@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { realpathSync } from 'node:fs';
+import { promises as fs, realpathSync, type BigIntStats } from 'node:fs';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { IdentityRegistry } from './identity-registry.service';
 import {
@@ -76,6 +76,24 @@ function foldForProtection(p: string): string {
   return process.platform === 'linux' ? p : p.normalize('NFC').toLowerCase();
 }
 
+/**
+ * 「尚不存在的名字」专用的保守折叠:比文件系统折得更狠(兼容分解、大小写往返 —— `ſ`→`s`、`ß`→`ss`、连字、
+ * final sigma;去掉默认可忽略码位)。只用来判断「新建的名字会不会与受保护根应在位置上的名字撞」,多拒无害;
+ * 不求与任何一种文件系统的折叠表逐字一致(见 README 残余)。
+ */
+function conservativeFold(name: string): string {
+  return name
+    .normalize('NFKC')
+    .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
+    .toLowerCase()
+    .toUpperCase()
+    .toLowerCase()
+    .normalize('NFKC');
+}
+
+// 找符号链接叶子的磁盘条目名时最多扫描的目录条目数;只对「父目录是受保护根祖先」的目录生效,超限 fail-closed。
+const ON_DISK_NAME_SCAN_LIMIT = 10_000;
+
 /** realpath;路径尚不存在时解析最近的已存在上级,其余各级原样接上(同 canonicalizeScopePath 的回退)。 */
 function realpathOrExistingAncestorSync(absolute: string): string {
   const missing: string[] = [];
@@ -132,6 +150,8 @@ export interface PathScopeRegistryOptions {
    * 改写其它插件的 main.js、读其它插件的 data.json。未注入 → 无受保护根(行为同改造前)。
    */
   protectedRoots?: readonly string[];
+  /** 找符号链接叶子的磁盘条目名时的目录扫描上限(默认 ON_DISK_NAME_SCAN_LIMIT;测试用小值)。 */
+  onDiskNameScanLimit?: number;
 }
 
 function modeAllows(scope: PathScope, mode: ScopeMode): boolean {
@@ -180,6 +200,7 @@ export class PathScopeRegistry extends EventEmitter {
 
   /** 受保护根的比较键(见 protectedRootKeys);构造时确定,之后不变。 */
   private readonly protectedKeys: readonly string[];
+  private readonly onDiskNameScanLimit: number;
 
   constructor(
     private readonly identityRegistry: IdentityRegistry,
@@ -187,6 +208,7 @@ export class PathScopeRegistry extends EventEmitter {
   ) {
     super();
     this.protectedKeys = [...new Set((opts.protectedRoots ?? []).flatMap(protectedRootKeys))];
+    this.onDiskNameScanLimit = opts.onDiskNameScanLimit ?? ON_DISK_NAME_SCAN_LIMIT;
   }
 
   /** 路径(词法绝对形或 canonical)是否落在某条受保护根之内(含根本身)。 */
@@ -199,6 +221,89 @@ export class PathScopeRegistry extends EventEmitter {
   private containsProtectedRoot(p: string): boolean {
     const probe = foldForProtection(p);
     return this.protectedKeys.some((root) => root !== probe && isWithinScope(probe, root));
+  }
+
+  /**
+   * 安全(文件系统折叠 ≠ JS 折叠):不跟随叶子的操作,probe 的叶子是插件给的写法,而 `foldForProtection` 只是
+   * JS 的 NFC + toLowerCase。大小写不敏感的文件系统折得更多 —— APFS 上长 s `ſ` ≡ `s`(`Application ſupport`
+   * 就是 `Application Support`)、连字、`ß`,Windows 还有 8.3 短名 —— 插件换个写法就绕过了「受保护根 / 其祖先」
+   * 判定:把整棵 `Application Support` 改名移走后随意读写,再移回或删光。不枚举字符,改让文件系统报出叶子
+   * 在磁盘上的真实名字再判一次。
+   *
+   * 只在父目录(已 realpath,名字是真的)是某条受保护根的祖先时才需要:否则叶子不可能是受保护根或其祖先
+   *(在受保护根之内的情形已被 probe 判定挡住)。绝大多数写操作因此不多任何文件系统调用。
+   * 返回拒绝原因,null = 放行。调用方(plugin-fs)在同一次持锁内校验并操作,SDK 内无法在其间改名。
+   */
+  private async onDiskLeafDenial(r: CheckResultWrite, opType: ScopeOpType): Promise<string | null> {
+    // Linux 默认大小写敏感,受保护根比较本就不折叠(行为不变;casefold 目录见 README 残余)。
+    if (process.platform === 'linux' || !this.containsProtectedRoot(r.parentCanonical)) return null;
+    let stat: BigIntStats;
+    try {
+      stat = await fs.lstat(r.fullPath, { bigint: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return 'cannot stat leaf next to a protected app directory';
+      // 叶子不存在:不可能是现有条目的别名;但新建它可能抢占受保护根(或其尚不存在的上级)应在位置上的名字。
+      return this.collidesWithProtectedSegment(r.parentCanonical, r.leaf)
+        ? 'new name collides with a protected app directory'
+        : null;
+    }
+    let onDisk: string[] | null;
+    if (stat.isSymbolicLink()) {
+      onDisk = await this.onDiskNamesOf(r.parentCanonical, r.leaf, stat);
+    } else {
+      // 非链接:整条 realpath 的最后一段就是磁盘上的名字。父目录对不上 = 叶子在 lstat 之后被换成了链接 → 拒。
+      const real = await fs.realpath(r.fullPath).catch(() => null);
+      onDisk = real !== null && dirname(real) === r.parentCanonical ? [real] : null;
+    }
+    if (onDisk === null) return 'cannot determine on-disk name next to a protected app directory';
+    for (const p of onDisk) {
+      if (this.isProtectedPath(p)) return 'on-disk name is a protected app directory';
+      if (ANCESTOR_DENIED_OPS.has(opType) && this.containsProtectedRoot(p)) {
+        return 'on-disk name is an ancestor of a protected app directory';
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 符号链接叶子在父目录里的磁盘条目名(完整路径;同一链接有多个硬链接名时全部返回)。操作作用在链接本身,
+   * 不能 realpath 跟随,只能在父目录里按 dev/ino 找。有条目与叶子逐字相同 → 那就是它,不再 lstat。
+   * 超过扫描上限 / 找不到(竞态)→ null,调用方 fail-closed。
+   */
+  private async onDiskNamesOf(parent: string, leaf: string, stat: BigIntStats): Promise<string[] | null> {
+    const found: string[] = [];
+    let scanned = 0;
+    try {
+      for await (const entry of await fs.opendir(parent)) {
+        scanned += 1;
+        if (scanned > this.onDiskNameScanLimit) return null;
+        if (entry.name === leaf) return [join(parent, leaf)];
+        if (!entry.isSymbolicLink()) continue;
+        const candidate = join(parent, entry.name);
+        const s = await fs.lstat(candidate, { bigint: true }).catch(() => null);
+        if (s !== null && s.dev === stat.dev && s.ino === stat.ino) found.push(candidate);
+      }
+    } catch {
+      return null;
+    }
+    return found.length > 0 ? found : null;
+  }
+
+  /**
+   * 在 `parent` 里新建 `leaf`,是否与某条受保护根在该目录下的那一段名字「保守折叠后相等、JS 折叠后却不等」
+   *(JS 折叠相等的情形由 probe 判定按原规则处理)。受保护根(或其上级)尚不存在时,插件用这样的变体名抢先
+   * 建出来,应用之后按标准写法访问就落进插件建的目录,而 realpath 报出的变体名与受保护根的比较键对不上。
+   */
+  private collidesWithProtectedSegment(parent: string, leaf: string): boolean {
+    const base = foldForProtection(parent);
+    const prefix = base.endsWith(sep) ? base : base + sep;
+    const folded = foldForProtection(leaf);
+    const loose = conservativeFold(leaf);
+    return this.protectedKeys.some((root) => {
+      if (!root.startsWith(prefix)) return false;
+      const segment = root.slice(prefix.length).split(sep, 1)[0]!;
+      return segment !== folded && conservativeFold(segment) === loose;
+    });
   }
 
   /** 受保护根拒绝:对插件与 scope 外路径同一条错误(不暴露这是受保护目录),原因只进主进程日志。 */
@@ -281,26 +386,19 @@ export class PathScopeRegistry extends EventEmitter {
     }
 
     let resolved: CheckResult;
-    if (opType === 'read' || opType === 'read-tree') {
-      const { canonical } = await resolveForRead(target);
-      resolved = { canonical };
-    } else if (
-      opType === 'lstat' ||
-      opType === 'remove' ||
-      opType === 'rename-src'
-    ) {
-      // 不跟随 leaf 符号链接:作用在链接本身(rm 删链接 / lstat 看链接 / rename 移链接),
-      // 而非 realpath 跟随到目标。父目录仍 realpath + leaf 经 validateLeaf,无 scope 逃逸。
-      resolved = withFullPath(await resolveNoFollowLeaf(target));
-    } else if (opType === 'write' || opType === 'mkdir') {
-      resolved = withFullPath(await resolveForWrite(target));
-    } else if (opType === 'rename-dst') {
-      resolved = withFullPath(await resolveForRenameDst(target));
-    } else {
-      throw new ScopeError(`unknown opType: ${opType as string}`, {
-        target,
-        reason: 'opType',
-      });
+    try {
+      resolved = await this.resolveTarget(opType, target);
+    } catch (err) {
+      // 安全(存在性探测):词法预判认不出的写法(scope 内指向受保护根的目录链接、文件系统折叠等价的祖先段)
+      // 解析失败时,错误会区分「目标 / 父目录不存在」—— 其下存在的路径却是统一拒绝,合起来就能探测受保护根里
+      // 有哪些文件。失败路径上按「最近的已存在上级 realpath + 其余各级」再判一次,落在受保护根内 → 同一条拒绝。
+      if (err instanceof ScopeError && this.protectedKeys.length > 0) {
+        const nearest = realpathOrExistingAncestorSync(lexical);
+        if (this.isProtectedPath(nearest)) {
+          throw this.denyProtected(pluginId, opType, 'unresolvable path inside a protected app directory', nearest, target, mode, scopes.length);
+        }
+      }
+      throw err;
     }
 
     const probe = 'fullPath' in resolved ? resolved.fullPath : resolved.canonical;
@@ -311,6 +409,10 @@ export class PathScopeRegistry extends EventEmitter {
     }
     if (ANCESTOR_DENIED_OPS.has(opType) && this.containsProtectedRoot(probe)) {
       throw this.denyProtected(pluginId, opType, 'subtree contains a protected app directory', probe, target, mode, scopes.length);
+    }
+    if ('fullPath' in resolved) {
+      const why = await this.onDiskLeafDenial(resolved, opType);
+      if (why !== null) throw this.denyProtected(pluginId, opType, why, probe, target, mode, scopes.length);
     }
     let match: PathScope | null = null;
     for (const s of scopes) {
@@ -323,6 +425,24 @@ export class PathScopeRegistry extends EventEmitter {
     if (!match) throw notInScope(target, mode, scopes.length);
 
     return resolved;
+  }
+
+  private async resolveTarget(opType: ScopeOpType, target: string): Promise<CheckResult> {
+    if (opType === 'read' || opType === 'read-tree') {
+      const { canonical } = await resolveForRead(target);
+      return { canonical };
+    }
+    if (opType === 'lstat' || opType === 'remove' || opType === 'rename-src') {
+      // 不跟随 leaf 符号链接:作用在链接本身(rm 删链接 / lstat 看链接 / rename 移链接),
+      // 而非 realpath 跟随到目标。父目录仍 realpath + leaf 经 validateLeaf,无 scope 逃逸。
+      return withFullPath(await resolveNoFollowLeaf(target));
+    }
+    if (opType === 'write' || opType === 'mkdir') return withFullPath(await resolveForWrite(target));
+    if (opType === 'rename-dst') return withFullPath(await resolveForRenameDst(target));
+    throw new ScopeError(`unknown opType: ${opType as string}`, {
+      target,
+      reason: 'opType',
+    });
   }
 
   /** 词法绝对路径是否落在某条(mode 足够的)已授 scope 的 canonical 根、或其已登记的请求写法之下。 */
