@@ -137,6 +137,7 @@
 - [`security-file-url-trust.spec.ts`](./49-polish-bugfixes/security-file-url-trust.spec.ts)
 - [`security-http-mcp-session-subject.spec.ts`](./49-polish-bugfixes/security-http-mcp-session-subject.spec.ts)
 - [`security-marketplace-token-main.spec.ts`](./49-polish-bugfixes/security-marketplace-token-main.spec.ts)
+- [`security-stdio-socket-owner.spec.ts`](./49-polish-bugfixes/security-stdio-socket-owner.spec.ts)
 - [`security-terminal-mcp-auth-gate.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-auth-gate.spec.ts)
 - [`security-terminal-mcp-capability.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-capability.spec.ts)
 - [`security-windows-stdio-pipe-per-user.spec.ts`](./49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts)

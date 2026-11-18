@@ -77,7 +77,7 @@ claude mcp add --transport stdio continuo -- /absolute/path/to/Continuo/scripts/
 
 Codex CLI / Aider 有类似的 stdio-MCP server 配置 —— 指向同一个脚本即可。
 
-在 Continuo 终端里,bridge 总是连接拥有该终端的 Continuo 实例(其 socket 路径以 `CONTINUO_MCP_SOCKET` 注入),因此 dev 构建与安装版可以并存。在 Continuo 终端之外,它先尝试安装版,再尝试 dev 构建。在 MCP server 配置中显式设置 `CONTINUO_MCP_SOCKET` 可覆盖以上两者。Windows 上显式设置的值必须是合法的本机 Continuo 管道名(`\\.\pipe\continuo-mcp-…`);其它值(远程管道、任意路径)会让 bridge 直接报错退出,不会回退到其它候选。
+在 Continuo 终端里,bridge 总是连接拥有该终端的 Continuo 实例(其 socket 路径以 `CONTINUO_MCP_SOCKET` 注入),因此 dev 构建与安装版可以并存。在 Continuo 终端之外,它先尝试安装版,再尝试 dev 构建。在 MCP server 配置中显式设置 `CONTINUO_MCP_SOCKET` 可覆盖以上两者。macOS / Linux 上 bridge 只连接属于当前用户的 socket,且其所在目录须属于当前用户、group / other 不可写(Continuo 自己的 socket 总是满足);显式设置的值不满足该条件(其他用户的 socket、`/tmp` 下的 socket、符号链接)时,bridge 直接报错退出,不连接、也不发送窗口 token。Windows 上显式设置的值必须是合法的本机 Continuo 管道名(`\\.\pipe\continuo-mcp-…`);其它值(远程管道、任意路径)会让 bridge 直接报错退出,不会回退到其它候选。
 
 **3 · 让 agent 驱动 UI**
 

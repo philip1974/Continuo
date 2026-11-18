@@ -345,8 +345,9 @@ describe('发现文件残留', () => {
   );
 
   // 安全:Windows 上 env 中的管道名与发现文件同样只认本机 continuo-mcp 管道(env 被写成远程管道
-  // `\\host\pipe\x` / 任意路径时报错退出,不连);POSIX 上 env 是任意 socket 路径,不校验。
-  it('proxy:Windows 上 CONTINUO_MCP_SOCKET 须是合法本机 continuo-mcp 管道名,POSIX 不校验', () => {
+  // `\\host\pipe\x` / 任意路径时报错退出,不连);POSIX 上 env 是任意 socket 路径,名字不校验
+  //(归属校验见 security-stdio-socket-owner.spec.ts)。
+  it('proxy:Windows 上 CONTINUO_MCP_SOCKET 须是合法本机 continuo-mcp 管道名,POSIX 不校验名字', () => {
     const { isAcceptableEnvSocket } = loadProxyDiscovery();
     expect(isAcceptableEnvSocket(createWindowsStdioPipeName(bob), 'win32')).toBe(true);
     for (const bad of INVALID_NAMES.filter((n) => n !== '')) {
