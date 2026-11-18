@@ -184,6 +184,21 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     expect(entries.filter((e) => e.startsWith('.'))).toEqual([]); // 无 staging/backup 残留
   });
 
+  // 安全:plugins 目录里 `.` / `_` 前缀名是主进程元数据与临时目录的命名空间(_plugin-path-scopes.json /
+  // _permissions.json / _enabled.json / .staging-* / .<id>.old-*),列举逻辑也跳过它们。远程仓库若能用
+  // 这类 manifest.id 安装,会占住元数据文件位置(读写 EISDIR → 卸载卡死、scope 持久化静默失效,且 UI 不可见)
+  // 或伪造启动恢复流程的备份目录。id 首字符必须是 [a-z0-9]。
+  it.each(['_plugin-path-scopes.json', '_permissions.json', '.victim.old-123', '...'])(
+    'manifest.id=%s(. / _ 前缀)→ 抛 BAD_MANIFEST,不占位元数据路径',
+    async (id) => {
+      ctl.manifest = { id, name: 'P', version: '1.0.0' };
+      await expect(installFromGit(URL, baseDir)).rejects.toMatchObject({
+        code: 'BAD_MANIFEST',
+      });
+      expect(await fs.readdir(baseDir)).toEqual([]);
+    },
+  );
+
   it('E27 超大 manifest 覆盖安装 → 抛 BAD_MANIFEST,旧版本原样保留', async () => {
     await installFromGit(URL, baseDir); // 先装 v1
     ctl.oversize = true;
