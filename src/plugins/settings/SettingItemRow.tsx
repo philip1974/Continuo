@@ -23,6 +23,7 @@ import {
   type SettingItemValue,
 } from '../registries/SettingItemRegistry';
 import { useSettingsValuesStore } from './values-store';
+import { ownValue } from '@shared/own-value';
 
 const SETTING_TOGGLE_SWITCH_BASE_CLASS_NAME =
   'relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40';
@@ -153,7 +154,7 @@ export function SettingItemRow({
   const description = spec.descriptionKey
     ? t(spec.descriptionKey)
     : spec.description;
-  const stored = useSettingsValuesStore((s) => s.values[spec.id]);
+  const stored = useSettingsValuesStore((s) => ownValue(s.values, spec.id));
   const setValueRaw = useSettingsValuesStore((s) => s.setValue);
   const resetRaw = useSettingsValuesStore((s) => s.reset);
   // race(R58):所有写入经此包装,写前复查 setting 仍注册;已移除则跳过(不写不报)。

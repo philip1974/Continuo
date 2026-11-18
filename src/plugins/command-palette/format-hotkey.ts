@@ -9,6 +9,7 @@
 // BDD: src/__tests__/format-hotkey/
 
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { ownValue } from '../../../electron/shared/own-value';
 
 export type Platform = 'mac' | 'other';
 
@@ -76,7 +77,7 @@ const KEY_ALIASES: Readonly<Record<string, string>> = {
 
 /** 把(已小写的)主键别名归一成 e.key 名;非别名原样返回。 */
 export function canonicalHotkeyKey(lowerKey: string): string {
-  return KEY_ALIASES[lowerKey] ?? lowerKey;
+  return ownValue(KEY_ALIASES, lowerKey) ?? lowerKey;
 }
 
 /**
@@ -138,9 +139,10 @@ const EMPTY_HOTKEY_PARTS: string[] = [];
 
 function formatPart(part: string, platform: Platform): string {
   const lower = lowerIfNeeded(part);
-  const mod = MOD_MAP[platform][lower];
+  // 主键名来自插件 hotkey:只认自有属性(constructor 等不得命中原型链返回函数)。
+  const mod = ownValue(MOD_MAP[platform], lower);
   if (mod) return mod;
-  const special = SPECIAL_KEYS[platform][canonicalHotkeyKey(lower)];
+  const special = ownValue(SPECIAL_KEYS[platform], canonicalHotkeyKey(lower));
   if (special) return special;
   // 普通字母 / 数字 / 符号 → uppercase(F1 / A / , / .)
   return part.toUpperCase();

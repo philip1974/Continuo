@@ -17,6 +17,7 @@ import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { ownValue } from '../../../electron/shared/own-value';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 
 interface SettingsPanelProps {
@@ -109,7 +110,7 @@ export function groupSearchResults(items: readonly SettingItemSpec[]): readonly 
     const { key: category, items: groupItems } = groups[i]!;
     buckets[i] = {
       category,
-      label: tWithFallback(CATEGORY_TITLE_KEYS[category], category),
+      label: tWithFallback(ownValue(CATEGORY_TITLE_KEYS, category), category),
       items: groupItems,
     };
   }

@@ -5,6 +5,7 @@
 // 监听 `storage` 事件按 key 重读。抽成 helper,各 store 只保留自己的 key / 值类型 / setState 映射。
 
 import { jsonStringLengthLowerBoundExceeds } from '../../../electron/shared/json-byte-budget';
+import { setOwnValue } from '../../../electron/shared/own-value';
 
 /**
  * 读 localStorage[key] 的 JSON 对象;无/非对象/解析失败/无 localStorage → {}.
@@ -82,7 +83,7 @@ export function readRecord<V>(
         continue;
       const v = rec[k];
       if (opts.valueGuard !== undefined && !opts.valueGuard(v)) continue;
-      out[k] = v as V;
+      setOwnValue(out, k, v as V); // `__proto__` 键保留为自有属性(同 JSON.parse 语义)
       n += 1;
     }
     return out;

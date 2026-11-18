@@ -203,7 +203,7 @@ export function buildKeybindingDisplayCommands(
   let outCount = 0;
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
-    const isOverridden = cmd.id in overrides;
+    const isOverridden = Object.hasOwn(overrides, cmd.id); // 只认自有属性(toString 等命令 id)
     if (!cmd.hotkey && !isOverridden) continue;
     if (out === null) out = new Array<DisplayCommand>(allCommands.length);
     const effective = resolveEffectiveHotkey(cmd, overrides);

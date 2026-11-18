@@ -24,6 +24,7 @@ import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError, errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
+import { ownValue } from '../../shared/own-value';
 import { isValidGitBranch } from '../../shared/git-branch';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
@@ -880,10 +881,10 @@ export function writePluginPermissions(
 
     const all = { ...(await readPermissions(baseDir)) };
     if (isEmpty) {
-      if (!(id in all)) return; // 无变化,不为删空条目而触盘
+      if (!Object.hasOwn(all, id)) return; // 无变化,不为删空条目而触盘
       delete all[id];
     } else {
-      if (permissionRecordEqual(all[id], decisions, scopes)) return;
+      if (permissionRecordEqual(ownValue(all, id), decisions, scopes)) return;
       all[id] =
         scopes === undefined ? decisions : { decisions, pathScopes: scopes };
     }
@@ -922,7 +923,8 @@ async function mutatePluginPermissionsQueued(
   mutation: IpcPermissionMutation,
 ): Promise<IpcPermissionRecord | null> {
   const all = { ...(await readPermissions(baseDir)) };
-  const existing = all[id];
+  // 只认自有属性:插件 id `constructor` 合法,普通对象上 all['constructor'] 会命中 Object 构造函数。
+  const existing = ownValue(all, id);
   const decisions: readonly IpcPermissionDecision[] =
     existing === undefined
       ? []
@@ -1044,7 +1046,7 @@ export async function readPluginPathScopes(
 ): Promise<IpcPathScope[]> {
   try {
     const all = await readAllPathScopes(baseDir);
-    return all[id] ?? [];
+    return ownValue(all, id) ?? [];
   } catch {
     // 损坏/IO 错误 → 本次冷启动不水合该 scope(插件会重新请求授权),fail-safe 降级。
     return [];
@@ -1077,10 +1079,10 @@ export function writePluginPathScopes(
       MAX_PERSISTED_SCOPES_PER_PLUGIN,
     );
     if (normalized.length === 0) {
-      if (!(id in all)) return; // 无变化,不为删除空条目而触盘
+      if (!Object.hasOwn(all, id)) return; // 无变化,不为删除空条目而触盘
       delete all[id];
     } else {
-      if (pathScopesEqual(all[id], normalized)) return;
+      if (pathScopesEqual(ownValue(all, id), normalized)) return;
       all[id] = normalized;
     }
     await fs.mkdir(baseDir, { recursive: true });

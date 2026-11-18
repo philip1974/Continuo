@@ -18,6 +18,7 @@ import {
   isAgentAuthRequestPayload,
 } from '@shared/agent-auth-channels';
 import { ERROR_CODES } from '@shared/error-codes';
+import { ownValue } from '@shared/own-value';
 
 // method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
 const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -106,7 +107,7 @@ function AgentAuthPromptBody({
   const isPlugin = isPluginAuthMethod(pending.method);
 
   function methodLabel(method: string): string {
-    const k = METHOD_LABEL_KEYS[method];
+    const k = ownValue(METHOD_LABEL_KEYS, method);
     if (k) return t(k);
     if (isPluginAuthMethod(method)) {
       return t('permissions.agent.plugin_tool', {

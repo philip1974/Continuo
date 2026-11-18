@@ -6,6 +6,7 @@ import {
   type TranslateParams,
 } from '@shared/i18n-interpolate';
 import type { Locale } from '@shared/i18n-types';
+import { ownValue } from '@shared/own-value';
 
 export type { Locale } from '@shared/i18n-types';
 export type { TranslateParams } from '@shared/i18n-interpolate';
@@ -38,8 +39,9 @@ export function translate(
   const dict = LOCALE_DICTS[currentLocale];
   const enDict = LOCALE_DICTS.en;
 
-  let template = dict[key];
-  if (template === undefined) template = enDict[key];
+  // 只认自有属性:插件 titleKey 为 constructor / toString 等时不得命中 Object.prototype 返回函数。
+  let template = ownValue(dict, key);
+  if (template === undefined) template = ownValue(enDict, key);
 
   if (template === undefined) {
     if (import.meta.env?.DEV && !missingWarned.has(key)) {
