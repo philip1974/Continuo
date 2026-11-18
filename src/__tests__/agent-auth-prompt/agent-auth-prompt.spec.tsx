@@ -8,6 +8,7 @@ import {
   captureLmApi,
 } from '../../lib/co-api';
 import { AgentAuthPrompt, AGENT_AUTH_GRANT_ARM_DELAY_MS } from '../../shell/AgentAuthPrompt';
+import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../../electron/shared/agent-auth-channels';
 import {
   _resetAgentAuthForTest,
   useAgentAuthStore,
@@ -455,7 +456,7 @@ describe('AgentAuthPrompt — main 已撤销', () => {
       });
       expect(useAgentAuthStore.getState().pending?.requestId).toBeDefined();
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+        await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
       });
       expect(useAgentAuthStore.getState().pending).toBeNull();
       expect(respond).not.toHaveBeenCalled();

@@ -166,13 +166,13 @@ describe.each([
 });
 
 describe('弹窗显示中 renderer reload', () => {
-  it('未决请求立即按取消结算;同窗口的新请求马上可以弹窗(不锁到 5 分钟超时 + 冷却)', async () => {
+  it('未决请求立即按取消结算;同窗口的新请求马上可以弹窗(不锁到无应答超时 + 冷却)', async () => {
     const first = request();
     await flush();
     expect(displayed()).toBe(true);
     reload();
 
-    // 审计复现:此前要等 330s(300s 超时 + 30s 冷却,期间没有任何弹窗可见)。
+    // 审计复现:此前要等无应答超时 + 30s 冷却(当时超时 5 分钟,共 330s),期间没有任何弹窗可见。
     let lockedMs = 0;
     for (; lockedMs < 400_000; lockedMs += 10_000) {
       const p = request();
@@ -226,7 +226,7 @@ describe('弹窗显示中 renderer reload', () => {
 });
 
 // 未决请求被 reload 取消后 agent 立即重试:IPC 落在加载中的文档(订阅还没建立)→ 没有可见弹窗,main 的未决请求
-// 留到 5 分钟超时再进冷却,该窗口同类调用方所有域被拒约 330s。
+// 留到无应答超时再进冷却,该窗口所有域被拒约 150s(当时超时 5 分钟,约 330s)。
 describe('reload 窗口期(新文档尚未建立授权订阅)到达的请求', () => {
   /** 加载中的文档收不到 IPC:期间的 send 记数后丢弃。 */
   function dropSendsWhileLoading(): { sends: number; restore: () => void } {
@@ -269,7 +269,7 @@ describe('reload 窗口期(新文档尚未建立授权订阅)到达的请求', (
     loading.restore();
     rebuildRenderer();
 
-    // 此前:丢失的那次请求占着未决槽 5 分钟,超时后再冷却 30s,期间别的域也弹不出。
+    // 此前:丢失的那次请求占着未决槽直到无应答超时,超时后再冷却 30s,期间别的域也弹不出。
     let lockedMs = 0;
     for (; lockedMs < 400_000; lockedMs += 10_000) {
       const p = request('debug.launch');

@@ -147,7 +147,7 @@ export function getAgentAuthEpoch(): number {
 // 被自动拒绝。不同类别的请求排在后面等显示(同一时刻仍只显示一个弹窗,不堆叠);同类别已占槽 → 立即拒。
 //
 // race(R88):每个请求带与 main 端 agent-auth.service PROMPT_TIMEOUT_MS 对齐的本地超时(从到达时起算)。main 在
-// 5min 后把该请求 resolve 为 denied(外部 agent 已收到拒绝),但不通知 renderer。若 renderer 不同 TTL 清理,
+// 超时(2 分钟)后把该请求 resolve 为 denied(外部 agent 已收到拒绝),但不通知 renderer。若 renderer 不同 TTL 清理,
 // 授权弹窗永久滞留并占着槽,直到用户手动点掉这个已失效的旧弹窗。
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
 interface AuthSlot {

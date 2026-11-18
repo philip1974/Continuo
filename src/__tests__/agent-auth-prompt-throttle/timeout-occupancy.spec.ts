@@ -83,8 +83,20 @@ async function throttled(
   return false;
 }
 
+describe('无人应答超时时长', () => {
+  it('弹窗 120s 无人应答 → main 结算为拒绝,renderer 同时关掉弹窗', async () => {
+    expect(TIMEOUT).toBe(120_000);
+    const p = request();
+    await flush(120_000 - 1);
+    expect(displayed()).toBe(true);
+    await flush(1);
+    expect(await p).toBe('denied');
+    expect(displayed()).toBe(false);
+  });
+});
+
 describe('无人应答超时:冷却不按授权域记', () => {
-  it('审计复现:轮换三个域、只发起不应答,每 5s 重试 → 一小时内弹窗占屏不超过 65%(此前 ≈100%)', async () => {
+  it('审计复现:轮换三个域、只发起不应答,每 5s 重试 → 一小时内弹窗占屏不超过 40%(此前 ≈100%)', async () => {
     const HORIZON = 60 * 60_000;
     const STEP = 5_000;
     let onScreen = 0;
@@ -98,9 +110,10 @@ describe('无人应答超时:冷却不按授权域记', () => {
       if (displayed()) onScreen += STEP;
       await flush(STEP);
     }
-    // 300s 显示 / 30s、60s、120s、240s、300s… 冷却 → 一小时内 8 个弹窗、占屏 62.5%,稳态 50%。
-    expect(onScreen / HORIZON).toBeLessThanOrEqual(0.65);
-    expect(prompts).toBe(8);
+    // 120s 显示 / 30s、60s、120s、240s、300s… 冷却 → 一小时内 11 个弹窗、占屏 36.7%,稳态 120/420 ≈ 28.6%。
+    // (超时 5 分钟时:8 个弹窗、62.5%。)
+    expect(onScreen / HORIZON).toBeLessThanOrEqual(0.4);
+    expect(prompts).toBe(11);
   });
 
   it('一个域超时 → 该调用方的所有域 30s 内都不弹窗', async () => {
@@ -150,7 +163,7 @@ describe('无人应答超时:冷却不按授权域记', () => {
 });
 
 describe('无人应答超时:冷却按窗口记(窗口内 agent 与 external 共用)', () => {
-  it('审计复现:窗口内与 external 两个身份交替发起、只发起不应答,每 5s 重试 → 一小时内弹窗占屏不超过 65%(此前 100%)', async () => {
+  it('审计复现:窗口内与 external 两个身份交替发起、只发起不应答,每 5s 重试 → 一小时内弹窗占屏不超过 40%(此前 100%)', async () => {
     const HORIZON = 60 * 60_000;
     const STEP = 5_000;
     let onScreen = 0;
@@ -166,10 +179,10 @@ describe('无人应答超时:冷却按窗口记(窗口内 agent 与 external 共
       if (displayed()) onScreen += STEP;
       await flush(STEP);
     }
-    // 此前超时冷却按 subject 记:一个身份冷却时另一个顶上 → 12 个弹窗、占屏 100%。现在按窗口记,与单身份同:
-    // 8 个弹窗、占屏 62.5%。
-    expect(onScreen / HORIZON).toBeLessThanOrEqual(0.65);
-    expect(prompts).toBe(8);
+    // 超时冷却按 subject 记时一个身份冷却、另一个顶上:超时 5 分钟 12 个弹窗、占屏 100%(超时 2 分钟 20 个、
+    // 66.7%)。按窗口记后与单身份相同:11 个弹窗、占屏 36.7%(超时 5 分钟时 8 个、62.5%)。
+    expect(onScreen / HORIZON).toBeLessThanOrEqual(0.4);
+    expect(prompts).toBe(11);
   });
 
   it('窗口内 agent 超时 → 同窗口的 external 调用方也进冷却;反之亦然', async () => {

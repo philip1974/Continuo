@@ -15,6 +15,7 @@ import {
 } from '../../../electron/main/services/agent-auth.service';
 import {
   AGENT_AUTH_CHANNELS,
+  AGENT_AUTH_PROMPT_TIMEOUT_MS,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../../electron/shared/agent-auth-channels';
@@ -246,12 +247,12 @@ describe('agent-auth-service: requestAgentAuth', () => {
     });
     electronMock.windows = [win];
 
-    // 不抛(契约:失败返 'denied' 而非 reject),且立即结算,不等 5min 超时。
+    // 不抛(契约:失败返 'denied' 而非 reject),且立即结算,不等无应答超时。
     await expect(
       requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
     ).resolves.toBe('denied');
 
-    // pending 已清:推进 5min 不应再有任何"延迟超时结算"留痕(_resetPendingForTest 无可清项)。
+    // pending 已清:推进超时时长不应再有任何"延迟超时结算"留痕(_resetPendingForTest 无可清项)。
     const cleared = (() => {
       // 若 pending 残留,_resetPendingForTest 会 settle 它;这里通过再发一个正常请求并确认
       // requestId 不冲突、能独立结算来间接验证 map 干净。
@@ -270,7 +271,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     electronMock.windows = [win];
 
     const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
 
     await expect(pending).resolves.toBe('denied');
   });
@@ -361,7 +362,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     ).resolves.toBe('denied');
     expect(win.webContents.send).toHaveBeenCalledTimes(max); // 没多发
     // 清理:全部超时结算,避免悬挂 timer
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
     await Promise.all(ps);
   });
 
@@ -387,7 +388,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     const revived = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 1 });
     expect(win.webContents.send).toHaveBeenCalledTimes(sendsBefore + 1);
     // 清理
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
     await Promise.all([...ps.slice(1), revived]);
   });
 
@@ -421,7 +422,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     resolveAgentAuthRequest(p2.requestId, 'session');
     await expect(onWin2).resolves.toBe('session');
     // 清理
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
     await Promise.all(ps);
   });
 
@@ -452,7 +453,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     ).resolves.toBe('denied');
     expect(wins[winCount]!.webContents.send).not.toHaveBeenCalled();
     // 清理
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
     await Promise.all(ps);
   });
 });
@@ -561,7 +562,7 @@ describe('agent-auth-service: pending lifecycle', () => {
 
     resolveAgentAuthRequest(payload.requestId, 'once');
     await expect(pending).resolves.toBe('once');
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
 
     expect(settled).toBe('once');
   });
@@ -722,7 +723,7 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
 });
 
 // 退出清理:before-quit 时窗口已隐藏,用户无法再应答授权弹窗;挂在授权上的 HTTP/stdio 工具调用若等
-// 5 分钟定时器,mcpHost.close() 会被拖住 → 应用不可见且无法退出。cancelAllAgentAuth 同步把所有未决
+// 无应答超时定时器,mcpHost.close() 会被拖住 → 应用不可见且无法退出。cancelAllAgentAuth 同步把所有未决
 // 请求结算为 denied(跨窗口),不发任何 IPC(不是「撤销」语义,不重置 renderer 的会话授权)。
 describe('agent-auth-service: cancelAllAgentAuth(退出清理)', () => {
   it('T17: 所有窗口的未决请求立即 denied,返回取消数,不发 IPC', async () => {

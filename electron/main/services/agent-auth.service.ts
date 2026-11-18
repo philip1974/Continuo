@@ -24,12 +24,12 @@ import { broadcastToWindows } from '../lib/broadcast';
 import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
 
-// 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
+// 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
 
 // 边界(E229,E227/E228 pending 数量上限族):未决授权请求数量上限。requestAgentAuth 每次登记一条
-// pending + 起 5min timer + 向 renderer 发 IPC;此前无数量上限 —— 外部 MCP/agent 可并发 spam 大量
-// 需授权的 tool 调用,renderer 同一时间只弹一个,其余全堆在 main 等满 5min 超时 → pending Map + timer +
+// pending + 起无应答超时 timer + 向 renderer 发 IPC;此前无数量上限 —— 外部 MCP/agent 可并发 spam 大量
+// 需授权的 tool 调用,renderer 同一时间只弹一个,其余全堆在 main 等满无应答超时 → pending Map + timer +
 // IPC 线性放大内存/事件循环,发起的外部 agent 进程干等假死。全局 + per-window 双闸(对齐 E227
 // ScopeRequestCorrelator),超限直接终态 'denied'(不入 pending、不起 timer、不发 IPC)。backstop 值远超
 // 任何正常并发授权(renderer store.ensure 仍处理合法并发 pending,见文件头注释),只挡 spam。
@@ -82,15 +82,15 @@ const sessionGrantMirror = new Set<string>();
 // 安全:renderer 文档被换掉(主窗 View 菜单 Cmd+R reload、渲染进程崩溃)时 webContents 不销毁、窗口也不关,
 // win 'closed' 的清理走不到;而 renderer 侧的授权态与弹窗已随旧文档消失。不清的话:
 // - 镜像残留 → 该域请求不走节流,renderer 却真的弹窗(速率上限 / 超时冷却 / 拒绝冷却全部失效);
-// - 显示中的弹窗消失,main 的未决请求留到 5 分钟超时,调用方一直「已有未决弹窗」,之后再吃超时冷却 →
+// - 显示中的弹窗消失,main 的未决请求留到无应答超时,调用方一直「已有未决弹窗」,之后再吃超时冷却 →
 //   同窗口所有 agent 数分钟拿不到弹窗。
 // 窗口创建时挂钩(main/index.ts 的 browser-window-created;首次加载也算「新文档尚未就绪」),首次向某窗口发请求时
 // 兜底再挂一次(幂等);此后该 webContents 每次换文档都结算。
 const rendererGoneWatched = new WeakSet<object>();
 /**
  * renderer 文档已被换掉(reload / 渲染进程崩溃)、新文档还没订阅授权请求的窗口。这段时间发过去的请求落在加载中
- * 的文档上:没有弹窗可见,main 的未决请求却占着槽等满 5 分钟再进超时冷却 —— 未决请求被 reload 取消后 agent 立即
- * 重试就会撞上,该窗口同类调用方所有域被拒约 330s。期间的请求直接拒绝(requestAgentAuth);renderer 订阅建立后
+ * 的文档上:没有弹窗可见,main 的未决请求却占着槽等满无应答超时(2 分钟)再进超时冷却 —— 未决请求被 reload 取消后 agent 立即
+ * 重试就会撞上,该窗口所有域被拒约 150s(超时 5 分钟时约 330s)。期间的请求直接拒绝(requestAgentAuth);renderer 订阅建立后
  * 经 AGENT_AUTH_CHANNELS.READY 上报(markAgentAuthRendererReady)才恢复。
  */
 const rendererNotReady = new Set<number>();
@@ -145,7 +145,7 @@ function rendererUnavailable(win: BrowserWindow): boolean {
 
 /**
  * 显示不足该时长就到期的弹窗不记超时冷却:它排在别的弹窗后面(窗口内 agent 的弹窗占屏时排队的 external 请求,
- * 或反过来),各请求从到达起各自计 5 分钟,轮到它显示时已经到期 —— 用户没机会应答,也谈不上占屏。
+ * 或反过来),各请求从到达起各自计 2 分钟,轮到它显示时已经到期 —— 用户没机会应答,也谈不上占屏。
  */
 const MIN_SHOWN_FOR_TIMEOUT_COOLDOWN_MS = 5_000;
 
@@ -207,7 +207,7 @@ function pickAuthTargetWindow(ownerWindowId: number | undefined): BrowserWindow 
 
 /**
  * Tool 调用入口:把请求 push 给调用方窗口,等用户决定。
- * 目标窗口不存在 / 5 分钟超时 → 默认 'denied'(防卡死)。
+ * 目标窗口不存在 / 2 分钟无应答超时 → 默认 'denied'(防卡死)。
  * 被节流(拒绝冷却 / 退避 / 超速 / 该调用方已有未决弹窗)→ 不弹窗,reject AGENT_NOT_AUTHORIZED(消息说明原因,
  * 工具门控原样抛给 agent)。目标窗口的 renderer 正在重新加载 → 同样 reject(消息说明稍后重试)。
  */
@@ -282,7 +282,7 @@ export async function requestAgentAuth(
     // race(R62):pending.set 在前、send 在后。若 win 通过了上面的 isDestroyed 检查,但其
     // webContents 在此刻已销毁(窗口正在关闭的竞态窗口),send 会同步抛("Object has been
     // destroyed")。不捕获则 Promise executor 抛错使 Promise reject(契约要求失败返 'denied'
-    // 而非抛),且已登记的 pending 条目 + timer 会泄漏到 5min 超时才清 —— 期间发起请求的、
+    // 而非抛),且已登记的 pending 条目 + timer 会泄漏到无应答超时才清 —— 期间发起请求的、
     // 仍存活的外部 agent 进程干等假死。投递失败立即清 pending + timer 并 resolve('denied'),
     // 与 plugin-mcp send-fail-abort 同族(那条已修,这是未传播的兄弟入口)。
     try {
@@ -331,7 +331,7 @@ export function answerAgentAuthRequest(
 /**
  * 目标窗口关闭/销毁,或其 renderer 文档被换掉(reload / 渲染进程崩溃,见 watchAgentAuthRenderer)→ 把发往它的所有
  * pending 授权请求立即结算为 denied(按取消:不计拒绝、不进冷却),并清掉它的授权镜像。
- * 否则发起的**外部 agent CLI 进程**(仍存活)要干等满 PROMPT_TIMEOUT_MS(5min)才收到
+ * 否则发起的**外部 agent CLI 进程**(仍存活)要干等满 PROMPT_TIMEOUT_MS(2 分钟)才收到
  * 默认拒绝,表现为 agent 假死。这与 request-scope「等待者是已死请求方自己」不同 ——
  * 这里等待者是活的外部进程。镜像 stop-hook broker.cancelByWindow(审计 #3)。返回取消数。
  * 见第十七轮 P2-AT。
@@ -353,7 +353,7 @@ export function cancelAgentAuthByWindow(windowId: number): number {
 
 /**
  * 退出清理:把所有窗口的 pending 授权请求立即结算为 denied。before-quit 时窗口已隐藏、无人应答弹窗,
- * 挂在授权上的 MCP 工具调用否则等满 5min 定时器,拖住 mcpHost.close() → 应用不可见且无法退出。
+ * 挂在授权上的 MCP 工具调用否则等满无应答超时定时器,拖住 mcpHost.close() → 应用不可见且无法退出。
  * 不发 IPC、不走 revokeAndKillAgentSessions:这不是「撤销」,不应重置 renderer 的会话授权或轮换 token。
  * 返回取消数。
  */

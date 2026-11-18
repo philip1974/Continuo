@@ -81,7 +81,7 @@ export function AgentAuthPrompt() {
       if (decision === 'cancelled') return;
       const epoch = getAgentAuthEpoch();
       // a11y(A58,A50 同族):respond 返回 IpcResult 且可 reject。此前 void 丢弃 → IPC 应答失败时
-      // 弹窗已关、main pending 等 5 分钟才默认拒绝,用户/AT 不知决定未生效。失败给可见+可播报反馈。
+      // 弹窗已关、main pending 等到无应答超时(2 分钟)才默认拒绝,用户/AT 不知决定未生效。失败给可见+可播报反馈。
       try {
         const r = await coApi.agentAuth.respond(requestId, decision);
         // 安全:「本次启动期间允许」仅在 main 确认该请求仍在等待(ok)后生效;main 已撤销/超时删除
