@@ -171,6 +171,10 @@ export const zh: Record<TranslationKey, string> = {
   'dialog.unsaved_close.dont_save': '不保存',
   'dialog.unsaved_close.save_failed': '{count} 个文件保存失败,窗口未关闭。',
   'dialog.unsaved_close.disk_changed_note': '其中 {count} 个文件已在磁盘上被其它程序修改,未覆盖。请在编辑器中按 Cmd/Ctrl+S 解决冲突,或选择「不保存」。',
+  'dialog.mcp_legacy_config.message': 'Claude Code 中的 Continuo MCP 配置指向临时路径,存在安全风险',
+  'dialog.mcp_legacy_config.detail':
+    '~/.claude.json 中的 MCP 服务器 {names} 指向旧版 AppImage 的临时挂载路径。Continuo 退出后,同机其他用户可在该位置放置同名脚本,由 Claude Code 以你的身份执行。请先在对应项目目录执行 `claude mcp remove {first}`(user 级配置加 `-s user`),再执行状态栏「复制 MCP 配置」中的新命令。',
+  'dialog.mcp_legacy_config.copy': '复制新命令',
   'dock.empty.message': '所有面板都关掉了。',
   'dock.empty.restore': '恢复默认布局',
   'panels.explorer.loading_or_empty': '读取中或空目录',

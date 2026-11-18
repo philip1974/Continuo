@@ -185,6 +185,10 @@ export const en = {
   'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
   'dialog.unsaved_close.disk_changed_note':
     '{count} file(s) were changed on disk by another program and were not overwritten. Press Cmd/Ctrl+S in the editor to resolve the conflict, or choose "Don\'t Save".',
+  'dialog.mcp_legacy_config.message': 'Your Continuo MCP config in Claude Code points to a temporary path',
+  'dialog.mcp_legacy_config.detail':
+    'MCP server(s) {names} in ~/.claude.json point to an old AppImage temporary mount path. After Continuo exits, another user on this machine can place a script with the same name there, which Claude Code would then run as you. Run `claude mcp remove {first}` in the corresponding project directory (add `-s user` for user-scoped config), then run the new command from "Copy MCP config" in the status bar.',
+  'dialog.mcp_legacy_config.copy': 'Copy New Command',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.restore': 'Restore default layout',
   'panels.explorer.loading_or_empty': 'Loading or empty folder',

@@ -16,7 +16,11 @@ import {
 } from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
-import { resolveSpawnCommand, withGitHardeningEnv } from '../lib/child-spawn-hardening';
+import {
+  resolveSpawnCommand,
+  stripInternalSecretEnv,
+  withGitHardeningEnv,
+} from '../lib/child-spawn-hardening';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { codedError } from '../../shared/error-message';
 
@@ -173,7 +177,8 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       // Windows .cmd/.bat 的正确启动方式需 PATHEXT 检测 + cmd.exe 包装 + quoting → DEFER。
       // 安全:git 命令行作用域 core.fsmonitor=false 兜底;Windows 裸命令名只在 PATH 绝对目录中解析、
       // 不查 cwd,解析不到抛错不 spawn(同 shell.service,见 lib/child-spawn-hardening)。
-      const env = withGitHardeningEnv(process.env);
+      // 剥离宿主内部机密(CONTINUO_MCP_TOKEN),见 INTERNAL_SECRET_ENV_KEYS。
+      const env = withGitHardeningEnv(stripInternalSecretEnv(process.env));
       const child = spawn(resolveSpawnCommand(cmd, env), args, {
         cwd: opts?.cwd,
         env,

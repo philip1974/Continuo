@@ -173,6 +173,10 @@ export const ko: Record<TranslationKey, string> = {
   'dialog.unsaved_close.save_failed': '{count}개 파일을 저장하지 못해 창을 닫지 않았습니다.',
   'dialog.unsaved_close.disk_changed_note':
     '그중 {count}개 파일은 디스크에서 다른 프로그램이 수정하여 덮어쓰지 않았습니다. 편집기에서 Cmd/Ctrl+S로 충돌을 해결하거나 \'저장 안 함\'을 선택하세요.',
+  'dialog.mcp_legacy_config.message': 'Claude Code의 Continuo MCP 설정이 임시 경로를 가리키고 있습니다',
+  'dialog.mcp_legacy_config.detail':
+    "~/.claude.json의 MCP 서버 {names}이(가) 이전 AppImage의 임시 마운트 경로를 가리킵니다. Continuo가 종료된 후 이 컴퓨터의 다른 사용자가 그 위치에 같은 이름의 스크립트를 두면 Claude Code가 사용자 권한으로 실행합니다. 해당 프로젝트 디렉터리에서 `claude mcp remove {first}`를 실행한 뒤(user 범위 설정은 `-s user` 추가) 상태 표시줄의 'MCP 설정 복사'에 있는 새 명령을 실행하세요.",
+  'dialog.mcp_legacy_config.copy': '새 명령 복사',
   'dock.empty.message': '모든 패널이 닫혀 있습니다.',
   'dock.empty.restore': '기본 레이아웃 복원',
   'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',

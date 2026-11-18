@@ -71,6 +71,17 @@ describe('I12 install_stop_hook 限定在 workspace 内', () => {
     expect(await exists(join(outside, '.codex'))).toBe(false);
   });
 
+  it('cwd 是 workspace 的同名前缀兄弟目录(ws2 vs ws)→ 拒绝', async () => {
+    const root = await makeRoot();
+    const ws = join(root, 'ws');
+    const sibling = join(root, 'ws2');
+    await mkdir(ws);
+    await mkdir(sibling);
+    const r = await install({ cwd: sibling, workspaceRoot: ws, homeDir: join(root, 'home') });
+    expect(r).toEqual({ installed: false, reason: 'cwd-outside-workspace' });
+    expect(await exists(join(sibling, '.codex'))).toBe(false);
+  });
+
   it('cwd 为用户 home(即便 workspace 就是 home)→ 拒绝,不写全局 ~/.codex/config.toml', async () => {
     const home = await makeRoot();
     for (const runner of ['codex', 'cc'] as const) {

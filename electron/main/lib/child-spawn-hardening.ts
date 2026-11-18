@@ -28,18 +28,57 @@ const GIT_HARDENING_CONFIG: readonly (readonly [string, string])[] = [['core.fsm
 /**
  * 返回注入 git 命令行作用域配置后的新 env(不改入参)。调用方已带 GIT_CONFIG_COUNT 时从其后续编号追加,
  * 不覆盖调用方条目;同名键后出现者生效,故我们的值优先于调用方同名条目。
+ * Windows env 键大小写不敏感:插件传 `git_config_count` 也按计数读取(多个大小写变体取最大合法值,保证排在
+ * 全部调用方条目之后);写入经 mergeSpawnEnv,不留与我们的键仅大小写不同的副本(否则子进程取到哪份不确定)。
  */
-export function withGitHardeningEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = { ...env };
-  const raw = out.GIT_CONFIG_COUNT;
+export function withGitHardeningEnv(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  const counts =
+    platform === 'win32'
+      ? Object.keys(env).filter((k) => k.toUpperCase() === 'GIT_CONFIG_COUNT').map((k) => env[k])
+      : [env.GIT_CONFIG_COUNT];
   // 非法计数:git 会整体报错退出(fail-closed);这里按 0 起编号并覆盖,保证我们的条目生效。
-  let n = raw !== undefined && /^\d+$/.test(raw) ? Number(raw) : 0;
+  let n = 0;
+  for (const raw of counts) if (raw !== undefined && /^\d+$/.test(raw)) n = Math.max(n, Number(raw));
+  const extra: NodeJS.ProcessEnv = {};
   for (const [key, value] of GIT_HARDENING_CONFIG) {
-    out[`GIT_CONFIG_KEY_${n}`] = key;
-    out[`GIT_CONFIG_VALUE_${n}`] = value;
+    extra[`GIT_CONFIG_KEY_${n}`] = key;
+    extra[`GIT_CONFIG_VALUE_${n}`] = value;
     n += 1;
   }
-  out.GIT_CONFIG_COUNT = String(n);
+  extra.GIT_CONFIG_COUNT = String(n);
+  return mergeSpawnEnv(env, extra, platform);
+}
+
+/**
+ * 只读本地对象库的 git 预设:GIT_NO_LAZY_FETCH=1(git ≥2.45 禁 partial clone 惰性拉取)+ GIT_ALLOW_PROTOCOL=''
+ * (空白名单:git ≥2.12 忽略全部 protocol.*.allow 配置、拒绝一切传输,仓库 config 无法覆盖)。
+ */
+export const GIT_OFFLINE_ENV: Readonly<Record<'GIT_NO_LAZY_FETCH' | 'GIT_ALLOW_PROTOCOL', string>> = Object.freeze({
+  GIT_NO_LAZY_FETCH: '1',
+  GIT_ALLOW_PROTOCOL: '',
+});
+
+/**
+ * 宿主内部机密 env 名单:不得进入插件 / 调试适配器等非宿主自身的子进程。Continuo 从带 token 的终端启动时
+ * process.env 即含它;持有 token 即可经 MCP HTTP 以该窗口身份调用工具。
+ * 只列机密:CONTINUO_MCP_SOCKET(路径,本就可由 userData 推得;连上仍需 hello token)、CONTINUO_WINDOW_ID /
+ * CONTINUO_TERMINAL_SESSION_ID(标识符,无 token 不能据以调用)不是凭据,保留以免破坏依赖它们定位实例的工具。
+ */
+export const INTERNAL_SECRET_ENV_KEYS: readonly string[] = Object.freeze(['CONTINUO_MCP_TOKEN']);
+
+/** 返回剥离 INTERNAL_SECRET_ENV_KEYS 后的新 env(不改入参);Windows 按大小写不敏感匹配。 */
+export function stripInternalSecretEnv(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env };
+  for (const k of Object.keys(out)) {
+    const name = platform === 'win32' ? k.toUpperCase() : k;
+    if (INTERNAL_SECRET_ENV_KEYS.includes(name)) delete out[k];
+  }
   return out;
 }
 

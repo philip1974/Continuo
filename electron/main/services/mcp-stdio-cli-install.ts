@@ -10,8 +10,12 @@ import { chmod, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/pro
 import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import { isSameOrInsidePath } from '../lib/path-inside';
 
 export const STDIO_CLI_FILE_NAME = 'continuo-mcp-stdio.mjs';
+
+const SHARED_TMP_DIRS = ['/tmp', '/var/tmp', '/dev/shm'] as const;
+const APPIMAGE_MOUNT_MARKER = '.mount_';
 
 /** resources 是否处于运行期临时位置(AppImage 挂载点),其路径不可持久写入外部配置。 */
 export function isUnstableResourcesPath(
@@ -22,9 +26,18 @@ export function isUnstableResourcesPath(
 ): boolean {
   if (platform !== 'linux') return false;
   if (env['APPIMAGE']) return true;
-  // 更一般地:resources 落在临时目录内(未设 APPIMAGE 的挂载 / 解包运行)同样不稳定。
-  const rel = path.relative(path.resolve(tmpDir), path.resolve(resourcesPath));
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  return isInUnstableLinuxLocation(resourcesPath, tmpDir);
+}
+
+/**
+ * (Linux)路径本身是否位于运行期临时 / 共享可写位置 —— 只看路径,不看当前进程环境(也用于检查外部配置里存量路径)。
+ * 落在任一共享临时目录内(未设 APPIMAGE 的挂载 / 解包运行)即不稳定:TMPDIR 可能被改,只比 os.tmpdir() 会漏掉
+ * /tmp、/var/tmp、/dev/shm —— 这些都是同机其他用户可写、可抢注的位置。AppImage 挂载点目录名形如
+ * `.mount_<前缀><随机>`,挂在别处(如 $XDG_RUNTIME_DIR)也是运行期临时路径。
+ */
+export function isInUnstableLinuxLocation(p: string, tmpDir: string = os.tmpdir()): boolean {
+  if ([tmpDir, ...SHARED_TMP_DIRS].some((dir) => isSameOrInsidePath(dir, p, 'linux'))) return true;
+  return path.posix.resolve(p).split('/').some((seg) => seg.includes(APPIMAGE_MOUNT_MARKER));
 }
 
 /**
