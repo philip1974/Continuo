@@ -87,22 +87,36 @@ export function isPluginAuthMethod(method: string): boolean {
   return method.startsWith(AGENT_AUTH_PLUGIN_METHOD_PREFIX);
 }
 
-type SessionGrantKey =
-  | 'sessionGranted'
-  | 'debugSessionGranted'
-  | 'pluginSessionGranted'
-  | 'externalSessionGranted'
-  | 'externalDebugSessionGranted'
-  | 'externalPluginSessionGranted';
+/**
+ * 窗口级(绑定 Continuo 终端的 agent)「本次启动期间允许」标志位。撤销 IPC 失败回滚时只恢复这些。
+ */
+export const WINDOW_SESSION_GRANT_KEYS = [
+  'sessionGranted',
+  'debugSessionGranted',
+  'pluginSessionGranted',
+] as const;
+/** 外部客户端的「本次启动期间允许」标志位。撤销失败时不恢复(往拒绝方向)。 */
+export const EXTERNAL_SESSION_GRANT_KEYS = [
+  'externalSessionGranted',
+  'externalDebugSessionGranted',
+  'externalPluginSessionGranted',
+] as const;
+/** 全部「本次启动期间允许」标志位的单一来源:撤销 / 撤销入口可见性 / 测试重置都从这里取。 */
+export const SESSION_GRANT_KEYS = [
+  ...WINDOW_SESSION_GRANT_KEYS,
+  ...EXTERNAL_SESSION_GRANT_KEYS,
+] as const;
 
-const NO_SESSION_GRANTS = {
-  sessionGranted: false,
-  debugSessionGranted: false,
-  pluginSessionGranted: false,
-  externalSessionGranted: false,
-  externalDebugSessionGranted: false,
-  externalPluginSessionGranted: false,
-} as const satisfies Record<SessionGrantKey, false>;
+export type SessionGrantKey = (typeof SESSION_GRANT_KEYS)[number];
+
+/** 任一域(含外部客户端)存在「本次启动期间允许」→ 需要提供撤销入口。 */
+export function hasAnySessionGrant(s: Readonly<Record<SessionGrantKey, boolean>>): boolean {
+  return SESSION_GRANT_KEYS.some((k) => s[k]);
+}
+
+const NO_SESSION_GRANTS = Object.fromEntries(
+  SESSION_GRANT_KEYS.map((k) => [k, false]),
+) as Record<SessionGrantKey, false>;
 
 /** (method, 调用方类别) → 所属「本次启动期间允许」标志位。 */
 function grantKeyFor(method: string, external?: boolean): SessionGrantKey {
@@ -213,11 +227,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
 
   revoke() {
     authEpoch += 1;
-    set((s) =>
-      (Object.keys(NO_SESSION_GRANTS) as SessionGrantKey[]).some((k) => s[k])
-        ? NO_SESSION_GRANTS
-        : s,
-    );
+    set((s) => (hasAnySessionGrant(s) ? NO_SESSION_GRANTS : s));
   },
 
   applyMainRevoked() {
