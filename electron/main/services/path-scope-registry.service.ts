@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { promises as fs, realpathSync, type BigIntStats } from 'node:fs';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { IdentityRegistry } from './identity-registry.service';
 import {
   lexicalAbsolutePath,
@@ -121,16 +121,59 @@ function darwinDataVolumeAlias(p: string): string {
 }
 
 /**
- * 一条受保护根的比较键:词法绝对形 + realpath 形(macOS 再加各自的数据卷别名),去重、已折叠。
+ * 一条受保护根的两种写法:词法绝对形 + realpath 形(未折叠,去重)。
  * 空串 / 相对路径 / 文件系统根忽略(测试里 `app.getPath` 常被 mock 成 `''`;把 cwd 或 `/` 当受保护根会误拒一切)。
  */
-function protectedRootKeys(raw: string): string[] {
+function protectedRootForms(raw: string): string[] {
   if (typeof raw !== 'string' || !isAbsolute(raw)) return [];
   const lexical = resolve(raw);
   if (dirname(lexical) === lexical) return [];
-  const forms = [lexical, realpathOrExistingAncestorSync(lexical)];
-  if (process.platform === 'darwin') forms.push(...forms.map(darwinDataVolumeAlias));
-  return [...new Set(forms.map(foldForProtection))];
+  return [...new Set([lexical, realpathOrExistingAncestorSync(lexical)])];
+}
+
+/** 受保护根各写法的字符串比较键(macOS 再加各自的数据卷别名),去重、已折叠。 */
+function protectedRootKeys(forms: readonly string[]): string[] {
+  const all = process.platform === 'darwin' ? [...forms, ...forms.map(darwinDataVolumeAlias)] : forms;
+  return [...new Set(all.map(foldForProtection))];
+}
+
+// macOS 根目录下由内核合成的路径前缀:`/.nofollow/<绝对路径>` 与 `<绝对路径>` 是同一个文件(只是沿途不跟随
+// 符号链接),`/.resolve/<n>/<绝对路径>`、`/.vol/<dev>/<ino>` 同理 —— 而 realpath 不归一(或直接失败)。
+// 它们不是访问用户文件的正当写法,plugin-fs 一律不认(与 scope 外路径同一条拒绝)。
+const DARWIN_MAGIC_ROOT_ENTRIES: ReadonlySet<string> = new Set(['.nofollow', '.resolve', '.vol']);
+
+function isDarwinMagicPath(p: string): boolean {
+  if (process.platform !== 'darwin') return false;
+  const first = p.split('/').find((segment) => segment !== '');
+  return first !== undefined && DARWIN_MAGIC_ROOT_ENTRIES.has(conservativeFold(first));
+}
+
+/** 路径自身及其各级上级(字符串 dirname,直到文件系统根),由深到浅。 */
+function prefixesOf(p: string): string[] {
+  const out = [p];
+  for (;;) {
+    const current = out[out.length - 1]!;
+    const parent = dirname(current);
+    if (parent === current) return out;
+    out.push(parent);
+  }
+}
+
+/** 文件身份 = (dev, ino)。ino 为 0(个别文件系统不提供)时不可比较 → null。 */
+type FileId = string;
+
+function fileIdOf(stat: BigIntStats | null): FileId | null {
+  return stat === null || stat.ino === 0n ? null : `${stat.dev}:${stat.ino}`;
+}
+
+/** 受保护根此刻在文件系统里的身份(每次校验现算:祖先可被改名 / 替换,根可能尚不存在)。 */
+interface ProtectedIds {
+  /** 现存的受保护根(经链接给出时还包括链接本身)。 */
+  roots: Set<FileId>;
+  /** 受保护根的各级上级目录(以及其写法途经的链接本身)。 */
+  ancestors: Set<FileId>;
+  /** 尚不存在的受保护根:最近的已存在上级 + 其下到根为止尚不存在的各段名字。 */
+  pending: { parent: FileId; segments: string[] }[];
 }
 
 // 目标是受保护根的**祖先**时也拒绝的操作:它们会连带删除 / 移走 / 复制整棵受保护子树。
@@ -200,6 +243,8 @@ export class PathScopeRegistry extends EventEmitter {
 
   /** 受保护根的比较键(见 protectedRootKeys);构造时确定,之后不变。 */
   private readonly protectedKeys: readonly string[];
+  /** 受保护根各写法(见 protectedRootForms)的「自身 + 各级上级」路径,由深到浅;按 (dev, ino) 判定时逐级 stat。 */
+  private readonly protectedChains: readonly (readonly string[])[];
   private readonly onDiskNameScanLimit: number;
 
   constructor(
@@ -207,12 +252,18 @@ export class PathScopeRegistry extends EventEmitter {
     opts: PathScopeRegistryOptions = {},
   ) {
     super();
-    this.protectedKeys = [...new Set((opts.protectedRoots ?? []).flatMap(protectedRootKeys))];
+    const forms = [...new Set((opts.protectedRoots ?? []).flatMap(protectedRootForms))];
+    this.protectedKeys = protectedRootKeys(forms);
+    this.protectedChains = forms.map(prefixesOf);
     this.onDiskNameScanLimit = opts.onDiskNameScanLimit ?? ON_DISK_NAME_SCAN_LIMIT;
   }
 
-  /** 路径(词法绝对形或 canonical)是否落在某条受保护根之内(含根本身)。 */
+  /**
+   * 路径(词法绝对形或 canonical)按字符串是否落在某条受保护根之内(含根本身),或是 macOS 合成前缀下的写法。
+   * 只看字符串;文件系统别名(同一目录的另一种路径)由 check 里的 inodeDenial 按 (dev, ino) 判定。
+   */
   isProtectedPath(p: string): boolean {
+    if (isDarwinMagicPath(p)) return true;
     const probe = foldForProtection(p);
     return this.protectedKeys.some((root) => isWithinScope(root, probe));
   }
@@ -261,6 +312,104 @@ export class PathScopeRegistry extends EventEmitter {
       if (ANCESTOR_DENIED_OPS.has(opType) && this.containsProtectedRoot(p)) {
         return 'on-disk name is an ancestor of a protected app directory';
       }
+    }
+    return null;
+  }
+
+  /**
+   * 受保护根此刻的 (dev, ino)。`withUpper` = 连同各级上级与「尚不存在的根」一起算(各写法共享上级,同一路径只 stat
+   * 一次);否则只 stat 根本身 —— 读类 / 只看不动的操作只需要判「之内」,不必每次把上级链也 stat 一遍。
+   */
+  private async protectedIds(withUpper: boolean): Promise<ProtectedIds> {
+    const seen = new Map<string, Promise<{ self: FileId | null; target: FileId | null }>>();
+    const idsAt = (p: string): Promise<{ self: FileId | null; target: FileId | null }> => {
+      let pending = seen.get(p);
+      if (!pending) {
+        pending = (async () => {
+          const own = await fs.lstat(p, { bigint: true }).catch(() => null);
+          const self = fileIdOf(own);
+          if (own === null || !own.isSymbolicLink()) return { self, target: self };
+          return { self, target: fileIdOf(await fs.stat(p, { bigint: true }).catch(() => null)) };
+        })();
+        seen.set(p, pending);
+      }
+      return pending;
+    };
+    const out: ProtectedIds = { roots: new Set(), ancestors: new Set(), pending: [] };
+    await Promise.all(
+      this.protectedChains.map(async (chain) => {
+        const ids = await Promise.all((withUpper ? chain : chain.slice(0, 1)).map(idsAt));
+        const root = ids[0]!;
+        if (root.self !== null) out.roots.add(root.self);
+        if (root.target !== null) out.roots.add(root.target);
+        for (const up of ids.slice(1)) {
+          if (up.self !== null) out.ancestors.add(up.self);
+          if (up.target !== null) out.ancestors.add(up.target);
+        }
+        if (root.self !== null) return;
+        const nearest = ids.findIndex((id) => id.target !== null);
+        if (nearest > 0) {
+          out.pending.push({
+            parent: ids[nearest]!.target!,
+            segments: chain.slice(0, nearest).reverse().map((p) => basename(p)),
+          });
+        }
+      }),
+    );
+    return out;
+  }
+
+  /**
+   * 安全(文件系统认为相同、路径字符串认为不同):上面的判定都在比路径字符串,而同一个目录可以有 realpath 不归一
+   * 的别的路径 —— macOS 的 `/.nofollow/<绝对路径>`、数据卷 firmlink,Linux 的 bind mount,Windows 的 subst 盘符。
+   * scope 宽到覆盖别名所在的树(如 `/`)时,插件换个写法就读写了 `_permissions.json`、删掉 / 移走了 userData。
+   * 不再枚举别名:按 (dev, ino) 判定。
+   *
+   *  - 之内(含根本身):`resolved`(已 realpath:整条,或父目录 + 叶子)的各级字符串前缀逐级 stat,任一级就是某条
+   *    受保护根 → 拒。依据:路径解析必然依次经过这些前缀所指的目录,stat(前缀) 得到的正是途经的那个目录
+   *    (实测 `/.nofollow/…`、`/System/Volumes/Data/…` 下各级的 inode 与真实目录相同);realpath 后途中没有链接,
+   *    所以它们也就是目标在文件系统里的各级上级。不用 `<dir>/..` 逐级上溯:路径会越拼越长(macOS PATH_MAX 1024)。
+   *  - 是受保护根的上级:目标自身(不跟随叶子的操作取链接本身)是某条受保护根的上级目录 → 对会连带移动 / 删除 /
+   *    复制整棵子树的操作拒。
+   *  - 受保护根尚不存在时没有 inode:目标的最近已存在上级就是该根的最近已存在上级、且其下各段名字与根的各段
+   *    (保守折叠后)相同 → 按「之内 / 上级」同样处理。
+   *
+   * 某一级 stat 失败(权限等)就跳过那一级,不因此拒绝 —— 字符串判定仍在。返回拒绝原因,null = 放行。
+   */
+  private async inodeDenial(resolved: string, noFollowLeaf: boolean, opType: ScopeOpType): Promise<string | null> {
+    if (this.protectedChains.length === 0) return null;
+    const prefixes = prefixesOf(resolved);
+    const ancestorOp = ANCESTOR_DENIED_OPS.has(opType);
+    const [known, ids] = await Promise.all([
+      this.protectedIds(ancestorOp),
+      Promise.all(
+        prefixes.map((p, i) =>
+          (i === 0 && noFollowLeaf ? fs.lstat(p, { bigint: true }) : fs.stat(p, { bigint: true })).then(fileIdOf, () => null),
+        ),
+      ),
+    ]);
+    if (ids.some((id) => id !== null && known.roots.has(id))) return 'is inside a protected app directory (same inode)';
+    const nearest = ids.findIndex((id) => id !== null);
+    if (nearest === -1) return null;
+    if (nearest === 0) {
+      return ancestorOp && known.ancestors.has(ids[0]!)
+        ? 'is an ancestor of a protected app directory (same inode)'
+        : null;
+    }
+    // 目标(或其若干级上级)尚不存在:要和「尚不存在的受保护根」比,需要上级链。
+    const protectedIds = ancestorOp ? known : await this.protectedIds(true);
+    const missing = prefixes.slice(0, nearest).reverse().map((p) => basename(p));
+    const sameName = (a: string, b: string): boolean =>
+      process.platform === 'linux' ? a === b : conservativeFold(a) === conservativeFold(b);
+    for (const root of protectedIds.pending) {
+      if (root.parent !== ids[nearest]) continue;
+      const shared = Math.min(missing.length, root.segments.length);
+      if (!missing.slice(0, shared).every((name, i) => sameName(name, root.segments[i]!))) continue;
+      if (missing.length >= root.segments.length) return 'is inside a not-yet-created protected app directory';
+      // 根的某级尚不存在的上级:标准写法只拒会连带整棵子树的操作(同已存在的上级);变体写法(文件系统会把它与
+      // 标准名当成同一个名字)一律拒,否则应用之后按标准写法访问就落进插件建的目录。
+      const variant = missing.some((name, i) => foldForProtection(name) !== foldForProtection(root.segments[i]!));
+      if (ancestorOp || variant) return 'would create an ancestor of a not-yet-created protected app directory';
     }
     return null;
   }
@@ -394,7 +543,7 @@ export class PathScopeRegistry extends EventEmitter {
       // 有哪些文件。失败路径上按「最近的已存在上级 realpath + 其余各级」再判一次,落在受保护根内 → 同一条拒绝。
       if (err instanceof ScopeError && this.protectedKeys.length > 0) {
         const nearest = realpathOrExistingAncestorSync(lexical);
-        if (this.isProtectedPath(nearest)) {
+        if (this.isProtectedPath(nearest) || (await this.inodeDenial(nearest, false, opType)) !== null) {
           throw this.denyProtected(pluginId, opType, 'unresolvable path inside a protected app directory', nearest, target, mode, scopes.length);
         }
       }
@@ -410,6 +559,9 @@ export class PathScopeRegistry extends EventEmitter {
     if (ANCESTOR_DENIED_OPS.has(opType) && this.containsProtectedRoot(probe)) {
       throw this.denyProtected(pluginId, opType, 'subtree contains a protected app directory', probe, target, mode, scopes.length);
     }
+    // 安全(文件系统别名):同一判定按 (dev, ino) 再做一次,与路径怎么写无关。
+    const sameInode = await this.inodeDenial(probe, 'fullPath' in resolved, opType);
+    if (sameInode !== null) throw this.denyProtected(pluginId, opType, sameInode, probe, target, mode, scopes.length);
     if ('fullPath' in resolved) {
       const why = await this.onDiskLeafDenial(resolved, opType);
       if (why !== null) throw this.denyProtected(pluginId, opType, why, probe, target, mode, scopes.length);
