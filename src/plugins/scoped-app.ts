@@ -822,14 +822,22 @@ export function isThirdPartyContribution(spec: object): boolean {
  * 各贡献点 spec 里数组 / 对象形态的数据字段目前只有 settingItems 的 `enum`(选项是只含字符串字段的平对象);
  * 其余非函数字段都是原始值或 ReactNode(icon:不校验内容,不拷贝)。畸形 enum 原样留给注册表校验报错。
  */
+// 远高于注册表自己的选项数上限(SettingItemRegistry 的 SI_ENUM_COUNT_MAX),只为给拷贝循环封顶。
+const ENUM_SNAPSHOT_MAX = 4096;
+
 function snapshotSpec(spec: object): object {
   const copy: Record<string, unknown> = { ...spec };
-  if (Array.isArray(copy.enum)) {
-    copy.enum = Object.freeze(
-      copy.enum.map((option: unknown) =>
-        isSpecObject(option) ? Object.freeze({ ...(option as object) }) : option,
-      ),
-    );
+  const source = copy.enum;
+  // 超长数组不拷贝(稀疏数组的 length 可达 2^32-1),原样留给注册表按数量上限拒绝。
+  if (Array.isArray(source) && source.length <= ENUM_SNAPSHOT_MAX) {
+    // 按下标读进一个普通数组:不调用插件数组自己的 map / 迭代器 / Symbol.species(它们可以让校验的
+    // for…of 与消费方的下标访问看到不同内容)。
+    const options: unknown[] = [];
+    for (let i = 0; i < source.length; i += 1) {
+      const option: unknown = source[i];
+      options.push(isSpecObject(option) ? Object.freeze({ ...(option as object) }) : option);
+    }
+    copy.enum = Object.freeze(options);
   }
   return Object.freeze(copy);
 }

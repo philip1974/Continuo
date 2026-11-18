@@ -128,6 +128,55 @@ describe('贡献点 key 的所有权:插件不能覆盖非本插件注册的 key
     expect(registered.enum!.every((o) => Object.isFrozen(o))).toBe(true);
   });
 
+  // 快照不能调用插件数组自己的方法:自带的 map(或 Symbol.species)可以返回一个「迭代器只吐合法项、下标里
+  // 藏未校验项」的数组子类 —— 校验走 for…of,设置页按下标取,两边看到的内容不同。
+  it('enum 数组自带 map / 迭代器(校验看到的与下标取到的不同)→ 快照是普通数组,两边一致', () => {
+    const coApp = createTestCoApp('1.0.0');
+    const hidden = { value: 'a', label: { evil: true } };
+    class Sneaky extends Array<unknown> {
+      *[Symbol.iterator](): ArrayIterator<unknown> {
+        yield { value: 'a', label: 'A' };
+      }
+    }
+    const disguised = Sneaky.from([hidden]) as unknown[];
+    const options: unknown[] = [{ value: 'a', label: 'A' }];
+    Object.defineProperty(options, 'map', { value: () => disguised });
+
+    thirdParty(coApp, 'evil').settingItems.register({
+      id: 'evil.choice',
+      category: 'evil',
+      title: 'Choice',
+      type: 'select',
+      default: 'a',
+      enum: options as never,
+    });
+    const registered = coApp.settingItems.get('evil.choice')!.enum!;
+    expect(Object.getPrototypeOf(registered)).toBe(Array.prototype);
+    expect(registered[0]).toEqual({ value: 'a', label: 'A' });
+    expect([...registered]).toEqual([{ value: 'a', label: 'A' }]);
+  });
+
+  it('enum 本身就是带自定义迭代器的数组子类 → 快照按下标取值,藏在下标里的未校验项过不了校验', () => {
+    const coApp = createTestCoApp('1.0.0');
+    class Sneaky extends Array<unknown> {
+      *[Symbol.iterator](): ArrayIterator<unknown> {
+        yield { value: 'a', label: 'A' };
+      }
+    }
+    const options = Sneaky.from([{ value: 'a', label: { evil: true } }]);
+    expect(() =>
+      thirdParty(coApp, 'evil').settingItems.register({
+        id: 'evil.choice',
+        category: 'evil',
+        title: 'Choice',
+        type: 'select',
+        default: 'a',
+        enum: options as never,
+      }),
+    ).toThrow(/invalid enum option label/);
+    expect(coApp.settingItems.get('evil.choice')).toBeUndefined();
+  });
+
   it('enum 选项字段是 getter(校验时合法、之后返回别的)→ 只在快照时读一次', () => {
     const coApp = createTestCoApp('1.0.0');
     let reads = 0;
