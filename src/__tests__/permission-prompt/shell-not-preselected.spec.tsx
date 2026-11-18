@@ -8,6 +8,10 @@ import { usePermissionPromptStore } from '../../plugins/permissions/promptStore'
 import { PROMPT_GRANT_ARM_DELAY_MS } from '../../lib/use-prompt-grant-guard';
 import type { PermissionKey } from '../../plugins/permissions';
 
+// 指针点击(浏览器里鼠标 click 的 detail ≥ 1;fireEvent.click 默认 detail=0,会被当作键盘激活,授予按钮对键盘
+// 激活另有「停顿后的有意按键」要求,见 keyboard-grant-guard 规范)。
+const pointerClick = (el: Element): boolean => fireEvent.click(el, { detail: 1 });
+
 const store = () => usePermissionPromptStore.getState();
 const buttons = (): HTMLButtonElement[] =>
   Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'));
@@ -51,7 +55,7 @@ describe('manifest 权限弹窗:shell 默认不勾选', () => {
     const granted = manifest('plugin.a', ['fs', 'shell', 'network', 'clipboard', 'mcp-tools']);
     expect(checkboxes().map((c) => c.checked)).toEqual([true, false, true, true, true]);
     waitArmed();
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await granted()).toEqual(['fs', 'network', 'clipboard', 'mcp-tools']);
   });
 
@@ -59,24 +63,24 @@ describe('manifest 权限弹窗:shell 默认不勾选', () => {
     const granted = manifest('plugin.a', ['shell']);
     expect(checkboxes().map((c) => c.checked)).toEqual([false]);
     waitArmed();
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await granted()).toEqual([]);
   });
 
   it('用户主动勾选 shell 后才会被授予', async () => {
     const granted = manifest('plugin.a', ['fs', 'shell']);
-    fireEvent.click(checkboxes()[1]!);
+    pointerClick(checkboxes()[1]!);
     waitArmed();
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await granted()).toEqual(['fs', 'shell']);
   });
 
   it('「全选」是用户的主动操作,包含 shell', async () => {
     const granted = manifest('plugin.a', ['shell', 'fs']);
-    fireEvent.click(selectAllButton());
+    pointerClick(selectAllButton());
     expect(checkboxes().every((c) => c.checked)).toBe(true);
     waitArmed();
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await granted()).toEqual(['shell', 'fs']);
   });
 
@@ -84,11 +88,11 @@ describe('manifest 权限弹窗:shell 默认不勾选', () => {
     const a = manifest('plugin.a', ['fs']);
     const b = manifest('plugin.b', ['shell', 'clipboard']);
     waitArmed();
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await a()).toEqual(['fs']);
     expect(checkboxes().map((c) => c.checked)).toEqual([false, true]);
     waitArmed();
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await b()).toEqual(['clipboard']);
   });
 });

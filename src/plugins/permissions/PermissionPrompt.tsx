@@ -8,7 +8,11 @@ import type { FsScopePrompt, Pending } from './promptStore';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
 import { PermissionOptionRow } from './PermissionOptionRow';
-import { usePromptGrantGuard, type PromptGrantGuard } from '@/lib/use-prompt-grant-guard';
+import {
+  PROMPT_GRANT_BUTTON_PROPS,
+  usePromptGrantGuard,
+  type PromptGrantGuard,
+} from '@/lib/use-prompt-grant-guard';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
@@ -68,7 +72,7 @@ function manifestKey(pending: Pending): number {
  * 不订阅 grant/deny actions、不初始化 selected state。manifest 优先。
  *
  * 防误触(守卫放在 shell 里,body 换类型 / remount 不丢状态;实现见 lib/use-prompt-grant-guard):
- * - 授予方向(grantArmed):请求出现后短时间内无效 —— 首次出现(时机由插件决定:启用时的 manifest 权限、运行时的
+ * - 授予方向(canGrant):键盘激活须是停顿后的有意按键;此外请求出现后短时间内无效 —— 首次出现(时机由插件决定:启用时的 manifest 权限、运行时的
  *   requestScope)与切换(同类排队 A→B、fs-scope↔manifest 类型切换)都算。
  * - 拒绝方向(switchSettled):首次出现立即可用;只在直接切换后短时间内无效(新弹窗按钮与旧弹窗在同一位置,对旧
  *   弹窗连点 / Esc 键重复的第二下不能把新请求拒掉 —— manifest 的拒绝会写盘)。
@@ -168,8 +172,9 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
           <Button
             variant="primary"
             size="sm"
-            onClick={() => {
-              if (guard.grantArmed()) grant(copySelectedPermissions(selected));
+            {...PROMPT_GRANT_BUTTON_PROPS}
+            onClick={(e) => {
+              if (guard.canGrant(e)) grant(copySelectedPermissions(selected));
             }}
           >
             {t('permissions.prompt.grant_selected', { count: selected.size })}
@@ -244,8 +249,9 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
         <Button
           variant="primary"
           size="sm"
-          onClick={() => {
-            if (guard.grantArmed()) grantFsScope(requestId);
+          {...PROMPT_GRANT_BUTTON_PROPS}
+          onClick={(e) => {
+            if (guard.canGrant(e)) grantFsScope(requestId);
           }}
         >
           {t('permissions.fs_scope.grant')}

@@ -11,6 +11,10 @@ import {
   type EnsureOutcome,
 } from '../../stores/agent-auth.store';
 
+// 指针点击(浏览器里鼠标 click 的 detail ≥ 1;fireEvent.click 默认 detail=0,会被当作键盘激活,授予按钮对键盘
+// 激活另有「停顿后的有意按键」要求,见 keyboard-grant-guard 规范)。
+const pointerClick = (el: Element): boolean => fireEvent.click(el, { detail: 1 });
+
 vi.mock('../../notifications/notify', () => ({ notify: { error: vi.fn() } }));
 
 const store = () => useAgentAuthStore.getState();
@@ -74,25 +78,25 @@ describe('AgentAuthPrompt:授予方向的防误触延迟', () => {
     `弹出后 ${AGENT_AUTH_GRANT_ARM_DELAY_MS}ms 内点「%s」无效,弹窗保持;之后有效`,
     async (label) => {
       const outcome = prompt();
-      fireEvent.click(button(label));
+      pointerClick(button(label));
       act(() => {
         vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS - 1);
       });
-      fireEvent.click(button(label));
+      pointerClick(button(label));
       expect(await outcome()).toBeNull();
       expect(store().pending).not.toBeNull();
 
       act(() => {
         vi.advanceTimersByTime(1);
       });
-      fireEvent.click(button(label));
+      pointerClick(button(label));
       expect(await outcome()).toBe(label === '仅本次' ? 'once' : 'session');
     },
   );
 
   it('「拒绝」弹出后立即可用', async () => {
     const outcome = prompt();
-    fireEvent.click(button('拒绝'));
+    pointerClick(button('拒绝'));
     expect(await outcome()).toBe('denied');
   });
 
@@ -116,15 +120,15 @@ describe('AgentAuthPrompt:授予方向的防误触延迟', () => {
     act(() => {
       vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS);
     });
-    fireEvent.click(button('仅本次'));
+    pointerClick(button('仅本次'));
     expect(await ext()).toBe('once');
     // 新弹窗(窗口内请求)刚显示:同一位置的「仅本次」此刻无效。
-    fireEvent.click(button('仅本次'));
+    pointerClick(button('仅本次'));
     expect(await inWindow()).toBeNull();
     act(() => {
       vi.advanceTimersByTime(AGENT_AUTH_GRANT_ARM_DELAY_MS);
     });
-    fireEvent.click(button('仅本次'));
+    pointerClick(button('仅本次'));
     expect(await inWindow()).toBe('once');
   });
 });

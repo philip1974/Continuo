@@ -8,6 +8,10 @@ import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { PROMPT_GRANT_ARM_DELAY_MS } from '../../lib/use-prompt-grant-guard';
 
+// 指针点击(浏览器里鼠标 click 的 detail ≥ 1;fireEvent.click 默认 detail=0,会被当作键盘激活,授予按钮对键盘
+// 激活另有「停顿后的有意按键」要求,见 keyboard-grant-guard 规范)。
+const pointerClick = (el: Element): boolean => fireEvent.click(el, { detail: 1 });
+
 const store = () => usePermissionPromptStore.getState();
 const buttons = (): HTMLButtonElement[] =>
   Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'));
@@ -63,22 +67,22 @@ afterEach(() => {
 describe('manifest 权限弹窗:首次出现的防误触延迟', () => {
   it(`出现后 ${PROMPT_GRANT_ARM_DELAY_MS}ms 内鼠标 / 键盘激活「授权选中」无效,弹窗保持;之后有效`, async () => {
     const granted = manifest('plugin.a', ['fs', 'network']);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     // 键盘激活(Enter / Space 落在按钮上)在浏览器里就是一次 detail=0 的 click
     fireEvent.click(grantButton(), { detail: 0 });
     advance(PROMPT_GRANT_ARM_DELAY_MS - 1);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await granted()).toBeNull();
     expect(store().pending?.pluginId).toBe('plugin.a');
 
     advance(1);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await granted()).toEqual(['fs', 'network']);
   });
 
   it('「全部拒绝」出现后立即可用', async () => {
     const granted = manifest('plugin.a', ['fs']);
-    fireEvent.click(denyButton());
+    pointerClick(denyButton());
     expect(await granted()).toEqual([]);
   });
 
@@ -97,16 +101,16 @@ describe('manifest 权限弹窗:首次出现的防误触延迟', () => {
   it('上一个落定、空闲一段时间后再出现的弹窗同样重新计时', async () => {
     const a = manifest('plugin.a', ['fs']);
     advance(PROMPT_GRANT_ARM_DELAY_MS);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await a()).toEqual(['fs']);
     expect(store().pending).toBeNull();
 
     advance(10_000);
     const b = manifest('plugin.b', ['network']);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await b()).toBeNull();
     advance(PROMPT_GRANT_ARM_DELAY_MS);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await b()).toEqual(['network']);
   });
 
@@ -115,17 +119,17 @@ describe('manifest 权限弹窗:首次出现的防误触延迟', () => {
     const b = manifest('plugin.b', ['network']);
     advance(PROMPT_GRANT_ARM_DELAY_MS);
     grantButton().focus();
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await a()).toEqual(['fs']);
     expect(store().pending?.pluginId).toBe('plugin.b');
 
     advance(PROMPT_GRANT_ARM_DELAY_MS - 1);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await b()).toBeNull();
     expect(document.activeElement).toBe(denyButton());
 
     advance(1);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await b()).toEqual(['network']);
   });
 });
@@ -133,21 +137,21 @@ describe('manifest 权限弹窗:首次出现的防误触延迟', () => {
 describe('fs-scope 文件夹授权弹窗:首次出现的防误触延迟', () => {
   it(`出现后 ${PROMPT_GRANT_ARM_DELAY_MS}ms 内鼠标 / 键盘激活「授权」无效,弹窗保持;之后有效`, async () => {
     const decision = fsScope('req-a');
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     fireEvent.click(grantButton(), { detail: 0 });
     advance(PROMPT_GRANT_ARM_DELAY_MS - 1);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await decision()).toBeNull();
     expect(store().currentFsScope?.requestId).toBe('req-a');
 
     advance(1);
-    fireEvent.click(grantButton());
+    pointerClick(grantButton());
     expect(await decision()).toBe('grant');
   });
 
   it('「拒绝」出现后立即可用', async () => {
     const decision = fsScope('req-a');
-    fireEvent.click(denyButton());
+    pointerClick(denyButton());
     expect(await decision()).toBe('deny');
   });
 

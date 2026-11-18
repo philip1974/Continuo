@@ -13,6 +13,10 @@ import {
   useAgentAuthStore,
 } from '../../stores/agent-auth.store';
 
+// 指针点击(浏览器里鼠标 click 的 detail ≥ 1;fireEvent.click 默认 detail=0,会被当作键盘激活,授予按钮对键盘
+// 激活另有「停顿后的有意按键」要求,见 keyboard-grant-guard 规范)。
+const pointerClick = (el: Element): boolean => fireEvent.click(el, { detail: 1 });
+
 const notifyError = vi.fn();
 vi.mock('../../notifications/notify', () => ({
   notify: { error: (...a: unknown[]) => notifyError(...a) },
@@ -61,7 +65,7 @@ function getButtons(): Record<string, HTMLButtonElement> {
 function clickGrant(label: '仅本次' | '本次启动期间允许'): void {
   const spy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + AGENT_AUTH_GRANT_ARM_DELAY_MS);
   try {
-    fireEvent.click(getButtons()[label]!);
+    pointerClick(getButtons()[label]!);
   } finally {
     spy.mockRestore();
   }
@@ -220,7 +224,7 @@ describe('AgentAuthPrompt — 按钮', () => {
 
   it('点拒绝 → store.deny + ensure resolve "denied"', async () => {
     const p = setup();
-    fireEvent.click(getButtons()['拒绝']!);
+    pointerClick(getButtons()['拒绝']!);
     await expect(p).resolves.toBe('denied');
     expect(useAgentAuthStore.getState().pending).toBeNull();
   });
