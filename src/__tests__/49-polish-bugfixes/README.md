@@ -73,7 +73,8 @@
 
 ### P2-F atomicReplace 泄漏 trash 可被回收 — `electron/main/__tests__/trash-sweep.test.ts` T20bis.e
 - `trashPathFor(finalPath, unique)` 产出的 trash 名以 `TRASH_PREFIX`(`.trash-`)开头
-  且落在同父目录,`sweepStaleTrashInDir` 按前缀匹配能命中。
+  且落在同父目录,`sweepStaleTrashInDir` 能命中(现只认宿主生成的精确形态,见
+  `plugin-fs-atomic-replace-trash`)。
 - 根因: 旧实现 trash 名是 `${finalPath}.trash-...`(后缀形式 `foo.json.trash-...`),
   不以 `.trash-` 开头,sweep 永远漏掉。rename 回滚失败(line 489)泄漏的 trash 会
   永久驻留插件目录。旧测试只用字面量 `.trash-old` 掩盖了这个 bug。
