@@ -11,6 +11,7 @@
 // 配套 doc/19-plugin-mcp-bridge.md。
 
 import {
+  BrowserWindow,
   ipcMain,
   webContents,
   type IpcMainInvokeEvent,
@@ -101,6 +102,12 @@ export function startPluginMcpIpc(
     },
     invokeRemote: localInvoke,
     ensureAuthorized,
+    // 安全:跨窗调用拒绝的依据 —— 注册者 wc 当前所在窗口(wc 已销毁 / 无窗口 → null,fail-closed)。
+    windowIdOfWc: (wcId) => {
+      const wc = webContents.fromId(wcId);
+      if (!wc || wc.isDestroyed()) return null;
+      return BrowserWindow.fromWebContents(wc)?.id ?? null;
+    },
     notifyToolsChanged: () => toolsChanged.notify(),
   });
 
