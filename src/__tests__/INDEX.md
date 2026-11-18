@@ -137,6 +137,7 @@
 - [`security-marketplace-token-main.spec.ts`](./49-polish-bugfixes/security-marketplace-token-main.spec.ts)
 - [`security-terminal-mcp-auth-gate.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-auth-gate.spec.ts)
 - [`security-terminal-mcp-capability.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-capability.spec.ts)
+- [`security-windows-stdio-pipe-per-user.spec.ts`](./49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts)
 - [`semver-prerelease-precedence.spec.ts`](./49-polish-bugfixes/semver-prerelease-precedence.spec.ts)
 - [`sessions-changed-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/sessions-changed-broadcast-send-throw.spec.ts)
 - [`settings-cross-window-sync.spec.ts`](./49-polish-bugfixes/settings-cross-window-sync.spec.ts)

@@ -37,6 +37,29 @@ import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { createNdjsonLineDecoder } from '../lib/ndjson-line-decoder';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
 
+/**
+ * Windows stdio MCP 命名管道名(按用户隔离)。
+ *
+ * 命名管道命名空间全机共享、不分用户:固定名时同机其它用户可抢先创建同名管道 → 本用户的 Continuo
+ * 绑定失败,终端里的 proxy 连到对方管道并在 hello 中交出 {windowId, token}。名字带入当前用户的
+ * 用户名 + profile 目录(均取自 os.userInfo(),来自进程 token 而非可被改写的环境变量),哈希后定长。
+ *
+ * 局限:用户名 / profile 目录对本机其它用户不是秘密,针对特定用户的定向抢注仍可能;本函数消除的是
+ * 固定名下的通用抢注与多用户同机互相冲突。server 端以 FILE_FLAG_FIRST_PIPE_INSTANCE 独占创建
+ *(libuv 默认),被抢注时 listen 报 EADDRINUSE。
+ *
+ * ⚠ scripts/continuo-mcp-stdio.mjs 有同算法副本(独立 node 脚本,不能 import 本模块),两处必须一致;
+ * 由 src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住。
+ */
+export function windowsStdioPipeName(user: { username: string; homedir: string }): string {
+  const id = crypto
+    .createHash('sha256')
+    .update(`${user.username.toLowerCase()}\0${user.homedir.toLowerCase()}`, 'utf8')
+    .digest('hex')
+    .slice(0, 32);
+  return `\\\\.\\pipe\\continuo-mcp-${id}`;
+}
+
 export interface ResolveStdioHelloDeps {
   resolveWindowId: (token: string) => number | null;
   windowExists: (windowId: number) => boolean;
@@ -358,8 +381,9 @@ function writeLine(sock: Socket, data: string): void {
  *
  * - macOS / Linux:Unix socket(`<userData>/mcp.sock`)— 文件系统 +
  *   chmod 0600 = capability 鉴权。
- * - Windows:named pipe(`\\.\pipe\continuo-mcp`)— 不在文件系统,
- *   无 mkdir / unlink / chmod。Win NT pipe ACL 默认只本用户可访问。
+ * - Windows:named pipe(按用户命名,见 windowsStdioPipeName)— 不在文件系统,无 mkdir / unlink /
+ *   chmod。libuv 以默认安全描述符创建:创建者 / SYSTEM / Administrators 完全控制,Everyone 仅读
+ *  (其它用户无法以读写打开 → 连不上);但管道**命名空间**不分用户,防抢注靠按用户命名。
  *
  * net 模块 API 跨平台一致,只在 fs 副作用上分支。
  */

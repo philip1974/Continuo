@@ -14,7 +14,8 @@
 //   3. dev socket(packaged 没跑时 fallback):
 //      macOS = ~/Library/Application Support/Continuo Dev/mcp.sock
 //      Linux = ".../Continuo Dev/mcp.sock"
-//   Windows = \\.\pipe\continuo-mcp(named pipe,不在文件系统,无 fallback)
+//   Windows = \\.\pipe\continuo-mcp-<用户哈希>(named pipe,不在文件系统,无 fallback;
+//             按用户命名防同机其它用户抢注同名管道骗走 hello token)
 //
 // 设计:packaged 是日常工具,dev 只是临时验证。两个都活时优先 packaged
 // (避免开发者忘了关 dev 误把 prod 流量打到 dev)。dev 单独活时(开发者
@@ -22,6 +23,7 @@
 //
 // Continuo 主进程必须在线;否则连失败,Claude Code 标 mcp server 不可用。
 
+import { createHash } from 'node:crypto';
 import { createConnection } from 'node:net';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -47,9 +49,22 @@ function devSocketPath() {
   return path.join(appSupportDir(), 'Continuo Dev', 'mcp.sock');
 }
 
+// Windows 命名管道名:与主进程 electron/main/services/mcp-stdio-server.service.ts 的
+// windowsStdioPipeName 同算法(本脚本独立运行不能 import),两处必须一致 —— 由
+// src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住。
+// <windows-pipe-name>
+function windowsStdioPipeName(user) {
+  const id = createHash('sha256')
+    .update(`${user.username.toLowerCase()}\0${user.homedir.toLowerCase()}`, 'utf8')
+    .digest('hex')
+    .slice(0, 32);
+  return `\\\\.\\pipe\\continuo-mcp-${id}`;
+}
+// </windows-pipe-name>
+
 function resolveSocketPath() {
   if (process.env.CONTINUO_MCP_SOCKET) return process.env.CONTINUO_MCP_SOCKET;
-  if (process.platform === 'win32') return '\\\\.\\pipe\\continuo-mcp';
+  if (process.platform === 'win32') return windowsStdioPipeName(os.userInfo());
   const packaged = packagedSocketPath();
   if (existsSync(packaged)) return packaged;
   const dev = devSocketPath();

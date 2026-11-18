@@ -9,6 +9,7 @@ import type {
   WindowOpenHandlerResponse,
 } from 'electron';
 import nodeFs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
@@ -60,6 +61,7 @@ import {
 } from './services/mcp-host.service';
 import {
   createStdioSocketServer,
+  windowsStdioPipeName,
   type StdioSocketServer,
 } from './services/mcp-stdio-server.service';
 import { makeTerminalMcpTools } from './services/mcp-terminal-host';
@@ -1168,14 +1170,15 @@ function resolveStdioCliPath(): string {
 /**
  * stdio socket / named pipe 路径(跨平台):
  *  - macOS / Linux:`<userData>/mcp.sock`(unix socket,文件系统)
- *  - Windows:`\\.\pipe\continuo-mcp`(named pipe,不在文件系统;
+ *  - Windows:`\\.\pipe\continuo-mcp-<用户哈希>`(named pipe,不在文件系统;命名空间全机共享,
+ *    按用户命名防其它用户抢注同名管道骗走 hello token,见 windowsStdioPipeName;
  *    单实例 lock 已防双实例,无需 pid 后缀)
  *
  * CLI proxy(scripts/continuo-mcp-stdio.mjs)有同款默认值算法,两边对齐。
  */
 function resolveStdioSocketPath(): string {
   if (process.platform === 'win32') {
-    return '\\\\.\\pipe\\continuo-mcp';
+    return windowsStdioPipeName(os.userInfo());
   }
   return path.join(app.getPath('userData'), 'mcp.sock');
 }

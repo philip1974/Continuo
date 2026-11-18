@@ -1207,3 +1207,13 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 - 修复:`fsync → close → stat(tmp)` 作 written(dev/ino/mtime/size),再 `rename → stat(target)` 比对(NTFS rename
   保留 FileId 与 LastWriteTime)。不一致(外部改写)或 stat(tmp) 失败 → `undefined`,退化为整文件读,永不误判为回声;
   写盘与 tmp 清理的错误路径不变。macOS/Linux 行为不变。
+
+### Windows stdio MCP 命名管道按用户命名 — `security-windows-stdio-pipe-per-user.spec.ts`
+- 攻击场景(Windows 专属):命名管道命名空间全机共享。旧固定名 `\\.\pipe\continuo-mcp` 下,同机其它用户先建同名管道
+  → 本用户 Continuo 绑定失败(EADDRINUSE 被吞成告警),终端里的 stdio proxy 连到对方管道并在 hello 中交出
+  `{windowId, token}` → 对方拿 token 调本用户的 127.0.0.1 HTTP MCP。
+- 契约:管道名 = `\\.\pipe\continuo-mcp-<sha256(小写用户名 \0 小写 profile 目录) 前 32 hex>`(`os.userInfo()`);
+  不同用户不同名、同用户稳定且不受大小写影响;独立 proxy 脚本 `scripts/continuo-mcp-stdio.mjs` 的同算法副本与主进程
+  `windowsStdioPipeName` 结果逐一相等(规范从脚本 `<windows-pipe-name>` 标记段取函数比对)。macOS/Linux unix socket 不变。
+- 局限:用户名 / profile 目录对本机其它用户非秘密,定向抢注仍可能;libuv 以 FILE_FLAG_FIRST_PIPE_INSTANCE 独占创建,
+  默认 DACL 仅创建者读写(Everyone 只读),其它用户连不上本用户的管道。
