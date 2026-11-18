@@ -94,6 +94,13 @@ async function renderSvg(code: string): Promise<RenderedSvg> {
       // 图表源码里的 %%{init}%% 指令不许改写这些键。传 secure 会整体替换默认列表,故默认项照抄;
       // 追加 htmlLabels(切回 foreignObject 标签会被 sanitizer 剥掉 → 节点没字)与
       // themeCSS(可带 url(https://…),打开不受信文档时发外部请求)。
+      // fontFamily / altFontFamily 同理:mermaid 对它们只查花括号配对,值原样拼进
+      // `:root { --mermaid-font-family: …}` 与外层 div 的 style —— `x; background:url(https://…)`
+      // 即成一条独立声明(指令里的 fontFamily 还会被复制进 themeVariables.fontFamily,
+      // 绕过 themeVariables 的字符集检查)。secure 在指令的每一层都生效,两处一并挡住。
+      // 其余进 CSS 的配置:themeCSS(已锁)、themeVariables.*(mermaid 以 /^[\d "#%(),.;A-Za-z]+$/
+      // 过滤,无冒号/斜杠拼不出声明);各图表的 *FontFamily(c4/sequence/journey 等)只经
+      // style.setProperty / setAttribute 单属性写入,`;` 无法逃出该属性。
       secure: [
         'secure',
         'securityLevel',
@@ -103,6 +110,8 @@ async function renderSvg(code: string): Promise<RenderedSvg> {
         'maxEdges',
         'htmlLabels',
         'themeCSS',
+        'fontFamily',
+        'altFontFamily',
       ],
       ...themeConfig,
     });

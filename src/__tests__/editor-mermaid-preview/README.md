@@ -7,7 +7,7 @@ Markdown 里的 ```` ```mermaid ```` 围栏代码块(流程图 / 时序图 / 甘
 - 语言为 `mermaid`(大小写不敏感)且内容非空的代码块:Preview 模式只显示图;Edit 模式显示源码 + 下方图预览,改源码后图跟着更新。
 - 其它语言、空内容的代码块没有预览区(行为与此前一致)。
 - mermaid 库按需加载:文档里没有 mermaid 代码块时不加载。
-- 渲染使用 `securityLevel: 'strict'` + `htmlLabels: false`(输出静态 SVG,无脚本 / 点击回调 / 内嵌 HTML)。图表源码里的 `%%{init}%%` 指令改不了这些加固项(`secure` 列表,另含 `themeCSS`)。
+- 渲染使用 `securityLevel: 'strict'` + `htmlLabels: false`(输出静态 SVG,无脚本 / 点击回调 / 内嵌 HTML)。图表源码里的 `%%{init}%%` 指令改不了这些加固项(`secure` 列表,另含 `themeCSS`、`fontFamily`、`altFontFamily` —— 后两者 mermaid 只查花括号配对,值原样拼进生成的 CSS,可注入 `background:url(https://…)` 之类声明;`mermaid-directive-css.spec.ts` 用真实 mermaid 的指令处理验证)。
 - 图的配色取自应用语义 token(`--md-*`,mermaid `base` 主题变量),随 light / dark 变化;token 读不到时退回 mermaid 内置的 `dark` / `default`。
 - 切换主题(含跟随系统的自动切换,可能发生在输入途中)时,已显示的图**就地重画**,编辑器不重挂载:光标、滚动位置、刚输入的内容都保留。
 - 图语法错误时预览区显示本地化的错误提示 + 转义后的错误信息,不抛异常、不向页面注入源码里的 HTML。
