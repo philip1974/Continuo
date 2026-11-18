@@ -97,7 +97,7 @@ const rendererGoneWatched = new WeakSet<object>();
 /**
  * renderer 文档已被换掉(reload / 渲染进程崩溃)、新文档还没订阅授权请求的窗口。这段时间发过去的请求落在加载中
  * 的文档上:没有弹窗可见,main 的未决请求却占着槽等满无应答超时(2 分钟)再进超时冷却 —— 未决请求被 reload 取消后 agent 立即
- * 重试就会撞上,该窗口所有域被拒约 150s(超时 5 分钟时约 330s)。期间的请求直接拒绝(requestAgentAuth);renderer 订阅建立后
+ * 重试就会撞上,该窗口所有域被拒约 150s(审计实测时无应答超时为 5 分钟,约 330s)。期间的请求直接拒绝(requestAgentAuth);renderer 订阅建立后
  * 经 AGENT_AUTH_CHANNELS.READY 上报(markAgentAuthRendererReady)才恢复。
  */
 const rendererNotReady = new Set<number>();

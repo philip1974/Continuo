@@ -348,7 +348,8 @@ const MAX_TOOLS_GLOBAL = 2048;
 
 /**
  * 插件工具的授权门控参数。method 带 plugin 前缀归独立域;按授权请求 method 上限截断(tool 名上限 256,
- * 加前缀后可超,超长 payload 会被 renderer ingress 守卫丢弃 → 请求干等 5min 超时)。
+ * 加前缀后可超,超长 payload 会被 renderer ingress 守卫丢弃 → 请求干等 agent 授权的无应答超时,
+ * AGENT_AUTH_PROMPT_TIMEOUT_MS 2 分钟)。
  */
 const PLUGIN_AUTH_GATE = {
   methodFor: (tool: AnyMcpTool): string =>
