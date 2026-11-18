@@ -178,6 +178,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     const pending = requestAgentAuth({
       method: 'terminal.create_session',
       agentLabel: 'codex',
+      ownerWindowId: 1,
     });
     const [channel, payload] = win.webContents.send.mock.calls[0]!;
     expect(channel).toBe(AGENT_AUTH_CHANNELS.REQUEST);
@@ -198,7 +199,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
 
   it("T2: no window returns 'denied' immediately", async () => {
     await expect(
-      requestAgentAuth({ method: 'terminal.create_session' }),
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
     ).resolves.toBe('denied');
   });
 
@@ -207,7 +208,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     electronMock.windows = [destroyed];
 
     await expect(
-      requestAgentAuth({ method: 'terminal.create_session' }),
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
     ).resolves.toBe('denied');
     expect(destroyed.webContents.send).not.toHaveBeenCalled();
   });
@@ -222,7 +223,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
 
     // 不抛(契约:失败返 'denied' 而非 reject),且立即结算,不等 5min 超时。
     await expect(
-      requestAgentAuth({ method: 'terminal.create_session' }),
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
     ).resolves.toBe('denied');
 
     // pending 已清:推进 5min 不应再有任何"延迟超时结算"留痕(_resetPendingForTest 无可清项)。
@@ -231,7 +232,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
       // requestId 不冲突、能独立结算来间接验证 map 干净。
       const ok = makeWin(2);
       electronMock.windows = [ok];
-      const p = requestAgentAuth({ method: 'terminal.write' });
+      const p = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 2 });
       const payload = firstAuthPayload(ok);
       resolveAgentAuthRequest(payload.requestId, 'session');
       return p;
@@ -243,52 +244,10 @@ describe('agent-auth-service: requestAgentAuth', () => {
     const win = makeWin(1);
     electronMock.windows = [win];
 
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
 
     await expect(pending).resolves.toBe('denied');
-  });
-
-  it('T4: prefers a normal window over a popout window', async () => {
-    const popout = makeWin(1, { popout: true });
-    const normal = makeWin(2);
-    electronMock.windows = [popout, normal];
-
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
-    const payload = firstAuthPayload(normal);
-    resolveAgentAuthRequest(payload.requestId, 'session');
-
-    expect(popout.webContents.send).not.toHaveBeenCalled();
-    expect(normal.webContents.send).toHaveBeenCalledTimes(1);
-    await expect(pending).resolves.toBe('session');
-  });
-
-  it('T4b: all-popout windows fall back to the first live popout', async () => {
-    const popout1 = makeWin(1, { popout: true });
-    const popout2 = makeWin(2, { popout: true });
-    electronMock.windows = [popout1, popout2];
-
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
-    const payload = firstAuthPayload(popout1);
-    resolveAgentAuthRequest(payload.requestId, 'once');
-
-    expect(popout1.webContents.send).toHaveBeenCalledTimes(1);
-    expect(popout2.webContents.send).not.toHaveBeenCalled();
-    await expect(pending).resolves.toBe('once');
-  });
-
-  it('T5: skips destroyed windows when choosing the main window', async () => {
-    const destroyed = makeWin(1, { destroyed: true });
-    const normal = makeWin(2);
-    electronMock.windows = [destroyed, normal];
-
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
-    const payload = firstAuthPayload(normal);
-    resolveAgentAuthRequest(payload.requestId, 'session');
-
-    expect(destroyed.webContents.send).not.toHaveBeenCalled();
-    expect(normal.webContents.send).toHaveBeenCalledTimes(1);
-    await expect(pending).resolves.toBe('session');
   });
 
   it('T-routing-1: ownerWindowId routes to an alive non-popout window', async () => {
@@ -344,14 +303,18 @@ describe('agent-auth-service: requestAgentAuth', () => {
     expect(other.webContents.send).not.toHaveBeenCalled();
   });
 
-  it('T-routing-4: ownerWindowId omitted → still falls back to pickMainWindow', async () => {
+  // 安全(fail-closed):未给 ownerWindowId 一律拒绝,不再回落到第一个主窗。McpCallCtx.ownerWindowId 必填,
+  // 该回落是死代码;若将来有无窗口上下文的调用方(如 external 客户端)走到这里,弹到用户正在用的任意窗口
+  // 会让用户误以为是本窗口 agent 而放行(或该窗口已 session 授权 → 静默放行)。
+  it("T-routing-4: ownerWindowId omitted → 'denied', no IPC to any window", async () => {
     const popout = makeWin(1, { popout: true });
     const normal = makeWin(2);
     electronMock.windows = [popout, normal];
 
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
-    resolveAgentAuthRequest(firstAuthPayload(normal).requestId, 'once');
-    await expect(pending).resolves.toBe('once');
+    await expect(
+      requestAgentAuth({ method: 'terminal.create_session' }),
+    ).resolves.toBe('denied');
+    expect(normal.webContents.send).not.toHaveBeenCalled();
     expect(popout.webContents.send).not.toHaveBeenCalled();
   });
 
@@ -363,12 +326,12 @@ describe('agent-auth-service: requestAgentAuth', () => {
     // 凑满 per-window 未决
     const ps: Promise<AgentAuthDecision>[] = [];
     for (let i = 0; i < max; i++) {
-      ps.push(requestAgentAuth({ method: 'terminal.create_session' }));
+      ps.push(requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }));
     }
     expect(win.webContents.send).toHaveBeenCalledTimes(max);
     // 第 max+1 个:立即 denied,不发 IPC
     await expect(
-      requestAgentAuth({ method: 'terminal.create_session' }),
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
     ).resolves.toBe('denied');
     expect(win.webContents.send).toHaveBeenCalledTimes(max); // 没多发
     // 清理:全部超时结算,避免悬挂 timer
@@ -382,11 +345,11 @@ describe('agent-auth-service: requestAgentAuth', () => {
     const max = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
     const ps: Promise<AgentAuthDecision>[] = [];
     for (let i = 0; i < max; i++) {
-      ps.push(requestAgentAuth({ method: 'terminal.create_session' }));
+      ps.push(requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }));
     }
     // 满了 → 溢出
     await expect(
-      requestAgentAuth({ method: 'terminal.create_session' }),
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
     ).resolves.toBe('denied');
     // resolve 第一个,释放一个槽位
     const firstPayload = firstAuthPayload(win);
@@ -394,7 +357,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     await expect(ps[0]!).resolves.toBe('session');
     // 现在能再接受一个:正常发 IPC
     const sendsBefore = win.webContents.send.mock.calls.length;
-    const revived = requestAgentAuth({ method: 'terminal.write' });
+    const revived = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 1 });
     expect(win.webContents.send).toHaveBeenCalledTimes(sendsBefore + 1);
     // 清理
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
@@ -469,7 +432,7 @@ describe('agent-auth-service: pending lifecycle', () => {
   it("T6: resolveAgentAuthRequest resolves a pending request as 'once'", async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     const payload = firstAuthPayload(win);
 
     resolveAgentAuthRequest(payload.requestId, 'once');
@@ -480,7 +443,7 @@ describe('agent-auth-service: pending lifecycle', () => {
   it('T7: resolving an unknown request id is a no-op', async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     const payload = firstAuthPayload(win);
 
     expect(() =>
@@ -496,7 +459,7 @@ describe('agent-auth-service: pending lifecycle', () => {
   it('T7b: answerAgentAuthRequest 对已不存在的 request id 抛 AGENT_AUTH_REQUEST_NOT_PENDING', async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     const payload = firstAuthPayload(win);
 
     revokeAndKillAgentSessions(); // 撤销结算并删除 pending
@@ -509,7 +472,7 @@ describe('agent-auth-service: pending lifecycle', () => {
   it('T7c: answerAgentAuthRequest 对仍在等待的 request id 正常结算', async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     const payload = firstAuthPayload(win);
     expect(() => answerAgentAuthRequest(payload.requestId, 'once')).not.toThrow();
     await expect(pending).resolves.toBe('once');
@@ -518,7 +481,7 @@ describe('agent-auth-service: pending lifecycle', () => {
   it('T8: resolving the same request twice only uses the first decision', async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
-    const pending = requestAgentAuth({ method: 'terminal.create_session' });
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     const payload = firstAuthPayload(win);
 
     resolveAgentAuthRequest(payload.requestId, 'session');
@@ -531,7 +494,7 @@ describe('agent-auth-service: pending lifecycle', () => {
     const win = makeWin(1);
     electronMock.windows = [win];
     let settled: AgentAuthDecision | null = null;
-    const pending = requestAgentAuth({ method: 'terminal.create_session' }).then(
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }).then(
       (decision) => {
         settled = decision;
         return decision;
@@ -549,8 +512,8 @@ describe('agent-auth-service: pending lifecycle', () => {
   it("T10: _resetPendingForTest denies all pending requests", async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
-    const first = requestAgentAuth({ method: 'terminal.create_session' });
-    const second = requestAgentAuth({ method: 'terminal.write' });
+    const first = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
+    const second = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 1 });
 
     _resetPendingForTest();
 
@@ -565,7 +528,7 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
   it('R91: revoke 把 in-flight 授权请求结算为 denied,迟到 respond 不再放行', async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
-    const pendingAuth = requestAgentAuth({ method: 'terminal.create_session' });
+    const pendingAuth = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     const payload = firstAuthPayload(win);
 
     // 撤销:应立即把这条 in-flight 请求 deny + 清 pending。

@@ -1051,10 +1051,10 @@ async function startMcpHost(): Promise<void> {
         service: termService,
         getSessionOwner,
         getSessionController: (id) => terminalSessions.getController(id),
-        ensureAuthorized: (ownerWindowId?: number, method?: string) =>
+        ensureAuthorized: (ownerWindowId: number, method?: string) =>
           requestAgentAuth({
             method: method ?? 'terminal.create_session',
-            ...(ownerWindowId !== undefined ? { ownerWindowId } : {}),
+            ownerWindowId,
           }),
         createSession: createSessionForAgent,
         installStopHook,
