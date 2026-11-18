@@ -133,6 +133,10 @@
   `verified` 仅徽章不阻止安装。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
 - 首字符不得为 `.` / `_`(plugins 目录元数据与临时目录命名空间);`-` 开头仍合法 —— 已装的这类插件须照常
   列举可见、可卸载(否则 renderer 静默跳过 + 卸载 INVALID_ID → 目录永久残留)。
+- 末字符不得为 `.`,且不得是 Windows 保留设备名(`con` / `prn` / `aux` / `nul` / `com0-9` / `lpt0-9`,含
+  `nul.x` 这类带扩展名形式),各平台统一。根因: Win32 去掉路径段尾部的点,`foo.` 与 `foo` 落到同一安装目录
+  与 data 文件,而互斥锁 / 权限 / scope 的键是两个 id;设备名作目录名指向设备。`com.example.foo`、`console`、
+  `x.nul` 等不受影响。
 
 ### P2-M atomicWriteFile 去掉 .backup 数据丢失窗口 — `atomic-write-no-backup-window.spec.ts`
 - 用户文档原子写简化为「写 tmp+fsync → rename(tmp→path)」,移除覆盖前的
