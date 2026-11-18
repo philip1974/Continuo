@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { createReadStream, promises as fs } from 'node:fs';
-import os from 'node:os';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
+const ADAPTER_VERSION = 'v1.117.0';
 const RELEASE_URL =
-  'https://github.com/microsoft/vscode-js-debug/releases/download/v1.117.0/js-debug-dap-v1.117.0.tar.gz';
+  `https://github.com/microsoft/vscode-js-debug/releases/download/${ADAPTER_VERSION}/js-debug-dap-${ADAPTER_VERSION}.tar.gz`;
 const EXPECTED_SHA256 =
   'ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772';
 
@@ -24,14 +24,11 @@ const dapServerPath = path.join(
 // "type":"module",若不在 js-debug/ 放一个 type:commonjs 标记,node 会按最近的
 // root package.json 把 .js 当 ESM 加载 → require 未定义 → "Dynamic require of fs"。
 // 写一个本地 package.json 覆盖继承的 type,让 adapter .js 按 CJS 加载。
-const cjsMarkerPath = path.join(adapterRoot, 'js-debug', 'package.json');
-async function ensureCommonjsMarker() {
-  try {
-    await fs.writeFile(cjsMarkerPath, '{ "type": "commonjs" }\n');
-  } catch {
-    /* best-effort; adapter dir 必已存在 */
-  }
-}
+const CJS_MARKER_CONTENT = '{ "type": "commonjs" }\n';
+// 缓存标记:解包完成后写在 .adapter/ 根(不在被打包的 js-debug/ 内),记录 adapter 版本、
+// 已校验的 tarball sha256 与解包结果的目录树哈希。缓存命中须三者全部吻合,否则删除重下 ——
+// 被改动过的本地 js-debug/ 目录不会被原样打进安装包。
+const CACHE_MARKER_NAME = '.continuo-adapter-cache.json';
 
 function failClear(reason, details = {}) {
   console.error(`[fetch-debug-adapter] FAIL: ${reason}`);
@@ -51,22 +48,12 @@ async function fileExists(filePath) {
   }
 }
 
-async function sha256File(filePath) {
-  const hash = createHash('sha256');
-  await new Promise((resolve, reject) => {
-    createReadStream(filePath)
-      .on('data', (chunk) => hash.update(chunk))
-      .on('error', reject)
-      .on('end', resolve);
-  });
-  return hash.digest('hex');
+export function sha256Hex(buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
 }
 
-async function downloadToTmp() {
-  const tmpFile = path.join(
-    os.tmpdir(),
-    `continuo-js-debug-dap-${process.pid}-${Date.now()}.tar.gz`,
-  );
+// 下载到内存:校验与解包用同一份字节,中间不落盘(无可预测的临时文件、无 TOCTOU)。
+async function downloadTarball() {
   let response;
   try {
     response = await fetch(RELEASE_URL);
@@ -83,9 +70,7 @@ async function downloadToTmp() {
     );
   }
 
-  const body = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(tmpFile, body);
-  return { filePath: tmpFile, httpStatus: response.status, isTmp: true };
+  return { buffer: Buffer.from(await response.arrayBuffer()), httpStatus: response.status };
 }
 
 function readCString(buffer, start, length) {
@@ -129,7 +114,7 @@ function validateEntryPath(entryPath) {
   }
 }
 
-function parseTarGz(tarGzBuffer) {
+export function parseTarGz(tarGzBuffer) {
   const tarBuffer = gunzipSync(tarGzBuffer);
   const entries = [];
   let offset = 0;
@@ -171,8 +156,7 @@ function parseTarGz(tarGzBuffer) {
   return entries;
 }
 
-async function extractEntries(entries) {
-  const root = path.resolve(adapterRoot);
+export async function extractEntries(entries, root) {
   await fs.rm(root, { recursive: true, force: true });
   await fs.mkdir(root, { recursive: true });
 
@@ -194,10 +178,61 @@ async function extractEntries(entries) {
   }
 }
 
+// 目录树哈希:按相对路径排序,逐文件纳入「路径 NUL 内容 sha256 NUL」。只收普通文件;
+// 出现符号链接等非常规条目即视为不可信(返回 null),解包本身也不会产生它们。
+export async function computeTreeHash(dir) {
+  const files = [];
+  async function walk(rel) {
+    const entries = await fs.readdir(path.join(dir, rel), { withFileTypes: true });
+    for (const e of entries) {
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(childRel);
+      else if (e.isFile()) files.push(childRel);
+      else throw new Error(`unexpected entry in adapter dir: ${childRel}`);
+    }
+  }
+  try {
+    await walk('');
+  } catch {
+    return null;
+  }
+  files.sort();
+  const hash = createHash('sha256');
+  for (const rel of files) {
+    hash.update(rel);
+    hash.update('\0');
+    hash.update(sha256Hex(await fs.readFile(path.join(dir, rel))));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+export async function writeCacheMarker(root, { version, sha256 }) {
+  const treeHash = await computeTreeHash(path.join(root, 'js-debug'));
+  await fs.writeFile(
+    path.join(root, CACHE_MARKER_NAME),
+    `${JSON.stringify({ version, sha256, treeHash }, null, 2)}\n`,
+  );
+}
+
+// 缓存有效:标记文件存在、版本与 sha256 等于当前钉死的值、js-debug/ 树哈希与标记一致。
+export async function isCacheValid(root, { version, sha256 }) {
+  let marker;
+  try {
+    marker = JSON.parse(await fs.readFile(path.join(root, CACHE_MARKER_NAME), 'utf8'));
+  } catch {
+    return false;
+  }
+  if (!marker || marker.version !== version || marker.sha256 !== sha256) return false;
+  if (typeof marker.treeHash !== 'string') return false;
+  const treeHash = await computeTreeHash(path.join(root, 'js-debug'));
+  return treeHash !== null && treeHash === marker.treeHash;
+}
+
 async function main() {
-  if (await fileExists(dapServerPath)) {
-    await ensureCommonjsMarker();
-    console.log(`[fetch-debug-adapter] cache hit: ${dapServerPath}`);
+  const pinned = { version: ADAPTER_VERSION, sha256: EXPECTED_SHA256 };
+  if ((await fileExists(dapServerPath)) && (await isCacheValid(adapterRoot, pinned))) {
+    console.log(`[fetch-debug-adapter] cache hit (verified): ${dapServerPath}`);
     return;
   }
 
@@ -206,14 +241,10 @@ async function main() {
   let actualSha;
   try {
     source = envTarball
-      ? {
-          filePath: path.resolve(envTarball),
-          httpStatus: 'env-override',
-          isTmp: false,
-        }
-      : await downloadToTmp();
+      ? { buffer: await fs.readFile(path.resolve(envTarball)), httpStatus: 'env-override' }
+      : await downloadTarball();
 
-    actualSha = await sha256File(source.filePath);
+    actualSha = sha256Hex(source.buffer);
     if (actualSha !== EXPECTED_SHA256) {
       failClear('sha256 mismatch; refusing to extract', {
         actualSha,
@@ -222,8 +253,9 @@ async function main() {
       return;
     }
 
-    const entries = parseTarGz(await fs.readFile(source.filePath));
-    await extractEntries(entries);
+    // 解包的正是刚校验过的那份 buffer。extractEntries 先整体删除 adapterRoot(含旧缓存与标记)。
+    const entries = parseTarGz(source.buffer);
+    await extractEntries(entries, path.resolve(adapterRoot));
 
     if (!(await fileExists(dapServerPath))) {
       failClear('extraction finished but dapDebugServer.js is missing', {
@@ -233,7 +265,8 @@ async function main() {
       return;
     }
 
-    await ensureCommonjsMarker();
+    await fs.writeFile(path.join(adapterRoot, 'js-debug', 'package.json'), CJS_MARKER_CONTENT);
+    await writeCacheMarker(adapterRoot, pinned);
     console.log(`[fetch-debug-adapter] extracted ${entries.length} entries`);
     console.log(`[fetch-debug-adapter] ready: ${dapServerPath}`);
   } catch (err) {
@@ -241,11 +274,9 @@ async function main() {
       actualSha,
       httpStatus: err.httpStatus ?? source?.httpStatus,
     });
-  } finally {
-    if (source?.isTmp) {
-      await fs.rm(source.filePath, { force: true });
-    }
   }
 }
 
-await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}

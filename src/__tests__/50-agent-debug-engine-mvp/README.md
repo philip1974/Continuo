@@ -41,8 +41,12 @@ DebugService 的真实 adapter 生命周期、wait/continue/teardown 幂等行�
 ## 打包前获取 js-debug adapter(终审 P1)
 
 - adapter 不入 git;`build:pack`(所有 `build:app*` 都经由它)先执行 `scripts/fetch-debug-adapter.mjs`
-  下载并校验固定版本 sha256,已存在则直接跳过。否则干净检出本地打包会产出调试功能不可用的安装包
+  下载并校验固定版本 sha256。否则干净检出本地打包会产出调试功能不可用的安装包
   (electron-builder 对缺失的 extraResources 只警告)。规范:`build-fetches-debug-adapter.spec.ts`。
+- 缓存完整性:tarball 下载到内存,sha256 校验与解包使用同一份 buffer(不落临时文件);解包后在
+  `.adapter/.continuo-adapter-cache.json` 写入 adapter 版本、tarball sha256 与 `js-debug/` 目录树哈希。
+  缓存命中须标记存在且三者全部吻合(含符号链接等非常规条目即不吻合),否则删除重下 —— 被改动过的
+  本地 adapter 目录不会被原样打进安装包。规范:`fetch-debug-adapter-cache.spec.ts`。
 
 ## adapter 退出那一刻回收其进程组(终审 P1)
 

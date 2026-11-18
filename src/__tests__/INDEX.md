@@ -195,6 +195,7 @@
 - [`dap-framing.spec.ts`](./50-agent-debug-engine-mvp/dap-framing.spec.ts)
 - [`debug-auth-hint-code-exec.spec.ts`](./50-agent-debug-engine-mvp/debug-auth-hint-code-exec.spec.ts)
 - [`debug-schemas.spec.ts`](./50-agent-debug-engine-mvp/debug-schemas.spec.ts)
+- [`fetch-debug-adapter-cache.spec.ts`](./50-agent-debug-engine-mvp/fetch-debug-adapter-cache.spec.ts)
 - [`mcp-debug-host.spec.ts`](./50-agent-debug-engine-mvp/mcp-debug-host.spec.ts)
 - [`revoke-covers-inflight-launch.spec.ts`](./50-agent-debug-engine-mvp/revoke-covers-inflight-launch.spec.ts)
 - [`stdio-caller-closed.spec.ts`](./50-agent-debug-engine-mvp/stdio-caller-closed.spec.ts)
