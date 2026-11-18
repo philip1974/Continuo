@@ -517,6 +517,36 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     );
   });
 
+  it('安全:被调试程序无限新建 worker / 宣告假 target → child 数达上限后 startDebugging 失败,不再建连接(嵌套共用计数)', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent);
+    await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+    await parent.triggerStartDebugging({ type: 'pwa-node' }); // 主目标
+    const main = parent.children[0]!;
+    // 嵌套 worker 与顶层 child 共用一个计数:主目标占 1 个,其余全部来自主目标的 child 连接。
+    for (let i = 1; i < debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION; i += 1) {
+      await main.triggerStartDebugging({ type: 'pwa-node', name: `[worker ${i}]` });
+    }
+    expect(debugSessions.list()[0]?.childSessionCount).toBe(
+      debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION,
+    );
+
+    await expect(main.triggerStartDebugging({ type: 'pwa-node', name: '[worker x]' })).rejects.toThrow(
+      /child session limit/,
+    );
+    await expect(parent.triggerStartDebugging({ type: 'pwa-node' })).rejects.toThrow(/child session limit/);
+    expect(main.children).toHaveLength(debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION - 1);
+    expect(parent.children).toHaveLength(1);
+    expect(debugSessions.list()[0]?.childSessionCount).toBe(
+      debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION,
+    );
+
+    // 一个 worker 结束释放名额后,新的 worker 照常建立。
+    main.children[0]!.emit('terminated', {});
+    await main.triggerStartDebugging({ type: 'pwa-node', name: '[worker y]' });
+    expect(main.children).toHaveLength(debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION);
+  });
+
   it('停在哪条连接上,后续请求就发给哪条连接(worker 停住 → 查 worker 的栈)', async () => {
     const parent = new FakeDapClient(1001);
     const { service } = makeFakeService(parent);

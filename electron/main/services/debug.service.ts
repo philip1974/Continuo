@@ -1792,6 +1792,12 @@ export class DebugService {
     requester: DebugDapClientLike,
   ): Promise<DapJson> {
     const runtime = this.requireRuntime(sessionId);
+    // 超出上限:抛错 → DapClient 回 success:false,js-debug 放弃附加该目标;不建 socket / DapClient。
+    if (runtime.childClients.length >= debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION) {
+      throw new Error(
+        `debug child session limit (${debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION}) reached`,
+      );
+    }
     const child = requester.createChildSession();
     child.setStartDebuggingHandler((nested) => this.handleStartDebugging(sessionId, nested, child));
     runtime.childClients.push(child);
