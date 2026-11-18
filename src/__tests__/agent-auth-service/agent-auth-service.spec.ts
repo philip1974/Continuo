@@ -136,6 +136,18 @@ function firstAuthPayload(win: FakeWindow): AgentAuthRequestPayload {
   return call[1] as AgentAuthRequestPayload;
 }
 
+/**
+ * 让窗口的终端域处于「本次启动期间允许」(之后清掉 send 记录)。此后该域的请求不经授权弹窗节流(同一调用方单飞 /
+ * 速率上限,见 src/__tests__/agent-auth-prompt-throttle/)原样转发给 renderer —— 未决数量上限只在这条路径上够得着。
+ */
+async function grantTerminalSession(win: FakeWindow): Promise<void> {
+  const p = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: win.id });
+  const payload = win.webContents.send.mock.calls.at(-1)![1] as AgentAuthRequestPayload;
+  resolveAgentAuthRequest(payload.requestId, 'session');
+  await p;
+  win.webContents.send.mockClear();
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   electronMock.windows = [];
@@ -335,6 +347,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
   it("E229-1: 单窗口未决授权到 per-window 上限后,再请求立即终态 'denied',不入 pending、不发 IPC", async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
+    await grantTerminalSession(win);
     const max = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
     // 凑满 per-window 未决
     const ps: Promise<AgentAuthDecision>[] = [];
@@ -355,6 +368,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
   it("E229-2: 终态(resolve)释放槽位后,可再接受新授权请求(计数无漂移)", async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
+    await grantTerminalSession(win);
     const max = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
     const ps: Promise<AgentAuthDecision>[] = [];
     for (let i = 0; i < max; i++) {
@@ -381,6 +395,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     const win1 = makeWin(1);
     const win2 = makeWin(2);
     electronMock.windows = [win1, win2];
+    await grantTerminalSession(win1);
     const max = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
     const ps: Promise<AgentAuthDecision>[] = [];
     for (let i = 0; i < max; i++) {
@@ -416,6 +431,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     const winCount = Math.ceil(global / perWin);
     const wins = Array.from({ length: winCount + 1 }, (_, i) => makeWin(i + 1));
     electronMock.windows = wins;
+    for (const w of wins.slice(0, winCount)) await grantTerminalSession(w);
     const ps: Promise<AgentAuthDecision>[] = [];
     let filled = 0;
     let wi = 0;
@@ -554,7 +570,8 @@ describe('agent-auth-service: pending lifecycle', () => {
     const win = makeWin(1);
     electronMock.windows = [win];
     const first = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
-    const second = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 1 });
+    // 同一调用方同时只有一个未决弹窗 → 第二条用另一类调用方(external)。
+    const second = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 1, external: true });
 
     _resetPendingForTest();
 

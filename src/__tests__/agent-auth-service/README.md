@@ -40,3 +40,5 @@ T17 `cancelAllAgentAuth`(退出清理)把所有窗口的未决请求立即结算
 T16 撤销(`revokeAndKillAgentSessions`)完成后向所有存活窗口广播 `AGENT_AUTH_CHANNELS.REVOKED`(payload `{}`):
 「本次启动期间允许」记在各窗口 renderer 的 store,只重置发起窗口会让其它窗口在撤销后仍静默放行请求;
 各 renderer 收到后执行与本地撤销相同的重置(见 `agent-auth-prompt` / `agent-terminal-mcp-auth`)。
+
+Prompt throttling (2026-11-18, security): `requestAgentAuth` now runs every request for a domain that is not yet "allowed for this launch" through the shared prompt throttle (deny cooldown / backoff / rate cap / one pending prompt per caller) and rejects with `AGENT_NOT_AUTHORIZED` when throttled — see `src/__tests__/agent-auth-prompt-throttle/`. The E229 pending caps are therefore only reachable for a domain the user already allowed for this launch (those requests are forwarded unthrottled), which is how the E229 cases now set up.

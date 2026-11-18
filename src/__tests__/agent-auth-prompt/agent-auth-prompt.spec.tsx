@@ -7,7 +7,7 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
-import { AgentAuthPrompt } from '../../shell/AgentAuthPrompt';
+import { AgentAuthPrompt, AGENT_AUTH_GRANT_ARM_DELAY_MS } from '../../shell/AgentAuthPrompt';
 import {
   _resetAgentAuthForTest,
   useAgentAuthStore,
@@ -52,6 +52,19 @@ function getButtons(): Record<string, HTMLButtonElement> {
     out[b.textContent ?? ''] = b;
   }
   return out;
+}
+
+/**
+ * 点「允许」类按钮。弹窗显示后 AGENT_AUTH_GRANT_ARM_DELAY_MS 内这类按钮无效(防误触,见
+ * src/__tests__/agent-auth-prompt-throttle/),这里把时钟拨过这段延迟再点。
+ */
+function clickGrant(label: '仅本次' | '本次启动期间允许'): void {
+  const spy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + AGENT_AUTH_GRANT_ARM_DELAY_MS);
+  try {
+    fireEvent.click(getButtons()[label]!);
+  } finally {
+    spy.mockRestore();
+  }
 }
 
 describe('AgentAuthPrompt — 渲染条件', () => {
@@ -184,7 +197,7 @@ describe('AgentAuthPrompt — 外部客户端请求', () => {
     await waitFor(() => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
     });
-    fireEvent.click(getButtons()['本次启动期间允许']!);
+    clickGrant('本次启动期间允许');
     await waitFor(() => {
       expect(useAgentAuthStore.getState().externalSessionGranted).toBe(true);
     });
@@ -214,14 +227,14 @@ describe('AgentAuthPrompt — 按钮', () => {
 
   it('点「仅本次」→ grant("once") + ensure resolve "once"', async () => {
     const p = setup();
-    fireEvent.click(getButtons()['仅本次']!);
+    clickGrant('仅本次');
     await expect(p).resolves.toBe('once');
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
 
   it('点「本次启动期间允许」→ grant("session")(域授权待 main 确认,见下方 respond 用例)', async () => {
     const p = setup();
-    fireEvent.click(getButtons()['本次启动期间允许']!);
+    clickGrant('本次启动期间允许');
     await expect(p).resolves.toBe('session');
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
@@ -253,7 +266,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     await waitFor(() => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
     });
-    fireEvent.click(getButtons()['仅本次']!);
+    clickGrant('仅本次');
     await waitFor(() => {
       expect(respond).toHaveBeenCalledWith('rq-1', 'once');
     });
@@ -287,7 +300,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     await waitFor(() => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
     });
-    fireEvent.click(getButtons()['本次启动期间允许']!);
+    clickGrant('本次启动期间允许');
     await waitFor(() => {
       expect(respond).toHaveBeenCalledWith('stale-1', 'session');
     });
@@ -311,7 +324,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     await waitFor(() => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
     });
-    fireEvent.click(getButtons()['本次启动期间允许']!);
+    clickGrant('本次启动期间允许');
     await waitFor(() => {
       expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
     });
@@ -335,7 +348,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     await waitFor(() => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
     });
-    fireEvent.click(getButtons()['仅本次']!);
+    clickGrant('仅本次');
     await waitFor(() => {
       expect(notifyError).toHaveBeenCalledTimes(1);
     });

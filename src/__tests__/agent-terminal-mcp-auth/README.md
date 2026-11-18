@@ -68,7 +68,9 @@ interface AgentAuthState {
     token(PTY env `CONTINUO_MCP_TOKEN`,如 macOS `ps eww`、Linux `/proc/<pid>/environ`),即可带该 token 经 HTTP
     或 stdio `_continuo/hello` 被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」静默执行。per-session
     capability 仍生效(只能操作自己创建的会话 / debug 会话)。真正收口需把 token 绑定到持有该终端的进程树,当前未做。
-- `pending !== null` → **立即** `resolve('denied')`(同一时刻一个,与 plugin permission-prompt 同型;并发的第二条直接拒)
+- 同一类调用方(窗口内 agent / external 客户端)已占槽 → **立即** `resolve('denied')`(与 plugin permission-prompt 同型;同类并发的第二条直接拒)。
+  另一类调用方已有弹窗显示中 → **排队**(不自动拒、不堆叠),当前弹窗落定后显示;`pending` 始终是显示中的那一个。
+  见 `src/__tests__/agent-auth-prompt-throttle/`(external 连弹不得顶掉窗口内 agent 的首次授权)
 - 其它 → 设 `pending = { requestId(uuid), method, agentLabel? }`,返回未 resolve 的 Promise
 
 ### `grant('once')`

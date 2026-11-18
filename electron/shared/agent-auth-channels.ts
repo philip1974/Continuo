@@ -44,6 +44,14 @@ export const AGENT_AUTH_METHOD_MAX = 256;
 export const AGENT_AUTH_PLUGIN_METHOD_PREFIX = 'plugin.';
 const AGENT_AUTH_LABEL_MAX = 512;
 
+/** 授权域:method 以 `debug.` 开头 → debug;以 `plugin.` 开头 → 插件工具;其余(终端工具及未知 method)→ 终端。 */
+export type AgentAuthDomain = 'terminal' | 'debug' | 'plugin';
+export function agentAuthDomainOf(method: string): AgentAuthDomain {
+  if (method.startsWith('debug.')) return 'debug';
+  if (method.startsWith(AGENT_AUTH_PLUGIN_METHOD_PREFIX)) return 'plugin';
+  return 'terminal';
+}
+
 /** agent-auth:request payload 的 runtime 形态 + 长度守卫(IPC ingress 纵深防御,E171)。 */
 export function isAgentAuthRequestPayload(
   v: unknown,
