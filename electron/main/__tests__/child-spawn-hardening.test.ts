@@ -4,9 +4,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
+  GIT_OFFLINE_ENV,
+  INTERNAL_SECRET_ENV_KEYS,
   isSpawnCandidate,
   mergeSpawnEnv,
   resolveSpawnCommand,
+  stripInternalSecretEnv,
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
 
@@ -38,6 +41,62 @@ describe('withGitHardeningEnv', () => {
       GIT_CONFIG_KEY_2: 'core.fsmonitor',
       GIT_CONFIG_VALUE_2: 'false',
     });
+  });
+});
+
+// 安全:Windows env 键大小写不敏感。插件传 `git_config_count=1` + `git_config_key_0=core.fsmonitor` +
+// `git_config_value_0=<cmd>` 时,旧实现只读大写 GIT_CONFIG_COUNT(不存在)→ 从 0 编号、另写大写键,两套键并存;
+// 子进程拿到哪套取决于 Node 对重复键的选择,我们的 core.fsmonitor=false 可能被插件那套盖掉。
+describe('withGitHardeningEnv(Windows 键大小写不敏感)', () => {
+  it('Windows:读小写 git_config_count 续编号,写入时只保留我们的键(无大小写重复)', () => {
+    const out = withGitHardeningEnv(
+      { git_config_count: '1', git_config_key_0: 'a.b', git_config_value_0: '1' },
+      'win32',
+    );
+    const countKeys = Object.keys(out).filter((k) => k.toUpperCase() === 'GIT_CONFIG_COUNT');
+    expect(countKeys).toEqual(['GIT_CONFIG_COUNT']);
+    expect(out.GIT_CONFIG_COUNT).toBe('2');
+    expect(out).toMatchObject({ GIT_CONFIG_KEY_1: 'core.fsmonitor', GIT_CONFIG_VALUE_1: 'false' });
+    expect(out.git_config_key_0).toBe('a.b'); // 调用方条目保留
+  });
+
+  it('Windows:插件预占我们将写的编号(小写 key_0 = 恶意 fsmonitor)→ 被我们的键替换,不并存', () => {
+    const out = withGitHardeningEnv(
+      { git_config_key_0: 'core.fsmonitor', git_config_value_0: 'calc.exe' },
+      'win32',
+    );
+    const vals = Object.entries(out).filter(([k]) => k.toUpperCase() === 'GIT_CONFIG_VALUE_0');
+    expect(vals).toEqual([['GIT_CONFIG_VALUE_0', 'false']]);
+  });
+
+  it('非 Windows:大小写敏感(小写键不是 git 认的 env),行为不变', () => {
+    const out = withGitHardeningEnv({ git_config_count: '5' }, 'linux');
+    expect(out).toMatchObject({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.fsmonitor', git_config_count: '5' });
+  });
+});
+
+describe('stripInternalSecretEnv / GIT_OFFLINE_ENV', () => {
+  it('剥离 CONTINUO_MCP_TOKEN,保留非机密的 CONTINUO_* 标识,不改入参', () => {
+    const src = {
+      CONTINUO_MCP_TOKEN: 't',
+      CONTINUO_MCP_SOCKET: '/s',
+      CONTINUO_WINDOW_ID: '1',
+      CONTINUO_TERMINAL_SESSION_ID: 'x',
+      PATH: '/bin',
+    };
+    const out = stripInternalSecretEnv(src, 'linux');
+    expect(out).toEqual({ CONTINUO_MCP_SOCKET: '/s', CONTINUO_WINDOW_ID: '1', CONTINUO_TERMINAL_SESSION_ID: 'x', PATH: '/bin' });
+    expect(src.CONTINUO_MCP_TOKEN).toBe('t');
+    expect(INTERNAL_SECRET_ENV_KEYS).toContain('CONTINUO_MCP_TOKEN');
+  });
+
+  it('Windows:大小写变体一并剥离;非 Windows 只剥精确键名', () => {
+    expect(stripInternalSecretEnv({ continuo_mcp_token: 't', Continuo_Mcp_Token: 'u' }, 'win32')).toEqual({});
+    expect(stripInternalSecretEnv({ continuo_mcp_token: 't' }, 'linux')).toEqual({ continuo_mcp_token: 't' });
+  });
+
+  it('GIT_OFFLINE_ENV:禁惰性拉取 + 空协议白名单', () => {
+    expect(GIT_OFFLINE_ENV).toEqual({ GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' });
   });
 });
 

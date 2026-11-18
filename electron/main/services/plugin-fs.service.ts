@@ -28,7 +28,13 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { fsError, isCaseOrNormalizationOnlyRename } from '../ipc/fs/path-utils';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { isSafePluginId } from './plugins.service';
-import { resolveSpawnCommand, withGitHardeningEnv } from '../lib/child-spawn-hardening';
+import {
+  GIT_OFFLINE_ENV,
+  mergeSpawnEnv,
+  resolveSpawnCommand,
+  stripInternalSecretEnv,
+  withGitHardeningEnv,
+} from '../lib/child-spawn-hardening';
 
 export interface PluginFsDeps {
   identityRegistry: IdentityRegistry;
@@ -97,11 +103,8 @@ export function readGitBlob(
     // 但 `protocol.<name>.allow` 优先于 `protocol.allow`:仓库 config 写 `protocol.file.allow=always` 即盖过
     // 命令行的 never,git <2.45 又不认 GIT_NO_LAZY_FETCH → 仍会执行。GIT_ALLOW_PROTOCOL 设为空(空白名单)
     // 时 git 忽略全部 protocol.*.allow 配置、拒绝一切传输(git ≥2.12 认),仓库 config 无法覆盖。
-    const env = {
-      ...withGitHardeningEnv(process.env),
-      GIT_NO_LAZY_FETCH: '1',
-      GIT_ALLOW_PROTOCOL: '',
-    };
+    // 两者即具名预设 GIT_OFFLINE_ENV;并剥离宿主内部机密(CONTINUO_MCP_TOKEN)。
+    const env = mergeSpawnEnv(withGitHardeningEnv(stripInternalSecretEnv(process.env)), GIT_OFFLINE_ENV);
     const child = spawn(
       resolveSpawnCommand('git', env),
       ['-c', 'protocol.allow=never', 'cat-file', 'blob', sha],

@@ -6,6 +6,7 @@ import { type Readable } from 'node:stream';
 import net, { type Socket } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { mergeSpawnEnv, stripInternalSecretEnv } from '../lib/child-spawn-hardening';
 
 type DapPrimitive = string | number | boolean | null;
 export type DapJson =
@@ -555,12 +556,8 @@ export class DapClient {
     // nodePath 默认 process.execPath。在打包/dev 的 Electron 里 process.execPath 是
     // Electron 二进制,必须设 ELECTRON_RUN_AS_NODE=1 让它以纯 Node 跑 dapDebugServer.js;
     // 否则 Electron 会把脚本当成 app 入口加载 → "Dynamic require of fs is not supported"。
-    // 同时按 safeguard 剥离敏感 env(不把 CONTINUO_MCP_TOKEN 泄漏给 adapter/debuggee)。
-    const adapterEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-    };
-    delete adapterEnv.CONTINUO_MCP_TOKEN;
+    // 同时按 safeguard 剥离敏感 env(INTERNAL_SECRET_ENV_KEYS:不把 CONTINUO_MCP_TOKEN 泄漏给 adapter/debuggee)。
+    const adapterEnv = stripInternalSecretEnv(mergeSpawnEnv(process.env, { ELECTRON_RUN_AS_NODE: '1' }));
     // TCP(仅显式 socketPath: null):dapDebugServer.js 的第二个参数是 host,默认 localhost 可能解析成 ::1,
     // 而 connectOnce 固定连 127.0.0.1 → 显式传同一地址。socket / 命名管道路径模式不需要 host。
     const adapterArgs = this.socketPath

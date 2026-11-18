@@ -18,6 +18,7 @@ import {
 import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
 import {
   mergeSpawnEnv,
+  stripInternalSecretEnv,
   resolveSpawnCommand,
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
@@ -146,7 +147,10 @@ export function execShell(
     // 安全:注入 git 命令行作用域 core.fsmonitor=false,恶意 workspace 的 .git/config 不能借插件的
     // `git status` 执行任意命令(见 lib/child-spawn-hardening)。
     // Windows env 键大小写不敏感合并(插件 PATH 不与宿主 Path 并存),命令解析与子进程 env 一致。
-    const env = withGitHardeningEnv(input.env ? mergeSpawnEnv(process.env, input.env) : process.env);
+    // 剥离宿主内部机密(CONTINUO_MCP_TOKEN,继承的或插件显式传入的),见 INTERNAL_SECRET_ENV_KEYS。
+    const env = withGitHardeningEnv(
+      stripInternalSecretEnv(input.env ? mergeSpawnEnv(process.env, input.env) : process.env),
+    );
 
     let child;
     try {

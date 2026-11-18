@@ -29,7 +29,12 @@ import { isValidGitBranch } from '../../shared/git-branch';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
 import { killWithGrace } from '../lib/kill-with-grace';
-import { resolveSpawnCommand, withGitHardeningEnv } from '../lib/child-spawn-hardening';
+import {
+  mergeSpawnEnv,
+  resolveSpawnCommand,
+  stripInternalSecretEnv,
+  withGitHardeningEnv,
+} from '../lib/child-spawn-hardening';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped';
@@ -1414,12 +1419,16 @@ function runGit(args: readonly string[]): Promise<void> {
     // 与插件子进程同一加固(见 lib/child-spawn-hardening):注入 core.fsmonitor=false(clone 不受影响);
     // Windows 上 git 只在 PATH 的绝对目录中解析 —— CLI 启动时主进程 cwd 即用户所在目录(可能是不可信
     // 仓库),裸名 spawn 会先执行其中的 git.exe。解析不到 → GIT_SPAWN_FAILED(fail-closed)。
-    const env = withGitHardeningEnv({
-      ...process.env,
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_ASKPASS: '',
-      GIT_CONFIG_NOSYSTEM: '1',
-    });
+    // 纵深:入口已限定 https URL,再以 GIT_ALLOW_PROTOCOL=https 限定传输协议(重定向 / 子模块等不得换用
+    // file / ext / ssh 等协议;优先于仓库与全局 protocol.*.allow 配置)。剥离宿主内部机密(CONTINUO_MCP_TOKEN)。
+    const env = withGitHardeningEnv(
+      mergeSpawnEnv(stripInternalSecretEnv(process.env), {
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_ASKPASS: '',
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_ALLOW_PROTOCOL: 'https',
+      }),
+    );
     const spawnGit = () =>
       spawn(resolveSpawnCommand('git', env), args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     let child: ReturnType<typeof spawnGit>;
