@@ -17,6 +17,7 @@ const {
   registerPluginFsHandlers,
   PLUGIN_FS_HEAVY_READ_CONCURRENCY: MAX_ACTIVE,
   PLUGIN_FS_HEAVY_READ_QUEUE_MAX: MAX_QUEUED,
+  PLUGIN_FS_HEAVY_READ_PER_PLUGIN_MAX: PER_PLUGIN,
 } = await import('../../../electron/main/services/plugin-fs.service');
 const { StubIpcMain, makeFakeEvent } = await import('../sdk-contract/integration/make-stub-ipc');
 
@@ -26,6 +27,7 @@ let proj: string;
 let ipc: InstanceType<typeof StubIpcMain>;
 let correlator: InstanceType<typeof ScopeRequestCorrelator>;
 let token: string;
+let scopes: InstanceType<typeof PathScopeRegistry>;
 const event = makeFakeEvent({ id: 1, isDestroyed: () => false });
 const invoke = (channel: string, ...args: unknown[]): Promise<unknown> =>
   ipc.invokeWithEvent(event, channel, token, ...args);
@@ -91,7 +93,7 @@ beforeEach(async () => {
       : (realOpendir as (...a: unknown[]) => Promise<unknown>)(p, ...rest)) as never);
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
-  const scopes = new PathScopeRegistry(identity);
+  scopes = new PathScopeRegistry(identity);
   correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,
@@ -135,9 +137,10 @@ describe('plugin-fs 大块读取的全局并发闸', () => {
     expect(gate.peak).toBe(MAX_ACTIVE);
   });
 
-  it('排队满后新的请求以 FS_BUSY 立即拒绝(含 read-for-editor 的结果对象、read-git-blob);放行后恢复', async () => {
-    const total = MAX_ACTIVE + MAX_QUEUED;
-    const calls = Array.from({ length: total }, (_, i) =>
+  // 原为单插件 MAX_ACTIVE + MAX_QUEUED 个读取占满全局队列;名额改为按插件后,单插件先触到自己的名额(本用例),
+  // 全局上限要多个插件合起来才触到(下一条用例)。
+  it('该插件在途 + 排队满名额后,它的新请求以 FS_BUSY 立即拒绝(含 read-for-editor 的结果对象、read-git-blob);放行后恢复', async () => {
+    const calls = Array.from({ length: PER_PLUGIN }, (_, i) =>
       invoke(C.READ_FILE, join(proj, `blocked-${i % 40}.txt`)),
     );
     await settle();
@@ -146,6 +149,33 @@ describe('plugin-fs 大块读取的全局并发闸', () => {
     await expect(invoke(C.READ_GIT_BLOB, proj, 'a'.repeat(40))).rejects.toMatchObject({ code: 'FS_BUSY' });
     expect(await invoke(C.READ_FOR_EDITOR, join(proj, 'free.txt'))).toMatchObject({ ok: false, code: 'FS_BUSY' });
     // 拒绝的请求不占名额:放行后全部完成,新请求照常
+    gate.open = true;
+    release();
+    expect(await Promise.all(calls)).toHaveLength(PER_PLUGIN);
+    expect(gate.peak).toBe(MAX_ACTIVE);
+    expect(await invoke(C.READ_FILE, join(proj, 'free.txt'))).toBe('free');
+  }, 60_000);
+
+  it('全部插件合计在途 + 排队达到全局上限后,任何插件的新请求都以 FS_BUSY 拒绝;放行后恢复', async () => {
+    const total = MAX_ACTIVE + MAX_QUEUED;
+    const calls: Promise<unknown>[] = [];
+    let last = { ev: event, tok: token };
+    for (let p = 0; calls.length < total; p++) {
+      const ev = makeFakeEvent({ id: 100 + p, isDestroyed: () => false });
+      const id = `plugin.flood${p}`;
+      const tok = ((await ipc.invokeWithEvent(ev, C.REGISTER_PLUGIN, id)) as { token: string }).token;
+      scopes.grant(id, [{ path: proj, mode: 'r' }]);
+      last = { ev, tok };
+      for (let i = 0; i < PER_PLUGIN && calls.length < total; i++) {
+        calls.push(ipc.invokeWithEvent(ev, C.READ_FILE, tok, join(proj, `blocked-${i % 40}.txt`)));
+      }
+    }
+    await settle();
+    // 名额未满的插件(本用例的 PLUGIN、最后一个 flood 插件)也被全局上限拒绝
+    await expect(invoke(C.READ_FILE, join(proj, 'free.txt'))).rejects.toMatchObject({ code: 'FS_BUSY' });
+    await expect(
+      ipc.invokeWithEvent(last.ev, C.READ_FILE, last.tok, join(proj, 'free.txt')),
+    ).rejects.toMatchObject({ code: 'FS_BUSY' });
     gate.open = true;
     release();
     expect(await Promise.all(calls)).toHaveLength(total);

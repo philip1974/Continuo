@@ -27,7 +27,6 @@ import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 import { readFileFromHandle, type ReadFileOptions } from '../ipc/fs/read-file';
 import { openForReadNonBlocking } from '../lib/read-fh-capped';
 import { createRwLock } from '../lib/rw-lock';
-import { createSemaphore } from '../lib/dir-stat-gate';
 import {
   FS_PATH_MAX,
   FS_PATH_MAX_DEPTH,
@@ -201,8 +200,12 @@ export function _pluginOpenedPathRefsForTest(): number {
 
 // 边界(内存峰值):单次读取有上限(read-file / read-for-editor 64MiB、read-git-blob 64MB、list-dir 10 万条),但并发
 // 次数此前无限制 —— 插件 Promise.all 几十个大文件读取即可把主进程撑大数 GB(实测 96 × 30MB 文件 RSS +3.5GB)。
-// 这几个「单次可占大块内存」的入口共用一个全局闸:同时在途至多 PLUGIN_FS_HEAVY_READ_CONCURRENCY 个,其余按到达
-// 顺序排队;排队者只持有参数(路径),排队长度也有上限,超限立即以 FS_BUSY 拒绝。
+// 这几个「单次可占大块内存」的入口共用一个全局闸:同时在途至多 PLUGIN_FS_HEAVY_READ_CONCURRENCY 个,其余排队;
+// 排队者只持有参数(路径),排队长度也有上限,超限立即以 FS_BUSY 拒绝。
+// 安全(插件之间的饥饿):名额按插件(pluginId,不按 token —— 同一插件多窗口 / 多实例共享,多开窗口不放大)计:
+// 每插件在途 + 排队至多 PLUGIN_FS_HEAVY_READ_PER_PLUGIN_MAX 个,超出只拒绝该插件;有空位时在有排队的插件之间
+// 轮转放行(同一插件内按到达顺序)。此前是一条全局队列:一个插件保持上千个排队读取,其它插件的 readFile /
+// listDir / editor.openFile 全部 FS_BUSY(审计实测)。全局排队上限保留作总量兜底。
 // 嵌套顺序:先取闸、后取 plugin-fs 读写锁的共享锁。反过来(持共享锁排队等闸)时,排队者都算共享持有者,独占写者
 // 要等整条队列读完才能开始;现在排队者不持锁,写者只需等至多 4 个在途读取。写者不取闸,不会互相等待成环。
 // 宿主自己的 fs:read-file(用户编辑器)不经此闸 —— 插件占满闸也不影响用户打开文件。
@@ -210,23 +213,56 @@ export function _pluginOpenedPathRefsForTest(): number {
 // atomicReplace 持独占锁,本就串行(cp 经 copyFile 在内核里复制,不进 JS 堆)。
 export const PLUGIN_FS_HEAVY_READ_CONCURRENCY = 4;
 export const PLUGIN_FS_HEAVY_READ_QUEUE_MAX = 1024;
-const heavyReadGate = createSemaphore(PLUGIN_FS_HEAVY_READ_CONCURRENCY);
-let heavyReadPending = 0; // 在途 + 排队
+export const PLUGIN_FS_HEAVY_READ_PER_PLUGIN_MAX = 64;
+let heavyReadActive = 0;
+let heavyReadPending = 0; // 全部插件的在途 + 排队
+/** 有在途或排队读取的插件:在途 + 排队数、排队者(FIFO)。归零即删除。 */
+const heavyReadByPlugin = new Map<string, { pending: number; waiting: (() => void)[] }>();
+/** 有排队者的插件,轮转顺序(每个至多出现一次)。 */
+const heavyReadTurns: string[] = [];
 
-function heavyRead<T>(task: () => Promise<T>): Promise<T> {
-  if (heavyReadPending >= PLUGIN_FS_HEAVY_READ_CONCURRENCY + PLUGIN_FS_HEAVY_READ_QUEUE_MAX) {
-    return Promise.reject(fsError(ERROR_CODES.FS_BUSY, 'too many plugin file reads in progress; try again later'));
+function dispatchHeavyReads(): void {
+  while (heavyReadActive < PLUGIN_FS_HEAVY_READ_CONCURRENCY && heavyReadTurns.length > 0) {
+    const key = heavyReadTurns.shift()!;
+    const waiting = heavyReadByPlugin.get(key)!.waiting;
+    const start = waiting.shift()!;
+    if (waiting.length > 0) heavyReadTurns.push(key);
+    heavyReadActive += 1;
+    start();
   }
-  heavyReadPending += 1;
-  return heavyReadGate.run(() => fsLock.shared(task)).finally(() => {
-    heavyReadPending -= 1;
-  });
 }
 
-const sharedHeavy =
-  <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
-  (...args: A): Promise<R> =>
-    heavyRead(() => fn(...args));
+/** key:发起插件的 pluginId(未知 token 归入同一个桶,随后的 scope 校验会拒绝它)。 */
+function heavyRead<T>(key: string, task: () => Promise<T>): Promise<T> {
+  let entry = heavyReadByPlugin.get(key);
+  if (
+    heavyReadPending >= PLUGIN_FS_HEAVY_READ_CONCURRENCY + PLUGIN_FS_HEAVY_READ_QUEUE_MAX ||
+    (entry?.pending ?? 0) >= PLUGIN_FS_HEAVY_READ_PER_PLUGIN_MAX
+  ) {
+    return Promise.reject(fsError(ERROR_CODES.FS_BUSY, 'too many plugin file reads in progress; try again later'));
+  }
+  if (entry === undefined) {
+    entry = { pending: 0, waiting: [] };
+    heavyReadByPlugin.set(key, entry);
+  }
+  const own = entry;
+  own.pending += 1;
+  heavyReadPending += 1;
+  const acquired = new Promise<void>((resolve) => {
+    own.waiting.push(resolve);
+    if (own.waiting.length === 1) heavyReadTurns.push(key);
+  });
+  dispatchHeavyReads();
+  return acquired
+    .then(() => fsLock.shared(task))
+    .finally(() => {
+      heavyReadActive -= 1;
+      heavyReadPending -= 1;
+      own.pending -= 1;
+      if (own.pending === 0) heavyReadByPlugin.delete(key);
+      dispatchHeavyReads();
+    });
+}
 
 // 包装 handler:返回类型留给 ipcMain.handle 做上下文推断,handler 的参数类型标注保持原样。
 const shared =
@@ -569,6 +605,14 @@ export function registerPluginFsHandlers(
     }
     return pathScopeRegistry.check(token, senderId, opType as 'read', target, mode);
   }) as PathScopeRegistry['check'];
+  // 大块读取闸的名额键:token 所属插件的 pluginId(同一插件各窗口 / 各实例共享)。未知 token 归入 '' 桶
+  //('' 不是合法 pluginId),随后的 scope 校验照常拒绝。
+  const heavyReadKey = (token: unknown): string =>
+    (typeof token === 'string' ? identityRegistry.lookup(token)?.pluginId : undefined) ?? '';
+  const sharedHeavy =
+    <E, A extends unknown[], R>(fn: (event: E, token: string, ...args: A) => Promise<R>) =>
+    (event: E, token: string, ...args: A): Promise<R> =>
+      heavyRead(heavyReadKey(token), () => fn(event, token, ...args));
   const maybeSweepStaleTrash = createTrashSweepThrottle();
   const scopeThrottle = new ScopeRequestThrottle();
   // 关窗(destroyed)/ renderer reload(主框架非同文档导航)时释放该 webContents 名下的身份 token 与
@@ -642,7 +686,7 @@ export function registerPluginFsHandlers(
       const recheck = async (): Promise<string> =>
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       try {
-        const read = await heavyRead(async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
+        const read = await heavyRead(heavyReadKey(token), async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
         if (!pinPluginOpenedPath(read.canonical, event.sender.id)) {
           console.warn('[plugin-fs] read-for-editor refused: too many plugin-opened editor tabs');
           return {
