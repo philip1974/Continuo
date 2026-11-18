@@ -7,9 +7,10 @@
 ### 构建产物机密扫描(`scripts/check-no-secrets.mjs`)
 
 - 背景:v0.2.5 安装包曾把 GitHub token 打进 `app.asar`。
-- 只扫构建产物,不扫源码(测试 fixture 里的假值不受影响)。位置参数整棵扫描(`out/`、`out-pack/`);`--packaged <dir>` 只扫其下的 `app.asar` 与 `app.asar.unpacked/`(Electron Framework 等上游二进制的随机字节会误中 AKIA 规则,且不可能含本仓凭据)。`app.asar` 未压缩,直接对文件字节匹配。
-- 规则:`(gho|ghp|ghu|ghs|ghr)_[A-Za-z0-9]{20,}`、`github_pat_[A-Za-z0-9_]{20,}`、`AKIA[0-9A-Z]{16}`、`-----BEGIN [A-Z ]*PRIVATE KEY-----`。
+- 只扫构建产物,不扫源码(测试 fixture 里的假值不受影响)。位置参数整棵扫描(`out/`、`out-pack/`);`--packaged <dir>` 扫其下每个含 `app.asar` 的资源目录整体(`app.asar`、`app.asar.unpacked/`,以及 extraResources 放入的 `continuo-mcp-stdio.mjs`、`js-debug/` 等);资源目录之外的 Electron Framework 等上游二进制不扫(随机字节会误中 AKIA 规则,且不可能含本仓凭据)。`app.asar` 未压缩,直接对文件字节匹配。
+- 规则:`(gho|ghp|ghu|ghs|ghr)_[A-Za-z0-9]{20,}`、`github_pat_[A-Za-z0-9_]{20,}`、`AKIA[0-9A-Z]{16}`、`-----BEGIN [A-Z ]*PRIVATE KEY-----`、`npm_[A-Za-z0-9]{36}`、`sk-[A-Za-z0-9]{20,}`、`xox[baprs]-[A-Za-z0-9-]{10,}`。
 - 命中 → 退出码 1,只输出「文件:字节偏移 (规则名)」,不输出命中值。按 8MiB 分块读取、块间重叠,跨块边界的命中不漏不重。
+- 命中时删除 `--packaged` 目录顶层本次构建的分发产物(dmg / zip / blockmap / exe 等、`SHA256SUMS*`、`latest*.yml`;mtime 不早于 `app.asar` 视为本次产物),防止手动 `gh release create` 照样上传;保留解包的 `.app` / `app.asar` 以便定位,历史版本产物不动。未命中不删任何文件。
 - fail-closed:路径不存在、`--packaged` 目录里找不到 `app.asar`、无参数 → 退出码 2。
 - 跳过压缩容器(`.dmg` / `.zip` / `.blockmap` 等),其内容已以 `.app` / `app.asar` 形式被扫。
 - 接线:所有 `build:app*` 在 `electron-builder` 之后自动运行 `pnpm check:secrets:pack`(`out-pack` 全量 + `dist-electron` 的 `app.asar`);CI `secret-scan` job 在 `pnpm build` 之后独立一步扫 `out/`。

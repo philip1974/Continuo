@@ -2,7 +2,7 @@
 // 扫构建产物,命中即非零退出且不回显命中值。假 token 用字符串拼接生成,源码里不出现完整字面量。
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,9 @@ const FAKE = {
   pat: 'github' + '_pat_' + '11ABCDEFG0123456789_abcdefghijklmnop',
   aws: 'AK' + 'IA' + 'ABCDEFGHIJKLMNOP',
   key: '-----BEGIN ' + 'RSA PRIVATE KEY-----',
+  npm: 'np' + 'm_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8',
+  openai: 's' + 'k-' + 'A1b2C3d4E5f6G7h8I9j0K1l2',
+  slack: 'xo' + 'xb-' + '1234567890-abcdefGHIJ',
 };
 
 function run(...args: string[]) {
@@ -57,6 +60,52 @@ describe('check-no-secrets:构建产物机密扫描', () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain(`app.asar:4`);
     expect(r.out).not.toContain('Electron Framework');
+  });
+
+  it('--packaged 也扫 app.asar 同目录的 extraResources(continuo-mcp-stdio.mjs、js-debug/)', () => {
+    const res = join(dir, 'mac-arm64', 'Continuo.app', 'Contents', 'Resources');
+    mkdirSync(join(res, 'js-debug', 'src'), { recursive: true });
+    writeFileSync(join(res, 'app.asar'), 'clean');
+    writeFileSync(join(res, 'continuo-mcp-stdio.mjs'), `const t = "${FAKE.github}";`);
+    writeFileSync(join(res, 'js-debug', 'src', 'dapDebugServer.js'), `const t = "${FAKE.npm}";`);
+    const r = run('--packaged', dir);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('continuo-mcp-stdio.mjs:');
+    expect(r.out).toContain('dapDebugServer.js:');
+  });
+
+  it('命中时删除本次构建的分发产物(dmg/zip/blockmap/SHA256SUMS/latest*.yml),保留 .app 与历史版本', () => {
+    const res = join(dir, 'mac-arm64', 'Continuo.app', 'Contents', 'Resources');
+    mkdirSync(res, { recursive: true });
+    const asar = join(res, 'app.asar');
+    writeFileSync(asar, FAKE.github);
+    const t = Date.now() / 1000;
+    utimesSync(asar, t - 60, t - 60);
+    const fresh = [
+      'Continuo-9.9.9-arm64.dmg',
+      'Continuo-9.9.9-arm64-mac.zip',
+      'Continuo-9.9.9-arm64.dmg.blockmap',
+      'SHA256SUMS.txt',
+      'latest-mac.yml',
+    ];
+    for (const f of fresh) writeFileSync(join(dir, f), 'x');
+    const old = join(dir, 'Continuo-0.0.1-arm64.dmg');
+    writeFileSync(old, 'x');
+    utimesSync(old, t - 86400, t - 86400);
+    const r = run('--packaged', dir);
+    expect(r.code).toBe(1);
+    for (const f of fresh) expect(existsSync(join(dir, f)), f).toBe(false);
+    expect(existsSync(old)).toBe(true);
+    expect(existsSync(asar)).toBe(true);
+  });
+
+  it('未命中时不删除任何产物', () => {
+    const res = join(dir, 'mac-arm64', 'Continuo.app', 'Contents', 'Resources');
+    mkdirSync(res, { recursive: true });
+    writeFileSync(join(res, 'app.asar'), 'clean');
+    writeFileSync(join(dir, 'Continuo-9.9.9-arm64.dmg'), 'x');
+    expect(run('--packaged', dir).code).toBe(0);
+    expect(existsSync(join(dir, 'Continuo-9.9.9-arm64.dmg'))).toBe(true);
   });
 
   it('跨 8MiB 读块边界的 token 也能扫到', () => {
