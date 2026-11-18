@@ -346,7 +346,19 @@ export function execShell(
  * 漏接白名单成为协议处理器投放面。
  */
 export function isAllowedExternalUrl(url: string): boolean {
-  return startsWithAllowedExternalScheme(url);
+  return startsWithAllowedExternalScheme(url) && !hasControlChar(url);
+}
+
+// 安全:shell.openExternal 交 GURL 解析时按 URL 规范删掉 Tab / CR / LF,下游客户端对其它控制字符的处理也不可知。
+// 若放行,`mailto:x?att<TAB>ach=~/.ssh/id_rsa` 在 sanitizeExternalUrl 里键名是 `att\tach`(不删),交出后却成 attach。
+// 正常外链(Markdown 链接目标 / 终端链接 / Chromium 已规范化的 window.open URL)不含 C0 控制字符与 DEL,
+// 故所有 scheme 一律拒绝(fail-closed),不去猜下游的剥离规则。字符扫描,不走 RegExp(热路径约束同上)。
+function hasControlChar(url: string): boolean {
+  for (let i = 0; i < url.length; i++) {
+    const c = url.charCodeAt(i);
+    if (c <= 0x1f || c === 0x7f) return true;
+  }
+  return false;
 }
 
 // 安全 L4:mailto 的 attach / attachment 参数会让部分邮件客户端静默附加本地文件(Evolution CVE-2020-11879、
