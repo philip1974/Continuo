@@ -50,11 +50,11 @@ describe('agent 授权就绪握手 · preload 上报', () => {
 
 describe('agent 授权就绪握手 · main 接线', () => {
   it('READY 处理器校验受信 frame,按发送方所在窗口记为就绪(不信 renderer 自报的窗口)', () => {
-    const src = readFileSync(path.join(mainDir, 'ipc.ts'), 'utf8');
+    const src = readFileSync(path.join(mainDir, 'index.ts'), 'utf8');
     const start = src.indexOf('ipcMain.on(AGENT_AUTH_CHANNELS.READY');
     expect(start).toBeGreaterThanOrEqual(0);
     const body = src.slice(start, start + 400);
-    expect(body).toContain('trusted(event.senderFrame)');
+    expect(body).toContain('defaultIsTrustedFrame(event.senderFrame)');
     expect(body).toContain('BrowserWindow.fromWebContents(event.sender)');
     expect(body).toContain('markAgentAuthRendererReady(win.id)');
   });
