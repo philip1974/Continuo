@@ -66,23 +66,31 @@ interface ActiveStream {
   senderId: number;
 }
 
+/**
+ * active 表的 key:按 sender 隔离 streamId。streamId 由插件(renderer)自取,全局去重会让拿到 raw IPC 的调用方
+ * 抢先用别的窗口的同名 id,使其 START 失败(拒绝服务);事件本就只发给各自 sender,id 只需 sender 内唯一。
+ */
+function activeKey(senderId: number, streamId: string): string {
+  return `${senderId}:${streamId}`;
+}
+
 export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
   const active = new Map<string, ActiveStream>();
 
   // 单个 stream 的强制清理:清 timer + 从 active 摘除 + 终止进程树
   // (子进程吞掉 SIGTERM 时不至于挂到 timeout)。killStreamsForSender 与 ABORT 共用。
-  const forceKillStream = (streamId: string, handle: ActiveStream): void => {
+  const forceKillStream = (key: string, handle: ActiveStream): void => {
     if (handle.timeoutTimer) clearTimeout(handle.timeoutTimer);
-    active.delete(streamId);
+    active.delete(key);
     handle.terminate();
   };
 
   // 窗口/插件 webContents 销毁时,杀掉它名下所有未结束的 stream 子进程,
   // 否则插件不调 ABORT 直接 unload / 关窗会泄漏子进程直到 timeout(审计 P1)。
   const killStreamsForSender = (senderId: number): void => {
-    for (const [streamId, handle] of active) {
+    for (const [key, handle] of active) {
       if (handle.senderId !== senderId) continue;
-      forceKillStream(streamId, handle);
+      forceKillStream(key, handle);
     }
   };
   const attachWcGoneHook = makeWcGoneHook(killStreamsForSender);
@@ -113,7 +121,8 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       if (shuttingDown) {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'shell stream rejected: app is quitting');
       }
-      if (active.has(streamId)) {
+      const key = activeKey(event.sender.id, streamId);
+      if (active.has(key)) {
         throw new Error(`streamId already active: ${streamId}`);
       }
 
@@ -211,9 +220,9 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       ): void => {
         if (settled) return;
         settled = true;
-        const handle = active.get(streamId);
+        const handle = active.get(key);
         if (handle?.timeoutTimer) clearTimeout(handle.timeoutTimer);
-        active.delete(streamId);
+        active.delete(key);
         send('exit', { exitCode, signal });
       };
 
@@ -250,7 +259,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       }, timeoutMs);
       const maybeUnref = timeoutTimer as { unref?: () => void };
       if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
-      active.set(streamId, { terminate, timeoutTimer, senderId });
+      active.set(key, { terminate, timeoutTimer, senderId });
     },
   );
 
@@ -259,14 +268,15 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
     async (event, streamId: string) => {
       // 同 START 的 frame-trust 兜底(R8)。
       assertTrustedFrame(event);
-      const handle = active.get(streamId);
+      const key = activeKey(event.sender.id, streamId);
+      const handle = active.get(key);
       if (!handle) return;
       // 归属校验:只有发起该 stream 的 sender 能 abort 它,避免跨 sender 按 streamId
       // 终止别人的 stream(codex 复审 loop R8 次要项)。
       if (handle.senderId !== event.sender.id) return;
       // 审计 P2-A:旧实现只发 SIGTERM,不清 active 表也不升级 SIGKILL;子进程
       // 吞掉 SIGTERM 时会挂到 timeout(最长 30min)且 active 条目+timer 驻留。
-      forceKillStream(streamId, handle);
+      forceKillStream(key, handle);
     },
   );
 }

@@ -478,7 +478,7 @@ describe('agent-auth-service: pending lifecycle', () => {
 
     revokeAndKillAgentSessions(); // 撤销结算并删除 pending
     await expect(pending).resolves.toBe('denied');
-    expect(() => answerAgentAuthRequest(payload.requestId, 'session')).toThrow(
+    expect(() => answerAgentAuthRequest(payload.requestId, 'session', 1)).toThrow(
       expect.objectContaining({ code: 'AGENT_AUTH_REQUEST_NOT_PENDING' }),
     );
   });
@@ -488,8 +488,36 @@ describe('agent-auth-service: pending lifecycle', () => {
     electronMock.windows = [win];
     const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
     const payload = firstAuthPayload(win);
-    expect(() => answerAgentAuthRequest(payload.requestId, 'once')).not.toThrow();
+    expect(() => answerAgentAuthRequest(payload.requestId, 'once', 1)).not.toThrow();
     await expect(pending).resolves.toBe('once');
+  });
+
+  // T7d 安全:应答方须是收到该请求的窗口。别的窗口(或拿到 raw IPC 的调用方)猜/截到 requestId 也不能
+  // 替目标窗口放行;其应答被拒(抛 NOT_PENDING)且不消耗该请求,目标窗口之后仍可正常应答。
+  it('T7d: answerAgentAuthRequest 拒绝非目标窗口的应答,且不结算该请求', async () => {
+    const win1 = makeWin(1);
+    const win2 = makeWin(2);
+    electronMock.windows = [win1, win2];
+    const pending = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 });
+    const payload = firstAuthPayload(win1);
+    expect(() => answerAgentAuthRequest(payload.requestId, 'session', 2)).toThrow(
+      expect.objectContaining({ code: 'AGENT_AUTH_REQUEST_NOT_PENDING' }),
+    );
+    expect(() => answerAgentAuthRequest(payload.requestId, 'session', null)).toThrow(
+      expect.objectContaining({ code: 'AGENT_AUTH_REQUEST_NOT_PENDING' }),
+    );
+    expect(() => answerAgentAuthRequest(payload.requestId, 'denied', 1)).not.toThrow();
+    await expect(pending).resolves.toBe('denied');
+  });
+
+  it('T7e: ipc respond 接线以 IPC sender 所在窗口作为应答方窗口(不信 renderer 自报)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const src = readFileSync(join(process.cwd(), 'electron/main/ipc.ts'), 'utf8');
+    const start = src.indexOf('AGENT_AUTH_CHANNELS.RESPOND,');
+    const block = src.slice(start, src.indexOf('trusted,', start));
+    expect(block).toMatch(/BrowserWindow\.fromWebContents\(event\.sender\)\?\.id \?\? null/);
+    expect(block).toMatch(/answerAgentAuthRequest\(requestId, decision, senderWindowId\)/);
   });
 
   it('T8: resolving the same request twice only uses the first decision', async () => {

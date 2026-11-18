@@ -30,6 +30,9 @@ The spec uses local-only `vi.hoisted` mocks for Electron windows, terminal sessi
 
 T7b `answerAgentAuthRequest`(ipc respond 入口)对已不在等待的 `requestId`(撤销 / 超时 / 窗口关闭已结算并删除)抛 `AGENT_AUTH_REQUEST_NOT_PENDING`(renderer 收到 ok:false,据此不记 session 授权);
 T7c 对仍在等待的 `requestId` 正常结算、不抛。
+T7d 应答方窗口(IPC sender 所在窗口)必须是该请求的目标窗口;否则(别的窗口 / 无窗口)抛 `AGENT_AUTH_REQUEST_NOT_PENDING` 且不结算,
+目标窗口之后仍可正常应答 —— 防止拿到 raw IPC 的其它窗口替目标窗口放行授权。
+T7e ipc respond 接线用 `BrowserWindow.fromWebContents(event.sender)` 推断应答方窗口(源码钉)。
 
 T17 `cancelAllAgentAuth`(退出清理)把所有窗口的未决请求立即结算为 `'denied'` 并返回取消数;不发任何 IPC、不轮换 token
 (不是「撤销」语义)。before-quit 窗口已隐藏无人应答,否则挂在授权上的 MCP 调用会把 `mcpHost.close()` 拖到 5min 超时。

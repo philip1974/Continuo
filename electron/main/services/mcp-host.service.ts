@@ -564,6 +564,12 @@ export interface McpHostOptions {
   initialTools?: ReadonlyArray<AnyMcpTool>;
   /** 默认 {name:'continuo', version:'0.1.0', protocolVersion:'2024-11-05'}. */
   serverInfo?: Partial<ServerInfo>;
+  /**
+   * HTTP session(Mcp-Session-Id)被客户端 DELETE 结束或达上限被空闲驱逐时以其 callerSubject 回调。该身份此后再无人能用,
+   * 调用方据此回收它名下的 debug 会话 / 在途创建(同终端 token 吊销)。token 吊销 / 轮换不经此回调,
+   * 由吊销方按 callerSubjectsForToken / 全量回收自行处理。
+   */
+  onHttpSessionReleased?: (subject: string) => void;
 }
 
 const DEFAULT_SERVER_INFO: ServerInfo = {
@@ -696,12 +702,21 @@ function sendJson(res: ServerResponse, status: number, json: string): void {
 // (规范 2025-03-26 起:服务端在 initialize 响应下发,客户端 MUST 在后续请求回带):session id 随机生成、只在
 // 客户端内存(不进 env、不进日志),callerSubject = token + session id。未带该头的旧客户端保持 subject = token。
 const MCP_SESSION_ID_HEADER = 'Mcp-Session-Id';
-// 单 token / 全局 session 数上限:超限 initialize 回 429(不驱逐已有 session —— 驱逐会让持 token 的一方
-// 反复 initialize 把受害方 session 挤掉)。session 随 token 吊销 / 轮换 / DELETE 释放。
+// 单 token / 全局 session 数上限:超限 initialize 回 429。session 随 token 吊销 / 轮换 / DELETE 释放。
+// 不发 DELETE 的客户端(TS SDK close() 默认不 terminateSession)在同一终端反复启动会把名额耗尽 → 单 token
+// 达上限时只驱逐**空闲超过 HTTP_SESSION_IDLE_EVICT_MS 且无在途请求**的最旧 session;活跃 session 不驱逐
+// (否则持 token 的一方反复 initialize 即可把受害方 session 挤掉)。
 const MAX_HTTP_SESSIONS_PER_TOKEN = 64;
+const HTTP_SESSION_IDLE_EVICT_MS = 30 * 60_000;
 const MAX_HTTP_SESSIONS_GLOBAL = 4096;
 // 客户端回带的 session id 长度上限(generateToken 为 43 字符),超长不查表。
 const MAX_HTTP_SESSION_ID_LEN = 128;
+
+interface HttpSessionEntry {
+  readonly token: string;
+  lastUsed: number;
+  inFlight: number;
+}
 
 function httpSessionSubject(token: string, sessionId: string): string {
   return `${token}:${sessionId}`;
@@ -728,14 +743,43 @@ export async function createMcpHost(
 
   const windowTokens: Map<string, number> = new Map();
   // 安全(F1):Mcp-Session-Id → 签发它时的 bearer token。只认同 token 回带的 session id。
-  const httpSessions: Map<string, string> = new Map();
+  // lastUsed / inFlight 供达上限时驱逐空闲 session(见 HTTP_SESSION_IDLE_EVICT_MS)。
+  const httpSessions = new Map<string, HttpSessionEntry>();
   const sessionCountForToken = (token: string): number => {
     let n = 0;
-    for (const t of httpSessions.values()) if (t === token) n += 1;
+    for (const e of httpSessions.values()) if (e.token === token) n += 1;
     return n;
   };
   const dropSessionsWhere = (pred: (token: string) => boolean): void => {
-    for (const [sid, t] of [...httpSessions]) if (pred(t)) httpSessions.delete(sid);
+    for (const [sid, e] of [...httpSessions]) if (pred(e.token)) httpSessions.delete(sid);
+  };
+  /** 结束一个 session 并通知释放其 subject(DELETE / 空闲驱逐共用,确保都回收其名下资源)。 */
+  const releaseHttpSession = (sid: string): void => {
+    const entry = httpSessions.get(sid);
+    if (!entry) return;
+    httpSessions.delete(sid);
+    // 该 subject 此后作废:通知回收其 debug 会话 / 在途创建,否则它们再无人能 disconnect(名额被占满)。
+    try {
+      options.onHttpSessionReleased?.(httpSessionSubject(entry.token, sid));
+    } catch (err) {
+      console.warn('[mcp-host] onHttpSessionReleased threw', err);
+    }
+  };
+  /** 驱逐该 token 空闲超阈值且无在途请求的最旧 session;没有可驱逐的返回 false。 */
+  const evictIdleSessionForToken = (token: string): boolean => {
+    const cutoff = Date.now() - HTTP_SESSION_IDLE_EVICT_MS;
+    let victim: string | null = null;
+    let victimLastUsed = Infinity;
+    for (const [sid, e] of httpSessions) {
+      if (e.token !== token || e.inFlight > 0 || e.lastUsed > cutoff) continue;
+      if (e.lastUsed < victimLastUsed) {
+        victim = sid;
+        victimLastUsed = e.lastUsed;
+      }
+    }
+    if (victim === null) return false;
+    releaseHttpSession(victim);
+    return true;
   };
   /** 校验客户端回带的 session id 属于该 token;是则返回 subject,否则 null。 */
   const resolveHttpSubject = (
@@ -749,7 +793,7 @@ export async function createMcpHost(
     ) {
       return null;
     }
-    return httpSessions.get(header) === token ? httpSessionSubject(token, header) : null;
+    return httpSessions.get(header)?.token === token ? httpSessionSubject(token, header) : null;
   };
   // race(R76):SSE client 记 {windowId, token, keepalive},供 revokeToken/revokeWindowTokens
   // 精确关闭对应连接 + 清 keepalive interval(此前只是 Set<res>,定向 revoke 无法触达已建立的
@@ -855,10 +899,12 @@ export async function createMcpHost(
     // 不带 → 旧客户端,subject = token(行为不变)。verifyAndResolveCtx 的 callerSubject 即 token。
     const token = freshCtx.callerSubject ?? '';
     let callerSubject = token;
+    let session: HttpSessionEntry | undefined;
     if (rpc.method === 'initialize') {
       if (
         httpSessions.size >= MAX_HTTP_SESSIONS_GLOBAL ||
-        sessionCountForToken(token) >= MAX_HTTP_SESSIONS_PER_TOKEN
+        (sessionCountForToken(token) >= MAX_HTTP_SESSIONS_PER_TOKEN &&
+          !evictIdleSessionForToken(token))
       ) {
         sendJson(
           res,
@@ -868,7 +914,8 @@ export async function createMcpHost(
         return;
       }
       const sessionId = generateToken();
-      httpSessions.set(sessionId, token);
+      session = { token, lastUsed: Date.now(), inFlight: 0 };
+      httpSessions.set(sessionId, session);
       res.setHeader(MCP_SESSION_ID_HEADER, sessionId);
       callerSubject = httpSessionSubject(token, sessionId);
     } else if (req.headers['mcp-session-id'] !== undefined) {
@@ -882,6 +929,12 @@ export async function createMcpHost(
         return;
       }
       callerSubject = subject;
+      session = httpSessions.get(req.headers['mcp-session-id'] as string);
+    }
+    // 在途请求期间不可被空闲驱逐;开始 / 结束都刷新最后使用时间。
+    if (session) {
+      session.inFlight += 1;
+      session.lastUsed = Date.now();
     }
     const aborter = new AbortController();
     const onClose = (): void => aborter.abort();
@@ -898,6 +951,10 @@ export async function createMcpHost(
     } finally {
       req.off('close', onClose);
       res.off('close', onClose);
+      if (session) {
+        session.inFlight -= 1;
+        session.lastUsed = Date.now();
+      }
     }
   };
 
@@ -994,7 +1051,7 @@ export async function createMcpHost(
         res.end();
         return;
       }
-      httpSessions.delete(sid);
+      releaseHttpSession(sid);
       res.statusCode = 200;
       res.end();
       return;
@@ -1050,8 +1107,8 @@ export async function createMcpHost(
     },
     callerSubjectsForToken(token: string): string[] {
       const out = [token];
-      for (const [sid, t] of httpSessions) {
-        if (t === token) out.push(httpSessionSubject(token, sid));
+      for (const [sid, e] of httpSessions) {
+        if (e.token === token) out.push(httpSessionSubject(token, sid));
       }
       return out;
     },
@@ -1117,3 +1174,4 @@ export async function createMcpHost(
 
 // 安全(F1)测试用:单 token HTTP session 上限。
 export const MAX_HTTP_SESSIONS_PER_TOKEN_FOR_TEST = MAX_HTTP_SESSIONS_PER_TOKEN;
+export const HTTP_SESSION_IDLE_EVICT_MS_FOR_TEST = HTTP_SESSION_IDLE_EVICT_MS;
