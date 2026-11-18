@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getAgentAuthEpoch,
+  hasAnySessionGrant,
   useAgentAuthStore,
   _resetAgentAuthForTest,
 } from '../../stores/agent-auth.store';
@@ -480,12 +481,24 @@ describe('授权分调用方:external(未绑定终端)独立于窗口级授权',
     useAgentAuthStore.setState({
       externalSessionGranted: true,
       externalDebugSessionGranted: true,
-      externalPluginSessionGranted: true,
     });
     useAgentAuthStore.getState().revoke();
     const s = useAgentAuthStore.getState();
     expect(s.externalSessionGranted).toBe(false);
     expect(s.externalDebugSessionGranted).toBe(false);
-    expect(s.externalPluginSessionGranted).toBe(false);
+  });
+
+  // 纵深:main plugin-mcp-bridge 在授权前已拒绝外部客户端调插件工具;store 对该组合也直接拒,
+  // 不弹窗、不记任何授权(也就没有 external 插件域状态)。
+  it('external 调插件工具(plugin.*)→ 直接 denied,不弹窗,confirmSessionGrant 也不记授权', async () => {
+    await expect(
+      useAgentAuthStore.getState().ensure({ method: 'plugin.git.commit', external: true }),
+    ).resolves.toBe('denied');
+    expect(useAgentAuthStore.getState().pending).toBeNull();
+
+    useAgentAuthStore.getState().confirmSessionGrant('plugin.git.commit', getAgentAuthEpoch(), true);
+    const s = useAgentAuthStore.getState();
+    expect(hasAnySessionGrant(s)).toBe(false);
+    expect('externalPluginSessionGranted' in s).toBe(false);
   });
 });
