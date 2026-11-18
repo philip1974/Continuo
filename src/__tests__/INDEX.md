@@ -1120,6 +1120,11 @@
 
 - [`process-layering.spec.ts`](./process-layering/process-layering.spec.ts)
 
+## [prompt-untrusted-text(授权弹窗里对方可控的字段要可见化,不能冒充系统文案)](./prompt-untrusted-text/README.md)
+
+- [`tool-name-charset.spec.ts`](./prompt-untrusted-text/tool-name-charset.spec.ts)
+- [`untrusted-text.spec.tsx`](./prompt-untrusted-text/untrusted-text.spec.tsx)
+
 ## [protocol-url(co:// 路由)](./protocol-url/README.md)
 
 - [`protocol-url.spec.ts`](./protocol-url/protocol-url.spec.ts)
