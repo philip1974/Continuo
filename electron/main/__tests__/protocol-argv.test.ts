@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { extractProtocolUrl } from '../protocol-argv';
+import { extractProtocolUrl, registerDefaultProtocolClient } from '../protocol-argv';
 import { MAX_PROTOCOL_URL_LEN } from '../protocol-dispatch';
 
 describe('extractProtocolUrl — 从 argv 提取 co:// 深链(大小写无关)', () => {
@@ -100,5 +100,19 @@ describe('extractProtocolUrl — 从 argv 提取 co:// 深链(大小写无关)',
     const exact = scheme + 'a'.repeat(MAX_PROTOCOL_URL_LEN - scheme.length);
     expect(exact.length).toBe(MAX_PROTOCOL_URL_LEN);
     expect(extractProtocolUrl([exact], 'co')).toBe(exact);
+  });
+});
+
+describe('registerDefaultProtocolClient — 只有打包版注册为 co:// 系统默认处理者', () => {
+  it('打包版(非 defaultApp)注册协议', () => {
+    const app = { setAsDefaultProtocolClient: vi.fn(() => true) };
+    registerDefaultProtocolClient(app, 'co', { defaultApp: false });
+    expect(app.setAsDefaultProtocolClient).toHaveBeenCalledWith('co');
+  });
+
+  it('dev(defaultApp,如 pnpm dev 下的 Electron.app)不注册:否则 macOS 把 co:// 永久指向 Electron.app,打包版收不到深链', () => {
+    const app = { setAsDefaultProtocolClient: vi.fn(() => true) };
+    registerDefaultProtocolClient(app, 'co', { defaultApp: true });
+    expect(app.setAsDefaultProtocolClient).not.toHaveBeenCalled();
   });
 });

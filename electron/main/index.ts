@@ -36,7 +36,7 @@ import {
   isWithinStartupPathLimit,
   MAX_STARTUP_DIRS,
 } from './services/cli-args.service';
-import { extractProtocolUrl } from './protocol-argv';
+import { extractProtocolUrl, registerDefaultProtocolClient } from './protocol-argv';
 import {
   routeProtocolUrl,
   drainOnProtocolReady,
@@ -874,15 +874,7 @@ function dispatchProtocolUrl(url: string): void {
   });
 }
 
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
-      path.resolve(process.argv[1]!),
-    ]);
-  }
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
-}
+registerDefaultProtocolClient(app, PROTOCOL, { defaultApp: process.defaultApp === true });
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
