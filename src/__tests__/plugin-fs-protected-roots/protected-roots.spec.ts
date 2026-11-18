@@ -11,7 +11,7 @@ import { PLUGIN_FS_CHANNELS } from '../../../electron/shared/plugin-fs-channels'
 import { IdentityRegistry } from '../../../electron/main/services/identity-registry.service';
 import { PathScopeRegistry } from '../../../electron/main/services/path-scope-registry.service';
 import { ScopeRequestCorrelator } from '../../../electron/main/services/scope-request-correlator';
-import { registerPluginFsHandlers } from '../../../electron/main/services/plugin-fs.service';
+import { pluginFsIdentityEpoch, registerPluginFsHandlers } from '../../../electron/main/services/plugin-fs.service';
 import { readPermissions, writePermissions } from '../../../electron/main/services/plugins.service';
 import { StubIpcMain, makeFakeEvent } from '../sdk-contract/integration/make-stub-ipc';
 
@@ -43,6 +43,9 @@ let correlator: ScopeRequestCorrelator;
 let token: string;
 let event: ReturnType<typeof makeFakeEvent>;
 let permBefore: string;
+// 整套攻击回归跑在生产接线下:受保护根 inode 判定的身份缓存接到 plugin-fs 锁的代际上(见 identity-cache.spec.ts)。
+let identityCacheOff = false;
+const identityCache = { getEpoch: (): number | null => (identityCacheOff ? null : pluginFsIdentityEpoch()) };
 
 function call(channel: string, ...args: unknown[]): Promise<unknown> {
   return ipc.invokeWithEvent(event, channel, token, ...args);
@@ -65,6 +68,7 @@ async function expectDenied(p: Promise<unknown>): Promise<void> {
 }
 
 beforeEach(async () => {
+  identityCacheOff = false;
   root = await realpath(await mkdtemp(join(tmpdir(), 'protected-roots-')));
   home = join(root, 'home');
   appData = join(home, 'Library', 'Application Support');
@@ -101,7 +105,7 @@ beforeEach(async () => {
   event = makeFakeEvent({ id: 1, isDestroyed: () => false });
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
-  scopes = new PathScopeRegistry(identity, { protectedRoots: allRoots });
+  scopes = new PathScopeRegistry(identity, { protectedRoots: allRoots, identityCache });
   correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,
@@ -121,7 +125,7 @@ async function extraStack(
 ): Promise<(channel: string, ...args: unknown[]) => Promise<unknown>> {
   const stubIpc = new StubIpcMain();
   const identity = new IdentityRegistry();
-  const registry = new PathScopeRegistry(identity, { protectedRoots: allRoots, ...opts });
+  const registry = new PathScopeRegistry(identity, { protectedRoots: allRoots, identityCache, ...opts });
   const c = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
   extraCorrelators.push(c);
   registerPluginFsHandlers(stubIpc as never, {
@@ -199,6 +203,7 @@ describe('受保护根之内:所有入口一律拒绝,文件不变', () => {
     await expectDenied(call(C.STAT, userData));
     expect(await call(C.CHECK_PATH, permFile)).toBe(false);
     expect(await call(C.CHECK_PATH, userData)).toBe(false);
+    expect(await call(C.READ_FOR_EDITOR, permFile)).toMatchObject({ ok: false, code: 'SCOPE_ERROR' });
   });
 
   it('rm / rename / mkdir / cp(源与目标)/ atomicReplace', async () => {
@@ -815,12 +820,13 @@ describe('按 (dev, ino) 判定:路径字符串对不上、文件系统里却是
     expect(existsSync(appData)).toBe(true);
   });
 
-  it('开销:每次校验新增的 stat 有上限 —— 只看不动的操作 = 目标路径级数 + 受保护根写法数;会动整棵子树的操作再加根的各级上级;不新增 realpath / readdir', async () => {
+  it('开销(未命中身份缓存时):每次校验新增的 stat 有上限 —— 只看不动的操作 = 目标路径级数 + 受保护根写法数;会动整棵子树的操作再加根的各级上级;不新增 realpath / readdir', async () => {
     const levels = (p: string): string[] => {
       const out = [p];
       while (dirname(out[out.length - 1]!) !== out[out.length - 1]) out.push(dirname(out[out.length - 1]!));
       return out;
     };
+    identityCacheOff = true; // 本用例量的是冷开销(命中缓存后的次数见 identity-cache.spec.ts)
     const target = join(docs, 'a.txt');
     const rootForms = [...allRoots, join(home, 'reallib', 'App')]; // 词法形 + 构造时经链接的那条根的 realpath 形
     const statSpy = vi.spyOn(fsp, 'stat');

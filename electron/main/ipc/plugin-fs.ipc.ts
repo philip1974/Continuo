@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { IdentityRegistry } from '../services/identity-registry.service';
 import { PathScopeRegistry } from '../services/path-scope-registry.service';
-import { registerPluginFsHandlers } from '../services/plugin-fs.service';
+import { pluginFsIdentityEpoch, registerPluginFsHandlers } from '../services/plugin-fs.service';
 import {
   persistPluginPathScopesIfInstalled,
   readPluginPathScopes,
@@ -81,6 +81,8 @@ export function registerPluginFsIpc({
       resourcesPath: process.resourcesPath ?? '',
       platform: process.platform,
     }),
+    // 性能:受保护根 inode 判定的身份在两次 plugin-fs 变更(独占锁授予)之间复用。
+    identityCache: { getEpoch: pluginFsIdentityEpoch },
   });
   const correlator = new ScopeRequestCorrelator();
   activeCorrelator = correlator;

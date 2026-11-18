@@ -26,7 +26,7 @@ const coApiMocks = vi.hoisted(() => {
       readGitBlob: vi.fn().mockResolvedValue(new Uint8Array()),
       atomicReplaceWithinScope: vi.fn().mockResolvedValue(undefined),
       userHome: vi.fn().mockResolvedValue('/home/test'),
-      checkPath: vi.fn().mockResolvedValue(true),
+      readForEditor: vi.fn(async (_t: string, p: string) => ({ ok: true, canonicalPath: p, content: 'verified' })),
     },
     pluginShellStreamRaw: {
       execStream: vi.fn(() => ({
@@ -68,6 +68,7 @@ function makeCoApp(): CoApp {
     },
     editor: {
       openFile: vi.fn(async () => ({ ok: true, lineApplied: true })),
+      openVerifiedFile: vi.fn(async () => ({ ok: true, lineApplied: true })),
     },
     commands: {},
     panels: {},
@@ -203,12 +204,13 @@ describe('sdk-contract shape: ScopedApp permission and token contract', () => {
     await expect(
       granted.editor.openFile('/tmp/a.txt', { line: 2 }),
     ).resolves.toEqual({ ok: true, lineApplied: true });
-    expect(coApiMocks.pluginFsRaw.checkPath).toHaveBeenCalledWith(
+    expect(coApiMocks.pluginFsRaw.readForEditor).toHaveBeenCalledWith(
       'token-a',
       '/tmp/a.txt',
     );
-    expect(app.editor.openFile).toHaveBeenCalledWith('/tmp/a.txt', {
+    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/tmp/a.txt', 'verified', {
       line: 2,
     });
+    expect(app.editor.openFile).not.toHaveBeenCalled();
   });
 });

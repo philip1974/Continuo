@@ -52,8 +52,8 @@ export interface CoApp {
   /** Workspace state(v0.2.2):current window 的 workspace.root,plugins
    * 用于 project-scope features(skills/terminal/decorator default cwd). */
   readonly workspace: CoWorkspaceApi;
-  /** Editor control API(v0.2.3):open files and optionally jump to a line. */
-  readonly editor: CoEditorApi;
+  /** Editor control API(v0.2.3):open files and optionally jump to a line. 插件拿到的是只含 openFile 的 per-plugin 包装. */
+  readonly editor: CoHostEditorApi;
   /** Dock control API(v0.2.4):open or focus singleton plugin panels. */
   readonly dock: CoDockApi;
   /** Toast notification API(v0.2.4):show user-visible notifications. */
@@ -101,6 +101,19 @@ export type EditorOpenResult =
 export interface CoEditorApi {
   openFile(
     path: string,
+    opts?: EditorOpenOptions,
+  ): Promise<EditorOpenResult>;
+}
+
+/**
+ * 宿主内部的编辑器入口(不对插件暴露:CoPluginApp.editor 是 CoEditorApi)。
+ * openVerifiedFile:安全 —— 插件的 editor.openFile 由主进程在 plugin-fs 锁内完成「scope 校验 + 读取」
+ *(plugin-fs:read-for-editor),再用这份已校验内容在 canonicalPath 上开标签,不按插件给的路径另读一次。
+ */
+export interface CoHostEditorApi extends CoEditorApi {
+  openVerifiedFile(
+    canonicalPath: string,
+    content: string,
     opts?: EditorOpenOptions,
   ): Promise<EditorOpenResult>;
 }
@@ -342,7 +355,9 @@ export interface CoPluginApp
     | 'explorerDecorators'
     | 'editorActions'
     | 'explorerContextMenu'
+    | 'editor'
   > {
+  readonly editor: CoEditorApi;
   readonly panels: PluginPanelsApi;
   readonly commands: PluginCommandsApi;
   readonly statusBar: PluginStatusBarApi;

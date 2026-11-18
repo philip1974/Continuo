@@ -16,13 +16,15 @@ import {
 } from './scope-request-correlator';
 import { ScopeRequestThrottle, scopeThrottleKeys } from './scope-request-throttle';
 import {
+  PLUGIN_FS_EDITOR_READ_SCOPE_DENIED,
   ScopeError,
   ScopeRequestTimeoutError,
   type PathScope,
+  type PluginFsEditorRead,
 } from '../../shared/plugin-fs-contract';
 import { canonicalizeScopePath } from './path-resolve.helper';
 import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
-import { readFileFromHandle } from '../ipc/fs/read-file';
+import { readFileFromHandle, type ReadFileOptions } from '../ipc/fs/read-file';
 import { openForReadNonBlocking } from '../lib/read-fh-capped';
 import { createRwLock } from '../lib/rw-lock';
 import {
@@ -36,6 +38,7 @@ import {
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { fsError, isCaseOrNormalizationOnlyRename, mapNodeErrnoCode } from '../ipc/fs/path-utils';
 import { ERROR_CODES } from '../../shared/error-codes';
+import { errorMessage } from '../../shared/error-message';
 import { isSafePluginId } from './plugins.service';
 import {
   GIT_OFFLINE_ENV,
@@ -82,10 +85,82 @@ export const MAX_CP_ENTRIES = 100_000;
 // 取独占,只读类(readFile / listDir / stat / lstat / readGitBlob)取共享。全局一把而非每插件一把:
 // 不同插件的 scope 可重叠,可能合谋。
 // 约束:持锁期间不得等待用户交互、不得再调用需要这把锁的入口(不可重入,会死锁)—— requestScope / 注册 /
-// 注销不取锁;realpath / checkPath 在校验之后没有文件系统操作,也不取。
+// 注销不取锁(它们不调用 pathScopeRegistry.check)。realpath / checkPath 的处理器本身在校验之后不再做文件系统
+// 操作,取共享锁是因为 check 的身份缓存要求调用方持锁(见 pluginFsIdentityEpoch)。
+// 但这不等于「校验之后没有文件系统操作」:checkPath 只回答「此刻是否在 scope 内」,调用方拿这个布尔值再经别的
+// 通道按路径字符串读 / 写,就把「校验 → 操作」拆到了锁外(editor.openFile 曾如此:校验通过后并发换入链接,宿主
+// 按原路径读到 scope 外的文件)。需要「校验后操作」的调用方必须让主进程在同一次持锁内做完 —— 见 READ_FOR_EDITOR
+// 与 guardPluginOpenedPath。checkPath 目前在 renderer 没有调用方。
 // 残余:锁只管 plugin-fs 自己的调用。有 shell 权限的插件(可运行任意命令,本就等于完全访问)、用户自己的进程、
 // 其它应用对同一目录的并发改动不在此列。
 const fsLock = createRwLock();
+
+/**
+ * PathScopeRegistry 身份缓存的代际(见该处 IdentityCacheOptions):独占锁的累计授予次数;有独占持有者在运行时
+ * 返回 null(不缓存)。由 plugin-fs.ipc 注入 registry。
+ */
+export function pluginFsIdentityEpoch(): number | null {
+  return fsLock.isExclusiveHeld() ? null : fsLock.exclusiveGrants();
+}
+// 安全(插件打开的编辑器标签,之后的读 / 写):标签绑定的是打开时的 canonical 路径(不含任何链接),但宿主之后
+// 的保存、保存前比对、外部修改重载都经受信通道**按路径**进行。插件可在打开之后把路径上的某一级换成指向 scope
+// 外的链接:用户在标签里编辑并保存 → 内容落到 scope 外;未修改的标签被外部同步重载 → scope 外的文件显示在标签里。
+// 所以记下这些路径,宿主对它们的读 / 写在共享锁内先确认「路径仍是 canonical」(realpath 仍等于自身 —— 途中没有
+// 被换入链接),确认与操作在同一次持锁内。不比 (dev, ino):编辑器保存是「临时文件 + rename」,每次保存 inode
+// 都会变,正常的外部原子保存也一样;而越出 scope 必须经过链接,比 realpath 正好。
+// 数量有上限,按最近使用淘汰(被淘汰的路径不再受此保护:要淘汰一条需要再打开这么多个不同的文件)。
+const PLUGIN_OPENED_PATHS_MAX = 4096;
+const pluginOpenedPaths = new Set<string>();
+
+function pinPluginOpenedPath(canonical: string): void {
+  pluginOpenedPaths.delete(canonical); // 重新插入到末尾 = 最近使用
+  pluginOpenedPaths.add(canonical);
+  if (pluginOpenedPaths.size > PLUGIN_OPENED_PATHS_MAX) {
+    const oldest = pluginOpenedPaths.values().next().value;
+    if (oldest !== undefined) pluginOpenedPaths.delete(oldest);
+  }
+}
+
+/** 路径是否仍是 canonical。尚不存在(保存会重建)时:父目录仍 canonical,且叶子不是悬空链接。无法确认 → false。 */
+async function isStillCanonical(p: string): Promise<boolean> {
+  try {
+    return (await fs.realpath(p)) === p;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+  }
+  try {
+    if ((await lstatOrNull(p)) !== null) return false;
+    return join(await fs.realpath(dirname(p)), basename(p)) === p;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 宿主编辑器通道(fs:read-file / fs:write-file)对路径的读 / 写经此包一层:路径是插件经 editor.openFile 打开过的
+ * → 在共享锁内确认它仍是 canonical 再运行 task,否则以 FS_DENIED 拒绝;其它路径直接运行 task(不取锁、不多任何
+ * 文件系统调用)。task 不得再申请 plugin-fs 的锁。
+ */
+export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): Promise<T> {
+  if (!pluginOpenedPaths.has(path)) return task();
+  return fsLock.shared(async () => {
+    if (!(await isStillCanonical(path))) {
+      console.warn(`[plugin-fs] host editor access refused: plugin-opened path no longer canonical: ${path}`);
+      throw fsError(
+        ERROR_CODES.FS_DENIED,
+        `path now passes through a symbolic link that was not there when a plugin opened it: ${path}`,
+      );
+    }
+    pinPluginOpenedPath(path);
+    return task();
+  });
+}
+
+/** Test-only:清空「插件打开过的路径」记录。 */
+export function _resetPluginOpenedPathsForTest(): void {
+  pluginOpenedPaths.clear();
+}
+
 // 包装 handler:返回类型留给 ipcMain.handle 做上下文推断,handler 的参数类型标注保持原样。
 const shared =
   <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
@@ -357,7 +432,11 @@ async function lstatOrNull(target: string): Promise<Awaited<ReturnType<typeof fs
  * (重试,读到的是 scope 内的文件)。复核本身仍按路径,来回换多次的外部竞态者理论上仍可通过(见
  * plugin-fs-rw-lock/README 残余)。正常的并发原子保存(inode 换新)也会造成不一致,所以重试一次再拒绝。
  */
-async function readFileVerified(canonical: string, recheck: () => Promise<string>): Promise<string> {
+async function readFileVerified(
+  canonical: string,
+  recheck: () => Promise<string>,
+  opts: ReadFileOptions = {},
+): Promise<{ canonical: string; content: string }> {
   for (let attempt = 0; ; attempt++) {
     let fh: FileHandle;
     try {
@@ -368,7 +447,9 @@ async function readFileVerified(canonical: string, recheck: () => Promise<string
     try {
       const opened = await fh.stat({ bigint: true });
       const now = await fs.stat(await recheck(), { bigint: true });
-      if (opened.dev === now.dev && opened.ino === now.ino) return await readFileFromHandle(fh, canonical);
+      if (opened.dev === now.dev && opened.ino === now.ino) {
+        return { canonical, content: await readFileFromHandle(fh, canonical, opts) };
+      }
     } finally {
       await fh.close().catch(() => {});
     }
@@ -480,7 +561,32 @@ export function registerPluginFsHandlers(
       // 已授权插件可让主进程整块读入超大文件再经 IPC 回 renderer → 内存峰值/卡死。复用主
       // fs:read-file 的 readFile(E18:读前 stat.size,超 64MiB 抛 FS_FILE_TOO_LARGE +
       // 目录守卫 + errno 映射),单一来源,与 write-file 复用 atomicWriteFile(R4)同手法。
-      return readFileVerified(await recheck(), recheck);
+      return (await readFileVerified(await recheck(), recheck)).content;
+    }),
+  );
+
+  // editor.openFile(插件发起):校验与读取在同一次持锁内完成,返回已校验的内容与 canonical 路径;renderer 用
+  // 这份内容开标签。读取规则与编辑器自己的读取入口(fs:read-file)一致:64MiB 上限、非法 UTF-8 拒绝、非普通
+  // 文件拒绝。scope 拒绝 / FS_* 错误以结果对象返回(renderer 映射成 openFile 的结果码);身份错误照抛。
+  ipcMain.handle(
+    PLUGIN_FS_CHANNELS.READ_FOR_EDITOR,
+    shared(async (event, token: string, target: string): Promise<PluginFsEditorRead> => {
+      const recheck = async (): Promise<string> =>
+        (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
+      try {
+        const read = await readFileVerified(await recheck(), recheck, { requireUtf8: true });
+        pinPluginOpenedPath(read.canonical);
+        return { ok: true, canonicalPath: read.canonical, content: read.content };
+      } catch (err) {
+        if (err instanceof ScopeError) {
+          return { ok: false, code: PLUGIN_FS_EDITOR_READ_SCOPE_DENIED, message: 'path out of granted scope' };
+        }
+        const code = (err as { code?: unknown } | null)?.code;
+        if (typeof code === 'string' && code.startsWith('FS_')) {
+          return { ok: false, code, message: errorMessage(err) };
+        }
+        throw err;
+      }
     }),
   );
 
@@ -585,7 +691,7 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.REALPATH,
-    async (event, token: string, target: string) => {
+    shared(async (event, token: string, target: string) => {
       const r = await checkScope(
         token,
         event.sender.id,
@@ -593,8 +699,8 @@ export function registerPluginFsHandlers(
         target,
         'r',
       );
-      return canonicalPath(r); // 校验之后没有文件系统操作,不需要 fsLock
-    },
+      return canonicalPath(r);
+    }),
   );
 
   ipcMain.handle(
@@ -798,7 +904,7 @@ export function registerPluginFsHandlers(
   // (未知 token / 跨窗)仍 rethrow,保持 fail-loud。
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.CHECK_PATH,
-    async (event, token: string, target: string): Promise<boolean> => {
+    shared(async (event, token: string, target: string): Promise<boolean> => {
       try {
         await checkScope(token, event.sender.id, 'read', target, 'r');
         return true;
@@ -806,7 +912,7 @@ export function registerPluginFsHandlers(
         if (err instanceof ScopeError) return false;
         throw err;
       }
-    },
+    }),
   );
 
   ipcMain.handle(

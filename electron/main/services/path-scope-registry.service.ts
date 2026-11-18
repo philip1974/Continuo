@@ -133,6 +133,38 @@ interface ProtectedIds {
   pending: { parent: FileId; segments: string[] }[];
 }
 
+/**
+ * 身份缓存(性能):inode 判定要 stat 目标的每一级目录前缀与每条受保护根(及其上级链),次数随路径深度线性增长。
+ * 只经 SDK 的插件改动目录结构的唯一手段是 plugin-fs 的变更调用(独占锁),所以两次独占授予之间这些 (dev, ino)
+ * 对插件而言不变,可以复用。缓存的是「目录前缀」与「受保护根一侧」;目标自身(叶子)总是现查。
+ * 失效:代际变化(独占锁被授予过)、存活满 TTL(不经过锁的外部改动,见 README 残余)、条目超限 —— 都是整体丢弃。
+ */
+interface IdentityCache {
+  epoch: number;
+  bornAt: number;
+  /** 目录前缀(跟随链接的 stat)→ 身份。 */
+  dirs: Map<string, Promise<FileId | null>>;
+  /** protectedIds(false) / protectedIds(true) 的结果。 */
+  protectedIds: [Promise<ProtectedIds> | undefined, Promise<ProtectedIds> | undefined];
+}
+
+const IDENTITY_CACHE_TTL_MS = 250;
+const IDENTITY_CACHE_MAX_ENTRIES = 4096;
+
+export interface IdentityCacheOptions {
+  /**
+   * 当前代际:plugin-fs 全局读写锁的独占授予次数。返回 null = 此刻不可缓存(有独占持有者在运行 —— 它的校验
+   * 发生在自己的变更之前,留下的身份对之后的调用是旧的)。**调用 check 的一方须持有该锁**(共享或独占)。
+   */
+  getEpoch: () => number | null;
+  /** 缓存整体的最长存活时间(默认 250ms):不经过锁的外部改动最多被旧身份掩盖这么久。 */
+  ttlMs?: number;
+  /** 目录前缀条目数上限(默认 4096),超限整体清空。 */
+  maxEntries?: number;
+  /** 时钟(测试注入)。 */
+  now?: () => number;
+}
+
 // 目标是受保护根的**祖先**时也拒绝的操作:它们会连带删除 / 移走 / 复制整棵受保护子树。
 // 只读地看祖先(stat / listDir / lstat)与 mkdir(对已存在目录是 no-op)不在此列。
 const ANCESTOR_DENIED_OPS: ReadonlySet<ScopeOpType> = new Set<ScopeOpType>([
@@ -152,6 +184,8 @@ export interface PathScopeRegistryOptions {
   protectedRoots?: readonly string[];
   /** 找符号链接叶子的磁盘条目名时的目录扫描上限(默认 ON_DISK_NAME_SCAN_LIMIT;测试用小值)。 */
   onDiskNameScanLimit?: number;
+  /** inode 判定的身份缓存(由 plugin-fs.ipc 接到 plugin-fs 锁上);未注入 → 不缓存,每次校验现查。 */
+  identityCache?: IdentityCacheOptions;
 }
 
 function modeAllows(scope: PathScope, mode: ScopeMode): boolean {
@@ -203,6 +237,8 @@ export class PathScopeRegistry extends EventEmitter {
   /** 受保护根各写法(见 protectedRootForms)的「自身 + 各级上级」路径,由深到浅;按 (dev, ino) 判定时逐级 stat。 */
   private readonly protectedChains: readonly (readonly string[])[];
   private readonly onDiskNameScanLimit: number;
+  private readonly identityCacheOpts: IdentityCacheOptions | undefined;
+  private identityCache: IdentityCache | null = null;
 
   constructor(
     private readonly identityRegistry: IdentityRegistry,
@@ -213,6 +249,44 @@ export class PathScopeRegistry extends EventEmitter {
     this.protectedKeys = protectedRootKeys(forms);
     this.protectedChains = forms.map(prefixesOf);
     this.onDiskNameScanLimit = opts.onDiskNameScanLimit ?? ON_DISK_NAME_SCAN_LIMIT;
+    this.identityCacheOpts = opts.identityCache;
+  }
+
+  /** 本次校验可用的身份缓存;不可缓存(未注入 / 独占持有期间)→ null。代际变了、存活满 TTL、时钟回拨 → 换新的。 */
+  private currentIdentityCache(): IdentityCache | null {
+    const opts = this.identityCacheOpts;
+    const epoch = opts ? opts.getEpoch() : null;
+    if (!opts || epoch === null) return null;
+    const now = (opts.now ?? Date.now)();
+    const cur = this.identityCache;
+    const age = cur ? now - cur.bornAt : -1;
+    if (cur && cur.epoch === epoch && age >= 0 && age < (opts.ttlMs ?? IDENTITY_CACHE_TTL_MS)) return cur;
+    return (this.identityCache = { epoch, bornAt: now, dirs: new Map(), protectedIds: [undefined, undefined] });
+  }
+
+  /** 目录前缀的身份(跟随链接)。有缓存则同一代际内只 stat 一次。 */
+  private dirIdOf(p: string, cache: IdentityCache | null): Promise<FileId | null> {
+    const fresh = (): Promise<FileId | null> => fs.stat(p, { bigint: true }).then(fileIdOf, () => null);
+    if (!cache) return fresh();
+    let hit = cache.dirs.get(p);
+    if (!hit) {
+      if (cache.dirs.size >= (this.identityCacheOpts?.maxEntries ?? IDENTITY_CACHE_MAX_ENTRIES)) cache.dirs.clear();
+      hit = fresh();
+      cache.dirs.set(p, hit);
+    }
+    return hit;
+  }
+
+  /** protectedIds 的缓存入口(同一代际内每种 withUpper 只算一次)。 */
+  private protectedIdsVia(withUpper: boolean, cache: IdentityCache | null): Promise<ProtectedIds> {
+    if (!cache) return this.protectedIds(withUpper);
+    const slot = withUpper ? 1 : 0;
+    return (cache.protectedIds[slot] ??= this.protectedIds(withUpper));
+  }
+
+  /** Test-only:当前缓存的目录前缀条目数。 */
+  _identityCacheSizeForTest(): number {
+    return this.identityCache?.dirs.size ?? 0;
   }
 
   /**
@@ -337,11 +411,15 @@ export class PathScopeRegistry extends EventEmitter {
     if (this.protectedChains.length === 0) return null;
     const prefixes = prefixesOf(resolved);
     const ancestorOp = ANCESTOR_DENIED_OPS.has(opType);
+    const cache = this.currentIdentityCache();
     const [known, ids] = await Promise.all([
-      this.protectedIds(ancestorOp),
+      this.protectedIdsVia(ancestorOp, cache),
       Promise.all(
         prefixes.map((p, i) =>
-          (i === 0 && noFollowLeaf ? fs.lstat(p, { bigint: true }) : fs.stat(p, { bigint: true })).then(fileIdOf, () => null),
+          // 目标自身总是现查(不跟随叶子的操作取链接本身);各级上级目录走缓存。
+          i === 0
+            ? (noFollowLeaf ? fs.lstat(p, { bigint: true }) : fs.stat(p, { bigint: true })).then(fileIdOf, () => null)
+            : this.dirIdOf(p, cache),
         ),
       ),
     ]);
@@ -354,7 +432,7 @@ export class PathScopeRegistry extends EventEmitter {
         : null;
     }
     // 目标(或其若干级上级)尚不存在:要和「尚不存在的受保护根」比,需要上级链。
-    const protectedIds = ancestorOp ? known : await this.protectedIds(true);
+    const protectedIds = ancestorOp ? known : await this.protectedIdsVia(true, cache);
     const missing = prefixes.slice(0, nearest).reverse().map((p) => basename(p));
     const sameName = (a: string, b: string): boolean =>
       process.platform === 'linux' ? a === b : conservativeFold(a) === conservativeFold(b);

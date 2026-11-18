@@ -42,10 +42,14 @@ export async function readFile(filePath: string, opts: ReadFileOptions = {}): Pr
  * 同 readFile(同一上限与错误码),但经调用方已打开并校验过的 fd 读(plugin-fs:打开后复核身份再读,见
  * readFileVerified);不关闭 fd。非普通文件(含目录)→ FS_NOT_FILE。
  */
-export async function readFileFromHandle(fh: FileHandle, filePath: string): Promise<string> {
+export async function readFileFromHandle(
+  fh: FileHandle,
+  filePath: string,
+  opts: ReadFileOptions = {},
+): Promise<string> {
   let read: CappedFdRead;
   try {
-    read = await readCappedFromHandle(fh, filePath, MAX_READ_BYTES);
+    read = await readCappedFromHandle(fh, filePath, MAX_READ_BYTES, { requireUtf8: opts.requireUtf8 === true });
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `readFile failed: ${filePath}`);
   }

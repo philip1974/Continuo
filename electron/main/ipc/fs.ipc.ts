@@ -18,6 +18,7 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
+import { guardPluginOpenedPath } from '../services/plugin-fs.service';
 import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
@@ -166,6 +167,12 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
 // 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
 export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
   atomicWriteFile(input.path, input.content);
+// 安全:注册到 fs:read-file / fs:write-file 的是这两个包装 —— 路径是插件经 editor.openFile 打开过的标签时,
+// 读 / 写前在 plugin-fs 锁内确认路径没有被换入链接(见 guardPluginOpenedPath);其它路径原样直通。
+export const guardedReadFileHandler = (input: ReadFileInput): Promise<FsReadFileData> =>
+  guardPluginOpenedPath(input.path, () => readFileHandler(input));
+export const guardedWriteFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
+  guardPluginOpenedPath(input.path, () => writeFileHandler(input));
 // writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
 // 安全:唯一调用方是外部文件拖入 Explorer(新建 / 放入语义,同名静默覆盖)。不复用编辑器保存的
 // atomicWriteFile —— 它对 leaf 符号链接写穿到目标:恶意仓库放 `README.md -> ~/.ssh/authorized_keys`,
@@ -370,9 +377,9 @@ export function registerFsIpc(): void {
   const trusted = defaultIsTrustedFrame;
 
   safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler, trusted);
-  safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, readFileHandler, trusted);
+  safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, guardedReadFileHandler, trusted);
   safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler, trusted);
-  safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, writeFileHandler, trusted);
+  safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler, trusted);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler, trusted);
   safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler, trusted);
   safeHandle(FS_CHANNELS.REMOVE, removeInputSchema, removeHandler, trusted);
