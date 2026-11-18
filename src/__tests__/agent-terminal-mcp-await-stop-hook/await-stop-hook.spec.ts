@@ -517,10 +517,10 @@ describe('terminal.await_stop_hook', () => {
     await expect(first).resolves.toBeDefined();
   });
 
-  // 安全(S8):Stop 事件与会话精确绑定。旧实现按 (窗口, runner, cwd) 匹配:同窗口另一终端里的不受信
-  // 进程 create_session(agentLabel:'claude', cwd=受害会话目录)后对自己的会话 await_stop_hook,即可
-  // 截获受害 claude 会话的 Stop 事件(last_assistant_message / transcript_path,文件随后被删),或抢先
-  // 占 key 让受害方 ALREADY_PENDING。
+  // 正确性(S8):Stop 事件与会话精确绑定。旧实现按 (窗口, runner, cwd) 匹配:同窗口同 runner 同 cwd 的
+  // 另一会话 await_stop_hook 会拿走本会话的 Stop 事件(文件随后被删,本会话等待者超时),或互占 key 让
+  // 对方 ALREADY_PENDING。这是防事件串会话,不是安全边界(同用户进程可直接读 hook-events / transcript)。
+  // 用例中的 victim / attacker 只是两个会话的标签。
   it('S8 同窗口同 runner 同 cwd 的他会话等待者不能截获本会话的 Stop 事件', async () => {
     const doneDir = await makeDoneDir();
     // 可手动投递 watch 事件的 watcher:模拟「攻击者先挂等待,受害会话随后 Stop」的实时路径。

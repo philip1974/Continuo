@@ -64,12 +64,14 @@
 - `s1=cc` 与 `s2=codex` 两个 `await_stop_hook` 可并发等待。
 - runner 是 ambiguity guard 的区分维度。
 
-## S8 会话绑定(安全)
+## S8 会话绑定(防事件串会话的正确性约束)
 
 - 每个 PTY 注入 `CONTINUO_TERMINAL_SESSION_ID=<会话 id>`(内部值,调用方 env 不能覆盖);managed
   Stop hook 把它写进事件文件名第二段。
-- broker 只把事件交给**该会话**的等待者:同窗口、同 runner、同 cwd 的他会话等待者(例如同窗口
-  不受信进程 `create_session(agentLabel:'claude', cwd=受害目录)` 后 await 自己的会话)拿不到,
-  也不能抢先占位让受害方 `ALREADY_PENDING`。实时命中与缓冲命中两条路径都成立(S8 / S8a)。
-- 缺会话 id 的事件(旧版 hook 文件名、`unknown`、非 Continuo 会话)fail-closed,不当通配(S8b)。
+- broker 只把事件交给**该会话**的等待者:同窗口、同 runner、同 cwd 的他会话等待者拿不到(否则会拿走
+  本会话的事件、使本会话等待者超时),也不会占位让本会话 `ALREADY_PENDING`。实时命中与缓冲命中两条
+  路径都成立(S8 / S8a)。
+- 缺会话 id 的事件(旧版 hook 文件名、`unknown`、非 Continuo 会话)不当通配(S8b)。
+- **不是安全边界**:同用户进程可直接读 hook-events 目录与 transcript,也能伪造带任意会话 id 的事件
+  文件。本约束只保证合法并发会话之间不串事件;跨 OS 用户的隔离靠 hook-events 目录 0700 / 事件文件 0600。
 - 端到端:真实安装的 hook 命令在带该变量的环境中执行,写出的事件只交给对应会话(S8c)。

@@ -4,7 +4,8 @@
 //  - app-singleton broker (Continuo 端只一个实例,不是 per-call)
 //  - matched-only unlink (P0-3) + maxEntries=500 + maxAgeMs=600_000 stale cleanup (P1-1)
 //  - ambiguity guard (P0-1): 同 (windowId, runner, 终端会话) 第二 pending → AWAIT_STOP_HOOK_ALREADY_PENDING
-//  - 会话绑定:事件按文件名中的 CONTINUO_TERMINAL_SESSION_ID 精确交给该会话的等待者
+//  - 会话绑定:事件按文件名中的 CONTINUO_TERMINAL_SESSION_ID 精确交给该会话的等待者(防串会话的
+//    正确性约束,非安全边界:同用户进程可直接读 hook-events / transcript)
 //  - Codex hook filename 加 windowId (P0-4)
 //  - settings merge 不 parse TOML, block-level regex + marker-only path drift (P1-3)
 //  - raw default omit (P1-4) — broker 返回完整 payload, awaitStopHookTool.run() 仅 input.include_raw=true 时加 output
@@ -99,7 +100,8 @@ export const LAST_MSG_MAX = 64 * 1024; // last_assistant_message 正文上限
 const CODEX_STOP_HEADER = '[[hooks.Stop]]';
 const CODEX_MANAGED_MARKER = '# continuo-managed';
 const COMMAND_KEY = 'command';
-// 安全(会话绑定):PTY 注入的终端会话 id 环境变量名(terminal.service 注入,hook 命令写进文件名)。
+// 正确性(会话绑定,防事件串会话,非安全边界):PTY 注入的终端会话 id 环境变量名(terminal.service 注入,
+// hook 命令写进文件名)。
 // 已装的 managed hook 命令不含它 = 旧版(按 cwd 匹配时代),install 时原地升级。
 export const TERMINAL_SESSION_ENV = 'CONTINUO_TERMINAL_SESSION_ID';
 
@@ -343,7 +345,7 @@ function filterKey(filter: AwaitFilter): string {
 }
 
 /**
- * 安全(会话绑定):hook 文件名 `cc_<win>_<termSid>_<cliSid>_<ns>.jsonl` / `codex_<win>_<termSid>_<ns>.jsonl`
+ * 正确性(会话绑定):hook 文件名 `cc_<win>_<termSid>_<cliSid>_<ns>.jsonl` / `codex_<win>_<termSid>_<ns>.jsonl`
  * 的第二段是 PTY 注入的 CONTINUO_TERMINAL_SESSION_ID。缺段(旧 hook 格式 `codex_<win>_<ns>`)、空段、
  * `unknown`(变量未注入)→ null。旧 cc 格式第二段是 CLI session id,不会等于 Continuo 生成的 `term-<uuid>`。
  */
@@ -469,10 +471,11 @@ export function createHookFileBroker(
     // 故 null entry 一律不匹配。windowId 正是文件名里做窗口隔离的字段,不该被 null 旁路。
     // 见第十三轮 P2-AK。
     if (entry.windowId !== filter.windowId) return false;
-    // 安全(会话绑定):事件只交给写它的那个终端会话的等待者。旧实现按 (窗口, runner, cwd) 匹配,
-    // 同窗口他方 create_session(同 runner、同 cwd)后 await 自己的会话即可截获受害会话的
-    // last_assistant_message / transcript_path(文件随后被删),违反 per-session capability 边界。
-    // 无会话 id 的事件(旧 hook / 非 Continuo 会话)fail-closed,不当通配。
+    // 正确性(会话绑定):事件只交给写它的那个终端会话的等待者。旧实现按 (窗口, runner, cwd) 匹配,
+    // 同窗口同 runner 同 cwd 的两个会话会互相拿到对方的 Stop 事件(拿走后文件被删,本该收到的会话超时),
+    // 或互占 ALREADY_PENDING。注意这**不是安全边界**:同用户进程可直接读 hook-events 目录与 transcript,
+    // 也能伪造带任意会话 id 的事件文件;此处只防事件串会话。无会话 id 的事件(旧 hook / 非 Continuo 会话)
+    // 不当通配(否则仍会串)。
     if (entry.terminalSessionId === null || entry.terminalSessionId !== filter.sessionId) {
       return false;
     }
@@ -1048,7 +1051,7 @@ async function mergeClaudeCodeSettings(
   }
 
   if (legacy !== null) {
-    // 安全(会话绑定):旧命令写出的事件无会话 id,broker 不再交给任何等待者 → 必须升级,否则该项目的
+    // 正确性(会话绑定):旧命令写出的事件无会话 id,broker 不再交给任何等待者 → 必须升级,否则该项目的
     // await_stop_hook 永远超时。只改 command,保留该 hook 对象的其它字段与用户其它 Stop 项。
     const { entryIdx, hookIdx } = legacy;
     const entry = stopArr[entryIdx] as { hooks: unknown[] };
@@ -1105,7 +1108,7 @@ async function mergeCodexConfig(
   // 时吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)时从 marker 后直接扫描。
   const managedStop = findManagedCodexStopCommand(text);
   if (managedStop !== null) {
-    // 安全(会话绑定):managed command 不含会话 id 变量 = 旧版,同 hookEventsDir 漂移一样原地替换升级。
+    // 正确性(会话绑定):managed command 不含会话 id 变量 = 旧版,同 hookEventsDir 漂移一样原地替换升级。
     const managedCommand = text.slice(managedStop.quoteStart, managedStop.quoteEnd);
     if (text.includes(hookEventsDir) && managedCommand.includes(TERMINAL_SESSION_ENV)) {
       return { installed: false, reason: 'already-installed' };
