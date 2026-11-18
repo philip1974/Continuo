@@ -75,6 +75,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.TERMINAL_SESSION_DUPLICATE': '终端会话重复',
   'errors.TERMINAL_SESSION_NOT_FOUND': '终端会话不存在',
   'errors.TOO_MANY_STREAMS': '活动流过多',
+  'errors.TOO_MANY_WINDOWS': '打开的窗口过多',
   'errors.TOO_MANY_TERMINALS': '终端会话过多',
   'errors.WORKSPACE_NOT_ABSOLUTE': '工作区路径必须是绝对路径：{path}',
   'errors.WORKSPACE_NOT_DIRECTORY': '工作区不是一个目录：{workspace}',
@@ -90,6 +91,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.FS_FILE_TOO_LARGE': '文件过大,无法打开',
   'errors.FS_NOT_UTF8': '文件是二进制或非 UTF-8 编码,无法在文本编辑器中打开',
   'errors.FS_DIR_TOO_LARGE': '目录条目过多',
+  'errors.FS_BUSY': '进行中的文件操作过多,请稍后重试',
   'errors.FS_NOT_FOUND': '找不到文件：{path}',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────

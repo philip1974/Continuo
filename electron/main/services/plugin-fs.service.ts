@@ -27,6 +27,7 @@ import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 import { readFileFromHandle, type ReadFileOptions } from '../ipc/fs/read-file';
 import { openForReadNonBlocking } from '../lib/read-fh-capped';
 import { createRwLock } from '../lib/rw-lock';
+import { createSemaphore } from '../lib/dir-stat-gate';
 import {
   FS_PATH_MAX,
   FS_PATH_MAX_DEPTH,
@@ -108,16 +109,48 @@ export function pluginFsIdentityEpoch(): number | null {
 // 所以记下这些路径,宿主对它们的读 / 写在共享锁内先确认「路径仍是 canonical」(realpath 仍等于自身 —— 途中没有
 // 被换入链接),确认与操作在同一次持锁内。不比 (dev, ino):编辑器保存是「临时文件 + rename」,每次保存 inode
 // 都会变,正常的外部原子保存也一样;而越出 scope 必须经过链接,比 realpath 正好。
-// 数量有上限,按最近使用淘汰(被淘汰的路径不再受此保护:要淘汰一条需要再打开这么多个不同的文件)。
-const PLUGIN_OPENED_PATHS_MAX = 4096;
-const pluginOpenedPaths = new Set<string>();
+// 记录与标签生命周期绑定:每次成功的 read-for-editor 记一份(按发起窗口的 webContents 计数);renderer 用这份
+// 内容新建了标签 → 由该标签持有,标签关闭时经 plugin-fs:release-editor-path 释放;没有新建标签(已开着只切换 /
+// 打开失败 / 插件已吊销)→ 当即释放。窗口关闭 / renderer 重载时整窗释放(见 wc-gone 钩子)。
+// 数量有上限且**不淘汰**:满了以后新的 read-for-editor 以 FS_BUSY 拒绝,已有记录照常生效。此前按最近使用淘汰,
+// 插件再打开 4096 个别的文件就能把目标路径挤出记录、解除保护(审计 F2)。
+export const PLUGIN_OPENED_PATHS_MAX = 4096;
+/** canonical 路径 → (webContents id → 持有份数) */
+const pluginOpenedPaths = new Map<string, Map<number, number>>();
+let pluginOpenedRefs = 0;
 
-function pinPluginOpenedPath(canonical: string): void {
-  pluginOpenedPaths.delete(canonical); // 重新插入到末尾 = 最近使用
-  pluginOpenedPaths.add(canonical);
-  if (pluginOpenedPaths.size > PLUGIN_OPENED_PATHS_MAX) {
-    const oldest = pluginOpenedPaths.values().next().value;
-    if (oldest !== undefined) pluginOpenedPaths.delete(oldest);
+/** 记一份;记录已满 → false(不记)。 */
+function pinPluginOpenedPath(canonical: string, wcId: number): boolean {
+  if (pluginOpenedRefs >= PLUGIN_OPENED_PATHS_MAX) return false;
+  let holders = pluginOpenedPaths.get(canonical);
+  if (holders === undefined) {
+    holders = new Map();
+    pluginOpenedPaths.set(canonical, holders);
+  }
+  holders.set(wcId, (holders.get(wcId) ?? 0) + 1);
+  pluginOpenedRefs += 1;
+  return true;
+}
+
+/** 释放该窗口对该路径的一份(没有则 no-op)。 */
+function unpinPluginOpenedPath(canonical: string, wcId: number): void {
+  const holders = pluginOpenedPaths.get(canonical);
+  const n = holders?.get(wcId);
+  if (holders === undefined || n === undefined) return;
+  if (n > 1) holders.set(wcId, n - 1);
+  else holders.delete(wcId);
+  if (holders.size === 0) pluginOpenedPaths.delete(canonical);
+  pluginOpenedRefs -= 1;
+}
+
+/** 窗口关闭 / renderer 重载:该窗口的标签都已不在,释放它持有的全部记录。 */
+function unpinPluginOpenedPathsOf(wcId: number): void {
+  for (const [path, holders] of pluginOpenedPaths) {
+    const n = holders.get(wcId);
+    if (n === undefined) continue;
+    holders.delete(wcId);
+    pluginOpenedRefs -= n;
+    if (holders.size === 0) pluginOpenedPaths.delete(path);
   }
 }
 
@@ -151,7 +184,6 @@ export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): 
         `path now passes through a symbolic link that was not there when a plugin opened it: ${path}`,
       );
     }
-    pinPluginOpenedPath(path);
     return task();
   });
 }
@@ -159,7 +191,42 @@ export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): 
 /** Test-only:清空「插件打开过的路径」记录。 */
 export function _resetPluginOpenedPathsForTest(): void {
   pluginOpenedPaths.clear();
+  pluginOpenedRefs = 0;
 }
+
+/** Test-only:「插件打开过的路径」记录的总份数。 */
+export function _pluginOpenedPathRefsForTest(): number {
+  return pluginOpenedRefs;
+}
+
+// 边界(内存峰值):单次读取有上限(read-file / read-for-editor 64MiB、read-git-blob 64MB、list-dir 10 万条),但并发
+// 次数此前无限制 —— 插件 Promise.all 几十个大文件读取即可把主进程撑大数 GB(实测 96 × 30MB 文件 RSS +3.5GB)。
+// 这几个「单次可占大块内存」的入口共用一个全局闸:同时在途至多 PLUGIN_FS_HEAVY_READ_CONCURRENCY 个,其余按到达
+// 顺序排队;排队者只持有参数(路径),排队长度也有上限,超限立即以 FS_BUSY 拒绝。
+// 嵌套顺序:先取闸、后取 plugin-fs 读写锁的共享锁。反过来(持共享锁排队等闸)时,排队者都算共享持有者,独占写者
+// 要等整条队列读完才能开始;现在排队者不持锁,写者只需等至多 4 个在途读取。写者不取闸,不会互相等待成环。
+// 宿主自己的 fs:read-file(用户编辑器)不经此闸 —— 插件占满闸也不影响用户打开文件。
+// 其它入口:stat / lstat / realpath / check-path 的结果是常数大小;write-file / rename / cp / mkdir / rm /
+// atomicReplace 持独占锁,本就串行(cp 经 copyFile 在内核里复制,不进 JS 堆)。
+export const PLUGIN_FS_HEAVY_READ_CONCURRENCY = 4;
+export const PLUGIN_FS_HEAVY_READ_QUEUE_MAX = 1024;
+const heavyReadGate = createSemaphore(PLUGIN_FS_HEAVY_READ_CONCURRENCY);
+let heavyReadPending = 0; // 在途 + 排队
+
+function heavyRead<T>(task: () => Promise<T>): Promise<T> {
+  if (heavyReadPending >= PLUGIN_FS_HEAVY_READ_CONCURRENCY + PLUGIN_FS_HEAVY_READ_QUEUE_MAX) {
+    return Promise.reject(fsError(ERROR_CODES.FS_BUSY, 'too many plugin file reads in progress; try again later'));
+  }
+  heavyReadPending += 1;
+  return heavyReadGate.run(() => fsLock.shared(task)).finally(() => {
+    heavyReadPending -= 1;
+  });
+}
+
+const sharedHeavy =
+  <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+  (...args: A): Promise<R> =>
+    heavyRead(() => fn(...args));
 
 // 包装 handler:返回类型留给 ipcMain.handle 做上下文推断,handler 的参数类型标注保持原样。
 const shared =
@@ -512,6 +579,7 @@ export function registerPluginFsHandlers(
   const attachWcGoneHook = makeWcGoneHook((wcId) => {
     identityRegistry.revokeByWebContents(wcId);
     correlator.cancelBySender(wcId);
+    unpinPluginOpenedPathsOf(wcId);
   });
 
   ipcMain.handle(
@@ -554,7 +622,7 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.READ_FILE,
-    shared(async (event, token: string, target: string) => {
+    sharedHeavy(async (event, token: string, target: string) => {
       const recheck = async (): Promise<string> =>
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       // 边界(E28,E18 平行入口):scope 校验后直接 fs.readFile(.., 'utf-8') 无大小上限,
@@ -570,12 +638,19 @@ export function registerPluginFsHandlers(
   // 文件拒绝。scope 拒绝 / FS_* 错误以结果对象返回(renderer 映射成 openFile 的结果码);身份错误照抛。
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.READ_FOR_EDITOR,
-    shared(async (event, token: string, target: string): Promise<PluginFsEditorRead> => {
+    async (event, token: string, target: string): Promise<PluginFsEditorRead> => {
       const recheck = async (): Promise<string> =>
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       try {
-        const read = await readFileVerified(await recheck(), recheck, { requireUtf8: true });
-        pinPluginOpenedPath(read.canonical);
+        const read = await heavyRead(async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
+        if (!pinPluginOpenedPath(read.canonical, event.sender.id)) {
+          console.warn('[plugin-fs] read-for-editor refused: too many plugin-opened editor tabs');
+          return {
+            ok: false,
+            code: ERROR_CODES.FS_BUSY,
+            message: `too many files opened by plugins (max ${PLUGIN_OPENED_PATHS_MAX}); close some editor tabs`,
+          };
+        }
         return { ok: true, canonicalPath: read.canonical, content: read.content };
       } catch (err) {
         if (err instanceof ScopeError) {
@@ -587,8 +662,14 @@ export function registerPluginFsHandlers(
         }
         throw err;
       }
-    }),
+    },
   );
+
+  // 宿主编辑器释放 read-for-editor 记下的一份(标签关闭 / 未新建标签)。不取锁:只改内存记录。只释放发起窗口自己的。
+  ipcMain.handle(PLUGIN_FS_CHANNELS.RELEASE_EDITOR_PATH, (event, path: unknown) => {
+    if (typeof path !== 'string' || path.length > FS_PATH_MAX) return;
+    unpinPluginOpenedPath(path, event.sender.id);
+  });
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.WRITE_FILE,
@@ -629,7 +710,7 @@ export function registerPluginFsHandlers(
     }),
   );
 
-  ipcMain.handle(PLUGIN_FS_CHANNELS.LIST_DIR, shared(async (event, token: string, target: string) => {
+  ipcMain.handle(PLUGIN_FS_CHANNELS.LIST_DIR, sharedHeavy(async (event, token: string, target: string) => {
     const r = await checkScope(
       token,
       event.sender.id,
@@ -875,7 +956,7 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.READ_GIT_BLOB,
-    shared(async (event, token: string, repoDir: string, rawSha: string) => {
+    sharedHeavy(async (event, token: string, repoDir: string, rawSha: string) => {
       // 边界(E63):sha 进 git cat-file argv 前先校验固定 hex 形态 + 长度(挡超长 sha 触发 spawn
       // E2BIG / argv 内存放大;非 hex 也直接拒,绝不进 spawn)。只认完整 sha,不做唯一前缀解析。
       if (!isValidGitBlobSha(rawSha)) {

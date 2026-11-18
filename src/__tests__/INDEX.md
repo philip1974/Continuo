@@ -935,6 +935,7 @@
 ## [plugin-editor-open-verified(插件 `app.editor.openFile`:校验与读取在同一把锁内)](./plugin-editor-open-verified/README.md)
 
 - [`main-read-for-editor.spec.ts`](./plugin-editor-open-verified/main-read-for-editor.spec.ts)
+- [`plugin-opened-lifecycle.spec.ts`](./plugin-editor-open-verified/plugin-opened-lifecycle.spec.ts)
 - [`scoped-open-end-to-end.spec.ts`](./plugin-editor-open-verified/scoped-open-end-to-end.spec.ts)
 
 ## [plugin-fs-atomic-replace-trash(atomicReplace 的 trash 落点与清扫不出 scope、只动宿主自己的 trash)](./plugin-fs-atomic-replace-trash/README.md)
@@ -954,6 +955,7 @@
 
 ## [plugin-fs-read-cap (E28 + E29 + E30 + E31)](./plugin-fs-read-cap/README.md)
 
+- [`read-concurrency.spec.ts`](./plugin-fs-read-cap/read-concurrency.spec.ts)
 - [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)
 
 ## [plugin-fs-rw-lock(plugin-fs 调用之间的读写锁:插件不能在另一次调用的「校验 → 操作」之间改目录结构)](./plugin-fs-rw-lock/README.md)
@@ -1187,6 +1189,7 @@
 
 - [`contribution-ownership.spec.ts`](./scoped-app/contribution-ownership.spec.ts)
 - [`facade-surface.spec.ts`](./scoped-app/facade-surface.spec.ts)
+- [`host-command-rate-limit.spec.ts`](./scoped-app/host-command-rate-limit.spec.ts)
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
@@ -1521,6 +1524,7 @@
 
 ## [window-ipc-create](./window-ipc-create/README.md)
 
+- [`window-count-cap.spec.ts`](./window-ipc-create/window-count-cap.spec.ts)
 - [`window-create-handler.spec.ts`](./window-ipc-create/window-create-handler.spec.ts)
 
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)

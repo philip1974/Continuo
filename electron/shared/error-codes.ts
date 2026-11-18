@@ -54,6 +54,8 @@ const MAIN_ERROR_CODES = {
   TERMINAL_WRITE_FAILED: 'TERMINAL_WRITE_FAILED',
   // 边界(E230,E227/E228/E229 数量上限族):并发 active 资源(流式 shell 子进程)超全局/per-sender 上限。
   TOO_MANY_STREAMS: 'TOO_MANY_STREAMS',
+  // 边界(数量上限):renderer 发起的新建窗口超全局主窗口数上限(防插件循环执行 window.new 指数开窗)。
+  TOO_MANY_WINDOWS: 'TOO_MANY_WINDOWS',
   WORKSPACE_NOT_ABSOLUTE: 'WORKSPACE_NOT_ABSOLUTE',
   WORKSPACE_NOT_DIRECTORY: 'WORKSPACE_NOT_DIRECTORY',
   WORKSPACE_NOT_FOUND: 'WORKSPACE_NOT_FOUND',
@@ -73,6 +75,8 @@ export const FS_ERROR_CODES = {
   FS_NOT_UTF8: 'FS_NOT_UTF8',
   // 边界(E30):目录条目数超硬上限(防超大目录一次性构造数组 + IPC 全量返回卡死)。
   FS_DIR_TOO_LARGE: 'FS_DIR_TOO_LARGE',
+  // 边界(内存峰值):插件 fs 的大块读取(read-file / list-dir / 仓库对象读取 / editor.openFile)全局并发闸排队已满。
+  FS_BUSY: 'FS_BUSY',
 } as const;
 
 export const ERROR_CODES = {
