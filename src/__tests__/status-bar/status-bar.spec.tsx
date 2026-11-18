@@ -32,6 +32,9 @@ import { _resetAgentAuthForTest, useAgentAuthStore } from '../../stores/agent-au
 import { coApp } from '../../plugins/co-app';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import { notify } from '../../notifications/notify';
+import { en } from '../../../electron/shared/i18n-locales/en';
+import { zh } from '../../../electron/shared/i18n-locales/zh';
+import { ko } from '../../../electron/shared/i18n-locales/ko';
 
 interface FakeApi {
   mcp?: { getStdioConfig: ReturnType<typeof vi.fn> };
@@ -577,6 +580,17 @@ describe('StatusBar — agent 撤销', () => {
       expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
       expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
     });
+  });
+
+  // 撤销同时清终端 / 调试 / 插件工具三个域(agent-auth.store revoke),文案须如实列出插件工具域,
+  // 否则用户以为插件工具授权(可 git stage/commit 等)未被撤销。
+  it.each([
+    ['en', en, /plugin tool/i],
+    ['zh', zh, /插件工具/],
+    ['ko', ko, /플러그인 도구/],
+  ] as const)('%s:无会话撤销确认 / 撤销入口提示 文案包含插件工具域', (_l, dict, re) => {
+    expect(dict['permissions.revoke_all.confirm_grant_only']).toMatch(re);
+    expect(dict['statusbar.agent_revoke_grant_tooltip']).toMatch(re);
   });
 
   it('既无 agent 会话也无任何授权 → 不显示撤销入口', () => {
