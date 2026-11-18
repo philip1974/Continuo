@@ -52,3 +52,23 @@ permission 是持 pluginId 的闭包。permission.check / granted 真读 store�
 - `code = 'PERMISSION_DENIED'`(常量字面)
 - `permission: PermissionKey` 暴露被拒的具体权限
 - 默认 message `Permission denied: X`(i18n I11 改英文),可覆盖
+
+### 贡献点 key 的所有权(`contribution-ownership.spec.ts`)
+
+keyed 注册表(`panels`(key = `type`)/ `commands` / `statusBar` / `ribbon` / `settingTabs` / `settingItems` /
+`editorActions` / `explorerContextMenu`(key = `id`))本身是同 key「后注册赢」。零权限插件据此可注册
+settingTab `core.plugins`(替换插件与权限管理页)、panel `settings` / `terminal`(接管面板)、command
+`terminal.new`(劫持内置命令与快捷键)。经 scoped app 注册时:
+
+- key 已存在且**不是本插件注册的**(宿主直接注册 / 内置插件 / 其它插件)→ 抛 `code: 'PERMISSION_DENIED'`,
+  不入表,原条目不变;被拒的插件停用时也不会删掉原条目
+- 同一插件重复注册自己的 key(含重载后的新实例)→ 仍是后注册赢
+- 所有者注销后,该 key 可被其它插件注册
+- 所有者标识区分「宿主自建的 scoped app(内置插件,不带 plugin-fs token)」与「PluginManager 激活的第三方插件」:
+  第三方插件把 manifest id 起成 `core.plugins` 也不能覆盖内置条目
+- 宿主自身代码直接在注册表上注册(不经 scoped app)不受影响:后注册赢语义不变
+
+### events.clear 只清本插件的订阅
+
+- 总线的 `clear()` / `clear(name)` 会清掉宿主与其它插件的订阅;scoped app 的 `events.clear` 只退订本插件经
+  `events.on` 订阅的(无参 = 本插件全部,带 name = 本插件在该事件上的)

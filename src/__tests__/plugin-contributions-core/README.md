@@ -19,7 +19,7 @@
 
 - `register(spec)` 返回 `Disposable`,dispose 后 `getAll()` 不含该项
 - `subscribe(listener)` 在注册 / 取消时触发,返回 unsub
-- 重复 id:**后注册赢**(覆盖前者),旧的隐式 dispose,warn 提示
+- 重复 id:**后注册赢**(覆盖前者),旧的隐式 dispose,warn 提示(注册表自身语义;插件经 scoped app 注册时不能覆盖非本插件的 key,见 scoped-app README)
 - `getAll()` 返回 readonly 快照
 
 ### PanelRegistry 特有

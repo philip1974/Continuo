@@ -14,7 +14,8 @@
 // 不阻断:fs 读、dataStore(插件自有数据,onunload 常用 saveData)、permission 查询、userHome。
 // 贡献点注册表 / events:吊销后 register / on / subscribe 拒绝,吊销前经 scoped app 直接注册的贡献与订阅在
 // revoke() 时统一注销(见 trackContributions);commands.execute / events.emit / events.clear 有外部副作用
-//(执行宿主命令可开窗口 / 终端,emit 触发他人监听,clear 清他人订阅),同样拒绝;只放行只读查询与 events.off。
+//(执行宿主命令可开窗口 / 终端,emit 触发他人监听),同样拒绝;只放行只读查询与 events.off。
+// 所有权:register 不能覆盖非本插件注册的 key(见 contributionOwners);events.clear 只清本插件自己的订阅。
 // 经 app.mcp.register 注册的工具同样在 revoke() 时注销(插件未保存 Disposable 也不残留)。
 // 只读查询结果是浅拷贝,其中回调包吊销检查(缓存 commands.get(..).fn 停用后调用同样被拒)。
 // 见 src/__tests__/plugin-capability-revoke/。
@@ -794,13 +795,29 @@ const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
  * - 其余成员(commands.execute / events.emit / events.clear ...)有外部副作用:已吊销 → 拒绝
  *   (execute 返回 reject 的 Promise,其余同步抛 PERMISSION_DENIED),未吊销照常直通。
  */
+/**
+ * 安全(零权限插件覆盖宿主贡献点):keyed 注册表同 key「后注册赢」,插件注册 settingTab `core.plugins`、panel
+ * `settings` / `terminal`、command `terminal.new` 即可替换权限管理页、接管面板、劫持内置命令与快捷键。
+ * 这里按注册表里**当前存活的 spec 对象**记录它由谁注册(弱引用:条目被注销 / 被宿主覆盖后记录自然失效);
+ * 没有记录 = 宿主自身代码直接在注册表上注册的。scoped app 的 register 遇到已存在且所有者不是自己的 key 即拒绝。
+ * 注册表本身(宿主代码直接调用)的「后注册赢」语义不变。
+ */
+const contributionOwners = new WeakMap<object, string>();
+
 function trackContributions<T extends object>(
   pluginId: string,
   name: string,
   target: T,
   life: ScopedLifecycle,
   owned: Set<() => void>,
+  /** 该注册表的 key 字段与所有者标识(见 contributionOwners);events / explorerDecorators 无 key,不传。 */
+  keyed?: { readonly field: 'id' | 'type'; readonly owner: string },
 ): T {
+  const liveSpec = (key: unknown): object | undefined => {
+    if (typeof key !== 'string') return undefined; // 非法 key 交给注册表自身的 spec 校验报错
+    const spec: unknown = (target as { get?: (k: string) => unknown }).get?.(key);
+    return typeof spec === 'object' && spec !== null ? spec : undefined;
+  };
   // 按原函数缓存包装(引用稳定;原实例上的方法被替换,如测试 spy,则重新包装)。
   const methods = new WeakMap<object, unknown>();
   // 终审 P1(缓存查询结果里的回调绕过吊销):查询结果(spec / spec 数组 / 回调数组)按原引用缓存其包装 ——
@@ -874,6 +891,18 @@ function trackContributions<T extends object>(
           };
         } else if (PASSTHROUGH_METHODS.has(prop)) {
           method = (...args: unknown[]) => guardResult(fn.apply(t, args));
+        } else if (prop === 'clear' && name === 'events') {
+          // 安全:总线的 clear() 清空全部订阅、clear(name) 清空该事件的全部订阅(含宿主与其它插件的)。
+          // 插件只能清自己经本 scoped app 订阅的:逐个走退订句柄(与 dispose / off 同一路径)。
+          method = (...args: unknown[]) => {
+            assertLiveUi(pluginId, capability, life);
+            const eventNames = args[0] === undefined ? [...subscriptions.keys()] : [args[0]];
+            for (const eventName of eventNames) {
+              for (const releases of [...(subscriptions.get(eventName)?.values() ?? [])]) {
+                for (const release of [...releases]) release();
+              }
+            }
+          };
         } else if (!CONTRIBUTION_METHODS.has(prop)) {
           method = (...args: unknown[]) => {
             if (life.revoked && ASYNC_METHODS.has(prop)) {
@@ -887,7 +916,20 @@ function trackContributions<T extends object>(
         } else {
           method = (...args: unknown[]) => {
             assertLiveUi(pluginId, capability, life);
+            const key: unknown =
+              keyed !== undefined && prop === 'register'
+                ? (args[0] as Record<string, unknown> | null | undefined)?.[keyed.field]
+                : undefined;
+            const existing = liveSpec(key);
+            if (keyed !== undefined && existing !== undefined && contributionOwners.get(existing) !== keyed.owner) {
+              throw codedError(
+                'PERMISSION_DENIED',
+                `[${name}] ${keyed.field} "${String(key).slice(0, 128)}" is already registered by the host or another plugin; plugin ${pluginId} cannot override it`,
+              );
+            }
             const handle = fn.apply(t, args) as Disposable | (() => void);
+            const registered = liveSpec(key);
+            if (keyed !== undefined && registered !== undefined) contributionOwners.set(registered, keyed.owner);
             let released = false;
             const release = (): void => {
               if (released) return;
@@ -1002,8 +1044,19 @@ export function createScopedAppController(
   const life: ScopedLifecycle = { revoked: false, inflightFetches: new Set() };
   // 本实例经共享注册表 / 事件总线登记的贡献与订阅(revoke 时统一注销)。
   const owned = new Set<() => void>();
-  const track = <T extends object>(name: string, target: T): T =>
-    trackContributions(pluginId, name, target, life, owned);
+  // 贡献点 key 的所有者标识(见 contributionOwners)。PluginManager 激活第三方插件总是带 plugin-fs token;不带 token 的
+  // 是宿主自建的 scoped app(内置插件)。二者分属不同命名空间 —— 第三方插件把 manifest id 起成内置插件的 id
+  //(如 `core.plugins`)也不算内置条目的所有者。同一插件重载后的新实例标识不变,可覆盖自己的旧条目。
+  const owner = `${token === undefined ? 'core' : 'plugin'}:${pluginId}`;
+  const track = <T extends object>(name: string, target: T, keyField?: 'id' | 'type'): T =>
+    trackContributions(
+      pluginId,
+      name,
+      target,
+      life,
+      owned,
+      keyField === undefined ? undefined : { field: keyField, owner },
+    );
   // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers;贡献点注册表 / events 逐个
   // 包 trackContributions;其余(version / workspace,只读)直通。
   const { mcp: registry, editor, dock, notifications, dataStore, ...rest } =
@@ -1011,16 +1064,16 @@ export function createScopedAppController(
   const mcp = makeMcp(pluginId, store, registry, life);
   const app: CoPluginApp = {
     ...rest,
-    panels: track('panels', coApp.panels),
-    commands: track('commands', coApp.commands),
-    statusBar: track('statusBar', coApp.statusBar),
-    ribbon: track('ribbon', coApp.ribbon),
+    panels: track('panels', coApp.panels, 'type'),
+    commands: track('commands', coApp.commands, 'id'),
+    statusBar: track('statusBar', coApp.statusBar, 'id'),
+    ribbon: track('ribbon', coApp.ribbon, 'id'),
     events: track('events', coApp.events),
-    settingTabs: track('settingTabs', coApp.settingTabs),
-    settingItems: track('settingItems', coApp.settingItems),
+    settingTabs: track('settingTabs', coApp.settingTabs, 'id'),
+    settingItems: track('settingItems', coApp.settingItems, 'id'),
     explorerDecorators: track('explorerDecorators', coApp.explorerDecorators),
-    editorActions: track('editorActions', coApp.editorActions),
-    explorerContextMenu: track('explorerContextMenu', coApp.explorerContextMenu),
+    editorActions: track('editorActions', coApp.editorActions, 'id'),
+    explorerContextMenu: track('explorerContextMenu', coApp.explorerContextMenu, 'id'),
     dataStore: makeDataStore(pluginId, dataStore),
     editor: makeEditor(pluginId, store, editor, life, token),
     dock: makeDock(pluginId, dock, life),
