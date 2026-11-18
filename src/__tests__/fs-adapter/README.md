@@ -34,6 +34,9 @@
 - utf-8 字符串
 - 不存在 → 抛 `FS_NOT_FOUND`
 - 是目录 → 抛 `FS_NOT_FILE`
+- 是 FIFO / socket / 设备,或符号链接指向它们 → **迅速**抛 `FS_NOT_FILE`:open 带 `O_NONBLOCK`(FIFO 无写端时
+  阻塞 open 永不返回,会占满 libuv 线程池让主进程所有 fs.promises 挂死),open 后 fstat 非普通文件即拒
+  (`read-file-fifo.spec.ts`;同族:插件列举 main 可用性探测同样不挂死)
 
 ### atomicWriteFile(absPath, content) — ADR-009
 执行顺序:

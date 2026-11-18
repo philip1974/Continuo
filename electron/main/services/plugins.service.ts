@@ -32,7 +32,7 @@ import { killWithGrace } from '../lib/kill-with-grace';
 import { resolveSpawnCommand, withGitHardeningEnv } from '../lib/child-spawn-hardening';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
-import { readFileCappedFd } from '../lib/read-fh-capped';
+import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped';
 import { runSerialPerKey } from './serialize-per-key';
 import { parseManifest } from '../../shared/plugin-manifest';
 
@@ -391,7 +391,8 @@ async function isPluginMainAvailable(dir: string, manifestText: string): Promise
   if (!mainPath) return false;
   let fh: import('node:fs/promises').FileHandle;
   try {
-    fh = await fs.open(mainPath, 'r');
+    // O_NONBLOCK:main 若是 FIFO(或指向 FIFO 的链接),阻塞 open 会永久占住 libuv 线程池线程。
+    fh = await openForReadNonBlocking(mainPath);
   } catch {
     return false;
   }

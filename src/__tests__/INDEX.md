@@ -635,6 +635,7 @@
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
 - [`list-dir-without-stats.spec.ts`](./fs-adapter/list-dir-without-stats.spec.ts)
+- [`read-file-fifo.spec.ts`](./fs-adapter/read-file-fifo.spec.ts)
 
 ## [fs-dir-changed-payload-guard (E173)](./fs-dir-changed-payload-guard/README.md)
 
