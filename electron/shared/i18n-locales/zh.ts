@@ -505,15 +505,15 @@ export const zh: Record<TranslationKey, string> = {
 
   // permissions.* perm labels
   'permissions.perm.fs.title': '文件系统',
-  'permissions.perm.fs.desc': '读写本地文件夹与文件',
+  'permissions.perm.fs.desc': '读写你批准的文件夹内的文件(按文件夹另行询问)',
   'permissions.perm.network.title': '网络访问',
-  'permissions.perm.network.desc': '发起 HTTP / WebSocket 等远程请求',
+  'permissions.perm.network.desc': '向任意 https 地址发请求,包括本机(localhost)与内网服务',
   'permissions.perm.shell.title': '执行 shell 命令',
-  'permissions.perm.shell.desc': '调用本机 shell / 子进程',
+  'permissions.perm.shell.desc': '以你的身份运行任意程序;不受文件夹授权限制,等同于完全访问本机文件与网络',
   'permissions.perm.clipboard.title': '剪贴板',
   'permissions.perm.clipboard.desc': '读写系统剪贴板',
   'permissions.perm.mcp_tools.title': '注册 MCP 工具',
-  'permissions.perm.mcp_tools.desc': '把 plugin 自定义工具暴露给 Agent / Claude Code 等 MCP client 调用',
+  'permissions.perm.mcp_tools.desc': '注册工具:名称与描述会展示给 AI Agent(Claude Code 等 MCP 客户端),并可被其调用',
 
   // permissions prompt UI
   'permissions.prompt.title': '权限请求',

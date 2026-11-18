@@ -535,15 +535,18 @@ export const en = {
 
   // permissions.* perm labels (topic-21)
   'permissions.perm.fs.title': 'File system',
-  'permissions.perm.fs.desc': 'Read/write local folders and files',
+  'permissions.perm.fs.desc': 'Read and write files in the folders you approve (asked per folder)',
   'permissions.perm.network.title': 'Network access',
-  'permissions.perm.network.desc': 'Initiate HTTP / WebSocket and other remote requests',
+  'permissions.perm.network.desc':
+    'Send requests to any https address, including services on this computer (localhost) and your local network',
   'permissions.perm.shell.title': 'Run shell commands',
-  'permissions.perm.shell.desc': 'Invoke local shell / subprocess',
+  'permissions.perm.shell.desc':
+    'Run any program as you. Not limited by folder access — equivalent to full access to your files and network',
   'permissions.perm.clipboard.title': 'Clipboard',
   'permissions.perm.clipboard.desc': 'Read/write system clipboard',
   'permissions.perm.mcp_tools.title': 'Register MCP tools',
-  'permissions.perm.mcp_tools.desc': 'Expose plugin custom tools to Agents / Claude Code and other MCP clients',
+  'permissions.perm.mcp_tools.desc':
+    'Register tools whose names and descriptions are shown to AI agents (Claude Code and other MCP clients), which can call them',
 
   // permissions prompt UI
   'permissions.prompt.title': 'Permission request',
