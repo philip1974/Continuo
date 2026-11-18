@@ -37,6 +37,13 @@ export interface AgentAuthRequestPayload {
  */
 export const AGENT_AUTH_PROMPT_TIMEOUT_MS = 2 * 60 * 1000;
 
+/**
+ * 无应答超时从请求**开始显示**起算(renderer 同一时刻只显示一个弹窗,排在后面的请求不提前耗掉自己的 2 分钟)。
+ * 排队总时长兜底:排队这么久仍没轮到显示(前面的弹窗一直轮不完,如 renderer 无响应时已授权域的请求排成长队)→
+ * main 按取消结算(不计拒绝、不进冷却)。正常情况下排队不超过前一个弹窗的显示时长(≤ 2 分钟),碰不到这个上限。
+ */
+export const AGENT_AUTH_QUEUE_MAX_MS = 10 * 60 * 1000;
+
 export const AGENT_AUTH_REQUEST_ID_MAX = 256; // 与 AgentAuthRespondSchema requestId 上限一致(E146)
 export const AGENT_AUTH_METHOD_MAX = 256;
 

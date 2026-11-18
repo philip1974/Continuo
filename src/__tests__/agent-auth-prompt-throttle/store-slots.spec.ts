@@ -57,15 +57,22 @@ describe('agent-auth store:按调用方类别分槽', () => {
     expect(store().pending).toMatchObject({ external: true });
   });
 
-  it('各请求按自己到达的时刻超时(cancelled);显示中的超时后,排队的显示出来', async () => {
+  it('各请求从开始显示起超时(cancelled);显示中的超时后,排队的显示出来并重新计满 2 分钟', async () => {
     const ext = store().ensure({ method: 'terminal.send_text', external: true });
     vi.advanceTimersByTime(60_000);
     const inWindow = store().ensure({ method: 'terminal.create_session' });
+    let inWindowSettled = false;
+    void inWindow.then(() => {
+      inWindowSettled = true;
+    });
     vi.advanceTimersByTime(AGENT_AUTH_PROMPT_TIMEOUT_MS - 60_000);
     await expect(ext).resolves.toBe('cancelled');
-    // external 超时 → 排队的窗口请求显示出来,它自己的计时还剩 60s。
+    // external 超时 → 排队的窗口请求显示出来,从此刻起计 2 分钟(与 main 一致)。
     expect(store().pending).toMatchObject({ method: 'terminal.create_session' });
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(AGENT_AUTH_PROMPT_TIMEOUT_MS - 1);
+    await Promise.resolve();
+    expect(inWindowSettled).toBe(false);
+    vi.advanceTimersByTime(1);
     await expect(inWindow).resolves.toBe('cancelled');
     expect(store().pending).toBeNull();
   });

@@ -10,6 +10,7 @@ import { BrowserWindow } from 'electron';
 import {
   AGENT_AUTH_CHANNELS,
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
+  AGENT_AUTH_QUEUE_MAX_MS,
   agentAuthDomainOf,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
@@ -24,8 +25,12 @@ import { broadcastToWindows } from '../lib/broadcast';
 import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
 
-// 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
+// 弹窗显示 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)。
+// 从请求成为窗口的显示中弹窗起算(见 markDisplayed),与 renderer 的 agent-auth.store 一致;此前从到达起算,排在别的
+// 弹窗后面的请求轮到显示时已经到期(审计实测:external 只发起不应答、冷却一结束就占住显示,窗口内合法 agent 的请求
+// 排在其后,一小时内 11 次全部显示 0 秒即按超时拒绝)。排队超过 AGENT_AUTH_QUEUE_MAX_MS 仍没轮到显示 → 按取消结算。
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
+const QUEUE_MAX_MS = AGENT_AUTH_QUEUE_MAX_MS;
 
 // 边界(E229,E227/E228 pending 数量上限族):未决授权请求数量上限。requestAgentAuth 每次登记一条
 // pending + 起无应答超时 timer + 向 renderer 发 IPC;此前无数量上限 —— 外部 MCP/agent 可并发 spam 大量
@@ -47,6 +52,8 @@ interface PendingAuth {
    * 顺序排队(agent-auth.store 的 slots),所以窗口内最早的未决请求即显示中的那个(见 markDisplayed)。
    */
   shownAt: number | null;
+  /** 排队中 = 排队兜底上限(到点按取消结算);显示中 = 无应答超时(到点按超时结算)。 */
+  timer: ReturnType<typeof setTimeout>;
   readonly settle: (decision: AgentAuthDecision, cause: SettleCause) => void;
 }
 const pending = new Map<string, PendingAuth>();
@@ -59,7 +66,7 @@ const pending = new Map<string, PendingAuth>();
 //   (超时冷却除外,见下)。
 // - 用户拒绝 → 该域冷却(30s 起,连续被拒翻倍到 5 分钟);同一 subject 连续 3 次被拒(轮换域)→ 所有域退避;
 //   无人应答超时 → 该**窗口**(窗口内与 external 两个 subject)所有域冷却 30s,连续超时按窗口合并计数、翻倍到
-//   5 分钟(排队中没轮到显示就到期的不记);任一 subject 上的用户决定把该窗口的连续超时计数归零。按窗口而非按
+//   5 分钟(排队兜底上限到期的按取消、不记);任一 subject 上的用户决定把该窗口的连续超时计数归零。按窗口而非按
 //   subject 记:同时用窗口内与 external 两个身份交替只发起不应答,两者的超时冷却互相填补,弹窗占屏 100%。代价:
 //   external 的超时也让同窗口的合法 agent 冷却(用户已接受)。拒绝冷却 / 退避 / 速率 / 单飞仍按 subject。
 //   每 subject 60s 内最多 10 个弹窗;每 subject 同时最多一个未决弹窗。
@@ -144,16 +151,25 @@ function rendererUnavailable(win: BrowserWindow): boolean {
 }
 
 /**
- * 显示不足该时长就到期的弹窗不记超时冷却:它排在别的弹窗后面(窗口内 agent 的弹窗占屏时排队的 external 请求,
- * 或反过来),各请求从到达起各自计 2 分钟,轮到它显示时已经到期 —— 用户没机会应答,也谈不上占屏。
+ * 显示不足该时长就到期的弹窗不记超时冷却 —— 用户没机会应答,也谈不上占屏。纵深:无应答超时现从开始显示起算,
+ * 正常到期的都显示满 2 分钟;排队兜底上限按取消结算,本就不记。
  */
 const MIN_SHOWN_FOR_TIMEOUT_COOLDOWN_MS = 5_000;
 
-/** 把该窗口最早的未决请求记为显示中(已记过则不动)。登记新请求、任一请求结算后调。 */
+/**
+ * 把该窗口最早的未决请求记为显示中(已记过则不动),并把它的计时从排队上限换成无应答超时。登记新请求、任一请求
+ * 结算后调。
+ */
 function markDisplayed(windowId: number): void {
-  for (const entry of pending.values()) {
+  for (const [requestId, entry] of pending) {
     if (entry.windowId !== windowId) continue;
-    entry.shownAt ??= Date.now();
+    if (entry.shownAt === null) {
+      entry.shownAt = Date.now();
+      clearTimeout(entry.timer);
+      entry.timer = setTimeout(() => {
+        if (pending.delete(requestId)) entry.settle('denied', 'timeout');
+      }, PROMPT_TIMEOUT_MS);
+    }
     return;
   }
 }
@@ -207,7 +223,7 @@ function pickAuthTargetWindow(ownerWindowId: number | undefined): BrowserWindow 
 
 /**
  * Tool 调用入口:把请求 push 给调用方窗口,等用户决定。
- * 目标窗口不存在 / 2 分钟无应答超时 → 默认 'denied'(防卡死)。
+ * 目标窗口不存在 / 显示 2 分钟无应答超时 / 排队 10 分钟仍未显示 → 默认 'denied'(防卡死)。
  * 被节流(拒绝冷却 / 退避 / 超速 / 该调用方已有未决弹窗)→ 不弹窗,reject AGENT_NOT_AUTHORIZED(消息说明原因,
  * 工具门控原样抛给 agent)。目标窗口的 renderer 正在重新加载 → 同样 reject(消息说明稍后重试)。
  */
@@ -245,7 +261,7 @@ export async function requestAgentAuth(
   const requestId = `req-${crypto.randomUUID()}`;
   return new Promise<AgentAuthDecision>((resolve) => {
     const settle = (decision: AgentAuthDecision, cause: SettleCause): void => {
-      clearTimeout(timer);
+      clearTimeout(entry.timer);
       const granted = cause === 'answer' && decision === 'session';
       // 未走节流(镜像说已授权)却不是 'session' → 镜像已过期:清掉,这次的结果照常记账。并发的同类请求只有
       // 第一个发现过期的记账(其余是 renderer 因槽被占自动拒的,不是用户的决定)。没有 admit 过,不调 endPrompt。
@@ -267,10 +283,11 @@ export async function requestAgentAuth(
       if (granted) sessionGrantMirror.add(grantKey);
       resolve(decision);
     };
-    const timer = setTimeout(() => {
-      if (pending.delete(requestId)) settle('denied', 'timeout');
-    }, PROMPT_TIMEOUT_MS);
-    const entry: PendingAuth = { windowId: win.id, shownAt: null, settle };
+    // 排队兜底:一直没轮到显示 → 按取消结算(不计拒绝、不进冷却)。轮到显示时 markDisplayed 换成无应答超时。
+    const queueTimer = setTimeout(() => {
+      if (pending.delete(requestId)) settle('denied', 'cancelled');
+    }, QUEUE_MAX_MS);
+    const entry: PendingAuth = { windowId: win.id, shownAt: null, timer: queueTimer, settle };
     pending.set(requestId, entry);
     markDisplayed(win.id);
     const payload: AgentAuthRequestPayload = {

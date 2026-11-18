@@ -16,6 +16,7 @@ import {
 import {
   AGENT_AUTH_CHANNELS,
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
+  AGENT_AUTH_QUEUE_MAX_MS,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../../electron/shared/agent-auth-channels';
@@ -361,8 +362,8 @@ describe('agent-auth-service: requestAgentAuth', () => {
       requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
     ).resolves.toBe('denied');
     expect(win.webContents.send).toHaveBeenCalledTimes(max); // 没多发
-    // 清理:全部超时结算,避免悬挂 timer
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
+    // 清理:全部结算,避免悬挂 timer(超时从开始显示起算、逐个显示 → 推进到排队兜底上限,其余按取消结算)
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
     await Promise.all(ps);
   });
 
@@ -388,7 +389,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     const revived = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 1 });
     expect(win.webContents.send).toHaveBeenCalledTimes(sendsBefore + 1);
     // 清理
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
     await Promise.all([...ps.slice(1), revived]);
   });
 
@@ -422,7 +423,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     resolveAgentAuthRequest(p2.requestId, 'session');
     await expect(onWin2).resolves.toBe('session');
     // 清理
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
     await Promise.all(ps);
   });
 
@@ -453,7 +454,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     ).resolves.toBe('denied');
     expect(wins[winCount]!.webContents.send).not.toHaveBeenCalled();
     // 清理
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
     await Promise.all(ps);
   });
 });
