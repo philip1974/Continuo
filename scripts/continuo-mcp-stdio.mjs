@@ -7,7 +7,8 @@
 //   claude mcp add --transport stdio continuo -- /path/to/continuo-mcp-stdio.mjs
 //
 // socket 路径优先级(smart fallback):
-//   1. CONTINUO_MCP_SOCKET 环境变量(显式 override,最优先)
+//   1. CONTINUO_MCP_SOCKET 环境变量(显式 override,最优先;Continuo 终端里由 PTY env 注入本实例的端点,
+//      所有平台 —— dev 实例终端里的 proxy 因此连 dev 而非 packaged)
 //   2. packaged.app socket(日常驱动器):
 //      macOS = ~/Library/Application Support/Continuo/mcp.sock
 //      Linux = $XDG_CONFIG_HOME/Continuo/mcp.sock 或 ~/.config/Continuo/mcp.sock
@@ -19,7 +20,8 @@
 //             %APPDATA%\Continuo\mcp-pipe → %APPDATA%\Continuo Dev\mcp-pipe(只认合法名),
 //             都读不到即报错退出 —— 不回落可预测名(同机其它用户可抢注同名管道骗走 hello token)
 //   2/3(及 Windows 的两个发现文件)是**候选**:按序连接,连不上(崩溃残留的 socket / 过期管道名 →
-//   ENOENT / ECONNREFUSED)就试下一个,全部失败才报错退出。env 显式指定时只连它,不回落。
+//   ENOENT / ECONNREFUSED)就试下一个,全部失败才报错退出。env 显式指定时只连它,不回落(Windows 上 env
+//   值须是合法本机 continuo-mcp 管道名,否则报错退出)。
 //
 // 设计:packaged 是日常工具,dev 只是临时验证。两个都活时优先 packaged
 // (避免开发者忘了关 dev 误把 prod 流量打到 dev)。dev 单独活时(开发者
@@ -77,6 +79,11 @@ function readWindowsPipeDiscovery(appDataDir) {
   }
   return names;
 }
+// CONTINUO_MCP_SOCKET env 的取值校验:Windows 上与发现文件同一规则,只认本机 continuo-mcp 管道名(env 被
+// 写成远程管道 / 任意路径 → 不连,报错退出,不把 hello token 发到别处);POSIX 上 env 是任意 socket 路径,不校验。
+function isAcceptableEnvSocket(value, platform) {
+  return platform !== 'win32' || WINDOWS_PIPE_NAME_RE.test(value);
+}
 // </windows-pipe-discovery>
 
 // 按序连接候选,返回第一个连上的 { sock, path };全部失败 reject(消息列出每个候选的错误)。
@@ -111,7 +118,16 @@ function connectFirstCandidate(candidates, connect) {
 // </connect-candidates>
 
 function resolveSocketCandidates() {
-  if (process.env.CONTINUO_MCP_SOCKET) return [process.env.CONTINUO_MCP_SOCKET];
+  const envSocket = process.env.CONTINUO_MCP_SOCKET;
+  if (envSocket) {
+    if (!isAcceptableEnvSocket(envSocket, process.platform)) {
+      process.stderr.write(
+        `[continuo-mcp-stdio] CONTINUO_MCP_SOCKET is not a local Continuo pipe name: ${JSON.stringify(envSocket)}\n`,
+      );
+      process.exit(1);
+    }
+    return [envSocket];
+  }
   if (process.platform === 'win32') return readWindowsPipeDiscovery(windowsAppDataDir());
   // existsSync 只用于筛掉明显不存在的路径(给清晰错误);存在 ≠ 有人在听,真正判定靠连接。
   return [packagedSocketPath(), devSocketPath()].filter((p) => existsSync(p));

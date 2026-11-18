@@ -17,6 +17,11 @@ export interface AgentAuthRequestPayload {
   readonly requestId: string;
   readonly method: string;
   readonly agentLabel?: string;
+  /**
+   * 安全(F2):请求来自未绑定 Continuo 终端的外部客户端(stdio 未发 hello)。renderer 弹窗标注来源,且只读写
+   * 独立的 external 授权状态,不复用 / 不写入窗口级「本次启动期间允许」。
+   */
+  readonly external?: boolean;
 }
 
 // 边界(E171,E168/E169/E170 同族 IPC ingress 纵深防御):agent-auth:request 驱动授权弹窗(安全敏感)。
@@ -66,6 +71,7 @@ export function isAgentAuthRequestPayload(
   ) {
     return false;
   }
+  if (o.external !== undefined && typeof o.external !== 'boolean') return false;
   return true;
 }
 

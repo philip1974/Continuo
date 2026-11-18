@@ -134,6 +134,7 @@
 - [`scope-updated-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/scope-updated-broadcast-send-throw.spec.ts)
 - [`scoped-app-shell-stream-early-break.spec.ts`](./49-polish-bugfixes/scoped-app-shell-stream-early-break.spec.ts)
 - [`security-file-url-trust.spec.ts`](./49-polish-bugfixes/security-file-url-trust.spec.ts)
+- [`security-http-mcp-session-subject.spec.ts`](./49-polish-bugfixes/security-http-mcp-session-subject.spec.ts)
 - [`security-marketplace-token-main.spec.ts`](./49-polish-bugfixes/security-marketplace-token-main.spec.ts)
 - [`security-terminal-mcp-auth-gate.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-auth-gate.spec.ts)
 - [`security-terminal-mcp-capability.spec.ts`](./49-polish-bugfixes/security-terminal-mcp-capability.spec.ts)

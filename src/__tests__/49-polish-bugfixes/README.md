@@ -244,6 +244,9 @@
 - **安全修订(F4)**:只有**未发 hello** 的连接(外部 MCP client)才回落到当前活窗;发过 hello 的连接绑定窗口
   关闭后 fail-closed —— tools/call 回 `NO_WINDOW_CTX`、不执行工具(tools/list 不受影响)。回落会让窗口 A 里
   agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。该 proxy 随 A 的终端退出。
+- **安全修订(hello 失败)**:hello **本身失败**(token 无效 / 已轮换、窗口在 hello 到达前已关)同样记为「已尝试
+  hello」,tools/call 回 `NO_WINDOW_CTX`,不被当作外部客户端回落主窗。连接状态机:未 hello → 外部客户端;
+  hello 成功 → 绑定窗口;hello 失败或绑定窗口已关 → 拒绝。
 
 ### P2-X update/reviews store 并发 refresh 不被过期结果覆盖 — `marketplace-update-store/update-store.spec.ts`
 - `useUpdateStore.refresh` / `useReviewsStore.refresh` 各加单调 `gen` 守卫:捕获本次
@@ -1227,14 +1230,33 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 - 契约:
   - 主进程每次启动生成 `\\.\pipe\continuo-mcp-<sha256(小写用户名 \0 小写 profile 目录) 前 32 hex>-<128 bit 随机 hex>`,
     每次不同;只接受形如 `^\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$` 的名字(拒绝远程管道 / 任意路径 / 多行)。
-  - 每个 PTY 注入 `CONTINUO_MCP_SOCKET=<该名>`(Windows;与 `CONTINUO_MCP_TOKEN` 同处注入),proxy 优先读它。
+  - 每个 PTY 注入 `CONTINUO_MCP_SOCKET=<该名>`(与 `CONTINUO_MCP_TOKEN` 同处注入),proxy 优先读它。**所有平台**都注入本实例端点
+    (POSIX 为 `<userData>/mcp.sock`):否则 dev 实例终端里的 proxy 按候选顺序优先连 packaged 的 socket,用 dev token 发 hello 必败。
   - 启动时(任何准备 / listen 之前)先删 `<userData>/mcp-pipe` 旧文件(崩溃残留);listen 成功后才原子写入新名,
     启动失败不留文件;close 时内容仍是自己的名字才删除。
   - proxy 在 win32 且无 env 时按 `%APPDATA%\Continuo` → `%APPDATA%\Continuo Dev` 读 `mcp-pipe`,内容非法则跳过;
     都读不到 → 报错退出,不回落确定性名。proxy 的校验正则 / 读取逻辑(`<windows-pipe-discovery>` 标记段)与主进程逐项比对。
   - proxy 对候选(win32 的合法发现文件;macOS / Linux 存在的 packaged / dev socket)按序连接,连不上(ENOENT /
     ECONNREFUSED 等)试下一个,全部失败才报错退出(`<connect-candidates>` 标记段直测 + 端到端:过期 packaged socket
-    回落到运行中的 dev)。`CONTINUO_MCP_SOCKET` 显式指定时只连它。
-  - macOS / Linux unix socket 行为不变(不注入 env、不写发现文件)。
+    回落到运行中的 dev)。`CONTINUO_MCP_SOCKET` 显式指定时只连它;win32 上其值同样须是合法本机 continuo-mcp
+    管道名(`isAcceptableEnvSocket`),否则报错退出;POSIX 上是任意 socket 路径,不校验。
+  - macOS / Linux 不写发现文件(PTY env 注入见上)。
 - 残余窗口:Continuo 崩溃后到下次启动之间发现文件仍在,其中的管道名可被同机其它用户抢注;此期间在 Continuo 终端外
   启动的 proxy(不发 hello,不泄 token)可能连到对方管道收到伪造工具结果。下次启动即删除。
+
+### HTTP MCP 调用方身份绑定 Mcp-Session-Id — `security-http-mcp-session-subject.spec.ts`
+- 攻击场景(已被提示注入、已获终端授权的 agent):HTTP 传输下 per-session capability 的 `callerSubject` 就是 bearer
+  token,而 token 经 PTY env `CONTINUO_MCP_TOKEN` 注入每个终端;同用户进程可读其它进程环境(macOS `ps eww -ax` 实测
+  可读同 uid 进程 env,Linux `/proc/<pid>/environ`)。攻击方 agent 读到受害终端 agent 的 token → 直接 POST /mcp 调
+  read_output / send_input / kill / await_stop_hook 操作受害方经 HTTP 创建的会话。stdio 不受影响(subject 为每连接
+  随机 uuid);默认接入方式是 stdio,本条只影响手动配置 HTTP 传输的用户。
+- 契约:
+  - `initialize` 响应头下发随机 `Mcp-Session-Id`(服务端生成,不进 env / 日志 / 响应体);带该头的请求
+    `callerSubject = token + session id`。攻击方拿到 token 只能 initialize 出自己的新 session,身份与受害方不同。
+  - 回带的 session id 不存在 / 属于别的 token → HTTP 404(MCP 规范:未知 session 回 404),工具不执行。
+  - 未带该头的旧客户端 `callerSubject = token`(行为不变),与带 session 的客户端身份互不相通。
+  - 单 token session 数上限,超限 initialize → 429(不驱逐已有 session,防持 token 方反复 initialize 挤掉受害方);
+    session 随 `revokeToken` / `revokeWindowTokens` / `rotateToken` / `DELETE /mcp`(带 session id)释放。
+  - 终端 token 吊销(`byToken`)先取 `callerSubjectsForToken(token)` 再 `revokeToken`,逐个身份回收在途创建 / debug 会话。
+- 残余:token 本身仍可被同 uid 进程读到,持 token 者仍可在该窗口以窗口级授权 create_session 等(窗口级授权模型,
+  非本条范围);未回带 `Mcp-Session-Id` 的非规范客户端仍以 token 为身份。

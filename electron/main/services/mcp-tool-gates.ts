@@ -12,10 +12,14 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import type { AnyMcpTool, McpCallCtx } from './mcp-host.service';
 import { codedError } from '../../shared/error-message';
 
-/** agent 授权门控:owner 窗口 + 调用 method,返回三态决策. */
+/**
+ * agent 授权门控:owner 窗口 + 调用 method,返回三态决策。external=true 表示调用方是未绑定 Continuo 终端的
+ * 外部客户端(ctx.external),renderer 用独立的 external 授权状态。
+ */
 export type EnsureAuthorized = (
   ownerWindowId: number,
   method?: string,
+  external?: boolean,
 ) => Promise<'once' | 'session' | 'denied'>;
 
 export interface AuthGateOptions {
@@ -43,7 +47,11 @@ export function gateWithAuth(
       if (ctx.signal?.aborted) {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before authorization');
       }
-      const decision = await ensureAuthorized(ctx.ownerWindowId, opts.methodFor(tool));
+      const decision = await ensureAuthorized(
+        ctx.ownerWindowId,
+        opts.methodFor(tool),
+        ctx.external === true,
+      );
       if (decision === 'denied') {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, opts.deniedMessage);
       }

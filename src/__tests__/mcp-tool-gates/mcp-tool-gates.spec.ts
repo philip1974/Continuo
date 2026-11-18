@@ -29,8 +29,18 @@ describe('gateWithAuth(S2)', () => {
     const ensure = vi.fn(async () => decision);
     const gated = gateWithAuth(tool, ensure, AUTH);
     await expect(gated.run({ a: 1 }, ctx(7, 's'))).resolves.toEqual({ ok: true });
-    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool');
+    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool', false);
     expect(run).toHaveBeenCalledWith({ a: 1 }, ctx(7, 's'));
+  });
+
+  // 安全(F2):外部客户端(stdio 未发 hello)的调用带 external 标记请求授权,renderer 据此用独立的
+  // external 授权状态,不复用窗口级「本次启动期间允许」。
+  it('ctx.external=true → ensureAuthorized 第三参为 true', async () => {
+    const { tool } = makeTool();
+    const ensure = vi.fn(async () => 'once' as const);
+    const gated = gateWithAuth(tool, ensure, AUTH);
+    await gated.run({}, { ownerWindowId: 7, callerSubject: 's', external: true });
+    expect(ensure).toHaveBeenCalledWith(7, 'm:demo_tool', true);
   });
 
   it('denied → AGENT_NOT_AUTHORIZED,内部工具不执行', async () => {

@@ -99,7 +99,7 @@ const LOCALHOST_ADDRS: ReadonlySet<string> = new Set([
 export interface McpCallCtx {
   readonly ownerWindowId: number;
   /**
-   * 安全 S3:MCP 调用方身份(HTTP=bearer token,stdio=每连接 subject)。读/写/杀类
+   * 安全 S3:MCP 调用方身份(HTTP=bearer token + Mcp-Session-Id(未带该头的旧客户端为 token),stdio=每连接 subject)。读/写/杀类
    * 工具据此校验目标会话是否由本调用方创建(session.controllerToken === callerSubject)。
    * undefined/null(内部/单测直接构造 ctx)→ 不持任何 capability,被 capability 校验拒绝。
    */
@@ -110,6 +110,11 @@ export interface McpCallCtx {
    * 不创建无调用方的孤儿会话。可选:HTTP host / 内部构造 ctx 不传 → 工具按未取消处理。
    */
   readonly signal?: AbortSignal;
+  /**
+   * 安全(F2):调用方是未绑定 Continuo 终端的外部客户端(stdio 连接未发 `_continuo/hello`,回落到主窗)。
+   * 授权请求据此带 external 标记,renderer 用独立的 external 授权状态,不复用 / 不写入窗口级授权。
+   */
+  readonly external?: boolean;
 }
 
 export interface McpRevokers {
@@ -534,6 +539,11 @@ export interface McpHost {
   revokeWindowTokens(windowId: number): void;
   resolveWindowId(token: string): number | null;
   verifyAndResolveCtx(authHeader: string | undefined): McpCallCtx | null;
+  /**
+   * 安全(F1):该 token 下的全部调用方身份(token 本身 + 每个 Mcp-Session-Id 绑定的 subject)。
+   * 终端 token 吊销时据此回收这些身份名下的在途创建 / debug 会话(须在 revokeToken 之前取)。
+   */
+  callerSubjectsForToken(token: string): string[];
   /** 名字已存在 → 抛错(不覆盖)。 */
   registerTool(tool: AnyMcpTool): void;
   /** registerTool 反操作。unknown name 静默 noop. */
@@ -679,6 +689,24 @@ function sendJson(res: ServerResponse, status: number, json: string): void {
   res.end(json);
 }
 
+// ── HTTP 会话(Mcp-Session-Id)──────────────────────────────────
+// 安全(F1):HTTP 传输下 per-session capability 的调用方身份此前就是 bearer token,而 token 经 PTY env
+// CONTINUO_MCP_TOKEN 注入终端 —— 同用户进程可读它进程环境(macOS `ps eww`、Linux /proc/<pid>/environ),
+// 读到受害终端 agent 的 token 即可读控受害方经 HTTP 创建的会话。实现 MCP Streamable HTTP 的 Mcp-Session-Id
+// (规范 2025-03-26 起:服务端在 initialize 响应下发,客户端 MUST 在后续请求回带):session id 随机生成、只在
+// 客户端内存(不进 env、不进日志),callerSubject = token + session id。未带该头的旧客户端保持 subject = token。
+const MCP_SESSION_ID_HEADER = 'Mcp-Session-Id';
+// 单 token / 全局 session 数上限:超限 initialize 回 429(不驱逐已有 session —— 驱逐会让持 token 的一方
+// 反复 initialize 把受害方 session 挤掉)。session 随 token 吊销 / 轮换 / DELETE 释放。
+const MAX_HTTP_SESSIONS_PER_TOKEN = 64;
+const MAX_HTTP_SESSIONS_GLOBAL = 4096;
+// 客户端回带的 session id 长度上限(generateToken 为 43 字符),超长不查表。
+const MAX_HTTP_SESSION_ID_LEN = 128;
+
+function httpSessionSubject(token: string, sessionId: string): string {
+  return `${token}:${sessionId}`;
+}
+
 // close() 等待 server 关闭回调的上限(断开现存连接后通常立即完成;兜底不让退出被拖住)。
 const MCP_HOST_CLOSE_TIMEOUT_MS = 2000;
 
@@ -699,6 +727,30 @@ export async function createMcpHost(
   };
 
   const windowTokens: Map<string, number> = new Map();
+  // 安全(F1):Mcp-Session-Id → 签发它时的 bearer token。只认同 token 回带的 session id。
+  const httpSessions: Map<string, string> = new Map();
+  const sessionCountForToken = (token: string): number => {
+    let n = 0;
+    for (const t of httpSessions.values()) if (t === token) n += 1;
+    return n;
+  };
+  const dropSessionsWhere = (pred: (token: string) => boolean): void => {
+    for (const [sid, t] of [...httpSessions]) if (pred(t)) httpSessions.delete(sid);
+  };
+  /** 校验客户端回带的 session id 属于该 token;是则返回 subject,否则 null。 */
+  const resolveHttpSubject = (
+    token: string,
+    header: string | string[] | undefined,
+  ): string | null => {
+    if (
+      typeof header !== 'string' ||
+      header.length === 0 ||
+      header.length > MAX_HTTP_SESSION_ID_LEN
+    ) {
+      return null;
+    }
+    return httpSessions.get(header) === token ? httpSessionSubject(token, header) : null;
+  };
   // race(R76):SSE client 记 {windowId, token, keepalive},供 revokeToken/revokeWindowTokens
   // 精确关闭对应连接 + 清 keepalive interval(此前只是 Set<res>,定向 revoke 无法触达已建立的
   // SSE → 撤销后 stale 连接仍 keepalive + 继续收 broadcast,资源泄漏)。
@@ -798,6 +850,39 @@ export async function createMcpHost(
     // 孤儿 agent terminal,最后只把响应写死连接。每请求一个 AbortController,req/res close 时 abort
     // → 注入 ctx.signal,create_session 在授权后、副作用前复查(R111 已实装),已取消则拒绝;响应
     // 也不写回已断连接。
+    // 安全(F1):调用方身份绑定 Mcp-Session-Id。initialize → 签发新 session(响应头下发);带 session id 的
+    // 请求 → 须是本 token 签发的,否则 404(规范:未知 session 回 404,客户端应重新 initialize);
+    // 不带 → 旧客户端,subject = token(行为不变)。verifyAndResolveCtx 的 callerSubject 即 token。
+    const token = freshCtx.callerSubject ?? '';
+    let callerSubject = token;
+    if (rpc.method === 'initialize') {
+      if (
+        httpSessions.size >= MAX_HTTP_SESSIONS_GLOBAL ||
+        sessionCountForToken(token) >= MAX_HTTP_SESSIONS_PER_TOKEN
+      ) {
+        sendJson(
+          res,
+          429,
+          formatRpcError(rpc.id, RPC_ERROR_CODES.UNAUTHORIZED, 'too many sessions'),
+        );
+        return;
+      }
+      const sessionId = generateToken();
+      httpSessions.set(sessionId, token);
+      res.setHeader(MCP_SESSION_ID_HEADER, sessionId);
+      callerSubject = httpSessionSubject(token, sessionId);
+    } else if (req.headers['mcp-session-id'] !== undefined) {
+      const subject = resolveHttpSubject(token, req.headers['mcp-session-id']);
+      if (subject === null) {
+        sendJson(
+          res,
+          404,
+          formatRpcError(rpc.id, RPC_ERROR_CODES.UNAUTHORIZED, 'session not found'),
+        );
+        return;
+      }
+      callerSubject = subject;
+    }
     const aborter = new AbortController();
     const onClose = (): void => aborter.abort();
     req.on('close', onClose);
@@ -805,6 +890,7 @@ export async function createMcpHost(
     try {
       const response = await dispatchRpc(rpc, tools, serverInfo, {
         ...freshCtx,
+        callerSubject,
         signal: aborter.signal,
       });
       if (aborter.signal.aborted) return; // 连接已断 → 不写死连接
@@ -894,6 +980,25 @@ export async function createMcpHost(
       handleSse(req, res);
       return;
     }
+    // 安全(F1):Streamable HTTP 客户端结束会话 → DELETE 带 Mcp-Session-Id。只释放本 token 签发的 session。
+    if (req.method === 'DELETE' && path === '/mcp') {
+      const ctx = host.verifyAndResolveCtx(req.headers['authorization']);
+      if (!ctx) {
+        res.statusCode = 401;
+        res.end();
+        return;
+      }
+      const sid = req.headers['mcp-session-id'];
+      if (typeof sid !== 'string' || resolveHttpSubject(ctx.callerSubject ?? '', sid) === null) {
+        res.statusCode = 404;
+        res.end();
+        return;
+      }
+      httpSessions.delete(sid);
+      res.statusCode = 200;
+      res.end();
+      return;
+    }
     res.statusCode = 404;
     res.end();
   });
@@ -923,6 +1028,7 @@ export async function createMcpHost(
     },
     revokeToken(token: string): void {
       windowTokens.delete(token);
+      dropSessionsWhere((t) => t === token);
       // race(R76):同步关闭该 token 已建立的 SSE 连接,否则撤销后旧 client 仍 keepalive +
       // 继续收 broadcast(stale 连接 + interval 泄漏)。
       for (const [res, meta] of [...sseClients]) {
@@ -933,6 +1039,7 @@ export async function createMcpHost(
       for (const [tok, wid] of windowTokens) {
         if (wid === windowId) windowTokens.delete(tok);
       }
+      dropSessionsWhere((t) => !windowTokens.has(t));
       // race(R76):关闭该 window 所有 SSE 连接(同 revokeToken)。
       for (const [res, meta] of [...sseClients]) {
         if (meta.windowId === windowId) closeSseClient(res);
@@ -940,6 +1047,13 @@ export async function createMcpHost(
     },
     resolveWindowId(token: string): number | null {
       return windowTokens.get(token) ?? null;
+    },
+    callerSubjectsForToken(token: string): string[] {
+      const out = [token];
+      for (const [sid, t] of httpSessions) {
+        if (t === token) out.push(httpSessionSubject(token, sid));
+      }
+      return out;
     },
     verifyAndResolveCtx(authHeader: string | undefined): McpCallCtx | null {
       if (!authHeader) return null;
@@ -978,6 +1092,7 @@ export async function createMcpHost(
     },
     rotateToken(): void {
       windowTokens.clear();
+      httpSessions.clear();
       // 踢断所有现有 SSE 连接(它们持的旧 token 已无效)+ 清各自 keepalive interval。
       closeAllSseClients();
     },
@@ -999,3 +1114,6 @@ export async function createMcpHost(
   };
   return host;
 }
+
+// 安全(F1)测试用:单 token HTTP session 上限。
+export const MAX_HTTP_SESSIONS_PER_TOKEN_FOR_TEST = MAX_HTTP_SESSIONS_PER_TOKEN;

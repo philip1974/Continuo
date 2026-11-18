@@ -178,7 +178,9 @@ export function resolveStdioCallOwnerWindow(
 
 // ── socket server ──────────────────────────────────────────────
 
-const socketCtx: Map<Socket, number> = new Map();
+// 连接的窗口绑定状态:无条目 = 从未发 hello(外部客户端);number = hello 成功绑定的窗口;
+// null = 发过 hello 但失败(token 无效 / 已轮换、窗口在 hello 前已关)→ tools/call 一律拒绝,不回落主窗。
+const socketCtx: Map<Socket, number | null> = new Map();
 
 // 边界(E1):stdio NDJSON 单行/残行字节上限。畸形/恶意本地客户端发送无换行的超长输入会让
 // 行解码器(E135 createNdjsonLineDecoder)的残行 buffer 在 main 进程无限累积 → 内存增长甚至 OOM(HTTP MCP 有
@@ -210,11 +212,16 @@ export const MAX_STDIO_UNREAD_OUTPUT_BYTES = 16_000_000;
 // 广播拖慢。connection 回调入口加全局上限(连接建立时 subject/window 尚未解析,只能全局闸),超限立即写
 // 错误 + sock.destroy(),确保不进入 clients 表。
 const MAX_STDIO_CLIENTS_GLOBAL = 64; // 全局 stdio 连接上限(远超任何正常 MCP client 并发)
+// 安全(W2,Windows 多用户):首条完整消息超时。Windows 命名管道默认 DACL 给 Everyone 读、管道名可枚举 ——
+// 其它本机用户只读打开 MAX_STDIO_CLIENTS_GLOBAL 次挂着不发数据,即可占满全局名额,本用户所有 agent 的
+// MCP 连接被拒。连上后此时限内没收到任何完整的非空行 → 断开。合法客户端连上即发 `_continuo/hello`
+// (终端 proxy)或 initialize(外部客户端经 proxy 转发),不受影响;首条消息之后的空闲不计时。
+const STDIO_FIRST_MESSAGE_TIMEOUT_MS = 10_000;
 
 // 安全 S3:每个 stdio 连接一个稳定 subject(callerSubject)。Claude Code 的 proxy
 // 一次 spawn 长连接复用 → 同一连接的 create_session 与 read/send 共享 subject;
 // 不同连接(含恶意进程直连 mcp.sock,unix socket 0600 仅本用户但 postinstall 也是本
-// 用户)subject 不同 → 无法读控别连接创建的会话。HTTP 侧 subject=bearer token。
+// 用户)subject 不同 → 无法读控别连接创建的会话。HTTP 侧 subject=bearer token + Mcp-Session-Id。
 const socketSubject: Map<Socket, string> = new Map();
 function subjectForSocket(sock: Socket): string {
   let s = socketSubject.get(sock);
@@ -339,7 +346,8 @@ async function handleLine(
         windowExists: isWindowAlive,
       },
     );
-    if (windowId === null) return;
+    // 安全(fail-closed):hello 失败也记下(null)。否则该连接被当作「从未发 hello」的外部客户端,
+    // 回落到主窗并借用其授权 —— 持失效 token / 窗口已关的 proxy 不应获得任何窗口上下文。
     socketCtx.set(sock, windowId);
     return;
   }
@@ -359,7 +367,7 @@ async function handleLine(
   // socketCtx,而 socket 仍连着(proxy 进程没退)。resolveStdioCallOwnerWindow 每次调用校验
   // 绑定窗口存活,死则返回 null。
   const boundWindowId = socketCtx.get(sock);
-  const liveOwner = resolveStdioCallOwnerWindow(boundWindowId, {
+  const liveOwner = resolveStdioCallOwnerWindow(boundWindowId ?? undefined, {
     isWindowAlive,
   });
   // 安全 S3:无论绑定窗口还是 fallback,都带本连接的 callerSubject,供 capability 校验。
@@ -371,12 +379,14 @@ async function handleLine(
   // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
   // 非 popout 主窗。mirror agent-auth.pickMainWindow 策略。tools/list 无需 ctx
   // (dispatchRpc 自行短路),只有 tools/call 路径需要。
-  // 安全(fail-closed):**发过 hello** 的连接绑定窗口关闭后不回落 —— 否则窗口 A 里 agent 的调用以窗口 B
-  // 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。ctx 保持 null → tools/call 回 NO_WINDOW_CTX
-  // (该 proxy 随 A 的终端退出;tools/list 不受影响)。
-  if (ctx === null && boundWindowId === undefined) {
+  // 安全(fail-closed):**发过 hello** 的连接(hello 失败,或绑定窗口已关闭)不回落 —— 否则窗口 A 里
+  // agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。ctx 保持 null →
+  // tools/call 回 NO_WINDOW_CTX(该 proxy 随 A 的终端退出;tools/list 不受影响)。
+  if (ctx === null && !socketCtx.has(sock)) {
     const fallback = pickMainWindowPreferNonPopout();
-    if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal };
+    // 安全(F2):标记 external —— 授权走独立的 external 状态,不借主窗已有的「本次启动期间允许」
+    // (否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默执行)。
+    if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal, external: true };
   }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
   // race(R111):连接已断开 / 已拒绝 → writeLine 丢弃响应(避免 EPIPE / write-after-end)。
@@ -454,6 +464,17 @@ export async function createStdioSocketServer(
       aborter.abort();
       rejectAndDestroy(sock, message);
     };
+    // 安全(W2):首条完整消息超时(见 STDIO_FIRST_MESSAGE_TIMEOUT_MS)。
+    let firstMessageTimer: NodeJS.Timeout | null = setTimeout(() => {
+      firstMessageTimer = null;
+      reject('no message received');
+    }, STDIO_FIRST_MESSAGE_TIMEOUT_MS);
+    firstMessageTimer.unref?.();
+    const clearFirstMessageTimer = (): void => {
+      if (firstMessageTimer === null) return;
+      clearTimeout(firstMessageTimer);
+      firstMessageTimer = null;
+    };
     sock.on('data', (chunk: Buffer) => {
       // 已拒绝(end 半关闭中):后续输入一律丢弃,不再解析 / 排队。
       if (sock.writableEnded) return;
@@ -487,6 +508,7 @@ export async function createStdioSocketServer(
       // overflow 分支),此处不必再计数。
       for (const line of lines) {
         if (isBlankStdioLine(line)) continue; // 空白行:NDJSON 忽略,不入链
+        clearFirstMessageTimer(); // 安全(W2):收到首条完整消息
         const bytes = Buffer.byteLength(line, 'utf8');
         if (
           pendingLines >= MAX_STDIO_PENDING_LINES ||
@@ -517,6 +539,7 @@ export async function createStdioSocketServer(
       }
     });
     sock.on('close', () => {
+      clearFirstMessageTimer();
       clients.delete(sock);
       socketCtx.delete(sock);
       const subject = socketSubject.get(sock);
@@ -613,3 +636,5 @@ export async function createStdioSocketServer(
 
 // 边界(E233)测试用:全局 stdio 连接上限常量。
 export const MAX_STDIO_CLIENTS_GLOBAL_FOR_TEST = MAX_STDIO_CLIENTS_GLOBAL;
+// 安全(W2)测试用:首条完整消息超时。
+export const STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST = STDIO_FIRST_MESSAGE_TIMEOUT_MS;

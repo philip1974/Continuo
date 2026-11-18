@@ -17,6 +17,8 @@ describe('终端 token 吊销同步回收其 debug 会话', () => {
     const end = src.indexOf('\n    });', start);
     const byToken = src.slice(src.indexOf('byToken:', start), end);
     expect(byToken).toMatch(/mcpHost!?\.revokeToken\(token\)/);
-    expect(byToken).toMatch(/debugService\s*\.killByController\(token,\s*'terminal-exit'\)\s*\.catch\(/);
+    // F1:HTTP 调用方身份 = token(+ Mcp-Session-Id),逐个身份回收(见 security-http-mcp-session-subject)。
+    expect(byToken).toMatch(/for \(const subject of subjects\)/);
+    expect(byToken).toMatch(/debugService\s*\.killByController\(subject,\s*'terminal-exit'\)\s*\.catch\(/);
   });
 });

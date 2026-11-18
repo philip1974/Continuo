@@ -84,7 +84,7 @@ describe('50 · agent debug MCP host', () => {
       ctx,
     );
 
-    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.launch');
+    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.launch', false);
     expect(service.launchSession).toHaveBeenCalledWith(
       { program: '/repo/app.js', stopOnEntry: false },
       { ownerWindowId: WIN, controllerToken: ME },
@@ -137,7 +137,7 @@ describe('50 · agent debug MCP host', () => {
       ctx,
     );
 
-    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.*');
+    expect(ensureAuthorized).toHaveBeenCalledWith(WIN, 'debug.*', false);
   });
 
   it('授权被拒时不触达 DebugService', async () => {

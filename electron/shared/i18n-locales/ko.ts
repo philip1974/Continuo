@@ -294,6 +294,8 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.debug_launch': '디버그 세션 시작',
   'permissions.agent.debug_control': '디버그 세션 제어(중단점, 단계 실행, 변수)',
   'permissions.agent.generic': '{method} 호출',
+  'permissions.agent.external_caller':
+    '요청 출처: 외부 클라이언트(Continuo 터미널에 연결되지 않음). 이 창의 어떤 터미널에도 속하지 않으며, 권한은 이 창의 터미널 에이전트 권한과 별도입니다.',
   'permissions.agent.plugin_tool': '플러그인 도구 {name} 호출',
   'permissions.agent.title_plugin': '에이전트가 플러그인 도구 호출을 요청합니다',
   'permissions.agent.hint_plugin':

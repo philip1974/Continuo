@@ -292,6 +292,8 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.debug_launch': '启动调试会话',
   'permissions.agent.debug_control': '控制调试会话(断点、单步、查看变量)',
   'permissions.agent.generic': '调用 {method}',
+  'permissions.agent.external_caller':
+    '请求来源:外部客户端(未绑定 Continuo 终端)。它不属于本窗口任何终端，授权独立于本窗口终端 agent 的授权。',
   'permissions.agent.plugin_tool': '调用插件工具 {name}',
   'permissions.agent.title_plugin': 'Agent 请求调用插件工具',
   'permissions.agent.hint_plugin':

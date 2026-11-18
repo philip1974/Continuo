@@ -72,6 +72,31 @@ describe('规则 2 · create_session installStopHook 返回后复查 abort', () 
   });
 });
 
+// 安全(F2):create_session 直接调 ensureAuthorized(不经 gateWithAuth),同样须带上外部客户端标记。
+describe('F2 · create_session 授权带 external 标记', () => {
+  it.each([
+    [true, true],
+    [undefined, false],
+  ])('ctx.external=%s → ensureAuthorized 第三参 %s', async (external, expected) => {
+    const ensureAuthorized = vi.fn(async () => 'denied' as const);
+    const tool = makeCreateSessionTool({
+      ensureAuthorized,
+      installStopHook: async () => ({ installed: true }),
+      createSession: vi.fn(async () => ({ id: 'x' })),
+    });
+    const ctx: McpCallCtx = {
+      ownerWindowId: 1,
+      callerSubject: 's',
+      signal: new AbortController().signal,
+      ...(external !== undefined ? { external } : {}),
+    };
+    await expect(tool.run({} as never, ctx)).rejects.toMatchObject({
+      code: 'AGENT_NOT_AUTHORIZED',
+    });
+    expect(ensureAuthorized).toHaveBeenCalledWith(1, undefined, expected);
+  });
+});
+
 describe('规则 2 · create_session 在 PTY 创建期间断开 → 回收会话', () => {
   it('createSession 完成时调用方已断开 → kill PTY + 删 metadata,以取消错误结束', async () => {
     const aborter = new AbortController();
