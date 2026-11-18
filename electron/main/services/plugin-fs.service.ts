@@ -94,7 +94,14 @@ export function readGitBlob(
     // 安全(纵深):恶意 `.git/config` 设 extensions.partialClone + remote.<r>.uploadpack=<cmd> 时,缺失 blob
     // 触发惰性拉取即执行该命令。禁用拉取:GIT_NO_LAZY_FETCH=1(git ≥2.45)+ `-c protocol.allow=never`
     //(任何传输协议一律拒绝,低版本 git 也认)。只读本地对象库,缺失即失败。
-    const env = { ...withGitHardeningEnv(process.env), GIT_NO_LAZY_FETCH: '1' };
+    // 但 `protocol.<name>.allow` 优先于 `protocol.allow`:仓库 config 写 `protocol.file.allow=always` 即盖过
+    // 命令行的 never,git <2.45 又不认 GIT_NO_LAZY_FETCH → 仍会执行。GIT_ALLOW_PROTOCOL 设为空(空白名单)
+    // 时 git 忽略全部 protocol.*.allow 配置、拒绝一切传输(git ≥2.12 认),仓库 config 无法覆盖。
+    const env = {
+      ...withGitHardeningEnv(process.env),
+      GIT_NO_LAZY_FETCH: '1',
+      GIT_ALLOW_PROTOCOL: '',
+    };
     const child = spawn(
       resolveSpawnCommand('git', env),
       ['-c', 'protocol.allow=never', 'cat-file', 'blob', sha],

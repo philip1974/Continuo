@@ -3,10 +3,14 @@
 //(lazy fetch),git 以本地传输启动 uploadpack 指定的命令 → 任意命令执行。readGitBlob 追加
 // `-c protocol.allow=never`(所有传输协议一律拒绝,低版本 git 也认)+ env GIT_NO_LAZY_FETCH=1(git ≥2.45)。
 // 用真实 git 仓库 + 会创建标记文件的 uploadpack 脚本验证。
+// 绕过(sec 2026-11-18):`protocol.<name>.allow` 优先于 `protocol.allow`,仓库 config 写
+// `protocol.file.allow=always` 即盖过命令行 `-c protocol.allow=never`;git <2.45 不认 GIT_NO_LAZY_FETCH →
+// 照样执行 uploadpack。故再加 env GIT_ALLOW_PROTOCOL=''(空白名单,优先于全部 protocol.*.allow 配置)。
+// 旧版 git 用 PATH 上的 git 包装脚本模拟:剥掉 GIT_NO_LAZY_FETCH 后再 exec 真 git。
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readGitBlob } from '../services/plugin-fs.service';
@@ -60,3 +64,42 @@ describe.skipIf(process.platform === 'win32')('readGitBlob 不触发 partial clo
     expect(Buffer.from(bytes).toString('utf8')).toBe('hello');
   });
 });
+
+describe.skipIf(process.platform === 'win32')(
+  'readGitBlob:仓库 protocol.file.allow=always + 旧版 git(不认 GIT_NO_LAZY_FETCH)仍不拉取',
+  () => {
+    let savedPath: string | undefined;
+    beforeEach(async () => {
+      git(['config', 'remote.origin.promisor', 'true']);
+      git(['config', 'protocol.file.allow', 'always']);
+      const realGit = execFileSync('sh', ['-c', 'command -v git']).toString().trim();
+      const shimDir = path.join(root, 'old-git-bin');
+      await mkdir(shimDir);
+      const shim = path.join(shimDir, 'git');
+      await writeFile(shim, `#!/bin/sh\nunset GIT_NO_LAZY_FETCH\nexec "${realGit}" "$@"\n`);
+      await chmod(shim, 0o755);
+      savedPath = process.env.PATH;
+      process.env.PATH = `${shimDir}${path.delimiter}${savedPath ?? ''}`;
+    });
+    afterEach(() => {
+      process.env.PATH = savedPath;
+    });
+
+    it('前提:仅 -c protocol.allow=never(无 GIT_NO_LAZY_FETCH)时仓库 protocol.file.allow 盖过它,uploadpack 被执行', () => {
+      try {
+        execFileSync('git', ['-c', 'protocol.allow=never', 'cat-file', 'blob', MISSING_SHA], {
+          cwd: repo,
+          stdio: 'ignore',
+        });
+      } catch {
+        // 拉取失败 → 非零退出,预期
+      }
+      expect(existsSync(marker)).toBe(true);
+    });
+
+    it('readGitBlob(GIT_ALLOW_PROTOCOL 空白名单)reject 且不执行 uploadpack', async () => {
+      await expect(readGitBlob(repo, MISSING_SHA)).rejects.toThrow(/git cat-file failed/);
+      expect(existsSync(marker)).toBe(false);
+    });
+  },
+);

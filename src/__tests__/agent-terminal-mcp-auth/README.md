@@ -63,6 +63,10 @@ interface AgentAuthState {
 - **按调用方类别再分**:`external: true`(main 侧 stdio 连接未发 `_continuo/hello`,回落主窗)只看 / 只写
   `external*SessionGranted`,不复用也不写入窗口级授权;弹窗标注「外部客户端(未绑定 Continuo 终端)」。
   否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默 create_session / debug_launch
+  - **残余风险(未收口)**:external 隔离只区分「发没发 hello」,不验证调用方是谁。任一同用户进程若读到某窗口终端的
+    token(PTY env `CONTINUO_MCP_TOKEN`,如 macOS `ps eww`、Linux `/proc/<pid>/environ`),即可带该 token 经 HTTP
+    或 stdio `_continuo/hello` 被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」静默执行。per-session
+    capability 仍生效(只能操作自己创建的会话 / debug 会话)。真正收口需把 token 绑定到持有该终端的进程树,当前未做。
 - `pending !== null` → **立即** `resolve('denied')`(同一时刻一个,与 plugin permission-prompt 同型;并发的第二条直接拒)
 - 其它 → 设 `pending = { requestId(uuid), method, agentLabel? }`,返回未 resolve 的 Promise
 

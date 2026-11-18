@@ -1255,8 +1255,12 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
     `callerSubject = token + session id`。攻击方拿到 token 只能 initialize 出自己的新 session,身份与受害方不同。
   - 回带的 session id 不存在 / 属于别的 token → HTTP 404(MCP 规范:未知 session 回 404),工具不执行。
   - 未带该头的旧客户端 `callerSubject = token`(行为不变),与带 session 的客户端身份互不相通。
-  - 单 token session 数上限,超限 initialize → 429(不驱逐已有 session,防持 token 方反复 initialize 挤掉受害方);
+  - 单 token session 数上限,超限 initialize → 429;达上限时只驱逐**空闲超阈值、无在途请求、且名下无活跃资源**
+    (debug 会话 / 在途 launch、在途终端创建、其创建且未退出的终端,`hasLiveResources`)的最旧 session,全部候选都有
+    资源则仍 429 —— 防持 token 方反复 initialize 驱逐停在断点的受害方、杀其 debug 会话 / 让其终端沦为孤儿;
     session 随 `revokeToken` / `revokeWindowTokens` / `rotateToken` / `DELETE /mcp`(带 session id)释放。
   - 终端 token 吊销(`byToken`)先取 `callerSubjectsForToken(token)` 再 `revokeToken`,逐个身份回收在途创建 / debug 会话。
-- 残余:token 本身仍可被同 uid 进程读到,持 token 者仍可在该窗口以窗口级授权 create_session 等(窗口级授权模型,
-  非本条范围);未回带 `Mcp-Session-Id` 的非规范客户端仍以 token 为身份。
+- 残余(未收口):token 本身仍可被同 uid 进程读到(如 `ps eww`)。持 token 者可经 HTTP 或 stdio `_continuo/hello`
+  被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」静默 create_session / debug_launch 等;per-session
+  capability 仍生效(读控不了受害方的会话)。真正收口需把 token 绑定到持有终端的进程树,当前未做。未回带
+  `Mcp-Session-Id` 的非规范客户端仍以 token 为身份。

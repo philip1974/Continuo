@@ -32,6 +32,11 @@ export function trackAgentTerminalCreate(callerSubject: string | null | undefine
   };
 }
 
+/** 该调用方是否有在途创建(HTTP session 空闲驱逐据此跳过)。 */
+export function hasAgentTerminalCreates(callerSubject: string): boolean {
+  return inFlight.has(callerSubject);
+}
+
 /** 取消该调用方的在途创建;省略 callerSubject 取消全部(撤销授权终止全部 agent 终端)。 */
 export function cancelAgentTerminalCreates(callerSubject?: string): void {
   const keys = callerSubject === undefined ? [...inFlight.keys()] : [callerSubject];

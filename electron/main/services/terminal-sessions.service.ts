@@ -187,6 +187,14 @@ export function getController(id: string): string | null {
   return sessions.get(id)?.controllerToken ?? null;
 }
 
+/** 该 MCP 身份是否仍有其创建且未退出的终端会话(HTTP session 空闲驱逐据此跳过,免得会话沦为孤儿). */
+export function hasLiveSessionForController(controllerToken: string): boolean {
+  for (const s of sessions.values()) {
+    if (s.controllerToken === controllerToken && s.exitCode === null) return true;
+  }
+  return false;
+}
+
 export function getAll(filter?: GetAllFilter): readonly MainTerminalSession[] {
   if (!filter) return snapshot();
   const cached = cachedSnapshotsByOwner.get(filter.ownerWindowId);
