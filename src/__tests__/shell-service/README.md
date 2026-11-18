@@ -49,6 +49,10 @@
   `diff.<x>.textconv` / `diff.external`、`core.sshCommand`、`core.pager`、`credential.helper` 等,驱动名由仓库
   自定、无通配禁用语法,强行置空又会破坏用户合法配置 —— **需插件自行加固**(`--no-textconv` / `--no-ext-diff`、
   按需 `-c <key>=<安全值>` 显式覆盖、只用不触发过滤器的子命令,或受信判断后再调用)。
+- **配置式 hooks 同样不在兜底范围内。** git ≥ 2.54 支持仓库 config 的 `[hook "<name>"] event/command`,
+  在 `git add` 与会刷新 index 的 `git status` 时执行,不受 `core.hooksPath` 影响;宿主无法统一禁用(会连同
+  用户自己的 hooks 一起关掉)。经 `shell.exec` 调 git 的插件须自行处理:把仓库作用域的 `hook.*` 视为不可信,
+  或对非 commit 子命令加 `-c hook.<event>.enabled=false`(git ≥ 2.55)。
 
 ### env 合并(Windows)
 

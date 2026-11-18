@@ -11,7 +11,11 @@
 //    一并禁用;强行置空 sshCommand/pager 等还会破坏用户合法配置。这些需**插件自行加固**:对不可信仓库
 //    调用 git 时显式传 `--no-textconv` / `--no-ext-diff`、按需用 `-c <key>=<安全值>` 显式覆盖,只用不触发
 //    过滤器 / 外部 diff 的子命令,或在受信判断后再调用。
-// 2. resolveSpawnCommand:Windows 上 libuv 解析无路径命令名时**先查子进程 cwd** 再查 PATH,workspace 根放
+//    另有 git ≥ 2.54 的**配置式 hooks**(仓库 config 的 `[hook "<name>"] event = … / command = …`):在
+//    `git add` 与会刷新 index 的 `git status` 时执行,不受 `core.hooksPath` 影响。hook 名由仓库自定,宿主
+//    无法统一禁用(会连同用户自己的 hooks 一起关掉)→ 经 shell.exec 调 git 的插件须自行处理:把仓库作用域的
+//    `hook.*` 视为不可信,或对非 commit 子命令加 `-c hook.<event>.enabled=false`(git ≥ 2.55)。
+// 2.resolveSpawnCommand:Windows 上 libuv 解析无路径命令名时**先查子进程 cwd** 再查 PATH,workspace 根放
 //    `git.exe` 即被执行。spawn 前按 libuv 同款规则(原名若带扩展名先试,再 .com / .exe)只在 PATH 的绝对目录
 //    中解析为绝对路径,解析不到 fail-closed。libuv v1.x(src/win/process.c search_path)虽会调
 //    NeedCurrentDirectoryForExePathW 而遵守 NoDefaultCurrentDirectoryInExePath,但该 env 默认未设、可被插件
