@@ -10,6 +10,7 @@ import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
+import { ScopeRequestThrottle, scopeRequestKey } from './scope-request-throttle';
 import {
   ScopeError,
   ScopeRequestTimeoutError,
@@ -352,6 +353,7 @@ export function registerPluginFsHandlers(
 ): void {
   const { identityRegistry, pathScopeRegistry, correlator } = deps;
   const maybeSweepStaleTrash = createTrashSweepThrottle();
+  const scopeThrottle = new ScopeRequestThrottle();
   // 关窗(destroyed)/ renderer reload(主框架非同文档导航)时释放该 webContents 名下的身份 token 与
   // pending scope 授权请求:两种情况都不会有 renderer 主动发的 _unregister-plugin,此前 token 永驻
   // entries;reload 前发起的授权请求也要干等满 TTL(关窗另有 releaseWindowResources 兜底,幂等)。
@@ -800,6 +802,12 @@ export function registerPluginFsHandlers(
       if (!correlator.canAccept(event.sender.id)) {
         return 'deny';
       }
+      // 安全:拒绝冷却 + 每插件弹窗速率上限(见 scope-request-throttle)。同一组 scope 刚被用户拒绝、或该插件
+      // 弹窗过于频繁 → 直接 deny,不发弹窗:插件不能在拒绝回调里循环 requestScope 诱导误点。
+      const throttleKey = scopeRequestKey(canonicalScopes);
+      if (!scopeThrottle.tryPrompt(pluginId, throttleKey)) {
+        return 'deny';
+      }
       const { requestId, promise } = correlator.createRequest(
         token,
         scopes,
@@ -845,6 +853,7 @@ export function registerPluginFsHandlers(
         }
         throw err;
       }
+      scopeThrottle.noteDecision(pluginId, throttleKey, decision);
       // 弹窗挂起期间插件可能被卸载/禁用(_unregister-plugin → revoke token,token
       // 进 5s drain;lookup/resolve 仍能查到所以无法区分)。落地 grant 前重校验 token
       // 仍 active,否则会复活已撤销插件的 path-scope,同 id 重装直接继承(绕过

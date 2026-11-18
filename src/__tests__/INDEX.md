@@ -927,6 +927,10 @@
 - [`scope-dotdot-alias.spec.ts`](./plugin-fs-scope-existence-oracle/scope-dotdot-alias.spec.ts)
 - [`scope-existence-oracle.spec.ts`](./plugin-fs-scope-existence-oracle/scope-existence-oracle.spec.ts)
 
+## [plugin-fs-scope-request-throttle(scope 授权请求被拒后有冷却,不能循环弹窗诱导误点)](./plugin-fs-scope-request-throttle/README.md)
+
+- [`scope-request-throttle.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-throttle.spec.ts)
+
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
