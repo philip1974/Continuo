@@ -70,6 +70,31 @@ export function isValidWindowsStdioPipeName(name: string): boolean {
 /** Windows 管道名发现文件(位于 userData,packaged / dev 各一份;proxy 同名读取)。 */
 export const STDIO_PIPE_DISCOVERY_FILE = 'mcp-pipe';
 
+/**
+ * 发现文件内容:两行「管道名 \n 主进程 pid \n」。
+ *
+ * pid 用来识别崩溃残留:Continuo 崩溃 / 被强杀后发现文件要到下次启动才删,其中的管道名可被同机其它用户在
+ * `\\.\pipe\` 下枚举并抢注;此期间 Continuo 终端外启动的 proxy 读到过期名会连到对方管道(收到伪造的 tools/list /
+ * 工具结果)。proxy 读到后先探测该 pid 是否存活,不存活即跳过。
+ * ⚠ scripts/continuo-mcp-stdio.mjs 的 parseWindowsPipeDiscovery 是 parseStdioPipeDiscovery 的副本(独立脚本不能
+ * import),由 security-windows-stdio-pipe-per-user.spec.ts 钉住一致。
+ */
+export function formatStdioPipeDiscovery(pipeName: string, pid: number): string {
+  return `${pipeName}\n${pid}\n`;
+}
+
+const DISCOVERY_PID_RE = /^[1-9][0-9]{0,9}$/;
+
+/** 解析发现文件内容;格式不符(含只有管道名一行的旧格式)→ null。 */
+export function parseStdioPipeDiscovery(raw: string): { name: string; pid: number } | null {
+  const lines = raw.split('\n');
+  if (lines.length === 3 && lines[2] === '') lines.pop(); // 末尾换行
+  if (lines.length !== 2) return null;
+  const [name, pidText] = lines as [string, string];
+  if (!WINDOWS_PIPE_NAME_RE.test(name) || !DISCOVERY_PID_RE.test(pidText)) return null;
+  return { name, pid: Number(pidText) };
+}
+
 export interface ResolveStdioHelloDeps {
   resolveWindowId: (token: string) => number | null;
   windowExists: (windowId: number) => boolean;
@@ -255,7 +280,8 @@ export interface CreateStdioSocketOptions {
   onCallerClosed?: (callerSubject: string) => void;
   /**
    * 启动时先删除旧文件(崩溃残留);listen 成功后把 socketPath 原子写入该文件(Windows 管道名发现文件,供无 env 的外部 proxy 读取);
-   * close 时若内容仍是本 server 的名字则删除。写失败只告警,不影响 server。
+   * close 时若内容仍是本 server 写入的(名字 + 本进程 pid,见 formatStdioPipeDiscovery)则删除。
+   * 写失败只告警,不影响 server。
    */
   discoveryFile?: string;
 }
@@ -572,7 +598,7 @@ export async function createStdioSocketServer(
 
   if (opts.discoveryFile) {
     try {
-      await atomicWriteText(opts.discoveryFile, opts.socketPath);
+      await atomicWriteText(opts.discoveryFile, formatStdioPipeDiscovery(opts.socketPath, process.pid));
     } catch (err) {
       console.warn('[mcp-stdio] failed to write pipe discovery file', err);
     }
@@ -620,7 +646,10 @@ export async function createStdioSocketServer(
       if (opts.discoveryFile) {
         try {
           // 只删自己写的:内容已被换掉(理论上单实例锁下不会发生)则保留。
-          if ((await readFile(opts.discoveryFile, 'utf8')) === opts.socketPath) {
+          if (
+            (await readFile(opts.discoveryFile, 'utf8')) ===
+            formatStdioPipeDiscovery(opts.socketPath, process.pid)
+          ) {
             await unlink(opts.discoveryFile);
           }
         } catch {

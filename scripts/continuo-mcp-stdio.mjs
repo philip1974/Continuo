@@ -17,7 +17,8 @@
 //      Linux = ".../Continuo Dev/mcp.sock"
 //   Windows = 每次启动随机的 named pipe(\\.\pipe\continuo-mcp-<用户哈希>-<随机>):
 //             Continuo 终端里由 CONTINUO_MCP_SOCKET 注入;否则读发现文件
-//             %APPDATA%\Continuo\mcp-pipe → %APPDATA%\Continuo Dev\mcp-pipe(只认合法名),
+//             %APPDATA%\Continuo\mcp-pipe → %APPDATA%\Continuo Dev\mcp-pipe(内容是「管道名 + 主进程 pid」
+//             两行;只认合法名,且该 pid 须仍存活 —— 崩溃残留的发现文件不用),
 //             都读不到即报错退出 —— 不回落可预测名(同机其它用户可抢注同名管道骗走 hello token)
 //   2/3(及 Windows 的两个发现文件)是**候选**:按序连接,连不上(崩溃残留的 socket / 过期管道名 →
 //   ENOENT / ECONNREFUSED)就试下一个,全部失败才报错退出。env 显式指定时只连它,不回落(Windows 上 env
@@ -62,13 +63,39 @@ function windowsAppDataDir() {
 }
 
 // Windows 管道名发现:与主进程 electron/main/services/mcp-stdio-server.service.ts 的
-// isValidWindowsStdioPipeName / STDIO_PIPE_DISCOVERY_FILE 一致(本脚本独立运行不能 import)——
-// 由 src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住。
+// isValidWindowsStdioPipeName / STDIO_PIPE_DISCOVERY_FILE / parseStdioPipeDiscovery 一致(本脚本独立运行不能
+// import)—— 由 src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住。
 // <windows-pipe-discovery>
 const WINDOWS_PIPE_NAME_RE = /^\\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$/;
-function readWindowsPipeDiscovery(appDataDir) {
+const DISCOVERY_PID_RE = /^[1-9][0-9]{0,9}$/;
+// 发现文件内容:两行「管道名 \n 主进程 pid \n」。格式不符(含只有管道名一行的旧格式)→ null。
+function parseWindowsPipeDiscovery(raw) {
+  const lines = raw.split('\n');
+  if (lines.length === 3 && lines[2] === '') lines.pop(); // 末尾换行
+  if (lines.length !== 2) return null;
+  const [name, pidText] = lines;
+  if (!WINDOWS_PIPE_NAME_RE.test(name) || !DISCOVERY_PID_RE.test(pidText)) return null;
+  return { name, pid: Number(pidText) };
+}
+// 0 信号只探测进程是否存在(Windows 上 Node 同样支持)。EPERM = 存在但无权发信号 → 视为存活;
+// ESRCH / 非法 pid 等其它错误 → 不存活。
+function isProcessAlive(pid, probe = (p) => process.kill(p, 0)) {
+  try {
+    probe(pid);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM';
+  }
+}
+function readWindowsPipeDiscovery(appDataDir, isAlive = isProcessAlive) {
   // packaged 优先(日常驱动器),dev 次之;内容不是本机 continuo-mcp 管道名(被写成远程管道 / 任意路径)→ 不用。
-  // 返回全部合法候选(按优先级),由调用方逐个尝试连接:packaged 文件可能是崩溃残留的过期名。
+  // 返回全部合法候选(按优先级),由调用方逐个尝试连接。
+  // 写入发现文件的主进程已不存活 → 跳过:Continuo 崩溃 / 被强杀后发现文件要到下次启动才删,其中的管道名可被
+  // 同机其它用户在 \\.\pipe\ 下枚举并抢注,连过去会收到对方伪造的 tools/list 与工具结果。旧格式(只有管道名、
+  // 没有 pid)无从验证,同样跳过(fail-closed;本脚本与 Continuo 同版本发布)。
+  // 残余:崩溃后该 pid 被系统复用给别的进程(任何用户的)时这里仍判为存活,过期名照旧会被尝试 —— pid 只能
+  // 证明「有这么个进程」,证明不了它是写入者;Windows 复用 pid 较快,此检查只是把窗口从「崩溃后到下次启动」
+  // 缩到「崩溃后且 pid 恰被复用」,不是消除。
   const names = [];
   for (const appName of ['Continuo', 'Continuo Dev']) {
     let raw;
@@ -77,8 +104,8 @@ function readWindowsPipeDiscovery(appDataDir) {
     } catch {
       continue;
     }
-    const name = raw.trim();
-    if (WINDOWS_PIPE_NAME_RE.test(name)) names.push(name);
+    const entry = parseWindowsPipeDiscovery(raw);
+    if (entry && isAlive(entry.pid)) names.push(entry.name);
   }
   return names;
 }

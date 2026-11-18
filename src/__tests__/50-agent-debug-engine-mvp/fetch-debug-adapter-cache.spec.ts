@@ -1,7 +1,8 @@
 // js-debug adapter 缓存完整性:scripts/fetch-debug-adapter.mjs 以前只要 dapDebugServer.js 存在就跳过
 // sha256 校验,被改动过的本地 js-debug/ 会被原样打进安装包;校验与解包也读的不是同一份数据。
 // 现在:内存 buffer 校验后用同一 buffer 解包,解包后写缓存标记(版本 + sha256 + 目录树哈希),
-// 命中缓存须标记全部吻合。
+// 命中缓存须标记全部吻合。标记与目录放在一起,是自证值:防意外损坏 / 误改 / 过期缓存,
+// 不防有本地写权限、同时改目录和标记的人(本规范也只钉前者)。
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
