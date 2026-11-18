@@ -686,7 +686,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     }
   });
 
-  // 边界(E314,E63 renderer 对偶 / pre-IPC):readGitBlob 发 IPC 前校验 sha hex 形态(4-64 hex),
+  // 边界(E314,E63 renderer 对偶 / pre-IPC):readGitBlob 发 IPC 前校验 sha hex 形态(完整 40 / 64 位 hex),
   // 非 hex/超长 → BAD_INPUT 不发 IPC(单一来源 isValidGitBlobSha)。
   it('E314 readGitBlob 非法 sha(非 hex / 超长)→ BAD_INPUT 且不发 IPC', async () => {
     const store = new InMemoryPermissionStore();
@@ -702,18 +702,20 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     expect(coApiMocks.pluginFsRaw.readGitBlob).not.toHaveBeenCalled();
   });
 
-  it('E314 合法 sha(4-64 hex)→ 透传(回归)', async () => {
+  it('E314 合法 sha(完整 40 位 hex)→ 透传(回归);缩写 sha → BAD_INPUT', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['fs']);
     const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
-    await scoped.fs.readGitBlob('/repo', 'abcd1234');
+    await expect(scoped.fs.readGitBlob('/repo', 'abcd1234')).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    expect(coApiMocks.pluginFsRaw.readGitBlob).not.toHaveBeenCalled();
+    await scoped.fs.readGitBlob('/repo', 'abcd1234'.repeat(5));
     expect(coApiMocks.pluginFsRaw.readGitBlob).toHaveBeenCalled();
   });
 
   it('E314 shared sha 校验走字符扫描,不调用 RegExp.test', () => {
     const testSpy = vi.spyOn(RegExp.prototype, 'test');
-    expect(isValidGitBlobSha('abcd1234')).toBe(true);
-    expect(isValidGitBlobSha('ABCDEF012345')).toBe(true);
+    expect(isValidGitBlobSha('abcd1234'.repeat(5))).toBe(true);
+    expect(isValidGitBlobSha('ABCDEF01'.repeat(8))).toBe(true);
     expect(isValidGitBlobSha('abc')).toBe(false);
     expect(isValidGitBlobSha('not-hex-zz')).toBe(false);
     expect(isValidGitBlobSha('a'.repeat(65))).toBe(false);

@@ -905,6 +905,10 @@
 - [`plugin-data.spec.ts`](./plugin-data/plugin-data.spec.ts)
 - [`serialize-order.spec.ts`](./plugin-data/serialize-order.spec.ts)
 
+## [plugin-fs-git-blob-scope(readGitBlob 的对象库必须在已授 scope 内)](./plugin-fs-git-blob-scope/README.md)
+
+- [`read-git-blob-scope.spec.ts`](./plugin-fs-git-blob-scope/read-git-blob-scope.spec.ts)
+
 ## [plugin-fs-read-cap (E28 + E29 + E30 + E31)](./plugin-fs-read-cap/README.md)
 
 - [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)

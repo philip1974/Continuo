@@ -342,7 +342,7 @@ function makeFs(
       // 边界(E314,E63 renderer 对偶 / pre-IPC 预检):sha 发 IPC 前校验 hex 形态 —— 此前只校验 repoDir,
       // 超长/非 hex sha 经 structured-clone 进 main 才被 isValidGitBlobSha 拒(IPC 放大)。共享 isValidGitBlobSha。
       if (!isValidGitBlobSha(sha)) {
-        throw codedError('BAD_INPUT', 'plugin readGitBlob sha must be 4-64 hex chars');
+        throw codedError('BAD_INPUT', 'plugin readGitBlob sha must be a full 40- or 64-char hex sha');
       }
       return coApi.pluginFsRaw.readGitBlob(
         token ?? missingPluginFsToken(),
