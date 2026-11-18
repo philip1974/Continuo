@@ -925,6 +925,10 @@
 
 - [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)
 
+## [plugin-fs-rw-lock(plugin-fs 调用之间的读写锁:插件不能在另一次调用的「校验 → 操作」之间改目录结构)](./plugin-fs-rw-lock/README.md)
+
+- [`plugin-fs-rw-lock.spec.ts`](./plugin-fs-rw-lock/plugin-fs-rw-lock.spec.ts)
+
 ## [plugin-fs-scope-bridge](./plugin-fs-scope-bridge/README.md)
 
 - [`scope-decision-feedback.spec.ts`](./plugin-fs-scope-bridge/scope-decision-feedback.spec.ts)
