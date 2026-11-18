@@ -46,6 +46,19 @@ plugin)计。
   此前(审计实测):①镜像残留 → 该域请求不走节流而 renderer 真的弹窗:40 次请求每次点「仅本次」弹 40 次(上限
   应为 10)、连续超时无冷却、被拒后立刻再请求又弹;②弹窗显示中 reload → 弹窗消失而 main 的未决请求留到 5 分钟
   超时,调用方一直「已有未决弹窗」,再加 30s 超时冷却 → 同窗口所有 agent 330s 拿不到弹窗。
+- **reload 窗口期(新文档尚未订阅授权请求)到达的请求直接拒绝**。上一条把未决请求按取消结算后,agent 立即重试的
+  那次 IPC 落在加载中的文档上(实测):没有可见弹窗,main 的未决请求占着槽等满 5 分钟再进超时冷却,该窗口同类调用方
+  **所有域**被拒约 330s。
+  - 就绪握手:renderer 订阅授权请求(preload `agentAuth.onRequest` 挂上监听)后上报 `agent-auth:ready`(同
+    `plugins:protocol-ready`);main 校验受信 frame,按发送方所在窗口记为就绪。`did-finish-load` 不算(React 挂载、
+    订阅建立在其后)。
+  - main 在窗口创建时(`browser-window-created`,首次加载之前)开始跟踪;主框架非同文档导航 / `render-process-gone`
+    起到下一次上报就绪为止,以及主框架仍在加载(`isLoadingMainFrame`,纵深)时,`requestAgentAuth` **立即** reject
+    `AGENT_NOT_AUTHORIZED`(消息说明窗口正在重新加载、稍后重试):不发 IPC、不登记未决、不计拒绝、不进冷却。
+  - 这些被拒的请求**计入速率上限**(窗口期狂刷重试 → 就绪后按超速拒绝,不连弹)。
+  - 渲染进程崩溃后一直不恢复 → 该窗口的请求一直立即被拒(本来也显示不了弹窗),不再各自干等 5 分钟。
+  - 残余:对本应用入口的主框架导航开始后被中止(文档其实没换)时不会再有就绪上报,该窗口的授权请求被拒到下一次
+    reload;正常的 Cmd+R / `webContents.reload()` 不会中止。
 - **镜像过期的纵深**:镜像说已授权时 renderer 只会秒回 `session`。按镜像放行的请求得到任何别的结果(仅本次 / 拒绝 /
   超时 / 取消)→ 清镜像,且这次的结果照常记入节流(拒绝进冷却、超时进冷却、授予计速率之后的请求)。并发的同域
   请求只有第一个发现过期的记账(其余是 renderer 因槽被占自动拒的,不是用户的决定)。
@@ -86,6 +99,8 @@ plugin)计。
 - `renderer-reload.spec.ts`:真实 `agent-auth.service` + 真实 renderer store(fake timers):「本次启动期间允许」后
   reload(main 收到导航事件 / 纵深:没收到)→ 40 次「仅本次」≤ 10 个弹窗、超时有冷却、拒绝有冷却;弹窗显示中
   reload / 渲染进程崩溃 → 未决请求立即结算、新请求马上可弹、不计拒绝;同文档导航不结算。
+  reload 窗口期(未上报就绪 / 主框架加载中)的请求立刻被拒、不发 IPC、不锁死、计入速率;就绪后正常弹窗。
+- `renderer-ready-handshake.spec.ts`:preload 先挂监听再上报 `agent-auth:ready`;main 的 READY 处理器与窗口创建时的跟踪接线。
 - `timeout-occupancy.spec.ts`:真实 service + 真实 renderer store:三域轮换只发起不应答的占屏比例、超时冷却按
   调用方记、连续超时翻倍与封顶、用户决定后归零、超时不算拒绝、窗口内与 external 各记各的;排队未显示就到期的
   external 请求不进冷却、轮到显示并显示到超时的照常进冷却。

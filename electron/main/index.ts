@@ -84,6 +84,7 @@ import {
 } from './ipc/terminal.ipc';
 import {
   cancelAgentAuthByWindow,
+  watchAgentAuthRenderer,
   cancelAllAgentAuth,
   requestAgentAuth,
   setAgentAuthControllerTeardown,
@@ -862,6 +863,8 @@ app.on('browser-window-created', (_evt, win) => {
   // webContents id ≠ BrowserWindow id 且 'closed' 后 webContents 已销毁不可读 →
   // 在创建期(此刻 webContents 存活)先捕获 wcId。
   const wcId = win.webContents.id;
+  // agent 授权:从此刻(首次加载之前)起跟踪该窗口的 renderer 是否已能显示授权弹窗。
+  watchAgentAuthRenderer(win);
   win.once('closed', () => {
     void debugService.killByOwner(win.id, 'window-closed').catch((err) => {
       console.warn('[debug] killByOwner failed during window close', err);

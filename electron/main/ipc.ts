@@ -40,6 +40,7 @@ import { jsonStringLengthLowerBoundExceeds } from '../shared/json-byte-budget';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import {
   answerAgentAuthRequest,
+  markAgentAuthRendererReady,
   revokeAndKillAgentSessions,
 } from './services/agent-auth.service';
 import { MCP_CHANNELS } from '../shared/mcp-channels';
@@ -283,6 +284,15 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
     },
     trusted,
   );
+
+  // renderer 已订阅授权请求(reload 后新文档重新上报)→ 该窗口恢复接收授权弹窗。窗口由 sender 推断。
+  ipcMain.on(AGENT_AUTH_CHANNELS.READY, (event) => {
+    if (!trusted(event.senderFrame)) return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed() && win.webContents === event.sender) {
+      markAgentAuthRendererReady(win.id);
+    }
+  });
 
   // 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发)。
   // 入参空对象,返回 { killed, rotated } 给 renderer 显示 toast / 反馈。

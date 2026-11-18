@@ -220,6 +220,7 @@
 - [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
 - [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
 - [`prompt-keyboard-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-keyboard-grant-guard.spec.tsx)
+- [`renderer-ready-handshake.spec.ts`](./agent-auth-prompt-throttle/renderer-ready-handshake.spec.ts)
 - [`renderer-reload.spec.ts`](./agent-auth-prompt-throttle/renderer-reload.spec.ts)
 - [`store-slots.spec.ts`](./agent-auth-prompt-throttle/store-slots.spec.ts)
 - [`timeout-occupancy.spec.ts`](./agent-auth-prompt-throttle/timeout-occupancy.spec.ts)
