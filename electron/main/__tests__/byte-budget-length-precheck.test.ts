@@ -2,7 +2,7 @@
 // .length 下界(jsonStringLengthLowerBoundExceeds,每个字符串 O(1)),不再逐字符 UTF-8 计数 —— 三处其后都有
 // JSON.stringify + 精确 UTF-8 字节终裁,.length ≤ UTF-8 字节,故 .length 下界仍是合法下界,接受/拒绝判定不变
 //(多字节内容只是从「预检拒」挪到「精确终裁拒」)。
-import { readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -67,6 +67,7 @@ describe('plugin-data SAVE:.length 下界预检 + 精确字节终裁', () => {
   async function save(data: unknown): Promise<unknown> {
     const root = await mkdtemp(path.join(tmpdir(), 'continuo-pd-len-'));
     roots.push(root);
+    mkdirSync(path.join(root, 'plugins', 'p.len'), { recursive: true }); // save 只写已安装插件的目录
     const handlers = new Map<string, Handler>();
     registerPluginDataStoreHandlers(
       { handle: (c: string, h: Handler) => handlers.set(c, h) } as never,

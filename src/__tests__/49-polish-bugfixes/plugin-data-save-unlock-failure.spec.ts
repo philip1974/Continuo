@@ -6,7 +6,7 @@
 // reject 会覆盖成功结果 → 一次本已落盘成功的写被 IPC 报成失败(未闭环:成功却报错,
 // 上层可能误触发重试 / 丢数据反馈)。修复:解锁 best-effort `.catch(() => {})`。
 
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -25,6 +25,7 @@ let ipc: StubIpcMain;
 beforeEach(async () => {
   userDataPath = await mkdtemp(join(tmpdir(), `data-unlock-${randomUUID()}-`));
   ipc = new StubIpcMain();
+  await mkdir(join(userDataPath, 'plugins', 'plugin.data'), { recursive: true }); // save 只写已安装插件的目录
   registerPluginDataStoreHandlers(ipc as never, { userDataPath });
   // lock() 成功获取,但 release() reject(模拟 stale 接管 / .lock 被清)
   lockMock.lock.mockResolvedValue(async () => {

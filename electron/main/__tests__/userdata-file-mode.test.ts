@@ -58,8 +58,9 @@ describe.skipIf(process.platform === 'win32')('userData 敏感文件以 0600 新
 
   it('插件 data.json 首次保存的占位文件 0600(加锁失败时残留也不放宽)', async () => {
     const { root, invoke } = await pluginDataHarness();
+    await mkdir(join(root, 'plugins', 'p.b'), { recursive: true }); // save 只写已安装插件的目录
     vi.spyOn(lockfile, 'lock').mockRejectedValue(new Error('lock failed'));
-    await expect(invoke('plugin-data:save', 'p.b', { value: 1 })).rejects.toThrow();
+    await expect(invoke('plugin-data:save', 'p.b', { value: 1 })).rejects.toThrow('lock failed');
     expect(await modeOf(join(root, 'plugins', 'p.b', 'data.json'))).toBe(0o600);
   });
 

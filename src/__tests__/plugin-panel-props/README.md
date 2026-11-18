@@ -19,8 +19,10 @@
   - `isVisible` 实时反映面板可见性;`onDidVisibilityChange` 回调只收到 `{ isVisible }`。
   - props / api 对象冻结;同一个面板实例多次渲染拿到同一个对象(可放进 effect 依赖)。
   - 没有 `containerApi`、`params`,`api` 上没有 `close` / `group` / `setTitle` 等其它成员。
-- 宿主直接注册、或内置插件(不带 token 的 scoped app)注册的面板(terminal / editor / settings …):
-  照旧收到 dockview 原始 props。
+- 内置插件(不带 token 的 scoped app,`bootCorePlugins`)注册的面板(terminal / editor / settings …):
+  照旧收到 dockview 原始 props。宿主 / 内置面板全部走这条路径。
+- **查不到所有者记录**的面板(未经 scoped app 直接进注册表,或所有权登记被绕过)→ 按第三方处理,只给最小 props
+  (fail-closed)。
 - 面板 type 已被注销(插件停用)→ 渲染空,不调用旧 factory(既有行为)。
 
 ## 残余

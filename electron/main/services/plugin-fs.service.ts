@@ -10,7 +10,7 @@ import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
-import { ScopeRequestThrottle, scopeRequestKey } from './scope-request-throttle';
+import { ScopeRequestThrottle } from './scope-request-throttle';
 import {
   ScopeError,
   ScopeRequestTimeoutError,
@@ -678,14 +678,17 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.READ_GIT_BLOB,
-    async (event, token: string, repoDir: string, sha: string) => {
+    async (event, token: string, repoDir: string, rawSha: string) => {
       // 边界(E63):sha 进 git cat-file argv 前先校验固定 hex 形态 + 长度(挡超长 sha 触发 spawn
       // E2BIG / argv 内存放大;非 hex 也直接拒,绝不进 spawn)。只认完整 sha,不做唯一前缀解析。
-      if (!isValidGitBlobSha(sha)) {
+      if (!isValidGitBlobSha(rawSha)) {
         throw new ScopeError('invalid git blob sha (must be a full 40- or 64-char hex sha)', {
-          target: typeof sha === 'string' ? sha.slice(0, 64) : 'non-string',
+          target: typeof rawSha === 'string' ? rawSha.slice(0, 64) : 'non-string',
         });
       }
+      // 安全:hex 允许 A-F,而 git 内部转小写后才找对象(objects/ab/…)。按原样的大写前缀校验扇出目录时,大小写
+      // 敏感文件系统上 objects/AB 不存在(跳过校验),git 实际读的 objects/ab 若是外链就读到 scope 外。统一转小写。
+      const sha = rawSha.toLowerCase();
       const senderId = event.sender.id;
       const r = await pathScopeRegistry.check(token, senderId, 'read', repoDir, 'r');
       const cwd = canonicalPath(r);
@@ -802,9 +805,10 @@ export function registerPluginFsHandlers(
       if (!correlator.canAccept(event.sender.id)) {
         return 'deny';
       }
-      // 安全:拒绝冷却 + 每插件弹窗速率上限(见 scope-request-throttle)。同一组 scope 刚被用户拒绝、或该插件
-      // 弹窗过于频繁 → 直接 deny,不发弹窗:插件不能在拒绝回调里循环 requestScope 诱导误点。
-      const throttleKey = scopeRequestKey(canonicalScopes);
+      // 安全:拒绝冷却(按单条路径)+ 插件级连续被拒退避 + 每插件弹窗速率上限(见 scope-request-throttle)。
+      // 请求里有刚被用户拒绝的路径(或其祖先)、或该插件连续被拒 / 弹窗过于频繁 → 直接 deny,不发弹窗:
+      // 插件不能在拒绝回调里循环 requestScope(换个组合 / mode / 父目录再问)诱导误点。
+      const throttleKey = canonicalScopes.map((s) => s.path);
       if (!scopeThrottle.tryPrompt(pluginId, throttleKey)) {
         return 'deny';
       }

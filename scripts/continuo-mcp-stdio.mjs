@@ -22,8 +22,9 @@
 //   2/3(及 Windows 的两个发现文件)是**候选**:按序连接,连不上(崩溃残留的 socket / 过期管道名 →
 //   ENOENT / ECONNREFUSED)就试下一个,全部失败才报错退出。env 显式指定时只连它,不回落(Windows 上 env
 //   值须是合法本机 continuo-mcp 管道名,否则报错退出)。
-//   macOS / Linux:候选须是属于当前用户的 socket,且所在目录属于当前用户、他人不可写(见 posixSocketTrustError);
-//   env 指定的不满足 → 报错退出(不连接、不发 hello token),默认候选不满足 → 跳过。
+//   macOS / Linux:候选先 realpath,解析后须是属于当前用户的 socket,且所在目录属于当前用户、他人不可写
+//   (见 resolveTrustedPosixSocket),连接的是解析后的路径;env 指定的不满足 / 无法校验 → 报错退出
+//   (不连接、不发 hello token),默认候选不满足 → 跳过。
 //
 // 设计:packaged 是日常工具,dev 只是临时验证。两个都活时优先 packaged
 // (避免开发者忘了关 dev 误把 prod 流量打到 dev)。dev 单独活时(开发者
@@ -32,7 +33,7 @@
 // Continuo 主进程必须在线;否则连失败,Claude Code 标 mcp server 不可用。
 
 import { createConnection } from 'node:net';
-import { existsSync, lstatSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -83,41 +84,47 @@ function readWindowsPipeDiscovery(appDataDir) {
 }
 // CONTINUO_MCP_SOCKET env 的取值校验:Windows 上与发现文件同一规则,只认本机 continuo-mcp 管道名(env 被
 // 写成远程管道 / 任意路径 → 不连,报错退出,不把 hello token 发到别处);POSIX 上 env 是任意 socket 路径,
-// 名字不校验,归属由 posixSocketTrustError 校验。
+// 名字不校验,归属由 resolveTrustedPosixSocket 校验。
 function isAcceptableEnvSocket(value, platform) {
   return platform !== 'win32' || WINDOWS_PIPE_NAME_RE.test(value);
 }
 // </windows-pipe-discovery>
 
 // POSIX 上候选 unix socket 的归属校验(连接、发 hello token 之前)。项目级 MCP 配置的 env 段可以把
-// CONTINUO_MCP_SOCKET 指向同机其它用户监听的 socket,proxy 连上后会把窗口 token 发过去。要求:
-//   - 路径本身是 socket(lstat,不跟随符号链接)且属主是当前用户;
-//   - 父目录属主是当前用户且 group / other 不可写(否则他人可在校验与连接之间换掉 socket)。
+// CONTINUO_MCP_SOCKET 指向同机其它用户监听的 socket,proxy 连上后会把窗口 token 发过去。
+// 先 realpath,对**解析后的路径**校验,并让调用方**连接解析后的路径**:只校验原路径时,路径中间若有别人可改的
+// 符号链接(/tmp/link/mcp.sock),校验时指向本人的 socket、连接前换成指向别人的即可绕过。要求:
+//   - 解析后的路径是 socket 且属主是当前用户;
+//   - 其父目录属主是当前用户且 group / other 不可写(否则他人可在校验与连接之间换掉 socket)。
 // 主进程把 socket 建在 0700 的 userData 里(mcp-stdio-server.service setupSocketDir),必然满足。
-// 返回 null = 可连;字符串 = 拒绝原因。stat 失败(不存在等)不在这里判,交给连接去报错 / 试下一个候选。
-// uid 为 undefined(Windows 无 getuid)→ 不适用。由 security-stdio-socket-owner.spec.ts 抽出本段直接测。
+// 返回 { path, error }:error 为 null → 连接 path(解析后的路径);否则 error 是拒绝原因。
+// realpath / stat 失败(不存在、无权限 …)同样是拒绝(fail-closed),由调用方决定报错退出还是跳过。
+// uid 为 undefined(Windows 无 getuid)→ 不适用,路径原样。由 security-stdio-socket-owner.spec.ts 抽出本段直接测。
 // <posix-socket-trust>
-function posixSocketTrustError(socketPath, uid, fs) {
-  if (uid === undefined) return null;
+function resolveTrustedPosixSocket(socketPath, uid, fs) {
+  if (uid === undefined) return { path: socketPath, error: null };
+  let real;
   let leaf;
   let parent;
   try {
-    leaf = fs.lstatSync(socketPath);
-    parent = fs.statSync(path.dirname(socketPath));
-  } catch {
-    return null;
+    real = fs.realpathSync(socketPath);
+    leaf = fs.lstatSync(real);
+    parent = fs.statSync(path.dirname(real));
+  } catch (err) {
+    return { path: socketPath, error: `cannot verify socket: ${err?.message ?? err}` };
   }
-  if (!leaf.isSocket()) return 'not a socket';
-  if (leaf.uid !== uid) return 'socket is not owned by the current user';
-  if (parent.uid !== uid || (parent.mode & 0o022) !== 0) {
-    return 'socket directory is not owned by the current user or is writable by others';
+  let error = null;
+  if (!leaf.isSocket()) error = 'not a socket';
+  else if (leaf.uid !== uid) error = 'socket is not owned by the current user';
+  else if (parent.uid !== uid || (parent.mode & 0o022) !== 0) {
+    error = 'socket directory is not owned by the current user or is writable by others';
   }
-  return null;
+  return { path: real, error };
 }
 // </posix-socket-trust>
-function socketTrustError(socketPath) {
-  if (process.platform === 'win32') return null;
-  return posixSocketTrustError(socketPath, process.getuid?.(), { lstatSync, statSync });
+function trustedSocket(socketPath) {
+  if (process.platform === 'win32') return { path: socketPath, error: null };
+  return resolveTrustedPosixSocket(socketPath, process.getuid?.(), { realpathSync, lstatSync, statSync });
 }
 
 // 按序连接候选,返回第一个连上的 { sock, path };全部失败 reject(消息列出每个候选的错误)。
@@ -160,24 +167,27 @@ function resolveSocketCandidates() {
       );
       process.exit(1);
     }
-    // 不属于当前用户的 socket:不连接(连上即便不发 hello,对方也能伪造工具结果),直接报错退出。
-    const untrusted = socketTrustError(envSocket);
-    if (untrusted) {
+    // 不属于当前用户的 socket / 无法校验的路径:不连接(连上即便不发 hello,对方也能伪造工具结果),直接报错退出。
+    const trusted = trustedSocket(envSocket);
+    if (trusted.error) {
       process.stderr.write(
-        `[continuo-mcp-stdio] refusing CONTINUO_MCP_SOCKET ${JSON.stringify(envSocket)}: ${untrusted}\n`,
+        `[continuo-mcp-stdio] refusing CONTINUO_MCP_SOCKET ${JSON.stringify(envSocket)}: ${trusted.error}\n`,
       );
       process.exit(1);
     }
-    return [envSocket];
+    return [trusted.path];
   }
   if (process.platform === 'win32') return readWindowsPipeDiscovery(windowsAppDataDir());
   // existsSync 只用于筛掉明显不存在的路径(给清晰错误);存在 ≠ 有人在听,真正判定靠连接。
-  return [packagedSocketPath(), devSocketPath()].filter((p) => {
-    if (!existsSync(p)) return false;
-    const untrusted = socketTrustError(p);
-    if (untrusted) process.stderr.write(`[continuo-mcp-stdio] skipping ${p}: ${untrusted}\n`);
-    return !untrusted;
-  });
+  // 通过校验的候选换成解析后的路径(连接的就是校验过的那个);不可信 / 无法校验 → 跳过。
+  const candidates = [];
+  for (const p of [packagedSocketPath(), devSocketPath()]) {
+    if (!existsSync(p)) continue;
+    const trusted = trustedSocket(p);
+    if (trusted.error) process.stderr.write(`[continuo-mcp-stdio] skipping ${p}: ${trusted.error}\n`);
+    else candidates.push(trusted.path);
+  }
+  return candidates;
 }
 
 const candidates = resolveSocketCandidates();

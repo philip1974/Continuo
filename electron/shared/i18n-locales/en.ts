@@ -76,6 +76,7 @@ export const en = {
     'Could not revoke the plugin file-access token; the operation was aborted. Try again.',
   'errors.PLUGIN_ID_MISMATCH': 'Plugin id in the repository does not match the marketplace entry',
   'errors.PLUGIN_SYMLINK_REJECTED': 'Plugin repository contains symbolic links; installation refused',
+  'errors.PLUGIN_DATA_PRESERVE_FAILED': 'Could not preserve plugin data; update aborted (the installed version and its data are unchanged)',
   'errors.RM_FAILED': 'Remove failed',
   'errors.TERMINAL_CREATE_CANCELLED': 'Terminal creation was cancelled',
   'errors.TERMINAL_CWD_UNRESOLVED': 'Terminal cwd unresolved',

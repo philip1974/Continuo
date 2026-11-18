@@ -550,6 +550,43 @@ describe('createPluginsWatcher', () => {
     expect(fn.mock.calls).toEqual([['new.id']]);
   });
 
+  // 安全:旧安装的插件目录可能带符号链接。watcher 读 manifest(算 hash、取 id)前与列举同口径校验
+  // 真实路径仍在插件目录内,否则等于替插件读目录外文件。
+  it('manifest.json 是指向插件目录外文件的符号链接 → 跳过该目录,不读外部文件(不以其 id 报告变化)', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'lm-watch-outside-'));
+    try {
+      writeFileSync(join(outside, 'secret.json'), JSON.stringify({ id: 'outside.id', name: 'X', version: '1' }));
+      const dir = join(tmp, 'evil');
+      mkdirSync(dir);
+      symlinkSync(join(outside, 'secret.json'), join(dir, 'manifest.json'));
+      writeFileSync(join(dir, 'main.js'), '/* main */');
+      const open = vi.spyOn(fsp, 'open');
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      touch('evil', 'main.js', Date.now() + 5000);
+      await w.tick();
+      expect(fn).not.toHaveBeenCalled();
+      expect(open.mock.calls.filter((c) => String(c[0]).endsWith('manifest.json'))).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('manifest.json 是指向插件目录内文件的符号链接 → 照常监控', async () => {
+    const dir = join(tmp, 'linked');
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'real-manifest.json'), JSON.stringify({ id: 'linked.id', name: 'L', version: '1' }));
+    symlinkSync(join(dir, 'real-manifest.json'), join(dir, 'manifest.json'));
+    writeFileSync(join(dir, 'main.js'), '/* main */');
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    touch('linked', 'main.js', Date.now() + 5000);
+    await w.tick();
+    expect(fn).toHaveBeenCalledWith('linked.id');
+  });
+
   it('start(intervalMs) 返 dispose,disposed 后 tick 不再 fire', async () => {
     makeDir('a', { id: 'a', name: 'A', version: '0.1.0' });
     const fn = vi.fn();

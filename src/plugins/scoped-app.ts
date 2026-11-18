@@ -12,6 +12,7 @@
 // 能力(shell / network / fs 写与 requestScope / clipboard / mcp 注册与调用 / notifications / dock / editor.openFile)
 // 在 renderer 源头拒绝、不发 IPC —— 延迟回调或超时后仍在跑的 onunload 不能再起进程 / 发请求。
 // 不阻断:fs 读、dataStore(插件自有数据,onunload 常用 saveData)、permission 查询、userHome。
+// (卸载后的 saveData 由主进程拒绝:只写已安装插件的目录,见 src/__tests__/plugin-data-uninstall-zombie/。)
 // 贡献点注册表 / events:吊销后 register / on / subscribe 拒绝,吊销前经 scoped app 直接注册的贡献与订阅在
 // revoke() 时统一注销(见 trackContributions);commands.execute / events.emit / events.clear 有外部副作用
 //(执行宿主命令可开窗口 / 终端,emit 触发他人监听),同样拒绝;只放行只读查询与 events.off。
@@ -36,6 +37,7 @@ import type {
 } from './types';
 import type { FileEntry } from '../../electron/shared/fs-entry';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
+import { isSpecObject } from './registries/spec-guard';
 import type { PluginDataStore } from './PluginDataStore';
 import {
   PermissionError,
@@ -348,7 +350,7 @@ function makeFs(
       return coApi.pluginFsRaw.readGitBlob(
         token ?? missingPluginFsToken(),
         repoDir,
-        sha,
+        sha.toLowerCase(), // 与主进程入口一致:统一小写(git 内部按小写找对象)
       );
     },
     atomicReplaceWithinScope: async (staging, final, opts) => {
@@ -805,11 +807,13 @@ const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
 const contributionOwners = new WeakMap<object, string>();
 
 /**
- * 该贡献(注册表里存活的 spec 对象)是否由第三方插件经 scoped app 注册。宿主直接注册 / 内置插件 → false。
+ * 该贡献(注册表里存活的 spec 对象)是否按第三方插件对待。只有内置插件(宿主自建、不带 token 的 scoped app)
+ * 注册的 → false;第三方插件注册的、以及**查不到所有者记录的** → true(fail-closed:所有者不明就只给最小接口面)。
  * 宿主把自己的内部对象交给贡献回调前用它决定要不要收窄(如 dock 面板 factory 的 props)。
+ * 宿主 / 内置面板全部经 bootCorePlugins 的 scoped app 注册,都有 `core:` 所有者记录。
  */
 export function isThirdPartyContribution(spec: object): boolean {
-  return contributionOwners.get(spec)?.startsWith('plugin:') === true;
+  return contributionOwners.get(spec)?.startsWith('core:') !== true;
 }
 
 function trackContributions<T extends object>(
@@ -922,8 +926,15 @@ function trackContributions<T extends object>(
             return fn.apply(t, args);
           };
         } else {
-          method = (...args: unknown[]) => {
+          method = (...rawArgs: unknown[]) => {
             assertLiveUi(pluginId, capability, life);
+            // 安全(TOCTOU):spec 来自插件,字段可以是 getter(首次返回诱饵 key、之后返回宿主的 key)。所有权检查与
+            // 注册表若各读一次,检查看到的 key 与入表的 key 就可以不同。这里只读一次:浅拷贝成冻结快照(展开对每个
+            // 自有属性恰好取值一次,函数字段保持引用),检查、入表、登记所有者都用这一份。非对象 spec 原样交给注册表报错。
+            const args =
+              keyed !== undefined && prop === 'register' && isSpecObject(rawArgs[0])
+                ? [Object.freeze({ ...(rawArgs[0] as object) }), ...rawArgs.slice(1)]
+                : rawArgs;
             const key: unknown =
               keyed !== undefined && prop === 'register'
                 ? (args[0] as Record<string, unknown> | null | undefined)?.[keyed.field]

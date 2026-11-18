@@ -362,7 +362,7 @@ describe('发现文件残留', () => {
   it('proxy:CONTINUO_MCP_SOCKET 显式指定时只连它,不回落', () => {
     const src = nodeFs.readFileSync(PROXY_SCRIPT, 'utf8');
     expect(src).toMatch(
-      /const envSocket = process\.env\.CONTINUO_MCP_SOCKET;\s*if \(envSocket\) \{[\s\S]*?return \[envSocket\];\s*\}/,
+      /const envSocket = process\.env\.CONTINUO_MCP_SOCKET;\s*if \(envSocket\) \{[\s\S]*?return \[trusted\.path\];\s*\}/, // Windows 上 trusted.path 即 envSocket 原值;POSIX 上是 realpath 结果
     );
   });
 });

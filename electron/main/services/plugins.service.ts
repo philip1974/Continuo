@@ -41,6 +41,7 @@ import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped'
 import { isSameOrInsidePath } from '../lib/path-inside';
 import { runSerialPerKey } from './serialize-per-key';
 import { parseManifest } from '../../shared/plugin-manifest';
+import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -127,6 +128,48 @@ function getPluginMainName(manifest: unknown): string {
   return 'main.js';
 }
 
+const UUID_LEN = 36;
+
+/** s[from..] 是否恰好是 randomUUID() 的形态:8-4-4-4-12 位小写 hex(字符扫描,不走 RegExp)。 */
+function isLowerUuidAt(s: string, from: number): boolean {
+  if (s.length - from !== UUID_LEN) return false;
+  for (let i = 0; i < UUID_LEN; i += 1) {
+    const code = s.charCodeAt(from + i);
+    if (i === 8 || i === 13 || i === 18 || i === 23) {
+      if (code !== 45) return false;
+    } else if (!((code >= 48 && code <= 57) || (code >= 97 && code <= 102))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 解析 installFromGit 留下的残留目录名,等价于锚定匹配 `^\.(<id>)\.(installing|old)-<uuid>$`:
+ * 末尾固定是 randomUUID(36 位),其前紧挨 `.installing-` 或 `.old-`,再往前(去掉开头的 `.`)整段是插件 id。
+ * uuid 定长 → 标记位置唯一,id 自身含 `.old-` / `.installing-` 也不会切错。
+ *
+ * 曾用 `lastIndexOf('.old-')` 且先判 backup:manifest.id = `a.old-z` 的 staging 目录
+ * `.a.old-z.installing-<uuid>` 被解析成「插件 a 的备份」,崩溃恢复时 rename 成 plugins/a ——
+ * 未装完的另一个插件的代码冒名成 a。先判 installing;id 须是合法插件 id(不合法 → 不认,原样留着)。
+ */
+function parseInterruptedInstallName(name: string): { kind: 'installing' | 'backup'; id: string } | null {
+  if (name.charCodeAt(0) !== 46) return null;
+  const uuidAt = name.length - UUID_LEN;
+  if (uuidAt < 0 || !isLowerUuidAt(name, uuidAt)) return null;
+  for (const [marker, kind] of [
+    ['.installing-', 'installing'],
+    ['.old-', 'backup'],
+  ] as const) {
+    const markerAt = uuidAt - marker.length;
+    if (markerAt > 1 && name.startsWith(marker, markerAt)) {
+      const id = name.slice(1, markerAt);
+      return isSafePluginId(id) ? { kind, id } : null;
+    }
+  }
+  return null;
+}
+
 /**
  * 启动期恢复被**进程崩溃**中断的插件更新(数据安全,codex 复查 P1)。
  *
@@ -141,52 +184,34 @@ function getPluginMainName(manifest: unknown): string {
  *   - 残留 `.<id>.installing-<uuid>` staging → 删除。
  * 幂等:无残留时纯 no-op,可安全在每次启动调用。
  */
-function parseInterruptedBackupId(name: string): string | null {
-  if (name.charCodeAt(0) !== 46) return null;
-  const marker = '.old-';
-  const markerIndex = name.lastIndexOf(marker);
-  if (markerIndex <= 1 || markerIndex + marker.length >= name.length) {
-    return null;
-  }
-  return name.slice(1, markerIndex);
-}
-
-function isInterruptedInstallingName(name: string): boolean {
-  if (name.charCodeAt(0) !== 46) return false;
-  const marker = '.installing-';
-  const markerIndex = name.lastIndexOf(marker);
-  return markerIndex > 1 && markerIndex + marker.length < name.length;
-}
-
 export async function recoverInterruptedInstalls(baseDir: string): Promise<void> {
   // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
   const entries = await readPluginDirEntriesCapped(baseDir);
   for (const name of entries) {
-    const id = parseInterruptedBackupId(name);
-    if (id !== null) {
-      const backupPath = path.join(baseDir, name);
-      const targetPath = path.join(baseDir, id);
-      let targetExists = false;
-      try {
-        await fs.access(targetPath);
-        targetExists = true;
-      } catch {
-        /* 目标缺失 = 崩在两次 rename 之间 */
-      }
-      if (targetExists) {
-        // 更新已完成,backup 是没删干净的残留 → 清理
-        await rm(backupPath, { recursive: true, force: true }).catch(() => {});
-      } else {
-        // 崩溃中断 → 还原旧版本
-        await fs.rename(backupPath, targetPath).catch(() => {});
-      }
-      continue;
-    }
+    const residue = parseInterruptedInstallName(name);
+    if (residue === null) continue;
     // 残留 staging(cp 完但还没 swap 就崩)→ 清理
-    if (isInterruptedInstallingName(name)) {
+    if (residue.kind === 'installing') {
       await rm(path.join(baseDir, name), { recursive: true, force: true }).catch(
         () => {},
       );
+      continue;
+    }
+    const backupPath = path.join(baseDir, name);
+    const targetPath = path.join(baseDir, residue.id);
+    let targetExists = false;
+    try {
+      await fs.access(targetPath);
+      targetExists = true;
+    } catch {
+      /* 目标缺失 = 崩在两次 rename 之间 */
+    }
+    if (targetExists) {
+      // 更新已完成,backup 是没删干净的残留 → 清理
+      await rm(backupPath, { recursive: true, force: true }).catch(() => {});
+    } else {
+      // 崩溃中断 → 还原旧版本
+      await fs.rename(backupPath, targetPath).catch(() => {});
     }
   }
 }
@@ -1220,14 +1245,42 @@ export function persistPluginPathScopesIfInstalled(
   scopes: readonly IpcPathScope[],
 ): Promise<void> {
   if (!isSafePluginId(id)) return Promise.resolve();
+  return withInstalledPluginLock(baseDir, id, () => writePluginPathScopes(baseDir, id, scopes));
+}
+
+/**
+ * 在同 id mutation 锁内(与安装 / 更新 / 卸载互斥)确认插件目录仍在,再执行 fn;目录缺失 → NOT_INSTALLED,fn 不执行。
+ * 给「只应作用于已安装插件」的迟到写入用(path scope 持久化、plugin-data 的 saveData):要么落在卸载之前
+ * (随后被卸载清掉),要么等卸载完成后因目录缺失被拒 —— 不会在卸载 rm 之后把东西写回去。调用方须先校验 id 形态。
+ */
+export function withInstalledPluginLock<T>(baseDir: string, id: string, fn: () => Promise<T>): Promise<T> {
   return withPluginMutationLock(id, async () => {
     try {
       await fs.access(path.join(baseDir, id));
     } catch {
       throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
     }
-    await writePluginPathScopes(baseDir, id, scopes);
+    return fn();
   });
+}
+
+/** 插件数据文件名(plugin-data-store.service 写在安装目录里)。 */
+const PLUGIN_DATA_FILE = 'data.json';
+
+/**
+ * dir 是否是 plugin-data 留下的残留目录:没有 manifest.json,且里面只有 data.json 及其附属文件(`.lock` 锁目录、
+ * `.corrupt` 快照、原子写的 `.data.json.*.tmp`)。旧版本里卸载后迟到的 saveData 会 `mkdir -p` 把目录建回来,
+ * 留下这种目录:不被列出(UI 无卸载入口),却让同 id 安装永远 EEXIST。安装时在锁内识别并清掉(自愈)。
+ * 判定从严:含任何其它条目(用户手放的文件等)或无法确认 → false,照旧按「已存在」处理,不删。
+ */
+async function isPluginDataResidueDir(dir: string): Promise<boolean> {
+  try {
+    if (!(await fs.lstat(dir)).isDirectory()) return false;
+    const names = await fs.readdir(dir);
+    return names.every((name) => name.startsWith('data.json') || name.startsWith('.data.json.'));
+  } catch {
+    return false;
+  }
 }
 
 export interface InstallFromGitResult {
@@ -1393,6 +1446,12 @@ export async function installFromGit(
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
         /* ENOENT = not exists, OK */
       }
+      // 自愈:只剩 plugin-data 残留的目录(见 isPluginDataResidueDir)不算已安装 —— 清掉后按全新安装继续
+      //(残留的 data.json 是卸载之后才写进来的,不继承)。在锁内判定 + 删除,与 saveData / 卸载互斥。
+      if (targetExists && (await isPluginDataResidueDir(targetDir))) {
+        await rm(targetDir, { recursive: true, force: true });
+        targetExists = false;
+      }
       if (targetExists && opts.overwrite !== true) {
         throw codedError(ERROR_CODES.EEXIST, `插件 ${pluginId} 已安装,卸载后再装`);
       }
@@ -1420,6 +1479,17 @@ export async function installFromGit(
         throw err;
       }
 
+      // 数据安全:插件数据 data.json 就存在安装目录里,整目录 swap 会把它丢掉。更新(已有旧目录)时在锁内把旧
+      // data.json 带进 staging(覆盖仓库自带的同名文件);无法安全读取 → 中止更新,旧目录原样保留。
+      if (backup) {
+        try {
+          await carryOverPluginData(targetDir, staging);
+        } catch (err) {
+          await rm(staging, { recursive: true, force: true }).catch(() => {});
+          throw err;
+        }
+      }
+
       try {
         if (backup) await fs.rename(targetDir, backup);
         await fs.rename(staging, targetDir);
@@ -1437,6 +1507,44 @@ export async function installFromGit(
     });
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * 把旧安装目录的 data.json(插件经 saveData 存的用户数据)带进新版本的 staging 目录。
+ * - 旧目录没有 data.json → 什么都不做(仓库自带的 data.json 照旧保留,与全新安装一致)。
+ * - 有 → 覆盖 staging 里仓库自带的同名文件:更新不应让仓库内容取代用户数据。
+ * - 只认普通文件:noFollow(符号链接 ELOOP / 硬链接 EMLINK / 非普通文件 EFTYPE 一律拒)、大小沿用 plugin-data
+ *   的上限、须是合法 UTF-8(按文本读写,非法字节无法原样带过去)。不满足或读写失败 → 抛
+ *   PLUGIN_DATA_PRESERVE_FAILED,由调用方中止更新 —— 宁可不更新,也不丢数据 / 不把链接目标的内容复制进来。
+ * 调用方须持有该 id 的 mutation 锁(saveData 也走这把锁,读到的就是最后一次落盘的内容)。
+ */
+async function carryOverPluginData(oldDir: string, stagingDir: string): Promise<void> {
+  const src = path.join(oldDir, PLUGIN_DATA_FILE);
+  const dst = path.join(stagingDir, PLUGIN_DATA_FILE);
+  let text: string;
+  try {
+    const read = await readFileCappedFd(src, MAX_PLUGIN_DATA_BYTES, { noFollow: true, requireUtf8: true });
+    if (read.text === null) {
+      throw new Error(read.tooLarge ? `larger than ${MAX_PLUGIN_DATA_BYTES} bytes` : 'not valid UTF-8');
+    }
+    text = read.text;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw codedError(
+      ERROR_CODES.PLUGIN_DATA_PRESERVE_FAILED,
+      `无法安全读取插件数据 ${PLUGIN_DATA_FILE},已中止更新(旧版本与数据原样保留): ${errorMessage(err)}`,
+    );
+  }
+  try {
+    // 仓库自带的同名条目(文件或目录;克隆树已拒符号链接)先删,再排他创建。
+    await rm(dst, { recursive: true, force: true });
+    await fs.writeFile(dst, text, { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    throw codedError(
+      ERROR_CODES.PLUGIN_DATA_PRESERVE_FAILED,
+      `无法把插件数据带入新版本,已中止更新: ${errorMessage(err)}`,
+    );
   }
 }
 
@@ -1680,6 +1788,12 @@ export function createPluginsWatcher(
       // 边界(E27,E24/listPluginDirs 同源):watcher 扫描读 manifest 也走有界读(同 MANIFEST_MAX_BYTES),
       // 避免超大 manifest 整块读入。读失败(缺失 / EACCES 等)→ 跳过该目录且不缓存,下轮重试。
       // perf:超限 → 按本轮签名缓存为 info=null(跳过),签名不变不再每 2s open+fstat + 告警,改动后照常重读。
+      // 安全:与列举(readPluginManifestText)同口径 —— manifest 的真实路径须仍在插件目录内。旧安装的目录可能带
+      // 符号链接(manifest.json -> 目录外文件),不校验就会对目录外文件算 hash、取 id。越界按本轮签名缓存为跳过。
+      if (!(await staysInsidePluginDir(dir, manifestPath))) {
+        manifestCache.set(name, { sig, info: null });
+        return null;
+      }
       let text: string | null;
       try {
         const read = await readFileCappedFd(manifestPath, MANIFEST_MAX_BYTES);

@@ -119,17 +119,35 @@ describe('第三方插件面板:factory 只收到 PluginPanelProps', () => {
   });
 });
 
-describe('宿主 / 内置插件面板:照旧收到 dockview 原始 props', () => {
-  it('宿主直接注册', () => {
+describe('内置插件面板:照旧收到 dockview 原始 props;查不到所有者的按第三方处理', () => {
+  it('没有所有者记录的面板(未经 scoped app 注册)→ fail-closed,只给最小 props', () => {
     const coApp = createTestCoApp('1.0.0');
     const factory = vi.fn((_props: unknown) => null);
-    coApp.panels.register({ type: 'terminal', title: 'Terminal', factory });
+    coApp.panels.register({ type: 'unknown-owner', title: 'X', factory });
     const { props } = makeDockviewProps();
-    renderPanel(coApp, 'terminal', props);
-    const got = factory.mock.calls[0]![0] as IDockviewPanelProps;
-    expect(got.containerApi).toBe(props.containerApi);
-    expect(got.api).toBe(props.api);
-    expect(got.params).toBe(props.params);
+    renderPanel(coApp, 'unknown-owner', props);
+    const got = factory.mock.calls[0]![0] as Record<string, unknown>;
+    expect(Reflect.ownKeys(got)).toEqual(['api']);
+    expect(got.containerApi).toBeUndefined();
+  });
+
+  it('第三方插件用 getter 让所有权记录落空(type 先 decoy 后 x.panel)→ 仍只拿到最小 props', () => {
+    const coApp = createTestCoApp('1.0.0');
+    const factory = vi.fn((_props: unknown) => null);
+    let reads = 0;
+    createScopedApp(coApp, 'evil', null, 'token-evil').panels.register({
+      get type(): string {
+        return reads++ === 0 ? 'decoy' : 'x.panel';
+      },
+      title: 'X',
+      factory,
+    });
+    const type = coApp.panels.get('x.panel') ? 'x.panel' : 'decoy';
+    const { props } = makeDockviewProps();
+    renderPanel(coApp, type, props);
+    const got = factory.mock.calls[0]![0] as Record<string, unknown>;
+    expect(got.containerApi).toBeUndefined();
+    expect(Reflect.ownKeys(got)).toEqual(['api']);
   });
 
   it('内置插件(不带 token 的 scoped app)注册', () => {

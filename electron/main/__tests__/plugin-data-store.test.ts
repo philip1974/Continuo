@@ -36,6 +36,11 @@ async function makeHarness(): Promise<{
   return { root, ipc };
 }
 
+/** saveData 只写已安装插件的目录(不再 mkdir -p):测试里先把插件目录建好。 */
+async function installed(root: string, pluginId: string): Promise<void> {
+  await mkdir(join(root, 'plugins', pluginId), { recursive: true });
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
@@ -61,7 +66,8 @@ describe('plugin-data-store.service', () => {
   });
 
   it('clear rm 真错误(EACCES 等)→ 抛出,不静默报成功', async () => {
-    const { ipc } = await makeHarness();
+    const { root, ipc } = await makeHarness();
+    await installed(root, 'p.x');
     await ipc.invoke('plugin-data:save', 'p.x', { a: 1 });
     const rmSpy = vi
       .spyOn(fsp, 'rm')
@@ -103,7 +109,8 @@ describe('plugin-data-store.service', () => {
   });
 
   it('T2.b save then load round-trips JSON data', async () => {
-    const { ipc } = await makeHarness();
+    const { root, ipc } = await makeHarness();
+    await installed(root, 'p.roundtrip');
 
     await ipc.invoke('plugin-data:save', 'p.roundtrip', { a: 1 });
 
@@ -163,7 +170,8 @@ describe('plugin-data-store.service', () => {
   });
 
   it('T2.c concurrent saves end with one complete caller payload', async () => {
-    const { ipc } = await makeHarness();
+    const { root, ipc } = await makeHarness();
+    await installed(root, 'p.concurrent');
     const payloads = Array.from({ length: 5 }, (_, i) => ({
       writer: i,
       id: randomUUID(),
@@ -180,7 +188,8 @@ describe('plugin-data-store.service', () => {
   });
 
   it('T2.d clear deletes data file', async () => {
-    const { ipc } = await makeHarness();
+    const { root, ipc } = await makeHarness();
+    await installed(root, 'p.clear');
 
     await ipc.invoke('plugin-data:save', 'p.clear', { a: 1 });
     await ipc.invoke('plugin-data:clear', 'p.clear');
@@ -188,14 +197,15 @@ describe('plugin-data-store.service', () => {
     await expect(ipc.invoke('plugin-data:load', 'p.clear')).resolves.toEqual({});
   });
 
-  it('T2.e save creates missing parent plugin dir', async () => {
+  it('T2.e 插件目录不存在 → save 拒绝(NOT_INSTALLED),不创建目录(卸载后迟到的 saveData 不复活目录)', async () => {
     const { root, ipc } = await makeHarness();
-    const file = join(root, 'plugins', 'p.parent', 'data.json');
+    const dir = join(root, 'plugins', 'p.parent');
 
-    expect(existsSync(file)).toBe(false);
-    await ipc.invoke('plugin-data:save', 'p.parent', { created: true });
+    await expect(ipc.invoke('plugin-data:save', 'p.parent', { created: true })).rejects.toMatchObject({
+      code: 'NOT_INSTALLED',
+    });
 
-    expect(existsSync(file)).toBe(true);
+    expect(existsSync(dir)).toBe(false);
   });
 
   it('T2.f rejects path-traversal pluginId on load/save/clear (审计 V1)', async () => {
@@ -275,6 +285,7 @@ describe('plugin-data-store.service', () => {
 describe('plugin-data-store save 复用序列化结果', () => {
   it('save 全程只 stringify payload 一次,落盘即该序列化串,load 往返一致', async () => {
     const { root, ipc } = await makeHarness();
+    await installed(root, 'p.once');
     const payload = { value: { list: [1, 2, 3], text: '中文' } };
     const stringify = vi.spyOn(JSON, 'stringify');
     try {

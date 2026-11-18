@@ -37,6 +37,10 @@
 - main 入口须是普通文件(目录 → `BAD_MAIN`,不落地);`branch` 选项 → `--branch=<b>`
   (非法/前导 `-` → `BAD_INPUT`,不启动子进程);`expectedId` ≠ manifest.id → `PLUGIN_ID_MISMATCH`。
   marketplace 卡片安装/更新经 `entryInstallOptions(entry)` 传 `{ expectedId, branch }`。
+- 更新(overwrite,已有旧目录)保留插件数据:swap 前在锁内把旧目录的 `data.json` 带进 staging,**覆盖**仓库自带的
+  同名文件(更新不让仓库内容取代用户数据);旧目录没有 `data.json` → 仓库自带的照旧保留(同全新安装)。
+  只认普通文件(noFollow:符号链接 / 硬链接 / 非普通文件拒)、≤ plugin-data 上限、合法 UTF-8;不满足或读写失败 →
+  `PLUGIN_DATA_PRESERVE_FAILED`,中止更新,旧版本与数据原样保留、无 staging 残留。
 
 ## P2 批次(资源/边界/体验)
 
@@ -1248,14 +1252,19 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 - 攻击场景(macOS / Linux,多用户机器):项目级 MCP 配置(不可信仓库里的 `.mcp.json` 等)的 env 段把
   `CONTINUO_MCP_SOCKET` 指向同机其它用户监听的 unix socket。proxy 在 Continuo 终端里启动(env 带窗口 token),
   连上后在 hello 里把 `{windowId, token}` 发给对方 → 对方拿 token 调本用户的 127.0.0.1 HTTP MCP。
-- 契约(`<posix-socket-trust>` 标记段直测 + 启动真实 proxy 的端到端):连接前校验每个候选 ——
-  - 路径本身是 socket(`lstat`,不跟随符号链接)且属主是当前用户;
-  - 父目录属主是当前用户且 group / other 不可写(否则他人可在校验与连接之间换掉 socket)。
+- 契约(`<posix-socket-trust>` 标记段直测 + 启动真实 proxy 的端到端):连接前对每个候选先 `realpath`,
+  校验**解析后的路径**,并**连接解析后的路径**(不是原路径)——
+  - 解析后的路径是 socket 且属主是当前用户;
+  - 其父目录属主是当前用户且 group / other 不可写(否则他人可在校验与连接之间换掉 socket)。
   主进程把 socket 建在 0700 的 userData 里(`setupSocketDir`),必然满足。
-  - `CONTINUO_MCP_SOCKET` 指定的不满足 → 报错退出:不连接、不发 hello、不透传(连上不发 hello 对方仍可伪造工具结果)。
-  - 默认候选(packaged / dev)不满足 → 跳过并在 stderr 说明,继续试下一个。
-  - stat 失败(路径不存在等)不在此判,照旧由连接报错 / 试下一个候选。Windows 分支(管道名校验)不变。
-- 行为变化:把 `CONTINUO_MCP_SOCKET` 指到 `/tmp` 等非本人目录、或指向符号链接的自定义用法不再可用。
+  - 只校验原路径不够:路径中间有别人可改的符号链接(`/tmp/link/mcp.sock`)时,校验时指向本人的 socket、
+    连接前换成指向别人的即可绕过;连接解析后的路径则与该链接此后的指向无关。
+  - `realpath` / `stat` 失败(不存在、无权限 …)= 不可信(fail-closed),不再「交给连接去试」。
+  - `CONTINUO_MCP_SOCKET` 指定的不满足 / 无法校验 → 报错退出:不连接、不发 hello、不透传(连上不发 hello 对方仍可伪造工具结果)。
+  - 默认候选(packaged / dev)不满足 → 跳过并在 stderr 说明,继续试下一个。Windows 分支(管道名校验)不变。
+- 行为变化:把 `CONTINUO_MCP_SOCKET` 指到 `/tmp` 等非本人目录的自定义用法不可用;指向符号链接的,只要解析后
+  落在本人的可信目录里即可用(连接的是解析后的路径)。
+- 残余:解析后路径的更上层祖先目录若他人可写且无 sticky 位,仍可在校验与连接之间被整体替换(只校验了直接父目录)。
 - 残余:同一用户的其它进程监听的 socket 仍会通过校验(同 uid 进程本就能读终端 env 里的 token)。
 
 ### HTTP MCP 调用方身份绑定 Mcp-Session-Id — `security-http-mcp-session-subject.spec.ts`

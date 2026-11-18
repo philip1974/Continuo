@@ -153,6 +153,48 @@ describe.skipIf(process.platform === 'win32')('readGitBlob:对象库必须在已
     await expectScopeDenied(readBlob(scope, secretSha));
   });
 
+  // git 内部把 hex 转小写再找对象;校验若按原样的大写前缀去 lstat 扇出目录,大小写敏感文件系统上 objects/AB 不存在
+  // (跳过校验)而 git 实际读的 objects/ab 是外链 → 读到 scope 外对象。入口统一转小写,校验与 git 看同一个名字。
+  describe('大写 sha', () => {
+    /** 建一个 sha 前两位含字母的 blob(大小写才有区别)。 */
+    async function blobWithLetterFanout(dir: string): Promise<{ sha: string; content: string }> {
+      for (let i = 0; ; i += 1) {
+        const content = `own-${i}\n`;
+        const sha = await initRepoWithBlob(dir, content);
+        if (/[a-f]/.test(sha.slice(0, 2))) return { sha, content };
+      }
+    }
+
+    it('校验的是小写扇出目录 / 对象文件路径(与 git 实际读取的一致),并照常读到内容', async () => {
+      const scope = join(root, 'scope');
+      const { sha, content } = await blobWithLetterFanout(scope);
+      scopes.grant(PLUGIN, [{ path: scope, mode: 'r' }]);
+      const check = vi.spyOn(scopes, 'check');
+      expect(await readBlobText(scope, sha.toUpperCase())).toBe(content);
+      const checked = check.mock.calls.map((c) => String(c[3]));
+      const objects = join(scope, '.git', 'objects');
+      expect(checked).toContain(join(objects, sha.slice(0, 2)));
+      expect(checked).toContain(join(objects, sha.slice(0, 2), sha.slice(2)));
+      expect(checked).not.toContain(join(objects, sha.slice(0, 2).toUpperCase()));
+    });
+
+    it('大写 sha + 小写扇出目录是指向 scope 外的符号链接 → 拒', async () => {
+      // 让受害仓库里的秘密 blob 的扇出前缀含字母。
+      let upper = secretSha;
+      for (let i = 0; !/[a-f]/.test(upper.slice(0, 2)); i += 1) {
+        await writeFile(join(victim, 'blob-src'), `${SECRET}#${i}\n`);
+        upper = git(victim, ['hash-object', '-w', 'blob-src']).trim();
+      }
+      const scope = join(root, 'scope');
+      await initRepoWithBlob(scope, 'own');
+      const fanout = upper.slice(0, 2);
+      await rm(join(scope, '.git', 'objects', fanout), { recursive: true, force: true });
+      await symlink(join(victim, '.git', 'objects', fanout), join(scope, '.git', 'objects', fanout));
+      scopes.grant(PLUGIN, [{ path: scope, mode: 'r' }]);
+      await expectScopeDenied(readBlob(scope, upper.toUpperCase()));
+    });
+  });
+
   // 有 rw scope 的插件可在 scope 内仓库写 refs/replace/<请求的 sha> 指向目标 OID T,并让 objects/<T 前两位>
   // 成为指向 scope 外对象目录的符号链接(SDK 的 cp 按链接复制,可把工作区里已有的外链搬进去)。扇出校验只覆盖
   // 被请求 sha 的前两位;git 默认跟随 replace-ref,cat-file 就读到未校验扇出里的 scope 外对象。

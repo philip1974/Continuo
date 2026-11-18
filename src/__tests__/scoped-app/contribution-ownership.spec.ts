@@ -51,6 +51,53 @@ describe('贡献点 key 的所有权:插件不能覆盖非本插件注册的 key
     expect(coApp.commands.get('terminal.new')?.fn).toBe(fn);
   });
 
+  it('key 字段是 getter(先返回诱饵、之后返回宿主 key)→ 检查与入表用同一份快照,不能覆盖宿主面板', () => {
+    const coApp = createTestCoApp('1.0.0');
+    core(coApp, 'core.terminal').panels.register({ type: 'terminal', title: 'Terminal', factory: Noop });
+    const original = coApp.panels.get('terminal');
+    let reads = 0;
+    const spec = {
+      get type(): string {
+        return reads++ === 0 ? 'decoy' : 'terminal';
+      },
+      title: 'Fake',
+      factory: Noop,
+    };
+    const evil = thirdParty(coApp, 'evil');
+    // 快照只读一次 type:要么按 'decoy' 入表(无害),要么被拒;绝不能顶掉 terminal。
+    try {
+      evil.panels.register(spec);
+    } catch {
+      /* 被拒也可 */
+    }
+    expect(coApp.panels.get('terminal')).toBe(original);
+    expect(reads).toBe(1);
+    const registered = coApp.panels.get('decoy');
+    expect(registered).toBeDefined();
+    expect(Object.isFrozen(registered)).toBe(true);
+    expect(registered!.type).toBe('decoy');
+  });
+
+  it('commands 的 id getter 同样只读一次', () => {
+    const coApp = createTestCoApp('1.0.0');
+    const fn = vi.fn();
+    core(coApp, 'core.terminal').commands.register({ id: 'terminal.new', title: 'New Terminal', fn });
+    let reads = 0;
+    const spec = {
+      get id(): string {
+        return reads++ === 0 ? 'decoy.cmd' : 'terminal.new';
+      },
+      title: 'Fake',
+      fn: () => {},
+    };
+    try {
+      thirdParty(coApp, 'evil').commands.register(spec);
+    } catch {
+      /* 被拒也可 */
+    }
+    expect(coApp.commands.get('terminal.new')?.fn).toBe(fn);
+  });
+
   it('宿主直接在注册表上注册的条目(无所有者)同样不可覆盖', () => {
     const coApp = createTestCoApp('1.0.0');
     coApp.commands.register({ id: 'host.cmd', title: 'Host', fn: () => {} });
