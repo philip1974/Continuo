@@ -156,6 +156,10 @@ describe('installStopHookForSession', () => {
     expect(settings).toContain('cat >');
     expect(settings).toContain('${CONTINUO_WINDOW_ID:-unknown}');
     expect(settings).toContain('${CLAUDE_CODE_SESSION_ID:-unknown}');
+    // 安全(会话绑定):文件名带 PTY 注入的终端会话 id,broker 只交给该会话的等待者。
+    expect(settings).toContain(
+      'cc_${CONTINUO_WINDOW_ID:-unknown}_${CONTINUO_TERMINAL_SESSION_ID:-unknown}_${CLAUDE_CODE_SESSION_ID:-unknown}_',
+    );
     expect(settings).toContain('"_continuo_managed": true');
   });
 
@@ -176,8 +180,72 @@ describe('installStopHookForSession', () => {
     expect(toml).toContain('[[hooks.Stop]]');
     expect(toml).toContain('# continuo-managed');
     expect(toml).toContain(
-      'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl',
+      'codex_${CONTINUO_WINDOW_ID:-unknown}_${CONTINUO_TERMINAL_SESSION_ID:-unknown}_$(date +%s%N).jsonl',
     );
+  });
+
+  // 安全(会话绑定):旧版 managed hook 写出的事件文件名无终端会话 id,broker 不再交给任何等待者。
+  // 已装旧版 hook 的项目必须在下次 install 时原地升级,否则 await_stop_hook 永远超时。
+  it('I8 旧版 Claude managed Stop hook(无会话 id)原地升级 command,不追加第二条、保留用户 Stop', async () => {
+    const cwd = await makeCwd();
+    const settingsPath = join(cwd, '.claude', 'settings.local.json');
+    const legacyCommand =
+      'mkdir -p "/x" && cat > "${CONTINUO_HOOK_EVENTS_DIR:-/x}/cc_${CONTINUO_WINDOW_ID:-unknown}_${CLAUDE_CODE_SESSION_ID:-unknown}_$(date +%s%N).jsonl"';
+    await writeText(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            { hooks: [{ type: 'command', command: 'echo user-stop' }] },
+            { hooks: [{ type: 'command', command: legacyCommand, _continuo_managed: true }] },
+          ],
+        },
+      }),
+    );
+
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'claude', hookEventsDir: '/x', windowId: 4 }),
+    ).resolves.toEqual({ installed: true });
+
+    const parsed = JSON.parse(await readText(settingsPath)) as {
+      hooks: { Stop: Array<{ hooks: Array<{ command: string; _continuo_managed?: boolean }> }> };
+    };
+    expect(parsed.hooks.Stop).toHaveLength(2);
+    expect(parsed.hooks.Stop[0]!.hooks[0]!.command).toBe('echo user-stop');
+    const managed = parsed.hooks.Stop[1]!.hooks[0]!;
+    expect(managed._continuo_managed).toBe(true);
+    expect(managed.command).toContain('${CONTINUO_TERMINAL_SESSION_ID:-unknown}');
+    await expect(listBackups(cwd)).resolves.toHaveLength(1);
+
+    // 升级后再装 → already-installed(幂等)。
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'claude', hookEventsDir: '/x', windowId: 4 }),
+    ).resolves.toEqual({ installed: false, reason: 'already-installed' });
+  });
+
+  it('I8b 旧版 Codex managed Stop hook(同 hookEventsDir、无会话 id)原地升级', async () => {
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    const hookEventsDir = join(cwd, '.continuo', 'hook-events');
+    const legacyCommand =
+      `mkdir -p "${hookEventsDir}" && cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
+      'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"';
+    await writeText(
+      configPath,
+      ['# continuo-managed', '[[hooks.Stop]]', '[[hooks.Stop.hooks]]', 'type = "command"',
+        `command = ${JSON.stringify(legacyCommand)}`, ''].join('\n'),
+    );
+
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'codex', hookEventsDir, windowId: 4 }),
+    ).resolves.toEqual({ installed: true });
+    const toml = await readText(configPath);
+    expect(toml).toContain('${CONTINUO_TERMINAL_SESSION_ID:-unknown}');
+    expect(toml.match(/codex_\$\{CONTINUO_WINDOW_ID/g)?.length).toBe(1);
+
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'codex', hookEventsDir, windowId: 4 }),
+    ).resolves.toEqual({ installed: false, reason: 'already-installed' });
   });
 
   it('I3a/I3b should skip managed Stop but not skip when only Notification contains env', async () => {
@@ -195,7 +263,7 @@ describe('installStopHookForSession', () => {
                   {
                     type: 'command',
                     command:
-                      'mkdir -p "$CONTINUO_HOOK_EVENTS_DIR"; cat > "$CONTINUO_HOOK_EVENTS_DIR/cc.jsonl"',
+                      'mkdir -p "$CONTINUO_HOOK_EVENTS_DIR"; cat > "$CONTINUO_HOOK_EVENTS_DIR/cc_$CONTINUO_TERMINAL_SESSION_ID.jsonl"',
                     _continuo_managed: true,
                   },
                 ],

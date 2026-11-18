@@ -16,8 +16,8 @@ describe('topic 49 · broker.cancelByWindow', () => {
   it('取消指定窗口的 pending 等待者并 reject,返回取消数量', async () => {
     const broker = createHookFileBroker('/tmp/topic49-hook-events-a');
     // 不调 start() — awaitNext 在未 stop 时直接挂 pending(目录里无文件可匹配)。
-    const p1 = broker.awaitNext({ windowId: 7, runner: 'cc', cwd: '/ws', timeoutMs: 600_000 });
-    const p2 = broker.awaitNext({ windowId: 9, runner: 'cc', cwd: '/ws', timeoutMs: 600_000 });
+    const p1 = broker.awaitNext({ windowId: 7, sessionId: 'term-1', runner: 'cc', cwd: '/ws', timeoutMs: 600_000 });
+    const p2 = broker.awaitNext({ windowId: 9, sessionId: 'term-2', runner: 'cc', cwd: '/ws', timeoutMs: 600_000 });
 
     const rejected1 = p1.catch((e: Error) => e.message);
 
@@ -60,7 +60,7 @@ describe('race(R81) · start 期间 stop 插入不复活资源', () => {
       expect(vi.getTimerCount()).toBe(0);
       // broker 处于 stopped 态:awaitNext 立即 reject。
       await expect(
-        broker.awaitNext({ windowId: 1, runner: 'cc', cwd: '/ws', timeoutMs: 600_000 }),
+        broker.awaitNext({ windowId: 1, sessionId: 'term-1', runner: 'cc', cwd: '/ws', timeoutMs: 600_000 }),
       ).rejects.toThrow(/stopped/);
     } finally {
       vi.clearAllTimers();

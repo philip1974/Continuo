@@ -16,6 +16,7 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - hook command 含 `cat >` 目标路径。
 - hook command 含 `${CONTINUO_WINDOW_ID:-unknown}`。
 - hook command 含 `${CLAUDE_CODE_SESSION_ID:-unknown}`。
+- 文件名为 `cc_${CONTINUO_WINDOW_ID:-unknown}_${CONTINUO_TERMINAL_SESSION_ID:-unknown}_${CLAUDE_CODE_SESSION_ID:-unknown}_<ns>.jsonl`(会话绑定)。
 - managed marker `_continuo_managed: true`。
 - 返回 `{ installed: true }`。
 
@@ -26,14 +27,14 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - 写入 `.codex/config.toml`。
 - TOML 含 `[[hooks.Stop]]` block。
 - TOML 含 `# continuo-managed` marker。
-- hook command 含 `codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl`。
+- hook command 含 `codex_${CONTINUO_WINDOW_ID:-unknown}_${CONTINUO_TERMINAL_SESSION_ID:-unknown}_$(date +%s%N).jsonl`。
 - 该断言覆盖 P0-4:Codex filename 必须带 windowId。
 
 ## I3a/I3b managed skip 与 Notification negative
 
 - cwd 既有 `.claude/settings.local.json`。
 - 文件含 `_continuo_managed: true`。
-- 同一 managed Stop hook command 含 `CONTINUO_HOOK_EVENTS_DIR`。
+- 同一 managed Stop hook command 含 `CONTINUO_HOOK_EVENTS_DIR` 与 `CONTINUO_TERMINAL_SESSION_ID`。
 - install 返回 `{ installed: false, reason: 'already-installed' }`。
 - 不创建新的 backup 文件。
 - cwd 既有 `.codex/config.toml`。
@@ -71,6 +72,13 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - install 创建 backup `.continuo-bak.<ts>`。
 - install 只改写 `_continuo_managed` marker 紧跟的 entry。
 - 不跨多个 `[[hooks.Stop]]` 误替用户自有 Stop hook。
+
+## I8 旧版 managed hook 原地升级(会话绑定)
+
+- 旧版 managed Stop hook 命令不含 `CONTINUO_TERMINAL_SESSION_ID`:其事件无会话 id,broker 不交给任何等待者。
+- Claude:install 备份后只替换该 managed hook 的 `command`,不追加第二条,用户自有 Stop 原样保留。
+- Codex:同 hookEventsDir 但 managed command 无会话 id → 与路径漂移同路径原地替换。
+- 升级后再 install → `already-installed`(幂等)。
 
 ## I7 install spawn 前完成
 
