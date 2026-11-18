@@ -44,6 +44,8 @@ export const ko: Record<TranslationKey, string> = {
   'errors.EEXIST': '파일이 이미 있습니다',
   'errors.GIT_FAILED': 'Git 명령 실패',
   'errors.GIT_SPAWN_FAILED': 'git 시작 실패',
+  'errors.GIT_TIMEOUT':
+    'Git 명령 시간이 초과되었습니다. git 설정이 https를 ssh로 바꾸는 경우 ssh 호스트 키가 이미 신뢰되어 있고 대화형 암호가 필요 없는지 확인하세요',
   'errors.INVALID_ID': '잘못된 ID',
   'errors.MARKETPLACE_INDEX_INVALID': '원격 인덱스가 올바른 배열이 아닙니다',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': '메인 프로세스에 GitHub 토큰이 설정되지 않았습니다',

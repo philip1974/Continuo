@@ -56,6 +56,7 @@
 - [`command-palette-virtualized.spec.tsx`](./49-polish-bugfixes/command-palette-virtualized.spec.tsx)
 - [`contextmenu-plugin-when-lazy.spec.tsx`](./49-polish-bugfixes/contextmenu-plugin-when-lazy.spec.tsx)
 - [`contributed-action-error-surfaced.spec.ts`](./49-polish-bugfixes/contributed-action-error-surfaced.spec.ts)
+- [`csp-localhost-dev-only.spec.ts`](./49-polish-bugfixes/csp-localhost-dev-only.spec.ts)
 - [`dest-picker-batch-unique.spec.ts`](./49-polish-bugfixes/dest-picker-batch-unique.spec.ts)
 - [`dir-changed-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/dir-changed-broadcast-send-throw.spec.ts)
 - [`dock-api-ref-cancels-pending-close.spec.ts`](./49-polish-bugfixes/dock-api-ref-cancels-pending-close.spec.ts)

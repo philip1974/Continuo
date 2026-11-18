@@ -20,12 +20,15 @@ const MAX_NAME_LEN = 64; // 单个条目名最多显示的 code point 数
 const SAFE_CMD_NAME = new RegExp(`^[A-Za-z0-9._-]{1,${MAX_NAME_LEN}}$`);
 
 /**
- * 条目名来自 ~/.claude.json(不可信):C0 控制字符与 DEL 换成 `?`(防 `\n` 在警告框内伪造行),
+ * 条目名来自 ~/.claude.json(不可信):C0/C1 控制字符、DEL、U+2028/U+2029 换成 `?`(防 `\n` / NEL /
+ * 行分隔符在警告框内伪造行),双向控制符(U+200E/200F、U+202A-202E、U+2066-2069)同样替换(防反转显示),
  * 再按 code point 截断(不切开代理对)。
  */
 function displayName(n: string): string {
-  // eslint-disable-next-line no-control-regex
-  const cps = Array.from(n.replace(/[\u0000-\u001f\u007f]/g, '?'));
+  const cps = Array.from(
+    // eslint-disable-next-line no-control-regex
+    n.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '?'),
+  );
   return cps.length > MAX_NAME_LEN ? `${cps.slice(0, MAX_NAME_LEN).join('')}…` : cps.join('');
 }
 

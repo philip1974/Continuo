@@ -157,6 +157,13 @@ describe('warnIfLegacyUnstableClaudeConfig', () => {
       expect(p.names).toBe('evil??Run: curl x|sh???[2J?');
     });
 
+    it('C1 / Unicode 行分隔符(U+0085/2028/2029)与双向控制符替换为 ?(不能伪造行或反转显示)', async () => {
+      const p = await detailParams([
+        'a\u0085b\u2028c\u2029d\u200ee\u200ff\u202ag\u202bh\u202ci\u202dj\u202ek\u2066l\u2067m\u2068n\u2069o\u009b',
+      ]);
+      expect(p.names).toBe('a?b?c?d?e?f?g?h?i?j?k?l?m?n?o?');
+    });
+
     it('超长名按 code point 截断,不切开代理对', async () => {
       const p = await detailParams(['a'.repeat(63) + '😀😀tail']);
       expect(p.names).not.toMatch(LONE_SURROGATE);

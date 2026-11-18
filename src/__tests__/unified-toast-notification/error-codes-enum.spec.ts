@@ -60,7 +60,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 插件卸载:+PATH_SCOPE_CLEANUP_FAILED(48→49),path scope 授权清理失败时中止卸载(不删目录)。
     // debug 安全:+DEBUG_NODE_RUNTIME_NOT_FOUND(49→50),被调试程序的 node 由 main 解析,找不到即拒绝 launch。
     // 插件激活:+PLUGIN_MANIFEST_CHANGED(50→51),列举后 manifest 被更新则拒绝以旧 manifest 执行新 main。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(51);
+    // 插件安装:+GIT_TIMEOUT(51→52),clone 超时独立本地化(提示 ssh host key / 交互口令)。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(52);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

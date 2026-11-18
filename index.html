@@ -10,7 +10,8 @@
       - script-src 'self' blob::插件 main.js 通过 Blob URL 动态 import(M-Plugin v4.1)
       - style-src 'self' 'unsafe-inline':Tailwind v4 / Motion 需要内联样式
       - img-src 'self' data: https::内嵌 SVG/data 图 + plugin 可能引外部图
-      - connect-src:自身 + dev Vite HMR(localhost ws/http) + 外部 https
+      - connect-src:自身 + 外部 https;dev Vite HMR 所需的本机 ws/http 来源由
+        scripts/vite-csp-dev-connect.ts 仅在 dev server 注入,生产产物不含
         (v5 plugin 的 app.network.fetch 需调外部 API;权限系统已 gate,
         CSP 不再做第二道门 — 桌面 app 安全靠权限模型,不靠 CSP)
       - object-src / base-uri:无副作用的 hardening
@@ -20,7 +21,7 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: ws://localhost:* wss://localhost:* http://localhost:*; object-src 'none'; base-uri 'self';"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self';"
     />
   </head>
   <body class="bg-[#020617] text-neutral-100">

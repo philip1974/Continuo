@@ -157,6 +157,13 @@ describe('makeCreateSessionTool · 元数据', () => {
     expect(props.agentLabel?.maxLength).toBe(LABEL_MAX);
     expect(props.autorun?.maxLength).toBe(65536);
   });
+
+  it('cwd 描述如实说明默认值为窗口 workspace 根(resolveTerminalCwd 不回退家目录)', () => {
+    const tool = makeCreateSessionTool(makeOkDeps());
+    const props = (tool.jsonSchema.properties ?? {}) as Record<string, { description?: string }>;
+    expect(props.cwd?.description).toMatch(/workspace root/);
+    expect(props.cwd?.description).not.toMatch(/home/);
+  });
 });
 
 describe('makeCreateSessionTool · 授权', () => {

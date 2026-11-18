@@ -1242,6 +1242,18 @@ const GIT_CLONE_TIMEOUT_MS = 60_000;
 // 追加并标记截断;**不 kill 子进程**——git clone 进度本就走 stderr,大仓库进度可合法 >64KB,kill
 // 会误伤合法克隆;只 bound 内存。失败 message 只带截断摘要 + 标记。
 const MAX_GIT_STDERR_BYTES = 64 * 1024;
+// 安全:用户全局 ~/.gitconfig 常有 `git lfs install` 写入的 filter.lfs.*(GIT_CONFIG_NOSYSTEM 不屏蔽全局)。
+// 被攻破的插件仓库放 `.lfsconfig`(lfs.url=内网 / 127.0.0.1 地址)+ LFS 指针文件,clone 检出时 git-lfs 即向
+// 任意地址发请求(GIT_ALLOW_PROTOCOL 管不到 git-lfs 自身 HTTP),且发生在用户启用 / 授权插件之前。
+// 命令行作用域置空 lfs 驱动(空命令 = 不运行该过滤器)并取消 required,再加 GIT_LFS_SKIP_SMUDGE=1 兜底。
+// 代价:依赖 Git LFS 的插件仓库检出得到的是指针文件 —— 插件 bundle 依赖 LFS 视为不支持。
+const PLUGIN_CLONE_GIT_CONFIG: readonly (readonly [string, string])[] = [
+  ['filter.lfs.process', ''],
+  ['filter.lfs.smudge', ''],
+  ['filter.lfs.required', 'false'],
+  // 空值重置 helper 列表:不调用用户全局凭据助手(见 runGit 注释)
+  ['credential.helper', ''],
+];
 
 export interface InstallFromGitOptions {
   /** true:原子覆盖已装版本(更新)。 */
@@ -1414,8 +1426,9 @@ export async function installFromGit(
 
 function runGit(args: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起,
-    // 也不读系统/全局凭据助手。GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置。
+    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起(GIT_TERMINAL_PROMPT=0 / 空 ASKPASS)。
+    // 不调用凭据助手:GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置;全局 ~/.gitconfig 的 credential.helper 不受它
+    // 影响,故在命令行作用域注入空值 `credential.helper=`(gitcredentials(7):空串重置 helper 列表)。
     // 与插件子进程同一加固(见 lib/child-spawn-hardening):注入 core.fsmonitor=false(clone 不受影响);
     // Windows 上 git 只在 PATH 的绝对目录中解析 —— CLI 启动时主进程 cwd 即用户所在目录(可能是不可信
     // 仓库),裸名 spawn 会先执行其中的 git.exe。解析不到 → GIT_SPAWN_FAILED(fail-closed)。
@@ -1431,7 +1444,10 @@ function runGit(args: readonly string[]): Promise<void> {
         GIT_ASKPASS: '',
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_ALLOW_PROTOCOL: 'https:ssh',
+        GIT_LFS_SKIP_SMUDGE: '1',
       }),
+      process.platform,
+      PLUGIN_CLONE_GIT_CONFIG,
     );
     const spawnGit = () =>
       spawn(resolveSpawnCommand('git', env), args, { stdio: ['ignore', 'pipe', 'pipe'], env });
@@ -1456,7 +1472,8 @@ function runGit(args: readonly string[]): Promise<void> {
       killWithGrace(child);
       finish(() =>
         reject(
-          codedError(ERROR_CODES.GIT_FAILED, `git ${args[0]} 超时`),
+          // 独立错误码:renderer 按 code 本地化出 ssh host key / 口令提示(GUI 无终端应答 ssh 交互,只会超时)
+          codedError(ERROR_CODES.GIT_TIMEOUT, `git ${args[0]} 超时`),
         ),
       );
     }, GIT_CLONE_TIMEOUT_MS);
