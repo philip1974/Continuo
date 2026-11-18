@@ -18,6 +18,8 @@
 //             Continuo 终端里由 CONTINUO_MCP_SOCKET 注入;否则读发现文件
 //             %APPDATA%\Continuo\mcp-pipe → %APPDATA%\Continuo Dev\mcp-pipe(只认合法名),
 //             都读不到即报错退出 —— 不回落可预测名(同机其它用户可抢注同名管道骗走 hello token)
+//   2/3(及 Windows 的两个发现文件)是**候选**:按序连接,连不上(崩溃残留的 socket / 过期管道名 →
+//   ENOENT / ECONNREFUSED)就试下一个,全部失败才报错退出。env 显式指定时只连它,不回落。
 //
 // 设计:packaged 是日常工具,dev 只是临时验证。两个都活时优先 packaged
 // (避免开发者忘了关 dev 误把 prod 流量打到 dev)。dev 单独活时(开发者
@@ -61,6 +63,8 @@ function windowsAppDataDir() {
 const WINDOWS_PIPE_NAME_RE = /^\\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$/;
 function readWindowsPipeDiscovery(appDataDir) {
   // packaged 优先(日常驱动器),dev 次之;内容不是本机 continuo-mcp 管道名(被写成远程管道 / 任意路径)→ 不用。
+  // 返回全部合法候选(按优先级),由调用方逐个尝试连接:packaged 文件可能是崩溃残留的过期名。
+  const names = [];
   for (const appName of ['Continuo', 'Continuo Dev']) {
     let raw;
     try {
@@ -69,23 +73,51 @@ function readWindowsPipeDiscovery(appDataDir) {
       continue;
     }
     const name = raw.trim();
-    if (WINDOWS_PIPE_NAME_RE.test(name)) return name;
+    if (WINDOWS_PIPE_NAME_RE.test(name)) names.push(name);
   }
-  return null;
+  return names;
 }
 // </windows-pipe-discovery>
 
-function resolveSocketPath() {
-  if (process.env.CONTINUO_MCP_SOCKET) return process.env.CONTINUO_MCP_SOCKET;
+// 按序连接候选,返回第一个连上的 { sock, path };全部失败 reject(消息列出每个候选的错误)。
+// 由 security-windows-stdio-pipe-per-user.spec.ts 抽出本段直接测。
+// <connect-candidates>
+function connectFirstCandidate(candidates, connect) {
+  return new Promise((resolve, reject) => {
+    const errors = [];
+    const tryAt = (i) => {
+      if (i >= candidates.length) {
+        reject(new Error(errors.length > 0 ? errors.join('; ') : 'no candidates'));
+        return;
+      }
+      const candidate = candidates[i];
+      const sock = connect(candidate);
+      const onError = (err) => {
+        sock.removeListener('connect', onConnect);
+        sock.destroy();
+        errors.push(`${candidate}: ${err.message}`);
+        tryAt(i + 1);
+      };
+      const onConnect = () => {
+        sock.removeListener('error', onError);
+        resolve({ sock, path: candidate });
+      };
+      sock.once('error', onError);
+      sock.once('connect', onConnect);
+    };
+    tryAt(0);
+  });
+}
+// </connect-candidates>
+
+function resolveSocketCandidates() {
+  if (process.env.CONTINUO_MCP_SOCKET) return [process.env.CONTINUO_MCP_SOCKET];
   if (process.platform === 'win32') return readWindowsPipeDiscovery(windowsAppDataDir());
-  const packaged = packagedSocketPath();
-  if (existsSync(packaged)) return packaged;
-  const dev = devSocketPath();
-  if (existsSync(dev)) return dev;
-  return packaged;
+  // existsSync 只用于筛掉明显不存在的路径(给清晰错误);存在 ≠ 有人在听,真正判定靠连接。
+  return [packagedSocketPath(), devSocketPath()].filter((p) => existsSync(p));
 }
 
-const socketPath = resolveSocketPath();
+const candidates = resolveSocketCandidates();
 // CONTINUO_WINDOW_ID / CONTINUO_MCP_TOKEN 由 Continuo PTY env provider 注入
 // (per-window 隔离);若缺失说明 proxy 是外部 spawn(eg. Claude Code
 // `claude mcp add` 配置),不属于任何 Continuo window 上下文 — 不发 hello,
@@ -97,45 +129,27 @@ const windowId =
     ? Number(CONTINUO_WINDOW_ID)
     : null;
 
-if (process.platform === 'win32' && socketPath === null) {
+// existsSync 在 Windows named pipe 上不工作(不在文件系统),Windows 候选只来自 env / 发现文件。
+if (candidates.length === 0) {
   process.stderr.write(
-    `[continuo-mcp-stdio] no valid pipe discovery file under ${windowsAppDataDir()}\\{Continuo,Continuo Dev}\\mcp-pipe\n` +
+    (process.platform === 'win32'
+      ? `[continuo-mcp-stdio] no valid pipe discovery file under ${windowsAppDataDir()}\\{Continuo,Continuo Dev}\\mcp-pipe\n`
+      : `[continuo-mcp-stdio] socket not found: ${packagedSocketPath()} (nor ${devSocketPath()})\n`) +
       '  Continuo app appears not to be running. Start Continuo first (or set CONTINUO_MCP_SOCKET).\n',
   );
   process.exit(1);
 }
 
-// existsSync 在 Windows named pipe 上不工作(不在文件系统),跳过预检;
-// macOS/Linux 仍预检以给清晰错误,避免连接异常时报模糊网络错误。
-if (process.platform !== 'win32' && !existsSync(socketPath)) {
-  const triedDev = !process.env.CONTINUO_MCP_SOCKET && existsSync(devSocketPath());
+let sock;
+try {
+  ({ sock } = await connectFirstCandidate(candidates, (p) => createConnection(p)));
+} catch (err) {
   process.stderr.write(
-    `[continuo-mcp-stdio] socket not found: ${socketPath}\n` +
-      '  Continuo app appears not to be running. Start Continuo first.\n' +
-      (triedDev
-        ? `  (Note: dev socket exists at ${devSocketPath()}; set CONTINUO_MCP_SOCKET to override.)\n`
-        : ''),
+    `[continuo-mcp-stdio] could not connect to Continuo: ${err.message}\n` +
+      '  Continuo app appears not to be running. Start Continuo first (or set CONTINUO_MCP_SOCKET).\n',
   );
   process.exit(1);
 }
-
-const sock = createConnection(socketPath, () => {
-  if (windowId !== null && CONTINUO_MCP_TOKEN) {
-    // 有 windowId + token env → 发 hello 绑定 per-window ctx(Continuo 内部 PTY 路径)
-    const hello =
-      JSON.stringify({
-        jsonrpc: '2.0',
-        method: '_continuo/hello',
-        params: { windowId, token: CONTINUO_MCP_TOKEN },
-      }) + '\n';
-    sock.write(hello);
-  }
-  // 无 windowId/token → 跳过 hello;server 端 tools/call 会 fallback 到默认主窗
-  // (外部 MCP client 如 Claude Code 的 stdio 配置走此路径)
-
-  // stdin → socket(byte 流透传,framing 由两端按 NDJSON 自管)
-  process.stdin.pipe(sock);
-});
 
 sock.on('error', (err) => {
   process.stderr.write(
@@ -148,6 +162,22 @@ sock.on('close', () => {
   // socket 关闭(Continuo 退出)→ 客户端会发现 stdout EOF
   process.exit(0);
 });
+
+if (windowId !== null && CONTINUO_MCP_TOKEN) {
+  // 有 windowId + token env → 发 hello 绑定 per-window ctx(Continuo 内部 PTY 路径)
+  const hello =
+    JSON.stringify({
+      jsonrpc: '2.0',
+      method: '_continuo/hello',
+      params: { windowId, token: CONTINUO_MCP_TOKEN },
+    }) + '\n';
+  sock.write(hello);
+}
+// 无 windowId/token → 跳过 hello;server 端 tools/call 会 fallback 到默认主窗
+// (外部 MCP client 如 Claude Code 的 stdio 配置走此路径)
+
+// stdin → socket(byte 流透传,framing 由两端按 NDJSON 自管)
+process.stdin.pipe(sock);
 
 // socket → stdout(同)
 sock.pipe(process.stdout);

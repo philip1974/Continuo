@@ -1216,8 +1216,13 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   - 主进程每次启动生成 `\\.\pipe\continuo-mcp-<sha256(小写用户名 \0 小写 profile 目录) 前 32 hex>-<128 bit 随机 hex>`,
     每次不同;只接受形如 `^\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$` 的名字(拒绝远程管道 / 任意路径 / 多行)。
   - 每个 PTY 注入 `CONTINUO_MCP_SOCKET=<该名>`(Windows;与 `CONTINUO_MCP_TOKEN` 同处注入),proxy 优先读它。
-  - listen 成功后原子写 `<userData>/mcp-pipe`;close 时内容仍是自己的名字才删除。
+  - 启动时(任何准备 / listen 之前)先删 `<userData>/mcp-pipe` 旧文件(崩溃残留);listen 成功后才原子写入新名,
+    启动失败不留文件;close 时内容仍是自己的名字才删除。
   - proxy 在 win32 且无 env 时按 `%APPDATA%\Continuo` → `%APPDATA%\Continuo Dev` 读 `mcp-pipe`,内容非法则跳过;
     都读不到 → 报错退出,不回落确定性名。proxy 的校验正则 / 读取逻辑(`<windows-pipe-discovery>` 标记段)与主进程逐项比对。
+  - proxy 对候选(win32 的合法发现文件;macOS / Linux 存在的 packaged / dev socket)按序连接,连不上(ENOENT /
+    ECONNREFUSED 等)试下一个,全部失败才报错退出(`<connect-candidates>` 标记段直测 + 端到端:过期 packaged socket
+    回落到运行中的 dev)。`CONTINUO_MCP_SOCKET` 显式指定时只连它。
   - macOS / Linux unix socket 行为不变(不注入 env、不写发现文件)。
-- 局限:Continuo 崩溃残留的 packaged 发现文件会让外部 proxy 优先连已失效的管道(报错而非落到 dev),下次启动覆盖。
+- 残余窗口:Continuo 崩溃后到下次启动之间发现文件仍在,其中的管道名可被同机其它用户抢注;此期间在 Continuo 终端外
+  启动的 proxy(不发 hello,不泄 token)可能连到对方管道收到伪造工具结果。下次启动即删除。
