@@ -2,10 +2,10 @@
 // path-scope(如 `~`),其下任何路径都不可读写。行为见同目录 README。
 // 经真实 plugin-fs IPC handler + 真实 PathScopeRegistry + 真实临时目录验证。
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, promises as fsp, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, promises as fsp, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PLUGIN_FS_CHANNELS } from '../../../electron/shared/plugin-fs-channels';
 import { IdentityRegistry } from '../../../electron/main/services/identity-registry.service';
@@ -31,6 +31,7 @@ let cfg: string;
 let secrets: string; // 名字含 `s` 的受保护根(长 s 变体 `ſecrets` 在 APFS 上是同一个条目)
 let nextSecrets: string; // 尚不存在、名字含 `s` 的受保护根
 let viaLinkRoot: string; // 经符号链接 `SLib` 给出的受保护根:链接这个名字是其词法形的祖先
+let lateRoot: string; // 启动时尚不存在、之后经符号链接 `later` 出现在别处的受保护根
 let allRoots: string[];
 const extraCorrelators: ScopeRequestCorrelator[] = [];
 let pluginsDir: string;
@@ -94,7 +95,8 @@ beforeEach(async () => {
   await mkdir(join(home, 'reallib', 'App'), { recursive: true });
   await symlink(join(home, 'reallib'), join(home, 'SLib'));
   viaLinkRoot = join(home, 'SLib', 'App');
-  allRoots = [userData, otherUserData, notYet, secrets, nextSecrets, viaLinkRoot];
+  lateRoot = join(home, 'later', 'App');
+  allRoots = [userData, otherUserData, notYet, secrets, nextSecrets, viaLinkRoot, lateRoot];
 
   event = makeFakeEvent({ id: 1, isDestroyed: () => false });
   ipc = new StubIpcMain();
@@ -591,8 +593,270 @@ describe('磁盘条目名解析的范围与开销', () => {
       expect(await outcome(linux(C.MKDIR, join(cfg, 'Nextſecrets')))).toBe('ok');
       await expectDenied(linux(C.MKDIR, nextSecrets));
       await expectDenied(linux(C.RM, appData, { recursive: true }));
+      // `/.nofollow` 等只在 macOS 是合成前缀;Linux 上是普通名字,不特殊对待
+      const plain = new PathScopeRegistry(new IdentityRegistry(), { protectedRoots: allRoots });
+      expect(plain.isProtectedPath('/.nofollow/home/x')).toBe(false);
+      expect(plain.isProtectedPath('/.vol/1/2')).toBe(false);
     } finally {
       Object.defineProperty(process, 'platform', platform);
     }
+  });
+});
+
+// ───────────────────────── 文件系统别名:同一个目录的另一种路径(realpath 不归一) ─────────────────────────
+
+// macOS 根目录下内核合成的 `/.nofollow`:`/.nofollow/<绝对路径>` 与 `<绝对路径>` 是同一个文件。其它平台 / 不提供它的
+// 系统上跳过(Linux CI)。
+const hasNoFollow = process.platform === 'darwin' && existsSync(`/.nofollow${realpathSync(tmpdir())}`);
+const nf = (p: string): string => `/.nofollow${p}`;
+
+describe.skipIf(!hasNoFollow)('macOS `/.nofollow/<绝对路径>`(同一 inode,realpath 不归一);scope 授到 `/`', () => {
+  beforeEach(() => {
+    scopes.grant(PLUGIN, [{ path: '/', mode: 'rw' }]);
+  });
+
+  it('前提:`/.nofollow` 写法确实到达同一个文件,realpath 保留该前缀', async () => {
+    expect(await readFile(nf(permFile), 'utf-8')).toBe(permBefore);
+    expect(await realpath(nf(permFile))).toBe(nf(permFile));
+    expect(statSync(nf(userData)).ino).toBe(statSync(userData).ino);
+  });
+
+  it('审计复现的六个操作:读 / 改权限文件、列插件目录、checkPath、rm -r userData、rename userData → 全拒,磁盘不变', async () => {
+    await expectDenied(call(C.READ_FILE, nf(permFile)));
+    await expectDenied(call(C.WRITE_FILE, nf(permFile), `{"${PLUGIN}":{"decisions":[{"permission":"shell","granted":true,"decidedAt":2}]}}`));
+    await expectDenied(call(C.LIST_DIR, nf(pluginsDir)));
+    expect(await call(C.CHECK_PATH, nf(permFile))).toBe(false);
+    await expectDenied(call(C.RM, nf(userData), { recursive: true, force: true }));
+    await expectDenied(call(C.RENAME, nf(userData), nf(join(appData, 'Continuo Dev Pwned'))));
+    expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
+    expect(readdirSync(appData).sort()).toEqual(['Continuo', 'Continuo Dev']);
+    expect(existsSync(join(pluginsDir, 'victim', 'data.json'))).toBe(true);
+  });
+
+  it('其余入口:stat / lstat / realpath / mkdir / cp(源与目标)/ atomicReplace / 另一发行形态 / 经链接给出的根', async () => {
+    await expectDenied(call(C.STAT, nf(permFile)));
+    await expectDenied(call(C.LSTAT, nf(userData)));
+    await expectDenied(call(C.REALPATH, nf(permFile)));
+    await expectDenied(call(C.MKDIR, nf(join(pluginsDir, 'evil')), { recursive: true }));
+    await expectDenied(call(C.CP, nf(permFile), join(docs, 'stolen.json')));
+    await expectDenied(call(C.CP, nf(join(pluginsDir, 'victim')), join(docs, 'victim'), { recursive: true }));
+    await expectDenied(call(C.CP, join(docs, 'a.txt'), nf(join(pluginsDir, 'victim', 'evil.js'))));
+    await writeFile(join(docs, 'staging.json'), '{}');
+    await expectDenied(call(C.ATOMIC_REPLACE, nf(join(docs, 'staging.json')), nf(permFile), { overwrite: true }));
+    await expectDenied(call(C.READ_FILE, nf(join(otherUserData, 'plugins', '_permissions.json'))));
+    await expectDenied(call(C.WRITE_FILE, nf(join(secrets, 'key')), 'evil'));
+    await expectDenied(call(C.LIST_DIR, nf(join(home, 'reallib', 'App'))));
+    expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
+    expect(await readFile(join(secrets, 'key'), 'utf-8')).toBe('k');
+    expect(existsSync(join(pluginsDir, 'evil'))).toBe(false);
+    expect(existsSync(join(docs, 'stolen.json'))).toBe(false);
+    expect(existsSync(join(docs, 'victim'))).toBe(false);
+  });
+
+  it('受保护根的祖先:rm -r / rename(源与目标)/ cp -r(源与目标)/ atomicReplace / writeFile → 拒', async () => {
+    const library = join(home, 'Library');
+    await mkdir(join(home, 'staging'));
+    await expectDenied(call(C.RM, nf(appData), { recursive: true, force: true }));
+    await expectDenied(call(C.RM, nf(library), { recursive: true, force: true }));
+    await expectDenied(call(C.RENAME, nf(appData), nf(join(library, 'Moved'))));
+    await expectDenied(call(C.RENAME, join(home, 'staging'), nf(library)));
+    await expectDenied(call(C.CP, nf(library), join(home, 'LibCopy'), { recursive: true }));
+    await expectDenied(call(C.CP, join(home, 'staging'), nf(appData), { recursive: true }));
+    await expectDenied(call(C.ATOMIC_REPLACE, nf(library), nf(join(home, 'Lib3'))));
+    await expectDenied(call(C.ATOMIC_REPLACE, join(home, 'staging'), nf(library), { overwrite: true }));
+    await expectDenied(call(C.WRITE_FILE, nf(appData), 'x'));
+    expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
+    expect(existsSync(join(home, 'LibCopy'))).toBe(false);
+    expect(existsSync(join(home, 'Lib3'))).toBe(false);
+    expect(existsSync(join(library, 'Moved'))).toBe(false);
+  });
+
+  it('尚不存在的受保护根:不能经别名抢先创建(mkdir / writeFile / rename / cp / atomicReplace 的目标,及其下的路径)', async () => {
+    await expectDenied(call(C.MKDIR, nf(notYet), { recursive: true }));
+    await expectDenied(call(C.WRITE_FILE, nf(notYet), 'x'));
+    await expectDenied(call(C.RENAME, docs, nf(notYet)));
+    await expectDenied(call(C.CP, docs, nf(notYet), { recursive: true }));
+    await expectDenied(call(C.ATOMIC_REPLACE, docs, nf(notYet)));
+    await expectDenied(call(C.MKDIR, nf(join(notYet, 'plugins')), { recursive: true }));
+    await expectDenied(call(C.MKDIR, nf(nextSecrets)));
+    expect(existsSync(notYet)).toBe(false);
+    expect(existsSync(nextSecrets)).toBe(false);
+    expect(existsSync(docs)).toBe(true);
+  });
+
+  it('不是存在性探测器:别名下受保护根内存在 / 不存在的路径得到同一条拒绝', async () => {
+    const existing = await outcome(call(C.STAT, nf(join(pluginsDir, 'victim'))));
+    const missing = await outcome(call(C.STAT, nf(join(pluginsDir, 'nope'))));
+    expect(existing).toContain(DENIED);
+    expect(missing.replace('nope', 'victim')).toBe(existing);
+    const wMissing = await outcome(call(C.WRITE_FILE, nf(join(pluginsDir, 'nope', 'x')), ''));
+    expect(wMissing).toContain(DENIED);
+  });
+
+  it('第二层:`/.nofollow`、`/.resolve/<n>`、`/.vol/<dev>/<ino>` 下的任何路径都不认(与受保护根无关),requestScope 直接 deny', async () => {
+    const file = join(docs, 'a.txt');
+    const st = statSync(docs, { bigint: true });
+    expect(await call(C.READ_FILE, file)).toBe('hello'); // 标准写法照常
+    for (const alias of [nf(file), `/.NOFOLLOW${file}`, `/.resolve/1${file}`, `/.vol/${st.dev}/${st.ino}/a.txt`]) {
+      await expectDenied(call(C.READ_FILE, alias));
+      await expectDenied(call(C.WRITE_FILE, alias, 'changed'));
+      await expectDenied(call(C.LSTAT, alias));
+      expect(await call(C.CHECK_PATH, alias)).toBe(false);
+    }
+    await expectDenied(call(C.LIST_DIR, '/.nofollow'));
+    // scope 内指向合成前缀的链接:realpath 报出 `/.nofollow/…`,同样不认
+    await symlink(nf(docs), join(home, 'magic'));
+    await expectDenied(call(C.READ_FILE, join(home, 'magic', 'a.txt')));
+    expect(await readFile(file, 'utf-8')).toBe('hello');
+
+    scopes.revokeAll(PLUGIN);
+    for (const p of [nf(docs), nf(home), '/.nofollow', `/.resolve/1${docs}`, `/.vol/${st.dev}/${st.ino}`, '/.vol']) {
+      expect(await call(C.REQUEST_SCOPE, [{ path: p, mode: 'r' }])).toBe('deny');
+    }
+    expect(event.sender.send).not.toHaveBeenCalled();
+    expect(scopes.getScopes(PLUGIN)).toEqual([]);
+  });
+
+  it('合法回归(scope `/`):home 下普通读写、Application Support 下的兄弟目录、名字含 Continuo 的工作区、只读地看祖先', async () => {
+    expect(await call(C.READ_FILE, join(docs, 'a.txt'))).toBe('hello');
+    expect(await outcome(call(C.WRITE_FILE, join(docs, 'b.txt'), 'b'))).toBe('ok');
+    expect(await outcome(call(C.MKDIR, join(appData, 'Other App'), { recursive: true }))).toBe('ok');
+    expect(await outcome(call(C.WRITE_FILE, join(appData, 'Other App', 'conf.json'), '{}'))).toBe('ok');
+    expect(await outcome(call(C.RENAME, join(appData, 'Other App'), join(appData, 'Continuo Devtools')))).toBe('ok');
+    expect(await outcome(call(C.RM, join(appData, 'Continuo Devtools'), { recursive: true }))).toBe('ok');
+    const ws = join(home, 'code', 'Continuo');
+    await mkdir(ws, { recursive: true });
+    expect(await outcome(call(C.MKDIR, join(ws, 'src')))).toBe('ok');
+    expect(await outcome(call(C.WRITE_FILE, join(ws, 'src', 'main.ts'), 'x'))).toBe('ok');
+    expect(await outcome(call(C.CP, ws, join(home, 'code', 'Continuo Dev'), { recursive: true }))).toBe('ok');
+    expect(await outcome(call(C.RM, ws, { recursive: true }))).toBe('ok');
+    expect(await outcome(call(C.STAT, appData))).toBe('ok');
+    expect(await outcome(call(C.LIST_DIR, join(home, 'Library')))).toBe('ok');
+    expect(await outcome(call(C.STAT, '/'))).toBe('ok');
+  });
+});
+
+describe('按 (dev, ino) 判定:路径字符串对不上、文件系统里却是同一个目录', () => {
+  // 启动(构造 registry)时 `<home>/later` 还不存在;之后它成了指向别处的链接,受保护根 `<home>/later/App` 的真实
+  // 位置是 `<home>/far/away/App` —— 构造时算出的比较键里没有这条路径,只有 inode 认得出。
+  let realRoot: string;
+  beforeEach(async () => {
+    realRoot = join(home, 'far', 'away', 'App');
+    await mkdir(realRoot, { recursive: true });
+    await writeFile(join(realRoot, 'secret'), 's');
+    await symlink(join(home, 'far', 'away'), join(home, 'later'));
+  });
+
+  it('之内(含根本身):读 / 写 / 列 / stat / mkdir / rm / rename / cp / atomicReplace / checkPath 全拒,存在与否不可区分', async () => {
+    await expectDenied(call(C.READ_FILE, join(realRoot, 'secret')));
+    await expectDenied(call(C.WRITE_FILE, join(realRoot, 'secret'), 'evil'));
+    await expectDenied(call(C.WRITE_FILE, join(realRoot, 'new'), 'evil'));
+    await expectDenied(call(C.LIST_DIR, realRoot));
+    await expectDenied(call(C.STAT, realRoot));
+    await expectDenied(call(C.LSTAT, join(realRoot, 'secret')));
+    await expectDenied(call(C.MKDIR, join(realRoot, 'sub'), { recursive: true }));
+    await expectDenied(call(C.RM, join(realRoot, 'secret')));
+    await expectDenied(call(C.RM, realRoot, { recursive: true, force: true }));
+    await expectDenied(call(C.RENAME, realRoot, join(home, 'far', 'away', 'Moved')));
+    await expectDenied(call(C.CP, realRoot, join(docs, 'copy'), { recursive: true }));
+    await expectDenied(call(C.CP, join(docs, 'a.txt'), join(realRoot, 'a.txt')));
+    await expectDenied(call(C.ATOMIC_REPLACE, join(docs, 'a.txt'), join(realRoot, 'secret'), { overwrite: true }));
+    expect(await call(C.CHECK_PATH, join(realRoot, 'secret'))).toBe(false);
+    const existing = await outcome(call(C.STAT, join(realRoot, 'secret')));
+    const missing = await outcome(call(C.STAT, join(realRoot, 'nope', 'deeper')));
+    expect(missing.replace(join('nope', 'deeper'), 'secret')).toBe(existing);
+    expect(await readFile(join(realRoot, 'secret'), 'utf-8')).toBe('s');
+    expect(readdirSync(realRoot)).toEqual(['secret']);
+    expect(existsSync(join(docs, 'copy'))).toBe(false);
+    expect(await readFile(join(docs, 'a.txt'), 'utf-8')).toBe('hello');
+  });
+
+  it('是受保护根的上级:rm -r / rename(源与目标)/ cp -r / atomicReplace / writeFile 被拒;只读地看与同级目录照常', async () => {
+    const away = join(home, 'far', 'away');
+    await mkdir(join(home, 'staging'));
+    await expectDenied(call(C.RM, away, { recursive: true, force: true }));
+    await expectDenied(call(C.RENAME, away, join(home, 'far', 'gone')));
+    await expectDenied(call(C.RENAME, join(home, 'staging'), away));
+    await expectDenied(call(C.CP, away, join(docs, 'copy'), { recursive: true }));
+    await expectDenied(call(C.ATOMIC_REPLACE, away, join(home, 'far', 'gone')));
+    await expectDenied(call(C.ATOMIC_REPLACE, join(home, 'staging'), away, { overwrite: true }));
+    await expectDenied(call(C.WRITE_FILE, away, 'x'));
+    expect(await readFile(join(realRoot, 'secret'), 'utf-8')).toBe('s');
+    expect(existsSync(join(home, 'far', 'gone'))).toBe(false);
+    expect(existsSync(join(docs, 'copy'))).toBe(false);
+    const names = ((await call(C.LIST_DIR, away)) as { name: string }[]).map((e) => e.name);
+    expect(names).toEqual(['App']);
+    expect(await outcome(call(C.STAT, away))).toBe('ok');
+    expect(await outcome(call(C.WRITE_FILE, join(away, 'sibling.txt'), 'x'))).toBe('ok');
+    expect(await outcome(call(C.RM, join(away, 'sibling.txt')))).toBe('ok');
+  });
+
+  it('通用:scope 内指向受保护根祖先的目录链接别名 —— 经它对祖先做 rm / rename / cp / atomicReplace / writeFile 被拒', async () => {
+    const alias = join(docs, 'toLib'); // → <home>/Library
+    await symlink(join(home, 'Library'), alias);
+    const viaAlias = join(alias, 'Application Support');
+    await mkdir(join(home, 'staging'));
+    await expectDenied(call(C.RM, viaAlias, { recursive: true, force: true }));
+    await expectDenied(call(C.RENAME, viaAlias, join(alias, 'Moved')));
+    await expectDenied(call(C.RENAME, join(home, 'staging'), viaAlias));
+    await expectDenied(call(C.CP, viaAlias, join(docs, 'copy'), { recursive: true }));
+    await expectDenied(call(C.CP, alias, join(docs, 'copy'), { recursive: true })); // 源跟随链接 = 整个 Library
+    await expectDenied(call(C.CP, join(home, 'staging'), viaAlias, { recursive: true }));
+    await expectDenied(call(C.ATOMIC_REPLACE, viaAlias, join(alias, 'Moved')));
+    await expectDenied(call(C.ATOMIC_REPLACE, join(home, 'staging'), viaAlias, { overwrite: true }));
+    await expectDenied(call(C.WRITE_FILE, viaAlias, 'x'));
+    await expectDenied(call(C.RM, join(viaAlias, 'Continuo Dev'), { recursive: true, force: true }));
+    await expectDenied(call(C.READ_FILE, join(viaAlias, 'Continuo Dev', 'plugins', '_permissions.json')));
+    expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
+    expect(existsSync(join(docs, 'copy'))).toBe(false);
+    expect(existsSync(join(home, 'Library', 'Moved'))).toBe(false);
+    // 链接本身可以删(作用在链接,不是目标)
+    expect(await outcome(call(C.RM, alias))).toBe('ok');
+    expect(existsSync(appData)).toBe(true);
+  });
+
+  it('开销:每次校验新增的 stat 有上限 —— 只看不动的操作 = 目标路径级数 + 受保护根写法数;会动整棵子树的操作再加根的各级上级;不新增 realpath / readdir', async () => {
+    const levels = (p: string): string[] => {
+      const out = [p];
+      while (dirname(out[out.length - 1]!) !== out[out.length - 1]) out.push(dirname(out[out.length - 1]!));
+      return out;
+    };
+    const target = join(docs, 'a.txt');
+    const rootForms = [...allRoots, join(home, 'reallib', 'App')]; // 词法形 + 构造时经链接的那条根的 realpath 形
+    const statSpy = vi.spyOn(fsp, 'stat');
+    const lstatSpy = vi.spyOn(fsp, 'lstat');
+    const realpathSpy = vi.spyOn(fsp, 'realpath');
+    const opendirSpy = vi.spyOn(fsp, 'opendir');
+    const stats = (): number => statSpy.mock.calls.length + lstatSpy.mock.calls.length;
+
+    await scopes.check(token, event.sender.id, 'lstat', target, 'r');
+    expect(stats()).toBe(levels(target).length + rootForms.length);
+    expect(realpathSpy).toHaveBeenCalledTimes(1);
+
+    statSpy.mockClear();
+    lstatSpy.mockClear();
+    await scopes.check(token, event.sender.id, 'read', target, 'r');
+    expect(stats()).toBe(levels(target).length + rootForms.length);
+
+    // 会连带整棵子树的操作(rm / rename / cp 源 / write):再加受保护根各写法的不同上级(途经的链接多一次)
+    statSpy.mockClear();
+    lstatSpy.mockClear();
+    await scopes.check(token, event.sender.id, 'remove', target, 'rw');
+    const protectedLevels = new Set(rootForms.flatMap(levels)).size;
+    const links = 2; // SLib、later
+    expect(stats()).toBe(levels(target).length + protectedLevels + links);
+    expect(opendirSpy).not.toHaveBeenCalled();
+  });
+
+  it('没有受保护根的 registry:不做任何额外 stat', async () => {
+    const identity = new IdentityRegistry();
+    const plain = new PathScopeRegistry(identity, {});
+    const { token: t } = identity.register(PLUGIN, 9);
+    plain.grant(PLUGIN, [{ path: home, mode: 'rw' }]);
+    const statSpy = vi.spyOn(fsp, 'stat');
+    const lstatSpy = vi.spyOn(fsp, 'lstat');
+    await plain.check(t, 9, 'read', join(docs, 'a.txt'), 'r');
+    expect(statSpy).not.toHaveBeenCalled();
+    expect(lstatSpy).not.toHaveBeenCalled();
   });
 });

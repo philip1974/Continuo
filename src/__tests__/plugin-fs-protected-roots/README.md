@@ -27,6 +27,47 @@ path-scope 判定是纯前缀匹配,此前不排除应用自己的 `userData`。
 (`/System/Volumes/Data/Users/…` 与 `/Users/…` 是同一目录,而 realpath 不归一这两种写法)。空串 / 相对路径 /
 文件系统根不构成受保护根。
 
+### 按 (dev, ino) 判定(文件系统认为相同、路径字符串认为不同)
+
+上面的比较都在比路径字符串。同一个目录还可以有 realpath **不归一**的别的路径:macOS 根目录下内核合成的
+`/.nofollow/<绝对路径>`(与 `<绝对路径>` 是同一个 inode,只是沿途不跟随符号链接)、数据卷 firmlink,Linux 的
+bind mount,Windows 的 `subst` 盘符。scope 宽到覆盖别名所在的树(如 `/`)时,插件此前经
+`/.nofollow/…/Continuo Dev/plugins/_permissions.json` 即可读写权限文件(自提权到 `shell`)、列插件目录、
+`rm -r` / `rename` 整个 userData。
+
+不再枚举别名 —— 每次校验在字符串判定之外,按 `(dev, ino)` 再判一次(`PathScopeRegistry.inodeDenial`):
+
+| 判定 | 做法 |
+|---|---|
+| 之内(含根本身) | 解析后的路径(读:整条 realpath;其余:父目录 realpath + 叶子)的**各级字符串前缀**逐级 `stat`,任一级的 (dev, ino) 等于某条受保护根 → 拒 |
+| 是受保护根的上级 | 目标自身(不跟随叶子的操作取链接本身)的 (dev, ino) 等于某条受保护根的某级上级目录 → 对会连带移动 / 删除 / 复制整棵子树的操作拒(同字符串判定的 opType 语义) |
+| 受保护根尚不存在(没有 inode) | 目标的最近已存在上级就是该根的最近已存在上级(按 inode),且其下各段名字与根的各段保守折叠后相同 → 按「之内 / 上级」同样处理;标准写法另由字符串判定覆盖 |
+
+依据(macOS 实测):路径解析必然依次经过各级前缀所指的目录,`stat(前缀)` 得到的就是途经的那个目录 ——
+`/.nofollow/Users/x`、`/System/Volumes/Data/Users/x` 各级的 inode 与 `/Users/x` 各级相同;realpath 后途中没有
+链接,所以这些前缀也就是目标在文件系统里的各级上级。不用 `<dir>/..` 逐级上溯(路径越拼越长,macOS `PATH_MAX`
+只有 1024)。
+
+受保护根一侧**每次校验现算**(不缓存:上级可被改名 / 替换,根可能启动后才出现):对每条根的词法形与(构造时的)
+realpath 形 `lstat`(是链接再 `stat` 一次)。开销:
+
+- 只看不动的操作(`readFile / stat / lstat / listDir / realpath / checkPath / mkdir`):目标路径级数 + 受保护根写法数
+  次 `stat`(生产形态约 4~5 条根;路径 8 级时约 13 次,并行发出)。实测每次调用多约 0.1 ms(15 级深的路径)。
+- 会连带整棵子树的操作(`rm / rename / cp / writeFile / atomicReplace`),以及目标尚不存在时:再加受保护根各写法的
+  不同上级数(约 10 来次)。
+- 没有受保护根的 registry 不做任何额外 `stat`;不新增 `realpath` / `readdir`。
+
+某一级 `stat` 失败(权限等)就跳过那一级,不因此拒绝(字符串判定仍在)。`ino` 为 0 的文件系统不可比较,同样跳过。
+Linux / Windows 走同一段代码(bind mount 同 dev/ino → 覆盖;Windows 未实测)。
+
+### macOS 合成前缀一律不认(第二层,与受保护根无关)
+
+macOS 上,路径(词法形或解析后)的第一段是 `.nofollow`、`.resolve`、`.vol` → 与 scope 外路径同一条拒绝;
+`requestScope` 请求这些前缀下的 scope 直接 `deny`(不弹窗)。它们不是访问用户文件的正当写法;scope 内指向它们的
+符号链接(realpath 会报出 `/.nofollow/…`)同样不认。`/.resolve/<n>/…`、`/.vol/<dev>/<ino>` 此前只是因为 realpath
+恰好失败才不可用。两层各自独立成立:去掉任一层,`/.nofollow` 的全部复现仍被另一层挡住(变异验证)。
+Linux 上这些只是普通名字,不特殊对待。
+
 ### 叶子按磁盘上的真实名字判定(文件系统折叠 ≠ JS 折叠)
 
 不跟随叶子的操作(`writeFile / mkdir / rename / rm / lstat / cp` 的目标 / `atomicReplaceWithinScope`)按
@@ -77,6 +118,7 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
 ## 行为收紧
 
 - 插件不能再经 `app.fs` 访问自己的安装目录(`<userData>/plugins/<id>/`);插件数据走 `loadData / saveData`。
+- macOS:`/.nofollow/…`、`/.resolve/…`、`/.vol/…` 写法的路径插件一律不可用(此前 `/.nofollow/<scope 内路径>` 可用)。
 - 工作区根本身位于受保护根之内时(把 userData 当工作区打开),插件对它的 `requestScope` 直接被拒。
 
 ## 残余
@@ -84,11 +126,15 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
 - 有 `shell` 权限的插件可运行任意命令,仍能直接改这些文件 —— 与「shell = 完全访问」一致。
 - 另一发行形态的 userData 只按默认位置保护;它若被用户放到别处(自定义 `--user-data-dir`),本实例不知道。
   本实例自己的 userData 无论在哪都受保护。
-- 受保护根在启动时确定:启动后才出现、且经符号链接指到别处的根,只按启动时算出的路径保护。
+- 受保护根的**路径写法**在启动时确定。启动后才出现、且经符号链接指到别处的根:根本身与其内部按 inode 受保护
+  (每次校验现 `stat`),它途经的链接所指的目录也算上级;但真实位置更上面的各级目录不在上级链里(对它们
+  `rm -r` / `rename` 不被拒)。
 - 指向受保护文件的**硬链接**(须由 SDK 之外的手段事先建在 scope 内)不被识别:可经它读到内容;写入走
   「临时文件 + rename」替换的是链接这个名字,不会改到原文件。
-- 比较按路径字符串(realpath 后),不是按 inode。realpath 不归一的其它文件系统级别名未覆盖:Windows 的
-  `subst` 盘符 / UNC 写法,Linux 的 bind mount —— 都要求 scope 宽到覆盖别名所在的另一棵目录树。
+- 已存在的受保护根(及其上级)按 (dev, ino) 判定,realpath 不归一的别名(`/.nofollow`、firmlink、bind mount、
+  `subst`)不再能绕过;**尚不存在的根没有 inode**:其最近已存在上级按 inode 认,再往下各段仍是名字比较(保守折叠)。
+  Windows(`subst` / UNC、`ino` 是否稳定)未实测;`ino` 为 0 的文件系统退回纯字符串判定。
+- inode 判定同样只管 plugin-fs 自己的调用:校验与操作在同一次持锁内,外部进程在其间改名 / 换目录不在此列。
 - Windows 的 8.3 短名作叶子(`…\Roaming\CONTIN~1`):写类 / 不跟随叶子的操作本就拒绝任何含 `~` 的叶子名
   (`leafNameRejectReason`),读类整条 realpath 会还原成长名;「叶子按真实名字判定」对存在的叶子同样会把短名
   还原。按代码推断已覆盖,**未在 Windows 实测**(包括 Windows 上 `lstat` 的 dev/ino 是否足以在目录里认出链接条目
@@ -110,5 +156,8 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
   每个入口、符号链接、祖先、requestScope、大小写变体、尚不存在的根;长 s 变体(审计复现的五步链、各入口、
   受保护根本身、符号链接叶子、扫描超限 fail-closed、抢先创建)、存在性不可区分、解析范围与开销、Linux 分支。
   长 s 用例在临时目录所在卷不折叠 `ſ` 时跳过(Linux CI)。
+  文件系统别名:`/.nofollow`(scope 授到 `/`;审计复现的六个操作、其余入口、祖先、尚不存在的根、存在性不可区分、
+  第二层前缀拒绝与 requestScope、合法回归;系统不提供 `/.nofollow` 时跳过)、按 inode 判定(启动后经链接出现在别处的
+  根:之内 / 上级;经目录链接别名操作祖先;每次校验的 stat 次数上限;无受保护根时零开销)。
 - `ipc-wiring.spec.ts` —— `registerPluginFsIpc` 实际注入了本实例与两种发行形态的 userData。
 - `electron/main/__tests__/user-data-path.test.ts` —— `resolveProtectedRoots` 各平台 / 发行形态的清单。
