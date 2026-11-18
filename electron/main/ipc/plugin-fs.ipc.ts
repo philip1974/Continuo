@@ -64,11 +64,17 @@ export function revokePluginFsAccess(pluginId: string): void {
  * 不经弹窗恢复(request-scope 命中 covers() 静默授予;重启后从磁盘水合同样恢复)。
  * 撤销后标记为「已水合(空)」:磁盘条目随即删除,在途 / 之后的水合读不得把旧 scope 写回内存。
  * plugin-fs token 不动(插件实例照常运行;无 `fs` 权限时 renderer 侧拒绝 fs 调用)。
+ * 该插件(各窗口 / 各实例)正挂着的 scope 弹窗一并结算为取消:renderer 撤掉弹窗,请求方得到 deny;否则用户之后点
+ * 「授权」,scope 照样落地并持久化,再勾上 `fs` 即不经弹窗恢复。还没走到弹窗的在途请求由 request-scope 处理器按
+ * revokeAll 的代际自行放弃(见 PathScopeRegistry.revocationEpoch)。
  */
 export function revokePluginPathScopes(pluginId: string): void {
   if (!activeHandles) return;
   activeHandles.pathScopeRegistry.revokeAll(pluginId);
   activeHandles.pathScopeRegistry.hydrate(pluginId, []);
+  for (const token of activeHandles.identityRegistry.tokensFor(pluginId)) {
+    activeHandles.correlator.cancelByToken(token);
+  }
 }
 
 export function copyScopesForPersistence(

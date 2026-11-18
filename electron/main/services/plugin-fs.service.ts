@@ -27,7 +27,6 @@ import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 import { readFileFromHandle, type ReadFileOptions } from '../ipc/fs/read-file';
 import { openForReadNonBlocking } from '../lib/read-fh-capped';
 import { createRwLock } from '../lib/rw-lock';
-import { createSemaphore } from '../lib/dir-stat-gate';
 import {
   FS_PATH_MAX,
   FS_PATH_MAX_DEPTH,
@@ -114,20 +113,42 @@ export function pluginFsIdentityEpoch(): number | null {
 // 打开失败 / 插件已吊销)→ 当即释放。窗口关闭 / renderer 重载时整窗释放(见 wc-gone 钩子)。
 // 数量有上限且**不淘汰**:满了以后新的 read-for-editor 以 FS_BUSY 拒绝,已有记录照常生效。此前按最近使用淘汰,
 // 插件再打开 4096 个别的文件就能把目标路径挤出记录、解除保护(审计 F2)。
+// 名额按插件:每插件至多 PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX 份(同一插件各窗口 / 各实例合计),全部插件合计至多
+// PLUGIN_OPENED_PATHS_MAX 份。此前只有全局上限:一个插件连续 openFile 4096 次即让所有插件的 openFile 失败,直到
+// 用户关掉标签。释放通道只带路径(宿主编辑器不知道标签是哪个插件开的):同一窗口同一路径的多份按后进先出归还 ——
+// 「已开着只切换 / 被吊销」的当即释放正好是刚记的那份;同一窗口同一路径通常只有一个标签,归属偏差至多在同窗口的
+// 插件之间挪动名额,全局上限不受影响。
 export const PLUGIN_OPENED_PATHS_MAX = 4096;
-/** canonical 路径 → (webContents id → 持有份数) */
-const pluginOpenedPaths = new Map<string, Map<number, number>>();
+export const PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX = 1024;
+/** canonical 路径 → (webContents id → 各份的 pluginId,按记录顺序) */
+const pluginOpenedPaths = new Map<string, Map<number, string[]>>();
 let pluginOpenedRefs = 0;
+/** pluginId → 份数(归零即删除) */
+const pluginOpenedRefsByPlugin = new Map<string, number>();
 
-/** 记一份;记录已满 → false(不记)。 */
-function pinPluginOpenedPath(canonical: string, wcId: number): boolean {
-  if (pluginOpenedRefs >= PLUGIN_OPENED_PATHS_MAX) return false;
+function releasePluginOpenedRef(pluginId: string): void {
+  const n = pluginOpenedRefsByPlugin.get(pluginId) ?? 0;
+  if (n > 1) pluginOpenedRefsByPlugin.set(pluginId, n - 1);
+  else pluginOpenedRefsByPlugin.delete(pluginId);
+  pluginOpenedRefs -= 1;
+}
+
+/** 记一份;该插件或全局已满 → false(不记)。 */
+function pinPluginOpenedPath(canonical: string, wcId: number, pluginId: string): boolean {
+  const own = pluginOpenedRefsByPlugin.get(pluginId) ?? 0;
+  if (pluginOpenedRefs >= PLUGIN_OPENED_PATHS_MAX || own >= PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX) return false;
   let holders = pluginOpenedPaths.get(canonical);
   if (holders === undefined) {
     holders = new Map();
     pluginOpenedPaths.set(canonical, holders);
   }
-  holders.set(wcId, (holders.get(wcId) ?? 0) + 1);
+  let refs = holders.get(wcId);
+  if (refs === undefined) {
+    refs = [];
+    holders.set(wcId, refs);
+  }
+  refs.push(pluginId);
+  pluginOpenedRefsByPlugin.set(pluginId, own + 1);
   pluginOpenedRefs += 1;
   return true;
 }
@@ -135,21 +156,20 @@ function pinPluginOpenedPath(canonical: string, wcId: number): boolean {
 /** 释放该窗口对该路径的一份(没有则 no-op)。 */
 function unpinPluginOpenedPath(canonical: string, wcId: number): void {
   const holders = pluginOpenedPaths.get(canonical);
-  const n = holders?.get(wcId);
-  if (holders === undefined || n === undefined) return;
-  if (n > 1) holders.set(wcId, n - 1);
-  else holders.delete(wcId);
+  const refs = holders?.get(wcId);
+  if (holders === undefined || refs === undefined) return;
+  releasePluginOpenedRef(refs.pop()!);
+  if (refs.length === 0) holders.delete(wcId);
   if (holders.size === 0) pluginOpenedPaths.delete(canonical);
-  pluginOpenedRefs -= 1;
 }
 
 /** 窗口关闭 / renderer 重载:该窗口的标签都已不在,释放它持有的全部记录。 */
 function unpinPluginOpenedPathsOf(wcId: number): void {
   for (const [path, holders] of pluginOpenedPaths) {
-    const n = holders.get(wcId);
-    if (n === undefined) continue;
+    const refs = holders.get(wcId);
+    if (refs === undefined) continue;
     holders.delete(wcId);
-    pluginOpenedRefs -= n;
+    for (const pluginId of refs) releasePluginOpenedRef(pluginId);
     if (holders.size === 0) pluginOpenedPaths.delete(path);
   }
 }
@@ -191,18 +211,23 @@ export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): 
 /** Test-only:清空「插件打开过的路径」记录。 */
 export function _resetPluginOpenedPathsForTest(): void {
   pluginOpenedPaths.clear();
+  pluginOpenedRefsByPlugin.clear();
   pluginOpenedRefs = 0;
 }
 
-/** Test-only:「插件打开过的路径」记录的总份数。 */
-export function _pluginOpenedPathRefsForTest(): number {
-  return pluginOpenedRefs;
+/** Test-only:「插件打开过的路径」记录的总份数(给 pluginId 则只计该插件的)。 */
+export function _pluginOpenedPathRefsForTest(pluginId?: string): number {
+  return pluginId === undefined ? pluginOpenedRefs : (pluginOpenedRefsByPlugin.get(pluginId) ?? 0);
 }
 
 // 边界(内存峰值):单次读取有上限(read-file / read-for-editor 64MiB、read-git-blob 64MB、list-dir 10 万条),但并发
 // 次数此前无限制 —— 插件 Promise.all 几十个大文件读取即可把主进程撑大数 GB(实测 96 × 30MB 文件 RSS +3.5GB)。
-// 这几个「单次可占大块内存」的入口共用一个全局闸:同时在途至多 PLUGIN_FS_HEAVY_READ_CONCURRENCY 个,其余按到达
-// 顺序排队;排队者只持有参数(路径),排队长度也有上限,超限立即以 FS_BUSY 拒绝。
+// 这几个「单次可占大块内存」的入口共用一个全局闸:同时在途至多 PLUGIN_FS_HEAVY_READ_CONCURRENCY 个,其余排队;
+// 排队者只持有参数(路径),排队长度也有上限,超限立即以 FS_BUSY 拒绝。
+// 安全(插件之间的饥饿):名额按插件(pluginId,不按 token —— 同一插件多窗口 / 多实例共享,多开窗口不放大)计:
+// 每插件在途 + 排队至多 PLUGIN_FS_HEAVY_READ_PER_PLUGIN_MAX 个,超出只拒绝该插件;有空位时在有排队的插件之间
+// 轮转放行(同一插件内按到达顺序)。此前是一条全局队列:一个插件保持上千个排队读取,其它插件的 readFile /
+// listDir / editor.openFile 全部 FS_BUSY(审计实测)。全局排队上限保留作总量兜底。
 // 嵌套顺序:先取闸、后取 plugin-fs 读写锁的共享锁。反过来(持共享锁排队等闸)时,排队者都算共享持有者,独占写者
 // 要等整条队列读完才能开始;现在排队者不持锁,写者只需等至多 4 个在途读取。写者不取闸,不会互相等待成环。
 // 宿主自己的 fs:read-file(用户编辑器)不经此闸 —— 插件占满闸也不影响用户打开文件。
@@ -210,23 +235,56 @@ export function _pluginOpenedPathRefsForTest(): number {
 // atomicReplace 持独占锁,本就串行(cp 经 copyFile 在内核里复制,不进 JS 堆)。
 export const PLUGIN_FS_HEAVY_READ_CONCURRENCY = 4;
 export const PLUGIN_FS_HEAVY_READ_QUEUE_MAX = 1024;
-const heavyReadGate = createSemaphore(PLUGIN_FS_HEAVY_READ_CONCURRENCY);
-let heavyReadPending = 0; // 在途 + 排队
+export const PLUGIN_FS_HEAVY_READ_PER_PLUGIN_MAX = 64;
+let heavyReadActive = 0;
+let heavyReadPending = 0; // 全部插件的在途 + 排队
+/** 有在途或排队读取的插件:在途 + 排队数、排队者(FIFO)。归零即删除。 */
+const heavyReadByPlugin = new Map<string, { pending: number; waiting: (() => void)[] }>();
+/** 有排队者的插件,轮转顺序(每个至多出现一次)。 */
+const heavyReadTurns: string[] = [];
 
-function heavyRead<T>(task: () => Promise<T>): Promise<T> {
-  if (heavyReadPending >= PLUGIN_FS_HEAVY_READ_CONCURRENCY + PLUGIN_FS_HEAVY_READ_QUEUE_MAX) {
-    return Promise.reject(fsError(ERROR_CODES.FS_BUSY, 'too many plugin file reads in progress; try again later'));
+function dispatchHeavyReads(): void {
+  while (heavyReadActive < PLUGIN_FS_HEAVY_READ_CONCURRENCY && heavyReadTurns.length > 0) {
+    const key = heavyReadTurns.shift()!;
+    const waiting = heavyReadByPlugin.get(key)!.waiting;
+    const start = waiting.shift()!;
+    if (waiting.length > 0) heavyReadTurns.push(key);
+    heavyReadActive += 1;
+    start();
   }
-  heavyReadPending += 1;
-  return heavyReadGate.run(() => fsLock.shared(task)).finally(() => {
-    heavyReadPending -= 1;
-  });
 }
 
-const sharedHeavy =
-  <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
-  (...args: A): Promise<R> =>
-    heavyRead(() => fn(...args));
+/** key:发起插件的 pluginId(未知 token 归入同一个桶,随后的 scope 校验会拒绝它)。 */
+function heavyRead<T>(key: string, task: () => Promise<T>): Promise<T> {
+  let entry = heavyReadByPlugin.get(key);
+  if (
+    heavyReadPending >= PLUGIN_FS_HEAVY_READ_CONCURRENCY + PLUGIN_FS_HEAVY_READ_QUEUE_MAX ||
+    (entry?.pending ?? 0) >= PLUGIN_FS_HEAVY_READ_PER_PLUGIN_MAX
+  ) {
+    return Promise.reject(fsError(ERROR_CODES.FS_BUSY, 'too many plugin file reads in progress; try again later'));
+  }
+  if (entry === undefined) {
+    entry = { pending: 0, waiting: [] };
+    heavyReadByPlugin.set(key, entry);
+  }
+  const own = entry;
+  own.pending += 1;
+  heavyReadPending += 1;
+  const acquired = new Promise<void>((resolve) => {
+    own.waiting.push(resolve);
+    if (own.waiting.length === 1) heavyReadTurns.push(key);
+  });
+  dispatchHeavyReads();
+  return acquired
+    .then(() => fsLock.shared(task))
+    .finally(() => {
+      heavyReadActive -= 1;
+      heavyReadPending -= 1;
+      own.pending -= 1;
+      if (own.pending === 0) heavyReadByPlugin.delete(key);
+      dispatchHeavyReads();
+    });
+}
 
 // 包装 handler:返回类型留给 ipcMain.handle 做上下文推断,handler 的参数类型标注保持原样。
 const shared =
@@ -569,6 +627,14 @@ export function registerPluginFsHandlers(
     }
     return pathScopeRegistry.check(token, senderId, opType as 'read', target, mode);
   }) as PathScopeRegistry['check'];
+  // 大块读取闸的名额键:token 所属插件的 pluginId(同一插件各窗口 / 各实例共享)。未知 token 归入 '' 桶
+  //('' 不是合法 pluginId),随后的 scope 校验照常拒绝。
+  const heavyReadKey = (token: unknown): string =>
+    (typeof token === 'string' ? identityRegistry.lookup(token)?.pluginId : undefined) ?? '';
+  const sharedHeavy =
+    <E, A extends unknown[], R>(fn: (event: E, token: string, ...args: A) => Promise<R>) =>
+    (event: E, token: string, ...args: A): Promise<R> =>
+      heavyRead(heavyReadKey(token), () => fn(event, token, ...args));
   const maybeSweepStaleTrash = createTrashSweepThrottle();
   const scopeThrottle = new ScopeRequestThrottle();
   // 关窗(destroyed)/ renderer reload(主框架非同文档导航)时释放该 webContents 名下的身份 token 与
@@ -642,13 +708,14 @@ export function registerPluginFsHandlers(
       const recheck = async (): Promise<string> =>
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       try {
-        const read = await heavyRead(async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
-        if (!pinPluginOpenedPath(read.canonical, event.sender.id)) {
+        const read = await heavyRead(heavyReadKey(token), async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
+        // 读取已过 scope 校验(token 有效);lookup 落空只可能是 token 恰好被回收,归入 '' 桶。
+        if (!pinPluginOpenedPath(read.canonical, event.sender.id, identityRegistry.lookup(token)?.pluginId ?? '')) {
           console.warn('[plugin-fs] read-for-editor refused: too many plugin-opened editor tabs');
           return {
             ok: false,
             code: ERROR_CODES.FS_BUSY,
-            message: `too many files opened by plugins (max ${PLUGIN_OPENED_PATHS_MAX}); close some editor tabs`,
+            message: `too many files opened by plugins (max ${PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX} per plugin, ${PLUGIN_OPENED_PATHS_MAX} in total); close some editor tabs`,
           };
         }
         return { ok: true, canonicalPath: read.canonical, content: read.content };
@@ -1054,6 +1121,11 @@ export function registerPluginFsHandlers(
     PLUGIN_FS_CHANNELS.REQUEST_SCOPE,
     async (event, token: string, scopes: readonly PathScope[]) => {
       const { pluginId } = identityRegistry.resolve(token, event.sender.id);
+      // 安全:请求期间该插件的 scope 被整体撤销(撤销 fs / 卸载)→ 这个请求作废:不弹窗、不落地。撤销时已挂着的弹窗
+      // 由撤销方结算(correlator.cancelByToken);这里挡的是撤销落在本处理器 await 间隙(归一化 / 水合读盘 / 冷却键)
+      // 里的请求 —— 否则撤销之后照样弹出新窗,用户一点「授权」scope 就落地并持久化。
+      const revocationEpoch = pathScopeRegistry.revocationEpoch(pluginId);
+      const revokedMeanwhile = (): boolean => pathScopeRegistry.revocationEpoch(pluginId) !== revocationEpoch;
 
       // 边界(E31):scopes 是插件直传的 IPC payload,此前无运行时校验就批量 canonicalize
       // (realpath)+ 原样发 renderer 弹窗 + 可能进 registry/persist。畸形插件可传超大数组/
@@ -1096,6 +1168,7 @@ export function registerPluginFsHandlers(
           if (identityRegistry.isActive(token)) pathScopeRegistry.hydrate(pluginId, []);
         }
       }
+      if (revokedMeanwhile()) return 'deny';
 
       // 已被现有授权(本会话 grant 或已水合的持久化授权)覆盖 → 静默授予,免重复弹窗。
       // 这是「持久化方案」省去重启后重复授权的关键路径。
@@ -1118,7 +1191,7 @@ export function registerPluginFsHandlers(
 
       // 边界(E227):未决 scope 请求数到顶(全局/单窗口)→ 终态 deny 收口,不入 pending、不向 renderer
       // 发弹窗。插件 spam request-scope 否则让主进程 pending Map / renderer 弹窗队列 / TTL 定时器线性增长。
-      if (!correlator.canAccept(event.sender.id)) {
+      if (!correlator.canAccept(event.sender.id) || revokedMeanwhile()) {
         return 'deny';
       }
       // 安全:每插件单飞 + 拒绝冷却(按单条路径)+ 插件级连续被拒退避 + 每插件弹窗速率上限(见
@@ -1193,7 +1266,7 @@ export function registerPluginFsHandlers(
       // 进 5s drain;lookup/resolve 仍能查到所以无法区分)。落地 grant 前重校验 token
       // 仍 active,否则会复活已撤销插件的 path-scope,同 id 重装直接继承(绕过
       // _unregister-plugin 的 revokeAll 守卫,审计 #2 同源)。见第十三轮 P2-AJ。
-      if (decision === 'grant' && identityRegistry.isActive(token)) {
+      if (decision === 'grant' && identityRegistry.isActive(token) && !revokedMeanwhile()) {
         pathScopeRegistry.grant(pluginId, canonicalScopes);
         pathScopeRegistry.noteRequestedRoots(pluginId, scopes, canonicalScopes);
         // 持久化合并后的全集,供下次启动水合;best-effort,失败不影响本次授权。

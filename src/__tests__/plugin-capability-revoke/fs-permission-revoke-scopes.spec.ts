@@ -15,6 +15,9 @@ type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
   userData: '',
+  /** 非 null 时,水合读盘(readPluginPathScopes)挂在这里,直到测试放行。 */
+  loadGate: null as Promise<void> | null,
+  loads: 0,
 }));
 
 vi.mock('electron', () => ({
@@ -35,6 +38,12 @@ vi.mock('../../../electron/main/services/plugins.service', async (importOriginal
   ...(await importOriginal<typeof import('../../../electron/main/services/plugins.service')>()),
   createPluginsWatcher: () => ({ start: () => {}, stop: () => {}, ensureBaseline: async () => {} }),
   recoverInterruptedInstalls: async () => undefined,
+  readPluginPathScopes: async (...a: Parameters<typeof import('../../../electron/main/services/plugins.service').readPluginPathScopes>) => {
+    h.loads += 1;
+    if (h.loadGate) await h.loadGate;
+    const real = await importOriginal<typeof import('../../../electron/main/services/plugins.service')>();
+    return real.readPluginPathScopes(...a);
+  },
 }));
 
 import { registerPluginsIpc } from '../../../electron/main/ipc/plugins.ipc';
@@ -49,8 +58,8 @@ const roots: string[] = [];
 let fsHandles: ReturnType<typeof registerPluginFsIpc>;
 let scopeDir: string;
 
-const event = (send = vi.fn()) => ({
-  sender: { id: 1, send, isDestroyed: () => false },
+const event = (send = vi.fn(), id = 1) => ({
+  sender: { id, send, isDestroyed: () => false },
   senderFrame: { url: 'file:///app/index.html' },
 });
 
@@ -77,6 +86,8 @@ async function persistedScopes(): Promise<Record<string, unknown>> {
 }
 
 beforeEach(async () => {
+  h.loadGate = null;
+  h.loads = 0;
   const base = await mkdtemp(join(tmpdir(), 'continuo-fs-revoke-'));
   roots.push(base);
   h.userData = join(base, 'userData');
@@ -147,6 +158,52 @@ describe('撤销 fs 权限 → 撤销该插件全部已批准的路径 scope', (
     await setFs(false);
     expect(fsHandles.pathScopeRegistry.isHydrated(ID)).toBe(true);
     expect(fsHandles.pathScopeRegistry.covers(ID, [{ path: scopeDir, mode: 'r' }])).toBe(false);
+  });
+
+  it('挂起中的 scope 弹窗:撤销 fs → 弹窗被撤、请求方得到 deny,之后点「授权」送不到,scope 不落地不持久化(插件的任一实例)', async () => {
+    await setFs(true);
+    // 同一插件两个窗口的实例;挂起的请求来自后注册的那个(须枚举该插件全部 token)
+    fsHandles.identityRegistry.register(ID, 1);
+    const { token } = fsHandles.identityRegistry.register(ID, 2);
+    const send = vi.fn();
+    const ev = event(send, 2);
+    const pending = invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, ev, token, [{ path: scopeDir, mode: 'rw' }]);
+    void pending.catch(() => undefined);
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, expect.anything()),
+    );
+    const { requestId } = send.mock.calls.find(
+      (c) => c[0] === PLUGIN_FS_CHANNELS.SCOPE_REQUEST,
+    )![1] as { requestId: string };
+
+    await expect(setFs(false)).resolves.toMatchObject({ ok: true });
+    // 用户在弹窗撤掉之前点了「授权」:决定送不到(请求已结算)
+    await expect(
+      invoke(PLUGIN_FS_CHANNELS.SCOPE_DECISION, ev, requestId, 'grant'),
+    ).rejects.toThrow();
+    await expect(pending).resolves.toBe('deny');
+    expect(send).toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, { requestId });
+    expect(fsHandles.pathScopeRegistry._peek(ID)).toEqual([]);
+    expect((await persistedScopes())[ID]).toBeUndefined();
+    // 其它插件的请求不受影响(此处只确认没有误伤其 scope)
+    expect(fsHandles.pathScopeRegistry._peek(OTHER)).toEqual([]);
+  });
+
+  it('撤销 fs 时请求还没走到弹窗(在途的水合读盘)→ 不再弹窗、请求方得到 deny、scope 不落地', async () => {
+    await setFs(true);
+    const { token } = fsHandles.identityRegistry.register(ID, 1);
+    let open!: () => void;
+    h.loadGate = new Promise<void>((r) => (open = r));
+    const send = vi.fn();
+    const pending = invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, event(send), token, [{ path: scopeDir, mode: 'rw' }]);
+    void pending.catch(() => undefined);
+    await vi.waitFor(() => expect(h.loads).toBe(1));
+    await expect(setFs(false)).resolves.toMatchObject({ ok: true });
+    open();
+    await expect(pending).resolves.toBe('deny');
+    expect(send).not.toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, expect.anything());
+    expect(fsHandles.pathScopeRegistry._peek(ID)).toEqual([]);
+    expect((await persistedScopes())[ID]).toBeUndefined();
   });
 
   it('授予 fs、撤销其它权限 → 不动 scope', async () => {

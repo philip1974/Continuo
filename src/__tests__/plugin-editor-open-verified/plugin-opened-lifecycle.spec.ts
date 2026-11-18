@@ -54,6 +54,7 @@ const {
   _pluginOpenedPathRefsForTest: refs,
   pluginFsIdentityEpoch,
   PLUGIN_OPENED_PATHS_MAX,
+  PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX: PER_PLUGIN,
 } = await import('../../../electron/main/services/plugin-fs.service');
 const { registerFsIpc } = await import('../../../electron/main/ipc/fs.ipc');
 const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
@@ -79,6 +80,7 @@ let ipc: InstanceType<typeof StubIpcMain>;
 let correlator: InstanceType<typeof ScopeRequestCorrelator>;
 let token: string;
 let plugin: ReturnType<typeof createScopedApp>;
+let scopes: InstanceType<typeof PathScopeRegistry>;
 const event = makeFakeEvent({ id: 1, isDestroyed: () => false });
 const invoke = (channel: string, ...args: unknown[]): Promise<unknown> =>
   ipc.invokeWithEvent(event, channel, token, ...args);
@@ -114,7 +116,7 @@ beforeEach(async () => {
 
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
-  const scopes = new PathScopeRegistry(identity, { identityCache: { getEpoch: pluginFsIdentityEpoch } });
+  scopes = new PathScopeRegistry(identity, { identityCache: { getEpoch: pluginFsIdentityEpoch } });
   correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,
@@ -202,12 +204,12 @@ function collectPaths(): readonly string[] {
 
 describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关闭释放', () => {
   it.skipIf(process.platform === 'win32')(
-    `打开 T 后再打开 ${PLUGIN_OPENED_PATHS_MAX} 个别的文件:超出部分 FS_BUSY,T 的记录仍生效(换入后宿主读写 T 被拒)`,
+    `打开 T 后再打开 ${PER_PLUGIN} 个别的文件:超出该插件名额的部分 FS_BUSY,T 的记录仍生效(换入后宿主读写 T 被拒)`,
     async () => {
       expect(await invoke(C.READ_FOR_EDITOR, T)).toMatchObject({ ok: true });
       const others = join(work, 'others');
       await mkdir(others);
-      const files = Array.from({ length: PLUGIN_OPENED_PATHS_MAX }, (_, i) => join(others, `f${i}.txt`));
+      const files = Array.from({ length: PER_PLUGIN }, (_, i) => join(others, `f${i}.txt`));
       for (let i = 0; i < files.length; i += 256) {
         await Promise.all(files.slice(i, i + 256).map((f) => writeFile(f, 'x')));
       }
@@ -220,9 +222,9 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
           }[]),
         );
       }
-      expect(results.filter((r) => r.ok)).toHaveLength(PLUGIN_OPENED_PATHS_MAX - 1);
+      expect(results.filter((r) => r.ok)).toHaveLength(PER_PLUGIN - 1);
       expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, code: 'FS_BUSY', message: expect.any(String) }]);
-      expect(refs()).toBe(PLUGIN_OPENED_PATHS_MAX);
+      expect(refs()).toBe(PER_PLUGIN);
       await swapIn();
       expect(await hostRead(T)).toMatchObject({ ok: false, code: 'FS_DENIED' });
       // 释放一份后又能打开
@@ -233,14 +235,71 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
   );
 
   it('满额时插件 editor.openFile 得到 EXCEPTION(FS_BUSY 的消息),不开标签', async () => {
-    for (let i = 0; i < PLUGIN_OPENED_PATHS_MAX; i += 64) {
+    for (let i = 0; i < PER_PLUGIN; i += 64) {
       await Promise.all(Array.from({ length: 64 }, () => invoke(C.READ_FOR_EDITOR, T)));
     }
-    expect(refs()).toBe(PLUGIN_OPENED_PATHS_MAX);
+    expect(refs()).toBe(PER_PLUGIN);
     const r = await plugin.editor.openFile(T);
     expect(r).toMatchObject({ ok: false, code: 'EXCEPTION' });
     expect(useEditorStore.getState().tabs).toEqual([]);
   }, 60_000);
+
+  /** 在窗口 1 注册另一个插件(同样授予 home),返回其 token。 */
+  async function otherPlugin(id: string): Promise<string> {
+    const t = ((await ipc.invokeWithEvent(event, C.REGISTER_PLUGIN, id)) as { token: string }).token;
+    scopes.grant(id, [{ path: home, mode: 'rw' }]);
+    return t;
+  }
+  async function fill(tok: string, n: number): Promise<void> {
+    for (let i = 0; i < n; i += 64) {
+      await Promise.all(
+        Array.from({ length: Math.min(64, n - i) }, () => ipc.invokeWithEvent(event, C.READ_FOR_EDITOR, tok, T)),
+      );
+    }
+  }
+
+  it('名额按插件:插件 A 占满自己的名额后,插件 B 的 editor.openFile 照常(此前全局共享,A 开满后所有插件都失败)', async () => {
+    await fill(token, PER_PLUGIN);
+    expect(await invoke(C.READ_FOR_EDITOR, T)).toMatchObject({ ok: false, code: 'FS_BUSY' });
+    expect(await plugin.editor.openFile(T)).toMatchObject({ ok: false, code: 'EXCEPTION' });
+    const tb = await otherPlugin('plugin.b');
+    const perms = new InMemoryPermissionStore();
+    await perms.grant('plugin.b', ['fs']);
+    const b = createScopedApp(coApp, 'plugin.b', perms, tb);
+    const other = join(work, 'other.md');
+    await writeFile(other, 'o');
+    expect(await b.editor.openFile(other)).toMatchObject({ ok: true });
+    await flush();
+    expect(useEditorStore.getState().tabs.map((t) => t.pluginOpenedPath)).toEqual([other]);
+    expect(refs('plugin.b')).toBe(1);
+    expect(refs(PLUGIN)).toBe(PER_PLUGIN);
+  }, 60_000);
+
+  it('全部插件合计到全局上限后,名额未满的插件也 FS_BUSY;释放一份后恢复', async () => {
+    const plugins = [token];
+    while (plugins.length * PER_PLUGIN < PLUGIN_OPENED_PATHS_MAX) plugins.push(await otherPlugin(`plugin.f${plugins.length}`));
+    for (const t of plugins) await fill(t, PER_PLUGIN);
+    expect(refs()).toBe(PLUGIN_OPENED_PATHS_MAX);
+    const late = await otherPlugin('plugin.late');
+    expect(await ipc.invokeWithEvent(event, C.READ_FOR_EDITOR, late, T)).toMatchObject({ ok: false, code: 'FS_BUSY' });
+    await ipc.invokeWithEvent(event, C.RELEASE_EDITOR_PATH, T);
+    expect(await ipc.invokeWithEvent(event, C.READ_FOR_EDITOR, late, T)).toMatchObject({ ok: true });
+  }, 120_000);
+
+  it('同一窗口两个插件打开同一路径:后者「已开着只切换」当即释放的是它自己的那份;关标签归还前者的', async () => {
+    const tb = await otherPlugin('plugin.b');
+    const perms = new InMemoryPermissionStore();
+    await perms.grant('plugin.b', ['fs']);
+    const b = createScopedApp(coApp, 'plugin.b', perms, tb);
+    expect(await plugin.editor.openFile(T)).toMatchObject({ ok: true });
+    expect(await b.editor.openFile(T)).toMatchObject({ ok: true });
+    await flush();
+    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect([refs(PLUGIN), refs('plugin.b')]).toEqual([1, 0]);
+    useEditorStore.getState().closeTab(T);
+    await flush();
+    expect([refs(PLUGIN), refs()]).toEqual([0, 0]);
+  });
 
   it('一个标签持有一份:关闭标签即释放;已开着再打开(只切换)不多占', async () => {
     await plugin.editor.openFile(T);

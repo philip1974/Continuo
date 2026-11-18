@@ -146,7 +146,10 @@ describe('request-scope:冷启动水合在途时插件被卸载 → 不把卸载
       scopes.revokeAll(ID);
       // 卸载清盘前读到的旧快照此时才返回
       releaseLoad(SCOPE);
-      await vi.waitFor(() => expect(event.sender.send).toHaveBeenCalled());
+      // 原以「仍发出弹窗」作为请求走完水合的同步点;现在请求期间被 revokeAll 即作废(不弹窗,直接 deny,
+      // 见 PathScopeRegistry.revocationEpoch),同步点改为请求结算。
+      await expect(pending).resolves.toBe('deny');
+      expect(event.sender.send).not.toHaveBeenCalled();
 
       expect(scopes._peek(ID)).toEqual([]);
       expect(scopes.isHydrated(ID)).toBe(false);
