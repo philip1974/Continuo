@@ -508,15 +508,17 @@ export const ko: Record<TranslationKey, string> = {
 
   // permissions.* perm labels
   'permissions.perm.fs.title': '파일 시스템',
-  'permissions.perm.fs.desc': '로컬 폴더 및 파일 읽기/쓰기',
+  'permissions.perm.fs.desc': '승인한 폴더 안의 파일 읽기/쓰기(폴더별로 별도 확인)',
   'permissions.perm.network.title': '네트워크 액세스',
-  'permissions.perm.network.desc': 'HTTP / WebSocket 등 원격 요청 시작',
+  'permissions.perm.network.desc': '임의의 https 주소로 요청 전송(이 컴퓨터(localhost) 및 내부 네트워크 서비스 포함)',
   'permissions.perm.shell.title': 'Shell 명령 실행',
-  'permissions.perm.shell.desc': '로컬 셸 / 하위 프로세스 호출',
+  'permissions.perm.shell.desc':
+    '사용자 권한으로 임의의 프로그램 실행. 폴더 권한의 제한을 받지 않으며, 로컬 파일과 네트워크에 대한 전체 액세스와 같습니다',
   'permissions.perm.clipboard.title': '클립보드',
   'permissions.perm.clipboard.desc': '시스템 클립보드 읽기/쓰기',
   'permissions.perm.mcp_tools.title': 'MCP 도구 등록',
-  'permissions.perm.mcp_tools.desc': '플러그인 사용자 정의 도구를 Agent / Claude Code 등 MCP 클라이언트에 노출',
+  'permissions.perm.mcp_tools.desc':
+    '도구 등록: 이름과 설명이 AI Agent(Claude Code 등 MCP 클라이언트)에 표시되며, Agent가 호출할 수 있습니다',
 
   // permissions prompt UI
   'permissions.prompt.title': '권한 요청',

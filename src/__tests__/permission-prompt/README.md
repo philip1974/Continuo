@@ -42,3 +42,13 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
   3. 失败 → entry.status='failed', error='PERMISSION_DENIED: <list>',不 new instance
   4. 成功(或无 permissions / 无 host)→ new + _activate 原流程
 - 缺 host 字段时:权限请求不被检查(向后兼容,测试用)
+
+### 权限说明文案(`permission-copy-matches-capability.spec.ts`)
+
+每行权限的说明(`permissions.perm.<perm>.desc`,en / zh / ko)须如实点明实际能力,用户据此决定是否授权:
+
+- `shell`:以用户身份运行任意程序;**不受文件夹授权(fs scope)限制**,等同于完全访问本机文件与网络。
+- `network`:向任意 https 地址发请求,**包括本机(localhost)与内网服务**(只放行 https,没有 WebSocket API)。
+- `fs`:只能读写用户批准的文件夹(按文件夹另行弹窗询问)。
+- `mcp-tools`:注册的工具名称与描述会展示给 AI agent,并可被其调用。
+- `clipboard`:读写系统剪贴板。

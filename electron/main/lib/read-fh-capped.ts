@@ -91,36 +91,46 @@ export async function readFileCappedFd(
   // open 错误(ENOENT/EACCES 等)透传给调用方
   const fh = opts.noFollow ? await openNoFollow(filePath) : await openForReadNonBlocking(filePath);
   try {
-    const st = await fh.stat({ bigint: true });
-    // 只读普通文件(两分支都要):FIFO / socket / 设备 / 目录一律 EFTYPE,不进读循环。
-    if (!st.isFile()) throw unsafeFileError('EFTYPE', filePath);
-    if (opts.noFollow && st.nlink > 1n) throw unsafeFileError('EMLINK', filePath);
-    const identity = opts.noFollow ? { dev: st.dev, ino: st.ino } : undefined;
-    const size = Number(st.size);
-    if (size > maxBytes) {
-      return { text: null, tooLarge: true, size };
-    }
-    const buf = Buffer.allocUnsafe(Math.min(size, maxBytes) + 1);
-    let total = 0;
-    while (total < buf.length) {
-      const { bytesRead } = await fh.read(buf, total, buf.length - total, total);
-      if (bytesRead === 0) break; // EOF
-      total += bytesRead;
-    }
-    if (total > maxBytes) {
-      return { text: null, tooLarge: true, size: total };
-    }
-    const bytes = buf.subarray(0, total);
-    if (opts.requireUtf8) {
-      try {
-        const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-        return { text, tooLarge: false, size: total, ...(identity && { identity }) };
-      } catch {
-        return { text: null, tooLarge: false, size: total, notUtf8: true };
-      }
-    }
-    return { text: bytes.toString('utf-8'), tooLarge: false, size: total, ...(identity && { identity }) };
+    return await readCappedFromHandle(fh, filePath, maxBytes, opts);
   } finally {
     await fh.close().catch(() => {});
   }
+}
+
+/** readFileCappedFd 的读取部分:经调用方已打开的 fd(fstat → 有界读);不关闭 fd。filePath 只用于错误信息。 */
+export async function readCappedFromHandle(
+  fh: FileHandle,
+  filePath: string,
+  maxBytes: number,
+  opts: CappedFdReadOptions = {},
+): Promise<CappedFdRead> {
+  const st = await fh.stat({ bigint: true });
+  // 只读普通文件(两分支都要):FIFO / socket / 设备 / 目录一律 EFTYPE,不进读循环。
+  if (!st.isFile()) throw unsafeFileError('EFTYPE', filePath);
+  if (opts.noFollow && st.nlink > 1n) throw unsafeFileError('EMLINK', filePath);
+  const identity = opts.noFollow ? { dev: st.dev, ino: st.ino } : undefined;
+  const size = Number(st.size);
+  if (size > maxBytes) {
+    return { text: null, tooLarge: true, size };
+  }
+  const buf = Buffer.allocUnsafe(Math.min(size, maxBytes) + 1);
+  let total = 0;
+  while (total < buf.length) {
+    const { bytesRead } = await fh.read(buf, total, buf.length - total, total);
+    if (bytesRead === 0) break; // EOF
+    total += bytesRead;
+  }
+  if (total > maxBytes) {
+    return { text: null, tooLarge: true, size: total };
+  }
+  const bytes = buf.subarray(0, total);
+  if (opts.requireUtf8) {
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+      return { text, tooLarge: false, size: total, ...(identity && { identity }) };
+    } catch {
+      return { text: null, tooLarge: false, size: total, notUtf8: true };
+    }
+  }
+  return { text: bytes.toString('utf-8'), tooLarge: false, size: total, ...(identity && { identity }) };
 }

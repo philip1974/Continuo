@@ -872,6 +872,7 @@
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
+- [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
 
 ## [permission-record-contract(权限记录单条形态的跨进程统一规则)](./permission-record-contract/README.md)
@@ -924,6 +925,10 @@
 ## [plugin-fs-read-cap (E28 + E29 + E30 + E31)](./plugin-fs-read-cap/README.md)
 
 - [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)
+
+## [plugin-fs-rw-lock(plugin-fs 调用之间的读写锁:插件不能在另一次调用的「校验 → 操作」之间改目录结构)](./plugin-fs-rw-lock/README.md)
+
+- [`plugin-fs-rw-lock.spec.ts`](./plugin-fs-rw-lock/plugin-fs-rw-lock.spec.ts)
 
 ## [plugin-fs-scope-bridge](./plugin-fs-scope-bridge/README.md)
 
