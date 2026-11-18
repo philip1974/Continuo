@@ -1171,6 +1171,13 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   授权不弹窗,新代码继承旧目录读写授权。顺序:renderer 先回收 plugin-fs token(失败 `PLUGIN_FS_TOKEN_REVOKE_FAILED`
   中止),再调 main 卸载;main 先清 enabled / permissions / path scope,全部成功后才删目录。
 
+### 卸载间隙的授权不把 path scope 写回磁盘 — `uninstall-scope-persist-race.spec.ts`
+- 授权弹窗「授权」后的 scope 落盘走 `persistPluginPathScopesIfInstalled`:与卸载共用同 id mutation 锁,锁内确认插件目录仍在,
+  否则拒 `NOT_INSTALLED`(调用方 best-effort 吞掉,本会话内存授权随后被卸载的 `revokePluginFsAccess` 撤销)。
+- 任意交错下卸载完成后磁盘无该插件 scope:卸载前到达的写入随后被卸载清掉;卸载中(scope 已清、rm 未完成)到达的写入等卸载结束后被拒。
+- 根因:卸载先清 `_plugin-path-scopes.json` 再 rm 目录,返回后才撤内存 token;间隙里另一窗口点「授权」→ token 仍 active →
+  直接写盘把 scope 写回 → 同 id 重装冷启动水合旧 scope,`covers()` 静默授权。
+
 ### 退出时在途 HTTP MCP 请求不拖住 mcpHost.close() — `mcp-host-close-inflight.spec.ts`
 - `close()` 停止接新连接后立即 `closeAllConnections()` 断开现存连接(挂在授权 await 上的在途 POST 被断开,服务端
   `ctx.signal` abort),整个关闭上限 2s。

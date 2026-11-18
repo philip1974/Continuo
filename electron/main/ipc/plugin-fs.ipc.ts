@@ -8,8 +8,8 @@ import { IdentityRegistry } from '../services/identity-registry.service';
 import { PathScopeRegistry } from '../services/path-scope-registry.service';
 import { registerPluginFsHandlers } from '../services/plugin-fs.service';
 import {
+  persistPluginPathScopesIfInstalled,
   readPluginPathScopes,
-  writePluginPathScopes,
 } from '../services/plugins.service';
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
 import type { PathScope } from '../../shared/plugin-fs-contract';
@@ -87,8 +87,9 @@ export function registerPluginFsIpc({
       webContents.fromId(senderId) ?? null,
     loadPersistedScopes: (pluginId) =>
       readPluginPathScopes(pluginsDir, pluginId),
+    // 安全:经同 id mutation 锁 + 已安装校验落盘,防卸载间隙的授权把 scope 写回磁盘(见函数注释)。
     persistScopes: (pluginId, scopes) =>
-      writePluginPathScopes(
+      persistPluginPathScopesIfInstalled(
         pluginsDir,
         pluginId,
         copyScopesForPersistence(scopes),
