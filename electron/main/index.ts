@@ -87,6 +87,7 @@ import { buildClaudeAddCommand, setStdioConfig } from './services/mcp-stdio-conf
 import {
   createAwaitStopHookTool,
   createHookFileBroker,
+  ensureHookEventsDir,
   inferRunner,
   installStopHookForSession,
 } from './services/mcp-tools-hook-bridge';
@@ -1017,7 +1018,7 @@ async function startMcpHost(): Promise<void> {
   const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
   const broker = createHookFileBroker(hookEventsDir);
   try {
-    await nodeFs.promises.mkdir(hookEventsDir, { recursive: true });
+    await ensureHookEventsDir(hookEventsDir); // 0700(多用户 Linux:事件含会话内容)
     try {
       await broker.start();
       brokerStarted = true;

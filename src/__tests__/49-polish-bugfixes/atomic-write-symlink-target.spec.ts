@@ -7,7 +7,10 @@ import { lstat, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
+import {
+  atomicReplaceFileNoFollow,
+  atomicWriteFile,
+} from '../../../electron/main/ipc/fs/atomic-write';
 
 const dirs: string[] = [];
 async function tempDir(): Promise<string> {
@@ -42,5 +45,23 @@ describe('atomicWriteFile 保存 symlink 写穿到 target,不断链', () => {
     const file = join(dir, 'plain.txt');
     await atomicWriteFile(file, 'hello');
     expect(await readFile(file, 'utf-8')).toBe('hello');
+  });
+});
+
+// 安全(H1):写不可信目录(agent 仓库内 CLI 配置)用不跟随链接的变体 —— 即便检查后路径被换成链接,
+// rename 也只替换链接本身,绝不写穿到仓库外目标。
+describe.skipIf(process.platform === 'win32')('atomicReplaceFileNoFollow 不写穿 symlink', () => {
+  it('路径是 symlink → 链接被普通文件替换,target 不变', async () => {
+    const dir = await tempDir();
+    const target = join(dir, 'target.txt');
+    const link = join(dir, 'link.txt');
+    await writeFile(target, 'secret', 'utf-8');
+    await symlink(target, link);
+
+    await atomicReplaceFileNoFollow(link, 'managed');
+
+    expect(await readFile(target, 'utf-8')).toBe('secret');
+    expect((await lstat(link)).isSymbolicLink()).toBe(false);
+    expect(await readFile(link, 'utf-8')).toBe('managed');
   });
 });

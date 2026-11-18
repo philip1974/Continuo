@@ -4,7 +4,8 @@
 //  - app-singleton broker (Continuo 端只一个实例,不是 per-call)
 //  - matched-only unlink (P0-3) + maxEntries=500 + maxAgeMs=600_000 stale cleanup (P1-1)
 //  - ambiguity guard (P0-1): 同 (windowId, runner, 终端会话) 第二 pending → AWAIT_STOP_HOOK_ALREADY_PENDING
-//  - 会话绑定:事件按文件名中的 CONTINUO_TERMINAL_SESSION_ID 精确交给该会话的等待者
+//  - 会话绑定:事件按文件名中的 CONTINUO_TERMINAL_SESSION_ID 精确交给该会话的等待者(防串会话的
+//    正确性约束,非安全边界:同用户进程可直接读 hook-events / transcript)
 //  - Codex hook filename 加 windowId (P0-4)
 //  - settings merge 不 parse TOML, block-level regex + marker-only path drift (P1-3)
 //  - raw default omit (P1-4) — broker 返回完整 payload, awaitStopHookTool.run() 仅 input.include_raw=true 时加 output
@@ -12,14 +13,17 @@
 
 import { watch } from 'node:fs';
 import {
-  copyFile,
+  chmod,
+  lstat,
   mkdir,
   opendir,
+  realpath,
   stat,
   unlink,
+  writeFile,
 } from 'node:fs/promises';
 import * as path from 'node:path';
-import { atomicWriteFile } from '../ipc/fs/atomic-write';
+import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 
 import {
   awaitStopHookInputSchema,
@@ -96,7 +100,8 @@ export const LAST_MSG_MAX = 64 * 1024; // last_assistant_message 正文上限
 const CODEX_STOP_HEADER = '[[hooks.Stop]]';
 const CODEX_MANAGED_MARKER = '# continuo-managed';
 const COMMAND_KEY = 'command';
-// 安全(会话绑定):PTY 注入的终端会话 id 环境变量名(terminal.service 注入,hook 命令写进文件名)。
+// 正确性(会话绑定,防事件串会话,非安全边界):PTY 注入的终端会话 id 环境变量名(terminal.service 注入,
+// hook 命令写进文件名)。
 // 已装的 managed hook 命令不含它 = 旧版(按 cwd 匹配时代),install 时原地升级。
 export const TERMINAL_SESSION_ENV = 'CONTINUO_TERMINAL_SESSION_ID';
 
@@ -340,7 +345,7 @@ function filterKey(filter: AwaitFilter): string {
 }
 
 /**
- * 安全(会话绑定):hook 文件名 `cc_<win>_<termSid>_<cliSid>_<ns>.jsonl` / `codex_<win>_<termSid>_<ns>.jsonl`
+ * 正确性(会话绑定):hook 文件名 `cc_<win>_<termSid>_<cliSid>_<ns>.jsonl` / `codex_<win>_<termSid>_<ns>.jsonl`
  * 的第二段是 PTY 注入的 CONTINUO_TERMINAL_SESSION_ID。缺段(旧 hook 格式 `codex_<win>_<ns>`)、空段、
  * `unknown`(变量未注入)→ null。旧 cc 格式第二段是 CLI session id,不会等于 Continuo 生成的 `term-<uuid>`。
  */
@@ -466,10 +471,11 @@ export function createHookFileBroker(
     // 故 null entry 一律不匹配。windowId 正是文件名里做窗口隔离的字段,不该被 null 旁路。
     // 见第十三轮 P2-AK。
     if (entry.windowId !== filter.windowId) return false;
-    // 安全(会话绑定):事件只交给写它的那个终端会话的等待者。旧实现按 (窗口, runner, cwd) 匹配,
-    // 同窗口他方 create_session(同 runner、同 cwd)后 await 自己的会话即可截获受害会话的
-    // last_assistant_message / transcript_path(文件随后被删),违反 per-session capability 边界。
-    // 无会话 id 的事件(旧 hook / 非 Continuo 会话)fail-closed,不当通配。
+    // 正确性(会话绑定):事件只交给写它的那个终端会话的等待者。旧实现按 (窗口, runner, cwd) 匹配,
+    // 同窗口同 runner 同 cwd 的两个会话会互相拿到对方的 Stop 事件(拿走后文件被删,本该收到的会话超时),
+    // 或互占 ALREADY_PENDING。注意这**不是安全边界**:同用户进程可直接读 hook-events 目录与 transcript,
+    // 也能伪造带任意会话 id 的事件文件;此处只防事件串会话。无会话 id 的事件(旧 hook / 非 Continuo 会话)
+    // 不当通配(否则仍会串)。
     if (entry.terminalSessionId === null || entry.terminalSessionId !== filter.sessionId) {
       return false;
     }
@@ -851,8 +857,55 @@ type InstallStopHookResult = {
     | 'config-too-large'
     | 'unknown-runner'
     | 'no-cwd'
-    | 'unrecognized-existing-stop-hook';
+    | 'unrecognized-existing-stop-hook'
+    | 'unsafe-config-path';
 };
+
+// 安全(H1,不可信仓库符号链接):install_stop_hook 写的是 agent 所在仓库(可能不可信)里的配置。仓库可预置
+// `.codex/config.toml -> ~/.ssh/config`、`.claude/settings.local.json -> ~/.claude/settings.json`,或
+// `.claude` / `.codex` 目录本身是链接 —— 此前备份 copyFile 会把链接目标(机密)拷进工作树,atomicWriteFile
+// 写穿链接损坏目标 / 把 hook 装进全局配置。fail-closed:配置目录与配置文件任何一环是链接(或类型不对)即拒绝;
+// 目录已存在时 realpath 后还须仍在 cwd 内。cwd 本身经链接访问(如 macOS /tmp)不受影响。
+// 检查 → 写入之间的 TOCTOU 由写入侧收口:备份用 'wx'(O_EXCL 不跟随链接),配置用不跟随链接的 rename 原子替换。
+async function guardConfigPath(
+  cwd: string,
+  configDir: string,
+  configPath: string,
+): Promise<'ok' | 'unsafe-config-path' | 'read-error'> {
+  for (const [p, wantDir] of [[configDir, true], [configPath, false]] as const) {
+    let st;
+    try {
+      st = await lstat(p);
+    } catch (err) {
+      // 目录不存在 → 文件必不存在,后续 mkdir 新建;文件不存在 → 新建。其它错误:状态未知,不写。
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') break;
+      return 'read-error';
+    }
+    if (st.isSymbolicLink()) return 'unsafe-config-path';
+    if (wantDir ? !st.isDirectory() : !st.isFile()) return 'unsafe-config-path';
+  }
+  try {
+    const realCwd = await realpath(cwd);
+    const realDir = await realpath(configDir);
+    const rel = path.relative(realCwd, realDir);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return 'unsafe-config-path';
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return 'read-error';
+  }
+  return 'ok';
+}
+
+// 备份已读入的原配置文本:'wx' 排他创建,备份名已存在(含被预置成链接)→ EEXIST → 返回 false 由调用方拒绝,
+// 绝不经链接写出;也不再按路径 copyFile(源在检查后被换成链接时会把链接目标拷进工作树)。
+async function writeConfigBackup(configPath: string, text: string): Promise<boolean> {
+  try {
+    await writeFile(`${configPath}.continuo-bak.${Date.now()}`, text, { flag: 'wx', mode: 0o600 });
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw err;
+  }
+}
 
 // 边界(E66,E26 同款 / E18 stat-before-read 族):安装 stop-hook 时要读用户工作区的配置文件
 // (.claude/settings.local.json / .codex/config.toml)—— 这是工作区外部输入。此前两处直接
@@ -884,6 +937,17 @@ async function readConfigCapped(filePath: string): Promise<CappedConfigRead> {
   return { kind: 'ok', text: read.text as string };
 }
 
+// 安全(多用户 Linux):hook 事件含会话内容(last_assistant_message 等)。hook 命令在 `umask 077` 下运行,
+// `mkdir -p` 建出的目录为 0700、`cat >` 写出的事件文件为 0600;默认 umask 022 会让同机其他用户可读。
+// 两种 runner 的 hook 均由 POSIX shell 执行(命令本身已依赖 `$(date +%s%N)`),无 Windows cmd 分支。
+const HOOK_UMASK_PREFIX = 'umask 077; ';
+
+/** 建 hook-events 目录为 0700;已存在(旧版按默认 umask 建成 0755)也收紧。 */
+export async function ensureHookEventsDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') await chmod(dir, 0o700);
+}
+
 export async function installStopHookForSession(
   cwd: string,
   runner: RunnerKind,
@@ -905,6 +969,9 @@ async function mergeClaudeCodeSettings(
   let existing: Record<string, unknown> = {};
   let fileExists = false;
 
+  const guard = await guardConfigPath(cwd, path.dirname(settingsPath), settingsPath);
+  if (guard !== 'ok') return { installed: false, reason: guard };
+
   // 边界(E66):stat.size 预检的 capped-read。too-large/read-error 直接 fail-fast,不进
   // JSON.parse / atomicWrite。read-error 同既有「读失败当空→写覆盖」族:不能当空配置覆盖。
   const read = await readConfigCapped(settingsPath);
@@ -914,8 +981,10 @@ async function mergeClaudeCodeSettings(
   if (read.kind === 'read-error') {
     return { installed: false, reason: 'read-error' };
   }
+  let originalText = '';
   if (read.kind === 'ok') {
     fileExists = true;
+    originalText = read.text;
     try {
       const parsed = JSON.parse(read.text) as unknown;
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -943,6 +1012,7 @@ async function mergeClaudeCodeSettings(
   const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];
 
   const command =
+    HOOK_UMASK_PREFIX +
     `mkdir -p "${hookEventsDir}" && ` +
     `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
     `cc_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
@@ -973,13 +1043,15 @@ async function mergeClaudeCodeSettings(
   }
 
   if (fileExists) {
-    await copyFile(settingsPath, `${settingsPath}.continuo-bak.${Date.now()}`);
+    if (!(await writeConfigBackup(settingsPath, originalText))) {
+      return { installed: false, reason: 'unsafe-config-path' };
+    }
   } else {
     await mkdir(path.dirname(settingsPath), { recursive: true });
   }
 
   if (legacy !== null) {
-    // 安全(会话绑定):旧命令写出的事件无会话 id,broker 不再交给任何等待者 → 必须升级,否则该项目的
+    // 正确性(会话绑定):旧命令写出的事件无会话 id,broker 不再交给任何等待者 → 必须升级,否则该项目的
     // await_stop_hook 永远超时。只改 command,保留该 hook 对象的其它字段与用户其它 Stop 项。
     const { entryIdx, hookIdx } = legacy;
     const entry = stopArr[entryIdx] as { hooks: unknown[] };
@@ -995,7 +1067,8 @@ async function mergeClaudeCodeSettings(
   // crash-safe 原子写:裸 writeFile 先 truncate 用户真实配置,写入中途崩溃/磁盘满会把
   // .claude/settings.local.json 留成空/半截(.continuo-bak 备份需手工恢复)。与 R4
   // plugin-fs writeFile / plugin-data 的原子写策略对齐。(codex 复审 loop R6)
-  await atomicWriteFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
+  // 安全(H1):不跟随链接的 rename 替换,绝不写穿到仓库外。
+  await atomicReplaceFileNoFollow(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
   return { installed: true };
 }
 
@@ -1006,6 +1079,8 @@ async function mergeCodexConfig(
   const configPath = path.join(cwd, '.codex', 'config.toml');
   let text = '';
   let fileExists = false;
+  const guard = await guardConfigPath(cwd, path.dirname(configPath), configPath);
+  if (guard !== 'ok') return { installed: false, reason: guard };
   // 边界(E66,同 mergeClaudeCodeSettings):stat.size 预检的 capped-read,超大不进 regex/
   // replace/atomicWrite(超大文本上跑正则 + 构造更大写入串)。read-error 不当空配置覆盖。
   const read = await readConfigCapped(configPath);
@@ -1033,7 +1108,7 @@ async function mergeCodexConfig(
   // 时吞掉 managed 自身的 Stop 头;marker 在块内(I6 测试)时从 marker 后直接扫描。
   const managedStop = findManagedCodexStopCommand(text);
   if (managedStop !== null) {
-    // 安全(会话绑定):managed command 不含会话 id 变量 = 旧版,同 hookEventsDir 漂移一样原地替换升级。
+    // 正确性(会话绑定):managed command 不含会话 id 变量 = 旧版,同 hookEventsDir 漂移一样原地替换升级。
     const managedCommand = text.slice(managedStop.quoteStart, managedStop.quoteEnd);
     if (text.includes(hookEventsDir) && managedCommand.includes(TERMINAL_SESSION_ENV)) {
       return { installed: false, reason: 'already-installed' };
@@ -1042,7 +1117,9 @@ async function mergeCodexConfig(
   }
 
   if (fileExists) {
-    await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
+    if (!(await writeConfigBackup(configPath, text))) {
+      return { installed: false, reason: 'unsafe-config-path' };
+    }
   } else {
     await mkdir(path.dirname(configPath), { recursive: true });
   }
@@ -1054,14 +1131,15 @@ async function mergeCodexConfig(
     '[[hooks.Stop.hooks]]\n' +
     'type = "command"\n' +
     `command = ${JSON.stringify(command)}\n`;
-  // crash-safe 原子写(同 R6 理由:.codex/config.toml 不得被截断)
-  await atomicWriteFile(configPath, text + block);
+  // crash-safe 原子写(同 R6 理由:.codex/config.toml 不得被截断);不跟随链接(H1)
+  await atomicReplaceFileNoFollow(configPath, text + block);
   return { installed: true };
 }
 
 /** Codex Stop hook 写入 config.toml 的 shell 命令(新建与替换 managed 块共用)。 */
 function codexStopHookCommand(hookEventsDir: string): string {
   return (
+    HOOK_UMASK_PREFIX +
     `mkdir -p "${hookEventsDir}" && ` +
     `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
     `codex_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
@@ -1082,9 +1160,11 @@ async function replaceManagedCodexStopHook(
     text.slice(0, managedStop.quoteStart) +
     JSON.stringify(codexStopHookCommand(hookEventsDir)) +
     text.slice(managedStop.quoteEnd);
-  await copyFile(configPath, `${configPath}.continuo-bak.${Date.now()}`);
-  // crash-safe 原子写(同 R6 理由)
-  await atomicWriteFile(configPath, next);
+  if (!(await writeConfigBackup(configPath, text))) {
+    return { installed: false, reason: 'unsafe-config-path' };
+  }
+  // crash-safe 原子写(同 R6 理由);不跟随链接(H1,调用方 mergeCodexConfig 已 guardConfigPath)
+  await atomicReplaceFileNoFollow(configPath, next);
   return { installed: true };
 }
 

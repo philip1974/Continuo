@@ -88,6 +88,26 @@ describe('atomic explorer persistence writes', () => {
     expect(existsSync(file)).toBe(false);
   });
 
+  // 安全(H2,多用户 Linux):此 helper 只写 userData 内部文件(explorer/settings/插件授权/插件数据/
+  // stdio 发现文件)。tmp 按默认 umask(常见 022)建成 0644,rename 后同机其他用户可读。须 0600 创建,
+  // 覆盖既有 0644 文件后也收紧为 0600。
+  it.skipIf(process.platform === 'win32')(
+    'T17b: 新建与覆盖都落成 0600(不受进程 umask 放宽)',
+    async () => {
+      const prev = process.umask(0o022);
+      try {
+        await atomicWriteJson(file, { a: 1 });
+        expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+
+        await fs.chmod(file, 0o644);
+        await atomicWriteJson(file, { a: 2 });
+        expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+      } finally {
+        process.umask(prev);
+      }
+    },
+  );
+
   it('T17: unlinks the temp file when rename fails', async () => {
     const renameSpy = vi
       .spyOn(fs, 'rename')

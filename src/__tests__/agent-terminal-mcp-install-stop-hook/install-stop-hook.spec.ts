@@ -156,7 +156,7 @@ describe('installStopHookForSession', () => {
     expect(settings).toContain('cat >');
     expect(settings).toContain('${CONTINUO_WINDOW_ID:-unknown}');
     expect(settings).toContain('${CLAUDE_CODE_SESSION_ID:-unknown}');
-    // 安全(会话绑定):文件名带 PTY 注入的终端会话 id,broker 只交给该会话的等待者。
+    // 正确性(会话绑定):文件名带 PTY 注入的终端会话 id,broker 只交给该会话的等待者。
     expect(settings).toContain(
       'cc_${CONTINUO_WINDOW_ID:-unknown}_${CONTINUO_TERMINAL_SESSION_ID:-unknown}_${CLAUDE_CODE_SESSION_ID:-unknown}_',
     );
@@ -184,7 +184,7 @@ describe('installStopHookForSession', () => {
     );
   });
 
-  // 安全(会话绑定):旧版 managed hook 写出的事件文件名无终端会话 id,broker 不再交给任何等待者。
+  // 正确性(会话绑定):旧版 managed hook 写出的事件文件名无终端会话 id,broker 不再交给任何等待者。
   // 已装旧版 hook 的项目必须在下次 install 时原地升级,否则 await_stop_hook 永远超时。
   it('I8 旧版 Claude managed Stop hook(无会话 id)原地升级 command,不追加第二条、保留用户 Stop', async () => {
     const cwd = await makeCwd();

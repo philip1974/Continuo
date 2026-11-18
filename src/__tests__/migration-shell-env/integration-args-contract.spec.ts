@@ -125,7 +125,7 @@ describe('shell spawn env 约定(bash / fish 不采用 helper env)', () => {
   );
 });
 
-// 安全(会话绑定):每个 PTY 注入自己的终端会话 id,managed Stop hook 把它写进事件文件名,broker 只把
+// 正确性(会话绑定):每个 PTY 注入自己的终端会话 id,managed Stop hook 把它写进事件文件名,broker 只把
 // Stop 事件交给该会话的 await_stop_hook 等待者。必须是内部值:调用方传入的 env 不能伪造成他会话 id。
 describe('shell spawn env 注入终端会话 id', () => {
   beforeEach(() => {

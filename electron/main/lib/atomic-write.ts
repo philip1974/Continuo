@@ -42,7 +42,10 @@ export async function atomicWriteText(
       `.${base}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`,
     );
     try {
-      fh = await fs.open(tempPath, 'wx');
+      // 安全(多用户 Linux):本 helper 只写 userData 内部文件(explorer/settings/插件授权与数据/stdio
+      // 发现文件),以 0600 创建 temp;rename 后目标即 0600(覆盖既有 0644 也随之收紧)。默认 0666&umask
+      // 会让同机其他用户读到工作区路径、插件授权与插件数据。Windows 上 mode 仅影响只读位,无副作用。
+      fh = await fs.open(tempPath, 'wx', 0o600);
       break;
     } catch (err) {
       // EEXIST = 撞名(非本次创建,绝不截断/清理它)→ 换新随机名重试;其它错误直接抛。

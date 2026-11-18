@@ -80,6 +80,24 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - Codex:同 hookEventsDir 但 managed command 无会话 id → 与路径漂移同路径原地替换。
 - 升级后再 install → `already-installed`(幂等)。
 
+## I9 项目内符号链接 fail-closed(安全)
+
+- agent 所在仓库可能不可信:可预置 `.codex/config.toml -> ~/.ssh/config`、
+  `.claude/settings.local.json -> ~/.claude/settings.json`,或 `.claude` / `.codex` 目录本身是链接。
+- 配置目录或配置文件任何一环是符号链接(或类型不对),或目录 realpath 后不在 cwd 内 →
+  返回 `{ installed: false, reason: 'unsafe-config-path' }`。
+- 拒绝时:链接目标不被修改,仓库内外都不产生 `.continuo-bak.<ts>` 备份副本(机密不进工作树)。
+- 备份名已存在(含被预置成链接)→ 同样拒绝,不经链接写出备份。
+- 写入用不跟随链接的 rename 原子替换,检查后被换成链接也不会写穿。
+- cwd 本身经链接访问(如 macOS `/tmp`)不受影响,正常安装。
+
+## I10 hook 事件私有权限(多用户 Linux)
+
+- hook 事件含会话内容(`last_assistant_message` 等)。
+- 两种 runner 的 hook 命令以 `umask 077;` 开头:即便调用方 umask 为 022,`mkdir -p` 建出的
+  hook-events 目录为 0700、`cat >` 写出的事件文件为 0600(真实 `/bin/sh` 执行验证)。
+- main 启动时 `ensureHookEventsDir` 以 0700 建目录;已存在的(旧版 0755)也收紧为 0700。
+
 ## I7 install spawn 前完成
 
 - 覆盖 P0-3 / P2-3。

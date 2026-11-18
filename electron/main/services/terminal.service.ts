@@ -605,8 +605,9 @@ export async function createTerminal(
   const envWithHookEvents = {
     ...shellEnv,
     CONTINUO_HOOK_EVENTS_DIR: hookEventsDir,
-    // 安全(会话绑定):managed Stop hook 把它写进事件文件名,broker 据此只把 Stop 事件交给本会话的
-    // await_stop_hook 等待者(不按 cwd 串给同窗口他方会话)。放在 shellEnv 之后,用户 env 不能覆盖。
+    // 正确性(会话绑定):managed Stop hook 把它写进事件文件名,broker 据此只把 Stop 事件交给本会话的
+    // await_stop_hook 等待者(不按 cwd 串给同窗口他会话)。放在 shellEnv 之后,用户 env 不能覆盖。
+    // 非安全边界:会话内进程可改写该变量或直接读写 hook-events 目录,这里只防事件串会话。
     [TERMINAL_SESSION_ENV]: id,
   };
   // 强制 login + interactive shell:对齐 iTerm 默认行为 (`exec -l zsh`)。
