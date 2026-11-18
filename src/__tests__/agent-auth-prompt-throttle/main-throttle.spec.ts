@@ -163,7 +163,7 @@ describe('agent 授权弹窗:拒绝冷却与退避', () => {
     await expect(ask('once')).resolves.toBe('once');
   });
 
-  it('超时(用户不理会)不计为拒绝、不升级退避,但同域进入一次 30s 冷却', async () => {
+  it('超时(用户不理会)不计为拒绝、不升级拒绝退避,但进入 30s 冷却', async () => {
     const p = request();
     expect(prompts()).toBe(1);
     await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
@@ -232,15 +232,30 @@ describe('agent 授权弹窗:单飞与「本次启动期间允许」', () => {
     await expectThrottled({}, /not ask again for 30s/);
   });
 
-  it('renderer 丢了授权态(reload)→ 已授权域的请求被拒一次即恢复节流', async () => {
+  it('纵深:镜像过期(renderer 丢了授权态而 main 没收到事件)→ 按镜像放行的请求被拒即恢复节流,这次拒绝照常计冷却', async () => {
     await ask('session');
-    // renderer 已 reload:对「已授权」域的请求真的弹了窗并被用户拒绝。
+    // 对「已授权」域的请求真的弹了窗并被用户拒绝。
     await expect(ask('denied')).resolves.toBe('denied');
+    await expectThrottled({}, /not ask again for 30s/);
+    vi.advanceTimersByTime(BASE);
+    // 镜像已清 → 恢复单飞。
     const p = request();
     await expectThrottled({}, /already waiting/);
-    answerAgentAuthRequest(lastRequestId(), 'denied', 1);
+    answerAgentAuthRequest(lastRequestId(), 'once', 1);
     await p;
+  });
+
+  it('纵深:镜像过期时并发的同域请求只记一次拒绝(其余是 renderer 因槽被占自动拒的)', async () => {
+    await ask('session');
+    const ps = Array.from({ length: 5 }, () => request());
+    for (const [, payload] of win.webContents.send.mock.calls.slice(1)) {
+      answerAgentAuthRequest((payload as AgentAuthRequestPayload).requestId, 'denied', 1);
+    }
+    await Promise.all(ps);
+    // 一次拒绝 → 30s;若 5 次都记,调用方级退避会到 120s。
     await expectThrottled({}, /not ask again for 30s/);
+    vi.advanceTimersByTime(BASE);
+    await expect(ask('once')).resolves.toBe('once');
   });
 });
 

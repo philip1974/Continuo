@@ -23,11 +23,32 @@ hello 只在**绑定时**校验一次 token、之后只记 windowId,每次调用
 - 从未发 hello 的外部客户端不持 token,不受吊销 / 轮换影响(仍以 external 回落主窗,走独立的 external 授权)。
 - HTTP / SSE 侧行为不变(吊销后 401、SSE 连接被关闭)。
 
+### 在途调用(吊销发生在一次工具调用执行期间)
+
+此前复查只发生在请求出队时。stdio 的调用方身份是连接(`stdio:<uuid>`),按 token 回收够不着它;`ctx.signal` 只在
+socket 关闭时取消。实测:hello → `create_session{autorun}` 卡在授权弹窗(或 PTY 创建中)→ 持有该 token 的终端
+退出 → 用户点允许 → stdio 返回新会话并执行 autorun;HTTP 同序列得
+`AGENT_NOT_AUTHORIZED: caller disconnected or revoked before session creation`。`await_stop_hook`(最长 600s)、
+`read_output` 等在途时吊销,结果仍写回已失效的连接。
+
+- 三个吊销入口(`revokeToken` / `revokeWindowTokens` / `rotateToken`)之后,mcp-host 经 `onTokensRevoked` 通知;
+  stdio server 立即复查所有已绑定连接,绑定所用 token 已失效的:
+  - 该绑定下在途调用的 `ctx.signal` 被取消(每个绑定一个 AbortController,并入连接的取消信号)——
+    `create_session` 在授权后 / 建 PTY 前 / 建完后的复查点据此不建会话、回收刚建的会话、不跑 autorun;
+    `await_stop_hook` 的等待被撤销;
+  - 连接的调用方身份作废:以旧身份回调 `onCallerRevoked`(main 取消其在途终端创建、回收其 debug 会话,同 HTTP 侧
+    token 吊销);之后的调用拿新身份。已创建的终端会话不被杀(同 HTTP),但重新 hello 后的新身份无权读控它们。
+- **响应写回前**再复查一次绑定:已失效 → 丢弃工具结果(终端输出 / transcript / 新会话 id),改回 `NO_WINDOW_CTX`。
+- 只影响绑定了被吊销 token 的连接;别的 token 的连接、未 hello 的外部客户端的在途调用照常完成。
+
 ## 残余
 
-吊销时**正在执行中**的那一次工具调用不会被打断(「撤销全部」另有处理:未决授权按拒绝结算、在途创建取消、
-agent 终端与 debug 会话被终止);复查发生在下一次请求进入时。
+- 不理会 `ctx.signal` 的工具在吊销后仍会跑完当前这一步(例如已写进 PTY 的 `send_text`),只是结果不再写回。
+- `tools/list` / `initialize` 不需要窗口上下文,吊销后仍可用(不含会话数据)。
 
 ## 规范
 
-`stdio-revoked-token-binding.spec.ts`:真实 `createMcpHost`(token 表)+ 真实 `createStdioSocketServer` + unix socket。
+- `stdio-revoked-token-binding.spec.ts`:真实 `createMcpHost`(token 表)+ 真实 `createStdioSocketServer` + unix socket。
+- `inflight-revocation.spec.ts`:再加真实回收接线(`createMcpRevokerWiring`)与真实终端工具:授权挂起中 / PTY 创建中
+  吊销 → 无新会话、无 autorun、返回错误(并与 HTTP 同序列对照);`await_stop_hook` 在途吊销不返回 transcript;
+  三个吊销入口都即时取消在途调用;吊销后重新 hello 是新身份;别的连接与外部客户端不受影响。

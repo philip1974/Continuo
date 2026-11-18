@@ -21,6 +21,7 @@ import * as crypto from 'node:crypto';
 import { mkdir, unlink, chmod, lstat, stat, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  NO_WINDOW_CTX_MESSAGE,
   RPC_ERROR_CODES,
   isRpcNotification,
   parseRpcMessage,
@@ -210,6 +211,8 @@ export function resolveStdioCallOwnerWindow(
 interface StdioBinding {
   readonly windowId: number;
   readonly token: string;
+  /** 绑定失效(所用 token 被吊销 / 轮换)时 abort:并入该绑定下每次调用的 ctx.signal,取消在途调用。 */
+  readonly aborter: AbortController;
 }
 const socketCtx: Map<Socket, StdioBinding | null> = new Map();
 
@@ -263,6 +266,30 @@ function subjectForSocket(sock: Socket): string {
   return s;
 }
 
+type StdioRevocationDeps = Pick<CreateStdioSocketOptions, 'resolveWindowId' | 'onCallerRevoked'>;
+
+/**
+ * 复查连接的绑定:所用 token 已不再解析到绑定的窗口(被吊销 / 轮换)→ 连接降为「hello 失败」状态
+ * (NO_WINDOW_CTX,不回落 external),取消该绑定下的在途调用,并作废连接的 callerSubject(之后的调用拿新身份,
+ * 旧身份名下的资源交 onCallerRevoked 回收)—— 与 HTTP 侧「token 吊销 = 该身份作废」对齐。返回仍有效的绑定。
+ */
+function validStdioBinding(sock: Socket, deps: StdioRevocationDeps): StdioBinding | null | undefined {
+  const binding = socketCtx.get(sock);
+  if (!binding || deps.resolveWindowId(binding.token) === binding.windowId) return binding;
+  socketCtx.set(sock, null);
+  binding.aborter.abort();
+  const subject = socketSubject.get(sock);
+  socketSubject.delete(sock);
+  if (subject !== undefined) {
+    try {
+      deps.onCallerRevoked?.(subject);
+    } catch (err) {
+      console.warn('[mcp-stdio] onCallerRevoked threw', err);
+    }
+  }
+  return null;
+}
+
 export interface StdioSocketServer {
   readonly socketPath: string;
   /**
@@ -284,6 +311,16 @@ export interface CreateStdioSocketOptions {
    * 归属它的资源(debug 会话)再无人能清理 —— 由 main 据此回收。
    */
   onCallerClosed?: (callerSubject: string) => void;
+  /**
+   * 登记「token 表被吊销 / 轮换」的监听(main 接到 mcp-host 的 onTokensRevoked)。触发时复查所有已绑定连接,
+   * 失效的立即降级并取消在途调用。未提供时退化为只在每个请求出队 / 响应写回时复查。
+   */
+  onTokensRevoked?: (listener: () => void) => void;
+  /**
+   * 连接的绑定因 token 吊销 / 轮换失效时,以它当时的 callerSubject 回调(该身份随即作废):main 据此取消其
+   * 在途终端创建、回收其 debug 会话。已创建的终端会话不动(同 HTTP 侧 token 吊销)。
+   */
+  onCallerRevoked?: (callerSubject: string) => void;
   /**
    * 启动时先删除旧文件(崩溃残留);listen 成功后把 socketPath 原子写入该文件(Windows 管道名发现文件,供无 env 的外部 proxy 读取);
    * close 时若内容仍是本 server 写入的(名字 + 本进程 pid,见 formatStdioPipeDiscovery)则删除。
@@ -347,11 +384,10 @@ async function setupSocketDir(socketPath: string): Promise<void> {
 async function handleLine(
   line: string,
   sock: Socket,
-  tools: ReadonlyMap<string, AnyMcpTool>,
-  serverInfo: ServerInfo,
-  resolveWindowId: (token: string) => number | null,
+  opts: Pick<CreateStdioSocketOptions, 'tools' | 'serverInfo'> & StdioRevocationDeps,
   signal: AbortSignal,
 ): Promise<void> {
+  const { tools, serverInfo, resolveWindowId } = opts;
   // 连接已 abort(拒绝 / 断开):abort 前已链入队列的行直接丢弃,不再 dispatch(否则逐条走到
   // gateWithAuth → 大量迟到授权弹窗)。
   if (signal.aborted || isBlankStdioLine(line)) return;
@@ -386,7 +422,7 @@ async function handleLine(
       sock,
       windowId === null
         ? null
-        : { windowId, token: (params as { token: string }).token },
+        : { windowId, token: (params as { token: string }).token, aborter: new AbortController() },
     );
     return;
   }
@@ -408,19 +444,23 @@ async function handleLine(
   // 安全:hello 只在绑定时校验一次 token。token 之后被吊销(持有它的终端退出、窗口关闭)或全部轮换(用户
   // 「撤销全部」)时 HTTP 立即 401,而已绑定的 stdio 连接此前仍以原窗口身份继续调用工具。每次请求复查绑定所用
   // token 仍解析到同一窗口;否则该连接降为「hello 失败」状态(NO_WINDOW_CTX,不回落 external)。
-  let binding = socketCtx.get(sock);
-  if (binding && resolveWindowId(binding.token) !== binding.windowId) {
-    socketCtx.set(sock, null);
-    binding = null;
-  }
+  const binding = validStdioBinding(sock, opts);
   const liveOwner = resolveStdioCallOwnerWindow(binding?.windowId, {
     isWindowAlive,
   });
   // 安全 S3:无论绑定窗口还是 fallback,都带本连接的 callerSubject,供 capability 校验。
   const callerSubject = subjectForSocket(sock);
   // race(R111):本次调用带连接取消信号,供有副作用工具在授权 await 后复查(socket close 即 abort)。
+  // 安全:绑定调用再并入绑定的取消信号 —— 调用在途(卡在授权弹窗 / PTY 创建 / await_stop_hook)时 token 被吊销,
+  // 与连接断开同样处理(HTTP 侧靠 token 身份被 reclaim;stdio 的身份是连接,reclaim(token) 够不着)。
   let ctx: McpCallCtx | null =
-    liveOwner !== null ? { ownerWindowId: liveOwner, callerSubject, signal } : null;
+    liveOwner !== null && binding
+      ? {
+          ownerWindowId: liveOwner,
+          callerSubject,
+          signal: AbortSignal.any([signal, binding.aborter.signal]),
+        }
+      : null;
   // Fallback:外部 MCP client(eg. Claude Code stdio 配置)spawn 的 proxy
   // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
   // 非 popout 主窗(pickMainWindowPreferNonPopout:按 BrowserWindow.getAllWindows() 顺序取第一个未销毁的
@@ -439,6 +479,15 @@ async function handleLine(
     if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal, external: true };
   }
   const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
+  // 安全:写回前再复查一次绑定。调用在途时 token 被吊销 → 丢弃工具结果(终端输出 / transcript / 新会话 id),
+  // 改回与「吊销后才发起」相同的 NO_WINDOW_CTX。HTTP 侧同序列在授权后复查点即失败。
+  if (binding && rpc.method === 'tools/call' && validStdioBinding(sock, opts) !== binding) {
+    writeLine(
+      sock,
+      formatRpcError(rpc.id, RPC_ERROR_CODES.NO_WINDOW_CTX, NO_WINDOW_CTX_MESSAGE),
+    );
+    return;
+  }
   // race(R111):连接已断开 / 已拒绝 → writeLine 丢弃响应(避免 EPIPE / write-after-end)。
   writeLine(sock, formatRpcResponse(rpc.id, response));
 }
@@ -487,6 +536,10 @@ export async function createStdioSocketServer(
   }
 
   const clients = new Set<Socket>();
+  // 安全:token 吊销 / 轮换 → 立即复查所有已绑定连接(不等它们的下一个请求),取消失效绑定下的在途调用。
+  opts.onTokensRevoked?.(() => {
+    for (const sock of clients) validStdioBinding(sock, opts);
+  });
   const server: NetServer = createNetServer((sock) => {
     // 边界(E233):全局连接数上限,超限立即写错误 + destroy,不入 clients。
     // 连接建立时 subject/window 未知,只能全局闸(per-subject 在 per-message 才解析)。
@@ -570,14 +623,7 @@ export async function createStdioSocketServer(
         pendingLines += 1;
         pendingBytes += bytes;
         void lineQueue.run(() =>
-          handleLine(
-            line,
-            sock,
-            opts.tools,
-            opts.serverInfo,
-            opts.resolveWindowId,
-            aborter.signal,
-          )
+          handleLine(line, sock, opts, aborter.signal)
             .catch((err) => {
               console.warn('[mcp-stdio] handleLine threw', err);
             })

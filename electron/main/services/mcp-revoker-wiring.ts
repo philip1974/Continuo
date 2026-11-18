@@ -3,6 +3,8 @@
 // 从 index.ts 抽出(便于行为测试)。HTTP 调用方身份 = token(未带 Mcp-Session-Id)或 token + session id;
 // 任一身份作废都要回收其名下的在途终端创建与 debug 会话,否则它们再无人能 disconnect(名额被占满、adapter 常驻)。
 // session 身份统一由 host 在删除 session 时经 onHttpSessionReleased 逐个通知(带原因),吊销器只需处理 token 本身。
+// stdio 调用方身份 = 连接(`stdio:<uuid>`),token 只在 hello 时用一次:host 的 token 表变动经 onTokensRevoked 转给
+// stdio server 复查各连接的绑定,失效的连接以其身份经 onCallerRevoked 回收(同 HTTP 的 token 吊销)。
 
 import type {
   HttpSessionReleaseCause,
@@ -23,7 +25,14 @@ export interface McpRevokerWiringDeps {
 
 export interface McpRevokerWiring {
   /** 传给 createMcpHost 的回调。 */
-  readonly hostOptions: Required<Pick<McpHostOptions, 'onHttpSessionReleased' | 'hasLiveResources'>>;
+  readonly hostOptions: Required<
+    Pick<McpHostOptions, 'onHttpSessionReleased' | 'hasLiveResources' | 'onTokensRevoked'>
+  >;
+  /** 传给 createStdioSocketServer 的回调。 */
+  readonly stdioOptions: {
+    readonly onTokensRevoked: (listener: () => void) => void;
+    readonly onCallerRevoked: (callerSubject: string) => void;
+  };
   /** host 建好后传给 setMcpRevokers。 */
   revokers(host: Pick<McpHost, 'revokeToken' | 'revokeWindowTokens'>): McpRevokers;
 }
@@ -37,8 +46,19 @@ export function createMcpRevokerWiring(deps: McpRevokerWiringDeps): McpRevokerWi
     });
   };
 
+  const tokensRevokedListeners = new Set<() => void>();
+
   return {
+    stdioOptions: {
+      onTokensRevoked: (listener) => {
+        tokensRevokedListeners.add(listener);
+      },
+      onCallerRevoked: (subject) => reclaim(subject, 'token-revoked', 'stdio token revoke'),
+    },
     hostOptions: {
+      onTokensRevoked: () => {
+        for (const listener of tokensRevokedListeners) listener();
+      },
       onHttpSessionReleased: (subject: string, cause: HttpSessionReleaseCause) => {
         switch (cause) {
           case 'closed': // DELETE 结束 / 空闲驱逐

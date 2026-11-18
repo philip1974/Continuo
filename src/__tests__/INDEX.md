@@ -220,7 +220,9 @@
 - [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
 - [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
 - [`prompt-keyboard-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-keyboard-grant-guard.spec.tsx)
+- [`renderer-reload.spec.ts`](./agent-auth-prompt-throttle/renderer-reload.spec.ts)
 - [`store-slots.spec.ts`](./agent-auth-prompt-throttle/store-slots.spec.ts)
+- [`timeout-occupancy.spec.ts`](./agent-auth-prompt-throttle/timeout-occupancy.spec.ts)
 
 ## [agent-auth-respond-schema (E146)](./agent-auth-respond-schema/README.md)
 
@@ -1291,6 +1293,7 @@
 
 ## [stdio-revoked-token-binding(token 吊销后,已 hello 的 stdio 连接立即失效)](./stdio-revoked-token-binding/README.md)
 
+- [`inflight-revocation.spec.ts`](./stdio-revoked-token-binding/inflight-revocation.spec.ts)
 - [`stdio-revoked-token-binding.spec.ts`](./stdio-revoked-token-binding/stdio-revoked-token-binding.spec.ts)
 
 ## [stop-hook broker:不丢事件、不留孤儿等待者](./stop-hook-broker-reliability/README.md)
