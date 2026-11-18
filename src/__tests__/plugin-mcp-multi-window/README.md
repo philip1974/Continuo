@@ -118,7 +118,8 @@ export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMc
   与终端 / debug 工具同走 agent 授权。此前 stub 丢弃 ctx 直接 invoke,用户对 agent 点了「拒绝」该 agent
   仍能调插件工具(如 git stage/commit)
 - **跨窗调用拒绝**(安全,2026-11-18 起取代旧的「跨窗共享」):`CreatePluginMcpBridgeDeps.windowIdOfWc`(必填)
-  给出注册者 wc 当前所在窗口。调用方 `ctx.ownerWindowId` 与之不同、调用方无有效窗口(external 客户端)、
+  给出注册者 wc 当前所在窗口。调用方 `ctx.ownerWindowId` 与之不同、调用方无有效窗口、调用方是外部客户端
+  (`ctx.external`:stdio 未发 hello、回落到主窗 —— 即便主窗恰是注册者窗口)、
   或注册者窗口已不可解析(null)→ 抛 `AGENT_NOT_AUTHORIZED`(消息含 `belongs to another window`),**不弹授权、
   不 invoke**。旧行为是「调用方窗口授权、注册者窗口执行」:窗口 A 的 agent 调 B 的插件工具,A 的用户批准,操作
   却落在 B 的仓库,B 的用户不知情。工具名全局唯一注册(先到先得)保持不变,只是别的窗口调不了。

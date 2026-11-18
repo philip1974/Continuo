@@ -411,7 +411,9 @@ export function createPluginMcpBridge(
         run: async (input, ctx) => {
           // ownerWin 为 null(注册者 wc 已销毁 / 无窗口)时须单独拒,否则无窗口调用方(null)会与之相等。
           const ownerWin = windowIdOfWc(wcId);
-          if (ownerWin === null || ctx.ownerWindowId !== ownerWin) {
+          // 外部客户端(ctx.external:stdio 未发 hello,回落到主窗)即便回落窗口恰是注册者窗口,也不是该窗口
+          // 终端里的 agent → 同样拒绝。
+          if (ownerWin === null || ctx.external === true || ctx.ownerWindowId !== ownerWin) {
             throw codedError(
               ERROR_CODES.AGENT_NOT_AUTHORIZED,
               `plugin mcp tool "${payload.name}" belongs to another window; call it from the agent in that window`,

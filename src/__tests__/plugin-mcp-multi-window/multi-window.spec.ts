@@ -467,6 +467,19 @@ describe('授权门控 · 插件工具经 agent 授权', () => {
     expect(invokeRemote.invokeCalls).toEqual([]);
   });
 
+  // 外部客户端(stdio 未发 hello)回落到主窗:ctx.ownerWindowId 是主窗 id、external=true。即便主窗恰是注册者
+  // 窗口,它也不是该窗口终端里的 agent —— 与「无窗口调用方」同样拒绝,不弹授权、不 invoke。
+  it('外部客户端(ctx.external,回落到注册者所在的主窗)→ 拒绝,不弹授权、不 invoke', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(11, regPayload('a')); // 注册者窗口 1
+    await expect(
+      host.tools.get('a')!.run({}, { ownerWindowId: 1, callerSubject: 's', external: true }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
   it('注册者窗口已不可解析(wc 已销毁 / 不在任何窗口)→ 拒绝', async () => {
     const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
     const { bridge, host, invokeRemote } = makeBridge(ensure);
