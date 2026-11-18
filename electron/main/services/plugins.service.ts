@@ -1007,7 +1007,7 @@ async function readAllPathScopes(
   try {
     json = JSON.parse(text);
   } catch {
-    await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx' }).catch(() => {});
+    await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx', mode: 0o600 }).catch(() => {});
     throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
   }
   if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
