@@ -14,6 +14,7 @@ import {
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
 import type { PathScope } from '../../shared/plugin-fs-contract';
 import { withTrustedFrameGate } from '../safe-handle';
+import { resolveProtectedRoots } from '../user-data-path';
 
 export interface RegisterPluginFsIpcArgs {
   ipcMain: IpcMain;
@@ -71,7 +72,16 @@ export function registerPluginFsIpc({
   ipcMain,
 }: RegisterPluginFsIpcArgs): PluginFsIpcHandles {
   const identityRegistry = new IdentityRegistry();
-  const pathScopeRegistry = new PathScopeRegistry(identityRegistry);
+  // 安全:应用自身的数据 / 程序目录是受保护根,任何 path-scope(哪怕用户授了 `~`)都不覆盖。
+  const pathScopeRegistry = new PathScopeRegistry(identityRegistry, {
+    protectedRoots: resolveProtectedRoots({
+      userDataPath: app.getPath('userData'),
+      appDataPath: app.getPath('appData'),
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath ?? '',
+      platform: process.platform,
+    }),
+  });
   const correlator = new ScopeRequestCorrelator();
   activeCorrelator = correlator;
 

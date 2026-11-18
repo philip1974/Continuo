@@ -922,6 +922,11 @@
 
 - [`read-git-blob-scope.spec.ts`](./plugin-fs-git-blob-scope/read-git-blob-scope.spec.ts)
 
+## [plugin-fs-protected-roots(应用自身的数据 / 程序目录对插件不可达,与已授 path-scope 无关)](./plugin-fs-protected-roots/README.md)
+
+- [`ipc-wiring.spec.ts`](./plugin-fs-protected-roots/ipc-wiring.spec.ts)
+- [`protected-roots.spec.ts`](./plugin-fs-protected-roots/protected-roots.spec.ts)
+
 ## [plugin-fs-read-cap (E28 + E29 + E30 + E31)](./plugin-fs-read-cap/README.md)
 
 - [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)
