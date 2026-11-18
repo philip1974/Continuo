@@ -907,17 +907,18 @@ export class DapClient {
       return;
     }
 
-    const unsupported = message.command !== 'runInTerminal';
+    // 其余反向请求一律不执行并如实回失败。runInTerminal 也不例外:launch 固定 console:'internalConsole',
+    // 正常不会收到;收到时回 success:true 会让 adapter 误以为进程已在终端里起来。
     this.sendReverseResponse({
       seq: this.seq++,
       type: 'response',
       request_seq: message.seq ?? 0,
       command: message.command,
-      success: !unsupported,
-      message: unsupported
-        ? `unsupported reverse request: ${message.command}`
-        : undefined,
-      body: unsupported ? undefined : {},
+      success: false,
+      message:
+        message.command === 'runInTerminal'
+          ? 'runInTerminal not supported'
+          : `unsupported reverse request: ${message.command}`,
     });
   }
 
