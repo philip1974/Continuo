@@ -11,6 +11,11 @@ main 的 mtime watcher 只发现 `main.js` 变化,发现不了目录删除,B 无
 - `plugins:uninstall` 成功后,经 `broadcastToWindows` 向所有窗口推 `plugins:uninstalled { id }`(含发起卸载的窗口)。
 - 跳过已销毁窗口;某窗口 `send` 抛错只记录,不影响其它窗口与卸载结果。
 - 卸载失败 → 不广播(插件仍在盘上,各窗口照常运行)。
+- 卸载成功后(广播前)主进程无条件撤销该插件的内存授权:所有窗口的 plugin-fs token 进 drain(在途授权弹窗的
+  grant 不再落地)、内存 path-scope 清空、hydrated 标记清除(重装后从已清空的磁盘重新水合)。不受
+  `_unregister-plugin` 的 generation 守卫影响 —— 旧 generation 窗口卸载 / 最新实例所在窗口已关时同样撤,
+  否则同会话重装同 id 插件静默继承旧目录读写授权。卸载失败不撤。
+- request-scope 冷启动水合读盘挂起期间插件被卸载(token 不再 active)→ 不把读到的旧快照水合回内存。
 
 ### renderer
 
@@ -33,6 +38,8 @@ main 的 mtime watcher 只发现 `main.js` 变化,发现不了目录删除,B 无
 ## 规范文件
 
 - `main-broadcast.spec.ts`:main 侧广播(含跳过已销毁窗口、send 抛错隔离、失败不广播)。
+- `main-revoke-path-scope.spec.ts`:卸载成功后撤销内存 path-scope / token(含旧 generation 窗口卸载)、失败不撤、
+  水合在途被卸载不水合旧快照。
 - `pending-prompt-cancel.spec.ts`:弹窗挂起时收到广播 → 弹窗取消、插件代码未执行、权限未写入;授权写入在途时收到
   广播 → 不加载插件代码;排队弹窗取消与队列推进;init 激活挂在弹窗上时 gate 立即标记并取消。
 - `renderer-teardown.spec.ts`:两个 manager 模拟窗口 A / B;B 收到广播后实例停用、贡献点注销、权限查询不再放行;
