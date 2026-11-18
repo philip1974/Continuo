@@ -14,7 +14,11 @@ import {
   mergeWritableIntoFull,
   migrateV1ToV2,
   migrateV2ToV3,
+  MAX_PERSISTED_WINDOW_SEGMENTS,
+  pruneExplorerFileWindows,
   pruneLRUClosed,
+  stampMissingClosedAt,
+  closedAtNow,
   saveExplorer,
   type ExplorerPayload,
   type ExplorerPayloadV3,
@@ -226,6 +230,145 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(payload.windows.map((w) => w.windowSeq).sort()).toEqual([1]);
     pruneLRUClosed(payload, Infinity, new Set());
     expect(payload.windows.map((w) => w.windowSeq)).toEqual([1]);
+  });
+
+  // perf:LRU 上限此前为 Infinity,关闭窗口段永不淘汰(真机 102 段 / 211KB),每次 layout/explorer 写都
+  // 全量处理。上限改为有限值,并在启动时对既有超长文件收敛一次。
+  describe('窗口段数上限与启动收敛', () => {
+    const closedWindow = (seq: number, closedAt: number | undefined) => ({
+      windowSeq: seq,
+      workspace: { root: `/w${seq}` },
+      explorer: { activePath: null, expandedPaths: [], sort },
+      ...(closedAt === undefined ? {} : { lastClosedAt: closedAt }),
+    });
+
+    it('上限是有限值,且不小于启动恢复的候选检查预算', async () => {
+      const { MAX_RESTORE_CHECKS } = await import(
+        '../../../electron/main/services/window-restore.service'
+      );
+      expect(Number.isFinite(MAX_PERSISTED_WINDOW_SEGMENTS)).toBe(true);
+      expect(MAX_PERSISTED_WINDOW_SEGMENTS).toBeGreaterThanOrEqual(MAX_RESTORE_CHECKS);
+    });
+
+    it('超长文件收敛到上限:摘最旧 closed 段,保护段与较新段保留,其余字段与 nextWindowSeq 不变', async () => {
+      const payload = defaultExplorerV3();
+      payload.nextWindowSeq = 500;
+      payload.windows = [
+        { ...payload.windows[0]!, lastClosedAt: 1 }, // 主窗段最旧,但受保护
+        ...Array.from({ length: 99 }, (_, i) => closedWindow(i + 1, 1000 + i)),
+        // 无 lastClosedAt = 上次会话仍开着(退出时 closed 写入是 void 异步、app.quit 不等;崩溃更不写)
+        // → 视为最新,不能当最旧摘掉
+        closedWindow(400, undefined),
+      ];
+      await saveExplorer(file, payload);
+
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+
+      const after = (await loadExplorer(file))!;
+      expect(after.windows).toHaveLength(64);
+      const seqs = after.windows.map((w) => w.windowSeq);
+      expect(seqs[0]).toBe(0);
+      expect(seqs).toContain(400);
+      expect(seqs).not.toContain(1);
+      expect(seqs).not.toContain(37); // 有时间戳的第 37 旧段(36 个 + 它 = 37 段被摘)
+      expect(seqs).toContain(38);
+      expect(seqs).toContain(99);
+      // 保留段维持原数组顺序
+      expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+      expect(after.nextWindowSeq).toBe(500);
+      expect(after.workspace).toEqual(payload.workspace);
+    });
+
+    it('缺 lastClosedAt 的段视为最新:先摘完有时间戳的最旧段,不论其在数组中的位置', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        closedWindow(1, undefined), // 数组最前,且无时间戳
+        closedWindow(2, 50),
+        closedWindow(3, undefined),
+        closedWindow(4, 10),
+        closedWindow(5, 30),
+      ];
+
+      pruneLRUClosed(payload, 4, new Set([0]));
+
+      expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 1, 2, 3]);
+    });
+
+    it('跨启动:缺 lastClosedAt 的陈旧段只比「本进程启动前」的时间戳新;本次运行刚关的段不会被它们挤掉', () => {
+      const payload = defaultExplorerV3();
+      const stale = Array.from({ length: 4 }, (_, i) => closedWindow(i + 1, undefined));
+      payload.windows = [payload.windows[0]!, ...stale, closedWindow(9, Date.now() + 1000)];
+
+      pruneLRUClosed(payload, 4, new Set([0]));
+
+      // 6 段上限 4 → 摘 2:刚关的 seq 9(时间戳晚于进程启动)保留;按数组顺序摘最前的两个陈旧段
+      expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 3, 4, 9]);
+    });
+
+    it('stampMissingClosedAt:给非保护且缺 lastClosedAt 的段补写同一个固定时间戳(落盘后跨启动正常老化)', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        closedWindow(1, undefined),
+        closedWindow(2, 50),
+        closedWindow(3, undefined),
+      ];
+
+      stampMissingClosedAt(payload, new Set([0, 3]));
+
+      const by = new Map(payload.windows.map((w) => [w.windowSeq, w.lastClosedAt]));
+      expect(by.get(0)).toBeUndefined(); // 保护段不写
+      expect(by.get(3)).toBeUndefined();
+      expect(by.get(2)).toBe(50); // 已有时间戳不改
+      expect(typeof by.get(1)).toBe('number');
+      expect(by.get(1)!).toBeLessThanOrEqual(closedAtNow());
+    });
+
+    it('stampMissingClosedAt:schema 允许的 lastClosedAt: null 同样视为缺失并补写(与 LRU 排序键的 ?? 一致)', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [payload.windows[0]!, { ...closedWindow(1, undefined), lastClosedAt: null }];
+
+      stampMissingClosedAt(payload, new Set([0]));
+
+      expect(typeof payload.windows[1]!.lastClosedAt).toBe('number');
+    });
+
+    it('缺 lastClosedAt 的段本身超限(数据异常):有时间戳段先摘完,其余按数组顺序稳定摘,且不抛', () => {
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        closedWindow(1, undefined),
+        closedWindow(2, 5),
+        closedWindow(3, undefined),
+        closedWindow(4, undefined),
+      ];
+
+      pruneLRUClosed(payload, 2, new Set([0]));
+
+      expect(payload.windows.map((w) => w.windowSeq)).toEqual([0, 4]);
+    });
+
+    it('未超限时不写盘', async () => {
+      const payload = defaultExplorerV3();
+      payload.windows.push(closedWindow(1, 10));
+      await saveExplorer(file, payload);
+      const before = await fs.readFile(file, 'utf-8');
+      const statBefore = await fs.stat(file);
+
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+
+      expect(await fs.readFile(file, 'utf-8')).toBe(before);
+      expect((await fs.stat(file)).ino).toBe(statBefore.ino);
+    });
+
+    it('文件缺失或损坏时不写、不抛', async () => {
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      await expect(fs.access(file)).rejects.toThrow();
+      await fs.writeFile(file, '{ not json', 'utf-8');
+      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      expect(await fs.readFile(file, 'utf-8')).toBe('{ not json');
+    });
   });
 
   it('pruneLRUClosed 全部窗口仍 active 时不预分配 closed 数组', () => {

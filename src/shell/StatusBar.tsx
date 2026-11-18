@@ -2,7 +2,7 @@
 // 左:workspace 名 + sidebar 收起提示 + git 分支占位。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -153,6 +153,39 @@ async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
   }
 }
 
+/**
+ * 行/词/字符统计(codex 打磨 R1 memo 化;性能 P7 单遍 computeTextStats)。
+ * perf:内容每键都变,统计 O(N) 全文扫描对 useDeferredValue 后的内容计算 —— 高优先级渲染沿用旧值先提交,
+ * 统计在随后可中断的低优先级渲染里更新(允许延后一帧,最终值不变)。独立 memo 子组件:延后渲染只重跑本组件,
+ * 父级 StatusBar(含插件 status item 的 render())每键仍只渲染一次。
+ */
+const EditorStats = memo(function EditorStats({
+  tabId,
+  content,
+}: {
+  tabId: string | null;
+  content: string | undefined;
+}) {
+  const t = useT();
+  const deferredTabId = useDeferredValue(tabId);
+  const deferredContent = useDeferredValue(content);
+  // 只对同一 tab 内的编辑延后;切换 tab 时延后值仍属上一个文件 → 直接用当前内容,不闪旧文件统计。
+  const statsContent = deferredTabId === tabId ? deferredContent : content;
+  const stats = useMemo(
+    () => (statsContent === undefined ? null : computeTextStats(statsContent)),
+    [statsContent],
+  );
+  return (
+    <span>
+      {t('statusbar.editor_stats', {
+        lines: stats?.lines ?? 0,
+        words: stats?.words ?? 0,
+        chars: stats?.chars ?? 0,
+      })}
+    </span>
+  );
+});
+
 export function StatusBar() {
   const t = useT();
   const root = useWorkspaceStore((s) => s.root);
@@ -172,7 +205,7 @@ export function StatusBar() {
   // 仍更新统计(配合 R1 的统计 memo)。R24 用 4 个 selector 各 some/find;R46 合并为
   // 单次 find 返回**扁平 primitive 对象**,useShallow 逐字段 Object.is 比较——content
   // 只是 string ref(不像 EditorHeader 用 JSON 签名,这里避免序列化大文档正文)。
-  const { hasActiveTab, activeFilePath, activeDirty, activeContent } =
+  const { hasActiveTab, activeTabId, activeFilePath, activeDirty, activeContent } =
     useEditorStore(
       useShallow((s) => {
         const found =
@@ -181,6 +214,7 @@ export function StatusBar() {
             : findEditorFileTabById(s.tabs, s.activeTabId);
         return {
           hasActiveTab: found !== null,
+          activeTabId: found?.id ?? null,
           activeFilePath: found?.filePath ?? null,
           activeDirty: found?.dirty ?? false,
           activeContent: found?.content,
@@ -191,17 +225,6 @@ export function StatusBar() {
   const { left: leftItems, right: rightItems } = useMemo(
     () => splitStatusItemsBySide(statusItems),
     [statusItems],
-  );
-
-  // 行/词/字符统计按 active 内容 memo 化(codex 打磨 R1)。StatusBar 因 sessions /
-  // MCP 复制态 / 插件 status item 等无关变化频繁重渲染,无 memo 时每次都重扫整篇。
-  // dep 只用 activeContent 字符串值:内容编辑 → 变 → 重算;无关重渲染 → 不变 → 命中缓存。
-  // 性能 P7:computeTextStats 单遍、零数组分配同时拿三项(旧版 lineCount/wordCount 各
-  // 全文扫一遍 + 分配 match/split 大临时数组)。
-  const stats = useMemo(
-    () =>
-      activeContent === undefined ? null : computeTextStats(activeContent),
-    [activeContent],
   );
 
   // 非 null = 撤销确认弹窗打开,值为打开时的 agent 会话数。
@@ -328,13 +351,7 @@ export function StatusBar() {
                 </>
               )}
             </span>
-            <span>
-              {t('statusbar.editor_stats', {
-                lines: stats?.lines ?? 0,
-                words: stats?.words ?? 0,
-                chars: stats?.chars ?? 0,
-              })}
-            </span>
+            <EditorStats tabId={activeTabId} content={activeContent} />
           </>
         ) : null}
       </div>

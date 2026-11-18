@@ -6,11 +6,18 @@ import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import path from 'node:path';
 import { z } from 'zod';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
-import { PLUGINS_CHANNELS, GIT_URL_MAX } from '../../shared/plugins-channels';
+import {
+  PLUGINS_CHANNELS,
+  GIT_URL_MAX,
+  PLUGIN_DIR_NAME_MAX_LEN,
+  PLUGIN_MANIFEST_HASH_RE,
+} from '../../shared/plugins-channels';
 import {
   createPluginsWatcher,
   installFromGit,
   listPluginDirs,
+  readPluginDirByManifestId,
+  readPluginMainByDir,
   recoverInterruptedInstalls,
   readEnabledIds,
   readPermissions,
@@ -56,6 +63,16 @@ export const InstallFromGitInput = z
     // marketplace entry.branch / entry.id(可选,缺省行为不变);形态校验同 service 层契约。
     branch: z.string().max(GIT_BRANCH_MAX).refine(isValidGitBranch).optional(),
     expectedId: z.string().min(1).max(PLUGIN_ID_MAX).optional(),
+  })
+  .strict();
+export const ReadDirByIdInput = z
+  .object({ id: z.string().min(1).max(PLUGIN_ID_MAX) })
+  .strict();
+export const ReadMainByDirInput = z
+  .object({
+    dir: z.string().min(1).max(PLUGIN_DIR_NAME_MAX_LEN),
+    // 列举项的 manifest 版本令牌(sha256 hex,定长 64)。
+    manifestHash: z.string().max(64).regex(PLUGIN_MANIFEST_HASH_RE),
   })
   .strict();
 export const UninstallInput = z
@@ -107,6 +124,17 @@ export function broadcastPluginEnabledChanged(id: string, enabled: boolean): voi
   );
 }
 
+let primeBaseline: (() => void) | null = null;
+
+/**
+ * 冷启动:首窗创建后提前建立插件 watcher 基线。不在注册时(早于建窗)扫,免与建窗前 IO 争 libuv 线程池;
+ * 也不等第一个 2s 周期 —— 否则 renderer 首次 LIST_DIRS 会在插件 init 关键路径上当场串行扫一遍。
+ * 幂等(ensureBaseline 已建好 / 在途时直接复用);未注册时 no-op。
+ */
+export function primePluginsWatcherBaseline(): void {
+  primeBaseline?.();
+}
+
 export function registerPluginsIpc(): void {
   const userData = app.getPath('userData');
   const pluginsDir = path.join(userData, 'plugins');
@@ -116,12 +144,47 @@ export function registerPluginsIpc(): void {
   // 在首次列举前完成,避免崩溃中断的更新让插件静默消失(数据安全)。幂等。
   const installRecovery = recoverInterruptedInstalls(pluginsDir).catch(() => {});
 
+  // v4.3.1 mtime 自动 watch:任一 plugin main.js 改 → 推所有窗口。
+  // 冷启动性能:不在注册时(早于建首窗)立即首扫 —— 与启动 IO 争 libuv 线程池;首扫推迟到第一个周期,
+  // 或由 LIST_DIRS 在列举前按需建立(见下),两者取先到者。
+  const watcher = createPluginsWatcher(pluginsDir, broadcastPluginsChanged);
+  watcher.start(2000, { immediate: false });
+  // 首窗创建后由 index.ts 调 primePluginsWatcherBaseline 提前建基线(安装恢复之后,免把恢复动作误报为变更)。
+  primeBaseline = () => {
+    void installRecovery.then(() => watcher.ensureBaseline());
+  };
+
   safeHandle(
     PLUGINS_CHANNELS.LIST_DIRS,
     NoInput,
     async () => {
       await installRecovery;
+      // 基线须在列举前建立(串行,不可并发):否则基线可能吞掉「列举之后、基线之前」的插件修改 →
+      // renderer 拿到旧内容而永不收到 CHANGED。列举在基线之后读盘 → 此后的修改必被后续 tick 发现。
+      await watcher.ensureBaseline();
       return listPluginDirs(pluginsDir);
+    },
+    trusted,
+  );
+
+  // perf:列举不带 main 源码,激活时按目录名只读该插件 main。
+  safeHandle(
+    PLUGINS_CHANNELS.READ_MAIN_BY_DIR,
+    ReadMainByDirInput,
+    async ({ dir, manifestHash }) => {
+      await installRecovery;
+      return readPluginMainByDir(pluginsDir, dir, manifestHash);
+    },
+    trusted,
+  );
+
+  // perf:单插件热重载只读目标插件(不再每个窗口全量 listDirs)。
+  safeHandle(
+    PLUGINS_CHANNELS.READ_DIR_BY_ID,
+    ReadDirByIdInput,
+    async ({ id }) => {
+      await installRecovery;
+      return readPluginDirByManifestId(pluginsDir, id);
     },
     trusted,
   );
@@ -162,10 +225,6 @@ export function registerPluginsIpc(): void {
     },
     trusted,
   );
-
-  // v4.3.1 mtime 自动 watch:任一 plugin main.js 改 → 推所有窗口
-  const watcher = createPluginsWatcher(pluginsDir, broadcastPluginsChanged);
-  watcher.start(2000);
 
   // v4.5 从 git URL 安装
   safeHandle(

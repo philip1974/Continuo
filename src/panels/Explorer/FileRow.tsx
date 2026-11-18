@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
-import type { ItemInstance } from '@headless-tree/core';
+import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Input } from '@/design';
 import { t } from '@/i18n';
@@ -13,14 +13,66 @@ import {
 import { coApp } from '@/plugins/co-app';
 import type { ExplorerContextMenuItemSpec } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
-import { useExplorerClipboardStore } from './clipboard-store';
+import { clipboardPathSet, useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
 import { FileIcon } from './file-icon';
 
-interface FileRowProps {
+/**
+ * 行状态快照(perf):由 FolderTree 在渲染期从 item 读出后作为 primitive 下传。FileRow 是 memo 组件,
+ * 而 headless-tree 的 item 实例按 id 缓存、引用恒定 —— 若行内直接读 item.isSelected() 等,memo 浅比较
+ * 看不到状态变化。凡影响本行渲染(含 item.getProps() 产出的 aria-* / tabIndex / draggable)的状态都必须
+ * 列在这里,否则 memo 会让行停在旧状态。
+ */
+export interface FileRowState {
+  /** item.getItemData():数据刷新(listDir 失效重载)时换新对象。 */
+  data: FileEntry;
+  isDir: boolean;
+  isSelected: boolean;
+  isFocused: boolean;
+  isExpanded: boolean;
+  isLoading: boolean;
+  isRenaming: boolean;
+  /** 仅重命名中的行有值(受控 input 的 value);其它行恒 undefined,输入时不牵动它们。 */
+  renamingValue: string | undefined;
+  level: number;
+  /** aria-posinset / aria-setsize(getProps 产出,兄弟增删时变化)。 */
+  posInSet: number;
+  setSize: number;
+  /** headless-tree 内部 drag 的 hover 落点。 */
+  isDraggingOver: boolean;
+}
+
+/**
+ * 从 headless-tree item 读出 FileRow 渲染所需的全部状态(perf:FileRow 是 memo 组件,item 实例按 id
+ * 缓存、引用恒定,状态必须以 primitive 下传才能被 memo 浅比较看见)。字段清单见 FileRowState。
+ */
+export function readFileRowState(
+  item: ItemInstance<FileEntry>,
+  tree: Pick<TreeInstance<FileEntry>, 'getRenamingValue'>,
+): FileRowState {
+  const isDir = item.isFolder();
+  const isRenaming = item.isRenaming();
+  const meta = item.getItemMeta();
+  return {
+    data: item.getItemData(),
+    isDir,
+    isSelected: item.isSelected(),
+    isFocused: item.isFocused(),
+    isExpanded: isDir && item.isExpanded(),
+    isLoading: item.isLoading(),
+    isRenaming,
+    renamingValue: isRenaming ? tree.getRenamingValue() : undefined,
+    level: meta.level,
+    posInSet: meta.posInSet,
+    setSize: meta.setSize,
+    isDraggingOver: item.isDraggingOver(),
+  };
+}
+
+interface FileRowProps extends FileRowState {
   item: ItemInstance<FileEntry>;
-  /** react-virtual 提供的绝对定位 transform 等 style. */
-  style: React.CSSProperties;
+  /** react-virtual 行起点(px);绝对定位 style 在行内构造,避免每次父渲染新建 style 对象击穿 memo. */
+  start: number;
   selectedPaths: ReadonlySet<string>;
   rootPath: string;
   contextActions: ContextMenuActions;
@@ -30,6 +82,8 @@ interface FileRowProps {
   isDropHover?: boolean;
   /** 单击文件触发(目录的展开仍由 headless-tree mousedown 接管). */
   onFileOpen?: (path: string) => void;
+  /** perf:文件行 pointerdown(早于 click)预热打开所需资源,如编辑引擎 chunk。 */
+  onFileIntent?: (path: string) => void;
   /** 插件装饰器快照(FolderTree 一次订阅后下传,避免每行各自订阅). */
   decorators: readonly DecoratorFn[];
   /** 剪贴板是否非空(FolderTree 已订阅,下传避免每行各自订阅同一布尔值). */
@@ -104,42 +158,56 @@ function useDecoration(
 
 // 单行节点。renamingFeature 自动接管 input 的 Enter/Esc 键盘事件,
 // 我们只需在 isRenaming() 时把 name 区域换成 input 即可。
-export function FileRow({
+//
+// perf:memo —— 滚动时 virtualizer 每跨一行经 flushSync 同步重渲 FolderTree,未进出视口的行
+// props 全不变(状态 primitive + start + 父级稳定引用的回调/快照)→ 跳过整行(含 Radix ContextMenu)。
+export const FileRow = memo(function FileRow({
   item,
-  style,
+  start,
+  data,
+  isDir,
+  isSelected,
+  isFocused,
+  isExpanded,
+  isLoading,
+  isRenaming,
+  level,
+  isDraggingOver: isInternalDropOver,
   selectedPaths,
   rootPath,
   contextActions,
   onHoverDropTarget,
   isDropHover = false,
   onFileOpen,
+  onFileIntent,
   decorators,
   hasClipboard,
   pluginMenuItems,
   indent,
 }: FileRowProps) {
-  const data = item.getItemData();
-  const isDir = item.isFolder();
-  const isSelected = item.isSelected();
-  const isFocused = item.isFocused();
-  const isExpanded = isDir && item.isExpanded();
-  const isLoading = item.isLoading();
-  const isRenaming = item.isRenaming();
-  const level = item.getItemMeta().level;
+  // renamingValue / posInSet / setSize 不在此解构:它们只作 memo 失效键 —— 行内 item.getProps() /
+  // getRenameInputProps() 现取 aria-posinset/setsize 与 input value,这些 props 变化时本行必重渲,
+  // 现取值与 props 一致(见 FileRowState)。
   const decoration = useDecoration(data.path, isDir, decorators);
   // VSCode 同款:已剪切的项目灰显,提示「等待粘贴」;copy 不灰
   const isCutMarked = useExplorerClipboardStore(
-    (s) => s.kind === 'cut' && s.paths.includes(data.path),
+    (s) => s.kind === 'cut' && clipboardPathSet(s.paths).has(data.path),
   );
-  // headless-tree 内部 drag 时,drop 目标行高亮(drag preview 可能遮挡视线,
-  // 没有这个 hover 反馈用户看不清要 drop 到哪)。
-  const isInternalDropOver = item.isDraggingOver();
+  // headless-tree 内部 drag 时,drop 目标行高亮(isDraggingOver):drag preview 可能遮挡视线,
+  // 没有这个 hover 反馈用户看不清要 drop 到哪。
 
   const row = (
     <div
       {...item.getProps()}
       // a11y(A110):目录加载子项时 treeitem 标 aria-busy,AT 知该行正在加载(配下方 sr-only 文本)。
       aria-busy={isLoading || undefined}
+      onPointerDown={(e) => {
+        // 保留上游可能注入的 pointerdown(当前 headless-tree 未注入,防御升级)
+        (item.getProps() as { onPointerDown?: (e: React.PointerEvent) => void }).onPointerDown?.(e);
+        // 仅主键且无 Ctrl:右键 / macOS Ctrl+点击打开上下文菜单而非文件,不预热(Windows Ctrl+点击仍会
+        // 打开,届时由 openFileByPath 预热,只少一点提前量)。
+        if (e.button === 0 && !e.ctrlKey && !isDir && !isRenaming) onFileIntent?.(data.path);
+      }}
       onClick={(e) => {
         // 上游 selectionFeature 用 mousedown,onClick 不冲突
         const upstream = (item.getProps() as { onClick?: (e: React.MouseEvent) => void })
@@ -157,7 +225,11 @@ export function FileRow({
         onHoverDropTarget?.({ path: data.path, isDirectory: isDir });
       }}
       style={{
-        ...style,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${start}px)`,
         height: ROW_HEIGHT,
         paddingLeft: 4 + level * indent,
         // 缩进指南线用 CSS gradient 一笔画 N 条,替代之前每行 N 个 absolute span:
@@ -255,6 +327,6 @@ export function FileRow({
       {row}
     </ContextMenu>
   );
-}
+});
 
 export const FILE_ROW_HEIGHT = ROW_HEIGHT;

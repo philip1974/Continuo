@@ -23,6 +23,9 @@
 
 - 注册一次 onDirChanged,debounce 100ms 后调 onChange
 - 同一 path 100ms 内多次只触发一次(由 debouncer 实装,本 hook 仅装上)
+- 传入可选 `root`(Explorer 工作区根)时,root 自身及其内部之外的路径在进入 debouncer 前丢弃
+  (dir-changed 是全窗口广播,别的窗口工作区的变化不触发本树 invalidation→listDir);路径归属用
+  `isSameOrInsidePath`(路径边界 + Windows 大小写不敏感)。不影响其它 onDirChanged 订阅者
 
 ### fs:watch-lost(main 因 FSWatcher error 驱逐了本窗持有的 watcher)
 
@@ -43,3 +46,8 @@
 
 - onDirChanged / onWatchLost unsub,取消待重装定时器
 - 当前 prevPathsRef 全部 unwatchDir
+
+### 仅内容变化 / 持续事件(性能)
+
+- dir-changed 带 `changeOnly: true`(main 合并器:该目录本 tick 所有 fs.watch 回调 eventType 均为 'change',无新建/删除/改名)→ 不刷新(目录列表不变);含 rename / 缺 eventType → 照常刷新
+- 同 path 持续事件下 debounce 带 maxWait=1000ms:至多每 1s 刷新一次(纯 trailing 下持续写入永不触发);稀疏事件仍 100ms trailing

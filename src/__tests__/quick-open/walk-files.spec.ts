@@ -12,6 +12,7 @@ type ListDirFn = (
     maxDepth?: number;
     exclude?: readonly string[];
     maxFiles?: number;
+    withStats?: boolean;
   },
 ) => Promise<IpcResult<readonly FileEntry[]>>;
 
@@ -112,6 +113,16 @@ describe('walkWorkspaceFiles', () => {
     // 显式上限透传
     await walkWorkspaceFiles({ rootPath: '/r', listDir, maxFiles: 12 });
     expect(captured?.maxFiles).toBe(12);
+  });
+
+  it('perf · 调 listDir 传 withStats:false(只用 path/name/isDirectory,main 免逐项 lstat)', async () => {
+    let captured: { withStats?: boolean } | undefined;
+    const listDir: ListDirFn = async (_p, options) => {
+      captured = options;
+      return { ok: true, data: [] };
+    };
+    await walkWorkspaceFiles({ rootPath: '/r', listDir });
+    expect(captured?.withStats).toBe(false);
   });
 
   it('调 listDir 时传默认 + extraExclude(dist/out/build/.next/.nuxt/.cache/.vite)', async () => {

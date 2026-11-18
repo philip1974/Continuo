@@ -25,6 +25,7 @@
 - `opts.exclude` 默认 `['.git', '.svn', '.hg', 'node_modules', '.DS_Store', 'Thumbs.db']`
 - 自定义 `exclude` 完全替换默认(传空数组 = 显式要看 `.git`)
 - `opts.followSymlinks` 默认 false:用 `lstat`,symlink 标 `isSymlink: true` 不递归
+- `opts.withStats` 默认 true;false 时不回传 size/mtime/ctime,类型取自 dirent 不逐项 `lstat`(仅 dirent 类型未知、或 win32 上 dirent 报 symlink(libuv 把所有 reparse point 报成链接)时回退 `lstat`),结构字段与 true 逐项一致(Quick Open 用,见 `list-dir-without-stats.spec.ts`)
 - 排序(借鉴 Lokus):**目录优先,再按 `localeCompare`**
 - 路径不存在 → 抛 `code: 'FS_NOT_FOUND'`
 - 路径是文件不是目录 → 抛 `code: 'FS_NOT_DIRECTORY'`

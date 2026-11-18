@@ -20,8 +20,9 @@
 | Channel | schema | handler 调 | data |
 |---|---|---|---|
 | `fs:list-dir`         | `{ path, options? }` | `listDir(path, options)` | `FileEntry[]` |
-| `fs:read-file`        | `{ path }`           | `readFile(path)` | `string` |
-| `fs:write-file`       | `{ path, content }`  | `atomicWriteFile(path, content)` | `void` |
+| `fs:read-file`        | `{ path }`           | `readFile(path)` | `{ content, realPath? }`(leaf 为 symlink 时带真实目标;preload `toFsReadFileResult` 映射为 `data: string` + 可选 `realPath`) |
+| `fs:write-file`       | `{ path, content }`  | `atomicWriteFile(path, content)` | `{ mtimeMs, size, ino } \| undefined`(写入内容的 stat,rename 后复核一致才返回;preload `toFsWriteFileResult` 守卫) |
+| `fs:stat`             | `{ path }`           | `fs.promises.stat(path)`(跟随 symlink) | `{ mtimeMs, size, ino }`(preload `toFsStatResult`:畸形 / 缺 ino → 失败) |
 | `fs:rename`           | `{ path, newName }`  | `renameEntry(path, newName)` | `string`(新路径) |
 | `fs:remove`           | `{ path }`           | `removeEntry(path)` | `void` |
 | `fs:create-file`      | `{ dir, name }`      | `createFile(dir, name)` | `string` |

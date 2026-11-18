@@ -3,6 +3,7 @@ import { promises as nodeFsPromises } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PLUGIN_FS_CHANNELS } from '../../../../electron/shared/plugin-fs-channels';
 import { IdentityRegistry } from '../../../../electron/main/services/identity-registry.service';
@@ -347,5 +348,65 @@ describe('sdk-contract integration: plugin-fs.service', () => {
         { overwrite: true },
       ),
     ).rejects.toThrow(/share parent/);
+  });
+});
+
+describe('sdk-contract integration: plugin-fs.service · webContents 关窗 / reload 释放身份 token', () => {
+  // 此前 token 只在 renderer 主动发 _unregister-plugin 时撤销;关窗 / reload 不会发 → entries 永不释放,
+  // 且 reload 前发起的 pending scope 授权请求要干等满 TTL。
+  function makeLiveSender(id: number) {
+    const emitter = new EventEmitter();
+    const event = makeFakeEvent({ id });
+    Object.assign(event.sender, {
+      once: emitter.once.bind(emitter),
+      on: emitter.on.bind(emitter),
+    });
+    return { event, emitter };
+  }
+  async function register(h: FsHarness, event: StubIpcEvent): Promise<string> {
+    const r = (await h.ipc.invokeWithEvent(
+      event,
+      PLUGIN_FS_CHANNELS.REGISTER_PLUGIN,
+      'plugin.fs',
+    )) as { token: string };
+    return r.token;
+  }
+
+  it('主框架非同文档导航(reload):撤旧 token、结算该 sender 的 pending scope 请求;其后新注册的 token 有效', async () => {
+    const { event, emitter } = makeLiveSender(7);
+    const oldToken = await register(harness, event);
+    const pending = harness.ipc.invokeWithEvent(
+      event,
+      PLUGIN_FS_CHANNELS.REQUEST_SCOPE,
+      oldToken,
+      [{ path: tmpCanonical, mode: 'r' }],
+    );
+    const settled = expect(pending).rejects.toThrow(/window closed/);
+    await vi.waitFor(() => {
+      if (!event.sender.send.mock.calls.length) throw new Error('scope-request 尚未发出');
+    });
+
+    // 同文档导航(hash / pushState)不算
+    emitter.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
+    expect(harness.identity.isActive(oldToken)).toBe(true);
+
+    emitter.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+    expect(harness.identity.isActive(oldToken)).toBe(false);
+    await settled;
+
+    const newToken = await register(harness, event);
+    expect(harness.identity.isActive(newToken)).toBe(true);
+    // 其它 webContents 的 token 不受影响
+    expect(harness.identity.isActive(harness.token)).toBe(true);
+  });
+
+  it('webContents destroyed(关窗):撤该 sender 全部 token', async () => {
+    const { event, emitter } = makeLiveSender(8);
+    const t1 = await register(harness, event);
+    const t2 = await register(harness, event);
+    emitter.emit('destroyed');
+    expect(harness.identity.isActive(t1)).toBe(false);
+    expect(harness.identity.isActive(t2)).toBe(false);
+    expect(harness.identity.isActive(harness.token)).toBe(true);
   });
 });

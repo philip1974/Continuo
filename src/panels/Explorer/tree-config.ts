@@ -5,6 +5,7 @@
 import { basename, dirname } from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
 import { isSameOrInsidePath } from '@/lib/path-cross';
+import { isImeComposing } from '@/lib/ime';
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -46,6 +47,8 @@ export interface CreateTreeConfigDeps {
   /** 受控展开状态:接 store.expandedPaths 时由 FolderTree 注入。 */
   expandedItems?: string[];
   setExpandedItems?: SetStateFn<string[]>;
+  /** 键盘导航焦点跳到虚拟窗口外时滚动到该行(headless-tree updateDomFocus / item.scrollTo 调用)。 */
+  scrollToItem?: (item: ItemInstance<FileEntry>) => void;
 }
 
 const INDENT = 16;
@@ -73,6 +76,33 @@ export function buildTreeChildrenWithData(
     out[i] = { id: entry.path, data: entry };
   }
   return out;
+}
+
+/**
+ * 目录刷新比对(性能):新 listDir 结果与已缓存子项在树显示依赖的字段上是否完全一致 —— 顺序、path(=id)、
+ * name(含隐藏判定)、isDirectory、isSymlink。size / mtime / ctime 不比较:行不显示,且按 FileEntry 契约
+ * 本就是列目录时的快照。一致则刷新可跳过(原子保存只产生 rename 事件,但目录列表不变)。
+ */
+export function sameTreeChildren(
+  cachedIds: readonly string[],
+  cachedData: Readonly<Record<string, FileEntry | undefined>>,
+  entries: readonly FileEntry[],
+): boolean {
+  if (cachedIds.length !== entries.length) return false;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i]!;
+    const old = cachedData[e.path];
+    if (
+      cachedIds[i] !== e.path ||
+      old === undefined ||
+      old.name !== e.name ||
+      old.isDirectory !== e.isDirectory ||
+      !old.isSymlink !== !e.isSymlink
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function findFileEntryByPath(
@@ -150,6 +180,7 @@ export function createTreeConfig(
     isItemFolder: (item) => item.getItemData().isDirectory,
     dataLoader: createDataLoader(deps),
     onRename: deps.onRename,
+    scrollToItem: deps.scrollToItem,
     // headless-tree 默认不渲染 root 自身,只渲染已展开节点的 children。
     // root 必须显式 expand 才会触发 children 加载,否则 getItems() 返回 []。
     initialState: {
@@ -187,6 +218,30 @@ export function createTreeConfig(
       hasFiles(dataTransfer),
     onDropForeignDragObject: (dataTransfer, target) => {
       deps.onDropForeign?.(dataTransfer, resolveDest(target));
+    },
+    // IME:renamingFeature 的 completeRenaming / abortRenaming 只按 e.code 匹配 Enter / Escape、不看
+    // isComposing(isEnabled 只拿 tree 拿不到事件)→ 覆盖 handler,组合中的按键(确认候选 / 取消组合)
+    // 直接忽略。注意 hotkeys-core 1.6.3 匹配阶段是 {...presets, ...hotkeys} 浅合并整条(执行阶段才逐字段
+    // 合并),故必须照抄 preset 的 hotkey / allowWhenInputFocused / isEnabled,只写 handler 会让匹配崩溃。
+    hotkeys: {
+      completeRenaming: {
+        hotkey: 'Enter',
+        allowWhenInputFocused: true,
+        isEnabled: (tree) => tree.isRenamingItem(),
+        handler: (e, tree) => {
+          if (isImeComposing(e)) return;
+          tree.completeRenaming();
+        },
+      },
+      abortRenaming: {
+        hotkey: 'Escape',
+        allowWhenInputFocused: true,
+        isEnabled: (tree) => tree.isRenamingItem(),
+        handler: (e, tree) => {
+          if (isImeComposing(e)) return;
+          tree.abortRenaming();
+        },
+      },
     },
     features: [
       asyncDataLoaderFeature,

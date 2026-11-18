@@ -10,12 +10,43 @@ import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
 import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
-import { createTab, useEditorStore } from '@/stores/editor.store';
+import {
+  beginUserActivation,
+  createTab,
+  getEffectiveMode,
+  getUserActivationGen,
+  useEditorStore,
+} from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import {
   findEditorFileTabById,
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
+import { isMarkdownPath } from './editor-path-utils';
+import { recordSavedDiskStat } from './saved-disk-stat';
+import {
+  loadCodeEditorModule,
+  loadEditorPanelModule,
+  loadMilkdownEditorModule,
+} from './editor-engine-loaders';
+
+const ignoreWarmupError = (): void => {};
+
+/**
+ * perf:首次打开文件时与 readFile 并行预热即将渲染的编辑引擎 chunk(此前要等 readFile + openTab 提交后
+ * EditorPanel 渲染 lazy 引擎才开始拉)。引擎选择与 EditorPanel 同口径:Markdown 且 getEffectiveMode 非 source
+ * → Milkdown,否则 CodeEditor(读文件前无 tab,按 null tab 判定;unsafe 内容落 Source 时仅多拉一个 chunk)。
+ * 共享 loader 去重、失败不缓存;fire-and-forget,失败吞掉(真正渲染时由引擎错误边界处理)。
+ * 也供 Explorer 文件行 pointerdown 调用(意图早于 click,提前量更大)。
+ */
+export function warmEditorEngineFor(path: string): void {
+  loadEditorPanelModule().catch(ignoreWarmupError);
+  const engine =
+    isMarkdownPath(path) && getEffectiveMode(null) !== 'source'
+      ? loadMilkdownEditorModule()
+      : loadCodeEditorModule();
+  engine.catch(ignoreWarmupError);
+}
 
 // race(R21):同一 tab 的保存串行链。autosave(旧内容)在途时用户编辑 + 手动保存(新内容),若
 // 二者乱序完成,旧内容会最后落盘覆盖新的。按 tabId 串行保证按发起顺序写盘,最后发起者最后落盘。
@@ -55,6 +86,13 @@ export async function openFileByPath(
     return { ok: true, data: undefined };
   }
 
+  warmEditorEngineFor(path);
+
+  // 用户激活代际(见 editor.store beginUserActivation):快速连续打开时读盘耗时不同的请求乱序完成,读盘期间
+  // 用户也可能在 tab 栏切到别的 tab(store.switchTab)。读完后代际已被更晚的用户选择(另一次打开 / 切换)
+  // 超越 → 仅后台加入 tab,不抢激活/焦点(参考 hydrateEditorTabs 迟到恢复的 activate:false)。
+  const my = beginUserActivation();
+
   let r;
   try {
     r = await fs.readFile(path);
@@ -67,13 +105,17 @@ export async function openFileByPath(
   // (尤其 Windows 不同大小写路径 C:\Repo\a.md / c:\repo\a.md)时,两个调用都在读前看不到
   // existing,读后各自 createTab → 同一磁盘文件出现两个 tab,分别保存互相覆盖(重现 X10
   // pathEquals 想防的数据丢失)。读后、建 tab 前再用 pathEquals 复检 store,已存在则只切换。
+  const latest = my === getUserActivationGen();
   const raced = findEditorFileTabByPath(store.getState().tabs, path);
   if (raced) {
-    store.getState().switchTab(raced.id);
+    if (latest) store.getState().switchTab(raced.id);
     return { ok: true, data: undefined };
   }
 
-  store.getState().openTab(createTab(path, r.data));
+  const tab = createTab(path, r.data, r.realPath);
+  store
+    .getState()
+    .openTab(tab, latest ? undefined : { activate: false, requestFocus: false });
   return { ok: true, data: undefined };
 }
 
@@ -164,6 +206,9 @@ async function saveFileNow(
   }
   if (!r.ok) return r;
 
-  store.getState().markSaved(tabId, savedContent);
+  // 性能:记录写入内容的 { mtimeMs, size, ino } + 保存代际(同写到 tab.savedGen),外部同步据此识别本次保存的
+  // dir-changed 回声(免整文件重读)。
+  const savedGen = recordSavedDiskStat(tab.filePath, r.data);
+  store.getState().markSaved(tabId, savedContent, savedGen);
   return { ok: true, data: undefined };
 }

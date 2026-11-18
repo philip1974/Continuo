@@ -3,7 +3,7 @@
 // initExplorerPersistence 是 fire-and-forget,renderer 首帧 root=null(hydrate 未完成)。若一变就
 // notifyRoot(null),会把 null 写进 main 的 window→root map;hydrate 完成前 MCP/agent 经
 // terminal.create_session(未显式传 cwd)建终端时,main 从空 map 回退成无 workspaceRoot 的全局终端
-// 或错误 cwd,hydrate 后修正已来不及。门控:等 waitForWorkspaceHydrated() 再推,且 await 后读
+// 或错误 cwd,hydrate 后修正已来不及。门控:等 root 恢复(App 注入 waitForWorkspaceRootRestored,不等编辑器 tab 读盘)再推,且 await 后读
 // **最新** root(而非首帧捕获),hydrate 后该 Promise 立即 resolve,正常 root 变更无延迟。
 
 export interface NotifyRootWhenHydratedDeps {

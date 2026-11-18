@@ -54,13 +54,14 @@ vi.mock('@/lib/co-api', () => ({
   },
 }));
 vi.mock('@/plugins/settings/values-store', () => ({ useSettingValue: <T,>(_k: string, fb: T) => fb }));
-vi.mock('@/stores/layout-ui.store', () => ({
-  useLayoutUiStore: (s: (state: { sidebarOpen: boolean; sidebarWidth: number }) => unknown) =>
-    s({ sidebarOpen: true, sidebarWidth: 280 }),
-}));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
-import { osc7AcceptedHosts, useTerminal } from '../../panels/Terminal/useTerminal';
+import {
+  CWD_REPORT_DEBOUNCE_MS,
+  CWD_REPORT_MAX_WAIT_MS,
+  osc7AcceptedHosts,
+  useTerminal,
+} from '../../panels/Terminal/useTerminal';
 import { coApi } from '@/lib/co-api';
 import { WebglAddon } from '@xterm/addon-webgl';
 
@@ -120,13 +121,120 @@ describe('terminal-osc7 wiring (T13)', () => {
     expect(firstCall[2]).toEqual({ acceptedHosts: ['', 'localhost', 'my-mac.local'] });
   });
 
-  it('T13b: captured onCwd routes to coApi.terminal.updateCwd with termId', () => {
-    render(createElement(Host, { termId: 'term-osc7' }));
+  it('T13b: captured onCwd routes to coApi.terminal.updateCwd with termId(尾随合并窗口后)', () => {
+    vi.useFakeTimers();
+    try {
+      render(createElement(Host, { termId: 'term-osc7' }));
 
-    expect(hoisted.capturedOnCwd).toBeDefined();
-    hoisted.capturedOnCwd!('/tmp');
-    expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
-    expect(coApi.terminal.updateCwd).toHaveBeenCalledWith('term-osc7', '/tmp');
+      expect(hoisted.capturedOnCwd).toBeDefined();
+      hoisted.capturedOnCwd!('/tmp');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledWith('term-osc7', '/tmp');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // perf:每个 prompt 都会发 OSC7;readHistory 回放最多 1MB 历史会把历史中每个 OSC7 重新触发一遍
+  // → N 次 updateCwd IPC + N 次 sessions_changed 广播,且 cwd 短暂回退到历史值。
+  describe('T13f: updateCwd 去重 + 尾随合并', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('与上次已发送值相同的 cwd 不再发送', () => {
+      render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
+    });
+
+    it('回放突发(连续多个 OSC7)只发送最终值一次', () => {
+      render(createElement(Host, { termId: 'term-osc7' }));
+      for (const cwd of ['/h1', '/h2', '/h3', '/h1', '/final']) hoisted.capturedOnCwd!(cwd);
+      expect(coApi.terminal.updateCwd).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledWith('term-osc7', '/final');
+    });
+
+    it('回放跨多帧解析(间隔 < 窗口)→ 窗口顺延,仍只发最终值', () => {
+      render(createElement(Host, { termId: 'term-osc7' }));
+      const step = Math.floor(CWD_REPORT_DEBOUNCE_MS * 0.6);
+      hoisted.capturedOnCwd!('/h1');
+      vi.advanceTimersByTime(step);
+      hoisted.capturedOnCwd!('/h2');
+      vi.advanceTimersByTime(step);
+      expect(coApi.terminal.updateCwd).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledWith('term-osc7', '/h2');
+    });
+
+    it('持续 OSC7(间隔 < 窗口)不会无限顺延:自本轮首个值起至多 maxWait 必发一次', () => {
+      render(createElement(Host, { termId: 'term-osc7' }));
+      const step = Math.floor(CWD_REPORT_DEBOUNCE_MS / 2);
+      for (let t = 0; t < CWD_REPORT_MAX_WAIT_MS; t += step) {
+        hoisted.capturedOnCwd!(`/p${t}`);
+        vi.advanceTimersByTime(step);
+      }
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(1);
+    });
+
+    it('updateCwd 返回 ok:false → 同一 cwd 再次到来时重发', async () => {
+      vi.mocked(coApi.terminal.updateCwd).mockResolvedValueOnce({
+        ok: false,
+        code: 'X',
+        message: 'fail',
+      } as never);
+      render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      await vi.advanceTimersByTimeAsync(0);
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(2);
+    });
+
+    it('updateCwd reject → 同一 cwd 再次到来时重发', async () => {
+      vi.mocked(coApi.terminal.updateCwd).mockRejectedValueOnce(new Error('bridge'));
+      render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      await vi.advanceTimersByTimeAsync(0);
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(2);
+    });
+
+    it('旧 cwd 失败回来时已发出更新的 cwd → 不复位(更新值仍去重)', async () => {
+      let rejectFirst!: (e: unknown) => void;
+      vi.mocked(coApi.terminal.updateCwd).mockReturnValueOnce(
+        new Promise((_, rej) => {
+          rejectFirst = rej;
+        }) as never,
+      );
+      render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/a');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      hoisted.capturedOnCwd!('/b');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      rejectFirst(new Error('late'));
+      await vi.advanceTimersByTimeAsync(0);
+      hoisted.capturedOnCwd!('/b');
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS);
+      expect(coApi.terminal.updateCwd).toHaveBeenCalledTimes(2);
+    });
+
+    it('合并窗口内卸载 → 丢弃待发值,不发送', () => {
+      const { unmount } = render(createElement(Host, { termId: 'term-osc7' }));
+      hoisted.capturedOnCwd!('/pending');
+      unmount();
+      vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS * 4);
+      expect(coApi.terminal.updateCwd).not.toHaveBeenCalled();
+    });
   });
 
   it('T13c: unmount triggers disposable.dispose once', () => {

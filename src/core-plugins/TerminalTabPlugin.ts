@@ -3,7 +3,7 @@
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
-import { CategoryTabContent } from '@/plugins/settings/CategoryTabContent';
+import { renderCategoryTab } from './lazy-category-tab';
 import { TerminalIcon } from '@/plugins/settings/tab-icons';
 
 export default class TerminalTabPlugin extends Plugin {
@@ -15,8 +15,7 @@ export default class TerminalTabPlugin extends Plugin {
       titleKey: 'settings.terminal.tab_title',
       priority: 30,
       icon: createElement(TerminalIcon),
-      render: () =>
-        createElement(CategoryTabContent, { category: 'terminal' }),
+      render: () => renderCategoryTab('terminal'),
     });
 
     this.addSettingItem({

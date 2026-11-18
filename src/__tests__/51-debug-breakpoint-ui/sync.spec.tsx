@@ -228,9 +228,9 @@ describe('topic51 Op6 · debug decoration sync', () => {
     expect(markdownView.dom.querySelector('.cm-debug-exec-line')).toBeNull();
     expect(codeView.dom.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
 
-    useEditorStore.setState((state) => ({
-      tabs: state.tabs.filter((tab) => tab.id !== '/repo/a.ts'),
-    }));
+    // 走真实关闭路径(store action 会 bump chromeVersion);perf E4 起同步只在 viewRefs/chromeVersion
+    // 变化时触发,生产代码不存在绕过 action 直接改 tabs 的写法。
+    useEditorStore.getState().closeTab('/repo/a.ts');
 
     expect(codeView.dom.querySelector('.cm-debug-breakpoint-marker')).toBeNull();
     expect(codeView.dom.querySelector('.cm-debug-exec-line')).toBeNull();

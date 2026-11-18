@@ -137,4 +137,40 @@ describe('ConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  // 调用方(StatusBar / EditorPanel / PluginsTabContent)都传内联 onCancel:父组件在弹窗
+  // 打开期间重渲时,若原样交给 Modal(effect 依赖 onClose),Modal 会 cleanup 再重跑 →
+  // 焦点被拉回 [data-autofocus] 确认(危险)按钮、键盘栈重排。onCancel 引用变化不得影响焦点,
+  // 且 Esc / 取消仍调用**最新**的 onCancel。
+  it('父组件重渲换新 onCancel 引用 → 焦点留在用户 Tab 到的取消按钮;Esc 调最新 onCancel', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      const first = vi.fn();
+      const { rerender } = render(
+        <ConfirmDialog open title="t" description="d" onConfirm={vi.fn()} onCancel={first} />,
+      );
+      const cancel = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+      ).find((b) => b.textContent === '取消')!;
+      cancel.focus();
+      expect(document.activeElement).toBe(cancel);
+
+      const latest = vi.fn();
+      rerender(
+        <ConfirmDialog open title="t" description="d" onConfirm={vi.fn()} onCancel={latest} />,
+      );
+      expect(document.activeElement).toBe(cancel);
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(latest).toHaveBeenCalledTimes(1);
+      expect(first).not.toHaveBeenCalled();
+    } finally {
+      raf.mockRestore();
+    }
+  });
 });

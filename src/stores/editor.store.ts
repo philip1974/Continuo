@@ -8,11 +8,17 @@ import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';
 import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
 import { isMarkdownPath } from '@/panels/Editor/editor-path-utils';
-import { isSameOrInsidePath } from '@/lib/path-cross';
+import {
+  containmentFold,
+  containmentKey,
+  isSameOrInsidePath,
+  someContainmentCandidate,
+} from '@/lib/path-cross';
 import {
   PATH_ARRAY_MAX,
   PATH_STR_MAX,
 } from '../../electron/shared/explorer-persistence-schema';
+import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -56,6 +62,18 @@ export interface EditorTab {
    * 只由 acceptUnsafeEdit 置 true;按 tab 记,不影响其它 unsafe tab。runtime only。
    */
   readonly unsafeEditAccepted?: boolean;
+  /**
+   * filePath 为符号链接时其真实目标(main readFile 解析,见 shared FsReadFileData)。外部同步据此按目标
+   * 目录 / 文件名匹配 dir-changed(FSEvents/inotify 报的是被实际修改的目录项名)。打开 / 会话恢复 /
+   * reloadFromDisk 时随读盘结果更新;runtime only,不持久化(collectEditorSnapshot 只取 filePath)。
+   */
+  readonly realPath?: string;
+  /**
+   * 保存代际(性能:保存回声识别,见 panels/Editor/saved-disk-stat):markSaved 时写入本次保存记录的代际,
+   * 外部同步只在 tab.savedGen 与记录代际一致时才信任该记录(tab 当前基线 = 那次写盘内容)。
+   * 外部 reload 换了内容 → 清除;关闭重开的新 tab 无此值。runtime only,不持久化。
+   */
+  readonly savedGen?: number;
 }
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
@@ -77,8 +95,9 @@ const EMPTY_EDITOR_TABS: EditorTab[] = [];
 export function createTab(
   filePath: string | null,
   content: string,
+  realPath?: string,
 ): EditorTab {
-  return {
+  const tab: EditorTab = {
     id: filePath ?? `untitled-${crypto.randomUUID()}`,
     filePath,
     content,
@@ -86,6 +105,15 @@ export function createTab(
     dirty: false,
     milkdownUnsafe: computeMilkdownUnsafe(filePath, content), // perf P4
   };
+  return realPath === undefined ? tab : { ...tab, realPath };
+}
+
+/** 按最新读盘结果设置 / 移除 realPath(未变则原样返回,保持对象 identity). */
+function withRealPath(tab: EditorTab, realPath: string | undefined): EditorTab {
+  if (tab.realPath === realPath) return tab;
+  if (realPath !== undefined) return { ...tab, realPath };
+  const { realPath: _drop, ...rest } = tab;
+  return rest;
 }
 
 export function replaceTabAt(
@@ -160,6 +188,23 @@ export function getStateAfterClosingTab(
     tabs: remaining,
     activeTabId: next?.id ?? null,
   };
+}
+
+/**
+ * 只回写某个 tab 变更(关闭 / 换 id)会影响到的 tab:按 pre-flush 的 tabs 跑一遍纯函数 `change`,
+ * 结果里不再出现的旧 id 即受影响者。无受影响 tab 时不调用回写。
+ */
+function flushWriteBacksForAffectedTabs(
+  tabs: EditorTab[],
+  change: (tabs: EditorTab[], activeTabId: string | null) => CloseTabResult,
+): void {
+  const next = change(tabs, null).tabs;
+  if (next === tabs) return;
+  const kept = new Set<string>();
+  for (const t of next) kept.add(t.id);
+  const affected: string[] = [];
+  for (const t of tabs) if (!kept.has(t.id)) affected.push(t.id);
+  if (affected.length > 0) flushEditorWriteBacks(affected);
 }
 
 /**
@@ -346,9 +391,40 @@ export function getStateAfterRemovingPath(
   // 跨平台(codex 复查 P2):删除匹配走 isSameOrInsidePath —— Windows case-fold(`C:\Repo\dir`
   // 匹配 `c:\repo\dir\a.md`),否则 clean tab 不随删除/trash 关闭 → 用户基于已删旧路径保存
   // 复活文件;POSIX 保持大小写敏感。同前缀但非子(`/x/foo` 删 vs `/x/foobar.md`)仍不误匹配。
-  const isMatch = (filePath: string | null): boolean =>
-    filePath !== null && isSameOrInsidePath(removedPath, filePath);
+  return removeMatchingCleanTabs(tabs, activeTabId, (filePath) =>
+    isSameOrInsidePath(removedPath, filePath),
+  );
+}
 
+/**
+ * 批量版 getStateAfterRemovingPath(perf:批量删除后逐条 removePath 是 O(R·T) 比较 + R 次 set)。
+ * 删除集合建祖先索引(containmentFold/Key 与 isSameOrInsidePath 精确等价),每个 tab 只查 O(depth)
+ * 个候选键;最终 tabs / activeTabId 与按任意顺序逐条 getStateAfterRemovingPath 完全一致(active 被
+ * 关时都落到「原序后向第一个保留项,否则前向最后一个」)。
+ */
+export function getStateAfterRemovingPaths(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  removedPaths: readonly string[],
+): CloseTabResult {
+  if (removedPaths.length === 0) return { tabs, activeTabId };
+  const fold = containmentFold();
+  const removedKeys = new Set<string>();
+  for (const removedPath of removedPaths) removedKeys.add(containmentKey(removedPath, fold));
+  if (removedKeys.has('')) {
+    return removeMatchingCleanTabs(tabs, activeTabId, () => true); // 纯分隔符根覆盖一切
+  }
+  const isRemovedKey = (key: string): boolean => removedKeys.has(key);
+  return removeMatchingCleanTabs(tabs, activeTabId, (filePath) =>
+    someContainmentCandidate(fold(filePath), isRemovedKey),
+  );
+}
+
+function removeMatchingCleanTabs(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  isRemoved: (filePath: string) => boolean,
+): CloseTabResult {
   // 数据安全:dirty(未保存编辑)tab 不随文件删除/trash 自动关闭 —— 否则会绕过
   // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
   // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
@@ -356,7 +432,7 @@ export function getStateAfterRemovingPath(
   const r = filterTabsTrackingActive(
     tabs,
     activeTabId,
-    (tab) => !(isMatch(tab.filePath) && !tab.dirty),
+    (tab) => tab.filePath === null || tab.dirty || !isRemoved(tab.filePath),
   );
   if (!r.changed) return { tabs, activeTabId };
   if (r.remaining.length === 0) {
@@ -378,10 +454,32 @@ export function getStateAfterRemovingPath(
  */
 export interface EditorFocusOpts {
   readonly requestFocus?: boolean;
+  /**
+   * 仅 openTab:`false` = 只插入不激活(当前已有活动 tab 时保持 activeTabId 不变;无活动 tab 时仍激活新 tab)。
+   * 供迟到的会话恢复在用户已打开/切换 tab 后补入恢复 tab 而不抢回活动 tab。缺省 true。
+   */
+  readonly activate?: boolean;
 }
 
 function nextFocusPulse(pulse: number, opts: EditorFocusOpts | undefined): number {
   return opts?.requestFocus === false ? pulse : pulse + 1;
+}
+
+/**
+ * 用户激活代际:每次「用户选择要激活哪个 tab」递增 —— switchTab(tab 栏点击 / 打开已开文件,requestFocus
+ * 非 false)与 openFileByPath 发起读盘时(beginUserActivation)。openFileByPath 读盘前记下代际、读完比较,
+ * 已被更晚的用户选择超越 → 只后台加入,不抢激活/焦点。不计入:会话恢复(requestFocus:false)、openTab 本身
+ * (唯一的用户入口 openFileByPath 已在发起读盘时计入)、closeTab(关 tab 后相邻 tab 接替不是对某个文件的
+ * 选择,用户刚点的文件读完仍应激活)。runtime only,不进 state(不触发订阅者)。
+ */
+let userActivationGen = 0;
+
+export function getUserActivationGen(): number {
+  return userActivationGen;
+}
+
+export function beginUserActivation(): number {
+  return ++userActivationGen;
 }
 
 type EditorState = {
@@ -413,10 +511,15 @@ type EditorState = {
   closeTab: (id: string) => void;
   /** 文件/目录被删除时调用:精确匹配或前缀匹配的 tab 统一关闭. */
   removePath: (path: string) => void;
+  /** 批量删除后调用:结果与逐条 removePath 一致,但只 set 一次(chromeVersion 至多 bump 一次). */
+  removePaths: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
   renamePath: (oldPath: string, newPath: string) => void;
-  /** 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过. */
-  reloadFromDisk: (tabId: string, content: string) => void;
+  /**
+   * 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过。realPath = 本次读盘
+   * 结果的符号链接真实目标(缺省 = 非链接,移除旧值)。
+   */
+  reloadFromDisk: (tabId: string, content: string, realPath?: string) => void;
   /** 工作区切换时调用:关闭 root 外的 file tabs;untitled 始终保留. */
   closeTabsOutsideRoot: (root: string | null) => void;
   switchTab: (id: string, opts?: EditorFocusOpts) => void;
@@ -429,8 +532,9 @@ type EditorState = {
    *   - 写盘 await 期间用户继续键入(cur.content !== savedContent)→ originalContent
    *     推进到 savedContent 但**保留 dirty=true**,使这段增量不被静默吞掉、后续
    *     autosave 会再写。省略 savedContent 时退化为旧语义(originalContent ← content)。
+   * `savedGen`:本次保存记录的代际(见 EditorTab.savedGen);缺省 = 无记录,清除旧代际。
    */
-  markSaved: (id: string, savedContent?: string) => void;
+  markSaved: (id: string, savedContent?: string, savedGen?: number) => void;
   /** 另存为后:把 tab 的 filePath 与 id 同步改为 newPath. */
   setFilePath: (id: string, newPath: string) => void;
   setMode: (mode: EditorMode) => void;
@@ -473,8 +577,11 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   openTab: (tab, opts) =>
     set((s) => {
       const pulse = nextFocusPulse(s.editorFocusPulse, opts);
+      const keepActive = opts?.activate === false && s.activeTabId !== null;
       const existingIndex = findEditorTabIndexById(s.tabs, tab.id);
-      if (existingIndex >= 0) return { activeTabId: tab.id, editorFocusPulse: pulse };
+      if (existingIndex >= 0) {
+        return keepActive ? s : { activeTabId: tab.id, editorFocusPulse: pulse };
+      }
       // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):file tab 经 snapshotFromStores 序列化成
       // editor.openFilePaths(持久化 PATH_ARRAY_MAX=100000 cap + 单条 PATH_STR_MAX)。插件经 SDK openFile
       // 循环开海量文件 → tabs 超量 → openFilePaths 超上限 → explorer:write 拒整份 → 全 explorer 持久化失败。
@@ -487,7 +594,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       }
       return {
         tabs: appendEditorTab(s.tabs, tab),
-        activeTabId: tab.id,
+        activeTabId: keepActive ? s.activeTabId : tab.id,
         editorFocusPulse: pulse,
         chromeVersion: s.chromeVersion + 1, // perf P12:新增 tab → chrome 变
       };
@@ -500,41 +607,76 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
     ),
 
-  removePath: (path) =>
+  // 先按 pre-flush 状态算出受影响(将被关闭 / 换 id)的 tab,只回写它们 —— 回写会把正在编辑的大文档
+  // 整篇序列化并提前上抛,不相关的删除 / 改名 / 切 root 不应打断输入。回写只改 content / dirty,
+  // 不改 id 与路径匹配;回写后变脏的 tab 按既有规则保留。
+  removePath: (path)=> {
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterRemovingPath(tabs, active, path),
+    );
     set((s) =>
       applyTabStateChange(
         s,
         getStateAfterRemovingPath(s.tabs, s.activeTabId, path),
       ),
-    ),
+    );
+  },
 
-  renamePath: (oldPath, newPath) =>
+  removePaths: (paths)=> {
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterRemovingPaths(tabs, active, paths),
+    );
+    set((s) =>
+      applyTabStateChange(
+        s,
+        getStateAfterRemovingPaths(s.tabs, s.activeTabId, paths),
+      ),
+    );
+  },
+
+  renamePath: (oldPath, newPath)=> {
+    // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterRenamingPath(tabs, active, oldPath, newPath),
+    );
     set((s) =>
       applyTabStateChange(
         s,
         getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
       ),
-    ),
+    );
+  },
 
-  closeTabsOutsideRoot: (root) =>
+  closeTabsOutsideRoot: (root)=> {
+    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+      getStateAfterClosingTabsOutsideRoot(tabs, active, root),
+    );
     set((s) =>
       applyTabStateChange(
         s,
         getStateAfterClosingTabsOutsideRoot(s.tabs, s.activeTabId, root),
       ),
-    ),
+    );
+  },
 
-  reloadFromDisk: (tabId, content) =>
+  reloadFromDisk: (tabId, content, realPath) => {
+    // 只回写被重载的 tab:未上抛输入先进 store → tab 变脏 → 下面按 dirty 跳过,不被磁盘覆盖。
+    // 别的 tab 被外部改动不打断正在输入的 tab(回写会整篇序列化)。
+    flushEditorWriteBacks([tabId]);
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, tabId);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       // dirty:保留用户改动,不覆盖
       if (cur.dirty) return s;
-      // 内容没变(stat 触发但实际未改):无需重渲
-      if (cur.originalContent === content) return s;
+      const base = withRealPath(cur, realPath);
+      // 内容没变(stat 触发但实际未改):无需重渲;仅链接目标变了时同步 realPath(chrome 不变)
+      if (cur.originalContent === content) {
+        return base === cur ? s : { tabs: replaceTabAt(s.tabs, idx, base) };
+      }
+      const { savedGen: _staleSave, ...rest } = base; // 基线已不是自己写盘的内容 → 保存记录失效
       const next: EditorTab = {
-        ...cur,
+        ...rest,
         content,
         originalContent: content,
         dirty: false,
@@ -548,13 +690,16 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       return !!next.milkdownUnsafe !== !!cur.milkdownUnsafe
         ? { tabs, chromeVersion: s.chromeVersion + 1 }
         : { tabs };
-    }),
+    });
+  },
 
-  switchTab: (id, opts) =>
+  switchTab: (id, opts) => {
+    if (opts?.requestFocus !== false) beginUserActivation();
     set((s) => ({
       activeTabId: id,
       editorFocusPulse: nextFocusPulse(s.editorFocusPulse, opts),
-    })),
+    }));
+  },
 
   updateContent: (id, content) =>
     set((s) => {
@@ -578,7 +723,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         : { tabs };
     }),
 
-  markSaved: (id, savedContent) =>
+  markSaved: (id, savedContent, savedGen) =>
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
@@ -588,11 +733,15 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       // 此时必须保留 dirty,否则那段增量既没落盘又不再触发 autosave → 静默丢失。
       const onDisk = savedContent ?? cur.content;
       const dirty = cur.content !== onDisk;
-      if (cur.originalContent === onDisk && cur.dirty === dirty) return s;
+      if (cur.originalContent === onDisk && cur.dirty === dirty && cur.savedGen === savedGen) {
+        return s;
+      }
+      const { savedGen: _prevSave, ...rest } = cur;
       const next = withDirtyGen(cur, {
-        ...cur,
+        ...rest,
         originalContent: onDisk,
         dirty,
+        ...(savedGen === undefined ? {} : { savedGen }),
       });
       const tabs = replaceTabAt(s.tabs, idx, next);
       // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。
@@ -603,7 +752,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         : { tabs };
     }),
 
-  setFilePath: (id, newPath) =>
+  setFilePath: (id, newPath) => {
+    flushEditorWriteBacks([id]); // 换 tab id 前按旧 id 回写(见 renamePath 处说明)
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
@@ -622,9 +772,15 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         activeTabId: s.activeTabId === id ? newPath : s.activeTabId,
         chromeVersion: s.chromeVersion + 1, // perf P12:filePath 变 → chrome 变
       };
-    }),
+    });
+  },
 
-  setMode: (mode) => set((s) => (s.mode === mode ? s : { mode })),
+  setMode: (mode) => {
+    if (get().mode === mode) return;
+    // 新模式视图按 store 内容挂载:先回写。mode 是全局的,所有已挂载编辑器都随之重挂载 → 全量。
+    flushEditorWriteBacks();
+    set({ mode });
+  },
 
   acceptUnsafeEdit: (id) =>
     set((s) => {

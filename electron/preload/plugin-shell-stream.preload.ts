@@ -82,6 +82,40 @@ function createFifo<T>() {
   };
 }
 
+// perf:整窗口对 EVENT 通道只挂一个 ipcRenderer listener,按 streamId 定向分发(同 terminal-data-demux)。
+// 此前每次 execStream 各挂一个 listener、回调里自行过滤 streamId → 活跃 S 条流时每个 chunk 触发 S 个
+// handler(单 renderer 上限 32 条流)。listener 只在有活跃流时挂载(首条流注册时挂、最后一条结束时摘),
+// 与旧版「无活跃流时不驻留」一致。
+type StreamEventHandler = (rawPayload: unknown) => void;
+const streamHandlers = new Map<string, StreamEventHandler>();
+
+const onStreamEvent = (_event: IpcRendererEvent, rawPayload: unknown): void => {
+  const streamId =
+    rawPayload !== null && typeof rawPayload === 'object'
+      ? (rawPayload as { streamId?: unknown }).streamId
+      : undefined;
+  if (typeof streamId !== 'string') {
+    // 边界(E175):无主畸形 payload warn+drop,不动任何 stream(此前每条活跃流各告警一次)。
+    console.warn('[plugin-shell-stream] unattributable event payload, dropped', rawPayload);
+    return;
+  }
+  streamHandlers.get(streamId)?.(rawPayload); // 非本窗口活跃流(含已结束流的迟到事件)→ 忽略
+};
+
+function registerStreamHandler(streamId: string, handler: StreamEventHandler): void {
+  if (streamHandlers.size === 0) {
+    ipcRenderer.on(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, onStreamEvent);
+  }
+  streamHandlers.set(streamId, handler);
+}
+
+function unregisterStreamHandler(streamId: string): void {
+  if (!streamHandlers.delete(streamId)) return;
+  if (streamHandlers.size === 0) {
+    ipcRenderer.removeListener(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, onStreamEvent);
+  }
+}
+
 export const pluginShellStreamRaw: PluginShellStreamRaw = {
   execStream(cmd, args, opts) {
     const streamId = globalThis.crypto.randomUUID();
@@ -109,7 +143,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       exitResolve = resolve;
     });
 
-    const handler = (_event: IpcRendererEvent, rawPayload: unknown): void => {
+    const handler = (rawPayload: unknown): void => {
       // 边界(E175,E168-E174 同族 IPC ingress 纵深防御):事件经 parseShellStreamEvent runtime 校验。
       // not-ours 静默忽略;unattributable(无主畸形)warn+drop 但不动本 stream;invalid(本 stream
       // 但形态非法)warn + 合成 exit 收敛(防 done/chunks 永久挂起)。
@@ -165,7 +199,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       exitInfo = info;
       resolveAllChunksDone(); // race(R93):唤醒所有 pending 等待者为 done
       exitResolve?.(exitInfo);
-      ipcRenderer.removeListener(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
+      unregisterStreamHandler(streamId);
     };
     /** 让 main 杀掉子进程(best-effort;流可能已结束)。 */
     const requestAbort = (): void => {
@@ -179,7 +213,7 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       settleExit({ exitCode: -1, signal: null });
     };
 
-    ipcRenderer.on(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, handler);
+    registerStreamHandler(streamId, handler);
     void ipcRenderer
       .invoke(PLUGIN_SHELL_STREAM_CHANNELS.START, streamId, cmd, args, opts)
       .catch(() => settleExit({ exitCode: -1, signal: null }));

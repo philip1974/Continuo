@@ -18,8 +18,12 @@ vi.mock('../../plugins/settings/values-store', () => ({
   useSettingValue: (_k: string, fallback: unknown) => fallback,
 }));
 
-import { FileRow, fileRowClassName } from '../../panels/Explorer/FileRow';
+import { FileRow, fileRowClassName, readFileRowState } from '../../panels/Explorer/FileRow';
 import { coApp } from '../../plugins/co-app';
+
+// FileRow 是 memo 组件,行状态由调用方(FolderTree)经 readFileRowState 读出后以 primitive 下传。
+const NO_RENAME_TREE = { getRenamingValue: () => '' };
+const rowState = (item: ItemInstance<FileEntry>) => readFileRowState(item, NO_RENAME_TREE);
 
 // race(R57):FileRow 合并装饰时读 live coApp.explorerDecorators.getAll()(防快照滞后期执行已
 // unregister 的 decorator)。故测试在真源注册 decorator(prop 仍作 memo 失效键传入),afterEach
@@ -52,7 +56,8 @@ function renderRow(decorators: readonly DecoratorFn[]) {
   return render(
     <FileRow
       item={mockItem('/work/a.ts', 'a.ts')}
-      style={{}}
+      {...rowState(mockItem('/work/a.ts', 'a.ts'))}
+      start={0}
       selectedPaths={new Set()}
       rootPath="/work"
       contextActions={{} as never}
@@ -178,7 +183,8 @@ describe('a11y(A110) — 目录行加载态可被 AT 感知', () => {
     const { container } = render(
       <FileRow
         item={loadingItem()}
-        style={{}}
+        {...rowState(loadingItem())}
+        start={0}
         selectedPaths={new Set()}
         rootPath="/work"
         contextActions={{} as never}
@@ -225,7 +231,8 @@ describe('a11y(A71) — 目录行展开箭头 aria-hidden', () => {
     return render(
       <FileRow
         item={dirItem(expanded)}
-        style={{}}
+        {...rowState(dirItem(expanded))}
+        start={0}
         selectedPaths={new Set()}
         rootPath="/work"
         contextActions={{} as never}
@@ -277,7 +284,8 @@ describe('a11y(A26) — inline rename input 可访问名', () => {
     const { container } = render(
       <FileRow
         item={item}
-        style={{}}
+        {...rowState(item)}
+        start={0}
         selectedPaths={new Set()}
         rootPath="/work"
         contextActions={{} as never}

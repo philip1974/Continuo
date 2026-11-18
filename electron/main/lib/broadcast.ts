@@ -8,8 +8,12 @@
 
 import { BrowserWindow } from 'electron';
 
+/** payloadFor 返回它 → 本次不向该窗口发送(如该窗口的过滤快照与上次发出的相同)。 */
+export const SKIP_BROADCAST: unique symbol = Symbol('skip-broadcast');
+
 /**
- * @param payloadFor 按窗口给出 payload(固定 payload 传 `() => payload`;也可按 ownerWindowId 过滤快照)
+ * @param payloadFor 按窗口给出 payload(固定 payload 传 `() => payload`;也可按 ownerWindowId 过滤快照);
+ *   返回 SKIP_BROADCAST 则跳过该窗口
  * @param tag 失败日志前缀(如 `[fs] DIR_CHANGED`)
  */
 export function broadcastToWindows(
@@ -20,7 +24,8 @@ export function broadcastToWindows(
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
-      win.webContents.send(channel, payloadFor(win));
+      const payload = payloadFor(win);
+      if (payload !== SKIP_BROADCAST) win.webContents.send(channel, payload);
     } catch (err) {
       console.error(`${tag} broadcast failed`, err);
     }

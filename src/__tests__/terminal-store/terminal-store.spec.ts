@@ -156,6 +156,51 @@ describe('replaceSnapshot', () => {
     }
   });
 
+  // perf:main 任一会话变化都给所有窗口推各自完整快照,IPC 反序列化每次都是新数组/新对象。内容未变的窗口
+  // 不应 set(否则所有订阅者与 DockReconciler 白跑一轮)。
+  it('内容逐字段相同的新数组(含新的 attachTarget 对象)→ 不通知订阅者,保留旧引用', () => {
+    const first = [
+      sess('/a', { agentLabel: 'codex', attachTarget: { kind: 'panel', panelId: 'p1' } }),
+      sess('/b'),
+    ];
+    useTerminalStore.getState().replaceSnapshot(first);
+    const listener = vi.fn();
+    const unsubscribe = useTerminalStore.subscribe(listener);
+    try {
+      useTerminalStore.getState().replaceSnapshot([
+        sess('/a', { agentLabel: 'codex', attachTarget: { kind: 'panel', panelId: 'p1' } }),
+        sess('/b'),
+      ]);
+      expect(listener).not.toHaveBeenCalled();
+      expect(useTerminalStore.getState().sessions).toBe(first);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('任一字段不同(cwd / 可选字段增减 / attachTarget 内字段)→ 照常替换', () => {
+    const base = sess('/a', { attachTarget: { kind: 'panel', panelId: 'p1' } });
+    useTerminalStore.getState().replaceSnapshot([base]);
+    const variants: TerminalSession[][] = [
+      [{ ...base, cwd: '/other' }],
+      [{ ...base, agentLabel: 'codex' }],
+      [{ ...base, attachTarget: { kind: 'panel', panelId: 'p2' } }],
+      [base, sess('/b')],
+    ];
+    for (const next of variants) {
+      useTerminalStore.getState().replaceSnapshot(next);
+      expect(useTerminalStore.getState().sessions).toBe(next);
+    }
+  });
+
+  it('首个权威快照即使内容与当前相同,也必须置 hydrated(Splash 就绪屏障语义)', () => {
+    const cur = [sess('/a')];
+    useTerminalStore.setState({ sessions: cur, hydrated: false });
+    useTerminalStore.getState().replaceSnapshot([sess('/a')]);
+    expect(useTerminalStore.getState().hydrated).toBe(true);
+    expect(useTerminalStore.getState().sessions).toBe(cur);
+  });
+
   it('全部 session 被移除 → sessions 为空', () => {
     useTerminalStore.getState().replaceSnapshot([sess('/a')]);
     useTerminalStore.getState().replaceSnapshot([]);
@@ -165,7 +210,15 @@ describe('replaceSnapshot', () => {
 
 // 「哪个终端处于活动状态」由 dockview 的活动 panel 决定;store 不再记 activeId,也没有改名(customTitles)。
 describe('store 只镜像 sessions', () => {
-  it('状态里只有 sessions 与 replaceSnapshot', () => {
-    expect(Object.keys(useTerminalStore.getState()).sort()).toEqual(['replaceSnapshot', 'sessions']);
+  // hydrated / markHydrated:首个权威快照是否已到(Splash 就绪屏障,见 splash-terminal-ready-barrier)。
+  it('状态里只有 sessions / hydrated / settled 与 replaceSnapshot / markHydrated / markSettled', () => {
+    expect(Object.keys(useTerminalStore.getState()).sort()).toEqual([
+      'hydrated',
+      'markHydrated',
+      'markSettled',
+      'replaceSnapshot',
+      'sessions',
+      'settled',
+    ]);
   });
 });

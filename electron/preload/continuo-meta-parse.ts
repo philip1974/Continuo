@@ -17,3 +17,12 @@ export function parseContinuoHostnameFromArgv(
   const host = arg?.slice(prefix.length);
   return host ? host : null;
 }
+
+// 终端 xterm windowsPty:解析 main 注入的 `--continuo-windows-build=<n>`(仅 win32 注入);缺失 / 非法 → null。
+export function parseContinuoWindowsBuildFromArgv(
+  argv: readonly string[],
+): number | null {
+  const prefix = '--continuo-windows-build=';
+  const value = argv.find((a) => a.startsWith(prefix))?.slice(prefix.length);
+  return value !== undefined && /^\d+$/.test(value) ? Number(value) : null;
+}

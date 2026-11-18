@@ -15,6 +15,7 @@ import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager, setUserPluginManager } from './plugins/PluginManager';
 import { wirePluginReloadGate } from './plugins/plugin-reload-gate';
+import { initPluginsThenCheckUpdates } from './marketplace/startup-update-check';
 import { wireProtocolUrl } from './plugins/protocol/wire-protocol-url';
 import { createWindowApiHost } from './lib/plugins-host';
 import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
@@ -24,6 +25,8 @@ import { startPluginFsScopeRequestBridge } from './plugins/permissions/usePlugin
 import { PermissionError, type PermissionKey } from './plugins/permissions';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
+import { isPopoutWindow } from './lib/popout-mode';
+import { prefetchDockLayout } from './shell/dock/layout-prefetch';
 import { useUpdateStore } from './marketplace/update-store';
 import { useKeybindingsStore } from './plugins/keybindings/keybindings-store';
 import { useSettingsValuesStore } from './plugins/settings/values-store';
@@ -76,6 +79,12 @@ declare const window: Window & {
   };
 };
 
+function renderApp(container: HTMLElement): void {
+  createRoot(container).render(
+    React.createElement(React.StrictMode, null, React.createElement(App)),
+  );
+}
+
 // topic 16: 把后续 boot 流程包 async init，等 locale 真值后再 bootCorePlugins/createRoot
 export async function init(): Promise<void> {
   // Phase 4.B:**最早**调,把 window.api 缓存到 module-local。
@@ -104,6 +113,27 @@ export async function init(): Promise<void> {
   const container = document.getElementById('root');
   if (!container) throw new Error('#root not found');
 
+  // 性能(冷启动关键路径):两个只读启动 IPC 不再串在 await getLocale 之后,在此并发发起。
+  // - layout.read(main 端读+解析+Zod explorer.json)预取,DockShell 首次 onReady 消费(见 layout-prefetch)。
+  // - explorer.read 先发起,下方 initExplorerPersistence 的 read() 取用这同一个 promise(只取一次)。
+  //   只是提前发 IPC:hydrate 逻辑与 root 选择守卫仍在 initExplorerPersistence 原位置执行。
+  // getLocale 仍在 bootCorePlugins / createRoot 之前 await —— i18n 首次渲染前就绪的契约不变。
+  // popout 子窗口两者都不发(见下方 popout 早退)。
+  const popout = isPopoutWindow();
+  let explorerReadPrefetch: ReturnType<typeof coApi.explorer.read> | null = null;
+  if (!popout) {
+    prefetchDockLayout();
+    try {
+      // Promise.resolve:非 promise 返回值(桩 / 异常桥)与原先 `await api.read()` 同样交给 initExplorerPersistence 处理。
+      explorerReadPrefetch = Promise.resolve(coApi.explorer.read());
+    } catch (err) {
+      // 同步抛错与原先在 initExplorerPersistence 的 try 内调用 read() 等价:转成 rejected promise 交给它处理。
+      explorerReadPrefetch = Promise.reject(err);
+    }
+    // 被 initExplorerPersistence 取用前 reject 不应成为 unhandled rejection(取用方 await 仍拿到 reject)。
+    explorerReadPrefetch.catch(() => {});
+  }
+
   try {
     const initial = await coApi.i18n.getLocale();
     if (initial.ok) {
@@ -116,6 +146,20 @@ export async function init(): Promise<void> {
   }
 
   subscribeToI18nBroadcast();
+
+  // perf:dockview popout 子窗口是独立 BrowserWindow(独立 JS 上下文,同一 renderer 入口 ?popout=1),App 只渲染
+  // PopoutHost;弹出的面板由父窗口 React 经 portal 渲染,用的是父窗口的 store / 插件实例。子窗口自己跑完整 init
+  // 只有代价与隐患:按同一 windowSeq(popout URL 沿用主窗 query)hydrate explorer 段并全量 readFile 恢复 tab、
+  // 注册写回订阅;再 import + onload 一遍全部已启用插件,其 MCP 工具按 webContents 注册进 main(可能抢走路由);
+  // 协议深链广播到所有就绪窗口(子窗口会重复执行命令)。main 侧无一依赖 popout 注册这些:debug 事件按
+  // ownerWindowId 只发主窗,MCP / 协议路由在 popout 不注册时自然落到主窗。故只保留渲染所需(i18n + App)。
+  if (popout) {
+    // 安全:弹出的插件面板 portal 进本窗口 DOM,插件可经 el.ownerDocument.defaultView 取本窗口的原生 fetch /
+    // navigator.clipboard 绕过权限门 → 与主窗口同口径清洗(PROD)。
+    if (import.meta.env.PROD) sandboxSweep();
+    renderApp(container);
+    return;
+  }
 
   // M-Plugin v1.7:渲染前同步注册内置插件(editor / terminal / output),
   // 使 coApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
@@ -169,7 +213,13 @@ export async function init(): Promise<void> {
   // race(R16):init() 与 onChanged 订阅经 reload-gate 解耦 —— init 仍在扫描时到达的变更先
   // 缓冲(去重),init 完成(成功/失败)后逐个 reload,避免窗口期变更被「Plugin not found」丢弃。
   wirePluginReloadGate({
-    init: () => userPluginManager.init(),
+    // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用),排在插件扫描完成之后 —— refresh 按
+    // listAll() 裁剪,扫描前为空会直接落空;不等激活(可能挂在授权弹窗上)。popout 已在上方早退,此处恒为主窗。
+    // fire-and-forget,不阻塞 UI 渲染;失败 console.warn 不抛。
+    init: () =>
+      initPluginsThenCheckUpdates(userPluginManager, () => useUpdateStore.getState().refresh(), {
+        checkUpdates: true,
+      }),
     reload: (id) => userPluginManager.reload(id),
     onChanged: (cb) => coApi.plugins.onChanged(cb),
     // 终审 P1:任一窗口卸载成功 → main 广播,本窗口撤销该插件实例 / 贡献点 / 权限缓存(幂等、不触盘)。
@@ -214,7 +264,12 @@ export async function init(): Promise<void> {
   const initialFresh = parseInitialFresh(search);
   void initExplorerPersistence(
     {
-      read: () => coApi.explorer.read(),
+      // 取用上方提前发起的 explorer.read(仅一次);之后若再调用则照常发新 IPC。
+      read: () => {
+        const p = explorerReadPrefetch ?? coApi.explorer.read();
+        explorerReadPrefetch = null;
+        return p;
+      },
       write: (snap) => coApi.explorer.write(snap),
     },
     {
@@ -225,17 +280,11 @@ export async function init(): Promise<void> {
     },
   );
 
-  // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用)。
-  // fire-and-forget,不阻塞 UI 渲染。失败 console.warn 不抛。
-  void useUpdateStore.getState().refresh();
-
   // 注:reviews(卡片 ★)不再启动预拉(打磨 R53)。该数据只在 MarketplaceTab 可见
   // 时用,不像 update 清单驱动 IconSidebar 角标。改为 MarketplaceTab 首次挂载时拉,
   // 把隐藏功能的 GitHub API/网络/解析从冷启动路径移走。
 
-  createRoot(container).render(
-    React.createElement(React.StrictMode, null, React.createElement(App)),
-  );
+  renderApp(container);
 
   // 按意图预热 Terminal lazy chunk(xterm 6MB+addons)(打磨 R55:恢复 lazy boundary)。
   // 原先无条件 idle prefetch 会让从不开终端的 session 也下载/解析这个大 chunk。改为只在

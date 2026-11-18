@@ -15,9 +15,19 @@ export async function atomicWriteJson(
   filePath: string,
   payload: unknown,
 ): Promise<void> {
+  await atomicWriteText(filePath, JSON.stringify(payload, null, 2));
+}
+
+/**
+ * 原子写已序列化文本(语义同 atomicWriteJson,见上)。供调用方已持有序列化结果时复用,
+ * 避免为落盘再 stringify 一次(perf:大 payload 的第二次全量遍历 + 第二份大字符串)。
+ */
+export async function atomicWriteText(
+  filePath: string,
+  data: string,
+): Promise<void> {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
-  const data = JSON.stringify(payload, null, 2);
 
   // open 用 'wx'(排他创建),绝不用 'w' 盲目截断已存在的同名 temp:此 helper 现被
   // permissions/path-scopes/enabled/settings/explorer/plugin-data 复用,temp 名一旦撞到

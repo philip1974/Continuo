@@ -368,6 +368,49 @@ describe('StatusBar — 插件 statusBar items', () => {
     });
     expect(container.textContent).toContain('LATE_ITEM');
   });
+
+  // 复审回退 perf E5(6eb4a3f6):StatusBarItemSpec 无订阅/失效 API,插件合法地让 render()
+  // 从闭包 / 命令式 store 读值,依赖 StatusBar 父级重渲刷新。按键等父级重渲必须重新调用插件
+  // render(),不得按 item 引用 memo 跳过,否则动态 item 静默陈旧。
+  it('插件 render 读外部可变状态 → StatusBar 因编辑重渲时显示最新值', () => {
+    installApi({});
+    let external = 'EXT_V1';
+    coApp.statusBar.register({ id: 'plugin.dyn', side: 'left', render: () => external });
+    useEditorStore.setState({
+      tabs: [
+        { id: '/a.txt', filePath: '/a.txt', content: 'a', originalContent: 'x', dirty: true },
+      ],
+      activeTabId: '/a.txt',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('EXT_V1');
+
+    external = 'EXT_V2';
+    act(() => {
+      useEditorStore.getState().updateContent('/a.txt', 'a b c');
+    });
+
+    expect(container.textContent).toContain('EXT_V2');
+    expect(container.textContent).not.toContain('EXT_V1');
+  });
+
+  it('同 id 重新注册(新 spec)→ item 按新 render 刷新', () => {
+    installApi({});
+    const first = coApp.statusBar.register({
+      id: 'plugin.e5b',
+      side: 'right',
+      render: () => 'V1',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('V1');
+
+    act(() => {
+      first.dispose();
+      coApp.statusBar.register({ id: 'plugin.e5b', side: 'right', render: () => 'V2' });
+    });
+    expect(container.textContent).toContain('V2');
+    expect(container.textContent).not.toContain('V1');
+  });
 });
 
 describe('StatusBar — MCP 复制', () => {

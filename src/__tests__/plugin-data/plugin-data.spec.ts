@@ -53,6 +53,48 @@ describe('utf8 byte length (E125)', () => {
     expect(utf8BytesExceed('\uD800中', 5)).toBe(true);
     expect(utf8BytesExceed('\uD800中', 6)).toBe(false);
   });
+
+  // perf P2:UTF-8 字节数 ≤ 3 × UTF-16 code unit 数(BMP ≤3/unit、代理对 4/2 unit、lone 代理 3/unit)。
+  // s.length * 3 ≤ maxBytes 时必不超限,直接返回 false,不逐字符计数。
+  it('utf8BytesExceed 与 TextEncoder 判定等价(随机串含代理对 / lone 代理,上限取真实字节数附近)', () => {
+    const te = new TextEncoder();
+    const alphabet = ['a', 'é', '中', '😀', '\uD800', '\uDC00', '߿', 'ࠀ', '￿'];
+    let seed = 12345;
+    const rnd = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 0x100000000;
+    };
+    for (let k = 0; k < 500; k++) {
+      let s = '';
+      const n = Math.floor(rnd() * 20);
+      for (let i = 0; i < n; i++) s += alphabet[Math.floor(rnd() * alphabet.length)];
+      const bytes = te.encode(s).byteLength;
+      for (const max of [0, bytes - 1, bytes, bytes + 1, s.length * 3 - 1, s.length * 3, s.length * 3 + 1, s.length]) {
+        if (max < 0) continue;
+        expect(utf8BytesExceed(s, max), `${JSON.stringify(s)} max=${max}`).toBe(bytes > max);
+      }
+    }
+  });
+
+  it('utf8BytesExceed 快速路径:s.length × 3 ≤ maxBytes 时不计数', () => {
+    // 计数有两条实现:有 Buffer(main / 本测试 node 环境)走原生 Buffer.byteLength,否则 JS 逐字符 charCodeAt。
+    const orig = String.prototype.charCodeAt;
+    let calls = 0;
+    String.prototype.charCodeAt = function (this: string, i: number) {
+      calls++;
+      return orig.call(this, i);
+    };
+    const nativeSpy = vi.spyOn(Buffer, 'byteLength');
+    try {
+      expect(utf8BytesExceed('中'.repeat(1000), 3000)).toBe(false);
+      expect(calls + nativeSpy.mock.calls.length).toBe(0);
+      expect(utf8BytesExceed('中'.repeat(1000), 2999)).toBe(true);
+      expect(calls + nativeSpy.mock.calls.length).toBeGreaterThan(0);
+    } finally {
+      String.prototype.charCodeAt = orig;
+      nativeSpy.mockRestore();
+    }
+  });
 });
 
 const manifest: PluginManifest = {
@@ -96,6 +138,23 @@ describe('InMemoryDataStore', () => {
     const huge = Array.from({ length: 17 }, () => 'x'.repeat(1024 * 1024));
     await expect(ds.write('k', huge)).rejects.toThrow(/too large/i);
     expect(await ds.read('k')).toBeNull();
+  });
+
+  // perf(B-2):预检换成 .length 下界后,判定仍以精确 UTF-8 字节为准 —— CJK(3 字节/字符,.length 远小于
+  // 字节数)恰好等于上限接受,多 1 字节拒。序列化串 = '"' + s + '"'。
+  it('B-2 CJK 序列化字节恰好等于上限 → 接受;+1 字节 → 拒(too large),不写入', async () => {
+    const MAX = 16 * 1024 * 1024;
+    const body = MAX - 2; // 去掉两侧引号
+    const cjk = '中'.repeat(Math.floor(body / 3)) + 'a'.repeat(body % 3);
+    const ds = new InMemoryDataStore();
+    await expect(ds.write('k', cjk)).resolves.toBeUndefined();
+    expect(await ds.read('k')).toBe(cjk);
+
+    const ds2 = new InMemoryDataStore();
+    await expect(ds2.write('k', cjk + 'a')).rejects.toThrow(
+      new RegExp(`too large \\(${MAX + 1} > ${MAX}\\)`),
+    );
+    expect(await ds2.read('k')).toBeNull();
   });
 
   // 边界(E103):JSON.stringify 静默改写 NaN/Infinity→null、丢 undefined → write 须 assertJsonValue

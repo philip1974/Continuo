@@ -9,7 +9,7 @@
 // copy 粘贴成功后保留(允许多次粘贴到不同位置)。
 
 import { create } from 'zustand';
-import { isSameOrInsidePath } from '@/lib/path-cross';
+import { containmentFold, containmentKey, someContainmentCandidate } from '@/lib/path-cross';
 
 export type ClipboardKind = 'cut' | 'copy';
 
@@ -28,13 +28,6 @@ interface ExplorerClipboardState {
    * 或目录前缀 `path + '/'|'\\'`)。
    */
   prune(removedPaths: readonly string[]): void;
-}
-
-function isClipboardPathRemoved(path: string, removedPaths: readonly string[]): boolean {
-  for (const removedPath of removedPaths) {
-    if (isSameOrInsidePath(removedPath, path)) return true;
-  }
-  return false;
 }
 
 function copyClipboardPaths(paths: readonly string[]): readonly string[] {
@@ -61,11 +54,19 @@ export function pruneClipboardPaths(
   removedPaths: readonly string[],
 ): readonly string[] {
   if (paths.length === 0) return EMPTY_CLIPBOARD_PATHS;
+  // perf:原为 clipboard × removed 两两 isSameOrInsidePath。改为把 removed 的比较键建 Set,
+  // 每个剪贴板路径只查其 O(depth) 个候选祖先键;与「存在 removed 覆盖该路径」精确等价。
+  const fold = containmentFold();
+  const removedKeys = new Set<string>();
+  for (const removedPath of removedPaths) removedKeys.add(containmentKey(removedPath, fold));
+  const isRemovedKey = (key: string): boolean => removedKeys.has(key);
+  const isRemoved = (path: string): boolean =>
+    removedKeys.has('') || someContainmentCandidate(fold(path), isRemovedKey);
   let remaining: string[] | null = null;
   let remainingCount = 0;
   for (let i = 0; i < paths.length; i++) {
     const path = paths[i]!;
-    if (isClipboardPathRemoved(path, removedPaths)) {
+    if (isRemoved(path)) {
       if (remaining === null) {
         remaining = new Array<string>(paths.length - 1);
         for (let j = 0; j < i; j++) remaining[remainingCount++] = paths[j]!;
@@ -77,6 +78,20 @@ export function pruneClipboardPaths(
   if (remaining === null) return paths;
   remaining.length = remainingCount;
   return remainingCount === 0 ? EMPTY_CLIPBOARD_PATHS : remaining;
+}
+
+// perf:FileRow 每个可见行要判「是否已剪切」;对 paths 数组线性 includes 在剪切海量项后滚动每帧
+// O(行数 × 剪切数)。paths 在 store 内不可变(set 复制、prune 产新数组),按数组引用派生缓存 Set,
+// 同一 paths 只建一次,判定 O(1);Set.has 与 includes 同为 SameValueZero(精确字符串相等)。
+const clipboardPathSets = new WeakMap<readonly string[], ReadonlySet<string>>();
+
+export function clipboardPathSet(paths: readonly string[]): ReadonlySet<string> {
+  let set = clipboardPathSets.get(paths);
+  if (set === undefined) {
+    set = new Set(paths);
+    clipboardPathSets.set(paths, set);
+  }
+  return set;
 }
 
 export const useExplorerClipboardStore = create<ExplorerClipboardState>(

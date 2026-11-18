@@ -31,7 +31,7 @@ describe('a11y(A152) — Markdown 链接键盘激活(Cmd/Ctrl+Enter)', () => {
   function setup() {
     const onLinkClick = vi.fn();
     const { container } = render(
-      <MilkdownEditor defaultValue="x" readonly onLinkClick={onLinkClick} />,
+      <MilkdownEditor tabId="/t.md" defaultValue="x" readonly onLinkClick={onLinkClick} />,
     );
     // 包裹 div 是 onKeyDown 宿主(.overflow-auto)。注入一个真实 <a> 模拟渲染出的 markdown link。
     const wrapper = container.querySelector('.overflow-auto') as HTMLElement;

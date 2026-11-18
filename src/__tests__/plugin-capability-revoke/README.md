@@ -44,6 +44,8 @@
   scoped app 注册的贡献与订阅(无论是否经 `Plugin.register` 收集)由控制面记录,`revoke()` 时统一注销 ——
   插件绕过 `Plugin.register` 直接 `app.commands.register(...)` 的命令,停用后同样从注册表移除、快捷键失效。
   返回的句柄幂等;插件先自行 dispose 的不再重复注销,也不会误删他人后注册的同 id 贡献。
+  经直通的 `events.off(name, listener)` 退订后,控制面同步丢弃该 (name, listener) 的全部退订句柄(总线按 Set 一次全移除),
+  反复 on/off 不在控制面累积句柄与插件回调;插件仍持有的旧 Disposable 再 dispose 照旧转发到总线。
 - MCP 工具回收:`revoke()` 经原 Disposable 注销本实例经 `app.mcp.register` 注册的全部工具(main 侧 stub 同步
   移除)—— 插件不保存返回的 Disposable(不经 `registerMcpTool` 收集)时,停用 / 热重载 / `onload` 抛错后工具不残留,
   再次启用注册同名工具不会命中 `TOOL_NAME_TAKEN`。
@@ -74,6 +76,8 @@
   尚未写入 entries;其禁用广播此前只被 reload-gate 缓冲 → init 仍按旧快照 import 并激活。`revokeImmediately` 记下
   停用意图(见 1d,不要求 entry 已存在);init 建 entry 时据此按 `disabled` 建 entry、不 import / 不构造。
   reload-gate 收到 `enabled=true` 广播时立即调用 `markEnabled(id)` 清除意图(之后按快照照常激活)。
+  两阶段 init 后(见 plugin-manager「扫描完成信号」):后面的插件已登记 entry 但尚未激活;激活循环在锁内、激活前
+  重新检查停用意图,存在 → 落 `disabled`、不 import / 不构造(语义同上)。
 - 模块顶层 await 永不结束(终审 P1):中止句柄在开始 import **之前**就挂到 entry,import 与中止 `Promise.race`。禁用 /
   卸载 → 管理器停止等待 import,激活按禁用收尾、释放生命周期锁,排队的停用 / 卸载照常完成(落盘 `enabled=false`)。
   import 无法真正取消:迟到完成的结果被丢弃,不构造实例。不设固定超时。

@@ -8,6 +8,7 @@
 import type { EditorTab } from '@/stores/editor.store';
 import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
 import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
+import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 
 type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty' | 'dirtyGen'>;
 
@@ -110,25 +111,28 @@ export interface SaveForCloseResult {
  * 复审:保存期间用户继续输入 → saveFile 返回 ok 但 tab 仍脏(markSaved 保留 dirty);只看返回值会
  * 报成功并关窗丢新输入。全部完成后用 getTabs() 复查,仍脏的同样计为失败。
  */
+/**
+ * perf:关窗「保存」时同时在途的保存数上限。每个保存含整文件读比对 + writeFile fsync,原 Promise.all
+ * 全并发在数百个大文件时 main 峰值内存与 fsync 并发失控。
+ */
+export const SAVE_FOR_CLOSE_CONCURRENCY = 32;
+
 export async function saveDirtyTabsForClose(
   tabs: readonly TabLike[],
   saveTab: (tabId: string) => Promise<{ readonly ok: boolean; readonly code?: string }>,
   getTabs: () => readonly TabLike[],
 ): Promise<SaveForCloseResult> {
   const targets = tabs.filter((tab) => tab.dirty && tab.filePath !== null);
-  const results = await Promise.all(
-    targets.map((tab) =>
-      saveTab(tab.id).then(
-        (r) => r,
-        () => ({ ok: false }) as const,
-      ),
-    ),
+  // 有界并发(结果按下标对位,单个 reject 记为失败,同原 Promise.all + catch 语义)。
+  const settled = await allSettledWithConcurrency(targets, SAVE_FOR_CLOSE_CONCURRENCY, (tab) =>
+    saveTab(tab.id),
   );
   const current = getTabs();
   let failed = 0;
   let diskChanged = 0;
   for (let i = 0; i < targets.length; i += 1) {
-    const r = results[i]!;
+    const s = settled[i]!;
+    const r = s.status === 'fulfilled' ? s.value : ({ ok: false } as const);
     if (!r.ok) {
       failed += 1;
       if ('code' in r && r.code === 'EDITOR_DISK_CHANGED') diskChanged += 1;

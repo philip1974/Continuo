@@ -1,17 +1,22 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import { basenamePreserveTrailing, dirname } from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import type { ItemInstance, SetStateFn, TreeInstance } from '@headless-tree/core';
+import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
+import type {
+  AsyncDataLoaderDataRef,
+  ItemInstance,
+  SetStateFn,
+  TreeInstance,
+} from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
-import { createTreeConfig } from './tree-config';
-import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow } from './FileRow';
+import { buildTreeChildrenWithData, createTreeConfig, sameTreeChildren } from './tree-config';
+import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
@@ -21,7 +26,9 @@ import {
 } from './batch-transfer';
 
 import { useFsWatcher } from './hooks/useFsWatcher';
+import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
+import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
 import { useEditorStore } from '@/stores/editor.store';
 import { useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
@@ -54,6 +61,21 @@ const EMPTY_PATH_LIST: string[] = [];
 // (`c:\repo`)仅大小写不同时被判 out-of-root → 树恢复展开错乱/旧展开项滞留。
 function isWithinRoot(path: string, root: string): boolean {
   return isSameOrInsidePath(root, path);
+}
+
+/**
+ * perf:子项从未加载过的非 root 目录无缓存可失效。macOS/Win 根目录 recursive watcher 对任意深度变更
+ * 都上报其所在目录(含 .git / node_modules 等树上不显示的目录);headless-tree 的 getItemInstance 对
+ * 未知 id 现建临时实例,invalidateChildrenIds 仍会 listDir + 写缓存 + rebuildTree。未加载目录日后展开
+ * 时自会按需加载;加载中的目录 invalidate 本就只复用在途加载。已加载(含已折叠但仍缓存)的目录与 root
+ * 需要刷新。
+ */
+function isUnloadedNonRootDir(t: TreeInstance<FileEntry> | null, path: string): boolean {
+  return (
+    t !== null &&
+    path !== t.getConfig().rootItemId &&
+    t.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds?.[path] === undefined
+  );
 }
 
 export function joinRelativePaths(root: string, paths: readonly string[]): string {
@@ -162,12 +184,60 @@ export function FolderTree({ root }: { root: string }) {
   // a11y(A148):tree listDir 失败(root/子目录)此前仅 console.warn(FolderTree 未传 onIpcWarn)
   // → 加载失败无反馈。但展开深树会触发多次 listDir,无差别弹会刷屏 —— 3s 限流(对齐 A144)。
   const lastIpcWarnAtRef = useRef(0);
+  // 键盘导航(End / Home / ArrowLeft 回父目录)焦点跳出虚拟窗口时,headless-tree updateDomFocus 先调
+  // config.scrollToItem 再轮询等行挂载,超时把焦点打回首项。照官方虚拟化示例接 virtualizer.scrollToIndex;
+  // 但下标必须取实际渲染的 items(隐藏文件过滤后),不能用 getItemMeta().index。virtualizer 在 tree 之后
+  // 创建,故经 ref 持有;找不到下标(目标被过滤)则不滚。
+  const virtualizerRef = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
+  const renderedItemsRef = useRef<readonly ItemInstance<FileEntry>[]>([]);
+  // 拖放结束不滚:headless-tree 行 onDrop 在 config.onDrop / onDropForeignDragObject 之后
+  // draggedItems[0].setFocused() + updateDomFocus(),后者在 setTimeout 里调 scrollToItem(无焦点回退首项)
+  // → 长列表拖到下方目录 / 从 Finder 拖入后列表跳回源行或首项。drop 回调里置一次性标志,scrollToItem
+  // 读到即清除并跳过。库未调用(如容器级 root drop 不 updateDomFocus)时标志不能残留到下次键盘导航:
+  // 嵌套两层 setTimeout 清除 —— 外层排在库 updateDomFocus 的 setTimeout(drop 回调之后的微任务里才排)
+  // 之前,内层排在其后,故库那一次总能读到标志,之后必定清掉。
+  // 只跳过滚动还不够:updateDomFocus 在 scrollToItem 后轮询 500ms 等焦点项挂载,取不到就把焦点重置到首项
+  // (内部移动的焦点项是源行,长列表里常已滚出窗口)→ 下次方向键从首项出发,列表跳回顶部。故在外层
+  // setTimeout(先于库 updateDomFocus 的定时器;库在 drop 回调之后才同步 setFocused 源行,这里晚于它)
+  // 把焦点改到实际松手的那一行:它此刻必在虚拟窗口内,轮询立即取到元素,列表不动。松手行由容器
+  // handleDropCapture 记录(库清 dnd 状态后再调 onDrop,回调参数里的 target 可能是窗口外的父目录 / 不渲染的 root)。
+  const suppressDropScrollRef = useRef(false);
+  const dropRowIdRef = useRef<string | null>(null);
+  const suppressNextDropScroll = useCallback(() => {
+    suppressDropScrollRef.current = true;
+    setTimeout(() => {
+      const rowId = dropRowIdRef.current;
+      dropRowIdRef.current = null;
+      if (rowId !== null) treeRef.current?.getItemInstance(rowId)?.setFocused();
+      setTimeout(() => (suppressDropScrollRef.current = false));
+    });
+  }, []);
+  const scrollToItem = useCallback((item: ItemInstance<FileEntry>) => {
+    if (suppressDropScrollRef.current) {
+      suppressDropScrollRef.current = false;
+      return;
+    }
+    const id = item.getId();
+    const index = renderedItemsRef.current.findIndex((it) => it.getId() === id);
+    if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
+  }, []);
   const { resolved: theme } = useTheme();
   const [creating, setCreating] = useState<CreatingState | null>(null);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
   const [hoverTarget, setHoverTarget] = useState<DropTargetEntry | null>(null);
+  // perf:FileRow 每个 dragenter(含行内子元素冒泡上来的)都回报一个新对象;同 path + isDirectory 时
+  // 保留旧引用 → React 跳过重渲,拖过一行不再反复整树重渲。
+  const reportHoverTarget = useCallback((target: DropTargetEntry | null) => {
+    setHoverTarget((prev) =>
+      prev !== null && prev.path === target?.path && prev.isDirectory === target.isDirectory
+        ? prev
+        : target,
+    );
+  }, []);
   const dragDepthRef = useRef(0);
+  // OS 文件 drop 的落点目录:handleDropCapture 复位 hoverTarget 前算好,冒泡阶段 handleDrop 读后清空
+  const foreignDropTargetRef = useRef<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const persistedExpandedPaths = useExplorerStore((s) => s.expandedPaths);
   const setPersistedExpandedPaths = useExplorerStore((s) => s.setExpandedPaths);
@@ -181,8 +251,18 @@ export function FolderTree({ root }: { root: string }) {
     items.length = count;
     return items;
   }, [persistedExpandedPaths, root]);
-  const setExpandedItems = useCallback<SetStateFn<string[]>>(
-    (updater) => {
+  // 「全部展开」批量期(perf):headless-tree 的 expandAll 逐目录 item.expand(),每步都把整份
+  // expandedItems 经 setExpandedItems 回写;若每步都分区 + 写 store(重建 Set)+ 触发重渲
+  // (expandedItems 换新数组 → setConfig 再 rebuild 一次)→ 展开 D 个目录累计 O(D²)。
+  // 批量期内只把库给的最新数组暂存在 latest,批末一次写 store。渲染期 config.state 也必须
+  // 用 latest(与库内部 state 同一引用),否则重渲时 setConfig 会拿 store 旧值覆盖库内部
+  // 已展开的状态。depth 计数允许多次点击重叠,最后一个结束才落盘。
+  const expandBatchRef = useRef<{ depth: number; latest: string[] | null }>({
+    depth: 0,
+    latest: null,
+  });
+  const writeInRootExpanded = useCallback(
+    (updater: string[] | ((old: string[]) => string[])) => {
       // expandedPaths 是跨 root 共享的单一 Set;headless-tree 只看到 isWithinRoot
       // 过滤后的 in-root 子集,回写也只给 in-root 路径。直接整体替换会丢掉其它 root
       // 的展开状态(切 root 后第一次折叠/展开即触发)。保留 out-of-root 段,只更新
@@ -221,14 +301,88 @@ export function FolderTree({ root }: { root: string }) {
     },
     [setPersistedExpandedPaths, root],
   );
+  const setExpandedItems = useCallback<SetStateFn<string[]>>(
+    (updater) => {
+      const batch = expandBatchRef.current;
+      if (batch.depth > 0) {
+        batch.latest =
+          typeof updater === 'function' ? updater(batch.latest ?? expandedItems) : updater;
+        return;
+      }
+      writeInRootExpanded(updater);
+    },
+    [expandedItems, writeInRootExpanded],
+  );
+  const expandAll = useCallback(
+    (tree: TreeInstance<FileEntry>): void => {
+      const batch = expandBatchRef.current;
+      batch.depth += 1;
+      void tree.expandAll().finally(() => {
+        batch.depth -= 1;
+        if (batch.depth > 0) return;
+        const latest = batch.latest;
+        batch.latest = null;
+        if (latest) writeInRootExpanded(latest);
+      });
+    },
+    [writeInRootExpanded],
+  );
+  // 批量期 render 用库内部同一引用(ref 读取:库每步 rebuildTree 都会触发重渲),批外用 store 派生值。
+  const treeExpandedItems = expandBatchRef.current.latest ?? expandedItems;
 
+  // 每目录刷新代际:同目录并发刷新只应用最后发起的那次 listDir(迟到的旧结果不覆盖新结果);
+  // 卸载时清空 → 在途结果全部作废。编号取组件级单调序号(不按目录从 1 重新计数):完成后会删掉该目录
+  // 的登记,若按 `旧值 + 1` 取号,删号后新发起的刷新会与仍在途的更早请求撞号 → 旧快照被应用、新结果被丢。
+  const refreshGenRef = useRef<Map<string, number>>(new Map());
+  const refreshSeqRef = useRef(0);
+  useEffect(() => {
+    const gens = refreshGenRef.current;
+    return () => gens.clear();
+  }, []);
   const refreshParent = useCallback((parentPath: string) => {
-    try {
-      const parentItem = treeRef.current?.getItemInstance(parentPath);
-      parentItem?.invalidateChildrenIds();
-    } catch {
-      treeRef.current?.rebuildTree();
-    }
+    const t = treeRef.current;
+    // perf:子项从未加载过的非 root 目录跳过(见 isUnloadedNonRootDir);root 永远刷新。
+    if (t === null || isUnloadedNonRootDir(t, parentPath)) return;
+    const invalidate = (): void => {
+      try {
+        void t.getItemInstance(parentPath).invalidateChildrenIds();
+      } catch {
+        t.rebuildTree();
+      }
+    };
+    // perf:原子保存(本应用 / 外部编辑器写 tmp 再 rename)只产生 rename 事件,但目录列表不变。listDir
+    // 便宜,贵的是 headless-tree 整树 rebuild → 先 listDir 与缓存子项比较(sameTreeChildren),相同则
+    // 什么都不做;不同则直接用这次结果写缓存并 rebuild 一次(同 asyncDataLoader 的 loadChildrenIds,
+    // 不二次 listDir)。listDir 失败 / 缓存已失效 → 走原 invalidate 路径(原语义)。
+    const gens = refreshGenRef.current;
+    const gen = ++refreshSeqRef.current;
+    gens.set(parentPath, gen);
+    void (async () => {
+      let entries: readonly FileEntry[] | null = null;
+      try {
+        const r = await coApi.fs.listDir(parentPath);
+        if (r.ok) entries = r.data;
+      } catch {
+        // 落到 invalidate(原路径自带失败告警)
+      }
+      if (gens.get(parentPath) !== gen) return; // 已被更新的刷新取代,或已卸载
+      gens.delete(parentPath);
+      const data = t.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current;
+      const cachedIds = data.childrenIds?.[parentPath];
+      // 缓存缺失 = 该目录被别处 invalidate、正在重新加载 → 原路径会复用那次在途加载。
+      if (entries === null || cachedIds === undefined) {
+        invalidate();
+        return;
+      }
+      if (sameTreeChildren(cachedIds, data.itemData, entries)) return;
+      const children = buildTreeChildrenWithData(entries);
+      for (const c of children) data.itemData[c.id] = c.data;
+      try {
+        t.getItemInstance(parentPath).updateCachedChildrenIds(children.map((c) => c.id));
+      } catch {
+        t.rebuildTree();
+      }
+    })();
   }, []);
 
   // 为「单批移动/复制到同一 destDir」建一个唯一名 picker:listDir 一次拿现有
@@ -239,7 +393,8 @@ export function FolderTree({ root }: { root: string }) {
   // `${stem} copy${ext}` / `${stem} copy 2${ext}` / ... 上限 100 次,兜底加时间戳。
   const makeUniqueDestPicker = useCallback(
     async (destDir: string): Promise<(name: string) => string> => {
-      const r = await coApi.fs.listDir(destDir);
+      // perf:只用 e.name → withStats:false,main 不逐项 lstat(大目录粘贴/拖入时显著)。
+      const r = await coApi.fs.listDir(destDir, { withStats: false });
       const existing = new Set<string>();
       if (r.ok) {
         for (const e of r.data) existing.add(e.name);
@@ -329,6 +484,7 @@ export function FolderTree({ root }: { root: string }) {
         },
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
+          suppressNextDropScroll();
           // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
           void runBatchTransfer(
             'move',
@@ -341,12 +497,22 @@ export function FolderTree({ root }: { root: string }) {
         },
         // 外部 OS 文件 drop 到具体 row → 走与容器 onDrop 同一套 performDrop
         onDropForeign: (dataTransfer, destDir) => {
+          suppressNextDropScroll();
           void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent);
         },
-        expandedItems,
+        expandedItems: treeExpandedItems,
         setExpandedItems,
+        scrollToItem,
       }),
-    [expandedItems, refreshParent, root, runBatchTransfer, setExpandedItems],
+    [
+      treeExpandedItems,
+      refreshParent,
+      root,
+      runBatchTransfer,
+      setExpandedItems,
+      scrollToItem,
+      suppressNextDropScroll,
+    ],
   );
   const tree = useTree<FileEntry>(config);
   treeRef.current = tree;
@@ -355,6 +521,7 @@ export function FolderTree({ root }: { root: string }) {
   // explorer.showHiddenFiles=false(默认)过滤 . 开头的 entries(.git / .env 等)
   const showHidden = useSettingValue<boolean>('explorer.showHiddenFiles', false);
   const items = useMemo(() => selectVisibleTreeItems(allItems, showHidden), [allItems, showHidden]);
+  renderedItemsRef.current = items;
 
   // 多选集合数据源 = headless-tree selectionFeature 真实状态。
   // 不再读 explorer.store.selectedPaths(从未被同步,留 cleanup 单独提交)。
@@ -378,18 +545,53 @@ export function FolderTree({ root }: { root: string }) {
 
   // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
   // 跟随 headless-tree 受控展开集合,同步到 main 进程 watcher。
-  const expandedPaths = useMemo(() => new Set(expandedItems), [expandedItems]);
-  useFsWatcher(expandedPaths, (changedPath) => {
-    refreshParent(changedPath);
-  });
+  // 用 treeExpandedItems(树实际展开集合)而非 store 派生的 expandedItems:「全部展开」批量期
+  // store 批末才写,若 watcher 跟 store,批中新展开目录整批都没 watcher;Linux watcher 非递归,
+  // listDir 之后、批末之前的变化永久漏掉。选派生而非批末补偿 invalidation:后者要对所有新目录
+  // 再 listDir 一遍(IO 翻倍),且补偿前的窗口仍不可观察。批外两者同一引用,行为不变。
+  const expandedPaths = useMemo(() => new Set(treeExpandedItems), [treeExpandedItems]);
+  // perf(侧栏保活):ExplorerSidebar 关闭时文件树保持挂载但隐藏,watcher 仍在(树不陈旧)。隐藏期间
+  // 用户看不见,dir-changed 不立即 invalidate→listDir,只记脏目录(未加载的目录照 refreshParent 规则
+  // 直接忽略),再次显示时批量刷新。集合按路径去重,上限即已加载目录数。
+  const visible = useContext(ExplorerVisibleContext);
+  const dirtyWhileHiddenRef = useRef<Set<string>>(new Set());
+  useFsWatcher(
+    expandedPaths,
+    (changedPath) => {
+      if (!visible) {
+        if (!isUnloadedNonRootDir(treeRef.current, changedPath)) {
+          dirtyWhileHiddenRef.current.add(changedPath);
+        }
+        return;
+      }
+      refreshParent(changedPath);
+    },
+    root,
+  );
+  useEffect(() => {
+    if (!visible) return;
+    const dirty = dirtyWhileHiddenRef.current;
+    if (dirty.size === 0) return;
+    dirtyWhileHiddenRef.current = new Set();
+    for (const p of dirty) refreshParent(p);
+  }, [visible, refreshParent]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 侧栏保活:隐藏(display:none)期间滚动容器没有布局盒,浏览器可能把 scrollTop 归零;记下可见时
+  // 最后的滚动位置,再次显示时(绘制前)恢复。
+  const lastScrollTopRef = useRef(0);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!visible || !el) return;
+    if (el.scrollTop !== lastScrollTopRef.current) el.scrollTop = lastScrollTopRef.current;
+  }, [visible]);
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => FILE_ROW_HEIGHT,
     overscan: 8,
   });
+  virtualizerRef.current = virtualizer;
 
   const treeApi = useMemo(() => ({ invalidateChildrenIds: refreshParent }), [refreshParent]);
   const mutateDeps = useMemo(() => ({ fs: coApi.fs }), []);
@@ -489,7 +691,7 @@ export function FolderTree({ root }: { root: string }) {
           // R6 完整性批判。editor tab 关闭与剪贴板 prune 只对 result.removed 做,在
           // trashItemsAndCleanup 一处完成(已测)。
           const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, {
-            removePath: (p) => useEditorStore.getState().removePath(p),
+            removePaths: (ps) => useEditorStore.getState().removePaths(ps),
             prune: (removed) => useExplorerClipboardStore.getState().prune(removed),
           });
           if (!result.ok) {
@@ -568,7 +770,39 @@ export function FolderTree({ root }: { root: string }) {
       setHoverTarget(null);
     }
   };
+  // OS 文件 drop 一律在捕获阶段复位拖拽态:落在具体行上时 headless-tree 行 onDrop 先 stopPropagation,
+  // 下面冒泡阶段的 handleDrop 收不到;浏览器 drop 后也不再派发 dragleave → 不在此复位则 DropOverlay
+  // 残留、dragDepth 不归零(下次拖离不消失)。
+  // 落点必须在复位前算好存 ref:React 19 根容器的捕获 / 冒泡是两个原生监听,drop 为离散事件,这里的
+  // setState 在 microtask 中 flush,真实浏览器在两个监听回调之间做 microtask checkpoint → 冒泡阶段
+  // handleDrop 已是复位后的重渲闭包(hoverTarget === null),再从闭包解析会退化成 root。
+  // 记录松手所在的已渲染行(供 suppressNextDropScroll 把焦点放回该行);不在行上则 null。
+  // 用 contains 而非 instanceof:dockview 弹出窗口里的节点属另一 realm。
+  const findRenderedRowId = (node: EventTarget | null): string | null => {
+    if (!node) return null;
+    for (const v of virtualizer.getVirtualItems()) {
+      const it = items[v.index];
+      if (it?.getElement()?.contains(node as Node)) return it.getId();
+    }
+    return null;
+  };
+  const handleDropCapture = (e: React.DragEvent) => {
+    dropRowIdRef.current = findRenderedRowId(e.target);
+    if (!hasFiles(e.dataTransfer)) return;
+    foreignDropTargetRef.current = resolveDropTarget(hoverTarget, root);
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    setHoverTarget(null);
+  };
   const handleDrop = async (e: React.DragEvent) => {
+    // OS 文件 drop 落在 Explorer 内(空白处 / [role=tree] 容器)即由本面板消费:stopPropagation,别再冒泡到
+    // App 的 window 级 drop 监听 —— 否则拖文件夹进文件树空白处,刚复制进 root,窗口 workspace 又被切到源文件夹。
+    // 行级 drop 已由 headless-tree stopPropagation。不能改由 App 监听判 defaultPrevented:dockview 根
+    // Droptarget 的 drop 无条件 preventDefault,那样会打断「拖文件夹到 dock 区域打开为 workspace」。
+    if (hasFiles(e.dataTransfer)) e.stopPropagation();
+    // headless-tree 容器 [role=tree] 的 onDrop 已处理(落点 root)时只 preventDefault 不 stopPropagation:
+    // 再处理一次 = 同一批文件写两次 / 重复 move。行级 drop 已 stopPropagation,空白处无人 preventDefault。
+    if (e.defaultPrevented) return;
     // 内部 drag drop 到空白(root level)— headless-tree row onDrop 接不到 root row
     if (!hasFiles(e.dataTransfer)) {
       const dnd = tree.getState().dnd;
@@ -589,10 +823,9 @@ export function FolderTree({ root }: { root: string }) {
       return;
     }
     e.preventDefault();
-    dragDepthRef.current = 0;
-    setDragActive(false);
-    const target = resolveDropTarget(hoverTarget, root);
-    setHoverTarget(null);
+    // 拖拽态已在 handleDropCapture 复位;落点取其复位前存下的值(读后清空)
+    const target = foreignDropTargetRef.current ?? resolveDropTarget(hoverTarget, root);
+    foreignDropTargetRef.current = null;
     await dropForeignFilesInto(e.dataTransfer.items, target, coApi.fs, refreshParent);
   };
 
@@ -602,13 +835,14 @@ export function FolderTree({ root }: { root: string }) {
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
+      onDropCapture={handleDropCapture}
       onDrop={handleDrop}
     >
       <ExplorerHeader
         root={root}
         onExpandAll={() => {
-          // 异步,大目录会触发大量 listDir;用户主动行为,不防抖
-          void tree.expandAll();
+          // 异步,大目录会触发大量 listDir;用户主动行为,不防抖。store 回写批末合并一次。
+          expandAll(tree);
         }}
         onCollapseAll={() => tree.collapseAll()}
         onRefresh={() => {
@@ -650,7 +884,13 @@ export function FolderTree({ root }: { root: string }) {
         hasClipboard={hasClipboard}
         pluginItems={pluginMenuItems}
       >
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto bg-canvas">
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-auto bg-canvas"
+          onScroll={(e) => {
+            if (visible) lastScrollTopRef.current = e.currentTarget.scrollTop;
+          }}
+        >
           {items.length === 0 ? (
             <div className="p-4 text-xs text-fg-dim">{tt('panels.explorer.loading_or_empty')}</div>
           ) : (
@@ -671,19 +911,15 @@ export function FolderTree({ root }: { root: string }) {
                   <FileRow
                     key={item.getId()}
                     item={item}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${vRow.start}px)`,
-                    }}
+                    {...readFileRowState(item, tree)}
+                    start={vRow.start}
                     selectedPaths={selectedPaths}
                     rootPath={root}
                     contextActions={contextActions}
-                    onHoverDropTarget={setHoverTarget}
+                    onHoverDropTarget={reportHoverTarget}
                     isDropHover={dragActive && hoverTarget?.path === item.getId()}
                     onFileOpen={handleFileOpen}
+                    onFileIntent={warmEditorEngineFor}
                     decorators={decorators}
                     hasClipboard={hasClipboard}
                     pluginMenuItems={pluginMenuItems}

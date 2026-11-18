@@ -29,7 +29,7 @@ afterEach(() => cleanup());
 function setup(readonly: boolean) {
   const onLinkClick = vi.fn();
   const { container } = render(
-    <MilkdownEditor defaultValue="x" readonly={readonly} onLinkClick={onLinkClick} />,
+    <MilkdownEditor tabId="/t.md" defaultValue="x" readonly={readonly} onLinkClick={onLinkClick} />,
   );
   const wrapper = container.querySelector('.overflow-auto') as HTMLElement;
   const a = document.createElement('a');
@@ -90,7 +90,7 @@ describe('Milkdown 链接点击不导航应用窗口', () => {
   it('不在链接上的点击不受影响', () => {
     const onLinkClick = vi.fn();
     const { container } = render(
-      <MilkdownEditor defaultValue="x" readonly onLinkClick={onLinkClick} />,
+      <MilkdownEditor tabId="/t.md" defaultValue="x" readonly onLinkClick={onLinkClick} />,
     );
     const wrapper = container.querySelector('.overflow-auto') as HTMLElement;
 

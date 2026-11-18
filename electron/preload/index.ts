@@ -8,7 +8,19 @@ import { subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
-import { FS_CHANNELS, isFsDirChangedPayload } from '../shared/fs-channels';
+import {
+  DIR_CHANGED_FILES_MAX,
+  FS_CHANNELS,
+  isFsDirChangedPayload,
+  readFsDirChangedChangeOnly,
+  readFsDirChangedFiles,
+  toFsReadFileResult,
+  toFsStatResult,
+  toFsWriteFileResult,
+  type FsFileStat,
+  type FsReadFileData,
+  type FsReadFileResult,
+} from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
@@ -22,6 +34,7 @@ import {
   type IpcPermissionsMap,
   type IpcPermissionRecord,
   type IpcPluginDir,
+  type IpcPluginDirListing,
 } from '../shared/plugins-channels';
 import {
   SHELL_CHANNELS,
@@ -69,6 +82,7 @@ import { pluginFsRaw } from './plugin-fs.preload';
 import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
 import {
   parseContinuoHostnameFromArgv,
+  parseContinuoWindowsBuildFromArgv,
   parseContinuoPackagedFromArgv,
 } from './continuo-meta-parse';
 
@@ -96,6 +110,8 @@ export interface PreloadListDirOptions {
   readonly followSymlinks?: boolean;
   /** perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。 */
   readonly maxFiles?: number;
+  /** 性能:默认 true;false 时不回传 size/mtime/ctime。见 fs/list-dir.ts ListDirOptions.withStats。 */
+  readonly withStats?: boolean;
 }
 
 // 性能 P1:终端输出 'terminal:data' 整窗只挂一个 ipcRenderer listener,按 sessionId
@@ -179,6 +195,8 @@ const api = {
     windowId: ipcRenderer.sendSync(WINDOW_ID_CHANNEL) as number,
     /** 本机 hostname(main 经 additionalArguments 注入;OSC7 acceptedHosts 用)。 */
     hostname: parseContinuoHostnameFromArgv(process.argv),
+    /** Windows 系统 build 号(仅 win32 由 main 注入;其余平台 null)。终端 xterm windowsPty 用。 */
+    windowsBuild: parseContinuoWindowsBuildFromArgv(process.argv),
   },
   explorer: {
     // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown
@@ -193,10 +211,20 @@ const api = {
       options?: PreloadListDirOptions,
     ): Promise<IpcResult<ReadonlyArray<FileEntry>>> =>
       ipcRenderer.invoke(FS_CHANNELS.LIST_DIR, { path, options }),
-    readFile: (path: string): Promise<IpcResult<string>> =>
-      ipcRenderer.invoke(FS_CHANNELS.READ_FILE, { path }),
-    writeFile: (path: string, content: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(FS_CHANNELS.WRITE_FILE, { path, content }),
+    /** data = 文件内容;realPath = leaf 为符号链接时的真实目标(可选,FS_PATH_MAX 与 PATH_STR_MAX 同值). */
+    readFile: async (path: string): Promise<FsReadFileResult> =>
+      toFsReadFileResult(
+        (await ipcRenderer.invoke(FS_CHANNELS.READ_FILE, { path })) as IpcResult<FsReadFileData>,
+        FS_PATH_MAX,
+      ),
+    /** 成功时 data = 写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),供编辑器识别自己保存的回声. */
+    writeFile: async (path: string, content: string): Promise<IpcResult<FsFileStat | undefined>> =>
+      toFsWriteFileResult(
+        (await ipcRenderer.invoke(FS_CHANNELS.WRITE_FILE, { path, content })) as IpcResult<unknown>,
+      ),
+    /** 跟随 symlink 的廉价 stat({ mtimeMs, size, ino });畸形结果映射为失败. */
+    stat: async (path: string): Promise<IpcResult<FsFileStat>> =>
+      toFsStatResult((await ipcRenderer.invoke(FS_CHANNELS.STAT, { path })) as IpcResult<unknown>),
     writeBinary: (path: string, content: Uint8Array): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.WRITE_BINARY, { path, content }),
     rename: (path: string, newName: string): Promise<IpcResult<string>> =>
@@ -221,8 +249,14 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.WATCH, { path }),
     unwatchDir: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.UNWATCH, { path }),
-    /** 订阅目录变更 push 事件;返回 unsubscribe. */
-    onDirChanged: (cb: (path: string) => void): (() => void) => {
+    /**
+     * 订阅目录变更 push 事件;返回 unsubscribe。files:该目录本次变更项名字(可选,
+     * undefined = 未知,按整个目录处理;畸形/超限同样退化为 undefined)。changeOnly:true = 仅内容
+     * 变化、目录列表不变(缺省 / 畸形 → false).
+     */
+    onDirChanged: (
+      cb: (path: string, files?: readonly string[], changeOnly?: boolean) => void,
+    ): (() => void) => {
       // 边界(E173,E168-E172 同族 IPC ingress 纵深防御):fs:dir-changed payload 此前直接 cb(payload.path)。
       // 畸形 IPC payload(null/非对象/path 非字符串/超长)→ preload listener 抛错(null.path),或把非法
       // key 送进 Explorer watcher / external-file-sync(目录刷新异常、debounce Map 污染、外部同步失效)。
@@ -232,7 +266,11 @@ const api = {
           console.warn('[fs] invalid dir-changed payload, dropped', payload);
           return;
         }
-        cb(payload.path);
+        cb(
+          payload.path,
+          readFsDirChangedFiles(payload, DIR_CHANGED_FILES_MAX, FS_PATH_MAX),
+          readFsDirChangedChangeOnly(payload),
+        );
       };
       return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);
     },
@@ -319,8 +357,17 @@ const api = {
     },
   },
   plugins: {
-    listDirs: (): Promise<IpcResult<readonly IpcPluginDir[]>> =>
+    listDirs: (): Promise<IpcResult<readonly IpcPluginDirListing[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
+    /**
+     * perf:激活时按目录名拉 main 源码(列举不再携带),不可用 → null。manifestHash 为列举项令牌,
+     * manifest 已变 → PLUGIN_MANIFEST_CHANGED。
+     */
+    readMainByDir: (dir: string, manifestHash: string): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_MAIN_BY_DIR, { dir, manifestHash }),
+    /** perf:按 manifest.id 只读单个插件目录(热重载用),不存在 → null. */
+    readDirById: (id: string): Promise<IpcResult<IpcPluginDir | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_DIR_BY_ID, { id }),
     readEnabled: (): Promise<IpcResult<readonly string[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
     /** 数据安全:按单 plugin 启用/禁用 delta 写,防多窗口整表 RMW 互相覆盖. */

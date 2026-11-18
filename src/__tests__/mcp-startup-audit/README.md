@@ -30,6 +30,11 @@
 5. **co:// 旧队列优先**:有就绪窗口时依次尝试各就绪窗口排空 pending;旧队列未能全部交付前
    不投递新 URL(新 URL 入队尾,受队列上限约束),保 FIFO 不乱序。
 
+6. **stdio server 不挡建首窗**:冷启动只 await HTTP host(首窗 / PTY env 依赖),stdio socket server 在首窗
+   创建后启动。就绪前「复制 MCP 配置」读到 `{ available:false }` → unavailable;插件 tool 集变更的
+   `tools/list_changed` 就绪前只推 HTTP、就绪后同时推 stdio(取值函数读最新引用);退出清理先等 stdio
+   启动结束再 close。
+
 ## 规范文件
 
 | 文件 | 规则 |
@@ -39,6 +44,7 @@
 | `stdio-queue-cap.spec.ts` | 3 |
 | `startup-check-budget.spec.ts` | 4 |
 | `protocol-fifo-order.spec.ts` | 5 |
+| `stdio-deferred-start.spec.ts` | 6 |
 
 ## stdio 输出背压(终审 P1)
 

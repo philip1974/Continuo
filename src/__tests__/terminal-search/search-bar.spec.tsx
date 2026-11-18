@@ -124,6 +124,24 @@ describe('TerminalSearchBar UI', () => {
     expect(api.prev).toHaveBeenCalledTimes(1);
   });
 
+  it('S4b IME 组合中的 Enter / Escape 不跳转也不关闭;普通 Enter 照常', () => {
+    const api = makeApi();
+    const onClose = vi.fn();
+    const { getByPlaceholderText } = render(
+      <TerminalSearchBar searchApi={api} onClose={onClose} />,
+    );
+    const input = getByPlaceholderText('panels.terminal.search.placeholder');
+
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    expect(api.next).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(api.next).toHaveBeenCalledTimes(1);
+  });
+
   it('S5 option toggles request updated options', () => {
     const api = makeApi();
     const { getByLabelText } = render(
@@ -209,5 +227,28 @@ describe('TerminalSearchBar UI', () => {
     const passed = (api.setTerm as ReturnType<typeof vi.fn>).mock
       .calls[0]![0] as string;
     expect(passed.length).toBe(MAX_SEARCH_QUERY_LEN);
+  });
+
+  // 真实鼠标点关闭:mousedown 默认动作把焦点移到按钮 → 输入框 blur(clearActiveDecoration 会 flush 挂起的
+  // 防抖搜索,同步扫整段 scrollback)→ 之后才 click 关闭。关闭按钮须在 mousedown 阻止焦点转移,让关闭路径
+  // 直接取消挂起搜索,而不是先被 blur 白跑一次。
+  it('鼠标点关闭按钮不经输入框 blur(不 flush 挂起搜索),直接关闭', () => {
+    const api = makeApi({ term: 'err' });
+    const onClose = vi.fn();
+    const { getByPlaceholderText, getByLabelText } = render(
+      <TerminalSearchBar searchApi={api} onClose={onClose} />,
+    );
+    const input = getByPlaceholderText('panels.terminal.search.placeholder');
+    expect(document.activeElement).toBe(input);
+    const closeBtn = getByLabelText('panels.terminal.search.close');
+
+    // 按浏览器默认动作模拟:mousedown 未被 preventDefault → 焦点移到按钮(input blur)
+    const notPrevented = fireEvent.mouseDown(closeBtn);
+    if (notPrevented) closeBtn.focus();
+    fireEvent.mouseUp(closeBtn);
+    fireEvent.click(closeBtn);
+
+    expect(api.clearActiveDecoration).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -34,7 +34,7 @@
 
 ### removeItems(paths, opts, deps, tree)
 - 默认 `opts.trash = true` → 调 `fs.trash(p)`;`trash: false` → 调 `fs.remove(p)`
-- 多路径循环调用,各自结果聚合到 `failures` 数组
+- 多路径有界并发调用(在途 ≤4;outermostPaths 已保证互不包含),各自结果按输入顺序聚合到 `failures` 数组 / `removed`
 - 成功路径的父目录去重后批量 invalidate;失败路径的父不刷
 - 全成功 → `{ ok: true, removed }`;有失败 → `{ ok: false, failures: [{path, code, message}], removed }`
 - `removed` 只列实际删掉的(最外层)路径;调用方的成功后清理(关 editor tab、剪贴板 prune)只基于它

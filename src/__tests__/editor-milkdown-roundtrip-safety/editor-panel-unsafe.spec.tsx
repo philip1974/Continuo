@@ -54,6 +54,14 @@ vi.mock('../../notifications/notify', () => ({
   notify: { error: vi.fn() },
 }));
 
+// perf E2:EditorPanel 内编辑引擎 lazy 加载 → render 后须等引擎模块解析、Suspense 重试完成再断言。
+async function flushLazyEditors() {
+  await act(async () => {
+    await import('../../panels/Editor/CodeEditor');
+    await import('../../panels/Editor/MilkdownEditor');
+  });
+}
+
 const unsafeContent = '---\nid: demo\n---\n# Title\n';
 
 beforeEach(() => {
@@ -80,8 +88,9 @@ afterEach(() => {
 });
 
 describe('EditorPanel unsafe markdown routing', () => {
-  it('renders CodeEditor and banner even when requested mode is edit', () => {
+  it('renders CodeEditor and banner even when requested mode is edit', async () => {
     const { container } = render(<EditorPanel />);
+    await flushLazyEditors();
 
     expect(screen.getByTestId('code-editor')).not.toBeNull();
     expect(screen.queryByTestId('milkdown-editor')).toBeNull();
@@ -104,9 +113,10 @@ describe('EditorPanel unsafe markdown routing', () => {
     );
   });
 
-  it('renders read-only Milkdown without banner in preview mode, frontmatter as yaml block', () => {
+  it('renders read-only Milkdown without banner in preview mode, frontmatter as yaml block', async () => {
     useEditorStore.setState({ mode: 'preview' });
     const { container } = render(<EditorPanel />);
+    await flushLazyEditors();
 
     const milkdown = screen.getByTestId('milkdown-editor');
     expect(milkdown.getAttribute('data-readonly')).toBe('true');
@@ -118,7 +128,7 @@ describe('EditorPanel unsafe markdown routing', () => {
     expect(useEditorStore.getState().tabs[0]?.content).toBe(unsafeContent);
   });
 
-  it('opts only the confirmed tab into Milkdown edit via "switch anyway"', () => {
+  it('opts only the confirmed tab into Milkdown edit via "switch anyway"', async () => {
     const other = '/work/other.md';
     useEditorStore.setState((s) => ({
       mode: 'source',
@@ -134,6 +144,7 @@ describe('EditorPanel unsafe markdown routing', () => {
       ],
     }));
     render(<EditorPanel />);
+    await flushLazyEditors();
 
     fireEvent.click(
       screen.getByRole('radio', { name: t('panels.editor.mode.edit') }),
@@ -144,6 +155,7 @@ describe('EditorPanel unsafe markdown routing', () => {
         name: t('panels.editor.milkdownUnsafe.switchAnyway'),
       }),
     );
+    await flushLazyEditors();
 
     const milkdown = screen.getByTestId('milkdown-editor');
     expect(milkdown.getAttribute('data-readonly')).toBe('false');
@@ -152,6 +164,7 @@ describe('EditorPanel unsafe markdown routing', () => {
     act(() => {
       useEditorStore.getState().switchTab(other);
     });
+    await flushLazyEditors();
     expect(screen.queryByTestId('milkdown-editor')).toBeNull();
     expect(screen.getByTestId('code-editor')).not.toBeNull();
   });

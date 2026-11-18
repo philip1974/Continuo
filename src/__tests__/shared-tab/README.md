@@ -36,5 +36,5 @@ active 时 title 与底部下划线指示条都挂 motion layoutId(panelTitleLay
 
 ### 动画 layoutId
 
-- active=true → motion.span title 挂 layoutId、底部指示条挂 layoutId
+- active=true → m.span title 挂 layoutId、底部指示条挂 layoutId
 - active=false → 普通 span,不挂指示条

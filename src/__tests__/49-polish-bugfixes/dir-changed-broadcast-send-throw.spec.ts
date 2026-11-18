@@ -3,6 +3,8 @@
 // "Object has been destroyed":(1)中断循环使后续窗口漏收 DIR_CHANGED,Explorer/外部同步停旧树;
 // (2)在 fs.watch 异步事件回调里成主进程未捕获异常。修复:每个窗口 send 独立 try/catch。
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type FakeWin = {
@@ -54,5 +56,73 @@ describe('race(R66) · fs broadcastDirChanged 单窗口 send 抛错不中断广�
     expect(healthy.webContents.send).toHaveBeenCalledWith(FS_CHANNELS.DIR_CHANGED, {
       path: '/some/dir',
     });
+  });
+});
+
+// 性能(审计 #1):生产 watch 回调经 queueDirChangedBroadcast 入队,同 tick 内多个 recursive 祖先
+// watcher 报告的同一 changedPath 只向每个窗口发一次 DIR_CHANGED。
+describe('perf · queueDirChangedBroadcast 同 tick 同路径合并广播', () => {
+  it('同 tick 重复路径 → 每窗口每路径只 send 一次', async () => {
+    const w = makeWin();
+    mocks.windows = [w];
+    const { queueDirChangedBroadcast } = await import('../../../electron/main/ipc/fs.ipc');
+    const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
+
+    queueDirChangedBroadcast('/r/a/b');
+    queueDirChangedBroadcast('/r/a/b');
+    queueDirChangedBroadcast('/r/a/b');
+    queueDirChangedBroadcast('/r/c');
+    await new Promise((r) => setImmediate(r));
+
+    expect(w.webContents.send.mock.calls).toEqual([
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/a/b' }],
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/c' }],
+    ]);
+  });
+
+  it('同 tick 带文件名 → payload 携带去重后的 files;缺 filename 的目录不带 files 字段', async () => {
+    const w = makeWin();
+    mocks.windows = [w];
+    const { queueDirChangedBroadcast } = await import('../../../electron/main/ipc/fs.ipc');
+    const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
+
+    queueDirChangedBroadcast('/r/a', 'x.md');
+    queueDirChangedBroadcast('/r/a', 'x.md');
+    queueDirChangedBroadcast('/r/b', 'y.md');
+    queueDirChangedBroadcast('/r/b');
+    await new Promise((r) => setImmediate(r));
+
+    expect(w.webContents.send.mock.calls).toEqual([
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/a', files: ['x.md'] }],
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/b' }],
+    ]);
+  });
+
+  // 性能:同 tick 该目录所有回调都是 'change' → payload 带 changeOnly:true;否则不带该字段(与旧版逐字一致)。
+  it('同 tick 全为 change → payload 带 changeOnly:true;含 rename 的目录不带', async () => {
+    const w = makeWin();
+    mocks.windows = [w];
+    const { queueDirChangedBroadcast } = await import('../../../electron/main/ipc/fs.ipc');
+    const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
+
+    queueDirChangedBroadcast('/r/a', 'log.txt', 'change');
+    queueDirChangedBroadcast('/r/b', 'x.md', 'change');
+    queueDirChangedBroadcast('/r/b', 'y.md', 'rename');
+    await new Promise((r) => setImmediate(r));
+
+    expect(w.webContents.send.mock.calls).toEqual([
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/a', files: ['log.txt'], changeOnly: true }],
+      [FS_CHANNELS.DIR_CHANGED, { path: '/r/b', files: ['x.md', 'y.md'] }],
+    ]);
+  });
+
+  it('WATCH handler 的 watcher 回调走 queueDirChangedBroadcast(非逐次直接广播)', () => {
+    const src = readFileSync(
+      join(__dirname, '..', '..', '..', 'electron', 'main', 'ipc', 'fs.ipc.ts'),
+      'utf-8',
+    );
+    const call = src.slice(src.indexOf('watcherPool.watch('), src.indexOf('ownerId,', src.indexOf('watcherPool.watch(')));
+    expect(call).toContain('queueDirChangedBroadcast');
+    expect(call).not.toContain('broadcastDirChanged');
   });
 });

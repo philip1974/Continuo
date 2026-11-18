@@ -199,6 +199,22 @@ describe('usePickerList', () => {
     expect(onEnter).toHaveBeenCalledTimes(1);
   });
 
+  it('IME 组合中的 Enter / 方向键(isComposing 或 keyCode 229)→ 不执行、不移动、不拦默认;普通 Enter 照常', () => {
+    const moveSelection = vi.fn();
+    const onEnter = vi.fn();
+    const { getByTestId } = render(
+      <Harness count={5} selectedIndex={2} moveSelection={moveSelection} onEnter={onEnter} />,
+    );
+    const input = getByTestId('input');
+    expect(fireEvent.keyDown(input, { key: 'Enter', isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true })).toBe(true);
+    expect(onEnter).not.toHaveBeenCalled();
+    expect(moveSelection).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onEnter).toHaveBeenCalledWith(2);
+  });
+
   it('count 变化 → clampSelection;selectedIndex 变化 → scrollToIndex(空列表不滚)', () => {
     const clampSelection = vi.fn();
     const { rerender } = render(

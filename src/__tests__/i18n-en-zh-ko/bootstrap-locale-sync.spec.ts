@@ -100,6 +100,7 @@ vi.mock('@/plugins/Plugin', () => ({
 vi.mock('@/plugins/PluginManager', () => ({
   PluginManager: class PluginManager {
     init = vi.fn(async () => undefined);
+    whenScanned = vi.fn(async () => undefined);
     reload = vi.fn(async () => undefined);
   },
   setUserPluginManager: mocks.setUserPluginManager,

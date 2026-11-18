@@ -118,6 +118,53 @@ export function ensureWindowEntry(
   return entry;
 }
 
+/**
+ * explorer.json windows[] 的段数上限(LRU:超出时摘最旧的 closed 段,活跃窗永不摘)。
+ * 此前为 Infinity(topic-08 预留「先观察后裁剪」),真机已累积到 100+ 段,每次 layout/explorer 写都
+ * 全量 parse+校验+stringify。取 64 = 启动恢复的候选检查预算 MAX_RESTORE_CHECKS:恢复最多看前 64 个
+ * 候选段,更多的历史段本就不会被恢复。nextWindowSeq 是独立单调计数器,摘段不会让 seq 被复用。
+ */
+export const MAX_PERSISTED_WINDOW_SEGMENTS = 64;
+
+/** 本进程启动时刻(模块加载时取一次)。 */
+const PROCESS_BOOT_MS = Date.now();
+
+/**
+ * LRU 排序键:缺 lastClosedAt 视为「本进程启动时关闭」(PROCESS_BOOT_MS)。lastClosedAt 只在窗口 closed
+ * 时写,而退出流程里那次写是 void 异步、app.quit 不等,崩溃更不写 → 缺时间戳的段多半是「上次会话仍开着」
+ * 的窗口:按 0(最旧)排会在启动收敛 / 首次关窗时最先被摘;按 +Infinity(永远最新)排则跨启动永不老化,
+ * 本次运行真正关闭、带时间戳的段反而先被摘。取启动时刻:比所有历史时间戳新(启动收敛保留它们),又比本次
+ * 运行里关闭的段旧。缺时间戳的段之间按数组顺序稳定处理(Array.prototype.sort 稳定),段数始终有界。
+ */
+function lruClosedAt(w: WindowEntryV3): number {
+  return w.lastClosedAt ?? PROCESS_BOOT_MS;
+}
+
+/**
+ * 关窗写入的 lastClosedAt:不早于本进程启动时刻。启动后墙钟回拨(NTP 校正 / 虚拟机恢复)时,本次运行
+ * 关闭的段不得排到缺时间戳段(按启动时刻排)之前被先摘。
+ */
+export function closedAtNow(): number {
+  return Math.max(Date.now(), PROCESS_BOOT_MS);
+}
+
+/**
+ * 给非保护且缺 lastClosedAt 的段补写 PROCESS_BOOT_MS 并随本次写盘落盘。缺失值若不落盘,每次启动都会被
+ * 重算成当次启动时刻、永不老化:上一次运行里正常关闭(带时间戳)的段反而总先被摘。补写后排序键固定,
+ * 从下次启动起按真实先后老化。保护段(活跃 / 关闭中 / seq 0)不写。
+ */
+export function stampMissingClosedAt(
+  payload: ExplorerPayloadV3,
+  protectedSeqs: ReadonlySet<number>,
+): void {
+  for (const w of payload.windows) {
+    // schema 允许 null(与 lruClosedAt 的 ?? 一致视为缺失)。
+    if (w.lastClosedAt == null && !protectedSeqs.has(w.windowSeq)) {
+      w.lastClosedAt = PROCESS_BOOT_MS;
+    }
+  }
+}
+
 export function pruneLRUClosed(
   payload: ExplorerPayloadV3,
   maxClosed: number,
@@ -136,7 +183,7 @@ export function pruneLRUClosed(
       if (closed === null) {
         closed = new Array<WindowEntryV3>(payload.windows.length - scanned);
       }
-      const closedAt = w.lastClosedAt ?? 0;
+      const closedAt = lruClosedAt(w);
       if (closedAt < prevClosedAt) closedSorted = false;
       prevClosedAt = closedAt;
       closed[closedCount++] = w;
@@ -146,7 +193,8 @@ export function pruneLRUClosed(
   if (closed === null) return;
   closed.length = closedCount;
   if (closedCount > 1 && !closedSorted) {
-    closed.sort((a, b) => (a.lastClosedAt ?? 0) - (b.lastClosedAt ?? 0));
+    // 缺时间戳的段键相同(PROCESS_BOOT_MS)→ 稳定排序保持数组顺序。
+    closed.sort((a, b) => lruClosedAt(a) - lruClosedAt(b));
   }
 
   const toRemove = payload.windows.length - maxClosed; // > 0:函数开头已保证 length > maxClosed
@@ -282,7 +330,7 @@ async function preserveCorruptExplorer(
 const MAX_EXPLORER_FILE_BYTES = 16 * 1024 * 1024;
 
 /**
- * stat.size 预检的 capped 读取(单一来源,loadExplorer + migrate 二次读共用,避免漂移)。
+ * stat.size 预检的 capped 读取(单一来源,loadExplorer 唯一入口;迁移复用其 isV3 判定,不再二次读)。
  * - ENOENT(stat 或 TOCTOU 下 readFile)→ null(首次启动语义)
  * - size 超上限 → throw(同 EACCES「当前态未知」:绝不返 null 触发 `?? default` 覆盖,
  *   也不进 readFile/JSON.parse/preserveCorrupt 整块读)
@@ -349,6 +397,16 @@ export function dedupeWindowsBySeq(payload: ExplorerPayloadV3): ExplorerPayloadV
 export async function loadExplorer(
   filePath: string,
 ): Promise<ExplorerPayloadV3 | null> {
+  return (await loadExplorerWithFormat(filePath))?.payload ?? null;
+}
+
+/**
+ * loadExplorer 的内部形态:额外报告磁盘原文是否**已是**合法 v3(`isV3`)。启动迁移据此判断是否需要
+ * 回写,不必再读 + 解析 + 校验一次(性能:冷启动关键路径)。
+ */
+async function loadExplorerWithFormat(
+  filePath: string,
+): Promise<{ payload: ExplorerPayloadV3; isV3: boolean } | null> {
   // 只有「文件不存在」(ENOENT)才是首次启动语义 → null(调用方用默认值)。其它读错误
   // (EACCES/EIO/too-large 等)是「当前态未知」:绝不能当 null —— 否则调用方 `?? default` /
   // mergeWritableIntoFull(null,...) 后 atomicWriteJson 会用默认/局部快照覆盖一个**仍存在但
@@ -360,12 +418,17 @@ export async function loadExplorer(
   try {
     const parsed = JSON.parse(raw);
     const v3 = ExplorerSchemaV3.safeParse(parsed);
-    if (v3.success) return dedupeWindowsBySeq(v3.data);
+    if (v3.success) return { payload: dedupeWindowsBySeq(v3.data), isV3: true };
     const v2 = ExplorerSchema.safeParse(parsed);
-    if (v2.success) return dedupeWindowsBySeq(migrateV2ToV3(v2.data));
+    if (v2.success) {
+      return { payload: dedupeWindowsBySeq(migrateV2ToV3(v2.data)), isV3: false };
+    }
     const v1 = ExplorerV1Schema.safeParse(parsed);
     if (v1.success) {
-      return dedupeWindowsBySeq(migrateV2ToV3(migrateV1ToV2(v1.data)));
+      return {
+        payload: dedupeWindowsBySeq(migrateV2ToV3(migrateV1ToV2(v1.data))),
+        isV3: false,
+      };
     }
   } catch {
     // JSON.parse 抛错 → 落到下面的损坏保留
@@ -392,6 +455,63 @@ export async function saveExplorer(
   }
 
   ExplorerSchemaV3.parse(payload);
+}
+
+/**
+ * 启动收敛:既有 explorer.json 段数超限时裁到上限(未超限 / 文件缺失 / 损坏 / 不可读 → 不写)。
+ * 运行期只在关窗时裁剪,不做这一步的话超长文件要等到第一次关窗才收敛,期间每次写仍全量处理。
+ */
+export async function pruneExplorerFileWindows(
+  explorerFile: string,
+  maxSegments: number,
+  activeSeqs: ReadonlySet<number>,
+): Promise<void> {
+  await withExplorerFileMutex(async () => {
+    const payload = await loadExplorer(explorerFile);
+    if (payload !== null) await prunePayloadAndWrite(explorerFile, payload, maxSegments, activeSeqs);
+  });
+}
+
+/** 段数收敛核心(调用方须持 explorer 文件锁):未超限 / 裁剪无变化 → 不写。 */
+async function prunePayloadAndWrite(
+  explorerFile: string,
+  payload: ExplorerPayloadV3,
+  maxSegments: number,
+  activeSeqs: ReadonlySet<number>,
+): Promise<void> {
+  if (payload.windows.length <= maxSegments) return;
+  const before = payload.windows.length;
+  pruneLRUClosed(payload, maxSegments, activeSeqs);
+  if (payload.windows.length === before) return;
+  await atomicWriteJson(explorerFile, payload);
+}
+
+/**
+ * 启动建窗前的 explorer.json 准备:v3 迁移 + 超长段数收敛,在**同一次**文件锁内共用**一次**加载。
+ * 性能(冷启动关键路径):此前 migrate 读一次、判断是否已是 v3 再读一次、prune 又读一次 = 3 次
+ * 读 + JSON.parse + Zod。语义与「先 migrateExplorerFileToV3 再 pruneExplorerFileWindows」一致:
+ * 迁移的数据安全分支(损坏 → .corrupt 快照且不覆盖 / 存在性未知 → 不写不删)原样保留,迁移读错误
+ * 照旧抛出;收敛失败只告警不抛(原调用点 `.catch(warn)` 语义)。
+ */
+export async function prepareExplorerFileForBoot(
+  explorerFile: string,
+  legacyLayoutFile: string,
+  maxSegments: number,
+  activeSeqs: ReadonlySet<number>,
+): Promise<void> {
+  await withExplorerFileMutex(async () => {
+    const migrated = await migrateExplorerFile(explorerFile, legacyLayoutFile);
+    try {
+      // MIGRATE_UNKNOWN(存在性无法确认)时迁移没读文件 → 收敛按原逻辑自己加载一次。
+      const payload =
+        migrated === MIGRATE_UNKNOWN ? await loadExplorer(explorerFile) : migrated;
+      if (payload !== null) {
+        await prunePayloadAndWrite(explorerFile, payload, maxSegments, activeSeqs);
+      }
+    } catch (err) {
+      console.warn('[boot] explorer window segment prune skipped', err);
+    }
+  });
 }
 
 export async function allocateWindowSeq(explorerFile: string): Promise<number> {
@@ -447,6 +567,20 @@ export async function migrateExplorerFileToV3(
   explorerFile: string,
   legacyLayoutFile: string,
 ): Promise<void> {
+  await migrateExplorerFile(explorerFile, legacyLayoutFile);
+}
+
+const MIGRATE_UNKNOWN = Symbol('migrate-unknown');
+
+/**
+ * 迁移核心。返回迁移后磁盘上 explorer.json 对应的 payload(供启动收敛复用,免重读):
+ * - null:文件不存在 / 损坏(收敛无事可做,与 loadExplorer 返回 null 同)
+ * - MIGRATE_UNKNOWN:存在性无法确认、迁移跳过且未读文件
+ */
+async function migrateExplorerFile(
+  explorerFile: string,
+  legacyLayoutFile: string,
+): Promise<ExplorerPayloadV3 | null | typeof MIGRATE_UNKNOWN> {
   let explorerExists: boolean;
   let legacyExists: boolean;
   try {
@@ -457,39 +591,33 @@ export async function migrateExplorerFileToV3(
     // 删 legacy」分支(否则把不可读但存在的 explorer.json 用默认覆盖、删旧 layout,丢
     // recentRoots/pinned/window 段,codex P1)。boot fail-safe:不写不删,下次启动重试。
     console.warn('[boot] explorer migrate skipped: cannot stat files', err);
-    return;
+    return MIGRATE_UNKNOWN;
   }
 
-  if (!explorerExists && !legacyExists) return;
+  if (!explorerExists && !legacyExists) return null;
 
   if (!explorerExists && legacyExists) {
-    await atomicWriteJson(explorerFile, defaultExplorerV3());
+    const fresh = defaultExplorerV3();
+    await atomicWriteJson(explorerFile, fresh);
     await fs
       .unlink(legacyLayoutFile)
       .catch((err) => console.warn('[boot] legacy unlink failed', err));
-    return;
+    return fresh;
   }
 
-  const payload = await loadExplorer(explorerFile);
-  if (payload == null) {
+  const loaded = await loadExplorerWithFormat(explorerFile);
+  if (loaded == null) {
     console.warn('[boot] explorer.json corrupt; skipping migrate + legacy cleanup');
-    return;
+    return null;
   }
-  if (!legacyExists) {
-    try {
-      // 边界(E67):二次读复用同一 capped loader(单一来源,不再裸 readFile)。
-      const raw = await readExplorerCapped(explorerFile);
-      if (raw !== null && ExplorerSchemaV3.safeParse(JSON.parse(raw)).success) {
-        return;
-      }
-    } catch {
-      // loadExplorer succeeded above, so this is best-effort no-op detection only.
-    }
-  }
+  const { payload } = loaded;
+  // 磁盘原文已是合法 v3 且无旧 layout → 无需回写(复用本次加载的判定,不再二次读 + 解析)。
+  if (!legacyExists && loaded.isV3) return payload;
   await atomicWriteJson(explorerFile, payload);
   if (legacyExists) {
     await fs
       .unlink(legacyLayoutFile)
       .catch((err) => console.warn('[boot] legacy unlink failed', err));
   }
+  return payload;
 }

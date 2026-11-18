@@ -42,6 +42,14 @@ vi.mock('../../notifications/notify', () => ({
   notify: { error: h.notifyError },
 }));
 
+// perf E2:EditorPanel 内编辑引擎 lazy 加载 → render 后须等引擎模块解析、Suspense 重试完成再断言。
+async function flushLazyEditors() {
+  await act(async () => {
+    await import('../../panels/Editor/CodeEditor');
+    await import('../../panels/Editor/MilkdownEditor');
+  });
+}
+
 const openExternalMock = h.openExternal;
 const notifyErrorMock = h.notifyError;
 
@@ -75,6 +83,7 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
   it('openExternal {ok:false} → notify.error', async () => {
     openExternalMock.mockResolvedValue({ ok: false, code: 'CO_COMMAND_BLOCKED' });
     render(<EditorPanel />);
+    await flushLazyEditors();
     expect(h.onLinkClick.current).not.toBeNull();
     act(() => {
       h.onLinkClick.current!('https://example.com');
@@ -88,6 +97,7 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
   it('openExternal reject(IPC 异常)→ notify.error,不静默', async () => {
     openExternalMock.mockRejectedValue(new Error('ipc down'));
     render(<EditorPanel />);
+    await flushLazyEditors();
     act(() => {
       h.onLinkClick.current!('https://example.com');
     });
@@ -99,6 +109,7 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
   it('openExternal {ok:true} → 不报错', async () => {
     openExternalMock.mockResolvedValue({ ok: true, data: undefined });
     render(<EditorPanel />);
+    await flushLazyEditors();
     act(() => {
       h.onLinkClick.current!('https://example.com');
     });
@@ -112,6 +123,7 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
   it('本地文件链接 openFileByPath {ok:false} → notify.error', async () => {
     h.openFileByPath.mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND' });
     render(<EditorPanel />);
+    await flushLazyEditors();
     act(() => {
       h.onLinkClick.current!('./other.md'); // 相对路径 → file 分支
     });
@@ -124,6 +136,7 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
   it('本地文件链接 openFileByPath reject → notify.error', async () => {
     h.openFileByPath.mockRejectedValue(new Error('io error'));
     render(<EditorPanel />);
+    await flushLazyEditors();
     act(() => {
       h.onLinkClick.current!('./other.md');
     });

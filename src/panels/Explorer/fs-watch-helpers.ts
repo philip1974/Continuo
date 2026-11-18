@@ -46,25 +46,35 @@ export interface PerPathDebouncer {
 /**
  * 按 path 维度 debounce:同 path 在 delay 内多次触发只调最后一次,
  * 不同 path 互不影响。
+ *
+ * maxWaitMs(可选):纯 trailing debounce 在持续事件(如根目录持续写日志)下永不触发;给定时同 path
+ * 自本轮首次触发起至多 maxWaitMs 必调一次(lodash maxWait 语义),之后开始新一轮。缺省 = 纯 trailing。
  */
 export function makeDebouncePerPath(
   fn: (path: string) => void,
   delayMs: number,
+  maxWaitMs?: number,
 ): PerPathDebouncer {
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  // firstAt:本轮(上次调用 fn 之后)首次触发时刻,用于 maxWait 截止。
+  const timers = new Map<string, { t: ReturnType<typeof setTimeout>; firstAt: number }>();
 
   const debounced = (path: string) => {
     const existing = timers.get(path);
-    if (existing) clearTimeout(existing);
+    if (existing) clearTimeout(existing.t);
+    const firstAt = existing?.firstAt ?? Date.now();
+    const wait =
+      maxWaitMs === undefined
+        ? delayMs
+        : Math.max(0, Math.min(delayMs, firstAt + maxWaitMs - Date.now()));
     const t = setTimeout(() => {
       timers.delete(path);
       fn(path);
-    }, delayMs);
-    timers.set(path, t);
+    }, wait);
+    timers.set(path, { t, firstAt });
   };
 
   debounced.cancel = () => {
-    for (const t of timers.values()) clearTimeout(t);
+    for (const e of timers.values()) clearTimeout(e.t);
     timers.clear();
   };
 

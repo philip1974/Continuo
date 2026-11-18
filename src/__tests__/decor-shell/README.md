@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/shell/decor/BackgroundBeams.tsx` | 50 条 motion.path 动画(aceternity ui) |
+| `src/shell/decor/BackgroundBeams.tsx` | 50 条 m.path 动画(aceternity ui) |
 | `src/shell/decor/Splash.tsx` | 启动 splash:Spotlight + Continuo 文字 |
 | `src/shell/PopoutHost.tsx` | dockview popout 子窗根容器 |
 
@@ -23,6 +23,7 @@
 
 - data-testid='splash'
 - 内含 Spotlight(svg) + 标题「Continuo」
+- 生命周期(`splash-lifecycle.spec.tsx`):只遮住布局恢复期,DockShell `onLayoutReady` 即移除,无最短展示时长(`onLayoutReady` = 布局恢复 + 终端首个快照已 reconcile,见 `splash-terminal-ready-barrier/`)
 
 ### PopoutHost
 

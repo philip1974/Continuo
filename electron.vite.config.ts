@@ -3,6 +3,8 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { xtermWebglAtlasVersionPlugin } from './scripts/vite-xterm-webgl-atlas-version';
+import { mainModuleSideEffects } from './scripts/main-bundle-side-effects';
+import { milkdownKatexStubPlugin } from './scripts/vite-milkdown-katex-stub';
 
 // BUILD_TARGET=pack 时输出到 out-pack/,让 `pnpm build:app` 与 `pnpm dev` 可以并行
 // 跑(dev 持续写 out/,builder 读 out-pack/,互不踩盘)。
@@ -20,7 +22,12 @@ export default defineConfig({
     ],
     build: {
       outDir: `${OUT_ROOT}/main`,
-      rollupOptions: { input: resolve(__dirname, 'electron/main/index.ts') },
+      rollupOptions: {
+        input: resolve(__dirname, 'electron/main/index.ts'),
+        // 性能:server-node 包根经 server.ts(顶层 bin 守卫=副作用)静态拖入完整 MCP SDK;声明其无副作用,
+        // main 未用即摇掉(启动包少 ~430KB)。见 scripts/main-bundle-side-effects.ts。
+        treeshake: { moduleSideEffects: mainModuleSideEffects },
+      },
     },
   },
   preload: {
@@ -41,7 +48,9 @@ export default defineConfig({
   },
   renderer: {
     root: '.',
-    plugins: [react(), tailwindcss(), xtermWebglAtlasVersionPlugin()],
+    // milkdownKatexStubPlugin:CrepeFeature.Latex 关闭,@milkdown 内的 katex 导入换空壳(MilkdownEditor
+    // chunk 少 ~260KB);mermaid 的 katex 不受影响。⚠ 启用 CrepeFeature.Latex 前须移除。
+    plugins: [react(), tailwindcss(), xtermWebglAtlasVersionPlugin(), milkdownKatexStubPlugin()],
     // dev 预打包会绕过 transform,addon-webgl 是无依赖的单文件 ESM,直接走源文件即可。
     optimizeDeps: { exclude: ['@xterm/addon-webgl'] },
     resolve: {
@@ -60,6 +69,9 @@ export default defineConfig({
     },
     build: {
       outDir: `${OUT_ROOT}/renderer`,
+      // electron-vite 2.x 对 renderer 默认 minify:false:首屏必载 main-app chunk 未压缩 ~2.49MB,
+      // 压缩后 ~1.27MB,每次冷启动都要完整读取 + 编译(BDD: perf-audit/renderer-minify)。
+      minify: 'esbuild',
       rollupOptions: { input: resolve(__dirname, 'index.html') },
     },
   },

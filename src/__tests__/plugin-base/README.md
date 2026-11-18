@@ -24,6 +24,8 @@
 - 多次 `register` 累积;`_deactivate()` 反序 dispose(后注册先清)
 - 单个 dispose 抛错不影响其他 dispose 继续执行(警告日志)
 - 不调 `register` 也能干净 deactivate
+- 贡献点代理(`registerPanel / addCommand / registerEvent / registerExplorerDecorator / registerMcpTool` 等)返回包装句柄:
+  插件提前 dispose 时从收集集合移除自身,反复「dispose + 重新注册」集合不增长;停用只按注册逆序释放仍存活的句柄
 
 ### 生命周期幂等性
 

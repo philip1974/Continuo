@@ -21,9 +21,9 @@ function setup(over: Partial<Parameters<typeof CreateInput>[0]> = {}) {
   return { ...utils, input, onSubmit, onCancel };
 }
 
-function fireKey(input: HTMLInputElement, key: string): void {
+function fireKey(input: HTMLInputElement, key: string, init: KeyboardEventInit = {}): void {
   input.dispatchEvent(
-    new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+    new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }),
   );
 }
 
@@ -68,6 +68,19 @@ describe('CreateInput — 键盘行为', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith('a.ts');
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  // IME:拼音 / 日文输入法组合中按 Enter 是确认候选词、Esc 是取消组合,不是提交 / 取消新建。
+  it('IME 组合中的 Enter / Esc(isComposing 或 keyCode 229)→ 不提交也不取消;组合结束后普通 Enter 照常提交', () => {
+    const { input, onSubmit, onCancel } = setup();
+    fireEvent.change(input, { target: { value: '中文' } });
+    fireKey(input, 'Enter', { isComposing: true });
+    fireKey(input, 'Escape', { isComposing: true });
+    fireKey(input, 'Enter', { keyCode: 229 });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    fireKey(input, 'Enter');
+    expect(onSubmit).toHaveBeenCalledWith('中文');
   });
 
   it('Enter + 空字符串 → onCancel', () => {

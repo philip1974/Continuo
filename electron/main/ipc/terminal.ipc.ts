@@ -31,7 +31,7 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 // 边界(E219,E125/E127/E129 字节 vs code-unit 族):terminal:write data 须按真实 UTF-8 字节限,
 // 非 .max()(UTF-16 code unit)—— CJK/emoji 在 length≤上限时真实字节数倍超,实际写 6-8MB 到 PTY/IPC。
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { broadcastToWindows } from '../lib/broadcast';
+import { broadcastToWindows, SKIP_BROADCAST } from '../lib/broadcast';
 import { codedError } from '../../shared/error-message';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 
@@ -137,7 +137,7 @@ export function makeCreateHandler(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
   generateId?: () => string;
-  resolveCwd?: (cwdHint?: string) => string;
+  resolveCwd?: (cwdHint?: string) => string | Promise<string>;
 }) {
   const service = deps?.service ?? termService;
   const sessionStore = deps?.sessionStore ?? terminalSessions;
@@ -164,7 +164,13 @@ export function makeCreateHandler(deps?: {
     //      window:notify-root IPC 推送)
     const cwdHint =
       input.cwd ?? input.workspaceRoot ?? getWindowWorkspaceRoot(win.id) ?? undefined;
-    const cwd = resolveCwd(cwdHint);
+    const cwd = await resolveCwd(cwdHint);
+    // race:cwd 异步校验是 await 边界,期间窗口可能已关闭(window-closed cleanup 已跑完)。此后再登记
+    // session / 签发 token / spawn 会成为已关窗口名下的孤儿终端 → 以 CANCELLED 收场。
+    // (测试替身窗口可能不带 isDestroyed,按未销毁处理。)
+    if (typeof win.isDestroyed === 'function' && win.isDestroyed()) {
+      throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'terminal create cancelled: window closed');
+    }
     const id = generateId();
     // MCP env(token / url)注入到所有 PTY:用户在 terminal 跑 claude / codex 时
     // 自动反连本机 MCP host。internalEnv 在后,防用户 env 覆盖内部 token。
@@ -216,12 +222,14 @@ export function makeCreateHandler(deps?: {
   };
 }
 
-export function resolveTerminalCwd(cwdHint?: string): string {
+// 性能:单次异步 stat(不存在即 reject)取代同步 existsSync + statSync —— 网络盘 / 休眠外置盘 / 失联挂载点
+// 上同步 fs 调用会卡住 Electron main(所有窗口与 IPC)。语义不变:缺省 / 不存在 / 非目录均 TERMINAL_CWD_UNRESOLVED。
+export async function resolveTerminalCwd(cwdHint?: string): Promise<string> {
   if (!cwdHint) {
     throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, 'terminal cwd unresolved (no hint)');
   }
   try {
-    if (fs.existsSync(cwdHint) && fs.statSync(cwdHint).isDirectory()) {
+    if ((await fs.promises.stat(cwdHint)).isDirectory()) {
       return cwdHint;
     }
   } catch {
@@ -345,10 +353,47 @@ export function makeResizeHandler(deps?: {
  * Dock/Terminal 面板停在旧 session 列表直到下一次 session 变化。每个窗口的 send 独立 try/catch,
  * 失败只跳过/记录并继续给其它窗口发送。导出供 R68 回归测试。
  */
+/**
+ * 性能:窗口 id → 上次发给它的 owner 过滤快照(terminalSessions 内部的 MainTerminalSession 数组)。
+ * 任一会话变化都会触发本广播,而 invalidateSnapshotCache 会清掉所有窗口的过滤缓存;此前无关窗口
+ * (自己的会话没变)也每次 toRendererSessions + 序列化 + send,renderer 再重跑过滤 / reconcile。
+ * 前提:terminalSessions 的会话对象不可变(add 新建 / updateCwd、setExited 展开替换 / remove 删除),
+ * 所以「长度相同且每个元素引用相同」⇔ 内容未变 → 跳过该窗口。
+ * 没有记录(新窗口)一定发送。记录在 payload 计算时写入:send 只会因窗口已销毁而抛(R68),
+ * 随后的 closed 会清掉记录。
+ */
+const lastSentSessionsByWindow = new Map<number, readonly terminalSessions.MainTerminalSession[]>();
+
+function sameSessionRefs(
+  a: readonly terminalSessions.MainTerminalSession[],
+  b: readonly terminalSessions.MainTerminalSession[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * 清除窗口的已发送记录:窗口 closed(防 Map 泄漏),以及 renderer 拉取 list_sessions 时(初始化 /
+ * reload 后 renderer 状态已重置,下一次变化须无条件推送,保证「首个权威快照」仍能到达)。
+ */
+export function forgetSessionsBroadcastWindow(windowId: number): void {
+  lastSentSessionsByWindow.delete(windowId);
+}
+
 export function broadcastSessionsChanged(): void {
   broadcastToWindows(
     TERMINAL_CHANNELS.SESSIONS_CHANGED,
-    (w) => toRendererSessions(terminalSessions.getAll({ ownerWindowId: w.id })),
+    (w) => {
+      const owned = terminalSessions.getAll({ ownerWindowId: w.id });
+      const last = lastSentSessionsByWindow.get(w.id);
+      if (last !== undefined && sameSessionRefs(last, owned)) return SKIP_BROADCAST;
+      lastSentSessionsByWindow.set(w.id, owned);
+      return toRendererSessions(owned);
+    },
     '[terminal] SESSIONS_CHANGED',
   );
 }
@@ -376,9 +421,10 @@ export function registerTerminalIpc(): void {
 
   ownerScopedHandle(TERMINAL_CHANNELS.CREATE, createInputSchema, createHandler);
   // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId。
-  ownerScopedHandle(TERMINAL_CHANNELS.LIST_SESSIONS, noInputSchema, (_input, win) =>
-    listSessionsHandler({ ownerWindowId: win.id }),
-  );
+  ownerScopedHandle(TERMINAL_CHANNELS.LIST_SESSIONS, noInputSchema, (_input, win) => {
+    forgetSessionsBroadcastWindow(win.id);
+    return listSessionsHandler({ ownerWindowId: win.id });
+  });
   ownerScopedHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
@@ -407,6 +453,7 @@ export function registerTerminalIpc(): void {
   const attachClosed = (w: BrowserWindow): void => {
     w.once('closed', () => {
       windowClosedCleanup(w.id);
+      forgetSessionsBroadcastWindow(w.id);
     });
   };
   for (const w of BrowserWindow.getAllWindows()) attachClosed(w);

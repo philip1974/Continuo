@@ -26,7 +26,7 @@ describe('49 · saveFile 写盘 await 期间并发编辑不丢 dirty', () => {
     const writeFile = vi.fn(async (_path: string, content: string) => {
       expect(content).toBe('S1'); // 写盘的是快照 S1,不是后来的 S2
       useEditorStore.getState().updateContent(tab.id, 'S1 + S2');
-      return ok(undefined as void);
+      return ok(undefined);
     });
     const deps: EditorFileDeps = {
       fs: { readFile: vi.fn(async () => ok('S1')), writeFile },
@@ -51,7 +51,7 @@ describe('49 · saveFile 写盘 await 期间并发编辑不丢 dirty', () => {
     const deps: EditorFileDeps = {
       fs: {
         readFile: vi.fn(async () => ok('hello')),
-        writeFile: vi.fn(async () => ok(undefined as void)),
+        writeFile: vi.fn(async () => ok(undefined)),
       },
       store: useEditorStore,
     };

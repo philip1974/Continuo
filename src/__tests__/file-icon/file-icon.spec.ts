@@ -367,3 +367,18 @@ describe('getFileIconComponent · fallback', () => {
     expect(getFileIconComponent('', false)).toBe(Document);
   });
 });
+
+// 映射表是普通对象:按名查表会命中原型链(constructor / __proto__ / hasOwnProperty 等),返回 Object 函数或
+// Object.prototype → <Icon /> 渲染抛错,Explorer 无错误边界 → 整窗白屏(展开态持久化,每次打开复现)。
+describe('getFileIconComponent · 原型链键不命中', () => {
+  const protoNames = ['constructor', '__proto__', 'hasOwnProperty', 'toString', 'valueOf'];
+  it.each(protoNames)('目录 %s → Folder', (n) => {
+    expect(getFileIconComponent(n, true)).toBe(getFileIconComponent('plain-dir', true));
+  });
+  it.each(protoNames)('文件 %s → Document', (n) => {
+    expect(getFileIconComponent(n, false)).toBe(getFileIconComponent('plain-file', false));
+  });
+  it.each(protoNames.map((n) => `x.${n}`))('扩展名 %s → Document', (n) => {
+    expect(getFileIconComponent(n, false)).toBe(getFileIconComponent('plain-file', false));
+  });
+});

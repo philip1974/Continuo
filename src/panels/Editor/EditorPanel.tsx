@@ -7,7 +7,7 @@
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   getEffectiveMode,
   isTabMilkdownUnsafe,
@@ -21,15 +21,15 @@ import {
 } from './editor-path-utils';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
-import { CodeEditor } from './CodeEditor';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
-import { MilkdownEditor } from './MilkdownEditor';
+import { createLazyCodeEditor, createLazyMilkdownEditor } from './editor-engine-loaders';
+import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
+import { applyEditorWriteBack, flushEditorWriteBacks } from './editor-writeback-registry';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
-import { useExternalFileSync } from './useExternalFileSync';
 import { resolveLink } from './link-resolve';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -40,6 +40,22 @@ import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
 const MODE_IDS: readonly EditorMode[] = ['edit', 'source', 'preview'];
+
+// perf E2:两套编辑引擎各自 lazy —— CodeEditor(CodeMirror + 语言包)与 MilkdownEditor
+// (Crepe/ProseMirror/katex)不再一起进 Editor chunk:Welcome 不加载任何引擎,代码文件不加载
+// Milkdown,Markdown edit/preview 不加载 CodeEditor。body 外的 <Suspense key={engine}> 让
+// 切换引擎时整个边界重挂(旧编辑器完整卸载,新编辑器首挂才可能 suspend),与原先 key 重挂语义一致。
+// import 工厂取自共享加载器:co-app 的 openFile({line}) 预加载与这里共用同一 promise。
+// 模块级实例:引擎已加载后再挂载同步渲染、不闪 fallback。chunk 加载失败由 EditorEngineErrorBoundary
+// 接住;重试时替换失败引擎的实例(React.lazy 永久缓存 rejection),后续挂载也用新实例。
+type LazyEngines = {
+  code: ReturnType<typeof createLazyCodeEditor>;
+  milkdown: ReturnType<typeof createLazyMilkdownEditor>;
+};
+let lazyEngines: LazyEngines = {
+  code: createLazyCodeEditor(),
+  milkdown: createLazyMilkdownEditor(),
+};
 
 function isMarkdownPath(p: string | null): boolean {
   // 可维护性 M13:非空判定共用 editor-path-utils.isMarkdownPath;此处只保留「草稿(null)默认
@@ -91,6 +107,19 @@ export function EditorPanel() {
   const updateContent = useEditorStore((s) => s.updateContent);
   const closeTab = useEditorStore((s) => s.closeTab);
   const acceptUnsafeEdit = useEditorStore((s) => s.acceptUnsafeEdit);
+  // 引擎 lazy 实例 + 重试代数:重试新建失败引擎的 lazy 实例,并换 key 重挂错误边界。
+  const [engines, setEngines] = useState(() => lazyEngines);
+  const [engineRetry, setEngineRetry] = useState(0);
+  const { code: CodeEditor, milkdown: MilkdownEditor } = engines;
+  const retryEngine = useCallback((which: 'welcome' | 'code' | 'milkdown') => {
+    if (which === 'code') {
+      lazyEngines = { ...lazyEngines, code: createLazyCodeEditor() };
+    } else if (which === 'milkdown') {
+      lazyEngines = { ...lazyEngines, milkdown: createLazyMilkdownEditor() };
+    }
+    setEngines(lazyEngines);
+    setEngineRetry((n) => n + 1);
+  }, []);
   const effective = getEffectiveMode(activeTab);
   // perf P5:复用派生缓存(isTabMilkdownUnsafe 内部 cache-or-compute),不再在 render
   // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
@@ -145,15 +174,20 @@ export function EditorPanel() {
   const autoSaveEnabled =
     isAutoSaveEnabled(activeTab?.filePath ?? null) && mdAutoSaveEnabled;
 
+  // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
+  // EditorTab/content,确认框只需 filePath,关闭只需 id)。
+  const [closeCandidate, setCloseCandidate] = useState<TabChrome | null>(null);
+
   // 自动保存:Markdown 启用,代码不启用(决策 #3)。按 tabId 保存,切走/卸载时
   // flush pending,避免连续输入后立即切 tab 丢失整段编辑。
+  // 关闭脏 tab 的「放弃修改?」确认框开着时暂停:否则停留超过 delay 会把待放弃的内容写盘。
+  // !enabled 取消已排队的保存;取消确认后 enabled 恢复,仍脏照常重新排队。
   useAutoSave(saveTab, {
-    enabled: autoSaveEnabled,
+    enabled: autoSaveEnabled && closeCandidate === null,
     delayMs: autoSaveDelayMs,
   });
 
-  // 外部进程修改文件时,自动同步 non-dirty tab 的内容
-  useExternalFileSync();
+  // 外部进程修改文件时自动同步 non-dirty tab:useExternalFileSync 由常驻 MainApp 承载(见 App.tsx)。
 
   useEffect(() => startDebugDecorationSync(), []);
 
@@ -192,13 +226,17 @@ export function EditorPanel() {
     }
   }, [overwriteCandidate, saveTab]);
 
-  // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
-  // EditorTab/content,确认框只需 filePath,关闭只需 id)。
-  const [closeCandidate, setCloseCandidate] = useState<TabChrome | null>(null);
+  // 关闭脏 tab 二次确认(closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave)。
   const onTabCloseRequest = useCallback(
     (tab: TabChrome) => {
-      if (tab.dirty) setCloseCandidate(tab);
-      else closeTab(tab.id);
+      // tab.dirty 是 TabChrome 快照,store 可能落后编辑器(Milkdown 自适应延迟上抛,单次最长约 2s、持续输入最长 5s):
+      // 先同步回写未上抛的输入,再按 store 最新 dirty 判定。否则「干净」tab 直接关闭,
+      // 随后卸载回写找不到 tab → 这段输入丢失。
+      flushEditorWriteBacks([tab.id]);
+      const live = findEditorFileTabById(useEditorStore.getState().tabs, tab.id);
+      if (!live) return;
+      if (live.dirty) setCloseCandidate({ id: live.id, filePath: live.filePath, dirty: true });
+      else closeTab(live.id);
     },
     [closeTab],
   );
@@ -230,10 +268,13 @@ export function EditorPanel() {
 
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
+  let engine: 'welcome' | 'code' | 'milkdown';
   if (!activeTab) {
+    engine = 'welcome';
     body = <EditorWelcome />;
   } else if (activeIsMarkdown) {
     if (effective === 'source') {
+      engine = 'code';
       body = (
         <CodeEditor
           key={`${activeTab.id}-src`}
@@ -245,12 +286,14 @@ export function EditorPanel() {
         />
       );
     } else {
+      engine = 'milkdown';
       body = (
         <MilkdownEditor
           // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
           // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
           // 用户输入/保存不动 epoch,故不会每次按键 remount。
           key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
+          tabId={activeTab.id}
           // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
           defaultValue={
             effective === 'preview'
@@ -259,11 +302,15 @@ export function EditorPanel() {
           }
           readonly={effective === 'preview'}
           onChange={(md) => updateContent(activeTab.id, md)}
+          onWriteBack={(md, base) =>
+            applyEditorWriteBack(useEditorStore, activeTab.id, md, base)
+          }
           onLinkClick={handleLinkClick}
         />
       );
     }
   } else {
+    engine = 'code';
     body = (
       <CodeEditor
         key={activeTab.id}
@@ -310,7 +357,16 @@ export function EditorPanel() {
           {translate('panels.editor.milkdownUnsafe.banner')}
         </div>
       )}
-      <div className="min-h-0 flex-1">{body}</div>
+      <div className="min-h-0 flex-1">
+        {/* perf E2:引擎 chunk 首次加载期间 fallback 为空(同 lazyPanel 外层),加载完即挂载。
+            key 含 engine:切换引擎时边界整体重挂;含重试代数:重试后清掉错误态重新加载。 */}
+        <EditorEngineErrorBoundary
+          key={`${engine}:${engineRetry}`}
+          onRetry={() => retryEngine(engine)}
+        >
+          <Suspense fallback={null}>{body}</Suspense>
+        </EditorEngineErrorBoundary>
+      </div>
 
       <ConfirmDialog
         open={closeCandidate !== null}

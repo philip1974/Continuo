@@ -45,6 +45,7 @@ vi.mock('../../../electron/main/services/pty-lang', () => ({
 }));
 
 import * as terminalService from '../../../electron/main/services/terminal.service';
+import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
 import { setMcpRevokers } from '../../../electron/main/services/mcp-host.service';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
@@ -157,5 +158,18 @@ describe('终端退出闸:cleanupAll 开始后拒绝新建 PTY 并兜底强杀�
     terminalService.resetTerminalShutdownForTest();
     await terminalService.createTerminal('again', makeWindow(1), ZSH, [], '/tmp');
     expect(terminalService.has('again')).toBe(true);
+  });
+  // perf:退出强杀时会话元数据仍在,此前每个 PTY 都把最多 4MB 输出缓冲拼成「已退出历史」快照(10 个满载终端
+  // ~40ms 主线程 + ~40MB 堆),进程随即退出、快照无人读取。退出期间不再保留。
+  it('cleanupAll 强杀时不为已退出会话拍输出快照', async () => {
+    await terminalService.createTerminal('h', makeWindow(1), ZSH, [], '/tmp');
+    terminalSessions.add({ id: 'h', title: 'h', cwd: '/tmp', originHint: 'user', ownerWindowId: 1 });
+    sm.getBufferSnapshot.mockReset().mockReturnValue({ data: 'x'.repeat(1024), seq: 1 });
+    try {
+      await terminalService.cleanupAll();
+      expect(sm.getBufferSnapshot).not.toHaveBeenCalled();
+    } finally {
+      terminalSessions._reset();
+    }
   });
 });

@@ -43,10 +43,17 @@
 - `performDrop` 部分写失败 → ok:false + failed 列出
 - `performDrop` file.arrayBuffer() 抛 → failed READ_ERROR
 - `performDrop` 不主动跳过同名(由 atomic write 静默覆盖)
+- `performDrop` 有界并发读写(在途写入/arrayBuffer ≤ 上界);同目标路径(大小写/NFC 折叠)按输入顺序串行,后项覆盖前项;按目标键分组为 worker 任务,同键链不阻塞后续异键文件;written/failed 按输入顺序汇总
+
+### `folder-tree-row-drop-overlay.spec.tsx`(jsdom + 真实 headless-tree)
+- OS 文件 drop 到具体行(库行 onDrop 会 stopPropagation,浏览器 drop 后不派发 dragleave)→ DropOverlay 消失
+- drop 到行后再次拖入 → overlay 出现;拖离 → 消失(拖拽计数已归零)
+- 拖过目录行后在空白处松手 → 落点为 DropOverlay 显示的该目录(非 root);捕获阶段复位 hoverTarget 前先存落点,
+  冒泡阶段读存值 —— 真实浏览器两阶段监听之间有 microtask checkpoint,测试用 at-target flushSync 模拟
 
 ## 不在本主题验证
 
 - React DnD 事件实际触发(留 E2E 手动)
-- DropOverlay 渲染、hover 行高亮(留 E2E)
+- hover 行高亮(留 E2E)
 - IPC writeBinary 真跨进程(留 E2E,但 schema 通过 fs-ipc-bridge 风格补)
 - 文件夹递归复制(留下里程碑)

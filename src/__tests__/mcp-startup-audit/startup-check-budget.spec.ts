@@ -27,13 +27,13 @@ describe('规则 4 · pickArgvFolders 候选检查预算', () => {
 });
 
 describe('规则 4 · pickWindowsToRestore 候选检查预算', () => {
-  it('海量指向不存在目录的段 → isExistingDir 调用次数 ≤ 预算', () => {
+  it('海量指向不存在目录的段 → isExistingDir 调用次数 ≤ 预算', async () => {
     const windows = Array.from({ length: 10_000 }, (_, i) => ({
       windowSeq: i + 1,
       workspace: { root: `/gone/${i}` },
     }));
     const isDir = vi.fn(() => false);
-    const out = pickWindowsToRestore(
+    const out = await pickWindowsToRestore(
       { restoreAllWindowsOnLaunch: true, windows } as never,
       isDir,
     );

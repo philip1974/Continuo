@@ -37,13 +37,38 @@ export const MAX_JSON_OBJECT_KEYS = 100_000;
 // key 放大错误串本身。超限直接抛(错误消息只含长度数字,不拼 key)。8192 远超任何真实属性名。导出供单测。
 export const MAX_JSON_KEY_LEN = 8192;
 
+// perf:快速模式的失败哨兵(不携带消息)。快速模式 path === null,全程不拼路径串。
+const FAST_FAIL: unique symbol = Symbol('assertJsonValue.fastFail');
+
+// 快速模式抛哨兵;带路径模式抛带 `at <path>` 的原文案。`at` 只在带路径模式下被调用(惰性拼接)。
+function fail(path: string | null, msg: string, at: (p: string) => string = (p) => p): never {
+  if (path === null) throw FAST_FAIL;
+  throw new Error(`${msg} at ${at(path)}`);
+}
+
 /**
  * 递归断言 value 为 JSON 安全值,否则抛 Error。
  * JSON 安全 = null / 有限 number / string / boolean / (元素/属性递归安全的)数组/普通对象。
+ *
+ * perf:合法输入(绝大多数)不需要错误路径,每节点预拼 `${path}.${k}` / `${path}[${i}]` 是纯开销
+ *(2.5MB/2 万对象 8.9ms → ~5.5ms)。先以快速模式(path=null,不拼任何路径串)遍历;仅失败时再以带路径模式
+ * 重跑同一实现生成错误消息 —— 检查项 / 上限 / 抛错条件**同源**(同一个 walkJsonValue),文案逐字不变。
  */
 export function assertJsonValue(value: unknown, path = '$', depth = 0): void {
+  try {
+    walkJsonValue(value, null, depth);
+    return;
+  } catch (e) {
+    if (e !== FAST_FAIL) throw e;
+  }
+  walkJsonValue(value, path, depth);
+  // fail-closed:快速模式已判非法,但重跑未复现(仅当值在两遍间被改写,如 Proxy trap 非确定)—— 仍拒。
+  throw new Error(`non-JSON value at ${path}`);
+}
+
+function walkJsonValue(value: unknown, path: string | null, depth: number): void {
   if (depth > MAX_JSON_DEPTH) {
-    throw new Error(`json nesting too deep at ${path}`);
+    fail(path, 'json nesting too deep');
   }
   if (value === null) return;
   const t = typeof value;
@@ -51,15 +76,13 @@ export function assertJsonValue(value: unknown, path = '$', depth = 0): void {
   if (t === 'string') {
     // 边界(E285):字符串值长度 fail-fast(错误消息只含长度,不拼字符串本身,避免错误串放大)。
     if ((value as string).length > MAX_JSON_STRING_LEN) {
-      throw new Error(
-        `string too long (${(value as string).length} > ${MAX_JSON_STRING_LEN}) at ${path}`,
-      );
+      fail(path, `string too long (${(value as string).length} > ${MAX_JSON_STRING_LEN})`);
     }
     return;
   }
   if (t === 'number') {
     if (!Number.isFinite(value as number)) {
-      throw new Error(`non-finite number at ${path}`);
+      fail(path, 'non-finite number');
     }
     return;
   }
@@ -69,21 +92,19 @@ export function assertJsonValue(value: unknown, path = '$', depth = 0): void {
     t === 'symbol' ||
     t === 'bigint'
   ) {
-    throw new Error(`non-JSON value (${t}) at ${path}`);
+    fail(path, `non-JSON value (${t})`);
   }
   if (Array.isArray(value)) {
     // 边界(E183):先限 length(挡稀疏巨数组在 stringify 处 OOM),再**索引循环**(非 forEach)逐位
     // 校验并拒绝空洞(`!(i in value)` = sparse hole → stringify 成 null,落盘变形;forEach 会跳过漏检)。
     if (value.length > MAX_JSON_ARRAY_LEN) {
-      throw new Error(
-        `array too large (${value.length} > ${MAX_JSON_ARRAY_LEN}) at ${path}`,
-      );
+      fail(path, `array too large (${value.length} > ${MAX_JSON_ARRAY_LEN})`);
     }
     for (let i = 0; i < value.length; i++) {
       if (!(i in value)) {
-        throw new Error(`sparse array hole at ${path}[${i}]`);
+        fail(path, 'sparse array hole', (p) => `${p}[${i}]`);
       }
-      assertJsonValue(value[i], `${path}[${i}]`, depth + 1);
+      walkJsonValue(value[i], path === null ? null : `${path}[${i}]`, depth + 1);
     }
     return;
   }
@@ -94,7 +115,7 @@ export function assertJsonValue(value: unknown, path = '$', depth = 0): void {
     // 但持久化/返回的是变形数据,调用方以为存的是原值。
     const proto = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) {
-      throw new Error(`non-plain object at ${path}`);
+      fail(path, 'non-plain object');
     }
     // 边界(E140,E136 深化 / E184 物化收口):plain object 仍可能携带 JSON.stringify 不忠实序列化的
     // 成员 —— (1)symbol key:`{[Symbol()]:x}` stringify 静默丢;(2)非枚举自有属性:stringify 跳过 →
@@ -117,35 +138,31 @@ export function assertJsonValue(value: unknown, path = '$', depth = 0): void {
     // 检测 symbol/非枚举(E140/E200 契约)与"零物化"在 JS 中不可兼得;保留单次 Reflect.ownKeys。
     const ownKeys = Reflect.ownKeys(obj);
     if (ownKeys.length > MAX_JSON_OBJECT_KEYS) {
-      throw new Error(
-        `object too many keys (${ownKeys.length} > ${MAX_JSON_OBJECT_KEYS}) at ${path}`,
-      );
+      fail(path, `object too many keys (${ownKeys.length} > ${MAX_JSON_OBJECT_KEYS})`);
     }
     for (const k of ownKeys) {
       if (typeof k === 'symbol') {
-        throw new Error(`symbol key in object at ${path}`);
+        fail(path, 'symbol key in object');
       }
       // 边界(E254):单个 string key 长度上限。错误消息只含长度(不拼 key 本身,避免错误串放大);
       // 此 throw 在递归前,故下方 `${path}.${k}` 的 k 必 ≤ MAX_JSON_KEY_LEN(path 拼接有界)。
       if (k.length > MAX_JSON_KEY_LEN) {
-        throw new Error(
-          `object key too long (${k.length} > ${MAX_JSON_KEY_LEN}) at ${path}`,
-        );
+        fail(path, `object key too long (${k.length} > ${MAX_JSON_KEY_LEN})`);
       }
       const desc = Object.getOwnPropertyDescriptor(obj, k);
       if (!desc || !desc.enumerable) {
-        throw new Error(`non-enumerable own property in object at ${path}`);
+        fail(path, 'non-enumerable own property in object');
       }
       // 边界(E200,E103/E136 数据完整性族):必须是 data property —— 拒 getter/setter。否则校验读
       // obj[k] 会调 getter 一次,调用方 JSON.stringify(value) 再调一次,getter 可两次返回不同值(校验
       // 看到小 JSON-safe 值,序列化落超大/非 JSON-safe/不同内容)→ 校验↔落盘不一致(TOCTOU)。
       // accessor 描述符无 `value` 字段;data 描述符有。递归校验 desc.value(只求值一次),不读 obj[k]。
       if (!('value' in desc)) {
-        throw new Error(`accessor (getter/setter) property in object at ${path}`);
+        fail(path, 'accessor (getter/setter) property in object');
       }
-      assertJsonValue(desc.value, `${path}.${k}`, depth + 1);
+      walkJsonValue(desc.value, path === null ? null : `${path}.${k}`, depth + 1);
     }
     return;
   }
-  throw new Error(`non-JSON value at ${path}`);
+  fail(path, 'non-JSON value');
 }

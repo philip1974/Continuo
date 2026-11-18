@@ -10,6 +10,8 @@ import { dirname } from './path-utils';
 import { joinPath } from '@/lib/path-cross';
 import { isValidLeafName, FS_NAME_MAX } from '../../../electron/shared/leaf-name';
 import { MAX_DROP_FILES } from '@/lib/window-drop';
+import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 export interface DropTargetEntry {
   path: string;
@@ -51,6 +53,9 @@ export const MAX_DROP_FILE_COUNT = MAX_DROP_FILES; // 单次 drop 文件数量�
 // 边界(E115):partition 总扫描上限(覆盖 file/dir/string 各 kind 项),防超大 items 列表
 // 在 partition 循环里大量 webkitGetAsEntry / skippedDirs 膨胀;远大于 file 上限,正常拖放不受影响。
 const MAX_DROP_SCAN_ITEMS = 4000;
+// perf:performDrop 读写有界并发度。每个 worker 同一时刻至多持有一个 arrayBuffer,故在途读入内存
+// ≤ DROP_IO_CONCURRENCY × MAX_DROP_FILE_BYTES(且仍受 MAX_DROP_TOTAL_BYTES 总量约束)。
+const DROP_IO_CONCURRENCY = 4;
 
 export interface PartitionResult {
   files: File[];
@@ -127,33 +132,36 @@ export function partitionDropItems(
 // MAX_DROP_FILE_COUNT 的项直接归 failed,绝不调 arrayBuffer()。常量统一声明于文件上方(E115)。
 
 /**
- * 顺序写入文件到 targetDir。同名文件由 fs.writeBinary 内部 atomic 覆盖,不弹确认。
+ * 写入文件到 targetDir。同名文件由 fs.writeBinary 内部 atomic 覆盖,不弹确认。
+ *
+ * perf:读写有界并发(DROP_IO_CONCURRENCY)—— 此前逐个串行 arrayBuffer + IPC + fsync,
+ * 拖入数百小文件时总耗时 ≈ 各项延迟之和。预检(数量/名字/大小/累计字节)仍按输入顺序串行
+ * 先跑完,语义与原先一致;只把通过预检的读写放进 worker 池。
+ * 同目标路径(大小写 + NFC 折叠后同键,覆盖大小写不敏感盘上 A.txt / a.txt 同一文件)按输入
+ * 顺序串行:后项在前项写完后才读写 → 「后项覆盖前项」不变。主进程 atomicWriteFile 的写锁按
+ * 真实路径字符串区分,不折叠大小写,故折叠串行须在这里做。
+ * written / failed 按输入顺序汇总(每项结果落到下标槽位,最后顺序收集)。
  */
 export async function performDrop(
   files: ReadonlyArray<File>,
   targetDir: string,
   fs: DropFsApi,
 ): Promise<DropResult> {
-  const written = new Array<string>(files.length);
-  const failed = new Array<{ name: string; code: string; message: string }>(
-    files.length,
-  );
-  let writtenCount = 0;
-  let failedCount = 0;
+  type Failure = { name: string; code: string; message: string };
+  type Outcome = { written: string } | { failed: Failure };
+  const outcomes = new Array<Outcome | undefined>(files.length);
+  const acceptedIdx = new Array<number>(Math.min(files.length, MAX_DROP_FILE_COUNT));
   let totalBytes = 0;
   let accepted = 0;
-  const recordFailure = (failure: {
-    name: string;
-    code: string;
-    message: string;
-  }) => {
-    failed[failedCount++] = failure;
+  const recordFailure = (index: number, failure: Failure) => {
+    outcomes[index] = { failed: failure };
   };
 
-  for (const file of files) {
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index]!;
     // 边界(E41):数量上限 —— 超出的项不读不写,归 failed(message 兜底展示)。
     if (accepted >= MAX_DROP_FILE_COUNT) {
-      recordFailure({
+      recordFailure(index, {
         name: file.name,
         code: 'DROP_TOO_MANY_FILES',
         message: `too many files in one drop (> ${MAX_DROP_FILE_COUNT})`,
@@ -164,7 +172,7 @@ export async function performDrop(
     // 穿越(写入子/父路径而非目标目录)或超长路径跨 IPC 放大。读 arrayBuffer / 拼 targetPath 前校验 leaf;
     // 非法直接归 failed(name 截断到 FS_NAME_MAX 防 failed 列表放大),与 main assertValidBasename 同源。
     if (!isValidLeafName(file.name)) {
-      recordFailure({
+      recordFailure(index, {
         name:
           typeof file.name === 'string'
             ? file.name.slice(0, FS_NAME_MAX)
@@ -176,7 +184,7 @@ export async function performDrop(
     }
     // 边界(E41):单文件大小预检(读前 file.size,超限不 arrayBuffer)。FS_FILE_TOO_LARGE 已 i18n。
     if (file.size > MAX_DROP_FILE_BYTES) {
-      recordFailure({
+      recordFailure(index, {
         name: file.name,
         code: 'FS_FILE_TOO_LARGE',
         message: `file too large (${file.size} > ${MAX_DROP_FILE_BYTES})`,
@@ -185,26 +193,30 @@ export async function performDrop(
     }
     // 边界(E41):累计总字节上限 —— 防海量中等文件求和成巨大 renderer 内存。
     if (totalBytes + file.size > MAX_DROP_TOTAL_BYTES) {
-      recordFailure({
+      recordFailure(index, {
         name: file.name,
         code: 'DROP_TOTAL_TOO_LARGE',
         message: `drop total size exceeds limit (${MAX_DROP_TOTAL_BYTES} bytes)`,
       });
       continue;
     }
-    accepted++;
+    acceptedIdx[accepted++] = index;
     totalBytes += file.size;
+  }
+  acceptedIdx.length = accepted;
 
+  const readAndWrite = async (index: number): Promise<void> => {
+    const file = files[index]!;
     let bytes: Uint8Array;
     try {
       bytes = new Uint8Array(await file.arrayBuffer());
     } catch (err) {
-      recordFailure({
+      recordFailure(index, {
         name: file.name,
         code: 'READ_ERROR',
         message: errorMessage(err),
       });
-      continue;
+      return;
     }
     const targetPath = joinPath(targetDir, file.name);
     // a11y(A137):writeBinary reject(IPC 抛错而非返回 {ok:false})此前未捕获 → performDrop
@@ -215,18 +227,43 @@ export async function performDrop(
     try {
       r = await fs.writeBinary(targetPath, bytes);
     } catch (err) {
-      recordFailure({
+      recordFailure(index, {
         name: file.name,
         code: 'WRITE_ERROR',
         message: errorMessage(err),
       });
-      continue;
+      return;
     }
     if (r.ok) {
-      written[writtenCount++] = targetPath;
+      outcomes[index] = { written: targetPath };
     } else {
-      recordFailure({ name: file.name, code: r.code, message: r.message });
+      recordFailure(index, { name: file.name, code: r.code, message: r.message });
     }
+  };
+
+  // 按折叠目标键(大小写/NFC)分组,以组为 worker 任务:组内按输入顺序串行(后项覆盖前项),
+  // 组间并发 DROP_IO_CONCURRENCY。此前每项一个任务、同键后项 await 前项链尾,若前 4 项同键,
+  // 4 个 worker 全卡在同一条链上,后续异键文件队头阻塞。每个 worker 同一时刻只读/写一项,
+  // 在途 arrayBuffer 仍 ≤ DROP_IO_CONCURRENCY;结果按下标记录,汇总顺序不变。readAndWrite 不抛。
+  const groupsByKey = new Map<string, number[]>();
+  for (const index of acceptedIdx) {
+    const key = lowerIfNeeded(files[index]!.name.normalize('NFC'));
+    const group = groupsByKey.get(key);
+    if (group) group.push(index);
+    else groupsByKey.set(key, [index]);
+  }
+  await allSettledWithConcurrency([...groupsByKey.values()], DROP_IO_CONCURRENCY, async (group) => {
+    for (const index of group) await readAndWrite(index);
+  });
+
+  const written = new Array<string>(files.length);
+  const failed = new Array<Failure>(files.length);
+  let writtenCount = 0;
+  let failedCount = 0;
+  for (const outcome of outcomes) {
+    if (!outcome) continue;
+    if ('written' in outcome) written[writtenCount++] = outcome.written;
+    else failed[failedCount++] = outcome.failed;
   }
   written.length = writtenCount;
   failed.length = failedCount;

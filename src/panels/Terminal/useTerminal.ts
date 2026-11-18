@@ -16,6 +16,7 @@ import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { localizeErrorByCode } from '@/lib/localize-error';
+import { isWindowsRuntime } from '@/lib/path-cross';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import {
@@ -36,6 +37,7 @@ import {
   shouldSkipXtermKey,
 } from '@continuo-terminal/react-terminal';
 import { isSearchHotkey } from './terminal-search-keymap';
+import { createOutputCoalescer } from './output-coalescer';
 import {
   applyTerminalSearchEffect,
   INITIAL_TERMINAL_SEARCH_STATE,
@@ -258,6 +260,30 @@ function queueCoversSnapshot(
   return next >= endOffset;
 }
 
+/** 侧栏拖宽停下后补一次 fit 的等待时间(RO 漏报兜底,见 sidebarWidth 订阅)。 */
+export const SIDEBAR_WIDTH_FIT_SETTLE_MS = 100;
+
+/** 搜索词输入 → SearchAddon.findNext 的防抖间隔(见 pendingSearchTimerRef)。 */
+export const TERMINAL_SEARCH_DEBOUNCE_MS = 100;
+
+/**
+ * OSC7 cwd → updateCwd IPC 的尾随合并窗口。每个 prompt 都发 OSC7,readHistory 回放(最多 1MB)还会把
+ * 历史里每个 OSC7 重新触发一遍:窗口内只发最终值,且与上次已发送值相同则不发(main 同值虽提前返回,
+ * IPC 管线与 sessions_changed 广播照跑,回放时 cwd 还会短暂回退到历史值)。
+ */
+export const CWD_REPORT_DEBOUNCE_MS = 50;
+/**
+ * 尾随合并的 maxWait(lodash 语义,同 makeDebouncePerPath):持续 OSC7(间隔 < 窗口)下窗口不会无限顺延,
+ * 自本轮首个值起至多此时长必发一次最新值。
+ */
+export const CWD_REPORT_MAX_WAIT_MS = 200;
+
+function cancelTimer(ref: { current: ReturnType<typeof setTimeout> | null }): void {
+  if (ref.current === null) return;
+  clearTimeout(ref.current);
+  ref.current = null;
+}
+
 const TERM_OPTIONS = {
   scrollback: 20000, // 跑 Agent CLI 大输出留余量(决策 #3)
   fontSize: 13,
@@ -278,6 +304,28 @@ const TERM_OPTIONS = {
   cursorBlink: true,
   cursorStyle: 'block' as const,
 };
+
+/** node-pty 默认后端判定:Windows build ≥ 18309 用 ConPTY,更低回落 winpty(node-pty windowsPtyAgent)。 */
+const NODE_PTY_CONPTY_MIN_BUILD = 18309;
+
+/**
+ * Windows 上告诉 xterm PTY 后端与系统 build 号(同 VS Code)。xterm 6 未设 buildNumber 时 Windows 仍开
+ * reflow:ConPTY(build < 21376)自己会重绘,xterm 再对整段 scrollback 做 O(N) reflow 既白做又与之冲突;
+ * 设了之后 xterm 按 `backend === 'conpty' && buildNumber >= 21376` 决定是否 reflow。
+ * 非 Windows / 拿不到 build 号 → 不设(维持旧行为,不猜)。
+ */
+export function terminalWindowsPtyOptions(
+  isWindows: boolean,
+  build: number | null | undefined,
+): { windowsPty?: { backend: 'conpty' | 'winpty'; buildNumber: number } } {
+  if (!isWindows || typeof build !== 'number' || build <= 0) return {};
+  return {
+    windowsPty: {
+      backend: build >= NODE_PTY_CONPTY_MIN_BUILD ? 'conpty' : 'winpty',
+      buildNumber: build,
+    },
+  };
+}
 
 /**
  * 挂在 div container 上,创建 xterm 实例,监听数据流与 resize。
@@ -325,6 +373,10 @@ export function useTerminal(termId: string) {
   const searchStateRef = useRef<TerminalSearchState>(
     INITIAL_TERMINAL_SEARCH_STATE,
   );
+  // 性能:输入搜索词时 SearchAddon.findNext 同步扫描整段 scrollback(最多 2 万行)并重建高亮,
+  // 每次按键都跑会卡输入。输入框状态立即更新,findNext 副作用防抖到停顿后再跑;其它搜索动作
+  // (Enter/上下跳转/选项切换/失焦)先 flush,关闭/卸载/切 session 则取消。
+  const pendingSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -364,6 +416,7 @@ export function useTerminal(termId: string) {
       const initOptions = initOptionsRef.current;
       const term = new Terminal({
       ...TERM_OPTIONS,
+      ...terminalWindowsPtyOptions(isWindowsRuntime(), coApi.system?.windowsBuild),
       // 用当前 settings + 主题值开局,避免初始一帧的旧值闪烁
       fontSize: initOptions.fontSize,
       cursorStyle: initOptions.cursorStyle,
@@ -455,9 +508,43 @@ export function useTerminal(termId: string) {
     termRef.current = term;
     fitRef.current = fitAddon;
 
+    // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS / CWD_REPORT_MAX_WAIT_MS):只发窗口内最新值,
+    // 且与上次已发送值不同才发。
+    let lastSentCwd: string | undefined;
+    let pendingCwd: string | undefined;
+    let cwdTimer: ReturnType<typeof setTimeout> | null = null;
+    let cwdFirstAt: number | undefined; // 本轮(上次发送之后)首个 OSC7 时刻,用于 maxWait 截止
+    const flushCwd = () => {
+      cwdTimer = null;
+      cwdFirstAt = undefined;
+      const cwd = pendingCwd;
+      pendingCwd = undefined;
+      if (cwd === undefined || cwd === lastSentCwd) return;
+      lastSentCwd = cwd;
+      // 发送失败(ok:false / reject)→ 复位去重基线,否则同一 cwd 之后永不重发、main 停在旧 cwd。
+      // 仅当基线仍是本值时复位:期间已发出更新的 cwd 则保持其去重。
+      const forget = () => {
+        if (lastSentCwd === cwd) lastSentCwd = undefined;
+      };
+      Promise.resolve(coApi.terminal.updateCwd(termId, cwd))
+        .then((r) => {
+          if (!r.ok) forget();
+        })
+        .catch(forget);
+    };
     const osc7Disposable = registerOsc7Cwd(
       term,
-      (cwd) => { void coApi.terminal.updateCwd(termId, cwd); },
+      (cwd) => {
+        pendingCwd = cwd;
+        if (cwdTimer !== null) clearTimeout(cwdTimer);
+        const now = Date.now();
+        cwdFirstAt ??= now;
+        const wait = Math.max(
+          0,
+          Math.min(CWD_REPORT_DEBOUNCE_MS, cwdFirstAt + CWD_REPORT_MAX_WAIT_MS - now),
+        );
+        cwdTimer = setTimeout(flushCwd, wait);
+      },
       // 测试桩常不带 system → 可选链。
       { acceptedHosts: osc7AcceptedHosts(coApi.system?.hostname) },
     );
@@ -468,7 +555,9 @@ export function useTerminal(termId: string) {
     const doFit = () => fitAndResize(term, fitAddon, termId, lastSentSizeRef);
     const fitRetryRaf = doFit() ? 0 : requestAnimationFrame(doFit);
 
-    // 主进程 stdout → safeWrite 队列。第一次写入本 termId 的输出就标 ready,上层移除 loading overlay。
+    // 主进程 stdout → 写入合并 → safeWrite 队列。第一次写入本 termId 的输出就标 ready,上层移除 loading overlay。
+    // 性能 P1:safeWrite 按 chunk 数节流,主进程每 ~5ms 一条的小块直接灌入会持续积压;先合并成接近
+    // 16KB 的一次调用(空闲首块立即写,不加首字节延迟)。见 output-coalescer.ts。
     let firstData = true;
     const clearLoadingOverlay = () => {
       if (firstData) {
@@ -476,9 +565,10 @@ export function useTerminal(termId: string) {
         setIsReady(true);
       }
     };
+    const outputCoalescer = createOutputCoalescer((data) => safeWrite(term, data));
     const writeOutput = (data: string) => {
       clearLoadingOverlay();
-      safeWrite(term, data);
+      outputCoalescer.push(data);
     };
 
     // topic-07: dockview lazy-mount inactive panel 会错过 PTY spawn 后的初始输出(shell prompt 等),
@@ -629,10 +719,14 @@ export function useTerminal(termId: string) {
         unsubExit();
         onDataDisposable.dispose();
         osc7Disposable.dispose();
+        if (cwdTimer !== null) clearTimeout(cwdTimer); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
         searchResultsDisposable.dispose();
         ro.disconnect();
         resizeDebouncer.dispose();
         atlasGuards?.dispose(); // 已装才有 guards(rAF 未触发时为 null)
+        // 合并缓冲里未写出的输出随 safeWrite 队列一并丢弃(term 即将 dispose),且撤销窗口定时器,
+        // 否则迟到的 flush 会经 safeWrite 新建队列写已死 xterm(同 P1-AR)。
+        outputCoalescer.dispose();
         disposeQueue(term);
         term.dispose();
         // xterm.dispose() 不移除 DOM children。StrictMode 双 mount 场景下
@@ -659,6 +753,8 @@ export function useTerminal(termId: string) {
 
     return () => {
       mountedRef.current = false;
+      // 未触发的防抖搜索属于即将拆除的 term,别让它落到新 session 的 addon 上
+      cancelTimer(pendingSearchTimerRef);
       waitRo?.disconnect();
       cleanupTerm?.();
     };
@@ -696,13 +792,33 @@ export function useTerminal(termId: string) {
   // 事件驱动 fit 兜底:订阅 layoutUi 的 sidebarOpen/Width,变化下一帧强制 fit。
   // RAF 让 React 完成 layout 提交后再量;与 RO 重叠不会有副作用(fit 幂等)。
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
-  const sidebarWidth = useLayoutUiStore((s) => s.sidebarWidth);
   useEffect(() => {
     const debouncer = resizeDebouncerRef.current;
     if (!debouncer) return;
     const raf = requestAnimationFrame(() => debouncer.request());
     return () => cancelAnimationFrame(raf);
-  }, [sidebarOpen, sidebarWidth, termId]);
+  }, [sidebarOpen, termId]);
+
+  // 性能:侧栏拖宽每个 mousemove 都写 sidebarWidth。拖动期间的连续 fit 由容器 ResizeObserver
+  // 负责;这里只是 RO 漏报的兜底,不走 React 订阅(否则每像素让所有终端重渲染),改为 imperative
+  // subscribe + 尾随防抖:拖动停下后必定补一次 fit。
+  useEffect(() => {
+    let prevWidth = useLayoutUiStore.getState().sidebarWidth;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = useLayoutUiStore.subscribe((state) => {
+      if (state.sidebarWidth === prevWidth) return;
+      prevWidth = state.sidebarWidth;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        resizeDebouncerRef.current?.request();
+      }, SIDEBAR_WIDTH_FIT_SETTLE_MS);
+    });
+    return () => {
+      unsubscribe();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [termId]);
 
   // 激活 / 切回可见:立即 fit。
   const fit = useCallback(() => {
@@ -725,7 +841,7 @@ export function useTerminal(termId: string) {
   // leaving the real path uncovered). All 7 search callbacks now share this
   // one chokepoint; behavior is identical, state machine + side effects
   // now share a single tested implementation.
-  const dispatchSearchAction = useCallback((action: TerminalSearchAction) => {
+  const runSearchAction = useCallback((action: TerminalSearchAction) => {
     // issue #42 round-3 (D.4/E.2): React state updater MUST be pure.
     // Compute synchronously: read ref → apply side effect → assign ref →
     // enqueue plain state value.
@@ -752,6 +868,41 @@ export function useTerminal(termId: string) {
     searchStateRef.current = next;
     setSearchState(next);
   }, []);
+
+  // 立即执行挂起的「按当前词搜索」:与未防抖时最后一次按键触发的 findNext 等价。
+  const flushPendingSearch = useCallback(() => {
+    if (pendingSearchTimerRef.current === null) return;
+    clearTimeout(pendingSearchTimerRef.current);
+    pendingSearchTimerRef.current = null;
+    runSearchAction({ type: 'setTerm', term: searchStateRef.current.term });
+  }, [runSearchAction]);
+
+  const dispatchSearchAction = useCallback(
+    (action: TerminalSearchAction) => {
+      if (action.type === 'setTerm' && action.term.length > 0) {
+        // 只更新输入框状态(reducer 纯函数,不碰 addon),findNext 防抖
+        const next = terminalSearchReducer(searchStateRef.current, action);
+        searchStateRef.current = next;
+        setSearchState(next);
+        if (pendingSearchTimerRef.current !== null) {
+          clearTimeout(pendingSearchTimerRef.current);
+        }
+        pendingSearchTimerRef.current = setTimeout(() => {
+          pendingSearchTimerRef.current = null;
+          runSearchAction({ type: 'setTerm', term: searchStateRef.current.term });
+        }, TERMINAL_SEARCH_DEBOUNCE_MS);
+        return;
+      }
+      if (action.type === 'close' || action.type === 'setTerm') {
+        // 关闭会清高亮、空词会清高亮:挂起的搜索已无意义,直接取消
+        cancelTimer(pendingSearchTimerRef);
+      } else {
+        flushPendingSearch();
+      }
+      runSearchAction(action);
+    },
+    [runSearchAction, flushPendingSearch],
+  );
   dispatchSearchActionRef.current = dispatchSearchAction;
 
   const openSearch = useCallback(() => {

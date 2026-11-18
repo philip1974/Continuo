@@ -11,12 +11,16 @@ import { lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel } from '@/lib/lazy-panel';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
+import { loadCategoryTabContent } from './lazy-category-tab';
 
-const SettingsPanel = lazy(() =>
-  import('@/plugins/settings/SettingsPanel').then((m) => ({
+// perf:设置首开时外壳 chunk 与默认分类 tab 的 CategoryTabContent chunk 同时发起,不再「外壳加载渲染后才拉
+// 分类内容」两级瀑布。分类预取 fire-and-forget:不阻塞外壳,失败吞掉(分类 tab 自己的 lazy 照常重新 import)。
+const SettingsPanel = lazy(() => {
+  loadCategoryTabContent().catch(() => {});
+  return import('@/plugins/settings/SettingsPanel').then((m) => ({
     default: m.SettingsPanel,
-  })),
-);
+  }));
+});
 
 export default class SettingsPanelPlugin extends Plugin {
   onload(): void {

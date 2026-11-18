@@ -21,7 +21,8 @@ export async function openRecentRootOrNotify(
 ): Promise<void> {
   const isLatest = workspaceRootSelectionGuard.begin();
   try {
-    const r = await coApi.fs.listDir(path);
+    // perf:只看 ok(可访问性探测)→ withStats:false,main 不逐项 lstat。
+    const r = await coApi.fs.listDir(path, { withStats: false });
     // 期间有更新的「打开最近」发起 → 本次过期,丢弃(不 setRoot 不报),由最新一次负责。
     if (!isLatest()) return;
     if (!r.ok) {

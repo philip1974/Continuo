@@ -71,6 +71,18 @@ export class IdentityRegistry {
       : undefined;
   }
 
+  /**
+   * 持有该 pluginId token 的 webContents id(含 drain 中:_unregister-plugin 先 revoke 再 revokeAll,
+   * 其 scope-updated 仍应送达该窗口)。供 scope-updated 定向推送,不做授权判断。
+   */
+  webContentsIdsFor(pluginId: string): Set<number> {
+    const ids = new Set<number>();
+    for (const entry of this.entries.values()) {
+      if (entry.pluginId === pluginId) ids.add(entry.webContentsId);
+    }
+    return ids;
+  }
+
   /** Latest generation registered for a pluginId (0 if never). */
   currentGeneration(pluginId: string): number {
     return this.generations.get(pluginId) ?? 0;
@@ -99,6 +111,16 @@ export class IdentityRegistry {
     const maybeUnref = timer as { unref?: () => void };
     if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
     this.drainTimers.set(token, timer);
+  }
+
+  /**
+   * webContents 销毁 / renderer reload 时调用:该 webContents 名下全部 token 走与 revoke 相同的 drain。
+   * 关窗 / reload 不会有 renderer 主动发的 _unregister-plugin,否则 entries 永不释放。
+   */
+  revokeByWebContents(webContentsId: number): void {
+    for (const [token, entry] of this.entries) {
+      if (entry.webContentsId === webContentsId) this.revoke(token);
+    }
   }
 
   /** Test-only: synchronous GC (skip setTimeout). */

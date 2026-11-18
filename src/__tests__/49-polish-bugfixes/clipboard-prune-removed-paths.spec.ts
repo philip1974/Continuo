@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  clipboardPathSet,
   pruneClipboardPaths,
   useExplorerClipboardStore,
 } from '../../panels/Explorer/clipboard-store';
@@ -185,5 +186,48 @@ describe('49 第八 session · clipboard prune 剪除失效源路径', () => {
       if (orig) Object.defineProperty(navigator, 'platform', orig);
       else delete (navigator as { platform?: string }).platform;
     }
+  });
+});
+
+// perf:FileRow 每个可见行判定「已剪切灰显」原为 s.paths.includes(path)(剪切 10 万项后滚动
+// 每帧 O(行数 × 剪切数))。改为按 paths 数组派生缓存 Set:同一 paths 引用只建一次,判定 O(1);
+// 比较口径与 includes 相同(SameValueZero = 精确字符串相等,大小写/尾分隔符都不归一)。
+describe('perf · 剪切灰显判定 O(1)(clipboardPathSet)', () => {
+  it('同一 paths 引用复用同一个 Set;新 paths(set/prune 后)重新派生', () => {
+    useExplorerClipboardStore.getState().set('cut', ['/r/a', '/r/b']);
+    const p1 = useExplorerClipboardStore.getState().paths;
+    expect(clipboardPathSet(p1)).toBe(clipboardPathSet(p1));
+    useExplorerClipboardStore.getState().prune(['/r/a']);
+    const p2 = useExplorerClipboardStore.getState().paths;
+    expect(p2).not.toBe(p1);
+    expect(clipboardPathSet(p2).has('/r/a')).toBe(false);
+    expect(clipboardPathSet(p2).has('/r/b')).toBe(true);
+  });
+
+  it('判定与 paths.includes 精确一致(不做大小写/分隔符归一)', () => {
+    const paths = ['/r/a', 'C:\\R\\b', '/r/dir/'];
+    const probes = ['/r/a', '/R/a', 'C:\\R\\b', 'c:\\r\\b', '/r/dir', '/r/dir/', '', '/r/a/'];
+    for (const q of probes) expect(clipboardPathSet(paths).has(q)).toBe(paths.includes(q));
+  });
+
+  it('重复判定不再线性扫描 paths(不调用 Array.prototype.includes)', () => {
+    const paths = Array.from({ length: 1000 }, (_, i) => `/r/f${i}`);
+    clipboardPathSet(paths); // 预热派生
+    const spy = vi.spyOn(Array.prototype, 'includes');
+    try {
+      for (let i = 0; i < 1000; i++) clipboardPathSet(paths).has(`/r/f${i}`);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('FileRow 的 isCutMarked selector 走 clipboardPathSet,不再 paths.includes', () => {
+    const src = readFileSync(
+      join(__dirname, '..', '..', 'panels', 'Explorer', 'FileRow.tsx'),
+      'utf8',
+    );
+    expect(src).not.toContain('s.paths.includes(');
+    expect(src).toContain("s.kind === 'cut' && clipboardPathSet(s.paths).has(data.path)");
   });
 });

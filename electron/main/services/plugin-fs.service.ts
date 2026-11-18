@@ -6,6 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import type { IpcMain, WebContents } from 'electron';
 import { PLUGIN_FS_CHANNELS, SCOPE_REQUEST_ID_MAX } from '../../shared/plugin-fs-channels';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { IdentityRegistry } from './identity-registry.service';
 import { PathScopeRegistry } from './path-scope-registry.service';
 import { ScopeRequestCorrelator } from './scope-request-correlator';
@@ -213,6 +214,16 @@ export function registerPluginFsHandlers(
   deps: PluginFsDeps,
 ): void {
   const { identityRegistry, pathScopeRegistry, correlator } = deps;
+  const maybeSweepStaleTrash = createTrashSweepThrottle();
+  // 关窗(destroyed)/ renderer reload(主框架非同文档导航)时释放该 webContents 名下的身份 token 与
+  // pending scope 授权请求:两种情况都不会有 renderer 主动发的 _unregister-plugin,此前 token 永驻
+  // entries;reload 前发起的授权请求也要干等满 TTL(关窗另有 releaseWindowResources 兜底,幂等)。
+  // 时序:导航开始即撤旧,新文档脚本的重新注册在其后,不会被误撤。path-scope 按 pluginId 全局共享
+  //(其它窗口同插件仍在用、且有持久化),不在此撤。
+  const attachWcGoneHook = makeWcGoneHook((wcId) => {
+    identityRegistry.revokeByWebContents(wcId);
+    correlator.cancelBySender(wcId);
+  });
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.REGISTER_PLUGIN,
@@ -228,6 +239,7 @@ export function registerPluginFsHandlers(
       ) {
         throw fsError(ERROR_CODES.BAD_INPUT, 'invalid pluginId');
       }
+      attachWcGoneHook(event.sender);
       return identityRegistry.register(pluginId, event.sender.id);
     },
   );
@@ -590,7 +602,7 @@ export function registerPluginFsHandlers(
           target: final,
         });
       }
-      await sweepStaleTrashInDir(rFinal.parentCanonical);
+      await maybeSweepStaleTrash(rFinal.parentCanonical); // perf:按目录节流,见 createTrashSweepThrottle
       await atomicReplacePaths(rStaging.fullPath, rFinal.fullPath, final, opts);
     },
   );
@@ -816,6 +828,34 @@ async function atomicReplacePaths(
   } catch {
     // best effort cleanup only
   }
+}
+
+// perf:ATOMIC_REPLACE 此前每次替换前无条件 sweep(整目录 readdir + 逐个 stat .trash-*)—— 插件以原子替换做
+// 自动保存、目标目录条目很多时,每次保存都 O(N)。sweep 只回收 >TRASH_TTL_MS(24h)的泄漏 trash(rename
+// 回滚失败 / 崩溃残留),不是替换的正确性前置:trash 名含时间戳+随机后缀,不依赖目录先被清空防撞名。
+// 改为按 canonical parent 节流:同一目录 TRASH_SWEEP_INTERVAL_MS 内只扫一次(相对 24h TTL,仅延后回收)。
+// 跟踪表按插入序淘汰,容量上限防随访问过的目录数单调增长。
+const TRASH_SWEEP_INTERVAL_MS = 60_000;
+const TRASH_SWEEP_TRACK_MAX = 256;
+
+export function createTrashSweepThrottle(
+  now: () => number = Date.now,
+  maxTracked: number = TRASH_SWEEP_TRACK_MAX,
+): (dir: string) => Promise<void> {
+  const lastSweepAt = new Map<string, number>();
+  return async (dir) => {
+    const t = now();
+    const last = lastSweepAt.get(dir);
+    // t < last(时钟回拨)→ 视为到期,不被卡死。
+    if (last !== undefined && t >= last && t - last < TRASH_SWEEP_INTERVAL_MS) return;
+    lastSweepAt.delete(dir); // 重新插入到末尾(最近使用)
+    if (lastSweepAt.size >= maxTracked) {
+      const oldest = lastSweepAt.keys().next().value;
+      if (oldest !== undefined) lastSweepAt.delete(oldest);
+    }
+    lastSweepAt.set(dir, t); // 先记再扫:并发替换不重复扫
+    await sweepStaleTrashInDir(dir);
+  };
 }
 
 /** Sweep .trash-* older than TRASH_TTL_MS in given dir. Best-effort. */

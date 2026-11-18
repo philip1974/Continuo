@@ -3,7 +3,12 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { loadExplorer } from '../../../electron/main/persistence';
+import {
+  defaultExplorerV3,
+  loadExplorer,
+  MAX_PERSISTED_WINDOW_SEGMENTS,
+  saveExplorer,
+} from '../../../electron/main/persistence';
 import {
   _reset as resetWindowSeq,
   clearWindow,
@@ -146,6 +151,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/main/ipc', () => ({ registerIpc: vi.fn() }));
 vi.mock('../../../electron/main/services/window-restore.service', () => ({
   pickWindowsToRestore: vi.fn(() => []),
+  isStartupRestoreInFlight: vi.fn(() => false),
 }));
 vi.mock('../../../electron/main/services/startup-mode.service', () => ({
   pickStartupMode: vi.fn(() => ({ mode: 'restore' })),
@@ -452,6 +458,135 @@ describe('window close layout flush', () => {
     });
 
     expect(getActiveSeqs().has(10)).toBe(false);
+  });
+
+  it('T20c: 关窗时窗口段超过上限 → 摘最旧 closed 段;活跃窗、主窗段(seq 0)与刚关的窗口保留', async () => {
+    const sortDefault = { by: 'name' as const, reverse: false };
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      ...Array.from({ length: 120 }, (_, i) => ({
+        windowSeq: i + 100,
+        workspace: { root: `/w${i}` },
+        explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        lastClosedAt: 1000 + i,
+      })),
+    ];
+    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    const active = createMockMainWindow(100); // 段最旧但窗口活跃
+    const closing = createMockMainWindow(300);
+
+    closing.close();
+    ack(closing);
+    await vi.waitFor(async () => {
+      const after = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(after?.windows).toHaveLength(MAX_PERSISTED_WINDOW_SEGMENTS);
+    });
+    const seqs = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows.map(
+      (w) => w.windowSeq,
+    );
+    expect(seqs).toContain(0);
+    expect(seqs).toContain(100);
+    expect(seqs).toContain(300);
+    expect(seqs).toContain(219); // 最新的 closed 段
+    expect(seqs).not.toContain(101); // 最旧的非活跃 closed 段
+    expect(active.destroyed).toBe(false);
+  });
+
+  it('T20e: 关窗 LRU 不摘缺 lastClosedAt 的段(上次会话仍开着),摘有时间戳的最旧段', async () => {
+    const sortDefault = { by: 'name' as const, reverse: false };
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      ...Array.from({ length: 120 }, (_, i) => ({
+        windowSeq: i + 100,
+        workspace: { root: `/w${i}` },
+        explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        ...(i < 2 ? {} : { lastClosedAt: 1000 + i }), // seq 100/101 无时间戳
+      })),
+    ];
+    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    const closing = createMockMainWindow(300);
+
+    closing.close();
+    ack(closing);
+    await vi.waitFor(async () => {
+      const after = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(after?.windows).toHaveLength(MAX_PERSISTED_WINDOW_SEGMENTS);
+    });
+    const seqs = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows.map(
+      (w) => w.windowSeq,
+    );
+    expect(seqs).toContain(100);
+    expect(seqs).toContain(101);
+    expect(seqs).toContain(300);
+    expect(seqs).not.toContain(102); // 有时间戳的最旧段
+    // 跨启动老化:缺时间戳的陈旧段随本次关窗写盘补上固定时间戳,下次启动不再被重算为「最新」。
+    const after = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows;
+    expect(after.find((w) => w.windowSeq === 100)?.lastClosedAt).toEqual(expect.any(Number));
+    expect(after.find((w) => w.windowSeq === 101)?.lastClosedAt).toEqual(expect.any(Number));
+  });
+
+  it('T20f: 启动恢复阶段未结束时关窗 → 不给缺时间戳的段补写(它们可能即将被恢复并开着);自身段照写', async () => {
+    const { isStartupRestoreInFlight } = await import(
+      '../../../electron/main/services/window-restore.service'
+    );
+    vi.mocked(isStartupRestoreInFlight).mockReturnValue(true);
+    try {
+      const sortDefault = { by: 'name' as const, reverse: false };
+      const payload = defaultExplorerV3();
+      payload.windows = [
+        payload.windows[0]!,
+        {
+          windowSeq: 100,
+          workspace: { root: '/w100' },
+          explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        },
+      ];
+      await saveExplorer(path.join(dir, 'explorer.json'), payload);
+      const closing = createMockMainWindow(300);
+
+      closing.close();
+      ack(closing);
+      await waitForLastClosedAt(300);
+
+      const after = (await loadExplorer(path.join(dir, 'explorer.json')))!.windows;
+      expect(after.find((w) => w.windowSeq === 100)?.lastClosedAt).toBeUndefined();
+    } finally {
+      vi.mocked(isStartupRestoreInFlight).mockReturnValue(false);
+    }
+  });
+
+  it('T20d: 两窗近同时关闭 → 先落盘的 LRU 不摘另一个仍在关闭中(尚未写 lastClosedAt)的窗口段', async () => {
+    const sortDefault = { by: 'name' as const, reverse: false };
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      { ...payload.windows[0]!, lastClosedAt: 1 },
+      ...Array.from({ length: 120 }, (_, i) => ({
+        windowSeq: i + 100,
+        workspace: { root: `/w${i}` },
+        explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
+        lastClosedAt: 1000 + i,
+      })),
+    ];
+    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    const first = createMockMainWindow(300);
+    const second = createMockMainWindow(100); // 段最旧,且与 first 同时关闭
+
+    first.close();
+    second.close();
+    ack(first);
+    ack(second);
+    await vi.waitFor(async () => {
+      const after = await loadExplorer(path.join(dir, 'explorer.json'));
+      const seg = after?.windows.find((w) => w.windowSeq === 100);
+      expect(seg?.lastClosedAt).toBeGreaterThan(1000);
+    });
+    const after = (await loadExplorer(path.join(dir, 'explorer.json')))!;
+    const seg100 = after.windows.find((w) => w.windowSeq === 100)!;
+    expect(seg100.workspace).toEqual({ root: '/w0' });
+    expect(after.windows.map((w) => w.windowSeq)).toContain(300);
+    expect(after.windows).toHaveLength(MAX_PERSISTED_WINDOW_SEGMENTS);
   });
 
   it('before-quit 扫描窗口不对 getAllWindows 结果 filter 出中间数组,且仍 flush 存活窗口', async () => {

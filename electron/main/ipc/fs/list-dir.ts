@@ -37,6 +37,15 @@ export interface ListDirOptions {
    * 仅供进程内调用方调低(及测试);**不在 listDirInputSchema 暴露**,renderer 无法绕过 backstop。
    */
   readonly maxTotalEntries?: number;
+  /**
+   * 性能(Quick Open ⌘P):默认 true。为 false 时不返回 size/mtime/ctime,类型直接取自 opendir 的
+   * dirent(isFile/isDirectory/isSymbolicLink),普通文件/目录/符号链接不再逐项 lstat;仅 dirent 类型
+   * 未知(三者皆 false,如部分文件系统返回 DT_UNKNOWN)及 win32 上 dirent 报 symlink(libuv 把所有
+   * reparse point 报成链接,见 resolveEntry)回退 lstat。followSymlinks 解析链接目标仍走 stat。
+   * maxFiles 计数口径与 withStats:true 一致(dirent.isFile() ≡ lstat().isFile())。
+   * 差异仅一处:readdir 与 lstat 之间被删的项,withStats:true 跳过,false 仍列出(本就是竞态快照)。
+   */
+  readonly withStats?: boolean;
 }
 
 /**
@@ -55,6 +64,7 @@ export async function listDir(
   const exclude =
     opts.exclude === undefined ? DEFAULT_EXCLUDE_SET : new Set(opts.exclude);
   const followSymlinks = opts.followSymlinks ?? false;
+  const withStats = opts.withStats ?? true;
   // 边界(E275,clamp 非有限/不安全整数族):maxFiles 经 IPC schema(已加 .max(MAX_TOTAL_ENTRIES))进来,
   // 但 list-dir 作为内部 helper 须自守(防 schema 旁路/不安全整数 1e308 仍过 z.int())。要求安全正整数,
   // 并 clamp 到 MAX_TOTAL_ENTRIES(超过无意义:总条目本就在此硬上限早停);非法 → Infinity(走默认硬上限)。
@@ -91,6 +101,7 @@ export async function listDir(
     maxDepth,
     exclude,
     followSymlinks,
+    withStats,
     maxFiles,
     maxTotalEntries,
     state,
@@ -106,28 +117,58 @@ const LSTAT_CHUNK = 32;
 interface ResolvedEntry {
   readonly d: { name: string };
   readonly full: string;
-  readonly st: import('node:fs').Stats;
+  /** withStats:false 时为 null(输出不带 size/mtime/ctime)。 */
+  readonly st: import('node:fs').Stats | null;
   readonly isSymlink: boolean;
   readonly isDirectory: boolean;
+  readonly isFile: boolean;
 }
 
-type DirEntryLike = { name: string };
+type DirEntryLike = {
+  name: string;
+  isFile(): boolean;
+  isDirectory(): boolean;
+  isSymbolicLink(): boolean;
+};
 
-// 解析单个 dirent 的 stat。lstat 失败(边读边删竞态)→ null(跳过)。
+// 解析单个 dirent。withStats:false 且 dirent 类型已知 → 直接用 dirent 类型,不 lstat;
+// 否则 lstat,失败(边读边删竞态)→ null(跳过)。
 async function resolveEntry(
   dir: string,
   d: DirEntryLike,
   followSymlinks: boolean,
+  withStats: boolean,
 ): Promise<ResolvedEntry | null> {
   const full = path.join(dir, d.name);
-  let st;
-  try {
-    st = await lstat(full);
-  } catch {
-    return null; // 边读边删的竞态:跳过
+  let st: import('node:fs').Stats | null = null;
+  let isSymlink: boolean;
+  let isDirectory: boolean;
+  let isFile: boolean;
+  // Windows:libuv fs__readdir 对**任何** FILE_ATTRIBUTE_REPARSE_POINT 都报 DT_LINK(先于目录判断),
+  // 而 lstat 只把 SYMLINK/LX_SYMLINK/junction/APPEXECLINK 视为链接;OneDrive 按需文件、Dedup 等其它
+  // reparse tag 在 lstat 下是普通文件/目录。故 win32 上 dirent 报 symlink 的项不可采信,回退 lstat
+  //(与 withStats:true 口径一致:目录照常递归、文件计入 maxFiles)。其它平台 DT_LNK ≡ lstat 链接。
+  if (
+    !withStats &&
+    (d.isFile() ||
+      d.isDirectory() ||
+      (d.isSymbolicLink() && process.platform !== 'win32'))
+  ) {
+    isSymlink = d.isSymbolicLink();
+    isDirectory = d.isDirectory();
+    isFile = d.isFile();
+  } else {
+    let lst;
+    try {
+      lst = await lstat(full);
+    } catch {
+      return null; // 边读边删的竞态:跳过
+    }
+    isSymlink = lst.isSymbolicLink();
+    isDirectory = lst.isDirectory();
+    isFile = lst.isFile();
+    if (withStats) st = lst;
   }
-  const isSymlink = st.isSymbolicLink();
-  let isDirectory = st.isDirectory();
   // followSymlinks=true 时按**目标**判 isDirectory(但仍记 isSymlink:true 以便 UI 区分)。
   // 必须用 stat(跟随 link)而非 lstat —— 旧实现误用 lstat 拿到的仍是链接本身,
   // symlink-to-directory 永远 isDirectory=false → 不递归 → 静默漏掉链接目录下的文件
@@ -140,7 +181,7 @@ async function resolveEntry(
       /* link 失效,按原 lstat 处理 */
     }
   }
-  return { d, full, st, isSymlink, isDirectory };
+  return { d, full, st, isSymlink, isDirectory, isFile };
 }
 
 function resolveEntryBatch(
@@ -148,10 +189,11 @@ function resolveEntryBatch(
   batch: readonly DirEntryLike[],
   batchCount: number,
   followSymlinks: boolean,
+  withStats: boolean,
 ): Array<Promise<ResolvedEntry | null>> {
   const promises = new Array<Promise<ResolvedEntry | null>>(batchCount);
   for (let i = 0; i < batchCount; i++) {
-    promises[i] = resolveEntry(dir, batch[i]!, followSymlinks);
+    promises[i] = resolveEntry(dir, batch[i]!, followSymlinks, withStats);
   }
   return promises;
 }
@@ -162,6 +204,7 @@ async function walk(
   maxDepth: number,
   exclude: ReadonlySet<string>,
   followSymlinks: boolean,
+  withStats: boolean,
   maxFiles: number,
   maxTotalEntries: number,
   state: { fileCount: number; totalCount: number },
@@ -184,7 +227,7 @@ async function walk(
     const batchCount = chunkCount;
     chunkCount = 0;
     const resolved = await Promise.all(
-      resolveEntryBatch(dir, chunk, batchCount, followSymlinks),
+      resolveEntryBatch(dir, chunk, batchCount, followSymlinks, withStats),
     );
     for (const item of resolved) {
       if (state.fileCount >= maxFiles) {
@@ -192,17 +235,25 @@ async function walk(
         break;
       }
       if (!item) continue;
-      const { full, st, isSymlink, isDirectory } = item;
-      out[out.length] = {
-        path: full,
-        name: item.d.name,
-        isDirectory,
-        ...(isSymlink && { isSymlink: true }),
-        ...(st.isFile() && { size: st.size }),
-        mtime: st.mtimeMs,
-        ctime: st.ctimeMs,
-      };
-      if (st.isFile()) state.fileCount++; // 只文件计入 maxFiles(目录不计)
+      const { full, st, isSymlink, isDirectory, isFile } = item;
+      out[out.length] =
+        st === null
+          ? {
+              path: full,
+              name: item.d.name,
+              isDirectory,
+              ...(isSymlink && { isSymlink: true }),
+            }
+          : {
+              path: full,
+              name: item.d.name,
+              isDirectory,
+              ...(isSymlink && { isSymlink: true }),
+              ...(isFile && { size: st.size }),
+              mtime: st.mtimeMs,
+              ctime: st.ctimeMs,
+            };
+      if (isFile) state.fileCount++; // 只文件计入 maxFiles(目录不计)
       // 边界(E38):总条目(文件+目录)硬上限,超过即 fail-closed 抛(滥用/极端目录 backstop,
       // 不静默截断)。与只数文件的业务 maxFiles 正交;QuickOpen 的 maxFiles 更低会先早停。
       state.totalCount++;
@@ -223,6 +274,7 @@ async function walk(
           maxDepth,
           exclude,
           followSymlinks,
+          withStats,
           maxFiles,
           maxTotalEntries,
           state,
@@ -238,7 +290,7 @@ async function walk(
   for await (const dirent of dirHandle) {
     if (state.fileCount >= maxFiles) break;
     if (exclude.has(dirent.name)) continue;
-    chunk[chunkCount] = { name: dirent.name };
+    chunk[chunkCount] = dirent; // 保留 dirent 类型(withStats:false 免 lstat)
     chunkCount += 1;
     if (chunkCount >= LSTAT_CHUNK) {
       await flushChunk(); // 抛 FS_DIR_TOO_LARGE 时 for await 经迭代器 return() 关闭 Dir

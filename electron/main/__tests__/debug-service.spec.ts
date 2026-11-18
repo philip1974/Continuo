@@ -2469,6 +2469,133 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     return held;
   }
 
+  /** 让下一个 child 的 setBreakpoints 响应挂起(须在 startDebugging 之前装好:child 建好就开始重放)。 */
+  function holdNextChildSetBreakpoints(parent: FakeDapClient) {
+    const held: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+    const createChild = parent.createChildSession.bind(parent);
+    parent.createChildSession = () => {
+      const child = createChild() as FakeDapClient;
+      child.beforeResponse = (command) => {
+        if (command !== 'setBreakpoints') return undefined;
+        return new Promise<void>((resolve, reject) => held.push({ resolve, reject }));
+      };
+      return child;
+    };
+    return held;
+  }
+
+  // 子目标(worker / child_process)在 configurationDone 之前一直停住:各 source 的重放须并发发出,
+  // 不能每个 source 串行付一次往返。
+  it('child 重放:各 source 的 setBreakpoints 在首个响应之前全部发出,全部响应后才 configurationDone', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/b.js', line: 5 });
+    await service.setBreakpoints(sessionId, { file: '/c.js', line: 8 });
+    const held = holdNextChildSetBreakpoints(parent);
+
+    const started = parent.triggerStartDebugging({ type: 'pwa-node' });
+    await vi.waitFor(() => expect(held).toHaveLength(3));
+    const child = parent.children[0]!;
+    expect(setBreakpointRequests(child).map((r) => r.source.path)).toEqual(['/a.js', '/b.js', '/c.js']);
+    expect(child.requestLog.some((r) => r.command === 'configurationDone')).toBe(false);
+
+    // 乱序回应:前两个回来后仍不发 configurationDone。
+    child.adjustBreakpointLine = (line) => line + 100;
+    held[2]!.resolve();
+    held[0]!.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(child.requestLog.some((r) => r.command === 'configurationDone')).toBe(false);
+    held[1]!.resolve();
+    await started;
+
+    const commands = child.requestLog.map((r) => r.command);
+    expect(commands.indexOf('configurationDone')).toBeGreaterThan(commands.lastIndexOf('setBreakpoints'));
+    // 每个响应记到对应 source 的记录上(child verified 优先 → 快照取 child 的校正行)。
+    expect(service.viewSnapshot(ctx.ownerWindowId)[0]?.breakpointsBySource).toEqual([
+      { file: '/a.js', breakpoints: [{ file: '/a.js', line: 103, verified: true }] },
+      { file: '/b.js', breakpoints: [{ file: '/b.js', line: 105, verified: true }] },
+      { file: '/c.js', breakpoints: [{ file: '/c.js', line: 108, verified: true }] },
+    ]);
+    await service.cleanupAll('test');
+  });
+
+  it('child 重放:某个 source 失败 → 不发 configurationDone / launch,摘除并 dispose child,不留它的回报', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/b.js', line: 5 });
+    const held = holdNextChildSetBreakpoints(parent);
+
+    const started = parent.triggerStartDebugging({ type: 'pwa-node' });
+    await vi.waitFor(() => expect(held).toHaveLength(2));
+    const child = parent.children[0]!;
+    child.adjustBreakpointLine = (line) => line + 100;
+    held[0]!.resolve(); // a 成功
+    held[1]!.reject(new Error('setBreakpoints failed')); // b 失败
+    await expect(started).rejects.toThrow(/setBreakpoints failed/);
+
+    expect(child.requestLog.some((r) => r.command === 'configurationDone')).toBe(false);
+    expect(child.requestLog.some((r) => r.command === 'launch')).toBe(false);
+    expect(child.disposeCalls).toBe(1);
+    expect(debugSessions.get(sessionId)?.childSessionCount).toBe(0);
+    // a 的成功回报不残留(快照仍是父连接的回报)。
+    expect(service.viewSnapshot(ctx.ownerWindowId)[0]?.breakpointsBySource).toEqual([
+      { file: '/a.js', breakpoints: [{ file: '/a.js', line: 3, verified: true }] },
+      { file: '/b.js', breakpoints: [{ file: '/b.js', line: 5, verified: true }] },
+    ]);
+    await service.cleanupAll('test');
+  });
+
+  // adapter 按请求顺序处理:重放先发、用户随后对同一 child 发同 source 的完整集合 → 用户那次才是 adapter 的
+  // 最终状态。重放回报须在其响应到达时就登记,不能推迟到最慢 source 返回后再登记(那样会覆盖用户那次的新回报)。
+  it('child 重放在途时用户 setBreakpoints 同 source:最终回报为用户那次(不被推迟登记的重放回报覆盖)', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await service.setBreakpoints(sessionId, { file: '/b.js', line: 5 });
+    const held = holdNextChildSetBreakpoints(parent);
+
+    const started = parent.triggerStartDebugging({ type: 'pwa-node' });
+    await vi.waitFor(() => expect(held).toHaveLength(2));
+    const child = parent.children[0]!;
+    // 用户在重放在途时对 /a.js 再设一个断点:同 source 完整集合也发给这个 child。
+    const userSet = service.setBreakpoints(sessionId, { file: '/a.js', line: 9 });
+    await vi.waitFor(() => expect(held).toHaveLength(3));
+    expect(setBreakpointRequests(child).map((r) => r.source.path)).toEqual(['/a.js', '/b.js', '/a.js']);
+
+    // adapter 先回重放的 /a.js(+100),再回用户的 /a.js(+200);/b.js 最慢。
+    child.adjustBreakpointLine = (line) => line + 100;
+    held[0]!.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    child.adjustBreakpointLine = (line) => line + 200;
+    held[2]!.resolve();
+    await userSet;
+    held[1]!.resolve();
+    await started;
+
+    expect(service.viewSnapshot(ctx.ownerWindowId)[0]?.breakpointsBySource).toEqual([
+      {
+        file: '/a.js',
+        breakpoints: [
+          { file: '/a.js', line: 203, verified: true },
+          { file: '/a.js', line: 209, verified: true },
+        ],
+      },
+      { file: '/b.js', breakpoints: [{ file: '/b.js', line: 205, verified: true }] },
+    ]);
+    await service.cleanupAll('test');
+  });
+
   // 同 session 同 source 的并发设置必须串行:否则 B 捕获的完整集合含未完成的 A,A 失败回滚时 B 已把 A
   // 设进 adapter。
   it('同 source 并发 setBreakpoints 串行:前一个失败回滚后,后一个下发的集合不含它', async () => {
@@ -3217,6 +3344,40 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
     await service.disconnect(sessionId);
     expect(main.children.every((worker) => worker.disconnectRequests === 0)).toBe(true);
     expect(main.disconnectRequests).toBe(1);
+  });
+
+  it('worker 重放在途时结束 → 迟到的重放响应不再为已回收的连接登记回报', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/a.js', line: 3 });
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    const main = parent.children[0]!;
+    const held: Array<() => void> = [];
+    const createChild = main.createChildSession.bind(main);
+    main.createChildSession = () => {
+      const child = createChild() as FakeDapClient;
+      child.beforeResponse = (command) =>
+        command === 'setBreakpoints' ? new Promise<void>((resolve) => held.push(resolve)) : undefined;
+      return child;
+    };
+
+    const started = main.triggerStartDebugging({ type: 'pwa-node', name: '[worker]' });
+    await vi.waitFor(() => expect(held).toHaveLength(1));
+    const worker = main.children[0]!;
+    worker.emit('terminated', {}); // 结束的 child 当即回收,连接等在途请求结算后再关
+    held[0]!();
+    await started;
+
+    const runtime = runtimeOf(service, sessionId);
+    expect(runtime.childClients).toEqual([main]);
+    for (const bp of runtime.breakpoints) {
+      expect(bp.reportedBy.has(worker)).toBe(false);
+      expect(bp.ids.has(worker)).toBe(false);
+    }
+    await service.cleanupAll('test');
   });
 
   /** 每个 variables 请求都回满 count 个可展开成员(每个成员一个新的 variablesReference)。 */

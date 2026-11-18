@@ -222,3 +222,19 @@ describe('打磨 — FolderTree root-drop 可移动路径选择', () => {
     expect(src).not.toContain('const contextActions: ContextMenuActions = {');
   });
 });
+
+// perf:只用名字 / 只做可访问性探测的 listDir 调用点传 withStats:false,main 不再逐项 lstat
+//(10 万条目目录 ~560ms → ~130ms)。Explorer 树本身仍取 stat:插件右键菜单 ctx.target 是
+// FileEntry(SDK 契约含 size/mtime/ctime)。
+describe('perf — 只用名字/探测的 listDir 不取 stat', () => {
+  it('makeUniqueDestPicker 只用 e.name → listDir(destDir, { withStats: false })', () => {
+    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
+    expect(src).toContain('coApi.fs.listDir(destDir, { withStats: false })');
+  });
+
+  it('App 全局拖入目录探测只看 ok → listDir(p, { withStats: false })', () => {
+    const src = readFileSync(join(ROOT, 'shell', 'App.tsx'), 'utf8');
+    expect(src).toContain('(p) => coApi.fs.listDir(p, { withStats: false })');
+    expect(src).not.toContain('(p) => coApi.fs.listDir(p),');
+  });
+});

@@ -85,6 +85,43 @@ describe('makeDebouncePerPath', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+  // 性能:纯 trailing debounce 在持续事件下永不触发;maxWait 保证同 path 至多 maxWait 调一次。
+  it('maxWait:持续触发下自本轮首次触发起至多 maxWait 调一次,之后开始新一轮', () => {
+    const fn = vi.fn();
+    const debounced = makeDebouncePerPath(fn, 100, 1000);
+    for (let i = 0; i < 20; i++) {
+      debounced('/a');
+      vi.advanceTimersByTime(50);
+    }
+    // t=1000 时触发一次(本轮首次在 t=0,最后一次触发在 t=950)
+    expect(fn).toHaveBeenCalledTimes(1);
+    debounced('/a'); // 新一轮:恢复普通 trailing
+    vi.advanceTimersByTime(99);
+    expect(fn).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('maxWait:稀疏触发时行为与纯 trailing 一致;未给 maxWait 的持续触发仍只在停止后调一次', () => {
+    const fn = vi.fn();
+    const withMax = makeDebouncePerPath(fn, 100, 1000);
+    withMax('/a');
+    vi.advanceTimersByTime(99);
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    const g = vi.fn();
+    const plain = makeDebouncePerPath(g, 100);
+    for (let i = 0; i < 40; i++) {
+      plain('/a');
+      vi.advanceTimersByTime(50);
+    }
+    expect(g).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    expect(g).toHaveBeenCalledTimes(1);
+  });
+
   it('cancel 后再触发仍工作', () => {
     const fn = vi.fn();
     const debounced = makeDebouncePerPath(fn, 100);

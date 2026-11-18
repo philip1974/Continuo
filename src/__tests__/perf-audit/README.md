@@ -139,3 +139,85 @@
 **修复**:`fuzzy.ts` 抽 `fuzzyScoreBothLower`(q 与 t 均已 lower)+ `fuzzyFilter` 加可选 `getStrLower`(返回预 lower 的 target)。`QuickOpenFile` 加 `relPathLower` 字段(walk-files scan 时算一次),QuickOpenModal 传 `getStrLower=(f)=>f.relPathLower`。query 仍每批 lower 一次,打分/排序逐字节一致(`relPath.toLowerCase()` 与 `target.toLowerCase()` 同操作)。每按键 O(候选总长) lowercasing → 0(scan 时一次)。
 
 **契约不变量**(`command-palette/fuzzy.spec.ts` perf P16:对多种混合大小写 query/target,有无 getStrLower 结果排序完全相同)。
+
+## E1 — co-app 跳行处动态 import scrollToLine(CodeMirror 不进 main-app 启动包)
+
+**位置**:`src/plugins/co-app.ts` `editor.openFile`。
+
+**问题**:co-app 在 main-app 启动路径上,静态 import `scrollToLine`(运行时依赖 `@codemirror/view`)把整套 CodeMirror 拖进启动包,破坏 Editor 懒加载边界。
+
+**修复**:跳行时 `await import('@/panels/Editor/scrollToLine')`。复审修正:与 `preloadCodeEditorEngine()`(Editor 面板 + CodeEditor chunk,与 lazy 共用 `editor-engine-loaders` 的同一 promise)并行加载,模块就绪后才开始 500ms 有界挂载等待,并按 `viewRefs` 复核 view 未被替换;加载失败映射为 `EXCEPTION`。
+
+**契约不变量**(`editor-lazy-boundary.spec.ts`:co-app 不静态 import scrollToLine / `@codemirror/*`;`sdk-editor-namespace/*` 行号跳转契约不变,`openFile-cold-load.spec.ts` 覆盖冷加载/并发/加载失败)。
+
+## E2 — EditorPanel 内两套编辑引擎各自 lazy
+
+**位置**:`src/panels/Editor/EditorPanel.tsx`。
+
+**问题**:EditorPanel 静态 import CodeEditor(CodeMirror + 语言包)与 MilkdownEditor(Crepe/ProseMirror/katex),Editor chunk 同时含两套引擎;Welcome / 只开代码文件也要下载解析 Milkdown。
+
+**修复**:两引擎各 `React.lazy`,body 外包 `<Suspense key={engine} fallback={null}>`(engine = welcome/code/milkdown)—— 切换引擎时边界整体重挂,旧编辑器完整卸载,与原 key 重挂语义一致。viewRefs 仍由 CodeEditor 挂载 effect 注册,`waitForViewRef` 不变。语言包按扩展名动态加载**未做**(pickLanguage 同步导出且被测试,改异步需 Compartment 重配,收益/风险不匹配)。
+
+复审修正:import 工厂抽到 `editor-engine-loaders.ts`(成功 promise 共享、失败不缓存),EditorPlugin / EditorPanel / co-app 预加载共用;引擎 Suspense 外包局部 `EditorEngineErrorBoundary`,chunk 加载失败只在引擎区显示错误 + 重试(i18n),重试新建该引擎的 lazy 实例并换 key 重挂边界。
+
+**契约不变量**(`editor-engine-lazy.spec.tsx`:Welcome 不加载引擎;代码文件只加载 CodeEditor;Markdown edit 再加载 Milkdown;引擎已加载后切换同步渲染;加载器共享 promise、失败可重试。`editor-engine-error-boundary.spec.tsx`:加载失败面板不崩、显示错误与重试,重试后加载成功)。
+
+**首开预热**:首次打开文件时引擎 chunk 原要等 readFile 返回、openTab 提交、EditorPanel 渲染后才开始加载(两段串行)。
+`openFileByPath`(Explorer 单击 / Quick Open 回车 / SDK openFile)在 `await readFile` 之前 fire-and-forget 预热
+Editor 面板 + 对应引擎(Markdown 且 `getEffectiveMode(null)` 非 source → Milkdown,否则 CodeEditor);已打开的 tab
+只切换不预热;Quick Open 面板挂载即 `preloadCodeEditorEngine()`。共享 loader 去重、失败不缓存,预热失败吞掉不影响
+打开结果(`editor-engine-prewarm.spec.tsx`)。
+
+## E3 — EditorHeader memo
+
+**位置**:`src/panels/Editor/EditorHeader.tsx`。
+
+**问题**:EditorPanel 每按键重渲,非 memo 的 EditorHeader 被连带调用,每键重建全部 TabNavItem 与闭包(O(tab 数))。
+
+**修复**:`memo` 包裹。唯一 prop `onCloseRequest` 为父级稳定 useCallback,所需 store 状态全走自身窄订阅。
+
+**契约不变量**(`editor-header-memo.spec.tsx`:父级重渲 props 不变 → 不重渲;自身订阅的 chrome 变化 → 仍更新)。
+
+## E4 — debug 装饰同步按相关切片门控
+
+**位置**:`src/panels/Editor/decorations/debug-decoration-sync.ts`。
+
+**问题**:宽订阅 editor store + debug store,每按键 / 变量加载都对每个 view 线性找 tab + 扫全部断点做路径比较(O(T²+T·B)),签名缓存只省掉最后的 dispatch。
+
+**修复**:订阅回调比较前后状态 —— editor 侧仅 `viewRefs` / `chromeVersion`(tab 增删/改名/改路径都经 action bump),debug 侧仅 `activeSessionId` 或某 session 的 `breakpoints` / `stopped` 引用变化时同步。正文变化后的装饰由 StateField 在 `docChanged` 时按行号重建,不依赖 store 通知。
+
+**契约不变量**(`debug-decoration-sync-gating.spec.tsx`:按键 / 无关 debug 更新零扫描;停点移动、断点变更、新开 view、改路径、关闭 tab 仍同步;`51-debug-breakpoint-ui/sync.spec.tsx` 全部保持)。
+
+## E5 — debug 装饰同步不静态引入 CodeMirror
+
+**位置**:`src/panels/Editor/decorations/debug-decoration-sync.ts`、`debug-decorations.ts`。
+
+**问题**:EditorPanel 静态 import 同步模块,后者静态 import `./debug-decorations`(运行时依赖 `@codemirror/view` + `state`),EditorPanel chunk 因此静态依赖 ~245KB CodeMirror 公共 chunk,Welcome / 未开代码 tab 冷启动也要下载解析,违背 `editor-engine-loaders.ts`「不得静态 import CodeMirror」约束。
+
+**修复**:同步模块对装饰实现只做 type import;`debug-decorations` 模块求值时调用 `provideDebugDecorationsApplier(setDebugDecorations)` 注册。view 只由静态 import 了它的 CodeEditor 注册,有 view 时实现必已就绪,同步语义不变。兜底:有 view 而实现未就绪时 `import('./debug-decorations')`,加载完成且同步仍在运行时补做一次(失败不缓存)。
+
+**契约不变量**(`editor-lazy-boundary.spec.ts`:sync 模块与 EditorPanel 不静态 import `@codemirror/*` / debug-decorations;`debug-decoration-sync-lazy.spec.tsx`:实现未加载时动态加载后对已注册 view 补做同步;`51-debug-breakpoint-ui/sync.spec.tsx`、`debug-decoration-sync-gating.spec.tsx` 全部保持)。
+
+## E6 — @milkdown 的 katex 导入换空壳(Latex 关闭)
+
+**位置**:`electron.vite.config.ts` renderer 插件 `scripts/vite-milkdown-katex-stub.ts` + 空壳 `scripts/milkdown-katex-stub.ts`。
+
+**问题**:`@milkdown/crepe` 主入口与 `feature/toolbar` 静态 `import katex from 'katex'`,即使 MilkdownEditor 设 `CrepeFeature.Latex: false`,MilkdownEditor chunk 仍带 katex@0.16.45(~260KB);mermaid 另动态带 katex@0.16.47。
+
+**修复**:renderer 构建插件把**来自 `node_modules/@milkdown/`** 的裸 `katex` 导入解析到空壳(`render(){}` / `renderToString(){return ''}` —— Crepe 只用这两个默认导出方法,且仅在 Latex 启用时可达)。mermaid 的 katex 不受影响;`katex/dist/katex.min.css` 等子路径不匹配。**启用 CrepeFeature.Latex 前须移除插件。** MilkdownEditor chunk 987,236 B → 726,893 B。
+
+**契约不变量**(`milkdown-katex-stub.spec.ts`:插件挂在 renderer;只匹配 @milkdown importer;空壳 API 调用不抛错;MilkdownEditor 仍关闭 Latex;Latex 关闭时真实 Crepe 渲染含 `$...$` / `$$...$$` / ```` ```latex ```` 的文档不调用 katex 且原样往返)。
+
+## renderer 产物压缩(renderer-minify.spec.ts)
+
+- `electron.vite.config.ts` 的 renderer build 显式 `minify: 'esbuild'`(electron-vite 2.x 默认不压缩)。
+- 首屏 main-app chunk 2,494,294 B → ~1,267,928 B;TerminalPanelView 654,356 B → ~496,848 B。
+- 仓库运行时代码不依赖函数 / 类名(`constructor.name` 等),压缩不改变行为;以全量 e2e 验证。
+
+## main 冷启动:node:http 不以 ESM 值导入(main-node-http-cjs.spec.ts)
+
+- main 产物是 ESM;`import { createServer } from 'node:http'` 会让 Node 读取 node:http 全部导出(含懒 getter),
+  连带加载并编译整个 undici,实测 main 求值 +17–18ms。mcp-host 只用 createServer,改经
+  `createRequire(import.meta.url)('node:http')` 取得,类型仍用 `import type`。
+
+- `first-interaction-warmup.spec.tsx`:Explorer 文件行 pointerdown 预热编辑引擎 chunk(早于 click);终端意图预热同时加载捆绑字体 MesloLGS NF。

@@ -1,7 +1,9 @@
 import { lstat, open, realpath, rename, rm, stat } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 import { runSerialPerKey } from '../../../shared/run-serial-per-key';
+import type { FsFileStat } from '../../../shared/fs-channels';
 
 /**
  * 原子写文件(ADR-009,借鉴 Lokus atomic_write_file)。
@@ -31,6 +33,8 @@ import { runSerialPerKey } from '../../../shared/run-serial-per-key';
  * 不做:父目录 mkdir(VSCode 行为:save 到不存在的目录就该报错)
  *
  * content 为 string → utf-8 写;为 Uint8Array → 二进制写(Step 5d Dropzone 路径)
+ *
+ * 返回值(性能:编辑器保存回声识别,见 FsFileStat):写入内容对应的 { mtimeMs, size, ino };无法确认则 undefined。
  */
 
 // per-path 写串行化链。同一 filePath 的写排队执行,避免共享固定 tmp 名被并发截断。
@@ -49,7 +53,7 @@ function withPathLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
  * 操作不跟随 symlink」相反:内容读/写应对称跟随到目标。
  * 非 symlink / 不存在(新建)/ 断链(realpath 失败)→ 用原路径正常创建或替换。
  */
-async function resolveSymlinkTarget(filePath: string): Promise<string> {
+export async function resolveSymlinkTarget(filePath: string): Promise<string> {
   // 数据安全:lstat/realpath 的错误必须**只对 ENOENT 回退**,其它(EACCES/EIO 等)抛出。
   // catch-all 会把「无法确认状态」当新建/断链 → 回退原路径后 rename 用普通文件替换 symlink
   // 本身(断链、读写不对称),重现已修过的损坏(codex P1,#11 的连带缺口)。
@@ -72,7 +76,7 @@ async function resolveSymlinkTarget(filePath: string): Promise<string> {
 export async function atomicWriteFile(
   filePath: string,
   content: string | Uint8Array,
-): Promise<void> {
+): Promise<FsFileStat | undefined> {
   // symlink → 写穿到 canonical target,并以 target 作锁 key(经不同 symlink 指向同一
   // target 的并发写也能正确串行)。
   const realPath = await resolveSymlinkTarget(filePath);
@@ -100,7 +104,7 @@ async function existingFileMode(filePath: string): Promise<number | undefined> {
 async function atomicWriteFileInner(
   filePath: string,
   content: string | Uint8Array,
-): Promise<void> {
+): Promise<FsFileStat | undefined> {
   // tmp 用**隐藏标记名** `.<base>.continuo.tmp`(而非旧的可预测 `${filePath}.tmp`):
   // 旧名会与用户真实文件(如 `foo.md.tmp` —— 常见后缀)撞名,`open('w')` 直接截断它、
   // 随后 rename 连内容带文件一起销毁 → 数据丢失(codex P1)。隐藏 + 应用标记的 sibling
@@ -112,6 +116,8 @@ async function atomicWriteFileInner(
   // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试
   // 一次,保留「固定名 crash 残留自愈」语义(第十八轮设计),同时不再有截断用户文件之虞。
   let fd: Awaited<ReturnType<typeof open>> | undefined;
+  // 本进程写的那份 tmp 的身份(dev/ino,关闭前经 fd 取,不受平台关闭时刷新 mtime 影响)。
+  let handleId: Stats | undefined;
   try {
     try {
       fd = await open(tmpPath, 'wx');
@@ -129,6 +135,7 @@ async function atomicWriteFileInner(
       await fd.writeFile(content);
     }
     await fd.sync();
+    handleId = await fd.stat().catch(() => undefined);
   } catch (err) {
     await fd?.close().catch(() => {});
     await rm(tmpPath, { force: true }).catch(() => {});
@@ -136,6 +143,19 @@ async function atomicWriteFileInner(
   } finally {
     await fd?.close().catch(() => {});
   }
+
+  // 本次写入内容的身份:**写句柄关闭后**、rename 前对 tmp 取(失败不影响写盘本身)。不能在关闭前经 fd 取:
+  // NTFS/FAT 在写句柄关闭时才刷新 LastWriteTime(GetFileTime 文档),关闭前的 mtime 与 rename 后目标
+  // 几乎必然不一致 → Windows 上回声识别恒失效。NTFS rename 保留 FileId(ino)与 LastWriteTime。
+  // close→stat 窗口:tmp 为隐藏标记名,同路径写已 per-path 串行,外部不会写它;即便有,rename 后的
+  // 比对也只会在「目标 == 被 stat 的那份 tmp」时通过,其余不一致一律退化为整文件读。
+  // 关闭后按路径 stat 须仍是本进程写的同一 inode:另一进程(如 dev 版与打包版同开)在关闭→stat 之间删掉
+  // 并重建同名 tmp 时,不得把对方的内容记成自己的回声。
+  const tmpStat: Stats | undefined = await stat(tmpPath).catch(() => undefined);
+  const written =
+    tmpStat && handleId && tmpStat.dev === handleId.dev && tmpStat.ino === handleId.ino
+      ? tmpStat
+      : undefined;
 
   // ② 原子 rename tmp → path(替换原文件)。失败不改动原文件,清 tmp 后抛。
   try {
@@ -147,4 +167,28 @@ async function atomicWriteFileInner(
       `atomic write rename failed: ${filePath}`,
     );
   }
+  return confirmWrittenStat(filePath, written);
+}
+
+/**
+ * rename 后对目标 stat 一次,与关闭写句柄后对 tmp 取得的「本次写入」身份(dev/ino/mtimeMs/size)比对:一致才返回
+ * { mtimeMs, size, ino }。rename 与 stat 之间若有外部写入 / 替换,或平台在 rename 时改了 mtime,则
+ * 不一致 → undefined(调用方不记录,外部同步照旧整文件读,绝不把别人的写入当成自己的回声)。
+ */
+async function confirmWrittenStat(
+  filePath: string,
+  written: Stats | undefined,
+): Promise<FsFileStat | undefined> {
+  if (!written) return undefined;
+  const now = await stat(filePath).catch(() => undefined);
+  if (
+    !now ||
+    now.dev !== written.dev ||
+    now.ino !== written.ino ||
+    now.mtimeMs !== written.mtimeMs ||
+    now.size !== written.size
+  ) {
+    return undefined;
+  }
+  return { mtimeMs: now.mtimeMs, size: now.size, ino: now.ino };
 }

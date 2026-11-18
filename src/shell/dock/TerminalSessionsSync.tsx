@@ -10,6 +10,7 @@ import {
   type TerminalSession,
 } from '@/stores/terminal.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { pruneReconcilerSeenSessions } from './DockReconciler';
 
 const warnedDropKeys = new Set<string>();
 let warnedNonFiniteOnce = false;
@@ -41,6 +42,8 @@ export function TerminalSessionsSync(): null {
           winId,
         );
       }
+      // 不会再有快照到达 → 解除 Splash 就绪屏障(不让它干等安全上限)。
+      useTerminalStore.getState().markHydrated();
       return;
     }
 
@@ -52,13 +55,49 @@ export function TerminalSessionsSync(): null {
     let sawPush = false;
     // 最近一次 owner-过滤后的 raw 快照。workspace root 变化时据此重新过滤,使切换 workspace
     // 后旧项目 terminal 隐藏、切回旧根又重现(PTY 在 main 仍活,这里只是视图过滤)。(R12)
-    let rawOwned: readonly TerminalSession[] = [];
+    // null = 尚无权威快照(listSessions 在途 / 失败且无广播):此时不得把「无快照」当空快照置 hydrated。
+    let rawOwned: readonly TerminalSession[] | null = null;
+
+    // 按 owner 过滤 IPC 快照。droppedIds:本轮因 wrong-owner 以外的原因被丢弃(shape-invalid /
+    // missing-owner)且能解析出字符串 id 的项 —— 可能正是本窗口仍存活的 session,过滤结果里缺失不能当作
+    // 真删除。wrong-owner 是他窗口 session,确定不属于本窗口,不算。无法解析 id 的丢弃项(not-object /
+    // id 非字符串 / over-capacity)无从对应 seen 记录里的任何 id,不参与保护。
+    const filterOwned = (
+      sessions: readonly unknown[],
+    ): { owned: readonly TerminalSession[]; droppedIds: string[] } => {
+      const droppedIds: string[] = [];
+      const owned = filterByOwnerWindow(sessions, winId, {
+        onDrop: (sessionId, reason) => {
+          if (reason !== 'wrong-owner' && sessionId !== undefined) droppedIds.push(sessionId);
+          warnOnDrop(sessionId, reason);
+        },
+      });
+      return { owned, droppedIds };
+    };
+
+    // rawOwned 每次被权威快照替换后调用:剪掉 reconciler 首次出现记录里已真正消失的 session
+    // (基于 workspace 过滤前的 rawOwned,workspace 隐藏的仍保留,见 pruneReconcilerSeenSessions)。
+    // 被歧义丢弃的 id 保留:否则该 session 下次以有效形态重现会被当首次出现而 setActive 抢焦;其余照常剪,
+    // 持续混入畸形项也不会让记录重新无界增长。
+    const setRawOwned = ({
+      owned,
+      droppedIds,
+    }: ReturnType<typeof filterOwned>): void => {
+      rawOwned = owned;
+      pruneReconcilerSeenSessions(owned, droppedIds);
+    };
 
     const applyWorkspaceFilter = (): void => {
-      const root = useWorkspaceStore.getState().root;
-      useTerminalStore
-        .getState()
-        .replaceSnapshot(filterByWorkspaceRoot(rawOwned, root));
+      if (rawOwned === null) return;
+      const workspace = useWorkspaceStore.getState();
+      // workspace 尚未完成持久化恢复时 root 仍是初始 null:此时过滤会把存量 workspace 终端滤掉、恢复后
+      // 再当普通新增(兜底聚焦抢焦)。首轮可见过滤等 workspace root 恢复(由下方订阅触发);
+      // 只需 root,不等编辑器 tab 读盘(rootRestored 早于 hydrated,hydrated ⇒ rootRestored)。
+      if (!workspace.rootRestored && !workspace.hydrated) return;
+      const store = useTerminalStore.getState();
+      store.replaceSnapshot(filterByWorkspaceRoot(rawOwned, workspace.root));
+      // 空快照时 replaceSnapshot 不产生变化 → 显式标记已收到首个权威快照(非空时已原子置位,此处 no-op)。
+      store.markHydrated();
     };
 
     coApi.terminal
@@ -68,17 +107,18 @@ export function TerminalSessionsSync(): null {
         if (!r.ok || !Array.isArray(r.data?.sessions)) {
           // a11y(A130,A129 同族):初始会话恢复失败此前静默早返(列表缺失无反馈)→ notify。
           notify.error(translate('errors.terminal.sessions_restore_failed'));
+          // 初始拉取已失败:只放行 Splash 屏障;之后首个有效广播仍按 hydrate 处理(不置 hydrated)。
+          useTerminalStore.getState().markSettled();
           return;
         }
-        rawOwned = filterByOwnerWindow(r.data.sessions, winId, {
-          onDrop: warnOnDrop,
-        });
+        setRawOwned(filterOwned(r.data.sessions));
         applyWorkspaceFilter();
       })
       .catch(() => {
         // a11y(A130):IPC reject 此前是未处理 rejection + 静默失败 → notify(被推送取代则跳过)。
         if (cancelled || sawPush) return;
         notify.error(translate('errors.terminal.sessions_restore_failed'));
+        useTerminalStore.getState().markSettled();
       });
 
     const unsub = coApi.terminal.onSessionsChanged((snapshot) => {
@@ -95,13 +135,19 @@ export function TerminalSessionsSync(): null {
         return;
       }
       sawPush = true;
-      rawOwned = filterByOwnerWindow(snapshot, winId, { onDrop: warnOnDrop });
+      setRawOwned(filterOwned(snapshot));
       applyWorkspaceFilter();
     });
 
-    // 当前 workspace 切换 → 用最新 raw 重新过滤(契约:visible = global || workspaceRoot===root)。
+    // 当前 workspace 切换 / 首次恢复完成 → 用最新 raw 重新过滤(契约:visible = global || workspaceRoot===root)。
     const unsubWorkspace = useWorkspaceStore.subscribe((s, prev) => {
-      if (s.root !== prev.root) applyWorkspaceFilter();
+      if (
+        s.root !== prev.root ||
+        s.hydrated !== prev.hydrated ||
+        s.rootRestored !== prev.rootRestored
+      ) {
+        applyWorkspaceFilter();
+      }
     });
 
     return () => {

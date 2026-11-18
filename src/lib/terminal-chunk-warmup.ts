@@ -26,6 +26,9 @@ export function preloadTerminalPanelChunk(): void {
   void import('@/panels/Terminal/TerminalPanelView').catch(() => {
     /* 用户真触发时 React.lazy 会再试 */
   });
+  // 捆绑字体仅终端使用:不预载则首个 term.open 才开始加载/解码(1.25MB woff2),且 xterm 6 不在字体
+  // 加载完后重测字符尺寸 → 首个终端按回退字体测量 cell。与 chunk 同一意图点并行加载;失败吞掉。
+  void globalThis.document?.fonts?.load('13px "MesloLGS NF"').catch(() => {});
 }
 
 /**

@@ -66,6 +66,7 @@ export function captureBoundedFiles(
 
 /** webkitGetAsEntry 形态(DataTransferItem 上的非标准方法). */
 interface EntryItem {
+  kind?: string;
   webkitGetAsEntry?: () => { isDirectory: boolean } | null;
 }
 
@@ -87,6 +88,55 @@ export function hasDirectoryInFirstItems(
     if (entry?.isDirectory === true) return true;
   }
   return false;
+}
+
+/**
+ * 性能:用 webkitGetAsEntry 的同步信息判定 files[] 中哪些下标是目录。每个文件型 item 都拿到
+ * entry 且与 files 一一对应 → 返回目录下标(可为空 = 明确全是文件);任一无法判断 → null。
+ * 非文件型 item(kind !== 'file',如 text/uri-list)不占 files 下标,跳过。
+ */
+function knownDirectoryIndexes(
+  items: ArrayLike<unknown> | null | undefined,
+  expected: number,
+): number[] | null {
+  if (!items) return null;
+  const dirs: number[] = [];
+  let fileIdx = 0;
+  // 边界(E176 同族):按索引有界遍历;非文件 item 异常多时放弃判定走回退
+  for (let i = 0; i < items.length && fileIdx < expected && i < expected * 2 + 16; i++) {
+    const it = items[i] as EntryItem | undefined;
+    if (it?.kind !== undefined && it.kind !== 'file') continue;
+    const entry = it?.webkitGetAsEntry?.();
+    if (!entry) return null;
+    if (entry.isDirectory) dirs.push(fileIdx);
+    fileIdx++;
+  }
+  return fileIdx === expected ? dirs : null;
+}
+
+/**
+ * 性能:drop 回调里**同步**确定要做目录探测(listDir IPC)的候选文件。此前纯文件拖入也会对
+ * 每个文件串行 listDir(最多 MAX_DROP_FILES 次 IPC)才得出「忽略」。webkitGetAsEntry 能判定时:
+ * 只把目录交给 resolveDroppedWorkspace(全是文件 → 空列表,零 IPC);无法判定(API 缺失/返 null/
+ * 与 files 对不上)→ 回退原逻辑(全部文件逐个探测)。候选保持原顺序 → 「选第一个可打开目录」语义不变。
+ * DataTransfer 仅事件期有效,须在 drop 回调同步调用。
+ */
+export function captureDropCandidates(
+  dt: { readonly items?: ArrayLike<unknown> | null; readonly files: ArrayLike<File> },
+  max: number,
+): { files: File[]; hadDirectory: boolean } {
+  const all = captureBoundedFiles(dt.files, max);
+  const expected = Math.min(dt.files.length, Math.max(max, 0));
+  const dirIdx = all.length === expected ? knownDirectoryIndexes(dt.items, expected) : null;
+  if (dirIdx === null) {
+    return { files: all, hadDirectory: hasDirectoryInFirstItems(dt.items, max) };
+  }
+  const files: File[] = [];
+  for (const i of dirIdx) {
+    const f = all[i];
+    if (f) files.push(f);
+  }
+  return { files, hadDirectory: files.length > 0 };
 }
 
 /**

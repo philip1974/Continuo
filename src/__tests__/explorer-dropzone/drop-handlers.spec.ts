@@ -416,3 +416,143 @@ describe('performDrop', () => {
     });
   });
 });
+
+// perf:外部拖入多文件改为有界并发读写(此前完全串行,1000 个小文件 = 1000 次串行
+// arrayBuffer + IPC + fsync)。并发同时须:在途 arrayBuffer/写入有上界;同目标路径(大小写/NFC 折叠后)
+// 严格按输入顺序串行(后项覆盖前项);written/failed 按输入顺序汇总。
+describe('performDrop · 有界并发', () => {
+  const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
+  // 可手动放行的 writeBinary:记录在途峰值与调用顺序。
+  function gatedFs() {
+    let inFlight = 0;
+    let peak = 0;
+    const calls: { path: string; bytes: number[] }[] = [];
+    const pending: { path: string; resolve: (r: IpcResult<void>) => void }[] = [];
+    const writeBinary = vi.fn<DropFsApi['writeBinary']>(
+      (path, content) =>
+        new Promise<IpcResult<void>>((resolve) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          calls.push({ path, bytes: Array.from(content) });
+          pending.push({
+            path,
+            resolve: (r) => {
+              inFlight -= 1;
+              resolve(r);
+            },
+          });
+        }),
+    );
+    return { fs: makeFs(writeBinary), calls, pending, peak: () => peak };
+  }
+
+  // 记录 arrayBuffer 在途峰值(读到写完之间都算在途内存)。
+  function countingFiles(names: string[]) {
+    let reading = 0;
+    let peak = 0;
+    const files = names.map(
+      (name, i) =>
+        ({
+          name,
+          size: 1,
+          arrayBuffer: async () => {
+            reading += 1;
+            peak = Math.max(peak, reading);
+            await tick();
+            reading -= 1;
+            return new Uint8Array([i]).buffer;
+          },
+        }) as unknown as File,
+    );
+    return { files, peak: () => peak };
+  }
+
+  it('不同目标并发写入,在途写入与 arrayBuffer 都有上界(2..8)', async () => {
+    const g = gatedFs();
+    const names = Array.from({ length: 20 }, (_, i) => `f${i}`);
+    const { files, peak: readPeak } = countingFiles(names);
+    const done = performDrop(files, '/work', g.fs);
+    // 每 tick 放行一个在途写入,直到全部完成
+    let settled = false;
+    void done.then(() => {
+      settled = true;
+    });
+    for (let n = 0; n < 500 && !settled; n++) {
+      await tick();
+      g.pending.shift()?.resolve(ok());
+    }
+    const r = await done;
+    expect(r.ok).toBe(true);
+    expect(r.written).toEqual(names.map((n) => `/work/${n}`));
+    expect(g.peak()).toBeGreaterThan(1);
+    expect(g.peak()).toBeLessThanOrEqual(8);
+    expect(readPeak()).toBeLessThanOrEqual(8);
+  });
+
+  it('同目标路径(含大小写差异)按输入顺序串行:前项写完才开始后项', async () => {
+    const g = gatedFs();
+    const { files } = countingFiles(['dup', 'other', 'DUP', 'dup']);
+    const done = performDrop(files, '/work', g.fs);
+    for (let n = 0; n < 10; n++) await tick();
+    // 第一个 dup 未完成前,后续同名(DUP / dup)不得发起写入
+    expect(g.calls.map((c) => c.path)).toEqual(['/work/dup', '/work/other']);
+    // 放行第一个 dup
+    g.pending.find((p) => p.path === '/work/dup')!.resolve(ok());
+    g.pending.splice(g.pending.findIndex((p) => p.path === '/work/dup'), 1);
+    for (let n = 0; n < 10; n++) await tick();
+    expect(g.calls.map((c) => c.path)).toEqual(['/work/dup', '/work/other', '/work/DUP']);
+    while (g.calls.length < 4 || g.pending.length > 0) {
+      g.pending.shift()?.resolve(ok());
+      await tick();
+    }
+    const r = await done;
+    // 同名写入顺序 = 输入顺序(字节为输入下标):后项覆盖前项
+    expect(g.calls.filter((c) => c.path !== '/work/other').map((c) => c.bytes[0])).toEqual([0, 2, 3]);
+    expect(r.written).toEqual(['/work/dup', '/work/other', '/work/DUP', '/work/dup']);
+  });
+
+  it('前 4+ 项同目标键时,后续异键项仍并发启动(同键链不占满 worker)', async () => {
+    const g = gatedFs();
+    const { files } = countingFiles(['dup', 'DUP', 'dup', 'Dup', 'dup', 'x', 'y', 'z']);
+    const done = performDrop(files, '/work', g.fs);
+    for (let n = 0; n < 10; n++) await tick();
+    // 第一个 dup 在途未放行:同键其余项等待,但 x/y/z 应已发起写入(同键组只占 1 个 worker)
+    expect(g.calls.map((c) => c.path)).toEqual(['/work/dup', '/work/x', '/work/y', '/work/z']);
+    while (g.calls.length < 8 || g.pending.length > 0) {
+      g.pending.shift()?.resolve(ok());
+      await tick();
+    }
+    const r = await done;
+    // 同键组内仍按输入顺序串行
+    expect(
+      g.calls.filter((c) => c.path.toLowerCase() === '/work/dup').map((c) => c.bytes[0]),
+    ).toEqual([0, 1, 2, 3, 4]);
+    expect(r.written).toEqual([
+      '/work/dup',
+      '/work/DUP',
+      '/work/dup',
+      '/work/Dup',
+      '/work/dup',
+      '/work/x',
+      '/work/y',
+      '/work/z',
+    ]);
+  });
+
+  it('完成顺序乱序时 written/failed 仍按输入顺序汇总', async () => {
+    const g = gatedFs();
+    const { files } = countingFiles(['a', 'b', 'c', 'd']);
+    const done = performDrop(files, '/work', g.fs);
+    for (let n = 0; n < 10; n++) await tick();
+    // 倒序完成:d ok, c fail, b fail, a ok
+    const by = (p: string) => g.pending.find((x) => x.path === p)!;
+    by('/work/d').resolve(ok());
+    by('/work/c').resolve(fail('E_C'));
+    by('/work/b').resolve(fail('E_B'));
+    by('/work/a').resolve(ok());
+    const r = await done;
+    expect(r.written).toEqual(['/work/a', '/work/d']);
+    expect(r.failed.map((f) => f.name)).toEqual(['b', 'c']);
+  });
+});

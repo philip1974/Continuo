@@ -607,15 +607,32 @@ function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, 'utf8');
 }
 
-function truncateUtf8(value: string, maxBytes: number): { value: string; truncated: boolean } {
+/**
+ * 按 UTF-8 字节上限截断(不切开代理对)。逐码元累加字节而非逐码点调 Buffer.byteLength:后者每字符一次 JS↔C++
+ * 跨界,64KiB 截断约 64K 次(单值 ~1.3ms),variables 展开一批大字符串时阻塞 main 50–90ms。口径与
+ * Buffer.byteLength 一致:<0x80→1、<0x800→2、合法代理对→4、其余(含孤立代理,编码为 U+FFFD)→3。
+ */
+export function truncateUtf8(value: string, maxBytes: number): { value: string; truncated: boolean } {
   if (utf8Bytes(value) <= maxBytes) return { value, truncated: false };
   let bytes = 0;
   let end = 0;
-  for (const char of value) {
-    const next = bytes + utf8Bytes(char);
-    if (next > maxBytes) break;
-    bytes = next;
-    end += char.length;
+  const n = value.length;
+  while (end < n) {
+    const c = value.charCodeAt(end);
+    let units = 1;
+    let size: number;
+    if (c < 0x80) size = 1;
+    else if (c < 0x800) size = 2;
+    else if (c >= 0xd800 && c <= 0xdbff && end + 1 < n) {
+      const d = value.charCodeAt(end + 1);
+      if (d >= 0xdc00 && d <= 0xdfff) {
+        size = 4;
+        units = 2;
+      } else size = 3;
+    } else size = 3;
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    end += units;
   }
   return { value: value.slice(0, end), truncated: true };
 }
@@ -1786,19 +1803,23 @@ export class DebugService {
       await child.connectToServer();
 
       await this.initializeClient(child);
-      // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。
-      for (const [source, records] of breakpointsBySource(runtime.breakpoints)) {
-        rememberBreakpointReports(
-          runtime,
-          child,
-          records,
-          await child.sendRequest(
+      // 每个 source 发一次完整集合(逐个断点发会让后一个覆盖前一个)。不同 source 并发发出:子目标在
+      // configurationDone 之前一直停住,串行会让每个 child 付 K 次往返。每个响应到达即登记:重放在途时
+      // 用户对同一 child 发的同 source 集合在 adapter 侧排在重放之后、其回报也随响应即时登记,推迟到最慢
+      // source 返回再登记会让旧的重放回报覆盖它。已被摘除(失败回滚 / 结束回收)的 child 不再登记;任一失败
+      // 进 catch 回滚(forgetClient 清掉该 child 的全部回报,与串行时一致)。
+      await Promise.all(
+        [...breakpointsBySource(runtime.breakpoints)].map(async ([source, records]) => {
+          const response = await child.sendRequest(
             'setBreakpoints',
             setBreakpointsArgs(runtime.adapterPaths.get(source) ?? source, records),
             this.requestTimeoutMs,
-          ),
-        );
-      }
+          );
+          if (runtime.childClients.includes(child)) {
+            rememberBreakpointReports(runtime, child, records, response);
+          }
+        }),
+      );
       await child.sendRequest('configurationDone', {}, this.requestTimeoutMs);
     } catch (err) {
       // child 没建起来:摘掉它,activeClient 保持原样(父 client 仍可用)。若在连接前就切过去,

@@ -16,3 +16,11 @@ These BDD specs pin the narrow contract:
 - scoped plugin access reuses the existing `fs` permission and path scope.
 - editor view refs are runtime-only and unregister by view identity.
 
+- cold load / concurrency (`openFile-cold-load.spec.ts`): a line jump preloads the
+  CodeEditor engine chunks (shared promise with the lazy panel/engine) and only
+  starts the bounded 500ms mount wait once they are ready; the view is re-checked
+  against `viewRefs` so a view destroyed while chunks load is never scrolled.
+  Right before scrolling the store is re-read: the target must still be the active
+  tab and still in CodeMirror mode (same effective-mode rule as the pre-check), so a
+  tab switch / Markdown Source→Edit whose old view is not yet cleaned up returns
+  `tab-not-mounted` / `milkdown-engine` instead of a false `lineApplied: true`.

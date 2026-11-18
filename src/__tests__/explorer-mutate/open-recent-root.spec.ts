@@ -29,6 +29,12 @@ describe('openRecentRootOrNotify (A147)', () => {
     expect(notifyError).not.toHaveBeenCalled();
   });
 
+  it('perf · 可访问性探测只看 ok,传 withStats:false(main 免逐项 lstat)', async () => {
+    listDir.mockResolvedValue({ ok: true, data: [] });
+    await openRecentRootOrNotify('/proj', vi.fn());
+    expect(listDir).toHaveBeenCalledWith('/proj', { withStats: false });
+  });
+
   it('listDir {ok:false} → notify.error 不 setRoot', async () => {
     listDir.mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' });
     const setRoot = vi.fn();

@@ -32,7 +32,11 @@ import {
 } from './spec-guard';
 
 export interface ExplorerContextMenuItemContext {
-  /** 右键的目标 entry. null = 空白处右键(根目录场景). */
+  /**
+   * 右键的目标 entry. null = 空白处右键(根目录场景).
+   * 注意:target.size / mtime / ctime 是 Explorer 列目录时的快照(仅内容变化不会重新列目录),可能已过期;
+   * 需要最新值请调用 `app.fs.stat(target.path)`。path / name / isDirectory / isSymlink 随目录刷新保持准确。
+   */
   readonly target: FileEntry | null;
   /** 当前选中集合. 单选时含 target.path 一项. */
   readonly selectedPaths: ReadonlySet<string>;

@@ -19,7 +19,8 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   // 默认成功的桩
   listDir: vi.fn(async () => ok([])),
   readFile: vi.fn(async () => ok('')),
-  writeFile: vi.fn(async () => ok(undefined as void)),
+  writeFile: vi.fn(async () => ok(undefined)),
+  stat: vi.fn(async () => ok({ mtimeMs: 0, size: 0, ino: 0 })),
   rename: vi.fn(async (_o, n) => ok(`/parent/${n}`)),
   remove: vi.fn(async () => ok(undefined as void)),
   createFile: vi.fn(async (d, n) => ok(`${d}/${n}`)),
@@ -178,6 +179,47 @@ describe('removeItems', () => {
       tree.invalidateChildrenIds as ReturnType<typeof vi.fn>
     ).mock.calls.map((c) => c[0]);
     expect(new Set(invalidatedParents)).toEqual(new Set(['/a', '/c']));
+  });
+
+  // perf:批量删除此前逐项 await trash/remove(N 次串行 IPC 往返)。改为有界并发(≤4),
+  // outermostPaths 已保证互不包含,并发删除安全;removed/failures 仍按输入顺序汇总。
+  it('有界并发删除:在途数 >1 且 ≤4;乱序完成时 removed/failures 仍按输入顺序', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const pending = new Map<string, (r: IpcResult<void>) => void>();
+    const trash = vi.fn(
+      (p: string) =>
+        new Promise<IpcResult<void>>((resolve) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          pending.set(p, (r) => {
+            inFlight -= 1;
+            pending.delete(p);
+            resolve(r);
+          });
+        }),
+    );
+    const fs = makeFs({ trash });
+    const tree = makeTree();
+    const paths = Array.from({ length: 10 }, (_, i) => `/d${i}/f`);
+    const done = removeItems(paths, {}, { fs }, tree);
+    const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+    for (let n = 0; n < 200 && (pending.size > 0 || trash.mock.calls.length < 10); n++) {
+      await tick();
+      // 倒序放行在途项(后发先完成);d3、d6 失败
+      const last = [...pending.keys()].pop();
+      if (last) pending.get(last)!(/d[36]\//.test(last) ? fail('FS_DENIED') : ok(undefined as void));
+    }
+    const r = await done;
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(r.removed).toEqual(paths.filter((p) => !/d[36]\//.test(p)));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.failures.map((f) => f.path)).toEqual(['/d3/f', '/d6/f']);
+    const invalidated = (tree.invalidateChildrenIds as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[0],
+    );
+    expect(invalidated).toEqual(r.removed.map((p) => p.slice(0, p.lastIndexOf('/'))));
   });
 
   it('remove(硬删)reject 无 code → 归类 failures code=EXCEPTION', async () => {

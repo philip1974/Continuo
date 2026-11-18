@@ -179,8 +179,10 @@ describe('E286 家族接线守卫:全部 stringify+字节cap 入口在 stringify
     'electron/main/services/mcp-host.service.ts',
     'src/plugins/registries/PluginMcpRegistry.ts',
   ];
-  it.each(sites)('%s 引用 jsonByteLowerBoundExceeds', (rel) => {
+  // 下界可用 UTF-8 逐字符(jsonByteLowerBoundExceeds)或 .length(jsonStringLengthLowerBoundExceeds,其后须有精确
+  // UTF-8 终裁);须是实际调用,注释里出现名字不算。
+  it.each(sites)('%s 调用下界预检', (rel) => {
     const src = readFileSync(resolve(repoRoot, rel), 'utf-8');
-    expect(src).toContain('jsonByteLowerBoundExceeds');
+    expect(src).toMatch(/\bjson(?:Byte|StringLength)LowerBoundExceeds\(/);
   });
 });

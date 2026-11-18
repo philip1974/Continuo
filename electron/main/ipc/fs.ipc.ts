@@ -7,18 +7,25 @@ import {
   safeHandle,
   safeHandleWithCtx,
 } from '../safe-handle';
-import { FS_CHANNELS } from '../../shared/fs-channels';
+import {
+  FS_CHANNELS,
+  type FsDirChangedPayload,
+  type FsFileStat,
+  type FsReadFileData,
+} from '../../shared/fs-channels';
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
+import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
-import { atomicWriteFile } from './fs/atomic-write';
+import { atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
-import { createWatcherPool, type WatcherCreator } from './fs/watch';
+import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
+import { makeWcGoneHook } from '../lib/wc-gone-hook';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -44,6 +51,8 @@ const ListDirOptionsSchema = z
     // 边界(E275):上界对齐到 MAX_TOTAL_ENTRIES 硬上限 + 安全整数 —— 此前只 positive int,畸形 IPC 可传
     // 1e308(仍过 z.int())绕过调用方早停,迫使主进程遍历/排序/回传近 10 万条放大。超上限直接 BAD_INPUT。
     maxFiles: z.number().int().positive().max(MAX_TOTAL_ENTRIES).optional(),
+    // 性能:false 时不 lstat、不回传 size/mtime/ctime(Quick Open 用)。见 ListDirOptions.withStats。
+    withStats: z.boolean().optional(),
   })
   .strict();
 
@@ -55,6 +64,8 @@ export const listDirInputSchema = z
   .strict();
 
 export const readFileInputSchema = z.object({ path: fsPath() }).strict();
+
+export const statInputSchema = z.object({ path: fsPath() }).strict();
 
 // 边界(E13):fs:writeFile / fs:writeBinary 的 content 此前无大小上限。IPC payload 会先完整进入
 // 主进程,再由 atomicWriteFile 写临时文件 + fsync。畸形/误操作的超大字符串/Uint8Array 会造成主
@@ -122,6 +133,7 @@ const unwatchInputSchema = z.object({ path: fsPath() }).strict();
 // 类型导出(给 preload / renderer 用)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
 export type ReadFileInput = z.infer<typeof readFileInputSchema>;
+export type StatInput = z.infer<typeof statInputSchema>;
 export type WriteFileInput = z.infer<typeof writeFileInputSchema>;
 export type WriteBinaryInput = z.infer<typeof writeBinaryInputSchema>;
 export type RenameInput = z.infer<typeof renameInputSchema>;
@@ -140,9 +152,32 @@ export type CopyInput = z.infer<typeof copyInputSchema>;
 export const listDirHandler = (input: ListDirInput) => listDir(input.path, input.options);
 // fs:read-file 是编辑器打开 / 外部同步 / 会话恢复 / 保存前比对的文本读取入口 → requireUtf8:非法 UTF-8
 // 拒绝(FS_NOT_UTF8),防 U+FFFD 替换后保存写回损坏原文件(独立审计)。插件 fs readFile 不经此处。
-export const readFileHandler = (input: ReadFileInput) => readFile(input.path, { requireUtf8: true });
-export const writeFileHandler = (input: WriteFileInput) => atomicWriteFile(input.path, input.content);
-const writeBinaryHandler = (input: WriteBinaryInput) => atomicWriteFile(input.path, input.content);
+// leaf 为 symlink 时随结果带 realPath(见 FsReadFileData):与保存写穿复用 resolveSymlinkTarget;解析失败 /
+// 断链(返回原路径)/ 超长 → 不带,不影响读取结果。
+export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileData> => {
+  const content = await readFile(input.path, { requireUtf8: true });
+  const target = await resolveSymlinkTarget(input.path).catch(() => input.path);
+  return target !== input.path && target.length <= FS_PATH_MAX
+    ? { content, realPath: target }
+    : { content };
+};
+// 性能:返回写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
+// 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
+export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
+  atomicWriteFile(input.path, input.content);
+// writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
+const writeBinaryHandler = async (input: WriteBinaryInput): Promise<void> => {
+  await atomicWriteFile(input.path, input.content);
+};
+// fs:stat:跟随 symlink(与 readFile / 保存写穿同口径)取 { mtimeMs, size, ino };errno 同其它 fs 通道映射。
+export const statHandler = async (input: StatInput): Promise<FsFileStat> => {
+  try {
+    const st = await fs.promises.stat(input.path);
+    return { mtimeMs: st.mtimeMs, size: st.size, ino: st.ino };
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `stat failed: ${input.path}`);
+  }
+};
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);
 export const removeHandler = (input: RemoveInput) => removeEntry(input.path);
 export const createFileHandler = (input: CreateFileInput) => createFile(input.dir, input.name);
@@ -219,6 +254,16 @@ export function resolveWatchChangedPath(
   return subdir ? pathMod.join(rootPath, subdir) : rootPath;
 }
 
+/**
+ * watcher 回调 filename 的末段名(变更项在 changedPath 目录内的名字,分隔符 `/` `\` 都认)。
+ * 末段为空 → undefined(视为未知文件,下游退化为目录级)。
+ */
+export function resolveWatchChangedFileName(filename: string): string | undefined {
+  const rel = String(filename);
+  const name = rel.slice(lastRelativePathSeparatorIndex(rel) + 1);
+  return name === '' ? undefined : name;
+}
+
 function lastRelativePathSeparatorIndex(value: string): number {
   for (let i = value.length - 1; i >= 0; i -= 1) {
     const code = value.charCodeAt(i);
@@ -251,13 +296,17 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
   const watcher = fs.watch(
     rootPath,
     { persistent: false, recursive: RECURSIVE_SUPPORTED },
-    (_eventType, filename) => {
+    (eventType, filename) => {
       if (!filename) {
-        // 罕见:某些 macOS 旧版 / 平台不传 filename,退回根目录广播
+        // 罕见:某些 macOS 旧版 / 平台不传 filename(含 Windows 缓冲溢出),退回根目录广播,
+        // 不带文件名 → 下游按目录级处理
         onChange(rootPath);
         return;
       }
-      onChange(resolveWatchChangedPath(rootPath, String(filename)));
+      // 带上变更项名字(rename 的旧名/新名各回调一次),renderer 外部同步只重读命中的 clean tab
+      const rel = String(filename);
+      // eventType 一并上抛,合并器据此判定「仅内容变化」(changeOnly,见 FsDirChangedPayload)
+      onChange(resolveWatchChangedPath(rootPath, rel), resolveWatchChangedFileName(rel), eventType);
     },
   );
   watcher.on('error', (err) => {
@@ -283,17 +332,41 @@ export function notifyWatchLost(path: string, ownerIds: readonly number[]): void
 
 const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost);
 
+// watch 引用按 BrowserWindow id 记账,但 renderer reload(webContents 与窗口都不变)时旧文档不会
+// unwatch,新文档又重新 watch 已展开目录 → 旧引用永不释放(折叠后 fs.watch 关不掉、持续广播、占 LRU
+// 名额)。主框架非同文档导航即释放该窗口全部引用,与关窗 releaseFsWatchersForWindow 同一路径;
+// 导航开始在新文档脚本之前,新文档的重新 watch 不受影响。destroyed 时关窗路径已释放,这里幂等。
+// dockview popout 的面板经 portal 由主窗 renderer 渲染,watch 的 sender 是主窗 webContents。
+const watchOwnerByWc = new Map<number, number>();
+const attachWatchWcGoneHook = makeWcGoneHook((wcId) => {
+  const ownerId = watchOwnerByWc.get(wcId);
+  watchOwnerByWc.delete(wcId); // reload 后新文档的 watch 会重新登记;关窗后不留残项
+  if (ownerId !== undefined) watcherPool.unwatchByOwner(ownerId);
+});
+
 // 导出仅供 R66 回归测试(验证单窗口 send 抛错不中断广播);生产仍只经 watcherPool onChange 调用。
-export function broadcastDirChanged(path: string): void {
+export function broadcastDirChanged(
+  path: string,
+  files?: readonly string[],
+  changeOnly = false,
+): void {
   // race(R66):由 fs.watch 回调触发;单窗口 send 抛错不中断其余窗口、不成未捕获异常。
-  broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => ({ path }), '[fs] DIR_CHANGED');
+  // files 未知 / changeOnly 为 false 时不带对应字段(payload 与旧版逐字一致)。
+  const base: FsDirChangedPayload = files ? { path, files } : { path };
+  const payload: FsDirChangedPayload = changeOnly ? { ...base, changeOnly: true } : base;
+  broadcastToWindows(FS_CHANNELS.DIR_CHANGED, () => payload, '[fs] DIR_CHANGED');
 }
+
+// 生产 watch 回调入口:同 tick 内同一 changedPath(多个 recursive 祖先 watcher 重复报告)只广播一次
+// (性能审计 #1,见 createSameTickPathCoalescer)。导出仅供回归测试。
+export const queueDirChangedBroadcast = createSameTickPathCoalescer(broadcastDirChanged);
 
 export function registerFsIpc(): void {
   const trusted = defaultIsTrustedFrame;
 
   safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler, trusted);
   safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, readFileHandler, trusted);
+  safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler, trusted);
   safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, writeFileHandler, trusted);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler, trusted);
   safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler, trusted);
@@ -345,11 +418,15 @@ export function registerFsIpc(): void {
     watchInputSchema,
     (input, { event }) => {
       const ownerId = BrowserWindow.fromWebContents(event.sender)?.id;
+      if (ownerId !== undefined) {
+        watchOwnerByWc.set(event.sender.id, ownerId);
+        attachWatchWcGoneHook(event.sender);
+      }
       // 广播 creator 上抛的真实变更路径(可能 = input.path,也可能是其
       // recursive 子目录,见 issue #20)。
       watcherPool.watch(
         input.path,
-        (changedPath) => broadcastDirChanged(changedPath),
+        queueDirChangedBroadcast,
         ownerId,
       );
     },

@@ -35,6 +35,7 @@
 - [`account-chip-not-button.spec.tsx`](./49-polish-bugfixes/account-chip-not-button.spec.tsx)
 - [`agent-auth-cancel-by-window.spec.ts`](./49-polish-bugfixes/agent-auth-cancel-by-window.spec.ts)
 - [`atomic-write-concurrent-same-path.spec.ts`](./49-polish-bugfixes/atomic-write-concurrent-same-path.spec.ts)
+- [`atomic-write-echo-stat-after-close.spec.ts`](./49-polish-bugfixes/atomic-write-echo-stat-after-close.spec.ts)
 - [`atomic-write-no-backup-window.spec.ts`](./49-polish-bugfixes/atomic-write-no-backup-window.spec.ts)
 - [`atomic-write-preserve-mode.spec.ts`](./49-polish-bugfixes/atomic-write-preserve-mode.spec.ts)
 - [`atomic-write-symlink-resolve-fail-closed.spec.ts`](./49-polish-bugfixes/atomic-write-symlink-resolve-fail-closed.spec.ts)
@@ -141,6 +142,7 @@
 - [`settings-cross-window-sync.spec.ts`](./49-polish-bugfixes/settings-cross-window-sync.spec.ts)
 - [`settings-search-lazy-subscribe.spec.tsx`](./49-polish-bugfixes/settings-search-lazy-subscribe.spec.tsx)
 - [`settings-search-localized.spec.tsx`](./49-polish-bugfixes/settings-search-localized.spec.tsx)
+- [`shell-exec-cap-drain.spec.ts`](./49-polish-bugfixes/shell-exec-cap-drain.spec.ts)
 - [`shell-exec-cjk-bytes.spec.ts`](./49-polish-bugfixes/shell-exec-cjk-bytes.spec.ts)
 - [`shell-exec-timeout-clamp.spec.ts`](./49-polish-bugfixes/shell-exec-timeout-clamp.spec.ts)
 - [`shell-process-tree-kill.spec.ts`](./49-polish-bugfixes/shell-process-tree-kill.spec.ts)
@@ -276,6 +278,7 @@
 ## [动画落点契约 (M3)](./animation-contracts/README.md) `[contract]`
 
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
+- [`lazy-motion.spec.tsx`](./animation-contracts/lazy-motion.spec.tsx)
 
 ## [assert-json-value-sparse (E183)](./assert-json-value-sparse/README.md)
 
@@ -348,6 +351,7 @@
 ## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
 
 - [`core-plugins.spec.ts`](./core-plugins/core-plugins.spec.ts)
+- [`settings-chunk-parallel.spec.tsx`](./core-plugins/settings-chunk-parallel.spec.tsx)
 
 ## [CreateInput(Explorer 新建文件 / 文件夹 sticky bar)](./create-input/README.md)
 
@@ -368,6 +372,7 @@
 ## [shell decor / Splash / PopoutHost 装饰组件](./decor-shell/README.md)
 
 - [`decor-shell.spec.tsx`](./decor-shell/decor-shell.spec.tsx)
+- [`splash-lifecycle.spec.tsx`](./decor-shell/splash-lifecycle.spec.tsx)
 
 ## [design-system](./design-system/README.md)
 
@@ -420,6 +425,10 @@
 - [`api-rebuild.spec.tsx`](./dock-reconciler-api-rebuild/api-rebuild.spec.tsx)
 - [`restore-after-fromjson.spec.tsx`](./dock-reconciler-api-rebuild/restore-after-fromjson.spec.tsx)
 
+## [dock-reconciler-seen-prune](./dock-reconciler-seen-prune/README.md)
+
+- [`seen-prune.spec.tsx`](./dock-reconciler-seen-prune/seen-prune.spec.tsx)
+
 ## [dock-reconciler-windowid-filter](./dock-reconciler-windowid-filter/README.md)
 
 - [`filter-pure-fn.spec.ts`](./dock-reconciler-windowid-filter/filter-pure-fn.spec.ts)
@@ -439,6 +448,10 @@
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
 
+## [editor-crlf-line-endings](./editor-crlf-line-endings/README.md)
+
+- [`code-editor-crlf.spec.tsx`](./editor-crlf-line-endings/code-editor-crlf.spec.tsx)
+
 ## [editor-external-link-feedback](./editor-external-link-feedback/README.md)
 
 - [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)
@@ -454,6 +467,7 @@
 
 ## [editor-hooks-react(useAutoSave / useEditorFile / useExternalFileSync)](./editor-hooks-react/README.md)
 
+- [`autosave-discard-confirm.spec.tsx`](./editor-hooks-react/autosave-discard-confirm.spec.tsx)
 - [`use-auto-save.spec.tsx`](./editor-hooks-react/use-auto-save.spec.tsx)
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
@@ -469,6 +483,15 @@
 - [`effective-mode.spec.ts`](./editor-milkdown-roundtrip-safety/effective-mode.spec.ts)
 - [`milkdown-preview.spec.tsx`](./editor-milkdown-roundtrip-safety/milkdown-preview.spec.tsx)
 - [`milkdown-roundtrip-safety.spec.ts`](./editor-milkdown-roundtrip-safety/milkdown-roundtrip-safety.spec.ts)
+
+## [editor-milkdown-writeback](./editor-milkdown-writeback/README.md)
+
+- [`milkdown-ctx-contract.spec.tsx`](./editor-milkdown-writeback/milkdown-ctx-contract.spec.tsx)
+- [`milkdown-writeback.spec.tsx`](./editor-milkdown-writeback/milkdown-writeback.spec.tsx)
+
+## [editor-pending-input-flush](./editor-pending-input-flush/README.md)
+
+- [`pending-input-flush.spec.tsx`](./editor-pending-input-flush/pending-input-flush.spec.tsx)
 
 ## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)
 
@@ -510,9 +533,12 @@
 ## [explorer-dropzone (M-Explorer Step 5d)](./explorer-dropzone/README.md)
 
 - [`drop-handlers.spec.ts`](./explorer-dropzone/drop-handlers.spec.ts)
+- [`folder-tree-row-drop-overlay.spec.tsx`](./explorer-dropzone/folder-tree-row-drop-overlay.spec.tsx)
 
 ## [explorer-expanded-state](./explorer-expanded-state/README.md)
 
+- [`folder-tree-expand-all-batch.spec.tsx`](./explorer-expanded-state/folder-tree-expand-all-batch.spec.tsx)
+- [`folder-tree-expand-all-watcher.spec.tsx`](./explorer-expanded-state/folder-tree-expand-all-watcher.spec.tsx)
 - [`folder-tree-expanded-state.spec.tsx`](./explorer-expanded-state/folder-tree-expanded-state.spec.tsx)
 
 ## [ExplorerHeader(FolderTree 顶部 Header)](./explorer-header/README.md)
@@ -536,10 +562,15 @@
 
 ## [explorer-path-utils(Explorer 跨平台路径 helper)](./explorer-path-utils/README.md)
 
+- [`containment-complexity.spec.ts`](./explorer-path-utils/containment-complexity.spec.ts)
+- [`containment-equivalence.spec.ts`](./explorer-path-utils/containment-equivalence.spec.ts)
 - [`path-utils.spec.ts`](./explorer-path-utils/path-utils.spec.ts)
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
 
+- [`explorer-sidebar-hidden-menus.spec.tsx`](./explorer-sidebar/explorer-sidebar-hidden-menus.spec.tsx)
+- [`explorer-sidebar-keepalive.spec.tsx`](./explorer-sidebar/explorer-sidebar-keepalive.spec.tsx)
+- [`explorer-sidebar-render-isolation.spec.tsx`](./explorer-sidebar/explorer-sidebar-render-isolation.spec.tsx)
 - [`explorer-sidebar.spec.tsx`](./explorer-sidebar/explorer-sidebar.spec.tsx)
 
 ## [explorer-stores (M-Explorer Step 3)](./explorer-stores/README.md)
@@ -562,12 +593,22 @@
 
 ## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
 
+- [`folder-tree-row-memo.spec.tsx`](./explorer-tree/folder-tree-row-memo.spec.tsx)
+- [`folder-tree-scroll-to-item.spec.tsx`](./explorer-tree/folder-tree-scroll-to-item.spec.tsx)
 - [`tree-config.spec.ts`](./explorer-tree/tree-config.spec.ts)
 
 ## [explorer-watch (M-Explorer Step 6)](./explorer-watch/README.md)
 
+- [`folder-tree-dir-changed-unloaded.spec.tsx`](./explorer-watch/folder-tree-dir-changed-unloaded.spec.tsx)
+- [`folder-tree-hidden-defer.spec.tsx`](./explorer-watch/folder-tree-hidden-defer.spec.tsx)
+- [`folder-tree-refresh-skip-unchanged.spec.tsx`](./explorer-watch/folder-tree-refresh-skip-unchanged.spec.tsx)
 - [`fs-watch-helpers.spec.ts`](./explorer-watch/fs-watch-helpers.spec.ts)
+- [`fs-watch-release-on-reload.spec.ts`](./explorer-watch/fs-watch-release-on-reload.spec.ts)
 - [`watch-pool.spec.ts`](./explorer-watch/watch-pool.spec.ts)
+
+## [外部文件同步的宿主(external-file-sync-owner)](./external-file-sync-owner/README.md)
+
+- [`external-file-sync-owner.spec.tsx`](./external-file-sync-owner/external-file-sync-owner.spec.tsx)
 
 ## [file-icon(资源管理器文件图标化)](./file-icon/README.md)
 
@@ -584,6 +625,7 @@
 ## [fs-adapter (M-Explorer Step 1)](./fs-adapter/README.md)
 
 - [`fs-adapter.spec.ts`](./fs-adapter/fs-adapter.spec.ts)
+- [`list-dir-without-stats.spec.ts`](./fs-adapter/list-dir-without-stats.spec.ts)
 
 ## [fs-dir-changed-payload-guard (E173)](./fs-dir-changed-payload-guard/README.md)
 
@@ -701,6 +743,10 @@
 
 - [`env-compat.spec.ts`](./m4-continuo-adopt-host/env-compat.spec.ts)
 
+## [main-bundle-mcp-sdk-treeshake](./main-bundle-mcp-sdk-treeshake/README.md)
+
+- [`main-bundle-mcp-sdk-treeshake.spec.ts`](./main-bundle-mcp-sdk-treeshake/main-bundle-mcp-sdk-treeshake.spec.ts)
+
 ## [map-with-concurrency (E234/E251)](./map-with-concurrency/README.md)
 
 - [`map-with-concurrency.spec.ts`](./map-with-concurrency/map-with-concurrency.spec.ts)
@@ -736,6 +782,7 @@
 
 ## [marketplace update-store(Phase 3 — 更新检查)](./marketplace-update-store/README.md)
 
+- [`startup-check-after-init.spec.ts`](./marketplace-update-store/startup-check-after-init.spec.ts)
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
 ## [mcp-startup-audit(main 侧 MCP / 启动路径审计修复)](./mcp-startup-audit/README.md)
@@ -745,6 +792,7 @@
 - [`protocol-fifo-order.spec.ts`](./mcp-startup-audit/protocol-fifo-order.spec.ts)
 - [`sse-backpressure.spec.ts`](./mcp-startup-audit/sse-backpressure.spec.ts)
 - [`startup-check-budget.spec.ts`](./mcp-startup-audit/startup-check-budget.spec.ts)
+- [`stdio-deferred-start.spec.ts`](./mcp-startup-audit/stdio-deferred-start.spec.ts)
 - [`stdio-queue-cap.spec.ts`](./mcp-startup-audit/stdio-queue-cap.spec.ts)
 
 ## [mcp-tool-gates(重构:MCP 工具授权 / capability 门控单一来源)](./mcp-tool-gates/README.md)
@@ -786,6 +834,17 @@
 ## [perf-audit(性能优化审计 · 与 codex 协作)](./perf-audit/README.md)
 
 - [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)
+- [`debug-decoration-sync-gating.spec.tsx`](./perf-audit/debug-decoration-sync-gating.spec.tsx)
+- [`debug-decoration-sync-lazy.spec.tsx`](./perf-audit/debug-decoration-sync-lazy.spec.tsx)
+- [`editor-engine-error-boundary.spec.tsx`](./perf-audit/editor-engine-error-boundary.spec.tsx)
+- [`editor-engine-lazy.spec.tsx`](./perf-audit/editor-engine-lazy.spec.tsx)
+- [`editor-engine-prewarm.spec.tsx`](./perf-audit/editor-engine-prewarm.spec.tsx)
+- [`editor-header-memo.spec.tsx`](./perf-audit/editor-header-memo.spec.tsx)
+- [`editor-lazy-boundary.spec.ts`](./perf-audit/editor-lazy-boundary.spec.ts)
+- [`first-interaction-warmup.spec.tsx`](./perf-audit/first-interaction-warmup.spec.tsx)
+- [`main-node-http-cjs.spec.ts`](./perf-audit/main-node-http-cjs.spec.ts)
+- [`milkdown-katex-stub.spec.ts`](./perf-audit/milkdown-katex-stub.spec.ts)
+- [`renderer-minify.spec.ts`](./perf-audit/renderer-minify.spec.ts)
 - [`terminal-data-demux.spec.ts`](./perf-audit/terminal-data-demux.spec.ts)
 - [`terminal-resize-gating.spec.ts`](./perf-audit/terminal-resize-gating.spec.ts)
 
@@ -860,6 +919,7 @@
 ## [plugin-manager(插件目录扫描 + 启用禁用 + 生命周期编排)](./plugin-manager/README.md)
 
 - [`plugin-manager.spec.ts`](./plugin-manager/plugin-manager.spec.ts)
+- [`when-scanned.spec.ts`](./plugin-manager/when-scanned.spec.ts)
 
 ## [plugin-manifest(manifest.json 解析与版本比对)](./plugin-manifest/README.md)
 
@@ -929,6 +989,10 @@
 
 - [`backpressure.spec.ts`](./plugin-shell-stream-backpressure/backpressure.spec.ts)
 
+## [plugin-shell-stream-demux(perf:preload 单 listener 分发)](./plugin-shell-stream-demux/README.md)
+
+- [`demux.spec.ts`](./plugin-shell-stream-demux/demux.spec.ts)
+
 ## [plugin-uninstall-broadcast(跨窗口卸载撤销插件实例与授权)](./plugin-uninstall-broadcast/README.md)
 
 - [`main-broadcast.spec.ts`](./plugin-uninstall-broadcast/main-broadcast.spec.ts)
@@ -957,6 +1021,8 @@
 
 ## [plugins-watcher(mtime 自动 watch)](./plugins-watcher/README.md)
 
+- [`baseline-prime-wiring.spec.ts`](./plugins-watcher/baseline-prime-wiring.spec.ts)
+- [`list-dirs-baseline.spec.ts`](./plugins-watcher/list-dirs-baseline.spec.ts)
 - [`plugins-watcher.spec.ts`](./plugins-watcher/plugins-watcher.spec.ts)
 
 ## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`
@@ -1024,6 +1090,7 @@
 
 - [`editor-path-utils.spec.ts`](./sdk-editor-namespace/editor-path-utils.spec.ts)
 - [`openFile-boundary.spec.ts`](./sdk-editor-namespace/openFile-boundary.spec.ts)
+- [`openFile-cold-load.spec.ts`](./sdk-editor-namespace/openFile-cold-load.spec.ts)
 - [`openFile-failure-taxonomy.spec.ts`](./sdk-editor-namespace/openFile-failure-taxonomy.spec.ts)
 - [`openFile-happy.spec.ts`](./sdk-editor-namespace/openFile-happy.spec.ts)
 - [`openFile-line.spec.ts`](./sdk-editor-namespace/openFile-line.spec.ts)
@@ -1104,9 +1171,23 @@
 
 - [`spec-object-guard.spec.ts`](./spec-object-guard/spec-object-guard.spec.ts)
 
+## [splash-terminal-ready-barrier](./splash-terminal-ready-barrier/README.md)
+
+- [`ready-barrier.spec.tsx`](./splash-terminal-ready-barrier/ready-barrier.spec.tsx)
+- [`sync-hydrated.spec.ts`](./splash-terminal-ready-barrier/sync-hydrated.spec.ts)
+- [`sync-ordering.spec.tsx`](./splash-terminal-ready-barrier/sync-ordering.spec.tsx)
+
 ## [Spotlight(装饰用聚光灯 SVG)](./spotlight/README.md)
 
 - [`spotlight.spec.tsx`](./spotlight/spotlight.spec.tsx)
+
+## [startup-critical-path(冷启动关键路径 · renderer)](./startup-critical-path/README.md)
+
+- [`dock-layout-prefetch.spec.tsx`](./startup-critical-path/dock-layout-prefetch.spec.tsx)
+- [`init-ipc-prefetch.spec.ts`](./startup-critical-path/init-ipc-prefetch.spec.ts)
+- [`notify-root-gate.spec.tsx`](./startup-critical-path/notify-root-gate.spec.tsx)
+- [`plugin-source-prefetch.spec.ts`](./startup-critical-path/plugin-source-prefetch.spec.ts)
+- [`terminal-root-gate.spec.ts`](./startup-critical-path/terminal-root-gate.spec.ts)
 
 ## [startup-mode (Issue #30 修复)](./startup-mode/README.md)
 
@@ -1132,6 +1213,10 @@
 ## [terminal-buffer-capacity · 终端输出缓冲区容量](./terminal-buffer-capacity/README.md)
 
 - [`buffer-capacity.spec.ts`](./terminal-buffer-capacity/buffer-capacity.spec.ts)
+
+## [terminal-bundled-font(终端内置 Nerd Font 以 WOFF2 加载)](./terminal-bundled-font/README.md)
+
+- [`fonts-css.spec.ts`](./terminal-bundled-font/fonts-css.spec.ts)
 
 ## [terminal-controller-token-redaction](./terminal-controller-token-redaction/README.md)
 
@@ -1163,6 +1248,7 @@
 ## [terminal-ipc (M-Terminal Step T2)](./terminal-ipc/README.md) `[integration]`
 
 - [`read-history-ownership.spec.ts`](./terminal-ipc/read-history-ownership.spec.ts)
+- [`sessions-changed-skip-unchanged.spec.ts`](./terminal-ipc/sessions-changed-skip-unchanged.spec.ts)
 - [`terminal-ipc.spec.ts`](./terminal-ipc/terminal-ipc.spec.ts)
 
 ## [Terminal 键位映射(`mapTerminalKey`)](./terminal-key-mapping/README.md)
@@ -1182,6 +1268,10 @@
 
 - [`output-latency.spec.ts`](./terminal-output-latency/output-latency.spec.ts)
 
+## [terminal-overflow-throttle](./terminal-overflow-throttle/README.md)
+
+- [`overflow-throttle.spec.ts`](./terminal-overflow-throttle/overflow-throttle.spec.ts)
+
 ## [terminal-panel-as-dockview-panel](./terminal-panel-as-dockview-panel/README.md)
 
 - [`core-contract.spec.ts`](./terminal-panel-as-dockview-panel/core-contract.spec.ts)
@@ -1200,7 +1290,9 @@
 
 ## [terminal-resize-debounce](./terminal-resize-debounce/README.md)
 
+- [`dimensions-change-raf.spec.tsx`](./terminal-resize-debounce/dimensions-change-raf.spec.tsx)
 - [`resize-debounce.spec.ts`](./terminal-resize-debounce/resize-debounce.spec.ts)
+- [`sidebar-width-subscription.spec.ts`](./terminal-resize-debounce/sidebar-width-subscription.spec.ts)
 
 ## [terminal-search](./terminal-search/README.md)
 
@@ -1208,6 +1300,7 @@
 - [`invalid-regex.spec.ts`](./terminal-search/invalid-regex.spec.ts)
 - [`keymap.spec.ts`](./terminal-search/keymap.spec.ts)
 - [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)
+- [`search-debounce.spec.ts`](./terminal-search/search-debounce.spec.ts)
 - [`state-machine.spec.ts`](./terminal-search/state-machine.spec.ts)
 
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)
@@ -1238,6 +1331,10 @@
 
 - [`terminal-window-isolation.spec.ts`](./terminal-window-isolation/terminal-window-isolation.spec.ts)
 
+## [terminal-windows-pty](./terminal-windows-pty/README.md)
+
+- [`windows-pty.spec.ts`](./terminal-windows-pty/windows-pty.spec.ts)
+
 ## [terminal-workspace-isolation](./terminal-workspace-isolation/README.md)
 
 - [`workspaceRoot-roundtrip.spec.ts`](./terminal-workspace-isolation/workspaceRoot-roundtrip.spec.ts)
@@ -1245,6 +1342,8 @@
 ## [terminal-write (M-Terminal Step T4)](./terminal-write/README.md) `[integration]`
 
 - [`safe-write.spec.ts`](./terminal-write/safe-write.spec.ts)
+- [`use-terminal-coalesce.spec.ts`](./terminal-write/use-terminal-coalesce.spec.ts)
+- [`write-coalesce.spec.ts`](./terminal-write/write-coalesce.spec.ts)
 
 ## [text-stats(StatusBar 用统计)](./text-stats/README.md)
 
@@ -1283,6 +1382,10 @@
 
 - [`use-polled-snapshot.spec.tsx`](./use-polled-snapshot/use-polled-snapshot.spec.tsx)
 
+## [wc-gone-hook · 何时回收 webContents 名下的 main 侧资源](./wc-gone-hook/README.md)
+
+- [`wc-gone-hook-navigation.spec.ts`](./wc-gone-hook/wc-gone-hook-navigation.spec.ts)
+
 ## [window-aware-agent-session](./window-aware-agent-session/README.md) `[integration]`
 
 - [`cross-window-isolation.spec.ts`](./window-aware-agent-session/cross-window-isolation.spec.ts)
@@ -1290,6 +1393,7 @@
 
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
 
+- [`explorer-vs-window-folder-drop.spec.tsx`](./window-drop/explorer-vs-window-folder-drop.spec.tsx)
 - [`window-drop.spec.ts`](./window-drop/window-drop.spec.ts)
 
 ## [window-ipc-create](./window-ipc-create/README.md)
@@ -1298,6 +1402,7 @@
 
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)
 
+- [`startup-restore-cancel-wiring.spec.ts`](./window-restore/startup-restore-cancel-wiring.spec.ts)
 - [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)
 
 ## [window-workspace-roots-map](./window-workspace-roots-map/README.md)

@@ -44,6 +44,7 @@ import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
 import { pathEquals } from '@/lib/path-cross';
 import { findWindowEntryBySeq } from '../../../electron/shared/window-entry-lookup';
+import type { FsReadFileResult } from '../../../electron/shared/fs-channels';
 import type { IpcResult } from '../fs/types';
 import {
   ExplorerSchema,
@@ -92,7 +93,7 @@ export interface ExplorerPersistApi {
 
 /** Editor session 异步 hydrate 所需的 fs 子集(只用 readFile). */
 export interface EditorSessionFsApi {
-  readFile: (path: string) => Promise<IpcResult<string>>;
+  readFile: (path: string) => Promise<FsReadFileResult>;
 }
 
 export interface InitExplorerPersistenceExtras {
@@ -330,6 +331,12 @@ export async function hydrateEditorTabs(
   // 本函数「不抛、单文件失败静默跳过」契约 → initExplorerPersistence catch 后 0 tab,
   // 下次变化把 editor.openFilePaths 写成空数组 → 丢掉本可恢复的整个编辑会话。allSettled
   // 把 reject 当作该文件失败逐项跳过,保留其它成功恢复的 tab。
+  // r4 复审 #1:Splash 在 root 恢复后即放行(rootRestored),下方读盘期间用户可能已打开/切换 tab。
+  // 记录用户意图基线:用户 openTab/switchTab 递增 editorFocusPulse(恢复自身用 requestFocus:false 不递增),
+  // 关 tab 改 activeTabId。读完后据此判断是否保留用户当前活动 tab。
+  const before = useEditorStore.getState();
+  const baselinePulse = before.editorFocusPulse;
+  const baselineActive = before.activeTabId;
   // 边界(E216):固定 worker 池并发读,峰值并发钳到 RESTORE_READ_CONCURRENCY(不一次性 fan-out 全部 readFile)。
   const settled = await allSettledWithConcurrency(
     paths,
@@ -347,20 +354,27 @@ export async function hydrateEditorTabs(
       : currentRoot === null || !pathEquals(currentRoot, expectedRoot);
   if (rootChanged) return;
   const store = useEditorStore.getState();
+  // 用户在读盘期间已打开/切换 tab 且当前有活动 tab → 恢复 tab 仍按顺序补入(不丢会话),
+  // 但不激活、不 switchTab(desired),保留用户的活动 tab。用户未操作时行为与原先一致。
+  const keepUserActive =
+    store.activeTabId !== null &&
+    (store.editorFocusPulse !== baselinePulse || store.activeTabId !== baselineActive);
   // 会话恢复不是用户意图:requestFocus:false 不递增 editorFocusPulse —— 布局已先恢复时,DockShell
   // 不据此 setActive(editor) 抢走 fromJSON 恢复出的活动面板(只确保 editor 面板存在)。
-  const restoreOpts = { requestFocus: false } as const;
+  const restoreOpts = keepUserActive
+    ? ({ requestFocus: false, activate: false } as const)
+    : ({ requestFocus: false } as const);
   for (let i = 0; i < paths.length; i++) {
     const s = settled[i];
     if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
     const r = s.value;
     if (!r || !r.ok) continue;
-    store.openTab(createTab(paths[i]!, r.data), restoreOpts);
+    store.openTab(createTab(paths[i]!, r.data, r.realPath), restoreOpts);
   }
   // 重读最新 store(openTab 改了状态)
   const next = useEditorStore.getState();
   const desired = entry.editor.activePath;
-  if (desired && hasEditorTabWithId(next.tabs, desired)) {
+  if (!keepUserActive && desired && hasEditorTabWithId(next.tabs, desired)) {
     next.switchTab(desired, restoreOpts);
   }
 }
@@ -471,6 +485,10 @@ export async function initExplorerPersistence(
     console.warn('[explorer-persist] read failed', err);
   }
 
+  // root 已定(恢复 / 新窗 / 读失败保持默认):先放行只依赖 root 的消费方(终端首轮过滤 / Splash 屏障),
+  // 不让它们等下方编辑器 tab 并发读盘。
+  useWorkspaceStore.getState().markRootRestored();
+
   // 2. async hydrate editor tabs(只在自己段存在且非 fresh 时 restore)
   if (!fresh && hydratedSnap && extras?.fs && findWindowEntry(hydratedSnap, windowSeq)) {
     try {
@@ -553,15 +571,18 @@ export async function initExplorerPersistence(
   };
 
   subscribeAll(
-    [
-      useWorkspaceStore,
-      useExplorerStore,
-      usePinnedStore,
-      useLayoutUiStore,
-      useEditorStore,
-    ],
+    [useWorkspaceStore, useExplorerStore, usePinnedStore, useLayoutUiStore],
     markDirtyAndPersist,
   );
+  // 性能(r4 复审 #2):快照只含 editor 的 openFilePaths/activePath,不含正文。每次按键 updateContent 都替换
+  // tabs,若订阅整个 editor store 会每键 clearTimeout+setTimeout 并在停顿后构建 snapshot+JSON.stringify。
+  // openFilePaths/activePath 只随 tab 增删/改路径(open/close/removePath/renamePath/closeTabsOutsideRoot/
+  // setFilePath,均 bump chromeVersion)与 activeTabId 变化而变 → 只在这两者变化时标脏。
+  useEditorStore.subscribe((s, prev) => {
+    if (s.activeTabId !== prev.activeTabId || s.chromeVersion !== prev.chromeVersion) {
+      markDirtyAndPersist();
+    }
+  });
 }
 
 /**

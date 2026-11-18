@@ -1,6 +1,7 @@
 import * as Menu from '@radix-ui/react-context-menu';
-import { useRef, useState } from 'react';
+import { useContext, useLayoutEffect, useRef, useState } from 'react';
 import { dirname } from './path-utils';
+import { ExplorerVisibleContext } from './visibility';
 import { createMenuFocusRestore, type MenuFocusRestore } from './menu-close-focus';
 import type { FileEntry } from '@/lib/fs/types';
 import { useT } from '@/i18n';
@@ -159,6 +160,7 @@ export function ContextMenu({
           hasClipboard={hasClipboard}
           pluginItems={pluginItems}
           focusRestore={focusRestore}
+          onHidden={() => setOpen(false)}
         />
       )}
     </Menu.Root>
@@ -167,6 +169,8 @@ export function ContextMenu({
 
 interface ContextMenuContentProps extends Omit<ContextMenuProps, 'children'> {
   readonly focusRestore: MenuFocusRestore;
+  /** 侧栏保活隐藏时调用:卸载菜单内容(见 ContextMenuContent 内注释)。 */
+  readonly onHidden: () => void;
 }
 
 function ContextMenuContent({
@@ -177,8 +181,18 @@ function ContextMenuContent({
   hasClipboard,
   pluginItems,
   focusRestore,
+  onHidden,
 }: ContextMenuContentProps) {
   const t = useT();
+  // 交互回归修复:侧栏关闭改为保活隐藏(aside hidden)后,菜单 Portal 在 body 上不随隐藏消失 →
+  // 悬浮可操作看不见的树,且 Radix 模态菜单令 body pointer-events:none 残留。隐藏即卸载内容
+  //(DismissableLayer 卸载即还原 body 样式);layout effect 在绘制前生效,隐藏帧不会画出菜单。
+  // 只在打开态订阅可见性,关闭态的每行菜单不因侧栏显隐重渲。Radix ContextMenu.Root 不支持受控
+  // open,其内部 open 仍为 true 无副作用:下次右键照常回调 onOpenChange(true) 重新打开。
+  const visible = useContext(ExplorerVisibleContext);
+  useLayoutEffect(() => {
+    if (!visible) onHidden();
+  }, [visible, onHidden]);
   const isFile = target !== null && !target.isDirectory;
   const isFolder = target !== null && target.isDirectory;
   const isBlank = target === null;

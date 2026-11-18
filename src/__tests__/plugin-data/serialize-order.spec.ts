@@ -8,6 +8,21 @@ vi.mock('../../../electron/shared/assert-json-value', () => ({
   assertJsonValue: assertJsonValueSpy,
 }));
 
+// perf(B-2):renderer 无 Buffer,UTF-8 逐字符下界是全量 JS 计数 → 预检须用 .length 下界(其后有精确 UTF-8 终裁)。
+const { budgetSpies } = vi.hoisted(() => ({
+  budgetSpies: { utf8: vi.fn(), length: vi.fn() },
+}));
+vi.mock('../../../electron/shared/json-byte-budget', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../electron/shared/json-byte-budget')>();
+  budgetSpies.utf8.mockImplementation(actual.jsonByteLowerBoundExceeds);
+  budgetSpies.length.mockImplementation(actual.jsonStringLengthLowerBoundExceeds);
+  return {
+    ...actual,
+    jsonByteLowerBoundExceeds: budgetSpies.utf8,
+    jsonStringLengthLowerBoundExceeds: budgetSpies.length,
+  };
+});
+
 import { InMemoryDataStore } from '../../plugins/PluginDataStore';
 
 describe('serializeWithinLimit 校验顺序 (E306)', () => {
@@ -25,5 +40,16 @@ describe('serializeWithinLimit 校验顺序 (E306)', () => {
     const ds = new InMemoryDataStore();
     await ds.write('k', { ok: true });
     expect(assertJsonValueSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('serializeWithinLimit 预检度量 (B-2 perf)', () => {
+  it('预检调用 .length 下界(jsonStringLengthLowerBoundExceeds),不再逐字符计 UTF-8 下界', async () => {
+    budgetSpies.utf8.mockClear();
+    budgetSpies.length.mockClear();
+    const ds = new InMemoryDataStore();
+    await ds.write('k', { text: '中文'.repeat(100) });
+    expect(budgetSpies.length).toHaveBeenCalledTimes(1);
+    expect(budgetSpies.utf8).not.toHaveBeenCalled();
   });
 });

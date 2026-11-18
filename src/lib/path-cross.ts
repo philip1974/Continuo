@@ -109,6 +109,33 @@ export function isSameOrInsidePath(base: string, filePath: string): boolean {
 }
 
 /**
+ * isSameOrInsidePath 的「祖先索引」拆分(perf:批量 N×M 两两比较 → 每路径 O(depth) 次查表)。
+ * 与 isSameOrInsidePath(base, p) 精确等价:base 的比较键 = fold(trimTrailingSeparators(base));
+ * p 被 base 覆盖 ⇔ 键为 '' 或 键 ∈ containmentCandidates(fold(p))。fold 与 isSameOrInsidePath
+ * 同策(Windows 运行时 lowerIfNeeded,否则原样),调用方每批取一次。
+ */
+export function containmentFold(): (s: string) => string {
+  return isWindowsRuntime() ? lowerIfNeeded : (s) => s;
+}
+
+/** base 在 containmentFold 下的比较键(isSameOrInsidePath 的 `b`;纯分隔符根为 '')。 */
+export function containmentKey(base: string, fold: (s: string) => string): string {
+  return fold(trimTrailingSeparators(base));
+}
+
+/**
+ * 已折叠路径 fp 的全部候选覆盖键:fp 本身 + 每个分隔符前的前缀(`fp.startsWith(b + sep)` 的全部 b)。
+ * 键 '' 恒覆盖,调用方单独判断。visit 返回 true 即提前停止,本函数随之返回 true。
+ */
+export function someContainmentCandidate(fp: string, visit: (key: string) => boolean): boolean {
+  if (visit(fp)) return true;
+  for (let k = 1; k < fp.length; k++) {
+    if (isPathSeparatorCode(fp.charCodeAt(k)) && visit(fp.slice(0, k))) return true;
+  }
+  return false;
+}
+
+/**
  * 跨平台 basename:**先去尾部分隔符**再取最后一段(吃 `/` 与 `\\`)。`/a/b/` → `b`、`/a` → `a`。
  * Explorer(root entry name / 面包屑)与 Editor(tab 标题)共用。
  */

@@ -12,6 +12,7 @@ import {
   type FileOpResult,
   type SaveFileOptions,
 } from './editor-file-actions';
+import { flushEditorWriteBacks } from './editor-writeback-registry';
 
 export interface EditorFileApi {
   /** Explorer 单击文件触发. 返 IpcResult,UI 决定如何提示. */
@@ -38,6 +39,9 @@ export function useEditorFile(): EditorFileApi {
         if (!id) {
           return { ok: false, code: 'NO_ACTIVE_TAB', message: 'no active tab' };
         }
+        // 先把编辑器里尚未上抛的输入(Milkdown 自适应延迟上抛窗口)同步写回 store,本次保存才包含最后几键。
+        // 只回写要保存的 tab(回写会整篇序列化)。
+        flushEditorWriteBacks([id]);
         return saveFileImpl(id, deps);
       },
       saveTab: (tabId, opts) => saveFileImpl(tabId, deps, opts),

@@ -1,7 +1,6 @@
 // autoSave.delayMs input 显示 store 值 + 改后 store 同步.
 import { test, expect } from './fixtures/electron-app';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
 const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 const EDITOR_TAB = /^(编辑器|Editor|편집기)$/;
 
@@ -15,6 +14,10 @@ test('编辑器 tab 第二 number input = 2000 + 改后 store=4000', async ({
       ),
     { timeout: 5_000 },
   );
+  // dock 未就绪(DockShell onReady 前)时 openOrFocusPanel 按契约静默忽略;测试钩子可能更早可用。
+  // 出现 dock 页签 = 布局已恢复(fromJSON / 默认布局);Splash 不在 = 就绪屏障已放行。
+  await expect(window.getByRole('tab').first()).toBeVisible({ timeout: 10_000 });
+  await expect(window.getByTestId('splash')).toHaveCount(0, { timeout: 10_000 });
   await window.evaluate(() => {
     (
       window as unknown as {
@@ -29,10 +32,9 @@ test('编辑器 tab 第二 number input = 2000 + 改后 store=4000', async ({
     ).__continuoTest.openOrFocusPanel('settings', 'settings', 'Settings');
   });
 
+  // openOrFocusPanel 幂等打开(布局恢复前会排队到恢复后执行);Settings 内容是懒加载 chunk,
+  // 不能立即用 count()===0 判断「没打开」再点齿轮 —— 那会把刚排队打开的 Settings toggle 关掉。
   const settingsNav = window.getByRole('navigation', { name: SETTINGS_NAV });
-  if ((await settingsNav.count()) === 0) {
-    await window.getByRole('button', { name: SETTINGS }).click();
-  }
   await expect(settingsNav).toBeVisible({ timeout: 10_000 });
   const editorTab = settingsNav.getByRole('button', { name: EDITOR_TAB });
   await expect(editorTab).toBeVisible();

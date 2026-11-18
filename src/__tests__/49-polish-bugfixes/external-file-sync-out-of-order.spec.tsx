@@ -78,7 +78,7 @@ describe('P15 · useExternalFileSync in-flight 合并', () => {
     await Promise.resolve();
     const calls = storeMock.reloadFromDisk.mock.calls;
     expect(calls.length).toBe(1);
-    expect(calls[0]).toEqual(['/dir/f.txt', 'NEW']);
+    expect(calls[0]).toEqual(['/dir/f.txt', 'NEW', undefined]); // 第 3 参 realPath:非链接为 undefined
   });
 
   it('单个事件 → 立即读并落地(无 burst 时不延迟)', async () => {
@@ -93,7 +93,7 @@ describe('P15 · useExternalFileSync in-flight 合并', () => {
     expect(fsMock.readFile).toHaveBeenCalledTimes(1);
     await Promise.resolve();
     await Promise.resolve();
-    expect(storeMock.reloadFromDisk).toHaveBeenCalledWith('/dir/f.txt', 'fresh');
+    expect(storeMock.reloadFromDisk).toHaveBeenCalledWith('/dir/f.txt', 'fresh', undefined);
   });
 
   it('tab identity 复查走单趟 helper,不调用 tabs.find', async () => {
@@ -114,6 +114,7 @@ describe('P15 · useExternalFileSync in-flight 合并', () => {
       expect(storeMock.reloadFromDisk).toHaveBeenCalledWith(
         '/dir/f.txt',
         'fresh',
+        undefined,
       );
       expect(findSpy).not.toHaveBeenCalled();
     } finally {
@@ -160,6 +161,7 @@ describe('P15 · useExternalFileSync in-flight 合并', () => {
     expect(storeMock.reloadFromDisk).toHaveBeenCalledWith(
       '/dir/f.txt',
       'RECOVERED',
+      undefined,
     );
   });
 

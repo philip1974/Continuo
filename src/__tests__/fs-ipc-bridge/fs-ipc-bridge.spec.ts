@@ -1,10 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile as fspReadFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile as fspReadFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { FS_CHANNELS } from '../../../electron/shared/fs-channels';
+import {
+  FS_CHANNELS,
+  toFsFileStat,
+  toFsReadFileResult,
+  toFsStatResult,
+  toFsWriteFileResult,
+} from '../../../electron/shared/fs-channels';
 import {
   createDirHandler,
   createDirInputSchema,
@@ -22,6 +36,8 @@ import {
   renameHandler,
   renameInputSchema,
   selectDirectoryInputSchema,
+  statHandler,
+  statInputSchema,
   trashInputSchema,
   writeFileHandler,
   writeFileInputSchema,
@@ -53,6 +69,7 @@ describe('FS_CHANNELS 常量', () => {
     expect(FS_CHANNELS.CREATE_DIR).toBe('fs:create-dir');
     expect(FS_CHANNELS.TRASH).toBe('fs:trash');
     expect(FS_CHANNELS.SELECT_DIRECTORY).toBe('fs:select-directory');
+    expect(FS_CHANNELS.STAT).toBe('fs:stat');
   });
 
   it('9 条常量值唯一不重复', () => {
@@ -82,6 +99,14 @@ describe('listDirInputSchema', () => {
         options: { maxDepth: 3, exclude: ['.git'], followSymlinks: true },
       }).success,
     ).toBe(true);
+  });
+  it('接受 options.withStats 布尔;非布尔 → fail', () => {
+    expect(
+      listDirInputSchema.safeParse({ path: '/tmp', options: { withStats: false } }).success,
+    ).toBe(true);
+    expect(
+      listDirInputSchema.safeParse({ path: '/tmp', options: { withStats: 'no' } }).success,
+    ).toBe(false);
   });
   it('缺 path → fail', () => {
     expect(listDirInputSchema.safeParse({}).success).toBe(false);
@@ -337,16 +362,94 @@ describe('handlers 接线', () => {
     expect(recursive.some((i) => i.name === 'inner.txt')).toBe(true);
   });
 
-  it('readFileHandler 返回 utf-8 内容', async () => {
+  it('readFileHandler 返回 utf-8 内容(普通文件不带 realPath)', async () => {
     const f = path.join(dir, 'r.txt');
     await writeFile(f, 'hello');
-    expect(await readFileHandler({ path: f })).toBe('hello');
+    expect(await readFileHandler({ path: f })).toEqual({ content: 'hello' });
+  });
+
+  // 外部同步(dir-changed 按文件名匹配)需要知道 symlink tab 的真实目标:FSEvents/inotify 上报的是被
+  // 实际修改的目录项(链接目标)名。leaf 为 symlink 时随结果带 realPath(与保存写穿同一套解析)。
+  it('readFileHandler:leaf 为 symlink → 读目标内容并带 realPath(同目录 / 跨目录)', async () => {
+    const canonical = await realpath(dir);
+    await writeFile(path.join(dir, 'AGENTS.md'), 'agents');
+    await symlink('AGENTS.md', path.join(dir, 'CLAUDE.md'));
+    expect(await readFileHandler({ path: path.join(dir, 'CLAUDE.md') })).toEqual({
+      content: 'agents',
+      realPath: path.join(canonical, 'AGENTS.md'),
+    });
+    await mkdir(path.join(dir, 'other'));
+    await writeFile(path.join(dir, 'other', 't.md'), 'far');
+    await symlink(path.join(dir, 'other', 't.md'), path.join(dir, 'link.md'));
+    expect(await readFileHandler({ path: path.join(dir, 'link.md') })).toEqual({
+      content: 'far',
+      realPath: path.join(canonical, 'other', 't.md'),
+    });
   });
 
   it('writeFileHandler 落盘内容正确', async () => {
     const f = path.join(dir, 'w.txt');
     await writeFileHandler({ path: f, content: 'world' });
     expect(await fspReadFile(f, 'utf-8')).toBe('world');
+  });
+
+  // 性能(编辑器保存回声识别):写成功返回写入内容的 { mtimeMs, size, ino },与随后 fs:stat 一致。
+  it('writeFileHandler 返回写入后的 { mtimeMs, size, ino },与 statHandler 一致', async () => {
+    const f = path.join(dir, 'w.txt');
+    const written = await writeFileHandler({ path: f, content: '世界' });
+    const st = statSync(f);
+    expect(written).toEqual({ mtimeMs: st.mtimeMs, size: st.size, ino: st.ino });
+    expect(written?.size).toBe(6);
+    expect(await statHandler({ path: f })).toEqual(written);
+  });
+
+  it('writeFileHandler 写穿 symlink:返回链接目标的 stat', async () => {
+    const target = path.join(dir, 't.md');
+    await writeFile(target, 'x');
+    await symlink(target, path.join(dir, 'link.md'));
+    const written = await writeFileHandler({ path: path.join(dir, 'link.md'), content: 'abc' });
+    const st = statSync(target);
+    expect(written).toEqual({ mtimeMs: st.mtimeMs, size: 3, ino: st.ino });
+  });
+
+  it('statHandler:不存在 → 抛 FS_NOT_FOUND;schema strict + 必填 path', async () => {
+    await expect(statHandler({ path: path.join(dir, 'nope') })).rejects.toMatchObject({
+      code: 'FS_NOT_FOUND',
+    });
+    expect(statInputSchema.safeParse({ path: '/a' }).success).toBe(true);
+    expect(statInputSchema.safeParse({}).success).toBe(false);
+    expect(statInputSchema.safeParse({ path: '/a', x: 1 }).success).toBe(false);
+    expect(statInputSchema.safeParse({ path: 'a'.repeat(100_000) }).success).toBe(false);
+  });
+
+  it('preload 结果映射:stat 守卫 / writeFile 畸形 data → undefined / stat 畸形 → 失败', () => {
+    expect(toFsFileStat({ mtimeMs: 1.5, size: 2, ino: 7, extra: 1 })).toEqual({
+      mtimeMs: 1.5,
+      size: 2,
+      ino: 7,
+    });
+    expect(toFsFileStat({ mtimeMs: Number.NaN, size: 2, ino: 7 })).toBeUndefined();
+    expect(toFsFileStat({ mtimeMs: 1, size: -1, ino: 7 })).toBeUndefined();
+    expect(toFsFileStat({ mtimeMs: 1, size: 1.5, ino: 7 })).toBeUndefined();
+    // ino 必填(粗粒度 mtime 文件系统上同大小外部替换靠它区分):缺省 / 非有限 / 负 → 不合规
+    expect(toFsFileStat({ mtimeMs: 1, size: 2 })).toBeUndefined();
+    expect(toFsFileStat({ mtimeMs: 1, size: 2, ino: Number.POSITIVE_INFINITY })).toBeUndefined();
+    expect(toFsFileStat({ mtimeMs: 1, size: 2, ino: -1 })).toBeUndefined();
+    expect(toFsFileStat({ mtimeMs: 1, size: 2, ino: '7' })).toBeUndefined();
+    expect(toFsFileStat(null)).toBeUndefined();
+    expect(toFsWriteFileResult({ ok: true, data: { mtimeMs: 1, size: 2, ino: 7 } })).toEqual({
+      ok: true,
+      data: { mtimeMs: 1, size: 2, ino: 7 },
+    });
+    expect(toFsWriteFileResult({ ok: true, data: 'bogus' })).toEqual({ ok: true, data: undefined });
+    const fail = { ok: false as const, code: 'FS_IO', message: 'x' };
+    expect(toFsWriteFileResult(fail)).toBe(fail);
+    expect(toFsStatResult({ ok: true, data: { mtimeMs: 1, size: 2, ino: 7 } })).toEqual({
+      ok: true,
+      data: { mtimeMs: 1, size: 2, ino: 7 },
+    });
+    expect(toFsStatResult({ ok: true, data: {} }).ok).toBe(false);
+    expect(toFsStatResult(fail)).toBe(fail);
   });
 
   it('renameHandler 同目录改名,返回新路径', async () => {
@@ -466,5 +569,36 @@ describe('makeSelectDirectoryHandler', () => {
     expect(showOpenDialog).toHaveBeenCalledTimes(1);
     const arg = showOpenDialog.mock.calls[0]![0];
     expect(arg.properties).toContain('openDirectory');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// E. preload 侧 readFile 结果映射:data 仍为 string(既有调用方不变),realPath 校验后可选附带
+// ────────────────────────────────────────────────────────────
+
+describe('toFsReadFileResult', () => {
+  it('ok + realPath 合规 → { ok, data: content, realPath }', () => {
+    expect(
+      toFsReadFileResult({ ok: true, data: { content: 'x', realPath: '/r/a.md' } }, 100),
+    ).toEqual({ ok: true, data: 'x', realPath: '/r/a.md' });
+  });
+  it('ok 无 realPath → 不带该字段', () => {
+    expect(toFsReadFileResult({ ok: true, data: { content: 'x' } }, 100)).toEqual({
+      ok: true,
+      data: 'x',
+    });
+  });
+  it('realPath 畸形 / 超长 → 丢弃 realPath(内容照常)', () => {
+    for (const bad of [42, '', 'x'.repeat(101), null]) {
+      const r = toFsReadFileResult(
+        { ok: true, data: { content: 'x', realPath: bad as unknown as string } },
+        100,
+      );
+      expect(r).toEqual({ ok: true, data: 'x' });
+    }
+  });
+  it('失败结果原样透传', () => {
+    const fail = { ok: false as const, code: 'FS_NOT_FOUND', message: 'nope' };
+    expect(toFsReadFileResult(fail, 100)).toBe(fail);
   });
 });

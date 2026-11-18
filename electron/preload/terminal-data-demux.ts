@@ -45,6 +45,13 @@ export function createTerminalDataDemux(): TerminalDataDemux {
     dispatch(id, data, offset) {
       const set = handlers.get(id);
       if (!set) return 0;
+      // 性能:常态每 session 只有一个 handler → 直接调用,不为每个 chunk 分配快照数组(GC 压力)。
+      // 语义与快照一致:本轮只调这一个(分发中新增 / 退订都从下一轮生效)。
+      if (set.size === 1) {
+        const only = set.values().next().value as TerminalDataHandler;
+        only(data, offset);
+        return 1;
+      }
       // 快照迭代:某 handler 在分发中 unsubscribe(如首 chunk 即拆面板)不影响本轮。
       let n = 0;
       for (const h of [...set]) {

@@ -151,7 +151,12 @@ const EditorActionsArea = memo(function EditorActionsArea({
   );
 });
 
-export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
+// perf E3:memo —— EditorPanel 每按键(active tab 正文变)都重渲;本组件唯一 prop onCloseRequest
+// 是父级稳定 useCallback,所需 store 状态全走自身窄订阅(chromeVersion/activeTabId/mode/locale),
+// 父级重渲时跳过,不再每键重建全部 TabNavItem 与闭包。
+export const EditorHeader = memo(function EditorHeader({
+  onCloseRequest,
+}: EditorHeaderProps) {
   const t = useT(); // 订阅 locale 让 basename 改语言时 re-render
   // 只订阅派生的 tab chrome(打磨 R23 + 性能 P12)。旧实现每次 store 更新都在 selector 里
   // `tabs.map(...)+JSON.stringify`(O(tab 数) 分配+序列化),虽阻止重渲但不阻止每按键计算。
@@ -232,4 +237,4 @@ export function EditorHeader({ onCloseRequest }: EditorHeaderProps) {
       </div>
     </div>
   );
-}
+});

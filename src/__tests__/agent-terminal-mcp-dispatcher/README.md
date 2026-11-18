@@ -91,6 +91,9 @@ interface McpToolDef<I, O> {
    ```ts
    { result: { content: [{ type: 'text', text: JSON.stringify(toolResult) }] } }
    ```
+8. 结果序列化 UTF-8 字节 > RESULT_BYTES_MAX(10MiB)→ RESULT_TOO_LARGE(CJK 结果按真实字节判)。
+   stringify 前的下界预检用 `.length` 度量(每串 O(1)),精确裁决由 `utf8BytesExceed(text)` 完成;
+   上限内的结果全程不逐字符计算 UTF-8 字节(perf)。
 
 ### 未知 method
 

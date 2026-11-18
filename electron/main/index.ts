@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
+import { setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -19,11 +20,14 @@ import {
   defaultExplorerV3,
   ensureWindowEntry,
   loadExplorer,
-  migrateExplorerFileToV3,
+  MAX_PERSISTED_WINDOW_SEGMENTS,
+  prepareExplorerFileForBoot,
   pruneLRUClosed,
+  stampMissingClosedAt,
+  closedAtNow,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
-import { pickWindowsToRestore } from './services/window-restore.service';
+import { isStartupRestoreInFlight, restoreStartupWindows } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import {
   pickArgvFolders,
@@ -42,6 +46,7 @@ import {
 } from './services/window-seq.service';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { atomicWriteJson } from './lib/atomic-write';
+import { statDirGated } from './lib/dir-stat-gate';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
@@ -82,6 +87,7 @@ import {
   installStopHookForSession,
 } from './services/mcp-tools-hook-bridge';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
+import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
   defaultIsTrustedFrame,
   isTrustedRendererFileUrl,
@@ -145,7 +151,28 @@ if (resolvedUserDataPath !== null) {
   app.setPath('userData', resolvedUserDataPath);
 }
 
-const LRU_MAX_CLOSED = Infinity;
+const LRU_MAX_CLOSED = MAX_PERSISTED_WINDOW_SEGMENTS;
+/**
+ * 正在关闭(已 clearWindow 退出活跃集、但自身 lastClosedAt 尚未落盘)的 seq → 引用计数。
+ * 多窗近同时关闭时,先拿到 explorer mutex 的那个执行 LRU,不能把另一个仍在关闭中的窗口段当最旧摘掉
+ * (其 lastClosedAt 还是旧值),否则后者落盘时只能 ensureWindowEntry 重建空段,原 workspace/layout 丢失。
+ */
+const closingSeqRefs = new Map<number, number>();
+/**
+ * LRU 不可摘的段:活跃窗 + 关闭中窗 + 主窗段 seq 0。冷启动主窗固定复用 seq 0 的段恢复 workspace,
+ * 即使它很早就被关掉,也不能当成过期历史摘掉。
+ */
+function releaseClosingSeq(seq: number): void {
+  const next = (closingSeqRefs.get(seq) ?? 0) - 1;
+  if (next > 0) closingSeqRefs.set(seq, next);
+  else closingSeqRefs.delete(seq);
+}
+function lruProtectedSeqs(): ReadonlySet<number> {
+  const seqs = new Set(getActiveSeqs());
+  for (const seq of closingSeqRefs.keys()) seqs.add(seq);
+  seqs.add(0);
+  return seqs;
+}
 // flush 结果:'ok' 已 ack / 'save-failed' renderer 报保存失败 / 'still-dirty' flush 后最终脏检查仍有未保存改动 /
 // 'timeout' 超时兜底 / 'skipped' 无法 flush 直接放行。
 type FlushOutcome = 'ok' | 'save-failed' | 'still-dirty' | 'timeout' | 'skipped';
@@ -396,6 +423,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     dirtyStates.delete(windowId);
     closeFlowGen.delete(windowId);
     closeFlowReleases.delete(windowId);
+    flushedOnQuit.delete(windowId); // BrowserWindow.id 不复用:不清理会随关窗次数单调增长
   });
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
@@ -477,6 +505,9 @@ function isOwnRendererUrl(url: string): boolean {
     isTrustedRendererFileUrl,
   );
 }
+
+// wc-gone 资源回收只把目标为本应用入口的导航视为 reload(被导航守卫拦下的外链不算,见 wc-gone-hook)。
+setReloadUrlPredicate(isOwnRendererUrl);
 
 function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   // 边界(E190,E179/E152 同族外链长度):window.open url 的类型/长度前置闸,先于 new URL 解析与
@@ -584,17 +615,27 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   wireWindowCloseFlush(win);
 
   win.on('closed', () => {
+    // 先同步登记为关闭中,再退出活跃集:两者之间不能留出让其他窗口 LRU 摘掉本段的窗口期。
+    closingSeqRefs.set(seq, (closingSeqRefs.get(seq) ?? 0) + 1);
     clearWindow(win.id);
     // 窗口级资源清理(scope / fs watcher / agent 授权)已移到覆盖全窗口的
     // browser-window-created → releaseWindowResources,主窗与 popout 统一处理。
     // 此处只保留主窗专属的 explorer.json 段落持久化(popout 无 windowSeq 段)。
     const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
     void withExplorerFileMutex(async () => {
-      const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
-      const entry = ensureWindowEntry(payload, seq);
-      entry.lastClosedAt = Date.now();
-      pruneLRUClosed(payload, LRU_MAX_CLOSED, getActiveSeqs());
-      await atomicWriteJson(explorerFile, payload);
+      try {
+        const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
+        const entry = ensureWindowEntry(payload, seq);
+        entry.lastClosedAt = closedAtNow();
+        const protectedSeqs = lruProtectedSeqs();
+        // 启动恢复未结束时不补写:即将被恢复的段还不在保护集(恢复后开着,补写的启动时刻会让它下次偏旧)。
+        if (!isStartupRestoreInFlight()) stampMissingClosedAt(payload, protectedSeqs);
+        pruneLRUClosed(payload, LRU_MAX_CLOSED, protectedSeqs);
+        await atomicWriteJson(explorerFile, payload);
+      } finally {
+        // 自身段已落盘(或写失败)→ 解除保护;放在 mutex 体内,不另起派生 promise 制造未处理拒绝。
+        releaseClosingSeq(seq);
+      }
     });
   });
 
@@ -662,6 +703,18 @@ app.on('web-contents-created', (_evt, contents) => {
 function isDirectorySync(p: string): boolean {
   try {
     return nodeFs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * isDirectorySync 的异步版:启动窗口恢复 / 运行期 open-file 用,慢挂载 / 断开网络盘不阻塞 main(性能
+ * 审计 #7);经全局目录判定闸,失联挂载点上的在途 stat 不占满 libuv 线程池。
+ */
+async function isDirectory(p: string): Promise<boolean> {
+  try {
+    return (await statDirGated(p)).isDirectory();
   } catch {
     return false;
   }
@@ -879,10 +932,10 @@ pendingOpenPaths.push(
 // 边界(E59,E58 运行期 sibling):macOS open-file 在 app ready 后直接走本入口,绕过冷启动
 // pendingOpenPaths/pickStartupMode 的数量/长度上限。畸形/自动化 open-file 事件可在运行中连续送入
 // 大量目录或超长路径 → 对每个先同步 statSync + 批量 allocateWindowSeq/createMainWindow,主进程
-// 同步 I/O 卡顿 + 批量开窗。复用启动路径长度守卫(超长不 statSync)+ 运行期并发开窗上限。
+// 同步 I/O 卡顿 + 批量开窗。复用启动路径长度守卫(超长不 stat)+ 运行期并发开窗上限;目录判定已改异步。
 let openInFlight = 0;
 async function openPathInNewWindow(absPath: string): Promise<void> {
-  // 超长/非法路径先跳过,绝不对其 statSync。
+  // 超长/非法路径先跳过,绝不对其 stat。
   if (!isWithinStartupPathLimit(absPath)) {
     console.warn('[open-file] dropping invalid/oversize path');
     return;
@@ -896,7 +949,8 @@ async function openPathInNewWindow(absPath: string): Promise<void> {
   }
   openInFlight += 1;
   try {
-    if (!isDirectorySync(absPath)) return; // 路径不存在 / 无权限 / 非目录 → 跳过
+    // 运行期异步判定:同步 stat 遇慢挂载 / 失联网络盘会冻结整个 main(在途判定也计入 openInFlight)。
+    if (!(await isDirectory(absPath))) return; // 路径不存在 / 无权限 / 非目录 → 跳过
     await openWorkspaceWindow(absPath);
   } finally {
     openInFlight -= 1;
@@ -917,6 +971,8 @@ app.on('open-file', (event, filePath) => {
 // P4+ C 方案:同时启 stdio server(unix socket),Claude Code 走 stdio 配置一次永久使用。
 let mcpHost: McpHost | null = null;
 let mcpStdio: StdioSocketServer | null = null;
+// stdio server 在首窗创建后 void 启动;退出清理先等它结束再 close(否则 listen 晚于 close → socket 残留)。
+let mcpStdioStarting: Promise<void> = Promise.resolve();
 // Stop hook broker 的停止函数(MCP host 启动成功后赋值),由 before-quit 不可逆清理阶段调用。
 let stopHookBroker: (() => Promise<void>) | null = null;
 
@@ -1172,6 +1228,11 @@ async function startMcpStdioServer(): Promise<void> {
   }
 }
 
+// 启动窗口恢复取消标志:目录判定 async 后,慢 stat 期间用户可关掉最后一个窗口 / 触发退出;此后
+// 恢复不得再建窗(否则 macOS 窗口「复活」,或新窗落在 before-quit 已取快照之外绕过 flush / 清理)。
+// 单向置位:退出被中止(用户取消确认)也不恢复 —— 余下的恢复窗用户可手动再开,不值得冒险。
+let startupRestoreCancelled = false;
+
 app.whenReady().then(async () => {
   // 安全 S1:在建任何窗口 / IPC 之前注册真实 renderer 入口,让 defaultIsTrustedFrame
   // 与 windowOpenHandler 只信这个 file URL,拒绝任意 file:// 弹窗/frame 受信。放在
@@ -1181,10 +1242,14 @@ app.whenReady().then(async () => {
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
   const legacyLayoutFile = path.join(userData, 'layout.json');
-  await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
-
-  // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label
-  await loadSettings();
+  // explorer.json v3 迁移 + 既有超长文件(LRU 上限曾为 Infinity)段数收敛:同一次锁内共用一次加载;
+  // 收敛失败只告警,不阻断启动。
+  // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label。
+  // 性能:两者读写不同文件、互无依赖 → 并行(loadSettings 永不抛)。
+  await Promise.all([
+    prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, LRU_MAX_CLOSED, lruProtectedSeqs()),
+    loadSettings(),
+  ]);
 
   // E2E 跑 Playwright 时,Electron 默认菜单的 CmdOrCtrl+P 绑定 Print 会先吞
   // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。
@@ -1200,12 +1265,12 @@ app.whenReady().then(async () => {
   // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
   setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
-  // env 已含 MCP url / token。
+  // env 已含 MCP url / token。stdio server 不挡建窗(见下方首窗创建后的启动)。
   await startMcpHost();
-  await startMcpStdioServer();
   // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)。
-  // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉.
-  if (mcpHost) startPluginMcpIpc(mcpHost, mcpStdio ?? undefined);
+  // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉;
+  // stdio 用取值函数:就绪前只推 HTTP,就绪后同时推 stdio。
+  if (mcpHost) startPluginMcpIpc(mcpHost, () => mcpStdio);
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
@@ -1231,21 +1296,23 @@ app.whenReady().then(async () => {
     // 正常启动:主窗 windowSeq=0(workspace 由 renderer 从 explorer.json 段恢复)
     createMainWindow({ windowSeq: 0 });
     // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复
-    void (async () => {
-      try {
-        const data = await loadExplorer(explorerFile);
-        if (!data) return;
-        for (const entry of pickWindowsToRestore(data, isDirectorySync)) {
-          createMainWindow({
-            windowSeq: entry.windowSeq,
-            workspace: entry.workspace,
-          });
-        }
-      } catch (err) {
-        console.warn('[window-restore] 启动恢复失败,只开主窗', err);
-      }
-    })();
+    // 恢复期间可被退出 / 全部关窗取消(见 startupRestoreCancelled),取消后不再建恢复窗。
+    restoreStartupWindows(
+      () => loadExplorer(explorerFile),
+      isDirectory,
+      (entry) => createMainWindow({ windowSeq: entry.windowSeq, workspace: entry.workspace }),
+      () => startupRestoreCancelled,
+    ).catch((err: unknown) => {
+      console.warn('[window-restore] 启动恢复失败,只开主窗', err);
+    });
   }
+
+  // 冷启动性能:stdio socket server(mkdir/stat/lstat/unlink/listen/chmod 串行)不挡建首窗 ——
+  // 首窗与 PTY env 只依赖 HTTP host;stdio 配置仅「复制 MCP 配置」点击时读,未就绪时既有
+  // { available:false } 默认值 → 按钮显示 unavailable。启动失败在 startMcpStdioServer 内照旧告警。
+  mcpStdioStarting = startMcpStdioServer();
+  // 首窗已建:提前建立插件 watcher 基线,renderer 首次 LIST_DIRS 时通常已就绪(见 primePluginsWatcherBaseline)。
+  primePluginsWatcherBaseline();
 
   // 冷启 + open-url 顺序处理:可能在 mainwindow 未就绪前已收 url。race(R41):协议队列 drain 统一
   // 由 PROTOCOL_READY 处理器负责(任一窗口上报就绪即排空),此处不单独挂 drain。
@@ -1269,16 +1336,19 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  startupRestoreCancelled = true;
   e2eQuitTrace('window-all-closed');
   if (process.platform !== 'darwin') app.quit();
 });
 app.on('will-quit', (event) => {
+  startupRestoreCancelled = true;
   // 放在其它 will-quit 监听之后检查是否被阻止(仅诊断,不改变行为)。
   setImmediate(() => e2eQuitTrace(`will-quit prevented=${event.defaultPrevented}`));
 });
 app.on('quit', () => e2eQuitTrace('quit'));
 
 app.on('before-quit', async (event) => {
+  startupRestoreCancelled = true; // 须在任何 await / 快照窗口列表之前置位
   const action = quitGuard.onBeforeQuit();
   // 清理已完成 → 内部 app.quit() 的重入,放行退出。
   if (action === 'allow') return;
@@ -1411,7 +1481,7 @@ app.on('before-quit', async (event) => {
   // 单个 close 失败/reject 不阻断另一个,也不阻断退出。
   await Promise.allSettled([
     traced('mcp-host', mcpHost?.close()),
-    traced('mcp-stdio', mcpStdio?.close()),
+    traced('mcp-stdio', mcpStdioStarting.then(() => mcpStdio?.close())),
     traced('hook-broker', stopHookBroker?.()),
   ]);
   quitTrace('quit');

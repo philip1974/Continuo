@@ -1,7 +1,7 @@
 # EmptyState(dock 全空时占位)
 
 行为契约:**`<EmptyState onRestore />` 显示「所有面板都关掉了」与一个「恢复默认布局」按钮。
-visibilityState='hidden' 时不挂载装饰用 BackgroundBeams 节电。点按钮触发 onRestore。**
+visibilityState='hidden' 或窗口失焦时不挂载装饰用 BackgroundBeams 节电(backgroundThrottling:false 下最小化/遮挡仍报 visible,靠焦点兜底)。点按钮触发 onRestore。**
 
 ## 模块
 
@@ -17,3 +17,5 @@ visibilityState='hidden' 时不挂载装饰用 BackgroundBeams 节电。点按�
 - visibilityState !== 'hidden' → 渲染 BackgroundBeams(SVG)
 - visibilityState === 'hidden' → 不渲染 BackgroundBeams
 - visibilitychange 事件 → 切换显示
+- 窗口 blur → 不渲染 BackgroundBeams;focus → 恢复
+- 挂载时 document.hasFocus() 为 false → 不渲染 BackgroundBeams

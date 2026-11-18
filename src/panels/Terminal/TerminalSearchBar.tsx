@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
 import { clampSearchQuery } from '@/lib/search-query';
+import { isImeComposing } from '@/lib/ime';
 import type { SearchApi } from './useTerminal';
 import type { TerminalSearchOptions } from './terminal-search-state';
 
@@ -79,6 +80,8 @@ export function TerminalSearchBar({
           searchApi.setTerm(clampSearchQuery(event.target.value))
         }
         onKeyDown={(event) => {
+          // IME 组合中的 Enter / Esc 属于输入法(确认候选 / 取消组合),不跳转也不关闭搜索框。
+          if (isImeComposing(event.nativeEvent)) return;
           if (event.key === 'Escape') {
             event.preventDefault();
             onClose();
@@ -168,6 +171,10 @@ export function TerminalSearchBar({
         size="xs"
         aria-label={closeLabel}
         title={closeLabel}
+        // 性能:阻止 mousedown 默认的焦点转移 —— 否则输入框先 blur,clearActiveDecoration 会 flush
+        // 挂起的防抖搜索(同步扫整段 scrollback),之后 click 才关闭,关闭取消挂起搜索的语义被抵消。
+        // 关闭后焦点由 close 交还 xterm,按钮本身无需获焦。
+        onMouseDown={(e) => e.preventDefault()}
         onClick={onClose}
       >
         x

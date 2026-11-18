@@ -47,6 +47,11 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
   - `write/resize/remove/updateCwd/readHistory` 都必须由 sender window 推断 owner
   - 非 owner 操作现有 session 时抛 `TERMINAL_NOT_FOUND`,不写 PTY、不删 metadata
 
+- sessions_changed 广播(`sessions-changed-skip-unchanged.spec.ts`):
+  - 按窗口记录上次发出的 owner 过滤快照;长度与每个会话对象引用都相同 → 跳过该窗口(会话对象不可变,变化即整体替换)
+  - 没有记录的窗口(新窗口)一定发送,含空快照
+  - 窗口 `closed` 与 renderer 拉取 `list_sessions`(初始化 / reload)时清记录,下一次广播无条件发送
+
 ## 不在本主题验证
 
 - node-pty spawn 真行为(留 E2E)

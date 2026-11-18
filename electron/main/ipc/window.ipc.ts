@@ -4,12 +4,12 @@
 // 持久化到自己段(windows[seq]),实现多窗状态隔离。
 
 import { z } from 'zod';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
 import { boundedObjectAdmissible } from '../../shared/bounded-input';
 import { formatZodErrorCapped } from '../lib/format-zod-error';
+import { statDirGated } from '../lib/dir-stat-gate';
 import {
   WINDOW_CHANNELS,
   type IpcWindowCreateInput,
@@ -64,9 +64,11 @@ async function createWindowHandler(
     if (!path.isAbsolute(input.workspace)) {
       throw codedError(ERROR_CODES.WORKSPACE_NOT_ABSOLUTE, `workspace must be absolute path: ${input.workspace}`);
     }
+    // 性能:异步 stat —— 网络盘 / 休眠外置盘 / 失联挂载点上同步 stat 可卡数秒,冻结所有窗口的 IPC 与 PTY 输出。
+    // 经全局目录判定闸:并发打开多个失联路径时不占满 libuv 线程池(其余 fs.promises 不排队)。
     let stat;
     try {
-      stat = fs.statSync(input.workspace);
+      stat = await statDirGated(input.workspace);
     } catch {
       throw codedError(ERROR_CODES.WORKSPACE_NOT_FOUND, `workspace not found: ${input.workspace}`);
     }

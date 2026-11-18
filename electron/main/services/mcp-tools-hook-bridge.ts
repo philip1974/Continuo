@@ -100,6 +100,9 @@ const COMMAND_KEY = 'command';
 // unlink 才是主导开销),主进程 I/O/CPU 被外部目录状态放大。每轮枚举后截断到 N 候选,超限告警 +
 // 留给后续轮继续清理(cleanupStale 周期跑,每轮再削 N)。start 扫描与 cleanupStale 共用。
 const MAX_HOOK_DIR_ENTRIES = 4096;
+// perf:start() 存量扫描在首窗创建前被 await。逐文件串行 stat+read 时首窗延迟 = 全部文件 I/O 之和;
+// 改为有界并发读取(I/O 重叠),结果仍按文件名顺序提交(buffered 先后 = 首个匹配胜出语义不变)。
+const STARTUP_INGEST_CONCURRENCY = 16;
 
 export function sortHookDirNames(names: string[]): string[] {
   for (let i = 1; i < names.length; i++) {
@@ -445,7 +448,14 @@ export function createHookFileBroker(
     return true;
   }
 
-  async function ingestFile(fileName: string): Promise<void> {
+  /**
+   * beforeCommit:启动存量扫描用的提交闸门。I/O(stat/读取/解析)可与其它文件并发,但成功结果写入共享状态
+   * (processed / pending 命中 / buffered)前先等闸门,保证按文件名顺序提交。隔离(过期/超大)与顺序无关,不经闸门。
+   */
+  async function ingestFile(
+    fileName: string,
+    beforeCommit?: () => Promise<void>,
+  ): Promise<void> {
     if (stopped || processed.has(fileName)) return;
     if (inFlight.has(fileName)) {
       // 同名文件正在处理:记下「需补跑」。`cat > file` 先建空文件再写内容,写完的 change 事件若恰在第一次
@@ -516,6 +526,11 @@ export function createHookFileBroker(
       const jsonText = read.text as string; // tooLarge=false 时必为 string
 
       const payload = parseStopPayload(runner, jsonText);
+      if (beforeCommit) {
+        await beforeCommit();
+        // race(R90):等待闸门期间若 stop()/restart → 丢弃,不写共享状态(同上)。
+        if (stopped || myGen !== ingestGen) return;
+      }
       if (payload === null) {
         // 解析失败:文件可能正被 `cat >` 写入未完成。绝不 unlink(否则真实事件
         // 在内容到达前被删 → 永久丢失),也不标 processed,等写完后的 watch 事件
@@ -648,9 +663,23 @@ export function createHookFileBroker(
 
       try {
         const entries = await readHookDirCapped(hookEventsDir, maxDirEntries); // 边界(E83):有界枚举
-        for (const name of entries) {
-          await ingestFile(name);
-        }
+        // settled[i] = 前 i+1 个文件都已处理完(提交或放弃)。第 i 个文件提交前等 settled[i-1]:链式累积,
+        // 中间文件提前返回(隔离/读失败)也不会让后面的文件越过更早的文件提交。worker 按下标顺序领取,
+        // settled[i-1] 在领取 i 前已同步赋值,不会死锁。
+        const settled: Promise<void>[] = new Array<Promise<void>>(entries.length);
+        let next = 0;
+        const worker = async (): Promise<void> => {
+          while (next < entries.length) {
+            const i = next++;
+            const prev = i === 0 ? undefined : settled[i - 1]!;
+            const done = ingestFile(entries[i]!, prev && (() => prev)).catch(() => undefined);
+            settled[i] = prev ? Promise.all([prev, done]).then(() => undefined) : done;
+            await done;
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(STARTUP_INGEST_CONCURRENCY, entries.length) }, worker),
+        );
       } catch {
         // Ignore startup directory races; watcher handles later files.
       }

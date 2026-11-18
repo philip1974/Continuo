@@ -81,4 +81,36 @@ describe('perf-audit P1 · createTerminalDataDemux', () => {
     expect(demux.dispatch('s', 'd')).toBe(1);
     expect(h2).toHaveBeenCalledOnce();
   });
+
+  // 常态每 session 只有一个 handler:每个 chunk 都 `[...set]` 拷快照会持续制造短命数组(GC 压力)。
+  // 单 handler 直接调用,不迭代整个 Set 做快照;多 handler 才快照(保留分发中退订语义,见上)。
+  it('单 handler:dispatch 不拷 handler 快照', () => {
+    const demux = createTerminalDataDemux();
+    const h = vi.fn();
+    demux.add('s', h);
+    const iterSpy = vi.spyOn(Set.prototype, Symbol.iterator);
+    try {
+      expect(demux.dispatch('s', 'd', 7)).toBe(1);
+      expect(iterSpy).not.toHaveBeenCalled();
+    } finally {
+      iterSpy.mockRestore();
+    }
+    expect(h).toHaveBeenCalledWith('d', 7);
+  });
+
+  it('单 handler 在分发中退订自身 / 新增 handler:本轮只调它一次,下轮按新集合', () => {
+    const demux = createTerminalDataDemux();
+    const order: string[] = [];
+    let unsub1: (() => void) | null = null;
+    unsub1 = demux.add('s', () => {
+      order.push('h1');
+      unsub1?.();
+      demux.add('s', () => order.push('h2'));
+    });
+    expect(demux.dispatch('s', 'd')).toBe(1);
+    expect(order).toEqual(['h1']);
+    order.length = 0;
+    expect(demux.dispatch('s', 'd')).toBe(1);
+    expect(order).toEqual(['h2']);
+  });
 });

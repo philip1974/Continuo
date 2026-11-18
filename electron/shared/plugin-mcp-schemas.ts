@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
 import { assertJsonValue } from './assert-json-value';
 import { utf8BytesExceed } from './utf8-byte-length';
-import { jsonByteLowerBoundExceeds } from './json-byte-budget';
+import { jsonStringLengthLowerBoundExceeds } from './json-byte-budget';
 import { boundedValueDeepAdmissible } from './bounded-input';
 import type { InvokeReply } from './plugin-mcp-channels';
 
@@ -55,7 +55,8 @@ export const RegisterPayloadSchema = z
       // 字节可远超 64KiB,否则 assertJsonValue 先完整遍历(≤65536 元素)才被字节 cap 拒。jsonByteLowerBoundExceeds
       // 对任意输入安全(E288)可先于 assertJsonValue 跑。(仅「既非 JSON-safe 又超字节」病态 schema 的 issue
       // 文案从「非 JSON 安全值」变「序列化超过 N 字节」—— 两者皆 reject,单-bad 不变。)
-      if (jsonByteLowerBoundExceeds(s, SCHEMA_BYTES_MAX)) {
+      // .length 下界即可(其后 E128 有真实 UTF-8 字节精确终裁)。
+      if (jsonStringLengthLowerBoundExceeds(s, SCHEMA_BYTES_MAX)) {
         ctx.addIssue({
           code: 'custom',
           message: `jsonSchema 序列化超过 ${SCHEMA_BYTES_MAX} 字节`,
@@ -134,7 +135,9 @@ export function isInvokeResultAdmissible(r: unknown): boolean {
     // assertJsonValue 前运行。**行为保持**(超限两序皆 false;非 JSON-safe 仍由其后 assertJsonValue 拒)——
     // 不用 codex 建议的 boundedValueDeepAdmissible(那会把 accept set 收紧:深度 256→64 / 数组 1M→65536,
     // 误拒当前合法的深/大 result),reorder 既 fail-fast 又不改判定。
-    if (jsonByteLowerBoundExceeds(r, RESULT_BYTES_MAX)) return false;
+    // perf:预检用 .length 下界(每串 O(1),不逐字符计 UTF-8):其后有 stringify + 精确 UTF-8 字节终裁,
+    // .length ≤ UTF-8 字节仍是合法下界,判定不变(多字节超限只是从预检挪到精确终裁拒)。
+    if (jsonStringLengthLowerBoundExceeds(r, RESULT_BYTES_MAX)) return false;
     // 边界(E286):字节下界 ≤ 上限后,assertJsonValue 拒非 JSON 安全值 + 形态早停,再精确字节 cap(转义后
     // 真实字节可能 > 下界)。
     assertJsonValue(r);

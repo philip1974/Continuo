@@ -7,6 +7,8 @@
 // - 同 path 重复 watch 共享 watcher,按引用计数释放(creator 只调一次)
 // - cb 是 renderer 端注入的"通知函数",pool 内部不知道 IPC
 
+import { DIR_CHANGED_FILES_MAX } from '../../../shared/fs-channels';
+
 export const MAX_WATCHERS = 64;
 
 export interface Watcher {
@@ -23,9 +25,19 @@ export interface Watcher {
  * onError(err):creator 底层 watcher 异步失效(网络盘 / 可移动卷断开、目录失效 → FSWatcher
  * 'error')时调用,池据此关闭并移出该 watcher(见 evictDead)。
  */
+/**
+ * fileName:变更项名字(watch 回调 filename 末段);undefined = 未知是哪个文件(目录级).
+ * eventType:fs.watch 回调的 eventType('change' | 'rename');undefined = 未知(按可能有结构变化处理).
+ */
+export type WatchChangeListener = (
+  changedPath: string,
+  fileName?: string,
+  eventType?: string,
+) => void;
+
 export type WatcherCreator = (
   path: string,
-  onChange: (changedPath: string) => void,
+  onChange: WatchChangeListener,
   onError: (err: unknown) => void,
 ) => Watcher;
 
@@ -36,7 +48,7 @@ export interface WatcherPool {
    */
   watch: (
     path: string,
-    onChange: (changedPath: string) => void,
+    onChange: WatchChangeListener,
     ownerId?: number,
   ) => void;
   unwatch: (path: string, ownerId?: number) => void;
@@ -197,5 +209,61 @@ export function createWatcherPool(
       order.length = 0;
       ownerPaths.clear();
     },
+  };
+}
+
+/**
+ * 同 tick 同路径合并(性能审计 #1)。macOS/Win 上每个展开目录各有一个 recursive watcher,一次变更会被
+ * 根及每个已展开祖先的 watcher 各回调一次,且算出**同一个** changedPath(resolveWatchChangedPath 按
+ * watcher 根拼相对子目录,结果与哪个祖先报告无关)→ 原先逐个广播 = O(展开祖先数 × 窗口数) 次 IPC。
+ * 这些回调在同一轮事件循环内派发,合并到 schedule(默认 setImmediate)后每个路径只 emit 一次;不同
+ * 路径按首次出现顺序各 emit 一次。renderer 侧本就按路径 100ms debounce / in-flight 合并,语义不变。
+ *
+ * 性能:同时按目录收集变更文件名(去重),emit(path, files) 让 renderer 外部同步只重读命中的 clean tab。
+ * 同目录同 tick 内任一回调缺 fileName(平台不给 filename / Windows 缓冲溢出)或文件名数超 maxFiles →
+ * 该目录此次 files=undefined(未知文件,订阅者退化为目录级);一旦未知不会被之后的文件名恢复成集合。
+ *
+ * 性能:同时按目录聚合 changeOnly(本 tick 该目录所有回调 eventType 均为 'change' → true;任一 'rename' /
+ * 缺 eventType → false),Explorer 据此跳过「仅内容变化」时的整目录 listDir(目录列表不变)。
+ */
+export function createSameTickPathCoalescer(
+  emit: (path: string, files: readonly string[] | undefined, changeOnly: boolean) => void,
+  schedule: (flush: () => void) => void = (flush) => {
+    setImmediate(flush);
+  },
+  maxFiles: number = DIR_CHANGED_FILES_MAX,
+): WatchChangeListener {
+  // files:该目录本 tick 的文件名集合,null = 未知文件(目录级)。
+  // changeOnly:本 tick 该目录所有回调 eventType 均为 'change'(任一 rename / 缺失 → false,不可恢复)。
+  let pending: Map<string, { files: Set<string> | null; changeOnly: boolean }> | null = null;
+  const flush = (): void => {
+    const paths = pending;
+    pending = null;
+    if (paths) {
+      for (const [p, e] of paths) emit(p, e.files ? [...e.files] : undefined, e.changeOnly);
+    }
+  };
+  return (path, fileName, eventType) => {
+    if (pending === null) {
+      pending = new Map();
+      schedule(flush);
+    }
+    const isChange = eventType === 'change';
+    const entry = pending.get(path);
+    if (!entry) {
+      pending.set(path, {
+        files: fileName === undefined ? null : new Set([fileName]),
+        changeOnly: isChange,
+      });
+      return;
+    }
+    if (!isChange) entry.changeOnly = false;
+    if (!entry.files) return; // 已是未知文件
+    if (fileName === undefined) {
+      entry.files = null;
+      return;
+    }
+    entry.files.add(fileName);
+    if (entry.files.size > maxFiles) entry.files = null;
   };
 }

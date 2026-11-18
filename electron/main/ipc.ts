@@ -36,7 +36,7 @@ import { ERROR_CODES } from '../shared/error-codes';
 import { assertJsonValue } from '../shared/assert-json-value';
 import { AgentAuthRespondSchema } from './agent-auth-schema';
 import { utf8ByteLength } from '../shared/utf8-byte-length';
-import { jsonByteLowerBoundExceeds } from '../shared/json-byte-budget';
+import { jsonStringLengthLowerBoundExceeds } from '../shared/json-byte-budget';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import {
   answerAgentAuthRequest,
@@ -169,7 +169,9 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
       // 全量遍历之前 —— 超 2MiB 但 shape 合法(≤assertJsonValue 1M/10万/256 上限)的 layout 不被 assertJsonValue
       // 完整遍历后才拒。jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」
       // 病态 layout 错误码从 BAD_INPUT 变 PAYLOAD_TOO_LARGE —— 两者皆拒写,单-bad 不变。)
-      if (jsonByteLowerBoundExceeds(layout, MAX_LAYOUT_BYTES)) {
+      // perf:预检用 .length 下界(每串 O(1),不逐字符计 UTF-8):其后有 stringify + 精确 UTF-8 字节终裁,
+      // .length ≤ UTF-8 字节仍是合法下界,判定不变(多字节超限只是从预检挪到精确终裁拒)。
+      if (jsonStringLengthLowerBoundExceeds(layout, MAX_LAYOUT_BYTES)) {
         throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `layout too large (> ${MAX_LAYOUT_BYTES})`);
       }
       // 边界(E119,E105/E117 同族):LayoutSchema 是 .passthrough(),layout 可含 Infinity/NaN/

@@ -52,11 +52,19 @@ type WorkspaceState = {
    * initExplorerPersistence 完成(成功 / 失败 / 没有持久化文件)都置 true。
    */
   hydrated: boolean;
+  /**
+   * root 是否已按持久化恢复(早于 hydrated:置于编辑器 tab 并发读盘之前)。
+   * 只依赖 root 的消费方(终端首轮可见过滤 / Splash 就绪屏障)等它即可,不必等全部 tab 读完。
+   * markHydrated 同时置位(hydrated ⇒ rootRestored)。
+   */
+  rootRestored: boolean;
   /** 切换 root;同时 LRU 维护 recentRoots. null 时只清 root,不动 recent.
    *  副作用:旧 root 外的 file tab 自动关闭(untitled 草稿保留). */
   setRoot: (path: string | null) => void;
   /** 持久化层调用,置 hydrated=true。幂等。 */
   markHydrated: () => void;
+  /** 持久化层调用,置 rootRestored=true。幂等。 */
+  markRootRestored: () => void;
 };
 
 /**
@@ -87,7 +95,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   root: null,
   recentRoots: [],
   hydrated: false,
-  markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true })),
+  rootRestored: false,
+  markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true, rootRestored: true })),
+  markRootRestored: () => set((s) => (s.rootRestored ? s : { rootRestored: true })),
   setRoot: (path) => {
     const normalized = normalizeWorkspaceRoot(path);
     // 切换/关闭 root 时同步清掉 root 外的 file tab,避免旧路径残留误导
@@ -121,6 +131,30 @@ export function waitForWorkspaceHydrated(): Promise<void> {
     });
     // 订阅后再查一次,弥合 getState 与 subscribe 之间的瞬时翻转(否则可能丢 markHydrated 事件)。
     if (useWorkspaceStore.getState().hydrated) {
+      unsub();
+      resolve();
+    }
+  });
+}
+
+/**
+ * 等待 workspace root 已按持久化恢复(rootRestored || hydrated;hydrated ⇒ rootRestored)。
+ * 性能(冷启动关键路径):只依赖 root 的消费方(新建终端 cwd / 向 main 推 window→root 映射)等它即可,
+ * 不必像 waitForWorkspaceHydrated 那样再等编辑器 tab 并发读盘(最多 256 tab)。markRootRestored 在
+ * initExplorerPersistence 读成功/失败/无文件时都会调,故此 Promise 总会 settle。
+ */
+export function waitForWorkspaceRootRestored(): Promise<void> {
+  const ready = (s: WorkspaceState) => s.rootRestored || s.hydrated;
+  if (ready(useWorkspaceStore.getState())) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsub = useWorkspaceStore.subscribe((s) => {
+      if (ready(s)) {
+        unsub();
+        resolve();
+      }
+    });
+    // 订阅后再查一次,弥合 getState 与 subscribe 之间的瞬时翻转(同 waitForWorkspaceHydrated)。
+    if (ready(useWorkspaceStore.getState())) {
       unsub();
       resolve();
     }

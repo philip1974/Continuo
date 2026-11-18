@@ -20,12 +20,16 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
 import { coApi } from '@/lib/co-api';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
-import { findEditorFileTabByPath } from '@/panels/Editor/editor-tab-lookup';
+import {
+  findEditorFileTabById,
+  findEditorFileTabByPath,
+} from '@/panels/Editor/editor-tab-lookup';
+import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
+import type { EditorView } from '@codemirror/view';
 import {
   isAbsolutePath,
   isMarkdownPath,
 } from '@/panels/Editor/editor-path-utils';
-import { scrollToLine } from '@/panels/Editor/scrollToLine';
 import { getEffectiveMode, useEditorStore } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
@@ -74,6 +78,19 @@ function mapFsCodeToEditorCode(code: string): EditorOpenFailureCode {
     default:
       return 'EXCEPTION';
   }
+}
+
+/**
+ * 等待 viewKey 的 CodeMirror view 挂载,并确认返回时它仍是当前注册的 view(waitForViewRef
+ * resolve 到续体之间隔 microtask,期间可能被替换);被替换则按新值再等一次。
+ */
+async function waitForCurrentView(viewKey: string): Promise<EditorView | null> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const view = await useEditorStore.getState().waitForViewRef(viewKey, 500);
+    if (!view) return null;
+    if (useEditorStore.getState().viewRefs.get(viewKey) === view) return view;
+  }
+  return null;
 }
 
 const editor: CoEditorApi = {
@@ -125,12 +142,46 @@ const editor: CoEditorApi = {
       return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
     }
 
-    const view = await useEditorStore.getState().waitForViewRef(viewKey, 500);
-    if (!view) {
-      return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
+    // perf E1:scrollToLine 运行时依赖 @codemirror/view。co-app 在 main-app 启动路径上,静态
+    // import 会把整套 CodeMirror 拖进启动包、破坏 Editor 懒加载边界,故动态 import。
+    // 冷加载(复审 #1):Editor 面板与 CodeEditor 是串行两级 lazy chunk,固定 500ms 的挂载等待
+    // 可能在 chunk 下载期间就超时 → 永久漏跳。先并行拉齐 scrollToLine 与 CodeEditor 引擎 chunk,
+    // 模块就绪后才开始有界等待:剩余工作只有 React 提交 + EditorView 构造,500ms 足够;热路径
+    // 模块均已缓存,只多几个 microtask。
+    // 并发(复审 #2):view 在模块就绪**之后**取,并按当前注册值复核 —— 加载期间切 tab / 切 mode
+    // 销毁的旧 view 不会被跳行(destroy 后 dispatch 不抛错,会谎报成功)。
+    // 错误契约(复审 #4):chunk 加载失败 / 跳行抛错同样映射为 EXCEPTION 结果,不让 openFile reject。
+    let outcome: ReturnType<
+      typeof import('@/panels/Editor/scrollToLine').scrollToLine
+    >;
+    try {
+      const [{ scrollToLine }] = await Promise.all([
+        import('@/panels/Editor/scrollToLine'),
+        preloadCodeEditorEngine(),
+      ]);
+      const view = await waitForCurrentView(viewKey);
+      if (!view) {
+        return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
+      }
+      // 并发(复审 r3 #2):切 tab / Source→Edit 时 store 同步变化,但旧 view 要到 useEffect
+      // cleanup 才 unregister —— 这一窗口内 Map 里仍是将被销毁的旧 view。跳行前紧挨着按 store
+      // 当前态复核:目标仍为活动 tab、仍处 CodeMirror 模式(与上方 inMilkdown 同口径)。
+      const now = useEditorStore.getState();
+      const nowTab = findEditorFileTabById(now.tabs, viewKey);
+      if (isMarkdownPath(path) && getEffectiveMode(nowTab) !== 'source') {
+        return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
+      }
+      if (now.activeTabId !== viewKey || now.viewRefs.get(viewKey) !== view) {
+        return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
+      }
+      outcome = scrollToLine(view, opts.line);
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'EXCEPTION',
+        message: errorMessage(err),
+      };
     }
-
-    const outcome = scrollToLine(view, opts.line);
     if (outcome === 'out-of-range') {
       return {
         ok: true,

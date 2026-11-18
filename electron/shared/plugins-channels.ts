@@ -7,8 +7,23 @@ import type { PermissionKey } from './permission-keys';
 // 通过 Blob URL 动态 import。
 
 export const PLUGINS_CHANNELS = {
-  /** 扫描 plugins 目录,返回所有候选(每个含 manifestText + mainText). */
+  /**
+   * 扫描 plugins 目录,返回所有候选(每个含 manifestText;main 可用性已判定,但不含 main 源码 ——
+   * perf:未启用插件的源码不读、不跨 IPC 传输)。源码激活时经 READ_MAIN_BY_DIR 按目录名拉取。
+   */
   LIST_DIRS: 'plugins:list-dirs',
+  /**
+   * 按**目录名**(LIST_DIRS 结果的 id)读取该插件 main 入口源码,返回 string | null(目录 / manifest / main
+   * 不可用)。按目录而非 manifest.id:重复 id 的目录选择已在 renderer 完成,不在此再选一次以免口径漂移。
+   * 入参须带列举项的 manifestHash:读 main 前后当前 manifest 与之不一致(列举后插件被更新)→ 抛
+   * PLUGIN_MANIFEST_CHANGED,避免以旧 manifest(id / 权限 / 入口)执行新 main。
+   */
+  READ_MAIN_BY_DIR: 'plugins:read-main-by-dir',
+  /**
+   * 按 manifest.id 只读单个插件目录(perf:热重载不再全量 listDirs),返回 IpcPluginDir | null。
+   * 选择规则与 renderer findPluginDirByManifestId(listDirs) 等价(同名目录优先,否则目录名字典序)。
+   */
+  READ_DIR_BY_ID: 'plugins:read-dir-by-id',
   /** 读取 enabled.json(string[] of plugin ids). */
   READ_ENABLED: 'plugins:read-enabled',
   /**
@@ -89,15 +104,31 @@ export function isProtocolUrlPayload(p: unknown): p is { url: string } {
   return typeof url === 'string' && url.length > 0 && url.length <= PROTOCOL_URL_MAX_LEN;
 }
 
-/** 主→renderer 一次返回的插件目录信息. */
-export interface IpcPluginDir {
+/** 插件目录列举项(LIST_DIRS):manifest + 目录名,不含 main 源码. */
+export interface IpcPluginDirMeta {
   /** 目录名(以 manifest.id 为准,renderer 端再校验). */
   readonly id: string;
   /** manifest.json 文件文本. */
   readonly manifestText: string;
+}
+
+/** 插件目录列举项(LIST_DIRS):在 IpcPluginDirMeta 基础上带 manifest 版本令牌. */
+export interface IpcPluginDirListing extends IpcPluginDirMeta {
+  /** manifestText 的 sha256(小写 hex);激活时随 READ_MAIN_BY_DIR 提交,校验 manifest 未变. */
+  readonly manifestHash: string;
+}
+
+/** 含 main 源码的插件目录信息(READ_DIR_BY_ID 热重载用). */
+export interface IpcPluginDir extends IpcPluginDirMeta {
   /** main.js 入口文本(renderer Blob URL + dynamic import). */
   readonly mainText: string;
 }
+
+/** READ_MAIN_BY_DIR 目录名长度上限(= 常见文件系统单级文件名上限 NAME_MAX). */
+export const PLUGIN_DIR_NAME_MAX_LEN = 255;
+
+/** manifest 版本令牌格式(sha256 小写 hex,定长 64). */
+export const PLUGIN_MANIFEST_HASH_RE = /^[0-9a-f]{64}$/;
 
 /** v4.2 权限决策存储的磁盘格式. */
 export interface IpcPermissionDecision {

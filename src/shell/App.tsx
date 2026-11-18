@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { MotionConfig } from 'motion/react';
+import { LazyMotion, MotionConfig } from 'motion/react';
 import { ThemeProvider } from '@/theme';
 import { useThemeBinding } from '@/theme/binding';
 import { DockShell } from './dock/DockShell';
@@ -13,6 +13,7 @@ import { TitleBar } from './TitleBar';
 import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
+import { useExternalFileSync } from '@/panels/Editor/useExternalFileSync';
 import { QuickOpenModal } from '@/plugins/quick-open/QuickOpenModal';
 import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
@@ -22,15 +23,14 @@ import { coApi } from '@/lib/co-api';
 import { isPopoutWindow } from '@/lib/popout-mode';
 import {
   resolveDroppedWorkspace,
-  captureBoundedFiles,
-  hasDirectoryInFirstItems,
+  captureDropCandidates,
   hasFiles,
   MAX_DROP_FILES,
 } from '@/lib/window-drop';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
 import {
   useWorkspaceStore,
-  waitForWorkspaceHydrated,
+  waitForWorkspaceRootRestored,
 } from '@/stores/workspace.store';
 import { notifyRootWhenHydrated } from './notify-root-when-hydrated';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
@@ -38,16 +38,11 @@ import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
-const SPLASH_MIN_MS = 600;
-
 function MainApp() {
+  // 性能:Splash 只遮住布局恢复期,布局就绪即移除(此前另有 600ms 最短展示,布局 80ms 就绪也要
+  // 再白等 ~500ms 才可交互)。
+  // onLayoutReady 由 DockShell 在「布局恢复 + 终端首个快照已 reconcile」后报(事件式屏障,带安全上限)。
   const [layoutReady, setLayoutReady] = useState(false);
-  const [splashElapsed, setSplashElapsed] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setSplashElapsed(true), SPLASH_MIN_MS);
-    return () => clearTimeout(t);
-  }, []);
 
   // 全局 ⌘P / Ctrl+P 触发 Quick Open(文件搜索,VSCode 同款)
   useQuickOpenHotkey();
@@ -55,19 +50,23 @@ function MainApp() {
   useCommandPaletteHotkey();
   // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
   useCommandHotkeys(coApp.commands);
+  // 外部文件同步挂在常驻 MainApp(每窗口一次),不放在懒加载的 EditorPanel:打开文件到 Editor chunk
+  // 挂载之间的外部修改否则会因订阅尚不存在而永久漏掉。hook 只依赖 editor store + coApi.fs。
+  useExternalFileSync();
 
   // workspace.root 变化 → 通知 main 维护 windowId→root 映射,供 MCP agent
   // terminal_create_session 路径 cwd 回退使用。
   // race(R46):initExplorerPersistence 是 fire-and-forget,首帧 root=null(hydrate 未完成)。若
   // 立即 notifyRoot(null) 写进 main 的 window→root map,hydrate 前 MCP/agent 建终端(未显式传 cwd)
-  // 会从空 map 回退成无 workspaceRoot 的全局终端 / 错误 cwd。门控:等 waitForWorkspaceHydrated()
-  // 再推,且 await 后读**最新** root(getState)而非首帧捕获值。hydrate 后该 Promise 立即 resolve,
-  // 正常 root 变更无延迟。renderer 自身新建终端早已用同一门控(createUserTerminal)。
+  // 会从空 map 回退成无 workspaceRoot 的全局终端 / 错误 cwd。门控:等 root 恢复
+  //(waitForWorkspaceRootRestored;只需 root,不等编辑器 tab 恢复读盘)再推,且 await 后读**最新** root
+  //(getState)而非首帧捕获值。恢复后该 Promise 立即 resolve,正常 root 变更无延迟。renderer 自身新建
+  // 终端用同一门控(createUserTerminal)。
   const workspaceRoot = useWorkspaceStore((s) => s.root);
   useEffect(() => {
     let cancelled = false;
     void notifyRootWhenHydrated({
-      waitHydrated: waitForWorkspaceHydrated,
+      waitHydrated: waitForWorkspaceRootRestored,
       getRoot: () => useWorkspaceStore.getState().root,
       notifyRoot: (root) => coApi.window.notifyRoot(root),
       isCancelled: () => cancelled,
@@ -106,11 +105,11 @@ function MainApp() {
       // 边界(E114,E176 有界化):仅检查前 MAX_DROP_FILES 个 item,与 pickDroppedDirectory 的探测
       // 上限对齐,防超大拖放在同步 hadDirectory 探测处放大。E176:改用 hasDirectoryInFirstItems 按索引
       // 有界循环,不再 `Array.from(dt.items).slice(...)` 全量物化 DataTransferItemList(与 captureBoundedFiles 同款)。
-      const hadDirectory = hasDirectoryInFirstItems(dt.items, MAX_DROP_FILES);
       // 边界(E118,E114 残留 + E116 同款):同步有界捕获 dt.files(最多 MAX_DROP_FILES 个,
       // 即 pickDroppedDirectory 的探测上限),不在调用点全量 Array.from 物化超大 FileList;
       // 且同步捕获避免进入 async 后 DataTransfer.files 失效。
-      const droppedFiles = captureBoundedFiles(dt.files, MAX_DROP_FILES);
+      // 性能:webkitGetAsEntry 已能判定时只探测目录(纯文件拖入零 listDir IPC),否则回退全量探测。
+      const { files: droppedFiles, hadDirectory } = captureDropCandidates(dt, MAX_DROP_FILES);
       const isLatest = workspaceRootSelectionGuard.begin(); // race(R18→R27):标记本次 root 选择为最新(全窗口共享守卫)
       void (async () => {
         try {
@@ -118,7 +117,8 @@ function MainApp() {
             { files: droppedFiles },
             hadDirectory,
             (file) => coApi.window.getPathForFile(file),
-            (p) => coApi.fs.listDir(p),
+            // perf:目录探测只看 ok → withStats:false,main 不逐项 lstat。
+            (p) => coApi.fs.listDir(p, { withStats: false }),
           );
           // 期间有更新的 drop 发起 → 本次为过期请求,丢弃(不 setRoot 不反馈),由最新 drop 负责。
           if (!isLatest()) return;
@@ -141,7 +141,7 @@ function MainApp() {
   }, [setRoot]);
 
   const onLayoutReady = useCallback(() => setLayoutReady(true), []);
-  const showSplash = !(layoutReady && splashElapsed);
+  const showSplash = !layoutReady;
 
   return (
     <>
@@ -172,6 +172,13 @@ function ThemeBinder() {
   return null;
 }
 
+// 首屏包体积:组件统一用轻量 m.*,完整特性集 domMax(动画 / 手势 / 拖拽 / layout,~115KB)异步加载,
+// 不进 main-app 静态图。layoutId(SharedTab 标题 / 指示条飞行)需要 layout 特性,故用 domMax 而非
+// domAnimation。strict:残留 motion.* 会在渲染时直接报错。特性加载完成前 m.* 按 initial 渲染,
+// 动画晚一帧开始。模块求值即开始加载(不等首次 commit 后 LazyMotion 的 effect),与首屏渲染并行。
+const motionFeatures = import('./motion-features').then((mod) => mod.domMax);
+const loadMotionFeatures = () => motionFeatures;
+
 export function App() {
   return (
     <ThemeProvider>
@@ -179,9 +186,11 @@ export function App() {
       <LanguageFromSettings />
       <NotificationsProvider>
         <ToastViewport />
-        <MotionConfig reducedMotion="user">
-          {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
-        </MotionConfig>
+        <LazyMotion features={loadMotionFeatures} strict>
+          <MotionConfig reducedMotion="user">
+            {isPopoutWindow() ? <PopoutHost /> : <MainApp />}
+          </MotionConfig>
+        </LazyMotion>
       </NotificationsProvider>
     </ThemeProvider>
   );

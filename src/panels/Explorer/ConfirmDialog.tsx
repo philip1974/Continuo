@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { Button, Modal } from '@/design';
 import { useT } from '@/i18n';
 
@@ -34,8 +35,14 @@ function ConfirmDialogBody({
   const t = useT();
   const confirmText = confirmLabel ?? t('panels.explorer.confirm.confirm');
   const cancelText = cancelLabel ?? t('panels.explorer.confirm.cancel');
+  // 引用必须稳定(同 PermissionPrompt handleClose):调用方都传内联 onCancel,Modal 的焦点 /
+  // 键盘 effect 依赖 onClose,父组件每次重渲换新引用会让它 cleanup 再重跑 → 焦点被拉回
+  // [data-autofocus] 确认(危险)按钮、键盘栈重排。ref 存最新回调,Esc / overlay 仍调最新的。
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const handleClose = useCallback(() => onCancelRef.current(), []);
   return (
-    <Modal visible onClose={onCancel} aria-labelledby="confirm-dialog-title">
+    <Modal visible onClose={handleClose} aria-labelledby="confirm-dialog-title">
       <h2
         id="confirm-dialog-title"
         className="mb-2 text-sm font-medium text-fg"

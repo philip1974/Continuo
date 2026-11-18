@@ -28,6 +28,7 @@ import { useEditorStore } from '@/stores/editor.store';
 import { debounce } from '@/lib/debounce';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
+import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
 import {
   getAutoSaveFailureVersion,
   subscribeAutoSaveFailures,
@@ -41,6 +42,7 @@ import {
   saveDirtyTabsForClose,
 } from './dirty-close';
 import { coApi } from '@/lib/co-api';
+import { readDockLayout } from './layout-prefetch';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import '@/styles/dockview.css';
@@ -109,11 +111,13 @@ function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
 function DockReconcilerMount({
   api,
   restoreStartedAt,
+  onHydrated,
 }: {
   api: DockviewApi;
   restoreStartedAt: number;
+  onHydrated: () => void;
 }): null {
-  useDockReconciler(api, restoreStartedAt);
+  useDockReconciler(api, restoreStartedAt, onHydrated);
   useDockLocaleSync(api);
   return null;
 }
@@ -187,6 +191,12 @@ async function writeDockLayoutSnapshot(
   }
 }
 
+/**
+ * Splash 就绪屏障的安全上限:布局已恢复而终端首个 sessions 快照迟迟不到(IPC 卡住 / 同步源未启用)时,
+ * 最多再等这么久就报 ready,不永久遮挡界面。正常路径由事件解除,不等此上限。
+ */
+export const DOCK_TERMINAL_READY_TIMEOUT_MS = 3000;
+
 export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   const apiRef = useRef<DockviewApi | null>(null);
   // race(R22):保存 onReady 里注册的 dockview onDid* disposables + debounce 持久化函数,在
@@ -223,6 +233,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 布局(fromJSON / 默认布局)已恢复。会 addPanel 的 editor 自动激活依赖它而非 apiReady:恢复前加的面板
   // 会被 fromJSON 的 clear() 删掉且不再补建。关窗 flush 握手仍依赖 apiReady(时序不变)。
   const [layoutRestored, setLayoutRestored] = useState(false);
+  // 当前 api 的 Reconciler 已按终端首个权威快照完成 reconcile(或已达安全上限)。与 layoutRestored 一起
+  // 构成 onLayoutReady(App 移除 Splash)的事件式屏障:仅布局恢复就移除 Splash 时,迟到的终端快照会让
+  // 面板在用户已可操作后跳入。
+  const [terminalsReady, setTerminalsReady] = useState(false);
+  const onTerminalsHydrated = useCallback(() => setTerminalsReady(true), []);
   const [empty, setEmpty] = useState(false);
   const panelComponents = usePanelComponents();
   const { saveTab } = useEditorFile();
@@ -236,6 +251,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       //(dockview 内部先 clear())清掉,而 Reconciler 视为已同步不再补加 → 终端从 UI 消失。
       setApiReady(true);
       setLayoutRestored(false);
+      setTerminalsReady(false);
       // 暴露给 IconSidebar 等 Dockview 之外的组件;布局恢复前 openOrFocusPanel 排队(见 dock-api-ref)。
       setDockApi(event.api, { layoutPending: true });
       // a11y(A131,A130 同族):layout.read() reject 此前会中断整个 onReady(连默认布局都不应用)。
@@ -244,7 +260,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       let persisted: unknown = null;
       let restoreFailed = false;
       try {
-        const readResult = await coApi.layout.read();
+        // 性能:首次 onReady 取用 init() 开头的预取结果;之后的 onReady(重建 / StrictMode)重新读取。
+        const readResult = await readDockLayout();
         if (readResult.ok) {
           persisted = readResult.data;
         } else {
@@ -303,7 +320,6 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       }
 
       setEmpty(event.api.totalPanels === 0);
-      onLayoutReady?.();
 
       // race(R22):onReady 重入(dockview 重建)先清旧 listener/debounce,再注册新的。
       disposeDockListeners();
@@ -351,8 +367,18 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       );
       event.api.panels.forEach(wrapPanelClose);
     },
-    [onLayoutReady, disposeDockListeners],
+    [disposeDockListeners],
   );
+
+  useEffect(() => {
+    if (layoutRestored && terminalsReady) onLayoutReady?.();
+  }, [layoutRestored, terminalsReady, onLayoutReady]);
+
+  useEffect(() => {
+    if (!layoutRestored || terminalsReady) return;
+    const timer = setTimeout(() => setTerminalsReady(true), DOCK_TERMINAL_READY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [layoutRestored, terminalsReady]);
 
   const restore = useCallback(() => {
     if (apiRef.current) applyDefaultLayout(apiRef.current);
@@ -378,6 +404,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     // 关窗。必须经 coApi(preload 只暴露 __lmApi;此前读了一个不存在的全局 bridge,整条握手是死的:
     // flush 从不执行,main 每次关窗干等 ack 超时)。
     const off = coApi.layout.onFlushRequest?.(async (payload) => {
+      // 先把编辑器里尚未进 store 的输入(Milkdown 自适应延迟上抛窗口内,见 MilkdownEditor emitDelayMs)同步回写,
+      // 下面的「保存」与 autosave flush 才落盘到最新内容。
+      flushEditorWriteBacks();
       // 用户在 main 的脏文件确认框选了「保存」→ 先保存所有有路径的脏 tab(代码文件不 autosave,
       // ADR-015),任一失败 → toast + 回执 saveFailed,main 中止关窗 / 退出并重新显示窗口。
       let saveFailed = false;
@@ -552,6 +581,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         <DockReconcilerMount
           api={reconcilerTarget.api}
           restoreStartedAt={reconcilerTarget.restoreStartedAt}
+          onHydrated={onTerminalsHydrated}
         />
       )}
       <DockviewReact

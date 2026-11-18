@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   MAX_WATCHERS,
   createWatcherPool,
+  createSameTickPathCoalescer,
   type WatcherCreator,
 } from '../../../electron/main/ipc/fs/watch';
 
@@ -292,5 +293,120 @@ describe('createWatcherPool', () => {
     pool.watch('/new', vi.fn()); // 触发驱逐,应踢 /p1(现存最早),不是 /p0
     expect(pool.has('/p0')).toBe(true);
     expect(pool.has('/p1')).toBe(false);
+  });
+});
+
+// 性能(审计 #1):macOS/Win 上每个展开目录各有一个 recursive watcher,同一次变更被根及每个展开
+// 祖先的 watcher 各报一次、算出同一个 changedPath → 原先逐个广播 = O(展开祖先数 × 窗口数) 次 IPC。
+// 同一 tick 内同一路径只广播一次;不同路径按首次出现顺序各广播一次。
+describe('createSameTickPathCoalescer', () => {
+  function manualSchedule() {
+    const queued: Array<() => void> = [];
+    return {
+      schedule: (fn: () => void) => {
+        queued.push(fn);
+      },
+      run: () => {
+        for (const fn of queued.splice(0)) fn();
+      },
+      size: () => queued.length,
+    };
+  }
+
+  it('同 tick 内重复路径只 emit 一次,不同路径按首次出现顺序各 emit 一次', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a/b');
+    push('/r/a/b');
+    push('/r/x');
+    push('/r/a/b');
+    expect(emit).not.toHaveBeenCalled();
+    expect(s.size()).toBe(1); // 一个 tick 只排一次 flush
+    s.run();
+    expect(emit.mock.calls.map((c) => c[0])).toEqual(['/r/a/b', '/r/x']);
+  });
+
+  it('flush 之后的新事件进入下一 tick,同一路径再次 emit', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a');
+    s.run();
+    push('/r/a');
+    expect(s.size()).toBe(1);
+    s.run();
+    expect(emit.mock.calls.map((c) => c[0])).toEqual(['/r/a', '/r/a']);
+  });
+
+  // 性能:watch 回调带 filename 时按目录聚合变更文件名,renderer 据此只重读命中的 clean tab。
+  it('同 tick 同目录按目录聚合文件名(去重,按首次出现顺序)', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a', 'x.md');
+    push('/r/a', 'y.md');
+    push('/r/a', 'x.md'); // 多个祖先 watcher 重复报告
+    push('/r/b', 'z.md');
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', ['x.md', 'y.md'], false],
+      ['/r/b', ['z.md'], false],
+    ]);
+  });
+
+  it('同目录同 tick 内任一回调缺 filename → 该目录此次不带文件集合(退化为目录级),其它目录不受影响', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a', 'x.md');
+    push('/r/a'); // Windows 缓冲溢出 / 平台不传 filename
+    push('/r/a', 'y.md'); // 之后再来的文件名不能把「未知」恢复成集合
+    push('/r/b', 'z.md');
+    push('/r/c');
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', undefined, false],
+      ['/r/b', ['z.md'], false],
+      ['/r/c', undefined, false],
+    ]);
+  });
+
+  it('文件名数量超上限 → 该目录此次退化为目录级(不带集合)', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule, 2);
+    push('/r/a', '1');
+    push('/r/a', '2');
+    push('/r/b', '1');
+    push('/r/b', '2');
+    push('/r/b', '3');
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', ['1', '2'], false],
+      ['/r/b', undefined, false],
+    ]);
+  });
+
+  // 性能:按目录聚合 changeOnly —— 本 tick 该目录所有回调 eventType 均为 'change' 才为 true。
+  it('changeOnly:全为 change → true;任一 rename 或缺 eventType → false(不被之后的 change 恢复)', () => {
+    const emit = vi.fn();
+    const s = manualSchedule();
+    const push = createSameTickPathCoalescer(emit, s.schedule);
+    push('/r/a', 'log.txt', 'change');
+    push('/r/a', 'log.txt', 'change'); // 多个祖先 watcher 重复报告
+    push('/r/b', 'x', 'change');
+    push('/r/b', 'y', 'rename');
+    push('/r/b', 'x', 'change');
+    push('/r/c', 'x', 'change');
+    push('/r/c'); // 缺 filename / eventType(目录级)
+    push('/r/d', 'x'); // 有 filename 但缺 eventType
+    s.run();
+    expect(emit.mock.calls).toEqual([
+      ['/r/a', ['log.txt'], true],
+      ['/r/b', ['x', 'y'], false],
+      ['/r/c', undefined, false],
+      ['/r/d', ['x'], false],
+    ]);
   });
 });

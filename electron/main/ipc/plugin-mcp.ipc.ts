@@ -33,9 +33,11 @@ import {
 import type { McpHost } from '../services/mcp-host.service';
 import type { StdioSocketServer } from '../services/mcp-stdio-server.service';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
+import { createTrailingNotifier } from '../lib/trailing-notifier';
 
 /** MCP 标准 method:tool 集变更通知. */
 const TOOLS_LIST_CHANGED = 'notifications/tools/list_changed';
+const TOOLS_LIST_CHANGED_COALESCE_MS = 50;
 
 // ── 内部状态(模块级单例) ────────────────────────────────────
 
@@ -54,7 +56,9 @@ let invokeRemote: InvokeRemoteCore | null = null;
  */
 export function startPluginMcpIpc(
   host: McpHost,
-  stdio?: StdioSocketServer,
+  // 取值函数而非快照:stdio server 在首窗创建后才异步启动(冷启动不挡建窗),就绪前返回 null →
+  // 广播只推 HTTP;就绪后每次广播读到最新引用。
+  getStdio: () => StdioSocketServer | null = () => null,
 ): {
   bridge: PluginMcpBridge;
   invokeRemote: InvokeRemoteCore;
@@ -79,6 +83,13 @@ export function startPluginMcpIpc(
     },
   });
 
+  // 性能:插件激活 / 停用时逐个注册 / 注销 N 个 tool,逐次广播 list_changed 会让每个 MCP 客户端重拉
+  // N 次 tools/list(每次序列化全部 schema)→ O(N²)。50ms 尾随合并为一次。
+  const toolsChanged = createTrailingNotifier(() => {
+    host.broadcast(TOOLS_LIST_CHANGED);
+    getStdio()?.broadcast(TOOLS_LIST_CHANGED);
+  }, TOOLS_LIST_CHANGED_COALESCE_MS);
+
   const localBridge = createPluginMcpBridge({
     host: {
       registerTool: (t) => host.registerTool(t),
@@ -86,10 +97,7 @@ export function startPluginMcpIpc(
       tools: host.tools,
     },
     invokeRemote: localInvoke,
-    notifyToolsChanged: () => {
-      host.broadcast(TOOLS_LIST_CHANGED);
-      stdio?.broadcast(TOOLS_LIST_CHANGED);
-    },
+    notifyToolsChanged: () => toolsChanged.notify(),
   });
 
   bridge = localBridge;

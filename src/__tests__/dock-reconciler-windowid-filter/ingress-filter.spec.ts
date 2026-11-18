@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { TerminalSessionsSync } from '../../shell/dock/TerminalSessionsSync';
 import { useTerminalStore } from '../../stores/terminal.store';
+import { useWorkspaceStore } from '../../stores/workspace.store';
 import { makeSession } from './fixtures';
 
 let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -46,6 +47,8 @@ vi.mock('../../panels/Terminal/useTerminal', () => ({
 }));
 
 beforeEach(async () => {
+  // TerminalSessionsSync 首轮可见过滤等 workspace 持久化恢复完成(复审 r3 term#1)。
+  useWorkspaceStore.setState({ hydrated: true });
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   mocks.windowId = 1;
   mocks.listSessions.mockReset();

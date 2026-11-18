@@ -5,6 +5,7 @@ import {
   countDirtyForClose,
   remainingAfterDiscard,
   remainingAfterFlush,
+  SAVE_FOR_CLOSE_CONCURRENCY,
   saveDirtyTabsForClose,
 } from '../../shell/dock/dirty-close';
 import { createTab, useEditorStore } from '../../stores/editor.store';
@@ -155,6 +156,49 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有有路径的脏 ta
       () => [tab('/a.ts', true), tab('/b.ts', false)],
     );
     expect(r).toEqual({ failed: 1, diskChanged: 0 });
+  });
+});
+
+// perf:「保存」分支原 Promise.all 同时保存全部脏 tab(每个含整文件读比对 + writeFile fsync),
+// 数百个大文件时 main 峰值内存与 fsync 并发失控。改为有界并发(上限 SAVE_FOR_CLOSE_CONCURRENCY),
+// 按下标汇总结果、失败语义不变。
+describe('saveDirtyTabsForClose:有界并发保存', () => {
+  it('上限为 32', () => {
+    expect(SAVE_FOR_CLOSE_CONCURRENCY).toBe(32);
+  });
+
+  it('256 个脏 tab → 峰值在途 ≤ 上限,且全部被保存恰好一次', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const saveTab = vi.fn(async (_id: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 0));
+      inFlight -= 1;
+      return { ok: true as const };
+    });
+    const tabs = Array.from({ length: 256 }, (_, i) => tab(`/f${i}.ts`, true));
+    const r = await saveDirtyTabsForClose(tabs, saveTab, () => []);
+    expect(r).toEqual({ failed: 0, diskChanged: 0 });
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(SAVE_FOR_CLOSE_CONCURRENCY);
+    expect(saveTab.mock.calls.map((c) => c[0]).sort()).toEqual(tabs.map((t) => t.id).sort());
+  });
+
+  it('超过上限时结果仍按下标对位:失败 / 抛异常 / 磁盘冲突 / 保存后仍脏 计数不变', async () => {
+    const saveTab = vi.fn(async (id: string) => {
+      const i = Number(id.slice(2, -3));
+      await new Promise((r) => setTimeout(r, (i * 7) % 5)); // 乱序完成
+      if (i % 10 === 1) throw new Error('disk full');
+      if (i % 10 === 2) return { ok: false as const, code: 'FS_DENIED' };
+      if (i % 10 === 3) return { ok: false as const, code: 'EDITOR_DISK_CHANGED' };
+      return { ok: true as const };
+    });
+    const tabs = Array.from({ length: 100 }, (_, i) => tab(`/f${i}.ts`, true));
+    // 保存完成后仍脏:i % 10 === 4(ok 但期间继续输入)与 i % 10 === 2(本就失败,不重复计)
+    const after = tabs.map((t, i) => tab(t.filePath, i % 10 === 4 || i % 10 === 2));
+    const r = await saveDirtyTabsForClose(tabs, saveTab, () => after);
+    expect(r).toEqual({ failed: 40, diskChanged: 10 });
   });
 });
 

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs';
 import * as os from 'node:os';
+import * as path from 'node:path';
 import { z } from 'zod';
 import {
   createInputSchema,
@@ -26,30 +28,55 @@ function unresolvedError(message = 'cwd'): Error & { code: string } {
 }
 
 describe('window-workspace-roots-map: terminal cwd fallback errors', () => {
-  it('T12: resolveTerminalCwd(undefined) throws TERMINAL_CWD_UNRESOLVED', () => {
-    expect(() => resolveTerminalCwd(undefined)).toThrowError(
-      /cwd unresolved/i,
-    );
-    try {
-      resolveTerminalCwd(undefined);
-    } catch (err) {
-      expect(err).toMatchObject({ code: 'TERMINAL_CWD_UNRESOLVED' });
-    }
+  // 性能:cwd 校验走单次异步 fs.promises.stat,不在 Electron main 同步 existsSync+statSync(网络盘 /
+  // 失联挂载点会同步卡住所有窗口与 IPC)。语义不变:缺省 / 不存在 / 非目录均 TERMINAL_CWD_UNRESOLVED。
+  it('T12: resolveTerminalCwd(undefined) rejects TERMINAL_CWD_UNRESOLVED', async () => {
+    await expect(resolveTerminalCwd(undefined)).rejects.toThrowError(/cwd unresolved/i);
+    await expect(resolveTerminalCwd(undefined)).rejects.toMatchObject({
+      code: 'TERMINAL_CWD_UNRESOLVED',
+    });
   });
 
-  it('T13: resolveTerminalCwd(invalid path) throws TERMINAL_CWD_UNRESOLVED', () => {
-    expect(() =>
-      resolveTerminalCwd('/this/does/not/exist/xyz123'),
-    ).toThrowError(/cwd invalid/i);
-    try {
-      resolveTerminalCwd('/this/does/not/exist/xyz123');
-    } catch (err) {
-      expect(err).toMatchObject({ code: 'TERMINAL_CWD_UNRESOLVED' });
-    }
+  it('T13: resolveTerminalCwd(invalid path) rejects TERMINAL_CWD_UNRESOLVED', async () => {
+    const p = resolveTerminalCwd('/this/does/not/exist/xyz123');
+    await expect(p).rejects.toThrowError(/cwd invalid/i);
+    await expect(p).rejects.toMatchObject({ code: 'TERMINAL_CWD_UNRESOLVED' });
   });
 
-  it('T14: resolveTerminalCwd(valid absolute dir) returns it', () => {
-    expect(resolveTerminalCwd(os.tmpdir())).toBe(os.tmpdir());
+  it('T13b: resolveTerminalCwd(existing file, not dir) rejects TERMINAL_CWD_UNRESOLVED', async () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cwd-')), 'f.txt');
+    fs.writeFileSync(file, 'x');
+    await expect(resolveTerminalCwd(file)).rejects.toMatchObject({
+      code: 'TERMINAL_CWD_UNRESOLVED',
+    });
+  });
+
+  it('T14: resolveTerminalCwd(valid absolute dir) resolves it(异步,不同步阻塞)', async () => {
+    const p = resolveTerminalCwd(os.tmpdir());
+    expect(p).toBeInstanceOf(Promise);
+    await expect(p).resolves.toBe(os.tmpdir());
+  });
+
+  // cwd 校验改异步后多了一个 await 边界:期间窗口关闭(window-closed cleanup 已跑完)时不得再登记
+  // session / 签发 token / spawn PTY,否则成为已关窗口名下的孤儿终端。
+  it('T14b: 异步 cwd 解析期间窗口销毁 → TERMINAL_CREATE_CANCELLED,不登记不 spawn', async () => {
+    let destroyed = false;
+    const win = { id: 42, isDestroyed: () => destroyed } as unknown as import('electron').BrowserWindow;
+    const add = vi.fn();
+    const createTerminal = vi.fn();
+    const handler = makeCreateHandler({
+      service: { createTerminal } as never,
+      sessionStore: { add, nextDefaultTitle: () => 't' } as never,
+      resolveCwd: async () => {
+        destroyed = true;
+        return '/work';
+      },
+    });
+    await expect(handler({ cwd: '/work' }, win)).rejects.toMatchObject({
+      code: 'TERMINAL_CREATE_CANCELLED',
+    });
+    expect(add).not.toHaveBeenCalled();
+    expect(createTerminal).not.toHaveBeenCalled();
   });
 
   it('T15: makeCreateHandler preserves resolveCwd throw code', async () => {

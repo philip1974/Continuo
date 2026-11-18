@@ -44,9 +44,36 @@ const PENDING_FOCUS_TTL_MS = 5000;
 // 旧 workspace 的 user terminal(workspaceRoot 过滤后隐藏、切回再现 = 重新进 added)会被误判
 // 为新建而 setActive 抢焦点,用户可能在错误面板继续键盘输入。重现的 session 已在此 set 中 →
 // 不走兜底。真正新建的 session 不在 set 中 → 保留兜底聚焦(对照 startup 注释的设计意图)。
-// 永久保留(不在 reconciler removed 循环里剪除:那里无法区分「workspace 隐藏」与「真关闭」,
-// 剪了会让 workspace 切回再被当首次出现重新抢焦)。
+// 不在 reconciler removed 循环里剪除:那里只看到 workspace 过滤后的可见列表,无法区分「workspace
+// 隐藏」与「真关闭」,剪了会让 workspace 切回再被当首次出现重新抢焦。
+// 性能(内存):只增不删会随进程生命周期内创建过的终端总数无界增长 → 由 TerminalSessionsSync 在
+// 收到权威的本窗口 sessions 快照(owner 过滤后、workspace 过滤前)时调 pruneReconcilerSeenSessions
+// 剪掉已不存在的 id(workspace 隐藏的 session 仍在该快照里,不受影响)。
 const everAddedSessionIds = new Set<string>();
+
+/**
+ * 剪除 everAddedSessionIds 中已不在 `liveOwnedSessions` 的 id。`liveOwnedSessions` 必须是**未按
+ * workspace 过滤**的本窗口 sessions 快照(TerminalSessionsSync 的 rawOwned)—— 传可见列表会把
+ * workspace 隐藏的 session 剪掉,切回时被误判首次出现而抢焦(R25)。
+ * `keepIds`:本轮快照里被 ingress 校验丢弃、但可能仍存活的本窗口 session id(缺失不等于真删除)——
+ * 一并保留,其余已消失的 id 照常剪。
+ */
+export function pruneReconcilerSeenSessions(
+  liveOwnedSessions: readonly TerminalSession[],
+  keepIds: readonly string[] = [],
+): void {
+  if (everAddedSessionIds.size === 0) return;
+  const live = new Set<string>(keepIds);
+  for (const s of liveOwnedSessions) live.add(s.id);
+  for (const id of everAddedSessionIds) {
+    if (!live.has(id)) everAddedSessionIds.delete(id);
+  }
+}
+
+/** 仅测试用:当前 first-appearance 记录条数(验证有界)。 */
+export function __reconcilerSeenSessionCountForTest(): number {
+  return everAddedSessionIds.size;
+}
 
 /** 仅测试用:重置模块级 first-appearance 记录。 */
 export function __resetReconcilerForTest(): void {
@@ -207,14 +234,26 @@ export function reconcileTerminalPanels(
 /**
  * @param hydrateBefore 本 api 布局恢复开始时刻(见 ReconcileInput.hydrateBefore);缺省 = 首次 reconcile
  *   的存量 session 全部按 hydrate 处理。
+ * @param onHydrated 本 api 已按终端首个权威快照(store.hydrated)完成 reconcile,或终端同步已结算
+ *   (store.settled,如初始拉取失败)时调用(每个 api 一次)。DockShell 据此解除 Splash 就绪屏障。
  */
 export function useDockReconciler(
   api: DockviewApi | null,
   hydrateBefore?: number,
+  onHydrated?: () => void,
 ): void {
   const previousSessionsRef = useRef<readonly TerminalSession[]>([]);
   const currentApiRef = useRef(api);
   currentApiRef.current = api;
+  const hydrateBeforeRef = useRef(hydrateBefore);
+  hydrateBeforeRef.current = hydrateBefore;
+  const onHydratedRef = useRef(onHydrated);
+  onHydratedRef.current = onHydrated;
+  // 挂载时 store 尚未收到首个快照 → 首个快照到达那轮 reconcile 仍按 hydrate 处理:其中都是存量 session
+  // (如 renderer reload 时 listSessions 晚于 layout.read 返回),不得 setActive 抢走恢复出的活动面板。
+  const awaitingHydrateRef = useRef(false);
+  // 本 api 是否已通知 onHydrated(Splash 放行,每个 api 一次)。
+  const signalledRef = useRef(false);
 
   useEffect(() => {
     if (!api) return;
@@ -232,22 +271,38 @@ export function useDockReconciler(
       ...(hydrateBefore !== undefined ? { hydrateBefore } : {}),
     });
     previousSessionsRef.current = initial.sessions;
+    awaitingHydrateRef.current = !initial.hydrated;
+    signalledRef.current = initial.hydrated || initial.settled;
+    if (signalledRef.current) onHydratedRef.current?.();
     // hydrateBefore 与 api 由 DockShell 在同一次 setState 中设定,随 api 一起变化。
   }, [api, hydrateBefore]);
 
   useEffect(() => {
     return useTerminalStore.subscribe((state) => {
       const prev = previousSessionsRef.current;
-      if (state.sessions === prev) return;
-
+      const hydrateNow = awaitingHydrateRef.current && state.hydrated;
       const dockApi = currentApiRef.current;
-      if (dockApi) {
+      // settled(初始拉取失败)只放行 Splash,不消费 awaitingHydrate:之后首个有效快照仍按 hydrate 处理。
+      const signalNow =
+        dockApi !== null && !signalledRef.current && (state.hydrated || state.settled);
+      if (state.sessions === prev && !hydrateNow && !signalNow) return;
+      if (hydrateNow) awaitingHydrateRef.current = false;
+
+      if (dockApi && (state.sessions !== prev || hydrateNow)) {
+        const before = hydrateBeforeRef.current;
         reconcileTerminalPanels(dockApi, {
           previousSessions: prev,
           nextSessions: state.sessions,
+          ...(hydrateNow
+            ? { hydrate: true, ...(before !== undefined ? { hydrateBefore: before } : {}) }
+            : {}),
         });
       }
       previousSessionsRef.current = state.sessions;
+      if (signalNow) {
+        signalledRef.current = true;
+        onHydratedRef.current?.();
+      }
     });
     // 仅 mount 一次订阅,deps 内部用 ref 读最新值。
      

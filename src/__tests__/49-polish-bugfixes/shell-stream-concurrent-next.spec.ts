@@ -3,7 +3,7 @@
 // 且后续 chunk/exit 只唤醒最后一个等待者。改为 FIFO 等待者队列:chunk 到达 resolve 队首,
 // exit 时 resolve 所有 pending 为 done。
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IpcRendererEvent } from 'electron';
 
 let capturedHandler:
@@ -24,11 +24,16 @@ vi.mock('electron', () => ({
   },
 }));
 
-import {
-  pluginShellStreamRaw,
-  MAX_PENDING_NEXT_RESOLVERS_FOR_TEST,
-} from '../../../electron/preload/plugin-shell-stream.preload';
+import { MAX_PENDING_NEXT_RESOLVERS_FOR_TEST } from '../../../electron/preload/plugin-shell-stream.preload';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../../electron/shared/plugin-shell-stream-channels';
+
+// preload 的 EVENT listener 是模块级单例(perf:单 listener 按 streamId 分发,只在有活跃流时挂载)。
+// 每例重置模块,前例遗留的未结束流不影响本例对 listener 挂载 / 摘除的捕获与断言。
+let pluginShellStreamRaw: typeof import('../../../electron/preload/plugin-shell-stream.preload').pluginShellStreamRaw;
+beforeEach(async () => {
+  vi.resetModules();
+  ({ pluginShellStreamRaw } = await import('../../../electron/preload/plugin-shell-stream.preload'));
+});
 
 afterEach(() => {
   capturedHandler = null;

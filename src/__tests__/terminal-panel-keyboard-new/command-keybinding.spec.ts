@@ -4,7 +4,7 @@ import TerminalPlugin from '@/core-plugins/TerminalPlugin';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 
 beforeEach(() => {
-  // terminal.new 现在会 await waitForWorkspaceHydrated()(R10);测试里置 hydrated 防挂死。
+  // terminal.new 会 await waitForWorkspaceRootRestored()(R10;hydrated ⇒ rootRestored);测试里置 hydrated 防挂死。
   useWorkspaceStore.setState({ hydrated: true });
 });
 
