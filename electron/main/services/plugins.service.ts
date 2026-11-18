@@ -1424,8 +1424,9 @@ export async function installFromGit(
 
 function runGit(args: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起,
-    // 也不读系统/全局凭据助手。GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置。
+    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起。GIT_CONFIG_NOSYSTEM 隔离系统级
+    // git 配置;用户全局 ~/.gitconfig 的 credential.helper 仍生效(有意保留:私有插件仓库依赖钥匙串凭据,
+    // 且 helper 按目标主机取凭据,clone 跨主机重定向时 git 不携带凭据,不构成泄露)。
     // 与插件子进程同一加固(见 lib/child-spawn-hardening):注入 core.fsmonitor=false(clone 不受影响);
     // Windows 上 git 只在 PATH 的绝对目录中解析 —— CLI 启动时主进程 cwd 即用户所在目录(可能是不可信
     // 仓库),裸名 spawn 会先执行其中的 git.exe。解析不到 → GIT_SPAWN_FAILED(fail-closed)。
