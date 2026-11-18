@@ -34,7 +34,7 @@
     "build:app:linux": "pnpm build:pack && electron-builder --linux",
     "relaunch": "bash scripts/relaunch.sh",
     "preview": "electron-vite preview",
-    "postinstall": "electron-rebuild --only node-pty",
+    "postinstall": "install-electron && electron-rebuild --only node-pty",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.e2e.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "eslint . --ext .ts,.tsx",
