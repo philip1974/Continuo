@@ -1,7 +1,8 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import type { DockviewGroupPanelApi } from 'dockview-react';
 import { coApi } from '@/lib/co-api';
-import { joinWithTrailingSpace, quotePaths } from '@continuo-terminal/shell-quote';
+import { joinWithTrailingSpace } from '@continuo-terminal/shell-quote';
+import { quoteDropPaths } from '@/lib/terminal-drop-quote';
 import { useT } from '@/i18n';
 import { notify } from '@/notifications/notify';
 import { getShellFamily } from '@/stores/terminal.store';
@@ -158,7 +159,7 @@ export function useTerminalDragDrop({
 
           paths.length = pathCount;
           const shellFamily = getShellFamily(sessionId);
-          const { quoted, skipped } = quotePaths(paths, shellFamily);
+          const { quoted, skipped } = quoteDropPaths(paths, shellFamily);
 
           // 边界(E134):写入长度上限须按 **quote 后的真实长度** 复核 —— 循环里的 path.length + 3
           // 仅估算,POSIX/PowerShell 把每个 ' 展开成多字符(如 '\''),含大量单引号的路径 quote 后可
