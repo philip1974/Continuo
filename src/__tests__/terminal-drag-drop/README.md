@@ -23,6 +23,7 @@ Internal TDD:
 - S7 path with a control character (`evil\nrm`) is rejected and counted in `panels.terminal.drag_drop.partial_skip`.
 - S8 PowerShell session on Win32 uses single quotes with `''` escaping; double quotes are never used.
 - S9 (security, `drop-quote-injection.spec.ts`) POSIX-family paths containing `\` keep `\` and `'` outside the quotes (`\\`, `\'`), so the inserted text parses back to the original single argument in bash, zsh (incl. `RC_QUOTES`) and fish — fish treats `\'`/`\\` inside single quotes as escapes, so the plain `'\''` splice let `a\'; touch pwned #` break out.
+- S10 (security, `drop-quote-powershell.spec.ts`) PowerShell sessions double every single-quote-class character (`'` and U+2018–U+201B), because PowerShell treats `‘ ’ ‚ ‛` as single-quote delimiters too; `a’;calc;’.txt` must stay one literal argument.
 
 ## Notes
 

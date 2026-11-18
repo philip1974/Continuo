@@ -8,6 +8,10 @@
 // 判定,用户在 zsh 里再起 fish 时也识别不到,所以不另立 fish 族,而是让 posix 输出对 bash/zsh/fish
 // 同时成立:含 `\` 的路径把 `\` 与 `'` 都放到引号外用反斜杠转义(`\\`、`\'`),引号内只剩普通字符。
 // 引号段之间从不相邻,不产生 `''`(zsh RC_QUOTES 下 `''` 在引号内表示字面 `'`)。
+//
+// 安全(Q2,PowerShell):PowerShell tokenizer 把 U+2018–U+201B(‘ ’ ‚ ‛)与 ASCII `'` 一样当单引号
+// 定界符,shell-quote 只双写 ASCII `'`,文件名 `a’;calc;’.txt` 会被 `’` 提前闭合 → 回车执行 calc。
+// 单引号串内「两个连续单引号类字符」= 一个字面量(取第一个),故每个智能单引号原样双写即可保留原字符。
 import { quoteForShell, type ShellFamily } from '@continuo-terminal/shell-quote';
 
 /** 引号内只放普通字符,`\` 与 `'` 放在引号外反斜杠转义:bash/zsh/fish 解析结果一致。 */
@@ -17,6 +21,9 @@ function quotePosixPortable(path: string): string {
   );
 }
 
+/** PowerShell 视作单引号的全部字符:ASCII ' + U+2018–U+201B。 */
+const POWERSHELL_SINGLE_QUOTES = /['\u2018-\u201b]/g;
+
 function quoteOne(
   path: string,
   family: ShellFamily,
@@ -25,6 +32,9 @@ function quoteOne(
   if (!r.ok) return r;
   if (family === 'posix' && path.includes('\\')) {
     return { ok: true, quoted: quotePosixPortable(path) };
+  }
+  if (family === 'powershell') {
+    return { ok: true, quoted: `'${path.replace(POWERSHELL_SINGLE_QUOTES, '$&$&')}'` };
   }
   return r;
 }
