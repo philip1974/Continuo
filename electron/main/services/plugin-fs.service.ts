@@ -27,6 +27,7 @@ import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 import { readFileFromHandle, type ReadFileOptions } from '../ipc/fs/read-file';
 import { openForReadNonBlocking } from '../lib/read-fh-capped';
 import { createRwLock } from '../lib/rw-lock';
+import { createSemaphore } from '../lib/dir-stat-gate';
 import {
   FS_PATH_MAX,
   FS_PATH_MAX_DEPTH,
@@ -160,6 +161,35 @@ export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): 
 export function _resetPluginOpenedPathsForTest(): void {
   pluginOpenedPaths.clear();
 }
+
+// 边界(内存峰值):单次读取有上限(read-file / read-for-editor 64MiB、read-git-blob 64MB、list-dir 10 万条),但并发
+// 次数此前无限制 —— 插件 Promise.all 几十个大文件读取即可把主进程撑大数 GB(实测 96 × 30MB 文件 RSS +3.5GB)。
+// 这几个「单次可占大块内存」的入口共用一个全局闸:同时在途至多 PLUGIN_FS_HEAVY_READ_CONCURRENCY 个,其余按到达
+// 顺序排队;排队者只持有参数(路径),排队长度也有上限,超限立即以 FS_BUSY 拒绝。
+// 嵌套顺序:先取闸、后取 plugin-fs 读写锁的共享锁。反过来(持共享锁排队等闸)时,排队者都算共享持有者,独占写者
+// 要等整条队列读完才能开始;现在排队者不持锁,写者只需等至多 4 个在途读取。写者不取闸,不会互相等待成环。
+// 宿主自己的 fs:read-file(用户编辑器)不经此闸 —— 插件占满闸也不影响用户打开文件。
+// 其它入口:stat / lstat / realpath / check-path 的结果是常数大小;write-file / rename / cp / mkdir / rm /
+// atomicReplace 持独占锁,本就串行(cp 经 copyFile 在内核里复制,不进 JS 堆)。
+export const PLUGIN_FS_HEAVY_READ_CONCURRENCY = 4;
+export const PLUGIN_FS_HEAVY_READ_QUEUE_MAX = 1024;
+const heavyReadGate = createSemaphore(PLUGIN_FS_HEAVY_READ_CONCURRENCY);
+let heavyReadPending = 0; // 在途 + 排队
+
+function heavyRead<T>(task: () => Promise<T>): Promise<T> {
+  if (heavyReadPending >= PLUGIN_FS_HEAVY_READ_CONCURRENCY + PLUGIN_FS_HEAVY_READ_QUEUE_MAX) {
+    return Promise.reject(fsError(ERROR_CODES.FS_BUSY, 'too many plugin file reads in progress; try again later'));
+  }
+  heavyReadPending += 1;
+  return heavyReadGate.run(() => fsLock.shared(task)).finally(() => {
+    heavyReadPending -= 1;
+  });
+}
+
+const sharedHeavy =
+  <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+  (...args: A): Promise<R> =>
+    heavyRead(() => fn(...args));
 
 // 包装 handler:返回类型留给 ipcMain.handle 做上下文推断,handler 的参数类型标注保持原样。
 const shared =
@@ -554,7 +584,7 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.READ_FILE,
-    shared(async (event, token: string, target: string) => {
+    sharedHeavy(async (event, token: string, target: string) => {
       const recheck = async (): Promise<string> =>
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       // 边界(E28,E18 平行入口):scope 校验后直接 fs.readFile(.., 'utf-8') 无大小上限,
@@ -570,11 +600,11 @@ export function registerPluginFsHandlers(
   // 文件拒绝。scope 拒绝 / FS_* 错误以结果对象返回(renderer 映射成 openFile 的结果码);身份错误照抛。
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.READ_FOR_EDITOR,
-    shared(async (event, token: string, target: string): Promise<PluginFsEditorRead> => {
+    async (event, token: string, target: string): Promise<PluginFsEditorRead> => {
       const recheck = async (): Promise<string> =>
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       try {
-        const read = await readFileVerified(await recheck(), recheck, { requireUtf8: true });
+        const read = await heavyRead(async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
         pinPluginOpenedPath(read.canonical);
         return { ok: true, canonicalPath: read.canonical, content: read.content };
       } catch (err) {
@@ -587,7 +617,7 @@ export function registerPluginFsHandlers(
         }
         throw err;
       }
-    }),
+    },
   );
 
   ipcMain.handle(
@@ -629,7 +659,7 @@ export function registerPluginFsHandlers(
     }),
   );
 
-  ipcMain.handle(PLUGIN_FS_CHANNELS.LIST_DIR, shared(async (event, token: string, target: string) => {
+  ipcMain.handle(PLUGIN_FS_CHANNELS.LIST_DIR, sharedHeavy(async (event, token: string, target: string) => {
     const r = await checkScope(
       token,
       event.sender.id,
@@ -875,7 +905,7 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.READ_GIT_BLOB,
-    shared(async (event, token: string, repoDir: string, rawSha: string) => {
+    sharedHeavy(async (event, token: string, repoDir: string, rawSha: string) => {
       // 边界(E63):sha 进 git cat-file argv 前先校验固定 hex 形态 + 长度(挡超长 sha 触发 spawn
       // E2BIG / argv 内存放大;非 hex 也直接拒,绝不进 spawn)。只认完整 sha,不做唯一前缀解析。
       if (!isValidGitBlobSha(rawSha)) {

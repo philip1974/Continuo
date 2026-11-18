@@ -953,6 +953,7 @@
 
 ## [plugin-fs-read-cap (E28 + E29 + E30 + E31)](./plugin-fs-read-cap/README.md)
 
+- [`read-concurrency.spec.ts`](./plugin-fs-read-cap/read-concurrency.spec.ts)
 - [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)
 
 ## [plugin-fs-rw-lock(plugin-fs 调用之间的读写锁:插件不能在另一次调用的「校验 → 操作」之间改目录结构)](./plugin-fs-rw-lock/README.md)

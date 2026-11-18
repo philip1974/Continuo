@@ -102,6 +102,7 @@ export const en = {
   'errors.FS_FILE_TOO_LARGE': 'File too large to open',
   'errors.FS_NOT_UTF8': 'File is binary or not UTF-8 encoded; cannot open in the text editor',
   'errors.FS_DIR_TOO_LARGE': 'Directory has too many entries',
+  'errors.FS_BUSY': 'Too many file operations in progress; try again later',
   'errors.FS_NOT_FOUND': 'File not found: {path}',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────

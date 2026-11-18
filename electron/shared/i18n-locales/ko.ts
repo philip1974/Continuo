@@ -91,6 +91,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.FS_FILE_TOO_LARGE': '파일이 너무 커서 열 수 없습니다',
   'errors.FS_NOT_UTF8': '바이너리이거나 UTF-8 인코딩이 아닌 파일이라 텍스트 편집기에서 열 수 없습니다',
   'errors.FS_DIR_TOO_LARGE': '디렉터리 항목이 너무 많습니다',
+  'errors.FS_BUSY': '진행 중인 파일 작업이 너무 많습니다. 잠시 후 다시 시도하세요',
   'errors.FS_NOT_FOUND': '파일을 찾을 수 없습니다: {path}',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────

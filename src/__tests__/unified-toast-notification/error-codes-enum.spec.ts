@@ -63,7 +63,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 插件安装:+GIT_TIMEOUT(51→52),clone 超时独立本地化(提示 ssh host key / 交互口令)。
     // 插件安装:+PLUGIN_SYMLINK_REJECTED(52→53),克隆树含符号链接一律拒装。
     // 插件更新:+PLUGIN_DATA_PRESERVE_FAILED(53→54),旧 data.json 无法安全带入新版本时中止更新。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(54);
+    // 边界(内存峰值):+FS_BUSY(54→55),插件 fs 大块读取的全局并发闸排队已满。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(55);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

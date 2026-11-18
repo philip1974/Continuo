@@ -73,6 +73,8 @@ export const FS_ERROR_CODES = {
   FS_NOT_UTF8: 'FS_NOT_UTF8',
   // 边界(E30):目录条目数超硬上限(防超大目录一次性构造数组 + IPC 全量返回卡死)。
   FS_DIR_TOO_LARGE: 'FS_DIR_TOO_LARGE',
+  // 边界(内存峰值):插件 fs 的大块读取(read-file / list-dir / 仓库对象读取 / editor.openFile)全局并发闸排队已满。
+  FS_BUSY: 'FS_BUSY',
 } as const;
 
 export const ERROR_CODES = {
