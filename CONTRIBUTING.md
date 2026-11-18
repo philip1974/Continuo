@@ -37,6 +37,8 @@ pnpm test:smoke             # quick Playwright smoke only
 pnpm build:app
 ```
 
+`build:app*` automatically runs `pnpm check:secrets:pack` after electron-builder: it scans `out-pack/` and every `app.asar` under `dist-electron/` for GitHub tokens / AWS keys / private keys and fails the build on any hit (printing only file + offset, never the value). Do not publish an installer from a build where this step failed.
+
 ## PR flow
 
 1. Fork → branch from `main`.

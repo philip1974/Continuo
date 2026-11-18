@@ -187,6 +187,41 @@ jobs:
       - name: Run electron main-context DAP teardown spec without adapter skip
         run: pnpm exec vitest run --project electron electron/main/__tests__/dap-teardown-mini.spec.ts --reporter=verbose
 
+  secret-scan:
+    name: Build output secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # v0.2.5 安装包曾把 GitHub token 打进 app.asar:构建产物里出现 token / AWS key / 私钥即失败
+      # (只输出文件与偏移,不回显值)。本地 build:app* 在 electron-builder 之后同样自动扫描。
+      - name: Scan build output for secrets
+        run: node scripts/check-no-secrets.mjs out
+
   perf-bench:
     name: Plugin DataStore perf bench
     runs-on: ubuntu-latest
