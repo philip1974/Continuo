@@ -1123,12 +1123,16 @@ async function startMcpHost(): Promise<void> {
       // byToken 只用于终端专属 token(终端退出 / 创建回滚):token 失效后其经 HTTP MCP 创建的 debug
       // 会话再无人能 disconnect → 同步回收(与 stdio 断连路径一致),否则名额被占满、adapter 常驻。
       byToken: (token) => {
+        // 安全(F1):HTTP 调用方身份 = token(+ Mcp-Session-Id)。须在 revokeToken 清掉 session 表之前取全。
+        const subjects = mcpHost!.callerSubjectsForToken(token);
         mcpHost!.revokeToken(token);
-        // 该 token 的在途 create_session 同样失去调用方(同 stdio 断连 abort ctx.signal):取消,不留孤儿会话。
-        cancelAgentTerminalCreates(token);
-        void debugService.killByController(token, 'terminal-exit').catch((err) => {
-          console.warn('[debug] killByController failed on terminal token revoke', err);
-        });
+        for (const subject of subjects) {
+          // 该 token 的在途 create_session 同样失去调用方(同 stdio 断连 abort ctx.signal):取消,不留孤儿会话。
+          cancelAgentTerminalCreates(subject);
+          void debugService.killByController(subject, 'terminal-exit').catch((err) => {
+            console.warn('[debug] killByController failed on terminal token revoke', err);
+          });
+        }
       },
     });
     setAgentAuthControllerTeardown({

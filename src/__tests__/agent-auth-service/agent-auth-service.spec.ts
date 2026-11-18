@@ -104,6 +104,7 @@ function makeMcpHost(overrides: Partial<McpHost> = {}): McpHost {
     revokeWindowTokens: vi.fn(),
     resolveWindowId: vi.fn(() => null),
     verifyAndResolveCtx: vi.fn(() => null),
+    callerSubjectsForToken: vi.fn((token: string) => [token]),
     registerTool: vi.fn(),
     removeTool: vi.fn(),
     broadcast: vi.fn(),

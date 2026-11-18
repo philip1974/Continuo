@@ -221,7 +221,7 @@ const STDIO_FIRST_MESSAGE_TIMEOUT_MS = 10_000;
 // 安全 S3:每个 stdio 连接一个稳定 subject(callerSubject)。Claude Code 的 proxy
 // 一次 spawn 长连接复用 → 同一连接的 create_session 与 read/send 共享 subject;
 // 不同连接(含恶意进程直连 mcp.sock,unix socket 0600 仅本用户但 postinstall 也是本
-// 用户)subject 不同 → 无法读控别连接创建的会话。HTTP 侧 subject=bearer token。
+// 用户)subject 不同 → 无法读控别连接创建的会话。HTTP 侧 subject=bearer token + Mcp-Session-Id。
 const socketSubject: Map<Socket, string> = new Map();
 function subjectForSocket(sock: Socket): string {
   let s = socketSubject.get(sock);
