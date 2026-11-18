@@ -56,7 +56,7 @@ export const RPC_ERROR_CODES = {
 // RESULT_TOO_LARGE 错误而非物化巨响应。
 const MAX_TOOLS_LIST_BYTES = 16 * 1024 * 1024; // tools/list 聚合响应 ≤ 16MiB
 
-const NO_WINDOW_CTX_MESSAGE = 'missing window context';
+export const NO_WINDOW_CTX_MESSAGE = 'missing window context';
 
 // 边界(E78,E73/E75/E76/E77 错误串放大族 + 回显面):JSON-RPC id/method 与 tools/call 的
 // params.name 都是短标识符。此前 parseRpcMessage 只校验 method 非空、id 为 string|number,无长度
@@ -579,6 +579,11 @@ export interface McpHostOptions {
    * 释放回调杀掉其 debug 会话 / 让其终端沦为无人可控的孤儿。全部候选都有资源时照旧 429。
    */
   hasLiveResources?: (subject: string) => boolean;
+  /**
+   * token 表被吊销 / 轮换后(revokeToken / revokeWindowTokens / rotateToken)回调。HTTP 每个请求都带 token、
+   * 逐请求校验;stdio 连接只在 hello 时交一次 token,靠此通知让已绑定的连接立即失效并取消其在途调用。
+   */
+  onTokensRevoked?: () => void;
 }
 
 const DEFAULT_SERVER_INFO: ServerInfo = {
@@ -1103,6 +1108,13 @@ export async function createMcpHost(
     throw new Error('MCP host: failed to obtain server address');
   }
   const port = addr.port;
+  const notifyTokensRevoked = (): void => {
+    try {
+      options.onTokensRevoked?.();
+    } catch (err) {
+      console.warn('[mcp-host] onTokensRevoked threw', err);
+    }
+  };
 
   const host: McpHost = {
     port,
@@ -1120,6 +1132,7 @@ export async function createMcpHost(
       for (const [res, meta] of [...sseClients]) {
         if (meta.token === token) closeSseClient(res);
       }
+      notifyTokensRevoked();
     },
     revokeWindowTokens(windowId: number): void {
       for (const [tok, wid] of windowTokens) {
@@ -1130,6 +1143,7 @@ export async function createMcpHost(
       for (const [res, meta] of [...sseClients]) {
         if (meta.windowId === windowId) closeSseClient(res);
       }
+      notifyTokensRevoked();
     },
     resolveWindowId(token: string): number | null {
       return windowTokens.get(token) ?? null;
@@ -1174,6 +1188,7 @@ export async function createMcpHost(
       httpSessions.clear();
       // 踢断所有现有 SSE 连接(它们持的旧 token 已无效)+ 清各自 keepalive interval。
       closeAllSseClients();
+      notifyTokensRevoked();
     },
     async close(): Promise<void> {
       closeAllSseClients();

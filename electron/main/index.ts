@@ -90,7 +90,7 @@ import {
   setMcpHostRef,
 } from './services/agent-auth.service';
 import { DebugService } from './services/debug.service';
-import { createMcpRevokerWiring } from './services/mcp-revoker-wiring';
+import { createMcpRevokerWiring, type McpRevokerWiring } from './services/mcp-revoker-wiring';
 import * as debugSessions from './services/debug-sessions.service';
 import { makeDebugMcpTools } from './services/mcp-debug-host';
 import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
@@ -991,6 +991,7 @@ app.on('open-file', (event, filePath) => {
 // P4+ C 方案:同时启 stdio server(unix socket),Claude Code 走 stdio 配置一次永久使用。
 let mcpHost: McpHost | null = null;
 let mcpStdio: StdioSocketServer | null = null;
+let mcpRevokerWiring: McpRevokerWiring | null = null;
 // stdio server 在首窗创建后 void 启动;退出清理先等它结束再 close(否则 listen 晚于 close → socket 残留)。
 let mcpStdioStarting: Promise<void> = Promise.resolve();
 // Stop hook broker 的停止函数(MCP host 启动成功后赋值),由 before-quit 不可逆清理阶段调用。
@@ -1123,6 +1124,7 @@ async function startMcpHost(): Promise<void> {
       hasAgentTerminalCreates,
       hasLiveSessionForController: terminalSessions.hasLiveSessionForController,
     });
+    mcpRevokerWiring = revokerWiring;
     mcpHost = await createMcpHost({ initialTools, ...revokerWiring.hostOptions });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
@@ -1231,6 +1233,8 @@ async function startMcpStdioServer(): Promise<void> {
       tools: mcpHost.tools,
       serverInfo: mcpHost.serverInfo,
       resolveWindowId: (token) => mcpHost!.resolveWindowId(token),
+      // 安全:token 吊销 / 轮换 → 已绑定的 stdio 连接立即失效、在途调用取消、其身份名下的在途创建与 debug 会话回收。
+      ...mcpRevokerWiring?.stdioOptions,
       // stdio 连接断开 → 其 subject 永久失效:回收它创建的 debug 会话(否则无人能 disconnect,
       // 名额被占满、adapter 常驻)。终端会话对用户可见、可手动关,不在此回收。HTTP subject 是窗口级
       // token,随窗口关闭 / 撤销回收(killByOwner / revokeAndKillAgentSessions),不按连接回收。

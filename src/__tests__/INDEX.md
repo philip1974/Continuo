@@ -1289,6 +1289,7 @@
 
 ## [stdio-revoked-token-binding(token 吊销后,已 hello 的 stdio 连接立即失效)](./stdio-revoked-token-binding/README.md)
 
+- [`inflight-revocation.spec.ts`](./stdio-revoked-token-binding/inflight-revocation.spec.ts)
 - [`stdio-revoked-token-binding.spec.ts`](./stdio-revoked-token-binding/stdio-revoked-token-binding.spec.ts)
 
 ## [stop-hook broker:不丢事件、不留孤儿等待者](./stop-hook-broker-reliability/README.md)
