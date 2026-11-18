@@ -27,7 +27,7 @@
   | `notifications.show` / `dock.openPanel` | 抛 `code: 'PERMISSION_DENIED'`(无对应权限项的 UI 副作用) |
   | 贡献点注册 / 订阅:`panels / commands / statusBar / ribbon / settingTabs / settingItems / explorerDecorators / editorActions / explorerContextMenu` 的 `register`、`subscribe`;`events.on` | 抛 `code: 'PERMISSION_DENIED'`,不入共享注册表 |
   | `commands.execute` | 返回 reject 的 Promise(`code: 'PERMISSION_DENIED'`),命令不执行 —— 宿主命令(`window.new` / `terminal.new` 等)会创建不归插件、回收清不掉的窗口 / 终端 |
-  | `events.emit` / `events.clear` | 抛 `code: 'PERMISSION_DENIED'` —— emit 触发他人监听的副作用;clear 清掉他人订阅 |
+  | `events.emit` / `events.clear` | 抛 `code: 'PERMISSION_DENIED'` —— emit 触发他人监听的副作用;clear 吊销后同样拒绝(未吊销时只清本插件自己的订阅,见 scoped-app README) |
   | 注册表 / 总线上其余未列入「不阻断」的成员 | 同上抛 `PERMISSION_DENIED`(白名单放行,新增方法默认阻断) |
   | `editor.openFile` | 返回 `{ ok: false, code: 'PERMISSION_DENIED' }`(其契约返回结果对象不抛) |
 

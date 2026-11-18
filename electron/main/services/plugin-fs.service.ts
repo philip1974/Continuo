@@ -1,8 +1,8 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { promises as fs, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { IpcMain, WebContents } from 'electron';
 import { PLUGIN_FS_CHANNELS, SCOPE_REQUEST_ID_MAX } from '../../shared/plugin-fs-channels';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
@@ -32,6 +32,7 @@ import {
   GIT_OFFLINE_ENV,
   mergeSpawnEnv,
   resolveSpawnCommand,
+  stripGitRepoRedirectEnv,
   stripInternalSecretEnv,
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
@@ -80,14 +81,122 @@ const GIT_BLOB_STDERR_MAX = 64 * 1024;
 // 边界(E63 / E314):git blob sha hex 形态校验收口到 shared/fs-limits(renderer scoped-app readGitBlob
 // 发 IPC 前同款预检,单一来源防漂移)。
 
+/** 已逐项校验在插件只读 scope 内的仓库位置(canonical);readGitBlob 据此钉死 git 读哪个对象库。 */
+export interface GitObjectStorePin {
+  gitDir: string;
+  commonDir: string;
+  objectDir: string;
+}
+
+// rev-parse 只输出两行路径,给足余量即可。
+const GIT_REV_PARSE_MAX_BYTES = 64 * 1024;
+
+/**
+ * readGitBlob 的 git 子进程 env:剥离宿主机密与会重定向仓库 / 对象库的 GIT_*(见 stripGitRepoRedirectEnv),
+ * 再加 git 兜底配置与离线预设(说明见 readGitBlob 内注释)。
+ */
+function gitBlobEnv(): NodeJS.ProcessEnv {
+  return mergeSpawnEnv(
+    withGitHardeningEnv(stripGitRepoRedirectEnv(stripInternalSecretEnv(process.env))),
+    GIT_OFFLINE_ENV,
+  );
+}
+
+function gitStoreOutOfScope(cwd: string, reason: string, cause?: unknown): ScopeError {
+  // 对插件只有这一条文案:「不是仓库」「仓库在 scope 外」「git 太旧」不可区分(否则成了 scope 外 .git 的探测器)。
+  // 具体原因进主进程日志供排错。
+  console.warn(`[plugin-fs] readGitBlob rejected (${reason}) cwd=${cwd}`);
+  return new ScopeError('git repository not found within granted scope', { target: cwd }, { cause });
+}
+
+/**
+ * 安全:`git cat-file` 读哪个对象库由 git 决定,与 cwd 是否在 scope 内无关 —— 向上发现到 scope 外的 `.git`、
+ * `.git` 文件(`gitdir: <任意仓库>`)、`objects/info/alternates`、指向别处的 `objects` 符号链接都会让只校验
+ * cwd 的 readGitBlob 读到 scope 外的对象。这里先问 git 实际会用的 gitdir / commondir,要求它们与对象目录
+ * (及本次可能读到的扇出目录 / 对象文件 / pack 目录)realpath 后都在只读 scope 内,带 alternates 的对象库
+ * 一律拒绝。`realpathInScope` 须返回 realpath 后的路径,不在 scope 内 / 不存在时抛错。
+ * git < 2.31 不认 `--path-format`(原样回显该选项,输出不是「恰好两行绝对路径」)→ fail-closed。
+ */
+export async function resolveGitObjectStoreInScope(
+  cwd: string,
+  sha: string,
+  realpathInScope: (p: string) => Promise<string>,
+): Promise<GitObjectStorePin> {
+  const env = gitBlobEnv();
+  let stdout: string;
+  try {
+    stdout = await new Promise<string>((resolve, reject) => {
+      execFile(
+        resolveSpawnCommand('git', env),
+        ['rev-parse', '--path-format=absolute', '--absolute-git-dir', '--git-common-dir'],
+        { cwd, env, timeout: GIT_BLOB_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: GIT_REV_PARSE_MAX_BYTES },
+        (err, out) => (err ? reject(err) : resolve(out)),
+      );
+    });
+  } catch (err) {
+    throw gitStoreOutOfScope(cwd, 'rev-parse failed', err);
+  }
+  const lines = stdout.replace(/\r?\n$/, '').split(/\r?\n/);
+  if (lines.length !== 2 || !lines.every((l) => isAbsolute(l))) {
+    throw gitStoreOutOfScope(cwd, 'unexpected rev-parse output (git < 2.31?)');
+  }
+  let pin: GitObjectStorePin;
+  try {
+    const gitDir = await realpathInScope(lines[0]!);
+    const commonDir = await realpathInScope(lines[1]!);
+    const objectDir = await realpathInScope(join(commonDir, 'objects'));
+    pin = { gitDir, commonDir, objectDir };
+    // 对象目录之下,本次读取可能经过的路径同样不能经符号链接落到 scope 外:松散对象的扇出目录与文件、pack 目录。
+    for (const sub of [sha.slice(0, 2), join(sha.slice(0, 2), sha.slice(2)), 'pack']) {
+      const p = join(objectDir, sub);
+      if (await lstatOrNull(p)) await realpathInScope(p);
+    }
+    // pack 目录内的条目(.pack / .idx / multi-pack-index)逐个 realpath 成本高,直接拒绝符号链接条目。
+    for (const e of await readdirOrEmpty(join(objectDir, 'pack'))) {
+      if (e.isSymbolicLink()) throw new Error(`symlink in pack dir: ${e.name}`);
+    }
+  } catch (err) {
+    throw gitStoreOutOfScope(cwd, 'object store not within scope', err);
+  }
+  // alternates 让 git 额外去读任意对象目录;不逐项判定,存在且非空即拒。无法确认(非 ENOENT 错误)也拒。
+  for (const dir of new Set([pin.objectDir, join(pin.gitDir, 'objects')])) {
+    const alternates = join(dir, 'info', 'alternates');
+    let st: Awaited<ReturnType<typeof lstatOrNull>>;
+    try {
+      st = await lstatOrNull(alternates);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOTDIR') continue;
+      throw gitStoreOutOfScope(cwd, 'cannot stat alternates', err);
+    }
+    if (st && (!st.isFile() || st.size > 0)) {
+      throw new ScopeError('git repository uses objects/info/alternates; refusing to read', {
+        target: cwd,
+        reason: 'alternates',
+      });
+    }
+  }
+  return pin;
+}
+
+async function readdirOrEmpty(dir: string): Promise<Dirent[]> {
+  try {
+    return await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    return [];
+  }
+}
+
 /**
  * 读取单个 git blob(`git cat-file blob <sha>`),带超时与字节上限。
  * 超时 / 超限 / spawn 错误 → SIGKILL 子进程并 reject。可注入 opts 供测试用小值。
+ * `opts.pin`(resolveGitObjectStoreInScope 的结果)把 gitdir / commondir / 对象目录钉成已校验的路径:
+ * git 不再自行发现仓库,校验之后再改 `.git` 文件或 `objects` 链接不影响本次读取。
  */
 export function readGitBlob(
   cwd: string,
   sha: string,
-  opts?: { timeoutMs?: number; maxBytes?: number },
+  opts?: { timeoutMs?: number; maxBytes?: number; pin?: GitObjectStorePin },
 ): Promise<Uint8Array> {
   const timeoutMs = opts?.timeoutMs ?? GIT_BLOB_TIMEOUT_MS;
   const maxBytes = opts?.maxBytes ?? GIT_BLOB_MAX_BYTES;
@@ -103,8 +212,15 @@ export function readGitBlob(
     // 但 `protocol.<name>.allow` 优先于 `protocol.allow`:仓库 config 写 `protocol.file.allow=always` 即盖过
     // 命令行的 never,git <2.45 又不认 GIT_NO_LAZY_FETCH → 仍会执行。GIT_ALLOW_PROTOCOL 设为空(空白名单)
     // 时 git 忽略全部 protocol.*.allow 配置、拒绝一切传输(git ≥2.12 认),仓库 config 无法覆盖。
-    // 两者即具名预设 GIT_OFFLINE_ENV;并剥离宿主内部机密(CONTINUO_MCP_TOKEN)。
-    const env = mergeSpawnEnv(withGitHardeningEnv(stripInternalSecretEnv(process.env)), GIT_OFFLINE_ENV);
+    // 两者即具名预设 GIT_OFFLINE_ENV;并剥离宿主内部机密(CONTINUO_MCP_TOKEN)与重定向仓库的 GIT_*。
+    const pin = opts?.pin;
+    const env = pin
+      ? mergeSpawnEnv(gitBlobEnv(), {
+          GIT_DIR: pin.gitDir,
+          GIT_COMMON_DIR: pin.commonDir,
+          GIT_OBJECT_DIRECTORY: pin.objectDir,
+        })
+      : gitBlobEnv();
     const child = spawn(
       resolveSpawnCommand('git', env),
       ['-c', 'protocol.allow=never', 'cat-file', 'blob', sha],
@@ -562,20 +678,22 @@ export function registerPluginFsHandlers(
     PLUGIN_FS_CHANNELS.READ_GIT_BLOB,
     async (event, token: string, repoDir: string, sha: string) => {
       // 边界(E63):sha 进 git cat-file argv 前先校验固定 hex 形态 + 长度(挡超长 sha 触发 spawn
-      // E2BIG / argv 内存放大;非 hex 也直接拒,绝不进 spawn)。
+      // E2BIG / argv 内存放大;非 hex 也直接拒,绝不进 spawn)。只认完整 sha,不做唯一前缀解析。
       if (!isValidGitBlobSha(sha)) {
-        throw new ScopeError('invalid git blob sha (must be 4-64 hex chars)', {
+        throw new ScopeError('invalid git blob sha (must be a full 40- or 64-char hex sha)', {
           target: typeof sha === 'string' ? sha.slice(0, 64) : 'non-string',
         });
       }
-      const r = await pathScopeRegistry.check(
-        token,
-        event.sender.id,
-        'read',
-        repoDir,
-        'r',
+      const senderId = event.sender.id;
+      const r = await pathScopeRegistry.check(token, senderId, 'read', repoDir, 'r');
+      const cwd = canonicalPath(r);
+      // 安全:repoDir 在 scope 内不代表 git 读的对象库在 scope 内(见 resolveGitObjectStoreInScope)。
+      const pin = await resolveGitObjectStoreInScope(
+        cwd,
+        sha,
+        async (p) => (await pathScopeRegistry.check(token, senderId, 'read', p, 'r')).canonical,
       );
-      return readGitBlob(canonicalPath(r), sha);
+      return readGitBlob(cwd, sha, { pin });
     },
   );
 
@@ -672,6 +790,8 @@ export function registerPluginFsHandlers(
       // 已被现有授权(本会话 grant 或已水合的持久化授权)覆盖 → 静默授予,免重复弹窗。
       // 这是「持久化方案」省去重启后重复授权的关键路径。
       if (pathScopeRegistry.covers(pluginId, canonicalScopes)) {
+        // 登记插件请求时的写法(如经符号链接的路径),之后用同一写法访问才能通过 check 的词法预判。
+        pathScopeRegistry.noteRequestedRoots(pluginId, scopes, canonicalScopes);
         return 'grant';
       }
 
@@ -731,6 +851,7 @@ export function registerPluginFsHandlers(
       // _unregister-plugin 的 revokeAll 守卫,审计 #2 同源)。见第十三轮 P2-AJ。
       if (decision === 'grant' && identityRegistry.isActive(token)) {
         pathScopeRegistry.grant(pluginId, canonicalScopes);
+        pathScopeRegistry.noteRequestedRoots(pluginId, scopes, canonicalScopes);
         // 持久化合并后的全集,供下次启动水合;best-effort,失败不影响本次授权。
         if (deps.persistScopes) {
           try {

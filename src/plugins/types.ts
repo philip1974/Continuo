@@ -169,7 +169,7 @@ export interface PluginFsApi {
   rename(src: string, dst: string): Promise<void>;
   rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<void>;
   cp(src: string, dst: string, opts?: { recursive?: boolean }): Promise<void>;
-  readGitBlob(repoDir: string, sha: string): Promise<Uint8Array>;
+  readGitBlob(repoDir: string, sha: string): Promise<Uint8Array>; // sha 须完整 40 / 64 位 hex;仓库的 .git(含对象库)须整个在已授 scope 内,否则 ScopeError
   /**
    * PRECHECK
    *

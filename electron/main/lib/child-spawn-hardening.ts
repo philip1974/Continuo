@@ -71,17 +71,46 @@ export const GIT_OFFLINE_ENV: Readonly<Record<'GIT_NO_LAZY_FETCH' | 'GIT_ALLOW_P
  */
 export const INTERNAL_SECRET_ENV_KEYS: readonly string[] = Object.freeze(['CONTINUO_MCP_TOKEN']);
 
+function stripEnvKeys(env: NodeJS.ProcessEnv, keys: readonly string[], platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env };
+  for (const k of Object.keys(out)) {
+    const name = platform === 'win32' ? k.toUpperCase() : k;
+    if (keys.includes(name)) delete out[k];
+  }
+  return out;
+}
+
 /** 返回剥离 INTERNAL_SECRET_ENV_KEYS 后的新 env(不改入参);Windows 按大小写不敏感匹配。 */
 export function stripInternalSecretEnv(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
 ): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = { ...env };
-  for (const k of Object.keys(out)) {
-    const name = platform === 'win32' ? k.toUpperCase() : k;
-    if (INTERNAL_SECRET_ENV_KEYS.includes(name)) delete out[k];
-  }
-  return out;
+  return stripEnvKeys(env, INTERNAL_SECRET_ENV_KEYS, platform);
+}
+
+/**
+ * 会让 git 改读别的仓库 / 对象库 / 工作树 / 索引的 env。宿主代插件跑「只许读某个已校验仓库」的 git 命令
+ * (readGitBlob)时必须剥离:否则 Continuo 从设了 GIT_DIR / GIT_ALTERNATE_OBJECT_DIRECTORIES 等的终端启动时,
+ * git 读的不是 cwd 所在的仓库,scope 校验形同虚设。GIT_CEILING_DIRECTORIES 会改变向上发现的结果,一并剥离
+ * (发现到的位置另有 scope 校验)。不用于 shell.exec:那里的 git 由插件凭 shell 权限自行调用,env 归用户。
+ */
+const GIT_REPO_REDIRECT_ENV_KEYS: readonly string[] = Object.freeze([
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_NAMESPACE',
+  'GIT_CEILING_DIRECTORIES',
+]);
+
+/** 返回剥离 GIT_REPO_REDIRECT_ENV_KEYS 后的新 env(不改入参);Windows 按大小写不敏感匹配。 */
+export function stripGitRepoRedirectEnv(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  return stripEnvKeys(env, GIT_REPO_REDIRECT_ENV_KEYS, platform);
 }
 
 /**

@@ -9,11 +9,12 @@ export const MAX_WRITE_BYTES = 64 * 1024 * 1024; // 64 MiB:fs 写入内容上限
 export const FS_PATH_MAX = 8192; // 路径字符串上限(与 fs.ipc fsPath / plugin-fs scope path 一致)
 
 // 边界(E63 / E314 renderer 对偶):git blob sha 是插件直传 IPC 入 git cat-file argv。固定 hex 形态 +
-// 长度上限(4-64 hex,git 缩写到完整 SHA-1/SHA-256),挡超长 sha 触发 spawn E2BIG / argv 放大。
+// 长度(完整 SHA-1 = 40 / SHA-256 = 64 位 hex),挡超长 sha 触发 spawn E2BIG / argv 放大。不接受缩写:
+// git 对唯一前缀直接返回内容,4 位起即可枚举对象库。
 // main(plugin-fs readGitBlob)+ renderer(scoped-app readGitBlob 发 IPC 前预检)单一来源。
 /** sha 是否合法 git blob 形态(有效性谓词:非 string → false → 无效 → 调用方拒). */
 export function isValidGitBlobSha(sha: unknown): boolean {
-  if (typeof sha !== 'string' || sha.length < 4 || sha.length > 64) {
+  if (typeof sha !== 'string' || (sha.length !== 40 && sha.length !== 64)) {
     return false;
   }
   for (let i = 0; i < sha.length; i += 1) {

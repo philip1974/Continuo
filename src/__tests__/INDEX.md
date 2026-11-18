@@ -905,6 +905,10 @@
 - [`plugin-data.spec.ts`](./plugin-data/plugin-data.spec.ts)
 - [`serialize-order.spec.ts`](./plugin-data/serialize-order.spec.ts)
 
+## [plugin-fs-git-blob-scope(readGitBlob 的对象库必须在已授 scope 内)](./plugin-fs-git-blob-scope/README.md)
+
+- [`read-git-blob-scope.spec.ts`](./plugin-fs-git-blob-scope/read-git-blob-scope.spec.ts)
+
 ## [plugin-fs-read-cap (E28 + E29 + E30 + E31)](./plugin-fs-read-cap/README.md)
 
 - [`read-file-size-cap.spec.ts`](./plugin-fs-read-cap/read-file-size-cap.spec.ts)
@@ -917,6 +921,10 @@
 
 - [`main-sends-display-path.spec.ts`](./plugin-fs-scope-display-path/main-sends-display-path.spec.ts)
 - [`renderer-uses-display-path.spec.ts`](./plugin-fs-scope-display-path/renderer-uses-display-path.spec.ts)
+
+## [plugin-fs-scope-existence-oracle(scope 外路径一律同一条拒绝,不泄露存在性)](./plugin-fs-scope-existence-oracle/README.md)
+
+- [`scope-existence-oracle.spec.ts`](./plugin-fs-scope-existence-oracle/scope-existence-oracle.spec.ts)
 
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)
 
@@ -1106,6 +1114,7 @@
 
 ## [scoped-app(per-plugin CoApp 包装)](./scoped-app/README.md)
 
+- [`contribution-ownership.spec.ts`](./scoped-app/contribution-ownership.spec.ts)
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 

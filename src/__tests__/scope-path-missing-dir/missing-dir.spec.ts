@@ -83,7 +83,10 @@ describe('尚不存在的 scope 目录 · 端到端', () => {
     const identity = new IdentityRegistry();
     const registry = new PathScopeRegistry(identity);
     const { token } = identity.register('com.test', 10);
-    registry.grant('com.test', [{ path: await canonicalizeScopePath(requested), mode: 'r' }]);
+    // 与 request-scope handler 同序:授予 canonical 路径,并登记插件请求时的写法(check 的词法预判用)。
+    const canonical = [{ path: await canonicalizeScopePath(requested), mode: 'r' as const }];
+    registry.grant('com.test', canonical);
+    registry.noteRequestedRoots('com.test', [{ path: requested, mode: 'r' }], canonical);
 
     mkdirSync(dir, { recursive: true });
     const file = join(dir, 'f.txt');
