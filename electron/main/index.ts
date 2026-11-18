@@ -128,7 +128,7 @@ import {
   parseDevRendererUrl,
 } from './spike-gate';
 import { buildCommonWebPreferences } from './continuo-meta-args';
-import { isPopoutUrl } from './popout-url';
+import { isPopoutOnlyUrl, isPopoutUrl } from './popout-url';
 import {
   askDirtyClose,
   needsDirtyConfirm,
@@ -552,7 +552,10 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
     return { action: 'deny' };
   }
   // 安全 S1:只允许指向本应用自己的 renderer 入口(dev server 同源 / 受信的 renderer 文件,精确 pathname)。
-  const allow = isOwnRendererUrl(url);
+  // 安全 L1:且只为 dockview popout 放行 —— query 恰好只有 popout=1。否则页面内容(Markdown 预览中键点
+  // 链接、target=_blank)可用 `index.html?workspace=%2F&fresh=1&windowSeq=0` 开出带完整 preload、以攻击者
+  // 指定目录为根的应用窗口。packaged 下的 `?spike=` 窗口也因此在这里被拒(原 spike-gate guardOpen 的意图)。
+  const allow = isOwnRendererUrl(url) && isPopoutOnlyUrl(url);
 
   if (allow) {
     return {

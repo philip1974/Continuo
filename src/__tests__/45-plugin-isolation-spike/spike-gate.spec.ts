@@ -7,12 +7,9 @@ type SpikeAllowedResult = { allowed: boolean; reason: SpikeAllowedReason };
 type RendererQuery = Record<string, string>;
 type NavigationEvent = { preventDefault: () => void };
 type SpikeNavigationEvent = { preventDefault(): void; readonly url: string };
-type WindowOpenDetails = { url: string };
-type WindowOpenResult = { action: 'allow' | 'deny' };
 
 type SpikeGateModule = {
   guardNav(event: NavigationEvent, url: string, packaged: boolean): SpikeAllowedResult;
-  guardOpen(details: WindowOpenDetails, packaged: boolean): WindowOpenResult;
   stripSpikeQuery(query: RendererQuery, spikeAllowed: boolean): RendererQuery;
   buildRendererQuery(
     options: { workspace?: string; fresh?: boolean; windowSeq?: string; spike?: 'plugin-isolation' },
@@ -82,36 +79,9 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
     expect(preventDefault).not.toHaveBeenCalled();
   });
 
-  it('guardOpen allows dev spike windows through setWindowOpenHandler contract', async () => {
-    expect(
-      (await loadSpikeGate()).guardOpen(
-        { url: 'http://localhost:5173/?spike=plugin-isolation' },
-        false,
-      ),
-    ).toEqual({ action: 'allow' });
-  });
-
-  it('guardOpen denies packaged spike windows when env opt-in is absent', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-
-    expect(
-      (await loadSpikeGate()).guardOpen(
-        { url: 'file:///app/index.html?spike=plugin-isolation' },
-        true,
-      ),
-    ).toEqual({ action: 'deny' });
-  });
-
-  it('guardOpen allows packaged spike windows when env opt-in is present', async () => {
-    process.env.CONTINUO_SPIKE = '1';
-
-    expect(
-      (await loadSpikeGate()).guardOpen(
-        { url: 'file:///app/index.html?spike=plugin-isolation' },
-        true,
-      ),
-    ).toEqual({ action: 'allow' });
-  });
+  // guardOpen 已删除(安全 L1):它从未接入 setWindowOpenHandler,且其语义(packaged 下凡无 opt-in 一律
+  // deny)若照接会拒掉全部 popout。spike 窗口禁止经 window.open 打开现由 windowOpenHandler 的
+  // 「只放行纯 popout URL」承担(?spike= 必被拒),见 popout-contracts/window-open-policy.spec.ts。
 
   it('stripSpikeQuery removes spike query when gate is closed', async () => {
     expect(
@@ -351,7 +321,7 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
     warn.mockRestore();
   });
 
-  it('does not wire did-frame-navigate because top-level will-navigate/guardOpen are the intended gates', async () => {
+  it('does not wire did-frame-navigate because top-level will-navigate (+ windowOpenHandler popout-only) are the intended gates', async () => {
     const on = vi.fn();
 
     const unsubscribe = (await loadSpikeGate()).installSpikeGate({ on }, true);

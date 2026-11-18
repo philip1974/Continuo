@@ -139,6 +139,9 @@ describe('renderMermaidPreview', () => {
         // 本项目追加:不许图表把标签切回 foreignObject / 注入可发外部请求的 CSS
         'htmlLabels',
         'themeCSS',
+        // 安全 L2:字体键只查花括号配对,值原样进 CSS → 可注入 background:url(…)
+        'fontFamily',
+        'altFontFamily',
       ]),
     );
   });

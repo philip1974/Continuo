@@ -501,6 +501,7 @@
 
 ## [editor-mermaid-preview](./editor-mermaid-preview/README.md)
 
+- [`mermaid-directive-css.spec.ts`](./editor-mermaid-preview/mermaid-directive-css.spec.ts)
 - [`mermaid-preview.spec.ts`](./editor-mermaid-preview/mermaid-preview.spec.ts)
 - [`milkdown-code-block-config.spec.tsx`](./editor-mermaid-preview/milkdown-code-block-config.spec.tsx)
 

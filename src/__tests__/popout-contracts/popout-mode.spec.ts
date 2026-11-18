@@ -6,10 +6,11 @@ describe('popout 模式 URL 编码', () => {
     expect(popoutUrlFor('http://localhost:5173/')).toMatch(/[?&]popout=1/);
   });
 
-  it('已有查询的 URL → 追加 popout=1,不破坏其他参数', () => {
+  // 安全 L1:主进程 windowOpenHandler 只放行 query 恰好为 popout=1 的 URL(见 window-open-policy.spec);
+  // popout 子窗只看这个标记,主窗的启动参数(workspace / windowSeq / fresh / spike)一律不带过去。
+  it('已有查询的 URL → 丢弃其他参数,只留 popout=1', () => {
     const out = popoutUrlFor('http://localhost:5173/?foo=bar');
-    expect(out).toMatch(/[?&]foo=bar/);
-    expect(out).toMatch(/[?&]popout=1/);
+    expect(out).toBe('http://localhost:5173/?popout=1');
   });
 
   it('已带 popout=1 → 幂等(还是 1)', () => {
@@ -60,10 +61,10 @@ describe('E195 · popout query 长度上限(同一外部输入族)', () => {
     expect(out.length).toBeLessThan(200);
   });
 
-  it('popoutUrlFor:上限内 query → 保留(回归)', () => {
-    const out = popoutUrlFor('http://localhost:5173/?workspace=/x&windowSeq=2');
-    expect(out).toMatch(/[?&]workspace=%2Fx|[?&]workspace=\/x/);
-    expect(out).toMatch(/[?&]windowSeq=2/);
-    expect(out).toMatch(/[?&]popout=1/);
+  it('popoutUrlFor:上限内的主窗启动 query 也不携带(安全 L1,只留 popout=1)', () => {
+    const out = popoutUrlFor(
+      'file:///app/out/renderer/index.html?workspace=%2Fx&windowSeq=2&fresh=1&spike=plugin-isolation',
+    );
+    expect(out).toBe('file:///app/out/renderer/index.html?popout=1');
   });
 });

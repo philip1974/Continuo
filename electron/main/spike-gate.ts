@@ -19,7 +19,7 @@ export interface RendererQueryInput {
 }
 
 // 边界(E191,E190 同族):导航 URL 长度上限。spikeAllowed 每次导航(will-navigate/will-frame-navigate)
-// 都对 url 跑正则;guardNav/guardOpen 阻止时把完整 url 写日志。畸形超长导航 URL 否则每次导航守卫扫描 +
+// 都对 url 跑正则;guardNav 阻止时把完整 url 写日志。畸形超长导航 URL 否则每次导航守卫扫描 +
 // 保留巨大字符串。导航 URL = renderer file URL + workspace(≤2048)/windowSeq/spike query,8KiB 留足余量。
 const MAX_NAV_URL_LEN = 8192;
 const URL_LOG_MAX = 256;
@@ -125,20 +125,9 @@ export function guardNav(
   return result;
 }
 
-export function guardOpen(
-  details: { url: string },
-  packaged: boolean,
-): { action: 'deny' | 'allow' } {
-  const result = spikeAllowed({ url: details.url, argv: process.argv, packaged });
-  if (!result.allowed) {
-    console.warn('[spike-gate] guardOpen denied', {
-      url: capUrlForLog(details.url), // 边界(E191):日志只记截断摘要
-      reason: result.reason,
-    });
-    return { action: 'deny' };
-  }
-  return { action: 'allow' };
-}
+// 无 guardOpen(安全 L1):window.open 不另设 spike 闸 —— windowOpenHandler 只放行 query 恰好为 popout=1 的
+// 本应用入口(electron/main/popout-url.ts isPopoutOnlyUrl),带 ?spike= 的 URL 在那里一律被拒。原 guardOpen
+// 从未接入,且 packaged 下凡无 opt-in 一律 deny,照接会拒掉全部 popout。
 
 interface NavEvent {
   preventDefault(): void;

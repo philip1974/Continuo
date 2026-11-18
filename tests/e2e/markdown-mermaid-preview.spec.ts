@@ -307,3 +307,36 @@ test('Edit:在图源码里连续输入不逐键重画,停手后渲染最后一�
   expect(renders).toBeGreaterThanOrEqual(1);
   expect(renders).toBeLessThanOrEqual(5);
 });
+
+// 安全 L2:%%{init}%% 的 fontFamily / altFontFamily 值原样拼进 SVG 的 <style>(mermaid 只查花括号配对),
+// `x; background:url(https://…)` 会成为独立声明 → 打开不受信文档即发外部请求。被 secure 列表忽略后,
+// 生成的 CSS 不含攻击者的声明,图照常渲染。
+test('Preview:init 指令经 fontFamily 注入的 CSS 声明不进入生成的样式', async ({
+  window,
+  workspaceRoot,
+}) => {
+  writeFileSync(
+    path.join(workspaceRoot, 'font.md'),
+    [
+      '```mermaid',
+      '%%{init: {"fontFamily":"x; background:url(https://evil.example/ff)", "altFontFamily":"y; background:url(https://evil.example/alt)"}}%%',
+      'flowchart LR',
+      '  F[字体节点] --> G',
+      '```',
+      '',
+    ].join('\n'),
+  );
+  await openWorkspaceFile(window, ['font.md']);
+  await editorModeButton(window, EDITOR_MODE_PREVIEW).click();
+
+  const svg = window.locator('main .milkdown .preview svg');
+  await expect(svg).toHaveCount(1, { timeout: 15_000 });
+  await expect(svg).toContainText('字体节点');
+  const css = await svg.evaluate((el) =>
+    [...el.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n'),
+  );
+  // 默认字体仍在(回归),攻击者的声明不在
+  expect(css).toContain('trebuchet ms');
+  expect(css).not.toContain('evil.example');
+  expect(css).not.toMatch(/background:\s*url\(/);
+});
