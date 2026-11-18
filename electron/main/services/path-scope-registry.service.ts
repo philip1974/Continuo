@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { promises as fs, realpathSync, type BigIntStats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { IdentityRegistry } from './identity-registry.service';
+import { conservativeFold, fileIdOf, isDarwinMagicPath, prefixesOf, type FileId } from '../lib/file-identity';
 import {
   lexicalAbsolutePath,
   resolveForRead,
@@ -76,21 +77,6 @@ function foldForProtection(p: string): string {
   return process.platform === 'linux' ? p : p.normalize('NFC').toLowerCase();
 }
 
-/**
- * 「尚不存在的名字」专用的保守折叠:比文件系统折得更狠(兼容分解、大小写往返 —— `ſ`→`s`、`ß`→`ss`、连字、
- * final sigma;去掉默认可忽略码位)。只用来判断「新建的名字会不会与受保护根应在位置上的名字撞」,多拒无害;
- * 不求与任何一种文件系统的折叠表逐字一致(见 README 残余)。
- */
-function conservativeFold(name: string): string {
-  return name
-    .normalize('NFKC')
-    .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
-    .toLowerCase()
-    .toUpperCase()
-    .toLowerCase()
-    .normalize('NFKC');
-}
-
 // 找符号链接叶子的磁盘条目名时最多扫描的目录条目数;只对「父目录是受保护根祖先」的目录生效,超限 fail-closed。
 const ON_DISK_NAME_SCAN_LIMIT = 10_000;
 
@@ -135,35 +121,6 @@ function protectedRootForms(raw: string): string[] {
 function protectedRootKeys(forms: readonly string[]): string[] {
   const all = process.platform === 'darwin' ? [...forms, ...forms.map(darwinDataVolumeAlias)] : forms;
   return [...new Set(all.map(foldForProtection))];
-}
-
-// macOS 根目录下由内核合成的路径前缀:`/.nofollow/<绝对路径>` 与 `<绝对路径>` 是同一个文件(只是沿途不跟随
-// 符号链接),`/.resolve/<n>/<绝对路径>`、`/.vol/<dev>/<ino>` 同理 —— 而 realpath 不归一(或直接失败)。
-// 它们不是访问用户文件的正当写法,plugin-fs 一律不认(与 scope 外路径同一条拒绝)。
-const DARWIN_MAGIC_ROOT_ENTRIES: ReadonlySet<string> = new Set(['.nofollow', '.resolve', '.vol']);
-
-function isDarwinMagicPath(p: string): boolean {
-  if (process.platform !== 'darwin') return false;
-  const first = p.split('/').find((segment) => segment !== '');
-  return first !== undefined && DARWIN_MAGIC_ROOT_ENTRIES.has(conservativeFold(first));
-}
-
-/** 路径自身及其各级上级(字符串 dirname,直到文件系统根),由深到浅。 */
-function prefixesOf(p: string): string[] {
-  const out = [p];
-  for (;;) {
-    const current = out[out.length - 1]!;
-    const parent = dirname(current);
-    if (parent === current) return out;
-    out.push(parent);
-  }
-}
-
-/** 文件身份 = (dev, ino)。ino 为 0(个别文件系统不提供)时不可比较 → null。 */
-type FileId = string;
-
-function fileIdOf(stat: BigIntStats | null): FileId | null {
-  return stat === null || stat.ino === 0n ? null : `${stat.dev}:${stat.ino}`;
 }
 
 /** 受保护根此刻在文件系统里的身份(每次校验现算:祖先可被改名 / 替换,根可能尚不存在)。 */

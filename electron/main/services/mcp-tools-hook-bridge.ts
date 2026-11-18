@@ -33,6 +33,7 @@ import {
 } from '../../shared/mcp-terminal-schemas';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { readFileCappedFd } from '../lib/read-fh-capped';
+import { fileIdOf, isDarwinMagicPath, prefixesOf } from '../lib/file-identity';
 import { isSameOrInsidePath } from '../lib/path-inside';
 import { posixSingleQuote } from '../lib/posix-shell-quote';
 import { truncateSessionIdForEcho } from '../lib/session-id-echo';
@@ -1042,6 +1043,13 @@ export async function ensureHookEventsDir(dir: string): Promise<void> {
 // workspace 根之内,且不得是用户 home 或其祖先(该处 `.codex/config.toml` / `.claude/` 即全局配置,workspace
 // 就是 home 也拒)。会话本身允许在 workspace 外(全局会话),只禁止在那里**安装 hook**。
 // 包含判定统一走 lib/path-inside.isSameOrInsidePath(base, target)。
+//
+// 安全(文件系统别名):「是否为 home 或其祖先」不能只比路径字符串 —— 同一目录可以有 realpath 不归一的别的路径
+// (macOS `/.nofollow/<绝对路径>`、数据卷 `/System/Volumes/Data/<绝对路径>`;Linux bind mount;Windows subst)。
+// 窗口 workspace 是 home 的祖先(`/`、`/Users`)时,`cwd=/System/Volumes/Data/Users/x` 字符串上既在 workspace 内、
+// 又不是 home,hook 就装进了全局 `~/.claude` / `~/.codex`。现在字符串判定之外再按 (dev, ino) 判:cwd 与 home 及其
+// 各级祖先逐个比;cwd 自身 stat 失败 → fail-closed 拒绝。macOS 内核合成前缀(`/.nofollow` 等)下的 cwd 一律拒。
+// 「在 workspace 内」是允许方向,仍按字符串:别名写法不以 workspace 为前缀 → 只会多拒。
 
 export async function installStopHookInWorkspace(opts: {
   readonly cwd: string | undefined;
@@ -1050,7 +1058,10 @@ export async function installStopHookInWorkspace(opts: {
   readonly runner: RunnerKind;
   readonly hookEventsDir: string;
   readonly resolveCwd: (cwdHint?: string) => Promise<string>;
+  /** 取文件身份用的 stat(跟随链接);仅测试注入。 */
+  readonly stat?: (p: string) => Promise<{ readonly dev: bigint; readonly ino: bigint }>;
 }): Promise<InstallStopHookResult> {
+  const statOf = opts.stat ?? ((p: string) => stat(p, { bigint: true }));
   let realCwd: string;
   try {
     realCwd = await realpath(await opts.resolveCwd(opts.cwd ?? opts.workspaceRoot ?? undefined));
@@ -1063,7 +1074,7 @@ export async function installStopHookInWorkspace(opts: {
   } catch {
     realRoot = null;
   }
-  if (realRoot === null || !isSameOrInsidePath(realRoot, realCwd)) {
+  if (realRoot === null || !isSameOrInsidePath(realRoot, realCwd) || isDarwinMagicPath(realCwd)) {
     return { installed: false, reason: 'cwd-outside-workspace' };
   }
   let realHome = path.resolve(opts.homeDir);
@@ -1075,6 +1086,19 @@ export async function installStopHookInWorkspace(opts: {
   // 大小写不敏感文件系统(macOS / Windows 默认)上按折叠后比较,只会多拒不会漏拒。
   const fold = (p: string) => (process.platform === 'linux' ? p : p.toLowerCase());
   if (isSameOrInsidePath(fold(realCwd), fold(realHome))) {
+    return { installed: false, reason: 'cwd-is-home-or-ancestor' };
+  }
+  let cwdId: string | null;
+  try {
+    cwdId = fileIdOf(await statOf(realCwd));
+  } catch {
+    return { installed: false, reason: 'no-cwd' };
+  }
+  // home 尚不存在 / 某级祖先 stat 不了 → 跳过那一级(字符串判定仍在);cwdId 为 null = 该文件系统不提供 inode,无从比较。
+  const homeChainIds = await Promise.all(
+    prefixesOf(realHome).map((p) => statOf(p).then(fileIdOf, () => null)),
+  );
+  if (cwdId !== null && homeChainIds.includes(cwdId)) {
     return { installed: false, reason: 'cwd-is-home-or-ancestor' };
   }
   return installStopHookForSession(realCwd, opts.runner, opts.hookEventsDir);
