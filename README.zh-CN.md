@@ -77,6 +77,8 @@ claude mcp add --transport stdio continuo -- /absolute/path/to/Continuo/scripts/
 
 Codex CLI / Aider 有类似的 stdio-MCP server 配置 —— 指向同一个脚本即可。
 
+在 Continuo 终端里,bridge 总是连接拥有该终端的 Continuo 实例(其 socket 路径以 `CONTINUO_MCP_SOCKET` 注入),因此 dev 构建与安装版可以并存。在 Continuo 终端之外,它先尝试安装版,再尝试 dev 构建。在 MCP server 配置中显式设置 `CONTINUO_MCP_SOCKET` 可覆盖以上两者。
+
 **3 · 让 agent 驱动 UI**
 
 一旦 Continuo 运行起来并注册了 MCP server，agent 就可以调用：
