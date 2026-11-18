@@ -921,6 +921,7 @@
 ## [plugin-fs-scope-bridge](./plugin-fs-scope-bridge/README.md)
 
 - [`scope-decision-feedback.spec.ts`](./plugin-fs-scope-bridge/scope-decision-feedback.spec.ts)
+- [`scope-request-cancelled.spec.ts`](./plugin-fs-scope-bridge/scope-request-cancelled.spec.ts)
 
 ## [plugin-fs scope 授权弹窗的显示路径](./plugin-fs-scope-display-path/README.md)
 

@@ -36,6 +36,7 @@ const coApiMocks = vi.hoisted(() => ({
     atomicReplaceWithinScope: vi.fn().mockResolvedValue(undefined),
     requestScope: vi.fn().mockResolvedValue('grant'),
     _scopeDecision: vi.fn().mockResolvedValue(undefined),
+    onScopeRequestCancelled: vi.fn(() => () => {}),
     onScopeRequest: vi.fn(() => () => {}),
     onScopeUpdated: vi.fn(() => () => {}),
   },

@@ -9,6 +9,8 @@ import { isSameOrInsidePath } from '../lib/path-inside';
 // - 插件级退避:同一插件连续 SCOPE_PLUGIN_DENY_STREAK 次被拒(不论请求什么)→ 该插件所有 scope 请求进入退避,
 //   每多被拒一次翻倍、封顶;用户授予一次即清零。
 // - 速率上限:同一插件单位时间内发出的弹窗数有上限(挡轮换不同目录的刷屏)。
+// - 单飞:同一插件同时最多一个未决弹窗。上面三项只看**已落定**的决定:插件不等结果同步连发 N 次同一请求时还没有
+//   任何拒绝记录,N 个弹窗全部排进队列,用户拒掉第一个后其余依次弹出。未决期间的新请求直接 deny(不排队、不计拒绝)。
 // 只在主进程内存里,数量有上限;见 src/__tests__/plugin-fs-scope-request-throttle/。
 
 /** 首次被拒后的冷却。 */
@@ -49,12 +51,16 @@ const cooldownFor = (level: number): number =>
 
 export class ScopeRequestThrottle {
   private readonly plugins = new Map<string, PluginState>();
+  /** 有未决弹窗的插件。独立于 plugins(不随其容量淘汰);大小受 correlator 的未决请求上限约束。 */
+  private readonly inFlight = new Set<string>();
 
   /**
-   * 是否可以为这次请求弹窗(canonicalPaths = 请求里各 scope 归一化后的路径)。true → 已计入该插件的弹窗速率
-   * (调用方随后必须真的弹窗);false(插件在退避期 / 某条路径在拒绝冷却期内 / 弹窗超速)→ 调用方直接按 deny 收口。
+   * 是否可以为这次请求弹窗(canonicalPaths = 请求里各 scope 归一化后的路径)。true → 已计入该插件的弹窗速率并
+   * 标记为在途(调用方随后必须真的弹窗,且弹窗无论以何种方式收口都必须调 endPrompt);false(该插件已有未决弹窗 /
+   * 在退避期 / 某条路径在拒绝冷却期内 / 弹窗超速)→ 调用方直接按 deny 收口。
    */
   tryPrompt(pluginId: string, canonicalPaths: readonly string[], now: number = Date.now()): boolean {
+    if (this.inFlight.has(pluginId)) return false;
     const state = this.plugins.get(pluginId);
     if (state) {
       if (now < state.backoffUntil) return false;
@@ -70,7 +76,13 @@ export class ScopeRequestThrottle {
       if (state.prompts.length >= SCOPE_PROMPT_RATE_MAX) return false;
     }
     this.stateFor(pluginId).prompts.push(now);
+    this.inFlight.add(pluginId);
     return true;
+  }
+
+  /** tryPrompt 放行的弹窗已收口(用户决定 / 超时 / 窗口关闭 / 插件卸载 / 发送失败)→ 该插件可以再弹。 */
+  endPrompt(pluginId: string): void {
+    this.inFlight.delete(pluginId);
   }
 
   /**
@@ -98,7 +110,9 @@ export class ScopeRequestThrottle {
         state.denied.delete(state.denied.keys().next().value as string);
       }
     }
-    if (now - state.lastDeniedAt > SCOPE_DENY_FORGET_MS) state.streak = 0;
+    // 「无拒绝」从退避结束起算:退避期内插件本来就弹不了窗,不能算作安静。否则退避到上限(5 分钟)后再等 5 分钟
+    // 计数即清零,又能从头连弹 SCOPE_PLUGIN_DENY_STREAK 次。
+    if (now - Math.max(state.lastDeniedAt, state.backoffUntil) > SCOPE_DENY_FORGET_MS) state.streak = 0;
     state.streak += 1;
     state.lastDeniedAt = now;
     if (state.streak >= SCOPE_PLUGIN_DENY_STREAK) {

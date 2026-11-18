@@ -21,6 +21,8 @@ export interface CreateRequestResult {
 }
 
 const DEFAULT_TTL_MS = SCOPE_REQUEST_TTL_MS;
+/** cancelByToken 的 reject 原因(request-scope handler 据此按 deny 静默收口)。 */
+export const SCOPE_REQUEST_PLUGIN_UNREGISTERED = 'plugin unregistered';
 const GC_INTERVAL_MS = 60_000;
 // 边界(E227):未决 scope 请求数量上限。单次 request-scope 的 scopes 已限,但插件可连续 spam 大量未决
 // 请求 —— 每个在 pending Map 驻留至 resolve / 5min TTL,且 renderer 弹窗队列随之线性增长 → 内存/弹窗放大。
@@ -127,6 +129,22 @@ export class ScopeRequestCorrelator {
       if (entry.webContentsId !== webContentsId) continue;
       entry.resolved = true;
       entry.reject(new ScopeRequestTimeoutError('window closed', requestId));
+      this.pending.delete(requestId);
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * 插件实例被注销(卸载 / 禁用 / reload)时 reject 并丢弃它的未决请求:该实例已不在,用户的决定无处落地
+   * (grant 也会因 token 失效被丢弃),而请求留在 pending 会一直占着该插件的单飞名额直到用户应答或 TTL。
+   */
+  cancelByToken(token: string): number {
+    let n = 0;
+    for (const [requestId, entry] of this.pending) {
+      if (entry.resolved || entry.token !== token) continue;
+      entry.resolved = true;
+      entry.reject(new ScopeRequestTimeoutError(SCOPE_REQUEST_PLUGIN_UNREGISTERED, requestId));
       this.pending.delete(requestId);
       n++;
     }

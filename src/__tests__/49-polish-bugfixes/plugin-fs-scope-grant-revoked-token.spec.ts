@@ -81,12 +81,12 @@ describe('topic49 P2-AJ · 弹窗挂起期间被卸载则不落地 grant', () =>
     });
     const sent = event.sender.send.mock.calls[0]?.[1] as { requestId: string };
 
-    // 弹窗挂起期间插件被卸载:revoke token(进 drain)+ revokeAll(pluginId)
-    await ipc.invokeWithEvent(
-      event,
-      PLUGIN_FS_CHANNELS.UNREGISTER_PLUGIN,
-      token,
-    );
+    // 弹窗挂起期间 token 被撤销(进 drain)+ revokeAll(pluginId)。
+    // 注:_unregister-plugin 现在会同时把该 token 的未决请求按 deny 收口(见
+    // plugin-fs-scope-request-throttle「插件卸载 / 禁用」),用户的决定根本到不了这里;本用例直接撤 token,
+    // 钉住落地前 isActive 重校验这层纵深防御(任何没有一并收口未决请求的撤销路径)。
+    identity.revoke(token);
+    scopes.revokeAll('plugin.fs');
     expect(scopes._peek('plugin.fs')).toEqual([]);
 
     // 用户随后点 grant
