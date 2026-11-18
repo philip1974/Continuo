@@ -117,3 +117,39 @@ describe.skipIf(process.platform === 'win32')('插件 git 安装不受用户全�
     expect(await readFile(path.join(dst, 'a.bin'), 'utf8')).toBe('payload\n');
   });
 });
+
+// 安装插件不读用户全局 credential.helper(与 runGit 注释一致):空值 helper 按 gitcredentials(7) 重置 helper
+// 列表。用 `git credential fill` 直接驱动凭据查找验证。
+describe.skipIf(process.platform === 'win32')('插件 git 安装不调用用户全局 credential.helper', () => {
+  let userGlobal: string;
+  let marker: string;
+
+  beforeEach(async () => {
+    marker = path.join(root, 'HELPER_RAN');
+    const helper = await makeScript('helper.sh', marker, 'exit 0');
+    userGlobal = path.join(root, 'user.gitconfig');
+    await writeFile(userGlobal, `[credential]\n\thelper = ${helper}\n`);
+  });
+
+  function credentialFill(env: NodeJS.ProcessEnv): void {
+    try {
+      execFileSync('git', ['credential', 'fill'], {
+        env: { ...env, GIT_CONFIG_GLOBAL: userGlobal, GIT_TERMINAL_PROMPT: '0' },
+        input: 'protocol=https\nhost=example.com\n\n',
+        stdio: ['pipe', 'ignore', 'ignore'],
+      });
+    } catch {
+      // 无 helper 给出凭据且禁止终端提示 → 失败退出;此处只关心 helper 是否被执行
+    }
+  }
+
+  it('前提:不加防护时会执行全局 credential.helper', () => {
+    credentialFill({ ...process.env, GIT_CONFIG_NOSYSTEM: '1' });
+    expect(existsSync(marker)).toBe(true);
+  });
+
+  it('runGit 的 env:全局 credential.helper 不被执行', async () => {
+    credentialFill(await runGitEnv());
+    expect(existsSync(marker)).toBe(false);
+  });
+});
