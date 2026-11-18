@@ -54,7 +54,7 @@ export const ManifestSchema = z.object({
     .min(1)
     .max(PLUGIN_ID_MAX_LEN)
     .refine(isValidPluginId, {
-      message: 'id 仅允许小写字母数字与 . _ -,且不能为 . 或 ..',
+      message: 'id 仅允许小写字母数字与 . _ -,且须以小写字母或数字开头',
     }),
   name: z.string().min(1).max(NAME_MAX),
   version: z.string().max(VERSION_MAX).regex(SEMVER_RE),

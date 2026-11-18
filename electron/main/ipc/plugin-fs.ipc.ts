@@ -41,6 +41,21 @@ export function cancelScopeRequestsForWebContents(webContentsId: number): number
   return activeCorrelator?.cancelBySender(webContentsId) ?? 0;
 }
 
+// 模块级引用,供插件卸载成功后 revokePluginFsAccess 撤销内存授权(同 activeCorrelator 手法)。
+let activeHandles: PluginFsIpcHandles | null = null;
+
+/**
+ * 插件卸载成功后调用(安全):撤销该 pluginId 在所有窗口的 plugin-fs token 与内存 path-scope,
+ * 并清 hydrated 标记(之后重新从已清空的磁盘水合)。_unregister-plugin 的 revokeAll 受 generation
+ * 守卫(只最新实例才撤),旧 generation 窗口卸载 / 最新实例所在窗口已关时会跳过 → 内存 scope 残留,
+ * 同会话重装同 id 插件经 covers() 静默继承旧目录读写授权。卸载 = 该插件在所有窗口失效,故无条件撤。
+ */
+export function revokePluginFsAccess(pluginId: string): void {
+  if (!activeHandles) return;
+  activeHandles.identityRegistry.revokeByPlugin(pluginId);
+  activeHandles.pathScopeRegistry.revokeAll(pluginId);
+}
+
 export function copyScopesForPersistence(
   scopes: readonly { path: string; mode: 'r' | 'rw' }[],
 ): PathScope[] {
@@ -107,5 +122,6 @@ export function registerPluginFsIpc({
     },
   );
 
-  return { identityRegistry, pathScopeRegistry, correlator };
+  activeHandles = { identityRegistry, pathScopeRegistry, correlator };
+  return activeHandles;
 }

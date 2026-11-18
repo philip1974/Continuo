@@ -26,6 +26,7 @@ import {
   uninstallPlugin,
 } from '../services/plugins.service';
 import { broadcastToWindows } from '../lib/broadcast';
+import { revokePluginFsAccess } from './plugin-fs.ipc';
 import { PERMISSION_KEYS } from '../../shared/permission-keys';
 import { GIT_BRANCH_MAX, isValidGitBranch } from '../../shared/git-branch';
 
@@ -241,6 +242,8 @@ export function registerPluginsIpc(): void {
     UninstallInput,
     async ({ id }) => {
       await uninstallPlugin(pluginsDir, id);
+      // 安全:盘上授权已清,内存 path-scope / token 也必须同步撤(否则同会话重装同 id 静默继承)。
+      revokePluginFsAccess(id);
       // 仅成功后广播(失败时插件仍在盘上,各窗口照常运行)。
       broadcastPluginUninstalled(id);
     },

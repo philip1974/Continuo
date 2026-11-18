@@ -123,6 +123,16 @@ export class IdentityRegistry {
     }
   }
 
+  /**
+   * 插件卸载时调用:该 pluginId 在所有窗口的 token 走与 revoke 相同的 drain(isActive 转 false),
+   * 使挂起中的 scope 授权弹窗即便随后被点「授权」也不会落地复活 scope。
+   */
+  revokeByPlugin(pluginId: string): void {
+    for (const [token, entry] of this.entries) {
+      if (entry.pluginId === pluginId) this.revoke(token);
+    }
+  }
+
   /** Test-only: synchronous GC (skip setTimeout). */
   _gcDrainedNow(): void {
     for (const [token, timer] of this.drainTimers) {

@@ -640,9 +640,11 @@ export function registerPluginFsHandlers(
       if (deps.loadPersistedScopes && !pathScopeRegistry.isHydrated(pluginId)) {
         try {
           const persisted = await deps.loadPersistedScopes(pluginId);
-          pathScopeRegistry.hydrate(pluginId, persisted);
+          // 读盘挂起期间插件可能已卸载(token 撤销 + revokeAll 清内存):此时 persisted 是卸载清盘前
+          // 的旧快照,水合会把旧 scope 写回内存并置 hydrated → 同 id 重装静默继承。token 非 active 不水合。
+          if (identityRegistry.isActive(token)) pathScopeRegistry.hydrate(pluginId, persisted);
         } catch {
-          pathScopeRegistry.hydrate(pluginId, []);
+          if (identityRegistry.isActive(token)) pathScopeRegistry.hydrate(pluginId, []);
         }
       }
 

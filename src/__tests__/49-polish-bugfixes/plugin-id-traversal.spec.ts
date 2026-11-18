@@ -20,9 +20,17 @@ describe('49 · isSafePluginId 拒绝路径穿越 id', () => {
     expect(isSafePluginId('a')).toBe(true);
   });
 
-  it('接受含点但非纯点的 id(非穿越)', () => {
-    expect(isSafePluginId('...')).toBe(true); // join 后是普通子目录,非穿越
+  it('接受中间含点 / 下划线 / 连字符的 id', () => {
     expect(isSafePluginId('a.b')).toBe(true);
+    expect(isSafePluginId('a_b-c.d')).toBe(true);
+    expect(isSafePluginId('0x')).toBe(true);
+  });
+
+  it('拒绝 . / _ / - 开头的 id(plugins 目录元数据与临时目录命名空间,列举逻辑跳过)', () => {
+    for (const id of ['...', '_plugin-path-scopes.json', '_permissions.json', '.victim.old-1', '-x']) {
+      expect(isSafePluginId(id)).toBe(false);
+      expect(isValidPluginId(id)).toBe(false);
+    }
   });
 
   it('拒绝含分隔符 / 大写 / 空白 / 空串', () => {
