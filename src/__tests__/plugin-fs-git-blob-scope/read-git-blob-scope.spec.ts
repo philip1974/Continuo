@@ -153,6 +153,24 @@ describe.skipIf(process.platform === 'win32')('readGitBlob:对象库必须在已
     await expectScopeDenied(readBlob(scope, secretSha));
   });
 
+  // 有 rw scope 的插件可在 scope 内仓库写 refs/replace/<请求的 sha> 指向目标 OID T,并让 objects/<T 前两位>
+  // 成为指向 scope 外对象目录的符号链接(SDK 的 cp 按链接复制,可把工作区里已有的外链搬进去)。扇出校验只覆盖
+  // 被请求 sha 的前两位;git 默认跟随 replace-ref,cat-file 就读到未校验扇出里的 scope 外对象。
+  it('replace-ref 指向经外链扇出可达的 scope 外对象 → 返回原对象,不跟随 replace-ref', async () => {
+    const scope = join(root, 'scope');
+    const ownSha = await initRepoWithBlob(scope, 'own');
+    const targetFanout = secretSha.slice(0, 2);
+    expect(ownSha.slice(0, 2)).not.toBe(targetFanout); // 否则被既有的扇出校验拦下,测不到 replace-ref
+    await symlink(join(victim, '.git', 'objects', targetFanout), join(scope, '.git', 'objects', targetFanout));
+    await mkdir(join(scope, '.git', 'refs', 'replace'), { recursive: true });
+    await writeFile(join(scope, '.git', 'refs', 'replace', ownSha), `${secretSha}\n`);
+    // 前提:裸 git 跟随 replace-ref,读请求的 sha 得到的是 scope 外对象的内容。
+    expect(git(scope, ['cat-file', 'blob', ownSha])).toBe(SECRET);
+
+    scopes.grant(PLUGIN, [{ path: scope, mode: 'r' }]);
+    expect(await readBlobText(scope, ownSha)).toBe('own');
+  });
+
   it('pack 目录里有符号链接 → 拒', async () => {
     const scope = join(root, 'scope');
     const ownSha = await initRepoWithBlob(scope, 'own');

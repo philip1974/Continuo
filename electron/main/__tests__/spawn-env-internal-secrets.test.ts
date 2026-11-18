@@ -78,11 +78,11 @@ describe('插件 / git 子进程 env 剥离 CONTINUO_MCP_TOKEN', () => {
     expect(lastEnv().CONTINUO_MCP_TOKEN).toBeUndefined();
   });
 
-  it('readGitBlob:剥离 token,并带 GIT_OFFLINE_ENV(禁惰性拉取 + 空协议白名单)', async () => {
+  it('readGitBlob:剥离 token,并带 GIT_OFFLINE_ENV(禁惰性拉取 + 空协议白名单 + 不跟随 replace-ref)', async () => {
     await readGitBlob('/ws', '1234567890123456789012345678901234567890').catch(() => undefined);
     const env = lastEnv();
     expect(env.CONTINUO_MCP_TOKEN).toBeUndefined();
-    expect(env).toMatchObject({ GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' });
+    expect(env).toMatchObject({ GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '', GIT_NO_REPLACE_OBJECTS: '1' });
   });
 
   it('插件 git 安装(runGit):剥离 token,且协议白名单只允许 https 与 ssh(用户全局 insteadOf 把 https 改写成 ssh 时仍能安装)', async () => {
