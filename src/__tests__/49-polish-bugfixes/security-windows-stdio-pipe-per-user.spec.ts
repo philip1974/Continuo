@@ -10,6 +10,7 @@
 //   读不到 / 内容不是合法本机 continuo-mcp 管道名 → 报错退出,绝不回落到确定性名。
 // 发现文件残留(崩溃后未走 close):主进程 listen 前先删自己的旧发现文件(listen 失败也不留);proxy 对候选按序
 // 连接,连不上(ENOENT / ECONNREFUSED)试下一个,全部失败才报错退出 —— 过期 packaged 文件不再挡住运行中的 dev。
+// 发现文件内容是两行「管道名 + 主进程 pid」:proxy 只用 pid 仍存活的候选(见文末「发现文件带主进程 pid」)。
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -28,7 +29,9 @@ vi.mock('electron', () => ({
 import {
   createStdioSocketServer,
   createWindowsStdioPipeName,
+  formatStdioPipeDiscovery,
   isValidWindowsStdioPipeName,
+  parseStdioPipeDiscovery,
   STDIO_PIPE_DISCOVERY_FILE,
   type StdioSocketServer,
 } from '../../../electron/main/services/mcp-stdio-server.service';
@@ -39,7 +42,9 @@ const PROXY_SCRIPT = path.join(ROOT, 'scripts/continuo-mcp-stdio.mjs');
 
 interface ProxyDiscovery {
   WINDOWS_PIPE_NAME_RE: RegExp;
-  readWindowsPipeDiscovery: (appDataDir: string) => string[];
+  parseWindowsPipeDiscovery: (raw: string) => { name: string; pid: number } | null;
+  isProcessAlive: (pid: number, probe?: (pid: number) => void) => boolean;
+  readWindowsPipeDiscovery: (appDataDir: string, isAlive?: (pid: number) => boolean) => string[];
   isAcceptableEnvSocket: (value: string, platform: NodeJS.Platform) => boolean;
 }
 
@@ -51,7 +56,7 @@ function loadProxyDiscovery(): ProxyDiscovery {
   return new Function(
     'readFileSync',
     'path',
-    `${m[1]}\nreturn { WINDOWS_PIPE_NAME_RE, readWindowsPipeDiscovery, isAcceptableEnvSocket };`,
+    `${m[1]}\nreturn { WINDOWS_PIPE_NAME_RE, parseWindowsPipeDiscovery, isProcessAlive, readWindowsPipeDiscovery, isAcceptableEnvSocket };`,
   )(nodeFs.readFileSync, path) as ProxyDiscovery;
 }
 
@@ -141,7 +146,7 @@ describe('发现文件', () => {
     return d;
   }
 
-  it('server listen 成功后写入监听名,close 时删除', async () => {
+  it('server listen 成功后写入「监听名 + 本进程 pid」,close 时删除', async () => {
     const dir = await tmp();
     const socketPath = path.join(dir, 's.sock');
     const discoveryFile = path.join(dir, STDIO_PIPE_DISCOVERY_FILE);
@@ -152,7 +157,8 @@ describe('发现文件', () => {
       serverInfo: { name: 't', version: '0', protocolVersion: '2024-11-05' },
       resolveWindowId: () => null,
     });
-    expect(await readFile(discoveryFile, 'utf8')).toBe(socketPath);
+    expect(await readFile(discoveryFile, 'utf8')).toBe(`${socketPath}\n${process.pid}\n`);
+    expect(await readFile(discoveryFile, 'utf8')).toBe(formatStdioPipeDiscovery(socketPath, process.pid));
     await server.close();
     expect(nodeFs.existsSync(discoveryFile)).toBe(false);
   });
@@ -177,8 +183,9 @@ describe('发现文件', () => {
     expect(src).toContain(`'${STDIO_PIPE_DISCOVERY_FILE}'`);
   });
 
-  it('proxy 按 Continuo → Continuo Dev 顺序读,跳过非法内容,都没有返回 null', async () => {
-    const { readWindowsPipeDiscovery } = loadProxyDiscovery();
+  it('proxy 按 Continuo → Continuo Dev 顺序读,跳过非法内容,都没有返回空', async () => {
+    const proxy = loadProxyDiscovery();
+    const readWindowsPipeDiscovery = (dir: string) => proxy.readWindowsPipeDiscovery(dir, () => true);
     const appData = await tmp();
     const packagedName = createWindowsStdioPipeName(alice);
     const devName = createWindowsStdioPipeName(alice);
@@ -189,15 +196,15 @@ describe('发现文件', () => {
 
     expect(readWindowsPipeDiscovery(appData)).toEqual([]);
 
-    await put('Continuo Dev', `${devName}\n`);
+    await put('Continuo Dev', formatStdioPipeDiscovery(devName, 4321));
     expect(readWindowsPipeDiscovery(appData)).toEqual([devName]);
 
     // 两个都在:packaged 在前,dev 作为连接失败时的后备候选
-    await put('Continuo', packagedName);
+    await put('Continuo', formatStdioPipeDiscovery(packagedName, 1234));
     expect(readWindowsPipeDiscovery(appData)).toEqual([packagedName, devName]);
 
     // packaged 发现文件被写成别的路径 → 不用,只剩 dev
-    await put('Continuo', '\\\\attacker-host\\pipe\\continuo-mcp-abcd');
+    await put('Continuo', formatStdioPipeDiscovery('\\\\attacker-host\\pipe\\continuo-mcp-abcd', 1234));
     expect(readWindowsPipeDiscovery(appData)).toEqual([devName]);
 
     await put('Continuo Dev', 'C:\\evil');
@@ -364,5 +371,142 @@ describe('发现文件残留', () => {
     expect(src).toMatch(
       /const envSocket = process\.env\.CONTINUO_MCP_SOCKET;\s*if \(envSocket\) \{[\s\S]*?return \[trusted\.path\];\s*\}/, // Windows 上 trusted.path 即 envSocket 原值;POSIX 上是 realpath 结果
     );
+  });
+});
+
+// ── 发现文件带主进程 pid ──
+// 攻击场景(仅 Windows):Continuo 崩溃 / 被强杀后发现文件残留(下次启动才删),其中的管道名可被同机其它用户在
+// \\.\pipe\ 下枚举并抢注。受害者在重启 Continuo 之前从 Continuo 终端外启动的 Claude Code 经 proxy 读到过期名并
+// 连过去 → 对方可伪造 tools/list 与工具结果(不泄 token:外部 proxy 不发 hello)。
+// 修复:发现文件内容为两行「管道名 \n 主进程 pid \n」;proxy 校验格式后以 0 信号探测该 pid,不存活 → 跳过该候选。
+// 旧格式(只有管道名一行)没有 pid → 跳过(fail-closed;Continuo 与 proxy 脚本同版本发布)。
+// 残余:崩溃后该 pid 被系统复用给别的进程时,proxy 仍会认为存活(见 proxy 脚本注释)。
+describe('发现文件带主进程 pid', () => {
+  const dirs: string[] = [];
+  afterEach(async () => {
+    await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  });
+
+  const name = createWindowsStdioPipeName(alice);
+  const DISCOVERY_SAMPLES = [
+    formatStdioPipeDiscovery(name, 1),
+    formatStdioPipeDiscovery(name, 4321),
+    formatStdioPipeDiscovery(name, 4294967295),
+    `${name}\n4321`, // 末尾换行可缺
+    name, // 旧格式:只有管道名
+    `${name}\n`,
+    `${name}\n\n`,
+    `${name}\n0\n`,
+    `${name}\n-1\n`,
+    `${name}\n012\n`,
+    `${name}\n12a\n`,
+    `${name}\n1.5\n`,
+    `${name}\n 12\n`,
+    `${name}\n12345678901\n`, // 超过 10 位
+    `${name}\r\n4321\r\n`,
+    `${name}\n4321\nextra\n`,
+    `${name}\n4321\n\n`,
+    `\n${name}\n4321\n`,
+    ` ${name}\n4321\n`,
+    '',
+    '\n',
+    '4321\n',
+    ...INVALID_NAMES.map((bad) => `${bad}\n4321\n`),
+  ];
+
+  it('主进程写入的格式:管道名 + pid 两行,解析还原;旧格式 / 畸形内容 → null', () => {
+    expect(formatStdioPipeDiscovery(name, 4321)).toBe(`${name}\n4321\n`);
+    expect(parseStdioPipeDiscovery(formatStdioPipeDiscovery(name, 4321))).toEqual({ name, pid: 4321 });
+    expect(parseStdioPipeDiscovery(`${name}\n4321`)).toEqual({ name, pid: 4321 });
+    expect(parseStdioPipeDiscovery(name)).toBeNull();
+    expect(parseStdioPipeDiscovery(`${name}\n0\n`)).toBeNull();
+    expect(parseStdioPipeDiscovery(`${name}\n4321\nextra\n`)).toBeNull();
+    expect(DISCOVERY_SAMPLES.filter((raw) => parseStdioPipeDiscovery(raw) !== null)).toHaveLength(4);
+  });
+
+  it('proxy 脚本与主进程对发现文件内容的解析逐项一致', () => {
+    const { parseWindowsPipeDiscovery } = loadProxyDiscovery();
+    for (const raw of DISCOVERY_SAMPLES) {
+      expect(parseWindowsPipeDiscovery(raw), JSON.stringify(raw)).toEqual(parseStdioPipeDiscovery(raw));
+    }
+  });
+
+  it('proxy:pid 不存活的候选跳过(崩溃残留),存活的保留;旧格式无 pid → 跳过且不探测', async () => {
+    const { readWindowsPipeDiscovery } = loadProxyDiscovery();
+    const appData = await mkdtemp(path.join(tmpdir(), 'pipe-pid-'));
+    dirs.push(appData);
+    const packagedName = createWindowsStdioPipeName(alice);
+    const devName = createWindowsStdioPipeName(alice);
+    const put = async (app: string, content: string) => {
+      await mkdir(path.join(appData, app), { recursive: true });
+      await writeFile(path.join(appData, app, STDIO_PIPE_DISCOVERY_FILE), content);
+    };
+    await put('Continuo', formatStdioPipeDiscovery(packagedName, 1111)); // 已崩溃
+    await put('Continuo Dev', formatStdioPipeDiscovery(devName, 2222)); // 运行中
+    const probed: number[] = [];
+    const isAlive = (pid: number) => {
+      probed.push(pid);
+      return pid === 2222;
+    };
+    expect(readWindowsPipeDiscovery(appData, isAlive)).toEqual([devName]);
+    expect(probed).toEqual([1111, 2222]);
+    expect(readWindowsPipeDiscovery(appData, () => false)).toEqual([]);
+    expect(readWindowsPipeDiscovery(appData, () => true)).toEqual([packagedName, devName]);
+
+    // 旧格式(升级前的 Continuo 崩溃残留):没有 pid 可验 → 不用
+    probed.length = 0;
+    await put('Continuo', packagedName);
+    await put('Continuo Dev', `${devName}\n`);
+    expect(readWindowsPipeDiscovery(appData, isAlive)).toEqual([]);
+    expect(probed).toEqual([]);
+  });
+
+  it('proxy:进程存活探测 —— 0 信号成功 / EPERM 视为存活,ESRCH 等其它错误视为不存活', () => {
+    const { isProcessAlive } = loadProxyDiscovery();
+    const probed: number[] = [];
+    expect(isProcessAlive(42, (pid) => void probed.push(pid))).toBe(true);
+    expect(probed).toEqual([42]);
+    const fail = (code: string) => () => {
+      throw Object.assign(new Error(code), { code });
+    };
+    expect(isProcessAlive(42, fail('EPERM'))).toBe(true);
+    expect(isProcessAlive(42, fail('ESRCH'))).toBe(false);
+    expect(isProcessAlive(42, fail('EINVAL'))).toBe(false);
+    expect(isProcessAlive(42, () => { throw new TypeError('bad pid'); })).toBe(false);
+  });
+
+  it('proxy:默认探测用真实 process.kill(pid, 0) —— 本进程存活,已退出的子进程不存活', () => {
+    const { isProcessAlive, readWindowsPipeDiscovery } = loadProxyDiscovery();
+    expect(isProcessAlive(process.pid)).toBe(true);
+    const exited = spawnSync(process.execPath, ['-e', '']);
+    expect(exited.status).toBe(0);
+    expect(isProcessAlive(exited.pid)).toBe(false);
+    // 默认参数接的就是它(不注入 isAlive 时)
+    const dir = nodeFs.mkdtempSync(path.join(tmpdir(), 'pipe-pid-'));
+    dirs.push(dir);
+    nodeFs.mkdirSync(path.join(dir, 'Continuo'));
+    nodeFs.mkdirSync(path.join(dir, 'Continuo Dev'));
+    nodeFs.writeFileSync(path.join(dir, 'Continuo', STDIO_PIPE_DISCOVERY_FILE), formatStdioPipeDiscovery(name, exited.pid));
+    const live = createWindowsStdioPipeName(alice);
+    nodeFs.writeFileSync(path.join(dir, 'Continuo Dev', STDIO_PIPE_DISCOVERY_FILE), formatStdioPipeDiscovery(live, process.pid));
+    expect(readWindowsPipeDiscovery(dir)).toEqual([live]);
+  });
+
+  it('close 只删自己写的发现文件(内容 = 自己的名字 + pid);pid 不同视为后来者,不删', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'pipe-pid-'));
+    dirs.push(dir);
+    const socketPath = path.join(dir, 's.sock');
+    const discoveryFile = path.join(dir, STDIO_PIPE_DISCOVERY_FILE);
+    const server = await createStdioSocketServer({
+      socketPath,
+      discoveryFile,
+      tools: new Map(),
+      serverInfo: { name: 't', version: '0', protocolVersion: '2024-11-05' },
+      resolveWindowId: () => null,
+    });
+    const other = formatStdioPipeDiscovery(socketPath, process.pid + 1);
+    await writeFile(discoveryFile, other);
+    await server.close();
+    expect(await readFile(discoveryFile, 'utf8')).toBe(other);
   });
 });
