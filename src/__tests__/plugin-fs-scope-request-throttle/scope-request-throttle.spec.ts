@@ -241,11 +241,50 @@ describe('插件级连续被拒退避', () => {
     expect((await request('p', [join(root, 'z')], 'grant')).prompted).toBe(true);
   });
 
-  it('用户授予一次 → 连续被拒计数清零', async () => {
+  it('用户授予一次 → 连续被拒计数只减 1,不清零', async () => {
     await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'x');
     expect((await request('p', [join(root, 'ok')], 'grant')).result).toBe('grant');
-    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'y');
+    await denyDistinct(1, 'y');
     expect((await request('p', [join(root, 'still')], 'grant')).prompted).toBe(true);
+  });
+
+  it('「拒、拒、(骗一次无害小目录的)允、拒、拒」→ 照样进入插件级退避(授予不能把计数洗白)', async () => {
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK - 1, 'x');
+    expect((await request('p', [join(root, 'harmless')], 'grant')).result).toBe('grant');
+    await denyDistinct(2, 'y'); // 计数:2 → 1(授予)→ 3
+    expect(await request('p', [join(root, 'fresh')], 'grant')).toEqual({ result: 'deny', prompted: false });
+    // 一直这样交替也到不了「永远不退避」:每轮净增 1。
+    vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_BASE_MS);
+    expect((await request('p', [join(root, 'harmless2')], 'grant')).result).toBe('grant');
+    await denyDistinct(1, 'z');
+    expect(await request('p', [join(root, 'fresh')], 'grant')).toEqual({ result: 'deny', prompted: false });
+  });
+
+  it('计数不低于 0:先攒几次授予不能预支之后的拒绝额度', async () => {
+    await denyDistinct(1, 'w');
+    for (let i = 0; i < 3; i += 1) {
+      expect((await request('p', [join(root, `ok${i}`)], 'grant')).result).toBe('grant');
+    }
+    await denyDistinct(SCOPE_PLUGIN_DENY_STREAK, 'x');
+    expect(await request('p', [join(root, 'fresh')], 'grant')).toEqual({ result: 'deny', prompted: false });
+  });
+
+  it('授予不提前解除已生效的插件级退避', () => {
+    const throttle = new ScopeRequestThrottle();
+    for (let i = 0; i < SCOPE_PLUGIN_DENY_STREAK; i += 1) throttle.noteDecision('p', [`/d${i}`], 'deny', 0);
+    expect(throttle.tryPrompt('p', ['/fresh'], 1)).toBe(false);
+    throttle.noteDecision('p', ['/ok'], 'grant', 1);
+    expect(throttle.tryPrompt('p', ['/fresh'], SCOPE_DENY_COOLDOWN_BASE_MS - 1)).toBe(false);
+    expect(throttle.tryPrompt('p', ['/fresh'], SCOPE_DENY_COOLDOWN_BASE_MS)).toBe(true);
+  });
+
+  it('别的路径被授予 → 不清除被拒路径自身的冷却', async () => {
+    const denied = join(root, 'a');
+    expect((await request('p', [denied], 'deny')).prompted).toBe(true);
+    expect((await request('p', [join(root, 'b')], 'grant')).result).toBe('grant');
+    expect(await request('p', [denied], 'grant')).toEqual({ result: 'deny', prompted: false });
+    vi.advanceTimersByTime(SCOPE_DENY_COOLDOWN_BASE_MS);
+    expect((await request('p', [denied], 'grant')).prompted).toBe(true);
   });
 
   it('距上次被拒超过 SCOPE_DENY_FORGET_MS → 计数清零', async () => {
