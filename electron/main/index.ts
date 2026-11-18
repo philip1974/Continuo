@@ -3,6 +3,7 @@ import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-po
 import { setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { installPermissionHandlers } from './lib/permission-policy';
 import { installFileRequestGuard } from './lib/file-request-policy';
+import { showOpenDialogRemembering } from './lib/open-dialog';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -756,7 +757,7 @@ async function openWorkspaceWindow(workspace?: string): Promise<void> {
 }
 
 async function openFolderInNewWindow(): Promise<void> {
-  const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  const r = await showOpenDialogRemembering({ properties: ['openDirectory'] });
   if (r.canceled || r.filePaths.length === 0) return;
   await openWorkspaceWindow(r.filePaths[0]!);
 }
