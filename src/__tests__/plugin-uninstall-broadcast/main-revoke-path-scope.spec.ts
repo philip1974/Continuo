@@ -48,6 +48,8 @@ import { ScopeRequestCorrelator } from '../../../electron/main/services/scope-re
 import { registerPluginFsHandlers } from '../../../electron/main/services/plugin-fs.service';
 import { StubIpcMain, makeFakeEvent } from '../sdk-contract/integration/make-stub-ipc';
 
+import { setTrustedDevOrigin } from '../../../electron/main/safe-handle';
+
 const RENDERER_URL = 'http://localhost:5173';
 const TRUSTED = { senderFrame: { url: `${RENDERER_URL}/` } };
 const ID = 'com.x.p';
@@ -60,12 +62,11 @@ function uninstall(id: string): Promise<unknown> {
   return fn(TRUSTED, { id });
 }
 
-const savedEnv = process.env['ELECTRON_RENDERER_URL'];
 let uninstallImpl: ReturnType<typeof vi.fn>;
 let fsHandles: ReturnType<typeof registerPluginFsIpc>;
 
 beforeEach(() => {
-  process.env['ELECTRON_RENDERER_URL'] = RENDERER_URL;
+  setTrustedDevOrigin(RENDERER_URL);
   h.handlers.clear();
   uninstallImpl = vi.fn().mockResolvedValue(undefined);
   h.uninstallPlugin.current = uninstallImpl as unknown as (...args: unknown[]) => Promise<void>;
@@ -74,8 +75,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (savedEnv === undefined) delete process.env['ELECTRON_RENDERER_URL'];
-  else process.env['ELECTRON_RENDERER_URL'] = savedEnv;
+  setTrustedDevOrigin(null);
 });
 
 describe('main:卸载成功后撤销该插件的内存 path-scope 与 plugin-fs token', () => {

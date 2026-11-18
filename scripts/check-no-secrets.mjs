@@ -9,7 +9,8 @@
 //   (体积大且随机字节会误中 AKIA 规则,也不可能含本仓凭据),不扫;
 //   一个 app.asar 都没找到 → 视为扫描失败(退出码 2)。
 // - 命中时删除 --packaged 目录顶层本次构建的分发产物(dmg / zip / blockmap / exe 等安装包、
-//   SHA256SUMS*、latest*.yml;以 mtime 不早于 app.asar 判定为本次产物),防止手动
+//   SHA256SUMS*、latest*.yml;以 mtime 不早于「有命中的资源目录」的 app.asar 判定为本次产物;
+//   输出目录里残留的旧构建解包目录不参与定界,否则会删到历史版本安装包),防止手动
 //   gh release create 照样上传。选删除而非改名:改名后的文件仍可能被 dist-electron/* 通配上传;
 //   保留解包的 .app / app.asar 以便按输出的偏移定位来源;不动历史版本的产物。
 // - app.asar 是未压缩归档,直接对文件做二进制匹配即可覆盖其内容。
@@ -26,7 +27,13 @@ export const SECRET_RULES = [
   { name: 'aws-access-key-id', re: /AKIA[0-9A-Z]{16}/g },
   { name: 'private-key', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g },
   { name: 'npm-token', re: /npm_[A-Za-z0-9]{36}/g },
-  { name: 'openai-style-key', re: /sk-[A-Za-z0-9]{20,}/g },
+  // sk- 密钥:旧形态主体只有字母数字;带前缀的形态(OpenAI sk-proj- / sk-svcacct- / sk-admin-,
+  // Anthropic sk-ant-api03- 等)主体还含 - 与 _。放宽字符集只限于已知前缀之后,且要求 sk- 前
+  // 不是字母数字:否则 task-list-item-… 这类连字符类名会大量误报。
+  {
+    name: 'openai-style-key',
+    re: /sk-[A-Za-z0-9]{20,}|(?<![A-Za-z0-9])sk-(?:(?:proj|svcacct|admin)-|ant-[a-z0-9]+-)[A-Za-z0-9_-]{20,}/g,
+  },
   { name: 'slack-token', re: /xox[baprs]-[A-Za-z0-9-]{10,}/g },
 ];
 
@@ -159,13 +166,19 @@ export async function scanPaths(targets, packaged = []) {
       missing.push(path.join(dir, '**', 'app.asar'));
       continue;
     }
-    // 本次构建的起点:最早的 app.asar 写入时间(安装包在其后生成)。
-    let since = Infinity;
+    // 泄露构建的起点:有命中的资源目录里最早的 app.asar 写入时间(安装包在其后生成;多架构
+    // 同时命中取最早)。没命中的资源目录可能是旧构建残留,不参与定界。命中只出现在位置参数
+    // 目录(out-pack 等)时,以最新 app.asar 为本次构建的起点。
+    let hitSince = Infinity;
+    let latest = -Infinity;
     for (const r of resourceDirs) {
-      since = Math.min(since, (await fs.stat(path.join(r, 'app.asar'))).mtimeMs);
+      const { mtimeMs } = await fs.stat(path.join(r, 'app.asar'));
+      const before = findings.length;
       await walk(r, findings, stats);
+      if (findings.length > before) hitSince = Math.min(hitSince, mtimeMs);
+      latest = Math.max(latest, mtimeMs);
     }
-    builds.push({ dir, since });
+    builds.push({ dir, since: hitSince === Infinity ? latest : hitSince });
   }
   return { findings, missing, files: stats.files, builds };
 }

@@ -16,6 +16,11 @@ const FAKE = {
   key: '-----BEGIN ' + 'RSA PRIVATE KEY-----',
   npm: 'np' + 'm_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8',
   openai: 's' + 'k-' + 'A1b2C3d4E5f6G7h8I9j0K1l2',
+  // 带前缀的新形态:前缀后的主体含 - 与 _。
+  openaiProject: 's' + 'k-' + 'proj-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
+  openaiServiceAccount: 's' + 'k-' + 'svcacct-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
+  openaiAdmin: 's' + 'k-' + 'admin-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
+  anthropic: 's' + 'k-' + 'ant-api03-' + 'A1b2_C3d4-E5f6G7h8I9j0K1l2',
   slack: 'xo' + 'xb-' + '1234567890-abcdefGHIJ',
 };
 
@@ -46,6 +51,14 @@ describe('check-no-secrets:构建产物机密扫描', () => {
     expect(r.code).toBe(1);
     expect(r.out).toContain(`${file}:${'var x = 1;\nconst t = "'.length}`);
     expect(r.out).not.toContain(value);
+  });
+
+  it('连字符分隔的普通标识符(CSS 类名 / 事件名里的 …sk-…)不误报', () => {
+    writeFileSync(
+      join(dir, 'index.css'),
+      '.task-list-item-checkbox-wrapper{} .mask-image-linear-gradient-from{} "risk-proj-assessment-summary-view"',
+    );
+    expect(run(dir).code).toBe(0);
   });
 
   it('二进制 app.asar(未压缩归档)内的 token 也能扫到;--packaged 只扫 app.asar 不扫框架二进制', () => {
@@ -97,6 +110,49 @@ describe('check-no-secrets:构建产物机密扫描', () => {
     for (const f of fresh) expect(existsSync(join(dir, f)), f).toBe(false);
     expect(existsSync(old)).toBe(true);
     expect(existsSync(asar)).toBe(true);
+  });
+
+  // dist-electron 留有旧构建的解包目录(如早先另一架构的 mac/)时,删除范围不得以它的 app.asar 为起点。
+  describe('输出目录里同时有旧构建的解包目录与旧安装包', () => {
+    const DAY = 86400;
+    let newAsar: string;
+    let oldInstaller: string;
+    let newInstaller: string;
+    beforeEach(() => {
+      const t = Date.now() / 1000;
+      const oldRes = join(dir, 'mac', 'Continuo.app', 'Contents', 'Resources');
+      const newRes = join(dir, 'mac-arm64', 'Continuo.app', 'Contents', 'Resources');
+      mkdirSync(oldRes, { recursive: true });
+      mkdirSync(newRes, { recursive: true });
+      writeFileSync(join(oldRes, 'app.asar'), 'clean');
+      utimesSync(join(oldRes, 'app.asar'), t - 10 * DAY, t - 10 * DAY);
+      oldInstaller = join(dir, 'Continuo-0.0.1.dmg');
+      writeFileSync(oldInstaller, 'x');
+      utimesSync(oldInstaller, t - 5 * DAY, t - 5 * DAY);
+      newAsar = join(newRes, 'app.asar');
+      writeFileSync(newAsar, 'clean');
+      utimesSync(newAsar, t - 60, t - 60);
+      newInstaller = join(dir, 'Continuo-9.9.9-arm64.dmg');
+      writeFileSync(newInstaller, 'x');
+    });
+
+    it('命中在新解包目录 → 只删其 app.asar 之后生成的安装包,历史版本安装包保留', () => {
+      const t = Date.now() / 1000;
+      writeFileSync(newAsar, FAKE.github);
+      utimesSync(newAsar, t - 60, t - 60);
+      expect(run('--packaged', dir).code).toBe(1);
+      expect(existsSync(newInstaller)).toBe(false);
+      expect(existsSync(oldInstaller)).toBe(true);
+    });
+
+    it('命中只在位置参数目录(out-pack)→ 按最新 app.asar 删本次安装包,历史版本安装包保留', () => {
+      const outPack = join(dir, 'out-pack');
+      mkdirSync(outPack);
+      writeFileSync(join(outPack, 'main.js'), FAKE.github);
+      expect(run(outPack, '--packaged', dir).code).toBe(1);
+      expect(existsSync(newInstaller)).toBe(false);
+      expect(existsSync(oldInstaller)).toBe(true);
+    });
   });
 
   it('未命中时不删除任何产物', () => {

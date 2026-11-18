@@ -138,15 +138,60 @@ describe('check-sibling-ref:node_modules 里的 file: 依赖副本须等于固�
     expect(r.out).toContain('src/extra.ts');
   });
 
+  // 场景:skip-worktree / assume-unchanged 让 git status 对已修改的跟踪文件保持沉默;此时 pnpm install,
+  // status 为空、HEAD 等于固定 SHA、副本与工作区一致,未提交代码却进了安装包。
+  it.each([['--skip-worktree'], ['--assume-unchanged']])(
+    'sibling 用 update-index %s 隐藏改动后 install → 中止',
+    (flag) => {
+      git(sibling, 'update-index', flag, 'packages/pkg/src/index.ts');
+      writeFileSync(join(pkgSrc(), 'src', 'index.ts'), 'export const v = "evil";\n');
+      install();
+      expect(git(sibling, 'status', '--porcelain')).toBe('');
+      const r = run();
+      expect(r.code).toBe(1);
+      expect(r.out).toContain('packages/pkg/src/index.ts');
+    },
+  );
+
+  // 场景:本地 clean filter 把工作区的改动还原(须等长,否则 status 按大小直接判为已修改),
+  // git status 同样为空、ls-files 标记也正常。
+  // 期望内容取自固定 SHA 的 git 对象而非工作区文件,才能发现副本被改。
+  it('sibling 工作区内容经本地 clean filter 伪装成干净 → 仍按固定 SHA 的 git 对象比对,中止', () => {
+    git(sibling, 'config', 'filter.hide.clean', 'tr 9 1');
+    writeFileSync(join(sibling, '.git', 'info', 'attributes'), '*.ts filter=hide\n');
+    writeFileSync(join(pkgSrc(), 'src', 'index.ts'), 'export const v = 9;\n');
+    install();
+    expect(git(sibling, 'status', '--porcelain')).toBe('');
+    const r = run();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('src/index.ts');
+    expect(r.out).toContain('pnpm install');
+  });
+
   it('已安装副本缺失 → 中止', () => {
     rmSync(installed(), { recursive: true, force: true });
     expect(run().code).toBe(1);
   });
 
-  it('副本内嵌套的 node_modules(pnpm 放置的依赖链接)不参与比对 → 通过', () => {
-    mkdirSync(join(installed(), 'node_modules', 'zod'), { recursive: true });
-    writeFileSync(join(installed(), 'node_modules', 'zod', 'index.js'), 'x');
+  // 真实 pnpm 安装:依赖放在副本同级(.pnpm/<pkg>/node_modules/),副本自身顶层 node_modules 只有 .bin。
+  it('副本顶层 node_modules 只含 pnpm 生成的 .bin → 通过', () => {
+    mkdirSync(join(installed(), 'node_modules', '.bin'), { recursive: true });
+    writeFileSync(join(installed(), 'node_modules', '.bin', 'tsx'), '#!/bin/sh\n');
     expect(run().code).toBe(0);
+  });
+
+  // 场景:副本内放一个 node_modules/zod,从副本 src/ 出发的模块解析优先命中它,劫持真实依赖。
+  it.each([
+    ['顶层 node_modules 里除 .bin 外还有包', ['node_modules', 'zod']],
+    ['更深层目录里的 node_modules', ['src', 'node_modules', 'zod']],
+    ['深层 node_modules 即便只含 .bin', ['src', 'node_modules', '.bin']],
+  ])('副本内 %s → 中止', (_n, segs) => {
+    mkdirSync(join(installed(), ...segs), { recursive: true });
+    writeFileSync(join(installed(), ...segs, 'index.js'), 'x');
+    const r = run();
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('node_modules');
+    expect(r.out).toContain('pnpm install');
   });
 
   it('package.json 里一个指向 sibling 的 file: 依赖都找不到 → 中止(fail-closed)', () => {

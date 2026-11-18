@@ -114,6 +114,7 @@ import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
   defaultIsTrustedFrame,
   isTrustedRendererFileUrl,
+  setTrustedDevOrigin,
   setTrustedRendererFile,
 } from './safe-handle';
 import {
@@ -1287,6 +1288,11 @@ app.whenReady().then(async () => {
   // 与 windowOpenHandler 只信这个 file URL,拒绝任意 file:// 弹窗/frame 受信。放在
   // whenReady(而非模块顶层)以免被仅 import index 的单测污染全局注册态。
   setTrustedRendererFile(RENDERER_FILE);
+  // dev server origin 同样在此注入,且以 isDev 为闸:打包版即使环境里带着 ELECTRON_RENDERER_URL
+  // 也不信该 origin(与 isOwnRendererUrl / createMainWindow 的 dev 判定一致)。
+  setTrustedDevOrigin(
+    isDev ? (parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL'])?.origin ?? null) : null,
+  );
   // 安全:Chromium 权限默认拒绝,仅受信 renderer 入口的剪贴板读写放行(见 permission-policy)。
   // 须在建任何窗口之前注册,否则首窗加载期的权限请求走 Electron 默认放行。
   installPermissionHandlers(session.defaultSession);
