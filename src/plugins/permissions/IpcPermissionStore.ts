@@ -24,6 +24,7 @@ import {
 } from '../../../electron/shared/permission-record';
 import { codedError } from '../../../electron/shared/error-message';
 import { ownValue } from '../../../electron/shared/own-value';
+import { isValidPluginId } from '../plugin-id';
 
 export interface PermissionRecord {
   readonly decisions: PermissionDecision[];
@@ -119,6 +120,9 @@ export function parsePermissionState(raw: unknown): PermissionState {
   let keyCount = 0;
   for (const pluginId in raw) {
     if (!Object.prototype.hasOwnProperty.call(raw, pluginId)) continue;
+    // 安全:key 来自磁盘 JSON,非法 id(如 `__proto__`,首字符 `_`)写入 `out[pluginId]` 会改写结果对象原型。
+    // 与主进程 readPermissions 读端同规则:非法 id 跳过且不计数。
+    if (!isValidPluginId(pluginId)) continue;
     if (keyCount >= MAX_PERMISSION_PLUGIN_KEYS) break;
     keyCount += 1;
     const record: unknown = (raw as Record<string, unknown>)[pluginId];
