@@ -970,6 +970,7 @@
 
 ## [plugin-fs-scope-request-throttle(scope 授权请求被拒后有冷却,不能循环弹窗诱导误点)](./plugin-fs-scope-request-throttle/README.md)
 
+- [`scope-request-fanout-bounds.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-fanout-bounds.spec.ts)
 - [`scope-request-throttle.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-throttle.spec.ts)
 
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/README.md)

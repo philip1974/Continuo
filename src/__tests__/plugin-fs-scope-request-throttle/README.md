@@ -35,7 +35,24 @@
   renderer 不再回传决定(见 `plugin-fs-scope-bridge/scope-request-cancelled.spec.ts`)。
 - 已被现有授权覆盖的请求照旧静默 `grant`,不计入速率、不受冷却影响。
 - 记录只在主进程内存里(重启应用即清空),数量有上限。
+- **开销有界**(`scope-request-fanout-bounds.spec.ts`)。路径是插件给的,可以「很短的段 × 很多级」(8190 字符
+  ≈ 4080 级);冷却键要逐级 stat 取文件身份。此前全量并发、缺失的各级逐级拼接余下各段(键长是层级数的平方),
+  且在任何节流判定之前 —— 实测一次请求 64 条这样的路径,主进程事件循环卡死 10s、RSS +2.8GB,5 次并发堆耗尽。
+  - 入口:scope 路径最多 64 级(`MAX_SCOPE_PATH_DEPTH`,`validateScopesShape`,renderer 发 IPC 前与主进程同一
+    校验),超出 → `BAD_INPUT`,不归一化、不算键、不弹窗。
+  - 算键:层级数超过 128(canonical 化后可能比请求写法深)的路径不 stat,只按路径字符串记;各路径共有的上级只
+    stat 一次;同时在途的 stat 最多 16 个;缺失的各级各记一个定长的链式摘要(键长与层级数成线性);单个键有字符数
+    上限,超出退回纯路径键。每插件记住的被拒键数上限不变(64)。
+  - 顺序:未决数到顶、该插件已有未决弹窗 / 在退避期 / 弹窗超速的请求先被拒,不算键(不触发 stat)。
+  - plugin-fs 各操作(readFile / writeFile / listDir / stat / lstat / realpath / mkdir / rename / rm / cp /
+    atomicReplace / readGitBlob / checkPath)的 target 最多 256 级(`FS_PATH_MAX_DEPTH`),超出与超长一样按
+    `invalid target path` 拒绝,不进 scope 校验里按层级逐级处理的部分。
 
 ## 残余
+
+- 层级数超过 128 的 canonical 路径只按字符串记冷却,不带文件身份(别名换写法可避开**单路径**冷却;插件级连续
+  被拒退避与速率上限仍然生效)。真实目录到不了这个深度。
+- 处于单路径冷却(而非插件级退避 / 超速 / 单飞)的重复请求仍要先算键才能判定(每次 ≤ 64 条 × 129 级的 stat,
+  有界并发);这与每次请求都要做的路径归一化同一量级。
 
 - 插件可轮换请求不同的目录,在连续被拒 3 次进入退避之前继续弹窗(之后每个退避期最多 1 个)。

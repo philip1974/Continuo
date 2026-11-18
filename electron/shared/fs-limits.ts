@@ -8,6 +8,32 @@
 export const MAX_WRITE_BYTES = 64 * 1024 * 1024; // 64 MiB:fs 写入内容上限
 export const FS_PATH_MAX = 8192; // 路径字符串上限(与 fs.ipc fsPath / plugin-fs scope path 一致)
 
+// 安全:路径**层级数**上限。长度上限(8192)挡不住「很短的段 × 很多级」:`/a/a/a/…` 可以有 4000 多级,而主进程里
+// 凡是「按层级逐级处理」的代码(逐级 stat 取文件身份、逐级找最近的已存在上级、逐级拼前缀)对它都是线性甚至二次方
+// 的开销 —— 实测一次 requestScope 传 64 条这样的路径,主进程事件循环卡死 10s、RSS +2.8GB。真实路径到不了这个深度
+//(macOS PATH_MAX 1024、Linux 4096;嵌套很深的 node_modules 也就几十级),超出即按畸形输入拒绝。
+/** plugin-fs 各操作的 target 路径层级上限。 */
+export const FS_PATH_MAX_DEPTH = 256;
+/** request-scope 的 scope 路径层级上限(授权的是目录,更浅;同时限定「scope 数 × 层级」的扇出)。 */
+export const MAX_SCOPE_PATH_DEPTH = 64;
+
+/** 路径的非空段数是否超过 max(`/` 与 `\` 都算分隔符;O(长度),超过即返回,不分配)。 */
+export function pathDepthExceeds(path: string, max: number): boolean {
+  let depth = 0;
+  let inSegment = false;
+  for (let i = 0; i < path.length; i += 1) {
+    const code = path.charCodeAt(i);
+    if (code === 47 || code === 92) {
+      inSegment = false;
+    } else if (!inSegment) {
+      inSegment = true;
+      depth += 1;
+      if (depth > max) return true;
+    }
+  }
+  return false;
+}
+
 // 边界(E63 / E314 renderer 对偶):git blob sha 是插件直传 IPC 入 git cat-file argv。固定 hex 形态 +
 // 长度(完整 SHA-1 = 40 / SHA-256 = 64 位 hex),挡超长 sha 触发 spawn E2BIG / argv 放大。不接受缩写:
 // git 对唯一前缀直接返回内容,4 位起即可枚举对象库。
@@ -40,7 +66,7 @@ export const MAX_SCOPE_REQUEST_COUNT = 64; // 单次 request-scope 的 scopes �
 
 /**
  * 校验 request-scope 的 scopes 数组形态(数组 + 数量 ≤ MAX_SCOPE_REQUEST_COUNT + 每项
- * {path: 非空 string ≤ FS_PATH_MAX, mode: 'r'|'rw'})。合法返 null,否则返错误消息(由调用方按各自
+ * {path: 非空 string ≤ FS_PATH_MAX 且层级 ≤ MAX_SCOPE_PATH_DEPTH, mode: 'r'|'rw'})。合法返 null,否则返错误消息(由调用方按各自
  * 错误类型抛出:main 用 fsError,renderer 用 Error+code)。
  */
 export function validateScopesShape(scopes: unknown): string | null {
@@ -58,6 +84,9 @@ export function validateScopesShape(scopes: unknown): string | null {
       (sc.mode !== 'r' && sc.mode !== 'rw')
     ) {
       return `invalid scope entry: path must be non-empty ≤${FS_PATH_MAX} chars, mode ∈ {r,rw}`;
+    }
+    if (pathDepthExceeds(sc.path, MAX_SCOPE_PATH_DEPTH)) {
+      return `invalid scope entry: path must be at most ${MAX_SCOPE_PATH_DEPTH} levels deep`;
     }
   }
   return null;

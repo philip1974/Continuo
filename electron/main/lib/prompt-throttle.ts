@@ -108,6 +108,21 @@ export class PromptThrottle {
   }
 
   /**
+   * 不看 key 就能确定 admit 会拒绝:该 subject 已有未决弹窗 / 在连续被拒退避期或超时冷却期 / 弹窗超速。只读,
+   * 不记账。给「算 key 本身有开销」的调用方(scope 请求的冷却键要逐级 stat)在算 key 之前先问一次 —— 被节流的
+   * 请求不该再触发那份开销;false 之后仍须照常调 admit(key 级冷却只有它能判,且两者之间状态可能变化)。
+   */
+  blockedRegardlessOfKeys(subject: string, now: number = Date.now()): boolean {
+    if (this.inFlight.has(subject)) return true;
+    const state = this.subjects.get(subject);
+    if (!state) return false;
+    if (now < Math.max(state.backoffUntil, state.timeoutUntil)) return true;
+    let recent = 0;
+    for (const t of state.prompts) if (now - t < PROMPT_RATE_WINDOW_MS) recent += 1;
+    return recent >= PROMPT_RATE_MAX;
+  }
+
+  /**
    * 计入该 subject 的弹窗速率,但不占在途槽、不记任何决定:请求因目标暂时无法显示弹窗(窗口正在重新加载)被直接
    * 拒绝时用 —— 否则这段时间里的重试不受任何限制,目标恢复后积压的重试可以连弹。
    */
