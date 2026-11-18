@@ -55,14 +55,21 @@ const pending = new Map<string, PendingAuth>();
 // 被提示注入的 agent 循环调用任一需授权工具,每次被拒立即再调 → 弹窗关一个来一个并抢走键盘焦点,用户正在打字的
 // 按键落到「允许」上。
 // - subject =(目标窗口, 调用方类别 window / external),key = 授权域(terminal / debug / plugin)。external 调用方
-//   (未 hello 的 stdio 客户端,可能是别的窗口里的 agent)与窗口内 agent 各自计数、各占一个未决槽,互不影响。
+//   (未 hello 的 stdio 客户端,可能是别的窗口里的 agent)与窗口内 agent 各自计数、各占一个未决槽,互不影响
+//   (超时冷却除外,见下)。
 // - 用户拒绝 → 该域冷却(30s 起,连续被拒翻倍到 5 分钟);同一 subject 连续 3 次被拒(轮换域)→ 所有域退避;
-//   无人应答超时 → 该 subject 所有域冷却 30s,连续超时翻倍到 5 分钟(排队中没轮到显示就到期的不记);
+//   无人应答超时 → 该**窗口**(窗口内与 external 两个 subject)所有域冷却 30s,连续超时按窗口合并计数、翻倍到
+//   5 分钟(排队中没轮到显示就到期的不记);任一 subject 上的用户决定把该窗口的连续超时计数归零。按窗口而非按
+//   subject 记:同时用窗口内与 external 两个身份交替只发起不应答,两者的超时冷却互相填补,弹窗占屏 100%。代价:
+//   external 的超时也让同窗口的合法 agent 冷却(用户已接受)。拒绝冷却 / 退避 / 速率 / 单飞仍按 subject。
 //   每 subject 60s 内最多 10 个弹窗;每 subject 同时最多一个未决弹窗。
 //   窗口关闭 / renderer reload / 撤销 / 退出 / 发送失败结算的不算拒绝。
 // - 目标窗口的 renderer 正在重新加载(见 rendererNotReady)→ 直接拒绝,只计入速率,不占未决槽、不进冷却。
 // - 被节流的请求不发 IPC、不弹窗,抛 AGENT_NOT_AUTHORIZED 并在消息里说明原因与多久内不再询问。
-let throttle = new PromptThrottle();
+/** 超时组 = 目标窗口(authSubject 的 `windowId:` 前缀)。 */
+const newAuthThrottle = (): PromptThrottle =>
+  new PromptThrottle(undefined, (subject) => subject.slice(0, subject.indexOf(':')));
+let throttle = newAuthThrottle();
 /**
  * main 对 renderer「本次启动期间允许」的镜像(`窗口:类别:域`)。真相源仍在 renderer;这里只用来决定是否走节流:
  * 已授权域的请求 renderer 直接放行、不弹窗,所以并发、高频都是正常使用,不能被单飞 / 速率上限拦住。
@@ -378,7 +385,7 @@ export function setAgentAuthControllerTeardown(
 export function _resetPendingForTest(): void {
   for (const [, r] of pending) r.settle('denied', 'cancelled');
   pending.clear();
-  throttle = new PromptThrottle();
+  throttle = newAuthThrottle();
   sessionGrantMirror.clear();
   rendererNotReady.clear();
   controllerTeardown = null;
