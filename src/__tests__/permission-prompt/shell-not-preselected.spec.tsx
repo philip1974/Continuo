@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// 安全:manifest 权限弹窗默认预选声明的权限,但 `shell`(等同于完全访问本机)不预选 —— 须用户主动勾选(或点「全选」)
-// 才会授予,不能随一次「授权选中」顺手给出。行为见同目录 README。
+// 安全:manifest 权限弹窗默认预选声明的权限,但 `shell`(等同于完全访问本机)不预选 —— 须用户逐项主动勾选才会
+// 授予(「全选」也不含它),不能随一次「授权选中」顺手给出。行为见同目录 README。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
@@ -69,19 +69,20 @@ describe('manifest 权限弹窗:shell 默认不勾选', () => {
 
   it('用户主动勾选 shell 后才会被授予', async () => {
     const granted = manifest('plugin.a', ['fs', 'shell']);
-    pointerClick(checkboxes()[1]!);
+    // 勾上也是授予方向:出现延迟过后才有效(见 select-all-and-checkbox-guard.spec.tsx)。
     waitArmed();
+    pointerClick(checkboxes()[1]!);
     pointerClick(grantButton());
     expect(await granted()).toEqual(['fs', 'shell']);
   });
 
-  it('「全选」是用户的主动操作,包含 shell', async () => {
+  it('「全选」不含 shell:shell 只能逐项手动勾选', async () => {
     const granted = manifest('plugin.a', ['shell', 'fs']);
-    pointerClick(selectAllButton());
-    expect(checkboxes().every((c) => c.checked)).toBe(true);
     waitArmed();
+    pointerClick(selectAllButton());
+    expect(checkboxes().map((c) => c.checked)).toEqual([false, true]);
     pointerClick(grantButton());
-    expect(await granted()).toEqual(['shell', 'fs']);
+    expect(await granted()).toEqual(['fs']);
   });
 
   it('排队切换到的下一个请求同样不预选 shell', async () => {

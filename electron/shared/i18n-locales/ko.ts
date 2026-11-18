@@ -527,6 +527,7 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.prompt.note_partial': '부분 권한 부여',
   'permissions.prompt.note_suffix': ': 플러그인이 권한 없는 API 호출 시 거부(PermissionError 발생)되지만 전체적으로 활성화 가능. 모두 거부하면 플러그인은 활성화되지 않음.',
   'permissions.prompt.select_all': '모두 선택',
+  'permissions.prompt.select_all_except_shell': '모두 선택(Shell 제외)',
   'permissions.prompt.deny_all': '모두 거부',
   'permissions.prompt.grant_selected': '선택 허용 ({count})',
 

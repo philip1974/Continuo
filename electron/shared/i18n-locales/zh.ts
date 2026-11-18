@@ -522,6 +522,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.prompt.note_partial': '部分授权',
   'permissions.prompt.note_suffix': '：plugin 调未授 API 时会被拒（抛 PermissionError），整体仍能激活。全部拒绝则 plugin 不激活。',
   'permissions.prompt.select_all': '全选',
+  'permissions.prompt.select_all_except_shell': '全选（不含 shell）',
   'permissions.prompt.deny_all': '全部拒绝',
   'permissions.prompt.grant_selected': '授权选中（{count}）',
 

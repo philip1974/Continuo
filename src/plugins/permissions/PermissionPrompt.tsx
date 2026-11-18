@@ -11,6 +11,7 @@ import { PermissionOptionRow } from './PermissionOptionRow';
 import {
   PROMPT_GRANT_BUTTON_PROPS,
   usePromptGrantGuard,
+  type GrantClick,
   type PromptGrantGuard,
 } from '@/lib/use-prompt-grant-guard';
 
@@ -42,8 +43,8 @@ export function copySelectedPermissions(
 }
 
 /**
- * 安全:默认不预选的权限,须用户主动勾选(或点「全选」)才会授予。`shell` 等同于完全访问本机(以用户身份运行任意
- * 程序,不受文件夹授权限制),不能随一次「授权选中」顺手给出;其余权限照旧默认预选。
+ * 安全:默认不预选的权限,须用户逐项主动勾选才会授予(「全选」也不含它们)。`shell` 等同于完全访问本机(以用户
+ * 身份运行任意程序,不受文件夹授权限制),不能随一次「授权选中」/「全选」顺手给出;其余权限照旧默认预选。
  */
 const NOT_PRESELECTED: ReadonlySet<PermissionKey> = new Set<PermissionKey>(['shell']);
 
@@ -73,7 +74,8 @@ function manifestKey(pending: Pending): number {
  *
  * 防误触(守卫放在 shell 里,body 换类型 / remount 不丢状态;实现见 lib/use-prompt-grant-guard):
  * - 授予方向(canGrant):键盘激活须是停顿后的有意按键;此外请求出现后短时间内无效 —— 首次出现(时机由插件决定:启用时的 manifest 权限、运行时的
- *   requestScope)与切换(同类排队 A→B、fs-scope↔manifest 类型切换)都算。
+ *   requestScope)与切换(同类排队 A→B、fs-scope↔manifest 类型切换)都算。manifest 弹窗里勾上权限 /「全选」也算
+ *   授予方向(之后一次「授权选中」就带上它们);取消勾选不设防。
  * - 拒绝方向(switchSettled):首次出现立即可用;只在直接切换后短时间内无效(新弹窗按钮与旧弹窗在同一位置,对旧
  *   弹窗连点 / Esc 键重复的第二下不能把新请求拒掉 —— manifest 的拒绝会写盘)。
  * 初始焦点在拒绝按钮上。
@@ -110,7 +112,9 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
     if (guard.switchSettled()) denyAll();
   }, [guard, denyAll]);
 
-  const toggle = (perm: PermissionKey) => {
+  const toggle = (perm: PermissionKey, e: GrantClick) => {
+    // 勾上 = 授予方向,与授予按钮同一守卫;取消勾选不设防。
+    if (!selected.has(perm) && !guard.canGrant(e)) return;
     setSelected((s) => {
       const next = new Set(s);
       if (next.has(perm)) next.delete(perm);
@@ -155,9 +159,17 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setSelected(new Set(pending.perms))}
+          onClick={(e) => {
+            // 授予方向;不含默认不预选的权限(shell 只能逐项手动勾选),已勾选的保持。
+            if (!guard.canGrant(e)) return;
+            setSelected((s) => new Set([...s, ...defaultSelected(pending.perms)]));
+          }}
         >
-          {t('permissions.prompt.select_all')}
+          {t(
+            pending.perms.includes('shell')
+              ? 'permissions.prompt.select_all_except_shell'
+              : 'permissions.prompt.select_all',
+          )}
         </Button>
         <div className="flex gap-2">
           <Button

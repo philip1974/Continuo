@@ -5,6 +5,7 @@
 // design Modal 是与 Nous 共享的副本,不在那一层加。
 //
 // 授予按钮的用法:标上 PROMPT_GRANT_BUTTON_PROPS,onClick 里先问 guard.canGrant(e)。
+// 弹窗里其它「授予方向」的状态变更(勾上权限、全选)同样先问 guard.canGrant。
 
 import { useLayoutEffect, useRef, useState } from 'react';
 
@@ -23,7 +24,7 @@ const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** click 事件里守卫用到的部分(React.MouseEvent 满足)。 */
-interface GrantClick {
+export interface GrantClick {
   /** 浏览器约定:指针点击 ≥ 1(连击的第 n 击为 n);键盘(Enter / Space)与程序触发的 click 为 0。 */
   readonly detail: number;
   readonly currentTarget: Element;
@@ -31,7 +32,7 @@ interface GrantClick {
 
 export interface PromptGrantGuard {
   /**
-   * 这次对授予按钮的 click 是否算数。
+   * 这次对授予按钮(或别的授予方向控件)的 click 是否算数。
    * - 任何方式:当前请求**出现**(首次出现或由别的请求切换而来)后 PROMPT_GRANT_ARM_DELAY_MS 内无效;在此期间
    *   被拒掉的激活把计时起点推到它自己的时刻(过早的点击之后要再等满一个时间窗)。
    * - 指针点击只认单击(detail=1):双击 / 多击的后几击不算(第一击被拒、第二击跨过时间窗不能落成授予)。
