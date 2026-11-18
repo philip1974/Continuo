@@ -1,6 +1,8 @@
 // 安全:恶意 workspace 的 `.git/config` 写 `core.fsmonitor = "<cmd>"`,插件经宿主 shell.exec / 流式 shell
 // 在其中跑 `git status` 即执行任意命令。宿主为插件子进程注入 git 命令行作用域 core.fsmonitor=false 兜底。
 // 用真实 git 仓库 + 会创建标记文件的 fsmonitor 脚本验证(本机需有 git ≥2.31)。
+// 范围:只验证 fsmonitor —— filter/textconv/sshCommand 等同类向量宿主无法通配禁用,需插件自行加固
+//(见 lib/child-spawn-hardening 文件头「覆盖范围」与 src/__tests__/shell-service/README.md)。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';

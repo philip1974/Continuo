@@ -89,6 +89,16 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - 拒绝时:链接目标不被修改,仓库内外都不产生 `.continuo-bak.<ts>` 备份副本(机密不进工作树)。
 - 备份名已存在(含被预置成链接)→ 同样拒绝,不经链接写出备份。
 - 写入用不跟随链接的 rename 原子替换,检查后被换成链接也不会写穿。
+- 有意行为:用户把 `.claude` / `.codex` 软链到 dotfiles 仓库也会被拒(main 日志写明「拒绝符号链接的配置目录/文件」)。
+
+## I11 检查之后被并发换成链接(TOCTOU,安全)
+
+- 并发进程(如只能写工作区的沙箱 agent)可在 I9 检查之后把配置文件 / `.codex` 目录换成(或新建为)链接。
+- 读取不跟随文件链接、只读普通文件(`O_NOFOLLOW`;不可用的平台退化为 lstat → open → fstat 同 inode),
+  否则 `unsafe-config-path`,仓库外内容不经备份进工作树。
+- mkdir 之后、写备份与 rename 之前复查:目录链 lstat + realpath 仍在 cwd 内,且配置文件仍是读到的那个
+  inode(读时不存在则仍不存在),否则 `unsafe-config-path`,仓库外配置不变、不产生备份。
+- 残余窗口:Node 无 `openat`/`renameat`,复查 → rename 之间目录分量仍按路径解析;复查把窗口收窄到这几个 syscall。
 - cwd 本身经链接访问(如 macOS `/tmp`)不受影响,正常安装。
 
 ## I10 hook 事件私有权限(多用户 Linux)
@@ -97,6 +107,7 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - 两种 runner 的 hook 命令以 `umask 077;` 开头:即便调用方 umask 为 022,`mkdir -p` 建出的
   hook-events 目录为 0700、`cat >` 写出的事件文件为 0600(真实 `/bin/sh` 执行验证)。
 - main 启动时 `ensureHookEventsDir` 以 0700 建目录;已存在的(旧版 0755)也收紧为 0700。
+- 收紧是尽力而为:文件系统不支持 chmod(抛 EPERM 等)时只告警,不让 MCP host 启动失败;mkdir 失败仍抛出。
 
 ## I7 install spawn 前完成
 

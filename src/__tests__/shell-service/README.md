@@ -40,3 +40,17 @@
 
 - input 字符串非 undefined → write + end
 - 未提供 input → 立即 end stdin(一次性非交互 API;cat / python - 读到 EOF 正常退出,不等到超时)
+
+### 不可信仓库中的 git 兜底(安全,覆盖范围有限)
+
+- 宿主给所有插件子进程注入 git 命令行作用域 `core.fsmonitor=false`(`lib/child-spawn-hardening`),
+  恶意 `.git/config` 的 fsmonitor 不能借插件的 `git status` 执行命令(`git-fsmonitor-hardening.test.ts`)。
+- **宿主兜底只覆盖 fsmonitor。** 同一威胁下的 `filter.<x>.clean/smudge/process` + `.gitattributes`、
+  `diff.<x>.textconv` / `diff.external`、`core.sshCommand`、`core.pager`、`credential.helper` 等,驱动名由仓库
+  自定、无通配禁用语法,强行置空又会破坏用户合法配置 —— **需插件自行加固**(`--no-textconv` / `--no-ext-diff`、
+  按需 `-c <key>=<安全值>` 显式覆盖、只用不触发过滤器的子命令,或受信判断后再调用)。
+
+### env 合并(Windows)
+
+- `input.env` 覆盖宿主 env;Windows 上键大小写不敏感合并(插件 `PATH` 覆盖宿主 `Path`,只留一个键),
+  命令解析与子进程实际 env 一致(`spawn-env-path-case.test.ts`)。
