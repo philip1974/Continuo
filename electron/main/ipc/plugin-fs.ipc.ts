@@ -57,6 +57,20 @@ export function revokePluginFsAccess(pluginId: string): void {
   activeHandles.pathScopeRegistry.revokeAll(pluginId);
 }
 
+/**
+ * 安全:插件的 `fs` 权限被撤销(权限编辑保存 / 任何经 mutatePluginPermissions 把 fs 置为拒绝的入口)后调用:撤销该
+ * 插件已批准的全部内存路径 scope(持久化的 `_plugin-path-scopes.json` 条目由调用方随即删除)。plugin-fs 主进程不看
+ * `fs` 权限项(只靠 renderer 的 ensurePerm),此前撤销 `fs` 后 scope 原样留着,再勾上 `fs` 时以前批准的路径全部
+ * 不经弹窗恢复(request-scope 命中 covers() 静默授予;重启后从磁盘水合同样恢复)。
+ * 撤销后标记为「已水合(空)」:磁盘条目随即删除,在途 / 之后的水合读不得把旧 scope 写回内存。
+ * plugin-fs token 不动(插件实例照常运行;无 `fs` 权限时 renderer 侧拒绝 fs 调用)。
+ */
+export function revokePluginPathScopes(pluginId: string): void {
+  if (!activeHandles) return;
+  activeHandles.pathScopeRegistry.revokeAll(pluginId);
+  activeHandles.pathScopeRegistry.hydrate(pluginId, []);
+}
+
 export function copyScopesForPersistence(
   scopes: readonly { path: string; mode: 'r' | 'rw' }[],
 ): PathScope[] {
