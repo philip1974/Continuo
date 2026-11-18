@@ -36,6 +36,7 @@ import type {
 } from './types';
 import type { FileEntry } from '../../electron/shared/fs-entry';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
+import { isSpecObject } from './registries/spec-guard';
 import type { PluginDataStore } from './PluginDataStore';
 import {
   PermissionError,
@@ -805,11 +806,13 @@ const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
 const contributionOwners = new WeakMap<object, string>();
 
 /**
- * 该贡献(注册表里存活的 spec 对象)是否由第三方插件经 scoped app 注册。宿主直接注册 / 内置插件 → false。
+ * 该贡献(注册表里存活的 spec 对象)是否按第三方插件对待。只有内置插件(宿主自建、不带 token 的 scoped app)
+ * 注册的 → false;第三方插件注册的、以及**查不到所有者记录的** → true(fail-closed:所有者不明就只给最小接口面)。
  * 宿主把自己的内部对象交给贡献回调前用它决定要不要收窄(如 dock 面板 factory 的 props)。
+ * 宿主 / 内置面板全部经 bootCorePlugins 的 scoped app 注册,都有 `core:` 所有者记录。
  */
 export function isThirdPartyContribution(spec: object): boolean {
-  return contributionOwners.get(spec)?.startsWith('plugin:') === true;
+  return contributionOwners.get(spec)?.startsWith('core:') !== true;
 }
 
 function trackContributions<T extends object>(
@@ -922,8 +925,15 @@ function trackContributions<T extends object>(
             return fn.apply(t, args);
           };
         } else {
-          method = (...args: unknown[]) => {
+          method = (...rawArgs: unknown[]) => {
             assertLiveUi(pluginId, capability, life);
+            // 安全(TOCTOU):spec 来自插件,字段可以是 getter(首次返回诱饵 key、之后返回宿主的 key)。所有权检查与
+            // 注册表若各读一次,检查看到的 key 与入表的 key 就可以不同。这里只读一次:浅拷贝成冻结快照(展开对每个
+            // 自有属性恰好取值一次,函数字段保持引用),检查、入表、登记所有者都用这一份。非对象 spec 原样交给注册表报错。
+            const args =
+              keyed !== undefined && prop === 'register' && isSpecObject(rawArgs[0])
+                ? [Object.freeze({ ...(rawArgs[0] as object) }), ...rawArgs.slice(1)]
+                : rawArgs;
             const key: unknown =
               keyed !== undefined && prop === 'register'
                 ? (args[0] as Record<string, unknown> | null | undefined)?.[keyed.field]

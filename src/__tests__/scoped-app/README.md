@@ -62,6 +62,9 @@ settingTab `core.plugins`(替换插件与权限管理页)、panel `settings` / `
 
 - key 已存在且**不是本插件注册的**(宿主直接注册 / 内置插件 / 其它插件)→ 抛 `code: 'PERMISSION_DENIED'`,
   不入表,原条目不变;被拒的插件停用时也不会删掉原条目
+- 所有权检查与入表用**同一份 spec 快照**:scoped app 的 keyed `register` 先把 spec 浅拷贝并冻结(每个自有属性
+  只读一次),key 字段写成 getter(首次返回诱饵、之后返回 `terminal`)不能让检查与入表看到不同的 key。
+  注册表里存活的是这份冻结快照,不是插件传入的对象
 - 同一插件重复注册自己的 key(含重载后的新实例)→ 仍是后注册赢
 - 所有者注销后,该 key 可被其它插件注册
 - 所有者标识区分「宿主自建的 scoped app(内置插件,不带 plugin-fs token)」与「PluginManager 激活的第三方插件」:
