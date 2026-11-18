@@ -10,7 +10,7 @@ External BDD:
 
 Internal TDD:
 
-- `@continuo-terminal/shell-quote (shell-quote)` covers the pure quoting and control-character rejection rules used by the drop behavior.
+- `@/lib/terminal-drop-quote` wraps the sibling package with Continuo-side injection hardening; `@continuo-terminal/shell-quote (shell-quote)` covers the pure quoting and control-character rejection rules used by the drop behavior.
 
 ## Scenarios
 
@@ -22,6 +22,7 @@ Internal TDD:
 - S6 web drag with synthetic `File` and no OS path performs no PTY write and shows `panels.terminal.drag_drop.no_os_path`.
 - S7 path with a control character (`evil\nrm`) is rejected and counted in `panels.terminal.drag_drop.partial_skip`.
 - S8 PowerShell session on Win32 uses single quotes with `''` escaping; double quotes are never used.
+- S9 (security, `drop-quote-injection.spec.ts`) POSIX-family paths containing `\` keep `\` and `'` outside the quotes (`\\`, `\'`), so the inserted text parses back to the original single argument in bash, zsh (incl. `RC_QUOTES`) and fish — fish treats `\'`/`\\` inside single quotes as escapes, so the plain `'\''` splice let `a\'; touch pwned #` break out.
 
 ## Notes
 

@@ -1231,6 +1231,7 @@
 ## [terminal-drag-drop](./terminal-drag-drop/README.md)
 
 - [`drag-drop.spec.tsx`](./terminal-drag-drop/drag-drop.spec.tsx)
+- [`drop-quote-injection.spec.ts`](./terminal-drag-drop/drop-quote-injection.spec.ts)
 - [`shell-quote.spec.ts`](./terminal-drag-drop/shell-quote.spec.ts)
 
 ## [terminal-exited-history](./terminal-exited-history/README.md)
