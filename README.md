@@ -79,6 +79,8 @@ claude mcp add --transport stdio continuo -- /absolute/path/to/Continuo/scripts/
 
 Codex CLI / Aider have analogous stdio-MCP server config — point the same script.
 
+Inside a Continuo terminal the bridge always connects to the Continuo instance that owns that terminal (its socket path is injected as `CONTINUO_MCP_SOCKET`), so a dev build and the packaged app can run side by side. Outside Continuo terminals it tries the packaged app first, then the dev build. Setting `CONTINUO_MCP_SOCKET` explicitly in your MCP server config overrides both.
+
 **3 · Let the agent drive the UI**
 
 Once Continuo is running and the MCP server is registered, the agent can call:

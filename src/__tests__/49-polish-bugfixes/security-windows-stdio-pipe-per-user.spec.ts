@@ -114,11 +114,14 @@ describe('PTY 注入 CONTINUO_MCP_SOCKET', () => {
     expect(createContinuoMcpEnv(base).env).not.toHaveProperty('CONTINUO_MCP_SOCKET');
   });
 
-  it('主进程 Windows 上用随机名并把它注入 PTY env、写发现文件', () => {
+  it('主进程 Windows 上用随机名;所有平台都把本实例 socket 路径注入 PTY env;Windows 写发现文件', () => {
     const src = nodeFs.readFileSync(path.join(ROOT, 'electron/main/index.ts'), 'utf8');
     const fn = /function resolveStdioSocketPath\(\): string \{[\s\S]*?\n\}/.exec(src)?.[0] ?? '';
     expect(fn).toMatch(/createWindowsStdioPipeName\(os\.userInfo\(\)\)/);
-    expect(src).toMatch(/stdioSocketPath: process\.platform === 'win32' \? resolveStdioSocketPath\(\) : undefined/);
+    // 所有平台都注入本实例的 socket 路径(POSIX 即 <userData>/mcp.sock):dev 实例终端里的 proxy 否则优先连
+    // packaged 的 socket,用 dev token 发 hello 必败(→ NO_WINDOW_CTX)。
+    expect(src).toMatch(/stdioSocketPath: resolveStdioSocketPath\(\),/);
+    expect(src).not.toMatch(/stdioSocketPath: process\.platform === 'win32'/);
     expect(src).toMatch(/discoveryFile: process\.platform === 'win32'\s*\?\s*path\.join\(app\.getPath\('userData'\), STDIO_PIPE_DISCOVERY_FILE\)/);
   });
 });

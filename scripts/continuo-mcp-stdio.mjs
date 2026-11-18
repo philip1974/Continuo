@@ -7,7 +7,8 @@
 //   claude mcp add --transport stdio continuo -- /path/to/continuo-mcp-stdio.mjs
 //
 // socket 路径优先级(smart fallback):
-//   1. CONTINUO_MCP_SOCKET 环境变量(显式 override,最优先)
+//   1. CONTINUO_MCP_SOCKET 环境变量(显式 override,最优先;Continuo 终端里由 PTY env 注入本实例的端点,
+//      所有平台 —— dev 实例终端里的 proxy 因此连 dev 而非 packaged)
 //   2. packaged.app socket(日常驱动器):
 //      macOS = ~/Library/Application Support/Continuo/mcp.sock
 //      Linux = $XDG_CONFIG_HOME/Continuo/mcp.sock 或 ~/.config/Continuo/mcp.sock
