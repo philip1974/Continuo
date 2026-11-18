@@ -9,10 +9,12 @@ import { quoteDropPaths } from '@/lib/terminal-drop-quote';
 class Unsafe extends Error {}
 
 /**
- * cmd 交互命令行:" 切换引号态;引号外 & | < > ^ 为元字符。% 任意位置先展开(引号内也展开),但只展开为
- * 已存在变量的值 —— 攻击者只控制文件名、控制不了变量值,常规值不含元字符,故 % 本身不视为执行(值可能变)。
+ * cmd 交互命令行:" 切换引号态;引号外 & | < > ^ 为元字符。% 任意位置先于解析展开(引号内也展开):成对的
+ * `%名字%` 可能取到攻击者可控的值(动态变量 %CD% / %__CD__% / %=C:% 即当前目录名,目录可来自不可信仓库,
+ * 如 `x&calc&y`),展开出的 & 随后被当作元字符 → 视为不安全。单个 %(a%20b.pdf、100%.png)不展开。
  */
 function parseCmd(line: string): string[] {
+  if (/%[^%]+%/.test(line)) throw new Unsafe('cmd variable expansion');
   const args: string[] = [];
   let cur = '';
   let has = false;
@@ -95,6 +97,10 @@ const PAYLOADS = [
   'C:\\repo\\a&$(calc).txt',
   'C:\\repo\\%PATH%&calc.txt',
   'C:\\repo\\a!x!&calc.txt',
+  // 不可信仓库目录 `x&calc&y` 里的文件 `%CD%.txt`:PowerShell 终端里进 cmd 后拖入,%CD% 展开出 & → 执行 calc。
+  'C:\\x&calc&y\\%CD%.txt',
+  'C:\\repo\\a%__CD__%b.txt',
+  'C:\\repo\\%=C:%.txt',
 ];
 
 describe('terminal drop quoting: Windows 嵌套 shell 注入(Q3)', () => {
@@ -137,9 +143,15 @@ describe('terminal drop quoting: 常见 Windows 文件名不被拒绝', () => {
     });
   }
 
-  it('PowerShell 族:含 % 的常见下载名(a%20b.pdf)仍用单引号形态,不被跳过', () => {
-    for (const p of ['C:\\dl\\a%20b.pdf', 'C:\\dl\\100%.png', 'C:\\dl\\%TEMP%.txt']) {
+  it('PowerShell 族:含单个 % 的常见下载名(a%20b.pdf)仍用单引号形态,不被跳过', () => {
+    for (const p of ['C:\\dl\\a%20b.pdf', 'C:\\dl\\100%.png', 'C:\\dl\\50%%.txt']) {
       expect(quoteDropPaths([p], 'powershell').quoted).toEqual([`'${p}'`]);
+    }
+  });
+
+  it('PowerShell 族:含成对 %名字% 的路径拒绝(嵌套 cmd 中 %CD% 等可展开为不可信目录名)', () => {
+    for (const p of ['C:\\dl\\%TEMP%.txt', 'C:\\repo\\%CD%.txt', 'C:\\dl\\a%20b%20c.pdf']) {
+      expect(quoteDropPaths([p], 'powershell').skipped).toEqual([{ path: p, reason: 'cmd_unrepresentable' }]);
     }
   });
 

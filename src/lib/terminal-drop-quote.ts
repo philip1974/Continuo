@@ -23,9 +23,10 @@
 //     " % ! $ ` U+201C–U+201E 的路径用 `"…"` 在两者下都是同一字面参数。
 //   - PowerShell 族另保留既有 `'…'`:路径不含 cmd 元字符(& | < > ^)与 " 时,cmd 把它当普通文本,
 //     最多值带上引号,不会执行;PowerShell 中单引号串纯字面,$ ` 智能双引号都能保留。! 在 cmd 中只有
-//     /V:ON 时于解析之后展开,改变值不造成执行,故此形态允许 !。% 也允许:cmd 中 %X% 只展开为已存在
-//     变量的值,攻击者只控制文件名、控制不了变量值,常规变量值不含 & 等元字符,风险牵强;而 a%20b.pdf
-//     这类下载文件名常见。
+//     /V:ON 时于解析之后展开,改变值不造成执行,故此形态允许 !。但 cmd 的 %X% 在解析**之前**展开,且值未必
+//     不可信:动态变量 %CD% / %__CD__% / %=C:% 取当前目录名,目录可来自不可信仓库(目录 `x&calc&y` + 文件
+//     `%CD%.txt`,PowerShell 里进 cmd 后拖入 → 展开出 & 即执行)。故成对的 `%名字%` 拒绝此形态(再落到双引号
+//     形态,含 % 一律拒绝);单个 %(a%20b.pdf、100%.png 这类常见下载名)不构成变量引用,仍允许。
 //   - cmd 族不能用 `'…'`(cmd 中值会带上引号);两种形态都不安全的路径一律拒绝(cmd_unrepresentable)。
 import { quoteForShell, type ShellFamily } from '@continuo-terminal/shell-quote';
 
@@ -43,6 +44,8 @@ const POWERSHELL_SINGLE_QUOTES = /['\u2018-\u201b]/g;
 const WIN_DQ_UNSAFE = /["%!$`\u201c-\u201e]/;
 /** PowerShell `'…'` 在 cmd 中仍不执行命令:不含 cmd 元字符与引号切换(% 见文件头 Q3 说明)。 */
 const CMD_ACTIVE = /[&|<>^"]/;
+/** cmd 变量引用 `%名字%`(名字非空、不含 %):解析前展开,值可能来自不可信目录名(见文件头 Q3)。 */
+const CMD_PERCENT_VAR = /%[^%]+%/;
 
 function quoteOne(
   path: string,
@@ -53,7 +56,7 @@ function quoteOne(
   if (family === 'posix' && path.includes('\\')) {
     return { ok: true, quoted: quotePosixPortable(path) };
   }
-  if (family === 'powershell' && !CMD_ACTIVE.test(path)) {
+  if (family === 'powershell' && !CMD_ACTIVE.test(path) && !CMD_PERCENT_VAR.test(path)) {
     return { ok: true, quoted: `'${path.replace(POWERSHELL_SINGLE_QUOTES, '$&$&')}'` };
   }
   if (family === 'powershell' || family === 'cmd') {
