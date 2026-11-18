@@ -19,7 +19,7 @@ T7 resolving an unknown `requestId` is a no-op and does not disturb later resolu
 T8 resolving the same `requestId` twice is idempotent: the first decision wins;
 T9 resolving a request clears the timeout path, so advancing five minutes does not change the settled decision;
 T10 `_resetPendingForTest` denies every pending request and clears pending state;
-T11 `revokeAndKillAgentSessions` rotates the MCP token, removes/kills/destroys only `originHint:'agent'` sessions, and never touches user sessions;
+T11 `revokeAndKillAgentSessions` rotates the MCP token, removes/kills/destroys only `originHint:'agent'` sessions, and never touches user sessions (the rotation also invalidates stdio connections already bound via `_continuo/hello`, not only HTTP — see `src/__tests__/stdio-revoked-token-binding/`);
 T12 revoke iterates over a snapshot, so mutating the backing session array during `remove` does not skip later agent sessions;
 T13 with `mcpHostRef=null`, revoke still removes/kills/destroys agent sessions but returns `rotated:false`;
 T13b when `terminal.service.has(id)` is false, revoke skips PTY kill but still removes metadata and destroys the buffer;
@@ -40,3 +40,5 @@ T17 `cancelAllAgentAuth`(退出清理)把所有窗口的未决请求立即结算
 T16 撤销(`revokeAndKillAgentSessions`)完成后向所有存活窗口广播 `AGENT_AUTH_CHANNELS.REVOKED`(payload `{}`):
 「本次启动期间允许」记在各窗口 renderer 的 store,只重置发起窗口会让其它窗口在撤销后仍静默放行请求;
 各 renderer 收到后执行与本地撤销相同的重置(见 `agent-auth-prompt` / `agent-terminal-mcp-auth`)。
+
+Prompt throttling (2026-11-18, security): `requestAgentAuth` now runs every request for a domain that is not yet "allowed for this launch" through the shared prompt throttle (deny cooldown / backoff / rate cap / one pending prompt per caller) and rejects with `AGENT_NOT_AUTHORIZED` when throttled — see `src/__tests__/agent-auth-prompt-throttle/`. The E229 pending caps are therefore only reachable for a domain the user already allowed for this launch (those requests are forwarded unthrottled), which is how the E229 cases now set up.

@@ -5,14 +5,14 @@
 // 决策(2026-05-05):
 //   - 一次性授权(本次启动有效),不持久化
 //   - 撤销走"终止全部 agent terminal"按钮 → revoke()
-//   - 同一时刻只允许一个 pending(并发 ensure 第二条立即 denied)
+//   - 同一时刻只显示一个弹窗;窗口内 agent / external 客户端各占一个槽(同类并发第二条立即 denied,异类排队)
 //
 // BDD: src/__tests__/agent-terminal-mcp-auth/
 
 import { create } from 'zustand';
 import {
-  AGENT_AUTH_PLUGIN_METHOD_PREFIX,
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
+  agentAuthDomainOf,
 } from '../../electron/shared/agent-auth-channels';
 
 export type AuthDecision = 'once' | 'session' | 'denied';
@@ -79,7 +79,7 @@ type AgentAuthState = {
  *   外部客户端没有插件工具域(main 在授权前即拒绝),所以实际共 5 个标志位(见 SESSION_GRANT_KEYS)。
  */
 export function isDebugAuthMethod(method: string): boolean {
-  return method.startsWith('debug.');
+  return agentAuthDomainOf(method) === 'debug';
 }
 
 /**
@@ -87,7 +87,7 @@ export function isDebugAuthMethod(method: string): boolean {
  * 任意插件能力(如 git stage/commit),不应被终端 / debug 域的授权静默放行。
  */
 export function isPluginAuthMethod(method: string): boolean {
-  return method.startsWith(AGENT_AUTH_PLUGIN_METHOD_PREFIX);
+  return agentAuthDomainOf(method) === 'plugin';
 }
 
 /**
@@ -141,21 +141,21 @@ export function getAgentAuthEpoch(): number {
   return authEpoch;
 }
 
-// 内部:挂起 Promise 的 resolver(zustand 状态外存,避免序列化函数)。
-let pendingResolver: ((outcome: EnsureOutcome) => void) | null = null;
-
-// race(R88):与 main 端 agent-auth.service PROMPT_TIMEOUT_MS 对齐的 renderer 本地超时。main 在
-// 5min 后把该请求 resolve 为 denied(外部 agent 已收到拒绝),但不通知 renderer。若 renderer 不
-// 同 TTL 清理,授权弹窗(pending/Modal)永久滞留,且 pending!==null 让后续 agent auth 请求被
-// 立即拒,直到用户手动点掉这个已失效的旧弹窗。本地超时到点 → deny + 清 pending(与 main 一致)。
+// 内部:占着槽的授权请求(zustand 状态外存,避免序列化函数)。slots[0] 即显示中的弹窗(state.pending),其余排队。
+// 安全:按调用方类别(窗口内 agent / external 客户端)各一个槽。此前全局只有一个 pending:external 调用方
+// (未 hello 的 stdio 客户端,可以是别的窗口里的 agent)连弹即可占住主窗唯一的槽,窗口内合法 agent 的首次授权
+// 被自动拒绝。不同类别的请求排在后面等显示(同一时刻仍只显示一个弹窗,不堆叠);同类别已占槽 → 立即拒。
+//
+// race(R88):每个请求带与 main 端 agent-auth.service PROMPT_TIMEOUT_MS 对齐的本地超时(从到达时起算)。main 在
+// 5min 后把该请求 resolve 为 denied(外部 agent 已收到拒绝),但不通知 renderer。若 renderer 不同 TTL 清理,
+// 授权弹窗永久滞留并占着槽,直到用户手动点掉这个已失效的旧弹窗。
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
-let pendingTimer: ReturnType<typeof setTimeout> | null = null;
-function clearPendingTimer(): void {
-  if (pendingTimer !== null) {
-    clearTimeout(pendingTimer);
-    pendingTimer = null;
-  }
+interface AuthSlot {
+  readonly req: PendingAuthRequest;
+  readonly resolve: (outcome: EnsureOutcome) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
 }
+const slots: AuthSlot[] = [];
 
 function generateRequestId(): string {
   // crypto.randomUUID 在 Node 与浏览器 modern env 都可用。
@@ -178,43 +178,30 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     if (get()[key]) {
       return Promise.resolve('session' as const);
     }
-    // 已有 pending → 第二条立即拒(简化并发,与 plugin permission-prompt 同型)
-    if (get().pending !== null) {
+    // 同类别调用方已占槽(显示中或排队中)→ 立即拒(简化并发,与 plugin permission-prompt 同型)
+    const external = info.external === true;
+    if (slots.some((slot) => (slot.req.external === true) === external)) {
       return Promise.resolve('denied' as const);
     }
     const req: PendingAuthRequest = {
       requestId: generateRequestId(),
       method: info.method,
       ...(info.agentLabel !== undefined ? { agentLabel: info.agentLabel } : {}),
-      ...(info.external === true ? { external: true } : {}),
+      ...(external ? { external: true } : {}),
     };
-    set({ pending: req });
     return new Promise<EnsureOutcome>((resolve) => {
-      pendingResolver = resolve;
-      // race(R88):同 TTL 本地超时。过期且仍是本请求 → 清 pending(main 已 denied 并删除该请求),
-      // 避免失效弹窗滞留 + 阻塞后续请求。结算为 'cancelled':调用方不再 respond(否则 main 返回
-      // NOT_PENDING → 误导性「授权响应失败」toast)。grant/deny/reset 都会 clearPendingTimer 防误触。
-      clearPendingTimer();
-      pendingTimer = setTimeout(() => {
-        pendingTimer = null;
-        if (get().pending?.requestId !== req.requestId) return;
-        const r = pendingResolver;
-        pendingResolver = null;
-        set({ pending: null });
-        r?.('cancelled');
-      }, PROMPT_TIMEOUT_MS);
+      // 过期 → 以 'cancelled' 收口(main 已 denied 并删除该请求):调用方不再 respond(否则 main 返回
+      // NOT_PENDING → 误导性「授权响应失败」toast)。
+      const timer = setTimeout(() => settleSlot(req.requestId, 'cancelled'), PROMPT_TIMEOUT_MS);
+      slots.push({ req, resolve, timer });
+      syncPending();
     });
   },
 
   grant(kind) {
-    clearPendingTimer();
-    const resolver = pendingResolver;
-    pendingResolver = null;
-    if (!resolver && get().pending === null) return;
     // 安全:'session' 此处**不**记域授权。该请求在 main 可能已被撤销 / 超时删除(旧弹窗仍显示),
     // 若此刻置 sessionGranted,之后的请求会被静默放行。由应答方在 main 确认后调 confirmSessionGrant。
-    set({ pending: null });
-    resolver?.(kind);
+    settleDisplayed(kind);
   },
 
   confirmSessionGrant(method, epoch, external) {
@@ -225,12 +212,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
   },
 
   deny() {
-    clearPendingTimer();
-    const resolver = pendingResolver;
-    pendingResolver = null;
-    if (!resolver && get().pending === null) return;
-    set({ pending: null });
-    resolver?.('denied');
+    settleDisplayed('denied');
   },
 
   revoke() {
@@ -240,18 +222,39 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
 
   applyMainRevoked() {
     get().revoke();
-    clearPendingTimer();
-    const resolver = pendingResolver;
-    pendingResolver = null;
-    if (get().pending !== null) set({ pending: null });
-    resolver?.('cancelled');
+    for (const slot of slots.splice(0)) {
+      clearTimeout(slot.timer);
+      slot.resolve('cancelled');
+    }
+    syncPending();
   },
 }));
 
+/** state.pending 跟随 slots[0](显示中的弹窗)。 */
+function syncPending(): void {
+  const next = slots[0]?.req ?? null;
+  if (useAgentAuthStore.getState().pending !== next) useAgentAuthStore.setState({ pending: next });
+}
+
+function settleSlot(requestId: string, outcome: EnsureOutcome): void {
+  const index = slots.findIndex((slot) => slot.req.requestId === requestId);
+  if (index < 0) return;
+  const [slot] = slots.splice(index, 1);
+  clearTimeout(slot!.timer);
+  syncPending();
+  slot!.resolve(outcome);
+}
+
+/** 用户对显示中弹窗的决定。 */
+function settleDisplayed(outcome: AuthDecision): void {
+  const displayed = slots[0];
+  if (displayed) settleSlot(displayed.req.requestId, outcome);
+  else syncPending();
+}
+
 /** 测试用:重置内部状态(状态 + 挂起 resolver). */
 export function _resetAgentAuthForTest(): void {
-  clearPendingTimer();
-  pendingResolver = null;
+  for (const slot of slots.splice(0)) clearTimeout(slot.timer);
   useAgentAuthStore.setState({
     pending: null,
     ...NO_SESSION_GRANTS,

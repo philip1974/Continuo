@@ -215,6 +215,12 @@
 
 - [`agent-auth-prompt.spec.tsx`](./agent-auth-prompt/agent-auth-prompt.spec.tsx)
 
+## [agent-auth-prompt-throttle(agent 授权弹窗被拒后有冷却,不能循环弹窗诱导误点)](./agent-auth-prompt-throttle/README.md)
+
+- [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
+- [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
+- [`store-slots.spec.ts`](./agent-auth-prompt-throttle/store-slots.spec.ts)
+
 ## [agent-auth-respond-schema (E146)](./agent-auth-respond-schema/README.md)
 
 - [`agent-auth-respond-schema.spec.ts`](./agent-auth-respond-schema/agent-auth-respond-schema.spec.ts)
@@ -1278,6 +1284,10 @@
 ## [statusbar-copy-feedback-timer](./statusbar-copy-feedback-timer/README.md)
 
 - [`copy-feedback-timer.spec.tsx`](./statusbar-copy-feedback-timer/copy-feedback-timer.spec.tsx)
+
+## [stdio-revoked-token-binding(token 吊销后,已 hello 的 stdio 连接立即失效)](./stdio-revoked-token-binding/README.md)
+
+- [`stdio-revoked-token-binding.spec.ts`](./stdio-revoked-token-binding/stdio-revoked-token-binding.spec.ts)
 
 ## [stop-hook broker:不丢事件、不留孤儿等待者](./stop-hook-broker-reliability/README.md)
 

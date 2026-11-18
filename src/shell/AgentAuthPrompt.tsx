@@ -2,7 +2,7 @@
 // 订阅 main 推的 'agent-auth:request' → 调 store.ensure → 等用户决定 → 应答 main。
 // 已 sessionGranted 时 ensure 立刻返回 'session',Modal 不渲染。
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { coApi } from '@/lib/co-api';
 import {
@@ -34,6 +34,14 @@ const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
   'debug.launch': 'permissions.agent.debug_launch',
   'debug.*': 'permissions.agent.debug_control',
 };
+
+/**
+ * 安全:弹窗显示后这段时间内忽略「允许」类按钮的激活(鼠标与键盘)。弹窗会抢走键盘焦点,用户正在终端 / 编辑器
+ * 打字或点击时,落进弹窗的按键(Tab+Enter)/ 连点不能变成授予。只对授予方向设防:「拒绝」与 Esc 立即可用。
+ * 与 plugins/permissions/PermissionPrompt 的切换守卫同值;那边只守「请求直接换成下一个」,这里首次出现也守
+ * (授权请求的时机由 agent 决定)。design Modal 是与 Nous 共享的副本,不在那一层加。
+ */
+export const AGENT_AUTH_GRANT_ARM_DELAY_MS = 500;
 
 export function AgentAuthPrompt() {
   const pending = useAgentAuthStore((s) => s.pending);
@@ -93,7 +101,8 @@ export function AgentAuthPrompt() {
   }, []);
 
   if (!pending) return null;
-  return <AgentAuthPromptBody pending={pending} />;
+  // key:每个请求一个 body 实例 → 排队的下一个请求显示时,防误触延迟与初始焦点都重新来过。
+  return <AgentAuthPromptBody key={pending.requestId} pending={pending} />;
 }
 
 function AgentAuthPromptBody({
@@ -101,7 +110,11 @@ function AgentAuthPromptBody({
 }: {
   readonly pending: NonNullable<ReturnType<typeof useAgentAuthStore.getState>['pending']>;
 }) {
-  const grant = useAgentAuthStore((s) => s.grant);
+  const grantNow = useAgentAuthStore((s) => s.grant);
+  const [shownAt] = useState(() => Date.now());
+  const grant = (kind: 'once' | 'session'): void => {
+    if (Date.now() - shownAt >= AGENT_AUTH_GRANT_ARM_DELAY_MS) grantNow(kind);
+  };
   const deny = useAgentAuthStore((s) => s.deny);
   const t = useT();
   // debug 域的请求:标题与说明讲调试器能做什么(授权也只记在 debug 域)。

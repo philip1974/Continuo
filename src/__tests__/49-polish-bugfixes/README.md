@@ -256,6 +256,8 @@
 - **安全修订(hello 失败)**:hello **本身失败**(token 无效 / 已轮换、窗口在 hello 到达前已关)同样记为「已尝试
   hello」,tools/call 回 `NO_WINDOW_CTX`,不被当作外部客户端回落主窗。连接状态机:未 hello → 外部客户端;
   hello 成功 → 绑定窗口;hello 失败或绑定窗口已关 → 拒绝。
+- **安全修订(token 吊销)**:hello 成功后绑定所用的 token 被吊销 / 轮换 → 连接同样降为「hello 失败」(每次请求
+  复查 token),可用新 token 重新 hello 恢复。见 `stdio-revoked-token-binding/`。
 
 ### P2-X update/reviews store 并发 refresh 不被过期结果覆盖 — `marketplace-update-store/update-store.spec.ts`
 - `useUpdateStore.refresh` / `useReviewsStore.refresh` 各加单调 `gen` 守卫:捕获本次

@@ -10,6 +10,7 @@ import { BrowserWindow } from 'electron';
 import {
   AGENT_AUTH_CHANNELS,
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
+  agentAuthDomainOf,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../shared/agent-auth-channels';
@@ -21,6 +22,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
 import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
+import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
 
 // 5 分钟无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
@@ -34,12 +36,46 @@ const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
 const MAX_PENDING_AUTH_GLOBAL = 256; // 全局未决授权上限
 const MAX_PENDING_AUTH_PER_WINDOW = 64; // 单窗口未决授权上限
 
+/** 结算原因:answer = renderer 应答(用户的决定);timeout = 无人应答;cancelled = 窗口关闭 / 撤销 / 退出 / 发送失败。 */
+type SettleCause = 'answer' | 'timeout' | 'cancelled';
+
 interface PendingAuth {
   /** 弹窗目标窗口 id(调用方窗口)。窗口关闭即按它结算。 */
   readonly windowId: number;
-  readonly settle: (decision: AgentAuthDecision) => void;
+  readonly settle: (decision: AgentAuthDecision, cause: SettleCause) => void;
 }
 const pending = new Map<string, PendingAuth>();
+
+// 安全:授权弹窗节流(机制见 lib/prompt-throttle.ts,与 plugin-fs scope 请求共用)。此前被拒后没有任何冷却:
+// 被提示注入的 agent 循环调用任一需授权工具,每次被拒立即再调 → 弹窗关一个来一个并抢走键盘焦点,用户正在打字的
+// 按键落到「允许」上。
+// - subject =(目标窗口, 调用方类别 window / external),key = 授权域(terminal / debug / plugin)。external 调用方
+//   (未 hello 的 stdio 客户端,可能是别的窗口里的 agent)与窗口内 agent 各自计数、各占一个未决槽,互不影响。
+// - 用户拒绝 → 该域冷却(30s 起,连续被拒翻倍到 5 分钟);同一 subject 连续 3 次被拒(轮换域)→ 所有域退避;
+//   无人应答超时 → 该域一次 30s 冷却(不升级);每 subject 60s 内最多 10 个弹窗;每 subject 同时最多一个未决弹窗。
+//   窗口关闭 / 撤销 / 退出 / 发送失败结算的不算拒绝。
+// - 被节流的请求不发 IPC、不弹窗,抛 AGENT_NOT_AUTHORIZED 并在消息里说明原因与多久内不再询问。
+let throttle = new PromptThrottle();
+/**
+ * main 对 renderer「本次启动期间允许」的镜像(`窗口:类别:域`)。真相源仍在 renderer;这里只用来决定是否走节流:
+ * 已授权域的请求 renderer 直接放行、不弹窗,所以并发、高频都是正常使用,不能被单飞 / 速率上限拦住。
+ * 镜像过期(renderer reload 丢了授权态)时自愈:按镜像放行的请求被拒 → 清镜像(不计拒绝),之后恢复节流。
+ */
+const sessionGrantMirror = new Set<string>();
+
+const authSubject = (windowId: number, external: boolean): string =>
+  `${windowId}:${external ? 'external' : 'window'}`;
+
+function throttledError(admission: Exclude<PromptAdmission, { ok: true }>): Error {
+  const seconds = Math.ceil(admission.retryAfterMs / 1000);
+  const message =
+    admission.reason === 'in-flight'
+      ? 'another authorization prompt from this caller is already waiting for the user; wait for that decision before retrying'
+      : admission.reason === 'rate'
+        ? `too many authorization prompts; Continuo will not ask the user again for ${seconds}s`
+        : `the user denied (or did not answer) a recent authorization prompt; Continuo will not ask again for ${seconds}s`;
+  return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, message);
+}
 
 /** 边界(E229):统计某窗口当前未决授权数。pending 已封顶后 O(≤MAX_PENDING_AUTH_GLOBAL)。 */
 function pendingCountForWindow(windowId: number): number {
@@ -77,6 +113,8 @@ function pickAuthTargetWindow(ownerWindowId: number | undefined): BrowserWindow 
 /**
  * Tool 调用入口:把请求 push 给调用方窗口,等用户决定。
  * 目标窗口不存在 / 5 分钟超时 → 默认 'denied'(防卡死)。
+ * 被节流(拒绝冷却 / 退避 / 超速 / 该调用方已有未决弹窗)→ 不弹窗,reject AGENT_NOT_AUTHORIZED(消息说明原因,
+ * 工具门控原样抛给 agent)。
  */
 export async function requestAgentAuth(
   info: AgentAuthInfo,
@@ -92,21 +130,37 @@ export async function requestAgentAuth(
   ) {
     return 'denied';
   }
+  const domain = agentAuthDomainOf(info.method);
+  const subject = authSubject(win.id, info.external === true);
+  const grantKey = `${subject}:${domain}`;
+  // 该域已「本次启动期间允许」→ renderer 不弹窗,不走节流。
+  const throttled = !sessionGrantMirror.has(grantKey);
+  if (throttled) {
+    const admission = throttle.admit(subject, [domain]);
+    if (!admission.ok) throw throttledError(admission);
+  }
   const requestId = `req-${crypto.randomUUID()}`;
   return new Promise<AgentAuthDecision>((resolve) => {
-    const timer = setTimeout(() => {
-      if (pending.has(requestId)) {
-        pending.delete(requestId);
-        resolve('denied');
+    const settle = (decision: AgentAuthDecision, cause: SettleCause): void => {
+      clearTimeout(timer);
+      if (throttled) {
+        throttle.endPrompt(subject);
+        if (cause === 'answer') {
+          throttle.noteDecision(subject, [domain], decision === 'denied' ? 'deny' : 'grant');
+        } else if (cause === 'timeout') {
+          throttle.noteTimeout(subject, [domain]);
+        }
+      } else if (cause === 'answer' && decision === 'denied') {
+        // 镜像说已授权,renderer 却拒了(reload 丢了授权态后真的弹了窗 / 弹窗被占)→ 镜像作废,之后走节流。
+        sessionGrantMirror.delete(grantKey);
       }
+      if (cause === 'answer' && decision === 'session') sessionGrantMirror.add(grantKey);
+      resolve(decision);
+    };
+    const timer = setTimeout(() => {
+      if (pending.delete(requestId)) settle('denied', 'timeout');
     }, PROMPT_TIMEOUT_MS);
-    pending.set(requestId, {
-      windowId: win.id,
-      settle: (decision) => {
-        clearTimeout(timer);
-        resolve(decision);
-      },
-    });
+    pending.set(requestId, { windowId: win.id, settle });
     const payload: AgentAuthRequestPayload = {
       requestId,
       method: info.method,
@@ -122,11 +176,7 @@ export async function requestAgentAuth(
     try {
       win.webContents.send(AGENT_AUTH_CHANNELS.REQUEST, payload);
     } catch {
-      if (pending.has(requestId)) {
-        clearTimeout(timer);
-        pending.delete(requestId);
-        resolve('denied');
-      }
+      if (pending.delete(requestId)) settle('denied', 'cancelled');
     }
   });
 }
@@ -141,7 +191,7 @@ export function resolveAgentAuthRequest(
   const r = pending.get(requestId);
   if (!r) return false;
   pending.delete(requestId);
-  r.settle(decision);
+  r.settle(decision, 'answer');
   return true;
 }
 
@@ -178,8 +228,12 @@ export function cancelAgentAuthByWindow(windowId: number): number {
   for (const [requestId, entry] of [...pending]) {
     if (entry.windowId !== windowId) continue;
     pending.delete(requestId);
-    entry.settle('denied');
+    entry.settle('denied', 'cancelled');
     count += 1;
+  }
+  // 窗口没了(关闭 / reload)→ 它的 renderer 授权态也没了。
+  for (const key of sessionGrantMirror) {
+    if (key.startsWith(`${windowId}:`)) sessionGrantMirror.delete(key);
   }
   return count;
 }
@@ -193,7 +247,7 @@ export function cancelAgentAuthByWindow(windowId: number): number {
 export function cancelAllAgentAuth(): number {
   const entries = [...pending.values()];
   pending.clear();
-  for (const entry of entries) entry.settle('denied');
+  for (const entry of entries) entry.settle('denied', 'cancelled');
   return entries.length;
 }
 
@@ -216,8 +270,10 @@ export function setAgentAuthControllerTeardown(
 
 /** 测试用:清空所有 pending(test 隔离). */
 export function _resetPendingForTest(): void {
-  for (const [, r] of pending) r.settle('denied');
+  for (const [, r] of pending) r.settle('denied', 'cancelled');
   pending.clear();
+  throttle = new PromptThrottle();
+  sessionGrantMirror.clear();
   controllerTeardown = null;
 }
 
@@ -257,8 +313,10 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   // 清空 pending 后,迟到 respond 找不到条目 → no-op,无法复活已撤销的授权。
   for (const [requestId, entry] of [...pending]) {
     pending.delete(requestId);
-    entry.settle('denied');
+    entry.settle('denied', 'cancelled');
   }
+  // 各窗口 renderer 的「本次启动期间允许」随下方 REVOKED 广播清空 → 镜像同步清空(拒绝冷却不清)。
+  sessionGrantMirror.clear();
   let rotated = false;
   if (mcpHostRef) {
     mcpHostRef.rotateToken();
