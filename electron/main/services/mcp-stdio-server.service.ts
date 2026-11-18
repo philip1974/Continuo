@@ -203,9 +203,15 @@ export function resolveStdioCallOwnerWindow(
 
 // ── socket server ──────────────────────────────────────────────
 
-// 连接的窗口绑定状态:无条目 = 从未发 hello(外部客户端);number = hello 成功绑定的窗口;
-// null = 发过 hello 但失败(token 无效 / 已轮换、窗口在 hello 前已关)→ tools/call 一律拒绝,不回落主窗。
-const socketCtx: Map<Socket, number | null> = new Map();
+// 连接的窗口绑定状态:无条目 = 从未发 hello(外部客户端);对象 = hello 成功绑定的窗口及所用 token;
+// null = 发过 hello 但失败(token 无效 / 已轮换、窗口在 hello 前已关),或绑定所用的 token 之后被吊销
+// → tools/call 一律拒绝,不回落主窗。可用有效 token 重新 hello 恢复。
+// token 只存内存(供每次调用复查是否仍有效),不进日志。
+interface StdioBinding {
+  readonly windowId: number;
+  readonly token: string;
+}
+const socketCtx: Map<Socket, StdioBinding | null> = new Map();
 
 // 边界(E1):stdio NDJSON 单行/残行字节上限。畸形/恶意本地客户端发送无换行的超长输入会让
 // 行解码器(E135 createNdjsonLineDecoder)的残行 buffer 在 main 进程无限累积 → 内存增长甚至 OOM(HTTP MCP 有
@@ -365,8 +371,9 @@ async function handleLine(
     isRpcNotification(raw) &&
     (raw as Record<string, unknown>)['method'] === '_continuo/hello'
   ) {
+    const params = (raw as Record<string, unknown>)['params'];
     const windowId = resolveStdioHelloWindowId(
-      (raw as Record<string, unknown>)['params'],
+      params,
       {
         resolveWindowId,
         windowExists: isWindowAlive,
@@ -374,7 +381,13 @@ async function handleLine(
     );
     // 安全(fail-closed):hello 失败也记下(null)。否则该连接被当作「从未发 hello」的外部客户端,
     // 回落到主窗并借用其授权 —— 持失效 token / 窗口已关的 proxy 不应获得任何窗口上下文。
-    socketCtx.set(sock, windowId);
+    // windowId 非 null 即 params.token 已通过校验(非空字符串)。
+    socketCtx.set(
+      sock,
+      windowId === null
+        ? null
+        : { windowId, token: (params as { token: string }).token },
+    );
     return;
   }
 
@@ -392,8 +405,15 @@ async function handleLine(
   // 绑定的窗口可能已关闭:窗口关闭清理(revokeWindowTokens/cancelByWindow)不触碰
   // socketCtx,而 socket 仍连着(proxy 进程没退)。resolveStdioCallOwnerWindow 每次调用校验
   // 绑定窗口存活,死则返回 null。
-  const boundWindowId = socketCtx.get(sock);
-  const liveOwner = resolveStdioCallOwnerWindow(boundWindowId ?? undefined, {
+  // 安全:hello 只在绑定时校验一次 token。token 之后被吊销(持有它的终端退出、窗口关闭)或全部轮换(用户
+  // 「撤销全部」)时 HTTP 立即 401,而已绑定的 stdio 连接此前仍以原窗口身份继续调用工具。每次请求复查绑定所用
+  // token 仍解析到同一窗口;否则该连接降为「hello 失败」状态(NO_WINDOW_CTX,不回落 external)。
+  let binding = socketCtx.get(sock);
+  if (binding && resolveWindowId(binding.token) !== binding.windowId) {
+    socketCtx.set(sock, null);
+    binding = null;
+  }
+  const liveOwner = resolveStdioCallOwnerWindow(binding?.windowId, {
     isWindowAlive,
   });
   // 安全 S3:无论绑定窗口还是 fallback,都带本连接的 callerSubject,供 capability 校验。

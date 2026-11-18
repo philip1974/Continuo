@@ -1280,6 +1280,10 @@
 
 - [`copy-feedback-timer.spec.tsx`](./statusbar-copy-feedback-timer/copy-feedback-timer.spec.tsx)
 
+## [stdio-revoked-token-binding(token 吊销后,已 hello 的 stdio 连接立即失效)](./stdio-revoked-token-binding/README.md)
+
+- [`stdio-revoked-token-binding.spec.ts`](./stdio-revoked-token-binding/stdio-revoked-token-binding.spec.ts)
+
 ## [stop-hook broker:不丢事件、不留孤儿等待者](./stop-hook-broker-reliability/README.md)
 
 - [`broker-reliability.spec.ts`](./stop-hook-broker-reliability/broker-reliability.spec.ts)

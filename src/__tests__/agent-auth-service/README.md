@@ -19,7 +19,7 @@ T7 resolving an unknown `requestId` is a no-op and does not disturb later resolu
 T8 resolving the same `requestId` twice is idempotent: the first decision wins;
 T9 resolving a request clears the timeout path, so advancing five minutes does not change the settled decision;
 T10 `_resetPendingForTest` denies every pending request and clears pending state;
-T11 `revokeAndKillAgentSessions` rotates the MCP token, removes/kills/destroys only `originHint:'agent'` sessions, and never touches user sessions;
+T11 `revokeAndKillAgentSessions` rotates the MCP token, removes/kills/destroys only `originHint:'agent'` sessions, and never touches user sessions (the rotation also invalidates stdio connections already bound via `_continuo/hello`, not only HTTP — see `src/__tests__/stdio-revoked-token-binding/`);
 T12 revoke iterates over a snapshot, so mutating the backing session array during `remove` does not skip later agent sessions;
 T13 with `mcpHostRef=null`, revoke still removes/kills/destroys agent sessions but returns `rotated:false`;
 T13b when `terminal.service.has(id)` is false, revoke skips PTY kill but still removes metadata and destroys the buffer;
