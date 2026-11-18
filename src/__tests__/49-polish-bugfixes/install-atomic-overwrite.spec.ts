@@ -16,14 +16,16 @@ const ctl = vi.hoisted(() => ({
   manifest: { id: 'p', name: 'P', version: '1.0.0' } as Record<string, string>,
   mainAsDir: false, // main 入口是目录而非文件
   lastArgs: [] as readonly string[], // 最近一次 git 调用的 argv
+  lastEnv: {} as NodeJS.ProcessEnv, // 最近一次 git 调用的 env
 }));
 
 vi.mock('node:child_process', async () => {
   const { chmodSync, mkdirSync, writeFileSync } = await import('node:fs');
   const np = await import('node:path');
   return {
-    spawn: (_cmd: string, args: readonly string[]) => {
+    spawn: (_cmd: string, args: readonly string[], opts: { env?: NodeJS.ProcessEnv }) => {
       ctl.lastArgs = args;
+      ctl.lastEnv = opts.env ?? {};
       const cloneDir = args[args.length - 1] as string;
       const listeners: Record<string, ((arg?: unknown) => void)[]> = {};
       const stderrListeners: Record<string, ((arg?: unknown) => void)[]> = {};
@@ -361,6 +363,16 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     await installFromGit(URL, baseDir, { branch: 'release/v2' });
     expect(ctl.lastArgs).toContain('--branch=release/v2');
     expect(ctl.lastArgs.indexOf('--branch=release/v2')).toBeLessThan(ctl.lastArgs.indexOf(URL));
+  });
+
+  // 与插件子进程同一加固:clone 子进程 env 注入命令行作用域 core.fsmonitor=false,且保留禁交互凭据设置。
+  it('clone 子进程 env 注入 core.fsmonitor=false 加固', async () => {
+    await installFromGit(URL, baseDir);
+    const env = ctl.lastEnv;
+    const n = Number(env.GIT_CONFIG_COUNT);
+    const pairs = Array.from({ length: n }, (_, i) => [env[`GIT_CONFIG_KEY_${i}`], env[`GIT_CONFIG_VALUE_${i}`]]);
+    expect(pairs).toContainEqual(['core.fsmonitor', 'false']);
+    expect(env.GIT_TERMINAL_PROMPT).toBe('0');
   });
 
   it('不传 branch → argv 不含 --branch(行为不变)', async () => {

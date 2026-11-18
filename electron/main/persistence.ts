@@ -316,7 +316,7 @@ async function preserveCorruptExplorer(
   raw: string,
 ): Promise<void> {
   try {
-    await fs.writeFile(`${filePath}.corrupt`, raw, { flag: 'wx' });
+    await fs.writeFile(`${filePath}.corrupt`, raw, { flag: 'wx', mode: 0o600 });
   } catch {
     // 备份已存在(EEXIST)或写失败 → best-effort,忽略
   }

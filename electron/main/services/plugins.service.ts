@@ -29,6 +29,7 @@ import { isValidGitBranch } from '../../shared/git-branch';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
 import { killWithGrace } from '../lib/kill-with-grace';
+import { resolveSpawnCommand, withGitHardeningEnv } from '../lib/child-spawn-hardening';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { readFileCappedFd } from '../lib/read-fh-capped';
@@ -88,8 +89,8 @@ export function resolvePluginMainPath(
 }
 
 /**
- * 插件 id 安全性:仅允许小写字母数字与 `. _ -`,且**不得**为 `.` 或 `..`。
- * 旧正则 `^[a-z0-9._-]+$` 允许纯点段,`id='..'` 会让 `path.join(baseDir, id)` 解析到
+ * 插件 id 安全性:形态规则见 electron/shared/plugin-id(isValidPluginId,跨进程单一来源)+ 长度上限。
+ * 历史:旧正则 `^[a-z0-9._-]+$` 允许纯点段,`id='..'` 会让 `path.join(baseDir, id)` 解析到
  * baseDir 的父目录;overwrite 安装(marketplace「更新」)随即 rename 覆盖父目录 →
  * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
  */
@@ -1006,7 +1007,7 @@ async function readAllPathScopes(
   try {
     json = JSON.parse(text);
   } catch {
-    await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx' }).catch(() => {});
+    await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx', mode: 0o600 }).catch(() => {});
     throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
   }
   if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
@@ -1297,8 +1298,8 @@ export async function installFromGit(
       throw codedError(ERROR_CODES.BAD_MANIFEST, `manifest 校验失败: ${result.message}`);
     }
     const manifest = result.data;
-    // 边界:ManifestSchema 的 id 正则 /^[a-z0-9._-]+$/ 允许纯点段(如 '..'),不挡路径穿越;
-    // isSafePluginId 额外拒 '.'/'..'(install→rename 覆盖父目录的穿越向量,与 uninstall 对称),必叠加。
+    // 边界:id 拼进安装路径(install→rename 覆盖父目录是穿越向量,与 uninstall 对称),此处显式叠加
+    // isSafePluginId(形态规则见 electron/shared/plugin-id + 长度上限),不依赖 manifest schema 的校验。
     if (!isSafePluginId(manifest.id)) {
       throw codedError(ERROR_CODES.BAD_MANIFEST, 'manifest id 含非法字符或路径穿越');
     }
@@ -1407,17 +1408,26 @@ export async function installFromGit(
 
 function runGit(args: readonly string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起,
-      // 也不读系统/全局凭据助手。GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置。
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-        GIT_ASKPASS: '',
-        GIT_CONFIG_NOSYSTEM: '1',
-      },
+    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起,
+    // 也不读系统/全局凭据助手。GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置。
+    // 与插件子进程同一加固(见 lib/child-spawn-hardening):注入 core.fsmonitor=false(clone 不受影响);
+    // Windows 上 git 只在 PATH 的绝对目录中解析 —— CLI 启动时主进程 cwd 即用户所在目录(可能是不可信
+    // 仓库),裸名 spawn 会先执行其中的 git.exe。解析不到 → GIT_SPAWN_FAILED(fail-closed)。
+    const env = withGitHardeningEnv({
+      ...process.env,
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ASKPASS: '',
+      GIT_CONFIG_NOSYSTEM: '1',
     });
+    const spawnGit = () =>
+      spawn(resolveSpawnCommand('git', env), args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+    let child: ReturnType<typeof spawnGit>;
+    try {
+      child = spawnGit();
+    } catch (err) {
+      reject(codedError(ERROR_CODES.GIT_SPAWN_FAILED, `git spawn 失败: ${errorMessage(err)}`));
+      return;
+    }
     // 边界(E62 + E131):按真实 UTF-8 字节累积/截断,decode 延后整体进行(见 byte-capped-buffer)。
     const stderrCap = createByteCappedBuffer(MAX_GIT_STDERR_BYTES);
     let settled = false;

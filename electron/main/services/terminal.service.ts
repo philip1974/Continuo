@@ -20,6 +20,7 @@ import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
+import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
@@ -558,8 +559,9 @@ export async function createTerminal(
     throw new Error(`Terminal id "${id}" already exists`);
   }
 
-  const baseEnv = {
-    ...process.env,
+  // Windows env 键大小写不敏感:宿主 `Path` 与调用方 `PATH` 普通展开会两键并存,node-pty 按插入顺序写
+  // 环境块,子进程取到宿主值、调用方覆盖失效 → mergeSpawnEnv 只留后者的键(非 Windows 即普通展开)。
+  const baseEnv = mergeSpawnEnv(mergeSpawnEnv(process.env, {
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     // 显式声明终端身份,让用户 .zshrc / .bashrc 能区分 Continuo 与 iTerm。
@@ -569,8 +571,7 @@ export async function createTerminal(
     // 模式下 segment 黑底黑字。两个都得覆盖,||  任一命中就误判。
     TERM_PROGRAM: 'Continuo',
     LC_TERMINAL: 'Continuo',
-    ...env,
-  };
+  }), env ?? {});
   const baseEnvWithLang = withPtyLangEnv(
     baseEnv as Record<string, string | undefined>,
     getCurrentLocale(),
@@ -602,14 +603,13 @@ export async function createTerminal(
     throw createRejectedQuittingError();
   }
   const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
-  const envWithHookEvents = {
-    ...shellEnv,
+  const envWithHookEvents = mergeSpawnEnv(shellEnv, {
     CONTINUO_HOOK_EVENTS_DIR: hookEventsDir,
     // 正确性(会话绑定):managed Stop hook 把它写进事件文件名,broker 据此只把 Stop 事件交给本会话的
     // await_stop_hook 等待者(不按 cwd 串给同窗口他会话)。放在 shellEnv 之后,用户 env 不能覆盖。
     // 非安全边界:会话内进程可改写该变量或直接读写 hook-events 目录,这里只防事件串会话。
     [TERMINAL_SESSION_ENV]: id,
-  };
+  });
   // 强制 login + interactive shell:对齐 iTerm 默认行为 (`exec -l zsh`)。
   // 没 -l/-i 时 zsh 偶发不启 ZLE → zsh-autosuggestions 等 widget plugin 失效。
   // 用户传 args 优先,只在用户没传时加默认 flag。

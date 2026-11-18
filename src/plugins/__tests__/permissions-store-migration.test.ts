@@ -112,3 +112,17 @@ describe('IpcPermissionStore permission state migration', () => {
     });
   });
 });
+
+// 安全:权限表 key 来自磁盘 JSON(经 IPC),`out[pluginId] = …` 写普通对象时 `__proto__` 键会改写结果对象的
+// 原型(而非成为自有键)。非法 plugin id(含 `_` / `.` 开头)本就不该存在,解析时直接跳过。
+describe('parsePermissionState 跳过非法 plugin id', () => {
+  it('__proto__ / _meta / 大写等非法 key 被丢弃,原型不被改写', () => {
+    const decision = '[{"permission":"fs","granted":true,"decidedAt":1}]';
+    const raw = JSON.parse(
+      `{"__proto__":${decision},"_meta":${decision},"Bad":${decision},"com.ok":${decision}}`,
+    ) as unknown;
+    const parsed = parsePermissionState(raw);
+    expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
+    expect(Object.keys(parsed)).toEqual(['com.ok']);
+  });
+});

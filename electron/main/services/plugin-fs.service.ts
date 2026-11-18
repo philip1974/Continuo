@@ -235,7 +235,7 @@ export function registerPluginFsHandlers(
       // 边界(E97):pluginId 来自 renderer,裸 register 绕过 manifest id 正则 + E86/E87 持久化
       // canonicalize 前门。超长/非法 id 会经 request-scope/persist/broadcast 携带 → 主进程 Map
       // 长期驻留 + 路径 scope 持久化键污染 + IPC payload 放大。注册入口复用插件 id 规则
-      //(isSafePluginId:^[a-z0-9._-]+$ 且非 . / ..)+ 长度上限;非法固定 BAD_INPUT,不进 registry。
+      //(isSafePluginId,形态规则见 electron/shared/plugin-id)+ 长度上限;非法固定 BAD_INPUT,不进 registry。
       if (
         typeof pluginId !== 'string' ||
         pluginId.length > MAX_PLUGIN_ID_LEN ||
