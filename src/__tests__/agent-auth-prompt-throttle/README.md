@@ -42,7 +42,8 @@ plugin)计。
 - **按调用方类别分槽**(`agent-auth.store.ts`):窗口内 agent 与 external 客户端各一个槽。同一时刻仍只显示一个
   弹窗(不堆叠);另一类调用方的请求排在后面,当前弹窗落定后显示。同一类已占槽 → 立即 `denied`。每个请求从到达起
   按 5 分钟各自超时(`cancelled`);main 撤销时显示中与排队中的一并 `cancelled`。
-- **授予方向的防误触延迟**(`AgentAuthPrompt.tsx`):弹窗显示后 500ms 内,「仅本次」「本次启动期间允许」的鼠标 /
+- **授予方向的防误触延迟**(`AgentAuthPrompt.tsx`;实现在 `src/lib/use-prompt-grant-guard.ts`,与插件权限弹窗共用,
+  见 `permission-prompt/`):弹窗显示后 500ms 内,「仅本次」「本次启动期间允许」的鼠标 /
   键盘激活无效(弹窗保持);「拒绝」与 Esc 立即可用;初始焦点仍在「拒绝」。排队的下一个请求显示时重新计时
   (对旧弹窗的连点不落到新请求上)。
 

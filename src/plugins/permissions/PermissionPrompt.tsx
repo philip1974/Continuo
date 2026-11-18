@@ -1,13 +1,14 @@
 // 权限授权 Modal(M-Plugin v3.4)。
 // 订阅 promptStore,无 pending 时不渲染。
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
 import { PermissionOptionRow } from './PermissionOptionRow';
+import { usePromptGrantGuard, type PromptGrantGuard } from '@/lib/use-prompt-grant-guard';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
@@ -36,47 +37,43 @@ export function copySelectedPermissions(
   return out;
 }
 
+// 每个 manifest 请求一个 body 实例(pending 无自带 id,按对象身份编号):排队 A→B 时勾选与初始焦点都重新来过。
+const manifestKeys = new WeakMap<Pending, number>();
+let nextManifestKey = 0;
+function manifestKey(pending: Pending): number {
+  let key = manifestKeys.get(pending);
+  if (key === undefined) {
+    key = nextManifestKey++;
+    manifestKeys.set(pending, key);
+  }
+  return key;
+}
+
 /**
  * 轻量 shell(打磨 R52,仿 R32/R50):权限弹窗绝大多数时间为空闲态。外层只订阅
  * pending / currentFsScope 两个队列字段,都空时直接返回 null。manifest 弹窗与
  * fs-scope 弹窗各自拆成 body 子组件,仅在对应请求存在时挂载 —— 空闲态不再 useT、
- * 不订阅 grant/deny actions、不初始化 selected state/effect。manifest 优先。
+ * 不订阅 grant/deny actions、不初始化 selected state。manifest 优先。
+ *
+ * 防误触(守卫放在 shell 里,body 换类型 / remount 不丢状态;实现见 lib/use-prompt-grant-guard):
+ * - 授予方向(grantArmed):请求出现后短时间内无效 —— 首次出现(时机由插件决定:启用时的 manifest 权限、运行时的
+ *   requestScope)与切换(同类排队 A→B、fs-scope↔manifest 类型切换)都算。
+ * - 拒绝方向(switchSettled):首次出现立即可用;只在直接切换后短时间内无效(新弹窗按钮与旧弹窗在同一位置,对旧
+ *   弹窗连点 / Esc 键重复的第二下不能把新请求拒掉 —— manifest 的拒绝会写盘)。
+ * 初始焦点在拒绝按钮上。
  */
-/** 排队切换到下一个请求后,忽略「授予 / 拒绝」点击的时长(覆盖一次双击的间隔)。 */
-const HANDOVER_GUARD_MS = 500;
-
-/**
- * 切换守卫:显示中的请求直接换成另一个(同类排队 A→B,或 fs-scope↔manifest 类型切换;不经空闲)时,
- * 新弹窗按钮与旧弹窗在同一位置(manifest 还默认全选),对旧弹窗连点的第二下不能落到新请求上。
- * 返回稳定引用的 armed():切换后 HANDOVER_GUARD_MS 内为 false。放在 shell 里,body 换类型 / remount 不丢状态。
- */
-function useHandoverGuard(current: object | null): () => boolean {
-  const lastRef = useRef(current);
-  const handoverAtRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (current !== null && lastRef.current !== null && current !== lastRef.current) {
-      handoverAtRef.current = Date.now();
-    }
-    lastRef.current = current;
-  }, [current]);
-  return useCallback(() => {
-    const at = handoverAtRef.current;
-    return at === null || Date.now() - at >= HANDOVER_GUARD_MS;
-  }, []);
-}
-
 export function PermissionPrompt() {
   const pending = usePermissionPromptStore((s) => s.pending);
   const currentFsScope = usePermissionPromptStore((s) => s.currentFsScope);
-  const armed = useHandoverGuard(pending ?? currentFsScope);
-  if (pending) return <ManifestPromptBody pending={pending} armed={armed} />;
+  const guard = usePromptGrantGuard(pending ?? currentFsScope);
+  if (pending) return <ManifestPromptBody key={manifestKey(pending)} pending={pending} guard={guard} />;
   if (currentFsScope) {
-    return <FsScopePromptBody key={currentFsScope.requestId} scope={currentFsScope} armed={armed} />;
+    return <FsScopePromptBody key={currentFsScope.requestId} scope={currentFsScope} guard={guard} />;
   }
   return null;
 }
 
-function ManifestPromptBody({ pending, armed }: { pending: Pending; armed: () => boolean }) {
+function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: PromptGrantGuard }) {
   const t = useT();
   const grant = usePermissionPromptStore((s) => s.grant);
   const denyAll = usePermissionPromptStore((s) => s.denyAll);
@@ -87,21 +84,15 @@ function ManifestPromptBody({ pending, armed }: { pending: Pending; armed: () =>
     () => splitPluginIdTemplate(promptBodyTemplate),
     [promptBodyTemplate],
   );
-  // body 仅在某次 pending 存在时挂载;同一身份的请求保持勾选,默认全选。
-  // 用 pending.pluginId+perms 作 key 在 shell 端 remount 即可重置,这里直接初值全选。
+  // 以请求身份为 key 挂载(shell 端):换请求即 remount,勾选回到新请求的默认全选。
   const [selected, setSelected] = useState<Set<PermissionKey>>(
     () => new Set(pending.perms),
   );
-  // pending 直接 A→B 覆盖(排队的下一个请求;不经 null,body 不 remount)时也重置勾选为新请求的默认全选。
-  // 连点误授由 shell 的切换守卫(armed)拦截。
-  useEffect(() => {
-    setSelected(new Set(pending.perms));
-  }, [pending]);
   // 引用必须稳定:Modal 的焦点 / 键盘 effect 依赖 onClose,每次渲染换新引用会让它反复重跑
-  //(勾选一次,焦点就先被还给弹窗外、再跳回弹窗内第一个元素)。armed 引用稳定。
+  //(勾选一次,焦点就先被还给弹窗外、再跳回弹窗内第一个元素)。guard 引用稳定。
   const handleClose = useCallback(() => {
-    if (armed()) denyAll();
-  }, [armed, denyAll]);
+    if (guard.switchSettled()) denyAll();
+  }, [guard, denyAll]);
 
   const toggle = (perm: PermissionKey) => {
     setSelected((s) => {
@@ -115,7 +106,7 @@ function ManifestPromptBody({ pending, armed }: { pending: Pending; armed: () =>
   return (
     <Modal
       visible
-      // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,同样受切换守卫约束。
+      // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,与拒绝按钮同一守卫(只在切换后短时间内无效)。
       onClose={handleClose}
       aria-labelledby="permission-prompt-title"
     >
@@ -156,9 +147,9 @@ function ManifestPromptBody({ pending, armed }: { pending: Pending; armed: () =>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              if (armed()) denyAll();
-            }}
+            // 初始焦点放在拒绝方向(Modal 默认聚焦第一个可聚焦元素 = 第一个勾选框)。
+            data-autofocus
+            onClick={handleClose}
           >
             {t('permissions.prompt.deny_all')}
           </Button>
@@ -166,7 +157,7 @@ function ManifestPromptBody({ pending, armed }: { pending: Pending; armed: () =>
             variant="primary"
             size="sm"
             onClick={() => {
-              if (armed()) grant(copySelectedPermissions(selected));
+              if (guard.grantArmed()) grant(copySelectedPermissions(selected));
             }}
           >
             {t('permissions.prompt.grant_selected', { count: selected.size })}
@@ -178,7 +169,7 @@ function ManifestPromptBody({ pending, armed }: { pending: Pending; armed: () =>
 }
 
 // 以 requestId 为 key 挂载(shell 端):换请求即 remount。
-function FsScopePromptBody({ scope, armed }: { scope: FsScopePrompt; armed: () => boolean }) {
+function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: PromptGrantGuard }) {
   const t = useT();
   const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
   const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
@@ -190,10 +181,10 @@ function FsScopePromptBody({ scope, armed }: { scope: FsScopePrompt; armed: () =
     [fsScopeBodyTemplate],
   );
   const { requestId } = scope;
-  // Esc(键重复)/ 点遮罩也是拒绝入口,同样受切换守卫约束;引用稳定(同 manifest 分支)。
+  // Esc(键重复)/ 点遮罩也是拒绝入口,与拒绝按钮同一守卫(只在切换后短时间内无效);引用稳定(同 manifest 分支)。
   const handleClose = useCallback(() => {
-    if (armed()) denyFsScope(requestId);
-  }, [armed, denyFsScope, requestId]);
+    if (guard.switchSettled()) denyFsScope(requestId);
+  }, [guard, denyFsScope, requestId]);
   return (
     <Modal
       visible
@@ -232,9 +223,9 @@ function FsScopePromptBody({ scope, armed }: { scope: FsScopePrompt; armed: () =
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => {
-            if (armed()) denyFsScope(requestId);
-          }}
+          // 初始焦点在拒绝方向。
+          data-autofocus
+          onClick={handleClose}
         >
           {t('permissions.fs_scope.deny')}
         </Button>
@@ -242,7 +233,7 @@ function FsScopePromptBody({ scope, armed }: { scope: FsScopePrompt; armed: () =
           variant="primary"
           size="sm"
           onClick={() => {
-            if (armed()) grantFsScope(requestId);
+            if (guard.grantArmed()) grantFsScope(requestId);
           }}
         >
           {t('permissions.fs_scope.grant')}

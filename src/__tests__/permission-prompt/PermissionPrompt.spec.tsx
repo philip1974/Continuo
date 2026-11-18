@@ -18,17 +18,18 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-// 排队后弹窗会从 A 直接换成 B(按钮位置不变、B 默认全选)。对 A 的「授予」连点两下,第二下不能落到 B 上。
+// 排队后弹窗会从 A 直接换成 B(按钮位置不变、B 默认预选)。对 A 的「授予」连点两下,第二下不能落到 B 上。
 describe('PermissionPrompt — 排队切换时防连点误授', () => {
   it('A 结算后立刻出现的 B:短时间内的点击被忽略,之后才生效', async () => {
     vi.useFakeTimers();
     try {
       const a = usePermissionPromptStore.getState().request('plugin.a', ['fs']);
-      const b = usePermissionPromptStore.getState().request('plugin.b', ['shell']);
+      const b = usePermissionPromptStore.getState().request('plugin.b', ['network']);
       render(<PermissionPrompt />);
       const grantButton = (): HTMLButtonElement =>
         Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).at(-1)!;
 
+      act(() => void vi.advanceTimersByTime(600)); // 首次出现的防误触延迟过后
       fireEvent.click(grantButton()); // 授予 A
       expect(await a).toEqual(['fs']);
       expect(usePermissionPromptStore.getState().pending?.pluginId).toBe('plugin.b');
@@ -43,7 +44,7 @@ describe('PermissionPrompt — 排队切换时防连点误授', () => {
 
       act(() => void vi.advanceTimersByTime(600));
       fireEvent.click(grantButton()); // 用户看清后再点
-      expect(await b).toEqual(['shell']);
+      expect(await b).toEqual(['network']);
     } finally {
       vi.useRealTimers();
     }
@@ -77,6 +78,7 @@ describe('PermissionPrompt — fs-scope 排队 / 类型切换时防连点误授'
     void scopeReq('req-b', '/Users/me', 'rw').then((d) => (bDecision = d));
     render(<PermissionPrompt />);
 
+    act(() => void vi.advanceTimersByTime(600)); // 首次出现的防误触延迟过后
     fireEvent.click(lastButton()); // 授权 A
     expect(await a).toBe('grant');
     expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-b');
@@ -98,7 +100,7 @@ describe('PermissionPrompt — fs-scope 排队 / 类型切换时防连点误授'
     expect(bDecision).toBe('grant');
   });
 
-  it('fs-scope → manifest 切换:插队出现的 manifest 弹窗(全新挂载默认全选)短时间内忽略授予', async () => {
+  it('fs-scope → manifest 切换:插队出现的 manifest 弹窗(全新挂载)短时间内忽略授予', async () => {
     const a = scopeReq('req-a', '/tmp/docs', 'r');
     render(<PermissionPrompt />);
     expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-a');
@@ -106,7 +108,7 @@ describe('PermissionPrompt — fs-scope 排队 / 类型切换时防连点误授'
     // 用户正要点 A 的「授权」时,manifest 请求到达并优先显示(按钮位置相同)
     let granted: readonly string[] | null = null;
     act(() => {
-      void usePermissionPromptStore.getState().request('plugin.m', ['shell']).then((g) => (granted = g));
+      void usePermissionPromptStore.getState().request('plugin.m', ['network']).then((g) => (granted = g));
     });
     fireEvent.click(lastButton()); // 本想点 A,落在 manifest「授权选中」
     await act(async () => {});
@@ -116,7 +118,7 @@ describe('PermissionPrompt — fs-scope 排队 / 类型切换时防连点误授'
     act(() => void vi.advanceTimersByTime(600));
     fireEvent.click(lastButton());
     await act(async () => {});
-    expect(granted).toEqual(['shell']);
+    expect(granted).toEqual(['network']);
     // 回到 fs-scope A(又一次类型切换),A 仍未决
     expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-a');
     act(() => void vi.advanceTimersByTime(600));
@@ -130,6 +132,7 @@ describe('PermissionPrompt — fs-scope 排队 / 类型切换时防连点误授'
     const m = usePermissionPromptStore.getState().request('plugin.m', ['fs']);
     render(<PermissionPrompt />);
 
+    act(() => void vi.advanceTimersByTime(600)); // 首次出现的防误触延迟过后
     fireEvent.click(lastButton()); // 授予 manifest
     expect(await m).toEqual(['fs']);
     expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('req-b');
@@ -283,6 +286,10 @@ describe('PermissionPrompt UI', () => {
       '.wm-modal-content input[type="checkbox"]',
     );
     fireEvent.click(checkboxes[1]!); // 取消 network,只剩 fs
+    // 首次出现的防误触延迟过后才可授予(见 first-appearance-grant-guard.spec.tsx)
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 550));
+    });
     const grantBtn = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
     ).find((b) => b.textContent?.includes('授权选中'))!;

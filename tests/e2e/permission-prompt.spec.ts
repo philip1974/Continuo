@@ -3,6 +3,7 @@
 // 通过 testing hook 调 promptStore.request → modal 出现.
 import { test, expect } from './fixtures/electron-app';
 import {
+  PERMISSION_GRANT_ARM_WAIT_MS,
   PERMISSION_GRANT_SELECTED,
   permissionGrantSelectedText,
 } from './helpers/permission-prompt';
@@ -86,6 +87,7 @@ test('点「授权选中」→ Promise resolve 含勾选项', async ({ window })
   const grantBtn = modal
     .locator('button')
     .filter({ hasText: PERMISSION_GRANT_SELECTED });
+  await window.waitForTimeout(PERMISSION_GRANT_ARM_WAIT_MS);
   await grantBtn.click();
 
   const granted = (await grantedPromise) as readonly string[];

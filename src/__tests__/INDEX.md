@@ -878,6 +878,7 @@
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
+- [`first-appearance-grant-guard.spec.tsx`](./permission-prompt/first-appearance-grant-guard.spec.tsx)
 - [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
 
