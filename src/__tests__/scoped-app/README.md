@@ -1,7 +1,7 @@
 # scoped-app(per-plugin CoApp 包装)
 
 行为契约:**`createScopedApp(coApp, pluginId, store)` 返回每个 plugin 一份的
-`CoPluginApp`,贡献点 registry 透传 coApp 引用,fs/network/clipboard/
+`CoPluginApp`,贡献点命名空间是只含公开方法的冻结外观(底层仍是 coApp 的共享注册表),fs/network/clipboard/
 permission 是持 pluginId 的闭包。permission.check / granted 真读 store。**
 
 > v5 Phase 1。fs/network/clipboard 当前直接转发 window.api / globalThis.fetch /
@@ -19,9 +19,9 @@ permission 是持 pluginId 的闭包。permission.check / granted 真读 store�
 
 ### createScopedApp(coApp, pluginId, store)
 
-- 返回新对象,所有 coApp 字段(panels/commands/...)用 spread 透传引用
+- 返回新对象,逐字段显式构造(不展开 coApp);贡献点字段(panels/commands/...)见下文「贡献点命名空间是冻结外观」
 - fs / network / clipboard / shell / permission 5 个新字段是新构造,持 pluginId
-- 不复制 registry,**两个 plugin 的 scopedApp.commands 是同一引用**
+- 不复制 registry:两个 plugin 的 `app.commands` 是各自的外观,注册进同一个共享注册表
 
 ### permission.check(perm) / granted()
 
@@ -79,3 +79,28 @@ settingTab `core.plugins`(替换插件与权限管理页)、panel `settings` / `
 
 - 总线的 `clear()` / `clear(name)` 会清掉宿主与其它插件的订阅;scoped app 的 `events.clear` 只退订本插件经
   `events.on` 订阅的(无参 = 本插件全部,带 name = 本插件在该事件上的)
+
+### 贡献点命名空间是冻结外观(`facade-surface.spec.ts`)
+
+插件拿到的 `app.<贡献点>` 不是注册表实例,也不是它的 Proxy,而是一个普通冻结对象(原型 `Object.prototype`),
+自有属性只有 SDK 公开方法(`src/plugins/types.ts` 的 `Plugin*Api`):
+
+| 命名空间 | 公开方法 |
+|---|---|
+| `panels` | `register` `get` `getAll` `list` `subscribe` |
+| `commands` | `register` `get` `getAll` `execute` `subscribe` |
+| `statusBar` | `register` `get` `getAll` `getBySide` `subscribe` |
+| `settingItems` | `register` `get` `getAll` `getByCategory` `subscribe` |
+| `ribbon` / `settingTabs` / `editorActions` / `explorerContextMenu` | `register` `get` `getAll` `subscribe` |
+| `explorerDecorators` | `register` `getAll` `subscribe` |
+| `events` | `on` `off` `emit` `clear` |
+| `workspace` | `getRoot` |
+
+- 注册表的内部字段(`items` / `listeners` / `hotkeyCounts` / `byName` / `fns`)、受保护方法(`registerKeyed`)都是
+  `undefined`;`Object.getPrototypeOf` 拿到的是 `Object.prototype`,没有注册表类的原型方法可供 `.call`
+- 方法是不读 `this` 的闭包:`app.commands.register.call(别的对象, spec)` 走的仍是本插件的校验 / 快照 / 所有权检查
+- 外观与每个方法都冻结:插件不能改写;`workspace` 也是 per-plugin 冻结对象(宿主单例不外传)
+- 吊销后同样拿不到内部对象;各方法按「停用即吊销」的既有语义拒绝或放行
+- 查询结果不泄露内部对象:`get` 返回冻结的浅拷贝(函数字段包吊销检查,包装不可被写入属性),`getAll` / `list` /
+  `getBySide` / `getByCategory` 返回冻结的新数组;`settingItems` 的 `enum` 及其选项是冻结拷贝
+- 宿主自身代码直接用 `coApp` 的注册表实例,不经外观,不受影响

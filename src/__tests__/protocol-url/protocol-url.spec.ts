@@ -3,7 +3,7 @@ import {
   handleProtocolUrl,
   parseProtocolUrl,
 } from '../../plugins/protocol/handler';
-import { createTestApp } from '../../plugins/test-utils';
+import { createTestCoApp } from '../../plugins/test-utils';
 
 describe('parseProtocolUrl', () => {
   it('co://command/<id> 基本解析', () => {
@@ -107,7 +107,7 @@ describe('parseProtocolUrl', () => {
 
 describe('handleProtocolUrl', () => {
   it('command 在 allowlist 且存在 → 执行', async () => {
-    const app = createTestApp();
+    const app = createTestCoApp();
     const fn = vi.fn();
     app.commands.register({ id: 'sample.hi', title: 'Hi', fn });
     await handleProtocolUrl('co://command/sample.hi', app, new Set(['sample.hi']));
@@ -116,7 +116,7 @@ describe('handleProtocolUrl', () => {
 
   it('安全 S5:command 存在但**不在 allowlist** → 拒绝不执行 + warn(核心安全断言)', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const app = createTestApp();
+    const app = createTestCoApp();
     const fn = vi.fn();
     // 模拟恶意插件注册的命令;外部 co://command 不应能触发它
     app.commands.register({ id: 'evil.plugin.cmd', title: 'Evil', fn });
@@ -128,7 +128,7 @@ describe('handleProtocolUrl', () => {
 
   it('默认 allowlist(EXTERNALLY_INVOKABLE_COMMANDS)为空 → 任何命令深链都被拒', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const app = createTestApp();
+    const app = createTestCoApp();
     const fn = vi.fn();
     app.commands.register({ id: 'sample.hi', title: 'Hi', fn });
     // 不传 allowlist → 用默认 core 集合(空)
@@ -140,7 +140,7 @@ describe('handleProtocolUrl', () => {
 
   it('command 不存在(且不在 allowlist)→ warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const app = createTestApp();
+    const app = createTestCoApp();
     await expect(
       handleProtocolUrl('co://command/nope', app),
     ).resolves.toBeUndefined();
@@ -150,7 +150,7 @@ describe('handleProtocolUrl', () => {
 
   it('allowlist 内 command fn 抛错 → warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const app = createTestApp();
+    const app = createTestCoApp();
     app.commands.register({
       id: 'boom',
       title: 'Boom',
@@ -165,7 +165,7 @@ describe('handleProtocolUrl', () => {
 
   it('不支持的 action → warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const app = createTestApp();
+    const app = createTestCoApp();
     await handleProtocolUrl('co://panel/editor', app);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
@@ -175,7 +175,7 @@ describe('handleProtocolUrl', () => {
   // 绕过 invalid 分支,在此不应完整输出)。
   it('E99 unsupported action 长 URL → warn 截断,不回显完整 url', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const app = createTestApp();
+    const app = createTestCoApp();
     // 合法 co://panel/...(action 'panel' 不支持)+ 长 param value(<8KB,过 URL 总长但参数被跳过)
     const longTail = 'x'.repeat(4000);
     await handleProtocolUrl(`co://panel/editor?d=${longTail}`, app);
@@ -188,7 +188,7 @@ describe('handleProtocolUrl', () => {
 
   it('非法 URL → warn 不抛', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const app = createTestApp();
+    const app = createTestCoApp();
     await handleProtocolUrl('not a url', app);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();

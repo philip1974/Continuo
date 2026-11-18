@@ -292,17 +292,67 @@ export interface PluginMcpApi {
   ): Promise<Disposable>;
 }
 
-/**
- * Plugin 拿到的 app:在 CoApp 基础上加 5 个 per-plugin 命名空间。
- * 由 createScopedApp(coApp, pluginId, store) 在激活时构造。
- */
+// ── 贡献点命名空间对插件公开的成员 ─────────────────────────────────────
+// 插件拿到的不是注册表实例,而是只含下列方法的冻结外观(见 scoped-app.ts 的 trackContributions)。
+// 注册表类的其余成员(内部 Map / 监听器集合 / registerKeyed 等)属宿主实现,不在 SDK 面上。
+
+/** keyed 注册表的共同公开成员。 */
+type KeyedMembers = 'register' | 'get' | 'getAll' | 'subscribe';
+export type PluginPanelsApi = Pick<import('./registries/PanelRegistry').PanelRegistry, KeyedMembers | 'list'>;
+export type PluginCommandsApi = Pick<import('./registries/CommandRegistry').CommandRegistry, KeyedMembers | 'execute'>;
+export type PluginStatusBarApi = Pick<
+  import('./registries/StatusBarRegistry').StatusBarRegistry,
+  KeyedMembers | 'getBySide'
+>;
+export type PluginRibbonApi = Pick<import('./registries/RibbonRegistry').RibbonRegistry, KeyedMembers>;
+export type PluginSettingTabsApi = Pick<import('./registries/SettingTabRegistry').SettingTabRegistry, KeyedMembers>;
+export type PluginSettingItemsApi = Pick<
+  import('./registries/SettingItemRegistry').SettingItemRegistry,
+  KeyedMembers | 'getByCategory'
+>;
+export type PluginEditorActionsApi = Pick<import('./registries/EditorActionRegistry').EditorActionRegistry, KeyedMembers>;
+export type PluginExplorerContextMenuApi = Pick<
+  import('./registries/ExplorerContextMenuRegistry').ExplorerContextMenuRegistry,
+  KeyedMembers
+>;
+export type PluginExplorerDecoratorsApi = Pick<
+  import('./registries/ExplorerDecoratorRegistry').ExplorerDecoratorRegistry,
+  'register' | 'getAll' | 'subscribe'
+>;
+/** events.clear 只清本插件自己的订阅(无参 = 全部,带 name = 该事件上的)。 */
+export type PluginEventsApi = Pick<import('./EventBus').EventBus, 'on' | 'off' | 'emit' | 'clear'>;
+
 /**
  * Plugin 拿到的 app:在 CoApp 基础上加 per-plugin 命名空间。
  *
  * 注意 `mcp` 字段在 CoApp 是 PluginMcpRegistry(单例),CoPluginApp 是 PluginMcpApi
  * (per-plugin scope wrapper)— 类型不同,因此 Omit 掉 CoApp.mcp 再重声明。
  */
-export interface CoPluginApp extends Omit<CoApp, 'mcp'> {
+export interface CoPluginApp
+  extends Omit<
+    CoApp,
+    | 'mcp'
+    | 'panels'
+    | 'commands'
+    | 'statusBar'
+    | 'ribbon'
+    | 'events'
+    | 'settingTabs'
+    | 'settingItems'
+    | 'explorerDecorators'
+    | 'editorActions'
+    | 'explorerContextMenu'
+  > {
+  readonly panels: PluginPanelsApi;
+  readonly commands: PluginCommandsApi;
+  readonly statusBar: PluginStatusBarApi;
+  readonly ribbon: PluginRibbonApi;
+  readonly events: PluginEventsApi;
+  readonly settingTabs: PluginSettingTabsApi;
+  readonly settingItems: PluginSettingItemsApi;
+  readonly explorerDecorators: PluginExplorerDecoratorsApi;
+  readonly editorActions: PluginEditorActionsApi;
+  readonly explorerContextMenu: PluginExplorerContextMenuApi;
   readonly fs: PluginFsApi;
   readonly network: PluginNetworkApi;
   readonly shell: PluginShellApi;

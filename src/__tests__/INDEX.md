@@ -1139,6 +1139,7 @@
 ## [scoped-app(per-plugin CoApp 包装)](./scoped-app/README.md)
 
 - [`contribution-ownership.spec.ts`](./scoped-app/contribution-ownership.spec.ts)
+- [`facade-surface.spec.ts`](./scoped-app/facade-surface.spec.ts)
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
 
