@@ -40,6 +40,7 @@ const PROXY_SCRIPT = path.join(ROOT, 'scripts/continuo-mcp-stdio.mjs');
 interface ProxyDiscovery {
   WINDOWS_PIPE_NAME_RE: RegExp;
   readWindowsPipeDiscovery: (appDataDir: string) => string[];
+  isAcceptableEnvSocket: (value: string, platform: NodeJS.Platform) => boolean;
 }
 
 /** 取出独立 proxy 脚本里的发现段(脚本顶层会直接连 socket,不能 import)。 */
@@ -50,7 +51,7 @@ function loadProxyDiscovery(): ProxyDiscovery {
   return new Function(
     'readFileSync',
     'path',
-    `${m[1]}\nreturn { WINDOWS_PIPE_NAME_RE, readWindowsPipeDiscovery };`,
+    `${m[1]}\nreturn { WINDOWS_PIPE_NAME_RE, readWindowsPipeDiscovery, isAcceptableEnvSocket };`,
   )(nodeFs.readFileSync, path) as ProxyDiscovery;
 }
 
@@ -343,8 +344,24 @@ describe('发现文件残留', () => {
     },
   );
 
+  // 安全:Windows 上 env 中的管道名与发现文件同样只认本机 continuo-mcp 管道(env 被写成远程管道
+  // `\\host\pipe\x` / 任意路径时报错退出,不连);POSIX 上 env 是任意 socket 路径,不校验。
+  it('proxy:Windows 上 CONTINUO_MCP_SOCKET 须是合法本机 continuo-mcp 管道名,POSIX 不校验', () => {
+    const { isAcceptableEnvSocket } = loadProxyDiscovery();
+    expect(isAcceptableEnvSocket(createWindowsStdioPipeName(bob), 'win32')).toBe(true);
+    for (const bad of INVALID_NAMES.filter((n) => n !== '')) {
+      expect(isAcceptableEnvSocket(bad, 'win32')).toBe(false);
+    }
+    expect(isAcceptableEnvSocket('/home/u/.config/Continuo Dev/mcp.sock', 'linux')).toBe(true);
+    expect(isAcceptableEnvSocket('/tmp/whatever.sock', 'darwin')).toBe(true);
+    const src = nodeFs.readFileSync(PROXY_SCRIPT, 'utf8');
+    expect(src).toMatch(/!isAcceptableEnvSocket\(envSocket, process\.platform\)/);
+  });
+
   it('proxy:CONTINUO_MCP_SOCKET 显式指定时只连它,不回落', () => {
     const src = nodeFs.readFileSync(PROXY_SCRIPT, 'utf8');
-    expect(src).toMatch(/if \(process\.env\.CONTINUO_MCP_SOCKET\) return \[process\.env\.CONTINUO_MCP_SOCKET\];/);
+    expect(src).toMatch(
+      /const envSocket = process\.env\.CONTINUO_MCP_SOCKET;\s*if \(envSocket\) \{[\s\S]*?return \[envSocket\];\s*\}/,
+    );
   });
 });
