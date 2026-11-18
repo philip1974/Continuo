@@ -68,7 +68,10 @@ import {
   type StdioSocketServer,
 } from './services/mcp-stdio-server.service';
 import { makeTerminalMcpTools } from './services/mcp-terminal-host';
-import { cancelAgentTerminalCreates } from './services/agent-terminal-inflight';
+import {
+  cancelAgentTerminalCreates,
+  hasAgentTerminalCreates,
+} from './services/agent-terminal-inflight';
 import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
@@ -1109,6 +1112,11 @@ async function startMcpHost(): Promise<void> {
           console.warn('[debug] killByController failed on http session release', err);
         });
       },
+      // 空闲驱逐跳过名下仍有 debug 会话 / 在途 launch、在途终端创建、其创建的存活终端的 session。
+      hasLiveResources: (subject) =>
+        debugService.listControllerTokens().includes(subject) ||
+        hasAgentTerminalCreates(subject) ||
+        terminalSessions.hasLiveSessionForController(subject),
     });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };

@@ -23,6 +23,12 @@ import {
   type McpCallCtx,
   type McpHost,
 } from '../../../electron/main/services/mcp-host.service';
+import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
+import {
+  cancelAgentTerminalCreates,
+  hasAgentTerminalCreates,
+  trackAgentTerminalCreate,
+} from '../../../electron/main/services/agent-terminal-inflight';
 
 let host: McpHost | null = null;
 afterEach(async () => {
@@ -229,6 +235,66 @@ describe('F1 · HTTP MCP callerSubject 绑定 Mcp-Session-Id', () => {
     await stillOk.text();
   });
 
+  // 攻击场景:受害 agent 停在断点 >30 分钟(无在途请求);持被窃 token 的攻击方反复 initialize 凑满上限 →
+  // 驱逐受害方最旧 session → 释放回调 killByController 杀掉其 debug 会话 / 其终端会话沦为无人可控的孤儿。
+  // 修复:名下仍有活跃资源(debug 会话、在途 create/launch、存活终端)的 subject 不被驱逐。
+  it('空闲驱逐跳过名下仍有活跃资源的 session,改驱逐下一个空闲且无资源的', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const released: string[] = [];
+    subjects.length = 0;
+    const busy = new Set<string>();
+    host = await createMcpHost({
+      initialTools: [whoami],
+      onHttpSessionReleased: (subject) => released.push(subject),
+      hasLiveResources: (subject) => busy.has(subject),
+    });
+    const token = host.issueWindowToken(1);
+    const victim = await initialize(token);
+    await (await post(token, CALL, victim)).text();
+    busy.add(subjects.at(-1)!);
+    vi.advanceTimersByTime(1000);
+    const second = await initialize(token);
+    for (let i = 2; i < MAX_HTTP_SESSIONS_PER_TOKEN_FOR_TEST; i++) await initialize(token);
+    vi.advanceTimersByTime(HTTP_SESSION_IDLE_EVICT_MS_FOR_TEST * 2);
+    const r = await post(token, { id: 'init', method: 'initialize', params: {} });
+    expect(r.status).toBe(200);
+    await r.text();
+    expect(released).toHaveLength(1);
+    expect(released[0]!.endsWith(`:${second}`)).toBe(true);
+    const still = await post(token, CALL, victim);
+    expect(still.status).toBe(200);
+    await still.text();
+  });
+
+  it('所有空闲候选名下都有活跃资源 → 仍 429,不驱逐、不通知释放', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const released: string[] = [];
+    host = await createMcpHost({
+      initialTools: [whoami],
+      onHttpSessionReleased: (subject) => released.push(subject),
+      hasLiveResources: () => true,
+    });
+    const token = host.issueWindowToken(1);
+    const first = await initialize(token);
+    for (let i = 1; i < MAX_HTTP_SESSIONS_PER_TOKEN_FOR_TEST; i++) await initialize(token);
+    vi.advanceTimersByTime(HTTP_SESSION_IDLE_EVICT_MS_FOR_TEST * 2);
+    const over = await post(token, { id: 'init', method: 'initialize', params: {} });
+    expect(over.status).toBe(429);
+    await over.text();
+    expect(released).toEqual([]);
+    const ok = await post(token, CALL, first);
+    expect(ok.status).toBe(200);
+    await ok.text();
+  });
+
+  it('hasLiveResources 接线:index.ts 查 debug 会话 / 在途 launch、在途终端创建、该 subject 创建的存活终端', () => {
+    const src = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const fn = /hasLiveResources: \(subject\) =>[\s\S]*?\n {6}\S/.exec(src)?.[0] ?? '';
+    expect(fn).toMatch(/debugService\.listControllerTokens\(\)\.includes\(subject\)/);
+    expect(fn).toMatch(/hasAgentTerminalCreates\(subject\)/);
+    expect(fn).toMatch(/terminalSessions\.hasLiveSessionForController\(subject\)/);
+  });
+
   it('在途请求中的 session(如长时间 await)即使超过空闲阈值也不被驱逐', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     let unblock: () => void = () => {};
@@ -254,5 +320,36 @@ describe('F1 · HTTP MCP callerSubject 绑定 Mcp-Session-Id', () => {
     const still = await post(token, CALL, busySid);
     expect(still.status).toBe(200);
     await still.text();
+  });
+});
+
+describe('空闲驱逐的活跃资源只读查询', () => {
+  afterEach(() => {
+    terminalSessions._reset();
+    cancelAgentTerminalCreates();
+  });
+
+  it('hasLiveSessionForController:只认该 subject 创建且未退出的终端', () => {
+    expect(terminalSessions.hasLiveSessionForController('tok:a')).toBe(false);
+    terminalSessions.add({
+      id: 't1',
+      title: 'x',
+      cwd: '/w',
+      originHint: 'agent',
+      ownerWindowId: 1,
+      controllerToken: 'tok:a',
+    });
+    expect(terminalSessions.hasLiveSessionForController('tok:a')).toBe(true);
+    expect(terminalSessions.hasLiveSessionForController('tok:b')).toBe(false);
+    terminalSessions.setExited('t1', 0);
+    expect(terminalSessions.hasLiveSessionForController('tok:a')).toBe(false);
+  });
+
+  it('hasAgentTerminalCreates:在途创建登记期间为 true,done 后为 false', () => {
+    const t = trackAgentTerminalCreate('tok:a');
+    expect(hasAgentTerminalCreates('tok:a')).toBe(true);
+    expect(hasAgentTerminalCreates('tok:b')).toBe(false);
+    t.done();
+    expect(hasAgentTerminalCreates('tok:a')).toBe(false);
   });
 });
