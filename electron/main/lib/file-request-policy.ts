@@ -74,7 +74,8 @@ export function isFileRequestOutsideRoot(url: string, rootPathname: string, case
     return true;
   }
   if (root === '' || root === '/') return true;
-  if (reqPath.includes('\\') || reqPath.split('/').some((seg) => seg === '..' || seg === '.')) return true;
+  // 只由点和空格组成的段都当穿越:Win32 会去掉段尾的点与空格,`.. ` / `...` 在磁盘上等价于 `..` / `.`。
+  if (reqPath.includes('\\') || reqPath.split('/').some((seg) => /^[. ]+$/.test(seg))) return true;
   if (!root.endsWith('/')) root += '/';
   if (caseInsensitive) {
     reqPath = reqPath.toLowerCase();

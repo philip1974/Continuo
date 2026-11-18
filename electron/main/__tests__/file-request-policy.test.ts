@@ -127,6 +127,17 @@ describe('isFileRequestOutsideRoot', () => {
     expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/../index.html`, ROOT)).toBe(false);
   });
 
+  // Win32 会去掉路径段尾随的点与空格:`.. ` / `..%20` / `...` 在磁盘上等价于 `..` 或 `.`。URL 解析不认它们是
+  // 穿越段,前缀比较会放行;只由点和空格组成的段一律视为穿越(合法资源名不会这样命名),各平台同规则。
+  it('只由点和空格组成的路径段(.. 加尾随空格 / 三个点等)→ 视为穿越,拒', () => {
+    for (const seg of ['..%20', '.%20', '..%20%20', '...', '.%20.']) {
+      expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/${seg}/${seg}/secret.js`, ROOT), seg).toBe(true);
+    }
+    // 名字里带点 / 空格的正常文件不误杀
+    expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/a..b.js`, ROOT)).toBe(false);
+    expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/my%20font.woff2`, ROOT)).toBe(false);
+  });
+
   it('解码后才出现的穿越段 / 畸形编码 / 无法解析 → fail-closed 视为目录外', () => {
     expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/%252e%252e/x.js`, ROOT)).toBe(false); // 字面 %2e%2e 文件名,不是穿越
     expect(isFileRequestOutsideRoot(`file://${ROOT}/assets/%E0%A4%A/x.js`, ROOT)).toBe(true);
