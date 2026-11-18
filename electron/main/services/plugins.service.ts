@@ -1680,6 +1680,12 @@ export function createPluginsWatcher(
       // 边界(E27,E24/listPluginDirs 同源):watcher 扫描读 manifest 也走有界读(同 MANIFEST_MAX_BYTES),
       // 避免超大 manifest 整块读入。读失败(缺失 / EACCES 等)→ 跳过该目录且不缓存,下轮重试。
       // perf:超限 → 按本轮签名缓存为 info=null(跳过),签名不变不再每 2s open+fstat + 告警,改动后照常重读。
+      // 安全:与列举(readPluginManifestText)同口径 —— manifest 的真实路径须仍在插件目录内。旧安装的目录可能带
+      // 符号链接(manifest.json -> 目录外文件),不校验就会对目录外文件算 hash、取 id。越界按本轮签名缓存为跳过。
+      if (!(await staysInsidePluginDir(dir, manifestPath))) {
+        manifestCache.set(name, { sig, info: null });
+        return null;
+      }
       let text: string | null;
       try {
         const read = await readFileCappedFd(manifestPath, MANIFEST_MAX_BYTES);
