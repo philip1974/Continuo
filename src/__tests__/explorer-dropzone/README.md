@@ -43,6 +43,9 @@
 - `performDrop` 部分写失败 → ok:false + failed 列出
 - `performDrop` file.arrayBuffer() 抛 → failed READ_ERROR
 - `performDrop` 不主动跳过同名(由 atomic write 静默覆盖)
+- 安全:`fs:write-binary` 落盘**不跟随 leaf 符号链接** —— 同名项是链接(可能指向 workspace 外,如
+  `README.md -> ~/.ssh/authorized_keys`)时替换链接本身为普通文件,链接目标不受影响;同名普通文件照旧静默覆盖;
+  编辑器保存 `fs:write-file` 仍写穿链接(`drop-write-no-follow.spec.ts`)
 - `performDrop` 有界并发读写(在途写入/arrayBuffer ≤ 上界);同目标路径(大小写/NFC 折叠)按输入顺序串行,后项覆盖前项;按目标键分组为 worker 任务,同键链不阻塞后续异键文件;written/failed 按输入顺序汇总
 
 ### `folder-tree-row-drop-overlay.spec.tsx`(jsdom + 真实 headless-tree)

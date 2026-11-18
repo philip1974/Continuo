@@ -18,7 +18,7 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
-import { atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
+import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
@@ -166,8 +166,12 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
 export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
   atomicWriteFile(input.path, input.content);
 // writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
-const writeBinaryHandler = async (input: WriteBinaryInput): Promise<void> => {
-  await atomicWriteFile(input.path, input.content);
+// 安全:唯一调用方是外部文件拖入 Explorer(新建 / 放入语义,同名静默覆盖)。不复用编辑器保存的
+// atomicWriteFile —— 它对 leaf 符号链接写穿到目标:恶意仓库放 `README.md -> ~/.ssh/authorized_keys`,
+// 用户拖入同名文件即无确认覆盖 workspace 外文件。改为不跟随:目标是链接时替换链接本身,链接目标不受影响;
+// 同名普通文件照旧原子覆盖。
+export const writeBinaryHandler = async (input: WriteBinaryInput): Promise<void> => {
+  await atomicReplaceFileNoFollow(input.path, input.content);
 };
 // fs:stat:跟随 symlink(与 readFile / 保存写穿同口径)取 { mtimeMs, size, ino };errno 同其它 fs 通道映射。
 export const statHandler = async (input: StatInput): Promise<FsFileStat> => {

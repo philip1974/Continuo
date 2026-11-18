@@ -132,7 +132,8 @@ export function partitionDropItems(
 // MAX_DROP_FILE_COUNT 的项直接归 failed,绝不调 arrayBuffer()。常量统一声明于文件上方(E115)。
 
 /**
- * 写入文件到 targetDir。同名文件由 fs.writeBinary 内部 atomic 覆盖,不弹确认。
+ * 写入文件到 targetDir。同名文件由 fs.writeBinary 内部 atomic 覆盖,不弹确认;同名项是符号链接时替换链接
+ * 本身、不写穿到链接目标(防恶意仓库 `README.md -> ~/.ssh/authorized_keys` 诱导拖放覆盖 workspace 外文件)。
  *
  * perf:读写有界并发(DROP_IO_CONCURRENCY)—— 此前逐个串行 arrayBuffer + IPC + fsync,
  * 拖入数百小文件时总耗时 ≈ 各项延迟之和。预检(数量/名字/大小/累计字节)仍按输入顺序串行

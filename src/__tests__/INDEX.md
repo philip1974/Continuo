@@ -542,6 +542,7 @@
 ## [explorer-dropzone (M-Explorer Step 5d)](./explorer-dropzone/README.md)
 
 - [`drop-handlers.spec.ts`](./explorer-dropzone/drop-handlers.spec.ts)
+- [`drop-write-no-follow.spec.ts`](./explorer-dropzone/drop-write-no-follow.spec.ts)
 - [`folder-tree-row-drop-overlay.spec.tsx`](./explorer-dropzone/folder-tree-row-drop-overlay.spec.tsx)
 
 ## [explorer-expanded-state](./explorer-expanded-state/README.md)
