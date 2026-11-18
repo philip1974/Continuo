@@ -113,20 +113,42 @@ export function pluginFsIdentityEpoch(): number | null {
 // 打开失败 / 插件已吊销)→ 当即释放。窗口关闭 / renderer 重载时整窗释放(见 wc-gone 钩子)。
 // 数量有上限且**不淘汰**:满了以后新的 read-for-editor 以 FS_BUSY 拒绝,已有记录照常生效。此前按最近使用淘汰,
 // 插件再打开 4096 个别的文件就能把目标路径挤出记录、解除保护(审计 F2)。
+// 名额按插件:每插件至多 PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX 份(同一插件各窗口 / 各实例合计),全部插件合计至多
+// PLUGIN_OPENED_PATHS_MAX 份。此前只有全局上限:一个插件连续 openFile 4096 次即让所有插件的 openFile 失败,直到
+// 用户关掉标签。释放通道只带路径(宿主编辑器不知道标签是哪个插件开的):同一窗口同一路径的多份按后进先出归还 ——
+// 「已开着只切换 / 被吊销」的当即释放正好是刚记的那份;同一窗口同一路径通常只有一个标签,归属偏差至多在同窗口的
+// 插件之间挪动名额,全局上限不受影响。
 export const PLUGIN_OPENED_PATHS_MAX = 4096;
-/** canonical 路径 → (webContents id → 持有份数) */
-const pluginOpenedPaths = new Map<string, Map<number, number>>();
+export const PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX = 1024;
+/** canonical 路径 → (webContents id → 各份的 pluginId,按记录顺序) */
+const pluginOpenedPaths = new Map<string, Map<number, string[]>>();
 let pluginOpenedRefs = 0;
+/** pluginId → 份数(归零即删除) */
+const pluginOpenedRefsByPlugin = new Map<string, number>();
 
-/** 记一份;记录已满 → false(不记)。 */
-function pinPluginOpenedPath(canonical: string, wcId: number): boolean {
-  if (pluginOpenedRefs >= PLUGIN_OPENED_PATHS_MAX) return false;
+function releasePluginOpenedRef(pluginId: string): void {
+  const n = pluginOpenedRefsByPlugin.get(pluginId) ?? 0;
+  if (n > 1) pluginOpenedRefsByPlugin.set(pluginId, n - 1);
+  else pluginOpenedRefsByPlugin.delete(pluginId);
+  pluginOpenedRefs -= 1;
+}
+
+/** 记一份;该插件或全局已满 → false(不记)。 */
+function pinPluginOpenedPath(canonical: string, wcId: number, pluginId: string): boolean {
+  const own = pluginOpenedRefsByPlugin.get(pluginId) ?? 0;
+  if (pluginOpenedRefs >= PLUGIN_OPENED_PATHS_MAX || own >= PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX) return false;
   let holders = pluginOpenedPaths.get(canonical);
   if (holders === undefined) {
     holders = new Map();
     pluginOpenedPaths.set(canonical, holders);
   }
-  holders.set(wcId, (holders.get(wcId) ?? 0) + 1);
+  let refs = holders.get(wcId);
+  if (refs === undefined) {
+    refs = [];
+    holders.set(wcId, refs);
+  }
+  refs.push(pluginId);
+  pluginOpenedRefsByPlugin.set(pluginId, own + 1);
   pluginOpenedRefs += 1;
   return true;
 }
@@ -134,21 +156,20 @@ function pinPluginOpenedPath(canonical: string, wcId: number): boolean {
 /** 释放该窗口对该路径的一份(没有则 no-op)。 */
 function unpinPluginOpenedPath(canonical: string, wcId: number): void {
   const holders = pluginOpenedPaths.get(canonical);
-  const n = holders?.get(wcId);
-  if (holders === undefined || n === undefined) return;
-  if (n > 1) holders.set(wcId, n - 1);
-  else holders.delete(wcId);
+  const refs = holders?.get(wcId);
+  if (holders === undefined || refs === undefined) return;
+  releasePluginOpenedRef(refs.pop()!);
+  if (refs.length === 0) holders.delete(wcId);
   if (holders.size === 0) pluginOpenedPaths.delete(canonical);
-  pluginOpenedRefs -= 1;
 }
 
 /** 窗口关闭 / renderer 重载:该窗口的标签都已不在,释放它持有的全部记录。 */
 function unpinPluginOpenedPathsOf(wcId: number): void {
   for (const [path, holders] of pluginOpenedPaths) {
-    const n = holders.get(wcId);
-    if (n === undefined) continue;
+    const refs = holders.get(wcId);
+    if (refs === undefined) continue;
     holders.delete(wcId);
-    pluginOpenedRefs -= n;
+    for (const pluginId of refs) releasePluginOpenedRef(pluginId);
     if (holders.size === 0) pluginOpenedPaths.delete(path);
   }
 }
@@ -190,12 +211,13 @@ export function guardPluginOpenedPath<T>(path: string, task: () => Promise<T>): 
 /** Test-only:清空「插件打开过的路径」记录。 */
 export function _resetPluginOpenedPathsForTest(): void {
   pluginOpenedPaths.clear();
+  pluginOpenedRefsByPlugin.clear();
   pluginOpenedRefs = 0;
 }
 
-/** Test-only:「插件打开过的路径」记录的总份数。 */
-export function _pluginOpenedPathRefsForTest(): number {
-  return pluginOpenedRefs;
+/** Test-only:「插件打开过的路径」记录的总份数(给 pluginId 则只计该插件的)。 */
+export function _pluginOpenedPathRefsForTest(pluginId?: string): number {
+  return pluginId === undefined ? pluginOpenedRefs : (pluginOpenedRefsByPlugin.get(pluginId) ?? 0);
 }
 
 // 边界(内存峰值):单次读取有上限(read-file / read-for-editor 64MiB、read-git-blob 64MB、list-dir 10 万条),但并发
@@ -687,12 +709,13 @@ export function registerPluginFsHandlers(
         (await checkScope(token, event.sender.id, 'read', target, 'r')).canonical;
       try {
         const read = await heavyRead(heavyReadKey(token), async () => readFileVerified(await recheck(), recheck, { requireUtf8: true }));
-        if (!pinPluginOpenedPath(read.canonical, event.sender.id)) {
+        // 读取已过 scope 校验(token 有效);lookup 落空只可能是 token 恰好被回收,归入 '' 桶。
+        if (!pinPluginOpenedPath(read.canonical, event.sender.id, identityRegistry.lookup(token)?.pluginId ?? '')) {
           console.warn('[plugin-fs] read-for-editor refused: too many plugin-opened editor tabs');
           return {
             ok: false,
             code: ERROR_CODES.FS_BUSY,
-            message: `too many files opened by plugins (max ${PLUGIN_OPENED_PATHS_MAX}); close some editor tabs`,
+            message: `too many files opened by plugins (max ${PLUGIN_OPENED_PATHS_PER_PLUGIN_MAX} per plugin, ${PLUGIN_OPENED_PATHS_MAX} in total); close some editor tabs`,
           };
         }
         return { ok: true, canonicalPath: read.canonical, content: read.content };
