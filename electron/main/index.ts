@@ -10,6 +10,7 @@ import type {
   WindowOpenHandlerResponse,
 } from 'electron';
 import nodeFs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
@@ -61,6 +62,8 @@ import {
 } from './services/mcp-host.service';
 import {
   createStdioSocketServer,
+  createWindowsStdioPipeName,
+  STDIO_PIPE_DISCOVERY_FILE,
   type StdioSocketServer,
 } from './services/mcp-stdio-server.service';
 import { makeTerminalMcpTools } from './services/mcp-terminal-host';
@@ -1097,6 +1100,8 @@ async function startMcpHost(): Promise<void> {
         windowId,
         url: mcpHost.url,
         issueToken: (id) => mcpHost!.issueWindowToken(id),
+        // Windows:注入本次启动的随机管道名,终端里的 proxy 直连本实例(见 resolveStdioSocketPath)。
+        stdioSocketPath: process.platform === 'win32' ? resolveStdioSocketPath() : undefined,
       });
     });
     // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
@@ -1169,14 +1174,16 @@ function resolveStdioCliPath(): string {
 /**
  * stdio socket / named pipe 路径(跨平台):
  *  - macOS / Linux:`<userData>/mcp.sock`(unix socket,文件系统)
- *  - Windows:`\\.\pipe\continuo-mcp`(named pipe,不在文件系统;
- *    单实例 lock 已防双实例,无需 pid 后缀)
- *
- * CLI proxy(scripts/continuo-mcp-stdio.mjs)有同款默认值算法,两边对齐。
+ *  - Windows:`\\.\pipe\continuo-mcp-<用户哈希>-<128 bit 随机>`,本进程首次调用时生成、此后不变
+ *   (命名空间全机共享,可预测名会被其它用户抢注骗走 hello token,见 createWindowsStdioPipeName)。
+ *    proxy 经 PTY env CONTINUO_MCP_SOCKET 或 `<userData>/mcp-pipe` 发现文件拿到名字;
+ *    单实例 lock 保证每个 userData 只有一个实例写发现文件。
  */
+let windowsStdioPipePath: string | null = null;
 function resolveStdioSocketPath(): string {
   if (process.platform === 'win32') {
-    return '\\\\.\\pipe\\continuo-mcp';
+    windowsStdioPipePath ??= createWindowsStdioPipeName(os.userInfo());
+    return windowsStdioPipePath;
   }
   return path.join(app.getPath('userData'), 'mcp.sock');
 }
@@ -1191,6 +1198,9 @@ async function startMcpStdioServer(): Promise<void> {
   try {
     mcpStdio = await createStdioSocketServer({
       socketPath,
+      discoveryFile: process.platform === 'win32'
+        ? path.join(app.getPath('userData'), STDIO_PIPE_DISCOVERY_FILE)
+        : undefined,
       tools: mcpHost.tools,
       serverInfo: mcpHost.serverInfo,
       resolveWindowId: (token) => mcpHost!.resolveWindowId(token),

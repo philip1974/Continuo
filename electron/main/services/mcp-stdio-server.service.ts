@@ -18,7 +18,7 @@ import {
 } from 'node:net';
 import { BrowserWindow } from 'electron';
 import * as crypto from 'node:crypto';
-import { mkdir, unlink, chmod, lstat, stat } from 'node:fs/promises';
+import { mkdir, unlink, chmod, lstat, stat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   RPC_ERROR_CODES,
@@ -35,7 +35,40 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { isBlankString } from '../../shared/ecma-whitespace';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { createNdjsonLineDecoder } from '../lib/ndjson-line-decoder';
+import { atomicWriteText } from '../lib/atomic-write';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
+
+/**
+ * Windows stdio MCP 命名管道名:`\\.\pipe\continuo-mcp-<用户哈希>-<128 bit 随机>`,每次启动新生成。
+ *
+ * 命名管道命名空间全机共享、不分用户:名字可预测(固定名,或仅由用户名 / profile 目录推导)时,同机其它
+ * 用户可抢先创建同名管道 → 本用户 Continuo 绑定失败,终端里的 proxy 连到对方管道并在 hello 中交出
+ * {windowId, token}。随机段让对方无从预知;用户哈希段(os.userInfo() 的用户名 + profile 目录,小写后
+ * sha256)只为可读 / 多用户区分。proxy 经 PTY env CONTINUO_MCP_SOCKET 或 userData 下的发现文件拿到名字。
+ * libuv 以 FILE_FLAG_FIRST_PIPE_INSTANCE 独占创建。
+ */
+export function createWindowsStdioPipeName(user: { username: string; homedir: string }): string {
+  const userHash = crypto
+    .createHash('sha256')
+    .update(`${user.username.toLowerCase()}\0${user.homedir.toLowerCase()}`, 'utf8')
+    .digest('hex')
+    .slice(0, 32);
+  return `\\\\.\\pipe\\continuo-mcp-${userHash}-${crypto.randomBytes(16).toString('hex')}`;
+}
+
+/**
+ * 发现文件 / env 中的管道名只认本机 continuo-mcp 管道(防发现文件被写成远程管道 / 任意路径)。
+ * ⚠ scripts/continuo-mcp-stdio.mjs 的 WINDOWS_PIPE_NAME_RE 是同一正则的副本(独立脚本不能 import),
+ * 由 src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住一致。
+ */
+const WINDOWS_PIPE_NAME_RE = /^\\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$/;
+
+export function isValidWindowsStdioPipeName(name: string): boolean {
+  return WINDOWS_PIPE_NAME_RE.test(name);
+}
+
+/** Windows 管道名发现文件(位于 userData,packaged / dev 各一份;proxy 同名读取)。 */
+export const STDIO_PIPE_DISCOVERY_FILE = 'mcp-pipe';
 
 export interface ResolveStdioHelloDeps {
   resolveWindowId: (token: string) => number | null;
@@ -213,6 +246,11 @@ export interface CreateStdioSocketOptions {
    * 归属它的资源(debug 会话)再无人能清理 —— 由 main 据此回收。
    */
   onCallerClosed?: (callerSubject: string) => void;
+  /**
+   * listen 成功后把 socketPath 原子写入该文件(Windows 管道名发现文件,供无 env 的外部 proxy 读取);
+   * close 时若内容仍是本 server 的名字则删除。写失败只告警,不影响 server。
+   */
+  discoveryFile?: string;
 }
 
 function modeOct(mode: number): string {
@@ -358,8 +396,9 @@ function writeLine(sock: Socket, data: string): void {
  *
  * - macOS / Linux:Unix socket(`<userData>/mcp.sock`)— 文件系统 +
  *   chmod 0600 = capability 鉴权。
- * - Windows:named pipe(`\\.\pipe\continuo-mcp`)— 不在文件系统,
- *   无 mkdir / unlink / chmod。Win NT pipe ACL 默认只本用户可访问。
+ * - Windows:named pipe(每次启动随机命名,见 createWindowsStdioPipeName)— 不在文件系统,无 mkdir / unlink /
+ *   chmod。libuv 以默认安全描述符创建:创建者 / SYSTEM / Administrators 完全控制,Everyone 仅读
+ *  (其它用户无法以读写打开 → 连不上);但管道**命名空间**不分用户,防抢注靠按用户命名。
  *
  * net 模块 API 跨平台一致,只在 fs 副作用上分支。
  */
@@ -491,6 +530,14 @@ export async function createStdioSocketServer(
     });
   });
 
+  if (opts.discoveryFile) {
+    try {
+      await atomicWriteText(opts.discoveryFile, opts.socketPath);
+    } catch (err) {
+      console.warn('[mcp-stdio] failed to write pipe discovery file', err);
+    }
+  }
+
   if (shouldPrepareFilesystem) {
     // 显式 chmod 0600(unix socket 默认 umask 通常 0666 太宽)
     try {
@@ -530,6 +577,16 @@ export async function createStdioSocketServer(
       }
       clients.clear();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (opts.discoveryFile) {
+        try {
+          // 只删自己写的:内容已被换掉(理论上单实例锁下不会发生)则保留。
+          if ((await readFile(opts.discoveryFile, 'utf8')) === opts.socketPath) {
+            await unlink(opts.discoveryFile);
+          }
+        } catch {
+          /* 不存在 / 读删失败 → 忽略 */
+        }
+      }
       if (shouldPrepareFilesystem) {
         try {
           await unlink(opts.socketPath);
