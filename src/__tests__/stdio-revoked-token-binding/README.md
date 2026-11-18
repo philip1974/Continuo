@@ -18,6 +18,9 @@ hello 只在**绑定时**校验一次 token、之后只记 windowId,每次调用
   也**不**回落成 external 借主窗执行。
 - 三种吊销都覆盖:单个 token(终端退出)、按窗口、全部轮换。
 - 连接可用**新签发的有效 token** 重新 hello 恢复;用旧 token 重新 hello 无效。
+- 发过 hello 却没有有效绑定的连接(hello 所用 token 无效,或绑定后被吊销)的 `-32002` 消息带可操作提示:
+  `missing window context; the terminal's Continuo token was revoked — start the agent in a new Continuo terminal`。
+  终端 env 里的 token 不会更新,终端里的 proxy 也只 hello 一次,所以实际的恢复方式是在新终端里启动 agent。
 - 只看本连接绑定所用的 token:同一窗口另一个终端的 token 被吊销不影响本连接。
 - `tools/list` 不需要窗口上下文,不受影响。
 - 从未发 hello 的外部客户端不持 token,不受吊销 / 轮换影响(仍以 external 回落主窗,走独立的 external 授权)。

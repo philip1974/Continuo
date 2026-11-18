@@ -216,6 +216,12 @@ interface StdioBinding {
 }
 const socketCtx: Map<Socket, StdioBinding | null> = new Map();
 
+/**
+ * 发过 hello 却没有有效绑定的连接(hello 所用 token 无效,或绑定后被吊销 / 轮换)收到的 -32002 消息。终端 env 里的
+ * token 不会更新:该终端里的 proxy(已连着的,或之后重启的)此后只会一直收到这个错误,消息须说明怎么办。
+ */
+const REVOKED_TOKEN_CTX_MESSAGE = `${NO_WINDOW_CTX_MESSAGE}; the terminal's Continuo token was revoked — start the agent in a new Continuo terminal`;
+
 // 边界(E1):stdio NDJSON 单行/残行字节上限。畸形/恶意本地客户端发送无换行的超长输入会让
 // 行解码器(E135 createNdjsonLineDecoder)的残行 buffer 在 main 进程无限累积 → 内存增长甚至 OOM(HTTP MCP 有
 // MAX_BODY_BYTES,stdio 传输此前缺同等保护)。超限即回 parse 错误并断开连接。与 HTTP 的
@@ -498,7 +504,18 @@ async function handleLine(
   if (binding && rpc.method === 'tools/call' && validStdioBinding(sock, opts) !== binding) {
     writeLine(
       sock,
-      formatRpcError(rpc.id, RPC_ERROR_CODES.NO_WINDOW_CTX, NO_WINDOW_CTX_MESSAGE),
+      formatRpcError(rpc.id, RPC_ERROR_CODES.NO_WINDOW_CTX, REVOKED_TOKEN_CTX_MESSAGE),
+    );
+    return;
+  }
+  if (
+    'error' in response &&
+    response.error.code === RPC_ERROR_CODES.NO_WINDOW_CTX &&
+    socketCtx.get(sock) === null
+  ) {
+    writeLine(
+      sock,
+      formatRpcError(rpc.id, RPC_ERROR_CODES.NO_WINDOW_CTX, REVOKED_TOKEN_CTX_MESSAGE),
     );
     return;
   }

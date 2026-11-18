@@ -240,6 +240,7 @@
 ## [agent-terminal-mcp-auth (Agent Terminal MCP Phase 2)](./agent-terminal-mcp-auth/README.md)
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
+- [`revoke-copy-matches-behavior.spec.ts`](./agent-terminal-mcp-auth/revoke-copy-matches-behavior.spec.ts)
 
 ## [agent-terminal-mcp-await-stop-hook](./agent-terminal-mcp-await-stop-hook/README.md)
 

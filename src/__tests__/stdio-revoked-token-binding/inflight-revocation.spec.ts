@@ -328,6 +328,7 @@ describe.skipIf(process.platform === 'win32')('stdio:在途调用跨越 token �
     const reply = await inflight;
     expect(reply.errorCode).toBe(NO_WINDOW_CTX);
     expect((await queued).errorCode).toBe(NO_WINDOW_CTX);
+    expect(reply.errorMessage).toMatch(/token was revoked.*new Continuo terminal/i);
     expect(h.create.calls).toBe(0);
     expect(h.create.autoruns).toEqual([]);
     expect(sessions.getAll()).toEqual([]);

@@ -108,6 +108,19 @@ interface AgentAuthState {
 - 与 `revoke()` 同样重置(全部域 session 授权清空 —— 窗口级三域与外部客户端两域,见 `SESSION_GRANT_KEYS`;epoch +1 → 在途的 session 确认迟到不复活)
 - 残留 pending → 清空,挂起的 ensure resolve `'cancelled'`(main 已结算该请求,应答方不得再 respond)
 
+### 撤销之后(文案与错误消息须如实)
+
+撤销全部会轮换所有 MCP token。终端 env 里的 `CONTINUO_MCP_TOKEN` 是创建终端时注入的,不会更新:
+
+- 现存终端里的 stdio proxy(`scripts/continuo-mcp-stdio.mjs`)只在连上时用 env 里的 token hello 一次;撤销后它的
+  绑定失效,`tools/call` 此后一直是 `-32002`(HTTP 侧同样 401)。在同一终端里重新启动 agent 也一样(hello 用的还是
+  旧 token)。**须在新开的 Continuo 终端里启动 agent** 才能再次请求授权。
+- 确认框文案(`permissions.revoke_all.confirm` / `confirm_grant_only`,三语)须点明这一点,不能笼统地说「之后可
+  重新授权」—— `revoke-copy-matches-behavior.spec.ts`(钉事实,不钉整句)。
+- 发过 hello 却没有有效绑定的 stdio 连接,`-32002` 的消息带可操作提示:
+  `missing window context; the terminal's Continuo token was revoked — start the agent in a new Continuo terminal`
+  (`stdio-revoked-token-binding/`)。未发 hello 且无窗口可回落的外部客户端仍是 `missing window context`。
+
 ### 边界
 
 - 无 pending 时调 `grant` / `deny` → no-op,不抛

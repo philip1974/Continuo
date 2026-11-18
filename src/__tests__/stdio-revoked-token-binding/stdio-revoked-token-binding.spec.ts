@@ -77,6 +77,8 @@ interface Client {
   hello(windowId: number, token: string): void;
   /** tools/call whoami → JSON-RPC error code(成功为 null)。 */
   call(): Promise<number | null>;
+  /** tools/call whoami → JSON-RPC error message(成功为 null)。 */
+  callMessage(): Promise<string | null>;
   /** tools/list → 是否成功。 */
   list(): Promise<boolean>;
 }
@@ -117,6 +119,11 @@ async function connect(socketPath: string): Promise<Client> {
       send({ id: (id += 1), method: 'tools/call', params: { name: 'whoami', arguments: {} } });
       const r = await next();
       return (r['error'] as { code: number } | undefined)?.code ?? null;
+    },
+    callMessage: async () => {
+      send({ id: (id += 1), method: 'tools/call', params: { name: 'whoami', arguments: {} } });
+      const r = await next();
+      return (r['error'] as { message: string } | undefined)?.message ?? null;
     },
     list: async () => {
       send({ id: (id += 1), method: 'tools/list' });
@@ -231,5 +238,41 @@ describe.skipIf(process.platform === 'win32')('stdio:token 吊销后已 hello �
     expect(await c.call()).toBeNull();
     expect(run).toHaveBeenCalledTimes(2);
     expect(run.mock.calls[1]![1]).toMatchObject({ ownerWindowId: 3, external: true });
+  });
+});
+
+// 现存终端 env 里的 token 不会更新:吊销后该终端里的 proxy(已连着的,或之后重启的)只会一直收到 -32002。
+// 错误消息须告诉 agent / 用户怎么办(在新的 Continuo 终端里启动),而不是只说「缺窗口上下文」。
+describe.skipIf(process.platform === 'win32')('stdio:token 失效后的 -32002 带可操作提示', () => {
+  const HINT = /token was revoked.*new Continuo terminal/i;
+
+  it('绑定所用 token 被吊销(撤销全部)→ 消息说明 token 已吊销、须在新的 Continuo 终端里启动 agent', async () => {
+    win.alive.add(7);
+    const { host: h, socketPath } = await start();
+    const c = await connect(socketPath);
+    c.hello(7, h.issueWindowToken(7));
+    expect(await c.callMessage()).toBeNull();
+    h.rotateToken();
+    expect(await c.callMessage()).toMatch(HINT);
+  });
+
+  it('用已失效的 token hello(撤销后在旧终端里重启 agent)→ 同样的提示', async () => {
+    win.alive.add(7);
+    const { host: h, socketPath } = await start();
+    const stale = h.issueWindowToken(7);
+    h.rotateToken();
+    const c = await connect(socketPath);
+    c.hello(7, stale);
+    const message = await c.callMessage();
+    expect(message).toMatch(/missing window context/);
+    expect(message).toMatch(HINT);
+  });
+
+  it('未发 hello 且没有可回落窗口的外部客户端:只是缺窗口上下文,不提 token', async () => {
+    const { socketPath } = await start();
+    const c = await connect(socketPath);
+    const message = await c.callMessage();
+    expect(message).toMatch(/missing window context/);
+    expect(message).not.toMatch(/token/i);
   });
 });
