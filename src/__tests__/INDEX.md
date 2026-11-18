@@ -881,6 +881,7 @@
 - [`first-appearance-grant-guard.spec.tsx`](./permission-prompt/first-appearance-grant-guard.spec.tsx)
 - [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
+- [`shell-not-preselected.spec.tsx`](./permission-prompt/shell-not-preselected.spec.tsx)
 
 ## [permission-record-contract(权限记录单条形态的跨进程统一规则)](./permission-record-contract/README.md)
 

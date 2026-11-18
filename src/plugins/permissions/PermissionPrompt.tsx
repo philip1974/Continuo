@@ -37,6 +37,18 @@ export function copySelectedPermissions(
   return out;
 }
 
+/**
+ * 安全:默认不预选的权限,须用户主动勾选(或点「全选」)才会授予。`shell` 等同于完全访问本机(以用户身份运行任意
+ * 程序,不受文件夹授权限制),不能随一次「授权选中」顺手给出;其余权限照旧默认预选。
+ */
+const NOT_PRESELECTED: ReadonlySet<PermissionKey> = new Set<PermissionKey>(['shell']);
+
+function defaultSelected(perms: readonly PermissionKey[]): Set<PermissionKey> {
+  const selected = new Set<PermissionKey>();
+  for (const perm of perms) if (!NOT_PRESELECTED.has(perm)) selected.add(perm);
+  return selected;
+}
+
 // 每个 manifest 请求一个 body 实例(pending 无自带 id,按对象身份编号):排队 A→B 时勾选与初始焦点都重新来过。
 const manifestKeys = new WeakMap<Pending, number>();
 let nextManifestKey = 0;
@@ -84,9 +96,9 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
     () => splitPluginIdTemplate(promptBodyTemplate),
     [promptBodyTemplate],
   );
-  // 以请求身份为 key 挂载(shell 端):换请求即 remount,勾选回到新请求的默认全选。
-  const [selected, setSelected] = useState<Set<PermissionKey>>(
-    () => new Set(pending.perms),
+  // 以请求身份为 key 挂载(shell 端):换请求即 remount,勾选回到新请求的默认值(shell 不预选)。
+  const [selected, setSelected] = useState<Set<PermissionKey>>(() =>
+    defaultSelected(pending.perms),
   );
   // 引用必须稳定:Modal 的焦点 / 键盘 effect 依赖 onClose,每次渲染换新引用会让它反复重跑
   //(勾选一次,焦点就先被还给弹窗外、再跳回弹窗内第一个元素)。guard 引用稳定。

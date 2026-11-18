@@ -226,6 +226,7 @@ describe('PermissionPrompt UI', () => {
     expect(title?.textContent?.length ?? 0).toBeGreaterThan(0);
   });
 
+  // shell 例外(默认不勾选),见 shell-not-preselected.spec.tsx
   it('pending 渲染 + 默认全选', () => {
     render(<PermissionPrompt />);
     act(() => {
@@ -320,9 +321,8 @@ describe('PermissionPrompt UI', () => {
     const checkboxes = document.querySelectorAll<HTMLInputElement>(
       '.wm-modal-content input[type="checkbox"]',
     );
-    // 先取消两个
+    // 先取消 fs(shell 默认就不勾选)
     fireEvent.click(checkboxes[0]!);
-    fireEvent.click(checkboxes[1]!);
     expect(Array.from(checkboxes).every((c) => !c.checked)).toBe(true);
     // 点全选
     const selectAll = Array.from(
