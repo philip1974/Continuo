@@ -48,6 +48,20 @@ describe('isUnstableResourcesPath', () => {
   it('Linux resourcesPath 在临时目录(AppImage 挂载点)→ 不稳定', () => {
     expect(isUnstableResourcesPath('/tmp/.mount_ContinXYZ/resources', {}, 'linux', '/tmp')).toBe(true);
   });
+  it('Linux TMPDIR 被改时仍识别 /tmp、/var/tmp、/dev/shm 下的路径为不稳定', () => {
+    const tmp = '/home/u/mytmp';
+    expect(isUnstableResourcesPath('/tmp/.mount_X/resources', {}, 'linux', tmp)).toBe(true);
+    expect(isUnstableResourcesPath('/tmp/continuo/resources', {}, 'linux', tmp)).toBe(true);
+    expect(isUnstableResourcesPath('/var/tmp/continuo/resources', {}, 'linux', tmp)).toBe(true);
+    expect(isUnstableResourcesPath('/dev/shm/continuo/resources', {}, 'linux', tmp)).toBe(true);
+    expect(isUnstableResourcesPath('/home/u/mytmp/x/resources', {}, 'linux', tmp)).toBe(true);
+    // 前缀相似的兄弟目录不算
+    expect(isUnstableResourcesPath('/tmpfoo/continuo/resources', {}, 'linux', tmp)).toBe(false);
+  });
+  it('Linux 路径段含 .mount_(任意位置的 AppImage 挂载点)→ 不稳定', () => {
+    expect(isUnstableResourcesPath('/run/user/1000/.mount_ContinAB/resources', {}, 'linux', '/tmp')).toBe(true);
+    expect(isUnstableResourcesPath('/opt/x.mount_y/resources', {}, 'linux', '/tmp')).toBe(true);
+  });
   it('Linux 安装在稳定目录 / macOS / Windows → 稳定(行为不变)', () => {
     expect(isUnstableResourcesPath('/opt/Continuo/resources', {}, 'linux', '/tmp')).toBe(false);
     expect(

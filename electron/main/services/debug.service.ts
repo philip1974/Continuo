@@ -28,6 +28,7 @@ import { codedError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
 import { processTreeKillable } from '../lib/kill-with-grace';
+import { isSameOrInsidePath } from '../lib/path-inside';
 
 const execFile = promisify(execFileCb);
 
@@ -871,9 +872,7 @@ export class DebugService {
     } catch {
       throw codedError(ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE, `debug ${label} not found or inaccessible: ${target}`);
     }
-    const rel = path.relative(realRoot, realTarget);
-    const inside = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-    if (!inside) {
+    if (!isSameOrInsidePath(realRoot, realTarget)) {
       throw codedError(ERROR_CODES.DEBUG_PROGRAM_OUTSIDE_WORKSPACE, `debug ${label} must be inside the workspace: ${target}`);
     }
     return realTarget;

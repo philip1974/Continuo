@@ -33,6 +33,7 @@ import {
 } from '../../shared/mcp-terminal-schemas';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { readFileCappedFd } from '../lib/read-fh-capped';
+import { isSameOrInsidePath } from '../lib/path-inside';
 import { truncateSessionIdForEcho } from '../lib/session-id-echo';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
@@ -1013,10 +1014,7 @@ export async function ensureHookEventsDir(dir: string): Promise<void> {
 // 目录树。现:cwd 与会话同一解析(resolveCwd:须已存在且为目录;缺省回退窗口 workspace 根),realpath 后须在窗口
 // workspace 根之内,且不得是用户 home 或其祖先(该处 `.codex/config.toml` / `.claude/` 即全局配置,workspace
 // 就是 home 也拒)。会话本身允许在 workspace 外(全局会话),只禁止在那里**安装 hook**。
-function isSameOrInside(child: string, parent: string): boolean {
-  const rel = path.relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-}
+// 包含判定统一走 lib/path-inside.isSameOrInsidePath(base, target)。
 
 export async function installStopHookInWorkspace(opts: {
   readonly cwd: string | undefined;
@@ -1038,7 +1036,7 @@ export async function installStopHookInWorkspace(opts: {
   } catch {
     realRoot = null;
   }
-  if (realRoot === null || !isSameOrInside(realCwd, realRoot)) {
+  if (realRoot === null || !isSameOrInsidePath(realRoot, realCwd)) {
     return { installed: false, reason: 'cwd-outside-workspace' };
   }
   let realHome = path.resolve(opts.homeDir);
@@ -1049,7 +1047,7 @@ export async function installStopHookInWorkspace(opts: {
   }
   // 大小写不敏感文件系统(macOS / Windows 默认)上按折叠后比较,只会多拒不会漏拒。
   const fold = (p: string) => (process.platform === 'linux' ? p : p.toLowerCase());
-  if (isSameOrInside(fold(realHome), fold(realCwd))) {
+  if (isSameOrInsidePath(fold(realCwd), fold(realHome))) {
     return { installed: false, reason: 'cwd-is-home-or-ancestor' };
   }
   return installStopHookForSession(realCwd, opts.runner, opts.hookEventsDir);

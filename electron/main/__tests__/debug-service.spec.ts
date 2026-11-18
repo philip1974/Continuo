@@ -1239,6 +1239,21 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(parent.requestLog.length).toBe(0);
   });
 
+  it('安全:program 在 workspace 同名前缀兄弟目录(/repo2 vs /repo)→ 拒绝', async () => {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent, {
+      getWorkspaceRoot: () => '/repo',
+      realpath: async (p) => p,
+    });
+    await expect(
+      service.launchSession(
+        { program: '/repo2/evil.js', cwd: '/repo' },
+        { ownerWindowId: 22, controllerToken: 'agent-sec-sib' },
+      ),
+    ).rejects.toMatchObject({ code: 'DEBUG_PROGRAM_OUTSIDE_WORKSPACE' });
+    expect(parent.requestLog.length).toBe(0);
+  });
+
   it('安全:cwd 在 workspace 外 → 拒绝', async () => {
     const { service } = makeFakeService(new FakeDapClient(1001), {
       getWorkspaceRoot: () => '/repo',
