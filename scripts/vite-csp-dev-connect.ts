@@ -2,7 +2,8 @@ import type { Plugin } from 'vite';
 
 // 纵深(CSP):index.html 的 connect-src 只写生产所需来源('self' https:)。开发期 Vite HMR 需连
 // localhost 的 http / ws,由本插件仅在 dev server(apply: 'serve')把这些来源加回;生产构建
-//(`pnpm build` / 打包)产物不含 localhost,renderer 被注入脚本时不能借 CSP 探测本机端口服务。
+//(`pnpm build` / 打包)产物不再放行本机明文 http / ws 服务(`https:` 为协议级来源,仍放行
+// https://localhost,属预期)。
 // 见 src/__tests__/49-polish-bugfixes/csp-localhost-dev-only.spec.ts。
 
 export const DEV_CONNECT_SOURCES = 'ws://localhost:* wss://localhost:* http://localhost:*';
