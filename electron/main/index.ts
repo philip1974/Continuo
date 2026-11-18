@@ -91,6 +91,11 @@ import { makeDebugMcpTools } from './services/mcp-debug-host';
 import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
 import { buildClaudeAddCommand, setStdioConfig } from './services/mcp-stdio-config.service';
 import {
+  STDIO_CLI_FILE_NAME,
+  isUnstableResourcesPath,
+  resolveStdioCliPathForConfig,
+} from './services/mcp-stdio-cli-install';
+import {
   createAwaitStopHookTool,
   createHookFileBroker,
   ensureHookEventsDir,
@@ -1183,15 +1188,21 @@ async function startMcpHost(): Promise<void> {
 /**
  * stdio CLI proxy 路径:
  *  - packaged app:`<resourcesPath>/continuo-mcp-stdio.mjs`(electron-builder
- *    extraResources 拷过去)
+ *    extraResources 拷过去);Linux AppImage 等临时挂载位置 → `<userData>/bin/` 稳定副本
  *  - dev:`scripts/continuo-mcp-stdio.mjs`(项目根)
  */
-function resolveStdioCliPath(): string {
+function resolveStdioCliPath(): Promise<string | undefined> {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'continuo-mcp-stdio.mjs');
+    // 安全:Linux AppImage 的 resourcesPath 是运行期临时挂载点(退出即消失、名字他人可见可抢注),
+    // 不可持久写进 ~/.claude.json → 复制到 <userData>/bin 稳定副本;复制失败返回 undefined(不提供命令)。
+    return resolveStdioCliPathForConfig({
+      sourcePath: path.join(process.resourcesPath, STDIO_CLI_FILE_NAME),
+      userDataDir: app.getPath('userData'),
+      unstable: isUnstableResourcesPath(process.resourcesPath),
+    });
   }
   // dev:从 main 的 __dirname(out/main/)往上找项目根
-  return path.resolve(__dirname, '..', '..', 'scripts', 'continuo-mcp-stdio.mjs');
+  return Promise.resolve(path.resolve(__dirname, '..', '..', 'scripts', STDIO_CLI_FILE_NAME));
 }
 
 /**
@@ -1236,10 +1247,14 @@ async function startMcpStdioServer(): Promise<void> {
         });
       },
     });
-    const cliPath = resolveStdioCliPath();
-    const claudeAddCommand = buildClaudeAddCommand(cliPath);
-     
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
+    const cliPath = await resolveStdioCliPath();
+    if (!cliPath) {
+      // fail-closed:没有稳定 CLI 路径就不提供命令(状态栏显示不可用),绝不给临时挂载路径
+      setStdioConfig({ available: true, socketPath: mcpStdio.socketPath });
+      return;
+    }
+    const claudeAddCommand = buildClaudeAddCommand(cliPath);
     // 打印推荐的 claude mcp add 命令,用户复制即可一次配置永久使用
      
     console.log(
