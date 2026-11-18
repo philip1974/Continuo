@@ -5,6 +5,7 @@ import {
   createInputSchema,
   idOnlyInputSchema,
   makeCreateHandler,
+  setMcpEnvProvider,
   resizeInputSchema,
   updateCwdInputSchema,
   writeInputSchema,
@@ -363,6 +364,28 @@ describe('makeCreateHandler', () => {
     expect(call[3]).toEqual(['-l']);
     expect(call[4]).toBe('/proj');
     expect(call[5]).toEqual({ K: 'V' });
+  });
+
+  // 安全(Windows env 键大小写不敏感):用户 env 以不同大小写传内部键(如 continuo_mcp_token),普通展开会
+  // 两键并存,node-pty 按插入顺序写入环境块,子进程可能取到用户值 → 「internalEnv 在后」的防覆盖失效。
+  it('Windows:用户 env 大小写变体不能与内部 env 并存,内部值胜出', async () => {
+    const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    setMcpEnvProvider(() => ({ env: { CONTINUO_MCP_TOKEN: 'real' }, mcpToken: 'real' }));
+    try {
+      const service = makeService();
+      const handler = makeCreateHandler({
+        service: service as never,
+        sessionStore: makeSessionStore() as never,
+        generateId: () => 'x',
+        resolveCwd: () => '/proj',
+      });
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      await handler({ shell: getDefaultShell(), env: { continuo_mcp_token: 'evil', K: 'V' } }, fakeWin);
+      expect(service.createTerminal.mock.calls[0]![5]).toEqual({ K: 'V', CONTINUO_MCP_TOKEN: 'real' });
+    } finally {
+      Object.defineProperty(process, 'platform', realPlatform);
+      setMcpEnvProvider(() => ({ env: {}, mcpToken: '' }));
+    }
   });
 
   // ── P1 metadata 入 sessions service ────────────────────────
