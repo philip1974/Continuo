@@ -20,7 +20,9 @@ jobs:
 
       # 见 ci.yml 同款步骤:把 ContinuoTerminal clone 到 workspace 同级路径,供 pnpm workspace 解析。
       - name: Checkout ContinuoTerminal (workspace sibling)
-        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

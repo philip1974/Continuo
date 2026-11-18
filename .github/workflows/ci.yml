@@ -25,7 +25,9 @@ jobs:
       # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
       # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
       - name: Checkout ContinuoTerminal (workspace sibling)
-        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -55,7 +57,9 @@ jobs:
       # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
       # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
       - name: Checkout ContinuoTerminal (workspace sibling)
-        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -90,7 +94,9 @@ jobs:
       # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
       # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
       - name: Checkout ContinuoTerminal (workspace sibling)
-        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -153,7 +159,9 @@ jobs:
       # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
       # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径。
       - name: Checkout ContinuoTerminal (workspace sibling)
-        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -197,7 +205,9 @@ jobs:
       # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
       # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径。
       - name: Checkout ContinuoTerminal (workspace sibling)
-        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -233,7 +243,9 @@ jobs:
       # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
       # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
       - name: Checkout ContinuoTerminal (workspace sibling)
-        run: git clone --depth 1 https://github.com/philip1974/ContinuoTerminal.git "${{ github.workspace }}/../ContinuoTerminal"
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

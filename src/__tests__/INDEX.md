@@ -1087,6 +1087,7 @@
 ## [Release 供应链防线](./release-supply-chain/README.md)
 
 - [`check-no-secrets.spec.ts`](./release-supply-chain/check-no-secrets.spec.ts)
+- [`sibling-ref-pinned.spec.ts`](./release-supply-chain/sibling-ref-pinned.spec.ts)
 
 ## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
 

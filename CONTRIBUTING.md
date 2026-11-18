@@ -39,6 +39,8 @@ pnpm build:app
 
 `build:app*` automatically runs `pnpm check:secrets:pack` after electron-builder: it scans `out-pack/` and every `app.asar` under `dist-electron/` for GitHub tokens / AWS keys / private keys and fails the build on any hit (printing only file + offset, never the value). Do not publish an installer from a build where this step failed.
 
+The sibling dependency `../ContinuoTerminal` is pinned by commit SHA in `.continuo-terminal-ref` (CI checks out exactly that commit). `build:app*` first runs `pnpm check:sibling-ref`, which aborts unless the local `../ContinuoTerminal` checkout is clean and its HEAD equals the recorded SHA. To bump it, push the new ContinuoTerminal commit, update `.continuo-terminal-ref`, and re-run `pnpm install`.
+
 ## PR flow
 
 1. Fork → branch from `main`.

@@ -14,6 +14,14 @@
 - 跳过压缩容器(`.dmg` / `.zip` / `.blockmap` 等),其内容已以 `.app` / `app.asar` 形式被扫。
 - 接线:所有 `build:app*` 在 `electron-builder` 之后自动运行 `pnpm check:secrets:pack`(`out-pack` 全量 + `dist-electron` 的 `app.asar`);CI `secret-scan` job 在 `pnpm build` 之后独立一步扫 `out/`。
 
+### sibling 依赖 ContinuoTerminal 固定版本(`.continuo-terminal-ref`)
+
+- package.json 以 `file:../ContinuoTerminal/...` 引用 sibling 仓库,本身不固定版本;仓库根 `.continuo-terminal-ref` 记录应使用的 40 位 commit SHA。
+- CI(ci.yml / e2e.yml 所有 job)经 `scripts/ci-checkout-continuo-terminal.sh` 浅克隆后按 SHA `fetch --depth 1` 并 `checkout --detach`,检出后核对 HEAD;不再跟随 sibling 默认分支最新提交。
+- 所有 `build:app*` 第一步运行 `pnpm check:sibling-ref`(`scripts/check-sibling-ref.mjs`):`../ContinuoTerminal` 必须是独立 git 仓库根(不是外层仓库里的普通子目录)、工作区干净(含未跟踪文件)、HEAD 等于记录的 SHA;否则中止打包并提示。记录文件缺失或格式不对同样中止。
+- 升级 sibling:确认新 commit 已推送到远端后更新 `.continuo-terminal-ref`,并重新 `pnpm install`(`file:` 依赖在 install 时被复制进 `node_modules/.pnpm`)。
+
 ## 规范文件
 
 - `check-no-secrets.spec.ts`:扫描器退出码 / 不回显值 / 分块边界 / fail-closed,以及 package.json 与 CI 接线。
+- `sibling-ref-pinned.spec.ts`:sibling 版本核对(干净 / HEAD 一致 / 非外层仓库子目录)与 CI 固定 SHA 检出接线。
