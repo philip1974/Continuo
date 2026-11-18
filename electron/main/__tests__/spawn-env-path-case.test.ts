@@ -1,7 +1,7 @@
 // 功能回归(Windows):宿主 `{...process.env}` 带 `Path`,插件 shell.exec 的 env 传 `PATH`,旧合并后两键并存 ——
 // resolveSpawnCommand 按插入顺序取到宿主 `Path`,而 Node 给子进程按排序选键(`PATH`),插件补充的 PATH 在命令
 // 解析时被忽略,且解析用的 env 与子进程实际 env 不一致。契约:Windows 上合并 env 大小写不敏感(后者覆盖前者,只留
-// 一个键),解析与传给 spawn 的 env 一致。mock platform=win32 + statSync,验证 shell.exec 入口。
+// 一个键),解析与传给 spawn 的 env 一致。mock platform=win32 + lstatSync,验证 shell.exec 入口。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 
@@ -29,9 +29,12 @@ vi.mock('node:child_process', async (orig) => ({
 }));
 vi.mock('node:fs', async (orig) => {
   const real = await orig<typeof import('node:fs')>();
-  const statSync = ((p: string) =>
-    p === 'C:\\plug\\tool.exe' ? { isFile: () => true } : real.statSync(p)) as typeof real.statSync;
-  return { ...real, statSync, default: { ...real, statSync } };
+  // 命令候选判定用 lstat(与 libuv「存在且不是目录」对齐,见 child-spawn-hardening isSpawnCandidate)
+  const lstatSync = ((p: string) =>
+    p === 'C:\\plug\\tool.exe'
+      ? { isDirectory: () => false, isSymbolicLink: () => false }
+      : real.lstatSync(p)) as typeof real.lstatSync;
+  return { ...real, lstatSync, default: { ...real, lstatSync } };
 });
 
 import { execShell } from '../services/shell.service';

@@ -923,15 +923,15 @@ async function writeConfigBackup(configPath: string, text: string): Promise<bool
 // 加过同款 cap,这两处配置读入是其平行入口。
 const MAX_CONFIG_FILE_BYTES = 1024 * 1024; // 1 MiB:stop-hook 配置是小文本,留足余量
 
-/** 读到的配置文件 inode 身份;null = 读取时文件不存在(新建)。 */
-type ConfigIdentity = { readonly dev: number; readonly ino: number } | null;
+/** 读到的配置文件 inode 身份(bigint,见 CappedFdRead.identity);null = 读取时文件不存在(新建)。 */
+type ConfigIdentity = { readonly dev: bigint; readonly ino: bigint } | null;
 
 type CappedConfigRead =
   | { readonly kind: 'ok'; readonly text: string; readonly identity: ConfigIdentity }
   | { readonly kind: 'missing' } // ENOENT → 新建
   | { readonly kind: 'too-large' }
   | { readonly kind: 'read-error' }
-  | { readonly kind: 'unsafe-config-path' }; // 检查后被换成链接 / 非普通文件
+  | { readonly kind: 'unsafe-config-path' }; // 检查后被换成链接 / 非普通文件 / 硬链接
 
 // 边界(E162,E66 stat-before-read TOCTOU 修正):此前 `stat(path).size` 预检 + `readFile(path)` 两次
 // 独立路径解析,检查与读取之间配置可被替换/增长绕过 MAX_CONFIG_FILE_BYTES。改用共享 readFileCappedFd
@@ -941,12 +941,12 @@ async function readConfigCapped(filePath: string): Promise<CappedConfigRead> {
   let read: Awaited<ReturnType<typeof readFileCappedFd>>;
   try {
     // 安全(H1 TOCTOU):不跟随链接 + 只读普通文件。guard 之后文件被换成仓库外链接时,跟随读会把仓库外内容
-    // 经备份写进工作树。
+    // 经备份写进工作树。硬链接(nlink > 1,lstat 显示普通文件)同理可指向全局配置 → EMLINK 拒绝。
     read = await readFileCappedFd(filePath, MAX_CONFIG_FILE_BYTES, { noFollow: true });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return { kind: 'missing' };
-    if (code === 'ELOOP' || code === 'EFTYPE') return { kind: 'unsafe-config-path' };
+    if (code === 'ELOOP' || code === 'EFTYPE' || code === 'EMLINK') return { kind: 'unsafe-config-path' };
     return { kind: 'read-error' };
   }
   if (read.tooLarge) return { kind: 'too-large' };
@@ -967,7 +967,7 @@ async function recheckConfigPathBeforeWrite(
   const guard = await guardConfigPath(cwd, path.dirname(configPath), configPath);
   if (guard !== 'ok') return guard;
   try {
-    const st = await lstat(configPath);
+    const st = await lstat(configPath, { bigint: true });
     if (identity === null || st.dev !== identity.dev || st.ino !== identity.ino) {
       return 'unsafe-config-path';
     }
@@ -981,8 +981,8 @@ async function recheckConfigPathBeforeWrite(
 /** 拒绝安装并记录可理解的原因(用户把配置目录软链到 dotfiles 时也会走到这里,属有意行为)。 */
 function refuseUnsafeConfigPath(configPath: string): InstallStopHookResult {
   console.warn(
-    '[hook-bridge] install_stop_hook refused: symlinked (or concurrently replaced) config directory/file ' +
-      'is not allowed — 拒绝符号链接的配置目录/文件:',
+    '[hook-bridge] install_stop_hook refused: symlinked / hard-linked (or concurrently replaced) config ' +
+      'directory/file is not allowed — 拒绝符号链接或硬链接的配置目录/文件:',
     configPath,
   );
   return { installed: false, reason: 'unsafe-config-path' };

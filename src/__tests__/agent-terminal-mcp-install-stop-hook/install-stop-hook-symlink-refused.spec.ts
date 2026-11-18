@@ -8,6 +8,7 @@
 // 目标文件不被修改,不产生备份副本。
 
 import {
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -160,5 +161,43 @@ describe('I9 .claude / .codex 目录本身是链接(junction)→ 拒绝', () => 
       installed: true,
     });
     expect((await lstat(join(real, '.claude', 'settings.local.json'))).isFile()).toBe(true);
+  });
+});
+
+// 安全(I12):硬链接与符号链接不同,lstat 显示普通文件,O_NOFOLLOW 也挡不住;指向全局配置的硬链接被读出后
+// 会经 `.continuo-bak` 备份写进工作区。读取时 nlink > 1 → 拒绝。硬链接无需特权,全平台都跑。
+describe('I12 配置文件是指向仓库外的硬链接 → 拒绝', () => {
+  it('codex: .codex/config.toml 与仓库外机密是同一 inode:拒绝,机密不进工作树,目标不变', async () => {
+    const cwd = await makeDir('continuo-hook-hardlink-cwd-');
+    const outside = await makeDir('continuo-hook-hardlink-out-');
+    const target = join(outside, 'config');
+    await writeFile(target, SECRET, 'utf8');
+    await mkdir(join(cwd, '.codex'));
+    await link(target, join(cwd, '.codex', 'config.toml'));
+
+    await expect(installStopHookForSession(cwd, codex, join(cwd, 'hk'))).resolves.toEqual({
+      installed: false,
+      reason: 'unsafe-config-path',
+    });
+    expect(await readFile(target, 'utf8')).toBe(SECRET);
+    expect(await listBackups(cwd)).toEqual([]);
+    expect(await listBackups(outside)).toEqual([]);
+  });
+
+  it('cc: .claude/settings.local.json 是硬链接 → 拒绝,目标不变,无备份', async () => {
+    const cwd = await makeDir('continuo-hook-hardlink-cwd-');
+    const outside = await makeDir('continuo-hook-hardlink-out-');
+    const target = join(outside, 'settings.json');
+    await writeFile(target, CC_GLOBAL, 'utf8');
+    await mkdir(join(cwd, '.claude'));
+    await link(target, join(cwd, '.claude', 'settings.local.json'));
+
+    await expect(installStopHookForSession(cwd, cc, join(cwd, 'hk'))).resolves.toEqual({
+      installed: false,
+      reason: 'unsafe-config-path',
+    });
+    expect(await readFile(target, 'utf8')).toBe(CC_GLOBAL);
+    expect(await listBackups(cwd)).toEqual([]);
+    expect(await listBackups(outside)).toEqual([]);
   });
 });

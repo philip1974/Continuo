@@ -54,3 +54,5 @@
 
 - `input.env` 覆盖宿主 env;Windows 上键大小写不敏感合并(插件 `PATH` 覆盖宿主 `Path`,只留一个键),
   命令解析与子进程实际 env 一致(`spawn-env-path-case.test.ts`)。
+- Windows 无路径命令名只在 PATH 的绝对目录中解析(不查 cwd);PATH 切分与候选判定同 libuv(引号内 `;` 不切分;
+  「存在且不是目录」即候选,故 Store 版 `python.exe` 等 App Execution Alias 可正常执行)(`child-spawn-hardening.test.ts`)。
