@@ -21,6 +21,7 @@ T14r a window whose renderer has not reported `layout:flush-ready` (still bootin
 T15 `ensureWindowEntry` creates missing entries without replacing existing data;
 T16 multi-window IPC mocks prove independent layouts;
 T17 persistence writes via temp file plus rename;
+T17b the shared userData atomic writer creates files as 0600 (also tightens an existing 0644 file on overwrite), so other local users cannot read workspace/plugin state;
 T18 file mutex serializes concurrent read-modify-write operations;
 T19 `safeHandleWithCtx` injects sender context into handlers;
 T20 `lastClosedAt` is owned by main process and updated on close;

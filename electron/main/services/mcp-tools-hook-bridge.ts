@@ -12,6 +12,7 @@
 
 import { watch } from 'node:fs';
 import {
+  chmod,
   lstat,
   mkdir,
   opendir,
@@ -933,6 +934,17 @@ async function readConfigCapped(filePath: string): Promise<CappedConfigRead> {
   return { kind: 'ok', text: read.text as string };
 }
 
+// 安全(多用户 Linux):hook 事件含会话内容(last_assistant_message 等)。hook 命令在 `umask 077` 下运行,
+// `mkdir -p` 建出的目录为 0700、`cat >` 写出的事件文件为 0600;默认 umask 022 会让同机其他用户可读。
+// 两种 runner 的 hook 均由 POSIX shell 执行(命令本身已依赖 `$(date +%s%N)`),无 Windows cmd 分支。
+const HOOK_UMASK_PREFIX = 'umask 077; ';
+
+/** 建 hook-events 目录为 0700;已存在(旧版按默认 umask 建成 0755)也收紧。 */
+export async function ensureHookEventsDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') await chmod(dir, 0o700);
+}
+
 export async function installStopHookForSession(
   cwd: string,
   runner: RunnerKind,
@@ -997,6 +1009,7 @@ async function mergeClaudeCodeSettings(
   const stopArr = Array.isArray(hooks.Stop) ? [...hooks.Stop] : [];
 
   const command =
+    HOOK_UMASK_PREFIX +
     `mkdir -p "${hookEventsDir}" && ` +
     `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
     `cc_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
@@ -1123,6 +1136,7 @@ async function mergeCodexConfig(
 /** Codex Stop hook 写入 config.toml 的 shell 命令(新建与替换 managed 块共用)。 */
 function codexStopHookCommand(hookEventsDir: string): string {
   return (
+    HOOK_UMASK_PREFIX +
     `mkdir -p "${hookEventsDir}" && ` +
     `cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
     `codex_\${CONTINUO_WINDOW_ID:-unknown}_\${${TERMINAL_SESSION_ENV}:-unknown}_` +
