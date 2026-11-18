@@ -12,6 +12,19 @@
 // 安全(Q2,PowerShell):PowerShell tokenizer 把 U+2018–U+201B(‘ ’ ‚ ‛)与 ASCII `'` 一样当单引号
 // 定界符,shell-quote 只双写 ASCII `'`,文件名 `a’;calc;’.txt` 会被 `’` 提前闭合 → 回车执行 calc。
 // 单引号串内「两个连续单引号类字符」= 一个字面量(取第一个),故每个智能单引号原样双写即可保留原字符。
+//
+// 安全(Q3,Windows 嵌套 shell):族同样按 PTY 启动 shell 判定,PowerShell 终端里进了 cmd(或反之)时识别不到。
+// PowerShell 的 `'…'` 在 cmd 中不是引号(`'…x&calc&.txt'` 的 & 直接分隔命令);cmd 的 `"…"` 在 PowerShell 中
+// 是可展开串(`"…$(calc).txt"` 被求值,U+201C–U+201E 智能双引号可闭合)。故 Windows 两族的输出须在两者下
+// 都不执行命令,与 posix 族「bash/zsh/fish 通用写法」同思路:
+//   - 双引号 `"…"`:cmd 双引号内 & | < > ^ ( ) 是字面量,只有 " 切换引号态、% 展开(引号内也展开)、
+//     ! 在延迟展开下展开(SS64 cmd "Escape Characters");PowerShell 双引号类串内只有 $(变量/子表达式)、
+//     `(转义)与 " U+201C–U+201E(定界)特殊,其余含 ' ‘ ’ 皆字面(about_Quoting_Rules)。故不含
+//     " % ! $ ` U+201C–U+201E 的路径用 `"…"` 在两者下都是同一字面参数。
+//   - PowerShell 族另保留既有 `'…'`:路径不含 cmd 元字符(& | < > ^)、% 与 " 时,cmd 把它当普通文本,
+//     最多值带上引号,不会执行;PowerShell 中单引号串纯字面,$ ` 智能双引号都能保留。! 在 cmd 中只有
+//     /V:ON 时于解析之后展开,改变值不造成执行,故此形态允许 !。
+//   - cmd 族不能用 `'…'`(cmd 中值会带上引号);两种形态都不安全的路径一律拒绝(cmd_unrepresentable)。
 import { quoteForShell, type ShellFamily } from '@continuo-terminal/shell-quote';
 
 /** 引号内只放普通字符,`\` 与 `'` 放在引号外反斜杠转义:bash/zsh/fish 解析结果一致。 */
@@ -24,6 +37,11 @@ function quotePosixPortable(path: string): string {
 /** PowerShell 视作单引号的全部字符:ASCII ' + U+2018–U+201B。 */
 const POWERSHELL_SINGLE_QUOTES = /['\u2018-\u201b]/g;
 
+/** cmd 与 PowerShell 双引号内都只当字面量的路径:不含 " % ! $ ` 与 U+201C–U+201E。 */
+const WIN_DQ_UNSAFE = /["%!$`\u201c-\u201e]/;
+/** PowerShell `'…'` 在 cmd 中仍不执行命令:不含 cmd 元字符、% 展开与引号切换。 */
+const CMD_ACTIVE = /[&|<>^%"]/;
+
 function quoteOne(
   path: string,
   family: ShellFamily,
@@ -33,8 +51,12 @@ function quoteOne(
   if (family === 'posix' && path.includes('\\')) {
     return { ok: true, quoted: quotePosixPortable(path) };
   }
-  if (family === 'powershell') {
+  if (family === 'powershell' && !CMD_ACTIVE.test(path)) {
     return { ok: true, quoted: `'${path.replace(POWERSHELL_SINGLE_QUOTES, '$&$&')}'` };
+  }
+  if (family === 'powershell' || family === 'cmd') {
+    if (WIN_DQ_UNSAFE.test(path)) return { ok: false, reason: 'cmd_unrepresentable' };
+    return { ok: true, quoted: `"${path}"` };
   }
   return r;
 }
