@@ -15,6 +15,7 @@ const ctl = vi.hoisted(() => ({
   stderrChunk: '' as string, // E62:fail 时 git 子进程 stderr 输出(模拟超大错误输出)
   manifest: { id: 'p', name: 'P', version: '1.0.0' } as Record<string, string>,
   mainAsDir: false, // main 入口是目录而非文件
+  shipDataJson: null as string | null, // 仓库自带 data.json 的内容(null = 不带)
   lastArgs: [] as readonly string[], // 最近一次 git 调用的 argv
   lastEnv: {} as NodeJS.ProcessEnv, // 最近一次 git 调用的 env
 }));
@@ -56,6 +57,7 @@ vi.mock('node:child_process', async () => {
         writeFileSync(np.join(cloneDir, 'manifest.json'), manifestJson);
         if (ctl.mainAsDir) mkdirSync(np.join(cloneDir, 'main.js'));
         else writeFileSync(np.join(cloneDir, 'main.js'), '// plugin');
+        if (ctl.shipDataJson !== null) writeFileSync(np.join(cloneDir, 'data.json'), ctl.shipDataJson);
         if (ctl.unreadableFile) {
           writeFileSync(np.join(cloneDir, 'zz-secret.bin'), 'x');
           chmodSync(np.join(cloneDir, 'zz-secret.bin'), 0o000);
@@ -84,6 +86,7 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     ctl.oversize = false;
     ctl.stderrChunk = '';
     ctl.mainAsDir = false;
+    ctl.shipDataJson = null;
     ctl.lastArgs = [];
     ctl.manifest = { id: 'p', name: 'P', version: '1.0.0' };
   });
@@ -99,6 +102,67 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     const r = await installFromGit(URL, baseDir, { overwrite: true });
     expect(r.version).toBe('2.0.0');
     expect(await readVersion('p')).toBe('2.0.0');
+  });
+
+  // 数据安全:插件数据 data.json 存在安装目录里,市场「更新」(overwrite swap)整目录替换会把它丢掉。
+  describe('overwrite 更新保留插件数据 data.json', () => {
+    const dataFile = (): string => path.join(baseDir, 'p', 'data.json');
+    const USER_DATA = '{"value":{"todo":["用户数据"],"n":1}}';
+
+    async function update(version = '2.0.0'): Promise<unknown> {
+      ctl.manifest = { id: 'p', name: 'P', version };
+      return installFromGit(URL, baseDir, { overwrite: true });
+    }
+
+    it('更新后 data.json 内容不变(0600)', async () => {
+      await installFromGit(URL, baseDir);
+      await fs.writeFile(dataFile(), USER_DATA);
+      await update();
+      expect(await readVersion('p')).toBe('2.0.0');
+      expect(await fs.readFile(dataFile(), 'utf-8')).toBe(USER_DATA);
+      if (process.platform !== 'win32') expect((await fs.stat(dataFile())).mode & 0o777).toBe(0o600);
+      expect((await fs.readdir(baseDir)).filter((e) => e.startsWith('.'))).toEqual([]);
+    });
+
+    it('新版本仓库自带 data.json → 不取代用户数据', async () => {
+      await installFromGit(URL, baseDir);
+      await fs.writeFile(dataFile(), USER_DATA);
+      ctl.shipDataJson = '{"value":"shipped-by-repo"}';
+      await update();
+      expect(await fs.readFile(dataFile(), 'utf-8')).toBe(USER_DATA);
+    });
+
+    it('旧目录没有 data.json → 照常更新;仓库自带的 data.json 保留(同全新安装)', async () => {
+      await installFromGit(URL, baseDir);
+      ctl.shipDataJson = '{"value":"shipped-by-repo"}';
+      await update();
+      expect(await readVersion('p')).toBe('2.0.0');
+      expect(await fs.readFile(dataFile(), 'utf-8')).toBe('{"value":"shipped-by-repo"}');
+    });
+
+    it('旧 data.json 是符号链接 → 更新被拒(PLUGIN_DATA_PRESERVE_FAILED),原目录完好、无残留', async () => {
+      await installFromGit(URL, baseDir);
+      const outside = path.join(baseDir, '..', `outside-${path.basename(baseDir)}.json`);
+      await fs.writeFile(outside, '{"value":"other-plugin-secret"}');
+      try {
+        await fs.symlink(outside, dataFile());
+        await expect(update()).rejects.toMatchObject({ code: 'PLUGIN_DATA_PRESERVE_FAILED' });
+        expect(await readVersion('p')).toBe('1.0.0');
+        expect((await fs.lstat(dataFile())).isSymbolicLink()).toBe(true);
+        expect((await fs.readdir(baseDir)).filter((e) => e.startsWith('.'))).toEqual([]);
+      } finally {
+        await rm(outside, { force: true });
+      }
+    });
+
+    it('旧 data.json 超过大小上限 → 更新被拒,原目录完好', async () => {
+      await installFromGit(URL, baseDir);
+      await fs.writeFile(dataFile(), '{}');
+      await fs.truncate(dataFile(), 16 * 1024 * 1024 + 1);
+      await expect(update()).rejects.toMatchObject({ code: 'PLUGIN_DATA_PRESERVE_FAILED' });
+      expect(await readVersion('p')).toBe('1.0.0');
+      expect((await fs.stat(dataFile())).size).toBe(16 * 1024 * 1024 + 1);
+    });
   });
 
   it('git URL scheme 校验走字符扫描,不调用 RegExp.test', async () => {

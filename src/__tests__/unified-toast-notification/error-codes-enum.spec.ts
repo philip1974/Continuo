@@ -62,7 +62,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 插件激活:+PLUGIN_MANIFEST_CHANGED(50→51),列举后 manifest 被更新则拒绝以旧 manifest 执行新 main。
     // 插件安装:+GIT_TIMEOUT(51→52),clone 超时独立本地化(提示 ssh host key / 交互口令)。
     // 插件安装:+PLUGIN_SYMLINK_REJECTED(52→53),克隆树含符号链接一律拒装。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(53);
+    // 插件更新:+PLUGIN_DATA_PRESERVE_FAILED(53→54),旧 data.json 无法安全带入新版本时中止更新。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(54);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

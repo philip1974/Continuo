@@ -41,6 +41,7 @@ import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped'
 import { isSameOrInsidePath } from '../lib/path-inside';
 import { runSerialPerKey } from './serialize-per-key';
 import { parseManifest } from '../../shared/plugin-manifest';
+import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -1263,6 +1264,9 @@ export function withInstalledPluginLock<T>(baseDir: string, id: string, fn: () =
   });
 }
 
+/** 插件数据文件名(plugin-data-store.service 写在安装目录里)。 */
+const PLUGIN_DATA_FILE = 'data.json';
+
 /**
  * dir 是否是 plugin-data 留下的残留目录:没有 manifest.json,且里面只有 data.json 及其附属文件(`.lock` 锁目录、
  * `.corrupt` 快照、原子写的 `.data.json.*.tmp`)。旧版本里卸载后迟到的 saveData 会 `mkdir -p` 把目录建回来,
@@ -1475,6 +1479,17 @@ export async function installFromGit(
         throw err;
       }
 
+      // 数据安全:插件数据 data.json 就存在安装目录里,整目录 swap 会把它丢掉。更新(已有旧目录)时在锁内把旧
+      // data.json 带进 staging(覆盖仓库自带的同名文件);无法安全读取 → 中止更新,旧目录原样保留。
+      if (backup) {
+        try {
+          await carryOverPluginData(targetDir, staging);
+        } catch (err) {
+          await rm(staging, { recursive: true, force: true }).catch(() => {});
+          throw err;
+        }
+      }
+
       try {
         if (backup) await fs.rename(targetDir, backup);
         await fs.rename(staging, targetDir);
@@ -1492,6 +1507,44 @@ export async function installFromGit(
     });
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * 把旧安装目录的 data.json(插件经 saveData 存的用户数据)带进新版本的 staging 目录。
+ * - 旧目录没有 data.json → 什么都不做(仓库自带的 data.json 照旧保留,与全新安装一致)。
+ * - 有 → 覆盖 staging 里仓库自带的同名文件:更新不应让仓库内容取代用户数据。
+ * - 只认普通文件:noFollow(符号链接 ELOOP / 硬链接 EMLINK / 非普通文件 EFTYPE 一律拒)、大小沿用 plugin-data
+ *   的上限、须是合法 UTF-8(按文本读写,非法字节无法原样带过去)。不满足或读写失败 → 抛
+ *   PLUGIN_DATA_PRESERVE_FAILED,由调用方中止更新 —— 宁可不更新,也不丢数据 / 不把链接目标的内容复制进来。
+ * 调用方须持有该 id 的 mutation 锁(saveData 也走这把锁,读到的就是最后一次落盘的内容)。
+ */
+async function carryOverPluginData(oldDir: string, stagingDir: string): Promise<void> {
+  const src = path.join(oldDir, PLUGIN_DATA_FILE);
+  const dst = path.join(stagingDir, PLUGIN_DATA_FILE);
+  let text: string;
+  try {
+    const read = await readFileCappedFd(src, MAX_PLUGIN_DATA_BYTES, { noFollow: true, requireUtf8: true });
+    if (read.text === null) {
+      throw new Error(read.tooLarge ? `larger than ${MAX_PLUGIN_DATA_BYTES} bytes` : 'not valid UTF-8');
+    }
+    text = read.text;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw codedError(
+      ERROR_CODES.PLUGIN_DATA_PRESERVE_FAILED,
+      `无法安全读取插件数据 ${PLUGIN_DATA_FILE},已中止更新(旧版本与数据原样保留): ${errorMessage(err)}`,
+    );
+  }
+  try {
+    // 仓库自带的同名条目(文件或目录;克隆树已拒符号链接)先删,再排他创建。
+    await rm(dst, { recursive: true, force: true });
+    await fs.writeFile(dst, text, { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    throw codedError(
+      ERROR_CODES.PLUGIN_DATA_PRESERVE_FAILED,
+      `无法把插件数据带入新版本,已中止更新: ${errorMessage(err)}`,
+    );
   }
 }
 
