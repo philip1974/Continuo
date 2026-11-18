@@ -10,12 +10,10 @@ T1 `requestAgentAuth` sends `AGENT_AUTH_CHANNELS.REQUEST` to the selected main w
 T2 with no windows, `requestAgentAuth` resolves `'denied'` immediately;
 T2b with only destroyed windows, `requestAgentAuth` resolves `'denied'` and sends no IPC;
 T3 unanswered auth requests time out after five minutes and resolve `'denied'`;
-T4 popout windows are skipped when a normal window is available;
-T4b if all live windows are popouts, the first live popout is used as the current fallback contract;
-T5 destroyed windows are skipped while selecting the main window (T4/T4b/T5 apply only when `ownerWindowId` is omitted);
+T4/T4b/T5 (removed 2026-11-18) the "no `ownerWindowId` → pick a main window" fallback no longer exists, see T-routing-4;
 T-routing-1 an explicit `ownerWindowId` routes the prompt to that alive non-popout window only;
 T-routing-2/3 (security, fail-closed) an explicit `ownerWindowId` that is unknown, destroyed, or a popout resolves `'denied'` and sends no IPC to any other window — previously it fell back to the first main window, so a session's prompt could land in (or be silently granted by) a different window. Popouts have no reliable owner-main-window mapping (`window.open` child, no `parent`) and do not mount the prompt;
-T-routing-4 omitting `ownerWindowId` keeps the pickMainWindow fallback;
+T-routing-4 (security, fail-closed) omitting `ownerWindowId` resolves `'denied'` and sends no IPC — `McpCallCtx.ownerWindowId` is required so the old pickMainWindow fallback was dead code, and a caller without window context must not get a prompt in whatever window the user happens to be using;
 T6 `resolveAgentAuthRequest` resolves a pending request with `'once'`;
 T7 resolving an unknown `requestId` is a no-op and does not disturb later resolutions;
 T8 resolving the same `requestId` twice is idempotent: the first decision wins;

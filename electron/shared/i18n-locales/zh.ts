@@ -311,7 +311,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.grant_session': '本次启动期间允许',
   'permissions.revoke_all.title': '撤销 agent 终端授权？',
   'permissions.revoke_all.confirm_grant_only':
-    '将撤销本次启动期间授予 agent 的终端与调试授权,并结束其调试会话。\n\n已运行的 agent CLI 持有的 token 将立刻 401;之后可重新授权。\n\n确定继续？',
+    '将撤销本次启动期间授予 agent 的终端、调试与插件工具授权,并结束其调试会话。\n\n已运行的 agent CLI 持有的 token 将立刻 401;之后可重新授权。\n\n确定继续？',
   'permissions.revoke_all.confirm':
     '将终止 {count} 个 agent terminal 并撤销本次启动期间的授权。\n\n已运行的 agent CLI 持有的 token 将立刻 401；新开 terminal 仍可重新授权。\n\n确定继续？',
   'permissions.revoke_all.failed':
@@ -331,7 +331,7 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.mcp.revoke_tooltip': '终止全部 {count} 个 agent terminal 并撤销授权',
   'statusbar.agent_sessions': '{count} 个 agent',
   'statusbar.agent_authorized': 'Agent 已授权',
-  'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端与调试授权',
+  'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端、调试与插件工具授权',
   'statusbar.no_workspace': '无工作区',
   'statusbar.sidebar_hidden': '侧栏已隐藏',
   'statusbar.untitled_file': '未命名',
