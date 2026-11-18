@@ -22,8 +22,12 @@ writeFile 写到 scope 外、mkdir 在 scope 外建目录都能命中。叶子 n
 | 类别 | 入口 | 锁 |
 |---|---|---|
 | 变更 | `writeFile` `mkdir` `rename` `rm` `cp` `atomicReplaceWithinScope`(含 trash 清扫) | 独占 |
-| 只读 | `readFile` `listDir` `stat` `lstat` `readGitBlob` | 共享 |
-| 不取锁 | `requestScope`(等待用户点弹窗)、注册 / 注销、`realpath` / `checkPath`(校验之后没有文件系统操作) | — |
+| 只读 | `readFile` `listDir` `stat` `lstat` `readGitBlob` `realpath` `checkPath` | 共享 |
+| 不取锁 | `requestScope`(等待用户点弹窗)、注册 / 注销 | — |
+
+`realpath` / `checkPath` 自己在校验之后没有文件系统操作,取共享锁是因为 scope 校验的身份缓存要求调用方持锁
+(见 `plugin-fs-protected-roots` README「身份缓存」)。锁另外暴露「独占累计授予次数」与「此刻是否有独占持有者」,
+供该缓存判断失效。
 
 - 任一调用处于校验与操作之间时,并发的变更调用排到它完成之后;变更本身照常完成,只是不会落在别人的间隙里。
 - 只读调用之间不互斥。排队严格按到达顺序(独占在等待时,后到的共享排在它后面),写者不会饿死。

@@ -80,10 +80,19 @@ export const MAX_CP_ENTRIES = 100_000;
 // 取独占,只读类(readFile / listDir / stat / lstat / readGitBlob)取共享。全局一把而非每插件一把:
 // 不同插件的 scope 可重叠,可能合谋。
 // 约束:持锁期间不得等待用户交互、不得再调用需要这把锁的入口(不可重入,会死锁)—— requestScope / 注册 /
-// 注销不取锁;realpath / checkPath 在校验之后没有文件系统操作,也不取。
+// 注销不取锁(它们不调用 pathScopeRegistry.check)。realpath / checkPath 自己在校验之后没有文件系统操作,
+// 但 check 的身份缓存要求调用方持锁(见 pluginFsIdentityEpoch),所以也取共享锁。
 // 残余:锁只管 plugin-fs 自己的调用。有 shell 权限的插件(可运行任意命令,本就等于完全访问)、用户自己的进程、
 // 其它应用对同一目录的并发改动不在此列。
 const fsLock = createRwLock();
+
+/**
+ * PathScopeRegistry 身份缓存的代际(见该处 IdentityCacheOptions):独占锁的累计授予次数;有独占持有者在运行时
+ * 返回 null(不缓存)。由 plugin-fs.ipc 注入 registry。
+ */
+export function pluginFsIdentityEpoch(): number | null {
+  return fsLock.isExclusiveHeld() ? null : fsLock.exclusiveGrants();
+}
 // 包装 handler:返回类型留给 ipcMain.handle 做上下文推断,handler 的参数类型标注保持原样。
 const shared =
   <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
@@ -574,7 +583,7 @@ export function registerPluginFsHandlers(
 
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.REALPATH,
-    async (event, token: string, target: string) => {
+    shared(async (event, token: string, target: string) => {
       const r = await pathScopeRegistry.check(
         token,
         event.sender.id,
@@ -582,8 +591,8 @@ export function registerPluginFsHandlers(
         target,
         'r',
       );
-      return canonicalPath(r); // 校验之后没有文件系统操作,不需要 fsLock
-    },
+      return canonicalPath(r);
+    }),
   );
 
   ipcMain.handle(
@@ -787,7 +796,7 @@ export function registerPluginFsHandlers(
   // (未知 token / 跨窗)仍 rethrow,保持 fail-loud。
   ipcMain.handle(
     PLUGIN_FS_CHANNELS.CHECK_PATH,
-    async (event, token: string, target: string): Promise<boolean> => {
+    shared(async (event, token: string, target: string): Promise<boolean> => {
       try {
         await pathScopeRegistry.check(token, event.sender.id, 'read', target, 'r');
         return true;
@@ -795,7 +804,7 @@ export function registerPluginFsHandlers(
         if (err instanceof ScopeError) return false;
         throw err;
       }
-    },
+    }),
   );
 
   ipcMain.handle(

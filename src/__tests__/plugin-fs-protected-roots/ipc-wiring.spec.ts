@@ -61,4 +61,29 @@ describe('registerPluginFsIpc 注入受保护根', () => {
       handles.correlator.dispose();
     }
   });
+
+  it('接上了身份缓存:两次只读调用之间,第二次不再逐级 stat 目录前缀与受保护根', async () => {
+    const { promises: fsp } = await import('node:fs');
+    const ipc = new StubIpcMain();
+    const event = makeFakeEvent({ id: 1 });
+    const handles = registerPluginFsIpc({ ipcMain: ipc as never });
+    try {
+      const { token } = (await ipc.invokeWithEvent(event, C.REGISTER_PLUGIN, PLUGIN)) as { token: string };
+      handles.pathScopeRegistry.grant(PLUGIN, [{ path: home, mode: 'rw' }]);
+      const note = join(home, 'note.txt');
+      const statSpy = vi.spyOn(fsp, 'stat');
+      const lstatSpy = vi.spyOn(fsp, 'lstat');
+      const count = async (): Promise<number> => {
+        statSpy.mockClear();
+        lstatSpy.mockClear();
+        await ipc.invokeWithEvent(event, C.STAT, token, note);
+        return statSpy.mock.calls.length + lstatSpy.mock.calls.length;
+      };
+      const cold = await count();
+      expect(await count()).toBeLessThan(cold);
+      expect(await count()).toBe(2); // 校验现查叶子 1 次 + stat 本身 1 次
+    } finally {
+      handles.correlator.dispose();
+    }
+  });
 });

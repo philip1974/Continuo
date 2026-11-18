@@ -81,4 +81,28 @@ describe('createRwLock', () => {
     ).rejects.toThrow('sync boom');
     expect(await lock.exclusive(async () => 42)).toBe(42);
   });
+
+  it('exclusiveGrants 只在独占被授予时 +1;isExclusiveHeld 只在独占任务运行期间为 true', async () => {
+    const lock = createRwLock();
+    expect(lock.exclusiveGrants()).toBe(0);
+    expect(lock.isExclusiveHeld()).toBe(false);
+    await lock.shared(() => {
+      expect(lock.isExclusiveHeld()).toBe(false);
+    });
+    expect(lock.exclusiveGrants()).toBe(0);
+    const gate = deferred();
+    const reader = lock.shared(() => gate.promise);
+    const writer = lock.exclusive(() => {
+      expect(lock.isExclusiveHeld()).toBe(true);
+      expect(lock.exclusiveGrants()).toBe(1);
+    });
+    await tick();
+    expect(lock.exclusiveGrants()).toBe(0); // 还在排队:未授予不计数
+    gate.resolve();
+    await Promise.all([reader, writer]);
+    expect(lock.isExclusiveHeld()).toBe(false);
+    await lock.exclusive(() => Promise.reject(new Error('boom'))).catch(() => {});
+    expect(lock.exclusiveGrants()).toBe(2);
+    expect(lock.isExclusiveHeld()).toBe(false);
+  });
 });

@@ -940,6 +940,7 @@
 
 ## [plugin-fs-protected-roots(应用自身的数据 / 程序目录对插件不可达,与已授 path-scope 无关)](./plugin-fs-protected-roots/README.md)
 
+- [`identity-cache.spec.ts`](./plugin-fs-protected-roots/identity-cache.spec.ts)
 - [`ipc-wiring.spec.ts`](./plugin-fs-protected-roots/ipc-wiring.spec.ts)
 - [`protected-roots.spec.ts`](./plugin-fs-protected-roots/protected-roots.spec.ts)
 
