@@ -342,6 +342,38 @@ describe('贡献点 key 的所有权:插件不能覆盖非本插件注册的 key
   });
 });
 
+describe('插件抢注宿主尚未注册的 key:内置插件后注册时收回', () => {
+  it('第三方先注册 terminal.new,内置插件后注册 → 内置的赢,被顶掉的插件条目按注销处理并记日志', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const coApp = createTestCoApp('1.0.0');
+    const squatFn = vi.fn();
+    const hostFn = vi.fn();
+    const squatter = createScopedAppController(coApp, 'evil', null, 'token-evil');
+    const squatted = squatter.app.commands.register({ id: 'terminal.new', title: 'Fake', fn: squatFn });
+    expect(() =>
+      core(coApp, 'core.terminal').commands.register({ id: 'terminal.new', title: 'New Terminal', fn: hostFn }),
+    ).not.toThrow();
+    expect(coApp.commands.get('terminal.new')?.fn).toBe(hostFn);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('plugin:evil'))).toBe(true);
+    // 插件不能夺回;它手里的旧句柄与停用清理都不会删掉内置条目。
+    expect(() => squatter.app.commands.register({ id: 'terminal.new', title: 'Again', fn: squatFn })).toThrow(DENIED);
+    squatted.dispose();
+    squatter.revoke();
+    expect(coApp.commands.get('terminal.new')?.fn).toBe(hostFn);
+    warn.mockRestore();
+  });
+
+  it('只有内置插件能收回:第三方之间仍互不覆盖;内置插件之间、内置对宿主直接注册的条目也不覆盖', () => {
+    const coApp = createTestCoApp('1.0.0');
+    thirdParty(coApp, 'p.a').panels.register({ type: 'k', title: 'A', factory: Noop });
+    expect(() => thirdParty(coApp, 'p.b').panels.register({ type: 'k', title: 'B', factory: Noop })).toThrow(DENIED);
+    core(coApp, 'core.a').panels.register({ type: 'c', title: 'A', factory: Noop });
+    expect(() => core(coApp, 'core.b').panels.register({ type: 'c', title: 'B', factory: Noop })).toThrow(DENIED);
+    coApp.panels.register({ type: 'h', title: 'Host', factory: Noop });
+    expect(() => core(coApp, 'core.a').panels.register({ type: 'h', title: 'A', factory: Noop })).toThrow(DENIED);
+  });
+});
+
 describe('events.clear 只清本插件的订阅', () => {
   it('无参 clear:其它插件与宿主的订阅保留', () => {
     const coApp = createTestCoApp('1.0.0');

@@ -74,6 +74,9 @@ settingTab `core.plugins`(替换插件与权限管理页)、panel `settings` / `
 - 所有者标识区分「宿主自建的 scoped app(内置插件,不带 plugin-fs token)」与「PluginManager 激活的第三方插件」:
   第三方插件把 manifest id 起成 `core.plugins` 也不能覆盖内置条目
 - 宿主自身代码直接在注册表上注册(不经 scoped app)不受影响:后注册赢语义不变
+- 抢注:第三方插件先注册了宿主尚未注册的 key,**内置插件**后注册同 key 时收回(内置的赢,记一条告警;被顶掉的插件
+  条目按注销处理,插件手里的旧句柄与停用清理都不会删掉内置条目,也不能再夺回)。第三方之间、内置插件之间、
+  内置插件对宿主直接注册的条目仍互不覆盖
 
 ### events.clear 只清本插件的订阅
 

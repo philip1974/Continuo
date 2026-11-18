@@ -16,7 +16,8 @@
 // 贡献点注册表 / events:吊销后 register / on / subscribe 拒绝,吊销前经 scoped app 直接注册的贡献与订阅在
 // revoke() 时统一注销(见 trackContributions);commands.execute / events.emit / events.clear 有外部副作用
 //(执行宿主命令可开窗口 / 终端,emit 触发他人监听),同样拒绝;只放行只读查询与 events.off。
-// 所有权:register 不能覆盖非本插件注册的 key(见 contributionOwners);events.clear 只清本插件自己的订阅。
+// 所有权:register 不能覆盖非本插件注册的 key(见 contributionOwners;例外:内置插件可收回被第三方抢注的 key);
+// events.clear 只清本插件自己的订阅。
 // 经 app.mcp.register 注册的工具同样在 revoke() 时注销(插件未保存 Disposable 也不残留)。
 // 只读查询结果是浅拷贝,其中回调包吊销检查(缓存 commands.get(..).fn 停用后调用同样被拒)。
 // 见 src/__tests__/plugin-capability-revoke/。
@@ -995,10 +996,20 @@ function trackContributions<T extends object, K extends keyof T & string>(
           ? (args[0] as Record<string, unknown> | null | undefined)?.[keyed.field]
           : undefined;
       const existing = liveSpec(key);
-      if (keyed !== undefined && existing !== undefined && contributionOwners.get(existing) !== keyed.owner) {
-        throw codedError(
-          'PERMISSION_DENIED',
-          `[${name}] ${keyed.field} "${String(key).slice(0, 128)}" is already registered by the host or another plugin; plugin ${pluginId} cannot override it`,
+      const existingOwner = existing === undefined ? undefined : contributionOwners.get(existing);
+      if (keyed !== undefined && existing !== undefined && existingOwner !== keyed.owner) {
+        // 安全(抢注):第三方插件可以先注册宿主尚未注册的 key(内置条目晚于插件激活才注册时)。内置插件(`core:`)
+        // 后注册同 key 时收回:顶掉第三方(`plugin:`)的条目 —— 注册表按覆盖处理,插件手里的旧句柄此后是 no-op。
+        // 第三方之间、内置插件之间、对宿主直接注册的条目(无所有者记录)仍一律拒绝。
+        const reclaim = keyed.owner.startsWith('core:') && existingOwner?.startsWith('plugin:') === true;
+        if (!reclaim) {
+          throw codedError(
+            'PERMISSION_DENIED',
+            `[${name}] ${keyed.field} "${String(key).slice(0, 128)}" is already registered by the host or another plugin; plugin ${pluginId} cannot override it`,
+          );
+        }
+        console.warn(
+          `[scoped-app] ${name} ${keyed.field} "${String(key).slice(0, 128)}" 被 ${existingOwner} 抢注,内置插件 ${pluginId} 注册时收回(原条目按注销处理)`,
         );
       }
       // 所有者在入表之前登记到快照上(注册表存的就是这份快照):注册表入表后同步通知监听器,监听器里读到的新条目
