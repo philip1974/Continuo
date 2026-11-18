@@ -91,8 +91,15 @@ export function readGitBlob(
     let done = false;
     // 安全:cat-file 不读 index、不触发 fsmonitor,但零成本带上同款 git 兜底 env(防将来改用读 index 的子命令)。
     // Windows 上 `git` 只在 PATH 绝对目录中解析,不执行仓库目录下的 git.exe;解析不到抛错 → 本 Promise reject。
-    const env = withGitHardeningEnv(process.env);
-    const child = spawn(resolveSpawnCommand('git', env), ['cat-file', 'blob', sha], { cwd, env });
+    // 安全(纵深):恶意 `.git/config` 设 extensions.partialClone + remote.<r>.uploadpack=<cmd> 时,缺失 blob
+    // 触发惰性拉取即执行该命令。禁用拉取:GIT_NO_LAZY_FETCH=1(git ≥2.45)+ `-c protocol.allow=never`
+    //(任何传输协议一律拒绝,低版本 git 也认)。只读本地对象库,缺失即失败。
+    const env = { ...withGitHardeningEnv(process.env), GIT_NO_LAZY_FETCH: '1' };
+    const child = spawn(
+      resolveSpawnCommand('git', env),
+      ['-c', 'protocol.allow=never', 'cat-file', 'blob', sha],
+      { cwd, env },
+    );
     // 边界(E63 + E132,E131 同款):按真实 UTF-8 字节累积/截断 stderr,decode 延后整体进行。
     const stderrCap = createByteCappedBuffer(GIT_BLOB_STDERR_MAX);
     const fail = (err: Error): void => {
