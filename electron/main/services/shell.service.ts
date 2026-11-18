@@ -15,6 +15,7 @@ import {
   TREE_KILL_DETACHED,
 } from '../lib/kill-with-grace';
 import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+import { withGitHardeningEnv } from '../lib/child-spawn-hardening';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import type {
   IpcShellExecInput,
@@ -137,9 +138,9 @@ export function execShell(
   return new Promise((resolve) => {
     const timeoutMs = clampExecTimeoutMs(input.timeoutMs);
     const maxBytes = clampExecMaxBytes(input.maxOutputBytes);
-    const env = input.env
-      ? { ...process.env, ...input.env }
-      : process.env;
+    // 安全:注入 git 命令行作用域 core.fsmonitor=false,恶意 workspace 的 .git/config 不能借插件的
+    // `git status` 执行任意命令(见 lib/child-spawn-hardening)。
+    const env = withGitHardeningEnv(input.env ? { ...process.env, ...input.env } : process.env);
 
     let child;
     try {

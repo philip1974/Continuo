@@ -16,6 +16,7 @@ import {
 } from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+import { withGitHardeningEnv } from '../lib/child-spawn-hardening';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { codedError } from '../../shared/error-message';
 
@@ -161,8 +162,10 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
           : DEFAULT_TIMEOUT_MS;
       // 不用 shell:true(同 shell.service:破坏参数原子性 + 注入面,codex diff 复查)。
       // Windows .cmd/.bat 的正确启动方式需 PATHEXT 检测 + cmd.exe 包装 + quoting → DEFER。
+      // 安全:git 命令行作用域 core.fsmonitor=false 兜底(同 shell.service,见 lib/child-spawn-hardening)。
       const child = spawn(cmd, args, {
         cwd: opts?.cwd,
+        env: withGitHardeningEnv(process.env),
         stdio: ['ignore', 'pipe', 'pipe'],
         // 新进程组(POSIX),终止时整组发信号,后台后代不成孤儿(见 processTreeKillable)。
         detached: TREE_KILL_DETACHED,
