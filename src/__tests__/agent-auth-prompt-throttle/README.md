@@ -90,6 +90,16 @@ plugin)计。
     按 Enter / Space。弹窗出现后若已经打过字,键盘只能拒绝(Enter 在「拒绝」上 / Esc),授予须用鼠标或等 agent 重新请求。
   - Shift+Tab 不能从「拒绝」回绕到末尾的「本次启动期间允许」(焦点留在「拒绝」;向前 Tab 仍可到达所有按钮)。
   - 鼠标点击只受出现延迟约束;「拒绝」的键盘激活与 Esc 不受任何限制。
+- **被拒掉的指针点击不留下可用键盘授予的焦点**(同一守卫;`prompt-early-click-focus.spec.tsx`)。Chromium 在
+  mousedown 时把焦点移到被按的按钮上:实测弹窗出现 +200ms 单击「本次启动期间允许」被拒,但焦点已在该按钮上,再过
+  700ms 的 Enter 满足全部键盘条件 → 整域授予;双击落在「仅本次」、manifest 的「授权选中」、shell 勾选框 + Space 同理。
+  - 指针点击会被拒的时刻(出现后的时间窗内 —— 含被拒点击推后的窗口;多击的后几击 `detail ≥ 2`),弹窗里的
+    `mousedown` / `pointerdown`(鼠标、触摸、笔)被 `preventDefault`:焦点不随按下移入,click 照常派发并被拒、给提示。
+    时间窗过后的单击不受影响(焦点照常移入、照常授予)。
+  - 授予方向的指针点击被拒时,焦点若已在该控件上(按下时没拦住,或更早经别的途径聚焦):这次聚焦标为不可键盘授予
+    (同「输入流里的 Tab」,焦点移开再回来才重置),并把焦点移回弹窗的初始焦点「拒绝」(不 blur:焦点落到 body 读屏会
+    丢失位置;被拒原因由 status 区域播报)。之后的 Enter / Space 落在「拒绝」上。
+  - 被拒的**键盘**激活不移动焦点(Tab 后立刻 Enter 被拒、停顿后再 Enter 授予,行为不变)。
 - **被守卫拒掉的授予激活有可感知反馈**(`src/lib/prompt-grant-hint.tsx`,三种授权弹窗共用):此前被拒只是「没反应」
   —— 过早的点击、Tab 后立刻回车,以及辅助技术合成的点击(`detail=0`、没有 keydown、DOM 焦点可能不在按钮上,可能
   一直无效)。弹窗按钮下方常驻一个 `role="status"` 区域(空;占一行高度,提示出现时弹窗不跳动);授予方向的激活被拒
@@ -113,6 +123,9 @@ plugin)计。
 - `store-slots.spec.ts`:renderer 分槽与排队。
 - `prompt-grant-guard.spec.tsx`:500ms 内「允许」无效、「拒绝」/ Esc 有效、初始焦点、排队切换后重新计时。
   双击第二击跨过延迟不授予、过早的点击重新计时、`detail ≥ 2` 不算授予。
+- `prompt-early-click-focus.spec.tsx`:过早的单击 / 双击被拒后停顿再按 Enter 不授予(焦点回到「拒绝」);时间窗内与多击
+  的按下被 preventDefault、时间窗过后与弹窗外的不被;被拒后等满时间窗再点 / 再 Tab 过去按 Enter 仍可授予。
+  真实 Chromium 的 mousedown 聚焦:`tests/e2e/permission-prompt-keyboard-grant-guard.spec.ts`。
 - `prompt-keyboard-grant-guard.spec.tsx`:Shift+Tab 不回绕、Tab→Enter / 打字流里的 Space·Enter / 键重复不授予、
   停顿后的键盘确认授予、鼠标点击与拒绝方向不受键盘规则约束。
   输入流里的 Tab(紧跟别的按键 / 出现后 500ms 内 / 出现后打过字)带来的焦点不能用键盘授予,有意的 Tab 可以。

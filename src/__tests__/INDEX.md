@@ -218,6 +218,7 @@
 ## [agent-auth-prompt-throttle(agent 授权弹窗被拒后有冷却,不能循环弹窗诱导误点)](./agent-auth-prompt-throttle/README.md)
 
 - [`main-throttle.spec.ts`](./agent-auth-prompt-throttle/main-throttle.spec.ts)
+- [`prompt-early-click-focus.spec.tsx`](./agent-auth-prompt-throttle/prompt-early-click-focus.spec.tsx)
 - [`prompt-grant-feedback.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-feedback.spec.tsx)
 - [`prompt-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-grant-guard.spec.tsx)
 - [`prompt-keyboard-grant-guard.spec.tsx`](./agent-auth-prompt-throttle/prompt-keyboard-grant-guard.spec.tsx)
@@ -884,6 +885,7 @@
 ## [permission-prompt(授权 UI store + Modal + Manager 集成)](./permission-prompt/README.md)
 
 - [`PermissionPrompt.spec.tsx`](./permission-prompt/PermissionPrompt.spec.tsx)
+- [`early-click-focus.spec.tsx`](./permission-prompt/early-click-focus.spec.tsx)
 - [`first-appearance-grant-guard.spec.tsx`](./permission-prompt/first-appearance-grant-guard.spec.tsx)
 - [`keyboard-grant-guard.spec.tsx`](./permission-prompt/keyboard-grant-guard.spec.tsx)
 - [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
