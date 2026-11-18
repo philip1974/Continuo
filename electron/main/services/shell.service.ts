@@ -370,6 +370,9 @@ function hasControlChar(url: string): boolean {
 // 经 xdg-open 交给邮件客户端即可外发私钥。统一出口净化(各平台都做)。
 // **白名单**而非黑名单:只留 RFC 6068 常用头,其余一律丢弃。黑名单(attach / attachment)被绕过两次 ——
 // `attach%00=`(键解码后带 NUL,不等于 attach,客户端却可能截断 / 忽略它)、`#&attach=`(见 sanitizeExternalUrl)。
+// 已知残余:白名单参数的**值**里编码的分隔符不处理 —— `subject=x%26attach%3D/y` 原样保留,对「先把整条 URL 解码
+// 再按 & 切分」的客户端(不合 RFC 6068)仍可注入 attach。不处理是因为 `subject=Q%26A` 这类写法完全合法,拒绝或
+// 改写会破坏正常链接;地址段不存在这种合法用法,已在 isSafeMailtoAddress 拒绝。
 const MAILTO_ALLOWED_PARAMS = new Set(['to', 'cc', 'bcc', 'subject', 'body', 'in-reply-to']);
 
 /** 该 mailto 参数段(`key=value` 原文)是否保留。解码失败 / 解码后含控制字符 / 键不在白名单 → 丢弃(fail-closed)。 */
