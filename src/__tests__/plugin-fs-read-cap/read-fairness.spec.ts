@@ -34,11 +34,12 @@ let tokA2: string;
 let tokB: string;
 
 /** 拦住对 `blocked-*` 的 open / opendir:记录在途数与谁在途,放行由测试控制(FIFO)。 */
-const gate = { active: 0, peak: 0, waiters: [] as (() => void)[], open: false };
+const gate = { active: 0, peak: 0, waiters: [] as (() => void)[], open: false, arrivals: [] as string[] };
 function release(n = Infinity): void {
   for (let i = 0; i < n && gate.waiters.length > 0; i++) gate.waiters.shift()!();
 }
-async function blocking<T>(run: () => Promise<T>): Promise<T> {
+async function blocking<T>(p: string, run: () => Promise<T>): Promise<T> {
+  gate.arrivals.push(p); // 到达闸门(= 被大块读取闸放行后真正开始读)的顺序
   gate.active += 1;
   gate.peak = Math.max(gate.peak, gate.active);
   if (!gate.open) await new Promise<void>((r) => gate.waiters.push(r));
@@ -66,6 +67,7 @@ beforeEach(async () => {
   gate.peak = 0;
   gate.waiters = [];
   gate.open = false;
+  gate.arrivals = [];
   root = await realpath(await mkdtemp(join(tmpdir(), 'pfs-read-fair-')));
   proj = join(root, 'proj');
   await mkdir(join(proj, 'blocked-dir'), { recursive: true });
@@ -75,11 +77,11 @@ beforeEach(async () => {
   const realOpendir = fsp.opendir.bind(fsp);
   vi.spyOn(fsp, 'open').mockImplementation(((p: unknown, ...rest: unknown[]) =>
     isBlocked(p)
-      ? blocking(() => (realOpen as (...a: unknown[]) => Promise<unknown>)(p, ...rest))
+      ? blocking(p as string, () => (realOpen as (...a: unknown[]) => Promise<unknown>)(p, ...rest))
       : (realOpen as (...a: unknown[]) => Promise<unknown>)(p, ...rest)) as never);
   vi.spyOn(fsp, 'opendir').mockImplementation(((p: unknown, ...rest: unknown[]) =>
     isBlocked(p)
-      ? blocking(() => (realOpendir as (...a: unknown[]) => Promise<unknown>)(p, ...rest))
+      ? blocking(p as string, () => (realOpendir as (...a: unknown[]) => Promise<unknown>)(p, ...rest))
       : (realOpendir as (...a: unknown[]) => Promise<unknown>)(p, ...rest)) as never);
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
@@ -141,24 +143,27 @@ describe('plugin-fs 大块读取闸:按插件名额 + 插件间轮转', () => {
   });
 
   it('两个插件各有长队:全局在途 ≤ 上限,放行顺序在插件之间交替', async () => {
+    // 断言**放行顺序**(读取到达闸门的顺序),不看完成顺序:完成顺序受负载下 IO 调度影响。每次只放一个,
+    // 且等空出的位置被下一个放行的读取占上(到达闸门)后才放下一个 —— 同一时刻至多一个读取处在「已放行、
+    // 未到闸门」之间,到达顺序即放行顺序。
+    for (let i = 0; i < 8; i++) {
+      await writeFile(join(proj, `blocked-a-${i}.txt`), `a ${i}`);
+      await writeFile(join(proj, `blocked-b-${i}.txt`), `b ${i}`);
+    }
     const N = 30;
-    const order: string[] = [];
     const calls: Promise<unknown>[] = [];
-    for (let i = 0; i < N; i++) {
-      calls.push(read(evA, tokA, `blocked-${i % 8}.txt`).then(() => order.push('A')));
-    }
-    for (let i = 0; i < N; i++) {
-      calls.push(read(evB, tokB, `blocked-${i % 8}.txt`).then(() => order.push('B')));
-    }
+    for (let i = 0; i < N; i++) calls.push(read(evA, tokA, `blocked-a-${i % 8}.txt`));
+    for (let i = 0; i < N; i++) calls.push(read(evB, tokB, `blocked-b-${i % 8}.txt`));
     await until(() => gate.active === MAX_ACTIVE);
-    let finished = 0;
-    for (const c of calls) void c.then(() => (finished += 1));
-    while (finished < calls.length) {
+    for (let released = 1; released <= calls.length; released++) {
       release(1);
-      await settle();
+      const expected = Math.min(calls.length, MAX_ACTIVE + released);
+      await until(() => gate.arrivals.length === expected && gate.waiters.length === expected - released);
       expect(gate.active).toBeLessThanOrEqual(MAX_ACTIVE);
     }
+    await Promise.all(calls);
     expect(gate.peak).toBe(MAX_ACTIVE);
+    const order = gate.arrivals.map((p) => (p.includes('blocked-a-') ? 'A' : 'B'));
     // 前 4 个是 A 先到时直接拿到的位置;之后 A 剩 26、B 有 30:先严格交替 52 次,最后 4 个是 B
     const tail = order.slice(MAX_ACTIVE);
     expect(order.slice(0, MAX_ACTIVE)).toEqual(['A', 'A', 'A', 'A']);
