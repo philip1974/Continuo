@@ -140,8 +140,13 @@ plugin-fs 主进程不看 `fs` 权限项(只靠 renderer 的 `ensurePerm`),路�
   拒绝冷却),之后点「授权」送不到。此前弹窗留着,用户一点「授权」scope 照样落地并写回 `_plugin-path-scopes.json`。
 - 还没走到弹窗的在途请求(撤销落在归一化 / 水合读盘 / 冷却键的 await 间隙):request-scope 开始时记下
   `PathScopeRegistry.revocationEpoch(pluginId)`(revokeAll 次数),弹窗前与落地前比对,变了即 `deny`、不弹窗、不落地。
-- 残余:撤销恰好落在「用户刚授权 → 持久化写盘」那几毫秒里时,在途的持久化可能晚于撤销的清盘写入,磁盘留下旧条目
-  (内存已撤;下次启动会水合回来)。
+- 撤销与「用户点授权」交错(撤销写 `_permissions.json` 期间用户点了挂起弹窗的「授权」):清盘走与授权持久化同一把
+  同 id 锁(`persistPluginPathScopesIfInstalled`,FIFO),排在已带旧快照入队的持久化之后 → 最终盘上无该插件条目;
+  重新授予 `fs` 并「重启」后再请求原路径仍弹窗。清盘时插件已被卸载(NOT_INSTALLED)视为已清。
+- 水合对照 `_permissions.json`(纵深):冷启动水合前读权限记录,该插件当前未持有 `fs` 授权 → 不水合任何 scope(请求照常
+  弹窗),并在同 id 锁内清掉盘上残留;权限文件读失败 → 按空水合(fail-closed)。持有 `fs` 授权 → 照常水合、已批准路径
+  不弹窗。主进程 request-scope / plugin-fs 运行时不另查 `fs` 授权:内存 scope 只来自用户在弹窗中的授予或经上述对照的
+  水合,撤销路径清内存。
 
 ## 规范文件
 
@@ -164,7 +169,8 @@ plugin-fs 主进程不看 `fs` 权限项(只靠 renderer 的 `ensurePerm`),路�
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。
 - `fs-permission-revoke-scopes.spec.ts`:授予 scope → 撤销 fs → 重新授予 fs → 原路径重新弹窗;持久化条目删除、其它插件不受影响;
-  撤销后本会话不再水合;撤销其它权限项不动 scope。
+  撤销后本会话不再水合;撤销其它权限项不动 scope;撤销与「授权」交错后盘上不残留、「重启」后仍弹窗;水合对照 fs 授权
+  (未授权不水合并清残留、已授权照常水合)。
 - `mcp-permission-revoke.spec.ts`:撤销后调用被拒;变更通知后注销工具(stub 移除)、调用 NO_SUCH_TOOL;仍授权保留;
   直接 `app.mcp.register` 不保存 Disposable → 停用 / 热重载 / onload 抛错后工具注销,再启用同名注册成功。
 

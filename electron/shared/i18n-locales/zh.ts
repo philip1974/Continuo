@@ -64,6 +64,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED': '插件文件访问凭据回收失败,操作已中止,请重试',
   'errors.PLUGIN_ID_MISMATCH': '仓库中的插件 id 与市场条目不一致',
   'errors.PLUGIN_SYMLINK_REJECTED': '插件仓库包含符号链接,已拒绝安装',
+  'errors.PLUGIN_REPO_TOO_LARGE': '插件仓库超过大小或文件数上限,已中止安装',
   'errors.PLUGIN_DATA_PRESERVE_FAILED': '无法保留插件数据,已中止更新(旧版本与数据未改动)',
   'errors.RM_FAILED': '删除失败',
   'errors.TERMINAL_CREATE_CANCELLED': '终端创建已取消',

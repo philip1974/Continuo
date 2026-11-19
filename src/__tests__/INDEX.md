@@ -992,6 +992,10 @@
 
 - [`write-file-symlink-race.spec.ts`](./plugin-fs-write-nofollow/write-file-symlink-race.spec.ts)
 
+## [plugin-install-clone-size-cap(插件 git 安装 / 更新的 clone 体积上限)](./plugin-install-clone-size-cap/README.md)
+
+- [`clone-size-cap.spec.ts`](./plugin-install-clone-size-cap/clone-size-cap.spec.ts)
+
 ## [plugin-ipc-frame-trust(plugin-data / plugin-fs raw IPC 的 frame-trust 门)](./plugin-ipc-frame-trust/README.md)
 
 - [`frame-trust-gate.spec.ts`](./plugin-ipc-frame-trust/frame-trust-gate.spec.ts)

@@ -7,7 +7,7 @@ import {
   PLUGIN_ID_MAX_LEN,
 } from '../../shared/permission-record-limits';
 import { createHash, randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { promises as fs, type Dirent, type Stats } from 'node:fs';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -1304,6 +1304,13 @@ function startsWithHttpsScheme(url: string): boolean {
   );
 }
 const GIT_CLONE_TIMEOUT_MS = 60_000;
+// 安全:插件仓库 clone 的体积 / 文件数上限。此前只有 60s 超时:恶意仓库放高压缩比巨型 blob,60s 内即可写满磁盘
+//(超时后才 kill 并删临时目录)。clone 期间每 PLUGIN_CLONE_POLL_MS 有界统计临时目录(含 .git)的逻辑字节数与
+// 条目数,任一超限即终止 git、等其退出后删临时目录,报 PLUGIN_REPO_TOO_LARGE;clone 在两次轮询之间完成的,
+// 检出后再复查一次。上限远超现实插件仓库(浅克隆,插件 bundle 通常 < 10MiB / 数百文件)。
+export const PLUGIN_CLONE_MAX_BYTES = 200 * 1024 * 1024;
+export const PLUGIN_CLONE_MAX_ENTRIES = 20_000;
+const PLUGIN_CLONE_POLL_MS = 500;
 // 边界(E62,E1/E61 累积缓冲族):runGit 的 git 子进程 stderr 此前 `stderr += String(d)` 无限累积,
 // 失败时整段拼进 Error message。恶意/异常远端或协议错误可产生超大 stderr → main 内存膨胀 + 巨大
 // 错误串传到 renderer/UI。stderr 累积上限 64KB(保留前 64KB,git 的 fatal 行通常在前部),超限停止
@@ -1359,7 +1366,9 @@ export async function installFromGit(
     const cloneArgs = ['clone', '--depth', '1'];
     if (opts.branch !== undefined) cloneArgs.push(`--branch=${opts.branch}`);
     cloneArgs.push(gitUrl, cloneDir);
-    await runGit(cloneArgs);
+    await runGit(cloneArgs, cloneDir);
+    // clone 在两次轮询之间就完成时,轮询没机会看到最终体积:检出后复查。
+    if (await cloneTreeExceedsLimits(cloneDir)) throw cloneTooLargeError();
 
     // 安全:克隆树里不允许任何符号链接,且在读 manifest 之前检查(manifest.json 本身也可以是链接)。
     await assertNoSymlinksInClone(cloneDir);
@@ -1574,7 +1583,55 @@ async function assertNoSymlinksInClone(cloneDir: string): Promise<void> {
   }
 }
 
-function runGit(args: readonly string[]): Promise<void> {
+function cloneTooLargeError(): Error {
+  return codedError(
+    ERROR_CODES.PLUGIN_REPO_TOO_LARGE,
+    `插件仓库超过大小上限(${PLUGIN_CLONE_MAX_BYTES / (1024 * 1024)}MiB / ${PLUGIN_CLONE_MAX_ENTRIES} 个条目),已中止安装`,
+  );
+}
+
+/**
+ * 有界统计 clone 目录(含 .git)的逻辑字节数与条目数,任一超过上限即停止并返回 true。clone 写入中的瞬时态
+ *(目录 / 文件刚被 git 改名或删除)读不到就跳过。单次统计最多访问 PLUGIN_CLONE_MAX_ENTRIES 个条目。
+ */
+async function cloneTreeExceedsLimits(dir: string): Promise<boolean> {
+  let bytes = 0;
+  let entries = 0;
+  const pending = [dir];
+  while (pending.length > 0) {
+    const cur = pending.pop()!;
+    let dirents: Dirent[];
+    try {
+      dirents = await fs.readdir(cur, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const dirent of dirents) {
+      if (++entries > PLUGIN_CLONE_MAX_ENTRIES) return true;
+      const full = path.join(cur, dirent.name);
+      if (dirent.isDirectory()) {
+        pending.push(full);
+        continue;
+      }
+      let st: Stats;
+      try {
+        st = await fs.lstat(full);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        pending.push(full);
+        continue;
+      }
+      bytes += st.size;
+      if (bytes > PLUGIN_CLONE_MAX_BYTES) return true;
+    }
+  }
+  return false;
+}
+
+/** budgetDir:clone 目标目录;给出时 clone 期间轮询其体积 / 条目数,超限即终止 git(见 PLUGIN_CLONE_MAX_BYTES)。 */
+function runGit(args: readonly string[], budgetDir?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起。GIT_CONFIG_NOSYSTEM 隔离系统级
     // git 配置;用户全局 ~/.gitconfig 的 credential.helper 仍生效(有意保留:私有插件仓库依赖钥匙串凭据,
@@ -1611,10 +1668,14 @@ function runGit(args: readonly string[]): Promise<void> {
     // 边界(E62 + E131):按真实 UTF-8 字节累积/截断,decode 延后整体进行(见 byte-capped-buffer)。
     const stderrCap = createByteCappedBuffer(MAX_GIT_STDERR_BYTES);
     let settled = false;
+    // 超出体积 / 条目上限、已发出终止:等 git 真正退出再结算(调用方随即删临时目录,不与仍在写的 git 赛跑)。
+    let overBudget = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (fn: () => void): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(pollTimer);
       fn();
     };
     // timeout:防慢速/挂起的远端无限占用(DoS)。SIGTERM → 1s 后 SIGKILL。
@@ -1622,11 +1683,27 @@ function runGit(args: readonly string[]): Promise<void> {
       killWithGrace(child);
       finish(() =>
         reject(
-          // 独立错误码:renderer 按 code 本地化出 ssh host key / 口令提示(GUI 无终端应答 ssh 交互,只会超时)
-          codedError(ERROR_CODES.GIT_TIMEOUT, `git ${args[0]} 超时`),
+          overBudget
+            ? cloneTooLargeError()
+            : // 独立错误码:renderer 按 code 本地化出 ssh host key / 口令提示(GUI 无终端应答 ssh 交互,只会超时)
+              codedError(ERROR_CODES.GIT_TIMEOUT, `git ${args[0]} 超时`),
         ),
       );
     }, GIT_CLONE_TIMEOUT_MS);
+    if (budgetDir !== undefined) {
+      // 上一次统计结束后才排下一次(不重叠)。
+      const poll = async (): Promise<void> => {
+        const exceeded = await cloneTreeExceedsLimits(budgetDir).catch(() => false);
+        if (settled || overBudget) return;
+        if (exceeded) {
+          overBudget = true;
+          killWithGrace(child);
+          return;
+        }
+        pollTimer = setTimeout(() => void poll(), PLUGIN_CLONE_POLL_MS);
+      };
+      pollTimer = setTimeout(() => void poll(), PLUGIN_CLONE_POLL_MS);
+    }
     // 边界(E62 + E131):按真实字节累积上限,超限停止追加(保留前 64KB 字节)+ 标记截断,不 kill
     //(进度合法 >64KB)。
     child.stderr.on('data', (d: Buffer) => stderrCap.push(d));
@@ -1638,7 +1715,8 @@ function runGit(args: readonly string[]): Promise<void> {
       ),
     );
     child.on('exit', (code) => {
-      if (code === 0) finish(resolve);
+      if (overBudget) finish(() => reject(cloneTooLargeError()));
+      else if (code === 0) finish(resolve);
       else
         finish(() =>
           reject(
