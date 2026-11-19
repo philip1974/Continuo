@@ -48,7 +48,10 @@ vi.mock('../../../electron/main/services/plugins.service', async (importOriginal
 
 import { registerPluginsIpc } from '../../../electron/main/ipc/plugins.ipc';
 import { registerPluginFsIpc } from '../../../electron/main/ipc/plugin-fs.ipc';
-import { writePluginPathScopes } from '../../../electron/main/services/plugins.service';
+import {
+  mutatePluginPermissions,
+  writePluginPathScopes,
+} from '../../../electron/main/services/plugins.service';
 import { PLUGINS_CHANNELS } from '../../../electron/shared/plugins-channels';
 import { PLUGIN_FS_CHANNELS } from '../../../electron/shared/plugin-fs-channels';
 
@@ -204,6 +207,93 @@ describe('撤销 fs 权限 → 撤销该插件全部已批准的路径 scope', (
     expect(send).not.toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, expect.anything());
     expect(fsHandles.pathScopeRegistry._peek(ID)).toEqual([]);
     expect((await persistedScopes())[ID]).toBeUndefined();
+  });
+
+  it('撤销 fs 写权限文件期间用户点了挂起弹窗的「授权」→ 盘上不残留旧 scope,「重启」后再请求仍弹窗', async () => {
+    // 序列:弹窗挂起 → 撤销 fs(mutatePluginPermissions 在同 id 锁内写 _permissions.json,撤销代际尚未变)
+    // → 同一时刻用户点「授权」:scope 落内存,持久化排到锁后 → 撤销清内存并清盘 → 持久化拿到锁后把授权
+    // 时的旧快照写回。此前清盘不走锁、排在持久化之前,被覆盖 → 重启水合直接恢复、不弹窗。
+    await setFs(true);
+    const { token } = fsHandles.identityRegistry.register(ID, 1);
+    const send = vi.fn();
+    const ev = event(send);
+    const pending = invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, ev, token, [{ path: scopeDir, mode: 'rw' }]);
+    void pending.catch(() => undefined);
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, expect.anything()),
+    );
+    const { requestId } = send.mock.calls.find(
+      (c) => c[0] === PLUGIN_FS_CHANNELS.SCOPE_REQUEST,
+    )![1] as { requestId: string };
+    const revoking = setFs(false); // 不 await:同 id 锁内写 _permissions.json
+    await invoke(PLUGIN_FS_CHANNELS.SCOPE_DECISION, ev, requestId, 'grant');
+    await pending;
+    await expect(revoking).resolves.toMatchObject({ ok: true });
+    // 等在途的持久化落盘(best-effort,不随 request-scope 的返回值暴露)
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(fsHandles.pathScopeRegistry._peek(ID)).toEqual([]);
+    expect((await persistedScopes())[ID]).toBeUndefined();
+
+    // 「重启」:新 registry 冷启动从磁盘水合;用户此时重新授予 fs,再请求原路径必须弹窗。
+    await setFs(true);
+    h.handlers.clear();
+    registerPluginsIpc();
+    const fresh = registerPluginFsIpc({
+      ipcMain: { handle: (c: string, fn: Handler) => h.handlers.set(c, fn) } as never,
+    });
+    const send2 = vi.fn();
+    const ev2 = event(send2);
+    const pending2 = invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, ev2, fresh.identityRegistry.register(ID, 1).token, [
+      { path: scopeDir, mode: 'rw' },
+    ]);
+    void pending2.catch(() => undefined);
+    await vi.waitFor(() =>
+      expect(send2).toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, expect.anything()),
+    );
+    const { requestId: r2 } = send2.mock.calls.find(
+      (c) => c[0] === PLUGIN_FS_CHANNELS.SCOPE_REQUEST,
+    )![1] as { requestId: string };
+    await invoke(PLUGIN_FS_CHANNELS.SCOPE_DECISION, ev2, r2, 'deny');
+    await expect(pending2).resolves.toBe('deny');
+  });
+
+  it('水合对照 _permissions.json:盘上有 scope 但该插件未持有 fs 授权 → 不水合(请求弹窗),并清掉盘上残留', async () => {
+    // 手工构造残留:_plugin-path-scopes.json 有该插件的 scope,_permissions.json 里该插件 fs 为拒绝(直接写服务层,
+    // 不走 IPC —— IPC 的撤销会顺带把内存标为已水合,构造不出「冷启动」)。
+    const pluginsDir = join(h.userData, 'plugins');
+    await mutatePluginPermissions(pluginsDir, ID, { kind: 'set', perms: ['fs'], granted: false });
+    await writePluginPathScopes(pluginsDir, ID, [{ path: scopeDir, mode: 'rw' }]);
+    await writePluginPathScopes(pluginsDir, OTHER, [{ path: scopeDir, mode: 'rw' }]);
+    const { token } = fsHandles.identityRegistry.register(ID, 1);
+    const send = vi.fn();
+    const ev = event(send);
+    const pending = invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, ev, token, [{ path: scopeDir, mode: 'rw' }]);
+    void pending.catch(() => undefined);
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, expect.anything()),
+    );
+    expect(fsHandles.pathScopeRegistry._peek(ID)).toEqual([]);
+    const { requestId } = send.mock.calls.find(
+      (c) => c[0] === PLUGIN_FS_CHANNELS.SCOPE_REQUEST,
+    )![1] as { requestId: string };
+    await invoke(PLUGIN_FS_CHANNELS.SCOPE_DECISION, ev, requestId, 'deny');
+    await expect(pending).resolves.toBe('deny');
+    // 清残留不阻塞水合(不 await),等它落盘
+    await vi.waitFor(async () => expect((await persistedScopes())[ID]).toBeUndefined());
+    const persisted = await persistedScopes();
+    expect(persisted[OTHER]).toEqual([{ path: scopeDir, mode: 'rw' }]);
+  });
+
+  it('水合对照 _permissions.json:持有 fs 授权 → 照常水合,再请求已批准路径不弹窗', async () => {
+    await setFs(true);
+    await writePluginPathScopes(join(h.userData, 'plugins'), ID, [{ path: scopeDir, mode: 'rw' }]);
+    const { token } = fsHandles.identityRegistry.register(ID, 1);
+    const send = vi.fn();
+    await expect(
+      invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, event(send), token, [{ path: scopeDir, mode: 'r' }]),
+    ).resolves.toBe('grant');
+    expect(send).not.toHaveBeenCalledWith(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, expect.anything());
   });
 
   it('授予 fs、撤销其它权限 → 不动 scope', async () => {

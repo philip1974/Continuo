@@ -9,8 +9,11 @@ import { PathScopeRegistry } from '../services/path-scope-registry.service';
 import { pluginFsIdentityEpoch, registerPluginFsHandlers } from '../services/plugin-fs.service';
 import {
   persistPluginPathScopesIfInstalled,
+  readPermissions,
   readPluginPathScopes,
 } from '../services/plugins.service';
+import { ownValue } from '../../shared/own-value';
+import type { IpcPermissionDecision, IpcPermissionRecord } from '../../shared/plugins-channels';
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
 import type { PathScope } from '../../shared/plugin-fs-contract';
 import { withTrustedFrameGate } from '../safe-handle';
@@ -77,6 +80,33 @@ export function revokePluginPathScopes(pluginId: string): void {
   }
 }
 
+function recordGrantsFs(record: IpcPermissionRecord | undefined): boolean {
+  if (record === undefined) return false;
+  // Array.isArray 不收窄 readonly[] union 分支(同 plugins.service),显式 cast 对象形态。
+  const decisions: readonly IpcPermissionDecision[] = Array.isArray(record)
+    ? record
+    : (record as { decisions: readonly IpcPermissionDecision[] }).decisions;
+  return decisions.some((d) => d.permission === 'fs' && d.granted);
+}
+
+/**
+ * 冷启动水合读盘(安全纵深):先对照 `_permissions.json` —— 该插件当前未持有 `fs` 授权 → 不水合任何 scope
+ * (返回 []),并顺带清掉盘上残留。撤销 `fs` 的清盘若因任何原因(交错、崩溃、旧版本残留)没落盘,不能在下次
+ * 重新授予 `fs` 后不经弹窗恢复旧路径。权限文件读失败 → 抛出,水合方按 [] 降级(fail-closed)。
+ * 清残留不 await:走同 id 锁(FIFO,排在其后的授权持久化不受影响),不让水合等安装 / 更新持有的锁。
+ */
+export async function loadPersistedScopesIfFsGranted(
+  pluginsDir: string,
+  pluginId: string,
+): Promise<PathScope[]> {
+  const record = ownValue(await readPermissions(pluginsDir), pluginId);
+  if (!recordGrantsFs(record)) {
+    persistPluginPathScopesIfInstalled(pluginsDir, pluginId, []).catch(() => undefined);
+    return [];
+  }
+  return readPluginPathScopes(pluginsDir, pluginId);
+}
+
 export function copyScopesForPersistence(
   scopes: readonly { path: string; mode: 'r' | 'rw' }[],
 ): PathScope[] {
@@ -118,7 +148,7 @@ export function registerPluginFsIpc({
     webContentsForSender: (senderId: number): WebContents | null =>
       webContents.fromId(senderId) ?? null,
     loadPersistedScopes: (pluginId) =>
-      readPluginPathScopes(pluginsDir, pluginId),
+      loadPersistedScopesIfFsGranted(pluginsDir, pluginId),
     // 安全:经同 id mutation 锁 + 已安装校验落盘,防卸载间隙的授权把 scope 写回磁盘(见函数注释)。
     persistScopes: (pluginId, scopes) =>
       persistPluginPathScopesIfInstalled(

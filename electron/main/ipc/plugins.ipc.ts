@@ -23,9 +23,11 @@ import {
   readPermissions,
   mutatePluginPermissions,
   setEnabledId,
+  persistPluginPathScopesIfInstalled,
   uninstallPlugin,
-  writePluginPathScopes,
 } from '../services/plugins.service';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { errorCodeOf } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
 import { revokePluginFsAccess, revokePluginPathScopes } from './plugin-fs.ipc';
 import { PERMISSION_KEYS } from '../../shared/permission-keys';
@@ -225,9 +227,17 @@ export function registerPluginsIpc(): void {
       broadcastPluginPermissionsChanged(id);
       // 安全:撤销 `fs` → 一并撤销该插件已批准的全部路径 scope(内存 + 持久化),否则再授予 `fs` 时旧路径不经弹窗
       // 恢复。持久化失败如实报错(权限项本身已撤销)。
+      // race:清盘必须走与授权持久化同一把同 id 锁(persistPluginPathScopesIfInstalled,FIFO)。用户在撤销写
+      // _permissions.json(锁内)期间点了挂起弹窗的「授权」时,该授权的持久化已带着旧快照排在锁后;此前清盘直接
+      // 进写队列、排在它之前,随后被旧快照覆盖 → 重启水合不弹窗即恢复。走锁则清盘排在其后,最终盘上为空。
       if (mutation.kind === 'set' && !mutation.granted && mutation.perms.includes('fs')) {
         revokePluginPathScopes(id);
-        await writePluginPathScopes(pluginsDir, id, []);
+        try {
+          await persistPluginPathScopesIfInstalled(pluginsDir, id, []);
+        } catch (err) {
+          // 撤销与卸载交错:卸载已在锁内清掉该插件的 scope 条目,无需再清。
+          if (errorCodeOf(err) !== ERROR_CODES.NOT_INSTALLED) throw err;
+        }
       }
       return record;
     },
