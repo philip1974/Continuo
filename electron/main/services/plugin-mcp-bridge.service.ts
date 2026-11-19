@@ -19,6 +19,12 @@ import {
 } from '../../shared/plugin-mcp-channels';
 import type { AnyMcpTool } from './mcp-host.service';
 import { codedError } from '../../shared/error-message';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { gateWithAuth, type EnsureAuthorized } from './mcp-tool-gates';
+import {
+  AGENT_AUTH_METHOD_MAX,
+  AGENT_AUTH_PLUGIN_METHOD_PREFIX,
+} from '../../shared/agent-auth-channels';
 
 // ── 类型 ────────────────────────────────────────────────────
 
@@ -310,6 +316,16 @@ export interface CreatePluginMcpBridgeDeps {
   host: PluginMcpBridgeHost;
   invokeRemote: InvokeRemoteCore;
   /**
+   * 安全:agent 授权门控(必填,与终端 / debug 工具同走 gateWithAuth)。按调用方窗口(ctx.ownerWindowId,
+   * 经下方同窗校验后即注册者窗口)弹授权,method=`plugin.<tool 名>` 归 renderer 的独立 plugin 域。
+   */
+  ensureAuthorized: EnsureAuthorized;
+  /**
+   * 安全:注册者 webContents 当前所在 BrowserWindow id(wc 已销毁 / 不属任何窗口 → null)。调用方窗口
+   * 与之不同(或调用方无窗口)即拒绝,防「调用方窗口授权、注册者窗口执行」。
+   */
+  windowIdOfWc: (wcId: number) => number | null;
+  /**
    * 可选:tool 集变更时调(register / unregister / wcGone 摘到 tool)。
    * 调用方可在此触发 MCP `notifications/tools/list_changed` 推给所有
    * MCP client(HTTP SSE / stdio sock)。失败 / unknown / 假冒 等不调。
@@ -330,10 +346,21 @@ interface BridgeEntry {
 const MAX_TOOLS_PER_WC = 256;
 const MAX_TOOLS_GLOBAL = 2048;
 
+/**
+ * 插件工具的授权门控参数。method 带 plugin 前缀归独立域;按授权请求 method 上限截断(tool 名上限 256,
+ * 加前缀后可超,超长 payload 会被 renderer ingress 守卫丢弃 → 请求干等 agent 授权的无应答超时,
+ * AGENT_AUTH_PROMPT_TIMEOUT_MS 2 分钟)。
+ */
+const PLUGIN_AUTH_GATE = {
+  methodFor: (tool: AnyMcpTool): string =>
+    `${AGENT_AUTH_PLUGIN_METHOD_PREFIX}${tool.name}`.slice(0, AGENT_AUTH_METHOD_MAX),
+  deniedMessage: 'agent plugin tool not authorized by user',
+} as const;
+
 export function createPluginMcpBridge(
   deps: CreatePluginMcpBridgeDeps,
 ): PluginMcpBridge {
-  const { host, invokeRemote, notifyToolsChanged } = deps;
+  const { host, invokeRemote, notifyToolsChanged, ensureAuthorized, windowIdOfWc } = deps;
   const entries = new Map<string, BridgeEntry>();
   // 边界(E79):per-wc 注册计数(O(1) 维护,避免 register 时 O(n) 遍历 entries 数 wc 计数 → O(n²))。
   const perWcCount = new Map<number, number>();
@@ -362,15 +389,40 @@ export function createPluginMcpBridge(
         pluginId: payload.pluginId,
         wcId,
       };
-      const stub = createStubTool(
-        {
-          name: payload.name,
-          description: payload.description,
-          jsonSchema: payload.jsonSchema,
-        },
-        owner,
-        invokeRemote.invoke,
+      // 安全:插件工具与终端 / debug 工具同走 agent 授权。此前 stub 丢弃 ctx 直接 invoke,用户对 agent
+      // 点了「拒绝」该 agent 仍能调插件工具(如 git stage/commit)。
+      const authed = gateWithAuth(
+        createStubTool(
+          {
+            name: payload.name,
+            description: payload.description,
+            jsonSchema: payload.jsonSchema,
+          },
+          owner,
+          invokeRemote.invoke,
+        ),
+        ensureAuthorized,
+        PLUGIN_AUTH_GATE,
       );
+      // 安全:只允许注册者所在窗口的 agent 调用。否则窗口 A 的 agent 调 B 注册的工具,A 的用户批准,
+      // 操作却落在 B 的仓库,B 的用户不知情。工具名仍全局唯一(先到先得),跨窗 / 无窗口(external
+      // 客户端)调用一律拒绝 —— 在授权弹窗之前判定,不打扰任何用户。
+      const stub: AnyMcpTool = {
+        ...authed,
+        run: async (input, ctx) => {
+          // ownerWin 为 null(注册者 wc 已销毁 / 无窗口)时须单独拒,否则无窗口调用方(null)会与之相等。
+          const ownerWin = windowIdOfWc(wcId);
+          // 外部客户端(ctx.external:stdio 未发 hello,回落到主窗)即便回落窗口恰是注册者窗口,也不是该窗口
+          // 终端里的 agent → 同样拒绝。
+          if (ownerWin === null || ctx.external === true || ctx.ownerWindowId !== ownerWin) {
+            throw codedError(
+              ERROR_CODES.AGENT_NOT_AUTHORIZED,
+              `plugin mcp tool "${payload.name}" belongs to another window; call it from the agent in that window`,
+            );
+          }
+          return authed.run(input, ctx);
+        },
+      };
       host.registerTool(stub);
       entries.set(payload.name, {
         name: payload.name,

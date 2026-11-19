@@ -18,6 +18,8 @@ import { isSpecObject } from './spec-guard';
 import { utf8BytesExceed } from '../../../electron/shared/utf8-byte-length';
 import {
   TOOL_NAME_MAX,
+  TOOL_NAME_PATTERN,
+  TOOL_NAME_RULE,
   DESC_MAX,
   SCHEMA_BYTES_MAX,
 } from '../../../electron/shared/plugin-mcp-schemas';
@@ -89,6 +91,9 @@ function validateToolSpec<I, O>(spec: PluginMcpToolSpec<I, O>): void {
   if (!isSpecObject(spec)) bad('tool spec must be an object');
   if (typeof spec.name !== 'string' || spec.name.length === 0 || spec.name.length > TOOL_NAME_MAX)
     bad(`invalid tool name (empty or > ${TOOL_NAME_MAX})`);
+  // 安全:名字会进 agent 授权弹窗与 MCP tools/list;字符集与 main 的 RegisterPayloadSchema 同源。
+  if (!TOOL_NAME_PATTERN.test(spec.name))
+    bad(`invalid tool name ${JSON.stringify(spec.name.slice(0, 64))}: use ${TOOL_NAME_RULE}`);
   if (typeof spec.description !== 'string' || spec.description.length > DESC_MAX)
     bad(`invalid description (not string or > ${DESC_MAX})`);
   if (typeof spec.run !== 'function') bad('run must be a function');

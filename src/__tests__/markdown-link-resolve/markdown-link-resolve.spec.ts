@@ -188,8 +188,8 @@ describe('resolveLink — Windows 路径', () => {
     });
   });
 
-  it('UNC 绝对路径 → file,不当相对路径拼接', () => {
-    expect(resolveLink('\\\\server\\share\\f.md', '/cur.md')).toEqual({
+  it('UNC 绝对路径 → file,不当相对路径拼接(同 share 文档内)', () => {
+    expect(resolveLink('\\\\server\\share\\f.md', '\\\\server\\share\\cur.md')).toEqual({
       kind: 'file',
       absPath: '\\\\server\\share\\f.md',
     });
@@ -203,7 +203,7 @@ describe('resolveLink — Windows 路径', () => {
         kind: 'file',
         absPath: 'C:\\work\\notes.md',
       });
-      expect(resolveLink('\\\\server\\share\\f.md', '/cur.md')).toEqual({
+      expect(resolveLink('\\\\server\\share\\f.md', '\\\\server\\share\\cur.md')).toEqual({
         kind: 'file',
         absPath: '\\\\server\\share\\f.md',
       });
@@ -288,5 +288,72 @@ describe('resolveLink — href 长度上限 (E179)', () => {
     const p = '/abs/' + 'x'.repeat(1000) + '.md';
     expect(p.length).toBeLessThanOrEqual(8192);
     expect(resolveLink(p, null)).toMatchObject({ kind: 'file' });
+  });
+});
+
+// 安全(仅 Windows):markdown 里直接书写的 UNC 链接(`\\attacker@SSL\share\a.md`)点开后经
+// coApi.fs.readFile → 主进程 lstat/open,Windows 会向攻击者主机发起 SMB/WebDAV 并自动 NTLMv2
+// 认证 → 凭据哈希泄露。规则:解析结果是 UNC 时,只有当前文档本身位于**同一 server+share** 才放行
+// (UNC 工作区内的链接照常可用);否则返回 null 不打开。设备命名空间 `\\?\` / `\\.\` 一律拒。
+describe('resolveLink — 安全:拒绝跨主机 UNC 链接(NTLM 凭据泄露)', () => {
+  it('本地文档中的 UNC 链接 → null', () => {
+    expect(resolveLink('\\\\attacker.example@SSL\\share\\a.md', 'C:\\work\\cur.md')).toBeNull();
+    expect(resolveLink('\\\\attacker\\share\\a.md', '/home/u/cur.md')).toBeNull();
+  });
+
+  it('无当前文档时的 UNC 链接 → null', () => {
+    expect(resolveLink('\\\\attacker\\share\\a.md', null)).toBeNull();
+  });
+
+  it('percent 编码的 UNC 链接 → null', () => {
+    expect(resolveLink('%5C%5Cattacker%5Cshare%5Ca.md', 'C:\\work\\cur.md')).toBeNull();
+  });
+
+  it('只有 server 无 share 的残缺 UNC → null', () => {
+    expect(resolveLink('\\\\attacker', 'C:\\work\\cur.md')).toBeNull();
+    expect(resolveLink('\\\\attacker\\', '\\\\attacker\\share\\cur.md')).toBeNull();
+  });
+
+  it('UNC 文档中指向其他 server 或 share 的链接 → null', () => {
+    const cur = '\\\\server\\share\\dir\\cur.md';
+    expect(resolveLink('\\\\attacker\\share\\a.md', cur)).toBeNull();
+    expect(resolveLink('\\\\server\\other\\a.md', cur)).toBeNull();
+  });
+
+  it('UNC 文档中同 server+share 的链接放行(大小写不敏感)', () => {
+    const cur = '\\\\server\\share\\dir\\cur.md';
+    expect(resolveLink('\\\\SERVER\\Share\\a.md', cur)).toEqual({
+      kind: 'file',
+      absPath: '\\\\SERVER\\Share\\a.md',
+    });
+    expect(resolveLink('./a.md', cur)).toEqual({
+      kind: 'file',
+      absPath: '\\\\server\\share\\dir\\a.md',
+    });
+  });
+
+  it('设备命名空间 \\\\?\\ / \\\\.\\ 链接 → null(含从设备路径文档出发的相对链接越根)', () => {
+    expect(resolveLink('\\\\?\\UNC\\attacker\\share\\a.md', 'C:\\work\\cur.md')).toBeNull();
+    expect(resolveLink('\\\\.\\pipe\\x', 'C:\\work\\cur.md')).toBeNull();
+    expect(
+      resolveLink('..\\..\\..\\..\\attacker\\s\\a.md', '\\\\?\\UNC\\server\\share\\dir\\cur.md'),
+    ).toBeNull();
+    expect(
+      resolveLink('\\\\?\\UNC\\attacker\\s\\a.md', '\\\\?\\UNC\\server\\share\\cur.md'),
+    ).toBeNull();
+  });
+
+  it('`//host/share` 与 `/\\host` 不产出 UNC(折叠为根下路径)', () => {
+    for (const href of ['//attacker/share/a.md', '/\\attacker\\share\\a.md']) {
+      const r = resolveLink(href, 'C:\\work\\cur.md');
+      expect(r?.kind).toBe('file');
+      const p = r?.kind === 'file' ? r.absPath : '';
+      expect(/^[\\/]{2}/.test(p)).toBe(false);
+    }
+  });
+
+  it('file: scheme 指向远程主机 → null', () => {
+    expect(resolveLink('file://attacker/share/a.md', 'C:\\work\\cur.md')).toBeNull();
+    expect(resolveLink('file:\\\\attacker\\share\\a.md', 'C:\\work\\cur.md')).toBeNull();
   });
 });

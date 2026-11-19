@@ -12,10 +12,14 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import type { AnyMcpTool, McpCallCtx } from './mcp-host.service';
 import { codedError } from '../../shared/error-message';
 
-/** agent 授权门控:owner 窗口 + 调用 method,返回三态决策. */
+/**
+ * agent 授权门控:owner 窗口 + 调用 method,返回三态决策。external=true 表示调用方是未绑定 Continuo 终端的
+ * 外部客户端(ctx.external),renderer 用独立的 external 授权状态。
+ */
 export type EnsureAuthorized = (
   ownerWindowId: number,
   method?: string,
+  external?: boolean,
 ) => Promise<'once' | 'session' | 'denied'>;
 
 export interface AuthGateOptions {
@@ -28,7 +32,7 @@ export interface AuthGateOptions {
 /**
  * 安全 S2:包一层授权门控。用户未授权该窗口 agent 控制时,工具调用先触发授权弹窗;拒绝即抛
  * AGENT_NOT_AUTHORIZED。已建立 session 授权后直接放行(renderer 的 agent-auth store 按域短路:
- * method 以 `debug.` 开头的看 debug 域,其余看终端域,两个域互不放行)。
+ * method 以 `debug.` 开头的看 debug 域,以 `plugin.` 开头的看插件工具域,其余看终端域,三个域互不放行)。
  */
 export function gateWithAuth(
   tool: AnyMcpTool,
@@ -43,7 +47,11 @@ export function gateWithAuth(
       if (ctx.signal?.aborted) {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'caller disconnected before authorization');
       }
-      const decision = await ensureAuthorized(ctx.ownerWindowId, opts.methodFor(tool));
+      const decision = await ensureAuthorized(
+        ctx.ownerWindowId,
+        opts.methodFor(tool),
+        ctx.external === true,
+      );
       if (decision === 'denied') {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, opts.deniedMessage);
       }

@@ -1,9 +1,6 @@
 // dockview popout 子窗口的标记。主窗口给 addPopoutGroup 传 popoutUrl 时附 ?popout=1,
 // 子窗口的 App.tsx 据此短路 DockShell,留位置给 dockview 的 portal 渲染。
-import {
-  MAX_STARTUP_QUERY_LEN,
-  safeStartupParams,
-} from './initial-workspace';
+import { safeStartupParams } from './initial-workspace';
 
 const POPOUT_FLAG = 'popout';
 
@@ -27,11 +24,11 @@ export function popoutUrlFor(baseHref: string): string {
   } catch {
     return baseHref;
   }
-  // 边界(E195):不把超长 query 携带进 popout 子窗 —— 否则子窗每次渲染(isPopoutWindow 等)又要解析一次。
-  // 超 MAX_STARTUP_QUERY_LEN 的 query 必是畸形(合法启动 query 远小于此),清空后再附 popout 标记。
-  if (url.search.length > MAX_STARTUP_QUERY_LEN) {
-    url.search = '';
-  }
+  // 安全 L1:query 只留 popout=1。主进程 windowOpenHandler 只放行这种纯 popout URL(isPopoutOnlyUrl),
+  // 带 workspace / windowSeq / fresh / spike 的应用入口一律拒 —— 否则页面内容可借 window.open 开出以任意
+  // 目录为根的完整应用窗口。popout 子窗只看这个标记(main-app 早退、App 只渲染 PopoutHost),用不到主窗
+  // 的启动参数。顺带也不会把超长 query 带进子窗(E195)。
+  url.search = '';
   url.searchParams.set(POPOUT_FLAG, '1');
   return url.toString();
 }

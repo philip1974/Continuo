@@ -44,7 +44,9 @@ test('主窗 + popout 窗口同时存在 → popout 能打开,退出不多等一
   const { app, main, stdout, dispose } = await launch();
   try {
     const opened = await main.evaluate(() => {
+      // 与 popoutUrlFor 同形态:query 只有 popout=1(windowOpenHandler 只放行这种,安全 L1)
       const url = new URL(window.location.href);
+      url.search = '';
       url.searchParams.set('popout', '1');
       return window.open(url.toString()) !== null;
     });

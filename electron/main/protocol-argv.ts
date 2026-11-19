@@ -33,3 +33,18 @@ export function extractProtocolUrl(
   }
   return null;
 }
+
+/**
+ * 把本程序注册为 `<protocol>://` 的系统默认处理者 —— 仅打包版。
+ * dev(process.defaultApp:pnpm dev / e2e 以 `electron <入口>` 启动)不注册:macOS 的 LaunchServices
+ * 会把 scheme 持久指向 node_modules 里的 Electron.app,跑过一次 dev 后打包版就收不到 co:// 深链。
+ * dev 下验证深链用 second-instance argv / open-url 事件即可,不需要系统级注册。
+ */
+export function registerDefaultProtocolClient(
+  app: { setAsDefaultProtocolClient(protocol: string): boolean },
+  protocol: string,
+  options: { defaultApp: boolean },
+): void {
+  if (options.defaultApp) return;
+  app.setAsDefaultProtocolClient(protocol);
+}

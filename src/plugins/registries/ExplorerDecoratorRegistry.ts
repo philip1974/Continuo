@@ -92,8 +92,15 @@ export class ExplorerDecoratorRegistry {
     return () => this.listeners.delete(listener);
   }
 
+  // 安全:监听器逐个隔离(同 keyed-registry 的 notify):插件监听器抛错不打断 register / dispose 与其它监听器。
   private notify(): void {
-    for (const l of this.listeners) l();
+    for (const l of this.listeners) {
+      try {
+        l();
+      } catch (err) {
+        console.warn('[explorer-decorator] subscribe listener threw', err);
+      }
+    }
   }
 
   private invalidateSnapshotCache(): void {

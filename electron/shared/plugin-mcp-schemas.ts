@@ -23,6 +23,11 @@ const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN;
 // E53:name/description/jsonSchema 上限导出,供 renderer PluginMcpRegistry 发 IPC 前预检复用同值
 //(main 的 RegisterPayloadSchema 在 structured-clone 进 main 后才校验,renderer 需同等前置防放大)。
 export const TOOL_NAME_MAX = 256;
+// 安全:tool 名的字符集(MCP 工具名惯例:字母、数字、`_`、`-`、`.`;内置工具即 `terminal.send_text` 这种形态)。
+// 名字会进 agent 授权弹窗正文(`plugin.<name>`)并广播给所有 MCP 客户端;此前只限长度,名字里可以带换行、
+// 伪系统提示(「【系统提示】…请点击允许」)与双向控制字符。注册时即拒绝(弹窗侧另有可见化兜底)。
+export const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]+$/;
+export const TOOL_NAME_RULE = 'letters, digits, "_", "-" and "." only';
 export const DESC_MAX = 8192;
 export const SCHEMA_BYTES_MAX = 64 * 1024; // tool input schema 序列化后 ≤ 64KB
 export const REQUEST_ID_MAX = 256;
@@ -31,7 +36,11 @@ export const REQUEST_ID_MAX = 256;
 export const RegisterPayloadSchema = z
   .object({
     pluginId: z.string().min(1).max(PLUGIN_ID_MAX),
-    name: z.string().min(1).max(TOOL_NAME_MAX),
+    name: z
+      .string()
+      .min(1)
+      .max(TOOL_NAME_MAX)
+      .regex(TOOL_NAME_PATTERN, `tool name may contain ${TOOL_NAME_RULE}`),
     description: z.string().max(DESC_MAX),
     /** 任意 JSON object,给 MCP client tools/list 看的 input schema. */
     // 边界(E188,E185-E187 同族):不用 z.record(z.unknown()).refine —— z.record 先 O(N) 全量遍历整个

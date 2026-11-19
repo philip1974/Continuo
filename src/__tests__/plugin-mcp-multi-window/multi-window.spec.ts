@@ -15,6 +15,9 @@ import {
   PLUGIN_MCP_ERROR_CODES,
 } from '../../../electron/shared/plugin-mcp-channels';
 import type { AnyMcpTool } from '../../../electron/main/services/mcp-host.service';
+import type { EnsureAuthorized } from '../../../electron/main/services/mcp-tool-gates';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import { AGENT_AUTH_METHOD_MAX } from '../../../electron/shared/agent-auth-channels';
 
 // ─── fake host ───────────────────────────────────────────────
 
@@ -84,6 +87,10 @@ function makeFakeInvokeRemote(): FakeInvokeRemote {
 
 // ─── 帮手 ───────────────────────────────────────────────────
 
+/** 假 wc → BrowserWindow 映射:wc 11 在窗口 1,wc 22 在窗口 2,其余视为已销毁(null)。 */
+const fakeWindowIdOfWc = (wcId: number): number | null =>
+  wcId === 11 ? 1 : wcId === 22 ? 2 : null;
+
 function regPayload(name: string, pluginId = 'p') {
   return {
     pluginId,
@@ -93,7 +100,9 @@ function regPayload(name: string, pluginId = 'p') {
   };
 }
 
-function makeBridge(): {
+function makeBridge(
+  ensureAuthorized: EnsureAuthorized = async () => 'once',
+): {
   bridge: PluginMcpBridge;
   host: FakeHost;
   invokeRemote: FakeInvokeRemote;
@@ -105,6 +114,8 @@ function makeBridge(): {
   const bridge = createPluginMcpBridge({
     host,
     invokeRemote,
+    ensureAuthorized,
+    windowIdOfWc: fakeWindowIdOfWc,
     notifyToolsChanged: () => {
       counter.n++;
     },
@@ -384,9 +395,9 @@ describe('路由正确性', () => {
     bridge.handleRegister(22, regPayload('b', 'p.beta'));
     const stubA = host.tools.get('a')!;
     const stubB = host.tools.get('b')!;
-    const ctx = { ownerWindowId: 1 };
-    await stubA.run({ x: 1 }, ctx);
-    await stubB.run({ x: 2 }, ctx);
+    // 各自由注册者所在窗口(wc 11 → 窗口 1,wc 22 → 窗口 2)的 agent 调用
+    await stubA.run({ x: 1 }, { ownerWindowId: 1 });
+    await stubB.run({ x: 2 }, { ownerWindowId: 2 });
     expect(invokeRemote.invokeCalls).toEqual([
       { owner: { pluginId: 'p.alpha', wcId: 11 }, name: 'a', input: { x: 1 } },
       { owner: { pluginId: 'p.beta', wcId: 22 }, name: 'b', input: { x: 2 } },
@@ -398,6 +409,113 @@ describe('路由正确性', () => {
     bridge.handleRegister(11, regPayload('a'));
     bridge.handleWebContentsGone(11);
     expect(host.tools.get('a')).toBeUndefined();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 授权门控 — 插件工具与终端 / debug 工具同走 agent 授权(独立 plugin 域)
+// 安全:此前 stub.run 丢弃 ctx 直接 invoke,用户对 agent 点了「拒绝」仍可调插件工具(如 git stage/commit)。
+// ────────────────────────────────────────────────────────────
+
+describe('授权门控 · 插件工具经 agent 授权', () => {
+  it('用户拒绝 → AGENT_NOT_AUTHORIZED,不向插件 renderer 发 invoke', async () => {
+    const { bridge, host, invokeRemote } = makeBridge(async () => 'denied');
+    bridge.handleRegister(11, regPayload('git.stage', 'p.git'));
+    await expect(
+      host.tools.get('git.stage')!.run({}, { ownerWindowId: 1 }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  it('同窗调用:授权弹在该窗口,method 归 plugin 域(plugin.<tool 名>),路由到注册者', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(22, regPayload('git.commit', 'p.git'));
+    await host.tools.get('git.commit')!.run({ m: 'x' }, { ownerWindowId: 2 });
+    expect(ensure).toHaveBeenCalledWith(2, 'plugin.git.commit', false);
+    expect(invokeRemote.invokeCalls).toEqual([
+      { owner: { pluginId: 'p.git', wcId: 22 }, name: 'git.commit', input: { m: 'x' } },
+    ]);
+  });
+
+  // 安全:此前「调用方窗口授权、注册者窗口执行」—— 窗口 A 的 agent 调用窗口 B 插件注册的工具,A 的用户
+  // 批准,操作却落在 B 的仓库,B 的用户全不知情。跨窗调用一律拒绝(工具名全局唯一注册不变)。
+  it('跨窗调用 → AGENT_NOT_AUTHORIZED,不弹授权、不 invoke', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(11, regPayload('git.commit', 'p.git')); // 窗口 1 的插件
+    await expect(
+      host.tools.get('git.commit')!.run({ m: 'x' }, { ownerWindowId: 2 }),
+    ).rejects.toMatchObject({
+      code: ERROR_CODES.AGENT_NOT_AUTHORIZED,
+      message: expect.stringContaining('another window'),
+    });
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  it('调用方无窗口(external 客户端)→ 拒绝,不弹授权、不 invoke', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(11, regPayload('a'));
+    for (const ownerWindowId of [undefined, Number.NaN, -1]) {
+      await expect(
+        host.tools.get('a')!.run({}, { ownerWindowId } as never),
+      ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    }
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  // 外部客户端(stdio 未发 hello)回落到主窗:ctx.ownerWindowId 是主窗 id、external=true。即便主窗恰是注册者
+  // 窗口,它也不是该窗口终端里的 agent —— 与「无窗口调用方」同样拒绝,不弹授权、不 invoke。
+  it('外部客户端(ctx.external,回落到注册者所在的主窗)→ 拒绝,不弹授权、不 invoke', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(11, regPayload('a')); // 注册者窗口 1
+    await expect(
+      host.tools.get('a')!.run({}, { ownerWindowId: 1, callerSubject: 's', external: true }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  it('注册者窗口已不可解析(wc 已销毁 / 不在任何窗口)→ 拒绝', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(33, regPayload('a')); // fakeWindowIdOfWc(33) === null
+    for (const ownerWindowId of [1, null]) {
+      // null:无窗口调用方不得因「两边都没有窗口」而相等放行
+      await expect(
+        host.tools.get('a')!.run({}, { ownerWindowId } as never),
+      ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    }
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  it('调用方已断开 → 不弹授权、不 invoke', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host, invokeRemote } = makeBridge(ensure);
+    bridge.handleRegister(11, regPayload('a'));
+    const ac = new AbortController();
+    ac.abort();
+    await expect(
+      host.tools.get('a')!.run({}, { ownerWindowId: 1, signal: ac.signal }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.AGENT_NOT_AUTHORIZED });
+    expect(ensure).not.toHaveBeenCalled();
+    expect(invokeRemote.invokeCalls).toEqual([]);
+  });
+
+  it('超长 tool 名 → method 截到授权请求 method 上限内(弹窗不因超长被 renderer 丢弃)', async () => {
+    const ensure = vi.fn<EnsureAuthorized>(async () => 'once');
+    const { bridge, host } = makeBridge(ensure);
+    const longName = 'x'.repeat(256);
+    bridge.handleRegister(11, regPayload(longName));
+    await host.tools.get(longName)!.run({}, { ownerWindowId: 1 });
+    const method = ensure.mock.calls[0]![1]!;
+    expect(method.startsWith('plugin.')).toBe(true);
+    expect(method.length).toBeLessThanOrEqual(AGENT_AUTH_METHOD_MAX);
   });
 });
 
@@ -463,7 +581,12 @@ describe('notifyToolsChanged · 钩子触发时机', () => {
   it('notifyToolsChanged 未注入 → 不抛错(可选 deps)', () => {
     const host = makeFakeHost();
     const invokeRemote = makeFakeInvokeRemote();
-    const bridge = createPluginMcpBridge({ host, invokeRemote });
+    const bridge = createPluginMcpBridge({
+      host,
+      invokeRemote,
+      ensureAuthorized: async () => 'once',
+      windowIdOfWc: fakeWindowIdOfWc,
+    });
     expect(() => bridge.handleRegister(11, regPayload('a'))).not.toThrow();
     expect(() => bridge.handleUnregister(11, 'a')).not.toThrow();
     expect(() => bridge.handleWebContentsGone(11)).not.toThrow();

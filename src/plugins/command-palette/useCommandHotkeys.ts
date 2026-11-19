@@ -14,6 +14,7 @@ import { tWithFallback } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { ownValue } from '../../../electron/shared/own-value';
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
 interface ComboSignature {
@@ -154,7 +155,7 @@ export function buildCompiledBindings(
   let out: CompiledBinding[] | undefined;
   let count = 0;
   for (const cmd of commands) {
-    const override = overrides[cmd.id];
+    const override = ownValue(overrides, cmd.id);
     if (!cmd.hotkey && override === undefined) continue;
     const effective = resolveEffectiveHotkey(cmd, overrides);
     if (!effective) continue; // 无 hotkey 或显式 unbind

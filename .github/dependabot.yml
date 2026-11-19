@@ -1,0 +1,7 @@
+# 第三方 action 已固定到 commit SHA(# 注释标版本),由 Dependabot 每周提 PR 升级 SHA 与注释。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

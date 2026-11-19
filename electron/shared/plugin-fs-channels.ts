@@ -16,12 +16,18 @@ export const PLUGIN_FS_CHANNELS = {
   CP: 'plugin-fs:cp',
   READ_GIT_BLOB: 'plugin-fs:read-git-blob',
   CHECK_PATH: 'plugin-fs:check-path',
+  /** editor.openFile 专用:主进程在同一次持锁内完成 scope 校验 + 读取,返回已校验的内容(见 PluginFsEditorRead)。 */
+  READ_FOR_EDITOR: 'plugin-fs:read-for-editor',
+  /** 宿主编辑器释放 read-for-editor 记下的一份「插件打开的路径」(标签关闭 / 未新建标签)。 */
+  RELEASE_EDITOR_PATH: 'plugin-fs:release-editor-path',
   ATOMIC_REPLACE: 'plugin-fs:atomic-replace',
   USER_HOME: 'plugin-fs:user-home',
   REQUEST_SCOPE: 'plugin-fs:request-scope',
   SCOPE_DECISION: 'plugin-fs:scope-decision',
   /** main -> renderer event (sent via webContents.send) */
   SCOPE_REQUEST: 'plugin-fs:scope-request',
+  /** main -> renderer event:某个已发出的 scope-request 在 main 侧已收口(超时 / 插件已注销),撤掉对应弹窗 */
+  SCOPE_REQUEST_CANCELLED: 'plugin-fs:scope-request-cancelled',
   /** main -> renderer event after PathScopeRegistry grant/revoke */
   SCOPE_UPDATED: 'plugin-fs:scope-updated',
 } as const;

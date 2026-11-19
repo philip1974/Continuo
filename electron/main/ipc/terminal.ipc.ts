@@ -32,6 +32,7 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 // 非 .max()(UTF-16 code unit)—— CJK/emoji 在 length≤上限时真实字节数倍超,实际写 6-8MB 到 PTY/IPC。
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { broadcastToWindows, SKIP_BROADCAST } from '../lib/broadcast';
+import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 import { codedError } from '../../shared/error-message';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 
@@ -174,8 +175,10 @@ export function makeCreateHandler(deps?: {
     const id = generateId();
     // MCP env(token / url)注入到所有 PTY:用户在 terminal 跑 claude / codex 时
     // 自动反连本机 MCP host。internalEnv 在后,防用户 env 覆盖内部 token。
+    // Windows env 键大小写不敏感:用户传 `continuo_mcp_token` 时普通展开会两键并存,node-pty 按插入顺序写
+    // 环境块,子进程可能取到用户值 → 用 mergeSpawnEnv 只留后者(内部)的键。
     const { env: internalEnv, mcpToken } = mcpEnvProvider(win.id);
-    const mergedEnv = { ...(input.env ?? {}), ...internalEnv };
+    const mergedEnv = mergeSpawnEnv(input.env ?? {}, internalEnv) as Record<string, string>;
     const title = input.title ?? input.name ?? sessionStore.nextDefaultTitle(win.id);
     // 先登记 session metadata(reservation),再 spawn PTY。PTY 可能在 createTerminal 的
     // await 期间就极速退出(如 `sh -c 'exit 0'` / 启动即失败的 shell),其 onExit →

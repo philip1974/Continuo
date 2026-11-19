@@ -115,4 +115,13 @@ describe('makeJsonSafe', () => {
     expect(makeJsonSafe(NaN).value).toBeNull();
     expect(makeJsonSafe(undefined).value).toBeNull();
   });
+
+  it('自有 `__proto__` 键按 JSON.stringify 语义保留为自有数据属性,不改写输出对象原型', () => {
+    const input = JSON.parse('{"__proto__":{"x":1},"b":2}') as Record<string, unknown>;
+    const { value, dropped } = makeJsonSafe(input);
+    expect(dropped).toEqual([]);
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    expect(Object.hasOwn(value as object, '__proto__')).toBe(true);
+    expect(JSON.stringify(value)).toBe(JSON.stringify(input));
+  });
 });

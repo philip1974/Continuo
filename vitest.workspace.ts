@@ -2,9 +2,16 @@ import { defineWorkspace } from 'vitest/config';
 // @ts-expect-error mjs 共享配置,无 .d.ts
 import { CONTRACT_INCLUDE, INTEGRATION_INCLUDE } from './scripts/test-categories.mjs';
 
-const CI_ELECTRON_UNIT_EXCLUDE = process.env.CI
+// 历史:下列规范经 electron/main 服务间接 import electron,曾因 Actions 上缺 Electron 二进制
+//(require('electron') 抛 "Electron failed to install correctly")在全部 CI 平台排除。
+// 现状:根 postinstall 先跑 `install-electron`(CI 的 `pnpm install --frozen-lockfile` 会执行根
+// lifecycle 脚本,仓库未设 ignore-scripts),且 Electron 45 的 index.js 缺二进制时还会自行下载,
+// 故 ubuntu 已恢复运行。Windows 仍排除:这些规范从未在 Windows CI 跑过,其中不少依赖 POSIX
+// shell / 路径语义,需先在 Windows runner 上逐个验证再放开。
+const CI_WINDOWS_UNVERIFIED = Boolean(process.env.CI) && process.platform === 'win32';
+
+const CI_ELECTRON_UNIT_EXCLUDE = CI_WINDOWS_UNVERIFIED
   ? [
-      // TODO: re-enable after Electron binary installation is fixed for Actions.
       'src/__tests__/dock-layout-per-window-seq/safe-handle-ctx.spec.ts',
       'src/__tests__/fs-ipc-bridge/fs-ipc-bridge.spec.ts',
       'src/__tests__/ipc-safe-handle/safe-handle.spec.ts',
@@ -33,7 +40,7 @@ const CI_ELECTRON_UNIT_EXCLUDE = process.env.CI
     ]
   : [];
 
-const CI_ELECTRON_CONTRACT_EXCLUDE = process.env.CI
+const CI_ELECTRON_CONTRACT_EXCLUDE = CI_WINDOWS_UNVERIFIED
   ? [
       'src/__tests__/agent-terminal-mcp-stdio-framing/framing.spec.ts',
       'src/__tests__/sdk-contract/integration/plugin-fs.service.spec.ts',
@@ -43,7 +50,7 @@ const CI_ELECTRON_CONTRACT_EXCLUDE = process.env.CI
     ]
   : [];
 
-const CI_ELECTRON_INTEGRATION_EXCLUDE = process.env.CI
+const CI_ELECTRON_INTEGRATION_EXCLUDE = CI_WINDOWS_UNVERIFIED
   ? [
       'src/__tests__/terminal-ipc/read-history-ownership.spec.ts',
       'src/__tests__/terminal-ipc/terminal-ipc.spec.ts',

@@ -10,7 +10,11 @@ import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
-import { useAgentAuthStore } from '@/stores/agent-auth.store';
+import {
+  hasAnySessionGrant,
+  useAgentAuthStore,
+  WINDOW_SESSION_GRANT_KEYS,
+} from '@/stores/agent-auth.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { computeTextStats } from '@/lib/text-stats';
@@ -107,9 +111,9 @@ let revokeGen = 0;
 async function handleRevokeAgentTerminals(): Promise<void> {
   const myGen = ++revokeGen; // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
-  // 撤销覆盖终端与 debug 两个域;失败回滚时两个都按撤销前的值恢复。
-  const { sessionGranted: wasGranted, debugSessionGranted: wasDebugGranted } =
-    useAgentAuthStore.getState();
+  // 撤销覆盖全部域(窗口级三域 + 外部客户端);失败回滚只恢复窗口级授权,外部客户端授权不恢复(往拒绝方向)。
+  const before = useAgentAuthStore.getState();
+  const wasWindowGranted = WINDOW_SESSION_GRANT_KEYS.filter((k) => before[k]);
   useAgentAuthStore.getState().revoke();
   // 闭环:revoke IPC(kill PTY + rotate token)可能失败(revokeAndKillAgentSessions 抛错 →
   // safeHandle 返 ok:false / IPC reject)。旧实现 `void` 完全忽略结果 → 失败被静默伪成功:
@@ -129,8 +133,7 @@ async function handleRevokeAgentTerminals(): Promise<void> {
     // 已把状态正确置为 revoked,先发的迟到失败不得用旧 wasGranted 把 sessionGranted 翻回 true。
     if (myGen !== revokeGen) return;
     // 只恢复、不降级:撤销在途期间用户若又新授权了某个域,失败回滚不能把它写回 false。
-    if (wasGranted) useAgentAuthStore.setState({ sessionGranted: true });
-    if (wasDebugGranted) useAgentAuthStore.setState({ debugSessionGranted: true });
+    for (const k of wasWindowGranted) useAgentAuthStore.setState({ [k]: true });
     notify.error(translate('permissions.revoke_all.failed'), {
       code: errorCodeOf(err),
     });
@@ -197,7 +200,8 @@ export function StatusBar() {
   );
   // 终审 P1:只授予了调试域(外部 MCP 客户端 debug.launch)而没有 agent terminal 时也必须能撤销 ——
   // 调试授权等同任意代码执行,此前入口只看 agent 会话数,debug-only 授权只能退出应用才能撤销。
-  const anyAgentGrant = useAgentAuthStore((s) => s.sessionGranted || s.debugSessionGranted);
+  // 插件工具域、外部客户端授权同理:任一「本次启动期间允许」都须能撤销(单一来源 hasAnySessionGrant)。
+  const anyAgentGrant = useAgentAuthStore(hasAnySessionGrant);
   const showAgentRevoke = agentSessionCount > 0 || anyAgentGrant;
 
   // 只订阅 active tab 的派生 primitive(打磨 R24 + 合并优化 R46)。非 active tab 的

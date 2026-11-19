@@ -3,6 +3,7 @@
 // 上限 cap 避免 OOM。返回完整 ExecResult,plugin 等 process exit 后拿。
 
 import { startsWithAllowedExternalScheme } from '../../shared/url-limits';
+import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { spawn } from 'node:child_process';
 import { shell } from 'electron';
 import { codedError, errorMessage } from '../../shared/error-message';
@@ -15,6 +16,12 @@ import {
   TREE_KILL_DETACHED,
 } from '../lib/kill-with-grace';
 import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+import {
+  mergeSpawnEnv,
+  stripInternalSecretEnv,
+  resolveSpawnCommand,
+  withGitHardeningEnv,
+} from '../lib/child-spawn-hardening';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import type {
   IpcShellExecInput,
@@ -137,9 +144,13 @@ export function execShell(
   return new Promise((resolve) => {
     const timeoutMs = clampExecTimeoutMs(input.timeoutMs);
     const maxBytes = clampExecMaxBytes(input.maxOutputBytes);
-    const env = input.env
-      ? { ...process.env, ...input.env }
-      : process.env;
+    // 安全:注入 git 命令行作用域 core.fsmonitor=false,恶意 workspace 的 .git/config 不能借插件的
+    // `git status` 执行任意命令(见 lib/child-spawn-hardening)。
+    // Windows env 键大小写不敏感合并(插件 PATH 不与宿主 Path 并存),命令解析与子进程 env 一致。
+    // 剥离宿主内部机密(CONTINUO_MCP_TOKEN,继承的或插件显式传入的),见 INTERNAL_SECRET_ENV_KEYS。
+    const env = withGitHardeningEnv(
+      stripInternalSecretEnv(input.env ? mergeSpawnEnv(process.env, input.env) : process.env),
+    );
 
     let child;
     try {
@@ -148,7 +159,9 @@ export function execShell(
       // 语法执行 → 破坏参数原子性 + 命令注入面(codex diff 复查)。Windows 下 `.cmd`/
       // `.bat`(npm/pnpm 等)无法直接 spawn 的正确解法是 PATHEXT 检测 + 仅对 .cmd/.bat
       // 走 `cmd.exe /d /s /c` 并对每个 arg 做 Windows quoting,需 Windows 实测 → DEFER。
-      child = spawn(input.cmd, [...input.args], {
+      // 安全(Windows):裸命令名只在 PATH 绝对目录中解析,不查 cwd(workspace 根的 git.exe);解析不到抛错
+      // 走下方 spawn failed(见 lib/child-spawn-hardening)。
+      child = spawn(resolveSpawnCommand(input.cmd, env), [...input.args], {
         cwd: input.cwd,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -337,7 +350,96 @@ export function execShell(
  * 漏接白名单成为协议处理器投放面。
  */
 export function isAllowedExternalUrl(url: string): boolean {
-  return startsWithAllowedExternalScheme(url);
+  return startsWithAllowedExternalScheme(url) && !hasControlChar(url);
+}
+
+// 安全:shell.openExternal 交 GURL 解析时按 URL 规范删掉 Tab / CR / LF,下游客户端对其它控制字符的处理也不可知。
+// 若放行,`mailto:x?att<TAB>ach=~/.ssh/id_rsa` 在 sanitizeExternalUrl 里键名是 `att\tach`(不删),交出后却成 attach。
+// 正常外链(Markdown 链接目标 / 终端链接 / Chromium 已规范化的 window.open URL)不含 C0 控制字符与 DEL,
+// 故所有 scheme 一律拒绝(fail-closed),不去猜下游的剥离规则。字符扫描,不走 RegExp(热路径约束同上)。
+function hasControlChar(url: string): boolean {
+  for (let i = 0; i < url.length; i++) {
+    const c = url.charCodeAt(i);
+    if (c <= 0x1f || c === 0x7f) return true;
+  }
+  return false;
+}
+
+// 安全 L4:mailto 的 attach / attachment 参数会让部分邮件客户端静默附加本地文件(Evolution CVE-2020-11879、
+// KMail CVE-2020-11880)。openExternal 的输入含不受信 markdown / 终端输出链接,`mailto:x@evil?attach=~/.ssh/id_rsa`
+// 经 xdg-open 交给邮件客户端即可外发私钥。统一出口净化(各平台都做)。
+// **白名单**而非黑名单:只留 RFC 6068 常用头,其余一律丢弃。黑名单(attach / attachment)被绕过两次 ——
+// `attach%00=`(键解码后带 NUL,不等于 attach,客户端却可能截断 / 忽略它)、`#&attach=`(见 sanitizeExternalUrl)。
+// 已知残余:白名单参数的**值**里编码的分隔符不处理 —— `subject=x%26attach%3D/y` 原样保留,对「先把整条 URL 解码
+// 再按 & 切分」的客户端(不合 RFC 6068)仍可注入 attach。不处理是因为 `subject=Q%26A` 这类写法完全合法,拒绝或
+// 改写会破坏正常链接;地址段不存在这种合法用法,已在 isSafeMailtoAddress 拒绝。
+const MAILTO_ALLOWED_PARAMS = new Set(['to', 'cc', 'bcc', 'subject', 'body', 'in-reply-to']);
+
+/** 该 mailto 参数段(`key=value` 原文)是否保留。解码失败 / 解码后含控制字符 / 键不在白名单 → 丢弃(fail-closed)。 */
+function isAllowedMailtoParam(part: string): boolean {
+  const eq = part.indexOf('=');
+  let key: string;
+  let value: string;
+  try {
+    key = decodeURIComponent(eq < 0 ? part : part.slice(0, eq));
+    value = eq < 0 ? '' : decodeURIComponent(part.slice(eq + 1));
+  } catch {
+    return false;
+  }
+  // 先查控制字符再 trim:trim 会把首尾的 Tab / LF 洗掉,`%0Asubject` 不该因此变成合法键
+  if (hasControlChar(key)) return false;
+  const name = key.trim().toLowerCase();
+  if (!MAILTO_ALLOWED_PARAMS.has(name)) return false;
+  // body 的换行(RFC 6068 规定写作 %0D%0A)与 Tab 是合法正文;其它头的值里出现 CR / LF 是头注入形态,丢弃
+  return !hasControlChar(name === 'body' ? value.replace(/[\t\r\n]/g, '') : value);
+}
+
+/** mailto 地址段是否可原样保留:能解码,且解码后不含控制字符与参数 / fragment 分隔符。 */
+function isSafeMailtoAddress(address: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(address);
+  } catch {
+    return false;
+  }
+  if (hasControlChar(decoded)) return false;
+  return !decoded.includes('?') && !decoded.includes('&') && !decoded.includes('#');
+}
+
+/**
+ * 交系统打开前的 URL 净化:mailto 只保留白名单参数并去掉 fragment;其它 URL 原样返回。
+ * 没有被丢弃内容的 mailto URL 逐字节不变。
+ */
+export function sanitizeExternalUrl(url: string): string {
+  if (!startsWithAsciiIgnoreCase(url, 'mailto:')) return url;
+  // mailto 没有 fragment 语义(RFC 6068 要求 # 必须编码),而不识别 fragment 的邮件客户端会把
+  // `?subject=x#&attach=/path` 里 # 之后的内容继续当参数 → # 及其后全部丢弃。
+  const hashIdx = url.indexOf('#');
+  let noHash = hashIdx < 0 ? url : url.slice(0, hashIdx);
+  let q = noHash.indexOf('?');
+  // 地址段(scheme 之后、? 之前)同样不可信:「先整体解码再切分」的客户端会把其中编码的 ? & # 当分隔符、
+  // 把编码的 CR / LF 当头分隔。解码失败,或解码后含控制字符 / ? / & / # → 丢弃整个地址段(fail-closed)。
+  const SCHEME_LEN = 'mailto:'.length;
+  const address = noHash.slice(SCHEME_LEN, q < 0 ? undefined : q);
+  if (!isSafeMailtoAddress(address)) {
+    noHash = noHash.slice(0, SCHEME_LEN) + (q < 0 ? '' : noHash.slice(q));
+    q = q < 0 ? -1 : SCHEME_LEN;
+  }
+  if (q < 0) return noHash;
+  // 按 & 与 ; 切分(部分客户端把 ; 当分隔符);保留的参数保持原文、顺序与原分隔符,空段原样保留。
+  const parts = noHash.slice(q + 1).split(/([&;])/); // [段, 分隔符, 段, 分隔符, ...]
+  let out = '';
+  let removed = false;
+  for (let i = 0; i < parts.length; i += 2) {
+    const part = parts[i]!;
+    if (part !== '' && !isAllowedMailtoParam(part)) {
+      removed = true;
+      continue;
+    }
+    out += out === '' ? part : (parts[i - 1] ?? '&') + part;
+  }
+  if (!removed) return noHash;
+  return noHash.slice(0, q) + (out !== '' ? `?${out}` : '');
 }
 
 export async function openExternalUrl(
@@ -349,5 +451,5 @@ export async function openExternalUrl(
       `[shell.openExternal] scheme not allowed: ${url.slice(0, 32)}...`,
     );
   }
-  await shell.openExternal(url);
+  await shell.openExternal(sanitizeExternalUrl(url));
 }

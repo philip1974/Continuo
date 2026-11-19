@@ -3,11 +3,14 @@
 // 普通文件替换链接本身,target 未更新,用户编辑落在断链副本里(读/写语义不对称)。
 // 与 plugin-fs 的 rm/lstat/rename「实体操作不跟随 symlink」区分:内容读/写应对称跟随。
 
-import { lstat, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
+import {
+  atomicReplaceFileNoFollow,
+  atomicWriteFile,
+} from '../../../electron/main/ipc/fs/atomic-write';
 
 const dirs: string[] = [];
 async function tempDir(): Promise<string> {
@@ -42,5 +45,40 @@ describe('atomicWriteFile 保存 symlink 写穿到 target,不断链', () => {
     const file = join(dir, 'plain.txt');
     await atomicWriteFile(file, 'hello');
     expect(await readFile(file, 'utf-8')).toBe('hello');
+  });
+});
+
+// 安全(H1):写不可信目录(agent 仓库内 CLI 配置)用不跟随链接的变体 —— 即便检查后路径被换成链接,
+// rename 也只替换链接本身,绝不写穿到仓库外目标。
+describe.skipIf(process.platform === 'win32')('atomicReplaceFileNoFollow 不写穿 symlink', () => {
+  it('路径是 symlink → 链接被普通文件替换,target 不变', async () => {
+    const dir = await tempDir();
+    const target = join(dir, 'target.txt');
+    const link = join(dir, 'link.txt');
+    await writeFile(target, 'secret', 'utf-8');
+    await symlink(target, link);
+
+    await atomicReplaceFileNoFollow(link, 'managed');
+
+    expect(await readFile(target, 'utf-8')).toBe('secret');
+    expect((await lstat(link)).isSymbolicLink()).toBe(false);
+    expect(await readFile(link, 'utf-8')).toBe('managed');
+  });
+
+  // 不跟随链接也包括权限位:替换链接得到的新文件不得继承链接目标的权限(目标 0755 → 新配置文件变可执行;
+  // 目标权限也不应被探测/复制)。链接本身视同新建,用默认 mode。
+  it('路径是 symlink → 新文件不继承链接目标的权限位', async () => {
+    const dir = await tempDir();
+    const target = join(dir, 'target.sh');
+    const link = join(dir, 'link.toml');
+    await writeFile(target, 'secret', 'utf-8');
+    await chmod(target, 0o777);
+    await symlink(target, link);
+
+    await atomicReplaceFileNoFollow(link, 'managed');
+
+    expect((await lstat(link)).isSymbolicLink()).toBe(false);
+    expect((await stat(link)).mode & 0o777).not.toBe(0o777);
+    expect((await stat(target)).mode & 0o777).toBe(0o777);
   });
 });

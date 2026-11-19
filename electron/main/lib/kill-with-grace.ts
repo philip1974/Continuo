@@ -5,6 +5,8 @@
 // 关窗 / 退出时延迟退出(第七 session R3:unref 曾逐个兄弟 timer 补)。kill 抛错(进程已退出等)忽略。
 
 import { spawn } from 'node:child_process';
+import path from 'node:path';
+import { resolveSpawnCommand } from './child-spawn-hardening';
 
 interface Killable {
   kill(signal?: NodeJS.Signals | number): boolean;
@@ -24,6 +26,15 @@ interface TreeKillTarget extends Killable {
 // Windows:等待 taskkill 结束的上限。taskkill 靠根 PID 遍历子进程,根进程须在它结束后才可直杀;
 // taskkill 卡住时不能无限推迟兜底,1s 后照常直杀根进程(退出清理 killProcessTreesNow 的总上限为 2s)。
 export const TASKKILL_WAIT_MS = 1000;
+
+// taskkill 的绝对路径:裸名 spawn 时 libuv 先查主进程 cwd(CLI 启动时即用户所在目录,可能是不可信仓库),
+// 其中的 taskkill.exe 会被执行。优先 %SystemRoot%\System32;SystemRoot 缺失 / 非绝对路径时回落 PATH 绝对
+// 目录解析(解析不到抛错 → 调用方回退直杀根进程)。
+function taskkillCommand(): string {
+  const root = process.env.SystemRoot;
+  if (root && path.win32.isAbsolute(root)) return path.win32.join(root, 'System32', 'taskkill.exe');
+  return resolveSpawnCommand('taskkill', process.env);
+}
 
 export function processTreeKillable(child: TreeKillTarget): Killable {
   // Windows:在途 taskkill 结束(或到等待上限)时 resolve;SIGKILL 兜底排在它之后。
@@ -47,7 +58,7 @@ export function processTreeKillable(child: TreeKillTarget): Killable {
           return true;
         }
         try {
-          const tk = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+          const tk = spawn(taskkillCommand(), ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
           taskkillDone = new Promise<void>((resolve) => {
             const timer = setTimeout(resolve, TASKKILL_WAIT_MS);
             (timer as { unref?: () => void }).unref?.();

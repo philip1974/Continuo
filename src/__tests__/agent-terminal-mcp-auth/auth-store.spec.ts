@@ -4,15 +4,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getAgentAuthEpoch,
+  hasAnySessionGrant,
   useAgentAuthStore,
   _resetAgentAuthForTest,
 } from '../../stores/agent-auth.store';
+import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../../electron/shared/agent-auth-channels';
 
 beforeEach(() => {
   _resetAgentAuthForTest();
 });
 
-// race(R88):main 端 5min timeout 把请求 resolve 为 denied 但不通知 renderer。renderer 端同 TTL
+// race(R88):main 端无应答超时(AGENT_AUTH_PROMPT_TIMEOUT_MS,2 分钟) 把请求 resolve 为 denied 但不通知 renderer。renderer 端同 TTL
 // 本地超时:过期 → 清 pending,避免失效弹窗滞留 + 阻塞后续 agent auth 请求。结算为 'cancelled'
 // (main 已按 denied 结算并删除该请求;再 respond 只会拿到 NOT_PENDING 并弹误导性失败 toast)。
 describe('race(R88) · pending 同 TTL 本地超时自清', () => {
@@ -20,14 +22,14 @@ describe('race(R88) · pending 同 TTL 本地超时自清', () => {
     vi.useRealTimers();
   });
 
-  it('5min 无应答 → ensure resolve cancelled + pending 清空 + 后续请求不被阻塞', async () => {
+  it('超时时长内无应答 → ensure resolve cancelled + pending 清空 + 后续请求不被阻塞', async () => {
     vi.useFakeTimers();
     const p = useAgentAuthStore
       .getState()
       .ensure({ method: 'terminal.create_session' });
     expect(useAgentAuthStore.getState().pending).not.toBeNull();
 
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
 
     await expect(p).resolves.toBe('cancelled');
     expect(useAgentAuthStore.getState().pending).toBeNull();
@@ -45,7 +47,7 @@ describe('race(R88) · pending 同 TTL 本地超时自清', () => {
     useAgentAuthStore.getState().grant('once');
     await expect(p).resolves.toBe('once');
     // 推进过 TTL:不应再触发(grant 已 clearPendingTimer)。
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
     expect(useAgentAuthStore.getState().pending).toBeNull();
   });
 });
@@ -394,5 +396,110 @@ describe('授权分域:terminal 与 debug 各自记「本次启动期间允许�
     await expect(useAgentAuthStore.getState().ensure({ method: 'something.else' })).resolves.toBe(
       'session',
     );
+  });
+});
+
+// 安全:插件注册的 MCP 工具(method 以 plugin. 开头)独立成 plugin 域。插件工具能做任意插件能力
+// (如 git stage/commit),对终端点「本次启动期间允许」不应静默放行插件工具,反之亦然。
+describe('授权分域:plugin 域独立于 terminal / debug', () => {
+  it('终端 + debug 均已 session 授权,插件工具请求仍然弹窗', () => {
+    useAgentAuthStore.setState({ sessionGranted: true, debugSessionGranted: true });
+    void useAgentAuthStore.getState().ensure({ method: 'plugin.git.stage' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('plugin.git.stage');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('plugin 域 session 授权后:插件工具直接通过,终端 / debug 请求仍然弹窗', async () => {
+    const p = useAgentAuthStore.getState().ensure({ method: 'plugin.git.stage' });
+    useAgentAuthStore.getState().grant('session');
+    await expect(p).resolves.toBe('session');
+    useAgentAuthStore.getState().confirmSessionGrant('plugin.git.stage', getAgentAuthEpoch());
+    expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+
+    await expect(
+      useAgentAuthStore.getState().ensure({ method: 'plugin.other.tool' }),
+    ).resolves.toBe('session');
+
+    void useAgentAuthStore.getState().ensure({ method: 'terminal.send_input' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.send_input');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('revoke 同时撤销 plugin 域', () => {
+    useAgentAuthStore.setState({ pluginSessionGranted: true });
+    useAgentAuthStore.getState().revoke();
+    expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(false);
+  });
+});
+
+// 安全(F2):未发 `_continuo/hello` 的 stdio 连接(外部客户端,未绑定 Continuo 终端)用独立的 external 授权状态,
+// 不复用任何窗口的「本次启动期间允许」,也不写入窗口级授权。否则窗口 B 终端里的 agent 绕过 proxy 直连
+// mcp.sock 不发 hello,即可借主窗 A 已有的授权静默 create_session / debug_launch。
+describe('授权分调用方:external(未绑定终端)独立于窗口级授权', () => {
+  it('窗口级三个域均已 session 授权,external 请求仍然弹窗', () => {
+    useAgentAuthStore.setState({
+      sessionGranted: true,
+      debugSessionGranted: true,
+      pluginSessionGranted: true,
+    });
+    void useAgentAuthStore
+      .getState()
+      .ensure({ method: 'terminal.create_session', external: true });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.create_session');
+    expect(useAgentAuthStore.getState().pending?.external).toBe(true);
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('external session 授权只记在 external 同域:不写窗口级授权,窗口请求 / external 其它域仍弹窗', async () => {
+    const p = useAgentAuthStore
+      .getState()
+      .ensure({ method: 'terminal.create_session', external: true });
+    useAgentAuthStore.getState().grant('session');
+    await expect(p).resolves.toBe('session');
+    useAgentAuthStore
+      .getState()
+      .confirmSessionGrant('terminal.create_session', getAgentAuthEpoch(), true);
+    const s = useAgentAuthStore.getState();
+    expect(s.externalSessionGranted).toBe(true);
+    expect(s.sessionGranted).toBe(false);
+
+    await expect(
+      useAgentAuthStore.getState().ensure({ method: 'terminal.read_output', external: true }),
+    ).resolves.toBe('session');
+
+    void useAgentAuthStore.getState().ensure({ method: 'terminal.read_output' });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.read_output');
+    useAgentAuthStore.getState().deny();
+
+    void useAgentAuthStore.getState().ensure({ method: 'debug.launch', external: true });
+    expect(useAgentAuthStore.getState().pending?.method).toBe('debug.launch');
+    useAgentAuthStore.getState().deny();
+  });
+
+  it('revoke 同时撤销 external 各域', () => {
+    useAgentAuthStore.setState({
+      externalSessionGranted: true,
+      externalDebugSessionGranted: true,
+    });
+    useAgentAuthStore.getState().revoke();
+    const s = useAgentAuthStore.getState();
+    expect(s.externalSessionGranted).toBe(false);
+    expect(s.externalDebugSessionGranted).toBe(false);
+  });
+
+  // 纵深:main plugin-mcp-bridge 在授权前已拒绝外部客户端调插件工具;store 对该组合也直接拒,
+  // 不弹窗、不记任何授权(也就没有 external 插件域状态)。
+  it('external 调插件工具(plugin.*)→ 直接 denied,不弹窗,confirmSessionGrant 也不记授权', async () => {
+    await expect(
+      useAgentAuthStore.getState().ensure({ method: 'plugin.git.commit', external: true }),
+    ).resolves.toBe('denied');
+    expect(useAgentAuthStore.getState().pending).toBeNull();
+
+    useAgentAuthStore.getState().confirmSessionGrant('plugin.git.commit', getAgentAuthEpoch(), true);
+    const s = useAgentAuthStore.getState();
+    expect(hasAnySessionGrant(s)).toBe(false);
+    expect('externalPluginSessionGranted' in s).toBe(false);
   });
 });

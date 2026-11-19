@@ -15,7 +15,8 @@
   - 验证 SharedArrayBuffer/Atomics probe 四个失败阶段与 `crossOriginIsolated` 记录。
   - 保证 `Atomics.wait` 只能在 worker 中执行。
 - `spike-gate.spec.ts`
-  - 验证 packaged spike gate：navigation guard、window-open guard、query strip、renderer query builder、allow reason。
+  - 验证 packaged spike gate：navigation guard、query strip、renderer query builder、allow reason。
+  - window-open 不另设 spike 闸(原 `guardOpen` 从未接入、照接会拒掉全部 popout,已删除):windowOpenHandler 只放行 query 恰好为 `popout=1` 的本应用入口,`?spike=` 必被拒(见 `popout-contracts`)。
   - 明确事件 wire 列表不能包含 `did-frame-navigate`。
 - `thin-entry.spec.ts`
   - 验证 thin entry 在 spike route 与 normal route 下只加载对应模块。

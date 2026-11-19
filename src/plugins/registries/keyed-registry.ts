@@ -103,8 +103,16 @@ export abstract class KeyedRegistry<T> {
     return () => this.listeners.delete(listener);
   }
 
+  // 安全:监听器逐个隔离。subscribe 对插件开放,监听器抛错若冒出 notify,register 会在条目已入表后抛错 ——
+  // 调用方拿不到 Disposable(该 key 注销不掉),排在后面的监听器(宿主 UI)也收不到这次变更。
   private notify(): void {
-    for (const l of this.listeners) l();
+    for (const l of this.listeners) {
+      try {
+        l();
+      } catch (err) {
+        console.warn(`[${this.registryName}] subscribe listener threw`, err);
+      }
+    }
   }
 }
 

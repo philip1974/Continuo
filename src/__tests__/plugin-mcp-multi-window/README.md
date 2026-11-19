@@ -10,6 +10,8 @@
 > 同 plugin 在 N 个窗口被加载 N 次时:第一个 wc 抢先注册成功,其它 wc 拿
 > `TOOL_NAME_TAKEN` 错。Plugin 作者要多窗口共存自己用 `localStorage` 做 leader
 > election。这是有意识的极简取舍。
+>
+> 注意:注册是全局唯一的,但**调用只允许注册者所在窗口的 agent**(跨窗调用被拒,见「授权门控」)。
 
 ## 模块
 
@@ -53,6 +55,10 @@ export interface CreatePluginMcpBridgeDeps {
     removeTool(name: string): void;
   };
   invokeRemote: import('./plugin-mcp-bridge.service').InvokeRemoteCore;
+  /** agent 授权门控(必填),见下「授权门控」. */
+  ensureAuthorized: import('./mcp-tool-gates').EnsureAuthorized;
+  /** 注册者 wc 所在窗口 id(必填),跨窗调用拒绝的依据,见下「授权门控」. */
+  windowIdOfWc: (wcId: number) => number | null;
 }
 
 export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMcpBridge;
@@ -105,6 +111,25 @@ export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMc
 
 - wc=11 注册 'echo' → wc=11 destroyed → wc=22 注册 'echo' 应成功
 - 本 spec 断:gone 后再 handleRegister 同名不抛 TOOL_NAME_TAKEN
+
+### 授权门控(安全)
+
+- `CreatePluginMcpBridgeDeps.ensureAuthorized`(必填)—— stub 经 `gateWithAuth`(`mcp-tool-gates.ts`)包一层,
+  与终端 / debug 工具同走 agent 授权。此前 stub 丢弃 ctx 直接 invoke,用户对 agent 点了「拒绝」该 agent
+  仍能调插件工具(如 git stage/commit)
+- **跨窗调用拒绝**(安全,2026-11-18 起取代旧的「跨窗共享」):`CreatePluginMcpBridgeDeps.windowIdOfWc`(必填)
+  给出注册者 wc 当前所在窗口。调用方 `ctx.ownerWindowId` 与之不同、调用方无有效窗口、调用方是外部客户端
+  (`ctx.external`:stdio 未发 hello、回落到主窗 —— 即便主窗恰是注册者窗口)、
+  或注册者窗口已不可解析(null)→ 抛 `AGENT_NOT_AUTHORIZED`(消息含 `belongs to another window`),**不弹授权、
+  不 invoke**。旧行为是「调用方窗口授权、注册者窗口执行」:窗口 A 的 agent 调 B 的插件工具,A 的用户批准,操作
+  却落在 B 的仓库,B 的用户不知情。工具名全局唯一注册(先到先得)保持不变,只是别的窗口调不了。
+- 同窗通过后授权:`ensureAuthorized(ctx.ownerWindowId, 'plugin.<tool 名>')`,弹窗出现在该窗口;路由按注册者 owner
+- IPC 接线中 `windowIdOfWc` 取 `BrowserWindow.fromWebContents(webContents.fromId(wcId))?.id`,wc 已销毁 → null
+- method 以 `plugin.` 为前缀,renderer agent-auth store 归入独立的插件工具域(与终端 / debug 域互不放行,
+  见 `agent-terminal-mcp-auth`);超长 tool 名按授权请求 method 上限截断
+- denied / 调用方已断开 → `AGENT_NOT_AUTHORIZED`,不向插件 renderer 发 invoke
+- IPC 接线 `startPluginMcpIpc(host, getStdio, ensureAuthorized)`:第三参缺省 fail-closed(一律拒绝),
+  生产由 `main/index.ts` 注入 `requestAgentAuth`
 
 ### 路由正确性
 

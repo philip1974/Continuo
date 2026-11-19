@@ -1,4 +1,4 @@
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -15,6 +15,8 @@ beforeEach(async () => {
   userDataPath = await mkdtemp(
     join(tmpdir(), `sdk-contract-data-${randomUUID()}-`),
   );
+  // save 只写已安装插件的目录(不 mkdir -p):先建好。
+  await mkdir(join(userDataPath, 'plugins', 'plugin.data'), { recursive: true });
   ipc = new StubIpcMain();
   registerPluginDataStoreHandlers(ipc as never, { userDataPath });
 });

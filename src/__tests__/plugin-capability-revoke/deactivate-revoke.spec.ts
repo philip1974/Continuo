@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
   execStream: vi.fn(),
   writeFile: vi.fn(),
   readFile: vi.fn(),
-  checkPath: vi.fn(),
+  readForEditor: vi.fn(),
   fetch: vi.fn(),
   clipboardWrite: vi.fn(),
   clipboardRead: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock('@/lib/co-api', () => ({
       _unregisterPlugin: async () => undefined,
       writeFile: h.writeFile,
       readFile: h.readFile,
-      checkPath: h.checkPath,
+      readForEditor: h.readForEditor,
     },
     shell: { exec: h.shellExec, killPluginProcesses: async () => ({ ok: true, data: undefined }) },
     pluginShellStreamRaw: { execStream: h.execStream },
@@ -57,7 +57,7 @@ beforeEach(() => {
   });
   h.writeFile.mockResolvedValue(undefined);
   h.readFile.mockResolvedValue('content');
-  h.checkPath.mockResolvedValue(true);
+  h.readForEditor.mockResolvedValue({ ok: true, canonicalPath: '/w/a', content: 'content' });
   h.fetch.mockResolvedValue(new Response('x'));
   h.clipboardWrite.mockResolvedValue(undefined);
   h.clipboardRead.mockResolvedValue('clip');
@@ -72,7 +72,12 @@ describe('scoped app:revoke() 后有外部副作用的能力一律拒绝,不发 
   function revoked(): { app: CoPluginApp; editorOpen: ReturnType<typeof vi.fn> } {
     const coApp = createTestCoApp();
     const editorOpen = vi.fn().mockResolvedValue({ ok: true, lineApplied: false, reason: 'no-line-arg' });
-    const ctl = createScopedAppController({ ...coApp, editor: { openFile: editorOpen } }, ID, null, 'tok');
+    const ctl = createScopedAppController(
+      { ...coApp, editor: { openFile: editorOpen, openVerifiedFile: editorOpen } },
+      ID,
+      null,
+      'tok',
+    );
     ctl.revoke();
     return { app: ctl.app, editorOpen };
   }

@@ -1,6 +1,7 @@
 // PermissionPrompt:取消所有 checkbox + 「授权选中」(数量=0)→ resolve [].
 import { test, expect } from './fixtures/electron-app';
 import {
+  PERMISSION_GRANT_ARM_WAIT_MS,
   PERMISSION_GRANT_SELECTED,
   permissionGrantSelectedText,
 } from './helpers/permission-prompt';
@@ -41,6 +42,7 @@ test('全部 uncheck → 「授权选中(0)」 → resolve []', async ({ window 
   ).toHaveText(permissionGrantSelectedText(0));
 
   // 点「授权选中」
+  await window.waitForTimeout(PERMISSION_GRANT_ARM_WAIT_MS);
   await modal
     .locator('button')
     .filter({ hasText: PERMISSION_GRANT_SELECTED })

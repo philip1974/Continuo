@@ -38,6 +38,7 @@ import {
 } from '@continuo-terminal/react-terminal';
 import { isSearchHotkey } from './terminal-search-keymap';
 import { createOutputCoalescer } from './output-coalescer';
+import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
 import {
   applyTerminalSearchEffect,
   INITIAL_TERMINAL_SEARCH_STATE,
@@ -443,6 +444,8 @@ export function useTerminal(termId: string) {
       }),
     );
     term.open(container);
+    // 安全(pastejacking):粘贴先剥离控制字符(防伪造 \x1b[201~ 跳出 bracketed paste),见 terminal-paste-sanitize。
+    const disposePasteSanitizer = installTerminalPasteSanitizer(container, term);
     // 性能(Phase-5 终端新建加载):WebGL renderer 安装是**同步 GPU 初始化**(创建
     // canvas + getContext('webgl2') + 读 GPU 参数 + glyph/rectangle/atlas 状态)~tens
     // of ms。挪到首屏接线(open + listener + readHistory + 首字节渲染 + 清 loading)之后,
@@ -718,6 +721,7 @@ export function useTerminal(termId: string) {
         unsubData();
         unsubExit();
         onDataDisposable.dispose();
+        disposePasteSanitizer();
         osc7Disposable.dispose();
         if (cwdTimer !== null) clearTimeout(cwdTimer); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
         searchResultsDisposable.dispose();

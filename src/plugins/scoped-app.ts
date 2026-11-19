@@ -12,9 +12,12 @@
 // 能力(shell / network / fs 写与 requestScope / clipboard / mcp 注册与调用 / notifications / dock / editor.openFile)
 // 在 renderer 源头拒绝、不发 IPC —— 延迟回调或超时后仍在跑的 onunload 不能再起进程 / 发请求。
 // 不阻断:fs 读、dataStore(插件自有数据,onunload 常用 saveData)、permission 查询、userHome。
+// (卸载后的 saveData 由主进程拒绝:只写已安装插件的目录,见 src/__tests__/plugin-data-uninstall-zombie/。)
 // 贡献点注册表 / events:吊销后 register / on / subscribe 拒绝,吊销前经 scoped app 直接注册的贡献与订阅在
 // revoke() 时统一注销(见 trackContributions);commands.execute / events.emit / events.clear 有外部副作用
-//(执行宿主命令可开窗口 / 终端,emit 触发他人监听,clear 清他人订阅),同样拒绝;只放行只读查询与 events.off。
+//(执行宿主命令可开窗口 / 终端,emit 触发他人监听),同样拒绝;只放行只读查询与 events.off。
+// 所有权:register 不能覆盖非本插件注册的 key(见 contributionOwners;例外:内置插件可收回被第三方抢注的 key);
+// events.clear 只清本插件自己的订阅。
 // 经 app.mcp.register 注册的工具同样在 revoke() 时注销(插件未保存 Disposable 也不残留)。
 // 只读查询结果是浅拷贝,其中回调包吊销检查(缓存 commands.get(..).fn 停用后调用同样被拒)。
 // 见 src/__tests__/plugin-capability-revoke/。
@@ -24,6 +27,7 @@ import type {
   CoDockApi,
   Disposable,
   CoEditorApi,
+  CoHostEditorApi,
   CoNotificationsApi,
   CoPluginApp,
   PluginClipboardApi,
@@ -35,6 +39,7 @@ import type {
 } from './types';
 import type { FileEntry } from '../../electron/shared/fs-entry';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
+import { isSpecObject } from './registries/spec-guard';
 import type { PluginDataStore } from './PluginDataStore';
 import {
   PermissionError,
@@ -53,6 +58,9 @@ import {
 } from '../../electron/shared/fs-limits';
 import { utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
 import { codedError } from '../../electron/shared/error-message';
+import { PLUGIN_FS_EDITOR_READ_SCOPE_DENIED } from '../../electron/shared/plugin-fs-contract';
+import { mapFsCodeToEditorCode } from './editor-open-codes';
+import { releasePluginOpenedPath } from './plugin-opened-tabs';
 import {
   NETWORK_URL_MAX,
   NETWORK_HEADERS_MAX,
@@ -173,7 +181,9 @@ function missingPluginFsToken(): never {
   throw new Error('[plugin-fs] no token bound');
 }
 
-const EMPTY_PLUGIN_LIST_DIR_ENTRIES: FileEntry[] = [];
+// 冻结:这个空数组是所有插件共用的同一个对象(空目录的 listDir 结果)。不冻结的话,一个插件往里 push 伪造条目,
+// 其它插件列空目录时就会读到它们。
+const EMPTY_PLUGIN_LIST_DIR_ENTRIES = Object.freeze([]) as unknown as FileEntry[];
 
 export function buildPluginListDirEntries(
   path: string,
@@ -342,12 +352,12 @@ function makeFs(
       // 边界(E314,E63 renderer 对偶 / pre-IPC 预检):sha 发 IPC 前校验 hex 形态 —— 此前只校验 repoDir,
       // 超长/非 hex sha 经 structured-clone 进 main 才被 isValidGitBlobSha 拒(IPC 放大)。共享 isValidGitBlobSha。
       if (!isValidGitBlobSha(sha)) {
-        throw codedError('BAD_INPUT', 'plugin readGitBlob sha must be 4-64 hex chars');
+        throw codedError('BAD_INPUT', 'plugin readGitBlob sha must be a full 40- or 64-char hex sha');
       }
       return coApi.pluginFsRaw.readGitBlob(
         token ?? missingPluginFsToken(),
         repoDir,
-        sha,
+        sha.toLowerCase(), // 与主进程入口一致:统一小写(git 内部按小写找对象)
       );
     },
     atomicReplaceWithinScope: async (staging, final, opts) => {
@@ -372,16 +382,30 @@ function makeFs(
 // network 此前是唯一无输入边界闸的能力(fs/shell 等都有)。URL/headers 由 fetch 同步解析,超长 URL /
 // 海量·超长 headers 会让(与插件共享的)renderer 网络栈解析放大。body 不在此 cap(浏览器流式发送、
 // 非 renderer 同步物化;给 body 限大小是上传策略决策,留作单独议题)。超限抛 BAD_INPUT、不调 fetch。
-function validateNetworkInput(url: unknown, init?: unknown): void {
+//
+// 安全(scheme):只放行**绝对 https:** URL,返回解析后的 href 供实际请求使用(校验与请求同一个值)。
+// 打包版页面源是 file://,CSP connect-src 管不到 file:,原生 fetch 对 `file:///…` 以及相对路径(按页面
+// base 解析成 file:)直接返回本地文件内容 —— 只授了 network 的插件即可读任意文件再 https 外传,整体旁路
+// fs 权限与主进程 path-scope。不带 base 解析:相对 / 协议相对 URL 一律拒。http 不放行(与生产 CSP
+// connect-src 一致)。重定向无需额外处理:Chromium 拒绝 http(s) → file: 的重定向(Electron 45 实测)。
+function validateNetworkInput(url: unknown, init?: unknown): string {
   const bad = (msg: string): never => {
     throw codedError('BAD_INPUT', `[network] ${msg}`);
   };
   if (typeof url !== 'string' || url.length === 0 || url.length > NETWORK_URL_MAX)
-    bad(`invalid url (empty or > ${NETWORK_URL_MAX})`);
-  if (init === undefined || init === null) return;
+    return bad(`invalid url (empty or > ${NETWORK_URL_MAX})`);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return bad('invalid url (must be an absolute https: URL)');
+  }
+  if (parsed.protocol !== 'https:') bad('invalid url (only https: is allowed)');
+  const href = parsed.href;
+  if (init === undefined || init === null) return href;
   if (typeof init !== 'object') bad('invalid init');
   const headers = (init as { headers?: unknown }).headers;
-  if (headers === undefined || headers === null) return;
+  if (headers === undefined || headers === null) return href;
 
   let headerCount = 0;
   const validateHeaderEntry = (k: unknown, v: unknown): void => {
@@ -411,6 +435,7 @@ function validateNetworkInput(url: unknown, init?: unknown): void {
   } else {
     bad('invalid headers');
   }
+  return href;
 }
 
 function makeNetwork(
@@ -421,7 +446,7 @@ function makeNetwork(
   return {
     async fetch(url, init) {
       await ensurePerm(pluginId, 'network', store, life);
-      validateNetworkInput(url, init); // 边界(E264):发 raw fetch 前校验 URL/headers
+      const href = validateNetworkInput(url, init); // 边界(E264)+ 安全:校验 URL/headers,只放行 https
       // 停用即中止(终审):每次请求挂本实例的 AbortController,revoke() 时 abort 全部在途请求。
       // 调用方自带 signal 时用 AbortSignal.any 合并:成功后响应体仍在读取,调用方 abort 须能照常中止(同原生
       // fetch 语义);且源 signal 对合并 signal 只持弱引用,长期复用同一调用方 signal 轮询不会堆积监听(终审)。
@@ -432,7 +457,7 @@ function makeNetwork(
       try {
         // 用 module 顶部 cached raw fetch,sandboxSweep 后全局 fetch
         // 已涂掉但本闭包仍能调
-        return await getCachedFetch()(url, { ...init, signal });
+        return await getCachedFetch()(href, { ...init, signal });
       } finally {
         life.inflightFetches.delete(ctl);
       }
@@ -650,7 +675,7 @@ function makeMcp(
 function makeEditor(
   pluginId: string,
   store: PermissionStore | null,
-  rawEditor: CoEditorApi,
+  rawEditor: CoHostEditorApi,
   life: ScopedLifecycle,
   token?: string,
 ): CoEditorApi {
@@ -691,26 +716,36 @@ function makeEditor(
         };
       }
 
-      if (store) {
-        // path-scope 校验:openFile 走宿主受信 fs 通道,必须先确认目标在已授
-        // scope 内,否则有 'fs' 权限的插件可借此越权打开任意文件。checkPath
-        // 现为 PluginFsRaw 必备方法(main 端 plugin-fs:check-path 实装)。
-        const scopeOk = await coApi.pluginFsRaw.checkPath(
-          token ?? missingPluginFsToken(),
-          path,
-        );
-        if (!scopeOk) {
-          return {
-            ok: false,
-            code: 'PERMISSION_DENIED',
-            message: `path '${path}' out of granted scope`,
-          };
-        }
+      if (!store) {
+        // store=null(向后兼容 / 测试,见文件头):不做 scope 检查,直接转发。
+        if (life.revoked) return revokedResult;
+        return rawEditor.openFile(path, opts);
       }
 
-      // 授权 / scope 检查 await 期间被吊销 → 同样不打开。
-      if (life.revoked) return revokedResult;
-      return rawEditor.openFile(path, opts);
+      // 安全:不是「checkPath 通过 → 宿主受信通道按插件给的路径另读一次」—— 两步之间插件可并发 rename 换入指向
+      // scope 外的既有链接,宿主就按原路径读到 scope 外的文件(审计 L1)。改为主进程在 plugin-fs 锁内一次完成
+      // 「scope 校验 + 读取」,宿主用这份已校验内容在 canonicalPath 上开标签;之后宿主对该路径的读 / 写也先确认
+      // 路径没有被换入链接(见 src/__tests__/plugin-editor-open-verified/)。内容只进标签,不回传插件。
+      const read = await coApi.pluginFsRaw.readForEditor(
+        token ?? missingPluginFsToken(),
+        path,
+      );
+      if (!read.ok) {
+        return read.code === PLUGIN_FS_EDITOR_READ_SCOPE_DENIED
+          ? {
+              ok: false,
+              code: 'PERMISSION_DENIED',
+              message: `path '${path}' out of granted scope`,
+            }
+          : { ok: false, code: mapFsCodeToEditorCode(read.code), message: read.message };
+      }
+
+      // 授权 / 读取 await 期间被吊销 → 同样不打开(释放主进程为这次读取记下的路径,见 plugin-opened-tabs)。
+      if (life.revoked) {
+        releasePluginOpenedPath(read.canonicalPath);
+        return revokedResult;
+      }
+      return rawEditor.openVerifiedFile(read.canonicalPath, read.content, opts);
     },
   };
 }
@@ -753,13 +788,15 @@ function makeNotifications(
   };
 }
 
+/** keyed 注册表对插件公开的共同成员(各表特有的 list / execute / getBySide / getByCategory 在构造处追加)。 */
+const KEYED_MEMBERS = ['register', 'get', 'getAll', 'subscribe'] as const;
 /** 注册 / 订阅类方法名:返回 Disposable(register / on)或退订函数(subscribe)。 */
-const CONTRIBUTION_METHODS: ReadonlySet<PropertyKey> = new Set(['register', 'on', 'subscribe']);
+const CONTRIBUTION_METHODS: ReadonlySet<string> = new Set(['register', 'on', 'subscribe']);
 /**
  * 吊销后仍放行的成员:只读查询 + events.off(只能移除调用方持有引用的 listener,即自身订阅)。
  * 白名单 —— 其余成员(commands.execute / events.emit / events.clear 及未来新增方法)吊销后一律拒绝。
  */
-const PASSTHROUGH_METHODS: ReadonlySet<PropertyKey> = new Set([
+const PASSTHROUGH_METHODS: ReadonlySet<string> = new Set([
   'get',
   'getAll',
   'list',
@@ -768,10 +805,16 @@ const PASSTHROUGH_METHODS: ReadonlySet<PropertyKey> = new Set([
   'off',
 ]);
 /** 返回 Promise 的成员:吊销后以 reject 拒绝(契约是异步),其余同步抛。 */
-const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
+const ASYNC_METHODS: ReadonlySet<string> = new Set(['execute']);
 
 /**
- * 终审 P1(停用后仍可经原始注册表注册):共享注册表 / 事件总线包一层 Proxy ——
+ * 安全(注册表内部经 scoped app 可达):插件拿到的每个贡献点命名空间是**只含 SDK 公开方法的冻结外观**,不是注册表
+ * 实例,也不是它的 Proxy。此前是 Proxy:非函数属性原样返回(`app.commands.items` 就是内部 Map 本体),白名单之外的
+ * 方法直通(`registerKeyed` 绕过校验 / 冻结快照 / 所有权,且不受吊销约束),原型也可达
+ * (`Object.getPrototypeOf(app.commands).register.call(…)`)—— 零权限插件即可覆盖宿主命令、替换权限管理页。
+ * 外观的方法是闭包,不读 this;公开方法清单由调用方按 types.ts 的 Plugin*Api 传入(见 createScopedAppController)。
+ *
+ * 终审 P1(停用后仍可经原始注册表注册):各方法的语义 ——
  * - register / on / subscribe:已吊销 → 抛 PERMISSION_DENIED、不入表;否则照常注册,并把退订句柄记入 owned,
  *   revoke() 时统一注销(插件绕过 Plugin.register 直接注册的贡献,停用时同样被清理)。返回的句柄幂等,
  *   先被插件 / Plugin 自行 dispose 则从 owned 移除。
@@ -779,15 +822,110 @@ const ASYNC_METHODS: ReadonlySet<PropertyKey> = new Set(['execute']);
  * - 其余成员(commands.execute / events.emit / events.clear ...)有外部副作用:已吊销 → 拒绝
  *   (execute 返回 reject 的 Promise,其余同步抛 PERMISSION_DENIED),未吊销照常直通。
  */
-function trackContributions<T extends object>(
+/**
+ * 安全(零权限插件覆盖宿主贡献点):keyed 注册表同 key「后注册赢」,插件注册 settingTab `core.plugins`、panel
+ * `settings` / `terminal`、command `terminal.new` 即可替换权限管理页、接管面板、劫持内置命令与快捷键。
+ * 这里按注册表里**当前存活的 spec 对象**记录它由谁注册(弱引用:条目被注销 / 被宿主覆盖后记录自然失效);
+ * 没有记录 = 宿主自身代码直接在注册表上注册的。scoped app 的 register 遇到已存在且所有者不是自己的 key 即拒绝。
+ * 注册表本身(宿主代码直接调用)的「后注册赢」语义不变。
+ */
+const contributionOwners = new WeakMap<object, string>();
+
+/**
+ * 安全(零权限插件无限开窗 / 开终端):第三方插件经 commands.execute(或 get / getAll 拿到的 fn)可以执行宿主自己的
+ * 命令。`window.new` 每开一个窗口就会在新窗口里重新加载该插件 → 循环执行即指数开窗;`terminal.new` 每次起一个
+ * shell。宿主命令对第三方仍开放(SDK 未限定可执行哪些命令),但每个插件实例(每窗口一份)在滑动窗口内限次;
+ * 主进程另有全局窗口数上限与每窗口终端数上限兜底。插件自己 / 其它第三方插件注册的命令不受此限。
+ */
+export const HOST_COMMAND_RATE_LIMIT = 5;
+export const HOST_COMMAND_RATE_WINDOW_MS = 10_000;
+
+/** 该命令 spec 是否宿主所有(内置插件注册的,或查不到所有者记录 = 宿主直接注册的)。 */
+function isHostCommand(spec: object): boolean {
+  return contributionOwners.get(spec)?.startsWith('plugin:') !== true;
+}
+
+function createHostCommandGate(pluginId: string): (commandId: unknown) => void {
+  const stamps: number[] = [];
+  return (commandId) => {
+    const now = Date.now();
+    while (stamps.length > 0 && now - stamps[0]! >= HOST_COMMAND_RATE_WINDOW_MS) stamps.shift();
+    if (stamps.length >= HOST_COMMAND_RATE_LIMIT) {
+      throw codedError(
+        'RATE_LIMITED',
+        `plugin ${pluginId} may run at most ${HOST_COMMAND_RATE_LIMIT} host commands per ${
+          HOST_COMMAND_RATE_WINDOW_MS / 1000
+        }s (command "${String(commandId).slice(0, 128)}")`,
+      );
+    }
+    stamps.push(now);
+  };
+}
+
+/**
+ * 该贡献(注册表里存活的 spec 对象)是否按第三方插件对待。只有内置插件(宿主自建、不带 token 的 scoped app)
+ * 注册的 → false;第三方插件注册的、以及**查不到所有者记录的** → true(fail-closed:所有者不明就只给最小接口面)。
+ * 宿主把自己的内部对象交给贡献回调前用它决定要不要收窄(如 dock 面板 factory 的 props)。
+ * 宿主 / 内置面板全部经 bootCorePlugins 的 scoped app 注册,都有 `core:` 所有者记录。
+ */
+export function isThirdPartyContribution(spec: object): boolean {
+  return contributionOwners.get(spec)?.startsWith('core:') !== true;
+}
+
+/**
+ * 贡献 spec 的冻结快照(见 trackContributions 的 TOCTOU 说明)。顶层浅拷贝;嵌套的**数据**字段要深拷贝冻结,否则
+ * 入表的仍是插件手里的引用:注册期校验通过后再改(把 label 换成对象 / 超长串、往数组里追加选项)即绕过校验。
+ * 各贡献点 spec 里数组 / 对象形态的数据字段目前只有 settingItems 的 `enum`(选项是只含字符串字段的平对象);
+ * 其余非函数字段都是原始值或 ReactNode(icon:不校验内容,不拷贝)。非数组的 enum 原样留给注册表校验报错。
+ */
+// 远高于注册表自己的选项数上限(SettingItemRegistry 的 SI_ENUM_COUNT_MAX),只为给拷贝循环封顶;超出即拒绝。
+const ENUM_SNAPSHOT_MAX = 4096;
+
+function snapshotSpec(spec: object): object {
+  const copy: Record<string, unknown> = { ...spec };
+  const source = copy.enum;
+  if (Array.isArray(source)) {
+    // length 只读一次:Proxy 数组可以每次读返回不同值(先超限让这里跳过拷贝、再合法骗过注册表的数量校验;
+    // 或循环中途变大让拷贝跑飞)。不在 0..上限 的整数范围内直接拒绝,绝不把插件的数组原样放进注册表。
+    const length: unknown = source.length;
+    if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > ENUM_SNAPSHOT_MAX) {
+      throw new Error(`[scoped-app] enum must be an array of at most ${ENUM_SNAPSHOT_MAX} options`);
+    }
+    // 按下标读进一个普通数组:不调用插件数组自己的 map / 迭代器 / Symbol.species(它们可以让校验的
+    // for…of 与消费方的下标访问看到不同内容)。
+    const options: unknown[] = [];
+    for (let i = 0; i < length; i += 1) {
+      const option: unknown = source[i];
+      // 函数 / 数组也能挂 value、label 属性过注册表的 typeof 校验,却不会被下面的拷贝冻结 → 直接拒绝。
+      // 原始值 / null / 空洞原样带过去,由注册表按「选项无效」报错。
+      if (typeof option === 'function' || Array.isArray(option)) {
+        throw new Error('[scoped-app] enum option must be a plain object');
+      }
+      options.push(isSpecObject(option) ? Object.freeze({ ...(option as object) }) : option);
+    }
+    copy.enum = Object.freeze(options);
+  }
+  return Object.freeze(copy);
+}
+
+function trackContributions<T extends object, K extends keyof T & string>(
   pluginId: string,
   name: string,
   target: T,
+  /** 对插件公开的方法名(以 types.ts 的 Plugin*Api 为准);外观只含这些成员。 */
+  members: readonly K[],
   life: ScopedLifecycle,
   owned: Set<() => void>,
-): T {
-  // 按原函数缓存包装(引用稳定;原实例上的方法被替换,如测试 spy,则重新包装)。
-  const methods = new WeakMap<object, unknown>();
+  /** 该注册表的 key 字段与所有者标识(见 contributionOwners);events / explorerDecorators 无 key,不传。 */
+  keyed?: { readonly field: 'id' | 'type'; readonly owner: string },
+  /** 仅 commands 且调用方是第三方插件:执行宿主命令前的限次闸(见 HOST_COMMAND_RATE_LIMIT)。 */
+  hostCommandGate?: (commandId: unknown) => void,
+): Pick<T, K> {
+  const liveSpec = (key: unknown): object | undefined => {
+    if (typeof key !== 'string') return undefined; // 非法 key 交给注册表自身的 spec 校验报错
+    const spec: unknown = (target as { get?: (k: string) => unknown }).get?.(key);
+    return typeof spec === 'object' && spec !== null ? spec : undefined;
+  };
   // 终审 P1(缓存查询结果里的回调绕过吊销):查询结果(spec / spec 数组 / 回调数组)按原引用缓存其包装 ——
   // 共享注册表的原对象不改,返回浅拷贝,函数字段换成带吊销检查的 Proxy(未吊销透明转发,吊销后抛 PERMISSION_DENIED)。
   // 按原引用缓存保证同一快照返回同一包装(useRegistry / memo 依赖引用稳定)。
@@ -804,16 +942,24 @@ function trackContributions<T extends object>(
     byListener.delete(listener);
     if (byListener.size === 0) subscriptions.delete(eventName);
   };
-  const guardFn = (f: object, capability: string): unknown =>
+  const guardFn = (f: object, capability: string, beforeCall?: () => void): unknown =>
     new Proxy(f, {
       apply(target, thisArg, args) {
         assertLiveUi(pluginId, capability, life);
+        beforeCall?.();
         return Reflect.apply(target as (...a: unknown[]) => unknown, thisArg, args);
       },
       construct(target, args, newTarget) {
         assertLiveUi(pluginId, capability, life);
+        beforeCall?.();
         return Reflect.construct(target as new (...a: unknown[]) => object, args, newTarget);
       },
+      // 包装只用于调用:不给插件留下改写原函数对象(宿主 / 其它插件的回调)的通道。
+      set: () => false,
+      defineProperty: () => false,
+      deleteProperty: () => false,
+      setPrototypeOf: () => false,
+      preventExtensions: () => false,
     });
   const guardItem = (item: unknown): unknown => {
     if (typeof item !== 'object' && typeof item !== 'function') return item;
@@ -825,11 +971,23 @@ function trackContributions<T extends object>(
       out = guardFn(item, `${name}.callback`);
     } else {
       const copy: Record<string, unknown> = { ...(item as Record<string, unknown>) };
+      // 宿主命令的 fn 经查询结果直接调用,同样过限次闸(否则 get('window.new').fn() 绕过 execute 的限制)。
+      const gateFn =
+        hostCommandGate !== undefined && isHostCommand(item as object)
+          ? () => hostCommandGate(copy.id)
+          : undefined;
       for (const key of Object.keys(copy)) {
         const v = copy[key];
-        if (typeof v === 'function') copy[key] = guardFn(v, `${name}.${key}`);
+        if (typeof v === 'function') copy[key] = guardFn(v, `${name}.${key}`, gateFn);
       }
-      out = copy;
+      // 嵌套的数据字段(同 snapshotSpec:目前只有 settingItems 的 enum)给冻结拷贝 —— 宿主直接注册的 spec 未经
+      // 快照,原数组 / 选项对象不能交到插件手里。
+      if (Array.isArray(copy.enum)) {
+        copy.enum = Object.freeze(
+          (copy.enum as unknown[]).map((o) => (isSpecObject(o) ? Object.freeze({ ...(o as object) }) : o)),
+        );
+      }
+      out = Object.freeze(copy);
     }
     guarded.set(item, out);
     return out;
@@ -838,76 +996,136 @@ function trackContributions<T extends object>(
     if (!Array.isArray(result)) return guardItem(result);
     const hit = guarded.get(result);
     if (hit !== undefined) return hit;
-    const out = result.map(guardItem);
+    const out = Object.freeze(result.map(guardItem));
     guarded.set(result, out);
     return out;
   };
-  return new Proxy(target, {
-    get(t, prop) {
-      const value: unknown = Reflect.get(t, prop, t);
-      if (typeof value !== 'function') return value;
-      let method = methods.get(value);
-      if (method === undefined) {
-        const fn = value as (...args: unknown[]) => unknown;
-        const capability = `${name}.${String(prop)}`;
-        if (prop === 'off') {
-          method = (...args: unknown[]) => {
-            const result = guardResult(fn.apply(t, args));
-            // 退订句柄本身不吊销(插件仍持有的旧 Disposable 再 dispose 照旧转发到总线),仅不再由 owned 持有。
-            forgetSubscriptions(args[0], args[1]);
-            return result;
-          };
-        } else if (PASSTHROUGH_METHODS.has(prop)) {
-          method = (...args: unknown[]) => guardResult(fn.apply(t, args));
-        } else if (!CONTRIBUTION_METHODS.has(prop)) {
-          method = (...args: unknown[]) => {
-            if (life.revoked && ASYNC_METHODS.has(prop)) {
-              return Promise.reject(
-                codedError('PERMISSION_DENIED', revokedMessage(pluginId, capability)),
-              );
-            }
-            assertLiveUi(pluginId, capability, life);
-            return fn.apply(t, args);
-          };
-        } else {
-          method = (...args: unknown[]) => {
-            assertLiveUi(pluginId, capability, life);
-            const handle = fn.apply(t, args) as Disposable | (() => void);
-            let released = false;
-            const release = (): void => {
-              if (released) return;
-              released = true;
-              owned.delete(release);
-              if (prop === 'on') {
-                const releases = subscriptions.get(args[0])?.get(args[1]);
-                releases?.delete(release);
-                if (releases?.size === 0) forgetSubscriptions(args[0], args[1]);
-              }
-              if (typeof handle === 'function') handle();
-              else handle.dispose();
-            };
-            owned.add(release);
-            if (prop === 'on') {
-              let byListener = subscriptions.get(args[0]);
-              if (!byListener) {
-                byListener = new Map();
-                subscriptions.set(args[0], byListener);
-              }
-              let releases = byListener.get(args[1]);
-              if (!releases) {
-                releases = new Set();
-                byListener.set(args[1], releases);
-              }
-              releases.add(release);
-            }
-            return typeof handle === 'function' ? release : { dispose: release };
-          };
+  // 调用时才从注册表实例上取方法(原实例上的方法被替换,如测试 spy,照样生效)。
+  const call = (prop: string, args: unknown[]): unknown =>
+    (target as Record<string, (...a: unknown[]) => unknown>)[prop]!(...args);
+  const build = (prop: string): ((...args: unknown[]) => unknown) => {
+    const capability = `${name}.${prop}`;
+    if (prop === 'off') {
+      return (...args) => {
+        const result = guardResult(call(prop, args));
+        // 退订句柄本身不吊销(插件仍持有的旧 Disposable 再 dispose 照旧转发到总线),仅不再由 owned 持有。
+        forgetSubscriptions(args[0], args[1]);
+        return result;
+      };
+    }
+    if (PASSTHROUGH_METHODS.has(prop)) {
+      return (...args) => guardResult(call(prop, args));
+    }
+    if (prop === 'clear' && name === 'events') {
+      // 安全:总线的 clear() 清空全部订阅、clear(name) 清空该事件的全部订阅(含宿主与其它插件的)。
+      // 插件只能清自己经本 scoped app 订阅的:逐个走退订句柄(与 dispose / off 同一路径)。
+      return (...args) => {
+        assertLiveUi(pluginId, capability, life);
+        const eventNames = args[0] === undefined ? [...subscriptions.keys()] : [args[0]];
+        for (const eventName of eventNames) {
+          for (const releases of [...(subscriptions.get(eventName)?.values() ?? [])]) {
+            for (const release of [...releases]) release();
+          }
         }
-        methods.set(value, method);
+      };
+    }
+    if (!CONTRIBUTION_METHODS.has(prop)) {
+      return (...args) => {
+        if (life.revoked && ASYNC_METHODS.has(prop)) {
+          return Promise.reject(codedError('PERMISSION_DENIED', revokedMessage(pluginId, capability)));
+        }
+        assertLiveUi(pluginId, capability, life);
+        if (hostCommandGate !== undefined && prop === 'execute') {
+          const spec = liveSpec(args[0]);
+          if (spec !== undefined && isHostCommand(spec)) {
+            try {
+              hostCommandGate(args[0]);
+            } catch (err) {
+              return Promise.reject(err);
+            }
+          }
+        }
+        return call(prop, args);
+      };
+    }
+    return (...rawArgs) => {
+      assertLiveUi(pluginId, capability, life);
+      // 安全(TOCTOU):spec 来自插件,字段可以是 getter(首次返回诱饵 key、之后返回宿主的 key)。所有权检查与
+      // 注册表若各读一次,检查看到的 key 与入表的 key 就可以不同。这里只读一次:浅拷贝成冻结快照(展开对每个
+      // 自有属性恰好取值一次,函数字段保持引用),检查、入表、登记所有者都用这一份。非对象 spec 原样交给注册表报错。
+      const args =
+        keyed !== undefined && prop === 'register' && isSpecObject(rawArgs[0])
+          ? [snapshotSpec(rawArgs[0] as object), ...rawArgs.slice(1)]
+          : rawArgs;
+      const key: unknown =
+        keyed !== undefined && prop === 'register'
+          ? (args[0] as Record<string, unknown> | null | undefined)?.[keyed.field]
+          : undefined;
+      const existing = liveSpec(key);
+      const existingOwner = existing === undefined ? undefined : contributionOwners.get(existing);
+      if (keyed !== undefined && existing !== undefined && existingOwner !== keyed.owner) {
+        // 安全(抢注):第三方插件可以先注册宿主尚未注册的 key(内置条目晚于插件激活才注册时)。内置插件(`core:`)
+        // 后注册同 key 时收回:顶掉第三方(`plugin:`)的条目 —— 注册表按覆盖处理,插件手里的旧句柄此后是 no-op。
+        // 第三方之间、内置插件之间、对宿主直接注册的条目(无所有者记录)仍一律拒绝。
+        const reclaim = keyed.owner.startsWith('core:') && existingOwner?.startsWith('plugin:') === true;
+        if (!reclaim) {
+          throw codedError(
+            'PERMISSION_DENIED',
+            `[${name}] ${keyed.field} "${String(key).slice(0, 128)}" is already registered by the host or another plugin; plugin ${pluginId} cannot override it`,
+          );
+        }
+        console.warn(
+          `[scoped-app] ${name} ${keyed.field} "${String(key).slice(0, 128)}" 被 ${existingOwner} 抢注,内置插件 ${pluginId} 注册时收回(原条目按注销处理)`,
+        );
       }
-      return method;
-    },
-  });
+      // 所有者在入表之前登记到快照上(注册表存的就是这份快照):注册表入表后同步通知监听器,监听器里读到的新条目
+      // 必须已有所有者(isThirdPartyContribution 对「无记录」按第三方处理)。注册表拒绝(校验 / 容量)则撤回。
+      const pending = keyed !== undefined && isSpecObject(args[0]) ? (args[0] as object) : undefined;
+      if (pending !== undefined) contributionOwners.set(pending, keyed!.owner);
+      let handle: Disposable | (() => void);
+      try {
+        handle = call(prop, args) as Disposable | (() => void);
+      } catch (err) {
+        if (pending !== undefined) contributionOwners.delete(pending);
+        throw err;
+      }
+      const registered = liveSpec(key);
+      if (keyed !== undefined && registered !== undefined) contributionOwners.set(registered, keyed.owner);
+      let released = false;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        owned.delete(release);
+        if (prop === 'on') {
+          const releases = subscriptions.get(args[0])?.get(args[1]);
+          releases?.delete(release);
+          if (releases?.size === 0) forgetSubscriptions(args[0], args[1]);
+        }
+        if (typeof handle === 'function') handle();
+        else handle.dispose();
+      };
+      owned.add(release);
+      if (prop === 'on') {
+        let byListener = subscriptions.get(args[0]);
+        if (!byListener) {
+          byListener = new Map();
+          subscriptions.set(args[0], byListener);
+        }
+        let releases = byListener.get(args[1]);
+        if (!releases) {
+          releases = new Set();
+          byListener.set(args[1], releases);
+        }
+        releases.add(release);
+      }
+      return typeof handle === 'function' ? release : { dispose: release };
+    };
+  };
+  // 外观:普通对象(原型 Object.prototype),自有属性只有 members 列出的方法;方法是不读 this 的箭头闭包。
+  // 外观与方法都冻结 —— 插件拿不到注册表实例,也就拿不到它的内部字段、受保护方法与原型方法。
+  const facade: Record<string, unknown> = {};
+  for (const prop of members) facade[prop] = Object.freeze(build(prop));
+  return Object.freeze(facade) as Pick<T, K>;
 }
 
 const EMPTY_GRANTED_PERMISSIONS: PermissionKey[] = [];
@@ -970,7 +1188,7 @@ export interface ScopedAppController {
 /**
  * 把 coApp 包成 per-plugin CoPluginApp。Plugin constructor 拿到的就是它。
  *
- * - 原有贡献点字段(panels/commands/...)包 trackContributions(随吊销拒绝 + 注销),底层仍是 coApp 单例
+ * - 贡献点字段(panels/commands/...)是 trackContributions 构造的冻结外观(随吊销拒绝 + 注销),底层仍是 coApp 单例
  * - fs/network/clipboard/shell/permission 是 per-plugin 闭包,持 pluginId
  */
 export function createScopedAppController(
@@ -987,29 +1205,50 @@ export function createScopedAppController(
   const life: ScopedLifecycle = { revoked: false, inflightFetches: new Set() };
   // 本实例经共享注册表 / 事件总线登记的贡献与订阅(revoke 时统一注销)。
   const owned = new Set<() => void>();
-  const track = <T extends object>(name: string, target: T): T =>
-    trackContributions(pluginId, name, target, life, owned);
-  // Omit coApp.mcp/editor raw singletons → 替换为 per-plugin scope wrappers;贡献点注册表 / events 逐个
-  // 包 trackContributions;其余(version / workspace,只读)直通。
-  const { mcp: registry, editor, dock, notifications, dataStore, ...rest } =
-    coApp;
-  const mcp = makeMcp(pluginId, store, registry, life);
+  // 贡献点 key 的所有者标识(见 contributionOwners)。PluginManager 激活第三方插件总是带 plugin-fs token;不带 token 的
+  // 是宿主自建的 scoped app(内置插件)。二者分属不同命名空间 —— 第三方插件把 manifest id 起成内置插件的 id
+  //(如 `core.plugins`)也不算内置条目的所有者。同一插件重载后的新实例标识不变,可覆盖自己的旧条目。
+  const owner = `${token === undefined ? 'core' : 'plugin'}:${pluginId}`;
+  // 第三方插件执行宿主命令的限次闸(每个 scoped app 实例一份);内置插件不限。
+  const hostCommandGate = token === undefined ? undefined : createHostCommandGate(pluginId);
+  const track = <T extends object, K extends keyof T & string>(
+    name: string,
+    target: T,
+    members: readonly K[],
+    keyField?: 'id' | 'type',
+  ): Pick<T, K> =>
+    trackContributions(
+      pluginId,
+      name,
+      target,
+      members,
+      life,
+      owned,
+      keyField === undefined ? undefined : { field: keyField, owner },
+      name === 'commands' ? hostCommandGate : undefined,
+    );
+  // 插件拿到的 app 逐字段显式构造(不展开 coApp:将来给 CoApp 加字段不会自动透给插件)。贡献点注册表 / events 是
+  // 只含公开方法的冻结外观(成员清单须与 types.ts 的 Plugin*Api 一致,少列一个 tsc 报错);mcp / editor / dock /
+  // notifications / dataStore / workspace 是 per-plugin 闭包,同样不交出宿主单例对象。
+  const mcp = makeMcp(pluginId, store, coApp.mcp, life);
   const app: CoPluginApp = {
-    ...rest,
-    panels: track('panels', coApp.panels),
-    commands: track('commands', coApp.commands),
-    statusBar: track('statusBar', coApp.statusBar),
-    ribbon: track('ribbon', coApp.ribbon),
-    events: track('events', coApp.events),
-    settingTabs: track('settingTabs', coApp.settingTabs),
-    settingItems: track('settingItems', coApp.settingItems),
-    explorerDecorators: track('explorerDecorators', coApp.explorerDecorators),
-    editorActions: track('editorActions', coApp.editorActions),
-    explorerContextMenu: track('explorerContextMenu', coApp.explorerContextMenu),
-    dataStore: makeDataStore(pluginId, dataStore),
-    editor: makeEditor(pluginId, store, editor, life, token),
-    dock: makeDock(pluginId, dock, life),
-    notifications: makeNotifications(pluginId, notifications, life),
+    version: coApp.version,
+    panels: track('panels', coApp.panels, [...KEYED_MEMBERS, 'list'], 'type'),
+    commands: track('commands', coApp.commands, [...KEYED_MEMBERS, 'execute'], 'id'),
+    statusBar: track('statusBar', coApp.statusBar, [...KEYED_MEMBERS, 'getBySide'], 'id'),
+    ribbon: track('ribbon', coApp.ribbon, KEYED_MEMBERS, 'id'),
+    events: track('events', coApp.events, ['on', 'off', 'emit', 'clear']),
+    settingTabs: track('settingTabs', coApp.settingTabs, KEYED_MEMBERS, 'id'),
+    settingItems: track('settingItems', coApp.settingItems, [...KEYED_MEMBERS, 'getByCategory'], 'id'),
+    explorerDecorators: track('explorerDecorators', coApp.explorerDecorators, ['register', 'getAll', 'subscribe']),
+    editorActions: track('editorActions', coApp.editorActions, KEYED_MEMBERS, 'id'),
+    explorerContextMenu: track('explorerContextMenu', coApp.explorerContextMenu, KEYED_MEMBERS, 'id'),
+    // 宿主的 workspace 是全窗口共用的单例对象:原样透传的话,一个插件改写 getRoot 会影响所有插件。
+    workspace: Object.freeze({ getRoot: Object.freeze(() => coApp.workspace.getRoot()) }),
+    dataStore: makeDataStore(pluginId, coApp.dataStore),
+    editor: makeEditor(pluginId, store, coApp.editor, life, token),
+    dock: makeDock(pluginId, coApp.dock, life),
+    notifications: makeNotifications(pluginId, coApp.notifications, life),
     fs: makeFs(pluginId, store, life, token),
     network: makeNetwork(pluginId, store, life),
     shell: makeShell(pluginId, store, life),

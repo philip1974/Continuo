@@ -7,7 +7,7 @@ import {
   PLUGIN_ID_MAX_LEN,
 } from '../../shared/permission-record-limits';
 import { createHash, randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { promises as fs, type Dirent, type Stats } from 'node:fs';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,15 +24,24 @@ import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError, errorMessage } from '../../shared/error-message';
 import { isValidPluginId } from '../../shared/plugin-id';
+import { ownValue } from '../../shared/own-value';
 import { isValidGitBranch } from '../../shared/git-branch';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
 import { killWithGrace } from '../lib/kill-with-grace';
+import {
+  mergeSpawnEnv,
+  resolveSpawnCommand,
+  stripInternalSecretEnv,
+  withGitHardeningEnv,
+} from '../lib/child-spawn-hardening';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
-import { readFileCappedFd } from '../lib/read-fh-capped';
+import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped';
+import { isSameOrInsidePath } from '../lib/path-inside';
 import { runSerialPerKey } from './serialize-per-key';
 import { parseManifest } from '../../shared/plugin-manifest';
+import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -87,8 +96,8 @@ export function resolvePluginMainPath(
 }
 
 /**
- * 插件 id 安全性:仅允许小写字母数字与 `. _ -`,且**不得**为 `.` 或 `..`。
- * 旧正则 `^[a-z0-9._-]+$` 允许纯点段,`id='..'` 会让 `path.join(baseDir, id)` 解析到
+ * 插件 id 安全性:形态规则见 electron/shared/plugin-id(isValidPluginId,跨进程单一来源)+ 长度上限。
+ * 历史:旧正则 `^[a-z0-9._-]+$` 允许纯点段,`id='..'` 会让 `path.join(baseDir, id)` 解析到
  * baseDir 的父目录;overwrite 安装(marketplace「更新」)随即 rename 覆盖父目录 →
  * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
  */
@@ -119,6 +128,48 @@ function getPluginMainName(manifest: unknown): string {
   return 'main.js';
 }
 
+const UUID_LEN = 36;
+
+/** s[from..] 是否恰好是 randomUUID() 的形态:8-4-4-4-12 位小写 hex(字符扫描,不走 RegExp)。 */
+function isLowerUuidAt(s: string, from: number): boolean {
+  if (s.length - from !== UUID_LEN) return false;
+  for (let i = 0; i < UUID_LEN; i += 1) {
+    const code = s.charCodeAt(from + i);
+    if (i === 8 || i === 13 || i === 18 || i === 23) {
+      if (code !== 45) return false;
+    } else if (!((code >= 48 && code <= 57) || (code >= 97 && code <= 102))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 解析 installFromGit 留下的残留目录名,等价于锚定匹配 `^\.(<id>)\.(installing|old)-<uuid>$`:
+ * 末尾固定是 randomUUID(36 位),其前紧挨 `.installing-` 或 `.old-`,再往前(去掉开头的 `.`)整段是插件 id。
+ * uuid 定长 → 标记位置唯一,id 自身含 `.old-` / `.installing-` 也不会切错。
+ *
+ * 曾用 `lastIndexOf('.old-')` 且先判 backup:manifest.id = `a.old-z` 的 staging 目录
+ * `.a.old-z.installing-<uuid>` 被解析成「插件 a 的备份」,崩溃恢复时 rename 成 plugins/a ——
+ * 未装完的另一个插件的代码冒名成 a。先判 installing;id 须是合法插件 id(不合法 → 不认,原样留着)。
+ */
+function parseInterruptedInstallName(name: string): { kind: 'installing' | 'backup'; id: string } | null {
+  if (name.charCodeAt(0) !== 46) return null;
+  const uuidAt = name.length - UUID_LEN;
+  if (uuidAt < 0 || !isLowerUuidAt(name, uuidAt)) return null;
+  for (const [marker, kind] of [
+    ['.installing-', 'installing'],
+    ['.old-', 'backup'],
+  ] as const) {
+    const markerAt = uuidAt - marker.length;
+    if (markerAt > 1 && name.startsWith(marker, markerAt)) {
+      const id = name.slice(1, markerAt);
+      return isSafePluginId(id) ? { kind, id } : null;
+    }
+  }
+  return null;
+}
+
 /**
  * 启动期恢复被**进程崩溃**中断的插件更新(数据安全,codex 复查 P1)。
  *
@@ -133,52 +184,34 @@ function getPluginMainName(manifest: unknown): string {
  *   - 残留 `.<id>.installing-<uuid>` staging → 删除。
  * 幂等:无残留时纯 no-op,可安全在每次启动调用。
  */
-function parseInterruptedBackupId(name: string): string | null {
-  if (name.charCodeAt(0) !== 46) return null;
-  const marker = '.old-';
-  const markerIndex = name.lastIndexOf(marker);
-  if (markerIndex <= 1 || markerIndex + marker.length >= name.length) {
-    return null;
-  }
-  return name.slice(1, markerIndex);
-}
-
-function isInterruptedInstallingName(name: string): boolean {
-  if (name.charCodeAt(0) !== 46) return false;
-  const marker = '.installing-';
-  const markerIndex = name.lastIndexOf(marker);
-  return markerIndex > 1 && markerIndex + marker.length < name.length;
-}
-
 export async function recoverInterruptedInstalls(baseDir: string): Promise<void> {
   // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。
   const entries = await readPluginDirEntriesCapped(baseDir);
   for (const name of entries) {
-    const id = parseInterruptedBackupId(name);
-    if (id !== null) {
-      const backupPath = path.join(baseDir, name);
-      const targetPath = path.join(baseDir, id);
-      let targetExists = false;
-      try {
-        await fs.access(targetPath);
-        targetExists = true;
-      } catch {
-        /* 目标缺失 = 崩在两次 rename 之间 */
-      }
-      if (targetExists) {
-        // 更新已完成,backup 是没删干净的残留 → 清理
-        await rm(backupPath, { recursive: true, force: true }).catch(() => {});
-      } else {
-        // 崩溃中断 → 还原旧版本
-        await fs.rename(backupPath, targetPath).catch(() => {});
-      }
-      continue;
-    }
+    const residue = parseInterruptedInstallName(name);
+    if (residue === null) continue;
     // 残留 staging(cp 完但还没 swap 就崩)→ 清理
-    if (isInterruptedInstallingName(name)) {
+    if (residue.kind === 'installing') {
       await rm(path.join(baseDir, name), { recursive: true, force: true }).catch(
         () => {},
       );
+      continue;
+    }
+    const backupPath = path.join(baseDir, name);
+    const targetPath = path.join(baseDir, residue.id);
+    let targetExists = false;
+    try {
+      await fs.access(targetPath);
+      targetExists = true;
+    } catch {
+      /* 目标缺失 = 崩在两次 rename 之间 */
+    }
+    if (targetExists) {
+      // 更新已完成,backup 是没删干净的残留 → 清理
+      await rm(backupPath, { recursive: true, force: true }).catch(() => {});
+    } else {
+      // 崩溃中断 → 还原旧版本
+      await fs.rename(backupPath, targetPath).catch(() => {});
     }
   }
 }
@@ -350,13 +383,27 @@ async function readPluginManifestText(
     return null;
   }
   if (!stat.isDirectory()) return null;
+  const manifestPath = path.join(dir, 'manifest.json');
+  if (!(await staysInsidePluginDir(dir, manifestPath))) return null;
   // 边界(E24):manifest 超 1MiB(或缺失/不可读)→ 跳过整插件,不整文件读入 + IPC 传输。
-  const manifestText = await readFileCapped(
-    path.join(dir, 'manifest.json'),
-    MANIFEST_MAX_BYTES,
-  );
+  const manifestText = await readFileCapped(manifestPath, MANIFEST_MAX_BYTES);
   if (manifestText === null) return null;
   return { dir, manifestText };
+}
+
+/**
+ * 安全:filePath(插件目录下的 manifest / main)的真实路径是否仍在插件目录的真实路径内。
+ * 插件目录内容来自插件仓库,旧版本安装的目录可能带符号链接(`main.js -> ~/.ssh/id_rsa`、`dist -> /`):
+ * 宿主读它等于替插件读目录外文件。按 realpath 判包含而非禁链接:插件目录本身是链接(本地开发)、
+ * 目录内互指的链接照旧可用。缺失 / 不可解析 → false。
+ */
+async function staysInsidePluginDir(dir: string, filePath: string): Promise<boolean> {
+  try {
+    const [realDir, realFile] = await Promise.all([fs.realpath(dir), fs.realpath(filePath)]);
+    return isSameOrInsidePath(realDir, realFile);
+  } catch {
+    return false;
+  }
 }
 
 /** 按 manifest.main(解析失败 → 默认 main.js)读 main 文本;越界 / 缺失 / 超限 → null。 */
@@ -369,7 +416,7 @@ async function readPluginMainText(dir: string, manifestText: string): Promise<st
     // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
   }
   const mainPath = resolvePluginMainPath(dir, mainName);
-  if (!mainPath) return null;
+  if (!mainPath || !(await staysInsidePluginDir(dir, mainPath))) return null;
   // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
   return readFileCapped(mainPath, MAIN_MAX_BYTES);
 }
@@ -386,10 +433,11 @@ async function isPluginMainAvailable(dir: string, manifestText: string): Promise
     // 同 readPluginMainText:manifest 解析失败按默认 main.js
   }
   const mainPath = resolvePluginMainPath(dir, mainName);
-  if (!mainPath) return false;
+  if (!mainPath || !(await staysInsidePluginDir(dir, mainPath))) return false;
   let fh: import('node:fs/promises').FileHandle;
   try {
-    fh = await fs.open(mainPath, 'r');
+    // O_NONBLOCK:main 若是 FIFO(或指向 FIFO 的链接),阻塞 open 会永久占住 libuv 线程池线程。
+    fh = await openForReadNonBlocking(mainPath);
   } catch {
     return false;
   }
@@ -880,10 +928,10 @@ export function writePluginPermissions(
 
     const all = { ...(await readPermissions(baseDir)) };
     if (isEmpty) {
-      if (!(id in all)) return; // 无变化,不为删空条目而触盘
+      if (!Object.hasOwn(all, id)) return; // 无变化,不为删空条目而触盘
       delete all[id];
     } else {
-      if (permissionRecordEqual(all[id], decisions, scopes)) return;
+      if (permissionRecordEqual(ownValue(all, id), decisions, scopes)) return;
       all[id] =
         scopes === undefined ? decisions : { decisions, pathScopes: scopes };
     }
@@ -922,7 +970,8 @@ async function mutatePluginPermissionsQueued(
   mutation: IpcPermissionMutation,
 ): Promise<IpcPermissionRecord | null> {
   const all = { ...(await readPermissions(baseDir)) };
-  const existing = all[id];
+  // 只认自有属性:插件 id `constructor` 合法,普通对象上 all['constructor'] 会命中 Object 构造函数。
+  const existing = ownValue(all, id);
   const decisions: readonly IpcPermissionDecision[] =
     existing === undefined
       ? []
@@ -1004,7 +1053,7 @@ async function readAllPathScopes(
   try {
     json = JSON.parse(text);
   } catch {
-    await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx' }).catch(() => {});
+    await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx', mode: 0o600 }).catch(() => {});
     throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
   }
   if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
@@ -1044,7 +1093,7 @@ export async function readPluginPathScopes(
 ): Promise<IpcPathScope[]> {
   try {
     const all = await readAllPathScopes(baseDir);
-    return all[id] ?? [];
+    return ownValue(all, id) ?? [];
   } catch {
     // 损坏/IO 错误 → 本次冷启动不水合该 scope(插件会重新请求授权),fail-safe 降级。
     return [];
@@ -1077,10 +1126,10 @@ export function writePluginPathScopes(
       MAX_PERSISTED_SCOPES_PER_PLUGIN,
     );
     if (normalized.length === 0) {
-      if (!(id in all)) return; // 无变化,不为删除空条目而触盘
+      if (!Object.hasOwn(all, id)) return; // 无变化,不为删除空条目而触盘
       delete all[id];
     } else {
-      if (pathScopesEqual(all[id], normalized)) return;
+      if (pathScopesEqual(ownValue(all, id), normalized)) return;
       all[id] = normalized;
     }
     await fs.mkdir(baseDir, { recursive: true });
@@ -1181,6 +1230,59 @@ export async function uninstallPlugin(
   });
 }
 
+/**
+ * 授权弹窗「授权」后的 path scope 持久化入口(plugin-fs persistScopes 走这里,不直接 writePluginPathScopes)。
+ *
+ * 安全(卸载交错):uninstallPlugin 先清 _plugin-path-scopes.json 再 rm 目录,卸载返回后才撤内存 token。
+ * 间隙里另一窗口挂着的授权弹窗被点「授权」→ token 仍 active → 直接写盘会把 scope 写回,同 id 重装从磁盘
+ * 水合继承旧授权。与 mutatePluginPermissions 同法:纳入同 id mutation 锁(与卸载互斥),锁内确认插件目录仍在:
+ * 要么在卸载前写入(随后被卸载清掉),要么等卸载完成后因目录缺失被拒(NOT_INSTALLED,调用方 best-effort 吞掉)。
+ * 授权弹窗只针对已安装插件,目录缺失即拒不影响正常授权。
+ */
+export function persistPluginPathScopesIfInstalled(
+  baseDir: string,
+  id: string,
+  scopes: readonly IpcPathScope[],
+): Promise<void> {
+  if (!isSafePluginId(id)) return Promise.resolve();
+  return withInstalledPluginLock(baseDir, id, () => writePluginPathScopes(baseDir, id, scopes));
+}
+
+/**
+ * 在同 id mutation 锁内(与安装 / 更新 / 卸载互斥)确认插件目录仍在,再执行 fn;目录缺失 → NOT_INSTALLED,fn 不执行。
+ * 给「只应作用于已安装插件」的迟到写入用(path scope 持久化、plugin-data 的 saveData):要么落在卸载之前
+ * (随后被卸载清掉),要么等卸载完成后因目录缺失被拒 —— 不会在卸载 rm 之后把东西写回去。调用方须先校验 id 形态。
+ */
+export function withInstalledPluginLock<T>(baseDir: string, id: string, fn: () => Promise<T>): Promise<T> {
+  return withPluginMutationLock(id, async () => {
+    try {
+      await fs.access(path.join(baseDir, id));
+    } catch {
+      throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
+    }
+    return fn();
+  });
+}
+
+/** 插件数据文件名(plugin-data-store.service 写在安装目录里)。 */
+const PLUGIN_DATA_FILE = 'data.json';
+
+/**
+ * dir 是否是 plugin-data 留下的残留目录:没有 manifest.json,且里面只有 data.json 及其附属文件(`.lock` 锁目录、
+ * `.corrupt` 快照、原子写的 `.data.json.*.tmp`)。旧版本里卸载后迟到的 saveData 会 `mkdir -p` 把目录建回来,
+ * 留下这种目录:不被列出(UI 无卸载入口),却让同 id 安装永远 EEXIST。安装时在锁内识别并清掉(自愈)。
+ * 判定从严:含任何其它条目(用户手放的文件等)或无法确认 → false,照旧按「已存在」处理,不删。
+ */
+async function isPluginDataResidueDir(dir: string): Promise<boolean> {
+  try {
+    if (!(await fs.lstat(dir)).isDirectory()) return false;
+    const names = await fs.readdir(dir);
+    return names.every((name) => name.startsWith('data.json') || name.startsWith('.data.json.'));
+  } catch {
+    return false;
+  }
+}
+
 export interface InstallFromGitResult {
   readonly id: string;
   readonly name: string;
@@ -1202,12 +1304,29 @@ function startsWithHttpsScheme(url: string): boolean {
   );
 }
 const GIT_CLONE_TIMEOUT_MS = 60_000;
+// 安全:插件仓库 clone 的体积 / 文件数上限。此前只有 60s 超时:恶意仓库放高压缩比巨型 blob,60s 内即可写满磁盘
+//(超时后才 kill 并删临时目录)。clone 期间每 PLUGIN_CLONE_POLL_MS 有界统计临时目录(含 .git)的逻辑字节数与
+// 条目数,任一超限即终止 git、等其退出后删临时目录,报 PLUGIN_REPO_TOO_LARGE;clone 在两次轮询之间完成的,
+// 检出后再复查一次。上限远超现实插件仓库(浅克隆,插件 bundle 通常 < 10MiB / 数百文件)。
+export const PLUGIN_CLONE_MAX_BYTES = 200 * 1024 * 1024;
+export const PLUGIN_CLONE_MAX_ENTRIES = 20_000;
+const PLUGIN_CLONE_POLL_MS = 500;
 // 边界(E62,E1/E61 累积缓冲族):runGit 的 git 子进程 stderr 此前 `stderr += String(d)` 无限累积,
 // 失败时整段拼进 Error message。恶意/异常远端或协议错误可产生超大 stderr → main 内存膨胀 + 巨大
 // 错误串传到 renderer/UI。stderr 累积上限 64KB(保留前 64KB,git 的 fatal 行通常在前部),超限停止
 // 追加并标记截断;**不 kill 子进程**——git clone 进度本就走 stderr,大仓库进度可合法 >64KB,kill
 // 会误伤合法克隆;只 bound 内存。失败 message 只带截断摘要 + 标记。
 const MAX_GIT_STDERR_BYTES = 64 * 1024;
+// 安全:用户全局 ~/.gitconfig 常有 `git lfs install` 写入的 filter.lfs.*(GIT_CONFIG_NOSYSTEM 不屏蔽全局)。
+// 被攻破的插件仓库放 `.lfsconfig`(lfs.url=内网 / 127.0.0.1 地址)+ LFS 指针文件,clone 检出时 git-lfs 即向
+// 任意地址发请求(GIT_ALLOW_PROTOCOL 管不到 git-lfs 自身 HTTP),且发生在用户启用 / 授权插件之前。
+// 命令行作用域置空 lfs 驱动(空命令 = 不运行该过滤器)并取消 required,再加 GIT_LFS_SKIP_SMUDGE=1 兜底。
+// 代价:依赖 Git LFS 的插件仓库检出得到的是指针文件 —— 插件 bundle 依赖 LFS 视为不支持。
+const PLUGIN_CLONE_GIT_CONFIG: readonly (readonly [string, string])[] = [
+  ['filter.lfs.process', ''],
+  ['filter.lfs.smudge', ''],
+  ['filter.lfs.required', 'false'],
+];
 
 export interface InstallFromGitOptions {
   /** true:原子覆盖已装版本(更新)。 */
@@ -1247,7 +1366,12 @@ export async function installFromGit(
     const cloneArgs = ['clone', '--depth', '1'];
     if (opts.branch !== undefined) cloneArgs.push(`--branch=${opts.branch}`);
     cloneArgs.push(gitUrl, cloneDir);
-    await runGit(cloneArgs);
+    await runGit(cloneArgs, cloneDir);
+    // clone 在两次轮询之间就完成时,轮询没机会看到最终体积:检出后复查。
+    if (await cloneTreeExceedsLimits(cloneDir)) throw cloneTooLargeError();
+
+    // 安全:克隆树里不允许任何符号链接,且在读 manifest 之前检查(manifest.json 本身也可以是链接)。
+    await assertNoSymlinksInClone(cloneDir);
 
     // 边界(E27,E24 兄弟):安装路径读 clone 的 manifest.json 也走 readFileCapped(同
     // MANIFEST_MAX_BYTES),与 listPluginDirs 启动扫描一致。clone 来自外部 git 仓库,manifest
@@ -1270,8 +1394,8 @@ export async function installFromGit(
       throw codedError(ERROR_CODES.BAD_MANIFEST, `manifest 校验失败: ${result.message}`);
     }
     const manifest = result.data;
-    // 边界:ManifestSchema 的 id 正则 /^[a-z0-9._-]+$/ 允许纯点段(如 '..'),不挡路径穿越;
-    // isSafePluginId 额外拒 '.'/'..'(install→rename 覆盖父目录的穿越向量,与 uninstall 对称),必叠加。
+    // 边界:id 拼进安装路径(install→rename 覆盖父目录是穿越向量,与 uninstall 对称),此处显式叠加
+    // isSafePluginId(形态规则见 electron/shared/plugin-id + 长度上限),不依赖 manifest schema 的校验。
     if (!isSafePluginId(manifest.id)) {
       throw codedError(ERROR_CODES.BAD_MANIFEST, 'manifest id 含非法字符或路径穿越');
     }
@@ -1331,6 +1455,12 @@ export async function installFromGit(
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
         /* ENOENT = not exists, OK */
       }
+      // 自愈:只剩 plugin-data 残留的目录(见 isPluginDataResidueDir)不算已安装 —— 清掉后按全新安装继续
+      //(残留的 data.json 是卸载之后才写进来的,不继承)。在锁内判定 + 删除,与 saveData / 卸载互斥。
+      if (targetExists && (await isPluginDataResidueDir(targetDir))) {
+        await rm(targetDir, { recursive: true, force: true });
+        targetExists = false;
+      }
       if (targetExists && opts.overwrite !== true) {
         throw codedError(ERROR_CODES.EEXIST, `插件 ${pluginId} 已安装,卸载后再装`);
       }
@@ -1358,6 +1488,17 @@ export async function installFromGit(
         throw err;
       }
 
+      // 数据安全:插件数据 data.json 就存在安装目录里,整目录 swap 会把它丢掉。更新(已有旧目录)时在锁内把旧
+      // data.json 带进 staging(覆盖仓库自带的同名文件);无法安全读取 → 中止更新,旧目录原样保留。
+      if (backup) {
+        try {
+          await carryOverPluginData(targetDir, staging);
+        } catch (err) {
+          await rm(staging, { recursive: true, force: true }).catch(() => {});
+          throw err;
+        }
+      }
+
       try {
         if (backup) await fs.rename(targetDir, backup);
         await fs.rename(staging, targetDir);
@@ -1378,26 +1519,163 @@ export async function installFromGit(
   }
 }
 
-function runGit(args: readonly string[]): Promise<void> {
+/**
+ * 把旧安装目录的 data.json(插件经 saveData 存的用户数据)带进新版本的 staging 目录。
+ * - 旧目录没有 data.json → 什么都不做(仓库自带的 data.json 照旧保留,与全新安装一致)。
+ * - 有 → 覆盖 staging 里仓库自带的同名文件:更新不应让仓库内容取代用户数据。
+ * - 只认普通文件:noFollow(符号链接 ELOOP / 硬链接 EMLINK / 非普通文件 EFTYPE 一律拒)、大小沿用 plugin-data
+ *   的上限、须是合法 UTF-8(按文本读写,非法字节无法原样带过去)。不满足或读写失败 → 抛
+ *   PLUGIN_DATA_PRESERVE_FAILED,由调用方中止更新 —— 宁可不更新,也不丢数据 / 不把链接目标的内容复制进来。
+ * 调用方须持有该 id 的 mutation 锁(saveData 也走这把锁,读到的就是最后一次落盘的内容)。
+ */
+async function carryOverPluginData(oldDir: string, stagingDir: string): Promise<void> {
+  const src = path.join(oldDir, PLUGIN_DATA_FILE);
+  const dst = path.join(stagingDir, PLUGIN_DATA_FILE);
+  let text: string;
+  try {
+    const read = await readFileCappedFd(src, MAX_PLUGIN_DATA_BYTES, { noFollow: true, requireUtf8: true });
+    if (read.text === null) {
+      throw new Error(read.tooLarge ? `larger than ${MAX_PLUGIN_DATA_BYTES} bytes` : 'not valid UTF-8');
+    }
+    text = read.text;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw codedError(
+      ERROR_CODES.PLUGIN_DATA_PRESERVE_FAILED,
+      `无法安全读取插件数据 ${PLUGIN_DATA_FILE},已中止更新(旧版本与数据原样保留): ${errorMessage(err)}`,
+    );
+  }
+  try {
+    // 仓库自带的同名条目(文件或目录;克隆树已拒符号链接)先删,再排他创建。
+    await rm(dst, { recursive: true, force: true });
+    await fs.writeFile(dst, text, { flag: 'wx', mode: 0o600 });
+  } catch (err) {
+    throw codedError(
+      ERROR_CODES.PLUGIN_DATA_PRESERVE_FAILED,
+      `无法把插件数据带入新版本,已中止更新: ${errorMessage(err)}`,
+    );
+  }
+}
+
+/**
+ * 安全:克隆树(顶层 .git 除外,落位前即删)含任何符号链接 → 抛 PLUGIN_SYMLINK_REJECTED。
+ * 宿主以自身权限读安装目录里的文件(data.json / manifest.json / main),仓库提交
+ * `data.json -> ../<别的插件>/data.json`、`main.js -> ~/.ssh/id_rsa` 即可借宿主之手读到目录外内容。
+ * 不区分树内 / 树外目标:已知插件仓库都不含链接,一律拒绝最简单。
+ */
+async function assertNoSymlinksInClone(cloneDir: string): Promise<void> {
+  const pending = [cloneDir];
+  while (pending.length > 0) {
+    const dir = pending.pop()!;
+    for (const dirent of await fs.readdir(dir, { withFileTypes: true })) {
+      if (dir === cloneDir && dirent.name === '.git') continue;
+      const full = path.join(dir, dirent.name);
+      // 部分文件系统 d_type 未知(三个判定都为 false)→ lstat 补判。
+      const st = dirent.isDirectory() || dirent.isFile() || dirent.isSymbolicLink() ? dirent : await fs.lstat(full);
+      if (st.isSymbolicLink()) {
+        throw codedError(
+          ERROR_CODES.PLUGIN_SYMLINK_REJECTED,
+          `插件仓库含符号链接,拒绝安装: ${path.relative(cloneDir, full).slice(0, 256)}`,
+        );
+      }
+      if (st.isDirectory()) pending.push(full);
+    }
+  }
+}
+
+function cloneTooLargeError(): Error {
+  return codedError(
+    ERROR_CODES.PLUGIN_REPO_TOO_LARGE,
+    `插件仓库超过大小上限(${PLUGIN_CLONE_MAX_BYTES / (1024 * 1024)}MiB / ${PLUGIN_CLONE_MAX_ENTRIES} 个条目),已中止安装`,
+  );
+}
+
+/**
+ * 有界统计 clone 目录(含 .git)的逻辑字节数与条目数,任一超过上限即停止并返回 true。clone 写入中的瞬时态
+ *(目录 / 文件刚被 git 改名或删除)读不到就跳过。单次统计最多访问 PLUGIN_CLONE_MAX_ENTRIES 个条目。
+ */
+async function cloneTreeExceedsLimits(dir: string): Promise<boolean> {
+  let bytes = 0;
+  let entries = 0;
+  const pending = [dir];
+  while (pending.length > 0) {
+    const cur = pending.pop()!;
+    let dirents: Dirent[];
+    try {
+      dirents = await fs.readdir(cur, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const dirent of dirents) {
+      if (++entries > PLUGIN_CLONE_MAX_ENTRIES) return true;
+      const full = path.join(cur, dirent.name);
+      if (dirent.isDirectory()) {
+        pending.push(full);
+        continue;
+      }
+      let st: Stats;
+      try {
+        st = await fs.lstat(full);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        pending.push(full);
+        continue;
+      }
+      bytes += st.size;
+      if (bytes > PLUGIN_CLONE_MAX_BYTES) return true;
+    }
+  }
+  return false;
+}
+
+/** budgetDir:clone 目标目录;给出时 clone 期间轮询其体积 / 条目数,超限即终止 git(见 PLUGIN_CLONE_MAX_BYTES)。 */
+function runGit(args: readonly string[], budgetDir?: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起,
-      // 也不读系统/全局凭据助手。GIT_CONFIG_NOSYSTEM 隔离系统级 git 配置。
-      env: {
-        ...process.env,
+    // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起。GIT_CONFIG_NOSYSTEM 隔离系统级
+    // git 配置;用户全局 ~/.gitconfig 的 credential.helper 仍生效(有意保留:私有插件仓库依赖钥匙串凭据,
+    // 且 helper 按目标主机取凭据,clone 跨主机重定向时 git 不携带凭据,不构成泄露)。
+    // 与插件子进程同一加固(见 lib/child-spawn-hardening):注入 core.fsmonitor=false(clone 不受影响);
+    // Windows 上 git 只在 PATH 的绝对目录中解析 —— CLI 启动时主进程 cwd 即用户所在目录(可能是不可信
+    // 仓库),裸名 spawn 会先执行其中的 git.exe。解析不到 → GIT_SPAWN_FAILED(fail-closed)。
+    // 纵深:入口已限定 https URL,再以 GIT_ALLOW_PROTOCOL=https:ssh 限定传输协议(重定向 / 子模块等不得换用
+    // file / ext 等协议;优先于仓库与全局 protocol.*.allow 配置)。放行 ssh 的理由:git 先按 url.*.insteadOf
+    // 改写 URL 再查白名单,用户全局 ~/.gitconfig 常见 `url."ssh://git@github.com/".insteadOf=https://github.com/`
+    //(GIT_CONFIG_NOSYSTEM 不屏蔽全局配置),只放 https 会 `transport 'ssh' not allowed` 致插件装不上。ssh 改写
+    // 只可能来自用户自己的全局配置;clone 目标是新建临时目录,不存在仓库级 config 攻击面;http 重定向不能换成 ssh。
+    // 剥离宿主内部机密(CONTINUO_MCP_TOKEN)。
+    const env = withGitHardeningEnv(
+      mergeSpawnEnv(stripInternalSecretEnv(process.env), {
         GIT_TERMINAL_PROMPT: '0',
         GIT_ASKPASS: '',
         GIT_CONFIG_NOSYSTEM: '1',
-      },
-    });
+        GIT_ALLOW_PROTOCOL: 'https:ssh',
+        GIT_LFS_SKIP_SMUDGE: '1',
+      }),
+      process.platform,
+      PLUGIN_CLONE_GIT_CONFIG,
+    );
+    const spawnGit = () =>
+      spawn(resolveSpawnCommand('git', env), args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+    let child: ReturnType<typeof spawnGit>;
+    try {
+      child = spawnGit();
+    } catch (err) {
+      reject(codedError(ERROR_CODES.GIT_SPAWN_FAILED, `git spawn 失败: ${errorMessage(err)}`));
+      return;
+    }
     // 边界(E62 + E131):按真实 UTF-8 字节累积/截断,decode 延后整体进行(见 byte-capped-buffer)。
     const stderrCap = createByteCappedBuffer(MAX_GIT_STDERR_BYTES);
     let settled = false;
+    // 超出体积 / 条目上限、已发出终止:等 git 真正退出再结算(调用方随即删临时目录,不与仍在写的 git 赛跑)。
+    let overBudget = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (fn: () => void): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(pollTimer);
       fn();
     };
     // timeout:防慢速/挂起的远端无限占用(DoS)。SIGTERM → 1s 后 SIGKILL。
@@ -1405,10 +1683,27 @@ function runGit(args: readonly string[]): Promise<void> {
       killWithGrace(child);
       finish(() =>
         reject(
-          codedError(ERROR_CODES.GIT_FAILED, `git ${args[0]} 超时`),
+          overBudget
+            ? cloneTooLargeError()
+            : // 独立错误码:renderer 按 code 本地化出 ssh host key / 口令提示(GUI 无终端应答 ssh 交互,只会超时)
+              codedError(ERROR_CODES.GIT_TIMEOUT, `git ${args[0]} 超时`),
         ),
       );
     }, GIT_CLONE_TIMEOUT_MS);
+    if (budgetDir !== undefined) {
+      // 上一次统计结束后才排下一次(不重叠)。
+      const poll = async (): Promise<void> => {
+        const exceeded = await cloneTreeExceedsLimits(budgetDir).catch(() => false);
+        if (settled || overBudget) return;
+        if (exceeded) {
+          overBudget = true;
+          killWithGrace(child);
+          return;
+        }
+        pollTimer = setTimeout(() => void poll(), PLUGIN_CLONE_POLL_MS);
+      };
+      pollTimer = setTimeout(() => void poll(), PLUGIN_CLONE_POLL_MS);
+    }
     // 边界(E62 + E131):按真实字节累积上限,超限停止追加(保留前 64KB 字节)+ 标记截断,不 kill
     //(进度合法 >64KB)。
     child.stderr.on('data', (d: Buffer) => stderrCap.push(d));
@@ -1420,7 +1715,8 @@ function runGit(args: readonly string[]): Promise<void> {
       ),
     );
     child.on('exit', (code) => {
-      if (code === 0) finish(resolve);
+      if (overBudget) finish(() => reject(cloneTooLargeError()));
+      else if (code === 0) finish(resolve);
       else
         finish(() =>
           reject(
@@ -1570,6 +1866,12 @@ export function createPluginsWatcher(
       // 边界(E27,E24/listPluginDirs 同源):watcher 扫描读 manifest 也走有界读(同 MANIFEST_MAX_BYTES),
       // 避免超大 manifest 整块读入。读失败(缺失 / EACCES 等)→ 跳过该目录且不缓存,下轮重试。
       // perf:超限 → 按本轮签名缓存为 info=null(跳过),签名不变不再每 2s open+fstat + 告警,改动后照常重读。
+      // 安全:与列举(readPluginManifestText)同口径 —— manifest 的真实路径须仍在插件目录内。旧安装的目录可能带
+      // 符号链接(manifest.json -> 目录外文件),不校验就会对目录外文件算 hash、取 id。越界按本轮签名缓存为跳过。
+      if (!(await staysInsidePluginDir(dir, manifestPath))) {
+        manifestCache.set(name, { sig, info: null });
+        return null;
+      }
       let text: string | null;
       try {
         const read = await readFileCappedFd(manifestPath, MANIFEST_MAX_BYTES);

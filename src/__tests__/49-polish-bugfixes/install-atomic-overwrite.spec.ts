@@ -15,15 +15,18 @@ const ctl = vi.hoisted(() => ({
   stderrChunk: '' as string, // E62:fail 时 git 子进程 stderr 输出(模拟超大错误输出)
   manifest: { id: 'p', name: 'P', version: '1.0.0' } as Record<string, string>,
   mainAsDir: false, // main 入口是目录而非文件
+  shipDataJson: null as string | null, // 仓库自带 data.json 的内容(null = 不带)
   lastArgs: [] as readonly string[], // 最近一次 git 调用的 argv
+  lastEnv: {} as NodeJS.ProcessEnv, // 最近一次 git 调用的 env
 }));
 
 vi.mock('node:child_process', async () => {
   const { chmodSync, mkdirSync, writeFileSync } = await import('node:fs');
   const np = await import('node:path');
   return {
-    spawn: (_cmd: string, args: readonly string[]) => {
+    spawn: (_cmd: string, args: readonly string[], opts: { env?: NodeJS.ProcessEnv }) => {
       ctl.lastArgs = args;
+      ctl.lastEnv = opts.env ?? {};
       const cloneDir = args[args.length - 1] as string;
       const listeners: Record<string, ((arg?: unknown) => void)[]> = {};
       const stderrListeners: Record<string, ((arg?: unknown) => void)[]> = {};
@@ -54,6 +57,7 @@ vi.mock('node:child_process', async () => {
         writeFileSync(np.join(cloneDir, 'manifest.json'), manifestJson);
         if (ctl.mainAsDir) mkdirSync(np.join(cloneDir, 'main.js'));
         else writeFileSync(np.join(cloneDir, 'main.js'), '// plugin');
+        if (ctl.shipDataJson !== null) writeFileSync(np.join(cloneDir, 'data.json'), ctl.shipDataJson);
         if (ctl.unreadableFile) {
           writeFileSync(np.join(cloneDir, 'zz-secret.bin'), 'x');
           chmodSync(np.join(cloneDir, 'zz-secret.bin'), 0o000);
@@ -82,6 +86,7 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     ctl.oversize = false;
     ctl.stderrChunk = '';
     ctl.mainAsDir = false;
+    ctl.shipDataJson = null;
     ctl.lastArgs = [];
     ctl.manifest = { id: 'p', name: 'P', version: '1.0.0' };
   });
@@ -97,6 +102,67 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     const r = await installFromGit(URL, baseDir, { overwrite: true });
     expect(r.version).toBe('2.0.0');
     expect(await readVersion('p')).toBe('2.0.0');
+  });
+
+  // 数据安全:插件数据 data.json 存在安装目录里,市场「更新」(overwrite swap)整目录替换会把它丢掉。
+  describe('overwrite 更新保留插件数据 data.json', () => {
+    const dataFile = (): string => path.join(baseDir, 'p', 'data.json');
+    const USER_DATA = '{"value":{"todo":["用户数据"],"n":1}}';
+
+    async function update(version = '2.0.0'): Promise<unknown> {
+      ctl.manifest = { id: 'p', name: 'P', version };
+      return installFromGit(URL, baseDir, { overwrite: true });
+    }
+
+    it('更新后 data.json 内容不变(0600)', async () => {
+      await installFromGit(URL, baseDir);
+      await fs.writeFile(dataFile(), USER_DATA);
+      await update();
+      expect(await readVersion('p')).toBe('2.0.0');
+      expect(await fs.readFile(dataFile(), 'utf-8')).toBe(USER_DATA);
+      if (process.platform !== 'win32') expect((await fs.stat(dataFile())).mode & 0o777).toBe(0o600);
+      expect((await fs.readdir(baseDir)).filter((e) => e.startsWith('.'))).toEqual([]);
+    });
+
+    it('新版本仓库自带 data.json → 不取代用户数据', async () => {
+      await installFromGit(URL, baseDir);
+      await fs.writeFile(dataFile(), USER_DATA);
+      ctl.shipDataJson = '{"value":"shipped-by-repo"}';
+      await update();
+      expect(await fs.readFile(dataFile(), 'utf-8')).toBe(USER_DATA);
+    });
+
+    it('旧目录没有 data.json → 照常更新;仓库自带的 data.json 保留(同全新安装)', async () => {
+      await installFromGit(URL, baseDir);
+      ctl.shipDataJson = '{"value":"shipped-by-repo"}';
+      await update();
+      expect(await readVersion('p')).toBe('2.0.0');
+      expect(await fs.readFile(dataFile(), 'utf-8')).toBe('{"value":"shipped-by-repo"}');
+    });
+
+    it('旧 data.json 是符号链接 → 更新被拒(PLUGIN_DATA_PRESERVE_FAILED),原目录完好、无残留', async () => {
+      await installFromGit(URL, baseDir);
+      const outside = path.join(baseDir, '..', `outside-${path.basename(baseDir)}.json`);
+      await fs.writeFile(outside, '{"value":"other-plugin-secret"}');
+      try {
+        await fs.symlink(outside, dataFile());
+        await expect(update()).rejects.toMatchObject({ code: 'PLUGIN_DATA_PRESERVE_FAILED' });
+        expect(await readVersion('p')).toBe('1.0.0');
+        expect((await fs.lstat(dataFile())).isSymbolicLink()).toBe(true);
+        expect((await fs.readdir(baseDir)).filter((e) => e.startsWith('.'))).toEqual([]);
+      } finally {
+        await rm(outside, { force: true });
+      }
+    });
+
+    it('旧 data.json 超过大小上限 → 更新被拒,原目录完好', async () => {
+      await installFromGit(URL, baseDir);
+      await fs.writeFile(dataFile(), '{}');
+      await fs.truncate(dataFile(), 16 * 1024 * 1024 + 1);
+      await expect(update()).rejects.toMatchObject({ code: 'PLUGIN_DATA_PRESERVE_FAILED' });
+      expect(await readVersion('p')).toBe('1.0.0');
+      expect((await fs.stat(dataFile())).size).toBe(16 * 1024 * 1024 + 1);
+    });
   });
 
   it('git URL scheme 校验走字符扫描,不调用 RegExp.test', async () => {
@@ -183,6 +249,21 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     expect(entries).not.toContain('p'); // 未复制/替换任何插件目录
     expect(entries.filter((e) => e.startsWith('.'))).toEqual([]); // 无 staging/backup 残留
   });
+
+  // 安全:plugins 目录里 `.` / `_` 前缀名是主进程元数据与临时目录的命名空间(_plugin-path-scopes.json /
+  // _permissions.json / _enabled.json / .staging-* / .<id>.old-*),列举逻辑也跳过它们。远程仓库若能用
+  // 这类 manifest.id 安装,会占住元数据文件位置(读写 EISDIR → 卸载卡死、scope 持久化静默失效,且 UI 不可见)
+  // 或伪造启动恢复流程的备份目录。id 首字符必须是 [a-z0-9]。
+  it.each(['_plugin-path-scopes.json', '_permissions.json', '.victim.old-123', '...'])(
+    'manifest.id=%s(. / _ 前缀)→ 抛 BAD_MANIFEST,不占位元数据路径',
+    async (id) => {
+      ctl.manifest = { id, name: 'P', version: '1.0.0' };
+      await expect(installFromGit(URL, baseDir)).rejects.toMatchObject({
+        code: 'BAD_MANIFEST',
+      });
+      expect(await fs.readdir(baseDir)).toEqual([]);
+    },
+  );
 
   it('E27 超大 manifest 覆盖安装 → 抛 BAD_MANIFEST,旧版本原样保留', async () => {
     await installFromGit(URL, baseDir); // 先装 v1
@@ -346,6 +427,16 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     await installFromGit(URL, baseDir, { branch: 'release/v2' });
     expect(ctl.lastArgs).toContain('--branch=release/v2');
     expect(ctl.lastArgs.indexOf('--branch=release/v2')).toBeLessThan(ctl.lastArgs.indexOf(URL));
+  });
+
+  // 与插件子进程同一加固:clone 子进程 env 注入命令行作用域 core.fsmonitor=false,且保留禁交互凭据设置。
+  it('clone 子进程 env 注入 core.fsmonitor=false 加固', async () => {
+    await installFromGit(URL, baseDir);
+    const env = ctl.lastEnv;
+    const n = Number(env.GIT_CONFIG_COUNT);
+    const pairs = Array.from({ length: n }, (_, i) => [env[`GIT_CONFIG_KEY_${i}`], env[`GIT_CONFIG_VALUE_${i}`]]);
+    expect(pairs).toContainEqual(['core.fsmonitor', 'false']);
+    expect(env.GIT_TERMINAL_PROMPT).toBe('0');
   });
 
   it('不传 branch → argv 不含 --branch(行为不变)', async () => {

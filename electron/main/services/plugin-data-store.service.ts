@@ -16,6 +16,7 @@ import { jsonStringLengthLowerBoundExceeds } from '../../shared/json-byte-budget
 import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { codedError } from '../../shared/error-message';
+import { withInstalledPluginLock } from './plugins.service';
 
 const LOCK_OPTS: lockfile.LockOptions = {
   // Op12.5 spike not executed in this batch; using library defaults/recommendation.
@@ -56,13 +57,6 @@ export function registerPluginDataStoreHandlers(
     return join(baseDir, pluginId, 'data.json');
   };
 
-  async function ensureDir(pluginId: string): Promise<string> {
-    assertPluginId(pluginId);
-    const dir = join(baseDir, pluginId);
-    await fs.mkdir(dir, { recursive: true });
-    return dir;
-  }
-
   ipcMain.handle(PLUGIN_DATA_CHANNELS.LOAD, async (_event, pluginId: string) => {
     const file = dataFile(pluginId);
     // 边界(E20;E161 stat-before-read TOCTOU 修正):此前 `fs.stat` 判大小 + `fs.readFile` 整文件两次
@@ -71,9 +65,13 @@ export function registerPluginDataStoreHandlers(
     // (EACCES 等)→throw;too-large→隔离 .corrupt 后降级 {}(不整块读入 + 不 parse)。
     let r: Awaited<ReturnType<typeof readFileCappedFd>>;
     try {
-      r = await readFileCappedFd(file, MAX_PLUGIN_DATA_BYTES);
+      // 安全:data.json 在插件安装目录内,目录内容来自插件仓库。noFollow:符号链接(ELOOP)/ 硬链接(EMLINK)
+      // 一律当无数据 —— 否则恶意仓库提交 `data.json -> ../<别的插件>/data.json` 即可经 loadData() 读到其它
+      // 插件的数据;也不走下面的 .corrupt 快照(会把链接目标的内容复制落盘)。
+      r = await readFileCappedFd(file, MAX_PLUGIN_DATA_BYTES, { noFollow: true });
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ELOOP' || code === 'EMLINK') return {};
       throw err; // 权限等真正的 IO 错误仍抛
     }
     if (r.tooLarge) {
@@ -92,7 +90,7 @@ export function registerPluginDataStoreHandlers(
         typeof parsed !== 'object' ||
         Array.isArray(parsed)
       ) {
-        await fs.writeFile(`${file}.corrupt`, buf, { flag: 'wx' }).catch(() => {});
+        await fs.writeFile(`${file}.corrupt`, buf, { flag: 'wx', mode: 0o600 }).catch(() => {});
         return {};
       }
       return parsed as Record<string, unknown>;
@@ -100,7 +98,7 @@ export function registerPluginDataStoreHandlers(
       // 文件存在但 JSON 损坏(旧实现非原子写,崩溃/掉电会截断)。旧实现在这里直接
       // rethrow → IPC 永久 reject,该插件持久化数据"假死"丢失。改为:保留一次性
       // `.corrupt` 快照后降级返回 {},不阻塞插件继续运行(与 loadExplorer 同款)。
-      await fs.writeFile(`${file}.corrupt`, buf, { flag: 'wx' }).catch(() => {});
+      await fs.writeFile(`${file}.corrupt`, buf, { flag: 'wx', mode: 0o600 }).catch(() => {});
       return {};
     }
   });
@@ -175,16 +173,29 @@ export function registerPluginDataStoreHandlers(
     },
   );
 
-  async function writeSerialized(pluginId: string, serialized: string): Promise<void> {
-    await ensureDir(pluginId);
+  // 数据安全(卸载后复活目录):data.json 落在插件安装目录里。卸载时主进程先删目录,renderer 之后才跑 onunload,
+  // 其中的 saveData(或更早发起、此刻才到的)若在这里 `mkdir -p` 就把目录建了回来 —— 只剩 data.json、没有 manifest:
+  // 不被列出(UI 无卸载入口),同 id 再安装永远 EEXIST。与 path scope 持久化同法:进同 id mutation 锁(与安装 /
+  // 卸载互斥),锁内确认插件目录仍在才写,不存在 → NOT_INSTALLED,**不创建目录**。
+  // 内置插件(静态加载,不在 plugins 目录下)不使用 dataStore,不受影响。
+  function writeSerialized(pluginId: string, serialized: string): Promise<void> {
+    assertPluginId(pluginId);
+    return withInstalledPluginLock(baseDir, pluginId, () => writeSerializedLocked(pluginId, serialized));
+  }
+
+  async function writeSerializedLocked(pluginId: string, serialized: string): Promise<void> {
     const file = dataFile(pluginId);
     // 创建 lock 目标文件:proper-lockfile 要求目标存在。必须用**排他创建**(wx)
     // 而非「access 判缺失 → writeFile 截断」:后者在加锁前 truncate,并发首次 save
     // 或 access 竞态(TOCTOU)会把另一次已落盘的 data.json 抹回 {},若随后加锁/写入
     // 失败则该数据静默丢失(codex 数据安全复查 P1)。wx 仅当不存在时写空 {},已存在
     // 吞 EEXIST,绝不截断已有内容。真正的写入仍在持锁后由 atomicWriteText 完成。
+    // 安全:data.json 是符号链接(来自插件仓库,见 LOAD)→ 先删链接。否则 proper-lockfile 按 realpath 把锁建到
+    // 链接目标旁(悬空链接则 ENOENT,永远存不了);写入本身是 rename 替换链接,不会写穿。
+    const existing = await fs.lstat(file).catch(() => null);
+    if (existing?.isSymbolicLink()) await fs.unlink(file);
     try {
-      await fs.writeFile(file, '{}', { flag: 'wx' });
+      await fs.writeFile(file, '{}', { flag: 'wx', mode: 0o600 });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
     }

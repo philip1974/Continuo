@@ -108,10 +108,13 @@ describe('path-resolve.helper', () => {
 
     expect(result.canonical).toBe(realpathSync(homedir()));
     expect(result.canonical).not.toContain('~');
-    expect(
-      result.canonical.startsWith('/Users/') ||
-        result.canonical.startsWith('/home/'),
-    ).toBe(true);
+    // 家目录前缀是 POSIX 专属(Windows 为 C:\Users\...),仅在 macOS/Linux 断言
+    if (process.platform !== 'win32') {
+      expect(
+        result.canonical.startsWith('/Users/') ||
+          result.canonical.startsWith('/home/'),
+      ).toBe(true);
+    }
   });
 
   it('T20.a rejects empty leaf', () => {

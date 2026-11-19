@@ -44,6 +44,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.EEXIST': '文件已存在',
   'errors.GIT_FAILED': 'Git 命令失败',
   'errors.GIT_SPAWN_FAILED': '无法启动 git',
+  'errors.GIT_TIMEOUT': 'Git 命令超时。若 git 配置将 https 改写为 ssh,请确认 ssh 主机密钥已信任且无需交互口令',
   'errors.INVALID_ID': 'ID 无效',
   'errors.MARKETPLACE_INDEX_INVALID': '远程索引不是合法数组',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': 'GitHub token 未在主进程配置',
@@ -62,6 +63,9 @@ export const zh: Record<TranslationKey, string> = {
   'errors.PAYLOAD_TOO_LARGE': '负载过大',
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED': '插件文件访问凭据回收失败,操作已中止,请重试',
   'errors.PLUGIN_ID_MISMATCH': '仓库中的插件 id 与市场条目不一致',
+  'errors.PLUGIN_SYMLINK_REJECTED': '插件仓库包含符号链接,已拒绝安装',
+  'errors.PLUGIN_REPO_TOO_LARGE': '插件仓库超过大小或文件数上限,已中止安装',
+  'errors.PLUGIN_DATA_PRESERVE_FAILED': '无法保留插件数据,已中止更新(旧版本与数据未改动)',
   'errors.RM_FAILED': '删除失败',
   'errors.TERMINAL_CREATE_CANCELLED': '终端创建已取消',
   'errors.TERMINAL_CWD_UNRESOLVED': '终端 cwd 无法解析',
@@ -72,6 +76,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.TERMINAL_SESSION_DUPLICATE': '终端会话重复',
   'errors.TERMINAL_SESSION_NOT_FOUND': '终端会话不存在',
   'errors.TOO_MANY_STREAMS': '活动流过多',
+  'errors.TOO_MANY_WINDOWS': '打开的窗口过多',
   'errors.TOO_MANY_TERMINALS': '终端会话过多',
   'errors.WORKSPACE_NOT_ABSOLUTE': '工作区路径必须是绝对路径：{path}',
   'errors.WORKSPACE_NOT_DIRECTORY': '工作区不是一个目录：{workspace}',
@@ -87,6 +92,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.FS_FILE_TOO_LARGE': '文件过大,无法打开',
   'errors.FS_NOT_UTF8': '文件是二进制或非 UTF-8 编码,无法在文本编辑器中打开',
   'errors.FS_DIR_TOO_LARGE': '目录条目过多',
+  'errors.FS_BUSY': '进行中的文件操作过多,请稍后重试',
   'errors.FS_NOT_FOUND': '找不到文件：{path}',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
@@ -171,6 +177,10 @@ export const zh: Record<TranslationKey, string> = {
   'dialog.unsaved_close.dont_save': '不保存',
   'dialog.unsaved_close.save_failed': '{count} 个文件保存失败,窗口未关闭。',
   'dialog.unsaved_close.disk_changed_note': '其中 {count} 个文件已在磁盘上被其它程序修改,未覆盖。请在编辑器中按 Cmd/Ctrl+S 解决冲突,或选择「不保存」。',
+  'dialog.mcp_legacy_config.message': 'Claude Code 中的 Continuo MCP 配置指向临时路径,存在安全风险',
+  'dialog.mcp_legacy_config.detail':
+    '~/.claude.json 中的 MCP 服务器 {names} 指向旧版 AppImage 的临时挂载路径。Continuo 退出后,同机其他用户可在该位置放置同名脚本,由 Claude Code 以你的身份执行。请先在对应项目目录执行 `claude mcp remove {first}`(user 级配置加 `-s user`),再执行状态栏「复制 MCP 配置」中的新命令。',
+  'dialog.mcp_legacy_config.copy': '复制新命令',
   'dock.empty.message': '所有面板都关掉了。',
   'dock.empty.restore': '恢复默认布局',
   'panels.explorer.loading_or_empty': '读取中或空目录',
@@ -292,6 +302,12 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.debug_launch': '启动调试会话',
   'permissions.agent.debug_control': '控制调试会话(断点、单步、查看变量)',
   'permissions.agent.generic': '调用 {method}',
+  'permissions.agent.external_caller':
+    '请求来源:外部客户端(未绑定 Continuo 终端)。它不属于本窗口任何终端，授权独立于本窗口终端 agent 的授权。',
+  'permissions.agent.plugin_tool': '调用插件工具 {name}',
+  'permissions.agent.title_plugin': 'Agent 请求调用插件工具',
+  'permissions.agent.hint_plugin':
+    '授权后，持有 MCP token 的 agent 可以调用已安装插件注册的工具(如 Git 暂存 / 提交)。插件工具以插件自身的权限执行，请只授权给你信任的 agent。仅本次启动有效。',
   'permissions.agent.title': 'Agent 请求控制内置终端',
   'permissions.agent.title_debug': 'Agent 请求控制调试器',
   'permissions.agent.hint_debug':
@@ -307,7 +323,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.grant_session': '本次启动期间允许',
   'permissions.revoke_all.title': '撤销 agent 终端授权？',
   'permissions.revoke_all.confirm_grant_only':
-    '将撤销本次启动期间授予 agent 的终端与调试授权,并结束其调试会话。\n\n已运行的 agent CLI 持有的 token 将立刻 401;之后可重新授权。\n\n确定继续？',
+    '将撤销本次启动期间授予 agent 的终端、调试与插件工具授权,并结束其调试会话。\n\n已运行的 agent CLI 持有的 token 将立刻 401;现有终端里的 agent 无法再次请求授权,须在新开的终端中重新启动。\n\n确定继续？',
   'permissions.revoke_all.confirm':
     '将终止 {count} 个 agent terminal 并撤销本次启动期间的授权。\n\n已运行的 agent CLI 持有的 token 将立刻 401；新开 terminal 仍可重新授权。\n\n确定继续？',
   'permissions.revoke_all.failed':
@@ -327,7 +343,7 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.mcp.revoke_tooltip': '终止全部 {count} 个 agent terminal 并撤销授权',
   'statusbar.agent_sessions': '{count} 个 agent',
   'statusbar.agent_authorized': 'Agent 已授权',
-  'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端与调试授权',
+  'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端、调试与插件工具授权',
   'statusbar.no_workspace': '无工作区',
   'statusbar.sidebar_hidden': '侧栏已隐藏',
   'statusbar.untitled_file': '未命名',
@@ -492,15 +508,15 @@ export const zh: Record<TranslationKey, string> = {
 
   // permissions.* perm labels
   'permissions.perm.fs.title': '文件系统',
-  'permissions.perm.fs.desc': '读写本地文件夹与文件',
+  'permissions.perm.fs.desc': '读写你批准的文件夹内的文件(按文件夹另行询问)',
   'permissions.perm.network.title': '网络访问',
-  'permissions.perm.network.desc': '发起 HTTP / WebSocket 等远程请求',
+  'permissions.perm.network.desc': '向任意 https 地址发请求,包括本机(localhost)与内网服务',
   'permissions.perm.shell.title': '执行 shell 命令',
-  'permissions.perm.shell.desc': '调用本机 shell / 子进程',
+  'permissions.perm.shell.desc': '以你的身份运行任意程序;不受文件夹授权限制,等同于完全访问本机文件与网络',
   'permissions.perm.clipboard.title': '剪贴板',
   'permissions.perm.clipboard.desc': '读写系统剪贴板',
   'permissions.perm.mcp_tools.title': '注册 MCP 工具',
-  'permissions.perm.mcp_tools.desc': '把 plugin 自定义工具暴露给 Agent / Claude Code 等 MCP client 调用',
+  'permissions.perm.mcp_tools.desc': '注册工具:名称与描述会展示给 AI Agent(Claude Code 等 MCP 客户端),并可被其调用',
 
   // permissions prompt UI
   'permissions.prompt.title': '权限请求',
@@ -508,7 +524,9 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.prompt.note_prefix': '未勾视为拒绝。支持',
   'permissions.prompt.note_partial': '部分授权',
   'permissions.prompt.note_suffix': '：plugin 调未授 API 时会被拒（抛 PermissionError），整体仍能激活。全部拒绝则 plugin 不激活。',
+  'permissions.grant_guard.rejected': '尚未生效:请稍作停顿后再单击,或聚焦片刻后再按 Enter / 空格。',
   'permissions.prompt.select_all': '全选',
+  'permissions.prompt.select_all_except_shell': '全选（不含 shell）',
   'permissions.prompt.deny_all': '全部拒绝',
   'permissions.prompt.grant_selected': '授权选中（{count}）',
 

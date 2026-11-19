@@ -244,6 +244,29 @@ describe('plugin-shell-stream.service', () => {
     ).rejects.toThrow('streamId already active');
   });
 
+  // 安全:active 去重按 sender 隔离。拿到 raw IPC 的调用方用别的窗口正在用(或将用)的同名 streamId
+  // 不能让对方 START 失败,也不能 ABORT 对方的 stream;两边各自的 exit 事件只发给各自 sender。
+  it('同名 streamId 跨 sender 互不干扰:各自可 START,ABORT 只作用于本 sender', async () => {
+    const { ipc, sender: victim } = makeHarness();
+    const attacker = new MockWebContents();
+    const id = 'shared-name';
+    childrenToAbort.push({ ipc, sender: victim, id }, { ipc, sender: attacker, id });
+
+    await ipc.invoke(attacker, PLUGIN_SHELL_STREAM_CHANNELS.START, id, process.execPath, [
+      '-e',
+      'setInterval(() => {}, 1000)',
+    ]);
+    await expect(
+      ipc.invoke(victim, PLUGIN_SHELL_STREAM_CHANNELS.START, id, process.execPath, [
+        '-e',
+        'setTimeout(() => process.exit(7), 300)',
+      ]),
+    ).resolves.toBeUndefined();
+    // 攻击方 ABORT 同名 id 只杀自己的,受害方照常以 7 退出。
+    await ipc.invoke(attacker, PLUGIN_SHELL_STREAM_CHANNELS.ABORT, id);
+    expect((await waitForExit(victim, id)).exitCode).toBe(7);
+  });
+
   // race(R72,R71 同构):send 在 isDestroyed() 检查后、实际 send 前 webContents 销毁会抛。
   // child.on('error') 里先 send('stderr') 再 finalize(-1):若 send 抛,finalize 不执行 →
   // active 条目 + timeoutTimer 泄漏(spawn error 子进程不发 'close',finalize 永不触发)。

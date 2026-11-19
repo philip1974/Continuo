@@ -1,10 +1,12 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { appendFileSync, promises as fs } from 'node:fs';
 import { type Readable } from 'node:stream';
 import net, { type Socket } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { mergeSpawnEnv, stripInternalSecretEnv } from '../lib/child-spawn-hardening';
 
 type DapPrimitive = string | number | boolean | null;
 export type DapJson =
@@ -348,6 +350,22 @@ async function createPrivateSocketDir(): Promise<string> {
   return dir;
 }
 
+/**
+ * Windows:adapter 监听随机名命名管道(js-debug dapDebugServer 对非数字参数走 `listen({ path })`)。
+ * 不用 TCP:127.0.0.1 端口本机其它用户可直连,浏览器页面也能发 no-cors POST(带 Content-Length 头,
+ * 可能被当成 DAP 帧)→ launch 任意 runtimeExecutable。命名管道浏览器触达不到;libuv 以
+ * FILE_FLAG_FIRST_PIPE_INSTANCE + 默认 DACL(仅创建者读写,Everyone 只读)创建;128 bit 随机名不可预测,
+ * 他人无从抢注(撞名时 adapter 以 EADDRINUSE 在就绪前退出,不会连到别人的管道)。
+ */
+function randomWindowsPipePath(): string {
+  return `\\\\.\\pipe\\continuo-dap-${randomBytes(16).toString('hex')}`;
+}
+
+/** 命名管道不在文件系统:不能(也无需)fs.rm。 */
+function isWindowsPipePath(p: string): boolean {
+  return p.startsWith('\\\\.\\pipe\\');
+}
+
 /** TCP 模式下 adapter 监听与客户端连接共用的地址(两端必须一致)。 */
 const DAP_TCP_HOST = '127.0.0.1';
 
@@ -485,7 +503,11 @@ export class DapClient {
     this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
     this.connectIntervalMs = options.connectIntervalMs ?? 100;
     this.autoSocketPath = options.socketPath === undefined && process.platform !== 'win32';
-    this.socketPathValue = options.socketPath ?? null;
+    // Windows 未显式给 socketPath → 随机名命名管道;显式 null 仍走 TCP(测试 / 诊断用途)。
+    this.socketPathValue =
+      options.socketPath === undefined && process.platform === 'win32'
+        ? randomWindowsPipePath()
+        : (options.socketPath ?? null);
     this.autoTcpPort = options.tcpPort === undefined;
     this.tcpPortValue = options.tcpPort ?? randomTcpPort();
     this.transcript = options.transcript ?? [];
@@ -504,12 +526,12 @@ export class DapClient {
       this.socketDir = dir;
       this.socketPathValue = path.join(dir, SOCKET_FILE_NAME);
     }
-    if (this.socketPath) {
+    if (this.socketPath && !isWindowsPipePath(this.socketPath)) {
       await fs.rm(this.socketPath, { force: true });
     }
 
     // TCP 随机端口可能与另一会话的 adapter 撞上:本 adapter 因 EADDRINUSE 在就绪前退出 → 换端口重 spawn。
-    // socket 路径是私有目录内的唯一路径,不会冲突,只试一次。
+    // socket 路径是私有目录内的唯一路径 / Windows 管道名 128 bit 随机,不会冲突,只试一次。
     const attempts = !this.socketPath && this.autoTcpPort ? TCP_SPAWN_ATTEMPTS : 1;
     let socket: Socket;
     for (let attempt = 1; ; attempt += 1) {
@@ -534,15 +556,10 @@ export class DapClient {
     // nodePath 默认 process.execPath。在打包/dev 的 Electron 里 process.execPath 是
     // Electron 二进制,必须设 ELECTRON_RUN_AS_NODE=1 让它以纯 Node 跑 dapDebugServer.js;
     // 否则 Electron 会把脚本当成 app 入口加载 → "Dynamic require of fs is not supported"。
-    // 同时按 safeguard 剥离敏感 env(不把 CONTINUO_MCP_TOKEN 泄漏给 adapter/debuggee)。
-    const adapterEnv: NodeJS.ProcessEnv = {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-    };
-    delete adapterEnv.CONTINUO_MCP_TOKEN;
-    // TCP(Windows):dapDebugServer.js 的第二个参数是 host,默认 localhost 可能解析成 ::1,
-    // 而 connectOnce 固定连 127.0.0.1 → 显式传同一地址。socket 路径模式不需要 host。
-    // 127.0.0.1 端口本机其它用户也能连:改命名管道 + 收紧 ACL 见 doc/follow-ups.md「Windows 上 DAP 端点改用命名管道」。
+    // 同时按 safeguard 剥离敏感 env(INTERNAL_SECRET_ENV_KEYS:不把 CONTINUO_MCP_TOKEN 泄漏给 adapter/debuggee)。
+    const adapterEnv = stripInternalSecretEnv(mergeSpawnEnv(process.env, { ELECTRON_RUN_AS_NODE: '1' }));
+    // TCP(仅显式 socketPath: null):dapDebugServer.js 的第二个参数是 host,默认 localhost 可能解析成 ::1,
+    // 而 connectOnce 固定连 127.0.0.1 → 显式传同一地址。socket / 命名管道路径模式不需要 host。
     const adapterArgs = this.socketPath
       ? [this.adapterPath, endpoint]
       : [this.adapterPath, endpoint, DAP_TCP_HOST];
@@ -550,6 +567,9 @@ export class DapClient {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',
       env: adapterEnv,
+      // 安全:不继承主进程 cwd(CLI 从不可信仓库目录启动时即该目录)。adapter 的参数都是绝对路径,
+      // 被调试程序的 cwd 经 DAP launch 参数显式传入,均不依赖进程 cwd。
+      cwd: os.homedir(),
     });
     this.server = server;
     // 必须是 spawn 之后的第一件事:fd 耗尽(EMFILE / ENFILE)时返回的 ChildProcess 没有 stdio,先碰
@@ -641,7 +661,7 @@ export class DapClient {
       // 本 adapter 已退出:端口上若还有监听者那也是别人(如撞端口的另一会话的 adapter),不能连。
       if (run?.exited) throw await this.exitedEarlyError(run);
       // TCP:端口可能被别的进程占着,能连上不代表是本 adapter → 等它在 stdout 报告 listen 成功再连。
-      // socket 路径在私有目录内唯一,连得上即是本 adapter。
+      // socket 路径在私有目录内唯一 / Windows 管道名随机不可预测,连得上即是本 adapter。
       if (run && !this.socketPath && !run.listening) {
         await sleep(this.connectIntervalMs);
         continue;
@@ -887,17 +907,18 @@ export class DapClient {
       return;
     }
 
-    const unsupported = message.command !== 'runInTerminal';
+    // 其余反向请求一律不执行并如实回失败。runInTerminal 也不例外:launch 固定 console:'internalConsole',
+    // 正常不会收到;收到时回 success:true 会让 adapter 误以为进程已在终端里起来。
     this.sendReverseResponse({
       seq: this.seq++,
       type: 'response',
       request_seq: message.seq ?? 0,
       command: message.command,
-      success: !unsupported,
-      message: unsupported
-        ? `unsupported reverse request: ${message.command}`
-        : undefined,
-      body: unsupported ? undefined : {},
+      success: false,
+      message:
+        message.command === 'runInTerminal'
+          ? 'runInTerminal not supported'
+          : `unsupported reverse request: ${message.command}`,
     });
   }
 
@@ -940,7 +961,7 @@ export class DapClient {
     // socketPath:单独释放一个 child(握手失败)时删掉它,仍在运行的 adapter 就再也连不上了。
     if (this.server) {
       await this.killServer();
-      if (this.socketPath) {
+      if (this.socketPath && !isWindowsPipePath(this.socketPath)) {
         await fs.rm(this.socketPath, { force: true });
       }
     }
@@ -952,13 +973,13 @@ export class DapClient {
 
   /**
    * adapter 监听的 unix socket 路径。POSIX 默认在 spawnServer 时于私有目录内新建(此前为 null);
-   * Windows 为 null(用 TCP)。
+   * Windows 默认为构造时生成的随机名命名管道;显式 socketPath: null 时为 null(用 TCP)。
    */
   get socketPath(): string | null {
     return this.socketPathValue;
   }
 
-  /** TCP 模式(Windows)adapter 监听的端口;随机端口冲突重试后会变。 */
+  /** TCP 模式(显式 socketPath: null)adapter 监听的端口;随机端口冲突重试后会变。 */
   get tcpPort(): number {
     return this.tcpPortValue;
   }

@@ -62,12 +62,12 @@ describe('尚不存在的 scope 目录 · 已存在的上级目录', () => {
     expect(await canonicalizeScopePath(join(root, 'a', 'b') + sep)).toBe(join(real, 'a', 'b'));
   });
 
-  // Windows 由系统按字面折叠 `..`(`root\a\..` 就是 root,存在),不适用。
-  it.skipIf(process.platform === 'win32')('尚不存在的部分不折叠 `..`', async () => {
+  // 安全:`..` 先按字面折叠(弹窗显示 = 实际授予 = 别名),见 plugin-fs-scope-existence-oracle。
+  it('`..` 先折叠再解析:尚不存在的分量后跟 `..` 不保留在结果里', async () => {
     const root = mkdtempSync(join(tmpdir(), 'continuo-scope-missing-'));
     tempRoots.push(root);
-    expect(await canonicalizeScopePath(`${root}/a/../b`)).toBe(
-      `${realpathSync.native(root)}/a/../b`,
+    expect(await canonicalizeScopePath(join(root, 'a', '..', 'b'))).toBe(
+      join(realpathSync.native(root), 'b'),
     );
   });
 
@@ -83,7 +83,10 @@ describe('尚不存在的 scope 目录 · 端到端', () => {
     const identity = new IdentityRegistry();
     const registry = new PathScopeRegistry(identity);
     const { token } = identity.register('com.test', 10);
-    registry.grant('com.test', [{ path: await canonicalizeScopePath(requested), mode: 'r' }]);
+    // 与 request-scope handler 同序:授予 canonical 路径,并登记插件请求时的写法(check 的词法预判用)。
+    const canonical = [{ path: await canonicalizeScopePath(requested), mode: 'r' as const }];
+    registry.grant('com.test', canonical);
+    registry.noteRequestedRoots('com.test', [{ path: requested, mode: 'r' }], canonical);
 
     mkdirSync(dir, { recursive: true });
     const file = join(dir, 'f.txt');

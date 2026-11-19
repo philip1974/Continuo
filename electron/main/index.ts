@@ -1,6 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session, shell } from 'electron';
 import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
 import { setReloadUrlPredicate } from './lib/wc-gone-hook';
+import { installPermissionHandlers } from './lib/permission-policy';
+import { installFileRequestGuard } from './lib/file-request-policy';
+import { showOpenDialogRemembering } from './lib/open-dialog';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -9,6 +12,7 @@ import type {
   WindowOpenHandlerResponse,
 } from 'electron';
 import nodeFs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
@@ -34,7 +38,7 @@ import {
   isWithinStartupPathLimit,
   MAX_STARTUP_DIRS,
 } from './services/cli-args.service';
-import { extractProtocolUrl } from './protocol-argv';
+import { extractProtocolUrl, registerDefaultProtocolClient } from './protocol-argv';
 import {
   routeProtocolUrl,
   drainOnProtocolReady,
@@ -51,6 +55,7 @@ import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
+import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import {
   createMcpHost,
@@ -60,37 +65,59 @@ import {
 } from './services/mcp-host.service';
 import {
   createStdioSocketServer,
+  createWindowsStdioPipeName,
+  STDIO_PIPE_DISCOVERY_FILE,
   type StdioSocketServer,
 } from './services/mcp-stdio-server.service';
 import { makeTerminalMcpTools } from './services/mcp-terminal-host';
-import { cancelAgentTerminalCreates } from './services/agent-terminal-inflight';
+import {
+  cancelAgentTerminalCreates,
+  hasAgentTerminalCreates,
+} from './services/agent-terminal-inflight';
 import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
-import { makeCreateHandler, setMcpEnvProvider, setStopHookCanceller } from './ipc/terminal.ipc';
+import {
+  makeCreateHandler,
+  resolveTerminalCwd,
+  setMcpEnvProvider,
+  setStopHookCanceller,
+} from './ipc/terminal.ipc';
 import {
   cancelAgentAuthByWindow,
+  markAgentAuthRendererReady,
+  watchAgentAuthRenderer,
   cancelAllAgentAuth,
   requestAgentAuth,
   setAgentAuthControllerTeardown,
   setMcpHostRef,
 } from './services/agent-auth.service';
 import { DebugService } from './services/debug.service';
+import { createMcpRevokerWiring, type McpRevokerWiring } from './services/mcp-revoker-wiring';
 import * as debugSessions from './services/debug-sessions.service';
 import { makeDebugMcpTools } from './services/mcp-debug-host';
 import { createContinuoMcpEnv } from './services/continuo-terminal-host-adapter';
 import { buildClaudeAddCommand, setStdioConfig } from './services/mcp-stdio-config.service';
 import {
+  STDIO_CLI_FILE_NAME,
+  isUnstableResourcesPath,
+  resolveStdioCliPathForConfig,
+} from './services/mcp-stdio-cli-install';
+import { warnIfLegacyUnstableClaudeConfig } from './services/mcp-stdio-legacy-config';
+import {
   createAwaitStopHookTool,
   createHookFileBroker,
+  ensureHookEventsDir,
   inferRunner,
-  installStopHookForSession,
+  installStopHookInWorkspace,
 } from './services/mcp-tools-hook-bridge';
+import { getWorkspaceRoot as getWindowWorkspaceRoot } from './services/window-workspace-roots.service';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
   defaultIsTrustedFrame,
   isTrustedRendererFileUrl,
+  setTrustedDevOrigin,
   setTrustedRendererFile,
 } from './safe-handle';
 import {
@@ -101,7 +128,7 @@ import {
   parseDevRendererUrl,
 } from './spike-gate';
 import { buildCommonWebPreferences } from './continuo-meta-args';
-import { isPopoutUrl } from './popout-url';
+import { isPopoutOnlyUrl, isPopoutUrl } from './popout-url';
 import {
   askDirtyClose,
   needsDirtyConfirm,
@@ -111,7 +138,11 @@ import {
   type DirtyState,
 } from './dirty-close-confirm';
 import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
-import { cleanupAllShellExecs, isAllowedExternalUrl } from './services/shell.service';
+import {
+  cleanupAllShellExecs,
+  isAllowedExternalUrl,
+  sanitizeExternalUrl,
+} from './services/shell.service';
 import { cleanupAllShellStreams } from './services/plugin-shell-stream.service';
 import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
@@ -521,7 +552,10 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
     return { action: 'deny' };
   }
   // 安全 S1:只允许指向本应用自己的 renderer 入口(dev server 同源 / 受信的 renderer 文件,精确 pathname)。
-  const allow = isOwnRendererUrl(url);
+  // 安全 L1:且只为 dockview popout 放行 —— query 恰好只有 popout=1。否则页面内容(Markdown 预览中键点
+  // 链接、target=_blank)可用 `index.html?workspace=%2F&fresh=1&windowSeq=0` 开出带完整 preload、以攻击者
+  // 指定目录为根的应用窗口。packaged 下的 `?spike=` 窗口也因此在这里被拒(原 spike-gate guardOpen 的意图)。
+  const allow = isOwnRendererUrl(url) && isPopoutOnlyUrl(url);
 
   if (allow) {
     return {
@@ -554,7 +588,7 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
 function openExternalIfAllowed(url: string): void {
   if (typeof url !== 'string' || url.length === 0 || url.length > MAX_EXTERNAL_URL_LEN) return;
   if (isAllowedExternalUrl(url)) {
-    shell.openExternal(url);
+    shell.openExternal(sanitizeExternalUrl(url));
   }
 }
 
@@ -593,6 +627,15 @@ ipcMain.on(PLUGINS_CHANNELS.PROTOCOL_READY, (event: IpcMainEvent) => {
   if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
   protocolReadyContents.add(win.webContents);
   drainOnProtocolReady(win, PLUGINS_CHANNELS.PROTOCOL_URL, pendingProtocolUrls);
+});
+
+// agent 授权:renderer 已订阅授权请求(reload 后新文档重新上报)→ 该窗口恢复接收授权弹窗(同 PROTOCOL_READY 的
+// 握手)。窗口由 sender 推断,不信 renderer 自报。
+ipcMain.on(AGENT_AUTH_CHANNELS.READY, (event: IpcMainEvent) => {
+  if (!defaultIsTrustedFrame(event.senderFrame)) return;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
+  markAgentAuthRendererReady(win.id);
 });
 
 export function createMainWindow(opts: CreateMainWindowOpts) {
@@ -732,7 +775,7 @@ async function openWorkspaceWindow(workspace?: string): Promise<void> {
 }
 
 async function openFolderInNewWindow(): Promise<void> {
-  const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  const r = await showOpenDialogRemembering({ properties: ['openDirectory'] });
   if (r.canceled || r.filePaths.length === 0) return;
   await openWorkspaceWindow(r.filePaths[0]!);
 }
@@ -834,6 +877,8 @@ app.on('browser-window-created', (_evt, win) => {
   // webContents id ≠ BrowserWindow id 且 'closed' 后 webContents 已销毁不可读 →
   // 在创建期(此刻 webContents 存活)先捕获 wcId。
   const wcId = win.webContents.id;
+  // agent 授权:从此刻(首次加载之前)起跟踪该窗口的 renderer 是否已能显示授权弹窗。
+  watchAgentAuthRenderer(win);
   win.once('closed', () => {
     void debugService.killByOwner(win.id, 'window-closed').catch((err) => {
       console.warn('[debug] killByOwner failed during window close', err);
@@ -870,15 +915,7 @@ function dispatchProtocolUrl(url: string): void {
   });
 }
 
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
-      path.resolve(process.argv[1]!),
-    ]);
-  }
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
-}
+registerDefaultProtocolClient(app, PROTOCOL, { defaultApp: process.defaultApp === true });
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -971,6 +1008,7 @@ app.on('open-file', (event, filePath) => {
 // P4+ C 方案:同时启 stdio server(unix socket),Claude Code 走 stdio 配置一次永久使用。
 let mcpHost: McpHost | null = null;
 let mcpStdio: StdioSocketServer | null = null;
+let mcpRevokerWiring: McpRevokerWiring | null = null;
 // stdio server 在首窗创建后 void 启动;退出清理先等它结束再 close(否则 listen 晚于 close → socket 残留)。
 let mcpStdioStarting: Promise<void> = Promise.resolve();
 // Stop hook broker 的停止函数(MCP host 启动成功后赋值),由 before-quit 不可逆清理阶段调用。
@@ -1021,7 +1059,7 @@ async function startMcpHost(): Promise<void> {
   const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
   const broker = createHookFileBroker(hookEventsDir);
   try {
-    await nodeFs.promises.mkdir(hookEventsDir, { recursive: true });
+    await ensureHookEventsDir(hookEventsDir); // 0700(多用户 Linux:事件含会话内容)
     try {
       await broker.start();
       brokerStarted = true;
@@ -1039,24 +1077,32 @@ async function startMcpHost(): Promise<void> {
         err,
       );
     }
+    // 安全(F3):cwd 与会话同一解析(resolveTerminalCwd,缺省回退窗口 workspace 根),且须在调用方窗口
+    // workspace 根之内、不得是 home 或其祖先 —— 否则不装(会话照建,stop_hook_installed:false)。
     const installStopHook = async (
       cwd: string | undefined,
       agentLabel: string,
-    ) => {
-      const resolvedCwd = cwd ?? '';
-      const runner = inferRunner({ id: '', cwd: resolvedCwd, agentLabel });
-      return installStopHookForSession(resolvedCwd, runner, hookEventsDir);
-    };
+      ownerWindowId: number,
+    ) =>
+      installStopHookInWorkspace({
+        cwd,
+        workspaceRoot: getWindowWorkspaceRoot(ownerWindowId),
+        homeDir: os.homedir(),
+        runner: inferRunner({ id: '', cwd: cwd ?? '', agentLabel }),
+        hookEventsDir,
+        resolveCwd: resolveTerminalCwd,
+      });
     const initialTools = [
       ...makeTerminalMcpTools({
         sessionStore: terminalSessions,
         service: termService,
         getSessionOwner,
         getSessionController: (id) => terminalSessions.getController(id),
-        ensureAuthorized: (ownerWindowId?: number, method?: string) =>
+        ensureAuthorized: (ownerWindowId: number, method?: string, external?: boolean) =>
           requestAgentAuth({
             method: method ?? 'terminal.create_session',
-            ...(ownerWindowId !== undefined ? { ownerWindowId } : {}),
+            ownerWindowId,
+            ...(external === true ? { external } : {}),
           }),
         createSession: createSessionForAgent,
         installStopHook,
@@ -1080,39 +1126,39 @@ async function startMcpHost(): Promise<void> {
         getSessionOwner: (id) => debugSessions.get(id)?.ownerWindowId ?? null,
         getSessionController: (id) =>
           debugSessions.get(id)?.controllerToken ?? null,
-        ensureAuthorized: (ownerWindowId: number, method?: string) =>
+        ensureAuthorized: (ownerWindowId: number, method?: string, external?: boolean) =>
           requestAgentAuth({
             method: method ?? 'debug.*',
             ownerWindowId,
+            ...(external === true ? { external } : {}),
           }),
       }),
     ];
-    mcpHost = await createMcpHost({
-      initialTools,
+    // 安全(F1):HTTP session 释放 / token 吊销回收其在途创建与 debug 会话;空闲驱逐跳过名下仍有活跃资源的 session。
+    const revokerWiring = createMcpRevokerWiring({
+      debugService,
+      cancelAgentTerminalCreates,
+      hasAgentTerminalCreates,
+      hasLiveSessionForController: terminalSessions.hasLiveSessionForController,
     });
+    mcpRevokerWiring = revokerWiring;
+    mcpHost = await createMcpHost({ initialTools, ...revokerWiring.hostOptions });
     setMcpEnvProvider((windowId: number) => {
       if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
       return createContinuoMcpEnv({
         windowId,
         url: mcpHost.url,
         issueToken: (id) => mcpHost!.issueWindowToken(id),
+        // 注入本实例的 stdio 端点(Windows 为本次启动的随机管道名,POSIX 为 <userData>/mcp.sock),终端里的
+        // proxy 直连本实例(见 resolveStdioSocketPath)。POSIX 上若不注入,dev 实例终端里的 proxy 会按候选顺序
+        // 优先连 packaged 的 socket,用 dev token 发 hello 必败。用户在 MCP 配置 env 里显式设置的
+        // CONTINUO_MCP_SOCKET 会覆盖 PTY env(行为不变)。
+        stdioSocketPath: resolveStdioSocketPath(),
       });
     });
     // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
     setMcpHostRef(mcpHost);
-    setMcpRevokers({
-      byWindow: (windowId) => mcpHost!.revokeWindowTokens(windowId),
-      // byToken 只用于终端专属 token(终端退出 / 创建回滚):token 失效后其经 HTTP MCP 创建的 debug
-      // 会话再无人能 disconnect → 同步回收(与 stdio 断连路径一致),否则名额被占满、adapter 常驻。
-      byToken: (token) => {
-        mcpHost!.revokeToken(token);
-        // 该 token 的在途 create_session 同样失去调用方(同 stdio 断连 abort ctx.signal):取消,不留孤儿会话。
-        cancelAgentTerminalCreates(token);
-        void debugService.killByController(token, 'terminal-exit').catch((err) => {
-          console.warn('[debug] killByController failed on terminal token revoke', err);
-        });
-      },
-    });
+    setMcpRevokers(revokerWiring.revokers(mcpHost));
     setAgentAuthControllerTeardown({
       // 含在途 launch 的调用方:会话尚未登记,只列已登记会话的话撤销时漏掉它们(见 DebugService.listControllerTokens)。
       listControllerTokens: () => debugService.listControllerTokens(),
@@ -1154,28 +1200,36 @@ async function startMcpHost(): Promise<void> {
 /**
  * stdio CLI proxy 路径:
  *  - packaged app:`<resourcesPath>/continuo-mcp-stdio.mjs`(electron-builder
- *    extraResources 拷过去)
+ *    extraResources 拷过去);Linux AppImage 等临时挂载位置 → `<userData>/bin/` 稳定副本
  *  - dev:`scripts/continuo-mcp-stdio.mjs`(项目根)
  */
-function resolveStdioCliPath(): string {
+function resolveStdioCliPath(): Promise<string | undefined> {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'continuo-mcp-stdio.mjs');
+    // 安全:Linux AppImage 的 resourcesPath 是运行期临时挂载点(退出即消失、名字他人可见可抢注),
+    // 不可持久写进 ~/.claude.json → 复制到 <userData>/bin 稳定副本;复制失败返回 undefined(不提供命令)。
+    return resolveStdioCliPathForConfig({
+      sourcePath: path.join(process.resourcesPath, STDIO_CLI_FILE_NAME),
+      userDataDir: app.getPath('userData'),
+      unstable: isUnstableResourcesPath(process.resourcesPath),
+    });
   }
   // dev:从 main 的 __dirname(out/main/)往上找项目根
-  return path.resolve(__dirname, '..', '..', 'scripts', 'continuo-mcp-stdio.mjs');
+  return Promise.resolve(path.resolve(__dirname, '..', '..', 'scripts', STDIO_CLI_FILE_NAME));
 }
 
 /**
  * stdio socket / named pipe 路径(跨平台):
  *  - macOS / Linux:`<userData>/mcp.sock`(unix socket,文件系统)
- *  - Windows:`\\.\pipe\continuo-mcp`(named pipe,不在文件系统;
- *    单实例 lock 已防双实例,无需 pid 后缀)
- *
- * CLI proxy(scripts/continuo-mcp-stdio.mjs)有同款默认值算法,两边对齐。
+ *  - Windows:`\\.\pipe\continuo-mcp-<用户哈希>-<128 bit 随机>`,本进程首次调用时生成、此后不变
+ *   (命名空间全机共享,可预测名会被其它用户抢注骗走 hello token,见 createWindowsStdioPipeName)。
+ *    proxy 经 PTY env CONTINUO_MCP_SOCKET 或 `<userData>/mcp-pipe` 发现文件拿到名字;
+ *    单实例 lock 保证每个 userData 只有一个实例写发现文件。
  */
+let windowsStdioPipePath: string | null = null;
 function resolveStdioSocketPath(): string {
   if (process.platform === 'win32') {
-    return '\\\\.\\pipe\\continuo-mcp';
+    windowsStdioPipePath ??= createWindowsStdioPipeName(os.userInfo());
+    return windowsStdioPipePath;
   }
   return path.join(app.getPath('userData'), 'mcp.sock');
 }
@@ -1190,9 +1244,14 @@ async function startMcpStdioServer(): Promise<void> {
   try {
     mcpStdio = await createStdioSocketServer({
       socketPath,
+      discoveryFile: process.platform === 'win32'
+        ? path.join(app.getPath('userData'), STDIO_PIPE_DISCOVERY_FILE)
+        : undefined,
       tools: mcpHost.tools,
       serverInfo: mcpHost.serverInfo,
       resolveWindowId: (token) => mcpHost!.resolveWindowId(token),
+      // 安全:token 吊销 / 轮换 → 已绑定的 stdio 连接立即失效、在途调用取消、其身份名下的在途创建与 debug 会话回收。
+      ...mcpRevokerWiring?.stdioOptions,
       // stdio 连接断开 → 其 subject 永久失效:回收它创建的 debug 会话(否则无人能 disconnect,
       // 名额被占满、adapter 常驻)。终端会话对用户可见、可手动关,不在此回收。HTTP subject 是窗口级
       // token,随窗口关闭 / 撤销回收(killByOwner / revokeAndKillAgentSessions),不按连接回收。
@@ -1202,10 +1261,22 @@ async function startMcpStdioServer(): Promise<void> {
         });
       },
     });
-    const cliPath = resolveStdioCliPath();
-    const claudeAddCommand = buildClaudeAddCommand(cliPath);
-     
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
+    const cliPath = await resolveStdioCliPath();
+    // 安全(AppImage 老用户迁移):~/.claude.json 里存量的临时挂载路径条目只读检查并提示(仅 Linux,不阻塞启动)
+    void warnIfLegacyUnstableClaudeConfig({
+      homeDir: os.homedir(),
+      claudeAddCommand: cliPath ? buildClaudeAddCommand(cliPath) : undefined,
+      t: getMainT(),
+      show: (opts) => dialog.showMessageBox(opts),
+      writeClipboard: (text) => clipboard.writeText(text),
+    });
+    if (!cliPath) {
+      // fail-closed:没有稳定 CLI 路径就不提供命令(状态栏显示不可用),绝不给临时挂载路径
+      setStdioConfig({ available: true, socketPath: mcpStdio.socketPath });
+      return;
+    }
+    const claudeAddCommand = buildClaudeAddCommand(cliPath);
     // 打印推荐的 claude mcp add 命令,用户复制即可一次配置永久使用
      
     console.log(
@@ -1238,6 +1309,16 @@ app.whenReady().then(async () => {
   // 与 windowOpenHandler 只信这个 file URL,拒绝任意 file:// 弹窗/frame 受信。放在
   // whenReady(而非模块顶层)以免被仅 import index 的单测污染全局注册态。
   setTrustedRendererFile(RENDERER_FILE);
+  // dev server origin 同样在此注入,且以 isDev 为闸:打包版即使环境里带着 ELECTRON_RENDERER_URL
+  // 也不信该 origin(与 isOwnRendererUrl / createMainWindow 的 dev 判定一致)。
+  setTrustedDevOrigin(
+    isDev ? (parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL'])?.origin ?? null) : null,
+  );
+  // 安全:Chromium 权限默认拒绝,仅受信 renderer 入口的剪贴板读写放行(见 permission-policy)。
+  // 须在建任何窗口之前注册,否则首窗加载期的权限请求走 Electron 默认放行。
+  installPermissionHandlers(session.defaultSession);
+  // 安全:拒绝带主机名的 file: 请求(Windows UNC/SMB 外连泄露 NTLM,见 file-request-policy)。
+  installFileRequestGuard(session.defaultSession, RENDERER_FILE);
 
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
@@ -1270,7 +1351,15 @@ app.whenReady().then(async () => {
   // Plugin → MCP bridge 接线(host 已就绪,renderer 通过 IPC 注册的 tool 走它)。
   // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉;
   // stdio 用取值函数:就绪前只推 HTTP,就绪后同时推 stdio。
-  if (mcpHost) startPluginMcpIpc(mcpHost, () => mcpStdio);
+  if (mcpHost) {
+    startPluginMcpIpc(mcpHost, () => mcpStdio, (ownerWindowId, method, external) =>
+      requestAgentAuth({
+        method: method ?? 'plugin.*',
+        ownerWindowId,
+        ...(external === true ? { external } : {}),
+      }),
+    );
+  }
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
@@ -1464,7 +1553,7 @@ app.on('before-quit', async (event) => {
   // 都必须跑(关最后一个窗口触发的 quit 路径 wins 已空,旧 every() 守卫会跳过它)。
   // 在 app.quit() 前 await:window 'closed' 清理走 3s grace timer,进程退出不触发 SIGKILL。
   // 窗口已隐藏、无人应答授权弹窗:同步拒绝所有未决 agent 授权,挂在授权上的 MCP 工具调用随即结算,
-  // 不把下面的 mcpHost close 拖到 5min 授权超时(close 自身也会断开现存连接并设上限)。
+  // 不把下面的 mcpHost close 拖到 授权超时(agent 2min)(close 自身也会断开现存连接并设上限)。
   cancelAllAgentAuth();
   quitTrace('cleanup begin');
   // 插件 shell 子进程(一次性 exec / 流式)是 detached 进程组,不随 IDE 退出终止;立即强杀整树并等待。

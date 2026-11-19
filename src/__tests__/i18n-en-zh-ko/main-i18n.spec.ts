@@ -46,4 +46,12 @@ describe('main i18n translate', () => {
       replaceSpy.mockRestore();
     }
   });
+
+  it('key 为 Object.prototype 成员名 → 回 key 字符串,不返回函数', async () => {
+    const { getMainT } = await import('../../../electron/main/i18n');
+    const t = getMainT();
+    for (const key of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+      expect(t(key)).toBe(key);
+    }
+  });
 });

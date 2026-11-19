@@ -28,10 +28,17 @@ import { useEditorStore } from '../../stores/editor.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
 import { useLayoutUiStore } from '../../stores/layout-ui.store';
 import { useTerminalStore } from '../../stores/terminal.store';
-import { _resetAgentAuthForTest, useAgentAuthStore } from '../../stores/agent-auth.store';
+import {
+  _resetAgentAuthForTest,
+  hasAnySessionGrant,
+  useAgentAuthStore,
+} from '../../stores/agent-auth.store';
 import { coApp } from '../../plugins/co-app';
 import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
 import { notify } from '../../notifications/notify';
+import { en } from '../../../electron/shared/i18n-locales/en';
+import { zh } from '../../../electron/shared/i18n-locales/zh';
+import { ko } from '../../../electron/shared/i18n-locales/ko';
 
 interface FakeApi {
   mcp?: { getStdioConfig: ReturnType<typeof vi.fn> };
@@ -548,9 +555,10 @@ function clickRevoke(btn: HTMLButtonElement, confirm: boolean): void {
   const dialog = document.querySelector('.wm-modal-content')!;
   expect(dialog).not.toBeNull();
   const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'));
+  // 撤销是 destructive 确认框:确认按钮为 danger variant,初始焦点(data-autofocus)在取消。
   const target = confirm
-    ? buttons.find((b) => b.hasAttribute('data-autofocus'))!
-    : buttons.find((b) => !b.hasAttribute('data-autofocus'))!;
+    ? buttons.find((b) => b.getAttribute('data-variant') === 'danger')!
+    : buttons.find((b) => b.getAttribute('data-variant') !== 'danger')!;
   fireEvent.click(target);
   expect(document.querySelector('.wm-modal-content')).toBeNull();
 }
@@ -577,6 +585,61 @@ describe('StatusBar — agent 撤销', () => {
       expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
       expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
     });
+  });
+
+  // 安全回归:外部客户端(stdio 未发 hello)的「本次启动期间允许」记在 external* 上。外部客户端获 debug.launch
+  // 授权(等同任意代码执行)且当时无 agent 终端时,撤销入口也必须可见,否则只能退出应用撤销。
+  it.each([
+    ['external 终端', { externalSessionGranted: true }],
+    ['external debug', { externalDebugSessionGranted: true }],
+  ])('无 agent 会话、仅有 %s 授权 → 仍显示撤销入口,确认后全部清除', async (_name, granted) => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, ...granted });
+
+    const { container } = render(<StatusBar />);
+    const btn = container.querySelector<HTMLButtonElement>('[data-agent-revoke]');
+    expect(btn).not.toBeNull();
+    clickRevoke(btn!, true);
+
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalled();
+      expect(hasAnySessionGrant(useAgentAuthStore.getState())).toBe(false);
+    });
+  });
+
+  // 撤销 IPC 失败回滚只恢复窗口级授权;外部客户端授权往拒绝方向,不恢复。
+  it('撤销 IPC 失败 → 窗口级授权回滚,external 授权不恢复', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({
+      pending: null,
+      pluginSessionGranted: true,
+      externalDebugSessionGranted: true,
+    });
+
+    const { container } = render(<StatusBar />);
+    clickRevoke(container.querySelector<HTMLButtonElement>('[data-agent-revoke]')!, true);
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().externalDebugSessionGranted).toBe(false);
+    errSpy.mockRestore();
+  });
+
+  // 撤销同时清终端 / 调试 / 插件工具三个域(agent-auth.store revoke),文案须如实列出插件工具域,
+  // 否则用户以为插件工具授权(可 git stage/commit 等)未被撤销。
+  it.each([
+    ['en', en, /plugin tool/i],
+    ['zh', zh, /插件工具/],
+    ['ko', ko, /플러그인 도구/],
+  ] as const)('%s:无会话撤销确认 / 撤销入口提示 文案包含插件工具域', (_l, dict, re) => {
+    expect(dict['permissions.revoke_all.confirm_grant_only']).toMatch(re);
+    expect(dict['statusbar.agent_revoke_grant_tooltip']).toMatch(re);
   });
 
   it('既无 agent 会话也无任何授权 → 不显示撤销入口', () => {

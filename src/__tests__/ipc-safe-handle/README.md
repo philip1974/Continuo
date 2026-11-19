@@ -14,7 +14,7 @@
 6. **`defaultIsTrustedFrame` 行为**:
    - `null` 或空 url → false
    - `file://` 协议 → true(prod renderer 加载方式)
-   - dev 下与 `ELECTRON_RENDERER_URL` 同 origin → true
+   - dev 下与 index.ts 注入(`setTrustedDevOrigin`,以 `isDev` 为闸)的 dev server origin 同 origin → true;未注入(打包版)时即使环境里有 `ELECTRON_RENDERER_URL` 也 → false;注入值不是规范 origin(如不透明 origin 的 `"null"`)视为未注入
    - 跨 origin / URL 不可解析 → false
 
 ## 不在本主题验证

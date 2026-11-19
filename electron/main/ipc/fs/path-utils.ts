@@ -18,6 +18,7 @@ export function mapNodeErrnoCode(err: unknown): FsErrorCode {
     case 'ENOTDIR':
       return ERROR_CODES.FS_NOT_DIRECTORY;
     case 'EISDIR':
+    case 'EFTYPE': // readFileCappedFd:FIFO / socket / 设备等非普通文件
       return ERROR_CODES.FS_NOT_FILE;
     // ERR_FS_CP_EEXIST:fs.cp(force:false, errorOnExist:true) 目标已存在时的专用码,语义同 EEXIST。
     case 'EEXIST':

@@ -44,6 +44,8 @@ export const ko: Record<TranslationKey, string> = {
   'errors.EEXIST': '파일이 이미 있습니다',
   'errors.GIT_FAILED': 'Git 명령 실패',
   'errors.GIT_SPAWN_FAILED': 'git 시작 실패',
+  'errors.GIT_TIMEOUT':
+    'Git 명령 시간이 초과되었습니다. git 설정이 https를 ssh로 바꾸는 경우 ssh 호스트 키가 이미 신뢰되어 있고 대화형 암호가 필요 없는지 확인하세요',
   'errors.INVALID_ID': '잘못된 ID',
   'errors.MARKETPLACE_INDEX_INVALID': '원격 인덱스가 올바른 배열이 아닙니다',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': '메인 프로세스에 GitHub 토큰이 설정되지 않았습니다',
@@ -62,6 +64,9 @@ export const ko: Record<TranslationKey, string> = {
   'errors.PAYLOAD_TOO_LARGE': '페이로드가 너무 큽니다',
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED': '플러그인 파일 접근 토큰 회수에 실패하여 작업을 중단했습니다. 다시 시도하세요.',
   'errors.PLUGIN_ID_MISMATCH': '저장소의 플러그인 id가 마켓플레이스 항목과 일치하지 않습니다',
+  'errors.PLUGIN_SYMLINK_REJECTED': '플러그인 저장소에 심볼릭 링크가 포함되어 있어 설치를 거부했습니다',
+  'errors.PLUGIN_REPO_TOO_LARGE': '플러그인 저장소가 크기 또는 파일 수 제한을 초과하여 설치를 중단했습니다',
+  'errors.PLUGIN_DATA_PRESERVE_FAILED': '플러그인 데이터를 보존할 수 없어 업데이트를 중단했습니다(설치된 버전과 데이터는 변경되지 않았습니다)',
   'errors.RM_FAILED': '삭제 실패',
   'errors.TERMINAL_CREATE_CANCELLED': '터미널 생성이 취소되었습니다',
   'errors.TERMINAL_CWD_UNRESOLVED': '터미널 cwd를 확인할 수 없습니다',
@@ -72,6 +77,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.TERMINAL_SESSION_DUPLICATE': '터미널 세션 중복',
   'errors.TERMINAL_SESSION_NOT_FOUND': '터미널 세션을 찾을 수 없습니다',
   'errors.TOO_MANY_STREAMS': '활성 스트림이 너무 많습니다',
+  'errors.TOO_MANY_WINDOWS': '열린 창이 너무 많습니다',
   'errors.TOO_MANY_TERMINALS': '터미널 세션이 너무 많습니다',
   'errors.WORKSPACE_NOT_ABSOLUTE': '작업 공간은 절대 경로여야 합니다: {path}',
   'errors.WORKSPACE_NOT_DIRECTORY': '작업 공간이 디렉터리가 아닙니다: {workspace}',
@@ -87,6 +93,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.FS_FILE_TOO_LARGE': '파일이 너무 커서 열 수 없습니다',
   'errors.FS_NOT_UTF8': '바이너리이거나 UTF-8 인코딩이 아닌 파일이라 텍스트 편집기에서 열 수 없습니다',
   'errors.FS_DIR_TOO_LARGE': '디렉터리 항목이 너무 많습니다',
+  'errors.FS_BUSY': '진행 중인 파일 작업이 너무 많습니다. 잠시 후 다시 시도하세요',
   'errors.FS_NOT_FOUND': '파일을 찾을 수 없습니다: {path}',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
@@ -173,6 +180,10 @@ export const ko: Record<TranslationKey, string> = {
   'dialog.unsaved_close.save_failed': '{count}개 파일을 저장하지 못해 창을 닫지 않았습니다.',
   'dialog.unsaved_close.disk_changed_note':
     '그중 {count}개 파일은 디스크에서 다른 프로그램이 수정하여 덮어쓰지 않았습니다. 편집기에서 Cmd/Ctrl+S로 충돌을 해결하거나 \'저장 안 함\'을 선택하세요.',
+  'dialog.mcp_legacy_config.message': 'Claude Code의 Continuo MCP 설정이 임시 경로를 가리키고 있습니다',
+  'dialog.mcp_legacy_config.detail':
+    "~/.claude.json의 MCP 서버 {names}이(가) 이전 AppImage의 임시 마운트 경로를 가리킵니다. Continuo가 종료된 후 이 컴퓨터의 다른 사용자가 그 위치에 같은 이름의 스크립트를 두면 Claude Code가 사용자 권한으로 실행합니다. 해당 프로젝트 디렉터리에서 `claude mcp remove {first}`를 실행한 뒤(user 범위 설정은 `-s user` 추가) 상태 표시줄의 'MCP 설정 복사'에 있는 새 명령을 실행하세요.",
+  'dialog.mcp_legacy_config.copy': '새 명령 복사',
   'dock.empty.message': '모든 패널이 닫혀 있습니다.',
   'dock.empty.restore': '기본 레이아웃 복원',
   'panels.explorer.loading_or_empty': '로딩 중이거나 빈 폴더',
@@ -294,6 +305,12 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.debug_launch': '디버그 세션 시작',
   'permissions.agent.debug_control': '디버그 세션 제어(중단점, 단계 실행, 변수)',
   'permissions.agent.generic': '{method} 호출',
+  'permissions.agent.external_caller':
+    '요청 출처: 외부 클라이언트(Continuo 터미널에 연결되지 않음). 이 창의 어떤 터미널에도 속하지 않으며, 권한은 이 창의 터미널 에이전트 권한과 별도입니다.',
+  'permissions.agent.plugin_tool': '플러그인 도구 {name} 호출',
+  'permissions.agent.title_plugin': '에이전트가 플러그인 도구 호출을 요청합니다',
+  'permissions.agent.hint_plugin':
+    '권한을 부여하면 MCP 토큰을 가진 에이전트가 설치된 플러그인이 등록한 도구(예: Git 스테이지 / 커밋)를 호출할 수 있습니다. 플러그인 도구는 플러그인의 권한으로 실행되므로 신뢰하는 에이전트에게만 허용하세요. 이번 실행 동안만 유효합니다.',
   'permissions.agent.title': '에이전트가 내장 터미널 제어를 요청합니다',
   'permissions.agent.title_debug': '에이전트가 디버거 제어를 요청합니다',
   'permissions.agent.hint_debug':
@@ -309,7 +326,7 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.grant_session': '이번 실행 동안 허용',
   'permissions.revoke_all.title': '에이전트 터미널 권한을 취소할까요?',
   'permissions.revoke_all.confirm_grant_only':
-    '이번 실행 중 에이전트에 부여된 터미널 및 디버거 인증을 취소하고 디버그 세션을 종료합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 이후 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
+    '이번 실행 중 에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소하고 디버그 세션을 종료합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 기존 터미널의 에이전트는 다시 인증을 요청할 수 없으므로 새 터미널에서 다시 시작해야 합니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.confirm':
     '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.failed':
@@ -329,7 +346,7 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.mcp.revoke_tooltip': '전체 {count}개의 에이전트 터미널을 종료하고 인증을 취소합니다',
   'statusbar.agent_sessions': 'agent {count}개',
   'statusbar.agent_authorized': '에이전트 인증됨',
-  'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널 및 디버거 인증을 취소합니다',
+  'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소합니다',
   'statusbar.no_workspace': '작업 공간 없음',
   'statusbar.sidebar_hidden': '사이드바 숨김',
   'statusbar.untitled_file': '제목 없음',
@@ -494,15 +511,17 @@ export const ko: Record<TranslationKey, string> = {
 
   // permissions.* perm labels
   'permissions.perm.fs.title': '파일 시스템',
-  'permissions.perm.fs.desc': '로컬 폴더 및 파일 읽기/쓰기',
+  'permissions.perm.fs.desc': '승인한 폴더 안의 파일 읽기/쓰기(폴더별로 별도 확인)',
   'permissions.perm.network.title': '네트워크 액세스',
-  'permissions.perm.network.desc': 'HTTP / WebSocket 등 원격 요청 시작',
+  'permissions.perm.network.desc': '임의의 https 주소로 요청 전송(이 컴퓨터(localhost) 및 내부 네트워크 서비스 포함)',
   'permissions.perm.shell.title': 'Shell 명령 실행',
-  'permissions.perm.shell.desc': '로컬 셸 / 하위 프로세스 호출',
+  'permissions.perm.shell.desc':
+    '사용자 권한으로 임의의 프로그램 실행. 폴더 권한의 제한을 받지 않으며, 로컬 파일과 네트워크에 대한 전체 액세스와 같습니다',
   'permissions.perm.clipboard.title': '클립보드',
   'permissions.perm.clipboard.desc': '시스템 클립보드 읽기/쓰기',
   'permissions.perm.mcp_tools.title': 'MCP 도구 등록',
-  'permissions.perm.mcp_tools.desc': '플러그인 사용자 정의 도구를 Agent / Claude Code 등 MCP 클라이언트에 노출',
+  'permissions.perm.mcp_tools.desc':
+    '도구 등록: 이름과 설명이 AI Agent(Claude Code 등 MCP 클라이언트)에 표시되며, Agent가 호출할 수 있습니다',
 
   // permissions prompt UI
   'permissions.prompt.title': '권한 요청',
@@ -510,7 +529,10 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.prompt.note_prefix': '체크하지 않은 것은 거부로 간주됩니다. 지원:',
   'permissions.prompt.note_partial': '부분 권한 부여',
   'permissions.prompt.note_suffix': ': 플러그인이 권한 없는 API 호출 시 거부(PermissionError 발생)되지만 전체적으로 활성화 가능. 모두 거부하면 플러그인은 활성화되지 않음.',
+  'permissions.grant_guard.rejected':
+    '아직 적용되지 않았습니다. 잠시 멈춘 뒤 한 번 클릭하거나, 포커스를 잠시 둔 뒤 Enter / Space를 누르세요.',
   'permissions.prompt.select_all': '모두 선택',
+  'permissions.prompt.select_all_except_shell': '모두 선택(Shell 제외)',
   'permissions.prompt.deny_all': '모두 거부',
   'permissions.prompt.grant_selected': '선택 허용 ({count})',
 

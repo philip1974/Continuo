@@ -21,6 +21,7 @@ import {
   type WriteRecordResult,
 } from '../storage/local-storage-record';
 import { coApp } from '../co-app';
+import { ownValue } from '../../../electron/shared/own-value';
 
 const STORAGE_KEY = 'continuo.settings.values';
 
@@ -80,7 +81,7 @@ export const useSettingsValuesStore = create<SettingsValueState>((set, get) => (
       v = v.slice(0, MAX_SETTING_TEXT_LEN);
     }
     const latest = readStored();
-    if (Object.is(latest[id], v)) {
+    if (Object.is(ownValue(latest, id), v)) {
       if (recordsShallowEqual(get().values, latest)) return;
       set({ values: latest });
       return;
@@ -98,9 +99,9 @@ export const useSettingsValuesStore = create<SettingsValueState>((set, get) => (
   },
   reset: (id) => {
     const latest = readStored();
-    if (!(id in latest)) {
+    if (!Object.hasOwn(latest, id)) {
       // 别窗可能已删该 key;本窗内存若仍有则收敛到 latest。
-      set((s) => (id in s.values ? { values: latest } : s));
+      set((s) => (Object.hasOwn(s.values, id) ? { values: latest } : s));
       return;
     }
     const next = { ...latest };
@@ -133,11 +134,17 @@ subscribeStorageKey(STORAGE_KEY, () =>
   }),
 );
 
+/** 取某 setting id 的已存储值(无 → undefined);只认自有属性,见 ownValue。 */
+export function getStoredSettingValue(id: string): SettingItemValue | undefined {
+  return ownValue(useSettingsValuesStore.getState().values, id);
+}
+
 /** 取某 spec 当前值(override ?? default). 非 React 上下文用. */
 export function getSettingValue<T extends SettingItemValue>(
   spec: SettingItemSpec,
 ): T {
-  const stored = useSettingsValuesStore.getState().values[spec.id];
+  // 只认自有属性:插件 setting id 为 constructor 等时不得命中原型链(返回函数而非 default)。
+  const stored = getStoredSettingValue(spec.id);
   const v = stored ?? spec.default;
   // 边界(E6 number clamp + E139 select enum):读路径按 spec 规整已持久化/篡改值,防越界 number /
   // 非法 select 字符串喂给 xterm fontSize/cursorStyle 等消费者。与 useSettingValue 共用 coerceSettingValue。
@@ -150,7 +157,7 @@ export function useSettingValue<T extends SettingItemValue>(
   fallback: T,
 ): T {
   return useSettingsValuesStore((s) => {
-    const v = (s.values[id] ?? fallback) as T;
+    const v = (ownValue(s.values, id) ?? fallback) as T;
     // 边界(E122 number clamp + E139 select enum,E6 读路径对齐):按注册 spec 规整值,与 getSettingValue
     // 共用 coerceSettingValue —— 篡改/旧 localStorage 的越界 number 或非法 select 字符串(如
     // terminal.cursorStyle)绕过净化直接喂给 xterm/CSS/timer 等消费者。spec 未注册(测试/早期)原样返回。

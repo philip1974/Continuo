@@ -14,7 +14,8 @@ let reg: PathScopeRegistry;
 let token: string;
 
 beforeEach(async () => {
-  tmpRoot = await mkdtemp(join(tmpdir(), `sdk-contract-scope-${randomUUID()}-`));
+  // canonical:直接 grant 的 scope 只认 canonical 根(经 requestScope 登记的写法见 plugin-fs-scope-existence-oracle)。
+  tmpRoot = await realpath(await mkdtemp(join(tmpdir(), `sdk-contract-scope-${randomUUID()}-`)));
   tmpCanonical = await realpath(tmpRoot);
   ids = new IdentityRegistry();
   reg = new PathScopeRegistry(ids);

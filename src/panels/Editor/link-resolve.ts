@@ -84,6 +84,19 @@ function readUncRoot(
   return { root: `${p.slice(0, rootEnd)}\\`, restStart: i };
 }
 
+/**
+ * UNC 卷键:`\\server\share` 统一成小写 + 反斜杠,供同卷比较。非 UNC / 残缺 UNC(无 share)/
+ * 设备命名空间(`\\?\`、`\\.\`,其后的 `UNC\host\share` 不构成不可越过的根)→ null。
+ */
+function uncShareKey(p: string): string | null {
+  if (!isUncPath(p)) return null;
+  const uncRoot = readUncRoot(p);
+  if (uncRoot === null) return null;
+  const server = p.charCodeAt(2);
+  if ((server === 63 || server === 46) && isPathSeparatorCode(p.charCodeAt(3))) return null;
+  return uncRoot.root.replaceAll('/', '\\').toLowerCase();
+}
+
 /** 跨平台绝对路径:POSIX `/`、Windows 盘符、UNC。 */
 function isAbsolutePathLike(p: string): boolean {
   return p.charCodeAt(0) === 47 || isWindowsDriveAbsolute(p) || isUncPath(p);
@@ -200,5 +213,16 @@ export function resolveLink(
     absPath = `${dir}/${pathPart}`;
   }
 
-  return { kind: 'file', absPath: normalize(absPath) };
+  const resolved = normalize(absPath);
+  // 安全(仅 Windows,NTLM 凭据泄露):打开 UNC 路径会让主进程 lstat/open 向该主机发起
+  // SMB/WebDAV(`\\host@SSL\share` 走 HTTPS 绕 445 封锁)并自动 NTLMv2 认证。markdown 来源不受信 →
+  // 解析结果是 UNC 时,只放行与当前文档**同一 server+share** 的路径(UNC 工作区内链接照常可用,
+  // 那台主机已在访问中);其余(本地文档里写的 UNC、跨主机/跨 share、设备命名空间)一律不打开。
+  if (isUncPath(resolved)) {
+    const key = uncShareKey(resolved);
+    if (key === null || currentFilePath === null || key !== uncShareKey(currentFilePath)) {
+      return null;
+    }
+  }
+  return { kind: 'file', absPath: resolved };
 }

@@ -1,13 +1,21 @@
 // 权限授权 Modal(M-Plugin v3.4)。
 // 订阅 promptStore,无 pending 时不渲染。
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
 import { PermissionOptionRow } from './PermissionOptionRow';
+import {
+  PROMPT_GRANT_BUTTON_PROPS,
+  usePromptGrantGuard,
+  type GrantClick,
+  type PromptGrantGuard,
+} from '@/lib/use-prompt-grant-guard';
+import { PromptGrantHint } from '@/lib/prompt-grant-hint';
+import { UNTRUSTED_PATH_MAX_CHARS, UntrustedText } from '@/lib/untrusted-text';
 
 const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
@@ -37,23 +45,55 @@ export function copySelectedPermissions(
 }
 
 /**
+ * 安全:默认不预选的权限,须用户逐项主动勾选才会授予(「全选」也不含它们)。`shell` 等同于完全访问本机(以用户
+ * 身份运行任意程序,不受文件夹授权限制),不能随一次「授权选中」/「全选」顺手给出;其余权限照旧默认预选。
+ */
+const NOT_PRESELECTED: ReadonlySet<PermissionKey> = new Set<PermissionKey>(['shell']);
+
+function defaultSelected(perms: readonly PermissionKey[]): Set<PermissionKey> {
+  const selected = new Set<PermissionKey>();
+  for (const perm of perms) if (!NOT_PRESELECTED.has(perm)) selected.add(perm);
+  return selected;
+}
+
+// 每个 manifest 请求一个 body 实例(pending 无自带 id,按对象身份编号):排队 A→B 时勾选与初始焦点都重新来过。
+const manifestKeys = new WeakMap<Pending, number>();
+let nextManifestKey = 0;
+function manifestKey(pending: Pending): number {
+  let key = manifestKeys.get(pending);
+  if (key === undefined) {
+    key = nextManifestKey++;
+    manifestKeys.set(pending, key);
+  }
+  return key;
+}
+
+/**
  * 轻量 shell(打磨 R52,仿 R32/R50):权限弹窗绝大多数时间为空闲态。外层只订阅
  * pending / currentFsScope 两个队列字段,都空时直接返回 null。manifest 弹窗与
  * fs-scope 弹窗各自拆成 body 子组件,仅在对应请求存在时挂载 —— 空闲态不再 useT、
- * 不订阅 grant/deny actions、不初始化 selected state/effect。manifest 优先。
+ * 不订阅 grant/deny actions、不初始化 selected state。manifest 优先。
+ *
+ * 防误触(守卫放在 shell 里,body 换类型 / remount 不丢状态;实现见 lib/use-prompt-grant-guard):
+ * - 授予方向(canGrant):键盘激活须是停顿后的有意按键;此外请求出现后短时间内无效 —— 首次出现(时机由插件决定:启用时的 manifest 权限、运行时的
+ *   requestScope)与切换(同类排队 A→B、fs-scope↔manifest 类型切换)都算。manifest 弹窗里勾上权限 /「全选」也算
+ *   授予方向(之后一次「授权选中」就带上它们);取消勾选不设防。
+ * - 拒绝方向(switchSettled):首次出现立即可用;只在直接切换后短时间内无效(新弹窗按钮与旧弹窗在同一位置,对旧
+ *   弹窗连点 / Esc 键重复的第二下不能把新请求拒掉 —— manifest 的拒绝会写盘)。
+ * 初始焦点在拒绝按钮上。
  */
-/** 排队切换到下一个请求后,忽略「授予 / 全部拒绝」点击的时长(覆盖一次双击的间隔)。 */
-const HANDOVER_GUARD_MS = 500;
-
 export function PermissionPrompt() {
   const pending = usePermissionPromptStore((s) => s.pending);
   const currentFsScope = usePermissionPromptStore((s) => s.currentFsScope);
-  if (pending) return <ManifestPromptBody pending={pending} />;
-  if (currentFsScope) return <FsScopePromptBody scope={currentFsScope} />;
+  const guard = usePromptGrantGuard(pending ?? currentFsScope);
+  if (pending) return <ManifestPromptBody key={manifestKey(pending)} pending={pending} guard={guard} />;
+  if (currentFsScope) {
+    return <FsScopePromptBody key={currentFsScope.requestId} scope={currentFsScope} guard={guard} />;
+  }
   return null;
 }
 
-function ManifestPromptBody({ pending }: { pending: Pending }) {
+function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: PromptGrantGuard }) {
   const t = useT();
   const grant = usePermissionPromptStore((s) => s.grant);
   const denyAll = usePermissionPromptStore((s) => s.denyAll);
@@ -64,29 +104,19 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
     () => splitPluginIdTemplate(promptBodyTemplate),
     [promptBodyTemplate],
   );
-  // body 仅在某次 pending 存在时挂载;同一身份的请求保持勾选,默认全选。
-  // 用 pending.pluginId+perms 作 key 在 shell 端 remount 即可重置,这里直接初值全选。
-  const [selected, setSelected] = useState<Set<PermissionKey>>(
-    () => new Set(pending.perms),
+  // 以请求身份为 key 挂载(shell 端):换请求即 remount,勾选回到新请求的默认值(shell 不预选)。
+  const [selected, setSelected] = useState<Set<PermissionKey>>(() =>
+    defaultSelected(pending.perms),
   );
-  // pending 直接 A→B 覆盖(排队的下一个请求;不经 null,body 不 remount)时也重置勾选为新请求的默认全选,
-  // 并记下切换时刻:B 的按钮与 A 的在同一位置且默认全选,对 A 连点的第二下不能落到 B 上。
-  const firstPendingRef = useRef(pending);
-  const handoverAtRef = useRef<number | null>(null);
-  useEffect(() => {
-    setSelected(new Set(pending.perms));
-    if (pending !== firstPendingRef.current) handoverAtRef.current = Date.now();
-  }, [pending]);
-  const decisionArmed = (): boolean =>
-    handoverAtRef.current === null || Date.now() - handoverAtRef.current >= HANDOVER_GUARD_MS;
   // 引用必须稳定:Modal 的焦点 / 键盘 effect 依赖 onClose,每次渲染换新引用会让它反复重跑
-  //(勾选一次,焦点就先被还给弹窗外、再跳回弹窗内第一个元素)。只读 ref,无需其它依赖。
+  //(勾选一次,焦点就先被还给弹窗外、再跳回弹窗内第一个元素)。guard 引用稳定。
   const handleClose = useCallback(() => {
-    const at = handoverAtRef.current;
-    if (at === null || Date.now() - at >= HANDOVER_GUARD_MS) denyAll();
-  }, [denyAll]);
+    if (guard.switchSettled()) denyAll();
+  }, [guard, denyAll]);
 
-  const toggle = (perm: PermissionKey) => {
+  const toggle = (perm: PermissionKey, e: GrantClick) => {
+    // 勾上 = 授予方向,与授予按钮同一守卫;取消勾选不设防。
+    if (!selected.has(perm) && !guard.canGrant(e)) return;
     setSelected((s) => {
       const next = new Set(s);
       if (next.has(perm)) next.delete(perm);
@@ -98,7 +128,7 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
   return (
     <Modal
       visible
-      // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,同样受切换守卫约束。
+      // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,与拒绝按钮同一守卫(只在切换后短时间内无效)。
       onClose={handleClose}
       aria-labelledby="permission-prompt-title"
     >
@@ -109,7 +139,7 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
       <p className="mb-2 text-xs text-fg-muted">
         {/* tpl 含 {pluginId}；inline <code> 渲染 — 拆 prefix/suffix */}
         {promptBodyParts.prefix}
-        <code className="text-fg">{pending.pluginId}</code>
+        <UntrustedText text={pending.pluginId} />
         {promptBodyParts.suffix}
       </p>
       <p className="mb-3 text-2xs text-fg-dim">
@@ -131,36 +161,47 @@ function ManifestPromptBody({ pending }: { pending: Pending }) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setSelected(new Set(pending.perms))}
+          onClick={(e) => {
+            // 授予方向;不含默认不预选的权限(shell 只能逐项手动勾选),已勾选的保持。
+            if (!guard.canGrant(e)) return;
+            setSelected((s) => new Set([...s, ...defaultSelected(pending.perms)]));
+          }}
         >
-          {t('permissions.prompt.select_all')}
+          {t(
+            pending.perms.includes('shell')
+              ? 'permissions.prompt.select_all_except_shell'
+              : 'permissions.prompt.select_all',
+          )}
         </Button>
         <div className="flex gap-2">
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              if (decisionArmed()) denyAll();
-            }}
+            // 初始焦点放在拒绝方向(Modal 默认聚焦第一个可聚焦元素 = 第一个勾选框)。
+            data-autofocus
+            onClick={handleClose}
           >
             {t('permissions.prompt.deny_all')}
           </Button>
           <Button
             variant="primary"
             size="sm"
-            onClick={() => {
-              if (decisionArmed()) grant(copySelectedPermissions(selected));
+            {...PROMPT_GRANT_BUTTON_PROPS}
+            onClick={(e) => {
+              if (guard.canGrant(e)) grant(copySelectedPermissions(selected));
             }}
           >
             {t('permissions.prompt.grant_selected', { count: selected.size })}
           </Button>
         </div>
       </div>
+      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }
 
-function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
+// 以 requestId 为 key 挂载(shell 端):换请求即 remount。
+function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: PromptGrantGuard }) {
   const t = useT();
   const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
   const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
@@ -171,10 +212,15 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
     () => splitPluginIdTemplate(fsScopeBodyTemplate),
     [fsScopeBodyTemplate],
   );
+  const { requestId } = scope;
+  // Esc(键重复)/ 点遮罩也是拒绝入口,与拒绝按钮同一守卫(只在切换后短时间内无效);引用稳定(同 manifest 分支)。
+  const handleClose = useCallback(() => {
+    if (guard.switchSettled()) denyFsScope(requestId);
+  }, [guard, denyFsScope, requestId]);
   return (
     <Modal
       visible
-      onClose={() => denyFsScope(scope.requestId)}
+      onClose={handleClose}
       aria-labelledby="permission-fs-scope-title"
     >
       {/* a11y(A13):同上,fs-scope 弹窗关联标题。 */}
@@ -184,7 +230,7 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
       <p className="mb-3 text-xs text-fg-muted">
         {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
         {fsScopeBodyParts.prefix}
-        <code className="text-fg">{scope.pluginId}</code>
+        <UntrustedText text={scope.pluginId} />
         {fsScopeBodyParts.suffix}
       </p>
       <ul className="mb-4 space-y-1 text-xs">
@@ -193,8 +239,10 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
             key={`${s.path}:${i}`}
             className="rounded border border-line bg-panel-soft p-2"
           >
-            <div className="font-mono text-fg">
-              {s.displayPath}
+            {/* 安全:路径由插件给出(≤ 8192 字符)。可见化(换行 / 控制字符 / 双向控制字符)并从中间截断,
+                保留首尾 —— 否则超长路径把按钮挤出视野、U+202E 让显示的路径与实际授予的不符。 */}
+            <div>
+              <UntrustedText text={s.displayPath} max={UNTRUSTED_PATH_MAX_CHARS} />
             </div>
             <div className="text-fg-dim">
               {t('permissions.fs_scope.mode_label')}:{' '}
@@ -209,18 +257,24 @@ function FsScopePromptBody({ scope }: { scope: FsScopePrompt }) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => denyFsScope(scope.requestId)}
+          // 初始焦点在拒绝方向。
+          data-autofocus
+          onClick={handleClose}
         >
           {t('permissions.fs_scope.deny')}
         </Button>
         <Button
           variant="primary"
           size="sm"
-          onClick={() => grantFsScope(scope.requestId)}
+          {...PROMPT_GRANT_BUTTON_PROPS}
+          onClick={(e) => {
+            if (guard.canGrant(e)) grantFsScope(requestId);
+          }}
         >
           {t('permissions.fs_scope.grant')}
         </Button>
       </div>
+      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }

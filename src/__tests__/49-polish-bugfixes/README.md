@@ -37,6 +37,10 @@
 - main 入口须是普通文件(目录 → `BAD_MAIN`,不落地);`branch` 选项 → `--branch=<b>`
   (非法/前导 `-` → `BAD_INPUT`,不启动子进程);`expectedId` ≠ manifest.id → `PLUGIN_ID_MISMATCH`。
   marketplace 卡片安装/更新经 `entryInstallOptions(entry)` 传 `{ expectedId, branch }`。
+- 更新(overwrite,已有旧目录)保留插件数据:swap 前在锁内把旧目录的 `data.json` 带进 staging,**覆盖**仓库自带的
+  同名文件(更新不让仓库内容取代用户数据);旧目录没有 `data.json` → 仓库自带的照旧保留(同全新安装)。
+  只认普通文件(noFollow:符号链接 / 硬链接 / 非普通文件拒)、≤ plugin-data 上限、合法 UTF-8;不满足或读写失败 →
+  `PLUGIN_DATA_PRESERVE_FAILED`,中止更新,旧版本与数据原样保留、无 staging 残留。
 
 ## P2 批次(资源/边界/体验)
 
@@ -69,7 +73,8 @@
 
 ### P2-F atomicReplace 泄漏 trash 可被回收 — `electron/main/__tests__/trash-sweep.test.ts` T20bis.e
 - `trashPathFor(finalPath, unique)` 产出的 trash 名以 `TRASH_PREFIX`(`.trash-`)开头
-  且落在同父目录,`sweepStaleTrashInDir` 按前缀匹配能命中。
+  且落在同父目录,`sweepStaleTrashInDir` 能命中(现只认宿主生成的精确形态,见
+  `plugin-fs-atomic-replace-trash`)。
 - 根因: 旧实现 trash 名是 `${finalPath}.trash-...`(后缀形式 `foo.json.trash-...`),
   不以 `.trash-` 开头,sweep 永远漏掉。rename 回滚失败(line 489)泄漏的 trash 会
   永久驻留插件目录。旧测试只用字面量 `.trash-old` 掩盖了这个 bug。
@@ -126,6 +131,12 @@
   `path.join(baseDir,'..')` 解析到 baseDir 父目录;overwrite 安装(marketplace「更新」
   路径直接传 `overwrite=true`)随即 rename 覆盖/挪走父目录 = 路径穿越。社区插件
   `verified` 仅徽章不阻止安装。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
+- 首字符不得为 `.` / `_`(plugins 目录元数据与临时目录命名空间);`-` 开头仍合法 —— 已装的这类插件须照常
+  列举可见、可卸载(否则 renderer 静默跳过 + 卸载 INVALID_ID → 目录永久残留)。
+- 末字符不得为 `.`,且不得是 Windows 保留设备名(`con` / `prn` / `aux` / `nul` / `com0-9` / `lpt0-9`,含
+  `nul.x` 这类带扩展名形式),各平台统一。根因: Win32 去掉路径段尾部的点,`foo.` 与 `foo` 落到同一安装目录
+  与 data 文件,而互斥锁 / 权限 / scope 的键是两个 id;设备名作目录名指向设备。`com.example.foo`、`console`、
+  `x.nul` 等不受影响。
 
 ### P2-M atomicWriteFile 去掉 .backup 数据丢失窗口 — `atomic-write-no-backup-window.spec.ts`
 - 用户文档原子写简化为「写 tmp+fsync → rename(tmp→path)」,移除覆盖前的
@@ -239,6 +250,14 @@
   socket 仍连着。旧 dispatch 直接用陈旧 windowId 构造 ctx(非 null)→ 跳过 fallback
   分支 → `BrowserWindow.fromId(deadId)=null` → 所有 tools/call 撞 TERMINAL_NO_WINDOW/
   SESSION_NOT_FOUND,该 proxy 连接对所有工具**永久损坏**(即使别的窗口活着)。
+- **安全修订(F4)**:只有**未发 hello** 的连接(外部 MCP client)才回落到当前活窗;发过 hello 的连接绑定窗口
+  关闭后 fail-closed —— tools/call 回 `NO_WINDOW_CTX`、不执行工具(tools/list 不受影响)。回落会让窗口 A 里
+  agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。该 proxy 随 A 的终端退出。
+- **安全修订(hello 失败)**:hello **本身失败**(token 无效 / 已轮换、窗口在 hello 到达前已关)同样记为「已尝试
+  hello」,tools/call 回 `NO_WINDOW_CTX`,不被当作外部客户端回落主窗。连接状态机:未 hello → 外部客户端;
+  hello 成功 → 绑定窗口;hello 失败或绑定窗口已关 → 拒绝。
+- **安全修订(token 吊销)**:hello 成功后绑定所用的 token 被吊销 / 轮换 → 连接同样降为「hello 失败」(每次请求
+  复查 token),可用新 token 重新 hello 恢复。见 `stdio-revoked-token-binding/`。
 
 ### P2-X update/reviews store 并发 refresh 不被过期结果覆盖 — `marketplace-update-store/update-store.spec.ts`
 - `useUpdateStore.refresh` / `useReviewsStore.refresh` 各加单调 `gen` 守卫:捕获本次
@@ -1171,6 +1190,13 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
   授权不弹窗,新代码继承旧目录读写授权。顺序:renderer 先回收 plugin-fs token(失败 `PLUGIN_FS_TOKEN_REVOKE_FAILED`
   中止),再调 main 卸载;main 先清 enabled / permissions / path scope,全部成功后才删目录。
 
+### 卸载间隙的授权不把 path scope 写回磁盘 — `uninstall-scope-persist-race.spec.ts`
+- 授权弹窗「授权」后的 scope 落盘走 `persistPluginPathScopesIfInstalled`:与卸载共用同 id mutation 锁,锁内确认插件目录仍在,
+  否则拒 `NOT_INSTALLED`(调用方 best-effort 吞掉,本会话内存授权随后被卸载的 `revokePluginFsAccess` 撤销)。
+- 任意交错下卸载完成后磁盘无该插件 scope:卸载前到达的写入随后被卸载清掉;卸载中(scope 已清、rm 未完成)到达的写入等卸载结束后被拒。
+- 根因:卸载先清 `_plugin-path-scopes.json` 再 rm 目录,返回后才撤内存 token;间隙里另一窗口点「授权」→ token 仍 active →
+  直接写盘把 scope 写回 → 同 id 重装冷启动水合旧 scope,`covers()` 静默授权。
+
 ### 退出时在途 HTTP MCP 请求不拖住 mcpHost.close() — `mcp-host-close-inflight.spec.ts`
 - `close()` 停止接新连接后立即 `closeAllConnections()` 断开现存连接(挂在授权 await 上的在途 POST 被断开,服务端
   `ctx.signal` abort),整个关闭上限 2s。
@@ -1207,3 +1233,77 @@ helper + 必挂 browser-window-created),把「单一来源」固化进测试防�
 - 修复:`fsync → close → stat(tmp)` 作 written(dev/ino/mtime/size),再 `rename → stat(target)` 比对(NTFS rename
   保留 FileId 与 LastWriteTime)。不一致(外部改写)或 stat(tmp) 失败 → `undefined`,退化为整文件读,永不误判为回声;
   写盘与 tmp 清理的错误路径不变。macOS/Linux 行为不变。
+
+### Windows stdio MCP 命名管道每次启动随机命名 + 发现文件 — `security-windows-stdio-pipe-per-user.spec.ts`
+- 攻击场景(Windows 专属):命名管道命名空间全机共享。可预测名(旧固定名 `\\.\pipe\continuo-mcp`,或仅由用户名 /
+  profile 目录推导的名字)下,同机其它用户先建同名管道 → 本用户 Continuo 绑定失败(EADDRINUSE 被吞成告警),终端里的
+  stdio proxy 连到对方管道并在 hello 中交出 `{windowId, token}` → 对方拿 token 调本用户的 127.0.0.1 HTTP MCP。
+- 契约:
+  - 主进程每次启动生成 `\\.\pipe\continuo-mcp-<sha256(小写用户名 \0 小写 profile 目录) 前 32 hex>-<128 bit 随机 hex>`,
+    每次不同;只接受形如 `^\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$` 的名字(拒绝远程管道 / 任意路径 / 多行)。
+  - 每个 PTY 注入 `CONTINUO_MCP_SOCKET=<该名>`(与 `CONTINUO_MCP_TOKEN` 同处注入),proxy 优先读它。**所有平台**都注入本实例端点
+    (POSIX 为 `<userData>/mcp.sock`):否则 dev 实例终端里的 proxy 按候选顺序优先连 packaged 的 socket,用 dev token 发 hello 必败。
+  - 启动时(任何准备 / listen 之前)先删 `<userData>/mcp-pipe` 旧文件(崩溃残留);listen 成功后才原子写入两行
+    「管道名 + 主进程 pid」,启动失败不留文件;close 时内容仍是自己写的(名字 + 本进程 pid)才删除。
+  - proxy 在 win32 且无 env 时按 `%APPDATA%\Continuo` → `%APPDATA%\Continuo Dev` 读 `mcp-pipe`,内容非法则跳过;
+    格式合法还须其中的 pid 仍存活(`process.kill(pid, 0)`,EPERM 视为存活),否则跳过该候选 —— 崩溃 / 强杀残留的
+    发现文件不用;只有管道名一行的旧格式没有 pid 可验,同样跳过(fail-closed)。
+    都读不到 → 报错退出,不回落确定性名。proxy 的校验正则 / 读取逻辑(`<windows-pipe-discovery>` 标记段)与主进程逐项比对。
+  - proxy 对候选(win32 的合法发现文件;macOS / Linux 存在的 packaged / dev socket)按序连接,连不上(ENOENT /
+    ECONNREFUSED 等)试下一个,全部失败才报错退出(`<connect-candidates>` 标记段直测 + 端到端:过期 packaged socket
+    回落到运行中的 dev)。`CONTINUO_MCP_SOCKET` 显式指定时只连它;win32 上其值同样须是合法本机 continuo-mcp
+    管道名(`isAcceptableEnvSocket`),否则报错退出;POSIX 上是任意 socket 路径,名字不校验(归属校验见下一节)。
+  - macOS / Linux 不写发现文件(PTY env 注入见上)。
+- 残余窗口:Continuo 崩溃后到下次启动之间发现文件仍在,其中的管道名可被同机其它用户抢注。proxy 的 pid 存活检查
+  挡住「写入者已死」的情形;但该 pid 若已被系统复用给别的进程,检查仍判为存活,此期间在 Continuo 终端外启动的
+  proxy(不发 hello,不泄 token)仍可能连到对方管道收到伪造工具结果。下次启动即删除。
+
+### POSIX stdio proxy 只连属于当前用户的 unix socket — `security-stdio-socket-owner.spec.ts`
+- 攻击场景(macOS / Linux,多用户机器):项目级 MCP 配置(不可信仓库里的 `.mcp.json` 等)的 env 段把
+  `CONTINUO_MCP_SOCKET` 指向同机其它用户监听的 unix socket。proxy 在 Continuo 终端里启动(env 带窗口 token),
+  连上后在 hello 里把 `{windowId, token}` 发给对方 → 对方拿 token 调本用户的 127.0.0.1 HTTP MCP。
+- 契约(`<posix-socket-trust>` 标记段直测 + 启动真实 proxy 的端到端):连接前对每个候选先 `realpath`,
+  校验**解析后的路径**,并**连接解析后的路径**(不是原路径)——
+  - 解析后的路径是 socket 且属主是当前用户;
+  - 其父目录属主是当前用户且 group / other 不可写(否则他人可在校验与连接之间换掉 socket)。
+  主进程把 socket 建在 0700 的 userData 里(`setupSocketDir`),必然满足。
+  - 只校验原路径不够:路径中间有别人可改的符号链接(`/tmp/link/mcp.sock`)时,校验时指向本人的 socket、
+    连接前换成指向别人的即可绕过;连接解析后的路径则与该链接此后的指向无关。
+  - `realpath` / `stat` 失败(不存在、无权限 …)= 不可信(fail-closed),不再「交给连接去试」。
+  - `CONTINUO_MCP_SOCKET` 指定的不满足 / 无法校验 → 报错退出:不连接、不发 hello、不透传(连上不发 hello 对方仍可伪造工具结果)。
+  - 默认候选(packaged / dev)不满足 → 跳过并在 stderr 说明,继续试下一个。Windows 分支(管道名校验)不变。
+- 行为变化:把 `CONTINUO_MCP_SOCKET` 指到 `/tmp` 等非本人目录的自定义用法不可用;指向符号链接的,只要解析后
+  落在本人的可信目录里即可用(连接的是解析后的路径)。
+- 残余:解析后路径的更上层祖先目录若他人可写且无 sticky 位,仍可在校验与连接之间被整体替换(只校验了直接父目录)。
+- 残余:同一用户的其它进程监听的 socket 仍会通过校验(同 uid 进程本就能读终端 env 里的 token)。
+
+### HTTP MCP 调用方身份绑定 Mcp-Session-Id — `security-http-mcp-session-subject.spec.ts`
+- 攻击场景(已被提示注入、已获终端授权的 agent):HTTP 传输下 per-session capability 的 `callerSubject` 就是 bearer
+  token,而 token 经 PTY env `CONTINUO_MCP_TOKEN` 注入每个终端;同用户进程可读其它进程环境(macOS `ps eww -ax` 实测
+  可读同 uid 进程 env,Linux `/proc/<pid>/environ`)。攻击方 agent 读到受害终端 agent 的 token → 直接 POST /mcp 调
+  read_output / send_input / kill / await_stop_hook 操作受害方经 HTTP 创建的会话。stdio 不受影响(subject 为每连接
+  随机 uuid);默认接入方式是 stdio,本条只影响手动配置 HTTP 传输的用户。
+- 契约:
+  - `initialize` 响应头下发随机 `Mcp-Session-Id`(服务端生成,不进 env / 日志 / 响应体);带该头的请求
+    `callerSubject = token + session id`。攻击方拿到 token 只能 initialize 出自己的新 session,身份与受害方不同。
+  - 回带的 session id 不存在 / 属于别的 token → HTTP 404(MCP 规范:未知 session 回 404),工具不执行。
+  - 未带该头的旧客户端 `callerSubject = token`(行为不变),与带 session 的客户端身份互不相通。
+  - 单 token session 数上限,超限 initialize → 429;达上限时只驱逐**空闲超阈值、无在途请求、且名下无活跃资源**
+    (debug 会话 / 在途 launch、在途终端创建、其创建且未退出的终端,`hasLiveResources`)的最旧 session,全部候选都有
+    资源则仍 429 —— 防持 token 方反复 initialize 驱逐停在断点的受害方、杀其 debug 会话 / 让其终端沦为孤儿;
+    session 随 `revokeToken` / `revokeWindowTokens` / `rotateToken` / `DELETE /mcp`(带 session id)释放。
+  - session 每次被删除(DELETE / 空闲驱逐 → `closed`;`revokeToken` → `token-revoked`;`revokeWindowTokens` →
+    `window-revoked`)都经 `onHttpSessionReleased(subject, cause)` 通知一次(幂等)。回收接线在
+    `electron/main/services/mcp-revoker-wiring.ts`:`closed` 取消在途创建 + `killByController(subject,'session-closed')`;
+    `token-revoked` 同样回收但 reason 为 `terminal-exit`,`byToken` 再回收 token 本身;`window-revoked` 不经此回收
+    (窗口关闭由 `killByOwner('window-closed')` 与终端 kill 负责)。
+- 残余(未收口):token 本身仍可被同 uid 进程读到(如 `ps eww`)。持 token 者可经 HTTP 或 stdio `_continuo/hello`
+  被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」静默 create_session / debug_launch 等;per-session
+  capability 仍生效(读控不了受害方的会话)。真正收口需把 token 绑定到持有终端的进程树,当前未做。未回带
+  `Mcp-Session-Id` 的非规范客户端仍以 token 为身份。
+
+### 生产 CSP 的 connect-src 不放行 localhost — `csp-localhost-dev-only.spec.ts`
+- `index.html`(生产构建产物来源)的 connect-src 只含 `https:`(不含 `'self'`:file:// 源下 `'self'` = 全盘 file:,Worker 内 fetch 只有 CSP 能拦);`http://localhost:*` / `ws://localhost:*` /
+  `wss://localhost:*` 只为开发期 Vite HMR,由 `scripts/vite-csp-dev-connect.ts`(`apply: 'serve'`)仅在 dev server
+  加回。生产产物 `out/renderer/index.html` 不含 localhost,renderer 被注入脚本时不能借 CSP 探测本机端口服务。
+- dev 变换找不到 connect-src 锚点即抛错(index.html 改 CSP 须同步插件,不静默丢失 HMR 来源)。

@@ -225,6 +225,8 @@ export interface CreateSessionToolDeps {
    */
   readonly ensureAuthorized: (
     ownerWindowId: number,
+    method?: string,
+    external?: boolean,
   ) => Promise<'once' | 'session' | 'denied'>;
   /**
    * 实际 spawn PTY + 入 sessions service。由 main 启动入口注入,把
@@ -234,9 +236,11 @@ export interface CreateSessionToolDeps {
     input: CreateSessionPtyInput,
     ctx: McpCallCtx,
   ) => Promise<{ id: string }>;
+  /** 安全(F3):ownerWindowId 用于把安装位置限定在调用方窗口的 workspace 根之内。 */
   readonly installStopHook?: (
     cwd: string | undefined,
     agentLabel: string,
+    ownerWindowId: number,
   ) => Promise<{ installed: boolean; reason?: string }>;
   /** 回收刚建好的会话(kill PTY + 删 metadata);创建期间调用方断开时调用。 */
   readonly discardSession?: (sessionId: string) => void;
@@ -257,7 +261,8 @@ export function makeCreateSessionTool(
         cwd: {
           type: 'string',
           maxLength: PATH_MAX,
-          description: 'Working directory for the spawned shell (default: user home).',
+          description:
+            "Working directory for the spawned shell (default: the current window's workspace root; fails with TERMINAL_CWD_UNRESOLVED if the window has none or the directory does not exist).",
         },
         name: {
           type: 'string',
@@ -327,7 +332,8 @@ export function makeCreateSessionTool(
     input: CreateSessionBoundedInput,
     ctx: McpCallCtx & { readonly signal: AbortSignal },
   ): Promise<CreateSessionOutput> {
-    const decision = await deps.ensureAuthorized(ctx.ownerWindowId);
+    // 安全(F2):外部客户端(stdio 未发 hello)带 external 标记,不借窗口级授权。
+    const decision = await deps.ensureAuthorized(ctx.ownerWindowId, undefined, ctx.external === true);
     if (decision === 'denied') {
       throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');
     }
@@ -343,6 +349,7 @@ export function makeCreateSessionTool(
         stopHookInstalled = await deps.installStopHook(
           input.cwd,
           input.agentLabel ?? 'agent',
+          ctx.ownerWindowId,
         );
       } catch {
         stopHookInstalled = { installed: false };

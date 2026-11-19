@@ -29,7 +29,10 @@ import { isPopoutWindow } from './lib/popout-mode';
 import { prefetchDockLayout } from './shell/dock/layout-prefetch';
 import { useUpdateStore } from './marketplace/update-store';
 import { useKeybindingsStore } from './plugins/keybindings/keybindings-store';
-import { useSettingsValuesStore } from './plugins/settings/values-store';
+import {
+  getStoredSettingValue,
+  useSettingsValuesStore,
+} from './plugins/settings/values-store';
 import { openOrFocusPanel, focusPanel } from './shell/dock/dock-api-ref';
 import { useEditorStore } from './stores/editor.store';
 import { useTerminalStore } from './stores/terminal.store';
@@ -303,7 +306,7 @@ export async function init(): Promise<void> {
       getEditorActiveTabId: () => useEditorStore.getState().activeTabId,
       setSettingValue: (id, v) =>
         useSettingsValuesStore.getState().setValue(id, v),
-      getSettingValue: (id) => useSettingsValuesStore.getState().values[id],
+      getSettingValue: (id) => getStoredSettingValue(id),
       requestPermissions: (pluginId, perms) =>
         usePermissionPromptStore.getState().request(pluginId, perms),
       commandCount: () => coApp.commands.getAll().length,

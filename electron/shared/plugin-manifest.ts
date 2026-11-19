@@ -47,14 +47,14 @@ const VERSION_MAX = PLUGIN_VERSION_MAX_LEN;
 export const ManifestSchema = z.object({
   // 反 DNS 命名:小写字母 / 数字 / . _ -。边界(E123):此前只用裸正则 /^[a-z0-9._-]+$/,放行
   // "."/".."(纯点段=路径穿越语义),与 main isSafePluginId、marketplace isValidPluginId 契约漂移
-  //(三处)。改用共享 isValidPluginId(charset + 拒 ./..)收敛,防手工放入的畸形本地 manifest
+  //(三处)。改用共享 isValidPluginId(规则见 ./plugin-id)收敛,防手工放入的畸形本地 manifest
   // 经 renderer parseManifest 进 PluginManager 成脏 entry(仅启用时主进程才拒)。
   id: z
     .string()
     .min(1)
     .max(PLUGIN_ID_MAX_LEN)
     .refine(isValidPluginId, {
-      message: 'id 仅允许小写字母数字与 . _ -,且不能为 . 或 ..',
+      message: 'id 仅允许小写字母数字与 . _ -,不能以 . 或 _ 开头、不能以 . 结尾,且不能是 Windows 保留设备名',
     }),
   name: z.string().min(1).max(NAME_MAX),
   version: z.string().max(VERSION_MAX).regex(SEMVER_RE),

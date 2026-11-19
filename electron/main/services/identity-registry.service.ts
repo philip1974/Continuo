@@ -83,6 +83,15 @@ export class IdentityRegistry {
     return ids;
   }
 
+  /** 该 pluginId 在所有窗口的 token(含 drain 中)。供撤销时结算其未决 scope 请求,不做授权判断。 */
+  tokensFor(pluginId: string): string[] {
+    const out: string[] = [];
+    for (const [token, entry] of this.entries) {
+      if (entry.pluginId === pluginId) out.push(token);
+    }
+    return out;
+  }
+
   /** Latest generation registered for a pluginId (0 if never). */
   currentGeneration(pluginId: string): number {
     return this.generations.get(pluginId) ?? 0;
@@ -120,6 +129,16 @@ export class IdentityRegistry {
   revokeByWebContents(webContentsId: number): void {
     for (const [token, entry] of this.entries) {
       if (entry.webContentsId === webContentsId) this.revoke(token);
+    }
+  }
+
+  /**
+   * 插件卸载时调用:该 pluginId 在所有窗口的 token 走与 revoke 相同的 drain(isActive 转 false),
+   * 使挂起中的 scope 授权弹窗即便随后被点「授权」也不会落地复活 scope。
+   */
+  revokeByPlugin(pluginId: string): void {
+    for (const [token, entry] of this.entries) {
+      if (entry.pluginId === pluginId) this.revoke(token);
     }
   }
 

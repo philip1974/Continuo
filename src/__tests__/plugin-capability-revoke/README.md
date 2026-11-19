@@ -27,7 +27,7 @@
   | `notifications.show` / `dock.openPanel` | 抛 `code: 'PERMISSION_DENIED'`(无对应权限项的 UI 副作用) |
   | 贡献点注册 / 订阅:`panels / commands / statusBar / ribbon / settingTabs / settingItems / explorerDecorators / editorActions / explorerContextMenu` 的 `register`、`subscribe`;`events.on` | 抛 `code: 'PERMISSION_DENIED'`,不入共享注册表 |
   | `commands.execute` | 返回 reject 的 Promise(`code: 'PERMISSION_DENIED'`),命令不执行 —— 宿主命令(`window.new` / `terminal.new` 等)会创建不归插件、回收清不掉的窗口 / 终端 |
-  | `events.emit` / `events.clear` | 抛 `code: 'PERMISSION_DENIED'` —— emit 触发他人监听的副作用;clear 清掉他人订阅 |
+  | `events.emit` / `events.clear` | 抛 `code: 'PERMISSION_DENIED'` —— emit 触发他人监听的副作用;clear 吊销后同样拒绝(未吊销时只清本插件自己的订阅,见 scoped-app README) |
   | 注册表 / 总线上其余未列入「不阻断」的成员 | 同上抛 `PERMISSION_DENIED`(白名单放行,新增方法默认阻断) |
   | `editor.openFile` | 返回 `{ ok: false, code: 'PERMISSION_DENIED' }`(其契约返回结果对象不抛) |
 
@@ -125,6 +125,29 @@ app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell /
   `PluginManager.handlePermissionsChanged(id)` → `recheckMcpPermission()`:已无 `mcp-tools` 授权则经原
   Disposable 注销该实例全部工具(main 侧 stub 同步移除);之后插件停用再 dispose 为幂等 no-op。仍授权 → 不动。
 
+### 4. 撤销 fs(`electron/main/ipc/plugins.ipc.ts` 的 MUTATE_PLUGIN_PERMISSIONS / `plugin-fs.ipc.ts` 的 `revokePluginPathScopes`)
+
+plugin-fs 主进程不看 `fs` 权限项(只靠 renderer 的 `ensurePerm`),路径授权记在 `PathScopeRegistry` 与
+`_plugin-path-scopes.json`。此前只有卸载 / 注销才撤 scope:权限编辑里撤销 `fs` 再勾上,以前批准的所有路径不经弹窗直接
+恢复(request-scope 命中 `covers()` 静默授予;重启后从磁盘水合同样恢复)。
+
+- 任何把 `fs` 置为拒绝的权限变更(权限编辑保存、权限弹窗拒绝等,统一经 `mutatePluginPermissions` 的 `set`/`granted:false`)
+  成功后,main 撤销该插件全部内存 scope(并标记本会话「已水合(空)」,在途 / 之后的水合读不把旧 scope 写回)、删除
+  `_plugin-path-scopes.json` 里该插件的条目。持久化失败如实报错(权限项本身已撤销)。
+- 之后重新授予 `fs`,再访问原路径须重新弹窗。其它插件的 scope、撤销其它权限项、plugin-fs token 均不受影响。
+- 撤销时该插件(任一窗口 / 实例,经 `IdentityRegistry.tokensFor` 枚举)正挂着的 scope 弹窗一并结算为取消
+  (`correlator.cancelByToken`):renderer 收到 `plugin-fs:scope-request-cancelled` 撤掉弹窗,请求方得到 `deny`(不记入
+  拒绝冷却),之后点「授权」送不到。此前弹窗留着,用户一点「授权」scope 照样落地并写回 `_plugin-path-scopes.json`。
+- 还没走到弹窗的在途请求(撤销落在归一化 / 水合读盘 / 冷却键的 await 间隙):request-scope 开始时记下
+  `PathScopeRegistry.revocationEpoch(pluginId)`(revokeAll 次数),弹窗前与落地前比对,变了即 `deny`、不弹窗、不落地。
+- 撤销与「用户点授权」交错(撤销写 `_permissions.json` 期间用户点了挂起弹窗的「授权」):清盘走与授权持久化同一把
+  同 id 锁(`persistPluginPathScopesIfInstalled`,FIFO),排在已带旧快照入队的持久化之后 → 最终盘上无该插件条目;
+  重新授予 `fs` 并「重启」后再请求原路径仍弹窗。清盘时插件已被卸载(NOT_INSTALLED)视为已清。
+- 水合对照 `_permissions.json`(纵深):冷启动水合前读权限记录,该插件当前未持有 `fs` 授权 → 不水合任何 scope(请求照常
+  弹窗),并在同 id 锁内清掉盘上残留;权限文件读失败 → 按空水合(fail-closed)。持有 `fs` 授权 → 照常水合、已批准路径
+  不弹窗。主进程 request-scope / plugin-fs 运行时不另查 `fs` 授权:内存 scope 只来自用户在弹窗中的授予或经上述对照的
+  水合,撤销路径清内存。
+
 ## 规范文件
 
 - `deactivate-revoke.spec.ts`:revoke 后各能力拒绝且不发 IPC、不阻断项照常;授权等待期间被吊销;PluginManager
@@ -145,6 +168,9 @@ app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell /
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
   激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。
+- `fs-permission-revoke-scopes.spec.ts`:授予 scope → 撤销 fs → 重新授予 fs → 原路径重新弹窗;持久化条目删除、其它插件不受影响;
+  撤销后本会话不再水合;撤销其它权限项不动 scope;撤销与「授权」交错后盘上不残留、「重启」后仍弹窗;水合对照 fs 授权
+  (未授权不水合并清残留、已授权照常水合)。
 - `mcp-permission-revoke.spec.ts`:撤销后调用被拒;变更通知后注销工具(stub 移除)、调用 NO_SUCH_TOOL;仍授权保留;
   直接 `app.mcp.register` 不保存 Disposable → 停用 / 热重载 / onload 抛错后工具注销,再启用同名注册成功。
 

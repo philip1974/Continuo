@@ -8,6 +8,7 @@
 
 import type { FsApi } from '@/lib/fs/api';
 import type { IpcResult } from '@/lib/fs/types';
+import type { IpcFail } from '../../../electron/shared/ipc-result';
 import { errorCodeOf, errorMessage } from '../../../electron/shared/error-message';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import {
@@ -60,7 +61,7 @@ export interface EditorFileDeps {
 
 export type FileOpResult = IpcResult<void>;
 
-const exception = (err: unknown): FileOpResult => ({
+const exception = (err: unknown): IpcFail => ({
   ok: false,
   // IPC reject 带的稳定 code 原样保留(无则 EXCEPTION),调用方才能按 code 本地化。
   code: errorCodeOf(err),
@@ -75,7 +76,34 @@ export async function openFileByPath(
   path: string,
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {
-  const { fs, store } = deps;
+  const r = await openTabWith(path, deps, () => deps.fs.readFile(path));
+  return r.ok ? OPENED : r;
+}
+
+const OPENED: FileOpResult = { ok: true, data: undefined };
+
+/**
+ * 安全(插件 editor.openFile):用主进程已校验并读出的内容开标签,不再经宿主受信通道按路径另读一次(见
+ * src/__tests__/plugin-editor-open-verified/)。path 必须是主进程返回的 canonical 路径(不含链接,所以不带 realPath)。
+ * 其余与 openFileByPath 相同:已开过 → 只切换(不覆盖已开标签的内容);用户激活代际;读后复检并发打开。
+ * 新建的标签带 pluginOpenedPath 标记(不进会话快照,关闭时释放主进程记录)。data = 是否新建了标签。
+ */
+export function openFileWithContent(
+  path: string,
+  content: string,
+  deps: Pick<EditorFileDeps, 'store'>,
+): Promise<IpcResult<boolean>> {
+  return openTabWith(path, deps, async () => ({ ok: true, data: content }), path);
+}
+
+/** data = 是否新建了标签(false:已开着只切换)。 */
+async function openTabWith(
+  path: string,
+  deps: Pick<EditorFileDeps, 'store'>,
+  read: () => Promise<IpcResult<string> & { readonly realPath?: string }>,
+  pluginOpenedPath?: string,
+): Promise<IpcResult<boolean>> {
+  const { store } = deps;
   // 已开过 → 只切换。跨平台(codex 复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
   // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
   // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
@@ -83,7 +111,7 @@ export async function openFileByPath(
   const existing = findEditorFileTabByPath(store.getState().tabs, path);
   if (existing) {
     store.getState().switchTab(existing.id);
-    return { ok: true, data: undefined };
+    return { ok: true, data: false };
   }
 
   warmEditorEngineFor(path);
@@ -95,7 +123,7 @@ export async function openFileByPath(
 
   let r;
   try {
-    r = await fs.readFile(path);
+    r = await read();
   } catch (err) {
     return exception(err);
   }
@@ -109,14 +137,16 @@ export async function openFileByPath(
   const raced = findEditorFileTabByPath(store.getState().tabs, path);
   if (raced) {
     if (latest) store.getState().switchTab(raced.id);
-    return { ok: true, data: undefined };
+    return { ok: true, data: false };
   }
 
-  const tab = createTab(path, r.data, r.realPath);
+  const created = createTab(path, r.data, r.realPath);
+  const tab = pluginOpenedPath === undefined ? created : { ...created, pluginOpenedPath };
   store
     .getState()
     .openTab(tab, latest ? undefined : { activate: false, requestFocus: false });
-  return { ok: true, data: undefined };
+  // openTab 可能拒开(tab 数 / 路径长度上限)→ 按 store 里是否真有这个标签对象判定
+  return { ok: true, data: store.getState().tabs.includes(tab) };
 }
 
 /**

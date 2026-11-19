@@ -463,6 +463,31 @@ describe('反向请求的回复', () => {
     });
   }
 
+  it('runInTerminal 反向请求不执行 → 如实回复 success:false 并说明不支持(不谎报已启动)', async () => {
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const socket = connected(client);
+    client.receiveMessage({
+      seq: 7,
+      type: 'request',
+      command: 'runInTerminal',
+      arguments: { kind: 'integrated', cwd: '/work', args: ['node', 'evil.js'] },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const replies = socket.written.map((chunk) => {
+      const text = chunk.toString('utf8');
+      return JSON.parse(text.slice(text.indexOf('\r\n\r\n') + 4)) as Record<string, unknown>;
+    });
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toMatchObject({
+      type: 'response',
+      request_seq: 7,
+      command: 'runInTerminal',
+      success: false,
+      message: 'runInTerminal not supported',
+    });
+    expect(replies[0]).not.toHaveProperty('body');
+  });
+
   it('socket 已关闭时收到不支持的反向请求 → 不抛、无未处理 rejection', async () => {
     process.on('unhandledRejection', onUnhandled);
     const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });

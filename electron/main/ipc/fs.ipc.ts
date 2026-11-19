@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, shell } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -18,7 +18,8 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
-import { atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
+import { guardPluginOpenedPath } from '../services/plugin-fs.service';
+import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
@@ -26,6 +27,7 @@ import { copyEntry, moveEntry } from './fs/move-copy';
 import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
+import { showOpenDialogRemembering } from '../lib/open-dialog';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -165,9 +167,19 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
 // 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
 export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
   atomicWriteFile(input.path, input.content);
+// 安全:注册到 fs:read-file / fs:write-file 的是这两个包装 —— 路径是插件经 editor.openFile 打开过的标签时,
+// 读 / 写前在 plugin-fs 锁内确认路径没有被换入链接(见 guardPluginOpenedPath);其它路径原样直通。
+export const guardedReadFileHandler = (input: ReadFileInput): Promise<FsReadFileData> =>
+  guardPluginOpenedPath(input.path, () => readFileHandler(input));
+export const guardedWriteFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
+  guardPluginOpenedPath(input.path, () => writeFileHandler(input));
 // writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
-const writeBinaryHandler = async (input: WriteBinaryInput): Promise<void> => {
-  await atomicWriteFile(input.path, input.content);
+// 安全:唯一调用方是外部文件拖入 Explorer(新建 / 放入语义,同名静默覆盖)。不复用编辑器保存的
+// atomicWriteFile —— 它对 leaf 符号链接写穿到目标:恶意仓库放 `README.md -> ~/.ssh/authorized_keys`,
+// 用户拖入同名文件即无确认覆盖 workspace 外文件。改为不跟随:目标是链接时替换链接本身,链接目标不受影响;
+// 同名普通文件照旧原子覆盖。
+export const writeBinaryHandler = async (input: WriteBinaryInput): Promise<void> => {
+  await atomicReplaceFileNoFollow(input.path, input.content);
 };
 // fs:stat:跟随 symlink(与 readFile / 保存写穿同口径)取 { mtimeMs, size, ino };errno 同其它 fs 通道映射。
 export const statHandler = async (input: StatInput): Promise<FsFileStat> => {
@@ -365,9 +377,9 @@ export function registerFsIpc(): void {
   const trusted = defaultIsTrustedFrame;
 
   safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler, trusted);
-  safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, readFileHandler, trusted);
+  safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, guardedReadFileHandler, trusted);
   safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler, trusted);
-  safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, writeFileHandler, trusted);
+  safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler, trusted);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler, trusted);
   safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler, trusted);
   safeHandle(FS_CHANNELS.REMOVE, removeInputSchema, removeHandler, trusted);
@@ -403,7 +415,8 @@ export function registerFsIpc(): void {
       showOpenDialog: (opts) =>
         // adapter 抽象用 ReadonlyArray<string>,Electron 真 API 要窄字面量 enum,
         // 真接处补 type assertion。spec 已断言 properties 含 'openDirectory'。
-        dialog.showOpenDialog({
+        // 经 showOpenDialogRemembering:Electron 43+ 未给 defaultPath 时固定从「下载」打开,这里记住上次位置。
+        showOpenDialogRemembering({
           properties: opts.properties as Electron.OpenDialogOptions['properties'],
         }),
     }),

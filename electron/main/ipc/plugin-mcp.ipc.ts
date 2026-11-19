@@ -11,6 +11,7 @@
 // 配套 doc/19-plugin-mcp-bridge.md。
 
 import {
+  BrowserWindow,
   ipcMain,
   webContents,
   type IpcMainInvokeEvent,
@@ -31,6 +32,7 @@ import {
   type PluginMcpToolOwner,
 } from '../services/plugin-mcp-bridge.service';
 import type { McpHost } from '../services/mcp-host.service';
+import type { EnsureAuthorized } from '../services/mcp-tool-gates';
 import type { StdioSocketServer } from '../services/mcp-stdio-server.service';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { createTrailingNotifier } from '../lib/trailing-notifier';
@@ -59,6 +61,8 @@ export function startPluginMcpIpc(
   // 取值函数而非快照:stdio server 在首窗创建后才异步启动(冷启动不挡建窗),就绪前返回 null →
   // 广播只推 HTTP;就绪后每次广播读到最新引用。
   getStdio: () => StdioSocketServer | null = () => null,
+  // 安全:插件工具 agent 授权门控。缺省 fail-closed(一律拒绝),生产由 main/index.ts 注入 requestAgentAuth。
+  ensureAuthorized: EnsureAuthorized = async () => 'denied',
 ): {
   bridge: PluginMcpBridge;
   invokeRemote: InvokeRemoteCore;
@@ -97,6 +101,13 @@ export function startPluginMcpIpc(
       tools: host.tools,
     },
     invokeRemote: localInvoke,
+    ensureAuthorized,
+    // 安全:跨窗调用拒绝的依据 —— 注册者 wc 当前所在窗口(wc 已销毁 / 无窗口 → null,fail-closed)。
+    windowIdOfWc: (wcId) => {
+      const wc = webContents.fromId(wcId);
+      if (!wc || wc.isDestroyed()) return null;
+      return BrowserWindow.fromWebContents(wc)?.id ?? null;
+    },
     notifyToolsChanged: () => toolsChanged.notify(),
   });
 

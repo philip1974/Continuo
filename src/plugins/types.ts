@@ -52,8 +52,8 @@ export interface CoApp {
   /** Workspace state(v0.2.2):current window 的 workspace.root,plugins
    * 用于 project-scope features(skills/terminal/decorator default cwd). */
   readonly workspace: CoWorkspaceApi;
-  /** Editor control API(v0.2.3):open files and optionally jump to a line. */
-  readonly editor: CoEditorApi;
+  /** Editor control API(v0.2.3):open files and optionally jump to a line. 插件拿到的是只含 openFile 的 per-plugin 包装. */
+  readonly editor: CoHostEditorApi;
   /** Dock control API(v0.2.4):open or focus singleton plugin panels. */
   readonly dock: CoDockApi;
   /** Toast notification API(v0.2.4):show user-visible notifications. */
@@ -101,6 +101,21 @@ export type EditorOpenResult =
 export interface CoEditorApi {
   openFile(
     path: string,
+    opts?: EditorOpenOptions,
+  ): Promise<EditorOpenResult>;
+}
+
+/**
+ * 宿主内部的编辑器入口(不对插件暴露:CoPluginApp.editor 是 CoEditorApi)。
+ * openVerifiedFile:安全 —— 插件的 editor.openFile 由主进程在 plugin-fs 锁内完成「scope 校验 + 读取」
+ *(plugin-fs:read-for-editor),再用这份已校验内容在 canonicalPath 上开标签,不按插件给的路径另读一次。
+ * 调用方把那次读取在主进程记下的一份「插件打开的路径」交给它处置(新建了标签则由标签持有,否则当即释放);
+ * 读取成功却不调用它时(如插件已吊销)调用方须自行 releasePluginOpenedPath(见 plugin-opened-tabs)。
+ */
+export interface CoHostEditorApi extends CoEditorApi {
+  openVerifiedFile(
+    canonicalPath: string,
+    content: string,
     opts?: EditorOpenOptions,
   ): Promise<EditorOpenResult>;
 }
@@ -169,7 +184,7 @@ export interface PluginFsApi {
   rename(src: string, dst: string): Promise<void>;
   rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<void>;
   cp(src: string, dst: string, opts?: { recursive?: boolean }): Promise<void>;
-  readGitBlob(repoDir: string, sha: string): Promise<Uint8Array>;
+  readGitBlob(repoDir: string, sha: string): Promise<Uint8Array>; // sha 须完整 40 / 64 位 hex;仓库的 .git(含对象库)须整个在已授 scope 内,否则 ScopeError
   /**
    * PRECHECK
    *
@@ -177,6 +192,10 @@ export interface PluginFsApi {
    * - `staging` must exist.
    * - `final` parent directory must exist.
    * - `staging` and `final` must have the same parent directory.
+   * - `staging` and `final` must be different paths.
+   * - That shared parent directory must itself be inside a granted `rw` scope (the host
+   *   parks the old `final` there as `.trash-<name>-<timestamp>-<rand>` and reclaims its own
+   *   stale trash there) — so `final` cannot be a scope root.
    * - If `final` exists and `opts.overwrite !== true`, reject before mutating.
    *
    * final 不存在
@@ -207,7 +226,7 @@ export interface PluginFsApi {
 }
 
 export interface PluginNetworkApi {
-  /** 检 'network',未授抛 PermissionError(Phase 3 启用). */
+  /** 检 'network',未授抛 PermissionError。url 须为绝对 https: URL,file:/blob:/data:/http:/相对路径等抛 BAD_INPUT. */
   fetch(url: string, init?: RequestInit): Promise<Response>;
 }
 
@@ -288,21 +307,89 @@ export interface PluginMcpApi {
   ): Promise<Disposable>;
 }
 
-/**
- * Plugin 拿到的 app:在 CoApp 基础上加 5 个 per-plugin 命名空间。
- * 由 createScopedApp(coApp, pluginId, store) 在激活时构造。
- */
+// ── 贡献点命名空间对插件公开的成员 ─────────────────────────────────────
+// 插件拿到的不是注册表实例,而是只含下列方法的冻结外观(见 scoped-app.ts 的 trackContributions)。
+// 注册表类的其余成员(内部 Map / 监听器集合 / registerKeyed 等)属宿主实现,不在 SDK 面上。
+
+/** keyed 注册表的共同公开成员。 */
+type KeyedMembers = 'register' | 'get' | 'getAll' | 'subscribe';
+export type PluginPanelsApi = Pick<import('./registries/PanelRegistry').PanelRegistry, KeyedMembers | 'list'>;
+export type PluginCommandsApi = Pick<import('./registries/CommandRegistry').CommandRegistry, KeyedMembers | 'execute'>;
+export type PluginStatusBarApi = Pick<
+  import('./registries/StatusBarRegistry').StatusBarRegistry,
+  KeyedMembers | 'getBySide'
+>;
+export type PluginRibbonApi = Pick<import('./registries/RibbonRegistry').RibbonRegistry, KeyedMembers>;
+export type PluginSettingTabsApi = Pick<import('./registries/SettingTabRegistry').SettingTabRegistry, KeyedMembers>;
+export type PluginSettingItemsApi = Pick<
+  import('./registries/SettingItemRegistry').SettingItemRegistry,
+  KeyedMembers | 'getByCategory'
+>;
+export type PluginEditorActionsApi = Pick<import('./registries/EditorActionRegistry').EditorActionRegistry, KeyedMembers>;
+export type PluginExplorerContextMenuApi = Pick<
+  import('./registries/ExplorerContextMenuRegistry').ExplorerContextMenuRegistry,
+  KeyedMembers
+>;
+export type PluginExplorerDecoratorsApi = Pick<
+  import('./registries/ExplorerDecoratorRegistry').ExplorerDecoratorRegistry,
+  'register' | 'getAll' | 'subscribe'
+>;
+/** events.clear 只清本插件自己的订阅(无参 = 全部,带 name = 该事件上的)。 */
+export type PluginEventsApi = Pick<import('./EventBus').EventBus, 'on' | 'off' | 'emit' | 'clear'>;
+
 /**
  * Plugin 拿到的 app:在 CoApp 基础上加 per-plugin 命名空间。
  *
  * 注意 `mcp` 字段在 CoApp 是 PluginMcpRegistry(单例),CoPluginApp 是 PluginMcpApi
  * (per-plugin scope wrapper)— 类型不同,因此 Omit 掉 CoApp.mcp 再重声明。
  */
-export interface CoPluginApp extends Omit<CoApp, 'mcp'> {
+export interface CoPluginApp
+  extends Omit<
+    CoApp,
+    | 'mcp'
+    | 'panels'
+    | 'commands'
+    | 'statusBar'
+    | 'ribbon'
+    | 'events'
+    | 'settingTabs'
+    | 'settingItems'
+    | 'explorerDecorators'
+    | 'editorActions'
+    | 'explorerContextMenu'
+    | 'editor'
+  > {
+  readonly editor: CoEditorApi;
+  readonly panels: PluginPanelsApi;
+  readonly commands: PluginCommandsApi;
+  readonly statusBar: PluginStatusBarApi;
+  readonly ribbon: PluginRibbonApi;
+  readonly events: PluginEventsApi;
+  readonly settingTabs: PluginSettingTabsApi;
+  readonly settingItems: PluginSettingItemsApi;
+  readonly explorerDecorators: PluginExplorerDecoratorsApi;
+  readonly editorActions: PluginEditorActionsApi;
+  readonly explorerContextMenu: PluginExplorerContextMenuApi;
   readonly fs: PluginFsApi;
   readonly network: PluginNetworkApi;
   readonly shell: PluginShellApi;
   readonly clipboard: PluginClipboardApi;
   readonly permission: PluginPermissionApi;
   readonly mcp: PluginMcpApi;
+}
+
+/**
+ * 第三方插件面板 factory 收到的 props(`app.panels.register({ factory })`)。宿主只交出这里声明的字段 ——
+ * 不含 dockview 的 containerApi / 完整 panel api(见 src/__tests__/plugin-panel-props/)。
+ */
+export interface PluginPanelApi {
+  /** 面板实例 id。 */
+  readonly id: string;
+  /** 面板当前是否可见(tab 切到后台为 false);每次读取都是实时值。 */
+  readonly isVisible: boolean;
+  onDidVisibilityChange(cb: (event: { readonly isVisible: boolean }) => void): Disposable;
+}
+
+export interface PluginPanelProps {
+  readonly api: PluginPanelApi;
 }

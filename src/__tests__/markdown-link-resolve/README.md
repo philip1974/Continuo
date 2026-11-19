@@ -31,6 +31,10 @@ markdown 内锚点跳转,只到文件)。路径部分按 URL 规则做 percent-d
 - 未知 / 不安全 scheme(如 `javascript:`、`tel:`、自定义 `myapp://`)
 - 相对路径但 `currentFilePath = null`(无 base,放弃)
 - 空 href
+- 解析结果是 UNC 路径(`\\server\share\...`)但当前文档不在**同一 server+share** 下(含本地文档、
+  无当前文档、残缺 UNC、设备命名空间 `\\?\` / `\\.\`)。安全:Windows 打开 UNC 会向该主机发起
+  SMB/WebDAV 并自动 NTLM 认证,markdown 来源不受信,直接书写的跨主机 UNC 链接会泄露凭据哈希。
+  UNC 工作区内(同 server+share)的相对/绝对链接照常打开。
 
 ## 点击链接不把应用窗口带走
 
@@ -39,4 +43,5 @@ Milkdown 视图里的 `<a>`(Markdown 链接、mermaid 图的 `click` 链接)被�
 - Edit 模式:普通点击只定位光标;Cmd/Ctrl+click 才交给 `resolveLink` 打开。链接气泡里显示的地址普通点击即打开。
 - Preview 模式(只读):普通点击即打开(只读视图里点链接就是要跳转);Cmd/Ctrl+click 同样打开。
 - mermaid 图里的链接是 SVG `<a xlink:href>`,与 HTML `<a href>` 同样处理。
+- 中键点链接(Chromium 只发 `auxclick`,默认行为是「后台标签打开」→ 走主进程 windowOpenHandler)与左键同语义:吞掉默认行为,按上面的模式规则交给 `resolveLink`;右键等其它键不当作打开(安全 L1)。
 - 主进程另有兜底:`installNavigationGuard` 拦下离开本应用 renderer 入口的主框架导航(见 `popout-contracts`)。

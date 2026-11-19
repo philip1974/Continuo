@@ -2,7 +2,8 @@
 // Continuo stdio socket keeps its private hello/dispatch path while adopting
 // CT-B1 framing and socket safety semantics.
 
-import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmod, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { createConnection, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -23,6 +24,7 @@ vi.mock('electron', () => ({
 import {
   createStdioSocketServer,
   MAX_STDIO_CLIENTS_GLOBAL_FOR_TEST,
+  STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST,
   shouldPrepareStdioSocketFilesystem,
   type StdioSocketServer,
 } from '../../../electron/main/services/mcp-stdio-server.service';
@@ -223,6 +225,42 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
     expect(buildClaudeAddCommand('/p', 'darwin')).toBe(
       'claude mcp add --transport stdio continuo -- /p',
     );
+  });
+
+  // 安全:该命令由用户粘贴进 shell(也经 warnIfLegacyUnstableClaudeConfig 写进剪贴板)。路径不加引号时
+  // `/Applications/Continuo 2.app/…` 被拆成两个参数(功能坏),路径段含 `;touch X;` / `$(…)` 则粘贴即执行。
+  // 契约:含 `[A-Za-z0-9_./-]` 以外字符的路径做 POSIX 单引号转义;常规路径输出逐字节不变(见上)。
+  describe.skipIf(process.platform === 'win32')('buildClaudeAddCommand 非 Windows 路径转义(真实 /bin/sh 回读)', () => {
+    const PREFIX = 'claude mcp add --transport stdio continuo -- ';
+    const HOSTILE_PATHS: ReadonlyArray<readonly [label: string, cliPath: string]> = [
+      ['空格', '/Applications/Continuo 2.app/Contents/Resources/continuo-mcp-stdio.mjs'],
+      ['分号', '/opt/x;touch PWNED;/continuo-mcp-stdio.mjs'],
+      ['$(…)', '/opt/$(touch PWNED)/continuo-mcp-stdio.mjs'],
+      ['反引号', '/opt/`touch PWNED`/continuo-mcp-stdio.mjs'],
+      ['单引号', "/Users/o'brien/Continuo/continuo-mcp-stdio.mjs"],
+      ['双引号与反斜杠', '/opt/a"b\\c/continuo-mcp-stdio.mjs'],
+      ['通配与重定向', '/opt/*?[a]>&|~#/continuo-mcp-stdio.mjs'],
+      ['中文', '/Users/张三/应用/continuo-mcp-stdio.mjs'],
+    ];
+
+    for (const [label, cliPath] of HOSTILE_PATHS) {
+      it(`路径含${label} → 恰好一个等于原路径的参数,不执行路径里的任何命令`, async () => {
+        const runDir = await mkdtemp(path.join(tmpdir(), 'continuo-claude-add-'));
+        dirs.push(runDir);
+        const command = buildClaudeAddCommand(cliPath, 'darwin');
+        expect(command.startsWith(PREFIX)).toBe(true);
+        const argsPart = command.slice(PREFIX.length);
+
+        const out = execFileSync('/bin/sh', ['-c', `printf '%s\\n' ${argsPart}`], {
+          cwd: runDir,
+          encoding: 'utf8',
+          env: { PATH: process.env.PATH ?? '/usr/bin:/bin' },
+        });
+
+        expect(out).toBe(`${cliPath}\n`);
+        expect(await readdir(runDir)).toEqual([]);
+      });
+    }
   });
 
   it('preserves getStdioConfig claude add command byte-exact format (round-trip)', () => {
@@ -594,5 +632,59 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
     for (const s of sockets) s.destroy();
     revived.destroy();
     overflow.destroy();
+  });
+
+  // 安全(W2,Windows 多用户):命名管道默认 DACL 给 Everyone 读、管道名可枚举 —— 其它本机用户只读打开
+  // MAX_STDIO_CLIENTS_GLOBAL 次挂着不发数据,即可占满全局连接名额,本用户所有 agent 的 MCP 连接被拒。
+  // 首条完整消息超时:连上后限定时间内没收到任何完整的非空行 → 断开。合法客户端连上即发 hello / initialize。
+  it('W2 连上后迟迟不发完整消息(含只发残行)→ 首条消息超时断开,释放连接名额', async () => {
+    const { dir, socketPath } = await makeSocketPath();
+    dirs.push(dir);
+    await start(socketPath);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const idle = createConnection(socketPath);
+      await waitForConnect(idle);
+      const partial = createConnection(socketPath);
+      await waitForConnect(partial);
+      partial.write('{"jsonrpc":"2.0"'); // 无换行:不是完整消息
+      // 读走数据,才能看到服务端 FIN 并自动关闭(否则暂停模式下 destroyed 永远 false)。
+      idle.resume();
+      partial.resume();
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      vi.advanceTimersByTime(STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST - 1);
+      expect(idle.destroyed).toBe(false);
+      vi.advanceTimersByTime(1);
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(idle.destroyed).toBe(true), REJECT_CLOSE_WAIT);
+      await vi.waitFor(() => expect(partial.destroyed).toBe(true), REJECT_CLOSE_WAIT);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('W2 连上后及时发出完整消息(hello / initialize)→ 之后长时间空闲也不被断开', async () => {
+    const { dir, socketPath } = await makeSocketPath();
+    dirs.push(dir);
+    await start(socketPath, { tools: new Map([['owner', ownerTool()]]) });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const socket = createConnection(socketPath);
+      await waitForConnect(socket);
+      // 不用 waitForLine(其 2s 超时也会被 fake):直接等首个响应数据到达,确认服务端已处理首条消息。
+      const response = new Promise<void>((resolve) => socket.once('data', () => resolve()));
+      socket.write(
+        JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n',
+      );
+      await response;
+      vi.advanceTimersByTime(STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST * 10);
+      vi.useRealTimers();
+      await new Promise((r) => setTimeout(r, 40));
+      expect(socket.destroyed).toBe(false);
+      socket.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

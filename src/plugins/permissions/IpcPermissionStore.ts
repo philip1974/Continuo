@@ -23,6 +23,8 @@ import {
   isIpcPermissionDecision,
 } from '../../../electron/shared/permission-record';
 import { codedError } from '../../../electron/shared/error-message';
+import { ownValue } from '../../../electron/shared/own-value';
+import { isValidPluginId } from '../plugin-id';
 
 export interface PermissionRecord {
   readonly decisions: PermissionDecision[];
@@ -118,6 +120,9 @@ export function parsePermissionState(raw: unknown): PermissionState {
   let keyCount = 0;
   for (const pluginId in raw) {
     if (!Object.prototype.hasOwnProperty.call(raw, pluginId)) continue;
+    // 安全:key 来自磁盘 JSON,非法 id(如 `__proto__`,首字符 `_`)写入 `out[pluginId]` 会改写结果对象原型。
+    // 与主进程 readPermissions 读端同规则:非法 id 跳过且不计数。
+    if (!isValidPluginId(pluginId)) continue;
     if (keyCount >= MAX_PERMISSION_PLUGIN_KEYS) break;
     keyCount += 1;
     const record: unknown = (raw as Record<string, unknown>)[pluginId];
@@ -175,7 +180,8 @@ export class IpcPermissionStore implements PermissionStore {
 
   async get(pluginId: string): Promise<readonly PermissionDecision[]> {
     const cache = await this.ensureLoaded();
-    return cache[pluginId]?.decisions ?? EMPTY_PERMISSION_DECISIONS;
+    // 只认自有属性:插件 id `constructor` 合法,普通对象缓存上会命中 Object 构造函数。
+    return ownValue(cache, pluginId)?.decisions ?? EMPTY_PERMISSION_DECISIONS;
   }
 
   async grant(
@@ -198,7 +204,7 @@ export class IpcPermissionStore implements PermissionStore {
     // 本窗口缓存里没有拒绝项 → 不发 IPC(启用重试的常见路径)。别窗的变更经 plugins:permissions-changed
     // 广播失效本缓存;真正的清理由 main 按当前落盘记录执行。
     const cache = await this.ensureLoaded();
-    const record = cache[pluginId];
+    const record = ownValue(cache, pluginId);
     if (!record || !record.decisions.some((d) => !d.granted)) return;
     await this.mutate(pluginId, { kind: 'clear-denied' });
   }

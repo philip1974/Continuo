@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { xtermWebglAtlasVersionPlugin } from './scripts/vite-xterm-webgl-atlas-version';
 import { mainModuleSideEffects } from './scripts/main-bundle-side-effects';
 import { milkdownKatexStubPlugin } from './scripts/vite-milkdown-katex-stub';
+import { cspDevConnectPlugin } from './scripts/vite-csp-dev-connect';
 
 // BUILD_TARGET=pack 时输出到 out-pack/,让 `pnpm build:app` 与 `pnpm dev` 可以并行
 // 跑(dev 持续写 out/,builder 读 out-pack/,互不踩盘)。
@@ -50,7 +51,14 @@ export default defineConfig({
     root: '.',
     // milkdownKatexStubPlugin:CrepeFeature.Latex 关闭,@milkdown 内的 katex 导入换空壳(MilkdownEditor
     // chunk 少 ~260KB);mermaid 的 katex 不受影响。⚠ 启用 CrepeFeature.Latex 前须移除。
-    plugins: [react(), tailwindcss(), xtermWebglAtlasVersionPlugin(), milkdownKatexStubPlugin()],
+    // cspDevConnectPlugin:仅 dev server 把 HMR 所需的 localhost 来源加进 CSP connect-src(生产不含)。
+    plugins: [
+      react(),
+      tailwindcss(),
+      xtermWebglAtlasVersionPlugin(),
+      milkdownKatexStubPlugin(),
+      cspDevConnectPlugin(),
+    ],
     // dev 预打包会绕过 transform,addon-webgl 是无依赖的单文件 ESM,直接走源文件即可。
     optimizeDeps: { exclude: ['@xterm/addon-webgl'] },
     resolve: {

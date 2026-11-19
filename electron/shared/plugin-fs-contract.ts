@@ -49,3 +49,16 @@ export class ScopeRequestTimeoutError extends Error {
     this.cause = options?.cause;
   }
 }
+
+/** `plugin-fs:read-for-editor` 的 scope 拒绝码(不在已授 scope / 目标不存在 / 落在受保护目录,三者不可区分)。 */
+export const PLUGIN_FS_EDITOR_READ_SCOPE_DENIED = 'SCOPE_ERROR';
+
+/**
+ * `plugin-fs:read-for-editor` 的结果:插件发起的 editor.openFile 由主进程在 plugin-fs 全局锁的共享锁内完成
+ * 「scope 校验 + 读取」,renderer 用这份内容开标签并绑定 canonicalPath(不再按插件给的路径字符串另读一次)。
+ * 失败:code = PLUGIN_FS_EDITOR_READ_SCOPE_DENIED,或与编辑器读取入口相同的 FS_* 码(FS_NOT_FILE /
+ * FS_FILE_TOO_LARGE / FS_NOT_UTF8 …)。内容只进宿主的编辑器标签,不回传插件代码。
+ */
+export type PluginFsEditorRead =
+  | { readonly ok: true; readonly canonicalPath: string; readonly content: string }
+  | { readonly ok: false; readonly code: string; readonly message: string };

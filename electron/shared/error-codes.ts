@@ -23,6 +23,8 @@ const MAIN_ERROR_CODES = {
   EEXIST: 'EEXIST',
   GIT_FAILED: 'GIT_FAILED',
   GIT_SPAWN_FAILED: 'GIT_SPAWN_FAILED',
+  // 插件安装 git clone 超时(常见原因:全局 insteadOf 改写成 ssh 后等待 host key 确认 / 私钥口令)。
+  GIT_TIMEOUT: 'GIT_TIMEOUT',
   INVALID_ID: 'INVALID_ID',
   MCP_HOST_BIND_FORBIDDEN: 'MCP_HOST_BIND_FORBIDDEN',
   NO_WINDOW: 'NO_WINDOW',
@@ -35,6 +37,12 @@ const MAIN_ERROR_CODES = {
   PLUGIN_MANIFEST_CHANGED: 'PLUGIN_MANIFEST_CHANGED',
   // 插件安装:clone 到的 manifest.id 与 marketplace entry.id(expectedId)不一致。
   PLUGIN_ID_MISMATCH: 'PLUGIN_ID_MISMATCH',
+  // 插件仓库(克隆树)含符号链接:宿主会读安装目录里的文件,链接可把读取引到目录外,一律拒装。
+  PLUGIN_SYMLINK_REJECTED: 'PLUGIN_SYMLINK_REJECTED',
+  // 插件安装 / 更新:clone 的体积或文件数超过上限,已终止 git 并清理临时目录。
+  PLUGIN_REPO_TOO_LARGE: 'PLUGIN_REPO_TOO_LARGE',
+  // 插件更新:旧安装目录里的 data.json(插件数据)无法安全带入新版本(是链接 / 超限 / 读写失败)→ 中止更新,不丢数据。
+  PLUGIN_DATA_PRESERVE_FAILED: 'PLUGIN_DATA_PRESERVE_FAILED',
   RM_FAILED: 'RM_FAILED',
   TERMINAL_CREATE_CANCELLED: 'TERMINAL_CREATE_CANCELLED',
   TERMINAL_CWD_UNRESOLVED: 'TERMINAL_CWD_UNRESOLVED',
@@ -48,6 +56,8 @@ const MAIN_ERROR_CODES = {
   TERMINAL_WRITE_FAILED: 'TERMINAL_WRITE_FAILED',
   // 边界(E230,E227/E228/E229 数量上限族):并发 active 资源(流式 shell 子进程)超全局/per-sender 上限。
   TOO_MANY_STREAMS: 'TOO_MANY_STREAMS',
+  // 边界(数量上限):renderer 发起的新建窗口超全局主窗口数上限(防插件循环执行 window.new 指数开窗)。
+  TOO_MANY_WINDOWS: 'TOO_MANY_WINDOWS',
   WORKSPACE_NOT_ABSOLUTE: 'WORKSPACE_NOT_ABSOLUTE',
   WORKSPACE_NOT_DIRECTORY: 'WORKSPACE_NOT_DIRECTORY',
   WORKSPACE_NOT_FOUND: 'WORKSPACE_NOT_FOUND',
@@ -67,6 +77,8 @@ export const FS_ERROR_CODES = {
   FS_NOT_UTF8: 'FS_NOT_UTF8',
   // 边界(E30):目录条目数超硬上限(防超大目录一次性构造数组 + IPC 全量返回卡死)。
   FS_DIR_TOO_LARGE: 'FS_DIR_TOO_LARGE',
+  // 边界(内存峰值):插件 fs 的大块读取(read-file / list-dir / 仓库对象读取 / editor.openFile)全局并发闸排队已满。
+  FS_BUSY: 'FS_BUSY',
 } as const;
 
 export const ERROR_CODES = {

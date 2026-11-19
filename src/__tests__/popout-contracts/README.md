@@ -25,6 +25,7 @@
   - 有 dev server(未打包且设了 `ELECTRON_RENDERER_URL`)→ 只认同源 URL;
   - 否则(已打包,或未打包但直接跑构建产物:预览 / e2e)→ 只认受信的 renderer 文件入口(精确 pathname)。
 - 此前只按「是否打包」分支:未打包且没有 dev server 时所有 popout 都被拒,子窗开不出来。
+- 且只为 popout 放行:URL 的 query 必须**恰好只有** `popout=1`(`isPopoutOnlyUrl`)。带 `workspace` / `fresh` / `windowSeq` / `spike` 等启动参数的本应用入口一律拒 —— 否则页面内容(Markdown 预览中键点链接、`target=_blank`)能开出带完整 preload、以攻击者指定目录为根的应用窗口(安全 L1)。
 - 有 popout 窗口时退出应用:不因 popout 窗口不应答关窗 flush 而等满 10s(e2e `quit-with-popout`)。
 
 ## 窗口不被页面内容带离应用
@@ -44,4 +45,5 @@
 ## 可机检的契约
 
 - `isPopoutWindow()` 在 `?popout=1` 下返回 true。
-- `popoutUrlFor(href)` 给任意 URL 加上 `popout=1` 查询。
+- `popoutUrlFor(href)` 把 URL 的查询替换为仅 `popout=1`(主窗启动参数不带进子窗)。
+- `isPopoutOnlyUrl(url)` 仅在查询恰为 `popout=1` 时为真;windowOpenHandler 放行 = 本应用入口 且 `isPopoutOnlyUrl`。

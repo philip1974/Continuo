@@ -1,7 +1,7 @@
 // T5: P95 < 100ms CI bench. CI-only — local skip via env gate.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -37,6 +37,7 @@ describe.skipIf(SKIP_PERF)('T5 PluginDataStore perf bench', () => {
 
   it('save P95 < 100ms after warmup', async () => {
     const pluginId = randomUUID();
+    mkdirSync(join(tmp, 'plugins', pluginId), { recursive: true }); // save 只写已安装插件的目录
     const fakeEvent = {};
     for (let i = 0; i < 3; i++) {
       await handlers['plugin-data:save']!(fakeEvent, pluginId, { i });
@@ -64,6 +65,7 @@ describe.skipIf(SKIP_PERF)('T5 PluginDataStore perf bench', () => {
 
   it('load P95 < 100ms after warmup', async () => {
     const pluginId = randomUUID();
+    mkdirSync(join(tmp, 'plugins', pluginId), { recursive: true }); // save 只写已安装插件的目录
     const fakeEvent = {};
     await handlers['plugin-data:save']!(fakeEvent, pluginId, {
       warmup: true,

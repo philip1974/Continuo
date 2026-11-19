@@ -24,7 +24,8 @@ import {
 const tempRoots: string[] = [];
 
 function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'continuo-scope-'));
+  // canonical:scope 以 canonical 路径授予,check 的词法预判只认 canonical 根与 requestScope 登记的写法。
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'continuo-scope-')));
   tempRoots.push(dir);
   return dir;
 }
@@ -199,12 +200,15 @@ describe('PathScopeRegistry', () => {
 
   it('T1.g check unknown opType throws ScopeError', async () => {
     const { registry, token } = makeHarness();
+    // scope 外路径先被词法预判统一拒绝,到不了 opType 分支 → 用 scope 内路径。
+    const inScope = makeTempDir();
+    registry.grant('com.test', [{ path: inScope, mode: 'r' }]);
 
     await expect(
-      registry.check(token, 10, 'banana' as never, '/x', 'r'),
+      registry.check(token, 10, 'banana' as never, inScope, 'r'),
     ).rejects.toThrow(ScopeError);
     await expect(
-      registry.check(token, 10, 'banana' as never, '/x', 'r'),
+      registry.check(token, 10, 'banana' as never, inScope, 'r'),
     ).rejects.toThrow('unknown opType');
   });
 

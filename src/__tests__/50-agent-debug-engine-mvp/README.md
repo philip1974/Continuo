@@ -12,6 +12,7 @@
 - `variables` / `evaluate` 保持分页、深度、字节预算与默认值边界。
 - `variables` 深度展开有整次总预算(节点数、DAP 请求数,以及返回内容字节 4MiB —— 名称 + 值 + 类型的 UTF-8 字节,低于 MCP 10MiB 结果上限):用尽即停;字节预算截断顶层这一页时 `next_start` 接在已返回的最后一项之后(顶层至少返回一项),未展开的节点保留 `variables_reference` 并标 `truncated`,顶层 `truncated: true`;调用方断连(`ctx.signal`)时停止继续展开。
 - 资源上限:结束的 child session(worker 退出等)当即回收(移出、清掉各断点记录里该连接的条目并重推受影响 source 的快照;连接等其在途请求结算后再 dispose —— js-debug 可能在 terminated 之后才回 continue 等请求的响应,当即关连接会让调用方收到「DAP socket closed」),teardown 不再对它发 disconnect;DAP transcript 单条按字节截断为摘要并有总字节预算(最旧优先淘汰);单条上限的计量口径是线上字节(入站 = 帧头 Content-Length,不对解析后的对象重新规范化序列化),对端发非紧凑 JSON(大量空白 / `\uXXXX` 转义)时线上超限即只存摘要,摘要的 `originalBytes` 同为线上字节。
+- 安全(提示注入): `debug.stack` / `debug.scopes` / `debug.variables` / `debug.evaluate` / `debug.wait_for_stop` 返回的函数名、变量值、异常 description、表达式结果由被调试程序控制,工具描述须提示 agent 这些内容不可信、作为数据而非指令处理(措辞同 `terminal.await_stop_hook`)。
 - KC#1: MVP 暂不暴露 renderer/editor context 的断点映射能力，降级为 main-context DAP 调试；源码映射与编辑器联动留给后续批次。
 - 安全(program-workspace 锁): `debug.launch` 的 `program`/`cwd` 来自 agent，必须落在 owner window 的 workspace root 内(realpath 规范化后比较，防 symlink 逃逸与 `..` 穿越)；窗口无 workspace 记录则 fail-closed 拒绝；`cwd` 省略时默认 workspace root，不回退 main 进程 cwd。校验通过的真实路径(program/cwd 的 realpath)即为之后 launch 使用的路径 —— 起跑推迟到 `wait_for_stop` 等调用，期间把软链改指工作区外不生效。该契约由 `electron/main/__tests__/debug-service.spec.ts` 覆盖。
 - 安全(运行时 node 由 Continuo 解析): 被调试程序用哪个 node 由 main 进程按自身 PATH(启动时的环境，**不含** agent 传入的 `env`)查找并 realpath 成绝对路径(main PATH 找不到时，非 Windows 上执行一次用户登录 shell `$SHELL -ilc` 取其 PATH 再按同样规则查找 —— 覆盖 macOS 从 Finder 启动时 PATH 不含 Homebrew / nvm;仍是 Continuo 可信环境，成功结果缓存、失败不缓存)，作为 `runtimeExecutable` 固定写进父 / child 的 launch 参数 —— agent 的 `env`(含 `PATH`)只影响被调试程序自身，不影响用哪个 node(否则 js-debug 按 env 的 PATH 先执行 `<PATH>/node --version`，即工作区外任意代码执行)。找不到 node 时 launch 以 `DEBUG_NODE_RUNTIME_NOT_FOUND` 失败且不 spawn adapter。`env` 另有禁用规则作纵深防御(大小写不敏感):以 `DYLD_` / `LD_` / `OPENSSL_` 开头的变量整族拒绝，外加精确名 `NODE_OPTIONS` / `NODE_PATH` / `NODE_REPL_EXTERNAL_MODULE` / `GCONV_PATH`;名字含 `=` 或 NUL 一律拒绝(POSIX 按第一个 `=` 切分,`NODE_OPTIONS=--import` 会生成 `NODE_OPTIONS`);`NODE_ENV` 等普通变量照常放行。
@@ -40,8 +41,13 @@ DebugService 的真实 adapter 生命周期、wait/continue/teardown 幂等行�
 ## 打包前获取 js-debug adapter(终审 P1)
 
 - adapter 不入 git;`build:pack`(所有 `build:app*` 都经由它)先执行 `scripts/fetch-debug-adapter.mjs`
-  下载并校验固定版本 sha256,已存在则直接跳过。否则干净检出本地打包会产出调试功能不可用的安装包
+  下载并校验固定版本 sha256。否则干净检出本地打包会产出调试功能不可用的安装包
   (electron-builder 对缺失的 extraResources 只警告)。规范:`build-fetches-debug-adapter.spec.ts`。
+- 缓存完整性:tarball 下载到内存,sha256 校验与解包使用同一份 buffer(不落临时文件);解包后在
+  `.adapter/.continuo-adapter-cache.json` 写入 adapter 版本、tarball sha256 与 `js-debug/` 目录树哈希。
+  缓存命中须标记存在且三者全部吻合(含符号链接等非常规条目即不吻合),否则删除重下。
+  这是一致性检查而非安全边界:树哈希与被校验目录放在一起(自证值),防意外损坏 / 误改 / 过期或半成品缓存,
+  防不了有本地写权限、同时改目录和标记的人。规范:`fetch-debug-adapter-cache.spec.ts`。
 
 ## adapter 退出那一刻回收其进程组(终审 P1)
 

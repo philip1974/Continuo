@@ -9,6 +9,12 @@ dist-electron
 .cache
 .env
 .env.local
+# 机密文件:任意 .env 变体、证书 / 私钥 / 签名证书包。示例文件例外(须保持被跟踪)。
+.env.*
+!.env.local.example
+*.pem
+*.p12
+*.key
 # codex 协作 scratch(安全审计指令/反馈工作文件,非产物)
 .codex-security-task.md
 .codex-security-feedback.md

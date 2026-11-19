@@ -36,7 +36,7 @@ safeHandle(channel, zodSchema, handler, isTrustedFrame);
 
 Does three things every channel must do:
 
-1. **Trust check** — `defaultIsTrustedFrame` accepts only the **真实 renderer 入口 index.html** `file://` URL (prod，精确 pathname，由 index.ts 启动 `setTrustedRendererFile` 注册) or the `ELECTRON_RENDERER_URL` origin (dev). Anything else — 任意其它 `file://`(攻击者写的 evil.html / 插件目录 html)、injected iframe、外站 — is refused with `IPC_DENIED`。这同时是 windowOpenHandler 注入 preload 的放行条件(安全 S1:防恶意 `file://` 弹窗拿全量 IPC)。
+1. **Trust check** — `defaultIsTrustedFrame` accepts only the **真实 renderer 入口 index.html** `file://` URL (prod，精确 pathname，由 index.ts 启动 `setTrustedRendererFile` 注册) or the dev server origin (dev only: index.ts 启动时以 `isDev` 为闸把 `ELECTRON_RENDERER_URL` 的 origin 经 `setTrustedDevOrigin` 注入,打包版注入 null;safe-handle 不自行读 env). Anything else — 任意其它 `file://`(攻击者写的 evil.html / 插件目录 html)、injected iframe、外站 — is refused with `IPC_DENIED`。这同时是 windowOpenHandler 注入 preload 的放行条件(安全 S1:防恶意 `file://` 弹窗拿全量 IPC)。
 2. **Zod validation** — invalid input → `IPC_BAD_INPUT`, never reaches the handler body.
 3. **Error envelope** — handler exceptions get caught and shaped into `IpcFail`.
 
@@ -62,7 +62,7 @@ Each lives in `electron/shared/*-channels.ts` and is registered by `electron/mai
 - `terminal-sessions.service.ts` — single source of truth for PTYs. Broadcasts `sessions_changed` to all renderer windows; per-window filtering is done by `window-workspace-roots.service.ts` + the renderer-side reconciler.
 - `mcp-host.service.ts` + `mcp-stdio-server.service.ts` + `mcp-tools-terminal.ts` + `mcp-terminal-host.ts` — the MCP server. Exposes the 7 `terminal.*` tools (`list_sessions` / `create_session` / `send_input` / `send_text` / `press_key` / `read_output` / `kill`); per-window scoping via the `_continuo/hello` handshake from `scripts/continuo-mcp-stdio.mjs`.
 - `plugin-mcp-bridge.service.ts` — lets renderer plugins register MCP tools the MCP host then exposes upstream.
-- `agent-auth.service.ts` — reverse-IPC channel for "the agent is asking to do X, do you allow?". Routes to the *owner* window only (issue #32 fix), with destroyed-window fallback.
+- `agent-auth.service.ts` — reverse-IPC channel for "the agent is asking to do X, do you allow?". Routes to the *owner* window only (issue #32 fix); an explicit owner that is gone / a popout is denied (fail-closed), only calls without an owner fall back to the first main window.
 - `window-seq.service.ts` + `window-restore.service.ts` + `window-workspace-roots.service.ts` — per-window identity / layout restoration / cwd resolution.
 
 ## Adding a new IPC channel (recipe)

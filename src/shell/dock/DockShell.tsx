@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
-  type IDockviewPanelProps,
   type SerializedDockview,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
-import { coApp } from '@/plugins/co-app';
-import { useRegistry } from '@/plugins/registries/useRegistry';
-import { PanelMount } from '@/shell/motion/PanelMount';
+import { usePanelComponents } from './panel-components';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
@@ -80,32 +77,6 @@ export function sanitizePersistedDockLayout(
   // 终端 panel 即整体弃用(返 null)→ 连带丢弃 editor 等非终端布局,且被上层当作「恢复失败」误报红
   // toast。改为只剥离终端 panel + 修补 grid 树,让非终端布局存活;无非终端残留 → null(静默走默认)。
   return stripTerminalPanelsFromLayout(layout);
-}
-
-/** 把 coApp.panels 注册的 PanelSpec 桥接成 Dockview 的 components map.
- *  每个 panel 自动包 PanelMount(进出场动画). */
-function usePanelComponents(): Record<string, React.FC<IDockviewPanelProps>> {
-  const snapshot = useRegistry(coApp.panels);
-  return useMemo(() => {
-    const map: Record<string, React.FC<IDockviewPanelProps>> = {};
-    for (const spec of snapshot) {
-      const type = spec.type;
-      // race(R59,R55-R58 同族):wrapper 只捕获 type,渲染时从 **live** coApp.panels.get(type) 取
-      // 当前 factory,而非闭包捕获快照里的 spec.factory。panel type 被插件 disable/reload
-      // unregister 后、到 useRegistry 快照重渲前,dockview 仍会渲染本 component → 闭包捕获旧
-      // factory 会实例化已移除插件代码(访问已释放资源)。live 查找:已移除则渲染空(panel 内容空,
-      // 由 reconciler/关闭流程移除该 panel)。
-      map[type] = (p) => {
-        const live = coApp.panels.get(type);
-        return (
-          <PanelMount panelId={p.api.id}>
-            {live ? (live.factory(p) as React.ReactNode) : null}
-          </PanelMount>
-        );
-      };
-    }
-    return map;
-  }, [snapshot]);
 }
 
 function DockReconcilerMount({

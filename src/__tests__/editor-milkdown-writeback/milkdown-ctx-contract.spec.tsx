@@ -99,6 +99,25 @@ describe('Milkdown 内部契约(真实 Crepe)', () => {
     expect(onWriteBack.mock.calls[0]![1]).toBe('# Title\n\nbody\n');
   });
 
+  // 原生输入(浏览器先改 DOM,prosemirror-view 经 DOMObserver 读回)走的是 view 自己 import 的
+  // prosemirror-model;dispatch insertText 只走 state/transform 那份。lockfile 里若解析出两份
+  // prosemirror-model(view 1.42.x 要求 ^1.25.12,其余仍锁 1.25.4),读回时 Fragment.from 认不出另一份的
+  // Node → 抛「multiple versions of prosemirror-model」,真实按键全被丢弃、也不变脏。
+  it('原生输入(DOM 变更读回)进入文档并上抛', async () => {
+    const onChange = vi.fn();
+    render(<MilkdownEditor tabId="/t.md" defaultValue={'# Title\n\nbody\n'} onChange={onChange} />);
+    const crepe = await waitMounted();
+    const view = viewOf(crepe) as PmView & { dom: HTMLElement };
+    const text = view.dom.querySelector('h1')!.firstChild as Text;
+    await act(async () => {
+      text.data = 'Titlex';
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    expect(crepe.getMarkdown()).toContain('# Titlex');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]![0]).toContain('# Titlex');
+  });
+
   it('真实 plugin-listener updated:小文档输入后约 200ms 上抛全文', async () => {
     const onChange = vi.fn();
     render(<MilkdownEditor tabId="/t.md" defaultValue={'# Title\n\nbody\n'} onChange={onChange} />);

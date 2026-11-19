@@ -99,7 +99,7 @@ describe('安全 S2 — terminal MCP 读/写/杀工具授权门控', () => {
     for (const { name, input } of GATED) {
       const { tools, ensureAuthorized } = buildTools('once');
       await findTool(tools, name).run(input as never, ctx).catch(() => {});
-      expect(ensureAuthorized).toHaveBeenCalledWith(OWNER, name);
+      expect(ensureAuthorized).toHaveBeenCalledWith(OWNER, name, false);
     }
   });
 

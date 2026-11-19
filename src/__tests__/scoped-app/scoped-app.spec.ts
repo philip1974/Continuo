@@ -33,6 +33,7 @@ const coApiMocks = vi.hoisted(() => {
       atomicReplaceWithinScope: vi.fn().mockResolvedValue(undefined),
       requestScope: vi.fn().mockResolvedValue('grant'),
       _scopeDecision: vi.fn().mockResolvedValue(undefined),
+      onScopeRequestCancelled: vi.fn(() => () => {}),
       onScopeRequest: vi.fn(() => () => {}),
       onScopeUpdated: vi.fn(() => () => {}),
     },
@@ -255,6 +256,55 @@ describe('network.fetch 输入边界 (E264)', () => {
       headers: { authorization: 'Bearer token' },
     });
     expect(sandboxMocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  // 安全:network 权限只意味着"向远程 https 发请求"。打包版页面源是 file://,原生 fetch 对 file: URL
+  // (含相对路径,按页面 base 解析成 file:)直接返回本地文件内容 —— 只授了 network 的插件即可读任意文件
+  // 再 https 外传,整体旁路 fs 权限与主进程 path-scope。入口只放行绝对 https: URL。
+  it('非 https scheme(file / blob / data / about / ws / wss / http)→ BAD_INPUT,不调 fetch', async () => {
+    const scoped = createScopedApp(makeLmApp(), 'p', null);
+    sandboxMocks.fetch.mockClear();
+    for (const url of [
+      'file:///Users/x/.ssh/id_rsa',
+      'FILE:///etc/passwd',
+      '  file:///etc/passwd',
+      'file://localhost/etc/passwd',
+      'blob:file:///0b1c2d3e-0000-0000-0000-000000000000',
+      'data:text/plain,hi',
+      'about:blank',
+      'ws://example.com/',
+      'wss://example.com/',
+      'http://example.com/',
+      'http://localhost:11434/api',
+      'javascript:alert(1)',
+    ]) {
+      await expect(scoped.network.fetch(url), url).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    }
+    expect(sandboxMocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it('相对 / 协议相对 / 无法解析的 URL → BAD_INPUT,不调 fetch(不按页面 base 解析)', async () => {
+    const scoped = createScopedApp(makeLmApp(), 'p', null);
+    sandboxMocks.fetch.mockClear();
+    for (const url of [
+      '../../../../etc/passwd',
+      '/etc/passwd',
+      'etc/passwd',
+      '//attacker.example.com/x',
+      '?a=1',
+      'https://',
+    ]) {
+      await expect(scoped.network.fetch(url), url).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    }
+    expect(sandboxMocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it('https URL → 以解析后的绝对 href 调 fetch(校验与实际请求用同一个值)', async () => {
+    const scoped = createScopedApp(makeLmApp(), 'p', null);
+    sandboxMocks.fetch.mockClear();
+    await scoped.network.fetch('HTTPS://Example.com/a/../b?q=1');
+    expect(sandboxMocks.fetch).toHaveBeenCalledTimes(1);
+    expect((sandboxMocks.fetch.mock.calls[0] as unknown[])[0]).toBe('https://example.com/b?q=1');
   });
 
   it('未授 network 权限 → PermissionError 先于输入校验(权限门控不变)', async () => {
@@ -637,7 +687,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     }
   });
 
-  // 边界(E314,E63 renderer 对偶 / pre-IPC):readGitBlob 发 IPC 前校验 sha hex 形态(4-64 hex),
+  // 边界(E314,E63 renderer 对偶 / pre-IPC):readGitBlob 发 IPC 前校验 sha hex 形态(完整 40 / 64 位 hex),
   // 非 hex/超长 → BAD_INPUT 不发 IPC(单一来源 isValidGitBlobSha)。
   it('E314 readGitBlob 非法 sha(非 hex / 超长)→ BAD_INPUT 且不发 IPC', async () => {
     const store = new InMemoryPermissionStore();
@@ -653,18 +703,32 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     expect(coApiMocks.pluginFsRaw.readGitBlob).not.toHaveBeenCalled();
   });
 
-  it('E314 合法 sha(4-64 hex)→ 透传(回归)', async () => {
+  it('readGitBlob 大写 sha → 转小写后发 IPC(与主进程入口一致)', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['fs']);
     const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
-    await scoped.fs.readGitBlob('/repo', 'abcd1234');
+    await scoped.fs.readGitBlob('/repo', 'ABCDEF'.repeat(6) + 'ABCD');
+    expect(coApiMocks.pluginFsRaw.readGitBlob).toHaveBeenCalledWith(
+      'test-token',
+      '/repo',
+      'abcdef'.repeat(6) + 'abcd',
+    );
+  });
+
+  it('E314 合法 sha(完整 40 位 hex)→ 透传(回归);缩写 sha → BAD_INPUT', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['fs']);
+    const scoped = createScopedApp(makeLmApp(), 'p', store, 'test-token');
+    await expect(scoped.fs.readGitBlob('/repo', 'abcd1234')).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    expect(coApiMocks.pluginFsRaw.readGitBlob).not.toHaveBeenCalled();
+    await scoped.fs.readGitBlob('/repo', 'abcd1234'.repeat(5));
     expect(coApiMocks.pluginFsRaw.readGitBlob).toHaveBeenCalled();
   });
 
   it('E314 shared sha 校验走字符扫描,不调用 RegExp.test', () => {
     const testSpy = vi.spyOn(RegExp.prototype, 'test');
-    expect(isValidGitBlobSha('abcd1234')).toBe(true);
-    expect(isValidGitBlobSha('ABCDEF012345')).toBe(true);
+    expect(isValidGitBlobSha('abcd1234'.repeat(5))).toBe(true);
+    expect(isValidGitBlobSha('ABCDEF01'.repeat(8))).toBe(true);
     expect(isValidGitBlobSha('abc')).toBe(false);
     expect(isValidGitBlobSha('not-hex-zz')).toBe(false);
     expect(isValidGitBlobSha('a'.repeat(65))).toBe(false);

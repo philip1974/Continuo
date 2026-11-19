@@ -5,6 +5,12 @@ export type DebugRuntimeState = 'starting' | 'running' | 'stopped' | 'terminated
 
 const MAX_DEBUG_SESSIONS_GLOBAL = 32;
 const MAX_DEBUG_SESSIONS_PER_WINDOW = 8;
+/**
+ * 每个顶层调试会话同时存活 / 握手中的 child session 上限(嵌套 worker 的 child 共用同一计数)。child 由被调试
+ * 程序驱动(worker_threads / 伪造的 inspector target 都会让 js-debug 发 startDebugging),每个占一个 socket fd
+ * 与 DapClient;无上限时被调试程序可耗尽 main 进程的 fd。
+ */
+export const MAX_DEBUG_CHILD_SESSIONS_PER_SESSION = 32;
 
 export interface DebugSession {
   readonly id: string;

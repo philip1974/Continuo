@@ -53,6 +53,8 @@ export const en = {
   'errors.EEXIST': 'File already exists',
   'errors.GIT_FAILED': 'Git command failed',
   'errors.GIT_SPAWN_FAILED': 'Failed to start git',
+  'errors.GIT_TIMEOUT':
+    'Git command timed out. If your git config rewrites https to ssh, make sure the ssh host key is already trusted and no interactive passphrase is required',
   'errors.INVALID_ID': 'Invalid id',
   'errors.MARKETPLACE_INDEX_INVALID': 'Remote index is not a valid array',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': 'GitHub token not configured in the main process',
@@ -73,6 +75,9 @@ export const en = {
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED':
     'Could not revoke the plugin file-access token; the operation was aborted. Try again.',
   'errors.PLUGIN_ID_MISMATCH': 'Plugin id in the repository does not match the marketplace entry',
+  'errors.PLUGIN_SYMLINK_REJECTED': 'Plugin repository contains symbolic links; installation refused',
+  'errors.PLUGIN_REPO_TOO_LARGE': 'Plugin repository exceeds the size or file-count limit; installation aborted',
+  'errors.PLUGIN_DATA_PRESERVE_FAILED': 'Could not preserve plugin data; update aborted (the installed version and its data are unchanged)',
   'errors.RM_FAILED': 'Remove failed',
   'errors.TERMINAL_CREATE_CANCELLED': 'Terminal creation was cancelled',
   'errors.TERMINAL_CWD_UNRESOLVED': 'Terminal cwd unresolved',
@@ -83,6 +88,7 @@ export const en = {
   'errors.TERMINAL_SESSION_DUPLICATE': 'Terminal session duplicate',
   'errors.TERMINAL_SESSION_NOT_FOUND': 'Terminal session not found',
   'errors.TOO_MANY_STREAMS': 'Too many active streams',
+  'errors.TOO_MANY_WINDOWS': 'Too many windows are open',
   'errors.TOO_MANY_TERMINALS': 'Too many terminal sessions',
   'errors.WORKSPACE_NOT_ABSOLUTE': 'Workspace must be an absolute path: {path}',
   'errors.WORKSPACE_NOT_DIRECTORY': 'Workspace is not a directory: {workspace}',
@@ -98,6 +104,7 @@ export const en = {
   'errors.FS_FILE_TOO_LARGE': 'File too large to open',
   'errors.FS_NOT_UTF8': 'File is binary or not UTF-8 encoded; cannot open in the text editor',
   'errors.FS_DIR_TOO_LARGE': 'Directory has too many entries',
+  'errors.FS_BUSY': 'Too many file operations in progress; try again later',
   'errors.FS_NOT_FOUND': 'File not found: {path}',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
@@ -185,6 +192,10 @@ export const en = {
   'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
   'dialog.unsaved_close.disk_changed_note':
     '{count} file(s) were changed on disk by another program and were not overwritten. Press Cmd/Ctrl+S in the editor to resolve the conflict, or choose "Don\'t Save".',
+  'dialog.mcp_legacy_config.message': 'Your Continuo MCP config in Claude Code points to a temporary path',
+  'dialog.mcp_legacy_config.detail':
+    'MCP server(s) {names} in ~/.claude.json point to an old AppImage temporary mount path. After Continuo exits, another user on this machine can place a script with the same name there, which Claude Code would then run as you. Run `claude mcp remove {first}` in the corresponding project directory (add `-s user` for user-scoped config), then run the new command from "Copy MCP config" in the status bar.',
+  'dialog.mcp_legacy_config.copy': 'Copy New Command',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.restore': 'Restore default layout',
   'panels.explorer.loading_or_empty': 'Loading or empty folder',
@@ -308,6 +319,12 @@ export const en = {
   'permissions.agent.debug_launch': 'start a debug session',
   'permissions.agent.debug_control': 'control a debug session (breakpoints, stepping, variables)',
   'permissions.agent.generic': 'call {method}',
+  'permissions.agent.external_caller':
+    'Requested by: external client (not bound to a Continuo terminal). It does not belong to any terminal in this window; its authorization is separate from this window\'s terminal agents.',
+  'permissions.agent.plugin_tool': 'call plugin tool {name}',
+  'permissions.agent.title_plugin': 'Agent requests to call a plugin tool',
+  'permissions.agent.hint_plugin':
+    "Once granted, agents holding the MCP token can call tools registered by your installed plugins (e.g. Git stage / commit). Plugin tools act with the plugin's permissions, so only grant this to agents you trust. Valid only for this launch.",
   'permissions.agent.title': 'Agent requests built-in terminal access',
   'permissions.agent.title_debug': 'Agent requests debugger access',
   'permissions.agent.hint_debug':
@@ -324,7 +341,7 @@ export const en = {
   'permissions.agent.grant_session': 'Allow this launch',
   'permissions.revoke_all.title': 'Revoke agent terminal access?',
   'permissions.revoke_all.confirm_grant_only':
-    'Will revoke the terminal and debugger authorization granted to agents during this launch, and end their debug sessions.\n\nRunning agent CLIs holding tokens will 401 immediately; they can re-authorize later.\n\nContinue?',
+    'Will revoke the terminal, debugger and plugin tool authorization granted to agents during this launch, and end their debug sessions.\n\nRunning agent CLIs holding tokens will 401 immediately; agents in existing terminals cannot request authorization again — restart them in a new terminal.\n\nContinue?',
   'permissions.revoke_all.confirm':
     'Will terminate {count} agent terminal(s) and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
   'permissions.revoke_all.failed':
@@ -344,7 +361,7 @@ export const en = {
   'statusbar.mcp.revoke_tooltip': 'Terminate all {count} agent terminal(s) and revoke authorization',
   'statusbar.agent_sessions': '{count} agent',
   'statusbar.agent_authorized': 'Agent authorized',
-  'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal and debugger authorization granted to agents',
+  'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal, debugger and plugin tool authorization granted to agents',
   'statusbar.no_workspace': 'No workspace',
   'statusbar.sidebar_hidden': 'Sidebar hidden',
   'statusbar.untitled_file': 'Untitled',
@@ -521,15 +538,18 @@ export const en = {
 
   // permissions.* perm labels (topic-21)
   'permissions.perm.fs.title': 'File system',
-  'permissions.perm.fs.desc': 'Read/write local folders and files',
+  'permissions.perm.fs.desc': 'Read and write files in the folders you approve (asked per folder)',
   'permissions.perm.network.title': 'Network access',
-  'permissions.perm.network.desc': 'Initiate HTTP / WebSocket and other remote requests',
+  'permissions.perm.network.desc':
+    'Send requests to any https address, including services on this computer (localhost) and your local network',
   'permissions.perm.shell.title': 'Run shell commands',
-  'permissions.perm.shell.desc': 'Invoke local shell / subprocess',
+  'permissions.perm.shell.desc':
+    'Run any program as you. Not limited by folder access — equivalent to full access to your files and network',
   'permissions.perm.clipboard.title': 'Clipboard',
   'permissions.perm.clipboard.desc': 'Read/write system clipboard',
   'permissions.perm.mcp_tools.title': 'Register MCP tools',
-  'permissions.perm.mcp_tools.desc': 'Expose plugin custom tools to Agents / Claude Code and other MCP clients',
+  'permissions.perm.mcp_tools.desc':
+    'Register tools whose names and descriptions are shown to AI agents (Claude Code and other MCP clients), which can call them',
 
   // permissions prompt UI
   'permissions.prompt.title': 'Permission request',
@@ -537,7 +557,10 @@ export const en = {
   'permissions.prompt.note_prefix': 'Unchecked = denied. Supports',
   'permissions.prompt.note_partial': 'partial grant',
   'permissions.prompt.note_suffix': ': plugin will be rejected (throws PermissionError) when calling un-granted API, but can still activate overall. Reject all → plugin cannot activate.',
+  'permissions.grant_guard.rejected':
+    'Not applied yet — pause, then click once (or focus it, wait, then press Enter / Space).',
   'permissions.prompt.select_all': 'Select all',
+  'permissions.prompt.select_all_except_shell': 'Select all (except shell)',
   'permissions.prompt.deny_all': 'Deny all',
   'permissions.prompt.grant_selected': 'Grant selected ({count})',
 

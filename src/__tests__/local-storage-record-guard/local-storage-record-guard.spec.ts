@@ -238,3 +238,15 @@ describe('subscribeStorageKey cleanup', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('readRecord constrained · `__proto__` 键', () => {
+  it('自有 `__proto__` 键原样读回为自有属性,不改写结果对象原型', () => {
+    globalThis.localStorage.setItem(KEY, '{"__proto__":"mod+k","a":"mod+j"}');
+    const r = readRecord<string>(KEY, {
+      valueGuard: (v): v is string => typeof v === 'string',
+    });
+    expect(Object.getPrototypeOf(r)).toBe(Object.prototype);
+    expect(Object.hasOwn(r, '__proto__')).toBe(true);
+    expect(JSON.stringify(r)).toBe('{"__proto__":"mod+k","a":"mod+j"}');
+  });
+});

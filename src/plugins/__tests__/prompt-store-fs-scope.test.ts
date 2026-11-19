@@ -90,6 +90,7 @@ describe('permission prompt store fs-scope flow', () => {
       configurable: true,
       value: {
         pluginFsRaw: {
+          onScopeRequestCancelled: vi.fn(() => () => {}),
           onScopeRequest: vi.fn((cb: ScopeRequestHandler) => {
             handler = cb;
             return () => {

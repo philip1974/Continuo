@@ -4,6 +4,11 @@ export interface ContinuoMcpEnvInput {
   readonly windowId: number;
   readonly url: string;
   readonly issueToken: (windowId: number) => string;
+  /**
+   * stdio MCP 端点(Windows 每次启动随机的命名管道名)。给出时注入 CONTINUO_MCP_SOCKET,终端里的 proxy
+   * 直接连本实例,不靠可预测名 / 发现文件。
+   */
+  readonly stdioSocketPath?: string;
 }
 
 export interface ContinuoMcpEnvResult {
@@ -37,16 +42,18 @@ export function createContinuoMcpEnv({
   windowId,
   url,
   issueToken,
+  stdioSocketPath,
 }: ContinuoMcpEnvInput): ContinuoMcpEnvResult {
   const mcpToken = issueToken(windowId);
+  const env = toLegacyContinuoEnv(
+    {
+      MCP_URL: url,
+      MCP_TOKEN: mcpToken,
+    },
+    windowId,
+  );
   return {
-    env: toLegacyContinuoEnv(
-      {
-        MCP_URL: url,
-        MCP_TOKEN: mcpToken,
-      },
-      windowId,
-    ),
+    env: stdioSocketPath === undefined ? env : { ...env, CONTINUO_MCP_SOCKET: stdioSocketPath },
     mcpToken,
     subject: subjectForWindow(windowId),
   };

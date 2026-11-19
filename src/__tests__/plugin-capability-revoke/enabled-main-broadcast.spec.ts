@@ -39,6 +39,8 @@ import {
   isPluginEnabledChangedPayload,
 } from '../../../electron/shared/plugins-channels';
 
+import { setTrustedDevOrigin } from '../../../electron/main/safe-handle';
+
 const RENDERER_URL = 'http://localhost:5173';
 const TRUSTED = { senderFrame: { url: `${RENDERER_URL}/` } };
 
@@ -58,11 +60,10 @@ function sends(win: MockWin): unknown[] {
     .map((c) => c[1]);
 }
 
-const savedEnv = process.env['ELECTRON_RENDERER_URL'];
 let setImpl: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  process.env['ELECTRON_RENDERER_URL'] = RENDERER_URL;
+  setTrustedDevOrigin(RENDERER_URL);
   h.handlers.clear();
   h.windows.length = 0;
   setImpl = vi.fn().mockResolvedValue(undefined);
@@ -71,8 +72,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (savedEnv === undefined) delete process.env['ELECTRON_RENDERER_URL'];
-  else process.env['ELECTRON_RENDERER_URL'] = savedEnv;
+  setTrustedDevOrigin(null);
 });
 
 describe('main:启用状态写入成功后广播 plugins:enabled-changed', () => {
