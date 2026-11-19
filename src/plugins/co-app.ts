@@ -51,11 +51,10 @@ import type {
   EditorOpenResult,
 } from './types';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.13 (2026-11-13)
-// for the codebase-cleanup refactor + real-app verification pass (debug multi-connection
-// stops, popout windows, close-flush handshake, not-yet-existing fs scope dirs).
+// Keep in sync with package.json "version" field. Bumped to 0.2.14 (2026-11-19)
+// for the Electron 45 upgrade, performance polish and security hardening pass.
 // Plugins declaring minLMVersion >= 0.2.4 need this.
-const APP_VERSION = '0.2.13';
+const APP_VERSION = '0.2.14';
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for
