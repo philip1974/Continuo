@@ -65,7 +65,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 插件更新:+PLUGIN_DATA_PRESERVE_FAILED(53→54),旧 data.json 无法安全带入新版本时中止更新。
     // 边界(内存峰值):+FS_BUSY(54→55),插件 fs 大块读取的全局并发闸排队已满。
     // 边界(数量上限):+TOO_MANY_WINDOWS(55→56),renderer 发起的新建窗口超全局主窗口数上限。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(56);
+    // 插件安装:+PLUGIN_REPO_TOO_LARGE(56→57),clone 体积 / 文件数超上限即终止并拒装。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(57);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

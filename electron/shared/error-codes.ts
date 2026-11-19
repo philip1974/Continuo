@@ -39,6 +39,8 @@ const MAIN_ERROR_CODES = {
   PLUGIN_ID_MISMATCH: 'PLUGIN_ID_MISMATCH',
   // 插件仓库(克隆树)含符号链接:宿主会读安装目录里的文件,链接可把读取引到目录外,一律拒装。
   PLUGIN_SYMLINK_REJECTED: 'PLUGIN_SYMLINK_REJECTED',
+  // 插件安装 / 更新:clone 的体积或文件数超过上限,已终止 git 并清理临时目录。
+  PLUGIN_REPO_TOO_LARGE: 'PLUGIN_REPO_TOO_LARGE',
   // 插件更新:旧安装目录里的 data.json(插件数据)无法安全带入新版本(是链接 / 超限 / 读写失败)→ 中止更新,不丢数据。
   PLUGIN_DATA_PRESERVE_FAILED: 'PLUGIN_DATA_PRESERVE_FAILED',
   RM_FAILED: 'RM_FAILED',
