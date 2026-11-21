@@ -11,13 +11,13 @@ Run Claude Code, Codex CLI, Aider, or your own agent inside a dockable multi-ter
 
 ## Download
 
-Prebuilt installers are published on the [Releases page](https://github.com/philip1974/Continuo/releases) when available. **There is no published build right now — build from source** (see **Quick start** below).
+Prebuilt installers are published on the [Releases page](https://github.com/philip1974/Continuo/releases). You can also build from source (see **Quick start** below).
 
 Early-access builds are **macOS (Apple Silicon) only and unsigned**: mount the `.dmg` and drag Continuo into **Applications**, then **right-click the app → Open → Open** to get past Gatekeeper (macOS 14 and earlier); on macOS 15 and later, try to open it once, then click **Open Anyway** in System Settings → Privacy & Security. If macOS says the app "is damaged", remove the download quarantine flag: `xattr -dr com.apple.quarantine /Applications/Continuo.app`. Code signing / notarization and Windows / Linux builds come later.
 
 ## First-run feedback
 
-1. Build from source (**Quick start** below), or use a build from the Releases page when one is available (unsigned — see the Gatekeeper note above).
+1. Build from source (**Quick start** below), or download a build from the Releases page (unsigned — see the Gatekeeper note above).
 2. Connect your normal terminal agent through the MCP stdio bridge.
 3. Tell us what happened: OS, agent, and the exact step where setup or MCP broke.
 

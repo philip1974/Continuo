@@ -11,13 +11,13 @@ Claude Code, Codex CLI, Aider 또는 직접 만든 에이전트를 도킹 가능
 
 ## 다운로드
 
-미리 빌드된 설치 파일은 준비되는 대로 [Releases 페이지](https://github.com/philip1974/Continuo/releases)에 게시됩니다. **현재 게시된 빌드가 없으니 소스에서 빌드하세요** (아래 **빠른 시작** 참고).
+미리 빌드된 설치 파일은 [Releases 페이지](https://github.com/philip1974/Continuo/releases)에 게시됩니다. 소스에서 직접 빌드할 수도 있습니다 (아래 **빠른 시작** 참고).
 
 얼리 액세스 빌드는 **macOS (Apple Silicon) 전용이며 서명되지 않았습니다**: `.dmg`를 마운트하고 Continuo를 **응용 프로그램** 폴더로 드래그한 뒤 **앱을 우클릭 → 열기 → 열기**를 선택해 Gatekeeper를 통과하세요 (macOS 14 이하). macOS 15 이상에서는 한 번 열기를 시도한 뒤 시스템 설정 → 개인정보 보호 및 보안에서 **그래도 열기**를 누르세요. 앱이 "손상되었다"는 메시지가 나오면 다운로드 격리 플래그를 제거하세요: `xattr -dr com.apple.quarantine /Applications/Continuo.app`. 코드 서명 / 공증과 Windows / Linux 빌드는 이후에 제공됩니다.
 
 ## 첫 실행 피드백
 
-1. 소스에서 빌드하거나(아래 **빠른 시작**), Releases 페이지에 빌드가 있으면 그것을 사용하세요 (서명되지 않음 — 위의 Gatekeeper 안내 참고).
+1. 소스에서 빌드하거나(아래 **빠른 시작**), Releases 페이지에서 빌드를 내려받으세요 (서명되지 않음 — 위의 Gatekeeper 안내 참고).
 2. MCP stdio 브리지를 통해 평소 쓰는 터미널 에이전트를 연결하세요.
 3. 어떤 일이 있었는지 알려 주세요: OS, 에이전트, 그리고 설정이나 MCP가 실패한 정확한 단계.
 

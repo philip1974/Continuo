@@ -11,13 +11,13 @@
 
 ## 下载
 
-预构建安装包有发布时会放在 [Releases 页面](https://github.com/philip1974/Continuo/releases)。**目前没有已发布的构建 —— 请从源码构建**（见下方 **快速开始**）。
+预构建安装包发布在 [Releases 页面](https://github.com/philip1974/Continuo/releases)，也可以从源码构建（见下方 **快速开始**）。
 
 抢先体验版**只支持 macOS（Apple Silicon）且未签名**：挂载 `.dmg` 并把 Continuo 拖进 **应用程序** 文件夹后，**右键点击 app → 打开 → 打开**以绕过 Gatekeeper（macOS 14 及更早）；macOS 15 及以上请先尝试打开一次，再到 系统设置 → 隐私与安全性 点 **仍要打开**。若提示 app「已损坏」，请移除下载隔离标记：`xattr -dr com.apple.quarantine /Applications/Continuo.app`。代码签名 / 公证以及 Windows / Linux 构建会在之后提供。
 
 ## 首次运行反馈
 
-1. 从源码构建（见下方 **快速开始**），或在 Releases 页面有构建时直接下载（未签名，见上方 Gatekeeper 说明）。
+1. 从源码构建（见下方 **快速开始**），或从 Releases 页面下载构建（未签名，见上方 Gatekeeper 说明）。
 2. 通过 MCP stdio 桥接，把你平常用的终端 agent 接进来。
 3. 告诉我们发生了什么：操作系统、agent，以及安装或 MCP 在哪一步出问题。
 
