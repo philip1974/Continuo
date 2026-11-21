@@ -1,0 +1,878 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
+
+// PROD 下 sandboxSweep 会涂掉 navigator.clipboard,LM UI 必须走 cached ref
+// (getCachedClipboard)。测试也走 mock 的 cached clipboard,而非 hack
+// navigator.clipboard 全局 — 这样 spec 才真锁住「PROD 仍能复制」。
+const { writeTextMock } = vi.hoisted(() => ({
+  writeTextMock: vi.fn<(text: string) => Promise<void>>(),
+}));
+vi.mock('../../plugins/sandbox-sweep', () => ({
+  getCachedFetch: () => globalThis.fetch,
+  getCachedClipboard: () => ({
+    readText: () => Promise.resolve(''),
+    writeText: writeTextMock,
+  }),
+  sandboxSweep: () => {},
+}));
+
+import {
+  _resetLmApiForTest,
+  captureLmApi,
+} from '../../lib/co-api';
+import { splitStatusItemsBySide, StatusBar } from '../../shell/StatusBar';
+import { useEditorStore } from '../../stores/editor.store';
+import { useWorkspaceStore } from '../../stores/workspace.store';
+import { useLayoutUiStore } from '../../stores/layout-ui.store';
+import { useTerminalStore } from '../../stores/terminal.store';
+import {
+  _resetAgentAuthForTest,
+  hasAnySessionGrant,
+  useAgentAuthStore,
+} from '../../stores/agent-auth.store';
+import { coApp } from '../../plugins/co-app';
+import { StatusBarRegistry } from '../../plugins/registries/StatusBarRegistry';
+import { notify } from '../../notifications/notify';
+import { en } from '../../../electron/shared/i18n-locales/en';
+import { zh } from '../../../electron/shared/i18n-locales/zh';
+import { ko } from '../../../electron/shared/i18n-locales/ko';
+
+interface FakeApi {
+  mcp?: { getStdioConfig: ReturnType<typeof vi.fn> };
+  agentAuth?: { revoke: ReturnType<typeof vi.fn> };
+}
+
+function installApi(api: FakeApi): void {
+  Object.defineProperty(window, 'api', {
+    value: api,
+    writable: true,
+    configurable: true,
+  });
+  captureLmApi();
+}
+
+beforeEach(() => {
+  _resetLmApiForTest();
+  _resetAgentAuthForTest();
+  useEditorStore.setState({ tabs: [], activeTabId: null });
+  useWorkspaceStore.setState({ root: null, recentRoots: [] });
+  useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
+  useTerminalStore.setState({ sessions: [] });
+  // 用类型断言覆盖 readonly,测试隔离需要(每 it 用全新 registry)
+  (coApp as { statusBar: StatusBarRegistry }).statusBar =
+    new StatusBarRegistry();
+  writeTextMock.mockReset();
+  writeTextMock.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  delete (window as { api?: unknown }).api;
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+describe('StatusBar — 左侧 workspace', () => {
+  it('复用 tooltip 翻译结果,title 与 aria-label 不重复查 catalog', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/shell/StatusBar.tsx'),
+      'utf8',
+    );
+
+    expect(src).toContain('const mcpTooltip = t(');
+    expect(src).toContain('const agentRevokeTooltip =');
+    expect(src).toContain('title={mcpTooltip}');
+    expect(src).toContain('aria-label={mcpTooltip}');
+    expect(src).toContain('title={agentRevokeTooltip}');
+    expect(src).toContain('aria-label={agentRevokeTooltip}');
+  });
+
+  it('root=null → 「无工作区」', () => {
+    installApi({});
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('无工作区');
+  });
+
+  // 状态栏只显示真实信息:此前恒显示的分支名 main、编码 UTF-8、换行 LF 都是写死的占位
+  //(打开 CRLF 文件也显示 LF),已去掉。
+  it('root 有 → basename;不显示写死的分支名', () => {
+    installApi({});
+    useWorkspaceStore.setState({
+      root: '/Users/foo/projects/myapp',
+      recentRoots: [],
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('myapp');
+    expect(container.textContent).not.toContain('main');
+  });
+
+  it('sidebarOpen=false → 「侧栏已隐藏」', () => {
+    installApi({});
+    useLayoutUiStore.setState({ sidebarOpen: false });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('侧栏已隐藏');
+  });
+});
+
+describe('StatusBar — 右侧文件信息', () => {
+  it('activeTab=null → 不显示文件信息,也不显示写死的编码', () => {
+    installApi({});
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).not.toContain('UTF-8');
+    expect(container.textContent).not.toMatch(/行/);
+  });
+
+  it('active 有 + dirty → basename + ● + 行/词/字符', () => {
+    installApi({});
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/x.md',
+          filePath: '/x.md',
+          content: 'hello world\nsecond line',
+          originalContent: 'old',
+          dirty: true,
+        },
+      ],
+      activeTabId: '/x.md',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('x.md');
+    expect(container.textContent).toContain('●'); // dirty 标记
+    expect(container.textContent).toMatch(/2\s*行/);
+    expect(container.textContent).toMatch(/词/);
+    expect(container.textContent).not.toContain('UTF-8');
+    expect(container.textContent).not.toMatch(/\bLF\b/);
+  });
+
+  // a11y(A37,A35 同族):状态栏 dirty 只用视觉 ● → AT 须有「未保存」文本,● 标 aria-hidden。
+  it('a11y · dirty → AT 可读「未保存」文本 + ● aria-hidden;clean → 无', () => {
+    installApi({});
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/x.md',
+          filePath: '/x.md',
+          content: 'a',
+          originalContent: 'b',
+          dirty: true,
+        },
+      ],
+      activeTabId: '/x.md',
+    });
+    const { container, rerender } = render(<StatusBar />);
+    expect(container.textContent).toContain('未保存的更改');
+    const dot = Array.from(container.querySelectorAll('span')).find(
+      (s) => s.textContent === '●',
+    )!;
+    expect(dot.getAttribute('aria-hidden')).toBe('true');
+
+    // clean → 无未保存文本
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: '/x.md',
+          filePath: '/x.md',
+          content: 'a',
+          originalContent: 'a',
+          dirty: false,
+        },
+      ],
+      activeTabId: '/x.md',
+    });
+    rerender(<StatusBar />);
+    expect(container.textContent).not.toContain('未保存的更改');
+  });
+
+  it('active.filePath=null(草稿) → 「未命名」', () => {
+    installApi({});
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 'untitled-1',
+          filePath: null,
+          content: 'x',
+          originalContent: '',
+          dirty: false,
+        },
+      ],
+      activeTabId: 'untitled-1',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('未命名');
+  });
+});
+
+describe('StatusBar — agent 计数', () => {
+  it('agent session 0 → 不显示 agent 按钮', () => {
+    installApi({});
+    useTerminalStore.setState({
+      sessions: [
+        {
+          id: 't1',
+          title: 'shell',
+          cwd: '/',
+          originHint: 'user',
+          createdAt: 0,
+          exitCode: null,
+          ownerWindowId: 1,
+        },
+      ],
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).not.toMatch(/\d+ agent/);
+  });
+
+  it('agent session > 0 → 显示「N agent」按钮', () => {
+    installApi({
+      agentAuth: { revoke: vi.fn().mockResolvedValue({ ok: true }) },
+    });
+    useTerminalStore.setState({
+      sessions: [
+        {
+          id: 't1',
+          title: 'codex',
+          cwd: '/',
+          originHint: 'agent',
+          createdAt: 0,
+          exitCode: null,
+          ownerWindowId: 1,
+        },
+        {
+          id: 't2',
+          title: 'shell',
+          cwd: '/',
+          originHint: 'user',
+          createdAt: 0,
+          exitCode: null,
+          ownerWindowId: 1,
+        },
+      ],
+    });
+    const { container } = render(<StatusBar />);
+    // i18n(I19):agent 计数走 catalog,默认 locale=zh 渲染「1 个 agent」。用 locale-无关
+    // 断言(count + 'agent'),不再钉死旧英文 '1 agent';并验 zh 本地化(含「个」)非纯英文。
+    expect(container.textContent).toMatch(/1.*agent/);
+    expect(container.textContent).toContain('个 agent'); // zh catalog,非英文 raw '1 agent'
+  });
+});
+
+describe('StatusBar — 插件 statusBar items', () => {
+  it('分左右侧时不对同一 statusItems 做两次 filter', () => {
+    const statusItems = [
+      { id: 'left', side: 'left' as const, render: () => null },
+      { id: 'right', side: 'right' as const, render: () => null },
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const split = splitStatusItemsBySide(statusItems);
+      expect(split.left.map((item) => item.id)).toEqual(['left']);
+      expect(split.right.map((item) => item.id)).toEqual(['right']);
+      expect(filterSpy.mock.contexts.some((ctx) => ctx === statusItems)).toBe(false);
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+
+  it('分左右侧时不在已知长度快照上追加数组', () => {
+    expect(splitStatusItemsBySide.toString()).not.toContain('left.push(');
+    expect(splitStatusItemsBySide.toString()).not.toContain('right.push(');
+  });
+
+  it('空/单项分侧走快路径,避免预分配两组数组', () => {
+    const empty = splitStatusItemsBySide([]);
+    const leftItem = { id: 'left', side: 'left' as const, render: () => null };
+    const leftItems = [leftItem];
+    const rightItem = {
+      id: 'right',
+      side: 'right' as const,
+      render: () => null,
+    };
+    const rightItems = [rightItem];
+
+    expect(empty.left).toBe(empty.right);
+    expect(splitStatusItemsBySide(leftItems).left).toBe(leftItems);
+    expect(splitStatusItemsBySide(rightItems).right).toBe(rightItems);
+  });
+
+  it('多项但全在同一侧时复用输入快照', () => {
+    const leftItems = [
+      { id: 'left.a', side: 'left' as const, render: () => null },
+      { id: 'left.b', side: 'left' as const, render: () => null },
+    ];
+    const rightItems = [
+      { id: 'right.a', side: 'right' as const, render: () => null },
+      { id: 'right.b', side: 'right' as const, render: () => null },
+    ];
+    const empty = splitStatusItemsBySide([]);
+
+    const leftSplit = splitStatusItemsBySide(leftItems);
+    const rightSplit = splitStatusItemsBySide(rightItems);
+
+    expect(leftSplit.left).toBe(leftItems);
+    expect(leftSplit.right).toBe(empty.right);
+    expect(rightSplit.left).toBe(empty.left);
+    expect(rightSplit.right).toBe(rightItems);
+  });
+
+  it('左侧 item render → 出现在左半', () => {
+    installApi({});
+    coApp.statusBar.register({
+      id: 'plugin.left',
+      side: 'left',
+      render: () => 'PLUGIN_LEFT',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('PLUGIN_LEFT');
+  });
+
+  it('右侧 item render → 出现', () => {
+    installApi({});
+    coApp.statusBar.register({
+      id: 'plugin.right',
+      side: 'right',
+      render: () => 'PLUGIN_RIGHT',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('PLUGIN_RIGHT');
+  });
+
+  // 打磨 R6:StatusBar 改为一次订阅取全量(全局 priority 排序)再 filter 分侧。
+  // 同侧多项必须仍按 priority 升序渲染(守护 getAll().filter 保序 ≡ getBySide)。
+  it('同侧多 item → 按 priority 升序渲染', () => {
+    installApi({});
+    coApp.statusBar.register({
+      id: 'plugin.l.hi',
+      side: 'left',
+      priority: 200,
+      render: () => 'L_HI',
+    });
+    coApp.statusBar.register({
+      id: 'plugin.l.lo',
+      side: 'left',
+      priority: 1,
+      render: () => 'L_LO',
+    });
+    const { container } = render(<StatusBar />);
+    const txt = container.textContent ?? '';
+    expect(txt.indexOf('L_LO')).toBeGreaterThanOrEqual(0);
+    expect(txt.indexOf('L_LO')).toBeLessThan(txt.indexOf('L_HI'));
+  });
+
+  it('subscribe 后注册新 item → 立即出现', () => {
+    installApi({});
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).not.toContain('LATE_ITEM');
+    act(() => {
+      coApp.statusBar.register({
+        id: 'plugin.late',
+        side: 'right',
+        render: () => 'LATE_ITEM',
+      });
+    });
+    expect(container.textContent).toContain('LATE_ITEM');
+  });
+
+  // 复审回退 perf E5:StatusBarItemSpec 无订阅/失效 API,插件合法地让 render()
+  // 从闭包 / 命令式 store 读值,依赖 StatusBar 父级重渲刷新。按键等父级重渲必须重新调用插件
+  // render(),不得按 item 引用 memo 跳过,否则动态 item 静默陈旧。
+  it('插件 render 读外部可变状态 → StatusBar 因编辑重渲时显示最新值', () => {
+    installApi({});
+    let external = 'EXT_V1';
+    coApp.statusBar.register({ id: 'plugin.dyn', side: 'left', render: () => external });
+    useEditorStore.setState({
+      tabs: [
+        { id: '/a.txt', filePath: '/a.txt', content: 'a', originalContent: 'x', dirty: true },
+      ],
+      activeTabId: '/a.txt',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('EXT_V1');
+
+    external = 'EXT_V2';
+    act(() => {
+      useEditorStore.getState().updateContent('/a.txt', 'a b c');
+    });
+
+    expect(container.textContent).toContain('EXT_V2');
+    expect(container.textContent).not.toContain('EXT_V1');
+  });
+
+  it('同 id 重新注册(新 spec)→ item 按新 render 刷新', () => {
+    installApi({});
+    const first = coApp.statusBar.register({
+      id: 'plugin.e5b',
+      side: 'right',
+      render: () => 'V1',
+    });
+    const { container } = render(<StatusBar />);
+    expect(container.textContent).toContain('V1');
+
+    act(() => {
+      first.dispose();
+      coApp.statusBar.register({ id: 'plugin.e5b', side: 'right', render: () => 'V2' });
+    });
+    expect(container.textContent).toContain('V2');
+    expect(container.textContent).not.toContain('V1');
+  });
+});
+
+describe('StatusBar — MCP 复制', () => {
+  // a11y(A82,A74 同族):按钮可见文本随复制状态变化,aria-label 须稳定表「复制 MCP 配置」语义,
+  // 不随状态漂移成结果文本(结果由 live region 播报)。
+  it('a11y · MCP copy 按钮 aria-label 稳定(不随复制状态漂移)', async () => {
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockResolvedValue({
+          ok: true,
+          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+        }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => (b.getAttribute('aria-label') ?? '').includes('claude mcp add'))!;
+    expect(btn).toBeDefined();
+    const before = btn.getAttribute('aria-label');
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('已复制'); // 可见文本变了
+    });
+    // 但 aria-label 不变(稳定动作语义)
+    expect(btn.getAttribute('aria-label')).toBe(before);
+  });
+
+  it('ok=true + claudeAddCommand 有 + clipboard 写成功 → 文案变「已复制」', async () => {
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockResolvedValue({
+          ok: true,
+          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+        }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '复制 MCP 配置')!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('已复制');
+    });
+    expect(writeTextMock).toHaveBeenCalledWith('claude mcp add ...');
+    // a11y(A51):复制结果须在 live region(role=status)播报,焦点在按钮时也能听到。
+    const status = container.querySelector('[role=status]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain('已复制');
+  });
+
+  // 回归 issue #16/#17:PROD 下 sandboxSweep 涂掉 navigator.clipboard 后,
+  // 旧代码直接调 navigator.clipboard.writeText 必抛 TypeError → UI 显
+  // 「复制失败」。修后走 getCachedClipboard,正常路径不抛;但 cached
+  // writeText 自身因系统拒绝抛错时,UI 仍要 fallback 到「复制失败」。
+  it('clipboard writeText 抛错 → 「复制失败」', async () => {
+    writeTextMock.mockRejectedValueOnce(new Error('denied'));
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockResolvedValue({
+          ok: true,
+          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+        }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '复制 MCP 配置')!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('复制失败');
+    });
+  });
+
+  // a11y(A115,A50 同族):getStdioConfig() IPC reject 时也须归「复制失败」,不被 void 丢弃。
+  it('getStdioConfig reject → 「复制失败」(IPC 异常不静默)', async () => {
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockRejectedValue(new Error('ipc down')),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '复制 MCP 配置')!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('复制失败');
+    });
+  });
+
+  it('available=false → 「MCP 不可用」', async () => {
+    installApi({
+      mcp: {
+        getStdioConfig: vi.fn().mockResolvedValue({
+          ok: true,
+          data: { available: false },
+        }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '复制 MCP 配置')!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('MCP 不可用');
+    });
+  });
+
+  it('IPC ok=false → 「复制失败」', async () => {
+    installApi({
+      mcp: {
+        getStdioConfig: vi
+          .fn()
+          .mockResolvedValue({ ok: false, code: 'X', message: 'oops' }),
+      },
+    });
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === '复制 MCP 配置')!;
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(container.textContent).toContain('复制失败');
+    });
+  });
+});
+
+// 撤销走 design Modal 确认框(不再用原生 window.confirm):点状态栏按钮 → 弹窗 → 点确认 / 取消。
+function clickRevoke(btn: HTMLButtonElement, confirm: boolean): void {
+  fireEvent.click(btn);
+  const dialog = document.querySelector('.wm-modal-content')!;
+  expect(dialog).not.toBeNull();
+  const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'));
+  // 撤销是 destructive 确认框:确认按钮为 danger variant,初始焦点(data-autofocus)在取消。
+  const target = confirm
+    ? buttons.find((b) => b.getAttribute('data-variant') === 'danger')!
+    : buttons.find((b) => b.getAttribute('data-variant') !== 'danger')!;
+  fireEvent.click(target);
+  expect(document.querySelector('.wm-modal-content')).toBeNull();
+}
+
+describe('StatusBar — agent 撤销', () => {
+  // 终审 P1:只授予了调试域(外部 MCP 客户端 debug.launch → 本次启动期间允许)而没有 agent terminal 时,
+  // 撤销按钮此前不渲染、处理函数也拒绝 count<=0 → 调试授权(等同任意代码执行)只能退出应用才能撤销。
+  it.each([
+    ['debug', { sessionGranted: false, debugSessionGranted: true }],
+    ['terminal', { sessionGranted: true, debugSessionGranted: false }],
+  ])('无 agent 会话但已授予 %s 域 → 仍显示撤销入口,确认后撤销', async (_name, granted) => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, ...granted });
+
+    const { container } = render(<StatusBar />);
+    const btn = container.querySelector<HTMLButtonElement>('[data-agent-revoke]');
+    expect(btn).not.toBeNull();
+    clickRevoke(btn!, true);
+
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalled();
+      expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+      expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+    });
+  });
+
+  // 安全回归:外部客户端(stdio 未发 hello)的「本次启动期间允许」记在 external* 上。外部客户端获 debug.launch
+  // 授权(等同任意代码执行)且当时无 agent 终端时,撤销入口也必须可见,否则只能退出应用撤销。
+  it.each([
+    ['external 终端', { externalSessionGranted: true }],
+    ['external debug', { externalDebugSessionGranted: true }],
+  ])('无 agent 会话、仅有 %s 授权 → 仍显示撤销入口,确认后全部清除', async (_name, granted) => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, ...granted });
+
+    const { container } = render(<StatusBar />);
+    const btn = container.querySelector<HTMLButtonElement>('[data-agent-revoke]');
+    expect(btn).not.toBeNull();
+    clickRevoke(btn!, true);
+
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalled();
+      expect(hasAnySessionGrant(useAgentAuthStore.getState())).toBe(false);
+    });
+  });
+
+  // 撤销 IPC 失败回滚只恢复窗口级授权;外部客户端授权往拒绝方向,不恢复。
+  it('撤销 IPC 失败 → 窗口级授权回滚,external 授权不恢复', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({
+      pending: null,
+      pluginSessionGranted: true,
+      externalDebugSessionGranted: true,
+    });
+
+    const { container } = render(<StatusBar />);
+    clickRevoke(container.querySelector<HTMLButtonElement>('[data-agent-revoke]')!, true);
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().externalDebugSessionGranted).toBe(false);
+    errSpy.mockRestore();
+  });
+
+  // 撤销同时清终端 / 调试 / 插件工具三个域(agent-auth.store revoke),文案须如实列出插件工具域,
+  // 否则用户以为插件工具授权(可 git stage/commit 等)未被撤销。
+  it.each([
+    ['en', en, /plugin tool/i],
+    ['zh', zh, /插件工具/],
+    ['ko', ko, /플러그인 도구/],
+  ] as const)('%s:无会话撤销确认 / 撤销入口提示 文案包含插件工具域', (_l, dict, re) => {
+    expect(dict['permissions.revoke_all.confirm_grant_only']).toMatch(re);
+    expect(dict['statusbar.agent_revoke_grant_tooltip']).toMatch(re);
+  });
+
+  it('既无 agent 会话也无任何授权 → 不显示撤销入口', () => {
+    installApi({});
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: false, debugSessionGranted: false });
+    const { container } = render(<StatusBar />);
+    expect(container.querySelector('[data-agent-revoke]')).toBeNull();
+  });
+
+  it('点 N agent 按钮 + 用户 confirm → revoke + coApi.agentAuth.revoke', async () => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        {
+          id: 't1',
+          title: 'codex',
+          cwd: '/',
+          originHint: 'agent',
+          createdAt: 0,
+          exitCode: null,
+          ownerWindowId: 1,
+        },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, true);
+
+    await waitFor(() => {
+      expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+      expect(revoke).toHaveBeenCalled();
+    });
+  });
+
+  // 撤销全部 vs 旧 pending 竞态:main revoke 会把所有 pending 授权结算为 denied 并删除。renderer 若仍
+  // 显示旧弹窗,用户点「本次启动期间允许」会把 sessionGranted 置 true → 之后的请求被静默放行。
+  // revoke 成功 → 清掉 renderer 的 pending 提示。main 已结算该请求,取消结果为 'cancelled'(应答方据此
+  // 不再向 main respond,避免 NOT_PENDING 误报「授权响应失败」)。
+  it('revoke 成功 → 清掉 renderer 的 pending 授权提示', async () => {
+    const revoke = vi.fn().mockResolvedValue({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        {
+          id: 't1',
+          title: 'codex',
+          cwd: '/',
+          originHint: 'agent',
+          createdAt: 0,
+          exitCode: null,
+          ownerWindowId: 1,
+        },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+    const decision = useAgentAuthStore
+      .getState()
+      .ensure({ method: 'debug.launch' }); // debug 域未授权 → 弹出 pending
+    expect(useAgentAuthStore.getState().pending).not.toBeNull();
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, true);
+
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalled();
+      expect(useAgentAuthStore.getState().pending).toBeNull();
+    });
+    await expect(decision).resolves.toBe('cancelled');
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
+  });
+
+  it('不调用原生 window.confirm', () => {
+    const src = readFileSync(join(process.cwd(), 'src/shell/StatusBar.tsx'), 'utf-8');
+    expect(src).not.toContain('window.confirm');
+  });
+
+  it('用户取消 confirm → 不调 revoke', async () => {
+    const revoke = vi.fn();
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        {
+          id: 't1',
+          title: 'a',
+          cwd: '/',
+          originHint: 'agent',
+          createdAt: 0,
+          exitCode: null,
+          ownerWindowId: 1,
+        },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, false);
+
+    await Promise.resolve();
+    expect(revoke).not.toHaveBeenCalled();
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+  });
+
+  // 复审 loop R18:revoke IPC 失败不得静默伪成功(否则 UI 显示已撤销但 main 的 agent
+  // PTY/token 仍存活 = 安全相关谎报)。失败 → 回滚本地授权态 + notify.error。
+  it('R18: revoke IPC 返 ok:false → 回滚 sessionGranted=true + notify.error', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, true);
+
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    // 关键:撤销实际没成功 → 本地授权态回滚为 true,不谎报已撤销
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    errSpy.mockRestore();
+  });
+
+  it('撤销同时清终端与 debug 两个域的授权;IPC 失败时两个域都回滚', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: false, debugSessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, true);
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false); // 先本地撤销
+
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+    errSpy.mockRestore();
+  });
+
+  it('R18: revoke IPC reject → 同样回滚 + notify.error', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    const revoke = vi.fn().mockRejectedValue(new Error('ipc down'));
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+    clickRevoke(btn, true);
+
+    await waitFor(() => {
+      expect(errSpy).toHaveBeenCalled();
+    });
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    errSpy.mockRestore();
+  });
+
+  // race(R92):两次 revoke 并发,先发的迟到失败不得用旧 wasGranted 快照把 sessionGranted 回滚成
+  // true 覆盖后发已成功的撤销(否则 renderer 误以为仍授权,后续 agent auth 被无提示放行)。
+  it('R92: 先发 revoke 迟到失败,在后发成功之后不回滚 sessionGranted', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    let rejectFirst: (e: unknown) => void = () => {};
+    const revoke = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce({ ok: true });
+    installApi({ agentAuth: { revoke } });
+    useTerminalStore.setState({
+      sessions: [
+        { id: 't1', title: 'a', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 },
+      ],
+    });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    const btn = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => /\d+.*agent/.test(b.textContent ?? ''))!;
+
+    // 第一次 revoke(A):wasGranted=true,sessionGranted→false,IPC#1 在途(deferred,将失败)。
+    clickRevoke(btn, true);
+    // 第二次 revoke(B):IPC#2 成功(resolve ok)→ 不回滚。
+    clickRevoke(btn, true);
+    await waitFor(() => {
+      expect(revoke).toHaveBeenCalledTimes(2);
+    });
+
+    // A 的 IPC 此刻才迟到失败:因 A 非最新 revoke,不得回滚。
+    rejectFirst(new Error('late fail'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 关键:sessionGranted 保持 false(后发 B 已成功撤销,A 迟到失败未覆盖)。
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
+    errSpy.mockRestore();
+  });
+});

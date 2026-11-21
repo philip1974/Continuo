@@ -1,0 +1,165 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import * as ts from 'typescript';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+type MainAppModule = {
+  init: () => Promise<void> | void;
+};
+
+const entryImplementationPath = resolve(process.cwd(), 'src/main.tsx');
+const mainAppImplementationPath = resolve(process.cwd(), 'src/main-app.ts');
+const entryModulePath = '@/main';
+const spikeModulePath = '@/spikes/plugin-isolation';
+const mainAppModulePath = '@/main-app';
+const describeIfImplemented = existsSync(entryImplementationPath) && existsSync(mainAppImplementationPath)
+  ? describe
+  : describe.skip;
+const mainAppAstCase = existsSync(mainAppImplementationPath) ? it : it.skip;
+
+async function runEntry(search: string): Promise<void> {
+  vi.stubGlobal('location', { search });
+  await import(entryModulePath);
+  await vi.dynamicImportSettled();
+}
+
+describeIfImplemented('topic 45 thin renderer entry', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('loads only the spike module when ?spike=plugin-isolation is present', async () => {
+    const run = vi.fn();
+    const init = vi.fn();
+    vi.doMock(spikeModulePath, () => ({ run }));
+    vi.doMock(mainAppModulePath, () => ({ init }));
+
+    await runEntry('?spike=plugin-isolation');
+
+    expect(run).toHaveBeenCalledOnce();
+    expect(init).not.toHaveBeenCalled();
+  });
+
+  it('loads only main-app.init when spike query is absent', async () => {
+    const run = vi.fn();
+    const init = vi.fn();
+    vi.doMock(spikeModulePath, () => ({ run }));
+    vi.doMock(mainAppModulePath, () => ({ init }));
+
+    await runEntry('');
+
+    expect(init).toHaveBeenCalledOnce();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('does not import main-app at all on the spike route', async () => {
+    const run = vi.fn();
+    const mainAppFactory = vi.fn((): MainAppModule => ({ init: vi.fn() }));
+    vi.doMock(spikeModulePath, () => ({ run }));
+    vi.doMock(mainAppModulePath, mainAppFactory);
+
+    await runEntry('?spike=plugin-isolation');
+
+    expect(mainAppFactory).not.toHaveBeenCalled();
+  });
+
+  it('does not import the spike module at all on the normal app route', async () => {
+    const init = vi.fn();
+    const spikeFactory = vi.fn(() => ({ run: vi.fn() }));
+    vi.doMock(spikeModulePath, spikeFactory);
+    vi.doMock(mainAppModulePath, () => ({ init }));
+
+    await runEntry('');
+
+    expect(spikeFactory).not.toHaveBeenCalled();
+  });
+
+  it('keeps main-app strict-init as a callable function export', async () => {
+    const mainAppModule = (await vi.importActual(mainAppModulePath)) as MainAppModule;
+
+    expect(typeof mainAppModule.init).toBe('function');
+  });
+
+  // 边界(E194,E193 兄弟入口):thin-entry 的 spike 判定复用 safeStartupParams 的长度闸。
+  // 畸形超长 location.search(> MAX_STARTUP_QUERY_LEN 64KiB)→ safeStartupParams 返 null → 不解析 →
+  // 当作非 spike → 加载 main-app(而非在最早入口完整解析超长 query)。
+  it('E194 super-long location.search is length-capped (not parsed for spike) → routes to main-app', async () => {
+    const run = vi.fn();
+    const init = vi.fn();
+    vi.doMock(spikeModulePath, () => ({ run }));
+    vi.doMock(mainAppModulePath, () => ({ init }));
+
+    // 含 spike=plugin-isolation 但整体超长 → 无长度闸时会被解析并命中 spike;有闸则当非 spike。
+    const huge = `?spike=plugin-isolation&pad=${'a'.repeat(70000)}`;
+    await runEntry(huge);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(init).toHaveBeenCalledOnce();
+  });
+});
+
+// 本文件的用例会真实加载 renderer 入口乃至整个 main-app 依赖图(vi.importActual / 动态 import):空闲机器上
+// 约 1.5s,CPU 被其它任务占满时会超过 vitest 默认的 5s,表现为与改动无关的间歇性超时。给足余量。
+vi.setConfig({ testTimeout: 30_000 });
+
+describe('topic 45 main-app top-level AST contract', () => {
+  mainAppAstCase('allows only inert top-level statements in src/main-app.ts', () => {
+    const sourceText = readFileSync(mainAppImplementationPath, 'utf8');
+    const source = ts.createSourceFile(
+      mainAppImplementationPath,
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+
+    const disallowed = source.statements.filter((statement) => !isAllowedTopLevelStatement(statement));
+
+    expect(disallowed.map((statement) => ts.SyntaxKind[statement.kind])).toEqual([]);
+  });
+});
+
+function isAllowedTopLevelStatement(statement: ts.Statement): boolean {
+  if (
+    ts.isImportDeclaration(statement) ||
+    ts.isTypeAliasDeclaration(statement) ||
+    ts.isInterfaceDeclaration(statement) ||
+    ts.isFunctionDeclaration(statement)
+  ) {
+    return true;
+  }
+
+  if (ts.isVariableStatement(statement)) {
+    const declarationList = statement.declarationList;
+    const isConstOrLet =
+      (declarationList.flags & ts.NodeFlags.Const) !== 0 ||
+      (declarationList.flags & ts.NodeFlags.Let) !== 0;
+    return isConstOrLet && declarationList.declarations.every(hasAllowedInitializer);
+  }
+
+  if (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)) {
+    const expression = statement.expression.expression;
+    return (
+      expression.kind === ts.SyntaxKind.ImportKeyword &&
+      statement.expression.arguments.length === 1 &&
+      ts.isStringLiteral(statement.expression.arguments[0]!) &&
+      statement.expression.arguments[0]!.text.endsWith('.css')
+    );
+  }
+
+  return false;
+}
+
+function hasAllowedInitializer(declaration: ts.VariableDeclaration): boolean {
+  if (!declaration.initializer) return true;
+  return (
+    ts.isArrowFunction(declaration.initializer) ||
+    ts.isStringLiteral(declaration.initializer) ||
+    ts.isNumericLiteral(declaration.initializer) ||
+    declaration.initializer.kind === ts.SyntaxKind.TrueKeyword ||
+    declaration.initializer.kind === ts.SyntaxKind.FalseKeyword ||
+    declaration.initializer.kind === ts.SyntaxKind.NullKeyword
+  );
+}

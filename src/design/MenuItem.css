@@ -1,0 +1,44 @@
+.wm-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  padding: var(--wm-space-1_5) var(--wm-space-3);
+  background-color: transparent;
+  color: var(--md-on-surface);
+  cursor: pointer;
+  font-family: var(--wm-font-sans);
+  font-size: var(--wm-text-sm);
+  line-height: var(--wm-leading-normal);
+  outline: none;
+  text-align: left;
+  transition:
+    background-color var(--wm-duration-fast) var(--wm-ease-default),
+    color var(--wm-duration-fast) var(--wm-ease-default),
+    opacity var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-menu-item:hover:not(:disabled),
+.wm-menu-item:focus-visible:not(:disabled) {
+  background-color: var(--md-state-hover);
+}
+
+.wm-menu-item[data-variant="danger"]:hover:not(:disabled),
+.wm-menu-item[data-variant="danger"]:focus-visible:not(:disabled) {
+  color: var(--md-error);
+}
+
+.wm-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+.wm-menu-item__content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

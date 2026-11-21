@@ -1,0 +1,857 @@
+// BDD: agent-terminal-mcp-await-stop-hook
+// terminal.await_stop_hook MCP tool 契约层。
+
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  awaitStopHookInputSchema,
+  awaitStopHookOutputSchema,
+  createSessionInputSchema,
+  MCP_TOOL_AWAIT_STOP_HOOK,
+} from '../../../electron/shared/mcp-terminal-schemas';
+import {
+  createAwaitStopHookTool,
+  createHookFileBroker,
+  installStopHookForSession,
+  sortHookDirNames,
+  type HookFileBroker,
+  type HookWatchFactory,
+} from '../../../electron/main/services/mcp-tools-hook-bridge';
+
+const DONE_BUFFER_CAP = 500;
+const DONE_ENTRY_MAX_AGE_MS = 10 * 60 * 1000;
+const ctx = { ownerWindowId: 4 };
+
+type Runner = 'cc' | 'codex';
+
+interface FakeSession {
+  readonly id: string;
+  readonly windowId: number;
+  readonly runner: Runner;
+  readonly cwd: string;
+}
+
+interface AwaitStopHookInput {
+  readonly session_id: string;
+  readonly timeout_sec?: number;
+  readonly include_raw?: boolean;
+}
+
+const tmpRoots: string[] = [];
+const brokers: HookFileBroker[] = [];
+const noopWatchFactory: HookWatchFactory = () => ({
+  close() {},
+});
+
+afterEach(async () => {
+  await Promise.all(brokers.splice(0).map((broker) => broker.stop()));
+  vi.useRealTimers();
+  await Promise.all(
+    tmpRoots.splice(0).map((root) =>
+      rm(root, { recursive: true, force: true }),
+    ),
+  );
+});
+
+async function makeDoneDir(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'continuo-await-stop-hook-'));
+  tmpRoots.push(root);
+  return root;
+}
+
+async function waitForFileRemoved(file: string): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    try {
+      await readFile(file, 'utf8');
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await expect(readFile(file, 'utf8')).rejects.toThrow();
+}
+
+async function writeFixture(
+  doneDir: string,
+  opts: {
+    readonly runner: Runner;
+    readonly windowId: number;
+    /** 写事件的 Continuo 终端会话 id(hook 命令从 PTY 注入的 CONTINUO_TERMINAL_SESSION_ID 取)。 */
+    readonly sid: string;
+    readonly cliSessionId?: string;
+    readonly ns: string;
+    readonly payload: Record<string, unknown>;
+    readonly old?: boolean;
+  },
+): Promise<string> {
+  const file =
+    opts.runner === 'cc'
+      ? `${opts.runner}_${opts.windowId}_${opts.sid}_${opts.cliSessionId}_${opts.ns}.jsonl`
+      : `${opts.runner}_${opts.windowId}_${opts.sid}_${opts.ns}.jsonl`;
+  const fullPath = join(doneDir, file);
+  await writeFile(fullPath, `${JSON.stringify(opts.payload)}\n`, 'utf8');
+  if (opts.old === true) {
+    const old = new Date(Date.now() - DONE_ENTRY_MAX_AGE_MS - 1_000);
+    await utimes(fullPath, old, old);
+  }
+  return fullPath;
+}
+
+async function makeDriver(
+  doneDir: string,
+  sessions: readonly FakeSession[],
+  watchFactory: HookWatchFactory = noopWatchFactory,
+) {
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const broker = createHookFileBroker(doneDir, {
+    maxEntries: DONE_BUFFER_CAP,
+    maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+    cleanupIntervalMs: 60_000,
+    watchFactory,
+  });
+  await broker.start();
+  brokers.push(broker);
+
+  const tool = createAwaitStopHookTool({
+    broker,
+    getSessionMeta: (sessionId, callCtx) => {
+      const session = byId.get(sessionId);
+      if (session === undefined || session.windowId !== callCtx.ownerWindowId) {
+        return null;
+      }
+      return {
+        id: session.id,
+        cwd: session.cwd,
+        agentLabel: session.runner === 'cc' ? 'claude' : 'codex',
+      };
+    },
+  });
+
+  return {
+    tool,
+    awaitStopHook: (input: AwaitStopHookInput) =>
+      tool.run(awaitStopHookInputSchema.parse(input), ctx),
+    getSession: (id: string) => byId.get(id),
+  };
+}
+
+describe('terminal.await_stop_hook', () => {
+  it('hook 目录文件名已排序时不调用 sort', () => {
+    const names = ['cc_1.jsonl', 'cc_2.jsonl', 'codex_1.jsonl'];
+    const sortSpy = vi.spyOn(Array.prototype, 'sort');
+
+    try {
+      expect(sortHookDirNames(names)).toBe(names);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it('hook 目录文件名排序使用 ASCII 比较,不调用 localeCompare', () => {
+    const localeSpy = vi.spyOn(String.prototype, 'localeCompare');
+
+    try {
+      expect(sortHookDirNames(['codex_2.jsonl', 'cc_1.jsonl'])).toEqual([
+        'cc_1.jsonl',
+        'codex_2.jsonl',
+      ]);
+      expect(sortHookDirNames(['cc_1.jsonl', 'codex_2.jsonl'])).toEqual([
+        'cc_1.jsonl',
+        'codex_2.jsonl',
+      ]);
+      expect(localeSpy).not.toHaveBeenCalled();
+    } finally {
+      localeSpy.mockRestore();
+    }
+  });
+
+  // 边界(E83,E82/E30 数量上限族):hook 目录文件数上限。start 扫描经 opendir 惰性枚举,累计到
+  // 上限(maxDirEntries,可注入)即停 + 告警,畸形/堆积目录不整目录读入。注入低上限 + 少量真文件验证。
+  it('E83 hook 目录文件数超 maxDirEntries → start 扫描截断 + 告警', async () => {
+    const doneDir = await makeDoneDir();
+    for (let i = 0; i < 8; i += 1) {
+      await writeFile(
+        join(doneDir, `cc_1_s_${i}.jsonl`),
+        '{"session_id":"s"}\n',
+        'utf8',
+      );
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: 10,
+      maxAgeMs: 60_000,
+      cleanupIntervalMs: 60_000,
+      maxDirEntries: 5, // 注入低上限:8 文件 > 5 → 截断
+      watchFactory: noopWatchFactory,
+    });
+    brokers.push(broker);
+    await broker.start();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('truncated to 5'));
+    warn.mockRestore();
+  });
+
+  it('hook 文件名 windowId 解析不调用 RegExp.exec', async () => {
+    const doneDir = await makeDoneDir();
+    await writeFixture(doneDir, {
+      runner: 'codex',
+      windowId: 4,
+      sid: 'term-codex',
+      ns: '123',
+      payload: {
+        session_id: 'cli-1',
+        cwd: '/repo',
+      },
+    });
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: DONE_BUFFER_CAP,
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 60_000,
+      watchFactory: noopWatchFactory,
+    });
+    brokers.push(broker);
+
+    try {
+      await broker.start();
+      await expect(
+        broker.awaitNext({
+          windowId: 4,
+          sessionId: 'term-codex',
+          runner: 'codex',
+          cwd: '/repo',
+          timeoutMs: 5000,
+        }),
+      ).resolves.toMatchObject({
+        payload: { runner: 'codex', cliSessionId: 'cli-1' },
+        windowId: 4,
+      });
+      const filenameRegexCalls = execSpy.mock.contexts.filter(
+        (context) =>
+          context instanceof RegExp &&
+          context.source === '^(cc|codex)_([0-9]+)_',
+      );
+      expect(filenameRegexCalls).toHaveLength(0);
+    } finally {
+      execSpy.mockRestore();
+    }
+  });
+
+  it('should expose schema in tools/list with session_id timeout_sec include_raw and output fields', async () => {
+    expect(createSessionInputSchema.safeParse({}).success).toBe(true);
+    const doneDir = await makeDoneDir();
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-1', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+
+    expect(driver.tool.name).toBe(MCP_TOOL_AWAIT_STOP_HOOK);
+    expect(
+      awaitStopHookInputSchema.safeParse({ session_id: 'term-1' }).success,
+    ).toBe(true);
+    expect(awaitStopHookInputSchema.parse({ session_id: 'term-1' })).toMatchObject(
+      {
+        timeout_sec: 60,
+        include_raw: false,
+      },
+    );
+    expect(awaitStopHookInputSchema.safeParse({ session_id: '' }).success).toBe(
+      false,
+    );
+    expect(
+      awaitStopHookInputSchema.safeParse({
+        session_id: 'term-1',
+        timeout_sec: 601,
+      }).success,
+    ).toBe(false);
+    // 边界(E203):tool.inputSchema 是 session_id 加 .max(SESSION_ID_MAX) 的 bounded 版(协议原 schema 无上限)。
+    const longId = 'term-' + 'x'.repeat(300);
+    expect(driver.tool.inputSchema.safeParse({ session_id: longId }).success).toBe(
+      false,
+    );
+    expect(driver.tool.inputSchema.safeParse({ session_id: 'term-1' }).success).toBe(
+      true,
+    );
+    expect(awaitStopHookInputSchema.safeParse({ session_id: longId }).success).toBe(
+      true,
+    ); // 协议原 schema 仍接受(本工具刻意收窄)
+    // 边界(E204):公开 jsonSchema 同步声明 maxLength:256。
+    expect(JSON.stringify(driver.tool.jsonSchema)).toContain('"maxLength":256');
+    expect(
+      awaitStopHookOutputSchema.safeParse({
+        status: 'timeout',
+        session_id: 'term-1',
+        cli_session_id: null,
+        turn_id: null,
+        cwd: null,
+        transcript_path: null,
+        last_assistant_message: null,
+        elapsed_ms: 0,
+        raw: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  // 条数上限可注入(默认 500)。此前这段塞在下一个用例里:顺序写 501 个文件再整目录读入,却没有任何
+  // 断言;在慢盘(Windows runner)上把那个用例拖过 5s 超时,超时后用例体仍在写文件,afterEach 的清理
+  // 再报 ENOTEMPTY。用小上限验证同一行为,并真的断言它。
+  it('buffer 条数超上限 → FIFO 淘汰最旧的一条并删除其文件,其余按序投递', async () => {
+    const doneDir = await makeDoneDir();
+    const files: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      files.push(
+        await writeFixture(doneDir, {
+          runner: 'cc',
+          windowId: 4,
+          sid: 'term-1',
+          cliSessionId: `cli-${i}`,
+          ns: `${i}`,
+          payload: { session_id: `cli-${i}`, cwd: '/repo', event: 'stop' },
+        }),
+      );
+    }
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: 3,
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 60_000,
+      watchFactory: noopWatchFactory,
+    });
+    brokers.push(broker);
+    await broker.start();
+
+    await waitForFileRemoved(files[0]!);
+    for (const expected of ['cli-1', 'cli-2', 'cli-3']) {
+      await expect(
+        broker.awaitNext({ windowId: 4, sessionId: 'term-1', runner: 'cc', cwd: '/repo', timeoutMs: 1_000 }),
+      ).resolves.toMatchObject({ payload: { cliSessionId: expected } });
+    }
+  });
+
+  it('should resolve cc and codex stop hooks, map fields, handle raw, unlink files, and cleanup old entries', async () => {
+    const doneDir = await makeDoneDir();
+    const stale = await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 4,
+      sid: 'term-cc',
+      cliSessionId: 'stale',
+      ns: 'old',
+      payload: { session_id: 'stale', cwd: '/repo', event: 'stop' },
+      old: true,
+    });
+    const ccDefault = await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 4,
+      sid: 'term-cc',
+      cliSessionId: 'claude-cli-1',
+      ns: 'default',
+      payload: {
+        session_id: 'claude-cli-1',
+        turn_id: 'turn-1',
+        cwd: '/repo',
+        event: 'stop',
+        transcript_path: '/tmp/claude.jsonl',
+        last_assistant_message: 'done',
+      },
+    });
+    await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 4,
+      sid: 'term-cc',
+      cliSessionId: 'claude-cli-2',
+      ns: 'raw',
+      payload: { session_id: 'claude-cli-2', cwd: '/repo', event: 'stop' },
+    });
+    await writeFixture(doneDir, {
+      runner: 'codex',
+      windowId: 4,
+      sid: 'term-codex',
+      ns: 'stop',
+      payload: {
+        session_id: 'codex-cli-1',
+        cwd: '/repo',
+        event: 'stop',
+      },
+    });
+
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-cc', windowId: 4, runner: 'cc', cwd: '/repo' },
+      { id: 'term-codex', windowId: 4, runner: 'codex', cwd: '/repo' },
+    ]);
+
+    const ccOut = await driver.awaitStopHook({ session_id: 'term-cc' });
+    expect(ccOut).toMatchObject({
+      status: 'stop',
+      session_id: 'term-cc',
+      cli_session_id: 'claude-cli-1',
+      turn_id: 'turn-1',
+      cwd: '/repo',
+      transcript_path: '/tmp/claude.jsonl',
+      last_assistant_message: 'done',
+    });
+    expect('raw' in ccOut).toBe(false);
+
+    const rawOut = await driver.awaitStopHook({
+      session_id: 'term-cc',
+      include_raw: true,
+    });
+    expect(rawOut.raw).toMatchObject({ session_id: 'claude-cli-2' });
+
+    await expect(
+      driver.awaitStopHook({ session_id: 'term-codex' }),
+    ).resolves.toMatchObject({
+      status: 'stop',
+      cli_session_id: 'codex-cli-1',
+    });
+
+    await vi.waitFor(async () => {
+      await expect(readFile(ccDefault, 'utf8')).rejects.toThrow();
+      await expect(readFile(stale, 'utf8')).rejects.toThrow();
+    });
+  });
+
+  it('should return timeout after timeout_sec without throwing when no fixture arrives', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-timeout', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+
+    const pending = driver.awaitStopHook({
+      session_id: 'term-timeout',
+      timeout_sec: 2,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(pending).resolves.toMatchObject({
+      status: 'timeout',
+      cli_session_id: null,
+      elapsed_ms: 2000,
+    });
+  });
+
+  // race(R3):start() 改为先 attach watcher 再补扫存量,关闭「扫描完成→watch 注册」之间写入
+  // 的事件文件被漏掉的窗口。本例守护重排后存量文件(watch 前已存在)仍被 ingest(scan 路径未断)。
+  it('R3 start() 先 watcher 后补扫:存量 stop-hook 文件(watch 前已存在)仍被 ingest', async () => {
+    const doneDir = await makeDoneDir();
+    await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 4,
+      sid: 'term-1',
+      cliSessionId: 'cli-preexist',
+      ns: 'preexist',
+      payload: {
+        session_id: 'cli-preexist',
+        turn_id: 'turn-pre',
+        cwd: '/repo',
+        event: 'stop',
+        transcript_path: '/tmp/pre.jsonl',
+        last_assistant_message: 'pre',
+      },
+    });
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-1', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+    await expect(
+      driver.awaitStopHook({ session_id: 'term-1' }),
+    ).resolves.toMatchObject({
+      status: 'stop',
+      cli_session_id: 'cli-preexist',
+      cwd: '/repo',
+    });
+  });
+
+  it('should throw TERMINAL_SESSION_NOT_FOUND for an unregistered session_id', async () => {
+    const doneDir = await makeDoneDir();
+    const driver = await makeDriver(doneDir, []);
+    expect(driver.getSession('missing')).toBeUndefined();
+
+    await expect(
+      driver.awaitStopHook({ session_id: 'missing' }),
+    ).rejects.toMatchObject({
+      code: 'TERMINAL_SESSION_NOT_FOUND',
+    });
+  });
+
+  it('should isolate waiters by windowId so a windowId=5 fixture does not unlock windowId=4', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 5,
+      sid: 'term-w4',
+      cliSessionId: 'wrong-window',
+      ns: 'stop',
+      payload: { session_id: 'wrong-window', cwd: '/repo', event: 'stop' },
+    });
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-w4', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+
+    const pending = driver.awaitStopHook({
+      session_id: 'term-w4',
+      timeout_sec: 2,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(pending).resolves.toMatchObject({
+      status: 'timeout',
+      cli_session_id: null,
+    });
+  });
+
+  it('should reject a second pending waiter for the same session with AWAIT_STOP_HOOK_ALREADY_PENDING', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-a', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+    const first = driver.awaitStopHook({ session_id: 'term-a', timeout_sec: 2 });
+    const second = driver.awaitStopHook({ session_id: 'term-a', timeout_sec: 2 });
+
+    await expect(second).rejects.toMatchObject({
+      code: 'AWAIT_STOP_HOOK_ALREADY_PENDING',
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(first).resolves.toBeDefined();
+  });
+
+  // 正确性(S8):Stop 事件与会话精确绑定。旧实现按 (窗口, runner, cwd) 匹配:同窗口同 runner 同 cwd 的
+  // 另一会话 await_stop_hook 会拿走本会话的 Stop 事件(文件随后被删,本会话等待者超时),或互占 key 让
+  // 对方 ALREADY_PENDING。这是防事件串会话,不是安全边界(同用户进程可直接读 hook-events / transcript)。
+  // 用例中的 victim / attacker 只是两个会话的标签。
+  it('S8 同窗口同 runner 同 cwd 的他会话等待者不能截获本会话的 Stop 事件', async () => {
+    const doneDir = await makeDoneDir();
+    // 可手动投递 watch 事件的 watcher:模拟「攻击者先挂等待,受害会话随后 Stop」的实时路径。
+    let emit: (fileName: string) => void = () => {};
+    const manualWatch: HookWatchFactory = (_dir, onFile) => {
+      emit = onFile;
+      return { close() {} };
+    };
+    const driver = await makeDriver(
+      doneDir,
+      [
+        { id: 'term-victim', windowId: 4, runner: 'cc', cwd: '/repo' },
+        { id: 'term-attacker', windowId: 4, runner: 'cc', cwd: '/repo' },
+      ],
+      manualWatch,
+    );
+
+    // 攻击者先占位等待,受害方随后等待同 (窗口, runner, cwd):不得 ALREADY_PENDING。
+    const attacker = driver.awaitStopHook({ session_id: 'term-attacker', timeout_sec: 1 });
+    const victim = driver.awaitStopHook({ session_id: 'term-victim', timeout_sec: 5 });
+    const victimFile = await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 4,
+      sid: 'term-victim',
+      cliSessionId: 'claude-victim',
+      ns: '1',
+      payload: {
+        session_id: 'claude-victim',
+        cwd: '/repo',
+        last_assistant_message: 'secret',
+        transcript_path: '/tmp/victim.jsonl',
+      },
+    });
+    emit(victimFile.slice(doneDir.length + 1));
+
+    await expect(victim).resolves.toMatchObject({
+      status: 'stop',
+      last_assistant_message: 'secret',
+      transcript_path: '/tmp/victim.jsonl',
+    });
+    await expect(attacker).resolves.toMatchObject({
+      status: 'timeout',
+      last_assistant_message: null,
+    });
+    await waitForFileRemoved(victimFile);
+  });
+
+  it('S8a 已缓冲的他会话事件也不交给攻击会话(缓冲命中路径)', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 4,
+      sid: 'term-victim',
+      cliSessionId: 'claude-victim',
+      ns: '1',
+      payload: { session_id: 'claude-victim', cwd: '/repo', last_assistant_message: 'secret' },
+    });
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-victim', windowId: 4, runner: 'cc', cwd: '/repo' },
+      { id: 'term-attacker', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+
+    const attacker = driver.awaitStopHook({ session_id: 'term-attacker', timeout_sec: 2 });
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(attacker).resolves.toMatchObject({ status: 'timeout' });
+    // 事件仍留给受害会话。
+    await expect(
+      driver.awaitStopHook({ session_id: 'term-victim', timeout_sec: 2 }),
+    ).resolves.toMatchObject({ status: 'stop', last_assistant_message: 'secret' });
+  });
+
+  // 端到端:真实安装的 Claude Stop hook 命令在带 CONTINUO_TERMINAL_SESSION_ID 的环境里执行,写出的事件
+  // 只交给该会话的等待者。守护 hook 命令 ↔ broker 文件名解析两端的格式契约。
+  it.skipIf(process.platform === 'win32')(
+    'S8c 真实 hook 命令写出的事件按 CONTINUO_TERMINAL_SESSION_ID 绑定会话',
+    async () => {
+      const doneDir = await makeDoneDir();
+      const cwd = await makeDoneDir();
+      await expect(installStopHookForSession(cwd, 'cc', doneDir)).resolves.toEqual({
+        installed: true,
+      });
+      const settings = JSON.parse(
+        await readFile(join(cwd, '.claude', 'settings.local.json'), 'utf8'),
+      ) as { hooks: { Stop: Array<{ hooks: Array<{ command: string }> }> } };
+      const command = settings.hooks.Stop[0]!.hooks[0]!.command;
+      execFileSync('/bin/sh', ['-c', command], {
+        input: JSON.stringify({ session_id: 'claude-victim', cwd: '/repo', last_assistant_message: 'secret' }),
+        env: {
+          PATH: process.env.PATH ?? '/usr/bin:/bin',
+          CONTINUO_HOOK_EVENTS_DIR: doneDir,
+          CONTINUO_WINDOW_ID: '4',
+          CONTINUO_TERMINAL_SESSION_ID: 'term-victim',
+          CLAUDE_CODE_SESSION_ID: 'claude-victim',
+        },
+      });
+
+      vi.useFakeTimers();
+      const driver = await makeDriver(doneDir, [
+        { id: 'term-victim', windowId: 4, runner: 'cc', cwd: '/repo' },
+        { id: 'term-attacker', windowId: 4, runner: 'cc', cwd: '/repo' },
+      ]);
+      const attacker = driver.awaitStopHook({ session_id: 'term-attacker', timeout_sec: 1 });
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(attacker).resolves.toMatchObject({ status: 'timeout' });
+      await expect(
+        driver.awaitStopHook({ session_id: 'term-victim', timeout_sec: 1 }),
+      ).resolves.toMatchObject({ status: 'stop', last_assistant_message: 'secret' });
+    },
+  );
+
+  it('S8b 缺会话 id 的事件(旧 hook 文件名 / 非 Continuo 会话)不当通配交给任何等待者', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    // 旧版 hook 文件名(无会话段)与 `${CONTINUO_TERMINAL_SESSION_ID:-unknown}` 落空的情形。
+    await writeFile(
+      join(doneDir, 'cc_4_claude-legacy_1.jsonl'),
+      `${JSON.stringify({ session_id: 'claude-legacy', cwd: '/repo' })}\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(doneDir, 'cc_4_unknown_claude-x_2.jsonl'),
+      `${JSON.stringify({ session_id: 'claude-x', cwd: '/repo' })}\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(doneDir, 'codex_4_3.jsonl'),
+      `${JSON.stringify({ session_id: 'codex-legacy', cwd: '/repo' })}\n`,
+      'utf8',
+    );
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-cc', windowId: 4, runner: 'cc', cwd: '/repo' },
+      { id: 'term-codex', windowId: 4, runner: 'codex', cwd: '/repo' },
+    ]);
+    const cc = driver.awaitStopHook({ session_id: 'term-cc', timeout_sec: 2 });
+    const codex = driver.awaitStopHook({ session_id: 'term-codex', timeout_sec: 2 });
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(cc).resolves.toMatchObject({ status: 'timeout' });
+    await expect(codex).resolves.toMatchObject({ status: 'timeout' });
+  });
+
+  it('should allow concurrent waiters for the same windowId and cwd when runner differs', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-cc', windowId: 4, runner: 'cc', cwd: '/repo' },
+      { id: 'term-codex', windowId: 4, runner: 'codex', cwd: '/repo' },
+    ]);
+
+    const cc = driver.awaitStopHook({ session_id: 'term-cc', timeout_sec: 2 });
+    const codex = driver.awaitStopHook({
+      session_id: 'term-codex',
+      timeout_sec: 2,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(Promise.all([cc, codex])).resolves.toHaveLength(2);
+  });
+
+  it('preserves a fresh unparseable hook file (possible incomplete write) instead of deleting it', async () => {
+    const doneDir = await makeDoneDir();
+    // 模拟 `cat >` 写入尚未完成:文件已创建但内容是截断的非法 JSON。
+    const partial = join(doneDir, 'cc_4_partial_stop.jsonl');
+    await writeFile(partial, '{ "session_id": "claude', 'utf8');
+
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: DONE_BUFFER_CAP,
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 60_000,
+      watchFactory: noopWatchFactory,
+    });
+    await broker.start(); // start 的 readdir 会 ingest 这个文件
+    brokers.push(broker);
+
+    // 解析失败的新文件必须被保留(等内容写完后由后续 watch 事件重试),
+    // 不能在内容到达前被删除 → 否则真实 stop 事件永久丢失(审计 P1)。
+    await expect(readFile(partial, 'utf8')).resolves.toBe('{ "session_id": "claude');
+  });
+
+  // 边界(E26,E18/E20/E24 兄弟):超大 hook 文件(畸形/异常 CLI 输出)绝不整块读入。
+  // ingestFile 在 stat 后按 size 拦截 → 标 processed + unlink 隔离,不读不解析不缓冲。
+  // 该上限反向钳住下游 raw / last_assistant_message / include_raw 字节数。
+  it('E26 超大 hook 文件(>1MiB)被隔离丢弃:从不投递且从磁盘删除', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    const oversizePath = join(doneDir, 'cc_4_term-1_cli-oversize_stop.jsonl');
+    // 合法 JSON 但 last_assistant_message 灌到 >1MiB,模拟异常/畸形 CLI 输出。
+    const oversize = JSON.stringify({
+      session_id: 'cli-oversize',
+      cwd: '/repo',
+      last_assistant_message: 'x'.repeat(1024 * 1024 + 1024),
+    });
+    expect(oversize.length).toBeGreaterThan(1024 * 1024);
+    await writeFile(oversizePath, oversize, 'utf8');
+
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-1', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+
+    const pending = driver.awaitStopHook({
+      session_id: 'term-1',
+      timeout_sec: 2,
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    // 超大文件被隔离 → 从不进 buffered → await 超时(而非 status:'stop' 带 cli-oversize)。
+    await expect(pending).resolves.toMatchObject({
+      status: 'timeout',
+      cli_session_id: null,
+    });
+    // 隔离文件最终被 unlink 删除(标 processed,不重试)。unlink 异步完成,全量并发负载下可能晚于上面的超时 →
+    // 轮询等它落地,而非单次读取。
+    await vi.waitFor(() => expect(readFile(oversizePath, 'utf8')).rejects.toThrow(), { timeout: 5_000 });
+  });
+
+  // 边界(E150,E26/E83 数量上限族):buffered 数组按"条数"上限(maxEntries=500)钳制,但每条可
+  // 持近 1MiB 原始 JSON → 仅按条数封顶最坏 ~500MiB 常驻。补"总字节"上限(maxBufferedBytes,可注入),
+  // 与条数上限同一 while 循环双闸 FIFO 淘汰。注入极小字节预算 + 多条大 entry 验证:仅最近一条幸存。
+  it('E150 buffered 总字节超 maxBufferedBytes → FIFO 淘汰旧 entry(仅 1 条幸存)', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    // 3 条匹配 term-cc 的大 entry,各 ~2KiB;预算 3000 字节 → 任意两条即超 → 始终只保 1 条。
+    const pad = 'y'.repeat(2000);
+    for (const ns of ['a', 'b', 'c']) {
+      await writeFixture(doneDir, {
+        runner: 'cc',
+        windowId: 4,
+        sid: 'term-cc',
+        cliSessionId: `cli-${ns}`,
+        ns,
+        payload: { session_id: `cli-${ns}`, cwd: '/repo', last_assistant_message: pad },
+      });
+    }
+
+    const byId = new Map([
+      ['term-cc', { id: 'term-cc', windowId: 4, cwd: '/repo', agentLabel: 'claude' }],
+    ]);
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: DONE_BUFFER_CAP, // 条数远未触及 → 字节预算是唯一约束
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 60_000,
+      maxBufferedBytes: 3000,
+      watchFactory: noopWatchFactory,
+    });
+    await broker.start(); // start 扫描即 ingest 3 条 → 字节淘汰至 1 条
+    brokers.push(broker);
+    const tool = createAwaitStopHookTool({
+      broker,
+      getSessionMeta: (sessionId, callCtx) => {
+        const s = byId.get(sessionId);
+        return s !== undefined && s.windowId === callCtx.ownerWindowId
+          ? { id: s.id, cwd: s.cwd, agentLabel: s.agentLabel }
+          : null;
+      },
+    });
+    const run = (input: AwaitStopHookInput) =>
+      tool.run(awaitStopHookInputSchema.parse(input), ctx);
+
+    // 第一次 await:幸存的那 1 条立即兑付(status:'stop')。
+    const first = await run({ session_id: 'term-cc', timeout_sec: 5 });
+    expect(first).toMatchObject({ status: 'stop' });
+
+    // 第二次 await:buffer 已空(只有 1 条幸存,已被上一次消费)→ 超时。
+    // 若无字节淘汰,3 条全部缓冲 → 此处会再次命中 status:'stop'。
+    const second = run({ session_id: 'term-cc', timeout_sec: 1 });
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(second).resolves.toMatchObject({ status: 'timeout' });
+    expect(createHookFileBroker.toString()).not.toContain('buffered.shift(');
+  });
+
+  it('cleanupStale 用 buffered 文件名索引跳过已缓冲文件,不对每个目录项 buffered.some', async () => {
+    const doneDir = await makeDoneDir();
+    for (const ns of ['a', 'b', 'c']) {
+      await writeFixture(doneDir, {
+        runner: 'cc',
+        windowId: 4,
+        sid: 'term-1',
+        cliSessionId: `cli-${ns}`,
+        ns,
+        payload: { session_id: `cli-${ns}`, cwd: '/repo' },
+      });
+    }
+    const broker = createHookFileBroker(doneDir, {
+      maxEntries: DONE_BUFFER_CAP,
+      maxAgeMs: DONE_ENTRY_MAX_AGE_MS,
+      cleanupIntervalMs: 5,
+      watchFactory: noopWatchFactory,
+    });
+    await broker.start();
+    brokers.push(broker);
+    const orphan = join(doneDir, 'cc_4_orphan_cleanup.jsonl');
+    await writeFile(orphan, '{bad json', 'utf8');
+    const old = new Date(Date.now() - DONE_ENTRY_MAX_AGE_MS - 1_000);
+    await utimes(orphan, old, old);
+    await waitForFileRemoved(orphan);
+
+    await expect(readFile(orphan, 'utf8')).rejects.toThrow();
+    expect(createHookFileBroker.toString()).not.toContain('buffered.some(');
+  });
+
+  // 边界(E151,E148 兄弟入口):await_stop_hook 的 session_id 仅 minLength;not-found 时不可把
+  // 超长原串原样拼进错误消息(放大 JSON-RPC error/日志/内存)。复用共享 truncateSessionIdForEcho。
+  it('E151 超长 session_id not-found → 错误消息截断(不回显超长原串)', async () => {
+    const doneDir = await makeDoneDir();
+    const driver = await makeDriver(doneDir, [
+      { id: 'term-1', windowId: 4, runner: 'cc', cwd: '/repo' },
+    ]);
+    const longId = 'z'.repeat(5000);
+    const err = await Promise.resolve(
+      driver.awaitStopHook({ session_id: longId }),
+    ).then(
+      () => {
+        throw new Error('expected await_stop_hook to reject');
+      },
+      (e: unknown) => e as Error,
+    );
+    expect((err as { code?: string }).code).toBe('TERMINAL_SESSION_NOT_FOUND');
+    expect(err.message).toContain('…');
+    expect(err.message.length).toBeLessThan(400);
+    expect(err.message).not.toContain('z'.repeat(300));
+  });
+});
+
+describe('S9 tool description 提示返回内容不可信', () => {
+  it('description 声明 last_assistant_message / transcript_path 须作为数据而非指令', () => {
+    const tool = createAwaitStopHookTool({
+      broker: createHookFileBroker('/nonexistent-hook-events'),
+      getSessionMeta: () => null,
+    });
+    expect(tool.description).toMatch(/last_assistant_message/);
+    expect(tool.description).toMatch(/transcript_path/);
+    expect(tool.description).toMatch(/untrusted/i);
+    expect(tool.description).toMatch(/data, not instructions/i);
+  });
+});

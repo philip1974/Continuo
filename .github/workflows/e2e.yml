@@ -1,0 +1,67 @@
+name: E2E
+
+# Electron + node-pty + Playwright 在 PR 上跑成本高、稳定性差。
+# 仅手动触发(workflow_dispatch)。原每日 nightly schedule 已移除
+# (长期失败、噪声大)。等 M5 拆出 smoke 分层后,再考虑把 smoke 子集挪到 PR 必要门禁。
+on:
+  workflow_dispatch:
+
+# 默认 GITHUB_TOKEN 只读:各 job 只需检出代码;upload-artifact / setup-node 缓存走
+# Actions runtime token,不需要额外 GITHUB_TOKEN 权限。需要更多权限的 job 须单独声明。
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Electron E2E
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # 见 ci.yml 同款步骤:把 ContinuoTerminal clone 到 workspace 同级路径,供 pnpm workspace 解析。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native modules for Electron
+        run: pnpm rebuild:native
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build Electron app
+        run: pnpm build
+
+      - name: Run e2e
+        run: pnpm e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

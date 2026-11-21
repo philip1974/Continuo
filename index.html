@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Continuo</title>
+    <!--
+      CSP:
+      - default-src 'self':其他未列资源全部走自身
+      - script-src 'self' blob::插件 main.js 通过 Blob URL 动态 import(M-Plugin v4.1)
+      - style-src 'self' 'unsafe-inline':Tailwind v4 / Motion 需要内联样式
+      - img-src 'self' data: https::内嵌 SVG/data 图 + plugin 可能引外部图
+      - connect-src:只放外部 https。**不写 'self'**:打包版页面源是 file://,'self' 会匹配全盘
+        file: URL,任何脚本都能 fetch 读任意本地文件(Worker 内的请求不经过主进程 webRequest 守卫,
+        只有 CSP 能拦);应用自身不 fetch 自己的资源。dev 的 'self' 与 Vite HMR 所需的本机 ws/http
+        来源由 scripts/vite-csp-dev-connect.ts 仅在 dev server 注入,生产产物不含
+        (v5 plugin 的 app.network.fetch 需调外部 API;权限系统已 gate,
+        CSP 不再做第二道门 — 桌面 app 安全靠权限模型,不靠 CSP)
+      - object-src / base-uri:无副作用的 hardening
+      注:frame-ancestors 规范上只能通过 HTTP header 下达,
+      meta 标签里写会被浏览器忽略并报 warning,故此处不写。
+      Electron 主进程没有反向代理,要补可在 main 端用 onHeadersReceived 注入。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src https:; object-src 'none'; base-uri 'self';"
+    />
+  </head>
+  <body class="bg-[#020617] text-neutral-100">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

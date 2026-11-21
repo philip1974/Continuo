@@ -1,0 +1,37 @@
+# dock-layout-per-window-seq
+
+This BDD topic is the topic-08 workspace-isolation follow-up after topic-07. It captures the persistence and IPC contracts needed for dock layout to be scoped by stable per-window sequence IDs instead of leaking state across windows. The main surface is main-process persistence: `explorer.json` v3 schema, layout data merged into the explorer file, atomic `windowSeq` allocation, and protection for main-owned fields while renderer persistence moves to v3-aware roundtrips.
+
+Behavior contract checklist T1-T28:
+T1 v3 schema contains `windows` keyed by `windowSeq`;
+T2 legacy explorer roots migrate into a current window entry;
+T3 legacy layout payload migrates into the v3 layout section;
+T4 migration is idempotent;
+T5 corrupt or missing optional layout data falls back without losing roots;
+T6 unknown fields survive read/write roundtrips;
+T7 LRU metadata is bounded and deterministic: `windows[]` is capped at `MAX_PERSISTED_WINDOW_SEGMENTS` (64) by dropping the oldest closed segments on window close and once at boot; active windows and the main-window segment (seq 0) are never dropped (T20c), nor is a window that is still closing (already left the active set but its own `lastClosedAt` not yet persisted) when several windows close concurrently (T20d); a segment without `lastClosedAt` (a window still open when the previous session quit or crashed — the close-time write is fire-and-forget during quit) ranks as newest, so timestamped segments are dropped first both at boot and on window close (T20e); if untimestamped segments alone exceed the cap they are dropped in stable array order;
+T8 window sequence service exposes allocate/read/write helpers;
+T9 `layout:read` resolves the sender window context;
+T10 `layout:write` writes only the sender window layout;
+T11 explorer file migration handles empty, v2-only, layout-only, and mixed paths; at boot migration and the segment-cap prune share one load under one file-mutex hold (`prepareExplorerFileForBoot`): a regular v3 boot reads explorer.json exactly once and writes nothing;
+T12 renderer v3 persistence sends the correct window-scoped payload;
+T13 `explorer:write` cannot overwrite another window entry;
+T14 window close flush persists the last known layout;
+T14r a window whose renderer has not reported `layout:flush-ready` (still booting / failed to load) closes immediately — no flush request, no 10s ack wait; the report is only accepted from a trusted frame of that window;
+T15 `ensureWindowEntry` creates missing entries without replacing existing data;
+T16 multi-window IPC mocks prove independent layouts;
+T17 persistence writes via temp file plus rename;
+T17b the shared userData atomic writer creates files as 0600 (also tightens an existing 0644 file on overwrite), so other local users cannot read workspace/plugin state;
+T18 file mutex serializes concurrent read-modify-write operations;
+T19 `safeHandleWithCtx` injects sender context into handlers;
+T20 `lastClosedAt` is owned by main process and updated on close;
+T21 e2e roundtrip gate validates reopen behavior;
+T22 writable merge rejects stale or foreign `windowSeq`;
+T23 main-owned fields are preserved during renderer writes;
+T24 writable merge preserves unknown future fields;
+T25 IPC errors preserve stable error codes;
+T26 `mergeWritableIntoFull` only updates current-window writable fields;
+T27 throw-with-code helpers normalize coded failures;
+T28 `allocateWindowSeq` is atomic under concurrent window creation.
+
+This topic is related to topic-07 by closing the remaining workspace-isolation gaps that topic-07 left at the layout/persistence boundary. Topic-07 established window-aware runtime behavior; this topic makes that behavior durable across `explorer.json` migration, layout roundtrips, close flushes, and e2e gates. This directory holds the BDD entry point for that work.

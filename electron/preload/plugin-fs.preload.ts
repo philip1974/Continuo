@@ -1,0 +1,167 @@
+// Renderer-facing raw plugin-fs IPC. Token is explicit first arg.
+// scoped-app.ts wraps these with token closure so plugin code never sees token.
+
+import { ipcRenderer, type IpcRendererEvent } from 'electron';
+import { subscribeIpc } from './subscribe-ipc';
+import { PLUGIN_FS_CHANNELS } from '../shared/plugin-fs-channels';
+import type { PluginFsEditorRead } from '../shared/plugin-fs-contract';
+
+export interface PluginFsRawStat {
+  size: number;
+  mtimeMs: number;
+  isFile: boolean;
+  isDirectory: boolean;
+  isSymlink: boolean;
+}
+
+export interface PluginFsRawListEntry {
+  name: string;
+  isFile: boolean;
+  isDirectory: boolean;
+  isSymlink: boolean;
+}
+
+export interface PluginFsRaw {
+  _registerPlugin(pluginId: string): Promise<{ token: string; generation: number }>;
+  _unregisterPlugin(token: string): Promise<void>;
+
+  readFile(token: string, target: string): Promise<string>;
+  writeFile(token: string, target: string, content: string): Promise<void>;
+  listDir(token: string, target: string): Promise<PluginFsRawListEntry[]>;
+  stat(token: string, target: string): Promise<PluginFsRawStat>;
+  lstat(token: string, target: string): Promise<PluginFsRawStat>;
+  realpath(token: string, target: string): Promise<string>;
+  mkdir(
+    token: string,
+    target: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void>;
+  rename(token: string, src: string, dst: string): Promise<void>;
+  rm(
+    token: string,
+    target: string,
+    opts?: { recursive?: boolean; force?: boolean },
+  ): Promise<void>;
+  cp(
+    token: string,
+    src: string,
+    dst: string,
+    opts?: { recursive?: boolean },
+  ): Promise<void>;
+  readGitBlob(token: string, repoDir: string, sha: string): Promise<Uint8Array>;
+  /**
+   * True if `path` resolves within a granted read scope; false otherwise. 只是「此刻」的答案:不要拿它当许可再经
+   * 宿主通道按路径读 / 写(校验与操作不在同一把锁内)—— 编辑器打开用 readForEditor。
+   */
+  checkPath(token: string, path: string): Promise<boolean>;
+  /** editor.openFile 专用:主进程在同一次持锁内校验 scope 并读取,返回已校验的内容与 canonical 路径。 */
+  readForEditor(token: string, path: string): Promise<PluginFsEditorRead>;
+  /**
+   * 宿主编辑器专用(插件拿不到):释放一次成功 readForEditor 在主进程记下的「插件打开的路径」。用这份内容新建的标签
+   * 关闭时调用;没有新建标签时当即调用。
+   */
+  releaseEditorPath(path: string): Promise<void>;
+  atomicReplaceWithinScope(
+    token: string,
+    staging: string,
+    final: string,
+    opts?: { overwrite?: boolean },
+  ): Promise<void>;
+  userHome(token: string): Promise<string>;
+
+  requestScope(
+    token: string,
+    scopes: readonly { path: string; mode: 'r' | 'rw' }[],
+  ): Promise<'grant' | 'deny'>;
+  /** Called by Op20 PromptStore after user grants/denies; not by plugin code. */
+  _scopeDecision(requestId: string, decision: 'grant' | 'deny'): Promise<void>;
+
+  onScopeRequest(
+    handler: (payload: {
+      requestId: string;
+      pluginId: string;
+      /** displayPath:main 归一化后的路径(弹窗展示用);path 仍是插件请求的原始值。 */
+      scopes: readonly { path: string; mode: 'r' | 'rw'; displayPath?: string }[];
+    }) => void,
+  ): () => void;
+  /** main 侧已收口(超时 / 插件已注销)的 scope 请求:撤掉对应弹窗,不回传决定。 */
+  onScopeRequestCancelled(handler: (payload: { requestId: string }) => void): () => void;
+  onScopeUpdated(
+    handler: (payload: {
+      pluginId: string;
+      scopes: readonly { path: string; mode: 'r' | 'rw' }[];
+    }) => void,
+  ): () => void;
+}
+
+export const pluginFsRaw: PluginFsRaw = {
+  _registerPlugin: (pluginId) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.REGISTER_PLUGIN, pluginId),
+  _unregisterPlugin: (token) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.UNREGISTER_PLUGIN, token),
+
+  readFile: (token, target) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.READ_FILE, token, target),
+  writeFile: (token, target, content) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.WRITE_FILE, token, target, content),
+  listDir: (token, target) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.LIST_DIR, token, target),
+  stat: (token, target) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.STAT, token, target),
+  lstat: (token, target) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.LSTAT, token, target),
+  realpath: (token, target) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.REALPATH, token, target),
+  mkdir: (token, target, opts) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.MKDIR, token, target, opts),
+  rename: (token, src, dst) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.RENAME, token, src, dst),
+  rm: (token, target, opts) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.RM, token, target, opts),
+  cp: (token, src, dst, opts) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.CP, token, src, dst, opts),
+  readGitBlob: (token, repoDir, sha) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.READ_GIT_BLOB, token, repoDir, sha),
+  checkPath: (token, path) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.CHECK_PATH, token, path),
+  readForEditor: (token, path) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.READ_FOR_EDITOR, token, path),
+  releaseEditorPath: (path) => ipcRenderer.invoke(PLUGIN_FS_CHANNELS.RELEASE_EDITOR_PATH, path),
+  atomicReplaceWithinScope: (token, staging, final, opts) =>
+    ipcRenderer.invoke(
+      PLUGIN_FS_CHANNELS.ATOMIC_REPLACE,
+      token,
+      staging,
+      final,
+      opts,
+    ),
+  userHome: (token) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.USER_HOME, token),
+
+  requestScope: (token, scopes) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, token, scopes),
+  _scopeDecision: (requestId, decision) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.SCOPE_DECISION, requestId, decision),
+
+  onScopeRequest: (handler) => {
+    const wrap = (
+      _event: IpcRendererEvent,
+      payload: Parameters<typeof handler>[0],
+    ) => handler(payload);
+    return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, wrap);
+  },
+  onScopeRequestCancelled: (handler) => {
+    const wrap = (
+      _event: IpcRendererEvent,
+      payload: Parameters<typeof handler>[0],
+    ) => handler(payload);
+    return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, wrap);
+  },
+  onScopeUpdated: (handler) => {
+    const wrap = (
+      _event: IpcRendererEvent,
+      payload: Parameters<typeof handler>[0],
+    ) => handler(payload);
+    return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_UPDATED, wrap);
+  },
+};

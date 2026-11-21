@@ -1,0 +1,569 @@
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  DockviewReact,
+  type DockviewApi,
+  type DockviewReadyEvent,
+  type SerializedDockview,
+} from 'dockview-react';
+import 'dockview-react/dist/styles/dockview.css';
+import { usePanelComponents } from './panel-components';
+import { applyDefaultLayout } from './layout.default';
+import { HeaderActions } from './HeaderActions';
+import { EmptyState } from './EmptyState';
+import { markDockLayoutRestored, setDockApi } from './dock-api-ref';
+import { focusTerminalPanel } from '@/panels/Terminal/terminal-focus-registry';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
+import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
+import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
+import { useDockReconciler } from './DockReconciler';
+import { useDockLocaleSync } from './useDockLocaleSync';
+import { wrapPanelClose, cancelPendingPanelClose } from './wrap-panel-close';
+import { handleTerminalPanelRemoved } from './DockReconciler';
+import { SharedTab } from '@/shell/motion/SharedTab';
+import { useClosingStore } from '@/stores/closing.store';
+import { useEditorStore } from '@/stores/editor.store';
+import { debounce } from '@/lib/debounce';
+import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
+import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
+import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
+import {
+  getAutoSaveFailureVersion,
+  subscribeAutoSaveFailures,
+} from '@/panels/Editor/autosave-failures';
+import { useEditorFile } from '@/panels/Editor/useEditorFile';
+import { useSettingValue } from '@/plugins/settings/values-store';
+import {
+  countDirtyForClose,
+  remainingAfterDiscard,
+  remainingAfterFlush,
+  saveDirtyTabsForClose,
+} from './dirty-close';
+import { coApi } from '@/lib/co-api';
+import { readDockLayout } from './layout-prefetch';
+import { notify } from '@/notifications/notify';
+import { t as translate } from '@/i18n';
+import '@/styles/dockview.css';
+
+// 外提到 module 顶层常量:DockviewReact 的 components/tabComponents 引用稳定
+// 才能避免 dockview 内部 effect 误判 props 变化。每次 render 新建对象会
+// 触发 dockview 重订阅 createComponent。同 panelComponents 对照(useMemo)。
+const tabComponents = { default: SharedTab };
+
+// 边界(E217,E215 同族):dock layout 的 panel 数量上限。layout:read 有 2MiB 字节上限(E215),但畸形
+// layout 仍可在其内塞大量短 panel key。正常 layout panel 数 = 编辑器 tab + 终端 + 资源管理器等,远低于此。
+const MAX_LAYOUT_PANELS = 256;
+
+export function sanitizePersistedDockLayout(
+  json: unknown,
+): SerializedDockview | null {
+  if (!json || typeof json !== 'object') return null;
+  const layout = json as SerializedDockview & {
+    panels?: Record<string, { contentComponent?: string }>;
+  };
+  // 既无 grid 也无 panels = 空布局(写端对「仅含终端」布局写的 {version:1})→ 无可恢复布局,静默走默认;
+  // 交给 fromJSON 只会抛错并误报「恢复失败」。
+  if (!('grid' in layout) && !('panels' in layout)) return null;
+  const panels = layout.panels;
+  if (!panels || typeof panels !== 'object') return layout;
+  // 边界(E217,E197/E199 有界迭代族):单次 for...in 边数边扫,不先 Object.keys 把畸形 layout 的所有
+  // panel key 全量物化。panel 数超 MAX_LAYOUT_PANELS → 丢弃 layout(返 null,走默认布局)。
+  let count = 0;
+  for (const panelId in panels) {
+    if (!Object.prototype.hasOwnProperty.call(panels, panelId)) continue;
+    count += 1;
+    if (count > MAX_LAYOUT_PANELS) return null;
+  }
+  // 既有契约:终端不从持久化 layout 恢复(终端由 DockReconciler 依 live session 重建)。旧实现发现
+  // 终端 panel 即整体弃用(返 null)→ 连带丢弃 editor 等非终端布局,且被上层当作「恢复失败」误报红
+  // toast。改为只剥离终端 panel + 修补 grid 树,让非终端布局存活;无非终端残留 → null(静默走默认)。
+  return stripTerminalPanelsFromLayout(layout);
+}
+
+function DockReconcilerMount({
+  api,
+  restoreStartedAt,
+  onHydrated,
+}: {
+  api: DockviewApi;
+  restoreStartedAt: number;
+  onHydrated: () => void;
+}): null {
+  useDockReconciler(api, restoreStartedAt, onHydrated);
+  useDockLocaleSync(api);
+  return null;
+}
+
+// 可维护性 M10:dock layout 写盘单一来源(toJSON → {version:1,...} payload → layout.write
+// → r.ok 失败 warn)。自动持久化(onDidLayoutChange debounce)与关窗 flush 共用,避免
+// payload 结构 / 版本号 / 错误处理在两处漂移。warnPrefix 区分日志来源;调用方各自决定是否
+// 再包 try/catch(flush 路径需捕获 toJSON/write 异常,debounce 路径沿用原行为不捕获)。
+// a11y(A132):布局保存失败的 notify 限流 —— 自动保存(debounce)可能连续失败,避免 toast 轰炸,
+// 同类失败 5s 内只播报一次。
+let lastLayoutSaveNotifyAt = 0;
+const LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS = 5000;
+let lastSuccessfulLayoutPayload: string | null = null;
+// 每个 dock api 的布局版本(每次变更 +1)与「已落盘」的版本;二者相等 = 干净,可跳过快照重建。
+// 用版本号而非布尔标记:写盘 await 期间若又发生变更,版本已前进,写成功后只把**写盘前**的版本记为
+// 已落盘 —— 期间的变更仍是脏的,后续 debounce / 关窗 flush 会再写(布尔标记会把它一并标干净而丢失)。
+const layoutVersions = new WeakMap<DockviewApi, number>();
+const savedLayoutVersions = new WeakMap<DockviewApi, number>();
+function notifyLayoutSaveFailedRateLimited(): void {
+  const now = Date.now();
+  if (now - lastLayoutSaveNotifyAt < LAYOUT_SAVE_NOTIFY_MIN_INTERVAL_MS) return;
+  lastLayoutSaveNotifyAt = now;
+  notify.error(translate('errors.dock.layout_save_failed'));
+}
+
+async function writeDockLayoutSnapshot(
+  api: DockviewApi,
+  warnPrefix: string,
+  // a11y(A132):自动保存路径传 true → 失败(!ok/reject)限流 notify(用户/SR 知布局未持久化,
+  // 重启会丢);关窗 flush 路径传 false(默认)→ 沿用「可见日志 + 抛出由调用方 try/catch」语义。
+  notifyOnFail = false,
+): Promise<void> {
+  const version = layoutVersions.get(api) ?? 0;
+  if (savedLayoutVersions.get(api) === version) return;
+  try {
+    // 写盘前剥离终端 panel(彻底修复:持久化 layout 不再携带终端的 sessionId/cwd 等陈旧/敏感
+    // 数据;读端 sanitize 仍是兜底防线,处理历史 explorer.json 与竞态)。仅含终端(无非终端
+    // panel)→ strip 返 null,此时写无 grid 的空布局(payload = {version:1}),终端绝不进持久化;
+    // 读端 sanitize 对无 grid 布局返 null → 静默走默认布局(与此前读端剥离后的恢复行为一致)。
+    const raw = api.toJSON();
+    const cleaned = (stripTerminalPanelsFromLayout(raw) ?? {}) as unknown;
+    // dockview toJSON 在某些瞬时状态会产出非有限 size 等非 JSON-safe 值,写端 assertJsonValue(E119)
+    // 会整份拒写(BAD_INPUT)→ 布局永远无法落盘。写盘前清洗成 JSON-safe(剔除非有限数/undefined,
+    // 语义同 JSON.stringify),让其余布局正常持久化;dockview 恢复时按窗口尺寸重算 size。
+    const { value: snapshot, dropped } = makeJsonSafe(cleaned);
+    if (dropped.length > 0) {
+      console.warn(`${warnPrefix} 丢弃非 JSON-safe 值(布局仍持久化)`, dropped);
+    }
+    const payload = {
+      version: 1 as const,
+      ...(snapshot as object),
+    };
+    const serializedPayload = JSON.stringify(payload);
+    if (serializedPayload === lastSuccessfulLayoutPayload) {
+      savedLayoutVersions.set(api, version);
+      return;
+    }
+
+    const r = await coApi.layout.write(payload);
+    if (!r.ok) {
+      console.warn(`${warnPrefix} failed`, r.code, r.message);
+      if (notifyOnFail) notifyLayoutSaveFailedRateLimited();
+      return;
+    }
+    lastSuccessfulLayoutPayload = serializedPayload;
+    savedLayoutVersions.set(api, version);
+  } catch (err) {
+    console.warn(`${warnPrefix} rejected`, err);
+    if (notifyOnFail) notifyLayoutSaveFailedRateLimited();
+    else throw err; // 保留 flush 路径抛出语义(调用方自有 try/catch)
+  }
+}
+
+/**
+ * Splash 就绪屏障的安全上限:布局已恢复而终端首个 sessions 快照迟迟不到(IPC 卡住 / 同步源未启用)时,
+ * 最多再等这么久就报 ready,不永久遮挡界面。正常路径由事件解除,不等此上限。
+ */
+export const DOCK_TERMINAL_READY_TIMEOUT_MS = 3000;
+
+export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
+  const apiRef = useRef<DockviewApi | null>(null);
+  // race(R22):保存 onReady 里注册的 dockview onDid* disposables + debounce 持久化函数,在
+  // DockShell 卸载 / onReady 重入(HMR/StrictMode/dockview 重建)时统一 dispose + cancel。
+  // 否则旧 listener 与旧 debounce(闭包持旧 event.api)仍会触发,对已卸载组件 setEmpty、重复
+  // handleTerminalPanelRemoved,或用旧 api.toJSON() 迟到写回 layout 覆盖新实例布局。
+  const dockDisposablesRef = useRef<
+    Array<{ dispose: () => void } | undefined>
+  >([]);
+  const layoutPersistRef = useRef<{ cancel: () => void } | null>(null);
+  const disposeDockListeners = useCallback(() => {
+    for (const d of dockDisposablesRef.current) {
+      if (typeof d?.dispose !== 'function') continue;
+      try {
+        d.dispose();
+      } catch {
+        /* ignore dispose errors */
+      }
+    }
+    dockDisposablesRef.current = [];
+    layoutPersistRef.current?.cancel();
+    layoutPersistRef.current = null;
+  }, []);
+  // restoreStartedAt:本 api 布局恢复开始时刻。Reconciler 首次 hydrate 只抑制此前已存在的 session 的兜底聚焦,
+  // 恢复期间新建的 user terminal(Cmd+T)照常聚焦。
+  const [reconcilerTarget, setReconcilerTarget] = useState<{
+    api: DockviewApi;
+    restoreStartedAt: number;
+  } | null>(null);
+  // apiReady 是 state(不是 ref):驱动下面 editor 自动激活 useEffect 的依赖,
+  // 修复"hydrate 在 onReady 之前完成 → activeTabId 变化触发 effect 时
+  // apiRef.current 仍 null → 错过添加 panel"的时序竞态。
+  const [apiReady, setApiReady] = useState(false);
+  // 布局(fromJSON / 默认布局)已恢复。会 addPanel 的 editor 自动激活依赖它而非 apiReady:恢复前加的面板
+  // 会被 fromJSON 的 clear() 删掉且不再补建。关窗 flush 握手仍依赖 apiReady(时序不变)。
+  const [layoutRestored, setLayoutRestored] = useState(false);
+  // 当前 api 的 Reconciler 已按终端首个权威快照完成 reconcile(或已达安全上限)。与 layoutRestored 一起
+  // 构成 onLayoutReady(App 移除 Splash)的事件式屏障:仅布局恢复就移除 Splash 时,迟到的终端快照会让
+  // 面板在用户已可操作后跳入。
+  const [terminalsReady, setTerminalsReady] = useState(false);
+  const onTerminalsHydrated = useCallback(() => setTerminalsReady(true), []);
+  const [empty, setEmpty] = useState(false);
+  const panelComponents = usePanelComponents();
+  const { saveTab } = useEditorFile();
+
+  const onReady = useCallback(
+    async (event: DockviewReadyEvent) => {
+      apiRef.current = event.api;
+      const restoreStartedAt = Date.now();
+      // race:Reconciler 的 api 推迟到布局恢复(fromJSON / 默认布局)完成后才设置(见下方)。
+      // 若此处即挂载,await layout.read() 期间 Reconciler 建出的终端 panel 会被随后的 fromJSON
+      //(dockview 内部先 clear())清掉,而 Reconciler 视为已同步不再补加 → 终端从 UI 消失。
+      setApiReady(true);
+      setLayoutRestored(false);
+      setTerminalsReady(false);
+      // 暴露给 IconSidebar 等 Dockview 之外的组件;布局恢复前 openOrFocusPanel 排队(见 dock-api-ref)。
+      setDockApi(event.api, { layoutPending: true });
+      // a11y(A131,A130 同族):layout.read() reject 此前会中断整个 onReady(连默认布局都不应用)。
+      // try/catch 兜底;read 失败(reject/!ok)或 fromJSON 失败 → notify.error(用户/SR 知布局被
+      // 重置而非静默);首次无持久布局(ok+null data)不算失败,默认布局静默应用。
+      let persisted: unknown = null;
+      let restoreFailed = false;
+      try {
+        // 性能:首次 onReady 取用 init() 开头的预取结果;之后的 onReady(重建 / StrictMode)重新读取。
+        const readResult = await readDockLayout();
+        if (readResult.ok) {
+          persisted = readResult.data;
+        } else {
+          restoreFailed = true;
+          console.warn('[dock] layout:read failed', readResult.code, readResult.message);
+        }
+      } catch (err) {
+        restoreFailed = true;
+        console.warn('[dock] layout:read rejected', err);
+      }
+
+      // race(R30):onReady 是 async,await layout.read() 期间可能发生 dockview 重建 / StrictMode /
+      // onReady 重入(新 onReady 把 apiRef.current 指向新 api)或组件卸载(unmount cleanup 置 null)。
+      // 此时本次回调已过期,继续执行会:对 stale event.api 跑 fromJSON/applyDefaultLayout、
+      // setDockApi/setEmpty 覆盖新实例、disposeDockListeners() 清掉新实例的 listener 再把
+      // debounce/flush listener 绑到旧 api(布局保存/关闭 flush 指向旧 dock、panel 事件丢失)、
+      // 以及卸载后 setState。apiRef.current 在每次 onReady 入口同步赋值、卸载时置 null →
+      // 用它判定本次是否仍是最新 api;过期则提前返回,跳过后续所有副作用。
+      if (apiRef.current !== event.api) return;
+
+      let restored = false;
+      if (persisted && typeof persisted === 'object') {
+        // sanitize 会剥离终端 panel(既有契约,非失败)并修补 grid 树。返回 null = 无可恢复的
+        // 非终端布局(或畸形/超限)→ 静默走默认布局,不算失败、不报错。只有真正的 fromJSON 抛错
+        // (布局结构损坏)才置 restoreFailed → 弹 toast。
+        const sanitized = sanitizePersistedDockLayout(persisted);
+        if (sanitized) {
+          try {
+            event.api.fromJSON(sanitized);
+            restored = true;
+          } catch (err) {
+            restoreFailed = true;
+            console.warn('[dock] fromJSON 失败,落回默认布局', err);
+          }
+        }
+      }
+      if (!restored) applyDefaultLayout(event.api);
+      // 布局已定型 → 挂载 Reconciler:新 api 视作空 dock,按 live sessions 全量建终端 panel(R26)。
+      setReconcilerTarget({ api: event.api, restoreStartedAt });
+      // 放行恢复前排队的 openOrFocusPanel + editor 自动激活。
+      markDockLayoutRestored(event.api);
+      setLayoutRestored(true);
+      if (restoreFailed) {
+        notify.error(translate('errors.dock.layout_restore_failed'));
+      }
+
+      // Explorer 已迁出 Dockview → 固定左 sidebar(VSCode 风)。
+      // 旧 layout.json 可能仍含 'explorer' panel(已无对应 component),清理掉。
+      const orphanExplorer = event.api.getPanel('explorer');
+      if (orphanExplorer) {
+        try {
+          orphanExplorer.api.close();
+        } catch {
+          /* ignore */
+        }
+      }
+
+      setEmpty(event.api.totalPanels === 0);
+
+      // race(R22):onReady 重入(dockview 重建)先清旧 listener/debounce,再注册新的。
+      disposeDockListeners();
+
+      const persist = debounce(
+        // a11y(A132):自动保存路径 notifyOnFail=true(失败限流 notify,用户知布局未落盘)。
+        () => writeDockLayoutSnapshot(event.api, '[dock] layout:write', true),
+        300,
+      );
+      layoutPersistRef.current = persist;
+
+      // race(R22):保存各 onDid* 返回的 disposable,卸载/重建时统一 dispose。
+      dockDisposablesRef.current.push(
+        event.api.onDidLayoutChange(() => {
+          layoutVersions.set(event.api, (layoutVersions.get(event.api) ?? 0) + 1);
+          persist();
+          setEmpty(event.api.totalPanels === 0);
+        }),
+        // 防 closing-store 残留:panel 真被 removed 后从 set 摘掉,
+        // 避免后续同 id panel 一上来就走 EXIT 动画。
+        // terminal panel:同时走 handleTerminalPanelRemoved 反向通知 main
+        // remove session(suppress flag + move-vs-real-close 区分由 helper 管)。
+        event.api.onDidRemovePanel((panel) => {
+          useClosingStore.getState().unmark(panel.id);
+          void handleTerminalPanelRemoved({
+            panel,
+            api: event.api,
+            removeSession: (sid) => coApi.terminal.remove(sid).then(() => undefined),
+          });
+        }),
+        // 拦截所有 panel 的 api.close,统一走"标记 closing → 220ms 延迟 → 真 close"。
+        // 包括 group 整体关闭、第三方调用方等间接路径,只要走 api.close 都能拿到动画。
+        event.api.onDidAddPanel(wrapPanelClose),
+        // topic-22: exit-maximize 后把 focus 拉回 xterm。
+        // setActive() 不会触发 onDidActiveChange(panel 在 exit 前已是 active),
+        // 所以必须显式调 focusTerminalPanel。用 event.group.activePanel
+        // (design review v1 P1-3) 不重读全局 activePanel,避免 exit 期间被改写。
+        event.api.onDidMaximizedGroupChange((evt) => {
+          if (evt.isMaximized) return;
+          const panel = evt.group.activePanel;
+          if (!panel) return;
+          if (panel.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
+          focusTerminalPanel(panel.id);
+        }),
+      );
+      event.api.panels.forEach(wrapPanelClose);
+    },
+    [disposeDockListeners],
+  );
+
+  useEffect(() => {
+    if (layoutRestored && terminalsReady) onLayoutReady?.();
+  }, [layoutRestored, terminalsReady, onLayoutReady]);
+
+  useEffect(() => {
+    if (!layoutRestored || terminalsReady) return;
+    const timer = setTimeout(() => setTerminalsReady(true), DOCK_TERMINAL_READY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [layoutRestored, terminalsReady]);
+
+  const restore = useCallback(() => {
+    if (apiRef.current) applyDefaultLayout(apiRef.current);
+  }, []);
+
+  // unmount 时 reset 单例,防 stale 引用;并 dispose onReady 注册的 dockview listeners +
+  // cancel layout debounce(race R22:防卸载后旧 listener/迟到写盘对新实例生效)。
+  useEffect(
+    () => () => {
+      setDockApi(null);
+      // race(R30):置 null 失效任何仍 parked 在 await 的 onReady —— 其 resume 后
+      // `apiRef.current !== event.api` 成立,跳过 fromJSON/register/setState 等卸载后副作用。
+      apiRef.current = null;
+      disposeDockListeners();
+    },
+    [disposeDockListeners],
+  );
+
+  useEffect(() => {
+    if (!apiReady) return;
+    if (!apiRef.current) return;
+    // 关窗 flush 握手:main 发 layout:flush-request → 本回调落盘三路数据 → sendFlushAck → main 才真正
+    // 关窗。必须经 coApi(preload 只暴露 __lmApi;此前读了一个不存在的全局 bridge,整条握手是死的:
+    // flush 从不执行,main 每次关窗干等 ack 超时)。
+    const off = coApi.layout.onFlushRequest?.(async (payload) => {
+      // 先把编辑器里尚未进 store 的输入(Milkdown 自适应延迟上抛窗口内,见 MilkdownEditor emitDelayMs)同步回写,
+      // 下面的「保存」与 autosave flush 才落盘到最新内容。
+      flushEditorWriteBacks();
+      // 用户在 main 的脏文件确认框选了「保存」→ 先保存所有有路径的脏 tab(代码文件不 autosave,
+      // ADR-015),任一失败 → toast + 回执 saveFailed,main 中止关窗 / 退出并重新显示窗口。
+      let saveFailed = false;
+      if (payload?.save) {
+        const { failed, diskChanged } = await saveDirtyTabsForClose(
+          useEditorStore.getState().tabs,
+          saveTab,
+          () => useEditorStore.getState().tabs,
+        );
+        if (failed > 0) {
+          saveFailed = true;
+          let message = translate('dialog.unsaved_close.save_failed', { count: failed });
+          // 磁盘冲突单独说明(关窗流程不弹覆盖框,引导用户 Cmd+S 解决或选「不保存」)。
+          if (diskChanged > 0) {
+            message += ` ${translate('dialog.unsaved_close.disk_changed_note', { count: diskChanged })}`;
+          }
+          notify.error(message);
+        }
+      }
+      // race(R42):在 flush **执行时**读取 apiRef.current,而非 effect 注册时闭包捕获。effect 仅
+      // 依赖 apiReady、只注册一次;若 onReady 重入/重建(HMR/StrictMode/dockview rebuild)把
+      // apiRef.current 换成新 api,旧闭包会用 stale api 写盘 → 关窗落盘旧 dock 布局,覆盖/丢失当前
+      // 窗口的 panel 增删/移动。apiRef.current 由 onReady 同步更新、卸载置 null(R30 同款基准)。
+      const api = apiRef.current;
+      const layoutFlush = (async () => {
+        if (!api) return;
+        try {
+          await writeDockLayoutSnapshot(api, '[dockview] flush save');
+        } catch (err) {
+          console.warn('[dockview] flush save failed', err);
+        }
+      })();
+      // 除 dockview layout 外,explorer/editor 段(workspace 切换、打开的 tab、
+      // 树展开)走的是独立的 300ms debounce 链,关窗前必须一并同步落盘,
+      // 否则 ack 返回但这些改动随未触发的 timer 丢失。见审计 #4。
+      const explorerFlush = (async () => {
+        try {
+          await flushExplorerPersistence();
+        } catch (err) {
+          console.warn('[dockview] explorer flush failed', err);
+        }
+      })();
+      // pending 的 markdown autosave 内容卡在 useAutoSave 的 2s 防抖 timer 里,
+      // 只在 React unmount cleanup 才 flush,而 win.close() 销毁 renderer 时
+      // React cleanup 不保证执行 → 编辑 md 后 2s 内关窗会丢最后一段。关窗前
+      // 在 ack 之前同步落盘(P1-AE)。
+      const autosaveFlush = (async () => {
+        try {
+          await flushPendingAutoSave();
+        } catch (err) {
+          console.warn('[dockview] autosave flush failed', err);
+        }
+      })();
+      // 三条 flush 数据域独立;layout/explorer 如最终共享 explorer.json,main 侧 file mutex
+      // 仍负责串行化磁盘合并。renderer 这里并行启动,减少关闭按钮等待首个慢任务串住后续落盘。
+      await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
+      // 统一规则:全部 flush 完成后、ACK 前最终脏检查。本轮未选「不保存」且仍有未保存改动(防抖内 autosave
+      // 失败 / flush 期间继续输入 / 确认期间变脏)→ 回执 remaining,main 中止关闭 / 退出并按此记账。
+      // 「保存」只放过确认框告知用户的 untitled id(main 随请求带 untitledIds);确认后新建 / 同数量替换的
+      // untitled 不在其中即计入。
+      const untitledIds = payload?.save ? payload.untitledIds : undefined;
+      const allowedUntitledIds = new Set(
+        Array.isArray(untitledIds) ? untitledIds.filter((id) => typeof id === 'string') : [],
+      );
+      const tabs = useEditorStore.getState().tabs;
+      // 「不保存」:框里列出的文件照常丢弃,但确认时未列入框的待 autosave .md(pendingAutoSave)仍脏 → remaining。
+      const pendingAutoSave = payload?.discard ? payload.pendingAutoSave : undefined;
+      const remaining = payload?.discard
+        ? remainingAfterDiscard(
+            tabs,
+            Array.isArray(pendingAutoSave)
+              ? pendingAutoSave.filter((id): id is string => typeof id === 'string')
+              : [],
+          )
+        : remainingAfterFlush(tabs, allowedUntitledIds);
+      // 回执始终携带 flush 后的最终脏态(含空集合),main 以其记账(复审:「保存」后 tab 变干净,但干净状态
+      // 此前要等之后的 effect 上报,main 可能先用旧脏集合做退出前全局最终检查而误中止退出)。
+      // autosave 已 flush 过,仍脏的 .md 也计入(同 remainingAfterFlush)。
+      const state = countDirtyForClose(tabs, false);
+      // main 已按回执记账:同步去重基准,之后脏态变化与之不同即重新上报。
+      lastDirtyReportRef.current = JSON.stringify(state);
+      const windowId = payload?.windowId ?? coApi.system.windowId;
+      // requestId 原样带回:main 只接受与在途请求匹配的回执(关窗与 Cmd+Q 交叉时不串号)。
+      const requestId = payload?.requestId;
+      coApi.layout.sendFlushAck?.(windowId, {
+        ...(payload?.save ? { saveFailed } : {}),
+        state,
+        ...(remaining ? { remaining } : {}),
+        ...(typeof requestId === 'number' ? { requestId } : {}),
+      });
+    });
+    return () => {
+      off?.();
+    };
+  }, [apiReady, saveTab]);
+
+  // 关窗脏文件确认:脏态变化(chromeVersion 覆盖 dirty 翻转 / tab 增删改名)时向 main 上报
+  // 关窗会丢的脏 tab 计数与 id,main 关窗 / 退出前据此弹「保存 / 不保存 / 取消」。计数与 id 不变不重发;
+  // 初值 0/0 = main 的默认(未上报),挂载时无脏 tab 不发。
+  const editorChromeVersion = useEditorStore((s) => s.chromeVersion);
+  // 活动 tab 的 autosave 持有者 / 失败态变化(失败或非活动的脏 .md 需计入确认)也要重新上报。
+  const autoSaveFailureVersion = useSyncExternalStore(
+    subscribeAutoSaveFailures,
+    getAutoSaveFailureVersion,
+  );
+  const mdAutoSaveEnabled = useSettingValue<boolean>('autoSave.markdown.enabled', true);
+  const lastDirtyReportRef = useRef(JSON.stringify(countDirtyForClose([], false)));
+  useEffect(() => {
+    const state = countDirtyForClose(useEditorStore.getState().tabs, mdAutoSaveEnabled);
+    const key = JSON.stringify(state);
+    if (key === lastDirtyReportRef.current) return;
+    lastDirtyReportRef.current = key;
+    coApi.layout.reportDirtyState?.(state);
+  }, [editorChromeVersion, mdAutoSaveEnabled, autoSaveFailureVersion]);
+
+  // Editor 自动激活:Explorer 单击文件 → editor.store activeTabId / editorFocusPulse 变
+  // → 自动 setActive 'editor' panel(VSCode 行为)。
+  // 若 panel 不存在(用户拖关了 / 启动时 layout 没含),自动 addPanel 加回。
+  // hydrate 恢复 session(可能晚于布局恢复)以 requestFocus:false 打开,不递增 pulse → 只确保面板存在,不激活。
+  //
+  // deps 必含 layoutRestored(而非 apiReady):让布局恢复完成晚于 activeTabId hydrate 的场景也能补建;
+  // 恢复前 addPanel 的 editor 会被 fromJSON 的 clear() 删掉。
+  // deps 必含 editorFocusPulse:同 id 重新点击(activeTabId 不变)也要触发,
+  // 否则用户切到 terminal 后再点资源管理器同一文档,terminal 不会让位。见 #22。
+  const editorActiveTabId = useEditorStore((s) => s.activeTabId);
+  const editorFocusPulse = useEditorStore((s) => s.editorFocusPulse);
+  // 已处理到的 editorFocusPulse 基线:布局恢复完成时取当时的 pulse,此后每消费一次用户意图(setActive editor)
+  // 就推进到当前 pulse。恢复后首次运行的 activeTabId 来自持久化 hydrate,不是用户意图:只确保 editor 面板存在,
+  // 不 setActive(否则覆盖 fromJSON 恢复的活动面板 / 恢复期间排队打开的面板);pulse 自上次处理以来有变化
+  //(用户打开 / 切换文件)才激活。不推进的话:用户在 hydrate 前开过文件(pulse 0→1)又切回别的面板,随后
+  // hydrate 以 requestFocus:false 改 activeTabId 时 1 !== 0 会被再次判成意图、抢走活动面板。
+  // layoutRestored 回落(onReady 重入)时重置。
+  const handledFocusPulseRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!layoutRestored) {
+      handledFocusPulseRef.current = null;
+      return;
+    }
+    handledFocusPulseRef.current ??= editorFocusPulse;
+    if (!editorActiveTabId) return;
+    const api = apiRef.current;
+    if (!api) return;
+    const userIntent = editorFocusPulse !== handledFocusPulseRef.current;
+    let editorPanel = api.getPanel('editor');
+    if (!editorPanel) {
+      const previousActivePanelId = api.activePanel?.api.id ?? null;
+      editorPanel = api.addPanel({
+        id: 'editor',
+        component: 'editor',
+        title: 'Editor',
+        params: { titleKey: 'panels.editor.title' },
+      });
+      // addPanel 默认激活新面板;非用户意图 → 激活还给原活动面板(同 Reconciler 不抢焦点的做法)。
+      if (!userIntent) {
+        if (previousActivePanelId) api.getPanel(previousActivePanelId)?.api.setActive();
+        return;
+      }
+    } else {
+      if (!userIntent) return;
+      // panel 仍存在但可能正处于关闭 EXIT 动画窗口内(用户刚关 editor 面板随即
+      // 又点开文件)。撤销它排定中的真 close + 清 closing 标记,否则刚激活的
+      // 面板会在 EXIT_DURATION_MS 后随排定的 close 一起消失(刚打开的文件没了)。
+      cancelPendingPanelClose('editor');
+    }
+    editorPanel.api.setActive();
+    handledFocusPulseRef.current = editorFocusPulse;
+  }, [editorActiveTabId, editorFocusPulse, layoutRestored]);
+
+  return (
+    <div className="relative h-full w-full">
+      {reconcilerTarget && (
+        <DockReconcilerMount
+          api={reconcilerTarget.api}
+          restoreStartedAt={reconcilerTarget.restoreStartedAt}
+          onHydrated={onTerminalsHydrated}
+        />
+      )}
+      <DockviewReact
+        components={panelComponents}
+        tabComponents={tabComponents}
+        defaultTabComponent={SharedTab}
+        rightHeaderActionsComponent={HeaderActions}
+        onReady={onReady}
+        className="dockview-theme-abyss h-full w-full"
+      />
+      {empty && <EmptyState onRestore={restore} />}
+    </div>
+  );
+}

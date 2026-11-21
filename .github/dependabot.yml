@@ -1,0 +1,20 @@
+# 第三方 action 已固定到 commit SHA(# 注释标版本),由 Dependabot 每周提 PR 升级 SHA 与注释。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # 只接收安全更新(不开常规版本 PR);测试 / 构建工具链的大版本升级需人工迁移,不自动开 PR。
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
+      - dependency-name: electron-builder
+        update-types: ["version-update:semver-major"]

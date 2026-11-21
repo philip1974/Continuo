@@ -1,0 +1,649 @@
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import {
+  EXPLORER_CHANNELS,
+  LAYOUT_CHANNELS,
+  WINDOW_ID_CHANNEL,
+} from '../shared/persistence-channels';
+import { subscribeIpc } from './subscribe-ipc';
+import { createTerminalDataDemux } from './terminal-data-demux';
+import type { IpcResult } from '../shared/ipc-result';
+import type { FileEntry } from '../shared/fs-entry';
+import {
+  DIR_CHANGED_FILES_MAX,
+  FS_CHANNELS,
+  isFsDirChangedPayload,
+  readFsDirChangedChangeOnly,
+  readFsDirChangedFiles,
+  toFsReadFileResult,
+  toFsStatResult,
+  toFsWriteFileResult,
+  type FsFileStat,
+  type FsReadFileData,
+  type FsReadFileResult,
+} from '../shared/fs-channels';
+import { FS_PATH_MAX } from '../shared/fs-limits';
+import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
+import type { TerminalSessionSnapshot } from '../shared/terminal-session';
+import type { TerminalCreateInput } from '../shared/terminal-create';
+import {
+  PLUGINS_CHANNELS,
+  isPluginsChangedPayload,
+  isPluginEnabledChangedPayload,
+  isProtocolUrlPayload,
+  type IpcPermissionMutation,
+  type IpcPermissionsMap,
+  type IpcPermissionRecord,
+  type IpcPluginDir,
+  type IpcPluginDirListing,
+} from '../shared/plugins-channels';
+import {
+  SHELL_CHANNELS,
+  type IpcShellExecInput,
+  type IpcShellExecResult,
+} from '../shared/shell-channels';
+import {
+  AGENT_AUTH_CHANNELS,
+  type AgentAuthRequestPayload,
+  type AgentAuthDecision,
+} from '../shared/agent-auth-channels';
+import {
+  MCP_CHANNELS,
+  type StdioMcpConfig,
+} from '../shared/mcp-channels';
+import {
+  PLUGIN_MCP_CHANNELS,
+  type InvokePayload,
+  type InvokeReply,
+} from '../shared/plugin-mcp-channels';
+import {
+  WINDOW_CHANNELS,
+  type IpcWindowCreateInput,
+  type IpcWindowCreateResult,
+} from '../shared/window-channels';
+import {
+  MARKETPLACE_CHANNELS,
+  type FetchReviewsResult,
+} from '../shared/marketplace-channels';
+import {
+  I18N_CHANNELS,
+  type I18nSetLocaleResult,
+  type I18nChangedPayload,
+} from '../shared/i18n-channels';
+import {
+  DEBUG_VIEW_CHANNELS,
+  type DebugGetScopesInput,
+  type DebugGetStackInput,
+  type DebugGetVariablesInput,
+  type DebugViewEvent,
+} from '../shared/debug-view-channels';
+import type { Locale } from '../shared/i18n-types';
+import { pluginDataRaw } from './plugin-data.preload';
+import { pluginFsRaw } from './plugin-fs.preload';
+import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
+import {
+  parseContinuoHostnameFromArgv,
+  parseContinuoWindowsBuildFromArgv,
+  parseContinuoPackagedFromArgv,
+} from './continuo-meta-parse';
+
+// 可维护性 M24:terminal create 入参复用 shared TerminalCreateInput(= main zod schema
+// z.infer),单一来源避免 main/preload 漂移(此前手写 interface 漏了 attachTarget)。
+// export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型(lib/lm-api.ts 需要)。
+export type TerminalCreateOptions = TerminalCreateInput;
+
+export interface TerminalExitPayload {
+  readonly exitCode: number | undefined;
+  readonly signal: number | undefined;
+}
+
+/**
+ * main 推过来的 session 形态;renderer cast 为 TerminalSession。
+ * 可维护性 M14:复用 shared TerminalSessionSnapshot 单一来源(此前内联重复了
+ * 同组字段 + attachTarget union)。
+ */
+export type PreloadTerminalSession = TerminalSessionSnapshot;
+
+// 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段
+export interface PreloadListDirOptions {
+  readonly maxDepth?: number;
+  readonly exclude?: ReadonlyArray<string>;
+  readonly followSymlinks?: boolean;
+  /** perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。 */
+  readonly maxFiles?: number;
+  /** 性能:默认 true;false 时不回传 size/mtime/ctime。见 fs/list-dir.ts ListDirOptions.withStats。 */
+  readonly withStats?: boolean;
+}
+
+// 性能 P1:终端输出 'terminal:data' 整窗只挂一个 ipcRenderer listener,按 sessionId
+// 分发(详见 terminal-data-demux.ts)。避免 N 个 panel = N 个 listener 的 O(N) fan-out。
+const terminalDataDemux = createTerminalDataDemux();
+let terminalDataListenerInstalled = false;
+function ensureTerminalDataListener(): void {
+  if (terminalDataListenerInstalled) return;
+  ipcRenderer.on(
+    TERMINAL_CHANNELS.DATA,
+    (_: unknown, id: string, data: string, offset?: number) => {
+      terminalDataDemux.dispatch(id, data, offset);
+    },
+  );
+  terminalDataListenerInstalled = true;
+}
+
+// 关窗脏态上报(计数 + 脏 tab id,id 供 main 按身份比较已接受范围)。
+type DirtyReport = {
+  dirty: number;
+  untitled: number;
+  ids: readonly string[];
+  untitledIds: readonly string[];
+  /** 未计入、依赖关窗 flush 落盘的脏 .md(非空才带;flush 超时时 main 据此中止关闭)。 */
+  pendingAutoSave?: readonly string[];
+};
+
+type FlushRequestPayload = {
+  windowId: number;
+  save?: boolean;
+  discard?: boolean;
+  /** save 时:确认框告知用户会丢弃的 untitled id(renderer 只放过这些 id)。 */
+  untitledIds?: string[];
+  /** discard 时:确认时未列入框的待 autosave .md 身份(flush 后仍脏 → renderer 回执 remaining)。 */
+  pendingAutoSave?: string[];
+  requestId?: number;
+};
+
+// 所有跨 IPC 的方法都返回 IpcResult<T>(详见 ADR-010),
+// renderer 拿到后按 ok 分流,不再 throw。
+const api = {
+  ping: () => 'pong' as const,
+  layout: {
+    read: (): Promise<IpcResult<unknown | null>> =>
+      ipcRenderer.invoke(LAYOUT_CHANNELS.READ),
+    write: (json: unknown): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(LAYOUT_CHANNELS.WRITE, json),
+    onFlushRequest: (
+      cb: (payload?: FlushRequestPayload) => void | Promise<void>,
+    ): (() => void) => {
+      // main 发 `{ windowId, requestId, save?, discard?, untitledIds? }`(save / discard:用户在脏文件确认框选了「保存」/
+      // 「不保存」;requestId 须在回执里原样带回,main 只接受匹配在途请求的回执);透传给回调(不暴露 IpcRendererEvent)。
+      const listener = (_event: unknown, payload?: FlushRequestPayload) => {
+        void cb(payload);
+      };
+      const unsubscribe = subscribeIpc(LAYOUT_CHANNELS.FLUSH_REQUEST, listener);
+      // 告诉 main「本窗口现在能应答 flush 请求了」。没上报过的窗口(启动中 / 加载失败)关窗时 main 不发
+      // 请求、不等回执 —— 否则没人回 ack,只能干等满超时。
+      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_READY);
+      return unsubscribe;
+    },
+    sendFlushAck: (
+      windowId: number,
+      // remaining:全部 flush 后仍有未保存改动(未选「不保存」时)的计数,main 据此中止关闭 / 退出。
+      // state:flush 后的最终脏态(始终携带,含空集合),main 以其更新脏态记账。
+      result?: {
+        saveFailed?: boolean;
+        requestId?: number;
+        remaining?: DirtyReport;
+        state?: DirtyReport;
+      },
+    ): void => {
+      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId, result);
+    },
+    /** 上报本窗口关窗会丢的脏 tab 计数与 id(main 关窗 / 退出前据此弹保存确认、按身份做最终检查)。 */
+    reportDirtyState: (state: DirtyReport): void => {
+      ipcRenderer.send(LAYOUT_CHANNELS.DIRTY_STATE, state);
+    },
+  },
+  system: {
+    windowId: ipcRenderer.sendSync(WINDOW_ID_CHANNEL) as number,
+    /** 本机 hostname(main 经 additionalArguments 注入;OSC7 acceptedHosts 用)。 */
+    hostname: parseContinuoHostnameFromArgv(process.argv),
+    /** Windows 系统 build 号(仅 win32 由 main 注入;其余平台 null)。终端 xterm windowsPty 用。 */
+    windowsBuild: parseContinuoWindowsBuildFromArgv(process.argv),
+  },
+  explorer: {
+    // ExplorerPayload 形态由 src/lib/persist/explorer-persist 保证;preload 透传 unknown
+    read: (): Promise<IpcResult<unknown | null>> =>
+      ipcRenderer.invoke(EXPLORER_CHANNELS.READ),
+    write: (json: unknown): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(EXPLORER_CHANNELS.WRITE, json),
+  },
+  fs: {
+    listDir: (
+      path: string,
+      options?: PreloadListDirOptions,
+    ): Promise<IpcResult<ReadonlyArray<FileEntry>>> =>
+      ipcRenderer.invoke(FS_CHANNELS.LIST_DIR, { path, options }),
+    /** data = 文件内容;realPath = leaf 为符号链接时的真实目标(可选,FS_PATH_MAX 与 PATH_STR_MAX 同值). */
+    readFile: async (path: string): Promise<FsReadFileResult> =>
+      toFsReadFileResult(
+        (await ipcRenderer.invoke(FS_CHANNELS.READ_FILE, { path })) as IpcResult<FsReadFileData>,
+        FS_PATH_MAX,
+      ),
+    /** 成功时 data = 写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),供编辑器识别自己保存的回声. */
+    writeFile: async (path: string, content: string): Promise<IpcResult<FsFileStat | undefined>> =>
+      toFsWriteFileResult(
+        (await ipcRenderer.invoke(FS_CHANNELS.WRITE_FILE, { path, content })) as IpcResult<unknown>,
+      ),
+    /** 跟随 symlink 的廉价 stat({ mtimeMs, size, ino });畸形结果映射为失败. */
+    stat: async (path: string): Promise<IpcResult<FsFileStat>> =>
+      toFsStatResult((await ipcRenderer.invoke(FS_CHANNELS.STAT, { path })) as IpcResult<unknown>),
+    writeBinary: (path: string, content: Uint8Array): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.WRITE_BINARY, { path, content }),
+    rename: (path: string, newName: string): Promise<IpcResult<string>> =>
+      ipcRenderer.invoke(FS_CHANNELS.RENAME, { path, newName }),
+    remove: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.REMOVE, { path }),
+    createFile: (dir: string, name: string): Promise<IpcResult<string>> =>
+      ipcRenderer.invoke(FS_CHANNELS.CREATE_FILE, { dir, name }),
+    createDir: (parent: string, name: string): Promise<IpcResult<string>> =>
+      ipcRenderer.invoke(FS_CHANNELS.CREATE_DIR, { parent, name }),
+    trash: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.TRASH, { path }),
+    reveal: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.REVEAL, { path }),
+    move: (src: string, dest: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.MOVE, { src, dest }),
+    copy: (src: string, dest: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.COPY, { src, dest }),
+    selectDirectory: (): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke(FS_CHANNELS.SELECT_DIRECTORY),
+    watchDir: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.WATCH, { path }),
+    unwatchDir: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(FS_CHANNELS.UNWATCH, { path }),
+    /**
+     * 订阅目录变更 push 事件;返回 unsubscribe。files:该目录本次变更项名字(可选,
+     * undefined = 未知,按整个目录处理;畸形/超限同样退化为 undefined)。changeOnly:true = 仅内容
+     * 变化、目录列表不变(缺省 / 畸形 → false).
+     */
+    onDirChanged: (
+      cb: (path: string, files?: readonly string[], changeOnly?: boolean) => void,
+    ): (() => void) => {
+      // 边界(E173,E168-E172 同族 IPC ingress 纵深防御):fs:dir-changed payload 此前直接 cb(payload.path)。
+      // 畸形 IPC payload(null/非对象/path 非字符串/超长)→ preload listener 抛错(null.path),或把非法
+      // key 送进 Explorer watcher / external-file-sync(目录刷新异常、debounce Map 污染、外部同步失效)。
+      // runtime guard:非对象/path 非字符串/超长 → console.warn drop;不抛、不下传脏 path。
+      const listener = (_: unknown, payload: unknown): void => {
+        if (!isFsDirChangedPayload(payload, FS_PATH_MAX)) {
+          console.warn('[fs] invalid dir-changed payload, dropped', payload);
+          return;
+        }
+        cb(
+          payload.path,
+          readFsDirChangedFiles(payload, DIR_CHANGED_FILES_MAX, FS_PATH_MAX),
+          readFsDirChangedChangeOnly(payload),
+        );
+      };
+      return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);
+    },
+    /** 订阅本窗口持有的 watcher 失效被驱逐事件(payload 守卫同 onDirChanged);返回 unsubscribe. */
+    onWatchLost: (cb: (path: string) => void): (() => void) => {
+      const listener = (_: unknown, payload: unknown): void => {
+        if (!isFsDirChangedPayload(payload, FS_PATH_MAX)) {
+          console.warn('[fs] invalid watch-lost payload, dropped', payload);
+          return;
+        }
+        cb(payload.path);
+      };
+      return subscribeIpc(FS_CHANNELS.WATCH_LOST, listener);
+    },
+  },
+  terminal: {
+    create: (
+      options?: TerminalCreateOptions,
+    ): Promise<IpcResult<{ id: string }>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.CREATE, options ?? {}),
+    write: (id: string, data: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.WRITE, { id, data }),
+    resize: (
+      id: string,
+      cols: number,
+      rows: number,
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.RESIZE, { id, cols, rows }),
+    // P1 Agent Terminal MCP:session metadata 真相源在 main
+    listSessions: (): Promise<
+      IpcResult<{ sessions: ReadonlyArray<PreloadTerminalSession> }>
+    > => ipcRenderer.invoke(TERMINAL_CHANNELS.LIST_SESSIONS, {}),
+    remove: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.REMOVE, { id }),
+    updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(SESSION_UPDATE_CWD_CHANNEL, { id, cwd }),
+    /**
+     * 读 main 端 buffer 的全部历史 raw chunks(保留 ANSI)。
+     * topic-07:dockview lazy-mount inactive panel 错过初始 PTY 输出,
+     * renderer mount 时调此 + 灌给 xterm 补齐。
+     */
+    readHistory: (
+      id: string,
+    ): Promise<
+      IpcResult<{ data: string; truncated: boolean; endOffset?: number; startOffset?: number }>
+    > =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.READ_HISTORY, { id }),
+    /** 订阅 main 推的 snapshot;返回 unsubscribe. */
+    onSessionsChanged: (
+      cb: (sessions: ReadonlyArray<PreloadTerminalSession>) => void,
+    ): (() => void) => {
+      const listener = (
+        _: unknown,
+        sessions: ReadonlyArray<PreloadTerminalSession>,
+      ) => cb(sessions);
+      return subscribeIpc(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
+    },
+    /**
+     * 订阅指定 session 的 stdout 字节流;返回 unsubscribe。
+     * 性能 P1:整窗共享单个 'terminal:data' listener,按 id 路由到本 cb(O(1)/chunk),
+     * cb 只收已过滤的 data(旧版收 (id,data) 让调用方自己 `if(id!==termId)return`)。
+     */
+    onData: (id: string, cb: (data: string, offset?: number) => void): (() => void) => {
+      ensureTerminalDataListener();
+      return terminalDataDemux.add(id, cb);
+    },
+    onExit: (
+      cb: (id: string, payload: TerminalExitPayload) => void,
+    ): (() => void) => {
+      const listener = (
+        _: unknown,
+        id: string,
+        payload: TerminalExitPayload,
+      ) => cb(id, payload);
+      return subscribeIpc(TERMINAL_CHANNELS.EXIT, listener);
+    },
+    onOverflow: (cb: (id: string) => void): (() => void) => {
+      const listener = (_: unknown, id: string) => cb(id);
+      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW, listener);
+    },
+    onOverflowRecovered: (cb: (id: string) => void): (() => void) => {
+      const listener = (_: unknown, id: string) => cb(id);
+      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
+    },
+  },
+  plugins: {
+    listDirs: (): Promise<IpcResult<readonly IpcPluginDirListing[]>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.LIST_DIRS),
+    /**
+     * perf:激活时按目录名拉 main 源码(列举不再携带),不可用 → null。manifestHash 为列举项令牌,
+     * manifest 已变 → PLUGIN_MANIFEST_CHANGED。
+     */
+    readMainByDir: (dir: string, manifestHash: string): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_MAIN_BY_DIR, { dir, manifestHash }),
+    /** perf:按 manifest.id 只读单个插件目录(热重载用),不存在 → null. */
+    readDirById: (id: string): Promise<IpcResult<IpcPluginDir | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_DIR_BY_ID, { id }),
+    readEnabled: (): Promise<IpcResult<readonly string[]>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),
+    /** 数据安全:按单 plugin 启用/禁用 delta 写,防多窗口整表 RMW 互相覆盖. */
+    mutateEnabled: (id: string, enabled: boolean): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.MUTATE_ENABLED, { id, enabled }),
+    readPermissions: (): Promise<IpcResult<IpcPermissionsMap>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.READ_PERMISSIONS),
+    /**
+     * 终审 P1:按权限项增量变更单 plugin 授权(main 合并当前落盘记录),返回合并后的记录(条目删除 → null)。
+     * 不再发整条记录覆盖写,陈旧窗口保存不会把别窗的撤销写回。
+     */
+    mutatePluginPermissions: (
+      id: string,
+      mutation: IpcPermissionMutation,
+    ): Promise<IpcResult<IpcPermissionRecord | null>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.MUTATE_PLUGIN_PERMISSIONS, {
+        id,
+        mutation,
+      }),
+    /** 订阅「插件授权已变更」广播(任一窗口变更成功后 main 推给所有窗口),返 unsubscribe. */
+    onPermissionsChanged: (cb: (id: string) => void): (() => void) => {
+      // 同 onChanged:payload 形态 `{ id }`,复用同一守卫(畸形 warn+drop)。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginsChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:permissions-changed payload', payload);
+          return;
+        }
+        cb(payload.id);
+      };
+      return subscribeIpc(PLUGINS_CHANNELS.PERMISSIONS_CHANGED, listener);
+    },
+    /** v4.3.1 订阅 plugin 文件 mtime 变化,返 unsubscribe. */
+    onChanged: (cb: (id: string) => void): (() => void) => {
+      // 边界(E242):runtime 守卫 push payload,畸形(null/非字符串/超长 id)warn+drop 不调 cb。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginsChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:changed payload', payload);
+          return;
+        }
+        cb(payload.id);
+      };
+      return subscribeIpc(PLUGINS_CHANNELS.CHANGED, listener);
+    },
+    /** 订阅「插件已卸载」广播(任一窗口卸载成功后 main 推给所有窗口),返 unsubscribe. */
+    onUninstalled: (cb: (id: string) => void): (() => void) => {
+      // 同 onChanged:payload 形态 `{ id }`,复用同一守卫(畸形 warn+drop)。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginsChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:uninstalled payload', payload);
+          return;
+        }
+        cb(payload.id);
+      };
+      return subscribeIpc(PLUGINS_CHANNELS.UNINSTALLED, listener);
+    },
+    /** 订阅「插件启用状态已变更」广播(任一窗口启用 / 禁用成功后 main 推给所有窗口),返 unsubscribe. */
+    onEnabledChanged: (cb: (id: string, enabled: boolean) => void): (() => void) => {
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isPluginEnabledChangedPayload(payload)) {
+          console.warn('[plugins] dropped malformed plugins:enabled-changed payload', payload);
+          return;
+        }
+        cb(payload.id, payload.enabled);
+      };
+      return subscribeIpc(PLUGINS_CHANNELS.ENABLED_CHANGED, listener);
+    },
+    /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
+    onProtocolUrl: (cb: (url: string) => void): (() => void) => {
+      // 边界(E242):同 onChanged,孪生 push 入口同款守卫(畸形 url warn+drop)。
+      const listener = (_: unknown, payload: unknown) => {
+        if (!isProtocolUrlPayload(payload)) {
+          console.warn('[plugins] dropped malformed protocol-url payload', payload);
+          return;
+        }
+        cb(payload.url);
+      };
+      const unsubscribe = subscribeIpc(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
+      // 监听已挂上 → 告诉 main「本窗口能接收 co:// 了」,main 才排空冷启动期间缓冲的深链(同 FLUSH_READY)。
+      ipcRenderer.send(PLUGINS_CHANNELS.PROTOCOL_READY);
+      return unsubscribe;
+    },
+    /**
+     * v4.5 从 git URL 安装插件,返回 manifest 元信息.
+     * overwrite=true:原子覆盖已装版本(用于「更新」,无需先卸载,失败保留旧版本)。
+     * opts.branch:clone 指定分支;opts.expectedId:manifest.id 须等于它(marketplace entry 用)。
+     */
+    installFromGit: (
+      url: string,
+      overwrite?: boolean,
+      opts?: { branch?: string; expectedId?: string },
+    ): Promise<
+      IpcResult<{ id: string; name: string; version: string }>
+    > =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, {
+        url,
+        overwrite,
+        branch: opts?.branch,
+        expectedId: opts?.expectedId,
+      }),
+    /** v4.6 卸载插件:rm -rf plugins/<id>/ + 清 _enabled / _permissions. */
+    uninstall: (id: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGINS_CHANNELS.UNINSTALL, { id }),
+  },
+  shell: {
+    /** plugin app.shell.exec 后端:一次性 spawn + buffered + 超时. */
+    exec: (input: IpcShellExecInput): Promise<IpcResult<IpcShellExecResult>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.EXEC, input),
+    /**
+     * 用系统默认 app 打开 URL — markdown 链接点击走这条路(http/https/mailto/file)。
+     * main process 白名单 scheme,其他抛错。
+     */
+    openExternal: (url: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.OPEN_EXTERNAL, { url }),
+    /** 终止本窗口内某插件启动的全部 shell 进程(插件停用/卸载时 PluginManager 调用). */
+    killPluginProcesses: (pluginId: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(SHELL_CHANNELS.KILL_PLUGIN_PROCESSES, { pluginId }),
+  },
+  marketplace: {
+    /**
+     * 安全 S4:拉 marketplace reviews。token + GitHub fetch 在 main(运行时
+     * GITHUB_TOKEN,绝不内联进 renderer);main 跑固定查询,返回聚合前 nodes。
+     * 无 token → { available:false, nodes:[] },renderer 降级 cache。
+     */
+    fetchReviews: (): Promise<IpcResult<FetchReviewsResult>> =>
+      ipcRenderer.invoke(MARKETPLACE_CHANNELS.FETCH_REVIEWS, {}),
+  },
+  window: {
+    /**
+     * 多窗口支持(issue #23 Phase 1):在已有 main process 内开新主窗口。
+     * 可选 workspace 绝对路径 — 新窗口启动时直接打开此目录(query string 注入)。
+     * 不传 workspace = 空白主窗,用户进 app 后可选 folder。
+     */
+    create: (
+      input: IpcWindowCreateInput,
+    ): Promise<IpcResult<IpcWindowCreateResult>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.CREATE, input),
+    /**
+     * renderer 在 workspace.root 变化时通知 main,维护 windowId→root 映射。
+     * 供 MCP agent terminal_create_session 路径 cwd 默认解析使用。
+     */
+    notifyRoot: (
+      root: string | null,
+    ): Promise<
+      | { ok: true }
+      | {
+          ok: false;
+          // main 还可能因不可信 frame 返回 IPC_DENIED
+          code: 'BAD_INPUT' | 'BAD_ROOT' | 'NO_WINDOW' | 'IPC_DENIED';
+          message?: string;
+        }
+    > => ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),
+    /**
+     * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
+     * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。
+     * 此 helper 在 preload realm 调 webUtils,sandbox renderer 拿不到原生对象。
+     */
+    getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  },
+  agentAuth: {
+    /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe. */
+    onRequest: (
+      cb: (payload: AgentAuthRequestPayload) => void,
+    ): (() => void) => {
+      const listener = (_: unknown, payload: AgentAuthRequestPayload) =>
+        cb(payload);
+      const unsubscribe = subscribeIpc(AGENT_AUTH_CHANNELS.REQUEST, listener);
+      // 监听已挂上 → 告诉 main「本窗口能显示授权弹窗了」(同 PROTOCOL_READY):reload 后新文档就绪之前到达的
+      // 请求 main 直接拒绝,不发给收不到的文档。
+      ipcRenderer.send(AGENT_AUTH_CHANNELS.READY);
+      return unsubscribe;
+    },
+    /** 用户决定后回应 main(对应 requestId). */
+    respond: (
+      requestId: string,
+      decision: AgentAuthDecision,
+    ): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(AGENT_AUTH_CHANNELS.RESPOND, { requestId, decision }),
+    /** 订阅 main 广播的「撤销已生效」(任一窗口撤销后推给所有窗口);返回 unsubscribe. */
+    onRevoked: (cb: () => void): (() => void) =>
+      subscribeIpc(AGENT_AUTH_CHANNELS.REVOKED, () => cb()),
+    /** 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发). */
+    revoke: (): Promise<IpcResult<{ killed: number; rotated: boolean }>> =>
+      ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
+  },
+  debug: {
+    subscribe: (): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.SUBSCRIBE, {}),
+    onEvent: (listener: (payload: DebugViewEvent) => void): (() => void) => {
+      const wrapped = (_evt: unknown, payload: DebugViewEvent) => listener(payload);
+      return subscribeIpc(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
+    },
+    getStack: (input: DebugGetStackInput): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_STACK, input),
+    getScopes: (input: DebugGetScopesInput): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_SCOPES, input),
+    getVariables: (
+      input: DebugGetVariablesInput,
+    ): Promise<IpcResult<unknown>> =>
+      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_VARIABLES, input),
+  },
+  i18n: {
+    /** 同步初值用 — main settings.service 已 hydrate 后返当前 locale。 */
+    getLocale(): Promise<IpcResult<Locale>> {
+      return ipcRenderer.invoke(I18N_CHANNELS.GET_LOCALE);
+    },
+    /** 设置新 locale；main 持久化 + 广播 i18n:changed；返回 { ok, locale, gen }。 */
+    setLocale(locale: Locale): Promise<IpcResult<I18nSetLocaleResult>> {
+      return ipcRenderer.invoke(I18N_CHANNELS.SET_LOCALE, locale);
+    },
+    /** 订阅 main 广播；返 unsubscribe。renderer 用 gen 排序去过期。 */
+    onChange(listener: (payload: I18nChangedPayload) => void): () => void {
+      const wrapped = (_evt: unknown, payload: I18nChangedPayload) =>
+        listener(payload);
+      return subscribeIpc(I18N_CHANNELS.CHANGED, wrapped);
+    },
+  },
+  mcp: {
+    /** 拿当前 stdio MCP 配置(状态栏"复制 MCP 配置"按钮用). */
+    getStdioConfig: (): Promise<IpcResult<StdioMcpConfig>> =>
+      ipcRenderer.invoke(MCP_CHANNELS.GET_STDIO_CONFIG, {}),
+  },
+  pluginMcp: {
+    /** 上行注册 tool 元数据;失败返 IpcFail(含 TOOL_NAME_TAKEN 等 code). */
+    registerTool: (payload: {
+      pluginId: string;
+      name: string;
+      description: string;
+      jsonSchema: Record<string, unknown>;
+    }): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGIN_MCP_CHANNELS.REGISTER, payload),
+    /** 上行摘 tool;unknown name 静默 ok. */
+    unregisterTool: (name: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(PLUGIN_MCP_CHANNELS.UNREGISTER, { name }),
+    /** main 反向调 tool.run 时推过来的 invoke 请求(订阅;返 unsubscribe). */
+    onInvoke: (cb: (payload: InvokePayload) => void): (() => void) => {
+      const listener = (_: unknown, payload: InvokePayload) => cb(payload);
+      return subscribeIpc(PLUGIN_MCP_CHANNELS.INVOKE, listener);
+    },
+    /** renderer 答 main(单向 send,无 IpcResult). */
+    replyInvoke: (reply: InvokeReply): void => {
+      ipcRenderer.send(PLUGIN_MCP_CHANNELS.INVOKE_REPLY, reply);
+    },
+  },
+  pluginDataRaw,
+  pluginFsRaw,
+  pluginShellStreamRaw,
+} as const;
+
+export type ContinuoApi = typeof api;
+
+let rendererApiClaimed = false;
+
+// v5 Phase 4.C:不要把全量 IPC bridge 挂在 plugin 同 realm 的全局对象上。
+// renderer main.tsx 启动最早调用 captureLmApi() 领取一次完整 api 并缓存到
+// module-local;用户插件加载发生在之后,再次 claim 只能得到 null。
+contextBridge.exposeInMainWorld('__lmApi', {
+  claimRendererApi: (): ContinuoApi | null => {
+    if (rendererApiClaimed) return null;
+    rendererApiClaimed = true;
+    return api;
+  },
+});
+
+// E2E 模式标志:main 进程检测 CONTINUO_E2E=1 时把这个常量设 true,
+// renderer main.tsx 看到 → 挂 testing helpers 到 window.__continuoTest.
+// 非 e2e 环境完全不存在,无副作用.
+if (process.env['CONTINUO_E2E'] === '1') {
+  contextBridge.exposeInMainWorld('__continuoE2E', true);
+}
+
+// topic 48: main injects `--continuo-packaged=<bool>` via
+// webPreferences.additionalArguments so renderer-side spike probes can read
+// packaged state synchronously without changing their existing access path.
+contextBridge.exposeInMainWorld(
+  '__continuoMeta',
+  Object.freeze({
+    appIsPackaged: parseContinuoPackagedFromArgv(process.argv),
+  } as Readonly<{ appIsPackaged: boolean | null }>),
+);

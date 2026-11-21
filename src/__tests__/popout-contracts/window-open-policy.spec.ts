@@ -1,0 +1,131 @@
+// BDD:window.open 的目标是否是本应用自己的 renderer 入口(是 → 允许开子窗并注入 preload)。见同目录 README。
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { isPopoutOnlyUrl } from '../../../electron/main/popout-url';
+import {
+  installNavigationGuard,
+  isOwnRendererWindowUrl,
+} from '../../../electron/main/window-open-policy';
+
+const trustedFile = (url: string): boolean =>
+  url.startsWith('file:///app/out/renderer/index.html');
+
+describe('isOwnRendererWindowUrl', () => {
+  it('有 dev server:只认同源 URL', () => {
+    const dev = new URL('http://localhost:5173/');
+    expect(isOwnRendererWindowUrl('http://localhost:5173/?popout=1', dev, trustedFile)).toBe(true);
+    expect(isOwnRendererWindowUrl('http://localhost:9999/?popout=1', dev, trustedFile)).toBe(false);
+    expect(isOwnRendererWindowUrl('file:///app/out/renderer/index.html?popout=1', dev, trustedFile)).toBe(false);
+    expect(isOwnRendererWindowUrl('not a url', dev, trustedFile)).toBe(false);
+  });
+
+  // 未打包但也没有 dev server(`electron out/main/index.js`:预览 / e2e)时主窗是 loadFile 加载的。
+  // 此前这种情况按「dev」处理、要求同源 dev URL,而 dev URL 不存在 → 所有 popout 都被拒,子窗开不出来。
+  it('没有 dev server(含未打包的本地构建)→ 与主窗一致,认受信的 renderer 文件入口', () => {
+    expect(
+      isOwnRendererWindowUrl('file:///app/out/renderer/index.html?windowSeq=0&popout=1', null, trustedFile),
+    ).toBe(true);
+    expect(isOwnRendererWindowUrl('file:///tmp/evil.html', null, trustedFile)).toBe(false);
+    expect(isOwnRendererWindowUrl('https://example.com/', null, trustedFile)).toBe(false);
+  });
+});
+
+// 安全 L1:window.open 放行(注入完整 preload)只为 dockview popout。Markdown 预览中键点
+// `file:///…/app.asar/out/renderer/index.html?workspace=%2F&fresh=1&windowSeq=0` 时,只比 pathname
+// 会开出一个以攻击者指定目录为根的完整权限应用窗口。popout 子窗只看 `popout` 标记(App 短路成
+// PopoutHost,不读 workspace / windowSeq / fresh / spike),故放行要求 query 恰好只有 popout=1。
+describe('L1 · window.open 只放行纯 popout URL', () => {
+  it('纯 popout URL 放行(file / dev 两种入口)', () => {
+    expect(isPopoutOnlyUrl('file:///app/out/renderer/index.html?popout=1')).toBe(true);
+    expect(isPopoutOnlyUrl('http://localhost:5173/?popout=1')).toBe(true);
+  });
+
+  it('带 workspace / fresh / windowSeq / spike 等启动参数的应用入口 URL 拒绝', () => {
+    const base = 'file:///app/out/renderer/index.html';
+    for (const q of [
+      '?workspace=%2F&fresh=1&windowSeq=0',
+      '?workspace=%2F&popout=1',
+      '?popout=1&fresh=1',
+      '?windowSeq=0&popout=1',
+      '?spike=plugin-isolation&popout=1',
+      '?popout=1&popout=1',
+    ]) {
+      expect(isPopoutOnlyUrl(`${base}${q}`), q).toBe(false);
+    }
+  });
+
+  it('没有 popout 标记 / popout 值不是 1 / 不可解析 / 超长 → 拒绝', () => {
+    expect(isPopoutOnlyUrl('file:///app/out/renderer/index.html')).toBe(false);
+    expect(isPopoutOnlyUrl('file:///app/out/renderer/index.html?popout=0')).toBe(false);
+    expect(isPopoutOnlyUrl('not a url')).toBe(false);
+    expect(isPopoutOnlyUrl(`http://localhost:5173/?popout=1#${'a'.repeat(70_000)}`)).toBe(false);
+  });
+
+  // index.ts 顶层有 app 副作用,不可直接 import(E146 同法):静态钉住 windowOpenHandler 的放行条件。
+  it('windowOpenHandler 的放行条件 = 本应用入口 且 纯 popout URL', () => {
+    const src = readFileSync(join(__dirname, '..', '..', '..', 'electron/main/index.ts'), 'utf-8');
+    expect(src).toContain('const allow = isOwnRendererUrl(url) && isPopoutOnlyUrl(url);');
+  });
+});
+
+describe('isOwnRendererWindowUrl 边界', () => {
+  it('超长 URL 直接判否,不进 URL 解析', () => {
+    const huge = `http://localhost:5173/?q=${'a'.repeat(70_000)}`;
+    expect(isOwnRendererWindowUrl(huge, new URL('http://localhost:5173/'), trustedFile)).toBe(false);
+  });
+});
+
+// 页面内容(如 Markdown 预览里的链接、mermaid 图的 click 链接)被点击时,窗口不能被导航到
+// 应用之外 —— 否则整个应用界面被一个网页顶替,且该网页跑在应用窗口里。
+describe('installNavigationGuard', () => {
+  function setup(isOwn: (url: string) => boolean) {
+    let listener: ((event: { preventDefault(): void; url: string }) => void) | null = null;
+    const onBlocked = vi.fn();
+    installNavigationGuard(
+      {
+        on: (event, cb) => {
+          expect(event).toBe('will-navigate');
+          listener = cb;
+        },
+      },
+      isOwn,
+      onBlocked,
+    );
+    const navigate = (url: string) => {
+      const preventDefault = vi.fn();
+      listener!({ preventDefault, url });
+      return preventDefault;
+    };
+    return { navigate, onBlocked };
+  }
+  const isOwn = (url: string): boolean =>
+    url.startsWith('file:///app/out/renderer/index.html');
+
+  it('拦下离开本应用 renderer 入口的主框架导航', () => {
+    const { navigate } = setup(isOwn);
+    expect(navigate('https://example.com/')).toHaveBeenCalledTimes(1);
+    expect(navigate('file:///tmp/evil.html')).toHaveBeenCalledTimes(1);
+  });
+
+  // 只拦不转交的话,漏网的链接点击对用户就是「没反应」。被拦的 URL 交给调用方
+  //(index.ts 走与 window.open 拒绝分支相同的外链白名单 → 系统浏览器)。
+  it('把被拦下的 URL 交给 onBlocked 处理', () => {
+    const { navigate, onBlocked } = setup(isOwn);
+    navigate('https://example.com/docs');
+    expect(onBlocked).toHaveBeenCalledTimes(1);
+    expect(onBlocked).toHaveBeenCalledWith('https://example.com/docs');
+  });
+
+  it('放行回到本应用 renderer 入口的导航(如 dev 重载)', () => {
+    const { navigate, onBlocked } = setup(isOwn);
+    expect(navigate('file:///app/out/renderer/index.html?windowSeq=0')).not.toHaveBeenCalled();
+    expect(onBlocked).not.toHaveBeenCalled();
+  });
+
+  it('不干涉 DevTools 自己的导航', () => {
+    const { navigate, onBlocked } = setup(() => false);
+    expect(navigate('devtools://devtools/bundled/devtools_app.html')).not.toHaveBeenCalled();
+    expect(onBlocked).not.toHaveBeenCalled();
+  });
+});

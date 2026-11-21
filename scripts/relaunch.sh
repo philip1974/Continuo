@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# relaunch: graceful quit running Continuo.app → build:app → open the fresh build.
+# 用 osascript 而非 pkill,走 Electron before-quit/will-quit 钩子,允许窗口状态/
+# explorer.json 正常落盘。pgrep 轮询确认进程真退出,避免 builder 撞 EBUSY。
+set -euo pipefail
+
+# 仅 macOS Apple Silicon:依赖 osascript / open 与 dist-electron/mac-arm64 产物路径。
+if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
+  echo "[relaunch] only supported on macOS (Apple Silicon); use \`pnpm build:app\` instead." >&2
+  exit 1
+fi
+
+# 锁到 .nvmrc 的 Node 版本(24),避免从默认 Node 20 shell 跑出 ABI 错配的
+# native build。electron-rebuild + node-pty prebuild 都依赖系统 Node 版本。
+if [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+  nvm use --silent
+fi
+
+APP_NAME="Continuo"
+APP_PATH="dist-electron/mac-arm64/${APP_NAME}.app"
+
+if pgrep -x "$APP_NAME" >/dev/null; then
+  echo "[relaunch] quitting running ${APP_NAME}.app..."
+  osascript -e "tell application \"${APP_NAME}\" to quit" || true
+  # 等真退出(最多 10s),否则 electron-builder 会撞 EBUSY。
+  for _ in $(seq 1 50); do
+    pgrep -x "$APP_NAME" >/dev/null || break
+    sleep 0.2
+  done
+  if pgrep -x "$APP_NAME" >/dev/null; then
+    echo "[relaunch] still running after 10s, force kill"
+    pkill -x "$APP_NAME" || true
+    sleep 0.5
+  fi
+fi
+
+echo "[relaunch] building..."
+pnpm build:app
+
+echo "[relaunch] launching ${APP_PATH}..."
+open "$APP_PATH"

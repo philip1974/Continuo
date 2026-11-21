@@ -1,0 +1,569 @@
+// BDD: agent-terminal-mcp-install-stop-hook
+// agent terminal spawn 前 stop hook 自动安装契约层。
+
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  inferRunner,
+  installStopHookForSession as installStopHookForRunner,
+  type RunnerKind,
+} from '../../../electron/main/services/mcp-tools-hook-bridge';
+
+interface InstallStopHookInput {
+  readonly cwd: string;
+  readonly agentLabel: string;
+  readonly hookEventsDir: string;
+  readonly windowId: number;
+}
+
+const tmpRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tmpRoots.splice(0).map((root) =>
+      rm(root, { recursive: true, force: true }),
+    ),
+  );
+  vi.useRealTimers();
+});
+
+async function makeCwd(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'continuo-install-stop-hook-'));
+  tmpRoots.push(root);
+  return root;
+}
+
+async function writeText(path: string, text: string): Promise<void> {
+  await mkdir(join(path, '..'), { recursive: true });
+  await writeFile(path, text, 'utf8');
+}
+
+async function readText(path: string): Promise<string> {
+  return readFile(path, 'utf8');
+}
+
+function tomlStringFragment(value: string): string {
+  return value.replaceAll('\\', '\\\\');
+}
+
+async function listBackups(cwd: string): Promise<string[]> {
+  const names = await readdir(cwd, { recursive: true });
+  return names
+    .map(String)
+    .filter((name) => name.includes('.continuo-bak.'));
+}
+
+function runnerFromAgentLabel(agentLabel: string): RunnerKind {
+  return inferRunner({ id: 'term', cwd: '/repo', agentLabel });
+}
+
+function installStopHookForSession(input: InstallStopHookInput) {
+  return installStopHookForRunner(
+    input.cwd,
+    runnerFromAgentLabel(input.agentLabel),
+    input.hookEventsDir,
+  );
+}
+
+function makeDriver() {
+  const calls: string[] = [];
+  return {
+    calls,
+    install: async (input: InstallStopHookInput) => {
+      calls.push(`install:${runnerFromAgentLabel(input.agentLabel)}`);
+      return installStopHookForSession(input);
+    },
+    createSession: async (input: InstallStopHookInput) => {
+      calls.push('resolve-cwd');
+      const installResult = await installStopHookForSession(input);
+      calls.push('install-complete');
+      calls.push('spawn');
+      return { installResult, sessionId: 'term-1' };
+    },
+  };
+}
+
+describe('installStopHookForSession', () => {
+  it('inferRunner 对常见小写 label/autorun 不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(inferRunner({ id: 'term', cwd: '/repo', agentLabel: 'codex' })).toBe(
+        'codex',
+      );
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'claude --danger' }),
+      ).toBe('cc');
+      expect(
+        lowerSpy.mock.contexts.some(
+          (ctx) => String(ctx) === 'codex' || String(ctx) === 'claude --danger',
+        ),
+      ).toBe(false);
+      expect(inferRunner({ id: 'term', cwd: '/repo', agentLabel: 'CLAUDE' })).toBe(
+        'cc',
+      );
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('inferRunner autorun token 空白边界判断不调用 RegExp.test', () => {
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'claude\t--danger' }),
+      ).toBe('cc');
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'codex\u00A0--yolo' }),
+      ).toBe('codex');
+      expect(
+        inferRunner({ id: 'term', cwd: '/repo', autorun: 'codexish --nope' }),
+      ).toBe('unknown');
+      const whitespaceRegexCalls = testSpy.mock.contexts.filter(
+        (context) => context instanceof RegExp && context.source === '\\s',
+      );
+      expect(whitespaceRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
+  it('I1 should merge Claude Code settings with managed stop hook command and return installed true', async () => {
+    const cwd = await makeCwd();
+    const hookEventsDir = join(cwd, '.continuo', 'hook-events');
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'claude',
+        hookEventsDir,
+        windowId: 4,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    const settings = await readText(join(cwd, '.claude', 'settings.local.json'));
+    expect(settings).toContain('mkdir -p');
+    expect(settings).toContain('cat >');
+    expect(settings).toContain('${CONTINUO_WINDOW_ID:-unknown}');
+    expect(settings).toContain('${CLAUDE_CODE_SESSION_ID:-unknown}');
+    // 正确性(会话绑定):文件名带 PTY 注入的终端会话 id,broker 只交给该会话的等待者。
+    expect(settings).toContain(
+      'cc_${CONTINUO_WINDOW_ID:-unknown}_${CONTINUO_TERMINAL_SESSION_ID:-unknown}_${CLAUDE_CODE_SESSION_ID:-unknown}_',
+    );
+    expect(settings).toContain('"_continuo_managed": true');
+  });
+
+  it('I2 should merge Codex config with windowId-aware Stop hook command', async () => {
+    const cwd = await makeCwd();
+    const hookEventsDir = join(cwd, '.continuo', 'hook-events');
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir,
+        windowId: 4,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    const toml = await readText(join(cwd, '.codex', 'config.toml'));
+    expect(toml).toContain('[[hooks.Stop]]');
+    expect(toml).toContain('# continuo-managed');
+    expect(toml).toContain(
+      'codex_${CONTINUO_WINDOW_ID:-unknown}_${CONTINUO_TERMINAL_SESSION_ID:-unknown}_$(date +%s%N).jsonl',
+    );
+  });
+
+  // 正确性(会话绑定):旧版 managed hook 写出的事件文件名无终端会话 id,broker 不再交给任何等待者。
+  // 已装旧版 hook 的项目必须在下次 install 时原地升级,否则 await_stop_hook 永远超时。
+  it('I8 旧版 Claude managed Stop hook(无会话 id)原地升级 command,不追加第二条、保留用户 Stop', async () => {
+    const cwd = await makeCwd();
+    const settingsPath = join(cwd, '.claude', 'settings.local.json');
+    const legacyCommand =
+      'mkdir -p "/x" && cat > "${CONTINUO_HOOK_EVENTS_DIR:-/x}/cc_${CONTINUO_WINDOW_ID:-unknown}_${CLAUDE_CODE_SESSION_ID:-unknown}_$(date +%s%N).jsonl"';
+    await writeText(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            { hooks: [{ type: 'command', command: 'echo user-stop' }] },
+            { hooks: [{ type: 'command', command: legacyCommand, _continuo_managed: true }] },
+          ],
+        },
+      }),
+    );
+
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'claude', hookEventsDir: '/x', windowId: 4 }),
+    ).resolves.toEqual({ installed: true });
+
+    const parsed = JSON.parse(await readText(settingsPath)) as {
+      hooks: { Stop: Array<{ hooks: Array<{ command: string; _continuo_managed?: boolean }> }> };
+    };
+    expect(parsed.hooks.Stop).toHaveLength(2);
+    expect(parsed.hooks.Stop[0]!.hooks[0]!.command).toBe('echo user-stop');
+    const managed = parsed.hooks.Stop[1]!.hooks[0]!;
+    expect(managed._continuo_managed).toBe(true);
+    expect(managed.command).toContain('${CONTINUO_TERMINAL_SESSION_ID:-unknown}');
+    await expect(listBackups(cwd)).resolves.toHaveLength(1);
+
+    // 升级后再装 → already-installed(幂等)。
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'claude', hookEventsDir: '/x', windowId: 4 }),
+    ).resolves.toEqual({ installed: false, reason: 'already-installed' });
+  });
+
+  it('I8b 旧版 Codex managed Stop hook(同 hookEventsDir、无会话 id)原地升级', async () => {
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    const hookEventsDir = join(cwd, '.continuo', 'hook-events');
+    const legacyCommand =
+      `mkdir -p "${hookEventsDir}" && cat > "\${CONTINUO_HOOK_EVENTS_DIR:-${hookEventsDir}}/` +
+      'codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"';
+    await writeText(
+      configPath,
+      ['# continuo-managed', '[[hooks.Stop]]', '[[hooks.Stop.hooks]]', 'type = "command"',
+        `command = ${JSON.stringify(legacyCommand)}`, ''].join('\n'),
+    );
+
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'codex', hookEventsDir, windowId: 4 }),
+    ).resolves.toEqual({ installed: true });
+    const toml = await readText(configPath);
+    expect(toml).toContain('${CONTINUO_TERMINAL_SESSION_ID:-unknown}');
+    expect(toml.match(/codex_\$\{CONTINUO_WINDOW_ID/g)?.length).toBe(1);
+
+    await expect(
+      installStopHookForSession({ cwd, agentLabel: 'codex', hookEventsDir, windowId: 4 }),
+    ).resolves.toEqual({ installed: false, reason: 'already-installed' });
+  });
+
+  it('I3a/I3b should skip managed Stop but not skip when only Notification contains env', async () => {
+    const cwd = await makeCwd();
+    const settingsPath = join(cwd, '.claude', 'settings.local.json');
+    await writeText(
+      settingsPath,
+      JSON.stringify(
+        {
+          hooks: {
+            Stop: [
+              {
+                matcher: '',
+                hooks: [
+                  {
+                    type: 'command',
+                    command:
+                      'mkdir -p "$CONTINUO_HOOK_EVENTS_DIR"; cat > "$CONTINUO_HOOK_EVENTS_DIR/cc_$CONTINUO_TERMINAL_SESSION_ID.jsonl"',
+                    _continuo_managed: true,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'cc',
+        hookEventsDir: join(cwd, '.continuo', 'hook-events'),
+        windowId: 4,
+      }),
+    ).resolves.toEqual({
+      installed: false,
+      reason: 'already-installed',
+    });
+    await expect(listBackups(cwd)).resolves.toHaveLength(0);
+
+    const codexCwd = await makeCwd();
+    const configPath = join(codexCwd, '.codex', 'config.toml');
+    await writeText(
+      configPath,
+      [
+        '[[hooks.Notification]]',
+        'command = "echo $CONTINUO_HOOK_EVENTS_DIR"',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(
+      installStopHookForSession({
+        cwd: codexCwd,
+        agentLabel: 'codex',
+        hookEventsDir: join(codexCwd, '.continuo', 'hook-events'),
+        windowId: 4,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    const toml = await readText(configPath);
+    expect(toml).toContain('[[hooks.Notification]]');
+    expect(toml).toContain('[[hooks.Stop]]');
+  });
+
+  it('I3c should refuse unrecognized Codex multiline Stop hook instead of appending', async () => {
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    const existing = [
+      '[[hooks.Stop]]',
+      "command = '''",
+      'mkdir -p "$CONTINUO_HOOK_EVENTS_DIR"',
+      "'''",
+      '',
+    ].join('\n');
+    await writeText(configPath, existing);
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: join(cwd, '.continuo', 'hook-events'),
+        windowId: 4,
+      }),
+    ).resolves.toEqual({
+      installed: false,
+      reason: 'unrecognized-existing-stop-hook',
+    });
+    await expect(readText(configPath)).resolves.toBe(existing);
+  });
+
+  it('Codex multiline Stop hook 检测走字符扫描,不调用 RegExp.test', async () => {
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    await writeText(
+      configPath,
+      ['[[hooks.Stop]]', "command\t=\n'''", 'echo stop', "'''", ''].join('\n'),
+    );
+    const testSpy = vi.spyOn(RegExp.prototype, 'test');
+
+    try {
+      await expect(
+        installStopHookForSession({
+          cwd,
+          agentLabel: 'codex',
+          hookEventsDir: join(cwd, '.continuo', 'hook-events'),
+          windowId: 4,
+        }),
+      ).resolves.toEqual({
+        installed: false,
+        reason: 'unrecognized-existing-stop-hook',
+      });
+      const stopTomlRegexCalls = testSpy.mock.contexts.filter(
+        (context) =>
+          context instanceof RegExp &&
+          context.source.includes('\\[\\[hooks\\.Stop\\]\\]'),
+      );
+      expect(stopTomlRegexCalls).toHaveLength(0);
+    } finally {
+      testSpy.mockRestore();
+    }
+  });
+
+  it('I4 should skip unknown runner and leave cwd untouched', async () => {
+    const cwd = await makeCwd();
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'aider',
+        hookEventsDir: join(cwd, '.continuo', 'hook-events'),
+        windowId: 4,
+      }),
+    ).resolves.toEqual({
+      installed: false,
+      reason: 'unknown-runner',
+    });
+    await expect(readdir(cwd)).resolves.toEqual([]);
+  });
+
+  it('I5 should skip parse-failed Claude settings and preserve invalid JSON bytes', async () => {
+    const cwd = await makeCwd();
+    const settingsPath = join(cwd, '.claude', 'settings.local.json');
+    await writeText(settingsPath, '{not-valid-json');
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'claude',
+        hookEventsDir: join(cwd, '.continuo', 'hook-events'),
+        windowId: 4,
+      }),
+    ).resolves.toEqual({
+      installed: false,
+      reason: 'parse-error',
+    });
+    await expect(readText(settingsPath)).resolves.toBe('{not-valid-json');
+  });
+
+  it('I6 should backup and replace only the managed marker entry when hookEventsDir drifts', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-07T00:00:00.000Z'));
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    await writeText(
+      configPath,
+      [
+        '[[hooks.Stop]]',
+        '# user-owned',
+        'command = "echo user-stop"',
+        '',
+        '[[hooks.Stop]]',
+        '# continuo-managed',
+        'command = "cat > /old/hook-events/codex_${CONTINUO_WINDOW_ID:-unknown}_$(date +%s%N).jsonl"',
+        '',
+        '[[hooks.Stop]]',
+        '# user-owned-2',
+        'command = "echo another-user-stop"',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: join(cwd, '.continuo', 'hook-events-new'),
+        windowId: 4,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    await expect(listBackups(cwd)).resolves.toHaveLength(1);
+    const toml = await readText(configPath);
+    expect(toml).toContain('echo user-stop');
+    expect(toml).toContain('echo another-user-stop');
+    expect(toml).not.toContain('/old/hook-events');
+  });
+
+  // 数据安全(复查 P1):真实首装写出的 command 经 JSON.stringify 含转义引号 \"
+  // (mkdir -p "..." 的内层引号)。drift 替换的 `"[^"]*"` 正则在第一个 \" 处截断 → 旧命令
+  // 尾巴残留、损坏 .codex/config.toml。转义感知正则须完整替换。I6 用手工无转义 command
+  // 故未触发,此处用真实两次安装复现。
+  it('I6b hookEventsDir drift 替换转义引号 command 不残留旧命令(真实两次安装)', async () => {
+    const cwd = await makeCwd();
+    const oldDir = join(cwd, '.continuo', 'old-hk');
+    const newDir = join(cwd, '.continuo', 'new-hk');
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: oldDir,
+        windowId: 1,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: newDir,
+        windowId: 1,
+      }),
+    ).resolves.toEqual({ installed: true });
+
+    const toml = await readText(join(cwd, '.codex', 'config.toml'));
+    expect(toml).toContain(tomlStringFragment(newDir));
+    expect(toml).not.toContain(tomlStringFragment(oldDir)); // 旧命令完全被替换,无残留
+    // 只有一个 managed command(未因截断残留半截旧命令)
+    expect(toml.match(/codex_\$\{CONTINUO_WINDOW_ID/g)?.length).toBe(1);
+  });
+
+  it('I6d managed Stop command 定位走字符扫描,不调用 RegExp.exec', async () => {
+    const cwd = await makeCwd();
+    const oldDir = join(cwd, '.continuo', 'old-hk');
+    const newDir = join(cwd, '.continuo', 'new-hk');
+    await expect(
+      installStopHookForSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: oldDir,
+        windowId: 1,
+      }),
+    ).resolves.toEqual({ installed: true });
+    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+
+    try {
+      await expect(
+        installStopHookForSession({
+          cwd,
+          agentLabel: 'codex',
+          hookEventsDir: newDir,
+          windowId: 1,
+        }),
+      ).resolves.toEqual({ installed: true });
+      const managedRegexCalls = execSpy.mock.contexts.filter(
+        (context) =>
+          context instanceof RegExp && context.source.includes('continuo-managed'),
+      );
+      expect(managedRegexCalls).toHaveLength(0);
+    } finally {
+      execSpy.mockRestore();
+    }
+  });
+
+  // 数据安全(复查 P1):managed marker 块缺/坏 command 时,无块边界的正则会一路
+  // 跨过 [[hooks.Stop]] 匹配到用户自有 Stop 的 command 并误替/写坏(违反 README I6 契约)。
+  // 块边界正则:managed 块无 command 则不匹配 → 不跨块改写用户 hook。
+  it('I6c managed 块缺 command 时不跨 [[hooks.Stop]] 块改写用户 Stop command', async () => {
+    const cwd = await makeCwd();
+    const configPath = join(cwd, '.codex', 'config.toml');
+    await writeText(
+      configPath,
+      [
+        '[[hooks.Stop]]',
+        '# user-owned',
+        'command = "echo user-stop"',
+        '',
+        '# continuo-managed',
+        '[[hooks.Stop]]',
+        '[[hooks.Stop.hooks]]',
+        'type = "command"',
+        '', // managed command 缺失(损坏)
+        '[[hooks.Stop]]',
+        '# user-owned-2',
+        'command = "echo another-user"',
+        '',
+      ].join('\n'),
+    );
+
+    await installStopHookForSession({
+      cwd,
+      agentLabel: 'codex',
+      hookEventsDir: join(cwd, '.continuo', 'hk'),
+      windowId: 1,
+    });
+
+    const toml = await readText(configPath);
+    // 两个用户自有 Stop command 都未被跨块误替
+    expect(toml).toContain('echo user-stop');
+    expect(toml).toContain('echo another-user');
+  });
+
+  it('I7 should finish install after cwd resolve and before spawn', async () => {
+    const cwd = await makeCwd();
+    const driver = makeDriver();
+
+    await expect(
+      driver.createSession({
+        cwd,
+        agentLabel: 'codex',
+        hookEventsDir: join(cwd, '.continuo', 'hook-events'),
+        windowId: 4,
+      }),
+    ).resolves.toMatchObject({ sessionId: 'term-1' });
+    expect(driver.calls).toEqual(['resolve-cwd', 'install-complete', 'spawn']);
+  });
+});

@@ -1,0 +1,62 @@
+.wm-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wm-space-0_5);
+  border-radius: 4px;
+  padding: var(--wm-space-0_5);
+  background-color: var(--md-surface-container-low);
+  font-family: var(--wm-font-sans);
+}
+
+.wm-segmented-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  padding: var(--wm-space-0_5) var(--wm-space-2);
+  background-color: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--wm-text-xs);
+  line-height: var(--wm-leading-tight);
+  outline: none;
+  transition:
+    background-color var(--wm-duration-fast) var(--wm-ease-default),
+    color var(--wm-duration-fast) var(--wm-ease-default),
+    opacity var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-segmented[data-size="sm"] .wm-segmented-option {
+  min-height: 20px;
+}
+
+.wm-segmented[data-size="md"] .wm-segmented-option {
+  min-height: 28px;
+  padding-right: var(--wm-space-3);
+  padding-left: var(--wm-space-3);
+}
+
+.wm-segmented-option:hover:not(:disabled),
+.wm-segmented-option:focus-visible:not(:disabled) {
+  color: var(--md-on-surface);
+}
+
+.wm-segmented-option:focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: 1px;
+}
+
+.wm-segmented-option[data-active="true"] {
+  background-color: var(--md-surface-container-high);
+  color: var(--md-on-surface);
+}
+
+.wm-segmented-option:disabled {
+  cursor: not-allowed;
+}
+
+.wm-segmented[data-disabled="true"] {
+  opacity: 0.3;
+}

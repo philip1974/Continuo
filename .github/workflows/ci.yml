@@ -1,0 +1,276 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    # 只在打 tag 时跑(发布门禁),平时分支 push 不触发,省 Actions minutes。
+    # 本地 `pnpm lint && pnpm typecheck && pnpm test` 是开发时的主信号。
+    # 需要按需手动跑用 workflow_dispatch。
+    tags:
+      - '*'
+  workflow_dispatch:
+
+# 默认 GITHUB_TOKEN 只读:各 job 只需检出代码;upload-artifact / setup-node 缓存走
+# Actions runtime token,不需要额外 GITHUB_TOKEN 权限。需要更多权限的 job 须单独声明。
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  test:
+    name: Test (vitest, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native modules for Electron
+        run: pnpm rebuild:native
+
+      - name: Run unit tests
+        if: matrix.os != 'windows-latest'
+        # Electron 二进制由根 postinstall 的 `install-electron` 安装;经 electron/main 间接
+        # import electron 的规范已在非 Windows 平台恢复(Windows 排除见 vitest.workspace.ts)。
+        run: pnpm test:unit
+
+      - name: Run unit tests (Windows stable workers)
+        if: matrix.os == 'windows-latest'
+        # Windows runners have intermittently crashed Vitest child-process workers
+        # with "Worker exited unexpectedly" even after all tests passed.
+        run: pnpm exec vitest run --project unit --pool=threads --poolOptions.threads.singleThread --no-file-parallelism
+
+      - name: Run contract tests
+        run: pnpm test:contract
+
+      - name: Run integration tests
+        run: pnpm test:integration
+
+      # electron/main/__tests__ 下的主进程单测(permission-policy / spawn-env-internal-secrets /
+      # file-request-policy / git-fsmonitor-hardening 等安全测试)。依赖本机环境的规范自带 skipIf:
+      # js-debug adapter 缺失跳过(debug-spike job 拉取 adapter 后专跑);POSIX shell 脚本 / 0600
+      # 权限 / 真实 git hook 的用例在 win32 跳过。perf bench 由 perf-bench job 单独跑,此处排除。
+      - name: Run electron main-process tests
+        if: matrix.os != 'windows-latest'
+        run: pnpm exec vitest run --project electron --exclude "electron/**/*.bench.ts"
+
+      - name: Run electron main-process tests (Windows, non-blocking)
+        if: matrix.os == 'windows-latest'
+        # 该项目从未在 Windows runner 跑过,路径/权限断言是否全部有守卫尚未经真实 Actions 验证;
+        # 先不阻塞,首次全绿后去掉 continue-on-error。
+        continue-on-error: true
+        run: pnpm exec vitest run --project electron --exclude "electron/**/*.bench.ts" --pool=threads --poolOptions.threads.singleThread --no-file-parallelism
+
+  debug-spike:
+    name: Debug spike (DAP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build debug spike fixture
+        run: pnpm exec tsc -p scripts/debug-spike/tsconfig.json
+
+      # Fetches pinned vscode-js-debug DAP release v1.117.0 (~4MB), verifies its pinned sha256,
+      # and writes the type:commonjs marker (production fetcher; replaced the spike duplicate).
+      - name: Fetch pinned js-debug DAP adapter
+        run: node scripts/fetch-debug-adapter.mjs
+
+      - name: Assert js-debug DAP adapter exists
+        run: test -f scripts/debug-spike/.adapter/js-debug/src/dapDebugServer.js
+
+      - name: Run debug spike specs without adapter skip
+        run: pnpm exec vitest run --project unit src/__tests__/49-agent-controllable-debug --reporter=verbose
+
+      - name: Run electron main-context DAP teardown spec without adapter skip
+        run: pnpm exec vitest run --project electron electron/main/__tests__/dap-teardown-mini.spec.ts --reporter=verbose
+
+  secret-scan:
+    name: Build output secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # v0.2.5 安装包曾把 GitHub token 打进 app.asar:构建产物里出现 token / AWS key / 私钥即失败
+      # (只输出文件与偏移,不回显值)。本地 build:app* 在 electron-builder 之后同样自动扫描。
+      - name: Scan build output for secrets
+        run: node scripts/check-no-secrets.mjs out
+
+  perf-bench:
+    name: Plugin DataStore perf bench
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+      # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+      # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+      - name: Checkout ContinuoTerminal (workspace sibling)
+        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+        shell: bash
+        run: bash scripts/ci-checkout-continuo-terminal.sh
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9
+          run_install: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run T5 perf bench
+        env:
+          RUN_PERF: '1'
+        run: pnpm exec vitest run --project electron electron/main/__tests__/plugin-data-store.perf.bench.ts --reporter=verbose
+
+# sync-design check 不在 CI 跑:依赖跨仓 checkout philip1974/Nous(private),
+# 默认 GITHUB_TOKEN 没权限。设计层漂移由本地 `pnpm sync:design:check` 守护
+# (commit 前由维护者在本地主动跑)。
+# 未来若想纳入 CI,在 repo Secrets 加 NOUS_PAT,再恢复 sync-design job。

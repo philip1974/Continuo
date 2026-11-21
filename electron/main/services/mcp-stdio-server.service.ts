@@ -1,0 +1,770 @@
+// Stdio MCP transport server(P4+ C 方案)。
+// macOS/Linux 走 unix socket(文件权限 0600 = capability 鉴权,无 token);
+// CLI proxy(scripts/continuo-mcp-stdio.mjs)由 Claude Code spawn,
+// 通过 stdin/stdout 与本 server 走 NDJSON。
+//
+// 优势:Claude Code mcp 配置只存 spawn 命令路径,无 token,无端口,
+// Continuo 重启 token rotate 不影响,一次配置永久使用。
+//
+// Windows 走 named pipe(不在文件系统,跳过 unix socket chmod/unlink)。
+//
+// BDD: src/__tests__/agent-terminal-mcp-stdio-framing/(framing 纯函数)
+// HTTP server 行为不复用本主题,留 E2E。
+
+import {
+  createServer as createNetServer,
+  type Server as NetServer,
+  type Socket,
+} from 'node:net';
+import { BrowserWindow } from 'electron';
+import * as crypto from 'node:crypto';
+import { mkdir, unlink, chmod, lstat, stat, readFile, rm } from 'node:fs/promises';
+import path from 'node:path';
+import {
+  NO_WINDOW_CTX_MESSAGE,
+  RPC_ERROR_CODES,
+  isRpcNotification,
+  parseRpcMessage,
+  formatRpcResponse,
+  formatRpcError,
+  dispatchRpc,
+  type AnyMcpTool,
+  type McpCallCtx,
+  type ServerInfo,
+} from './mcp-host.service';
+import { utf8BytesExceed } from '../../shared/utf8-byte-length';
+import { isBlankString } from '../../shared/ecma-whitespace';
+import { createSerialQueue } from '../../shared/run-serial-per-key';
+import { createNdjsonLineDecoder } from '../lib/ndjson-line-decoder';
+import { atomicWriteText } from '../lib/atomic-write';
+import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
+
+/**
+ * Windows stdio MCP 命名管道名:`\\.\pipe\continuo-mcp-<用户哈希>-<128 bit 随机>`,每次启动新生成。
+ *
+ * 命名管道命名空间全机共享、不分用户:名字可预测(固定名,或仅由用户名 / profile 目录推导)时,同机其它
+ * 用户可抢先创建同名管道 → 本用户 Continuo 绑定失败,终端里的 proxy 连到对方管道并在 hello 中交出
+ * {windowId, token}。随机段让对方无从预知;用户哈希段(os.userInfo() 的用户名 + profile 目录,小写后
+ * sha256)只为可读 / 多用户区分。proxy 经 PTY env CONTINUO_MCP_SOCKET 或 userData 下的发现文件拿到名字。
+ * libuv 以 FILE_FLAG_FIRST_PIPE_INSTANCE 独占创建。
+ */
+export function createWindowsStdioPipeName(user: { username: string; homedir: string }): string {
+  const userHash = crypto
+    .createHash('sha256')
+    .update(`${user.username.toLowerCase()}\0${user.homedir.toLowerCase()}`, 'utf8')
+    .digest('hex')
+    .slice(0, 32);
+  return `\\\\.\\pipe\\continuo-mcp-${userHash}-${crypto.randomBytes(16).toString('hex')}`;
+}
+
+/**
+ * 发现文件 / env 中的管道名只认本机 continuo-mcp 管道(防发现文件被写成远程管道 / 任意路径)。
+ * ⚠ scripts/continuo-mcp-stdio.mjs 的 WINDOWS_PIPE_NAME_RE 是同一正则的副本(独立脚本不能 import),
+ * 由 src/__tests__/49-polish-bugfixes/security-windows-stdio-pipe-per-user.spec.ts 钉住一致。
+ */
+const WINDOWS_PIPE_NAME_RE = /^\\\\\.\\pipe\\continuo-mcp-[0-9a-f-]+$/;
+
+export function isValidWindowsStdioPipeName(name: string): boolean {
+  return WINDOWS_PIPE_NAME_RE.test(name);
+}
+
+/** Windows 管道名发现文件(位于 userData,packaged / dev 各一份;proxy 同名读取)。 */
+export const STDIO_PIPE_DISCOVERY_FILE = 'mcp-pipe';
+
+/**
+ * 发现文件内容:两行「管道名 \n 主进程 pid \n」。
+ *
+ * pid 用来识别崩溃残留:Continuo 崩溃 / 被强杀后发现文件要到下次启动才删,其中的管道名可被同机其它用户在
+ * `\\.\pipe\` 下枚举并抢注;此期间 Continuo 终端外启动的 proxy 读到过期名会连到对方管道(收到伪造的 tools/list /
+ * 工具结果)。proxy 读到后先探测该 pid 是否存活,不存活即跳过。
+ * ⚠ scripts/continuo-mcp-stdio.mjs 的 parseWindowsPipeDiscovery 是 parseStdioPipeDiscovery 的副本(独立脚本不能
+ * import),由 security-windows-stdio-pipe-per-user.spec.ts 钉住一致。
+ */
+export function formatStdioPipeDiscovery(pipeName: string, pid: number): string {
+  return `${pipeName}\n${pid}\n`;
+}
+
+const DISCOVERY_PID_RE = /^[1-9][0-9]{0,9}$/;
+
+/** 解析发现文件内容;格式不符(含只有管道名一行的旧格式)→ null。 */
+export function parseStdioPipeDiscovery(raw: string): { name: string; pid: number } | null {
+  const lines = raw.split('\n');
+  if (lines.length === 3 && lines[2] === '') lines.pop(); // 末尾换行
+  if (lines.length !== 2) return null;
+  const [name, pidText] = lines as [string, string];
+  if (!WINDOWS_PIPE_NAME_RE.test(name) || !DISCOVERY_PID_RE.test(pidText)) return null;
+  return { name, pid: Number(pidText) };
+}
+
+export interface ResolveStdioHelloDeps {
+  resolveWindowId: (token: string) => number | null;
+  windowExists: (windowId: number) => boolean;
+}
+
+// 边界(E297,E252 同一 stdio hello payload 兄弟字段):hello token 长度上限。host token 由 generateToken
+// 生成(32 字节 base64url = 43 字符),合法 token 远短于此。此前 token 仅非空校验,无上限 → 不可信 stdio
+// client 可在 1MB 行内塞超长 token,经 resolveWindowId(Map.get/比较)放大 CPU/内存。超限直接 null。
+const MAX_HELLO_TOKEN_LEN = 256;
+
+export function hasOversizedStdioLine(
+  lines: readonly string[],
+  maxBytes: number,
+): boolean {
+  for (const line of lines) {
+    if (utf8BytesExceed(line, maxBytes)) return true;
+  }
+  return false;
+}
+
+/** 窗口存在且未销毁(hello 绑定校验与每次调用的 owner 复查共用)。 */
+function isWindowAlive(id: number): boolean {
+  const win = BrowserWindow.fromId(id);
+  return win !== null && !win.isDestroyed();
+}
+
+// 协议级拒绝后等待错误行送达 / 对端关闭的上限,超时强制 destroy(对端不读不关也不挂住连接)。
+const REJECT_FLUSH_TIMEOUT_MS = 1_000;
+
+/**
+ * 协议级拒绝:以 end(PARSE_ERROR) 半关闭后断开。不能 write 后立即 destroy():接收缓冲还有未读
+ * 数据时 destroy 会让内核发 RST,对端可能连同已发出的错误行一起丢掉。end 发 FIN,对端读完错误行
+ * 后关闭 → close;resume 继续读并丢弃后续输入(否则读不到对端 FIN);兜底超时 destroy。
+ */
+function rejectAndDestroy(sock: Socket, message: string): void {
+  if (sock.writableEnded || sock.destroyed) return;
+  // 连接上限分支尚未挂 error 监听;半关闭期间对端 RST 等错误不得冒成未捕获异常。
+  sock.on('error', () => {});
+  const timer = setTimeout(() => sock.destroy(), REJECT_FLUSH_TIMEOUT_MS);
+  timer.unref();
+  sock.once('close', () => clearTimeout(timer));
+  try {
+    sock.end(formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, message) + '\n');
+  } catch {
+    sock.destroy(); // 连接已坏
+  }
+  sock.resume();
+}
+
+export function isBlankStdioLine(line: string): boolean {
+  return isBlankString(line);
+}
+
+export function resolveStdioHelloWindowId(
+  params: unknown,
+  deps: ResolveStdioHelloDeps,
+): number | null {
+  if (params === null || typeof params !== 'object' || Array.isArray(params)) {
+    return null;
+  }
+  const windowId = (params as Record<string, unknown>)['windowId'];
+  const token = (params as Record<string, unknown>)['token'];
+  // 边界(E252):windowId 须**安全整数且非负**(对齐 AttachTargetSchema.windowId nonnegative()
+  // .max(MAX_SAFE_INTEGER))。此前仅 Number.isInteger —— 挡 NaN/Infinity/小数,但放行 -1 / 2^53+1 这类
+  // 负数/不安全整数,经 resolveWindowId !== / windowExists 判定时(数组索引 / Electron fromId)可能精度
+  // 碰撞或误探窗口。外部 stdio hello payload 不可信,收口为安全非负整数。
+  if (
+    typeof windowId !== 'number' ||
+    !Number.isSafeInteger(windowId) ||
+    windowId < 0
+  ) {
+    return null;
+  }
+  // 边界(E297):token 非空且 ≤ MAX_HELLO_TOKEN_LEN(超长不可信 → null,不进 resolveWindowId)。
+  if (
+    typeof token !== 'string' ||
+    token.length === 0 ||
+    token.length > MAX_HELLO_TOKEN_LEN
+  )
+    return null;
+  if (deps.resolveWindowId(token) !== windowId) return null;
+  if (!deps.windowExists(windowId)) return null;
+  return windowId;
+}
+
+export interface ResolveStdioCallCtxDeps {
+  /** 绑定窗口是否存活(BrowserWindow.fromId(id) 非 null 且未 destroyed)。 */
+  isWindowAlive: (windowId: number) => boolean;
+}
+
+/**
+ * 解析 tools/call 的 owner 窗口:仅当绑定窗口仍存活才返回它;未绑定(undefined)
+ * 或绑定窗口已关闭一律返回 null,交给调用方 fallback 到当前活窗。
+ *
+ * 必须在每次 dispatch 时校验存活 —— socketCtx 在 hello 时一次性绑定、窗口关闭
+ * 清理不会移除它,陈旧绑定若直接使用会让该 proxy 连接对所有工具永久损坏。
+ */
+export function resolveStdioCallOwnerWindow(
+  ownerWindowId: number | undefined,
+  deps: ResolveStdioCallCtxDeps,
+): number | null {
+  if (typeof ownerWindowId !== 'number') return null;
+  if (!deps.isWindowAlive(ownerWindowId)) return null;
+  return ownerWindowId;
+}
+
+// ── socket server ──────────────────────────────────────────────
+
+// 连接的窗口绑定状态:无条目 = 从未发 hello(外部客户端);对象 = hello 成功绑定的窗口及所用 token;
+// null = 发过 hello 但失败(token 无效 / 已轮换、窗口在 hello 前已关),或绑定所用的 token 之后被吊销
+// → tools/call 一律拒绝,不回落主窗。可用有效 token 重新 hello 恢复。
+// token 只存内存(供每次调用复查是否仍有效),不进日志。
+interface StdioBinding {
+  readonly windowId: number;
+  readonly token: string;
+  /** 绑定失效(所用 token 被吊销 / 轮换)时 abort:并入该绑定下每次调用的 ctx.signal,取消在途调用。 */
+  readonly aborter: AbortController;
+}
+const socketCtx: Map<Socket, StdioBinding | null> = new Map();
+
+/**
+ * 发过 hello 却没有有效绑定的连接(hello 所用 token 无效,或绑定后被吊销 / 轮换)收到的 -32002 消息。终端 env 里的
+ * token 不会更新:该终端里的 proxy(已连着的,或之后重启的)此后只会一直收到这个错误,消息须说明怎么办。
+ */
+const REVOKED_TOKEN_CTX_MESSAGE = `${NO_WINDOW_CTX_MESSAGE}; the terminal's Continuo token was revoked — start the agent in a new Continuo terminal`;
+
+// 边界(E1):stdio NDJSON 单行/残行字节上限。畸形/恶意本地客户端发送无换行的超长输入会让
+// 行解码器(E135 createNdjsonLineDecoder)的残行 buffer 在 main 进程无限累积 → 内存增长甚至 OOM(HTTP MCP 有
+// MAX_BODY_BYTES,stdio 传输此前缺同等保护)。超限即回 parse 错误并断开连接。与 HTTP 的
+// MAX_BODY_BYTES(1MB)对齐 —— 单条 JSON-RPC 行 1MB 对正常 tools/call 充裕。
+const MAX_STDIO_LINE_BYTES = 1_000_000;
+// 边界(E214):单次 data chunk 解出的**非空行数**上限。MAX_STDIO_LINE_BYTES 只限单行字节,不限行数 ——
+// 畸形/恶意客户端可发 1MB 的 `\n\n\n...` 或海量极短 JSON 行(每行都不超字节上限),for...of 会为每行挂
+// promise + 持有 line 字符串 → CPU/内存放大。空白行(NDJSON 约定忽略,handleLine 本就早返)入链前同步跳过;
+// 非空行数超此预算 → parse error + 断开。1024 远超任何正常批量(MCP client 通常一行一请求)。
+const MAX_STDIO_LINES_PER_CHUNK = 1024;
+// 边界(R110 串行队列的总深度):MAX_STDIO_LINES_PER_CHUNK 只限单 chunk。首请求阻塞(如 create_session
+// 卡在授权弹窗)时,客户端持续发小 chunk 可在本连接队列里无限堆积待处理行(每行持有 ≤1MB 字符串 +
+// promise)→ main 内存无界增长。每连接排队中(含在途)的非空行数 / 累计 UTF-8 字节超上限 → 与 E1/E214
+// 同款 parse error + 断开(fail-closed)。正常 MCP client 一行一请求,远达不到。
+export const MAX_STDIO_PENDING_LINES = 1024;
+export const MAX_STDIO_PENDING_BYTES = 16_000_000;
+/**
+ * 每连接未被客户端读走的输出上限(socket 写缓冲 writableLength)。排队上限只计未完成的请求,响应一旦写进
+ * 写缓冲就扣减;客户端只发不读时,输出在缓冲里无界堆积,可把主进程撑到 OOM。超限即断开该连接 —— 对端既然
+ * 不读,写错误帧也送不达。正常客户端边写边读,缓冲远小于此。
+ */
+export const MAX_STDIO_UNREAD_OUTPUT_BYTES = 16_000_000;
+
+// 边界(E233,E227-E232 数量上限族):stdio MCP socket server 并发连接数量上限。每条连接保留 Socket +
+// AbortController + 行解码器闭包 + clients/socketCtx/socketSubject 多个 Map/Set 条目,
+// 只在 close 才清。socket 受 chmod 0600 / NT pipe ACL 限本用户,但**本用户任意进程**可反复连接
+// <userData>/mcp.sock 保持空闲 → main 累积 fd / 内存 + broadcast() 对全部连接线性写入 → 资源耗尽 + 通知
+// 广播拖慢。connection 回调入口加全局上限(连接建立时 subject/window 尚未解析,只能全局闸),超限立即写
+// 错误 + sock.destroy(),确保不进入 clients 表。
+const MAX_STDIO_CLIENTS_GLOBAL = 64; // 全局 stdio 连接上限(远超任何正常 MCP client 并发)
+// 安全(W2,Windows 多用户):首条完整消息超时。Windows 命名管道默认 DACL 给 Everyone 读、管道名可枚举 ——
+// 其它本机用户只读打开 MAX_STDIO_CLIENTS_GLOBAL 次挂着不发数据,即可占满全局名额,本用户所有 agent 的
+// MCP 连接被拒。连上后此时限内没收到任何完整的非空行 → 断开。合法客户端连上即发 `_continuo/hello`
+// (终端 proxy)或 initialize(外部客户端经 proxy 转发),不受影响;首条消息之后的空闲不计时。
+const STDIO_FIRST_MESSAGE_TIMEOUT_MS = 10_000;
+
+// 安全 S3:每个 stdio 连接一个稳定 subject(callerSubject)。Claude Code 的 proxy
+// 一次 spawn 长连接复用 → 同一连接的 create_session 与 read/send 共享 subject;
+// 不同连接(含恶意进程直连 mcp.sock,unix socket 0600 仅本用户但 postinstall 也是本
+// 用户)subject 不同 → 无法读控别连接创建的会话。HTTP 侧 subject=bearer token + Mcp-Session-Id。
+const socketSubject: Map<Socket, string> = new Map();
+function subjectForSocket(sock: Socket): string {
+  let s = socketSubject.get(sock);
+  if (s === undefined) {
+    s = `stdio:${crypto.randomUUID()}`;
+    socketSubject.set(sock, s);
+  }
+  return s;
+}
+
+type StdioRevocationDeps = Pick<CreateStdioSocketOptions, 'resolveWindowId' | 'onCallerRevoked'>;
+
+/**
+ * 作废连接当前的调用方身份:取消当前绑定下的在途调用,丢弃 callerSubject(之后的调用拿新身份),旧身份名下的
+ * 资源交 onCallerRevoked 回收。绑定失效(token 吊销 / 轮换)与 hello 换绑共用。
+ */
+function retireStdioIdentity(sock: Socket, deps: StdioRevocationDeps): void {
+  socketCtx.get(sock)?.aborter.abort();
+  const subject = socketSubject.get(sock);
+  socketSubject.delete(sock);
+  if (subject !== undefined) {
+    try {
+      deps.onCallerRevoked?.(subject);
+    } catch (err) {
+      console.warn('[mcp-stdio] onCallerRevoked threw', err);
+    }
+  }
+}
+
+/**
+ * 复查连接的绑定:所用 token 已不再解析到绑定的窗口(被吊销 / 轮换)→ 连接降为「hello 失败」状态
+ * (NO_WINDOW_CTX,不回落 external),取消该绑定下的在途调用,并作废连接的 callerSubject(之后的调用拿新身份,
+ * 旧身份名下的资源交 onCallerRevoked 回收)—— 与 HTTP 侧「token 吊销 = 该身份作废」对齐。返回仍有效的绑定。
+ */
+function validStdioBinding(sock: Socket, deps: StdioRevocationDeps): StdioBinding | null | undefined {
+  const binding = socketCtx.get(sock);
+  if (!binding || deps.resolveWindowId(binding.token) === binding.windowId) return binding;
+  retireStdioIdentity(sock, deps);
+  socketCtx.set(sock, null);
+  return null;
+}
+
+export interface StdioSocketServer {
+  readonly socketPath: string;
+  /**
+   * 推 JSON-RPC notification(无 id)给所有 stdio 客户端.
+   * 写入失败的 socket 自动摘掉.
+   */
+  broadcast(method: string, params?: Record<string, unknown>): void;
+  close(): Promise<void>;
+}
+
+export interface CreateStdioSocketOptions {
+  socketPath: string;
+   
+  tools: ReadonlyMap<string, AnyMcpTool>;
+  serverInfo: ServerInfo;
+  resolveWindowId: (token: string) => number | null;
+  /**
+   * 连接关闭且该连接发起过调用(已分配 callerSubject)时回调:subject 随连接失效,新连接拿不到它,
+   * 归属它的资源(debug 会话)再无人能清理 —— 由 main 据此回收。
+   */
+  onCallerClosed?: (callerSubject: string) => void;
+  /**
+   * 登记「token 表被吊销 / 轮换」的监听(main 接到 mcp-host 的 onTokensRevoked)。触发时复查所有已绑定连接,
+   * 失效的立即降级并取消在途调用。未提供时退化为只在每个请求出队 / 响应写回时复查。
+   */
+  onTokensRevoked?: (listener: () => void) => void;
+  /**
+   * 连接的绑定因 token 吊销 / 轮换失效时,以它当时的 callerSubject 回调(该身份随即作废):main 据此取消其
+   * 在途终端创建、回收其 debug 会话。已创建的终端会话不动(同 HTTP 侧 token 吊销)。
+   */
+  onCallerRevoked?: (callerSubject: string) => void;
+  /**
+   * 启动时先删除旧文件(崩溃残留);listen 成功后把 socketPath 原子写入该文件(Windows 管道名发现文件,供无 env 的外部 proxy 读取);
+   * close 时若内容仍是本 server 写入的(名字 + 本进程 pid,见 formatStdioPipeDiscovery)则删除。
+   * 写失败只告警,不影响 server。
+   */
+  discoveryFile?: string;
+}
+
+function modeOct(mode: number): string {
+  return `0${(mode & 0o777).toString(8)}`;
+}
+
+export function shouldPrepareStdioSocketFilesystem(
+  platform: NodeJS.Platform,
+): boolean {
+  return platform !== 'win32';
+}
+
+async function setupSocketDir(socketPath: string): Promise<void> {
+  const parentDir = path.dirname(socketPath);
+  await mkdir(parentDir, { recursive: true, mode: 0o700 });
+
+  let parentStat = await stat(parentDir);
+  if ((parentStat.mode & 0o077) !== 0) {
+    const previous = modeOct(parentStat.mode);
+    await chmod(parentDir, 0o700);
+    parentStat = await stat(parentDir);
+    console.warn(
+      `[mcp-stdio] tightened socket parent directory mode ${previous} -> 0700: ${parentDir}`,
+    );
+    if ((parentStat.mode & 0o077) !== 0) {
+      throw new Error(
+        `mcp stdio socket parent remains group/world accessible after chmod: ${parentDir} (${modeOct(parentStat.mode)})`,
+      );
+    }
+  }
+
+  try {
+    const existing = await lstat(socketPath);
+    if (existing.isSymbolicLink()) {
+      throw new Error(`mcp stdio socket path is a symlink; remove it manually: ${socketPath}`);
+    }
+    if (existing.isSocket()) {
+      await unlink(socketPath);
+      return;
+    }
+    if (existing.isFile() && existing.size === 0) {
+      await unlink(socketPath);
+      console.warn(`[mcp-stdio] removed zero-size stale socket placeholder: ${socketPath}`);
+      return;
+    }
+    throw new Error(
+      `mcp stdio socket path exists and is not a stale socket. Remove it manually: ${socketPath}`,
+    );
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+}
+
+async function handleLine(
+  line: string,
+  sock: Socket,
+  opts: Pick<CreateStdioSocketOptions, 'tools' | 'serverInfo'> & StdioRevocationDeps,
+  signal: AbortSignal,
+): Promise<void> {
+  const { tools, serverInfo, resolveWindowId } = opts;
+  // 连接已 abort(拒绝 / 断开):abort 前已链入队列的行直接丢弃,不再 dispatch(否则逐条走到
+  // gateWithAuth → 大量迟到授权弹窗)。
+  if (signal.aborted || isBlankStdioLine(line)) return;
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(line);
+  } catch {
+    writeLine(sock, formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, 'parse error'));
+    return;
+  }
+
+  // Continuo private notification:proxy sends caller BrowserWindow context
+  // before normal MCP traffic. Must be consumed before generic notification
+  // discard below.
+  if (
+    isRpcNotification(raw) &&
+    (raw as Record<string, unknown>)['method'] === '_continuo/hello'
+  ) {
+    const params = (raw as Record<string, unknown>)['params'];
+    const windowId = resolveStdioHelloWindowId(
+      params,
+      {
+        resolveWindowId,
+        windowExists: isWindowAlive,
+      },
+    );
+    // 安全(fail-closed):hello 失败也记下(null)。否则该连接被当作「从未发 hello」的外部客户端,
+    // 回落到主窗并借用其授权 —— 持失效 token / 窗口已关的 proxy 不应获得任何窗口上下文。
+    // windowId 非 null 即 params.token 已通过校验(非空字符串)。
+    const token = windowId === null ? null : (params as { token: string }).token;
+    // 同一 (token, windowId) 重复 hello 幂等:绑定与身份不变。
+    const current = socketCtx.get(sock);
+    if (current && current.windowId === windowId && current.token === token) return;
+    // 安全:hello 改变绑定(换 token / 换窗口 / hello 失败 / 从未 hello 的 external 改为绑定窗口)= 换调用方,
+    // 旧身份按绑定失效同样作废。否则吊销前先 hello 一个别的 token 把旧绑定挪出表,吊销复查够不着它,
+    // 吊销后重新 hello 仍是旧身份、继续读控旧身份名下的会话。
+    retireStdioIdentity(sock, opts);
+    socketCtx.set(
+      sock,
+      windowId === null || token === null ? null : { windowId, token, aborter: new AbortController() },
+    );
+    return;
+  }
+
+  // notification(无 id)→ 不响应(202 等价语义,stdio 直接 silent)
+  if (isRpcNotification(raw)) {
+    return;
+  }
+
+  const rpc = parseRpcMessage(raw);
+  if (!rpc) {
+    writeLine(sock, formatRpcError(null, RPC_ERROR_CODES.PARSE_ERROR, 'invalid JSON-RPC 2.0'));
+    return;
+  }
+
+  // 绑定的窗口可能已关闭:窗口关闭清理(revokeWindowTokens/cancelByWindow)不触碰
+  // socketCtx,而 socket 仍连着(proxy 进程没退)。resolveStdioCallOwnerWindow 每次调用校验
+  // 绑定窗口存活,死则返回 null。
+  // 安全:hello 只在绑定时校验一次 token。token 之后被吊销(持有它的终端退出、窗口关闭)或全部轮换(用户
+  // 「撤销全部」)时 HTTP 立即 401,而已绑定的 stdio 连接此前仍以原窗口身份继续调用工具。每次请求复查绑定所用
+  // token 仍解析到同一窗口;否则该连接降为「hello 失败」状态(NO_WINDOW_CTX,不回落 external)。
+  const binding = validStdioBinding(sock, opts);
+  const liveOwner = resolveStdioCallOwnerWindow(binding?.windowId, {
+    isWindowAlive,
+  });
+  // 安全 S3:无论绑定窗口还是 fallback,都带本连接的 callerSubject,供 capability 校验。
+  const callerSubject = subjectForSocket(sock);
+  // race(R111):本次调用带连接取消信号,供有副作用工具在授权 await 后复查(socket close 即 abort)。
+  // 安全:绑定调用再并入绑定的取消信号 —— 调用在途(卡在授权弹窗 / PTY 创建 / await_stop_hook)时 token 被吊销,
+  // 与连接断开同样处理(HTTP 侧靠 token 身份被 reclaim;stdio 的身份是连接,reclaim(token) 够不着)。
+  let ctx: McpCallCtx | null =
+    liveOwner !== null && binding
+      ? {
+          ownerWindowId: liveOwner,
+          callerSubject,
+          signal: AbortSignal.any([signal, binding.aborter.signal]),
+        }
+      : null;
+  // Fallback:外部 MCP client(eg. Claude Code stdio 配置)spawn 的 proxy
+  // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
+  // 非 popout 主窗(pickMainWindowPreferNonPopout:按 BrowserWindow.getAllWindows() 顺序取第一个未销毁的
+  // 非 popout 窗口,全是 popout 时取第一个未销毁窗口,一个都没有则不回落)。tools/list 无需 ctx
+  // (dispatchRpc 自行短路),只有 tools/call 路径需要。
+  // 安全(fail-closed):**发过 hello** 的连接(hello 失败,或绑定窗口已关闭)不回落 —— 否则窗口 A 里
+  // agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。ctx 保持 null →
+  // tools/call 回 NO_WINDOW_CTX(该 proxy 随 A 的终端退出;tools/list 不受影响)。
+  if (ctx === null && !socketCtx.has(sock)) {
+    const fallback = pickMainWindowPreferNonPopout();
+    // 安全(F2):标记 external —— 授权走独立的 external 状态,不借主窗已有的「本次启动期间允许」
+    // (否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默执行)。
+    // 残余风险(未收口):此隔离只看「发没发 hello」。任一同用户进程若读到某窗口终端的 token(PTY env,
+    // 如 `ps eww`),带它发 hello(或走 HTTP)即被当作该窗口的绑定调用,复用该窗口的「本次启动期间允许」;
+    // per-session capability 仍生效。真正收口需把 token 绑定到持有终端的进程树,当前未做。
+    if (fallback) ctx = { ownerWindowId: fallback.id, callerSubject, signal, external: true };
+  }
+  const response = await dispatchRpc(rpc, tools, serverInfo, ctx);
+  // 安全:写回前再复查一次绑定。调用在途时 token 被吊销 → 丢弃工具结果(终端输出 / transcript / 新会话 id),
+  // 改回与「吊销后才发起」相同的 NO_WINDOW_CTX。HTTP 侧同序列在授权后复查点即失败。
+  if (binding && rpc.method === 'tools/call' && validStdioBinding(sock, opts) !== binding) {
+    writeLine(
+      sock,
+      formatRpcError(rpc.id, RPC_ERROR_CODES.NO_WINDOW_CTX, REVOKED_TOKEN_CTX_MESSAGE),
+    );
+    return;
+  }
+  if (
+    'error' in response &&
+    response.error.code === RPC_ERROR_CODES.NO_WINDOW_CTX &&
+    socketCtx.get(sock) === null
+  ) {
+    writeLine(
+      sock,
+      formatRpcError(rpc.id, RPC_ERROR_CODES.NO_WINDOW_CTX, REVOKED_TOKEN_CTX_MESSAGE),
+    );
+    return;
+  }
+  // race(R111):连接已断开 / 已拒绝 → writeLine 丢弃响应(避免 EPIPE / write-after-end)。
+  writeLine(sock, formatRpcResponse(rpc.id, response));
+}
+
+/**
+ * 写一行响应。已 end(拒绝半关闭中)或已 destroy 则丢弃:end 后再 write 会触发
+ * ERR_STREAM_WRITE_AFTER_END 并销毁 socket,截断尚未 flush 的 PARSE_ERROR。
+ */
+function writeLine(sock: Socket, data: string): void {
+  if (sock.writableEnded || sock.destroyed) return;
+  sock.write(data + '\n');
+  if (sock.writableLength > MAX_STDIO_UNREAD_OUTPUT_BYTES) sock.destroy();
+}
+
+/**
+ * 启动 stdio MCP socket server。
+ *
+ * - macOS / Linux:Unix socket(`<userData>/mcp.sock`)— 文件系统 +
+ *   chmod 0600 = capability 鉴权。
+ * - Windows:named pipe(每次启动随机命名,见 createWindowsStdioPipeName)— 不在文件系统,无 mkdir / unlink /
+ *   chmod。libuv 以默认安全描述符创建:创建者 / SYSTEM / Administrators 完全控制,Everyone 仅读
+ *  (其它用户无法以读写打开 → 连不上);但管道**命名空间**不分用户,防抢注靠按用户命名。
+ *
+ * net 模块 API 跨平台一致,只在 fs 副作用上分支。
+ */
+export async function createStdioSocketServer(
+  opts: CreateStdioSocketOptions,
+): Promise<StdioSocketServer> {
+  const shouldPrepareFilesystem = shouldPrepareStdioSocketFilesystem(
+    process.platform,
+  );
+
+  // 安全:上次崩溃 / 强杀没走 close 时发现文件残留,指向一个已无人监听、名字可被同机其它用户在 \\.\pipe\ 下
+  // 枚举到的管道 —— 对方抢注同名管道后,Continuo 终端外启动的 proxy 会读到过期文件连过去(伪造工具结果)。
+  // 任何准备 / listen 之前先删掉,启动失败也不会留下过期名;listen 成功后才写入新名字。
+  if (opts.discoveryFile) {
+    try {
+      await rm(opts.discoveryFile, { force: true });
+    } catch (err) {
+      console.warn('[mcp-stdio] failed to remove stale pipe discovery file', err);
+    }
+  }
+
+  if (shouldPrepareFilesystem) {
+    await setupSocketDir(opts.socketPath);
+  }
+
+  const clients = new Set<Socket>();
+  // 安全:token 吊销 / 轮换 → 立即复查所有已绑定连接(不等它们的下一个请求),取消失效绑定下的在途调用。
+  opts.onTokensRevoked?.(() => {
+    for (const sock of clients) validStdioBinding(sock, opts);
+  });
+  const server: NetServer = createNetServer((sock) => {
+    // 边界(E233):全局连接数上限,超限立即写错误 + destroy,不入 clients。
+    // 连接建立时 subject/window 未知,只能全局闸(per-subject 在 per-message 才解析)。
+    if (clients.size >= MAX_STDIO_CLIENTS_GLOBAL) {
+      rejectAndDestroy(sock, 'too many connections');
+      return;
+    }
+    clients.add(sock);
+    // race(R111):每连接一个 AbortController。socket close 时 abort → 在途 tool call(尤其卡在用户
+    // 授权 await 的 create_session)在产生副作用前复查 ctx.signal,已取消则拒绝,不留无调用方孤儿会话。
+    const aborter = new AbortController();
+    // race(R110):每连接一条行处理队列。同一 stdio socket 的多行 JSON-RPC 必须**按接收顺序串行**
+    // 执行 —— 并行 fire-and-forget 下有副作用的工具会乱序:terminal.send_text 紧跟
+    // terminal.press_key 时,Enter 可能先于文本写入 PTY(响应按 id 匹配只修复返回值配对,修不了
+    // 副作用顺序)。单行失败/抛错不阻塞后续行。队列随连接闭包回收。
+    const lineQueue = createSerialQueue();
+    // 本连接排队中(含在途)的行数 / 字节,任务结束(成功或失败)时扣减。
+    let pendingLines = 0;
+    let pendingBytes = 0;
+    // 边界(E135,E131/E132 同族):用流式 TextDecoder 行解码器,跨 chunk 多字节字符正确还原
+    //(替代 splitLines 的逐 chunk toString() 拆字 bug)。
+    const lineDecoder = createNdjsonLineDecoder();
+    // 拒绝 = 取消在途 tool call(close 要等对端关闭才触发,不能等它再 abort)+ end 后断开。
+    const reject = (message: string): void => {
+      aborter.abort();
+      rejectAndDestroy(sock, message);
+    };
+    // 安全(W2):首条完整消息超时(见 STDIO_FIRST_MESSAGE_TIMEOUT_MS)。
+    let firstMessageTimer: NodeJS.Timeout | null = setTimeout(() => {
+      firstMessageTimer = null;
+      reject('no message received');
+    }, STDIO_FIRST_MESSAGE_TIMEOUT_MS);
+    firstMessageTimer.unref?.();
+    const clearFirstMessageTimer = (): void => {
+      if (firstMessageTimer === null) return;
+      clearTimeout(firstMessageTimer);
+      firstMessageTimer = null;
+    };
+    sock.on('data', (chunk: Buffer) => {
+      // 已拒绝(end 半关闭中):后续输入一律丢弃,不再解析 / 排队。
+      if (sock.writableEnded) return;
+      // 边界(E218,E214 下推):行数上限下推到 decoder —— maxLines 钳定本次产出的完整行数,达到即
+      // overflow(decoder 不 split 全量物化)。overflow → 与 E214 too-many 同款 parse error + 断开。
+      const { lines, overflow } = lineDecoder.push(
+        chunk,
+        MAX_STDIO_LINES_PER_CHUNK,
+      );
+      if (overflow) {
+        reject('too many lines in one chunk');
+        return;
+      }
+      // 边界(E1):残行(未终结的单行)或任一完整行超字节上限 → 畸形/恶意客户端无限累积输入,
+      // main 进程内存增长/OOM。回 parse 错误并断开;aborter 由 close 处理统一清理。
+      // 边界(E127,E125 同族):按**真实 UTF-8 字节**判上限(非 .length=UTF-16 code unit),否则
+      // CJK/emoji 大行真实字节可数倍超 1MB 仍放行/继续累积,削弱输入背压并让超大 JSON 进 parse。
+      // perf P2:残行字节数由 decoder 增量维护(≡ utf8ByteLength(buffered)),不再每个分块全量重算整个残行。
+      if (
+        lineDecoder.bufferedBytes > MAX_STDIO_LINE_BYTES ||
+        hasOversizedStdioLine(lines, MAX_STDIO_LINE_BYTES)
+      ) {
+        reject('line exceeds maximum size');
+        return;
+      }
+      // race(R110):按接收顺序串到本 socket 的链尾,逐行串行 await。链尾 catch 后继续,单行
+      // 失败/抛错不阻塞后续行(每行响应仍按 id 配对发回客户端)。
+      // 边界(E214):空白行(NDJSON 忽略,handleLine 本就早返)入链前同步跳过,避免为海量空行挂 promise;
+      // 非空行数超 MAX_STDIO_LINES_PER_CHUNK → parse error + 断开(挡 1MB \n\n\n... / 海量极短行放大)。
+      // 行数上限已由 decoder 的 maxLines 钳定(lines.length ≤ MAX_STDIO_LINES_PER_CHUNK,超限走上面的
+      // overflow 分支),此处不必再计数。
+      for (const line of lines) {
+        if (isBlankStdioLine(line)) continue; // 空白行:NDJSON 忽略,不入链
+        clearFirstMessageTimer(); // 安全(W2):收到首条完整消息
+        const bytes = Buffer.byteLength(line, 'utf8');
+        if (
+          pendingLines >= MAX_STDIO_PENDING_LINES ||
+          pendingBytes + bytes > MAX_STDIO_PENDING_BYTES
+        ) {
+          reject('too many pending requests');
+          return;
+        }
+        pendingLines += 1;
+        pendingBytes += bytes;
+        void lineQueue.run(() =>
+          handleLine(line, sock, opts, aborter.signal)
+            .catch((err) => {
+              console.warn('[mcp-stdio] handleLine threw', err);
+            })
+            .finally(() => {
+              pendingLines -= 1;
+              pendingBytes -= bytes;
+            }),
+        );
+      }
+    });
+    sock.on('close', () => {
+      clearFirstMessageTimer();
+      clients.delete(sock);
+      socketCtx.delete(sock);
+      const subject = socketSubject.get(sock);
+      socketSubject.delete(sock);
+      aborter.abort(); // race(R111):取消本连接所有在途 tool call 的副作用
+      if (subject !== undefined) {
+        try {
+          opts.onCallerClosed?.(subject);
+        } catch (err) {
+          console.warn('[mcp-stdio] onCallerClosed threw', err);
+        }
+      }
+    });
+    sock.on('error', () => {
+      /* connection error,close 事件会清理 */
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(opts.socketPath, () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
+
+  if (opts.discoveryFile) {
+    try {
+      await atomicWriteText(opts.discoveryFile, formatStdioPipeDiscovery(opts.socketPath, process.pid));
+    } catch (err) {
+      console.warn('[mcp-stdio] failed to write pipe discovery file', err);
+    }
+  }
+
+  if (shouldPrepareFilesystem) {
+    // 显式 chmod 0600(unix socket 默认 umask 通常 0666 太宽)
+    try {
+      await chmod(opts.socketPath, 0o600);
+    } catch {
+      /* macOS 上偶尔不需要,忽略 */
+    }
+  }
+
+  return {
+    socketPath: opts.socketPath,
+    broadcast(method: string, params?: Record<string, unknown>): void {
+      const payload: Record<string, unknown> = { jsonrpc: '2.0', method };
+      if (params !== undefined) payload.params = params;
+      const line = JSON.stringify(payload);
+      for (const c of clients) {
+        try {
+          // 与响应同走 writeLine:跳过拒绝半关闭中 / 已销毁的连接(否则 write-after-end 截断 PARSE_ERROR)。
+          writeLine(c, line);
+        } catch {
+          clients.delete(c);
+        }
+      }
+    },
+    async close(): Promise<void> {
+      // 必须先 destroy 现存连接:server.close() 的回调要等所有现存连接关闭才触发,
+      // 只 clients.clear() 不 destroy → 有活动客户端时回调永不 fire,close() promise
+      // 永久挂起,socket 文件也来不及 unlink 残留(审计 P2)。
+      for (const sock of clients) {
+        try {
+          sock.destroy();
+        } catch {
+          /* 已断开 → 忽略 */
+        }
+        socketCtx.delete(sock);
+        socketSubject.delete(sock);
+      }
+      clients.clear();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (opts.discoveryFile) {
+        try {
+          // 只删自己写的:内容已被换掉(理论上单实例锁下不会发生)则保留。
+          if (
+            (await readFile(opts.discoveryFile, 'utf8')) ===
+            formatStdioPipeDiscovery(opts.socketPath, process.pid)
+          ) {
+            await unlink(opts.discoveryFile);
+          }
+        } catch {
+          /* 不存在 / 读删失败 → 忽略 */
+        }
+      }
+      if (shouldPrepareFilesystem) {
+        try {
+          await unlink(opts.socketPath);
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+  };
+}
+
+// 边界(E233)测试用:全局 stdio 连接上限常量。
+export const MAX_STDIO_CLIENTS_GLOBAL_FOR_TEST = MAX_STDIO_CLIENTS_GLOBAL;
+// 安全(W2)测试用:首条完整消息超时。
+export const STDIO_FIRST_MESSAGE_TIMEOUT_MS_FOR_TEST = STDIO_FIRST_MESSAGE_TIMEOUT_MS;

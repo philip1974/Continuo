@@ -1,0 +1,88 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { coApp } from '@/plugins/co-app';
+import { openFileByPath } from '@/panels/Editor/editor-file-actions';
+import { scrollToLine } from '@/panels/Editor/scrollToLine';
+import { useEditorStore } from '@/stores/editor.store';
+import type { EditorView } from '@codemirror/view';
+
+vi.mock('@/panels/Editor/editor-file-actions', () => ({
+  openFileByPath: vi.fn(),
+}));
+
+vi.mock('@/panels/Editor/scrollToLine', () => ({
+  scrollToLine: vi.fn(),
+}));
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: { fs: { readFile: vi.fn(), writeFile: vi.fn() } },
+}));
+
+const mockedOpenFileByPath = vi.mocked(openFileByPath);
+const mockedScrollToLine = vi.mocked(scrollToLine);
+const view = { id: 'view' } as unknown as EditorView;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockedOpenFileByPath.mockResolvedValue({ ok: true, data: undefined });
+  mockedScrollToLine.mockReturnValue('applied');
+});
+
+function setMarkdownState(mode: 'edit' | 'source', content = '# title') {
+  useEditorStore.setState({
+    tabs: [
+      {
+        id: '/work/readme.md',
+        filePath: '/work/readme.md',
+        content,
+        originalContent: content,
+        dirty: false,
+      },
+    ],
+    activeTabId: '/work/readme.md',
+    mode,
+    // view 须同时是 viewRefs 中的当前注册值:openFile 跳行前按 viewRefs 复核 view 未被替换
+    viewRefs: new Map([['/work/readme.md', view]]),
+    waitForViewRef: vi.fn(async () => view),
+  } as Partial<ReturnType<typeof useEditorStore.getState>>);
+}
+
+describe('app.editor.openFile markdown degradation', () => {
+  it('T1 reports milkdown-engine for markdown edit mode', async () => {
+    setMarkdownState('edit');
+
+    const result = await coApp.editor.openFile('/work/readme.md', { line: 3 });
+
+    expect(mockedScrollToLine).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      lineApplied: false,
+      reason: 'milkdown-engine',
+    });
+  });
+
+  it('T2 treats markdown source mode as CodeMirror', async () => {
+    setMarkdownState('source');
+
+    const result = await coApp.editor.openFile('/work/readme.md', { line: 3 });
+
+    expect(useEditorStore.getState().waitForViewRef).toHaveBeenCalledWith(
+      '/work/readme.md',
+      500,
+    );
+    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 3);
+    expect(result).toEqual({ ok: true, lineApplied: true });
+  });
+
+  it('T3 treats unsafe markdown edit mode as CodeMirror', async () => {
+    setMarkdownState('edit', '---\nid: demo\n---\n# title\n');
+
+    const result = await coApp.editor.openFile('/work/readme.md', { line: 10 });
+
+    expect(useEditorStore.getState().waitForViewRef).toHaveBeenCalledWith(
+      '/work/readme.md',
+      500,
+    );
+    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 10);
+    expect(result).toEqual({ ok: true, lineApplied: true });
+  });
+});

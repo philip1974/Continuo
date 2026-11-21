@@ -1,0 +1,510 @@
+// @vitest-environment jsdom
+// a11y(A131,A130 同族):Dock 布局恢复失败(layout.read reject/!ok 或 fromJSON throw)须 notify.error
+// (用户/SR 知布局被重置为默认),且 read reject 不得中断 onReady(默认布局仍要应用)。
+import React from 'react';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { cleanup, render } from '@testing-library/react';
+
+const h = vi.hoisted(() => ({
+  read: vi.fn(),
+  write: vi.fn().mockResolvedValue({ ok: true }),
+  flushExplorerPersistence: vi.fn().mockResolvedValue(undefined),
+  flushPendingAutoSave: vi.fn().mockResolvedValue(undefined),
+  toJSON: vi.fn(() => ({ panels: {} })),
+  notifyError: vi.fn(),
+  layoutChangeCb: { current: null as (() => void) | null },
+  // race(R22):注册数 / dispose 数计数,验卸载时「注册的全部被 dispose」。
+  regCount: { value: 0 },
+  disposeCount: { value: 0 },
+}));
+
+// race(R22):返回带计数 dispose 的 disposable;注册即计数。
+const fakeDisposable = (onCb?: (cb: (...a: unknown[]) => void) => void) =>
+  vi.fn((cb: (...a: unknown[]) => void) => {
+    onCb?.(cb);
+    h.regCount.value += 1;
+    return {
+      dispose: () => {
+        h.disposeCount.value += 1;
+      },
+    };
+  });
+
+vi.mock('dockview-react', () => ({
+  DockviewReact: ({ onReady }: { onReady: (event: { api: unknown }) => void }) => {
+    const api = React.useMemo(
+      () => ({
+        totalPanels: 1,
+        fromJSON: vi.fn(),
+        toJSON: h.toJSON,
+        getPanel: vi.fn(() => null),
+        addPanel: vi.fn(() => ({ api: { setActive: vi.fn() } })),
+        onDidLayoutChange: fakeDisposable((cb) => {
+          h.layoutChangeCb.current = cb as () => void;
+        }),
+        onDidRemovePanel: fakeDisposable(),
+        onDidAddPanel: fakeDisposable(),
+        onDidMaximizedGroupChange: fakeDisposable(),
+        panels: [],
+      }),
+      [],
+    );
+    React.useEffect(() => {
+      onReady({ api });
+    }, [api, onReady]);
+    return React.createElement('div', { 'data-testid': 'dockview' });
+  },
+}));
+
+interface FlushFixture {
+  layout?: { onFlushRequest?: unknown; sendFlushAck?: unknown };
+}
+function flushFixture(): FlushFixture | undefined {
+  return (window as { electron?: FlushFixture }).electron;
+}
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    // 关窗 flush 握手走 coApi.layout(preload 暴露的真实入口)。各用例把假 bridge 挂到
+    // window.electron 这个**测试夹具槽位**,由下面的 getter 转给 coApi —— 产品代码只读 coApi。
+    layout: {
+      read: h.read,
+      write: h.write,
+      get onFlushRequest() {
+        return flushFixture()?.layout?.onFlushRequest;
+      },
+      get sendFlushAck() {
+        return flushFixture()?.layout?.sendFlushAck;
+      },
+    },
+    terminal: { remove: vi.fn().mockResolvedValue({ ok: true }) },
+    system: { windowId: 1 },
+  },
+}));
+vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
+vi.mock('@/lib/persist/explorer-persist', () => ({
+  flushExplorerPersistence: h.flushExplorerPersistence,
+}));
+vi.mock('@/panels/Editor/autosave-flush-registry', () => ({
+  flushPendingAutoSave: h.flushPendingAutoSave,
+}));
+
+import { DockShell } from '@/shell/dock/DockShell';
+
+beforeEach(() => {
+  h.read.mockReset();
+  h.notifyError.mockReset();
+  h.write.mockReset();
+  h.write.mockResolvedValue({ ok: true });
+  h.flushExplorerPersistence.mockReset();
+  h.flushExplorerPersistence.mockResolvedValue(undefined);
+  h.flushPendingAutoSave.mockReset();
+  h.flushPendingAutoSave.mockResolvedValue(undefined);
+  h.toJSON.mockReset();
+  h.toJSON.mockReturnValue({ panels: {} });
+  h.regCount.value = 0;
+  h.disposeCount.value = 0;
+  h.layoutChangeCb.current = null;
+  delete (window as { electron?: unknown }).electron;
+});
+
+// flush 回执始终携带最终脏态(无脏 tab → 空集合),见 dirty-close-confirm/README.md。
+const CLEAN_ACK = { state: { dirty: 0, untitled: 0, ids: [], untitledIds: [] } };
+
+// globals:false 下 testing-library 不会自动 cleanup:须显式卸载,否则 DockShell 的终端就绪计时器在环境销毁后触发。
+afterEach(cleanup);
+
+describe('a11y(A131) — Dock 布局恢复失败须反馈', () => {
+  it('layout.read reject → notify.error(且不中断 onReady)', async () => {
+    h.read.mockRejectedValue(new Error('ipc down'));
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.notifyError).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('layout.read {ok:false} → notify.error', async () => {
+    h.read.mockResolvedValue({ ok: false, code: 'EIO' });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.notifyError).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('首次无持久布局(ok + data=null)→ 不报错(默认布局静默)', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    render(React.createElement(DockShell));
+    // 给 onReady microtask 链跑完
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
+  // 持久布局含 terminal panel 是**预期**情况(关窗时开着终端):sanitize 剥离终端、保留非终端
+  // 布局后 fromJSON 成功 → **不**报错(终端导致的 sanitize-drop 不再误判为「恢复失败」)。
+  it('持久布局含 terminal panel → 剥离后恢复,不报错', async () => {
+    h.read.mockResolvedValue({
+      ok: true,
+      data: {
+        grid: {
+          root: {
+            type: 'branch',
+            data: [
+              {
+                type: 'leaf',
+                data: { views: ['editor', 'term-1'], activeView: 'term-1', id: '1' },
+                size: 700,
+              },
+            ],
+            size: 800,
+          },
+          width: 1400,
+          height: 800,
+          orientation: 'HORIZONTAL',
+        },
+        panels: {
+          editor: { contentComponent: 'editor' },
+          'term-1': { contentComponent: 'terminal' },
+        },
+      },
+    });
+    render(React.createElement(DockShell));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
+  // a11y(A132,A131 同族):自动保存(onDidLayoutChange→debounce)写入失败 {ok:false} → 限流 notify。
+  it('自动保存 layout.write {ok:false} → notify.error', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null }); // onReady 顺利完成
+    h.write.mockResolvedValue({ ok: false, code: 'EIO' });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+    });
+    h.notifyError.mockReset(); // 忽略 onReady 阶段(无 write)
+    // 触发布局变化 → debounce(300ms)→ writeDockLayoutSnapshot(notifyOnFail=true)
+    h.layoutChangeCb.current!();
+    await vi.waitFor(
+      () => {
+        expect(h.notifyError).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 1500 },
+    );
+  });
+
+  it('自动保存相同 layout 快照 → 只写一次', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    h.write.mockResolvedValue({ ok: true });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+    });
+
+    h.layoutChangeCb.current!();
+    await vi.waitFor(
+      () => {
+        expect(h.write).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 1500 },
+    );
+
+    h.layoutChangeCb.current!();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(h.write).toHaveBeenCalledTimes(1);
+  });
+
+  // 仅含终端的布局:strip 返 null 时绝不能回落原始快照(含终端 sessionId/cwd)写盘;改写无 grid 的
+  // 空布局 `{version:1}`,恢复端视作「无可恢复布局」→ 静默走默认布局(与此前读端剥离后的行为一致)。
+  it('仅含终端 panel 的布局 → 写盘为空布局,不含终端数据', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    h.write.mockResolvedValue({ ok: true });
+    h.toJSON.mockReturnValue({
+      grid: {
+        root: {
+          type: 'branch',
+          data: [{ type: 'leaf', data: { views: ['terminal-s1'], id: '1' }, size: 800 }],
+          size: 800,
+        },
+        width: 1400,
+        height: 800,
+        orientation: 'HORIZONTAL',
+      },
+      panels: {
+        'terminal-s1': {
+          contentComponent: 'terminal',
+          params: { sessionId: 's1', cwd: '/secret/project' },
+        },
+      },
+    } as never);
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.layoutChangeCb.current).not.toBeNull());
+    h.layoutChangeCb.current!();
+    await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(1), { timeout: 1500 });
+    const written = JSON.stringify(h.write.mock.calls[0]![0]);
+    expect(written).not.toContain('terminal');
+    expect(written).not.toContain('/secret/project');
+    expect(h.write.mock.calls[0]![0]).toEqual({ version: 1 });
+  });
+
+  it('恢复端读到空布局 {version:1} → 静默走默认布局(不 fromJSON、不报错)', async () => {
+    const { sanitizePersistedDockLayout } = await import('@/shell/dock/DockShell');
+    expect(sanitizePersistedDockLayout({ version: 1 })).toBeNull();
+    h.read.mockResolvedValue({ ok: true, data: { version: 1 } });
+    render(React.createElement(DockShell));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
+  // 写盘在途时又发生的布局变更不能被「写成功 → 标干净」吞掉:写的是旧快照。
+  it('layout.write 在途期间的布局变更,在该次写成功后仍会落盘', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    let releaseFirst: (() => void) | null = null;
+    h.write.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          releaseFirst = () => r({ ok: true });
+        }),
+    );
+    h.toJSON.mockReturnValue({ panels: { a: { contentComponent: 'editor' } } });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+    });
+
+    h.layoutChangeCb.current!();
+    await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(1), { timeout: 1500 });
+
+    // 写#1 在途:布局再变一次
+    h.toJSON.mockReturnValue({ panels: { b: { contentComponent: 'editor' } } });
+    h.layoutChangeCb.current!();
+    releaseFirst!();
+
+    await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(2), { timeout: 1500 });
+    expect(JSON.stringify(h.write.mock.calls[1]![0])).toContain('"b"');
+  });
+
+  it('已自动保存且无 layout 变更时,close flush 跳过 dock 快照重建', async () => {
+    let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
+    const sendFlushAck = vi.fn();
+    (window as { electron?: unknown }).electron = {
+      layout: {
+        onFlushRequest: (cb: (p?: { windowId: number }) => Promise<void>) => {
+          flushCb = cb;
+          return () => {};
+        },
+        sendFlushAck,
+      },
+      system: { windowId: 1 },
+    };
+    h.read.mockResolvedValue({ ok: true, data: null });
+    h.write.mockResolvedValue({ ok: true });
+    h.toJSON.mockReturnValue({
+      panels: { stable: { contentComponent: 'editor' } },
+    });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+      expect(flushCb).not.toBeNull();
+    });
+
+    h.layoutChangeCb.current!();
+    await vi.waitFor(
+      () => {
+        expect(h.write).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 1500 },
+    );
+
+    h.toJSON.mockClear();
+    h.write.mockClear();
+    await flushCb!({ windowId: 1 });
+
+    expect(h.toJSON).not.toHaveBeenCalled();
+    expect(h.write).not.toHaveBeenCalled();
+    expect(sendFlushAck).toHaveBeenCalledWith(1, CLEAN_ACK);
+  });
+
+  it('close flush 并行启动 layout / explorer / autosave,但三者完成后才 ack', async () => {
+    let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
+    const sendFlushAck = vi.fn();
+    (window as { electron?: unknown }).electron = {
+      layout: {
+        onFlushRequest: (cb: (p?: { windowId: number }) => Promise<void>) => {
+          flushCb = cb;
+          return () => {};
+        },
+        sendFlushAck,
+      },
+      system: { windowId: 1 },
+    };
+    h.read.mockResolvedValue({ ok: true, data: null });
+
+    let resolveLayout: (v: { ok: true }) => void = () => {};
+    let resolveExplorer: () => void = () => {};
+    let resolveAutoSave: () => void = () => {};
+    h.toJSON.mockReturnValue({
+      panels: { parallel: { contentComponent: 'editor' } },
+    });
+    h.write.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLayout = resolve;
+      }),
+    );
+    h.flushExplorerPersistence.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveExplorer = resolve;
+      }),
+    );
+    h.flushPendingAutoSave.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveAutoSave = resolve;
+      }),
+    );
+
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(flushCb).not.toBeNull());
+
+    const flushPromise = flushCb!({ windowId: 1 });
+    await Promise.resolve();
+
+    expect(h.write).toHaveBeenCalledTimes(1);
+    expect(h.flushExplorerPersistence).toHaveBeenCalledTimes(1);
+    expect(h.flushPendingAutoSave).toHaveBeenCalledTimes(1);
+    expect(sendFlushAck).not.toHaveBeenCalled();
+
+    resolveLayout({ ok: true });
+    await Promise.resolve();
+    expect(sendFlushAck).not.toHaveBeenCalled();
+
+    resolveExplorer();
+    await Promise.resolve();
+    expect(sendFlushAck).not.toHaveBeenCalled();
+
+    resolveAutoSave();
+    await flushPromise;
+    expect(sendFlushAck).toHaveBeenCalledWith(1, CLEAN_ACK);
+  });
+
+  // race(R42):关窗 layout:flush 回调必须在**执行时**读 apiRef.current,而非 effect 注册时闭包
+  // 捕获 api。卸载后 apiRef.current=null(R30),迟到/错挂的 flush 回调应跳过写盘,不用 stale api。
+  it('R42 flush 回调在 apiRef.current 为空(卸载后)时跳过 writeDockLayoutSnapshot', async () => {
+    let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
+    (window as { electron?: unknown }).electron = {
+      layout: {
+        onFlushRequest: (cb: (p?: { windowId: number }) => Promise<void>) => {
+          flushCb = cb;
+          return () => {};
+        },
+        sendFlushAck: vi.fn(),
+      },
+      system: { windowId: 1 },
+    };
+    h.read.mockResolvedValue({ ok: true, data: null });
+    const view = render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(flushCb).not.toBeNull());
+
+    view.unmount(); // apiRef.current → null(R30 卸载置空)
+    h.write.mockClear();
+    await flushCb!({ windowId: 1 }); // 迟到 flush:旧实现用闭包 stale api 仍写;新实现读 null → 跳过
+
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  // race(R30):onReady 在 await layout.read() 期间组件卸载 → 迟到 resolve 后本次回调已过期
+  // (apiRef.current 被 unmount 置 null),不得再注册 listener / fromJSON / setState。
+  it('R30 卸载后迟到的 onReady(layout.read 晚 resolve)不再注册 listener / fromJSON', async () => {
+    let resolveRead: (v: unknown) => void = () => {};
+    h.read.mockReturnValue(
+      new Promise((r) => {
+        resolveRead = r;
+      }),
+    );
+    const view = render(React.createElement(DockShell));
+    // onReady 已 fire 并 park 在 await layout.read():此刻 onReady 自己的 4 个 onDid* 还没注册。
+    // baseline 不含 onReady 的 listener(DockReconcilerMount 也推迟到布局恢复后才挂载)。
+    const baseline = h.regCount.value;
+
+    view.unmount(); // 卸载 → apiRef.current=null 失效迟到 onReady
+    resolveRead({ ok: true, data: { panels: { p1: {} } } }); // 迟到 resolve(含可 fromJSON 的数据)
+    await new Promise((r) => setTimeout(r, 0));
+
+    // stale guard 生效:过期 onReady 提前返回 → 不再注册它那 4 个 onDid* listener(否则 regCount +4)。
+    expect(h.regCount.value).toBe(baseline);
+  });
+
+  // race(R22):DockShell 卸载时须 dispose onReady 注册的全部 dockview onDid* listener +
+  // cancel layout debounce,否则旧 listener/迟到写盘对新实例生效。
+  it('R22 卸载 → dispose 全部 onDid* listener + cancel layout debounce', async () => {
+    h.read.mockResolvedValue({ ok: true, data: null });
+    h.write.mockResolvedValue({ ok: true });
+    const view = render(React.createElement(DockShell));
+    await vi.waitFor(() => {
+      expect(h.layoutChangeCb.current).not.toBeNull();
+    });
+    expect(h.disposeCount.value).toBe(0); // 挂载期间不 dispose
+
+    // 触发一次布局变化排定 debounce 写盘(300ms)。
+    h.layoutChangeCb.current!();
+    h.write.mockClear();
+
+    const registered = h.regCount.value;
+    expect(registered).toBeGreaterThanOrEqual(4); // 至少 4 个 onDid* listener 注册
+
+    view.unmount(); // 卸载 → dispose 全部 listener + cancel debounce
+
+    // 注册的 onDid* 全部被 dispose(无残留 listener)。
+    expect(h.disposeCount.value).toBe(registered);
+
+    // debounce 被 cancel → 300ms 后不应再写盘(迟到 layout 写不覆盖新实例)。
+    await new Promise((r) => setTimeout(r, 400));
+    expect(h.write).not.toHaveBeenCalled();
+  });
+});
+
+// 回归守卫:DockShell 曾从不存在的 `window.electron` 取 flush bridge(preload 只暴露 __lmApi,经
+// coApi 访问)→ `layout:flush-request` 无人监听,关窗前 layout / explorer / autosave 三路 flush 从不
+// 执行,main 每次关窗干等 10s ack 超时(窗口已先 hide,用户无感)。必须经 coApi.layout 订阅 + ack。
+describe('关窗 flush 握手走 coApi(不读 window.electron)', () => {
+  it('DockShell 源码不再引用 window.electron / FlushBridge', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const src = readFileSync(join(process.cwd(), 'src/shell/dock/DockShell.tsx'), 'utf-8');
+    expect(src).not.toMatch(/\.electron\b/);
+    expect(src).not.toContain('getFlushBridge');
+    expect(src).toContain('coApi.layout.onFlushRequest');
+    expect(src).toContain('coApi.layout.sendFlushAck');
+  });
+
+  it('preload 把 main 的 {windowId} payload 透传给回调', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const src = readFileSync(join(process.cwd(), 'electron/preload/index.ts'), 'utf-8');
+    const block = src.slice(src.indexOf('onFlushRequest:'), src.indexOf('sendFlushAck:'));
+    expect(block).toMatch(/void cb\(payload\)/);
+  });
+
+  it('flush 请求到达 → 三路 flush 后用 payload.windowId ack', async () => {
+    let flushCb: ((p?: { windowId: number }) => Promise<void>) | null = null;
+    const sendFlushAck = vi.fn();
+    (window as { electron?: unknown }).electron = {
+      layout: {
+        onFlushRequest: (cb: (p?: { windowId: number }) => Promise<void>) => {
+          flushCb = cb;
+          return () => {};
+        },
+        sendFlushAck,
+      },
+    };
+    h.read.mockResolvedValue({ ok: true, data: null });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(flushCb).not.toBeNull());
+
+    await flushCb!({ windowId: 7 });
+    expect(h.flushExplorerPersistence).toHaveBeenCalledTimes(1);
+    expect(h.flushPendingAutoSave).toHaveBeenCalledTimes(1);
+    expect(sendFlushAck).toHaveBeenCalledWith(7, CLEAN_ACK);
+
+    // main 未带 payload(旧 preload 形态)→ 回退 coApi.system.windowId。
+    await flushCb!();
+    expect(sendFlushAck).toHaveBeenLastCalledWith(1, CLEAN_ACK);
+  });
+});

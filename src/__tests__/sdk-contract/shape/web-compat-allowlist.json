@@ -1,0 +1,56 @@
+[
+  {
+    "path": "src/plugins/sandbox-sweep.ts",
+    "line": 4,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Comment documents intentional sandbox hardening of globalThis.fetch."
+  },
+  {
+    "path": "src/plugins/sandbox-sweep.ts",
+    "line": 9,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Comment documents intentional dev-mode globalThis.fetch behavior."
+  },
+  {
+    "path": "src/plugins/sandbox-sweep.ts",
+    "line": 17,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Intentional cache of raw fetch before sandbox sweep."
+  },
+  {
+    "path": "src/plugins/sandbox-sweep.ts",
+    "line": 18,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Intentional bind of cached raw fetch before sandbox sweep."
+  },
+  {
+    "path": "src/plugins/sandbox-sweep.ts",
+    "line": 20,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Error message for missing globalThis.fetch during cache setup."
+  },
+  {
+    "path": "src/plugins/sandbox-sweep.ts",
+    "line": 52,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Comment documents intentional sandbox sweep of globalThis.fetch."
+  },
+  {
+    "path": "src/plugins/sandbox-sweep.ts",
+    "line": 83,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Comment documents legacy globalThis.api sweep behavior."
+  },
+  {
+    "path": "src/plugins/storage/local-storage-record.ts",
+    "line": 29,
+    "pattern": "global(?:This)?\\.",
+    "reason": "Shared localStorage-record helper intentionally centralizes guarded localStorage access (M21)."
+  },
+  {
+    "path": "src/plugins/types.ts",
+    "line": 281,
+    "pattern": "NodeJS\\.",
+    "reason": "Type-only public API currently exposes NodeJS.Signals; tracked as follow-up SDK web-compat debt."
+  }
+]

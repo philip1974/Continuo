@@ -1,0 +1,182 @@
+import { randomUUID } from 'node:crypto';
+import {
+  ScopeRequestTimeoutError,
+  type PathScope,
+} from '../../shared/plugin-fs-contract';
+import { SCOPE_REQUEST_TTL_MS } from '../../shared/plugin-fs-channels';
+
+interface PendingEntry {
+  token: string;
+  scopes: readonly PathScope[];
+  webContentsId: number;
+  expiresAt: number;
+  resolve: (decision: 'grant' | 'deny') => void;
+  reject: (err: ScopeRequestTimeoutError) => void;
+  resolved: boolean;
+}
+
+export interface CreateRequestResult {
+  requestId: string;
+  promise: Promise<'grant' | 'deny'>;
+}
+
+const DEFAULT_TTL_MS = SCOPE_REQUEST_TTL_MS;
+/** cancelByToken 的 reject 原因(request-scope handler 据此按 deny 静默收口)。 */
+export const SCOPE_REQUEST_PLUGIN_UNREGISTERED = 'plugin unregistered';
+const GC_INTERVAL_MS = 60_000;
+// 边界(E227):未决 scope 请求数量上限。单次 request-scope 的 scopes 已限,但插件可连续 spam 大量未决
+// 请求 —— 每个在 pending Map 驻留至 resolve / 5min TTL,且 renderer 弹窗队列随之线性增长 → 内存/弹窗放大。
+// 全局 + per-webContents 双闸,超限由调用方按终态 deny 收口(不入 pending、不弹窗)。
+const MAX_PENDING_SCOPE_REQUESTS = 256; // 全局未决上限(远超任何正常并发授权)
+const MAX_PENDING_PER_WEBCONTENTS = 64; // 单窗口未决上限
+
+export class ScopeRequestCorrelator {
+  private readonly pending = new Map<string, PendingEntry>();
+  private gcTimer: ReturnType<typeof setInterval> | null = null;
+  private _ttlMs = DEFAULT_TTL_MS;
+
+  constructor(opts?: { ttlMs?: number; gcIntervalMs?: number }) {
+    const gcInterval = opts?.gcIntervalMs ?? GC_INTERVAL_MS;
+    this.gcTimer = setInterval(() => this._sweep(), gcInterval);
+    const maybeUnref = this.gcTimer as { unref?: () => void };
+    if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
+    if (opts?.ttlMs !== undefined) {
+      this._ttlMs = opts.ttlMs;
+    }
+  }
+
+  /**
+   * 边界(E227):是否可再接受一个未决 scope 请求(全局 + per-webContents 双闸)。调用方在 createRequest +
+   * 弹窗前检查,false → 按终态 deny 收口(不入 pending、不向 renderer 发弹窗),防插件 spam 让 pending /
+   * renderer 弹窗队列线性增长。pending Map 已封顶后此遍历 O(≤MAX_PENDING_SCOPE_REQUESTS)。
+   */
+  canAccept(webContentsId: number): boolean {
+    if (this.pending.size >= MAX_PENDING_SCOPE_REQUESTS) return false;
+    let n = 0;
+    for (const e of this.pending.values()) {
+      if (!e.resolved && e.webContentsId === webContentsId) {
+        n += 1;
+        if (n >= MAX_PENDING_PER_WEBCONTENTS) return false;
+      }
+    }
+    return true;
+  }
+
+  createRequest(
+    token: string,
+    scopes: readonly PathScope[],
+    webContentsId: number,
+  ): CreateRequestResult {
+    const requestId = randomUUID();
+    let resolveFn: PendingEntry['resolve'];
+    let rejectFn: PendingEntry['reject'];
+    const promise = new Promise<'grant' | 'deny'>((res, rej) => {
+      resolveFn = res;
+      rejectFn = rej;
+    });
+    this.pending.set(requestId, {
+      token,
+      scopes,
+      webContentsId,
+      expiresAt: Date.now() + this._ttlMs,
+      resolve: resolveFn!,
+      reject: rejectFn!,
+      resolved: false,
+    });
+    return { requestId, promise };
+  }
+
+  /**
+   * Resolve a pending request. One-shot: subsequent calls throw.
+   * Throws if requestId unknown, sender mismatch, expired, or already resolved.
+   */
+  resolve(
+    requestId: string,
+    decision: 'grant' | 'deny',
+    fromWebContentsId: number,
+  ): void {
+    const entry = this.pending.get(requestId);
+    if (!entry) throw new ScopeRequestTimeoutError('unknown requestId', requestId);
+    if (entry.resolved) {
+      throw new ScopeRequestTimeoutError('already resolved', requestId);
+    }
+    if (entry.webContentsId !== fromWebContentsId) {
+      throw new ScopeRequestTimeoutError('wrong webContents', requestId);
+    }
+    if (Date.now() >= entry.expiresAt) {
+      entry.resolved = true;
+      entry.reject(new ScopeRequestTimeoutError('request expired', requestId));
+      this.pending.delete(requestId);
+      throw new ScopeRequestTimeoutError('request expired', requestId);
+    }
+    entry.resolved = true;
+    entry.resolve(decision);
+    this.pending.delete(requestId);
+  }
+
+  /**
+   * Reject + drop every pending request originated by a given webContents.
+   * Call when the owning window is closed/crashed: the awaiting renderer died
+   * with it, so the host-side `await promise` would otherwise hang in the
+   * `pending` Map until the 5min TTL sweep. Mirrors `cancelAgentAuthByWindow`
+   * (agent-auth) / `broker.cancelByWindow` (hook-bridge) — the parallel
+   * "window closed but waiter still pending" cleanup channels. Returns count.
+   */
+  cancelBySender(webContentsId: number): number {
+    let n = 0;
+    for (const [requestId, entry] of this.pending) {
+      if (entry.resolved) continue;
+      if (entry.webContentsId !== webContentsId) continue;
+      entry.resolved = true;
+      entry.reject(new ScopeRequestTimeoutError('window closed', requestId));
+      this.pending.delete(requestId);
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * 插件实例被注销(卸载 / 禁用 / reload)时 reject 并丢弃它的未决请求:该实例已不在,用户的决定无处落地
+   * (grant 也会因 token 失效被丢弃),而请求留在 pending 会一直占着该插件的单飞名额直到用户应答或 TTL。
+   */
+  cancelByToken(token: string): number {
+    let n = 0;
+    for (const [requestId, entry] of this.pending) {
+      if (entry.resolved || entry.token !== token) continue;
+      entry.resolved = true;
+      entry.reject(new ScopeRequestTimeoutError(SCOPE_REQUEST_PLUGIN_UNREGISTERED, requestId));
+      this.pending.delete(requestId);
+      n++;
+    }
+    return n;
+  }
+
+  /** Test-only: synchronous GC sweep skipping setInterval. */
+  _sweep(): void {
+    const now = Date.now();
+    for (const [requestId, entry] of this.pending) {
+      if (entry.resolved) continue;
+      if (now >= entry.expiresAt) {
+        entry.resolved = true;
+        entry.reject(new ScopeRequestTimeoutError('request expired', requestId));
+        this.pending.delete(requestId);
+      }
+    }
+  }
+
+  /** Stops GC interval. Call on host shutdown. Used in tests for cleanup. */
+  dispose(): void {
+    if (this.gcTimer) {
+      clearInterval(this.gcTimer);
+      this.gcTimer = null;
+    }
+  }
+
+  /** Test-only inspect. */
+  _peek(requestId: string): PendingEntry | undefined {
+    return this.pending.get(requestId);
+  }
+}
+
+export const DEFAULT_TTL_MS_FOR_TEST = DEFAULT_TTL_MS;
+export const GC_INTERVAL_MS_FOR_TEST = GC_INTERVAL_MS;

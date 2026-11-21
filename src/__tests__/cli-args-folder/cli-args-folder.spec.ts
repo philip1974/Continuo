@@ -1,0 +1,211 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  pickArgvFolders,
+  isWithinStartupPathLimit,
+  MAX_STARTUP_DIRS,
+  MAX_STARTUP_DIR_PATH_LEN,
+} from '../../../electron/main/services/cli-args.service';
+
+describe('pickArgvFolders', () => {
+  it('packaged mode returns existing absolute folder argv entries', () => {
+    const isDir = vi.fn((p: string) => p === '/Users/foo/proj');
+
+    expect(
+      pickArgvFolders(
+        ['/Applications/Continuo.app/Contents/MacOS/Continuo', '/Users/foo/proj'],
+        isDir,
+        { skipFirstArg: false },
+      ),
+    ).toEqual(['/Users/foo/proj']);
+  });
+
+  it('dev mode skips argv[1] and keeps the dragged folder', () => {
+    const isDir = vi.fn((p: string) => p === '/Users/foo/proj');
+
+    expect(
+      pickArgvFolders(['electron', '.', '/Users/foo/proj'], isDir, {
+        skipFirstArg: true,
+      }),
+    ).toEqual(['/Users/foo/proj']);
+    expect(isDir).not.toHaveBeenCalledWith('.');
+  });
+
+  it('drops non-existing paths', () => {
+    const isDir = vi.fn((_p: string) => false);
+
+    expect(
+      pickArgvFolders(['Continuo', '/Users/foo/nope'], isDir, {
+        skipFirstArg: false,
+      }),
+    ).toEqual([]);
+  });
+
+  it('dedupes duplicate folders preserving first-seen order', () => {
+    const isDir = vi.fn((_p: string) => true);
+
+    expect(
+      pickArgvFolders(
+        ['Continuo', '/Users/foo/proj', '/Users/foo/proj'],
+        isDir,
+        { skipFirstArg: false },
+      ),
+    ).toEqual(['/Users/foo/proj']);
+  });
+
+  it('skipAll returns empty even when argv has a folder', () => {
+    const isDir = vi.fn((_p: string) => true);
+
+    expect(
+      pickArgvFolders(['Continuo', '/Users/foo/proj'], isDir, {
+        skipFirstArg: false,
+        skipAll: true,
+      }),
+    ).toEqual([]);
+    expect(isDir).not.toHaveBeenCalled();
+  });
+
+  it('drops relative paths before checking isExistingDir', () => {
+    const isDir = vi.fn((_p: string) => true);
+
+    expect(
+      pickArgvFolders(['Continuo', 'relative/path'], isDir, {
+        skipFirstArg: false,
+      }),
+    ).toEqual([]);
+    expect(isDir).not.toHaveBeenCalled();
+  });
+
+  it('keeps mixed absolute folders, drops relative paths, and dedupes', () => {
+    const isDir = vi.fn((p: string) => p === '/abs/a' || p === '/abs/b');
+
+    expect(
+      pickArgvFolders(
+        ['Continuo', '/abs/a', 'relative', '/abs/b', '/abs/a'],
+        isDir,
+        { skipFirstArg: false },
+      ),
+    ).toEqual(['/abs/a', '/abs/b']);
+  });
+
+  // 边界(E58,E55 外部输入族):启动目录数封顶 + 超长路径先跳过(不 stat),挡畸形命令行/file-open
+  // 大量/超长路径冷启动同步 I/O + 批量开窗。
+  describe('E58 · 数量/路径长度上限', () => {
+    it('目录数超上限 → 封顶到 MAX_STARTUP_DIRS', () => {
+      const isDir = vi.fn(() => true);
+      const many = Array.from(
+        { length: MAX_STARTUP_DIRS + 20 },
+        (_, i) => `/abs/d${i}`,
+      );
+      const r = pickArgvFolders(['Continuo', ...many], isDir, {
+        skipFirstArg: false,
+      });
+      expect(r).toHaveLength(MAX_STARTUP_DIRS);
+      // 封顶后停止收集 → 不再对超出部分 isExistingDir(同步 stat)
+      expect(isDir.mock.calls.length).toBeLessThanOrEqual(MAX_STARTUP_DIRS);
+    });
+
+    it('超长路径 → 跳过且不调 isExistingDir(不 stat)', () => {
+      const isDir = vi.fn(() => true);
+      const longPath = '/' + 'x'.repeat(MAX_STARTUP_DIR_PATH_LEN);
+      const r = pickArgvFolders(['Continuo', longPath, '/abs/ok'], isDir, {
+        skipFirstArg: false,
+      });
+      expect(r).toEqual(['/abs/ok']);
+      expect(isDir).not.toHaveBeenCalledWith(longPath); // 超长不 stat
+    });
+  });
+
+  // 边界(E192,E176/E189 有界迭代族):pickArgvFolders 索引遍历原 argv,不 argv.slice(start)——
+  // slice 在循环截断前就把尾部全量复制,畸形超长 process.argv 冷启动产生不必要内存峰值。
+  describe('E192 · 不全量复制 argv 尾部(索引遍历)', () => {
+    it('实现不调用 argv.slice(凑满即 break,不物化新数组)', () => {
+      const isDir = vi.fn(() => true);
+      const real = ['Continuo', '/abs/a', '/abs/b'];
+      // Proxy:访问 .slice 即抛 —— 若实现仍 argv.slice(start) 立即失败。
+      const guarded = new Proxy(real, {
+        get(target, prop, recv) {
+          if (prop === 'slice') {
+            throw new Error('E192 regression: pickArgvFolders 不应 slice argv');
+          }
+          return Reflect.get(target, prop, recv);
+        },
+      }) as unknown as readonly string[];
+      expect(
+        pickArgvFolders(guarded, isDir, { skipFirstArg: false }),
+      ).toEqual(['/abs/a', '/abs/b']);
+    });
+
+    it('索引遍历仍尊重 start 偏移(skipFirstArg 跳过 argv[0..1])', () => {
+      const isDir = vi.fn(() => true);
+      // dev 模式 start=2:argv[0]=electron / argv[1]=. 都跳过,只收 argv[2..]
+      expect(
+        pickArgvFolders(['electron', '/abs/skipped-by-start', '/abs/keep'], isDir, {
+          skipFirstArg: true,
+        }),
+      ).toEqual(['/abs/keep']);
+      expect(isDir).not.toHaveBeenCalledWith('/abs/skipped-by-start');
+    });
+  });
+
+  describe('冷启动目录收集分配', () => {
+    it('实现使用固定上限数组收集目录,不通过 dirs.push 扩容', () => {
+      expect(pickArgvFolders.toString()).not.toContain('dirs.push(');
+    });
+  });
+
+  // 边界(E59):isWithinStartupPathLimit 是 argv / open-file 缓冲 / 运行期 open-file 三处共用的
+  // string + 长度守卫(运行期 openPathInNewWindow 复用它,statSync 前过滤超长路径)。
+  describe('E59 · isWithinStartupPathLimit', () => {
+    it('正常路径 → true', () => {
+      expect(isWithinStartupPathLimit('/Users/foo/proj')).toBe(true);
+    });
+    it('空串 / 非字符串 → false', () => {
+      expect(isWithinStartupPathLimit('')).toBe(false);
+      expect(isWithinStartupPathLimit(123 as never)).toBe(false);
+      expect(isWithinStartupPathLimit(null as never)).toBe(false);
+    });
+    it('超长(>上限)→ false;恰好上限 → true', () => {
+      expect(isWithinStartupPathLimit('x'.repeat(MAX_STARTUP_DIR_PATH_LEN))).toBe(
+        true,
+      );
+      expect(
+        isWithinStartupPathLimit('x'.repeat(MAX_STARTUP_DIR_PATH_LEN + 1)),
+      ).toBe(false);
+    });
+  });
+});
+
+// r5 审计(运行期 statSync):app ready 后的 macOS open-file 运行期入口若同步 stat,网络盘 / 休眠卷 /
+// 失联挂载点会冻结整个 main(所有窗口 IPC、PTY 输出)。运行期入口须用异步 isDirectory;
+// ready 前缓冲(pendingOpenPaths)与冷启动 pickStartupMode 仍是同步判定(启动期,不在本条范围)。
+// 主进程入口依赖整套启动,按仓库惯例做源码钉。
+describe('运行期 open-file 目录判定不阻塞 main', () => {
+  const src = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+  const start = src.indexOf('async function openPathInNewWindow(');
+  const end = src.indexOf("app.on('open-file'", start);
+  const body = src.slice(start, end);
+
+  it('openPathInNewWindow 用 await isDirectory,不调 isDirectorySync / statSync', () => {
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    expect(body).toMatch(/await isDirectory\(absPath\)/);
+    expect(body).not.toMatch(/isDirectorySync\(|statSync\(/);
+  });
+
+  it('并发开窗计数在异步判定之前占位(在途 stat 也计入上限)', () => {
+    expect(body.indexOf('openInFlight += 1')).toBeGreaterThan(0);
+    expect(body.indexOf('openInFlight += 1')).toBeLessThan(body.indexOf('await isDirectory('));
+  });
+
+  // 第 6 轮审计:失联挂载点上在途 stat ≥4 即占满 libuv 默认线程池 → 异步目录判定须经全局并发闸
+  //(lib/dir-stat-gate,与新窗口打开文件夹共用;闸本身的并发上限由 dir-stat-gate.test 行为测试覆盖)。
+  it('isDirectory(open-file / 启动恢复共用)经 statDirGated 全局闸,不直接 fs.promises.stat', () => {
+    const fnStart = src.indexOf('async function isDirectory(');
+    const fnBody = src.slice(fnStart, src.indexOf('\n}\n', fnStart));
+    expect(fnStart).toBeGreaterThan(0);
+    expect(fnBody).toMatch(/await statDirGated\(p\)/);
+    expect(fnBody).not.toMatch(/promises\.stat\(/);
+  });
+});

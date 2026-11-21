@@ -1,0 +1,274 @@
+// 设置 Panel(VSCode 同款 — dockview 工作区里的普通 panel,不再是 Modal)。
+// 顶部搜索框 + 左侧 tab 导航 + 右侧内容,h-full 占满 dockview 分配的空间。
+// 搜索模式(query 非空)→ 右侧渲染所有命中的 SettingItem 列表,左侧 nav 灰显。
+// 普通模式 → 按 active tab 走 spec.render();订阅 SettingTabRegistry +
+// SettingItemRegistry,plugin 运行时 register/dispose 自动反映。
+//
+// BDD: src/__tests__/settings-panel/
+
+import { useMemo, useState } from 'react';
+import { Input } from '@/design';
+import { clampSearchQuery } from '@/lib/search-query';
+import { coApp } from '@/plugins/co-app';
+import { useRegistry } from '../registries/useRegistry';
+import type { SettingItemRegistry, SettingItemSpec } from '../registries/SettingItemRegistry';
+import type { SettingTabRegistry, SettingTabSpec } from '../registries/SettingTabRegistry';
+import { SettingItemRow } from './SettingItemRow';
+import { useSettingsStore } from './store';
+import { useT, useLocale, tWithFallback } from '@/i18n';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { ownValue } from '../../../electron/shared/own-value';
+import { groupKeepingOrder } from '@/lib/group-keeping-order';
+
+interface SettingsPanelProps {
+  /** 默认用全局 coApp.settingTabs;测试可注入隔离 registry. */
+  readonly registry?: SettingTabRegistry;
+  /** 默认用全局 coApp.settingItems;测试可注入隔离 registry. */
+  readonly itemRegistry?: SettingItemRegistry;
+}
+
+function useTabs(reg: SettingTabRegistry): readonly SettingTabSpec[] {
+  return useRegistry(reg);
+}
+
+function useItems(reg: SettingItemRegistry): readonly SettingItemSpec[] {
+  return useRegistry(reg);
+}
+
+const SETTINGS_NAV_BASE_CLASS_NAME =
+  'flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity';
+const SETTINGS_NAV_SEARCH_CLASS_NAME = `${SETTINGS_NAV_BASE_CLASS_NAME} pointer-events-none opacity-40`;
+const SETTINGS_NAV_NORMAL_CLASS_NAME = `${SETTINGS_NAV_BASE_CLASS_NAME} opacity-100`;
+
+const SETTINGS_TAB_BUTTON_BASE_CLASS_NAME =
+  'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition';
+const SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME = `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-accent bg-hover text-fg`;
+const SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME = `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-transparent text-fg-muted hover:bg-hover/50`;
+
+export function settingsNavClassName(inSearch: boolean): string {
+  return inSearch ? SETTINGS_NAV_SEARCH_CLASS_NAME : SETTINGS_NAV_NORMAL_CLASS_NAME;
+}
+
+export function settingsTabButtonClassName(active: boolean): string {
+  return active ? SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME : SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME;
+}
+
+/** 一条设置项的搜索源:本地化标题/描述 + id + raw fallback,全 lowercase. */
+export interface SearchableSettingItem {
+  readonly item: SettingItemSpec;
+  readonly haystack: string;
+}
+
+const EMPTY_SEARCHABLE_SETTING_ITEMS: SearchableSettingItem[] = [];
+const EMPTY_MATCHED_SETTING_ITEMS: readonly SettingItemSpec[] = [];
+
+export function buildSettingSearchHaystack(item: SettingItemSpec): string {
+  const displayTitle = tWithFallback(item.titleKey, item.title);
+  const displayDescription = tWithFallback(item.descriptionKey, item.description ?? '');
+  return lowerIfNeeded(
+    `${displayTitle} ${displayDescription} ${item.id} ${item.title} ${item.description ?? ''}`,
+  );
+}
+
+export function buildSearchableSettingItems(
+  items: readonly SettingItemSpec[],
+): SearchableSettingItem[] {
+  if (items.length === 0) return EMPTY_SEARCHABLE_SETTING_ITEMS;
+  const out = new Array<SearchableSettingItem>(items.length);
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    out[i] = {
+      item,
+      haystack: buildSettingSearchHaystack(item),
+    };
+  }
+  return out;
+}
+
+// 内置 4 类 category → catalog tab_title key 映射；plugin 自定义 category fallback raw 字符串
+const CATEGORY_TITLE_KEYS: Record<string, string> = {
+  general: 'settings.general.tab_title',
+  editor: 'settings.editor.tab_title',
+  explorer: 'settings.explorer.tab_title',
+  terminal: 'settings.terminal.tab_title',
+};
+
+interface SearchBucket {
+  readonly category: string;
+  readonly label: string;
+  readonly items: readonly SettingItemSpec[];
+}
+
+const EMPTY_SEARCH_BUCKETS: readonly SearchBucket[] = [];
+
+/** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
+export function groupSearchResults(items: readonly SettingItemSpec[]): readonly SearchBucket[] {
+  if (items.length === 0) return EMPTY_SEARCH_BUCKETS;
+  const groups = groupKeepingOrder(items, (spec) => spec.category);
+  const buckets = new Array<SearchBucket>(groups.length);
+  for (let i = 0; i < groups.length; i++) {
+    const { key: category, items: groupItems } = groups[i]!;
+    buckets[i] = {
+      category,
+      label: tWithFallback(ownValue(CATEGORY_TITLE_KEYS, category), category),
+      items: groupItems,
+    };
+  }
+  return buckets;
+}
+
+export function selectMatchedSettingItems(
+  searchable: readonly SearchableSettingItem[],
+  trimmed: string,
+): readonly SettingItemSpec[] {
+  if (searchable.length === 0) return EMPTY_MATCHED_SETTING_ITEMS;
+  const ql = lowerIfNeeded(trimmed);
+  let matched: SettingItemSpec[] | null = null;
+  let count = 0;
+  for (const s of searchable) {
+    if (!s.haystack.includes(ql)) continue;
+    if (matched === null) matched = new Array<SettingItemSpec>(searchable.length);
+    matched[count++] = s.item;
+  }
+  if (matched === null) return EMPTY_MATCHED_SETTING_ITEMS;
+  matched.length = count;
+  return matched;
+}
+
+export function SettingsPanel({
+  registry = coApp.settingTabs,
+  itemRegistry = coApp.settingItems,
+}: SettingsPanelProps = {}) {
+  const t = useT();
+  const activeTabId = useSettingsStore((s) => s.activeTabId);
+  const setActiveTabId = useSettingsStore((s) => s.setActiveTabId);
+  const tabs = useTabs(registry);
+  // nav 列表用 tabs(快照,订阅驱动重渲)。
+  // race(R55,R50-R54 同族):active.render() 调插件函数,但 useRegistry 快照(useState 订阅)
+  // 滞后 registry 一帧 —— tab 刚被插件 disable/reload unregister 时快照仍含它,直接用快照里的
+  // spec 会执行已卸载 tab 的 render(访问已释放资源 / 陈旧 UI)。改为从 **live** registry 按
+  // activeTabId 复查;已移除则回退首个 live tab,确保只调当前仍注册的 spec.render。
+  const active =
+    (activeTabId ? registry.get(activeTabId) : undefined) ?? registry.getAll()[0] ?? null;
+
+  const [query, setQuery] = useState('');
+  const trimmed = query.trim();
+  const searchPlaceholderLabel = t('settings.panel.search_placeholder');
+  // 搜索模式仅由 query 判定(打磨 R49):普通浏览设置 tab 时不订阅 itemRegistry、
+  // 不构建搜索 haystack —— 这些都搬进仅搜索模式才挂载的 SettingsSearchResults。
+  const inSearch = trimmed.length > 0;
+
+  return (
+    <div className="flex h-full flex-col bg-canvas">
+      <div className="border-b border-line bg-panel-soft/50 p-3">
+        <Input
+          size="sm"
+          // a11y(A5,A1 同族):placeholder 无参数 → 复用作 aria-label 给屏幕阅读器可访问名。
+          aria-label={searchPlaceholderLabel}
+          placeholder={searchPlaceholderLabel}
+          value={query}
+          onChange={(e) => setQuery(clampSearchQuery((e.target as HTMLInputElement).value))}
+          // 改 search 时回到搜索结果区,避免左侧 nav 视觉错位
+          autoFocus
+        />
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <nav className={settingsNavClassName(inSearch)} aria-label={t('settings.panel.nav_aria')}>
+          {tabs.length === 0 ? (
+            <div className="px-4 py-4 text-fg-dim">{t('settings.panel.no_items')}</div>
+          ) : (
+            tabs.map((tab) => (
+              // native button:设置页左侧导航项(图标 + 文本整行、aria-current),design TabNav 是横向页签形态;颜色走语义 token。
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTabId(tab.id)}
+                // a11y(A17,A12 同族):搜索模式下 nav 仅 pointer-events-none(鼠标禁用)但键盘
+                // 仍可 Tab/Enter 触发 → disabled 从 tab 顺序移除 + 阻断键盘激活,与视觉禁用一致。
+                disabled={inSearch}
+                // a11y(A11):active 此前只用 className,AT 不知当前所在设置页。用 aria-current
+                // 暴露选中态(nav 是独立可 tab 的按钮列表,非箭头键 roving 的 tab 控件,故用
+                // aria-current 而非 role=tab/aria-selected,避免不完整的 tab 交互模型)。
+                aria-current={active?.id === tab.id ? 'page' : undefined}
+                className={settingsTabButtonClassName(active?.id === tab.id)}
+              >
+                {tab.icon && (
+                  <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                    {tab.icon}
+                  </span>
+                )}
+                <span className="truncate">{tWithFallback(tab.titleKey, tab.title)}</span>
+              </button>
+            ))
+          )}
+        </nav>
+        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6 text-xs text-fg-muted">
+          {inSearch ? (
+            <SettingsSearchResults itemRegistry={itemRegistry} trimmed={trimmed} />
+          ) : active ? (
+            active.render()
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 搜索结果区(打磨 R49):仅在搜索模式(query 非空)时挂载。订阅 itemRegistry +
+ * 构建本地化 haystack + 过滤分组都在这里 —— 普通浏览设置 tab 时父组件不挂载本
+ * 组件,故不订阅 itemRegistry、不跑这些派生(插件注册 item / 切语言时不触发)。
+ */
+function SettingsSearchResults({
+  itemRegistry,
+  trimmed,
+}: {
+  readonly itemRegistry: SettingItemRegistry;
+  readonly trimmed: string;
+}) {
+  const t = useT();
+  // locale 值随语言切换变化(useTWithFallback 返回的函数 identity 稳定,不能当
+  // memo deps),驱动本地化 haystack 切语言重算(打磨 R30)。
+  const locale = useLocale();
+  const allItems = useItems(itemRegistry);
+  // 预计算本地化 haystack:搜索源用 titleKey/descriptionKey 翻译后的可见文案
+  // (SettingItemRow 实际显示的),否则中文/韩文下按屏幕文字搜不到。保留 id + raw
+  // title/description 作补充。deps 含 locale 切语言重算。
+  const searchable = useMemo<readonly SearchableSettingItem[]>(
+    () => buildSearchableSettingItems(allItems),
+    // locale 作失效键:tWithFallback 内部按当前 locale 翻译,lint 看不到该依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allItems, locale],
+  );
+  const matched = useMemo(() => {
+    return selectMatchedSettingItems(searchable, trimmed);
+  }, [trimmed, searchable]);
+  const matchedBuckets = useMemo(() => groupSearchResults(matched), [matched]);
+
+  return (
+    <div>
+      {/* a11y(A54,A53 同族):搜索结果计数/无匹配随输入变化,焦点在搜索框时须 live region
+          (role=status/polite)播报匹配数量/无结果。 */}
+      <div className="mb-3 text-fg-dim" role="status">
+        {matched.length === 0
+          ? t('settings.panel.no_match', { q: trimmed })
+          : t('settings.panel.matched', { count: matched.length, q: trimmed })}
+      </div>
+      {matchedBuckets.map((bucket) => (
+        <section key={bucket.category} className="first:mt-0 [&:not(:first-child)]:mt-10">
+          <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
+            {bucket.label}
+          </h3>
+          {bucket.items.map((spec) => (
+            <SettingItemRow
+              key={spec.id}
+              spec={spec}
+              // race(R58):写前 live 复查 setting 仍注册(搜索结果快照可能滞后于 unregister)。
+              isStillRegistered={(id) => itemRegistry.get(id) !== undefined}
+            />
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}

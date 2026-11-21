@@ -1,0 +1,101 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const NOUS_TOKENS = readFileSync(
+  resolve(__dirname, '../../styles/nous-tokens.css'),
+  'utf-8',
+);
+const LM_THEME = readFileSync(
+  resolve(__dirname, '../../styles/theme.css'),
+  'utf-8',
+);
+
+function extractMdVars(block: string): string[] {
+  return Array.from(block.matchAll(/--md-[a-z-]+:/g)).map((m) => m[0]);
+}
+
+function getRootBlock(css: string): string {
+  const m = css.match(/:root\s*\{([\s\S]*?)\n\}/);
+  return m?.[1] ?? '';
+}
+
+function getDarkBlock(css: string): string {
+  const m = css.match(/\.dark\s*\{([\s\S]*?)\n\}/);
+  return m?.[1] ?? '';
+}
+
+describe('nous-tokens.css MD3 完整性', () => {
+  it(':root 与 .dark 下的 --md-* 数量严格相等', () => {
+    const lightVars = extractMdVars(getRootBlock(NOUS_TOKENS));
+    const darkVars = extractMdVars(getDarkBlock(NOUS_TOKENS));
+    expect(lightVars.length).toBeGreaterThanOrEqual(40);
+    expect(lightVars.length).toBe(darkVars.length);
+  });
+
+  it(':root 与 .dark 定义的 --md-* 名称集合完全一致', () => {
+    const lightSet = new Set(extractMdVars(getRootBlock(NOUS_TOKENS)));
+    const darkSet = new Set(extractMdVars(getDarkBlock(NOUS_TOKENS)));
+    expect([...lightSet].sort()).toEqual([...darkSet].sort());
+  });
+
+  it('必含 MD3 核心槽位 surface / primary / on-surface / outline / state-hover', () => {
+    const required = [
+      '--md-surface:',
+      '--md-on-surface:',
+      '--md-primary:',
+      '--md-on-primary:',
+      '--md-outline:',
+      '--md-state-hover:',
+    ];
+    for (const slot of required) {
+      expect(NOUS_TOKENS.includes(slot)).toBe(true);
+    }
+  });
+});
+
+describe('theme.css Continuo 暗色覆盖与 @theme inline 链路', () => {
+  it('引入 nous-tokens.css', () => {
+    expect(LM_THEME).toMatch(/@import\s+['"]\.\/nous-tokens\.css['"]/);
+  });
+
+  it('.dark 块覆盖核心 surface / primary 槽位(Continuo slate + sky 身份)', () => {
+    const lmDark = getDarkBlock(LM_THEME);
+    expect(lmDark).toMatch(/--md-surface\s*:/);
+    expect(lmDark).toMatch(/--md-primary\s*:/);
+    expect(lmDark).toMatch(/--md-on-surface\s*:/);
+  });
+
+  it('@theme inline 暴露 14 个 --color-* 语义 token,全部 var(--md-*) 解析', () => {
+    const themeBlock = LM_THEME.match(/@theme\s+inline\s*\{([\s\S]*?)\n\}/);
+    expect(themeBlock).not.toBeNull();
+    const inner = themeBlock![1] ?? '';
+    const colorTokens = [
+      'canvas',
+      'panel',
+      'panel-soft',
+      'hover',
+      'line',
+      'fg',
+      'fg-muted',
+      'fg-dim',
+      'accent',
+      // demo (3) 配色双槽:accent (淡蓝,stroke / 文字 / alpha) +
+      // accent-fill (royal blue,filled 控件强视觉) + on-accent-fill (filled 上的浅文字)
+      'accent-fill',
+      'on-accent-fill',
+      // 状态色:取代散在组件里的 text-red-* / text-amber-* / bg-red-500 硬编码
+      'error',
+      'on-error',
+      'warning',
+    ];
+    for (const t of colorTokens) {
+      expect(inner).toMatch(new RegExp(`--color-${t}\\s*:`));
+    }
+    // 所有 --color-* 都必须解析自 var(--md-*)(含 fg-dim:MD3 无对应槽,由 theme.css 自定义 --md-fg-dim 承载)
+    const lines = inner.split('\n').filter((l) => l.includes('--color-'));
+    for (const line of lines) {
+      expect(line).toMatch(/var\(--md-/);
+    }
+  });
+});

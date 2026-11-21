@@ -1,0 +1,51 @@
+.wm-nav-rail-button {
+  position: relative;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background-color: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color var(--wm-duration-fast) var(--wm-ease-default),
+    color var(--wm-duration-fast) var(--wm-ease-default),
+    opacity var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-nav-rail-button:hover:not(:disabled) {
+  background-color: var(--md-state-hover);
+  color: var(--md-on-surface);
+}
+
+.wm-nav-rail-button:focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: 2px;
+}
+
+.wm-nav-rail-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+.wm-nav-rail-button__active-bar {
+  position: absolute;
+  top: var(--wm-space-1_5);
+  bottom: var(--wm-space-1_5);
+  left: 0;
+  width: 2px;
+  border-radius: 0 var(--wm-radius-full) var(--wm-radius-full) 0;
+  background-color: var(--md-primary);
+}
+
+.wm-nav-rail-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}

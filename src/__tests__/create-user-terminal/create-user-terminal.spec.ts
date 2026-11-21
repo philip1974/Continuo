@@ -1,0 +1,134 @@
+// @vitest-environment jsdom
+// 可维护性 M1:terminal.new(命令面板)与 Dock header 新建终端入口曾复制同一段创建流程,
+// 抽到 createUserTerminal 单一来源。本规范直接锁定该 helper 的行为契约(两消费方共用),
+// 后续改终端创建契约只需改一处 + 看这一份测试。
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  getState: vi.fn(() => ({ root: null as string | null })),
+  waitHydrated: vi.fn(() => Promise.resolve()),
+  notifyError: vi.fn(),
+  setPendingFocus: vi.fn(),
+  preloadChunk: vi.fn(),
+}));
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: { terminal: { create: mocks.create } },
+}));
+vi.mock('@/lib/terminal-chunk-warmup', () => ({
+  preloadTerminalPanelChunk: mocks.preloadChunk,
+}));
+vi.mock('@/notifications/notify', () => ({
+  notify: { error: mocks.notifyError },
+}));
+vi.mock('@/stores/workspace.store', () => ({
+  useWorkspaceStore: { getState: mocks.getState },
+  waitForWorkspaceRootRestored: mocks.waitHydrated,
+}));
+vi.mock('@/shell/dock/DockReconciler', () => ({
+  setPendingFocus: mocks.setPendingFocus,
+}));
+
+import { createUserTerminal } from '@/shell/dock/create-user-terminal';
+
+beforeEach(() => {
+  Object.values(mocks).forEach((m) => m.mockReset?.());
+  mocks.getState.mockReturnValue({ root: null });
+  mocks.waitHydrated.mockResolvedValue(undefined);
+});
+
+describe('createUserTerminal — 共用创建流程', () => {
+  it('先 await root 恢复(rootRestored),再读 root 当 cwd/workspaceRoot 调 create', async () => {
+    mocks.getState.mockReturnValue({ root: '/repo' });
+    mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-1' } });
+
+    const id = await createUserTerminal();
+
+    expect(mocks.waitHydrated).toHaveBeenCalled();
+    expect(mocks.create).toHaveBeenCalledWith({
+      originHint: 'user',
+      cwd: '/repo',
+      workspaceRoot: '/repo',
+    });
+    expect(id).toBe('term-1');
+    expect(mocks.setPendingFocus).toHaveBeenCalledWith('term-1');
+  });
+
+  it('Phase-5 · 调 IPC create 前先 fire 预取 Terminal chunk(与 create 并行抢跑)', async () => {
+    mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-1' } });
+
+    await createUserTerminal();
+
+    expect(mocks.preloadChunk).toHaveBeenCalledOnce();
+    // 预取必须在 create 之前发起(才能与 create 往返/PTY spawn 并行)
+    expect(mocks.preloadChunk.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.create.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('root 为 null → create 不带 cwd/workspaceRoot(仅 originHint)', async () => {
+    mocks.getState.mockReturnValue({ root: null });
+    mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-2' } });
+
+    await createUserTerminal();
+
+    expect(mocks.create).toHaveBeenCalledWith({ originHint: 'user' });
+  });
+
+  it('CWD_UNRESOLVED 失败 → notify.error workspace 引导 + 返 null,不 focus', async () => {
+    mocks.create.mockResolvedValue({ ok: false, code: 'TERMINAL_CWD_UNRESOLVED' });
+
+    const id = await createUserTerminal();
+
+    expect(id).toBeNull();
+    expect(mocks.notifyError).toHaveBeenCalledOnce();
+    expect(mocks.notifyError.mock.calls[0]?.[0]).toContain('workspace');
+    expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+
+  it('通用失败 → notify.error 带 code + 返 null', async () => {
+    mocks.create.mockResolvedValue({ ok: false, code: 'OTHER' });
+
+    const id = await createUserTerminal();
+
+    expect(id).toBeNull();
+    expect(mocks.notifyError).toHaveBeenCalledWith(
+      expect.stringContaining('OTHER'),
+      expect.objectContaining({ code: 'OTHER' }),
+    );
+  });
+
+  // 终审 P1:退出清理开始后 main 以 TERMINAL_CREATE_CANCELLED 拒绝新建(退出闸)。IPC 以 {ok:false} 返回该码;
+  // 窗口已隐藏,这不是用户可处理的失败 → 与 reject 路径一致静默,不弹错误。
+  it('{ok:false, TERMINAL_CREATE_CANCELLED}(退出闸拒绝)→ 静默返 null,不 notify', async () => {
+    mocks.create.mockResolvedValue({ ok: false, code: 'TERMINAL_CREATE_CANCELLED' });
+
+    const id = await createUserTerminal();
+
+    expect(id).toBeNull();
+    expect(mocks.notifyError).not.toHaveBeenCalled();
+    expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+
+  // a11y(A116,A50/A115 同族):coApi.terminal.create promise reject(IPC 异常)须被捕获,
+  // notify.error + 返 null,不让异常经调用点 void 蒸发(用户点新建终端无反馈)。
+  it('create promise reject(IPC 异常)→ notify.error + 返 null,不 focus', async () => {
+    mocks.create.mockRejectedValue(new Error('ipc down'));
+
+    const id = await createUserTerminal();
+
+    expect(id).toBeNull();
+    expect(mocks.notifyError).toHaveBeenCalledOnce();
+    expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+
+  it('成功但无 id → 返 null,不 focus', async () => {
+    mocks.create.mockResolvedValue({ ok: true, data: {} });
+
+    const id = await createUserTerminal();
+
+    expect(id).toBeNull();
+    expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+});

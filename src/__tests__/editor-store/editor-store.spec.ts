@@ -1,0 +1,1570 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  appendEditorTab,
+  createTab,
+  findEditorTabIndexById,
+  getEffectiveMode,
+  getStateAfterClosingTab,
+  getStateAfterClosingTabsOutsideRoot,
+  getStateAfterRemovingPath,
+  getStateAfterRemovingPaths,
+  getStateAfterRenamingPath,
+  isTabMilkdownUnsafe,
+  replaceTabAt,
+  useEditorStore,
+  type EditorTab,
+} from '../../stores/editor.store';
+import {
+  PATH_ARRAY_MAX,
+  PATH_STR_MAX,
+} from '../../../electron/shared/explorer-persistence-schema';
+
+const makeTab = (overrides: Partial<EditorTab> = {}): EditorTab => ({
+  id: '/x/a.md',
+  filePath: '/x/a.md',
+  content: 'hello',
+  originalContent: 'hello',
+  dirty: false,
+  ...overrides,
+});
+
+beforeEach(() => {
+  useEditorStore.setState({
+    tabs: [],
+    activeTabId: null,
+    mode: 'source',
+    editorFocusPulse: 0,
+    chromeVersion: 0,
+  });
+});
+
+// 跨平台(复查 P2):路径包含判定走 path-cross.isSameOrInsidePath 的「平台感知」大小写
+// (Windows 运行时不敏感),与 pathEquals 同策。Windows 行为测试需 mock navigator.platform。
+const origPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+afterEach(() => {
+  if (origPlatform) Object.defineProperty(navigator, 'platform', origPlatform);
+  else delete (navigator as { platform?: string }).platform; // 删 own-prop 覆盖,防 Win32 泄漏
+});
+function setPlatform(p: string): void {
+  Object.defineProperty(navigator, 'platform', { value: p, configurable: true });
+}
+
+// ────────────────────────────────────────────────────────────
+// createTab
+// ────────────────────────────────────────────────────────────
+
+describe('createTab', () => {
+  it('有 filePath → id = filePath,originalContent = content,dirty=false', () => {
+    const t = createTab('/x/a.md', 'hello');
+    expect(t).toEqual({
+      id: '/x/a.md',
+      filePath: '/x/a.md',
+      content: 'hello',
+      originalContent: 'hello',
+      dirty: false,
+      milkdownUnsafe: false, // perf P4:派生缓存,'hello' 无 frontmatter/wiki
+    });
+  });
+
+  it('perf P4 · createTab 算 milkdownUnsafe 派生缓存', () => {
+    // markdown + wiki-link → true
+    expect(createTab('/x/a.md', 'see [[Note]]').milkdownUnsafe).toBe(true);
+    // markdown + frontmatter → true
+    expect(createTab('/x/a.md', '---\nk: v\n---\n').milkdownUnsafe).toBe(true);
+    // markdown + 普通正文 → false
+    expect(createTab('/x/a.md', 'plain text').milkdownUnsafe).toBe(false);
+    // 非 markdown(即便含 wiki 样式)→ false(短路不扫描)
+    expect(createTab('/x/a.ts', 'arr[[0]]').milkdownUnsafe).toBe(false);
+  });
+
+  it('perf P5 · isTabMilkdownUnsafe 优先读缓存,缺省回退现场计算', () => {
+    expect(isTabMilkdownUnsafe(null)).toBe(false);
+    // 缓存存在 → 直接读(即便与 content 不一致也信缓存,证明走的是缓存路径)
+    const cached = makeTab({
+      filePath: '/x/a.md',
+      content: 'see [[Note]]', // 实际 unsafe
+      milkdownUnsafe: false, // 但缓存说 false
+    });
+    expect(isTabMilkdownUnsafe(cached)).toBe(false);
+    // 缓存缺省(undefined)→ 回退现场算 content
+    const uncached = makeTab({
+      filePath: '/x/a.md',
+      content: 'see [[Note]]',
+      milkdownUnsafe: undefined,
+    });
+    expect(isTabMilkdownUnsafe(uncached)).toBe(true);
+  });
+
+  it('无 filePath → id 以 untitled- 开头', () => {
+    const t = createTab(null, '');
+    expect(t.id.startsWith('untitled-')).toBe(true);
+    expect(t.filePath).toBeNull();
+  });
+
+  it('两次无 filePath 创建 → id 不重复', () => {
+    const t1 = createTab(null, '');
+    const t2 = createTab(null, '');
+    expect(t1.id).not.toBe(t2.id);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 初态
+// ────────────────────────────────────────────────────────────
+
+describe('editor.store · 初态', () => {
+  it('tabs 空,activeTabId null,mode source', () => {
+    const s = useEditorStore.getState();
+    expect(s.tabs).toEqual([]);
+    expect(s.activeTabId).toBeNull();
+    expect(s.mode).toBe('source');
+  });
+
+  it('getEffectiveMode unsafe markdown 强制 source,safe content 返回 state.mode', () => {
+    useEditorStore.setState({ mode: 'edit' });
+    const unsafe = '---\nid: demo\n---\n# Demo\n';
+    const safe = '# Demo\nplain prose\n';
+
+    expect(
+      getEffectiveMode(
+        makeTab({
+          content: unsafe,
+          originalContent: unsafe,
+        }),
+      ),
+    ).toBe('source');
+    expect(
+      getEffectiveMode(
+        makeTab({
+          content: safe,
+          originalContent: safe,
+        }),
+      ),
+    ).toBe('edit');
+  });
+});
+
+describe('editor.store · tab array helpers', () => {
+  it('findEditorTabIndexById 单趟查找,不调用 tabs.findIndex', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    const findIndexSpy = vi.spyOn(tabs, 'findIndex');
+
+    try {
+      expect(findEditorTabIndexById(tabs, '/b')).toBe(1);
+      expect(findEditorTabIndexById(tabs, '/missing')).toBe(-1);
+      expect(findIndexSpy).not.toHaveBeenCalled();
+    } finally {
+      findIndexSpy.mockRestore();
+    }
+  });
+
+  it('replaceTabAt 预分配替换,不通过 push 扩容', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    const replacement = makeTab({ id: '/next' });
+    const next = replaceTabAt(tabs, 1, replacement);
+
+    expect(next).toEqual([tabs[0], replacement]);
+    expect(replaceTabAt.toString()).not.toContain('.push(');
+  });
+
+  it('replaceTabAt 同对象替换时返回原 tabs 引用', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    expect(replaceTabAt(tabs, 1, tabs[1]!)).toBe(tabs);
+  });
+
+  it('appendEditorTab 预分配追加,不通过 spread/push 拷贝', () => {
+    const tabs = [makeTab({ id: '/a' })];
+    const tab = makeTab({ id: '/b' });
+    const next = appendEditorTab(tabs, tab);
+
+    expect(next).toEqual([tabs[0], tab]);
+    expect(appendEditorTab.toString()).not.toContain('.push(');
+    expect(appendEditorTab.toString()).not.toContain('...');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// openTab
+// ────────────────────────────────────────────────────────────
+
+describe('openTab', () => {
+  it('新 tab → 追加 + 设 activeTabId', () => {
+    const t = makeTab({ id: '/a' });
+    useEditorStore.getState().openTab(t);
+    const s = useEditorStore.getState();
+    expect(s.tabs).toEqual([t]);
+    expect(s.activeTabId).toBe('/a');
+  });
+
+  it('已存在(同 id)→ 不重复追加,只切 activeTabId', () => {
+    const t1 = makeTab({ id: '/a' });
+    const t2 = makeTab({ id: '/b' });
+    const open = useEditorStore.getState().openTab;
+    open(t1);
+    open(t2);
+    open(t1); // 已存在,只切活跃
+    const s = useEditorStore.getState();
+    expect(s.tabs).toHaveLength(2);
+    expect(s.tabs.map((t) => t.id)).toEqual(['/a', '/b']);
+    expect(s.activeTabId).toBe('/a');
+  });
+
+  it('查重已打开 tab 走单趟 helper,不调用 tabs.some/findIndex', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const someSpy = vi.spyOn(tabs, 'some');
+    const findIndexSpy = vi.spyOn(tabs, 'findIndex');
+
+    try {
+      useEditorStore.getState().openTab(makeTab({ id: '/b' }));
+      expect(someSpy).not.toHaveBeenCalled();
+      expect(findIndexSpy).not.toHaveBeenCalled();
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(useEditorStore.getState().activeTabId).toBe('/b');
+    } finally {
+      someSpy.mockRestore();
+      findIndexSpy.mockRestore();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// switchTab
+// ────────────────────────────────────────────────────────────
+
+describe('switchTab', () => {
+  it('切到已存在 tab', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/a',
+    });
+    useEditorStore.getState().switchTab('/b');
+    expect(useEditorStore.getState().activeTabId).toBe('/b');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// editorFocusPulse(issue #22)
+//   场景:文档已打开,用户切到 terminal 后又点资源管理器同一文档。
+//   activeTabId 不变 → DockShell 若只 deps activeTabId,useEffect 不会
+//   再次跑 setActive('editor') → terminal panel 仍盖住。修法:openTab/
+//   switchTab 每次都 +1 一个递增 token,DockShell deps 进去。
+// ────────────────────────────────────────────────────────────
+
+describe('editorFocusPulse', () => {
+  it('初态 = 0', () => {
+    expect(useEditorStore.getState().editorFocusPulse).toBe(0);
+  });
+
+  it('openTab 新 tab → pulse +1', () => {
+    const before = useEditorStore.getState().editorFocusPulse;
+    useEditorStore.getState().openTab(makeTab({ id: '/a' }));
+    expect(useEditorStore.getState().editorFocusPulse).toBe(before + 1);
+  });
+
+  it('openTab 已存在 id → activeTabId 不变也 pulse +1(#22)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' })],
+      activeTabId: '/a',
+      editorFocusPulse: 5,
+    });
+    useEditorStore.getState().openTab(makeTab({ id: '/a' }));
+    expect(useEditorStore.getState().activeTabId).toBe('/a');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(6);
+  });
+
+  // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):tabs 经 snapshotFromStores → openFilePaths
+  //(PATH_ARRAY_MAX cap)。插件 SDK 循环 openFile 海量文件 → 超量则 explorer:write 拒整份。openTab 自限。
+  it('E278 filePath 超 PATH_STR_MAX → 拒开(no-op)', () => {
+    const longPath = '/' + 'x'.repeat(PATH_STR_MAX);
+    useEditorStore.getState().openTab(makeTab({ id: longPath, filePath: longPath }));
+    expect(useEditorStore.getState().tabs.length).toBe(0);
+  });
+
+  it('E278 tabs 达 PATH_ARRAY_MAX → 拒开新 tab(不超持久化上限)', () => {
+    const full = Array.from({ length: PATH_ARRAY_MAX }, (_, i) =>
+      makeTab({ id: `/f${i}`, filePath: `/f${i}` }),
+    );
+    useEditorStore.setState({ tabs: full, activeTabId: '/f0' });
+    useEditorStore.getState().openTab(makeTab({ id: '/overflow', filePath: '/overflow' }));
+    expect(useEditorStore.getState().tabs.length).toBe(PATH_ARRAY_MAX);
+    expect(
+      useEditorStore.getState().tabs.some((t) => t.id === '/overflow'),
+    ).toBe(false);
+  });
+
+  it('switchTab 同 id → activeTabId 不变也 pulse +1(#22)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' })],
+      activeTabId: '/a',
+      editorFocusPulse: 7,
+    });
+    useEditorStore.getState().switchTab('/a');
+    expect(useEditorStore.getState().activeTabId).toBe('/a');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(8);
+  });
+
+  it('switchTab 异 id → pulse +1', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/a',
+      editorFocusPulse: 3,
+    });
+    useEditorStore.getState().switchTab('/b');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(4);
+  });
+
+  // 持久化会话恢复(hydrateEditorTabs)不是「请求 editor 激活」:不递增 pulse,DockShell 不据此抢活动面板。
+  it('openTab(tab, { requestFocus: false }) → 打开并设 active,但 pulse 不变', () => {
+    useEditorStore.setState({ editorFocusPulse: 2 });
+    useEditorStore.getState().openTab(makeTab({ id: '/a' }), { requestFocus: false });
+    expect(useEditorStore.getState().activeTabId).toBe('/a');
+    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect(useEditorStore.getState().editorFocusPulse).toBe(2);
+  });
+
+  it('switchTab(id, { requestFocus: false }) → 切换 active,但 pulse 不变', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/a',
+      editorFocusPulse: 3,
+    });
+    useEditorStore.getState().switchTab('/b', { requestFocus: false });
+    expect(useEditorStore.getState().activeTabId).toBe('/b');
+    expect(useEditorStore.getState().editorFocusPulse).toBe(3);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// closeTab(委托给 getStateAfterClosingTab 纯函数)
+// ────────────────────────────────────────────────────────────
+
+describe('closeTab', () => {
+  it('关非活跃 tab → 自身减少,active 不变', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/a',
+    });
+    useEditorStore.getState().closeTab('/b');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual(['/a']);
+    expect(s.activeTabId).toBe('/a');
+  });
+
+  it('关活跃 tab,后面有 → 切到下一个', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' }), makeTab({ id: '/c' })],
+      activeTabId: '/b',
+    });
+    useEditorStore.getState().closeTab('/b');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
+    expect(s.activeTabId).toBe('/c');
+  });
+
+  it('关活跃尾部 tab → 切到前一个', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/b',
+    });
+    useEditorStore.getState().closeTab('/b');
+    expect(useEditorStore.getState().activeTabId).toBe('/a');
+  });
+
+  it('关最后一个 → activeTabId null', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' })],
+      activeTabId: '/a',
+    });
+    useEditorStore.getState().closeTab('/a');
+    const s = useEditorStore.getState();
+    expect(s.tabs).toEqual([]);
+    expect(s.activeTabId).toBeNull();
+  });
+
+  it('getStateAfterClosingTab 关最后一个时复用稳定空 tabs', () => {
+    const first = getStateAfterClosingTab([makeTab({ id: '/a' })], '/a', '/a');
+    const second = getStateAfterClosingTab([makeTab({ id: '/b' })], '/b', '/b');
+
+    expect(first.tabs).toEqual([]);
+    expect(second.tabs).toBe(first.tabs);
+    expect(first.activeTabId).toBeNull();
+  });
+
+  it('关不存在的 id → 状态不变', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' })],
+      activeTabId: '/a',
+    });
+    useEditorStore.getState().closeTab('/nope');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual(['/a']);
+    expect(s.activeTabId).toBe('/a');
+  });
+
+  it('关不存在的 id 时不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a' })];
+    useEditorStore.setState({
+      tabs,
+      activeTabId: '/a',
+    });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().closeTab('/nope');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('命中关闭项时单次扫描 tabs,不 findIndex 后再 push 重建', () => {
+    const tabs = [
+      makeTab({ id: '/a' }),
+      makeTab({ id: '/b' }),
+      makeTab({ id: '/c' }),
+    ];
+    const findIndexSpy = vi.spyOn(tabs, 'findIndex');
+
+    try {
+      const r = getStateAfterClosingTab(tabs, '/b', '/b');
+
+      expect(findIndexSpy).not.toHaveBeenCalled();
+      expect(getStateAfterClosingTab.toString()).not.toContain('.push(');
+      expect(r.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
+      expect(r.activeTabId).toBe('/c');
+    } finally {
+      findIndexSpy.mockRestore();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// getStateAfterRemovingPath / removePath
+// 文件被删除(trash)时,Editor 中对应 tab 应自动关闭。
+// 删除文件夹 → 该文件夹下所有打开 tab 都关。
+// ────────────────────────────────────────────────────────────
+
+describe('getStateAfterRemovingPath', () => {
+  it('没有 tab 匹配 → 状态不变(同引用)', () => {
+    const tabs = [makeTab({ id: '/x/a.md' })];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/y/none.md');
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/x/a.md');
+  });
+
+  it('没有 tab 匹配时不预分配 remaining 数组', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/y/none.md');
+
+    expect(r.tabs).toBe(tabs);
+    expect(getStateAfterRemovingPath.toString()).not.toMatch(
+      /new Array(?:<[^>]+>)?\(tabs\.length\)/,
+    );
+  });
+
+  it('删除单文件,精确匹配 → 关该 tab', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x/a.md');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/b.md']);
+    expect(r.activeTabId).toBe('/x/b.md');
+  });
+
+  it('删除文件夹 → 关其下所有 tab,不误伤同名前缀文件', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foo/sub/b.md', filePath: '/x/foo/sub/b.md' }),
+      makeTab({ id: '/x/foobar.md', filePath: '/x/foobar.md' }), // 同前缀 ≠ 子
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/foo/a.md', '/x/foo');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/foobar.md', '/y/c.md']);
+  });
+
+  it('active 被关,后面有未关 → 切到下一个', () => {
+    const tabs = [
+      makeTab({ id: '/a.md', filePath: '/a.md' }),
+      makeTab({ id: '/b.md', filePath: '/b.md' }),
+      makeTab({ id: '/c.md', filePath: '/c.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/b.md', '/b.md');
+    expect(r.activeTabId).toBe('/c.md');
+  });
+
+  it('active 是被关的尾部 → 切到前一个', () => {
+    const tabs = [
+      makeTab({ id: '/a.md', filePath: '/a.md' }),
+      makeTab({ id: '/b.md', filePath: '/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/b.md', '/b.md');
+    expect(r.activeTabId).toBe('/a.md');
+  });
+
+  it('删除目录覆盖所有 tab → activeTabId null', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x');
+    expect(r.tabs).toEqual([]);
+    expect(r.activeTabId).toBeNull();
+  });
+
+  it('删除路径删光 clean tabs 时复用稳定空 tabs', () => {
+    const first = getStateAfterRemovingPath(
+      [makeTab({ id: '/a.md', filePath: '/a.md' })],
+      '/a.md',
+      '/a.md',
+    );
+    const second = getStateAfterRemovingPath(
+      [makeTab({ id: '/b.md', filePath: '/b.md' })],
+      '/b.md',
+      '/b.md',
+    );
+
+    expect(first.tabs).toEqual([]);
+    expect(second.tabs).toBe(first.tabs);
+  });
+
+  // 数据安全(复查 P1):trash 一个在编辑器里有未保存改动的文件时,无条件
+  // 关闭 tab 会绕过 EditorPanel 的 dirty 关闭确认 → 内存未保存编辑静默丢失(磁盘
+  // 旧版本进废纸篓可恢复,但内存增量永久丢)。参考 VSCode:删除有未保存改动的文件
+  // 保留 dirty 编辑器。故 dirty tab 必须存活,仅 clean tab 自动关闭。
+  it('删除单文件命中 dirty tab → 保留该 tab(不静默丢未保存编辑)', () => {
+    const tabs = [makeTab({ id: '/x/a.md', filePath: '/x/a.md', dirty: true })];
+    const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x/a.md');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/a.md']); // 保留
+    expect(r.activeTabId).toBe('/x/a.md'); // 仍为活动
+  });
+
+  it('删除目录 → clean 子 tab 关闭,dirty 子 tab 保留', () => {
+    const tabs = [
+      makeTab({ id: '/x/clean.md', filePath: '/x/clean.md', dirty: false }),
+      makeTab({ id: '/x/dirty.md', filePath: '/x/dirty.md', dirty: true }),
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md', dirty: false }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/x/clean.md', '/x');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/dirty.md', '/y/c.md']);
+  });
+
+  it('untitled tab(filePath=null)不受任何路径影响', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [draft, makeTab({ id: '/x/a.md', filePath: '/x/a.md' })];
+    const r = getStateAfterRemovingPath(tabs, draft.id, '/x');
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+    expect(r.activeTabId).toBe(draft.id);
+  });
+
+  it('Windows 反斜杠路径:删除目录关其下子文件', () => {
+    const tabs = [
+      makeTab({ id: 'C:\\x\\a.md', filePath: 'C:\\x\\a.md' }),
+      makeTab({ id: 'C:\\y\\b.md', filePath: 'C:\\y\\b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, 'C:\\x\\a.md', 'C:\\x');
+    expect(r.tabs.map((t) => t.id)).toEqual(['C:\\y\\b.md']);
+  });
+
+  // 跨平台(复查 P2):Windows FS 大小写不敏感,删除 'C:\Repo\dir' 应关其下 clean tab
+  // 'c:\repo\dir\a.md'(大小写不同);否则 tab 不关,用户基于已删旧路径保存会复活文件。
+  it('Windows 大小写不敏感:删除目录关其下仅大小写不同的 clean 子文件', () => {
+    setPlatform('Win32');
+    const tabs = [
+      makeTab({ id: 'c:\\repo\\dir\\a.md', filePath: 'c:\\repo\\dir\\a.md' }),
+      makeTab({ id: 'C:\\repo\\other\\b.md', filePath: 'C:\\repo\\other\\b.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, 'c:\\repo\\dir\\a.md', 'C:\\Repo\\dir');
+    // 仅 dir 下的 a.md 被关(大小写折叠匹配);other/b.md 保留
+    expect(r.tabs.map((t) => t.id)).toEqual(['C:\\repo\\other\\b.md']);
+  });
+
+  it('POSIX 大小写敏感:删除 /repo/Dir 不关 /repo/dir/a.md(不同目录)', () => {
+    setPlatform('MacIntel');
+    const tabs = [
+      makeTab({ id: '/repo/dir/a.md', filePath: '/repo/dir/a.md' }),
+    ];
+    const r = getStateAfterRemovingPath(tabs, '/repo/dir/a.md', '/repo/Dir');
+    // POSIX:/repo/Dir ≠ /repo/dir → 不匹配 → tab 不关(状态不变)
+    expect(r.tabs).toBe(tabs);
+  });
+
+  it('删除路径命中时单次分类 tabs,不再 tabs.filter 生成 remaining', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md', dirty: true }),
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md' }),
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/x');
+      const filterCallsOnTabs = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(filterCallsOnTabs).toBe(0);
+      expect(getStateAfterRemovingPath.toString()).not.toContain(
+        'remaining.push(',
+      );
+      expect(r.tabs.map((t) => t.id)).toEqual(['/x/b.md', '/y/c.md']);
+      expect(r.activeTabId).toBe('/x/b.md');
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// getStateAfterRenamingPath / renamePath
+// 文件 / 目录被重命名或移动时,Editor 中对应 tab 的 id+filePath 应跟着改。
+// ────────────────────────────────────────────────────────────
+
+describe('getStateAfterRenamingPath', () => {
+  it('没有 tab 匹配 → 状态不变(同引用)', () => {
+    const tabs = [makeTab({ id: '/x/a.md' })];
+    const r = getStateAfterRenamingPath(
+      tabs,
+      '/x/a.md',
+      '/y/none.md',
+      '/y/renamed.md',
+    );
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/x/a.md');
+  });
+
+  // 跨平台(复查 P2,同 remove/close 族):Windows 大小写不敏感,rename 目录时仅
+  // 大小写不同的子 tab 须跟改路径,否则 tab 指向失效旧路径。后缀大小写按原 filePath 保留。
+  it('Windows 大小写不敏感:rename 目录改其下仅大小写不同的子 tab', () => {
+    setPlatform('Win32');
+    const tabs = [
+      makeTab({ id: 'c:\\repo\\dir\\a.md', filePath: 'c:\\repo\\dir\\a.md' }),
+    ];
+    const r = getStateAfterRenamingPath(
+      tabs,
+      'c:\\repo\\dir\\a.md',
+      'C:\\Repo\\dir',
+      'C:\\Repo\\newdir',
+    );
+    // 子 tab 跟改:newPath + 原后缀(后缀大小写来自原 filePath)
+    expect(r.tabs[0]?.filePath).toBe('C:\\Repo\\newdir\\a.md');
+  });
+
+  it('POSIX 大小写敏感:rename /repo/Dir 不影响 /repo/dir/a.md', () => {
+    setPlatform('MacIntel');
+    const tabs = [makeTab({ id: '/repo/dir/a.md', filePath: '/repo/dir/a.md' })];
+    const r = getStateAfterRenamingPath(
+      tabs,
+      '/repo/dir/a.md',
+      '/repo/Dir',
+      '/repo/Renamed',
+    );
+    expect(r.tabs).toBe(tabs); // 不同目录(大小写敏感)→ 不改
+  });
+
+  it('精确匹配 → tab.id 与 filePath 同步改成 newPath,dirty 保留', () => {
+    const tabs = [
+      makeTab({
+        id: '/x/a.md',
+        filePath: '/x/a.md',
+        content: 'edited',
+        originalContent: 'old',
+        dirty: true,
+      }),
+    ];
+    const r = getStateAfterRenamingPath(tabs, '/x/a.md', '/x/a.md', '/x/b.md');
+    expect(r.tabs[0]?.id).toBe('/x/b.md');
+    expect(r.tabs[0]?.filePath).toBe('/x/b.md');
+    expect(r.tabs[0]?.dirty).toBe(true);
+    expect(r.tabs[0]?.content).toBe('edited');
+    expect(r.activeTabId).toBe('/x/b.md');
+  });
+
+  it('目录 rename → 子文件 tab 前缀 rewrite,sibling 不动', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foo/sub/b.md', filePath: '/x/foo/sub/b.md' }),
+      makeTab({ id: '/x/foobar.md', filePath: '/x/foobar.md' }), // 同前缀 ≠ 子
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md' }),
+    ];
+    const r = getStateAfterRenamingPath(tabs, '/x/foo/a.md', '/x/foo', '/x/baz');
+    expect(r.tabs.map((t) => t.id)).toEqual([
+      '/x/baz/a.md',
+      '/x/baz/sub/b.md',
+      '/x/foobar.md',
+      '/y/c.md',
+    ]);
+  });
+
+  it('untitled tab(filePath=null)不受影响', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [draft, makeTab({ id: '/x/a.md', filePath: '/x/a.md' })];
+    const r = getStateAfterRenamingPath(tabs, draft.id, '/x/a.md', '/x/b.md');
+    expect(r.tabs[0]?.id).toBe(draft.id); // untitled 不动
+    expect(r.tabs[1]?.id).toBe('/x/b.md');
+    expect(r.activeTabId).toBe(draft.id);
+  });
+
+  it('active 是被改的目录子文件 → activeTabId 跟到新路径', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foo/b.md', filePath: '/x/foo/b.md' }),
+    ];
+    const r = getStateAfterRenamingPath(
+      tabs,
+      '/x/foo/a.md',
+      '/x/foo',
+      '/x/bar',
+    );
+    expect(r.activeTabId).toBe('/x/bar/a.md');
+  });
+
+  it('Windows 反斜杠目录 rename → 子文件 tab rewrite', () => {
+    const tabs = [makeTab({ id: 'C:\\x\\a.md', filePath: 'C:\\x\\a.md' })];
+    const r = getStateAfterRenamingPath(
+      tabs,
+      'C:\\x\\a.md',
+      'C:\\x',
+      'C:\\y',
+    );
+    expect(r.tabs[0]?.id).toBe('C:\\y\\a.md');
+  });
+
+  it('rename 命中时不通过 tabs.map 生成整组中间数组', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foo/b.md', filePath: '/x/foo/b.md' }),
+      makeTab({ id: '/y/c.md', filePath: '/y/c.md' }),
+    ];
+    const mapSpy = vi.spyOn(Array.prototype, 'map');
+
+    try {
+      const r = getStateAfterRenamingPath(
+        tabs,
+        '/x/foo/b.md',
+        '/x/foo',
+        '/x/bar',
+      );
+      const mapCallsOnTabs = mapSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(mapCallsOnTabs).toBe(0);
+      expect(getStateAfterRenamingPath.toString()).not.toContain('.push(');
+      expect(r.tabs[0]?.id).toBe('/x/bar/a.md');
+      expect(r.tabs[1]?.id).toBe('/x/bar/b.md');
+      expect(r.tabs[2]?.id).toBe('/y/c.md');
+      expect(r.activeTabId).toBe('/x/bar/b.md');
+    } finally {
+      mapSpy.mockRestore();
+    }
+  });
+});
+
+describe('renamePath(store method)', () => {
+  it('单文件 rename → tab.id 与 activeTabId 同步', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md', filePath: '/x/a.md' })],
+      activeTabId: '/x/a.md',
+    });
+    useEditorStore.getState().renamePath('/x/a.md', '/x/b.md');
+    const s = useEditorStore.getState();
+    expect(s.tabs[0]?.id).toBe('/x/b.md');
+    expect(s.activeTabId).toBe('/x/b.md');
+  });
+
+  it('目录 move → 子 tab 全部 rewrite', () => {
+    useEditorStore.setState({
+      tabs: [
+        makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+        makeTab({ id: '/x/sub/b.md', filePath: '/x/sub/b.md' }),
+      ],
+      activeTabId: '/x/sub/b.md',
+    });
+    useEditorStore.getState().renamePath('/x', '/y');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual(['/y/a.md', '/y/sub/b.md']);
+    expect(s.activeTabId).toBe('/y/sub/b.md');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// getStateAfterClosingTabsOutsideRoot / closeTabsOutsideRoot
+// 切换工作区 root 时,旧 root 下的 file tab 应自动关闭;
+// untitled tab(filePath=null)始终保留。
+// ────────────────────────────────────────────────────────────
+
+describe('getStateAfterClosingTabsOutsideRoot', () => {
+  it('全部 tab 都在 root 下 → 状态不变(同引用)', () => {
+    const tabs = [
+      makeTab({ id: '/work/a.md', filePath: '/work/a.md' }),
+      makeTab({ id: '/work/sub/b.md', filePath: '/work/sub/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/work/a.md', '/work');
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/work/a.md');
+  });
+
+  it('全部 tab 都保留时不预分配 remaining 数组', () => {
+    const tabs = [
+      makeTab({ id: '/work/a.md', filePath: '/work/a.md' }),
+      makeTab({ id: '/work/sub/b.md', filePath: '/work/sub/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/work/a.md', '/work');
+
+    expect(r.tabs).toBe(tabs);
+    expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toMatch(
+      /new Array(?:<[^>]+>)?\(tabs\.length\)/,
+    );
+  });
+
+  // 数据安全(复查 P2,同 path-scope isWithinScope #17):root 本身以分隔符结尾
+  // (文件系统根)时,旧实现拼 `root + '/'` 得 `//` / `C:\\`,根下文件都不匹配 → clean
+  // tab 全被误关 → 持久化把 openFilePaths 写空丢编辑会话。
+  it('root=POSIX 根 "/" → 根下 clean tab 保留(不被误判 root 外)', () => {
+    const tabs = [
+      makeTab({ id: '/a.md', filePath: '/a.md' }),
+      makeTab({ id: '/sub/b.md', filePath: '/sub/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/a.md', '/');
+    expect(r.tabs).toBe(tabs); // 全保留,状态不变
+    expect(r.activeTabId).toBe('/a.md');
+  });
+
+  it('root=Windows 盘根 "C:\\\\" → 盘根下 clean tab 保留', () => {
+    const tabs = [
+      makeTab({ id: 'C:\\a.md', filePath: 'C:\\a.md' }),
+      makeTab({ id: 'C:\\sub\\b.md', filePath: 'C:\\sub\\b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, 'C:\\a.md', 'C:\\');
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('C:\\a.md');
+  });
+
+  it('root=根 "/" 仍关闭其它盘/不存在的怪异路径之外项(前缀仍生效)', () => {
+    // 根 "/" 下任意绝对路径都应保留;只有非 "/" 开头(理论上不会出现)才关。
+    const tabs = [makeTab({ id: '/x/y.md', filePath: '/x/y.md' })];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/x/y.md', '/');
+    expect(r.tabs).toBe(tabs);
+  });
+
+  // 跨平台(复查 P2):Windows 文件系统大小写不敏感,root 与 tab path 仅大小写不同
+  // (如 root='c:\\repo' vs tab='C:\\Repo\\a.md',drive letter / 目录大小写常因来源不同而异)
+  // 是同一 workspace;大小写敏感 startsWith 会判 root 外 → 误关 clean tab 丢编辑会话。
+  it('Windows 路径大小写不敏感:仅大小写不同的 root 下 clean tab 保留', () => {
+    setPlatform('Win32');
+    const tabs = [
+      makeTab({ id: 'C:\\Repo\\a.md', filePath: 'C:\\Repo\\a.md' }),
+      makeTab({ id: 'c:\\repo\\sub\\b.md', filePath: 'c:\\repo\\sub\\b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, 'C:\\Repo\\a.md', 'c:\\repo');
+    expect(r.tabs).toBe(tabs); // 全保留(大小写折叠后都在 root 下)
+  });
+
+  it('POSIX 路径保持大小写敏感:/repo 不含 /Repo/a.md(应关闭)', () => {
+    setPlatform('MacIntel');
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/Repo/a.md', filePath: '/Repo/a.md' }), // 大小写不同 → root 外
+      draft,
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/Repo/a.md', '/repo');
+    // POSIX 大小写敏感:/Repo/a.md 不在 /repo 下 → 关;untitled 保留
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+  });
+
+  it('切换到不重叠 root → 全部 file tab 关闭,untitled 保留', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      draft,
+      makeTab({ id: '/old/b.md', filePath: '/old/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', '/new');
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+    expect(r.activeTabId).toBe(draft.id);
+  });
+
+  it('root=null(关闭文件夹)→ 关所有 file tab,只剩 untitled', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      draft,
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', null);
+    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+    expect(r.activeTabId).toBe(draft.id);
+  });
+
+  it('root=null + 全是 file tab → 全关,activeTabId null', () => {
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      makeTab({ id: '/old/b.md', filePath: '/old/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', null);
+    expect(r.tabs).toEqual([]);
+    expect(r.activeTabId).toBeNull();
+  });
+
+  it('切 root 关光 clean file tabs 时复用稳定空 tabs', () => {
+    const first = getStateAfterClosingTabsOutsideRoot(
+      [makeTab({ id: '/old/a.md', filePath: '/old/a.md' })],
+      '/old/a.md',
+      '/new',
+    );
+    const second = getStateAfterClosingTabsOutsideRoot(
+      [makeTab({ id: '/other/b.md', filePath: '/other/b.md' })],
+      '/other/b.md',
+      '/new',
+    );
+
+    expect(first.tabs).toEqual([]);
+    expect(second.tabs).toBe(first.tabs);
+  });
+
+  it('切换到子目录 → 父目录文件关,子目录文件留', () => {
+    const tabs = [
+      makeTab({ id: '/work/top.md', filePath: '/work/top.md' }),
+      makeTab({ id: '/work/sub/a.md', filePath: '/work/sub/a.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(
+      tabs,
+      '/work/top.md',
+      '/work/sub',
+    );
+    expect(r.tabs.map((t) => t.id)).toEqual(['/work/sub/a.md']);
+    expect(r.activeTabId).toBe('/work/sub/a.md');
+  });
+
+  it('同前缀但非子目录(/x/foo 切到 /x/foobar)→ /x/foo/* 全关', () => {
+    const tabs = [
+      makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
+      makeTab({ id: '/x/foobar/b.md', filePath: '/x/foobar/b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(
+      tabs,
+      '/x/foo/a.md',
+      '/x/foobar',
+    );
+    expect(r.tabs.map((t) => t.id)).toEqual(['/x/foobar/b.md']);
+  });
+
+  it('Windows 反斜杠路径:子目录判定生效', () => {
+    const tabs = [
+      makeTab({ id: 'C:\\old\\a.md', filePath: 'C:\\old\\a.md' }),
+      makeTab({ id: 'C:\\new\\b.md', filePath: 'C:\\new\\b.md' }),
+    ];
+    const r = getStateAfterClosingTabsOutsideRoot(
+      tabs,
+      'C:\\old\\a.md',
+      'C:\\new',
+    );
+    expect(r.tabs.map((t) => t.id)).toEqual(['C:\\new\\b.md']);
+  });
+
+  it('active 被关时单次分类 tabs,不再 filter+map 重算删除集合', () => {
+    const draft = createTab(null, 'd');
+    const tabs = [
+      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+      makeTab({ id: '/new/b.md', filePath: '/new/b.md' }),
+      draft,
+    ];
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', '/new');
+      const filterCallsOnTabs = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(filterCallsOnTabs).toBe(0);
+      expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toContain(
+        'remaining.push(',
+      );
+      expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toContain(
+        'new Set',
+      );
+      expect(r.tabs.map((t) => t.id)).toEqual(['/new/b.md', draft.id]);
+      expect(r.activeTabId).toBe('/new/b.md');
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+});
+
+describe('closeTabsOutsideRoot(store method)', () => {
+  it('切换 root → outside file tab 关,untitled 留,active 切到剩余', () => {
+    const draft = createTab(null, 'd');
+    useEditorStore.setState({
+      tabs: [
+        makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
+        draft,
+        makeTab({ id: '/new/b.md', filePath: '/new/b.md' }),
+      ],
+      activeTabId: '/old/a.md',
+    });
+    useEditorStore.getState().closeTabsOutsideRoot('/new');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual([draft.id, '/new/b.md']);
+    // active 被关 → 取原序后向第一个 remaining(原 idx 顺序:draft 比
+    // /new/b.md 更靠前,所以是 draft;untitled 也算合法 active)
+    expect(s.activeTabId).toBe(draft.id);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// reloadFromDisk
+// 外部修改文件时,非 dirty tab 同步;dirty 跳过避免覆盖用户编辑。
+// ────────────────────────────────────────────────────────────
+
+describe('reloadFromDisk', () => {
+  it('非 dirty tab → content + originalContent 同步,dirty 仍 false', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md', content: 'old', originalContent: 'old', dirty: false })],
+      activeTabId: '/x/a.md',
+    });
+    useEditorStore.getState().reloadFromDisk('/x/a.md', 'new from disk');
+    const t = useEditorStore.getState().tabs[0]!;
+    expect(t.content).toBe('new from disk');
+    expect(t.originalContent).toBe('new from disk');
+    expect(t.dirty).toBe(false);
+  });
+
+  it('dirty tab → 不动(保护用户改动)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md', content: 'edited', originalContent: 'old', dirty: true })],
+      activeTabId: '/x/a.md',
+    });
+    useEditorStore.getState().reloadFromDisk('/x/a.md', 'new from disk');
+    const t = useEditorStore.getState().tabs[0]!;
+    expect(t.content).toBe('edited');
+    expect(t.originalContent).toBe('old');
+    expect(t.dirty).toBe(true);
+  });
+
+  it('磁盘内容与 originalContent 一致 → 不重渲(同引用)', () => {
+    const before = makeTab({ id: '/x/a.md', content: 'same', originalContent: 'same' });
+    useEditorStore.setState({ tabs: [before], activeTabId: '/x/a.md' });
+    useEditorStore.getState().reloadFromDisk('/x/a.md', 'same');
+    const t = useEditorStore.getState().tabs[0]!;
+    expect(t).toBe(before);
+  });
+
+  it('id 不存在 → 不变(防异步事件打到已关闭 tab)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md' })],
+      activeTabId: '/x/a.md',
+    });
+    expect(() => useEditorStore.getState().reloadFromDisk('/zombie', 'x')).not.toThrow();
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('hello');
+  });
+
+  // symlink tab 的真实目标随每次读盘刷新(外部同步按目标目录/文件名匹配);内容未变时也同步 realPath。
+  it('realPath:随读盘结果更新;内容与 realPath 都未变 → 同引用', () => {
+    const before = makeTab({ id: '/x/CLAUDE.md', content: 'same', originalContent: 'same' });
+    useEditorStore.setState({ tabs: [before], activeTabId: '/x/CLAUDE.md' });
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'same', '/x/AGENTS.md');
+    const t1 = useEditorStore.getState().tabs[0]!;
+    expect(t1.realPath).toBe('/x/AGENTS.md');
+    expect(t1.reloadEpoch ?? 0).toBe(0); // 内容未变:不 remount
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'same', '/x/AGENTS.md');
+    expect(useEditorStore.getState().tabs[0]).toBe(t1);
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'new', '/y/T.md');
+    expect(useEditorStore.getState().tabs[0]).toMatchObject({ content: 'new', realPath: '/y/T.md' });
+    useEditorStore.getState().reloadFromDisk('/x/CLAUDE.md', 'new'); // 不再是链接
+    expect('realPath' in useEditorStore.getState().tabs[0]!).toBe(false);
+  });
+
+  it('createTab:带 realPath 时写入,不带时不出现该字段', () => {
+    expect('realPath' in createTab('/x/a.md', 'a')).toBe(false);
+    expect(createTab('/x/CLAUDE.md', 'a', '/x/AGENTS.md').realPath).toBe('/x/AGENTS.md');
+  });
+});
+
+describe('removePath(store method)', () => {
+  it('删除路径 → tabs 与 activeTabId 一并更新', () => {
+    useEditorStore.setState({
+      tabs: [
+        makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+        makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+      ],
+      activeTabId: '/x/a.md',
+    });
+    useEditorStore.getState().removePath('/x/a.md');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual(['/x/b.md']);
+    expect(s.activeTabId).toBe('/x/b.md');
+  });
+});
+
+// perf:批量删除后一次性关 tab。removePaths 用祖先索引(每 tab O(depth))+ 只 set 一次,
+// 最终 tabs / activeTabId 与逐条 removePath 完全一致;chromeVersion 仅在 tabs 真变化时 bump
+// (与单条规则一致,批量只 bump 一次)。
+describe('removePaths / getStateAfterRemovingPaths(批量 ≡ 逐条)', () => {
+  const ids = (tabs: readonly EditorTab[]) => tabs.map((t) => t.id);
+  const sequential = (tabs: EditorTab[], active: string | null, removed: readonly string[]) => {
+    let cur = { tabs, activeTabId: active };
+    for (const p of removed) cur = getStateAfterRemovingPath(cur.tabs, cur.activeTabId, p);
+    return cur;
+  };
+  const tabsOf = (paths: readonly (string | null)[], dirty: ReadonlySet<string> = new Set()) =>
+    paths.map((p, i) =>
+      makeTab({ id: p ?? `untitled-${i}`, filePath: p, dirty: p !== null && dirty.has(p) }),
+    );
+
+  const posixTabs = tabsOf(
+    ['/r/a.md', '/r/d/x.md', null, '/r/d/y/z.md', '/r/dd.md', '/r/b.md', '/R/b.md', '/r/e/f.md', '/r/dirty.md'],
+    new Set(['/r/dirty.md']),
+  );
+  const removedSets: readonly (readonly string[])[] = [
+    [],
+    ['/none'],
+    ['/r/d'],
+    ['/r/d/', '/r/b.md'],
+    ['/r/a.md', '/r/d', '/r/b.md', '/r/e'],
+    ['/r/d/y', '/r/d'],
+    ['/r/dirty.md', '/r/a.md'],
+    ['/R/B.MD', '/r/E'],
+    ['/'],
+    ['/r'],
+  ];
+
+  it.each(['MacIntel', 'Win32'])('%s:任意 active × 删除集合,批量结果与逐条一致', (platform) => {
+    setPlatform(platform);
+    const tabs = platform === 'Win32'
+      ? tabsOf(['C:\\R\\a.md', 'c:\\r\\D\\x.md', null, 'C:/r/d/y.md', 'C:\\r\\dd.md', 'C:\\r\\b.md'])
+      : posixTabs;
+    const sets: readonly (readonly string[])[] = platform === 'Win32'
+      ? [[], ['c:\\r\\d'], ['C:\\R\\D\\', 'c:/R/B.md'], ['C:\\'], ['c:\\r\\A.MD', 'C:\\r\\dd.md'], ['c:/r']]
+      : removedSets;
+    const actives: (string | null)[] = [null, 'missing', ...ids(tabs)];
+    for (const removed of sets) {
+      for (const active of actives) {
+        const expected = sequential(tabs, active, removed);
+        const got = getStateAfterRemovingPaths(tabs, active, removed);
+        expect({ removed, active, tabs: ids(got.tabs), activeTabId: got.activeTabId }).toEqual({
+          removed,
+          active,
+          tabs: ids(expected.tabs),
+          activeTabId: expected.activeTabId,
+        });
+        // 无变化时保持原引用(与单条一致,免 no-op 通知)
+        if (expected.tabs === tabs) expect(got.tabs).toBe(tabs);
+      }
+    }
+  });
+
+  it('store.removePaths:只 set 一次,chromeVersion 变化规则与逐条一致', () => {
+    const tabs = posixTabs;
+    for (const removed of removedSets) {
+      useEditorStore.setState({ tabs, activeTabId: '/r/d/x.md', chromeVersion: 0 });
+      const seq = sequential(tabs, '/r/d/x.md', removed);
+      let notifications = 0;
+      const unsub = useEditorStore.subscribe(() => {
+        notifications += 1;
+      });
+      useEditorStore.getState().removePaths(removed);
+      unsub();
+      const s = useEditorStore.getState();
+      expect(ids(s.tabs)).toEqual(ids(seq.tabs));
+      expect(s.activeTabId).toBe(seq.activeTabId);
+      const tabsChanged = seq.tabs !== tabs;
+      expect(s.chromeVersion).toBe(tabsChanged ? 1 : 0);
+      expect(notifications).toBe(tabsChanged || seq.activeTabId !== '/r/d/x.md' ? 1 : 0);
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// updateContent
+// ────────────────────────────────────────────────────────────
+
+describe('updateContent', () => {
+  it('content 与 originalContent 不同 → dirty true', () => {
+    useEditorStore.setState({ tabs: [makeTab({ id: '/a' })], activeTabId: '/a' });
+    useEditorStore.getState().updateContent('/a', 'changed');
+    const tab = useEditorStore.getState().tabs.find((t) => t.id === '/a');
+    expect(tab?.content).toBe('changed');
+    expect(tab?.dirty).toBe(true);
+  });
+
+  it('content 与 originalContent 相同 → dirty false(撤销回原文)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a', content: 'changed', dirty: true })],
+      activeTabId: '/a',
+    });
+    useEditorStore.getState().updateContent('/a', 'hello'); // = originalContent
+    const tab = useEditorStore.getState().tabs.find((t) => t.id === '/a');
+    expect(tab?.dirty).toBe(false);
+  });
+
+  it('id 不存在 → 状态不变(防异步事件打到已关闭 tab)', () => {
+    useEditorStore.setState({ tabs: [makeTab({ id: '/a' })], activeTabId: '/a' });
+    useEditorStore.getState().updateContent('/zombie', 'x');
+    const tab = useEditorStore.getState().tabs.find((t) => t.id === '/a');
+    expect(tab?.content).toBe('hello');
+  });
+
+  it('perf P4 · updateContent 重算 milkdownUnsafe 派生缓存(不 stale)', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/x/a.md', milkdownUnsafe: false })],
+      activeTabId: '/x/a.md',
+    });
+    // 输入含 wiki-link → 缓存翻 true
+    useEditorStore.getState().updateContent('/x/a.md', 'see [[Note]]');
+    expect(
+      useEditorStore.getState().tabs.find((t) => t.id === '/x/a.md')
+        ?.milkdownUnsafe,
+    ).toBe(true);
+    // 删回普通正文 → 缓存翻回 false
+    useEditorStore.getState().updateContent('/x/a.md', 'plain');
+    expect(
+      useEditorStore.getState().tabs.find((t) => t.id === '/x/a.md')
+        ?.milkdownUnsafe,
+      ).toBe(false);
+  });
+
+  it('更新单个 tab 时不通过 tabs.slice 复制整组', () => {
+    const tabs = [makeTab({ id: '/a' }), makeTab({ id: '/b' })];
+    useEditorStore.setState({ tabs, activeTabId: '/b' });
+    const sliceSpy = vi.spyOn(Array.prototype, 'slice');
+
+    try {
+      useEditorStore.getState().updateContent('/b', 'changed');
+      const sliceCallsOnTabs = sliceSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(sliceCallsOnTabs).toBe(0);
+      expect(useEditorStore.getState().tabs.map((t) => t.id)).toEqual(['/a', '/b']);
+      expect(useEditorStore.getState().tabs[1]?.content).toBe('changed');
+    } finally {
+      sliceSpy.mockRestore();
+    }
+  });
+
+  it('内容未变化时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a', content: 'hello' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().updateContent('/a', 'hello');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// markSaved
+// ────────────────────────────────────────────────────────────
+
+describe('markSaved', () => {
+  it('originalContent ← content,dirty false', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a', content: 'new', originalContent: 'old', dirty: true })],
+      activeTabId: '/a',
+    });
+    useEditorStore.getState().markSaved('/a');
+    const tab = useEditorStore.getState().tabs.find((t) => t.id === '/a');
+    expect(tab?.originalContent).toBe('new');
+    expect(tab?.dirty).toBe(false);
+  });
+
+  it('id 不存在 → 不变', () => {
+    useEditorStore.setState({ tabs: [makeTab({ id: '/a' })], activeTabId: '/a' });
+    expect(() => useEditorStore.getState().markSaved('/nope')).not.toThrow();
+  });
+
+  it('保存结果未改变 tab 状态时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [
+      makeTab({
+        id: '/a',
+        content: 'draft',
+        originalContent: 'persisted',
+        dirty: true,
+      }),
+    ];
+    useEditorStore.setState({ tabs, activeTabId: '/a' });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().markSaved('/a', 'persisted');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// setFilePath
+// ────────────────────────────────────────────────────────────
+
+describe('setFilePath', () => {
+  it('untitled tab 另存为 → id 同步改成 path', () => {
+    const draft = createTab(null, 'draft');
+    useEditorStore.setState({ tabs: [draft], activeTabId: draft.id });
+    useEditorStore.getState().setFilePath(draft.id, '/x/saved.md');
+    const s = useEditorStore.getState();
+    expect(s.tabs[0]?.id).toBe('/x/saved.md');
+    expect(s.tabs[0]?.filePath).toBe('/x/saved.md');
+    expect(s.activeTabId).toBe('/x/saved.md');
+  });
+
+  it('非活跃 tab 改 path → activeTabId 不变', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
+      activeTabId: '/a',
+    });
+    useEditorStore.getState().setFilePath('/b', '/c');
+    const s = useEditorStore.getState();
+    expect(s.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
+    expect(s.activeTabId).toBe('/a');
+  });
+
+  it('newPath 等于当前 id/filePath 时保持 tabs 同引用且不通知订阅者', () => {
+    const tabs = [makeTab({ id: '/a.md', filePath: '/a.md' })];
+    useEditorStore.setState({ tabs, activeTabId: '/a.md', chromeVersion: 0 });
+    const listener = vi.fn();
+    const unsubscribe = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().setFilePath('/a.md', '/a.md');
+
+      expect(useEditorStore.getState().tabs).toBe(tabs);
+      expect(useEditorStore.getState().chromeVersion).toBe(0);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// setMode
+// ────────────────────────────────────────────────────────────
+
+describe('setMode', () => {
+  it('切到 source / preview / edit', () => {
+    const set = useEditorStore.getState().setMode;
+    set('source');
+    expect(useEditorStore.getState().mode).toBe('source');
+    set('preview');
+    expect(useEditorStore.getState().mode).toBe('preview');
+    set('edit');
+    expect(useEditorStore.getState().mode).toBe('edit');
+  });
+
+  it('传入当前 mode 时 no-op,不触发订阅', () => {
+    useEditorStore.setState({ mode: 'source' });
+    const listener = vi.fn();
+    const unsub = useEditorStore.subscribe(listener);
+
+    try {
+      useEditorStore.getState().setMode('source');
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// getStateAfterClosingTab(纯函数,详细覆盖)
+// ────────────────────────────────────────────────────────────
+
+describe('getStateAfterClosingTab', () => {
+  const tabs = [
+    makeTab({ id: '/a' }),
+    makeTab({ id: '/b' }),
+    makeTab({ id: '/c' }),
+  ];
+
+  it('关 head 活跃 → 切到下一个', () => {
+    const r = getStateAfterClosingTab(tabs, '/a', '/a');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/b', '/c']);
+    expect(r.activeTabId).toBe('/b');
+  });
+
+  it('关 mid 活跃 → 切到下一个', () => {
+    const r = getStateAfterClosingTab(tabs, '/b', '/b');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
+    expect(r.activeTabId).toBe('/c');
+  });
+
+  it('关 tail 活跃 → 切到前一个', () => {
+    const r = getStateAfterClosingTab(tabs, '/c', '/c');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/a', '/b']);
+    expect(r.activeTabId).toBe('/b');
+  });
+
+  it('关非活跃 → active 不变', () => {
+    const r = getStateAfterClosingTab(tabs, '/a', '/c');
+    expect(r.tabs.map((t) => t.id)).toEqual(['/a', '/b']);
+    expect(r.activeTabId).toBe('/a');
+  });
+
+  it('唯一 tab 关闭 → active null', () => {
+    const r = getStateAfterClosingTab([makeTab({ id: '/x' })], '/x', '/x');
+    expect(r.tabs).toEqual([]);
+    expect(r.activeTabId).toBeNull();
+  });
+
+  it('关不存在的 id → 状态不变', () => {
+    const r = getStateAfterClosingTab(tabs, '/a', '/missing');
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/a');
+  });
+
+  it('关不存在的 id 不预分配 remaining 数组', () => {
+    const r = getStateAfterClosingTab(tabs, '/a', '/missing');
+    const src = getStateAfterClosingTab.toString();
+
+    expect(r.tabs).toBe(tabs);
+    expect(r.activeTabId).toBe('/a');
+    expect(src.indexOf('findEditorTabIndexById')).toBeGreaterThanOrEqual(0);
+    expect(src.indexOf('findEditorTabIndexById')).toBeLessThan(
+      src.indexOf('new Array'),
+    );
+  });
+
+  it('关命中的 tab 不通过 tabs.filter 二次扫描生成 remaining', () => {
+    const filterSpy = vi.spyOn(Array.prototype, 'filter');
+
+    try {
+      const r = getStateAfterClosingTab(tabs, '/b', '/b');
+      const filterCallsOnTabs = filterSpy.mock.contexts.filter(
+        (ctx) => ctx === tabs,
+      ).length;
+
+      expect(filterCallsOnTabs).toBe(0);
+      expect(r.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
+      expect(r.activeTabId).toBe('/c');
+    } finally {
+      filterSpy.mockRestore();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// perf P12 — chromeVersion 仅在 chrome 真变化时递增
+// ────────────────────────────────────────────────────────────
+
+describe('perf P12 — chromeVersion bump 契约', () => {
+  const ver = () => useEditorStore.getState().chromeVersion;
+
+  it('updateContent 在已脏 tab 持续输入(dirty 恒 true)→ 不 bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md', content: 'x', originalContent: 'orig', dirty: true })],
+      activeTabId: '/a.md',
+      chromeVersion: 5,
+    });
+    useEditorStore.getState().updateContent('/a.md', 'xy');
+    useEditorStore.getState().updateContent('/a.md', 'xyz');
+    expect(ver()).toBe(5); // dirty 恒 true → chrome 不变
+  });
+
+  it('updateContent 翻转 dirty(clean→dirty / dirty→clean)→ bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md', content: 'orig', originalContent: 'orig', dirty: false })],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    useEditorStore.getState().updateContent('/a.md', 'edited'); // clean→dirty
+    expect(ver()).toBe(1);
+    useEditorStore.getState().updateContent('/a.md', 'orig'); // dirty→clean
+    expect(ver()).toBe(2);
+  });
+
+  it('openTab 新增 → bump;openTab 已存在(仅切 active)→ 不 bump', () => {
+    useEditorStore.setState({ tabs: [], activeTabId: null, chromeVersion: 0 });
+    const tab = makeTab({ id: '/a.md' });
+    useEditorStore.getState().openTab(tab);
+    expect(ver()).toBe(1);
+    useEditorStore.getState().openTab(tab); // 已存在
+    expect(ver()).toBe(1);
+  });
+
+  it('setFilePath → bump;closeTab(真删)→ bump;关不存在 → 不 bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md' }), makeTab({ id: '/b.md' })],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    useEditorStore.getState().setFilePath('/a.md', '/a2.md');
+    expect(ver()).toBe(1);
+    useEditorStore.getState().closeTab('/missing'); // no-op
+    expect(ver()).toBe(1);
+    useEditorStore.getState().closeTab('/b.md'); // 真删
+    expect(ver()).toBe(2);
+  });
+
+  it('perf P14 · milkdownUnsafe 翻转(即便 dirty 不变)→ bump(供 action 区 effectiveMode)', () => {
+    useEditorStore.setState({
+      tabs: [
+        makeTab({
+          id: '/a.md',
+          content: 'plain',
+          originalContent: 'orig', // 已脏(content≠orig)
+          dirty: true,
+          milkdownUnsafe: false,
+        }),
+      ],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    // 输入含 wiki-link → milkdownUnsafe false→true,dirty 恒 true → 仍 bump
+    useEditorStore.getState().updateContent('/a.md', 'see [[Note]]');
+    expect(ver()).toBe(1);
+    // 再输入仍 unsafe(true→true)、dirty 恒 true → 不 bump
+    useEditorStore.getState().updateContent('/a.md', 'see [[Note]] more');
+    expect(ver()).toBe(1);
+  });
+
+  it('markSaved 改 dirty → bump;reloadFromDisk / switchTab → 不 bump', () => {
+    useEditorStore.setState({
+      tabs: [makeTab({ id: '/a.md', content: 'edited', originalContent: 'orig', dirty: true })],
+      activeTabId: '/a.md',
+      chromeVersion: 0,
+    });
+    useEditorStore.getState().markSaved('/a.md', 'edited'); // dirty true→false
+    expect(ver()).toBe(1);
+    // reloadFromDisk(非脏 tab,只换 content)→ chrome 不变
+    useEditorStore.getState().reloadFromDisk('/a.md', 'external');
+    expect(ver()).toBe(1);
+    useEditorStore.getState().switchTab('/a.md');
+    expect(ver()).toBe(1);
+  });
+
+  // 关窗脏确认的上报 effect 只订阅 chromeVersion:保存期间继续输入 → markSaved 推进基线但仍脏,
+  // dirty 未翻转却换了新变脏代际,必须 bump,否则新代际不上报、main 仍按旧代际放行退出(终审 P1)。
+  it('markSaved 推进基线但仍脏(保存期间继续输入)→ 新 dirtyGen 且 bump', () => {
+    useEditorStore.setState({ tabs: [], activeTabId: null, chromeVersion: 0 });
+    useEditorStore.getState().openTab(createTab('/a.ts', 'orig'));
+    useEditorStore.getState().updateContent('/a.ts', 'saving'); // 开始保存的内容
+    useEditorStore.getState().updateContent('/a.ts', 'saving+typed'); // 写盘期间继续输入
+    const genBefore = useEditorStore.getState().tabs[0]!.dirtyGen;
+    const verBefore = ver();
+    useEditorStore.getState().markSaved('/a.ts', 'saving');
+    const tab = useEditorStore.getState().tabs[0]!;
+    expect(tab.dirty).toBe(true);
+    expect(tab.dirtyGen).not.toBe(genBefore);
+    expect(ver()).toBe(verBefore + 1);
+  });
+});

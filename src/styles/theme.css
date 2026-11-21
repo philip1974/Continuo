@@ -1,0 +1,204 @@
+/* M-DesignSystem Step 1:接入 Nous 共享设计系统(MD3 token 层)。
+ *
+ * 结构:
+ *   1. 引入 nous-tokens.css(从 @nous/shell-ui 复制,含完整 47 个 --md-* + --wm-*
+ *      亮/暗双套,LM 暂不修改)。
+ *   2. 在 .dark 下覆盖 MD3 关键值,保留 LM 原有 slate + sky 视觉身份
+ *      (Nous 默认是暖灰 + lavender,LM 偏冷 slate + sky 蓝)。
+ *   3. @theme inline 把 LM 自有的 9 个 --color-* 私有 token 映射到 --md-*,
+ *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility,
+ *      LM 现有 className 零修改。
+ *
+ * LM 强制 dark 模式(index.html <html class="dark">),light 暂留 Nous 默认值
+ * 作为亮色切换的占位,后续若做亮色再细调。
+ */
+
+@import './nous-tokens.css';
+
+/* ── Continuo radius scale(对齐 demo DESIGN.md / Tailwind v4 默认值)────
+ * sm=2 / md=6 / lg=8 / xl=12 完全匹配 Tailwind rounded-sm/md/lg/xl,提供
+ * CSS var 形式给 .css 文件用(那里不能写 Tailwind utility)。
+ * 4px (DEFAULT) 是最常见的小圆角,组件 CSS 直接写字面值不另起 token。
+ * radius 是结构属性,与 dark/light 模式无关,放 :root 而非 .dark。 */
+:root {
+  --wm-radius-sm: 2px;
+  --wm-radius-md: 6px;
+  --wm-radius-lg: 8px;
+  --wm-radius-xl: 12px;
+
+  /* 动画时长 / 模糊 token(取代 Spinner / decor / Modal 等 CSS 文件里的裸数字) */
+  --wm-duration-spin: 600ms;          /* Spinner 转一圈 */
+  --wm-duration-spotlight: 2s;        /* Splash 装饰 spotlight 进场 */
+  --wm-delay-spotlight: 400ms;        /* spotlight 启动前等一拍 */
+  --wm-blur-sm: 4px;                  /* Modal 背板毛玻璃 */
+
+  /* Debug 可视化:断点 gutter 红点 + 当前命中行背景(light 占位也给完整槽位) */
+  --md-debug-breakpoint: #d32f2f;
+  --md-debug-exec-line: rgba(211, 47, 47, 0.14);
+
+  /* 次要弱化文字(MD3 无对应槽;light 占位沿用暗色值) */
+  --md-fg-dim: #6c6f7e;
+}
+
+/* ── Continuo 暗色身份(对齐 demo Industrial IDE Dark)──────── */
+/* 色板换装:从中性 slate + sky-600 → 蓝紫 surface + royal blue。
+ * 变化:
+ *   - surface 从纯黑 #020617 → 蓝紫调 #11131b(profession instrument 感)
+ *   - container 阶梯化(low/normal/high/highest)用 demo 推荐的 5 档
+ *   - on-surface #f5f5f5 → #e1e2ed(轻微降亮,长时间编辑减疲劳)
+ *   - outline 加深到 #434655(分隔更清晰)
+ *   - primary 从 sky-600 #0284c7 → royal blue #2563eb(更专业)
+ * 参考:demo/stitch_desktop_design_reviewer (2)/DESIGN.md
+ */
+.dark {
+  /* 表面层(5 档 surface tiering,demo 同款) */
+  --md-surface: #11131b;                /* canvas — 全局底色 */
+  --md-surface-dim: #11131b;
+  --md-surface-bright: #373942;
+  --md-surface-container-lowest: #0c0e16;
+  --md-surface-container-low: #191b23;  /* panel-soft */
+  --md-surface-container: #1d1f27;      /* panel */
+  --md-surface-container-high: #282a32; /* hover */
+  --md-surface-container-highest: #32343d;
+
+  /* 文本 */
+  --md-on-surface: #e1e2ed;             /* fg(柔和,适合长时间编辑) */
+  --md-on-surface-variant: #c3c6d7;     /* fg-muted(对比度提升) */
+
+  /* 边框 */
+  --md-outline: #8d90a0;
+  --md-outline-variant: #434655;        /* line(更明显的分隔) */
+
+  /* 主色:demo DESIGN.md 的 MD3 双槽 ──
+   *   --md-primary           = #b4c5ff(淡天蓝):text/border/alpha-blend 的 accent,
+   *                            在深色面板上对比度比 royal blue 高,长时间看更舒服
+   *   --md-on-primary        = #002a78(深海军蓝):light primary 上的可读文字
+   *   --md-primary-container = #2563eb(royal blue):filled button bg,需要更强视觉重量时用
+   *   --md-on-primary-container = #eeefff:royal blue 上的浅文字
+   * Button[variant=primary] 的 idle→hover 自然走 light blue → royal blue 的 MD3 tonal 过渡。
+   */
+  --md-primary: #b4c5ff;
+  --md-on-primary: #002a78;
+  --md-primary-container: #2563eb;
+  --md-on-primary-container: #eeefff;
+  --md-focus-ring: #2563eb;
+
+  /* Debug 可视化 */
+  --md-debug-breakpoint: #ff6b6b;
+  --md-debug-exec-line: rgba(255, 107, 107, 0.16);
+
+  /* 次要弱化文字(MD3 无对应槽,与新色板配套) */
+  --md-fg-dim: #6c6f7e;
+}
+
+/* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */
+@theme inline {
+  --color-canvas: var(--md-surface);
+  --color-panel: var(--md-surface-container);
+  --color-panel-soft: var(--md-surface-container-low);
+  --color-hover: var(--md-surface-container-high);
+  --color-line: var(--md-outline-variant);
+  --color-fg: var(--md-on-surface);
+  --color-fg-muted: var(--md-on-surface-variant);
+  --color-fg-dim: var(--md-fg-dim);
+  /* accent 双槽:
+   *   bg-accent / text-accent / border-accent → 淡天蓝(MD3 primary,适合 stroke / 文字 / alpha 混合)
+   *   bg-accent-fill / text-on-accent-fill   → royal blue(MD3 primary-container,filled 控件强视觉) */
+  --color-accent: var(--md-primary);
+  --color-accent-fill: var(--md-primary-container);
+  --color-on-accent-fill: var(--md-on-primary-container);
+  /* 状态色:替代散在组件里的 text-red-* / text-amber-* / bg-red-500 等硬编码。
+   *   bg-error / text-error             → 错误徽章/文字(MD3 error tone 80,#ffb4ab)
+   *   text-on-error                     → 错误填充上的深字
+   *   bg-warning / text-warning / border-warning → 警告框/文字(MD3 warning,#efc15e) */
+  --color-error: var(--md-error);
+  --color-on-error: var(--md-on-error);
+  --color-warning: var(--md-warning);
+  --color-success: var(--md-success);
+  --color-info: var(--md-info);
+  --color-debug-breakpoint: var(--md-debug-breakpoint);
+  --color-debug-exec-line: var(--md-debug-exec-line);
+
+  /* 浮层阴影:shadow-popover(design Modal 同款 --wm-shadow-popover,light/dark 各有取值),
+   * 替代手写弹出菜单上的 shadow-lg shadow-black/40。 */
+  --shadow-popover: var(--wm-shadow-popover);
+
+  /* 字号补漏:wm-text-2xs(10px)暴露成 Tailwind utility text-2xs,
+   * 消灭组件里散落的 ~44 处 text-[10px] arbitrary value。
+   * 其它 wm-text-* 暂不映射:Tailwind 默认 text-xs/sm/base/lg 已满足 73 处使用,
+   * 重映射风险大于收益。 */
+  --text-2xs: var(--wm-text-2xs);
+
+  /* z-index 分层 token:把散落数字赋予语义,新代码意图明显,旧 z-N 按需迁移。
+   * 已统计的层级(审计 round 2):
+   *   -z-10 backdrop,z-decor:1,z-sticky:10,z-overlay:30,z-modal:50,
+   *   z-terminal-overlay:9999(issue #38 R2d,见 topic-26 memory L3) */
+  --z-decor: 1;
+  --z-sticky: 10;
+  --z-overlay: 30;
+  --z-modal: var(--wm-z-modal);
+  /* xterm-host 内的浮层(SearchBar / 未来 menu / hover popup)必须用此
+   * token,因为 z-modal(50)会被 dockview panel stacking context 困住,
+   * 而 xterm 内部 canvas(xterm-link-layer 等)在同 context hit-test 上去。
+   * 9999 +(配合 isolation:isolate)强建独立 stacking context,凌驾任何
+   * xterm 层。issue #38 R2d 实测推导;改前请读 topic-26 memory L3。 */
+  --z-terminal-overlay: 9999;
+}
+
+/* Tailwind v4 不自动从 `--z-*` token 生成 utility class(v4 的 z-index
+ * namespace 是 `--z-index-*`,不是 `--z-*`)。显式用 `@utility` 给每个 z-token
+ * 生成对应 utility CSS rule,否则 className="z-modal"/"z-overlay" 等会静默
+ * 无效(review round 2 A.3 + round 3 E.1)。
+ *
+ * 历史遗留:Splash.tsx / HeaderActions.tsx / ExplorerHeader.tsx 之前用
+ * `z-modal` className 工作只是凑巧——这些位置 DOM order 靠后(splash) 或
+ * `position: fixed`(dropdown menu)+ 兄弟无显式 z-index,默认就在上层。
+ * 现在 `@utility` 让 className 真正匹配 token 数值,语义和视觉对齐。
+ * z-decor / z-sticky / z-overlay 当前 0 className 使用,但生成 utility
+ * 是未雨绸缪——未来谁加 z-sticky className 不会再踩坑。 */
+@utility z-decor {
+  z-index: var(--z-decor);
+}
+@utility z-sticky {
+  z-index: var(--z-sticky);
+}
+@utility z-overlay {
+  z-index: var(--z-overlay);
+}
+@utility z-modal {
+  z-index: var(--z-modal);
+}
+@utility z-terminal-overlay {
+  z-index: var(--z-terminal-overlay);
+}
+
+/* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────
+ * 走 design token,主题切换自动跟。Firefox 用 scrollbar-* 属性,
+ * Webkit(Chrome/Edge/Electron)用 ::-webkit-scrollbar pseudo。
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-outline-variant) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-outline-variant);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-outline);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

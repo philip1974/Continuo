@@ -1,0 +1,3 @@
+# 仓库内 .mjs 脚本(带 #! 行)在 Windows 检出时保持 LF:Vite 的 SSR 变换只认 `#!...\n`,CRLF 下不剥离 hashbang,
+# vitest 导入这些脚本即 SyntaxError(node 直接运行不受影响)。
+*.mjs text eol=lf

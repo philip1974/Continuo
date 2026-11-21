@@ -1,0 +1,128 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  parsePermissionState,
+  serializePermissionState,
+} from '../permissions/IpcPermissionStore';
+
+describe('IpcPermissionStore permission state migration', () => {
+  it('T4.a deserializes old JSON without pathScopes and writes legacy shape back', () => {
+    const oldJson = {
+      'com.old': [{ permission: 'fs', granted: true, decidedAt: 1 }],
+    };
+
+    const parsed = parsePermissionState(oldJson);
+
+    expect(parsed['com.old']).toEqual({
+      decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
+    });
+    expect(parsed['com.old']?.pathScopes).toBeUndefined();
+    expect(serializePermissionState(parsed)).toEqual(oldJson);
+  });
+
+  it('T4.b deserializes new JSON with pathScopes and preserves it round-trip', () => {
+    const newJson = {
+      'com.new': {
+        decisions: [{ permission: 'shell', granted: false, decidedAt: 2 }],
+        pathScopes: [{ path: '/tmp/x', mode: 'rw' }],
+      },
+    };
+
+    const parsed = parsePermissionState(newJson);
+
+    expect(parsed['com.new']).toEqual({
+      decisions: [{ permission: 'shell', granted: false, decidedAt: 2 }],
+      pathScopes: [{ path: '/tmp/x', mode: 'rw' }],
+    });
+    expect(serializePermissionState(parsed)).toEqual(newJson);
+  });
+
+  it('T4.c handles mixed JSON with and without pathScopes independently', () => {
+    const mixedJson = {
+      'com.legacy': [{ permission: 'network', granted: true, decidedAt: 3 }],
+      'com.scoped': {
+        decisions: [{ permission: 'clipboard', granted: true, decidedAt: 4 }],
+        pathScopes: [{ path: '/tmp/y', mode: 'r' }],
+      },
+    };
+
+    const parsed = parsePermissionState(mixedJson);
+
+    expect(parsed['com.legacy']).toEqual({
+      decisions: [{ permission: 'network', granted: true, decidedAt: 3 }],
+    });
+    expect(parsed['com.scoped']).toEqual({
+      decisions: [{ permission: 'clipboard', granted: true, decidedAt: 4 }],
+      pathScopes: [{ path: '/tmp/y', mode: 'r' }],
+    });
+    expect(serializePermissionState(parsed)).toEqual(mixedJson);
+  });
+
+  it('T4.d round-trips pathScopes content exactly', () => {
+    const state = parsePermissionState({
+      'com.paths': {
+        decisions: [{ permission: 'fs', granted: true, decidedAt: 5 }],
+        pathScopes: [
+          { path: '/tmp/x', mode: 'rw' },
+          { path: '/tmp/y', mode: 'r' },
+        ],
+      },
+    });
+
+    const serialized = serializePermissionState(state);
+    const reparsed = parsePermissionState(serialized);
+
+    expect(reparsed['com.paths']?.pathScopes).toEqual([
+      { path: '/tmp/x', mode: 'rw' },
+      { path: '/tmp/y', mode: 'r' },
+    ]);
+    expect(reparsed).toEqual(state);
+  });
+
+  it('parsePermissionState 解析 decisions/pathScopes 时预分配数组,不通过 push 扩容', () => {
+    const pushSpy = vi.spyOn(Array.prototype, 'push');
+    let parsed: ReturnType<typeof parsePermissionState>;
+
+    try {
+      parsed = parsePermissionState({
+        'com.prealloc': {
+          decisions: [
+            { permission: 'fs', granted: true, decidedAt: 1 },
+            { permission: 'network', granted: false, decidedAt: 2 },
+          ],
+          pathScopes: [
+            { path: '/tmp/a', mode: 'r' },
+            { path: '/tmp/b', mode: 'rw' },
+          ],
+        },
+      });
+      expect(pushSpy).not.toHaveBeenCalled();
+    } finally {
+      pushSpy.mockRestore();
+    }
+
+    expect(parsed!['com.prealloc']).toEqual({
+      decisions: [
+        { permission: 'fs', granted: true, decidedAt: 1 },
+        { permission: 'network', granted: false, decidedAt: 2 },
+      ],
+      pathScopes: [
+        { path: '/tmp/a', mode: 'r' },
+        { path: '/tmp/b', mode: 'rw' },
+      ],
+    });
+  });
+});
+
+// 安全:权限表 key 来自磁盘 JSON(经 IPC),`out[pluginId] = …` 写普通对象时 `__proto__` 键会改写结果对象的
+// 原型(而非成为自有键)。非法 plugin id(含 `_` / `.` 开头)本就不该存在,解析时直接跳过。
+describe('parsePermissionState 跳过非法 plugin id', () => {
+  it('__proto__ / _meta / 大写等非法 key 被丢弃,原型不被改写', () => {
+    const decision = '[{"permission":"fs","granted":true,"decidedAt":1}]';
+    const raw = JSON.parse(
+      `{"__proto__":${decision},"_meta":${decision},"Bad":${decision},"com.ok":${decision}}`,
+    ) as unknown;
+    const parsed = parsePermissionState(raw);
+    expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
+    expect(Object.keys(parsed)).toEqual(['com.ok']);
+  });
+});

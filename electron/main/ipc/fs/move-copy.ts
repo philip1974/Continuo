@@ -1,0 +1,102 @@
+// fs:move / fs:copy(M-Explorer 剪切/复制/粘贴 IPC,2026-05)。
+//
+// move:fs.rename(src, dest);跨盘 EXDEV → fallback cp + rm
+// copy:fs.cp recursive(Node 16+ 内置,递归 + 保留 mtime)
+//
+// dest 含目标 basename(parentDir/<name>);调用方负责 parent 存在性 +
+// 重名处理(本层不自动改名,EEXIST 直返 FS_EEXIST)。
+
+import { cp, lstat, rename, rm } from 'node:fs/promises';
+import { ERROR_CODES } from '../../../shared/error-codes';
+import { fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
+
+/**
+ * 移动 entry(rename 跨目录;同盘 atomic,跨盘走 cp+rm fallback)。
+ *
+ * - srcPath 不存在 → FS_NOT_FOUND
+ * - destPath 已存在 → FS_EEXIST(调用方决定是否覆盖 / 改名)
+ * - 跨盘 EXDEV → 自动 cp recursive + rm;cp 成功但 rm 失败 → 抛 rm 的映射 code(目标已复制、
+ *   源未完全删除),但**非 atomic**(中途断电可能
+ *   只完成一半 — 注释提醒,生产单盘场景几乎无问题)
+ */
+export async function moveEntry(
+  srcPath: string,
+  destPath: string,
+): Promise<void> {
+  // 校验源存在
+  await lstatOrThrow(srcPath);
+  // 拒绝 dest 已存在(避免静默覆盖)
+  let destExists = false;
+  try {
+    await lstat(destPath);
+    destExists = true;
+  } catch (err) {
+    // 只有 ENOENT(不存在)才按预期继续。EACCES/EIO 等「无法确认目标」不能 fail-open
+    // (否则下方 rename 静默覆盖已有目标,P1)→ 映射后抛出中止。
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw fsError(mapNodeErrnoCode(err), `lstat failed: ${destPath}`);
+    }
+  }
+  if (destExists) {
+    throw fsError(ERROR_CODES.FS_EEXIST, `destination already exists: ${destPath}`);
+  }
+
+  try {
+    await rename(srcPath, destPath);
+    return;
+  } catch (err) {
+    const e = err as { code?: string };
+    if (e.code !== 'EXDEV') {
+      throw fsError(mapNodeErrnoCode(err), `rename failed: ${srcPath} → ${destPath}`);
+    }
+    // 跨盘 fallback:cp -r + rm -rf
+  }
+
+  try {
+    // force:false 必须显式传 —— fs.cp 默认 force:true 会击穿 errorOnExist(实测:
+    // errorOnExist 仅在 force:false 时生效),否则 EXDEV fallback 仍会静默覆盖目标。
+    await cp(srcPath, destPath, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+    });
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `cross-device cp failed: ${srcPath} → ${destPath}`);
+  }
+  try {
+    await rm(srcPath, { recursive: true, force: true });
+  } catch (err) {
+    // cp 成功但 rm 失败:dest 已就位,src 残留(递归 rm 可能已删掉一部分)。不能宣告移动成功 ——
+    // 否则 renderer 改 editor tab 路径 / 剪除剪贴板,而源仍在。映射 rm 的 errno 抛出;dest 不回滚
+    // (src 可能已部分删除,dest 是唯一完整副本)。
+    throw fsError(
+      mapNodeErrnoCode(err),
+      `cross-device move: destination copied but source could not be fully removed: ${srcPath} → ${destPath}`,
+    );
+  }
+}
+
+/**
+ * 递归复制(Node fs.cp,recursive + errorOnExist=true 防覆盖)。
+ *
+ * - srcPath 不存在 → FS_NOT_FOUND
+ * - destPath 已存在 → FS_EEXIST
+ */
+export async function copyEntry(
+  srcPath: string,
+  destPath: string,
+): Promise<void> {
+  await lstatOrThrow(srcPath);
+  try {
+    // force:false 必须显式传 —— fs.cp 默认 force:true 会击穿 errorOnExist(实测:
+    // errorOnExist 仅在 force:false 时生效)。copyEntry 无 pre-check,完全依赖此选项防
+    // 覆盖;不传 force:false 则文档承诺的「已存在→FS_EEXIST」被击穿,静默覆盖原文件。
+    await cp(srcPath, destPath, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+    });
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `cp failed: ${srcPath} → ${destPath}`);
+  }
+}

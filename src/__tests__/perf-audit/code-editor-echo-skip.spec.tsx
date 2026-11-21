@@ -1,0 +1,141 @@
+// @vitest-environment jsdom
+// perf-audit P6 · CodeEditor 受控回声跳过全文 toString。
+//
+// 本地打字:updateListener `doc.toString()` emit 给 onChange(必要),父 store 更新后
+// 把同一字符串作为 value 回传 → value-sync effect 旧实现再 `doc.toString()` 比较一次
+// (回声),长文件每按键 2 次 O(file) 拷贝。P6:lastSyncedValueRef 记下 emit 值,effect
+// `value === lastSynced` 直接跳过,连 toString 都省;真正的外部新值(≠ lastSynced)仍
+// 正常 toString + dispatch 同步。
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+vi.mock('@/plugins/settings/values-store', () => ({
+  useSettingValue: (_k: string, fallback: unknown) => fallback,
+}));
+vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
+
+const views = new Map<string, unknown>();
+vi.mock('@/stores/editor.store', () => ({
+  useEditorStore: Object.assign(() => undefined, {
+    getState: () => ({
+      registerView: (id: string, v: unknown) => views.set(id, v),
+      unregisterView: (id: string) => views.delete(id),
+    }),
+  }),
+}));
+
+import {
+  CodeEditor,
+  fileExtensionLower,
+  pickLanguage,
+} from '../../panels/Editor/CodeEditor';
+import type { EditorView } from 'codemirror';
+
+afterEach(() => {
+  cleanup();
+  views.clear();
+});
+
+describe('perf-audit P6 · CodeEditor 受控回声免全文 toString', () => {
+  it('文件扩展名推断不通过 split/pop 分配数组', () => {
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+
+    try {
+      expect(fileExtensionLower('/repo/src/app.TSX')).toBe('tsx');
+      expect(fileExtensionLower('/repo/README')).toBeUndefined();
+      expect(splitSpy).not.toHaveBeenCalled();
+    } finally {
+      splitSpy.mockRestore();
+    }
+  });
+
+  it('文件扩展名已是小写时不调用 toLowerCase', () => {
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+
+    try {
+      expect(fileExtensionLower('/repo/src/app.tsx')).toBe('tsx');
+      expect(
+        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'tsx'),
+      ).toBe(false);
+      expect(fileExtensionLower('/repo/src/app.TSX')).toBe('tsx');
+    } finally {
+      lowerSpy.mockRestore();
+    }
+  });
+
+  it('未知文件类型复用稳定空语言扩展', () => {
+    expect(pickLanguage('README')).toEqual([]);
+    expect(pickLanguage('README')).toBe(pickLanguage('notes.unknown'));
+  });
+
+  it('浅色主题复用稳定空主题扩展,避免 render/effect 分配新数组', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/panels/Editor/CodeEditor.tsx'),
+      'utf-8',
+    );
+
+    expect(src).toContain('EMPTY_THEME_EXTENSIONS');
+    expect(src).not.toContain("resolved === 'dark' ? oneDark : []");
+  });
+
+  it('回声(value === 上次 emit)→ effect 跳过,不再 doc.toString();非回声 → 正常同步', () => {
+    const emitted: string[] = [];
+    const onChange = (v: string) => emitted.push(v);
+    const { rerender } = render(
+      <CodeEditor tabId="t1" value="hello" fileName="a.js" onChange={onChange} />,
+    );
+    const view = views.get('t1') as EditorView;
+    expect(view).toBeTruthy();
+
+    // 模拟用户输入 → updateListener docChanged → onChange emit 新全文
+    view.dispatch({ changes: { from: 5, insert: ' world' } });
+    const echo = emitted.at(-1);
+    expect(echo).toBe('hello world');
+
+    // 受控回声:父把 emit 的值作为 value 回传。effect 应命中 lastSynced 直接 return,
+    // 不对当前 doc 做全文拼接(P6 的核心收益)。CRLF 保留后全文出口改为
+    // sliceString(0, len, eol),toString 也走 sliceString,两者都监视。
+    const docSpy = vi.spyOn(view.state.doc, 'sliceString');
+    const docToStringSpy = vi.spyOn(view.state.doc, 'toString');
+    rerender(
+      <CodeEditor tabId="t1" value={echo!} fileName="a.js" onChange={onChange} />,
+    );
+    expect(docSpy).not.toHaveBeenCalled();
+    expect(docToStringSpy).not.toHaveBeenCalled();
+    // doc 未被多余 dispatch 改动
+    expect(view.state.doc.toString()).toBe('hello world');
+
+    // 反例:真正的外部新值(≠ lastSynced)→ 不跳过 → 现场 toString 比较 + dispatch 同步。
+    const docSpy2 = vi.spyOn(view.state.doc, 'sliceString');
+    rerender(
+      <CodeEditor
+        tabId="t1"
+        value="external change"
+        fileName="a.js"
+        onChange={onChange}
+      />,
+    );
+    expect(docSpy2).toHaveBeenCalled();
+    expect(view.state.doc.toString()).toBe('external change');
+  });
+
+  // 挂载时 EditorState.create 已带当前语言 / 主题;语言 / 主题 effect 挂载时再 reconfigure 一次会让
+  // markdown()(每次调用新建 Language)从 0 重新解析,每次切到 .md tab 首屏解析做两遍。
+  it('挂载时不重复 reconfigure 语言 / 主题;fileName 变化时才重配置', async () => {
+    const { EditorView: CmView } = await import('@codemirror/view');
+    const dispatchSpy = vi.spyOn(CmView.prototype, 'dispatch');
+    try {
+      const { rerender } = render(
+        <CodeEditor tabId="t2" value="# hi" fileName="a.md" onChange={() => {}} />,
+      );
+      expect(dispatchSpy).not.toHaveBeenCalled();
+      rerender(<CodeEditor tabId="t2" value="# hi" fileName="a.ts" onChange={() => {}} />);
+      expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      dispatchSpy.mockRestore();
+    }
+  });
+});

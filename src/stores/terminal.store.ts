@@ -1,0 +1,321 @@
+// Terminal sessions 镜像 store(M-Terminal Step T3 + Agent Terminal MCP P1)。
+// 真相源在 main(electron/main/services/terminal-sessions.service.ts);本 store
+// 接收 sessions_changed 推的 snapshot。哪个终端处于活动状态由 dockview 的活动 panel 决定,本 store 不记
+//(此前的 activeId / setActive / renameSession / customTitles 没有任何 UI 入口,已删)。
+//
+// 决策 #4(沿用):不持久化(重启 sessions 全部销毁)。
+// BDD: src/__tests__/terminal-store/
+
+import { create } from 'zustand';
+import { isWindowsRuntime, pathEquals } from '@/lib/path-cross';
+import type { ShellFamily } from '@continuo-terminal/shell-quote';
+import type { TerminalSessionSnapshot } from '../../electron/shared/terminal-session';
+import { LABEL_MAX, PATH_MAX } from '../../electron/shared/terminal-create';
+// E203:SESSION_ID_MAX 收口到 shared/session-id-limits(此前本文件 / terminal.ipc.ts / MCP tools 各副本,防漂移)。
+import { SESSION_ID_MAX } from '../../electron/shared/session-id-limits';
+// E292:renderer IPC ingress 计数闸,复用 main 的全局会话上限单一来源。
+import { MAX_TERMINAL_SESSIONS_GLOBAL } from '../../electron/shared/terminal-session-limits';
+
+// 可维护性 M14:终端 session 形态复用 shared TerminalSessionSnapshot 单一来源
+// (此前 main/preload/renderer 三层平行声明同组字段并已漂移)。
+export type TerminalSession = TerminalSessionSnapshot;
+
+const EMPTY_TERMINAL_SESSIONS: readonly TerminalSession[] = [];
+
+export interface FilterDropOpts {
+  onDrop?: (
+    sessionId: string | undefined,
+    reason:
+      | 'not-object'
+      | 'missing-owner'
+      | 'wrong-owner'
+      | 'shape-invalid'
+      // 边界(E292):ingress 数组超 MAX_TERMINAL_SESSIONS_GLOBAL 时,超额项被丢弃。
+      | 'over-capacity',
+  ) => void;
+}
+
+/** attachTarget(optional)形态校验:undefined 或 3 个 discriminated 变体之一. */
+function isAttachTargetShape(v: unknown): boolean {
+  if (v === undefined) return true;
+  if (!v || typeof v !== 'object') return false;
+  const t = v as Record<string, unknown>;
+  if (t.kind === 'active') return true;
+  // 边界(E23):与 AttachTargetSchema 同步 —— panelId 限长、windowId 须非负安全整数,防畸形
+  // attachTarget 经 sessions_changed 广播进各 renderer metadata 膨胀/匹配逻辑失真。
+  if (t.kind === 'panel')
+    return typeof t.panelId === 'string' && t.panelId.length <= 256;
+  if (t.kind === 'window')
+    return (
+      typeof t.windowId === 'number' &&
+      Number.isSafeInteger(t.windowId) &&
+      t.windowId >= 0
+    );
+  return false;
+}
+
+/**
+ * 可维护性 M16:IPC ingress 的完整 type guard —— 校验必填**与** optional 字段形态后
+ * narrow 到 TerminalSession(= shared TerminalSessionSnapshot,M14),取代此前只校验必填
+ * 字段、最后 `obj as unknown as TerminalSession` 双重断言(optional 字段绕过类型检查)。
+ */
+// 边界(E167,E23 同款 IPC-ingress 防御):session 经 sessions_changed/listSessions 广播进各
+// renderer store。主进程写入口(create / updateCwd)已按 LABEL_MAX/PATH_MAX cap,本守卫是 renderer
+// ingress 的纵深防御(对齐 E23 已给 attachTarget.panelId/windowId 加的长度/安全整数校验):字符串
+// 字段镜像 create 的长度上限,数字字段须有限/安全整数,防畸形 payload 进 store 致 UI 卡顿/状态污染。
+function isTerminalSessionShape(v: unknown): v is TerminalSession {
+  if (!v || typeof v !== 'object') return false;
+  const obj = v as Record<string, unknown>;
+  return (
+    typeof obj.id === 'string' &&
+    obj.id.length <= SESSION_ID_MAX &&
+    typeof obj.title === 'string' &&
+    obj.title.length <= LABEL_MAX &&
+    typeof obj.cwd === 'string' &&
+    obj.cwd.length <= PATH_MAX &&
+    (obj.originHint === 'user' || obj.originHint === 'agent') &&
+    typeof obj.createdAt === 'number' &&
+    Number.isFinite(obj.createdAt) &&
+    (obj.exitCode === null ||
+      (typeof obj.exitCode === 'number' && Number.isSafeInteger(obj.exitCode))) &&
+    typeof obj.ownerWindowId === 'number' &&
+    Number.isSafeInteger(obj.ownerWindowId) &&
+    obj.ownerWindowId >= 0 &&
+    (obj.agentLabel === undefined ||
+      (typeof obj.agentLabel === 'string' && obj.agentLabel.length <= LABEL_MAX)) &&
+    (obj.scoped === undefined || typeof obj.scoped === 'boolean') &&
+    (obj.shellFamily === undefined ||
+      obj.shellFamily === 'posix' ||
+      obj.shellFamily === 'cmd' ||
+      obj.shellFamily === 'powershell') &&
+    (obj.workspaceRoot === undefined ||
+      (typeof obj.workspaceRoot === 'string' &&
+        obj.workspaceRoot.length <= PATH_MAX)) &&
+    isAttachTargetShape(obj.attachTarget)
+  );
+}
+
+export function filterByOwnerWindow(
+  sessions: readonly unknown[],
+  currentWindowId: number,
+  opts: FilterDropOpts = {},
+): readonly TerminalSession[] {
+  if (sessions.length === 0) return EMPTY_TERMINAL_SESSIONS;
+
+  let result: TerminalSession[] | undefined;
+  const ensureResult = (prefixLength: number): TerminalSession[] => {
+    if (result === undefined) {
+      result = new Array<TerminalSession>(
+        Math.min(sessions.length, MAX_TERMINAL_SESSIONS_GLOBAL),
+      );
+      for (let i = 0; i < prefixLength; i++) {
+        result[i] = sessions[i] as TerminalSession;
+      }
+    }
+    return result;
+  };
+  let count = 0;
+  // 边界(E292,E167/E174 同款 IPC-ingress 纵深防御 / 数量维度):main 已按 MAX_TERMINAL_SESSIONS_GLOBAL
+  // 双闸(E235)封顶真实会话数,但 renderer 此前对 sessions_changed / listSessions 推来的数组**长度**无
+  // 上限 —— 有 bug / 被篡改的 main 推超大数组时,本 for 循环 O(n) 全量遍历 + 入 store + 渲染 n 个 tab,
+  // 拖垮 renderer。超 MAX_TERMINAL_SESSIONS_GLOBAL 的超额项一律丢弃(只可能来自异常 main;正常全局 ≤256
+  // 必在前 256 内,不丢任何合法会话)。
+  for (let i = 0; i < sessions.length; i++) {
+    // 一次性发 over-capacity 信号并 break —— 不再遍历病态超大数组余项(全局合法 ≤256 必在前 256 内,
+    // 故 break 不丢任何合法会话;只有异常 main 推超额项会触发)。
+    if (i >= MAX_TERMINAL_SESSIONS_GLOBAL) {
+      ensureResult(count);
+      opts.onDrop?.(undefined, 'over-capacity');
+      break;
+    }
+    const s = sessions[i];
+    if (!s || typeof s !== 'object') {
+      ensureResult(count);
+      opts.onDrop?.(undefined, 'not-object');
+      continue;
+    }
+    const obj = s as Record<string, unknown>;
+    const sessionId = typeof obj.id === 'string' ? obj.id : undefined;
+    // owner 检查先行,保留 missing-owner / wrong-owner 的细分 drop reason。
+    if (typeof obj.ownerWindowId !== 'number') {
+      ensureResult(count);
+      opts.onDrop?.(sessionId, 'missing-owner');
+      continue;
+    }
+    if (obj.ownerWindowId !== currentWindowId) {
+      ensureResult(count);
+      opts.onDrop?.(sessionId, 'wrong-owner');
+      continue;
+    }
+    if (!isTerminalSessionShape(obj)) {
+      ensureResult(count);
+      opts.onDrop?.(sessionId, 'shape-invalid');
+      continue;
+    }
+    if (result !== undefined) result[count] = obj;
+    count += 1;
+  }
+  const out = result;
+  if (out === undefined) return sessions as readonly TerminalSession[];
+  if (count === 0) return EMPTY_TERMINAL_SESSIONS;
+  out.length = count;
+  return out;
+}
+
+/**
+ * 按当前 workspace 过滤可见 session。契约见 terminal-sessions.service.ts:52 + workspaceRoot
+ * 字段注释:`visible = workspaceRoot === undefined(全局) || workspaceRoot === currentRoot`。
+ * 同窗口切换 workspace 后,旧项目的 terminal(workspaceRoot=旧根)应从视图隐藏(PTY 不杀,
+ * main 仍保留;切回旧根能重现);全局 session(agent 创建,workspaceRoot=undefined)始终可见。
+ * currentRoot 为 null(未选 workspace)时只剩全局 session。(复审 loop R12)
+ */
+export function filterByWorkspaceRoot(
+  sessions: readonly TerminalSession[],
+  currentRoot: string | null,
+): readonly TerminalSession[] {
+  if (sessions.length === 0) return EMPTY_TERMINAL_SESSIONS;
+
+  let visible: TerminalSession[] | null = null;
+  let count = 0;
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i]!;
+    const isVisible =
+      s.workspaceRoot === undefined ||
+      (currentRoot !== null && pathEquals(s.workspaceRoot, currentRoot));
+    if (isVisible) {
+      if (visible !== null) visible[count] = s;
+      count += 1;
+      continue;
+    }
+    if (visible === null) {
+      visible = new Array<TerminalSession>(sessions.length);
+      for (let j = 0; j < count; j++) {
+        visible[j] = sessions[j]!;
+      }
+    }
+  }
+  if (visible === null) return sessions;
+  visible.length = count;
+  return count === 0 ? EMPTY_TERMINAL_SESSIONS : visible;
+}
+
+let indexedSessionsRef: readonly TerminalSession[] | null = null;
+const EMPTY_TERMINAL_SESSION_INDEX = new Map<string, TerminalSession>();
+let indexedSessionsById = EMPTY_TERMINAL_SESSION_INDEX;
+
+export function getIndexedTerminalSessionById(
+  sessions: readonly TerminalSession[],
+  sessionId: string,
+): TerminalSession | undefined {
+  if (indexedSessionsRef !== sessions) {
+    if (sessions.length === 0) {
+      indexedSessionsRef = sessions;
+      indexedSessionsById = EMPTY_TERMINAL_SESSION_INDEX;
+      return undefined;
+    }
+    const next = new Map<string, TerminalSession>();
+    for (const session of sessions) next.set(session.id, session);
+    indexedSessionsRef = sessions;
+    indexedSessionsById = next;
+  }
+  return indexedSessionsById.get(sessionId);
+}
+
+function getSessionById(sessionId: string): TerminalSession | undefined {
+  return getIndexedTerminalSessionById(
+    useTerminalStore.getState().sessions,
+    sessionId,
+  );
+}
+
+export function getShellFamily(sessionId: string): ShellFamily {
+  const session = getSessionById(sessionId);
+  const shellFamily = (session as (TerminalSession & { shellFamily?: ShellFamily }) | undefined)
+    ?.shellFamily;
+  if (shellFamily) return shellFamily;
+
+  console.warn(
+    `[terminal-drag-drop] shellFamily missing for ${sessionId}; falling back to platform default`,
+  );
+  // renderer-safe: `process` is Node-only and undefined in Electron renderer;
+  // navigator.platform is filled by Electron + browser convention (mirrors
+  // format-hotkey.ts pattern). issue #40 R2 hot-fix.
+  return isWindowsRuntime() ? 'powershell' : 'posix';
+}
+
+type TerminalState = {
+  sessions: readonly TerminalSession[];
+  /**
+   * 已收到首个权威 sessions 快照(或初始拉取已失败、不会再等)。Splash 就绪屏障与 Reconciler 据此区分
+   * 「首个快照里的存量 session」(hydrate,不抢焦)与之后真正新增的 session。
+   */
+  hydrated: boolean;
+  /**
+   * 终端同步已结算、不必再为它挡 Splash —— 初始拉取失败 / windowId 非法时置位。与 hydrated 拆开:
+   * 失败只放行屏障,之后首个有效快照仍按 hydrate 处理(存量 session 不抢焦)。Splash 放行条件 =
+   * hydrated || settled。
+   */
+  settled: boolean;
+  /**
+   * 接收 main 推的 snapshot(整体替换;引用未变、都为空或逐字段内容相同时不通知订阅者)。sessions 变化时与
+   * hydrated=true 原子写入,订阅者不会看到「有 sessions 但未 hydrated」的中间态。
+   */
+  replaceSnapshot: (sessions: readonly TerminalSession[]) => void;
+  /** 标记 hydrated(空快照时 replaceSnapshot 不产生变化,由同步源显式调用)。 */
+  markHydrated: () => void;
+  /** 标记 settled(初始拉取失败等:只放行 Splash,不改 hydrate 语义)。幂等。 */
+  markSettled: () => void;
+};
+
+/** 字段值浅比较:Object.is;双方都是对象(如 attachTarget)时再逐键 Object.is 一层。 */
+function sameFieldValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  return sameShallow(a as Record<string, unknown>, b as Record<string, unknown>, Object.is);
+}
+
+function sameShallow(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  eq: (x: unknown, y: unknown) => boolean,
+): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const k of keys) {
+    if (!Object.hasOwn(b, k) || !eq(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+/** 两份快照逐元素逐字段相同(顺序敏感:顺序以 main 为准,变了也算变化)。 */
+function sameSessions(
+  a: readonly TerminalSession[],
+  b: readonly TerminalSession[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] as unknown as Record<string, unknown>;
+    const y = b[i] as unknown as Record<string, unknown>;
+    if (x !== y && !sameShallow(x, y, sameFieldValue)) return false;
+  }
+  return true;
+}
+
+export const useTerminalStore = create<TerminalState>((set) => ({
+  sessions: [],
+  hydrated: false,
+  settled: false,
+
+  replaceSnapshot: (newSessions) =>
+    set((s) => {
+      if (newSessions === s.sessions) return s;
+      if (newSessions.length === 0 && s.sessions.length === 0) return s;
+      // perf:main 任一会话变化都给所有窗口推各自完整快照,IPC 反序列化每次都是新数组 → 内容未变也不 set,
+      // 免得订阅者与 DockReconciler 白跑。首个权威快照内容相同仍须置 hydrated(Splash 就绪屏障)。
+      if (sameSessions(newSessions, s.sessions)) return s.hydrated ? s : { hydrated: true };
+      return { sessions: newSessions, hydrated: true };
+    }),
+
+  markHydrated: () => set((s) => (s.hydrated ? s : { hydrated: true })),
+  markSettled: () => set((s) => (s.settled ? s : { settled: true })),
+}));
