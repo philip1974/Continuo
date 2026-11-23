@@ -9,7 +9,6 @@ vi.mock('../../lib/co-api', () => ({
       onEvent: vi.fn(() => () => undefined),
       subscribe: vi.fn(async () => ({ ok: true, data: { sessions: [] } })),
       getStack: vi.fn(),
-      getScopes: vi.fn(),
       getVariables: vi.fn(async () => ({
         ok: true,
         data: {

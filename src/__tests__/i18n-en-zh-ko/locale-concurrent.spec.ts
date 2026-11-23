@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Locale = 'en' | 'zh' | 'ko';
 type IpcOk<T> = { readonly ok: true; readonly data: T };
-type SetLocaleData = { readonly ok: true; readonly locale: Locale; readonly gen: number };
+type SetLocaleData = { readonly locale: Locale; readonly gen: number };
 type Deferred<T> = { readonly promise: Promise<T>; readonly resolve: (v: T) => void };
 
 type SettingsStoreModule = {
@@ -60,12 +60,12 @@ describe('setLocale in-flight token serialization — P1-1', () => {
     const p1 = useSettingsStore.getState().setLocale('zh');
     const p2 = useSettingsStore.getState().setLocale('ko');
 
-    d2.resolve({ ok: true, data: { ok: true, locale: 'ko', gen: 2 } });
+    d2.resolve({ ok: true, data: { locale: 'ko', gen: 2 } });
     await p2;
     expect(useSettingsStore.getState().locale).toBe('ko');
     expect(useSettingsStore.getState().currentGen).toBe(2);
 
-    d1.resolve({ ok: true, data: { ok: true, locale: 'zh', gen: 1 } });
+    d1.resolve({ ok: true, data: { locale: 'zh', gen: 1 } });
     await p1;
     expect(useSettingsStore.getState().locale).toBe('ko');
     expect(useSettingsStore.getState().currentGen).toBe(2);

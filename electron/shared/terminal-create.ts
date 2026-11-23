@@ -17,7 +17,7 @@ import { makeEnvBoundedValidator } from './validate-env-bounded';
 // 滥用;超限 zod 校验失败 → 走 main 的 BAD_INPUT 拒绝路径。
 // 导出供 MCP create_session 路径(走 raw ptyCreateHandler,绕过本 schema)复用同一上限(E32)。
 export const PATH_MAX = 8192; // shell / cwd / workspaceRoot(路径,远超真实路径长度)
-export const LABEL_MAX = 512; // name / title / agentLabel(显示串)
+export const LABEL_MAX = 512; // name / agentLabel(显示串)
 const ARG_MAX_LEN = 16384; // 单个 arg
 const ARGS_MAX_COUNT = 1024; // arg 数量
 const ENV_KEY_MAX = 1024;
@@ -46,7 +46,6 @@ export const TerminalCreateInputSchema = z
       .optional(),
     // P1 metadata 真相源在 main:这些字段创建时入 sessions service。
     name: z.string().max(LABEL_MAX).optional(),
-    title: z.string().max(LABEL_MAX).optional(),
     originHint: z.enum(ORIGIN_HINTS).optional(),
     agentLabel: z.string().max(LABEL_MAX).optional(),
     /**

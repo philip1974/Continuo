@@ -88,10 +88,7 @@ describe('createInputSchema', () => {
         createInputSchema.safeParse({ args: ['x'.repeat(16385)] }).success,
       ).toBe(false);
     });
-    it('title/name/agentLabel 超长 → fail', () => {
-      expect(
-        createInputSchema.safeParse({ title: 'x'.repeat(513) }).success,
-      ).toBe(false);
+    it('name/agentLabel 超长 → fail', () => {
       expect(
         createInputSchema.safeParse({ name: 'x'.repeat(513) }).success,
       ).toBe(false);
@@ -145,7 +142,7 @@ describe('createInputSchema', () => {
           shell: '/bin/zsh',
           args: ['-l', '--login', '/some/long/path/to/a/file.txt'],
           env: { PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8' },
-          title: 'My Terminal',
+          name: 'My Terminal',
           agentLabel: 'codex',
           workspaceRoot: '/Users/me/projects/app',
         }).success,

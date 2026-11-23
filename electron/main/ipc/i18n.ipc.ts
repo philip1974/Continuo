@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { safeHandle } from '../safe-handle';
-import { I18N_CHANNELS, type I18nSetLocaleResult, type I18nChangedPayload } from '../../shared/i18n-channels';
+import { I18N_CHANNELS, type I18nChangedPayload } from '../../shared/i18n-channels';
 import { LocaleSchema, type Locale } from '../../shared/i18n-types';
 import {
   getCurrentLocale,
@@ -30,7 +30,7 @@ export function registerI18nIpc(): void {
     () => getCurrentLocale(),
   );
 
-  safeHandle<Locale, I18nSetLocaleResult>(
+  safeHandle<Locale, I18nChangedPayload>(
     I18N_CHANNELS.SET_LOCALE,
     LocaleSchema,
     async (locale) => {
@@ -49,7 +49,7 @@ export function registerI18nIpc(): void {
         }
         broadcastChanged({ locale, gen });
       }
-      return { ok: true as const, locale, gen };
+      return { locale, gen };
     },
   );
 }

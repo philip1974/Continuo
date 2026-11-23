@@ -11,14 +11,7 @@ export const I18N_CHANNELS = {
   CHANGED: 'i18n:changed',
 } as const;
 
-/** SET_LOCALE handler 的返回 shape（含 in-flight gen，配合 P1-1）。 */
-export interface I18nSetLocaleResult {
-  readonly ok: true;
-  readonly locale: 'en' | 'zh' | 'ko';
-  readonly gen: number;
-}
-
-/** CHANGED broadcast payload（含 gen，renderer 可丢弃过期）。 */
+/** CHANGED broadcast payload,也是 SET_LOCALE handler 的返回 shape（含 in-flight gen，renderer 可丢弃过期）。 */
 export interface I18nChangedPayload {
   readonly locale: 'en' | 'zh' | 'ko';
   readonly gen: number;

@@ -7,7 +7,6 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { sessionIdSchema } from '../../shared/mcp-debug-schemas';
 import {
   DEBUG_VIEW_CHANNELS,
-  type DebugGetScopesInput,
   type DebugGetStackInput,
   type DebugGetVariablesInput,
 } from '../../shared/debug-view-channels';
@@ -19,13 +18,6 @@ const debugSubscribeInputSchema = z.object({}).strict();
 
 // 面板只暴露它实际用到的入参;停住的线程、分页 / 展开深度 / 截断等一律走 debug.service 的默认值。
 const debugGetStackInputSchema = z.object({ sessionId: sessionIdSchema }).strict();
-
-const debugGetScopesInputSchema = z
-  .object({
-    sessionId: sessionIdSchema,
-    frameId: z.number().int().nonnegative(),
-  })
-  .strict();
 
 const debugGetVariablesInputSchema = z
   .object({
@@ -63,14 +55,19 @@ export function registerDebugViewIpc(service: DebugService): void {
     return { sessions: service.viewSnapshot(win.id) };
   });
 
-  windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_STACK, debugGetStackInputSchema, (input: DebugGetStackInput, win) => {
+  // 栈帧 + 首帧作用域一次返回:面板只展示首帧的作用域,首帧 id 是这里刚取到的,不必让 renderer 再带回来问一次。
+  // 作用域取不到(该帧已失效等)不影响栈帧展示 → 空数组。
+  windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_STACK, debugGetStackInputSchema, async (input: DebugGetStackInput, win) => {
     requireStoppedSession(input.sessionId, win);
-    return service.stackTrace(input.sessionId, {});
-  });
-
-  windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_SCOPES, debugGetScopesInputSchema, (input: DebugGetScopesInput, win) => {
-    requireStoppedSession(input.sessionId, win);
-    return service.scopes(input.sessionId, { frameId: input.frameId });
+    const stack = await service.stackTrace(input.sessionId, {});
+    const top = stack.frames[0];
+    const scopes = top
+      ? await service.scopes(input.sessionId, { frameId: top.id }).then(
+          (r) => r.scopes,
+          () => [],
+        )
+      : [];
+    return { ...stack, scopes };
   });
 
   windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_VARIABLES, debugGetVariablesInputSchema, (input: DebugGetVariablesInput, win) => {

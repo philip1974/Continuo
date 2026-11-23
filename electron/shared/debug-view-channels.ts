@@ -1,13 +1,13 @@
 export const DEBUG_VIEW_CHANNELS = {
   EVENT: 'debug:event',
   SUBSCRIBE: 'debug:subscribe',
+  /** 当前停点的栈帧 + 首帧的作用域(面板不能切帧,一次取齐)。 */
   GET_STACK: 'debug:getStack',
-  GET_SCOPES: 'debug:getScopes',
   GET_VARIABLES: 'debug:getVariables',
 } as const;
 
 // debug 视图的数据形态:main(debug.service 产出)与 renderer(debug.store 消费)共用。preload 的
-// getStack / getScopes / getVariables 返回的是 unknown,renderer 逐字段手工校验 —— 两侧各写一份接口时,
+// getStack / getVariables 返回的是 unknown,renderer 逐字段手工校验 —— 两侧各写一份接口时,
 // main 改字段名编译器不会报错,renderer 只会把所有条目静默丢掉。
 export interface DebugBreakpoint {
   readonly file: string;
@@ -89,11 +89,6 @@ export interface DebugViewSessionSnapshot {
 
 export interface DebugGetStackInput {
   readonly sessionId: string;
-}
-
-export interface DebugGetScopesInput {
-  readonly sessionId: string;
-  readonly frameId: number;
 }
 
 export interface DebugGetVariablesInput {

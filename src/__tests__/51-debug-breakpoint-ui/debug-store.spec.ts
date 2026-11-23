@@ -25,11 +25,7 @@ const debugApi = vi.hoisted(() => ({
           column: 1,
         },
       ],
-    },
-  })),
-  getScopes: vi.fn(async () => ({
-    ok: true as const,
-    data: {
+      // 首帧的作用域随栈帧一次返回(面板不能切帧,首帧 id 是 main 自己刚取到的,不必再绕 renderer 一趟)。
       scopes: [{ name: 'Local', variables_reference: 44, expensive: false }],
     },
   })),
@@ -170,7 +166,10 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     const emit = debugApi.events[0]!;
     const frame = (line: number) => ({
       ok: true as const,
-      data: { frames: [{ id: line, name: `at-${line}`, source_path: '/repo/a.ts', line, column: 1 }] },
+      data: {
+        frames: [{ id: line, name: `at-${line}`, source_path: '/repo/a.ts', line, column: 1 }],
+        scopes: [],
+      },
     });
     let releaseOld: (() => void) | null = null;
     debugApi.getStack.mockImplementationOnce(

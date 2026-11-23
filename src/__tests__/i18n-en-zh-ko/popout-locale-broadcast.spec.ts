@@ -123,6 +123,6 @@ describe('popout locale broadcast', () => {
       { locale: 'ko', gen: 2 },
     );
     // handler 不因单窗口 send 失败而返回 ok:false(否则发起 renderer 不更新语言 = 分裂)。
-    expect(result).toEqual({ ok: true, locale: 'ko', gen: 2 });
+    expect(result).toEqual({ locale: 'ko', gen: 2 });
   });
 });

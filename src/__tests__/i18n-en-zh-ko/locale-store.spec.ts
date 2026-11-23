@@ -5,7 +5,7 @@ type LocaleChange = { readonly locale: Locale; readonly gen: number };
 type LocaleChangeHandler = (change: LocaleChange) => void;
 type IpcOk<T> = { readonly ok: true; readonly data: T };
 type IpcFail = { readonly ok: false; readonly code: string; readonly message: string };
-type SetLocaleData = { readonly ok: true; readonly locale: Locale; readonly gen: number };
+type SetLocaleData = { readonly locale: Locale; readonly gen: number };
 
 type SettingsStoreModule = {
   readonly useSettingsStore: {
@@ -60,7 +60,7 @@ describe('settings.store + coApi.i18n roundtrip', () => {
   it('setLocale("zh") 调 coApi.i18n.setLocale("zh") 并更新 store', async () => {
     mockCoApi.i18n.setLocale.mockResolvedValue({
       ok: true,
-      data: { ok: true, locale: 'zh', gen: 1 },
+      data: { locale: 'zh', gen: 1 },
     });
     const { useSettingsStore } = await importStore();
 
@@ -74,7 +74,7 @@ describe('settings.store + coApi.i18n roundtrip', () => {
   it('setLocale 返回相同 locale/gen 时不通知订阅者', async () => {
     mockCoApi.i18n.setLocale.mockResolvedValue({
       ok: true,
-      data: { ok: true, locale: 'en', gen: 3 },
+      data: { locale: 'en', gen: 3 },
     });
     const { useSettingsStore } = await importStore();
     useSettingsStore.setState({ locale: 'en', currentGen: 3 });

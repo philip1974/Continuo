@@ -176,7 +176,7 @@ export function makeCreateHandler(deps?: {
     // 环境块,子进程可能取到用户值 → 用 mergeSpawnEnv 只留后者(内部)的键。
     const { env: internalEnv, mcpToken } = mcpEnvProvider(win.id);
     const mergedEnv = mergeSpawnEnv(input.env ?? {}, internalEnv) as Record<string, string>;
-    const title = input.title ?? input.name ?? sessionStore.nextDefaultTitle(win.id);
+    const title = input.name ?? sessionStore.nextDefaultTitle(win.id);
     // 先登记 session metadata(reservation),再 spawn PTY。PTY 可能在 createTerminal 的
     // await 期间就极速退出(如 `sh -c 'exit 0'` / 启动即失败的 shell),其 onExit →
     // cleanupSessionLocal → setExited(id) 需要 metadata 已存在;否则 setExited 因 id 不在

@@ -64,12 +64,10 @@ import {
 } from '../shared/marketplace-channels';
 import {
   I18N_CHANNELS,
-  type I18nSetLocaleResult,
   type I18nChangedPayload,
 } from '../shared/i18n-channels';
 import {
   DEBUG_VIEW_CHANNELS,
-  type DebugGetScopesInput,
   type DebugGetStackInput,
   type DebugGetVariablesInput,
   type DebugViewEvent,
@@ -523,8 +521,6 @@ const api = {
     },
     getStack: (input: DebugGetStackInput): Promise<IpcResult<unknown>> =>
       ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_STACK, input),
-    getScopes: (input: DebugGetScopesInput): Promise<IpcResult<unknown>> =>
-      ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.GET_SCOPES, input),
     getVariables: (
       input: DebugGetVariablesInput,
     ): Promise<IpcResult<unknown>> =>
@@ -536,7 +532,7 @@ const api = {
       return ipcRenderer.invoke(I18N_CHANNELS.GET_LOCALE);
     },
     /** 设置新 locale；main 持久化 + 广播 i18n:changed；返回 { ok, locale, gen }。 */
-    setLocale(locale: Locale): Promise<IpcResult<I18nSetLocaleResult>> {
+    setLocale(locale: Locale): Promise<IpcResult<I18nChangedPayload>> {
       return ipcRenderer.invoke(I18N_CHANNELS.SET_LOCALE, locale);
     },
     /** 订阅 main 广播；返 unsubscribe。renderer 用 gen 排序去过期。 */

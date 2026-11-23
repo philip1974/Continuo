@@ -185,19 +185,12 @@ async function pullStackAndScopes(sessionId: string, stopSeq: number): Promise<v
         .filter((frame): frame is DebugStackFrame => frame !== null)
     : [];
   const topFrame = frames[0];
-
-  let scopes: readonly DebugScope[] = [];
-  if (topFrame) {
-    const scopeResult = await coApi.debug.getScopes({
-      sessionId,
-      frameId: topFrame.id,
-    });
-    if (scopeResult.ok && Array.isArray(asRecord(scopeResult.data).scopes)) {
-      scopes = (asRecord(scopeResult.data).scopes as readonly unknown[])
+  // 首帧的作用域随栈帧一起返回(main 取完栈帧接着取,取不到给空数组)。
+  const scopes: readonly DebugScope[] = Array.isArray(asRecord(stack.data).scopes)
+    ? (asRecord(stack.data).scopes as readonly unknown[])
         .map(asScope)
-        .filter((scope): scope is DebugScope => scope !== null);
-    }
-  }
+        .filter((scope): scope is DebugScope => scope !== null)
+    : [];
 
   useDebugStore.setState((state) => {
     const current = state.sessions.get(sessionId);
