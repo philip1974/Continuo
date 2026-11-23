@@ -29,10 +29,9 @@ interface CodeEditorProps {
   tabId: string;
   value: string;
   onChange?: (value: string) => void;
-  readonly?: boolean;
   fileName?: string;
-  /** 强制语言(高于 fileName 推断;Source mode 用 'markdown'). */
-  forceLanguage?: 'markdown' | 'javascript' | 'typescript' | 'json' | 'css' | 'html';
+  /** 强制按 markdown 高亮(高于 fileName 推断;Markdown 的 Source mode 用). */
+  forceLanguage?: 'markdown';
 }
 
 export function fileExtensionLower(fileName: string): string | undefined {
@@ -73,22 +72,7 @@ export function pickLanguage(
   fileName: string,
   forceLanguage?: CodeEditorProps['forceLanguage'],
 ): Extension {
-  if (forceLanguage) {
-    switch (forceLanguage) {
-      case 'markdown':
-        return markdown();
-      case 'javascript':
-        return javascript({ jsx: true });
-      case 'typescript':
-        return javascript({ jsx: true, typescript: true });
-      case 'json':
-        return json();
-      case 'css':
-        return css();
-      case 'html':
-        return html();
-    }
-  }
+  if (forceLanguage === 'markdown') return markdown();
   const ext = fileExtensionLower(fileName);
   switch (ext) {
     case 'js':
@@ -118,7 +102,6 @@ export function CodeEditor({
   tabId,
   value,
   onChange,
-  readonly = false,
   fileName = '',
   forceLanguage,
 }: CodeEditorProps) {
@@ -158,8 +141,6 @@ export function CodeEditor({
         themeCompartment.current.of(themeExt),
         langCompartment.current.of(lang),
         debugDecorationsExtension(),
-        EditorView.editable.of(!readonly),
-        EditorState.readOnly.of(readonly),
         EditorView.updateListener.of((update: ViewUpdate) => {
           if (
             update.docChanged &&
