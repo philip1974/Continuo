@@ -15,8 +15,6 @@ export const TERMINAL_CHANNELS = {
   // event(main → renderer,webContents.send)
   DATA: 'terminal:data',
   EXIT: 'terminal:exit',
-  OVERFLOW: 'terminal:overflow',
-  OVERFLOW_RECOVERED: 'terminal:overflow-recovered',
   SESSIONS_CHANGED: 'terminal:sessions_changed',
 } as const;
 

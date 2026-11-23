@@ -20,7 +20,6 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
 | `terminal:resize` | `{ id, cols 1-1000, rows 1-500 }` | `void` |
 | `terminal:data` | event push | `(id, data)` |
 | `terminal:exit` | event push | `(id, { exitCode, signal })` |
-| `terminal:overflow` / `recovered` | event push | `(id)` |
 
 ## 关键行为
 

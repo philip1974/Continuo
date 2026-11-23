@@ -272,6 +272,8 @@
   回归测试经验证:去掉锁 `regs-unregs` 从 1 变 2(泄漏一个 token)即 FAIL。
 
 ### P2-Z terminal overflow 后流静默仍补发 overflow-recovered —(terminal.service.ts,逻辑修复)
+- **后续**:`terminal:overflow` / `overflow-recovered` 两个事件 renderer 从未订阅,已连同恢复检查定时器删除
+  (见 `terminal-overflow-throttle/README.md`);以下为当时的修复记录。
 - throttle reset interval 内增:若 `overflowNotified` 且本窗速率已 ≤ 阈值,清标志并
   `safeSend('terminal:overflow-recovered')`。
 - 根因: `overflow-recovered` 旧实现**只在下一个低于阈值的 chunk 到达时**发送

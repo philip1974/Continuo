@@ -347,14 +347,6 @@ const api = {
       ) => cb(id, payload);
       return subscribeIpc(TERMINAL_CHANNELS.EXIT, listener);
     },
-    onOverflow: (cb: (id: string) => void): (() => void) => {
-      const listener = (_: unknown, id: string) => cb(id);
-      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW, listener);
-    },
-    onOverflowRecovered: (cb: (id: string) => void): (() => void) => {
-      const listener = (_: unknown, id: string) => cb(id);
-      return subscribeIpc(TERMINAL_CHANNELS.OVERFLOW_RECOVERED, listener);
-    },
   },
   plugins: {
     listDirs: (): Promise<IpcResult<readonly IpcPluginDirListing[]>> =>

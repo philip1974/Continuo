@@ -1,5 +1,5 @@
 // PTY service(M-Terminal Step T1,从维护者早期原型移植)。
-// SessionManager session map<id, Instance>;输出节流 / 截断 / overflow 通知;
+// SessionManager session map<id, Instance>;输出节流 / 截断;
 // kill grace period 3s 优雅终止。
 
 import { app, BrowserWindow } from 'electron';
@@ -22,7 +22,7 @@ import { codedError } from '../../shared/error-message';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
-const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow
+const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow(截断 + 100ms 合批)
 const TRUNCATE_MAX_BYTES = 64 * 1024;             // overflow 时单 chunk 上限
 const FLUSH_DELAY_OVERFLOW_MS = 100;
 // 合批窗口直接叠加在每次按键回显上:此前 32ms / 原地更新 64ms(zsh 回显几乎都带 `\x1b[K` 等 CSI,
@@ -32,8 +32,7 @@ const FLUSH_DELAY_MS = 5;
 const THROTTLE_RESET_INTERVAL_MS = 1_000;
 const KILL_GRACE_PERIOD_MS = 3_000;
 
-// 吞吐窗口 / 恢复检查用单调时钟:墙钟(Date.now)可被系统校时回拨,窗口长期不滚动或恢复定时器 delay 被算成
-// 数小时 → 流静默时卡在 overflow(旧 setInterval 不受墙钟影响)。
+// 吞吐窗口用单调时钟:墙钟(Date.now)可被系统校时回拨,窗口长期不滚动 → 回拨后的输出一直按 overflow 截断。
 const monotonicNow = (): number => performance.now();
 
 // 把合批窗口里的在途输出发给 renderer,第三个参数 = 本批首字符的累计偏移(见 getBufferSnapshot)。
@@ -48,56 +47,22 @@ function flushPending(id: string, inst: Instance): void {
   }
 }
 
-/** 退出 overflow:清标志 + 撤销在途恢复检查定时器(否则残留一次无效唤醒)+ 通知 renderer。 */
-function markOverflowRecovered(id: string, inst: Instance): void {
-  inst.overflowNotified = false;
-  if (inst.recoveryTimer) {
-    clearTimeout(inst.recoveryTimer);
-    inst.recoveryTimer = null;
-  }
-  safeSend(id, TERMINAL_CHANNELS.OVERFLOW_RECOVERED, id);
-}
-
 /**
  * 吞吐窗口惰性滚动(perf):此前每个 PTY 一个永久 1Hz setInterval(上限 256 会话 → 空闲也 256 次/秒唤醒
- * 主进程),每个 tick 做「overflow 中且本窗速率已 ≤ 阈值 → 补发 recovered」再清零计数。现改为按时间戳在
- * 用到计数时(handleChunk / 恢复检查)补跑错过的 tick,窗口仍以创建时刻对齐、每 1s 一格,语义与旧 interval 等价:
- * - 错过的第一个 tick:计数为上一窗口总量,overflow 中且 ≤ 阈值 → recovered
- * - 错过 ≥2 个 tick:第二个 tick 时计数已清零 → overflow 中必然 recovered
+ * 主进程)清零计数。现改为 chunk 到达时按时间戳补跑错过的 tick,窗口仍以创建时刻对齐、每 1s 一格。
  */
-function rollThroughputWindow(id: string, inst: Instance, now: number): void {
+function rollThroughputWindow(inst: Instance, now: number): void {
   const elapsed = now - inst.windowStart;
   if (elapsed < THROTTLE_RESET_INTERVAL_MS) return;
-  if (
-    inst.overflowNotified &&
-    (inst.bytesPerSecond <= OVERFLOW_THRESHOLD_BYTES || elapsed >= 2 * THROTTLE_RESET_INTERVAL_MS)
-  ) {
-    markOverflowRecovered(id, inst);
-  }
   inst.bytesPerSecond = 0;
   inst.windowStart +=
     Math.floor(elapsed / THROTTLE_RESET_INTERVAL_MS) * THROTTLE_RESET_INTERVAL_MS;
 }
 
-/**
- * overflow 后若流恰好静默(不再有 chunk),handleChunk 的 recover 分支没机会跑 → renderer 永久卡在 overflow
- * 指示。仅在 overflow 期间按窗口边界安排一次性检查(等价旧 interval 的 tick 时刻),恢复后不再持有定时器。
- */
-function scheduleOverflowRecoveryCheck(id: string, inst: Instance): void {
-  if (inst.recoveryTimer) return;
-  const delay = Math.max(0, inst.windowStart + THROTTLE_RESET_INTERVAL_MS - monotonicNow());
-  inst.recoveryTimer = setTimeout(() => {
-    inst.recoveryTimer = null;
-    if (instances.get(id) !== inst) return;
-    rollThroughputWindow(id, inst, monotonicNow());
-    if (inst.overflowNotified) scheduleOverflowRecoveryCheck(id, inst);
-  }, delay);
-}
-
 function handleChunk(id: string, chunk: string): void {
   const inst = instances.get(id);
   if (!inst) return;
-  rollThroughputWindow(id, inst, monotonicNow());
+  rollThroughputWindow(inst, monotonicNow());
 
   if (!inst.pendingData) inst.pendingStart = inst.receivedChars;
   inst.receivedChars += chunk.length;
@@ -117,18 +82,12 @@ function handleChunk(id: string, chunk: string): void {
       inst.pendingStart =
         inst.receivedChars - (inst.pendingData.length - RESET_PREFIX.length);
     }
-    if (!inst.overflowNotified) {
-      inst.overflowNotified = true;
-      safeSend(id, TERMINAL_CHANNELS.OVERFLOW, id);
-      scheduleOverflowRecoveryCheck(id, inst);
-    }
     if (!inst.flushTimer) {
       inst.flushTimer = setTimeout(flushPending, FLUSH_DELAY_OVERFLOW_MS, id, inst);
     }
     return;
   }
 
-  if (inst.overflowNotified) markOverflowRecovered(id, inst);
   inst.pendingData += chunk;
 
   if (!inst.flushTimer) {
@@ -386,10 +345,6 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
     clearTimeout(instance.killTimer);
     instance.killTimer = null;
   }
-  if (instance.recoveryTimer) {
-    clearTimeout(instance.recoveryTimer);
-    instance.recoveryTimer = null;
-  }
 
   // 4. Continuo-specific cleanup (shellCleanup is async — P1-1 fix)
   try {
@@ -429,9 +384,6 @@ interface Instance {
   bytesPerSecond: number;
   /** 当前吞吐窗口起点(ms,以创建时刻对齐,每格 THROTTLE_RESET_INTERVAL_MS)。 */
   windowStart: number;
-  /** overflow 期间的一次性恢复检查(无 overflow 时为 null:空闲终端不持有周期定时器)。 */
-  recoveryTimer: NodeJS.Timeout | null;
-  overflowNotified: boolean;
   readonly mcpToken: string;
   readonly shellCleanup: () => Promise<void>;
 }
@@ -622,8 +574,6 @@ export async function createTerminal(
     killTimer: null,
     bytesPerSecond: 0,
     windowStart: monotonicNow(),
-    recoveryTimer: null,
-    overflowNotified: false,
     mcpToken: meta?.mcpToken ?? '',
     shellCleanup,
   };
@@ -648,10 +598,6 @@ export async function createTerminal(
     // PHASE 3: rollback all PHASE 1 state on sm.create failure.
     instances.delete(id);
     sessionTargets.delete(id);
-    if (inst.recoveryTimer) {
-      clearTimeout(inst.recoveryTimer);
-      inst.recoveryTimer = null;
-    }
     revokeTokenQuietly(inst.mcpToken);
     try {
       void inst.shellCleanup().catch(() => {

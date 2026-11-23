@@ -42,13 +42,27 @@ function emit(chunk: string): void {
   sessionManagerMock.options?.onData?.('a', chunk);
 }
 
-function overflowEvents(win: ReturnType<typeof makeWindow>): string[] {
+const TRUNCATE_MAX = 64 * 1024;
+const RESET_PREFIX = '\x1b[0m';
+
+/** 已推给 renderer 的输出批次(terminal:data 的 data 参数)。 */
+function dataBatches(win: ReturnType<typeof makeWindow>): string[] {
   return (win.webContents.send as ReturnType<typeof vi.fn>).mock.calls
-    .map((c) => c[0] as string)
-    .filter((ch) => ch === 'terminal:overflow' || ch === 'terminal:overflow-recovered');
+    .filter((c) => c[0] === 'terminal:data')
+    .map((c) => c[2] as string);
 }
 
-describe('terminal overflow 节流 · 吞吐窗口与恢复', () => {
+function lastBatch(win: ReturnType<typeof makeWindow>): string {
+  const batches = dataBatches(win);
+  return batches[batches.length - 1]!;
+}
+
+/** 该批是否经 overflow 截断(只留尾部并加 reset 前缀)。 */
+function isTruncated(batch: string): boolean {
+  return batch.startsWith(RESET_PREFIX) && batch.length <= TRUNCATE_MAX;
+}
+
+describe('terminal overflow 节流 · 吞吐窗口与截断', () => {
   let win: ReturnType<typeof makeWindow>;
 
   beforeEach(async () => {
@@ -89,86 +103,69 @@ describe('terminal overflow 节流 · 吞吐窗口与恢复', () => {
   it('普通输出合批发送后不残留定时器', () => {
     emit('hello');
     vi.advanceTimersByTime(5);
+    expect(dataBatches(win)).toEqual(['hello']);
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('1s 窗口以创建时刻对齐:跨窗口边界的两段各 <2MiB 不触发 overflow', () => {
+  it('1s 窗口以创建时刻对齐:跨窗口边界的两段各 <2MiB 不截断', () => {
     vi.advanceTimersByTime(900);
     emit('x'.repeat(1.5 * MiB));
     vi.advanceTimersByTime(200); // t=1100,进入下一窗口
     emit('x'.repeat(1 * MiB));
     vi.advanceTimersByTime(500);
-    expect(overflowEvents(win)).toEqual([]);
+    expect(dataBatches(win).map((b) => b.length)).toEqual([1.5 * MiB, 1 * MiB]);
   });
 
-  it('同一窗口内累计 >2MiB → overflow', () => {
+  it('同一窗口内累计 >2MiB → 截断到 64KiB + 100ms 合批', () => {
     vi.advanceTimersByTime(100);
     emit('x'.repeat(1.5 * MiB));
     vi.advanceTimersByTime(800); // t=900,同一窗口
     emit('x'.repeat(1 * MiB));
-    expect(overflowEvents(win)).toEqual(['terminal:overflow']);
+    vi.advanceTimersByTime(99);
+    expect(dataBatches(win)).toHaveLength(1); // overflow 批次尚未到 100ms
+    vi.advanceTimersByTime(1);
+    expect(dataBatches(win)).toHaveLength(2);
+    expect(isTruncated(lastBatch(win))).toBe(true);
   });
 
-  it('overflow 后流静默 → 在下下个窗口边界(t=2000)补发 recovered,之后不再持有定时器', () => {
+  it('overflow 后流静默 → flush 完不残留任何定时器', () => {
     emit('x'.repeat(3 * MiB)); // t=0 进入 overflow
-    vi.advanceTimersByTime(1999);
-    expect(overflowEvents(win)).toEqual(['terminal:overflow']);
-    vi.advanceTimersByTime(1); // t=2000
-    expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
+    vi.advanceTimersByTime(100);
+    expect(isTruncated(lastBatch(win))).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('overflow 后下一窗口来低速输出 → 立即 recovered(chunk 路径),恢复检查定时器一并清除', () => {
+  it('overflow 后下一窗口来低速输出 → 不截断,按普通 5ms 合批', () => {
     emit('x'.repeat(3 * MiB));
-    vi.advanceTimersByTime(1200); // t=1000 的恢复检查未恢复(上一窗口仍超阈值)→ 已重排到 t=2000
+    vi.advanceTimersByTime(1200);
     emit('ok');
-    expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
-    vi.advanceTimersByTime(5); // 普通输出合批 flush
+    vi.advanceTimersByTime(5);
+    expect(lastBatch(win)).toBe('ok');
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('下一窗口仍持续高速 → 该窗口结束(t=2000)不恢复,再下一边界(t=3000)静默时恢复', () => {
+  it('下一窗口仍持续高速 → 继续截断', () => {
     emit('x'.repeat(3 * MiB));
     vi.advanceTimersByTime(1500);
-    emit('x'.repeat(3 * MiB)); // 新窗口单 chunk 即超阈值:保持 overflow,不重复发送
-    vi.advanceTimersByTime(500); // t=2000
-    expect(overflowEvents(win)).toEqual(['terminal:overflow']);
-    vi.advanceTimersByTime(999);
-    expect(overflowEvents(win)).toEqual(['terminal:overflow']);
-    vi.advanceTimersByTime(1); // t=3000
-    expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
+    emit('x'.repeat(3 * MiB)); // 新窗口单 chunk 即超阈值
+    vi.advanceTimersByTime(100);
+    expect(dataBatches(win)).toHaveLength(2);
+    expect(dataBatches(win).every(isTruncated)).toBe(true);
   });
 
-  // 惰性窗口基于墙钟:系统时间回拨不得让窗口长期不滚动(旧 setInterval 不受墙钟影响)。
-  it('overflow 后系统时间回拨 1 小时 → 仍在 2s 内恢复,且后续窗口正常滚动', () => {
+  // 吞吐窗口用单调时钟:系统时间回拨不得让窗口长期不滚动(否则回拨后的输出一直按 overflow 截断)。
+  it('overflow 后系统时间回拨 1 小时 → 下一窗口照常滚动,输出不截断', () => {
     emit('x'.repeat(3 * MiB));
     vi.setSystemTime(-3_600_000);
-    vi.advanceTimersByTime(2000);
-    expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
-    emit('x'.repeat(1.5 * MiB));
-    vi.advanceTimersByTime(1000);
-    emit('x'.repeat(1.5 * MiB));
-    expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
+    vi.advanceTimersByTime(1100);
+    emit('ok');
+    vi.advanceTimersByTime(5);
+    expect(lastBatch(win)).toBe('ok');
   });
 
-  // 墙钟在一次 handleChunk 内的两次取时之间回拨(大 chunk 计数/截断时系统校时):旧实现窗口滚动与恢复定时器
-  // delay 分别读 Date.now(),delay 被算成约 1 小时,流静默时卡在 overflow。吞吐窗口改用单调时钟后不受墙钟影响。
-  it('进入 overflow 的同一次处理中墙钟回拨 1 小时 → 流静默仍在 t=2000 恢复', () => {
-    const realNow = Date.now.bind(Date);
-    let calls = 0;
-    vi.spyOn(Date, 'now').mockImplementation(() => {
-      calls += 1;
-      return calls === 1 ? realNow() : realNow() - 3_600_000;
-    });
+  it('overflow 批次在途时会话被清理 → 定时器一并清除', () => {
     emit('x'.repeat(3 * MiB));
-    vi.advanceTimersByTime(2000);
-    expect(overflowEvents(win)).toEqual(['terminal:overflow', 'terminal:overflow-recovered']);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('overflow 期间会话被清理 → 恢复检查定时器一并清除', () => {
-    emit('x'.repeat(3 * MiB));
-    vi.advanceTimersByTime(150); // 100ms overflow flush 已执行
+    expect(vi.getTimerCount()).toBe(1); // 100ms overflow flush 在途
     terminalService.forceKill('a');
     expect(vi.getTimerCount()).toBe(0);
   });

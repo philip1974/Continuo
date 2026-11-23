@@ -35,8 +35,6 @@ describe('TERMINAL_CHANNELS', () => {
     expect(TERMINAL_CHANNELS.REMOVE).toBe('terminal:remove');
     expect(TERMINAL_CHANNELS.DATA).toBe('terminal:data');
     expect(TERMINAL_CHANNELS.EXIT).toBe('terminal:exit');
-    expect(TERMINAL_CHANNELS.OVERFLOW).toBe('terminal:overflow');
-    expect(TERMINAL_CHANNELS.OVERFLOW_RECOVERED).toBe('terminal:overflow-recovered');
     expect(TERMINAL_CHANNELS.SESSIONS_CHANGED).toBe('terminal:sessions_changed');
   });
 
