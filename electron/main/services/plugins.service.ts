@@ -1633,8 +1633,8 @@ export function createPluginsWatcher(
   //(它还看 manifest schema 与 minLMVersion,main 判断不了),所以任一候选目录变化都要广播。签名按目录名排序拼接
   // (目录名 + main mtime + manifest 内容哈希),多轮无变化时稳定 —— 此前以 id 为键、多个目录轮流写同一键 → 每轮都
   // 判定变化,形成永久热重载风暴。manifest 内容变化也算变化:激活时令牌不一致的插件会激活失败,须由此广播重新加载。
-  // 记录分两张表:active = 上一轮有候选目录的 id(≤ 单轮枚举上限);missing = 未被选中(目录 / manifest / main
-  // 暂不可见)的 tombstone,插入序 = 开始缺失的先后。tombstone 不限时保留(rm -rf 后部署/构建/网络卷恢复再久,
+  // 记录分两张表:active = 上一轮有候选目录的 id(≤ 单轮枚举上限);missing = 本轮没有候选目录(目录 / manifest / main
+  // 暂不可见)的 id 的 tombstone,插入序 = 开始缺失的先后。tombstone 不限时保留(rm -rf 后部署/构建/网络卷恢复再久,
   // 重建后 main 已变仍要触发热重载),仅在记录总数超 recordCap 时淘汰最早缺失的。missingByDir 为 tombstone
   // 的目录索引:每轮只按「本轮出现的目录」查 tombstone,遍历成本与当前目录数相关,不随历史缺失记录数增长。
   type WatchRecord = { dirs: readonly string[]; sig: string };

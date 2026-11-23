@@ -500,7 +500,7 @@ export class PathScopeRegistry {
 
   /**
    * Main IPC handler first line. Throws PluginIdentityError (via identityRegistry)
-   * or ScopeError. Returns canonical resolution for downstream fs op.
+   * or ScopeError. Read ops return the canonical resolution; other ops return parent + leaf for the downstream fs op.
    *
    * @param token capability token from preload-bound wrapper
    * @param senderId event.sender.id (explicit per P1-1, not internal lookup)
@@ -508,7 +508,7 @@ export class PathScopeRegistry {
    * @param target raw target path from plugin
    * @param mode 'r' (read-only ok) or 'rw' (writable scope required)
    */
-  // 重载:'read' 解析为 canonical(跟随链接);其余 opType 一律解析为 parent + leaf(CheckResultWrite)。
+  // 重载:'read' / 'read-tree' 解析为 canonical(跟随链接);其余 opType 解析为 parent + leaf(CheckResultWrite)。
   // 调用方据 opType 直接拿到窄类型,不必再手写 `'fullPath' in r` 守卫。
   check(
     token: string,

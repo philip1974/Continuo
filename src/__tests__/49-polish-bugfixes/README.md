@@ -465,7 +465,8 @@
 
 ### P2-AP shell.service SIGKILL grace timer 清理闭环 —(逻辑审计 + 全量回归,无外部行为变更)
 - 内层 `setTimeout(SIGKILL)` 旧实现不存句柄、不在 `close`/`error` 清。改为存 `killTimer` +
-  `clearTimers()` 统一清 + `unref()` 兜底。
+  `clearTimers()` 统一清 + `unref()` 兜底。(后被 P2-BO 取代:宽限 SIGKILL 不随结算取消,计时器并入 `killWithGrace`
+  且 unref,`clearTimers()` 只清超时与强制结算计时器。)
 - 根因: 进程在 grace 期内正常退出(常态)后,这个 timer 仍挂 `SIGKILL_GRACE_MS`,闭包持
   `child` 引用阻止 GC + 让 event loop 多活一截。fire 时 `!exited` 为假只是 no-op,但资源
   未闭环。无外部行为变更(SIGKILL 本就 no-op),同 P2-G/P1-AI 类内部清理,靠逻辑审计 +
