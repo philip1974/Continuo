@@ -1,5 +1,4 @@
 import { execFile, spawn } from 'node:child_process';
-import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { constants as fsConstants, promises as fs, type Dirent } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -296,8 +295,6 @@ const exclusive =
 // 边界(E31/E239):plugin-fs:request-scope 的 scopes 是插件直传 IPC payload。数量/路径长度上限 + mode
 // 枚举收口到 shared(fs-limits.validateScopesShape),main 与 renderer scoped-app 共用单一来源。此处
 // 边界(E96):scope-decision 的 requestId 上限(correlator 用的是 UUID,~36 字符,256 留足余量)。
-// 边界(E97):注册入口 pluginId 长度上限(对齐 manifest id 上限 E74 NAME_MAX)。
-const MAX_PLUGIN_ID_LEN = PLUGIN_ID_MAX_LEN;
 // 边界(E315,E234 并发 fan-out 同族):单次 request-scope 最多 MAX_SCOPE_REQUEST_COUNT(64)条,路径归一化要
 // realpath。全量 Promise.all 会把它们同时打进主进程/libuv。固定 worker 池平滑 IO 峰值,
 // 顺序仍由 canonicalizePathScopes 的结果数组按输入下标保持。
@@ -650,7 +647,6 @@ export function registerPluginFsHandlers(
       //(isSafePluginId,形态规则见 electron/shared/plugin-id)+ 长度上限;非法固定 BAD_INPUT,不进 registry。
       if (
         typeof pluginId !== 'string' ||
-        pluginId.length > MAX_PLUGIN_ID_LEN ||
         !isSafePluginId(pluginId)
       ) {
         throw fsError(ERROR_CODES.BAD_INPUT, 'invalid pluginId');

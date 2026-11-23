@@ -3,33 +3,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import {
-  capJoinedMessages,
   capJoinedMessagesFrom,
 } from '../../../electron/shared/cap-joined-messages';
 import { formatZodErrorCapped } from '../../../electron/main/lib/format-zod-error';
-
-describe('capJoinedMessages(已物化 string[])', () => {
-  it('少量片段 → 直接拼接', () => {
-    expect(capJoinedMessages(['a', 'b', 'c'])).toBe('a; b; c');
-  });
-  it('超 20 条 → 截断 + (+N more)', () => {
-    const many = Array.from({ length: 25 }, (_, i) => `e${i}`);
-    const msg = capJoinedMessages(many);
-    expect(msg).toContain('…(+5 more)'); // 25 - 20
-  });
-
-  it('展示项数组预分配,不调用 messages.slice', () => {
-    const messages = ['a', 'b', 'c'];
-    const sliceSpy = vi.spyOn(messages, 'slice');
-
-    try {
-      expect(capJoinedMessages(messages)).toBe('a; b; c');
-      expect(sliceSpy).not.toHaveBeenCalled();
-    } finally {
-      sliceSpy.mockRestore();
-    }
-  });
-});
 
 // 边界(E222,有界迭代族):mapper 变体只对前 20 个元素调 mapper,不全量 .map 物化源数组。
 describe('capJoinedMessagesFrom(mapper 变体,E222)', () => {
@@ -42,7 +18,7 @@ describe('capJoinedMessagesFrom(mapper 变体,E222)', () => {
     expect(msg).toContain('…(+980 more)'); // extra = 1000 - 20,计数精确
   });
 
-  it('少量元素 → 全部 map + 拼接(语义同 capJoinedMessages)', () => {
+  it('少量元素 → 全部 map + 拼接', () => {
     const msg = capJoinedMessagesFrom([1, 2, 3], (n) => `e${n}`);
     expect(msg).toBe('e1; e2; e3');
   });

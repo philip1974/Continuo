@@ -145,7 +145,6 @@ async function start(): Promise<Harness> {
   let seq = 0;
 
   const broker: HookFileBroker = {
-    hookEventsDir: dir,
     start: async () => undefined,
     stop: async () => undefined,
     cancelByWindow: () => 0,

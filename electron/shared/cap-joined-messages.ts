@@ -8,23 +8,12 @@
 const MAX_JOINED_ITEMS = 20; // 最多展示的条目数(诊断足够)
 const MAX_JOINED_LENGTH = 2048; // 拼接后总长上限(单条也可能很大,二次兜底)
 
-const identity = (s: string): string => s;
-
 /**
- * 把字符串片段拼成有上限的单行 message(条数 + 总长双闸 + 截断标记)。
- * moreLabel 控制超量后缀文案(默认「more」,zod 用「more issues」)。
- */
-export function capJoinedMessages(
-  messages: readonly string[],
-  moreLabel = 'more',
-): string {
-  return capJoinedMessagesFrom(messages, identity, moreLabel);
-}
-
-/**
- * 边界(E222):capJoinedMessages 的 mapper 变体 —— 只对**前 MAX_JOINED_ITEMS 个**元素调 mapper,不先
- * `items.map(mapper)` 把外部可控数量的源数组(如畸形 GraphQL json.errors,8MiB 内可塞大量短 errors)
- * 全量物化成 string 数组再 slice。items.length 是数组 O(1),extra 计数精确。语义与 capJoinedMessages 一致。
+ * 把一组条目拼成有上限的单行 message(条数 + 总长双闸 + 截断标记)。moreLabel 控制超量后缀文案
+ * (默认「more」,zod 用「more issues」)。
+ * 边界(E222):只对**前 MAX_JOINED_ITEMS 个**元素调 mapper,不先 `items.map(mapper)` 把外部可控数量的
+ * 源数组(如畸形 GraphQL json.errors,8MiB 内可塞大量短 errors)全量物化成 string 数组再 slice。
+ * items.length 是数组 O(1),extra 计数精确。
  */
 export function capJoinedMessagesFrom<T>(
   items: readonly T[],

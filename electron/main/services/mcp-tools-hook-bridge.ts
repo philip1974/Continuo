@@ -382,7 +382,6 @@ export interface HookFileBroker {
    */
   cancelByWindow(windowId: number): number;
   stop(): Promise<void>;
-  readonly hookEventsDir: string;
 }
 
 export interface HookWatcher {
@@ -669,7 +668,6 @@ export function createHookFileBroker(
   }
 
   return {
-    hookEventsDir,
     async start() {
       if (started) return;
       started = true;

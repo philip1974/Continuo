@@ -571,8 +571,7 @@ const ENABLED_FILE = '_enabled.json';
 // id 格式/长度/数量。手工/旧版本残留的 1MiB JSON(E68 文件大小已封顶,但内可塞数十万短串或非法/
 // 超长 id)能通过 array-of-string 校验 → readEnabledIds → new Set → PluginManager.init 放大 CPU/内存,
 // 且 setEnabledId 的 RMW 把这些非法/超量 id 原样写回,绕过写 IPC schema 上限。读盘按写端同一契约
-// canonicalize:仅保留 isSafePluginId 且长度≤PLUGIN_ID_MAX 的 id、去重、数量≤MAX_ENABLED_IDS。
-const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN; // 对齐 manifest id 上限(E74 NAME_MAX)
+// canonicalize:仅保留 isSafePluginId(含长度上限 PLUGIN_ID_MAX_LEN)的 id、去重、数量≤MAX_ENABLED_IDS。
 const MAX_ENABLED_IDS = 4096; // 远超任何现实启用插件数
 
 export async function readEnabledIds(baseDir: string): Promise<string[]> {
@@ -600,7 +599,7 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
       let outCount = 0;
       for (const x of json) {
         if (typeof x !== 'string') return [];
-        if (x.length > PLUGIN_ID_MAX || !isSafePluginId(x)) continue;
+        if (!isSafePluginId(x)) continue;
         if (seen.has(x)) continue;
         seen.add(x);
         out[outCount] = x;
@@ -826,7 +825,7 @@ export async function readPermissions(
       if (!Object.prototype.hasOwnProperty.call(rec0, pid)) continue;
       const value = rec0[pid];
       // 边界(E87):读盘按写端契约 canonicalize —— 非法/超长 plugin key 跳过、key 数封顶。
-      if (!isSafePluginId(pid) || pid.length > PLUGIN_ID_MAX) continue;
+      if (!isSafePluginId(pid)) continue;
       if (keyCount >= MAX_PERMISSION_PLUGIN_KEYS) break;
       let rec: IpcPermissionRecord | null = null;
       // 边界(E207,E206 同族):用 cappedAllValid 有界校验,替代 `value.every(isDecision)`(在 slice 前
@@ -1021,7 +1020,7 @@ async function readAllPathScopes(
     const value = rec0[pid];
     // 边界(E86):读盘按写端契约 canonicalize —— 非法/超长 key 跳过(防注入畸形 key + 元数据放大),
     // key 数封顶。isSafePluginId 与 writePluginPathScopes 写端门控一致。
-    if (!isSafePluginId(pid) || pid.length > PLUGIN_ID_MAX) continue;
+    if (!isSafePluginId(pid)) continue;
     if (keyCount >= MAX_PERSISTED_PLUGIN_KEYS) break;
     if (!Array.isArray(value)) continue;
     // 边界(E86):scope 经 isIpcPathScope(含 path 长度上限)过滤,且每插件 scope 数封顶
@@ -1855,7 +1854,6 @@ export function createPluginsWatcher(
         if (
           typeof m.id === 'string' &&
           m.id.length > 0 &&
-          m.id.length <= PLUGIN_ID_MAX &&
           isSafePluginId(m.id)
         ) {
           pluginId = m.id;
