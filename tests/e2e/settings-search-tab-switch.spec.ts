@@ -1,6 +1,4 @@
-// Settings 搜索后切 nav tab → 搜索 query 保留(还在搜索模式).
-// 实际 SettingsPanel 行为:trimmed query 决定搜索模式,切 tab 不清 query.
-// 所以切 tab 不影响搜索状态(纳米细节).
+// Settings 搜索模式:nav 变暗且按钮 disabled(不能切 tab),query 保留;清空搜索后 nav 恢复可用.
 import { test, expect } from './fixtures/electron-app';
 import {
   MATCHED_SETTINGS,
@@ -9,7 +7,7 @@ import {
   settingsSearch,
 } from './helpers/settings';
 
-test('搜索 → 切 nav tab → 搜索 query 仍在 + 仍是搜索模式', async ({
+test('搜索 → nav 禁用(不能切 tab)+ query 保留 → 清空后 nav 恢复', async ({
   window,
 }) => {
   await openSettings(window);
@@ -22,11 +20,13 @@ test('搜索 → 切 nav tab → 搜索 query 仍在 + 仍是搜索模式', asyn
   const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
   await expect(nav).toHaveClass(/opacity-40/);
 
-  // 点 nav tab(虽然 pointer-events-none,但视觉上 nav 仍存在)
-  // 简化:验证搜索 input value 保留 + 仍显匹配/未找到
+  // 搜索模式下 nav 按钮 disabled(鼠标与键盘都不能切 tab),query 保留
+  const navButtons = nav.getByRole('button');
+  await expect(navButtons.first()).toBeDisabled();
   await expect(search).toHaveValue('fontSize');
 
-  // 清空搜索
+  // 清空搜索 → nav 恢复
   await search.fill('');
   await expect(nav).not.toHaveClass(/opacity-40/);
+  await expect(navButtons.first()).toBeEnabled();
 });

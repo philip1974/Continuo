@@ -1,5 +1,5 @@
 // Marketplace 加载完成 + allTags > 0 → 显「热门标签」prefix.
-// 离线 / index 错 / 空 tags → 跳过.
+// 离线 / 索引加载失败或为空 → 跳过;索引非空时无条件断言标签行.
 import { test, expect } from './fixtures/electron-app';
 import {
   MARKETPLACE_INDEX_NONEMPTY,
@@ -11,6 +11,10 @@ import {
 
 test('Marketplace ok 态 → 显「热门标签」prefix', async ({ window }) => {
   await window.getByRole('button', { name: SETTINGS }).click();
+  // 先等设置导航渲染,否则下面立即取值的 count() 会在渲染前得到 0 而误跳过
+  await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
+    timeout: 10_000,
+  });
   const marketplaceTab = window
     .getByRole('navigation', { name: SETTINGS_NAV })
     .getByRole('button', { name: MARKETPLACE_TAB });

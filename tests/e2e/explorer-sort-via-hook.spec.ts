@@ -11,8 +11,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-// 跳过原因:explorer-persist hydrate 与 headless-tree 渲染时序在 e2e 不稳;
-// sort 顺序由 store / persist 单测覆盖.
+// 跳过原因:Explorer 排序尚未接到树上(explorer.store 的 sort 是预留脚手架,FolderTree 直接用 listDir 顺序);
+// 接入排序后取消 skip.
 test.skip('sort.by=name + reverse=true → 文件名 z→a 倒序渲染', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-sort-r-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-sort-r-ws-'));

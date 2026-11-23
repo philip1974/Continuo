@@ -10,19 +10,17 @@ test('Cmd+P → ArrowDown → Enter → 第二项打开', async ({ window }) => 
     timeout: 10_000,
   });
 
-  // 拿前 2 项文件名
-  const items = window.locator('.wm-modal-content li');
-  const firstName = await items.nth(0).textContent();
-  const secondName = await items.nth(1).textContent();
+  // 拿前 2 项的名字(span.font-medium;整行文本是「名字 + 相对路径」拼接)
+  const names = window.locator('.wm-modal-content li span.font-medium');
+  const firstName = (await names.nth(0).textContent()) ?? '';
+  const secondName = (await names.nth(1).textContent()) ?? '';
+  expect(secondName).not.toBe(firstName);
 
   await window.keyboard.press('ArrowDown');
   await window.keyboard.press('Enter');
 
   await expect(input).toBeHidden({ timeout: 5_000 });
 
-  // header 显第二项的 basename
-  const headerText = await window.locator('header').first().textContent();
-  expect(headerText).not.toContain(firstName?.replace(/\s/g, '') ?? 'XYZ');
-  // 简单断言 second name 含 file basename(.ts/.md)
-  expect(secondName).toMatch(/\.(ts|md)/);
+  // 打开的是第二项:header 显示它的名字
+  await expect(window.locator('header').first()).toContainText(secondName, { timeout: 5_000 });
 });

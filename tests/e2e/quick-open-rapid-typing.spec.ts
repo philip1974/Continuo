@@ -13,9 +13,7 @@ test('Cmd+P fill a → fill ab → fill abc → 列表反映 abc', async ({ wind
   await input.fill('a');
   await input.fill('ab');
   await input.fill('abc'); // 不存在
-  // 等过滤稳定:列表应 0 项 或 显示「无结果」之类
-  await expect(input).toHaveValue('abc');
-  await window.waitForTimeout(200);
-  // 不该崩溃 - input 仍可见
-  await expect(input).toBeVisible();
+  // 列表收敛到 'abc' 的过滤结果:无匹配项,显示「无匹配文件」
+  await expect(window.locator('.wm-modal-content li')).toHaveCount(0, { timeout: 5_000 });
+  await expect(window.getByText(/^(无匹配文件|No matching files|일치하는 파일 없음)$/)).toBeVisible();
 });

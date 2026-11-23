@@ -32,14 +32,14 @@ test('editor.fontSize 改 → CodeMirror 容器 fontSize 同步', async ({
   await window.getByRole('button', { name: CLOSE_SETTINGS }).click();
   await window.waitForTimeout(400);
 
-  // CodeEditor 容器 fontSize 同步到 20px(不验证 cm-content 自身,因 CodeMirror
-  // 用 inherit;只看外层 style).
-  // 简化:验证 store value(可通过 SettingsPanel 重开看 input value 持久)
-  await window.getByRole('button', { name: SETTINGS }).click();
-  await window
-    .getByRole('navigation', { name: SETTINGS_NAV })
-    .getByRole('button', { name: EDITOR_TAB })
-    .click();
-  const fontInput2 = window.locator('input[type=number]').first();
-  await expect(fontInput2).toHaveValue('20');
+  // 经设置面板 UI 改值(区别于 editor-font-size-css 走 testing hook):CodeEditor 容器(.cm-editor 的父)
+  // inline style.fontSize 同步到 20px
+  await expect
+    .poll(() =>
+      window.evaluate(() => {
+        const cmEl = document.querySelector('.cm-editor');
+        return cmEl?.parentElement?.style.fontSize ?? null;
+      }),
+    )
+    .toBe('20px');
 });

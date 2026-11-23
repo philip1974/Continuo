@@ -1,4 +1,4 @@
-// Quick Open 关闭后 → editor 中 active tab 不变.
+// Quick Open 选 a.ts 打开 → 原 README.md tab 保留,a.ts 作为新 tab 打开(成为 active).
 import { test, expect } from './fixtures/with-workspace';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
 

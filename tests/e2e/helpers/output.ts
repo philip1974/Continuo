@@ -20,17 +20,18 @@ export async function openOutputPanel(window: Page): Promise<void> {
       ),
     { timeout: 5_000 },
   );
-  await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          openOrFocusPanel: (id: string, c: string, t: string) => void;
-        };
-      }
-    ).__continuoTest;
-    t.openOrFocusPanel('output', 'output', 'Output');
-  });
-  await expect(window.getByText(OUTPUT_READY)).toBeVisible({
-    timeout: 10_000,
-  });
+  // testing hook 可能先于 dock 就绪暴露(openOrFocusPanel 此时 no-op):重试到面板出现
+  await expect(async () => {
+    await window.evaluate(() => {
+      const t = (
+        window as unknown as {
+          __continuoTest: {
+            openOrFocusPanel: (id: string, c: string, t: string) => void;
+          };
+        }
+      ).__continuoTest;
+      t.openOrFocusPanel('output', 'output', 'Output');
+    });
+    await expect(window.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
 }

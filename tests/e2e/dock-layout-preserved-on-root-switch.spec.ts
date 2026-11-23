@@ -51,26 +51,30 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
         ),
       { timeout: 5_000 },
     );
-    await win.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: {
-            openOrFocusPanel: (id: string, c: string, t: string) => void;
-          };
-        }
-      ).__continuoTest;
-      t.openOrFocusPanel('output', 'output', 'Output');
-    });
-    await expect(win.getByText(OUTPUT_READY)).toBeVisible({
-      timeout: 10_000,
-    });
+    // testing hook 可能先于 dock 就绪暴露(openOrFocusPanel 此时 no-op):重试到面板出现
+    await expect(async () => {
+      await win.evaluate(() => {
+        const t = (
+          window as unknown as {
+            __continuoTest: {
+              openOrFocusPanel: (id: string, c: string, t: string) => void;
+            };
+          }
+        ).__continuoTest;
+        t.openOrFocusPanel('output', 'output', 'Output');
+      });
+      await expect(win.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
 
     // 切 root
     const wsName2 = path.basename(ws2);
     await explorerMoreActionsButton(win).click();
     await win.getByRole('menuitem', { name: wsName2, exact: false }).click();
 
-    // Output panel 仍在
+    // 先确认 root 真的切到 ws2(Explorer 显示 ws2 名),再确认 Output panel 仍在
+    await expect(
+      win.locator('main aside').nth(1).getByText(wsName2).first(),
+    ).toBeVisible({ timeout: 10_000 });
     await expect(win.getByText(OUTPUT_READY)).toBeVisible({
       timeout: 5_000,
     });

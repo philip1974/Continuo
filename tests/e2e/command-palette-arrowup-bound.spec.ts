@@ -1,5 +1,6 @@
 // CommandPalette ArrowUp 在 selectedIndex=0 → wrap 到末项.
 import { test, expect } from './fixtures/electron-app';
+import { ROW_SELECTED } from './helpers/palette';
 
 const SETTINGS = /^(设置|Settings|설정)$/;
 const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
@@ -33,7 +34,7 @@ test('ArrowUp 在第一项 → wrap 到末项', async ({ window }) => {
 
   await window.keyboard.press('ArrowUp');
 
-  // 末项底色 active
-  const lastClass = await items.last().getAttribute('class');
-  expect(lastClass).toContain('bg-hover');
+  // 末项选中,第一项不再选中
+  await expect(items.last()).toHaveClass(ROW_SELECTED);
+  await expect(items.first()).not.toHaveClass(ROW_SELECTED);
 });

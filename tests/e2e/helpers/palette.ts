@@ -52,3 +52,6 @@ export function settingsCommandOption(window: Page): Locator {
     .getByRole('option')
     .filter({ hasText: SETTINGS_COMMAND_TITLE });
 }
+
+/** 列表行选中态:className 含独立的 `bg-hover`(未选中行只有 `hover:bg-hover/50`,子串匹配会误命中)。 */
+export const ROW_SELECTED = /(^|\s)bg-hover(\s|$)/;

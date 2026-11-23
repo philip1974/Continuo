@@ -1,6 +1,6 @@
 // 无 active tab(EditorWelcome)→ 没有 EditorHeader 与模式行 → 没有 mode SegmentedControl.
 import { test, expect } from './fixtures/electron-app';
-import { EDITOR_NO_FILE_OPEN, EDITOR_SAVE_LABEL } from './helpers/editor';
+import { EDITOR_MODE_EDIT, EDITOR_NO_FILE_OPEN, EDITOR_SAVE_LABEL } from './helpers/editor';
 
 test('无 tab → 不显「保存」按钮 + 不显 SegmentedControl', async ({
   window,
@@ -14,7 +14,7 @@ test('无 tab → 不显「保存」按钮 + 不显 SegmentedControl', async ({
   expect(
     await main
       .locator('button, [role=tab]')
-      .filter({ hasText: /^Edit$/ })
+      .filter({ hasText: EDITOR_MODE_EDIT })
       .count(),
   ).toBe(0);
   // 没「保存」按钮(EditorHeader tabs=0 时返 null)

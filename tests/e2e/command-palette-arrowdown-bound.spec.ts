@@ -2,6 +2,7 @@
 // store.moveSelection(delta, max) 实现:wrap 到 (cur+delta+max) % max.
 // 多次按下 ArrowDown 不会越界,顶到末尾后回 0.
 import { test, expect } from './fixtures/electron-app';
+import { ROW_SELECTED } from './helpers/palette';
 
 const SETTINGS = /^(设置|Settings|설정)$/;
 const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
@@ -31,16 +32,18 @@ test('ArrowDown N 次 → wrap 回 0 / 不越界', async ({ window }) => {
     .getByRole('listbox', { name: COMMAND_LIST })
     .getByRole('option');
   const count = await items.count();
-  expect(count).toBeGreaterThan(0);
+  expect(count).toBeGreaterThan(1);
 
-  // ArrowDown count + 1 次:wrap 回头(末项后 → 第一项)
-  for (let i = 0; i < count + 1; i++) {
+  // ArrowDown count 次:从 0 走完一圈 wrap 回第一项
+  for (let i = 0; i < count; i++) {
     await window.keyboard.press('ArrowDown');
   }
-
-  // 不抛 + modal 仍开
   await expect(input).toBeVisible();
-  // 第一项有 selected 样式(bg-hover.text-fg)
-  const firstClass = await items.first().getAttribute('class');
-  expect(firstClass).toContain('bg-hover');
+  await expect(items.first()).toHaveClass(ROW_SELECTED);
+  await expect(items.last()).not.toHaveClass(ROW_SELECTED);
+
+  // 再按一次 → 第二项(下标 1)选中,不越界
+  await window.keyboard.press('ArrowDown');
+  await expect(items.nth(1)).toHaveClass(ROW_SELECTED);
+  await expect(items.first()).not.toHaveClass(ROW_SELECTED);
 });

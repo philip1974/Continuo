@@ -1,5 +1,5 @@
-// explorer.json 中 explorer.sort hydrate 不抛 + 文件树正常渲染.
-// 排序具体顺序由 explorer-stores 单测覆盖;e2e 只 smoke 持久化字段被解析.
+// explorer.json 中 explorer.sort 可解析、hydrate 不报错 + 文件树正常渲染.
+// 排序尚未接到树上(explorer.store 的 sort 是预留脚手架,FolderTree 直接用 listDir 顺序),故不断言顺序.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('explorer.sort=mtime+reverse hydrate → src 中较新文件排前', async () => {
+test('explorer.sort=mtime+reverse 可解析 → 文件树正常渲染(排序尚未实现)', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-sort-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-sort-ws-'));
   try {
@@ -54,9 +54,7 @@ test('explorer.sort=mtime+reverse hydrate → src 中较新文件排前', async 
       timeout: 10_000,
     });
 
-    // explorer-persist hydrate 异步;sort 在 store hydrate 后才生效。
-    // FolderTree 排序时序与 hydrate 早晚相关,e2e 内难精确同步.
-    // 这里只验证三个文件都已渲染,具体 sort 顺序由 store 单测覆盖(explorer-stores).
+    // 排序尚未接到树上:只验证三个文件都已渲染.
     await expect(explorerTreeItem(win, /^a\.ts$/)).toBeVisible();
     await expect(explorerTreeItem(win, /^b\.ts$/)).toBeVisible();
     await expect(explorerTreeItem(win, /^c\.ts$/)).toBeVisible();

@@ -1,6 +1,6 @@
 // Quick Open selectedIndex=0 时 ArrowUp → wrap 到末项.
 import { test, expect } from './fixtures/with-workspace';
-import { openQuickOpen, quickOpenInput } from './helpers/palette';
+import { ROW_SELECTED, openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('Quick Open ArrowUp 在第一项 → wrap 到末项', async ({ window }) => {
   await openQuickOpen(window);
@@ -18,7 +18,7 @@ test('Quick Open ArrowUp 在第一项 → wrap 到末项', async ({ window }) =>
 
   // selectedIndex=0;ArrowUp wrap 到 count-1
   await window.keyboard.press('ArrowUp');
-  // 末项底色为 bg-hover
-  const lastClass = await items.last().getAttribute('class');
-  expect(lastClass).toContain('bg-hover');
+  // 末项选中,第一项不再选中
+  await expect(items.last()).toHaveClass(ROW_SELECTED);
+  await expect(items.first()).not.toHaveClass(ROW_SELECTED);
 });

@@ -1,5 +1,4 @@
-// Cmd+Click TabNav item 中键 / TabNav 切 tab 用键盘 — Continuo TabNavItem
-// 是 button role=tab,Tab 键导航 + Enter 选中.
+// 编辑器 TabNav:点击切 tab → aria-selected 同步(TabNavItem 是 button role=tab).
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_TABS, editorTab, openWorkspaceFile } from './helpers/editor';
 

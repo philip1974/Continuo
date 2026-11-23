@@ -9,9 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-// 跳过:headless-tree initialState.expandedItems 与 store hydrate 时序问题;
-// 此功能在 explorer-persist 单测中已覆盖。
-test.skip('expandedPaths hydrate → 启动后 src 已展开,子文件可见', async () => {
+test('expandedPaths hydrate → 启动后 src 已展开,子文件可见', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-active-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-active-ws-'));
   try {
