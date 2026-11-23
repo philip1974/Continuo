@@ -4,7 +4,7 @@ import { test, expect } from './fixtures/electron-app';
 const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 const EDITOR_TAB = /^(编辑器|Editor|편집기)$/;
 
-test('编辑器 tab 第二 number input = 2000 + 改后 store=4000', async ({
+test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=4000', async ({
   window,
 }) => {
   await window.waitForFunction(
@@ -46,12 +46,13 @@ test('编辑器 tab 第二 number input = 2000 + 改后 store=4000', async ({
           setSettingValue: (id: string, value: number) => void;
         };
       }
-    ).__continuoTest.setSettingValue('autoSave.delayMs', 2000),
+    ).__continuoTest.setSettingValue('autoSave.delayMs', 3000),
   );
 
   // 第一个 input(fontSize)+ 第二个(autoSave.delayMs)
   const inputs = window.locator('input[type=number]');
-  await expect(inputs.nth(1)).toHaveValue('2000');
+  // 3000 非默认值(默认 2000):输入框显示它证明确实读自 store
+  await expect(inputs.nth(1)).toHaveValue('3000');
 
   await inputs.nth(1).fill('4000');
   await expect(inputs.nth(1)).toHaveValue('4000');

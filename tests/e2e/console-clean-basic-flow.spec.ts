@@ -33,7 +33,8 @@ test('basic flow → 无 console.error', async ({ window }) => {
   // 走 5 个 tab
   for (const tabName of SETTING_TABS) {
     const btn = nav.getByRole('button', { name: tabName });
-    if ((await btn.count()) > 0) await btn.dispatchEvent('click');
+    await expect(btn).toBeVisible();
+    await btn.dispatchEvent('click');
     await window.waitForTimeout(80);
   }
 

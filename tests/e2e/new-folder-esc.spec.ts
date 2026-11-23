@@ -23,6 +23,7 @@ test('右键 src → 新建文件夹 → Esc → 不创建', async ({
   await input.press('Escape');
 
   await expect(input).toBeHidden();
+  await new Promise((r) => setTimeout(r, 500)); // 等 500ms 再复核磁盘,覆盖异步误建
 
   const exists = await stat(
     path.join(workspaceRoot, 'src/shouldnotexist'),

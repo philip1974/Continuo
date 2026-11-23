@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EXPLORER_LOADING_OR_EMPTY } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -40,7 +41,9 @@ test('空 workspace → 渲染 workspace name + 没有 treeitem', async () => {
       win.locator('main aside').nth(1).getByText(wsName).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Tree 0 个 treeitem(空 root)
+    // Tree 0 个 treeitem(空 root):等 listDir 完成(空目录提示出现且稳定一段时间)再断言
+    await expect(win.getByText(EXPLORER_LOADING_OR_EMPTY)).toBeVisible({ timeout: 10_000 });
+    await win.waitForTimeout(1_000);
     await expect(win.locator('[role=treeitem]')).toHaveCount(0);
 
     await app.close();

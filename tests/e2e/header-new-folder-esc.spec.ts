@@ -20,6 +20,7 @@ test('header 新建文件夹 → ESC → 不创', async ({ window, workspaceRoot
   await input.press('Escape');
 
   await expect(input).toBeHidden();
+  await new Promise((r) => setTimeout(r, 500)); // 等 500ms 再复核磁盘,覆盖异步误建
   const exists = await stat(path.join(workspaceRoot, 'cancelled-dir'))
     .then(() => true)
     .catch(() => false);

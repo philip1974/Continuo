@@ -32,11 +32,16 @@ test('version=99 → fallback EmptyWorkspace + 不抛', async () => {
       env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
     });
     const win = await app.firstWindow();
+    const pageErrors: string[] = [];
+    win.on('pageerror', (err) => pageErrors.push(err.message));
     await win.waitForLoadState('domcontentloaded');
 
+    // 就绪屏障放行后再断言空态(首帧 root=null 的空态在读盘前就可见,不能直接断言)
+    await expect(win.getByTestId('splash')).toHaveCount(0, { timeout: 15_000 });
     await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
       timeout: 10_000,
     });
+    expect(pageErrors).toEqual([]);
     await app.close();
   } finally {
     rmSync(ud, { recursive: true, force: true });

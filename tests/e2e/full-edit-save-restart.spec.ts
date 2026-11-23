@@ -69,7 +69,7 @@ test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', asyn
       timeout: 10_000,
     });
 
-    // 磁盘读
+    // 磁盘读:重启前已确认写盘,这里只覆盖「app2 启动不回写旧内容」
     const after = readFileSync(path.join(ws, 'src/a.ts'), 'utf8');
     expect(after).toContain('saved-full');
 

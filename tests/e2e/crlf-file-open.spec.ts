@@ -4,11 +4,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { statusLines } from './helpers/status-bar';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
-const LINE_COUNT = /\d+\s*(行|lines|줄)/;
 
 test('CRLF file → 打开不崩 + footer 显行数', async () => {
   test.setTimeout(30_000);
@@ -47,7 +47,8 @@ test('CRLF file → 打开不崩 + footer 显行数', async () => {
 
     // CodeMirror 渲 + footer 行数显示
     await expect(win.locator('.cm-content').first()).toBeVisible();
-    await expect(win.locator('footer')).toContainText(LINE_COUNT);
+    // 'line1\r\nline2\r\nline3\r\n':3 个 \n → 4 行(尾部换行算下一空行,CRLF 只计 \n)
+    await expect(win.locator('footer')).toContainText(statusLines(4));
 
     await app.close();
   } finally {

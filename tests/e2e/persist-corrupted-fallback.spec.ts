@@ -1,8 +1,9 @@
 // explorer.json 损坏 / 不合 schema → 启动时 fallback 默认 store(EmptyWorkspace).  @edge
-// 用户不丢信任,UI 仍可用.
+// 用户不丢信任,UI 仍可用(无 pageerror)。UI 在持久化读完前即以 root=null 渲染空态,故先等就绪屏障
+// (Splash 消失)再断言;另有合法文件的对照用例证明同一路径能恢复出文件树。
 import { _electron as electron, expect, test } from '@playwright/test';
-import { EXPLORER_NO_FOLDER_OPEN } from './helpers/explorer';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { EXPLORER_NO_FOLDER_OPEN, explorerTreeItem } from './helpers/explorer';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,12 +18,16 @@ async function launchAndAssertEmpty(ud: string): Promise<void> {
     env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
   });
   const win = await app.firstWindow();
+  const pageErrors: string[] = [];
+  win.on('pageerror', (err) => pageErrors.push(err.message));
   await win.waitForLoadState('domcontentloaded');
 
-  // EmptyWorkspace 渲染
+  // 就绪屏障放行(持久化已读完、root 已恢复)后再断言空态,避免首帧 root=null 的空态恒真
+  await expect(win.getByTestId('splash')).toHaveCount(0, { timeout: 15_000 });
   await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
     timeout: 10_000,
   });
+  expect(pageErrors).toEqual([]);
 
   await app.close();
 }
@@ -65,6 +70,41 @@ test('explorer.json 是数组(整个根错类型) → fallback', async () => {
     writeFileSync(path.join(ud, 'explorer.json'), JSON.stringify([1, 2, 3]));
     await launchAndAssertEmpty(ud);
   } finally {
+    rmSync(ud, { recursive: true, force: true });
+  }
+});
+
+test('对照:合法 explorer.json(v1 + 存在的 ws)→ 恢复出文件树(证明同一路径能区分)', async () => {
+  const ud = mkdtempSync(path.join(tmpdir(), 'continuo-corrupt-ctrl-'));
+  const ws = mkdtempSync(path.join(tmpdir(), 'continuo-corrupt-ctrl-ws-'));
+  try {
+    mkdirSync(path.join(ws, 'src'), { recursive: true });
+    writeFileSync(path.join(ws, 'restored.txt'), 'x\n');
+    writeFileSync(
+      path.join(ud, 'explorer.json'),
+      JSON.stringify({
+        version: 1,
+        workspace: { root: ws, recentRoots: [ws] },
+        explorer: {
+          activePath: null,
+          expandedPaths: [ws],
+          sort: { by: 'name', reverse: false },
+        },
+        pinned: { paths: [] },
+      }),
+    );
+    const app = await electron.launch({
+      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
+      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
+    });
+    const win = await app.firstWindow();
+    await win.waitForLoadState('domcontentloaded');
+    await expect(win.getByTestId('splash')).toHaveCount(0, { timeout: 15_000 });
+    await expect(explorerTreeItem(win, /^restored\.txt$/)).toBeVisible({ timeout: 10_000 });
+    await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toHaveCount(0);
+    await app.close();
+  } finally {
+    rmSync(ws, { recursive: true, force: true });
     rmSync(ud, { recursive: true, force: true });
   }
 });

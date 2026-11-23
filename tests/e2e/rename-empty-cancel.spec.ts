@@ -1,5 +1,5 @@
 // rename 输入框 Enter 空字符串 → 取消 rename + 文件名不变.
-import { stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EXPLORER_RENAME } from './helpers/explorer';
@@ -16,10 +16,12 @@ test('右键 → 重命名 → 全删 + Enter → 文件名不变', async ({
   await input.press('ControlOrMeta+KeyA');
   await input.fill('');
   await input.press('Enter');
+  await new Promise((r) => setTimeout(r, 500)); // 等 500ms 再复核磁盘
 
-  // README.md 仍存在
+  // README.md 仍存在,且根目录没有多出别名文件
   const stat1 = await stat(path.join(workspaceRoot, 'README.md'))
     .then(() => true)
     .catch(() => false);
   expect(stat1).toBe(true);
+  expect((await readdir(workspaceRoot)).sort()).toEqual(['README.md', 'src']);
 });

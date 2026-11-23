@@ -10,16 +10,15 @@ test('Cmd+P → Enter → 第一项打开', async ({ window }) => {
     timeout: 10_000,
   });
 
-  // 第一项 active
-  const first = window.locator('.wm-modal-content li').first();
-  const firstName = await first.textContent();
+  // 第一项的文件名(span.font-medium)
+  const firstName = (
+    await window.locator('.wm-modal-content li').first().locator('span.font-medium').textContent()
+  )?.trim();
   expect(firstName).toBeTruthy();
 
   await window.keyboard.press('Enter');
   await expect(input).toBeHidden({ timeout: 5_000 });
 
-  // editor 显第一项中提到的某 .ts/.md 文件
-  // 名字不假设排序,只验证某 file 被打开 (header 含 file basename)
-  const headerText = await window.locator('header').first().textContent();
-  expect(headerText).toMatch(/a\.ts|b\.ts|README\.md/);
+  // 打开的正是第一项
+  await expect(window.locator('header').first()).toContainText(firstName as string, { timeout: 5_000 });
 });

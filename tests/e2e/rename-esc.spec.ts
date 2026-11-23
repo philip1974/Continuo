@@ -19,6 +19,7 @@ test('右键 → 重命名 → 输入新名 → Esc → 文件名不变', async 
   await input.press('ControlOrMeta+KeyA');
   await input.fill('CHANGED.md');
   await input.press('Escape');
+  await new Promise((r) => setTimeout(r, 500)); // 等 500ms 再复核磁盘,覆盖异步误改
 
   // 旧文件仍在 + 内容未变
   const after = await readFile(path.join(workspaceRoot, 'README.md'), 'utf8');

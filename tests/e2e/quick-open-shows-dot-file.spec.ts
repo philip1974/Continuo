@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explorerTreeItem } from './helpers/explorer';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,7 +39,8 @@ test('Cmd+P 列表含 .secret.md(虽 tree 默认不显)', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    // Tree 默认不显 .secret.md(showHiddenFiles=false)
+    // Tree 默认不显 .secret.md(showHiddenFiles=false):先等树渲染出 visible.txt 再断言
+    await expect(explorerTreeItem(win, /^visible\.txt$/)).toBeVisible({ timeout: 10_000 });
     await expect(
       win.locator('[role=treeitem]').filter({ hasText: /^\.secret\.md$/ }),
     ).toHaveCount(0);

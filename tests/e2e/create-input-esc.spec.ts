@@ -1,5 +1,5 @@
 // CreateInput 的 Esc 取消 + Enter 空白也算取消(空 trim).
-import { readdir, stat } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EXPLORER_NEW_FILE as NEW_FILE } from './helpers/explorer';
@@ -20,13 +20,7 @@ test('右键 src → 新建文件 → Esc 取消 → input 消失 + 无文件落
   await input.press('Escape');
 
   await expect(input).toBeHidden();
-  // src 下没有 something.ts(被 Esc 取消):在一小段时间内持续确认,覆盖异步误建
-  await expect(async () => {
-    const exists = await stat(path.join(workspaceRoot, 'src/something.ts'))
-      .then(() => true)
-      .catch(() => false);
-    expect(exists).toBe(false);
-  }).toPass({ timeout: 1_000 });
+  // src 下没有 something.ts(被 Esc 取消):等 500ms 再复核,覆盖异步误建
   await new Promise((r) => setTimeout(r, 500));
   expect((await readdir(path.join(workspaceRoot, 'src'))).sort()).toEqual(['a.ts', 'b.ts']);
 });
