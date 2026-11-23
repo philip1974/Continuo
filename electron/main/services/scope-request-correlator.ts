@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { ScopeRequestTimeoutError } from '../../shared/plugin-fs-contract';
-import { SCOPE_REQUEST_TTL_MS } from '../../shared/plugin-fs-channels';
 
 interface PendingEntry {
   token: string;
@@ -15,7 +14,9 @@ export interface CreateRequestResult {
   promise: Promise<'grant' | 'deny'>;
 }
 
-const DEFAULT_TTL_MS = SCOPE_REQUEST_TTL_MS;
+// scope 授权请求的存活时间:到期按超时收口,并经 SCOPE_REQUEST_CANCELLED 通知 renderer 撤弹窗
+// (renderer 不另行计时)。
+const DEFAULT_TTL_MS = 300_000;
 /** cancelByToken 的 reject 原因(request-scope handler 据此按 deny 静默收口)。 */
 export const SCOPE_REQUEST_PLUGIN_UNREGISTERED = 'plugin unregistered';
 const GC_INTERVAL_MS = 60_000;

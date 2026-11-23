@@ -17,7 +17,14 @@ import { resolveDebugAdapterPath } from './debug-adapter-provision';
 import * as debugSessions from './debug-sessions.service';
 import { getWorkspaceRoot } from './window-workspace-roots.service';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { isDebugLaunchEnvForbidden } from '../../shared/mcp-debug-schemas';
+import {
+  DEBUG_EVALUATE_RESULT_BYTES_MAX,
+  DEBUG_STACK_LEVELS_DEFAULT,
+  DEBUG_STRING_BYTES_DEFAULT,
+  DEBUG_VARIABLE_COUNT_DEFAULT,
+  DEBUG_VARIABLE_DEPTH_DEFAULT,
+  isDebugLaunchEnvForbidden,
+} from '../../shared/mcp-debug-schemas';
 import {
   DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
   type DebugBreakpoint,
@@ -1362,7 +1369,7 @@ export class DebugService {
       {
         threadId,
         startFrame: input.startFrame ?? 0,
-        levels: input.levels ?? 20,
+        levels: input.levels ?? DEBUG_STACK_LEVELS_DEFAULT,
       },
       this.requestTimeoutMs,
     );
@@ -1430,9 +1437,9 @@ export class DebugService {
   }> {
     const runtime = this.requireRuntime(sessionId);
     const start = input.start ?? 0;
-    const count = input.count ?? 100;
-    const maxDepth = input.maxDepth ?? 1;
-    const maxStringBytes = input.maxStringBytes ?? 65536;
+    const count = input.count ?? DEBUG_VARIABLE_COUNT_DEFAULT;
+    const maxDepth = input.maxDepth ?? DEBUG_VARIABLE_DEPTH_DEFAULT;
+    const maxStringBytes = input.maxStringBytes ?? DEBUG_STRING_BYTES_DEFAULT;
     const budget: VariablesBudget = {
       nodes: DEBUG_VARIABLES_EXPAND_MAX_NODES,
       requests: DEBUG_VARIABLES_EXPAND_MAX_REQUESTS,
@@ -1488,7 +1495,7 @@ export class DebugService {
     const body = asRecord(response.body);
     const truncated = truncateUtf8(
       stringField(body, 'result') ?? '',
-      input.maxResultBytes ?? 65536,
+      input.maxResultBytes ?? DEBUG_EVALUATE_RESULT_BYTES_MAX,
     );
     return {
       result: truncated.value,

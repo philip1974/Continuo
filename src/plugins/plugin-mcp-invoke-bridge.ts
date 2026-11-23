@@ -4,10 +4,6 @@
 // 的 PluginMcpRegistry,把结果(或错)封成 InvokeReply 通过 replyInvoke 单向发回 main。
 
 import type { PluginMcpRegistry } from './registries/PluginMcpRegistry';
-import type {
-  InvokePayload,
-  InvokeReply,
-} from '../../electron/shared/plugin-mcp-channels';
 import {
   InvokePayloadSchema,
   REQUEST_ID_MAX,
@@ -16,11 +12,10 @@ import {
 } from '../../electron/shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../electron/shared/plugin-mcp-channels';
 import { coApi } from '@/lib/co-api';
+import type { ContinuoApi } from '../../electron/preload';
 
-interface PluginMcpPreloadApi {
-  onInvoke(cb: (payload: InvokePayload) => void): () => void;
-  replyInvoke(reply: InvokeReply): void;
-}
+// 直接取 preload 的签名(此前手抄一份)。
+type PluginMcpPreloadApi = Pick<ContinuoApi['pluginMcp'], 'onInvoke' | 'replyInvoke'>;
 
 export function startPluginMcpInvokeBridge(
   registry: PluginMcpRegistry,

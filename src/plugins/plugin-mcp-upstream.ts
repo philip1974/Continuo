@@ -6,21 +6,13 @@
 // register 失败(权限 / 重名 / 上行错)IpcResult.ok=false → 抛 Error 含 code,
 // 让 PluginMcpRegistry 透传给 plugin。
 
-import type {
-  PluginMcpUpstream,
-  PluginMcpUpstreamRegisterPayload,
-} from './registries/PluginMcpRegistry';
+import type { PluginMcpUpstream } from './registries/PluginMcpRegistry';
 import { coApi } from '@/lib/co-api';
+import type { ContinuoApi } from '../../electron/preload';
 import { codedError } from '../../electron/shared/error-message';
 
-interface PluginMcpPreloadApi {
-  registerTool(
-    payload: PluginMcpUpstreamRegisterPayload,
-  ): Promise<{ ok: true; data: void } | { ok: false; code: string; message: string }>;
-  unregisterTool(
-    name: string,
-  ): Promise<{ ok: true; data: void } | { ok: false; code: string; message: string }>;
-}
+// 直接取 preload 的签名(此前手抄一份,preload 改签名时这里不会报错)。
+type PluginMcpPreloadApi = Pick<ContinuoApi['pluginMcp'], 'registerTool' | 'unregisterTool'>;
 
 function getPluginMcpApi(): PluginMcpPreloadApi | undefined {
   try {

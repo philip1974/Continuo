@@ -8,7 +8,11 @@ export const DEBUG_VARIABLE_COUNT_MAX = 100;
 export const DEBUG_STACK_LEVELS_MAX = 100;
 export const DEBUG_VARIABLE_DEPTH_MAX = 5;
 export const DEBUG_STRING_BYTES_DEFAULT = 65536;
-const DEBUG_EVALUATE_RESULT_BYTES_MAX = 65536;
+export const DEBUG_EVALUATE_RESULT_BYTES_MAX = 65536;
+// 未给值时的默认:MCP 工具经 zod .default 取,debug 面板 IPC(只传必需入参)经 DebugService 取 —— 两边共用这几个常量。
+export const DEBUG_STACK_LEVELS_DEFAULT = 20;
+export const DEBUG_VARIABLE_COUNT_DEFAULT = 100;
+export const DEBUG_VARIABLE_DEPTH_DEFAULT = 1;
 
 export const MCP_TOOL_DEBUG_LAUNCH = 'debug.launch';
 export const MCP_TOOL_DEBUG_SET_BREAKPOINT = 'debug.set_breakpoint';
@@ -165,7 +169,7 @@ export const debugStackInputSchema = z
     // (js-debug 的 stopped 事件可能报 threadId:0,直接透传会撞 min(1)。)
     thread_id: threadIdSchema,
     start_frame: nonNegativeIntSchema.default(0),
-    levels: z.number().int().min(1).max(DEBUG_STACK_LEVELS_MAX).default(20),
+    levels: z.number().int().min(1).max(DEBUG_STACK_LEVELS_MAX).default(DEBUG_STACK_LEVELS_DEFAULT),
   })
   .strict();
 
@@ -181,13 +185,13 @@ export const debugVariablesInputSchema = z
     session_id: sessionIdSchema,
     variables_reference: positiveIntSchema,
     start: nonNegativeIntSchema.default(0),
-    count: z.number().int().min(1).max(DEBUG_VARIABLE_COUNT_MAX).default(100),
+    count: z.number().int().min(1).max(DEBUG_VARIABLE_COUNT_MAX).default(DEBUG_VARIABLE_COUNT_DEFAULT),
     max_depth: z
       .number()
       .int()
       .min(0)
       .max(DEBUG_VARIABLE_DEPTH_MAX)
-      .default(1),
+      .default(DEBUG_VARIABLE_DEPTH_DEFAULT),
     max_string_bytes: z
       .number()
       .int()
