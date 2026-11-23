@@ -32,8 +32,6 @@ let setLocaleGen = 0;
 // 的调用推进,失败调用不碰它,故不会压掉前一个已成功提交者的广播。
 let committedLocaleGen = 0;
 
-export { mapSystemLocale } from '../../shared/i18n-types';
-export type { Locale, Settings } from '../../shared/i18n-types';
 
 function settingsFile(): string {
   return path.join(app.getPath('userData'), 'settings.json');

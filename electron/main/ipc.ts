@@ -258,7 +258,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   const pluginFsHandles = registerPluginFsIpc({ ipcMain });
 
   // plugin app.dataStore IPC-backed persistence(topic 01)
-  registerPluginDataIpc({ ipcMain });
+  registerPluginDataIpc();
 
   // plugin app.shell.execStream backend(topic 01)
   registerPluginShellStreamHandlers(ipcMain);

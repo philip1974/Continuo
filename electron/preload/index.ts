@@ -152,7 +152,6 @@ type FlushRequestPayload = {
 // 所有跨 IPC 的方法都返回 IpcResult<T>(详见 ADR-010),
 // renderer 拿到后按 ok 分流,不再 throw。
 const api = {
-  ping: () => 'pong' as const,
   layout: {
     read: (): Promise<IpcResult<unknown | null>> =>
       ipcRenderer.invoke(LAYOUT_CHANNELS.READ),

@@ -9,7 +9,6 @@ import path from 'node:path';
 type Locale = 'en' | 'zh' | 'ko';
 type SettingsData = { readonly version: 1; readonly locale: Locale };
 type SettingsServiceModule = {
-  readonly mapSystemLocale: (locale: string) => Locale;
   readonly loadSettings: () => Promise<SettingsData>;
   readonly saveSettings: (settings: SettingsData) => Promise<void>;
   readonly _resetSettingsForTest: () => void;
@@ -198,17 +197,13 @@ describe('settings.service (settings.json) — P2-1 表驱动', () => {
     ['de-DE', 'en'],
     ['ja-JP', 'en'],
   ] as const)('mapSystemLocale(%s) -> %s', async (input, expected) => {
-    const { mapSystemLocale } = await importPending<SettingsServiceModule>(
-      '../../../electron/main/services/settings.service',
-    );
+    const { mapSystemLocale } = await import('../../../electron/shared/i18n-types');
 
     expect(mapSystemLocale(input)).toBe(expected);
   });
 
   it('mapSystemLocale 不通过 split 物化 locale 段数组', async () => {
-    const { mapSystemLocale } = await importPending<SettingsServiceModule>(
-      '../../../electron/main/services/settings.service',
-    );
+    const { mapSystemLocale } = await import('../../../electron/shared/i18n-types');
     const splitSpy = vi.spyOn(String.prototype, 'split');
 
     try {

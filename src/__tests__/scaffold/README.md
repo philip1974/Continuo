@@ -4,6 +4,6 @@
 
 1. 应用窗口出现,标题为 "Continuo"。
 2. 主区域显示 "Hello Continuo"。
-3. preload 桥已建立(preload 的 `ping()` 返回 `'pong'`)。
+3. preload 桥已建立(`window.api` 暴露 layout / popout 等命名空间;真实可用性由 e2e smoke 的 `__lmApi` 用例验证)。
 
 > 注:Electron 主进程的端到端验证留给手工 demo。本主题只做 preload API 契约的纯函数级 BDD。
