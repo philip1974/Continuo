@@ -8,6 +8,8 @@ test('打开 README.md → 切 Preview → milkdown readonly + 不显 CodeMirror
   const previewBtn = editorModeButton(window, EDITOR_MODE_PREVIEW);
   await previewBtn.click();
 
+  // 先确认 Preview 已渲染(只读 Milkdown 把 '# Test Workspace' 渲染为 h1;Source 模式的 CodeMirror 行不是 h1)
+  await expect(window.locator('main h1', { hasText: 'Test Workspace' })).toBeVisible({ timeout: 10_000 });
   // CodeMirror 不显(.cm-content 没在 main 内)
   await expect(window.locator('main .cm-content')).toHaveCount(0, {
     timeout: 5_000,

@@ -7,6 +7,8 @@ test('Preview mode 改 fontSize → main 内 CodeMirror 不存在', async ({ win
   // 切 Preview
   await editorModeButton(window, EDITOR_MODE_PREVIEW).click();
 
+  // 先确认 Preview 已渲染(只读 Milkdown 把 '# Test Workspace' 渲染为 h1;Source 模式的 CodeMirror 行不是 h1)
+  await expect(window.locator('main h1', { hasText: 'Test Workspace' })).toBeVisible({ timeout: 10_000 });
   // CodeMirror 在 main 内不存在
   await expect(window.locator('main .cm-content')).toHaveCount(0, {
     timeout: 5_000,

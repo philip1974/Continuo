@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForAppReady } from './helpers/app-ready';
+import { explorerTreeItem } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -38,6 +40,10 @@ test('explorer.json 缺 layoutUi → sidebarOpen=true + width=280(默认)', asyn
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
+    // 先等就绪并等 README.md 出现(hydrate 已把 root / layoutUi 兼容分支落到 store),再断言默认值;
+    // 否则 store 初值本身就是 open + 280,首帧即恒真。
+    await waitForAppReady(win);
+    await expect(explorerTreeItem(win, /^README\.md$/)).toBeVisible({ timeout: 10_000 });
     // sidebar 默认 open + width 280
     const sidebar = win.locator('main aside').nth(1);
     await expect(sidebar).toBeVisible();

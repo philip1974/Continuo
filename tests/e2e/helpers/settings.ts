@@ -160,6 +160,7 @@ export async function pluginContributionCount(
     );
     if (rows.length === 0) return -1;
     const numCell = rows[0]!.querySelector('div.tabular-nums');
-    return Number(numCell?.textContent?.trim() ?? '0');
+    // 计数格缺失 → -1(避免「找不到计数格」被当成 0 让 *-zero 用例恒过)
+    return numCell ? Number(numCell.textContent?.trim() ?? '-1') : -1;
   }, labels);
 }

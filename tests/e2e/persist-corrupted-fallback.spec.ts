@@ -23,7 +23,8 @@ async function launchAndAssertEmpty(ud: string): Promise<void> {
   win.on('pageerror', (err) => pageErrors.push(err.message));
   await win.waitForLoadState('domcontentloaded');
 
-  // 就绪屏障放行(Splash 已挂上又撤除 → 持久化已读完、root 已恢复)后再断言空态,避免首帧 root=null 的空态恒真
+  // 就绪屏障放行(Splash 已挂上又撤除;正常路径下意味着持久化已读完、root 已恢复,旁路见 helpers/app-ready)
+  // 后再断言空态,避免首帧 root=null 的空态恒真。合法工作区对照用例证明同一屏障后会恢复出文件树。
   await waitForAppReady(win);
   await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
     timeout: 10_000,

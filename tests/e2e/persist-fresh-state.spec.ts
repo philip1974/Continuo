@@ -1,6 +1,7 @@
-// 首次启动:userData 中没有 explorer.json → 应用使用默认值不抛 + 写出空 store snapshot.
+// 首次启动:userData 中没有 explorer.json → 应用使用默认值、不抛页面错误.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { EXPLORER_NO_FOLDER_OPEN } from './helpers/explorer';
+import { waitForAppReady } from './helpers/app-ready';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -21,7 +22,10 @@ test('fresh userData(无 explorer.json)→ EmptyWorkspace + 默认值不抛', as
       env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
     });
     const win = await app.firstWindow();
+    const pageErrors: string[] = [];
+    win.on('pageerror', (err) => pageErrors.push(err.message));
     await win.waitForLoadState('domcontentloaded');
+    await waitForAppReady(win);
 
     // 默认 → EmptyWorkspace
     await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
@@ -33,6 +37,7 @@ test('fresh userData(无 explorer.json)→ EmptyWorkspace + 默认值不抛', as
     expect(
       await sidebar.evaluate((el: HTMLElement) => el.style.width),
     ).toBe('280px');
+    expect(pageErrors).toEqual([]);
 
     await app.close();
   } finally {

@@ -251,8 +251,8 @@ export async function init(): Promise<void> {
   });
 
   // 资源管理器持久化(M-Explorer Step 3 + Step 4)+ Editor session 恢复(Step E5)。
-  // fire-and-forget:hydrate 在毫秒级完成,store setState 触发 React 重渲染,
-  // EmptyWorkspace 自动切到 FolderTree。无需 splash。
+  // fire-and-forget:hydrate 完成后 store setState 触发 React 重渲染,EmptyWorkspace 切到 FolderTree。
+  // Splash 屏障经 rootRestored(终端首个快照对齐前提)间接等待 explorer 恢复。
   // 注入 coApi.fs:启动时按 explorer.json 的 editor.openFilePaths 异步读
   // 文件内容,恢复上次会话的 editor tabs。BDD: editor-session-restore。
   //
