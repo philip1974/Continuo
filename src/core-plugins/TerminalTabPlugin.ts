@@ -3,6 +3,10 @@
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
+import {
+  TERMINAL_CURSOR_STYLE,
+  TERMINAL_FONT_SIZE,
+} from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { TerminalIcon } from '@/plugins/settings/tab-icons';
 
@@ -18,34 +22,8 @@ export default class TerminalTabPlugin extends Plugin {
       render: () => renderCategoryTab('terminal'),
     });
 
-    this.addSettingItem({
-      id: 'terminal.fontSize',
-      category: 'terminal',
-      title: 'Font size',
-      titleKey: 'settings.terminal.font_size',
-      descriptionKey: 'settings.terminal.font_size.desc',
-      type: 'number',
-      default: 13,
-      min: 10,
-      max: 24,
-      step: 1,
-      unit: 'px',
-      priority: 1,
-    });
+    this.addSettingItem(TERMINAL_FONT_SIZE);
 
-    this.addSettingItem({
-      id: 'terminal.cursorStyle',
-      category: 'terminal',
-      title: 'Cursor style',
-      titleKey: 'settings.terminal.cursor_style',
-      type: 'select',
-      default: 'block',
-      enum: [
-        { value: 'block', label: 'Block', labelKey: 'settings.terminal.cursor_style.block' },
-        { value: 'underline', label: 'Underline', labelKey: 'settings.terminal.cursor_style.underline' },
-        { value: 'bar', label: 'Bar', labelKey: 'settings.terminal.cursor_style.bar' },
-      ],
-      priority: 2,
-    });
+    this.addSettingItem(TERMINAL_CURSOR_STYLE);
   }
 }

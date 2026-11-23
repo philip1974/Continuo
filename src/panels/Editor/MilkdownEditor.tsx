@@ -14,6 +14,9 @@ import '@milkdown/crepe/theme/frame-dark.css';
 // 必须在 Crepe theme 之后,才能 override 它的 px 字号(详见文件注释)
 import '@/styles/milkdown-font-override.css';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import {
+  EDITOR_FONT_SIZE,
+} from '@/plugins/settings/core-setting-specs';
 import { t, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import {
@@ -286,7 +289,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
   // src/styles/milkdown-font-override.css(本文件顶部已导入)里 override
-  const fontSize = useSettingValue<number>('editor.fontSize', 13);
+  const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
   // 主题变化(含跟随系统的自动切换,可能发生在输入途中):mermaid 图的配色在渲染时定死,
   // 就地重画即可,不重挂载编辑器(会丢光标 / 滚动 / 尚未落 store 的输入)。
   const { resolved: theme } = useTheme();

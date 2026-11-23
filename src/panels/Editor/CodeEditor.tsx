@@ -20,6 +20,10 @@ import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import {
+  EDITOR_FONT_SIZE,
+  EDITOR_LINE_NUMBERS,
+} from '@/plugins/settings/core-setting-specs';
 import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
 import { debugDecorationsExtension } from './decorations/debug-decorations';
@@ -256,8 +260,8 @@ export function CodeEditor({
 
   // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters
   // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。
-  const fontSize = useSettingValue<number>('editor.fontSize', 13);
-  const lineNumbers = useSettingValue<boolean>('editor.lineNumbers', true);
+  const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
+  const lineNumbers = useSettingValue(EDITOR_LINE_NUMBERS.id, EDITOR_LINE_NUMBERS.default);
 
   // editor.lineNumbers 变化 → 同步到 .cm-editor 的 className
   useEffect(() => {

@@ -18,6 +18,10 @@ import { notify } from '@/notifications/notify';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { isWindowsRuntime } from '@/lib/path-cross';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import {
+  TERMINAL_CURSOR_STYLE,
+  TERMINAL_FONT_SIZE,
+} from '@/plugins/settings/core-setting-specs';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import {
   getIndexedTerminalSessionById,
@@ -51,7 +55,6 @@ import {
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 
-type CursorStyle = 'block' | 'underline' | 'bar';
 
 export interface SearchApi {
   readonly isOpen: boolean;
@@ -340,11 +343,8 @@ export function useTerminal(termId: string) {
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
   // settings(实时):字号 / 光标样式
-  const fontSize = useSettingValue<number>('terminal.fontSize', 13);
-  const cursorStyle = useSettingValue<CursorStyle>(
-    'terminal.cursorStyle',
-    'block',
-  );
+  const fontSize = useSettingValue(TERMINAL_FONT_SIZE.id, TERMINAL_FONT_SIZE.default);
+  const cursorStyle = useSettingValue(TERMINAL_CURSOR_STYLE.id, TERMINAL_CURSOR_STYLE.default);
   const { resolved } = useTheme();
   // 创建 xterm 时读这里的最新值。创建 effect 只依赖 termId,其闭包里的字号 / 光标 / 主题是挂载时的;
   // 0 尺寸挂载会推迟创建,期间的变化同步 effect 又因 term 尚不存在而跳过 → 不读 ref 就会用旧值创建。

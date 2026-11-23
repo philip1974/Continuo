@@ -4,6 +4,10 @@
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
+import {
+  EXPLORER_INDENT_SIZE,
+  EXPLORER_SHOW_HIDDEN_FILES,
+} from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { ExplorerIcon } from '@/plugins/settings/tab-icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
@@ -31,30 +35,8 @@ export default class ExplorerTabPlugin extends Plugin {
       fn: () => useLayoutUiStore.getState().toggleSidebar(),
     });
 
-    this.addSettingItem({
-      id: 'explorer.showHiddenFiles',
-      category: 'explorer',
-      title: 'Show hidden files',
-      titleKey: 'settings.explorer.show_hidden_files',
-      descriptionKey: 'settings.explorer.show_hidden_files.desc',
-      type: 'boolean',
-      default: false,
-      priority: 1,
-    });
+    this.addSettingItem(EXPLORER_SHOW_HIDDEN_FILES);
 
-    this.addSettingItem({
-      id: 'explorer.indentSize',
-      category: 'explorer',
-      title: 'Indent width',
-      titleKey: 'settings.explorer.indent_width',
-      descriptionKey: 'settings.explorer.indent_width.desc',
-      type: 'number',
-      default: 16,
-      min: 8,
-      max: 32,
-      step: 2,
-      unit: 'px',
-      priority: 2,
-    });
+    this.addSettingItem(EXPLORER_INDENT_SIZE);
   }
 }

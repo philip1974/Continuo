@@ -33,6 +33,9 @@ import {
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
+  AUTO_SAVE_MARKDOWN_ENABLED,
+} from '@/plugins/settings/core-setting-specs';
+import {
   countDirtyForClose,
   remainingAfterDiscard,
   remainingAfterFlush,
@@ -478,7 +481,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     subscribeAutoSaveFailures,
     getAutoSaveFailureVersion,
   );
-  const mdAutoSaveEnabled = useSettingValue<boolean>('autoSave.markdown.enabled', true);
+  const mdAutoSaveEnabled = useSettingValue(AUTO_SAVE_MARKDOWN_ENABLED.id, AUTO_SAVE_MARKDOWN_ENABLED.default);
   const lastDirtyReportRef = useRef(JSON.stringify(countDirtyForClose([], false)));
   useEffect(() => {
     const state = countDirtyForClose(useEditorStore.getState().tabs, mdAutoSaveEnabled);

@@ -97,7 +97,6 @@ interface FileRowProps extends FileRowState {
 const ICON_SIZE = 16;
 // 28px 比 24 更松,Lokus / VSCode 同档(他们用 32);保持紧凑同时呼吸感更好
 const ROW_HEIGHT = 28;
-export const DEFAULT_INDENT = 16;
 const FILE_ROW_BASE_CLASS_NAME =
   'flex items-center gap-1 text-xs select-none border-l-2';
 const FILE_ROW_DROP_CLASS_NAME =

@@ -32,6 +32,10 @@ import { useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import {
+  AUTO_SAVE_DELAY_MS,
+  AUTO_SAVE_MARKDOWN_ENABLED,
+} from '@/plugins/settings/core-setting-specs';
 import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
@@ -165,11 +169,8 @@ export function EditorPanel() {
     [activeTab?.filePath, openFileByPath],
   );
   // 自动保存(Markdown)开关 + 延迟 — 都受 SettingsPanel 控制
-  const mdAutoSaveEnabled = useSettingValue<boolean>(
-    'autoSave.markdown.enabled',
-    true,
-  );
-  const autoSaveDelayMs = useSettingValue<number>('autoSave.delayMs', 2000);
+  const mdAutoSaveEnabled = useSettingValue(AUTO_SAVE_MARKDOWN_ENABLED.id, AUTO_SAVE_MARKDOWN_ENABLED.default);
+  const autoSaveDelayMs = useSettingValue(AUTO_SAVE_DELAY_MS.id, AUTO_SAVE_DELAY_MS.default);
   const autoSaveEnabled =
     isAutoSaveEnabled(activeTab?.filePath ?? null) && mdAutoSaveEnabled;
 

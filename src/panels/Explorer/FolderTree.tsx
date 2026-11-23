@@ -16,7 +16,7 @@ import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { buildTreeChildrenWithData, createTreeConfig, sameTreeChildren } from './tree-config';
-import { DEFAULT_INDENT, FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
+import { FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
@@ -36,6 +36,10 @@ import { notify } from '@/notifications/notify';
 import { copyToClipboardOrNotify } from './copy-to-clipboard';
 import { revealPathOrNotify } from './reveal-or-notify';
 import { useSettingValue } from '@/plugins/settings/values-store';
+import {
+  EXPLORER_INDENT_SIZE,
+  EXPLORER_SHOW_HIDDEN_FILES,
+} from '@/plugins/settings/core-setting-specs';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useTheme } from '@/theme';
@@ -519,7 +523,7 @@ export function FolderTree({ root }: { root: string }) {
 
   const allItems = tree.getItems();
   // explorer.showHiddenFiles=false(默认)过滤 . 开头的 entries(.git / .env 等)
-  const showHidden = useSettingValue<boolean>('explorer.showHiddenFiles', false);
+  const showHidden = useSettingValue(EXPLORER_SHOW_HIDDEN_FILES.id, EXPLORER_SHOW_HIDDEN_FILES.default);
   const items = useMemo(() => selectVisibleTreeItems(allItems, showHidden), [allItems, showHidden]);
   renderedItemsRef.current = items;
 
@@ -540,7 +544,7 @@ export function FolderTree({ root }: { root: string }) {
   const pluginMenuItems = useRegistry(coApp.explorerContextMenu);
   // explorer.indentSize 对整棵树一致,一次订阅后下传(打磨 R14),避免每个可见
   // FileRow 各订阅一份同值 setting。
-  const indent = useSettingValue<number>('explorer.indentSize', DEFAULT_INDENT);
+  const indent = useSettingValue(EXPLORER_INDENT_SIZE.id, EXPLORER_INDENT_SIZE.default);
 
   // ── fs.watch 增量更新(Step 6) ───────────────────────────────────
   // 跟随 headless-tree 受控展开集合,同步到 main 进程 watcher。
