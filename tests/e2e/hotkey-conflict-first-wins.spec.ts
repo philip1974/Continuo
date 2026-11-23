@@ -33,6 +33,13 @@ test('注册同 hotkey 第二条命令 → 第一条仍优先(getAll insertion �
     ).__continuoTest;
     t.registerCommand('e2e.dup', 'E2E Dup', 'mod+,');
   });
+  // 新命令要经过一次 React 提交才会进入热键绑定表:让出两帧再按键,否则按键可能打到只有 settings.toggle 的旧表。
+  await window.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 
   await dispatchModKey(window, ',');
 

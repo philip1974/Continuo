@@ -160,7 +160,8 @@ export async function pluginContributionCount(
     );
     if (rows.length === 0) return -1;
     const numCell = rows[0]!.querySelector('div.tabular-nums');
-    // 计数格缺失 → -1(避免「找不到计数格」被当成 0 让 *-zero 用例恒过)
-    return numCell ? Number(numCell.textContent?.trim() ?? '-1') : -1;
+    // 计数格缺失或内容不是纯数字 → -1(避免「找不到 / 空计数格」被当成 0 让 *-zero 用例恒过)
+    const text = numCell?.textContent?.trim() ?? '';
+    return /^\d+$/.test(text) ? Number(text) : -1;
   }, labels);
 }

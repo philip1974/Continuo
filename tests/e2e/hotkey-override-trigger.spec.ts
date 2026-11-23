@@ -76,7 +76,7 @@ test('override 后 → 旧 hotkey ⌘, 不再触发', async ({ window }) => {
 
   await dispatchModKey(window, ',');
 
-  // 等待几秒后 nav 仍不可见(旧 hotkey 不再绑定)
+  // 等 500ms 后 nav 仍不可见(旧 hotkey 不再绑定)
   await window.waitForTimeout(500);
   await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toHaveCount(0);
 });

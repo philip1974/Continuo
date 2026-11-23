@@ -11,13 +11,14 @@ test('a.ts 默认无保存按钮;输入 → dirty;Cmd+S 后 → dirty 清除', a
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click();
 
+  // 先等编辑器挂载,再断言无保存按钮(挂载前断言恒真)
+  const cm = window.locator('.cm-content');
+  await expect(cm).toBeVisible({ timeout: 10_000 });
   await expect(
     window.getByRole('button', { name: EDITOR_SAVE_LABEL }),
   ).toHaveCount(0);
 
   // 输入
-  const cm = window.locator('.cm-content');
-  await expect(cm).toBeVisible({ timeout: 10_000 });
   await cm.click();
   await window.keyboard.type(' // dirty');
 
