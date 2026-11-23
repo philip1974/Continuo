@@ -122,17 +122,6 @@ export interface InitExplorerPersistenceExtras {
 // snapshotFromStores / hydrateStores
 // ──────────────────────────────────────────────
 
-/**
- * 取 snap 中归属 windowSeq 的段;无则返 null(主窗 hydrate 用 null 起步)。
- * 主窗用 PRIMARY_WINDOW_SEQ;其余窗口用启动时注入的 windowSeq。
- */
-function findWindowEntry(
-  snap: ExplorerSnapshot,
-  windowSeq: number,
-): ExplorerWindowEntry | null {
-  return findWindowEntryBySeq(snap.windows, windowSeq);
-}
-
 export function collectNormalizedWorkspaceRoots(
   roots: readonly unknown[],
 ): string[] {
@@ -260,7 +249,7 @@ export function hydrateStores(
   snap: ExplorerSnapshot,
   windowSeq: number = PRIMARY_WINDOW_SEQ,
 ): void {
-  const entry = findWindowEntry(snap, windowSeq);
+  const entry = findWindowEntryBySeq(snap.windows, windowSeq);
   // 全局共享段
   useWorkspaceStore.setState({
     root: normalizeWorkspaceRoot(entry?.workspace.root ?? null),
@@ -312,7 +301,7 @@ export async function hydrateEditorTabs(
   fs: EditorSessionFsApi,
   windowSeq: number = PRIMARY_WINDOW_SEQ,
 ): Promise<void> {
-  const entry = findWindowEntry(snap, windowSeq);
+  const entry = findWindowEntryBySeq(snap.windows, windowSeq);
   if (!entry?.editor || entry.editor.openFilePaths.length === 0) return;
   // 本轮 restore 期望的 workspace root(= hydrateStores 刚据此 snapshot 段设的 root)。
   // readFile 是异步的,期间用户可能切到别的 workspace(setRoot 会关掉 root 外 tab,但此刻
@@ -461,7 +450,7 @@ export async function initExplorerPersistence(
         }
       } else if (r.data && isExplorerSnapshot(r.data)) {
         hydratedSnap = r.data;
-        const myEntry = findWindowEntry(r.data, windowSeq);
+        const myEntry = findWindowEntryBySeq(r.data.windows, windowSeq);
         if (fresh && initialWorkspace !== undefined) {
           // Issue #45:dock 模式 / CLI argv / 用户拖文件夹打开新窗口 ⇒ 强制覆盖该段
           hydrateStoresForNewWindow(r.data, initialWorkspace);
@@ -492,7 +481,7 @@ export async function initExplorerPersistence(
   useWorkspaceStore.getState().markRootRestored();
 
   // 2. async hydrate editor tabs(只在自己段存在且非 fresh 时 restore)
-  if (!fresh && hydratedSnap && extras?.fs && findWindowEntry(hydratedSnap, windowSeq)) {
+  if (!fresh && hydratedSnap && extras?.fs && findWindowEntryBySeq(hydratedSnap.windows, windowSeq)) {
     try {
       await hydrateEditorTabs(hydratedSnap, extras.fs, windowSeq);
     } catch (err) {
@@ -618,7 +607,7 @@ function hydrateStoresForNewWindow(
       : [],
   });
   // 主窗段的 sort 拿来当默认(同项目两窗口偏好排序应一致),无则 by:name
-  const primary = snap ? findWindowEntry(snap, PRIMARY_WINDOW_SEQ) : null;
+  const primary = snap ? findWindowEntryBySeq(snap.windows, PRIMARY_WINDOW_SEQ) : null;
   useExplorerStore.setState({
     expandedPaths: new Set(),
     sort: primary ? primary.explorer.sort : { by: 'name', reverse: false },

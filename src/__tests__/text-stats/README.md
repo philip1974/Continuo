@@ -7,7 +7,7 @@ StatusBar 实时显示当前 active editor tab 的统计,源自这些函数。
 
 | 文件 | 职责 |
 |---|---|
-| `src/lib/text-stats.ts` | lineCount / wordCount / charCount 纯函数 |
+| `src/lib/text-stats.ts` | `computeTextStats(s)` → `{ lines, words, chars }` 单遍纯函数(下文 lineCount / wordCount / charCount 指各字段) |
 
 ## 关键行为
 

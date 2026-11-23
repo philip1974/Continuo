@@ -36,11 +36,6 @@ export function visibleUntrustedText(text: string, maxChars: number = UNTRUSTED_
   return chars.slice(0, head).join('') + ELLIPSIS + (tail > 0 ? chars.slice(-tail).join('') : '');
 }
 
-/** 路径:同上,用路径的显示上限。 */
-export function visibleUntrustedPath(path: string): string {
-  return visibleUntrustedText(path, UNTRUSTED_PATH_MAX_CHARS);
-}
-
 /**
  * 弹窗里对方可控的字段:可见化后放进等宽 <code>。max 缺省为短标识上限;路径传 UNTRUSTED_PATH_MAX_CHARS。
  */

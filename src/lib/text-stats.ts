@@ -40,16 +40,3 @@ export function computeTextStats(s: string): TextStats {
   }
   return { lines, words, chars: len };
 }
-
-// 单项版本(仅测试 / 外部按名使用):委托 computeTextStats,不再各抄一份循环。
-export function lineCount(s: string): number {
-  return computeTextStats(s).lines;
-}
-
-export function wordCount(s: string): number {
-  return computeTextStats(s).words;
-}
-
-export function charCount(s: string): number {
-  return s.length;
-}

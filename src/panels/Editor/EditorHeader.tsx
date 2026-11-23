@@ -17,7 +17,7 @@ import {
 } from '@/stores/editor.store';
 import { useT, t as translate } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
-import { basenameForEditorPath } from './editor-path-utils';
+import { basename as pathBasename } from '@/lib/path-cross';
 import {
   Button,
   IconButton,
@@ -50,9 +50,9 @@ interface EditorHeaderProps {
 const EMPTY_TAB_CHROME: TabChrome[] = [];
 
 function basename(p: string | null): string {
-  // 可维护性 M12:非空 basename 规则共用 basenameForEditorPath;null fallback 文案各自处理。
+  // 非空 basename 规则共用 path-cross.basename;null fallback 文案各自处理。
   if (!p) return translate('panels.editor.untitled');
-  return basenameForEditorPath(p);
+  return pathBasename(p);
 }
 
 export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {

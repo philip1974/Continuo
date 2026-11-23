@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import {
-  charCount,
-  computeTextStats,
-  lineCount,
-  wordCount,
-} from '../../lib/text-stats';
+import { computeTextStats } from '../../lib/text-stats';
+
+const lineCount = (s: string): number => computeTextStats(s).lines;
+const wordCount = (s: string): number => computeTextStats(s).words;
+const charCount = (s: string): number => computeTextStats(s).chars;
 
 describe('lineCount', () => {
   it('空串 → 0', () => {
@@ -53,7 +52,7 @@ describe('charCount', () => {
   });
 });
 
-describe('perf P7 · computeTextStats 单遍与逐项函数逐字节等价', () => {
+describe('perf P7 · computeTextStats 单遍统计', () => {
   const cases = [
     '',
     '   \n\t',
@@ -67,16 +66,6 @@ describe('perf P7 · computeTextStats 单遍与逐项函数逐字节等价', () 
     'line0\nline1\nline2\n',
     '中文 词 测试\n第二行',
   ];
-  it('lines/words/chars 与 lineCount/wordCount/charCount 一致', () => {
-    for (const s of cases) {
-      expect(computeTextStats(s)).toEqual({
-        lines: lineCount(s),
-        words: wordCount(s),
-        chars: charCount(s),
-      });
-    }
-  });
-
   it('空字符串统计复用稳定空对象', () => {
     expect(computeTextStats('')).toEqual({ lines: 0, words: 0, chars: 0 });
     expect(computeTextStats('')).toBe(computeTextStats(''));

@@ -7,7 +7,6 @@ import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
 import {
   UNTRUSTED_LABEL_MAX_CHARS,
   UNTRUSTED_PATH_MAX_CHARS,
-  visibleUntrustedPath,
   visibleUntrustedText,
 } from '../../lib/untrusted-text';
 import { AgentAuthPrompt } from '../../shell/AgentAuthPrompt';
@@ -26,7 +25,7 @@ describe('visibleUntrustedText', () => {
   it('普通文本原样返回', () => {
     expect(visibleUntrustedText('git.status')).toBe('git.status');
     expect(visibleUntrustedText('中文 名字 with spaces')).toBe('中文 名字 with spaces');
-    expect(visibleUntrustedPath('/Users/me/项目/src')).toBe('/Users/me/项目/src');
+    expect(visibleUntrustedText('/Users/me/项目/src', UNTRUSTED_PATH_MAX_CHARS)).toBe('/Users/me/项目/src');
   });
 
   it('换行类连续出现折成一个空格', () => {
@@ -69,7 +68,7 @@ describe('visibleUntrustedText', () => {
     expect(out.endsWith('TAIL')).toBe(true);
     expect(out).toContain('…');
     const path = `/Users/me/${'d/'.repeat(4000)}leaf.txt`;
-    const shown = visibleUntrustedPath(path);
+    const shown = visibleUntrustedText(path, UNTRUSTED_PATH_MAX_CHARS);
     expect(Array.from(shown)).toHaveLength(UNTRUSTED_PATH_MAX_CHARS);
     expect(shown.startsWith('/Users/me/')).toBe(true);
     expect(shown.endsWith('leaf.txt')).toBe(true);

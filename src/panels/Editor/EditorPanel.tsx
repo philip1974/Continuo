@@ -15,10 +15,8 @@ import {
   type EditorMode,
 } from '@/stores/editor.store';
 import { t as translate, useLocale } from '@/i18n';
-import {
-  basenameForEditorPath,
-  isMarkdownPath as isMarkdownPathExact,
-} from './editor-path-utils';
+import { isMarkdownPath as isMarkdownPathExact } from './editor-path-utils';
+import { basename as pathBasename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { EditorHeader, type TabChrome } from './EditorHeader';
@@ -65,9 +63,9 @@ function isMarkdownPath(p: string | null): boolean {
 }
 
 function basename(p: string | null): string {
-  // 可维护性 M12:非空 basename 规则共用 basenameForEditorPath;null fallback 文案各自处理。
+  // 非空 basename 规则共用 path-cross.basename;null fallback 文案各自处理。
   if (!p) return translate('panels.editor.draft');
-  return basenameForEditorPath(p);
+  return pathBasename(p);
 }
 
 function isSKey(key: string): boolean {

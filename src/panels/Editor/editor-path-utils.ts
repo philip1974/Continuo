@@ -1,4 +1,4 @@
-import { basename, isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
+import { isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
 
 function isAsciiCharCaseInsensitive(
   path: string,
@@ -46,13 +46,4 @@ export function isAbsolutePath(path: string): boolean {
     path.charCodeAt(1) === 58 &&
     isPathSeparatorCode(path.charCodeAt(2))
   );
-}
-
-/**
- * 可维护性 M12:非空文件路径 → 展示用 basename(吃 `/` 与 `\`,先 trim 尾部分隔符再取
- * 最后一段)。EditorPanel(tab 标题)与 EditorHeader 共用此规则;**null fallback 文案**
- * (draft / untitled)各调用方自行处理,故此 helper 只收非空 path。
- */
-export function basenameForEditorPath(path: string): string {
-  return basename(path);
 }

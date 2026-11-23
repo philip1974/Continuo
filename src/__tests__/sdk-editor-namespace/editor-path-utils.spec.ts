@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { basename } from '../../lib/path-cross';
 import {
-  basenameForEditorPath,
   isAbsolutePath,
   isMarkdownPath,
 } from '@/panels/Editor/editor-path-utils';
@@ -69,19 +69,19 @@ describe('editor path utils', () => {
   });
 
   // 可维护性 M12:EditorPanel(tab 标题)与 EditorHeader 共用的非空 basename 规则。
-  it('T3 basenameForEditorPath 取展示用 basename(trim 尾斜杠 / 吃 / 与 \\)', () => {
-    expect(basenameForEditorPath('/work/README.md')).toBe('README.md');
-    expect(basenameForEditorPath('/work/sub/')).toBe('sub'); // trim 尾斜杠
-    expect(basenameForEditorPath('C:\\work\\spec.ts')).toBe('spec.ts');
-    expect(basenameForEditorPath('bare.txt')).toBe('bare.txt'); // 无分隔符
+  it('T3 path-cross.basename 取展示用 basename(trim 尾斜杠 / 吃 / 与 \\)', () => {
+    expect(basename('/work/README.md')).toBe('README.md');
+    expect(basename('/work/sub/')).toBe('sub'); // trim 尾斜杠
+    expect(basename('C:\\work\\spec.ts')).toBe('spec.ts');
+    expect(basename('bare.txt')).toBe('bare.txt'); // 无分隔符
   });
 
-  it('T4 basenameForEditorPath 去尾部分隔符不走 replace 正则', () => {
+  it('T4 path-cross.basename 去尾部分隔符不走 replace 正则', () => {
     const replaceSpy = vi.spyOn(String.prototype, 'replace');
 
     try {
-      expect(basenameForEditorPath('/work/sub///')).toBe('sub');
-      expect(basenameForEditorPath('C:\\work\\spec.ts\\\\')).toBe('spec.ts');
+      expect(basename('/work/sub///')).toBe('sub');
+      expect(basename('C:\\work\\spec.ts\\\\')).toBe('spec.ts');
       const trimRegexCalls = replaceSpy.mock.calls.filter(
         ([pattern]) => pattern instanceof RegExp && pattern.source === '[\\\\/]+$',
       );
