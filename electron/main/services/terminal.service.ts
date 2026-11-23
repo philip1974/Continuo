@@ -17,7 +17,7 @@ import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs, skipsShellIntegration } from './shell-args';
 import { runSerialPerKey } from './serialize-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
-import { TERMINAL_CHANNELS } from '../../shared/terminal-channels';
+import { TERMINAL_CHANNELS, type TerminalHistorySnapshot } from '../../shared/terminal-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
@@ -177,9 +177,7 @@ export function __resetForTest(): void {
  * 的偏移都 ≥ endOffset,不会有一批横跨快照边界。renderer 据此丢弃已含于快照的推送,避免同段输出写
  * 两次。PTY 输出入 ring buffer 与 handleChunk 在同一同步回调里,故此刻快照恰好止于 receivedChars。
  */
-export function getBufferSnapshot(
-  id: string,
-): { data: string; truncated: boolean; endOffset?: number; startOffset?: number } {
+export function getBufferSnapshot(id: string): TerminalHistorySnapshot {
   const sm = getSessionManager();
   const inst = instances.get(id);
   if (inst) flushPending(id, inst);
@@ -213,10 +211,7 @@ export function getBufferSnapshot(
 // 见 src/__tests__/terminal-exited-history。
 const MAX_EXITED_HISTORIES = 16;
 // 带退出时的 endOffset:挂载回放恰逢退出时,渲染端排队的退出前推送已含于快照,须照常按偏移丢弃。
-const exitedHistories = new Map<
-  string,
-  { data: string; truncated: boolean; endOffset?: number; startOffset?: number }
->();
+const exitedHistories = new Map<string, TerminalHistorySnapshot>();
 let unsubExitedHistoryPrune: (() => void) | null = null;
 
 function pruneExitedHistories(): void {

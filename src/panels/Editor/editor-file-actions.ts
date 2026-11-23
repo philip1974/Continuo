@@ -19,6 +19,7 @@ import {
   useEditorStore,
 } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
+import type { FsReadFileResult } from '../../../electron/shared/fs-channels';
 import {
   findEditorFileTabById,
   findEditorFileTabByPath,
@@ -96,7 +97,7 @@ export function openFileWithContent(
 /** data = 是否新建了标签(false:已开着只切换)。 */
 async function openTabWith(
   path: string,
-  read: () => Promise<IpcResult<string> & { readonly realPath?: string }>,
+  read: () => Promise<FsReadFileResult>,
   pluginOpenedPath?: string,
 ): Promise<IpcResult<boolean>> {
   const store = useEditorStore;

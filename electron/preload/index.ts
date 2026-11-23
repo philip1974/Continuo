@@ -23,7 +23,11 @@ import {
   type FsReadFileResult,
 } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
-import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../shared/terminal-channels';
+import {
+  SESSION_UPDATE_CWD_CHANNEL,
+  TERMINAL_CHANNELS,
+  type TerminalHistorySnapshot,
+} from '../shared/terminal-channels';
 import type { TerminalSessionSnapshot } from '../shared/terminal-session';
 import type { TerminalCreateInput } from '../shared/terminal-create';
 import {
@@ -294,9 +298,7 @@ const api = {
      */
     readHistory: (
       id: string,
-    ): Promise<
-      IpcResult<{ data: string; truncated: boolean; endOffset?: number; startOffset?: number }>
-    > =>
+    ): Promise<IpcResult<TerminalHistorySnapshot>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.READ_HISTORY, { id }),
     /** 订阅 main 推的 snapshot;返回 unsubscribe. */
     onSessionsChanged: (

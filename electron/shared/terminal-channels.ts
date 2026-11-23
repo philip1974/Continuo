@@ -22,3 +22,14 @@ export const TERMINAL_CHANNELS = {
  * (TERMINAL_CHANNELS 有「全部前缀 terminal:」的契约测试)。preload 与 main 共用此常量。
  */
 export const SESSION_UPDATE_CWD_CHANNEL = 'session:update-cwd';
+
+/**
+ * READ_HISTORY 的返回(main getBufferSnapshot → preload → renderer useTerminal)。renderer 按偏移把历史与
+ * 实时推送去重:startOffset = 快照首字符的累计偏移,endOffset = 快照止于的累计偏移(会话已无实例时缺省)。
+ */
+export interface TerminalHistorySnapshot {
+  readonly data: string;
+  readonly truncated: boolean;
+  readonly endOffset?: number;
+  readonly startOffset?: number;
+}
