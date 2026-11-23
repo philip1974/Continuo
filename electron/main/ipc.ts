@@ -25,10 +25,7 @@ import { registerShellIpc } from './ipc/shell.ipc';
 import { registerWindowIpc, type WindowIpcDeps } from './ipc/window.ipc';
 import { registerI18nIpc } from './ipc/i18n.ipc';
 import { registerMarketplaceIpc } from './ipc/marketplace.ipc';
-import {
-  registerPluginFsIpc,
-  type PluginFsIpcHandles,
-} from './ipc/plugin-fs.ipc';
+import { registerPluginFsIpc } from './ipc/plugin-fs.ipc';
 import { registerPluginDataIpc } from './ipc/plugin-data.ipc';
 import { registerPluginShellStreamHandlers } from './services/plugin-shell-stream.service';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
@@ -132,7 +129,7 @@ function senderWindowSeqOrThrow(event: IpcMainInvokeEvent): number {
   return seq;
 }
 
-export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpcHandles } {
+export function registerIpc(deps: WindowIpcDeps): void {
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
 
@@ -255,7 +252,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   registerMarketplaceIpc();
 
   // plugin app.fs path-scoped backend(topic 01)
-  const pluginFsHandles = registerPluginFsIpc({ ipcMain });
+  registerPluginFsIpc({ ipcMain });
 
   // plugin app.dataStore IPC-backed persistence(topic 01)
   registerPluginDataIpc();
@@ -296,6 +293,4 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   );
 
   registerI18nIpc();
-
-  return { pluginFsHandles };
 }

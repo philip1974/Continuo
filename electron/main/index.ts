@@ -391,7 +391,7 @@ ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
  */
 function requestWindowFlush(
   win: BrowserWindow,
-  mode: FlushMode = 'none',
+  mode: FlushMode,
   accepted?: DirtyState,
 ): Promise<FlushOutcome> {
   return new Promise((resolve) => {
