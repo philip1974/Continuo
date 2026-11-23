@@ -133,7 +133,6 @@ export function applyFilter(
 }
 
 function matchQuery(entry: MarketplaceEntry, q: string): boolean {
-  if (q.length === 0) return true;
   if (lowerName(entry).includes(q)) return true;
   if (lowerId(entry).includes(q)) return true;
   if (lowerDescription(entry).includes(q)) return true;
@@ -148,7 +147,6 @@ function matchTags(
   entry: MarketplaceEntry,
   selected: ReadonlySet<string>,
 ): boolean {
-  if (selected.size === 0) return true;
   const tags = entryTags(entry);
   for (const tag of tags) {
     if (selected.has(tag)) return true;

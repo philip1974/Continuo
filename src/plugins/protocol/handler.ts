@@ -52,8 +52,8 @@ const MAX_PARAM_KEY_LEN = 128;
 const MAX_PARAM_VALUE_LEN = 1024;
 
 /** 边界(E98):日志只打印截断摘要,不把超长 URL/字段原样拼进 console.warn。 */
-function truncForLog(s: string, max = 128): string {
-  return s.length > max ? `${s.slice(0, max)}…(len=${s.length})` : s;
+function truncForLog(s: string): string {
+  return s.length > 128 ? `${s.slice(0, 128)}…(len=${s.length})` : s;
 }
 
 function stripLeadingSlashes(pathname: string): string {

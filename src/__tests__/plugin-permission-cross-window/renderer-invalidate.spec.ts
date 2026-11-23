@@ -59,7 +59,7 @@ const ID = 'com.x.p';
 
 function makeWindow(): { store: IpcPermissionStore; check: (p: 'shell' | 'network' | 'fs') => Promise<boolean> } {
   const store = new IpcPermissionStore();
-  h.listeners.push((id) => store.invalidate(id));
+  h.listeners.push(() => store.invalidate());
   const app = createScopedApp(createTestCoApp(), ID, store, 'tok', ['shell', 'network', 'fs']);
   return { store, check: (p) => app.permission.check(p) };
 }
@@ -130,7 +130,7 @@ describe('renderer:权限变更广播后各窗口重新加载授权', () => {
     const store = new IpcPermissionStore();
     const pending = store.get(ID); // 发起加载(读到的是变更前的快照)
     h.disk[ID] = [{ permission: 'shell', granted: false, decidedAt: 9 }];
-    store.invalidate(ID);
+    store.invalidate();
     expect(await pending).toEqual([{ permission: 'shell', granted: false, decidedAt: 9 }]);
     expect(h.reads).toBe(2);
     expect(await store.get(ID)).toEqual([{ permission: 'shell', granted: false, decidedAt: 9 }]);
@@ -153,7 +153,7 @@ describe('renderer:权限变更广播后各窗口重新加载授权', () => {
   it('每次读取都被失效(代际始终不稳定)→ 重试有上限,读取失败,shell.exec 拒绝、不发 IPC', async () => {
     const b = makeWindow();
     const app = createScopedApp(createTestCoApp(), ID, b.store, 'tok', ['shell']);
-    h.onRead = () => b.store.invalidate(ID);
+    h.onRead = () => b.store.invalidate();
     await expect(app.shell.exec('/bin/echo', ['x'])).rejects.toThrow();
     expect(h.shellExec).not.toHaveBeenCalled();
     expect(h.reads).toBeGreaterThan(1);

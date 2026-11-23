@@ -1168,7 +1168,6 @@ export function formatDateAt(iso: string, nowMs: number): string {
   const createdAtMs = Date.parse(iso);
   if (!Number.isFinite(createdAtMs)) return iso;
   const ms = nowMs - createdAtMs;
-  if (Number.isNaN(ms)) return iso;
   const min = Math.floor(ms / 60_000);
   if (min < 60) return min <= 0 ? translate('marketplace.time.now') : translate('marketplace.time.minutes_ago', { n: min });
   const hr = Math.floor(min / 60);

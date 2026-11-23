@@ -207,7 +207,7 @@ export async function init(): Promise<void> {
   // 终审 P1:任一窗口(含本窗口)变更插件授权成功 → main 广播,本窗口失效授权缓存(下次读重新加载),
   // 再重查该插件 mcp-tools 授权:已撤销 → 注销其 MCP 工具(调用期逐次重查是兜底)。
   coApi.plugins.onPermissionsChanged((id) => {
-    userPermissionStore.invalidate(id);
+    userPermissionStore.invalidate();
     void userPluginManager
       .handlePermissionsChanged(id)
       .catch((err) => console.warn('[main] plugin permissions-changed recheck failed', err));

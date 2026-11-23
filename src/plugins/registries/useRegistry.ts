@@ -40,12 +40,11 @@ export function useRegistry<T>(
 
 /**
  * 多 source 联合 subscribe + 任一变化重算 selector(PluginsTabContent 6-registry 聚合)。
- * selector 必须把外部 deps 列进 deps,与 useRegistry 一致。
+ * selector 只应读这些 source(不依赖其它会变的外部值)。
  */
 export function useMultiRegistry<T>(
   sources: ReadonlyArray<SubscribableLike>,
   selector: () => T,
-  deps: React.DependencyList = [],
 ): T {
   const [snap, setSnap] = useState<T>(() => selector());
   useEffect(() => {
@@ -53,7 +52,7 @@ export function useMultiRegistry<T>(
     refresh();
     return subscribeAll(sources, refresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...sources, ...deps]);
+  }, [...sources]);
   return snap;
 }
 

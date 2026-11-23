@@ -200,7 +200,7 @@ export class IpcPermissionStore implements PermissionStore {
    * 下次读重新从 main 加载。否则 A 窗口撤销后,B 窗口禁用再启用 / permission.check 仍按陈旧缓存放行。
    * 整表重载而非按 id 局部刷新:权限表很小,且只有 readPermissions 一份读契约。
    */
-  invalidate(_pluginId: string): void {
+  invalidate(): void {
     this.generation += 1;
     this.cache = null;
   }

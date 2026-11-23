@@ -547,7 +547,7 @@ type EditorState = {
   unregisterView: (tabId: string, expectedView: EditorView) => void;
   waitForViewRef: (
     tabId: string,
-    timeoutMs?: number,
+    timeoutMs: number,
   ) => Promise<EditorView | null>;
 };
 
@@ -777,7 +777,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       return { viewRefs };
     }),
 
-  waitForViewRef: (tabId, timeoutMs = 500) => {
+  waitForViewRef: (tabId, timeoutMs) => {
     const existing = get().viewRefs.get(tabId);
     if (existing) return Promise.resolve(existing);
 
