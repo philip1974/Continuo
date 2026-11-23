@@ -51,7 +51,10 @@ const mainRefs = new Map<string, MainRef>();
 let nextMainRef = 1;
 // 引用的寿命跟随它的 dirInfo:热重载每次换一个新 dirInfo(新引用),旧的不再被任何 entry 持有 → 回收后摘除
 // 表项,否则 watcher 频繁触发的重载会让 mainRefs 单调增长。表项只含字符串,不反向持有 dirInfo。
+// 回收时按 releasePrefetchedSource 同样处置未被 import 的预取结果(revoke Blob URL;在途拉取经代际作废):
+// 预取方只存 URL 字符串、不持有 dirInfo,dirInfo 可能先于它的 release 被回收。
 const mainRefCleanup = new FinalizationRegistry<string>((ref) => {
+  releasePrefetchedSource(ref);
   mainRefs.delete(ref);
 });
 

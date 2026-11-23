@@ -531,7 +531,7 @@ const api = {
     getLocale(): Promise<IpcResult<Locale>> {
       return ipcRenderer.invoke(I18N_CHANNELS.GET_LOCALE);
     },
-    /** 设置新 locale；main 持久化 + 广播 i18n:changed；返回 { ok, locale, gen }。 */
+    /** 设置新 locale；main 持久化 + 广播 i18n:changed；返回 { locale, gen }。 */
     setLocale(locale: Locale): Promise<IpcResult<I18nChangedPayload>> {
       return ipcRenderer.invoke(I18N_CHANNELS.SET_LOCALE, locale);
     },

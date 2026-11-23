@@ -319,7 +319,7 @@ describe('makeCreateSessionTool · 输出合规', () => {
   });
 });
 
-// 边界(E32):MCP create_session 走 raw ptyCreateHandler 绕过有上限的 TerminalCreateInputSchema
+// 边界(E32):MCP create_session 经 makeAgentCreateSession 直接调 makeCreateHandler,绕过有上限的 TerminalCreateInputSchema
 // (E11),协议包 createSessionInputSchema 又无 cwd/name/agentLabel/autorun/target 上限。工具入口
 // 按 Continuo 自有上限 fail-closed,且在授权弹窗与任何副作用之前拒绝。
 describe('makeCreateSessionTool · 入参尺寸 fail-closed(E32)', () => {

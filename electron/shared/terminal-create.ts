@@ -15,7 +15,7 @@ import { makeEnvBoundedValidator } from './validate-env-bounded';
 // 可传超大 args/env 或超长标题;main 会把它们合进 PTY spawn 环境 + session metadata 再广播给所有
 // renderer → spawn 失败 / IPC 大对象传输卡顿 / Dock/UI 渲染异常。下列上限远超任何正常用法,只挡
 // 滥用;超限 zod 校验失败 → 走 main 的 BAD_INPUT 拒绝路径。
-// 导出供 MCP create_session 路径(走 raw ptyCreateHandler,绕过本 schema)复用同一上限(E32)。
+// 导出供 MCP create_session 路径(makeAgentCreateSession 直接调 makeCreateHandler,绕过本 schema)复用同一上限(E32)。
 export const PATH_MAX = 8192; // shell / cwd / workspaceRoot(路径,远超真实路径长度)
 export const LABEL_MAX = 512; // name / agentLabel(显示串)
 const ARG_MAX_LEN = 16384; // 单个 arg

@@ -76,7 +76,7 @@ describe('createInputSchema', () => {
     ).toBe(true);
   });
 
-  // 边界(E11):args/env/title 等无上限 → 畸形 payload 超大值致 spawn 失败/IPC 卡顿/UI 异常。
+  // 边界(E11):args/env/name 等无上限 → 畸形 payload 超大值致 spawn 失败/IPC 卡顿/UI 异常。
   // schema 加合理上限,超限校验失败(走 main BAD_INPUT 拒绝)。
   describe('E11 长度/数量上限', () => {
     it('args 数量超上限 → fail', () => {
