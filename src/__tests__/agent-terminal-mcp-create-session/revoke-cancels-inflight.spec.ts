@@ -60,7 +60,7 @@ describe('撤销授权覆盖在途 terminal.create_session', () => {
     const run = tool.run({ autorun: 'codex' }, { ownerWindowId: 1, callerSubject: 'tok-a' });
     await vi.waitFor(() => expect(createSession).toHaveBeenCalled());
     cancelAgentTerminalCreates();
-    // autorun 由 createSession 实现依据该信号跳过(index.ts createSessionForAgent)。
+    // autorun 由 createSession 实现依据该信号跳过(makeAgentCreateSession,见 agent-create-session.spec)。
     expect(seenCtx?.signal?.aborted).toBe(true);
     spawn.resolve({ id: 'term-1' });
     await expect(run).rejects.toMatchObject({ code: ERROR_CODES.TERMINAL_CREATE_CANCELLED });

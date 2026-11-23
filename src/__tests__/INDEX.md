@@ -248,6 +248,7 @@
 
 ## [agent-terminal-mcp-create-session (Agent Terminal MCP Phase 2 + P3 autorun)](./agent-terminal-mcp-create-session/README.md)
 
+- [`agent-create-session.spec.ts`](./agent-terminal-mcp-create-session/agent-create-session.spec.ts)
 - [`create-session.spec.ts`](./agent-terminal-mcp-create-session/create-session.spec.ts)
 - [`revoke-cancels-inflight.spec.ts`](./agent-terminal-mcp-create-session/revoke-cancels-inflight.spec.ts)
 

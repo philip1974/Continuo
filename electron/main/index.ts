@@ -56,11 +56,9 @@ import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
 import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
-import { ERROR_CODES } from '../shared/error-codes';
 import {
   createMcpHost,
   setMcpRevokers,
-  type McpCallCtx,
   type McpHost,
 } from './services/mcp-host.service';
 import {
@@ -75,11 +73,10 @@ import {
   cancelAgentTerminalCreates,
   hasAgentTerminalCreates,
 } from './services/agent-terminal-inflight';
-import type { CreateSessionPtyInput } from './services/mcp-tools-terminal';
 import * as terminalSessions from './services/terminal-sessions.service';
 import * as termService from './services/terminal.service';
 import {
-  makeCreateHandler,
+  makeAgentCreateSession,
   resolveTerminalCwd,
   setMcpEnvProvider,
   setStopHookCanceller,
@@ -148,7 +145,6 @@ import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
-import { codedError } from '../shared/error-message';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -158,9 +154,6 @@ const releaseWindowResources = makeWindowResourceCleanup({
   releaseFsWatchers: releaseFsWatchersForWindow,
   cancelAgentAuth: cancelAgentAuthByWindow,
 });
-
-// autorun delay:Win shell prompt 慢,默认更长。
-const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -987,45 +980,10 @@ let mcpStdioStarting: Promise<void> = Promise.resolve();
 // Stop hook broker 的停止函数(MCP host 启动成功后赋值),由 before-quit 不可逆清理阶段调用。
 let stopHookBroker: (() => Promise<void>) | null = null;
 
-// MCP tool 共享的 PTY create 入口:复用 IPC 端的 makeCreateHandler 工厂,
-// 包一层 lazy mainWindow 查询(tool 调用时窗口必在,但 host 启动时还没创建)。
-const ptyCreateHandler = makeCreateHandler();
+// MCP create_session 的 PTY 创建入口(窗口查找 + 归属到调用方 + autorun),实现见 ipc/terminal.ipc。
+const createSessionForAgent = makeAgentCreateSession();
 const getSessionOwner = (id: string): number | null =>
   terminalSessions.get(id)?.ownerWindowId ?? null;
-
-async function createSessionForAgent(
-  input: CreateSessionPtyInput,
-  ctx: McpCallCtx,
-): Promise<{ id: string }> {
-  const win = BrowserWindow.fromId(ctx.ownerWindowId);
-  if (!win || win.isDestroyed()) {
-    throw codedError(ERROR_CODES.TERMINAL_NO_WINDOW, 'no window for terminal create');
-  }
-  // 安全 S3:把新会话归属到发起 create 的 MCP 调用方(ctx.callerSubject)。后续
-  // read/send/kill 仅该调用方(同一 token / 同一 stdio 连接)可操作该会话。
-  const r = await ptyCreateHandler(
-    input,
-    win,
-    typeof ctx.callerSubject === 'string'
-      ? { controllerToken: ctx.callerSubject }
-      : undefined,
-  );
-  // P3 autorun:spawn 后 delay 200ms(Win 600)等 shell prompt 出现,然后键入命令。
-  // 不严格保证 prompt 已就绪 — 平台差异大,简单 timer 是最务实的近似。
-  // race(R111 同族):ptyCreateHandler 是异步边界,期间调用方已断开 → 不再键入 autorun 命令。
-  if (input.autorun && !ctx.signal?.aborted) {
-    const cmd = input.autorun;
-    setTimeout(() => {
-      // 延迟期间被撤销 / 调用方断开:会话已由 create_session 回收,不再键入。
-      if (!ctx.signal?.aborted && termService.has(r.id)) {
-        // autorun 是尽力而为(prompt 就绪近似),写入结果无 UI 反馈通道 → fire-and-forget。
-        // write 现返 Promise(R4),内部已 catch 不 reject,void 显式忽略避免 floating-promise。
-        void termService.write(r.id, `${cmd}\n`);
-      }
-    }, AUTORUN_DELAY_MS);
-  }
-  return r;
-}
 
 /** MCP 工具(终端 / debug / 插件三个域)共用的授权入口:转给 renderer 的授权弹窗。 */
 const ensureAgentAuthorized: EnsureAuthorized = (ownerWindowId, method, external) =>

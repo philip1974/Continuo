@@ -20,7 +20,8 @@ import {
 } from '../../shared/terminal-create';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
-import { mcpRevokers } from '../services/mcp-host.service';
+import { mcpRevokers, type McpCallCtx } from '../services/mcp-host.service';
+import type { CreateSessionPtyInput } from '../services/mcp-tools-terminal';
 import { getWorkspaceRoot as getWindowWorkspaceRoot } from '../services/window-workspace-roots.service';
 // 边界(E33,E11/E23 同族):session id 此前各 schema 只 .min(1) 无上限。id 进会话表查找 + 错误消息
 // 拼接 + sessions_changed 广播,畸形超长 id/cwd 会让主进程会话表/快照/Dock 渲染携带巨大字符串。
@@ -228,6 +229,52 @@ export function makeCreateHandler(deps?: {
       throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, `terminal create cancelled: ${id}`);
     }
     return { id };
+  };
+}
+
+// autorun delay:Win shell prompt 慢,默认更长。
+export const AUTORUN_DELAY_MS = process.platform === 'win32' ? 600 : 200;
+
+/**
+ * MCP create_session 的 PTY 创建入口:复用 makeCreateHandler(与 renderer 的 terminal:create 同一条创建链),
+ * 外加调用方窗口查找(tool 调用时窗口必在,但 host 启动时还没创建 → 调用时才查)、会话归属与 autorun。
+ */
+export function makeAgentCreateSession(deps?: {
+  createHandler?: ReturnType<typeof makeCreateHandler>;
+  service?: Pick<typeof termService, 'has' | 'write'>;
+  getWindow?: (windowId: number) => BrowserWindow | null;
+}) {
+  const createHandler = deps?.createHandler ?? makeCreateHandler();
+  const service = deps?.service ?? termService;
+  const getWindow = deps?.getWindow ?? ((windowId: number) => BrowserWindow.fromId(windowId));
+
+  return async (input: CreateSessionPtyInput, ctx: McpCallCtx): Promise<{ id: string }> => {
+    const win = getWindow(ctx.ownerWindowId);
+    if (!win || win.isDestroyed()) {
+      throw codedError(ERROR_CODES.TERMINAL_NO_WINDOW, 'no window for terminal create');
+    }
+    // 安全 S3:把新会话归属到发起 create 的 MCP 调用方(ctx.callerSubject)。后续
+    // read/send/kill 仅该调用方(同一 token / 同一 stdio 连接)可操作该会话。
+    const r = await createHandler(
+      input,
+      win,
+      typeof ctx.callerSubject === 'string' ? { controllerToken: ctx.callerSubject } : undefined,
+    );
+    // P3 autorun:spawn 后 delay 200ms(Win 600)等 shell prompt 出现,然后键入命令。
+    // 不严格保证 prompt 已就绪 — 平台差异大,简单 timer 是最务实的近似。
+    // race(R111 同族):createHandler 是异步边界,期间调用方已断开 → 不再键入 autorun 命令。
+    if (input.autorun && !ctx.signal?.aborted) {
+      const cmd = input.autorun;
+      setTimeout(() => {
+        // 延迟期间被撤销 / 调用方断开:会话已由 create_session 回收,不再键入。
+        if (!ctx.signal?.aborted && service.has(r.id)) {
+          // autorun 是尽力而为(prompt 就绪近似),写入结果无 UI 反馈通道 → fire-and-forget。
+          // write 返 Promise(R4),内部已 catch 不 reject,void 显式忽略避免 floating-promise。
+          void service.write(r.id, `${cmd}\n`);
+        }
+      }, AUTORUN_DELAY_MS);
+    }
+    return r;
   };
 }
 

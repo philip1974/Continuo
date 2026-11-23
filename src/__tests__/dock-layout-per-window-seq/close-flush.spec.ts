@@ -185,7 +185,7 @@ vi.mock('../../../electron/main/services/terminal.service', () => ({
   readOutput: vi.fn(),
 }));
 vi.mock('../../../electron/main/ipc/terminal.ipc', () => ({
-  makeCreateHandler: vi.fn(() => vi.fn()),
+  makeAgentCreateSession: vi.fn(() => vi.fn()),
   setMcpEnvProvider: vi.fn(),
 }));
 vi.mock('../../../electron/main/services/agent-auth.service', () => ({

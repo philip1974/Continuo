@@ -193,7 +193,7 @@ async function start(): Promise<Harness> {
       auth.calls += 1;
       return auth.gate ? auth.gate.promise : 'session';
     },
-    // 复刻 index.ts createSessionForAgent:先登记 metadata,再(异步)起 PTY,autorun 在 PTY 起来后跑。
+    // 复刻 makeAgentCreateSession(ipc/terminal.ipc)的顺序:先登记 metadata,再(异步)起 PTY,autorun 在 PTY 起来后跑。
     createSession: async (input, ctx) => {
       create.calls += 1;
       const id = `term-${(seq += 1)}`;
