@@ -60,7 +60,8 @@ test('autoSave.markdown.enabled=false → updateContent → 磁盘不变', async
   );
 
   // 等若干倍 delay 时间,确认仍未写盘
-  await window.waitForTimeout(500);
+  // delayMs=50 被钳到 500ms 下限:等 3 倍以上,若自动保存错误启用此时必已写盘
+  await window.waitForTimeout(1_600);
   const after = await readFile(
     path.join(workspaceRoot, 'README.md'),
     'utf8',

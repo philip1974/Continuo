@@ -19,7 +19,9 @@ test('加 Terminal session → 等 debounce → explorer.json 的 layout 不含 
     window.getByRole('textbox', { name: TERMINAL_INPUT }),
   ).toBeVisible({ timeout: 15_000 });
 
-  // 布局写盘后 explorer.json 的窗口段 layout 含 editor panel,且已剥离 terminal panel。
-  await expect.poll(() => persistedPanelComponents(userDataDir), { timeout: 5_000 }).toContain('editor');
+  // 等明显超过 300ms 防抖,确保加终端之后的那次写盘已落地(剥离后布局与之前相同时会去重不写,
+  // 故没有可轮询的「新写盘」信号);再断言窗口段 layout 含 editor panel、已剥离 terminal panel。
+  await window.waitForTimeout(1_500);
+  expect(persistedPanelComponents(userDataDir)).toContain('editor');
   expect(persistedPanelComponents(userDataDir)).not.toContain('terminal');
 });

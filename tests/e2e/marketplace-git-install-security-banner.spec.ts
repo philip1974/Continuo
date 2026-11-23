@@ -2,7 +2,7 @@
 import { test, expect } from './fixtures/electron-app';
 import {
   MARKETPLACE_GIT_URL_WARNING,
-  MARKETPLACE_INDEX_OK,
+  MARKETPLACE_INDEX_NONEMPTY,
   MARKETPLACE_TAB,
   SETTINGS,
   SETTINGS_NAV,
@@ -24,7 +24,7 @@ test('Marketplace ok 态 → GitUrl 段显安全风险提示 banner', async ({
   await marketplaceTab.click();
 
   const okText = await window
-    .getByText(MARKETPLACE_INDEX_OK)
+    .getByText(MARKETPLACE_INDEX_NONEMPTY)
     .first()
     .waitFor({ timeout: 15_000 })
     .then(() => true)

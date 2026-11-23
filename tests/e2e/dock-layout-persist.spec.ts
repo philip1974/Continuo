@@ -68,10 +68,8 @@ async function openOutputPanel(page: Page): Promise<void> {
   });
 }
 
-// Requires no other Continuo instance running. When packaged Continuo is open,
-// macOS NSApplication registration aborts the Playwright Electron launch before
-// the test body runs; existing e2e specs have the same limitation.
-test.describe.skip('dock-layout-per-window-seq: v3 persist roundtrip', () => {
+// 与其它 e2e 一样,运行时不能同时开着打包版 Continuo(macOS NSApplication 注册会中止 Playwright 的 Electron 启动)。
+test.describe('dock-layout-per-window-seq: v3 persist roundtrip', () => {
   let userData: string;
   let explorerFile: string;
   let legacyLayoutFile: string;
@@ -128,7 +126,7 @@ test.describe.skip('dock-layout-per-window-seq: v3 persist roundtrip', () => {
 
     await expect
       .poll(async () => {
-        const migrated = (await readJson(explorerFile)) as { version?: number };
+        const migrated = ((await fileExists(explorerFile)) ? await readJson(explorerFile) : {}) as { version?: number };
         return {
           version: migrated.version,
           legacyExists: await fileExists(legacyLayoutFile),
@@ -151,7 +149,8 @@ test.describe.skip('dock-layout-per-window-seq: v3 persist roundtrip', () => {
 
     await expect
       .poll(async () => {
-        const persisted = (await readJson(explorerFile)) as {
+        // 首次写盘前文件尚不存在:按空对象继续轮询
+        const persisted = ((await fileExists(explorerFile)) ? await readJson(explorerFile) : {}) as {
           version?: number;
           windows?: Array<{ windowSeq?: number; layout?: unknown }>;
         };

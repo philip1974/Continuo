@@ -45,7 +45,6 @@ test('从 ws1 → 通过菜单切到 ws2 → recentRoots = [ws2, ws1]', async ()
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    // 用 testing hook 直接 setRoot(ws2)— 比 ⋯ 菜单稳
     await win.waitForFunction(
       () =>
         Boolean(

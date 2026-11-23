@@ -61,7 +61,8 @@ test('打开 a.ts → updateContent → 不自动保存(代码必须 ⌘S)', asy
     { tabId, content: 'export const a = 999;\n' },
   );
 
-  await window.waitForTimeout(500);
+  // delayMs=50 被钳到 500ms 下限:等 3 倍以上,若自动保存错误启用此时必已写盘
+  await window.waitForTimeout(1_600);
   const after = await readFile(
     path.join(workspaceRoot, 'src/a.ts'),
     'utf8',

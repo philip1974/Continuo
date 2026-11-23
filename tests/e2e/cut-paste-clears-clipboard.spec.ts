@@ -21,5 +21,5 @@ test('cut README → paste 到 src → 再右键 src → 不含「粘贴」', as
   await window.locator('text=src').first().click({ button: 'right' });
   const menu = window.getByRole('menu').last();
   await expect(menu).toBeVisible();
-  await expect(menu).not.toContainText(PASTE);
+  await expect(menu.getByRole('menuitem', { name: PASTE })).toHaveCount(0);
 });

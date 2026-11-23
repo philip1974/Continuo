@@ -1,9 +1,10 @@
-// 往 document 派发 Ctrl+S 不抛错(⌘S 由 EditorPanel 容器 onKeyDown 处理,document 级事件到不了它).
+// Ctrl+S 显式保存:在编辑器内修改 → Ctrl+S(EditorPanel 容器 onKeyDown,meta / ctrl 均可)→ 磁盘写入;
+// 外部修改 → useExternalFileSync 自动同步 editor 内容.
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
-test('打开 a.ts → document 级 Ctrl+S 不抛 + 文件不变', async ({
+test('打开 a.ts → 编辑器内修改 → Ctrl+S → 磁盘写入', async ({
   window,
   workspaceRoot,
 }) => {
@@ -13,21 +14,16 @@ test('打开 a.ts → document 级 Ctrl+S 不抛 + 文件不变', async ({
     timeout: 10_000,
   });
 
-  // 往 document 派发 Ctrl+S:⌘S 由 EditorPanel 容器 onKeyDown 处理,document 级事件到不了它 —— 本用例只验证不抛错
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 's',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  const editor = window.locator('.cm-content').first();
+  await editor.click();
+  await window.keyboard.press('ControlOrMeta+End');
+  await window.keyboard.type('\n// saved-by-ctrl-s');
+  await window.keyboard.press('Control+s');
 
-  // 没修改 → 文件内容不变
-  const content = await readFile(path.join(workspaceRoot, 'src/a.ts'), 'utf8');
-  expect(content).toContain('export const a = 1;');
+  const aPath = path.join(workspaceRoot, 'src/a.ts');
+  await expect
+    .poll(() => readFile(aPath, 'utf8'), { timeout: 5_000 })
+    .toContain('// saved-by-ctrl-s');
 });
 
 test('外部修改 a.ts → useExternalFileSync 自动同步 editor 内容', async ({

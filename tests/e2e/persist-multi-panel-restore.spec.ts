@@ -63,9 +63,10 @@ test('Editor + Terminal 使用后重启不恢复 stale terminal panel', async ()
     ).toBeVisible({ timeout: 15_000 });
 
     // 等 layout-persist debounce 写盘(layout:write → explorer.json 的窗口段 layout)
-    await expect.poll(() => persistedPanelComponents(ud), { timeout: 5_000 }).toContain('editor');
-    expect(persistedPanelComponents(ud)).not.toContain('terminal');
     await app1.close();
+    // 关窗 flush 握手确定性写入最终布局快照:此时读到的就是加终端之后的布局。
+    expect(persistedPanelComponents(ud)).toContain('editor');
+    expect(persistedPanelComponents(ud)).not.toContain('terminal');
 
     // 重启
     const app2 = await electron.launch({

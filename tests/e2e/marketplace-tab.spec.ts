@@ -5,7 +5,7 @@
 import { test, expect } from './fixtures/electron-app';
 import {
   MARKETPLACE_GIT_URL_INSTALL,
-  MARKETPLACE_INDEX_OK,
+  MARKETPLACE_INDEX_NONEMPTY,
   MARKETPLACE_INSTALL_EXTENSION,
   MARKETPLACE_READY,
   MARKETPLACE_TAB,
@@ -58,9 +58,9 @@ test('商店底部 Git URL 安装段 — 输入空 → 按钮 disabled', async (
   }
   await marketplaceTab.click();
 
-  // 等任一稳态加载完(最多 15s)— error / 空索引态会提前返回,只渲染对应提示块(GitUrlInstall 仅 ok 才渲染).
+  // 等索引加载成功且非空(最多 15s)— error / 空索引态会提前返回、不渲染 GitUrlInstall,此时跳过.
   const okText = await window
-    .getByText(MARKETPLACE_INDEX_OK, { exact: false })
+    .getByText(MARKETPLACE_INDEX_NONEMPTY, { exact: false })
     .first()
     .waitFor({ timeout: 15_000 })
     .then(() => true)

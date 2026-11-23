@@ -1,4 +1,4 @@
-// 双击文件 → Editor 打开 tab + 内容显示.
+// 单击文件 → Editor 打开 tab + 内容显示.
 import { test, expect } from './fixtures/with-workspace';
 
 const LINE_COUNT = /(行|lines|줄)/;

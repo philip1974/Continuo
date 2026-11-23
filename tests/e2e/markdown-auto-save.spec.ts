@@ -5,22 +5,14 @@ import {
   SETTINGS,
   SETTINGS_NAV,
 } from './helpers/settings';
-// Markdown 自动保存:store.updateContent → 经过 autoSave.delayMs 后磁盘写入.
-//
-// 直接通过 testing hook 注入 editor.store.updateContent(避开 milkdown 复杂操作),
-// 验证 useAutoSave 触发 saveActive → fs.writeFile 成功.
-//
-// 实现:扩展 testing hook 暴露 editor store + autoSave 设置.
+// Markdown 自动保存设置的默认值在设置面板可见(autoSave.markdown.enabled=true、autoSave.delayMs=2000)。
+// 真实的「修改 → 防抖后写盘」见 markdown-auto-save-real.spec.ts。
 
-import { readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
-test('打开 .md → 修改内容(via store)→ 自动保存到磁盘', async ({
+test('打开 .md → 设置面板显示自动保存默认值(开启、2000ms)', async ({
   window,
-  workspaceRoot,
 }) => {
-  // 设 autoSave delay 短一些,避免 e2e 等久
   // 直接打开 README.md
   await window.locator('text=README.md').first().click();
   await expect(window.locator('header').first()).toContainText('README.md', {
@@ -30,10 +22,6 @@ test('打开 .md → 修改内容(via store)→ 自动保存到磁盘', async ({
   // milkdown 编辑器渲染需要时间,等元素出现
   await window.waitForTimeout(500);
 
-  // 通过 testing hook 写 store(若 hook 暴露 editor store).
-  // 没有暴露 → fallback:外部修改文件 + 触发 useExternalFileSync 同步进 store
-  // 这条 path 已被 save-shortcut spec 覆盖.
-  // 这里改测「显式调 saveActive 没有 dirty 时不抛 + 自动保存功能开关在 settings 内可见」.
 
   // 验证自动保存 setting 默认 true:打开 settings 看 toggle.
   await window.getByRole('button', { name: SETTINGS }).click();
@@ -63,19 +51,5 @@ test('打开 .md → 修改内容(via store)→ 自动保存到磁盘', async ({
   );
   expect(values).toContain('2000');
 
-  // 关 settings + 给个简单 smoke:外部 writeFile + 自动 sync(已被 save-shortcut 测,
-  // 这里只验证 useExternalFileSync 起作用)
   await window.getByRole('button', { name: CLOSE_SETTINGS }).click();
-  await window.waitForTimeout(300);
-
-  const newText = '# Updated by external\n';
-  await writeFile(path.join(workspaceRoot, 'README.md'), newText);
-
-  // editor 同步 — TitleBar 仍 README.md(basename 不变),内容由 useExternalFileSync 重读
-  // 我们通过磁盘读回作为已知 ground truth
-  const readBack = await readFile(
-    path.join(workspaceRoot, 'README.md'),
-    'utf8',
-  );
-  expect(readBack).toBe(newText);
 });

@@ -1,9 +1,9 @@
-// override hotkey 后 reset → 回到 spec.hotkey.
+// override hotkey 后再 override 回原值 → 原快捷键恢复生效(testing hook 不暴露 store.reset)。
 import { test, expect } from './fixtures/electron-app';
 import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS_NAV } from './helpers/settings';
 
-test('override 后 reset → CommandPalette 显示原 hotkey', async ({
+test('override 后再设回原 hotkey → 原快捷键打开 Settings', async ({
   window,
 }) => {
   await window.waitForFunction(
