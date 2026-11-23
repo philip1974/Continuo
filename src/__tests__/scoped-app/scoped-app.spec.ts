@@ -35,7 +35,6 @@ const coApiMocks = vi.hoisted(() => {
       _scopeDecision: vi.fn().mockResolvedValue(undefined),
       onScopeRequestCancelled: vi.fn(() => () => {}),
       onScopeRequest: vi.fn(() => () => {}),
-      onScopeUpdated: vi.fn(() => () => {}),
     },
     pluginShellStreamRaw: {
       execStream: vi.fn(() => ({

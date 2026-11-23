@@ -2,7 +2,7 @@ import { mkdtemp, rm, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { IdentityRegistry } from '../../../../electron/main/services/identity-registry.service';
 import { PathScopeRegistry } from '../../../../electron/main/services/path-scope-registry.service';
 import { ScopeError } from '../../../plugins/types';
@@ -78,19 +78,6 @@ describe('sdk-contract integration: PathScopeRegistry', () => {
       fullPath: join(tmpCanonical, 'write.txt'),
     });
     expect(reg._peek('plugin-x')).toEqual([{ path: tmpCanonical, mode: 'rw' }]);
-  });
-
-  it('T4 emits scope-updated when grant changes scopes', () => {
-    const listener = vi.fn();
-    reg.on('scope-updated', listener);
-
-    reg.grant('plugin-x', [{ path: tmpCanonical, mode: 'r' }]);
-
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith({
-      pluginId: 'plugin-x',
-      scopes: [{ path: tmpCanonical, mode: 'r' }],
-    });
   });
 
   it('T5 revokeAll removes all scopes and later checks reject', async () => {

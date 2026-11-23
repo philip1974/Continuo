@@ -28,8 +28,6 @@ export const PLUGIN_FS_CHANNELS = {
   SCOPE_REQUEST: 'plugin-fs:scope-request',
   /** main -> renderer event:某个已发出的 scope-request 在 main 侧已收口(超时 / 插件已注销),撤掉对应弹窗 */
   SCOPE_REQUEST_CANCELLED: 'plugin-fs:scope-request-cancelled',
-  /** main -> renderer event after PathScopeRegistry grant/revoke */
-  SCOPE_UPDATED: 'plugin-fs:scope-updated',
 } as const;
 
 /**

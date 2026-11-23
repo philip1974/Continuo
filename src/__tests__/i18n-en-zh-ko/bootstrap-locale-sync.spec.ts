@@ -61,7 +61,6 @@ const mocks = vi.hoisted(() => {
       _scopeDecision: vi.fn().mockResolvedValue(undefined),
       onScopeRequestCancelled: vi.fn(() => () => {}),
       onScopeRequest: vi.fn(() => () => {}),
-      onScopeUpdated: vi.fn(() => () => {}),
     },
     initExplorerPersistence: vi.fn(),
     updateRefresh: vi.fn(),

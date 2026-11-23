@@ -132,7 +132,6 @@
 - [`save-race-dirty-preserve.spec.ts`](./49-polish-bugfixes/save-race-dirty-preserve.spec.ts)
 - [`scope-correlator-cancel-by-sender.spec.ts`](./49-polish-bugfixes/scope-correlator-cancel-by-sender.spec.ts)
 - [`scope-grant-canonicalizes-path.spec.ts`](./49-polish-bugfixes/scope-grant-canonicalizes-path.spec.ts)
-- [`scope-updated-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/scope-updated-broadcast-send-throw.spec.ts)
 - [`scoped-app-shell-stream-early-break.spec.ts`](./49-polish-bugfixes/scoped-app-shell-stream-early-break.spec.ts)
 - [`security-file-url-trust.spec.ts`](./49-polish-bugfixes/security-file-url-trust.spec.ts)
 - [`security-http-mcp-session-subject.spec.ts`](./49-polish-bugfixes/security-http-mcp-session-subject.spec.ts)

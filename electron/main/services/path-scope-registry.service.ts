@@ -1,4 +1,3 @@
-import { EventEmitter } from 'node:events';
 import { promises as fs, realpathSync, type BigIntStats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { IdentityRegistry } from './identity-registry.service';
@@ -38,11 +37,6 @@ export interface CheckResultWrite {
 }
 
 export type CheckResult = CheckResultRead | CheckResultWrite;
-
-export interface ScopeUpdatedEvent {
-  pluginId: string;
-  scopes: readonly PathScope[];
-}
 
 /**
  * probe 是否在 scope 子树内(同路径或子路径)。注意根目录:scopePath 本身已以分隔符
@@ -215,7 +209,7 @@ function withFullPath(r: { parentCanonical: string; leaf: string }): CheckResult
   };
 }
 
-export class PathScopeRegistry extends EventEmitter {
+export class PathScopeRegistry {
   private readonly pluginScopes = new Map<string, PathScope[]>();
   // 边界(E81):全局唯一-path scope 累计数(O(1) 维护,避免每次 merge 遍历全表求和)。
   private totalScopes = 0;
@@ -245,7 +239,6 @@ export class PathScopeRegistry extends EventEmitter {
     private readonly identityRegistry: IdentityRegistry,
     opts: PathScopeRegistryOptions = {},
   ) {
-    super();
     const forms = [...new Set((opts.protectedRoots ?? []).flatMap(protectedRootForms))];
     this.protectedKeys = protectedRootKeys(forms);
     this.protectedChains = forms.map(prefixesOf);
@@ -724,13 +717,9 @@ export class PathScopeRegistry extends EventEmitter {
     return merged;
   }
 
-  /** Grant scopes for a plugin. Union by path; if present, takes wider mode (rw > r). Emits 'scope-updated'. */
+  /** Grant scopes for a plugin. Union by path; if present, takes wider mode (rw > r). */
   grant(pluginId: string, newScopes: readonly PathScope[]): void {
-    const merged = this.mergeScopes(pluginId, newScopes);
-    this.emit('scope-updated', {
-      pluginId,
-      scopes: merged,
-    } satisfies ScopeUpdatedEvent);
+    this.mergeScopes(pluginId, newScopes);
   }
 
   /**
@@ -739,8 +728,6 @@ export class PathScopeRegistry extends EventEmitter {
    *
    * - 幂等:每个 plugin 仅水合一次(由 hydrated 集合守卫),即便 persistedScopes 为空
    *   也标记已水合,避免 request-scope handler 每次都打盘。
-   * - 静默:不 emit 'scope-updated' —— 这是历史授权的恢复而非新授权决策,
-   *   也避免把恢复事件误当作新 grant 再次触发持久化。
    */
   hydrate(pluginId: string, persistedScopes: readonly PathScope[]): void {
     if (this.hydrated.has(pluginId)) return;
@@ -800,10 +787,6 @@ export class PathScopeRegistry extends EventEmitter {
     const removed = this.pluginScopes.get(pluginId);
     if (this.pluginScopes.delete(pluginId)) {
       this.totalScopes -= removed?.length ?? 0; // 边界(E81):同步全局计数,防泄漏
-      this.emit('scope-updated', {
-        pluginId,
-        scopes: [],
-      } satisfies ScopeUpdatedEvent);
     }
   }
 

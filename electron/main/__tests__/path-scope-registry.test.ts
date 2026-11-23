@@ -18,7 +18,6 @@ import {
 import { IdentityRegistry } from '../services/identity-registry.service';
 import {
   PathScopeRegistry,
-  type ScopeUpdatedEvent,
 } from '../services/path-scope-registry.service';
 
 const tempRoots: string[] = [];
@@ -212,16 +211,13 @@ describe('PathScopeRegistry', () => {
     ).rejects.toThrow('unknown opType');
   });
 
-  it('T1.h grant merge widens r to rw and emits scope-updated', () => {
+  it('T1.h grant merge widens r to rw', () => {
     const { registry } = makeHarness();
-    const listener = vi.fn<(event: ScopeUpdatedEvent) => void>();
-    registry.on('scope-updated', listener);
 
     registry.grant('com.test', [{ path: '/tmp/p', mode: 'r' }]);
     registry.grant('com.test', [{ path: '/tmp/p', mode: 'rw' }]);
 
     expect(registry._peek('com.test')).toEqual([{ path: '/tmp/p', mode: 'rw' }]);
-    expect(listener).toHaveBeenCalledTimes(2);
   });
 
   it('T1.h2 grant merge 不通过 existing.map 分配 pairs 中间数组', () => {
@@ -255,19 +251,13 @@ describe('PathScopeRegistry', () => {
     expect(source).not.toContain('[...byPath.values()]');
   });
 
-  it('T1.i revokeAll emits scope-updated with empty scopes', () => {
+  it('T1.i revokeAll clears all scopes', () => {
     const { registry } = makeHarness();
-    const listener = vi.fn<(event: ScopeUpdatedEvent) => void>();
-    registry.on('scope-updated', listener);
 
     registry.grant('com.test', [{ path: '/tmp/p', mode: 'rw' }]);
     registry.revokeAll('com.test');
 
     expect(registry._peek('com.test')).toEqual([]);
-    expect(listener).toHaveBeenLastCalledWith({
-      pluginId: 'com.test',
-      scopes: [],
-    });
   });
 
   it('T2.a covers: exact path + 子树 命中,越界 / mode 收窄 不命中', () => {
@@ -346,17 +336,13 @@ describe('PathScopeRegistry', () => {
     }
   });
 
-  it('T3.a hydrate 回填持久化 scope 且幂等、静默(不 emit)', () => {
+  it('T3.a hydrate 回填持久化 scope 且幂等', () => {
     const { registry } = makeHarness();
-    const listener = vi.fn<(event: ScopeUpdatedEvent) => void>();
-    registry.on('scope-updated', listener);
 
     expect(registry.isHydrated('com.test')).toBe(false);
     registry.hydrate('com.test', [{ path: '/ws/a', mode: 'rw' }]);
     expect(registry.isHydrated('com.test')).toBe(true);
     expect(registry._peek('com.test')).toEqual([{ path: '/ws/a', mode: 'rw' }]);
-    // 静默:水合是历史授权恢复,不应触发 scope-updated
-    expect(listener).not.toHaveBeenCalled();
 
     // 幂等:第二次 hydrate(即便参数不同)不再改动
     registry.hydrate('com.test', [{ path: '/ws/b', mode: 'rw' }]);
@@ -380,17 +366,13 @@ describe('PathScopeRegistry', () => {
     expect(registry._peek('com.test')).toEqual([{ path: '/ws/b', mode: 'rw' }]);
   });
 
-  it('T3.d hydrate 后 grant 仍 emit 并与已水合 scope 合并', () => {
+  it('T3.d hydrate 后 grant 与已水合 scope 合并', () => {
     const { registry } = makeHarness();
-    const listener = vi.fn<(event: ScopeUpdatedEvent) => void>();
     registry.hydrate('com.test', [{ path: '/ws/a', mode: 'rw' }]);
-    registry.on('scope-updated', listener);
-
     registry.grant('com.test', [{ path: '/ws/b', mode: 'rw' }]);
     expect(registry.getScopes('com.test')).toEqual([
       { path: '/ws/a', mode: 'rw' },
       { path: '/ws/b', mode: 'rw' },
     ]);
-    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
