@@ -166,7 +166,7 @@ function assertLiveUi(pluginId: string, capability: string, life: ScopedLifecycl
 async function ensurePerm(
   pluginId: string,
   perm: PermissionKey,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
   life?: ScopedLifecycle,
 ): Promise<void> {
   if (life) assertLive(pluginId, perm, life);
@@ -236,7 +236,7 @@ function pickBoolOpts<K extends string>(
 
 function makeFs(
   pluginId: string,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
   life: ScopedLifecycle,
   token?: string,
 ): PluginFsApi {
@@ -441,7 +441,7 @@ function validateNetworkInput(url: unknown, init?: unknown): string {
 
 function makeNetwork(
   pluginId: string,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
   life: ScopedLifecycle,
 ): PluginNetworkApi {
   return {
@@ -472,7 +472,7 @@ type ShellChunk = { stream: 'stdout' | 'stderr'; chunk: Uint8Array };
 
 function makeShell(
   pluginId: string,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
   life: ScopedLifecycle,
 ): PluginShellApi {
   return {
@@ -594,7 +594,7 @@ const CLIPBOARD_TEXT_MAX_BYTES = 16 * 1024 * 1024;
 
 function makeClipboard(
   pluginId: string,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
   life: ScopedLifecycle,
 ): PluginClipboardApi {
   // 吊销后读写都拦:读剪贴板是用户隐私数据,停用后的代码没有正当用途。
@@ -626,7 +626,7 @@ function makeClipboard(
  */
 function makeMcp(
   pluginId: string,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
   registry: CoApp['mcp'],
   life: ScopedLifecycle,
 ): { api: PluginMcpApi; recheck: () => Promise<void>; disposeAll: () => void } {
@@ -675,7 +675,7 @@ function makeMcp(
 
 function makeEditor(
   pluginId: string,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
   rawEditor: CoHostEditorApi,
   life: ScopedLifecycle,
   token?: string,
@@ -1133,7 +1133,7 @@ const EMPTY_GRANTED_PERMISSIONS: PermissionKey[] = [];
 
 function makePermission(
   pluginId: string,
-  store: PermissionStore | null,
+  store: ReadablePermissions | null,
 ): PluginPermissionApi {
   return {
     async check(perm) {
@@ -1155,20 +1155,20 @@ function makePermission(
   };
 }
 
-/** 只读视图:get 仅返回 declared 内的决策;scoped-app 只经 get 读授权。 */
+/** scoped-app 只经 get 读授权(写决策是 PluginManager / 授权弹窗的事)。 */
+type ReadablePermissions = Pick<PermissionStore, 'get'>;
+
+/** 只读视图:get 仅返回 declared 内的决策。 */
 function restrictToDeclared(
-  store: PermissionStore,
+  store: ReadablePermissions,
   declared: readonly PermissionKey[],
-): PermissionStore {
+): ReadablePermissions {
   const allowed = new Set(declared);
   return {
     async get(pluginId) {
       const decisions = await store.get(pluginId);
       return decisions.filter((d) => allowed.has(d.permission));
     },
-    grant: (pluginId, perms) => store.grant(pluginId, perms),
-    deny: (pluginId, perms) => store.deny(pluginId, perms),
-    clearDenied: (pluginId) => store.clearDenied(pluginId),
   };
 }
 
