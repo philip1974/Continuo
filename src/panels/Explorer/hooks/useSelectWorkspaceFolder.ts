@@ -25,7 +25,7 @@ export interface SelectWorkspaceFolder {
   readonly busy: boolean;
   /**
    * 发起选择。`onStart` 在拿到单飞锁之后、弹对话框之前同步调用(ExplorerHeader 用它关菜单并
-   * 还原焦点);被 busy / 单飞锁挡掉时不调用。
+   * 还原焦点);被单飞锁挡掉时不调用。
    */
   readonly selectFolder: (onStart?: () => void) => Promise<void>;
 }

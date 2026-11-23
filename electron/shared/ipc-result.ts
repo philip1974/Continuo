@@ -1,5 +1,6 @@
 // 全工程 IPC envelope。详见 ADR-010。
-// 任何 ipcMain.handle 通道都必须返回 IpcResult,renderer 端拿到后按 ok 分流。
+// 经 safeHandle 注册的 ipcMain.handle 通道都返回 IpcResult,renderer 端拿到后按 ok 分流
+// (plugin-data / plugin-fs / plugin-shell-stream 返回裸值,见 electron/main/README.md)。
 
 export interface IpcOk<T> {
   readonly ok: true;

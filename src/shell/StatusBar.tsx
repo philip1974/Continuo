@@ -209,13 +209,12 @@ export function StatusBar() {
   // 仍更新统计(配合 R1 的统计 memo)。R24 用 4 个 selector 各 some/find;R46 合并为
   // 单次 find 返回**扁平 primitive 对象**,useShallow 逐字段 Object.is 比较——content
   // 只是 string ref(不像 EditorHeader 用 JSON 签名,这里避免序列化大文档正文)。
-  const { hasActiveTab, activeTabId, activeFilePath, activeDirty, activeContent } =
+  const { activeTabId, activeFilePath, activeDirty, activeContent } =
     useEditorStore(
       useShallow((s) => {
         const found =
           findEditorFileTabById(s.tabs, s.activeTabId);
         return {
-          hasActiveTab: found !== null,
           activeTabId: found?.id ?? null,
           activeFilePath: found?.filePath ?? null,
           activeDirty: found?.dirty ?? false,
@@ -332,7 +331,7 @@ export function StatusBar() {
               : t('statusbar.agent_authorized')}
           </button>
         )}
-        {hasActiveTab ? (
+        {activeTabId !== null ? (
           <>
             <span
               className="truncate max-w-[280px]"

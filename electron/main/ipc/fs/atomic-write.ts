@@ -9,8 +9,8 @@ import type { FsFileStat } from '../../../shared/fs-channels';
  * 原子写文件(ADR-009,借鉴 Lokus atomic_write_file)。
  *
  * 流程:
- *   1. 写 ${path}.tmp + fsync(fd)
- *   2. rename ${path}.tmp → path     ← POSIX/Windows(MOVEFILE_REPLACE_EXISTING)原子替换
+ *   1. 写同目录的固定 tmp(`.<base>.continuo.tmp`,`open('wx')`;残留的旧 tmp 先删再建)+ fsync(fd)
+ *   2. rename tmp → path     ← POSIX/Windows(MOVEFILE_REPLACE_EXISTING)原子替换
  *
  * 失败回滚:
  *   - 步骤 1 失败:删 .tmp,原文件不动
@@ -22,13 +22,13 @@ import type { FsFileStat } from '../../../shared/fs-channels';
  * 原文件直到 rename 成功的那一刻始终完好,rename 失败也不动原文件 → 预备份多余且有害,
  * 故移除。
  *
- * 并发(P1-AL,第十四轮 + 第十八轮自审修订):固定 `${path}.tmp` 在同一路径的并发写
- * (autosave 连发 / 手动 Cmd+S 与 autosave 重叠 / 多窗或插件同写一文件)下会互相 `open('w')`
+ * 并发(P1-AL,第十四轮 + 第十八轮自审修订):固定 tmp 名在同一路径的并发写
+ * (autosave 连发 / 手动 Cmd+S 与 autosave 重叠 / 多窗或插件同写一文件)下会互相
  * 截断成半截文件,或后到的 rename 撞 ENOENT 丢写报错。**第十四轮**曾改唯一 tmp 名修并发,
  * 但**第十八轮自审**发现唯一名的反向代价:crash 在 fsync→rename 窗口残留的 `.tmp` 带随机
  * 后缀、永不被后续写复用、无清扫 → 单调累积孤儿文件。改为 **per-path 串行化 + 固定 tmp 名**:
  * 既消除并发损坏(同路径写排队、各自完整 rename = 干净 last-writer-wins),又让 crash 残留的
- * 单个 `${path}.tmp` 在下次同路径写时被复用覆盖、自愈,不累积。
+ * 单个 tmp 在下次同路径写时被删除重建、自愈,不累积。
  *
  * 不做:父目录 mkdir(VSCode 行为:save 到不存在的目录就该报错)
  *

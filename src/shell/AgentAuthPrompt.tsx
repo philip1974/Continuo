@@ -132,10 +132,10 @@ function AgentAuthPromptBody({
   function methodLabel(method: string): ReactNode {
     const k = ownValue(METHOD_LABEL_KEYS, method);
     if (k) return t(k);
-    const [before = '', after = ''] = isPluginAuthMethod(method)
+    const [before = '', after = ''] = isPlugin
       ? t('permissions.agent.plugin_tool', { name: UNTRUSTED_SLOT }).split(UNTRUSTED_SLOT)
       : t('permissions.agent.generic', { method: UNTRUSTED_SLOT }).split(UNTRUSTED_SLOT);
-    const shown = isPluginAuthMethod(method)
+    const shown = isPlugin
       ? method.slice(AGENT_AUTH_PLUGIN_METHOD_PREFIX.length)
       : method;
     return (

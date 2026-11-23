@@ -1,6 +1,7 @@
 // 全部 fs.* IPC 通道字符串集中地。main / preload 两侧 import 同一份,
-// 防字符串散漂改名错位。layout / popout 通道下个里程碑(P1.D2)统一处理。
+// 防字符串散漂改名错位。(layout 通道在 persistence-channels.ts。)
 
+import { FS_PATH_MAX } from './fs-limits';
 import { IPC_ERR, type IpcFail, type IpcOk, type IpcResult } from './ipc-result';
 
 export const FS_CHANNELS = {
@@ -54,28 +55,24 @@ export interface FsDirChangedPayload {
 export const DIR_CHANGED_FILES_MAX = 64;
 
 /** fs:dir-changed payload 的 runtime 形态 + 长度守卫(空字符串是合法根/相对路径,故只限上限不限非空). */
-export function isFsDirChangedPayload(
-  v: unknown,
-  maxPathLen: number,
-): v is FsDirChangedPayload {
+export function isFsDirChangedPayload(v: unknown): v is FsDirChangedPayload {
   if (v === null || typeof v !== 'object') return false;
   const p = (v as { path?: unknown }).path;
-  return typeof p === 'string' && p.length <= maxPathLen;
+  return typeof p === 'string' && p.length <= FS_PATH_MAX;
 }
 
 /**
- * 取 payload 的可选 files:合规(数组、数量 ≤ maxCount、每项为长度 ≤ maxNameLen 的字符串)→ 原数组;
+ * 取 payload 的可选 files:合规(数组、数量 ≤ maxCount、每项为长度 ≤ FS_PATH_MAX 的字符串)→ 原数组;
  * 缺省 / 畸形 / 超限 → undefined(退化为目录级,不丢整条事件,目录刷新照常)。
  */
 export function readFsDirChangedFiles(
   v: FsDirChangedPayload,
   maxCount: number,
-  maxNameLen: number,
 ): readonly string[] | undefined {
   const files: unknown = v.files;
   if (!Array.isArray(files) || files.length > maxCount) return undefined;
   for (const f of files) {
-    if (typeof f !== 'string' || f.length > maxNameLen) return undefined;
+    if (typeof f !== 'string' || f.length > FS_PATH_MAX) return undefined;
   }
   return files as readonly string[];
 }

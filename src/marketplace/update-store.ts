@@ -68,7 +68,7 @@ export function dismissAvailableUpdateFromList(
     if (update.id === id) {
       if (target === null) target = update;
       if (next === null) {
-        next = new Array<AvailableUpdate>(Math.max(0, available.length - 1));
+        next = new Array<AvailableUpdate>(available.length - 1);
         for (let j = 0; j < i; j++) {
           next[count++] = available[j]!;
         }

@@ -67,8 +67,6 @@ export function startPluginMcpIpc(
     return { invokeRemote };
   }
 
-  // host 内部 tools Map 在 createMcpHost 里是 ReadonlyMap 对外暴露,
-  // removeTool 已在 host 加方法直接调即可。
   const localInvoke = createInvokeRemote({
     send(owner: PluginMcpToolOwner, channel, payload): boolean {
       const wc = webContents.fromId(owner.wcId);

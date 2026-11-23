@@ -332,7 +332,7 @@ describe('IpcPermissionStore · R15 并发变更串行化', () => {
     expect(perms).toEqual(['fs', 'network', 'shell']);
   });
 
-  // race(R101):RMW 串行链(runExclusive→runSerialPerKey)排空后必须删除 chains 条目,否则
+  // race(R101):RMW 串行链(runSerialPerKey)排空后必须删除 chains 条目,否则
   // Map 随变更过权限的不同 pluginId 单调增长 = 内存泄漏。
   it('变更链排空后回收 chains 条目(不随 pluginId 单调增长)', async () => {
     installFakeApi(fakeMain({}));

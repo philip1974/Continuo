@@ -1111,7 +1111,6 @@ export async function installStopHookForSession(
   runner: RunnerKind,
   hookEventsDir: string,
 ): Promise<InstallStopHookResult> {
-  if (cwd.length === 0) return { installed: false, reason: 'no-cwd' };
   if (runner === 'unknown') {
     return { installed: false, reason: 'unknown-runner' };
   }

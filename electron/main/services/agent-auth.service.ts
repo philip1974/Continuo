@@ -457,7 +457,7 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   const controllerTokens = new Set<string>();
   if (controllerTeardown) {
     for (const token of controllerTeardown.listControllerTokens()) {
-      if (typeof token === 'string' && token.length > 0) controllerTokens.add(token);
+      controllerTokens.add(token);
     }
   }
   // terminalSessions.getAll() 已返回快照数组;remove 改 Map 不影响本轮遍历。

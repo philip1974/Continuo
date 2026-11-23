@@ -160,17 +160,6 @@ function forEachHotkeySegment(
   }
 }
 
-function visitFormattedHotkeyParts(
-  raw: string,
-  platform: Platform,
-  visit: (part: string) => void,
-): void {
-  if (!raw) return;
-  forEachHotkeySegment(raw, (start, end) => {
-    visit(formatPart(raw.slice(start, end), platform));
-  });
-}
-
 /**
  * 拆 raw 为 platform-aware 的 parts 数组。给 KeyCap 渲染用(每个 part
  * 一个 keycap)。例:`mod+shift+h` mac → ['⌘','⇧','H'];other →
@@ -182,7 +171,6 @@ export function formatHotkeyParts(
   raw: string,
   platform: Platform,
 ): string[] {
-  if (!raw) return EMPTY_HOTKEY_PARTS;
   // 两趟:先数段数再按确切长度预分配(每次按键渲染都会走,避免数组扩容)。两趟共用同一个切分器。
   let count = 0;
   forEachHotkeySegment(raw, () => {
@@ -201,7 +189,8 @@ export function formatHotkeyParts(
 export function formatHotkey(raw: string, platform: Platform): string {
   let formatted = '';
   let needsSeparator = false;
-  visitFormattedHotkeyParts(raw, platform, (part) => {
+  forEachHotkeySegment(raw, (start, end) => {
+    const part = formatPart(raw.slice(start, end), platform);
     if (platform !== 'mac' && needsSeparator) formatted += '+';
     formatted += part;
     needsSeparator = true;

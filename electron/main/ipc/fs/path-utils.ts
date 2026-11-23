@@ -60,7 +60,7 @@ export function isCaseOrNormalizationOnlyRename(srcPath: string, destPath: strin
 
 /**
  * lstat(不跟随符号链接),失败统一映射为带业务 code 的 fsError(不存在 → FS_NOT_FOUND 等)。
- * rename / remove / read-file / move / copy 的「先确认源存在」前置共用。
+ * rename / read-file / move / copy 的「先确认源存在」前置共用。
  */
 export async function lstatOrThrow(targetPath: string): Promise<Stats> {
   try {

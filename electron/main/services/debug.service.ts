@@ -143,7 +143,7 @@ function launchRejectedQuittingError(): Error {
 
 /**
  * cleanupAll(应用退出)等待在途 launch 结算的上限。正常 spawn + initialize 在 1s 内;adapter 卡住时不无限拖住
- * 退出(DapClient 自身 ready 超时 15s、请求超时 20s,超出本上限的那次 launch 结算后仍会自行释放 adapter)。
+ * 退出(DapClient 自身 ready 超时 15s、DebugService 请求超时默认 20s,超出本上限的那次 launch 结算后仍会自行释放 adapter)。
  */
 export const DEBUG_LAUNCH_SETTLE_WAIT_MS = 5_000;
 
@@ -598,10 +598,6 @@ function breakpointsBySource(
   return out;
 }
 
-function getClientPid(client: DebugDapClientLike): number | undefined {
-  return typeof client.serverPid === 'number' ? client.serverPid : undefined;
-}
-
 function makeSessionId(): string {
   return `debug-${crypto.randomUUID()}`;
 }
@@ -960,7 +956,7 @@ export class DebugService {
       await parentClient.dispose().catch(() => undefined);
       throw err;
     }
-    const adapterPid = getClientPid(parentClient);
+    const adapterPid = parentClient.serverPid;
     const adapterInfo = await this.processOps.processInfo(adapterPid);
     // spawn 期间被取消(断开 / 吊销 / 关窗 / 退出):还没登记,teardown 查不到,就地释放 adapter。
     if (cancelled.aborted) {

@@ -56,7 +56,7 @@ Each lives in `electron/shared/*-channels.ts`. Most are registered by `electron/
 
 | Namespace | File | Purpose |
 |---|---|---|
-| `FS_CHANNELS` | `fs-channels.ts` / `fs.ipc.ts` | File system: list/read/write/rename/remove/move/copy + atomic write |
+| `FS_CHANNELS` | `fs-channels.ts` / `fs.ipc.ts` | File system: list/read/write/rename/trash/move/copy + atomic write |
 | `TERMINAL_CHANNELS` | `terminal-channels.ts` / `terminal.ipc.ts` | Interactive PTY sessions (xterm renderer ↔ node-pty) |
 | `SHELL_CHANNELS` | `shell-channels.ts` / `shell.ipc.ts` | One-shot, non-interactive shell exec (buffered output) |
 | `WINDOW_CHANNELS` | `window-channels.ts` / `window.ipc.ts` | Window create + workspace-root binding (`NOTIFY_ROOT`); popouts go through `window.open` + `window-open-policy.ts` |

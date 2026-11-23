@@ -246,7 +246,6 @@ export function KeybindingsTabContent() {
   const locale = useLocale();
 
   const displayCommands = useMemo<readonly DisplayCommand[]>(() => {
-    void overrides; // deps:getEffectiveHotkey/isOverridden 依赖 overrides
     void locale; // deps:tk 内部按 locale 翻译
     return buildKeybindingDisplayCommands(allCommands, tk, overrides, PLATFORM);
   }, [allCommands, tk, overrides, locale]);

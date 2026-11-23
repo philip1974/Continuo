@@ -189,15 +189,15 @@ const LRU_MAX_CLOSED = MAX_PERSISTED_WINDOW_SEGMENTS;
  * (其 lastClosedAt 还是旧值),否则后者落盘时只能 ensureWindowEntry 重建空段,原 workspace/layout 丢失。
  */
 const closingSeqRefs = new Map<number, number>();
-/**
- * LRU 不可摘的段:活跃窗 + 关闭中窗 + 主窗段 seq 0。冷启动主窗固定复用 seq 0 的段恢复 workspace,
- * 即使它很早就被关掉,也不能当成过期历史摘掉。
- */
 function releaseClosingSeq(seq: number): void {
   const next = (closingSeqRefs.get(seq) ?? 0) - 1;
   if (next > 0) closingSeqRefs.set(seq, next);
   else closingSeqRefs.delete(seq);
 }
+/**
+ * LRU 不可摘的段:活跃窗 + 关闭中窗 + 主窗段 seq 0。冷启动主窗固定复用 seq 0 的段恢复 workspace,
+ * 即使它很早就被关掉,也不能当成过期历史摘掉。
+ */
 function lruProtectedSeqs(): ReadonlySet<number> {
   const seqs = new Set(getActiveSeqs());
   for (const seq of closingSeqRefs.keys()) seqs.add(seq);

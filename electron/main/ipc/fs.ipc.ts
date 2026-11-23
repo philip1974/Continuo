@@ -242,7 +242,7 @@ export function resolveWatchChangedPath(
   filename: string,
   pathMod: Pick<typeof path, 'join'> = path,
 ): string {
-  const rel = String(filename);
+  const rel = filename;
   const slashIdx = lastRelativePathSeparatorIndex(rel);
   const subdir = slashIdx >= 0 ? normalizeRelativeSubdir(rel, slashIdx) : '';
   return subdir ? pathMod.join(rootPath, subdir) : rootPath;
@@ -253,7 +253,7 @@ export function resolveWatchChangedPath(
  * 末段为空 → undefined(视为未知文件,下游退化为目录级)。
  */
 export function resolveWatchChangedFileName(filename: string): string | undefined {
-  const rel = String(filename);
+  const rel = filename;
   const name = rel.slice(lastRelativePathSeparatorIndex(rel) + 1);
   return name === '' ? undefined : name;
 }
@@ -298,7 +298,7 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
         return;
       }
       // 带上变更项名字(rename 的旧名/新名各回调一次),renderer 外部同步只重读命中的 clean tab
-      const rel = String(filename);
+      const rel = filename;
       // eventType 一并上抛,合并器据此判定「仅内容变化」(changeOnly,见 FsDirChangedPayload)
       onChange(resolveWatchChangedPath(rootPath, rel), resolveWatchChangedFileName(rel), eventType);
     },

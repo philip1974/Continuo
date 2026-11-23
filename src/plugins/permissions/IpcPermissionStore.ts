@@ -221,7 +221,7 @@ export class IpcPermissionStore implements PermissionStore {
             // 经 main safeHandle → ok:false;ENOENT 首次启动仍是 ok:true 的 {})= 当前权限态
             // 未知。绝不缓存空表 —— 抛出且不写 cache → 调用侧(get/grant/deny/clearDenied)
             // fail-closed,不在未知态写。
-            throw codedError(r.code, r.message ?? 'readPermissions failed');
+            throw codedError(r.code, r.message);
           }
           // 终审 P1:加载期间收到失效广播 → 读到的可能是撤销前快照,不落 cache 也不交给等待者(否则 ensurePerm
           // 放行一次),按当前代际重新读取;代际始终不稳定时有上限,超限视为读取失败(调用侧 fail-closed)。
@@ -268,7 +268,7 @@ export class IpcPermissionStore implements PermissionStore {
       const r = await coApi.plugins.mutatePluginPermissions(pluginId, mutation);
       // 数据安全(复查 P1):写失败必须抛(不只 warn),且不改 cache(写确认后才提交)。
       if (!r.ok) {
-        throw codedError(r.code, r.message ?? 'mutatePluginPermissions failed');
+        throw codedError(r.code, r.message);
       }
       // 期间已被 invalidate(cache=null)→ 下次读从 main 重新加载,无需提交。
       const cache = this.cache;

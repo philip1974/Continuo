@@ -88,7 +88,7 @@ import {
 
 // 可维护性 M24:terminal create 入参复用 shared TerminalCreateInput(= main zod schema
 // z.infer),单一来源避免 main/preload 漂移(此前手写 interface 漏了 attachTarget)。
-// export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型(lib/lm-api.ts 需要)。
+// export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型(src/lib/co-api.ts 需要)。
 export type TerminalCreateOptions = TerminalCreateInput;
 
 /**
@@ -252,13 +252,13 @@ const api = {
       // key 送进 Explorer watcher / external-file-sync(目录刷新异常、debounce Map 污染、外部同步失效)。
       // runtime guard:非对象/path 非字符串/超长 → console.warn drop;不抛、不下传脏 path。
       const listener = (_: unknown, payload: unknown): void => {
-        if (!isFsDirChangedPayload(payload, FS_PATH_MAX)) {
+        if (!isFsDirChangedPayload(payload)) {
           console.warn('[fs] invalid dir-changed payload, dropped', payload);
           return;
         }
         cb(
           payload.path,
-          readFsDirChangedFiles(payload, DIR_CHANGED_FILES_MAX, FS_PATH_MAX),
+          readFsDirChangedFiles(payload, DIR_CHANGED_FILES_MAX),
           readFsDirChangedChangeOnly(payload),
         );
       };
@@ -267,7 +267,7 @@ const api = {
     /** 订阅本窗口持有的 watcher 失效被驱逐事件(payload 守卫同 onDirChanged);返回 unsubscribe. */
     onWatchLost: (cb: (path: string) => void): (() => void) => {
       const listener = (_: unknown, payload: unknown): void => {
-        if (!isFsDirChangedPayload(payload, FS_PATH_MAX)) {
+        if (!isFsDirChangedPayload(payload)) {
           console.warn('[fs] invalid watch-lost payload, dropped', payload);
           return;
         }

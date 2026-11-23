@@ -776,28 +776,6 @@ function permissionDecisionsEqual(
   return true;
 }
 
-function permissionRecordEqual(
-  existing: IpcPermissionRecord | undefined,
-  decisions: readonly IpcPermissionDecision[],
-  scopes: readonly IpcPathScope[] | undefined,
-): boolean {
-  if (existing === undefined) return false;
-  if (Array.isArray(existing)) {
-    return (
-      scopes === undefined && permissionDecisionsEqual(existing, decisions)
-    );
-  }
-  const objectRecord = existing as {
-    readonly decisions: readonly IpcPermissionDecision[];
-    readonly pathScopes?: readonly IpcPathScope[];
-  };
-  return (
-    scopes !== undefined &&
-    permissionDecisionsEqual(objectRecord.decisions, decisions) &&
-    pathScopesEqual(objectRecord.pathScopes, scopes)
-  );
-}
-
 export async function readPermissions(
   baseDir: string,
 ): Promise<IpcPermissionsMap> {
@@ -959,7 +937,12 @@ async function mutatePluginPermissionsQueued(
   }
   const record: IpcPermissionRecord =
     scopes === undefined ? next : { decisions: next, pathScopes: scopes };
-  if (!permissionRecordEqual(existing, next, scopes)) {
+  // scopes 取自 existing,不会变;只有决策变了、或旧记录是不带 pathScopes 的对象形态(归一成数组)才写。
+  const unchanged =
+    existing !== undefined &&
+    (Array.isArray(existing) || scopes !== undefined) &&
+    permissionDecisionsEqual(decisions, next);
+  if (!unchanged) {
     all[id] = record;
     await writePermissions(baseDir, all);
   }
@@ -1764,7 +1747,7 @@ export function createPluginsWatcher(
   let pending = false;
   // 首轮扫描(基线)完成信号,供 ensureBaseline 等待。只等首轮、不等整个在途循环:单次扫描耗时超过周期时
   // 每个周期 tick 都会置 pending,循环可一直补跑不结束,等整个循环会让 LIST_DIRS 永远挂住。循环在基线建立
-  // 之前结束(扫描抛错 / 被取消)时也结算(best-effort,不挂住调用方;下次 ensureBaseline 重新发起)。
+  // 之前结束(扫描抛错)时也结算(best-effort,不挂住调用方;下次 ensureBaseline 重新发起)。
   let firstScanDone: Promise<void> | null = null;
   let settleFirstScan: (() => void) | null = null;
   const markFirstScanSettled = () => {

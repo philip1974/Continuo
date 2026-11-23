@@ -59,7 +59,7 @@ const everAddedSessionIds = new Set<string>();
  */
 export function pruneReconcilerSeenSessions(
   liveOwnedSessions: readonly TerminalSession[],
-  keepIds: readonly string[] = [],
+  keepIds: readonly string[],
 ): void {
   if (everAddedSessionIds.size === 0) return;
   const live = new Set<string>(keepIds);

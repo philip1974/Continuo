@@ -55,7 +55,7 @@ export async function loadPluginModule(
       message: `Plugin ${opts.manifest.id} has no default export`,
     };
   }
-  if (typeof def !== 'function' || !isPluginSubclass(def)) {
+  if (!isPluginSubclass(def)) {
     return {
       ok: false,
       code: 'NOT_PLUGIN_CLASS',

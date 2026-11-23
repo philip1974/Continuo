@@ -104,7 +104,7 @@ export class InMemoryDataStore implements PluginDataStore {
   private map = new Map<string, unknown>();
 
   async read(pluginId: string): Promise<unknown | null> {
-    return this.map.has(pluginId) ? (this.map.get(pluginId) ?? null) : null;
+    return this.map.get(pluginId) ?? null;
   }
 
   async write(pluginId: string, data: unknown): Promise<void> {

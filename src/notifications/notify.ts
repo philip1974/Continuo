@@ -27,7 +27,7 @@ export interface NotifyOpts {
 export interface NotifyApi {
   readonly notify: (
     message: string,
-    level?: NotificationLevel,
+    level: NotificationLevel,
     opts?: NotifyOpts,
   ) => void;
 }
@@ -68,10 +68,10 @@ function mirrorToConsole(
   }
 }
 
-/** 底层:notify(message, level?, opts?) */
+/** 底层:notify(message, level, opts?) */
 function notifyCore(
   message: string,
-  level: NotificationLevel = 'info',
+  level: NotificationLevel,
   opts?: NotifyOpts,
 ): void {
   // 边界(E311):本地 notify 路径此前无长度上限,而 SDK coApp.notifications.show(co-app)限长。renderer 各处 notify.error(err.message) 的 err.message 可超长
@@ -98,7 +98,7 @@ function notifyCore(
 type SugarOpts = NotifyOpts;
 
 interface NotifyPublic {
-  (message: string, level?: NotificationLevel, opts?: NotifyOpts): void;
+  (message: string, level: NotificationLevel, opts?: NotifyOpts): void;
   error(message: string, opts?: SugarOpts): void;
   warn(message: string, opts?: SugarOpts): void;
   info(message: string, opts?: SugarOpts): void;

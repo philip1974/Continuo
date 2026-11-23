@@ -20,7 +20,6 @@ const DRAIN_GRACE_MS = 5_000;
 export class IdentityRegistry {
   private readonly entries = new Map<string, RegistryEntry>();
   private readonly generations = new Map<string, number>();
-  private readonly drainTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   /** PluginManager calls on instance creation. Returns opaque token + monotonic generation. */
   register(pluginId: string, webContentsId: number): RegisterResult {
@@ -99,11 +98,9 @@ export class IdentityRegistry {
     entry.state = 'draining';
     const timer = setTimeout(() => {
       this.entries.delete(token);
-      this.drainTimers.delete(token);
     }, DRAIN_GRACE_MS);
     const maybeUnref = timer as { unref?: () => void };
     if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
-    this.drainTimers.set(token, timer);
   }
 
   /**

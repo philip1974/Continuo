@@ -135,8 +135,8 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
     }
   }
   if (!delivered) {
-    // 所有就绪窗口都在 send 时销毁(极端竞态):入队,留给下一个 attachWindowDrain/
-    // did-finish-load 的窗口消费,避免本次深链彻底丢失。边界(E55):同样受队列上限约束。
+    // 所有就绪窗口都在 send 时销毁(极端竞态):入队,留给下一个报告
+    // PROTOCOL_READY 的窗口消费,避免本次深链彻底丢失。边界(E55):同样受队列上限约束。
     if (pending.length < MAX_PENDING_PROTOCOL_URLS) pending.push(url);
   }
 }

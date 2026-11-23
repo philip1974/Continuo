@@ -160,7 +160,7 @@ function asSessionSnapshot(value: unknown): SessionSnapshot | null {
     const breakpoints = (groupRaw.breakpoints as readonly unknown[])
       .map(asBreakpoint)
       .filter((bp): bp is DebugBreakpoint => bp !== null)
-      .slice(0, Math.max(budget, 0));
+      .slice(0, budget);
     budget -= breakpoints.length;
     breakpointsBySource.set(groupRaw.file, breakpoints);
   }

@@ -151,7 +151,7 @@ function resolveTrustedPosixSocket(socketPath, uid, fs) {
 }
 // </posix-socket-trust>
 function trustedSocket(socketPath) {
-  if (process.platform === 'win32') return { path: socketPath, error: null };
+  // Windows 无 process.getuid → uid 为 undefined,resolveTrustedPosixSocket 原样返回路径。
   return resolveTrustedPosixSocket(socketPath, process.getuid?.(), { realpathSync, lstatSync, statSync });
 }
 

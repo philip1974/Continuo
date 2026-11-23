@@ -87,7 +87,7 @@ export class IpcPluginDataStore implements PluginDataStore {
 
   async read(pluginId: string): Promise<unknown | null> {
     if (this.loaded.has(pluginId)) {
-      return this.cache.has(pluginId) ? (this.cache.get(pluginId) ?? null) : null;
+      return this.cache.get(pluginId) ?? null;
     }
     const loaded = await this.load(pluginId);
     return loaded;
@@ -137,9 +137,7 @@ export class IpcPluginDataStore implements PluginDataStore {
         // 更新值;不回滚 cache,返回 cache 当前值(避免 stale read/write lost update)。
         if ((this.writeGen.get(pluginId) ?? 0) !== startGen) {
           this.loaded.add(pluginId);
-          return this.cache.has(pluginId)
-            ? (this.cache.get(pluginId) ?? null)
-            : null;
+          return this.cache.get(pluginId) ?? null;
         }
         const hasValue = Object.prototype.hasOwnProperty.call(data, 'value');
         if (hasValue) this.cache.set(pluginId, data['value']);

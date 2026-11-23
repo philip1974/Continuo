@@ -251,19 +251,17 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       if (apiRef.current !== event.api) return;
 
       let restored = false;
-      if (persisted && typeof persisted === 'object') {
-        // sanitize 会剥离终端 panel(既有契约,非失败)并修补 grid 树。返回 null = 无可恢复的
-        // 非终端布局(或畸形/超限)→ 静默走默认布局,不算失败、不报错。只有真正的 fromJSON 抛错
-        // (布局结构损坏)才置 restoreFailed → 弹 toast。
-        const sanitized = sanitizePersistedDockLayout(persisted);
-        if (sanitized) {
-          try {
-            event.api.fromJSON(sanitized);
-            restored = true;
-          } catch (err) {
-            restoreFailed = true;
-            console.warn('[dock] fromJSON 失败,落回默认布局', err);
-          }
+      // sanitize 会剥离终端 panel(既有契约,非失败)并修补 grid 树。返回 null = 无可恢复的
+      // 非终端布局(无持久化/畸形/超限)→ 静默走默认布局,不算失败、不报错。只有真正的 fromJSON 抛错
+      // (布局结构损坏)才置 restoreFailed → 弹 toast。
+      const sanitized = sanitizePersistedDockLayout(persisted);
+      if (sanitized) {
+        try {
+          event.api.fromJSON(sanitized);
+          restored = true;
+        } catch (err) {
+          restoreFailed = true;
+          console.warn('[dock] fromJSON 失败,落回默认布局', err);
         }
       }
       if (!restored) applyDefaultLayout(event.api);

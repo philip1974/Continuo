@@ -372,11 +372,11 @@ export function getStateAfterClosingTabsOutsideRoot(
   if (r.remaining.length === 0) {
     return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
   }
-  if (activeTabId !== null && r.activeKept) {
+  if (r.activeKept) {
     return { tabs: r.remaining, activeTabId };
   }
   // active 被关:取原序后向第一个 remaining,否则前向,否则首个
-  if (activeTabId !== null && r.activeFound) {
+  if (r.activeFound) {
     return { tabs: r.remaining, activeTabId: r.neighbor?.id ?? null };
   }
   return { tabs: r.remaining, activeTabId: r.remaining[0]!.id };
@@ -446,7 +446,7 @@ function removeMatchingCleanTabs(
     return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
   }
   // active 仍在(或本就不在 tabs 里)→ 不动 activeTabId。
-  if (activeTabId === null || r.activeKept || !r.activeFound) {
+  if (r.activeKept || !r.activeFound) {
     return { tabs: r.remaining, activeTabId };
   }
   return { tabs: r.remaining, activeTabId: r.neighbor?.id ?? null };

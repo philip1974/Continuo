@@ -16,7 +16,7 @@ import {
  * - 源不存在 → FS_NOT_FOUND
  * - 目标已存在 → FS_EEXIST(防静默覆盖,与 moveEntry 对齐);唯一例外是同 inode 且名字只差
  *   大小写 / Unicode 规范化(大小写不敏感盘上改名到自身)
- * - 跨目录 / 跨盘移动留给未来 fs:move,本函数只做改名
+ * - 跨目录 / 跨盘移动走 fs:move(move-copy.ts),本函数只做改名
  */
 export async function renameEntry(
   oldPath: string,

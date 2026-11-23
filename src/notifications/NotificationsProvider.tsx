@@ -181,7 +181,7 @@ export function NotificationsProvider({
   const notify = useCallback(
     (
       message: string,
-      level: NotificationLevel = 'info',
+      level: NotificationLevel,
       opts?: NotifyOpts,
     ) => {
       const now = Date.now();

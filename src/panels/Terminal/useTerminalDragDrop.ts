@@ -220,9 +220,7 @@ export function useTerminalDragDrop({
       doc.removeEventListener('dragenter', onDragEnter, listenerOptions);
       doc.removeEventListener('dragover', onDragOver, listenerOptions);
       doc.removeEventListener('drop', onDrop, listenerOptions);
-      if (boundDoc === doc) {
-        boundDoc = null;
-      }
+      boundDoc = null; // 两个调用点传的都是 boundDoc
     };
 
     const bind = () => {
@@ -253,7 +251,6 @@ export function useTerminalDragDrop({
       disposed = true;
       sub.dispose();
       if (boundDoc !== null) unbind(boundDoc);
-      boundDoc = null;
     };
   }, [api, focus, sessionId, t]);
 

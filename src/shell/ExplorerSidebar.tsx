@@ -45,7 +45,7 @@ export function ExplorerSidebar() {
   } else if (keptRoot !== NONE && keptRoot !== root) {
     setKeptRoot(NONE);
   }
-  const keepAlive = !open && keptRoot !== NONE && keptRoot !== null && keptRoot === root;
+  const keepAlive = !open && keptRoot !== null && keptRoot === root;
   if (!open && !keepAlive) return null;
 
   return (

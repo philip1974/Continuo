@@ -29,10 +29,6 @@ export interface PluginFsIpcHandles {
 }
 
 /**
- * Register plugin-fs IPC handlers. Returns the underlying registries so callers
- * can issue grant/revoke and listen to scope events in later wiring ops.
- */
-/**
  * 窗口关闭时,把该窗 webContents 发起的全部 pending scope 授权请求立即结算掉,
  * 否则 host 侧 `await promise` 要干等满 5min TTL 才被 sweep。返回结算条数。
  */
@@ -102,6 +98,7 @@ export async function loadPersistedScopesIfFsGranted(
   return readPluginPathScopes(pluginsDir, pluginId);
 }
 
+/** Register plugin-fs IPC handlers. Returns the underlying registries(测试用其发放 / 撤销授权)。 */
 export function registerPluginFsIpc({
   ipcMain,
 }: RegisterPluginFsIpcArgs): PluginFsIpcHandles {
