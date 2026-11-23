@@ -51,7 +51,6 @@ vi.mock('@/lib/co-api', () => ({
       resize: vi.fn().mockResolvedValue({ ok: true }),
       updateCwd: vi.fn().mockResolvedValue({ ok: true }),
       onData: vi.fn(() => vi.fn()),
-      onExit: vi.fn(() => vi.fn()),
       readHistory: vi.fn().mockResolvedValue({ ok: true, data: { data: '' } }),
       write: hoisted.write,
     },

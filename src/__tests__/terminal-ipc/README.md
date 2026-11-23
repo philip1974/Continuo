@@ -19,7 +19,7 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
 | `terminal:write` | `{ id, data: string ≤ 2M chars }` | `void` |
 | `terminal:resize` | `{ id, cols 1-1000, rows 1-500 }` | `void` |
 | `terminal:data` | event push | `(id, data)` |
-| `terminal:exit` | event push | `(id, { exitCode, signal })` |
+| `terminal:sessions_changed` | event push | 本窗口会话快照(退出状态 = 各会话的 `exitCode`,无单独的退出事件) |
 
 ## 关键行为
 

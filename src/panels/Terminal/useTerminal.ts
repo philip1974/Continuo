@@ -613,9 +613,13 @@ export function useTerminal(termId: string) {
     // shell…」spinner 永久悬浮在已死终端上。isReady 状态机此前只有 onData /
     // readHistory 两条 set-true 入口,漏了 exit 这条终态(典型「标记建了未覆盖所有
     // 终态」)。退出后终端缓冲(含任何错误输出)已可见,移掉 overlay 才能让用户看到。
-    const unsubExit = coApi.terminal.onExit((id: string) => {
-      if (id !== termId || teardownDone) return;
-      clearLoadingOverlay();
+    // 「已退出」的唯一事实源是会话快照的 exitCode(main 的 setExited 经 sessions_changed 广播)。
+    const sessionExited = (): boolean => {
+      const session = getIndexedTerminalSessionById(useTerminalStore.getState().sessions, termId);
+      return session !== undefined && session.exitCode !== null;
+    };
+    const unsubExit = useTerminalStore.subscribe(() => {
+      if (!teardownDone && sessionExited()) clearLoadingOverlay();
     });
 
     // a11y(A143):readHistory 失败(reject 或 !r.ok)此前只 return / 无 .catch,而 lazy-mount
@@ -649,12 +653,8 @@ export function useTerminal(termId: string) {
           if (r.data.data) writeOutput(r.data.data);
           releaseLiveAfterHistory(r.data.endOffset);
         }
-        // 挂载前就已退出、且无可回放输出(零输出 / 快照被淘汰)→ onExit 早已错过,不清就永挂 loading。
-        const session = getIndexedTerminalSessionById(
-          useTerminalStore.getState().sessions,
-          termId,
-        );
-        if (session && session.exitCode !== null) clearLoadingOverlay();
+        // 挂载前就已退出、且无可回放输出(零输出 / 快照被淘汰)→ 之后不会再有快照变更,不清就永挂 loading。
+        if (sessionExited()) clearLoadingOverlay();
       })
       .catch((err) => {
         if (teardownDone) return;

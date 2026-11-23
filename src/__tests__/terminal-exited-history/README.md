@@ -21,5 +21,5 @@ panel,用户可能从没打开过;进程退出后再点开,readHistory 拿到空
 ## 渲染端:已退出且无可回放输出的 tab 不永挂 loading
 
 - 面板挂载时会话已退出(store 中 exitCode ≠ null),readHistory 返回空历史 → 清掉「Starting shell…」遮罩
-  (退出事件早于挂载,onExit 等不到;此前遮罩永久悬浮)
+  (退出早于挂载,之后不会再有快照变更;此前遮罩永久悬浮)
 - 会话仍在运行 + 空历史 → 遮罩保留,等首批输出(prompt 尚未产出的正常态)

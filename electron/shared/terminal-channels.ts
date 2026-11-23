@@ -14,7 +14,6 @@ export const TERMINAL_CHANNELS = {
   READ_HISTORY: 'terminal:read_history',
   // event(main → renderer,webContents.send)
   DATA: 'terminal:data',
-  EXIT: 'terminal:exit',
   SESSIONS_CHANGED: 'terminal:sessions_changed',
 } as const;
 

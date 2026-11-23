@@ -1,5 +1,5 @@
-// topic 49 · 审计 #1: 终端自然退出时,卡在节流窗口里的最后一段输出必须先 flush
-// 再发 terminal:exit。cleanupSessionLocal 旧实现直接 clearTimeout(flushTimer)
+// topic 49 · 审计 #1: 终端自然退出时,卡在节流窗口里的最后一段输出必须 flush 给 renderer
+//(退出状态本身走 sessions 快照的 exitCode,没有单独的退出推送)。cleanupSessionLocal 旧实现直接 clearTimeout(flushTimer)
 // 而不触发 flush → 命令最终结果 / exit banner 被丢弃。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeWindow } from '../migration-step1-pty-handover/fixtures';
@@ -71,7 +71,7 @@ describe('topic 49 · 终端退出 flush 最后输出', () => {
     vi.useRealTimers();
   });
 
-  it('PTY 自然退出时,先发未 flush 的 pending 输出,再发 terminal:exit', async () => {
+  it('PTY 自然退出时,未 flush 的 pending 输出照常发出(不随退出丢弃)', async () => {
     const win = makeWindow(1);
     await service.createTerminal('s1', win, '/bin/zsh', [], '/tmp');
 
@@ -83,14 +83,8 @@ describe('topic 49 · 终端退出 flush 最后输出', () => {
     sessionManagerMock.options?.onExit?.('s1', { exitCode: 0 });
 
     const calls = (win.webContents.send as ReturnType<typeof vi.fn>).mock.calls;
-    const dataIdx = calls.findIndex((c) => c[0] === 'terminal:data' && c[2] === 'final-output');
-    const exitIdx = calls.findIndex((c) => c[0] === 'terminal:exit');
-
     // 数据没丢
-    expect(dataIdx).toBeGreaterThanOrEqual(0);
-    // 顺序: data 在 exit 之前
-    expect(exitIdx).toBeGreaterThanOrEqual(0);
-    expect(dataIdx).toBeLessThan(exitIdx);
+    expect(calls.some((c) => c[0] === 'terminal:data' && c[2] === 'final-output')).toBe(true);
   });
 
   it('退出时无 pending 输出则不发多余 terminal:data', async () => {
@@ -100,7 +94,7 @@ describe('topic 49 · 终端退出 flush 最后输出', () => {
     sessionManagerMock.options?.onExit?.('s2', { exitCode: 0 });
 
     const calls = (win.webContents.send as ReturnType<typeof vi.fn>).mock.calls;
-    expect(calls.some((c) => c[0] === 'terminal:data')).toBe(false);
-    expect(calls.some((c) => c[0] === 'terminal:exit')).toBe(true);
+    // 退出本身不向 renderer 单独推送:退出状态走 sessions 快照的 exitCode。
+    expect(calls).toEqual([]);
   });
 });

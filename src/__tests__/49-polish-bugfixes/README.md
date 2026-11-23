@@ -6,9 +6,8 @@
 ## 行为契约
 
 ### #1 终端自然退出不丢最后一段输出 — `terminal-exit-flush.spec.ts`
-- PTY 自然退出时,仍卡在节流(flush)窗口里的最后一段输出**必须先发**给 renderer,
-  再发 `terminal:exit`(顺序: `terminal:data` 在 `terminal:exit` 之前)。
-- 退出时若无 pending 输出,则不发多余的 `terminal:data`。
+- PTY 自然退出时,仍卡在节流(flush)窗口里的最后一段输出**必须发**给 renderer,不随退出丢弃。
+- 退出时若无 pending 输出,则不发多余的 `terminal:data`;退出状态走 sessions 快照的 `exitCode`,没有单独的退出推送。
 - 根因: `cleanupSessionLocal` 旧实现直接 `clearTimeout(flushTimer)` 而不触发 flush,
   命令最终结果 / exit banner 被丢弃。
 

@@ -118,7 +118,6 @@ describe('migration step1 PTY handover · forceKill cleanup', () => {
     terminalService.forceKill('k');
 
     expect(setExitedSpy).toHaveBeenCalledWith('k', -1);
-    expect(win.webContents.send).toHaveBeenCalledWith('terminal:exit', 'k');
     expect(byToken).toHaveBeenCalledWith('token-k');
     expect(terminalService.has('k')).toBe(false);
     expect(sessionManagerMock.kill).toHaveBeenCalledWith({
@@ -129,7 +128,8 @@ describe('migration step1 PTY handover · forceKill cleanup', () => {
     expect(() => {
       sessionManagerMock.options?.onExit?.('k', { exitCode: 137, signal: 9 });
     }).not.toThrow();
-    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    // 迟到的 onExit 不再二次清理(setExited 只那一次)。
+    expect(setExitedSpy).toHaveBeenCalledTimes(1);
   });
 
   it('cleanupAll 不通过 id 中间数组 .map 调度强杀,且仍清理所有会话', async () => {

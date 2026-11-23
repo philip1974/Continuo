@@ -327,10 +327,6 @@ const api = {
       ensureTerminalDataListener();
       return terminalDataDemux.add(id, cb);
     },
-    onExit: (cb: (id: string) => void): (() => void) => {
-      const listener = (_: unknown, id: string) => cb(id);
-      return subscribeIpc(TERMINAL_CHANNELS.EXIT, listener);
-    },
   },
   plugins: {
     listDirs: (): Promise<IpcResult<readonly IpcPluginDirListing[]>> =>

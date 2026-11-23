@@ -309,17 +309,13 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
     warnOnce(`setExited:${id}`, `terminalSessions.setExited threw for ${id}: ${(err as Error).message}`);
   }
 
-  // 1b. Flush any buffered output BEFORE the exit event (also clears flushTimer).
+  // 1b. Flush any buffered output (also clears flushTimer).
   // The last chunk still sitting in the throttle window (often the command's final result / exit
-  // banner) would otherwise be silently dropped. Emit it first so the renderer
-  // sees data → exit in order. (审计 #1)
+  // banner) would otherwise be silently dropped. (审计 #1)
   flushPending(id, instance);
   // 1c. ring buffer 即将被 server-node 删除(自然退出 onExit 之后 / sm.kill 时)→ 先留快照。
   // 退出强杀(cleanupAll)时不留:进程随即退出、快照无人读取,每个 PTY 拼最多 4MB 只白占主线程与堆。
   if (!shuttingDown) retainExitedHistory(id);
-
-  // 2. Push terminal:exit (only if target still alive)。只带 id:退出码走 sessions 快照的 exitCode。
-  safeSend(id, instance, TERMINAL_CHANNELS.EXIT, id);
 
   // 3. Clear all timers
   if (instance.killTimer) {

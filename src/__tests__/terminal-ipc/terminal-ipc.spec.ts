@@ -34,7 +34,6 @@ describe('TERMINAL_CHANNELS', () => {
     expect(TERMINAL_CHANNELS.LIST_SESSIONS).toBe('terminal:list_sessions');
     expect(TERMINAL_CHANNELS.REMOVE).toBe('terminal:remove');
     expect(TERMINAL_CHANNELS.DATA).toBe('terminal:data');
-    expect(TERMINAL_CHANNELS.EXIT).toBe('terminal:exit');
     expect(TERMINAL_CHANNELS.SESSIONS_CHANGED).toBe('terminal:sessions_changed');
   });
 

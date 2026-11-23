@@ -48,7 +48,6 @@ vi.mock('@/lib/co-api', () => ({
         hoisted.onDataHandler = cb;
         return vi.fn();
       }),
-      onExit: vi.fn(() => vi.fn()),
       readHistory: vi.fn(() => hoisted.historyDeferred!.promise),
       write: vi.fn().mockResolvedValue({ ok: true }),
     },

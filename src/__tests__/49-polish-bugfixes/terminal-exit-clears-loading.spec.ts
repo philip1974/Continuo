@@ -4,10 +4,11 @@
 // 或非空 readHistory。useTerminal **完全不订阅 terminal:exit**。若某 PTY 在产出任何字节
 // 之前就退出(自定义 shell 立即失败 / 零输出即 exit / 启动后立刻被 kill),firstData 恒真、
 // isReady 恒假 → spinner 永久悬浮在一个已死终端上,挡住真实状态(典型「状态机标记建了未
-// 覆盖所有终态」族)。main 端 cleanupSessionLocal 已发 terminal:exit,但 renderer 无消费方。
+// 覆盖所有终态」族)。
 //
-// 修复:useTerminal 订阅 coApi.terminal.onExit,本 termId 退出时清 isReady(移掉 overlay,
-// 让退出前缓冲/错误输出可见)。带 teardownDone 守卫 + termId 过滤 + cleanup 解绑。
+// 修复:「已退出」只有一个事实源 —— 会话快照的 exitCode(main 的 setExited 经 sessions_changed 广播)。
+// useTerminal 订阅 terminal.store,本 termId 的 exitCode 非 null 时清 isReady(移掉 overlay,
+// 让退出前缓冲/错误输出可见)。没有单独的 terminal:exit 通道。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { createElement } from 'react';
@@ -15,7 +16,6 @@ import { createElement } from 'react';
 const hoisted = vi.hoisted(() => ({
   terms: [] as Array<{ write: ReturnType<typeof vi.fn> }>,
   historyDeferred: null as null | { promise: Promise<unknown>; resolve: (v: unknown) => void },
-  exitCbs: [] as Array<(id: string, payload: unknown) => void>,
 }));
 
 vi.mock('@xterm/xterm', () => ({
@@ -47,10 +47,6 @@ vi.mock('@/lib/co-api', () => ({
       resize: vi.fn().mockResolvedValue({ ok: true }),
       updateCwd: vi.fn().mockResolvedValue({ ok: true }),
       onData: vi.fn(() => vi.fn()),
-      onExit: vi.fn((cb: (id: string, payload: unknown) => void) => {
-        hoisted.exitCbs.push(cb);
-        return vi.fn();
-      }),
       readHistory: vi.fn(() => hoisted.historyDeferred!.promise),
       write: vi.fn().mockResolvedValue({ ok: true }),
     },
@@ -63,6 +59,17 @@ vi.mock('@/plugins/settings/values-store', () => ({
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
 import { useTerminal } from '../../panels/Terminal/useTerminal';
+import { useTerminalStore } from '../../stores/terminal.store';
+
+const session = (id: string, exitCode: number | null) => ({
+  id,
+  title: id,
+  cwd: '/tmp',
+  originHint: 'user' as const,
+  createdAt: 0,
+  exitCode,
+  ownerWindowId: 1,
+});
 
 function Host({ termId }: { termId: string }) {
   const { containerRef, isReady } = useTerminal(termId);
@@ -71,7 +78,6 @@ function Host({ termId }: { termId: string }) {
 
 beforeEach(() => {
   hoisted.terms.length = 0;
-  hoisted.exitCbs.length = 0;
   let resolve!: (v: unknown) => void;
   const promise = new Promise<unknown>((r) => {
     resolve = r;
@@ -89,28 +95,30 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  useTerminalStore.setState({ sessions: [] });
   vi.clearAllMocks();
 });
 
 describe('49 第八 session · terminal exit 清 loading overlay', () => {
-  it('PTY 零输出即退出 → onExit 清 isReady(spinner 不再永挂)', async () => {
+  it('PTY 零输出即退出 → 会话快照带上 exitCode 即清 isReady(spinner 不再永挂)', async () => {
+    useTerminalStore.setState({ sessions: [session('t-exit', null)] });
     const { container } = render(createElement(Host, { termId: 't-exit' }));
     const div = container.querySelector('div')!;
     // 无 onData、history 未 resolve → 仍 loading
     expect(div.getAttribute('data-ready')).toBe('false');
-    expect(hoisted.exitCbs.length).toBeGreaterThan(0);
 
     await act(async () => {
-      for (const cb of hoisted.exitCbs) cb('t-exit', { exitCode: 1 });
+      useTerminalStore.setState({ sessions: [session('t-exit', 1)] });
     });
     expect(div.getAttribute('data-ready')).toBe('true');
   });
 
-  it('其它 termId 的 exit 不误清本终端 loading', async () => {
+  it('其它 termId 的退出不误清本终端 loading', async () => {
+    useTerminalStore.setState({ sessions: [session('t-mine', null), session('t-other', null)] });
     const { container } = render(createElement(Host, { termId: 't-mine' }));
     const div = container.querySelector('div')!;
     await act(async () => {
-      for (const cb of hoisted.exitCbs) cb('t-other', { exitCode: 0 });
+      useTerminalStore.setState({ sessions: [session('t-mine', null), session('t-other', 0)] });
     });
     expect(div.getAttribute('data-ready')).toBe('false');
   });
