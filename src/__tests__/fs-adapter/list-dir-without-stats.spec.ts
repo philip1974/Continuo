@@ -2,7 +2,7 @@
 // 性能(Quick Open ⌘P):调用方不需要 size/mtime/ctime 时传 withStats:false,
 // 类型直接取自 opendir 的 dirent,普通文件/目录/符号链接不再逐项 lstat。
 // 仅 dirent 类型未知(isFile/isDirectory/isSymbolicLink 皆 false)回退 lstat;
-// followSymlinks 解析链接目标仍走 stat。默认(withStats 不传/true)行为不变。
+// 默认(withStats 不传/true)行为不变。
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fsp from 'node:fs/promises';
@@ -96,29 +96,12 @@ describe('listDir withStats:false', () => {
   it.each([
     ['默认', {}],
     ['maxDepth=2', { maxDepth: 2 }],
-    ['followSymlinks', { maxDepth: 2, followSymlinks: true }],
     ['exclude=[]', { maxDepth: 2, exclude: [] as string[] }],
     ['maxFiles=2', { maxDepth: 2, maxFiles: 2 }],
   ])('等价:%s 下 withStats:false 与 withStats:true 结构字段逐项一致', async (_label, opts) => {
     const withStats = await listDir(dir, { ...opts, withStats: true });
     const without = await listDir(dir, { ...opts, withStats: false });
     expect(structural(without)).toEqual(structural(withStats));
-  });
-
-  it('followSymlinks:true 时链接目标仍经 stat 解析(链接目录递归),但不 lstat', async () => {
-    const items = await listDir(dir, {
-      maxDepth: 2,
-      followSymlinks: true,
-      withStats: false,
-    });
-    expectNoLstatExceptWin32Links();
-    const statted = statMock.mock.calls.map((c) => String(c[0]));
-    expect(statted).toContain(path.join(dir, 'link-dir'));
-    expect(items.find((i) => i.name === 'link-dir')).toMatchObject({
-      isDirectory: true,
-      isSymlink: true,
-    });
-    expect(items.some((i) => i.path === path.join(dir, 'link-dir', 'inner.txt'))).toBe(true);
   });
 
   it('dirent 类型未知(三者皆 false)→ 回退 lstat 判定,结果与默认一致', async () => {

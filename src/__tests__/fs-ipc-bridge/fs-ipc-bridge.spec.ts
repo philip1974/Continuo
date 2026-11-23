@@ -93,7 +93,7 @@ describe('listDirInputSchema', () => {
     expect(
       listDirInputSchema.safeParse({
         path: '/tmp',
-        options: { maxDepth: 3, exclude: ['.git'], followSymlinks: true },
+        options: { maxDepth: 3, exclude: ['.git'] },
       }).success,
     ).toBe(true);
   });

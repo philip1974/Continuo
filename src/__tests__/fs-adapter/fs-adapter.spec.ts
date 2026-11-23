@@ -41,20 +41,18 @@ describe('listDir', () => {
     await writeFile(path.join(dir, 'sub', 'inner.txt'), 'I');
   });
 
-  // 数据安全/正确性(复查 P2):followSymlinks:true 时旧实现仍 lstat link 本身,
-  // symlink-to-directory 永远 isDirectory=false → 不递归 → 静默漏掉链接目录下的文件。
-  // 改 stat(跟随到目标)后,symlink 目录被正确识别并递归。MAX_DEPTH_HARD_LIMIT 界定环。
-  it('followSymlinks:true 跟随 symlink 目录并递归(否则静默漏文件)', async () => {
+  it('不跟随 symlink 目录:标 isSymlink,不递归进链接', async () => {
     await mkdir(path.join(dir, 'target'));
     await writeFile(path.join(dir, 'target', 'deep.txt'), 'D');
     await symlink(path.join(dir, 'target'), path.join(dir, 'link'));
 
-    const items = await listDir(dir, { maxDepth: 2, followSymlinks: true });
-    const names = items.map((i) => i.name);
-    // link 被识别为目录并递归 → deep.txt 出现
-    expect(names).toContain('deep.txt');
-    // link 仍标记 isSymlink(UI 可区分)
-    expect(items.find((i) => i.name === 'link')?.isSymlink).toBe(true);
+    const items = await listDir(dir, { maxDepth: 2 });
+    const link = items.find((i) => i.name === 'link');
+    expect(link?.isSymlink).toBe(true);
+    // deep.txt 只经真实目录 target 出现一次,不经 link 再出现
+    expect(items.filter((i) => i.name === 'deep.txt').map((i) => i.path)).toEqual([
+      path.join(dir, 'target', 'deep.txt'),
+    ]);
   });
 
   it('默认列当前层(maxDepth=1),不递归', async () => {

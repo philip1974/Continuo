@@ -23,8 +23,6 @@ export interface ListDirOptions {
   readonly maxDepth?: number;
   /** basename 黑名单。默认见 DEFAULT_EXCLUDE,自定义完全替换默认。 */
   readonly exclude?: readonly string[];
-  /** 默认 false:用 lstat,symlink 不递归。 */
-  readonly followSymlinks?: boolean;
   /**
    * 性能(perf 审计 P2):**文件数**上限。收集到这么多文件即停止遍历与递归
    * (目录不计入)。默认无限。给 Quick Open 这类「只要前 N 个候选」的深递归用,
@@ -41,7 +39,7 @@ export interface ListDirOptions {
    * 性能(Quick Open ⌘P):默认 true。为 false 时不返回 size/mtime/ctime,类型直接取自 opendir 的
    * dirent(isFile/isDirectory/isSymbolicLink),普通文件/目录/符号链接不再逐项 lstat;仅 dirent 类型
    * 未知(三者皆 false,如部分文件系统返回 DT_UNKNOWN)及 win32 上 dirent 报 symlink(libuv 把所有
-   * reparse point 报成链接,见 resolveEntry)回退 lstat。followSymlinks 解析链接目标仍走 stat。
+   * reparse point 报成链接,见 resolveEntry)回退 lstat。
    * maxFiles 计数口径与 withStats:true 一致(dirent.isFile() ≡ lstat().isFile())。
    * 差异仅一处:readdir 与 lstat 之间被删的项,withStats:true 跳过,false 仍列出(本就是竞态快照)。
    */
@@ -63,7 +61,6 @@ export async function listDir(
   // (巨大 exclude 列表 × 宽目录 = 线性放大;schema 已 cap exclude ≤1000,Set 进一步消除热路径开销)。
   const exclude =
     opts.exclude === undefined ? DEFAULT_EXCLUDE_SET : new Set(opts.exclude);
-  const followSymlinks = opts.followSymlinks ?? false;
   const withStats = opts.withStats ?? true;
   // 边界(E275,clamp 非有限/不安全整数族):maxFiles 经 IPC schema(已加 .max(MAX_TOTAL_ENTRIES))进来,
   // 但 list-dir 作为内部 helper 须自守(防 schema 旁路/不安全整数 1e308 仍过 z.int())。要求安全正整数,
@@ -100,7 +97,6 @@ export async function listDir(
     1,
     maxDepth,
     exclude,
-    followSymlinks,
     withStats,
     maxFiles,
     maxTotalEntries,
@@ -136,7 +132,6 @@ type DirEntryLike = {
 async function resolveEntry(
   dir: string,
   d: DirEntryLike,
-  followSymlinks: boolean,
   withStats: boolean,
 ): Promise<ResolvedEntry | null> {
   const full = path.join(dir, d.name);
@@ -169,18 +164,6 @@ async function resolveEntry(
     isFile = lst.isFile();
     if (withStats) st = lst;
   }
-  // followSymlinks=true 时按**目标**判 isDirectory(但仍记 isSymlink:true 以便 UI 区分)。
-  // 必须用 stat(跟随 link)而非 lstat —— 旧实现误用 lstat 拿到的仍是链接本身,
-  // symlink-to-directory 永远 isDirectory=false → 不递归 → 静默漏掉链接目录下的文件
-  // (复查 P2,自相矛盾于本注释承诺)。symlink 环由 walk 的 MAX_DEPTH_HARD_LIMIT 界定。
-  if (isSymlink && followSymlinks) {
-    try {
-      const targetSt = await stat(full); // 跟随到 link 目标读其真实类型
-      isDirectory = targetSt.isDirectory();
-    } catch {
-      /* link 失效,按原 lstat 处理 */
-    }
-  }
   return { d, full, st, isSymlink, isDirectory, isFile };
 }
 
@@ -188,12 +171,11 @@ function resolveEntryBatch(
   dir: string,
   batch: readonly DirEntryLike[],
   batchCount: number,
-  followSymlinks: boolean,
   withStats: boolean,
 ): Array<Promise<ResolvedEntry | null>> {
   const promises = new Array<Promise<ResolvedEntry | null>>(batchCount);
   for (let i = 0; i < batchCount; i++) {
-    promises[i] = resolveEntry(dir, batch[i]!, followSymlinks, withStats);
+    promises[i] = resolveEntry(dir, batch[i]!, withStats);
   }
   return promises;
 }
@@ -203,7 +185,6 @@ async function walk(
   depth: number,
   maxDepth: number,
   exclude: ReadonlySet<string>,
-  followSymlinks: boolean,
   withStats: boolean,
   maxFiles: number,
   maxTotalEntries: number,
@@ -227,7 +208,7 @@ async function walk(
     const batchCount = chunkCount;
     chunkCount = 0;
     const resolved = await Promise.all(
-      resolveEntryBatch(dir, chunk, batchCount, followSymlinks, withStats),
+      resolveEntryBatch(dir, chunk, batchCount, withStats),
     );
     for (const item of resolved) {
       if (state.fileCount >= maxFiles) {
@@ -264,16 +245,14 @@ async function walk(
         );
       }
 
-      // 递归:目录、未达深度、且不是 symlink(除非 followSymlinks)
-      const shouldRecurse =
-        isDirectory && depth < maxDepth && (followSymlinks || !isSymlink);
+      // 递归:目录、未达深度、且不是 symlink(不跟随链接:类型按 lstat,链接目录不展开)
+      const shouldRecurse = isDirectory && depth < maxDepth && !isSymlink;
       if (shouldRecurse) {
         const children = await walk(
           full,
           depth + 1,
           maxDepth,
           exclude,
-          followSymlinks,
           withStats,
           maxFiles,
           maxTotalEntries,

@@ -107,7 +107,6 @@ export type PreloadTerminalSession = TerminalSessionSnapshot;
 export interface PreloadListDirOptions {
   readonly maxDepth?: number;
   readonly exclude?: ReadonlyArray<string>;
-  readonly followSymlinks?: boolean;
   /** perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。 */
   readonly maxFiles?: number;
   /** 性能:默认 true;false 时不回传 size/mtime/ctime。见 fs/list-dir.ts ListDirOptions.withStats。 */
