@@ -4,8 +4,6 @@
 
 export interface TrailingNotifier {
   notify(): void;
-  /** 取消待发通知(退出 / 卸载时调用)。 */
-  dispose(): void;
 }
 
 export function createTrailingNotifier(fn: () => void, delayMs: number): TrailingNotifier {
@@ -19,10 +17,6 @@ export function createTrailingNotifier(fn: () => void, delayMs: number): Trailin
       }, delayMs);
       // 不因待发通知阻止进程退出。
       if (typeof timer === 'object' && timer !== null && 'unref' in timer) timer.unref();
-    },
-    dispose() {
-      if (timer !== null) clearTimeout(timer);
-      timer = null;
     },
   };
 }

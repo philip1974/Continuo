@@ -34,14 +34,6 @@ describe('createTrailingNotifier · 窗口期内多次变更只通知一次', ()
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it('dispose 取消待发通知', () => {
-    const fn = vi.fn();
-    const n = createTrailingNotifier(fn, 50);
-    n.notify();
-    n.dispose();
-    vi.advanceTimersByTime(100);
-    expect(fn).not.toHaveBeenCalled();
-  });
 });
 
 describe('接线 · plugin MCP tools/list_changed 经尾随合并广播', () => {

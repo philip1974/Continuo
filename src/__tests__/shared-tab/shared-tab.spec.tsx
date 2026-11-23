@@ -54,14 +54,7 @@ function makeApi(over: Partial<FakeApi> = {}): FakeApi {
 
 afterEach(() => cleanup());
 
-function renderTab(
-  api: FakeApi,
-  extra: {
-    onPointerDown?: (e: never) => void;
-    onPointerUp?: (e: never) => void;
-    onPointerLeave?: (e: never) => void;
-  } = {},
-) {
+function renderTab(api: FakeApi) {
   // SharedTab 类型签名要求 IDockviewPanelHeaderProps,这里用 unknown 桥
   // topic-22: containerApi 现在被订阅 onDidMaximizedGroupChange,需 mock
   const props = {
@@ -71,9 +64,6 @@ function renderTab(
       exitMaximizedGroup: vi.fn(),
     } as never,
     params: {},
-    onPointerDown: extra.onPointerDown,
-    onPointerUp: extra.onPointerUp,
-    onPointerLeave: extra.onPointerLeave,
   } as unknown as Parameters<typeof SharedTab>[0];
   return render(<SharedTab {...props} />);
 }
@@ -379,26 +369,5 @@ describe('SharedTab — 中键关闭', () => {
     fireEvent.pointerLeave(root);
     fireEvent.pointerUp(root, { button: 1 });
     expect(api.close).not.toHaveBeenCalled();
-  });
-});
-
-describe('SharedTab — 透传 dockview pointer handler', () => {
-  it('onPointerDown / onPointerUp / onPointerLeave 都被调', () => {
-    const api = makeApi();
-    const onPointerDown = vi.fn();
-    const onPointerUp = vi.fn();
-    const onPointerLeave = vi.fn();
-    const { container } = renderTab(api, {
-      onPointerDown,
-      onPointerUp,
-      onPointerLeave,
-    });
-    const root = container.querySelector('.group\\/tab') as HTMLElement;
-    fireEvent.pointerDown(root, { button: 0 });
-    fireEvent.pointerUp(root, { button: 0 });
-    fireEvent.pointerLeave(root);
-    expect(onPointerDown).toHaveBeenCalledTimes(1);
-    expect(onPointerUp).toHaveBeenCalledTimes(1);
-    expect(onPointerLeave).toHaveBeenCalledTimes(1);
   });
 });

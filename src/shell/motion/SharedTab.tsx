@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { HTMLAttributes, KeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent, PointerEvent } from 'react';
 import { m } from 'motion/react';
 import type {
   DockviewApi,
@@ -82,15 +82,8 @@ function useIsThisGroupMaximized(
   return maxed;
 }
 
-// dockview 把 IDockviewPanelHeaderProps + 若干 PointerEvent handler 通过展开传进来,
-// 我们必须把这些 handler 转发到根 div,否则 tab 拖拽会失效。
-type TabHtmlExtras = Pick<
-  HTMLAttributes<HTMLDivElement>,
-  'onPointerDown' | 'onPointerUp' | 'onPointerLeave'
->;
-
-export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
-  const { api, containerApi, onPointerDown, onPointerUp, onPointerLeave } = props;
+export function SharedTab(props: IDockviewPanelHeaderProps) {
+  const { api, containerApi } = props;
   // a11y(A125):用 useT() 订阅 locale,使关闭/退出缩放/tablist 等可访问名随语言切换实时更新
   //(此前静态 t 在 locale 变化时不重渲,aria-label 停留旧语言)。
   const t = useT();
@@ -145,9 +138,8 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       isMiddleDown.current = event.button === 1;
-      onPointerDown?.(event);
     },
-    [onPointerDown],
+    [],
   );
 
   const handlePointerUp = useCallback(
@@ -156,18 +148,13 @@ export function SharedTab(props: IDockviewPanelHeaderProps & TabHtmlExtras) {
         isMiddleDown.current = false;
         api.close();
       }
-      onPointerUp?.(event);
     },
-    [api, onPointerUp],
+    [api],
   );
 
-  const handlePointerLeave = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      isMiddleDown.current = false;
-      onPointerLeave?.(event);
-    },
-    [onPointerLeave],
-  );
+  const handlePointerLeave = useCallback(() => {
+    isMiddleDown.current = false;
+  }, []);
 
   // a11y(A119/A120):tab 根键盘模型。Enter/Space 激活当前 tab;A120 补完整 WAI-ARIA tablist
   // 方向键模型 —— ArrowLeft/Right 在同组 tab 间循环移动并激活,Home/End 到首尾,且焦点跟随到
