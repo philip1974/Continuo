@@ -1,6 +1,9 @@
 // 全部 fs.* IPC 通道字符串集中地。main / preload 两侧 import 同一份,
 // 防字符串散漂改名错位。(layout 通道在 persistence-channels.ts。)
 
+import type { z } from 'zod';
+import type { ListDirOptionsSchema } from './fs-list-dir-schema';
+
 import { FS_PATH_MAX } from './fs-limits';
 import { IPC_ERR, type IpcFail, type IpcOk, type IpcResult } from './ipc-result';
 
@@ -147,3 +150,6 @@ export function toFsStatResult(r: IpcResult<unknown>): IpcResult<FsFileStat> {
     ? { ok: true, data: st }
     : { ok: false, code: IPC_ERR.HANDLER_ERROR, message: 'malformed fs:stat result' };
 }
+
+/** fs:list-dir 选项:由 main 的 zod schema 推出(单一来源,见 fs-list-dir-schema.ts)。 */
+export type FsListDirOptions = z.infer<typeof ListDirOptionsSchema>;

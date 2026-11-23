@@ -22,6 +22,7 @@ import {
   type FsFileStat,
   type FsReadFileData,
   type FsReadFileResult,
+  type FsListDirOptions,
 } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import {
@@ -59,6 +60,7 @@ import {
   PLUGIN_MCP_CHANNELS,
   type InvokePayload,
   type InvokeReply,
+  type RegisterPayload,
 } from '../shared/plugin-mcp-channels';
 import {
   WINDOW_CHANNELS,
@@ -99,15 +101,8 @@ export type TerminalCreateOptions = TerminalCreateInput;
  */
 export type PreloadTerminalSession = TerminalSessionSnapshot;
 
-// 给 fs 入参用的轻量 ListDirOptions —— 与 main 端 zod schema 对齐字段
-export interface PreloadListDirOptions {
-  readonly maxDepth?: number;
-  readonly exclude?: ReadonlyArray<string>;
-  /** perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。 */
-  readonly maxFiles?: number;
-  /** 性能:默认 true;false 时不回传 size/mtime/ctime。见 fs/list-dir.ts ListDirOptions.withStats。 */
-  readonly withStats?: boolean;
-}
+// fs:list-dir 选项(由 main 的 zod schema 推出,见 shared/fs-list-dir-schema.ts)。
+export type PreloadListDirOptions = FsListDirOptions;
 
 // 性能 P1:终端输出 'terminal:data' 整窗只挂一个 ipcRenderer listener,按 sessionId
 // 分发(详见 terminal-data-demux.ts)。避免 N 个 panel = N 个 listener 的 O(N) fan-out。
@@ -536,12 +531,7 @@ const api = {
   },
   pluginMcp: {
     /** 上行注册 tool 元数据;失败返 IpcFail(含 TOOL_NAME_TAKEN 等 code). */
-    registerTool: (payload: {
-      pluginId: string;
-      name: string;
-      description: string;
-      jsonSchema: Record<string, unknown>;
-    }): Promise<IpcResult<void>> =>
+    registerTool: (payload: RegisterPayload): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGIN_MCP_CHANNELS.REGISTER, payload),
     /** 上行摘 tool;unknown name 静默 ok. */
     unregisterTool: (name: string): Promise<IpcResult<void>> =>

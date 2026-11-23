@@ -1,3 +1,4 @@
+import { LIST_DIR_TOTAL_ENTRIES_MAX } from '../../../shared/fs-limits';
 import { lstat, opendir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { FileEntry } from '../../../shared/fs-entry';
@@ -13,8 +14,8 @@ const MAX_DEPTH_HARD_LIMIT = 10;
 // 作滥用 backstop,默认启用;超过即 fail-closed 抛 FS_DIR_TOO_LARGE(同 plugin-fs E30,不静默截断 —
 // Explorer 静默截断会让用户误判文件缺失)。单层目录 >10 万直接子项极罕见,远超任何现实目录;QuickOpen
 // 的 maxFiles(更低)在此之前早停,不会触发本上限。
-// 边界(E275):导出供 fs.ipc.ts 的 listDir schema 把 maxFiles 上界对齐到此硬上限。
-export const MAX_TOTAL_ENTRIES = 100_000;
+// 边界(E275):值定义在 shared(listDir IPC schema 的 maxFiles 上界对齐到此硬上限)。
+export const MAX_TOTAL_ENTRIES = LIST_DIR_TOTAL_ENTRIES_MAX;
 
 const DEFAULT_EXCLUDE_SET: ReadonlySet<string> = new Set(LIST_DIR_DEFAULT_EXCLUDE);
 

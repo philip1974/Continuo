@@ -14,7 +14,8 @@ import {
 } from '../../shared/fs-channels';
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { listDir, MAX_TOTAL_ENTRIES } from './fs/list-dir';
+import { listDir } from './fs/list-dir';
+import { FS_IPC_NAME_MAX, ListDirOptionsSchema } from '../../shared/fs-list-dir-schema';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
@@ -37,23 +38,9 @@ import { showOpenDialogRemembering } from '../lib/open-dialog';
 // 上限 + exclude 数组上限;listDir 内把 exclude 转 Set 避免大目录线性放大(见 fs/list-dir.ts)。
 // FS_PATH_MAX 取 shared 单一来源(preload / plugin-fs 同值)。下面这个是 IPC schema 对「名字类字符串」
 // (新建名 / exclude 项)的宽松长度闸,不是文件系统组件名上限(那是 shared/leaf-name 的 FS_NAME_MAX=255)。
-const FS_IPC_NAME_MAX = 1024;
-const FS_EXCLUDE_MAX = 1000;
 const fsPath = (): z.ZodString => z.string().min(1).max(FS_PATH_MAX);
 const fsName = (): z.ZodString => z.string().min(1).max(FS_IPC_NAME_MAX);
 
-const ListDirOptionsSchema = z
-  .object({
-    maxDepth: z.number().int().positive().optional(),
-    exclude: z.array(z.string().max(FS_IPC_NAME_MAX)).max(FS_EXCLUDE_MAX).optional(), // 边界(E21)
-    // perf P2:文件数上限(深递归早停)。见 fs/list-dir.ts ListDirOptions.maxFiles。
-    // 边界(E275):上界对齐到 MAX_TOTAL_ENTRIES 硬上限 + 安全整数 —— 此前只 positive int,畸形 IPC 可传
-    // 1e308(仍过 z.int())绕过调用方早停,迫使主进程遍历/排序/回传近 10 万条放大。超上限直接 BAD_INPUT。
-    maxFiles: z.number().int().positive().max(MAX_TOTAL_ENTRIES).optional(),
-    // 性能:false 时不 lstat、不回传 size/mtime/ctime(Quick Open 用)。见 ListDirOptions.withStats。
-    withStats: z.boolean().optional(),
-  })
-  .strict();
 
 export const listDirInputSchema = z
   .object({

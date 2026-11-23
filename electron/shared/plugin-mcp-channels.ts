@@ -8,7 +8,11 @@
 // ── channel 名常量 ─────────────────────────────────────────────
 
 import type { z } from 'zod';
-import type { InvokePayloadSchema, InvokeReplySchema } from './plugin-mcp-schemas';
+import type {
+  InvokePayloadSchema,
+  InvokeReplySchema,
+  RegisterPayloadSchema,
+} from './plugin-mcp-schemas';
 
 export const PLUGIN_MCP_CHANNELS = {
   /** renderer → main: 注册 tool 元数据. */
@@ -48,3 +52,4 @@ export const PLUGIN_MCP_ERROR_CODES = {
 // ── 纯类型:由 plugin-mcp-schemas.ts 的 zod schema 推出(单一来源)。`import type` 被擦除,preload 不带 zod。
 export type InvokePayload = z.infer<typeof InvokePayloadSchema>;
 export type InvokeReply = z.infer<typeof InvokeReplySchema>;
+export type RegisterPayload = z.infer<typeof RegisterPayloadSchema>;

@@ -7,6 +7,7 @@
 //
 // BDD: src/__tests__/plugin-mcp-registry/
 
+import type { RegisterPayload } from '../../../electron/shared/plugin-mcp-channels';
 import type { Disposable } from '../types';
 import { PLUGIN_MCP_ERROR_CODES } from '../../../electron/shared/plugin-mcp-channels';
 import { capJoinedMessagesFrom } from '../../../electron/shared/cap-joined-messages';
@@ -48,12 +49,8 @@ export interface PluginMcpToolSpec<I = unknown, O = unknown> {
 
 // ── 上行 IPC 适配 ──────────────────────────────────────────────
 
-export interface PluginMcpUpstreamRegisterPayload {
-  readonly pluginId: string;
-  readonly name: string;
-  readonly description: string;
-  readonly jsonSchema: Record<string, unknown>;
-}
+/** 上行注册 payload:与 main 的 RegisterPayloadSchema 同一来源。 */
+export type PluginMcpUpstreamRegisterPayload = RegisterPayload;
 
 export interface PluginMcpUpstream {
   /** main 侧若已存同名 tool → reject(message + code TOOL_NAME_TAKEN). */
