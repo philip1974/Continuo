@@ -502,7 +502,6 @@ function makeShell(
       type StreamHandle = ReturnType<
         typeof coApi.pluginShellStreamRaw.execStream
       >;
-      let raw: StreamHandle | null = null;
       let startPromise: Promise<StreamHandle> | null = null;
       // race(R94):消费者在权限等待期间提前 break/return 的取消标志。execStream 是急切启动
       // (下方 const done = start()),start() 的 ensurePerm 可能挂在权限弹窗;此时 chunks.return()
@@ -523,7 +522,6 @@ function makeShell(
         done: Promise.resolve({ exitCode: null, signal: null }),
       };
       const start = async (): Promise<StreamHandle> => {
-        if (raw) return raw;
         if (!startPromise) {
           startPromise = (async () => {
             await ensurePerm(pluginId, 'shell', store, life);
@@ -540,8 +538,7 @@ function makeShell(
               opts === undefined
                 ? { pluginId }
                 : { cwd: opts.cwd, timeoutMs: opts.timeoutMs, pluginId };
-            raw = coApi.pluginShellStreamRaw.execStream(cmd, args, safeOpts);
-            return raw;
+            return coApi.pluginShellStreamRaw.execStream(cmd, args, safeOpts);
           })();
         }
         return startPromise;
@@ -794,7 +791,7 @@ const KEYED_MEMBERS = ['register', 'get', 'getAll', 'subscribe'] as const;
 /** 注册 / 订阅类方法名:返回 Disposable(register / on)或退订函数(subscribe)。 */
 const CONTRIBUTION_METHODS: ReadonlySet<string> = new Set(['register', 'on', 'subscribe']);
 /**
- * 吊销后仍放行的成员:只读查询 + events.off(只能移除调用方持有引用的 listener,即自身订阅)。
+ * 吊销后仍放行的成员:只读查询(events.off 同样放行,由 build() 里的专门分支处理)。
  * 白名单 —— 其余成员(commands.execute / events.emit / events.clear 及未来新增方法)吊销后一律拒绝。
  */
 const PASSTHROUGH_METHODS: ReadonlySet<string> = new Set([
@@ -803,7 +800,6 @@ const PASSTHROUGH_METHODS: ReadonlySet<string> = new Set([
   'list',
   'getBySide',
   'getByCategory',
-  'off',
 ]);
 /** 返回 Promise 的成员:吊销后以 reject 拒绝(契约是异步),其余同步抛。 */
 const ASYNC_METHODS: ReadonlySet<string> = new Set(['execute']);
@@ -819,7 +815,7 @@ const ASYNC_METHODS: ReadonlySet<string> = new Set(['execute']);
  * - register / on / subscribe:已吊销 → 抛 PERMISSION_DENIED、不入表;否则照常注册,并把退订句柄记入 owned,
  *   revoke() 时统一注销(插件绕过 Plugin.register 直接注册的贡献,停用时同样被清理)。返回的句柄幂等,
  *   先被插件 / Plugin 自行 dispose 则从 owned 移除。
- * - 只读查询与 events.off(PASSTHROUGH_METHODS):直通,但结果中的回调包吊销检查(见 guardResult)。
+ * - 只读查询(PASSTHROUGH_METHODS)与 events.off:直通,但结果中的回调包吊销检查(见 guardResult)。
  * - 其余成员(commands.execute / events.emit / events.clear ...)有外部副作用:已吊销 → 拒绝
  *   (execute 返回 reject 的 Promise,其余同步抛 PERMISSION_DENIED),未吊销照常直通。
  */

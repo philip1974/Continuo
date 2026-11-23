@@ -136,7 +136,7 @@ function checkInstalledCopies(root, sibling, sha) {
   return null;
 }
 
-export function checkSiblingRef({ refFile, sibling, root = repoRoot }) {
+export function checkSiblingRef({ refFile, sibling, root }) {
   let expected;
   try {
     expected = readFileSync(refFile, 'utf8').trim();

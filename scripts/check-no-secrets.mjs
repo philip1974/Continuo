@@ -143,9 +143,9 @@ export async function removeDistributables(dir, sinceMs) {
 
 /**
  * @param {string[]} targets 全量扫描的目录 / 文件
- * @param {string[]} [packaged] electron-builder 输出目录,只扫其中的 app.asar(.unpacked)
+ * @param {string[]} packaged electron-builder 输出目录,只扫其中的 app.asar(.unpacked)
  */
-export async function scanPaths(targets, packaged = []) {
+export async function scanPaths(targets, packaged) {
   const findings = [];
   const missing = [];
   const stats = { files: 0 };

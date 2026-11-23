@@ -33,9 +33,9 @@ const CJS_MARKER_CONTENT = '{ "type": "commonjs" }\n';
 // 蓄意改动,须删掉 .adapter/ 从钉死 sha256 的 tarball 重新解包(干净检出 / CI 即如此)。
 const CACHE_MARKER_NAME = '.continuo-adapter-cache.json';
 
-function failClear(reason, details = {}) {
+function failClear(reason, details) {
   console.error(`[fetch-debug-adapter] FAIL: ${reason}`);
-  console.error(`[fetch-debug-adapter] URL: ${details.url ?? RELEASE_URL}`);
+  console.error(`[fetch-debug-adapter] URL: ${RELEASE_URL}`);
   console.error(`[fetch-debug-adapter] expected sha256: ${EXPECTED_SHA256}`);
   console.error(`[fetch-debug-adapter] actual sha256: ${details.actualSha ?? 'n/a'}`);
   console.error(`[fetch-debug-adapter] HTTP status: ${details.httpStatus ?? 'n/a'}`);

@@ -341,7 +341,7 @@ const SPECIAL_DIR_NAMES: Readonly<Record<string, IconComp>> = {
  * 根据文件名 / 目录名返回对应图标 component。
  *
  * 目录:特殊名(case-insensitive)→ FolderXxx;否则 Folder。
- * 文件:精确名 → ext → fallback Document。`.d.ts` 优先于 `.ts`。
+ * 文件:特殊名(case-insensitive)→ ext → fallback Document。`.d.ts` 优先于 `.ts`。
  */
 // 映射表是普通对象字面量:查表走 ownValue 只认自身属性,否则 constructor / __proto__ 等名会命中原型链返回非组件 → 渲染抛错白屏。
 
@@ -354,34 +354,30 @@ export function getFileIconComponent(
   }
   if (!name) return Document;
 
-  // 1. 精确特殊名(case-sensitive 先)
-  const exact = ownValue(SPECIAL_FILE_NAMES, name);
-  if (exact) return exact;
-
-  // 2. case-insensitive 兜底特殊名(README / Readme / readme 都通)
+  // 1. 特殊名,case-insensitive(README / Readme / readme 都通)
   const lower = lowerIfNeeded(name);
   const specialLower = ownValue(SPECIAL_FILE_NAMES_LOWER, lower);
   if (specialLower) return specialLower;
 
-  // 3. .d.ts 比通用 .ts 更专精
+  // 2. .d.ts 比通用 .ts 更专精
   if (lower.endsWith('.d.ts')) return Dts;
 
-  // 4. ext(取最后一段,case-insensitive)
+  // 3. ext(取最后一段,case-insensitive)
   const idx = name.lastIndexOf('.');
   if (idx <= 0) return Document; // 无 ext or 隐藏文件(.bashrc 等)
   const ext = lowerIfNeeded(name.slice(idx + 1));
   return ownValue(EXT_MAP, ext) ?? Document;
 }
 
-/** 直接渲染对应图标。size 默认 16(跟 FileRow ICON_SIZE 一致). */
+/** 直接渲染对应图标。 */
 export function FileIcon({
   name,
   isDirectory,
-  size = 16,
+  size,
 }: {
   readonly name: string;
   readonly isDirectory: boolean;
-  readonly size?: number;
+  readonly size: number;
 }) {
   const Icon = getFileIconComponent(name, isDirectory);
   return <Icon width={size} height={size} />;
