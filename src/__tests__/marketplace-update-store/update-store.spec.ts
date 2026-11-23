@@ -60,10 +60,7 @@ function fakeMgr(installed: { id: string; version: string }[]) {
 describe('useUpdateStore.refresh', () => {
   beforeEach(() => {
     useUpdateStore.setState({
-      remoteVersions: new Map(),
       available: [],
-      checking: false,
-      lastCheckedAt: null,
     });
     fetchIndex.mockReset();
     fetchManifest.mockReset();
@@ -107,8 +104,6 @@ describe('useUpdateStore.refresh', () => {
     await useUpdateStore.getState().refresh();
     const s = useUpdateStore.getState();
     expect(s.available).toHaveLength(0);
-    expect(s.remoteVersions.has('a')).toBe(false);
-    expect(s.remoteVersions.get('b')).toBe('0.1.0');
   });
 
   it('正路径:remote > local → available 收录;remote = local → 不收', async () => {
@@ -127,14 +122,10 @@ describe('useUpdateStore.refresh', () => {
     await useUpdateStore.getState().refresh();
     const s = useUpdateStore.getState();
 
-    expect(s.checking).toBe(false);
-    expect(s.lastCheckedAt).not.toBeNull();
     expect(s.available).toHaveLength(1);
     expect(s.available[0]?.id).toBe('a');
     expect(s.available[0]?.from).toBe('0.1.0');
     expect(s.available[0]?.to).toBe('0.2.0');
-    expect(s.remoteVersions.get('a')).toBe('0.2.0');
-    expect(s.remoteVersions.get('b')).toBe('0.1.0');
   });
 
   it('并发 refresh:慢的旧 refresh 后 resolve 不覆盖新 refresh 结果(topic49 第八轮 P2-X)', async () => {
@@ -195,8 +186,6 @@ describe('useUpdateStore.refresh', () => {
     const s = useUpdateStore.getState();
 
     expect(s.available.map((u) => u.id)).toEqual(['b']);
-    expect(s.remoteVersions.has('a')).toBe(false);
-    expect(s.remoteVersions.get('b')).toBe('0.5.0');
   });
 
   it('本地未装 → 不入 available', async () => {
@@ -217,7 +206,7 @@ describe('useUpdateStore.refresh', () => {
     expect(useUpdateStore.getState().available).toEqual([]);
   });
 
-  it('index fetch 失败 → console.warn + checking 清零,不抛', async () => {
+  it('index fetch 失败 → console.warn,不抛,available 不变', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     fetchIndex.mockRejectedValue(new Error('offline'));
     // R54:需有已安装插件才会走网络路径(否则空 installed 直接跳过 index fetch)
@@ -226,7 +215,6 @@ describe('useUpdateStore.refresh', () => {
     await useUpdateStore.getState().refresh();
     const s = useUpdateStore.getState();
 
-    expect(s.checking).toBe(false);
     expect(s.available).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('refresh failed'),
@@ -240,14 +228,9 @@ describe('useUpdateStore.refresh', () => {
     getMgr.mockReturnValue(fakeMgr([])); // 没装任何插件
 
     await useUpdateStore.getState().refresh();
-    const remoteVersions = useUpdateStore.getState().remoteVersions;
     expect(fetchIndex).not.toHaveBeenCalled();
     expect(fetchManifest).not.toHaveBeenCalled();
     expect(useUpdateStore.getState().available).toEqual([]);
-    expect(useUpdateStore.getState().lastCheckedAt).not.toBeNull();
-
-    await useUpdateStore.getState().refresh();
-    expect(useUpdateStore.getState().remoteVersions).toBe(remoteVersions);
   });
 
   it('PluginManager 缺失时复用稳定空 installed 快照', () => {
@@ -274,19 +257,14 @@ describe('useUpdateStore.refresh', () => {
     expect((fetchManifest.mock.calls[0]![0] as MarketplaceEntry).id).toBe('b');
   });
 
-  it('R54:已安装插件未命中 index → 跳过 manifest 拉取并复用空 remoteVersions', async () => {
+  it('R54:已安装插件未命中 index → 跳过 manifest 拉取', async () => {
     fetchIndex.mockResolvedValue([entry('a'), entry('b')]);
     getMgr.mockReturnValue(fakeMgr([{ id: 'missing', version: '0.1.0' }]));
 
     await useUpdateStore.getState().refresh();
-    const remoteVersions = useUpdateStore.getState().remoteVersions;
 
     expect(fetchManifest).not.toHaveBeenCalled();
-    expect(remoteVersions).toEqual(new Map());
     expect(useUpdateStore.getState().available).toEqual([]);
-
-    await useUpdateStore.getState().refresh();
-    expect(useUpdateStore.getState().remoteVersions).toBe(remoteVersions);
 
     const src = readFileSync(
       join(process.cwd(), 'src/marketplace/update-store.ts'),
@@ -362,12 +340,9 @@ describe('useUpdateStore.refresh', () => {
   // 修复:dismiss 记目标版本,refresh 提交前过滤同版本。
   it('R78 dismiss 后在途 refresh 用旧快照不复活该 update', async () => {
     useUpdateStore.setState({
-      remoteVersions: new Map(),
       available: [
         { id: 'a', name: 'a', from: '1.0.0', to: '2.0.0', entry: entry('a') },
       ],
-      checking: false,
-      lastCheckedAt: null,
       dismissed: new Map(),
     });
     // reload 尚未落地:mgr 仍报 a@1.0.0(< 远程 2.0.0)。
@@ -438,25 +413,7 @@ describe('useUpdateStore.refresh', () => {
     expect(fetchManifest).toHaveBeenCalledTimes(N);
   });
 
-  it('refresh 期间 checking=true', async () => {
-    let release: () => void = () => {};
-    fetchIndex.mockReturnValue(
-      new Promise<MarketplaceEntry[]>((resolve) => {
-        release = () => resolve([]);
-      }),
-    );
-    // R54:有已安装插件才走网络路径(index fetch 被 held → checking 维持 true)
-    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
-
-    const p = useUpdateStore.getState().refresh();
-    expect(useUpdateStore.getState().checking).toBe(true);
-    release();
-    await p;
-    expect(useUpdateStore.getState().checking).toBe(false);
-  });
-
-  it('refresh 已处于 checking=true 时不重复通知等价入口状态', async () => {
-    useUpdateStore.setState({ checking: true });
+  it('refresh 结果与当前相同(仍无可用更新)→ 不通知订阅者', async () => {
     let release: () => void = () => {};
     fetchIndex.mockReturnValue(
       new Promise<MarketplaceEntry[]>((resolve) => {

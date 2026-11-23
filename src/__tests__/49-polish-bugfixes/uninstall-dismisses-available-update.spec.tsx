@@ -91,10 +91,7 @@ beforeEach(() => {
   getMgr.mockReturnValue(null);
   getPerm.mockReturnValue(null);
   useUpdateStore.setState({
-    remoteVersions: new Map(),
     available: [avail('p.del'), avail('p.keep')],
-    checking: false,
-    lastCheckedAt: null,
   });
 });
 

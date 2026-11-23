@@ -35,10 +35,7 @@ function avail(id: string, from = '1.0.0', to = '2.0.0'): AvailableUpdate {
 
 beforeEach(() => {
   useUpdateStore.setState({
-    remoteVersions: new Map(),
     available: [avail('a'), avail('b')],
-    checking: false,
-    lastCheckedAt: null,
   });
 });
 

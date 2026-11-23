@@ -1,5 +1,5 @@
 // 启动更新检查必须排在用户插件扫描完成之后:refresh() 先同步读 listAll() 按已安装规模裁剪网络(打磨 R54),
-// 扫描尚在等 listPluginDirs IPC 时 listAll() 恒为空 → 直接落空并盖上 lastCheckedAt,已装插件有新版本也
+// 扫描尚在等 listPluginDirs IPC 时 listAll() 恒为空 → 直接落空,已装插件有新版本也
 // 永远不出 IconSidebar 角标。
 // perf:挂在「扫描完成」(whenScanned)而非整个 init 上 —— 某插件激活挂在授权弹窗 / onload 上时 init 可能永不完成,
 // 而 refresh 只需 manifest。popout 子窗口无 IconSidebar 角标 → 不检查(init 照常)。

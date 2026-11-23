@@ -180,7 +180,7 @@ export async function fetchPluginManifest(
   const json = await readJsonCapped(r, MAX_MANIFEST_BYTES);
   // 边界(E80,E74 字段上限族):远端 manifest 的 id/name/version 此前只做 string 类型校验,
   // 无字段长度 / semver 上限 —— 1MiB 内可返超长 version(如 999.999.999-<超长后缀>)进
-  // update-store 的 remoteVersions/available.to,在更新按钮 tooltip/文案放大渲染。复用本地
+  // update-store 的 available.to,在更新按钮 tooltip/文案放大渲染。复用本地
   // ManifestSchema 的 id/name/version 校验(.max + SEMVER_RE,E74 单一来源,避免漂移),
   // 不合规 → 抛(caller 当该插件 update-check 失败跳过)。
   const parsed = RemoteSnapshotSchema.safeParse(json);

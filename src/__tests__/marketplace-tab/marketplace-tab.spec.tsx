@@ -74,9 +74,6 @@ beforeEach(() => {
   getMgr.mockReset();
   useUpdateStore.setState({
     available: [],
-    remoteVersions: new Map(),
-    checking: false,
-    lastCheckedAt: null,
   });
   useReviewsStore.setState({
     byPid: new Map(),

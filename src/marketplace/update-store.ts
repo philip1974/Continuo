@@ -29,17 +29,10 @@ export interface AvailableUpdate {
 
 const EMPTY_AVAILABLE_UPDATES: readonly AvailableUpdate[] = [];
 const EMPTY_INSTALLED_PLUGINS: readonly PluginListItem[] = [];
-const EMPTY_REMOTE_VERSIONS: ReadonlyMap<string, string> = new Map();
 
 interface UpdateState {
-  /** id → 远程最新 version(已知的). */
-  readonly remoteVersions: ReadonlyMap<string, string>;
   /** 本地装了 + 有更新可用的清单. */
   readonly available: readonly AvailableUpdate[];
-  /** 是否正在 refresh. */
-  readonly checking: boolean;
-  /** 最后一次 refresh 时间(ms),null 表示还没跑过. */
-  readonly lastCheckedAt: number | null;
   /**
    * race(R78):被 dismiss 的「id → 目标版本」抑制集。dismiss(id) 只乐观删 available 不能让
    * 在途 refresh() 失效;旧 refresh 在 dismiss 之后、mgr.reload() 落地之前提交时,会用仍是
@@ -93,10 +86,7 @@ export function dismissAvailableUpdateFromList(
 }
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
-  remoteVersions: EMPTY_REMOTE_VERSIONS,
   available: EMPTY_AVAILABLE_UPDATES,
-  checking: false,
-  lastCheckedAt: null,
   dismissed: new Map(),
 
   dismiss: (id) =>
@@ -111,7 +101,9 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   refresh: async () => {
     const myGen = ++refreshGen;
-    set((s) => (s.checking ? s : { checking: true }));
+    // 没有可能的更新 → 清空(已为空则不通知订阅者)。
+    const clearAvailable = (): void =>
+      set((s) => (s.available.length === 0 ? s : { available: EMPTY_AVAILABLE_UPDATES }));
     try {
       // 先读本地已安装(打磨 R54):只有已安装插件可能"有更新",故按已安装规模裁剪
       // 网络。没装任何 marketplace 插件 → 直接落空,跳过 index + 全部 manifest 请求。
@@ -119,12 +111,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const installed = mgr ? mgr.listAll() : EMPTY_INSTALLED_PLUGINS;
       if (installed.length === 0) {
         if (myGen !== refreshGen) return;
-        set({
-          remoteVersions: EMPTY_REMOTE_VERSIONS,
-          available: EMPTY_AVAILABLE_UPDATES,
-          checking: false,
-          lastCheckedAt: Date.now(),
-        });
+        clearAvailable();
         return;
       }
       const installedIds = new Set<string>();
@@ -144,12 +131,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       }
       if (relevant === null || entriesById === null) {
         if (myGen !== refreshGen) return;
-        set({
-          remoteVersions: EMPTY_REMOTE_VERSIONS,
-          available: EMPTY_AVAILABLE_UPDATES,
-          checking: false,
-          lastCheckedAt: Date.now(),
-        });
+        clearAvailable();
         return;
       }
       relevant.length = relevantCount;
@@ -216,18 +198,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const nextAvailable =
         available === null ? EMPTY_AVAILABLE_UPDATES : available;
 
-      // 更晚的 refresh 已开始 → 丢弃本次过期结果(由最新代际负责落库 + 清 checking)
+      // 更晚的 refresh 已开始 → 丢弃本次过期结果(由最新代际负责落库)
       if (myGen !== refreshGen) return;
-      set({
-        remoteVersions,
-        available: nextAvailable,
-        checking: false,
-        lastCheckedAt: Date.now(),
-      });
+      set({ available: nextAvailable });
     } catch (err) {
       console.warn('[update-store] refresh failed', err);
-      if (myGen !== refreshGen) return;
-      set({ checking: false });
     }
   },
 }));

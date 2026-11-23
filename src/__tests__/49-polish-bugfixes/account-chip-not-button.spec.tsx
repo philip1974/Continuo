@@ -25,9 +25,6 @@ beforeEach(() => {
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
   useUpdateStore.setState({
     available: [],
-    remoteVersions: new Map(),
-    checking: false,
-    lastCheckedAt: null,
   });
   (coApp as { ribbon: RibbonRegistry }).ribbon = new RibbonRegistry();
 });

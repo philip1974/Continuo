@@ -35,7 +35,7 @@ function installApi(): void {
 beforeEach(() => {
   _resetLmApiForTest();
   fetchAllReviewsMock.mockClear();
-  useUpdateStore.setState({ available: [], remoteVersions: new Map(), checking: false, lastCheckedAt: null });
+  useUpdateStore.setState({ available: [] });
   useReviewsStore.setState({ byPid: new Map(), loading: false, error: null, lastFetchedAt: null });
   installApi();
 });
