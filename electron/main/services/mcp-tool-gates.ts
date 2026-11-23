@@ -18,8 +18,8 @@ import { codedError } from '../../shared/error-message';
  */
 export type EnsureAuthorized = (
   ownerWindowId: number,
-  method?: string,
-  external?: boolean,
+  method: string,
+  external: boolean,
 ) => Promise<'once' | 'session' | 'denied'>;
 
 export interface AuthGateOptions {

@@ -70,6 +70,7 @@ import {
   type StdioSocketServer,
 } from './services/mcp-stdio-server.service';
 import { makeTerminalMcpTools } from './services/mcp-terminal-host';
+import type { EnsureAuthorized } from './services/mcp-tool-gates';
 import {
   cancelAgentTerminalCreates,
   hasAgentTerminalCreates,
@@ -1050,6 +1051,10 @@ async function createSessionForAgent(
   return r;
 }
 
+/** MCP 工具(终端 / debug / 插件三个域)共用的授权入口:转给 renderer 的授权弹窗。 */
+const ensureAgentAuthorized: EnsureAuthorized = (ownerWindowId, method, external) =>
+  requestAgentAuth({ method, ownerWindowId, external });
+
 async function startMcpHost(): Promise<void> {
   let brokerStarted = false;
   const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
@@ -1094,12 +1099,7 @@ async function startMcpHost(): Promise<void> {
         service: termService,
         getSessionOwner,
         getSessionController: (id) => terminalSessions.getController(id),
-        ensureAuthorized: (ownerWindowId: number, method?: string, external?: boolean) =>
-          requestAgentAuth({
-            method: method ?? 'terminal.create_session',
-            ownerWindowId,
-            ...(external === true ? { external } : {}),
-          }),
+        ensureAuthorized: ensureAgentAuthorized,
         createSession: createSessionForAgent,
         installStopHook,
         // 安全:await_stop_hook 与 read_output 同走 auth + per-session capability 门控
@@ -1122,12 +1122,7 @@ async function startMcpHost(): Promise<void> {
         getSessionOwner: (id) => debugSessions.get(id)?.ownerWindowId ?? null,
         getSessionController: (id) =>
           debugSessions.get(id)?.controllerToken ?? null,
-        ensureAuthorized: (ownerWindowId: number, method?: string, external?: boolean) =>
-          requestAgentAuth({
-            method: method ?? 'debug.*',
-            ownerWindowId,
-            ...(external === true ? { external } : {}),
-          }),
+        ensureAuthorized: ensureAgentAuthorized,
       }),
     ];
     // 安全(F1):HTTP session 释放 / token 吊销回收其在途创建与 debug 会话;空闲驱逐跳过名下仍有活跃资源的 session。
@@ -1348,13 +1343,7 @@ app.whenReady().then(async () => {
   // tools/list_changed 通知同时推 HTTP SSE + stdio 客户端,Codex/Claude Code 收到自动重拉;
   // stdio 用取值函数:就绪前只推 HTTP,就绪后同时推 stdio。
   if (mcpHost) {
-    startPluginMcpIpc(mcpHost, () => mcpStdio, (ownerWindowId, method, external) =>
-      requestAgentAuth({
-        method: method ?? 'plugin.*',
-        ownerWindowId,
-        ...(external === true ? { external } : {}),
-      }),
-    );
+    startPluginMcpIpc(mcpHost, () => mcpStdio, ensureAgentAuthorized);
   }
   // 冷启动开窗模式决策(issue #30):有 dock 缓冲目录 → dock 模式,
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;

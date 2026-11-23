@@ -41,6 +41,7 @@ import type { OriginHint } from '../../shared/origin-hint';
 import { PATH_MAX, LABEL_MAX } from '../../shared/terminal-create';
 import { AttachTargetSchema } from '../../shared/terminal-attach';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
+import type { EnsureAuthorized } from './mcp-tool-gates';
 import { trackAgentTerminalCreate } from './agent-terminal-inflight';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
@@ -223,11 +224,7 @@ export interface CreateSessionToolDeps {
    *  - 'once' / 'session' → 通过
    *  - 'denied' → 拒绝
    */
-  readonly ensureAuthorized: (
-    ownerWindowId: number,
-    method?: string,
-    external?: boolean,
-  ) => Promise<'once' | 'session' | 'denied'>;
+  readonly ensureAuthorized: EnsureAuthorized;
   /**
    * 实际 spawn PTY + 入 sessions service。由 main 启动入口注入,把
    * `electron/main/ipc/terminal.ipc.ts` 的 createHandler 包一层(以脱离 BrowserWindow 上下文)。
@@ -333,7 +330,11 @@ export function makeCreateSessionTool(
     ctx: McpCallCtx & { readonly signal: AbortSignal },
   ): Promise<CreateSessionOutput> {
     // 安全(F2):外部客户端(stdio 未发 hello)带 external 标记,不借窗口级授权。
-    const decision = await deps.ensureAuthorized(ctx.ownerWindowId, undefined, ctx.external === true);
+    const decision = await deps.ensureAuthorized(
+      ctx.ownerWindowId,
+      MCP_TOOL_CREATE_SESSION,
+      ctx.external === true,
+    );
     if (decision === 'denied') {
       throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'agent terminal not authorized by user');
     }

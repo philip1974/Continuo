@@ -93,7 +93,7 @@ describe('F2 · create_session 授权带 external 标记', () => {
     await expect(tool.run({} as never, ctx)).rejects.toMatchObject({
       code: 'AGENT_NOT_AUTHORIZED',
     });
-    expect(ensureAuthorized).toHaveBeenCalledWith(1, undefined, expected);
+    expect(ensureAuthorized).toHaveBeenCalledWith(1, 'terminal.create_session', expected);
   });
 });
 
