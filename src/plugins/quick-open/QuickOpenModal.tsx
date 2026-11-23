@@ -159,12 +159,7 @@ function QuickOpenBody() {
   );
   const filtered = useMemo(
     () =>
-      fuzzyFilter(
-        liveResults,
-        query,
-        (f) => f.relPath,
-        (f) => f.relPathLower,
-      ),
+      fuzzyFilter(liveResults, query, (f) => f.relPathLower),
     [liveResults, query],
   );
 

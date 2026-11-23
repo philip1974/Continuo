@@ -32,37 +32,27 @@ function fuzzyScoreBothLower(q: string, t: string): number | null {
   return score;
 }
 
-/**
- * q 必须**已 lowercase**(打磨 R51)。target 在此 lowercase。
- */
-function fuzzyScoreLower(q: string, target: string): number | null {
-  if (q.length > target.length) return null;
-  return fuzzyScoreBothLower(q, target.toLowerCase());
-}
-
+/** 单条打分(大小写不敏感);不匹配 → null。批量过滤用 fuzzyFilter(target 预小写,不逐条 lowercase)。 */
 export function fuzzyScore(query: string, target: string): number | null {
   if (!query) return 0;
-  return fuzzyScoreLower(query.toLowerCase(), target);
+  return fuzzyScoreBothLower(query.toLowerCase(), target.toLowerCase());
 }
 
 export function fuzzyFilter<T>(
   items: readonly T[],
   query: string,
-  getStr: (t: T) => string,
   /**
-   * 性能 P16:可选——返回**已 lowercase** 的 target(scan 时预计算、跨按键稳定)。
-   * 提供时跳过每 item 每按键的 `target.toLowerCase()`;打分语义与 getStr 路径逐字节一致。
+   * 性能 P16:返回**已 lowercase** 的 target(调用方在数据变化时预计算、跨按键稳定),
+   * 避免每 item 每按键 `target.toLowerCase()`。
    */
-  getStrLower?: (t: T) => string,
+  getStrLower: (t: T) => string,
 ): readonly T[] {
   if (items.length === 0) return items;
   if (!query) return items;
   const q = query.toLowerCase(); // 整批一次(打磨 R51),循环内复用
   if (items.length === 1) {
     const item = items[0]!;
-    const score = getStrLower
-      ? fuzzyScoreBothLower(q, getStrLower(item))
-      : fuzzyScoreLower(q, getStr(item));
+    const score = fuzzyScoreBothLower(q, getStrLower(item));
     return score === null ? EMPTY_FUZZY_RESULTS : items;
   }
   let matched: T[] | null = null;
@@ -71,9 +61,7 @@ export function fuzzyFilter<T>(
   let prevScore = Infinity;
   let scoresSorted = true;
   for (const item of items) {
-    const s = getStrLower
-      ? fuzzyScoreBothLower(q, getStrLower(item))
-      : fuzzyScoreLower(q, getStr(item));
+    const s = fuzzyScoreBothLower(q, getStrLower(item));
     if (s !== null) {
       if (matched === null) {
         matched = new Array<T>(items.length);

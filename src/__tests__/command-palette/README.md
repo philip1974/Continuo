@@ -21,7 +21,7 @@
   - 0 = query 为空(全匹配)
   - 越高越优:首字母 / 词边界(. _ - space 后)+10,普通匹配 +1,连续匹配 +5
   - 大小写不敏感
-- `fuzzyFilter(items, query, getStr)`:按 score 降序返候选
+- `fuzzyFilter(items, query, getStrLower)`:按 score 降序返候选(getStrLower 返回预小写的 target)
 
 ### store
 

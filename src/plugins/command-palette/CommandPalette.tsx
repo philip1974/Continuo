@@ -48,10 +48,6 @@ export interface DisplayCommand {
   readonly matchSourceLower: string;
 }
 
-function matchSource(d: DisplayCommand): string {
-  return d.displayCategory ? `${d.displayCategory} ${d.displayTitle}` : d.displayTitle;
-}
-
 function matchSourceLower(d: DisplayCommand): string {
   return d.matchSourceLower;
 }
@@ -287,7 +283,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   const filtered = useMemo(() => {
     if (effectiveQuery) {
       // 有 query → fuzzy 匹配 displayCategory + displayTitle
-      return fuzzyFilter(displayCommands, effectiveQuery, matchSource, matchSourceLower);
+      return fuzzyFilter(displayCommands, effectiveQuery, matchSourceLower);
     }
     // 空 query → recent 置顶 + 其余按 displayTitle 字母序
     return sortByRecent(displayCommands, recentIds);

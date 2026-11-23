@@ -67,13 +67,13 @@ describe('fuzzyFilter', () => {
       { id: 'c', name: 'save all' },
       { id: 'd', name: 'reload' },
     ];
-    const r = fuzzyFilter(items, 'save', (i) => i.name);
+    const r = fuzzyFilter(items, 'save', (i) => i.name.toLowerCase());
     expect(r.map((x) => x.id)).toEqual(['a', 'c']);
   });
 
   it('空 query → 原序返回全部', () => {
     const items = [{ id: 'a' }, { id: 'b' }];
-    const r = fuzzyFilter(items, '', (i) => i.id);
+    const r = fuzzyFilter(items, '', (i) => i.id.toLowerCase());
     expect(r).toEqual(items);
     expect(r).toBe(items);
   });
@@ -83,7 +83,7 @@ describe('fuzzyFilter', () => {
     const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
 
     try {
-      const r = fuzzyFilter(items, 'save', (i) => i.id);
+      const r = fuzzyFilter(items, 'save', (i) => i.id.toLowerCase());
       expect(r).toBe(items);
       expect(lowerSpy).not.toHaveBeenCalled();
     } finally {
@@ -100,7 +100,7 @@ describe('fuzzyFilter', () => {
     const mapSpy = vi.spyOn(Array.prototype, 'map');
 
     try {
-      const r = fuzzyFilter(items, 'save', (i) => i.name);
+      const r = fuzzyFilter(items, 'save', (i) => i.name.toLowerCase());
       const mapCallsDuringFilter = mapSpy.mock.calls.length;
       expect(r.map((x) => x.id)).toEqual(['a', 'b']);
       expect(mapCallsDuringFilter).toBe(0);
@@ -119,8 +119,8 @@ describe('fuzzyFilter', () => {
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
-      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual(['a']);
-      expect(fuzzyFilter(items, 'zzzz', (i) => i.name)).toEqual([]);
+      expect(fuzzyFilter(items, 'save', (i) => i.name.toLowerCase()).map((x) => x.id)).toEqual(['a']);
+      expect(fuzzyFilter(items, 'zzzz', (i) => i.name.toLowerCase())).toEqual([]);
       expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
@@ -136,7 +136,7 @@ describe('fuzzyFilter', () => {
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
-      expect(fuzzyFilter(items, 'save', (i) => i.name).map((x) => x.id)).toEqual(['a', 'b']);
+      expect(fuzzyFilter(items, 'save', (i) => i.name.toLowerCase()).map((x) => x.id)).toEqual(['a', 'b']);
       expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
@@ -146,8 +146,8 @@ describe('fuzzyFilter', () => {
   it('单项匹配时直接复用原列表引用', () => {
     const items = [{ id: 'a', name: 'save file' }];
 
-    expect(fuzzyFilter(items, 'save', (i) => i.name)).toBe(items);
-    expect(fuzzyFilter(items, 'zzzz', (i) => i.name)).toEqual([]);
+    expect(fuzzyFilter(items, 'save', (i) => i.name.toLowerCase())).toBe(items);
+    expect(fuzzyFilter(items, 'zzzz', (i) => i.name.toLowerCase())).toEqual([]);
   });
 
   it('无匹配结果 → 复用稳定空列表', () => {
@@ -156,8 +156,8 @@ describe('fuzzyFilter', () => {
       { id: 'b', name: 'open folder' },
     ];
 
-    const a = fuzzyFilter(items, 'zzzz', (i) => i.name);
-    const b = fuzzyFilter(items, 'yyyy', (i) => i.name);
+    const a = fuzzyFilter(items, 'zzzz', (i) => i.name.toLowerCase());
+    const b = fuzzyFilter(items, 'yyyy', (i) => i.name.toLowerCase());
 
     expect(a).toEqual([]);
     expect(b).toBe(a);
@@ -169,7 +169,7 @@ describe('fuzzyFilter', () => {
     expect(fuzzyFilter.toString()).not.toContain('const scores = new Array(items.length)');
   });
 
-  it('query 长于 target 时直接判不匹配,不 lower target', () => {
+  it('fuzzyFilter 自身只 lower 一次 query,不 lower target(target 由调用方预小写)', () => {
     const items = [
       { id: 'a', name: 'a' },
       { id: 'b', name: 'bb' },
@@ -179,34 +179,10 @@ describe('fuzzyFilter', () => {
     try {
       expect(fuzzyFilter(items, 'abcdef', (i) => i.name)).toEqual([]);
       const lowerCallsDuringFilter = lowerSpy.mock.calls.length;
-      // 只允许 query.toLowerCase() 一次;target 长度已不足,不应再 lower 每个 target。
+      // 只允许 query.toLowerCase() 一次。
       expect(lowerCallsDuringFilter).toBe(1);
     } finally {
       lowerSpy.mockRestore();
-    }
-  });
-});
-
-describe('perf P16 · getStrLower 预 lowercase 入口与原路径逐字节一致', () => {
-  const items = [
-    { id: '1', s: 'Src/Foo/Bar.TS' },
-    { id: '2', s: 'README.md' },
-    { id: '3', s: 'src/index.ts' },
-    { id: '4', s: 'Components/App.TSX' },
-    { id: '5', s: 'lib/UTIL.ts' },
-  ];
-  const queries = ['s', 'sr', 'src', 'foo', 'TS', 'rdme', 'app', 'xyz', ''];
-
-  it('对各种混合大小写 query/target,有无 getStrLower 结果排序完全相同', () => {
-    for (const q of queries) {
-      const a = fuzzyFilter(items, q, (i) => i.s).map((x) => x.id);
-      const b = fuzzyFilter(
-        items,
-        q,
-        (i) => i.s,
-        (i) => i.s.toLowerCase(),
-      ).map((x) => x.id);
-      expect(b).toEqual(a);
     }
   });
 });

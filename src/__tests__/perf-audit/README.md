@@ -138,7 +138,7 @@
 
 **修复**:`fuzzy.ts` 抽 `fuzzyScoreBothLower`(q 与 t 均已 lower)+ `fuzzyFilter` 加可选 `getStrLower`(返回预 lower 的 target)。`QuickOpenFile` 加 `relPathLower` 字段(walk-files scan 时算一次),QuickOpenModal 传 `getStrLower=(f)=>f.relPathLower`。query 仍每批 lower 一次,打分/排序逐字节一致(`relPath.toLowerCase()` 与 `target.toLowerCase()` 同操作)。每按键 O(候选总长) lowercasing → 0(scan 时一次)。
 
-**契约不变量**(`command-palette/fuzzy.spec.ts` perf P16:对多种混合大小写 query/target,有无 getStrLower 结果排序完全相同)。
+**后续**:生产两个调用点都传预小写 target,未预小写的 `getStr` 路径(及 `fuzzyScoreLower`)已删,`getStrLower` 成为唯一入参。
 
 ## E1 — co-app 跳行处动态 import scrollToLine(CodeMirror 不进 main-app 启动包)
 
