@@ -32,7 +32,7 @@ export function getFileIconComponent(
 export function FileIcon(props: {
   name: string;
   isDirectory: boolean;
-  size?: number;  // 默认 16
+  size: number;
 }): JSX.Element;
 ```
 
@@ -69,7 +69,7 @@ export function FileIcon(props: {
 
 按优先级:
 
-1. **特殊文件名精确匹配**(case-sensitive 优先,失败再 case-insensitive)
+1. **特殊文件名匹配**(case-insensitive)
    - `package.json` / `package-lock.json` → `NPM`
    - `pnpm-lock.yaml` / `pnpm-workspace.yaml` → `PNPM`
    - `yarn.lock` → `Yarn`

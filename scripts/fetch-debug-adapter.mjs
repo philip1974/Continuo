@@ -259,7 +259,7 @@ async function main() {
 
     // 解包的正是刚校验过的那份 buffer。extractEntries 先整体删除 adapterRoot(含旧缓存与标记)。
     const entries = parseTarGz(source.buffer);
-    await extractEntries(entries, path.resolve(adapterRoot));
+    await extractEntries(entries, adapterRoot);
 
     if (!(await fileExists(dapServerPath))) {
       failClear('extraction finished but dapDebugServer.js is missing', {

@@ -117,7 +117,7 @@ import { ownValue } from '../../../electron/shared/own-value';
 
 type IconComp = ComponentType<{ width: number; height: number }>;
 
-// 特殊文件名(精确,case-sensitive 优先,大小写不敏感兜底)
+// 特殊文件名(大小写不敏感匹配,见下方 SPECIAL_FILE_NAMES_LOWER)
 const SPECIAL_FILE_NAMES: Readonly<Record<string, IconComp>> = {
   'package.json': NPM,
   'package-lock.json': NPM,

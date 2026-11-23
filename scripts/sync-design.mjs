@@ -132,7 +132,6 @@ if (!existsSync(NOUS_UI_SRC)) {
 }
 
 let synced = 0;
-let drifted = 0;
 let unchanged = 0;
 const drifts = [];
 
@@ -162,13 +161,12 @@ for (const entry of FILES) {
       );
       synced++;
     }
-  } else if (entry.mode === 'fork') {
+  } else {
     if (same) {
       unchanged++;
     } else {
       console.log(`⚠ fork drift: ${entry.dest}`);
-      console.log(`  reason: ${entry.reason ?? '(no reason)'}`);
-      drifted++;
+      console.log(`  reason: ${entry.reason}`);
       drifts.push(entry);
     }
   }
@@ -195,10 +193,10 @@ if (newFiles.length > 0) {
 
 // ── 总结 ────────────────────────────────────────────────
 console.log(
-  `\nSummary: ${synced} ${CHECK_ONLY ? 'would sync' : 'synced'}, ${drifted} fork drift, ${unchanged} unchanged${newFiles.length > 0 ? `, ${newFiles.length} new in Nous` : ''}`,
+  `\nSummary: ${synced} ${CHECK_ONLY ? 'would sync' : 'synced'}, ${drifts.length} fork drift, ${unchanged} unchanged${newFiles.length > 0 ? `, ${newFiles.length} new in Nous` : ''}`,
 );
 
-if (drifted > 0) {
+if (drifts.length > 0) {
   console.log('\n⚠ Fork 漂移列表:');
   for (const d of drifts) console.log(`  - ${d.dest}: ${d.reason}`);
   console.log('  → 手工 merge:对比 Nous 与 LM,合并 upstream 变化,保留 LM 微调');
@@ -209,4 +207,4 @@ if (drifted > 0) {
 // - CHECK_ONLY 下 fork 项漂移 → 不算 fail (LM 有意保留的分歧, reason 已声明)
 // - 写盘模式下 fork 项漂移 → fail (提醒手工 merge upstream 变化)
 if (CHECK_ONLY && synced > 0) process.exit(1);
-if (!CHECK_ONLY && drifted > 0) process.exit(1);
+if (!CHECK_ONLY && drifts.length > 0) process.exit(1);
