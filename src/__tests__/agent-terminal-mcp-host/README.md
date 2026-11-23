@@ -2,7 +2,7 @@
 
 行为契约:**main process 内置 MCP host 的契约层**:token 生成 / Bearer 校验 /
 JSON-RPC 2.0 收发解析。HTTP / SSE 真行为(socket 监听 / SSE 推送)
-留 E2E 验证;本主题只测**纯函数层**——可在 node 环境直接跑、不起真端口。
+留 E2E 验证;本主题测 token 生成、RPC 编解码等纯函数,并经真实 `createMcpHost({})`(监听回环随机端口,不发 HTTP 请求)测 `verifyAndResolveCtx`。
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §4
 
@@ -22,7 +22,7 @@ JSON-RPC 2.0 收发解析。HTTP / SSE 真行为(socket 监听 / SSE 推送)
 | `formatRpcResult(id, result)` | `(id, unknown) => string` | 编码响应(返回 JSON 字符串) |
 | `formatRpcError(id, code, message, data?)` | `(id, number, string, unknown?) => string` | 编码错误 |
 
-`createMcpHost(deps?)` 工厂(包 HTTP 实例)**不**在本主题测,留 E2E。
+`createMcpHost(deps?)` 的 HTTP 路由 / SSE / 生命周期**不**在本主题测,留 E2E(本主题只借它构造实例测 `verifyAndResolveCtx`)。
 
 ## 关键行为
 

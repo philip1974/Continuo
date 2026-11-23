@@ -1,5 +1,5 @@
 // BDD: agent-terminal-mcp-host
-// 测 main process MCP host 的纯函数契约层。HTTP/SSE 真行为留 E2E。
+// 测 main process MCP host 的纯函数契约层 + verifyAndResolveCtx(经真实 createMcpHost 构造)。HTTP/SSE 真行为留 E2E。
 //
 // 此 spec 在 Phase 1 实装前会 red(module 不存在)。实装目标:
 //   electron/main/services/mcp-host.service.ts 按下面 import 的形态 export。

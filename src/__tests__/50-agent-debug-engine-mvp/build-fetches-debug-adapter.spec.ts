@@ -1,6 +1,6 @@
 // 终审 P1:js-debug adapter 不在 git 里(.gitignore),只有 CI 会执行 scripts/fetch-debug-adapter.mjs;
 // 本地 `pnpm build:app*`(发布流程即在本地打包)不下载它,electron-builder 对缺失的 extraResources 只警告 →
-// 干净检出产出的安装包调试功能完全不可用。打包前必须确保 adapter 已就位(脚本已存在时直接跳过,无网络开销)。
+// 干净检出产出的安装包调试功能完全不可用。打包前必须确保 adapter 已就位(缓存标记与版本 / sha256 / 树哈希全部吻合时跳过,无网络开销;否则删除重下)。
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

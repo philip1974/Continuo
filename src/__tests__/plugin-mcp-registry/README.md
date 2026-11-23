@@ -91,8 +91,8 @@ export class PluginMcpError extends Error {
 - Disposable.dispose 后再 invokeLocal(name, ...) → reject `PluginMcpError` with code `NO_SUCH_TOOL`
   (因本地表已摘,与"从未注册"行为一致;不区分 TOOL_DISPOSED)
 
-> `TOOL_DISPOSED` 错误码保留供未来"已 dispose 但 name 仍未被复用"场景用,
-> 本主题暂不区分,只保证 dispose 后 invokeLocal 抛 `NO_SUCH_TOOL`。
+> renderer 侧 invokeLocal 不区分,dispose 后一律抛 `NO_SUCH_TOOL`;`TOOL_DISPOSED` 由 main bridge 在工具注销时
+> 用于结束其在途 invoke(见 plugin-mcp-multi-window)。
 
 ### 多个 tool 共存
 
