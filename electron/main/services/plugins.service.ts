@@ -702,19 +702,7 @@ function collectValidCapped<T>(
   isValid: (x: unknown) => x is T,
   max: number,
 ): T[] {
-  let out: T[] | null = null;
-  let outCount = 0;
-  for (const x of arr) {
-    if (outCount >= max) break;
-    if (isValid(x)) {
-      out ??= new Array<T>(Math.min(arr.length, max));
-      out[outCount] = x;
-      outCount += 1;
-    }
-  }
-  if (out === null) return [];
-  out.length = outCount;
-  return out;
+  return collectMappedValidCapped(arr, isValid, (x) => x, max);
 }
 
 function collectMappedValidCapped<T, U>(
@@ -1110,13 +1098,8 @@ export async function uninstallPlugin(
   // 的 swap(access → rename 就位)互斥串行。否则跨窗口「卸载 vs 安装/更新同 id」交错:卸载的
   // rm(targetDir) 可能删掉刚 rename 就位的新版本,或清掉新安装应保留的元数据 → 安装成功却插件消失/
   // 状态不一致。id 校验廉价、无副作用,放锁外。
-  return withPluginMutationLock(id, async () => {
+  return withInstalledPluginLock(baseDir, id, async () => {
     const targetDir = path.join(baseDir, id);
-    try {
-      await fs.access(targetDir);
-    } catch {
-      throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
-    }
     // 数据安全(P1):先清「会抛的」持久化元数据,**再**删目录(fail-fast)。旧顺序
     // 先删目录后清元数据,若清理抛错(如 writePluginPathScopes 在 scopes 文件损坏时抛 —— 见
     // #12)会留下「目录已删但卸载 reject」的半提交:PluginManager.uninstall 不 entries.delete,
