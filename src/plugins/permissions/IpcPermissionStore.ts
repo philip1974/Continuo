@@ -13,11 +13,7 @@ import type {
   PermissionStore,
 } from '../permissions';
 import type { PathScope } from '../types';
-import type {
-  IpcPermissionMutation,
-  IpcPermissionRecord,
-  IpcPermissionsMap,
-} from '../../../electron/shared/plugins-channels';
+import type { IpcPermissionMutation } from '../../../electron/shared/plugins-channels';
 import {
   isIpcPathScope,
   isIpcPermissionDecision,
@@ -139,25 +135,6 @@ export function parsePermissionState(raw: unknown): PermissionState {
     }
   }
   return out;
-}
-
-export function serializePermissionState(
-  state: PermissionState,
-): IpcPermissionsMap {
-  const out: Record<string, IpcPermissionRecord> = {};
-  for (const pluginId in state) {
-    if (!Object.prototype.hasOwnProperty.call(state, pluginId)) continue;
-    out[pluginId] = serializePermissionRecord(state[pluginId]!);
-  }
-  return out;
-}
-
-/** 单条记录序列化:无 pathScopes → 旧数组形态;有 → 新对象形态. */
-function serializePermissionRecord(
-  record: PermissionRecord,
-): IpcPermissionRecord {
-  if (record.pathScopes === undefined) return record.decisions;
-  return { decisions: record.decisions, pathScopes: record.pathScopes };
 }
 
 export class IpcPermissionStore implements PermissionStore {

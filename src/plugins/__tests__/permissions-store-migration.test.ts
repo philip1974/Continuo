@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  parsePermissionState,
-  serializePermissionState,
-} from '../permissions/IpcPermissionStore';
+import { parsePermissionState } from '../permissions/IpcPermissionStore';
 
 describe('IpcPermissionStore permission state migration', () => {
-  it('T4.a deserializes old JSON without pathScopes and writes legacy shape back', () => {
+  it('T4.a deserializes old JSON without pathScopes', () => {
     const oldJson = {
       'com.old': [{ permission: 'fs', granted: true, decidedAt: 1 }],
     };
@@ -16,10 +13,9 @@ describe('IpcPermissionStore permission state migration', () => {
       decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
     });
     expect(parsed['com.old']?.pathScopes).toBeUndefined();
-    expect(serializePermissionState(parsed)).toEqual(oldJson);
   });
 
-  it('T4.b deserializes new JSON with pathScopes and preserves it round-trip', () => {
+  it('T4.b deserializes new JSON with pathScopes', () => {
     const newJson = {
       'com.new': {
         decisions: [{ permission: 'shell', granted: false, decidedAt: 2 }],
@@ -33,7 +29,6 @@ describe('IpcPermissionStore permission state migration', () => {
       decisions: [{ permission: 'shell', granted: false, decidedAt: 2 }],
       pathScopes: [{ path: '/tmp/x', mode: 'rw' }],
     });
-    expect(serializePermissionState(parsed)).toEqual(newJson);
   });
 
   it('T4.c handles mixed JSON with and without pathScopes independently', () => {
@@ -54,28 +49,6 @@ describe('IpcPermissionStore permission state migration', () => {
       decisions: [{ permission: 'clipboard', granted: true, decidedAt: 4 }],
       pathScopes: [{ path: '/tmp/y', mode: 'r' }],
     });
-    expect(serializePermissionState(parsed)).toEqual(mixedJson);
-  });
-
-  it('T4.d round-trips pathScopes content exactly', () => {
-    const state = parsePermissionState({
-      'com.paths': {
-        decisions: [{ permission: 'fs', granted: true, decidedAt: 5 }],
-        pathScopes: [
-          { path: '/tmp/x', mode: 'rw' },
-          { path: '/tmp/y', mode: 'r' },
-        ],
-      },
-    });
-
-    const serialized = serializePermissionState(state);
-    const reparsed = parsePermissionState(serialized);
-
-    expect(reparsed['com.paths']?.pathScopes).toEqual([
-      { path: '/tmp/x', mode: 'rw' },
-      { path: '/tmp/y', mode: 'r' },
-    ]);
-    expect(reparsed).toEqual(state);
   });
 
   it('parsePermissionState 解析 decisions/pathScopes 时预分配数组,不通过 push 扩容', () => {

@@ -138,34 +138,10 @@ export interface PluginListItem {
   readonly warning?: PluginWarning;
 }
 
-const EMPTY_ACTIVATION_ORDER: string[] = [];
 const EMPTY_PLUGIN_LIST: readonly PluginListItem[] = [];
 const EMPTY_PLUGIN_PERMISSIONS: readonly PermissionKey[] = [];
 /** init 预取插件源码的并发上限(读源码 IPC + Blob 生成;激活本身仍串行)。 */
 const PREFETCH_CONCURRENCY = 4;
-
-export function removeActivationOrderId(order: string[], id: string): string[] {
-  if (order.length === 0) return EMPTY_ACTIVATION_ORDER;
-  let next: string[] | null = null;
-  let count = 0;
-  for (let i = 0; i < order.length; i++) {
-    const activeId = order[i]!;
-    if (activeId === id) {
-      if (next === null) {
-        next = new Array<string>(Math.max(0, order.length - 1));
-        for (let j = 0; j < i; j++) {
-          next[count++] = order[j]!;
-        }
-      }
-      continue;
-    }
-    if (next !== null) next[count++] = activeId;
-  }
-  if (next === null) return order;
-  if (count === 0) return EMPTY_ACTIVATION_ORDER;
-  next.length = count;
-  return next;
-}
 
 /**
  * 多个目录声明同一 manifest.id 时的确定性取舍(init 与 reload 共用,保证选中同一目录):
@@ -209,8 +185,6 @@ function uninstalledError(id: string): Error {
 export class PluginManager {
   private entries = new Map<string, PluginEntry>();
   private cachedList: readonly PluginListItem[] | null = null;
-  /** 已激活顺序(用于 shutdown LIFO). */
-  private activationOrder: string[] = [];
   /**
    * Per-id 生命周期串行锁。enable/disable/reload/uninstall 含多个 await 让权点
    * (权限 prompt / _registerPlugin / _activate / IPC),且 reload 由 mtime watcher
@@ -317,7 +291,7 @@ export class PluginManager {
     }
 
     // 重复 manifest.id:只保留一个目录(preferPluginDir,与 reload 同规则)。否则两个都激活,
-    // 后一个 entries.set 覆盖前一个却不停用它 → 孤儿实例(disable/uninstall/shutdown 都够不着)。
+    // 后一个 entries.set 覆盖前一个却不停用它 → 孤儿实例(disable/uninstall 都够不着)。
     const chosen = new Map<string, PluginDirInfo>();
     for (const { dir, manifest } of candidates) {
       const current = chosen.get(manifest.id);
@@ -422,18 +396,6 @@ export class PluginManager {
     });
   }
 
-  /** 关闭所有 active 插件,LIFO 反序. */
-  async shutdown(): Promise<void> {
-    for (let i = this.activationOrder.length - 1; i >= 0; i--) {
-      const id = this.activationOrder[i]!;
-      const entry = this.entries.get(id);
-      if (entry?.instance) {
-        await this.deactivateEntry(entry, `shutdown ${id}`);
-      }
-    }
-    this.activationOrder = [];
-  }
-
   /** 启用单个插件(若已 active 幂等). per-id 串行. */
   async enable(id: string): Promise<void> {
     // 显式启用:同步清除停用意图(须在进锁前 —— 若在锁内清,排在本次启用之后的禁用请求会被抹掉,
@@ -493,7 +455,6 @@ export class PluginManager {
     entry.warning = undefined;
     entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
     this.invalidateListCache();
-    this.activationOrder = removeActivationOrderId(this.activationOrder, entry.id);
   }
 
   /**
@@ -568,7 +529,6 @@ export class PluginManager {
     const wasEnabled = entry.enabledIntent && !this.deactivationIntents.has(id);
     if (entry.instance) {
       await this.deactivateEntry(entry, `reload ${id}`);
-      this.activationOrder = removeActivationOrderId(this.activationOrder, id);
     }
 
     // 解析新 manifest(可能 version / permissions 等变了)
@@ -663,7 +623,6 @@ export class PluginManager {
       if (entry) {
         if (entry.instance) {
           await this.deactivateEntry(entry, `uninstalled ${id}`);
-          this.activationOrder = removeActivationOrderId(this.activationOrder, id);
         }
         // 已停用但残留未回收的 token 再试一次;仍失败只记录(目录已删,不能像本地卸载那样中止)。
         await this.revokePluginFsToken(entry);
@@ -919,8 +878,8 @@ export class PluginManager {
       entry.status = 'failed';
       entry.error = { code: errorCodeOf(err) ?? 'EXCEPTION', message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
-      // 终审 P1:构造函数 / onload 抛错前可能已 exec / execStream 启动 shell 进程;失败实例不进
-      // activationOrder,之后禁用 / 卸载 / shutdown 都走不到 deactivateEntry → 此处同样终止。
+      // 终审 P1:构造函数 / onload 抛错前可能已 exec / execStream 启动 shell 进程;失败实例不挂
+      // entry.instance,之后禁用 / 卸载都走不到 deactivateEntry → 此处同样终止。
       await this.killPluginShellProcesses(entry.id, `activate ${entry.id}`);
       this.invalidateListCache();
       return;
@@ -931,7 +890,6 @@ export class PluginManager {
     this.invalidateListCache();
     // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
     // warning 若 partial grant 已在权限段设了)
-    this.activationOrder.push(entry.id);
   }
 
   private invalidateListCache(): void {
@@ -954,7 +912,7 @@ export class PluginManager {
     } finally {
       entry.instance = undefined;
       await this.revokePluginFsToken(entry);
-      // 终审 P1:disable / uninstall / 远端卸载 / reload / shutdown 都经此处 —— 终止该插件在本窗口的
+      // 终审 P1:disable / uninstall / 远端卸载 / reload 都经此处 —— 终止该插件在本窗口的
       // shell 进程(exec + 流式)。放在 _deactivate 之后:插件 onunload 可先自行收尾(_deactivate 对 onunload
       // 有等待上限,挂起的钩子不会阻塞这里的能力回收)。失败只记录,不阻断停用。
       await this.killPluginShellProcesses(entry.id, label);

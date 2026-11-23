@@ -7,8 +7,6 @@ import {
 import {
   IpcPermissionStore,
   parsePermissionState,
-  serializePermissionState,
-  type PermissionState,
 } from '../../plugins/permissions/IpcPermissionStore';
 
 interface FakePerm {
@@ -416,34 +414,5 @@ describe('E245 parsePermissionState 有界解析 + 字段校验', () => {
     expect(r['com.p']?.decisions).toEqual([
       { permission: 'fs', granted: true, decidedAt: 1700000000000 },
     ]);
-  });
-});
-
-describe('serializePermissionState', () => {
-  it('不对 state 调 Object.entries 全量物化', () => {
-    const state: PermissionState = {
-      'com.a': {
-        decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
-      },
-      'com.b': {
-        decisions: [{ permission: 'network', granted: false, decidedAt: 2 }],
-      },
-    };
-    const entriesSpy = vi.spyOn(Object, 'entries');
-
-    try {
-      const serialized = serializePermissionState(state);
-      const entriesCallsOnState = entriesSpy.mock.calls.filter(
-        ([arg]) => arg === state,
-      ).length;
-
-      expect(entriesCallsOnState).toBe(0);
-      expect(serialized).toEqual({
-        'com.a': [{ permission: 'fs', granted: true, decidedAt: 1 }],
-        'com.b': [{ permission: 'network', granted: false, decidedAt: 2 }],
-      });
-    } finally {
-      entriesSpy.mockRestore();
-    }
   });
 });

@@ -51,7 +51,6 @@ import { Plugin } from '../../plugins/Plugin';
 import {
   findPluginDirByManifestId,
   PluginManager,
-  removeActivationOrderId,
   type ManagerHost,
   type PluginDirInfo,
 } from '../../plugins/PluginManager';
@@ -142,28 +141,6 @@ beforeEach(() => {
 // ── init:扫描 + 激活 ──────────────────────────────────
 
 describe('init 扫描与激活', () => {
-  it('removeActivationOrderId 按需复制激活顺序,不通过 filter 重建', () => {
-    const order = ['a', 'b', 'a', 'c'];
-    const filterSpy = vi.spyOn(Array.prototype, 'filter');
-
-    try {
-      const next = removeActivationOrderId(order, 'a');
-      const filterCallsDuringRemove = filterSpy.mock.calls.length;
-      expect(next).toEqual(['b', 'c']);
-      expect(filterCallsDuringRemove).toBe(0);
-      expect(removeActivationOrderId.toString()).not.toContain('next.push(');
-    } finally {
-      filterSpy.mockRestore();
-    }
-  });
-
-  it('removeActivationOrderId 删除到空时复用稳定空数组', () => {
-    const empty = removeActivationOrderId(['a'], 'a');
-    expect(empty).toEqual([]);
-    expect(removeActivationOrderId(['b'], 'b')).toBe(empty);
-    expect(removeActivationOrderId([], 'missing')).toBe(empty);
-  });
-
   it('enabled 插件被激活,disabled 被发现但不激活', async () => {
     const state: MockHostState = {
       dirs: [
@@ -520,31 +497,6 @@ describe('enable / disable 动态', () => {
     expect(GoodPlugin.loaded).toEqual(['a']);
     await mgr.enable('a');
     expect(GoodPlugin.loaded).toEqual(['a']); // 不重复 load
-  });
-});
-
-// ── shutdown ─────────────────────────────────────────
-
-describe('shutdown', () => {
-  it('LIFO 反序 _deactivate 全部 active', async () => {
-    const state: MockHostState = {
-      dirs: [
-        { id: '1', manifestText: manifestText('1'), moduleUrl: 'mod://1' },
-        { id: '2', manifestText: manifestText('2'), moduleUrl: 'mod://2' },
-        { id: '3', manifestText: manifestText('3'), moduleUrl: 'mod://3' },
-      ],
-      enabled: new Set(['1', '2', '3']),
-      modules: new Map([
-        ['mod://1', { default: GoodPlugin }],
-        ['mod://2', { default: GoodPlugin }],
-        ['mod://3', { default: GoodPlugin }],
-      ]),
-      enabledWritten: new Set(),
-    };
-    const mgr = new PluginManager(fakeApp, makeHost(state));
-    await mgr.init();
-    await mgr.shutdown();
-    expect(GoodPlugin.unloaded).toEqual(['3', '2', '1']);
   });
 });
 
