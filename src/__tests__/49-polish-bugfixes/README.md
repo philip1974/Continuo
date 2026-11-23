@@ -452,7 +452,7 @@
   「读够就 break」是自然写法,会累积孤儿进程。
 
 ### P2-AN scoped-app done 急切 reject 不再成 unhandledrejection — `scoped-app-shell-stream-early-break.spec.ts`
-- `done = start().then(...)` 急切求值,缺 shell 权限时 `ensurePerm` 立即 reject。给 done 挂
+- `done = started.then(...)` 急切求值,缺 shell 权限时 `ensurePerm` 立即 reject。给 done 挂
   no-op `.catch` 标记 handled —— 但真实 `await done` 仍能看到 reject(catch 不吞,只防 unhandled)。
 - 根因: 插件只迭代 chunks(合法,chunks 路径会抛同一错误给 for-await)而从不引用 done 时,
   这个急切 reject 无人处理 → renderer unhandledrejection 噪声 / 误报到崩溃遥测。

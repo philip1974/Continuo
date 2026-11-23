@@ -7,7 +7,7 @@
 // 缺这个钩子 → 永不发 ABORT → 主进程子进程挂到 timeout(最长 30min)+ handler 驻留 +
 // chunkQueue 无界堆积。修复:两层都补 return(),外层委托内层、内层 invoke ABORT。
 //
-// P2-AN 根因:done = start().then(...) 急切求值,start() 的 ensurePerm 缺 shell 权限时
+// P2-AN 根因:done = started.then(...) 急切求值,started 的 ensurePerm 缺 shell 权限时
 // 立即 reject。插件只迭代 chunks(合法)不引用 done → 无人处理 → unhandledrejection 噪声。
 // 修复:给 done 挂 no-op .catch 标记 handled,但真实 await done 仍能看到 reject。
 
@@ -76,8 +76,8 @@ describe('topic49 P2-AM · 提前 break 触发内层 iterator.return()(abort)', 
   });
 });
 
-// race(R94):execStream 急切 start();若消费者在 shell 权限等待期间 break/return(此时内层 iterator
-// 尚为 null),权限 resolve 后 start() 不得再 spawn 子进程(否则已取消命令迟到执行 + 泄漏)。
+// race(R94):execStream 急切启动;若消费者在 shell 权限等待期间 break/return(此时内层 iterator
+// 尚为 null),权限 resolve 后不得再 spawn 子进程(否则已取消命令迟到执行 + 泄漏)。
 describe('race(R94) · 权限等待期间取消 → 权限通过后不 spawn', () => {
   it('权限挂起时 chunks.return() → 权限 grant 后不调 execStreamRaw,done 收敛', async () => {
     (coApi.pluginShellStreamRaw.execStream as ReturnType<typeof vi.fn>).mockClear();
@@ -91,7 +91,7 @@ describe('race(R94) · 权限等待期间取消 → 权限通过后不 spawn', (
     } as unknown as PermissionStore;
 
     const app = createScopedApp(makeApp(), 'p', store);
-    const stream = app.shell.execStream('rm', ['-rf', 'x']); // 急切 start(),卡在 store.get
+    const stream = app.shell.execStream('rm', ['-rf', 'x']); // 急切启动,卡在 store.get
 
     // 消费者在权限等待期间取消(内层 iterator 尚未创建)。
     const it = stream.chunks[Symbol.asyncIterator]();
