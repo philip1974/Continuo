@@ -5,7 +5,7 @@
 
 import type { MarketplaceEntry } from './types';
 import { clampSearchQuery } from '@/lib/search-query';
-import { lowerIfNeeded as lowerStringIfNeeded } from '../../electron/shared/lower-if-needed';
+import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
 
 export interface FilterOptions {
   /** 大小写不敏感子串匹配,空串 = pass. */
@@ -45,13 +45,6 @@ function searchCacheFor(entry: MarketplaceEntry): MarketplaceSearchCache {
     marketplaceSearchCache.set(entry, cache);
   }
   return cache;
-}
-
-function lowerIfNeeded(value: unknown): string {
-  if (typeof value !== 'string') {
-    return (value as { toLowerCase: () => string }).toLowerCase();
-  }
-  return lowerStringIfNeeded(value);
 }
 
 function lowerName(entry: MarketplaceEntry): string {

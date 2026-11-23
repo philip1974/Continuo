@@ -4,7 +4,7 @@
 
 `DockShell` 把 dockview 的原始面板 props 原样传给注册的面板 factory。原始 props 带 `containerApi`
 (整个 dock 的 `DockviewApi`)和完整的 `api`(`DockviewPanelApi`,可达 `group` / `close` / `moveTo` …)。
-零权限第三方插件注册一个面板即可:枚举全部面板及其 params(终端 sessionId / cwd / title)、关闭或新增任意
+零权限第三方插件注册一个面板即可:枚举全部面板及其 params(终端 sessionId 等)、关闭或新增任意
 面板、导出 / 重置布局 —— 绕过 scoped `app.dock` 只开放 `openPanel` 的限制。
 
 ## 行为

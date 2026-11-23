@@ -170,31 +170,30 @@ describe('applyFilter', () => {
   });
 
   it('重复过滤同一 entry 时复用字段 lowercase 缓存', () => {
-    const calls = { id: 0, name: 0, description: 0, tag: 0 };
-    const lowerable = (key: keyof typeof calls, lower: string) =>
-      ({
-        toLowerCase: () => {
-          calls[key] += 1;
-          return lower;
-        },
-      }) as unknown as string;
     const entry = {
-      id: lowerable('id', 'com.fast'),
-      name: lowerable('name', 'fast match'),
-      description: lowerable('description', 'desc'),
+      id: 'COM.FAST',
+      name: 'FAST MATCH',
+      description: 'DESC',
       author: 'a',
       repo: 'a/fast',
-      tags: [lowerable('tag', 'tools')],
+      tags: ['TOOLS'],
     } satisfies MarketplaceEntry;
+    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
+    const lowered = (value: string): number =>
+      lowerSpy.mock.contexts.filter((ctx) => String(ctx) === value).length;
 
-    expect(
-      applyFilter([entry], { query: 'tools', selectedTags: new Set() }),
-    ).toEqual([entry]);
-    expect(
-      applyFilter([entry], { query: 'tools', selectedTags: new Set() }),
-    ).toEqual([entry]);
+    try {
+      expect(applyFilter([entry], { query: 'tools', selectedTags: new Set() })).toEqual([entry]);
+      expect(applyFilter([entry], { query: 'tools', selectedTags: new Set() })).toEqual([entry]);
 
-    expect(calls).toEqual({ id: 1, name: 1, description: 1, tag: 1 });
+      // 每个字段在两次过滤里至多 lowercase 一次(第二次走缓存)
+      for (const field of ['COM.FAST', 'FAST MATCH', 'DESC', 'TOOLS']) {
+        expect(lowered(field)).toBeLessThanOrEqual(1);
+      }
+      expect(lowered('TOOLS')).toBe(1); // 命中的是 tag:确实 lowercase 过一次
+    } finally {
+      lowerSpy.mockRestore();
+    }
   });
 
   it('query 匹配 description', () => {

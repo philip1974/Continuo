@@ -204,7 +204,6 @@ export function reconcileTerminalPanels(
         params: {
           sessionId: session.id,
           originHint: session.originHint,
-          cwd: session.cwd,
         },
         ...(position ? { position } : {}),
       });

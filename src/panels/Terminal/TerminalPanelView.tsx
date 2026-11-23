@@ -17,8 +17,6 @@ import { terminalPanelTitle } from '@/shell/dock/terminal-panel-id';
 
 export interface TerminalPanelViewParams {
   sessionId: string;
-  cwd?: string;
-  title?: string;
   originHint?: OriginHint;
 }
 
@@ -56,12 +54,10 @@ export function TerminalPanelView(
       terminalPanelTitle({
         sessionId,
         sessionTitle,
-        fallbackTitle: props.params.title,
         originHint: sessionOriginHint ?? props.params.originHint,
       }),
     [
       props.params.originHint,
-      props.params.title,
       sessionOriginHint,
       sessionTitle,
       sessionId,

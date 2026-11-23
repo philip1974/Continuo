@@ -9,7 +9,7 @@ import { PanelMount } from '@/shell/motion/PanelMount';
 
 // 安全:第三方插件面板的 factory 只拿 SDK 声明的最小 props(PluginPanelProps)。dockview 原始 props 带
 // containerApi(整个 dock 的 DockviewApi)与完整 panel api(group / close / moveTo …):零权限插件注册一个面板
-// 就能枚举全部面板及 params(终端 sessionId / cwd)、关闭 / 新增任意面板、导出 / 重置布局,绕过 scoped
+// 就能枚举全部面板及 params(终端 sessionId)、关闭 / 新增任意面板、导出 / 重置布局,绕过 scoped
 // `app.dock` 只开放 openPanel 的限制。按 dockview panel api 缓存:同一面板多次渲染拿到同一对象
 //(插件把 props.api 放进 effect 依赖,每次渲染换新对象会让其反复退订 / 重订)。
 const pluginPanelProps = new WeakMap<object, PluginPanelProps>();

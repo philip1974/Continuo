@@ -124,7 +124,7 @@ async function writeDockLayoutSnapshot(
   const version = layoutVersions.get(api) ?? 0;
   if (savedLayoutVersions.get(api) === version) return;
   try {
-    // 写盘前剥离终端 panel(彻底修复:持久化 layout 不再携带终端的 sessionId/cwd 等陈旧/敏感
+    // 写盘前剥离终端 panel(彻底修复:持久化 layout 不再携带终端的 sessionId 等陈旧/敏感
     // 数据;读端 sanitize 仍是兜底防线,处理历史 explorer.json 与竞态)。仅含终端(无非终端
     // panel)→ strip 返 null,此时写无 grid 的空布局(payload = {version:1}),终端绝不进持久化;
     // 读端 sanitize 对无 grid 布局返 null → 静默走默认布局(与此前读端剥离后的恢复行为一致)。
