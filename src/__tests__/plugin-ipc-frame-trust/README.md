@@ -2,8 +2,8 @@
 
 ## 行为契约
 
-`plugin-data:*`(3 个)与 `plugin-fs:*`(18 个)是裸 `ipcMain.handle`,不经 `safeHandle`。`plugin-data` 只凭
-renderer 自报的 `pluginId`(无 token)读 / 写 / 清任意插件的 `data.json`;`plugin-fs:_register-plugin` 任何
+`plugin-data:*`(2 个:load / save-serialized)与 `plugin-fs:*`(19 个)是裸 `ipcMain.handle`,不经 `safeHandle`。`plugin-data` 只凭
+renderer 自报的 `pluginId`(无 token)读 / 写任意插件的 `data.json`;`plugin-fs:_register-plugin` 任何
 frame 可调。孪生的 `plugin-shell-stream:*` 早有 `defaultIsTrustedFrame` 检查(复审 R8),这两组漏了
 ——同一条「所有写 / 敏感 IPC 只信真实 renderer 入口 frame」纪律未传播到兄弟入口。
 

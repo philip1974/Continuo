@@ -66,10 +66,10 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
 
 - ManagerHost 增 optional `permissionStore` + `promptFn`
 - activateEntry 流程:
-  1. loadPluginModule(成功)
-  2. **若 manifest.permissions 非空且 host 配 permissionStore + promptFn → 调 ensureAuthorized**
-  3. 失败 → entry.status='failed', error='PERMISSION_DENIED: <list>',不 new instance
-  4. 成功(或无 permissions / 无 host)→ new + _activate 原流程
+  1. **若 manifest.permissions 非空且 host 配 permissionStore + promptFn → 先调 ensureAuthorized**(在 import 之前:
+     被拒即不加载模块、不执行插件 bundle 顶层代码)
+  2. 失败 → entry.status='failed', error=`{ code: 'PERMISSION_DENIED', message: <list> }`,不加载、不 new instance
+  3. 成功(或无 permissions / 无 host)→ loadPluginModule → new → _activate
 - 缺 host 字段时:权限请求不被检查(向后兼容,测试用)
 
 ### 权限说明文案(`permission-copy-matches-capability.spec.ts`)

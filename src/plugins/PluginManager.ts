@@ -48,7 +48,7 @@ export interface ManagerHost {
   releasePrefetchedModule?(url: string): void;
   /** v3.4 权限存储(可选,缺省 → 不做权限门). */
   permissionStore?: PermissionStore;
-  /** v3.4 权限弹窗 PromptFn(可选,缺省 → 默认拒绝所有 pending). */
+  /** v3.4 权限弹窗 PromptFn(可选,缺省 → 不做权限门,与 permissionStore 缺省同,向后兼容). */
   promptFn?: PromptFn;
   /** v4.6 卸载:rm -rf plugins/<id>/(可选,缺省 → uninstall 抛 NOT_SUPPORTED). */
   removePluginDir?(id: string): Promise<void>;
