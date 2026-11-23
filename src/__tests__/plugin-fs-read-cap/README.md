@@ -48,7 +48,7 @@ FS_FILE_TOO_LARGE。与 `write-file` 复用 `atomicWriteFile`(R4)同手法 —�
   请求都 `FS_BUSY`。
 - 嵌套顺序:先取闸、再取 plugin-fs 读写锁的共享锁。排队者不持锁,独占写者只等在途的至多 4 个读取,不会被整条
   队列饿死;写者不取闸,不会成环。
-- 不经此闸:`stat` / `lstat` / `realpath` / `check-path`(结果常数大小);变更类调用持独占锁本就串行(`cp` 经
+- 不经此闸:`stat` / `lstat` / `realpath`(结果常数大小);变更类调用持独占锁本就串行(`cp` 经
   copyFile 在内核里复制);宿主自己的 `fs:read-file`(用户编辑器)—— 插件占满闸不影响用户打开文件。
 - 残余:要 16 个以上各自占满名额的插件才会触到全局上限;被拒后忙等重试的插件消耗主进程 CPU(拒绝本身是常数
   开销);`plugin-fs:write-file` 的 content 在 IPC 反序列化时就已进入主进程内存,排队等独占锁期间仍占着 —— 不在 handler

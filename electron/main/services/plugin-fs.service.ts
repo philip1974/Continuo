@@ -83,12 +83,11 @@ export const MAX_CP_ENTRIES = 100_000;
 // 取独占,只读类(readFile / listDir / stat / lstat / readGitBlob)取共享。全局一把而非每插件一把:
 // 不同插件的 scope 可重叠,可能合谋。
 // 约束:持锁期间不得等待用户交互、不得再调用需要这把锁的入口(不可重入,会死锁)—— requestScope / 注册 /
-// 注销不取锁(它们不调用 pathScopeRegistry.check)。realpath / checkPath 的处理器本身在校验之后不再做文件系统
+// 注销不取锁(它们不调用 pathScopeRegistry.check)。realpath 的处理器本身在校验之后不再做文件系统
 // 操作,取共享锁是因为 check 的身份缓存要求调用方持锁(见 pluginFsIdentityEpoch)。
-// 但这不等于「校验之后没有文件系统操作」:checkPath 只回答「此刻是否在 scope 内」,调用方拿这个布尔值再经别的
-// 通道按路径字符串读 / 写,就把「校验 → 操作」拆到了锁外(editor.openFile 曾如此:校验通过后并发换入链接,宿主
-// 按原路径读到 scope 外的文件)。需要「校验后操作」的调用方必须让主进程在同一次持锁内做完 —— 见 READ_FOR_EDITOR
-// 与 guardPluginOpenedPath。checkPath 目前在 renderer 没有调用方。
+// 不提供「只回答此刻是否在 scope 内」的探测端点:调用方拿布尔值再经别的通道按路径字符串读 / 写,就把
+// 「校验 → 操作」拆到了锁外(editor.openFile 曾如此:校验通过后并发换入链接,宿主按原路径读到 scope 外的文件)。
+// 需要「校验后操作」的调用方必须让主进程在同一次持锁内做完 —— 见 READ_FOR_EDITOR 与 guardPluginOpenedPath。
 // 残余:锁只管 plugin-fs 自己的调用。有 shell 权限的插件(可运行任意命令,本就等于完全访问)、用户自己的进程、
 // 其它应用对同一目录的并发改动不在此列。
 const fsLock = createRwLock();
@@ -229,7 +228,7 @@ export function _pluginOpenedPathRefsForTest(pluginId?: string): number {
 // 嵌套顺序:先取闸、后取 plugin-fs 读写锁的共享锁。反过来(持共享锁排队等闸)时,排队者都算共享持有者,独占写者
 // 要等整条队列读完才能开始;现在排队者不持锁,写者只需等至多 4 个在途读取。写者不取闸,不会互相等待成环。
 // 宿主自己的 fs:read-file(用户编辑器)不经此闸 —— 插件占满闸也不影响用户打开文件。
-// 其它入口:stat / lstat / realpath / check-path 的结果是常数大小;write-file / rename / cp / mkdir / rm /
+// 其它入口:stat / lstat / realpath 的结果是常数大小;write-file / rename / cp / mkdir / rm /
 // atomicReplace 持独占锁,本就串行(cp 经 copyFile 在内核里复制,不进 JS 堆)。
 export const PLUGIN_FS_HEAVY_READ_CONCURRENCY = 4;
 export const PLUGIN_FS_HEAVY_READ_QUEUE_MAX = 1024;
@@ -1042,22 +1041,6 @@ export function registerPluginFsHandlers(
         async (p) => (await checkScope(token, senderId, 'read', p, 'r')).canonical,
       );
       return readGitBlob(cwd, sha, { pin });
-    }),
-  );
-
-  // 只读 scope 探测:返回 boolean 而非抛错,供 editor.openFile 等"先校验再走
-  // 受信通道"的场景用。ScopeError → false(路径不在已授 scope);identity 错误
-  // (未知 token / 跨窗)仍 rethrow,保持 fail-loud。
-  ipcMain.handle(
-    PLUGIN_FS_CHANNELS.CHECK_PATH,
-    shared(async (event, token: string, target: string): Promise<boolean> => {
-      try {
-        await checkScope(token, event.sender.id, 'read', target, 'r');
-        return true;
-      } catch (err) {
-        if (err instanceof ScopeError) return false;
-        throw err;
-      }
     }),
   );
 

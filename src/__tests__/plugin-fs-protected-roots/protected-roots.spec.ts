@@ -191,7 +191,7 @@ describe('端到端提权:持 `~` rw scope 的插件改写权限文件', () => {
 });
 
 describe('受保护根之内:所有入口一律拒绝,文件不变', () => {
-  it('readFile / stat / lstat / realpath / listDir / checkPath', async () => {
+  it('readFile / stat / lstat / realpath / listDir', async () => {
     await expectDenied(call(C.READ_FILE, permFile));
     await expectDenied(call(C.STAT, permFile));
     await expectDenied(call(C.LSTAT, permFile));
@@ -199,8 +199,6 @@ describe('受保护根之内:所有入口一律拒绝,文件不变', () => {
     await expectDenied(call(C.LIST_DIR, pluginsDir));
     await expectDenied(call(C.LIST_DIR, userData)); // 根本身
     await expectDenied(call(C.STAT, userData));
-    expect(await call(C.CHECK_PATH, permFile)).toBe(false);
-    expect(await call(C.CHECK_PATH, userData)).toBe(false);
     expect(await call(C.READ_FOR_EDITOR, permFile)).toMatchObject({ ok: false, code: 'SCOPE_ERROR' });
   });
 
@@ -306,7 +304,6 @@ describe('经符号链接', () => {
     await expectDenied(call(C.MKDIR, join(home, 'dlink', 'evil')));
     await expectDenied(call(C.CP, join(home, 'dlink'), join(docs, 'copy'), { recursive: true }));
     await expectDenied(call(C.READ_FILE, join(home, 'flink')));
-    expect(await call(C.CHECK_PATH, join(home, 'flink'))).toBe(false);
     expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
     // 作用在链接本身的操作不受影响:删掉的是链接,不是目标。
     expect(await outcome(call(C.RM, join(home, 'flink')))).toBe('ok');
@@ -328,7 +325,6 @@ describe('不是存在性探测器:词法预判认不出的写法(解析后才�
     await expectSameDenial(call(C.READ_FILE, join(hit, 'data.json')), call(C.READ_FILE, join(miss, 'data.json')));
     await expectSameDenial(call(C.LSTAT, hit), call(C.LSTAT, join(miss, 'x')));
     await expectSameDenial(call(C.WRITE_FILE, join(hit, 'x'), ''), call(C.WRITE_FILE, join(miss, 'x'), ''));
-    expect(await call(C.CHECK_PATH, miss)).toBe(false);
   });
 
   it.skipIf(!volumeFoldsLongS)('经长 s 写法的祖先段:同样不可区分', async () => {
@@ -368,7 +364,6 @@ describe('受保护根的祖先:会连带移动 / 删除 / 复制受保护子树
     expect(await outcome(call(C.STAT, join(home, 'Library')))).toBe('ok');
     expect(await outcome(call(C.LSTAT, appData))).toBe('ok');
     expect(await outcome(call(C.MKDIR, appData, { recursive: true }))).toBe('ok');
-    expect(await call(C.CHECK_PATH, appData)).toBe(true);
   });
 });
 
@@ -624,11 +619,10 @@ describe.skipIf(!hasNoFollow)('macOS `/.nofollow/<绝对路径>`(同一 inode,re
     expect(statSync(nf(userData)).ino).toBe(statSync(userData).ino);
   });
 
-  it('审计复现的六个操作:读 / 改权限文件、列插件目录、checkPath、rm -r userData、rename userData → 全拒,磁盘不变', async () => {
+  it('审计复现的六个操作:读 / 改权限文件、列插件目录、rm -r userData、rename userData → 全拒,磁盘不变', async () => {
     await expectDenied(call(C.READ_FILE, nf(permFile)));
     await expectDenied(call(C.WRITE_FILE, nf(permFile), `{"${PLUGIN}":{"decisions":[{"permission":"shell","granted":true,"decidedAt":2}]}}`));
     await expectDenied(call(C.LIST_DIR, nf(pluginsDir)));
-    expect(await call(C.CHECK_PATH, nf(permFile))).toBe(false);
     await expectDenied(call(C.RM, nf(userData), { recursive: true, force: true }));
     await expectDenied(call(C.RENAME, nf(userData), nf(join(appData, 'Continuo Dev Pwned'))));
     expect(await readFile(permFile, 'utf-8')).toBe(permBefore);
@@ -704,7 +698,6 @@ describe.skipIf(!hasNoFollow)('macOS `/.nofollow/<绝对路径>`(同一 inode,re
       await expectDenied(call(C.READ_FILE, alias));
       await expectDenied(call(C.WRITE_FILE, alias, 'changed'));
       await expectDenied(call(C.LSTAT, alias));
-      expect(await call(C.CHECK_PATH, alias)).toBe(false);
     }
     await expectDenied(call(C.LIST_DIR, '/.nofollow'));
     // scope 内指向合成前缀的链接:realpath 报出 `/.nofollow/…`,同样不认
@@ -750,7 +743,7 @@ describe('按 (dev, ino) 判定:路径字符串对不上、文件系统里却是
     await symlink(join(home, 'far', 'away'), join(home, 'later'));
   });
 
-  it('之内(含根本身):读 / 写 / 列 / stat / mkdir / rm / rename / cp / atomicReplace / checkPath 全拒,存在与否不可区分', async () => {
+  it('之内(含根本身):读 / 写 / 列 / stat / mkdir / rm / rename / cp / atomicReplace 全拒,存在与否不可区分', async () => {
     await expectDenied(call(C.READ_FILE, join(realRoot, 'secret')));
     await expectDenied(call(C.WRITE_FILE, join(realRoot, 'secret'), 'evil'));
     await expectDenied(call(C.WRITE_FILE, join(realRoot, 'new'), 'evil'));
@@ -764,7 +757,6 @@ describe('按 (dev, ino) 判定:路径字符串对不上、文件系统里却是
     await expectDenied(call(C.CP, realRoot, join(docs, 'copy'), { recursive: true }));
     await expectDenied(call(C.CP, join(docs, 'a.txt'), join(realRoot, 'a.txt')));
     await expectDenied(call(C.ATOMIC_REPLACE, join(docs, 'a.txt'), join(realRoot, 'secret'), { overwrite: true }));
-    expect(await call(C.CHECK_PATH, join(realRoot, 'secret'))).toBe(false);
     const existing = await outcome(call(C.STAT, join(realRoot, 'secret')));
     const missing = await outcome(call(C.STAT, join(realRoot, 'nope', 'deeper')));
     expect(missing.replace(join('nope', 'deeper'), 'secret')).toBe(existing);

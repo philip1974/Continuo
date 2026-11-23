@@ -122,12 +122,6 @@ describe('scope 外路径:同一条错误,与存在性 / 类型无关', () => {
     }
   }
 
-  it('checkPath:scope 外一律 false', async () => {
-    for (const p of [join(outside, 'file.txt'), join(outside, 'missing')]) {
-      expect(await call(C.CHECK_PATH, p)).toBe(false);
-    }
-  });
-
   it('scope 外路径不触发 realpath / lstat', async () => {
     scopes.grant(PLUGIN, [{ path: scope, mode: 'rw' }]);
     const realpathSpy = vi.spyOn(fsp, 'realpath');

@@ -45,7 +45,7 @@
     上限,超出退回纯路径键。每插件记住的被拒键数上限不变(64)。
   - 顺序:未决数到顶、该插件已有未决弹窗 / 在退避期 / 弹窗超速的请求先被拒,不算键(不触发 stat)。
   - plugin-fs 各操作(readFile / writeFile / listDir / stat / lstat / realpath / mkdir / rename / rm / cp /
-    atomicReplace / readGitBlob / checkPath)的 target 最多 256 级(`FS_PATH_MAX_DEPTH`),超出与超长一样按
+    atomicReplace / readGitBlob)的 target 最多 256 级(`FS_PATH_MAX_DEPTH`),超出与超长一样按
     `invalid target path` 拒绝,不进 scope 校验里按层级逐级处理的部分。
 
 ## 残余

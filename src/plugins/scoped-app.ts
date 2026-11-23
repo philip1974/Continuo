@@ -701,8 +701,8 @@ function makeEditor(
         throw err;
       }
 
-      // 边界(E182,E180 同族):path 类型/长度前置闸(发 checkPath IPC 前),与 app.fs.* 的
-      // assertPluginFsPath 一致。畸形/超长 path 否则先 structured-clone 进主进程才被 checkPath 拒。
+      // 边界(E182,E180 同族):path 类型/长度前置闸(发 IPC 前),与 app.fs.* 的
+      // assertPluginFsPath 一致。畸形/超长 path 否则先 structured-clone 进主进程才被拒。
       // openFile 契约返回结果对象(非抛),故非法返回 {ok:false, INVALID_PATH}(不复用会 throw 的 helper)。
       if (
         typeof path !== 'string' ||
@@ -722,7 +722,7 @@ function makeEditor(
         return rawEditor.openFile(path, opts);
       }
 
-      // 安全:不是「checkPath 通过 → 宿主受信通道按插件给的路径另读一次」—— 两步之间插件可并发 rename 换入指向
+      // 安全:不是「scope 探测通过 → 宿主受信通道按插件给的路径另读一次」—— 两步之间插件可并发 rename 换入指向
       // scope 外的既有链接,宿主就按原路径读到 scope 外的文件(审计 L1)。改为主进程在 plugin-fs 锁内一次完成
       // 「scope 校验 + 读取」,宿主用这份已校验内容在 canonicalPath 上开标签;之后宿主对该路径的读 / 写也先确认
       // 路径没有被换入链接(见 src/__tests__/plugin-editor-open-verified/)。内容只进标签,不回传插件。

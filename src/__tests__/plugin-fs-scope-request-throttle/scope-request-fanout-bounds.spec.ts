@@ -248,10 +248,6 @@ describe('plugin-fs 入口', () => {
       await expect(ipc.invokeWithEvent(event, C.STAT, token, audit)).rejects.toThrow('invalid target path');
     });
 
-    it('checkPath:超深 target → false', async () => {
-      expect(await ipc.invokeWithEvent(event, C.CHECK_PATH, token, inScope(FS_PATH_MAX_DEPTH + 1))).toBe(false);
-    });
-
     it('层级数在上限内的路径不受影响(照常进 scope 校验:这里是「不存在」而不是「畸形」)', async () => {
       const ok = inScope(FS_PATH_MAX_DEPTH);
       const err = await ipc.invokeWithEvent(event, C.STAT, token, ok).then(

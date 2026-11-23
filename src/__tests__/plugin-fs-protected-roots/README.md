@@ -51,7 +51,7 @@ bind mount,Windows 的 `subst` 盘符。scope 宽到覆盖别名所在的树(如
 受保护根一侧**每次校验现算**(不缓存:上级可被改名 / 替换,根可能启动后才出现):对每条根的词法形与(构造时的)
 realpath 形 `lstat`(是链接再 `stat` 一次)。开销:
 
-- 只看不动的操作(`readFile / stat / lstat / listDir / realpath / checkPath / mkdir`):目标路径级数 + 受保护根写法数
+- 只看不动的操作(`readFile / stat / lstat / listDir / realpath / mkdir`):目标路径级数 + 受保护根写法数
   次 `stat`(生产形态约 4~5 条根;路径 8 级时约 13 次,并行发出)。实测每次调用多约 0.1 ms(15 级深的路径)。
 - 会连带整棵子树的操作(`rm / rename / cp / writeFile / atomicReplace`),以及目标尚不存在时:再加受保护根各写法的
   不同上级数(约 10 来次)。
@@ -71,7 +71,7 @@ inode 判定要 `stat` 目标的每一级目录前缀与每条受保护根(会�
 - 失效都是**整体丢弃**:代际变了(有变更调用被授予过独占锁)、缓存存活满 **250ms**、时钟回拨、条目数超过 4096。
 - 独占持有期间不读也不写缓存:变更调用自己的校验发生在它的变更之前,那时查到的身份对之后的调用是旧的。
   (所以写类调用的开销不变;它们本来就伴随落盘。)
-- 缓存要求调用 `check` 的一方持锁 —— plugin-fs 所有经 `check` 的入口都持锁(`realpath` / `checkPath` 为此也取共享
+- 缓存要求调用 `check` 的一方持锁 —— plugin-fs 所有经 `check` 的入口都持锁(`realpath` 为此也取共享
   锁);`requestScope` 只做字符串判定,不经缓存。registry 未注入 `identityCache`(单独构造、测试)时不缓存。
 - 字符串层的判定(受保护根之内 / 祖先、macOS 合成前缀、叶子的磁盘真实名)**不经缓存**,每次现算。
 
@@ -112,7 +112,7 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
 ## 行为
 
 - **受保护根之内(含根本身)**:`readFile / writeFile / listDir / stat / lstat / realpath / mkdir / rename / rm /
-  cp(源与目标)/ atomicReplaceWithinScope / readGitBlob / checkPath / readForEditor(→ `editor.openFile`)` 一律拒绝,
+  cp(源与目标)/ atomicReplaceWithinScope / readGitBlob / readForEditor(→ `editor.openFile`)` 一律拒绝,
   与已授 scope 无关。错误与 scope 外路径是同一条(`target not in any granted scope`),不暴露「这是受保护目录」;
   原因(插件、操作、路径)只进主进程日志。
 - 词法上就在受保护根内的路径不碰文件系统即拒绝 —— 其下存在 / 不存在的路径得到完全相同的错误。
@@ -120,7 +120,7 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
   操作按「父目录 realpath + 叶子名」判定。删除 / lstat 链接本身不受影响(作用在链接,不是目标)。
 - **受保护根的祖先**(如 `~/Library`、`~/Library/Application Support`):会连带删除 / 移走 / 复制整棵受保护
   子树的操作被拒 —— `rm`、`rename`(源或目标)、`cp`(源或目标)、`atomicReplaceWithinScope`(staging 或
-  final)、`writeFile`。只读地看祖先(`stat / lstat / listDir / realpath / checkPath`)与 `mkdir`(对已存在
+  final)、`writeFile`。只读地看祖先(`stat / lstat / listDir / realpath`)与 `mkdir`(对已存在
   目录是 no-op)照常;`listDir` 父目录能看到 `Continuo` 这个条目名。
 - **requestScope**:
   - 请求里有任何一条的根位于受保护根之内(或就是受保护根)→ 整个请求直接 `deny`,不弹窗、不计入节流,

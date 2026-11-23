@@ -124,7 +124,6 @@ beforeEach(async () => {
   // scoped app 用到的 coApi.pluginFsRaw 方法接到真实 handler(每个用例重置,用例里可再包一层)
   Object.assign(coApi.pluginFsRaw, {
     readForEditor: (t: string, p: string) => ipc.invokeWithEvent(event, C.READ_FOR_EDITOR, t, p),
-    checkPath: (t: string, p: string) => ipc.invokeWithEvent(event, C.CHECK_PATH, t, p),
     rename: (t: string, a: string, b: string) => ipc.invokeWithEvent(event, C.RENAME, t, a, b),
   });
   vi.mocked(coApi.fs.readFile).mockClear();
@@ -185,7 +184,7 @@ describe.skipIf(process.platform === 'win32')('插件 editor.openFile:标签内�
 
   it('scope 校验的 IPC 一返回就换入(审计 t4 的时序)→ 标签仍是校验时的良性内容', async () => {
     const raw = coApi.pluginFsRaw as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
-    for (const name of ['readForEditor', 'checkPath']) {
+    for (const name of ['readForEditor']) {
       const orig = raw[name]!;
       raw[name] = async (...args: unknown[]) => {
         const r = await orig(...args);
