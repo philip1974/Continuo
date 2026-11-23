@@ -610,7 +610,8 @@ describe('StatusBar — agent 撤销', () => {
   });
 
   // 撤销 IPC 失败回滚只恢复窗口级授权;外部客户端授权往拒绝方向,不恢复。
-  it('撤销 IPC 失败 → 窗口级授权回滚,external 授权不恢复', async () => {
+  // 放行权威在 main;界面授权位只决定撤销入口是否显示。撤销失败时 main 可能仍有授权 → 全部恢复,不藏撤销入口。
+  it('撤销 IPC 失败 → 全部授权位回滚(含 external),撤销入口仍可见', async () => {
     const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
     const revoke = vi.fn().mockResolvedValue({ ok: false, code: 'KILL_FAILED' });
     installApi({ agentAuth: { revoke } });
@@ -627,7 +628,7 @@ describe('StatusBar — agent 撤销', () => {
       expect(errSpy).toHaveBeenCalled();
     });
     expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(true);
-    expect(useAgentAuthStore.getState().externalDebugSessionGranted).toBe(false);
+    expect(useAgentAuthStore.getState().externalDebugSessionGranted).toBe(true);
     errSpy.mockRestore();
   });
 

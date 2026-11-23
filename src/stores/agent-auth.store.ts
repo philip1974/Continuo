@@ -30,7 +30,7 @@ interface EnsureInfo {
   /** main 生成的请求 id(应答与 main 的取消通知都按它对应)。 */
   readonly requestId: string;
   readonly method: string;
-  /** 安全(F2):外部客户端请求 → 只读写 external 授权状态,不用窗口级授权。 */
+  /** 安全(F2):外部客户端请求 → 授权位记在 external 一侧(界面副本;放行由 main 按调用方类别判定)。 */
   readonly external?: boolean;
 }
 
@@ -89,23 +89,13 @@ export function isPluginAuthMethod(method: string): boolean {
   return agentAuthDomainOf(method) === 'plugin';
 }
 
-/**
- * 窗口级(绑定 Continuo 终端的 agent)「本次启动期间允许」标志位。撤销 IPC 失败回滚时只恢复这些。
- */
-export const WINDOW_SESSION_GRANT_KEYS = [
+/** 全部「本次启动期间允许」标志位(窗口级三域 + 外部客户端两域)的单一来源:撤销 / 撤销入口可见性 / 测试重置都从这里取。 */
+export const SESSION_GRANT_KEYS = [
   'sessionGranted',
   'debugSessionGranted',
   'pluginSessionGranted',
-] as const;
-/** 外部客户端的「本次启动期间允许」标志位。撤销失败时不恢复(往拒绝方向)。 */
-export const EXTERNAL_SESSION_GRANT_KEYS = [
   'externalSessionGranted',
   'externalDebugSessionGranted',
-] as const;
-/** 全部「本次启动期间允许」标志位的单一来源:撤销 / 撤销入口可见性 / 测试重置都从这里取。 */
-export const SESSION_GRANT_KEYS = [
-  ...WINDOW_SESSION_GRANT_KEYS,
-  ...EXTERNAL_SESSION_GRANT_KEYS,
 ] as const;
 
 export type SessionGrantKey = (typeof SESSION_GRANT_KEYS)[number];

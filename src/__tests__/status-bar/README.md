@@ -50,7 +50,8 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
   (调试授权等同任意代码执行,不能只能靠退出应用撤销)。
 - 只有外部客户端(stdio 未发 hello)的「本次启动期间允许」(`external*`)时同样显示入口,确认后全部清除。
   可见性判断与撤销都取自 `agent-auth.store` 的单一来源(`hasAnySessionGrant` / `SESSION_GRANT_KEYS`)。
-- 撤销 IPC 失败时只回滚窗口级授权(`WINDOW_SESSION_GRANT_KEYS`);外部客户端授权不恢复(往拒绝方向)。
+- 撤销 IPC 失败时回滚全部授权位(`SESSION_GRANT_KEYS`,含外部客户端):放行权威在 main,授权位只决定撤销入口
+  是否显示;失败时 main 可能仍有授权,不能把它藏起来。
 - 既无 agent 会话也无任何授权时不显示入口。
 - 无会话时确认框用 `permissions.revoke_all.confirm_grant_only` 文案(不提「终止 N 个 terminal」)。
 - 该确认文案与撤销入口提示 `statusbar.agent_revoke_grant_tooltip` 在 en / zh / ko 中都须列出插件工具域。

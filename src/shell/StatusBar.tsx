@@ -13,7 +13,7 @@ import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store'
 import {
   hasAnySessionGrant,
   useAgentAuthStore,
-  WINDOW_SESSION_GRANT_KEYS,
+  SESSION_GRANT_KEYS,
 } from '@/stores/agent-auth.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -104,16 +104,16 @@ export function countAgentSessions(sessions: readonly TerminalSession[]): number
 }
 
 // race(R92):revoke 代际。两次 revoke 并发时,失败回滚必须只由「最新」那次执行 —— 否则先发的
-// 迟到失败会用其调用开始时的旧 wasGranted 快照把 sessionGranted 回滚成 true,覆盖后发已成功撤销
-// 的状态 → renderer 误以为仍授权,后续 agent auth 被无提示放行,与 main 已撤销/旋转的真实态不符。
+// 迟到失败会用其调用开始时的旧快照把授权位写回 true,覆盖后发已成功撤销的界面状态(凭空显示一个不存在的授权)。
 let revokeGen = 0;
 
 async function handleRevokeAgentTerminals(): Promise<void> {
   const myGen = ++revokeGen; // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
-  // 撤销覆盖全部域(窗口级三域 + 外部客户端);失败回滚只恢复窗口级授权,外部客户端授权不恢复(往拒绝方向)。
+  // 放行的权威在 main,这里的授权位只决定撤销入口是否显示。撤销失败时 main 可能仍有授权(例如 IPC 没到达 main),
+  // 所以失败回滚恢复**全部**域(含外部客户端):宁可多显示一个撤销入口,也不能把仍有效的授权藏起来、让用户无从撤销。
   const before = useAgentAuthStore.getState();
-  const wasWindowGranted = WINDOW_SESSION_GRANT_KEYS.filter((k) => before[k]);
+  const wasGranted = SESSION_GRANT_KEYS.filter((k) => before[k]);
   useAgentAuthStore.getState().revoke();
   // 闭环:revoke IPC(kill PTY + rotate token)可能失败(revokeAndKillAgentSessions 抛错 →
   // safeHandle 返 ok:false / IPC reject)。旧实现 `void` 完全忽略结果 → 失败被静默伪成功:
@@ -130,10 +130,10 @@ async function handleRevokeAgentTerminals(): Promise<void> {
     useAgentAuthStore.getState().applyMainRevoked();
   } catch (err) {
     // race(R92):仅当本次仍是最新 revoke(无更晚的 revoke 覆盖)才回滚/报错。更晚的成功 revoke
-    // 已把状态正确置为 revoked,先发的迟到失败不得用旧 wasGranted 把 sessionGranted 翻回 true。
+    // 已把状态正确置为 revoked,先发的迟到失败不得用旧快照把授权位翻回 true。
     if (myGen !== revokeGen) return;
     // 只恢复、不降级:撤销在途期间用户若又新授权了某个域,失败回滚不能把它写回 false。
-    for (const k of wasWindowGranted) useAgentAuthStore.setState({ [k]: true });
+    for (const k of wasGranted) useAgentAuthStore.setState({ [k]: true });
     notify.error(translate('permissions.revoke_all.failed'), {
       code: errorCodeOf(err),
     });

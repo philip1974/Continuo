@@ -60,13 +60,14 @@ export function agentAuthDomainOf(method: string): AgentAuthDomain {
   return 'terminal';
 }
 
-/** agent-auth:request payload 的 runtime 形态 + 长度守卫(IPC ingress 纵深防御,E171)。 */
 /** agent-auth:cancelled payload 守卫(IPC ingress 纵深防御)。 */
 export function isAgentAuthCancelledPayload(v: unknown): v is { readonly requestId: string } {
   if (v === null || typeof v !== 'object') return false;
   const id = (v as Record<string, unknown>).requestId;
   return typeof id === 'string' && id.length > 0 && id.length <= AGENT_AUTH_REQUEST_ID_MAX;
 }
+
+/** agent-auth:request payload 的 runtime 形态 + 长度守卫(IPC ingress 纵深防御,E171)。 */
 
 export function isAgentAuthRequestPayload(
   v: unknown,

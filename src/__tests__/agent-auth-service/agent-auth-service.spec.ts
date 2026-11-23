@@ -6,6 +6,7 @@ import {
   _resetPendingForTest,
   answerAgentAuthRequest,
   cancelAllAgentAuth,
+  MAX_PENDING_AUTH_GLOBAL_FOR_TEST,
   requestAgentAuth,
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
@@ -348,6 +349,30 @@ describe('agent-auth-service: requestAgentAuth', () => {
   });
 
   // 边界(E229,E227/E228 pending 数量上限族):未决授权 pending 数量双闸。
+  // E229 全局上限仍是有效的后备防线:单飞下每窗口至多 2 个未决(窗口内 agent / external 各一),多个窗口累计到全局上限后,
+  // 新窗口的请求立即终态 'denied'(不入 pending、不发 IPC)。
+  it('E229: 跨窗口累计到全局未决上限后,新窗口请求立即 denied,不发 IPC', async () => {
+    const global = MAX_PENDING_AUTH_GLOBAL_FOR_TEST;
+    const winCount = Math.ceil(global / 2);
+    const wins = Array.from({ length: winCount + 1 }, (_, i) => makeWin(i + 1));
+    electronMock.windows = wins;
+    const ps: Promise<AgentAuthDecision>[] = [];
+    for (const w of wins.slice(0, winCount)) {
+      if (ps.length < global) ps.push(requestAgentAuth({ method: 'terminal.send_text', ownerWindowId: w.id }));
+      if (ps.length < global) {
+        ps.push(requestAgentAuth({ method: 'terminal.send_text', ownerWindowId: w.id, external: true }));
+      }
+    }
+    expect(ps).toHaveLength(global);
+    const fresh = wins[winCount]!;
+    await expect(
+      requestAgentAuth({ method: 'terminal.send_text', ownerWindowId: fresh.id }),
+    ).resolves.toBe('denied');
+    expect(fresh.webContents.send).not.toHaveBeenCalled();
+    expect(cancelAllAgentAuth()).toBe(global);
+    await Promise.all(ps);
+  });
+
   // 「本次启动期间允许」的权威在 main:按 (窗口, 调用方类别, 域) 记,互不放行。
   it('授权按窗口 × 调用方类别 × 域隔离:终端域授权不放行 debug / plugin 域、external 调用方与其它窗口', async () => {
     const w1 = makeWin(1);

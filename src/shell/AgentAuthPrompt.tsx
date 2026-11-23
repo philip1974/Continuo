@@ -104,8 +104,8 @@ export function AgentAuthPrompt() {
     });
   }, []);
 
-  // 跨窗口撤销:任一窗口撤销成功后 main 广播 REVOKED → 本窗口同样重置授权态并取消残留弹窗,
-  // 否则本窗口的「本次启动期间允许」仍生效,撤销后的请求被静默放行。
+  // 跨窗口撤销:任一窗口撤销成功后 main 广播 REVOKED → 本窗口重置授权位的界面副本并取消残留弹窗
+  //(否则撤销入口仍显示;残留弹窗被点「本次启动期间允许」会让 main 再记一次授权)。
   useEffect(() => {
     return coApi.agentAuth.onRevoked(() => {
       useAgentAuthStore.getState().applyMainRevoked();

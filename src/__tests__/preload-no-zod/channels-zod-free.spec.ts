@@ -14,6 +14,23 @@ import { describe, expect, it } from 'vitest';
 
 const SHARED_DIR = join(process.cwd(), 'electron/shared');
 
+// 泄漏判定(按语句):
+// - `import type { … } from …` / `import type * as … from …` 编译时整句擦除 → 放行;
+// - 其它 `import` / `export … from 'zod'`(含 `import type from 'zod'` 这种把 type 当默认导入名的写法)、
+//   `import 'zod'`、`require('zod')` → 泄漏;
+// - 对同目录 `*-schema.ts`(zod schema 的家)的值导入 / 再导出同样算:会把 zod 传递带进 preload。
+const NOT_TYPE_ONLY = String.raw`(?!\s+type\s*[{*])`;
+const FROM_ZOD = String.raw`\bfrom\s+['"]zod['"]`;
+const FROM_SCHEMA = String.raw`\bfrom\s+['"]\./[\w-]+-schema['"]`;
+function leaksZod(code: string): boolean {
+  return (
+    new RegExp(String.raw`(^|[;\n])\s*(import|export)\b${NOT_TYPE_ONLY}[^;]*?${FROM_ZOD}`).test(code) ||
+    new RegExp(String.raw`(^|[;\n])\s*(import|export)\b${NOT_TYPE_ONLY}[^;]*?${FROM_SCHEMA}`).test(code) ||
+    /(^|[;\n])\s*import\s+['"]zod['"]/.test(code) ||
+    /\brequire\(\s*['"]zod['"]\s*\)/.test(code)
+  );
+}
+
 describe('preload sandbox:shared channel 文件不得 import zod', () => {
   it('electron/shared/*-channels.ts 全部 zod-free(否则拖垮 sandbox preload)', () => {
     const channelFiles = readdirSync(SHARED_DIR).filter((f) =>
@@ -24,27 +41,39 @@ describe('preload sandbox:shared channel 文件不得 import zod', () => {
     const offenders: string[] = [];
     for (const f of channelFiles) {
       const src = readFileSync(join(SHARED_DIR, f), 'utf-8');
-      // 只看真实代码:剥掉 `//` 行注释(否则解释失败模式的注释文字会被误判),按 import 语句判断:
-      // `import type ... from 'zod'` 被擦除、放行;其它 `import ... from 'zod'` 与 `require('zod')` 都算泄漏。
+      // 只看真实代码:剥掉 `//` 行注释(否则解释失败模式的注释文字会被误判),按语句判断(见 leaksZod)。
       const code = src
         .split(/\r?\n/)
         .map((line) => line.replace(/\/\/.*$/, ''))
         .join('\n');
-      const offending =
-        /\bimport\s+(?!type\b)[^;]*?\bfrom\s+['"]zod['"]/.test(code) ||
-        /\brequire\(\s*['"]zod['"]\s*\)/.test(code);
+      const offending = leaksZod(code);
       if (offending) offenders.push(`electron/shared/${f}`);
     }
     expect(offenders).toEqual([]);
   });
 
-  it('守卫本身:值导入 zod 判为泄漏,import type 放行', () => {
-    const leak = (code: string): boolean =>
-      /\bimport\s+(?!type\b)[^;]*?\bfrom\s+['"]zod['"]/.test(code) ||
-      /\brequire\(\s*['"]zod['"]\s*\)/.test(code);
-    expect(leak("import { z } from 'zod';")).toBe(true);
-    expect(leak("import {\n  z,\n} from 'zod';")).toBe(true);
-    expect(leak("const z = require('zod');")).toBe(true);
-    expect(leak("import type { z } from 'zod';")).toBe(false);
+  it('守卫本身:值导入 / 再导出 / 副作用导入 zod 与值导入 *-schema 判为泄漏,import type 放行', () => {
+    for (const leak of [
+      "import { z } from 'zod';",
+      "import {\n  z,\n} from 'zod';",
+      "export { z } from 'zod';",
+      "export * from 'zod';",
+      "import type from 'zod';",
+      "import type, { z } from 'zod';",
+      "import 'zod';",
+      "const z = require('zod');",
+      "import { ShellExecInputSchema } from './shell-exec-schema';",
+      "export { ShellExecInputSchema } from './shell-exec-schema';",
+    ]) {
+      expect(leaksZod(leak), leak).toBe(true);
+    }
+    for (const ok of [
+      "import type { z } from 'zod';",
+      "import type * as zod from 'zod';",
+      "import type { ShellExecInputSchema } from './shell-exec-schema';",
+      "import { foo } from './fs-limits';",
+    ]) {
+      expect(leaksZod(ok), ok).toBe(false);
+    }
   });
 });

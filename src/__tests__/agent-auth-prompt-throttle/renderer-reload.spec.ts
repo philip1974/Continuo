@@ -1,4 +1,4 @@
-// 安全:renderer reload(主窗 View 菜单 Cmd+R)/ 渲染进程崩溃后,main 的授权镜像与未决弹窗随之结算。
+// 安全:renderer reload(主窗 View 菜单 Cmd+R)/ 渲染进程崩溃后,main 的授权与未决弹窗随之结算。
 // 行为见同目录 README「renderer reload」。真实 agent-auth.service + 真实 renderer store(fake timers);
 // 窗口与 renderer 的接法见 renderer-harness.ts。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -382,7 +382,7 @@ describe('未提交的主框架导航(被拦下 / 中止)不算换文档', () =>
     expect(await first).toBe('once');
   });
 
-  it('未提交的导航不清「本次启动期间允许」的镜像(renderer 的授权态还在)', async () => {
+  it('未提交的导航不清「本次启动期间允许」(旧文档与它的界面副本都还在)', async () => {
     await grantSession();
     startNavigation();
     // 已授权域:并发请求全部秒回 session,不走单飞

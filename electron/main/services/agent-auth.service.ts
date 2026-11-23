@@ -2,8 +2,8 @@
 // 反向 IPC 调度器:tool 调 requestAgentAuth → push 给 renderer →
 // 等 renderer 通过 IPC respond 回 → resolve 挂起的 Promise。
 //
-// 真相源在 renderer(`src/stores/agent-auth.store.ts`),main 端只是 transport。
-// renderer 端的 store.ensure 处理 sessionGranted / 并发 pending 等状态机。
+// 「本次启动期间允许」与请求过期的权威都在 main(本文件:sessionGrants、无应答超时 / 排队兜底);renderer
+//(`src/stores/agent-auth.store.ts`)只管弹窗的显示与排队,并持有授权位的界面副本(状态栏撤销入口)。
 
 import * as crypto from 'node:crypto';
 import { BrowserWindow } from 'electron';
@@ -26,7 +26,7 @@ import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
 
 // 弹窗显示 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)。
-// 从请求成为窗口的显示中弹窗起算(见 markDisplayed),与 renderer 的 agent-auth.store 一致;此前从到达起算,排在别的
+// 从请求成为窗口的显示中弹窗起算(见 markDisplayed),到点后经 CANCELLED 通知 renderer 撤掉弹窗;此前从到达起算,排在别的
 // 弹窗后面的请求轮到显示时已经到期(审计实测:external 只发起不应答、冷却一结束就占住显示,窗口内合法 agent 的请求
 // 排在其后,一小时内 11 次全部显示 0 秒即按超时拒绝)。排队超过 AGENT_AUTH_QUEUE_MAX_MS 仍没轮到显示 → 按取消结算。
 const PROMPT_TIMEOUT_MS = AGENT_AUTH_PROMPT_TIMEOUT_MS;
@@ -36,15 +36,15 @@ const QUEUE_MAX_MS = AGENT_AUTH_QUEUE_MAX_MS;
 // pending + 起无应答超时 timer + 向 renderer 发 IPC;此前无数量上限 —— 外部 MCP/agent 可并发 spam 大量
 // 需授权的 tool 调用,renderer 同一时间只弹一个,其余全堆在 main 等满无应答超时 → pending Map + timer +
 // IPC 线性放大内存/事件循环,发起的外部 agent 进程干等假死。全局 + per-window 双闸(对齐 E227
-// ScopeRequestCorrelator),超限直接终态 'denied'(不入 pending、不起 timer、不发 IPC)。backstop 值远超
-// 任何正常并发授权(renderer store.ensure 仍处理合法并发 pending,见文件头注释),只挡 spam。
+// ScopeRequestCorrelator),超限直接终态 'denied'(不入 pending、不起 timer、不发 IPC)。现为后备防线:已授权域
+// 的请求在 main 直接放行、不入 pending,未授权请求受单飞约束(每个调用方类别至多一个未决),正常与恶意并发都碰不到。
 const MAX_PENDING_AUTH_GLOBAL = 256; // 全局未决授权上限
 const MAX_PENDING_AUTH_PER_WINDOW = 64; // 单窗口未决授权上限
 
-/** 结算原因:answer = renderer 应答(用户的决定);timeout = 无人应答;cancelled = 窗口关闭 / 撤销 / 退出 / 发送失败。 */
 /**
- * 结算原因。'bulk-cancelled' = 退出清理 / 撤销的批量结算:与 'cancelled' 同样不计入节流,但不逐个通知 renderer
- *(退出时窗口已隐藏、无人应答;撤销另有 REVOKED 广播统一撤掉弹窗)。
+ * 结算原因:answer = renderer 应答(用户的决定);timeout = 无人应答;cancelled = 窗口关闭 / renderer 换文档 /
+ * 排队兜底 / 发送失败;bulk-cancelled = 退出清理 / 撤销的批量结算。后两者都不计入节流;cancelled 与 timeout 逐个
+ * 通知 renderer 撤掉弹窗,bulk-cancelled 不通知(退出时窗口已隐藏、无人应答;撤销另有 REVOKED 广播统一撤掉)。
  */
 type SettleCause = 'answer' | 'timeout' | 'cancelled' | 'bulk-cancelled';
 
@@ -87,11 +87,11 @@ let throttle = newAuthThrottle();
  * 或窗口关闭时清掉该窗口的条目(watchAgentAuthRenderer / cancelAgentAuthByWindow)—— 与此前「renderer 状态随文档
  * 消失」同一语义。renderer 只持有用于界面(状态栏撤销入口)的副本,不参与放行判断。
  */
-const sessionGrantMirror = new Set<string>();
+const sessionGrants = new Set<string>();
 
 // 安全:renderer 文档被换掉(主窗 View 菜单 Cmd+R reload、渲染进程崩溃)时 webContents 不销毁、窗口也不关,
 // win 'closed' 的清理走不到;而 renderer 侧的授权态与弹窗已随旧文档消失。不清的话:
-// - 镜像残留 → 该域请求不走节流,renderer 却真的弹窗(速率上限 / 超时冷却 / 拒绝冷却全部失效);
+// - 授权残留 → 该窗口已授权域的请求继续被静默放行,而用户看到的界面副本已随旧文档清空(没有撤销入口);
 // - 显示中的弹窗消失,main 的未决请求留到无应答超时,调用方一直「已有未决弹窗」,之后再吃超时冷却 →
 //   同窗口所有 agent 数分钟拿不到弹窗。
 // 窗口创建时挂钩(main/index.ts 的 browser-window-created;首次加载也算「新文档尚未就绪」),首次向某窗口发请求时
@@ -254,7 +254,7 @@ export async function requestAgentAuth(
     );
   }
   // 该域已「本次启动期间允许」→ 直接放行(不发 IPC、不弹窗、不走节流)。
-  if (sessionGrantMirror.has(grantKey)) return 'session';
+  if (sessionGrants.has(grantKey)) return 'session';
   const admission = throttle.admit(subject, [domain]);
   if (!admission.ok) throw throttledError(admission);
   const requestId = `req-${crypto.randomUUID()}`;
@@ -283,7 +283,7 @@ export async function requestAgentAuth(
       }
       // 调用方都是先从 pending 删除再 settle → 此刻窗口内最早的未决请求即 renderer 接着显示的那个。
       markDisplayed(win.id);
-      if (granted) sessionGrantMirror.add(grantKey);
+      if (granted) sessionGrants.add(grantKey);
       resolve(decision);
     };
     // 排队兜底:一直没轮到显示 → 按取消结算(不计拒绝、不进冷却)。轮到显示时 markDisplayed 换成无应答超时。
@@ -350,7 +350,7 @@ export function answerAgentAuthRequest(
 
 /**
  * 目标窗口关闭/销毁,或其 renderer 文档被换掉(reload / 渲染进程崩溃,见 watchAgentAuthRenderer)→ 把发往它的所有
- * pending 授权请求立即结算为 denied(按取消:不计拒绝、不进冷却),并清掉它的授权镜像。
+ * pending 授权请求立即结算为 denied(按取消:不计拒绝、不进冷却),并清掉它的授权。
  * 否则发起的**外部 agent CLI 进程**(仍存活)要干等满 PROMPT_TIMEOUT_MS(2 分钟)才收到
  * 默认拒绝,表现为 agent 假死。这与 request-scope「等待者是已死请求方自己」不同 ——
  * 这里等待者是活的外部进程。镜像 stop-hook broker.cancelByWindow(审计 #3)。返回取消数。
@@ -365,8 +365,8 @@ export function cancelAgentAuthByWindow(windowId: number): number {
     count += 1;
   }
   // renderer 文档没了 → 它的授权态也没了。
-  for (const key of sessionGrantMirror) {
-    if (key.startsWith(`${windowId}:`)) sessionGrantMirror.delete(key);
+  for (const key of sessionGrants) {
+    if (key.startsWith(`${windowId}:`)) sessionGrants.delete(key);
   }
   return count;
 }
@@ -406,7 +406,7 @@ export function _resetPendingForTest(): void {
   for (const [, r] of pending) r.settle('denied', 'bulk-cancelled');
   pending.clear();
   throttle = newAuthThrottle();
-  sessionGrantMirror.clear();
+  sessionGrants.clear();
   rendererNotReady.clear();
   controllerTeardown = null;
 }
@@ -446,8 +446,8 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   // 按旧 requestId 放行 → 撤销后那次 MCP tool call 仍执行一次,违反「撤销即时生效」的安全边界。
   // 清空 pending 后,迟到 respond 找不到条目 → no-op,无法复活已撤销的授权。
   cancelAllAgentAuth();
-  // 各窗口 renderer 的「本次启动期间允许」随下方 REVOKED 广播清空 → 镜像同步清空(拒绝冷却不清)。
-  sessionGrantMirror.clear();
+  // 清空全部「本次启动期间允许」(权威在此;各窗口的界面副本随下方 REVOKED 广播清空)。拒绝冷却不清。
+  sessionGrants.clear();
   let rotated = false;
   if (mcpHostRef) {
     mcpHostRef.rotateToken();
@@ -475,8 +475,8 @@ export function revokeAndKillAgentSessions(): RevokeResult {
       controllerTeardown.killByController(token, 'revoked');
     }
   }
-  // 跨窗口撤销:「本次启动期间允许」记在各窗口 renderer 的 store,只有发起窗口会本地重置。不通知其它窗口
-  // → 它们仍 sessionGranted=true、残留弹窗不清,之后的请求被静默放行。广播给所有窗口统一重置。
+  // 跨窗口撤销:授权已在上方清空(放行权威在 main);各窗口 renderer 的界面副本与残留弹窗由广播统一重置
+  //(否则其它窗口仍显示撤销入口、残留弹窗被点「本次启动期间允许」会再记一次授权)。
   broadcastToWindows(AGENT_AUTH_CHANNELS.REVOKED, () => ({}), '[agent-auth] REVOKED');
   return { killed, rotated };
 }
