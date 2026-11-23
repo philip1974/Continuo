@@ -115,9 +115,8 @@ export interface PluginWarning {
  * (loader NO_DEFAULT_EXPORT/NOT_PLUGIN_CLASS 的 message 是硬编码中文,旧实现 `${code}:
  * ${message}` 存进 entry.error 直接渲染 → en/ko 泄漏中文且不随 locale 重算)。error 来源
  * 异构(loader/manifest 解析/权限/catch-all),故存 code + 自由 message:renderer 用
- * tWithFallback(`errors.${code}`, `${code}: ${message}`) —— catalog 收录的 code 显本地化
- * 文案,未收录(PERMISSION_DENIED/IMPORT_FAILED/EXCEPTION 等动态 message)保留旧 `code:
- * message` 格式。
+ * localizeErrorByCode(code, `${code}: ${message}`) —— catalog 收录的 code 显本地化文案,未收录
+ *(PERMISSION_DENIED/IMPORT_FAILED/EXCEPTION 等动态 message)或模板带占位符时保留 `code: message`。
  */
 export interface PluginError {
   readonly code: string;

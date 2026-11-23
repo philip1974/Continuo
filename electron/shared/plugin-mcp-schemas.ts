@@ -1,9 +1,7 @@
 // Plugin → MCP Bridge — IPC payload zod schemas。
 //
-// **改 schema 后必须同步更新 ./plugin-mcp-channels.ts 里手写的对应 type**
-// (preload sandbox 不能 import zod,所以纯类型分文件留在 channels.ts)。
-//
-// 只在 main / renderer 进程使用(不被 preload 引用)。
+// 类型单一来源:plugin-mcp-channels.ts 以 `import type` + z.infer 派生 InvokePayload / InvokeReply / RegisterPayload
+//(类型导入被擦除,preload 不带 zod;见 preload-no-zod 守卫)。只在 main / renderer 进程值导入。
 //
 // BDD: src/__tests__/plugin-mcp-ipc-bridge/
 

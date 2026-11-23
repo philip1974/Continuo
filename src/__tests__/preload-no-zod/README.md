@@ -28,7 +28,8 @@ Error: module not found: zod  (at preloadRequire)
 
 - channel 常量 + 跨进程**类型**(interface)放 `*-channels.ts`(zod-free,preload 可安全 value-import)。
 - zod 入参 schema 放 `electron/main/ipc/*.ipc.ts`,或(需要与 shared 类型单一来源时)放 shared 的独立 schema 模块,由 main 值导入。
-- 跨进程**类型**若需从 zod schema 派生(`z.infer`),放在**独立的** shared 类型/schema 文件,
-  且 preload 只 `import type`(被 bundler 擦除,不拖 zod)。
+- 跨进程**类型**若需从 zod schema 派生(`z.infer`):schema 放独立的 shared schema 模块,`*-channels.ts` 只
+  `import type` 推出类型(被 bundler 擦除,不拖 zod)。
 
-> 已有先例:`plugin-mcp-channels.ts` 顶部注释「不 import zod」+ schema 另放 `plugin-mcp-schemas.ts`。
+> 先例:`plugin-mcp-channels.ts` ↔ `plugin-mcp-schemas.ts`、`plugins-channels.ts` ↔ `plugin-permission-schema.ts`、
+> `window-channels.ts` ↔ `window-create-schema.ts`。

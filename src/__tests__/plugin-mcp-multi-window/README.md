@@ -119,7 +119,7 @@ export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMc
   却落在 B 的仓库,B 的用户不知情。工具名全局唯一注册(先到先得)保持不变,只是别的窗口调不了。
 - 同窗通过后授权:`ensureAuthorized(ctx.ownerWindowId, 'plugin.<tool 名>')`,弹窗出现在该窗口;路由按注册者 owner
 - IPC 接线中 `windowIdOfWc` 取 `BrowserWindow.fromWebContents(webContents.fromId(wcId))?.id`,wc 已销毁 → null
-- method 以 `plugin.` 为前缀,renderer agent-auth store 归入独立的插件工具域(与终端 / debug 域互不放行,
+- method 以 `plugin.` 为前缀,`agentAuthDomainOf` 归入独立的插件工具域(main 按域判定放行,与终端 / debug 域互不放行,
   见 `agent-terminal-mcp-auth`);超长 tool 名按授权请求 method 上限截断
 - denied / 调用方已断开 → `AGENT_NOT_AUTHORIZED`,不向插件 renderer 发 invoke
 - IPC 接线 `startPluginMcpIpc(host, getStdio, ensureAuthorized)`:第三参缺省 fail-closed(一律拒绝),
