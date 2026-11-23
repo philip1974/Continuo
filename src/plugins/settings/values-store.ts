@@ -9,7 +9,6 @@ import { create } from 'zustand';
 import {
   coerceSettingValue,
   SI_TEXT_VALUE_MAX,
-  type SettingItemSpec,
   type SettingItemValue,
 } from '../registries/SettingItemRegistry';
 import {
@@ -27,7 +26,7 @@ const STORAGE_KEY = 'continuo.settings.values';
 // 边界(E142/E241):单个 text/string 设置值长度上限。setValue 写入前截断 —— 否则用户在 text setting
 // 粘贴超大文本会进 zustand+localStorage,整份 settings 记录超 readRecord 1MiB raw cap 后下次启动
 // 被当空表丢弃(所有设置丢失)。64KiB 远超任何真实设置文本,只挡滥用/误操作。常量收口到
-// SettingItemRegistry(coerceSettingValue 家),读端(getSettingValue/useSettingValue 经 coerce)也用同值。
+// SettingItemRegistry(coerceSettingValue 家),读端(useSettingValue 经 coerce)也用同值。
 const MAX_SETTING_TEXT_LEN = SI_TEXT_VALUE_MAX;
 
 // 可维护性 M21:localStorage 对象持久化 + 跨窗同步样板复用 local-storage-record helper。
@@ -127,18 +126,6 @@ export function getStoredSettingValue(id: string): SettingItemValue | undefined 
   return ownValue(useSettingsValuesStore.getState().values, id);
 }
 
-/** 取某 spec 当前值(override ?? default). 非 React 上下文用. */
-export function getSettingValue<T extends SettingItemValue>(
-  spec: SettingItemSpec,
-): T {
-  // 只认自有属性:插件 setting id 为 constructor 等时不得命中原型链(返回函数而非 default)。
-  const stored = getStoredSettingValue(spec.id);
-  const v = stored ?? spec.default;
-  // 边界(E6 number clamp + E139 select enum):读路径按 spec 规整已持久化/篡改值,防越界 number /
-  // 非法 select 字符串喂给 xterm fontSize/cursorStyle 等消费者。与 useSettingValue 共用 coerceSettingValue。
-  return coerceSettingValue(spec, v) as T;
-}
-
 /** React hook:订阅某 setting id 的值,变化时组件重渲. fallback = 该 id 的 spec.default. */
 export function useSettingValue<T extends SettingItemValue>(
   id: string,
@@ -146,8 +133,8 @@ export function useSettingValue<T extends SettingItemValue>(
 ): T {
   return useSettingsValuesStore((s) => {
     const v = (ownValue(s.values, id) ?? fallback) as T;
-    // 边界(E122 number clamp + E139 select enum,E6 读路径对齐):按注册 spec 规整值,与 getSettingValue
-    // 共用 coerceSettingValue —— 篡改/旧 localStorage 的越界 number 或非法 select 字符串(如
+    // 边界(E122 number clamp + E139 select enum,E6 读路径对齐):按注册 spec 规整值(coerceSettingValue)
+    // —— 篡改/旧 localStorage 的越界 number 或非法 select 字符串(如
     // terminal.cursorStyle)绕过净化直接喂给 xterm/CSS/timer 等消费者。spec 未注册(测试/早期)原样返回。
     const spec = coApp.settingItems.get(id);
     if (spec) return coerceSettingValue(spec, v as SettingItemValue) as T;

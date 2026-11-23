@@ -65,7 +65,7 @@ export function clampSettingNumber(spec: SettingItemSpec, n: number): number {
 }
 
 // 边界(E142/E241):单个 text/string 设置值长度上限(64KiB,远超任何真实设置文本)。单一来源放此处
-// (coerceSettingValue 的家),values-store 写端 import 复用 —— 写端 setValue 与读端 getSettingValue/
+// (coerceSettingValue 的家),values-store 写端 import 复用 —— 写端 setValue 与读端
 // useSettingValue 都经 coerceSettingValue,在此截断使读≡写。
 export const SI_TEXT_VALUE_MAX = 64 * 1024;
 
@@ -81,8 +81,8 @@ export function hasSettingEnumValue(
 
 // 边界(E139,E6/E122 同族读路径净化):按 spec 把已持久化/篡改的值规整到合法域 —— number clamp
 // 到 min/max(E6),select 校验属于 spec.enum(否则回退 default,防非法字符串喂给消费者,如
-// terminal.cursorStyle → xterm)。getSettingValue(非 hook)与 useSettingValue(hook)共用单一来源,
-// 避免两读路径净化逻辑漂移(E122 教训)。无 enum 的 select 无可校验集合 → 原样返回。
+// terminal.cursorStyle → xterm)。读端 useSettingValue 与设置行显示共用单一来源,
+// 避免净化逻辑漂移(E122 教训)。无 enum 的 select 无可校验集合 → 原样返回。
 export function coerceSettingValue(
   spec: SettingItemSpec,
   value: SettingItemValue,
@@ -97,7 +97,7 @@ export function coerceSettingValue(
   }
   // 边界(E241,E142 写端对偶):text/string 值按 SI_TEXT_VALUE_MAX 截断。写端 setValue 已截断,但
   // 篡改/旧版 localStorage 可放入接近 readRecord 1MiB raw cap 的超长 text override,读端经此 coerce
-  // 截断,防 useSettingValue/getSettingValue 原样返回超长字符串致设置页/消费者渲染卡顿。读≡写。
+  // 截断,防 useSettingValue 原样返回超长字符串致设置页/消费者渲染卡顿。读≡写。
   if (
     spec.type === 'text' &&
     typeof value === 'string' &&

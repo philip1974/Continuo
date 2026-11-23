@@ -2,14 +2,20 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
 import {
   useSettingsValuesStore,
-  getSettingValue,
+  getStoredSettingValue,
   useSettingValue,
 } from '../../plugins/settings/values-store';
 import {
   SI_TEXT_VALUE_MAX,
+  coerceSettingValue,
   type SettingItemSpec,
 } from '../../plugins/registries/SettingItemRegistry';
 import { coApp } from '../../plugins/co-app';
+
+/** 非 React 读取口径:override ?? default,经 coerceSettingValue 规整(与 useSettingValue 同一规整)。 */
+function getSettingValue(spec: SettingItemSpec): unknown {
+  return coerceSettingValue(spec, getStoredSettingValue(spec.id) ?? spec.default);
+}
 
 const textSpec: SettingItemSpec = {
   id: 'editor.scratch',

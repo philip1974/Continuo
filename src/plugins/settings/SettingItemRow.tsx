@@ -164,7 +164,7 @@ export function SettingItemRow({
   const reset = (id: string): void => {
     if (isStillRegistered(id)) resetRaw(id);
   };
-  // 与消费者(useSettingValue/getSettingValue)同一 coerceSettingValue 规整:越界 number clamp、非法
+  // 与消费者(useSettingValue)同一 coerceSettingValue 规整:越界 number clamp、非法
   // select 回退 default —— 否则设置页显示篡改/旧版 localStorage 原始脏值,与实际生效值不一致。
   const value = coerceSettingValue(spec, stored ?? spec.default);
   // values 中存在 override → 显示 reset;undefined 表示走 default,无需 reset

@@ -13,11 +13,19 @@ import {
   formatHotkeyParts,
 } from '../../plugins/command-palette/format-hotkey';
 import {
-  getSettingValue,
+  getStoredSettingValue,
   useSettingsValuesStore,
 } from '../../plugins/settings/values-store';
 import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
-import type { SettingItemSpec } from '../../plugins/registries/SettingItemRegistry';
+import {
+  coerceSettingValue,
+  type SettingItemSpec,
+} from '../../plugins/registries/SettingItemRegistry';
+
+/** 非 React 读取口径:override ?? default,经 coerceSettingValue 规整(与 useSettingValue 同一规整)。 */
+function getSettingValue(spec: SettingItemSpec): unknown {
+  return coerceSettingValue(spec, getStoredSettingValue(spec.id) ?? spec.default);
+}
 
 const PROTO_NAMES = ['constructor', 'toString', 'hasOwnProperty', 'valueOf', '__proto__'];
 
