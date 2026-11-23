@@ -179,9 +179,6 @@ export const ExplorerSchemaV3 = z
 export type ExplorerWritablePayload = z.infer<
   typeof ExplorerWritableSnapshotSchema
 >;
-export type ExplorerWritableWindowEntry = z.infer<
-  typeof WritableWindowEntrySchema
->;
 export type WindowEntryV3 = z.infer<typeof WindowEntrySchemaV3>;
 export type ExplorerPayloadV3 = z.infer<typeof ExplorerSchemaV3>;
 

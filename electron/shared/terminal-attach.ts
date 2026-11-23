@@ -17,5 +17,3 @@ export const AttachTargetSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
-
-export type AttachTarget = z.infer<typeof AttachTargetSchema>;

@@ -44,7 +44,6 @@ function isAlnumLower(code: number): boolean {
 }
 
 function hasOnlyPluginIdChars(id: string): boolean {
-  if (id.length === 0) return false;
   for (let i = 0; i < id.length; i += 1) {
     const code = id.charCodeAt(i);
     const ok =

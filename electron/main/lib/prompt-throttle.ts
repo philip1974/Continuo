@@ -128,7 +128,8 @@ export class PromptThrottle {
    * 不记账。给「算 key 本身有开销」的调用方(scope 请求的冷却键要逐级 stat)在算 key 之前先问一次 —— 被节流的
    * 请求不该再触发那份开销;false 之后仍须照常调 admit(key 级冷却只有它能判,且两者之间状态可能变化)。
    */
-  blockedRegardlessOfKeys(subject: string, now: number = Date.now()): boolean {
+  blockedRegardlessOfKeys(subject: string): boolean {
+    const now = Date.now();
     if (this.inFlight.has(subject)) return true;
     if (now < this.timeoutUntil(subject)) return true;
     const state = this.subjects.get(subject);
@@ -143,7 +144,8 @@ export class PromptThrottle {
    * 计入该 subject 的弹窗速率,但不占在途槽、不记任何决定:请求因目标暂时无法显示弹窗(窗口正在重新加载)被直接
    * 拒绝时用 —— 否则这段时间里的重试不受任何限制,目标恢复后积压的重试可以连弹。
    */
-  noteAttempt(subject: string, now: number = Date.now()): void {
+  noteAttempt(subject: string): void {
+    const now = Date.now();
     const state = this.stateFor(subject);
     state.prompts = state.prompts
       .filter((t) => now - t < PROMPT_RATE_WINDOW_MS)
@@ -197,7 +199,8 @@ export class PromptThrottle {
    * 合并计数)翻倍,上限同拒绝冷却。不按 key 记:轮换 key(授权域)即可绕开;按组而非单个 subject 记:组内多个
    * subject 交替只发起不应答,各自的冷却期由另一个的弹窗填满。
    */
-  noteTimeout(subject: string, now: number = Date.now()): void {
+  noteTimeout(subject: string): void {
+    const now = Date.now();
     const groupKey = this.timeoutGroupOf(subject);
     let state = this.timeoutGroups.get(groupKey);
     if (!state) {

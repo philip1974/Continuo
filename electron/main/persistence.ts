@@ -18,7 +18,6 @@ export type {
   ExplorerPayload,
   WindowEntry,
   ExplorerWritablePayload,
-  ExplorerWritableWindowEntry,
   WindowEntryV3,
   ExplorerPayloadV3,
 } from '../shared/explorer-persistence-schema';
@@ -448,7 +447,6 @@ async function prunePayloadAndWrite(
   maxSegments: number,
   activeSeqs: ReadonlySet<number>,
 ): Promise<void> {
-  if (payload.windows.length <= maxSegments) return;
   const before = payload.windows.length;
   pruneLRUClosed(payload, maxSegments, activeSeqs);
   if (payload.windows.length === before) return;

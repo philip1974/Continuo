@@ -300,14 +300,10 @@ export function makeRemoveHandler(deps?: {
   };
 }
 
-export function makeWriteHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
+export function makeWriteHandler(deps?: { service?: typeof termService }) {
   const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
   return async (input: WriteInput, win: BrowserWindow): Promise<void> => {
-    assertOwnedSession(sessionStore, input.id, win);
+    assertOwnedSession(terminalSessions, input.id, win);
     if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
     // race(R4):await 真实写入结果;失败(check 后 PTY 退出 / 写拒绝)→ 抛 TERMINAL_WRITE_FAILED,
     // IPC 返 ok:false,让 renderer(A144)真正感知写入失败而非收到假成功。
@@ -316,14 +312,10 @@ export function makeWriteHandler(deps?: {
   };
 }
 
-export function makeResizeHandler(deps?: {
-  service?: typeof termService;
-  sessionStore?: typeof terminalSessions;
-}) {
+export function makeResizeHandler(deps?: { service?: typeof termService }) {
   const service = deps?.service ?? termService;
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
   return async (input: ResizeInput, win: BrowserWindow): Promise<void> => {
-    assertOwnedSession(sessionStore, input.id, win);
+    assertOwnedSession(terminalSessions, input.id, win);
     if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
     // race(R96):await 真实 resize 结果并在失败时上抛 → IPC 返回 ok:false,让 renderer 感知
     // PTY resize 未成功、回滚 lastSize 以便同尺寸重试(否则 DOM/PTY 尺寸长期不一致)。

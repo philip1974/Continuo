@@ -33,13 +33,13 @@ The renderer (via `coApi` in `src/lib/co-api.ts`) gets the envelope back and bra
 Exceptions:
 
 - `plugin-data`, `plugin-fs` and `plugin-shell-stream` register `ipcMain.handle` directly behind the trusted-frame check (`withTrustedFrameGate` / `assertTrustedFrame`); they return plain values and reject on failure instead of using the envelope (exception: `PLUGIN_FS_CHANNELS.READ_FOR_EDITOR` resolves `{ ok: false, code, message }` on failure).
-- `window.ipc.ts` (`NOTIFY_ROOT`) and `plugin-mcp.ipc.ts` hand-write `ipcMain.handle` to reach `event.sender`, but still check `defaultIsTrustedFrame` (plugin-mcp via `processIpcCall`) and return the `IpcResult` envelope; `plugin-mcp.ipc.ts` also has a one-way `ipcMain.on` for `INVOKE_REPLY` (trusted-frame checked, no envelope).
+- `window.ipc.ts` (`NOTIFY_ROOT`) and `plugin-mcp.ipc.ts` use `safeHandleWithCtx` to reach `event.sender` (same trusted-frame check and `IpcResult` envelope); `plugin-mcp.ipc.ts` also has a one-way `ipcMain.on` for `INVOKE_REPLY` (trusted-frame checked, no envelope).
 - `ipcMain.on` listeners in `index.ts` do their own `defaultIsTrustedFrame` check and use no envelope: one-way notifications (`LAYOUT_CHANNELS.DIRTY_STATE` / `FLUSH_ACK` / `FLUSH_READY`, `PLUGINS_CHANNELS.PROTOCOL_READY`, `AGENT_AUTH_CHANNELS.READY`) and the synchronous `WINDOW_ID_CHANNEL` (answers via `event.returnValue`, `0` for untrusted frames).
 
 New request/response channels should use `safeHandle`.
 
 ```ts
-safeHandle(channel, zodSchema, handler, isTrustedFrame);
+safeHandle(channel, zodSchema, handler);
 ```
 
 Does three things every channel must do:
@@ -87,7 +87,7 @@ Each lives in `electron/shared/*-channels.ts`. Most are registered by `electron/
 1. Add the channel constant in `electron/shared/<area>-channels.ts`.
 2. Define a Zod schema for the input — usually next to the handler in `ipc/<area>.ipc.ts`, or in a shared `electron/shared/<area>.ts` module when preload / renderer also need the type.
 3. Write the handler as a pure function — input → output (throw for failure, attach `.code` for non-default error codes).
-4. In `electron/main/ipc/<area>.ipc.ts`, call `safeHandle(CHANNEL, schema, handler, defaultIsTrustedFrame)` from the register function.
+4. In `electron/main/ipc/<area>.ipc.ts`, call `safeHandle(CHANNEL, schema, handler)` from the register function.
 5. Expose the method on the API object in `electron/preload/index.ts`; the renderer reaches it through `coApi` (`src/lib/co-api.ts` is a generic proxy and needs no change).
 6. Write a BDD spec (`src/__tests__/<topic>/`) and / or a TDD unit test.
 

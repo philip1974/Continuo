@@ -62,12 +62,9 @@ export function startPluginMcpIpc(
   getStdio: () => StdioSocketServer | null = () => null,
   // 安全:插件工具 agent 授权门控。缺省 fail-closed(一律拒绝),生产由 main/index.ts 注入 requestAgentAuth。
   ensureAuthorized: EnsureAuthorized = async () => 'denied',
-): {
-  bridge: PluginMcpBridge;
-  invokeRemote: InvokeRemoteCore;
-} {
+): { invokeRemote: InvokeRemoteCore } {
   if (bridge && invokeRemote) {
-    return { bridge, invokeRemote };
+    return { invokeRemote };
   }
 
   // host 内部 tools Map 在 createMcpHost 里是 ReadonlyMap 对外暴露,
@@ -163,7 +160,7 @@ export function startPluginMcpIpc(
     rejectInvalidReply(raw);
   });
 
-  return { bridge: localBridge, invokeRemote: localInvoke };
+  return { invokeRemote: localInvoke };
 }
 
 // ── wc destroyed / reload hook ─────────────────────────────
