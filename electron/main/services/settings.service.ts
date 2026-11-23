@@ -132,17 +132,12 @@ export function getCurrentLocale(): Locale {
 
 /**
  * 设置 locale 并持久化。返回本次调用的 gen（in-flight token，议题 P1-1）。
- * 调用方应在 IPC handler 内对比本调用 gen 与 setLocaleGen，过期 callback 丢弃。
+ * 调用方写盘成功后把 gen 交给 commitSetLocaleGen 判定是否为最新成功提交。
  */
 export async function setCurrentLocale(locale: Locale): Promise<number> {
   const gen = ++setLocaleGen;
   await saveSettings({ version: 1, locale });
   return gen;
-}
-
-/** 当前 in-flight（已发起）计数；保留导出供既有调用方/测试参考。广播判定改用 commitSetLocaleGen。 */
-export function getSetLocaleGen(): number {
-  return setLocaleGen;
 }
 
 /**
