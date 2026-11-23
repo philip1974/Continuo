@@ -239,3 +239,19 @@ async function saveFileNow(
   store.getState().markSaved(tabId, savedContent, savedGen);
   return { ok: true, data: undefined };
 }
+
+/**
+ * 把编辑器回写的全文写入 tab。`base` 是编辑器最近一次上抛(或挂载时)的内容:store 里该 tab
+ * 内容已不等于 base → 期间被别处改过(外部改盘 reloadFromDisk 触发 epoch 重挂载等),不用旧
+ * 编辑器的内容覆盖。tab 已关闭 → no-op。
+ */
+export function applyEditorWriteBack(
+  tabId: string,
+  markdown: string,
+  base: string,
+): void {
+  const store = useEditorStore;
+  const cur = findEditorFileTabById(store.getState().tabs, tabId);
+  if (!cur || cur.content !== base) return;
+  store.getState().updateContent(tabId, markdown);
+}

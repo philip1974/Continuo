@@ -5,9 +5,9 @@ import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 import {
-  applyEditorWriteBack,
   flushEditorWriteBacks,
 } from '../../panels/Editor/editor-writeback-registry';
+import { applyEditorWriteBack } from '../../panels/Editor/editor-file-actions';
 import { useAutoSave } from '../../panels/Editor/useAutoSave';
 import {
   flushPendingAutoSave,
@@ -413,7 +413,7 @@ describe('applyEditorWriteBack', () => {
 
   it('store 内容仍是基线 → 写入并变脏', () => {
     useEditorStore.getState().openTab(createTab('/a.md', 'hello'));
-    applyEditorWriteBack(useEditorStore, '/a.md', 'hello world', 'hello');
+    applyEditorWriteBack('/a.md', 'hello world', 'hello');
     const t = useEditorStore.getState().tabs[0]!;
     expect(t.content).toBe('hello world');
     expect(t.dirty).toBe(true);
@@ -422,7 +422,7 @@ describe('applyEditorWriteBack', () => {
   it('store 已被外部重载改过(≠ 基线)→ 不用旧编辑器内容覆盖', () => {
     useEditorStore.getState().openTab(createTab('/a.md', 'hello'));
     useEditorStore.getState().reloadFromDisk('/a.md', 'external');
-    applyEditorWriteBack(useEditorStore, '/a.md', 'hello world', 'hello');
+    applyEditorWriteBack('/a.md', 'hello world', 'hello');
     expect(useEditorStore.getState().tabs[0]!.content).toBe('external');
   });
 });
@@ -446,7 +446,7 @@ describe('关窗 autosave flush 覆盖回写产生的未排队编辑', () => {
     await settle();
 
     // 关窗握手:同步回写后立刻 flush,中间没有 React 渲染 / effect 机会
-    applyEditorWriteBack(useEditorStore, '/a.md', 'hello world', 'hello');
+    applyEditorWriteBack('/a.md', 'hello world', 'hello');
     await flushPendingAutoSave();
 
     expect(saveTab).toHaveBeenCalledWith('/a.md');

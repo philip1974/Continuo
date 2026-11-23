@@ -91,9 +91,9 @@ import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from '@/panels/Edit
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import {
-  applyEditorWriteBack,
   registerEditorWriteBack,
 } from '@/panels/Editor/editor-writeback-registry';
+import { applyEditorWriteBack } from '@/panels/Editor/editor-file-actions';
 import { t } from '@/i18n';
 
 beforeEach(() => {
@@ -248,7 +248,7 @@ describe('flush 握手的「保存」分支', () => {
     await mountShell();
     act(() => useEditorStore.getState().openTab(createTab('/w/a.ts', 'old')));
     const unregister = registerEditorWriteBack('/w/a.ts', () =>
-      applyEditorWriteBack(useEditorStore, '/w/a.ts', 'typed', 'old'),
+      applyEditorWriteBack('/w/a.ts', 'typed', 'old'),
     );
     let contentAtAutoSaveFlush: string | undefined;
     vi.mocked(flushPendingAutoSave).mockImplementationOnce(async () => {

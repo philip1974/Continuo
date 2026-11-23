@@ -5,8 +5,6 @@
 // 窗口销毁丢失。活动 Milkdown 把「从编辑器同步取全文写回 store」的句柄登记在这里,DockShell
 // 关窗握手在保存 / autosave flush 之前先调 flushEditorWriteBacks()。
 
-import { findEditorFileTabById } from './editor-tab-lookup';
-import type { useEditorStore } from '@/stores/editor.store';
 
 // 按 tab id 登记:回写会把编辑器整篇序列化(大文档约 70ms)并提前上抛,只该回写受影响的 tab ——
 // 例如外部改了另一个打开中的干净文件(reloadFromDisk)不应打断正在输入的 tab。同一 tab id 允许
@@ -50,20 +48,4 @@ export function flushEditorWriteBacks(tabIds?: Iterable<string>): void {
     const set = writeBacks.get(id);
     if (set) for (const fn of [...set]) runWriteBack(fn);
   }
-}
-
-/**
- * 把编辑器回写的全文写入 tab。`base` 是编辑器最近一次上抛(或挂载时)的内容:store 里该 tab
- * 内容已不等于 base → 期间被别处改过(外部改盘 reloadFromDisk 触发 epoch 重挂载等),不用旧
- * 编辑器的内容覆盖。tab 已关闭 → no-op。
- */
-export function applyEditorWriteBack(
-  store: typeof useEditorStore,
-  tabId: string,
-  markdown: string,
-  base: string,
-): void {
-  const cur = findEditorFileTabById(store.getState().tabs, tabId);
-  if (!cur || cur.content !== base) return;
-  store.getState().updateContent(tabId, markdown);
 }

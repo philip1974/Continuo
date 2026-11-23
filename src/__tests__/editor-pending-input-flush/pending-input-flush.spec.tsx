@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTab, useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
 import {
-  applyEditorWriteBack,
   registerEditorWriteBack,
 } from '../../panels/Editor/editor-writeback-registry';
+import { applyEditorWriteBack } from '../../panels/Editor/editor-file-actions';
 import { t } from '../../i18n';
 
 // 模拟 Milkdown:pending = 编辑器里尚未上抛 store 的全文。与真实实现同口径 —— 登记同步回写句柄,
@@ -141,7 +141,7 @@ describe('editor store:按 dirty / id 决定的动作先回写未上抛输入', 
       if (harness.pending === null) return;
       const v = harness.pending;
       harness.pending = null;
-      applyEditorWriteBack(useEditorStore, tabId, v, base);
+      applyEditorWriteBack(tabId, v, base);
     });
   }
   afterEach(() => {
