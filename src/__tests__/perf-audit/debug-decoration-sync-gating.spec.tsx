@@ -76,7 +76,6 @@ function session(id: string, patch: Partial<DebugSessionShadow>): DebugSessionSh
     frames: [],
     scopes: [],
     variableRefs: new Map(),
-    variablesCache: new Map(),
     lastStoppedOrder: 0,
     ...patch,
   };
@@ -98,7 +97,7 @@ function setup(): EditorView {
         's1',
         session('s1', {
           breakpoints: [{ file: '/repo/a.ts', line: 2, verified: true }],
-          stopped: { reason: 'breakpoint', stopSeq: 1, pausedEpoch: 1, file: '/repo/a.ts', line: 3 },
+          stopped: { reason: 'breakpoint', stopSeq: 1, file: '/repo/a.ts', line: 3 },
           lastStoppedOrder: 1,
         }),
       ],
@@ -134,7 +133,7 @@ describe('perf E4 — debug 装饰同步按相关切片门控', () => {
 
     useDebugStore.setState((s) => {
       const cur = s.sessions.get('s1')!;
-      return { sessions: new Map(s.sessions).set('s1', { ...cur, variablesCache: new Map() }) };
+      return { sessions: new Map(s.sessions).set('s1', { ...cur, variableRefs: new Map() }) };
     });
     expect(h.pathEqualsCalls).toBe(0);
   });

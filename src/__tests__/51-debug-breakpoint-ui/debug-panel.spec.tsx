@@ -66,11 +66,9 @@ describe('topic51 Op5 · DebugPanel', () => {
             ],
             scopes: [{ name: 'Local', variables_reference: 44, expensive: false }],
             variableRefs: new Map(),
-            variablesCache: new Map(),
             stopped: {
               reason: 'breakpoint',
               stopSeq: 1,
-              pausedEpoch: 1,
               threadId: 3,
               file: '/repo/a.ts',
               line: 14,

@@ -144,7 +144,6 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       line: 14,
       threadId: 3,
       reason: 'breakpoint',
-      pausedEpoch: 1,
     });
     expect(session?.frames[0]?.name).toBe('main');
     expect(session?.scopes[0]?.name).toBe('Local');

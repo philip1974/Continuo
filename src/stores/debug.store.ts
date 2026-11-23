@@ -20,7 +20,6 @@ export type {
 export interface DebugStoppedLocation {
   readonly reason: string;
   readonly stopSeq: number;
-  readonly pausedEpoch: number;
   readonly threadId?: number;
   readonly file?: string;
   readonly line?: number;
@@ -32,7 +31,6 @@ export interface DebugSessionShadow {
   readonly frames: readonly DebugStackFrame[];
   readonly scopes: readonly DebugScope[];
   readonly variableRefs: ReadonlyMap<number, readonly DebugVariable[]>;
-  readonly variablesCache: ReadonlyMap<string, readonly DebugVariable[]>;
   readonly stopped?: DebugStoppedLocation;
   readonly lastStoppedOrder: number;
 }
@@ -61,7 +59,6 @@ function emptySession(id: string): DebugSessionShadow {
     frames: [],
     scopes: [],
     variableRefs: new Map(),
-    variablesCache: new Map(),
     lastStoppedOrder: 0,
   };
 }
@@ -71,14 +68,6 @@ function getOrCreateSession(
   sessionId: string,
 ): DebugSessionShadow {
   return sessions.get(sessionId) ?? emptySession(sessionId);
-}
-
-function variableCacheKey(
-  sessionId: string,
-  pausedEpoch: number,
-  variablesReference: number,
-): string {
-  return `${sessionId}:${pausedEpoch}:${variablesReference}`;
 }
 
 function asFrame(value: unknown): DebugStackFrame | null {
@@ -282,11 +271,9 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           frames: [],
           scopes: [],
           variableRefs: new Map(),
-          variablesCache: new Map(),
           stopped: {
             reason: event.reason,
             stopSeq: event.stopSeq,
-            pausedEpoch: event.stopSeq,
             ...(event.threadId !== undefined ? { threadId: event.threadId } : {}),
           },
           lastStoppedOrder: nextOrder,
@@ -312,7 +299,6 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           frames: [],
           scopes: [],
           variableRefs: new Map(),
-          variablesCache: new Map(),
           stopped: undefined,
         };
         const sessions = new Map(state.sessions);
@@ -347,9 +333,8 @@ export const useDebugStore = create<DebugState>((set, get) => ({
   loadVariables: async (sessionId, variablesReference) => {
     const session = get().sessions.get(sessionId);
     const stopSeq = session?.stopped?.stopSeq;
-    const pausedEpoch = session?.stopped?.pausedEpoch ?? 0;
-    const cacheKey = variableCacheKey(sessionId, pausedEpoch, variablesReference);
-    const cached = session?.variablesCache.get(cacheKey);
+    // 同一停内同一 reference 只拉一次(variableRefs 在 stopped / continued 时清空)。
+    const cached = session?.variableRefs.get(variablesReference);
     if (cached) return cached;
 
     const result = await coApi.debug.getVariables({
@@ -370,13 +355,10 @@ export const useDebugStore = create<DebugState>((set, get) => ({
       if (!current || current.stopped?.stopSeq !== stopSeq) return state;
       const variableRefs = new Map(current.variableRefs);
       variableRefs.set(variablesReference, variables);
-      const variablesCache = new Map(current.variablesCache);
-      variablesCache.set(cacheKey, variables);
       const sessions = new Map(state.sessions);
       sessions.set(sessionId, {
         ...current,
         variableRefs,
-        variablesCache,
       });
       return { sessions };
     });
@@ -430,7 +412,6 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
         stopped: {
           reason: snapshot.stop.reason,
           stopSeq: snapshot.stop.stopSeq,
-          pausedEpoch: snapshot.stop.stopSeq,
           ...(snapshot.stop.threadId !== undefined ? { threadId: snapshot.stop.threadId } : {}),
         },
         lastStoppedOrder: stoppedOrder,

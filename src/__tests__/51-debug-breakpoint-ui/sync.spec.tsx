@@ -63,7 +63,6 @@ function session(
     frames: [],
     scopes: [],
     variableRefs: new Map(),
-    variablesCache: new Map(),
     lastStoppedOrder: 0,
     ...patch,
   };
@@ -85,7 +84,6 @@ describe('topic51 Op6 · debug decoration sync', () => {
             stopped: {
               reason: 'breakpoint',
               stopSeq: 1,
-              pausedEpoch: 1,
               file: '/repo/a.ts',
               line: 3,
             },
@@ -166,7 +164,6 @@ describe('topic51 Op6 · debug decoration sync', () => {
             stopped: {
               reason: 'breakpoint',
               stopSeq: 1,
-              pausedEpoch: 1,
               file: '/repo/a.ts',
               line: 2,
             },
@@ -212,7 +209,6 @@ describe('topic51 Op6 · debug decoration sync', () => {
             stopped: {
               reason: 'breakpoint',
               stopSeq: 1,
-              pausedEpoch: 1,
               file: '/repo/readme.md',
               line: 3,
             },
@@ -254,7 +250,6 @@ describe('topic51 Op6 · debug decoration sync', () => {
               stopped: {
                 reason: 'breakpoint',
                 stopSeq: 1,
-                pausedEpoch: 1,
                 file: 'c:\\repo\\a.ts',
                 line: 3,
               },

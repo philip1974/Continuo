@@ -40,7 +40,6 @@ describe('perf E5 — 装饰实现未加载时按需动态加载并补做同步'
             frames: [],
             scopes: [],
             variableRefs: new Map(),
-            variablesCache: new Map(),
             lastStoppedOrder: 0,
           },
         ],
