@@ -12,7 +12,7 @@ import { clampSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type { SettingItemRegistry, SettingItemSpec } from '../registries/SettingItemRegistry';
-import type { SettingTabRegistry, SettingTabSpec } from '../registries/SettingTabRegistry';
+import type { SettingTabRegistry } from '../registries/SettingTabRegistry';
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
@@ -25,14 +25,6 @@ interface SettingsPanelProps {
   readonly registry?: SettingTabRegistry;
   /** 默认用全局 coApp.settingItems;测试可注入隔离 registry. */
   readonly itemRegistry?: SettingItemRegistry;
-}
-
-function useTabs(reg: SettingTabRegistry): readonly SettingTabSpec[] {
-  return useRegistry(reg);
-}
-
-function useItems(reg: SettingItemRegistry): readonly SettingItemSpec[] {
-  return useRegistry(reg);
 }
 
 const SETTINGS_NAV_BASE_CLASS_NAME =
@@ -142,7 +134,7 @@ export function SettingsPanel({
   const t = useT();
   const activeTabId = useSettingsStore((s) => s.activeTabId);
   const setActiveTabId = useSettingsStore((s) => s.setActiveTabId);
-  const tabs = useTabs(registry);
+  const tabs = useRegistry(registry);
   // nav 列表用 tabs(快照,订阅驱动重渲)。
   // race(R55,R50-R54 同族):active.render() 调插件函数,但 useRegistry 快照(useState 订阅)
   // 滞后 registry 一帧 —— tab 刚被插件 disable/reload unregister 时快照仍含它,直接用快照里的
@@ -230,7 +222,7 @@ function SettingsSearchResults({
   // locale 值随语言切换变化(useTWithFallback 返回的函数 identity 稳定,不能当
   // memo deps),驱动本地化 haystack 切语言重算(打磨 R30)。
   const locale = useLocale();
-  const allItems = useItems(itemRegistry);
+  const allItems = useRegistry(itemRegistry);
   // 预计算本地化 haystack:搜索源用 titleKey/descriptionKey 翻译后的可见文案
   // (SettingItemRow 实际显示的),否则中文/韩文下按屏幕文字搜不到。保留 id + raw
   // title/description 作补充。deps 含 locale 切语言重算。

@@ -69,17 +69,12 @@ export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
   return out;
 }
 
-/** 订阅 editorActions registry,渲染时按 ctx 过滤. */
-function useEditorActions(): readonly EditorActionSpec[] {
-  return useRegistry(coApp.editorActions);
-}
-
 /**
  * 抽出 actions 段为 memo 子组件:plugin 启停 actions 变化时,只本子组件
  * 重渲,父 EditorHeader 的 tabs 列表那段不动。
  *
  * memo 比较入参三个 primitive(filePath / dirty / mode)— 文件 / 脏态 /
- * 模式没变 + 子组件内 useEditorActions 订阅的 snapshot 也没变 → 跳过 reconcile。
+ * 模式没变 + 子组件内订阅的 editorActions snapshot 也没变 → 跳过 reconcile。
  *
  * (filterVisible 仍每次 props 或 actions 变化时跑;空数组也安然 memo。)
  */
@@ -94,7 +89,8 @@ const EditorActionsArea = memo(function EditorActionsArea({
   dirty,
   mode,
 }: EditorActionsAreaProps) {
-  const allActions = useEditorActions();
+  // 订阅 editorActions registry,渲染时按 ctx 过滤。
+  const allActions = useRegistry(coApp.editorActions);
   // race(R53,R51/R52 同族):点击时按 id 从 live registry 重查 + 按当前 ctx 重检 when 再执行,
   // 而非调渲染时捕获的 a.fn。插件 disable/reload unregister 后、到重渲移除按钮前旧 handler 仍可
   // 触发;重查使死 action / 当前 ctx 下不可见的 action 静默忽略,不执行已卸载插件代码。

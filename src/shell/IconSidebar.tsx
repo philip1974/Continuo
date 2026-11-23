@@ -11,7 +11,6 @@ import { NavRailButton } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useUpdateStore } from '@/marketplace/update-store';
-import type { RibbonActionSpec } from '@/plugins/registries/RibbonRegistry';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { useT } from '@/i18n';
 
@@ -50,15 +49,11 @@ function SettingsGearIcon({ size }: { size: number }) {
 const EXPLORER_ICON = <Folder width={ICON_SIZE} height={ICON_SIZE} />;
 const SETTINGS_ICON = <SettingsGearIcon size={ICON_SIZE} />;
 
-function useRibbonActions(): readonly RibbonActionSpec[] {
-  return useRegistry(coApp.ribbon);
-}
-
 export function IconSidebar() {
   const t = useT();
   const sidebarOpen = useLayoutUiStore((s) => s.sidebarOpen);
   const toggleSidebar = useLayoutUiStore((s) => s.toggleSidebar);
-  const ribbonActions = useRibbonActions();
+  const ribbonActions = useRegistry(coApp.ribbon);
   // Marketplace 更新数 → Settings 齿轮右上角红圈
   const updateCount = useUpdateStore((s) => s.available.length);
 

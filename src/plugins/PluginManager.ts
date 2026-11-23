@@ -721,7 +721,7 @@ export class PluginManager {
       console.warn(`[plugin-manager] activate ${entry.id} failed`, err);
       entry.instance = undefined;
       entry.status = 'failed';
-      entry.error = { code: errorCodeOf(err) ?? 'EXCEPTION', message: errorMessage(err) };
+      entry.error = { code: errorCodeOf(err), message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
       this.invalidateListCache();
     } finally {
@@ -874,7 +874,7 @@ export class PluginManager {
       scoped.revoke();
       entry.scoped = undefined;
       entry.status = 'failed';
-      entry.error = { code: errorCodeOf(err) ?? 'EXCEPTION', message: errorMessage(err) };
+      entry.error = { code: errorCodeOf(err), message: errorMessage(err) };
       await this.revokePluginFsToken(entry);
       // 终审 P1:构造函数 / onload 抛错前可能已 exec / execStream 启动 shell 进程;失败实例不挂
       // entry.instance,之后禁用 / 卸载都走不到 deactivateEntry → 此处同样终止。

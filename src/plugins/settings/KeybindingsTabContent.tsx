@@ -7,7 +7,7 @@ import { IconButton, Input, KeyCap } from '@/design';
 import { clampSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
-import type { CommandRegistry, CommandSpec } from '@/plugins/registries/CommandRegistry';
+import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import {
   formatHotkeyParts,
   detectPlatform,
@@ -57,10 +57,6 @@ const RESET_HOTKEY_ICON = (
     <path d="M13 3v3h-3" />
   </svg>
 );
-
-function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
-  return useRegistry(registry);
-}
 
 export interface DisplayCommand {
   readonly cmd: CommandSpec;
@@ -235,7 +231,7 @@ export function hasCommandId(commands: readonly CommandSpec[], id: string): bool
 }
 
 export function KeybindingsTabContent() {
-  const allCommands = useCommands(coApp.commands);
+  const allCommands = useRegistry(coApp.commands);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<CommandSpec | null>(null);
   const setHotkey = useKeybindingsStore((s) => s.setHotkey);

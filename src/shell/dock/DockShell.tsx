@@ -174,13 +174,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // DockShell 卸载 / onReady 重入(HMR/StrictMode/dockview 重建)时统一 dispose + cancel。
   // 否则旧 listener 与旧 debounce(闭包持旧 event.api)仍会触发,对已卸载组件 setEmpty、重复
   // handleTerminalPanelRemoved,或用旧 api.toJSON() 迟到写回 layout 覆盖新实例布局。
-  const dockDisposablesRef = useRef<
-    Array<{ dispose: () => void } | undefined>
-  >([]);
+  const dockDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const layoutPersistRef = useRef<{ cancel: () => void } | null>(null);
   const disposeDockListeners = useCallback(() => {
     for (const d of dockDisposablesRef.current) {
-      if (typeof d?.dispose !== 'function') continue;
       try {
         d.dispose();
       } catch {

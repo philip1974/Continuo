@@ -209,10 +209,6 @@ interface CommandPaletteProps {
   readonly commands: CommandRegistry;
 }
 
-function useCommands(registry: CommandRegistry): readonly CommandSpec[] {
-  return useRegistry(registry);
-}
-
 /**
  * 轻量 shell(打磨 R32):CommandPalette 常驻挂在 App 顶层。外层只订阅 isOpen/close
  * 并渲染 Modal,**仅 isOpen 时才挂载 CommandPaletteBody** —— 关闭状态下不再为不可见
@@ -257,7 +253,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   const moveSelection = useCommandPaletteStore((s) => s.moveSelection);
   const clampSelection = useCommandPaletteStore((s) => s.clampSelection);
 
-  const allCommands = useCommands(commands);
+  const allCommands = useRegistry(commands);
   const recentList = useRecentCommandsStore((s) => s.list);
   const recordRecent = useRecentCommandsStore((s) => s.record);
   const recentIds = useMemo(() => buildRecentCommandIds(recentList), [recentList]);
