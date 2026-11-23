@@ -1265,7 +1265,7 @@ async function startMcpStdioServer(): Promise<void> {
     });
     if (!cliPath) {
       // fail-closed:没有稳定 CLI 路径就不提供命令(状态栏显示不可用),绝不给临时挂载路径
-      setStdioConfig({ available: true, socketPath: mcpStdio.socketPath });
+      setStdioConfig({ available: true });
       return;
     }
     const claudeAddCommand = buildClaudeAddCommand(cliPath);
@@ -1276,12 +1276,7 @@ async function startMcpStdioServer(): Promise<void> {
         `  ${claudeAddCommand}`,
     );
     // 缓存配置给状态栏"复制 MCP 配置"按钮用
-    setStdioConfig({
-      available: true,
-      cliPath,
-      socketPath: mcpStdio.socketPath,
-      claudeAddCommand,
-    });
+    setStdioConfig({ available: true, claudeAddCommand });
   } catch (err) {
      
     console.warn(

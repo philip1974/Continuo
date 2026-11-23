@@ -10,10 +10,6 @@ export const MCP_CHANNELS = {
 export interface StdioMcpConfig {
   /** stdio server 是否在运行(macOS/Linux true,Win 当前 false). */
   readonly available: boolean;
-  /** CLI proxy 绝对路径(packaged 走 Resources,dev 走 scripts/). */
-  readonly cliPath?: string;
-  /** Unix socket 路径(debug 用). */
-  readonly socketPath?: string;
   /** 完整 `claude mcp add ...` 命令字符串,可直接 copy 跑. */
   readonly claudeAddCommand?: string;
 }
