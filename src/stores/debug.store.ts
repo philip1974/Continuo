@@ -393,7 +393,7 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
   for (const pull of pulls) void pullStackAndScopes(pull.id, pull.stopSeq);
 }
 
-// 幂等(模块级单例):renderer 启动入口(main-app init)尽早调用一次,DebugPanel 挂载时再调也无副作用。
+// 幂等(模块级单例):renderer 启动入口(main-app init)尽早调用一次;重复调用无副作用(只订阅一次)。
 // 不能只靠面板挂载:main 只推增量事件,面板没开时到达的停点 / 断点会永久丢失。
 // renderer 重载(Cmd+R)后 store 为空:subscribe 返回本窗口会话的快照(停点 + 断点),据此恢复。
 export function startDebugStoreSync(): void {

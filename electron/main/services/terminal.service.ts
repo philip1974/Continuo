@@ -335,7 +335,7 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
 }
 
 interface Instance {
-  /** 该会话输出 / 退出事件的投递目标(所属窗口)。 */
+  /** 该会话输出的投递目标(所属窗口)。 */
   readonly target: WebContents;
   pendingData: string;
   /** pendingData 首字符的累计偏移。 */

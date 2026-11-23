@@ -113,9 +113,9 @@ describe('createScopedApp editor permission gate', () => {
     expect(app.editor.openVerifiedFile).not.toHaveBeenCalled();
   });
 
-  // 边界(E182,E180 同族):openFile path 类型/长度前置闸(发 checkPath IPC 前)。畸形/超长 path →
-  // INVALID_PATH,不调 checkPath / rawEditor.openFile(挡 structured-clone 前置放大)。
-  it('E182 超长 / 非字符串 / 空 path → INVALID_PATH,不调 checkPath / rawEditor', async () => {
+  // 边界(E182,E180 同族):openFile path 类型/长度前置闸(发 readForEditor IPC 前)。畸形/超长 path →
+  // INVALID_PATH,不调 readForEditor / rawEditor.openFile(挡 structured-clone 前置放大)。
+  it('E182 超长 / 非字符串 / 空 path → INVALID_PATH,不调 readForEditor / rawEditor', async () => {
     const app = makeCoApp();
     const store = new InMemoryPermissionStore();
     await store.grant('plugin.a', ['fs']);

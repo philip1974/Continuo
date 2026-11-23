@@ -12,7 +12,7 @@
 | `src/panels/Explorer/mutate-actions.ts` | renameItem / removeItems / createNewFile / createNewDir |
 | `src/panels/Explorer/ContextMenu.tsx` | Radix UI ContextMenu 包装 |
 | `src/panels/Explorer/ConfirmDialog.tsx` | Radix UI Dialog 删除二次确认 |
-| `src/panels/Explorer/RenameInput.tsx` | 行内 input(Enter 提交 / Esc 取消) |
+| `src/panels/Explorer/FileRow.tsx` | 行内改名 input(headless-tree `getRenameInputProps`;Enter 提交 / Esc 取消) |
 | `src/panels/Explorer/CreateInput.tsx` | 顶部 sticky input(新建文件/夹) |
 
 ## 设计要点

@@ -31,7 +31,7 @@ handler 真行为(node-pty spawn / write / resize)需 PTY 运行时,留 E2E 验�
 - getDefaultShell:Win 默认 powershell.exe;Unix 优先 `$SHELL`,降级 `/bin/zsh`
 - makeCreateHandler:
   - shell 不在白名单 → 抛 `TERMINAL_FORBIDDEN_SHELL`
-  - cwd 缺失 → 用 homedir
+  - cwd 缺失 → 回退调用方窗口的 workspace 根,无则抛 `TERMINAL_CWD_UNRESOLVED`(不回退家目录)
   - 注入的 service.createTerminal 被调一次,id 由 generateId 决定
   - **sessionStore.add 入参附 `ownerWindowId: win.id`**(Issue #28 Phase 1)
   - Windows:input.env 与内部 MCP env 合并大小写不敏感,内部键的大小写变体不能并存覆盖(`terminal-ipc.spec.ts`)

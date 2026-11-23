@@ -528,8 +528,8 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
   const file = path.join(baseDir, ENABLED_FILE);
   // 数据安全:区分「缺文件」与「损坏/IO 错误」(与 readPermissions/readAllPathScopes 同型)。
   // 仅 ENOENT 是首次启动 → []。EACCES/EIO 等读错误是「当前态未知」,不能当空列表 —— 否则
-  // setEnabledId 基于 [] 做 RMW 写回,抹掉其它已启用插件。抛出 → setEnabledId 中止写;LIST 侧经 host
-  // 传播(见 plugins-host),init 降级为不激活任何插件。
+  // setEnabledId 基于 [] 做 RMW 写回,抹掉其它已启用插件。抛出 → setEnabledId 中止写;READ_ENABLED 侧
+  // 经 host.readEnabledIds 抛出(见 plugins-host),init 降级为不激活任何插件。
   let text: string;
   try {
     text = await readMetadataCapped(file); // 边界(E68):读前 stat.size 硬拦

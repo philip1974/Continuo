@@ -10,7 +10,7 @@ T4a/T4b setting the same `windowId` replaces the root, and a cleared `windowId` 
 T5 `clearWindow` deletes the mapping;
 T6 `_reset` clears all mappings;
 T7-T11 `NotifyRoot` IPC validates IPC_BAD_INPUT (shared IPC shell) / BAD_ROOT layering, accepts `null`, and accepts absolute roots;
-T7b rejected `NotifyRoot` calls emit `console.warn`;
+T7b rejected `BAD_ROOT` calls emit `console.warn` (malformed input is rejected by the shared IPC shell as `IPC_BAD_INPUT` without logging);
 T7c/T7d `{ ok: false }` includes a non-empty `message`, and the warning includes `winId`;
 T16/T16b window `closed` clears the root map, and `windowId` reuse is safe;
 T12-T15 `resolveTerminalCwd`(async, single `fs.promises.stat`, no sync fs on main) rejects on missing/invalid/non-directory cwd, resolves a valid absolute directory, and propagates through `makeCreateHandler`; T14b window destroyed during the async cwd check → `TERMINAL_CREATE_CANCELLED`, no session/token/PTY;
@@ -18,7 +18,7 @@ T18 IPC envelope via `processIpcCall` preserves `e.code`;
 T25 `makeCreateSessionTool` rejects with `.code` preserved;
 T26 `dispatchRpc tools/call` returns `error.code === -32603` and `error.data.code` for coded tool failures, asserting existing dispatcher behavior without modifying `mcp-host.service.ts`;
 T17 `INDEX.md` contains `window-workspace-roots-map` after `pnpm bdd:index`;
-T19-T21 renderer failure feedback shows an alert for `TerminalPlugin` Cmd+T and the direct `coApi.terminal.create` path in `HeaderActions`;
+T19-T21 renderer failure feedback: `TerminalPlugin` Cmd+T and `HeaderActions` both go through `createUserTerminal`, which reports failures via `notify.error`;
 T27 `normalizeWorkspaceRoot('') === null`;
 T28 `normalizeWorkspaceRoot('   ') === null`;
 T28b `normalizeWorkspaceRoot('  /abs  ') === '  /abs  '`;

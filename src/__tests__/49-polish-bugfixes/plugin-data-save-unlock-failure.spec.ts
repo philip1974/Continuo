@@ -1,4 +1,4 @@
-// topic 49 · P2-BH:plugin-data:save 的 finally 解锁失败不得掩盖一次成功的写。
+// topic 49 · P2-BH:plugin-data:save-serialized 的 finally 解锁失败不得掩盖一次成功的写。
 //
 // 根因:save handler 在 finally 里 `await release()`(proper-lockfile 解锁)。release()
 // 本身可能 reject —— 锁 stale(>5s)被其它进程接管、或 .lock 目录被外部清掉时抛
@@ -42,7 +42,7 @@ async function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
   return ipc.invokeWithEvent(makeFakeEvent(), channel, ...args);
 }
 
-describe('topic49 P2-BH · plugin-data:save 解锁失败不掩盖成功的写', () => {
+describe('topic49 P2-BH · plugin-data:save-serialized 解锁失败不掩盖成功的写', () => {
   it('release() reject 但写已成功 → handler 仍 resolve 且数据已落盘', async () => {
     const data = { value: { n: 42 } };
 

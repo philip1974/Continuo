@@ -43,8 +43,7 @@ permission 是持 pluginId 的闭包。permission.check / granted 真读 store�
 
 ### shell
 
-- Phase 1 占位,空对象;接口稳定但无方法
-- Phase 3 实装
+- `exec` / `execStream`(需 `shell` 权限;入参在 renderer wrapper 先按上限校验,见 E46)
 
 ### PermissionError
 
@@ -79,7 +78,7 @@ settingTab `core.plugins`(替换插件与权限管理页)、panel `settings` / `
 
 ### events.clear 只清本插件的订阅
 
-- 总线的 `clear()` / `clear(name)` 会清掉宿主与其它插件的订阅;scoped app 的 `events.clear` 只退订本插件经
+- 总线没有清空订阅的入口(只有 on / off / emit);scoped app 的 `events.clear` 是外观合成,只退订本插件经
   `events.on` 订阅的(无参 = 本插件全部,带 name = 本插件在该事件上的)
 
 ### 贡献点命名空间是冻结外观(`facade-surface.spec.ts`)

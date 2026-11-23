@@ -1,6 +1,6 @@
 import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 import { EXPLORER_TRASH } from './helpers/explorer';
-// 删 src 目录 → 已打开的 src/a.ts tab(filePath 前缀匹配 src/)由 store.removePath
+// 删 src 目录 → 已打开的 src/a.ts tab(filePath 前缀匹配 src/)由 store.removePaths
 // 自动关闭.
 import { test, expect } from './fixtures/with-workspace';
 
@@ -17,7 +17,7 @@ test('打开 src/a.ts → trash src 目录 → tab 自动关闭', async ({ windo
     .click({ button: 'right' });
   await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
 
-  // a.ts tab 自动关闭(editor.store.removePath 前缀匹配)→ EditorWelcome
+  // a.ts tab 自动关闭(editor.store.removePaths 前缀匹配)→ EditorWelcome
   await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({
     timeout: 5_000,
   });

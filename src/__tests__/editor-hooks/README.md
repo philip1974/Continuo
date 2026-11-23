@@ -8,7 +8,6 @@ React hook 是薄壳(Step E4 接入 EditorPanel),业务逻辑都在纯函数里,
 只做 3 个文件操作 + 1 个 autosaver:
 - `openFileByPath(path, deps)` — Explorer 单击触发
 - `saveFile(tabId, deps)` — Cmd+S 触发(已有 filePath 才能保存)
-- `updateActiveContent(content, deps)` — 编辑器 onChange,只是包 store action 的语法糖
 - `makeAutoSaveScheduler(saveFile, delayMs)` — debounce 调度器
 
 **不做**:Cmd+O / Cmd+N / 另存为(需要 fs:open-dialog/save-dialog,Continuo 暂无这两个 IPC,留下里程碑)。

@@ -1,4 +1,4 @@
-// 外部进程删除文件 → editor.store.removePath 同步关闭对应 tab.
+// 外部进程删除文件 → Explorer 树中该行消失(tab 是否关闭由外部同步决定,本用例不断言).
 import { unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';

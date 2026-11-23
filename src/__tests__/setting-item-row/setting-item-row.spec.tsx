@@ -252,7 +252,7 @@ describe('SettingItemRow — select', () => {
   });
 });
 
-// 设置行显示与消费者(useSettingValue/getSettingValue)同一 coerceSettingValue 规整后的有效值,
+// 设置行显示与消费者(useSettingValue)同一 coerceSettingValue 规整后的有效值,
 // 不显示篡改/旧版 localStorage 里的原始脏值。
 describe('SettingItemRow — 显示规整后的有效值', () => {
   it('number 越界存储值 → 显示 clamp 后的值', () => {

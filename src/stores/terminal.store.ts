@@ -42,7 +42,7 @@ export interface FilterDropOpts {
  */
 // 边界(E167,E23 同款 IPC-ingress 防御):session 经 sessions_changed/listSessions 广播进各
 // renderer store。主进程写入口(create / updateCwd)已按 LABEL_MAX/PATH_MAX cap,本守卫是 renderer
-// ingress 的纵深防御(对齐 E23 已给 attachTarget.panelId/windowId 加的长度/安全整数校验):字符串
+// ingress 的纵深防御(E23 同款长度 / 安全整数校验):字符串
 // 字段镜像 create 的长度上限,数字字段须有限/安全整数,防畸形 payload 进 store 致 UI 卡顿/状态污染。
 function isTerminalSessionShape(v: unknown): v is TerminalSession {
   if (!v || typeof v !== 'object') return false;

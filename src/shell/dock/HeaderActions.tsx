@@ -92,7 +92,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       if (key === TERMINAL_PANEL_TYPE) {
         // terminal panel session-bound:不走 containerApi.addPanel,而是经
         // createUserTerminal → coApi.terminal.create → SessionsSync → DockReconciler
-        // addPanel(含 sessionId)。创建流程(等 hydrate / 错误提示 / setPendingFocus)与
+        // addPanel(含 sessionId)。创建流程(等 workspace root 恢复 / 错误提示 / setPendingFocus)与
         // 命令面板 terminal.new 共用(可维护性 M1);此处只负责关闭菜单 UI 收尾。
         await createUserTerminal();
         setOpen(false);

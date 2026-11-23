@@ -1536,7 +1536,7 @@ export class DebugService {
   }
 
   /**
-   * renderer 订阅时的快照(只含该窗口、尚未拆除的会话):状态、当前停点、按 source 的断点集合。renderer 重载后
+   * renderer 订阅时的快照(只含该窗口、尚未拆除的会话):当前停点、按 source 的断点集合。renderer 重载后
    * store 为空,只靠增量事件恢复不了停点与断点。每个会话的断点总数封顶 DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX。
    */
   viewSnapshot(ownerWindowId: number): DebugViewSessionSnapshot[] {

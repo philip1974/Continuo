@@ -1,4 +1,4 @@
-# lm-api(Continuo UI 内部 IPC 入口)
+# co-api(Continuo UI 内部 IPC 入口)
 
 行为契约:**`captureLmApi()` 启动时把 window.api 缓存到 module-local;
 `coApi` Proxy 转发已 capture → 走缓存,未 capture → fallback globalThis;
@@ -10,7 +10,7 @@ sandboxSweep 删 window.api 后 coApi 仍能用(因走缓存)。**
 
 | 文件 | 职责 |
 |---|---|
-| `src/lib/lm-api.ts` | captureLmApi / coApi Proxy / _resetLmApiForTest |
+| `src/lib/co-api.ts` | captureLmApi / coApi Proxy / _resetLmApiForTest |
 
 ## 关键行为
 
