@@ -61,7 +61,7 @@ export function AgentAuthPrompt() {
         return;
       }
       const { requestId, method } = payload;
-      // 安全(F2):外部客户端(未绑定 Continuo 终端)只读写 external 授权状态,不复用窗口级授权。
+      // 安全(F2):外部客户端(未绑定 Continuo 终端)的授权位记在界面副本的 external 一侧;放行由 main 判定。
       const external = payload.external === true;
       const decision = await useAgentAuthStore.getState().ensure({
         requestId,

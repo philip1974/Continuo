@@ -24,8 +24,8 @@ export interface AgentAuthRequestPayload {
   readonly requestId: string;
   readonly method: string;
   /**
-   * 安全(F2):请求来自未绑定 Continuo 终端的外部客户端(stdio 未发 hello)。renderer 弹窗标注来源,且只读写
-   * 独立的 external 授权状态,不复用 / 不写入窗口级「本次启动期间允许」。
+   * 安全(F2):请求来自未绑定 Continuo 终端的外部客户端(stdio 未发 hello)。renderer 弹窗标注来源;放行由 main
+   * 按独立的调用方类别判定,不与窗口级「本次启动期间允许」互相放行(renderer 只在界面副本的 external 一侧记授权位)。
    */
   readonly external?: boolean;
 }

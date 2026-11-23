@@ -446,7 +446,7 @@ describe('createPluginsWatcher', () => {
         mkdirSync(join(tmp, dir, 'main.js'));
       }],
       ['main 超 8MiB', (dir: string) => fsp.truncate(join(tmp, dir, 'main.js'), 8 * 1024 * 1024 + 1)],
-    ])('首选目录无效(%s)→ 以合法后备目录为权威,后备目录 main 变化 fire', async (_label, breakMain) => {
+    ])('首选目录无效(%s)→ 不计入候选,合法后备目录 main 变化照常 fire', async (_label, breakMain) => {
       dupDirs();
       await breakMain('a.dir');
       const fn = vi.fn();
