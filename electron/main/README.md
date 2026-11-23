@@ -52,7 +52,7 @@ Use `safeHandleWithCtx` when the handler needs the raw `IpcMainInvokeEvent` (typ
 
 ## Channel namespaces
 
-Each lives in `electron/shared/*-channels.ts`. Most are registered by `electron/main/ipc/<area>.ipc.ts`; `MCP_CHANNELS`, `AGENT_AUTH_CHANNELS` and the `LAYOUT_CHANNELS` / `EXPLORER_CHANNELS` read/write handlers are registered directly in `ipc.ts`, and `PLUGIN_MCP_CHANNELS` (`ipc/plugin-mcp.ipc.ts`) is wired from `index.ts`:
+Each lives in `electron/shared/*-channels.ts`. Most are registered by `electron/main/ipc/<area>.ipc.ts`; `MCP_CHANNELS`, `AGENT_AUTH_CHANNELS` (respond / revoke) and the `LAYOUT_CHANNELS` / `EXPLORER_CHANNELS` read/write handlers are registered directly in `ipc.ts` (`AGENT_AUTH_CHANNELS.READY` is an `ipcMain.on` listener in `index.ts`), and `PLUGIN_MCP_CHANNELS` (`ipc/plugin-mcp.ipc.ts`) is wired from `index.ts`:
 
 | Namespace | File | Purpose |
 |---|---|---|

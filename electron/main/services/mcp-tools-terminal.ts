@@ -265,7 +265,8 @@ export function makeCreateSessionTool(
         agentLabel: {
           type: 'string',
           maxLength: LABEL_MAX,
-          description: 'Short label for the agent (e.g. "codex"). Shown on the tab.',
+          description:
+            'Short label for the agent, returned as agent_label by list_sessions. It also selects the Stop-hook runner for install_stop_hook / await_stop_hook: only "claude", "claude-code", "cc" (Claude Code) or "codex" are recognized; other values get no Stop-hook support.',
         },
         autorun: {
           type: 'string',
@@ -482,9 +483,9 @@ export function makeSendInputTool(
   return {
     name: MCP_TOOL_SEND_INPUT,
     description:
-      "[ADVANCED] Send raw input bytes to a terminal session's PTY stdin. " +
+      "[ADVANCED] Send input to a terminal session's PTY stdin. Before writing, LF (real or the literal two characters \\n) and a literal \\r become CR, a literal \\t becomes TAB and literal \\xHH escapes are decoded; use send_text to write backslash text verbatim. " +
       'PREFER send_text + press_key for normal input — they remove the LF/CR confusion in raw-mode TUIs. ' +
-      'Use send_input only for complex byte sequences (mouse events, custom escape codes, binary data). ' +
+      'Use send_input only for complex sequences (mouse events, custom escape codes); data containing 0x0A is rewritten, so it is not suitable for arbitrary binary. Max 2,000,000 UTF-8 bytes. ' +
       'Note: to submit input via this tool, append "\\r" (CR, 0x0d), NOT "\\n" (LF). ' +
       'Raw-mode TUIs (codex, vim, claude, less, ssh) only treat "\\r" as Enter. ' +
       'Returns immediately after writing; use read_output to observe results. ' +
@@ -497,7 +498,7 @@ export function makeSendInputTool(
           type: 'string',
           maxLength: 2_000_000,
           description:
-            'Raw bytes to write. To press Enter use "\\r" (CR), not "\\n". Example: "ls -la\\r" runs the ls command. Example: "你好\\r" submits text in a TUI prompt.',
+            'Input to write (LF and literal \\n / \\r / \\t / \\xHH escapes are converted as described above; max 2,000,000 UTF-8 bytes). To press Enter use "\\r" (CR). Example: "ls -la\\r" runs the ls command. Example: "你好\\r" submits text in a TUI prompt.',
         },
       },
       required: ['session_id', 'data'],
@@ -535,7 +536,7 @@ export function makeSendTextTool(
           type: 'string',
           maxLength: 2_000_000,
           description:
-            'Plain text written verbatim to PTY stdin. To press Enter afterwards, call press_key with key="enter".',
+            'Plain text written verbatim to PTY stdin (max 2,000,000 UTF-8 bytes). To press Enter afterwards, call press_key with key="enter".',
         },
       },
       required: ['session_id', 'text'],
@@ -604,7 +605,7 @@ export function makeReadOutputTool(
   return {
     name: MCP_TOOL_READ_OUTPUT,
     description:
-      'Read accumulated output from a terminal session as line-split text (raw text with ANSI kept unless strip_ansi=true; all retained lines unless max_lines is set). Use since_seq cursor (returned as next_seq) for incremental reads; truncated=true means older output was already dropped from the buffer. ' +
+      'Read accumulated output from a terminal session as line-split text (raw text with ANSI kept unless strip_ansi=true; all retained lines unless max_lines is set). Use since_seq cursor (returned as next_seq) for incremental reads; truncated=true means older output was already dropped from the buffer. The response also always includes data: the full raw text since since_seq (up to the 1 MiB per-session buffer), unaffected by max_lines and strip_ansi — use since_seq to bound the response size. ' +
       'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
@@ -621,7 +622,7 @@ export function makeReadOutputTool(
           minimum: 1,
           maximum: 2000,
           description:
-            'Return only the last N lines (clipping does not set truncated). Default: all retained lines.',
+            'Return only the last N entries in lines (clipping does not set truncated and does not shorten data). Default: all retained lines.',
         },
         strip_ansi: {
           type: 'boolean',
