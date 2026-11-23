@@ -14,7 +14,7 @@ import {
   MCP_TOOL_DEBUG_STEP_OVER,
   MCP_TOOL_DEBUG_VARIABLES,
   MCP_TOOL_DEBUG_WAIT_FOR_STOP,
-  DEBUG_TOOL_SCHEMAS,
+  debugThreadControlInputJsonSchema,
   debugContinueInputSchema,
   debugContinueOutputSchema,
   debugDisconnectInputJsonSchema,
@@ -175,12 +175,6 @@ export interface DebugToolsDeps {
 
 export type DebugTool<I, O> = McpToolDef<I, O>;
 
-function inputJsonSchemaFor(name: string): Record<string, unknown> {
-  const schema = DEBUG_TOOL_SCHEMAS.find((entry) => entry.name === name);
-  if (!schema) throw new Error(`missing debug tool schema: ${name}`);
-  return schema.inputJsonSchema;
-}
-
 function requireControllerContext(ctx: McpCallCtx): DebugCallerContext {
   if (typeof ctx.callerSubject !== 'string' || ctx.callerSubject.length === 0) {
     throw codedError(ERROR_CODES.DEBUG_NOT_AUTHORIZED, 'debug caller is not authorized');
@@ -322,7 +316,7 @@ function makeThreadControlTool<
   return {
     name,
     description,
-    jsonSchema: inputJsonSchemaFor(name),
+    jsonSchema: debugThreadControlInputJsonSchema,
     inputSchema,
     run: (input) =>
       runDebugTool(() =>

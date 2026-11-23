@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  DEBUG_TOOL_SCHEMAS,
+  debugDisconnectInputJsonSchema,
   debugDisconnectInputSchema,
+  debugEvaluateInputJsonSchema,
+  debugLaunchInputJsonSchema,
+  debugListSessionsInputJsonSchema,
+  debugScopesInputJsonSchema,
+  debugSetBreakpointInputJsonSchema,
+  debugStackInputJsonSchema,
+  debugThreadControlInputJsonSchema,
+  debugVariablesInputJsonSchema,
+  debugWaitForStopInputJsonSchema,
   debugEvaluateInputSchema,
   debugSetBreakpointInputSchema,
   debugVariablesInputSchema,
@@ -22,12 +31,24 @@ function collectObjectSchemas(schema: unknown, out: unknown[] = []): unknown[] {
   return out;
 }
 
+/** 对外广播的全部入参 JSON schema(MCP tools/list 的 inputSchema;工具输出没有 schema)。 */
+const ADVERTISED_INPUT_SCHEMAS = [
+  debugLaunchInputJsonSchema,
+  debugSetBreakpointInputJsonSchema,
+  debugWaitForStopInputJsonSchema,
+  debugThreadControlInputJsonSchema,
+  debugStackInputJsonSchema,
+  debugScopesInputJsonSchema,
+  debugVariablesInputJsonSchema,
+  debugEvaluateInputJsonSchema,
+  debugDisconnectInputJsonSchema,
+  debugListSessionsInputJsonSchema,
+];
+
 describe('50 · debug_* schemas', () => {
   it('所有 advertised object schema 都关闭 additionalProperties', () => {
-    for (const tool of DEBUG_TOOL_SCHEMAS) {
-      const objectSchemas = collectObjectSchemas(tool.inputJsonSchema).concat(
-        collectObjectSchemas(tool.outputJsonSchema),
-      );
+    for (const inputJsonSchema of ADVERTISED_INPUT_SCHEMAS) {
+      const objectSchemas = collectObjectSchemas(inputJsonSchema);
       expect(objectSchemas.length).toBeGreaterThan(0);
       for (const objectSchema of objectSchemas) {
         expect((objectSchema as Record<string, unknown>).additionalProperties).toBe(
@@ -88,15 +109,13 @@ describe('50 · debug_* schemas', () => {
     expect(rejected.success).toBe(false);
     expect(rejected.error?.issues[0]?.message).toMatch(/always terminates/i);
 
-    const tool = DEBUG_TOOL_SCHEMAS.find((entry) => entry.name === 'debug.disconnect')!;
-    const properties = (tool.inputJsonSchema as { properties: Record<string, Record<string, unknown>> })
+    const properties = (debugDisconnectInputJsonSchema as { properties: Record<string, Record<string, unknown>> })
       .properties;
     expect(properties.terminate_debuggee).toMatchObject({ type: 'boolean', const: true });
   });
 
   it('launch 的 env 在 advertised schema 中说明拒绝会加载额外代码的变量', () => {
-    const tool = DEBUG_TOOL_SCHEMAS.find((entry) => entry.name === 'debug.launch')!;
-    const env = (tool.inputJsonSchema as { properties: Record<string, Record<string, unknown>> })
+    const env = (debugLaunchInputJsonSchema as { properties: Record<string, Record<string, unknown>> })
       .properties.env!;
     expect(env.description).toMatch(/NODE_OPTIONS/);
     expect(env.description).toMatch(/LD_\*/);

@@ -33,44 +33,6 @@ const positiveIntSchema = z.number().int().min(1);
 // 可选:省略时引擎用 threads 请求解析。历史上误设 min(1) 把合法的 0 拒了。
 export const threadIdSchema = nonNegativeIntSchema.optional();
 
-const dapVariableSchema = z
-  .object({
-    name: z.string(),
-    value: z.string(),
-    type: z.string().optional(),
-    variables_reference: z.number().int().min(0).optional(),
-    truncated: z.boolean().optional(),
-  })
-  .strict();
-
-const stackFrameSchema = z
-  .object({
-    id: z.number().int(),
-    name: z.string(),
-    source_path: z.string().optional(),
-    line: positiveIntSchema,
-    column: positiveIntSchema.optional(),
-  })
-  .strict();
-
-const debugScopeSchema = z
-  .object({
-    name: z.string(),
-    variables_reference: z.number().int().min(0),
-    expensive: z.boolean(),
-  })
-  .strict();
-
-const debugSessionSummarySchema = z
-  .object({
-    session_id: sessionIdSchema,
-    state: z.enum(['starting', 'running', 'stopped', 'terminated']),
-    name: z.string().optional(),
-    stopped_reason: z.string().optional(),
-    owner_window_id: z.number().int().optional(),
-  })
-  .strict();
-
 /**
  * launch 的 env 禁止的变量(大小写不敏感比较,覆盖 Windows):它们让 Node / 动态链接器 / OpenSSL / glibc 在目标程序之前
  * 加载额外代码(NODE_OPTIONS=--require=/tmp/x.js、DYLD_INSERT_LIBRARIES、OPENSSL_CONF 指向的 engine/provider、
@@ -207,23 +169,10 @@ export const debugStackInputSchema = z
   })
   .strict();
 
-const debugStackOutputSchema = z
-  .object({
-    frames: z.array(stackFrameSchema).max(100),
-    total_frames: nonNegativeIntSchema.optional(),
-  })
-  .strict();
-
 export const debugScopesInputSchema = z
   .object({
     session_id: sessionIdSchema,
     frame_id: nonNegativeIntSchema,
-  })
-  .strict();
-
-const debugScopesOutputSchema = z
-  .object({
-    scopes: z.array(debugScopeSchema).max(50),
   })
   .strict();
 
@@ -245,14 +194,6 @@ export const debugVariablesInputSchema = z
       .min(1)
       .max(DEBUG_STRING_BYTES_DEFAULT)
       .default(DEBUG_STRING_BYTES_DEFAULT),
-  })
-  .strict();
-
-const debugVariablesOutputSchema = z
-  .object({
-    variables: z.array(dapVariableSchema).max(DEBUG_VARIABLE_COUNT_MAX),
-    truncated: z.boolean(),
-    next_start: nonNegativeIntSchema.optional(),
   })
   .strict();
 
@@ -301,12 +242,6 @@ export const debugDisconnectOutputSchema = z
   .strict();
 
 export const debugListSessionsInputSchema = z.object({}).strict();
-const debugListSessionsOutputSchema = z
-  .object({
-    sessions: z.array(debugSessionSummarySchema).max(100),
-  })
-  .strict();
-
 export type DebugLaunchInput = z.infer<typeof debugLaunchInputSchema>;
 export type DebugSetBreakpointInput = z.infer<
   typeof debugSetBreakpointInputSchema
@@ -345,7 +280,8 @@ const arraySchema = (items: JsonSchema, maxItems?: number): JsonSchema => ({
 
 const sessionIdJson = stringSchema(DEBUG_SESSION_ID_MAX);
 const pathJson = stringSchema(DEBUG_PATH_MAX);
-const threadControlInputJson = objectSchema(
+/** continue / step_over / step_in / step_out 共用的入参 JSON schema。 */
+export const debugThreadControlInputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
     thread_id: {
@@ -355,43 +291,6 @@ const threadControlInputJson = objectSchema(
     },
   },
   ['session_id'],
-);
-const threadControlOutputJson = objectSchema(
-  {
-    continued: boolSchema(),
-    all_threads_continued: boolSchema(),
-  },
-  ['continued'],
-);
-const frameJson = objectSchema(
-  {
-    id: intSchema(0),
-    name: stringSchema(),
-    source_path: stringSchema(DEBUG_PATH_MAX),
-    line: intSchema(1),
-    column: intSchema(1),
-  },
-  ['id', 'name', 'line'],
-);
-const variableJson = objectSchema(
-  {
-    name: stringSchema(),
-    value: stringSchema(),
-    type: stringSchema(),
-    variables_reference: intSchema(0),
-    truncated: boolSchema(),
-  },
-  ['name', 'value'],
-);
-const sessionSummaryJson = objectSchema(
-  {
-    session_id: sessionIdJson,
-    state: { type: 'string', enum: ['starting', 'running', 'stopped', 'terminated'] },
-    name: stringSchema(128),
-    stopped_reason: stringSchema(),
-    owner_window_id: intSchema(0),
-  },
-  ['session_id', 'state'],
 );
 const envEntryJson = objectSchema(
   {
@@ -416,13 +315,6 @@ export const debugLaunchInputJsonSchema = objectSchema(
   },
   ['program'],
 );
-const debugLaunchOutputJsonSchema = objectSchema(
-  {
-    session_id: sessionIdJson,
-    state: { type: 'string', enum: ['starting', 'running', 'stopped'] },
-  },
-  ['session_id', 'state'],
-);
 export const debugSetBreakpointInputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
@@ -444,15 +336,6 @@ export const debugSetBreakpointInputJsonSchema = objectSchema(
   },
   ['session_id', 'file', 'line'],
 );
-const debugSetBreakpointOutputJsonSchema = objectSchema(
-  {
-    breakpoint_id: stringSchema(),
-    verified: boolSchema(),
-    line: intSchema(1),
-    message: stringSchema(),
-  },
-  ['verified'],
-);
 export const debugWaitForStopInputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
@@ -460,16 +343,6 @@ export const debugWaitForStopInputJsonSchema = objectSchema(
     after_stop_seq: intSchema(0),
   },
   ['session_id'],
-);
-const debugWaitForStopOutputJsonSchema = objectSchema(
-  {
-    session_id: sessionIdJson,
-    stop_seq: intSchema(0),
-    reason: stringSchema(),
-    thread_id: intSchema(0),
-    description: stringSchema(),
-  },
-  ['session_id', 'stop_seq', 'reason'],
 );
 export const debugStackInputJsonSchema = objectSchema(
   {
@@ -484,21 +357,6 @@ export const debugStackInputJsonSchema = objectSchema(
   },
   ['session_id'],
 );
-const debugStackOutputJsonSchema = objectSchema(
-  {
-    frames: arraySchema(frameJson, 100),
-    total_frames: intSchema(0),
-  },
-  ['frames'],
-);
-const scopeJson = objectSchema(
-  {
-    name: stringSchema(),
-    variables_reference: intSchema(0),
-    expensive: boolSchema(),
-  },
-  ['name', 'variables_reference', 'expensive'],
-);
 export const debugScopesInputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
@@ -508,12 +366,6 @@ export const debugScopesInputJsonSchema = objectSchema(
     },
   },
   ['session_id', 'frame_id'],
-);
-const debugScopesOutputJsonSchema = objectSchema(
-  {
-    scopes: arraySchema(scopeJson, 50),
-  },
-  ['scopes'],
 );
 export const debugVariablesInputJsonSchema = objectSchema(
   {
@@ -526,14 +378,6 @@ export const debugVariablesInputJsonSchema = objectSchema(
   },
   ['session_id', 'variables_reference'],
 );
-const debugVariablesOutputJsonSchema = objectSchema(
-  {
-    variables: arraySchema(variableJson, DEBUG_VARIABLE_COUNT_MAX),
-    truncated: boolSchema(),
-    next_start: intSchema(0),
-  },
-  ['variables', 'truncated'],
-);
 export const debugEvaluateInputJsonSchema = objectSchema(
   {
     session_id: sessionIdJson,
@@ -543,15 +387,6 @@ export const debugEvaluateInputJsonSchema = objectSchema(
     max_result_bytes: intSchema(1, DEBUG_EVALUATE_RESULT_BYTES_MAX),
   },
   ['session_id', 'expression'],
-);
-const debugEvaluateOutputJsonSchema = objectSchema(
-  {
-    result: stringSchema(),
-    type: stringSchema(),
-    variables_reference: intSchema(0),
-    truncated: boolSchema(),
-  },
-  ['result', 'truncated'],
 );
 export const debugDisconnectInputJsonSchema = objectSchema(
   {
@@ -565,110 +400,4 @@ export const debugDisconnectInputJsonSchema = objectSchema(
   },
   ['session_id'],
 );
-const debugDisconnectOutputJsonSchema = objectSchema(
-  {
-    disconnected: boolSchema(),
-  },
-  ['disconnected'],
-);
 export const debugListSessionsInputJsonSchema = objectSchema({});
-const debugListSessionsOutputJsonSchema = objectSchema(
-  {
-    sessions: arraySchema(sessionSummaryJson, 100),
-  },
-  ['sessions'],
-);
-
-export const DEBUG_TOOL_SCHEMAS = [
-  {
-    name: MCP_TOOL_DEBUG_LAUNCH,
-    inputSchema: debugLaunchInputSchema,
-    outputSchema: debugLaunchOutputSchema,
-    inputJsonSchema: debugLaunchInputJsonSchema,
-    outputJsonSchema: debugLaunchOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_SET_BREAKPOINT,
-    inputSchema: debugSetBreakpointInputSchema,
-    outputSchema: debugSetBreakpointOutputSchema,
-    inputJsonSchema: debugSetBreakpointInputJsonSchema,
-    outputJsonSchema: debugSetBreakpointOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_WAIT_FOR_STOP,
-    inputSchema: debugWaitForStopInputSchema,
-    outputSchema: debugWaitForStopOutputSchema,
-    inputJsonSchema: debugWaitForStopInputJsonSchema,
-    outputJsonSchema: debugWaitForStopOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_CONTINUE,
-    inputSchema: debugContinueInputSchema,
-    outputSchema: debugContinueOutputSchema,
-    inputJsonSchema: threadControlInputJson,
-    outputJsonSchema: threadControlOutputJson,
-  },
-  {
-    name: MCP_TOOL_DEBUG_STEP_OVER,
-    inputSchema: debugStepOverInputSchema,
-    outputSchema: debugStepOverOutputSchema,
-    inputJsonSchema: threadControlInputJson,
-    outputJsonSchema: threadControlOutputJson,
-  },
-  {
-    name: MCP_TOOL_DEBUG_STEP_IN,
-    inputSchema: debugStepInInputSchema,
-    outputSchema: debugStepInOutputSchema,
-    inputJsonSchema: threadControlInputJson,
-    outputJsonSchema: threadControlOutputJson,
-  },
-  {
-    name: MCP_TOOL_DEBUG_STEP_OUT,
-    inputSchema: debugStepOutInputSchema,
-    outputSchema: debugStepOutOutputSchema,
-    inputJsonSchema: threadControlInputJson,
-    outputJsonSchema: threadControlOutputJson,
-  },
-  {
-    name: MCP_TOOL_DEBUG_STACK,
-    inputSchema: debugStackInputSchema,
-    outputSchema: debugStackOutputSchema,
-    inputJsonSchema: debugStackInputJsonSchema,
-    outputJsonSchema: debugStackOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_SCOPES,
-    inputSchema: debugScopesInputSchema,
-    outputSchema: debugScopesOutputSchema,
-    inputJsonSchema: debugScopesInputJsonSchema,
-    outputJsonSchema: debugScopesOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_VARIABLES,
-    inputSchema: debugVariablesInputSchema,
-    outputSchema: debugVariablesOutputSchema,
-    inputJsonSchema: debugVariablesInputJsonSchema,
-    outputJsonSchema: debugVariablesOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_EVALUATE,
-    inputSchema: debugEvaluateInputSchema,
-    outputSchema: debugEvaluateOutputSchema,
-    inputJsonSchema: debugEvaluateInputJsonSchema,
-    outputJsonSchema: debugEvaluateOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_DISCONNECT,
-    inputSchema: debugDisconnectInputSchema,
-    outputSchema: debugDisconnectOutputSchema,
-    inputJsonSchema: debugDisconnectInputJsonSchema,
-    outputJsonSchema: debugDisconnectOutputJsonSchema,
-  },
-  {
-    name: MCP_TOOL_DEBUG_LIST_SESSIONS,
-    inputSchema: debugListSessionsInputSchema,
-    outputSchema: debugListSessionsOutputSchema,
-    inputJsonSchema: debugListSessionsInputJsonSchema,
-    outputJsonSchema: debugListSessionsOutputJsonSchema,
-  },
-] as const;
