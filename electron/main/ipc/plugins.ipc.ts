@@ -132,8 +132,8 @@ export function registerPluginsIpc(): void {
   const installRecovery = recoverInterruptedInstalls(pluginsDir).catch(() => {});
 
   // v4.3.1 mtime 自动 watch:任一 plugin main.js 改 → 推所有窗口。
-  // 冷启动性能:不在注册时(早于建首窗)立即首扫 —— 与启动 IO 争 libuv 线程池;首扫推迟到第一个周期,
-  // 或由 LIST_DIRS 在列举前按需建立(见下),两者取先到者。
+  // 冷启动性能:不在注册时(早于建首窗)立即首扫 —— 与启动 IO 争 libuv 线程池;首扫推迟到首窗创建后由
+  // primePluginsWatcherBaseline 发起(安装恢复之后),或第一个周期 / LIST_DIRS 按需建立(见下),取先到者。
   const watcher = createPluginsWatcher(pluginsDir, broadcastPluginsChanged);
   watcher.start(2000, { immediate: false });
   // 首窗创建后由 index.ts 调 primePluginsWatcherBaseline 提前建基线(安装恢复之后,免把恢复动作误报为变更)。

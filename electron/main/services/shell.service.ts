@@ -1,6 +1,6 @@
 // Shell 一次性 exec(plugin app.shell.exec 后端)。
 // 用 child_process.spawn 收 stdout/stderr 到 buffer,超时 SIGTERM,输出
-// 上限 cap 避免 OOM。返回完整 ExecResult,plugin 等 process exit 后拿。
+// 上限 cap 避免 OOM。返回完整 IpcShellExecResult,plugin 等 process exit 后拿。
 
 import { startsWithAllowedExternalScheme } from '../../shared/url-limits';
 import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';

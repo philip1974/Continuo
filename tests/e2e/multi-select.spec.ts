@@ -18,7 +18,7 @@ test('Cmd-click 多选 a.ts + b.ts → 复制路径 → 剪贴板含 \\n 拼接'
   // Cmd-click b.ts(添加到选中集合)— headless-tree selection feature
   await bRow.click({ modifiers: ['ControlOrMeta'] });
 
-  // 右键 a.ts → 「复制路径」(deleteTargets() 应包含两个 path)
+  // 右键 a.ts → 「复制路径」(getContextActionTargets() 应包含两个 path)
   await aRow.click({
     button: 'right',
     modifiers: ['ControlOrMeta'],
