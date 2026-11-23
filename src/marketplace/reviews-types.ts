@@ -8,7 +8,6 @@ import {
   REVIEW_FIELD_MAX,
   REVIEW_TOTAL_NODES_MAX,
   REVIEW_URL_MAX,
-  REVIEW_VERSION_MAX,
 } from '../../electron/shared/marketplace-review-limits';
 import { isHttpUrl } from './url-safety'; // 边界(E109):review url/avatarUrl scheme 白名单(共享)
 import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):plugin id 形态契约(共享单一来源)
@@ -30,9 +29,6 @@ export interface Review {
   readonly createdAt: string; // ISO
   /** Phase 3:THUMBS_UP reaction 总数,排序"最有用"用. */
   readonly thumbsUp: number;
-  /** 可选:Continuo / plugin 版本. */
-  readonly continuoVersion?: string;
-  readonly pluginVersion?: string;
 }
 
 export interface PluginAggregateRating {
@@ -144,11 +140,6 @@ function isValidReview(v: unknown): v is Review {
   if (!isStrMax(a.avatarUrl, REVIEW_URL_MAX) || !isHttpUrl(a.avatarUrl))
     return false;
   if (!isStrMax(a.createdAt, REVIEW_FIELD_MAX)) return false; // 边界(E111)
-  // 边界(E111):版本字段长度上限(对齐 manifest VERSION_MAX)。
-  if (r.continuoVersion !== undefined && !isStrMax(r.continuoVersion, REVIEW_VERSION_MAX))
-    return false;
-  if (r.pluginVersion !== undefined && !isStrMax(r.pluginVersion, REVIEW_VERSION_MAX))
-    return false;
   return true;
 }
 

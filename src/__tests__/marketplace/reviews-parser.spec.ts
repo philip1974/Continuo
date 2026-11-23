@@ -61,8 +61,6 @@ describe('parseReview — 模板正路径', () => {
       });
       expect(r?.pluginId).toBe('com.example.foo');
       expect(r?.body).toBe('很好用,推荐。');
-      expect(r?.continuoVersion).toBe('0.1.0');
-      expect(r?.pluginVersion).toBe('0.2.0');
       expect(trimSpy).toHaveBeenCalledTimes(5);
     } finally {
       trimSpy.mockRestore();
@@ -151,8 +149,6 @@ describe('parseReview — 模板正路径', () => {
     expect(r!.rating).toBe(5);
     expect(r!.body).toBe('很好用,推荐。');
     expect(r!.author.handle).toBe('alice');
-    expect(r!.continuoVersion).toBe('0.1.0');
-    expect(r!.pluginVersion).toBe('0.2.0');
   });
 });
 
@@ -207,19 +203,6 @@ describe('parseReview — E250 畸形元素跳过(不抛)', () => {
         author: AUTHOR,
       }),
     ).toBeNull();
-  });
-
-  it('E253 版本 section 超长(>128)→ undefined', () => {
-    const longVer = 'v'.repeat(200);
-    const r = parseReview({
-      title: '[com.example.foo] x',
-      body: `### Plugin ID\ncom.example.foo\n### 评分\n★★★★★ 5\n### 评论正文\nok\n### Continuo 版本(可选)\n${longVer}`,
-      url: 'https://x',
-      createdAt: '2026-05-05T00:00:00Z',
-      author: AUTHOR,
-    });
-    expect(r).not.toBeNull();
-    expect(r!.continuoVersion).toBeUndefined();
   });
 });
 

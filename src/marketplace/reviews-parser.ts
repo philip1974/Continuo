@@ -16,7 +16,6 @@ import {
   REVIEW_BODY_MAX,
   REVIEW_FIELD_MAX,
   REVIEW_TITLE_MAX,
-  REVIEW_VERSION_MAX,
 } from '../../electron/shared/marketplace-review-limits';
 import type { Review } from './reviews-types';
 import { isGitHubLogin, REVIEW_URL_MAX } from './reviews-types';
@@ -46,7 +45,7 @@ interface RawDiscussion {
 const MAX_PARSE_BODY = REVIEW_BODY_MAX;
 const MAX_PARSE_TITLE = REVIEW_TITLE_MAX;
 // 边界(E253):fresh 解析的字段长度上限,与 cache-read isValidReview 对齐(REVIEW_FIELD_MAX=512
-// handle/createdAt;REVIEW_VERSION_MAX=128 版本)。fresh 路径此前对 createdAt/author.createdAt/版本
+// handle/createdAt)。fresh 路径此前对 createdAt/author.createdAt
 // 只 nullish 合并不校验类型/长度 → 畸形 IPC 可把 object/超长写进 Review,new Date() 变 Invalid/NaN 漏标。
 
 /** 失败返 null(skip 这条 review,不污染聚合). */
@@ -136,18 +135,7 @@ export function parseReview(rawInput: unknown): Review | null {
         : 0,
     url: raw.url,
     createdAt: raw.createdAt,
-    // 边界(E253):版本字段长度上限 REVIEW_VERSION_MAX(与 cache-read isValidReview 对齐),超长→undefined。
-    continuoVersion: capVersion(sections.get('continuo 版本(可选)')),
-    pluginVersion: capVersion(sections.get('plugin 版本(可选)')),
   };
-}
-
-/** 边界(E253):版本字段 trim 后 ≤REVIEW_VERSION_MAX 才采用,空/超长 → undefined。 */
-function capVersion(v: string | undefined): string | undefined {
-  if (v === undefined || v.length === 0 || v.length > REVIEW_VERSION_MAX) {
-    return undefined;
-  }
-  return v;
 }
 
 /** "### Foo\nbar baz\n### Qux\n..." → Map { foo: "bar baz", qux: ... }(key 小写). */
