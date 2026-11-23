@@ -26,7 +26,6 @@ export interface DebugSession {
   readonly systemProcessIds: readonly number[];
   readonly childSessionCount: number;
   readonly stopSeq: number;
-  readonly runSeq: number;
   readonly currentThreadId?: number;
   readonly stoppedReason?: string;
   readonly createdAt: number;
@@ -148,7 +147,6 @@ export function add(input: AddDebugSessionInput, reservation?: CapacityReservati
     systemProcessIds: [],
     childSessionCount: 0,
     stopSeq: 0,
-    runSeq: 0,
     createdAt: Date.now(),
   };
   sessions.set(input.id, session);

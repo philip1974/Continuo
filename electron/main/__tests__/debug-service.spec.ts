@@ -1093,7 +1093,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(service.listSessions()).toEqual([]);
   });
 
-  it('stopped 递增 stopSeq 并即时返回; continue 递增 runSeq 后旧 stop 不串话; disconnect reject waiter', async () => {
+  it('stopped 递增 stopSeq 并即时返回; continue 后旧 stop 不串话; disconnect reject waiter', async () => {
     const { service, parent } = makeFakeService();
     const { session_id: sessionId } = await service.launchSession(
       { program: '/fixture.js', cwd: '/work' },
@@ -1549,7 +1549,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     );
 
     await service.setBreakpoints(sessionId, { file: '/fixture.ts', line: 14 });
-    // 程序在第一个 wait_for_stop 时才起跑(launch 后 runSeq=1),之后才可能停住
+    // 程序在第一个 wait_for_stop 时才起跑(launch 后才进入 running),之后才可能停住
     const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
     await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
     parent.emit('stopped', { reason: 'breakpoint', threadId: 3 });
@@ -1580,7 +1580,6 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(events[2]!.event).toMatchObject({
       type: 'continued',
       sessionId,
-      runSeq: 2,
     });
     expect(events[3]).toMatchObject({
       event: { type: 'terminated', sessionId, reason: 'window-closed' },
@@ -1625,10 +1624,6 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(service.viewSnapshot(21)).toEqual([
       {
         session_id: sessionId,
-        state: 'stopped',
-        name: 'app',
-        stopped_reason: 'breakpoint',
-        owner_window_id: 21,
         stop: { stopSeq: 1, reason: 'breakpoint', threadId: 0, description: 'Paused on breakpoint' },
         breakpointsBySource: [
           {
@@ -1646,7 +1641,6 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(service.viewSnapshot(22)).toEqual([
       expect.objectContaining({
         session_id: otherId,
-        owner_window_id: 22,
         breakpointsBySource: [{ file: '/c.js', breakpoints: [{ file: '/c.js', line: 1, verified: true }] }],
       }),
     ]);

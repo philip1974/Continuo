@@ -1587,10 +1587,6 @@ export class DebugService {
         }
         return {
           session_id: session.id,
-          state: session.runtimeState,
-          ...(session.name !== undefined ? { name: session.name } : {}),
-          ...(session.stoppedReason !== undefined ? { stopped_reason: session.stoppedReason } : {}),
-          owner_window_id: session.ownerWindowId,
           ...(stop
             ? {
                 stop: {
@@ -1732,7 +1728,7 @@ export class DebugService {
     runtime.launched = true;
     // 已结束 / 拆除中的会话不翻回 running(configurationDone 期间可能已 teardown)。
     if (runtime.endedMessage === undefined && debugSessions.get(runtime.id)?.runtimeState === 'starting') {
-      debugSessions.update(runtime.id, { runtimeState: 'running', runSeq: 1 });
+      debugSessions.update(runtime.id, { runtimeState: 'running' });
     }
   }
 
@@ -2066,14 +2062,12 @@ export class DebugService {
     runtime.stoppedClient = undefined;
     debugSessions.update(sessionId, {
       runtimeState: 'running',
-      runSeq: session.runSeq + 1,
       currentThreadId: undefined,
       stoppedReason: undefined,
     });
     this.emitSessionEvent(sessionId, {
       type: 'continued',
       sessionId,
-      runSeq: session.runSeq + 1,
     });
     const next = runtime.queuedStops.shift();
     if (next) this.markStopped(sessionId, next.body, next.client);

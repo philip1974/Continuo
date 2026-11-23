@@ -157,7 +157,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     await useDebugStore.getState().loadVariables('s1', 44);
     expect(debugApi.getVariables).toHaveBeenCalledTimes(1);
 
-    emit({ type: 'continued', sessionId: 's1', runSeq: 2 });
+    emit({ type: 'continued', sessionId: 's1' });
     await useDebugStore.getState().loadVariables('s1', 44);
 
     const session = useDebugStore.getState().sessions.get('s1');
@@ -181,7 +181,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     debugApi.getStack.mockImplementationOnce(async () => frame(99));
 
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'step' });
-    emit({ type: 'continued', sessionId: 's1', runSeq: 2 });
+    emit({ type: 'continued', sessionId: 's1' });
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
     await flushAsync();
     await flushAsync();
@@ -214,7 +214,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     );
     const pending = useDebugStore.getState().loadVariables('s1', 44);
 
-    emit({ type: 'continued', sessionId: 's1', runSeq: 2 });
+    emit({ type: 'continued', sessionId: 's1' });
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
     await flushAsync();
     releaseOld!();
@@ -300,7 +300,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       expect(debugApi.getStack).toHaveBeenCalledWith({ sessionId: 's1', threadId: 0 });
 
       // 之后的事件照常增量。
-      debugApi.events[0]!({ type: 'continued', sessionId: 's1', runSeq: 4 });
+      debugApi.events[0]!({ type: 'continued', sessionId: 's1' });
       expect(useDebugStore.getState().sessions.get('s1')?.stopped).toBeUndefined();
     });
 
@@ -320,7 +320,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
         file: '/repo/a.ts',
         breakpoints: [{ file: '/repo/a.ts', line: 20, verified: true }],
       });
-      emit({ type: 'continued', sessionId: 's1', runSeq: 4 });
+      emit({ type: 'continued', sessionId: 's1' });
       emit({ type: 'terminated', sessionId: 's2', reason: 'exit' });
       resolveSubscribe({ ok: true, data: snapshot });
       await flushAsync();

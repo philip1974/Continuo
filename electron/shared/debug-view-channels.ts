@@ -59,7 +59,6 @@ export type DebugViewEvent =
   | {
       readonly type: 'continued';
       readonly sessionId: string;
-      readonly runSeq: number;
     }
   | {
       readonly type: 'terminated';
@@ -79,10 +78,6 @@ export const DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX = 1000;
  */
 export interface DebugViewSessionSnapshot {
   readonly session_id: string;
-  readonly state: string;
-  readonly name?: string;
-  readonly stopped_reason?: string;
-  readonly owner_window_id: number;
   /** 当前停点(会话停住时才有)。 */
   readonly stop?: {
     readonly stopSeq: number;
