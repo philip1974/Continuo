@@ -1,113 +1,167 @@
-// 回归守卫:preload 在 Electron sandbox 运行,**无法 require('zod')**。preload 会把
-// electron/shared/*-channels.ts 的 channel 常量当**值** import(非 type),若某个 channel
-// 文件混入 `import { z } from 'zod'`(如放了 zod 入参 schema),bundler 会把整个模块连同
-// zod 拖进 preload 产物 → 运行时 `Unable to load preload script: module not found: zod`,
-// 整个 app 白屏(单测/typecheck 抓不到,只有真跑 Electron 才暴露)。
+// 回归守卫:preload 在 Electron sandbox 运行,**无法 require('zod')**,而 preload 构建会把 workspace 包
+// (如 @continuo-terminal/protocol)和 electron/shared 的模块打进产物。只要 preload 的**值**依赖链上出现 zod,
+// 运行时就 `Unable to load preload script: module not found: zod`,整个 app 白屏(单测 / typecheck 抓不到,
+// 只有真跑 Electron 才暴露)。
 //
-// 故:channel 常量文件不得值导入 zod;zod 入参 schema 放到 shared 的独立 *-schema.ts(main 值导入),channel 文件
-// 只能 `import type`(编译时擦除,不进 preload 产物)从中推出类型 —— 同 terminal-create.ts 的做法。
-// (本守卫源于 S4 marketplace-channels.ts 误把 fetchReviewsInputSchema 放 channels 文件
-//  导致的 preload zod 泄漏。)
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+// 故:zod 入参 schema 放到 shared 的独立 schema 模块(main 值导入),preload 会值导入的模块(*-channels.ts 等)
+// 只能 `import type` 从中推出类型(编译时擦除,不进 preload 产物)—— 同 terminal-create.ts 的做法。
+// (本守卫源于 S4 marketplace-channels.ts 误把 fetchReviewsInputSchema 放 channels 文件导致的 preload zod 泄漏。)
+//
+// 判定:用 TypeScript AST 取每个模块的**值**依赖(import / export … from、副作用导入、动态 import()、require();
+// `import type` / `export type` / 全部成员都是 `type` 的导入编译时擦除,不算),从 electron/preload 的每个入口出发
+// 沿相对路径求闭包(不限目录、不看文件命名)。闭包里出现 `zod`,或出现 package.json 声明依赖 zod 的包 → 泄漏。
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-const SHARED_DIR = join(process.cwd(), 'electron/shared');
+const ROOT = process.cwd();
+const PRELOAD_DIR = join(ROOT, 'electron/preload');
 
-// 泄漏判定:按语句取出每个模块**值**依赖的模块说明符,再在 electron/shared 内求传递闭包。
-// - `import type { … }` / `import type * as …` / `export type { … }` 编译时整句擦除 → 不算依赖;
-// - 其它 `import … from` / `export … from` / `import '…'` / 动态 `import('…')` / `require('…')` 都算值依赖
-//   (含 `import type from 'zod'` 这种把 type 当默认导入名的写法);
-// - 值依赖 zod,或值依赖一个(传递地)值依赖 zod 的 shared 模块 → 该模块会把 zod 带进 preload。
-//   不按文件命名约定判断(schema 文件可能叫 *-schemas.ts / plugin-manifest.ts 等)。
-const STATEMENT_RE = /(?:^|[;\n])\s*(import|export)\b([^;'"]*?)['"]([^'"]+)['"]/g;
-const CALL_RE = /\b(?:import|require)\(\s*['"]([^'"]+)['"]\s*\)/g;
-function valueSpecifiers(code: string): string[] {
+function valueSpecifiers(file: string): string[] {
+  const sf = ts.createSourceFile(file, readFileSync(file, 'utf-8'), ts.ScriptTarget.Latest, true);
   const out: string[] = [];
-  for (const m of code.matchAll(STATEMENT_RE)) {
-    const [, kw, between, spec] = m;
-    if (kw === 'export' && !/\bfrom\s*$/.test(between!)) continue; // export const x = '…' 之类不是再导出
-    if (/^\s+type\s*[{*]/.test(between!)) continue; // type-only:整句擦除
-    out.push(spec!);
-  }
-  for (const m of code.matchAll(CALL_RE)) out.push(m[1]!);
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      const clause = node.importClause;
+      const named = clause?.namedBindings;
+      const typeOnly =
+        clause !== undefined &&
+        (clause.isTypeOnly ||
+          (clause.name === undefined &&
+            named !== undefined &&
+            ts.isNamedImports(named) &&
+            named.elements.length > 0 &&
+            named.elements.every((e) => e.isTypeOnly)));
+      if (!typeOnly) out.push(node.moduleSpecifier.text);
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      const clause = node.exportClause;
+      const typeOnly =
+        node.isTypeOnly ||
+        (clause !== undefined && ts.isNamedExports(clause) && clause.elements.length > 0 && clause.elements.every((e) => e.isTypeOnly));
+      if (!typeOnly) out.push(node.moduleSpecifier.text);
+    } else if (ts.isCallExpression(node)) {
+      const [arg] = node.arguments;
+      const isImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+      if ((isImport || isRequire) && arg && ts.isStringLiteralLike(arg)) out.push(arg.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
   return out;
 }
 
-function stripLineComments(src: string): string {
-  return src
-    .split(/\r?\n/)
-    .map((line) => line.replace(/\/\/.*$/, ''))
-    .join('\n');
+function resolveLocal(fromFile: string, spec: string): string | null {
+  const base = resolve(dirname(fromFile), spec.replace(/\.(js|ts)$/, ''));
+  for (const cand of [`${base}.ts`, `${base}.tsx`, join(base, 'index.ts')]) {
+    if (existsSync(cand) && statSync(cand).isFile()) return cand;
+  }
+  return null;
 }
 
-/** 给定 { 模块名 → 源码 },返回值依赖(含传递)zod 的模块名集合。模块名 = 去扩展名的文件名。 */
-function zodTaintedModules(sources: ReadonlyMap<string, string>): Set<string> {
-  const deps = new Map<string, string[]>();
-  for (const [name, src] of sources) deps.set(name, valueSpecifiers(stripLineComments(src)));
-  const tainted = new Set<string>();
-  const localName = (spec: string): string | null =>
-    spec.startsWith('./') ? spec.slice(2).replace(/\.(js|ts)$/, '') : null;
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [name, specs] of deps) {
-      if (tainted.has(name)) continue;
-      if (specs.some((sp) => sp === 'zod' || sp.startsWith('zod/') || tainted.has(localName(sp) ?? ''))) {
-        tainted.add(name);
-        changed = true;
+function packageName(spec: string): string {
+  const parts = spec.split('/');
+  return spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
+}
+
+function packageDependsOnZod(name: string, root: string): boolean {
+  if (name === 'zod') return true;
+  const pj = join(root, 'node_modules', name, 'package.json');
+  if (!existsSync(pj)) return false;
+  const json = JSON.parse(readFileSync(pj, 'utf-8')) as Record<string, Record<string, string> | undefined>;
+  return ['dependencies', 'peerDependencies'].some((k) => json[k]?.zod !== undefined);
+}
+
+/** 从 entries 出发求值依赖闭包,返回每条泄漏的依赖链(空 = 无泄漏)。 */
+function zodLeakChains(entries: readonly string[], root: string): string[] {
+  const leaks: string[] = [];
+  const seen = new Set<string>();
+  const walk = (file: string, chain: readonly string[]): void => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    for (const spec of valueSpecifiers(file)) {
+      const here = [...chain, file.replace(`${root}/`, '')];
+      if (spec.startsWith('.')) {
+        const next = resolveLocal(file, spec);
+        if (next) walk(next, here);
+      } else if (packageDependsOnZod(packageName(spec), root)) {
+        leaks.push([...here, spec].join(' → '));
       }
     }
-  }
-  return tainted;
+  };
+  for (const e of entries) walk(e, []);
+  return leaks;
 }
 
-function leaksZod(code: string, shared: ReadonlyMap<string, string> = new Map()): boolean {
-  return zodTaintedModules(new Map([...shared, ['__probe__', code]])).has('__probe__');
+function listTs(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? listTs(join(dir, d.name)) : d.name.endsWith('.ts') ? [join(dir, d.name)] : [],
+  );
 }
 
-describe('preload sandbox:shared channel 文件不得 import zod', () => {
-  it('electron/shared/*-channels.ts 全部 zod-free(含传递依赖,否则拖垮 sandbox preload)', () => {
-    const files = readdirSync(SHARED_DIR).filter((f) => f.endsWith('.ts'));
-    const sources = new Map(files.map((f) => [f.replace(/\.ts$/, ''), readFileSync(join(SHARED_DIR, f), 'utf-8')]));
-    const channelModules = [...sources.keys()].filter((n) => n.endsWith('-channels'));
-    expect(channelModules.length).toBeGreaterThan(0); // sanity:确实扫到了文件
-    const tainted = zodTaintedModules(sources);
-    expect(tainted.size).toBeGreaterThan(0); // sanity:schema 模块确实被识别为值依赖 zod
-    expect(channelModules.filter((n) => tainted.has(n)).map((n) => `electron/shared/${n}.ts`)).toEqual([]);
+describe('preload sandbox:值依赖闭包里不得出现 zod', () => {
+  it('electron/preload 全部入口的值依赖闭包(含 electron/shared、子目录、workspace 包)不含 zod', () => {
+    const entries = listTs(PRELOAD_DIR);
+    expect(entries.length).toBeGreaterThan(0); // sanity:确实扫到了文件
+    expect(zodLeakChains(entries, ROOT)).toEqual([]);
   });
 
-  it('守卫本身:值导入 / 再导出 / 副作用 / 动态导入 zod 与值导入(传递)依赖 zod 的模块判为泄漏,import type 放行', () => {
-    const shared = new Map([
-      ['a-schemas', "import { z } from 'zod';\nexport const A = z.string();"],
-      ['helper', "export { A } from './a-schemas';"],
-      ['limits', 'export const MAX = 1;'],
-    ]);
-    for (const leak of [
-      "import { z } from 'zod';",
-      "import {\n  z,\n} from 'zod';",
-      "export { z } from 'zod';",
-      "export * from 'zod';",
-      "import type from 'zod';",
-      "import type, { z } from 'zod';",
-      "import 'zod';",
-      "const z = require('zod');",
-      "const z = await import('zod');",
-      "import { A } from './a-schemas';",
-      "import { A } from './a-schemas.js';",
-      "export { A } from './a-schemas';",
-      "import { A } from './helper'", // 传递 + 无分号
-    ]) {
-      expect(leaksZod(leak, shared), leak).toBe(true);
-    }
-    for (const ok of [
-      "import type { z } from 'zod';",
-      "import type * as zod from 'zod';",
-      "import type { A } from './a-schemas';",
-      "import { MAX } from './limits'\nimport type { z } from 'zod'", // 无分号:值导入不跨到下一条 type 导入
-      "export const NAME = 'zod';",
-    ]) {
-      expect(leaksZod(ok, shared), ok).toBe(false);
+  it('sanity:shared 的 schema 模块确实被识别为依赖 zod(守卫没有空转)', () => {
+    expect(zodLeakChains([join(ROOT, 'electron/shared/plugin-mcp-schemas.ts')], ROOT)).not.toEqual([]);
+    expect(zodLeakChains([join(ROOT, 'electron/shared/mcp-terminal-schemas.ts')], ROOT)).not.toEqual([]);
+  });
+
+  it('守卫本身:各种值依赖写法判为泄漏,type-only 放行', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'preload-no-zod-'));
+    try {
+      mkdirSync(join(dir, 'node_modules/@x/proto'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules/@x/proto/package.json'), JSON.stringify({ dependencies: { zod: '4' } }));
+      mkdirSync(join(dir, 'sub'));
+      writeFileSync(join(dir, 'sub/a-schemas.ts'), "import { z } from 'zod';\nexport const A = z.string();\n");
+      writeFileSync(join(dir, 'helper.ts'), "export { A } from './sub/a-schemas'\n");
+      writeFileSync(join(dir, 'limits.ts'), "export const MAX = 1; export const U = 'http://x'\n");
+      const probe = (code: string): string[] => {
+        writeFileSync(join(dir, 'probe.ts'), code);
+        return zodLeakChains([join(dir, 'probe.ts')], dir);
+      };
+      for (const leak of [
+        "import { z } from 'zod';",
+        "import {\n  z,\n} from 'zod';",
+        "export { z } from 'zod';",
+        "export * from 'zod';",
+        "import type, { z } from 'zod';",
+        "import { type T, z } from 'zod';",
+        "import { /* it's */ z } from 'zod';",
+        "import 'zod';",
+        "const z = require('zod');",
+        "const z = await import('zod');",
+        'const z = await import(`zod`);',
+        "import { A } from './sub/a-schemas.js';",
+        "export { A } from './sub/a-schemas';",
+        "import { A } from './helper'",
+        "export type { Foo }\nimport { z } from 'zod'",
+        "export const U = 'http://x'; export { A } from './sub/a-schemas';",
+        "export * from '@x/proto';",
+      ]) {
+        expect(probe(leak), leak).not.toEqual([]);
+      }
+      for (const ok of [
+        "import type { z } from 'zod';",
+        "import type * as zod from 'zod';",
+        "import { type z } from 'zod';",
+        "export type { A } from './sub/a-schemas';",
+        "import type { A } from './helper';",
+        "import { MAX } from './limits'\nimport type { z } from 'zod'",
+        "export const NAME = 'zod';",
+        "type Z = typeof import('zod');",
+        "import { ipcRenderer } from 'electron';",
+      ]) {
+        expect(probe(ok), ok).toEqual([]);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

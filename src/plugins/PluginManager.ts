@@ -548,7 +548,8 @@ export class PluginManager {
       entry.error =
         rejection && !rejection.ok
           ? { code: rejection.code, message: rejection.message }
-          : { code: 'SCHEMA_ERROR', message: `no admissible directory for ${id}` };
+          : // 类型兜底:own 中的目录都声明了该 id,没被选中即准入失败,走不到这里。
+            { code: 'SCHEMA_ERROR', message: `no admissible directory for ${id}` };
       entry.warning = undefined; // 失败转换清陈旧 partial-grant warning(否则 failed 行同显 error+旧 warning)
       this.invalidateListCache();
       return;

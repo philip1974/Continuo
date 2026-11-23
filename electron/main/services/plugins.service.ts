@@ -1628,7 +1628,7 @@ export function createPluginsWatcher(
   opts: { missingRecordCap?: number } = {},
 ): PluginsWatcher {
   const recordCap = opts.missingRecordCap ?? WATCHER_RECORD_CAP;
-  // pluginId → { dir: 代表目录(目录名字典序最小的候选,只用于陈旧键 / tombstone 记账), sig: 全部候选目录的合并签名 }。
+  // pluginId → { dirs: 全部候选目录名(陈旧键 / tombstone / knownDirs 记账), sig: 全部候选目录的合并签名 }。
   // watcher 只决定是否广播,不选目录:重复 manifest.id 时选哪个目录由 renderer PluginManager.selectPluginDirs 统一决定
   //(它还看 manifest schema 与 minLMVersion,main 判断不了),所以任一候选目录变化都要广播。签名按目录名排序拼接
   // (目录名 + main mtime + manifest 内容哈希),多轮无变化时稳定 —— 此前以 id 为键、多个目录轮流写同一键 → 每轮都
@@ -1637,27 +1637,39 @@ export function createPluginsWatcher(
   // 暂不可见)的 tombstone,插入序 = 开始缺失的先后。tombstone 不限时保留(rm -rf 后部署/构建/网络卷恢复再久,
   // 重建后 main 已变仍要触发热重载),仅在记录总数超 recordCap 时淘汰最早缺失的。missingByDir 为 tombstone
   // 的目录索引:每轮只按「本轮出现的目录」查 tombstone,遍历成本与当前目录数相关,不随历史缺失记录数增长。
-  type WatchRecord = { dir: string; dirs: readonly string[]; sig: string };
+  type WatchRecord = { dirs: readonly string[]; sig: string };
   const active = new Map<string, WatchRecord>();
   const missing = new Map<string, WatchRecord>();
   const missingByDir = new Map<string, Set<string>>();
+  // tombstone 按其**全部**候选目录建索引(任一候选目录本轮出现都要参与陈旧判定 / knownDirs)。
   const addMissing = (pluginId: string, rec: WatchRecord): void => {
     missing.set(pluginId, rec);
-    let ids = missingByDir.get(rec.dir);
-    if (ids === undefined) {
-      ids = new Set();
-      missingByDir.set(rec.dir, ids);
+    for (const dir of rec.dirs) {
+      let ids = missingByDir.get(dir);
+      if (ids === undefined) {
+        ids = new Set();
+        missingByDir.set(dir, ids);
+      }
+      ids.add(pluginId);
     }
-    ids.add(pluginId);
   };
   const deleteMissing = (pluginId: string): void => {
     const rec = missing.get(pluginId);
     if (rec === undefined) return;
     missing.delete(pluginId);
-    const ids = missingByDir.get(rec.dir);
-    ids?.delete(pluginId);
-    if (ids?.size === 0) missingByDir.delete(rec.dir);
+    for (const dir of rec.dirs) {
+      const ids = missingByDir.get(dir);
+      ids?.delete(pluginId);
+      if (ids?.size === 0) missingByDir.delete(dir);
+    }
   };
+  // 记录陈旧 = 它的每个候选目录本轮都可解析且声明了别的 id(不再有任何目录代表它)。目录暂时消失 / manifest
+  // 缺失或损坏时不算陈旧(转 / 留 tombstone)。
+  const isStale = (pluginId: string, rec: WatchRecord): boolean =>
+    rec.dirs.every((dir) => {
+      const info = manifestCache.get(dir)?.info;
+      return info !== undefined && info !== null && info.pluginId !== pluginId;
+    });
   let firstRun = true;
   let cancelled = false;
   // race(R5):tick 异步扫描(readdir+stat+readFile)慢于 interval 时,setInterval 会并发触发多个
@@ -1818,7 +1830,7 @@ export function createPluginsWatcher(
     for (const [pluginId, group] of groups) {
       group.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
       const sig = group.map((g) => `${g.name}\0${g.mtime}\0${g.manifestHash}`).join('\n');
-      chosen.set(pluginId, { dir: group[0]!.name, dirs: group.map((g) => g.name), sig });
+      chosen.set(pluginId, { dirs: group.map((g) => g.name), sig });
     }
     // 本轮之前被记录过的目录:某 id 首次出现在其中 = 该目录改声明了新 id(更新换了 id),也算变化。
     // 须在本轮增删记录前取(含 tombstone 的目录);只需判定本轮被选中的目录。
@@ -1833,8 +1845,7 @@ export function createPluginsWatcher(
     for (const [pluginId, prev] of active) {
       if (chosen.has(pluginId)) continue;
       active.delete(pluginId);
-      const info = manifestCache.get(prev.dir)?.info;
-      if (!(info && info.pluginId !== pluginId)) addMissing(pluginId, prev);
+      if (!isStale(pluginId, prev)) addMissing(pluginId, prev);
     }
     // tombstone 的陈旧判定只可能发生在本轮枚举到(manifestCache 有条目)的目录上 → 按目录索引查,
     // 不遍历全部 tombstone。
@@ -1844,7 +1855,8 @@ export function createPluginsWatcher(
         const ids = missingByDir.get(dirName);
         if (ids === undefined) continue;
         for (const pluginId of [...ids]) {
-          if (pluginId !== info.pluginId && !chosen.has(pluginId)) deleteMissing(pluginId);
+          const rec = missing.get(pluginId);
+          if (rec && !chosen.has(pluginId) && isStale(pluginId, rec)) deleteMissing(pluginId);
         }
       }
     }
