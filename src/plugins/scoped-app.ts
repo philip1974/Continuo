@@ -452,7 +452,7 @@ function makeNetwork(
       // 调用方自带 signal 时用 AbortSignal.any 合并:成功后响应体仍在读取,调用方 abort 须能照常中止(同原生
       // fetch 语义);且源 signal 对合并 signal 只持弱引用,长期复用同一调用方 signal 轮询不会堆积监听(终审)。
       const ctl = new AbortController();
-      const callerSignal = init?.signal ?? undefined;
+      const callerSignal = init?.signal;
       const signal = callerSignal ? AbortSignal.any([callerSignal, ctl.signal]) : ctl.signal;
       life.inflightFetches.add(ctl);
       try {
@@ -502,12 +502,11 @@ function makeShell(
       type StreamHandle = ReturnType<
         typeof coApi.pluginShellStreamRaw.execStream
       >;
-      let startPromise: Promise<StreamHandle> | null = null;
       // race(R94):消费者在权限等待期间提前 break/return 的取消标志。execStream 是急切启动
-      // (下方 const done = start()),start() 的 ensurePerm 可能挂在权限弹窗;此时 chunks.return()
-      // 因内层 iterator 尚为 null 而跳过 abort。若不记取消,权限 resolve 后 start() 仍会
+      // (下方的 started),其中的 ensurePerm 可能挂在权限弹窗;此时 chunks.return()
+      // 因内层 iterator 尚为 null 而跳过 abort。若不记取消,权限 resolve 后 started 仍会
       // execStreamRaw **真的 spawn 子进程** —— 已取消消费的命令迟到执行,无人读 chunks,子进程挂到
-      // timeout = 资源泄漏 + 意外命令执行。return() 置 cancelled;start() 在 ensurePerm 之后、真正
+      // timeout = 资源泄漏 + 意外命令执行。return() 置 cancelled;started 在 ensurePerm 之后、真正
       // spawn 之前复查,已取消则返回一个立即终止的合成 stream(不 spawn,done 收敛)。
       let cancelled = false;
       const cancelledStream: StreamHandle = {
@@ -521,35 +520,30 @@ function makeShell(
         },
         done: Promise.resolve({ exitCode: null, signal: null }),
       };
-      const start = async (): Promise<StreamHandle> => {
-        if (!startPromise) {
-          startPromise = (async () => {
-            await ensurePerm(pluginId, 'shell', store, life);
-            // race(R94):权限等待期间已被消费者取消 → 不 spawn,返回合成终止 stream。
-            if (cancelled) return cancelledStream;
-            // 边界(E46):发 IPC(structured-clone args/opts)前预检,超限抛 BAD_INPUT(经
-            // startPromise reject 由 done/chunks 错误路径上抛,与 ensurePerm 异常同款语义)。
-            validateShellInput(cmd, args, opts);
-            // 边界(E313,E46/E312 同族 / 不转发 raw 外部对象):opts 是插件提供对象,JS 插件可绕 TS 类型
-            // 塞额外/超大字段;此前整 opts 直接进 IPC structured-clone(放大)。只取契约声明字段
-            //({timeoutMs, cwd}),丢弃未知额外字段后再发 IPC(validateShellInput 已先校验 cwd/env/input)。
-            // 终审 P1:带上插件 id,main 据此在插件停用/卸载时终止该流(不作授权依据)。
-            const safeOpts =
-              opts === undefined
-                ? { pluginId }
-                : { cwd: opts.cwd, timeoutMs: opts.timeoutMs, pluginId };
-            return coApi.pluginShellStreamRaw.execStream(cmd, args, safeOpts);
-          })();
-        }
-        return startPromise;
-      };
-      const done = start()
+      const started: Promise<StreamHandle> = (async () => {
+        await ensurePerm(pluginId, 'shell', store, life);
+        // race(R94):权限等待期间已被消费者取消 → 不 spawn,返回合成终止 stream。
+        if (cancelled) return cancelledStream;
+        // 边界(E46):发 IPC(structured-clone args/opts)前预检,超限抛 BAD_INPUT(经
+        // started reject 由 done/chunks 错误路径上抛,与 ensurePerm 异常同款语义)。
+        validateShellInput(cmd, args, opts);
+        // 边界(E313,E46/E312 同族 / 不转发 raw 外部对象):opts 是插件提供对象,JS 插件可绕 TS 类型
+        // 塞额外/超大字段;此前整 opts 直接进 IPC structured-clone(放大)。只取契约声明字段
+        //({timeoutMs, cwd}),丢弃未知额外字段后再发 IPC(validateShellInput 已先校验 cwd/env/input)。
+        // 终审 P1:带上插件 id,main 据此在插件停用/卸载时终止该流(不作授权依据)。
+        const safeOpts =
+          opts === undefined
+            ? { pluginId }
+            : { cwd: opts.cwd, timeoutMs: opts.timeoutMs, pluginId };
+        return coApi.pluginShellStreamRaw.execStream(cmd, args, safeOpts);
+      })();
+      const done = started
         .then((stream) => stream.done)
         .then((result) => ({
           exitCode: result.exitCode ?? -1,
           signal: result.signal,
         }));
-      // done 是急切求值:start() 的 ensurePerm 在缺 shell 权限时立即 reject。若插件
+      // done 是急切求值:started 的 ensurePerm 在缺 shell 权限时立即 reject。若插件
       // 只迭代 chunks(合法用法,chunks 路径会把同一错误抛给 for-await)而从不引用 done,
       // 这个 reject 无人处理 → renderer unhandledrejection 噪声。挂一个 no-op handler 把
       // done 标记为「已处理」(不改变返回给插件的 done:真实 await done 仍能看到 reject)。
@@ -561,15 +555,15 @@ function makeShell(
             let iterator: AsyncIterator<ShellChunk, void> | null = null;
             return {
               async next() {
-                const stream = await start();
+                const stream = await started;
                 iterator ??= stream.chunks[Symbol.asyncIterator]();
                 return iterator.next();
               },
               // 提前 break → 委托内层 iterator.return() 触发 ABORT,否则子进程挂到 timeout
-              // (P2-AM)。start() 未 resolve(权限弹窗中)则尚未 spawn,iterator 为 null 无需
+              // (P2-AM)。started 未 resolve(权限弹窗中)则尚未 spawn,iterator 为 null 无需
               // abort;已 resolve 才有内层 iterator 可关。
               async return(): Promise<IteratorResult<ShellChunk, void>> {
-                // race(R94):标记取消 —— 若 start() 仍在 ensurePerm(权限弹窗中,iterator 尚为 null),
+                // race(R94):标记取消 —— 若 started 仍在 ensurePerm(权限弹窗中,iterator 尚为 null),
                 // 权限 resolve 后据此不 spawn 子进程,避免已取消命令迟到执行 + 子进程泄漏。
                 cancelled = true;
                 await iterator?.return?.();

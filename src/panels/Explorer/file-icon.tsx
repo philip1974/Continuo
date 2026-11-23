@@ -2,8 +2,7 @@
 // 根据文件名 / 扩展名 / 目录名映射到 @react-symbols/icons 的彩色图标。
 // 未命中走 Document / Folder fallback。tree-shake 让 Vite 只 bundle 用到的 icon。
 //
-// V2 规划:扩 ExplorerDecoratorRegistry 让 plugin 贡献 icon(git modified
-// 状态、license badge 等)。
+// plugin 可经 ExplorerDecoratorRegistry 的 decoration.icon 覆盖图标(见 FileRow)。
 //
 // BDD: src/__tests__/file-icon/
 

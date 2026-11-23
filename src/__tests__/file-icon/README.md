@@ -77,8 +77,8 @@ export function FileIcon(props: {
    - `tsconfig.json` / `jsconfig.json` → `Tsconfig`
    - `vite.config.{ts,js,mts}` → `Vite`
    - `vitest.config.{ts,js}` → `Vitest`
-   - `eslint.config.{js,mjs,ts}` / `.eslintrc*` → `Eslint`
-   - `.prettierrc*` / `prettier.config.js` → `Prettier`
+   - `eslint.config.{js,mjs,ts}` / `.eslintrc` / `.eslintrc.{json,js,cjs}` → `Eslint`
+   - `.prettierrc` / `.prettierrc.{json,js}` / `prettier.config.js` → `Prettier`
    - `tailwind.config.{js,ts,cjs}` → `Tailwind`
    - `biome.{json,jsonc}` → `Biome`
    - `.gitignore` / `.gitattributes` / `.gitmodules` → `Ignore`
@@ -130,5 +130,5 @@ export function FileIcon(props: {
   react-symbols 自己保证 SVG 输出正确)
 - FileRow 接入(由 explorer-tree / FileRow 自己的 spec 测,本 topic 只测
   纯函数 `getFileIconComponent`)
-- 未来 plugin 通过 ExplorerDecoratorRegistry 贡献 icon(V2,Decoration
-  接口扩 `icon?` 字段后再加 spec)
+- plugin 通过 ExplorerDecoratorRegistry 的 `decoration.icon` 覆盖图标(由
+  explorer-decorator 规范测)
