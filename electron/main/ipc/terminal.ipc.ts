@@ -166,8 +166,7 @@ export function makeCreateHandler(deps?: {
     const cwd = await resolveCwd(cwdHint);
     // race:cwd 异步校验是 await 边界,期间窗口可能已关闭(window-closed cleanup 已跑完)。此后再登记
     // session / 签发 token / spawn 会成为已关窗口名下的孤儿终端 → 以 CANCELLED 收场。
-    // (测试替身窗口可能不带 isDestroyed,按未销毁处理。)
-    if (typeof win.isDestroyed === 'function' && win.isDestroyed()) {
+    if (win.isDestroyed()) {
       throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'terminal create cancelled: window closed');
     }
     const id = generateId();

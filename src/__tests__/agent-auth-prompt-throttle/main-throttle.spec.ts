@@ -24,7 +24,13 @@ import { ERROR_CODES } from '../../../electron/shared/error-codes';
 type FakeWindow = {
   id: number;
   isDestroyed: () => boolean;
-  webContents: { send: ReturnType<typeof vi.fn>; getURL: () => string };
+  webContents: {
+    send: ReturnType<typeof vi.fn>;
+    getURL: () => string;
+    on: ReturnType<typeof vi.fn>;
+    once: ReturnType<typeof vi.fn>;
+    isLoadingMainFrame: () => boolean;
+  };
 };
 
 const electronMock = vi.hoisted(() => ({ windows: [] as FakeWindow[] }));
@@ -49,7 +55,13 @@ function makeWin(id: number): FakeWindow {
   return {
     id,
     isDestroyed: () => false,
-    webContents: { send: vi.fn(), getURL: () => 'file:///renderer/index.html' },
+    webContents: {
+      send: vi.fn(),
+      getURL: () => 'file:///renderer/index.html',
+      on: vi.fn(),
+      once: vi.fn(),
+      isLoadingMainFrame: () => false,
+    },
   };
 }
 

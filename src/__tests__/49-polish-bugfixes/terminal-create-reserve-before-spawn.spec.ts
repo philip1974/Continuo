@@ -13,7 +13,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { BrowserWindow } from 'electron';
 import { makeCreateHandler } from '../../../electron/main/ipc/terminal.ipc';
 
-const fakeWin = { id: 11 } as unknown as BrowserWindow;
+const fakeWin = { id: 11, isDestroyed: () => false } as unknown as BrowserWindow;
 
 // 有状态的假 sessionStore,镜像真实 terminal-sessions.service:setExited 在 id 不存在时 no-op。
 function makeStatefulStore() {

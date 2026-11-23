@@ -273,7 +273,7 @@ describe('write/resize id 上限 (E33)', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('makeCreateHandler', () => {
-  const fakeWin = { id: 11 } as unknown as import('electron').BrowserWindow;
+  const fakeWin = { id: 11, isDestroyed: () => false } as unknown as import('electron').BrowserWindow;
   type StoredSession = {
     id: string;
     title?: string;
@@ -516,8 +516,8 @@ describe('makeCreateHandler', () => {
       sessionStore: sessionStore as never,
       generateId: () => `id-${++seq}`,
     });
-    await handler({}, { id: 11 } as unknown as import('electron').BrowserWindow);
-    await handler({}, { id: 22 } as unknown as import('electron').BrowserWindow);
+    await handler({}, { id: 11, isDestroyed: () => false } as unknown as import('electron').BrowserWindow);
+    await handler({}, { id: 22, isDestroyed: () => false } as unknown as import('electron').BrowserWindow);
     expect(sessionStore.add.mock.calls[0]![0].ownerWindowId).toBe(11);
     expect(sessionStore.add.mock.calls[1]![0].ownerWindowId).toBe(22);
   });
@@ -562,7 +562,7 @@ describe('makeListSessionsHandler', () => {
 });
 
 describe('makeRemoveHandler', () => {
-  const fakeWin = { id: 11 } as unknown as import('electron').BrowserWindow;
+  const fakeWin = { id: 11, isDestroyed: () => false } as unknown as import('electron').BrowserWindow;
 
   it('立即删 metadata + 异步 kill PTY(若存在)', async () => {
     const service = {
@@ -661,7 +661,7 @@ describe('makeRemoveHandler', () => {
     expect(() =>
       handler(
         { id: 'term-1' },
-        { id: 22 } as unknown as import('electron').BrowserWindow,
+        { id: 22, isDestroyed: () => false } as unknown as import('electron').BrowserWindow,
       ),
     ).toThrow(/terminal not found/);
     expect(sessionStore.remove).not.toHaveBeenCalled();

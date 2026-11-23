@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 function fakeWin(id = 11): BrowserWindow {
-  return { id } as unknown as BrowserWindow;
+  return { id, isDestroyed: () => false } as unknown as BrowserWindow;
 }
 
 function makeService() {

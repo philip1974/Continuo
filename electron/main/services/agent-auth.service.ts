@@ -121,26 +121,21 @@ export function watchAgentAuthRenderer(win: BrowserWindow): void {
     rendererNotReady.add(windowId);
     cancelAgentAuthByWindow(windowId);
   };
-  // 单测里的假 webContents 可能不带 on / once。
-  if (typeof wc.on === 'function') {
-    wc.on('did-navigate', onGone);
-    wc.on('render-process-gone', onGone);
-    // 主框架加载失败:Chromium 提交的是错误页,不发 did-navigate,但旧文档同样没了。
-    // ERR_ABORTED(-3)除外,它不代表文档被换掉(真机实测 Electron 对主框架发 -3 的两种情况):
-    // - 文档已提交但仍在加载时又 reload:did-fail-load(-3) → did-navigate → 就绪,换文档由随后的 did-navigate 处理;
-    // - 文档提交后主进程调 wc.stop():-3 在就绪**之后**才到,文档原样留着、不会再上报就绪 —— 按换文档处理会让该
-    //   窗口的授权请求被永久拒绝。
-    wc.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
-      if (isMainFrame && errorCode !== ERR_ABORTED) onGone();
-    });
-  }
+  wc.on('did-navigate', onGone);
+  wc.on('render-process-gone', onGone);
+  // 主框架加载失败:Chromium 提交的是错误页,不发 did-navigate,但旧文档同样没了。
+  // ERR_ABORTED(-3)除外,它不代表文档被换掉(真机实测 Electron 对主框架发 -3 的两种情况):
+  // - 文档已提交但仍在加载时又 reload:did-fail-load(-3) → did-navigate → 就绪,换文档由随后的 did-navigate 处理;
+  // - 文档提交后主进程调 wc.stop():-3 在就绪**之后**才到,文档原样留着、不会再上报就绪 —— 按换文档处理会让该
+  //   窗口的授权请求被永久拒绝。
+  wc.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
+    if (isMainFrame && errorCode !== ERR_ABORTED) onGone();
+  });
   // 窗口销毁:结算发往它的未决请求,之后不会再有请求发给它。
-  if (typeof wc.once === 'function') {
-    wc.once('destroyed', () => {
-      cancelAgentAuthByWindow(windowId);
-      rendererNotReady.delete(windowId);
-    });
-  }
+  wc.once('destroyed', () => {
+    cancelAgentAuthByWindow(windowId);
+    rendererNotReady.delete(windowId);
+  });
 }
 
 /** renderer 上报授权请求的订阅已建立(AGENT_AUTH_CHANNELS.READY)。 */
@@ -151,9 +146,7 @@ export function markAgentAuthRendererReady(windowId: number): void {
 /** 目标窗口此刻显示不了授权弹窗:renderer 文档正在重建,或主框架仍在加载(首次加载 / 没被监听到的 reload)。 */
 function rendererUnavailable(win: BrowserWindow): boolean {
   if (rendererNotReady.has(win.id)) return true;
-  const wc = win.webContents;
-  // 单测里的假 webContents 可能不带 isLoadingMainFrame。
-  return typeof wc.isLoadingMainFrame === 'function' && wc.isLoadingMainFrame();
+  return win.webContents.isLoadingMainFrame();
 }
 
 /**

@@ -48,6 +48,9 @@ function makeWin(id: number) {
     webContents: {
       send: vi.fn(),
       getURL: () => 'file:///renderer/index.html',
+      on: vi.fn(),
+      once: vi.fn(),
+      isLoadingMainFrame: () => false,
     },
   };
 }

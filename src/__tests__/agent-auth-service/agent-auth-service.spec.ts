@@ -31,6 +31,9 @@ type FakeWindow = {
   webContents: {
     send: ReturnType<typeof vi.fn>;
     getURL: () => string;
+    on: ReturnType<typeof vi.fn>;
+    once: ReturnType<typeof vi.fn>;
+    isLoadingMainFrame: () => boolean;
   };
 };
 
@@ -128,6 +131,9 @@ function makeWin(
         opts.popout
           ? 'file:///renderer/index.html?popout=1'
           : 'file:///renderer/index.html',
+      on: vi.fn(),
+      once: vi.fn(),
+      isLoadingMainFrame: () => false,
     },
   };
 }

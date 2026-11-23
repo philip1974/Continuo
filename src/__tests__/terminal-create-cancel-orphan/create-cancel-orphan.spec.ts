@@ -8,7 +8,7 @@ import type { BrowserWindow } from 'electron';
 import { makeCreateHandler } from '../../../electron/main/ipc/terminal.ipc';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
-const fakeWin = { id: 7 } as unknown as BrowserWindow;
+const fakeWin = { id: 7, isDestroyed: () => false } as unknown as BrowserWindow;
 
 function makeStatefulStore() {
   const map = new Map<string, { id: string; title: string; exitCode: number | null }>();
