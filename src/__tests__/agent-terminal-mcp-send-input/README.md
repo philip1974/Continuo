@@ -28,7 +28,7 @@ input: {
 output: {}               // 无 payload(成功即 ok)
 ```
 
-`data` 长度上限 2_000_000 字符(沿用 IPC writeInputSchema)。
+`data` 按 UTF-8 字节限长(`SEND_DATA_MAX_BYTES`,与 IPC writeInputSchema 同口径)。
 
 ## 关键行为
 
@@ -36,8 +36,8 @@ output: {}               // 无 payload(成功即 ok)
 
 - `sendInputInputSchema`:
   - `{session_id, data}` 全填 → ok
-  - 缺 session_id / data 空字符串 → fail
-  - 数据超 2M 字符 → fail
+  - 缺 session_id / session_id 空 → fail
+  - 数据超字节上限 → fail
   - 未知字段 → fail(strict)
 - `sendInputOutputSchema`:
   - `{}` → ok
@@ -54,7 +54,7 @@ deps:
 ```
 
 - `tool.name === 'terminal.send_input'`
-- `tool.inputSchema === sendInputInputSchema`
+- `tool.inputSchema` 是 Continuo 本地收窄后的 schema(基于协议 `sendInputInputSchema`,见 E202/E203/E205/E220),不是协议原 schema
 - `tool.run({session_id, data})`:
   1. `has(session_id) === false` → 抛 `TERMINAL_SESSION_NOT_FOUND`
   2. data 经 `preparePtyData` 处理(LF→CR + 字面 escape unescape)

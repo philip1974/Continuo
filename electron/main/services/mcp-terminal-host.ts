@@ -65,7 +65,7 @@ const TERMINAL_AUTH_GATE = {
  * 注入的 token / 直连 stdio socket)仍可横向 read/inject/kill 其它会话」。
  *
  * 修复:per-session capability。create_session 把新会话盖上调用方身份
- * (controllerToken = ctx.callerSubject;HTTP=bearer token,stdio=每连接 subject)。
+ * (controllerToken = ctx.callerSubject;HTTP=bearer token,带 Mcp-Session-Id 时为 token + session id;stdio=每连接 subject)。
  * read/send/kill 只允许操作「本窗口内且由本调用方创建」的会话:
  *   controller != null && subject != null && controller === subject。
  * user 终端(Cmd+T)无 controllerToken → 任何 MCP 调用方都无权;别的 token/连接创建

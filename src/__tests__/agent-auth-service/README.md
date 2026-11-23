@@ -19,14 +19,14 @@ T7 resolving an unknown `requestId` is a no-op and does not disturb later resolu
 T8 resolving the same `requestId` twice is idempotent: the first decision wins;
 T9 resolving a request clears the timeout path, so advancing past the prompt timeout does not change the settled decision;
 T10 `_resetPendingForTest` denies every pending request and clears pending state;
-T11 `revokeAndKillAgentSessions` rotates the MCP token, removes/kills/destroys only `originHint:'agent'` sessions, and never touches user sessions (the rotation also invalidates stdio connections already bound via `_continuo/hello`, not only HTTP — see `src/__tests__/stdio-revoked-token-binding/`);
+T11 `revokeAndKillAgentSessions` rotates the MCP token, removes and force-kills only `originHint:'agent'` sessions, and never touches user sessions (the rotation also invalidates stdio connections already bound via `_continuo/hello`, not only HTTP — see `src/__tests__/stdio-revoked-token-binding/`);
 T12 revoke iterates over a snapshot, so mutating the backing session array during `remove` does not skip later agent sessions;
-T13 with `mcpHostRef=null`, revoke still removes/kills/destroys agent sessions but returns `rotated:false`;
-T13b when `terminal.service.has(id)` is false, revoke skips PTY kill but still removes metadata and destroys the buffer;
+T13 with `mcpHostRef=null`, revoke still removes and kills agent sessions but returns `rotated:false`;
+T13b when `terminal.service.has(id)` is false, revoke skips PTY kill but still removes metadata;
 T14 `setMcpHostRef` is covered indirectly by T11 and T13;
 T15 `INDEX.md` contains `agent-auth-service` after `pnpm bdd:index`.
 
-The spec uses local-only `vi.hoisted` mocks for Electron windows, terminal session metadata, terminal service, and terminal buffer. It uses fake timers with `advanceTimersByTimeAsync` for the prompt-timeout contract. Helpers such as `makeSession`, `makeMcpHost`, and `makeWin` are intentionally local to the spec and are not exported or shared with other topics.
+The spec uses local-only `vi.hoisted` mocks for Electron windows, terminal session metadata, and terminal service. It uses fake timers with `advanceTimersByTimeAsync` for the prompt-timeout contract. Helpers such as `makeSession`, `makeMcpHost`, and `makeWin` are intentionally local to the spec and are not exported or shared with other topics.
 
 T7b `answerAgentAuthRequest`(ipc respond 入口)对已不在等待的 `requestId`(撤销 / 超时 / 窗口关闭已结算并删除)抛 `AGENT_AUTH_REQUEST_NOT_PENDING`(renderer 收到 ok:false,据此不记 session 授权);
 T7c 对仍在等待的 `requestId` 正常结算、不抛。

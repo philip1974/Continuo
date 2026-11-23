@@ -52,7 +52,7 @@ deps:
 (与 send_input deps 完全相同,可共用同一组实参。)
 
 - `tool.name === 'terminal.send_text'`
-- `tool.inputSchema === sendTextInputSchema`
+- `tool.inputSchema` 是 Continuo 本地收窄后的 schema(基于协议 `sendTextInputSchema`,见 E202/E203/E205/E220),不是协议原 schema
 - `tool.run({session_id, text})`:
   1. `has(session_id) === false` → 抛 `TERMINAL_SESSION_NOT_FOUND`
   2. 调 `write(session_id, text)` —— **逐字写入,不变换、不追加**
@@ -62,7 +62,7 @@ deps:
 
 ### 与 send_input 的关系
 
-二者**实装行为完全等价**(都是 raw write),区别在**语义**:
+二者写入方式不同:send_text 逐字写入;send_input 先经 `preparePtyData`(LF→CR、字面 escape 反转义)。语义上:
 - `send_text(text)` —— "写这段文字,不包含按键"
 - `send_input(data)` —— "写这段 raw 字节,可含 \\r \\x03 等"
 

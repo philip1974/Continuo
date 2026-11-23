@@ -5,7 +5,8 @@
 //   POST /mcp  JSON-RPC 2.0 单请求/响应,直接通过 HTTP body 同步返回。
 //   GET  /mcp  SSE endpoint(server-initiated 通知)。
 //
-// Bearer 鉴权:`Authorization: Bearer <token>`。Token 按窗口签发,窗口关闭 / 用户撤销授权时作废。
+// Bearer 鉴权:`Authorization: Bearer <token>`。Token 按终端签发(绑定所在窗口),终端退出 / 创建回滚 / 窗口关闭 /
+// 用户撤销全部授权时作废。
 // 仅监听 127.0.0.1(BIND_ADDR 常量,防误监听 0.0.0.0)。
 //
 // BDD: src/__tests__/agent-terminal-mcp-host/(纯函数层)

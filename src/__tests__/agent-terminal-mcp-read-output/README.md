@@ -55,7 +55,7 @@ deps:
 ```
 
 - `tool.name === 'terminal.read_output'`
-- `tool.inputSchema === readOutputInputSchema`
+- `tool.inputSchema` 是 Continuo 本地收窄后的 schema(基于协议 `readOutputInputSchema`,见 E202/E203/E205/E220),不是协议原 schema
 - `tool.run(input)`:
   1. 调 `deps.read(input)`,入参原样传递
   2. 缺省字段不补默认值(由 SessionManager 用自己的默认)

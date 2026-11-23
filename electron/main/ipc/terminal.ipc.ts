@@ -254,7 +254,7 @@ export function makeAgentCreateSession(deps?: {
       throw codedError(ERROR_CODES.TERMINAL_NO_WINDOW, 'no window for terminal create');
     }
     // 安全 S3:把新会话归属到发起 create 的 MCP 调用方(ctx.callerSubject)。后续
-    // read/send/kill 仅该调用方(同一 token / 同一 stdio 连接)可操作该会话。
+    // read/send/kill 仅该调用方(同一 token[+ session id] / 同一 stdio 连接)可操作该会话。
     const r = await createHandler(
       input,
       win,
@@ -295,8 +295,8 @@ export async function resolveTerminalCwd(cwdHint?: string): Promise<string> {
 }
 
 /**
- * 安全:发往 renderer 的会话快照剥掉 main 内部字段 controllerToken(HTTP 传输下即窗口 bearer
- * token,renderer / 共享 realm 插件拿到即可冒充该 agent 调 MCP host)。list_sessions 与
+ * 安全:发往 renderer 的会话快照剥掉 main 内部字段 controllerToken(HTTP 传输下为终端 bearer
+ * token,带 Mcp-Session-Id 时为 token + session id;renderer / 共享 realm 插件拿到即可冒充该 agent 调 MCP host)。list_sessions 与
  * sessions_changed 都经此投影。见 src/__tests__/terminal-controller-token-redaction。
  */
 export function toRendererSessions(

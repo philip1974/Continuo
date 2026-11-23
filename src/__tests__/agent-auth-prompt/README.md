@@ -33,8 +33,9 @@
 
 ### method 标签
 
-- terminal.create_session → 「新建一个 terminal」
-- 其它 → 「调用 ${method}」
+- 表内 method(7 个 terminal 工具、`debug.launch`、`debug.*`)→ 各自专属标签
+- `plugin.*` →「调用插件工具 {name}」
+- 其余未识别 → 「调用 ${method}」
 
 ### 订阅 onRequest
 

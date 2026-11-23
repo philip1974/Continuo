@@ -16,7 +16,7 @@ JSON-RPC 2.0 收发解析。HTTP / SSE 真行为(socket 监听 / SSE 推送)
 
 | 名字 | 签名 | 描述 |
 |---|---|---|
-| `generateToken()` | `() => string` | 启动 / rotate 时生成 |
+| `generateToken()` | `() => string` | 终端创建时签发 token、initialize 签发 session id 时生成(rotate 只清空 token 表) |
 | `host.verifyAndResolveCtx(authHeader)` | `(string \| undefined) => McpCallCtx \| null` | 校验 `Authorization` 并解析调用方 |
 | `parseRpcMessage(raw)` | `(unknown) => RpcRequest \| null` | JSON-RPC 2.0 输入校验 |
 | `formatRpcResult(id, result)` | `(id, unknown) => string` | 编码响应(返回 JSON 字符串) |
@@ -35,7 +35,7 @@ JSON-RPC 2.0 收发解析。HTTP / SSE 真行为(socket 监听 / SSE 推送)
 ### verifyAndResolveCtx
 
 - header 形如 `Bearer <token>`,scheme 大小写不敏感(`bearer xxx` / `BEARER xxx` 通过)
-- token 是已签发的窗口 token → 返回 `{ ownerWindowId, callerSubject }`
+- token 是已签发的终端 token(绑定所在窗口)→ 返回 `{ ownerWindowId, callerSubject }`
 - header 缺失 / 不是 Bearer scheme / 没空格分隔 / token 未签发或为空 → null
 
 ### parseRpcMessage

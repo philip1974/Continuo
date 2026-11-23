@@ -12,13 +12,13 @@ MCP client(Claude Code、Inspector 等)能直接接入 Continuo。
 
 | 文件 | 职责 |
 |---|---|
-| `electron/main/services/mcp-host.service.ts` | `dispatchRpc(rpc, tools, serverInfo) → RpcResponseObj` 纯函数 |
+| `electron/main/services/mcp-host.service.ts` | `dispatchRpc(rpc, tools, serverInfo, ctx) → RpcResponseObj` 纯函数 |
 
 需 export:
 
 | 名字 | 签名 | 描述 |
 |---|---|---|
-| `dispatchRpc(rpc, tools, serverInfo)` | `(RpcRequest, Map<string, AnyMcpTool>, ServerInfo) => Promise<RpcResponseObj>` | 路由 + 调用 tool + 包装结果 |
+| `dispatchRpc(rpc, tools, serverInfo, ctx)` | `(RpcRequest, Map<string, AnyMcpTool>, ServerInfo, McpCallCtx \| null) => Promise<RpcResponseObj>` | 路由 + 调用 tool + 包装结果(ctx 为 null 时 tools/call 回 NO_WINDOW_CTX) |
 
 ```ts
 type RpcResponseObj =
@@ -104,7 +104,7 @@ interface McpToolDef<I, O> {
 ### Notifications(rpc 没 id)
 
 本主题**不**处理 notification — 因为 dispatcher 入口是 RpcRequest(已经有 id)。
-notification 在 HTTP handler 层提前拦截(204 No Content),不进 dispatcher。
+notification 在 HTTP handler 层提前拦截(202 Accepted),不进 dispatcher。
 
 ## 错误码契约
 

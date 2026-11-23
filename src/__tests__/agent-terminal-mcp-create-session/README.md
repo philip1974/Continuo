@@ -60,7 +60,7 @@ deps:
 ```
 
 - `tool.name === 'terminal.create_session'`
-- `tool.inputSchema === createSessionInputSchema`
+- `tool.inputSchema` 是 Continuo 本地收窄后的 schema(基于协议 `createSessionInputSchema`,见 E202/E203/E205/E220),不是协议原 schema
 - `tool.run(input)`:
   1. 调 `ensureAuthorized()`
   2. 返回 `'denied'` → 抛 `AGENT_NOT_AUTHORIZED`(不调 createSession)
