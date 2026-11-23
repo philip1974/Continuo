@@ -1543,8 +1543,8 @@ async function cloneTreeExceedsLimits(dir: string): Promise<boolean> {
   return false;
 }
 
-/** budgetDir:clone 目标目录;给出时 clone 期间轮询其体积 / 条目数,超限即终止 git(见 PLUGIN_CLONE_MAX_BYTES)。 */
-function runGit(args: readonly string[], budgetDir?: string): Promise<void> {
+/** budgetDir:clone 目标目录;clone 期间轮询其体积 / 条目数,超限即终止 git(见 PLUGIN_CLONE_MAX_BYTES)。 */
+function runGit(args: readonly string[], budgetDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
     // 禁交互式凭据:防指向需认证的私有 repo 时 git 弹凭据提示永久挂起。GIT_CONFIG_NOSYSTEM 隔离系统级
     // git 配置;用户全局 ~/.gitconfig 的 credential.helper 仍生效(有意保留:私有插件仓库依赖钥匙串凭据,
@@ -1603,20 +1603,18 @@ function runGit(args: readonly string[], budgetDir?: string): Promise<void> {
         ),
       );
     }, GIT_CLONE_TIMEOUT_MS);
-    if (budgetDir !== undefined) {
-      // 上一次统计结束后才排下一次(不重叠)。
-      const poll = async (): Promise<void> => {
-        const exceeded = await cloneTreeExceedsLimits(budgetDir).catch(() => false);
-        if (settled || overBudget) return;
-        if (exceeded) {
-          overBudget = true;
-          killWithGrace(child);
-          return;
-        }
-        pollTimer = setTimeout(() => void poll(), PLUGIN_CLONE_POLL_MS);
-      };
+    // 上一次统计结束后才排下一次(不重叠)。
+    const poll = async (): Promise<void> => {
+      const exceeded = await cloneTreeExceedsLimits(budgetDir).catch(() => false);
+      if (settled || overBudget) return;
+      if (exceeded) {
+        overBudget = true;
+        killWithGrace(child);
+        return;
+      }
       pollTimer = setTimeout(() => void poll(), PLUGIN_CLONE_POLL_MS);
-    }
+    };
+    pollTimer = setTimeout(() => void poll(), PLUGIN_CLONE_POLL_MS);
     // 边界(E62 + E131):按真实字节累积上限,超限停止追加(保留前 64KB 字节)+ 标记截断,不 kill
     //(进度合法 >64KB)。
     child.stderr.on('data', (d: Buffer) => stderrCap.push(d));
