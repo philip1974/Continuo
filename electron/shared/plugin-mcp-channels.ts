@@ -1,6 +1,6 @@
 // Plugin → MCP Bridge — IPC channel 名 + error code 常量 + 纯类型。
 //
-// **不 import zod**,确保 preload sandbox bundle 能加载(preload import 此文件)。
+// **不值导入 zod**(只 `import type`),确保 preload sandbox bundle 能加载(preload import 此文件)。
 // zod schema 见同目录 plugin-mcp-schemas.ts(只 main / renderer 用)。
 //
 // BDD: src/__tests__/plugin-mcp-ipc-bridge/

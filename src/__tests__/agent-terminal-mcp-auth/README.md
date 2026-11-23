@@ -25,7 +25,7 @@ type EnsureOutcome = AuthDecision | 'cancelled'; // 'cancelled':main 已撤销�
 interface PendingAuthRequest {
   readonly requestId: string;
   readonly method: string;        // 'terminal.create_session' 等
-  readonly agentLabel?: string;
+  readonly external?: boolean;
 }
 
 interface AgentAuthState {
@@ -33,13 +33,13 @@ interface AgentAuthState {
   sessionGranted: boolean;        // 终端域
   debugSessionGranted: boolean;   // debug 域
   pluginSessionGranted: boolean;  // 插件工具域
-  // 外部客户端(stdio 未发 hello,未绑定 Continuo 终端)的终端 / debug 域授权,与上面窗口级授权互不放行。
+  // 外部客户端(stdio 未发 hello,未绑定 Continuo 终端)的终端 / debug 域授权位(界面副本,与窗口级分开记)。
   // 无 external 插件域:main plugin-mcp-bridge 在授权前即拒绝外部客户端调插件工具。
   externalSessionGranted: boolean;
   externalDebugSessionGranted: boolean;
 
   /** 一站式 API:弹窗(挂起 Promise);已授权域的请求在 main 直接放行,不会到达这里. */
-  ensure(info: { method: string; agentLabel?: string; external?: boolean }): Promise<EnsureOutcome>;
+  ensure(info: { requestId: string; method: string; external?: boolean }): Promise<EnsureOutcome>;
 
   /** UI 用户操作. */
   grant(kind: 'once' | 'session'): void;
@@ -73,7 +73,7 @@ interface AgentAuthState {
 - 同一类调用方(窗口内 agent / external 客户端)已占槽 → **立即** `resolve('denied')`(与 plugin permission-prompt 同型;同类并发的第二条直接拒)。
   另一类调用方已有弹窗显示中 → **排队**(不自动拒、不堆叠),当前弹窗落定后显示;`pending` 始终是显示中的那一个。
   见 `src/__tests__/agent-auth-prompt-throttle/`(external 连弹不得顶掉窗口内 agent 的首次授权)
-- 其它 → 设 `pending = { requestId(uuid), method, agentLabel? }`,返回未 resolve 的 Promise
+- 其它 → 设 `pending = { requestId, method, external? }`(requestId 由 main 生成、原样透传),返回未 resolve 的 Promise
 
 ### `grant('once')`
 
@@ -85,7 +85,7 @@ interface AgentAuthState {
 
 - pending → null
 - Promise resolve `'session'`
-- **不**立即置域标志:该请求在 main 可能已被撤销 / 超时删除(旧弹窗仍显示),立即置 true 会让之后的请求被静默放行
+- **不**立即置域标志:该请求在 main 可能已被撤销 / 超时删除(旧弹窗仍显示),立即置 true 会让界面错误显示一个不存在的授权
 
 ### `confirmSessionGrant(method, epoch, external?)`
 
@@ -126,8 +126,8 @@ interface AgentAuthState {
 ### 边界
 
 - 无 pending 时调 `grant` / `deny` → no-op,不抛
-- `ensure` 在 sessionGranted=true 时**不**设 pending(直接 'session'),所以同时能多个 agent 并发 ensure,都直接通过
-- `requestId` 注入 deps(默认 `crypto.randomUUID`),便于 spec 断言
+- 已授权域的请求在 main 直接放行、不会到达 store,所以多个 agent 的并发调用不会在 renderer 排队
+- `requestId` 由 main 生成并随请求下发,store 原样使用(取消 / 应答都按它对位)
 
 ## 不在本主题验证
 

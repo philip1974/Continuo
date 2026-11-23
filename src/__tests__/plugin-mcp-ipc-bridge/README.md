@@ -1,7 +1,7 @@
 # plugin-mcp-ipc-bridge (Plugin → MCP Bridge · IPC 协议层)
 
 行为契约:**renderer ↔ main 之间的 IPC 协议形态**。
-4 个 channel 名 + 4 套 zod payload schema + 错误码常量。
+4 个 channel 名 + zod payload schema + 错误码常量。
 
 > 配套:`doc/19-plugin-mcp-bridge.md`(维护者本地文档,未公开) §IPC 协议
 >
@@ -13,7 +13,8 @@
 
 | 文件 | 职责 |
 |---|---|
-| `electron/shared/plugin-mcp-channels.ts` | channel 名常量 + 4 套 payload zod schema + error codes |
+| `electron/shared/plugin-mcp-channels.ts` | channel 名常量 + error codes + 由 schema `import type` 推出的 payload 类型(preload 可值导入,不带 zod) |
+| `electron/shared/plugin-mcp-schemas.ts` | payload zod schema(main / renderer 值导入) |
 
 需 export 的形态(供本主题断言):
 

@@ -280,7 +280,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
   });
 
   // 「本次启动期间允许」只有在 main 确认该 requestId 仍在等待(respond ok)后才生效:main 已撤销/超时
-  // 删除的旧请求 → respond 失败 → 不得把 sessionGranted 置 true(否则之后的请求被静默放行)。
+  // 删除的旧请求 → respond 失败 → 不得把界面授权位置 true(否则界面错误显示一个不存在的授权)。
   it.each([
     ['ok=false', async () => ({ ok: false, code: 'IPC_FAIL', message: 'x' }), true],
     // NOT_PENDING = 请求已失效(main 已超时/撤销结算;main 与 renderer 计时起点相差 IPC 延迟仍有窗口)→
@@ -313,7 +313,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
   });
 
-  it('respond ok → 「本次启动期间允许」生效(后续请求直接通过)', async () => {
+  it('respond ok → 「本次启动期间允许」记入界面授权位', async () => {
     let cb: ((p: { requestId: string; method: string }) => void) | null = null;
     const onRequest = vi.fn((fn: (p: never) => void) => {
       cb = fn as never;

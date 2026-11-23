@@ -5,7 +5,7 @@
 // preload 没)。抽到本 shared 文件:main 复用 schema(运行时校验),preload 用
 // z.infer 派生类型(静态),跨进程契约单一来源。
 //
-// 纯 zod(无 node 依赖),renderer/preload 可 import。
+// 纯 zod(无 node 依赖):main / renderer 可值导入;preload 只能 `import type`(值导入会把 zod 带进 sandbox)。
 
 import { z } from 'zod';
 import { ORIGIN_HINTS } from './origin-hint';

@@ -12,7 +12,7 @@ All stores currently use `import { create } from 'zustand'` (React-coupled). A f
 | `explorer.store.ts` | Expanded paths set; sort preference (`name` / `mtime` / `ctime` / `size` + reverse — persisted but not yet applied to the tree) | partly (expanded + sort via `explorer.json`) | local |
 | `terminal.store.ts` | `TerminalSession[]` mirror (id, title, cwd, originHint `user`/`agent`, agentLabel) | No (PTYs die on restart) | **main** (`sessions_changed`, pushed per owner window) |
 | `closing.store.ts` | Set of panel ids currently playing the EXIT animation | No | local — see `src/shell/dock/wrap-panel-close.ts` |
-| `agent-auth.store.ts` | Agent MCP authorization state: granted once per launch; one prompt shown at a time (in-window agents and external clients each get one pending slot); `revoke()` resets the grant — killing agent terminals is done by main (`revokeAndKillAgentSessions`) | No (intentional — re-prompt each launch) | local; main calls renderer via reverse-IPC |
+| `agent-auth.store.ts` | Agent MCP authorization prompts: one prompt shown at a time (in-window agents and external clients each get one pending slot), plus a UI copy of the per-domain "allowed for this launch" flags (drives the status-bar revoke entry); `revoke()` resets that UI copy — the grants themselves, their revocation and killing agent terminals live in main (`agent-auth.service` `sessionGrants`, `revokeAndKillAgentSessions`) | No (intentional — re-prompt each launch) | **main** (`sessionGrants`); prompts arrive via reverse-IPC |
 | `layout-ui.store.ts` | Sidebar open/closed + width (clamped `[200, 500]`px, default 280) | Yes (per window: `explorer.json` `windows[].layoutUi`) | local |
 | `pinned.store.ts` | Ordered list of pinned file paths (Explorer "pinned" section) | Yes (`explorer.json.pinned`) | local |
 | `debug.store.ts` | Debug panel view: sessions, breakpoints, stack frames, scopes / variables of the stopped session | No | **main** (debug service pushes view events) |
@@ -22,7 +22,7 @@ All stores currently use `import { create } from 'zustand'` (React-coupled). A f
 ## Why some stores are mirrors and some are local
 
 - **`terminal.store`** is a renderer-side mirror of state owned by the main process. The PTY pool lives in main; the store just shows what main says exists. Renderer never `replaceSnapshot` from inside a UI handler, and keeps no terminal UI state of its own (which terminal is active is dockview's active panel). All session create/remove/title-change goes through `coApi.terminal.*` IPC and arrives back as the next `sessions_changed` broadcast.
-- **`agent-auth.store`** is local for the *decision*, but the *prompt* is triggered from main via reverse-IPC. Decision is intentionally not persisted: every Continuo launch starts with no granted agent.
+- **`agent-auth.store`** only shows prompts and keeps a UI copy of the grant flags. Main decides whether a request is already allowed (allowed requests never reach the renderer), sends the prompt via reverse-IPC, and settles timeouts / cancellations. Grants are intentionally not persisted: every Continuo launch starts with no granted agent.
 - **`debug.store`** and **`settings.store`** are also mirrors: main pushes debug view events and `i18n:changed` broadcasts.
 - Everything else is renderer-local.
 

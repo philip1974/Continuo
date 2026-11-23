@@ -33,8 +33,8 @@ describe('gateWithAuth(S2)', () => {
     expect(run).toHaveBeenCalledWith({ a: 1 }, ctx(7, 's'));
   });
 
-  // 安全(F2):外部客户端(stdio 未发 hello)的调用带 external 标记请求授权,renderer 据此用独立的
-  // external 授权状态,不复用窗口级「本次启动期间允许」。
+  // 安全(F2):外部客户端(stdio 未发 hello)的调用带 external 标记请求授权,main 据此按独立的调用方类别
+  // 判定放行,不复用窗口级「本次启动期间允许」。
   it('ctx.external=true → ensureAuthorized 第三参为 true', async () => {
     const { tool } = makeTool();
     const ensure = vi.fn(async () => 'once' as const);

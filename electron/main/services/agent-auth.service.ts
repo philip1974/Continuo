@@ -328,8 +328,8 @@ export function resolveAgentAuthRequest(
 
 /**
  * IPC handler 回调:renderer 应答时调。requestId 已不在等待(撤销 / 超时 / 窗口关闭已结算并删除)→
- * 抛 AGENT_AUTH_REQUEST_NOT_PENDING(renderer 收到 ok:false),renderer 据此不把该次「本次启动期间
- * 允许」记为生效 —— 否则对已撤销的旧弹窗点允许会让之后的请求被静默授予。
+ * 抛 AGENT_AUTH_REQUEST_NOT_PENDING(renderer 收到 ok:false):main 不记授权(sessionGrants 只在应答结算时写入),
+ * renderer 也据此不在界面副本里记该次「本次启动期间允许」。
  */
 export function answerAgentAuthRequest(
   requestId: string,
@@ -437,8 +437,7 @@ export interface RevokeResult {
  *  2. 终止所有 originHint='agent' 的 PTY + 删 metadata
  *
  * 不动 originHint='user' 的 session;不重启 mcp host。
- * 调用方(renderer)还需要本地调 useAgentAuthStore.revoke() 把 sessionGranted=false,
- * 这部分本服务不包(避免循环依赖)。
+ * 「本次启动期间允许」在此清空(权威在 main);各窗口 renderer 的界面副本经 REVOKED 广播重置。
  */
 export function revokeAndKillAgentSessions(): RevokeResult {
   // race(R91,安全):撤销时同步把所有 pending 授权请求结算为 denied 并清空。否则撤销前卡在授权
@@ -476,7 +475,7 @@ export function revokeAndKillAgentSessions(): RevokeResult {
     }
   }
   // 跨窗口撤销:授权已在上方清空(放行权威在 main);各窗口 renderer 的界面副本与残留弹窗由广播统一重置
-  //(否则其它窗口仍显示撤销入口、残留弹窗被点「本次启动期间允许」会再记一次授权)。
+  //(否则其它窗口仍显示撤销入口;残留弹窗对应的请求已结算,不撤掉的话用户点了只会得到 NOT_PENDING)。
   broadcastToWindows(AGENT_AUTH_CHANNELS.REVOKED, () => ({}), '[agent-auth] REVOKED');
   return { killed, rotated };
 }

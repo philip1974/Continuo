@@ -6,10 +6,10 @@ It closes the P0 main IPC/service guard series together with topic-12 `window-wo
 
 Behavior contract checklist T1-T15:
 
-T1 `requestAgentAuth` sends `AGENT_AUTH_CHANNELS.REQUEST` to the selected main window with `requestId`, `method`, and optional `agentLabel`, then resolves with the renderer decision;
+T1 `requestAgentAuth` sends `AGENT_AUTH_CHANNELS.REQUEST` to the selected main window with `requestId` (generated in main), `method`, and optional `external`, then resolves with the renderer decision;
 T2 with no windows, `requestAgentAuth` resolves `'denied'` immediately;
 T2b with only destroyed windows, `requestAgentAuth` resolves `'denied'` and sends no IPC;
-T3 unanswered auth requests time out after five minutes and resolve `'denied'`;
+T3 unanswered auth requests time out after `AGENT_AUTH_PROMPT_TIMEOUT_MS` (2 minutes, counted from when the prompt is displayed) and resolve `'denied'`;
 T4/T4b/T5 (removed 2026-11-18) the "no `ownerWindowId` → pick a main window" fallback no longer exists, see T-routing-4;
 T-routing-1 an explicit `ownerWindowId` routes the prompt to that alive non-popout window only;
 T-routing-2/3 (security, fail-closed) an explicit `ownerWindowId` that is unknown, destroyed, or a popout resolves `'denied'` and sends no IPC to any other window — previously it fell back to the first main window, so a session's prompt could land in (or be silently granted by) a different window. Popouts have no reliable owner-main-window mapping (`window.open` child, no `parent`) and do not mount the prompt;
@@ -17,7 +17,7 @@ T-routing-4 (security, fail-closed) omitting `ownerWindowId` resolves `'denied'`
 T6 `resolveAgentAuthRequest` resolves a pending request with `'once'`;
 T7 resolving an unknown `requestId` is a no-op and does not disturb later resolutions;
 T8 resolving the same `requestId` twice is idempotent: the first decision wins;
-T9 resolving a request clears the timeout path, so advancing five minutes does not change the settled decision;
+T9 resolving a request clears the timeout path, so advancing past the prompt timeout does not change the settled decision;
 T10 `_resetPendingForTest` denies every pending request and clears pending state;
 T11 `revokeAndKillAgentSessions` rotates the MCP token, removes/kills/destroys only `originHint:'agent'` sessions, and never touches user sessions (the rotation also invalidates stdio connections already bound via `_continuo/hello`, not only HTTP — see `src/__tests__/stdio-revoked-token-binding/`);
 T12 revoke iterates over a snapshot, so mutating the backing session array during `remove` does not skip later agent sessions;
@@ -26,7 +26,7 @@ T13b when `terminal.service.has(id)` is false, revoke skips PTY kill but still r
 T14 `setMcpHostRef` is covered indirectly by T11 and T13;
 T15 `INDEX.md` contains `agent-auth-service` after `pnpm bdd:index`.
 
-The spec uses local-only `vi.hoisted` mocks for Electron windows, terminal session metadata, terminal service, and terminal buffer. It uses fake timers with `advanceTimersByTimeAsync` for the five-minute timeout contract. Helpers such as `makeSession`, `makeMcpHost`, and `makeWin` are intentionally local to the spec and are not exported or shared with other topics.
+The spec uses local-only `vi.hoisted` mocks for Electron windows, terminal session metadata, terminal service, and terminal buffer. It uses fake timers with `advanceTimersByTimeAsync` for the prompt-timeout contract. Helpers such as `makeSession`, `makeMcpHost`, and `makeWin` are intentionally local to the spec and are not exported or shared with other topics.
 
 T7b `answerAgentAuthRequest`(ipc respond 入口)对已不在等待的 `requestId`(撤销 / 超时 / 窗口关闭已结算并删除)抛 `AGENT_AUTH_REQUEST_NOT_PENDING`(renderer 收到 ok:false,据此不记 session 授权);
 T7c 对仍在等待的 `requestId` 正常结算、不抛。
@@ -39,6 +39,6 @@ T17 `cancelAllAgentAuth`(退出清理)把所有窗口的未决请求立即结算
 
 T16 撤销(`revokeAndKillAgentSessions`)完成后向所有存活窗口广播 `AGENT_AUTH_CHANNELS.REVOKED`(payload `{}`):
 main 已先清空全部「本次启动期间允许」(权威在 main);广播让各窗口 renderer 重置授权位的界面副本(状态栏撤销入口)
-并取消残留弹窗(否则残留弹窗被点「本次启动期间允许」会再记一次授权)。各 renderer 收到后执行与本地撤销相同的重置(见 `agent-auth-prompt` / `agent-terminal-mcp-auth`)。
+并取消残留弹窗(main 已结算这些请求,不撤掉的话用户点了只会得到 NOT_PENDING)。各 renderer 收到后执行与本地撤销相同的重置(见 `agent-auth-prompt` / `agent-terminal-mcp-auth`)。
 
-Prompt throttling (2026-11-18, security): `requestAgentAuth` now runs every request for a domain that is not yet "allowed for this launch" through the shared prompt throttle (deny cooldown / backoff / rate cap / one pending prompt per caller) and rejects with `AGENT_NOT_AUTHORIZED` when throttled — see `src/__tests__/agent-auth-prompt-throttle/`. The E229 pending caps are therefore only reachable for a domain the user already allowed for this launch (those requests are forwarded unthrottled), which is how the E229 cases now set up.
+Prompt throttling (2026-11-18, security): `requestAgentAuth` now runs every request for a domain that is not yet "allowed for this launch" through the shared prompt throttle (deny cooldown / backoff / rate cap / one pending prompt per caller) and rejects with `AGENT_NOT_AUTHORIZED` when throttled — see `src/__tests__/agent-auth-prompt-throttle/`. Requests for a domain the user already allowed for this launch are approved in main directly (no pending entry, no IPC), and unallowed requests are single-flight per caller class, so the E229 pending caps are a backstop: the E229 case reaches the global cap by accumulating one pending prompt per caller class across many windows.

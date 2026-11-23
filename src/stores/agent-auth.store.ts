@@ -44,7 +44,7 @@ type AgentAuthState = {
   pluginSessionGranted: boolean;
   /**
    * 安全(F2):外部客户端(stdio 未发 hello,未绑定 Continuo 终端)的「本次启动期间允许」,分终端 / debug 两个域。
-   * 与上面的窗口级授权互不放行:外部请求不读也不写窗口级标志,窗口请求也不读 external 标志。
+   * 界面副本与上面的窗口级标志分开记(放行由 main 按调用方类别判定,两类互不放行)。
    * 插件工具域无 external 标志:main plugin-mcp-bridge 在授权前即拒绝外部客户端调用插件工具。
    */
   externalSessionGranted: boolean;
@@ -70,7 +70,7 @@ type AgentAuthState = {
 };
 
 /**
- * 授权分 3 个域 × 2 类调用方:
+ * 授权分 3 个域 × 2 类调用方(放行由 main 按此划分判定;本 store 的标志位只是界面副本):
  * - 域:method 以 `debug.` 开头的属 debug 域,以 `plugin.` 开头的属插件工具域,其余(终端工具及未知 method)属终端域。
  *   debug 能启动进程、读变量、执行表达式,与终端控制是不同的授权面;共用一个标志位时,用户对终端点了
  *   「本次启动期间允许」后 debug 工具会被静默放行。插件工具域同理(见 isPluginAuthMethod)。
@@ -170,7 +170,7 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
 
   grant(kind) {
     // 安全:'session' 此处**不**记域授权。该请求在 main 可能已被撤销 / 超时删除(旧弹窗仍显示),
-    // 若此刻置 sessionGranted,之后的请求会被静默放行。由应答方在 main 确认后调 confirmSessionGrant。
+    // 若此刻置授权位,界面会错误显示一个不存在的授权(多出撤销入口)。由应答方在 main 确认后调 confirmSessionGrant。
     settleDisplayed(kind);
   },
 

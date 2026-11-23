@@ -105,17 +105,11 @@ describe('ensure', () => {
     expect(await first).toBe('denied');
   });
 
-  it('每次 ensure 生成新 requestId(uuid)', () => {
-    void useAgentAuthStore
-      .getState()
-      .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
-    const id1 = useAgentAuthStore.getState().pending!.requestId;
+  it('pending.requestId 即 main 传入的 requestId(renderer 不自行生成)', () => {
+    const requestId = crypto.randomUUID();
+    void useAgentAuthStore.getState().ensure({ requestId, method: 'terminal.create_session' });
+    expect(useAgentAuthStore.getState().pending!.requestId).toBe(requestId);
     useAgentAuthStore.getState().deny();
-    void useAgentAuthStore
-      .getState()
-      .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
-    const id2 = useAgentAuthStore.getState().pending!.requestId;
-    expect(id1).not.toBe(id2);
   });
 
 });
@@ -214,7 +208,7 @@ describe('deny', () => {
   });
 
   it("deny 时 sessionGranted=true(用户授权了 session 但又改主意拒绝当前)→ 不影响 sessionGranted", async () => {
-    // 这条边界:理论上 grant('session') 后不会再 pending(ensure 直接通过),
+    // 这条边界:理论上 grant('session') 后该域的请求在 main 直接放行、不会再到达 store,
     // 但若 sessionGranted=true 时仍走到 deny(直接 setState pending 测),
     // deny 不应自动撤销 sessionGranted。
     useAgentAuthStore.setState({

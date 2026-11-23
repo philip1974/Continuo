@@ -60,7 +60,7 @@ const TERMINAL_AUTH_GATE = {
 } as const;
 
 /**
- * 安全 S3(安全审计·S2 深化):S2 的授权是**窗口级**单布尔(sessionGranted),
+ * 安全 S3(安全审计·S2 深化):S2 的授权按 窗口 × 调用方类别 × 域 记(main sessionGrants),不区分同窗口内的会话,
  * 故「用户已授权该窗口 agent terminal 控制后,同窗口另一个终端里的恶意进程(持自动
  * 注入的 token / 直连 stdio socket)仍可横向 read/inject/kill 其它会话」。
  *

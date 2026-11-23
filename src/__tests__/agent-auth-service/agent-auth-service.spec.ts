@@ -270,7 +270,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     await expect(cleared).resolves.toBe('session');
   });
 
-  it("T3: unanswered requests time out after five minutes as 'denied'", async () => {
+  it("T3: unanswered requests time out after the prompt timeout as 'denied'", async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
 
@@ -559,9 +559,8 @@ describe('agent-auth-service: revokeAndKillAgentSessions', () => {
     await expect(pendingAuth).resolves.toBe('denied');
   });
 
-  // 跨窗口撤销:撤销是全局的(token 旋转 / pending 全清),但「本次启动期间允许」记在各窗口 renderer
-  // 的 store 里。只有发起撤销的窗口会重置 → 其它窗口仍 sessionGranted=true,之后的请求被静默放行。
-  // 契约:撤销后向所有窗口广播 REVOKED,各 renderer 据此重置授权态。
+  // 跨窗口撤销:撤销是全局的(token 旋转 / pending 全清 / main 的「本次启动期间允许」全清)。各窗口 renderer
+  // 的授权位界面副本与残留弹窗须同步重置 → 契约:撤销后向所有窗口广播 REVOKED。
   it('T16: revoke 向所有存活窗口广播 REVOKED', () => {
     const w1 = makeWin(1);
     const w2 = makeWin(2);

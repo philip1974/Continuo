@@ -28,12 +28,9 @@ export interface PluginMcpToolSpec<I = unknown, O = unknown> {
   readonly run: (input: I) => O | Promise<O>;
 }
 
-export interface PluginMcpUpstreamRegisterPayload {
-  readonly pluginId: string;
-  readonly name: string;
-  readonly description: string;
-  readonly jsonSchema: Record<string, unknown>;
-}
+// = plugin-mcp-channels 的 RegisterPayload(由 plugin-mcp-schemas 的 zod schema z.infer 推出):
+// { pluginId: string; name: string; description: string; jsonSchema: Record<string, unknown> }
+export type PluginMcpUpstreamRegisterPayload = RegisterPayload;
 
 export interface PluginMcpUpstream {
   register(p: PluginMcpUpstreamRegisterPayload): Promise<void>;

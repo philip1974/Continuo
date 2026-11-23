@@ -82,8 +82,8 @@ plugin)计;唯一的例外是**超时冷却按窗口**计(见「超时」)。
 ### renderer
 
 - **按调用方类别分槽**(`agent-auth.store.ts`):窗口内 agent 与 external 客户端各一个槽。同一时刻仍只显示一个
-  弹窗(不堆叠);另一类调用方的请求排在后面,当前弹窗落定后显示。同一类已占槽 → 立即 `denied`。每个请求从开始显示起
-  按 2 分钟(与 main 同一常量)超时(`cancelled`),排队中不计时;main 撤销时显示中与排队中的一并 `cancelled`。
+  弹窗(不堆叠);另一类调用方的请求排在后面,当前弹窗落定后显示。同一类已占槽 → 立即 `denied`。renderer 不计时:
+  main 从请求开始显示起按 2 分钟结算超时 / 排队兜底后经 `agent-auth:cancelled` 撤掉对应弹窗;main 撤销时显示中与排队中的一并 `cancelled`。
 - **授予方向的防误触延迟**(`AgentAuthPrompt.tsx`;实现在 `src/lib/use-prompt-grant-guard.ts`,与插件权限弹窗共用,
   见 `permission-prompt/`):弹窗显示后 500ms 内,「仅本次」「本次启动期间允许」的鼠标 /
   键盘激活无效(弹窗保持);「拒绝」与 Esc 立即可用;初始焦点仍在「拒绝」。排队的下一个请求显示时重新计时
@@ -127,7 +127,7 @@ plugin)计;唯一的例外是**超时冷却按窗口**计(见「超时」)。
   冷却到期与退避增长、按域记、轮换域退避、授予 / 超时 / 取消不计拒绝、速率上限、单飞、session 授权后不节流、
   撤销与 reload 后恢复节流、external 与窗口内 / 不同窗口互不占用。
 - `renderer-reload.spec.ts`:真实 `agent-auth.service` + 真实 renderer store(fake timers):「本次启动期间允许」后
-  reload(main 收到导航事件 / 纵深:没收到)→ 40 次「仅本次」≤ 10 个弹窗、超时有冷却、拒绝有冷却;弹窗显示中
+  reload(main 收到导航事件)→ 40 次「仅本次」≤ 10 个弹窗、超时有冷却、拒绝有冷却;弹窗显示中
   reload / 渲染进程崩溃 → 未决请求立即结算、新请求马上可弹、不计拒绝;同文档导航不结算。
   未提交的主框架导航(只有 did-start-navigation)→ 请求照常弹窗、显示中的弹窗与授权镜像保留;开始到提交之间靠
   `isLoadingMainFrame` 拒;主框架 did-fail-load → 未就绪(ERR_ABORTED -3 除外:加载中又 reload、就绪后 `wc.stop()`
