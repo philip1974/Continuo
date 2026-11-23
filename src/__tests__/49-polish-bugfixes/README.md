@@ -502,7 +502,7 @@
 ## 第十七轮(独立复审 — mcp invoke 桥接/agent-auth 接线 + fs watcher/设置)
 ### P2-AT 目标窗口关闭立即结算 agent-auth pending — `agent-auth-cancel-by-window.spec.ts`
 - `requestAgentAuth` 的 `pending` 改存目标 windowId;新 `cancelAgentAuthByWindow(windowId)`
-  把发往该窗口的 pending 全部立即结算为 denied;`index.ts` `win.on('closed')` 调用之。
+  把发往该窗口的 pending 全部立即结算为 denied;窗口关闭清理(现为 browser-window-created → releaseWindowResources,见 P2-BJ)调用之。
 - 根因: pending 取消路径只有 5min 定时器,窗口 closed 不提前结算。发起调用的是**仍存活的
   外部 agent CLI 进程**,用户关窗后它要干等满 PROMPT_TIMEOUT_MS(5min)才收到默认 denied,
   表现为 agent 假死。这与已 DEFER 的 request-scope「等待者是已死请求方自己」**不同** ——

@@ -208,7 +208,7 @@ export function StatusBar() {
   // content / originalContent / reloadEpoch 变化不触发状态栏重渲;active 内容变化
   // 仍更新统计(配合 R1 的统计 memo)。R24 用 4 个 selector 各 some/find;R46 合并为
   // 单次 find 返回**扁平 primitive 对象**,useShallow 逐字段 Object.is 比较——content
-  // 只是 string ref(不像 EditorHeader 用 JSON 签名,这里避免序列化大文档正文)。
+  // 只是 string ref(不像旧 EditorHeader 的 JSON 签名 selector,这里避免序列化大文档正文)。
   const { activeTabId, activeFilePath, activeDirty, activeContent } =
     useEditorStore(
       useShallow((s) => {

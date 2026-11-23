@@ -4,7 +4,8 @@
 // 但 pending 的取消路径只有 5min 定时器。窗口 closed/destroyed 不会提前结算属于它的
 // pending。发起调用的是**仍存活的外部 agent CLI 进程**,用户关窗后它要干等满 5min 才
 // 收到默认 denied,表现为 agent 假死。这与 request-scope「等待者是已死请求方自己」不同。
-// 修复:pending 记目标 windowId,win.on('closed') 调 cancelAgentAuthByWindow 立即结算
+// 修复:pending 记目标 windowId,窗口关闭(browser-window-created 挂的 closed → releaseWindowResources,见 P2-BJ)
+// 调 cancelAgentAuthByWindow 立即结算
 // denied(镜像 stop-hook broker.cancelByWindow,审计 #3)。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

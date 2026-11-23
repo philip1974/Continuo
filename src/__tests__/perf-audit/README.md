@@ -56,7 +56,7 @@
 
 ## P6 — CodeEditor 受控回声免全文 toString
 
-**位置**:`src/panels/Editor/CodeEditor.tsx` updateListener(line ~115)+ value-sync effect(line ~162)。
+**位置**:`src/panels/Editor/CodeEditor.tsx` 的 `EditorView.updateListener` 扩展 + value-sync `useEffect([value])`(`lastSyncedValueRef`)。
 
 **问题**:CodeMirror 每按键 updateListener `doc.toString()` emit 给 `updateContent`(必要),store 更新后父把同一字符串作为 `value` 回传 → value-sync `useEffect([value])` 又 `view.state.doc.toString()` 仅为比较相等(受控回声)→ 长文件每按键 ≥2 次 O(file) 全文拷贝 + GC 压力。
 
