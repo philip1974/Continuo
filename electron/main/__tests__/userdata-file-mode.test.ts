@@ -60,7 +60,7 @@ describe.skipIf(process.platform === 'win32')('userData 敏感文件以 0600 新
     const { root, invoke } = await pluginDataHarness();
     await mkdir(join(root, 'plugins', 'p.b'), { recursive: true }); // save 只写已安装插件的目录
     vi.spyOn(lockfile, 'lock').mockRejectedValue(new Error('lock failed'));
-    await expect(invoke('plugin-data:save', 'p.b', { value: 1 })).rejects.toThrow('lock failed');
+    await expect(invoke('plugin-data:save-serialized', 'p.b', JSON.stringify(1))).rejects.toThrow('lock failed');
     expect(await modeOf(join(root, 'plugins', 'p.b', 'data.json'))).toBe(0o600);
   });
 

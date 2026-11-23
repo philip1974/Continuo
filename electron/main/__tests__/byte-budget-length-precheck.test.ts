@@ -1,10 +1,8 @@
-// perf:isInvokeResultAdmissible / plugin-data SAVE / layout:write 的 stringify 前 fail-fast 预检改用
-// .length 下界(jsonStringLengthLowerBoundExceeds,每个字符串 O(1)),不再逐字符 UTF-8 计数 —— 三处其后都有
+// perf:isInvokeResultAdmissible / layout:write 的 stringify 前 fail-fast 预检改用
+// .length 下界(jsonStringLengthLowerBoundExceeds,每个字符串 O(1)),不再逐字符 UTF-8 计数 —— 两处其后都有
 // JSON.stringify + 精确 UTF-8 字节终裁,.length ≤ UTF-8 字节,故 .length 下界仍是合法下界,接受/拒绝判定不变
 //(多字节内容只是从「预检拒」挪到「精确终裁拒」)。
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,9 +22,6 @@ vi.mock('../../shared/json-byte-budget', async (importActual) => {
 });
 
 import { isInvokeResultAdmissible, RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
-import { registerPluginDataStoreHandlers } from '../services/plugin-data-store.service';
-
-const MAX_PLUGIN_DATA_BYTES = 16 * 1024 * 1024;
 
 afterEach(() => {
   spies.bytes.mockClear();
@@ -55,47 +50,6 @@ describe('isInvokeResultAdmissible:.length 下界预检 + 精确字节终裁', (
     expect(isInvokeResultAdmissible(['x'.repeat(RESULT_BYTES_MAX)])).toBe(false);
     expect(isInvokeResultAdmissible({ a: NaN })).toBe(false);
     expect(isInvokeResultAdmissible(undefined)).toBe(true);
-  });
-});
-
-describe('plugin-data SAVE:.length 下界预检 + 精确字节终裁', () => {
-  type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
-  const roots: string[] = [];
-  afterEach(() => {
-    for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
-  });
-  async function save(data: unknown): Promise<unknown> {
-    const root = await mkdtemp(path.join(tmpdir(), 'continuo-pd-len-'));
-    roots.push(root);
-    mkdirSync(path.join(root, 'plugins', 'p.len'), { recursive: true }); // save 只写已安装插件的目录
-    const handlers = new Map<string, Handler>();
-    registerPluginDataStoreHandlers(
-      { handle: (c: string, h: Handler) => handlers.set(c, h) } as never,
-      { userDataPath: root },
-    );
-    return handlers.get('plugin-data:save')!({}, 'p.len', data);
-  }
-  // {"v":"..."} = 8 字节结构。
-  const cjkPayloadOfBytes = (bytes: number): { v: string } => {
-    const n = Math.floor((bytes - 8) / 3);
-    return { v: '中'.repeat(n) + 'a'.repeat(bytes - 8 - n * 3) };
-  };
-
-  it('预检用 .length 下界', async () => {
-    await save({ a: 1 });
-    expect(spies.length).toHaveBeenCalledWith(MAX_PLUGIN_DATA_BYTES);
-    expect(spies.bytes).not.toHaveBeenCalled();
-  });
-
-  it('多字节:恰好等于上限 → 写入;上限 +1 → PAYLOAD_TOO_LARGE', async () => {
-    await expect(save(cjkPayloadOfBytes(MAX_PLUGIN_DATA_BYTES))).resolves.toBeUndefined();
-    await expect(save(cjkPayloadOfBytes(MAX_PLUGIN_DATA_BYTES + 1))).rejects.toMatchObject({
-      code: 'PAYLOAD_TOO_LARGE',
-    });
-  });
-
-  it('非 JSON 安全(上限内)→ BAD_INPUT', async () => {
-    await expect(save({ a: Infinity })).rejects.toMatchObject({ code: 'BAD_INPUT' });
   });
 });
 

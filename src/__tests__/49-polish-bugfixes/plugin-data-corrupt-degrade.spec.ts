@@ -47,7 +47,7 @@ describe('49 · plugin-data 损坏不再永久阻塞 + 原子写', () => {
     const id = 'my.plugin';
     const data = { value: { a: 1, 中文: '可以' } };
     await mkdir(join(userDataPath, 'plugins', id), { recursive: true }); // save 只写已安装插件的目录
-    await invoke(PLUGIN_DATA_CHANNELS.SAVE, id, data);
+    await invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, id, JSON.stringify(data.value));
 
     // 文件是合法 JSON
     const raw = await readFile(dataFile(id), 'utf-8');
@@ -63,7 +63,7 @@ describe('49 · plugin-data 损坏不再永久阻塞 + 原子写', () => {
     await writeFile(dataFile(id), 'NOT JSON');
 
     expect(await invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).toEqual({});
-    await invoke(PLUGIN_DATA_CHANNELS.SAVE, id, { value: 'recovered' });
+    await invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, id, JSON.stringify('recovered'));
     await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).resolves.toEqual({
       value: 'recovered',
     });
@@ -84,39 +84,27 @@ describe('49 · plugin-data 损坏不再永久阻塞 + 原子写', () => {
     }
   });
 
-  it('E147 save 非 plain object(数组/字符串/数字)→ 拒(BAD_INPUT),不写盘', async () => {
-    const id = 'e147.save';
-    for (const bad of [[1, 2], 'str', 42, true]) {
-      await expect(
-        invoke(PLUGIN_DATA_CHANNELS.SAVE, id, bad),
-      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
-    }
-    // 未写盘 → load 仍 {}
-    await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).resolves.toEqual({});
-  });
-
-  it('E147 save null/undefined → 归一空对象({}),load 正常', async () => {
-    const id = 'e147.null';
-    await mkdir(join(userDataPath, 'plugins', id), { recursive: true }); // save 只写已安装插件的目录
-    await invoke(PLUGIN_DATA_CHANNELS.SAVE, id, null);
-    await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).resolves.toEqual({});
-  });
-
-  // 边界(E237):校验跑归一后的 payload(data ?? {}),但旧实现落盘写**原始 data** → raw IPC save(id, null)
-  // 校验按 {} 过,却把 "null" 写进 data.json,破坏 plain object 契约 → 下次 load 当损坏隔离(.corrupt)+ 降级
-  // = 数据静默丢失/重置。E147 的 null 测试只断言 load 返 {}(损坏降级也返 {},漏检);此处断言**落盘内容**
-  // 就是合法 {} 且不产生 .corrupt(证落盘对象 === 校验对象)。
-  it('E237 raw IPC save(id, null/undefined) → 落盘为合法 {} 且不触发损坏隔离', async () => {
-    for (const bad of [null, undefined]) {
-      const id = `e237.${bad === null ? 'null' : 'undef'}`;
+  // 保存入口只收 value 的 JSON 文本,main 自己包成 `{"value":…}` → 任何 value(含 null / 数组 / 原语)落盘都是
+  // plain object,不会破坏 data.json 契约、也不会让下次 load 走损坏隔离。
+  it('E147/E237 save 任意 JSON value(null / 数组 / 原语)→ 落盘为 plain object,load 正常且无 .corrupt', async () => {
+    for (const [i, value] of [null, [1, 2], 'str', 42, true].entries()) {
+      const id = `e147.save${i}`;
       await mkdir(join(userDataPath, 'plugins', id), { recursive: true }); // save 只写已安装插件的目录
-      await invoke(PLUGIN_DATA_CHANNELS.SAVE, id, bad);
-      // 落盘内容就是合法的空对象(不是 "null"/"undefined")
-      const raw = await readFile(dataFile(id), 'utf-8');
-      expect(JSON.parse(raw)).toEqual({});
-      // 未破坏契约 → 后续 load 不走损坏分支,无 .corrupt 快照
-      await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).resolves.toEqual({});
+      await invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, id, JSON.stringify(value));
+      expect(JSON.parse(await readFile(dataFile(id), 'utf-8'))).toEqual({ value });
+      await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).resolves.toEqual({ value });
       await expect(access(`${dataFile(id)}.corrupt`)).rejects.toThrow();
     }
+  });
+
+  it('E147 save 非字符串 / 非法 JSON 文本 → 拒(BAD_INPUT),不写盘', async () => {
+    const id = 'e147.bad';
+    await mkdir(join(userDataPath, 'plugins', id), { recursive: true });
+    for (const bad of [{ value: 1 }, 42, undefined, '', 'not json', '1,"x":2']) {
+      await expect(
+        invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, id, bad),
+      ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    }
+    await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, id)).resolves.toEqual({});
   });
 });

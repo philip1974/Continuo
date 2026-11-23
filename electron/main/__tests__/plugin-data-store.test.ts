@@ -36,6 +36,11 @@ async function makeHarness(): Promise<{
   return { root, ipc };
 }
 
+/** 保存 value(与 renderer 同一入口:传 value 的 JSON 文本,落盘 / load 得到 `{ value }`)。 */
+function save(ipc: FakeIpcMain, pluginId: string, value: unknown): Promise<unknown> {
+  return ipc.invoke('plugin-data:save-serialized', pluginId, JSON.stringify(value));
+}
+
 /** saveData 只写已安装插件的目录(不再 mkdir -p):测试里先把插件目录建好。 */
 async function installed(root: string, pluginId: string): Promise<void> {
   await mkdir(join(root, 'plugins', pluginId), { recursive: true });
@@ -54,28 +59,6 @@ describe('plugin-data-store.service', () => {
     await expect(ipc.invoke('plugin-data:load', 'p.missing')).resolves.toEqual(
       {},
     );
-  });
-
-  // 数据安全(复查):clear 旧实现 try/catch 吞掉所有 rm 错误,删除失败仍报成功 →
-  // 调用方以为已清除、重启却恢复旧数据。force:true 仅容忍 ENOENT,真错误须传播。
-  it('clear 文件不存在 → no-op 成功(ENOENT 容忍)', async () => {
-    const { ipc } = await makeHarness();
-    await expect(
-      ipc.invoke('plugin-data:clear', 'p.absent'),
-    ).resolves.toBeUndefined();
-  });
-
-  it('clear rm 真错误(EACCES 等)→ 抛出,不静默报成功', async () => {
-    const { root, ipc } = await makeHarness();
-    await installed(root, 'p.x');
-    await ipc.invoke('plugin-data:save', 'p.x', { a: 1 });
-    const rmSpy = vi
-      .spyOn(fsp, 'rm')
-      .mockRejectedValue(
-        Object.assign(new Error('EACCES'), { code: 'EACCES' }),
-      );
-    await expect(ipc.invoke('plugin-data:clear', 'p.x')).rejects.toThrow();
-    rmSpy.mockRestore();
   });
 
   it('T2.race 加锁前初始化 lock 目标不截断已有 data.json(竞态/TOCTOU 防护)', async () => {
@@ -98,7 +81,7 @@ describe('plugin-data-store.service', () => {
       .mockRejectedValue(new Error('lock fail'));
 
     await expect(
-      ipc.invoke('plugin-data:save', 'p.race', { next: 2 }),
+      save(ipc, 'p.race', { next: 2 }),
     ).rejects.toThrow();
 
     accessSpy.mockRestore();
@@ -112,10 +95,10 @@ describe('plugin-data-store.service', () => {
     const { root, ipc } = await makeHarness();
     await installed(root, 'p.roundtrip');
 
-    await ipc.invoke('plugin-data:save', 'p.roundtrip', { a: 1 });
+    await save(ipc, 'p.roundtrip', { a: 1 });
 
     await expect(ipc.invoke('plugin-data:load', 'p.roundtrip')).resolves.toEqual({
-      a: 1,
+      value: { a: 1 },
     });
   });
 
@@ -124,21 +107,13 @@ describe('plugin-data-store.service', () => {
   it('E20 save 超 16MiB → 拒绝(不写)', async () => {
     const { root, ipc } = await makeHarness();
     const big = { v: 'x'.repeat(16 * 1024 * 1024) };
-    await expect(ipc.invoke('plugin-data:save', 'p.big', big)).rejects.toThrow();
+    await installed(root, 'p.big');
+    await expect(save(ipc, 'p.big', big)).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
     // 未写出超大 data.json(仅可能有 wx 占位 {} 或无文件,但绝非 16MB)
     const file = join(root, 'plugins', 'p.big', 'data.json');
     if (existsSync(file)) {
       expect((await readFile(file, 'utf-8')).length).toBeLessThan(1024);
     }
-  });
-
-  it('E20 save 循环引用 → 拒绝(不可序列化)', async () => {
-    const { ipc } = await makeHarness();
-    const circular: Record<string, unknown> = {};
-    circular.self = circular;
-    await expect(
-      ipc.invoke('plugin-data:save', 'p.circ', circular),
-    ).rejects.toThrow();
   });
 
   it('E20 load 超 16MiB data.json → 隔离 .corrupt + 返 {}', async () => {
@@ -179,48 +154,33 @@ describe('plugin-data-store.service', () => {
 
     await Promise.all(
       payloads.map((payload) =>
-        ipc.invoke('plugin-data:save', 'p.concurrent', payload),
+        save(ipc, 'p.concurrent', payload),
       ),
     );
     const loaded = await ipc.invoke('plugin-data:load', 'p.concurrent');
 
-    expect(payloads).toContainEqual(loaded);
-  });
-
-  it('T2.d clear deletes data file', async () => {
-    const { root, ipc } = await makeHarness();
-    await installed(root, 'p.clear');
-
-    await ipc.invoke('plugin-data:save', 'p.clear', { a: 1 });
-    await ipc.invoke('plugin-data:clear', 'p.clear');
-
-    await expect(ipc.invoke('plugin-data:load', 'p.clear')).resolves.toEqual({});
+    expect(payloads.map((value) => ({ value }))).toContainEqual(loaded);
   });
 
   it('T2.e 插件目录不存在 → save 拒绝(NOT_INSTALLED),不创建目录(卸载后迟到的 saveData 不复活目录)', async () => {
     const { root, ipc } = await makeHarness();
     const dir = join(root, 'plugins', 'p.parent');
 
-    await expect(ipc.invoke('plugin-data:save', 'p.parent', { created: true })).rejects.toMatchObject({
+    await expect(save(ipc, 'p.parent', { created: true })).rejects.toMatchObject({
       code: 'NOT_INSTALLED',
     });
 
     expect(existsSync(dir)).toBe(false);
   });
 
-  it('T2.f rejects path-traversal pluginId on load/save/clear (审计 V1)', async () => {
+  it('T2.f rejects path-traversal pluginId on load/save (审计 V1)', async () => {
     const { root, ipc } = await makeHarness();
     const evil = '../../escaped';
 
     await expect(ipc.invoke('plugin-data:load', evil)).rejects.toThrow(
       /invalid plugin id/,
     );
-    await expect(
-      ipc.invoke('plugin-data:save', evil, { pwn: true }),
-    ).rejects.toThrow(/invalid plugin id/);
-    await expect(ipc.invoke('plugin-data:clear', evil)).rejects.toThrow(
-      /invalid plugin id/,
-    );
+    await expect(save(ipc, evil, { pwn: true })).rejects.toThrow(/invalid plugin id/);
 
     // 确认没有在 plugins 目录外写出任何文件
     expect(existsSync(join(root, 'escaped'))).toBe(false);
@@ -261,17 +221,13 @@ describe('plugin-data-store.service', () => {
   it('E177 超长 pluginId(>256,合法字符)→ 拒绝,错误不回显原始超长 id', async () => {
     const { ipc } = await makeHarness();
     const longId = 'a'.repeat(257); // 合法字符但超长
-    for (const ch of ['load', 'clear']) {
-      const err = (await ipc
-        .invoke(`plugin-data:${ch}`, longId)
-        .catch((e: unknown) => e)) as { code?: string; message?: string };
-      expect(err.code).toBe('BAD_INPUT');
-      expect(err.message).toMatch(/invalid plugin id/);
-      expect(err.message).not.toContain('a'.repeat(100)); // 不回显原始超长串
-    }
-    await expect(
-      ipc.invoke('plugin-data:save', longId, { x: 1 }),
-    ).rejects.toThrow(/invalid plugin id/);
+    const err = (await ipc
+      .invoke('plugin-data:load', longId)
+      .catch((e: unknown) => e)) as { code?: string; message?: string };
+    expect(err.code).toBe('BAD_INPUT');
+    expect(err.message).toMatch(/invalid plugin id/);
+    expect(err.message).not.toContain('a'.repeat(100)); // 不回显原始超长串
+    await expect(save(ipc, longId, { x: 1 })).rejects.toThrow(/invalid plugin id/);
   });
 
   it('E177 恰好 256 合法 pluginId → 接受(边界含等号)', async () => {
@@ -281,21 +237,15 @@ describe('plugin-data-store.service', () => {
   });
 });
 
-// perf:save 已为计量做过一次 compact JSON.stringify,原子写直接复用该字符串,不再 pretty stringify 第二次。
-describe('plugin-data-store save 复用序列化结果', () => {
-  it('save 全程只 stringify payload 一次,落盘即该序列化串,load 往返一致', async () => {
+// 落盘文本就是 `{"value":<传入的 JSON 文本>}`(compact,不二次 stringify),load 往返一致。
+describe('plugin-data-store save 落盘文本', () => {
+  it('落盘即 {"value":<串>},load 返回 { value }', async () => {
     const { root, ipc } = await makeHarness();
     await installed(root, 'p.once');
-    const payload = { value: { list: [1, 2, 3], text: '中文' } };
-    const stringify = vi.spyOn(JSON, 'stringify');
-    try {
-      await ipc.invoke('plugin-data:save', 'p.once', payload);
-      expect(stringify.mock.calls.filter((c) => c[0] === payload)).toHaveLength(1);
-    } finally {
-      stringify.mockRestore();
-    }
+    const value = { list: [1, 2, 3], text: '中文' };
+    await save(ipc, 'p.once', value);
     const disk = await readFile(join(root, 'plugins', 'p.once', 'data.json'), 'utf-8');
-    expect(disk).toBe(JSON.stringify(payload));
-    await expect(ipc.invoke('plugin-data:load', 'p.once')).resolves.toEqual(payload);
+    expect(disk).toBe(JSON.stringify({ value }));
+    await expect(ipc.invoke('plugin-data:load', 'p.once')).resolves.toEqual({ value });
   });
 });

@@ -11,8 +11,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // JSON.stringify/parse 内存峰值 + 长时间阻塞。E43:常量移到 shared,renderer PluginDataStore 复用同值。
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { assertJsonValue } from '../../shared/assert-json-value';
-import { utf8ByteLength, utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { jsonStringLengthLowerBoundExceeds } from '../../shared/json-byte-budget';
+import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { codedError } from '../../shared/error-message';
@@ -103,53 +102,9 @@ export function registerPluginDataStoreHandlers(
     }
   });
 
-  ipcMain.handle(
-    PLUGIN_DATA_CHANNELS.SAVE,
-    async (_event, pluginId: string, data: Record<string, unknown>) => {
-      // 边界(E147):data.json 契约是 plain object({value:...} 包装)。绕过 renderer 的 raw IPC 可传
-      // 数组/原语(string/number/boolean)→ 写出畸形 data.json,致 load 端 hasOwnProperty 抛/假丢失。
-      // null/undefined 归一为 {}(安全空),其余非 plain object 拒写。
-      const payload = data ?? {};
-      if (typeof payload !== 'object' || Array.isArray(payload)) {
-        throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data must be a plain object');
-      }
-      // 边界(E306,E305 reorder 同族 / 校验顺序 fail-fast):先廉价字节下界 fail-fast(早停于上限)再
-      // assertJsonValue 全量遍历 —— 超 16MiB 但 shape 合法的 payload 不被 assertJsonValue 完整遍历后才拒。
-      // jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」的病态输入
-      // 错误码从 BAD_INPUT 变 PAYLOAD_TOO_LARGE —— 两者皆拒写,无现实差异。)
-      // perf:预检用 .length 下界(每串 O(1),不逐字符计 UTF-8):其后有 stringify + 精确 UTF-8 字节终裁,
-      // .length ≤ UTF-8 字节仍是合法下界,判定不变(多字节超限只是从预检挪到精确终裁拒)。
-      if (jsonStringLengthLowerBoundExceeds(payload, MAX_PLUGIN_DATA_BYTES)) {
-        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `plugin data too large (> ${MAX_PLUGIN_DATA_BYTES})`);
-      }
-      // 边界(E103,main 兜底):JSON.stringify 静默改写 NaN/Infinity→null、丢 undefined/function
-      //(不抛)→ 静默持久化损坏。assertJsonValue 递归拒非 JSON 安全值(renderer 已预检,此为兜底,
-      // 挡绕过 renderer 的入口)。
-      try {
-        assertJsonValue(payload);
-      } catch {
-        throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data not JSON-safe');
-      }
-      // 边界(E20):序列化前校验 + 字节上限。畸形插件保存超大对象会让 JSON.stringify 内存峰值 +
-      // 写出超大 data.json(下次 load 再放大)。不可序列化(循环引用)或超限 → 明确拒绝,不写。
-      let serialized: string;
-      try {
-        serialized = JSON.stringify(payload);
-      } catch {
-        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, 'plugin data not serializable');
-      }
-      // 边界(E125):真实 UTF-8 字节(非 .length=UTF-16 code unit)。
-      const dataBytes = utf8ByteLength(serialized);
-      if (dataBytes > MAX_PLUGIN_DATA_BYTES) {
-        throw codedError(ERROR_CODES.PAYLOAD_TOO_LARGE, `plugin data too large (${dataBytes} > ${MAX_PLUGIN_DATA_BYTES})`,);
-      }
-      await writeSerialized(pluginId, serialized);
-    },
-  );
-
-  // perf P2:renderer 字节预检时已算好 value 的 JSON 文本,直接过 IPC(克隆字符串 ≪ 克隆对象图),此处不再
-  // 遍历对象 + 二次 stringify。校验与 SAVE 对象路径等价:落盘文本 `{"value":<串>}` 与 JSON.stringify({ value })
-  // 逐字节一致,字节上限按同一落盘文本计;JSON.parse 证明串是**单个** JSON 值(拒非法 / 拼接注入,如
+  // 保存:renderer 字节预检时已算好 value 的 JSON 文本,直接过 IPC(克隆字符串 ≪ 克隆对象图),此处不再
+  // 遍历对象 + 二次 stringify。落盘文本 `{"value":<串>}` 与 JSON.stringify({ value }) 逐字节一致(data.json 契约
+  // 是 plain object 包装),字节上限按落盘文本计;JSON.parse 证明串是**单个** JSON 值(拒非法 / 拼接注入,如
   // `1,"x":2` 会把包装撑出额外 key),解析结果再过 assertJsonValue 保留深度 / 宽度 / 字符串长度上限
   //(JSON.parse 产物本身不含 NaN / undefined / function)。
   ipcMain.handle(
@@ -205,12 +160,7 @@ export function registerPluginDataStoreHandlers(
       release = await lockfile.lock(file, LOCK_OPTS);
       // 原子写(temp+fsync+rename):旧实现 fs.writeFile 先 truncate 再写,崩溃/
       // 掉电落在中途会把 data.json 截断成损坏 JSON(审计)。
-      // 边界(E237):写**归一后的 payload**(data ?? {}),不是原始 data。校验/序列化/字节上限全跑
-      // payload,但此前落盘写原始 data —— 绕过 renderer 的 raw IPC 传 null/undefined 时 payload={} 过
-      // 校验,却把 null/undefined 写进 data.json,破坏 plain object 契约 → 下次 load 当损坏隔离降级 →
-      // 插件数据静默丢失。写 payload 使校验对象与落盘对象一致。
-      // perf:直接落盘上面为计量生成的 compact `serialized`(即 payload 的序列化),不再交给
-      // atomicWriteJson 二次 pretty stringify。读取端只做 JSON.parse,对缩进格式无依赖。
+      // 落盘的就是校验过的那份 `serialized`(校验对象 === 落盘对象);compact 文本,读取端只做 JSON.parse。
       await atomicWriteText(file, serialized);
     } finally {
       // release()(proper-lockfile 解锁)本身可能 reject —— 锁 stale(>5s)被其它
@@ -223,10 +173,4 @@ export function registerPluginDataStoreHandlers(
     }
   }
 
-  ipcMain.handle(PLUGIN_DATA_CHANNELS.CLEAR, async (_event, pluginId: string) => {
-    // force:true 已容忍「文件不存在」(ENOENT,已清空视为成功);但**不**吞 EACCES/EBUSY/
-    // IO 等真删除失败 —— 旧实现 try/catch 吞掉所有 rm 错误,删除失败仍报成功,调用方以为
-    // 数据已清除、重启/下次读取却恢复旧数据(数据安全复查)。真错误传播给调用方。
-    await fs.rm(dataFile(pluginId), { force: true });
-  });
 }

@@ -142,7 +142,7 @@ describe('安装:克隆树含符号链接 → 拒绝', () => {
 describe('plugin-data:data.json 是链接', () => {
   it('load:指向别的插件 data.json → {},读不到对方数据', async () => {
     await fs.mkdir(path.join(baseDir, 'victim'), { recursive: true });
-    await invoke('plugin-data:save', 'victim', { value: { token: 'victim-secret' } });
+    await invoke('plugin-data:save-serialized', 'victim', JSON.stringify({ token: 'victim-secret' }));
     await fs.mkdir(path.join(baseDir, 'evil'), { recursive: true });
     await fs.symlink('../victim/data.json', path.join(baseDir, 'evil', 'data.json'));
     await expect(invoke('plugin-data:load', 'evil')).resolves.toEqual({});
@@ -166,14 +166,14 @@ describe('plugin-data:data.json 是链接', () => {
 
   it('save:不写穿链接,落成插件目录里的普通文件', async () => {
     await fs.mkdir(path.join(baseDir, 'victim'), { recursive: true });
-    await invoke('plugin-data:save', 'victim', { value: 'victim-data' });
+    await invoke('plugin-data:save-serialized', 'victim', JSON.stringify('victim-data'));
     const victimFile = path.join(baseDir, 'victim', 'data.json');
     const before = await fs.readFile(victimFile, 'utf-8');
     const dir = path.join(baseDir, 'evil');
     await fs.mkdir(dir, { recursive: true });
     await fs.symlink('../victim/data.json', path.join(dir, 'data.json'));
 
-    await invoke('plugin-data:save', 'evil', { value: 'mine' });
+    await invoke('plugin-data:save-serialized', 'evil', JSON.stringify('mine'));
 
     expect(await fs.readFile(victimFile, 'utf-8')).toBe(before);
     expect(readdirSync(path.join(baseDir, 'victim'))).toEqual(['data.json']);
@@ -185,7 +185,7 @@ describe('plugin-data:data.json 是链接', () => {
     const dir = path.join(baseDir, 'evil');
     await fs.mkdir(dir, { recursive: true });
     await fs.symlink(path.join(outside, 'created-by-save.json'), path.join(dir, 'data.json'));
-    await invoke('plugin-data:save', 'evil', { value: 1 });
+    await invoke('plugin-data:save-serialized', 'evil', JSON.stringify(1));
     expect(readdirSync(outside)).toEqual(['secret.txt']);
     expect(lstatSync(path.join(dir, 'data.json')).isFile()).toBe(true);
   });

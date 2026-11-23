@@ -40,16 +40,17 @@ describe.skipIf(SKIP_PERF)('T5 PluginDataStore perf bench', () => {
     mkdirSync(join(tmp, 'plugins', pluginId), { recursive: true }); // save 只写已安装插件的目录
     const fakeEvent = {};
     for (let i = 0; i < 3; i++) {
-      await handlers['plugin-data:save']!(fakeEvent, pluginId, { i });
+      await handlers['plugin-data:save-serialized']!(fakeEvent, pluginId, JSON.stringify({ i }));
     }
 
     const times: number[] = [];
     for (let i = 0; i < ITER; i++) {
       const start = process.hrtime.bigint();
-      await handlers['plugin-data:save']!(fakeEvent, pluginId, {
-        i,
-        payload: 'x'.repeat(100),
-      });
+      await handlers['plugin-data:save-serialized']!(
+        fakeEvent,
+        pluginId,
+        JSON.stringify({ i, payload: 'x'.repeat(100) }),
+      );
       const end = process.hrtime.bigint();
       times.push(Number(end - start) / 1_000_000);
     }
@@ -67,9 +68,11 @@ describe.skipIf(SKIP_PERF)('T5 PluginDataStore perf bench', () => {
     const pluginId = randomUUID();
     mkdirSync(join(tmp, 'plugins', pluginId), { recursive: true }); // save 只写已安装插件的目录
     const fakeEvent = {};
-    await handlers['plugin-data:save']!(fakeEvent, pluginId, {
-      warmup: true,
-    });
+    await handlers['plugin-data:save-serialized']!(
+      fakeEvent,
+      pluginId,
+      JSON.stringify({ warmup: true }),
+    );
     for (let i = 0; i < 3; i++) {
       await handlers['plugin-data:load']!(fakeEvent, pluginId);
     }

@@ -39,27 +39,17 @@ describe('sdk-contract integration: plugin-data-store.service raw IPC', () => {
   it('T3.b saves then loads a JSON roundtrip', async () => {
     const data = { value: { enabled: true, count: 2 } };
 
-    await invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', data);
+    await invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', JSON.stringify(data.value));
 
     await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, 'plugin.data')).resolves.toEqual(
       data,
     );
   });
 
-  it('T3.c clear removes saved data and load returns empty object again', async () => {
-    await invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', { value: 'x' });
-
-    await invoke(PLUGIN_DATA_CHANNELS.CLEAR, 'plugin.data');
-
-    await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, 'plugin.data')).resolves.toEqual(
-      {},
-    );
-  });
-
   it('T3.d concurrent saves leave a valid JSON data file', async () => {
     await Promise.all([
-      invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', { value: { n: 1 } }),
-      invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', { value: { n: 2 } }),
+      invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', JSON.stringify({ n: 1 })),
+      invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', JSON.stringify({ n: 2 })),
     ]);
 
     const raw = await readFile(
@@ -71,17 +61,15 @@ describe('sdk-contract integration: plugin-data-store.service raw IPC', () => {
   });
 
   // perf P2:renderer 已为字节预检算好 value 的序列化串,直接把串过 IPC(结构化克隆字符串远快于克隆对象图),
-  // main JSON.parse 一次做形态 / 上限校验后直接落盘 `{"value":<串>}` —— 与旧 SAVE 对象路径字节一致。
+  // main JSON.parse 一次做形态 / 上限校验后直接落盘 `{"value":<串>}` 。
   describe('SAVE_SERIALIZED:传 value 的 JSON 串', () => {
     const file = () => join(userDataPath, 'plugins', 'plugin.data', 'data.json');
 
-    it('落盘文本与旧 SAVE({ value }) 逐字节一致,load 返回同一形态', async () => {
+    it('落盘文本即 JSON.stringify({ value }),load 返回同一形态', async () => {
       const value = { enabled: true, n: [1, 2.5, -3], s: '中文\u{1F600}', nested: { a: null } };
-      await invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', { value });
-      const viaObject = await readFile(file(), 'utf-8');
       await invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', JSON.stringify(value));
       const viaString = await readFile(file(), 'utf-8');
-      expect(viaString).toBe(viaObject);
+      expect(viaString).toBe(JSON.stringify({ value }));
       await expect(invoke(PLUGIN_DATA_CHANNELS.LOAD, 'plugin.data')).resolves.toEqual({ value });
     });
 
@@ -101,15 +89,12 @@ describe('sdk-contract integration: plugin-data-store.service raw IPC', () => {
       ).rejects.toMatchObject({ code: 'BAD_INPUT' });
     });
 
-    it('落盘文本超 MAX_PLUGIN_DATA_BYTES → PAYLOAD_TOO_LARGE(与旧路径同口径:含 {"value":} 包装)', async () => {
+    it('落盘文本超 MAX_PLUGIN_DATA_BYTES → PAYLOAD_TOO_LARGE(按落盘文本计:含 {"value":} 包装)', async () => {
       // value 串本身恰好 = 上限,加包装后超限
       const s = JSON.stringify('x'.repeat(MAX_PLUGIN_DATA_BYTES - 2));
       expect(s.length).toBe(MAX_PLUGIN_DATA_BYTES);
       await expect(
         invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', s),
-      ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
-      await expect(
-        invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', { value: 'x'.repeat(MAX_PLUGIN_DATA_BYTES - 2) }),
       ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
     });
 

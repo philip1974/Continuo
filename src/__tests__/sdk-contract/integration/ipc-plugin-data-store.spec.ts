@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const coApiMocks = vi.hoisted(() => ({
   load: vi.fn(),
-  save: vi.fn(),
   saveSerialized: vi.fn(),
 }));
 
@@ -10,7 +9,6 @@ vi.mock('@/lib/co-api', () => ({
   coApi: {
     pluginDataRaw: {
       load: coApiMocks.load,
-      save: coApiMocks.save,
       saveSerialized: coApiMocks.saveSerialized,
     },
   },
@@ -22,7 +20,6 @@ import { MAX_PLUGIN_DATA_BYTES } from '../../../../electron/shared/plugin-data-l
 beforeEach(() => {
   vi.clearAllMocks();
   coApiMocks.load.mockResolvedValue({});
-  coApiMocks.save.mockResolvedValue(undefined);
   coApiMocks.saveSerialized.mockResolvedValue(undefined);
 });
 
@@ -43,7 +40,6 @@ describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
     await store.write('plugin.data', data);
 
     expect(coApiMocks.saveSerialized).toHaveBeenCalledWith('plugin.data', '{"theme":"dark"}');
-    expect(coApiMocks.save).not.toHaveBeenCalled();
   });
 
   it('T4.b2 非 JSON 安全值仍在 renderer 拒绝(不发 IPC)', async () => {
@@ -52,7 +48,6 @@ describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
       await expect(store.write('plugin.data', bad)).rejects.toThrow();
     }
     expect(coApiMocks.saveSerialized).not.toHaveBeenCalled();
-    expect(coApiMocks.save).not.toHaveBeenCalled();
   });
 
   // 边界(E43,E41/E42 同族):write() 在 renderer JSON.stringify 后按主进程同一上限预检,超限
@@ -69,7 +64,6 @@ describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
     await expect(store.write('plugin.data', huge)).rejects.toThrow(
       /too large/i,
     );
-    expect(coApiMocks.save).not.toHaveBeenCalled();
     expect(coApiMocks.saveSerialized).not.toHaveBeenCalled();
   });
 
@@ -140,7 +134,7 @@ describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
     it('save 在途时 forget → 迟到的 save 不回填缓存', async () => {
       const store = new IpcPluginDataStore();
       const d = deferred<undefined>();
-      coApiMocks.save.mockReturnValueOnce(d.promise);
+      coApiMocks.saveSerialized.mockReturnValueOnce(d.promise);
       const pending = store.write('plugin.data', { stale: true });
       store.forget('plugin.data');
       d.resolve(undefined);

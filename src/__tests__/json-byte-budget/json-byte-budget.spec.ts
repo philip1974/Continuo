@@ -173,7 +173,6 @@ describe('E286 家族接线守卫:全部 stringify+字节cap 入口在 stringify
   const sites = [
     'electron/shared/plugin-mcp-schemas.ts',
     'src/plugins/PluginDataStore.ts',
-    'electron/main/services/plugin-data-store.service.ts',
     'electron/main/ipc.ts',
     'electron/main/lib/layout-read-guard.ts',
     'electron/main/services/mcp-host.service.ts',

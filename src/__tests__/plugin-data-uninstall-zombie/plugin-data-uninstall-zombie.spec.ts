@@ -71,9 +71,8 @@ afterEach(async () => {
 });
 
 describe('saveData 只写已安装插件的目录', () => {
-  it('插件目录不存在 → SAVE / SAVE_SERIALIZED 拒绝(NOT_INSTALLED),不创建目录', async () => {
+  it('插件目录不存在 → SAVE_SERIALIZED 拒绝(NOT_INSTALLED),不创建目录', async () => {
     await expect(saveSerialized(ID, '{"a":1}')).rejects.toEqual(NOT_INSTALLED);
-    await expect(invoke(PLUGIN_DATA_CHANNELS.SAVE, ID, { a: 1 })).rejects.toEqual(NOT_INSTALLED);
     expect(existsSync(path.join(baseDir, ID))).toBe(false);
   });
 

@@ -48,7 +48,7 @@ describe('topic49 P2-BH · plugin-data:save 解锁失败不掩盖成功的写', 
 
     // 不应因 finally 里的 release() reject 而 reject
     await expect(
-      invoke(PLUGIN_DATA_CHANNELS.SAVE, 'plugin.data', data),
+      invoke(PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED, 'plugin.data', JSON.stringify(data.value)),
     ).resolves.toBeUndefined();
 
     // 写确实落盘了
