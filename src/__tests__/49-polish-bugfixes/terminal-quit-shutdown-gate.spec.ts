@@ -70,7 +70,7 @@ describe('终端退出闸:cleanupAll 开始后拒绝新建 PTY 并兜底强杀�
     terminalService.resetTerminalShutdownForTest();
   });
 
-  it('cleanupAll 之后 createTerminal 以 TERMINAL_CREATE_CANCELLED 拒绝,不 spawn,并撤销已签发的 mcpToken', async () => {
+  it('cleanupAll 之后 createTerminal 以 TERMINAL_CREATE_CANCELLED 拒绝,不 spawn(已签发的 mcpToken 由签发它的 ipc 层吊销)', async () => {
     await terminalService.cleanupAll();
 
     await expect(
@@ -82,7 +82,6 @@ describe('终端退出闸:cleanupAll 开始后拒绝新建 PTY 并兜底强杀�
     expect(shellMock.prepareShellIntegrationEnv).not.toHaveBeenCalled();
     expect(sm.create).not.toHaveBeenCalled();
     expect(terminalService.has('late')).toBe(false);
-    expect(byToken).toHaveBeenCalledWith('tok-late');
   });
 
   it('cleanupAll 进行中(SIGKILL 未结算)新建的 createTerminal 被拒且不 spawn', async () => {
@@ -129,7 +128,6 @@ describe('终端退出闸:cleanupAll 开始后拒绝新建 PTY 并兜底强杀�
     await cleaning;
 
     expect(sm.create.mock.calls.some(([arg]) => arg.session_id === 'b')).toBe(false);
-    expect(byToken).toHaveBeenCalledWith('tok-b');
     expect(terminalService.has('b')).toBe(false);
   });
 

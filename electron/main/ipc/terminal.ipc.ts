@@ -183,27 +183,35 @@ export function makeCreateHandler(deps?: {
     // sessions map 而 no-op,exit 终态被丢 → 随后注册的 session 永远停在 exitCode:null 的
     // 假 live 态(stale panel「活着但已死」,write/resize 走 not-found)。先 add 让 setExited
     // 总能命中;create 失败回滚 remove(id)。(复审 loop R19)
-    sessionStore.add({
-      id,
-      title,
-      cwd,
-      originHint: input.originHint ?? 'user',
-      ownerWindowId: win.id,
-      // 跨平台:按真实 shell 路径标注引号族(renderer 拖拽文件据此引用,不再盲猜平台)。
-      shellFamily: shellFamilyForPath(shell),
-      ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
-      ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
-      ...(opts?.controllerToken !== undefined
-        ? { controllerToken: opts.controllerToken }
-        : {}),
-    });
-    // mcpToken 通过 meta 透传给 terminal.service.createTerminal, PTY exit cleanup 时 revoke
+    // mcpToken 在本层签发,创建失败也在本层吊销(登记失败如 TOO_MANY_TERMINALS、spawn 失败、退出闸):否则
+    // 孤儿 token 留在 windowTokens 直到窗口关闭。成功后 token 随 PTY 退出由 terminal.service 吊销。
     try {
+      sessionStore.add({
+        id,
+        title,
+        cwd,
+        originHint: input.originHint ?? 'user',
+        ownerWindowId: win.id,
+        // 跨平台:按真实 shell 路径标注引号族(renderer 拖拽文件据此引用,不再盲猜平台)。
+        shellFamily: shellFamilyForPath(shell),
+        ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
+        ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
+        ...(opts?.controllerToken !== undefined
+          ? { controllerToken: opts.controllerToken }
+          : {}),
+      });
       await service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
         mcpToken,
       });
     } catch (err) {
       sessionStore.remove(id);
+      if (mcpToken) {
+        try {
+          mcpRevokers().byToken(mcpToken);
+        } catch {
+          // 回滚尽力而为:吊销失败不遮蔽创建失败的原始错误
+        }
+      }
       throw err;
     }
     // race(R31):add()(可见 reservation)在 createTerminal 的 await 之前,但 PTY 在 await 期间才

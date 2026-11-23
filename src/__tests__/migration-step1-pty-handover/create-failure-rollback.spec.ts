@@ -98,7 +98,9 @@ describe('migration step1 PTY handover · create failure rollback', () => {
     vi.useRealTimers();
   });
 
-  it('rolls back local maps, buffer, interval, shell cleanup, and token on sm.create reject', async () => {
+  // 已签发的 mcpToken 由签发它的 ipc 层(makeCreateHandler)在创建失败时吊销,见
+  // 49-polish-bugfixes/terminal-create-reserve-before-spawn.spec.ts;本层只回滚自己分配的状态。
+  it('rolls back local maps, buffer, interval and shell cleanup on sm.create reject', async () => {
     const win = makeWindow(8);
     sessionManagerMock.create.mockRejectedValueOnce(new Error('boot fail'));
 
@@ -114,16 +116,15 @@ describe('migration step1 PTY handover · create failure rollback', () => {
       truncated: false,
     });
     expect(shellMock.cleanup).toHaveBeenCalledOnce();
-    expect(byToken).toHaveBeenCalledWith('token-rollback');
 
     sessionManagerMock.options?.onData?.('rollback', 'late-data');
     vi.advanceTimersByTime(32);
     expect(win.webContents.send).not.toHaveBeenCalled();
   });
 
-  // topic 49 第十九轮 P2-AW:prepareShellIntegrationEnv 在 PHASE 1 try 之外失败时,
-  // 已签发的 mcpToken 也要撤销(否则孤儿 token 留在 windowTokens 泄漏)。
-  it('revokes mcpToken when prepareShellIntegrationEnv rejects (pre-PHASE1 failure)', async () => {
+  // topic 49 第十九轮 P2-AW:prepareShellIntegrationEnv 在 PHASE 1 之前失败 → 原样上抛、不留本层状态
+  //(已签发的 mcpToken 由 ipc 层的同一个 catch 吊销)。
+  it('rejects without leaving state when prepareShellIntegrationEnv rejects (pre-PHASE1 failure)', async () => {
     const win = makeWindow(9);
     shellMock.prepareShellIntegrationEnv.mockRejectedValueOnce(
       new Error('ENOSPC writing shell integration'),
@@ -135,8 +136,7 @@ describe('migration step1 PTY handover · create failure rollback', () => {
       }),
     ).rejects.toThrow('ENOSPC');
 
-    // token 被撤销,且没有残留 instance(PHASE 1 从未执行到)
-    expect(byToken).toHaveBeenCalledWith('token-prep');
+    // 没有残留 instance(PHASE 1 从未执行到)
     expect(terminalService.has('prep-fail')).toBe(false);
     // sm.create 从未被调用(失败发生在它之前)
     expect(sessionManagerMock.create).not.toHaveBeenCalled();

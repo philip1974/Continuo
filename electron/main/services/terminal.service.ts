@@ -154,15 +154,6 @@ function createRejectedQuittingError(): Error {
   return codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'terminal create rejected: app is quitting');
 }
 
-function revokeTokenQuietly(mcpToken: string | undefined): void {
-  if (!mcpToken) return;
-  try {
-    mcpRevokers().byToken(mcpToken);
-  } catch {
-    // ignore rollback cleanup errors
-  }
-}
-
 // Test-only reset (P1-5 fix from design review v3)
 export function __resetForTest(): void {
   if (sessionManager) {
@@ -475,11 +466,7 @@ export async function createTerminal(
   env?: Record<string, string>,
   meta?: { mcpToken?: string },
 ): Promise<void> {
-  if (shuttingDown) {
-    // ipc 层已签发 mcpToken,未分配其它资源 → 撤销防孤儿 token。
-    revokeTokenQuietly(meta?.mcpToken);
-    throw createRejectedQuittingError();
-  }
+  if (shuttingDown) throw createRejectedQuittingError();
   if (instances.has(id)) {
     throw new Error(`Terminal id "${id}" already exists`);
   }
@@ -501,27 +488,14 @@ export async function createTerminal(
     baseEnv as Record<string, string | undefined>,
     getCurrentLocale(),
   );
-  let shellEnv: Awaited<ReturnType<typeof prepareShellIntegrationEnv>>['env'];
-  let shellCleanup: Awaited<
-    ReturnType<typeof prepareShellIntegrationEnv>
-  >['cleanup'];
-  try {
-    // bash / fish 不调用 helper(其 env 污染子进程,见 skipsShellIntegration);zsh 在 helper 内本就
-    // 是 no-op。代价:bash / fish 暂无 OSC7 cwd 跟踪。
-    ({ env: shellEnv, cleanup: shellCleanup } = skipsShellIntegration(shell)
-      ? { env: baseEnvWithLang, cleanup: async () => {} }
-      : await prepareShellIntegrationEnv(shell, baseEnvWithLang));
-  } catch (err) {
-    // prepareShellIntegrationEnv 在 PHASE 1 try 之外,失败(写 shell integration 脚本时
-    // 磁盘满 / 权限 / ENOENT)会绕过下面的 sm.create rollback。此刻 mcpToken 已在 ipc 层
-    // 签发(注入 windowTokens),但尚未分配其它资源 → 撤销它防孤儿 token 泄漏 + map 增长。
-    // 见第十九轮 P2-AW。
-    revokeTokenQuietly(meta?.mcpToken);
-    throw err;
-  }
+  // bash / fish 不调用 helper(其 env 污染子进程,见 skipsShellIntegration);zsh 在 helper 内本就
+  // 是 no-op。代价:bash / fish 暂无 OSC7 cwd 跟踪。准备失败(写脚本时磁盘满 / 权限 / ENOENT)直接上抛:
+  // 此刻尚未分配本层资源,已签发的 mcpToken 由签发它的 ipc 层吊销。
+  const { env: shellEnv, cleanup: shellCleanup } = skipsShellIntegration(shell)
+    ? { env: baseEnvWithLang, cleanup: async () => {} }
+    : await prepareShellIntegrationEnv(shell, baseEnvWithLang);
   // 退出闸:shell integration 准备是异步边界,期间 cleanupAll 可能已开始 → spawn 前复查。
   if (shuttingDown) {
-    revokeTokenQuietly(meta?.mcpToken);
     void shellCleanup().catch(() => {
       // ignore rollback cleanup errors
     });
@@ -575,7 +549,6 @@ export async function createTerminal(
   } catch (err) {
     // PHASE 3: rollback all PHASE 1 state on sm.create failure.
     instances.delete(id);
-    revokeTokenQuietly(inst.mcpToken);
     try {
       void inst.shellCleanup().catch(() => {
         // ignore rollback cleanup errors

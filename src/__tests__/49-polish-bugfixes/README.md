@@ -533,9 +533,10 @@
   useTerminal teardownDone 闭包各 init 独立;CodeEditor clamp 反向选区/readonly 均正确。
 
 ## 第十九轮(收敛轮 — MCP host token + window-restore/启动)
-### P2-AW prepareShellIntegrationEnv 失败时撤销已签发 mcpToken — `migration-step1-pty-handover/create-failure-rollback.spec.ts`
-- `terminal.service.createTerminal` 把 `prepareShellIntegrationEnv` 包进 try,失败时撤销
-  `meta.mcpToken`。
+### P2-AW 创建失败时撤销已签发 mcpToken — `terminal-create-reserve-before-spawn.spec.ts`
+- mcpToken 由 ipc 层的 `makeCreateHandler` 签发,也由它的同一个 catch 吊销:登记会话失败
+  (`TOO_MANY_TERMINALS` 等)、`prepareShellIntegrationEnv` 失败、spawn 失败、退出闸拒绝,一处覆盖。
+  `terminal.service.createTerminal` 只回滚自己分配的状态(`migration-step1-pty-handover/create-failure-rollback.spec.ts`)。
 - 根因: `prepareShellIntegrationEnv`(写 shell integration 脚本,磁盘满/权限/ENOENT 时抛)在
   PHASE 1 try **之外**,失败绕过 sm.create 的 rollback。此时 mcpToken 已在 ipc 层签发注入
   windowTokens,但绕过撤销 → 孤儿 token 留存(授予该窗 MCP 访问直到关窗)+ map 增长。安全
@@ -750,7 +751,7 @@
   数秒、MCP host 关闭前)agent 经 `terminal.create_session` 新建的 PTY 不在快照内,窗口关闭只走 3s grace,主进程退出后
   升级定时器不执行 → 忽略 SIGINT/SIGHUP 的长期命令成为孤儿。
 - 修复(与 shell exec / stream / debug launch 同一闸):`cleanupAll` 开始即置 shuttingDown;此后 `createTerminal`
-  在入口、shell integration 准备之后(spawn 前)两处以 `TERMINAL_CREATE_CANCELLED` 拒绝并撤销已签发的 mcpToken;
+  在入口、shell integration 准备之后(spawn 前)两处以 `TERMINAL_CREATE_CANCELLED` 拒绝(已签发的 mcpToken 由签发它的 ipc 层吊销);
   spawn 在途时清理开始 → spawn 完成后立即 SIGKILL 并以同码失败;结束前再扫一遍登记表强杀漏网会话。
   `resetTerminalShutdownForTest()` 供测试复位。
 - renderer 用户路径(Cmd+T / Dock「新建终端」)对 `{ok:false, TERMINAL_CREATE_CANCELLED}` 静默(窗口已隐藏),
