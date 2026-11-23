@@ -79,11 +79,6 @@ function frameDapBody(body: Buffer): Buffer {
   return Buffer.concat([header, body]);
 }
 
-/** 解码出的一帧。 */
-export interface DapDecodedFrame {
-  readonly message: DapMessage;
-}
-
 /**
  * 单个 DAP 帧 body 的字节上限。对端是本机 js-debug,正常响应远小于此;evaluate 结果服务层也只返回 64KiB,
  * 更大的帧收进来只会白占内存(evaluate('x'.repeat(16777216)) 曾把 RSS 冲到 ~1.1GiB)。超限帧不缓冲、边收边丢:
@@ -151,16 +146,12 @@ export class DapStreamDecoder {
   private oversized: { length: number; remaining: number; prefix: Buffer | null } | null = null;
 
   push(chunk: Buffer | Uint8Array | string): DapMessage[] {
-    return this.pushFrames(chunk).map((frame) => frame.message);
-  }
-
-  pushFrames(chunk: Buffer | Uint8Array | string): DapDecodedFrame[] {
     const input = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     if (input.length > 0) {
       this.chunks.push(input);
       this.buffered += input.length;
     }
-    const messages: DapDecodedFrame[] = [];
+    const messages: DapMessage[] = [];
 
     while (true) {
       if (this.oversized) {
@@ -174,7 +165,7 @@ export class DapStreamDecoder {
         over.remaining -= this.drop(over.remaining);
         if (over.remaining > 0) return messages;
         const response = oversizedFrameResponse(over.prefix.toString('utf8'), over.length);
-        if (response) messages.push({ message: response });
+        if (response) messages.push(response);
         this.oversized = null;
         continue;
       }
@@ -201,7 +192,7 @@ export class DapStreamDecoder {
       if (this.buffered < this.bodyLength) return messages;
       const body = this.take(this.bodyLength).toString('utf8');
       this.bodyLength = null;
-      messages.push({ message: parseDapMessageBody(body) });
+      messages.push(parseDapMessageBody(body));
     }
   }
 
@@ -568,9 +559,9 @@ export class DapClient {
   attachSocket(socket: Socket): void {
     socket.on('data', (chunk: Buffer) => {
       if (socket.destroyed) return;
-      let frames: DapDecodedFrame[];
+      let messages: DapMessage[];
       try {
-        frames = this.decoder.pushFrames(chunk);
+        messages = this.decoder.push(chunk);
       } catch (err) {
         // 畸形流(缺 Content-Length / 帧头超限 / body 非 JSON):解码器缓冲不会前进,之后每个 chunk 都会重抛。
         // 在 data 回调里抛出就是主进程未捕获异常 —— 结算在途请求并断开这条连接。
@@ -580,8 +571,8 @@ export class DapClient {
         socket.destroy();
         return;
       }
-      for (const frame of frames) {
-        this.receiveMessage(frame.message);
+      for (const message of messages) {
+        this.receiveMessage(message);
       }
     });
     socket.on('error', (err) => this.rejectAllPending(err));
