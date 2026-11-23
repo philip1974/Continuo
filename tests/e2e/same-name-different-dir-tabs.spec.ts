@@ -25,25 +25,10 @@ test('root/a.ts + src/a.ts 都打开 → 两个 tab 独立', async ({ window, wo
     timeout: 5_000,
   });
 
-  // 找路径指向 src/a.ts 的那个 treeitem 点开 — 通过 ID 属性 / 或最后一个
-  // (DOM 顺序看渲染:src 被渲染在 root/a.ts 之前还是后,不假设;直接 evaluate
-  // 找 data-id / aria-label / title 含 'src/a.ts')
-  const srcAItem = window
-    .getByRole('treeitem', { name: /^a\.ts$/ })
-    .filter({ has: window.locator(`[title*="${path.join(workspaceRoot, 'src/a.ts')}"]`) });
-  if ((await srcAItem.count()) > 0) {
-    await srcAItem.first().click();
-  } else {
-    // fallback:点击两个 nth 中标题不是已打开的那个
-    const items = window.getByRole('treeitem', { name: /^a\.ts$/ });
-    const i0 = items.nth(0);
-    const i1 = items.nth(1);
-    await i0.click();
-    const t = await titleSpan.getAttribute('title');
-    if (t === path.join(workspaceRoot, 'a.ts')) {
-      await i1.click();
-    }
-  }
+  // treeitem 自身带 title=绝对路径(FileRow):直接按 src/a.ts 的路径定位点开
+  await window
+    .locator(`[role=treeitem][title="${path.join(workspaceRoot, 'src', 'a.ts')}"]`)
+    .click();
 
   // tooltip 此时应是 src/a.ts
   titleSpan = window.locator('header').first().locator('span[title]');

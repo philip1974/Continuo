@@ -53,7 +53,10 @@ test('sidebarWidth=400 hydrate + 切 ws → 仍 400px', async () => {
       .getByRole('menu')
       .getByRole('menuitem', { name: ws2Name, exact: false })
       .click();
-    await win.waitForTimeout(300);
+    // 确认 root 真的切到 ws2(否则后面「状态不变」的断言恒过)
+    await expect(win.locator('main aside').nth(1).getByText(ws2Name).first()).toBeVisible({
+      timeout: 10_000,
+    });
 
     expect(
       await sidebar.evaluate((el: HTMLElement) => el.style.width),

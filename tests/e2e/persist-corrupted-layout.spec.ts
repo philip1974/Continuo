@@ -1,7 +1,7 @@
-// 旧版 layout.json 残留(且是垃圾 JSON)→ 启动时被删除、不解析 → 默认布局(Editor panel 出现).  @edge
+// 旧版 layout.json 残留(且是非法 JSON)→ 启动时不解析、直接删除 → 默认布局(Editor panel 出现).  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,13 +10,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('旧 layout.json 残留且为垃圾 JSON → 不影响启动,默认布局(Editor panel 渲染)', async () => {
+test('旧 layout.json 残留且为非法 JSON → 启动时被删除,默认布局(Editor panel 渲染)', async () => {
   test.setTimeout(30_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-corrupt-layout-'));
   try {
     writeFileSync(
       path.join(ud, 'layout.json'),
-      JSON.stringify({ totallyInvalid: 'shape' }),
+      '{not json',
     );
 
     const app = await electron.launch({
@@ -30,6 +30,8 @@ test('旧 layout.json 残留且为垃圾 JSON → 不影响启动,默认布局(E
     await expect(win.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({
       timeout: 10_000,
     });
+    // 旧文件在启动时被删除(不解析)
+    await expect.poll(() => existsSync(path.join(ud, 'layout.json'))).toBe(false);
 
     await app.close();
   } finally {

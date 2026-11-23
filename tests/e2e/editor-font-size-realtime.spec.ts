@@ -13,7 +13,7 @@ test('editor.fontSize 改 → CodeMirror 容器 fontSize 同步', async ({
 
   // 默认字号:CodeEditor 通过 useSettingValue('editor.fontSize', 13) → outer div 的 inline fontSize:13px
   // 找到 cm 容器外层(CodeEditor 用 div style fontSize 包裹).
-  // 简单做:在 SettingsPanel 改 fontSize 到 18,看 cm 容器的 fontSize.
+  // 简单做:在 SettingsPanel 改 fontSize 到 20,看 cm 容器的 fontSize.
   await window.getByRole('button', { name: SETTINGS }).click();
   await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,

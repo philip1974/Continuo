@@ -1,4 +1,4 @@
-// editor.fontSize 改 → Markdown Preview mode 不渲染 CodeMirror,fontSize 不影响 Milkdown.
+// editor.fontSize 改 → Markdown Preview mode 不渲染 CodeMirror;改字号后 Preview(只读 Milkdown)仍正常渲染.
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_MODE_PREVIEW, editorModeButton, openWorkspaceFile } from './helpers/editor';
 

@@ -15,9 +15,9 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
 test.skip('single-instance:第二次启同 userData 不创建新进程(由 main app.requestSingleInstanceLock)', async () => {
-  // 跳过原因:Playwright Electron 测试启 process 时不走 single-instance lock 路径
-  // (Electron 的 lock 通常在 packaged app 才完整生效;dev 模式 + 测试不可靠).
-  // 已记录,真行为留人工 QA.
+  // 跳过原因:main 无条件 requestSingleInstanceLock(),锁按 --user-data-dir 生效 —— 第二个实例启动即退出,
+  // electron.launch 拿不到窗口;且本用例当前只断言 app1 仍有窗口,区分不了第二实例是否建窗。
+  // 要启用需改为断言第二次 launch 被拒 / 进程退出 + app1 窗口数仍为 1。真行为暂留人工 QA.
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-mw-'));
   try {
     const app1 = await electron.launch({
