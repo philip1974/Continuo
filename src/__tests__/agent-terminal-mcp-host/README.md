@@ -1,7 +1,7 @@
 # agent-terminal-mcp-host (Agent Terminal MCP Phase 1)
 
 行为契约:**main process 内置 MCP host 的契约层**:token 生成 / Bearer 校验 /
-JSON-RPC 2.0 收发解析 / bind 地址白名单。HTTP / SSE 真行为(socket 监听 / SSE 推送)
+JSON-RPC 2.0 收发解析。HTTP / SSE 真行为(socket 监听 / SSE 推送)
 留 E2E 验证;本主题只测**纯函数层**——可在 node 环境直接跑、不起真端口。
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §4
@@ -21,7 +21,6 @@ JSON-RPC 2.0 收发解析 / bind 地址白名单。HTTP / SSE 真行为(socket �
 | `parseRpcMessage(raw)` | `(unknown) => RpcRequest \| null` | JSON-RPC 2.0 输入校验 |
 | `formatRpcResult(id, result)` | `(id, unknown) => string` | 编码响应(返回 JSON 字符串) |
 | `formatRpcError(id, code, message, data?)` | `(id, number, string, unknown?) => string` | 编码错误 |
-| `isLocalhostBindAddr(addr)` | `(string) => boolean` | 启动前 host 地址白名单 |
 
 `createMcpHost(deps?)` 工厂(包 HTTP 实例)**不**在本主题测,留 E2E。
 
@@ -67,11 +66,9 @@ JSON-RPC 2.0 收发解析 / bind 地址白名单。HTTP / SSE 真行为(socket �
 - `id` 透传输入(包括 number / string)
 - `data` 缺省时不出现在 error 对象里(JSON 体不带 `data: undefined` 字面)
 
-### isLocalhostBindAddr
+### 监听地址
 
-仅以下三个返回 true:`127.0.0.1`、`::1`、`localhost`(string,小写)。
-其它一律 false——含 `0.0.0.0`、`::`、任何外网地址。
-启动 host 时调,非白名单值 → 抛 `MCP_HOST_BIND_FORBIDDEN`(本主题不测抛错,留实装侧)。
+只监听 `127.0.0.1`(实现里的常量,不接受外部传入),端口由系统分配。
 
 ## 错误码契约
 

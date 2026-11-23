@@ -49,7 +49,6 @@ export const ko: Record<TranslationKey, string> = {
   'errors.INVALID_ID': '잘못된 ID',
   'errors.MARKETPLACE_INDEX_INVALID': '원격 인덱스가 올바른 배열이 아닙니다',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': '메인 프로세스에 GitHub 토큰이 설정되지 않았습니다',
-  'errors.MCP_HOST_BIND_FORBIDDEN': 'MCP 호스트 바인딩 거부',
   'errors.NO_WINDOW': '창을 찾을 수 없습니다',
   'errors.NO_WINDOW_SEQ': '창 시퀀스를 찾을 수 없습니다',
   'errors.NOT_INSTALLED': '설치되지 않음',

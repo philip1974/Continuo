@@ -10,7 +10,6 @@ import {
   parseRpcMessage,
   formatRpcResult,
   formatRpcError,
-  isLocalhostBindAddr,
   isLoopbackHostHeader,
   sseAdmissionAllowed,
   checkToolArgsBounded,
@@ -368,29 +367,6 @@ describe('formatRpcError', () => {
     expect(JSON.parse(formatRpcError(null, -32601, 'nf')).error.code).toBe(-32601);
     expect(JSON.parse(formatRpcError(null, -32602, 'ip')).error.code).toBe(-32602);
     expect(JSON.parse(formatRpcError(null, -32001, 'auth')).error.code).toBe(-32001);
-  });
-});
-
-// ────────────────────────────────────────────────────────────
-// isLocalhostBindAddr
-// ────────────────────────────────────────────────────────────
-
-describe('isLocalhostBindAddr', () => {
-  it.each(['127.0.0.1', '::1', 'localhost'])('白名单 — %s → true', (addr) => {
-    expect(isLocalhostBindAddr(addr)).toBe(true);
-  });
-
-  it.each([
-    '0.0.0.0',
-    '::',
-    '192.168.1.1',
-    '10.0.0.1',
-    '8.8.8.8',
-    'LOCALHOST', // 大小写敏感(简化判断)
-    '127.0.0.2',
-    '',
-  ])('非白名单 — %s → false', (addr) => {
-    expect(isLocalhostBindAddr(addr)).toBe(false);
   });
 });
 

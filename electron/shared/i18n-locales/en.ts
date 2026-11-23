@@ -58,7 +58,6 @@ export const en = {
   'errors.INVALID_ID': 'Invalid id',
   'errors.MARKETPLACE_INDEX_INVALID': 'Remote index is not a valid array',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': 'GitHub token not configured in the main process',
-  'errors.MCP_HOST_BIND_FORBIDDEN': 'MCP host bind forbidden',
   'errors.NO_WINDOW': 'No window',
   'errors.NO_WINDOW_SEQ': 'No window sequence',
   'errors.NOT_INSTALLED': 'Not installed',

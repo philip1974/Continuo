@@ -6,7 +6,7 @@
 //   GET  /mcp  SSE endpoint(server-initiated 通知)。
 //
 // Bearer 鉴权:`Authorization: Bearer <token>`。Token 按窗口签发,窗口关闭 / 用户撤销授权时作废。
-// 仅监听 127.0.0.1(isLocalhostBindAddr 校验,防误监听 0.0.0.0)。
+// 仅监听 127.0.0.1(BIND_ADDR 常量,防误监听 0.0.0.0)。
 //
 // BDD: src/__tests__/agent-terminal-mcp-host/(纯函数层)
 
@@ -90,11 +90,8 @@ export function parseHttpRequestTarget(rawUrl: string | undefined): {
   };
 }
 
-const LOCALHOST_ADDRS: ReadonlySet<string> = new Set([
-  '127.0.0.1',
-  '::1',
-  'localhost',
-]);
+// 只监听本机回环:地址是常量,不接受外部传入(无法误监听 0.0.0.0 暴露外网)。
+const BIND_ADDR = '127.0.0.1';
 
 export interface McpCallCtx {
   readonly ownerWindowId: number;
@@ -246,17 +243,6 @@ export function formatRpcError(
   const error: Record<string, unknown> = { code, message };
   if (data !== undefined) error.data = data;
   return JSON.stringify({ jsonrpc: '2.0', id, error });
-}
-
-// ── bind 白名单 ─────────────────────────────────────────────────
-
-/**
- * 仅 `127.0.0.1` / `::1` / `localhost` 三者返回 true(大小写敏感)。
- * 启动 HTTP server 前调,非白名单 → 拒绝绑定(防误监听 0.0.0.0 暴露外网)。
- */
-export function isLocalhostBindAddr(addr: string): boolean {
-  if (typeof addr !== 'string') return false;
-  return LOCALHOST_ADDRS.has(addr);
 }
 
 /**
@@ -541,11 +527,7 @@ export interface McpHost {
 export type HttpSessionReleaseCause = 'closed' | 'token-revoked' | 'window-revoked';
 
 export interface McpHostOptions {
-  bindAddr?: string;
-  port?: number;
   initialTools?: ReadonlyArray<AnyMcpTool>;
-  /** 默认 {name:'continuo', version:'0.1.0', protocolVersion:'2024-11-05'}. */
-  serverInfo?: Partial<ServerInfo>;
   /**
    * HTTP session(Mcp-Session-Id)被删除时以其 callerSubject 与原因回调,每个 session 至多一次:该身份此后再无人能用,
    * 调用方据此回收它名下的 debug 会话 / 在途创建。原因见 HttpSessionReleaseCause。rotateToken(撤销全部)不经此回调,
@@ -725,18 +707,10 @@ const MCP_HOST_CLOSE_TIMEOUT_MS = 2000;
 export async function createMcpHost(
   options: McpHostOptions = {},
 ): Promise<McpHost> {
-  const bindAddr = options.bindAddr ?? '127.0.0.1';
-  if (!isLocalhostBindAddr(bindAddr)) {
-    throw codedError(ERROR_CODES.MCP_HOST_BIND_FORBIDDEN, `MCP host bind forbidden: ${bindAddr}`);
-  }
-
   const tools = new Map<string, AnyMcpTool>();
   for (const t of options.initialTools ?? []) tools.set(t.name, t);
 
-  const serverInfo: ServerInfo = {
-    ...DEFAULT_SERVER_INFO,
-    ...(options.serverInfo ?? {}),
-  };
+  const serverInfo = DEFAULT_SERVER_INFO;
 
   const windowTokens: Map<string, number> = new Map();
   // 安全(F1):Mcp-Session-Id → 签发它时的 bearer token。只认同 token 回带的 session id。
@@ -1075,7 +1049,7 @@ export async function createMcpHost(
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(options.port ?? 0, bindAddr, () => {
+    server.listen(0, BIND_ADDR, () => {
       server.removeListener('error', reject);
       resolve();
     });
@@ -1097,7 +1071,7 @@ export async function createMcpHost(
 
   const host: McpHost = {
     port,
-    url: `http://${bindAddr}:${port}/mcp`,
+    url: `http://${BIND_ADDR}:${port}/mcp`,
     issueWindowToken(windowId: number): string {
       const tok = generateToken();
       windowTokens.set(tok, windowId);

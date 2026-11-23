@@ -26,7 +26,6 @@ const MAIN_ERROR_CODES = {
   // 插件安装 git clone 超时(常见原因:全局 insteadOf 改写成 ssh 后等待 host key 确认 / 私钥口令)。
   GIT_TIMEOUT: 'GIT_TIMEOUT',
   INVALID_ID: 'INVALID_ID',
-  MCP_HOST_BIND_FORBIDDEN: 'MCP_HOST_BIND_FORBIDDEN',
   NO_WINDOW: 'NO_WINDOW',
   NO_WINDOW_SEQ: 'NO_WINDOW_SEQ',
   NOT_INSTALLED: 'NOT_INSTALLED',

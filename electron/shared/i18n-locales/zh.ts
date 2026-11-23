@@ -48,7 +48,6 @@ export const zh: Record<TranslationKey, string> = {
   'errors.INVALID_ID': 'ID 无效',
   'errors.MARKETPLACE_INDEX_INVALID': '远程索引不是合法数组',
   'errors.MARKETPLACE_REVIEWS_NO_TOKEN': 'GitHub token 未在主进程配置',
-  'errors.MCP_HOST_BIND_FORBIDDEN': 'MCP 主机绑定被拒',
   'errors.NO_WINDOW': '找不到窗口',
   'errors.NO_WINDOW_SEQ': '找不到窗口序号',
   'errors.NOT_INSTALLED': '未安装',
