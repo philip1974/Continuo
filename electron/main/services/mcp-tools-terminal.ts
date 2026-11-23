@@ -48,7 +48,8 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { codedError } from '../../shared/error-message';
 
 // 边界(E202,无消费的解析放大面):Continuo 的 create_session 工具只消费
-// cwd/name/agentLabel/autorun/target/install_stop_hook/include_raw(见下方 ptyInput 构造),
+// cwd/name/agentLabel/autorun/target/install_stop_hook(见下方 ptyInput 构造;include_raw 是
+// await_stop_hook 自己的入参,这里不读),
 // **不消费** shell/args/cols/rows/env —— 那些是 server-node(协议包另一消费者)才用的 PTY spawn 字段。
 // 协议 createSessionInputSchema(node_modules,与 server-node 共享契约,不可改)含 args: z.array /
 // env: z.record **无数量/长度上限**:外部 MCP client 可在 1MB body 塞海量 args/env,让 zod 在工具
@@ -275,11 +276,6 @@ export function makeCreateSessionTool(
           type: 'boolean',
           description:
             'When true, install Continuo-managed Stop hook into the CLI settings before spawning. Returns stop_hook_installed in output.',
-        },
-        include_raw: {
-          type: 'boolean',
-          description:
-            'When true, include the full raw Stop hook payload in await_stop_hook output.',
         },
       },
       additionalProperties: false,
