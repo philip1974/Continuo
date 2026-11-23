@@ -33,7 +33,6 @@ import {
   type IpcPermissionMutation,
   type IpcPermissionsMap,
   type IpcPermissionRecord,
-  type IpcPluginDir,
   type IpcPluginDirListing,
 } from '../shared/plugins-channels';
 import {
@@ -337,7 +336,7 @@ const api = {
     readMainByDir: (dir: string, manifestHash: string): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_MAIN_BY_DIR, { dir, manifestHash }),
     /** perf:按 manifest.id 只读单个插件目录(热重载用),不存在 → null. */
-    readDirById: (id: string): Promise<IpcResult<IpcPluginDir | null>> =>
+    readDirById: (id: string): Promise<IpcResult<IpcPluginDirListing | null>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_DIR_BY_ID, { id }),
     readEnabled: (): Promise<IpcResult<readonly string[]>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.READ_ENABLED),

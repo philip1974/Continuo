@@ -373,10 +373,12 @@ describe('readPluginDirByManifestId', () => {
       return realOpen(...args);
     });
     const r = await readPluginDirByManifestId(tmp, 'com.foo');
+    // 与列举项同形:manifest + 版本令牌,不含 main 源码(需要激活时才按目录名 + 令牌另读)。
+    const manifestText = JSON.stringify({ id: 'com.foo', name: 'Foo', version: '0.1.0' });
     expect(r).toEqual({
       id: 'com.foo',
-      manifestText: JSON.stringify({ id: 'com.foo', name: 'Foo', version: '0.1.0' }),
-      mainText: 'FOO',
+      manifestText,
+      manifestHash: pluginManifestHash(manifestText),
     });
     expect(opened.length).toBeGreaterThan(0);
     expect(opened.every((p) => p.startsWith(join(tmp, 'com.foo')))).toBe(true);
@@ -388,7 +390,7 @@ describe('readPluginDirByManifestId', () => {
     makeDir('a.dir', { id: 'other', name: 'A', version: '0.1.0' }, 'A');
     const r = await readPluginDirByManifestId(tmp, 'x.id');
     expect(r?.id).toBe('m.dir');
-    expect(r?.mainText).toBe('M');
+    expect(await readPluginMainByDir(tmp, r!.id, r!.manifestHash)).toBe('M');
   });
 
   it('同名目录 manifest.id 不一致 → 不选它,回退其它匹配目录', async () => {

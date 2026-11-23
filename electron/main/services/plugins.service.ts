@@ -17,7 +17,6 @@ import type {
   IpcPermissionMutation,
   IpcPermissionRecord,
   IpcPermissionsMap,
-  IpcPluginDir,
   IpcPluginDirListing,
 } from '../../shared/plugins-channels';
 import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
@@ -517,14 +516,6 @@ function assertManifestUnchanged(manifestText: string, manifestHash: string, nam
   }
 }
 
-async function readOnePluginDir(baseDir: string, name: string): Promise<IpcPluginDir | null> {
-  const m = await readPluginManifestText(baseDir, name);
-  if (m === null) return null;
-  const mainText = await readPluginMainText(m.dir, m.manifestText);
-  if (mainText === null) return null;
-  return { id: name, manifestText: m.manifestText, mainText };
-}
-
 /** manifest 文本里的 id(与 renderer findPluginDirByManifestId 同判据:JSON 损坏 → undefined)。 */
 function manifestIdOf(manifestText: string): unknown {
   try {
@@ -535,20 +526,22 @@ function manifestIdOf(manifestText: string): unknown {
 }
 
 /**
- * perf:单插件热重载只读目标插件(此前 reload 走 listPluginDirs 全量读所有插件 main ≤8MiB 并经 IPC 传输,
- * 每个窗口各一次)。选择结果与 `findPluginDirByManifestId(listPluginDirs(baseDir), id)` 完全等价:
- * 只考虑 listPluginDirs 会收录的目录(同一有界枚举、. / _ 过滤、manifest + main 可读),manifest.id === id;
+ * perf:单插件热重载只定位目标插件(此前 reload 走 listPluginDirs 全量列举,每个窗口各一次)。返回与列举项同形
+ * (manifest + 版本令牌,不含 main 源码):renderer 与启动激活走同一条路 —— 需要激活时才按目录名 + 令牌拉 main
+ * (readPluginMainByDir,读前读后复核 manifest),已禁用的插件重载不读也不传源码。
+ * 选择结果与 `findPluginDirByManifestId(listPluginDirs(baseDir), id)` 完全等价:
+ * 只考虑 listPluginDirs 会收录的目录(同一有界枚举、. / _ 过滤、manifest 可读 + main 可用),manifest.id === id;
  * 目录名 == id 的优先,否则目录名字典序最小(preferPluginDir 同规则)。
- * - 快路径:枚举里有名为 id 的目录 → 只读它;它合格即为最优解(同名唯一且优先),不碰其它插件。
- * - 回退:只读其它目录的 manifest(有界并发),按目录名升序逐个尝试读 main,首个可读者即结果。
+ * - 快路径:枚举里有名为 id 的目录 → 只看它;它合格即为最优解(同名唯一且优先),不碰其它插件。
+ * - 回退:只读其它目录的 manifest(有界并发),按目录名升序逐个检查 main 可用,首个合格者即结果。
  */
 export async function readPluginDirByManifestId(
   baseDir: string,
   id: string,
-): Promise<IpcPluginDir | null> {
+): Promise<IpcPluginDirListing | null> {
   const entries = await readPluginDirEntriesCapped(baseDir);
   if (entries.includes(id)) {
-    const exact = await readOnePluginDir(baseDir, id);
+    const exact = await readOnePluginDirMeta(baseDir, id);
     if (exact !== null && manifestIdOf(exact.manifestText) === id) return exact;
   }
   const others = entries.filter((name) => name !== id);
@@ -560,8 +553,9 @@ export async function readPluginDirByManifestId(
   }
   candidates.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const c of candidates) {
-    const mainText = await readPluginMainText(c.dir, c.manifestText);
-    if (mainText !== null) return { id: c.name, manifestText: c.manifestText, mainText };
+    if (await isPluginMainAvailable(c.dir, c.manifestText)) {
+      return { id: c.name, manifestText: c.manifestText, manifestHash: pluginManifestHash(c.manifestText) };
+    }
   }
   return null;
 }

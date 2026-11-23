@@ -7,12 +7,6 @@ import type { ManagerHost } from '@/plugins/PluginManager';
 import { coApi } from './co-api';
 import { codedError } from '../../electron/shared/error-message';
 
-interface RawPluginDirInfo {
-  readonly id: string;
-  readonly manifestText: string;
-  readonly mainText: string;
-}
-
 interface PluginDirMeta {
   readonly id: string;
   readonly manifestText: string;
@@ -27,25 +21,6 @@ type PluginDirInfo = {
 };
 
 const EMPTY_PLUGIN_DIR_INFOS: PluginDirInfo[] = [];
-
-/**
- * moduleUrl 惰性生成:只在真正读取(激活该插件时 import)才 createObjectURL,且只生成一次。
- * 此前列举为每条都 createObjectURL 且从不 revoke → 反复 reload 单调泄漏 Blob URL。未读的 info 随 GC 回收。
- * (getter 须直接定义在返回对象上 —— 对象展开会立即求值 getter。)用于 readDirById(热重载)结果。
- */
-function lazyPluginDirInfo(dir: RawPluginDirInfo): PluginDirInfo {
-  let url: string | null = null;
-  return {
-    id: dir.id,
-    manifestText: dir.manifestText,
-    get moduleUrl(): string {
-      url ??= URL.createObjectURL(
-        new Blob([dir.mainText], { type: 'application/javascript' }),
-      );
-      return url;
-    },
-  };
-}
 
 /**
  * 列举项的 moduleUrl 是惰性**源码引用**(不是可 import 的 URL):listDirs 不再携带 main 源码(perf:未启用
@@ -183,14 +158,15 @@ export function createWindowApiHost(): ManagerHost {
       return buildPluginDirInfos(r.data);
     },
     readPluginDirByManifestId: async (id) => {
-      // perf:热重载只读目标插件(main 端选择规则与 findPluginDirByManifestId(listDirs) 等价)。
+      // perf:热重载只定位目标插件(main 端选择规则与 findPluginDirByManifestId(listDirs) 等价),结果与列举项
+      // 同形:moduleUrl 同样是惰性源码引用,重新激活时才按目录名 + manifest 令牌拉 main。
       // 失败与旧 listDirs 失败同降级:当作找不到(reload 抛 no longer exists)。
       const r = await coApi.plugins.readDirById(id);
       if (!r.ok) {
         console.warn('[plugins-host] readDirById failed', r.code, r.message);
         return null;
       }
-      return r.data ? lazyPluginDirInfo(r.data) : null;
+      return r.data ? deferredPluginDirInfo(r.data) : null;
     },
     readEnabledIds: async () => {
       const r = await coApi.plugins.readEnabled();

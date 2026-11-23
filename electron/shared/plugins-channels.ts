@@ -20,7 +20,8 @@ export const PLUGINS_CHANNELS = {
    */
   READ_MAIN_BY_DIR: 'plugins:read-main-by-dir',
   /**
-   * 按 manifest.id 只读单个插件目录(perf:热重载不再全量 listDirs),返回 IpcPluginDir | null。
+   * 按 manifest.id 定位单个插件目录(perf:热重载不再全量 listDirs),返回与列举项同形的 IpcPluginDirListing | null
+   *(不含 main 源码:需要激活时走 READ_MAIN_BY_DIR)。
    * 选择规则与 renderer findPluginDirByManifestId(listDirs) 等价(同名目录优先,否则目录名字典序)。
    */
   READ_DIR_BY_ID: 'plugins:read-dir-by-id',
@@ -116,12 +117,6 @@ export interface IpcPluginDirMeta {
 export interface IpcPluginDirListing extends IpcPluginDirMeta {
   /** manifestText 的 sha256(小写 hex);激活时随 READ_MAIN_BY_DIR 提交,校验 manifest 未变. */
   readonly manifestHash: string;
-}
-
-/** 含 main 源码的插件目录信息(READ_DIR_BY_ID 热重载用). */
-export interface IpcPluginDir extends IpcPluginDirMeta {
-  /** main.js 入口文本(renderer Blob URL + dynamic import). */
-  readonly mainText: string;
 }
 
 /** READ_MAIN_BY_DIR 目录名长度上限(= 常见文件系统单级文件名上限 NAME_MAX). */

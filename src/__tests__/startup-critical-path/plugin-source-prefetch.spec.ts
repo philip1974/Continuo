@@ -187,7 +187,7 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: async (dir) => ok(dir),
       readDirById: async (id) => ({
         ok: true,
-        data: { id, manifestText: manifest(id, '0.2.0'), mainText: '/* new */' },
+        data: { id, manifestText: manifest(id, '0.2.0'), manifestHash: 'new-token' },
       }),
     });
     const init = mgr.init();
@@ -206,7 +206,11 @@ describe('启动插件源码预取 (B-1)', () => {
     await init;
     expect(revokeObjectURL).toHaveBeenCalledWith(prefetchedB); // 未用上的预取被释放
     expect(loaded).toEqual(['a', 'b']); // b 只激活一次(新 manifest)
-    expect(plugins.readMainByDir.mock.calls.filter((c) => c[0] === 'b')).toHaveLength(1);
+    // b 的 main 拉了两次:旧令牌的预取(被丢弃)+ 热重载后按新令牌的激活。
+    expect(plugins.readMainByDir.mock.calls.filter((c) => c[0] === 'b').map((c) => c[1])).toEqual([
+      expect.not.stringMatching(/^new-token$/),
+      'new-token',
+    ]);
   });
 
   it('预取完成后、轮到激活前被禁用 → 不激活,预取的 Blob URL 被 revoke', async () => {
