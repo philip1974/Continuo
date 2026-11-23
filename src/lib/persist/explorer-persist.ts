@@ -578,8 +578,8 @@ export async function initExplorerPersistence(
   );
   // 性能(r4 复审 #2):快照只含 editor 的 openFilePaths/activePath,不含正文。每次按键 updateContent 都替换
   // tabs,若订阅整个 editor store 会每键 clearTimeout+setTimeout 并在停顿后构建 snapshot+JSON.stringify。
-  // openFilePaths/activePath 只随 tab 增删/改路径(open/close/removePath/renamePath/closeTabsOutsideRoot/
-  // setFilePath,均 bump chromeVersion)与 activeTabId 变化而变 → 只在这两者变化时标脏。
+  // openFilePaths/activePath 只随 tab 增删/改路径(open/close/removePaths/renamePath/closeTabsOutsideRoot,
+  // 均 bump chromeVersion)与 activeTabId 变化而变 → 只在这两者变化时标脏。
   useEditorStore.subscribe((s, prev) => {
     if (s.activeTabId !== prev.activeTabId || s.chromeVersion !== prev.chromeVersion) {
       markDirtyAndPersist();

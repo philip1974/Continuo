@@ -45,7 +45,7 @@ export interface EditorTab {
   /**
    * 性能 P4:派生缓存 = `isMarkdownFilePath(filePath) && isMilkdownUnsafe(content)`。
    * 仅在 content / filePath 变更时(createTab / updateContent / reloadFromDisk /
-   * setFilePath)算一次,避免 getEffectiveMode 在每次渲染 / Header selector 里对
+   * 改名)算一次,避免 getEffectiveMode 在每次渲染 / Header selector 里对
    * 全文重复跑未锚定的 wiki-link 正则(长 Markdown 输入时 ~3 次 O(file)/按键)。
    * optional:缺省时 getEffectiveMode 回退到现场计算(行为等价,不破坏旧构造)。
    */
@@ -383,7 +383,7 @@ export function getStateAfterClosingTabsOutsideRoot(
 }
 
 /**
- * 文件 / 目录被删除后的 tab 状态:
+ * 文件 / 目录被删除后的 tab 状态(单条参照实现;store 走批量版 getStateAfterRemovingPaths,测试用它做对照):
  * - 精确匹配 filePath === removedPath
  * - 或位于该目录下(`removedPath/` 或 `removedPath\\` 前缀)
  * - untitled(filePath=null)tab 不受影响
@@ -404,7 +404,7 @@ export function getStateAfterRemovingPath(
 }
 
 /**
- * 批量版 getStateAfterRemovingPath(perf:批量删除后逐条 removePath 是 O(R·T) 比较 + R 次 set)。
+ * 批量版 getStateAfterRemovingPath(perf:逐条删除是 O(R·T) 比较 + R 次 set)。
  * 删除集合建祖先索引(containmentFold/Key 与 isSameOrInsidePath 精确等价),每个 tab 只查 O(depth)
  * 个候选键;最终 tabs / activeTabId 与按任意顺序逐条 getStateAfterRemovingPath 完全一致(active 被
  * 关时都落到「原序后向第一个保留项,否则前向最后一个」)。
@@ -503,7 +503,7 @@ type EditorState = {
   /**
    * 性能 P12/P14:EditorHeader / TitleBar 派生状态的版本号 —— 覆盖每个 tab 的
    * id/filePath/dirty(chrome 条)+ **milkdownUnsafe**(影响 action 区 effectiveMode)
-   * + 增删/改名。仅在这些真变化时递增(open/close/rename/setFilePath / markSaved-dirty /
+   * + 增删/改名。仅在这些真变化时递增(open/close/rename / markSaved-dirty /
    * updateContent·reloadFromDisk 的 **dirty 或 milkdownUnsafe 翻转**)。EditorHeader
    * (chrome + activeAction)与 TitleBar 订阅本 number(O(1) 比较)替代每按键
    * `tabs.find/map + JSON.stringify`(O(tab 数) 分配+序列化)。content 变但这些都不变时
@@ -516,9 +516,7 @@ type EditorState = {
   /** 已存在则切换 active,新加则推入. `requestFocus: false`(持久化会话恢复)不递增 editorFocusPulse. */
   openTab: (tab: EditorTab, opts?: EditorFocusOpts) => void;
   closeTab: (id: string) => void;
-  /** 文件/目录被删除时调用:精确匹配或前缀匹配的 tab 统一关闭. */
-  removePath: (path: string) => void;
-  /** 批量删除后调用:结果与逐条 removePath 一致,但只 set 一次(chromeVersion 至多 bump 一次). */
+  /** 文件/目录被删除后调用:精确匹配或前缀匹配的 clean tab 统一关闭,只 set 一次(chromeVersion 至多 bump 一次). */
   removePaths: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
   renamePath: (oldPath: string, newPath: string) => void;
@@ -542,8 +540,6 @@ type EditorState = {
    * `savedGen`:本次保存记录的代际(见 EditorTab.savedGen);缺省 = 无记录,清除旧代际。
    */
   markSaved: (id: string, savedContent?: string, savedGen?: number) => void;
-  /** 另存为后:把 tab 的 filePath 与 id 同步改为 newPath. */
-  setFilePath: (id: string, newPath: string) => void;
   setMode: (mode: EditorMode) => void;
   /** unsafe markdown 的「仍然切换」确认:允许该 tab 在 Edit 模式下用 Milkdown. */
   acceptUnsafeEdit: (id: string) => void;
@@ -617,18 +613,6 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   // 先按 pre-flush 状态算出受影响(将被关闭 / 换 id)的 tab,只回写它们 —— 回写会把正在编辑的大文档
   // 整篇序列化并提前上抛,不相关的删除 / 改名 / 切 root 不应打断输入。回写只改 content / dirty,
   // 不改 id 与路径匹配;回写后变脏的 tab 按既有规则保留。
-  removePath: (path)=> {
-    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
-      getStateAfterRemovingPath(tabs, active, path),
-    );
-    set((s) =>
-      applyTabStateChange(
-        s,
-        getStateAfterRemovingPath(s.tabs, s.activeTabId, path),
-      ),
-    );
-  },
-
   removePaths: (paths)=> {
     flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
       getStateAfterRemovingPaths(tabs, active, paths),
@@ -758,29 +742,6 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         ? { tabs, chromeVersion: s.chromeVersion + 1 }
         : { tabs };
     }),
-
-  setFilePath: (id, newPath) => {
-    flushEditorWriteBacks([id]); // 换 tab id 前按旧 id 回写(见 renamePath 处说明)
-    set((s) => {
-      const idx = findEditorTabIndexById(s.tabs, id);
-      if (idx < 0) return s;
-      const cur = s.tabs[idx]!;
-      if (cur.id === newPath && cur.filePath === newPath) return s;
-      // perf P4:filePath 变(可能 .md↔.txt 改变 markdown 判定)→ 重算派生缓存。
-      const next: EditorTab = {
-        ...cur,
-        id: newPath,
-        filePath: newPath,
-        milkdownUnsafe: computeMilkdownUnsafe(newPath, cur.content),
-      };
-      const tabs = replaceTabAt(s.tabs, idx, next);
-      return {
-        tabs,
-        activeTabId: s.activeTabId === id ? newPath : s.activeTabId,
-        chromeVersion: s.chromeVersion + 1, // perf P12:filePath 变 → chrome 变
-      };
-    });
-  },
 
   setMode: (mode) => {
     if (get().mode === mode) return;

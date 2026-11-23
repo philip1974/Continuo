@@ -41,11 +41,11 @@ describe('getEffectiveMode for unsafe markdown', () => {
     useEditorStore.getState().updateContent('/work/flow.md', `${unsafe}more\n`);
     expect(getEffectiveMode(activeTab())).toBe('edit');
 
-    // 外部重载 / 另存为不撤销用户对这个文件的选择
+    // 外部重载 / 改名不撤销用户对这个文件的选择
     useEditorStore.getState().markSaved('/work/flow.md');
     useEditorStore.getState().reloadFromDisk('/work/flow.md', `${unsafe}external\n`);
     expect(getEffectiveMode(activeTab())).toBe('edit');
-    useEditorStore.getState().setFilePath('/work/flow.md', '/work/renamed.md');
+    useEditorStore.getState().renamePath('/work/flow.md', '/work/renamed.md');
     expect(getEffectiveMode(activeTab())).toBe('edit');
 
     useEditorStore.getState().openTab(createTab('/work/other.md', unsafe));

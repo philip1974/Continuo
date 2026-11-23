@@ -16,7 +16,7 @@ dirty / content、或会改 tab id 的入口,若不先 `flushEditorWriteBacks()`
 - **关闭 tab**:点 × 时先回写再按最新 dirty 判定 —— 有未上抛输入 → 弹「放弃修改?」,不直接关闭丢弃。
 - **切换 Edit / Source / Preview**:切换前先回写,新模式(Preview 只读视图 / Source)显示最新内容。
 - **外部改盘重载**(`reloadFromDisk`):先回写,tab 因此变脏 → 保留用户输入,不被磁盘内容覆盖。
-- **改名 / 移动**(`renamePath` / `setFilePath`,会换 tab id):先按旧 id 回写,输入随 tab 一起改名;
+- **改名 / 移动**(`renamePath`,会换 tab id):先按旧 id 回写,输入随 tab 一起改名;
   否则卸载回写的闭包仍持旧 id,找不到 tab 而丢弃。
 - **删除打开中的文件**(`removePath(s)`)与 **切工作区 root**(`closeTabsOutsideRoot`):先回写,tab 因此
   变脏 → 按既有规则保留,不随删除 / 切 root 静默关闭。

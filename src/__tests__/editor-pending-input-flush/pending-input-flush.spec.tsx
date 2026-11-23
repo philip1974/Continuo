@@ -167,26 +167,12 @@ describe('editor store:按 dirty / id 决定的动作先回写未上抛输入', 
     expect(tab?.dirty).toBe(true);
   });
 
-  it('setFilePath(换 tab id)→ 输入随 tab 保留', () => {
-    pendingInput('hello typed');
-    useEditorStore.getState().setFilePath(PATH, '/w/c.md');
-    const tab = useEditorStore.getState().tabs[0];
-    expect(tab?.id).toBe('/w/c.md');
-    expect(tab?.content).toBe('hello typed');
-  });
-
   it('删除打开中的文件 removePaths → tab 因未上抛输入变脏而保留', () => {
     pendingInput('hello typed');
     useEditorStore.getState().removePaths([PATH]);
     const tab = useEditorStore.getState().tabs[0];
     expect(tab?.content).toBe('hello typed');
     expect(tab?.dirty).toBe(true);
-  });
-
-  it('删除打开中的文件 removePath → 同上', () => {
-    pendingInput('hello typed');
-    useEditorStore.getState().removePath(PATH);
-    expect(useEditorStore.getState().tabs[0]?.content).toBe('hello typed');
   });
 
   it('切工作区 root closeTabsOutsideRoot → tab 因未上抛输入变脏而保留', () => {
@@ -226,18 +212,17 @@ describe('editor store:按 dirty / id 决定的动作先回写未上抛输入', 
       expect(b?.content).toBe('x2');
     });
 
-    it('改名 / 移动不相关路径(renamePath / setFilePath)→ 不回写', () => {
+    it('改名 / 移动不相关路径(renamePath)→ 不回写', () => {
       pendingInput('hello typed');
       useEditorStore.getState().renamePath(OTHER, '/w/other2.md');
-      useEditorStore.getState().setFilePath('/w/other2.md', '/w/other3.md');
       expect(calls).toEqual([]);
-      expect(useEditorStore.getState().tabs[1]?.id).toBe('/w/other3.md');
+      expect(useEditorStore.getState().tabs[1]?.id).toBe('/w/other2.md');
     });
 
-    it('删除不相关路径(removePath / removePaths)→ 不回写', () => {
+    it('删除不相关路径(removePaths)→ 不回写', () => {
       pendingInput('hello typed');
       useEditorStore.getState().removePaths(['/w/nope.md']);
-      useEditorStore.getState().removePath(OTHER);
+      useEditorStore.getState().removePaths([OTHER]);
       expect(calls).toEqual([]);
       expect(useEditorStore.getState().tabs.map((t) => t.id)).toEqual([PATH]);
     });

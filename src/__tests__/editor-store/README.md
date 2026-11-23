@@ -49,10 +49,6 @@ interface EditorTab {
 - tab.originalContent = tab.content
 - tab.dirty = false
 
-### `setFilePath(id, newPath)`(另存为后)
-- 找到 tab,把 filePath 改为 newPath,id 改为 newPath
-- 同时维持 activeTabId 跟随(若是当前活跃 tab)
-
 ### `setMode(mode)`
 - 全局编辑模式切换:`'edit' | 'source' | 'preview'`
 

@@ -40,7 +40,7 @@
 
 **问题**:Markdown active tab 每次 `updateContent`(每按键)替换 tab 对象 → EditorPanel 重渲调 `getEffectiveMode(activeTab)`,EditorHeader selector 每次 store update 也调 `getEffectiveMode(found)`,co-app SDK gate 再调一次。`getEffectiveMode` → `isMilkdownUnsafe(content)` 跑 **未锚定** wiki-link 正则 `/\[\[[^\]]+\]\]/`(无 wiki-link 时全文扫描)→ 长 Markdown 每按键约 3 次 O(file) 扫描。
 
-**修复**:`milkdownUnsafe` 作为 tab 派生字段(`isMarkdownFilePath(filePath) && isMilkdownUnsafe(content)`),在 **content/filePath 任一变更**的 5 个入口算一次:createTab / updateContent / reloadFromDisk / setFilePath / getStateAfterRenamingPath(markSaved 不改 content 用 `...cur` 保留)。`getEffectiveMode` 改读缓存字段,**缺省回退现场计算**(行为逐字节等价,不破坏旧构造)。非 markdown 文件短路为 false 不扫描(保持原 0 扫描)。每按键全文扫描 3 → 1(updateContent 内一次)。
+**修复**:`milkdownUnsafe` 作为 tab 派生字段(`isMarkdownFilePath(filePath) && isMilkdownUnsafe(content)`),在 **content/filePath 任一变更**的 4 个入口算一次:createTab / updateContent / reloadFromDisk / getStateAfterRenamingPath(markSaved 不改 content 用 `...cur` 保留)。`getEffectiveMode` 改读缓存字段,**缺省回退现场计算**(行为逐字节等价,不破坏旧构造)。非 markdown 文件短路为 false 不扫描(保持原 0 扫描)。每按键全文扫描 3 → 1(updateContent 内一次)。
 
 **契约不变量**(`editor-store.spec.ts`:createTab 派生值正确 / updateContent 重算不 stale;neutralize:去 updateContent 重算 → freshness 测试 FAIL)。
 
@@ -96,9 +96,9 @@
 
 **问题**:`updateContent` 每按键替换 `tabs` 数组 → Zustand 重跑所有订阅 selector。EditorHeader 旧 selector 每次 `s.tabs.map(...id/filePath/dirty...) + JSON.stringify(...)`(O(tab 数) 数组分配 + 序列化)。虽阻止 React 重渲,但每按键的 O(N) 计算照跑;打开几十个 tab + 持续输入时把 header chrome 签名计算拉进编辑热路径。
 
-**修复**:store 维护 `chromeVersion: number`,仅在 chrome 真变化时递增——openTab/setFilePath 必 bump,closeTab/removePath/renamePath/closeTabsOutsideRoot 经 `bumpChromeIfTabsChanged`(tabs 引用变才 bump),updateContent / markSaved 仅 **dirty 翻转** 才 bump;reloadFromDisk / switchTab 不 bump。EditorHeader 改订阅 `chromeVersion`(O(1) number 比较),useMemo 仅 version 变才从 getState() 重建 chrome 数组。持续在已脏 tab 输入(dirty 恒 true)→ 不 bump → selector O(1) 跳过。生产中 tab 仅经 action 增删(无 raw setState),故 version 不会 stale。
+**修复**:store 维护 `chromeVersion: number`,仅在 chrome 真变化时递增——openTab 必 bump,closeTab/removePaths/renamePath/closeTabsOutsideRoot 经 `bumpChromeIfTabsChanged`(tabs 引用变才 bump),updateContent / markSaved 仅 **dirty 翻转** 才 bump;reloadFromDisk / switchTab 不 bump。EditorHeader 改订阅 `chromeVersion`(O(1) number 比较),useMemo 仅 version 变才从 getState() 重建 chrome 数组。持续在已脏 tab 输入(dirty 恒 true)→ 不 bump → selector O(1) 跳过。生产中 tab 仅经 action 增删(无 raw setState),故 version 不会 stale。
 
-**契约不变量**(`editor-store.spec.ts` perf P12:已脏输入不 bump / dirty 翻转 bump / openTab 新增 bump·已存在不 bump / setFilePath·真删 bump·no-op 不 bump / markSaved-dirty bump·reloadFromDisk·switchTab 不 bump;neutralize:updateContent 总是 bump → 测试 FAIL;`editor-header-narrow-subscription.spec.tsx` content-only 不重渲 / 经 openTab 新增重渲)。
+**契约不变量**(`editor-store.spec.ts` perf P12:已脏输入不 bump / dirty 翻转 bump / openTab 新增 bump·已存在不 bump / renamePath·真删 bump·no-op 不 bump / markSaved-dirty bump·reloadFromDisk·switchTab 不 bump;neutralize:updateContent 总是 bump → 测试 FAIL;`editor-header-narrow-subscription.spec.tsx` content-only 不重渲 / 经 openTab 新增重渲)。
 
 ## P13 — TitleBar activeSig selector 复用 chromeVersion(P12 同族残留)
 

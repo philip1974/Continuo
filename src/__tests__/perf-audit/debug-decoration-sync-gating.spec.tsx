@@ -185,8 +185,8 @@ describe('perf E4 — debug 装饰同步按相关切片门控', () => {
     useEditorStore.getState().registerView('/repo/b.ts', other);
     expect(markers(other)).toBe(1);
 
-    // 改路径(setFilePath:.ts → .md)→ markdown tab 清空装饰
-    useEditorStore.getState().setFilePath('/repo/b.ts', '/repo/b.md');
+    // 改路径(renamePath:.ts → .md)→ markdown tab 清空装饰
+    useEditorStore.getState().renamePath('/repo/b.ts', '/repo/b.md');
     expect(markers(other)).toBe(0);
 
     // 关闭 tab(store action,chromeVersion bump)→ 清掉残留装饰

@@ -345,7 +345,7 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
     await plugin.editor.openFile(other);
     await flush();
     expect(refs()).toBe(2);
-    useEditorStore.getState().removePath(T);
+    useEditorStore.getState().removePaths([T]);
     await flush();
     expect(refs()).toBe(1);
     useEditorStore.setState({ tabs: [], activeTabId: null });

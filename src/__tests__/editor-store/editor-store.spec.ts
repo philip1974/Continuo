@@ -1088,7 +1088,7 @@ describe('reloadFromDisk', () => {
   });
 });
 
-describe('removePath(store method)', () => {
+describe('removePaths(store method)', () => {
   it('删除路径 → tabs 与 activeTabId 一并更新', () => {
     useEditorStore.setState({
       tabs: [
@@ -1097,7 +1097,7 @@ describe('removePath(store method)', () => {
       ],
       activeTabId: '/x/a.md',
     });
-    useEditorStore.getState().removePath('/x/a.md');
+    useEditorStore.getState().removePaths(['/x/a.md']);
     const s = useEditorStore.getState();
     expect(s.tabs.map((t) => t.id)).toEqual(['/x/b.md']);
     expect(s.activeTabId).toBe('/x/b.md');
@@ -1313,50 +1313,6 @@ describe('markSaved', () => {
 });
 
 // ────────────────────────────────────────────────────────────
-// setFilePath
-// ────────────────────────────────────────────────────────────
-
-describe('setFilePath', () => {
-  it('untitled tab 另存为 → id 同步改成 path', () => {
-    const draft = createTab(null, 'draft');
-    useEditorStore.setState({ tabs: [draft], activeTabId: draft.id });
-    useEditorStore.getState().setFilePath(draft.id, '/x/saved.md');
-    const s = useEditorStore.getState();
-    expect(s.tabs[0]?.id).toBe('/x/saved.md');
-    expect(s.tabs[0]?.filePath).toBe('/x/saved.md');
-    expect(s.activeTabId).toBe('/x/saved.md');
-  });
-
-  it('非活跃 tab 改 path → activeTabId 不变', () => {
-    useEditorStore.setState({
-      tabs: [makeTab({ id: '/a' }), makeTab({ id: '/b' })],
-      activeTabId: '/a',
-    });
-    useEditorStore.getState().setFilePath('/b', '/c');
-    const s = useEditorStore.getState();
-    expect(s.tabs.map((t) => t.id)).toEqual(['/a', '/c']);
-    expect(s.activeTabId).toBe('/a');
-  });
-
-  it('newPath 等于当前 id/filePath 时保持 tabs 同引用且不通知订阅者', () => {
-    const tabs = [makeTab({ id: '/a.md', filePath: '/a.md' })];
-    useEditorStore.setState({ tabs, activeTabId: '/a.md', chromeVersion: 0 });
-    const listener = vi.fn();
-    const unsubscribe = useEditorStore.subscribe(listener);
-
-    try {
-      useEditorStore.getState().setFilePath('/a.md', '/a.md');
-
-      expect(useEditorStore.getState().tabs).toBe(tabs);
-      expect(useEditorStore.getState().chromeVersion).toBe(0);
-      expect(listener).not.toHaveBeenCalled();
-    } finally {
-      unsubscribe();
-    }
-  });
-});
-
-// ────────────────────────────────────────────────────────────
 // setMode
 // ────────────────────────────────────────────────────────────
 
@@ -1501,13 +1457,13 @@ describe('perf P12 — chromeVersion bump 契约', () => {
     expect(ver()).toBe(1);
   });
 
-  it('setFilePath → bump;closeTab(真删)→ bump;关不存在 → 不 bump', () => {
+  it('renamePath → bump;closeTab(真删)→ bump;关不存在 → 不 bump', () => {
     useEditorStore.setState({
-      tabs: [makeTab({ id: '/a.md' }), makeTab({ id: '/b.md' })],
+      tabs: [makeTab({ id: '/a.md', filePath: '/a.md' }), makeTab({ id: '/b.md' })],
       activeTabId: '/a.md',
       chromeVersion: 0,
     });
-    useEditorStore.getState().setFilePath('/a.md', '/a2.md');
+    useEditorStore.getState().renamePath('/a.md', '/a2.md');
     expect(ver()).toBe(1);
     useEditorStore.getState().closeTab('/missing'); // no-op
     expect(ver()).toBe(1);
