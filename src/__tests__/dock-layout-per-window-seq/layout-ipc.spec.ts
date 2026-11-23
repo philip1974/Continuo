@@ -24,7 +24,7 @@ import {
 import {
   filterWritableSnapshotForWindowSeq,
   registerIpc,
-  sanitizeExplorerReadPayload,
+  stripMainOwnedWindowFields,
 } from '../../../electron/main/ipc';
 import {
   _reset as resetWindowSeq,
@@ -227,14 +227,12 @@ describe('window-scoped layout IPC', () => {
     expect(result).toEqual({ ok: true, data: null });
   });
 
-  // 边界(E261,E215 同入口对偶 / 读端 cap 绕过):explorer:read 返回完整 payload(含 windows[].layout),
-  // layout 的 2MiB 读端 cap 此前只用于 layout:read。污染/旧版 explorer.json 的超大 layout 可经 explorer:read
-  // 绕过 layout 读 cap → renderer hydrate 无谓传输巨大 layout。explorer:read 返回前对每个 window.layout
-  // 复用 sanitizeReadLayout:超限剥离(renderer 走默认布局),合法保留。
-  it('E261: explorer:read 剥离超大 window.layout(>2MiB),保留合法 layout 与其它字段', async () => {
+  // explorer:read 只给 renderer 它拥有的字段:windows[].layout / lastClosedAt 是 main 独占(renderer 不读、
+  // 写回时也由 main 取磁盘值),返回前一律剥离。layout 只经 layout:read(带 2MiB 读端 cap,E215)到达 renderer;
+  // 污染/旧版 explorer.json 的超大 layout 因此也到不了 renderer(原 E261)。
+  it('explorer:read 剥离每个窗口的 main 独占字段(layout / lastClosedAt),保留其它字段', async () => {
     const payload = defaultExplorerV3();
-    const huge = { version: 1 as const, blob: 'x'.repeat(2 * 1024 * 1024 + 16) }; // >2MiB <16MiB
-    const okLayout = { version: 1 as const, panel: 'B' };
+    const huge = { version: 1 as const, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
     payload.windows = [
       {
         windowSeq: 7,
@@ -246,80 +244,33 @@ describe('window-scoped layout IPC', () => {
         windowSeq: 8,
         workspace: { root: '/b' },
         explorer: { activePath: null, expandedPaths: [], sort },
-        layout: okLayout,
-      },
-    ];
-    await writeExplorer(payload);
-
-    const result = (await invokeIpc('explorer:read', undefined)) as {
-      ok: true;
-      data: ExplorerPayloadV3;
-    };
-    expect(result.ok).toBe(true);
-    const wins = result.data.windows;
-    // 超大 layout 被剥离(走默认布局),但窗口其它字段保留
-    const w7 = wins.find((w) => w.windowSeq === 7)!;
-    expect(w7.layout).toBeUndefined();
-    expect(w7.workspace.root).toBe('/a');
-    // 合法 layout 原样保留
-    const w8 = wins.find((w) => w.windowSeq === 8)!;
-    expect(w8.layout).toEqual(okLayout);
-  });
-
-  it('E261: explorer:read 无 layout 的窗口原样返回(回归)', async () => {
-    const payload = defaultExplorerV3();
-    payload.windows = [
-      {
-        windowSeq: 7,
-        workspace: { root: '/a' },
-        explorer: { activePath: null, expandedPaths: [], sort },
-      },
-    ];
-    await writeExplorer(payload);
-
-    const result = (await invokeIpc('explorer:read', undefined)) as {
-      ok: true;
-      data: ExplorerPayloadV3;
-    };
-    expect(result.ok).toBe(true);
-    expect(result.data.windows[0]!.workspace.root).toBe('/a');
-    expect(result.data.windows[0]!.layout).toBeUndefined();
-  });
-
-  it('E261: explorer:read layout 清洗只在实际剥离时复制,不对合法 windows 调 map', () => {
-    const payload = defaultExplorerV3();
-    payload.windows = [
-      {
-        windowSeq: 7,
-        workspace: { root: '/a' },
-        explorer: { activePath: null, expandedPaths: [], sort },
-      },
-      {
-        windowSeq: 8,
-        workspace: { root: '/b' },
-        explorer: { activePath: null, expandedPaths: [], sort },
         layout: { version: 1, panel: 'B' },
+        lastClosedAt: 123,
       },
     ];
-    const mapSpy = vi.spyOn(payload.windows, 'map');
+    await writeExplorer(payload);
 
-    try {
-      expect(sanitizeExplorerReadPayload(payload)).toBe(payload);
-      expect(mapSpy).not.toHaveBeenCalled();
-    } finally {
-      mapSpy.mockRestore();
-    }
-
-    const huge = { version: 1 as const, blob: 'x'.repeat(2 * 1024 * 1024 + 16) };
-    const polluted: ExplorerPayloadV3 = {
-      ...payload,
-      windows: [{ ...payload.windows[0]!, layout: huge }, payload.windows[1]!],
+    const result = (await invokeIpc('explorer:read', undefined)) as {
+      ok: true;
+      data: ExplorerPayloadV3;
     };
-    const cleaned = sanitizeExplorerReadPayload(polluted);
-    expect(cleaned).not.toBe(polluted);
-    expect(sanitizeExplorerReadPayload.toString()).not.toContain('windows.push(');
-    expect(cleaned.windows[0]!.layout).toBeUndefined();
-    expect(cleaned.windows[1]!.layout).toEqual({ version: 1, panel: 'B' });
+    expect(result.ok).toBe(true);
+    expect(result.data.windows).toEqual([
+      { windowSeq: 7, workspace: { root: '/a' }, explorer: { activePath: null, expandedPaths: [], sort } },
+      { windowSeq: 8, workspace: { root: '/b' }, explorer: { activePath: null, expandedPaths: [], sort } },
+    ]);
+  });
+
+  it('explorer:read 无 main 独占字段的窗口原样返回(不复制)', () => {
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+      },
+    ];
+    expect(stripMainOwnedWindowFields(payload)).toBe(payload);
   });
 
   it('T9b: layout:read without BrowserWindow returns NO_WINDOW', async () => {

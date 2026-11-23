@@ -13,7 +13,7 @@ import {
   type ExplorerPayloadV3,
   type ExplorerWritablePayload,
 } from './persistence';
-import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
+import { EXPLORER_FILE_NAME, MAIN_OWNED_WINDOW_FIELDS } from '../shared/explorer-persistence-schema';
 import { safeHandle, safeHandleWithCtx } from './safe-handle';
 import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
@@ -73,34 +73,24 @@ export function filterWritableSnapshotForWindowSeq(
   return ownWindows === null ? writable : { ...writable, windows: ownWindows };
 }
 
-export function sanitizeExplorerReadPayload(
-  payload: ExplorerPayloadV3,
-): ExplorerPayloadV3 {
-  let windows: ExplorerPayloadV3['windows'] | null = null;
-  let windowCount = 0;
-
-  for (let i = 0; i < payload.windows.length; i++) {
-    const w = payload.windows[i]!;
-    if (w.layout == null || sanitizeReadLayout(w.layout) !== null) {
-      if (windows !== null) windows[windowCount++] = w;
-      continue;
-    }
-
-    if (windows === null) {
-      windows = new Array<ExplorerPayloadV3['windows'][number]>(
-        payload.windows.length,
-      );
-      for (let j = 0; j < i; j++) {
-        windows[windowCount++] = payload.windows[j]!;
-      }
-    }
-    const rest = { ...w };
-    delete rest.layout; // 超大/非 JSON-safe layout → 剥离
-    windows[windowCount++] = rest;
-  }
-
-  if (windows !== null) windows.length = windowCount;
-  return windows === null ? payload : { ...payload, windows };
+/**
+ * explorer:read 返回前剥离窗口段里 main 独占的字段(MAIN_OWNED_WINDOW_FIELDS:layout / lastClosedAt)。
+ * renderer 不读它们(layout 只经 layout:read 到达,带读端 cap);不剥离则每次冷启动把所有窗口的 layout
+ * structured-clone 给 renderer 再过一遍 zod。没有窗口携带这些字段时原样返回。
+ */
+export function stripMainOwnedWindowFields(payload: ExplorerPayloadV3): ExplorerPayloadV3 {
+  const owns = (w: ExplorerPayloadV3['windows'][number]): boolean =>
+    MAIN_OWNED_WINDOW_FIELDS.some((field) => w[field] !== undefined);
+  if (!payload.windows.some(owns)) return payload;
+  return {
+    ...payload,
+    windows: payload.windows.map((w) => {
+      if (!owns(w)) return w;
+      const rest = { ...w };
+      for (const field of MAIN_OWNED_WINDOW_FIELDS) delete rest[field];
+      return rest;
+    }),
+  };
 }
 
 // 边界(E89/E215):单窗口 dockview layout 序列化字节上限 + 读端守卫,收口到 lib/layout-read-guard
@@ -207,12 +197,7 @@ export function registerIpc(deps: WindowIpcDeps): void {
     async () => {
       const payload = await loadExplorer(explorerFile);
       if (!payload) return payload; // null(首次启动 / 损坏保留)
-      // 边界(E261,E215 同入口对偶 / 读端 cap 绕过):explorer:read 返回完整 payload(含 windows[].layout)。
-      // layout 的 2MiB 读端 cap(sanitizeReadLayout,E215)此前只用于 layout:read —— 污染/旧版 explorer.json
-      // 可携带接近 16MiB 文件上限的超大 layout 经 LayoutSchema.passthrough() 绕过 layout 读 cap,使 renderer
-      // 启动 hydrate 无谓 structured-clone/传输巨大 layout 卡顿/内存峰值。返回前对每个 window.layout 复用
-      // 同一读端守卫:超限/非 JSON-safe → 剥离该 layout(renderer 走默认布局),合法则原样保留。
-      return sanitizeExplorerReadPayload(payload);
+      return stripMainOwnedWindowFields(payload);
     },
   );
   safeHandleWithCtx(
