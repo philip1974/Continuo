@@ -1,6 +1,5 @@
 import * as Menu from '@radix-ui/react-context-menu';
 import { useContext, useLayoutEffect, useRef, useState } from 'react';
-import { dirname } from './path-utils';
 import { ExplorerVisibleContext } from './visibility';
 import { createMenuFocusRestore, type MenuFocusRestore } from './menu-close-focus';
 import type { FileEntry } from '@/lib/fs/types';
@@ -193,7 +192,6 @@ function ContextMenuContent({
   useLayoutEffect(() => {
     if (!visible) onHidden();
   }, [visible, onHidden]);
-  const isFile = target !== null && !target.isDirectory;
   const isFolder = target !== null && target.isDirectory;
   const isBlank = target === null;
 
@@ -212,18 +210,8 @@ function ContextMenuContent({
   const actionTargets = getContextActionTargets(target, selectedPaths);
   const actionTargetCount = actionTargets.length;
 
-  // 创建上下文目录:文件夹 right-click → 它本身;文件 → 它的父;空白 → root
-  const createParent = (): string => {
-    if (isFolder) return target!.path;
-    if (isFile) {
-      // 跨平台(复查 P1):复用共享 dirname —— 此前手写 slice 对文件系统根下直接子
-      // 文件算错父目录(`/a.md`→'',`C:\a.md`→`C:` drive-relative),根 workspace 右键
-      // 「新建」会传错 parentDir。dirname 正确返 `/` / `C:\`;裸文件名(无分隔符,绝对路径
-      // 下不出现)→ rootPath 兜底。
-      return dirname(target!.path) || rootPath;
-    }
-    return rootPath;
-  };
+  // 创建上下文目录:文件夹 right-click → 它本身;空白 → root(文件行不显示「新建 / 粘贴」)。
+  const createParent = (): string => (isFolder ? target!.path : rootPath);
 
   return (
     <Menu.Portal>

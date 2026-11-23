@@ -30,7 +30,6 @@ export interface NotifyApi {
     level?: NotificationLevel,
     opts?: NotifyOpts,
   ) => void;
-  readonly dismiss: (id: string) => void;
 }
 
 let _api: NotifyApi | null = null;

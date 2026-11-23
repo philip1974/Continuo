@@ -96,20 +96,12 @@ function updateNotificationCreatedAt(
 
 interface NotificationsContextValue {
   readonly notifications: readonly Notification[];
-  readonly notify: (
-    message: string,
-    level?: NotificationLevel,
-    opts?: NotifyOpts,
-  ) => void;
   readonly dismiss: (id: string) => void;
 }
 
 const NotificationsContext =
   createContext<NotificationsContextValue>({
     notifications: EMPTY_NOTIFICATIONS,
-    notify: () => {
-      /* noop pre-mount */
-    },
     dismiss: () => {
       /* noop */
     },
@@ -257,13 +249,13 @@ export function NotificationsProvider({
   // epoch race 防护:mount 时注册,unmount 时仅当自身 epoch === 当前 currentEpoch 才清空
   useEffect(() => {
     const myEpoch = ++moduleEpoch;
-    const api: NotifyApi = { notify, dismiss };
+    const api: NotifyApi = { notify };
     __registerHandle(api, myEpoch);
     return () => {
       // 仅在自身仍是当前 epoch 时清空(防 StrictMode 双 mount / HMR 旧实例 unmount 清新单例)
       __registerHandle(null, myEpoch);
     };
-  }, [notify, dismiss]);
+  }, [notify]);
 
   // unmount 清所有 timer
   useEffect(() => {
@@ -275,8 +267,8 @@ export function NotificationsProvider({
   }, []);
 
   const value = useMemo<NotificationsContextValue>(
-    () => ({ notifications, notify, dismiss }),
-    [notifications, notify, dismiss],
+    () => ({ notifications, dismiss }),
+    [notifications, dismiss],
   );
 
   return (
