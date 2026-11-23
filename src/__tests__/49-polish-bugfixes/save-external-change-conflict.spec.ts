@@ -138,3 +138,44 @@ describe('saveFile — 外部修改冲突检测', () => {
     expect(tab()?.originalContent).toBe('mine');
   });
 });
+
+// 保存前「磁盘是否仍是我的基线」与外部同步共用同一机制:上次保存记下的 { mtimeMs, size, ino }(saved-disk-stat)。
+// stat 仍与记录一致 → 磁盘就是上次写入的内容(= originalContent),不必整文件回读;stat 变了 / 无记录 → 照旧
+// 整读比对(冲突检测不放松)。
+describe('saveFile — 自己上次保存的 stat 基线快路径', () => {
+  const stat = { mtimeMs: 1, size: 4, ino: 7 };
+  async function saveOnceWithStat(statFn: ReturnType<typeof vi.fn>, readFile: ReturnType<typeof vi.fn>) {
+    const writeFile = vi.fn(async () => ({ ok: true as const, data: stat }));
+    const deps = { fs: { readFile, writeFile, stat: statFn } } as unknown as EditorFileDeps;
+    // 第一次保存:无记录 → 整读比对后写盘,记下 stat 基线
+    await saveFile('/x/a.md', deps);
+    useEditorStore.getState().updateContent('/x/a.md', 'mine-2');
+    readFile.mockClear();
+    return { deps, writeFile };
+  }
+
+  it('stat 与上次保存记录一致 → 不整读,直接写盘', async () => {
+    const readFile = vi.fn(async () => okRead('orig'));
+    const statFn = vi.fn(async () => ({ ok: true as const, data: stat }));
+    const { deps, writeFile } = await saveOnceWithStat(statFn, readFile);
+
+    const r = await saveFile('/x/a.md', deps);
+    expect(r.ok).toBe(true);
+    expect(readFile).not.toHaveBeenCalled();
+    expect(writeFile).toHaveBeenLastCalledWith('/x/a.md', 'mine-2');
+  });
+
+  it('stat 变了(外部写过)→ 照旧整读;内容 ≠ 基线 → EDITOR_DISK_CHANGED', async () => {
+    const readFile = vi.fn(async () => okRead('orig'));
+    const statFn = vi.fn(async () => ({ ok: true as const, data: stat }));
+    const { deps, writeFile } = await saveOnceWithStat(statFn, readFile);
+    statFn.mockResolvedValue({ ok: true, data: { ...stat, mtimeMs: 2 } });
+    readFile.mockResolvedValue(okRead('theirs'));
+    writeFile.mockClear();
+
+    const r = await saveFile('/x/a.md', deps);
+    expect(r).toMatchObject({ ok: false, code: 'EDITOR_DISK_CHANGED' });
+    expect(readFile).toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+});

@@ -12,6 +12,7 @@
 // chrome 变化时清掉)。
 
 import type { FsFileStat } from '../../../electron/shared/fs-channels';
+import type { IpcResult } from '@/lib/fs/types';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 
 export interface SavedDiskStat extends FsFileStat {
@@ -67,6 +68,28 @@ export function getSavedDiskStat(path: string): SavedDiskStat | undefined {
 /** 磁盘当前 stat 是否就是该记录写入时的 stat. */
 export function isSameDiskStat(a: FsFileStat, b: FsFileStat): boolean {
   return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ino === b.ino;
+}
+
+/**
+ * 磁盘上的 path 是否仍是该 tab 最近一次保存写入的内容(tab.savedGen 对上记录、当前 stat 与记录一致)。
+ * 无适用记录 → null(调用方照旧整读),不发 stat;stat 失败 / 抛错 → false。外部同步的保存回声识别与
+ * 保存前冲突检测共用这一判断。
+ */
+export function ownSaveStatCheck(
+  path: string,
+  savedGen: number | undefined,
+  stat: (path: string) => Promise<IpcResult<FsFileStat>>,
+): Promise<boolean> | null {
+  const rec = records.get(path);
+  if (!rec || savedGen !== rec.gen) return null;
+  return (async () => {
+    try {
+      const st = await stat(path);
+      return st.ok && isSameDiskStat(st.data, rec);
+    } catch {
+      return false;
+    }
+  })();
 }
 
 /** 仅供测试:清空记录. */

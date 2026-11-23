@@ -25,7 +25,7 @@ import {
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
 import { isMarkdownPath } from './editor-path-utils';
-import { recordSavedDiskStat } from './saved-disk-stat';
+import { ownSaveStatCheck, recordSavedDiskStat } from './saved-disk-stat';
 import {
   loadCodeEditorModule,
   loadEditorPanelModule,
@@ -55,7 +55,8 @@ export function warmEditorEngineFor(path: string): void {
 const saveChains = new Map<string, Promise<unknown>>();
 
 export interface EditorFileDeps {
-  fs: Pick<FsApi, 'readFile' | 'writeFile'>;
+  /** stat 可选:有则保存前先用上次保存的 stat 基线做快路径(无则一律整读比对)。 */
+  fs: Pick<FsApi, 'readFile' | 'writeFile'> & Partial<Pick<FsApi, 'stat'>>;
 }
 
 export type FileOpResult = IpcResult<void>;
@@ -176,7 +177,12 @@ async function checkDiskBeforeSave(
   fs: EditorFileDeps['fs'],
   filePath: string,
   originalContent: string,
+  savedGen: number | undefined,
 ): Promise<FileOpResult | null> {
+  // 快路径:磁盘 stat 仍与本 tab 上次保存时记下的一致 → 磁盘就是那次写入的内容(= originalContent),
+  // 不必整文件回读(与外部同步的保存回声识别同一判断,见 saved-disk-stat)。不一致 / 无记录 → 整读比对。
+  const own = fs.stat ? ownSaveStatCheck(filePath, savedGen, (p) => fs.stat!(p)) : null;
+  if (own && (await own)) return null;
   let r: IpcResult<string>;
   try {
     r = await fs.readFile(filePath);
@@ -203,7 +209,7 @@ async function saveFileNow(
   const store = useEditorStore;
   let tab = findEditorFileTabById(store.getState().tabs, tabId);
   if (opts?.force !== true && tab?.filePath) {
-    const blocked = await checkDiskBeforeSave(fs, tab.filePath, tab.originalContent);
+    const blocked = await checkDiskBeforeSave(fs, tab.filePath, tab.originalContent, tab.savedGen);
     if (blocked) return blocked;
   }
   // 读盘 await 期间 tab 可能被关闭/继续编辑 → 重取,写盘快照用最新内容。

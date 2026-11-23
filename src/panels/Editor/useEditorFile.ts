@@ -29,6 +29,7 @@ export function useEditorFile(): EditorFileApi {
       fs: {
         readFile: (p) => coApi.fs.readFile(p),
         writeFile: (p, c) => coApi.fs.writeFile(p, c),
+        stat: (p) => coApi.fs.stat(p),
       },
     };
     return {

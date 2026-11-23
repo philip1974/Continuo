@@ -19,7 +19,7 @@ import { basename, isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { findEditorFileTabById } from './editor-tab-lookup';
-import { getSavedDiskStat, isSameDiskStat } from './saved-disk-stat';
+import { ownSaveStatCheck } from './saved-disk-stat';
 
 /** watch-restored 子树重读的最大同时在途 readFile 数(与 hydrateEditorTabs RESTORE_READ_CONCURRENCY 同口径). */
 const RESTORED_RELOAD_CONCURRENCY = 32;
@@ -32,16 +32,7 @@ const RESTORED_RELOAD_CONCURRENCY = 32;
  * 无适用记录 → 返回 null,调用方照旧**同步**发起 readFile(时序与改动前一致)。
  */
 function ownSaveEchoCheck(path: string, tab: EditorTab | null): Promise<boolean> | null {
-  const rec = getSavedDiskStat(path);
-  if (!rec || !tab || tab.savedGen !== rec.gen) return null;
-  return (async () => {
-    try {
-      const st = await coApi.fs.stat(path);
-      return st.ok && isSameDiskStat(st.data, rec);
-    } catch {
-      return false;
-    }
-  })();
+  return tab ? ownSaveStatCheck(path, tab.savedGen, (p) => coApi.fs.stat(p)) : null;
 }
 
 /** dir-changed 文件名匹配键:大小写 + Unicode NFC 折叠(宁多读不漏读,见下方订阅处注释). */
