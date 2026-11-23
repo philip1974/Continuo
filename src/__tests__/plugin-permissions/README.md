@@ -43,7 +43,7 @@ interface PermissionDecision {
 }
 ```
 
-InMemoryPermissionStore 默认实现,Map<pluginId, decisions>。
+InMemoryPermissionStore(测试替身,`src/plugins/testing/in-memory-stores.ts`),Map<pluginId, decisions>。
 
 ### clearDenied 重试机制(v4.7)
 

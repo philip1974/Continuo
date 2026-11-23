@@ -411,9 +411,7 @@ export class PluginManager {
 
     // FAILED 重试:清掉旧的 deny 决策,让 ensureAuthorized 重新 prompt 用户
     // (允许用户改主意 — 上次拒绝 ≠ 永远拒绝)
-    if (entry.status === 'failed' && this.host.permissionStore?.clearDenied) {
-      await this.host.permissionStore.clearDenied(id);
-    }
+    if (entry.status === 'failed') await this.host.permissionStore?.clearDenied(id);
 
     await this.activateEntry(entry);
     // activateEntry 是 mutating 方法,TS 不知道 status 已变。

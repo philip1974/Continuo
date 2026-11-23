@@ -8,7 +8,7 @@ Plugin 父类通过 `loadData<T>()` / `saveData(o)` 异步读写。**存储后�
 
 | 文件 | 职责 |
 |---|---|
-| `src/plugins/PluginDataStore.ts` | DataStore 接口 + InMemoryDataStore 默认实现 |
+| `src/plugins/PluginDataStore.ts` | DataStore 接口 + IpcPluginDataStore(测试替身 InMemoryDataStore 在 `src/plugins/testing/in-memory-stores.ts`) |
 | `src/plugins/Plugin.ts`(扩展) | `loadData<T>()` / `saveData(o)` |
 
 ## 关键行为
