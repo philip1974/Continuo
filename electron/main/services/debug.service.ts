@@ -51,11 +51,11 @@ export interface DebugDapClientLike {
       | null,
   ): void;
   on(eventName: string, callback: (event: DapEventMessage) => void): () => void;
-  waitForEvent(eventName: string, timeoutMs?: number): Promise<DapEventMessage>;
+  waitForEvent(eventName: string, timeoutMs: number): Promise<DapEventMessage>;
   sendRequest(
     command: string,
-    args?: DapJson,
-    timeoutMs?: number,
+    args: DapJson,
+    timeoutMs: number,
   ): Promise<DapResponseMessage>;
   sendRequestNoWait(command: string, args: DapJson): number;
   dispose(): Promise<void>;
@@ -105,10 +105,7 @@ const DEFAULT_WORKSPACE_GUARD: DebugWorkspaceGuard = {
 export interface DebugServiceOptions {
   readonly adapterPath?: string;
   readonly requestTimeoutMs?: number;
-  readonly createDapClient?: (options: {
-    adapterPath: string;
-    requestTimeoutMs: number;
-  }) => DebugDapClientLike;
+  readonly createDapClient?: (options: { adapterPath: string }) => DebugDapClientLike;
   readonly processOps?: DebugProcessOps;
   readonly workspace?: DebugWorkspaceGuard;
   /** 被调试程序的 node 绝对路径(注入式以便单测;默认按 main 进程自身 PATH 解析并缓存)。 */
@@ -233,7 +230,8 @@ interface RuntimeDebugSession {
   readonly parentClient: DebugDapClientLike;
   activeClient: DebugDapClientLike;
   readonly childClients: DebugDapClientLike[];
-  readonly launch: LaunchSessionInput;
+  /** program / cwd 是 workspace 闸校验后的真实路径(cwd 恒有值)。 */
+  readonly launch: LaunchSessionInput & { readonly cwd: string };
   /** 被调试程序的 node 绝对路径(launch 时由 main 解析;父 / child 的 launch 都固定用它)。 */
   readonly runtimeExecutable: string;
   readonly waiters: Set<StopWaiter>;
@@ -802,10 +800,7 @@ const DEFAULT_PROCESS_OPS: DebugProcessOps = {
 export class DebugService {
   private adapterPath: string | null;
   private readonly requestTimeoutMs: number;
-  private readonly createDapClient: (options: {
-    adapterPath: string;
-    requestTimeoutMs: number;
-  }) => DebugDapClientLike;
+  private readonly createDapClient: (options: { adapterPath: string }) => DebugDapClientLike;
   private readonly processOps: DebugProcessOps;
   private readonly workspace: DebugWorkspaceGuard;
   private readonly resolveNodeRuntime: () => Promise<string>;
@@ -829,11 +824,7 @@ export class DebugService {
     this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
     this.createDapClient =
       options.createDapClient ??
-      ((clientOptions) =>
-        new DapClient({
-          adapterPath: clientOptions.adapterPath,
-          requestTimeoutMs: clientOptions.requestTimeoutMs,
-        }));
+      ((clientOptions) => new DapClient({ adapterPath: clientOptions.adapterPath }));
     this.processOps = options.processOps ?? DEFAULT_PROCESS_OPS;
     this.workspace = options.workspace ?? DEFAULT_WORKSPACE_GUARD;
     this.resolveNodeRuntime = options.resolveNodeRuntime ?? defaultResolveNodeRuntime;
@@ -941,7 +932,7 @@ export class DebugService {
     // 被调试程序用哪个 node 由 main 解析(不受 env 影响);解析不到就拒绝,不 spawn adapter。
     const runtimeExecutable = await this.resolveNodeRuntime();
     // launch 固定用校验时的真实路径(见 assertLaunchInsideWorkspace);会话记录仍展示调用方拼写。
-    const normalizedInput: LaunchSessionInput = { ...input, program: verified.program, cwd: verified.cwd };
+    const normalizedInput = { ...input, program: verified.program, cwd: verified.cwd };
     // 名额被自然结束(terminated)的会话占满时回收最旧的:它们的 adapter 不会自己退出,否则一直占着名额。
     for (
       let victim = debugSessions.oldestTerminatedForCapacity(ctx.ownerWindowId);
@@ -959,7 +950,6 @@ export class DebugService {
     const id = makeSessionId();
     const parentClient = this.createDapClient({
       adapterPath: this.resolveAdapterPathLazy(),
-      requestTimeoutMs: this.requestTimeoutMs,
     });
 
     try {
@@ -1742,7 +1732,7 @@ export class DebugService {
       await this.assertLaunchInsideWorkspace(
         session.ownerWindowId,
         runtime.launch.program,
-        runtime.launch.cwd ?? process.cwd(),
+        runtime.launch.cwd,
       );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -1754,7 +1744,7 @@ export class DebugService {
 
   private launchArguments(runtime: RuntimeDebugSession): DapJson {
     const launch = runtime.launch;
-    const cwd = launch.cwd ?? process.cwd();
+    const cwd = launch.cwd;
     return {
       type: 'pwa-node',
       request: 'launch',

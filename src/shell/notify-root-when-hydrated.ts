@@ -20,7 +20,7 @@ export async function notifyRootWhenHydrated(
   await deps.waitHydrated();
   if (deps.isCancelled()) return;
   const root = deps.getRoot();
-  const res = await deps.notifyRoot(root ?? null);
+  const res = await deps.notifyRoot(root);
   if (!res.ok) {
     console.warn('[App] notifyRoot rejected', res.code, root);
   }

@@ -121,7 +121,7 @@ export function useAutoSave(
       setAutoSaveFailed(scheduler, true);
       return;
     }
-    if (active.id === null || !active.filePath) return;
+    if (!active.filePath) return;
     // 已不脏(Cmd+S 保存成功 / 撤销回原样)→ 取消防抖窗口里已排的保存,到点不再空写一遍。
     if (!active.dirty) {
       scheduler.cancel();

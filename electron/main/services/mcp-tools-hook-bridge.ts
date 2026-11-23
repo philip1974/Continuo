@@ -867,9 +867,9 @@ type InstallStopHookResult = {
 // 有意行为:用户把 `.claude` / `.codex` 软链到 dotfiles 仓库的场景也会被拒(无法区分善意与恶意链接)。
 async function guardConfigPath(
   cwd: string,
-  configDir: string,
   configPath: string,
 ): Promise<'ok' | 'unsafe-config-path' | 'read-error'> {
+  const configDir = path.dirname(configPath);
   for (const [p, wantDir] of [[configDir, true], [configPath, false]] as const) {
     let st;
     try {
@@ -954,7 +954,7 @@ async function recheckConfigPathBeforeWrite(
   configPath: string,
   identity: ConfigIdentity,
 ): Promise<'ok' | 'unsafe-config-path' | 'read-error'> {
-  const guard = await guardConfigPath(cwd, path.dirname(configPath), configPath);
+  const guard = await guardConfigPath(cwd, configPath);
   if (guard !== 'ok') return guard;
   try {
     const st = await lstat(configPath, { bigint: true });
@@ -1136,7 +1136,7 @@ async function writeConfigGuarded(
   configPath: string,
   edit: (original: ConfigOriginal) => ConfigEdit,
 ): Promise<InstallStopHookResult> {
-  const guard = await guardConfigPath(cwd, path.dirname(configPath), configPath);
+  const guard = await guardConfigPath(cwd, configPath);
   if (guard === 'unsafe-config-path') return refuseUnsafeConfigPath(configPath);
   if (guard !== 'ok') return { installed: false, reason: guard };
 
@@ -1386,7 +1386,7 @@ export function createAwaitStopHookTool(
           sessionId: meta.id,
           runner,
           cwd: meta.cwd,
-          timeoutMs: (input.timeout_sec ?? 60) * 1000,
+          timeoutMs: input.timeout_sec * 1000,
         },
         ctx.signal,
       );

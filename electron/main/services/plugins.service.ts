@@ -758,10 +758,10 @@ function pathScopesEqual(
 }
 
 function permissionDecisionsEqual(
-  a: readonly IpcPermissionDecision[] | undefined,
+  a: readonly IpcPermissionDecision[],
   b: readonly IpcPermissionDecision[],
 ): boolean {
-  if (a === undefined || a.length !== b.length) return false;
+  if (a.length !== b.length) return false;
   for (let i = 0; i < b.length; i += 1) {
     const left = a[i]!;
     const right = b[i]!;
@@ -1425,7 +1425,6 @@ export async function installFromGit(
         ? path.join(baseDir, `.${pluginId}.old-${suffix}`)
         : null;
 
-      await rm(staging, { recursive: true, force: true }).catch(() => {});
       try {
         // 性能:clone 与 staging 同卷时直接 rename 整树(O(1));fs.cp 是逐文件串行复制(实测 3000 文件
         // ~850ms,且全程持有该 id 的 mutation 锁、占 libuv 线程池)。rename 失败(跨卷 EXDEV、Windows
@@ -1690,7 +1689,7 @@ export interface PluginsWatcher {
    * 启动周期 tick;返 dispose 停 timer。immediate(默认 true)= 立即首扫;false = 首扫等第一个周期
    *(冷启动不与启动 IO 争 libuv 线程池),期间由 ensureBaseline 按需建立基线。
    */
-  start(intervalMs?: number, opts?: { immediate?: boolean }): { dispose(): void };
+  start(intervalMs: number, opts?: { immediate?: boolean }): { dispose(): void };
   /**
    * 确保基线(首扫)已建立:已建立 → 立即返回;首扫在途 → 等它结束;尚未开始 → 立即触发一次并等待。
    * 扫描失败也返回(best-effort,不阻塞调用方)。LIST_DIRS 列举前调用:列举之后的修改必被后续 tick 发现。
@@ -1853,7 +1852,6 @@ export function createPluginsWatcher(
         // (manifest 为 JSON null 时 m.id 抛 TypeError → 视为非法 manifest 跳过,同旧版。)
         if (
           typeof m.id === 'string' &&
-          m.id.length > 0 &&
           isSafePluginId(m.id)
         ) {
           pluginId = m.id;
@@ -1888,7 +1886,6 @@ export function createPluginsWatcher(
   };
 
   const runScan = async (): Promise<void> => {
-    if (cancelled) return;
     // 边界(E82):有界枚举(缺目录 → [] → 循环 no-op,等价旧版早返)。截断告警只在进入截断状态时打一次
     //(每 2s 轮询,持续截断时不刷屏)。
     let truncated = false;
@@ -2005,7 +2002,7 @@ export function createPluginsWatcher(
       if (!running) void tick().catch(() => {});
       await firstScanDone;
     },
-    start: (intervalMs = 2000, { immediate = true } = {}) => {
+    start: (intervalMs, { immediate = true } = {}) => {
       cancelled = false;
       if (immediate) void tick();
       const timer = setInterval(() => void tick(), intervalMs);

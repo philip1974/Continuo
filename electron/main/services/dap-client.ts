@@ -62,7 +62,6 @@ export interface DapClientOptions {
   readonly adapterPath: string;
   readonly nodePath?: string;
   readonly readyTimeoutMs?: number;
-  readonly requestTimeoutMs?: number;
   readonly connectIntervalMs?: number;
   readonly socketPath?: string;
   readonly startDebuggingHandler?: StartDebuggingHandler | null;
@@ -353,7 +352,6 @@ export class DapClient {
   readonly adapterPath: string;
   readonly nodePath: string;
   readonly readyTimeoutMs: number;
-  readonly requestTimeoutMs: number;
   readonly connectIntervalMs: number;
 
   private server: ChildProcessByStdio<null, Readable, Readable> | null = null;
@@ -385,7 +383,6 @@ export class DapClient {
     this.adapterPath = options.adapterPath;
     this.nodePath = options.nodePath ?? process.execPath;
     this.readyTimeoutMs = options.readyTimeoutMs ?? 15_000;
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
     this.connectIntervalMs = options.connectIntervalMs ?? 100;
     this.autoSocketPath = options.socketPath === undefined && process.platform !== 'win32';
     // Windows 未显式给 socketPath → 随机名命名管道;POSIX 未给 → spawnServer 时在私有目录内新建(此前为 null)。
@@ -487,7 +484,6 @@ export class DapClient {
       adapterPath: this.adapterPath,
       nodePath: this.nodePath,
       readyTimeoutMs: this.readyTimeoutMs,
-      requestTimeoutMs: this.requestTimeoutMs,
       connectIntervalMs: this.connectIntervalMs,
       ...(this.socketPath === null ? {} : { socketPath: this.socketPath }),
       traceId: `${this.traceId}>child${this.childSessionSeq++}`,
@@ -590,7 +586,7 @@ export class DapClient {
 
   waitForEvent(
     eventName: string,
-    timeoutMs = this.requestTimeoutMs,
+    timeoutMs: number,
   ): Promise<DapEventMessage> {
     let off: () => void = () => {};
     return withTimeout(
@@ -607,8 +603,8 @@ export class DapClient {
 
   sendRequest(
     command: string,
-    args: DapJson = {},
-    timeoutMs = this.requestTimeoutMs,
+    args: DapJson,
+    timeoutMs: number,
   ): Promise<DapResponseMessage> {
     const request = this.createRequest(command, args);
     // 先发后登记:socket 已断时 sendMessage 同步抛。若先建好带超时的 Promise 再抛,那个 Promise 没人接管,

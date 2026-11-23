@@ -10,7 +10,7 @@
 //   - a11y(A146,A141 同族):取消(ok + 无 data)是正常 no-op;但 !r.ok / reject 须 notify,否则
 //     控件退出 busy 却无 toast/live region 反馈,用户不知为何没切。
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
@@ -33,15 +33,12 @@ export interface SelectWorkspaceFolder {
 export function useSelectWorkspaceFolder(): SelectWorkspaceFolder {
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const [busy, setBusy] = useState(false);
-  // 与 busy state 同步的即时值:selectFolder 引用稳定,又能在同一渲染帧内读到最新 busy。
-  const busyRef = useRef(false);
 
   const selectFolder = useCallback(
     async (onStart?: () => void): Promise<void> => {
-      if (busyRef.current) return;
+      // 全局单飞锁同时挡住本实例的重入(持锁期间再次调用同样拿不到锁)。
       if (!trySelectDirectoryLock()) return;
       onStart?.();
-      busyRef.current = true;
       setBusy(true);
       const isLatest = workspaceRootSelectionGuard.begin();
       try {
@@ -54,7 +51,6 @@ export function useSelectWorkspaceFolder(): SelectWorkspaceFolder {
         notifyThrownError(err);
       } finally {
         releaseSelectDirectoryLock();
-        busyRef.current = false;
         setBusy(false);
       }
     },

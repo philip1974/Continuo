@@ -29,10 +29,10 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
   // 后台每帧补间 ~200 个 SVG 属性;故再加窗口焦点闸门。焦点信号在 macOS Dock 还原时
   // 可能迟到(要点击才 focus),误判只让装饰暂停/晚恢复,无功能影响。
   const [visible, setVisible] = useState(
-    () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
+    () => document.visibilityState !== 'hidden',
   );
   const [focused, setFocused] = useState(
-    () => typeof document === 'undefined' || document.hasFocus(),
+    () => document.hasFocus(),
   );
   useEffect(() => {
     const onChange = () => setVisible(document.visibilityState !== 'hidden');

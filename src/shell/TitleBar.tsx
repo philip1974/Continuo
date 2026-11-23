@@ -45,7 +45,7 @@ export function TitleBar() {
     <header className="flex h-9 shrink-0 items-center justify-center border-b border-line bg-panel/40 text-xs text-fg-muted select-none [-webkit-app-region:drag]">
       <span className="truncate px-12" title={activeFilePath ?? root ?? undefined}>
         {fileName}
-        {hasActiveTab && activeDirty && (
+        {activeDirty && (
           <>
             <span aria-hidden="true"> ●</span>
             <span style={SR_ONLY_STYLE}> {t('statusbar.unsaved_changes')}</span>

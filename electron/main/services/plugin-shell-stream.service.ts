@@ -258,10 +258,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         forceTimer.unref?.();
       };
 
-      const timeoutTimer = setTimeout(() => {
-        if (settled) return;
-        terminate();
-      }, timeoutMs);
+      const timeoutTimer = setTimeout(terminate, timeoutMs);
       const maybeUnref = timeoutTimer as { unref?: () => void };
       if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
       active.set(key, { terminate, timeoutTimer, senderId });

@@ -13,7 +13,7 @@ export function selectVisibleNotifications<T>(
   notifications: readonly T[],
 ): readonly T[] {
   if (notifications.length <= VISIBLE_LIMIT) return notifications;
-  const start = Math.max(0, notifications.length - VISIBLE_LIMIT);
+  const start = notifications.length - VISIBLE_LIMIT;
   const visible = new Array<T>(notifications.length - start);
   let visibleCount = 0;
   for (let i = start; i < notifications.length; i++) {
