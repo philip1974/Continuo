@@ -58,7 +58,6 @@ import {
 import {
   WINDOW_CHANNELS,
   type IpcWindowCreateInput,
-  type IpcWindowCreateResult,
 } from '../shared/window-channels';
 import {
   MARKETPLACE_CHANNELS,
@@ -474,7 +473,7 @@ const api = {
      */
     create: (
       input: IpcWindowCreateInput,
-    ): Promise<IpcResult<IpcWindowCreateResult>> =>
+    ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.CREATE, input),
     /**
      * renderer 在 workspace.root 变化时通知 main,维护 windowId→root 映射。

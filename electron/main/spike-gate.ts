@@ -127,13 +127,9 @@ interface SpikeGateContents {
 export function installSpikeGate(
   contents: SpikeGateContents,
   packaged: boolean,
-): () => void {
+): void {
   const handler = (event: NavEvent) => guardNav(event, event.url, packaged);
 
   contents.on('will-navigate', handler);
   contents.on('will-frame-navigate', handler);
-
-  return () => {
-    // Electron WebContents listener cleanup is wired by the owning lifecycle.
-  };
 }

@@ -121,7 +121,7 @@ describe('window-ipc-create: createWindowHandler', () => {
   it("T4: accepts a valid absolute directory and creates the window", async () => {
     fsMock.stat.mockResolvedValue({ isDirectory: () => true } as never);
     const result = await createWin({ workspace: '/abs/path' });
-    expect(result).toEqual({ ok: true, data: { windowId: 42 } });
+    expect(result).toEqual({ ok: true, data: undefined });
     expect(allocateWindowSeq).toHaveBeenCalledTimes(1);
     expect(createMainWindow).toHaveBeenCalledTimes(1);
     expect(createMainWindow).toHaveBeenCalledWith(
@@ -131,7 +131,7 @@ describe('window-ipc-create: createWindowHandler', () => {
 
   it("T5: omits workspace when input has no workspace field", async () => {
     const result = await createWin({});
-    expect(result).toEqual({ ok: true, data: { windowId: 42 } });
+    expect(result).toEqual({ ok: true, data: undefined });
     expect(allocateWindowSeq).toHaveBeenCalledTimes(1);
     expect(createMainWindow).toHaveBeenCalledTimes(1);
     const firstCallArgs = (
@@ -188,6 +188,6 @@ describe('window-ipc-create: createWindowHandler', () => {
     const results = await Promise.all(calls);
     expect(peak).toBe(2);
     expect(fsMock.stat).toHaveBeenCalledTimes(6);
-    for (const r of results) expect(r).toEqual({ ok: true, data: { windowId: 42 } });
+    for (const r of results) expect(r).toEqual({ ok: true, data: undefined });
   });
 });

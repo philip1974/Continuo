@@ -362,7 +362,7 @@ function shouldAbortClose(mode: FlushMode, outcome: FlushOutcome, windowId: numb
 }
 
 // 复审(d):每窗关闭流程代际。单窗关闭流程启动时取号;before-quit 接管窗口时再递增 → 旧流程(如在途的
-// 「不保存」关闭)完成时发现已被取代,不再 `flushed = true; win.close()`(否则在退出的「保存」完成前销毁窗口)。
+// 「不保存」关闭)完成时发现已被取代,不再标记已 flush 并 `win.close()`(否则在退出的「保存」完成前销毁窗口)。
 const closeFlowGen = new Map<number, number>();
 // 在途单窗关闭流程的复位函数(显示窗口 + 释放关窗守卫)。before-quit 接管时取走,退出中止时立即调用 ——
 // 否则被接管窗口仍隐藏、守卫仍在途,要等旧 ACK / 10s 超时才恢复(复审)。
@@ -452,18 +452,15 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     closeFlowReleases.delete(windowId);
     flushedOnQuit.delete(windowId); // BrowserWindow.id 不复用:不清理会随关窗次数单调增长
   });
-  let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
-  // `flushed` 仍为 false;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次
+  // 窗口尚未记入 flushedOnQuit;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次
   // requestWindowFlush(renderer 重复 flush / 重复弹确认框),且 flush 完成后可能重复 win.close()。
   let flushing = false;
   win.on('close', (event) => {
-    e2eQuitTrace(`win ${windowId} close flushed=${flushed || flushedOnQuit.has(windowId)} flushing=${flushing}`);
-    // flushedOnQuit 也要查:`before-quit` 路径可能已经 flush 过本窗并写入
-    // flushedOnQuit,但本闭包的局部 `flushed` 不会被它更新 —— 只看局部量会让
-    // app.quit() 触发 close 时对同一窗口重复 flush(多一次 IPC 往返 + preventDefault
-    // 二次阻塞退出)。
-    if (flushed || flushedOnQuit.has(win.id)) return;
+    e2eQuitTrace(`win ${windowId} close flushed=${flushedOnQuit.has(windowId)} flushing=${flushing}`);
+    // 已 flush 过(本窗的 close 流程,或 `before-quit` 路径)→ 放行,不重复 flush
+    //(多一次 IPC 往返 + preventDefault 二次阻塞退出)。
+    if (flushedOnQuit.has(win.id)) return;
     event.preventDefault();
     // race(R45):已有 flush 在途 → 只阻止本次关闭,不再发第二个 flush。
     // 脏文件确认框打开期间同样置 flushing,重复关闭不叠第二个确认框。
@@ -478,7 +475,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     const finish = (): void => {
       if (closeFlowReleases.get(windowId) === release) closeFlowReleases.delete(windowId);
     };
-    // 复审(d):本流程已被 before-quit 接管 → 无副作用返回,不置 flushed、不 close(退出继续则由退出关窗;
+    // 复审(d):本流程已被 before-quit 接管 → 无副作用返回,不标记已 flush、不 close(退出继续则由退出关窗;
     // 退出中止则退出流程已调用 release 显示窗口并释放守卫 —— 此处再复位会破坏用户之后发起的新关闭流程)。
     const superseded = (): boolean => closeFlowGen.get(windowId) !== gen;
     const flushAndClose = async (mode: FlushMode, accepted?: DirtyState) => {
@@ -497,7 +494,6 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
         release();
         return;
       }
-      flushed = true;
       flushedOnQuit.add(win.id);
       win.close();
     };

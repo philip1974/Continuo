@@ -292,10 +292,9 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
   it('does not wire did-frame-navigate because top-level will-navigate (+ windowOpenHandler popout-only) are the intended gates', async () => {
     const on = vi.fn();
 
-    const unsubscribe = (await loadSpikeGate()).installSpikeGate({ on }, true);
+    (await loadSpikeGate()).installSpikeGate({ on }, true);
 
     expect(on.mock.calls.map(([event]) => event)).toEqual(['will-navigate', 'will-frame-navigate']);
     expect(on.mock.calls.map(([event]) => event)).not.toContain('did-frame-navigate');
-    expect(typeof unsubscribe).toBe('function');
   });
 });

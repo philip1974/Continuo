@@ -11,7 +11,6 @@ import { statDirGated } from '../lib/dir-stat-gate';
 import {
   WINDOW_CHANNELS,
   type IpcWindowCreateInput,
-  type IpcWindowCreateResult,
 } from '../../shared/window-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
@@ -62,13 +61,13 @@ let windowsBeingCreated = 0;
 async function createWindowHandler(
   input: IpcWindowCreateInput,
   createMainWindow: WindowIpcDeps['createMainWindow'],
-): Promise<IpcWindowCreateResult> {
+): Promise<void> {
   if (windowSeqCount() + windowsBeingCreated >= MAX_APP_WINDOWS) {
     throw codedError(ERROR_CODES.TOO_MANY_WINDOWS, `too many windows open (max ${MAX_APP_WINDOWS})`);
   }
   windowsBeingCreated += 1;
   try {
-    return await createWindowNow(input, createMainWindow);
+    await createWindowNow(input, createMainWindow);
   } finally {
     windowsBeingCreated -= 1;
   }
@@ -77,7 +76,7 @@ async function createWindowHandler(
 async function createWindowNow(
   input: IpcWindowCreateInput,
   createMainWindow: WindowIpcDeps['createMainWindow'],
-): Promise<IpcWindowCreateResult> {
+): Promise<void> {
   if (input.workspace !== undefined) {
     // 安全 + 健壮性校验:必须 absolute,实际存在的目录。
     // 防 renderer 注入相对路径 / 不存在的路径让新窗口启不来。
@@ -99,13 +98,12 @@ async function createWindowNow(
 
   const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
   const newWindowSeq = await allocateWindowSeq(explorerFile);
-  const win = createMainWindow({
+  createMainWindow({
     windowSeq: newWindowSeq,
     ...(input.workspace !== undefined
       ? { workspace: input.workspace, fresh: true }
       : {}),
   });
-  return { windowId: win.id };
 }
 
 const NotifyRootInput = z

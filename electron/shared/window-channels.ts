@@ -16,6 +16,3 @@ export interface IpcWindowCreateInput {
   readonly workspace?: string;
 }
 
-export interface IpcWindowCreateResult {
-  readonly windowId: number;
-}
