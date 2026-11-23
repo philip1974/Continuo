@@ -104,6 +104,28 @@ describe.skipIf(process.platform === 'win32')('50 · stdio 连接断开回收该
     expect(onCallerClosed).not.toHaveBeenCalledWith(b.subject);
   });
 
+  it('server 关闭(destroy 全部连接)→ 每个连接同样经 onCallerClosed 回收', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'continuo-stdio-closed-'));
+    dirs.push(dir);
+    const socketPath = path.join(dir, 'mcp.sock');
+    const onCallerClosed = vi.fn();
+    const srv = await createStdioSocketServer({
+      socketPath,
+      tools: new Map([['whoami', subjectTool]]),
+      serverInfo,
+      resolveWindowId: () => 7,
+      onCallerClosed,
+    });
+    const a = await connectAndGetSubject(socketPath);
+    const b = await connectAndGetSubject(socketPath);
+
+    await srv.close();
+
+    await vi.waitFor(() => expect(onCallerClosed).toHaveBeenCalledTimes(2));
+    expect(onCallerClosed).toHaveBeenCalledWith(a.subject);
+    expect(onCallerClosed).toHaveBeenCalledWith(b.subject);
+  });
+
   it('从未发起调用的连接(未分配 subject)断开 → 不回调', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'continuo-stdio-closed-'));
     dirs.push(dir);

@@ -729,8 +729,8 @@ export async function createStdioSocketServer(
         } catch {
           /* 已断开 → 忽略 */
         }
-        socketCtx.delete(sock);
-        socketSubject.delete(sock);
+        // 表项与调用方身份的回收(onCallerClosed)统一交给该连接自己的 close 回调:此处若先删表,
+        // 回调就读不到 subject,server 关闭路径会比单连接断开少回收一步。
       }
       clients.clear();
       await new Promise<void>((resolve) => server.close(() => resolve()));
