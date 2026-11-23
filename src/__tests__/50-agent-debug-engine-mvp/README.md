@@ -11,7 +11,7 @@
 - DebugService 的 plain Error 在 MCP 工具边界归一化为稳定 debug 错误码，避免向 MCP client 回显超长 session id、program 或 adapter path。
 - `variables` / `evaluate` 保持分页、深度、字节预算与默认值边界。
 - `variables` 深度展开有整次总预算(节点数、DAP 请求数,以及返回内容字节 4MiB —— 名称 + 值 + 类型的 UTF-8 字节,低于 MCP 10MiB 结果上限):用尽即停;字节预算截断顶层这一页时 `next_start` 接在已返回的最后一项之后(顶层至少返回一项),未展开的节点保留 `variables_reference` 并标 `truncated`,顶层 `truncated: true`;调用方断连(`ctx.signal`)时停止继续展开。
-- 资源上限:结束的 child session(worker 退出等)当即回收(移出、清掉各断点记录里该连接的条目并重推受影响 source 的快照;连接等其在途请求结算后再 dispose —— js-debug 可能在 terminated 之后才回 continue 等请求的响应,当即关连接会让调用方收到「DAP socket closed」),teardown 不再对它发 disconnect;DAP transcript 单条按字节截断为摘要并有总字节预算(最旧优先淘汰);单条上限的计量口径是线上字节(入站 = 帧头 Content-Length,不对解析后的对象重新规范化序列化),对端发非紧凑 JSON(大量空白 / `\uXXXX` 转义)时线上超限即只存摘要,摘要的 `originalBytes` 同为线上字节。
+- 资源上限:结束的 child session(worker 退出等)当即回收(移出、清掉各断点记录里该连接的条目并重推受影响 source 的快照;连接等其在途请求结算后再 dispose —— js-debug 可能在 terminated 之后才回 continue 等请求的响应,当即关连接会让调用方收到「DAP socket closed」),teardown 不再对它发 disconnect。
 - 安全(提示注入): `debug.stack` / `debug.scopes` / `debug.variables` / `debug.evaluate` / `debug.wait_for_stop` 返回的函数名、变量值、异常 description、表达式结果由被调试程序控制,工具描述须提示 agent 这些内容不可信、作为数据而非指令处理(措辞同 `terminal.await_stop_hook`)。
 - KC#1: MVP 暂不暴露 renderer/editor context 的断点映射能力，降级为 main-context DAP 调试；源码映射与编辑器联动留给后续批次。
 - 安全(program-workspace 锁): `debug.launch` 的 `program`/`cwd` 来自 agent，必须落在 owner window 的 workspace root 内(realpath 规范化后比较，防 symlink 逃逸与 `..` 穿越)；窗口无 workspace 记录则 fail-closed 拒绝；`cwd` 省略时默认 workspace root，不回退 main 进程 cwd。校验通过的真实路径(program/cwd 的 realpath)即为之后 launch 使用的路径 —— 起跑推迟到 `wait_for_stop` 等调用，期间把软链改指工作区外不生效。该契约由 `electron/main/__tests__/debug-service.spec.ts` 覆盖。
