@@ -66,7 +66,13 @@ test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async
   const firstItem = options.first();
   await expect(firstItem).toContainText(SETTINGS_TITLE);
 
-  // 由于 settings.toggle 是唯一带 Settings category 的命令,只占 1 个 option
-  const settingsCount = await options.filter({ hasText: SETTINGS_TITLE }).count();
-  expect(settingsCount).toBe(1);
+  // recent 存储(LRU)里 id 唯一,settings.toggle 只出现一次且在首位(面板每个命令只渲染一行,
+  // 所以要直接看存储才能验证「不重复」)
+  const ids = await window.evaluate(() => {
+    const raw = localStorage.getItem('continuo:command-palette:recent');
+    return raw ? (JSON.parse(raw) as Array<{ id: string }>).map((e) => e.id) : [];
+  });
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(ids.filter((id) => id === 'settings.toggle')).toHaveLength(1);
+  expect(ids[0]).toBe('settings.toggle');
 });

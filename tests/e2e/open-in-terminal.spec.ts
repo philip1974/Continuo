@@ -1,5 +1,5 @@
-// 右键文件夹 → 「在集成终端中打开」 → 创建新 terminal session(cwd 设到该目录)
-// + 自动打开 dock terminal panel.
+// 右键文件夹 → 「在集成终端中打开」 → 创建新 terminal session + 自动打开 dock terminal panel.
+// (cwd 设到所选目录由 create-user-terminal 单测覆盖;本用例只验证 panel 出现.)
 import { test, expect } from './fixtures/with-workspace';
 import { TERMINAL_INPUT } from './helpers/editor';
 import { EXPLORER_OPEN_IN_TERMINAL } from './helpers/explorer';

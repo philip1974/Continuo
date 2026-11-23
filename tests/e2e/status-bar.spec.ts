@@ -13,7 +13,7 @@ test('MCP copy 按钮存在 + 点击不抛', async ({ window }) => {
 });
 
 test('agent terminal 计数 = 0 → 按钮不渲染', async ({ window }) => {
-  const status = window.locator('footer');
-  // 「N agent」按钮只在 sessions 中 originHint='agent' > 0 时显示
-  await expect(status).not.toContainText(/\d+\s*agent/);
+  // agent 撤销入口(data-agent-revoke)只在 agent 会话数 > 0 或存在「本次启动期间允许」授权时显示;
+  // 新启动、无 agent 会话也无授权 → 不渲染(按属性断言,不依赖界面语言)
+  await expect(window.locator('footer [data-agent-revoke]')).toHaveCount(0);
 });

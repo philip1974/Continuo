@@ -1,4 +1,4 @@
-// 动态注册的命令 + Enter 在 palette 中执行 → modal 关闭(fn 是 noop).
+// 动态注册的命令 + Enter 在 palette 中选中 → modal 关闭。testing hook 注册的 fn 是空函数,本用例不验证命令是否真的执行。
 import { test, expect } from './fixtures/electron-app';
 import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 

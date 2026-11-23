@@ -3,6 +3,7 @@ import { test, expect } from './fixtures/with-workspace';
 import {
   EDITOR_CLOSE_B_TS,
   EDITOR_CLOSE_README_MD,
+  EDITOR_TABS,
 } from './helpers/editor';
 
 test('打开 README.md + a.ts + b.ts(active)→ 关 b.ts → active 自动切回', async ({
@@ -38,7 +39,12 @@ test('关 README.md(非 active)→ active 不变(仍 b.ts)', async ({ window }) 
     name: EDITOR_CLOSE_README_MD,
   });
   await closeReadme.click();
-  await window.waitForTimeout(300);
+
+  // README 的 tab 确实已关闭(否则「active 不变」恒成立),剩 a.ts / b.ts 两个 tab
+  await expect(
+    window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab').filter({ hasText: /^README\.md/ }),
+  ).toHaveCount(0, { timeout: 5_000 });
+  await expect(window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab')).toHaveCount(2);
 
   // active 仍 b.ts(关闭非 active 不切)
   await expect(window.locator('header').first()).toContainText('b.ts');

@@ -38,19 +38,26 @@ test('reset fontSize → localStorage 删 key', async ({ window }) => {
     .getByRole('button', { name: EDITOR_TAB })
     .click();
 
-  // 改 + 验证写入
+  // 改 + 验证写入(否则下面「reset 后 key 不在」可能是因为根本没写进去)
   await window.locator('input[type=number]').first().fill('22');
-  await window.waitForTimeout(100);
+  await expect
+    .poll(() =>
+      window.evaluate(() => {
+        const r = localStorage.getItem('continuo.settings.values');
+        return r ? (JSON.parse(r) as Record<string, unknown>)['editor.fontSize'] : undefined;
+      }),
+    )
+    .toBe(22);
 
   // 点 reset(找 not-invisible 的)
   await clickFirstVisibleResetDefault(window);
-  await window.waitForTimeout(100);
 
-  const raw = await window.evaluate(() =>
-    localStorage.getItem('continuo.settings.values'),
-  );
-  if (raw) {
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    expect(data['editor.fontSize']).toBeUndefined();
-  }
+  await expect
+    .poll(() =>
+      window.evaluate(() => {
+        const r = localStorage.getItem('continuo.settings.values');
+        return r ? 'editor.fontSize' in (JSON.parse(r) as Record<string, unknown>) : false;
+      }),
+    )
+    .toBe(false);
 });

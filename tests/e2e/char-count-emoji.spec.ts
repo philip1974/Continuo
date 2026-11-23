@@ -1,4 +1,5 @@
 // computeTextStats().chars 用 s.length(UTF-16 code unit)→ '🌍' = 2 字符.
+import { statusChars } from './helpers/status-bar';
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,7 +44,7 @@ test('🌍 file → footer 显 2 chars(UTF-16 代码单元)', async () => {
 
     const footer = win.locator('footer');
     // '🌍'.length === 2(UTF-16)
-    await expect(footer).toContainText(/2\s*(字符|chars|자)/);
+    await expect(footer).toContainText(statusChars(2));
 
     await app.close();
   } finally {

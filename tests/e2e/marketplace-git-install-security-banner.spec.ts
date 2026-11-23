@@ -18,9 +18,8 @@ test('Marketplace ok 态 → GitUrl 段显安全风险提示 banner', async ({
   const marketplaceTab = window
     .getByRole('navigation', { name: SETTINGS_NAV })
     .getByRole('button', { name: MARKETPLACE_TAB });
-  if ((await marketplaceTab.count()) === 0) {
-    test.skip(true, '无 marketplace tab');
-  }
+  // core.marketplace 由内置插件无条件注册:tab 缺失 / 改名是回归,应失败而不是跳过
+  await expect(marketplaceTab).toBeVisible({ timeout: 10_000 });
   await marketplaceTab.click();
 
   const okText = await window

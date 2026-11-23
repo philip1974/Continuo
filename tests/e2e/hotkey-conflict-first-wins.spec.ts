@@ -1,4 +1,5 @@
-// 同 hotkey 多命令 → useCommandHotkeys 内 for 循环命中第一条 return,后注册的不响应.
+// 同 hotkey 多命令 → useCommandHotkeys 内 for 循环命中第一条即 return。testing hook 注册的 fn 为空,无法观察后注册者
+// 是否响应;本用例只验证先注册的 settings.toggle 仍被触发.
 import { test, expect } from './fixtures/electron-app';
 import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS, SETTINGS_NAV } from './helpers/settings';

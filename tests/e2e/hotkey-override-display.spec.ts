@@ -41,5 +41,7 @@ test('改 settings.toggle hotkey override → CommandPalette 显示新 hotkey', 
   const text = await item.textContent();
   expect(text).toMatch(/Y/i);
   // 不再含旧 hotkey ',' 的 KeyCap('settings.toggle' default 是 'mod+,')
-  // 旧 hotkey 不应出现 — 第一项 KeyCap textContent 应不含 ','
+  const keycaps = await item.locator('kbd').allTextContents();
+  expect(keycaps.length).toBeGreaterThan(0);
+  expect(keycaps.join('')).not.toContain(',');
 });

@@ -20,11 +20,15 @@ test('右键 src → 新建文件 → Esc 取消 → input 消失 + 无文件落
   await input.press('Escape');
 
   await expect(input).toBeHidden();
-  // src 下没有 something.ts(被 Esc 取消)
-  const exists = await stat(path.join(workspaceRoot, 'src/something.ts'))
-    .then(() => true)
-    .catch(() => false);
-  expect(exists).toBe(false);
+  // src 下没有 something.ts(被 Esc 取消):在一小段时间内持续确认,覆盖异步误建
+  await expect(async () => {
+    const exists = await stat(path.join(workspaceRoot, 'src/something.ts'))
+      .then(() => true)
+      .catch(() => false);
+    expect(exists).toBe(false);
+  }).toPass({ timeout: 1_000 });
+  await new Promise((r) => setTimeout(r, 500));
+  expect((await readdir(path.join(workspaceRoot, 'src'))).sort()).toEqual(['a.ts', 'b.ts']);
 });
 
 test('Enter 空白名字 → 视为取消 → 无文件', async ({
@@ -45,7 +49,7 @@ test('Enter 空白名字 → 视为取消 → 无文件', async ({
   expect((await readdir(path.join(workspaceRoot, 'src'))).sort()).toEqual(['a.ts', 'b.ts']);
 });
 
-test('全空格名字 → 视为取消', async ({ window }) => {
+test('全空格名字 → 视为取消', async ({ window, workspaceRoot }) => {
   await window.locator('text=src').first().click({ button: 'right' });
   await window.getByRole('menuitem', { name: NEW_FILE }).click();
 
@@ -54,4 +58,6 @@ test('全空格名字 → 视为取消', async ({ window }) => {
   await input.press('Enter');
 
   await expect(input).toBeHidden();
+  await new Promise((r) => setTimeout(r, 500));
+  expect((await readdir(path.join(workspaceRoot, 'src'))).sort()).toEqual(['a.ts', 'b.ts']);
 });

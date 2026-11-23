@@ -18,9 +18,8 @@ test('Marketplace ok 态 → 显「热门标签」prefix', async ({ window }) =>
   const marketplaceTab = window
     .getByRole('navigation', { name: SETTINGS_NAV })
     .getByRole('button', { name: MARKETPLACE_TAB });
-  if ((await marketplaceTab.count()) === 0) {
-    test.skip(true, '无 marketplace tab');
-  }
+  // core.marketplace 由内置插件无条件注册:tab 缺失 / 改名是回归,应失败而不是跳过
+  await expect(marketplaceTab).toBeVisible({ timeout: 10_000 });
   await marketplaceTab.click();
 
   // 等索引加载成功且非空(空索引不渲染标签行)

@@ -23,9 +23,8 @@ test('商店 tab 可打开 + UI 是三态之一', async ({ window }) => {
   const marketplaceTab = window
     .getByRole('navigation', { name: SETTINGS_NAV })
     .getByRole('button', { name: MARKETPLACE_TAB });
-  if ((await marketplaceTab.count()) === 0) {
-    test.skip(true, '该构建未注册 marketplace tab');
-  }
+  // core.marketplace 由内置插件无条件注册:tab 缺失 / 改名是回归,应失败而不是跳过
+  await expect(marketplaceTab).toBeVisible({ timeout: 10_000 });
   await marketplaceTab.click();
 
   // 等到 loading 完成或 error 出现:
@@ -53,9 +52,8 @@ test('商店底部 Git URL 安装段 — 输入空 → 按钮 disabled', async (
   const marketplaceTab = window
     .getByRole('navigation', { name: SETTINGS_NAV })
     .getByRole('button', { name: MARKETPLACE_TAB });
-  if ((await marketplaceTab.count()) === 0) {
-    test.skip(true, '该构建未注册 marketplace tab');
-  }
+  // core.marketplace 由内置插件无条件注册:tab 缺失 / 改名是回归,应失败而不是跳过
+  await expect(marketplaceTab).toBeVisible({ timeout: 10_000 });
   await marketplaceTab.click();
 
   // 等索引加载成功且非空(最多 15s)— error / 空索引态会提前返回、不渲染 GitUrlInstall,此时跳过.
