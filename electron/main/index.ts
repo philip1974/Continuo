@@ -124,8 +124,6 @@ import {
 } from './safe-handle';
 import {
   buildRendererQuery,
-  stripSpikeQuery,
-  spikeAllowed,
   installSpikeGate,
   parseDevRendererUrl,
 } from './spike-gate';
@@ -685,26 +683,12 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   // 多窗口:opts.workspace + opts.windowSeq 走 query string,renderer
   // parseInitialWorkspace / parseInitialWindowSeq 接收。dev loadURL 与 prod
   // loadFile 都加 query;loadFile 第二参支持 query 字段。
-  // [topic 45 spike gate 二道防线]: buildRendererQuery 收集所有 query input;
-  // stripSpikeQuery 在 spikeAllowed 拒绝时剥离 spike key (future-proof, P1.3)。
-  const baseQuery = buildRendererQuery({
+  // query 由 main 自己构造,只含这三项(不含 spike:spike 页面只能经导航进入,由 installSpikeGate 把关)。
+  const queryParts = buildRendererQuery({
     windowSeq: String(seq),
     workspace: opts.workspace,
     fresh: opts.fresh,
-    // opts.spike 当前 callsite 未注入,但 buildRendererQuery 支持 forward;
-    // future-proof, 防 packaged spike key 直接绕过第一道 will-navigate gate
   });
-
-  const targetUrl =
-    isDev && process.env['ELECTRON_RENDERER_URL']
-      ? process.env['ELECTRON_RENDERER_URL']
-      : `file://${RENDERER_FILE}`;
-  const gateResult = spikeAllowed({
-    url: targetUrl,
-    argv: process.argv,
-    packaged: app.isPackaged,
-  });
-  const queryParts = stripSpikeQuery(baseQuery, gateResult.allowed);
 
   // 边界(E299):dev env URL 解析失败(缺失/畸形,开发误配)→ parseDevRendererUrl 返 null,回退 loadFile,
   // 不让 new URL 同步抛崩溃 createMainWindow(应用启动无窗口)。

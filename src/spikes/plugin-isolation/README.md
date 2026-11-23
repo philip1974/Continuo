@@ -25,5 +25,5 @@ Phase 0 决策门评估完成（启 Phase 1 / 暂缓 / CSP follow-up）后，本
 
 ## 安全约束
 
-- `?spike=` 仅在 dev / preview,或打包版设了 `CONTINUO_SPIKE=1` 环境变量或带 `--spike` 参数时放行；packaged 默认两道防线齐拦（[`electron/main/spike-gate.ts`](../../../electron/main/spike-gate.ts) `installSpikeGate` + `stripSpikeQuery`）
+- `?spike=` 仅在 dev / preview,或打包版设了 `CONTINUO_SPIKE=1` 环境变量或带 `--spike` 参数时放行；packaged 默认由导航守卫拦下（[`electron/main/spike-gate.ts`](../../../electron/main/spike-gate.ts) `installSpikeGate`；主窗初始 query 由 main 自己构造,不含 `spike`）
 - 主 app 副作用零触发：thin-entry router (`src/main.tsx`) 动态 import 互斥；`pnpm build` 后手动运行 `node scripts/check-spike-isolation.mjs` 验 spike chunk ⇎ main-app chunk 物理隔离(未接入 CI)

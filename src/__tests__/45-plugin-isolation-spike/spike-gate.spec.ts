@@ -10,9 +10,8 @@ type SpikeNavigationEvent = { preventDefault(): void; readonly url: string };
 
 type SpikeGateModule = {
   guardNav(event: NavigationEvent, url: string, packaged: boolean): SpikeAllowedResult;
-  stripSpikeQuery(query: RendererQuery, spikeAllowed: boolean): RendererQuery;
   buildRendererQuery(
-    options: { workspace?: string; fresh?: boolean; windowSeq?: string; spike?: 'plugin-isolation' },
+    options: { workspace?: string; fresh?: boolean; windowSeq?: string },
   ): RendererQuery;
   spikeAllowed(options: { url: string; argv: string[]; packaged: boolean }): SpikeAllowedResult;
   installSpikeGate(
@@ -83,36 +82,6 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
   // deny)若照接会拒掉全部 popout。spike 窗口禁止经 window.open 打开现由 windowOpenHandler 的
   // 「只放行纯 popout URL」承担(?spike= 必被拒),见 popout-contracts/window-open-policy.spec.ts。
 
-  it('stripSpikeQuery removes spike query when gate is closed', async () => {
-    expect(
-      (await loadSpikeGate()).stripSpikeQuery(
-        { spike: 'plugin-isolation', spikeAck: '1', workspace: '/foo' },
-        false,
-      ),
-    ).toEqual({ workspace: '/foo' });
-  });
-
-  it('stripSpikeQuery gate closed 时单趟 for-in,不通过 Object.entries 物化中间数组', async () => {
-    const entriesSpy = vi.spyOn(Object, 'entries');
-    try {
-      expect(
-        (await loadSpikeGate()).stripSpikeQuery(
-          { spike: 'plugin-isolation', spikeAck: '1', workspace: '/foo' },
-          false,
-        ),
-      ).toEqual({ workspace: '/foo' });
-      expect(entriesSpy).not.toHaveBeenCalled();
-    } finally {
-      entriesSpy.mockRestore();
-    }
-  });
-
-  it('stripSpikeQuery keeps spike query when gate is open', async () => {
-    expect(
-      (await loadSpikeGate()).stripSpikeQuery({ spike: 'plugin-isolation', workspace: '/foo' }, true),
-    ).toEqual({ spike: 'plugin-isolation', workspace: '/foo' });
-  });
-
   // 边界(E299):dev 渲染 URL 解析 total —— 合法 → URL;缺失/畸形 env → null(调用方回退 loadFile,
   // 不让 new URL 同步抛崩溃 createMainWindow)。
   it('E299 parseDevRendererUrl: 合法 URL → URL 实例', async () => {
@@ -136,15 +105,14 @@ describeIfImplemented('topic 45 packaged spike gate', () => {
     expect(m.parseDevRendererUrl(huge)).toBeNull();
   });
 
-  it('buildRendererQuery assembles renderer query fields before spike stripping', async () => {
+  it('buildRendererQuery 只组装 windowSeq / workspace / fresh(不含 spike)', async () => {
     expect(
       (await loadSpikeGate()).buildRendererQuery({
         windowSeq: '2',
         workspace: '/foo',
         fresh: true,
-        spike: 'plugin-isolation',
       }),
-    ).toEqual({ windowSeq: '2', workspace: '/foo', fresh: '1', spike: 'plugin-isolation' });
+    ).toEqual({ windowSeq: '2', workspace: '/foo', fresh: '1' });
   });
 
   it('createMainWindow dev URL query 注入不通过 Object.entries(queryParts) 物化中间数组', () => {

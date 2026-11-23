@@ -15,7 +15,6 @@ export interface RendererQueryInput {
   workspace?: string;
   windowSeq?: string;
   fresh?: boolean;
-  spike?: string;
 }
 
 // 边界(E191,E190 同族):导航 URL 长度上限。spikeAllowed 每次导航(will-navigate/will-frame-navigate)
@@ -70,7 +69,6 @@ export function buildRendererQuery(input: RendererQueryInput): Record<string, st
   if (input.workspace) query.workspace = input.workspace;
   if (input.windowSeq) query.windowSeq = input.windowSeq;
   if (input.fresh) query.fresh = '1';
-  if (input.spike) query.spike = input.spike;
   return query;
 }
 
@@ -92,21 +90,6 @@ export function parseDevRendererUrl(rawUrl: string | undefined): URL | null {
   } catch {
     return null;
   }
-}
-
-export function stripSpikeQuery(
-  query: Record<string, string>,
-  allowed: boolean,
-): Record<string, string> {
-  if (allowed) return { ...query };
-
-  const out: Record<string, string> = {};
-  for (const key in query) {
-    if (!Object.prototype.hasOwnProperty.call(query, key)) continue;
-    if (key === 'spike' || key.startsWith('spike')) continue;
-    out[key] = query[key]!;
-  }
-  return out;
 }
 
 export function guardNav(
