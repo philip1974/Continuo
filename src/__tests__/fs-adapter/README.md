@@ -11,7 +11,7 @@
 |---|---|---|
 | `electron/main/ipc/fs/list-dir.ts` | `listDir` | 列目录 + 深度限制 + 排除黑名单 + symlink 处理 |
 | `electron/main/ipc/fs/read-file.ts` | `readFile` | utf-8 读 |
-| `electron/main/ipc/fs/atomic-write.ts` | `atomicWriteFile` | temp + fsync + rename + backup cleanup(ADR-009) |
+| `electron/main/ipc/fs/atomic-write.ts` | `atomicWriteFile` | 固定 tmp + fsync + 一次 rename,同路径串行(ADR-009) |
 | `electron/main/ipc/fs/rename.ts` | `renameEntry` | 同目录改 basename,返回新绝对路径 |
 | `electron/main/ipc/fs/create.ts` | `createFile` / `createDir` | 拼路径 → 写空 / mkdir,返回新绝对路径 |
 | `electron/shared/fs-entry.ts` | `FileEntry` 类型 | 主/渲染共享数据形状 |
@@ -38,16 +38,14 @@
   (`read-file-fifo.spec.ts`;同族:插件列举 main 可用性探测同样不挂死)
 
 ### atomicWriteFile(absPath, content) — ADR-009
-执行顺序:
-1. 写 `${path}.tmp`
-2. fsync(fd)
-3. 若 path 已存在,rename `path` → `${path}.backup`
-4. rename `${path}.tmp` → `path`(原子)
-5. 删 `${path}.backup`
+执行顺序(同一路径的写串行化):
+1. 写同目录固定 tmp `.<base>.continuo.tmp`(`open('wx')`;残留的旧 tmp 先删再建)+ fsync(fd)
+2. rename tmp → `path`(原子替换;leaf 为 symlink 时写穿到目标)
 
 失败时回滚:
-- 若步骤 4 之前失败,删 `.tmp`,**不动** path 与 `.backup`
-- 若步骤 4 后失败,`.backup` 仍可被 cleanup 路径找到(留为 debug)
+- 步骤 1 失败:删 tmp,原文件不动
+- 步骤 2 失败:rename 不改动目标,原文件完好;删 tmp 后抛错
+- 不做预备份(`.backup`):rename 本身就是原子替换,预备份反而留下「原文件已挪走、tmp 未就位」的丢失窗口
 - 多次连续 write 不留残留
 
 ### renameEntry(oldAbsPath, newName) → string
@@ -58,8 +56,8 @@
 
 ### createFile(dirAbsPath, name) → string
 - 拼出 `${dir}/${name}`
-- 已存在 → 抛 `FS_EEXIST`(防覆盖既有文件)
-- 调 atomicWriteFile(path, ''),返回新 path
+- `open(path, 'wx')` 原子排他创建空文件;已存在 → 抛 `FS_EEXIST`(防覆盖既有文件)
+- 返回新 path
 
 ### createDir(parentAbsPath, name) → string
 - 拼出 `${parent}/${name}`

@@ -14,7 +14,7 @@
 
 ### 类型化事件名(可扩展)
 
-- `LMEventMap` 是 `Record<string, unknown>`,各事件名字符串,payload 任意
+- 事件名为任意字符串,payload 为 `unknown`
 - 内核不预先穷举事件,Plugin 自由定义(命名建议 `<scope>.<verb>`,如 `editor.file-saved`)
 
 ### EventBus

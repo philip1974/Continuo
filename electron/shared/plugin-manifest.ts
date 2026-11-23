@@ -100,7 +100,7 @@ export function parseManifest(jsonText: string): ManifestParseResult {
       code: 'SCHEMA_ERROR',
       // 边界(E77,E73/E75/E76 错误串放大族最后一处 zod-join):issues 全量 map+join 无上限,
       // 畸形 manifest 可在 1MiB 文件内生成超长错误串,进入 PluginManager entry.error / PluginsTab
-      // 渲染放大。复用共享 capJoinedMessages(限条数 + 总长 + 截断标记,与 main/renderer 同一来源)。
+      // 渲染放大。复用共享 capJoinedMessagesFrom(限条数 + 总长 + 截断标记,与 main/renderer 同一来源)。
       // 边界(E223,E222 兄弟):mapper 变体,只对前 N 个 issue 格式化,不先 issues.map 全量物化。
       message: capJoinedMessagesFrom(
         parsed.error.issues,

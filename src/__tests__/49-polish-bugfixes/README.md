@@ -174,7 +174,7 @@
   与 issue-45 drag-folder 切根同源场景,脏 tab 保护缺口此前未覆盖。
 
 ### P2-R plugin-data 原子写 + 损坏降级 — `plugin-data-corrupt-degrade.spec.ts`
-- `plugin-data:save` 改用 `atomicWriteJson`(temp+fsync+rename);`plugin-data:load`
+- `plugin-data:save-serialized` 改用 `atomicWriteJson`(temp+fsync+rename);`plugin-data:load`
   对 JSON 解析失败保留 `.corrupt` 快照后降级返回 `{}`(不再 rethrow)。
 - 根因: 旧 save 用 `fs.writeFile`(truncate-then-write)非原子,崩溃/掉电截断 data.json;
   旧 load 对 parse 失败只放行 ENOENT、其余 rethrow → IPC 永久 reject,该插件持久化数据

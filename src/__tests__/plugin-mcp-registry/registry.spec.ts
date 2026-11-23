@@ -281,7 +281,7 @@ describe('invokeLocal · 派发本地 run', () => {
       'p',
     );
     // 边界(E259):key 数须 < MAX_BOUNDED_OBJECT_KEYS,否则被新增的递归 bounded 预检(下方 E259)
-    // 提前拦下,走不到 capJoinedMessages 截断路径。500 个长 key 仍产生单条超大 unrecognized_keys message。
+    // 提前拦下,走不到 capJoinedMessagesFrom 截断路径。500 个长 key 仍产生单条超大 unrecognized_keys message。
     const payload: Record<string, unknown> = { a: 'ok' };
     for (let i = 0; i < 500; i += 1) {
       payload[`unknownKey_${i}_${'x'.repeat(20)}`] = 1;

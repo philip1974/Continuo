@@ -1,6 +1,6 @@
 # plugin-permissions(声明式权限 + 授权门)
 
-行为契约:**插件 manifest 可声明 `permissions: ['fs','network','shell','clipboard']`,
+行为契约:**插件 manifest 可声明 `permissions`(`PERMISSION_KEYS`:'fs' / 'network' / 'shell' / 'clipboard' / 'mcp-tools'),
 首次启用时由用户授权;授权决策记入 PermissionStore(生产 IpcPermissionStore 经 IPC 持久化;InMemory 只是测试替身)。**
 PluginManager 在激活前调 `ensureAuthorized` 阻塞,未授权 / 用户拒 → 不激活。
 
@@ -16,7 +16,7 @@ PluginManager 在激活前调 `ensureAuthorized` 阻塞,未授权 / 用户拒 �
 ### PermissionKey
 
 ```ts
-type PermissionKey = 'fs' | 'network' | 'shell' | 'clipboard';
+type PermissionKey = (typeof PERMISSION_KEYS)[number]; // 'fs' | 'network' | 'shell' | 'clipboard' | 'mcp-tools'
 ```
 
 固定枚举(避免插件随便发明权限名)。manifest 缺省 / 空数组 → 视为无权限请求。

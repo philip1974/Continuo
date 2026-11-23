@@ -1,6 +1,6 @@
 // 边界(E73,E57/E62 错误串放大族):zod 校验失败时把 error.issues 全量 map+join 当错误 message
 // 返回(IPC / JSON-RPC)。对 .strict() schema,畸形 payload 带大量未知 key → 错误串无界放大,经
-// IPC/日志/通知链路造成额外内存与 UI 放大。统一经 capJoinedMessages(跨进程单一来源,见
+// IPC/日志/通知链路造成额外内存与 UI 放大。统一经 capJoinedMessagesFrom(跨进程单一来源,见
 // electron/shared/cap-joined-messages.ts,E76 起 renderer 侧也复用)cap:限 issue 条数 + 总长度。
 // safeHandle / safeHandleWithCtx / mcp-host 工具入参校验三处共用 formatZodErrorCapped。
 import type { z } from 'zod';

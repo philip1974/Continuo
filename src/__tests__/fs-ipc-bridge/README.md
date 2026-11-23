@@ -48,7 +48,7 @@
 - handler 接受 schema parse 后的对象作为唯一参数
 - handler 把字段正确映射给 fs 函数(用临时目录跑真 fs)
 - handler 抛业务 code 不被吞(由 safeHandle 透传,在另一主题已测,本主题只断言抛得出)
-- `trashHandler` / `selectDirectoryHandler` 用工厂注入 deps,不真接 Electron API
+- `makeTrashHandler` / `makeSelectDirectoryHandler` 用工厂注入 deps,不真接 Electron API
 
 ## 不在本主题验证
 

@@ -225,7 +225,7 @@ describe('E57 · marketplace reviews 外部响应边界', () => {
   });
 
   // 边界(E75,E73 错误串放大族):GraphQL errors 来自外部响应,数组条数/单条 message 长度不可控
-  // (8MiB 内可塞大量错误)。经 capJoinedMessages 限条数 + 总长,防超长错误串经 safeHandle/renderer
+  // (8MiB 内可塞大量错误)。经 capJoinedMessagesFrom 限条数 + 总长,防超长错误串经 safeHandle/renderer
   // 错误状态/通知链路放大。
   // 边界(E93):thumbsUp 须非负安全整数 —— 畸形 GraphQL 把点赞数设负数/小数 → canonicalize 0。
   it('E93 reactions.totalCount 负数/小数 → thumbsUp 归 0', async () => {

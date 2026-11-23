@@ -208,7 +208,7 @@ describe('parseManifest:Schema 校验', () => {
         id: 'a.b',
         name: 'X',
         version: '1.0.0',
-        // 数组长度 1(过 .max(5)),但元素是 3000 字符非法 enum(zod 3 会回显该值,超长时由 capJoinedMessages 截断)
+        // 数组长度 1(过 .max(5)),但元素是 3000 字符非法 enum(zod 3 会回显该值,超长时由 capJoinedMessagesFrom 截断)
         permissions: ['z'.repeat(3000)],
       }),
     );

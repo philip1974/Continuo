@@ -44,7 +44,7 @@ test('多行 file → footer N 行计数正确', async () => {
       timeout: 10_000,
     });
 
-    // lineCount 实现: split('\n').length。'a\nb\nc\nd\ne\n'.split('\n') = 6 段(末尾 \n 后空段)
+    // computeTextStats 的 lines = 换行数 + 1,与 split('\n').length 等价。'a\nb\nc\nd\ne\n'.split('\n') = 6 段(末尾 \n 后空段)
     const footer = win.locator('footer');
     await expect(footer).toContainText(statusLines(6));
 

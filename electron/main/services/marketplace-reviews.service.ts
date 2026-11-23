@@ -175,7 +175,7 @@ export async function fetchReviewNodes(): Promise<FetchReviewsResult> {
     // 无有效 data,下方 `!d || !Array.isArray(d.nodes)` 兜底 break)。
     if (Array.isArray(json.errors) && json.errors.length > 0) {
       // 边界(E75,E73 错误串放大族):GraphQL errors 来自外部响应,数组条数/单条 message 长度
-      // 都不可控(8MiB 内可塞大量错误)。经 capJoinedMessages 限条数 + 总长,防超长错误串经
+      // 都不可控(8MiB 内可塞大量错误)。经 capJoinedMessagesFrom 限条数 + 总长,防超长错误串经
       // safeHandle/renderer 错误状态/通知链路放大。message 强制 String 化(外部数据可能非 string)。
       // 边界(E222):用 mapper 变体,只对前 N 条 errors 调 String(...),不先 json.errors.map(...) 把
       // 外部可控数量的 errors(8MiB 内可塞大量短 errors)全量物化成 string 数组再 cap。
