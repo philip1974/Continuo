@@ -83,7 +83,7 @@ function openInTerminal(dir: string): void {
 }
 
 beforeEach(() => {
-  // Explorer 只在 workspace root 已恢复时渲染,其 root 即 store 的 root。
+  // 创建流程先等 workspace root 恢复(rootRestored);这里设为已恢复,Explorer 的 root 即 store 的 root。
   useWorkspaceStore.setState({ root: '/repo', rootRestored: true });
   h.create.mockReset();
   h.openOrFocusPanel.mockReset();

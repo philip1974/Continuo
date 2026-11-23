@@ -143,9 +143,14 @@ describe('saveFile — 外部修改冲突检测', () => {
 // stat 仍与记录一致 → 磁盘就是上次写入的内容(= originalContent),不必整文件回读;stat 变了 / 无记录 → 照旧
 // 整读比对(冲突检测不放松)。
 describe('saveFile — 自己上次保存的 stat 基线快路径', () => {
-  const stat = { mtimeMs: 1, size: 4, ino: 7 };
-  async function saveOnceWithStat(statFn: ReturnType<typeof vi.fn>, readFile: ReturnType<typeof vi.fn>) {
-    const writeFile = vi.fn(async () => ({ ok: true as const, data: stat }));
+  // mtime 带亚毫秒小数 = 高精度文件系统(APFS / ext4 / NTFS),快路径才适用。
+  const stat = { mtimeMs: 1.5, size: 4, ino: 7 };
+  async function saveOnceWithStat(
+    statFn: ReturnType<typeof vi.fn>,
+    readFile: ReturnType<typeof vi.fn>,
+    written: typeof stat = stat,
+  ) {
+    const writeFile = vi.fn(async () => ({ ok: true as const, data: written }));
     const deps = { fs: { readFile, writeFile, stat: statFn } } as unknown as EditorFileDeps;
     // 第一次保存:无记录 → 整读比对后写盘,记下 stat 基线
     await saveFile('/x/a.md', deps);
@@ -177,5 +182,41 @@ describe('saveFile — 自己上次保存的 stat 基线快路径', () => {
     expect(r).toMatchObject({ ok: false, code: 'EDITOR_DISK_CHANGED' });
     expect(readFile).toHaveBeenCalled();
     expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  // 粗粒度 mtime(FAT32 2s / exFAT 10ms / HFS+ 1s / 部分网络盘,mtimeMs 为整数)下,外部原地写入同样大小的
+  // 内容可能落在同一 mtime 刻度、stat 三元组不变 —— 快路径会误判为「仍是我的」并覆盖外部版本。此时一律整读。
+  it('上次保存的 mtime 为整数(粗粒度文件系统)→ 不走快路径,照旧整读比对', async () => {
+    const coarse = { mtimeMs: 2000, size: 4, ino: 7 };
+    const readFile = vi.fn(async () => okRead('orig'));
+    const statFn = vi.fn(async () => ({ ok: true as const, data: coarse }));
+    const { deps } = await saveOnceWithStat(statFn, readFile, coarse);
+    readFile.mockResolvedValue(okRead('theirs'));
+
+    const r = await saveFile('/x/a.md', deps);
+    expect(r).toMatchObject({ ok: false, code: 'EDITOR_DISK_CHANGED' });
+    expect(readFile).toHaveBeenCalled();
+  });
+
+  it('stat 失败 / 抛错 → 回落整读', async () => {
+    for (const fail of [
+      vi.fn(async () => ({ ok: false as const, code: 'FS_IO', message: 'x' })),
+      vi.fn(async () => {
+        throw new Error('ipc down');
+      }),
+    ]) {
+      useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'edit' });
+      useEditorStore.getState().openTab(createTab('/x/a.md', 'orig'));
+      useEditorStore.getState().updateContent('/x/a.md', 'mine');
+      const readFile = vi.fn(async () => okRead('orig'));
+      const statFn = vi.fn(async () => ({ ok: true as const, data: stat }));
+      const { deps } = await saveOnceWithStat(statFn, readFile);
+      statFn.mockImplementation(fail);
+      readFile.mockResolvedValue(okRead('mine')); // 磁盘仍是上次保存的内容
+
+      const r = await saveFile('/x/a.md', deps);
+      expect(r.ok).toBe(true);
+      expect(readFile).toHaveBeenCalled();
+    }
   });
 });

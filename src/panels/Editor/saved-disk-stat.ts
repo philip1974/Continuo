@@ -1,7 +1,8 @@
-// 编辑器保存回声识别(性能):保存成功后记录「本次写入内容」的 { mtimeMs, size, ino }(main 写完在 fd 上取、
+// 编辑器「磁盘是否仍是我上次保存的内容」(性能):保存成功后记录「本次写入内容」的 { mtimeMs, size, ino }(main 写完在 fd 上取、
 // rename 后复核,见 atomicWriteFile)。原子写的 tmp + rename 会让 watcher 上报被保存文件本身,
 // useExternalFileSync 命中后先发廉价 fs:stat 与此记录比对:相同 = 磁盘仍是自己刚写的内容 → 跳过整文件
 // readFile;不同 / stat 失败 / 无记录 → 照旧读。不凭「刚保存过」跳过 —— 同时发生的外部写入会改变 stat。
+// 保存前冲突检测(editor-file-actions checkDiskBeforeSave)也用同一判断,但只在高精度 mtime 下启用(见那里)。
 //
 // 记录按 tab 打开路径(filePath,外部同步正是按它 stat / 读)存,并带一个进程内单调的保存代际 gen;
 // saveFile 把同一 gen 经 markSaved 写到 tab.savedGen。只有 tab.savedGen === 记录 gen(tab 当前基线仍是

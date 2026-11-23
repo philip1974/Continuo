@@ -25,7 +25,7 @@ import {
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
 import { isMarkdownPath } from './editor-path-utils';
-import { ownSaveStatCheck, recordSavedDiskStat } from './saved-disk-stat';
+import { getSavedDiskStat, ownSaveStatCheck, recordSavedDiskStat } from './saved-disk-stat';
 import {
   loadCodeEditorModule,
   loadEditorPanelModule,
@@ -181,7 +181,12 @@ async function checkDiskBeforeSave(
 ): Promise<FileOpResult | null> {
   // 快路径:磁盘 stat 仍与本 tab 上次保存时记下的一致 → 磁盘就是那次写入的内容(= originalContent),
   // 不必整文件回读(与外部同步的保存回声识别同一判断,见 saved-disk-stat)。不一致 / 无记录 → 整读比对。
-  const own = fs.stat ? ownSaveStatCheck(filePath, savedGen, (p) => fs.stat!(p)) : null;
+  // 只在记录的 mtime 带亚毫秒小数(高精度文件系统:APFS / ext4 / NTFS)时适用:粗粒度 mtime(FAT32 / exFAT /
+  // HFS+ / 部分网络盘,mtimeMs 为整数)下外部原地写入同样大小的内容可能落在同一刻度、stat 不变,误判即覆盖外部
+  // 版本 —— 外部同步误判只是少一次 reload,这里误判会丢数据,所以一律整读。
+  const rec = getSavedDiskStat(filePath);
+  const fastPathEligible = fs.stat !== undefined && rec !== undefined && !Number.isInteger(rec.mtimeMs);
+  const own = fastPathEligible ? ownSaveStatCheck(filePath, savedGen, (p) => fs.stat!(p)) : null;
   if (own && (await own)) return null;
   let r: IpcResult<string>;
   try {

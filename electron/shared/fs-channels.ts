@@ -113,8 +113,9 @@ export function toFsReadFileResult(
 /**
  * 文件内容身份的廉价近似:mtimeMs + size + ino(跟随 symlink,即链接目标)。ino 区分粗粒度 mtime 文件系统上
  * 同大小的外部替换(原子写 / 另存为换了 inode,mtime 秒级可能相同)。fs:write-file 成功时返回写入后
- * 的值(无法确认则缺省),fs:stat 返回当前值;编辑器外部同步比对二者识别「自己保存的回声」,
- * 相同才跳过整文件 readFile,不同 / 未知照旧读。
+ * 的值(无法确认则缺省),fs:stat 返回当前值;编辑器外部同步比对二者识别「自己保存的回声」,保存前冲突检测
+ * 也比对它(仅高精度 mtime),相同才跳过整文件 readFile,不同 / 未知照旧读。粗粒度 mtime 上原地写入同大小内容
+ * 区分不了。
  */
 export interface FsFileStat {
   readonly mtimeMs: number;
