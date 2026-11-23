@@ -269,12 +269,8 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
     // this pins both source construction AND consumer-visible content.
     const cliPath = '/Applications/Continuo.app/Contents/Resources/continuo-mcp-stdio.mjs';
     const expectedCommand = `claude mcp add --transport stdio continuo -- ${cliPath}`;
-    const socketPath = '/Users/example/Library/Application Support/Continuo/mcp.sock';
-
     setStdioConfig({
       available: true,
-      cliPath,
-      socketPath,
       claudeAddCommand: expectedCommand,
     });
 
@@ -282,8 +278,6 @@ describe('CT-B3 stdio socket safety', { timeout: 30_000 }, () => {
 
     // Byte-exact assertions (no whitespace / flag / quote drift allowed)
     expect(config.available).toBe(true);
-    expect(config.cliPath).toBe(cliPath);
-    expect(config.socketPath).toBe(socketPath);
     expect(config.claudeAddCommand).toBe(expectedCommand);
     // Format anchored explicitly so future regressions are caught
     expect(config.claudeAddCommand).toBe(
