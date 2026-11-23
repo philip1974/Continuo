@@ -86,7 +86,7 @@ function createFifo<T>() {
 // 此前每次 execStream 各挂一个 listener、回调里自行过滤 streamId → 活跃 S 条流时每个 chunk 触发 S 个
 // handler(单 renderer 上限 32 条流)。listener 只在有活跃流时挂载(首条流注册时挂、最后一条结束时摘),
 // 与旧版「无活跃流时不驻留」一致。
-type StreamEventHandler = (rawPayload: unknown) => void;
+type StreamEventHandler = (rawPayload: object) => void;
 const streamHandlers = new Map<string, StreamEventHandler>();
 
 const onStreamEvent = (_event: IpcRendererEvent, rawPayload: unknown): void => {
@@ -94,7 +94,7 @@ const onStreamEvent = (_event: IpcRendererEvent, rawPayload: unknown): void => {
     rawPayload !== null && typeof rawPayload === 'object'
       ? (rawPayload as { streamId?: unknown }).streamId
       : undefined;
-  if (typeof streamId !== 'string') {
+  if (rawPayload === null || typeof rawPayload !== 'object' || typeof streamId !== 'string') {
     // 边界(E175):无主畸形 payload warn+drop,不动任何 stream(此前每条活跃流各告警一次)。
     console.warn('[plugin-shell-stream] unattributable event payload, dropped', rawPayload);
     return;
@@ -143,19 +143,11 @@ export const pluginShellStreamRaw: PluginShellStreamRaw = {
       exitResolve = resolve;
     });
 
-    const handler = (rawPayload: unknown): void => {
+    const handler = (rawPayload: object): void => {
       // 边界(E175,E168-E174 同族 IPC ingress 纵深防御):事件经 parseShellStreamEvent runtime 校验。
-      // not-ours 静默忽略;unattributable(无主畸形)warn+drop 但不动本 stream;invalid(本 stream
-      // 但形态非法)warn + 合成 exit 收敛(防 done/chunks 永久挂起)。
-      const parsed = parseShellStreamEvent(rawPayload, streamId);
-      if (parsed.kind === 'not-ours') return;
-      if (parsed.kind === 'unattributable') {
-        console.warn(
-          '[plugin-shell-stream] unattributable event payload, dropped',
-          rawPayload,
-        );
-        return;
-      }
+      // 归属已由 onStreamEvent 按 streamId 判定;invalid(本 stream 但形态非法)warn + 合成 exit
+      // 收敛(防 done/chunks 永久挂起)。
+      const parsed = parseShellStreamEvent(rawPayload);
       if (parsed.kind === 'invalid') {
         console.warn(
           '[plugin-shell-stream] invalid event payload for stream, synthesizing exit',
