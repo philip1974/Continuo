@@ -111,7 +111,6 @@ beforeEach(async () => {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator,
-    webContentsForSender: () => null,
   });
   token = ((await ipc.invokeWithEvent(event, C.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;
   scopes.grant(PLUGIN, [{ path: home, mode: 'rw' }]);
@@ -132,7 +131,6 @@ async function extraStack(
     identityRegistry: identity,
     pathScopeRegistry: registry,
     correlator: c,
-    webContentsForSender: () => null,
   });
   const ev = makeFakeEvent({ id: 7, isDestroyed: () => false });
   const t = ((await stubIpc.invokeWithEvent(ev, C.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;

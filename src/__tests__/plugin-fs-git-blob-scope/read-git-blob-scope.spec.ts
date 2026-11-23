@@ -71,7 +71,6 @@ beforeEach(async () => {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator,
-    webContentsForSender: () => null,
   });
   token = ((await ipc.invokeWithEvent(event, PLUGIN_FS_CHANNELS.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;
 });

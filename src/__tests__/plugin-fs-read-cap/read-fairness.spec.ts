@@ -91,7 +91,6 @@ beforeEach(async () => {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator,
-    webContentsForSender: () => null,
   });
   const reg = async (ev: typeof evA, id: string): Promise<string> =>
     ((await ipc.invokeWithEvent(ev, C.REGISTER_PLUGIN, id)) as { token: string }).token;

@@ -954,14 +954,9 @@ export function mutatePluginPermissions(
   mutation: IpcPermissionMutation,
 ): Promise<IpcPermissionRecord | null> {
   if (!isSafePluginId(id)) return Promise.resolve(null);
-  return withPluginMutationLock(id, async () => {
-    try {
-      await fs.access(path.join(baseDir, id));
-    } catch {
-      throw codedError(ERROR_CODES.NOT_INSTALLED, `插件未安装: ${id}`);
-    }
-    return permissionsWriteQueue.run(() => mutatePluginPermissionsQueued(baseDir, id, mutation));
-  });
+  return withInstalledPluginLock(baseDir, id, () =>
+    permissionsWriteQueue.run(() => mutatePluginPermissionsQueued(baseDir, id, mutation)),
+  );
 }
 
 async function mutatePluginPermissionsQueued(

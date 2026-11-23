@@ -122,7 +122,6 @@ beforeEach(async () => {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator,
-    webContentsForSender: () => null,
   });
   registerFsIpc();
   token = ((await ipc.invokeWithEvent(event, C.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;

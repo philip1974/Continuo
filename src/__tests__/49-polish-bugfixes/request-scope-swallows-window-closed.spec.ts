@@ -47,7 +47,6 @@ async function makeHarness(senderId: number): Promise<Harness> {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator: corr,
-    webContentsForSender: () => null,
   });
   const reg = (await ipc.invokeWithEvent(
     makeFakeEvent({ id: senderId }),

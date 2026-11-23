@@ -126,7 +126,6 @@ describe('request-scope:冷启动水合在途时插件被卸载 → 不把卸载
       identityRegistry: identity,
       pathScopeRegistry: scopes,
       correlator,
-      webContentsForSender: () => null,
       loadPersistedScopes: () => {
         loadStarted();
         return new Promise((r) => {

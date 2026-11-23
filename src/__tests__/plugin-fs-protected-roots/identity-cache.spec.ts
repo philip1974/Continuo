@@ -191,7 +191,6 @@ describe.skipIf(process.platform === 'win32')('身份缓存接到 plugin-fs 全�
       identityRegistry: identity,
       pathScopeRegistry: registry,
       correlator,
-      webContentsForSender: () => null,
     });
     const event = makeFakeEvent({ id: SENDER, isDestroyed: () => false });
     const { token } = (await ipc.invokeWithEvent(event, C.REGISTER_PLUGIN, PLUGIN)) as { token: string };

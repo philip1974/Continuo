@@ -48,7 +48,6 @@ beforeEach(async () => {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator,
-    webContentsForSender: () => null,
   });
   event = makeFakeEvent({ id: 1 });
   const reg = (await ipc.invokeWithEvent(

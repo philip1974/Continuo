@@ -59,7 +59,6 @@ async function makeHarness(persistence?: PersistenceDeps): Promise<FsHarness> {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator,
-    webContentsForSender: () => null,
     ...persistence,
   });
   const event = makeFakeEvent({ id: 1 });

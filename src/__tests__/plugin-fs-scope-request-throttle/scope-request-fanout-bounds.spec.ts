@@ -167,7 +167,6 @@ describe('plugin-fs 入口', () => {
       identityRegistry: identity,
       pathScopeRegistry: scopes,
       correlator,
-      webContentsForSender: () => null,
     });
     token = ((await ipc.invokeWithEvent(event, C.REGISTER_PLUGIN, 'p')) as { token: string }).token;
   });

@@ -38,7 +38,6 @@ async function requestScopes(
     identityRegistry: identity,
     pathScopeRegistry: new PathScopeRegistry(identity),
     correlator: corr,
-    webContentsForSender: () => null,
   });
   const { token } = (await ipc.invokeWithEvent(
     makeFakeEvent({ id: senderId }),

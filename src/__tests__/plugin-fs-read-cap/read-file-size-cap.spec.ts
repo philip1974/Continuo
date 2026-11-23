@@ -56,7 +56,6 @@ beforeEach(async () => {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
     correlator,
-    webContentsForSender: () => null,
   });
   const reg = (await ipc.invokeWithEvent(
     event,

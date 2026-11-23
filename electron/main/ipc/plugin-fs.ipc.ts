@@ -1,7 +1,7 @@
 // Wraps registerPluginFsHandlers from Op5 service factory.
 // All handlers take token as first arg (after event); see (b)-branch design.
 
-import { app, webContents, type IpcMain, type WebContents } from 'electron';
+import { app, webContents, type IpcMain } from 'electron';
 import { join } from 'node:path';
 import { PLUGIN_FS_CHANNELS } from '../../shared/plugin-fs-channels';
 import { IdentityRegistry } from '../services/identity-registry.service';
@@ -145,8 +145,6 @@ export function registerPluginFsIpc({
     identityRegistry,
     pathScopeRegistry,
     correlator,
-    webContentsForSender: (senderId: number): WebContents | null =>
-      webContents.fromId(senderId) ?? null,
     loadPersistedScopes: (pluginId) =>
       loadPersistedScopesIfFsGranted(pluginsDir, pluginId),
     // 安全:经同 id mutation 锁 + 已安装校验落盘,防卸载间隙的授权把 scope 写回磁盘(见函数注释)。

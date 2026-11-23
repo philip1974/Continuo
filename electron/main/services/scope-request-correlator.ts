@@ -12,7 +12,6 @@ interface PendingEntry {
   expiresAt: number;
   resolve: (decision: 'grant' | 'deny') => void;
   reject: (err: ScopeRequestTimeoutError) => void;
-  resolved: boolean;
 }
 
 export interface CreateRequestResult {
@@ -54,7 +53,7 @@ export class ScopeRequestCorrelator {
     if (this.pending.size >= MAX_PENDING_SCOPE_REQUESTS) return false;
     let n = 0;
     for (const e of this.pending.values()) {
-      if (!e.resolved && e.webContentsId === webContentsId) {
+      if (e.webContentsId === webContentsId) {
         n += 1;
         if (n >= MAX_PENDING_PER_WEBCONTENTS) return false;
       }
@@ -81,14 +80,13 @@ export class ScopeRequestCorrelator {
       expiresAt: Date.now() + this._ttlMs,
       resolve: resolveFn!,
       reject: rejectFn!,
-      resolved: false,
     });
     return { requestId, promise };
   }
 
   /**
-   * Resolve a pending request. One-shot: subsequent calls throw.
-   * Throws if requestId unknown, sender mismatch, expired, or already resolved.
+   * Resolve a pending request. One-shot: the entry is dropped, so subsequent calls throw
+   * 'unknown requestId'. Throws if requestId unknown, sender mismatch, or expired.
    */
   resolve(
     requestId: string,
@@ -97,19 +95,14 @@ export class ScopeRequestCorrelator {
   ): void {
     const entry = this.pending.get(requestId);
     if (!entry) throw new ScopeRequestTimeoutError('unknown requestId', requestId);
-    if (entry.resolved) {
-      throw new ScopeRequestTimeoutError('already resolved', requestId);
-    }
     if (entry.webContentsId !== fromWebContentsId) {
       throw new ScopeRequestTimeoutError('wrong webContents', requestId);
     }
     if (Date.now() >= entry.expiresAt) {
-      entry.resolved = true;
       entry.reject(new ScopeRequestTimeoutError('request expired', requestId));
       this.pending.delete(requestId);
       throw new ScopeRequestTimeoutError('request expired', requestId);
     }
-    entry.resolved = true;
     entry.resolve(decision);
     this.pending.delete(requestId);
   }
@@ -125,9 +118,7 @@ export class ScopeRequestCorrelator {
   cancelBySender(webContentsId: number): number {
     let n = 0;
     for (const [requestId, entry] of this.pending) {
-      if (entry.resolved) continue;
       if (entry.webContentsId !== webContentsId) continue;
-      entry.resolved = true;
       entry.reject(new ScopeRequestTimeoutError('window closed', requestId));
       this.pending.delete(requestId);
       n++;
@@ -142,8 +133,7 @@ export class ScopeRequestCorrelator {
   cancelByToken(token: string): number {
     let n = 0;
     for (const [requestId, entry] of this.pending) {
-      if (entry.resolved || entry.token !== token) continue;
-      entry.resolved = true;
+      if (entry.token !== token) continue;
       entry.reject(new ScopeRequestTimeoutError(SCOPE_REQUEST_PLUGIN_UNREGISTERED, requestId));
       this.pending.delete(requestId);
       n++;
@@ -155,9 +145,7 @@ export class ScopeRequestCorrelator {
   _sweep(): void {
     const now = Date.now();
     for (const [requestId, entry] of this.pending) {
-      if (entry.resolved) continue;
       if (now >= entry.expiresAt) {
-        entry.resolved = true;
         entry.reject(new ScopeRequestTimeoutError('request expired', requestId));
         this.pending.delete(requestId);
       }

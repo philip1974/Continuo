@@ -4,7 +4,7 @@ import { constants as fsConstants, promises as fs, type Dirent } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
-import type { IpcMain, WebContents } from 'electron';
+import type { IpcMain } from 'electron';
 import { PLUGIN_FS_CHANNELS, SCOPE_REQUEST_ID_MAX } from '../../shared/plugin-fs-channels';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
@@ -53,8 +53,6 @@ export interface PluginFsDeps {
   identityRegistry: IdentityRegistry;
   pathScopeRegistry: PathScopeRegistry;
   correlator: ScopeRequestCorrelator;
-  /** webContents getter for hosts that need to route scope request events. */
-  webContentsForSender: (senderId: number) => WebContents | null;
   /**
    * 冷启动水合:返回该 plugin 上次会话持久化的 path scope(canonical)。
    * 未注入(如测试)→ 跳过水合,行为同改造前(每次都弹窗)。
