@@ -1,7 +1,7 @@
-// Agent Terminal MCP — tool 实装(Phase 1 仅 list_sessions)。
-// 工厂注入 deps 便于单测,真路由分发器在后续 phase 接。
+// Agent Terminal MCP — tool 实装:list_sessions / create_session / send_input / send_text /
+// press_key / read_output / kill。工厂注入 deps 便于单测;路由分发在 mcp-host.service 的 dispatchRpc。
 //
-// BDD: src/__tests__/agent-terminal-mcp-list-sessions/
+// BDD: src/__tests__/agent-terminal-mcp-*/
 
 import {
   MCP_TOOL_LIST_SESSIONS,

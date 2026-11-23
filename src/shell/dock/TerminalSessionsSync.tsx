@@ -123,7 +123,7 @@ export function TerminalSessionsSync(): null {
 
     const unsub = coApi.terminal.onSessionsChanged((snapshot) => {
       // 边界(E174,E168-E173 同族 IPC ingress 纵深防御):实时广播 snapshot 须先校验是数组 —— 初始
-      // listSessions 路径已有 Array.isArray 守卫(line 68),广播路径此前缺,畸形 payload(null/对象/
+      // listSessions 路径已有 Array.isArray 守卫,广播路径此前缺,畸形 payload(null/对象/
       // 字符串)在 filterByOwnerWindow 的 `for (const s of sessions)` 处抛 → 中断会话同步、列表停旧态。
       // 非法 → warn + notify(同初始路径 UX),且**不置 sawPush**(畸形广播不应抑制有效的初始 hydration)。
       if (!Array.isArray(snapshot)) {

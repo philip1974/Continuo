@@ -1,5 +1,5 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
-// 自检视图:贡献点统计 + 内置插件清单 + 用户插件占位(等 v4 IPC)。
+// 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '@/design';

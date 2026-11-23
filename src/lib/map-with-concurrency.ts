@@ -15,14 +15,14 @@ const EMPTY_SETTLED_RESULTS: PromiseSettledResult<never>[] = [];
 export async function allSettledWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,
-  fn: (item: T, index: number) => Promise<R>,
+  fn: (item: T) => Promise<R>,
 ): Promise<PromiseSettledResult<R>[]> {
   if (items.length === 0) {
     return EMPTY_SETTLED_RESULTS as PromiseSettledResult<R>[];
   }
   if (items.length === 1) {
     try {
-      return [{ status: 'fulfilled', value: await fn(items[0]!, 0) }];
+      return [{ status: 'fulfilled', value: await fn(items[0]!) }];
     } catch (reason) {
       return [{ status: 'rejected', reason }];
     }
@@ -35,7 +35,7 @@ export async function allSettledWithConcurrency<T, R>(
       nextIndex += 1;
       if (i >= items.length) return;
       try {
-        results[i] = { status: 'fulfilled', value: await fn(items[i]!, i) };
+        results[i] = { status: 'fulfilled', value: await fn(items[i]!) };
       } catch (reason) {
         results[i] = { status: 'rejected', reason };
       }

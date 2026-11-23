@@ -1,8 +1,8 @@
 // 48px 竖向 Activity Bar(VSCode 风),Dockview 之外、main 之内。
-// 顶部:内置导航(Explorer / Search)。中段:plugin 通过 ribbon 贡献的图标。
+// 顶部:内置导航(Explorer)。中段:plugin 通过 ribbon 贡献的图标。
 // 底部:Settings / Account 等元类。
 // Explorer 按钮 toggle 左侧 Explorer Sidebar 显隐(active 状态显示左侧 accent bar);
-// Search / Settings 占位待实现。
+// Settings 按钮开关 Settings 面板。
 
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { Folder } from '@react-symbols/icons';

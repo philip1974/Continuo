@@ -68,7 +68,7 @@ const workspace: CoWorkspaceApi = {
 
 // v5 Phase 4:Plugin → MCP bridge — registry 持 IPC upstream,
 // dispose 时通过 preload.pluginMcp.unregisterTool 上行,renderer 启动时
-// 在 main.tsx 订阅 onInvoke 把反向调用路由到 registry.invokeLocal。
+// 在 main-app.ts 订阅 onInvoke 把反向调用路由到 registry.invokeLocal。
 const pluginMcpRegistry = new PluginMcpRegistry(
   createIpcPluginMcpUpstream(),
 );

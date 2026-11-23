@@ -104,7 +104,7 @@ export function sanitizeExplorerReadPayload(
 }
 
 // 边界(E89/E215):单窗口 dockview layout 序列化字节上限 + 读端守卫,收口到 lib/layout-read-guard
-//(写端 layout:write 与读端 layout:read 共用;ipc.ts 顶层 app 副作用不可测试导入,故抽出可导入模块)。
+//(写端 layout:write 与读端 layout:read 共用,抽成独立模块便于单测)。
 import {
   MAX_LAYOUT_BYTES,
   sanitizeReadLayout,

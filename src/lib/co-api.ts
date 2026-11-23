@@ -1,7 +1,7 @@
 // LM UI 内部 IPC 入口(M-Plugin v5 Phase 4.B)。
 //
 // 取代散落在源文件里的 `window.api.X.Y(...)` 直接访问。captureLmApi() 在
-// main.tsx 早期调用一次,从 preload 注入的 __lmApi.claimRendererApi()
+// main-app.ts 的 init() 早期调用一次,从 preload 注入的 __lmApi.claimRendererApi()
 // 一次性领取完整 API 并缓存到 module-local;之后 plugin 再 claim 得到 null,
 // 只能使用 constructor 注入的 scoped app。
 //
@@ -51,7 +51,7 @@ function readLiveApi(): ContinuoApi | undefined {
 /**
  * 从 window.__lmApi.claimRendererApi(PROD)一次性领取并缓存完整 API。
  * 测试 / 旧 dev mock 仍可用 window.__lmApi 或 window.api 的完整 API 形态。
- * **main.tsx 启动时必须调一次,sandboxSweep 之前**。
+ * **main-app.ts 的 init() 启动时必须调一次,sandboxSweep 之前**。
  * 缺 → warn 不抛,后续 coApi 调用才报。
  */
 export function captureLmApi(): void {

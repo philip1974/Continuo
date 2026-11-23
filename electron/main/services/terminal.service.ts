@@ -97,7 +97,7 @@ function handleChunk(id: string, chunk: string): void {
 
 function handleExit(id: string, info: { exitCode: number; signal?: number }): void {
   // SessionManager constructor onExit callback fires when PTY naturally exits.
-  // forceKill/killTimer-grace/cleanupAllForWindow paths sync-call cleanupSessionLocal
+  // forceKill/killTimer-grace/makeWindowClosedCleanup paths sync-call cleanupSessionLocal
   // BEFORE sm.kill (which disposes this listener), so this handler is the idempotent
   // fallback for natural exits.
   cleanupSessionLocal(id, info.exitCode);
@@ -394,7 +394,7 @@ const resizeChains = new Map<string, Promise<unknown>>();
 
 /**
  * 超出 maxBytes 时只保留尾部,前置 ANSI reset 防色码脏话。
- * 在尾部窗口 32 字节内向前找 ESC(0x1b),从那里截断 — 防 ANSI escape
+ * 截断点若落在一个转义序列内部,就把截断点向后挪到该序列之后(见函数内说明)— 防 ANSI escape
  * 序列(如 `\x1b[31m`)被切成两半成乱码。
  */
 // 边界(E244):前置的 ANSI reset(`\x1b[0m`)是 4 个 ASCII 字节。截断预算须先扣除它,否则返回值

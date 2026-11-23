@@ -325,15 +325,6 @@ export function makeResizeHandler(deps?: { service?: typeof termService }) {
 }
 
 /**
- * sessions_changed 广播:严格 per-owner 路由,把按 ownerWindowId 过滤后的 session 快照
- * 推给每个未销毁窗口。terminalSessions 的 subscriber。
- *
- * race(R68,R63-R67 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
- * "Object has been destroyed"。裸抛会中断窗口循环 → 坏窗口之后的其它窗口漏收终端会话快照,
- * Dock/Terminal 面板停在旧 session 列表直到下一次 session 变化。每个窗口的 send 独立 try/catch,
- * 失败只跳过/记录并继续给其它窗口发送。导出供 R68 回归测试。
- */
-/**
  * 性能:窗口 id → 上次发给它的 owner 过滤快照(terminalSessions 内部的 MainTerminalSession 数组)。
  * 任一会话变化都会触发本广播,而 invalidateSnapshotCache 会清掉所有窗口的过滤缓存;此前无关窗口
  * (自己的会话没变)也每次 toRendererSessions + 序列化 + send,renderer 再重跑过滤 / reconcile。
@@ -364,6 +355,15 @@ export function forgetSessionsBroadcastWindow(windowId: number): void {
   lastSentSessionsByWindow.delete(windowId);
 }
 
+/**
+ * sessions_changed 广播:严格 per-owner 路由,把按 ownerWindowId 过滤后的 session 快照
+ * 推给每个未销毁窗口。terminalSessions 的 subscriber。
+ *
+ * race(R68,R63-R67 同族):isDestroyed() 检查后、send 前窗口可能销毁,send 抛
+ * "Object has been destroyed"。裸抛会中断窗口循环 → 坏窗口之后的其它窗口漏收终端会话快照,
+ * Dock/Terminal 面板停在旧 session 列表直到下一次 session 变化。每个窗口的 send 独立 try/catch,
+ * 失败只跳过/记录并继续给其它窗口发送。导出供 R68 回归测试。
+ */
 export function broadcastSessionsChanged(): void {
   broadcastToWindows(
     TERMINAL_CHANNELS.SESSIONS_CHANGED,

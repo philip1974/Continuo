@@ -1,6 +1,6 @@
 // 底部状态栏(VSCode 风,24px,参考 stitch_desktop_design_reviewer)。
-// 左:workspace 名 + sidebar 收起提示 + git 分支占位。
-// 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码占位。
+// 左:workspace 名 + sidebar 收起提示。
+// 右:active editor tab 文件名 + dirty + 行 / 词 / 字符。
 
 import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';

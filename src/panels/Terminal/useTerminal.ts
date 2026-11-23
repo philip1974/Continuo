@@ -834,7 +834,7 @@ export function useTerminal(termId: string) {
   }, []);
 
   // topic-22: stale-safe focus,unmount 后 termRef.current 已被 dispose 路径置 null
-  // (line 291 cleanup),callback 自然 no-op,焦点不会落到已 dispose 的实例。
+  // (teardown 里),callback 自然 no-op,焦点不会落到已 dispose 的实例。
   const focus = useCallback(() => {
     termRef.current?.focus();
   }, []);

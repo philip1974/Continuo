@@ -7,7 +7,7 @@
 //  - 会话绑定:事件按文件名中的 CONTINUO_TERMINAL_SESSION_ID 精确交给该会话的等待者(防串会话的
 //    正确性约束,非安全边界:同用户进程可直接读 hook-events / transcript)
 //  - Codex hook filename 加 windowId (P0-4)
-//  - settings merge 不 parse TOML, block-level regex + marker-only path drift (P1-3)
+//  - settings merge 不 parse TOML, block-level 字符扫描 + managed command 逐字节比较 (P1-3)
 //  - raw default omit (P1-4) — broker 返回完整 payload, awaitStopHookTool.run() 仅 input.include_raw=true 时加 output
 //  - start fail degrade (P2-1) — broker.start throw → 上层 startMcpHost 不注册 tool
 
@@ -908,8 +908,8 @@ async function writeConfigBackup(configPath: string, text: string): Promise<bool
 // 边界(E66,E26 同款 / E18 stat-before-read 族):安装 stop-hook 时要读用户工作区的配置文件
 // (.claude/settings.local.json / .codex/config.toml)—— 这是工作区外部输入。此前两处直接
 // readFile(.., 'utf8') 整块读入,无大小上限:畸形/超大配置会让 main 进程在装 hook 时内存/CPU
-// 峰值,.codex/config.toml 还会让 regex/replace 在超大文本上跑并构造更大的写入串。共用 capped-read
-// helper:先 stat.size 拦,超限不进 parse/regex/atomicWrite。E26 已给 ingestFile 的 hook 输出文件
+// 峰值,.codex/config.toml 还会让字符扫描 / 拼接在超大文本上跑并构造更大的写入串。共用 capped-read
+// helper:先 stat.size 拦,超限不进 parse / 扫描 / atomicWrite。E26 已给 ingestFile 的 hook 输出文件
 // 加过同款 cap,这两处配置读入是其平行入口。
 const MAX_CONFIG_FILE_BYTES = 1024 * 1024; // 1 MiB:stop-hook 配置是小文本,留足余量
 
@@ -1140,7 +1140,7 @@ async function writeConfigGuarded(
   if (guard !== 'ok') return { installed: false, reason: guard };
 
   // 边界(E66):stat.size 预检的 capped-read。too-large/read-error 直接 fail-fast,不进
-  // JSON.parse / regex / atomicWrite。read-error 同既有「读失败当空→写覆盖」族:不能当空配置覆盖。
+  // JSON.parse / 扫描 / atomicWrite。read-error 同既有「读失败当空→写覆盖」族:不能当空配置覆盖。
   const read = await readConfigCapped(configPath);
   if (read.kind === 'unsafe-config-path') return refuseUnsafeConfigPath(configPath);
   if (read.kind === 'too-large') {
@@ -1261,8 +1261,8 @@ function mergeCodexConfig(
   hookEventsDir: string,
 ): Promise<InstallStopHookResult> {
   const configPath = path.join(cwd, '.codex', 'config.toml');
-  // 边界(E66,同 mergeClaudeCodeSettings):capped-read 由 writeConfigGuarded 统一做,超大不进 regex/
-  // replace/atomicWrite(超大文本上跑正则 + 构造更大写入串)。read-error 不当空配置覆盖。
+  // 边界(E66,同 mergeClaudeCodeSettings):capped-read 由 writeConfigGuarded 统一做,超大不进扫描 /
+  // 拼接 / atomicWrite(超大文本上逐字符扫描 + 构造更大写入串)。read-error 不当空配置覆盖。
   return writeConfigGuarded(cwd, configPath, (original) => {
     const text = original?.text ?? ''; // 不存在 → 新建
 

@@ -1,5 +1,4 @@
-// Agent Terminal MCP 授权应答 IPC schema(单列于此,不引 electron app —— 可被测试直接 import,
-// 不像 ipc.ts 会在模块加载时触达 electron/main/index 的 app.isPackaged)。
+// Agent Terminal MCP 授权应答 IPC schema(单列于此,不引 electron app,可被测试直接 import)。
 import { z } from 'zod';
 import {
   AGENT_AUTH_DECISIONS,

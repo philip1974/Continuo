@@ -234,7 +234,7 @@ export class PluginMcpRegistry {
     // 被外部 MCP client 立即 tools/call,而此调用若早于 renderer 的 await continuation 写入
     // entries,invokeLocal 命中 NO_SUCH_TOOL = "刚注册成功但首次调用失败"。本地 entry 先就位,
     // upstream.register resolve 时本地表已可执行。upstream 失败回滚本地 entry,保持"失败不残留
-    // 本地表、允许重试"语义(原 line 107 注释承诺)。
+    // 本地表、允许重试"语义。
     this.entries.set(spec.name, { invoke });
     try {
       await this.upstream.register({

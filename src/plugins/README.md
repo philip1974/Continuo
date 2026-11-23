@@ -31,7 +31,7 @@ A `Plugin` subclass calls these from inside `onload()`. Each returns a `Disposab
 | `addStatusBarItem(spec)` | A status-bar segment (left or right side, with priority). |
 | `addRibbonAction(spec)` | A clickable icon in the IconSidebar ribbon. |
 | `registerEvent(spec)` | Subscribe to a named event on the global event bus. |
-| `addSettingTab(spec)` | A whole tab in the Settings modal. |
+| `addSettingTab(spec)` | A whole tab in the Settings panel. |
 | `addSettingItem(spec)` | A single setting row (composes inside an existing tab). |
 | `registerExplorerDecorator(fn)` | Override file icon / badge / tooltip in the Explorer tree. |
 | `registerEditorAction(spec)` | An action that appears in the editor toolbar when its `when` predicate matches. |

@@ -25,10 +25,6 @@ export interface AgentAuthRequestPayload {
   readonly external?: boolean;
 }
 
-// 边界(E171,E168/E169/E170 同族 IPC ingress 纵深防御):agent-auth:request 驱动授权弹窗(安全敏感)。
-// AgentAuthPrompt 此前直接解构 payload({requestId, method}),畸形 push(null/缺 requestId·
-// method/超长 method)→ 解构 null 抛未处理 rejection、超长文本进弹窗状态并经 catalog 插值
-// 放大、缺 requestId 致 respond(undefined) → main pending 等到无应答超时。注册入口 runtime 守卫。
 /**
  * 授权弹窗无应答超时:main 到点把请求结算为 denied,renderer 同 TTL 关掉已失效的弹窗(两侧必须一致,
  * 否则弹窗滞留并挡住后续请求)。2 分钟(此前 5 分钟):只发起不应答的弹窗每次占屏时长与发起方干等时长都随之缩短;

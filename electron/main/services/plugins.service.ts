@@ -1359,7 +1359,7 @@ export async function installFromGit(
       throw codedError(ERROR_CODES.BAD_MAIN, `main 入口不存在或不是文件: ${mainName}`);
     }
 
-    // 验证已通过 → 收窄成 string 常量,带进下面的闭包(let manifest 的窄化跨闭包会丢)。
+    // 验证已通过 → 收窄成 string 常量,带进下面的闭包。
     const pluginId = manifest.id;
     const pluginName = manifest.name;
     const pluginVersion = manifest.version;

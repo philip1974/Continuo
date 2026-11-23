@@ -455,8 +455,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
   let flushed = flushedOnQuit.has(win.id);
   // race(R45):flush 在途守卫。requestWindowFlush 是异步(等 renderer ack / 10s 超时),其间
   // `flushed` 仍为 false;若不挡住,快速重复关窗 / 系统关窗 / app.quit 触发的第二个 close 会再次
-  // requestWindowFlush,用同 win.id 覆盖 pendingFlushAcks → renderer 的 ack 只 resolve 最新请求,
-  // 旧 promise 干等满超时才放行,且 flush 完成后可能重复 win.close()。
+  // requestWindowFlush(renderer 重复 flush / 重复弹确认框),且 flush 完成后可能重复 win.close()。
   let flushing = false;
   win.on('close', (event) => {
     e2eQuitTrace(`win ${windowId} close flushed=${flushed || flushedOnQuit.has(windowId)} flushing=${flushing}`);
@@ -466,7 +465,7 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
     // 二次阻塞退出)。
     if (flushed || flushedOnQuit.has(win.id)) return;
     event.preventDefault();
-    // race(R45):已有 flush 在途 → 只阻止本次关闭,不再发第二个 flush(避免覆盖 pending ack)。
+    // race(R45):已有 flush 在途 → 只阻止本次关闭,不再发第二个 flush。
     // 脏文件确认框打开期间同样置 flushing,重复关闭不叠第二个确认框。
     if (flushing) return;
     flushing = true;

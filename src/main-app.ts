@@ -165,8 +165,8 @@ export async function init(): Promise<void> {
     return;
   }
 
-  // M-Plugin v1.7:渲染前同步注册内置插件(editor / terminal / output),
-  // 使 coApp.panels 在 DockShell 首次 mount 时已含 3 个 panel 类型。
+  // M-Plugin v1.7:渲染前同步注册内置插件,
+  // 使 coApp.panels 在 DockShell 首次 mount 时已含全部内置 panel 类型。
   bootCorePlugins();
 
   // v5 Phase 4:Plugin → MCP bridge 反向调用路由。preload.pluginMcp.onInvoke

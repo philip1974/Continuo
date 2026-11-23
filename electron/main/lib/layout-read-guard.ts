@@ -2,7 +2,7 @@
 //
 // 边界(E89):单窗口 dockview layout 序列化字节上限(远小于 explorer.json 16MiB E67 上限,确保写入后
 // 整个 explorer.json 仍可读)。正常 layout 仅 KB 级,2MiB 留足余量。写端(layout:write)与读端
-// (layout:read)共用此常量 —— ipc.ts 顶层有 app 副作用不可测试导入,故守卫逻辑抽到本可导入模块。
+// (layout:read)共用此常量与守卫逻辑。
 import { assertJsonValue } from '../../shared/assert-json-value';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { jsonStringLengthLowerBoundExceeds } from '../../shared/json-byte-budget';

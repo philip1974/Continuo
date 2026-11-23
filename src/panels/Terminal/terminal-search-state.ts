@@ -1,7 +1,7 @@
 // Continuo-local thin wrapper for @continuo-terminal/react-terminal search-state.
 // Re-exports package types/reducer/effect with explicit named exports (not `export *`)
 // to avoid leaking the package's 4-arg applyTerminalSearchEffect into Continuo call sites.
-// host-specific bindings (DECORATIONS palette, dockview activePanel resolver) stay here.
+// host-specific bindings (DECORATIONS palette) stay here.
 //
 // Migrated per dev-loop topic 25.
 

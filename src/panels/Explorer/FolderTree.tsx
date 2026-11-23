@@ -524,7 +524,6 @@ export function FolderTree({ root }: { root: string }) {
   renderedItemsRef.current = items;
 
   // 多选集合数据源 = headless-tree selectionFeature 真实状态。
-  // 不再读 explorer.store.selectedPaths(从未被同步,留 cleanup 单独提交)。
   // 数组引用变 → Set 重建;Click/Cmd-Click/Shift-Click 由 selectionFeature 内部
   // 维护,任何变化都会引起组件重渲,Set 自动跟新。
   const selectedItemsArr = tree.getState().selectedItems;
@@ -658,7 +657,7 @@ export function FolderTree({ root }: { root: string }) {
         // —— 已在跑的 PTY 不会因主题切换而重渲。
         void (async () => {
           // a11y(A140,A139 同族):fire-and-forget async 包 try/catch —— terminal.create()
-          // 的 IPC reject(抛错而非返回 {ok:false})与动态 import dock-api-ref 的 reject 此前
+          // 的 IPC reject(抛错而非返回 {ok:false})此前
           // 未捕获 → unhandled rejection,右键「在终端打开」失败时无 toast/live region 反馈。
           try {
             const r = await coApi.terminal.create({

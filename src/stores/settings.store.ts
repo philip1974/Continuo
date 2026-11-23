@@ -21,7 +21,7 @@ function isValidI18nChangedPayload(
 }
 
 export interface SettingsState {
-  /** 当前 locale — 启动时由 main.tsx bootstrap 用 main 真值 setState 注入；之后随 setLocale 更新。 */
+  /** 当前 locale — 启动时由 main-app.ts bootstrap 用 main 真值 setState 注入；之后随 setLocale 更新。 */
   readonly locale: Locale;
   /** 最新一次本端发起或收到的 in-flight gen；过期 callback 丢弃。 */
   readonly currentGen: number;

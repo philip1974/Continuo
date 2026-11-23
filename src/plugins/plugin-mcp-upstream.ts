@@ -1,6 +1,6 @@
 // PluginMcpUpstream 的生产实装:走 preload 暴露的 pluginMcp IPC API。
 //
-// 单测里 PluginMcpRegistry 注入 fake upstream 即可,本文件只在 main.tsx 启动时
+// 单测里 PluginMcpRegistry 注入 fake upstream 即可,本文件只在 co-app.ts 模块初始化时
 // 通过 createIpcPluginMcpUpstream() 装到 coApp.mcp。
 //
 // register 失败(权限 / 重名 / 上行错)IpcResult.ok=false → 抛 Error 含 code,

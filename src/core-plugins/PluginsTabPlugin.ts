@@ -1,6 +1,5 @@
 // 内置 '插件' SettingTab(M-Plugin v3.5)。
-// 显示插件系统自检:已注册各类贡献点的数量与列表,作为开发时观察 + 用户了解
-// 当前激活的功能。第三方插件管理(enable/disable UI)等 v4 IPC backend 接入。
+// 显示插件系统自检(已注册各类贡献点的数量与列表)+ 用户插件管理(安装 / 启停 / 重载 / 权限 / 卸载)。
 //
 // 全局命令 'settings.toggle'(⌘,)在 SettingsPanelPlugin 注册。
 
@@ -26,7 +25,7 @@ const MarketplaceTab = lazy(() =>
 
 export default class PluginsTabPlugin extends Plugin {
   onload(): void {
-    // 插件商店在前(priority 数字小排前;现有 Sample 是 80,Plugins 50)
+    // 插件商店在前(priority 数字小排前)
     this.addSettingTab({
       id: 'core.marketplace',
       title: 'Plugin Market',

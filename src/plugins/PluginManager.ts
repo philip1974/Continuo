@@ -448,7 +448,7 @@ export class PluginManager {
     // partial-grant warning(及 error)只对 enabled+active 插件有意义。disable 后
     // 必须清,否则 PluginsTab 行无条件渲染 p.warning(无 status 门控)→ 已禁用的
     // 插件仍挂着「⚠ 部分授权」陈旧标记。deactivateEntry 不碰这两字段,activateEntry
-    // 只在重新激活时清(311)→ 离开 active 的转换此前漏清(对称性缺口)。
+    // 只在重新激活时清(activateEntry)→ 离开 active 的转换此前漏清(对称性缺口)。
     entry.error = undefined;
     entry.warning = undefined;
     entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
@@ -544,7 +544,7 @@ export class PluginManager {
     entry.status = wasEnabled ? 'enabled' : 'disabled';
     entry.error = undefined;
     // reload→disabled 不会走 activateEntry(只 wasEnabled 才走),warning 须在此清;
-    // reload→enabled 会走 activateEntry(311 清 + 342 按本次授权重设),此处清亦无害。
+    // reload→enabled 会走 activateEntry(先清、再按本次授权重设),此处清亦无害。
     entry.warning = undefined;
     this.invalidateListCache();
 
@@ -947,7 +947,7 @@ export class PluginManager {
 }
 
 // ── user PluginManager singleton ──────────────────────────────────
-// main.tsx 在 bootCorePlugins 后实例化并 init();其它地方通过 getter 访问
+// main-app.ts 在 bootCorePlugins 后实例化并 init();其它地方通过 getter 访问
 // 当前快照(用于 Plugins SettingTab 等 UI)。
 
 let _userManager: PluginManager | null = null;

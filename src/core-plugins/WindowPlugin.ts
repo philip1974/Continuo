@@ -59,7 +59,7 @@ export default class WindowPlugin extends Plugin {
               cr.code,
               cr.message,
             );
-            notifyFailure(cr);
+            notifyFailure(cr, { mirror: false });
           }
         } finally {
           releaseSelectDirectoryLock();

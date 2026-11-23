@@ -20,7 +20,7 @@
 // - setExited:由 SessionManagerOptions.onExit callback (Step 0.6) →
 //   handleExit → cleanupSessionLocal → setExited;exitCode 来自 PTY exit 真实值
 // - remove:IPC TERMINAL_REMOVE handler (user 主动关 panel) / agent-auth cleanup
-// - removeByOwner:BrowserWindow 'closed' 事件 → cleanupAllForWindow → removeByOwner;
+// - removeByOwner:BrowserWindow 'closed' 事件 → makeWindowClosedCleanup → removeByOwner;
 //   exited-retained 与 live 都被 cascade 删除
 //
 // 该状态机隐式实现自 Step 1,本 JSDoc 显式 promote 自 ADR 0003。
@@ -84,7 +84,7 @@ const EMPTY_TERMINAL_SESSION_SNAPSHOT: readonly MainTerminalSession[] = [];
 const EMPTY_REMOVED_SESSION_IDS: readonly string[] = [];
 
 // 边界(E235,E230 数量上限族):终端会话数量上限。每个 session 占一个**真实 PTY 子进程** + 4MiB ring
-// buffer + throttle interval + metadata 快照广播 + Dock panel —— 数量上限族里最重的资源。此前 add() 无
+// buffer + metadata 快照广播 + Dock panel —— 数量上限族里最重的资源。此前 add() 无
 // 数量上限,terminal:create / MCP create_session 可持续创建直至拖垮 main/renderer/系统。add() 是 PTY
 // spawn **前**的 reservation 单一漏斗(IPC handler 先 add 再 service.createTerminal),在此加全局 +
 // 每窗口双闸 → 超限抛 TOO_MANY_TERMINALS,既不入 sessions 也不会 spawn PTY(不漏子进程)。计数含 live 与

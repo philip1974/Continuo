@@ -802,7 +802,7 @@ export class DebugService {
   private readonly resolveNodeRuntime: () => Promise<string>;
   private readonly runtimes = new Map<string, RuntimeDebugSession>();
   private readonly teardownInFlight = new Map<string, Promise<void>>();
-  /** 按 session + source 串行 setBreakpoints(读集合→下发→回滚/推快照整段不交错)。 */
+  /** 按 session 串行 setBreakpoints(读集合→下发→回滚/推快照整段不交错)。 */
   private readonly breakpointChains = new Map<string, Promise<unknown>>();
   /**
    * 在途 launch 登记表。killByController / killByOwner / cleanupAll 只查得到已登记会话,据此取消尚未登记的;

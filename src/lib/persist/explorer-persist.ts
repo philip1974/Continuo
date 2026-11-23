@@ -461,7 +461,7 @@ export async function initExplorerPersistence(
           // 段缺失但 query 有 workspace(首次启动 / corrupted snap)⇒ 用 query 作 root
           hydrateStoresForNewWindow(r.data, initialWorkspace);
         } else {
-          // 新窗(本来不该走到 — main.tsx 不会缺 windowSeq + 缺 query)→ 默认
+          // 新窗(本来不该走到 — main-app.ts 不会缺 windowSeq + 缺 query)→ 默认
           hydrateStores(r.data, windowSeq);
         }
       } else if (initialWorkspace !== undefined) {

@@ -10,8 +10,8 @@ import { useClosingStore } from '@/stores/closing.store';
 
 // 进场:initial → animate(在 panels 注册处包一层即可触发)。
 // 退场:dockview 没有 onWillRemovePanel,无法直接挂 AnimatePresence。
-// 折中:SharedTab 的 close handler 先把 id 放进 closing-store + setTimeout,
-// 这一层订阅 store,isClosing 时 animate 到 EXIT,200ms 后 dockview 真 unmount。
+// 折中:wrap-panel-close.ts 包住 panel 的 close,先把 id 放进 closing-store + setTimeout,
+// 这一层订阅 store,isClosing 时 animate 到 EXIT,EXIT_DURATION_MS 后 dockview 真 unmount。
 export function PanelMount({ panelId, children }: { panelId: string; children: ReactNode }) {
   const isClosing = useClosingStore((s) => s.ids.has(panelId));
   return (

@@ -10,7 +10,7 @@ import { GeneralIcon } from '@/plugins/settings/tab-icons';
 
 export default class GeneralTabPlugin extends Plugin {
   onload(): void {
-    // priority 1:第一个 tab(快捷键 priority 100,插件 50,商店 40)
+    // priority 1:第一个 tab(其余内置 tab 的 priority 见各自的 *TabPlugin)
     this.addSettingTab({
       id: 'core.general',
       title: 'General',

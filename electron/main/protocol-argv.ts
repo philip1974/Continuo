@@ -3,8 +3,8 @@
 // Windows/Linux 没有 macOS 的 open-url 事件:协议深链通过 argv 传入(冷启动 process.argv
 // 或运行中 second-instance 的 argv)。此前用大小写敏感的 `a.startsWith('co://')` 前缀匹配:
 //   - 大写 scheme(`CO://...`)被丢弃(URL scheme 大小写不敏感)→ 深链不派发;
-// 这里用 `new URL()` 按 protocol 比较(大小写无关),兜底再做前缀匹配
-// (跨平台审计 P2,主仓 index.ts:486 / 861)。
+// 这里先做大小写无关的前缀匹配(无分配),不命中再用 `new URL()` 按 protocol 比较
+// (跨平台审计 P2;调用方是 index.ts 的冷启动与 second-instance 两处)。
 
 import { MAX_PROTOCOL_URL_LEN } from './protocol-dispatch';
 import { lowerIfNeeded, startsWithAsciiIgnoreCase } from '../shared/lower-if-needed';
@@ -18,17 +18,16 @@ export function extractProtocolUrl(
   const schemePrefix = `${scheme}//`;
   for (const a of argv) {
     if (typeof a !== 'string' || a.length === 0) continue;
-    // 边界(E152):在 `new URL(a)` 解析与失败分支 `a.toLowerCase()` 拷贝之前先做长度上限。
+    // 边界(E152):在前缀匹配与 `new URL(a)` 解析之前先做长度上限。
     // 否则畸形/恶意超长 argv(冷启动 process.argv 或 second-instance argv)会在 routeProtocolUrl
-    // 的 8KB 上限生效之前,先触发整串 URL 解析 + toLowerCase 大字符串拷贝 → 放大启动 CPU/内存。
+    // 的 8KB 上限生效之前,先触发整串 URL 解析 → 放大启动 CPU/内存。
     // 超 MAX_PROTOCOL_URL_LEN 的串即便是合法深链也会被下游 routeProtocolUrl 拒,故直接跳过无损。
     if (a.length > MAX_PROTOCOL_URL_LEN) continue;
     if (startsWithAsciiIgnoreCase(a, schemePrefix)) return a;
     try {
       if (lowerIfNeeded(new URL(a).protocol) === scheme) return a;
     } catch {
-      // 非合法 URL:退回前缀匹配(大小写无关)
-      // 常见 `<protocol>://` 已在上方无分配处理;这里保留 catch 形态以便未来 schemePrefix 规则扩展。
+      // 非合法 URL:不是深链,跳过(常见 `<protocol>://` 已在上方无分配处理)。
     }
   }
   return null;

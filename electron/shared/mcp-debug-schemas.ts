@@ -253,11 +253,8 @@ export type DebugScopesInput = z.infer<typeof debugScopesInputSchema>;
 
 type JsonSchema = Record<string, unknown>;
 
-const stringSchema = (maxLength?: number): JsonSchema => ({
-  type: 'string',
-  ...(maxLength ? { maxLength } : {}),
-});
-const intSchema = (minimum = 0, maximum?: number): JsonSchema => ({
+const stringSchema = (maxLength: number): JsonSchema => ({ type: 'string', maxLength });
+const intSchema = (minimum: number, maximum?: number): JsonSchema => ({
   type: 'integer',
   minimum,
   ...(maximum !== undefined ? { maximum } : {}),
@@ -272,10 +269,10 @@ const objectSchema = (
   required,
   additionalProperties: false,
 });
-const arraySchema = (items: JsonSchema, maxItems?: number): JsonSchema => ({
+const arraySchema = (items: JsonSchema, maxItems: number): JsonSchema => ({
   type: 'array',
   items,
-  ...(maxItems !== undefined ? { maxItems } : {}),
+  maxItems,
 });
 
 const sessionIdJson = stringSchema(DEBUG_SESSION_ID_MAX);
