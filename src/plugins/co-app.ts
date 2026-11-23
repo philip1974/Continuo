@@ -279,7 +279,3 @@ export const coApp: CoApp = {
   notifications,
 };
 
-/** 让 main.tsx 拿到 registry 引用,在启动时订阅 onInvoke 路由反向调用. */
-export function getPluginMcpRegistry(): PluginMcpRegistry {
-  return pluginMcpRegistry;
-}

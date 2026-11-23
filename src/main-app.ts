@@ -11,7 +11,7 @@ import {
   parseInitialWorkspace,
 } from './lib/initial-workspace';
 import { bootCorePlugins } from './core-plugins';
-import { coApp, getPluginMcpRegistry } from './plugins/co-app';
+import { coApp } from './plugins/co-app';
 import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager, setUserPluginManager } from './plugins/PluginManager';
@@ -173,7 +173,7 @@ export async function init(): Promise<void> {
   // 收 main 推过来的 INVOKE → 调 registry.invokeLocal → preload.replyInvoke 答 main。
   // fire-and-forget,卸载在窗口关闭时由 GC 处理(订阅 unsub 会泄漏一个 listener,
   // 单 renderer 生命周期级,可接受)。
-  startPluginMcpInvokeBridge(getPluginMcpRegistry());
+  startPluginMcpInvokeBridge(coApp.mcp);
   startPluginFsScopeRequestBridge();
 
   // Debug 视图事件同步(断点红点 / 停靠行 / Debug 面板的数据源)必须随 renderer 启动,不能等懒加载的
@@ -221,9 +221,7 @@ export async function init(): Promise<void> {
     // listAll() 裁剪,扫描前为空会直接落空;不等激活(可能挂在授权弹窗上)。popout 已在上方早退,此处恒为主窗。
     // fire-and-forget,不阻塞 UI 渲染;失败 console.warn 不抛。
     init: () =>
-      initPluginsThenCheckUpdates(userPluginManager, () => useUpdateStore.getState().refresh(), {
-        checkUpdates: true,
-      }),
+      initPluginsThenCheckUpdates(userPluginManager, () => useUpdateStore.getState().refresh()),
     reload: (id) => userPluginManager.reload(id),
     onChanged: (cb) => coApi.plugins.onChanged(cb),
     // 终审 P1:任一窗口卸载成功 → main 广播,本窗口撤销该插件实例 / 贡献点 / 权限缓存(幂等、不触盘)。

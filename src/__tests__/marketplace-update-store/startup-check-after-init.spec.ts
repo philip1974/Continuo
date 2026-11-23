@@ -36,7 +36,7 @@ describe('启动更新检查排在插件扫描完成之后', () => {
   it('扫描完成前不检查;扫描完成后检查一次(即使 init 仍挂在某插件激活上)', async () => {
     const { manager, scanned } = fakeManager();
     const refresh = vi.fn(() => Promise.resolve());
-    void initPluginsThenCheckUpdates(manager, refresh, { checkUpdates: true });
+    void initPluginsThenCheckUpdates(manager, refresh);
     await flush();
     expect(manager.init).toHaveBeenCalledTimes(1);
     expect(refresh).not.toHaveBeenCalled();
@@ -47,25 +47,11 @@ describe('启动更新检查排在插件扫描完成之后', () => {
 
   it('返回值即 init 的结果(含失败),原样交给 reload-gate', async () => {
     const { manager, init, scanned } = fakeManager();
-    const done = initPluginsThenCheckUpdates(manager, vi.fn(() => Promise.resolve()), {
-      checkUpdates: true,
-    });
+    const done = initPluginsThenCheckUpdates(manager, vi.fn(() => Promise.resolve()));
     const err = new Error('scan failed');
     init.reject(err);
     scanned.resolve();
     await expect(done).rejects.toBe(err);
-  });
-
-  it('popout(checkUpdates=false):init 照常,但不检查更新', async () => {
-    const { manager, init, scanned } = fakeManager();
-    const refresh = vi.fn(() => Promise.resolve());
-    const done = initPluginsThenCheckUpdates(manager, refresh, { checkUpdates: false });
-    scanned.resolve();
-    init.resolve();
-    await done;
-    await flush();
-    expect(manager.init).toHaveBeenCalledTimes(1);
-    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('main-app 不再在 init 发起的同一同步段直接调用 refresh', () => {

@@ -27,20 +27,16 @@ export type PluginModuleResult =
 export interface LoadPluginModuleOpts {
   readonly moduleUrl: string;
   readonly manifest: PluginManifest;
-  /** 测试可注入 mock,生产用 (url) => import(/* @vite-ignore *​/ url). */
-  readonly importer?: (url: string) => Promise<unknown>;
+  /** 生产传 host.importModule(负责 Blob URL 解析与 revoke);测试注入 mock。 */
+  readonly importer: (url: string) => Promise<unknown>;
 }
-
-const defaultImporter = (url: string) =>
-  import(/* @vite-ignore */ url) as Promise<unknown>;
 
 export async function loadPluginModule(
   opts: LoadPluginModuleOpts,
 ): Promise<PluginModuleResult> {
-  const importer = opts.importer ?? defaultImporter;
   let mod: unknown;
   try {
-    mod = await importer(opts.moduleUrl);
+    mod = await opts.importer(opts.moduleUrl);
   } catch (err) {
     return {
       ok: false,

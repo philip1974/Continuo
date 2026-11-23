@@ -12,8 +12,8 @@ const mocks = vi.hoisted(() => {
     startPluginMcpInvokeBridge: vi.fn(),
     coApp: {
       commands: { register: vi.fn(() => ({ dispose: vi.fn() })) },
+      mcp: {},
     },
-    getPluginMcpRegistry: vi.fn(() => ({})),
     setUserPluginManager: vi.fn(),
     setUserPermissionStore: vi.fn(),
     createWindowApiHost: vi.fn(() => ({})),
@@ -86,7 +86,6 @@ vi.mock('@/core-plugins', () => ({
 
 vi.mock('@/plugins/co-app', () => ({
   coApp: mocks.coApp,
-  getPluginMcpRegistry: mocks.getPluginMcpRegistry,
 }));
 
 vi.mock('@/plugins/plugin-mcp-invoke-bridge', () => ({
