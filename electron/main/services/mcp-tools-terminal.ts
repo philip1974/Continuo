@@ -496,7 +496,8 @@ export function makeSendInputTool(
         session_id: SESSION_ID_JSON_SCHEMA,
         data: {
           type: 'string',
-          maxLength: 2_000_000,
+          // 宣告值取整条 MCP 请求的传输上限(HTTP body / stdio 单行 1,000,000 字节);运行时另按 UTF-8 字节兜底。
+          maxLength: 1_000_000,
           description:
             'Input to write (LF and literal \\n / \\r / \\t / \\xHH escapes are converted as described above; the whole request is capped at 1,000,000 bytes). To press Enter end with "\\r" (CR). Example: "ls -la\\r" runs the ls command. Example: "你好\\r" submits text in a TUI prompt.',
         },
@@ -534,7 +535,8 @@ export function makeSendTextTool(
         session_id: { ...SESSION_ID_JSON_SCHEMA, description: 'Target terminal session id.' },
         text: {
           type: 'string',
-          maxLength: 2_000_000,
+          // 宣告值取整条 MCP 请求的传输上限(HTTP body / stdio 单行 1,000,000 字节);运行时另按 UTF-8 字节兜底。
+          maxLength: 1_000_000,
           description:
             'Plain text written verbatim to PTY stdin (the whole MCP request is capped at 1,000,000 bytes, so keep text well under 1 MB after JSON escaping). To press Enter afterwards, call press_key with key="enter".',
         },

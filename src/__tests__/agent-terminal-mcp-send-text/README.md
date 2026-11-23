@@ -5,8 +5,8 @@
 让 LLM 不必关心 LF/CR 的差异。
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §5
-> 设计动机:`send_input` 的 raw bytes 形态在 raw mode TUI(codex/vim/claude)
-> 容易被 LLM 错用 `\n`,实测 codex 不接 LF 当 Enter。拆开 send_text + press_key
+> 设计动机:早期 `send_input` 原样写入时,在 raw mode TUI(codex/vim/claude)
+> 容易被 LLM 错用 `\n`,实测 codex 不接 LF 当 Enter(现 send_input 写入前已做 LF→CR,见 send-input README)。拆开 send_text + press_key
 > 让 LLM 用语义化 API,server 内部正确处理。
 
 ## 模块

@@ -87,7 +87,7 @@ Windows 上需经 Node 调用：`claude mcp add --transport stdio continuo -- no
 | `terminal.read_output` | 读取已滚动过的输出 |
 | `terminal.list_sessions` | 枚举活跃面板 |
 | `terminal.kill` | 向 session 发信号:`SIGTERM`(默认)先发 Ctrl+C,3 秒后强杀;`SIGINT` 只发 Ctrl+C(Continuo 不会强制结束进程);`SIGKILL` 立即强杀。进程退出后面板保留,`list_sessions` 会返回其 `exit_code`;此时输出缓冲会被释放,如需最终输出请先调 `read_output` |
-| `terminal.await_stop_hook` | 阻塞等待 session 里的 agent 触发 Stop hook（完成本轮）；只有用 `install_stop_hook: true`、`agentLabel` 为 `claude` / `claude-code` / `cc` / `codex` 且 cwd 位于窗口 workspace 文件夹内(不能是 home 目录或其上级目录)创建的 session 才会安装该 hook |
+| `terminal.await_stop_hook` | 阻塞等待 session 里的 agent 触发 Stop hook（完成本轮）——若该 session 已有尚未取走的 Stop 事件（最多保留 10 分钟）则立即返回；只有用 `install_stop_hook: true`、`agentLabel` 为 `claude` / `claude-code` / `cc` / `codex` 且 cwd 位于窗口 workspace 文件夹内(不能是 home 目录或其上级目录)创建的 session 才会安装该 hook |
 | `debug.*` | 驱动 Node.js 调试器：`launch`、`set_breakpoint`、`wait_for_stop`、`continue`、`step_over` / `step_in` / `step_out`、`stack`、`scopes`、`variables`、`evaluate`、`disconnect`、`list_sessions` |
 
 agent 操作某个窗口之前，Continuo 会在该窗口里征求你的同意；终端、调试、插件工具三类权限分开授予。`list_sessions` 能看到窗口内全部 session，但读 / 写 / kill / 等待类工具和 `debug.*` 只能作用于同一个 MCP 调用方（一条 stdio 连接，或一个 HTTP 终端 token / MCP session）用 `create_session` 或 `debug.launch` 创建的 session。
