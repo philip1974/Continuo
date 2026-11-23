@@ -68,7 +68,8 @@ describe('接线守卫', () => {
     expect(main).not.toMatch(/function isIpcPathScope\(/);
     const renderer = read('src/plugins/permissions/IpcPermissionStore.ts');
     expect(renderer).toContain('isIpcPermissionDecision(value)');
-    expect(renderer).toContain('isIpcPathScope(value)');
+    // renderer 不解析记录里的 pathScopes(由 main 读写),因此不需要路径 scope 谓词。
+    expect(renderer).not.toMatch(/function isIpcPathScope\(/);
   });
 
   it('IPC schema 用同一枚举与非空下限', () => {

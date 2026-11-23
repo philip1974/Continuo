@@ -16,13 +16,12 @@ export interface PluginFsRawStat {
 
 export interface PluginFsRawListEntry {
   name: string;
-  isFile: boolean;
   isDirectory: boolean;
   isSymlink: boolean;
 }
 
 export interface PluginFsRaw {
-  _registerPlugin(pluginId: string): Promise<{ token: string; generation: number }>;
+  _registerPlugin(pluginId: string): Promise<{ token: string }>;
   _unregisterPlugin(token: string): Promise<void>;
 
   readFile(token: string, target: string): Promise<string>;

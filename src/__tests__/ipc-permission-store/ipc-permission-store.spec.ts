@@ -377,34 +377,27 @@ describe('E245 parsePermissionState 有界解析 + 字段校验', () => {
     expect(r['com.p']?.decisions.map((d) => d.permission)).toEqual(['clipboard']);
   });
 
-  it('超长 permission / path → 丢弃', () => {
+  it('超长 permission → 丢弃;记录里的 pathScopes 不进 renderer 状态(由 main 读写)', () => {
     const r = parsePermissionState({
       'com.p': {
         decisions: [{ permission: 'x'.repeat(257), granted: true, decidedAt: 1 }],
-        pathScopes: [
-          { path: 'y'.repeat(8193), mode: 'r' },
-          { path: '/ok', mode: 'rw' }, // 唯一合法
-        ],
+        pathScopes: [{ path: '/ok', mode: 'rw' }],
       },
     });
-    expect(r['com.p']?.decisions).toEqual([]);
-    expect(r['com.p']?.pathScopes).toEqual([{ path: '/ok', mode: 'rw' }]);
+    expect(r['com.p']).toEqual({ decisions: [] });
   });
 
-  it('全非法 decisions / pathScopes 复用稳定空数组', () => {
+  it('全非法 decisions 复用稳定空数组', () => {
     const raw = {
       'com.p': {
         decisions: [{ permission: 'fs', granted: true, decidedAt: NaN }],
-        pathScopes: [{ path: '/bad', mode: 'write' }],
       },
     };
     const a = parsePermissionState(raw);
     const b = parsePermissionState(raw);
 
     expect(a['com.p']?.decisions).toEqual([]);
-    expect(a['com.p']?.pathScopes).toEqual([]);
     expect(a['com.p']?.decisions).toBe(b['com.p']?.decisions);
-    expect(a['com.p']?.pathScopes).toBe(b['com.p']?.pathScopes);
   });
 
   it('合法数据原样解析(回归)', () => {

@@ -649,7 +649,8 @@ export function registerPluginFsHandlers(
         throw fsError(ERROR_CODES.BAD_INPUT, 'invalid pluginId');
       }
       attachWcGoneHook(event.sender);
-      return identityRegistry.register(pluginId, event.sender.id);
+      // renderer 只需要 token;generation 是 main 内部的实例代际(经 identityRegistry.lookup 取用)。
+      return { token: identityRegistry.register(pluginId, event.sender.id).token };
     },
   );
 
@@ -778,7 +779,6 @@ export function registerPluginFsHandlers(
     // backstop:单层目录 >10 万直接子项极罕见,远超任何现实插件目录。
     const out: {
       name: string;
-      isFile: boolean;
       isDirectory: boolean;
       isSymlink: boolean;
     }[] = [];
@@ -793,7 +793,6 @@ export function registerPluginFsHandlers(
       }
       out[out.length] = {
         name: e.name,
-        isFile: e.isFile(),
         isDirectory: e.isDirectory(),
         isSymlink: e.isSymbolicLink(),
       };

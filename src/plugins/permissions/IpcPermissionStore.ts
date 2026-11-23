@@ -12,19 +12,17 @@ import type {
   PermissionKey,
   PermissionStore,
 } from '../permissions';
-import type { PathScope } from '../types';
 import type { IpcPermissionMutation } from '../../../electron/shared/plugins-channels';
 import {
-  isIpcPathScope,
   isIpcPermissionDecision,
 } from '../../../electron/shared/permission-record';
 import { codedError } from '../../../electron/shared/error-message';
 import { ownValue } from '../../../electron/shared/own-value';
 import { isValidPluginId } from '../plugin-id';
 
+/** renderer 只关心授权决定;记录里的 pathScopes(落盘格式的一部分)由 main 读写,这里不解析。 */
 export interface PermissionRecord {
   readonly decisions: PermissionDecision[];
-  readonly pathScopes?: readonly PathScope[];
 }
 
 export type PermissionState = Record<string, PermissionRecord>;
@@ -38,19 +36,15 @@ type Cache = PermissionState;
 
 // 边界(E245,E215/E243 读端有界解析族):renderer 读回 READ_PERMISSIONS(IPC/磁盘持久化)的解析上限,
 // 与主进程 plugins.ipc 写端 / plugins.service 读端对齐(值同步)。此前 parsePermissionState 直接
-// Object.entries(raw) 全量物化 + parseDecisionList/parsePathScopes 无数量上限、无 permission/path 长度
+// Object.entries(raw) 全量物化 + parseDecisionList 无数量上限、无 permission 长度
 // 校验、decidedAt 仅 typeof number(允许 Infinity/NaN)—— 畸形/未来回归的 IPC payload 在 renderer 首次
-// 授权检查时扫描/分配巨表,并把超长 permission/path 或非有限时间戳缓进 cache,随后 grant/deny 写回。
+// 授权检查时扫描/分配巨表,并把超长 permission 或非有限时间戳缓进 cache,随后 grant/deny 写回。
 // 读端独立有界:数量收集到上限即停 + 字段长度/有限性校验(写端 cap 护不了畸形/旧/篡改数据)。
 const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
 const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
-// 边界(E246):pathScopes 上限对齐**绑定** cap = 读盘层 MAX_PERSISTED_SCOPES_PER_PLUGIN(256,
-// PathScopeRegistry 契约),非写端宽松值。E245 误对齐到写端 10_000;真正生效的是读盘 256,统一到此。
-const MAX_PATH_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 plugins.service MAX_PERSISTED_SCOPES_PER_PLUGIN / plugins.ipc PATHSCOPES_MAX
 const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
 // 读取期间被失效时按当前代际重读的总次数上限(终审 P1,见 ensureLoaded)。
 const MAX_READ_ATTEMPTS = 3;
-const EMPTY_PATH_SCOPES: PathScope[] = [];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -67,11 +61,6 @@ function parseDecision(value: unknown): PermissionDecision | null {
   };
 }
 
-function parsePathScope(value: unknown): PathScope | null {
-  if (!isIpcPathScope(value)) return null;
-  return { path: value.path, mode: value.mode };
-}
-
 function parseDecisionList(value: unknown): PermissionDecision[] {
   if (!Array.isArray(value)) return EMPTY_PERMISSION_DECISIONS;
   let out: PermissionDecision[] | null = null;
@@ -86,25 +75,6 @@ function parseDecisionList(value: unknown): PermissionDecision[] {
     out[outCount++] = parsed;
   }
   if (out === null) return EMPTY_PERMISSION_DECISIONS;
-  out.length = outCount;
-  return out;
-}
-
-function parsePathScopes(value: unknown): PathScope[] | undefined {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value)) return EMPTY_PATH_SCOPES;
-  let out: PathScope[] | null = null;
-  let outCount = 0;
-  for (const item of value) {
-    if (outCount >= MAX_PATH_SCOPES_PER_PLUGIN) break; // 边界(E245):数量上限早停
-    const parsed = parsePathScope(item);
-    if (!parsed) continue;
-    out ??= new Array<PathScope>(
-      Math.min(value.length, MAX_PATH_SCOPES_PER_PLUGIN),
-    );
-    out[outCount++] = parsed;
-  }
-  if (out === null) return EMPTY_PATH_SCOPES;
   out.length = outCount;
   return out;
 }
@@ -127,11 +97,7 @@ export function parsePermissionState(raw: unknown): PermissionState {
       continue;
     }
     if (isRecord(record)) {
-      const pathScopes = parsePathScopes(record.pathScopes);
-      out[pluginId] = {
-        decisions: parseDecisionList(record.decisions),
-        ...(pathScopes === undefined ? {} : { pathScopes }),
-      };
+      out[pluginId] = { decisions: parseDecisionList(record.decisions) };
     }
   }
   return out;

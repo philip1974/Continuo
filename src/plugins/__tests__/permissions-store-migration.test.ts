@@ -12,10 +12,10 @@ describe('IpcPermissionStore permission state migration', () => {
     expect(parsed['com.old']).toEqual({
       decisions: [{ permission: 'fs', granted: true, decidedAt: 1 }],
     });
-    expect(parsed['com.old']?.pathScopes).toBeUndefined();
   });
 
-  it('T4.b deserializes new JSON with pathScopes', () => {
+  // 记录里的 pathScopes 是落盘格式的一部分,由 main 读写;renderer 只取 decisions,不解析它。
+  it('T4.b deserializes new JSON with pathScopes (decisions only)', () => {
     const newJson = {
       'com.new': {
         decisions: [{ permission: 'shell', granted: false, decidedAt: 2 }],
@@ -27,7 +27,6 @@ describe('IpcPermissionStore permission state migration', () => {
 
     expect(parsed['com.new']).toEqual({
       decisions: [{ permission: 'shell', granted: false, decidedAt: 2 }],
-      pathScopes: [{ path: '/tmp/x', mode: 'rw' }],
     });
   });
 
@@ -47,11 +46,10 @@ describe('IpcPermissionStore permission state migration', () => {
     });
     expect(parsed['com.scoped']).toEqual({
       decisions: [{ permission: 'clipboard', granted: true, decidedAt: 4 }],
-      pathScopes: [{ path: '/tmp/y', mode: 'r' }],
     });
   });
 
-  it('parsePermissionState 解析 decisions/pathScopes 时预分配数组,不通过 push 扩容', () => {
+  it('parsePermissionState 解析 decisions 时预分配数组,不通过 push 扩容', () => {
     const pushSpy = vi.spyOn(Array.prototype, 'push');
     let parsed: ReturnType<typeof parsePermissionState>;
 
@@ -77,10 +75,6 @@ describe('IpcPermissionStore permission state migration', () => {
       decisions: [
         { permission: 'fs', granted: true, decidedAt: 1 },
         { permission: 'network', granted: false, decidedAt: 2 },
-      ],
-      pathScopes: [
-        { path: '/tmp/a', mode: 'r' },
-        { path: '/tmp/b', mode: 'rw' },
       ],
     });
   });
