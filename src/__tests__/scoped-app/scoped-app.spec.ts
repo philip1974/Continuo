@@ -967,7 +967,7 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
       env: { A: 'b' },
     } as unknown as { timeoutMs?: number; cwd?: string };
     const r = scoped.shell.execStream('echo', ['hi'], optsWithExtras);
-    await r.done; // 触发 started → validateShellInput + raw execStream
+    await r.done; // 等急切启动的 started 跑完:validateShellInput + raw execStream
     expect(coApiMocks.pluginShellStreamRaw.execStream).toHaveBeenCalledTimes(1);
     const firstCall = coApiMocks.pluginShellStreamRaw.execStream.mock.calls[0] as
       | readonly unknown[]

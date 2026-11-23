@@ -110,12 +110,6 @@ export function recentRootLabelParts(p: string): { name: string; parent: string 
     end -= 1;
   }
 
-  const nameStart = end + 1;
-  const name = p.slice(nameStart);
-  let parentEnd = nameStart;
-  if (parentEnd > 0) {
-    const code = p.charCodeAt(parentEnd - 1);
-    if (code === 47 || code === 92) parentEnd -= 1;
-  }
-  return { name, parent: p.slice(0, parentEnd) };
+  // 循环停在最后一个分隔符(end)或走到 -1(无分隔符):parent 取分隔符之前的部分。
+  return { name: p.slice(end + 1), parent: p.slice(0, Math.max(end, 0)) };
 }

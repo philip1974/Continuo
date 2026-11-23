@@ -20,9 +20,6 @@ export function registerTerminalSearch(
   return { dispose };
 }
 
-export function openTerminalSearch(panelId: string): boolean {
-  const openFn = searchRegistry.get(panelId);
-  if (!openFn) return false;
-  openFn();
-  return true;
+export function openTerminalSearch(panelId: string): void {
+  searchRegistry.get(panelId)?.();
 }

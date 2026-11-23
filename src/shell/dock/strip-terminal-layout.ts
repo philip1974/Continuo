@@ -162,10 +162,7 @@ export function stripTerminalPanelsFromLayout(
     panels: nextPanels,
   };
 
-  const filterFloating = (
-    groups: FloatingGroup[] | undefined,
-  ): FloatingGroup[] | undefined => {
-    if (!Array.isArray(groups)) return groups;
+  const filterFloating = (groups: FloatingGroup[]): FloatingGroup[] => {
     if (groups.length === 0) return EMPTY_FLOATING_GROUPS;
     let kept: FloatingGroup[] | null = null;
     let keptCount = 0;
