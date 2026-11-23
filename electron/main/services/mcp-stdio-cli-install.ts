@@ -35,7 +35,7 @@ export function isUnstableResourcesPath(
  * /tmp、/var/tmp、/dev/shm —— 这些都是同机其他用户可写、可抢注的位置。AppImage 挂载点目录名形如
  * `.mount_<前缀><随机>`,挂在别处(如 $XDG_RUNTIME_DIR)也是运行期临时路径。
  */
-export function isInUnstableLinuxLocation(p: string, tmpDir: string = os.tmpdir()): boolean {
+export function isInUnstableLinuxLocation(p: string, tmpDir: string): boolean {
   if ([tmpDir, ...SHARED_TMP_DIRS].some((dir) => isSameOrInsidePath(dir, p, 'linux'))) return true;
   return path.posix.resolve(p).split('/').some((seg) => seg.includes(APPIMAGE_MOUNT_MARKER));
 }

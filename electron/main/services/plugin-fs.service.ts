@@ -417,16 +417,16 @@ async function readdirOrEmpty(dir: string): Promise<Dirent[]> {
 
 /**
  * 读取单个 git blob(`git cat-file blob <sha>`),带超时与字节上限。
- * 超时 / 超限 / spawn 错误 → SIGKILL 子进程并 reject。可注入 opts 供测试用小值。
+ * 超时 / 超限 / spawn 错误 → SIGKILL 子进程并 reject。`opts.maxBytes` 供测试注入小值。
  * `opts.pin`(resolveGitObjectStoreInScope 的结果)把 gitdir / commondir / 对象目录钉成已校验的路径:
  * git 不再自行发现仓库,校验之后再改 `.git` 文件或 `objects` 链接不影响本次读取。
  */
 export function readGitBlob(
   cwd: string,
   sha: string,
-  opts?: { timeoutMs?: number; maxBytes?: number; pin?: GitObjectStorePin },
+  opts?: { maxBytes?: number; pin?: GitObjectStorePin },
 ): Promise<Uint8Array> {
-  const timeoutMs = opts?.timeoutMs ?? GIT_BLOB_TIMEOUT_MS;
+  const timeoutMs = GIT_BLOB_TIMEOUT_MS;
   const maxBytes = opts?.maxBytes ?? GIT_BLOB_MAX_BYTES;
   return new Promise<Uint8Array>((resolve, reject) => {
     const chunks: Buffer[] = [];

@@ -115,23 +115,23 @@ export interface DebugToolService {
   ): Promise<{ verified: boolean; line?: number; message?: string }>;
   waitForStop(
     sessionId: string,
-    input: { readonly afterStopSeq?: number; readonly timeoutMs?: number },
+    input: { readonly afterStopSeq?: number; readonly timeoutMs: number },
   ): Promise<z.infer<typeof debugWaitForStopOutputSchema>>;
   continue(
     sessionId: string,
-    input?: { readonly threadId?: number },
+    input: { readonly threadId?: number },
   ): Promise<DebugContinueOutput>;
   stepOver(
     sessionId: string,
-    input?: { readonly threadId?: number },
+    input: { readonly threadId?: number },
   ): Promise<DebugStepOverOutput>;
   stepIn(
     sessionId: string,
-    input?: { readonly threadId?: number },
+    input: { readonly threadId?: number },
   ): Promise<DebugStepInOutput>;
   stepOut(
     sessionId: string,
-    input?: { readonly threadId?: number },
+    input: { readonly threadId?: number },
   ): Promise<DebugStepOutOutput>;
   stackTrace(
     sessionId: string,

@@ -306,7 +306,7 @@ export interface StdioSocketServer {
    * 推 JSON-RPC notification(无 id)给所有 stdio 客户端.
    * 写入失败的 socket 自动摘掉.
    */
-  broadcast(method: string, params?: Record<string, unknown>): void;
+  broadcast(method: string): void;
   close(): Promise<void>;
 }
 
@@ -708,10 +708,8 @@ export async function createStdioSocketServer(
 
   return {
     socketPath: opts.socketPath,
-    broadcast(method: string, params?: Record<string, unknown>): void {
-      const payload: Record<string, unknown> = { jsonrpc: '2.0', method };
-      if (params !== undefined) payload.params = params;
-      const line = JSON.stringify(payload);
+    broadcast(method: string): void {
+      const line = JSON.stringify({ jsonrpc: '2.0', method });
       for (const c of clients) {
         try {
           // 与响应同走 writeLine:跳过拒绝半关闭中 / 已销毁的连接(否则 write-after-end 截断 PARSE_ERROR)。

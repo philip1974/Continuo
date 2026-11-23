@@ -633,7 +633,7 @@ export class DapClient {
     });
   }
 
-  sendRequestNoWait(command: string, args: DapJson = {}): number {
+  sendRequestNoWait(command: string, args: DapJson): number {
     const request = this.createRequest(command, args);
     this.sendMessage(request);
     return request.seq;

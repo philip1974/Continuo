@@ -57,7 +57,7 @@ export interface DebugDapClientLike {
     args?: DapJson,
     timeoutMs?: number,
   ): Promise<DapResponseMessage>;
-  sendRequestNoWait(command: string, args?: DapJson): number;
+  sendRequestNoWait(command: string, args: DapJson): number;
   dispose(): Promise<void>;
   /** 在途请求全部结算后再 dispose(回收已结束的 child:其在途请求的响应可能排在 terminated 之后)。 */
   disposeWhenIdle(): Promise<void>;
@@ -180,7 +180,7 @@ export interface SetBreakpointInput {
 
 export interface WaitForStopInput {
   readonly afterStopSeq?: number;
-  readonly timeoutMs?: number;
+  readonly timeoutMs: number;
 }
 
 export interface WaitForStopOutput {
@@ -1241,8 +1241,7 @@ export class DebugService {
     client: DebugDapClientLike,
     body: unknown,
   ): void {
-    const runtime = this.runtimes.get(sessionId);
-    if (!runtime) return;
+    const runtime = this.requireRuntime(sessionId); // 调用方已用 isLiveClient 确认会话在
     const event = asRecord(body);
     if (stringField(event, 'reason') !== 'changed') return;
     const breakpoint = asRecord(event.breakpoint);
@@ -1304,7 +1303,7 @@ export class DebugService {
 
   waitForStop(
     sessionId: string,
-    input: WaitForStopInput = {},
+    input: WaitForStopInput,
   ): Promise<WaitForStopOutput> {
     const runtime = this.requireRuntime(sessionId);
     const session = this.requireSession(sessionId);
@@ -1320,7 +1319,7 @@ export class DebugService {
       return Promise.resolve(runtime.currentStop);
     }
 
-    const timeoutMs = input.timeoutMs ?? 30_000;
+    const timeoutMs = input.timeoutMs;
     return new Promise((resolve, reject) => {
       const waiter: StopWaiter = {
         afterStopSeq,
@@ -1372,20 +1371,20 @@ export class DebugService {
 
   async continue(
     sessionId: string,
-    input: { readonly threadId?: number } = {},
+    input: { readonly threadId?: number },
   ): Promise<{ continued: boolean; all_threads_continued?: boolean }> {
     return this.resume(sessionId, 'continue', input);
   }
 
-  async stepOver(sessionId: string, input: { readonly threadId?: number } = {}) {
+  async stepOver(sessionId: string, input: { readonly threadId?: number }) {
     return this.resume(sessionId, 'next', input);
   }
 
-  async stepIn(sessionId: string, input: { readonly threadId?: number } = {}) {
+  async stepIn(sessionId: string, input: { readonly threadId?: number }) {
     return this.resume(sessionId, 'stepIn', input);
   }
 
-  async stepOut(sessionId: string, input: { readonly threadId?: number } = {}) {
+  async stepOut(sessionId: string, input: { readonly threadId?: number }) {
     return this.resume(sessionId, 'stepOut', input);
   }
 
@@ -1606,7 +1605,7 @@ export class DebugService {
    * 最多 DEBUG_LAUNCH_SETTLE_WAIT_MS —— 否则退出时 detached 的 adapter 遗留。开始即置 shuttingDown(此后 launch
    * 一律拒绝),结束前再查一遍登记表,拆除清理期间漏网登记的会话。
    */
-  async cleanupAll(reason = 'cleanupAll'): Promise<readonly string[]> {
+  async cleanupAll(reason: string): Promise<readonly string[]> {
     this.shuttingDown = true;
     const pending = this.cancelLaunches(() => true);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1626,7 +1625,7 @@ export class DebugService {
   /** 窗口关闭:取消该窗口的在途 launch(否则随后登记到已销毁的窗口成为孤儿),拆除其已登记会话。 */
   async killByOwner(
     ownerWindowId: number,
-    reason = 'killByOwner',
+    reason: string,
   ): Promise<readonly string[]> {
     this.cancelLaunches((launch) => launch.ownerWindowId === ownerWindowId);
     return this.teardownMany(debugSessions.byOwner(ownerWindowId), reason);
@@ -1638,7 +1637,7 @@ export class DebugService {
    */
   async killByController(
     controllerToken: string,
-    reason = 'killByController',
+    reason: string,
   ): Promise<readonly string[]> {
     this.cancelLaunches((launch) => launch.controllerToken === controllerToken);
     return this.teardownMany(debugSessions.byController(controllerToken), reason);
@@ -1973,27 +1972,25 @@ export class DebugService {
     bodyJson: DapJson | undefined,
     client: DebugDapClientLike,
   ): void {
-    const stoppedRuntime = this.runtimes.get(sessionId);
-    if (stoppedRuntime?.endedMessage !== undefined) return; // 已结束:迟到事件不翻回状态
-    if (stoppedRuntime) {
-      // 排队与否都先记下命中:绑定是既成事实。
-      this.markHitBreakpointsVerified(sessionId, stoppedRuntime, client, bodyJson);
-      // 当前停点还没恢复、而这次停在另一条连接上 → 排队(同一连接的旧排队项被替换),稍后再呈现。
-      if (
-        stoppedRuntime.currentStop !== undefined &&
-        stoppedRuntime.stoppedClient !== undefined &&
-        stoppedRuntime.stoppedClient !== client
-      ) {
-        const queued = stoppedRuntime.queuedStops;
-        const index = queued.findIndex((entry) => entry.client === client);
-        if (index >= 0) queued.splice(index, 1);
-        queued.push({ client, body: bodyJson });
-        return;
-      }
-      // 停在哪条连接上,后续的 stack / scopes / variables / continue 就发给哪条连接(主线程或某个 worker)。
-      stoppedRuntime.activeClient = client;
-      stoppedRuntime.stoppedClient = client;
+    const runtime = this.requireRuntime(sessionId); // 两个调用方都已确认会话在
+    if (runtime.endedMessage !== undefined) return; // 已结束:迟到事件不翻回状态
+    // 排队与否都先记下命中:绑定是既成事实。
+    this.markHitBreakpointsVerified(sessionId, runtime, client, bodyJson);
+    // 当前停点还没恢复、而这次停在另一条连接上 → 排队(同一连接的旧排队项被替换),稍后再呈现。
+    if (
+      runtime.currentStop !== undefined &&
+      runtime.stoppedClient !== undefined &&
+      runtime.stoppedClient !== client
+    ) {
+      const queued = runtime.queuedStops;
+      const index = queued.findIndex((entry) => entry.client === client);
+      if (index >= 0) queued.splice(index, 1);
+      queued.push({ client, body: bodyJson });
+      return;
     }
+    // 停在哪条连接上,后续的 stack / scopes / variables / continue 就发给哪条连接(主线程或某个 worker)。
+    runtime.activeClient = client;
+    runtime.stoppedClient = client;
     const body = asRecord(bodyJson);
     const session = this.requireSession(sessionId);
     const stopSeq = session.stopSeq + 1;
@@ -2014,7 +2011,6 @@ export class DebugService {
         ? { description: stringField(body, 'description') }
         : {}),
     };
-    const runtime = this.requireRuntime(sessionId);
     runtime.currentStop = output;
     debugSessions.update(sessionId, {
       runtimeState: 'stopped',
@@ -2236,8 +2232,6 @@ export class DebugService {
       if (pgid && (adapterAlive || windowsDebuggees)) {
         debugSessions.update(sessionId, { adapterPgid: pgid });
         const groupBefore = await this.processOps.pidsInProcessGroup(pgid);
-        const shouldTerminate =
-          adapterAlive || current.systemProcessIds.length > 0 || groupBefore.length > 0;
         const watchedPids = Array.from(
           new Set(
             [
@@ -2247,9 +2241,7 @@ export class DebugService {
             ].filter((pid): pid is number => typeof pid === 'number' && pid > 0),
           ),
         );
-        const alive = shouldTerminate
-          ? await this.processOps.terminateProcessGroup(pgid, watchedPids, reason)
-          : [];
+        const alive = await this.processOps.terminateProcessGroup(pgid, watchedPids, reason);
         if (alive.length > 0) {
           throw new Error(`debug teardown left alive pids: ${alive.join(',')}`);
         }

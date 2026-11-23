@@ -61,7 +61,7 @@ function collectFrom(servers: unknown, tmpDir: string, out: Set<string>): void {
  * 在已解析的 ~/.claude.json 中找 command / args 指向不稳定位置 continuo-mcp-stdio.mjs 的 MCP 条目名。
  * 覆盖顶层 `mcpServers`(user scope)与 `projects.<dir>.mcpServers`(local scope,`claude mcp add` 的默认)。
  */
-export function findUnstableStdioCliEntries(config: unknown, tmpDir: string = os.tmpdir()): string[] {
+export function findUnstableStdioCliEntries(config: unknown, tmpDir: string): string[] {
   const root = asObject(config);
   if (!root) return [];
   const out = new Set<string>();
