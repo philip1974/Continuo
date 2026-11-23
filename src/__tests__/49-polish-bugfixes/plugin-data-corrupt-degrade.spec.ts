@@ -29,7 +29,7 @@ function dataFile(pluginId: string): string {
 
 // P2 回归:plugin-data:save 旧实现 fs.writeFile 非原子(truncate-then-write),崩溃/掉电
 // 截断 data.json;load 旧实现对 parse 失败直接 rethrow → IPC 永久 reject,该插件持久化
-// 数据"假死"丢失。修复:save 用 atomicWriteJson;load 损坏时保留 .corrupt 快照并降级
+// 数据"假死"丢失。修复:save 用 atomicWriteText;load 损坏时保留 .corrupt 快照并降级
 // 返回 {} 不阻塞插件。
 describe('49 · plugin-data 损坏不再永久阻塞 + 原子写', () => {
   it('损坏 data.json → load 降级返 {} 且保留 .corrupt 快照(不再 reject)', async () => {

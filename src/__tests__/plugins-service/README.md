@@ -21,7 +21,7 @@ styles.css 不读取(renderer 不注入插件样式)**。
 - 缺 manifest.json → 跳过该项(不抛)
 - 缺 main 入口(默认 `main.js`,可被 manifest.main 覆盖) → 跳过该项
 - 目录里的 styles.css 不读取,结果里没有 stylesText 字段
-- 结果只含 `{ id: 目录名, manifestText }`,**不含 mainText**;main 可用性用 open + fstat 判定(普通文件且 ≤8MiB),
+- 结果只含 `{ id: 目录名, manifestText, manifestHash }`,**不含 mainText**;main 可用性用 open + fstat 判定(普通文件且 ≤8MiB),
   与读取口径一致(main 是目录 / 超限 / 越界 / 缺失 → 跳过)
 - 顺序:readdir 默认顺序(per-dir 读取有界并发 ≤8,结果仍按枚举顺序)
 

@@ -3,7 +3,7 @@
 // 根因:mergeClaudeCodeSettings / mergeCodexConfig / replaceManagedCodexStopHook 写用户真实
 // .claude/settings.local.json 和 .codex/config.toml 时直接 writeFile(truncate-then-write)。
 // 写入中途崩溃/磁盘满/断电会把用户配置留成空/半截(.continuo-bak 备份需手工恢复,新建场景无备份)。
-// 与 R4 plugin-fs writeFile / plugin-data atomicWriteJson 同源,平行写点漏了原子写保护。
+// 与 R4 plugin-fs writeFile / plugin-data atomicWriteText 同源,平行写点漏了原子写保护。
 //
 // 修:三处改用 atomicWriteFile(同目录 tmp + fsync + rename 原子替换)。
 //

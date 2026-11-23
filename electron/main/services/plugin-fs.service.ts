@@ -744,7 +744,7 @@ export function registerPluginFsHandlers(
       // ENOSPC/崩溃/掉电/进程被杀会把用户文件留成空/半截且无法回滚。复用 Explorer
       // fs:write-file 同款 atomicWriteFile(写同目录 tmp + fsync + rename 原子替换 +
       // per-path 串行),与主仓既有 crash-safe 写入语义(Explorer/autosave/plugin-data
-      // atomicWriteJson)对齐。(复审 loop R4:plugin-fs 平行入口漏了原子写保护)
+      // atomicWriteText)对齐。(复审 loop R4:plugin-fs 平行入口漏了原子写保护)
       //
       // 安全(符号链接写穿):必须用**不跟随叶子链接**的写入器。上面的 check('write') 已 lstat 叶子并拒绝链接,
       // 但编辑器保存用的 atomicWriteFile 会再 lstat 一次并 realpath 跟随链接(读写对称)。两次 lstat 之间叶子可被

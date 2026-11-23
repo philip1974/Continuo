@@ -992,7 +992,7 @@ export function writePluginPathScopes(
     const all = await readAllPathScopes(baseDir);
     // 边界(E249,E247 兄弟入口):service 层写端按 MAX_PERSISTED_SCOPES_PER_PLUGIN 有界收集,与
     // readAllPathScopes 同步。此前裸 .filter().map() 无数量上限 —— exported service 入口可被进程内/未来
-    // 调用绕过 IPC schema(PATHSCOPES_MAX=256),写超量 scope 落盘成功但 readAllPathScopes 只读回前 256 →
+    // 调用绕过 PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX(256),写超量 scope 落盘成功但 readAllPathScopes 只读回前 256 →
     // 写成功重启读回丢数据 + 全量物化卡顿。collectValidCapped 凑满 MAX 即停(E247)。
     const normalized = collectMappedValidCapped(
       scopes,

@@ -2,7 +2,7 @@
 //
 // 根因:save handler 在 finally 里 `await release()`(proper-lockfile 解锁)。release()
 // 本身可能 reject —— 锁 stale(>5s)被其它进程接管、或 .lock 目录被外部清掉时抛
-// "Lock is not owned by you"。若 atomicWriteJson 已成功而 release() reject,finally 的
+// "Lock is not owned by you"。若 atomicWriteText 已成功而 release() reject,finally 的
 // reject 会覆盖成功结果 → 一次本已落盘成功的写被 IPC 报成失败(未闭环:成功却报错,
 // 上层可能误触发重试 / 丢数据反馈)。修复:解锁 best-effort `.catch(() => {})`。
 

@@ -3,7 +3,7 @@
 // 根因:plugin-fs:write-file 直接 `fs.writeFile(path, content, 'utf-8')`。Node fs.writeFile
 // 默认以 'w' 打开 → 先 truncate 原文件;写入中途 ENOSPC/崩溃/掉电/进程被杀 → 用户文件留成
 // 空/半截且无法回滚。Explorer 的 fs:write-file 已走 atomicWriteFile(同目录 tmp + fsync +
-// rename 原子替换),plugin-fs 平行入口没同步(与已修的 plugin-data atomicWriteJson 同源)。
+// rename 原子替换),plugin-fs 平行入口没同步(与已修的 plugin-data atomicWriteText 同源)。
 //
 // 修:plugin-fs:write-file 复用 atomicWriteFile —— 写失败时原文件原样保留(rename 前不碰目标)。
 //

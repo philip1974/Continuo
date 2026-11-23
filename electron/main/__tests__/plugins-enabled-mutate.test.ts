@@ -13,7 +13,7 @@ import {
 // PluginManager 内做,串行锁 per-PluginManager 实例;每个窗口各有自己的 PluginManager,
 // 两窗口同时 enable/disable 不同插件 → 各读旧集合、整表写回,后写者覆盖先写者 →
 // 某插件启用状态重启后丢失(跨窗口 lost update)。RMW 收口到主进程 setEnabledId 单条
-// 串行链(enabledWriteChain),renderer 改传 delta(id, enabled)。
+// 串行链(enabledWriteQueue),renderer 改传 delta(id, enabled)。
 describe('setEnabledId(主进程全局串行 delta 写)', () => {
   let baseDir: string;
   const FILE = '_enabled.json';
@@ -64,7 +64,7 @@ describe('setEnabledId(主进程全局串行 delta 写)', () => {
   });
 
   // 数据安全(P1,#33 修复的连带兄弟入口):uninstallPlugin 清 _enabled.json 此前
-  // 手写 readEnabledIds→filter→writeEnabledIds,绕过 enabledWriteChain → 与跨窗口
+  // 手写 readEnabledIds→filter→writeEnabledIds,绕过 enabledWriteQueue → 与跨窗口
   // enable/disable 并发时用旧快照整表写回丢更新。改走 setEnabledId(id,false) 入链。
   it('uninstallPlugin 清 enabled 走同一串行链 → 与并发 enable 无 lost update', async () => {
     await mkdir(path.join(baseDir, 'b')); // 目标存在,可卸载

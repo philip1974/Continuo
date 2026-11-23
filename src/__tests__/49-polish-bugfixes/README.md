@@ -98,7 +98,7 @@
 - 根因: 旧实现对 ENOENT 与损坏都返 null,运行期写路径
   `(await loadExplorer()) ?? defaultExplorerV3()` 会在下一次窗口关闭/布局写时把整个
   explorer.json 静默覆盖成默认值 → recentRoots/pinned/所有 window 段不可恢复丢失。
-  迁移路径(`migrateExplorerFileToV3`)对损坏文件特意 skip 不动,运行期写路径却没有
+  迁移路径(`migrateExplorerFile`,启动时经 `prepareExplorerFileForBoot`)对损坏文件特意 skip 不动,运行期写路径却没有
   同等保护,二者不一致。
 
 ## P1/P2 批次(第三轮子系统审计 — 编辑器/MCP)
@@ -174,7 +174,7 @@
   与 issue-45 drag-folder 切根同源场景,脏 tab 保护缺口此前未覆盖。
 
 ### P2-R plugin-data 原子写 + 损坏降级 — `plugin-data-corrupt-degrade.spec.ts`
-- `plugin-data:save-serialized` 改用 `atomicWriteJson`(temp+fsync+rename);`plugin-data:load`
+- `plugin-data:save-serialized` 用 `atomicWriteText`(temp+fsync+rename)写入已序列化文本;`plugin-data:load`
   对 JSON 解析失败保留 `.corrupt` 快照后降级返回 `{}`(不再 rethrow)。
 - 根因: 旧 save 用 `fs.writeFile`(truncate-then-write)非原子,崩溃/掉电截断 data.json;
   旧 load 对 parse 失败只放行 ENOENT、其余 rethrow → IPC 永久 reject,该插件持久化数据

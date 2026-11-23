@@ -8,7 +8,7 @@
   或终端同步已结算(`useTerminalStore.settled`)
 - `hydrated` 由 `TerminalSessionsSync` 在首个有效快照应用时置位(非空快照与 sessions 原子写入);windowId 非法时
   也置位(不会再有快照)。尚无快照(listSessions 在途)时不置位;workspace 尚未完成持久化恢复(root 仍为初始
-  null)时首轮可见过滤推迟到 `useWorkspaceStore.hydrated`,与两者完成顺序无关
+  null)时首轮可见过滤推迟到 `rootRestored || hydrated`,与两者完成顺序无关
 - 初始拉取失败只置 `settled`:放行 Splash,不让它白等;之后首个有效广播仍按 hydrate 处理(存量终端不抢焦)
 - 安全上限 `DOCK_TERMINAL_READY_TIMEOUT_MS`:布局已恢复而快照迟迟不到,仍报 ready,不永久遮挡
 - 首个快照晚于 Reconciler 挂载到达时,其中 `createdAt` 早于恢复开始的存量 user 终端按 hydrate 处理,
@@ -21,4 +21,4 @@ hydrated / settled)、`sync-ordering.spec.tsx`(listSessions 与 workspace 恢复
 
 - workspace store 的 `rootRestored` 在持久化层恢复 root 之后、编辑器 tab 并发读盘之前置位(`hydrated ⇒ rootRestored`)。
 - 终端首轮可见过滤只依赖 root:`rootRestored || hydrated` 即可进行,Splash 屏障不再被恢复 tab 的读盘时长拖住。
-- `hydrated` 仍在 tab 恢复完成后置位,TerminalPanel 新建 PTY 等既有消费方契约不变。
+- `hydrated` 仍在 tab 恢复完成后置位(新建终端只等 `rootRestored`,见 `create-user-terminal`)。

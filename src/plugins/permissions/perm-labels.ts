@@ -1,4 +1,4 @@
-// topic-21: PERM_LABELS_KEYS — PermissionPrompt + PermissionEditorModal 共享。
+// topic-21: PERM_LABEL_KEYS — PermissionPrompt + PermissionEditorModal 共享。
 // 值是 i18n catalog key，render 时 useT() 解码。
 
 import type { PermissionKey } from '../permissions';

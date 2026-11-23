@@ -70,7 +70,7 @@ describe('plugin-data-store.service', () => {
     await writeFile(file, JSON.stringify({ keep: 1 }), 'utf-8');
 
     // 模拟 TOCTOU:access 判定缺失(老代码据此走截断式 writeFile('{}'));并让加锁
-    // 失败,使初始化之后的 atomicWriteJson 不执行 → 暴露「初始化步骤是否截断已有数据」。
+    // 失败,使初始化之后的 atomicWriteText 不执行 → 暴露「初始化步骤是否截断已有数据」。
     const accessSpy = vi
       .spyOn(fsp, 'access')
       .mockRejectedValue(
