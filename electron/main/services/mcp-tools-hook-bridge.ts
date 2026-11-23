@@ -371,7 +371,7 @@ function parseFilenameForWindowId(fileName: string): number | null {
 export interface HookFileBroker {
   start(): Promise<void>;
   /**
-   * 等下一条匹配的 Stop 事件。`signal`(调用方的 MCP 连接)abort 时撤销等待者并 reject:否则调用方断开后
+   * 先返回缓冲中该会话最旧的未取 Stop 事件(含调用前触发的),否则等下一条匹配事件或超时。`signal`(调用方的 MCP 连接)abort 时撤销等待者并 reject:否则调用方断开后
    * 等待者最长挂 600s,期间同一会话的新调用一直 ALREADY_PENDING,真正到达的事件也被死连接的等待者消费掉。
    */
   awaitNext(filter: AwaitFilter, signal?: AbortSignal): Promise<AwaitNextResult>;
