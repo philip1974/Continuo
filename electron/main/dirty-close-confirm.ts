@@ -116,8 +116,8 @@ export async function askDirtyClose(
 }
 
 /**
- * 解析 flush 回执的结果参数(旧格式无该参数 → 未失败)。requestId 为安全正整数才采纳,否则 null
- * (旧回执 / 畸形值,由调用方按「该窗口唯一在途请求」兼容处理)。
+ * 解析 flush 回执的结果参数(无该参数 → 未失败)。requestId 为安全正整数才采纳,否则 null
+ * (缺失 / 畸形值;调用方只结算与在途请求匹配的回执,null 即不结算)。
  * remaining:renderer 在全部 flush 完成后做最终脏检查,仍有未保存改动(且本轮未选「不保存」)时带回计数;
  * 合法且 dirty>0 才采纳,否则 null。main 据此中止关闭 / 退出并记账(下次关闭弹确认)。
  * state:flush 后的最终脏态(renderer 始终携带,含空集合);合法即采纳(旧回执 / 畸形 → null),main 以其更新

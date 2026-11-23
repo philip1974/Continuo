@@ -35,6 +35,7 @@ function fuzzyScoreBothLower(q: string, t: string): number | null {
 /** 单条打分(大小写不敏感);不匹配 → null。批量过滤用 fuzzyFilter(target 预小写,不逐条 lowercase)。 */
 export function fuzzyScore(query: string, target: string): number | null {
   if (!query) return 0;
+  if (query.length > target.length) return null;
   return fuzzyScoreBothLower(query.toLowerCase(), target.toLowerCase());
 }
 

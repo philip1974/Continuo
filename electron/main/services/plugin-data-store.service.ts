@@ -31,7 +31,7 @@ export interface PluginDataStoreDeps {
 // 拒绝路径分隔符 / .. / 空,防 dataFile() 的 join 越出 plugins 目录(路径穿越:
 // save('../../foo',...) 可在 userData 外任意写/删/读文件)。
 // 边界(E177):pluginId 长度上限(对齐 plugins.service / plugin-mcp-schemas / plugins.ipc 的
-// PLUGIN_ID_MAX=256)。绕过 wrapper 直调 pluginDataRaw.load/save/clear 时,超长合法 id 会进正则扫描/
+// PLUGIN_ID_MAX=256)。绕过 wrapper 直调 pluginDataRaw.load / saveSerialized 时,超长合法 id 会进正则扫描/
 // path join/lockfile/错误链路放大主进程 CPU/内存/日志或触发 ENAMETOOLONG。
 const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN;
 

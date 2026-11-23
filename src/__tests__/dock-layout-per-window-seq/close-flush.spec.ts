@@ -248,6 +248,8 @@ function ackBody(win: InstanceType<typeof electronMock.MockBrowserWindow>): { re
     (c) => c[0] === 'layout:flush-request',
   );
   const last = calls[calls.length - 1]?.[1] as { requestId?: unknown } | undefined;
+  // 必须真的取到 requestId:否则「跨窗伪造 / 不受信 frame」用例会因缺 requestId 被拒而假通过。
+  expect(last?.requestId).toEqual(expect.any(Number));
   return { requestId: last?.requestId };
 }
 

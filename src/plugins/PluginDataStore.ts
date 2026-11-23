@@ -1,6 +1,6 @@
 // 插件本地 KV 存储(M-Plugin v2.3)。
 // 生产实现走 IPC 写到 userData/plugins/<id>/data.json;
-// InMemoryDataStore 继续适配测试与无文件系统场景。
+// 测试替身 InMemoryDataStore 在 ./testing/in-memory-stores.ts。
 
 import { coApi } from '@/lib/co-api';
 import { runSerialPerKey } from '@/lib/serialize-per-key';

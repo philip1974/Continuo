@@ -31,7 +31,7 @@ const MAX_SETTING_TEXT_LEN = SI_TEXT_VALUE_MAX;
 
 // 可维护性 M21:localStorage 对象持久化 + 跨窗同步样板复用 local-storage-record helper。
 // 边界(E22):value 守卫 + 上限。settings 值只接受原语(string/number/boolean),畸形/篡改的
-// localStorage 混入对象/数组会被 getSettingValue 直接返出污染消费者;number 越界由 getSettingValue
+// localStorage 混入对象/数组会被读端直接返出污染消费者;number 越界由读端 coerceSettingValue
 // 的 clampSettingNumber(E6)钳制。key 限长 256、条目数封顶,非法项丢弃(回退 spec.default)。
 const readStored = (): Record<string, SettingItemValue> =>
   readRecord<SettingItemValue>(STORAGE_KEY, {
