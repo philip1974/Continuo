@@ -4,6 +4,9 @@ export interface StubWebContents {
   id: number;
   send: ReturnType<typeof vi.fn>;
   isDestroyed: () => boolean;
+  /** 真实 WebContents 的事件订阅(main 侧的 wc-gone 钩子会挂 destroyed / did-start-navigation)。 */
+  once: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
 }
 
 export interface StubIpcEvent {
@@ -63,6 +66,8 @@ export function makeFakeEvent(
       id: opts.id ?? 1,
       send: vi.fn(),
       isDestroyed: opts.isDestroyed ?? (() => false),
+      once: vi.fn(),
+      on: vi.fn(),
     },
     // 默认 trusted top frame(file:// → defaultIsTrustedFrame 为 true);传 null 显式模拟不可信。
     senderFrame:

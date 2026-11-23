@@ -30,6 +30,9 @@ class MockWebContents {
     if (event === 'destroyed') this.destroyHandlers.push(handler);
   }
 
+  /** did-start-navigation 等持久监听:本测试不触发导航,只需可挂。 */
+  on(_event: string, _handler: (...args: unknown[]) => void): void {}
+
   /** Test helper: simulate the webContents being destroyed (window close). */
   emitDestroyed(): void {
     this.destroyed = true;

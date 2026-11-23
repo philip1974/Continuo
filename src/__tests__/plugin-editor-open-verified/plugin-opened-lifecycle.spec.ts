@@ -357,7 +357,7 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
     let gone: (() => void) | undefined;
     const ev2 = {
       ...makeFakeEvent({ id: 2, isDestroyed: () => false }),
-      sender: { id: 2, send: vi.fn(), isDestroyed: () => false, once: (_: string, cb: () => void) => (gone = cb), on: vi.fn() },
+      sender: { id: 2, send: vi.fn(), isDestroyed: () => false, once: vi.fn((_: string, cb: () => void) => (gone = cb)), on: vi.fn() },
     };
     await ipc.invokeWithEvent(ev2, C.REGISTER_PLUGIN, 'plugin.other'); // 挂上窗口 2 的 wc-gone 钩子
     expect(await invoke(C.READ_FOR_EDITOR, T)).toMatchObject({ ok: true });
@@ -373,7 +373,7 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
     let gone: (() => void) | undefined;
     const ev3 = {
       ...makeFakeEvent({ id: 3, isDestroyed: () => false }),
-      sender: { id: 3, send: vi.fn(), isDestroyed: () => false, once: (_: string, cb: () => void) => (gone = cb), on: vi.fn() },
+      sender: { id: 3, send: vi.fn(), isDestroyed: () => false, once: vi.fn((_: string, cb: () => void) => (gone = cb)), on: vi.fn() },
     };
     const t3 = ((await ipc.invokeWithEvent(ev3, C.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;
     expect(await ipc.invokeWithEvent(ev3, C.READ_FOR_EDITOR, t3, T)).toMatchObject({ ok: true });

@@ -26,17 +26,14 @@ export function setReloadUrlPredicate(fn: ((url: string) => boolean) | null): vo
 export function makeWcGoneHook(onGone: (wcId: number) => void): (wc: WebContents) => void {
   const attached = new WeakSet<WebContents>();
   return (wc) => {
-    // 单测里的假 webContents 可能不带 once / on,缺则跳过对应监听。
-    if (attached.has(wc) || typeof wc.once !== 'function') return;
+    if (attached.has(wc)) return;
     attached.add(wc);
     const wcId = wc.id;
     wc.once('destroyed', () => onGone(wcId));
-    if (typeof wc.on === 'function') {
-      wc.on('did-start-navigation', (details) => {
-        if (!details.isMainFrame || details.isSameDocument) return;
-        if (isReloadUrl !== null && !isReloadUrl(details.url)) return; // 外链:会被导航守卫拦下
-        onGone(wcId);
-      });
-    }
+    wc.on('did-start-navigation', (details) => {
+      if (!details.isMainFrame || details.isSameDocument) return;
+      if (isReloadUrl !== null && !isReloadUrl(details.url)) return; // 外链:会被导航守卫拦下
+      onGone(wcId);
+    });
   };
 }
