@@ -83,7 +83,7 @@ const cachedSnapshotsByOwner = new Map<number, readonly MainTerminalSession[]>()
 const EMPTY_TERMINAL_SESSION_SNAPSHOT: readonly MainTerminalSession[] = [];
 const EMPTY_REMOVED_SESSION_IDS: readonly string[] = [];
 
-// 边界(E235,E230 数量上限族):终端会话数量上限。每个 session 占一个**真实 PTY 子进程** + 4MiB ring
+// 边界(E235,E230 数量上限族):终端会话数量上限。每个 session 占一个**真实 PTY 子进程** + 1MiB ring
 // buffer + metadata 快照广播 + Dock panel —— 数量上限族里最重的资源。此前 add() 无
 // 数量上限,terminal:create / MCP create_session 可持续创建直至拖垮 main/renderer/系统。add() 是 PTY
 // spawn **前**的 reservation 单一漏斗(IPC handler 先 add 再 service.createTerminal),在此加全局 +

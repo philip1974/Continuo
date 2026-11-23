@@ -931,7 +931,7 @@ export class DebugService {
     );
     // 被调试程序用哪个 node 由 main 解析(不受 env 影响);解析不到就拒绝,不 spawn adapter。
     const runtimeExecutable = await this.resolveNodeRuntime();
-    // launch 固定用校验时的真实路径(见 assertLaunchInsideWorkspace);会话记录仍展示调用方拼写。
+    // launch 固定用校验时的真实路径(见 assertLaunchInsideWorkspace);会话记录(debug-sessions)不保存 program / cwd。
     const normalizedInput = { ...input, program: verified.program, cwd: verified.cwd };
     // 名额被自然结束(terminated)的会话占满时回收最旧的:它们的 adapter 不会自己退出,否则一直占着名额。
     for (
