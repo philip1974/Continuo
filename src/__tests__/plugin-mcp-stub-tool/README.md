@@ -3,7 +3,7 @@
 行为契约:**main process 侧 PluginMcpBridge 的纯函数层**。
 
 两块内容:
-1. `createStubTool(spec, owner, deps)` —— 把 plugin 上送的元数据包成 `McpToolDef`,
+1. `createStubTool(spec, owner, invoke)`(`invoke: InvokeRemoteFn`)—— 把 plugin 上送的元数据包成 `McpToolDef`,
    注册给 `mcp-host`,其 `run(input)` 走反向 IPC 调 owner wc 的 plugin
 2. `createInvokeRemote(deps)` —— 反向调用核心:发 IPC + 维护 pending map +
    超时控制 + reply 路由

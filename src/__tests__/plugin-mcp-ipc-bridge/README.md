@@ -48,12 +48,15 @@ export const InvokeReplySchema: z.ZodType<
 
 export const PLUGIN_MCP_ERROR_CODES: {
   readonly TOOL_NAME_TAKEN: 'TOOL_NAME_TAKEN';
+  readonly TOO_MANY_TOOLS: 'TOO_MANY_TOOLS';
+  readonly TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS';
   readonly NO_SUCH_TOOL: 'NO_SUCH_TOOL';
   readonly INVALID_PARAMS: 'INVALID_PARAMS';
   readonly TOOL_DISPOSED: 'TOOL_DISPOSED';
   readonly INVOKE_TIMEOUT: 'INVOKE_TIMEOUT';
   readonly PLUGIN_GONE: 'PLUGIN_GONE';
-  readonly PERMISSION_DENIED: 'PERMISSION_DENIED';
+  readonly INVALID_REPLY: 'INVALID_REPLY';
+  readonly RESULT_TOO_LARGE: 'RESULT_TOO_LARGE';
 };
 ```
 
@@ -109,7 +112,7 @@ discriminated union by `ok`:
 
 ### PLUGIN_MCP_ERROR_CODES
 
-- 7 个 code 字符串值固定(给 plugin / 监控 / 测试断言用)
+- 10 个 code 字符串值固定、与 key 同名(给 plugin / 监控 / 测试断言用;`PERMISSION_DENIED` 是 `PermissionError.code`,不在此表)
 - 不允许动态变;新增 code 走 patch 版本
 
 ## 不在本主题验证

@@ -37,7 +37,7 @@ output: {}               // 无 payload(成功即 ok)
 - `sendInputInputSchema`:
   - `{session_id, data}` 全填 → ok
   - 缺 session_id / session_id 空 → fail
-  - 数据超字节上限 → fail
+  - 数据超 2M 字符 → fail(协议原 schema;工具自己的 `tool.inputSchema` 另按 UTF-8 字节限长)
   - 未知字段 → fail(strict)
 - `sendInputOutputSchema`:
   - `{}` → ok

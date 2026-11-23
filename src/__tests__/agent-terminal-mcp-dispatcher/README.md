@@ -38,8 +38,8 @@ interface McpToolDef<I, O> {
   readonly name: string;
   readonly description: string;          // 新增,给 LLM 看
   readonly jsonSchema: Record<string, unknown>;  // 新增,给 MCP client tools/list 看
-  readonly inputSchema: z.ZodType<I>;
-  readonly run: (input: I) => O | Promise<O>;
+  readonly inputSchema: z.ZodType<I, unknown>;
+  readonly run: (input: I, ctx: McpCallCtx) => O | Promise<O>;
 }
 ```
 

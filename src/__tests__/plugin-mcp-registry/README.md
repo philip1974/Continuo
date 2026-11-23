@@ -48,7 +48,7 @@ export const PLUGIN_MCP_ERROR_CODES: {
   readonly NO_SUCH_TOOL: 'NO_SUCH_TOOL';
   readonly INVALID_PARAMS: 'INVALID_PARAMS';
   readonly TOOL_DISPOSED: 'TOOL_DISPOSED';
-  // INVOKE_TIMEOUT / PLUGIN_GONE / PERMISSION_DENIED 由其他主题持有
+  // INVOKE_TIMEOUT / PLUGIN_GONE 等由其他主题持有(PERMISSION_DENIED 是 PermissionError.code)
 };
 
 export class PluginMcpError extends Error {
@@ -60,8 +60,8 @@ export class PluginMcpError extends Error {
 
 ### register(spec, pluginId) — 成功路径
 
-- 调 `upstream.register({pluginId, name, description, jsonSchema})` 一次,await 完成后
-  把 spec 存入本地 `name → spec` 表
+- 先把 spec 登记到本地 `name → spec` 表,再 await `upstream.register({pluginId, name, description, jsonSchema})`
+  一次;上行失败 → 回滚本地登记并抛出(R86)
 - resolve 一个 `Disposable`,`dispose()` 调 `upstream.unregister(name)` 一次并把本地表条目摘掉
 - `Disposable.dispose` 多次调用幂等(只 unregister 一次)
 

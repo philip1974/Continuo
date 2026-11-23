@@ -287,7 +287,7 @@ export function parseStopPayload(
   const r = raw as Record<string, unknown>;
   // 边界(E150):各字段长度上限。MAX_HOOK_FILE_BYTES 已把整文件钳到 1MiB,但单字段(尤其
   // last_assistant_message)仍可接近 1MiB,进 buffered/非 raw MCP 响应/日志放大。标识/路径上限 1024,
-  // 正文上限 64KiB(超出截断;不影响匹配,匹配只看 runner/windowId/cwd 前缀且 cwd 已限长)。
+  // 正文上限 64KiB(超出截断;不影响匹配,匹配只看 runner / windowId / 终端会话 id / cwd 精确相等,且 cwd 已限长)。
   const capStr = (v: unknown, max: number): string | null =>
     typeof v === 'string' && v.length > 0
       ? v.length > max

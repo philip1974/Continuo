@@ -360,7 +360,7 @@ export function makeCreateSessionTool(
     };
     const r = await deps.createSession(ptyInput, ctx);
     // race(R111 同族):createSession(异步 spawn)期间调用方断开 → 新会话无人持有。回收 PTY +
-    // metadata 并以取消错误结束,不留孤儿 agent terminal(index.ts 侧只跳过 autorun 不够)。
+    // metadata 并以取消错误结束,不留孤儿 agent terminal(ipc/terminal.ipc 的 makeAgentCreateSession 只跳过 autorun 不够)。
     if (ctx.signal.aborted) {
       deps.discardSession?.(r.id);
       throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, 'caller disconnected or revoked during session creation');
@@ -604,7 +604,7 @@ export function makeReadOutputTool(
   return {
     name: MCP_TOOL_READ_OUTPUT,
     description:
-      'Read accumulated output from a terminal session as line-split text. Default: ANSI stripped, last 200 lines. Use since_seq cursor (returned as next_seq) for incremental reads. ' +
+      'Read accumulated output from a terminal session as line-split text (raw text with ANSI kept unless strip_ansi=true; all retained lines unless max_lines is set). Use since_seq cursor (returned as next_seq) for incremental reads; truncated=true means older output was already dropped from the buffer. ' +
       'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
       type: 'object',
@@ -621,11 +621,11 @@ export function makeReadOutputTool(
           minimum: 1,
           maximum: 2000,
           description:
-            'Max lines returned. If exceeded, truncated=true and only last N lines returned. Default 200.',
+            'Return only the last N lines (clipping does not set truncated). Default: all retained lines.',
         },
         strip_ansi: {
           type: 'boolean',
-          description: 'Strip ANSI escape sequences (CSI/OSC/keypad). Default true.',
+          description: 'Strip ANSI escape sequences (CSI/OSC/keypad) from lines. Default false.',
         },
       },
       required: ['session_id'],

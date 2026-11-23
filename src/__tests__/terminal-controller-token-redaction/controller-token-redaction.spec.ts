@@ -1,4 +1,4 @@
-// 安全:agent 会话的 controllerToken(HTTP 下即 bearer token)此前经 list_sessions / sessions_changed
+// 安全:agent 会话的 controllerToken(HTTP 下为终端 bearer token[+ session id])此前经 list_sessions / sessions_changed
 // 原样发给 renderer —— getAll 返回 main 内部 MainTerminalSession 对象,IPC 没投影成 renderer 快照。
 
 import { afterEach, describe, expect, it, vi } from 'vitest';

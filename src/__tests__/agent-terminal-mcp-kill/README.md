@@ -1,7 +1,8 @@
 # agent-terminal-mcp-kill (Agent Terminal MCP Phase 4)
 
 行为契约:**`terminal.kill` MCP tool**:agent 给 PTY 发信号(SIGINT/SIGTERM/SIGKILL)。
-**不删 metadata** — kill 时同步本地清理(setExited(-1)),tab 显示 closed;不依赖 PTY 的 onExit。
+**不删 metadata**,按信号:SIGINT 只写 `\x03`(会话不结束);SIGTERM 先发 Ctrl+C,宽限期(3s)内自然退出由 onExit
+记真实退出码,期满才同步本地清理并记 -1;SIGKILL(forceKill)立即同步本地清理(setExited(-1))。tab 随之显示 closed。
 输出 buffer 随 PTY 退出释放:需要退出前的输出须先 read_output。
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §5.5
@@ -64,9 +65,9 @@ deps:
 ### `forceKill(id)` 行为(在 terminal.service)
 
 - 不存在 id → no-op
-- 存在 id → `inst.pty.kill('SIGKILL')`
 - 清 inst.killTimer(如果同时调过 kill)避免重复
-- 先同步 `cleanupSessionLocal(id, -1)` 再 `sm.kill`(sm.kill 会卸掉 exit 监听,等不到自然 onExit,退出码记 -1)
+- 存在 id → 先同步 `cleanupSessionLocal(id, -1)`,再 `getSessionManager().kill({ session_id, signal: 'SIGKILL' })`
+  (sm.kill 会卸掉 exit 监听,等不到自然 onExit,退出码记 -1)
 - 抛错(罕见,PTY 已死)→ console.warn,不传播
 
 ## 不在本主题验证

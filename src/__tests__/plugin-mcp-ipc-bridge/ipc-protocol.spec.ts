@@ -425,7 +425,7 @@ describe('InvokeReplySchema · 共通', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('PLUGIN_MCP_ERROR_CODES', () => {
-  it('包含 8 个 code 字面字符串契约', () => {
+  it('核心 code 字面字符串契约', () => {
     expect(PLUGIN_MCP_ERROR_CODES.TOOL_NAME_TAKEN).toBe('TOOL_NAME_TAKEN');
     expect(PLUGIN_MCP_ERROR_CODES.NO_SUCH_TOOL).toBe('NO_SUCH_TOOL');
     expect(PLUGIN_MCP_ERROR_CODES.INVALID_PARAMS).toBe('INVALID_PARAMS');

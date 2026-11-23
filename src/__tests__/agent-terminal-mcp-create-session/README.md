@@ -20,7 +20,7 @@ agent 通过此 tool 让 Continuo 创建一个新的可见 terminal tab + spawn 
 | 名字 | 来源 | 描述 |
 |---|---|---|
 | `MCP_TOOL_CREATE_SESSION` | schemas | `'terminal.create_session'` |
-| `createSessionInputSchema` | schemas | `{cwd?, name?, agentLabel?}` strict |
+| `createSessionInputSchema` | schemas | 协议原 schema(cwd / name / agentLabel / shell / args / cols / rows / env / autorun / install_stop_hook / target 等,strict;字段见 protocol) |
 | `createSessionOutputSchema` | schemas | `{session_id}` strict |
 | `makeCreateSessionTool(deps)` | tools | 工厂,返回 `{name, inputSchema, run}` |
 

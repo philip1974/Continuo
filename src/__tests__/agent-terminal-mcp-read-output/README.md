@@ -20,13 +20,14 @@
 input: {
   session_id: string,
   since_seq?: number,           // 缺省 0(从 buffer 最早保留的 entry)
-  max_lines?: number,           // 默认 200,上限 2000
-  strip_ansi?: boolean,         // 默认 true
+  max_lines?: number,           // 缺省 = 全部保留行;只返回最后 N 行(不设置 truncated),上限 2000
+  strip_ansi?: boolean,         // 缺省 false(不剥 ANSI;只作用于 lines,data 始终为原文)
 }
 output: {
+  data: string,                 // 原始文本
   lines: string[],
   next_seq: number,             // 客户端下次传作 since_seq 实现增量
-  truncated: boolean,
+  truncated: boolean,           // 仅表示 since_seq 之前的输出已被 buffer 挤掉(真实丢数据)
 }
 ```
 

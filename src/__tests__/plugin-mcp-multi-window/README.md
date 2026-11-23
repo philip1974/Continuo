@@ -26,7 +26,7 @@ import type { McpHost } from './mcp-host.service';
 
 export interface PluginMcpBridge {
   /**
-   * 处理一次 renderer 上行 register。重名抛 PluginMcpError(TOOL_NAME_TAKEN);
+   * 处理一次 renderer 上行 register。重名抛 codedError(TOOL_NAME_TAKEN)(`PluginMcpError` 类只在 renderer 侧);
    * 成功则在 host.tools 加 stub,在内部表登 owner=(pluginId,wcId)。
    */
   handleRegister(
@@ -71,8 +71,7 @@ export function createPluginMcpBridge(deps: CreatePluginMcpBridgeDeps): PluginMc
 
 ### handleRegister · 同名冲突
 
-- payload.name 在内部表中**已存在**(任何 wc owner)→ 抛 `PluginMcpError`
-  with code `TOOL_NAME_TAKEN`,**不**调 host.registerTool 第二次
+- payload.name 在内部表中**已存在**(任何 wc owner)→ 抛 `codedError(TOOL_NAME_TAKEN)`,**不**调 host.registerTool 第二次
 - 错误向上传给 IPC 回 renderer(由实装决定怎么发回 — 本 spec 只断"抛")
 - 与宿主 `host.tools` 已有 tool(含 terminal.* / debug.* 等内置)重名同样抛 `TOOL_NAME_TAKEN`:不覆盖
   内置 tool,随后的注销 / wc 销毁也不会删掉它(否则核心工具被插件截获或永久 NO_SUCH_TOOL)
