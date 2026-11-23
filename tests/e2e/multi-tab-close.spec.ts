@@ -3,10 +3,10 @@ import {
   EDITOR_NO_FILE_OPEN,
   EDITOR_TABS,
 } from './helpers/editor';
-// 多 tab 时点 tab close × → 该 tab 移除;关到 1 tab 退回紧凑模式.
+// 多 tab 时点 tab close × → 该 tab 移除;单 tab 也是 TabNav(仍有 tablist).
 import { test, expect } from './fixtures/with-workspace';
 
-test('开 2 tab → 关其中一个 → 回紧凑模式(无 tablist)', async ({
+test('开 2 tab → 关其中一个 → 只剩 1 个 tab', async ({
   window,
 }) => {
   // 开 README.md
@@ -15,15 +15,14 @@ test('开 2 tab → 关其中一个 → 回紧凑模式(无 tablist)', async ({
     timeout: 10_000,
   });
 
-  // 展开 src + 开 a.ts → 进 TabNav 模式
+  // 展开 src + 开 a.ts → 两个 tab
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click();
   await expect(
     window.locator('main [role=tablist]').first(),
   ).toBeVisible({ timeout: 10_000 });
 
-  // TabNavItem close button aria-label='Close ${title}',title 是完整 filePath.
-  // 用 *= 模糊匹配 README.md.
+  // TabNavItem close button 的可访问名由 basename 生成(见 helpers 的锚定正则).
   const closeReadme = window.getByRole('button', {
     name: EDITOR_CLOSE_README_MD,
   });
@@ -41,13 +40,13 @@ test('开 2 tab → 关其中一个 → 回紧凑模式(无 tablist)', async ({
   await expect(window.locator('header').first()).toContainText('a.ts');
 });
 
-test('紧凑模式右侧 close × → 回 EditorWelcome', async ({ window }) => {
+test('单 tab 的 close × → 回 EditorWelcome', async ({ window }) => {
   await window.locator('text=README.md').first().click();
   await expect(window.locator('header').first()).toContainText('README.md', {
     timeout: 10_000,
   });
 
-  // EditorHeader 紧凑模式的关闭按钮 aria-label='关闭文件'
+  // 单 tab 也是 TabNavItem,关闭按钮可访问名由 basename 生成
   await window.getByRole('button', { name: EDITOR_CLOSE_README_MD }).click();
 
   // EditorWelcome 出现

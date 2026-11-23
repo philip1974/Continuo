@@ -5,7 +5,7 @@ import { defineConfig } from '@playwright/test';
 // 给我们一个 ElectronApplication handle,从中取 firstWindow 拿 Page。
 //
 // 前置:`pnpm build` 先把 main / preload / renderer 编出来。
-// CI 与本地都强制 build 一次(reuseExisting=false),避免 stale 产物误报通过。
+// 不自动 build:本地先 `pnpm build` 再跑 e2e(CI 的 e2e.yml 显式 build),避免 stale 产物误报通过。
 
 export default defineConfig({
   testDir: './tests/e2e',

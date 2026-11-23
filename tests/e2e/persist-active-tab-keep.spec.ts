@@ -1,7 +1,6 @@
-// Editor active tab 在 dock layout panel 关 + 重开后 → 不持久(editor.tabs 不入 layout).
-// 但 dock layout(panel id 集合)持久化 → editor panel 仍在.
+// 打开的文件与 active 路径持久化在 explorer.json 的 editor 字段(不入 dock layout);dock layout 另行持久化.
 //
-// 这条测验证「关 Editor panel + 重启 → editor.tabs=[] 但 dock 还原 + EmptyState」.
+// 这条测验证「关 Editor panel + 重启」后的恢复行为(见用例断言).
 import { _electron as electron, expect, test } from '@playwright/test';
 import { DOCK_CLOSE_EDITOR } from './helpers/editor';
 import { mkdtempSync, rmSync } from 'node:fs';

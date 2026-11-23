@@ -1,4 +1,4 @@
-// treeitem draggable='true'(headless-tree dragFeature).
+// treeitem draggable='true'(headless-tree dragAndDropFeature).
 import { test, expect } from './fixtures/with-workspace';
 
 test('README.md row + src row 都 draggable=true', async ({ window }) => {

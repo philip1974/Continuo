@@ -14,7 +14,7 @@ test('点击 README.md → Editor 打开 + StatusBar 显示行/词/字符', asyn
   // 单击 → openFileByPath(VSCode 同款单击打开预览,我们的实现是单击直接打开)
   await readmeRow.click();
 
-  // EditorHeader 单 tab 紧凑模式:文件名出现在 Editor 顶部
+  // EditorHeader(单 tab 也是 TabNav):文件名出现在 Editor 顶部
   // 至少 dock 中渲染了 README.md 文本 / 内容
   await expect(window.locator('header').first()).toContainText('README.md', {
     timeout: 10_000,

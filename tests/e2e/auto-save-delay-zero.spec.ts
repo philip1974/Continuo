@@ -1,9 +1,9 @@
-// autoSave.delayMs=0 → 立即写盘.
+// autoSave.delayMs=0 → 被钳到设置下限 500ms → 防抖后写盘(用例按 2s 内写盘断言).
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
-test('autoSave.delayMs=0 + 修改 .md → 立即(<200ms)写盘', async ({
+test('autoSave.delayMs=0(钳到 500ms)+ 修改 .md → 防抖后写盘', async ({
   window,
   workspaceRoot,
 }) => {
@@ -55,7 +55,7 @@ test('autoSave.delayMs=0 + 修改 .md → 立即(<200ms)写盘', async ({
     { tabId, content: NEW },
   );
 
-  // delay=0 → 立即写盘(给 0-tick 调度些时间)
+  // delay=0 被钳到 500ms → 防抖后写盘
   await expect(async () => {
     const onDisk = await readFile(
       path.join(workspaceRoot, 'README.md'),

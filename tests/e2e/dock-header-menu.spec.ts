@@ -17,7 +17,7 @@ test('点 「更多操作」 → 菜单列出 panel 类型 + 点 Terminal 添加
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: TERMINAL_TAB })).toBeVisible();
 
-  // 点 Terminal → addPanel + 关菜单 + TerminalTabs 出现
+  // 点 Terminal → addPanel + 关菜单 + Terminal panel 出现
   await menu.getByRole('menuitem', { name: TERMINAL_TAB }).click();
   await expect(menu).toBeHidden();
   await expect(

@@ -1,4 +1,4 @@
-// .md 文件打开后,EditorHeader SegmentedControl 切换 Edit/Source/Preview.
+// .md 文件打开后,EditorPanel 模式行的 SegmentedControl 切换 Edit/Source/Preview.
 // 切换写 editor.store.mode,影响 EditorPanel body 渲染.
 import { test, expect } from './fixtures/with-workspace';
 import {

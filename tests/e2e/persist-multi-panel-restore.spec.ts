@@ -63,13 +63,12 @@ test('Editor + Terminal 使用后重启不恢复 stale terminal panel', async ()
       win1.getByRole('textbox', { name: TERMINAL_INPUT }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // 等 layout.json 写盘
-    await win1.waitForTimeout(800);
-    const layoutPath = path.join(ud, 'layout.json');
-    if (existsSync(layoutPath)) {
-      const raw = readFileSync(layoutPath, 'utf8');
-      expect(raw).not.toContain('"contentComponent":"terminal"');
-    }
+    // 等 layout-persist debounce 写盘(layout:write → explorer.json 的窗口段 layout)
+    const explorerPath = path.join(ud, 'explorer.json');
+    await expect
+      .poll(() => (existsSync(explorerPath) ? readFileSync(explorerPath, 'utf8') : ''), { timeout: 5_000 })
+      .toContain('"layout"');
+    expect(readFileSync(explorerPath, 'utf8')).not.toContain('"contentComponent":"terminal"');
     await app1.close();
 
     // 重启

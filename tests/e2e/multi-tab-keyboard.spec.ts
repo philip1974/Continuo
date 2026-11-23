@@ -67,7 +67,7 @@ test.skip('Tab 中键关闭(button=1 pointerup)', async ({ window }) => {
 
   // a.ts tab 关闭 → 剩 README.md
   const tabs = window.locator('main [role=tablist]').first().locator('[role=tab]');
-  // 单 tab 时回紧凑模式(无 tablist),所以可能 count=0
+  // 单 tab 也是 TabNav(仍有 tablist)
   const tabCount = await tabs.count();
   expect(tabCount).toBeLessThan(2);
 });

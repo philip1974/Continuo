@@ -3,7 +3,7 @@ import { unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
-test('打开 a.ts → 外部 unlink → tab 自动关闭', async ({
+test('打开 a.ts → 外部 unlink → Explorer 中 a.ts 行消失', async ({
   window,
   workspaceRoot,
 }) => {

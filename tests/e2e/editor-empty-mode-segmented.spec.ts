@@ -1,4 +1,4 @@
-// 无 active tab(EditorWelcome)→ EditorHeader 不渲染 → 没有 mode SegmentedControl.
+// 无 active tab(EditorWelcome)→ 没有 EditorHeader 与模式行 → 没有 mode SegmentedControl.
 import { test, expect } from './fixtures/electron-app';
 import { EDITOR_NO_FILE_OPEN, EDITOR_SAVE_LABEL } from './helpers/editor';
 

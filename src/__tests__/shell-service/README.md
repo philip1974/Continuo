@@ -2,7 +2,7 @@
 
 行为契约:**execShell(input) 用 child_process.spawn 跑一次性命令,buffered
 收 stdout/stderr,超时 SIGTERM,输出超 maxOutputBytes 截断标 truncated。
-返回 ExecResult 含 exitCode / signal / timedOut / truncated。**
+返回 IpcShellExecResult 含 exitCode / signal / timedOut / truncated。**
 
 ## 模块
 

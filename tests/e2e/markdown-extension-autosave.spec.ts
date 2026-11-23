@@ -1,4 +1,4 @@
-// .markdown 扩展 isAutoSaveEnabled=true → autoSave 立即写.
+// .markdown 扩展 isAutoSaveEnabled=true → autoSave 防抖后写(delayMs 被钳到 500ms 下限).
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('doc.markdown + delay=0 + setEditorContent → 立即写盘', async () => {
+test('doc.markdown + delay=0(钳到 500ms)+ setEditorContent → 防抖后写盘', async () => {
   test.setTimeout(30_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-mdas-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-mdas-ws-'));
@@ -82,7 +82,7 @@ test('doc.markdown + delay=0 + setEditorContent → 立即写盘', async () => {
       { tabId, content: NEW },
     );
 
-    // delay=0 → 立即写盘
+    // delay=0 被钳到 500ms → 防抖后写盘
     await expect(async () => {
       const onDisk = readFileSync(path.join(ws, 'doc.markdown'), 'utf8');
       expect(onDisk).toBe(NEW);

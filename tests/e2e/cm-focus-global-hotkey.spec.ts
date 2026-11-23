@@ -1,5 +1,5 @@
 // CodeMirror 聚焦时 → Cmd+Shift+P 仍打开命令面板.
-// useCommandHotkeys 用 document.addEventListener,CM 不阻断 keydown bubble.
+// useCommandPaletteHotkey(usePickerToggleHotkey)监听 document,CM 不阻断 keydown bubble.
 import { test, expect } from './fixtures/with-workspace';
 
 const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;

@@ -13,7 +13,7 @@ test('打开 a.ts → Ctrl+S 触发保存命令(无脏 → 立即返回不抛)',
     timeout: 10_000,
   });
 
-  // 触发 Ctrl+S(useCommandHotkeys 注册了 mod+s 走 saveActive 命令)
+  // 往 document 派发 Ctrl+S:⌘S 由 EditorPanel 容器 onKeyDown 处理,document 级事件到不了它 —— 本用例只验证不抛错
   await window.evaluate(() => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', {

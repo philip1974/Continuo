@@ -1,4 +1,4 @@
-// 删除路径:右键「移到废纸篓」→ ConfirmDialog 确认 → 文件被删.
+// 删除路径:右键「移到废纸篓」→ 直接移入废纸篓(无确认弹窗)→ 文件被删.
 //
 // 注:Continuo 走 shell.trashItem(系统废纸篓 API)。e2e 启的 Electron 真调
 // 这个 API,文件确实被移走;cleanup 在 fixture afterEach rm -rf 临时 ws 目录。

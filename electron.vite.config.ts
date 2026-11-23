@@ -16,7 +16,7 @@ export default defineConfig({
     plugins: [
       externalizeDepsPlugin({
         exclude: ['@continuo-terminal/protocol', '@continuo-terminal/server-node'],
-        // node-pty 是 devDep,默认会被 Rollup 打进 bundle。但它含 .node 原生二进制 +
+        // node-pty 是运行时依赖(dependencies),不 external 的话会被 Rollup 打进 bundle。但它含 .node 原生二进制 +
         // 动态 require("./prebuilds/...") — 必须留给 Electron runtime 解析。
         include: ['node-pty'],
       }),

@@ -1,4 +1,4 @@
-// 新建 .md 文件 → 单击打开 → EditorHeader 显示 SegmentedControl(autoSaveEnabled=true).
+// 新建 .md 文件 → 单击打开 → EditorPanel 模式行显示 SegmentedControl(按 isMarkdownPath).
 import { test, expect } from './fixtures/with-workspace';
 import {
   EDITOR_MODE_EDIT,

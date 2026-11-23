@@ -1,4 +1,4 @@
-// Terminal panel active 时,Cmd+P 仍可全局打开 Quick Open(useCommandHotkeys 监 document).
+// Terminal panel active 时,Cmd+P 仍可全局打开 Quick Open(useQuickOpenHotkey / usePickerToggleHotkey 监 document).
 import { test, expect } from './fixtures/with-workspace';
 
 const TERMINAL_TAB = /^(终端|Terminal|터미널)(\s|$)/;

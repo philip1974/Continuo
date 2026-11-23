@@ -1,6 +1,6 @@
 // HeaderActions popout button:activePanel=null 时 disabled.
 // 默认 layout 有 Editor panel + 它是 active,popout 应 enabled.
-// 关闭 Editor panel → activePanel=null → popout disabled.
+// 关闭全部 panel → HeaderActions 整个消失(见第二个用例).
 import { test, expect } from './fixtures/electron-app';
 import { DOCK_CLOSE_EDITOR, DOCK_POPOUT } from './helpers/editor';
 

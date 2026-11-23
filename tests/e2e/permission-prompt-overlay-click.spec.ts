@@ -1,7 +1,7 @@
 // PermissionPrompt overlay click → onClose → modal 关 + Promise resolve [](拒绝).
 //
 // design Modal 的 overlay 点击触发 onClose;PermissionPrompt 的 onClose 走
-// promptStore.deny 路径 → resolve [].
+// promptStore.denyAll 路径 → resolve [].
 import { test, expect } from './fixtures/electron-app';
 
 test('点 overlay → modal 关 + Promise resolve []', async ({ window }) => {

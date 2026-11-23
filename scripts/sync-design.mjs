@@ -71,7 +71,7 @@ const FILES = [
   },
   { src: 'design/Input.css', dest: 'design/Input.css', mode: 'fork', reason: 'LM radius token 化 (var(--wm-radius-lg/sm))' },
 
-  { src: 'design/MenuItem.tsx', dest: 'design/MenuItem.tsx', mode: 'sync' },
+  { src: 'design/MenuItem.tsx', dest: 'design/MenuItem.tsx', mode: 'fork', reason: 'LM 加 aria-label prop(截断 / 同名文本的可访问名注入)' },
   { src: 'design/MenuItem.css', dest: 'design/MenuItem.css', mode: 'sync' },
 
   // 上游曾加了 size prop (sm/md/lg) 取代调用方的 !max-w-[Npx],
@@ -96,7 +96,8 @@ const FILES = [
   {
     src: 'design/SegmentedControl.tsx',
     dest: 'design/SegmentedControl.tsx',
-    mode: 'sync',
+    mode: 'fork',
+    reason: 'LM a11y:radiogroup 可访问名(aria-label / aria-labelledby)+ WAI-ARIA radio 方向键模型',
   },
   {
     src: 'design/SegmentedControl.css',
@@ -110,7 +111,7 @@ const FILES = [
   { src: 'design/Spinner.tsx', dest: 'design/Spinner.tsx', mode: 'sync' },
   { src: 'design/Spinner.css', dest: 'design/Spinner.css', mode: 'fork', reason: 'LM duration token 化 (var(--wm-duration-spin))' },
 
-  // LM TabNav.tsx 用 ✕ 字符 (U+2715) 替代 Nous 的 'x',与 EditorHeader 视觉对齐;
+  // LM TabNav.tsx 用 ✕ 字符 (U+2715) 替代 Nous 的 'x',视觉更对称;
   // LM TabNav.css active tab 用 primary-container 背景 + 顶部圆角 (类按钮形态),
   // 而 Nous 上游保持纯下划线 indicator。
   { src: 'design/TabNav.tsx', dest: 'design/TabNav.tsx', mode: 'fork', reason: 'LM close 字符 ✕ vs Nous x' },

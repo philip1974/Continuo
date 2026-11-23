@@ -1,4 +1,4 @@
-// layout.json 损坏 → fromJSON 失败 → fallback 默认布局(Editor panel 出现).  @edge
+// 旧版 layout.json 残留(且是垃圾 JSON)→ 启动时被删除、不解析 → 默认布局(Editor panel 出现).  @edge
 import { _electron as electron, expect, test } from '@playwright/test';
 import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-test('layout.json 是垃圾 JSON → fallback 默认布局(Editor panel 渲染)', async () => {
+test('旧 layout.json 残留且为垃圾 JSON → 不影响启动,默认布局(Editor panel 渲染)', async () => {
   test.setTimeout(30_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-corrupt-layout-'));
   try {

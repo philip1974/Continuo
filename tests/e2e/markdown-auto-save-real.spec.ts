@@ -19,7 +19,7 @@ test('打开 .md → updateContent(via hook)→ 等 delay → 磁盘写入新内
     { timeout: 5_000 },
   );
 
-  // 把 autoSave delay 设短(50ms)避免 e2e 等久
+  // 把 autoSave delay 设到下限(设 50ms 会被钳到 500ms)避免 e2e 等久
   await window.evaluate(() => {
     (
       window as unknown as {
@@ -61,7 +61,7 @@ test('打开 .md → updateContent(via hook)→ 等 delay → 磁盘写入新内
     { tabId, content: NEW_CONTENT },
   );
 
-  // 等 useAutoSave debounce(50ms)+ saveActive IPC writeFile
+  // 等 useAutoSave debounce(钳到 500ms)+ saveActive IPC writeFile
   await expect(async () => {
     const onDisk = await readFile(
       path.join(workspaceRoot, 'README.md'),

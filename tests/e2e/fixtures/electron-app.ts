@@ -7,7 +7,7 @@
 // 设计:
 //   - 每个 spec 独立 user-data-dir(放在 tmp),避免互相污染 explorer.json /
 //     localStorage。
-//   - cleanup 在 afterAll 走,删除整个 tmp 目录。
+//   - test 作用域 fixture:每个用例结束时清理,删除整个 tmp 目录。
 
 import { test as base, _electron as electron, type Page, type ElectronApplication } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -49,7 +49,7 @@ export const test = base.extend<Fixtures>({
         ...process.env,
         // disable GPU 让 CI / headless 环境更稳;本地也无副作用
         ELECTRON_DISABLE_GPU: '1',
-        // E2E 环境标识(future:让 main 跳过某些 dev-only 行为)
+        // E2E 环境标识(main 与 preload 据此启用 e2e 行为 / testing helpers)
         CONTINUO_E2E: '1',
       },
     });
@@ -60,7 +60,7 @@ export const test = base.extend<Fixtures>({
 
   window: async ({ electronApp }, use) => {
     const page = await electronApp.firstWindow();
-    // 等到 React 挂载 — TitleBar 是必现元素,文本含 'Continuo'
+    // 等 DOM 就绪(domcontentloaded);各用例自行等待所需元素
     await page.waitForLoadState('domcontentloaded');
     await use(page);
   },

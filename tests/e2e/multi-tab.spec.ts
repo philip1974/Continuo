@@ -1,4 +1,4 @@
-// 多文件打开 → EditorHeader 切到 TabNav 模式;切 tab + 关 tab.
+// 多文件打开 → EditorHeader TabNav 出现多个 tab;切 tab + 关 tab.
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_TABS, openWorkspaceFile } from './helpers/editor';
 

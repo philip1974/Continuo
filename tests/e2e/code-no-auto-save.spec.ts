@@ -69,6 +69,6 @@ test('打开 a.ts → updateContent → 不自动保存(代码必须 ⌘S)', asy
   // 代码不自动保存 → 内容未变
   expect(after).toBe(before);
 
-  // 但 dirty 圆点已显示(EditorHeader 紧凑模式)
+  // 但 dirty 标记已显示(EditorHeader tab)
   await expect(window.getByText(UNSAVED_CHANGES).first()).toBeVisible();
 });

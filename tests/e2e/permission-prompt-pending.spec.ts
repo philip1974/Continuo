@@ -1,6 +1,5 @@
-// PermissionPrompt 已 pending 时,第二次 request → 自身 store.request 实际
-// resolve previous resolver. 看 promptStore 行为:目前实现只允许一个 pending,
-// 第二次会覆盖 pending → 旧 promise 被替换,但 e2e 内难强同步验证.
+// PermissionPrompt 已 pending 时,第二次 request 排入 promptStore 的 manifestPromptQueue(不覆盖当前
+// pending),当前弹窗落定后再显示;e2e 内难强同步验证.
 //
 // 简化:验证「同一时刻只看到 1 个 modal」,无论 fire 多少次 requestPermissions.
 

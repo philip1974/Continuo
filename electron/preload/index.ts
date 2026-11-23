@@ -566,7 +566,7 @@ contextBridge.exposeInMainWorld('__lmApi', {
   },
 });
 
-// E2E 模式标志:main 进程检测 CONTINUO_E2E=1 时把这个常量设 true,
+// E2E 模式标志:preload 读 process.env.CONTINUO_E2E === '1' 后 expose,
 // renderer main-app.ts 看到 → 挂 testing helpers 到 window.__continuoTest.
 // 非 e2e 环境完全不存在,无副作用.
 if (process.env['CONTINUO_E2E'] === '1') {

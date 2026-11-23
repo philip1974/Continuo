@@ -1,4 +1,4 @@
-// 切 file 类型 → EditorHeader UI 同步:.ts 无保存按钮/.md 显 SegmentedControl.
+// 切 file 类型 → 编辑器 UI 同步:.ts 无模式行 / .md 显模式行 SegmentedControl.
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_MODE_EDIT, EDITOR_SAVE_LABEL } from './helpers/editor';
 

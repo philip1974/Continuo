@@ -1,5 +1,5 @@
-// 打开 .md 文件 → EditorHeader 显示 mode SegmentedControl(Edit/Source/Preview).
-// 这是 autoSaveEnabled 的视觉指示(代码文件没有这个,因为 isAutoSaveEnabled='*.md').
+// 打开 .md 文件 → EditorPanel 的模式行显示 SegmentedControl(Edit/Source/Preview);按 isMarkdownPath 显示,
+// 与 autoSave 无关(代码文件没有模式行).
 import { test, expect } from './fixtures/with-workspace';
 import {
   EDITOR_MODE_EDIT,
@@ -8,7 +8,7 @@ import {
   EDITOR_SAVE_LABEL,
 } from './helpers/editor';
 
-test('打开 README.md → EditorHeader SegmentedControl 出现 + 不显「保存」按钮', async ({
+test('打开 README.md → 模式行 SegmentedControl 出现 + 不显「保存」按钮', async ({
   window,
 }) => {
   await window.locator('text=README.md').first().click();
@@ -17,8 +17,7 @@ test('打开 README.md → EditorHeader SegmentedControl 出现 + 不显「保�
     timeout: 10_000,
   });
 
-  // EditorHeader 内 SegmentedControl 含 Edit / Source / Preview 文本
-  // 紧凑模式下 SegmentedControl 在右侧控制条
+  // 模式行(EditorPanel 内、tab 行下方)SegmentedControl 含 Edit / Source / Preview 文本
   const main = window.locator('main');
   await expect(main.locator('button').filter({ hasText: EDITOR_MODE_EDIT })).toBeVisible();
   await expect(

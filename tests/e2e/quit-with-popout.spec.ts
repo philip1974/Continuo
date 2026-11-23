@@ -1,7 +1,6 @@
 // 有 popout 窗口时退出:不因 popout 窗口(跑 PopoutHost,不应答关窗 flush)而多等 10s 的 flush 回执超时。
 //
-// dockview 的 addPopoutGroup 在 Playwright 控制的 Electron 下不稳定(见 popout-window.spec.ts),这里
-// 直接用 window.open 打开 popout URL —— 走的是同一个 windowOpenHandler(受信 renderer 入口 → 允许 +
+// 这里直接用 window.open 打开 popout URL —— 走的是同一个 windowOpenHandler(受信 renderer 入口 → 允许 +
 // 注入 preload),main 侧看到的是同一种 popout 窗口。
 //
 // 不量整个进程的退出耗时:will-quit 之后 Chromium 原生收尾偶有数十秒抖动(见 doc/follow-ups.md),与应用

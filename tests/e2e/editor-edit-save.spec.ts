@@ -28,7 +28,7 @@ test('打开 a.ts → 输入 → dirty 圆点 → Ctrl+S → 磁盘更新 + dirt
   await window.keyboard.press('ControlOrMeta+End');
   await window.keyboard.type(' // edit-by-e2e');
 
-  // dirty 状态:EditorHeader 紧凑模式右侧的「未保存修改」蓝点
+  // dirty 状态:EditorHeader tab 上的「未保存修改」标记
   const dirtyDot = window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR);
   await expect(dirtyDot).toBeVisible({ timeout: 5_000 });
 

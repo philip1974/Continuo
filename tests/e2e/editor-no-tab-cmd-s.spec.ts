@@ -1,6 +1,6 @@
 import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
-// 无 active tab(EditorWelcome 状态)→ Cmd+S 不抛(handleSave 检 saveActive 返
-// NO_ACTIVE_TAB,alert 弹但 e2e 拦截).
+// 无 active tab(EditorWelcome 状态)→ Cmd+S 不抛(saveActive 返 NO_ACTIVE_TAB 时 handleSave 走
+// notifyFailure toast,不调 alert).
 import { test, expect } from './fixtures/with-workspace';
 
 test('无 tab + Cmd+S → 不抛(EditorPanel 容器 onKeyDown)', async ({

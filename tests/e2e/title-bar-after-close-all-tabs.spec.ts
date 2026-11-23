@@ -14,7 +14,7 @@ test('开 README.md → 关 → header 仅 workspace name', async ({
     timeout: 10_000,
   });
 
-  // 紧凑模式 close
+  // 单 tab 的 close
   await window.getByRole('button', { name: EDITOR_CLOSE_README_MD }).click();
   await window.waitForTimeout(300);
 

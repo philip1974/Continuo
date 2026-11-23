@@ -188,8 +188,7 @@ export function TabNavItem({
           tabIndex={-1}
           onClick={handleClose}
         >
-          {/* Continuo-local 微调:'x' → '✕'(U+2715 multiplication X)与
-           *  EditorHeader 单 tab close button 一致,视觉更对称。Nous 上游保持 'x'. */}
+          {/* Continuo-local 微调:'x' → '✕'(U+2715 multiplication X)视觉更对称。Nous 上游保持 'x'. */}
           <span aria-hidden="true">✕</span>
         </button>
       ) : null}

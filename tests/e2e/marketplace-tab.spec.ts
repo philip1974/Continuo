@@ -58,7 +58,7 @@ test('商店底部 Git URL 安装段 — 输入空 → 按钮 disabled', async (
   }
   await marketplaceTab.click();
 
-  // 等任一稳态加载完(最多 15s)— 即使 error 态也会渲染整段(error 在中部,但 GitUrlInstall 仅 ok 才渲染).
+  // 等任一稳态加载完(最多 15s)— error / 空索引态会提前返回,只渲染对应提示块(GitUrlInstall 仅 ok 才渲染).
   const okText = await window
     .getByText(MARKETPLACE_INDEX_OK, { exact: false })
     .first()
