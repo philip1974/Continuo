@@ -317,7 +317,7 @@ export interface CreatePluginMcpBridgeDeps {
   invokeRemote: InvokeRemoteCore;
   /**
    * 安全:agent 授权门控(必填,与终端 / debug 工具同走 gateWithAuth)。按调用方窗口(ctx.ownerWindowId,
-   * 经下方同窗校验后即注册者窗口)弹授权,method=`plugin.<tool 名>` 归 renderer 的独立 plugin 域。
+   * 经下方同窗校验后即注册者窗口)弹授权,method=`plugin.<tool 名>` 归 agentAuthDomainOf 的独立 plugin 域(main 按域判定放行)。
    */
   ensureAuthorized: EnsureAuthorized;
   /**
