@@ -34,7 +34,6 @@ const execFile = promisify(execFileCb);
 
 export interface DebugDapClientLike {
   readonly socketPath?: string | null;
-  readonly tcpPort?: number;
   readonly serverPid?: number;
   /** adapter 子进程已退出(其 pid 可能已被复用,清理不再对它发信号)。 */
   readonly serverExited?: boolean;

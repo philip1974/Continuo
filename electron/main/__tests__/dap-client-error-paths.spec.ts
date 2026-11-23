@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createServer, type Server, type Socket } from 'node:net';
+import type { Socket } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DAP_MAX_FRAME_BYTES,
@@ -501,158 +501,27 @@ describe('反向请求的回复', () => {
   });
 });
 
-describe('TCP 端点(Windows)', () => {
-  // dapDebugServer.js 的参数是 `[port|socket path] [host=localhost]`;不传 host 时 localhost 可能解析成 ::1,
-  // 而客户端固定连 127.0.0.1 → readiness 超时。spawn 时必须显式传 127.0.0.1。
-  it('无 socket 路径时 spawn adapter 的参数含 host 127.0.0.1(与客户端连接地址一致)', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'dap-tcp-host-'));
-    const adapterPath = path.join(dir, 'echo-argv.cjs');
-    await writeFile(adapterPath, 'process.stderr.write(JSON.stringify(process.argv.slice(2)));\n');
-    try {
-      const client = new DapClient({
-        adapterPath,
-        socketPath: null,
-        tcpPort: 45_678,
-        readyTimeoutMs: 500,
-        connectIntervalMs: 20,
-      });
-      const err = await client.spawnServer().then(
-        () => null,
-        (e: unknown) => e as Error,
-      );
-      await client.dispose();
-      expect(err?.message).toContain('["45678","127.0.0.1"]');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-});
-
-// Windows 走 TCP 127.0.0.1 随机端口:两个会话可能撞到同一端口。第二个 adapter 因 EADDRINUSE 退出,
-// 若客户端只管轮询连端口,会连上第一个会话的 adapter(两会话共用一个 adapter,断开一个连带终止另一个),
-// 且记下的是已退出的 adapter PID。
-describe('TCP 端口冲突(Windows 随机端口)', () => {
-  /** 让 randomTcpPort(20000 + floor(random * 30000))取到 port 的 Math.random 返回值。 */
-  function randomFor(port: number): number {
-    return (port - 20_000 + 0.5) / 30_000;
-  }
-
-  /** 在 randomTcpPort 的取值区间内找一个当前空闲的端口;keepOpen 时保持占用(模拟另一个会话的 adapter)。 */
-  async function portInRange(
-    keepOpen = false,
-  ): Promise<{ port: number; server: Server | null; accepted: () => number }> {
-    for (;;) {
-      const port = 20_000 + Math.floor(Math.random() * 30_000);
-      let count = 0;
-      const server = createServer((s) => {
-        count += 1;
-        s.on('error', () => {});
-        s.destroy();
-      });
-      const ok = await new Promise<boolean>((resolve) => {
-        server.once('error', () => resolve(false));
-        server.listen(port, '127.0.0.1', () => resolve(true));
-      });
-      if (!ok) continue;
-      if (!keepOpen) await new Promise((r) => server.close(r));
-      return { port, server: keepOpen ? server : null, accepted: () => count };
-    }
-  }
-
-  /** 假 adapter:记下收到的端口;delayMs 后在其上监听并照 js-debug 打印就绪行,端口被占则 EADDRINUSE 退出。 */
-  async function fakeAdapter(opts: { delayMs?: number; alwaysFail?: boolean } = {}) {
-    const dir = await mkdtemp(path.join(tmpdir(), 'dap-tcp-retry-'));
-    const log = path.join(dir, 'ports.log');
+describe('adapter 就绪前退出', () => {
+  /** 假 adapter:记下每次被 spawn 时收到的端点参数,然后立刻失败退出。 */
+  async function failingAdapter() {
+    const dir = await mkdtemp(path.join(tmpdir(), 'dap-exit-early-'));
+    const log = path.join(dir, 'spawns.log');
     const adapterPath = path.join(dir, 'adapter.cjs');
     await writeFile(
       adapterPath,
       [
-        "const net = require('node:net');",
-        'const [port, host] = process.argv.slice(2);',
-        `require('node:fs').appendFileSync(${JSON.stringify(log)}, port + '\\n');`,
-        opts.alwaysFail
-          ? "console.error('Error: listen EADDRINUSE: address already in use ' + host + ':' + port); process.exit(1);"
-          : `setTimeout(() => net.createServer((s) => s.on('error', () => {}))
-              .on('error', (e) => { console.error(e); process.exit(1); })
-              .listen(Number(port), host, () => console.log('Debug server listening at ' + host + ':' + port)), ${opts.delayMs ?? 0});`,
+        'const [endpoint] = process.argv.slice(2);',
+        `require('node:fs').appendFileSync(${JSON.stringify(log)}, endpoint + '\\n');`,
+        "console.error('Error: listen EADDRINUSE: address already in use ' + endpoint); process.exit(1);",
       ].join('\n'),
     );
-    const ports = (): number[] =>
-      existsSync(log)
-        ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(Number)
-        : [];
-    return { dir, adapterPath, ports };
+    const spawns = (): string[] =>
+      existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : [];
+    return { dir, adapterPath, spawns };
   }
 
-  it('随机端口已被别的 adapter 占用 → 不连该端口;本 adapter 就绪前退出后换新端口重试并成功', async () => {
-    const occupied = await portInRange(true);
-    const fresh = await portInRange();
-    const fixture = await fakeAdapter({ delayMs: 200 });
-    const random = vi
-      .spyOn(Math, 'random')
-      .mockReturnValueOnce(randomFor(occupied.port))
-      .mockReturnValueOnce(randomFor(fresh.port));
-    const client = new DapClient({
-      adapterPath: fixture.adapterPath,
-      socketPath: null,
-      readyTimeoutMs: 5_000,
-      connectIntervalMs: 20,
-    });
-    try {
-      await client.spawnServer();
-      random.mockRestore();
-      expect(occupied.accepted()).toBe(0);
-      expect(fixture.ports()).toEqual([occupied.port, fresh.port]);
-      expect(client.tcpPort).toBe(fresh.port);
-      // 记下的是仍在运行的那个 adapter
-      expect(() => process.kill(client.serverPid!, 0)).not.toThrow();
-    } finally {
-      random.mockRestore();
-      await client.dispose();
-      await new Promise((r) => occupied.server!.close(r));
-      await rm(fixture.dir, { recursive: true, force: true });
-    }
-  });
-
-  it('每次都在就绪前退出 → 共尝试 3 次后 launch 失败,不等满 readyTimeout', async () => {
-    const fixture = await fakeAdapter({ alwaysFail: true });
-    const client = new DapClient({
-      adapterPath: fixture.adapterPath,
-      socketPath: null,
-      readyTimeoutMs: 10_000,
-      connectIntervalMs: 20,
-    });
-    const startedAt = Date.now();
-    try {
-      await expect(client.spawnServer()).rejects.toThrow(/exited before ready[\s\S]*EADDRINUSE/);
-      expect(Date.now() - startedAt).toBeLessThan(5_000);
-      expect(fixture.ports()).toHaveLength(3);
-    } finally {
-      await client.dispose();
-      await rm(fixture.dir, { recursive: true, force: true });
-    }
-  });
-
-  it('显式指定的 tcpPort 不换端口重试:就绪前退出即失败', async () => {
-    const fixture = await fakeAdapter({ alwaysFail: true });
-    const client = new DapClient({
-      adapterPath: fixture.adapterPath,
-      socketPath: null,
-      tcpPort: 45_679,
-      readyTimeoutMs: 10_000,
-      connectIntervalMs: 20,
-    });
-    try {
-      await expect(client.spawnServer()).rejects.toThrow(/exited before ready/);
-      expect(fixture.ports()).toEqual([45_679]);
-    } finally {
-      await client.dispose();
-      await rm(fixture.dir, { recursive: true, force: true });
-    }
-  });
-
-  it.skipIf(process.platform === 'win32')('socket 路径模式:adapter 就绪前退出 → 立即失败,不重试', async () => {
-    const fixture = await fakeAdapter({ alwaysFail: true });
+  it.skipIf(process.platform === 'win32')('立即失败(不等满 readyTimeout),只 spawn 一次', async () => {
+    const fixture = await failingAdapter();
     const client = new DapClient({
       adapterPath: fixture.adapterPath,
       readyTimeoutMs: 10_000,
@@ -662,54 +531,10 @@ describe('TCP 端口冲突(Windows 随机端口)', () => {
     try {
       await expect(client.spawnServer()).rejects.toThrow(/exited before ready/);
       expect(Date.now() - startedAt).toBeLessThan(5_000);
-      expect(fixture.ports()).toHaveLength(1);
+      expect(fixture.spawns()).toHaveLength(1);
     } finally {
       await client.dispose();
       await rm(fixture.dir, { recursive: true, force: true });
     }
   });
-
-  const realAdapter = path.join(
-    process.cwd(),
-    'scripts/debug-spike/.adapter/js-debug/src/dapDebugServer.js',
-  );
-  it.skipIf(!existsSync(realAdapter))(
-    '真实 js-debug:两个 TCP 会话撞同一随机端口 → 第二个换端口,各有自己的(存活的)adapter',
-    async () => {
-      // 仓库 package.json 是 type:module,复制到 commonjs 目录再跑(同 debug-service real adapter 用例)。
-      const dir = await mkdtemp(path.join(tmpdir(), 'dap-tcp-real-'));
-      await cp(path.dirname(realAdapter), dir, { recursive: true });
-      await writeFile(path.join(dir, 'package.json'), '{"type":"commonjs"}\n');
-      const adapterPath = path.join(dir, 'dapDebugServer.js');
-      const shared = await portInRange();
-      const fresh = await portInRange();
-      const random = vi
-        .spyOn(Math, 'random')
-        .mockReturnValueOnce(randomFor(shared.port))
-        .mockReturnValueOnce(randomFor(shared.port))
-        .mockReturnValueOnce(randomFor(fresh.port));
-      const options = { adapterPath, socketPath: null, readyTimeoutMs: 15_000, connectIntervalMs: 50 };
-      const first = new DapClient(options);
-      const second = new DapClient(options);
-      try {
-        await first.spawnServer();
-        await second.spawnServer();
-        random.mockRestore();
-        expect(first.tcpPort).toBe(shared.port);
-        expect(second.tcpPort).toBe(fresh.port);
-        expect(second.serverPid).not.toBe(first.serverPid);
-        expect(() => process.kill(second.serverPid!, 0)).not.toThrow();
-        const init = await second.sendRequest('initialize', {
-          adapterID: 'pwa-node',
-          clientID: 'continuo-test',
-        });
-        expect(init.success).toBe(true);
-      } finally {
-        random.mockRestore();
-        await Promise.all([first.dispose(), second.dispose()]);
-        await rm(dir, { recursive: true, force: true });
-      }
-    },
-    30_000,
-  );
 });

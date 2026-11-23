@@ -53,7 +53,6 @@ vi.mock('../lib/kill-with-grace', async (importOriginal) => {
 
 class FakeDapClient implements DebugDapClientLike {
   readonly socketPath = `fake-${Math.random().toString(16).slice(2)}.sock`;
-  readonly tcpPort = 0;
   readonly serverPid: number;
   /** adapter 子进程已退出(模拟真实 DapClient 的 serverExited)。 */
   serverExited = false;
