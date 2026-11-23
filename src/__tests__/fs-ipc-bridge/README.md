@@ -24,7 +24,6 @@
 | `fs:write-file`       | `{ path, content }`  | `atomicWriteFile(path, content)` | `{ mtimeMs, size, ino } \| undefined`(写入内容的 stat,rename 后复核一致才返回;preload `toFsWriteFileResult` 守卫) |
 | `fs:stat`             | `{ path }`           | `fs.promises.stat(path)`(跟随 symlink) | `{ mtimeMs, size, ino }`(preload `toFsStatResult`:畸形 / 缺 ino → 失败) |
 | `fs:rename`           | `{ path, newName }`  | `renameEntry(path, newName)` | `string`(新路径) |
-| `fs:remove`           | `{ path }`           | `removeEntry(path)` | `void` |
 | `fs:create-file`      | `{ dir, name }`      | `createFile(dir, name)` | `string` |
 | `fs:create-dir`       | `{ parent, name }`   | `createDir(parent, name)` | `string` |
 | `fs:trash`            | `{ path }`           | `shell.trashItem(path)` | `void` |

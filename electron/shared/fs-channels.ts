@@ -11,7 +11,6 @@ export const FS_CHANNELS = {
   WRITE_FILE: 'fs:write-file',
   WRITE_BINARY: 'fs:write-binary',
   RENAME: 'fs:rename',
-  REMOVE: 'fs:remove',
   CREATE_FILE: 'fs:create-file',
   CREATE_DIR: 'fs:create-dir',
   TRASH: 'fs:trash',

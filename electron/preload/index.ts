@@ -229,8 +229,6 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.WRITE_BINARY, { path, content }),
     rename: (path: string, newName: string): Promise<IpcResult<string>> =>
       ipcRenderer.invoke(FS_CHANNELS.RENAME, { path, newName }),
-    remove: (path: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(FS_CHANNELS.REMOVE, { path }),
     createFile: (dir: string, name: string): Promise<IpcResult<string>> =>
       ipcRenderer.invoke(FS_CHANNELS.CREATE_FILE, { dir, name }),
     createDir: (parent: string, name: string): Promise<IpcResult<string>> =>

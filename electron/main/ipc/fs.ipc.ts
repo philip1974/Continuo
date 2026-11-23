@@ -20,7 +20,6 @@ import { readFile } from './fs/read-file';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
 import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
-import { removeEntry } from './fs/remove';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
 import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
@@ -103,7 +102,6 @@ export const renameInputSchema = z
   .object({ path: fsPath(), newName: fsName() })
   .strict();
 
-export const removeInputSchema = z.object({ path: fsPath() }).strict();
 
 export const createFileInputSchema = z
   .object({ dir: fsPath(), name: fsName() })
@@ -138,7 +136,6 @@ export type StatInput = z.infer<typeof statInputSchema>;
 export type WriteFileInput = z.infer<typeof writeFileInputSchema>;
 export type WriteBinaryInput = z.infer<typeof writeBinaryInputSchema>;
 export type RenameInput = z.infer<typeof renameInputSchema>;
-export type RemoveInput = z.infer<typeof removeInputSchema>;
 export type CreateFileInput = z.infer<typeof createFileInputSchema>;
 export type CreateDirInput = z.infer<typeof createDirInputSchema>;
 export type TrashInput = z.infer<typeof trashInputSchema>;
@@ -189,7 +186,6 @@ export const statHandler = async (input: StatInput): Promise<FsFileStat> => {
   }
 };
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);
-export const removeHandler = (input: RemoveInput) => removeEntry(input.path);
 export const createFileHandler = (input: CreateFileInput) => createFile(input.dir, input.name);
 export const createDirHandler = (input: CreateDirInput) => createDir(input.parent, input.name);
 const moveHandler = (input: MoveInput) => moveEntry(input.src, input.dest);
@@ -368,7 +364,6 @@ export function registerFsIpc(): void {
   safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler);
   safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler);
-  safeHandle(FS_CHANNELS.REMOVE, removeInputSchema, removeHandler);
   safeHandle(FS_CHANNELS.CREATE_FILE, createFileInputSchema, createFileHandler);
   safeHandle(FS_CHANNELS.CREATE_DIR, createDirInputSchema, createDirHandler);
 

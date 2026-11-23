@@ -21,7 +21,7 @@
   spec 用 vi.fn 验证调用语义。
 - 成功后调 `tree.invalidateChildrenIds(parentDir)` 触发 headless-tree 重新加载父目录;
   失败时不刷,返回结构化错误透传给 caller(组件层弹 toast / inline 错误)。
-- `removeItems` 默认 `trash: true`(VSCode 风,走系统回收站);
+- `removeItems` 走系统回收站(VSCode 风;Explorer 没有硬删入口);
   多路径并行删,聚合 failures,即便部分失败仍刷成功项的父目录。
 - `dirname` / `basename` 复用 tree-config 同模式纯函数(跨平台,不引 path-browserify)。
 
@@ -32,8 +32,8 @@
 - 成功 → `tree.invalidateChildrenIds(dirname(oldPath))` → 返 `{ ok, newPath }`
 - 失败 → 不刷,返 `{ ok: false, code, message }`(透传 IpcFail)
 
-### removeItems(paths, opts, deps, tree)
-- 默认 `opts.trash = true` → 调 `fs.trash(p)`;`trash: false` → 调 `fs.remove(p)`
+### removeItems(paths, deps, tree)
+- 逐项调 `fs.trash(p)`(移到系统回收站)
 - 多路径有界并发调用(在途 ≤4;outermostPaths 已保证互不包含),各自结果按输入顺序聚合到 `failures` 数组 / `removed`
 - 成功路径的父目录去重后批量 invalidate;失败路径的父不刷
 - 全成功 → `{ ok: true, removed }`;有失败 → `{ ok: false, failures: [{path, code, message}], removed }`

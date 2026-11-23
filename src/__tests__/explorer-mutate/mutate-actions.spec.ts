@@ -22,7 +22,6 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   writeFile: vi.fn(async () => ok(undefined)),
   stat: vi.fn(async () => ok({ mtimeMs: 0, size: 0, ino: 0 })),
   rename: vi.fn(async (_o, n) => ok(`/parent/${n}`)),
-  remove: vi.fn(async () => ok(undefined as void)),
   createFile: vi.fn(async (d, n) => ok(`${d}/${n}`)),
   createDir: vi.fn(async (d, n) => ok(`${d}/${n}`)),
   trash: vi.fn(async () => ok(undefined as void)),
@@ -83,7 +82,7 @@ describe('removeItems', () => {
     });
     const tree = makeTree();
 
-    const r = await removeItems(['/a/x', '/b/y'], {}, { fs }, tree);
+    const r = await removeItems(['/a/x', '/b/y'], { fs }, tree);
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -92,20 +91,11 @@ describe('removeItems', () => {
     expect(removeItems.toString()).not.toContain('failures.push(');
   });
 
-  it('默认 trash: true → 调 fs.trash 而非 fs.remove', async () => {
+  it('调 fs.trash(移到系统回收站)', async () => {
     const fs = makeFs();
     const tree = makeTree();
-    await removeItems(['/x/a'], {}, { fs }, tree);
+    await removeItems(['/x/a'], { fs }, tree);
     expect(fs.trash).toHaveBeenCalledWith('/x/a');
-    expect(fs.remove).not.toHaveBeenCalled();
-  });
-
-  it('显式 trash: false → 调 fs.remove(硬删)', async () => {
-    const fs = makeFs();
-    const tree = makeTree();
-    await removeItems(['/x/a'], { trash: false }, { fs }, tree);
-    expect(fs.remove).toHaveBeenCalledWith('/x/a');
-    expect(fs.trash).not.toHaveBeenCalled();
   });
 
   it('全部成功 → { ok: true }, 父目录批量 invalidate(去重)', async () => {
@@ -113,7 +103,6 @@ describe('removeItems', () => {
     const tree = makeTree();
     const r = await removeItems(
       ['/x/a', '/x/b', '/y/c'],
-      { trash: true },
       { fs },
       tree,
     );
@@ -133,7 +122,7 @@ describe('removeItems', () => {
       .mockResolvedValueOnce(ok(undefined as void));
     const fs = makeFs({ trash });
     const tree = makeTree();
-    const r = await removeItems(['/a/x', '/b/y', '/c/z'], {}, { fs }, tree);
+    const r = await removeItems(['/a/x', '/b/y', '/c/z'], { fs }, tree);
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.failures).toEqual([
@@ -151,10 +140,9 @@ describe('removeItems', () => {
   it('paths 空数组 → 不调任何 IPC,直接 ok', async () => {
     const fs = makeFs();
     const tree = makeTree();
-    const r = await removeItems([], {}, { fs }, tree);
+    const r = await removeItems([], { fs }, tree);
     expect(r).toEqual({ ok: true, removed: [] });
     expect(fs.trash).not.toHaveBeenCalled();
-    expect(fs.remove).not.toHaveBeenCalled();
     expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
   });
 
@@ -168,7 +156,7 @@ describe('removeItems', () => {
       .mockResolvedValueOnce(ok(undefined as void));
     const fs = makeFs({ trash });
     const tree = makeTree();
-    const r = await removeItems(['/a/x', '/b/y', '/c/z'], {}, { fs }, tree);
+    const r = await removeItems(['/a/x', '/b/y', '/c/z'], { fs }, tree);
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.failures).toEqual([
@@ -202,7 +190,7 @@ describe('removeItems', () => {
     const fs = makeFs({ trash });
     const tree = makeTree();
     const paths = Array.from({ length: 10 }, (_, i) => `/d${i}/f`);
-    const done = removeItems(paths, {}, { fs }, tree);
+    const done = removeItems(paths, { fs }, tree);
     const tick = () => new Promise<void>((r) => setTimeout(r, 0));
     for (let n = 0; n < 200 && (pending.size > 0 || trash.mock.calls.length < 10); n++) {
       await tick();
@@ -220,21 +208,6 @@ describe('removeItems', () => {
       (c) => c[0],
     );
     expect(invalidated).toEqual(r.removed.map((p) => p.slice(0, p.lastIndexOf('/'))));
-  });
-
-  it('remove(硬删)reject 无 code → 归类 failures code=EXCEPTION', async () => {
-    const remove = vi
-      .fn<(p: string) => Promise<IpcResult<void>>>()
-      .mockRejectedValueOnce(new Error('boom'));
-    const fs = makeFs({ remove });
-    const tree = makeTree();
-    const r = await removeItems(['/a/x'], { trash: false }, { fs }, tree);
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.failures).toEqual([
-        { path: '/a/x', code: 'EXCEPTION', message: 'boom' },
-      ]);
-    }
   });
 });
 

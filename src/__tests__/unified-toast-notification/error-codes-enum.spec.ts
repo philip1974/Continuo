@@ -28,7 +28,6 @@ const FS_TARGETS = [
   'electron/main/ipc/fs/list-dir.ts',
   'electron/main/ipc/fs/create.ts',
   'electron/main/ipc/fs/rename.ts',
-  'electron/main/ipc/fs/remove.ts',
   'electron/main/ipc/fs/move-copy.ts',
 ] as const;
 

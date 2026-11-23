@@ -11,7 +11,7 @@ import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 const REMOVE_CONCURRENCY = 4;
 
 export interface MutateDeps {
-  fs: Pick<FsApi, 'rename' | 'remove' | 'trash' | 'createFile' | 'createDir'>;
+  fs: Pick<FsApi, 'rename' | 'trash' | 'createFile' | 'createDir'>;
 }
 
 export interface TreeMutationApi {
@@ -59,18 +59,16 @@ export async function renameItem(
 }
 
 // ────────────────────────────────────────────────────────────
-// remove(默认 trash)
+// remove(移到系统回收站)
 // ────────────────────────────────────────────────────────────
 
 export async function removeItems(
   paths: ReadonlyArray<string>,
-  opts: { trash?: boolean },
   deps: MutateDeps,
   tree: TreeMutationApi,
 ): Promise<RemoveResult> {
   if (paths.length === 0) return { ok: true, removed: [] };
 
-  const useTrash = opts.trash ?? true;
   const failures = new Array<RemoveFailure>(paths.length);
   let failureCount = 0;
   const successParents = new Set<string>();
@@ -83,7 +81,7 @@ export async function removeItems(
   // 包含(同一实体不会被两项同时删),改为有界并发;结果按下标记录,汇总/刷新顺序与串行一致。
   const targets = outermostPaths(paths);
   const outcomes = await allSettledWithConcurrency(targets, REMOVE_CONCURRENCY, (p) =>
-    useTrash ? deps.fs.trash(p) : deps.fs.remove(p),
+    deps.fs.trash(p),
   );
   for (let i = 0; i < targets.length; i++) {
     const p = targets[i]!;
@@ -146,7 +144,7 @@ export async function trashItemsAndCleanup(
   tree: TreeMutationApi,
   cleanup: RemoveCleanup,
 ): Promise<RemoveResult> {
-  const result = await removeItems(paths, { trash: true }, deps, tree);
+  const result = await removeItems(paths, deps, tree);
   if (result.removed.length > 0) {
     cleanup.removePaths(result.removed);
     cleanup.prune(result.removed);

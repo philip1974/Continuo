@@ -8,7 +8,6 @@ import { listDir, sortDirsFirst } from '../../../electron/main/ipc/fs/list-dir';
 import { readFile } from '../../../electron/main/ipc/fs/read-file';
 import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
 import { renameEntry } from '../../../electron/main/ipc/fs/rename';
-import { removeEntry } from '../../../electron/main/ipc/fs/remove';
 import { createFile, createDir } from '../../../electron/main/ipc/fs/create';
 
 let dir: string;
@@ -403,32 +402,6 @@ describe('renameEntry', () => {
   it('源不存在 → FS_NOT_FOUND', async () => {
     await expectErrCode(
       () => renameEntry(path.join(dir, 'nope'), 'x'),
-      'FS_NOT_FOUND',
-    );
-  });
-});
-
-describe('removeEntry', () => {
-  it('删文件', async () => {
-    const f = path.join(dir, 'x.txt');
-    await writeFile(f, 'x');
-    await removeEntry(f);
-    expect(existsSync(f)).toBe(false);
-  });
-
-  it('递归删目录', async () => {
-    const sub = path.join(dir, 'sub');
-    await mkdir(sub);
-    await writeFile(path.join(sub, 'a'), 'a');
-    await mkdir(path.join(sub, 'inner'));
-    await writeFile(path.join(sub, 'inner', 'b'), 'b');
-    await removeEntry(sub);
-    expect(existsSync(sub)).toBe(false);
-  });
-
-  it('不存在 → FS_NOT_FOUND', async () => {
-    await expectErrCode(
-      () => removeEntry(path.join(dir, 'nope')),
       'FS_NOT_FOUND',
     );
   });

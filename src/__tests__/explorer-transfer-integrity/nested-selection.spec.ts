@@ -79,8 +79,8 @@ describe('transferEntriesInto — 嵌套选择', () => {
 describe('removeItems — 嵌套选择', () => {
   it('trash [A, A/B] → 只删 A,不对已随 A 删除的 A/B 报错', async () => {
     const trash = vi.fn(async () => OK);
-    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
-    const r = await removeItems(['/r/A', '/r/A/B'], { trash: true }, { fs } as never, {
+    const fs = { trash, rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const r = await removeItems(['/r/A', '/r/A/B'], { fs } as never, {
       invalidateChildrenIds: vi.fn(),
     });
     expect(r).toEqual({ ok: true, removed: ['/r/A'] });
@@ -93,8 +93,8 @@ describe('removeItems — 嵌套选择', () => {
     const trash = vi.fn(async (p: string): Promise<Result> =>
       p === '/r/A' ? { ok: false, code: 'FS_DENIED', message: 'no perm' } : OK,
     );
-    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
-    const r = await removeItems(['/r/A', '/r/A/B', '/r/x'], { trash: true }, { fs } as never, {
+    const fs = { trash, rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const r = await removeItems(['/r/A', '/r/A/B', '/r/x'], { fs } as never, {
       invalidateChildrenIds: vi.fn(),
     });
     expect(r.ok).toBe(false);
@@ -109,7 +109,7 @@ describe('onTrash 删除后只对实际删除的路径做清理', () => {
     const trash = vi.fn(async (p: string): Promise<Result> =>
       p === '/r/A' ? { ok: false, code: 'FS_DENIED', message: 'no perm' } : OK,
     );
-    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const fs = { trash, rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
     const cleanup = { removePaths: vi.fn(), prune: vi.fn() };
     const r = await trashItemsAndCleanup(
       ['/r/A', '/r/A/B', '/r/x'],
@@ -125,7 +125,7 @@ describe('onTrash 删除后只对实际删除的路径做清理', () => {
   // perf:批量删除后 editor tab 清理一次批量完成(O(R·T)+R 次 set → O(T·depth)+1 次 set)。
   it('perf · 多项删除成功 → removePaths 只调一次,收到全部 result.removed', async () => {
     const trash = vi.fn(async (): Promise<Result> => OK);
-    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const fs = { trash, rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
     const cleanup = { removePaths: vi.fn(), prune: vi.fn() };
     const r = await trashItemsAndCleanup(
       ['/r/a', '/r/b', '/r/c'],
@@ -143,7 +143,7 @@ describe('onTrash 删除后只对实际删除的路径做清理', () => {
       code: 'FS_DENIED',
       message: 'no perm',
     }));
-    const fs = { trash, remove: vi.fn(), rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
+    const fs = { trash, rename: vi.fn(), createFile: vi.fn(), createDir: vi.fn() };
     const cleanup = { removePaths: vi.fn(), prune: vi.fn() };
     const r = await trashItemsAndCleanup(
       ['/r/A', '/r/A/B'],

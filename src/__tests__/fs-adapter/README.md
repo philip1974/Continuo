@@ -13,7 +13,6 @@
 | `electron/main/ipc/fs/read-file.ts` | `readFile` | utf-8 读 |
 | `electron/main/ipc/fs/atomic-write.ts` | `atomicWriteFile` | temp + fsync + rename + backup cleanup(ADR-009) |
 | `electron/main/ipc/fs/rename.ts` | `renameEntry` | 同目录改 basename,返回新绝对路径 |
-| `electron/main/ipc/fs/remove.ts` | `removeEntry` | 硬删(trash 走系统回收站留 IPC 层调 shell.trashItem) |
 | `electron/main/ipc/fs/create.ts` | `createFile` / `createDir` | 拼路径 → 写空 / mkdir,返回新绝对路径 |
 | `electron/shared/fs-entry.ts` | `FileEntry` 类型 | 主/渲染共享数据形状 |
 
@@ -56,11 +55,6 @@
 - 含分隔符或为 `.`/`..` → 抛 `FS_BAD_NAME`
 - 同目录 rename
 - 返回新绝对路径
-
-### removeEntry(absPath)
-- 走 `fs.rm(path, { recursive: true, force: false })`
-- 不存在 → 抛 `FS_NOT_FOUND`(force: false 的语义)
-- **trash 走系统回收站**由 IPC 层 `shell.trashItem` 单独实现,本函数只做硬删
 
 ### createFile(dirAbsPath, name) → string
 - 拼出 `${dir}/${name}`

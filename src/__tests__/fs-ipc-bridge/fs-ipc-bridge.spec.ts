@@ -31,8 +31,6 @@ import {
   makeTrashHandler,
   readFileHandler,
   readFileInputSchema,
-  removeHandler,
-  removeInputSchema,
   renameHandler,
   renameInputSchema,
   selectDirectoryInputSchema,
@@ -64,7 +62,6 @@ describe('FS_CHANNELS 常量', () => {
     expect(FS_CHANNELS.READ_FILE).toBe('fs:read-file');
     expect(FS_CHANNELS.WRITE_FILE).toBe('fs:write-file');
     expect(FS_CHANNELS.RENAME).toBe('fs:rename');
-    expect(FS_CHANNELS.REMOVE).toBe('fs:remove');
     expect(FS_CHANNELS.CREATE_FILE).toBe('fs:create-file');
     expect(FS_CHANNELS.CREATE_DIR).toBe('fs:create-dir');
     expect(FS_CHANNELS.TRASH).toBe('fs:trash');
@@ -240,9 +237,6 @@ describe('E21 fs IPC 路径/名称/exclude 上限', () => {
     expect(
       readFileInputSchema.safeParse({ path: '/' + 'x'.repeat(8192) }).success,
     ).toBe(false);
-    expect(
-      removeInputSchema.safeParse({ path: '/' + 'x'.repeat(8192) }).success,
-    ).toBe(false);
   });
   it('newName / name 超 1024 → fail', () => {
     expect(
@@ -290,15 +284,6 @@ describe('renameInputSchema', () => {
   });
   it('newName 空字符串 → fail', () => {
     expect(renameInputSchema.safeParse({ path: '/x', newName: '' }).success).toBe(false);
-  });
-});
-
-describe('removeInputSchema', () => {
-  it('接受 { path }', () => {
-    expect(removeInputSchema.safeParse({ path: '/x' }).success).toBe(true);
-  });
-  it('缺 path → fail', () => {
-    expect(removeInputSchema.safeParse({}).success).toBe(false);
   });
 });
 
@@ -459,13 +444,6 @@ describe('handlers 接线', () => {
     expect(np).toBe(path.join(dir, 'new.txt'));
     expect(existsSync(f)).toBe(false);
     expect(existsSync(np)).toBe(true);
-  });
-
-  it('removeHandler 删文件', async () => {
-    const f = path.join(dir, 'x.txt');
-    await writeFile(f, '');
-    await removeHandler({ path: f });
-    expect(existsSync(f)).toBe(false);
   });
 
   it('createFileHandler 建空文件,返回新路径', async () => {
