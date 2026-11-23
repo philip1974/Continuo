@@ -122,7 +122,6 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     WINDOW_CHANNELS.CREATE,
     CreateInput,
     (input) => createWindowHandler(input, deps.createMainWindow),
-    defaultIsTrustedFrame,
   );
   // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal
   // 路径 cwd 回退使用。main 端做 absolute + 非空校验 + trusted-frame 校验。

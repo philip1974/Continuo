@@ -5,7 +5,7 @@ import { app } from 'electron';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import path from 'node:path';
 import { z } from 'zod';
-import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
+import { safeHandle } from '../safe-handle';
 import {
   PLUGINS_CHANNELS,
   GIT_URL_MAX,
@@ -142,7 +142,6 @@ export function primePluginsWatcherBaseline(): void {
 export function registerPluginsIpc(): void {
   const userData = app.getPath('userData');
   const pluginsDir = path.join(userData, 'plugins');
-  const trusted = defaultIsTrustedFrame;
 
   // 启动期一次性恢复被进程崩溃中断的插件更新(还原孤儿 backup / 清残留 staging),
   // 在首次列举前完成,避免崩溃中断的更新让插件静默消失(数据安全)。幂等。
@@ -168,7 +167,6 @@ export function registerPluginsIpc(): void {
       await watcher.ensureBaseline();
       return listPluginDirs(pluginsDir);
     },
-    trusted,
   );
 
   // perf:列举不带 main 源码,激活时按目录名只读该插件 main。
@@ -179,7 +177,6 @@ export function registerPluginsIpc(): void {
       await installRecovery;
       return readPluginMainByDir(pluginsDir, dir, manifestHash);
     },
-    trusted,
   );
 
   // perf:单插件热重载只读目标插件(不再每个窗口全量 listDirs)。
@@ -190,14 +187,12 @@ export function registerPluginsIpc(): void {
       await installRecovery;
       return readPluginDirByManifestId(pluginsDir, id);
     },
-    trusted,
   );
 
   safeHandle(
     PLUGINS_CHANNELS.READ_ENABLED,
     NoInput,
     () => readEnabledIds(pluginsDir),
-    trusted,
   );
 
   safeHandle(
@@ -208,14 +203,12 @@ export function registerPluginsIpc(): void {
       // 仅成功后广播(含发起窗口):各窗口同步实例启停(终审 P1)。
       broadcastPluginEnabledChanged(id, enabled);
     },
-    trusted,
   );
 
   safeHandle(
     PLUGINS_CHANNELS.READ_PERMISSIONS,
     NoInput,
     () => readPermissions(pluginsDir),
-    trusted,
   );
 
   safeHandle(
@@ -241,7 +234,6 @@ export function registerPluginsIpc(): void {
       }
       return record;
     },
-    trusted,
   );
 
   // v4.5 从 git URL 安装
@@ -250,7 +242,6 @@ export function registerPluginsIpc(): void {
     InstallFromGitInput,
     ({ url, overwrite, branch, expectedId }) =>
       installFromGit(url, pluginsDir, { overwrite, branch, expectedId }),
-    trusted,
   );
 
   // v4.6 卸载
@@ -264,6 +255,5 @@ export function registerPluginsIpc(): void {
       // 仅成功后广播(失败时插件仍在盘上,各窗口照常运行)。
       broadcastPluginUninstalled(id);
     },
-    trusted,
   );
 }

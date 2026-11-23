@@ -7,7 +7,6 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import { z } from 'zod';
 import {
-  defaultIsTrustedFrame,
   safeHandleWithWindow,
 } from '../safe-handle';
 import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../../shared/terminal-channels';
@@ -393,7 +392,6 @@ export function broadcastSessionsChanged(): void {
 // ── 注册 ─────────────────────────────────────────────────────
 
 export function registerTerminalIpc(): void {
-  const trusted = defaultIsTrustedFrame;
   const createHandler = makeCreateHandler();
   const listSessionsHandler = makeListSessionsHandler();
   const writeHandler = makeWriteHandler();
@@ -408,7 +406,7 @@ export function registerTerminalIpc(): void {
     schema: z.ZodType<I>,
     handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
   ): void =>
-    safeHandleWithWindow(channel, schema, handler, trusted, ERROR_CODES.TERMINAL_NO_WINDOW);
+    safeHandleWithWindow(channel, schema, handler, ERROR_CODES.TERMINAL_NO_WINDOW);
 
   ownerScopedHandle(TERMINAL_CHANNELS.CREATE, createInputSchema, createHandler);
   // list_sessions:Issue #28 Phase 1。从 sender 推断 ownerWindowId。

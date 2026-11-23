@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { safeHandle, type IsTrustedFrame } from '../safe-handle';
+import { safeHandle } from '../safe-handle';
 import { I18N_CHANNELS, type I18nSetLocaleResult, type I18nChangedPayload } from '../../shared/i18n-channels';
 import { LocaleSchema, type Locale } from '../../shared/i18n-types';
 import {
@@ -23,12 +23,11 @@ function broadcastChanged(payload: I18nChangedPayload): void {
   broadcastToWindows(I18N_CHANNELS.CHANGED, () => payload, '[i18n] CHANGED');
 }
 
-export function registerI18nIpc(trusted: IsTrustedFrame): void {
+export function registerI18nIpc(): void {
   safeHandle<undefined, Locale>(
     I18N_CHANNELS.GET_LOCALE,
     NoInput,
     () => getCurrentLocale(),
-    trusted,
   );
 
   safeHandle<Locale, I18nSetLocaleResult>(
@@ -52,6 +51,5 @@ export function registerI18nIpc(trusted: IsTrustedFrame): void {
       }
       return { ok: true as const, locale, gen };
     },
-    trusted,
   );
 }

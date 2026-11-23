@@ -84,7 +84,7 @@ describe('popout locale broadcast', () => {
       '../../../electron/main/ipc/i18n.ipc'
     );
 
-    registerI18nIpc(() => true);
+    registerI18nIpc();
     setMenuRebuilder(vi.fn());
     await setLocaleHandler()('ko');
 
@@ -113,7 +113,7 @@ describe('popout locale broadcast', () => {
       '../../../electron/main/ipc/i18n.ipc'
     );
 
-    registerI18nIpc(() => true);
+    registerI18nIpc();
     setMenuRebuilder(vi.fn());
     const result = await setLocaleHandler()('ko');
 

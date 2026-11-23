@@ -14,7 +14,7 @@ import {
   type ExplorerWritablePayload,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
-import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from './safe-handle';
+import { safeHandle, safeHandleWithCtx } from './safe-handle';
 import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { getWindowSeq } from './services/window-seq.service';
@@ -135,7 +135,6 @@ function senderWindowSeqOrThrow(event: IpcMainInvokeEvent): number {
 export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpcHandles } {
   const userData = app.getPath('userData');
   const explorerFile = path.join(userData, EXPLORER_FILE_NAME);
-  const trusted = defaultIsTrustedFrame;
 
   safeHandleWithCtx(
     LAYOUT_CHANNELS.READ,
@@ -149,7 +148,6 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
       //(走默认布局),不让 renderer fromJSON 处理超大 layout 卡顿/放大。
       return sanitizeReadLayout(entry?.layout ?? null);
     },
-    trusted,
   );
 
   safeHandleWithCtx(
@@ -203,7 +201,6 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
         await atomicWriteJson(explorerFile, payload);
       });
     },
-    trusted,
   );
 
   // 资源管理器持久化(Step 3 / ADR-012)
@@ -220,7 +217,6 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
       // 同一读端守卫:超限/非 JSON-safe → 剥离该 layout(renderer 走默认布局),合法则原样保留。
       return sanitizeExplorerReadPayload(payload);
     },
-    trusted,
   );
   safeHandleWithCtx(
     EXPLORER_CHANNELS.WRITE,
@@ -241,7 +237,6 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
         await atomicWriteJson(explorerFile, merged);
       });
     },
-    trusted,
   );
 
   // 资源管理器 fs.*(Step 2)
@@ -281,7 +276,6 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
       const senderWindowId = BrowserWindow.fromWebContents(event.sender)?.id ?? null;
       answerAgentAuthRequest(requestId, decision, senderWindowId);
     },
-    trusted,
   );
 
   // 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发)。
@@ -291,7 +285,6 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
     AGENT_AUTH_CHANNELS.REVOKE,
     agentAuthRevokeSchema,
     () => revokeAndKillAgentSessions(),
-    trusted,
   );
 
   // 状态栏"复制 MCP 配置"按钮:返回当前 stdio config(命令字符串可直接 copy 跑)
@@ -300,10 +293,9 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
     MCP_CHANNELS.GET_STDIO_CONFIG,
     mcpGetConfigSchema,
     () => getStdioConfig(),
-    trusted,
   );
 
-  registerI18nIpc(trusted);
+  registerI18nIpc();
 
   return { pluginFsHandles };
 }

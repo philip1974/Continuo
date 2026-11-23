@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import {
-  defaultIsTrustedFrame,
   safeHandle,
   safeHandleWithCtx,
 } from '../safe-handle';
@@ -362,17 +361,16 @@ export function broadcastDirChanged(
 export const queueDirChangedBroadcast = createSameTickPathCoalescer(broadcastDirChanged);
 
 export function registerFsIpc(): void {
-  const trusted = defaultIsTrustedFrame;
 
-  safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler, trusted);
-  safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, guardedReadFileHandler, trusted);
-  safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler, trusted);
-  safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler, trusted);
-  safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler, trusted);
-  safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler, trusted);
-  safeHandle(FS_CHANNELS.REMOVE, removeInputSchema, removeHandler, trusted);
-  safeHandle(FS_CHANNELS.CREATE_FILE, createFileInputSchema, createFileHandler, trusted);
-  safeHandle(FS_CHANNELS.CREATE_DIR, createDirInputSchema, createDirHandler, trusted);
+  safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler);
+  safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, guardedReadFileHandler);
+  safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler);
+  safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler);
+  safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler);
+  safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler);
+  safeHandle(FS_CHANNELS.REMOVE, removeInputSchema, removeHandler);
+  safeHandle(FS_CHANNELS.CREATE_FILE, createFileInputSchema, createFileHandler);
+  safeHandle(FS_CHANNELS.CREATE_DIR, createDirInputSchema, createDirHandler);
 
   safeHandle(
     FS_CHANNELS.TRASH,
@@ -381,7 +379,6 @@ export function registerFsIpc(): void {
       // shell.trashItem 在 Electron 38 是 Promise<void>
       trashItem: (p) => shell.trashItem(p),
     }),
-    trusted,
   );
 
   safeHandle(
@@ -391,11 +388,10 @@ export function registerFsIpc(): void {
       // shell.showItemInFolder 是同步 void;path 不存在时静默 noop.
       shell.showItemInFolder(input.path);
     },
-    trusted,
   );
 
-  safeHandle(FS_CHANNELS.MOVE, moveInputSchema, moveHandler, trusted);
-  safeHandle(FS_CHANNELS.COPY, copyInputSchema, copyHandler, trusted);
+  safeHandle(FS_CHANNELS.MOVE, moveInputSchema, moveHandler);
+  safeHandle(FS_CHANNELS.COPY, copyInputSchema, copyHandler);
 
   safeHandle(
     FS_CHANNELS.SELECT_DIRECTORY,
@@ -409,7 +405,6 @@ export function registerFsIpc(): void {
           properties: opts.properties as Electron.OpenDialogOptions['properties'],
         }),
     }),
-    trusted,
   );
 
   // ── fs.watch 增量更新(Step 6) ──────────────────────────────
@@ -432,7 +427,6 @@ export function registerFsIpc(): void {
         ownerId,
       );
     },
-    trusted,
   );
 
   safeHandleWithCtx(
@@ -442,7 +436,6 @@ export function registerFsIpc(): void {
       const ownerId = BrowserWindow.fromWebContents(event.sender)?.id;
       watcherPool.unwatch(input.path, ownerId);
     },
-    trusted,
   );
 }
 

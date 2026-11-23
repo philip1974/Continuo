@@ -20,11 +20,11 @@ vi.mock('electron', () => ({
 // 绕过 frame 信任 + zod 包装,直接把 payload 喂给业务回调。
 vi.mock('../../../electron/main/safe-handle', () => ({
   defaultIsTrustedFrame: () => true,
-  processIpcCall: async (
+  safeHandleWithCtx: (
+    ch: string,
     schema: { parse: (r: unknown) => unknown },
-    cb: (p: unknown) => unknown,
-    raw: unknown,
-  ) => cb(schema.parse(raw)),
+    cb: (p: unknown, ctx: { event: unknown }) => unknown,
+  ) => handlers.set(ch, async (event: unknown, raw: unknown) => cb(schema.parse(raw), { event })),
 }));
 
 import { startPluginMcpIpc } from '../../../electron/main/ipc/plugin-mcp.ipc';

@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../electron/main/safe-handle', () => ({
   defaultIsTrustedFrame: (frame: { url?: string }) => trust.fn(frame),
-  processIpcCall: async () => undefined,
+  safeHandleWithCtx: () => undefined,
 }));
 
 import { startPluginMcpIpc } from '../../../electron/main/ipc/plugin-mcp.ipc';

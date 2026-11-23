@@ -71,7 +71,7 @@ describe('main menu rebuild on setLocale', () => {
     );
     const rebuild = vi.fn();
 
-    registerI18nIpc(() => true);
+    registerI18nIpc();
     setMenuRebuilder(rebuild);
     await setLocaleHandler()('zh');
 
@@ -98,7 +98,7 @@ describe('main menu rebuild on setLocale', () => {
       '../../../electron/main/ipc/i18n.ipc'
     );
 
-    registerI18nIpc(() => true);
+    registerI18nIpc();
     setMenuRebuilder(vi.fn());
     await setLocaleHandler()('ko');
 

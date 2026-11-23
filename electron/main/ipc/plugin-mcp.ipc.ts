@@ -14,9 +14,8 @@ import {
   BrowserWindow,
   ipcMain,
   webContents,
-  type IpcMainInvokeEvent,
 } from 'electron';
-import { defaultIsTrustedFrame, processIpcCall } from '../safe-handle';
+import { defaultIsTrustedFrame, safeHandleWithCtx } from '../safe-handle';
 import { boundedObjectAdmissible } from '../../shared/bounded-input';
 import { PLUGIN_MCP_CHANNELS } from '../../shared/plugin-mcp-channels';
 import {
@@ -115,37 +114,16 @@ export function startPluginMcpIpc(
   invokeRemote = localInvoke;
 
   // ── ipcMain handlers ──
-  // 用手写 processIpcCall(不走 safeHandle wrapper)是因为需要 event.sender.id
-  // 拿 wcId(register 必须知道发送方 wc 才能挂 destroyed hook)。
+  // 需要 event.sender.id 拿 wcId(register 必须知道发送方 wc 才能挂 destroyed hook)→ ctx 版外壳。
 
-  ipcMain.handle(
-    PLUGIN_MCP_CHANNELS.REGISTER,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        RegisterPayloadSchema,
-        (payload) => {
-          attachWcDestroyHookOnce(event.sender);
-          localBridge.handleRegister(event.sender.id, payload);
-        },
-        raw,
-        event.senderFrame,
-        defaultIsTrustedFrame,
-      ),
-  );
+  safeHandleWithCtx(PLUGIN_MCP_CHANNELS.REGISTER, RegisterPayloadSchema, (payload, { event }) => {
+    attachWcDestroyHookOnce(event.sender);
+    localBridge.handleRegister(event.sender.id, payload);
+  });
 
-  ipcMain.handle(
-    PLUGIN_MCP_CHANNELS.UNREGISTER,
-    async (event: IpcMainInvokeEvent, raw: unknown) =>
-      processIpcCall(
-        UnregisterPayloadSchema,
-        (payload) => {
-          localBridge.handleUnregister(event.sender.id, payload.name);
-        },
-        raw,
-        event.senderFrame,
-        defaultIsTrustedFrame,
-      ),
-  );
+  safeHandleWithCtx(PLUGIN_MCP_CHANNELS.UNREGISTER, UnregisterPayloadSchema, (payload, { event }) => {
+    localBridge.handleUnregister(event.sender.id, payload.name);
+  });
 
   // INVOKE_REPLY:renderer 答 invoke,无需返回 → 用 ipcMain.on(send 配对)。
   // 与同模块 REGISTER/UNREGISTER 对齐:校验 senderFrame 可信,拒绝不受信 frame

@@ -1,7 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import { z } from 'zod';
 import {
-  defaultIsTrustedFrame,
   safeHandleWithWindow,
 } from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
@@ -72,13 +71,12 @@ function requireStoppedSession(sessionId: string, win: BrowserWindow) {
 }
 
 export function registerDebugViewIpc(service: DebugService): void {
-  const trusted = defaultIsTrustedFrame;
 
   const windowScopedHandle = <I>(
     channel: string,
     schema: z.ZodType<I>,
     handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
-  ): void => safeHandleWithWindow(channel, schema, handler, trusted, ERROR_CODES.NO_WINDOW);
+  ): void => safeHandleWithWindow(channel, schema, handler, ERROR_CODES.NO_WINDOW);
 
   // 快照只含本窗口的会话(含停点与按 source 的断点,供 renderer 重载后恢复);断点数在 service 侧封顶。
   windowScopedHandle(DEBUG_VIEW_CHANNELS.SUBSCRIBE, debugSubscribeInputSchema, (_input, win) => {

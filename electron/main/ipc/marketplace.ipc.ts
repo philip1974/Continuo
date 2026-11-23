@@ -2,7 +2,7 @@
 // services/marketplace-reviews.service.ts),renderer 只经此通道拿聚合前的 nodes。
 
 import { z } from 'zod';
-import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
+import { safeHandle } from '../safe-handle';
 import {
   MARKETPLACE_CHANNELS,
   type FetchReviewsResult,
@@ -18,6 +18,5 @@ export function registerMarketplaceIpc(): void {
     MARKETPLACE_CHANNELS.FETCH_REVIEWS,
     fetchReviewsInputSchema,
     (): Promise<FetchReviewsResult> => fetchReviewNodes(),
-    defaultIsTrustedFrame,
   );
 }

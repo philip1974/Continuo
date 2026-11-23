@@ -198,16 +198,16 @@ export async function processIpcCall<I, O>(
 }
 
 /**
- * ipcMain.handle 的安全包装。生产代码用这个,单测走 processIpcCall。
+ * ipcMain.handle 的安全包装。生产代码用这个(frame 信任恒为 defaultIsTrustedFrame,不可由调用方放宽),
+ * 单测走 processIpcCall。
  */
 export function safeHandle<I, O>(
   channel: string,
   schema: z.ZodType<I>,
   handler: SafeHandler<I, O>,
-  isTrustedFrame: IsTrustedFrame,
 ): void {
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) => {
-    return processIpcCall(schema, handler, raw, event.senderFrame, isTrustedFrame);
+    return processIpcCall(schema, handler, raw, event.senderFrame, defaultIsTrustedFrame);
   });
 }
 
@@ -265,10 +265,9 @@ export function safeHandleWithCtx<I, O>(
   channel: string,
   schema: z.ZodType<I>,
   handler: SafeHandlerWithCtx<I, O>,
-  isTrustedFrame: IsTrustedFrame,
 ): void {
   ipcMain.handle(channel, async (event: IpcMainInvokeEvent, raw: unknown) => {
-    return processIpcCallWithCtx(schema, handler, raw, event, isTrustedFrame);
+    return processIpcCallWithCtx(schema, handler, raw, event, defaultIsTrustedFrame);
   });
 }
 
@@ -293,14 +292,10 @@ export function safeHandleWithWindow<I>(
   channel: string,
   schema: z.ZodType<I>,
   handler: (input: I, win: BrowserWindow) => unknown | Promise<unknown>,
-  isTrustedFrame: IsTrustedFrame,
   noWindowCode: string,
 ): void {
-  safeHandleWithCtx(
-    channel,
-    schema,
-    (input, { event }) => handler(input, senderWindowOrThrow(event, noWindowCode)),
-    isTrustedFrame,
+  safeHandleWithCtx(channel, schema, (input, { event }) =>
+    handler(input, senderWindowOrThrow(event, noWindowCode)),
   );
 }
 

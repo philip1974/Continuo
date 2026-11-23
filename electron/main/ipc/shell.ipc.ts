@@ -1,7 +1,7 @@
 // Shell IPC 注册(plugin app.shell.exec 后端 + LM UI 跳转外链)。
 
 import { z } from 'zod';
-import { defaultIsTrustedFrame, safeHandle, safeHandleWithCtx } from '../safe-handle';
+import { safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { SHELL_CHANNELS } from '../../shared/shell-channels';
 import { attachShellExecWcGoneHook, execShell, openExternalUrl } from '../services/shell.service';
 import { killPluginShellProcesses } from '../lib/plugin-shell-owners';
@@ -77,7 +77,6 @@ export function registerShellIpc(): void {
       attachShellExecWcGoneHook(event.sender);
       return execShell(input, event.sender.id);
     },
-    defaultIsTrustedFrame,
   );
   // 终审 P1:插件停用/卸载 → 终止发送方窗口内该插件的全部 shell 进程(exec + 流式);
   // 范围限定在发送方 webContents 自己的进程,不能终止别的窗口的。
@@ -85,12 +84,10 @@ export function registerShellIpc(): void {
     SHELL_CHANNELS.KILL_PLUGIN_PROCESSES,
     KillPluginProcessesInput,
     ({ pluginId }, { event }) => killPluginShellProcesses(event.sender.id, pluginId),
-    defaultIsTrustedFrame,
   );
   safeHandle(
     SHELL_CHANNELS.OPEN_EXTERNAL,
     OpenExternalInput,
     openExternalUrl,
-    defaultIsTrustedFrame,
   );
 }
