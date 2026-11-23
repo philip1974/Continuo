@@ -54,7 +54,7 @@ describe('topic49 P2-BA · keybindings 跨窗口 storage 同步', () => {
     expect(useKeybindingsStore.getState().overrides['editor.save']).toBe('mod+s');
   });
 
-  it('别窗 resetAll(清空)→ 本窗 overrides 收敛为空', () => {
+  it('别窗清空全部 override→ 本窗 overrides 收敛为空', () => {
     useKeybindingsStore.setState({ overrides: { 'editor.save': 'mod+s' } });
     localStorage.setItem(STORAGE_KEY, JSON.stringify({}));
     window.dispatchEvent(

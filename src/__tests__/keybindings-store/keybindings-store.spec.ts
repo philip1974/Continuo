@@ -137,37 +137,6 @@ describe('keybindings-store', () => {
     expect(useKeybindingsStore.getState().overrides).toBe(before);
   });
 
-  it('resetAll 清所有 override + 持久化空', () => {
-    const s = useKeybindingsStore.getState();
-    s.setHotkey('a', 'x');
-    s.setHotkey('b', '');
-    useKeybindingsStore.getState().resetAll();
-    expect(useKeybindingsStore.getState().overrides).toEqual({});
-    expect(
-      globalThis.localStorage.getItem('continuo.keybindings.overrides'),
-    ).toBe('{}');
-  });
-
-  it('resetAll 空表且内存已同步时不通知订阅者且不重复写 localStorage', () => {
-    globalThis.localStorage.setItem('continuo.keybindings.overrides', '{}');
-    const overrides = {};
-    useKeybindingsStore.setState({ overrides });
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-    const listener = vi.fn();
-    const unsubscribe = useKeybindingsStore.subscribe(listener);
-
-    try {
-      useKeybindingsStore.getState().resetAll();
-
-      expect(useKeybindingsStore.getState().overrides).toBe(overrides);
-      expect(setItemSpy).not.toHaveBeenCalled();
-      expect(listener).not.toHaveBeenCalled();
-    } finally {
-      unsubscribe();
-      setItemSpy.mockRestore();
-    }
-  });
-
   it('对没有 spec.hotkey 的命令也能设 override', () => {
     useKeybindingsStore.getState().setHotkey('foo.bar', 'mod+f');
     expect(getEffectiveHotkey(noHotkey)).toBe('mod+f');

@@ -20,7 +20,6 @@ import {
   readRecord,
   writeRecord,
   subscribeStorageKey,
-  recordIsEmpty,
   recordsShallowEqual,
   type WriteRecordResult,
 } from '../storage/local-storage-record';
@@ -56,8 +55,6 @@ export interface KeybindingsState {
   setHotkey: (commandId: string, hotkey: string) => void;
   /** 删除 override → 回到 spec.hotkey. */
   reset: (commandId: string) => void;
-  /** 清空所有 override. */
-  resetAll: () => void;
 }
 
 export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
@@ -101,17 +98,6 @@ export const useKeybindingsStore = create<KeybindingsState>((set, get) => ({
     delete next[commandId];
     writeStored(next);
     set({ overrides: next });
-  },
-  resetAll: () => {
-    const latest = readStored();
-    if (recordIsEmpty(latest)) {
-      set((s) =>
-        recordsShallowEqual(s.overrides, latest) ? s : { overrides: latest },
-      );
-      return;
-    }
-    writeStored({});
-    set(() => ({ overrides: {} }));
   },
 }));
 

@@ -189,11 +189,3 @@ export function recordsShallowEqual<V>(
   }
   return aCount === bCount;
 }
-
-/** record 没有任何自有可枚举键。 */
-export function recordIsEmpty(record: Record<string, unknown>): boolean {
-  for (const key in record) {
-    if (Object.prototype.hasOwnProperty.call(record, key)) return false;
-  }
-  return true;
-}

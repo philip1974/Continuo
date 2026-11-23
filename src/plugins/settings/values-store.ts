@@ -16,7 +16,6 @@ import {
   readRecord,
   writeRecord,
   subscribeStorageKey,
-  recordIsEmpty,
   recordsShallowEqual,
   type WriteRecordResult,
 } from '../storage/local-storage-record';
@@ -56,8 +55,6 @@ export interface SettingsValueState {
   setValue: (id: string, value: SettingItemValue) => void;
   /** 删除某 id 的 override(回到 spec.default). */
   reset: (id: string) => void;
-  /** 清空所有 overrides. */
-  resetAll: () => void;
 }
 
 export const useSettingsValuesStore = create<SettingsValueState>((set, get) => ({
@@ -108,15 +105,6 @@ export const useSettingsValuesStore = create<SettingsValueState>((set, get) => (
     delete next[id];
     writeStored(next);
     set({ values: next });
-  },
-  resetAll: () => {
-    const latest = readStored();
-    if (recordIsEmpty(latest)) {
-      set((s) => (recordsShallowEqual(s.values, latest) ? s : { values: latest }));
-      return;
-    }
-    writeStored({});
-    set(() => ({ values: {} }));
   },
 }));
 

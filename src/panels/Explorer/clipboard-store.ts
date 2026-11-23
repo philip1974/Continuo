@@ -5,7 +5,7 @@
 //   { kind: 'cut' | 'copy', paths: string[] } — 待粘贴的路径集
 //   null = 空
 //
-// cut 粘贴成功后自动 clear(避免重复 move 同一文件)。
+// cut 粘贴成功后剪除已移走的源(prune,避免重复 move 同一文件)。
 // copy 粘贴成功后保留(允许多次粘贴到不同位置)。
 
 import { create } from 'zustand';
@@ -19,7 +19,6 @@ interface ExplorerClipboardState {
   kind: ClipboardKind | null;
   paths: readonly string[];
   set(kind: ClipboardKind, paths: readonly string[]): void;
-  clear(): void;
   /**
    * 删除/改名/移动后,把已不存在于原路径的源剪除出剪贴板(含被删/移走目录下的子
    * 路径)。剪空则一并清掉 kind。否则剪切了文件 A 后删除/改名/移走 A,剪贴板仍引用
@@ -103,12 +102,6 @@ export const useExplorerClipboardStore = create<ExplorerClipboardState>(
         s.kind === kind && clipboardPathsEqual(s.paths, paths)
           ? s
           : { kind, paths: copyClipboardPaths(paths) },
-      ),
-    clear: () =>
-      set((s) =>
-        s.kind === null && s.paths.length === 0
-          ? s
-          : { kind: null, paths: EMPTY_CLIPBOARD_PATHS },
       ),
     prune: (removedPaths) =>
       set((s) => {
