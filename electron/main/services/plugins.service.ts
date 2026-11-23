@@ -797,7 +797,7 @@ export async function writePermissions(
 }
 
 // 同文件 read-modify-write 串行化,防多窗口/并发授权互相覆盖(镜像
-// pathScopesWriteQueue / installLocks 思路)。
+// pathScopesWriteQueue / pluginMutationLocks 思路)。
 const permissionsWriteQueue = createSerialQueue();
 
 /**
@@ -975,7 +975,7 @@ export async function readPluginPathScopes(
   }
 }
 
-// 同文件 read-modify-write 串行化,防并发 grant 互相覆盖(镜像 installLocks 思路)。
+// 同文件 read-modify-write 串行化,防并发 grant 互相覆盖(镜像 pluginMutationLocks 思路)。
 const pathScopesWriteQueue = createSerialQueue();
 
 /**

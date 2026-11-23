@@ -27,9 +27,8 @@ export interface PermissionRecord {
 
 export type PermissionState = Record<string, PermissionRecord>;
 
-// 可维护性 M6:序列化形态复用 shared 契约(IpcPermissionsMap = 旧数组 | 新
-// { decisions, pathScopes? } union),不再本地另立 Serialized* 类型 + writePermissions
-// 时 `as never` 强转。
+// renderer 只按 decisions 有界解析 readPermissions 返回的 unknown 载荷(不解析 pathScopes);落盘形态由
+// main / shared 契约负责,renderer 不再写整条记录。
 
 type Cache = PermissionState;
 
@@ -51,7 +50,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // 单条形态判定取 shared 单一来源(与 main 读盘 / 写盘、IPC schema 同一规则:permission 必须是枚举成员、
-// decidedAt 有限非负、path 非空限长)。此处只负责把合法项重建成干净对象(丢弃额外字段)。
+// decidedAt 有限非负)。此处只负责把合法项重建成干净对象(丢弃额外字段)。
 function parseDecision(value: unknown): PermissionDecision | null {
   if (!isIpcPermissionDecision(value)) return null;
   return {

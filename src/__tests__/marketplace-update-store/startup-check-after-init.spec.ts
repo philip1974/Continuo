@@ -2,7 +2,7 @@
 // 扫描尚在等 listPluginDirs IPC 时 listAll() 恒为空 → 直接落空,已装插件有新版本也
 // 永远不出 IconSidebar 角标。
 // perf:挂在「扫描完成」(whenScanned)而非整个 init 上 —— 某插件激活挂在授权弹窗 / onload 上时 init 可能永不完成,
-// 而 refresh 只需 manifest。popout 子窗口无 IconSidebar 角标 → 不检查(init 照常)。
+// 而 refresh 只需 manifest。popout 子窗口无 IconSidebar 角标 → 在 main-app 早退,不 init 插件也不检查。
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

@@ -5,7 +5,7 @@
 //   - tabs≥1 → 统一 TabNav,单 tab 也按内容宽收紧(TabNavItem flex-shrink:0
 //              + max-width:220px),右侧 panel 留空,不再撑满整行。
 //   - 不显文字「保存」按钮 — dirty 由 TabNavItem 自带的 ● 指示,⌘S 保存。
-//   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 中的 EditorModeBar
+//   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 内的模式切换行(SegmentedControl)
 //     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
 import { memo, useCallback, useMemo } from 'react';

@@ -116,8 +116,8 @@ describe('parseInitialWindowSeq', () => {
   });
 });
 
-// 边界(E193,外部输入长度上限族 E152/E179/E190/E191):启动 query 总长度上限(paramsOf 单一来源)。
-// paramsOf 被三个 parse 函数在 renderer 启动早期各调一次 —— 超长 location.search 否则被 URLSearchParams
+// 边界(E193,外部输入长度上限族 E152/E179/E190/E191):启动 query 总长度上限(safeStartupParams 单一来源)。
+// safeStartupParams 被三个 parse 函数在 renderer 启动早期各调一次 —— 超长 location.search 否则被 URLSearchParams
 // 重复解析三次,早于字段级校验产生 CPU/内存峰值。超限 → 三处都当无 query(各自默认)。
 describe('E193 · 启动 query 总长度上限', () => {
   // 64KiB 上限;造一个远超的 query(workspace 值塞 200K 字符)。

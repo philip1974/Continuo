@@ -1,5 +1,5 @@
 // M-Editor Step E4:Editor 主容器编排。
-// 顶部 Toolbar + TabBar + 主体(Milkdown / CodeEditor / Welcome)+ 关闭确认 Dialog。
+// 顶部 EditorHeader(tab 行)+ 模式切换行(SegmentedControl)+ 主体(Milkdown / CodeEditor / Welcome)+ 确认对话框。
 //
 // mode 路由(决策 #1/#3/#4):
 //   activeTab 是 .md → mode=edit:Milkdown;source:CodeEditor markdown;preview:Milkdown readonly

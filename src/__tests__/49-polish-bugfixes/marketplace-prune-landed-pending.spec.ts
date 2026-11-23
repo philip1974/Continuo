@@ -2,7 +2,7 @@
 // 等磁盘落地」标记)此前单调只增不减。一旦插件已落地(进 installed 真实磁盘集),pending
 // 仍残留 → 用户在设置页卸载该插件后 installed 变假而 pending 仍真 → marketplace 卡片
 // 显示「已安装/待重启」幻影(installed 展示=installed||pending;pendingRestart=pending&&!installed)。
-// 修复:pruneLandedPending 在每次 installed 轮询更新时摘除已落地的 pending id。
+// 修复:pruneLandedPending 在每次 installed 集合变化(订阅插件列表)时摘除已落地的 pending id。
 import { describe, it, expect } from 'vitest';
 import { pruneLandedPending } from '../../marketplace/prune-landed-pending';
 

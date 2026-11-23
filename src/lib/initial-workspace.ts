@@ -10,7 +10,7 @@ const WORKSPACE_PARAM = 'workspace';
 const WINDOW_SEQ_PARAM = 'windowSeq';
 const FRESH_PARAM = 'fresh';
 
-// 边界(E193,外部输入长度上限族 E152/E179/E190/E191):启动 query 总长度上限。paramsOf 被
+// 边界(E193,外部输入长度上限族 E152/E179/E190/E191):启动 query 总长度上限。safeStartupParams 被
 // parseInitialWorkspace/WindowSeq/Fresh 三处在 renderer 启动早期各调一次 —— 同一畸形超长
 // location.search 否则会被 new URLSearchParams 重复解析三次,早于任何字段级校验就产生 CPU/内存峰值。
 // 合法启动 query = ?workspace=<encoded path>&windowSeq=<int>&fresh=1&spike=<...>。workspace 路径在入口处限

@@ -51,5 +51,5 @@
   不再与 init 同一同步段发起:`refresh()` 先读 `listAll()` 按已安装规模裁剪网络,扫描前恒为空会直接落空,
   导致已装插件的更新角标永不出现。不等整个 init —— 某插件激活挂在授权弹窗 / onload 上时 init 可能永不完成。
   仍 fire-and-forget,不阻塞首次渲染;init 的结果(含失败)原样交给 reload-gate(flush 仍等整个 init)。
-- popout 子窗口(只渲染 PopoutHost、无 IconSidebar 角标)不做启动更新检查,插件 init 照常
+- popout 子窗口(只渲染 PopoutHost、无 IconSidebar 角标)在 main-app 早退,既不 init 插件也不做启动更新检查
   (`startup-critical-path/init-ipc-prefetch.spec.ts`)。

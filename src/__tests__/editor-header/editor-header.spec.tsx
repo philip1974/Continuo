@@ -92,7 +92,7 @@ describe('EditorHeader — 与 VSCode 对齐:无保存按钮 + 不再持有 mode
   }
 
   // mode SegmentedControl(Edit/Source/Preview)已搬到 EditorPanel 中的
-  // EditorModeBar(tab 行下方独立一行) — EditorHeader 不再渲染它。
+  // 模式切换行(EditorPanel 内、tab 行下方的 SegmentedControl) — EditorHeader 不再渲染它。
   it('EditorHeader 内不再渲染 Edit/Source/Preview 切换', () => {
     const t = tab({ dirty: true });
     useEditorStore.setState({ tabs: [t], activeTabId: t.id });

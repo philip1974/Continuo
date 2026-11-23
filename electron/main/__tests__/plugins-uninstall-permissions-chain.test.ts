@@ -9,11 +9,11 @@ import {
 } from '../services/plugins.service';
 
 // 数据安全(独立审计揪出的同族遗漏入口):uninstallPlugin 清 _permissions.json 此前手写
-// readPermissions → delete → writePermissions(整表写),绕过 permissionsWriteChain —— 与紧邻的
+// readPermissions → delete → writePermissions(整表写),绕过 permissionsWriteQueue —— 与紧邻的
 // _enabled.json 清理(已改走 setEnabledId 入链)是同一个反模式,只修了兄弟。另一窗口同时给**别的**
 // 插件 grant/deny 时,卸载用旧快照整表写回 → 抹掉刚落盘的授权(跨窗口 lost update)。
 // 修复:卸载改走 removePluginPermissions(链内 RMW,只删该 id 条目)。
-describe('uninstallPlugin 清 permissions 走 permissionsWriteChain', () => {
+describe('uninstallPlugin 清 permissions 走 permissionsWriteQueue', () => {
   let baseDir: string;
   const decision = (permission: string) => ({ permission, granted: true, decidedAt: 1 });
   /** 给已安装的插件授权(与跨窗口 grant 同一入口)。 */

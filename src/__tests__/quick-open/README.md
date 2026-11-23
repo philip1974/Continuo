@@ -23,7 +23,7 @@
 - `close()` 仅 isOpen=false(query / results 保留 — 短期内重开秒响应)
 - `setQuery(q)` 更新查询,reset selectedIndex 为 0
 - `moveSelection(delta, max)` 循环
-- `setResults(files)` walk 完成后 store
+- `setResults(files, root)` walk 完成后 store(root 必填,绑定结果归属的 workspace)
 - `setLoading(b)` walk 期间 spinner
 
 ### walkWorkspaceFiles(纯函数)
