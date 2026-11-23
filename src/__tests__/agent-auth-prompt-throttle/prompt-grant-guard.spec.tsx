@@ -4,7 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
-import { AgentAuthPrompt, AGENT_AUTH_GRANT_ARM_DELAY_MS } from '../../shell/AgentAuthPrompt';
+import { AgentAuthPrompt } from '../../shell/AgentAuthPrompt';
+import { PROMPT_GRANT_ARM_DELAY_MS as AGENT_AUTH_GRANT_ARM_DELAY_MS } from '../../lib/use-prompt-grant-guard';
 import {
   _resetAgentAuthForTest,
   useAgentAuthStore,

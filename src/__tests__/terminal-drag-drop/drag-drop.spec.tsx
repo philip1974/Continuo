@@ -10,11 +10,11 @@ import { NotificationsProvider, useNotify } from '@/notifications/NotificationsP
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
 import {
   useTerminalDragDrop,
-  hasFiles,
   boundedTypes,
   MAX_TERMINAL_DROP_FILES,
   MAX_TERMINAL_DROP_CHARS,
 } from '@/panels/Terminal/useTerminalDragDrop';
+import { hasFiles } from '@/lib/window-drop';
 
 const mocks = vi.hoisted(() => ({
   getPathForFile: vi.fn<(file: File) => string>(),

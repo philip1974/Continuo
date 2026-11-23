@@ -20,7 +20,6 @@ import {
 import { ERROR_CODES } from '@shared/error-codes';
 import { ownValue } from '@shared/own-value';
 import {
-  PROMPT_GRANT_ARM_DELAY_MS,
   PROMPT_GRANT_BUTTON_PROPS,
   usePromptGrantGuard,
   type PromptGrantGuard,
@@ -42,13 +41,6 @@ const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
   'debug.launch': 'permissions.agent.debug_launch',
   'debug.*': 'permissions.agent.debug_control',
 };
-
-/**
- * 安全:弹窗显示后这段时间内忽略「允许」类按钮的激活(鼠标与键盘)。弹窗会抢走键盘焦点,用户正在终端 / 编辑器
- * 打字或点击时,落进弹窗的按键(Tab+Enter)/ 连点不能变成授予。只对授予方向设防:「拒绝」与 Esc 立即可用。
- * 与插件权限弹窗(plugins/permissions/PermissionPrompt)共用 lib/use-prompt-grant-guard。
- */
-export const AGENT_AUTH_GRANT_ARM_DELAY_MS = PROMPT_GRANT_ARM_DELAY_MS;
 
 /** 文案模板里对方可控字段的占位(先按它拆开模板,再把字段作为独立的 <code> 元素放进去)。 */
 const UNTRUSTED_SLOT = ' __UNTRUSTED__ ';

@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DockviewApi } from 'dockview-react';
 import type { TerminalSession } from '../../stores/terminal.store';
-import {
-  handleTerminalPanelRemoved,
-  markPanelCloseSuppressed,
-  reconcileTerminalPanels,
-} from '@/shell/dock/DockReconciler';
+import { handleTerminalPanelRemoved, reconcileTerminalPanels } from '@/shell/dock/DockReconciler';
+import { markPanelCloseSuppressed } from '@/shell/dock/wrap-panel-close';
 
 function session(id: string, over: Partial<TerminalSession> = {}): TerminalSession {
   return {

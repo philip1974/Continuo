@@ -14,8 +14,6 @@ import {
   terminalPanelTitle,
 } from './terminal-panel-id';
 
-export { markPanelCloseSuppressed };
-
 export interface ReconcileInput {
   previousSessions: readonly TerminalSession[];
   nextSessions: readonly TerminalSession[];

@@ -23,10 +23,8 @@ export const MAX_TERMINAL_DROP_FILES = MAX_DROP_FILES;
 export const MAX_TERMINAL_DROP_CHARS = 1_000_000;
 
 // 边界(E189/E224,E176 同族有界遍历):hasFiles 收口到共享 @/lib/window-drop(与 captureBoundedFiles /
-// hasDirectoryInFirstItems 同处),Terminal 与 App.tsx 全局 drop 共用单一来源。此处 import 供本模块用 +
-// re-export 保持既有 import 路径不变(Terminal 代码 + drag-drop.spec 仍从本模块 import hasFiles)。
+// hasDirectoryInFirstItems 同处),Terminal 与 App.tsx 全局 drop 共用单一来源。
 import { MAX_DROP_FILES, captureBoundedFiles, hasFiles } from '@/lib/window-drop';
-export { hasFiles };
 
 // 边界(E189):DEV 调试日志的 types 也按上限有界读取(不全量 Array.from),防开发环境复现同类卡顿。
 const DEBUG_TYPES_MAX = 32;

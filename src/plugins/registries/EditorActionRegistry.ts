@@ -5,9 +5,9 @@ import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
 import {
   KeyedRegistry,
-  filterKeepingIdentity,
   snapshotByPriority,
 } from './keyed-registry';
+import { filterKeepingIdentity } from '@/lib/filter-keeping-identity';
 import {
   SPEC_ID_MAX,
   SPEC_TITLE_MAX,

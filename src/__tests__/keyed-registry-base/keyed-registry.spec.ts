@@ -3,11 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  KeyedRegistry,
-  filterKeepingIdentity,
-  snapshotByPriority,
-} from '../../plugins/registries/keyed-registry';
+import { KeyedRegistry, snapshotByPriority } from '../../plugins/registries/keyed-registry';
+import { filterKeepingIdentity } from '../../lib/filter-keeping-identity';
 import { MAX_REGISTRY_ITEMS } from '../../plugins/registries/registry-capacity';
 import type { Disposable } from '../../plugins/types';
 

@@ -145,6 +145,3 @@ export function snapshotByPriority<T extends { readonly priority?: number }>(
   }
   return out;
 }
-
-// filterVisible 用的零拷贝过滤在 @/lib/filter-keeping-identity(notifications / 权限弹窗队列也用)。
-export { filterKeepingIdentity } from '@/lib/filter-keeping-identity';
