@@ -31,7 +31,7 @@ function installApi(): void {
         getStdioConfig: () =>
           Promise.resolve({
             ok: true,
-            data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+            data: { claudeAddCommand: 'claude mcp add ...' },
           }),
       },
     },

@@ -147,7 +147,7 @@ async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
   try {
     const r = await coApi.mcp.getStdioConfig();
     if (!r.ok) return 'fail';
-    if (!r.data.available || !r.data.claudeAddCommand) return 'unavailable';
+    if (!r.data.claudeAddCommand) return 'unavailable';
     // PROD 下 sandboxSweep 已涂掉 navigator.clipboard,必须走 cached raw ref
     await getCachedClipboard().writeText(r.data.claudeAddCommand);
     return 'ok';

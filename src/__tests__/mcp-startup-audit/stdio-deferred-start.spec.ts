@@ -82,7 +82,7 @@ describe('stdio 就绪前后的插件 tool list_changed 广播', () => {
   });
 
   it('stdio 未就绪时「复制 MCP 配置」读到 available:false(StatusBar 走 unavailable 分支)', () => {
-    expect(getStdioConfig()).toEqual({ available: false });
+    expect(getStdioConfig()).toEqual({});
   });
 });
 

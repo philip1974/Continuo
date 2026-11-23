@@ -428,7 +428,7 @@ describe('StatusBar — MCP 复制', () => {
       mcp: {
         getStdioConfig: vi.fn().mockResolvedValue({
           ok: true,
-          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+          data: { claudeAddCommand: 'claude mcp add ...' },
         }),
       },
     });
@@ -451,7 +451,7 @@ describe('StatusBar — MCP 复制', () => {
       mcp: {
         getStdioConfig: vi.fn().mockResolvedValue({
           ok: true,
-          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+          data: { claudeAddCommand: 'claude mcp add ...' },
         }),
       },
     });
@@ -480,7 +480,7 @@ describe('StatusBar — MCP 复制', () => {
       mcp: {
         getStdioConfig: vi.fn().mockResolvedValue({
           ok: true,
-          data: { available: true, claudeAddCommand: 'claude mcp add ...' },
+          data: { claudeAddCommand: 'claude mcp add ...' },
         }),
       },
     });
@@ -511,12 +511,12 @@ describe('StatusBar — MCP 复制', () => {
     });
   });
 
-  it('available=false → 「MCP 不可用」', async () => {
+  it('没有 claudeAddCommand → 「MCP 不可用」', async () => {
     installApi({
       mcp: {
         getStdioConfig: vi.fn().mockResolvedValue({
           ok: true,
-          data: { available: false },
+          data: {},
         }),
       },
     });

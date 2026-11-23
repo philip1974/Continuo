@@ -7,7 +7,7 @@
 import type { StdioMcpConfig } from '../../shared/mcp-channels';
 import { posixSingleQuote } from '../lib/posix-shell-quote';
 
-let cached: StdioMcpConfig = { available: false };
+let cached: StdioMcpConfig = {};
 
 export function setStdioConfig(config: StdioMcpConfig): void {
   cached = config;
@@ -19,7 +19,7 @@ export function getStdioConfig(): StdioMcpConfig {
 
 /** 测试用:重置缓存. */
 export function _resetForTest(): void {
-  cached = { available: false };
+  cached = {};
 }
 
 /**
