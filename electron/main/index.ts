@@ -4,7 +4,7 @@ import { setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { installPermissionHandlers } from './lib/permission-policy';
 import { installFileRequestGuard } from './lib/file-request-policy';
 import { showOpenDialogRemembering } from './lib/open-dialog';
-import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL } from '../shared/persistence-channels';
+import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL, type FlushRequestPayload } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
   IpcMainEvent,
@@ -422,7 +422,8 @@ function requestWindowFlush(
                 ...(accepted?.pendingAutoSave ? { pendingAutoSave: [...accepted.pendingAutoSave] } : {}),
               }
             : {};
-      win.webContents.send(LAYOUT_CHANNELS.FLUSH_REQUEST, { windowId: win.id, ...flag, requestId });
+      const payload: FlushRequestPayload = { windowId: win.id, ...flag, requestId };
+      win.webContents.send(LAYOUT_CHANNELS.FLUSH_REQUEST, payload);
     } catch {
       done('skipped');
     }

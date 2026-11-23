@@ -4,6 +4,7 @@ import {
   LAYOUT_CHANNELS,
   WINDOW_ID_CHANNEL,
   type DirtyState,
+  type FlushRequestPayload,
 } from '../shared/persistence-channels';
 import { subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
@@ -126,16 +127,6 @@ function ensureTerminalDataListener(): void {
 // 关窗脏态上报(计数 + 脏 tab id,id 供 main 按身份比较已接受范围),形态见 shared DirtyState。
 type DirtyReport = DirtyState;
 
-type FlushRequestPayload = {
-  windowId: number;
-  save?: boolean;
-  discard?: boolean;
-  /** save 时:确认框告知用户会丢弃的 untitled id(renderer 只放过这些 id)。 */
-  untitledIds?: string[];
-  /** discard 时:确认时未列入框的待 autosave .md 身份(flush 后仍脏 → renderer 回执 remaining)。 */
-  pendingAutoSave?: string[];
-  requestId?: number;
-};
 
 // 所有跨 IPC 的方法都返回 IpcResult<T>(详见 ADR-010),
 // renderer 拿到后按 ok 分流,不再 throw。

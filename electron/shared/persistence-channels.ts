@@ -39,6 +39,19 @@ export interface DirtyState {
   readonly pendingAutoSave?: readonly string[];
 }
 
+/** FLUSH_REQUEST(main → renderer)的 payload。 */
+export interface FlushRequestPayload {
+  readonly windowId: number;
+  readonly save?: boolean;
+  readonly discard?: boolean;
+  /** save 时:确认框告知用户会丢弃的 untitled id(renderer 只放过这些 id)。 */
+  readonly untitledIds?: string[];
+  /** discard 时:确认时未列入框的待 autosave .md 身份(flush 后仍脏 → renderer 回执 remaining)。 */
+  readonly pendingAutoSave?: string[];
+  /** renderer 回执原样带回,main 只结算对应请求。 */
+  readonly requestId?: number;
+}
+
 export const EXPLORER_CHANNELS = {
   READ: 'explorer:read',
   WRITE: 'explorer:write',
