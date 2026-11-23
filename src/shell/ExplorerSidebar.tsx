@@ -85,7 +85,6 @@ function ExplorerSidebarResizer() {
     setCurrent: setWidth,
     min: SIDEBAR_MIN_WIDTH,
     max: SIDEBAR_MAX_WIDTH,
-    direction: 'left-to-right',
   });
 
   return (

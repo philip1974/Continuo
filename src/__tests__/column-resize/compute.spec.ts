@@ -40,16 +40,3 @@ describe('computeNewWidth · left-to-right(左侧栏拖右边)', () => {
     expect(computeNewWidth(100, 280, 100, 200, 500)).toBe(280);
   });
 });
-
-describe('computeNewWidth · right-to-left(右侧栏拖左边)', () => {
-  it('向右拖 → 减宽', () => {
-    expect(
-      computeNewWidth(100, 280, 150, 200, 500, 'right-to-left'),
-    ).toBe(230);
-  });
-  it('向左拖 → 增宽', () => {
-    expect(
-      computeNewWidth(100, 280, 50, 200, 500, 'right-to-left'),
-    ).toBe(330);
-  });
-});

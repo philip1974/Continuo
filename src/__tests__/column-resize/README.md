@@ -17,9 +17,8 @@
 - 低于 min → min
 - NaN → min(防御性)
 
-### `computeNewWidth(startX, startW, currentX, min, max, direction?)`
-- direction='left-to-right'(默认):向右拖增宽(width = startW + delta)
-- direction='right-to-left':向右拖减宽(width = startW - delta)— 用于右侧栏的左边拖拽条
+### `computeNewWidth(startX, startW, currentX, min, max)`
+- 向右拖增宽(width = startW + delta);只有左侧栏,没有反向拖拽的右侧栏
 - 结果经 clampWidth 截断
 
 ## 不在本主题验证

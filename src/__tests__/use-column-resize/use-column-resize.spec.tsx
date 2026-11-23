@@ -36,7 +36,6 @@ describe('useColumnResize — left-to-right', () => {
         setCurrent,
         min: 200,
         max: 500,
-        direction: 'left-to-right',
       }),
     );
     const md = makeMouseDown(100);
@@ -81,28 +80,6 @@ describe('useColumnResize — left-to-right', () => {
     fireMouse('mousemove', -1000); // 280-1100 = -820 → 200
     expect(setCurrent).toHaveBeenLastCalledWith(200);
     fireMouse('mouseup', 0);
-  });
-});
-
-describe('useColumnResize — right-to-left', () => {
-  it('右栏左边拖:右移 → 减宽', () => {
-    let width = 300;
-    const setCurrent = vi.fn((n: number) => {
-      width = n;
-    });
-    const { result } = renderHook(() =>
-      useColumnResize({
-        getCurrent: () => width,
-        setCurrent,
-        min: 100,
-        max: 600,
-        direction: 'right-to-left',
-      }),
-    );
-    result.current(makeMouseDown(200));
-    fireMouse('mousemove', 250); // delta 50 → 300-50 = 250
-    expect(setCurrent).toHaveBeenLastCalledWith(250);
-    fireMouse('mouseup', 250);
   });
 });
 

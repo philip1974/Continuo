@@ -3,18 +3,13 @@
 
 import { useCallback, useRef } from 'react';
 
-export type ResizeDirection = 'left-to-right' | 'right-to-left';
-
 export function clampWidth(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
   return Math.max(min, Math.min(max, value));
 }
 
 /**
- * 由起始 X 与起始宽度算出新宽度。
- * direction:
- *   'left-to-right'(左侧栏的右边拖):向右拖 → 宽度增
- *   'right-to-left'(右侧栏的左边拖):向右拖 → 宽度减
+ * 由起始 X 与起始宽度算出新宽度(左侧栏的右边拖:向右拖 → 宽度增)。
  */
 export function computeNewWidth(
   startX: number,
@@ -22,11 +17,8 @@ export function computeNewWidth(
   currentX: number,
   min: number,
   max: number,
-  direction: ResizeDirection = 'left-to-right',
 ): number {
-  const delta = currentX - startX;
-  const raw = direction === 'left-to-right' ? startW + delta : startW - delta;
-  return clampWidth(raw, min, max);
+  return clampWidth(startW + (currentX - startX), min, max);
 }
 
 export interface ColumnResizeOptions {
@@ -36,7 +28,6 @@ export interface ColumnResizeOptions {
   setCurrent: (next: number) => void;
   min?: number;
   max?: number;
-  direction?: ResizeDirection;
 }
 
 /**
@@ -54,13 +45,12 @@ export function useColumnResize(opts: ColumnResizeOptions) {
       setCurrent,
       min = 200,
       max = 500,
-      direction = 'left-to-right',
     } = optsRef.current;
     const startX = e.clientX;
     const startW = getCurrent();
 
     const onMove = (ev: MouseEvent) => {
-      setCurrent(computeNewWidth(startX, startW, ev.clientX, min, max, direction));
+      setCurrent(computeNewWidth(startX, startW, ev.clientX, min, max));
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);

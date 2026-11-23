@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+const POLL_INTERVAL_MS = 1000;
+
 /**
  * 定时轮询一个外部快照(没有订阅接口的数据源,如 user plugin manager 的已装列表)。
  * 每次读到的值经 `same` 与当前值比较,相同则保持原引用 —— 否则每个 tick 都换引用,使用方每秒整页重渲。
@@ -9,7 +11,6 @@ import { useEffect, useRef, useState } from 'react';
 export function usePolledSnapshot<T>(
   read: () => T,
   same: (prev: T, next: T) => boolean,
-  intervalMs = 1000,
 ): readonly [T, () => void] {
   const [snap, setSnap] = useState<T>(read);
   // read / same 每次渲染可能是新函数;interval 回调读 ref,不因此重建定时器。
@@ -22,8 +23,8 @@ export function usePolledSnapshot<T>(
   useEffect(() => {
     const refresh = refreshRef.current;
     refresh();
-    const timer = setInterval(refresh, intervalMs);
+    const timer = setInterval(refresh, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [intervalMs]);
+  }, []);
   return [snap, refreshRef.current];
 }
