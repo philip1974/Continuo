@@ -499,15 +499,7 @@ const api = {
      */
     notifyRoot: (
       root: string | null,
-    ): Promise<
-      | { ok: true }
-      | {
-          ok: false;
-          // main 还可能因不可信 frame 返回 IPC_DENIED
-          code: 'BAD_INPUT' | 'BAD_ROOT' | 'NO_WINDOW' | 'IPC_DENIED';
-          message?: string;
-        }
-    > => ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),
+    ): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),
     /**
      * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
      * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。

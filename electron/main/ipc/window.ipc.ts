@@ -5,10 +5,8 @@
 
 import { z } from 'zod';
 import * as path from 'node:path';
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { defaultIsTrustedFrame, safeHandle } from '../safe-handle';
-import { boundedObjectAdmissible } from '../../shared/bounded-input';
-import { formatZodErrorCapped } from '../lib/format-zod-error';
+import { app, BrowserWindow } from 'electron';
+import { safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { statDirGated } from '../lib/dir-stat-gate';
 import {
   WINDOW_CHANNELS,
@@ -16,7 +14,6 @@ import {
   type IpcWindowCreateResult,
 } from '../../shared/window-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { IPC_ERR } from '../../shared/ipc-result';
 import {
   allocateWindowSeq,
 } from '../persistence';
@@ -123,79 +120,21 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     CreateInput,
     (input) => createWindowHandler(input, deps.createMainWindow),
   );
-  // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal
-  // 路径 cwd 回退使用。main 端做 absolute + 非空校验 + trusted-frame 校验。
-  // 这个 cwd hint 会成为 MCP/terminal create 未显式传 cwd 时 agent session 的回退
-  // 工作目录,被污染会让 agent 的读写/安装/git 落到错误目录。同文件 CREATE 及
-  // terminal/layout/plugin-mcp IPC 都校验 senderFrame,本 handler 漏了 → 补上,与
-  // 兄弟入口一致(ADR-Plugin-5 引入隔离 iframe 后不可信子 frame 才可达,提前纵深防御)。
-  // (复审 loop R7;frame-trust 守卫漏一兄弟 handler 族,同 P2-AD)
-  ipcMain.handle(
-    WINDOW_CHANNELS.NOTIFY_ROOT,
-    (event: IpcMainInvokeEvent, raw: unknown) => {
-      if (!defaultIsTrustedFrame(event.senderFrame)) {
-        return {
-          ok: false as const,
-          code: IPC_ERR.DENIED,
-          message: 'sender frame is not trusted',
-        };
-      }
-      const win = BrowserWindow.fromWebContents(event.sender);
-      // 边界(E258,E255/E256/E257 同族 / schema-阶段放大):此 handler 是手写 ipcMain.handle(为拿
-      // event.sender→BrowserWindow),绕过 safeHandle 的 bounded 预检。NotifyRootInput 是 .strict()
-      // object,畸形 payload 塞海量未知短 key 会在 Zod 阶段枚举/构造 issue 放大(notify-root 是高频
-      // workspace 同步入口)。safeParse 前复用 shared boundedObjectAdmissible,超限直接 BAD_INPUT 不进 Zod。
-      if (!boundedObjectAdmissible(raw).ok) {
-        console.warn('[window-ipc] notifyRoot BAD_INPUT (oversized) win=%s', win?.id);
-        return {
-          ok: false as const,
-          code: ERROR_CODES.BAD_INPUT,
-          message: 'invalid input shape',
-        };
-      }
-      const parsed = NotifyRootInput.safeParse(raw);
-      if (!parsed.success) {
-        // 边界(E258):日志用 capped formatter,不打印完整 parsed.error.issues(.strict() 大量未知 key
-        // 时 issues 数组本身就是放大面 —— 即便走到 Zod 也不让日志二次放大;同 E73/E157 错误串限幅纪律)。
-        console.warn(
-          '[window-ipc] notifyRoot BAD_INPUT win=%s %s',
-          win?.id,
-          formatZodErrorCapped(parsed.error),
-        );
-        return {
-          ok: false as const,
-          code: ERROR_CODES.BAD_INPUT,
-          message: 'invalid input shape',
-        };
-      }
-      const root = parsed.data.root;
-      // 边界(E34):root 非空时须 absolute 且 ≤ROOT_MAX(防超长串驻留 map + 带进 cwd 回退路径)。
-      if (
-        root !== null &&
-        (root === '' || root.length > ROOT_MAX || !path.isAbsolute(root))
-      ) {
-        console.warn(
-          '[window-ipc] notifyRoot BAD_ROOT win=%s root=%s',
-          win?.id,
-          summarizePath(root),
-        );
-        return {
-          ok: false as const,
-          code: ERROR_CODES.BAD_ROOT,
-          message: 'root must be absolute non-empty path',
-        };
-      }
-      if (!win) {
-        return {
-          ok: false as const,
-          code: ERROR_CODES.NO_WINDOW,
-          message: 'no browser window',
-        };
-      }
-      setWorkspaceRoot(win.id, root);
-      return { ok: true as const };
-    },
-  );
+  // workspace.root 变化时 renderer 推送 → main 维护 map,供 MCP agent terminal 路径 cwd 回退使用。
+  // 这个 cwd hint 会成为 MCP/terminal create 未显式传 cwd 时 agent session 的回退工作目录,被污染会让
+  // agent 的读写/安装/git 落到错误目录 —— 与兄弟入口一样走通用外壳(trusted-frame → bounded → zod),
+  // 归属窗口由 main 从 sender 推断。
+  safeHandleWithCtx(WINDOW_CHANNELS.NOTIFY_ROOT, NotifyRootInput, (input, { event }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const root = input.root;
+    // 边界(E34):root 非空时须 absolute 且 ≤ROOT_MAX(防超长串驻留 map + 带进 cwd 回退路径)。
+    if (root !== null && (root === '' || root.length > ROOT_MAX || !path.isAbsolute(root))) {
+      console.warn('[window-ipc] notifyRoot BAD_ROOT win=%s root=%s', win?.id, summarizePath(root));
+      throw codedError(ERROR_CODES.BAD_ROOT, 'root must be absolute non-empty path');
+    }
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    setWorkspaceRoot(win.id, root);
+  });
   // 窗口关闭清 map(防泄漏)。
   app.on('browser-window-created', (_event, win) => {
     win.on('closed', () => clearWindowRoot(win.id));

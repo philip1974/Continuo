@@ -9,7 +9,7 @@ T3 multiple windows keep independent workspace roots;
 T4a/T4b setting the same `windowId` replaces the root, and a cleared `windowId` can be rebuilt;
 T5 `clearWindow` deletes the mapping;
 T6 `_reset` clears all mappings;
-T7-T11 `NotifyRoot` IPC validates BAD_INPUT/BAD_ROOT layering, accepts `null`, and accepts absolute roots;
+T7-T11 `NotifyRoot` IPC validates IPC_BAD_INPUT (shared IPC shell) / BAD_ROOT layering, accepts `null`, and accepts absolute roots;
 T7b rejected `NotifyRoot` calls emit `console.warn`;
 T7c/T7d `{ ok: false }` includes a non-empty `message`, and the warning includes `winId`;
 T16/T16b window `closed` clears the root map, and `windowId` reuse is safe;
