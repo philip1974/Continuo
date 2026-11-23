@@ -478,7 +478,7 @@ export class DapClient {
     return this;
   }
 
-  createChildSession(options: Partial<DapClientOptions> = {}): DapClient {
+  createChildSession(): DapClient {
     const child = new DapClient({
       adapterPath: this.adapterPath,
       nodePath: this.nodePath,
@@ -486,7 +486,6 @@ export class DapClient {
       connectIntervalMs: this.connectIntervalMs,
       ...(this.socketPath === null ? {} : { socketPath: this.socketPath }),
       traceId: `${this.traceId}>child${this.childSessionSeq++}`,
-      ...options,
     });
     child.parentSession = this;
     this.childSessions.push(child);

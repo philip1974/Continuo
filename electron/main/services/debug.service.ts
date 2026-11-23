@@ -47,7 +47,7 @@ export interface DebugDapClientLike {
   onServerExit?(listener: () => void): void;
   spawnServer(): Promise<this>;
   connectToServer(): Promise<this>;
-  createChildSession(options?: unknown): DebugDapClientLike;
+  createChildSession(): DebugDapClientLike;
   setStartDebuggingHandler(
     handler: ((request: DapRequestMessage) => Promise<DapJson | undefined> | DapJson | undefined) | null,
   ): void;
