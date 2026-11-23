@@ -2,16 +2,16 @@
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { explorerTreeItem } from './helpers/explorer';
 
 test('默认隐藏 .hidden → 切 setting=true → tree 显', async ({
   window,
   workspaceRoot,
 }) => {
-  // 写一个 dot 文件
+  // 写一个 dot 文件 + 一个普通文件作对照:普通文件出现 = 树已渲染且 watch 已推送这批变更
   await writeFile(path.join(workspaceRoot, '.hidden'), 'secret');
-
-  // 等 watch 推
-  await window.waitForTimeout(500);
+  await writeFile(path.join(workspaceRoot, 'marker.txt'), 'marker');
+  await expect(explorerTreeItem(window, /^marker\.txt$/)).toBeVisible({ timeout: 10_000 });
 
   // 默认 showHiddenFiles=false → .hidden 不显
   await expect(

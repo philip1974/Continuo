@@ -2,6 +2,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { explorerTreeItem } from './helpers/explorer';
 
 test('切 showHiddenFiles=true → .env 显;node_modules 仍不显', async ({
   window,
@@ -9,9 +10,9 @@ test('切 showHiddenFiles=true → .env 显;node_modules 仍不显', async ({
 }) => {
   await writeFile(path.join(workspaceRoot, '.env'), 'SECRET=x');
   await mkdir(path.join(workspaceRoot, 'node_modules'), { recursive: true });
-
-  // 等 watch 推
-  await window.waitForTimeout(500);
+  // 普通文件作对照:出现 = 树已渲染且 watch 已推送这批变更
+  await writeFile(path.join(workspaceRoot, 'marker.txt'), 'marker');
+  await expect(explorerTreeItem(window, /^marker\.txt$/)).toBeVisible({ timeout: 10_000 });
 
   // 默认 false → .env 不显
   await expect(

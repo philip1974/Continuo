@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForAppReady } from './helpers/app-ready';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -22,8 +23,8 @@ async function launchAndAssertEmpty(ud: string): Promise<void> {
   win.on('pageerror', (err) => pageErrors.push(err.message));
   await win.waitForLoadState('domcontentloaded');
 
-  // 就绪屏障放行(持久化已读完、root 已恢复)后再断言空态,避免首帧 root=null 的空态恒真
-  await expect(win.getByTestId('splash')).toHaveCount(0, { timeout: 15_000 });
+  // 就绪屏障放行(Splash 已挂上又撤除 → 持久化已读完、root 已恢复)后再断言空态,避免首帧 root=null 的空态恒真
+  await waitForAppReady(win);
   await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
     timeout: 10_000,
   });
@@ -99,7 +100,7 @@ test('对照:合法 explorer.json(v1 + 存在的 ws)→ 恢复出文件树(证�
     });
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
-    await expect(win.getByTestId('splash')).toHaveCount(0, { timeout: 15_000 });
+    await waitForAppReady(win);
     await expect(explorerTreeItem(win, /^restored\.txt$/)).toBeVisible({ timeout: 10_000 });
     await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toHaveCount(0);
     await app.close();

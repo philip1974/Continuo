@@ -41,7 +41,8 @@ test('空 workspace → 渲染 workspace name + 没有 treeitem', async () => {
       win.locator('main aside').nth(1).getByText(wsName).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Tree 0 个 treeitem(空 root):等 listDir 完成(空目录提示出现且稳定一段时间)再断言
+    // Tree 0 个 treeitem(空 root):该提示在读取中也显示,仅作 FolderTree 已挂载的信号;
+    // 靠其后 1 秒等待兜底确认没有迟到的条目
     await expect(win.getByText(EXPLORER_LOADING_OR_EMPTY)).toBeVisible({ timeout: 10_000 });
     await win.waitForTimeout(1_000);
     await expect(win.locator('[role=treeitem]')).toHaveCount(0);

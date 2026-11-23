@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForAppReady } from './helpers/app-ready';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -68,15 +69,14 @@ test('加 Terminal session → 关 → 重启同 userData → 不恢复 stale te
     });
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
-    await win2.waitForTimeout(800);
-
-    // Terminal session 不从 dock layout 恢复;Editor 默认 panel 仍渲染.
-    await expect(
-      win2.getByRole('textbox', { name: TERMINAL_INPUT }),
-    ).toHaveCount(0);
+    // 先等应用就绪、dock 已渲染(Editor 默认 panel 可见),再断言 Terminal session 不从 dock layout 恢复.
+    await waitForAppReady(win2);
     await expect(
       win2.getByRole('tab').filter({ hasText: /Editor|编辑器|편집기/ }),
     ).toBeVisible();
+    await expect(
+      win2.getByRole('textbox', { name: TERMINAL_INPUT }),
+    ).toHaveCount(0);
 
     await app2.close();
   } finally {

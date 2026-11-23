@@ -1,6 +1,7 @@
 // 状态栏:无 workspace 时占位 + MCP 复制按钮.
 import { test, expect } from './fixtures/electron-app';
 import { MCP_COPY } from './helpers/status-bar';
+import { waitForAppReady } from './helpers/app-ready';
 
 test('MCP copy 按钮存在 + 点击不抛', async ({ window }) => {
   const status = window.locator('footer');
@@ -14,6 +15,9 @@ test('MCP copy 按钮存在 + 点击不抛', async ({ window }) => {
 
 test('agent terminal 计数 = 0 → 按钮不渲染', async ({ window }) => {
   // agent 撤销入口(data-agent-revoke)只在 agent 会话数 > 0 或存在「本次启动期间允许」授权时显示;
-  // 新启动、无 agent 会话也无授权 → 不渲染(按属性断言,不依赖界面语言)
+  // 新启动、无 agent 会话也无授权 → 不渲染(按属性断言,不依赖界面语言)。先等应用就绪(footer 已渲染、
+  // Splash 已撤除),再稍等,避免在 render 前断言恒真。
+  await waitForAppReady(window);
+  await window.waitForTimeout(500);
   await expect(window.locator('footer [data-agent-revoke]')).toHaveCount(0);
 });

@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForAppReady } from './helpers/app-ready';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -37,7 +38,7 @@ test('version=99 → fallback EmptyWorkspace + 不抛', async () => {
     await win.waitForLoadState('domcontentloaded');
 
     // 就绪屏障放行后再断言空态(首帧 root=null 的空态在读盘前就可见,不能直接断言)
-    await expect(win.getByTestId('splash')).toHaveCount(0, { timeout: 15_000 });
+    await waitForAppReady(win);
     await expect(win.getByText(EXPLORER_NO_FOLDER_OPEN)).toBeVisible({
       timeout: 10_000,
     });

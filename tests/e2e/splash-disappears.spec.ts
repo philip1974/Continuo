@@ -2,12 +2,12 @@
 import { test, expect } from './fixtures/electron-app';
 
 test('splash 启动后消失 + 主 shell 显示', async ({ window }) => {
-  // 主 shell 元素出现 → splash 应已消失
-  const splash = window.locator('[data-testid="splash"]');
-  // 给 splash 最大 5s 消失;布局就绪即移除
+  // footer 与 Splash 在同一次 React 提交中渲染:先等 footer 出现(此时 Splash 已挂上),
+  // 再给 Splash 最大 5s 撤除(布局就绪即移除)。直接断言 hidden 会在 render 前恒真。
+  await expect(window.locator('footer')).toBeVisible({ timeout: 15_000 });
+  const splash = window.getByTestId('splash');
   await expect(splash).toBeHidden({ timeout: 5_000 });
 
-  // 主 shell 框架(footer + IconSidebar)可见
-  await expect(window.locator('footer')).toBeVisible();
+  // 主 shell 框架(IconSidebar)可见
   await expect(window.locator('aside').first()).toBeVisible();
 });

@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { waitForAppReady } from './helpers/app-ready';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -25,7 +26,8 @@ test('theme=light 持久化:重启同 userData 仍 light', async () => {
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
-    // 默认 dark
+    // 默认 dark(index.html 静态即带 dark;等应用就绪后再断言,确认主题绑定未把它改掉)
+    await waitForAppReady(win1);
     await expect(win1.locator('html')).toHaveClass(/dark/);
 
     // 改成 light(通过 SettingsPanel)
