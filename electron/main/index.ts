@@ -110,6 +110,7 @@ import {
   createHookFileBroker,
   ensureHookEventsDir,
   inferRunner,
+  hookEventsDirFor,
   installStopHookInWorkspace,
 } from './services/mcp-tools-hook-bridge';
 import { getWorkspaceRoot as getWindowWorkspaceRoot } from './services/window-workspace-roots.service';
@@ -1057,7 +1058,7 @@ const ensureAgentAuthorized: EnsureAuthorized = (ownerWindowId, method, external
 
 async function startMcpHost(): Promise<void> {
   let brokerStarted = false;
-  const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
+  const hookEventsDir = hookEventsDirFor(app.getPath('userData'));
   const broker = createHookFileBroker(hookEventsDir);
   try {
     await ensureHookEventsDir(hookEventsDir); // 0700(多用户 Linux:事件含会话内容)
@@ -1133,20 +1134,20 @@ async function startMcpHost(): Promise<void> {
       hasLiveSessionForController: terminalSessions.hasLiveSessionForController,
     });
     mcpRevokerWiring = revokerWiring;
-    mcpHost = await createMcpHost({ initialTools, ...revokerWiring.hostOptions });
-    setMcpEnvProvider((windowId: number) => {
-      if (!mcpHost) return { env: {} as Record<string, string>, mcpToken: '' };
-      return createContinuoMcpEnv({
+    const host = await createMcpHost({ initialTools, ...revokerWiring.hostOptions });
+    mcpHost = host;
+    setMcpEnvProvider((windowId: number) =>
+      createContinuoMcpEnv({
         windowId,
-        url: mcpHost.url,
-        issueToken: (id) => mcpHost!.issueWindowToken(id),
+        url: host.url,
+        issueToken: (id) => host.issueWindowToken(id),
         // 注入本实例的 stdio 端点(Windows 为本次启动的随机管道名,POSIX 为 <userData>/mcp.sock),终端里的
         // proxy 直连本实例(见 resolveStdioSocketPath)。POSIX 上若不注入,dev 实例终端里的 proxy 会按候选顺序
         // 优先连 packaged 的 socket,用 dev token 发 hello 必败。用户在 MCP 配置 env 里显式设置的
         // CONTINUO_MCP_SOCKET 会覆盖 PTY env(行为不变)。
         stdioSocketPath: resolveStdioSocketPath(),
-      });
-    });
+      }),
+    );
     // 给 agent-auth service 注入 host 引用,撤销时 rotate token。
     setMcpHostRef(mcpHost);
     setMcpRevokers(revokerWiring.revokers(mcpHost));

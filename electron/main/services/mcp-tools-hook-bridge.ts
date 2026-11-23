@@ -107,6 +107,11 @@ const COMMAND_KEY = 'command';
 // 已装的 managed hook 命令不含它 = 旧版(按 cwd 匹配时代),install 时原地升级。
 export const TERMINAL_SESSION_ENV = 'CONTINUO_TERMINAL_SESSION_ID';
 
+/** hook 事件目录:broker 监听 / hook 安装 / PTY env(CONTINUO_HOOK_EVENTS_DIR)必须是同一个。 */
+export function hookEventsDirFor(userDataPath: string): string {
+  return path.join(userDataPath, 'hook-events');
+}
+
 // 边界(E83,E82/E30 数量上限族):hook 目录文件数上限。maxEntries 只限解析后 buffer、
 // MAX_HOOK_FILE_BYTES 只限单文件大小,目录文件**数量**无界 —— 畸形/堆积的 cc_*/codex_* 文件让
 // start() 初始扫描 + 每轮 cleanupStale 被海量 stat/read/parse/unlink 拖垮(每文件 stat+read+parse+

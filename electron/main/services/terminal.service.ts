@@ -4,14 +4,13 @@
 
 import { app, BrowserWindow } from 'electron';
 import type { WebContents } from 'electron';
-import path from 'node:path';
 import {
   prepareShellIntegrationEnv,
   SessionManager,
 } from '@continuo-terminal/server-node';
 import * as terminalSessions from './terminal-sessions.service';
 import { mcpRevokers } from './mcp-host.service';
-import { TERMINAL_SESSION_ENV } from './mcp-tools-hook-bridge';
+import { TERMINAL_SESSION_ENV, hookEventsDirFor } from './mcp-tools-hook-bridge';
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs, skipsShellIntegration } from './shell-args';
@@ -167,10 +166,6 @@ function getSessionManager(): SessionManager {
 
 // Per-session WebContents routing (P0-2 fix from design review v3)
 const sessionTargets = new Map<string, WebContents>();
-
-function setTarget(id: string, target: WebContents): void {
-  sessionTargets.set(id, target);
-}
 
 // Variadic safeSend — baseline IPC contract preserved (P0-1 fix)
 function safeSend(id: string, channel: string, ...args: unknown[]): void {
@@ -602,9 +597,8 @@ export async function createTerminal(
     });
     throw createRejectedQuittingError();
   }
-  const hookEventsDir = path.join(app.getPath('userData'), 'hook-events');
   const envWithHookEvents = mergeSpawnEnv(shellEnv, {
-    CONTINUO_HOOK_EVENTS_DIR: hookEventsDir,
+    CONTINUO_HOOK_EVENTS_DIR: hookEventsDirFor(app.getPath('userData')),
     // 正确性(会话绑定):managed Stop hook 把它写进事件文件名,broker 据此只把 Stop 事件交给本会话的
     // await_stop_hook 等待者(不按 cwd 串给同窗口他会话)。放在 shellEnv 之后,用户 env 不能覆盖。
     // 非安全边界:会话内进程可改写该变量或直接读写 hook-events 目录,这里只防事件串会话。
@@ -636,7 +630,7 @@ export async function createTerminal(
 
   // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
   instances.set(id, inst);
-  setTarget(id, win.webContents);
+  sessionTargets.set(id, win.webContents);
 
   try {
     // PHASE 2: spawn PTY via SessionManager.
@@ -658,13 +652,7 @@ export async function createTerminal(
       clearTimeout(inst.recoveryTimer);
       inst.recoveryTimer = null;
     }
-    if (inst.mcpToken) {
-      try {
-        mcpRevokers().byToken(inst.mcpToken);
-      } catch {
-        // ignore rollback cleanup errors
-      }
-    }
+    revokeTokenQuietly(inst.mcpToken);
     try {
       void inst.shellCleanup().catch(() => {
         // ignore rollback cleanup errors
