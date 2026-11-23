@@ -1,13 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import {
-  ScopeRequestTimeoutError,
-  type PathScope,
-} from '../../shared/plugin-fs-contract';
+import { ScopeRequestTimeoutError } from '../../shared/plugin-fs-contract';
 import { SCOPE_REQUEST_TTL_MS } from '../../shared/plugin-fs-channels';
 
 interface PendingEntry {
   token: string;
-  scopes: readonly PathScope[];
   webContentsId: number;
   expiresAt: number;
   resolve: (decision: 'grant' | 'deny') => void;
@@ -63,7 +59,6 @@ export class ScopeRequestCorrelator {
 
   createRequest(
     token: string,
-    scopes: readonly PathScope[],
     webContentsId: number,
   ): CreateRequestResult {
     const requestId = randomUUID();
@@ -75,7 +70,6 @@ export class ScopeRequestCorrelator {
     });
     this.pending.set(requestId, {
       token,
-      scopes,
       webContentsId,
       expiresAt: Date.now() + this._ttlMs,
       resolve: resolveFn!,

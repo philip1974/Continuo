@@ -580,10 +580,6 @@ async function readFileVerified(
   }
 }
 
-function canonicalPath(r: { canonical: string } | { fullPath: string }): string {
-  return 'canonical' in r ? r.canonical : r.fullPath;
-}
-
 export async function canonicalizePathScopes(
   scopes: readonly PathScope[],
 ): Promise<PathScope[]> {
@@ -793,7 +789,7 @@ export function registerPluginFsHandlers(
       isDirectory: boolean;
       isSymlink: boolean;
     }[] = [];
-    const dir = await fs.opendir(canonicalPath(r));
+    const dir = await fs.opendir(r.canonical);
     for await (const e of dir) {
       if (out.length >= MAX_LIST_DIR_ENTRIES) {
         // for-await 在抛出时调用迭代器 return() 自动关闭 dir,无句柄泄漏。
@@ -820,7 +816,7 @@ export function registerPluginFsHandlers(
       target,
       'r',
     );
-    return statPayload(await fs.stat(canonicalPath(r)));
+    return statPayload(await fs.stat(r.canonical));
   }));
 
   ipcMain.handle(PLUGIN_FS_CHANNELS.LSTAT, shared(async (event, token: string, target: string) => {
@@ -831,7 +827,7 @@ export function registerPluginFsHandlers(
       target,
       'r',
     );
-    return statPayload(await fs.lstat(canonicalPath(r)));
+    return statPayload(await fs.lstat(r.fullPath));
   }));
 
   ipcMain.handle(
@@ -844,7 +840,7 @@ export function registerPluginFsHandlers(
         target,
         'r',
       );
-      return canonicalPath(r);
+      return r.canonical;
     }),
   );
 
@@ -885,7 +881,7 @@ export function registerPluginFsHandlers(
         dst,
         'rw',
       );
-      const srcPath = canonicalPath(rSrc);
+      const srcPath = rSrc.fullPath;
       if (dirname(srcPath) !== rDst.parentCanonical) {
         throw new ScopeError('rename: same-parent enforced', { target: dst });
       }
@@ -938,7 +934,7 @@ export function registerPluginFsHandlers(
         target,
         'rw',
       );
-      await fs.rm(canonicalPath(r), {
+      await fs.rm(r.fullPath, {
         recursive: opts?.recursive ?? false,
         force: opts?.force ?? false,
       });
@@ -992,7 +988,7 @@ export function registerPluginFsHandlers(
       // fs.cp 按路径递归:期间目录结构不被插件改动由独占锁保证。filter 只用来数条目(含根),超限中止。
       let entries = 0;
       try {
-        await fs.cp(canonicalPath(rSrc), rDst.fullPath, {
+        await fs.cp(rSrc.canonical, rDst.fullPath, {
           recursive: opts?.recursive ?? false,
           force: false,
           errorOnExist: true,
@@ -1033,7 +1029,7 @@ export function registerPluginFsHandlers(
       const sha = rawSha.toLowerCase();
       const senderId = event.sender.id;
       const r = await checkScope(token, senderId, 'read', repoDir, 'r');
-      const cwd = canonicalPath(r);
+      const cwd = r.canonical;
       // 安全:repoDir 在 scope 内不代表 git 读的对象库在 scope 内(见 resolveGitObjectStoreInScope)。
       const pin = await resolveGitObjectStoreInScope(
         cwd,
@@ -1186,11 +1182,7 @@ export function registerPluginFsHandlers(
       // 任何异常)都必须释放,漏一条该插件就再也请求不了 scope —— 统一放 finally。
       let decision: 'grant' | 'deny';
       try {
-        const { requestId, promise } = correlator.createRequest(
-          token,
-          scopes,
-          event.sender.id,
-        );
+        const { requestId, promise } = correlator.createRequest(token, event.sender.id);
         // race(R73,agent-auth R62 同族):createRequest 登记 pending 后、send 前 sender 可能销毁
         // (renderer reload/关窗),send 抛 "Object has been destroyed"。下方 try 只裹 `await promise`,
         // 不裹这次 send;若 send 裸抛,该 pending 会泄漏到 5min TTL 才被 sweep —— 插件侧

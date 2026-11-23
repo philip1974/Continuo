@@ -4,9 +4,8 @@ import {
   GC_INTERVAL_MS_FOR_TEST,
   ScopeRequestCorrelator,
 } from '../services/scope-request-correlator';
-import { ScopeRequestTimeoutError, type PathScope } from '../../shared/plugin-fs-contract';
+import { ScopeRequestTimeoutError } from '../../shared/plugin-fs-contract';
 
-const SCOPES: readonly PathScope[] = [{ path: '/tmp', mode: 'rw' }];
 let correlator: ScopeRequestCorrelator | null = null;
 
 function makeCorrelator(): ScopeRequestCorrelator {
@@ -27,7 +26,7 @@ describe('ScopeRequestCorrelator', () => {
 
   it('T21.a createRequest returns requestId + pending promise', async () => {
     const local = makeCorrelator();
-    const { requestId, promise } = local.createRequest('token-a', SCOPES, 10);
+    const { requestId, promise } = local.createRequest('token-a', 10);
     let settled = false;
 
     void promise.then(
@@ -47,7 +46,7 @@ describe('ScopeRequestCorrelator', () => {
 
   it('T21.b resolve correct requestId settles promise with decision', async () => {
     const local = makeCorrelator();
-    const { requestId, promise } = local.createRequest('token-b', SCOPES, 10);
+    const { requestId, promise } = local.createRequest('token-b', 10);
 
     local.resolve(requestId, 'grant', 10);
 
@@ -67,7 +66,7 @@ describe('ScopeRequestCorrelator', () => {
 
   it('T21.d resolve wrong webContents throws', () => {
     const local = makeCorrelator();
-    const { requestId } = local.createRequest('token-d', SCOPES, 10);
+    const { requestId } = local.createRequest('token-d', 10);
 
     expect(() => local.resolve(requestId, 'deny', 11)).toThrow(
       ScopeRequestTimeoutError,
@@ -79,7 +78,7 @@ describe('ScopeRequestCorrelator', () => {
 
   it('T21.e one-shot consume rejects second resolve', async () => {
     const local = makeCorrelator();
-    const { requestId, promise } = local.createRequest('token-e', SCOPES, 10);
+    const { requestId, promise } = local.createRequest('token-e', 10);
 
     local.resolve(requestId, 'grant', 10);
     await expect(promise).resolves.toBe('grant');
@@ -92,7 +91,7 @@ describe('ScopeRequestCorrelator', () => {
 
   it('T21.f TTL automatically rejects promise and clears entry', async () => {
     const local = makeCorrelator();
-    const { requestId, promise } = local.createRequest('token-f', SCOPES, 10);
+    const { requestId, promise } = local.createRequest('token-f', 10);
     const rejected = expect(promise).rejects.toBeInstanceOf(
       ScopeRequestTimeoutError,
     );

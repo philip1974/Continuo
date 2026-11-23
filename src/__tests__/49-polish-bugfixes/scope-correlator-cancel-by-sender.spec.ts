@@ -23,7 +23,7 @@ afterEach(() => {
 describe('topic49 6thS · ScopeRequestCorrelator.cancelBySender', () => {
   it('关窗 → 该 webContents 的 pending 立即 reject(不等 5min TTL)', async () => {
     correlator = new ScopeRequestCorrelator();
-    const { requestId, promise } = correlator.createRequest('tok', [], 42);
+    const { requestId, promise } = correlator.createRequest('tok', 42);
     // 仍 pending(可被 _peek 查到)
     expect(correlator._peek(requestId)).toBeDefined();
 
@@ -36,8 +36,8 @@ describe('topic49 6thS · ScopeRequestCorrelator.cancelBySender', () => {
 
   it('只取消匹配 webContents 的 pending,其它 wc 不受影响', async () => {
     correlator = new ScopeRequestCorrelator();
-    const a = correlator.createRequest('t', [], 7);
-    const b = correlator.createRequest('t', [], 9);
+    const a = correlator.createRequest('t', 7);
+    const b = correlator.createRequest('t', 9);
 
     const n = correlator.cancelBySender(7);
     expect(n).toBe(1);
@@ -51,7 +51,7 @@ describe('topic49 6thS · ScopeRequestCorrelator.cancelBySender', () => {
 
   it('无匹配 webContents → 返回 0,不抛,已结算的不重复触发', async () => {
     correlator = new ScopeRequestCorrelator();
-    const { requestId, promise } = correlator.createRequest('t', [], 5);
+    const { requestId, promise } = correlator.createRequest('t', 5);
     correlator.resolve(requestId, 'deny', 5);
     await expect(promise).resolves.toBe('deny');
 
@@ -67,7 +67,7 @@ describe('E227 · ScopeRequestCorrelator.canAccept(pending 数量上限)', () =>
   it('per-webContents:单窗口未决达 64 → canAccept 该窗口 false,其它窗口仍 true', () => {
     correlator = new ScopeRequestCorrelator();
     const c = correlator;
-    for (let i = 0; i < 64; i++) c.createRequest('t', [], 7); // 同一 wc 64 个未决
+    for (let i = 0; i < 64; i++) c.createRequest('t', 7); // 同一 wc 64 个未决
     expect(c.canAccept(7)).toBe(false); // 该窗口到顶
     expect(c.canAccept(8)).toBe(true); // 别的窗口不受影响
   });
@@ -76,7 +76,7 @@ describe('E227 · ScopeRequestCorrelator.canAccept(pending 数量上限)', () =>
     correlator = new ScopeRequestCorrelator();
     const c = correlator;
     // 256 个未决跨多窗口(每窗 <64,只触发全局闸)
-    for (let i = 0; i < 256; i++) c.createRequest('t', [], 1000 + i);
+    for (let i = 0; i < 256; i++) c.createRequest('t', 1000 + i);
     expect(c.canAccept(1)).toBe(false); // 全局到顶
   });
 
