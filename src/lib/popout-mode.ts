@@ -14,7 +14,7 @@ export function isPopoutWindow(): boolean {
 }
 
 export function popoutUrlFor(baseHref: string): string {
-  // 边界(E296,A50 反馈契约):popoutUrlFor 在调用点同步构造 addPopoutGroup 参数(HeaderActions:107),
+  // 边界(E296,A50 反馈契约):popoutUrlFor 在调用点同步构造 addPopoutGroup 参数(HeaderActions.tsx 的 popout 按钮 addPopoutGroup 调用点),
   // 早于 Promise 创建 —— 若此处 new URL(baseHref) 抛(理论上 window.location.href 必合法,防御未来/异常
   // 调用方),同步异常会绕过调用点 .catch(...)→notify.error(A50 弹出失败反馈),成未处理异常。令本函数
   // total(永不抛):baseHref 不可解析 → 原样返回(畸形 URL 会在 addPopoutGroup 异步失败→.catch 统一反馈)。

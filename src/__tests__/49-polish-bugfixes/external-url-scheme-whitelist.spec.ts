@@ -1,6 +1,7 @@
 // topic 49 第六 session · P2(安全):windowOpenHandler 的 deny 分支裸调 shell.openExternal。
 //
-// 根因:shell.service 有 OPEN_EXTERNAL_SCHEME_WHITELIST(仅 http/https/mailto/file),
+// 根因(当时):shell.service 有 OPEN_EXTERNAL_SCHEME_WHITELIST(仅 http/https/mailto/file);现白名单在
+// shared/url-limits 的 startsWithAllowedExternalScheme(S6 后不含 file:),
 // openExternalUrl 会先过白名单。但 index.ts 的 windowOpenHandler deny 分支(所有
 // target="_blank" 锚点点击都走这里,含 marketplace 不受信的 authorUrl / 评论 url)
 // 旧实现裸调 `shell.openExternal(url)`,完全绕过白名单 → 攻击者控制 index 仓 / 评论

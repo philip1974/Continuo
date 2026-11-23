@@ -27,7 +27,7 @@ sandboxSweep 删 window.api 后 coApi 仍能用(因走缓存)。**
 
 ### 与 sandbox-sweep 的协作
 
-- main.tsx 顺序:`captureLmApi()` → `sandboxSweep()`(PROD)→ `PluginManager.init()`
+- main-app.ts(init)顺序:`captureLmApi()` → `sandboxSweep()`(PROD)→ `PluginManager.init()`
 - sweep 后 globalThis.api / window.api 都是 undefined
 - Continuo UI 后续 `coApi.fs.readFile(...)` 仍能工作,因 Proxy 走 _cached
 - plugin 直接 `window.api.fs.*` → TypeError(undefined)

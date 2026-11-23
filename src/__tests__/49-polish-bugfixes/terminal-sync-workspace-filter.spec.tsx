@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // topic 49 第十二 session · 复审 loop R12:TerminalSessionsSync 必须按当前 workspace 过滤可见 session。
 //
-// 根因:TerminalSession.workspaceRoot 的契约(terminal-sessions.service.ts:52 + 字段注释)是
+// 根因:TerminalSession.workspaceRoot 的契约(terminal-sessions.service.ts 的 TerminalSession.workspaceRoot 字段注释)是
 // renderer 按当前 workspace 过滤可见 session:visible = workspaceRoot===undefined(全局) ||
 // workspaceRoot===currentRoot。但 TerminalSessionsSync 两条路径只 filterByOwnerWindow(winId),
 // 没订阅 useWorkspaceStore.root、不按 workspaceRoot 过滤 → 同窗口切 workspace 后,旧项目的

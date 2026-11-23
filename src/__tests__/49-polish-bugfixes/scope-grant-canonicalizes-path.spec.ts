@@ -4,7 +4,7 @@
 //   1) `~/proj`(electron/shared/plugin-fs-contract.ts 文档明确「`~` allowed (expanded host-side)」)授予后永不匹配
 //      → 该 scope 静默死掉,插件后续所有 fs 操作误拒 ScopeError;
 //   2) 含符号链接组件的根(如 macOS `/tmp`→`/private/tmp`)同样失配。
-// 二者都是 fail-closed(误拒非越权)但破坏文档契约。既有 path-scope-registry.test.ts:52 等
+// 二者都是 fail-closed(误拒非越权)但破坏文档契约。既有 path-scope-registry.test.ts 的 T1.a 等用例
 // 全部预先 `realpathSync(root)` 再 grant —— 恰好假设「调用方已归一化」,掩盖了生产 grant
 // 调用方(plugin-fs:request-scope handler)未归一化的契约缺口。
 //

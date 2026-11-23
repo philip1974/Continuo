@@ -10,7 +10,7 @@
 |---|---|
 | `src/lib/persist/explorer-persist.ts` | snapshot/hydrate + `hydrateEditorTabs(snap, fs)` async helper + `initExplorerPersistence(api, extras)` |
 | `src/stores/editor.store.ts` | tabs / activeTabId / openTab / switchTab |
-| `src/main.tsx` | 启动时把 `coApi.fs` 注入 `initExplorerPersistence` extras |
+| `src/main-app.ts` | 启动时把 `coApi.fs` 注入 `initExplorerPersistence` extras |
 
 ## Snapshot 字段(扩展 `ExplorerSnapshot`)
 

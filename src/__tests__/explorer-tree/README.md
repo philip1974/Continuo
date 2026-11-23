@@ -58,4 +58,4 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 真实浏览器虚拟滚动行为(留 E2E)
 - selection feature 的内部 state 流转(headless-tree 自带覆盖)
 - `EmptyWorkspace` 按钮点击 → fs.selectDirectory → setRoot 的真实 IPC 路径(留 E2E)
-- `initExplorerPersistence` 在 main.tsx 的接入(已在 explorer-stores 主题测过)
+- `initExplorerPersistence` 在 main-app.ts 的接入(已在 explorer-stores 主题测过)

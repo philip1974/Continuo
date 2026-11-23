@@ -9,7 +9,7 @@ Error: dockview: panel with id editor already exists
   at Object.onReady (DockShell.tsx:126:22)
 ```
 
-**Root cause**: React 18 StrictMode (`main-app.ts:190`) dev mode 双 mount → `DockShell.onReady` 跑两次 → `applyDefaultLayout` 跑两次 → 第二次 `api.addPanel({id:'editor'})` throw because panel already exists。
+**Root cause**: React 18 StrictMode (`main-app.ts` 的 `renderApp`) dev mode 双 mount → `DockShell.onReady` 跑两次 → `applyDefaultLayout` 跑两次 → 第二次 `api.addPanel({id:'editor'})` throw because panel already exists。
 
 **Fix**: `applyDefaultLayout` 加 idempotent guard (`api.getPanel('editor')` → existing 则 setActive 不 addPanel)。同样修 DockShell `restore` callback 通过 EmptyState 重复触发的场景。
 

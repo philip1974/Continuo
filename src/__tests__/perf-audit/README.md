@@ -92,7 +92,7 @@
 
 ## P12 — EditorHeader chrome selector 由 O(N) 序列化降为 O(1) 版本号
 
-**位置**:`src/panels/Editor/EditorHeader.tsx` `chromeSig` selector + `src/stores/editor.store.ts`。
+**位置**:`src/panels/Editor/EditorHeader.tsx` 的 chrome 订阅(原 `chromeSig` selector,现订阅 `chromeVersion`)+ `src/stores/editor.store.ts`。
 
 **问题**:`updateContent` 每按键替换 `tabs` 数组 → Zustand 重跑所有订阅 selector。EditorHeader 旧 selector 每次 `s.tabs.map(...id/filePath/dirty...) + JSON.stringify(...)`(O(tab 数) 数组分配 + 序列化)。虽阻止 React 重渲,但每按键的 O(N) 计算照跑;打开几十个 tab + 持续输入时把 header chrome 签名计算拉进编辑热路径。
 
@@ -102,7 +102,7 @@
 
 ## P13 — TitleBar activeSig selector 复用 chromeVersion(P12 同族残留)
 
-**位置**:`src/shell/TitleBar.tsx` `activeSig` selector。
+**位置**:`src/shell/TitleBar.tsx` 的标题订阅(原 `activeSig` selector,现订阅 `chromeVersion`)。
 
 **问题**:P12 修了 EditorHeader,但 TitleBar 仍每按键 `s.tabs.find(...) + JSON.stringify([exists, filePath, dirty])`(O(tab 数) find + 小分配/序列化)。持续输入已脏 tab 时标题的 filePath/dirty 没变,但 selector 照扫一遍。
 
@@ -112,7 +112,7 @@
 
 ## P14 — EditorHeader activeActionSig 复用 chromeVersion(扩展含 milkdownUnsafe)
 
-**位置**:`src/panels/Editor/EditorHeader.tsx` `activeActionSig` selector + `editor.store.ts`。
+**位置**:`src/panels/Editor/EditorHeader.tsx` 的 action 区订阅(原 `activeActionSig` selector,现订阅 `chromeVersion`)+ `editor.store.ts`。
 
 **问题**:P12/P13 清掉了 chrome 条与 TitleBar,但 EditorHeader 右侧 action 区仍每按键 `s.tabs.find(...) + JSON.stringify([filePath, dirty, getEffectiveMode(found)])`(O(tab 数) find + 小分配/序列化)。getEffectiveMode 经 P4/P5 已 O(1),但 find + 序列化照跑。
 

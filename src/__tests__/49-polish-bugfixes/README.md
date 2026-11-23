@@ -73,7 +73,7 @@
   且落在同父目录,`sweepStaleTrashInDir` 能命中(现只认宿主生成的精确形态,见
   `plugin-fs-atomic-replace-trash`)。
 - 根因: 旧实现 trash 名是 `${finalPath}.trash-...`(后缀形式 `foo.json.trash-...`),
-  不以 `.trash-` 开头,sweep 永远漏掉。rename 回滚失败(line 489)泄漏的 trash 会
+  不以 `.trash-` 开头,sweep 永远漏掉。rename 回滚失败(`plugin-fs.service.ts` 的 `atomicReplacePaths` 回滚分支)泄漏的 trash 会
   永久驻留插件目录。旧测试只用字面量 `.trash-old` 掩盖了这个 bug。
 
 ### P2-G before-quit 不重复 flush 同窗 — (index.ts `wireWindowCloseFlush`)
@@ -143,8 +143,8 @@
 ## P2 批次(第五轮 — 跨切面资源生命周期复查)
 ### P2-N fs watcher 池 owner-aware 释放(硬关窗不泄漏) — `explorer-watch/watch-pool.spec.ts`
 - `createWatcherPool` 增 `ownerId` 追踪 + `unwatchByOwner(windowId)`;`fs.ipc` 的
-  WATCH/UNWATCH 改 `safeHandleWithCtx` 记录发起窗口;`index.ts` 的 `win.on('closed')`
-  调 `releaseFsWatchersForWindow(win.id)`。顺带修 LRU:重复 watch 已存在 path 刷新其
+  WATCH/UNWATCH 改 `safeHandleWithCtx` 记录发起窗口;窗口关闭清理(现为 browser-window-created →
+  releaseWindowResources,见 P2-BJ)调 `releaseFsWatchersForWindow(win.id)`。顺带修 LRU:重复 watch 已存在 path 刷新其
   在 `order` 中的位置(P3,避免热点目录被误驱逐)。
 - 根因: 全局单例 watcherPool 被所有窗口共享、按 path 引用计数,释放只依赖 renderer
   `useFsWatcher` 的 unmount cleanup。窗口**硬关闭/崩溃/webContents destroyed** 时

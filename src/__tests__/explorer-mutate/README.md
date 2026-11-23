@@ -3,7 +3,7 @@
 行为契约:**资源管理器 CRUD 动作层**(rename / remove / create file / create dir)。
 
 本主题**只测 `mutate-actions.ts` 的纯函数**:把 IPC 调用和 tree 刷新封装成单一动作,
-组件层 onClick 调它即可。Radix UI 弹窗渲染、键盘交互、行内 input 留 Step 7 smoke E2E。
+组件层 onClick 调它即可。design Modal 弹窗渲染、键盘交互、行内 input 留 Step 7 smoke E2E。
 
 ## 模块
 
@@ -11,7 +11,7 @@
 |---|---|
 | `src/panels/Explorer/mutate-actions.ts` | renameItem / removeItems / createNewFile / createNewDir |
 | `src/panels/Explorer/ContextMenu.tsx` | Radix UI ContextMenu 包装 |
-| `src/panels/Explorer/ConfirmDialog.tsx` | Radix UI Dialog 删除二次确认 |
+| `src/panels/Explorer/ConfirmDialog.tsx` | design `Modal` 删除二次确认 |
 | `src/panels/Explorer/FileRow.tsx` | 行内改名 input(headless-tree `getRenameInputProps`;Enter 提交 / Esc 取消) |
 | `src/panels/Explorer/CreateInput.tsx` | 顶部 sticky input(新建文件/夹) |
 
@@ -47,7 +47,7 @@
 
 ## 不在本主题验证
 
-- Radix UI 弹窗 mount/unmount(留 E2E)
+- design Modal 弹窗 mount/unmount(留 E2E)
 - 键盘 F2/Backspace/Enter/Esc 触发(留 E2E)
 - 多选交互(已在 explorer-stores 测过 store 行为)
 - IPC 实际跨进程行为(已在 fs-ipc-bridge 测过 schema/handler)

@@ -156,7 +156,7 @@ export async function init(): Promise<void> {
   // 只有代价与隐患:按同一 windowSeq(popout URL 沿用主窗 query)hydrate explorer 段并全量 readFile 恢复 tab、
   // 注册写回订阅;再 import + onload 一遍全部已启用插件,其 MCP 工具按 webContents 注册进 main(可能抢走路由);
   // 协议深链广播到所有就绪窗口(子窗口会重复执行命令)。main 侧无一依赖 popout 注册这些:debug 事件按
-  // ownerWindowId 只发主窗,MCP / 协议路由在 popout 不注册时自然落到主窗。故只保留渲染所需(i18n + App)。
+  // ownerWindowId 只发主窗,MCP / 协议路由在 popout 不注册时自然落到主窗。故只保留渲染所需(i18n + App)与 PROD 下的 sandboxSweep。
   if (popout) {
     // 安全:弹出的插件面板 portal 进本窗口 DOM,插件可经 el.ownerDocument.defaultView 取本窗口的原生 fetch /
     // navigator.clipboard 绕过权限门 → 与主窗口同口径清洗(PROD)。

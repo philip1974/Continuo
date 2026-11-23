@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 打磨 R23(性能):EditorHeader 只订阅 tab chrome(id/filePath/dirty)的
-// JSON 签名 + active 派生 primitive,不再订阅整份 tabs / 接完整 activeTab。用户
+// JSON 签名(现为订阅 chromeVersion,见 perf-audit P12)+ active 派生 primitive,不再订阅整份 tabs / 接完整 activeTab。用户
 // 编辑正文(tabs[].content 变)时签名不变 → 顶部 tab 栏不重渲(Profiler 验证)。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';

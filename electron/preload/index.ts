@@ -556,7 +556,7 @@ export type ContinuoApi = typeof api;
 let rendererApiClaimed = false;
 
 // v5 Phase 4.C:不要把全量 IPC bridge 挂在 plugin 同 realm 的全局对象上。
-// renderer main.tsx 启动最早调用 captureLmApi() 领取一次完整 api 并缓存到
+// renderer main-app.ts(init)启动最早调用 captureLmApi() 领取一次完整 api 并缓存到
 // module-local;用户插件加载发生在之后,再次 claim 只能得到 null。
 contextBridge.exposeInMainWorld('__lmApi', {
   claimRendererApi: (): ContinuoApi | null => {
@@ -567,7 +567,7 @@ contextBridge.exposeInMainWorld('__lmApi', {
 });
 
 // E2E 模式标志:main 进程检测 CONTINUO_E2E=1 时把这个常量设 true,
-// renderer main.tsx 看到 → 挂 testing helpers 到 window.__continuoTest.
+// renderer main-app.ts 看到 → 挂 testing helpers 到 window.__continuoTest.
 // 非 e2e 环境完全不存在,无副作用.
 if (process.env['CONTINUO_E2E'] === '1') {
   contextBridge.exposeInMainWorld('__continuoE2E', true);

@@ -185,7 +185,7 @@ beforeEach(() => {
 });
 
 describe('renderer bootstrap locale sync — P0-2', () => {
-  it('main.tsx async IIFE 完成后 locale 同步到 settings.store 与 translate 模块', async () => {
+  it('main-app init 完成后 locale 同步到 settings.store 与 translate 模块', async () => {
     await import('@/main');
 
     // 动态 import 整个 main(含 main-app 懒加载链),高负载全量运行时 vi.waitFor 默认 1s 偶发不够。

@@ -142,7 +142,7 @@ export function filterByOwnerWindow(
 }
 
 /**
- * 按当前 workspace 过滤可见 session。契约见 terminal-sessions.service.ts:52 + workspaceRoot
+ * 按当前 workspace 过滤可见 session。契约见 terminal-sessions.service.ts 的 TerminalSession.workspaceRoot
  * 字段注释:`visible = workspaceRoot === undefined(全局) || workspaceRoot === currentRoot`。
  * 同窗口切换 workspace 后,旧项目的 terminal(workspaceRoot=旧根)应从视图隐藏(PTY 不杀,
  * main 仍保留;切回旧根能重现);全局 session(agent 创建,workspaceRoot=undefined)始终可见。

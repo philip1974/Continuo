@@ -12,7 +12,7 @@ beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'edit' });
 });
 
-// P1 回归:saveFile 在 line 65 快照 tab(content=S1),await writeFile 期间用户继续
+// P1 回归:editor-file-actions.ts 的 saveFileNow 写盘前快照 tab(content=S1),await writeFile 期间用户继续
 // 键入 → store content=S2/dirty=true。旧 markSaved(id) 读**当前** content=S2 设
 // originalContent=S2 + dirty=false → 磁盘 S1、内存 S2、UI 显示已保存 → S2 增量
 // 既没落盘又不再触发 autosave,静默丢失。修复:markSaved 收到已写盘快照,仅当
