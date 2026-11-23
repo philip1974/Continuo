@@ -260,7 +260,7 @@ export async function init(): Promise<void> {
   // ?workspace=<path>。windowSeq 标识自己在 explorer.json windows[] 中的段,
   // 各窗 hydrate / persist 自己段不互相覆盖。query workspace 仅在自己段不存在
   // (全新窗口编号)时启动用。见 issue #23。
-  const search = typeof window !== 'undefined' ? window.location.search : '';
+  const search = window.location.search;
   const initialWindowSeq = parseInitialWindowSeq(search);
   const initialWorkspace = parseInitialWorkspace(search);
   const initialFresh = parseInitialFresh(search);

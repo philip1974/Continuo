@@ -19,7 +19,6 @@ import { useCallback, useRef, type KeyboardEvent, type RefObject } from 'react';
  * 真正 attach 时触发,才能可靠拿到 menuitem。
  */
 export function useMenuKeyboard(opts: {
-  readonly open: boolean;
   readonly triggerRef: RefObject<HTMLElement | null>;
   readonly onClose: () => void;
 }): {
@@ -28,15 +27,13 @@ export function useMenuKeyboard(opts: {
   readonly onKeyDown: (e: KeyboardEvent<HTMLElement>) => void;
   readonly closeAndRestore: () => void;
 } {
-  const { open, triggerRef, onClose } = opts;
+  const { triggerRef, onClose } = opts;
   const menuNode = useRef<HTMLElement | null>(null);
-  const openRef = useRef(open);
-  openRef.current = open;
 
   // callback ref:菜单节点挂载即把焦点移入首个可用 menuitem(unmount 时置 null)。
   const menuRef = useCallback((node: HTMLElement | null) => {
     menuNode.current = node;
-    if (node && openRef.current) getMenuItems(node)?.[0]?.focus();
+    if (node) getMenuItems(node)?.[0]?.focus();
   }, []);
 
   // a11y(A30):关闭菜单并把焦点还原到触发按钮。供「不会主动聚焦新目标」的菜单项激活时调用

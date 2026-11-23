@@ -250,7 +250,7 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       ];
       await fs.writeFile(file, JSON.stringify(payload));
 
-      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), new Set([0]));
 
       const after = (await loadExplorer(file))!;
       expect(after.windows).toHaveLength(64);
@@ -344,17 +344,17 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
       const before = await fs.readFile(file, 'utf-8');
       const statBefore = await fs.stat(file);
 
-      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), new Set([0]));
 
       expect(await fs.readFile(file, 'utf-8')).toBe(before);
       expect((await fs.stat(file)).ino).toBe(statBefore.ino);
     });
 
     it('文件缺失或损坏时不写、不抛', async () => {
-      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), new Set([0]));
       await expect(fs.access(file)).rejects.toThrow();
       await fs.writeFile(file, '{ not json', 'utf-8');
-      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), new Set([0]));
       expect(await fs.readFile(file, 'utf-8')).toBe('{ not json');
     });
   });

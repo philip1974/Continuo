@@ -98,7 +98,6 @@ export function ExplorerHeader({
     onKeyDown: onMenuKeyDown,
     closeAndRestore,
   } = useMenuKeyboard({
-    open: menuOpen,
     triggerRef,
     onClose: () => setMenuOpen(false),
   });

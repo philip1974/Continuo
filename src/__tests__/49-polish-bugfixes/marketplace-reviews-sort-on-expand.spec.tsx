@@ -149,7 +149,7 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
       review(`review-${String(i).padStart(2, '0')}`, i),
     );
 
-    const visible = selectDisplayReviews(reviews, 'helpful', 10);
+    const visible = selectDisplayReviews(reviews, 'helpful');
 
     expect(visible.map((r) => r.body)).toEqual([
       'review-19',
@@ -173,7 +173,7 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
     const sliceSpy = vi.spyOn(Array.prototype, 'slice');
 
     try {
-      const visible = selectDisplayReviews(reviews, 'newest', 10);
+      const visible = selectDisplayReviews(reviews, 'newest');
 
       expect(visible.map((r) => r.body)).toEqual([
         'review-0',
@@ -199,11 +199,11 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
     const sortSpy = vi.spyOn(Array.prototype, 'sort');
 
     try {
-      expect(selectDisplayReviews([], 'newest', 10)).toEqual([]);
-      expect(selectDisplayReviews([], 'newest', 10)).toBe(
-        selectDisplayReviews([], 'helpful', 10),
+      expect(selectDisplayReviews([], 'newest')).toEqual([]);
+      expect(selectDisplayReviews([], 'newest')).toBe(
+        selectDisplayReviews([], 'helpful'),
       );
-      expect(selectDisplayReviews(reviews, 'newest', 10)).toBe(reviews);
+      expect(selectDisplayReviews(reviews, 'newest')).toBe(reviews);
       expect(sortSpy).not.toHaveBeenCalled();
     } finally {
       sortSpy.mockRestore();
@@ -213,7 +213,7 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
   it('helpful 排序只有单条 review 时复用原数组引用', () => {
     const reviews = [review('only', 3)];
 
-    expect(selectDisplayReviews(reviews, 'helpful', 10)).toBe(reviews);
+    expect(selectDisplayReviews(reviews, 'helpful')).toBe(reviews);
   });
 
   it('helpful 排序已按有用顺序且未超过 limit 时复用原数组引用', () => {
@@ -223,7 +223,7 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
       review('least-helpful', 1),
     ];
 
-    expect(selectDisplayReviews(reviews, 'helpful', 10)).toBe(reviews);
+    expect(selectDisplayReviews(reviews, 'helpful')).toBe(reviews);
   });
 
   it('helpful 同 thumbsUp 时按 ISO createdAt 倒序,不调用 localeCompare', () => {
@@ -238,7 +238,7 @@ describe('打磨 R41 — review 仅在展开时排序渲染', () => {
     const localeSpy = vi.spyOn(String.prototype, 'localeCompare');
 
     try {
-      expect(selectDisplayReviews([older, newer], 'helpful', 10)).toEqual([
+      expect(selectDisplayReviews([older, newer], 'helpful')).toEqual([
         newer,
         older,
       ]);

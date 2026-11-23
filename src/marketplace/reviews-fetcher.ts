@@ -143,7 +143,6 @@ function aggregateMapToRecord(
 function aggregate(
   reviews: readonly Review[],
 ): ReadonlyMap<string, PluginAggregateRating> {
-  if (reviews.length === 0) return EMPTY_REVIEW_AGGREGATES;
   if (reviews.length === 1) {
     const review = reviews[0]!;
     const out = new Map<string, PluginAggregateRating>();

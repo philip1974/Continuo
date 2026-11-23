@@ -841,7 +841,7 @@ function rebuildAppMenu(): void {
 }
 
 function isReloadKey(key: string): boolean {
-  return key === 'r' || key === 'R' || key === 'F5';
+  return key === 'r' || key === 'R';
 }
 
 // popout 子窗口禁止刷新。
@@ -1295,7 +1295,7 @@ app.whenReady().then(async () => {
   // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label。
   // 性能:两者读写不同文件、互无依赖 → 并行(loadSettings 永不抛)。
   await Promise.all([
-    prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, LRU_MAX_CLOSED, lruProtectedSeqs()),
+    prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, lruProtectedSeqs()),
     loadSettings(),
   ]);
 

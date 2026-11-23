@@ -135,7 +135,6 @@ function copyCommands(commands: readonly DisplayCommand[]): DisplayCommand[] {
 }
 
 function matches(d: DisplayCommand, qLower: string): boolean {
-  if (!qLower) return true;
   return d.searchHaystack.includes(qLower);
 }
 
@@ -209,7 +208,7 @@ export function buildKeybindingDisplayCommands(
       cmd,
       displayTitle,
       displayCategory,
-      effectiveHotkey: effective ?? undefined,
+      effectiveHotkey: effective,
       hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
       isOverridden,
       // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):

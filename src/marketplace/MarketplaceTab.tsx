@@ -838,7 +838,7 @@ function RatingRow({
   const sorted = useMemo(
     () =>
       expanded && hasReviews
-        ? selectDisplayReviews(sourceReviews, sort, REVIEW_DISPLAY_LIMIT)
+        ? selectDisplayReviews(sourceReviews, sort)
         : EMPTY_REVIEWS,
     [expanded, hasReviews, sourceReviews, sort],
   );
@@ -1091,16 +1091,15 @@ function compareHelpfulReviews(a: Review, b: Review): number {
 export function selectDisplayReviews(
   reviews: readonly Review[],
   sort: ReviewSort,
-  limit: number,
 ): readonly Review[] {
-  if (limit <= 0 || reviews.length === 0) return EMPTY_REVIEWS;
+  const limit = REVIEW_DISPLAY_LIMIT;
+  if (reviews.length === 0) return EMPTY_REVIEWS;
   if (reviews.length === 1) return reviews;
   // newest:fetcher 已 createdAt DESC,只需取可见前 N 条。
   if (sort === 'newest') {
     if (reviews.length <= limit) return reviews;
-    const count = Math.min(limit, reviews.length);
-    const visible = new Array<Review>(count);
-    for (let i = 0; i < count; i++) {
+    const visible = new Array<Review>(limit);
+    for (let i = 0; i < limit; i++) {
       visible[i] = reviews[i]!;
     }
     return visible;

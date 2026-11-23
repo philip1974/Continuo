@@ -25,10 +25,10 @@
 ### renderer
 
 - `IpcPermissionStore.grant/deny/clearDenied` 改发增量变更,用 main 返回的合并结果更新缓存。
-- `IpcPermissionStore.invalidate(id)`:丢弃缓存,下次读重新从 main 加载。加载在途时其结果既不落缓存、也不交给
+- `IpcPermissionStore.invalidate()`:丢弃缓存(整表),下次读重新从 main 加载。加载在途时其结果既不落缓存、也不交给
   等待者(读到的可能是撤销前快照,`ensurePerm` 会放行一次),按当前代际重新读取;最多读 3 次仍不稳定 →
   视为读取失败,`ensurePerm` 拒绝(终审 P1)。
-- 启动接线:`coApi.plugins.onPermissionsChanged(id => store.invalidate(id))`(preload 复用 `{ id }` payload 守卫)。
+- 启动接线:`coApi.plugins.onPermissionsChanged(() => store.invalidate())`(preload 复用 `{ id }` payload 守卫)。
 
 ## 规范文件
 

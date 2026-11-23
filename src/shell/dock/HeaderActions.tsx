@@ -61,7 +61,6 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
     menuNode,
     onKeyDown: onMenuKeyDown,
   } = useMenuKeyboard({
-    open,
     triggerRef,
     onClose: () => setOpen(false),
   });

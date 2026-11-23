@@ -145,15 +145,10 @@ export class IpcPermissionStore implements PermissionStore {
   private loadingGeneration = -1;
   // race(R15):per-plugin 变更串行链。同 plugin 并发 grant/deny/clearDenied 经此链串行,
   // 后一个变更的缓存提交不会被前一个迟到的提交覆盖。
+  // race(R101):每插件的变更串行链,串行 + 排空回收由共享 runSerialPerKey 负责(前次失败不阻断后续)。
   private chains = new Map<string, Promise<unknown>>();
   // 加载在途时被 forget 的插件:读到的可能是卸载前的快照,落 cache 前剔除(见 forget)。
   private forgetOnLoad = new Set<string>();
-
-  // race(R101):串行 + 排空回收收口到共享 runSerialPerKey(原 inline 副本漏删 key → chains 随
-  // 变更过权限的不同 pluginId 单调增长内存泄漏)。语义不变:前次失败不阻断后续(链尾吞错)。
-  private runExclusive<T>(pluginId: string, fn: () => Promise<T>): Promise<T> {
-    return runSerialPerKey(this.chains, pluginId, fn);
-  }
 
   async get(pluginId: string): Promise<readonly PermissionDecision[]> {
     const cache = await this.ensureLoaded();
@@ -267,7 +262,7 @@ export class IpcPermissionStore implements PermissionStore {
     pluginId: string,
     mutation: IpcPermissionMutation,
   ): Promise<void> {
-    return this.runExclusive(pluginId, async () => {
+    return runSerialPerKey(this.chains, pluginId, async () => {
       // 读失败(未知态)→ 抛,不写(fail-closed,既有契约)。
       await this.ensureLoaded();
       const r = await coApi.plugins.mutatePluginPermissions(pluginId, mutation);

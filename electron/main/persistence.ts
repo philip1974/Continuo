@@ -444,11 +444,10 @@ async function loadExplorerWithFormat(
 async function prunePayloadAndWrite(
   explorerFile: string,
   payload: ExplorerPayloadV3,
-  maxSegments: number,
   activeSeqs: ReadonlySet<number>,
 ): Promise<void> {
   const before = payload.windows.length;
-  pruneLRUClosed(payload, maxSegments, activeSeqs);
+  pruneLRUClosed(payload, MAX_PERSISTED_WINDOW_SEGMENTS, activeSeqs);
   if (payload.windows.length === before) return;
   await atomicWriteJson(explorerFile, payload);
 }
@@ -463,7 +462,6 @@ async function prunePayloadAndWrite(
 export async function prepareExplorerFileForBoot(
   explorerFile: string,
   legacyLayoutFile: string,
-  maxSegments: number,
   activeSeqs: ReadonlySet<number>,
 ): Promise<void> {
   await withExplorerFileMutex(async () => {
@@ -473,7 +471,7 @@ export async function prepareExplorerFileForBoot(
       const payload =
         migrated === MIGRATE_UNKNOWN ? await loadExplorer(explorerFile) : migrated;
       if (payload !== null) {
-        await prunePayloadAndWrite(explorerFile, payload, maxSegments, activeSeqs);
+        await prunePayloadAndWrite(explorerFile, payload, activeSeqs);
       }
     } catch (err) {
       console.warn('[boot] explorer window segment prune skipped', err);
