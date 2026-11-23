@@ -40,7 +40,6 @@ function pendingRead() {
   );
   const deps: EditorFileDeps = {
     fs: { readFile, writeFile: vi.fn() },
-    store: useEditorStore,
   };
   return { deps, readFile, resolve: (data: string) => resolve({ ok: true, data }) };
 }

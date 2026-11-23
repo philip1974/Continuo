@@ -35,7 +35,6 @@ const makeDeps = (overrides: Partial<EditorFileDeps['fs']> = {}): EditorFileDeps
     writeFile: vi.fn(async () => ok(undefined)),
     ...overrides,
   },
-  store: useEditorStore,
 });
 
 beforeEach(() => {

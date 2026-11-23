@@ -23,7 +23,6 @@ import { useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
-import { useEditorStore } from '@/stores/editor.store';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -172,7 +171,6 @@ function QuickOpenBody() {
       try {
         const r = await openFileByPath(file.absPath, {
           fs: { readFile: coApi.fs.readFile, writeFile: coApi.fs.writeFile },
-          store: useEditorStore,
         });
         if (!r.ok) {
           // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应)。

@@ -55,8 +55,6 @@ const saveChains = new Map<string, Promise<unknown>>();
 
 export interface EditorFileDeps {
   fs: Pick<FsApi, 'readFile' | 'writeFile'>;
-  /** 用注入便于 spec 复用同一全局 store. */
-  store: typeof useEditorStore;
 }
 
 export type FileOpResult = IpcResult<void>;
@@ -76,7 +74,7 @@ export async function openFileByPath(
   path: string,
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {
-  const r = await openTabWith(path, deps, () => deps.fs.readFile(path));
+  const r = await openTabWith(path, () => deps.fs.readFile(path));
   return r.ok ? OPENED : r;
 }
 
@@ -91,19 +89,17 @@ const OPENED: FileOpResult = { ok: true, data: undefined };
 export function openFileWithContent(
   path: string,
   content: string,
-  deps: Pick<EditorFileDeps, 'store'>,
 ): Promise<IpcResult<boolean>> {
-  return openTabWith(path, deps, async () => ({ ok: true, data: content }), path);
+  return openTabWith(path, async () => ({ ok: true, data: content }), path);
 }
 
 /** data = 是否新建了标签(false:已开着只切换)。 */
 async function openTabWith(
   path: string,
-  deps: Pick<EditorFileDeps, 'store'>,
   read: () => Promise<IpcResult<string> & { readonly realPath?: string }>,
   pluginOpenedPath?: string,
 ): Promise<IpcResult<boolean>> {
-  const { store } = deps;
+  const store = useEditorStore;
   // 已开过 → 只切换。跨平台(复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
   // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
   // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
@@ -202,7 +198,8 @@ async function saveFileNow(
   deps: EditorFileDeps,
   opts?: SaveFileOptions,
 ): Promise<FileOpResult> {
-  const { fs, store } = deps;
+  const { fs } = deps;
+  const store = useEditorStore;
   let tab = findEditorFileTabById(store.getState().tabs, tabId);
   if (opts?.force !== true && tab?.filePath) {
     const blocked = await checkDiskBeforeSave(fs, tab.filePath, tab.originalContent);

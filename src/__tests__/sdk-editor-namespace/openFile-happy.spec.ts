@@ -35,7 +35,7 @@ describe('app.editor.openFile happy path', () => {
 
     expect(mockedOpenFileByPath).toHaveBeenCalledWith(
       '/work/a.ts',
-      expect.objectContaining({ store: useEditorStore }),
+      expect.objectContaining({ fs: expect.anything() }),
     );
     expect(result).toEqual({
       ok: true,

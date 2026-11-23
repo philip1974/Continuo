@@ -90,7 +90,7 @@ const hostRead = (p: string): Promise<unknown> =>
 const flush = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await new Promise<void>((r) => setImmediate(r));
 };
-const editorDeps = () => ({ fs: coApi.fs, store: useEditorStore });
+const editorDeps = () => ({ fs: coApi.fs });
 
 /** 审计序列:rename(w/a → w/a_) + rename(w/MH → w/a)。MH 是 scope 内指向 scope 外目录的链接(可经 cp 获得)。 */
 async function swapIn(): Promise<void> {

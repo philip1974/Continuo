@@ -99,7 +99,7 @@ const editor: CoHostEditorApi = {
   async openFile(path, opts) {
     if (!isAbsolutePath(path)) return invalidPathResult;
     return openInEditor(path, opts, () =>
-      openFileByPath(path, { fs: coApi.fs, store: useEditorStore }),
+      openFileByPath(path, { fs: coApi.fs }),
     );
   },
   // 安全:插件发起的 openFile 由 scoped app 先经主进程「持锁校验 + 读取」,再用这份内容开标签(见 CoHostEditorApi)。
@@ -111,7 +111,7 @@ const editor: CoHostEditorApi = {
     try {
       if (!isAbsolutePath(canonicalPath)) return invalidPathResult;
       return await openInEditor(canonicalPath, opts, async () => {
-        const r = await openFileWithContent(canonicalPath, content, { store: useEditorStore });
+        const r = await openFileWithContent(canonicalPath, content);
         if (!r.ok) return r;
         adopted = r.data;
         return OPENED;

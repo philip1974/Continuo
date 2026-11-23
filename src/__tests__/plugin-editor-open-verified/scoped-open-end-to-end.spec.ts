@@ -220,7 +220,7 @@ describe.skipIf(process.platform === 'win32')('插件打开的标签:打开后�
     await plugin.editor.openFile(P);
     useEditorStore.getState().updateContent(P, 'user edit');
     await swapIn();
-    const deps = { fs: coApi.fs, store: useEditorStore };
+    const deps = { fs: coApi.fs };
     expect(await saveFile(P, deps)).toMatchObject({ ok: false, code: 'FS_DENIED' });
     // 「仍然覆盖」(跳过磁盘比对)同样被拒
     expect(await saveFile(P, deps, { force: true })).toMatchObject({ ok: false, code: 'FS_DENIED' });
@@ -230,7 +230,7 @@ describe.skipIf(process.platform === 'win32')('插件打开的标签:打开后�
   it('路径未变:保存照常', async () => {
     await plugin.editor.openFile(P);
     useEditorStore.getState().updateContent(P, 'user edit');
-    expect(await saveFile(P, { fs: coApi.fs, store: useEditorStore })).toMatchObject({ ok: true });
+    expect(await saveFile(P, { fs: coApi.fs })).toMatchObject({ ok: true });
     expect(await readFile(P, 'utf-8')).toBe('user edit');
   });
 });

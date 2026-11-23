@@ -16,7 +16,7 @@ const okWrite = (): IpcResult<undefined> => ({ ok: true, data: undefined });
 
 function setup(readFile: EditorFileDeps['fs']['readFile']) {
   const writeFile = vi.fn(async (_p: string, _c: string) => okWrite());
-  const deps: EditorFileDeps = { fs: { readFile, writeFile }, store: useEditorStore };
+  const deps: EditorFileDeps = { fs: { readFile, writeFile } };
   return { deps, writeFile };
 }
 
@@ -112,7 +112,6 @@ describe('saveFile — 外部修改冲突检测', () => {
     });
     const deps: EditorFileDeps = {
       fs: { readFile: vi.fn(async () => okRead(disk)), writeFile },
-      store: useEditorStore,
     };
     expect((await saveFile('/x/a.md', deps)).ok).toBe(true);
     useEditorStore.getState().updateContent('/x/a.md', 'mine2');
@@ -129,7 +128,6 @@ describe('saveFile — 外部修改冲突检测', () => {
     });
     const deps: EditorFileDeps = {
       fs: { readFile: vi.fn(async () => okRead('orig')), writeFile },
-      store: useEditorStore,
     };
     const p = saveFile('/x/a.md', deps);
     await vi.waitFor(() => expect(writeFile).toHaveBeenCalled());
