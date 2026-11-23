@@ -100,8 +100,6 @@ export interface DebugViewSessionSnapshot {
 export interface DebugGetStackInput {
   readonly sessionId: string;
   readonly threadId?: number;
-  readonly startFrame?: number;
-  readonly levels?: number;
 }
 
 export interface DebugGetScopesInput {
@@ -112,8 +110,5 @@ export interface DebugGetScopesInput {
 export interface DebugGetVariablesInput {
   readonly sessionId: string;
   readonly variablesReference: number;
-  readonly start?: number;
-  readonly count?: number;
   readonly maxDepth?: number;
-  readonly maxStringBytes?: number;
 }

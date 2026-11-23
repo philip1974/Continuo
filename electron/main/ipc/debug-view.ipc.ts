@@ -5,9 +5,6 @@ import {
 } from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
-  DEBUG_STACK_LEVELS_MAX,
-  DEBUG_STRING_BYTES_DEFAULT,
-  DEBUG_VARIABLE_COUNT_MAX,
   DEBUG_VARIABLE_DEPTH_MAX,
   sessionIdSchema,
   threadIdSchema,
@@ -24,15 +21,12 @@ import { codedError } from '../../shared/error-message';
 
 const debugSubscribeInputSchema = z.object({}).strict();
 
-// 导出供回归测试;sessionId / threadId 与各项上限同 MCP debug 工具共用 shared 定义(threadId 含合法的 0)。
-// 上限只存在于入口 schema(debug.service 原样使用、按 maxDepth 递归发 DAP 请求),两个入口必须同值 ——
-// 此前面板 IPC 手写了更宽的 1000 / 10 / 1MB,而 MCP 侧是 100 / 5 / 64KiB。
+// 导出供回归测试;sessionId / threadId 与 maxDepth 上限同 MCP debug 工具共用 shared 定义(threadId 含合法的 0)。
+// 面板只暴露它实际用到的入参;分页 / 截断等其余参数走 debug.service 的默认值。
 export const debugGetStackInputSchema = z
   .object({
     sessionId: sessionIdSchema,
     threadId: threadIdSchema,
-    startFrame: z.number().int().min(0).max(100_000).optional(),
-    levels: z.number().int().min(1).max(DEBUG_STACK_LEVELS_MAX).optional(),
   })
   .strict();
 
@@ -47,10 +41,7 @@ const debugGetVariablesInputSchema = z
   .object({
     sessionId: sessionIdSchema,
     variablesReference: z.number().int().positive(),
-    start: z.number().int().min(0).max(100_000).optional(),
-    count: z.number().int().min(1).max(DEBUG_VARIABLE_COUNT_MAX).optional(),
     maxDepth: z.number().int().min(1).max(DEBUG_VARIABLE_DEPTH_MAX).optional(),
-    maxStringBytes: z.number().int().min(1).max(DEBUG_STRING_BYTES_DEFAULT).optional(),
   })
   .strict();
 
@@ -89,11 +80,7 @@ export function registerDebugViewIpc(service: DebugService): void {
     if (threadId === undefined) {
       throw codedError(ERROR_CODES.BAD_INPUT, `debug session has no stopped thread: ${input.sessionId}`);
     }
-    return service.stackTrace(input.sessionId, {
-      threadId,
-      startFrame: input.startFrame,
-      levels: input.levels,
-    });
+    return service.stackTrace(input.sessionId, { threadId });
   });
 
   windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_SCOPES, debugGetScopesInputSchema, (input: DebugGetScopesInput, win) => {
@@ -105,10 +92,7 @@ export function registerDebugViewIpc(service: DebugService): void {
     requireStoppedSession(input.sessionId, win);
     return service.variables(input.sessionId, {
       variablesReference: input.variablesReference,
-      start: input.start,
-      count: input.count,
       maxDepth: input.maxDepth,
-      maxStringBytes: input.maxStringBytes,
     });
   });
 }
