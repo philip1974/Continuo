@@ -183,8 +183,8 @@ export interface ResolveStdioCallCtxDeps {
 }
 
 /**
- * 解析 tools/call 的 owner 窗口:仅当绑定窗口仍存活才返回它;未绑定(undefined)
- * 或绑定窗口已关闭一律返回 null,交给调用方 fallback 到当前活窗。
+ * 解析 tools/call 的 owner 窗口:仅当绑定窗口仍存活才返回它,否则返回 null。调用方只对从未发过 hello 的
+ * 连接回落到第一个非 popout 主窗(external);发过 hello 而绑定窗口已关的连接返回 NO_WINDOW_CTX,不回落。
  *
  * 必须在每次 dispatch 时校验存活 —— socketCtx 在 hello 时一次性绑定、窗口关闭
  * 清理不会移除它,陈旧绑定若直接使用会让该 proxy 连接对所有工具永久损坏。
@@ -454,9 +454,8 @@ async function handleLine(
     return;
   }
 
-  // 绑定的窗口可能已关闭:窗口关闭清理(revokeWindowTokens/cancelByWindow)不触碰
-  // socketCtx,而 socket 仍连着(proxy 进程没退)。resolveStdioCallOwnerWindow 每次调用校验
-  // 绑定窗口存活,死则返回 null。
+  // 绑定的窗口可能已关闭:窗口关闭时 revokeWindowTokens 经 token 吊销通知把该连接的绑定降为 null,而 socket
+  // 仍连着(proxy 进程没退)。resolveStdioCallOwnerWindow 每次调用再校验绑定窗口存活(兜底),死则返回 null。
   // 安全:hello 只在绑定时校验一次 token。token 之后被吊销(持有它的终端退出、窗口关闭)或全部轮换(用户
   // 「撤销全部」)时 HTTP 立即 401,而已绑定的 stdio 连接此前仍以原窗口身份继续调用工具。每次请求复查绑定所用
   // token 仍解析到同一窗口;否则该连接降为「hello 失败」状态(NO_WINDOW_CTX,不回落 external)。

@@ -1,9 +1,9 @@
 # agent-terminal-mcp-auth (Agent Terminal MCP Phase 2)
 
 行为契约:**外部 agent(via MCP)创建 / 控制内置 terminal 的授权 store**。
-首次 agent 调 `terminal.create_session` 时弹窗,用户决定:
+首次调用任一需授权的工具时弹窗,用户决定:
 - `once` — 仅本次调用通过
-- `session` — 本次启动期间所有 agent 调用免提示
+- `session` — 本次启动期间该调用方类别(窗口内 agent / external)在该域(终端 / debug / 插件工具)内的调用免提示(由 main 判定)
 - `denied` — 拒绝
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §6

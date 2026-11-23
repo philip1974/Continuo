@@ -144,8 +144,8 @@ function firstAuthPayload(win: FakeWindow): AgentAuthRequestPayload {
 }
 
 /**
- * 让窗口的终端域处于「本次启动期间允许」(之后清掉 send 记录)。此后该域的请求不经授权弹窗节流(同一调用方单飞 /
- * 速率上限,见 src/__tests__/agent-auth-prompt-throttle/)原样转发给 renderer —— 未决数量上限只在这条路径上够得着。
+ * 让窗口的终端域处于「本次启动期间允许」(之后清掉 send 记录)。此后该域的请求在 main 直接放行(不发 IPC、
+ * 不入 pending、不走节流),用于验证已授权域不占未决上限、按 窗口 × 调用方类别 × 域 隔离。
  */
 async function grantTerminalSession(win: FakeWindow): Promise<void> {
   const p = requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: win.id });

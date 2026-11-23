@@ -62,7 +62,7 @@ deps:
   3. 成功 → 结果原样返回 `{data, lines, next_seq, truncated}`
   4. read 抛 TERMINAL_SESSION_NOT_FOUND → 透传(wrapper 已保留原 SESSION_NOT_FOUND cause)
   5. read 抛其它 → 透传
-- 不调 ensureAuthorized(read_output 不弹窗,与 list_sessions/send_input 同型)
+- 工厂本身不调 ensureAuthorized(授权(S2)与 capability(S3)门控由 mcp-terminal-host 统一包装,见 `mcp-tool-gates/`)
 
 ## 不在本主题验证
 

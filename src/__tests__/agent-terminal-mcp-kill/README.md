@@ -1,8 +1,8 @@
 # agent-terminal-mcp-kill (Agent Terminal MCP Phase 4)
 
 行为契约:**`terminal.kill` MCP tool**:agent 给 PTY 发信号(SIGINT/SIGTERM/SIGKILL)。
-**不删 metadata + 不删 buffer** — onExit 自动 setExited,tab 显示 closed;
-buffer 留着让 agent 仍可 read_output 看退出前的输出。
+**不删 metadata** — onExit 自动 setExited,tab 显示 closed。
+输出 buffer 随 PTY 退出释放:需要退出前的输出须先 read_output。
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §5.5
 
@@ -59,7 +59,7 @@ deps:
      → 抛 `TERMINAL_SESSION_NOT_FOUND`(与 send_input 写失败同码),不回报成功
   4. signal `'SIGKILL'` → 调 `forceKill(id)`
   5. 返回 `{}`
-- 不调 ensureAuthorized(与 send_input/read_output 同型,不弹窗)
+- 工厂本身不调 ensureAuthorized(授权(S2)与 capability(S3)门控由 mcp-terminal-host 统一包装,见 `mcp-tool-gates/`)
 
 ### `forceKill(id)` 行为(在 terminal.service)
 

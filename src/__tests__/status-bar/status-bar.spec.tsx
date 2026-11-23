@@ -832,7 +832,7 @@ describe('StatusBar — agent 撤销', () => {
   });
 
   // race(R92):两次 revoke 并发,先发的迟到失败不得用旧 wasGranted 快照把 sessionGranted 回滚成
-  // true 覆盖后发已成功的撤销(否则 renderer 误以为仍授权,后续 agent auth 被无提示放行)。
+  // true 覆盖后发已成功的撤销(否则界面凭空显示一个不存在的授权,多出撤销入口)。
   it('R92: 先发 revoke 迟到失败,在后发成功之后不回滚 sessionGranted', async () => {
     const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
     let rejectFirst: (e: unknown) => void = () => {};

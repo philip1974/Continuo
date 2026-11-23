@@ -337,7 +337,7 @@ describe('授权分域:terminal 与 debug 各自记「本次启动期间允许�
     expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
   });
 
-  it('非 debug 的 method(含未知 method)归终端域', () => {
+  it('非 debug、非 plugin 的 method(含未知 method)归终端域', () => {
     useAgentAuthStore.getState().confirmSessionGrant('something.else', getAgentAuthEpoch());
     expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
     expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);

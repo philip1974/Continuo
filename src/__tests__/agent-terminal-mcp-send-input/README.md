@@ -3,8 +3,8 @@
 行为契约:**`terminal.send_input` MCP tool**:agent 写字节给已存在 PTY。
 内部走 `preparePtyData`:**unescape 字面 escape + LF→CR**(参考维护者早期原型),
 让 LLM 误传 `\\n` 字面 / 真 `\n` 都能正确触发 raw mode TUI 的 Enter。
-不弹授权窗(决策:agent 持 session_id 即视为已授权,与 list_sessions 同型;
-要拒绝 agent 控制 → revoke,持旧 token 立刻 401)。
+工厂本身不调 ensureAuthorized;授权(S2)与 capability(S3)门控由 mcp-terminal-host 统一包装,见 `mcp-tool-gates/`
+(未授权会弹窗;要拒绝 agent 控制 → revoke,持旧 token 立刻 401)。
 
 `send_text` / `press_key` 是 P4+ c 方案的清晰替代;`send_input` 仍保留作 advanced
 原始接口(发复杂 escape 序列、二进制等)。
@@ -60,7 +60,7 @@ deps:
   2. data 经 `preparePtyData` 处理(LF→CR + 字面 escape unescape)
   3. 调 `write(session_id, processed)`,成功 → 返回 `{}`
   4. write 返回 false(罕见,PTY 刚死)→ 抛 `TERMINAL_SESSION_NOT_FOUND`
-- 不调 ensureAuthorized(send_input 不弹窗,与 list_sessions 同型)
+- 工厂本身不调 ensureAuthorized(授权(S2)与 capability(S3)门控由 mcp-terminal-host 统一包装,见 `mcp-tool-gates/`)
 
 ### preparePtyData 行为(纯函数 export)
 

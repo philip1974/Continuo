@@ -69,7 +69,7 @@ deps:
   5. createSession 成功 → 返回 `{ session_id: r.id }`
 - agentLabel 缺省 → 用 `'agent'`(便于 UI 兜底标记)
 - name 缺省 → 不传给 createSession(让 IPC handler 调 nextDefaultTitle)
-- cwd 缺省 → 不传(IPC handler 用 homedir)
+- cwd 缺省 → 不传(创建入口回退调用方窗口的 workspace 根,无则 `TERMINAL_CWD_UNRESOLVED`,不回退家目录)
 
 ### 字段透传
 

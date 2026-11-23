@@ -102,9 +102,9 @@ export interface McpCallCtx {
    */
   readonly callerSubject?: string | null;
   /**
-   * race(R111):本次调用的取消信号。stdio 连接断开(socket close)时 abort,供有副作用且在
+   * race(R111):本次调用的取消信号。stdio 连接断开(socket close)/ HTTP 请求或响应关闭时 abort,供有副作用且在
    * 用户授权 await 上挂起的工具(如 create_session)在真正产生副作用前复查 —— 已取消则拒绝,
-   * 不创建无调用方的孤儿会话。可选:HTTP host / 内部构造 ctx 不传 → 工具按未取消处理。
+   * 不创建无调用方的孤儿会话。可选:只有内部构造的 ctx 不传 → 工具按未取消处理。
    */
   readonly signal?: AbortSignal;
   /**

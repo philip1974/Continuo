@@ -215,7 +215,7 @@ export interface CreateSessionPtyInput {
 
 export interface CreateSessionToolDeps {
   /**
-   * 调 renderer 端 agent-auth.store.ensure();首次会弹窗。
+   * 交 main agent-auth.service 判定:已授权域直接放行,未授权才转 renderer 弹窗。
    * 返回值:
    *  - 'once' / 'session' → 通过
    *  - 'denied' → 拒绝

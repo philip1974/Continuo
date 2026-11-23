@@ -14,7 +14,7 @@ splitLines 纯函数,**不**测 socket server 真行为(留 E2E)。
 | 文件 | 职责 |
 |---|---|
 | `@continuo-terminal/server-node` CT-B1 `splitLines` | 共享 NDJSON 行切分 primitive |
-| `electron/main/services/mcp-stdio-server.service.ts` | 完整 stdio socket server,适配 CT-B1 splitLines shape |
+| `electron/main/services/mcp-stdio-server.service.ts` | 完整 stdio socket server(行切分用 `lib/ndjson-line-decoder`;本主题只钉上游 splitLines 与 hello 解析) |
 
 需 export:
 

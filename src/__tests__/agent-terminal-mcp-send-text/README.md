@@ -58,7 +58,7 @@ deps:
   2. 调 `write(session_id, text)` —— **逐字写入,不变换、不追加**
   3. write 返回 false → 抛 `TERMINAL_SESSION_NOT_FOUND`
   4. 成功 → 返回 `{}`
-- 不调 ensureAuthorized(同 send_input)
+- 工厂本身不调 ensureAuthorized(授权(S2)与 capability(S3)门控由 mcp-terminal-host 统一包装,见 `mcp-tool-gates/`)
 
 ### 与 send_input 的关系
 
