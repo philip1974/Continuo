@@ -126,18 +126,21 @@ export function getStoredSettingValue(id: string): SettingItemValue | undefined 
   return ownValue(useSettingsValuesStore.getState().values, id);
 }
 
-/** React hook:订阅某 setting id 的值,变化时组件重渲. fallback = 该 id 的 spec.default. */
+/**
+ * React hook:订阅某 setting id 的值,变化时组件重渲。未存值时用已注册 spec 的 default(与设置页显示的默认同源);
+ * `fallback` 只在 spec 未注册(测试 / 早期)时兜底。
+ */
 export function useSettingValue<T extends SettingItemValue>(
   id: string,
   fallback: T,
 ): T {
   return useSettingsValuesStore((s) => {
-    const v = (ownValue(s.values, id) ?? fallback) as T;
+    const stored = ownValue(s.values, id);
     // 边界(E122 number clamp + E139 select enum,E6 读路径对齐):按注册 spec 规整值(coerceSettingValue)
     // —— 篡改/旧 localStorage 的越界 number 或非法 select 字符串(如
     // terminal.cursorStyle)绕过净化直接喂给 xterm/CSS/timer 等消费者。spec 未注册(测试/早期)原样返回。
     const spec = coApp.settingItems.get(id);
-    if (spec) return coerceSettingValue(spec, v as SettingItemValue) as T;
-    return v;
+    if (spec) return coerceSettingValue(spec, stored ?? spec.default) as T;
+    return (stored ?? fallback) as T;
   });
 }

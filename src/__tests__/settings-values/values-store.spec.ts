@@ -315,6 +315,38 @@ describe('useSettingValue · number clamp (E122)', () => {
   });
 });
 
+// 默认值只有一个来源:已注册 spec 的 default(设置页 SettingItemRow 显示的也是它)。调用点传的 fallback
+// 只在 spec 未注册(测试 / 早期)时兜底 —— 此前未存值时一律用调用点字面量,两处一旦漂移,设置页显示的默认
+// 与实际运行值就不同。
+describe('useSettingValue · 默认值来源', () => {
+  it('spec 已注册且未存值 → 返回 spec.default(不用调用点 fallback)', () => {
+    const d = coApp.settingItems.register({
+      id: 'test.default.src',
+      category: 'editor',
+      title: 'n',
+      type: 'number',
+      default: 14,
+      min: 8,
+      max: 40,
+    });
+    try {
+      useSettingsValuesStore.setState({ values: {} });
+      expect(
+        renderHook(() => useSettingValue<number>('test.default.src', 13)).result.current,
+      ).toBe(14);
+    } finally {
+      d.dispose();
+    }
+  });
+
+  it('spec 未注册且未存值 → 返回调用点 fallback', () => {
+    useSettingsValuesStore.setState({ values: {} });
+    expect(
+      renderHook(() => useSettingValue<number>('test.default.unregistered', 13)).result.current,
+    ).toBe(13);
+  });
+});
+
 // 边界(E139,E6/E122 同族读路径净化):select setting 的 stored 值须属于 spec.enum,否则回退
 // default —— 篡改/旧 localStorage 的任意字符串不应喂给消费者(如 terminal.cursorStyle → xterm)。
 describe('select enum 净化 (E139)', () => {
