@@ -1,6 +1,7 @@
 // Theme 切换:Settings → 通用 → general.theme select.
 // 从 dark 切到 light → html.dark 移除;切回 → 加上.
 import { test, expect } from './fixtures/electron-app';
+import { waitForAppReady } from './helpers/app-ready';
 import {
   DARK_THEME,
   LIGHT_THEME,
@@ -10,6 +11,8 @@ import {
 
 test('通用 → 主题切到 light → html.dark 移除', async ({ window }) => {
   // 默认 dark:html 上有 .dark
+  // index.html 静态带 class="dark":先等应用就绪(ThemeProvider 已生效),默认 dark 断言才有意义
+  await waitForAppReady(window);
   await expect(window.locator('html')).toHaveClass(/dark/);
 
   // 打开 Settings,留在「通用」tab(默认首项)

@@ -41,6 +41,8 @@ test('LICENSE 无扩展名 → 不显示「保存」按钮', async () => {
     await expect(win.locator('header').first()).toContainText('LICENSE', {
       timeout: 10_000,
     });
+    // 先确认代码编辑器已挂载并显示文件内容,否定断言才有意义。
+    await expect(win.locator('.cm-content')).toContainText('MIT', { timeout: 10_000 });
 
     // Save 按钮不显
     const main = win.locator('main');

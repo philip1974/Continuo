@@ -31,6 +31,8 @@ test('新建 hello.ts → 打开 → 不显保存按钮 + 不显 SegmentedContro
     .first()
     .click();
   await expect(window.locator('header').first()).toContainText('hello.ts');
+  // 先确认代码编辑器已挂载(Editor 面板是懒加载 chunk),否定断言才有意义。
+  await expect(window.locator('.cm-content')).toBeVisible({ timeout: 10_000 });
 
   // 「保存」按钮不显
   const main = window.locator('main');

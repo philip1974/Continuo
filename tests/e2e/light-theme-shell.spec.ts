@@ -1,5 +1,6 @@
 // 切到 light 主题后 shell 关键元素仍正常渲染.
 import { test, expect } from './fixtures/electron-app';
+import { waitForAppReady } from './helpers/app-ready';
 import {
   CLOSE_SETTINGS,
   LIGHT_THEME,
@@ -11,6 +12,8 @@ test('light 主题下:TitleBar / IconSidebar / StatusBar 都可见', async ({
   window,
 }) => {
   // 默认 dark
+  // index.html 静态带 class="dark":先等应用就绪(ThemeProvider 已生效),默认 dark 断言才有意义
+  await waitForAppReady(window);
   await expect(window.locator('html')).toHaveClass(/dark/);
 
   // 切 light 通过 SettingsPanel

@@ -1,6 +1,6 @@
 // 状态栏:无 workspace 时占位 + MCP 复制按钮.
 import { test, expect } from './fixtures/electron-app';
-import { MCP_COPY } from './helpers/status-bar';
+import { MCP_COPY, MCP_COPY_FEEDBACK } from './helpers/status-bar';
 import { waitForAppReady } from './helpers/app-ready';
 
 test('MCP copy 按钮存在 + 点击不抛', async ({ window }) => {
@@ -9,10 +9,13 @@ test('MCP copy 按钮存在 + 点击不抛', async ({ window }) => {
   const status = window.locator('footer');
   const btn = status.locator('button').filter({ hasText: MCP_COPY });
   await expect(btn).toBeVisible();
-  // 点击后会触发 IPC 调用 + 文案 1.5s 内变(setTimeout 调度难确定性断言);
-  // 这里只验证不抛 + 1.5s 后文案回归默认.
+  // 点击后先经 IPC(handleCopyMcpConfig)再切到反馈文案(已复制 / 复制失败 / MCP 不可用之一),约 1.5s 后回到默认。
+  // 先等反馈文案出现(证明点击处理已完成),再等回到默认文案,最后断言无页面错误。
   await btn.click();
-  await expect(btn).toHaveText(MCP_COPY, { timeout: 5_000 });
+  await expect(status.locator('button').filter({ hasText: MCP_COPY_FEEDBACK })).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(status.locator('button').filter({ hasText: MCP_COPY })).toBeVisible({ timeout: 5_000 });
   expect(pageErrors).toEqual([]);
 });
 

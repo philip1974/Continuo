@@ -12,6 +12,8 @@ test('动态注册命令 → CommandPalette 立刻显示', async ({ window }) =>
       ),
     { timeout: 5_000 },
   );
+  // testing hook 先于 App 首次提交挂上:等 App 挂载(热键监听在 effect 中注册)再注册命令与派发热键
+  await expect(window.getByRole('button', { name: /^(设置|Settings|설정)$/ })).toBeVisible({ timeout: 10_000 });
 
   await window.evaluate(() => {
     const t = (

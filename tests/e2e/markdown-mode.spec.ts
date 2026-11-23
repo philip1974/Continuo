@@ -12,7 +12,7 @@ test('打开 README.md → 模式行 SegmentedControl 出现 + 不显「保存�
   window,
 }) => {
   await window.locator('text=README.md').first().click();
-  // 等 EditorHeader 渲染完成(显示 README.md basename)
+  // 等 TitleBar 显示文件名(README.md)
   await expect(window.locator('header').first()).toContainText('README.md', {
     timeout: 10_000,
   });
@@ -43,6 +43,8 @@ test('打开 .ts 代码文件 → 不显保存按钮(无 SegmentedControl)', asy
   });
 
   // EditorHeader 不再显示保存按钮,保存走 Cmd/Ctrl+S.
+  // 先确认代码编辑器已挂载(Editor 面板是懒加载 chunk),否定断言才有意义。
+  await expect(window.locator('.cm-content')).toBeVisible({ timeout: 10_000 });
   const main = window.locator('main');
   await expect(
     window.getByRole('button', { name: EDITOR_SAVE_LABEL }),

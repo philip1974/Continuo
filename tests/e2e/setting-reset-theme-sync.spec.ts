@@ -1,5 +1,6 @@
 // general.theme = light → reset → 默认 dark → html.dark 重加.
 import { test, expect } from './fixtures/electron-app';
+import { waitForAppReady } from './helpers/app-ready';
 import {
   clickFirstVisibleResetDefault,
   LIGHT_THEME,
@@ -9,6 +10,8 @@ import {
 
 test('改 theme=light → reset → html 重新加 .dark', async ({ window }) => {
   // 默认 dark
+  // index.html 静态带 class="dark":先等应用就绪(ThemeProvider 已生效),默认 dark 断言才有意义
+  await waitForAppReady(window);
   await expect(window.locator('html')).toHaveClass(/dark/);
 
   // 切到 light
