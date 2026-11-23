@@ -80,7 +80,7 @@ export function EditorPanel() {
   // EditorHeader 自己窄订阅,不依赖这里。
   const activeTab = useEditorStore(
     (s): EditorTab | null =>
-      s.activeTabId === null ? null : findEditorFileTabById(s.tabs, s.activeTabId),
+      findEditorFileTabById(s.tabs, s.activeTabId),
   );
   const locale = useLocale(); // i18n(I14):订阅 locale,模式切换 label 随语言更新
   const modeOptions = useMemo(
@@ -199,7 +199,7 @@ export function EditorPanel() {
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {
     const { activeTabId, tabs } = useEditorStore.getState();
-    const target = activeTabId === null ? null : findEditorFileTabById(tabs, activeTabId);
+    const target = findEditorFileTabById(tabs, activeTabId);
     const r = await saveActive();
     if (!r.ok) {
       if (r.code === 'EDITOR_DISK_CHANGED' && target) {

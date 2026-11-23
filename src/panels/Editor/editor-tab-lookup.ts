@@ -11,10 +11,12 @@ export function findEditorFileTabByPath(
   return null;
 }
 
+/** 按 id 找 tab;id 为 null(无 active tab)→ null。 */
 export function findEditorFileTabById(
   tabs: readonly EditorTab[],
-  tabId: string,
+  tabId: string | null,
 ): EditorTab | null {
+  if (tabId === null) return null;
   for (const tab of tabs) {
     if (tab.id === tabId) return tab;
   }

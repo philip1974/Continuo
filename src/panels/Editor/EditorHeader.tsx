@@ -69,13 +69,6 @@ export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
   return out;
 }
 
-export function findEditorTabById(
-  tabs: readonly EditorTab[],
-  id: string | null,
-): EditorTab | null {
-  return id === null ? null : findEditorFileTabById(tabs, id);
-}
-
 /** 订阅 editorActions registry,渲染时按 ctx 过滤. */
 function useEditorActions(): readonly EditorActionSpec[] {
   return useRegistry(coApp.editorActions);
@@ -181,7 +174,7 @@ export const EditorHeader = memo(function EditorHeader({
   // [filePath, dirty, effectiveMode]。持续输入已脏 tab → 三者不变 → O(1) 跳过。
   const requestedMode = useEditorStore((s) => s.mode);
   const { activeFilePath, dirty, effectiveMode } = useMemo(() => {
-    const found = findEditorTabById(useEditorStore.getState().tabs, activeTabId);
+    const found = findEditorFileTabById(useEditorStore.getState().tabs, activeTabId);
     return {
       activeFilePath: found?.filePath ?? null,
       dirty: found?.dirty ?? false,

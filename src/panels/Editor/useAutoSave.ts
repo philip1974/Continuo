@@ -41,7 +41,7 @@ export function useAutoSave(
   const active = useEditorStore(
     useShallow((s) => {
       const found =
-        s.activeTabId === null ? null : findEditorFileTabById(s.tabs, s.activeTabId);
+        findEditorFileTabById(s.tabs, s.activeTabId);
       return {
         id: found?.id ?? null,
         filePath: found?.filePath ?? null,

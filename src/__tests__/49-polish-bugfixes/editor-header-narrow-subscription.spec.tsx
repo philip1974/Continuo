@@ -10,8 +10,8 @@ import { render, cleanup, act } from '@testing-library/react';
 import {
   buildEditorTabChrome,
   EditorHeader,
-  findEditorTabById,
 } from '../../panels/Editor/EditorHeader';
+import { findEditorFileTabById } from '../../panels/Editor/editor-tab-lookup';
 import { useEditorStore, type EditorTab } from '../../stores/editor.store';
 import { coApp } from '../../plugins/co-app';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
@@ -83,7 +83,7 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     );
     const fnBody = src.slice(
       src.indexOf('export function buildEditorTabChrome'),
-      src.indexOf('export function findEditorTabById'),
+      src.indexOf('/** 订阅 editorActions registry'),
     );
     expect(fnBody).toMatch(/new Array<TabChrome>\(tabs\.length\)/);
     expect(fnBody).not.toMatch(/\.push\(/);
@@ -109,8 +109,9 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
     const findSpy = vi.spyOn(tabs, 'find');
 
     try {
-      expect(findEditorTabById(tabs, '/b.md')).toBe(tabs[1]);
-      expect(findEditorTabById(tabs, '/missing')).toBeNull();
+      expect(findEditorFileTabById(tabs, '/b.md')).toBe(tabs[1]);
+      expect(findEditorFileTabById(tabs, '/missing')).toBeNull();
+      expect(findEditorFileTabById(tabs, null)).toBeNull();
       expect(findSpy).not.toHaveBeenCalled();
     } finally {
       findSpy.mockRestore();

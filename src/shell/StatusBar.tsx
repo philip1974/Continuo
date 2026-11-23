@@ -213,9 +213,7 @@ export function StatusBar() {
     useEditorStore(
       useShallow((s) => {
         const found =
-          s.activeTabId === null
-            ? null
-            : findEditorFileTabById(s.tabs, s.activeTabId);
+          findEditorFileTabById(s.tabs, s.activeTabId);
         return {
           hasActiveTab: found !== null,
           activeTabId: found?.id ?? null,

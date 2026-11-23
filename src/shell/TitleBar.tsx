@@ -22,9 +22,7 @@ export function TitleBar() {
   const chromeVersion = useEditorStore((s) => s.chromeVersion);
   const { hasActiveTab, activeFilePath, activeDirty } = useMemo(() => {
     const found =
-      activeTabId === null
-        ? null
-        : findEditorFileTabById(useEditorStore.getState().tabs, activeTabId);
+      findEditorFileTabById(useEditorStore.getState().tabs, activeTabId);
     return {
       hasActiveTab: found !== null,
       activeFilePath: found?.filePath ?? null,
