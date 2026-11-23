@@ -21,10 +21,7 @@ export const MAX_MANIFEST_FETCH_CONCURRENCY = 12;
 
 export interface AvailableUpdate {
   readonly id: string;
-  readonly name: string;
-  readonly from: string; // 本地 installed version
-  readonly to: string;   // 远程 latest version
-  readonly entry: MarketplaceEntry;
+  readonly to: string; // 远程 latest version
 }
 
 const EMPTY_AVAILABLE_UPDATES: readonly AvailableUpdate[] = [];
@@ -118,18 +115,15 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       for (const item of installed) installedIds.add(item.id);
 
       const entries = await fetchMarketplaceIndex();
-      let entriesById: Map<string, MarketplaceEntry> | null = null;
       let relevant: MarketplaceEntry[] | null = null;
       let relevantCount = 0;
       for (const e of entries) {
         if (installedIds.has(e.id)) {
-          entriesById ??= new Map<string, MarketplaceEntry>();
           relevant ??= new Array<MarketplaceEntry>(entries.length);
-          entriesById.set(e.id, e);
           relevant[relevantCount++] = e;
         }
       }
-      if (relevant === null || entriesById === null) {
+      if (relevant === null) {
         if (myGen !== refreshGen) return;
         clearAvailable();
         return;
@@ -183,16 +177,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         // race(R78):该 id 已被 dismiss 且目标版本未变 → 不重新加入(防 dismiss 后、reload 落地
         // 前提交的在途 refresh 用旧快照复活同一 update)。远端版本变了则 get(id)!==remoteV → 仍显示。
         if (dismissed.get(item.id) === remoteV) continue;
-        const entry = entriesById.get(item.id);
-        if (!entry) continue;
         available ??= new Array<AvailableUpdate>(liveInstalled.length);
-        available[availableCount++] = {
-          id: item.id,
-          name: item.manifest.name,
-          from: item.manifest.version,
-          to: remoteV,
-          entry,
-        };
+        available[availableCount++] = { id: item.id, to: remoteV };
       }
       if (available !== null) available.length = availableCount;
       const nextAvailable =

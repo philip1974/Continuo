@@ -14,23 +14,8 @@ import {
   useUpdateStore,
 } from '../../marketplace/update-store';
 import type { AvailableUpdate } from '../../marketplace/update-store';
-import type { MarketplaceEntry } from '../../marketplace/types';
-
-function entry(id: string): MarketplaceEntry {
-  return {
-    id,
-    name: id,
-    description: '',
-    author: 'me',
-    repo: `me/${id}`,
-    branch: 'main',
-    tags: [],
-    verified: true,
-  };
-}
-
-function avail(id: string, from = '1.0.0', to = '2.0.0'): AvailableUpdate {
-  return { id, name: id, from, to, entry: entry(id) };
+function avail(id: string, to = '2.0.0'): AvailableUpdate {
+  return { id, to };
 }
 
 beforeEach(() => {
@@ -41,7 +26,7 @@ beforeEach(() => {
 
 describe('topic49 P2-AG · update-store.dismiss 乐观摘除', () => {
   it('dismissAvailableUpdateFromList 一次循环找目标并摘除,不走 find/filter', () => {
-    const available = [avail('a'), avail('b'), avail('a', '1.0.0', '2.1.0')];
+    const available = [avail('a'), avail('b'), avail('a', '2.1.0')];
     const findSpy = vi.spyOn(Array.prototype, 'find');
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
 

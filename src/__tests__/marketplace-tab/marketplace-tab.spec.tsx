@@ -133,8 +133,8 @@ describe('MarketplaceTab — update version map helper', () => {
 
   it('非空 updates 单趟构建 id → version Map', () => {
     const updates: AvailableUpdate[] = [
-      { id: 'a', name: 'A', from: '1.0.0', to: '2.0.0', entry: entry({ id: 'a' }) },
-      { id: 'b', name: 'B', from: '1.0.0', to: '3.0.0', entry: entry({ id: 'b' }) },
+      { id: 'a', to: '2.0.0' },
+      { id: 'b', to: '3.0.0' },
     ];
 
     expect(buildUpdateVersionMap(updates)).toEqual(
@@ -327,10 +327,7 @@ describe('MarketplaceTab — 列表 + 计数', () => {
     const updatesSnapshot = [
       {
         id: 'a',
-        name: 'A',
-        from: '1.0.0',
         to: '2.0.0',
-        entry: entry({ id: 'a', name: 'A' }),
       },
     ];
     useUpdateStore.setState({ available: updatesSnapshot });
@@ -977,10 +974,7 @@ describe('MarketplaceTab — 更新按钮', () => {
       available: [
         {
           id: 'a',
-          name: 'A',
-          from: '1.0.0',
           to: '2.0.0',
-          entry: entry({ id: 'a', name: 'A' }),
         },
       ],
     });
@@ -1034,10 +1028,7 @@ describe('MarketplaceTab — 更新按钮', () => {
       available: [
         {
           id: 'a',
-          name: 'A',
-          from: '1.0.0',
           to: '2.0.0',
-          entry: entry({ id: 'a', name: 'A' }),
         },
       ],
     });

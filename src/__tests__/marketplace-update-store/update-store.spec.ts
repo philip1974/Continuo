@@ -124,7 +124,6 @@ describe('useUpdateStore.refresh', () => {
 
     expect(s.available).toHaveLength(1);
     expect(s.available[0]?.id).toBe('a');
-    expect(s.available[0]?.from).toBe('0.1.0');
     expect(s.available[0]?.to).toBe('0.2.0');
   });
 
@@ -271,11 +270,10 @@ describe('useUpdateStore.refresh', () => {
       'utf-8',
     );
     expect(src).toContain('let relevant: MarketplaceEntry[] | null = null;');
-    expect(src).toContain('let entriesById: Map<string, MarketplaceEntry> | null = null;');
     expect(src).not.toContain(
       'const relevant = new Array<MarketplaceEntry>(entries.length)',
     );
-    expect(src).not.toContain('const entriesById = new Map<string, MarketplaceEntry>()');
+    expect(src).not.toContain('entriesById'); // 不再为无人读的 entry 字段建索引
   });
 
   it('构建 installedIds 不对 installed list 先 map 成中间数组', async () => {
@@ -341,7 +339,7 @@ describe('useUpdateStore.refresh', () => {
   it('R78 dismiss 后在途 refresh 用旧快照不复活该 update', async () => {
     useUpdateStore.setState({
       available: [
-        { id: 'a', name: 'a', from: '1.0.0', to: '2.0.0', entry: entry('a') },
+        { id: 'a', to: '2.0.0' },
       ],
       dismissed: new Map(),
     });

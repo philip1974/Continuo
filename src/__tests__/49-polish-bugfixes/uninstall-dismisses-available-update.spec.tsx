@@ -33,7 +33,6 @@ import { getUserPluginManager } from '../../plugins/PluginManager';
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
 import { useUpdateStore } from '../../marketplace/update-store';
 import type { AvailableUpdate } from '../../marketplace/update-store';
-import type { MarketplaceEntry } from '../../marketplace/types';
 import type { PluginListItem } from '../../plugins/PluginManager';
 
 const getMgr = getUserPluginManager as unknown as ReturnType<typeof vi.fn>;
@@ -47,21 +46,8 @@ function plugin(id: string): PluginListItem {
   } as PluginListItem;
 }
 
-function entry(id: string): MarketplaceEntry {
-  return {
-    id,
-    name: id,
-    description: '',
-    author: 'me',
-    repo: `me/${id}`,
-    branch: 'main',
-    tags: [],
-    verified: true,
-  };
-}
-
 function avail(id: string): AvailableUpdate {
-  return { id, name: id, from: '1.0.0', to: '2.0.0', entry: entry(id) };
+  return { id, to: '2.0.0' };
 }
 
 function installPluginsApi(): void {
