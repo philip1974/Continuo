@@ -29,7 +29,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { errorCodeOf } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
 import { revokePluginFsAccess, revokePluginPathScopes } from './plugin-fs.ipc';
-import { PERMISSION_KEYS } from '../../shared/permission-keys';
+import { PermissionMutationSchema } from '../../shared/plugin-permission-schema';
 import { GIT_BRANCH_MAX, isValidGitBranch } from '../../shared/git-branch';
 
 // 边界(E16):插件 IPC schema 的长度上限,远超任何现实插件集合,只挡损坏/滥用;超限 → safeHandle zod
@@ -41,18 +41,6 @@ const NoInput = z.undefined();
 const MutateEnabledInput = z
   .object({ id: z.string().min(1).max(PLUGIN_ID_MAX), enabled: z.boolean() })
   .strict();
-// 终审 P1:renderer 只发授权增量(按权限项),不再发整条记录覆盖写 —— 陈旧窗口的整条记录会把别窗的撤销
-// 写回。decidedAt 由 main 取当前时间;perms 必须是权限枚举成员,数量不超过枚举大小。
-const PermissionMutationSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      kind: z.literal('set'),
-      perms: z.array(z.enum(PERMISSION_KEYS)).min(1).max(PERMISSION_KEYS.length),
-      granted: z.boolean(),
-    })
-    .strict(),
-  z.object({ kind: z.literal('clear-denied') }).strict(),
-]);
 export const MutatePluginPermissionsInput = z
   .object({
     id: z.string().min(1).max(PLUGIN_ID_MAX),

@@ -73,8 +73,10 @@ describe('接线守卫', () => {
   });
 
   it('IPC schema 用同一枚举与非空下限', () => {
-    const ipc = read('electron/main/ipc/plugins.ipc.ts');
-    // 终审 P1:授权不再整条经 IPC 写入,增量变更的权限项仍用同一枚举 + 非空下限。
-    expect(ipc).toContain('perms: z.array(z.enum(PERMISSION_KEYS)).min(1)');
+    // 终审 P1:授权不再整条经 IPC 写入,增量变更的权限项仍用同一枚举 + 非空下限。schema 在 shared 单一来源,
+    // main 的 IPC 入参直接引用它。
+    const schema = read('electron/shared/plugin-permission-schema.ts');
+    expect(schema).toContain('perms: z.array(z.enum(PERMISSION_KEYS)).min(1)');
+    expect(read('electron/main/ipc/plugins.ipc.ts')).toContain('mutation: PermissionMutationSchema');
   });
 });

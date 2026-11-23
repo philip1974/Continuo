@@ -23,7 +23,7 @@ export interface PluginDirInfo {
   readonly id: string;
   /** manifest.json 文件文本. */
   readonly manifestText: string;
-  /** main.js 模块 URL(主进程 file://...,renderer dynamic import 用). */
+  /** 插件入口的惰性源码引用(激活时 host.importModule 才按目录名 + manifest 令牌拉 main 源码). */
   readonly moduleUrl: string;
 }
 

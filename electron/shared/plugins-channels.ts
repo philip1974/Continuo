@@ -1,6 +1,7 @@
 import type { PathScope } from './plugin-fs-contract';
+import type { z } from 'zod';
+import type { PermissionMutationSchema } from './plugin-permission-schema';
 import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
-import type { PermissionKey } from './permission-keys';
 
 // 插件系统 IPC 通道(M-Plugin v4.1)。
 // 主进程扫 userData/plugins/<id>/,renderer 拿到 manifest + main.js 文本
@@ -149,10 +150,4 @@ export type IpcPermissionsMap = Readonly<Record<string, IpcPermissionRecord>>;
  * 单个 plugin 的授权增量变更(终审 P1):`set` 只替换所列权限项的决策(decidedAt 由 main 取当前时间);
  * `clear-denied` 去掉所有拒绝项。其它权限项与 pathScopes 以 main 当前落盘记录为准原样保留。
  */
-export type IpcPermissionMutation =
-  | {
-      readonly kind: 'set';
-      readonly perms: readonly PermissionKey[];
-      readonly granted: boolean;
-    }
-  | { readonly kind: 'clear-denied' };
+export type IpcPermissionMutation = z.infer<typeof PermissionMutationSchema>;

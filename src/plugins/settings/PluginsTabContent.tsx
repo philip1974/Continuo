@@ -16,7 +16,7 @@ import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import { useUpdateStore } from '@/marketplace/update-store';
 import type { PluginListItem } from '../PluginManager';
 import type { PermissionKey } from '../permissions';
-import { useT, useTWithFallback } from '@/i18n';
+import { useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { errorMessage } from '../../../electron/shared/error-message';
@@ -224,7 +224,6 @@ export function hasPluginVersion(
 
 function UserPluginsSection() {
   const t = useT();
-  const tf = useTWithFallback();
   const plugins = useUserPluginList();
   const mgr = getUserPluginManager();
   const [gitUrl, setGitUrl] = useState('');
@@ -315,7 +314,7 @@ function UserPluginsSection() {
           // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
           // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
           // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
-          const localized = tf(`errors.${r.code}`, r.message);
+          const localized = localizeErrorByCode(r.code, r.message);
           setInstallMsg({
             text: t('plugins_tab.error.generic', {
               message: `[${r.code}] ${localized}`,
@@ -448,7 +447,7 @@ function UserPluginsSection() {
                     {/* i18n(I4):error 结构化 {code,message},按 code 经 catalog 渲染;
                         未收录 code(PERMISSION_DENIED/IMPORT_FAILED/EXCEPTION 等动态
                         message)保留旧 `code: message` 格式作 fallback。 */}
-                    {tf(`errors.${p.error.code}`, `${p.error.code}: ${p.error.message}`)}
+                    {localizeErrorByCode(p.error.code, `${p.error.code}: ${p.error.message}`)}
                   </div>
                 )}
                 {p.warning && (
