@@ -100,7 +100,7 @@ describe('useQuickOpenStore', () => {
 
   it('setResults / setLoading 独立写入', () => {
     const results = [{ absPath: '/a', relPath: 'a', relPathLower: 'a', name: 'a' }];
-    useQuickOpenStore.getState().setResults(results);
+    useQuickOpenStore.getState().setResults(results, '/work');
     expect(useQuickOpenStore.getState().results).toEqual(results);
     useQuickOpenStore.getState().setLoading(true);
     expect(useQuickOpenStore.getState().loading).toBe(true);

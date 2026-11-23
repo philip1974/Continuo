@@ -48,8 +48,8 @@ interface PromptState {
    */
   cancel: (pluginId: string, reason: unknown) => void;
   requestFsScope: (prompt: FsScopePrompt) => Promise<'grant' | 'deny'>;
-  grantFsScope: (requestId?: string) => void;
-  denyFsScope: (requestId?: string) => void;
+  grantFsScope: (requestId: string) => void;
+  denyFsScope: (requestId: string) => void;
 }
 
 // race(R89,R88 同型):main scope-request-correlator 的 TTL(DEFAULT_TTL_MS=300_000)到点只在
@@ -216,12 +216,10 @@ function resolveFsScope(
       | Partial<PromptState>
       | ((state: PromptState) => Partial<PromptState>),
   ) => void,
-  requestId: string | undefined,
+  id: string,
   decision: 'grant' | 'deny',
 ): void {
   const state = get();
-  const id = requestId ?? state.currentFsScope?.requestId;
-  if (!id) return;
   const entry = state.fsScopePending[id];
   if (!entry) return;
   clearFsScopeTimer(id); // race(R89):resolved → 清本地超时,防误触/泄漏

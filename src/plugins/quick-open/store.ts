@@ -40,7 +40,7 @@ interface QuickOpenState extends PickerSlice {
   loading: boolean;
   /** walk 失败标志 —— 与"workspace 真为空"区分,避免静默失败伪装成空列表。 */
   scanFailed: boolean;
-  setResults: (files: readonly QuickOpenFile[], root?: string | null) => void;
+  setResults: (files: readonly QuickOpenFile[], root: string | null) => void;
   setLoading: (b: boolean) => void;
   setScanFailed: (b: boolean) => void;
 }
@@ -73,8 +73,8 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   loading: false,
   scanFailed: false,
 
-  // root 省略(单参旧调用)→ resultsRoot 置 null;组件扫描时显式传当前 root 绑定归属。
-  setResults: (files, root = null) =>
+  // 组件扫描时显式传当前 root 绑定归属。
+  setResults: (files, root) =>
     set((s) =>
       s.resultsRoot === root && quickOpenResultsEqual(s.results, files)
         ? s
