@@ -141,7 +141,7 @@ jobs:
 
       # electron/main/__tests__ 下的主进程单测(permission-policy / spawn-env-internal-secrets /
       # file-request-policy / git-fsmonitor-hardening 等安全测试)。依赖本机环境的规范自带 skipIf:
-      # js-debug adapter 缺失跳过(debug-spike job 拉取 adapter 后专跑);POSIX shell 脚本 / 0600
+      # js-debug adapter 缺失跳过(debug-spike job 拉取 adapter 后实跑 smoke / teardown 两个规范);POSIX shell 脚本 / 0600
       # 权限 / 真实 git hook 的用例在 win32 跳过。perf bench 由 perf-bench job 单独跑,此处排除。
       - name: Run electron main-process tests
         if: matrix.os != 'windows-latest'
@@ -194,8 +194,11 @@ jobs:
       - name: Assert js-debug DAP adapter exists
         run: test -f scripts/debug-spike/.adapter/js-debug/src/dapDebugServer.js
 
-      - name: Run debug spike specs without adapter skip
+      - name: Run DAP frame codec specs
         run: pnpm exec vitest run --project unit src/__tests__/49-agent-controllable-debug --reporter=verbose
+
+      - name: Run electron main-context DAP adapter smoke spec without adapter skip
+        run: pnpm exec vitest run --project electron electron/main/__tests__/debug-adapter-smoke.spec.ts --reporter=verbose
 
       - name: Run electron main-context DAP teardown spec without adapter skip
         run: pnpm exec vitest run --project electron electron/main/__tests__/dap-teardown-mini.spec.ts --reporter=verbose

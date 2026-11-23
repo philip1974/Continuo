@@ -4,7 +4,7 @@ const DEBUG_SESSION_ID_MAX = 256;
 const DEBUG_PATH_MAX = 4096;
 const DEBUG_EXPRESSION_MAX = 4096;
 export const DEBUG_VARIABLE_COUNT_MAX = 100;
-/** 单次 stackTrace 取的帧数上限(MCP debug.stack 与 Debug 面板 IPC 共用)。 */
+/** 单次 stackTrace 取的帧数上限(MCP debug.stack 入参上限;Debug 面板不传 levels,走默认帧数)。 */
 export const DEBUG_STACK_LEVELS_MAX = 100;
 export const DEBUG_VARIABLE_DEPTH_MAX = 5;
 export const DEBUG_STRING_BYTES_DEFAULT = 65536;
@@ -34,7 +34,7 @@ const pathSchema = z.string().min(1).max(DEBUG_PATH_MAX);
 const nonNegativeIntSchema = z.number().int().min(0);
 const positiveIntSchema = z.number().int().min(1);
 // js-debug 的 Node 线程 id 是 0(DAP threadId 允许 0)。thread_id 用 nonNegative,
-// 可选:省略时引擎用 threads 请求解析。历史上误设 min(1) 把合法的 0 拒了。
+// 可选:省略时引擎取最近停点的线程,无停点记录再发 threads 请求。历史上误设 min(1) 把合法的 0 拒了。
 export const threadIdSchema = nonNegativeIntSchema.optional();
 
 /**
@@ -165,8 +165,7 @@ export const debugStepOutOutputSchema = debugThreadControlOutputSchema;
 export const debugStackInputSchema = z
   .object({
     session_id: sessionIdSchema,
-    // thread_id 可选:省略时引擎用 threads 请求解析当前活跃线程。
-    // (js-debug 的 stopped 事件可能报 threadId:0,直接透传会撞 min(1)。)
+    // thread_id 可选:省略时引擎取最近停点的线程,无停点记录再发 threads 请求(0 合法,直接透传)。
     thread_id: threadIdSchema,
     start_frame: nonNegativeIntSchema.default(0),
     levels: z.number().int().min(1).max(DEBUG_STACK_LEVELS_MAX).default(DEBUG_STACK_LEVELS_DEFAULT),

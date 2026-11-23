@@ -1312,7 +1312,8 @@ export class DebugService {
   }
 
   // thread_id 解析。js-debug 的 Node 线程 id 是 0(合法,DAP threadId 允许 0),
-  // 所以 provided 给定就直接透传(含 0);省略时发 DAP threads 请求取首个线程。
+  // 所以 provided 给定就直接透传(含 0);省略时优先用最近停点(stopped)记录的线程,无停点记录时才发
+  // DAP threads 请求取首个线程。
   // DAP next/stepIn/stepOut/continue/stackTrace 都需要 threadId,故统一在此解析。
   private async resolveThreadId(
     sessionId: string,
@@ -2192,7 +2193,8 @@ export class DebugService {
       // 结束时移出 systemProcessIds(上面 disconnect 期间结束的也已移出,故这里重读)。
       // POSIX 按 adapter 的进程组杀,仅限 adapter 仍存活(组必在、pgid 未复用);adapter 已退出时组已在退出那一刻
       // 处理(reapAdapterGroupOnExit),之后 pgid 可能已被复用,不再凭它枚举 / 发信号。
-      // Windows 不保存 pgid、无组可枚举:adapter 已退出且无记录在案的 debuggee → 只释放 client。
+      // Windows 无进程组(launch 不记 pgid;adapter 存活时 teardown 以 adapter pid 充当 taskkill 根):adapter 已退出且
+      // 无记录在案的 debuggee → 只释放 client。
       // 残留风险:debuggee 未经 DAP 通知就退出、且其 pid 在会话存活期间被复用的极窄窗口(Windows taskkill /T)。
       await runtime.adapterExitReap;
       const current = debugSessions.get(sessionId) ?? session;
@@ -2237,7 +2239,7 @@ export class DebugService {
    * adapter 退出那一刻(POSIX)按其进程组回收残留的同组子孙:进程组只要还有成员就不会被复用,此刻组内存活的
    * 成员必是 adapter 派生、未脱离组的进程;组空则什么也不做。之后 pgid 可被系统复用给无关进程组,teardown
    * 不再凭它枚举 / 发信号。残留窗口:exit 事件到达与枚举之间(毫秒级)组恰好清空且 pgid 被复用。
-   * Windows 不保存 pgid,不经此路径。
+   * Windows 无进程组可枚举(pidsInProcessGroup 返回空),此路径对其为 no-op。
    */
   private async reapAdapterGroupOnExit(sessionId: string): Promise<void> {
     const pgid = debugSessions.get(sessionId)?.adapterPgid;
