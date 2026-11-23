@@ -103,7 +103,7 @@ export function FileIcon(props: {
    - 数据:`json/jsonc → BracketsYellow` / `yaml/yml → Yaml` /
      `toml → BracketsOrange` / `xml → XML` / `csv → Csv` / `sql → Database`
    - 文档:`md → Markdown` / `mdx → MDX` / `txt/log → Text`
-   - 网页:`html/htm → CodeOrange` / `css → Css` / `scss/sass → Sass` /
+   - 网页:`html/htm → CodeOrange` / `css → BracketsBlue` / `scss/sass → Sass` /
      `styl → Stylus` / `svg → SVG`
    - 图像:`png/jpg/jpeg/gif/webp/ico/bmp → Image`
    - 音频:`mp3/wav/ogg/flac/m4a → Audio`
@@ -122,8 +122,7 @@ export function FileIcon(props: {
   会先在 step 1 命中 `Vite`,不会到 step 3
 - 空名 `''` → `Document`(不抛错)
 - 大小写不影响 ext / 目录映射(`.PNG` 同 `.png`)
-- 大小写**影响**特殊文件名首次匹配(`README` 命中 `Markdown`,但 `Readme`
-  也命中 `Markdown` 因为 case-insensitive 兜底)
+- 大小写不影响特殊文件名匹配(`README` / `Readme` / `readme` 都命中 `Markdown`)
 
 ### 不在本主题验证
 

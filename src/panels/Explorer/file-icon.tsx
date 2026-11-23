@@ -352,7 +352,6 @@ export function getFileIconComponent(
   if (isDirectory) {
     return ownValue(SPECIAL_DIR_NAMES, lowerIfNeeded(name)) ?? Folder;
   }
-  if (!name) return Document;
 
   // 1. 特殊名,case-insensitive(README / Readme / readme 都通)
   const lower = lowerIfNeeded(name);

@@ -7,7 +7,7 @@
 //
 // 用法:
 //   pnpm sync:design            正常同步
-//   pnpm sync:design --check    只检查不写盘(CI 用)
+//   pnpm sync:design --check    只检查不写盘(本地守护,CI 不跑)
 //   NOUS_REPO=/custom/path pnpm sync:design
 //
 // 退出码:0 干净;1 有漂移待审查;2 源缺失等错误

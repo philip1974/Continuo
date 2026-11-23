@@ -12,8 +12,7 @@ const EXPECTED_SHA256 =
   'ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.dirname(scriptDir);
-const adapterRoot = path.join(repoRoot, 'scripts', 'debug-spike', '.adapter');
+const adapterRoot = path.join(scriptDir, 'debug-spike', '.adapter');
 const dapServerPath = path.join(
   adapterRoot,
   'js-debug',
@@ -245,7 +244,7 @@ async function main() {
   let actualSha;
   try {
     source = envTarball
-      ? { buffer: await fs.readFile(path.resolve(envTarball)), httpStatus: 'env-override' }
+      ? { buffer: await fs.readFile(envTarball), httpStatus: 'env-override' }
       : await downloadTarball();
 
     actualSha = sha256Hex(source.buffer);
