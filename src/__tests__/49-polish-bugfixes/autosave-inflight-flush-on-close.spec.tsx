@@ -2,9 +2,9 @@
 // topic 49 第十二 session · 复审 F2:切走 tab 后的在途 autosave flush 必须纳入关窗 ack。
 //
 // 根因:useAutoSave 在切走某 tab / 卸载时,effect cleanup 会 fire-and-forget 触发旧 tab
-// scheduler 的 flush();但 registry 的 activeFlush 已被新 tab 覆盖(或清空),旧 tab 这次
-// 在途的落盘不在 activeFlush 里。若此刻立即关窗,flush 握手(DockShell→flushPendingAutoSave)
-// 只 await activeFlush → 主进程 ack 后继续退出,旧 tab 最后一段编辑的写盘 IPC 仍在飞 →
+// scheduler 的 flush();但活动持有者(claimAutoSave 登记的 flush 句柄)已换成新 tab(或清空),旧 tab 这次
+// 在途的落盘不在活动句柄里。若此刻立即关窗,flush 握手(DockShell→flushPendingAutoSave)
+// 只 await 活动句柄 → 主进程 ack 后继续退出,旧 tab 最后一段编辑的写盘 IPC 仍在飞 →
 // 静默丢失。这是第十三轮 P1-AE(关窗 flush 注册表)的兄弟缺口:registry 只跟踪"当前活跃 tab"。
 //
 // 修:在途 flush 登记进 trackInFlightAutoSave,flushPendingAutoSave() 一并 await(allSettled)。

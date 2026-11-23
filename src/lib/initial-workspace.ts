@@ -13,8 +13,10 @@ const FRESH_PARAM = 'fresh';
 // 边界(E193,外部输入长度上限族 E152/E179/E190/E191):启动 query 总长度上限。paramsOf 被
 // parseInitialWorkspace/WindowSeq/Fresh 三处在 renderer 启动早期各调一次 —— 同一畸形超长
 // location.search 否则会被 new URLSearchParams 重复解析三次,早于任何字段级校验就产生 CPU/内存峰值。
-// 合法启动 query = ?workspace=<encoded path>&windowSeq=<int>&fresh=1&spike=<...>。workspace 路径
-// ≤ FS_PATH_MAX(8192),URL-encode 最坏 ~3×,加其它小参数,64KiB 留足余量;超限直接当无 query(null)。
+// 合法启动 query = ?workspace=<encoded path>&windowSeq=<int>&fresh=1&spike=<...>。workspace 路径在入口处限
+// FS_PATH_MAX(8192)个 UTF-16 单元;URL-encode 后 ASCII 约 1–3×,非 ASCII BMP 字符(如中文)每个 9 字节。
+// 真实可开的目录受 OS 路径上限约束(macOS 1024 / Linux 4096 字节,在 stat 时即被拒),远在 64KiB 内;
+// 理论上只有 Windows 长路径里数千个非 ASCII 字符才会超,超限直接当无 query(null)。
 export const MAX_STARTUP_QUERY_LEN = 65536;
 
 /**

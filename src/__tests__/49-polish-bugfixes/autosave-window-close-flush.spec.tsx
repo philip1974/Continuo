@@ -9,8 +9,8 @@
 // 不保证执行(同第五轮 watcherPool 前提)。编辑 md 后 2s 内关窗/退出 → 最后一段静默丢失,
 // editor content 不持久化,重开即没。第七轮 P1-S 只解决"切 tab/卸载",关窗是另一条路径。
 //
-// 修复:autosave scheduler 把"立即 flush"句柄注册进模块级 registry(镜像
-// explorer-persist 的 activeFlush 模式);DockShell 关窗 flush 握手在 ack 前
+// 修复:autosave scheduler 把"立即 flush"句柄随 claimAutoSave 登记在活动持有者上;
+// DockShell 关窗 flush 握手在 ack 前
 // await flushPendingAutoSave(),把 pending 内容纳入 ack 之前的落盘序列。
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

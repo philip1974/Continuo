@@ -133,7 +133,7 @@ export function useAutoSave(
 
   // 切走该 tab(scheduler 身份随 tabId 变)或组件卸载 → flush pending,
   // 把还卡在防抖窗口里的编辑落盘,避免连续输入后立即切 tab 丢失整段内容。
-  // 同时把当前 scheduler 的 flush 句柄注册进 registry,供关窗/退出的 flush 握手
+  // 同时以 claimAutoSave 登记为活动持有者(带 flush 句柄),供关窗/退出的 flush 握手
   // (DockShell onFlushRequest)在 ack 前同步落盘 pending autosave(P1-AE)。
   useEffect(() => {
     if (!scheduler || tabId === null) return;
