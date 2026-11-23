@@ -1,8 +1,10 @@
 // rename a.ts → .hidden.ts → showHiddenFiles=false 默认时 tree 不显新文件.
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EXPLORER_RENAME } from './helpers/explorer';
 
-test('rename a.ts → .hidden.ts → tree 不显', async ({ window }) => {
+test('rename a.ts → .hidden.ts → tree 不显', async ({ window, workspaceRoot }) => {
   await window.locator('text=src').first().click();
   await window
     .locator('[role=treeitem]')
@@ -15,8 +17,10 @@ test('rename a.ts → .hidden.ts → tree 不显', async ({ window }) => {
   await input.fill('.hidden.ts');
   await input.press('Enter');
 
-  // 等 fs + watch
-  await window.waitForTimeout(500);
+  // 改名确实落盘(否则下面「不显」区分不了被过滤与改名失败)
+  await expect
+    .poll(() => stat(path.join(workspaceRoot, 'src/.hidden.ts')).then(() => true, () => false), { timeout: 5_000 })
+    .toBe(true);
 
   // a.ts 不再显
   await expect(

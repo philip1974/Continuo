@@ -38,9 +38,12 @@ test('长 workspace 名 → ExplorerHeader 标题 class 含 truncate', async () 
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
+    // ExplorerHeader 标题 span:title=root(完整路径),文本为 basename
     const aside = win.locator('main aside').nth(1);
-    const titleSpan = aside.locator('span.truncate').first();
+    const titleSpan = aside.getByTitle(ws, { exact: true });
     await expect(titleSpan).toBeVisible({ timeout: 10_000 });
+    await expect(titleSpan).toHaveText(path.basename(ws));
+    await expect(titleSpan).toHaveClass(/(^|\s)truncate(\s|$)/);
 
     await app.close();
   } finally {

@@ -21,6 +21,8 @@ test('openOrFocusPanel("output") 调 2 次 → 只 1 个 Output close ✕', asyn
   await expect(window.getByText(OUTPUT_READY)).toBeVisible({
     timeout: 10_000,
   });
+  // 留时间让可能的重复 addPanel 渲染出来,再数
+  await window.waitForTimeout(500);
 
   // 仅 1 个 Close Output 按钮
   const closeBtns = window.getByRole('button', { name: OUTPUT_CLOSE });

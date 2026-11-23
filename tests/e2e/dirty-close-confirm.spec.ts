@@ -50,7 +50,8 @@ test('改脏 a.ts → 关窗弹确认:取消保持打开,不保存则关闭', as
       { timeout: 10_000 },
     )
     .toBeGreaterThan(0);
-  expect((await calls())[0]).toMatch(/1/);
+  // 消息含未保存数量 1(dialog.unsaved_close.message 三语)
+  expect((await calls())[0]).toMatch(/(对 1 个文件|to 1 file\(s\)|1개 파일)/);
   // 取消 → 窗口仍在、内容仍 dirty。
   expect(await windowCount()).toBe(1);
   await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();

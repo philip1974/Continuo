@@ -12,10 +12,10 @@ test('启动后 → EditorWelcome 显完整 hint', async ({ window }) => {
     timeout: 5_000,
   });
   await expect(window.getByText(EDITOR_WELCOME_HINT)).toBeVisible();
-  // KeyCap ⌘ S
+  // KeyCap ⌘ S(各为一个 kbd.wm-keycap)
   const main = window.locator('main');
-  await expect(main).toContainText('⌘');
-  await expect(main).toContainText('S');
+  await expect(main.locator('kbd.wm-keycap').filter({ hasText: /^⌘$/ })).toHaveCount(1);
+  await expect(main.locator('kbd.wm-keycap').filter({ hasText: /^S$/ })).toHaveCount(1);
   await expect(window.getByText(EDITOR_SAVE_LABEL)).toBeVisible();
   await expect(main).toContainText(EDITOR_SAVE_TEXT);
 });

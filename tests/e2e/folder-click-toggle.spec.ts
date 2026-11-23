@@ -1,9 +1,11 @@
 // 单击 src 文件夹 → 展开 / 收起 toggle.
 import { test, expect } from './fixtures/with-workspace';
+import { explorerTreeItem } from './helpers/explorer';
 
 test('点 src toggle:展开 → 收 → 展开', async ({ window }) => {
   const aTs = window.locator('[role=treeitem]').filter({ hasText: /^a\.ts$/ });
-  // 默认 src 折叠 → a.ts 不显
+  // 先等树渲染出 src(否则 a.ts 计数为 0 首帧即成立),再确认默认折叠 → a.ts 不显
+  await expect(explorerTreeItem(window, /^src$/)).toBeVisible({ timeout: 10_000 });
   await expect(aTs).toHaveCount(0);
 
   // 第一次点 → 展开

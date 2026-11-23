@@ -6,17 +6,15 @@ import {
   openSettingsTab,
 } from './helpers/settings';
 
-const FONT_SIZE = /^(字号|Font size|글꼴 크기)$/;
+// settings.editor.font_size.desc 的三语原文(只出现在描述里,不与任何设置标题重合)
+const EDITOR_FONT_SIZE_DESC =
+  /(CodeEditor\(代码 \/ Source mode\)的字号。|Font size for the code editor \(Source mode\)\.|코드 에디터\(소스 모드\)의 글꼴 크기\.)/;
 
-test('编辑器 tab 显示 fontSize description「CodeEditor 字号」之类', async ({
-  window,
-}) => {
+test('编辑器 tab 显示 fontSize description', async ({ window }) => {
   await openSettingsTab(window, EDITOR_TAB);
 
-  // 验证有 description 文案存在(EditorTabPlugin 注册了 description)
-  await expect(window.getByText(FONT_SIZE).first()).toBeVisible();
-  // 自动保存说明
-  await expect(window.locator('main')).toContainText('Markdown');
+  // EditorTabPlugin 为 editor.fontSize 注册了 description
+  await expect(window.getByText(EDITOR_FONT_SIZE_DESC).first()).toBeVisible();
 });
 
 test('终端 tab 显示 fontSize description', async ({ window }) => {

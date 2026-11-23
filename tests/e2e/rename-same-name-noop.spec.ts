@@ -19,10 +19,13 @@ test('rename a.ts → a.ts 同名 → noop + 内容不变', async ({
   await window.getByRole('menuitem', { name: EXPLORER_RENAME }).click();
 
   const input = window.locator('input:focus');
+  // 改名输入框确实出现且预填原名
+  await expect(input).toHaveValue('a.ts', { timeout: 5_000 });
   // 不变名字直接 Enter
   await input.press('Enter');
 
-  // 等一段确认无错
+  // 输入框收起(改名流程结束),再等一段确认无错
+  await expect(input).toHaveCount(0, { timeout: 5_000 });
   await window.waitForTimeout(300);
   // 文件仍存在 + 内容不变
   const after = await readFile(path.join(workspaceRoot, 'src/a.ts'), 'utf8');

@@ -25,7 +25,8 @@ test('a.ts dirty → 外部 writeFile → CM 仍显内部修改 + 仍 dirty', as
     'export const a = 999; // ext\n',
   );
 
-  // 等一段(给 watch + dispatch 时间)
+  // 等一段(给 watch + dispatch 时间)。注:本用例没有「watch 事件确已到达」的正向对照,只能证明 2s 内未被覆盖;
+  // 外部变更同步到 clean tab 的正向路径见 save-shortcut.spec.ts 第二个用例。
   await window.waitForTimeout(2_000);
 
   // CM 仍显 'mine'(内部修改未被外部覆盖)

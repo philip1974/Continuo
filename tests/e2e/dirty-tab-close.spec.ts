@@ -36,6 +36,6 @@ test('改 a.ts → 关 → 弹 ConfirmDialog 「放弃未保存的修改?」 + �
   await expect(dialog).toBeVisible();
   // 文案 + 按钮文本(不依赖 aria-role,避免 Modal focus trap 期间 role 短暂错位)
   await expect(dialog).toContainText(EDITOR_DISCARD_TITLE);
-  await expect(dialog).toContainText(EDITOR_CANCEL);
+  await expect(dialog.locator('button').filter({ hasText: new RegExp(`^${EDITOR_CANCEL.source}$`) })).toHaveCount(1);
   await expect(dialog).toContainText(EDITOR_DISCARD_CONFIRM);
 });

@@ -46,6 +46,19 @@ test('打开 .md → 关闭 autoSave 后 SegmentedControl 仍在 + Save 不显',
     t.setSettingValue('autoSave.markdown.enabled', false);
   });
 
+  // 设置确实已写入(正向证据)
+  await expect
+    .poll(() =>
+      window.evaluate(() =>
+        (
+          window as unknown as {
+            __continuoTest: { getSettingValue: (id: string) => unknown };
+          }
+        ).__continuoTest.getSettingValue('autoSave.markdown.enabled'),
+      ),
+    )
+    .toBe(false);
+
   // 等重渲 → SegmentedControl 仍在,Save 按钮仍不显.
   await expect(editBtn).toBeVisible({ timeout: 5_000 });
   await expect(

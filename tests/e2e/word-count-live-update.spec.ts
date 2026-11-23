@@ -7,8 +7,10 @@ test('a.ts 输入 → footer 词数增加', async ({ window }) => {
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click();
 
-  // 默认 'export const a = 1;\n' → 5 词('export','const','a','=','1;')
+  // 默认 'export const a = 1;\n' → 5 词('export','const','a','=','1;')。先确认文件已打开、footer 已显示词数
+  await expect(window.locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
   const footer = window.locator('footer');
+  await expect(footer).toContainText(WORD_COUNT);
   const before = await footer.textContent();
   const matchBefore = before?.match(WORD_COUNT);
   const wordsBefore = matchBefore ? Number(matchBefore[1]) : 0;
