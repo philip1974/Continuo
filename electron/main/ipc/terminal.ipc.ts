@@ -111,7 +111,6 @@ const noInputSchema = z.object({}).strict();
 export type CreateInput = TerminalCreateInput;
 export type WriteInput = z.infer<typeof writeInputSchema>;
 export type ResizeInput = z.infer<typeof resizeInputSchema>;
-export type UpdateCwdInput = z.infer<typeof updateCwdInputSchema>;
 export type IdOnlyInput = z.infer<typeof idOnlyInputSchema>;
 
 // ── handlers ─────────────────────────────────────────────────
@@ -305,16 +304,6 @@ export function makeRemoveHandler(deps?: {
   };
 }
 
-function makeUpdateCwdHandler(deps?: {
-  sessionStore?: typeof terminalSessions;
-}) {
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: UpdateCwdInput, win: BrowserWindow): void => {
-    assertOwnedSession(sessionStore, input.id, win);
-    sessionStore.updateCwd(input.id, input.cwd);
-  };
-}
-
 export function makeWriteHandler(deps?: {
   service?: typeof termService;
   sessionStore?: typeof terminalSessions;
@@ -410,7 +399,6 @@ export function registerTerminalIpc(): void {
   const writeHandler = makeWriteHandler();
   const resizeHandler = makeResizeHandler();
   const removeHandler = makeRemoveHandler();
-  const updateCwdHandler = makeUpdateCwdHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
   // 所有 terminal IPC 走同一外壳(safeHandleWithWindow:trust → bounded → zod → try/catch + 从 sender
@@ -440,7 +428,10 @@ export function registerTerminalIpc(): void {
     },
   );
 
-  ownerScopedHandle(SESSION_UPDATE_CWD_CHANNEL, updateCwdInputSchema, updateCwdHandler);
+  ownerScopedHandle(SESSION_UPDATE_CWD_CHANNEL, updateCwdInputSchema, (input, win) => {
+    assertOwnedSession(terminalSessions, input.id, win);
+    terminalSessions.updateCwd(input.id, input.cwd);
+  });
 
   // sessions_changed:严格 per-owner 路由 — 不论 user / agent,可见域只由
   // ownerWindowId 决定,与 listSessionsHandler 一致。

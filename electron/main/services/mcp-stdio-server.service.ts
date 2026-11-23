@@ -145,10 +145,6 @@ function rejectAndDestroy(sock: Socket, message: string): void {
   sock.resume();
 }
 
-export function isBlankStdioLine(line: string): boolean {
-  return isBlankString(line);
-}
-
 export function resolveStdioHelloWindowId(
   params: unknown,
   deps: ResolveStdioHelloDeps,
@@ -404,7 +400,7 @@ async function handleLine(
   const { tools, serverInfo, resolveWindowId } = opts;
   // 连接已 abort(拒绝 / 断开):abort 前已链入队列的行直接丢弃,不再 dispatch(否则逐条走到
   // gateWithAuth → 大量迟到授权弹窗)。
-  if (signal.aborted || isBlankStdioLine(line)) return;
+  if (signal.aborted) return;
 
   let raw: unknown;
   try {
@@ -636,12 +632,12 @@ export async function createStdioSocketServer(
       }
       // race(R110):按接收顺序串到本 socket 的链尾,逐行串行 await。链尾 catch 后继续,单行
       // 失败/抛错不阻塞后续行(每行响应仍按 id 配对发回客户端)。
-      // 边界(E214):空白行(NDJSON 忽略,handleLine 本就早返)入链前同步跳过,避免为海量空行挂 promise;
+      // 边界(E214):空白行(NDJSON 忽略)入链前同步跳过,避免为海量空行挂 promise;
       // 非空行数超 MAX_STDIO_LINES_PER_CHUNK → parse error + 断开(挡 1MB \n\n\n... / 海量极短行放大)。
       // 行数上限已由 decoder 的 maxLines 钳定(lines.length ≤ MAX_STDIO_LINES_PER_CHUNK,超限走上面的
       // overflow 分支),此处不必再计数。
       for (const line of lines) {
-        if (isBlankStdioLine(line)) continue; // 空白行:NDJSON 忽略,不入链
+        if (isBlankString(line)) continue; // 空白行:NDJSON 忽略,不入链
         clearFirstMessageTimer(); // 安全(W2):收到首条完整消息
         const bytes = Buffer.byteLength(line, 'utf8');
         if (
