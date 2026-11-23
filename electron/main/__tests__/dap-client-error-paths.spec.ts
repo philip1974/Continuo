@@ -269,6 +269,17 @@ describe('child session 的释放', () => {
     }
   });
 
+  // worker 反复创建 / 结束:DebugService 逐个 dispose 结束的 child,父 client 不能继续持有它们。
+  it('单独 dispose 的 child 从父 client 的子会话列表中移除', async () => {
+    const parent = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
+    const children = Array.from({ length: 5 }, () => parent.createChildSession());
+    await Promise.all(children.slice(0, 4).map((child) => child.dispose()));
+    const held = (parent as unknown as { childSessions: DapClient[] }).childSessions;
+    expect(held).toEqual([children[4]]);
+    await parent.dispose();
+    expect((parent as unknown as { childSessions: DapClient[] }).childSessions).toEqual([]);
+  });
+
   // 结束的 child(terminated)由服务层回收:js-debug 可能在 terminated 之后才回在途请求的响应,先关 socket
   // 会让这些请求以「DAP socket closed」失败。
   it('disposeWhenIdle:有在途请求时等其响应到达后才关 socket;无在途请求时立即释放', async () => {
