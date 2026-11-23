@@ -9,7 +9,7 @@ import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
 import { useSingleFlight } from '@/lib/use-single-flight';
 import { errorMessage } from '../../electron/shared/error-message';
-import { getUserPluginManager, type PluginListItem } from '@/plugins/PluginManager';
+import { getUserPluginManager } from '@/plugins/PluginManager';
 import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
@@ -24,7 +24,7 @@ import { isHttpUrl } from './url-safety';
 import { useT, t as translate } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
-import { usePolledSnapshot } from '@/lib/use-polled-snapshot';
+import { useUserPluginList } from '@/plugins/use-user-plugin-list';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -52,8 +52,6 @@ const EMPTY_INSTALLED_IDS: ReadonlySet<string> = new Set();
 const EMPTY_MARKETPLACE_ENTRIES: readonly MarketplaceEntry[] = [];
 const EMPTY_UPDATE_VERSION_MAP: ReadonlyMap<string, string> = new Map();
 const EMPTY_REVIEWS: readonly Review[] = [];
-let cachedInstalledPlugins: readonly PluginListItem[] | null = null;
-let cachedInstalledIds: ReadonlySet<string> = EMPTY_INSTALLED_IDS;
 
 export function marketplaceTagButtonClassName(active: boolean): string {
   return active
@@ -81,41 +79,15 @@ interface InstallState {
   pending: ReadonlySet<string>;
 }
 
-/** 两个 id 集合成员完全相同(打磨 R2:轮询无变化时保持引用稳定). */
-export function sameIdSet(
-  a: ReadonlySet<string>,
-  b: ReadonlySet<string>,
-): boolean {
-  if (a === b) return true;
-  if (a.size !== b.size) return false;
-  for (const id of a) if (!b.has(id)) return false;
-  return true;
-}
-
-/** 1s 轮询当前已装 plugin id 集合(同 PluginsTabContent 模式). */
+/** 当前已装 plugin id 集合(订阅 user plugin manager 的列表变化)。 */
 export function useInstalledIds(): ReadonlySet<string> {
-  return usePolledSnapshot(readInstalledIds, sameIdSet)[0];
-}
-
-export function readInstalledIds(): ReadonlySet<string> {
-  const m = getUserPluginManager();
-  if (!m) {
-    cachedInstalledPlugins = null;
-    cachedInstalledIds = EMPTY_INSTALLED_IDS;
-    return EMPTY_INSTALLED_IDS;
-  }
-  const plugins = m.listAll();
-  if (plugins.length === 0) {
-    cachedInstalledPlugins = plugins;
-    cachedInstalledIds = EMPTY_INSTALLED_IDS;
-    return EMPTY_INSTALLED_IDS;
-  }
-  if (plugins === cachedInstalledPlugins) return cachedInstalledIds;
-  const ids = new Set<string>();
-  for (const plugin of plugins) ids.add(plugin.id);
-  cachedInstalledPlugins = plugins;
-  cachedInstalledIds = ids;
-  return ids;
+  const plugins = useUserPluginList();
+  return useMemo(() => {
+    if (plugins.length === 0) return EMPTY_INSTALLED_IDS;
+    const ids = new Set<string>();
+    for (const plugin of plugins) ids.add(plugin.id);
+    return ids;
+  }, [plugins]);
 }
 
 export function buildUpdateVersionMap(

@@ -2,7 +2,7 @@
 
 行为契约:**三段视图:贡献点统计(实时聚合 panels/commands/statusBar/ribbon/settingTabs/decorators/editorActions)
 + 内置插件清单(CORE_PLUGINS 静态)+ 第三方插件清单(从 PluginManager.listAll()
-轮询 + Git URL 安装表单)。每条第三方:重载 / 启用-禁用 / 权限编辑(manifest.permissions 非空)/ 卸载。
+订阅 PluginManager 的列表变化 + Git URL 安装表单)。每条第三方:重载 / 启用-禁用 / 权限编辑(manifest.permissions 非空)/ 卸载。
 卸载走 ConfirmDialog;权限走 PermissionEditorModal。**
 
 ## 模块

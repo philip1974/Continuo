@@ -17,10 +17,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, waitFor } from '@testing-library/react';
 
-vi.mock('../../plugins/PluginManager', () => ({
-  getUserPluginManager: vi.fn(),
-  setUserPluginManager: vi.fn(),
-}));
+// getMgr 配置「假 manager」;UI 经 getUserPluginManager 拿到的是包成可订阅形态的那一个。
+const { getMgr } = vi.hoisted(() => ({ getMgr: vi.fn() }));
+vi.mock('../../plugins/PluginManager', async () => {
+  const { asSubscribableManager } = await import('../plugins-tab-content/fake-user-plugin-manager');
+  return {
+    getUserPluginManager: () => asSubscribableManager(getMgr()),
+    setUserPluginManager: vi.fn(),
+  };
+});
 
 vi.mock('../../plugins/permissions/co-permission-store', () => ({
   getUserPermissionStore: vi.fn(),
@@ -29,13 +34,11 @@ vi.mock('../../plugins/permissions/co-permission-store', () => ({
 
 import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
 import { PluginsTabContent } from '../../plugins/settings/PluginsTabContent';
-import { getUserPluginManager } from '../../plugins/PluginManager';
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
 import { useUpdateStore } from '../../marketplace/update-store';
 import type { AvailableUpdate } from '../../marketplace/update-store';
 import type { PluginListItem } from '../../plugins/PluginManager';
 
-const getMgr = getUserPluginManager as unknown as ReturnType<typeof vi.fn>;
 const getPerm = getUserPermissionStore as unknown as ReturnType<typeof vi.fn>;
 
 function plugin(id: string): PluginListItem {

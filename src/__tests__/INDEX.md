@@ -112,7 +112,6 @@
 - [`plugin-mcp-malformed-reply-no-hang.spec.ts`](./49-polish-bugfixes/plugin-mcp-malformed-reply-no-hang.spec.ts)
 - [`plugin-mcp-reload-cleanup.spec.ts`](./49-polish-bugfixes/plugin-mcp-reload-cleanup.spec.ts)
 - [`plugin-mcp-unregister-aborts-invoke.spec.ts`](./49-polish-bugfixes/plugin-mcp-unregister-aborts-invoke.spec.ts)
-- [`plugin-poll-stable-ref.spec.tsx`](./49-polish-bugfixes/plugin-poll-stable-ref.spec.tsx)
 - [`plugin-warning-cleared-on-transition.spec.ts`](./49-polish-bugfixes/plugin-warning-cleared-on-transition.spec.ts)
 - [`plugins-changed-broadcast-send-throw.spec.ts`](./49-polish-bugfixes/plugins-changed-broadcast-send-throw.spec.ts)
 - [`popout-consumers-use-helper.spec.ts`](./49-polish-bugfixes/popout-consumers-use-helper.spec.ts)
@@ -1518,10 +1517,6 @@
 ## [useFsWatcher(Explorer 展开路径 ↔ fs.watch)](./use-fs-watcher/README.md)
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
-
-## [usePolledSnapshot(定时轮询外部快照)](./use-polled-snapshot/README.md)
-
-- [`use-polled-snapshot.spec.tsx`](./use-polled-snapshot/use-polled-snapshot.spec.tsx)
 
 ## [wc-gone-hook · 何时回收 webContents 名下的 main 侧资源](./wc-gone-hook/README.md)
 

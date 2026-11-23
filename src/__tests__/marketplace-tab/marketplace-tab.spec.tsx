@@ -13,10 +13,15 @@ vi.mock('../../marketplace/fetcher', () => ({
   }),
 }));
 
-vi.mock('../../plugins/PluginManager', () => ({
-  getUserPluginManager: vi.fn(),
-  setUserPluginManager: vi.fn(),
-}));
+// getMgr 配置「假 manager」;UI 经 getUserPluginManager 拿到的是包成可订阅形态的那一个。
+const { getMgr } = vi.hoisted(() => ({ getMgr: vi.fn() }));
+vi.mock('../../plugins/PluginManager', async () => {
+  const { asSubscribableManager } = await import('../plugins-tab-content/fake-user-plugin-manager');
+  return {
+    getUserPluginManager: () => asSubscribableManager(getMgr()),
+    setUserPluginManager: vi.fn(),
+  };
+});
 
 import {
   _resetLmApiForTest,
@@ -32,7 +37,6 @@ import {
 } from '../../marketplace/MarketplaceTab';
 import { setLocale as setI18nLocale } from '@/i18n';
 import { fetchMarketplaceIndex, fetchPluginManifest } from '../../marketplace/fetcher';
-import { getUserPluginManager } from '../../plugins/PluginManager';
 import { useUpdateStore, type AvailableUpdate } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
 import type { PluginAggregateRating, Review } from '../../marketplace/reviews-types';
@@ -40,7 +44,6 @@ import type { MarketplaceEntry } from '../../marketplace/types';
 
 const fetchIndexMock = fetchMarketplaceIndex as unknown as ReturnType<typeof vi.fn>;
 const fetchManifestMock = fetchPluginManifest as unknown as ReturnType<typeof vi.fn>;
-const getMgr = getUserPluginManager as unknown as ReturnType<typeof vi.fn>;
 
 function entry(over: Partial<MarketplaceEntry> & { id: string }): MarketplaceEntry {
   const base: MarketplaceEntry = {

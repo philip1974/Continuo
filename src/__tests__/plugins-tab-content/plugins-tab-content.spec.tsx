@@ -4,10 +4,17 @@ import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-vi.mock('../../plugins/PluginManager', () => ({
-  getUserPluginManager: vi.fn(),
-  setUserPluginManager: vi.fn(),
-}));
+// getMgr 配置「假 manager」;UI 经 getUserPluginManager 拿到的是包成可订阅形态的那一个。
+const { getMgr } = vi.hoisted(() => ({ getMgr: vi.fn() }));
+vi.mock('../../plugins/PluginManager', async () => {
+  const { asSubscribableManager } = await import('./fake-user-plugin-manager');
+  return {
+    getUserPluginManager: () => asSubscribableManager(getMgr()),
+    setUserPluginManager: vi.fn(),
+  };
+});
+
+import { notifyUserPluginListChanged } from './fake-user-plugin-manager';
 
 vi.mock('../../plugins/permissions/co-permission-store', () => ({
   getUserPermissionStore: vi.fn(),
@@ -32,11 +39,9 @@ import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
-import { getUserPluginManager } from '../../plugins/PluginManager';
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
 import type { PluginListItem } from '../../plugins/PluginManager';
 
-const getMgr = getUserPluginManager as unknown as ReturnType<typeof vi.fn>;
 const getPerm = getUserPermissionStore as unknown as ReturnType<typeof vi.fn>;
 
 interface FakeManager {
@@ -470,9 +475,9 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     expect(permBtn).toBeDefined();
   });
 
-  // race(R102):权限编辑弹窗打开期间该插件被卸载(轮询刷新后从 listAll 消失)→ 弹窗自动关闭,
+  // race(R102):权限编辑弹窗打开期间该插件被卸载(列表变化后从 listAll 消失)→ 弹窗自动关闭,
   // 防保存把已卸载插件的 ghost 权限写回。
-  it('打开权限弹窗后插件被卸载(轮询刷新)→ 弹窗自动关闭', async () => {
+  it('打开权限弹窗后插件被卸载(列表变化通知)→ 弹窗自动关闭', async () => {
     vi.useFakeTimers();
     try {
       installPluginsApi(vi.fn());
@@ -505,10 +510,10 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
       // 弹窗已开(标题渲染)
       expect(document.querySelector('.wm-modal-content')).toBeTruthy();
 
-      // 另一窗口卸载了插件 a → 下次 1s 轮询 listAll 不再含 a
+      // 另一窗口卸载了插件 a → manager 通知列表变化,listAll 不再含 a
       live = [];
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1000);
+        notifyUserPluginListChanged();
       });
 
       // 弹窗因 permEditTarget 从 live 列表消失而自动关闭
@@ -968,9 +973,9 @@ describe('PluginsTabContent — 卸载流程', () => {
     }
   });
 
-  // race(R103,R102 同族):卸载确认弹窗打开期间该插件被卸载(轮询刷新后从 listAll 消失)→ 弹窗自动
+  // race(R103,R102 同族):卸载确认弹窗打开期间该插件被卸载(列表变化后从 listAll 消失)→ 弹窗自动
   // 关闭,防迟到确认删错实例。
-  it('打开卸载弹窗后插件消失(轮询刷新)→ 弹窗自动关闭', async () => {
+  it('打开卸载弹窗后插件消失(列表变化通知)→ 弹窗自动关闭', async () => {
     vi.useFakeTimers();
     try {
       installPluginsApi(vi.fn());
@@ -987,7 +992,7 @@ describe('PluginsTabContent — 卸载流程', () => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();
       live = []; // 另一窗口已卸载
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1000);
+        notifyUserPluginListChanged();
       });
       expect(document.querySelector('.wm-modal-content')).toBeNull();
     } finally {
@@ -997,7 +1002,7 @@ describe('PluginsTabContent — 卸载流程', () => {
 
   // race(R103):卸载确认弹窗打开期间该插件被卸载+重装成不同 version(=不同实例,id 仍在但 version 变)
   // → effect 因 id+version 不再匹配自动关弹窗,防迟到确认删掉用户从未确认的新实例。
-  it('打开卸载弹窗后插件被重装成不同 version(轮询刷新)→ 弹窗自动关闭', async () => {
+  it('打开卸载弹窗后插件被重装成不同 version(列表变化通知)→ 弹窗自动关闭', async () => {
     vi.useFakeTimers();
     try {
       installPluginsApi(vi.fn());
@@ -1027,7 +1032,7 @@ describe('PluginsTabContent — 卸载流程', () => {
         }),
       ];
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1000);
+        notifyUserPluginListChanged();
       });
       expect(document.querySelector('.wm-modal-content')).toBeNull(); // 不同实例 → 关弹窗
     } finally {

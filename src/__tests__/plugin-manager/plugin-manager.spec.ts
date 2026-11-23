@@ -232,6 +232,34 @@ describe('init 扫描与激活', () => {
     expect(enabledAgain[0]?.status).toBe('enabled');
   });
 
+  // UI(设置页插件列表 / Marketplace 已装集合)订阅列表变化,不再每秒轮询 listAll。
+  it('subscribe:列表每次变化都通知,通知时 listAll 已是新快照;取消订阅后不再通知', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([['mod://a', { default: GoodPlugin }]]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    const seen: Array<string | undefined> = [];
+    const unsubscribe = mgr.subscribe(() => {
+      seen.push(mgr.listAll()[0]?.status);
+    });
+
+    await mgr.init();
+    expect(seen.at(-1)).toBe('enabled'); // init 异步完成后的迟到入表也会通知
+
+    await mgr.disable('a');
+    expect(seen.at(-1)).toBe('disabled');
+
+    const count = seen.length;
+    unsubscribe();
+    await mgr.enable('a');
+    expect(seen.length).toBe(count);
+  });
+
   it('listAll 空插件状态复用稳定空列表', () => {
     const stateA: MockHostState = {
       dirs: [],

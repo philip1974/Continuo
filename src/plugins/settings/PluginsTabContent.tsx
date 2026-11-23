@@ -4,13 +4,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Input } from '@/design';
 import { clampGitUrl } from '../../../electron/shared/plugins-channels';
-import { usePolledSnapshot } from '@/lib/use-polled-snapshot';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
 import { useSingleFlight } from '@/lib/use-single-flight';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';
+import { useUserPluginList } from '../use-user-plugin-list';
 import { getUserPermissionStore } from '../permissions/co-permission-store';
 import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import { useUpdateStore } from '@/marketplace/update-store';
@@ -28,7 +28,6 @@ interface ContributionRow {
 }
 
 const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
-const EMPTY_PLUGIN_TAB_ITEMS: never[] = [];
 const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
 const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
 const NO_PENDING_INSTALLS: ReadonlyMap<string, { id: string; name: string; version: string }> =
@@ -205,35 +204,6 @@ export function PluginsTabContent() {
   );
 }
 
-/**
- * 两个插件列表渲染等价(打磨 R2:轮询无变化时保持引用稳定)。逐项比较所有被
- * UI 渲染的可变字段(id/status/error/warning) + manifest 引用(reload 会换新
- * manifest ref)。任一 status/warning 变化即判不等 → 换引用 re-render,不会掩盖
- * 「loading→active→failed」「partial-grant ⚠」等真实状态更新(正是打磨在防的
- * UI 陈旧态)。
- */
-export function samePluginList(
-  a: readonly PluginListItem[],
-  b: readonly PluginListItem[],
-): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i]!; // i < a.length 且 a.length===b.length,两侧索引必有值
-    const y = b[i]!;
-    if (
-      x.id !== y.id ||
-      x.status !== y.status ||
-      x.error !== y.error ||
-      x.warning !== y.warning ||
-      x.manifest !== y.manifest
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
 export function hasPluginId(plugins: readonly PluginListItem[], id: string): boolean {
   for (const plugin of plugins) {
     if (plugin.id === id) return true;
@@ -252,24 +222,10 @@ export function hasPluginVersion(
   return false;
 }
 
-export function readUserPluginList(): readonly PluginListItem[] {
-  const m = getUserPluginManager();
-  return m ? m.listAll() : EMPTY_PLUGIN_TAB_ITEMS;
-}
-
-function useUserPlugins(): {
-  plugins: readonly PluginListItem[];
-  refresh: () => void;
-} {
-  // 1 秒轮询兜底:捕获 manager.init 异步完成的迟到入表;列表渲染态没变则保持同引用。
-  const [plugins, refresh] = usePolledSnapshot(readUserPluginList, samePluginList);
-  return { plugins, refresh };
-}
-
 function UserPluginsSection() {
   const t = useT();
   const tf = useTWithFallback();
-  const { plugins, refresh } = useUserPlugins();
+  const plugins = useUserPluginList();
   const mgr = getUserPluginManager();
   const [gitUrl, setGitUrl] = useState('');
   const trimmedGitUrl = useMemo(() => gitUrl.trim(), [gitUrl]);
@@ -293,9 +249,9 @@ function UserPluginsSection() {
   const permStore = getUserPermissionStore();
 
   // race(R102,R50 同族):权限编辑弹窗持有打开时捕获的 PluginListItem。弹窗打开期间该插件被
-  // 另一窗口/操作卸载时,1s 轮询刷新 plugins 列表但 permEditTarget 仍是旧 item → 弹窗仍可保存,
+  // 另一窗口/操作卸载时,plugins 列表随 manager 通知刷新,但 permEditTarget 仍是旧 item → 弹窗仍可保存,
   // 把已卸载插件的 ghost 权限写回 _permissions.json,同 id 日后重装意外继承非当前意图的授权。
-  // 插件从 live 列表消失即自动关闭弹窗(覆盖轮询);保存瞬间也 pluginStillExists 复检(覆盖
+  // 插件从 live 列表消失即自动关闭弹窗(覆盖列表变化);保存瞬间也 pluginStillExists 复检(覆盖
   // 本 effect 关闭前的同帧点击),同 KeybindingsTabContent R50。
   useEffect(() => {
     if (permEditTarget && !hasPluginId(plugins, permEditTarget.id)) {
@@ -304,7 +260,7 @@ function UserPluginsSection() {
   }, [permEditTarget, plugins]);
 
   // race(R103,R102 同族):卸载确认弹窗持有打开瞬间的 uninstallTarget 旧快照。弹窗打开期间该插件被
-  // 另一窗口/操作卸载(1s 轮询刷新后从 plugins 消失),或卸载+重装同 id(version 变化=不同实例),
+  // 另一窗口/操作卸载(列表变化后从 plugins 消失),或卸载+重装同 id(version 变化=不同实例),
   // 迟到的确认会对当前新实例执行 mgr.uninstall(target.id) → 删掉用户从未确认的新插件。live 列表中
   // 同 id+同 version 的条目不再存在即自动关弹窗。用 id+version 作同一实例校验(PluginListItem 无稳定
   // 实例 token,重装通常改 version;同 version 重装不可区分,极罕见,按 id 语义仍合理)。
@@ -346,7 +302,6 @@ function UserPluginsSection() {
         isError: true,
       });
     }
-    refresh();
   };
 
   const onInstall = (): Promise<void> | void => {
@@ -516,7 +471,6 @@ function UserPluginsSection() {
                       console.warn(`[plugins-tab] reload ${p.id} failed`, err);
                       reportActionError(err);
                     }
-                    refresh();
                   }}
                   title={t('plugins_tab.action.reload_tooltip')}
                   // a11y(A75):行内操作按钮可见文本通用(多行同名),aria-label 补插件名以区分。
@@ -538,7 +492,6 @@ function UserPluginsSection() {
                         console.warn(`[plugins-tab] disable ${p.id} failed`, err);
                         reportActionError(err);
                       }
-                      refresh();
                     }}
                     aria-label={t('plugins_tab.action.row_button_aria', {
                       action: t('plugins_tab.btn.disable'),
@@ -558,7 +511,6 @@ function UserPluginsSection() {
                         console.warn(`[plugins-tab] enable ${p.id} failed`, err);
                         reportActionError(err);
                       }
-                      refresh();
                     }}
                     aria-label={t('plugins_tab.action.row_button_aria', {
                       action: t('plugins_tab.btn.enable'),
@@ -579,7 +531,6 @@ function UserPluginsSection() {
                         console.warn(`[plugins-tab] retry ${p.id} failed`, err);
                         reportActionError(err);
                       }
-                      refresh();
                     }}
                     title={t('plugins_tab.action.retry_enable_tooltip')}
                     aria-label={t('plugins_tab.action.row_button_aria', {

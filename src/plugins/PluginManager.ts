@@ -185,6 +185,7 @@ function uninstalledError(id: string): Error {
 export class PluginManager {
   private entries = new Map<string, PluginEntry>();
   private cachedList: readonly PluginListItem[] | null = null;
+  private readonly listListeners = new Set<() => void>();
   /**
    * Per-id 生命周期串行锁。enable/disable/reload/uninstall 含多个 await 让权点
    * (权限 prompt / _registerPlugin / _activate / IPC),且 reload 由 mtime watcher
@@ -687,7 +688,18 @@ export class PluginManager {
     if (intent === 'disabled') throw activationAbortedError(id);
   }
 
-  /** 列出所有已发现插件状态. */
+  /**
+   * 订阅 listAll() 结果的变化(列表缓存每次失效时同步通知;此时条目状态已改完,listAll 返回新快照)。
+   * 箭头属性:可直接交给 useSyncExternalStore。返回取消订阅。
+   */
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listListeners.add(listener);
+    return () => {
+      this.listListeners.delete(listener);
+    };
+  };
+
+  /** 列出所有已发现插件状态(同一份列表在下次变化前返回同一引用)。 */
   listAll(): readonly PluginListItem[] {
     if (this.cachedList !== null) return this.cachedList;
     if (this.entries.size === 0) return EMPTY_PLUGIN_LIST;
@@ -892,6 +904,7 @@ export class PluginManager {
 
   private invalidateListCache(): void {
     this.cachedList = null;
+    for (const listener of [...this.listListeners]) listener();
   }
 
   private async deactivateEntry(

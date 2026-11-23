@@ -1,5 +1,5 @@
 // install.pending 是「刚装/更新成功、但等磁盘 mtime watcher 落地到 PluginManager」
-// 的乐观标记。一旦某 id 在 installed(1s 轮询的真实磁盘集)出现 = 已落地,该 id 的
+// 的乐观标记。一旦某 id 在 installed(user plugin manager 的已发现集合)出现 = 已落地,该 id 的
 // pending 使命已完,必须摘除。否则:
 //   (1) pending 单调只增不减(会话内内存泄漏);
 //   (2) 用户随后在设置页卸载该插件 → installed 变假但 pending 仍真 →
