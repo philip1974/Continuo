@@ -19,8 +19,11 @@ I/O 全部抽象为接口注入(`ManagerHost`),便于 jsdom 单测。
 - `host.listPluginDirs()` 返回 `[{ id, manifestText, moduleUrl }]`
 - 调 `parseManifest`,失败的跳过 + warn
 - 调 `isVersionCompatible`(若 manifest 有 minLMVersion),不兼容跳过 + warn
-- 多个目录声明同一 `manifest.id` → 只保留一个(目录名 == id 优先,否则目录名字典序第一个),其余跳过 + warn;
-  `reload` 的 `findPluginDirByManifestId` 用同一规则(防双激活留孤儿实例)
+- 多个目录声明同一 `manifest.id` → 只在**通过准入**(上两条)的目录中保留一个(目录名 == id 优先,否则目录名
+  字典序第一个),其余跳过 + warn(防双激活留孤儿实例)
+- 准入与选目录是同一个函数 `selectPluginDirs`,`reload` 也用它(重新列举全部目录后取目标 id):启动与热重载
+  对同一份磁盘状态总是选同一目录、同样拒绝不兼容版本。热重载时目标 id 没有合格目录但仍有目录声明它 →
+  条目 `failed`(manifest 错误码,或 `INCOMPATIBLE_VERSION`),不激活;没有任何目录声明它 → 抛 no longer exists
 
 ### 启用过滤
 

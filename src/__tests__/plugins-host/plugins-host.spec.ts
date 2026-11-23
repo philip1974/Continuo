@@ -65,19 +65,6 @@ describe('Blob URL 生命周期', () => {
     expect(createObjectURL).not.toHaveBeenCalled();
   });
 
-  it('readDirById 结果与列举项同形:moduleUrl 是稳定的惰性源码引用,不生成 Blob URL', async () => {
-    installFakeApi({
-      readDirById: vi.fn().mockResolvedValue({
-        ok: true,
-        data: { id: 'a', manifestText: '{}', manifestHash: '0'.repeat(64) },
-      }),
-    } as Partial<FakePluginsApi>);
-    const info = await createWindowApiHost().readPluginDirByManifestId!('a');
-    expect(info!.moduleUrl).toBe(info!.moduleUrl);
-    expect(info!.moduleUrl.startsWith('blob:')).toBe(false);
-    expect(createObjectURL).not.toHaveBeenCalled();
-  });
-
   it('importModule 结束后 revoke 该 blob URL(失败也 revoke);非 blob URL 不 revoke', async () => {
     const revokeObjectURL = vi.fn();
     Object.defineProperty(URL, 'revokeObjectURL', {
@@ -298,40 +285,6 @@ describe('createWindowApiHost:列举快照与激活拉取的 main 一致(真实 
     // jsdom 无法 import blob: URL → reject,但源码已拉到并生成 Blob URL(令牌校验通过)
     await expect(host.importModule(info!.moduleUrl)).rejects.toBeDefined();
     expect(createObjectURL).toHaveBeenCalledTimes(1);
-  });
-});
-
-// perf:热重载按 id 只读单个插件目录(coApi.plugins.readDirById)。
-describe('createWindowApiHost.readPluginDirByManifestId', () => {
-  it('ok=true → 透传 id/manifestText;重新激活时才按目录名 + manifest 令牌拉 main', async () => {
-    const readDirById = vi.fn().mockResolvedValue({
-      ok: true,
-      data: { id: 'dir', manifestText: '{"id":"p1"}', manifestHash: 'h'.repeat(64) },
-    });
-    installFakeApi({ readDirById } as Partial<FakePluginsApi>);
-    const host = createWindowApiHost();
-    const info = await host.readPluginDirByManifestId!('p1');
-    expect(readDirById).toHaveBeenCalledWith('p1');
-    expect(createObjectURL).not.toHaveBeenCalled();
-    expect(info).toMatchObject({ id: 'dir', manifestText: '{"id":"p1"}' });
-
-    const readMainByDir = vi.fn().mockResolvedValue({ ok: true, data: 'export default {}' });
-    installFakeApi({ readDirById, readMainByDir } as Partial<FakePluginsApi>);
-    await host.importModule(info!.moduleUrl).catch(() => undefined); // jsdom 下 import blob 会失败,只看拉取
-    expect(readMainByDir).toHaveBeenCalledWith('dir', 'h'.repeat(64));
-  });
-
-  it('data=null → null;ok=false → warn + null', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const readDirById = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, data: null })
-      .mockResolvedValueOnce({ ok: false, code: 'EIO', message: 'disk' });
-    installFakeApi({ readDirById } as Partial<FakePluginsApi>);
-    const host = createWindowApiHost();
-    await expect(host.readPluginDirByManifestId!('p1')).resolves.toBeNull();
-    await expect(host.readPluginDirByManifestId!('p1')).resolves.toBeNull();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('readDirById failed'), 'EIO', 'disk');
   });
 });
 

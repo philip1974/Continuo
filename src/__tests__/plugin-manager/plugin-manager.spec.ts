@@ -49,7 +49,7 @@ vi.mock('@/lib/co-api', () => ({
 
 import { Plugin } from '../../plugins/Plugin';
 import {
-  findPluginDirByManifestId,
+  selectPluginDirs,
   PluginManager,
   type ManagerHost,
   type PluginDirInfo,
@@ -531,20 +531,18 @@ describe('enable / disable 动态', () => {
 // ── v4.3 reload ────────────────────────────────────────
 
 describe('reload(id)', () => {
-  it('findPluginDirByManifestId 单趟扫描,不调用 dirs.find,并跳过坏 manifest', () => {
+  // 重复 manifest.id 时启动与热重载选同一目录:同一准入(manifest schema + minLMVersion)与同一偏好规则。
+  it('selectPluginDirs:先准入再选目录 —— 同名目录不合格时选其它合格目录;坏 manifest / 版本不兼容不参选', () => {
     const dirs: PluginDirInfo[] = [
       { id: 'bad', manifestText: 'not json', moduleUrl: 'mod://bad' },
-      { id: 'r', manifestText: manifestText('r'), moduleUrl: 'mod://r' },
+      { id: 'r', manifestText: manifestText('r', { minLMVersion: '99.0.0' }), moduleUrl: 'mod://r' },
+      { id: 'r-old', manifestText: manifestText('r'), moduleUrl: 'mod://r-old' },
     ];
-    const findSpy = vi.spyOn(dirs, 'find');
-
-    try {
-      expect(findPluginDirByManifestId(dirs, 'r')).toBe(dirs[1]);
-      expect(findPluginDirByManifestId(dirs, 'missing')).toBeNull();
-      expect(findSpy).not.toHaveBeenCalled();
-    } finally {
-      findSpy.mockRestore();
-    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const chosen = selectPluginDirs(dirs, '1.0.0');
+    warn.mockRestore();
+    expect(chosen.get('r')?.dir).toBe(dirs[2]);
+    expect([...chosen.keys()]).toEqual(['r']);
   });
 
   it('启用中插件 reload → _deactivate + 重 activate(用最新 mainText)', async () => {
@@ -776,8 +774,8 @@ describe('reload(id)', () => {
     expect(state.enabledWritten.size).toBe(0);
   });
 
-  // perf:host 提供按 id 读单目录时,reload 只读目标插件,不再全量 listPluginDirs。
-  it('host 提供 readPluginDirByManifestId → reload 只按 id 读,不调 listPluginDirs', async () => {
+  // 热重载与启动走同一准入:新版本要求更高的 app 版本 → 热重载不激活(启动同样跳过),条目标为失败。
+  it('reload 读到 minLMVersion 不兼容的 manifest → 不激活,条目 failed(与启动同一准入)', async () => {
     const state: MockHostState = {
       dirs: [{ id: 'k', manifestText: manifestText('k'), moduleUrl: 'mod://k' }],
       enabled: new Set(['k']),
@@ -787,25 +785,43 @@ describe('reload(id)', () => {
       ]),
       enabledWritten: new Set(),
     };
-    const base = makeHost(state);
-    const listSpy = vi.fn(base.listPluginDirs);
-    const readOne = vi.fn(async (id: string) =>
-      id === 'k' ? { id: 'k', manifestText: manifestText('k'), moduleUrl: 'mod://k2' } : null,
-    );
-    const mgr = new PluginManager(fakeApp, {
-      ...base,
-      listPluginDirs: listSpy,
-      readPluginDirByManifestId: readOne,
-    });
+    const mgr = new PluginManager(fakeApp, makeHost(state));
     await mgr.init();
-    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(GoodPlugin.loaded).toEqual(['k']);
+    state.dirs = [
+      { id: 'k', manifestText: manifestText('k', { minLMVersion: '99.0.0' }), moduleUrl: 'mod://k2' },
+    ];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await mgr.reload('k');
-    expect(listSpy).toHaveBeenCalledTimes(1);
-    expect(readOne).toHaveBeenCalledWith('k');
-    expect(mgr.listAll().find((p) => p.id === 'k')?.status).toBe('enabled');
+    warn.mockRestore();
+    const item = mgr.listAll().find((p) => p.id === 'k');
+    expect(item?.status).toBe('failed');
+    expect(item?.error?.code).toBe('INCOMPATIBLE_VERSION');
+    expect(GoodPlugin.loaded).toEqual(['k']); // 新版本没有被激活
+    expect(GoodPlugin.unloaded).toEqual(['k']); // 旧实例已拆
+  });
 
-    readOne.mockResolvedValueOnce(null);
-    await expect(mgr.reload('k')).rejects.toThrow(/no longer exists/i);
+  it('reload 与 init 对重复 id 选同一目录:同名目录不兼容时两者都选另一个合格目录', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'k', manifestText: manifestText('k', { minLMVersion: '99.0.0' }), moduleUrl: 'mod://k' },
+        { id: 'k-old', manifestText: manifestText('k'), moduleUrl: 'mod://k-old' },
+      ],
+      enabled: new Set(['k']),
+      modules: new Map([
+        ['mod://k', { default: GoodPlugin }],
+        ['mod://k-old', { default: GoodPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    await mgr.init();
+    await mgr.reload('k');
+    warn.mockRestore();
+    expect(mgr.listAll().find((p) => p.id === 'k')?.status).toBe('enabled');
+    expect(mgr.listAll()).toHaveLength(1);
+    expect(mgr.listAll().find((p) => p.id === 'k')).toBeDefined();
   });
 });
 
@@ -1173,7 +1189,7 @@ describe('init · 重复 manifest id 只激活一个(确定性)', () => {
     await mgr.disable('dup');
     expect(GoodPlugin.unloaded).toEqual(['dup']);
     expect(coApiMocks.pluginFsRaw._registerPlugin).toHaveBeenCalledTimes(1);
-    expect(findPluginDirByManifestId(state.dirs, 'dup')?.id).toBe('dup');
+    expect(selectPluginDirs(state.dirs, '1.0.0').get('dup')?.dir.id).toBe('dup');
     warn.mockRestore();
   });
 
@@ -1184,7 +1200,7 @@ describe('init · 重复 manifest id 只激活一个(确定性)', () => {
     await mgr.init();
     expect(GoodPlugin.instances).toHaveLength(1);
     // reload 选目录与 init 同一规则
-    expect(findPluginDirByManifestId(state.dirs, 'dup')?.id).toBe('aa');
+    expect(selectPluginDirs(state.dirs, '1.0.0').get('dup')?.dir.id).toBe('aa');
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('zz'));
     warn.mockRestore();
   });

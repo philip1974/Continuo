@@ -386,9 +386,10 @@ describe('createPluginsWatcher', () => {
     }
   });
 
-  // 重复 manifest.id:每个 id 只看唯一权威目录(目录名 == id 优先,否则目录名字典序最小,与
-  // PluginManager.preferPluginDir / readPluginDirByManifestId 同规则)。此前 mtimes 以 id 为键,
-  // 两个目录轮流写入同一键 → 每轮都判定变化并广播,形成永久重载风暴。
+  // 重复 manifest.id:watcher 只决定是否广播,不选目录(选目录由 renderer PluginManager.selectPluginDirs 统一做,
+  // 它还要看 manifest schema 与 minLMVersion,main 判断不了)。每个 id 记一份「全部声明它的目录」的合并签名:
+  // 任一目录变化都广播一次。此前 mtimes 以 id 为键、两个目录轮流写入同一键 → 每轮都判定变化,形成永久重载风暴;
+  // 后来只看一个「权威目录」又会漏掉 renderer 实际在用的另一个目录的变化。
   describe('重复 manifest.id', () => {
     const now = Date.now();
     function dupDirs(): void {
@@ -406,22 +407,26 @@ describe('createPluginsWatcher', () => {
       expect(fn).not.toHaveBeenCalled();
     });
 
-    it('权威目录(字典序最小)main 变化 → fire 一次;非权威目录变化 → 不 fire', async () => {
+    it('任一声明该 id 的目录 main / manifest 变化 → 各 fire 一次(renderer 实际在用哪个目录由它自己选)', async () => {
       dupDirs();
       const fn = vi.fn();
       const w = createPluginsWatcher(tmp, fn);
       await w.tick();
-      touch('b.dir', 'main.js', now + 5000); // 非权威
-      await w.tick();
-      await w.tick();
-      expect(fn).not.toHaveBeenCalled();
-      touch('a.dir', 'main.js', now + 9000); // 权威
+      touch('b.dir', 'main.js', now + 5000);
       await w.tick();
       await w.tick();
       expect(fn.mock.calls).toEqual([['x.id']]);
+      touch('a.dir', 'main.js', now + 9000);
+      await w.tick();
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['x.id'], ['x.id']]);
+      writeFileSync(join(tmp, 'b.dir', 'manifest.json'), JSON.stringify({ id: 'x.id', name: 'B2', version: '0.2.0' }));
+      await w.tick();
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['x.id'], ['x.id'], ['x.id']]);
     });
 
-    it('出现目录名 == id 的目录 → 权威目录切换,fire 一次后稳定', async () => {
+    it('新增一个声明该 id 的目录 → fire 一次后稳定', async () => {
       dupDirs();
       const fn = vi.fn();
       const w = createPluginsWatcher(tmp, fn);
@@ -434,8 +439,7 @@ describe('createPluginsWatcher', () => {
       expect(fn.mock.calls).toEqual([['x.id']]);
     });
 
-    // 权威目录选择须与列举(isPluginMainAvailable:main 为普通文件且 ≤8MiB)同口径:否则 watcher 盯住
-    // 无效首选目录,PluginManager 实际运行的后备目录被修改时不再热重载。
+    // 候选口径与列举(isPluginMainAvailable:main 为普通文件且 ≤8MiB)一致:无效目录不进签名,合法后备目录的变化照常 fire。
     it.each([
       ['main 是目录', (dir: string) => {
         rmSync(join(tmp, dir, 'main.js'));
@@ -454,7 +458,7 @@ describe('createPluginsWatcher', () => {
       expect(fn.mock.calls).toEqual([['x.id']]);
     });
 
-    it('权威目录被删除 → 回落到剩余目录并 fire 一次', async () => {
+    it('某候选目录被删除 → fire 一次后稳定', async () => {
       dupDirs();
       const fn = vi.fn();
       const w = createPluginsWatcher(tmp, fn);

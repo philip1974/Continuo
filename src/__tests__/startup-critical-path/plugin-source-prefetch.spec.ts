@@ -46,7 +46,6 @@ function setup(opts: {
   ids: string[];
   enabled: string[];
   readMainByDir: (dir: string, hash: string) => Promise<unknown>;
-  readDirById?: (id: string) => Promise<unknown>;
 }) {
   const plugins = {
     listDirs: vi.fn().mockResolvedValue({
@@ -56,7 +55,6 @@ function setup(opts: {
     readEnabled: vi.fn().mockResolvedValue({ ok: true, data: opts.enabled }),
     mutateEnabled: vi.fn().mockResolvedValue({ ok: true, data: undefined }),
     readMainByDir: vi.fn(opts.readMainByDir),
-    readDirById: vi.fn(opts.readDirById ?? (async () => ({ ok: true, data: null }))),
   };
   Object.defineProperty(window, 'api', {
     value: {
@@ -185,13 +183,17 @@ describe('启动插件源码预取 (B-1)', () => {
       ids: ['a', 'b'],
       enabled: ['a', 'b'],
       readMainByDir: async (dir) => ok(dir),
-      readDirById: async (id) => ({
-        ok: true,
-        data: { id, manifestText: manifest(id, '0.2.0'), manifestHash: 'new-token' },
-      }),
     });
     const init = mgr.init();
     await flush();
+    // 热重载重新列举:b 换成新 manifest(新令牌)
+    plugins.listDirs.mockResolvedValue({
+      ok: true,
+      data: [
+        { id: 'a', manifestText: manifest('a'), manifestHash: 'hash-a' },
+        { id: 'b', manifestText: manifest('b', '0.2.0'), manifestHash: 'new-token' },
+      ],
+    });
     // b 的预取已完成:记下它的 Blob URL
     const bIdx = plugins.readMainByDir.mock.calls.findIndex((c) => c[0] === 'b');
     expect(bIdx).toBeGreaterThanOrEqual(0);

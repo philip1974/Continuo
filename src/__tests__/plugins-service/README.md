@@ -25,13 +25,6 @@ styles.css 不读取(renderer 不注入插件样式)**。
   与读取口径一致(main 是目录 / 超限 / 越界 / 缺失 → 跳过)
 - 顺序:readdir 默认顺序(per-dir 读取有界并发 ≤8,结果仍按枚举顺序)
 
-### readPluginDirByManifestId(baseDir, id)(perf:热重载只读目标插件)
-
-- 结果与 renderer `findPluginDirByManifestId(listPluginDirs(baseDir), id)` 等价
-- 目录名 == id 且 manifest.id 一致、main 可读 → 直接返回,不读其它插件文件
-- 否则只读其它目录 manifest,取 manifest.id 匹配者中目录名字典序最小且 main 可读的
-- `.` / `_` 前缀、损坏 manifest、缺 main 不参与;无匹配 / baseDir 缺失 → null
-
 ### readPluginMainByDir(baseDir, dirName, manifestHash)(perf:激活时才读 main 源码)
 
 - 按**目录名**(列举结果的 id)读 manifest.main 指向的入口源码;按目录而非 id,不再做一次重复 id 选择

@@ -30,11 +30,6 @@ export interface PluginDirInfo {
 export interface ManagerHost {
   /** 同步返回所有插件目录信息(主进程预先扫好). */
   listPluginDirs(): readonly PluginDirInfo[] | Promise<readonly PluginDirInfo[]>;
-  /**
-   * 按 manifest.id 只读单个插件目录(可选,perf:热重载不再全量 listPluginDirs)。选择规则须与
-   * findPluginDirByManifestId(listPluginDirs(), id) 等价;不存在 → null。缺省 → reload 回退全量扫描。
-   */
-  readPluginDirByManifestId?(id: string): Promise<PluginDirInfo | null>;
   /** 读取 enabled.json. */
   readEnabledIds(): ReadonlySet<string> | Promise<ReadonlySet<string>>;
   /**
@@ -144,9 +139,8 @@ const EMPTY_PLUGIN_PERMISSIONS: readonly PermissionKey[] = [];
 const PREFETCH_CONCURRENCY = 4;
 
 /**
- * 多个目录声明同一 manifest.id 时的确定性取舍(init 与 reload 共用,保证选中同一目录):
- * 目录名 == id 的优先(与安装器落地 plugins/<id>/、卸载按 id 删目录一致),否则按目录名字典序
- * 取第一个。返回 candidate 是否应取代 current。
+ * 多个目录声明同一 manifest.id 时的确定性取舍:目录名 == id 的优先(与安装器落地 plugins/<id>/、卸载按 id
+ * 删目录一致),否则按目录名字典序取第一个。返回 candidate 是否应取代 current。
  */
 function preferPluginDir(candidate: PluginDirInfo, current: PluginDirInfo, id: string): boolean {
   const candidateExact = candidate.id === id;
@@ -154,22 +148,80 @@ function preferPluginDir(candidate: PluginDirInfo, current: PluginDirInfo, id: s
   return candidate.id < current.id;
 }
 
-export function findPluginDirByManifestId(
+type ManifestAdmission =
+  | { readonly ok: true; readonly manifest: PluginManifest }
+  | { readonly ok: false; readonly code: string; readonly message: string };
+
+/** 插件准入:manifest schema 合法,且 minLMVersion(若声明)不高于当前 app 版本。 */
+function admitManifest(manifestText: string, appVersion: string): ManifestAdmission {
+  const parsed = parseManifest(manifestText);
+  if (!parsed.ok) return parsed;
+  const { minLMVersion } = parsed.data;
+  if (minLMVersion && !isVersionCompatible(appVersion, minLMVersion)) {
+    return {
+      ok: false,
+      code: 'INCOMPATIBLE_VERSION',
+      message: `minLMVersion ${minLMVersion} > app ${appVersion}`,
+    };
+  }
+  return { ok: true, manifest: parsed.data };
+}
+
+export interface SelectedPluginDir {
+  readonly dir: PluginDirInfo;
+  readonly manifest: PluginManifest;
+}
+
+/**
+ * 启动与热重载共用的「准入 + 选目录」(单一来源,保证两者对同一份磁盘状态选同一目录):不合格的目录跳过并 warn;
+ * 同一 manifest.id 只在合格目录中按 preferPluginDir 留一个。返回 id → 选中目录,Map 插入序 = 选中目录的列举序
+ *(启动按此顺序登记、激活)。
+ */
+export function selectPluginDirs(
   dirs: readonly PluginDirInfo[],
-  id: string,
-): PluginDirInfo | null {
-  let found: PluginDirInfo | null = null;
-  for (const dir of dirs) {
-    try {
-      const manifest = JSON.parse(dir.manifestText) as { id?: unknown };
-      if (manifest.id === id && (found === null || preferPluginDir(dir, found, id))) {
-        found = dir;
+  appVersion: string,
+): Map<string, SelectedPluginDir> {
+  const chosen = new Map<string, SelectedPluginDir & { readonly index: number }>();
+  for (const [index, dir] of dirs.entries()) {
+    const admission = admitManifest(dir.manifestText, appVersion);
+    if (!admission.ok) {
+      console.warn(`[plugin-manager] skip ${dir.id}: ${admission.code} ${admission.message}`);
+      continue;
+    }
+    const { id } = admission.manifest;
+    const current = chosen.get(id);
+    if (!current || preferPluginDir(dir, current.dir, id)) {
+      if (current) {
+        console.warn(`[plugin-manager] skip ${current.dir.id}: duplicate manifest id ${id} (using ${dir.id})`);
       }
-    } catch {
-      // 半写入/损坏 manifest:reload 继续找其它目录,保持旧行为。
+      chosen.set(id, { dir, manifest: admission.manifest, index });
+    } else {
+      console.warn(`[plugin-manager] skip ${dir.id}: duplicate manifest id ${id} (using ${current.dir.id})`);
     }
   }
-  return found;
+  const ordered = [...chosen.entries()].sort((a, b) => a[1].index - b[1].index);
+  return new Map(ordered.map(([id, { dir, manifest }]) => [id, { dir, manifest }]));
+}
+
+/** 声明了该 id 却没通过准入的目录(按同一偏好取一个)的准入失败原因;没有目录声明该 id → null。 */
+function rejectionFor(
+  dirs: readonly PluginDirInfo[],
+  id: string,
+  appVersion: string,
+): { code: string; message: string } | null {
+  let found: PluginDirInfo | null = null;
+  for (const dir of dirs) {
+    let rawId: unknown;
+    try {
+      rawId = (JSON.parse(dir.manifestText) as { id?: unknown } | null)?.id;
+    } catch {
+      continue;
+    }
+    if (rawId === id && (found === null || preferPluginDir(dir, found, id))) found = dir;
+  }
+  if (found === null) return null;
+  const admission = admitManifest(found.manifestText, appVersion);
+  return admission.ok ? null : { code: admission.code, message: admission.message };
 }
 
 function activationAbortedError(id: string): Error {
@@ -267,48 +319,13 @@ export class PluginManager {
       enabledIds = new Set();
     }
 
-    const candidates: { dir: PluginDirInfo; manifest: PluginManifest }[] = [];
-    for (const dir of dirs) {
-      const parsed = parseManifest(dir.manifestText);
-      if (!parsed.ok) {
-        console.warn(
-          `[plugin-manager] skip ${dir.id}: ${parsed.code} ${parsed.message}`,
-        );
-        continue;
-      }
-      const manifest = parsed.data;
-
-      // 版本兼容
-      if (
-        manifest.minLMVersion &&
-        !isVersionCompatible(this.app.version, manifest.minLMVersion)
-      ) {
-        console.warn(
-          `[plugin-manager] skip ${manifest.id}: minLMVersion ${manifest.minLMVersion} > app ${this.app.version}`,
-        );
-        continue;
-      }
-      candidates.push({ dir, manifest });
-    }
-
-    // 重复 manifest.id:只保留一个目录(preferPluginDir,与 reload 同规则)。否则两个都激活,
+    // 准入(manifest schema + minLMVersion)与重复 manifest.id 取舍:与 reload 同一函数。重复 id 两个都激活的话,
     // 后一个 entries.set 覆盖前一个却不停用它 → 孤儿实例(disable/uninstall 都够不着)。
-    const chosen = new Map<string, PluginDirInfo>();
-    for (const { dir, manifest } of candidates) {
-      const current = chosen.get(manifest.id);
-      if (!current || preferPluginDir(dir, current, manifest.id)) chosen.set(manifest.id, dir);
-    }
+    const selected = selectPluginDirs(dirs, this.app.version);
 
     // 两阶段:先登记全部 entry(扫描完成 → whenScanned),再按同一顺序逐个激活。
     const registered: PluginEntry[] = [];
-    for (const { dir, manifest } of candidates) {
-      if (chosen.get(manifest.id) !== dir) {
-        console.warn(
-          `[plugin-manager] skip ${dir.id}: duplicate manifest id ${manifest.id} (using ${chosen.get(manifest.id)?.id})`,
-        );
-        continue;
-      }
-
+    for (const { dir, manifest } of selected.values()) {
       // 快照之后已收到禁用 / 卸载(见 deactivationIntents)→ 不按旧快照激活,以 disabled 建 entry。
       const intended = enabledIds.has(manifest.id) && !this.deactivationIntents.has(manifest.id);
       const entry: PluginEntry = {
@@ -512,12 +529,12 @@ export class PluginManager {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
 
-    // 用 manifest.id 匹配(目录名可能跟 id 不一致;manifest.id 是真源)。perf:host 支持时只读目标插件
-    //(main 端同一选择规则),否则全量扫描后匹配。
-    const fresh = this.host.readPluginDirByManifestId
-      ? await this.host.readPluginDirByManifestId(id)
-      : findPluginDirByManifestId(await this.host.listPluginDirs(), id);
-    if (!fresh) {
+    // 重新列举后用与启动同一个准入 + 选目录函数取目标 id(manifest.id 是真源,目录名可能不同):两者对同一份
+    // 磁盘状态总选同一目录、同样拒绝不兼容版本。没有合格目录 → 仍有目录声明该 id 时标 failed(下方),否则不存在。
+    const dirs = await this.host.listPluginDirs();
+    const selected = selectPluginDirs(dirs, this.app.version).get(id);
+    const rejection = selected ? null : rejectionFor(dirs, id, this.app.version);
+    if (!selected && !rejection) {
       throw new Error(`Plugin ${id} no longer exists in plugins dir`);
     }
 
@@ -530,18 +547,17 @@ export class PluginManager {
       await this.deactivateEntry(entry, `reload ${id}`);
     }
 
-    // 解析新 manifest(可能 version / permissions 等变了)
-    const parsed = parseManifest(fresh.manifestText);
-    if (!parsed.ok) {
+    // 新 manifest(可能 version / permissions 等变了)未通过准入 → failed
+    if (!selected) {
       entry.status = 'failed';
-      entry.error = { code: parsed.code, message: parsed.message };
+      entry.error = rejection!;
       entry.warning = undefined; // 失败转换清陈旧 partial-grant warning(否则 failed 行同显 error+旧 warning)
       this.invalidateListCache();
       return;
     }
 
-    entry.manifest = parsed.data;
-    entry.dirInfo = fresh;
+    entry.manifest = selected.manifest;
+    entry.dirInfo = selected.dir;
     entry.status = wasEnabled ? 'enabled' : 'disabled';
     entry.error = undefined;
     // reload→disabled 不会走 activateEntry(只 wasEnabled 才走),warning 须在此清;

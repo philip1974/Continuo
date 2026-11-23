@@ -54,7 +54,6 @@ import {
   installFromGit,
   listPluginDirs,
   pluginManifestHash,
-  readPluginDirByManifestId,
   readPluginMainByDir,
 } from '../../../electron/main/services/plugins.service';
 import { registerPluginDataStoreHandlers } from '../../../electron/main/services/plugin-data-store.service';
@@ -200,7 +199,6 @@ describe('已安装目录:manifest / main 经链接逃出插件目录 → 插件
 
     expect(await listPluginDirs(baseDir)).toEqual([]);
     expect(await readPluginMainByDir(baseDir, 'evil', pluginManifestHash(manifestText))).toBeNull();
-    expect(await readPluginDirByManifestId(baseDir, 'evil')).toBeNull();
   });
 
   it('manifest.main 经目录链接逃出(dist -> 目录外)→ 不可用', async () => {
@@ -211,7 +209,6 @@ describe('已安装目录:manifest / main 经链接逃出插件目录 → 插件
     );
     await fs.symlink(outside, path.join(dir, 'dist'));
     expect(await listPluginDirs(baseDir)).toEqual([]);
-    expect(await readPluginDirByManifestId(baseDir, 'evil')).toBeNull();
   });
 
   it('manifest.json 指向目录外 → 列举跳过', async () => {

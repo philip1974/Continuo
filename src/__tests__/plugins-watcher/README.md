@@ -39,12 +39,13 @@
 
 ## 重复 manifest.id(防热重载风暴)
 
-- 多个目录声明同一 manifest.id 时,每个 id 只看**唯一权威目录**:目录名 == id 优先,否则目录名字典序最小
-  (与 `PluginManager.preferPluginDir` / `readPluginDirByManifestId` 同规则);非权威目录的 main 变化不 fire
+- watcher 只决定**是否广播**,不选目录:选哪个目录由 renderer `PluginManager.selectPluginDirs` 统一决定(它还看
+  manifest schema 与 minLMVersion)。多个目录声明同一 manifest.id 时,每个 id 记一份全部候选目录
+  (目录名 + main mtime + manifest 哈希)的合并签名:任一候选目录的 main / manifest 变化、候选目录增减 → fire 一次
 - 候选口径与列举 `isPluginMainAvailable` 一致:main 须为普通文件且 ≤8MiB(仅凭 stat 判定,不逐轮 open;
-  读权限不校验),否则不参与权威目录选择 —— 首选目录 main 无效时以合法后备目录为权威,其 main 变化 fire
+  读权限不校验),否则不算候选 —— 首选目录 main 无效时合法后备目录的 main 变化照常 fire
 - 各目录都未变化 → 多轮扫描都不 fire(此前 mtime 表以 id 为键,两目录轮流写入 → 每轮都广播)
-- 权威目录切换(出现目录名 == id 的目录 / 原权威目录消失)→ fire 一次,之后稳定
+- 候选目录增减(新增一个声明该 id 的目录 / 某候选目录消失)→ fire 一次,之后稳定
 - 记录所属目录改声明别的 id → 旧 id 的记录清理;目录暂时消失 / manifest 缺失 / main 暂不可 stat 时保留记录,
   重建后 main 已变仍 fire
 - 缺失记录(tombstone)不限时保留:缺失再久,重建(main 已变)仍 fire;只按容量淘汰(记录总数超上限

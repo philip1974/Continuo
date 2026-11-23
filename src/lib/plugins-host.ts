@@ -167,17 +167,6 @@ export function createWindowApiHost(): ManagerHost {
       // moduleUrl 为惰性源码引用,激活时 importModule 才按目录拉源码并转 Blob URL(import 完成后即 revoke)。
       return buildPluginDirInfos(r.data);
     },
-    readPluginDirByManifestId: async (id) => {
-      // perf:热重载只定位目标插件(main 端选择规则与 findPluginDirByManifestId(listDirs) 等价),结果与列举项
-      // 同形:moduleUrl 同样是惰性源码引用,重新激活时才按目录名 + manifest 令牌拉 main。
-      // 失败与旧 listDirs 失败同降级:当作找不到(reload 抛 no longer exists)。
-      const r = await coApi.plugins.readDirById(id);
-      if (!r.ok) {
-        console.warn('[plugins-host] readDirById failed', r.code, r.message);
-        return null;
-      }
-      return r.data ? deferredPluginDirInfo(r.data) : null;
-    },
     readEnabledIds: async () => {
       const r = await coApi.plugins.readEnabled();
       if (!r.ok) {

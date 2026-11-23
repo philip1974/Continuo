@@ -16,7 +16,6 @@ import {
   createPluginsWatcher,
   installFromGit,
   listPluginDirs,
-  readPluginDirByManifestId,
   readPluginMainByDir,
   recoverInterruptedInstalls,
   readEnabledIds,
@@ -68,9 +67,6 @@ export const InstallFromGitInput = z
     branch: z.string().max(GIT_BRANCH_MAX).refine(isValidGitBranch).optional(),
     expectedId: z.string().min(1).max(PLUGIN_ID_MAX).optional(),
   })
-  .strict();
-export const ReadDirByIdInput = z
-  .object({ id: z.string().min(1).max(PLUGIN_ID_MAX) })
   .strict();
 export const ReadMainByDirInput = z
   .object({
@@ -176,16 +172,6 @@ export function registerPluginsIpc(): void {
     async ({ dir, manifestHash }) => {
       await installRecovery;
       return readPluginMainByDir(pluginsDir, dir, manifestHash);
-    },
-  );
-
-  // perf:单插件热重载只读目标插件(不再每个窗口全量 listDirs)。
-  safeHandle(
-    PLUGINS_CHANNELS.READ_DIR_BY_ID,
-    ReadDirByIdInput,
-    async ({ id }) => {
-      await installRecovery;
-      return readPluginDirByManifestId(pluginsDir, id);
     },
   );
 

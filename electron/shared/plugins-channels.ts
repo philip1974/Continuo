@@ -19,12 +19,6 @@ export const PLUGINS_CHANNELS = {
    * PLUGIN_MANIFEST_CHANGED,避免以旧 manifest(id / 权限 / 入口)执行新 main。
    */
   READ_MAIN_BY_DIR: 'plugins:read-main-by-dir',
-  /**
-   * 按 manifest.id 定位单个插件目录(perf:热重载不再全量 listDirs),返回与列举项同形的 IpcPluginDirListing | null
-   *(不含 main 源码:需要激活时走 READ_MAIN_BY_DIR)。
-   * 选择规则与 renderer findPluginDirByManifestId(listDirs) 等价(同名目录优先,否则目录名字典序)。
-   */
-  READ_DIR_BY_ID: 'plugins:read-dir-by-id',
   /** 读取 enabled.json(string[] of plugin ids). */
   READ_ENABLED: 'plugins:read-enabled',
   /**

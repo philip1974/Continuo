@@ -8,7 +8,6 @@ import { describe, it, expect } from 'vitest';
 import {
   MutatePluginPermissionsInput,
   InstallFromGitInput,
-  ReadDirByIdInput,
   ReadMainByDirInput,
   UninstallInput,
 } from '../../../electron/main/ipc/plugins.ipc';
@@ -25,13 +24,6 @@ describe('plugins IPC input limits (E16)', () => {
         mutation: { kind: 'set', perms: ['fs'], granted: true },
       }).success,
     ).toBe(true);
-  });
-
-  it('READ_DIR_BY_ID:id 必填且 ≤256、拒绝多余字段', () => {
-    expect(ReadDirByIdInput.safeParse({ id: 'a.b' }).success).toBe(true);
-    expect(ReadDirByIdInput.safeParse({ id: '' }).success).toBe(false);
-    expect(ReadDirByIdInput.safeParse({ id: 'x'.repeat(257) }).success).toBe(false);
-    expect(ReadDirByIdInput.safeParse({ id: 'a', extra: 1 }).success).toBe(false);
   });
 
   it('READ_MAIN_BY_DIR:dir 必填且 ≤255、manifestHash 必为 64 位小写 hex、拒绝多余字段', () => {
