@@ -178,33 +178,6 @@ export async function ensureAuthorized(
   }
 
   const decisions = await store.get(pluginId);
-  if (decisions.length === 0) {
-    const userGranted = await prompt(pluginId, requested);
-    if (userGranted.length === 0) {
-      await store.deny(pluginId, requested);
-      return { ok: false, deniedPerms: requested };
-    }
-    const userGrantedSet = new Set(userGranted);
-    const granted = new Array<PermissionKey>(requested.length);
-    const denied = new Array<PermissionKey>(requested.length);
-    let grantedCount = 0;
-    let deniedCount = 0;
-    for (const p of requested) {
-      if (userGrantedSet.has(p)) granted[grantedCount++] = p;
-      else denied[deniedCount++] = p;
-    }
-    granted.length = grantedCount;
-    denied.length = deniedCount;
-
-    await store.grant(pluginId, userGranted);
-    if (denied.length > 0) await store.deny(pluginId, denied);
-
-    if (granted.length === 0) {
-      return { ok: false, deniedPerms: denied };
-    }
-    return { ok: true, granted, denied };
-  }
-
   const grantedSet = new Set<PermissionKey>();
   const deniedSet = new Set<PermissionKey>();
   for (const d of decisions) {

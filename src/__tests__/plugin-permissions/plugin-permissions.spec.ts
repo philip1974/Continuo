@@ -440,14 +440,9 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.deniedPerms).toEqual(['fs', 'network']);
-      expect(r.deniedPerms).toBe(requested);
     }
     expect(store.grant).not.toHaveBeenCalled();
     expect(store.deny).toHaveBeenCalledWith('p', requested);
-    const source = ensureAuthorized.toString();
-    expect(source.indexOf('userGranted.length === 0')).toBeLessThan(
-      source.indexOf('new Set(userGranted)'),
-    );
   });
 
   it('部分已 grant + 部分待决 → 只 prompt 待决,合并结果', async () => {
