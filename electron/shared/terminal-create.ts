@@ -50,7 +50,6 @@ export const TerminalCreateInputSchema = z
     title: z.string().max(LABEL_MAX).optional(),
     originHint: z.enum(ORIGIN_HINTS).optional(),
     agentLabel: z.string().max(LABEL_MAX).optional(),
-    scoped: z.boolean().optional(),
     // topic-05: 透传到 sessionsService,让 renderer 端决定 attach 落点。
     attachTarget: AttachTargetSchema.optional(),
     /**

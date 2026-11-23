@@ -58,7 +58,6 @@ export interface AddSessionInput {
   readonly cwd: string;
   readonly originHint: OriginHint;
   readonly agentLabel?: string;
-  readonly scoped?: boolean;
   readonly ownerWindowId: number;
   readonly attachTarget?: AttachTarget;
   readonly workspaceRoot?: string;
@@ -162,7 +161,6 @@ export function add(input: AddSessionInput): void {
     cwd: input.cwd,
     originHint: input.originHint,
     ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
-    ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
     createdAt: Date.now(),
     exitCode: null,
     ownerWindowId: input.ownerWindowId,

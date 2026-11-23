@@ -23,8 +23,6 @@ export interface TerminalSessionSnapshot {
   readonly originHint: OriginHint;
   /** agent 类型才填,如 'codex' / 'gemini'. */
   readonly agentLabel?: string;
-  /** Scoped split-pane sessions are hidden from the legacy terminal tabs. */
-  readonly scoped?: boolean;
   /** ms epoch. */
   readonly createdAt: number;
   /** null = PTY 仍在运行;number = 已 exit. */

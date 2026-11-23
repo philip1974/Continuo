@@ -150,7 +150,7 @@ export function makeCreateHandler(deps?: {
     // 把会话归属到该调用方;IPC 路径(renderer Cmd+T)不传 → user 终端不盖 controllerToken,
     // 任何 MCP 调用方都无权读控。renderer 不能经 createInputSchema 伪造此字段。
     opts?: { controllerToken?: string },
-  ): Promise<{ id: string; cwd?: string; title?: string }> => {
+  ): Promise<{ id: string }> => {
     const shell = input.shell ?? getDefaultShell();
     if (!isAllowedShell(shell)) {
       throw codedError(ERROR_CODES.TERMINAL_FORBIDDEN_SHELL, `shell not in allowlist: ${shell}`);
@@ -192,7 +192,6 @@ export function makeCreateHandler(deps?: {
       // 跨平台:按真实 shell 路径标注引号族(renderer 拖拽文件据此引用,不再盲猜平台)。
       shellFamily: shellFamilyForPath(shell),
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
-      ...(input.scoped !== undefined ? { scoped: input.scoped } : {}),
       ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
       ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
       ...(opts?.controllerToken !== undefined
@@ -218,7 +217,7 @@ export function makeCreateHandler(deps?: {
       if (service.has(id)) service.kill(id);
       throw codedError(ERROR_CODES.TERMINAL_CREATE_CANCELLED, `terminal create cancelled: ${id}`);
     }
-    return input.scoped ? { id, cwd, title } : { id };
+    return { id };
   };
 }
 
