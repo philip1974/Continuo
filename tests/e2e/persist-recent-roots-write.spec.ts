@@ -62,23 +62,28 @@ test('从 ws1 → 通过菜单切到 ws2 → recentRoots = [ws2, ws1]', async ()
       .getByRole('menuitem', { name: ws2Name, exact: false });
     await menuItem.click();
 
-    // 等 explorer-persist debounce 写盘
-    await win.waitForTimeout(800);
-
-    const raw = readFileSync(path.join(ud, 'explorer.json'), 'utf8');
-    const data = JSON.parse(raw) as {
+    // 轮询到 explorer-persist debounce 写盘:窗口段 root = ws2,recentRoots 第一项 = ws2(LRU 最新在前)
+    type Persisted = {
       workspace: { root?: string; recentRoots: string[] };
       windows?: Array<{
         windowSeq: number;
         workspace: { root: string | null };
       }>;
     };
-    const windowRoot =
-      data.windows?.find((entry) => entry.windowSeq === 0)?.workspace.root ??
-      data.workspace.root;
-    expect(windowRoot).toBe(ws2);
-    // recentRoots 第一项是 ws2(LRU 最新在前)
-    expect(data.workspace.recentRoots[0]).toBe(ws2);
+    const read = (): { root: string | null | undefined; firstRecent: string | undefined } => {
+      try {
+        const data = JSON.parse(readFileSync(path.join(ud, 'explorer.json'), 'utf8')) as Persisted;
+        return {
+          root:
+            data.windows?.find((entry) => entry.windowSeq === 0)?.workspace.root ??
+            data.workspace.root,
+          firstRecent: data.workspace.recentRoots[0],
+        };
+      } catch {
+        return { root: undefined, firstRecent: undefined };
+      }
+    };
+    await expect.poll(read, { timeout: 5_000 }).toEqual({ root: ws2, firstRecent: ws2 });
 
     await app.close();
   } finally {

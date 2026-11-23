@@ -17,11 +17,7 @@ test('添加 Terminal panel → dock 含 Editor + Terminal 两个', async ({
     window.getByRole('textbox', { name: TERMINAL_INPUT }),
   ).toBeVisible({ timeout: 15_000 });
 
-  // Close 按钮 ≥ 2:
-  //   - Editor SharedTab close
-  //   - Terminal SharedTab close
-  //   - Terminal panel 的关闭按钮
-  // 至少 2 个 panel 级 close 存在
+  // Close 按钮 ≥ 2:Editor 与 Terminal 各一个 SharedTab close(编辑器无文件 tab)
   const closeBtns = await window
     .getByRole('button', { name: DOCK_CLOSE_BUTTON })
     .count();

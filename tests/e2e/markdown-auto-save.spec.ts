@@ -36,7 +36,7 @@ test('打开 .md → 设置面板显示自动保存默认值(开启、2000ms)', 
 
   // 自动保存 toggle = on(boolean default=true).
   // 「编辑器」tab 内 button[role=switch] 顺序:lineNumbers(外观) → autoSave.markdown.enabled(自动保存).
-  // 两个 toggle 都默认 true,我们只验证至少一个 boolean toggle 为 true.
+  // 断言第二个 toggle(autoSave.markdown.enabled,priority 排序后在 lineNumbers 之后)为 true.
   const toggles = window.locator('main button[role=switch]');
   expect(await toggles.count()).toBeGreaterThanOrEqual(2);
   // autoSave.markdown.enabled 是第二个(priority 排序后)

@@ -46,6 +46,10 @@ test('Component.tsx → 不显示 Save button', async () => {
       { timeout: 10_000 },
     );
 
+    // 先确认代码编辑器已挂载(TitleBar 直接订阅 store,早于懒加载的 Editor 面板),否定断言才有意义
+    await expect(win.locator('.cm-content')).toContainText('export const X', {
+      timeout: 10_000,
+    });
     const saveBtn = win
       .getByRole('button', { name: EDITOR_SAVE_LABEL });
     await expect(saveBtn).toHaveCount(0);

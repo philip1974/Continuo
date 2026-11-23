@@ -9,8 +9,13 @@ test('a.ts 无保存按钮 → 切 README.md → SegmentedControl 出', async ({
   await window.locator('text=a.ts').first().click();
   await expect(window.locator('header').first()).toContainText('a.ts');
 
-  // .ts:Save 按钮不显
+  // 先确认代码编辑器已挂载,否定断言才有意义
+  await expect(window.locator('.cm-content')).toBeVisible({ timeout: 10_000 });
+  // .ts:无模式行(无 Edit 按钮)+ Save 按钮不显
   const main = window.locator('main');
+  await expect(
+    main.locator('button').filter({ hasText: EDITOR_MODE_EDIT }),
+  ).toHaveCount(0);
   await expect(
     window.getByRole('button', { name: EDITOR_SAVE_LABEL }),
   ).toHaveCount(0);

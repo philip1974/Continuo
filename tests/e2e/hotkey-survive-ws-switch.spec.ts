@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { explorerMoreActionsButton } from './helpers/explorer';
+import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS_NAV } from './helpers/settings';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,17 +76,7 @@ test('override settings.toggle=mod+shift+y + 切 ws → 新 hotkey 仍触发', a
     });
 
     // 新 hotkey 仍生效
-    await win.evaluate(() => {
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'y',
-          metaKey: true,
-          shiftKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
+    await dispatchModKey(win, 'y', { shift: true });
     await expect(
       win.getByRole('navigation', { name: SETTINGS_NAV }),
     ).toBeVisible({ timeout: 5_000 });

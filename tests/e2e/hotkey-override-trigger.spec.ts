@@ -61,6 +61,13 @@ test('override 后 → 旧 hotkey ⌘, 不再触发', async ({ window }) => {
     { timeout: 5_000 },
   );
 
+  // 正向对照:改键前 ⌘, 能打开 Settings(热键通路已就绪),再 ⌘, 关闭
+  const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
+  await dispatchModKey(window, ',');
+  await expect(nav).toBeVisible({ timeout: 10_000 });
+  await dispatchModKey(window, ',');
+  await expect(nav).toHaveCount(0, { timeout: 5_000 });
+
   // override 走 setHotkey
   await window.evaluate(() => {
     const t = (

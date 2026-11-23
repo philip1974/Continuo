@@ -42,9 +42,9 @@ test('sidebarWidth=400 hydrate + 切 ws → 仍 400px', async () => {
 
     const sidebar = win.locator('main aside').nth(1);
     await expect(sidebar).toBeVisible({ timeout: 10_000 });
-    expect(
-      await sidebar.evaluate((el: HTMLElement) => el.style.width),
-    ).toBe('400px');
+    await expect
+      .poll(() => sidebar.evaluate((el: HTMLElement) => el.style.width), { timeout: 5_000 })
+      .toBe('400px');
 
     // 切 ws
     await explorerMoreActionsButton(win).click();
@@ -58,9 +58,9 @@ test('sidebarWidth=400 hydrate + 切 ws → 仍 400px', async () => {
       timeout: 10_000,
     });
 
-    expect(
-      await sidebar.evaluate((el: HTMLElement) => el.style.width),
-    ).toBe('400px');
+    await expect
+      .poll(() => sidebar.evaluate((el: HTMLElement) => el.style.width), { timeout: 5_000 })
+      .toBe('400px');
 
     await app.close();
   } finally {
