@@ -815,13 +815,21 @@ describe('reload(id)', () => {
       enabledWritten: new Set(),
     };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const mgr = new PluginManager(fakeApp, makeHost(state));
+    const imported: string[] = [];
+    const base = makeHost(state);
+    const mgr = new PluginManager(fakeApp, {
+      ...base,
+      importModule: async (url: string) => {
+        imported.push(url);
+        return base.importModule(url);
+      },
+    });
     await mgr.init();
     await mgr.reload('k');
     warn.mockRestore();
     expect(mgr.listAll().find((p) => p.id === 'k')?.status).toBe('enabled');
     expect(mgr.listAll()).toHaveLength(1);
-    expect(mgr.listAll().find((p) => p.id === 'k')).toBeDefined();
+    expect(imported).toEqual(['mod://k-old', 'mod://k-old']); // init 与 reload 都激活 k-old
   });
 });
 

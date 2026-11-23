@@ -181,47 +181,40 @@ export function selectPluginDirs(
   dirs: readonly PluginDirInfo[],
   appVersion: string,
 ): Map<string, SelectedPluginDir> {
-  const chosen = new Map<string, SelectedPluginDir & { readonly index: number }>();
+  // id → 合格目录(按列举序,带下标)
+  const admitted = new Map<string, { dir: PluginDirInfo; manifest: PluginManifest; index: number }[]>();
   for (const [index, dir] of dirs.entries()) {
     const admission = admitManifest(dir.manifestText, appVersion);
     if (!admission.ok) {
       console.warn(`[plugin-manager] skip ${dir.id}: ${admission.code} ${admission.message}`);
       continue;
     }
-    const { id } = admission.manifest;
-    const current = chosen.get(id);
-    if (!current || preferPluginDir(dir, current.dir, id)) {
-      if (current) {
-        console.warn(`[plugin-manager] skip ${current.dir.id}: duplicate manifest id ${id} (using ${dir.id})`);
-      }
-      chosen.set(id, { dir, manifest: admission.manifest, index });
-    } else {
-      console.warn(`[plugin-manager] skip ${dir.id}: duplicate manifest id ${id} (using ${current.dir.id})`);
-    }
+    const list = admitted.get(admission.manifest.id);
+    const item = { dir, manifest: admission.manifest, index };
+    if (list) list.push(item);
+    else admitted.set(admission.manifest.id, [item]);
   }
-  const ordered = [...chosen.entries()].sort((a, b) => a[1].index - b[1].index);
-  return new Map(ordered.map(([id, { dir, manifest }]) => [id, { dir, manifest }]));
+  const winners: { id: string; dir: PluginDirInfo; manifest: PluginManifest; index: number }[] = [];
+  for (const [id, list] of admitted) {
+    const winner = list.reduce((best, c) => (preferPluginDir(c.dir, best.dir, id) ? c : best));
+    for (const c of list) {
+      if (c !== winner) {
+        console.warn(`[plugin-manager] skip ${c.dir.id}: duplicate manifest id ${id} (using ${winner.dir.id})`);
+      }
+    }
+    winners.push({ id, ...winner });
+  }
+  winners.sort((x, y) => x.index - y.index);
+  return new Map(winners.map(({ id, dir, manifest }) => [id, { dir, manifest }]));
 }
 
-/** 声明了该 id 却没通过准入的目录(按同一偏好取一个)的准入失败原因;没有目录声明该 id → null。 */
-function rejectionFor(
-  dirs: readonly PluginDirInfo[],
-  id: string,
-  appVersion: string,
-): { code: string; message: string } | null {
-  let found: PluginDirInfo | null = null;
-  for (const dir of dirs) {
-    let rawId: unknown;
-    try {
-      rawId = (JSON.parse(dir.manifestText) as { id?: unknown } | null)?.id;
-    } catch {
-      continue;
-    }
-    if (rawId === id && (found === null || preferPluginDir(dir, found, id))) found = dir;
+/** manifest 原始 JSON 里的 id(JSON 损坏 → undefined);只用于「哪些目录声明了这个 id」,准入仍走 admitManifest。 */
+function rawManifestId(manifestText: string): unknown {
+  try {
+    return (JSON.parse(manifestText) as { id?: unknown } | null)?.id;
+  } catch {
+    return undefined;
   }
-  if (found === null) return null;
-  const admission = admitManifest(found.manifestText, appVersion);
-  return admission.ok ? null : { code: admission.code, message: admission.message };
 }
 
 function activationAbortedError(id: string): Error {
@@ -531,12 +524,14 @@ export class PluginManager {
 
     // 重新列举后用与启动同一个准入 + 选目录函数取目标 id(manifest.id 是真源,目录名可能不同):两者对同一份
     // 磁盘状态总选同一目录、同样拒绝不兼容版本。没有合格目录 → 仍有目录声明该 id 时标 failed(下方),否则不存在。
-    const dirs = await this.host.listPluginDirs();
-    const selected = selectPluginDirs(dirs, this.app.version).get(id);
-    const rejection = selected ? null : rejectionFor(dirs, id, this.app.version);
-    if (!selected && !rejection) {
-      throw new Error(`Plugin ${id} no longer exists in plugins dir`);
-    }
+    // 只看声明了该 id 的目录(其它目录不可能被选为该 id,也免得为无关插件告警)。
+    const own = (await this.host.listPluginDirs()).filter((d) => rawManifestId(d.manifestText) === id);
+    if (own.length === 0) throw new Error(`Plugin ${id} no longer exists in plugins dir`);
+    const selected = selectPluginDirs(own, this.app.version).get(id);
+    // 没有合格目录 → 取按同一偏好排第一的声明目录的准入失败原因(它声明了该 id 却没被选中,准入必然失败)。
+    const rejection = selected
+      ? null
+      : admitManifest(own.reduce((best, d) => (preferPluginDir(d, best, id) ? d : best)).manifestText, this.app.version);
 
     // race(R77):据「用户启用意图」而非瞬时 status 判是否重激活。否则连续热重载中先读到
     // 坏 manifest 把已启用插件置 'failed',文件修好再 reload 时 status 已非 'enabled' →
@@ -550,7 +545,10 @@ export class PluginManager {
     // 新 manifest(可能 version / permissions 等变了)未通过准入 → failed
     if (!selected) {
       entry.status = 'failed';
-      entry.error = rejection!;
+      entry.error =
+        rejection && !rejection.ok
+          ? { code: rejection.code, message: rejection.message }
+          : { code: 'SCHEMA_ERROR', message: `no admissible directory for ${id}` };
       entry.warning = undefined; // 失败转换清陈旧 partial-grant warning(否则 failed 行同显 error+旧 warning)
       this.invalidateListCache();
       return;

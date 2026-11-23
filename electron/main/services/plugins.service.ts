@@ -341,7 +341,7 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirListi
   return out;
 }
 
-/** 插件目录 I/O 的并发上限(list 首扫 / reload 回退扫描 / watcher 轮询共用)。 */
+/** 插件目录 I/O 的并发上限(列举 / watcher 轮询共用)。 */
 const PLUGIN_DIR_IO_CONCURRENCY = 8;
 
 /**
@@ -1637,7 +1637,7 @@ export function createPluginsWatcher(
   // 暂不可见)的 tombstone,插入序 = 开始缺失的先后。tombstone 不限时保留(rm -rf 后部署/构建/网络卷恢复再久,
   // 重建后 main 已变仍要触发热重载),仅在记录总数超 recordCap 时淘汰最早缺失的。missingByDir 为 tombstone
   // 的目录索引:每轮只按「本轮出现的目录」查 tombstone,遍历成本与当前目录数相关,不随历史缺失记录数增长。
-  type WatchRecord = { dir: string; sig: string };
+  type WatchRecord = { dir: string; dirs: readonly string[]; sig: string };
   const active = new Map<string, WatchRecord>();
   const missing = new Map<string, WatchRecord>();
   const missingByDir = new Map<string, Set<string>>();
@@ -1818,12 +1818,12 @@ export function createPluginsWatcher(
     for (const [pluginId, group] of groups) {
       group.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
       const sig = group.map((g) => `${g.name}\0${g.mtime}\0${g.manifestHash}`).join('\n');
-      chosen.set(pluginId, { dir: group[0]!.name, sig });
+      chosen.set(pluginId, { dir: group[0]!.name, dirs: group.map((g) => g.name), sig });
     }
     // 本轮之前被记录过的目录:某 id 首次出现在其中 = 该目录改声明了新 id(更新换了 id),也算变化。
     // 须在本轮增删记录前取(含 tombstone 的目录);只需判定本轮被选中的目录。
     const knownDirs = new Set<string>();
-    for (const prev of active.values()) knownDirs.add(prev.dir);
+    for (const prev of active.values()) for (const d of prev.dirs) knownDirs.add(d);
     for (const group of groups.values()) {
       for (const { name } of group) if (missingByDir.has(name)) knownDirs.add(name);
     }
