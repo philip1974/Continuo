@@ -1,9 +1,9 @@
-// Ctrl+S 触发保存:打开文件 → 修改 → Ctrl+S → 磁盘内容更新 + dirty 清除.
+// 往 document 派发 Ctrl+S 不抛错(⌘S 由 EditorPanel 容器 onKeyDown 处理,document 级事件到不了它).
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
-test('打开 a.ts → Ctrl+S 触发保存命令(无脏 → 立即返回不抛)', async ({
+test('打开 a.ts → document 级 Ctrl+S 不抛 + 文件不变', async ({
   window,
   workspaceRoot,
 }) => {

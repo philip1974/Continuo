@@ -27,7 +27,7 @@ test('打开 README.md → 模式行 SegmentedControl 出现 + 不显「保存�
     main.locator('button').filter({ hasText: EDITOR_MODE_PREVIEW }),
   ).toBeVisible();
 
-  // 「保存」按钮不存在(autoSaveEnabled=true 路径)
+  // 「保存」按钮不存在(EditorHeader 对任何文件都不渲染保存按钮)
   await expect(
     window.getByRole('button', { name: EDITOR_SAVE_LABEL }),
   ).toHaveCount(0);

@@ -21,7 +21,7 @@ test('打开 README.md + a.ts + b.ts(active)→ 关 b.ts → active 自动切回
   await window.waitForTimeout(300);
 
   // active 自动切到 a.ts(b.ts 之前的 tab)— editor.store 切到 idx-1
-  // 紧凑模式或 tablist 都要 a.ts 出现在 header
+  // 剩余 tab 的 tablist 中 a.ts 出现在 header
   await expect(window.locator('header').first()).toContainText('a.ts', {
     timeout: 5_000,
   });

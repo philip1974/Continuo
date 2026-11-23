@@ -42,7 +42,7 @@ const FILES = [
   { src: 'design/Badge.tsx', dest: 'design/Badge.tsx', mode: 'sync' },
   { src: 'design/Badge.css', dest: 'design/Badge.css', mode: 'sync' },
 
-  { src: 'design/Button.tsx', dest: 'design/Button.tsx', mode: 'sync' },
+  { src: 'design/Button.tsx', dest: 'design/Button.tsx', mode: 'fork', reason: "LM 加 'outlined' variant(EmptyWorkspace 使用)" },
   {
     src: 'design/Button.css',
     dest: 'design/Button.css',
@@ -82,7 +82,8 @@ const FILES = [
   {
     src: 'design/NavRailButton.tsx',
     dest: 'design/NavRailButton.tsx',
-    mode: 'sync',
+    mode: 'fork',
+    reason: 'LM a11y:仅显式传 active 才输出 aria-pressed(A32)+ describedById prop(A34,IconSidebar 使用)',
   },
   {
     src: 'design/NavRailButton.css',
@@ -117,7 +118,7 @@ const FILES = [
   { src: 'design/TabNav.tsx', dest: 'design/TabNav.tsx', mode: 'fork', reason: 'LM close 字符 ✕ vs Nous x' },
   { src: 'design/TabNav.css', dest: 'design/TabNav.css', mode: 'fork', reason: 'LM active tab 类按钮形态 vs Nous 纯下划线' },
 
-  { src: 'design/Tabs.tsx', dest: 'design/Tabs.tsx', mode: 'sync' },
+  { src: 'design/Tabs.tsx', dest: 'design/Tabs.tsx', mode: 'fork', reason: 'LM a11y:roving tabindex + ariaLabel(A28/A108),依赖本地 ./roving-tablist' },
   { src: 'design/Tabs.css', dest: 'design/Tabs.css', mode: 'fork', reason: 'LM radius token 化 (var(--wm-radius-xl))' },
 
   { src: 'design/Textarea.tsx', dest: 'design/Textarea.tsx', mode: 'sync' },

@@ -278,7 +278,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       }
 
       // Explorer 已迁出 Dockview → 固定左 sidebar(VSCode 风)。
-      // 旧 layout.json 可能仍含 'explorer' panel(已无对应 component),清理掉。
+      // 旧版持久化 layout(explorer.json 窗口段)可能仍含 'explorer' panel(已无对应 component),清理掉。
       const orphanExplorer = event.api.getPanel('explorer');
       if (orphanExplorer) {
         try {

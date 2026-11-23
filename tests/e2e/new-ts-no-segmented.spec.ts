@@ -1,4 +1,4 @@
-// 新建 .ts 代码文件 → SegmentedControl 不显(autoSaveEnabled=false 路径).
+// 新建 .ts 代码文件 → SegmentedControl 不显(非 markdown,按 isMarkdownPath).
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_MODE_EDIT, EDITOR_SAVE_LABEL } from './helpers/editor';
 import {

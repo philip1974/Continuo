@@ -1,4 +1,4 @@
-// .tsx file → 视为代码 → Save button.
+// .tsx file → 视为代码 → 不显示保存按钮(EditorHeader 对任何文件都不渲染保存按钮).
 import { _electron as electron, expect, test } from '@playwright/test';
 import { EDITOR_SAVE_LABEL } from './helpers/editor';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';

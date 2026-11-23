@@ -3,11 +3,10 @@ import { _electron as electron, expect, test } from '@playwright/test';
 import { DOCK_CLOSE_EDITOR, TERMINAL_INPUT } from './helpers/editor';
 import { dockHeaderMoreActionsButton } from './helpers/explorer';
 import { TERMINAL_TAB } from './helpers/settings';
+import { persistedPanelComponents } from './helpers/persisted-layout';
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -64,11 +63,8 @@ test('Editor + Terminal 使用后重启不恢复 stale terminal panel', async ()
     ).toBeVisible({ timeout: 15_000 });
 
     // 等 layout-persist debounce 写盘(layout:write → explorer.json 的窗口段 layout)
-    const explorerPath = path.join(ud, 'explorer.json');
-    await expect
-      .poll(() => (existsSync(explorerPath) ? readFileSync(explorerPath, 'utf8') : ''), { timeout: 5_000 })
-      .toContain('"layout"');
-    expect(readFileSync(explorerPath, 'utf8')).not.toContain('"contentComponent":"terminal"');
+    await expect.poll(() => persistedPanelComponents(ud), { timeout: 5_000 }).toContain('editor');
+    expect(persistedPanelComponents(ud)).not.toContain('terminal');
     await app1.close();
 
     // 重启

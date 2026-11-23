@@ -3,8 +3,7 @@ import { expect, test } from './fixtures/with-workspace';
 import { TERMINAL_INPUT } from './helpers/editor';
 import { dockHeaderMoreActionsButton } from './helpers/explorer';
 import { TERMINAL_TAB } from './helpers/settings';
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
+import { persistedPanelComponents } from './helpers/persisted-layout';
 
 test('加 Terminal session → 等 debounce → explorer.json 的 layout 不含 terminal panel', async ({
   userDataDir,
@@ -20,9 +19,7 @@ test('加 Terminal session → 等 debounce → explorer.json 的 layout 不含 
     window.getByRole('textbox', { name: TERMINAL_INPUT }),
   ).toBeVisible({ timeout: 15_000 });
 
-  const explorerPath = path.join(userDataDir, 'explorer.json');
-  await expect
-    .poll(() => (existsSync(explorerPath) ? readFileSync(explorerPath, 'utf8') : ''), { timeout: 5_000 })
-    .toContain('"layout"');
-  expect(readFileSync(explorerPath, 'utf8')).not.toContain('"contentComponent":"terminal"');
+  // 布局写盘后 explorer.json 的窗口段 layout 含 editor panel,且已剥离 terminal panel。
+  await expect.poll(() => persistedPanelComponents(userDataDir), { timeout: 5_000 }).toContain('editor');
+  expect(persistedPanelComponents(userDataDir)).not.toContain('terminal');
 });
