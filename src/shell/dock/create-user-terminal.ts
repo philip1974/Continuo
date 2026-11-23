@@ -1,7 +1,7 @@
 // 新建 user terminal 的共用流程(可维护性 M1:消除平行实现)。
 //
-// 命令面板 `terminal.new`(core-plugins/TerminalPlugin)与 Dock header「新建终端」
-// 入口(shell/dock/HeaderActions)此前各自手写了同一段创建流程,HeaderActions 注释也
+// 命令面板 `terminal.new`(core-plugins/TerminalPlugin)、Dock header「新建终端」
+// 入口(shell/dock/HeaderActions)与 Explorer「在终端中打开」此前各自手写了同一段创建流程,HeaderActions 注释也
 // 明写「同 TerminalPlugin.terminal.new」。平行实现易在改动终端创建契约时只改一处而漂移。
 // 抽到此处单一来源;调用方只负责各自的 UI 收尾(如关闭菜单)。
 
@@ -24,14 +24,16 @@ import { errorCodeOf } from '../../../electron/shared/error-message';
  *  1. 等 workspace root 恢复 —— 冷启动竞态:恢复前 root 仍是初始 null →
  *     terminal.create 不带 cwd → main 抛 TERMINAL_CWD_UNRESOLVED,首次新建失败不重试。
  *     (复审 loop R10)只需 root:等 rootRestored 而非 hydrated,不被编辑器 tab 恢复读盘拖住。
- *  2. 读 workspace root 当 cwd / workspaceRoot。
+ *  2. 读 workspace root 当 workspaceRoot;cwd 缺省也取它(Explorer 入口传所选目录)。
  *  3. coApi.terminal.create(originHint 'user')。
  *  4. 失败 → notify.error(区分 CWD_UNRESOLVED 与通用),返 null。
  *  5. 成功 → setPendingFocus(让 SessionsSync/DockReconciler 聚焦新建 panel),返 id。
  *
  * UI 收尾(关闭菜单等)由调用方自理。
  */
-export async function createUserTerminal(): Promise<string | null> {
+export async function createUserTerminal(
+  opts: { readonly cwd?: string; readonly env?: Record<string, string> } = {},
+): Promise<string | null> {
   // 性能(Phase-5 终端新建加载):用户点了「新建终端」= 明确 intent。立即 fire-and-forget
   // 预取 6MB+ xterm 面板 chunk,使其下载/解析与下面的 root 恢复等待 + IPC create + PTY
   // spawn + shell 启动**并行**;否则首个终端要等 session push 后 React.lazy 才开始拉
@@ -45,9 +47,12 @@ export async function createUserTerminal(): Promise<string | null> {
   // 业务失败,但 IPC promise reject 会直接抛;调用点(HeaderActions onClick void addPanel)
   // 不 await/catch → 用户点「新建终端」无反馈、菜单不关。reject 也走 create_failed notify。
   try {
+    const cwd = opts.cwd ?? workspaceRoot;
     const r = await coApi.terminal.create({
       originHint: 'user',
-      ...(workspaceRoot !== undefined ? { cwd: workspaceRoot, workspaceRoot } : {}),
+      ...(cwd !== undefined ? { cwd } : {}),
+      ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
+      ...(opts.env !== undefined ? { env: opts.env } : {}),
     });
     if (!r.ok) {
       // 退出闸(终审 P1):退出清理开始后 main 以 CANCELLED 拒绝新建;窗口已隐藏,静默即可(同下方 catch)。

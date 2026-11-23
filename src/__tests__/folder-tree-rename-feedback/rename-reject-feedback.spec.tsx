@@ -319,6 +319,9 @@ describe('a11y(A140) — onOpenInTerminal reject 须 notify.error', () => {
       coApi: { terminal: { create: ReturnType<typeof vi.fn> } };
     };
     coApi.terminal.create.mockRejectedValue(new Error('spawn down'));
+    // Explorer 只在 workspace root 已恢复时渲染(创建流程先等 root 恢复)。
+    const { useWorkspaceStore } = await import('@/stores/workspace.store');
+    useWorkspaceStore.setState({ root: '/repo', rootRestored: true });
     render(React.createElement(FolderTree, { root: '/repo' }));
     const onOpenInTerminal = h.contextActions.current?.onOpenInTerminal as
       | ((dir: string) => void)

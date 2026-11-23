@@ -42,7 +42,7 @@ import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
-import { setPendingFocus } from '@/shell/dock/DockReconciler';
+import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
@@ -651,35 +651,13 @@ export function FolderTree({ root }: { root: string }) {
         void revealPathOrNotify(path);
       },
       onOpenInTerminal: (dir: string) => {
-        // 新建 terminal session,cwd 设到该目录;sessions_changed 推送后 DockReconciler 为它建
-        // dockview terminal panel 并聚焦,让用户立即看到。
-        // COLORFGBG 让 P10k 等 prompt 框架启动时检测到当前主题亮度
-        // —— 已在跑的 PTY 不会因主题切换而重渲。
-        void (async () => {
-          // a11y(A140,A139 同族):fire-and-forget async 包 try/catch —— terminal.create()
-          // 的 IPC reject(抛错而非返回 {ok:false})此前
-          // 未捕获 → unhandled rejection,右键「在终端打开」失败时无 toast/live region 反馈。
-          try {
-            const r = await coApi.terminal.create({
-              cwd: dir,
-              env: { COLORFGBG: theme === 'dark' ? '15;0' : '0;15' },
-              // 归属当前 workspace(虽然 cwd 是子目录),便于跨 workspace 切换时
-              // 该 terminal 跟随显示/隐藏。
-              workspaceRoot: root,
-            });
-            if (!r.ok) {
-              console.warn('[explorer] open in terminal failed', r.code, r.message);
-              notifyFailure(r, { mirror: false });
-              return;
-            }
-            // 终端面板是 per-session id(terminal-<id>),只由 DockReconciler 建;此前调通用
-            // openOrFocusPanel('terminal') 会 addPanel 出无 sessionId 的坏面板(随即自动关闭)。
-            // 与 Cmd+T(createUserTerminal)相同,用 setPendingFocus 请求 Reconciler 聚焦新面板。
-            if (r.data?.id) setPendingFocus(r.data.id);
-          } catch (err) {
-            notifyThrownError(err);
-          }
-        })();
+        // 与 Cmd+T / header 新建同一条创建流程(createUserTerminal):cwd 设到该目录,归属当前 workspace
+        // (虽然 cwd 是子目录),便于跨 workspace 切换时该 terminal 跟随显示/隐藏。COLORFGBG 让 P10k 等
+        // prompt 框架启动时检测到当前主题亮度 —— 已在跑的 PTY 不会因主题切换而重渲。
+        void createUserTerminal({
+          cwd: dir,
+          env: { COLORFGBG: theme === 'dark' ? '15;0' : '0;15' },
+        });
       },
       onTrash: (paths: string[]) => {
         void (async () => {

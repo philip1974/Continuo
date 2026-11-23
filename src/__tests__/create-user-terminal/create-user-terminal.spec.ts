@@ -55,6 +55,22 @@ describe('createUserTerminal — 共用创建流程', () => {
     expect(mocks.setPendingFocus).toHaveBeenCalledWith('term-1');
   });
 
+  // Explorer「在终端中打开」同走本流程:cwd 设到所选目录(归属仍是 workspace root),并可带额外 env。
+  it('传入 cwd / env → create 用该 cwd,workspaceRoot 仍取 workspace root,env 透传', async () => {
+    mocks.getState.mockReturnValue({ root: '/repo' });
+    mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-2' } });
+
+    await createUserTerminal({ cwd: '/repo/sub', env: { COLORFGBG: '15;0' } });
+
+    expect(mocks.create).toHaveBeenCalledWith({
+      originHint: 'user',
+      cwd: '/repo/sub',
+      workspaceRoot: '/repo',
+      env: { COLORFGBG: '15;0' },
+    });
+    expect(mocks.setPendingFocus).toHaveBeenCalledWith('term-2');
+  });
+
   it('Phase-5 · 调 IPC create 前先 fire 预取 Terminal chunk(与 create 并行抢跑)', async () => {
     mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-1' } });
 

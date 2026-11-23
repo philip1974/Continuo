@@ -3,6 +3,8 @@
 // live session 建出。入口此前在 create 成功后调通用 openOrFocusPanel('terminal', ...) —— getPanel('terminal')
 // 恒为空 → addPanel 出 id='terminal'、无 params.sessionId 的坏面板(TerminalPanelView 自动关闭);布局恢复期间
 // 还会被排队重放。契约:该入口不调 openOrFocusPanel,改与 Cmd+T 相同用 setPendingFocus 请求 Reconciler 聚焦。
+// 该入口与 Cmd+T / header 新建同走 createUserTerminal(单一创建流程:等 root 恢复、预热 chunk、CANCELLED 静默、
+// 失败本地化提示),只额外指定 cwd 与 COLORFGBG。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -71,6 +73,7 @@ vi.mock('../../panels/Explorer/ContextMenu', () => ({
 }));
 
 import { FolderTree } from '../../panels/Explorer/FolderTree';
+import { useWorkspaceStore } from '../../stores/workspace.store';
 
 function openInTerminal(dir: string): void {
   render(React.createElement(FolderTree, { root: '/repo' }));
@@ -80,6 +83,8 @@ function openInTerminal(dir: string): void {
 }
 
 beforeEach(() => {
+  // Explorer 只在 workspace root 已恢复时渲染,其 root 即 store 的 root。
+  useWorkspaceStore.setState({ root: '/repo', rootRestored: true });
   h.create.mockReset();
   h.openOrFocusPanel.mockReset();
   h.setPendingFocus.mockReset();
@@ -98,6 +103,15 @@ describe('Explorer 在终端中打开', () => {
       expect.objectContaining({ cwd: '/repo/sub', workspaceRoot: '/repo' }),
     );
     expect(h.openOrFocusPanel).not.toHaveBeenCalled();
+  });
+
+  it('退出闸 CANCELLED → 静默(与其它新建终端入口一致),不提示、不聚焦', async () => {
+    h.create.mockResolvedValue({ ok: false, code: 'TERMINAL_CREATE_CANCELLED', message: 'x' });
+    openInTerminal('/repo/sub');
+    await vi.waitFor(() => expect(h.create).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(h.notifyError).not.toHaveBeenCalled();
+    expect(h.setPendingFocus).not.toHaveBeenCalled();
   });
 
   it('create 失败 → 错误提示,不请求聚焦', async () => {
