@@ -9,6 +9,22 @@ export interface PathScope {
   mode: 'r' | 'rw';
 }
 
+/** plugin-fs:stat / lstat 的返回(main 产出,preload / scoped-app 转给插件)。 */
+export interface PluginFsRawStat {
+  size: number;
+  mtimeMs: number;
+  isFile: boolean;
+  isDirectory: boolean;
+  isSymlink: boolean;
+}
+
+/** plugin-fs:list-dir 的单条返回。 */
+export interface PluginFsRawListEntry {
+  name: string;
+  isDirectory: boolean;
+  isSymlink: boolean;
+}
+
 export class ScopeError extends Error {
   readonly code = 'SCOPE_ERROR' as const;
   readonly cause?: unknown;

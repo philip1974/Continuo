@@ -4,21 +4,13 @@
 import { ipcRenderer, type IpcRendererEvent } from 'electron';
 import { subscribeIpc } from './subscribe-ipc';
 import { PLUGIN_FS_CHANNELS } from '../shared/plugin-fs-channels';
-import type { PluginFsEditorRead } from '../shared/plugin-fs-contract';
+import type {
+  PluginFsEditorRead,
+  PluginFsRawListEntry,
+  PluginFsRawStat,
+} from '../shared/plugin-fs-contract';
 
-export interface PluginFsRawStat {
-  size: number;
-  mtimeMs: number;
-  isFile: boolean;
-  isDirectory: boolean;
-  isSymlink: boolean;
-}
-
-export interface PluginFsRawListEntry {
-  name: string;
-  isDirectory: boolean;
-  isSymlink: boolean;
-}
+export type { PluginFsRawListEntry, PluginFsRawStat };
 
 export interface PluginFsRaw {
   _registerPlugin(pluginId: string): Promise<{ token: string }>;

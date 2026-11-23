@@ -20,6 +20,8 @@ import {
   ScopeRequestTimeoutError,
   type PathScope,
   type PluginFsEditorRead,
+  type PluginFsRawListEntry,
+  type PluginFsRawStat,
 } from '../../shared/plugin-fs-contract';
 import { canonicalizeScopePath } from './path-resolve.helper';
 import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
@@ -504,21 +506,13 @@ export function readGitBlob(
   });
 }
 
-interface StatPayload {
-  size: number;
-  mtimeMs: number;
-  isFile: boolean;
-  isDirectory: boolean;
-  isSymlink: boolean;
-}
-
 function statPayload(s: {
   size: number;
   mtimeMs: number;
   isFile(): boolean;
   isDirectory(): boolean;
   isSymbolicLink(): boolean;
-}): StatPayload {
+}): PluginFsRawStat {
   return {
     size: s.size,
     mtimeMs: s.mtimeMs,
@@ -777,11 +771,7 @@ export function registerPluginFsHandlers(
     // IPC 卡顿。用 opendir 惰性迭代(不先把全部 Dirent 物化进内存),累计到硬上限即 fail-closed
     // 抛 FS_DIR_TOO_LARGE(不静默截断 —— 截断会让插件误判「文件不存在」)。上限 100k 是滥用
     // backstop:单层目录 >10 万直接子项极罕见,远超任何现实插件目录。
-    const out: {
-      name: string;
-      isDirectory: boolean;
-      isSymlink: boolean;
-    }[] = [];
+    const out: PluginFsRawListEntry[] = [];
     const dir = await fs.opendir(r.canonical);
     for await (const e of dir) {
       if (out.length >= MAX_LIST_DIR_ENTRIES) {
