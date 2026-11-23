@@ -300,7 +300,7 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // banner) would otherwise be silently dropped. (审计 #1)
   flushPending(id, instance);
   // 1c. ring buffer 即将被 server-node 删除(自然退出 onExit 之后 / sm.kill 时)→ 先留快照。
-  // 退出强杀(cleanupAll)时不留:进程随即退出、快照无人读取,每个 PTY 拼最多 4MB 只白占主线程与堆。
+  // 退出强杀(cleanupAll)时不留:进程随即退出、快照无人读取,每个 PTY 拼最多 1MiB 只白占主线程与堆。
   if (!shuttingDown) retainExitedHistory(id);
 
   // 2. Clear all timers

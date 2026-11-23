@@ -945,8 +945,8 @@ export function useTerminal(termId: string) {
   }, [dispatchSearchAction]);
 
   // issue #42 #2: memoize searchApi 防止 TerminalSearchBar 在 useTerminal 每
-  // 次 re-render 时拿到新引用 / 不必要 re-render。所有 callbacks 已是 stable
-  // (useCallback 空 deps),只在 searchState 改时重新打包。
+  // 次 re-render 时拿到新引用 / 不必要 re-render。所有 callbacks 经依赖链均稳定
+  // (底层 runSearchAction / focus 为空 deps),只在 searchState 改时重新打包。
   const searchApi: SearchApi = useMemo(
     () => ({
       isOpen: searchState.isOpen,

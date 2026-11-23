@@ -78,7 +78,8 @@ function searchesInvalidRegex(
   }
 }
 
-// 本地 3 参 API，内部注入 DECORATIONS；与包同名 4 参版本通过 `as packageApply` 别名隔离
+// 本地 API(addon, state, action, term?)：内部注入 DECORATIONS(包版第 4 参是 decorations,本地第 4 参是可选的 term,
+// 用于清 selection)；与包同名版本通过 `as packageApply` 别名隔离
 // 返回 false = 搜索词是非法正则、未交给 addon:xterm SearchEngine 内直接 RegExp(term) 无 try/catch,
 // 非法正则(`[` / `(` / `\`)会抛 SyntaxError 穿透事件处理器,且 addon 记下的搜索选项会让其
 // 输出触发的防抖重搜在 setTimeout 里再抛。这里预校验并清高亮(连带清 addon 缓存词),
