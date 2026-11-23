@@ -82,7 +82,7 @@ Once Continuo is running and the MCP server is registered, the agent can call:
 |------|---------|
 | `terminal.create_session` | spawn a new terminal panel (becomes a dockable tile) |
 | `terminal.send_text` | type text into a session |
-| `terminal.send_input` | write raw bytes to a session (advanced; prefer `send_text` + `press_key`) |
+| `terminal.send_input` | write input with LF→CR and literal-escape (`\n` `\r` `\t` `\xHH`) conversion to a session (advanced; prefer `send_text` + `press_key`) |
 | `terminal.press_key` | send a named key (`enter`, `ctrl_c`, `tab`, `escape`, arrow keys, …) |
 | `terminal.read_output` | read what scrolled past |
 | `terminal.list_sessions` | enumerate active panels |

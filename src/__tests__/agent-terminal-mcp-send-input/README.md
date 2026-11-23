@@ -7,7 +7,7 @@
 (未授权会弹窗;要拒绝 agent 控制 → revoke,持旧 token 立刻 401)。
 
 `send_text` / `press_key` 是 P4+ c 方案的清晰替代;`send_input` 仍保留作 advanced
-原始接口(发复杂 escape 序列、二进制等)。
+接口(发复杂 escape 序列;会做 LF→CR 与字面转义解码,不适合任意二进制)。
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §5.2
 

@@ -483,11 +483,11 @@ export function makeSendInputTool(
   return {
     name: MCP_TOOL_SEND_INPUT,
     description:
-      "[ADVANCED] Send input to a terminal session's PTY stdin. Before writing, LF (real or the literal two characters \\n) and a literal \\r become CR, a literal \\t becomes TAB and literal \\xHH escapes are decoded; use send_text to write backslash text verbatim. " +
+      "[ADVANCED] Send input to a terminal session's PTY stdin. Before writing, LF (real or the literal two characters \\n) and a literal \\r become CR, a literal \\t becomes TAB, and a literal \\xHH becomes the character U+00HH written as UTF-8 (so 0x80 and above become two bytes; \\x0A also becomes CR); incomplete escapes are kept as-is. Use send_text to write backslash text verbatim. " +
       'PREFER send_text + press_key for normal input — they remove the LF/CR confusion in raw-mode TUIs. ' +
-      'Use send_input only for complex sequences (mouse events, custom escape codes); data containing 0x0A is rewritten, so it is not suitable for arbitrary binary. Max 2,000,000 UTF-8 bytes. ' +
-      'Note: to submit input via this tool, append "\\r" (CR, 0x0d), NOT "\\n" (LF). ' +
-      'Raw-mode TUIs (codex, vim, claude, less, ssh) only treat "\\r" as Enter. ' +
+      'Use send_input only for complex sequences (mouse events, custom escape codes); it is not suitable for arbitrary binary. ' +
+      'The whole MCP request is capped at 1,000,000 bytes, so keep data well under 1 MB after JSON escaping. ' +
+      'To submit input, end with "\\r" or "\\n" — both are written as CR, which raw-mode TUIs (codex, vim, claude, less, ssh) treat as Enter. ' +
       'Returns immediately after writing; use read_output to observe results. ' +
       'Session scope: current window only — sessions from other windows return TERMINAL_SESSION_NOT_FOUND.',
     jsonSchema: {
@@ -498,7 +498,7 @@ export function makeSendInputTool(
           type: 'string',
           maxLength: 2_000_000,
           description:
-            'Input to write (LF and literal \\n / \\r / \\t / \\xHH escapes are converted as described above; max 2,000,000 UTF-8 bytes). To press Enter use "\\r" (CR). Example: "ls -la\\r" runs the ls command. Example: "你好\\r" submits text in a TUI prompt.',
+            'Input to write (LF and literal \\n / \\r / \\t / \\xHH escapes are converted as described above; the whole request is capped at 1,000,000 bytes). To press Enter end with "\\r" (CR). Example: "ls -la\\r" runs the ls command. Example: "你好\\r" submits text in a TUI prompt.',
         },
       },
       required: ['session_id', 'data'],
@@ -536,7 +536,7 @@ export function makeSendTextTool(
           type: 'string',
           maxLength: 2_000_000,
           description:
-            'Plain text written verbatim to PTY stdin (max 2,000,000 UTF-8 bytes). To press Enter afterwards, call press_key with key="enter".',
+            'Plain text written verbatim to PTY stdin (the whole MCP request is capped at 1,000,000 bytes, so keep text well under 1 MB after JSON escaping). To press Enter afterwards, call press_key with key="enter".',
         },
       },
       required: ['session_id', 'text'],

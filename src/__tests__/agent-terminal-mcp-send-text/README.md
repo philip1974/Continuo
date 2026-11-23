@@ -64,10 +64,10 @@ deps:
 
 二者写入方式不同:send_text 逐字写入;send_input 先经 `preparePtyData`(LF→CR、字面 escape 反转义)。语义上:
 - `send_text(text)` —— "写这段文字,不包含按键"
-- `send_input(data)` —— "写这段 raw 字节,可含 \\r \\x03 等"
+- `send_input(data)` —— "写这段数据(LF→CR、字面转义解码),可含 \\r \\x03 等"
 
 LLM 看 description:写普通字符 → 用 send_text + press_key('enter');
-写复杂控制序列 / 二进制 → 才走 send_input。
+写复杂控制序列 → 才走 send_input。
 
 ## 不在本主题验证
 
