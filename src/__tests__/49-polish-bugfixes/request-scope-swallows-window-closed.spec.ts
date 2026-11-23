@@ -1,7 +1,7 @@
 // topic 49 后续 · 窗口关闭时 request-scope handler 不得把取消冒泡成 handler 错误。
 //
 // 根因:plugin-fs `request-scope` handler `await correlator.createRequest(...).promise`
-// 等 renderer 弹窗决策。窗口硬关闭时 index.ts win.on('closed') →
+// 等 renderer 弹窗决策。窗口硬关闭时窗口资源清理(browser-window-created → releaseWindowResources)→
 // cancelScopeRequestsForWebContents → correlator.cancelBySender 会 reject 该 pending
 // (ScopeRequestTimeoutError 'window closed')。但 handler 没 catch,于是 reject 冒泡到
 // ipcMain.handle,Electron 打印:

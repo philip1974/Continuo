@@ -2,7 +2,7 @@
 //
 // P2 UI 一致性回归(第七 session R4 完整性批判):partial-grant warning
 // (entry.warning「部分授权:已授 X;未授 Y」)只对 enabled+active 插件有意义。
-// PluginsTab 行**无条件**渲染 p.warning(无 status 门控,见 PluginsTabContent.tsx:339)。
+// PluginsTab 行**无条件**渲染 p.warning(无 status 门控,见 PluginsTabContent.tsx 中 p.warning 的渲染)。
 // activateEntry(311)在激活开头清 warning,但离开 active 的两条转换此前漏清:
 //   - disableLocked:经 deactivateEntry(不碰 warning/error)后 status='disabled',
 //     warning 残留 → 已禁用插件仍挂「⚠ 部分授权」陈旧标记。

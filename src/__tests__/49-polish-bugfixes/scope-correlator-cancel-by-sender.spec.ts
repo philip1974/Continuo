@@ -6,8 +6,8 @@
 // 侧的 `await promise` + pending Map 条目要驻留满 5min 才被 sweep。这与 agent-auth 的
 // cancelAgentAuthByWindow、hook-bridge broker 的 cancelByWindow 是同一类「窗口关了但
 // 等待者还挂着」缺口,唯独 scope-correlator 这条平行通道没跟上。
-// 修复:加 cancelBySender(webContentsId),index.ts win.on('closed') 经
-// cancelScopeRequestsForWebContents 调用(镜像 cancelAgentAuthByWindow)。
+// 修复:加 cancelBySender(webContentsId),窗口关闭清理(browser-window-created →
+// releaseWindowResources / makeWindowResourceCleanup)经 cancelScopeRequestsForWebContents 调用(镜像 cancelAgentAuthByWindow)。
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { ScopeRequestCorrelator } from '../../../electron/main/services/scope-request-correlator';

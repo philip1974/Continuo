@@ -1,6 +1,6 @@
 # window-ipc-create
 
-This BDD topic pins the main-process `createWindowHandler` (electron/main/ipc/window.ipc.ts:33-69, multi-window creation IPC entry). It is the sibling guard for topic-12 `window-workspace-roots-map`: topic-12 pins `NotifyRoot` + close listener in the same file; this topic pins `CREATE` handler. The two halves do not overlap.
+This BDD topic pins the main-process `createWindowHandler` (`createWindowHandler` in electron/main/ipc/window.ipc.ts, multi-window creation IPC entry). It is the sibling guard for topic-12 `window-workspace-roots-map`: topic-12 pins `NotifyRoot` + close listener in the same file; this topic pins `CREATE` handler. The two halves do not overlap.
 
 Behavior contract checklist T1-T8:
 

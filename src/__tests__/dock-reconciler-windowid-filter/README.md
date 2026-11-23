@@ -21,7 +21,7 @@ main 端已经按 `BrowserWindow.id` 做 list/broadcast 过滤;renderer 端仍�
 
 ## popout 推论
 
-`src/shell/App.tsx:123` 分支为 `{isPopoutWindow() ? <PopoutHost /> : <MainApp />}`。
+`src/shell/App.tsx` 中分支为 `{isPopoutWindow() ? <PopoutHost /> : <MainApp />}`。
 popout window 自身渲染空 `PopoutHost`;dockview popout 的内容来自主窗 React 树 portal,
 popout 内 `TerminalPanelView` 读的是主窗 store。因此**主窗 ingress filter 足够,popout 不需特例**。
 

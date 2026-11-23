@@ -1,7 +1,7 @@
 // P2 功能契约回归(第八 session R3):授予的 plugin-fs scope 路径此前裸存原始字符串,
 // 而 PathScopeRegistry.check 的 probe 走 expandHome + realpath(去符号链接的绝对 canonical)。
 // 两者不在同一空间 →
-//   1) `~/proj`(types.ts:149 文档明确「`~` allowed (expanded host-side)」)授予后永不匹配
+//   1) `~/proj`(electron/shared/plugin-fs-contract.ts 文档明确「`~` allowed (expanded host-side)」)授予后永不匹配
 //      → 该 scope 静默死掉,插件后续所有 fs 操作误拒 ScopeError;
 //   2) 含符号链接组件的根(如 macOS `/tmp`→`/private/tmp`)同样失配。
 // 二者都是 fail-closed(误拒非越权)但破坏文档契约。既有 path-scope-registry.test.ts:52 等

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 打磨 R41(性能):RatingRow 的 sorted = sortReviews(...).slice(0,10) 改为仅在
+// 打磨 R41(性能):RatingRow 的展示列表(现为 selectDisplayReviews(sourceReviews, sort))改为仅在
 // 卡片展开时计算(expanded && hasReviews ? ... : [])。本测试守护「展开后排序 review
 // 仍正确渲染」—— 若 gating 错误地恒返 [],展开也不显示 review,故能作为 neutralize。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

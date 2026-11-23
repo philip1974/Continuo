@@ -45,7 +45,7 @@ This keeps PTYs alive through drag-reorder while still tearing them down on genu
 Built-in panels (app code):
 
 1. Build the panel as a React component that accepts `{ params }` from dockview (params travels via `addPanel({ params })`).
-2. Register it in the panel registry under a stable string type (e.g. `"editor"`, `"explorer"`) — built-in panels and plugins (`registerPanel(spec)`) use the same registry; `panel-components.tsx` turns the registry snapshot into dockview's components map, so there is no hand-maintained map in `DockShell.tsx`.
+2. Register it in the panel registry under a stable string type (e.g. `"editor"`, `"settings"`) — built-in panels and plugins (`registerPanel(spec)`) use the same registry; `panel-components.tsx` turns the registry snapshot into dockview's components map, so there is no hand-maintained map in `DockShell.tsx`.
 3. Add panels by calling `api.addPanel({ id, component: 'your-key', title, params })`.
 
 Plugin panels: register the type with `registerPanel(spec)` and open it with `app.dock.openPanel(id)`; the factory receives only `{ api }` (`PluginPanelProps`), no `params`.

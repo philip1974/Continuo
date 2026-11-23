@@ -1,8 +1,8 @@
 // Quick Open Modal(VSCode ⌘P 同款)— UI 仿 CommandPalette.
 //
 // 数据流:
-//   open() → useEffect 监 isOpen+root 变化 → walkWorkspaceFiles →
-//   setLoading(true) → 拿到 files → setResults(files) + setLoading(false)
+//   挂载(= 打开,body 只在打开时挂载)或 root / reloadToken 变化 → walkWorkspaceFiles →
+//   setLoading(true) → 拿到 files → setResults(files, root) + setLoading(false)
 //   query 变 → fuzzyFilter(results) → 渲染列表
 //   Enter → openFileByPath(absPath) + close()
 

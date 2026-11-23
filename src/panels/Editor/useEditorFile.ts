@@ -1,6 +1,6 @@
 // M-Editor Step E2:useEditorFile 薄壳 hook。
 // 把 editor-file-actions 纯函数包装,注入 deps(coApi.fs),
-// 暴露给 EditorPanel / Toolbar。
+// 暴露给 EditorPanel / FolderTree / DockShell。
 
 import { useMemo } from 'react';
 import { coApi } from '@/lib/co-api';

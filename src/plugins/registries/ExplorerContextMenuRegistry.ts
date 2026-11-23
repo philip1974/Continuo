@@ -1,6 +1,6 @@
 // 资源管理器右键菜单贡献(M-Plugin V1 + 改进型 V1,2026-05)。
 // plugin 通过 registerExplorerContextMenuItem 给 Explorer 右键菜单加项,
-// 内置 4 项(新建文件 / 新建文件夹 / 重命名 / 删除)不可覆盖。
+// 内置项由 ContextMenu 直接渲染、不经本注册表,插件无法覆盖。
 //
 // 形态参考 EditorActionRegistry(同 register/getAll/subscribe/filterVisible)。
 //

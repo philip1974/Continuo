@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // 打磨 R50(性能,仿 R32/R33/R49):ExplorerSidebar 拆 shell + body。关闭状态
-// (sidebarOpen=false)下 shell 直接返回 null,不挂载 ExplorerSidebarBody → 不订阅
-// sidebarWidth、不创建 resize handler、不跑 useT。宽度变化不碰不可见 sidebar。
+// (sidebarOpen=false)下不挂载 ExplorerSidebarResizer → 不订阅 sidebarWidth、不创建 resize handler、
+// 不跑 useT(未显示过树时 shell 直接返回 null;显示过则保活为 <aside hidden>)。宽度变化不碰不可见 sidebar。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Profiler } from 'react';
 import { render, cleanup, act } from '@testing-library/react';

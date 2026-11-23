@@ -6,7 +6,7 @@
 // 关掉固定面板(Explorer/Output/Settings)随即又触发「打开/聚焦同 id 面板」(IconSidebar 点击 /
 // plugin coApp.dock.openPanel / mod+, 重开 Settings)→ getPanel 命中 mid-EXIT 面板直接 setActive,
 // 但排定的真 close 仍在 220ms 后执行 → 刚激活的面板凭空消失(用户感觉「点了没反应/一闪没了」)。
-// DockShell editor 激活路径(DockShell.tsx:264)对完全相同的复活竞态显式调了
+// DockShell editor 激活路径(DockShell.tsx 中的 cancelPendingPanelClose('editor'))对完全相同的复活竞态显式调了
 // cancelPendingPanelClose('editor'),但该守卫未传播到 dock-api-ref 两个兄弟入口。
 //
 // 修复:focusPanel / openOrFocusPanel 在 setActive 前调 cancelPendingPanelClose(id),镜像

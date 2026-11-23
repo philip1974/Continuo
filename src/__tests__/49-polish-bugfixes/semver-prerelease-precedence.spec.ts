@@ -5,7 +5,7 @@
 // `1.2.3-beta` 判等 → **永远收不到升稳定版的更新提示**(角标/更新按钮不亮)。四段
 // `1.2.3.4` 同样被截成 {1,2,3} 误判等。
 //
-// 既有 semver.spec.ts:35-40 只断言「prerelease 数字段优先」的两个方向(均保留),漏了
+// 既有 semver.spec.ts 的 prerelease 用例只断言「prerelease 数字段优先」的两个方向(均保留),漏了
 // 「稳定版 > 其 prerelease」这个方向。修复:正则加尾锚 + 解析 prerelease 段,按 semver
 // 优先级(数字相等时无后缀 > 有后缀;都有则后缀字符串序;完全无法解析退字符串比较)。
 import { describe, it, expect } from 'vitest';
