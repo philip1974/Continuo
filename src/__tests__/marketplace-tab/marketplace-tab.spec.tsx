@@ -233,6 +233,26 @@ describe('MarketplaceTab — load 状态', () => {
     });
   });
 
+  // fetcher / 评论拉取对响应超限 / 形态非法同样抛稳定 code;此前 catalog 缺这两个键,
+  // localizeErrorByCode 回退到 message(就是 code 本身)→ 界面直接显示大写 code 字符串。
+  it.each([
+    ['MARKETPLACE_RESPONSE_TOO_LARGE', 'too large'],
+    ['MARKETPLACE_RESPONSE_INVALID', 'malformed'],
+  ])('index 加载失败 %s → 本地化文案,不显示原始 code', async (code, text) => {
+    setI18nLocale('en');
+    try {
+      fetchIndexMock.mockRejectedValue(new Error(code));
+      installApi(vi.fn());
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => {
+        expect(container.textContent).toContain(text);
+      });
+      expect(container.textContent).not.toContain(code);
+    } finally {
+      setI18nLocale('zh');
+    }
+  });
+
   // i18n(I5):fetcher 对可本地化失败抛稳定 code(MARKETPLACE_INDEX_INVALID),
   // MarketplaceTab 按 errors.<CODE> catalog 渲染。locale=en 显英文,不泄漏中文。
   it('index 加载失败 code 在 catalog + locale=en → 英文文案,不泄漏中文', async () => {
