@@ -47,7 +47,11 @@ let activeHandles: PluginFsIpcHandles | null = null;
  */
 export function revokePluginFsAccess(pluginId: string): void {
   if (!activeHandles) return;
+  // 该插件(各窗口 / 各实例)正挂着的 scope 请求一并结算为取消(同实例注销、撤销 fs 权限两个入口):
+  // 先取 token 再吊销,renderer 据取消通知撤掉弹窗,请求方得到 deny。
+  const tokens = activeHandles.identityRegistry.tokensFor(pluginId);
   activeHandles.identityRegistry.revokeByPlugin(pluginId);
+  for (const token of tokens) activeHandles.correlator.cancelByToken(token);
   activeHandles.pathScopeRegistry.revokeAll(pluginId);
 }
 

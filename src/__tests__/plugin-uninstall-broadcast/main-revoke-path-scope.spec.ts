@@ -100,6 +100,32 @@ describe('main:卸载成功后撤销该插件的内存 path-scope 与 plugin-fs 
     expect(pathScopeRegistry._peek(OTHER)).toEqual(SCOPE);
   });
 
+  // 与实例注销 / 撤销 fs 权限两个入口一致:该插件正挂着的 scope 请求随卸载立即结算(否则未决条目与弹窗要等
+  // 各窗口 renderer 自己注销,或留到用户应答 / TTL)。
+  it('卸载成功 → 该插件各实例未决的 scope 请求立即结算为取消;其它插件的不受影响', async () => {
+    const { identityRegistry, correlator } = fsHandles;
+    const mine = identityRegistry.register(ID, 1);
+    const other = identityRegistry.register(OTHER, 1);
+    const pending = correlator.createRequest(mine.token, 1);
+    const settled = pending.promise.then(
+      (d) => `resolved:${d}`,
+      (err: Error) => `rejected:${err.message}`,
+    );
+    const otherPending = correlator.createRequest(other.token, 1);
+    let otherSettled = false;
+    void otherPending.promise.then(
+      () => (otherSettled = true),
+      () => (otherSettled = true),
+    );
+
+    await expect(uninstall(ID)).resolves.toMatchObject({ ok: true });
+
+    await expect(settled).resolves.toBe('rejected:plugin unregistered');
+    await Promise.resolve();
+    expect(otherSettled).toBe(false);
+    correlator.cancelByToken(other.token);
+  });
+
   it('卸载失败 → 不撤销(插件仍在盘上,各窗口照常运行)', async () => {
     const { identityRegistry, pathScopeRegistry } = fsHandles;
     const a = identityRegistry.register(ID, 1);

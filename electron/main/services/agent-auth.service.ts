@@ -440,10 +440,7 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   // 等待中的请求,若随后收到 renderer **迟到的** respond('session'),resolveAgentAuthRequest 仍会
   // 按旧 requestId 放行 → 撤销后那次 MCP tool call 仍执行一次,违反「撤销即时生效」的安全边界。
   // 清空 pending 后,迟到 respond 找不到条目 → no-op,无法复活已撤销的授权。
-  for (const [requestId, entry] of [...pending]) {
-    pending.delete(requestId);
-    entry.settle('denied', 'cancelled');
-  }
+  cancelAllAgentAuth();
   // 各窗口 renderer 的「本次启动期间允许」随下方 REVOKED 广播清空 → 镜像同步清空(拒绝冷却不清)。
   sessionGrantMirror.clear();
   let rotated = false;
@@ -454,19 +451,10 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   // 在途 create_session(授权已过、PTY 尚未登记)不在下方快照里:取消后由创建流程自行回收、不跑 autorun。
   cancelAgentTerminalCreates();
   let killed = 0;
-  const controllerTokens = new Set<string>();
-  if (controllerTeardown) {
-    for (const token of controllerTeardown.listControllerTokens()) {
-      controllerTokens.add(token);
-    }
-  }
   // terminalSessions.getAll() 已返回快照数组;remove 改 Map 不影响本轮遍历。
   const snapshot = terminalSessions.getAll();
   for (const s of snapshot) {
     if (s.originHint !== 'agent') continue;
-    if (typeof s.controllerToken === 'string' && s.controllerToken.length > 0) {
-      controllerTokens.add(s.controllerToken);
-    }
     terminalSessions.remove(s.id);
     // 用户**显式撤销** agent 授权是安全动作:用 forceKill(立即 SIGKILL)而非
     // kill()(先 Ctrl+C、3s grace 后才 SIGKILL)。否则吞 SIGINT / 正在跑破坏性
@@ -475,8 +463,10 @@ export function revokeAndKillAgentSessions(): RevokeResult {
     if (termService.has(s.id)) termService.forceKill(s.id);
     killed += 1;
   }
+  // debug 会话与在途 launch 按调用方回收(listControllerTokens 已含全部已登记会话与在途 launch 的调用方;
+  // 只有终端、没有 debug 资源的调用方无可回收)。
   if (controllerTeardown) {
-    for (const token of controllerTokens) {
+    for (const token of controllerTeardown.listControllerTokens()) {
       controllerTeardown.killByController(token, 'revoked');
     }
   }
