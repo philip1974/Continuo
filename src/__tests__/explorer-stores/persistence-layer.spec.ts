@@ -340,7 +340,7 @@ describe('initExplorerPersistence', () => {
       }));
       await initExplorerPersistence(api);
       useWorkspaceStore.getState().setRoot('/a');
-      useExplorerStore.getState().toggleExpand('/a');
+      useExplorerStore.getState().setExpandedPaths(['/a']);
       await vi.advanceTimersByTimeAsync(400);
       expect(api.write).not.toHaveBeenCalled(); // 不可信加载 → 绝不写盘
     } finally {
@@ -381,7 +381,7 @@ describe('initExplorerPersistence', () => {
       // 三次连续变化,应被 debounce 合并为 1 次写
       useWorkspaceStore.getState().setRoot('/a');
       useWorkspaceStore.getState().setRoot('/b');
-      useExplorerStore.getState().toggleExpand('/a');
+      useExplorerStore.getState().setExpandedPaths(['/a']);
 
       // 推进时钟,触发 debounce
       await vi.advanceTimersByTimeAsync(400);
@@ -606,7 +606,7 @@ describe('initExplorerPersistence', () => {
           windowSeq: NEW_SEQ,
           initialWorkspace: '/new/proj',
         });
-        useExplorerStore.getState().toggleExpand('/new/proj/sub');
+        useExplorerStore.getState().setExpandedPaths(['/new/proj/sub']);
         await vi.advanceTimersByTimeAsync(400);
         expect(api.write).toHaveBeenCalledTimes(1);
         const written = (api.write as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ExplorerSnapshot;
@@ -632,7 +632,7 @@ describe('initExplorerPersistence', () => {
         });
         expect(useWorkspaceStore.getState().root).toBe('/fresh');
         expect(useWorkspaceStore.getState().recentRoots).toEqual([]);
-        useExplorerStore.getState().toggleExpand('/fresh/x');
+        useExplorerStore.getState().setExpandedPaths(['/fresh/x']);
         await vi.advanceTimersByTimeAsync(400);
         const written = (api.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as ExplorerSnapshot;
         expect(written.windows.find((w) => w.windowSeq === 1)?.workspace.root).toBe('/fresh');

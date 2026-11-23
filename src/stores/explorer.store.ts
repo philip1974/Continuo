@@ -27,7 +27,6 @@ type ExplorerState = {
    */
   sort: ExplorerSort;
 
-  toggleExpand: (path: string) => void;
   setExpandedPaths: (paths: Iterable<string>) => void;
   setSort: (sort: ExplorerSort) => void;
 };
@@ -38,27 +37,12 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
   expandedPaths: EMPTY_EXPANDED_PATHS,
   sort: { by: 'name', reverse: false },
 
-  toggleExpand: (path) =>
-    set((s) => {
-      const has = s.expandedPaths.has(path);
-      // 边界(E277,E276 同族 / 运行时状态守持久化契约):expand 不得超持久化 schema(数量 ≤ PATH_ARRAY_MAX,
-      // 单条 path ≤ PATH_STR_MAX),否则 snapshotFromStores 写出后 explorer:write 被拒整份 → 全 explorer 持久化失败。
-      if (!has && (s.expandedPaths.size >= PATH_ARRAY_MAX || path.length > PATH_STR_MAX)) {
-        return s;
-      }
-      const next = new Set(s.expandedPaths);
-      if (has) {
-        next.delete(path);
-        return { expandedPaths: next.size === 0 ? EMPTY_EXPANDED_PATHS : next };
-      }
-      next.add(path);
-      return { expandedPaths: next };
-    }),
-
   setExpandedPaths: (paths) =>
     set((s) => {
       if (paths === s.expandedPaths) return s;
-      // 边界(E277):批量设置也按持久化契约约束 —— 数量截断到 PATH_ARRAY_MAX,过滤超长 path。
+      // 边界(E277,运行时状态守持久化契约):expand 不得超持久化 schema(数量 ≤ PATH_ARRAY_MAX,单条 path ≤
+      // PATH_STR_MAX),否则 snapshotFromStores 写出后 explorer:write 被拒整份 → 全 explorer 持久化失败。
+      // 数量截断到 PATH_ARRAY_MAX,过滤超长 path。
       const next = new Set<string>();
       for (const p of paths) {
         if (next.size >= PATH_ARRAY_MAX) break;

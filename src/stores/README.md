@@ -40,7 +40,7 @@ workspace.hydrated === false     → additionally, restored editor tabs may stil
 `initExplorerPersistence` flips `rootRestored = true` right after the root is restored (before the editor-tab reads), and `hydrated = true` after the tab reads. Both flip whether the read succeeds, fails, or finds no file, and `hydrated ⇒ rootRestored`.
 
 - Consumers that only need `root` (new user terminal cwd — `createUserTerminal`; window→root push to main — `MainApp` notifyRoot; first-pass terminal filter — `TerminalSessionsSync`, which checks the same predicate inline) wait on `waitForWorkspaceRootRestored()` (`rootRestored || hydrated`). Waiting on `hydrated` here would put the editor-tab disk reads on the cold-start critical path.
-- Consumers that also depend on the restored editor tabs must wait on `waitForWorkspaceHydrated()`.
+- Consumers that also depend on the restored editor tabs must wait for `hydrated` (none exist today).
 
 ## Adding a new store
 

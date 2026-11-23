@@ -8,7 +8,7 @@
 | 文件 | 内容 |
 |---|---|
 | `src/stores/workspace.store.ts` | `root` / `recentRoots`(LRU 5) |
-| `src/stores/explorer.store.ts` | `expandedPaths` / `sort` + `toggleExpand` / `setExpandedPaths` / `setSort`(多选由 headless-tree selection state 驱动;`activePath`/`search` 是死字段已删,见下) |
+| `src/stores/explorer.store.ts` | `expandedPaths` / `sort` + `setExpandedPaths` / `setSort`(多选由 headless-tree selection state 驱动;`activePath`/`search` 是死字段已删,见下) |
 | `src/stores/pinned.store.ts` | `paths`(只随 explorer.json 读入 / 写回;当前无置顶 UI,不提供修改动作) |
 | `electron/main/persistence.ts` | 复用,追加 `ExplorerSchema` / `loadExplorer` |
 | `electron/main/ipc.ts` | 追加 `explorer:read` / `explorer:write` 通道(走 safeHandle) |
@@ -42,7 +42,7 @@
 | 文件 | 主题 |
 |---|---|
 | `workspace.spec.ts` | LRU、setRoot 三态 |
-| `explorer.spec.ts` | toggleExpand / setExpandedPaths / setSort |
+| `explorer.spec.ts` | setExpandedPaths / setSort |
 | `persistence-schema.spec.ts` | ExplorerSchema strict + version 锁 + loadExplorer 读回 |
 | `persistence-layer.spec.ts` | snapshot ↔ hydrate Set/array 转换、不持久化字段闭包、init flow(mock api) |
 

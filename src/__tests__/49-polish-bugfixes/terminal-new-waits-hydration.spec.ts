@@ -7,7 +7,7 @@
 // 不带 cwd → main resolveTerminalCwd 抛 TERMINAL_CWD_UNRESOLVED → 首次新建失败且不重试。
 // (「契约建了消费方漏用」族;违反文档契约 = 真 bug。)
 //
-// 修:两入口在读 root 前 await waitForWorkspaceHydrated()(已 hydrated 立即返回;markHydrated
+// 修:两入口在读 root 前先等持久化恢复(已恢复立即返回;markHydrated
 // 在 init 成功/失败/无文件都会调,故不会挂死)。
 // 后续(冷启动关键路径):入口改等 waitForWorkspaceRootRestored()(rootRestored || hydrated)——只需 root,
 // 不等编辑器 tab 恢复读盘;见 startup-critical-path。本文件用 markHydrated(⇒ rootRestored)仍成立。
@@ -15,10 +15,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import TerminalPlugin from '@/core-plugins/TerminalPlugin';
-import {
-  useWorkspaceStore,
-  waitForWorkspaceHydrated,
-} from '@/stores/workspace.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 
 const mocks = vi.hoisted(() => ({
   createTerminal: vi.fn().mockResolvedValue({ ok: true, data: { id: 'term-new' } }),
@@ -80,14 +77,5 @@ describe('topic49 R10 · terminal.new 等 hydrate', () => {
     expect(mocks.createTerminal).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: '/repo', workspaceRoot: '/repo' }),
     );
-  });
-
-  it('已 hydrated 时 waitForWorkspaceHydrated 立即 resolve(不阻塞快路径)', async () => {
-    useWorkspaceStore.setState({ hydrated: true });
-    let resolved = false;
-    await waitForWorkspaceHydrated().then(() => {
-      resolved = true;
-    });
-    expect(resolved).toBe(true);
   });
 });
