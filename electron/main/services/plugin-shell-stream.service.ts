@@ -275,10 +275,8 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       assertTrustedFrame(event);
       const key = activeKey(event.sender.id, streamId);
       const handle = active.get(key);
+      // 归属:active 的 key 含 sender id,别的 sender 按同一 streamId 查不到这条(无法 abort 别人的 stream)。
       if (!handle) return;
-      // 归属校验:只有发起该 stream 的 sender 能 abort 它,避免跨 sender 按 streamId
-      // 终止别人的 stream(复审 loop R8 次要项)。
-      if (handle.senderId !== event.sender.id) return;
       // 审计 P2-A:旧实现只发 SIGTERM,不清 active 表也不升级 SIGKILL;子进程
       // 吞掉 SIGTERM 时会挂到 timeout(最长 30min)且 active 条目+timer 驻留。
       forceKillStream(key, handle);

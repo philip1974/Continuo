@@ -109,23 +109,6 @@ describe('createWatcherPool', () => {
     expect(closes[0]).toHaveBeenCalled();
   });
 
-  it('closeAll() 清空所有 watcher 并调 close', () => {
-    const closes: Array<() => void> = [];
-    const creator: WatcherCreator = vi.fn(() => {
-      const close = vi.fn();
-      closes.push(close);
-      return { close };
-    });
-    const pool = createWatcherPool(creator);
-    pool.watch('/a', vi.fn());
-    pool.watch('/b', vi.fn());
-    pool.closeAll();
-    expect(pool.size()).toBe(0);
-    expect(pool.has('/a')).toBe(false);
-    expect(closes[0]).toHaveBeenCalled();
-    expect(closes[1]).toHaveBeenCalled();
-  });
-
   it('creator 收到的 onChange 触发后,pool.watch 提供的 cb 被调', () => {
     let triggerChange: (p: string) => void = () => {};
     const creator: WatcherCreator = vi.fn((_path, onChange) => {

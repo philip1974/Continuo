@@ -56,7 +56,6 @@ export interface WatcherPool {
   unwatchByOwner: (ownerId: number) => void;
   has: (path: string) => boolean;
   size: () => number;
-  closeAll: () => void;
 }
 
 /**
@@ -201,13 +200,6 @@ export function createWatcherPool(
 
     size() {
       return watchers.size;
-    },
-
-    closeAll() {
-      for (const entry of watchers.values()) entry.watcher.close();
-      watchers.clear();
-      order.length = 0;
-      ownerPaths.clear();
     },
   };
 }

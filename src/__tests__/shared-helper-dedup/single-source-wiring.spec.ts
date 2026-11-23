@@ -7,7 +7,6 @@ import { isValidPluginId } from '../../../electron/shared/plugin-id';
 import {
   isBlankString,
   isEcmaWhitespaceCode,
-  trimStringToMax,
 } from '../../../electron/shared/ecma-whitespace';
 import {
   hasTranslateParams,
@@ -118,15 +117,11 @@ describe('ECMA 空白判定单一来源(electron/shared/ecma-whitespace.ts)', ()
     },
   );
 
-  it('isBlankString / trimStringToMax 语义等价 trim', () => {
+  it('isBlankString 语义等价 trim', () => {
     expect(rendererIsBlankString).toBe(isBlankString);
     for (const v of ['', ' \t\u00a0\u3000', ' a ', '\ufeff', 'x']) {
       expect(isBlankString(v)).toBe(v.trim() === '');
     }
-    for (const v of ['  hello world  ', '\u3000ab\n', '   ', 'abc']) {
-      expect(trimStringToMax(v, 4)).toBe(v.trim().slice(0, 4));
-    }
-    expect(trimStringToMax(' a ', 0)).toBe('');
   });
 });
 

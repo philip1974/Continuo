@@ -15,14 +15,11 @@ import {
   type DebugToolService,
 } from './mcp-tools-debug';
 
-/** debug 域授权门控(与 terminal 域同一签名;独立命名保留既有导出)。 */
-export type EnsureDebugAuthorized = EnsureAuthorized;
-
 export interface MakeDebugMcpToolsDeps {
   readonly service: DebugToolService;
   readonly getSessionOwner: (id: string) => number | null;
   readonly getSessionController: (id: string) => string | null;
-  readonly ensureAuthorized: EnsureDebugAuthorized;
+  readonly ensureAuthorized: EnsureAuthorized;
 }
 
 // 跨窗 session_id 与不存在的 session_id 必须不可区分(同一 code、同一文案、不回显 id)—— 否则调用方能

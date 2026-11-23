@@ -19,8 +19,6 @@ import {
   type CreateSessionToolDeps,
 } from './mcp-tools-terminal';
 
-export type { EnsureAuthorized } from './mcp-tool-gates';
-
 // createSession / installStopHook 的签名以 create_session 工具的 deps 为单一来源。
 export interface MakeTerminalMcpToolsDeps
   extends Pick<CreateSessionToolDeps, 'createSession' | 'installStopHook'> {

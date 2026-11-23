@@ -37,22 +37,3 @@ export function isBlankString(value: string): boolean {
   return true;
 }
 
-/** 等价 `value.trim().slice(0, maxLength)`,不物化完整 trim 结果。 */
-export function trimStringToMax(value: string, maxLength: number): string {
-  if (maxLength <= 0) return '';
-  let start = 0;
-  while (
-    start < value.length &&
-    isEcmaWhitespaceCode(value.charCodeAt(start))
-  ) {
-    start += 1;
-  }
-  if (start >= value.length) return '';
-
-  let end = value.length;
-  while (end > start && isEcmaWhitespaceCode(value.charCodeAt(end - 1))) {
-    end -= 1;
-  }
-
-  return value.slice(start, Math.min(end, start + maxLength));
-}

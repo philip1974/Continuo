@@ -7,7 +7,6 @@ import {
 import { ownValue } from '../shared/own-value';
 import { getCurrentLocale } from './services/settings.service';
 
-export type { TranslateParams } from '../shared/i18n-interpolate';
 export type MainT = (key: string, params?: TranslateParams) => string;
 
 /**

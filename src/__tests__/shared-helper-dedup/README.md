@@ -16,7 +16,7 @@
 3. plugin id 形态校验(`isValidPluginId`):跨进程单一来源 `electron/shared/plugin-id.ts`;
    renderer `src/plugins/plugin-id.ts`(re-export)、main `plugins.service.isSafePluginId`、
    `plugin-data-store.service.assertPluginId` 均委托它。
-4. ECMA 空白码点判定(`isEcmaWhitespaceCode` / `isBlankString` / `trimStringToMax`):跨进程单一来源
+4. ECMA 空白码点判定(`isEcmaWhitespaceCode` / `isBlankString`):跨进程单一来源
    `electron/shared/ecma-whitespace.ts`,集合恒等于 JS 正则 `\s`;renderer `blank-string` / `text-stats` /
    `CommandRegistry` 与 main `mcp-stdio-server` / `mcp-tools-hook-bridge` 只导入不复制。
 5. i18n 字典与 `{param}` 插值(`LOCALE_DICTS` / `hasTranslateParams` / `interpolateTemplate`):跨进程

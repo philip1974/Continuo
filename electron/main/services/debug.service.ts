@@ -2025,7 +2025,6 @@ export class DebugService {
     debugSessions.update(sessionId, {
       runtimeState: 'stopped',
       stopSeq,
-      pausedEpoch: session.pausedEpoch + 1,
       ...(output.thread_id !== undefined ? { currentThreadId: output.thread_id } : {}),
       stoppedReason: output.reason,
     });

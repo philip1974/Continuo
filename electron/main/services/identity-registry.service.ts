@@ -8,8 +8,6 @@ interface RegistryEntry {
   webContentsId: number;
   generation: number;
   state: EntryState;
-  createdAt: number;
-  drainStartedAt?: number;
 }
 
 export interface RegisterResult {
@@ -34,7 +32,6 @@ export class IdentityRegistry {
       webContentsId,
       generation,
       state: 'active',
-      createdAt: Date.now(),
     });
     return { token, generation };
   }
@@ -100,7 +97,6 @@ export class IdentityRegistry {
     const entry = this.entries.get(token);
     if (!entry || entry.state === 'draining') return;
     entry.state = 'draining';
-    entry.drainStartedAt = Date.now();
     const timer = setTimeout(() => {
       this.entries.delete(token);
       this.drainTimers.delete(token);
@@ -127,15 +123,6 @@ export class IdentityRegistry {
   revokeByPlugin(pluginId: string): void {
     for (const [token, entry] of this.entries) {
       if (entry.pluginId === pluginId) this.revoke(token);
-    }
-  }
-
-  /** Test-only: synchronous GC (skip setTimeout). */
-  _gcDrainedNow(): void {
-    for (const [token, timer] of this.drainTimers) {
-      clearTimeout(timer);
-      this.entries.delete(token);
-      this.drainTimers.delete(token);
     }
   }
 
