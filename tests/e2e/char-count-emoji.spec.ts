@@ -1,4 +1,4 @@
-// charCount 用 s.length(UTF-16 code unit)→ '🌍' = 2 字符.
+// computeTextStats().chars 用 s.length(UTF-16 code unit)→ '🌍' = 2 字符.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

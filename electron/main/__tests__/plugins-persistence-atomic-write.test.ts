@@ -10,7 +10,7 @@ import {
 } from '../services/plugins.service';
 
 // 数据安全(复查 P1,「读失败/损坏降级为空」族的写侧对偶):
-// _permissions.json / _path-scopes.json / _enabled.json 此前用裸 fs.writeFile('w')。
+// _permissions.json / _plugin-path-scopes.json / _enabled.json 此前用裸 fs.writeFile('w')。
 // 'w' 先截断已有文件再写,ENOSPC/进程被杀/写中断会留下空/半截 JSON;重启后读侧按
 // 既有契约把损坏 JSON 降级为空(授权/scope/enabled 全丢)。改 temp+fsync+rename 原子写后:
 // rename 成功前原文件始终完好,写失败也绝不改动原文件。
@@ -51,7 +51,7 @@ describe('插件持久化原子写(写中断不损坏原文件)', () => {
     expect(await readFile(file, 'utf-8')).toBe(original); // 原文件未被截断/覆盖
   });
 
-  it('writePluginPathScopes: rename 失败时原 _path-scopes.json 完好', async () => {
+  it('writePluginPathScopes: rename 失败时原 _plugin-path-scopes.json 完好', async () => {
     const file = path.join(baseDir, '_plugin-path-scopes.json');
     const original = JSON.stringify({
       'p.a': [{ path: '/work/a', mode: 'r' }],

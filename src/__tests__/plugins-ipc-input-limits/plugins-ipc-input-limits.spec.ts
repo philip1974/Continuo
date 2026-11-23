@@ -1,5 +1,5 @@
 // 边界(E16,E11-E15 同族):插件权限 IPC schema 加长度/数量上限。畸形 payload 可把
-// _permissions.json / _path-scopes.json 写成超大对象/超长路径 → 主进程 RMW/atomic 写/水合/UI 卡顿。
+// _permissions.json / _plugin-path-scopes.json 写成超大对象/超长路径 → 主进程 RMW/atomic 写/水合/UI 卡顿。
 // 超限 → zod 校验失败(safeHandle 走 BAD_INPUT)。cap 远超现实插件集合,不破坏正常写入。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

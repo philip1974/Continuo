@@ -271,7 +271,7 @@ describe('invokeLocal · 派发本地 run', () => {
   });
 
   // 边界(E76,E73/E75 跨进程同族):外部 MCP client 传畸形 arguments(.strict() schema 大量未知
-  // key → 单条超大 unrecognized_keys issue)时,INVALID_PARAMS 的 message 须经 capJoinedMessages
+  // key → 单条超大 unrecognized_keys issue)时,INVALID_PARAMS 的 message 须经 capJoinedMessagesFrom
   // 限总长,防超长错误串经 reply/IPC/日志放大。
   it('E76 strict schema 大量未知 key → INVALID_PARAMS message 有上限 + 截断标记', async () => {
     const upstream = makeFakeUpstream();

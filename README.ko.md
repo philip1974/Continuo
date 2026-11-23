@@ -82,7 +82,7 @@ Continuo가 실행되고 MCP 서버가 등록되면, 에이전트는 다음을 �
 |------|------|
 | `terminal.create_session` | 새 터미널 패널 생성 (도킹 가능한 타일이 됨) |
 | `terminal.send_text` | 세션에 텍스트 입력 |
-| `terminal.send_input` | 세션에 원시 바이트 쓰기 (고급; `send_text` + `press_key` 권장) |
+| `terminal.send_input` | 세션에 입력 쓰기 — 쓰기 전에 LF→CR 및 리터럴 이스케이프(`\n` `\r` `\t` `\xHH`) 변환 (고급; `send_text` + `press_key` 권장) |
 | `terminal.press_key` | 이름 있는 키 전송 (`enter`, `ctrl_c`, `tab`, `escape`, 방향키 등) |
 | `terminal.read_output` | 지나간 출력 읽기 |
 | `terminal.list_sessions` | 활성 패널 나열 |
@@ -90,7 +90,7 @@ Continuo가 실행되고 MCP 서버가 등록되면, 에이전트는 다음을 �
 | `terminal.await_stop_hook` | 세션의 에이전트가 Stop hook을 실행할 때(턴 종료)까지 대기; `install_stop_hook: true`, `agentLabel`이 `claude` / `claude-code` / `cc` / `codex`, cwd가 창의 workspace 폴더 안(홈 디렉터리나 그 상위 디렉터리는 제외)인 세션에만 hook이 설치됨 |
 | `debug.*` | Node.js 디버거 제어: `launch`, `set_breakpoint`, `wait_for_stop`, `continue`, `step_over` / `step_in` / `step_out`, `stack`, `scopes`, `variables`, `evaluate`, `disconnect`, `list_sessions` |
 
-에이전트가 창을 조작하기 전에 Continuo는 해당 창에서 허용 여부를 묻습니다. 터미널 권한과 디버그 권한은 따로 부여됩니다. `list_sessions`는 창의 모든 세션을 보여 주지만, 읽기 / 쓰기 / kill / 대기 도구와 `debug.*`는 같은 MCP 연결이 `create_session` 또는 `debug.launch`로 만든 세션에만 동작합니다.
+에이전트가 창을 조작하기 전에 Continuo는 해당 창에서 허용 여부를 묻습니다. 터미널, 디버그, 플러그인 도구 권한은 각각 따로 부여됩니다. `list_sessions`는 창의 모든 세션을 보여 주지만, 읽기 / 쓰기 / kill / 대기 도구와 `debug.*`는 같은 MCP 호출자(stdio 연결 하나, 또는 HTTP 터미널 토큰 / MCP 세션 하나)가 `create_session` 또는 `debug.launch`로 만든 세션에만 동작합니다.
 
 > **다중 사용자 호스트에서 디버깅할 때:** `debug.launch` 세션이 실행되는 동안 디버깅 중인 Node 프로세스의 inspector 는 `127.0.0.1` 의 임의 포트에서 대기합니다. 같은 머신의 다른 로컬 사용자는 누구나 이 포트에 접속해 디버기 안에서 당신의 권한으로 코드를 실행할 수 있습니다 — Continuo 고유가 아닌 Node / js-debug 의 일반적인 한계입니다. 다중 사용자 호스트에서는 `debug.launch` 를 신중히 사용하고, 끝나면 바로 세션을 끊으세요.
 

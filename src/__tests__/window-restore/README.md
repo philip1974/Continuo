@@ -33,7 +33,7 @@
 ### 目录判定 async + 有界并发(性能审计 #7)
 
 目录判定不再在 main 进程串行 `statSync`(慢挂载 / 断开网络盘会阻塞 main)。按 `windows[]`
-顺序每批取至多 `RESTORE_CHECK_CONCURRENCY`(8)个候选并发判定,再按原顺序回放串行规则:
+顺序每批取至多 `RESTORE_CHECK_CONCURRENCY`(2)个候选并发判定,再按原顺序回放串行规则:
 
 - 返回集合、`MAX_RESTORE_WINDOWS` 上限与顺序与串行逐一一致(结果按原索引收集,不按完成顺序)
 - 判定次数与串行相同:批大小不超过剩余检查预算(`MAX_RESTORE_CHECKS`)与剩余开窗名额

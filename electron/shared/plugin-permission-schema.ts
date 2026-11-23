@@ -1,4 +1,4 @@
-// plugins:mutate-permissions 入参中授权增量的 zod schema + 类型单一来源(同 window-create-schema.ts 的做法):
+// plugins:mutate-plugin-permissions 入参中授权增量的 zod schema + 类型单一来源(同 window-create-schema.ts 的做法):
 // main 用 schema 校验,plugins-channels 以 `import type` + z.infer 派生 IpcPermissionMutation(类型导入被擦除,preload 不带 zod)。
 
 import { z } from 'zod';

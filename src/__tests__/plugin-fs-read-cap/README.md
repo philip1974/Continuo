@@ -27,7 +27,7 @@ IPC 发超大字符串 → 主进程内存峰值 + 超大临时文件 + fsync/re
 
 `plugin-fs:read-file` handler 复用 `electron/main/ipc/fs/read-file.ts` 的 `readFile`
 (单一来源:stat.size 上限 + FS_FILE_TOO_LARGE + 目录守卫 + errno 映射);`plugin-fs:write-file`
-复用 `electron/main/ipc/fs.ipc.ts` 导出的 `MAX_WRITE_BYTES`,content.length 超限即抛
+复用 `electron/shared/fs-limits.ts` 的 `MAX_WRITE_BYTES`,按 UTF-8 字节(`utf8BytesExceed`)超限即抛
 FS_FILE_TOO_LARGE。与 `write-file` 复用 `atomicWriteFile`(R4)同手法 —— Explorer fs 的每项保护
 都要传播到 plugin-fs 平行入口。
 

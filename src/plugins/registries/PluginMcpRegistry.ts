@@ -214,7 +214,7 @@ export class PluginMcpRegistry {
         throw new PluginMcpError(
           PLUGIN_MCP_ERROR_CODES.INVALID_PARAMS,
           // 边界(E76,E73/E75 跨进程同族):外部 MCP client 传畸形 arguments 时,issues 无界
-          // map+join 会构造超长错误串经 reply schema/IPC/日志放大。复用共享 capJoinedMessages
+          // map+join 会构造超长错误串经 reply schema/IPC/日志放大。复用共享 capJoinedMessagesFrom
           // 限条数 + 总长(与 main 侧 formatZodErrorCapped 同一来源)。
           // 边界(E223,E222 兄弟):mapper 变体,只对前 N 个 issue 取 .message,不先 issues.map 全量物化。
           capJoinedMessagesFrom(

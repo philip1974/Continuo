@@ -12,7 +12,7 @@
 | `src/plugins/settings/PluginsTabContent.tsx` | UI |
 | `src/plugins/PluginManager.ts` | getUserPluginManager / setUserPluginManager singleton getters |
 | `src/plugins/permissions/co-permission-store.ts` | getUserPermissionStore getter |
-| `src/plugins/registries/*` | 6 类 registry(贡献点统计) |
+| `src/plugins/registries/*` | 7 类 registry(贡献点统计) |
 
 ## 关键行为
 

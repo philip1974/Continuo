@@ -198,7 +198,7 @@ describe('parseManifest:Schema 校验', () => {
     expect(r.ok).toBe(true);
   });
 
-  // 边界(E77,E73/E75/E76 错误串放大族最后一处 zod-join):SCHEMA_ERROR message 经 capJoinedMessages
+  // 边界(E77,E73/E75/E76 错误串放大族最后一处 zod-join):SCHEMA_ERROR message 经 capJoinedMessagesFrom
   // 限总长。zod enum 错误会回显 received 值 —— 单个超长非法 permission 元素(.max(5) 只限数组条数、
   // 不限元素长度,E74 未覆盖)会产生 >2048 的 issue.message,须截断防进 PluginManager.entry.error/
   // PluginsTab 渲染放大。

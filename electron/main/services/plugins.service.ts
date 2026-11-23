@@ -290,7 +290,7 @@ async function readPluginDirentsCapped(
 }
 
 // 边界(E68,E18/E26/E66/E67 stat-before-read 族):插件持久化元数据 _enabled.json /
-// _permissions.json / _path_scopes.json 此前裸 fs.readFile + JSON.parse,数量/字段/路径上限都在
+// _permissions.json / _plugin-path-scopes.json 此前裸 fs.readFile + JSON.parse,数量/字段/路径上限都在
 // 解析后才生效;path-scopes 损坏还把完整 text 写 .corrupt。畸形或手工放大的元数据可在启动/list/
 // 权限写入前撑爆 main 内存或长阻塞,.corrupt 二次放大 I/O。读前先 stat.size 硬拦。与 readFileCapped
 // (返 null)不同:此 helper **透传错误**(stat ENOENT→保留调用方「缺文件=空表」语义;EACCES/
@@ -947,7 +947,7 @@ async function readAllPathScopes(
     // 边界(E86):scope 经 isIpcPathScope(含 path 长度上限)过滤,且每插件 scope 数封顶
     //(对齐 PathScopeRegistry 上限,防整表在 hydrate 前放大 + RMW 写回超量)。
     // 边界(E208,E206/E207 有界迭代族):collectValidCapped 凑满 MAX 即停,不先 filter 全量扫描+物化再 slice
-    //(畸形 _path-scopes.json 单 plugin 塞大量 scope 否则冷启动水合时被完整遍历)。
+    //(畸形 _plugin-path-scopes.json 单 plugin 塞大量 scope 否则冷启动水合时被完整遍历)。
     const scopes = collectValidCapped(
       value,
       isIpcPathScope,

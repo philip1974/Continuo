@@ -82,7 +82,7 @@ Windows 上需经 Node 调用：`claude mcp add --transport stdio continuo -- no
 |------|------|
 | `terminal.create_session` | 新建一个终端面板（成为可停靠的瓦片） |
 | `terminal.send_text` | 向某个 session 输入文本 |
-| `terminal.send_input` | 向 session 写入原始字节（高级用法；优先用 `send_text` + `press_key`） |
+| `terminal.send_input` | 向 session 写入数据，写入前做 LF→CR 与字面转义（`\n` `\r` `\t` `\xHH`）转换（高级用法；优先用 `send_text` + `press_key`） |
 | `terminal.press_key` | 发送一个具名按键（`enter`、`ctrl_c`、`tab`、`escape`、方向键等） |
 | `terminal.read_output` | 读取已滚动过的输出 |
 | `terminal.list_sessions` | 枚举活跃面板 |
@@ -90,7 +90,7 @@ Windows 上需经 Node 调用：`claude mcp add --transport stdio continuo -- no
 | `terminal.await_stop_hook` | 阻塞等待 session 里的 agent 触发 Stop hook（完成本轮）；只有用 `install_stop_hook: true`、`agentLabel` 为 `claude` / `claude-code` / `cc` / `codex` 且 cwd 位于窗口 workspace 文件夹内(不能是 home 目录或其上级目录)创建的 session 才会安装该 hook |
 | `debug.*` | 驱动 Node.js 调试器：`launch`、`set_breakpoint`、`wait_for_stop`、`continue`、`step_over` / `step_in` / `step_out`、`stack`、`scopes`、`variables`、`evaluate`、`disconnect`、`list_sessions` |
 
-agent 操作某个窗口之前，Continuo 会在该窗口里征求你的同意；终端权限与调试权限分开授予。`list_sessions` 能看到窗口内全部 session，但读 / 写 / kill / 等待类工具和 `debug.*` 只能作用于同一个 MCP 连接用 `create_session` 或 `debug.launch` 创建的 session。
+agent 操作某个窗口之前，Continuo 会在该窗口里征求你的同意；终端、调试、插件工具三类权限分开授予。`list_sessions` 能看到窗口内全部 session，但读 / 写 / kill / 等待类工具和 `debug.*` 只能作用于同一个 MCP 调用方（一条 stdio 连接，或一个 HTTP 终端 token / MCP session）用 `create_session` 或 `debug.launch` 创建的 session。
 
 > **在多用户主机上调试：** `debug.launch` 会话运行期间，被调试 Node 进程的 inspector 监听 `127.0.0.1` 上的随机端口。同一台机器上的其他本地用户都能连接该端口，并以你的身份在被调试进程内执行代码 —— 这是 Node / js-debug 的通用限制，并非 Continuo 特有。在多用户主机上请谨慎使用 `debug.launch`，用完及时断开会话。
 

@@ -22,7 +22,7 @@ const DEFAULT_EXCLUDE_SET: ReadonlySet<string> = new Set(LIST_DIR_DEFAULT_EXCLUD
 export interface ListDirOptions {
   /** 默认 1(只列当前层)。受 MAX_DEPTH_HARD_LIMIT=10 截断。 */
   readonly maxDepth?: number;
-  /** basename 黑名单。默认见 DEFAULT_EXCLUDE,自定义完全替换默认。 */
+  /** basename 黑名单。默认见 LIST_DIR_DEFAULT_EXCLUDE,自定义完全替换默认。 */
   readonly exclude?: readonly string[];
   /**
    * 性能(perf 审计 P2):**文件数**上限。收集到这么多文件即停止遍历与递归

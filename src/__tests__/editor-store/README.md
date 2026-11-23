@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/stores/editor.store.ts` | tabs / activeTabId / mode + 7 个 actions + createTab/getStateAfterClosingTab 纯函数 |
+| `src/stores/editor.store.ts` | tabs / activeTabId / mode + actions(打开 / 关闭 / 删除 / 改名 / 重载 / 切换 / 内容与保存态 / 模式 / view 注册等)+ createTab/getStateAfterClosingTab 纯函数 |
 
 ## EditorTab 模型(与 Mind 同源)
 
