@@ -55,7 +55,6 @@ interface PendingRequest {
 export type DapEventHandler = (event: DapEventMessage) => void;
 export type StartDebuggingHandler = (
   request: DapRequestMessage,
-  client: DapClient,
 ) => Promise<DapJson | undefined> | DapJson | undefined;
 
 export interface DapClientOptions {
@@ -629,10 +628,8 @@ export class DapClient {
     });
   }
 
-  sendRequestNoWait(command: string, args: DapJson): number {
-    const request = this.createRequest(command, args);
-    this.sendMessage(request);
-    return request.seq;
+  sendRequestNoWait(command: string, args: DapJson): void {
+    this.sendMessage(this.createRequest(command, args));
   }
 
   createRequest(command: string, args: DapJson): DapRequestMessage & { seq: number } {
@@ -698,7 +695,7 @@ export class DapClient {
   async respondToReverseRequest(message: DapRequestMessage): Promise<void> {
     if (message.command === 'startDebugging' && this.startDebuggingHandler) {
       try {
-        const body = await this.startDebuggingHandler(message, this);
+        const body = await this.startDebuggingHandler(message);
         this.sendReverseResponse({
           seq: this.seq++,
           type: 'response',

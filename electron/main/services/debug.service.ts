@@ -33,7 +33,6 @@ import { isSameOrInsidePath } from '../lib/path-inside';
 const execFile = promisify(execFileCb);
 
 export interface DebugDapClientLike {
-  readonly socketPath?: string | null;
   readonly serverPid?: number;
   /** adapter 子进程已退出(其 pid 可能已被复用,清理不再对它发信号)。 */
   readonly serverExited?: boolean;
@@ -43,12 +42,7 @@ export interface DebugDapClientLike {
   connectToServer(): Promise<this>;
   createChildSession(options?: unknown): DebugDapClientLike;
   setStartDebuggingHandler(
-    handler:
-      | ((
-          request: DapRequestMessage,
-          client: DebugDapClientLike,
-        ) => Promise<DapJson | undefined> | DapJson | undefined)
-      | null,
+    handler: ((request: DapRequestMessage) => Promise<DapJson | undefined> | DapJson | undefined) | null,
   ): void;
   on(eventName: string, callback: (event: DapEventMessage) => void): () => void;
   waitForEvent(eventName: string, timeoutMs: number): Promise<DapEventMessage>;
@@ -57,7 +51,7 @@ export interface DebugDapClientLike {
     args: DapJson,
     timeoutMs: number,
   ): Promise<DapResponseMessage>;
-  sendRequestNoWait(command: string, args: DapJson): number;
+  sendRequestNoWait(command: string, args: DapJson): void;
   dispose(): Promise<void>;
   /** 在途请求全部结算后再 dispose(回收已结束的 child:其在途请求的响应可能排在 terminated 之后)。 */
   disposeWhenIdle(): Promise<void>;
@@ -82,7 +76,6 @@ export interface DebugProcessOps {
   readonly terminateProcessGroup: (
     pgid: number,
     watchedPids: readonly number[],
-    reason: string,
   ) => Promise<readonly number[]>;
 }
 
@@ -263,7 +256,6 @@ interface RuntimeDebugSession {
   readonly pendingBreakpointChanges: Map<DebugDapClientLike, Map<number, Record<string, unknown>>>;
   /** 各连接 process 事件回报的 debuggee pid:该连接结束时据此移出 systemProcessIds。 */
   readonly processIdsByClient: Map<DebugDapClientLike, number[]>;
-  initialized: boolean;
   configurationDone: boolean;
   launched: boolean;
   /** configurationDone + launch 的在途 / 已完成 Promise(并发的 wait_for_stop / continue 只起跑一次)。 */
@@ -984,7 +976,6 @@ export class DebugService {
       resolvedSources: new Map(),
       pendingBreakpointChanges: new Map(),
       processIdsByClient: new Map(),
-      initialized: false,
       configurationDone: false,
       launched: false,
     };
@@ -1030,7 +1021,6 @@ export class DebugService {
       await this.teardownSession(id, 'caller-disconnected').catch(() => undefined);
       throw launchCancelledError();
     }
-    runtime.initialized = true;
     // 程序此时还没起跑(configurationDone + launch 推迟到第一个「要求程序运行」的调用,见 ensureProgramStarted),
     // 如实报 starting。
     return { session_id: id, state: 'starting' };
@@ -2217,7 +2207,7 @@ export class DebugService {
             ].filter((pid): pid is number => typeof pid === 'number' && pid > 0),
           ),
         );
-        const alive = await this.processOps.terminateProcessGroup(pgid, watchedPids, reason);
+        const alive = await this.processOps.terminateProcessGroup(pgid, watchedPids);
         if (alive.length > 0) {
           throw new Error(`debug teardown left alive pids: ${alive.join(',')}`);
         }
@@ -2249,7 +2239,6 @@ export class DebugService {
       await this.processOps.terminateProcessGroup(
         pgid,
         members.map((entry) => entry.pid),
-        'debug adapter exited',
       );
     } catch {
       // 尽力而为:回收失败不影响会话后续的 teardown(teardown 不再凭旧 pgid 动手)
