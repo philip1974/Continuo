@@ -31,6 +31,7 @@ import type {
   CoNotificationsApi,
   CoPluginApp,
   PluginClipboardApi,
+  PluginEventsApi,
   PluginFsApi,
   PluginMcpApi,
   PluginNetworkApi,
@@ -1017,8 +1018,8 @@ function trackContributions<T extends object, K extends keyof T & string>(
       return (...args) => guardResult(call(prop, args));
     }
     if (prop === 'clear' && name === 'events') {
-      // 安全:总线的 clear() 清空全部订阅、clear(name) 清空该事件的全部订阅(含宿主与其它插件的)。
-      // 插件只能清自己经本 scoped app 订阅的:逐个走退订句柄(与 dispose / off 同一路径)。
+      // 安全:插件只能清自己经本 scoped app 订阅的(总线本身不提供清空入口,否则会连宿主与其它插件的订阅一起清):
+      // 逐个走退订句柄(与 dispose / off 同一路径)。
       return (...args) => {
         assertLiveUi(pluginId, capability, life);
         const eventNames = args[0] === undefined ? [...subscriptions.keys()] : [args[0]];
@@ -1237,7 +1238,13 @@ export function createScopedAppController(
     commands: track('commands', coApp.commands, [...KEYED_MEMBERS, 'execute'], 'id'),
     statusBar: track('statusBar', coApp.statusBar, [...KEYED_MEMBERS, 'getBySide'], 'id'),
     ribbon: track('ribbon', coApp.ribbon, KEYED_MEMBERS, 'id'),
-    events: track('events', coApp.events, ['on', 'off', 'emit', 'clear']),
+    // clear 不是总线的方法(总线没有「清空全部订阅」的入口):由外观合成,只清本插件自己的订阅(见 trackContributions)。
+    events: track('events', coApp.events as typeof coApp.events & Pick<PluginEventsApi, 'clear'>, [
+      'on',
+      'off',
+      'emit',
+      'clear',
+    ]),
     settingTabs: track('settingTabs', coApp.settingTabs, KEYED_MEMBERS, 'id'),
     settingItems: track('settingItems', coApp.settingItems, [...KEYED_MEMBERS, 'getByCategory'], 'id'),
     explorerDecorators: track('explorerDecorators', coApp.explorerDecorators, ['register', 'getAll', 'subscribe']),

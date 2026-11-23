@@ -90,12 +90,4 @@ export class EventBus {
       }
     }
   }
-
-  clear(name?: string): void {
-    if (name === undefined) {
-      this.byName.clear();
-    } else {
-      this.byName.delete(name);
-    }
-  }
 }

@@ -335,7 +335,9 @@ export type PluginExplorerDecoratorsApi = Pick<
   'register' | 'getAll' | 'subscribe'
 >;
 /** events.clear 只清本插件自己的订阅(无参 = 全部,带 name = 该事件上的)。 */
-export type PluginEventsApi = Pick<import('./EventBus').EventBus, 'on' | 'off' | 'emit' | 'clear'>;
+export type PluginEventsApi = Pick<import('./EventBus').EventBus, 'on' | 'off' | 'emit'> & {
+  clear(name?: string): void;
+};
 
 /**
  * Plugin 拿到的 app:在 CoApp 基础上加 per-plugin 命名空间。

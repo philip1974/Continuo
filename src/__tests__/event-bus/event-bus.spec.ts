@@ -118,28 +118,6 @@ describe('EventBus', () => {
     expect(() => bus.emit('nope', null)).not.toThrow();
   });
 
-  it('clear(name) 移除该事件全部 listener', () => {
-    const bus = new EventBus();
-    const fn = vi.fn();
-    bus.on('e', fn);
-    bus.clear('e');
-    bus.emit('e', null);
-    expect(fn).not.toHaveBeenCalled();
-  });
-
-  it('clear() 不带参 → 清全部', () => {
-    const bus = new EventBus();
-    const a = vi.fn();
-    const b = vi.fn();
-    bus.on('a', a);
-    bus.on('b', b);
-    bus.clear();
-    bus.emit('a', null);
-    bus.emit('b', null);
-    expect(a).not.toHaveBeenCalled();
-    expect(b).not.toHaveBeenCalled();
-  });
-
   // 边界(E56,插件 API 输入校验):on 校验 name(有限长度字符串)+ listener(函数)+ 数量上限。
   describe('E56 · on 输入校验', () => {
     it('超长/空/非字符串 name → 抛', () => {
