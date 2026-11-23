@@ -209,7 +209,7 @@ describe('saveFile — 自己上次保存的 stat 基线快路径', () => {
       useEditorStore.getState().openTab(createTab('/x/a.md', 'orig'));
       useEditorStore.getState().updateContent('/x/a.md', 'mine');
       const readFile = vi.fn(async () => okRead('orig'));
-      const statFn = vi.fn(async () => ({ ok: true as const, data: stat }));
+      const statFn = vi.fn(async (): Promise<unknown> => ({ ok: true as const, data: stat }));
       const { deps } = await saveOnceWithStat(statFn, readFile);
       statFn.mockImplementation(fail);
       readFile.mockResolvedValue(okRead('mine')); // 磁盘仍是上次保存的内容
