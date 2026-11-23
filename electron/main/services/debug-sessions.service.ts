@@ -18,16 +18,12 @@ export interface DebugSession {
   readonly controllerToken: string;
   readonly state: DebugTeardownState;
   readonly runtimeState: DebugRuntimeState;
-  readonly program: string;
-  readonly cwd: string;
   readonly name?: string;
   readonly adapterPid?: number;
   readonly adapterPgid?: number;
   readonly systemProcessIds: readonly number[];
   readonly childSessionCount: number;
   readonly stopSeq: number;
-  readonly currentThreadId?: number;
-  readonly stoppedReason?: string;
   readonly createdAt: number;
 }
 
@@ -35,8 +31,6 @@ export interface AddDebugSessionInput {
   readonly id: string;
   readonly ownerWindowId: number;
   readonly controllerToken: string;
-  readonly program: string;
-  readonly cwd: string;
   readonly name?: string;
   readonly adapterPid?: number;
 }
@@ -140,8 +134,6 @@ export function add(input: AddDebugSessionInput, reservation?: CapacityReservati
     controllerToken: input.controllerToken,
     state: 'active',
     runtimeState: 'starting',
-    program: input.program,
-    cwd: input.cwd,
     ...(input.name !== undefined ? { name: input.name } : {}),
     ...(input.adapterPid !== undefined ? { adapterPid: input.adapterPid } : {}),
     systemProcessIds: [],

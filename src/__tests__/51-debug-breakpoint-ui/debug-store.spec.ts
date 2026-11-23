@@ -132,7 +132,6 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       sessionId: 's1',
       stopSeq: 1,
       reason: 'breakpoint',
-      threadId: 3,
     });
     await flushAsync();
 
@@ -264,7 +263,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
           state: 'stopped',
           owner_window_id: 1,
           stopped_reason: 'breakpoint',
-          stop: { stopSeq: 3, reason: 'breakpoint', threadId: 0 },
+          stop: { stopSeq: 3, reason: 'breakpoint' },
           breakpointsBySource: [
             { file: '/repo/a.ts', breakpoints: [{ file: '/repo/a.ts', line: 14, verified: true }] },
             { file: '/repo/b.ts', breakpoints: [{ file: '/repo/b.ts', line: 2, verified: false, message: 'pending' }] },
@@ -296,7 +295,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       expect(s1?.scopes).toEqual([{ name: 'Local', variables_reference: 44, expensive: false }]);
       expect(state.activeSessionId).toBe('s1');
       expect(state.sessions.get('s2')?.stopped).toBeUndefined();
-      expect(debugApi.getStack).toHaveBeenCalledWith({ sessionId: 's1', threadId: 0 });
+      expect(debugApi.getStack).toHaveBeenCalledWith({ sessionId: 's1' });
 
       // 之后的事件照常增量。
       debugApi.events[0]!({ type: 'continued', sessionId: 's1' });

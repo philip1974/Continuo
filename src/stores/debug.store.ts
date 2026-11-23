@@ -134,7 +134,7 @@ function asBreakpoint(value: unknown): DebugBreakpoint | null {
 
 interface SessionSnapshot {
   readonly id: string;
-  readonly stop?: { readonly stopSeq: number; readonly reason: string; readonly threadId?: number };
+  readonly stop?: { readonly stopSeq: number; readonly reason: string };
   /** 按 source 分组(file → 该 source 的完整集合),总数已按上限截断。 */
   readonly breakpointsBySource: ReadonlyMap<string, readonly DebugBreakpoint[]>;
 }
@@ -146,11 +146,7 @@ function asSessionSnapshot(value: unknown): SessionSnapshot | null {
   const stopRaw = asRecord(raw.stop);
   const stop =
     typeof stopRaw.stopSeq === 'number' && typeof stopRaw.reason === 'string'
-      ? {
-          stopSeq: stopRaw.stopSeq,
-          reason: stopRaw.reason,
-          ...(typeof stopRaw.threadId === 'number' ? { threadId: stopRaw.threadId } : {}),
-        }
+      ? { stopSeq: stopRaw.stopSeq, reason: stopRaw.reason }
       : undefined;
   const breakpointsBySource = new Map<string, readonly DebugBreakpoint[]>();
   let budget = DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX;
@@ -180,12 +176,8 @@ function updateActiveSession(
 
 // stopSeq:发起本次拉取的那一停。连续 step 时上一停的 stack/scopes 可能晚到,回写前比对,过期丢弃
 //(否则旧栈帧与旧停靠行会写进新一停,编辑器高亮停在错误的行)。
-async function pullStackAndScopes(
-  sessionId: string,
-  stopSeq: number,
-  threadId?: number,
-): Promise<void> {
-  const stack = await coApi.debug.getStack({ sessionId, threadId });
+async function pullStackAndScopes(sessionId: string, stopSeq: number): Promise<void> {
+  const stack = await coApi.debug.getStack({ sessionId });
   if (!stack.ok) return;
   const frames = Array.isArray(asRecord(stack.data).frames)
     ? (asRecord(stack.data).frames as readonly unknown[])
@@ -279,7 +271,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           stoppedOrder: nextOrder,
         };
       });
-      await pullStackAndScopes(event.sessionId, event.stopSeq, event.threadId);
+      await pullStackAndScopes(event.sessionId, event.stopSeq);
       return;
     }
 
@@ -330,11 +322,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     const cached = session?.variableRefs.get(variablesReference);
     if (cached) return cached;
 
-    const result = await coApi.debug.getVariables({
-      sessionId,
-      variablesReference,
-      maxDepth: 1,
-    });
+    const result = await coApi.debug.getVariables({ sessionId, variablesReference });
     if (!result.ok) return [];
     const variables = Array.isArray(asRecord(result.data).variables)
       ? (asRecord(result.data).variables as readonly unknown[])
@@ -368,7 +356,7 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
   const snapshots = (Array.isArray(asRecord(data).sessions) ? (asRecord(data).sessions as readonly unknown[]) : [])
     .map(asSessionSnapshot)
     .filter((snapshot): snapshot is SessionSnapshot => snapshot !== null);
-  const pulls: Array<{ id: string; stopSeq: number; threadId?: number }> = [];
+  const pulls: Array<{ id: string; stopSeq: number }> = [];
   useDebugStore.setState((state) => {
     const sessions = new Map(state.sessions);
     let stoppedOrder = state.stoppedOrder;
@@ -401,11 +389,7 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
         },
         lastStoppedOrder: stoppedOrder,
       });
-      pulls.push({
-        id: snapshot.id,
-        stopSeq: snapshot.stop.stopSeq,
-        ...(snapshot.stop.threadId !== undefined ? { threadId: snapshot.stop.threadId } : {}),
-      });
+      pulls.push({ id: snapshot.id, stopSeq: snapshot.stop.stopSeq });
     }
     return {
       sessions,
@@ -413,7 +397,7 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
       activeSessionId: state.activeSessionId ?? updateActiveSession(sessions),
     };
   });
-  for (const pull of pulls) void pullStackAndScopes(pull.id, pull.stopSeq, pull.threadId);
+  for (const pull of pulls) void pullStackAndScopes(pull.id, pull.stopSeq);
 }
 
 // 幂等(模块级单例):renderer 启动入口(main-app init)尽早调用一次,DebugPanel 挂载时再调也无副作用。

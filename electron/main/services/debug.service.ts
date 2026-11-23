@@ -993,8 +993,6 @@ export class DebugService {
         id,
         ownerWindowId: ctx.ownerWindowId,
         controllerToken: ctx.controllerToken,
-        program: input.program,
-        cwd: effectiveCwd,
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(adapterPid !== undefined ? { adapterPid } : {}),
       }, launch.reservation);
@@ -1342,10 +1340,10 @@ export class DebugService {
     if (provided !== undefined) return provided;
     // 优先用最近 stopped 事件记录的线程:多线程(worker)下这才是真正停住的那条,
     // 也省掉一次 threads 往返。0 是 Node 主线程的合法 id。
-    const stopped = debugSessions.get(sessionId)?.currentThreadId;
+    const runtime = this.requireRuntime(sessionId);
+    const stopped = runtime.currentStop?.thread_id;
     if (stopped !== undefined) return stopped;
     // 回退:无停点记录(如停点事件未带 threadId)→ threads 请求取首个线程。
-    const runtime = this.requireRuntime(sessionId);
     const response = await runtime.activeClient.sendRequest(
       'threads',
       {},
@@ -1544,15 +1542,16 @@ export class DebugService {
     readonly stopped_reason?: string;
     readonly owner_window_id: number;
   }[] {
-    return debugSessions.list().map((session) => ({
-      session_id: session.id,
-      state: session.runtimeState,
-      ...(session.name !== undefined ? { name: session.name } : {}),
-      ...(session.stoppedReason !== undefined
-        ? { stopped_reason: session.stoppedReason }
-        : {}),
-      owner_window_id: session.ownerWindowId,
-    }));
+    return debugSessions.list().map((session) => {
+      const stoppedReason = this.runtimes.get(session.id)?.currentStop?.reason;
+      return {
+        session_id: session.id,
+        state: session.runtimeState,
+        ...(session.name !== undefined ? { name: session.name } : {}),
+        ...(stoppedReason !== undefined ? { stopped_reason: stoppedReason } : {}),
+        owner_window_id: session.ownerWindowId,
+      };
+    });
   }
 
   /**
@@ -1579,11 +1578,7 @@ export class DebugService {
           session_id: session.id,
           ...(stop
             ? {
-                stop: {
-                  stopSeq: stop.stop_seq,
-                  reason: stop.reason,
-                  ...(stop.thread_id !== undefined ? { threadId: stop.thread_id } : {}),
-                },
+                stop: { stopSeq: stop.stop_seq, reason: stop.reason },
               }
             : {}),
           breakpointsBySource: groups,
@@ -2003,18 +1998,12 @@ export class DebugService {
         : {}),
     };
     runtime.currentStop = output;
-    debugSessions.update(sessionId, {
-      runtimeState: 'stopped',
-      stopSeq,
-      ...(output.thread_id !== undefined ? { currentThreadId: output.thread_id } : {}),
-      stoppedReason: output.reason,
-    });
+    debugSessions.update(sessionId, { runtimeState: 'stopped', stopSeq });
     this.emitSessionEvent(sessionId, {
       type: 'stopped',
       sessionId,
       stopSeq,
       reason: output.reason,
-      ...(output.thread_id !== undefined ? { threadId: output.thread_id } : {}),
     });
 
     for (const waiter of Array.from(runtime.waiters)) {
@@ -2043,11 +2032,7 @@ export class DebugService {
     }
     runtime.currentStop = undefined;
     runtime.stoppedClient = undefined;
-    debugSessions.update(sessionId, {
-      runtimeState: 'running',
-      currentThreadId: undefined,
-      stoppedReason: undefined,
-    });
+    debugSessions.update(sessionId, { runtimeState: 'running' });
     this.emitSessionEvent(sessionId, {
       type: 'continued',
       sessionId,

@@ -1150,7 +1150,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     const stack = await service.stackTrace(sessionId, { startFrame: 0, levels: 1 });
     expect(stack.frames[0]).toMatchObject({ id: 7 });
 
-    // 用 currentThreadId=0(stopped 记录),不发 threads 请求
+    // 用当前停点记录的 thread_id=0,不发 threads 请求
     expect(parent.requestLog.some((r) => r.command === 'threads')).toBe(false);
     const stackReq = parent.requestLog.find((r) => r.command === 'stackTrace');
     expect(stackReq?.args).toMatchObject({ threadId: 0 });
@@ -1404,7 +1404,8 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
   });
 
   it('安全:cwd 省略 → 默认 workspace root(不回退 main 进程 cwd)', async () => {
-    const { service } = makeFakeService(new FakeDapClient(1001), {
+    const parent = new FakeDapClient(1001);
+    const { service } = makeFakeService(parent, {
       getWorkspaceRoot: () => '/repo',
       realpath: async (p) => p,
     });
@@ -1412,7 +1413,11 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       { program: '/repo/app.js' },
       { ownerWindowId: 24, controllerToken: 'agent-sec5' },
     );
-    expect(debugSessions.get(session_id)?.cwd).toBe('/repo');
+    // launch 请求推迟到第一个「要求程序运行」的调用才发出。
+    void service.waitForStop(session_id, { timeoutMs: 5_000 }).catch(() => undefined);
+    await vi.waitFor(() =>
+      expect(parent.requestLog.find((r) => r.command === 'launch')?.args).toMatchObject({ cwd: '/repo' }),
+    );
   });
 
   // program/cwd 锁在工作区内,但 env 原样交给 Node:NODE_OPTIONS=--require=/tmp/x.js 等会在目标程序前
@@ -1594,7 +1599,6 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       sessionId,
       stopSeq: 1,
       reason: 'breakpoint',
-      threadId: 3,
     });
     expect(events[2]!.event).toMatchObject({
       type: 'continued',
@@ -1643,7 +1647,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(service.viewSnapshot(21)).toEqual([
       {
         session_id: sessionId,
-        stop: { stopSeq: 1, reason: 'breakpoint', threadId: 0 },
+        stop: { stopSeq: 1, reason: 'breakpoint' },
         breakpointsBySource: [
           {
             file: '/a.js',
@@ -1705,8 +1709,6 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
         id: `${prefix}-${ownerWindowId}-${i}`,
         ownerWindowId,
         controllerToken: 'other',
-        program: '/p.js',
-        cwd: '/',
       });
     }
   }
@@ -2149,8 +2151,6 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
       id: 'straggler',
       ownerWindowId: ctx.ownerWindowId,
       controllerToken: 'x',
-      program: '/p.js',
-      cwd: '/',
     });
     releaseTeardown?.();
     const ids = await cleanup;
