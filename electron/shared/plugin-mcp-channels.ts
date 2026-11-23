@@ -43,9 +43,6 @@ export const PLUGIN_MCP_ERROR_CODES = {
   RESULT_TOO_LARGE: 'RESULT_TOO_LARGE',
 } as const;
 
-export type PluginMcpErrorCode =
-  (typeof PLUGIN_MCP_ERROR_CODES)[keyof typeof PLUGIN_MCP_ERROR_CODES];
-
 // ── 纯类型(对应 plugin-mcp-schemas.ts 的 z.infer 形态)──────────
 // 手写而非 z.infer 导出,以避免 preload 触达 zod。
 

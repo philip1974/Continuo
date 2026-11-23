@@ -11,8 +11,6 @@ export const I18N_CHANNELS = {
   CHANGED: 'i18n:changed',
 } as const;
 
-export type I18nChannel = (typeof I18N_CHANNELS)[keyof typeof I18N_CHANNELS];
-
 /** SET_LOCALE handler 的返回 shape（含 in-flight gen，配合 P1-1）。 */
 export interface I18nSetLocaleResult {
   readonly ok: true;

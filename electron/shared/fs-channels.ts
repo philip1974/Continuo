@@ -29,8 +29,6 @@ export const FS_CHANNELS = {
   WATCH_LOST: 'fs:watch-lost',
 } as const;
 
-export type FsChannel = (typeof FS_CHANNELS)[keyof typeof FS_CHANNELS];
-
 // 边界(E173,E168-E172 同族 IPC ingress 纵深防御):fs:dir-changed push payload 形态守卫。preload
 // onDirChanged 此前直接 cb(payload.path),畸形 payload(null/非对象/path 非字符串/超长)→ listener
 // 抛(null.path)或把非法 key 送进 Explorer watcher / external-file-sync。单一来源,preload 复用 + 单测。

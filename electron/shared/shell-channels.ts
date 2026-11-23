@@ -12,10 +12,6 @@ export const SHELL_CHANNELS = {
   KILL_PLUGIN_PROCESSES: 'shell:kill-plugin-processes',
 } as const;
 
-export interface IpcShellKillPluginProcessesInput {
-  readonly pluginId: string;
-}
-
 export interface IpcShellOpenExternalInput {
   readonly url: string;
 }

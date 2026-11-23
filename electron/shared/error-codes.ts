@@ -86,6 +86,4 @@ export const ERROR_CODES = {
   ...FS_ERROR_CODES,
 } as const;
 
-export type MainErrorCode = (typeof MAIN_ERROR_CODES)[keyof typeof MAIN_ERROR_CODES];
 export type FsErrorCode = (typeof FS_ERROR_CODES)[keyof typeof FS_ERROR_CODES];
-export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
