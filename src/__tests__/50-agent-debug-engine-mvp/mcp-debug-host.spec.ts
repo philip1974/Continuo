@@ -214,38 +214,23 @@ describe('50 · agent debug MCP host', () => {
     );
   });
 
-  it('DebugService plain errors 被归一化为 debug 错误码和短消息', async () => {
+  it('launch 的无码错误收敛为 DEBUG_ADAPTER_LAUNCH_FAILED 短消息;带码错误原样上抛', async () => {
     const { tools, service } = build({
       'debug-owned': { owner: WIN, controller: ME },
     });
-    service.waitForStop.mockRejectedValueOnce(
-      new Error('debug wait_for_stop timed out after 120000ms'),
-    );
-    service.stackTrace.mockRejectedValueOnce(
-      new Error(`debug session not found: ${'x'.repeat(1000)}`),
+    service.launchSession.mockRejectedValueOnce(
+      Object.assign(new Error('node not found'), { code: 'DEBUG_NODE_RUNTIME_NOT_FOUND' }),
     );
     service.launchSession.mockRejectedValueOnce(
       new Error(`adapter failed at /${'very-long/'.repeat(200)}dap.js`),
     );
 
     await expect(
-      findTool(tools, MCP_TOOL_DEBUG_WAIT_FOR_STOP).run(
-        { session_id: 'debug-owned' } as never,
+      findTool(tools, MCP_TOOL_DEBUG_LAUNCH).run(
+        { program: '/repo/app.js', stop_on_entry: false } as never,
         ctx,
       ),
-    ).rejects.toMatchObject({
-      code: 'DEBUG_WAIT_TIMEOUT',
-      message: 'debug wait_for_stop timed out',
-    });
-    await expect(
-      findTool(tools, MCP_TOOL_DEBUG_STACK).run(
-        { session_id: 'debug-owned', thread_id: 1 } as never,
-        ctx,
-      ),
-    ).rejects.toMatchObject({
-      code: 'DEBUG_SESSION_NOT_FOUND',
-      message: 'debug session not found',
-    });
+    ).rejects.toMatchObject({ code: 'DEBUG_NODE_RUNTIME_NOT_FOUND', message: 'node not found' });
     await expect(
       findTool(tools, MCP_TOOL_DEBUG_LAUNCH).run(
         { program: '/repo/app.js', stop_on_entry: false } as never,

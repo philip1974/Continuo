@@ -809,6 +809,25 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
 });
 
 describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
+  // 错误码由抛出层直接给出(MCP 工具层与 debug 面板 IPC 两个入口拿到的是同一份),文案固定、不回显调用方传入的 id / 毫秒数。
+  it('未知 session → DEBUG_SESSION_NOT_FOUND;wait_for_stop 超时 → DEBUG_WAIT_TIMEOUT', async () => {
+    const service = new DebugService({ createDapClient: () => new FakeDapClient(3_999_911), workspace: PERMISSIVE_WORKSPACE });
+    await expect(service.scopes('x'.repeat(1000), { frameId: 1 })).rejects.toMatchObject({
+      code: 'DEBUG_SESSION_NOT_FOUND',
+      message: 'debug session not found',
+    });
+
+    const { session_id } = await service.launchSession(
+      { program: '/repo/fixture.js', cwd: '/repo' },
+      { ownerWindowId: 41, controllerToken: 'agent-timeout' },
+    );
+    await expect(service.waitForStop(session_id, { timeoutMs: 5 })).rejects.toMatchObject({
+      code: 'DEBUG_WAIT_TIMEOUT',
+      message: 'debug wait_for_stop timed out',
+    });
+    await service.killByOwner(41, 'window-closed');
+  });
+
   // Windows 没有进程组可枚举:只直杀 adapter 与已记录的 debuggee pid,未记录的后代(debuggee 再 spawn
   // 的子进程等)会存活。默认 processOps 须对这些 pid 走 taskkill /T /F 整树强杀(复用 kill-with-grace)。
   it('Windows:默认 processOps 的 teardown 对 adapter 与 debuggee pid 走进程树强杀', async () => {

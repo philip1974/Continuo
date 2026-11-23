@@ -136,6 +136,11 @@ function launchCancelledError(): Error {
   return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'debug launch cancelled (caller disconnected, revoked, window closed or app quitting)');
 }
 
+/** 文案固定、不回显调用方传入的 session id(可任意长)。 */
+function sessionNotFoundError(): Error {
+  return codedError(ERROR_CODES.DEBUG_SESSION_NOT_FOUND, 'debug session not found');
+}
+
 /** 退出清理(cleanupAll)开始之后发起的 launch:与在途 launch 被退出取消同一错误码。 */
 function launchRejectedQuittingError(): Error {
   return codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'debug launch rejected: app is quitting');
@@ -1313,7 +1318,7 @@ export class DebugService {
         reject,
         timer: setTimeout(() => {
           runtime.waiters.delete(waiter);
-          reject(new Error(`debug wait_for_stop timed out after ${timeoutMs}ms`));
+          reject(codedError(ERROR_CODES.DEBUG_WAIT_TIMEOUT, 'debug wait_for_stop timed out'));
         }, timeoutMs),
       };
       runtime.waiters.add(waiter);
@@ -1723,7 +1728,7 @@ export class DebugService {
    */
   private async reverifyLaunchInsideWorkspace(runtime: RuntimeDebugSession): Promise<void> {
     const session = debugSessions.get(runtime.id);
-    if (!session) throw new Error(`debug session not found: ${runtime.id}`);
+    if (!session) throw sessionNotFoundError();
     try {
       await this.assertLaunchInsideWorkspace(
         session.ownerWindowId,
@@ -2268,13 +2273,13 @@ export class DebugService {
 
   private requireRuntime(sessionId: string): RuntimeDebugSession {
     const runtime = this.runtimes.get(sessionId);
-    if (!runtime) throw new Error(`debug session not found: ${sessionId}`);
+    if (!runtime) throw sessionNotFoundError();
     return runtime;
   }
 
   private requireSession(sessionId: string): debugSessions.DebugSession {
     const session = debugSessions.get(sessionId);
-    if (!session) throw new Error(`debug session not found: ${sessionId}`);
+    if (!session) throw sessionNotFoundError();
     return session;
   }
 }
