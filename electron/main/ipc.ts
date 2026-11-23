@@ -30,7 +30,7 @@ import {
   type PluginFsIpcHandles,
 } from './ipc/plugin-fs.ipc';
 import { registerPluginDataIpc } from './ipc/plugin-data.ipc';
-import { registerPluginShellStreamIpc } from './ipc/plugin-shell-stream.ipc';
+import { registerPluginShellStreamHandlers } from './services/plugin-shell-stream.service';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import { ERROR_CODES } from '../shared/error-codes';
 import { assertJsonValue } from '../shared/assert-json-value';
@@ -266,7 +266,7 @@ export function registerIpc(deps: WindowIpcDeps): { pluginFsHandles: PluginFsIpc
   registerPluginDataIpc({ ipcMain });
 
   // plugin app.shell.execStream backend(topic 01)
-  registerPluginShellStreamIpc({ ipcMain });
+  registerPluginShellStreamHandlers(ipcMain);
 
   // 多窗口支持(issue #23 Phase 1):window.create
   registerWindowIpc(deps);

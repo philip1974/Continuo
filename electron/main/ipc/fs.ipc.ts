@@ -143,7 +143,6 @@ export type RemoveInput = z.infer<typeof removeInputSchema>;
 export type CreateFileInput = z.infer<typeof createFileInputSchema>;
 export type CreateDirInput = z.infer<typeof createDirInputSchema>;
 export type TrashInput = z.infer<typeof trashInputSchema>;
-export type RevealInput = z.infer<typeof revealInputSchema>;
 export type MoveInput = z.infer<typeof moveInputSchema>;
 export type CopyInput = z.infer<typeof copyInputSchema>;
 
@@ -205,17 +204,6 @@ export interface TrashDeps {
 export const makeTrashHandler =
   (deps: TrashDeps) => async (input: TrashInput): Promise<void> => {
     await deps.trashItem(input.path);
-  };
-
-export interface RevealDeps {
-  /** 真生产注入 Electron shell.showItemInFolder;测试可注入 spy. */
-  showItemInFolder: (path: string) => void;
-}
-const makeRevealHandler =
-  (deps: RevealDeps) =>
-  (input: RevealInput): void => {
-    // shell.showItemInFolder 是同步 void;path 不存在时静默 noop.
-    deps.showItemInFolder(input.path);
   };
 
 export interface SelectDirectoryDeps {
@@ -399,9 +387,10 @@ export function registerFsIpc(): void {
   safeHandle(
     FS_CHANNELS.REVEAL,
     revealInputSchema,
-    makeRevealHandler({
-      showItemInFolder: (p) => shell.showItemInFolder(p),
-    }),
+    (input) => {
+      // shell.showItemInFolder 是同步 void;path 不存在时静默 noop.
+      shell.showItemInFolder(input.path);
+    },
     trusted,
   );
 

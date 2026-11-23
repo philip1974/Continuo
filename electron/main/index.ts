@@ -780,10 +780,6 @@ async function openFolderInNewWindow(): Promise<void> {
   await openWorkspaceWindow(r.filePaths[0]!);
 }
 
-async function newWindow(): Promise<void> {
-  await openWorkspaceWindow();
-}
-
 function buildAppMenu(t: MainT): Menu {
   const isMac = process.platform === 'darwin';
   const fileSubmenu: MenuItemConstructorOptions[] = [
@@ -791,7 +787,7 @@ function buildAppMenu(t: MainT): Menu {
       label: t('menu.file.new_window'),
       accelerator: 'CmdOrCtrl+Shift+N',
       click: () => {
-        void newWindow();
+        void openWorkspaceWindow();
       },
     },
     {
@@ -842,7 +838,7 @@ function setDockMenu(): void {
       {
         label: t('menu.file.new_window'),
         click: () => {
-          void newWindow();
+          void openWorkspaceWindow();
         },
       },
       {
