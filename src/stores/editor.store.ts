@@ -569,6 +569,18 @@ function applyTabStateChange(
     : next;
 }
 
+/**
+ * 关闭 / 换 id 类的 tab 变更:先只回写受影响的 tab(按 pre-flush 状态算),再按同一纯函数应用到最新状态。
+ */
+function changeTabsWithWriteBack(
+  get: () => EditorState,
+  set: (fn: (s: EditorState) => EditorState | Partial<EditorState>) => void,
+  change: (tabs: EditorTab[], activeTabId: string | null) => CloseTabResult,
+): void {
+  flushWriteBacksForAffectedTabs(get().tabs, change);
+  set((s) => applyTabStateChange(s, change(s.tabs, s.activeTabId)));
+}
+
 export const useEditorStore = create<EditorState>((set, get, api) => ({
   tabs: [],
   activeTabId: null,
@@ -613,42 +625,21 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   // 先按 pre-flush 状态算出受影响(将被关闭 / 换 id)的 tab,只回写它们 —— 回写会把正在编辑的大文档
   // 整篇序列化并提前上抛,不相关的删除 / 改名 / 切 root 不应打断输入。回写只改 content / dirty,
   // 不改 id 与路径匹配;回写后变脏的 tab 按既有规则保留。
-  removePaths: (paths)=> {
-    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+  removePaths: (paths) =>
+    changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterRemovingPaths(tabs, active, paths),
-    );
-    set((s) =>
-      applyTabStateChange(
-        s,
-        getStateAfterRemovingPaths(s.tabs, s.activeTabId, paths),
-      ),
-    );
-  },
+    ),
 
-  renamePath: (oldPath, newPath)=> {
-    // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃
-    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+  // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃
+  renamePath: (oldPath, newPath) =>
+    changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterRenamingPath(tabs, active, oldPath, newPath),
-    );
-    set((s) =>
-      applyTabStateChange(
-        s,
-        getStateAfterRenamingPath(s.tabs, s.activeTabId, oldPath, newPath),
-      ),
-    );
-  },
+    ),
 
-  closeTabsOutsideRoot: (root)=> {
-    flushWriteBacksForAffectedTabs(get().tabs, (tabs, active) =>
+  closeTabsOutsideRoot: (root) =>
+    changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterClosingTabsOutsideRoot(tabs, active, root),
-    );
-    set((s) =>
-      applyTabStateChange(
-        s,
-        getStateAfterClosingTabsOutsideRoot(s.tabs, s.activeTabId, root),
-      ),
-    );
-  },
+    ),
 
   reloadFromDisk: (tabId, content, realPath) => {
     // 只回写被重载的 tab:未上抛输入先进 store → tab 变脏 → 下面按 dirty 跳过,不被磁盘覆盖。
