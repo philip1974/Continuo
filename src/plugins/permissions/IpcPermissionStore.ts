@@ -41,7 +41,7 @@ type Cache = PermissionState;
 // 授权检查时扫描/分配巨表,并把超长 permission 或非有限时间戳缓进 cache,随后 grant/deny 写回。
 // 读端独立有界:数量收集到上限即停 + 字段长度/有限性校验(写端 cap 护不了畸形/旧/篡改数据)。
 const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
-const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
+const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX;
 const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
 // 读取期间被失效时按当前代际重读的总次数上限(终审 P1,见 ensureLoaded)。
 const MAX_READ_ATTEMPTS = 3;

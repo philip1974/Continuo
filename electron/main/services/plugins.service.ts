@@ -528,8 +528,8 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
   const file = path.join(baseDir, ENABLED_FILE);
   // 数据安全:区分「缺文件」与「损坏/IO 错误」(与 readPermissions/readAllPathScopes 同型)。
   // 仅 ENOENT 是首次启动 → []。EACCES/EIO 等读错误是「当前态未知」,不能当空列表 —— 否则
-  // PluginManager.mutateEnabledIds 基于 [] 做 RMW 写回,抹掉其它已启用插件。抛出 → host 端
-  // 传播(见 plugins-host),mutate 中止写、init 降级。
+  // setEnabledId 基于 [] 做 RMW 写回,抹掉其它已启用插件。抛出 → setEnabledId 中止写;LIST 侧经 host
+  // 传播(见 plugins-host),init 降级为不激活任何插件。
   let text: string;
   try {
     text = await readMetadataCapped(file); // 边界(E68):读前 stat.size 硬拦
@@ -615,8 +615,8 @@ const PERMISSIONS_FILE = '_permissions.json';
 // 边界(E87,E85/E86 数据完整性族 / E5 时间戳):_permissions.json 读盘按写端 + 业务枚举 canonicalize。
 // permission 必须是 PERMISSION_KEYS 成员(否则 PERM_LABEL_KEYS[perm]=undefined 渲染崩),decidedAt 必须
 // finite(1e400 经 JSON.parse=Infinity 但 typeof 仍 number,同 E5)。每插件 decisions 数 + plugin key 数
-// 封顶(decisions 对齐 IPC 写端 DECISIONS_MAX,防 RMW 写回绕过写端上限)。
-const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX; // 对齐 plugins.ipc DECISIONS_MAX
+// 封顶(上限来自共享的 PERMISSION_RECORD_LIMITS,读写两端同一口径)。
+const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX;
 const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
 
 // 单条 decision / scope 的形态判定取 shared 单一来源(与 renderer 读端、IPC schema 同一规则)。

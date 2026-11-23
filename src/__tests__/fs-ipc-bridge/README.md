@@ -15,7 +15,7 @@
 | `ipcMain.handle` 真注册、`coApi.fs` 真路由 | E2E(P1.D4 Playwright) |
 | `shell.trashItem` / `dialog.showOpenDialog` 真实现 | 同上 |
 
-## 通道清单(9 条)
+## 通道清单(节选:请求 / 应答类核心通道;完整 17 个常量见 `fs-channels.ts`)
 
 | Channel | schema | handler 调 | data |
 |---|---|---|---|
@@ -33,7 +33,7 @@
 
 ### 通道常量表(`electron/shared/fs-channels.ts`)
 - `FS_CHANNELS.LIST_DIR === 'fs:list-dir'` 等(防字符串散漂,见 ADR-010 配套 P1.D2)
-- 9 个常量值唯一不重复
+- 全部常量值唯一不重复
 - 所有值满足 `fs:` 前缀
 
 ### schemas

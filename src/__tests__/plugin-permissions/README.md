@@ -1,7 +1,7 @@
 # plugin-permissions(声明式权限 + 授权门)
 
 行为契约:**插件 manifest 可声明 `permissions: ['fs','network','shell','clipboard']`,
-首次启用时由用户授权;授权决策记入 PermissionStore(InMemory 默认,生产 IPC 持久化)。**
+首次启用时由用户授权;授权决策记入 PermissionStore(生产 IpcPermissionStore 经 IPC 持久化;InMemory 只是测试替身)。**
 PluginManager 在激活前调 `ensureAuthorized` 阻塞,未授权 / 用户拒 → 不激活。
 
 ## 模块

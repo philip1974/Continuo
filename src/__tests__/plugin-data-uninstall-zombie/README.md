@@ -12,12 +12,12 @@ renderer 收到广播后才停用实例、跑 `onunload`(其中常有 `saveData`
 
 ## 行为
 
-- `plugin-data:save` / `save-serialized` 只写**已安装**插件的目录:写入进同 id 的主进程 mutation 锁(与安装 /
+- `plugin-data:save-serialized` 只写**已安装**插件的目录:写入进同 id 的主进程 mutation 锁(与安装 /
   更新 / 卸载互斥),锁内确认 `plugins/<id>` 目录存在才写;不存在 → 拒绝 `code: 'NOT_INSTALLED'`,**不创建目录**。
   与 path scope 持久化(`persistPluginPathScopesIfInstalled`)同一规则、同一把锁。
   - 卸载完成后才到达的 `saveData` → 被拒,目录不复活。
   - 卸载进行中发起的 `saveData` → 排在卸载之后,同样被拒(不会在 `rm` 之后重建目录)。
-  - 已安装插件的保存 / 读取 / 清除不变。`load` / `clear` 本就不创建目录。
+  - 已安装插件的保存 / 读取不变。`load` 本就不创建目录。
 - 安装自愈历史残留:`installFromGit` 在锁内发现目标目录是 plugin-data 残留 —— 没有 `manifest.json`,且里面只有
   `data.json` 及其附属文件(`data.json.lock` 锁目录、`data.json.corrupt`、原子写的 `.data.json.*.tmp`),或是空目录
   —— 先清掉再按全新安装继续;残留的 `data.json` 是卸载之后写进来的,不继承。

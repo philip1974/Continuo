@@ -22,7 +22,6 @@
 - `on(name, listener)` 返回 Disposable;dispose 移除监听
 - `emit(name, payload)` 同步广播全部 listener,单 listener 抛错不影响其他(warn)
 - `off(name, listener)` 显式移除(register 已自动 dispose,这里给非 plugin 场景用)
-- `clear(name?)` 测试 / 重置用
 
 ### Plugin 集成
 

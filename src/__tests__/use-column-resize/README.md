@@ -1,7 +1,7 @@
 # useColumnResize(侧栏拖拽 hook)
 
 行为契约:**`useColumnResize` 返回 mousedown handler。按下后注册 document 上 mousemove
-/ mouseup,移动时根据 direction 与 startX/startW 算新宽度调 setCurrent;
+/ mouseup,移动时根据 startX/startW 算新宽度(clamp 到 [min,max])调 setCurrent;
 松开移除监听,恢复 body cursor 与 userSelect。**
 
 ## 模块

@@ -484,8 +484,8 @@ describe('readEnabledIds / writeEnabledIds', () => {
     expect(await readEnabledIds(tmp)).toEqual([]);
   });
 
-  // 数据安全(复查 P1):非 ENOENT 读错误(EACCES/EIO)此前也降级 []，mutateEnabledIds
-  // 随后基于空集合 RMW 抹掉其它已启用插件。只 ENOENT→[],其它读错误抛出(同型清扫第 4 个读点)。
+  // 数据安全(复查 P1):非 ENOENT 读错误(EACCES/EIO)此前也降级 [],启用状态的 RMW(现为 main setEnabledId)
+  // 随后基于空集合写回,抹掉其它已启用插件。只 ENOENT→[],其它读错误抛出(同型清扫第 4 个读点)。
   // 边界(E159):readMetadataCapped 改单 fd 后,EACCES 经 fs.open 抛出透传(原 readFile 改 open)。
   it('非 ENOENT 读错误(EACCES 等)→ 抛出,不当空列表', async () => {
     writeFileSync(join(tmp, '_enabled.json'), '[]');

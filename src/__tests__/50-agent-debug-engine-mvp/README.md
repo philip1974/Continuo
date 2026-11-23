@@ -4,11 +4,11 @@
 
 ## 行为契约
 
-- `debug.*` MCP tools 使用 `electron/shared/mcp-debug-schemas.ts` 作为输入/输出边界。所有 advertised object schema 必须关闭 `additionalProperties`。
+- `debug.*` MCP tools 使用 `electron/shared/mcp-debug-schemas.ts` 作为输入边界(输出 zod 仅用于推导类型)。所有 advertised object schema 必须关闭 `additionalProperties`。
 - `debug.launch` 首次调用必须走 agent 授权，授权 method 是 `debug.launch`，并把 MCP caller subject 写入 DebugService 的 `controllerToken`。
 - 除 `debug.launch` / `debug.list_sessions` 外，带 `session_id` 的 debug 工具必须同时满足当前窗口归属与 `ctx.callerSubject === controllerToken`，否则拒绝，不触达 DebugService。
 - 跨窗口 debug session 对当前调用方表现为 not found，不暴露 capability 细节。
-- DebugService 的 plain Error 在 MCP 工具边界归一化为稳定 debug 错误码，避免向 MCP client 回显超长 session id、program 或 adapter path。
+- DebugService 在抛出点直接带稳定 debug 错误码(codedError),避免向 MCP client 回显超长 session id、program 或 adapter path;MCP 层只把 launch 的无码错误收敛为 `DEBUG_ADAPTER_LAUNCH_FAILED` 短消息。
 - `variables` / `evaluate` 保持分页、深度、字节预算与默认值边界。
 - `variables` 深度展开有整次总预算(节点数、DAP 请求数,以及返回内容字节 4MiB —— 名称 + 值 + 类型的 UTF-8 字节,低于 MCP 10MiB 结果上限):用尽即停;字节预算截断顶层这一页时 `next_start` 接在已返回的最后一项之后(顶层至少返回一项),未展开的节点保留 `variables_reference` 并标 `truncated`,顶层 `truncated: true`;调用方断连(`ctx.signal`)时停止继续展开。
 - 资源上限:结束的 child session(worker 退出等)当即回收(移出、清掉各断点记录里该连接的条目并重推受影响 source 的快照;连接等其在途请求结算后再 dispose —— js-debug 可能在 terminated 之后才回 continue 等请求的响应,当即关连接会让调用方收到「DAP socket closed」),teardown 不再对它发 disconnect。
@@ -31,7 +31,7 @@
 
 - `dap-framing.spec.ts`: DAP `Content-Length` framing 的编码/解码契约。
 - `debug-schemas.spec.ts`: `debug.*` MCP schema 的 strict/bounds/defaults 契约。
-- `mcp-debug-host.spec.ts`: MCP 授权、capability、错误归一化契约。
+- `mcp-debug-host.spec.ts`: MCP 授权、capability、错误码契约。
 - `stdio-caller-closed.spec.ts`: stdio 连接断开时通知调用方失效(onCallerClosed)的契约。
 - `terminal-token-revoke-kills-debug.spec.ts`: 终端专属 token 吊销时回收其 debug 会话的接线(源码钉)。
 - `revoke-covers-inflight-launch.spec.ts`: 撤销 agent 授权时枚举的调用方含在途 launch 的接线(源码钉)。

@@ -48,10 +48,10 @@
 
 ### 操作按钮
 
-- 重载 → mgr.reload(p.id) + refresh
+- 重载 → mgr.reload(p.id)(列表经 useUserPluginList 订阅 PluginManager 自动更新)
 - 禁用 → mgr.disable(p.id)
 - 启用 → mgr.enable(p.id)
-- 卸载 → 弹 ConfirmDialog,确认 → mgr.uninstall + refresh
+- 卸载 → 弹 ConfirmDialog,确认 → mgr.uninstall
 
 ### 权限按钮
 

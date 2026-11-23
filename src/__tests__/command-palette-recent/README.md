@@ -20,7 +20,6 @@ export interface RecentEntry {
 interface RecentState {
   readonly list: readonly RecentEntry[];
   record(id: string): void;
-  clear(): void;
 }
 
 export const useRecentCommandsStore: UseBoundStore<...>;
@@ -40,9 +39,6 @@ export const useRecentCommandsStore: UseBoundStore<...>;
 - 按 ts 降序(最新在前)
 - 启动时从 localStorage 读回(JSON.parse 失败 → 空数组)
 
-### clear
-
-- 清空 list + 清 localStorage
 
 ### 持久化
 

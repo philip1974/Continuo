@@ -443,7 +443,7 @@ describe('closeTab', () => {
 });
 
 // ────────────────────────────────────────────────────────────
-// getStateAfterRemovingPath / removePath
+// getStateAfterRemovingPath
 // 文件被删除(trash)时,Editor 中对应 tab 应自动关闭。
 // 删除文件夹 → 该文件夹下所有打开 tab 都关。
 // ────────────────────────────────────────────────────────────
@@ -1105,7 +1105,7 @@ describe('removePaths(store method)', () => {
 });
 
 // perf:批量删除后一次性关 tab。removePaths 用祖先索引(每 tab O(depth))+ 只 set 一次,
-// 最终 tabs / activeTabId 与逐条 removePath 完全一致;chromeVersion 仅在 tabs 真变化时 bump
+// 最终 tabs / activeTabId 与逐条 getStateAfterRemovingPath 完全一致;chromeVersion 仅在 tabs 真变化时 bump
 // (与单条规则一致,批量只 bump 一次)。
 describe('removePaths / getStateAfterRemovingPaths(批量 ≡ 逐条)', () => {
   const ids = (tabs: readonly EditorTab[]) => tabs.map((t) => t.id);

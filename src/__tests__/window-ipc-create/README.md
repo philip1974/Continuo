@@ -7,8 +7,8 @@ Behavior contract checklist T1-T8:
 T1 `createWindowHandler` rejects a relative `workspace` as `WORKSPACE_NOT_ABSOLUTE`;
 T2 rejects a non-existent absolute path as `WORKSPACE_NOT_FOUND`;
 T3 rejects an absolute path that is not a directory as `WORKSPACE_NOT_DIRECTORY`;
-T4 with a valid absolute directory, allocates a `windowSeq`, calls `createMainWindow({windowSeq, workspace})`, and returns `{ok:true, data:{windowId}}`;
-T5 without a `workspace` field, allocates a `windowSeq`, calls `createMainWindow({windowSeq})` (no `workspace` key), and returns `{ok:true, data:{windowId}}`;
+T4 with a valid absolute directory, allocates a `windowSeq`, calls `createMainWindow({windowSeq, workspace})`, and returns `{ok:true}` (no data);
+T5 without a `workspace` field, allocates a `windowSeq`, calls `createMainWindow({windowSeq})` (no `workspace` key), and returns `{ok:true}` (no data);
 T6 `CreateInput.strict()` rejects unknown fields as `IPC_BAD_INPUT` (safe-handle envelope);
 T7 `workspace: ''` fails zod `.min(1)` as `IPC_BAD_INPUT` before reaching the absolute-path check;
 T8 `INDEX.md` contains `window-ipc-create` after `pnpm bdd:index`;

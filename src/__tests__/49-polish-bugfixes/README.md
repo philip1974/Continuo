@@ -77,7 +77,7 @@
   永久驻留插件目录。旧测试只用字面量 `.trash-old` 掩盖了这个 bug。
 
 ### P2-G before-quit 不重复 flush 同窗 — (index.ts `wireWindowCloseFlush`)
-- close handler 除局部 `flushed` 外,也查 `flushedOnQuit.has(win.id)`。
+- close handler 查 `flushedOnQuit.has(win.id)`(本窗 close 流程与 before-quit 共用;后续删去了原先的局部 `flushed`)。
 - 根因: Cmd+Q 时 `before-quit` 已 flush 本窗并写 `flushedOnQuit`,但 close 闭包的
   局部 `flushed` 不会被它更新 → `app.quit()` 触发 close 时对同窗重复 flush
   (多一次 IPC 往返 + `preventDefault` 二次阻塞退出)。lifecycle 类改动,
@@ -390,6 +390,7 @@
 - autosave scheduler 的 `flush()` 改为返回可 await 的 Promise;新 `autosave-flush-registry.ts`
   模块级 registry(镜像 explorer-persist 的 `activeFlush`),`useAutoSave` 注册当前 scheduler
   的 flush;DockShell `onFlushRequest` 在 ack 前 `await flushPendingAutoSave()`。
+  后续:活动句柄改随 `claimAutoSave` 登记在 autosave-failures(`activeAutoSaveFlush()`),registry 只保留在途 flush 集合。
 - 根因: 关窗走 main→renderer flush 握手,DockShell 只 flush 了 dockview layout +
   `flushExplorerPersistence()`(会话元数据),**漏了** pending 的 markdown autosave 内容 ——
   它卡在 useAutoSave 内部 scheduler 的 2s 防抖 timer 里,只在 React unmount cleanup 才 flush,

@@ -36,7 +36,7 @@ CoApp 加 `dataStore: PluginDataStore` 字段。
 - 抛错向上传(由插件决定如何处理)
 - data 必须 JSON-serializable(由 store 实现负责验证 / 抛错)
 
-### InMemoryDataStore
+### InMemoryDataStore(测试替身)
 
-- 默认实现,Map<id, value>;测试 / 单元用
-- 生产替换为 IPC-backed 实现(M-Plugin v3 接 `userData/plugins/<id>/data.json`)
+- Map<id, value>;仅测试 / 单元用
+- 生产用 IpcPluginDataStore(`userData/plugins/<id>/data.json`)

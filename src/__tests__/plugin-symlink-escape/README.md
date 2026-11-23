@@ -14,7 +14,7 @@
 - **安装**:克隆树(不含 `.git`)里出现任何符号链接(文件 / 目录 / 悬空;树内树外不区分)→
   `installFromGit` 抛 `PLUGIN_SYMLINK_REJECTED`,在读 manifest 之前中止,不落地、无残留。
 - **`plugin-data:load`**:`data.json` 是符号链接或硬链接 → 当作无数据返回 `{}`,不读目标、不生成 `.corrupt`。
-- **`plugin-data:save`**:`data.json` 是符号链接(含悬空)→ 先删掉链接再写,结果是插件目录里的普通文件;
+- **`plugin-data:save-serialized`**:`data.json` 是符号链接(含悬空)→ 先删掉链接再写,结果是插件目录里的普通文件;
   链接目标不被改写,也不在目标旁留锁目录。
 - **已安装目录的读取**(列举 / 激活读 main / 单插件重载):`manifest.json` 或 main 入口经符号链接
   解析到插件目录(realpath)之外 → 该插件视为不可用(跳过),不读取链接目标。插件目录本身是符号链接

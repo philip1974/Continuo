@@ -70,9 +70,9 @@
 
 **问题**:`lineCount` 用 `s.match(/\n/g)`(分配全部换行的匹配数组)、`wordCount` 用 `trim().split(/\s+/)`(分配全部单词的子串数组)。active editor 每按键 `activeContent` 变 → StatusBar memo 失效重算 → 2 次全文扫描 + 2 个大临时数组(长文件 GC 压力)。memo 已挡无关重渲(R1),但内容编辑必重算。
 
-**修复**:`computeTextStats(s)` 用 `charCodeAt` **单遍、零数组分配**同时算 lines/words/chars(`isWhitespaceCode` 复刻 JS 正则 `\s` 码点集 → 单词切分逐字节等价);`lineCount`/`wordCount` 也重写为无分配循环。StatusBar 改用 `computeTextStats` 一遍拿三项。每按键 2 次全文扫 + 2 大数组 → 1 遍 0 分配。
+**修复**:`computeTextStats(s)` 用 `charCodeAt` **单遍、零数组分配**同时算 lines/words/chars(`isWhitespaceCode` 复刻 JS 正则 `\s` 码点集 → 单词切分逐字节等价);`lineCount`/`wordCount` 也重写为无分配循环(后续:这三个单项导出已删,只留 `computeTextStats`)。StatusBar 改用 `computeTextStats` 一遍拿三项。每按键 2 次全文扫 + 2 大数组 → 1 遍 0 分配。
 
-**契约不变量**(`text-stats.spec.ts`:computeTextStats 与 lineCount/wordCount/charCount 一致 + 与旧 `match(/\n/g)`/`split(/\s+/)` 正则口径逐字节等价,覆盖空/全空白/CRLF/中文/尾换行;`statusbar-stats-memoized.spec.tsx`:memo 命中/失效契约不变,改 spy computeTextStats)。
+**契约不变量**(`text-stats.spec.ts`:computeTextStats 的 lines/words/chars 与旧 `match(/\n/g)`/`split(/\s+/)` 正则口径逐字节等价,覆盖空/全空白/CRLF/中文/尾换行;`statusbar-stats-memoized.spec.tsx`:memo 命中/失效契约不变,改 spy computeTextStats)。
 
 ## P8 — CodeEditor content-as-source-of-truth 大重构(DEFER)
 
