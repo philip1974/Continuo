@@ -39,7 +39,7 @@ describe('migration step2 buffer merge · exited session replay', () => {
     const original = sessionNotFound();
     sessionManagerMock.readOutput.mockRejectedValue(original);
 
-    await expect(service.readOutput('exited-id', {})).rejects.toMatchObject({
+    await expect(service.readOutput({ session_id: 'exited-id' })).rejects.toMatchObject({
       code: 'TERMINAL_SESSION_NOT_FOUND',
       cause: original,
     });

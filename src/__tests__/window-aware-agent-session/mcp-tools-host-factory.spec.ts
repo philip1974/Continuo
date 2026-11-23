@@ -58,7 +58,7 @@ function makeDeps(store: ReturnType<typeof makeFakeStore>) {
       interrupt: vi.fn(),
       kill: vi.fn(),
       forceKill: vi.fn(),
-      readOutput: vi.fn(async () => ({ lines: ['ok'], nextSeq: 1, truncated: false })),
+      readOutput: vi.fn(async () => ({ data: 'ok', lines: ['ok'], next_seq: 1, truncated: false })),
     } as never,
     getSessionOwner: (id: string) => store.sessions.get(id)?.ownerWindowId ?? null,
     // 安全 S3:capability 校验 dep。这些用例无 MCP 创建的会话 → null。

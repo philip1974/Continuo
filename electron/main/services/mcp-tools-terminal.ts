@@ -594,14 +594,7 @@ export function makePressKeyTool(
 // ── read_output(P3)────────────────────────────────────────────
 
 export interface ReadOutputToolDeps {
-  readonly read: (
-    sessionId: string,
-    opts: {
-      sinceSeq?: number;
-      maxLines?: number;
-      stripAnsi?: boolean;
-    },
-  ) => Promise<{ data: string; lines: string[]; nextSeq: number; truncated: boolean }>;
+  readonly read: (input: ReadOutputInput) => Promise<ReadOutputOutput>;
   readonly getSessionOwner: (sessionId: string) => number | null;
 }
 
@@ -645,21 +638,7 @@ export function makeReadOutputTool(
         ctx.ownerWindowId,
         deps.getSessionOwner,
       );
-      const opts: {
-        sinceSeq?: number;
-        maxLines?: number;
-        stripAnsi?: boolean;
-      } = {};
-      if (input.since_seq !== undefined) opts.sinceSeq = input.since_seq;
-      if (input.max_lines !== undefined) opts.maxLines = input.max_lines;
-      if (input.strip_ansi !== undefined) opts.stripAnsi = input.strip_ansi;
-      const r = await deps.read(input.session_id, opts);
-      return {
-        data: r.data,
-        lines: r.lines,
-        next_seq: r.nextSeq,
-        truncated: r.truncated,
-      };
+      return deps.read(input);
     },
   };
 }

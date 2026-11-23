@@ -35,7 +35,7 @@ function buildTools(decision: 'once' | 'session' | 'denied') {
     interrupt: vi.fn(),
     kill: vi.fn(),
     forceKill: vi.fn(),
-    readOutput: vi.fn(async () => ({ data: 'x', lines: ['x'], nextSeq: 1, truncated: false })),
+    readOutput: vi.fn(async () => ({ data: 'x', lines: ['x'], next_seq: 1, truncated: false })),
   };
   const tools = makeTerminalMcpTools({
     sessionStore: {
@@ -92,7 +92,7 @@ describe('安全 S2 — terminal MCP 读/写/杀工具授权门控', () => {
       { session_id: 'S' } as never,
       ctx,
     );
-    expect(service.readOutput).toHaveBeenCalledWith('S', expect.anything());
+    expect(service.readOutput).toHaveBeenCalledWith(expect.objectContaining({ session_id: 'S' }));
   });
 
   it('门控把正确 method 标签 + ownerWindowId 传给授权器(弹窗显示用)', async () => {

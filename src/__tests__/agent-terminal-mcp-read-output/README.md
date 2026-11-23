@@ -1,11 +1,11 @@
 # agent-terminal-mcp-read-output (Agent Terminal MCP Phase 3)
 
 行为契约:**`terminal.read_output` MCP tool**:agent 增量读 SessionManager buffer。
-内部调 `terminal.service.readOutput`(SessionManager wrapper, async),转换 camelCase 字段为对外 snake_case。
+内部调 `terminal.service.readOutput`(SessionManager wrapper, async);工具、wrapper、SessionManager 三层用同一份 snake_case 协议类型,不做命名转换。
 
 > 配套:`doc/17-agent-terminal-mcp.md`(维护者本地文档,未公开) §5.3
 > Buffer 内部行为 / ANSI strip → ContinuoTerminal `__tests__/session-buffer` + `__tests__/get-buffer-snapshot` 和本仓库 `migration-step2-buffer-merge`。
-> 本主题只测 tool 契约 + 字段映射 + error 转换。
+> 本主题只测 tool 契约 + 入参出参原样传递 + error 转换。
 
 ## 模块
 
@@ -51,16 +51,15 @@ output: {
 
 deps:
 ```ts
-{ read: async (sessionId, { sinceSeq?, maxLines?, stripAnsi? }) => { lines, nextSeq, truncated } }
+{ read: async ({ session_id, since_seq?, max_lines?, strip_ansi? }) => { data, lines, next_seq, truncated } }
 ```
 
 - `tool.name === 'terminal.read_output'`
 - `tool.inputSchema === readOutputInputSchema`
 - `tool.run(input)`:
-  1. 调 `deps.read(input.session_id, opts)`,opts 字段 snake_case → camelCase
-     (`since_seq` → `sinceSeq`, `max_lines` → `maxLines`, `strip_ansi` → `stripAnsi`)
-  2. 缺省字段不传给 deps(让 service wrapper 用自己默认)
-  3. 成功 → 转字段返回 `{lines, next_seq, truncated}`(camelCase nextSeq → snake_case)
+  1. 调 `deps.read(input)`,入参原样传递
+  2. 缺省字段不补默认值(由 SessionManager 用自己的默认)
+  3. 成功 → 结果原样返回 `{data, lines, next_seq, truncated}`
   4. read 抛 TERMINAL_SESSION_NOT_FOUND → 透传(wrapper 已保留原 SESSION_NOT_FOUND cause)
   5. read 抛其它 → 透传
 - 不调 ensureAuthorized(read_output 不弹窗,与 list_sessions/send_input 同型)

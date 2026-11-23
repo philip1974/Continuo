@@ -8,6 +8,7 @@ import {
   prepareShellIntegrationEnv,
   SessionManager,
 } from '@continuo-terminal/server-node';
+import type { ReadOutputInput, ReadOutputOutput } from '../../shared/mcp-terminal-schemas';
 import * as terminalSessions from './terminal-sessions.service';
 import { mcpRevokers } from './mcp-host.service';
 import { TERMINAL_SESSION_ENV, hookEventsDirFor } from './mcp-tools-hook-bridge';
@@ -42,7 +43,7 @@ function flushPending(id: string, inst: Instance): void {
     inst.flushTimer = null;
   }
   if (inst.pendingData) {
-    safeSend(id, TERMINAL_CHANNELS.DATA, id, inst.pendingData, inst.pendingStart);
+    safeSend(id, inst, TERMINAL_CHANNELS.DATA, id, inst.pendingData, inst.pendingStart);
     inst.pendingData = '';
   }
 }
@@ -119,13 +120,10 @@ function getSessionManager(): SessionManager {
   return sessionManager;
 }
 
-// Per-session WebContents routing (P0-2 fix from design review v3)
-const sessionTargets = new Map<string, WebContents>();
-
-// Variadic safeSend — baseline IPC contract preserved (P0-1 fix)
-function safeSend(id: string, channel: string, ...args: unknown[]): void {
-  const target = sessionTargets.get(id);
-  if (!target || target.isDestroyed()) return;
+// 按会话路由:发给该会话所属窗口的 WebContents(inst.target)。
+function safeSend(id: string, inst: Instance, channel: string, ...args: unknown[]): void {
+  const target = inst.target;
+  if (target.isDestroyed()) return;
   // race(R71):isDestroyed() 检查后、send 前 webContents 可能销毁,send 抛 "Object has been
   // destroyed"。safeSend 由 PTY onData/flush timer/exit 回调调用 —— 尤其 handleChunk 的 flush
   // 闭包:若 send 抛,后面的 `pendingData=''` + `flushTimer=null` 都不执行 → 下个 chunk 因
@@ -172,7 +170,6 @@ export function __resetForTest(): void {
     instances.clear();
   }
   sessionManager = null;
-  sessionTargets.clear();
   resizeChains.clear();
   exitedHistories.clear();
   unsubExitedHistoryPrune?.();
@@ -263,23 +260,12 @@ function retainExitedHistory(id: string): void {
 export const MAX_EXITED_HISTORIES_FOR_TEST = MAX_EXITED_HISTORIES;
 
 /**
- * Async line-based read for MCP terminal.read_output tool.
- * Returns camelCase {data, lines, nextSeq, truncated} (library convention; deps expect this).
+ * Async line-based read for MCP terminal.read_output tool:入参出参就是兄弟包的协议类型(与工具契约同形,不做命名转换)。
  * SESSION_NOT_FOUND → rethrow with code='TERMINAL_SESSION_NOT_FOUND' preserving cause.
  */
-export async function readOutput(
-  id: string,
-  opts: { sinceSeq?: number; maxLines?: number; stripAnsi?: boolean },
-): Promise<{ data: string; lines: string[]; nextSeq: number; truncated: boolean }> {
-  const sm = getSessionManager();
+export async function readOutput(input: ReadOutputInput): Promise<ReadOutputOutput> {
   try {
-    const r = await sm.readOutput({
-      session_id: id,
-      since_seq: opts.sinceSeq,
-      max_lines: opts.maxLines,
-      strip_ansi: opts.stripAnsi,
-    });
-    return { data: r.data, lines: r.lines, nextSeq: r.next_seq, truncated: r.truncated };
+    return await getSessionManager().readOutput(input);
   } catch (err) {
     const e = err as Error & { code?: string };
     if (e?.code === 'SESSION_NOT_FOUND') {
@@ -333,7 +319,7 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   if (!shuttingDown) retainExitedHistory(id);
 
   // 2. Push terminal:exit (only if target still alive)。只带 id:退出码走 sessions 快照的 exitCode。
-  safeSend(id, TERMINAL_CHANNELS.EXIT, id);
+  safeSend(id, instance, TERMINAL_CHANNELS.EXIT, id);
 
   // 3. Clear all timers
   if (instance.killTimer) {
@@ -363,11 +349,12 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
 
   // 5. Remove from all maps (finally-style — even if above threw)
   instances.delete(id);
-  sessionTargets.delete(id);
   resizeChains.delete(id); // race(R17):清 resize 串行链,防 session 关闭后泄漏
 }
 
 interface Instance {
+  /** 该会话输出 / 退出事件的投递目标(所属窗口)。 */
+  readonly target: WebContents;
   pendingData: string;
   /** pendingData 首字符的累计偏移。 */
   pendingStart: number;
@@ -562,6 +549,7 @@ export async function createTerminal(
   // 仿 VSCode shellIntegration-bash 模拟 login 启动文件选择后再启用(doc/follow-ups.md)。
   const finalArgs = args.length === 0 ? defaultShellArgs(shell) : args;
   const inst: Instance = {
+    target: win.webContents,
     pendingData: '',
     pendingStart: 0,
     receivedChars: 0,
@@ -575,7 +563,6 @@ export async function createTerminal(
 
   // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
   instances.set(id, inst);
-  sessionTargets.set(id, win.webContents);
 
   try {
     // PHASE 2: spawn PTY via SessionManager.
@@ -592,7 +579,6 @@ export async function createTerminal(
   } catch (err) {
     // PHASE 3: rollback all PHASE 1 state on sm.create failure.
     instances.delete(id);
-    sessionTargets.delete(id);
     revokeTokenQuietly(inst.mcpToken);
     try {
       void inst.shellCleanup().catch(() => {

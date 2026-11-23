@@ -111,18 +111,21 @@ describe('readOutputOutputSchema', () => {
 // makeReadOutputTool · 行为
 // ────────────────────────────────────────────────────────────
 
-type ReadFn = (
-  id: string,
-  opts: { sinceSeq?: number; maxLines?: number; stripAnsi?: boolean },
-) => Promise<{ data: string; lines: string[]; nextSeq: number; truncated: boolean }>;
+type ReadResult = { data: string; lines: string[]; next_seq: number; truncated: boolean };
+type ReadFn = (input: {
+  session_id: string;
+  since_seq?: number;
+  max_lines?: number;
+  strip_ansi?: boolean;
+}) => Promise<ReadResult>;
 const ctx = { ownerWindowId: 1 };
 const getSessionOwner = vi.fn(() => 1);
 
 const makeOkRead = (
-  result: { data: string; lines: string[]; nextSeq: number; truncated: boolean } = {
+  result: ReadResult = {
     data: '',
     lines: [],
-    nextSeq: 0,
+    next_seq: 0,
     truncated: false,
   },
 ) => vi.fn<ReadFn>(async () => result);
@@ -148,46 +151,25 @@ describe('makeReadOutputTool · 元数据', () => {
 });
 
 describe('makeReadOutputTool · run', () => {
-  it('字段映射:snake_case → camelCase 给 deps', async () => {
+  it('入参原样交给 deps(协议类型,不做命名转换)', async () => {
     const read = makeOkRead();
     const tool = makeReadOutputTool({ read, getSessionOwner });
-    await tool.run({
-      session_id: 'term-1',
-      since_seq: 5,
-      max_lines: 100,
-      strip_ansi: false,
-    }, ctx);
-    expect(read).toHaveBeenCalledWith('term-1', {
-      sinceSeq: 5,
-      maxLines: 100,
-      stripAnsi: false,
-    });
+    const input = { session_id: 'term-1', since_seq: 5, max_lines: 100, strip_ansi: false };
+    await tool.run(input, ctx);
+    expect(read).toHaveBeenCalledWith(input);
   });
 
-  it('字段映射:nextSeq → next_seq 输出', async () => {
-    const read = makeOkRead({ data: '', lines: ['a'], nextSeq: 7, truncated: true });
-    const tool = makeReadOutputTool({ read, getSessionOwner });
-    const r = await tool.run({ session_id: 't' }, ctx);
-    expect(r).toEqual({
-      data: '',
-      lines: ['a'],
-      next_seq: 7,
-      truncated: true,
-    });
+  it('deps 的结果原样作为工具输出', async () => {
+    const result = { data: '', lines: ['a'], next_seq: 7, truncated: true };
+    const tool = makeReadOutputTool({ read: makeOkRead(result), getSessionOwner });
+    expect(await tool.run({ session_id: 't' }, ctx)).toEqual(result);
   });
 
-  it('缺省 since_seq / max_lines / strip_ansi → opts 不传(让 service wrapper 用自己默认)', async () => {
+  it('缺省 since_seq / max_lines / strip_ansi → 不补默认值(由 SessionManager 用自己的默认)', async () => {
     const read = makeOkRead();
     const tool = makeReadOutputTool({ read, getSessionOwner });
     await tool.run({ session_id: 't' }, ctx);
-    expect(read).toHaveBeenCalledWith('t', {});
-  });
-
-  it('部分给值 → 仅给的字段透传', async () => {
-    const read = makeOkRead();
-    const tool = makeReadOutputTool({ read, getSessionOwner });
-    await tool.run({ session_id: 't', max_lines: 50 }, ctx);
-    expect(read).toHaveBeenCalledWith('t', { maxLines: 50 });
+    expect(read).toHaveBeenCalledWith({ session_id: 't' });
   });
 
   it('read 抛 TERMINAL_SESSION_NOT_FOUND → 透传', async () => {
@@ -213,7 +195,7 @@ describe('makeReadOutputTool · run', () => {
   });
 
   it('输出符合 readOutputOutputSchema', async () => {
-    const read = makeOkRead({ data: '', lines: ['x', 'y'], nextSeq: 2, truncated: false });
+    const read = makeOkRead({ data: '', lines: ['x', 'y'], next_seq: 2, truncated: false });
     const tool = makeReadOutputTool({ read, getSessionOwner });
     const out = await tool.run({ session_id: 't' }, ctx);
     expect(readOutputOutputSchema.safeParse(out).success).toBe(true);

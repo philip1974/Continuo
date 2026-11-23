@@ -33,7 +33,7 @@ function makeTools(store: ReturnType<typeof makeFakeStore>) {
       interrupt: vi.fn(),
       kill: vi.fn(),
       forceKill: vi.fn(),
-      readOutput: vi.fn(async () => ({ lines: [], nextSeq: 0, truncated: false })),
+      readOutput: vi.fn(async () => ({ data: '', lines: [], next_seq: 0, truncated: false })),
     } as never,
     getSessionOwner: (id: string) => store.sessions.get(id)?.ownerWindowId ?? null,
     // 安全 S3:capability dep。本用例只测 list(无 capability)→ null。

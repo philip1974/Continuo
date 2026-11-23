@@ -185,7 +185,7 @@ async function start(): Promise<Harness> {
       interrupt: async (id: string) => pty.has(id),
       kill: (id: string) => void pty.delete(id),
       forceKill: (id: string) => void pty.delete(id),
-      readOutput: async () => ({ data: SECRET, lines: [SECRET], nextSeq: 1, truncated: false }),
+      readOutput: async () => ({ data: SECRET, lines: [SECRET], next_seq: 1, truncated: false }),
     } as never,
     getSessionOwner: (id) => sessions.get(id)?.ownerWindowId ?? null,
     getSessionController: (id) => sessions.getController(id),

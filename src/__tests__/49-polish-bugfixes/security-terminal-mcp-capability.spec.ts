@@ -26,7 +26,7 @@ function build(sessions: Record<string, Sess>) {
     interrupt: vi.fn(),
     kill: vi.fn(),
     forceKill: vi.fn(),
-    readOutput: vi.fn(async () => ({ data: '', lines: [], nextSeq: 0, truncated: false })),
+    readOutput: vi.fn(async () => ({ data: '', lines: [], next_seq: 0, truncated: false })),
   };
   const tools = makeTerminalMcpTools({
     sessionStore: {
@@ -97,7 +97,7 @@ describe('安全 S3 — per-session capability(横向接管防护)', () => {
       { session_id: 'mine', data: 'x' } as never,
       ctxMe,
     );
-    expect(service.readOutput).toHaveBeenCalledWith('mine', expect.anything());
+    expect(service.readOutput).toHaveBeenCalledWith(expect.objectContaining({ session_id: 'mine' }));
     expect(service.write).toHaveBeenCalled();
   });
 
