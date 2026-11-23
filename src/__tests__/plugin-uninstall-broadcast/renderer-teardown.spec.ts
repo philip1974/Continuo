@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
   // main 侧 _permissions.json 的内存替身(两窗共享)
   disk: {} as Record<string, unknown>,
   pluginFsRaw: {
-    _registerPlugin: async () => ({ token: 'tok', generation: 1 }),
+    _registerPlugin: async () => ({ token: 'tok' }),
     _unregisterPlugin: async () => undefined,
   },
 }));

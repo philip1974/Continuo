@@ -645,7 +645,7 @@ describe('reload(id)', () => {
   it('某插件激活时 _registerPlugin 抛错 → 该插件落 failed 并带错误;其余插件照常加载', async () => {
     coApiMocks.pluginFsRaw._registerPlugin
       .mockRejectedValueOnce(new Error('main IPC unavailable'))
-      .mockResolvedValue({ token: 'test-token', generation: 1 });
+      .mockResolvedValue({ token: 'test-token' });
     const state: MockHostState = {
       dirs: [
         { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },

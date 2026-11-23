@@ -62,7 +62,7 @@ function setup(opts: {
     value: {
       plugins,
       pluginFsRaw: {
-        _registerPlugin: vi.fn().mockResolvedValue({ token: 'tok', generation: 1 }),
+        _registerPlugin: vi.fn().mockResolvedValue({ token: 'tok' }),
         _unregisterPlugin: vi.fn().mockResolvedValue(undefined),
       },
       shell: { killPluginProcesses: vi.fn().mockResolvedValue({ ok: true, data: undefined }) },

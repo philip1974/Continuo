@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const coApiMocks = vi.hoisted(() => ({
   pluginFsRaw: {
-    _registerPlugin: vi.fn().mockResolvedValue({ token: 't', generation: 1 }),
+    _registerPlugin: vi.fn().mockResolvedValue({ token: 't' }),
     _unregisterPlugin: vi.fn().mockResolvedValue(undefined),
     readFile: vi.fn().mockResolvedValue('mock'),
     writeFile: vi.fn().mockResolvedValue(undefined),

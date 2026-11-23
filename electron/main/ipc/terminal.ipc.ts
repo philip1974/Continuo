@@ -185,6 +185,7 @@ export function makeCreateHandler(deps?: {
     // 总能命中;create 失败回滚 remove(id)。(复审 loop R19)
     // mcpToken 在本层签发,创建失败也在本层吊销(登记失败如 TOO_MANY_TERMINALS、spawn 失败、退出闸):否则
     // 孤儿 token 留在 windowTokens 直到窗口关闭。成功后 token 随 PTY 退出由 terminal.service 吊销。
+    let reserved = false;
     try {
       sessionStore.add({
         id,
@@ -200,11 +201,13 @@ export function makeCreateHandler(deps?: {
           ? { controllerToken: opts.controllerToken }
           : {}),
       });
+      reserved = true;
       await service.createTerminal(id, win, shell, input.args ?? [], cwd, mergedEnv, {
         mcpToken,
       });
     } catch (err) {
-      sessionStore.remove(id);
+      // 只回滚本次登记成功的那条:add 自己抛错(数量上限 / 重复 id)时不得删掉已存在的同 id 会话。
+      if (reserved) sessionStore.remove(id);
       if (mcpToken) {
         try {
           mcpRevokers().byToken(mcpToken);

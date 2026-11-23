@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/co-api', () => ({
   coApi: {
     pluginFsRaw: {
-      _registerPlugin: async () => ({ token: 'tok', generation: 1 }),
+      _registerPlugin: async () => ({ token: 'tok' }),
       _unregisterPlugin: async () => undefined,
     },
   },

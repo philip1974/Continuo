@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
   disk: {} as Record<string, unknown>,
   mutate: vi.fn(),
   pluginFsRaw: {
-    _registerPlugin: vi.fn(async () => ({ token: 'tok', generation: 1 })),
+    _registerPlugin: vi.fn(async () => ({ token: 'tok' })),
     _unregisterPlugin: async () => undefined,
   },
 }));

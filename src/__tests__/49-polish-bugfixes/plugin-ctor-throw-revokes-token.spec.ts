@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const coApiMocks = vi.hoisted(() => ({
   pluginFsRaw: {
-    _registerPlugin: vi.fn().mockResolvedValue({ token: 'test-token', generation: 1 }),
+    _registerPlugin: vi.fn().mockResolvedValue({ token: 'test-token' }),
     _unregisterPlugin: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -65,7 +65,7 @@ function makeHost(modules: Map<string, unknown>, dirs: PluginDirInfo[], enabled:
 
 beforeEach(() => {
   vi.clearAllMocks();
-  coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValue({ token: 'test-token', generation: 1 });
+  coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValue({ token: 'test-token' });
   coApiMocks.pluginFsRaw._unregisterPlugin.mockResolvedValue(undefined);
 });
 

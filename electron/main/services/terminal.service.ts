@@ -308,13 +308,13 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // 退出强杀(cleanupAll)时不留:进程随即退出、快照无人读取,每个 PTY 拼最多 4MB 只白占主线程与堆。
   if (!shuttingDown) retainExitedHistory(id);
 
-  // 3. Clear all timers
+  // 2. Clear all timers
   if (instance.killTimer) {
     clearTimeout(instance.killTimer);
     instance.killTimer = null;
   }
 
-  // 4. Continuo-specific cleanup (shellCleanup is async — P1-1 fix)
+  // 3. Continuo-specific cleanup (shellCleanup is async — P1-1 fix)
   try {
     const cleanupResult = instance.shellCleanup?.();
     if (cleanupResult && typeof (cleanupResult as Promise<unknown>).catch === 'function') {
@@ -334,7 +334,7 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
     }
   }
 
-  // 5. Remove from all maps (finally-style — even if above threw)
+  // 4. Remove from the map (finally-style — even if above threw)
   instances.delete(id);
   resizeChains.delete(id); // race(R17):清 resize 串行链,防 session 关闭后泄漏
 }

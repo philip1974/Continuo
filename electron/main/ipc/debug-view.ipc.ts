@@ -29,7 +29,7 @@ const debugGetVariablesInputSchema = z
 function requireOwnedDebugSession(sessionId: string, win: BrowserWindow) {
   const session = debugSessions.get(sessionId);
   if (!session || session.ownerWindowId !== win.id) {
-    throw codedError(ERROR_CODES.DEBUG_SESSION_NOT_FOUND, `debug session not found: ${sessionId}`);
+    throw codedError(ERROR_CODES.DEBUG_SESSION_NOT_FOUND, 'debug session not found');
   }
   return session;
 }

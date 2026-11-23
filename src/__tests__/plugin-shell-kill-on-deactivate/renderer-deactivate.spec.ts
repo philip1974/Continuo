@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/co-api', () => ({
   coApi: {
     pluginFsRaw: {
-      _registerPlugin: async () => ({ token: 'tok', generation: 1 }),
+      _registerPlugin: async () => ({ token: 'tok' }),
       _unregisterPlugin: h.unregisterPlugin,
     },
     shell: { exec: h.shellExec, killPluginProcesses: h.killPluginProcesses },

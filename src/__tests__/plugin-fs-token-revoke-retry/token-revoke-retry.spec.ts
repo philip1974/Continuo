@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const coApiMocks = vi.hoisted(() => ({
   pluginFsRaw: {
-    _registerPlugin: vi.fn().mockResolvedValue({ token: 'tok1', generation: 1 }),
+    _registerPlugin: vi.fn().mockResolvedValue({ token: 'tok1' }),
     _unregisterPlugin: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -72,7 +72,7 @@ function makeMgr(removePluginDir?: ManagerHost['removePluginDir']) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValue({ token: 'tok1', generation: 1 });
+  coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValue({ token: 'tok1' });
   coApiMocks.pluginFsRaw._unregisterPlugin.mockResolvedValue(undefined);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -101,7 +101,7 @@ describe('race(R29) · plugin-fs token 回收失败不半提交 + 可重试', ()
 
     coApiMocks.pluginFsRaw._unregisterPlugin.mockClear();
     coApiMocks.pluginFsRaw._unregisterPlugin.mockResolvedValue(undefined); // 这次回收成功
-    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValueOnce({ token: 'tok2', generation: 2 });
+    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValueOnce({ token: 'tok2' });
 
     await mgr.enable('p'); // activateEntry:先 flush 残留 tok1(重试),再注册 tok2
 
@@ -117,7 +117,7 @@ describe('race(R29) · plugin-fs token 回收失败不半提交 + 可重试', ()
     await mgr.disable('p'); // tok1 回收成功 → 清空
 
     coApiMocks.pluginFsRaw._unregisterPlugin.mockClear();
-    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValueOnce({ token: 'tok2', generation: 2 });
+    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValueOnce({ token: 'tok2' });
     await mgr.enable('p'); // flush 时无残留 token → 不调用 unregister
 
     expect(coApiMocks.pluginFsRaw._unregisterPlugin).not.toHaveBeenCalled();
@@ -191,7 +191,7 @@ describe('enable · 残留 token 重试回收仍失败 → 中止激活', () => 
     // 恢复后重试:先用保留的 tok1 回收,再注册新 token、正常启用。
     coApiMocks.pluginFsRaw._unregisterPlugin.mockReset();
     coApiMocks.pluginFsRaw._unregisterPlugin.mockResolvedValue(undefined);
-    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValueOnce({ token: 'tok2', generation: 2 });
+    coApiMocks.pluginFsRaw._registerPlugin.mockResolvedValueOnce({ token: 'tok2' });
     await mgr.enable('p');
     expect(coApiMocks.pluginFsRaw._unregisterPlugin).toHaveBeenCalledWith('tok1');
     expect(coApiMocks.pluginFsRaw._registerPlugin).toHaveBeenCalledWith('p');

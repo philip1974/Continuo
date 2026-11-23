@@ -49,10 +49,15 @@ interface MainRef {
 }
 const mainRefs = new Map<string, MainRef>();
 let nextMainRef = 1;
+// 引用的寿命跟随它的 dirInfo:热重载每次换一个新 dirInfo(新引用),旧的不再被任何 entry 持有 → 回收后摘除
+// 表项,否则 watcher 频繁触发的重载会让 mainRefs 单调增长。表项只含字符串,不反向持有 dirInfo。
+const mainRefCleanup = new FinalizationRegistry<string>((ref) => {
+  mainRefs.delete(ref);
+});
 
 function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
   let ref: string | null = null;
-  return {
+  const info: PluginDirInfo = {
     id: dir.id,
     manifestText: dir.manifestText,
     get moduleUrl(): string {
@@ -66,10 +71,12 @@ function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
           imported: false,
           gen: 0,
         });
+        mainRefCleanup.register(info, ref);
       }
       return ref;
     },
   };
+  return info;
 }
 
 export function buildPluginDirInfos(dirs: readonly PluginDirMeta[]): PluginDirInfo[] {

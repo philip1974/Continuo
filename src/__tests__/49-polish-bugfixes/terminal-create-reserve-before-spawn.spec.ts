@@ -126,6 +126,26 @@ describe('topic49 R19 · terminal create reservation 先于 spawn', () => {
       expect(service.createTerminal).not.toHaveBeenCalled();
     });
 
+    it('登记因重复 id 失败 → 不动已存在的那条会话(只吊销本次签发的 token)', async () => {
+      withToken();
+      const store = makeStatefulStore();
+      store.map.set('dup', { id: 'dup', title: 'existing', exitCode: null });
+      store.add.mockImplementation(() => {
+        throw Object.assign(new Error('duplicate'), { code: 'TERMINAL_SESSION_DUPLICATE' });
+      });
+      const handler = makeCreateHandler({
+        service: { createTerminal: vi.fn(async () => {}) } as never,
+        sessionStore: store as never,
+        generateId: () => 'dup',
+        resolveCwd: () => '/w',
+      });
+
+      await expect(handler({ cwd: '/w' }, fakeWin)).rejects.toMatchObject({ code: 'TERMINAL_SESSION_DUPLICATE' });
+      expect(store.get('dup')?.title).toBe('existing');
+      expect(store.remove).not.toHaveBeenCalled();
+      expect(byToken).toHaveBeenCalledWith('tok-1');
+    });
+
     it('createTerminal 失败 → token 被吊销', async () => {
       withToken();
       const store = makeStatefulStore();
