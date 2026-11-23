@@ -1,6 +1,9 @@
 // Shell IPC 通道(plugin app.shell.exec 用)。
 // 一次性 spawn + buffered 输出,**非交互式**(交互式终端走 terminal-channels)。
 
+import type { z } from 'zod';
+import type { ShellExecInputSchema } from './shell-exec-schema';
+
 export const SHELL_CHANNELS = {
   EXEC: 'shell:exec',
   /** 用系统默认 app 打开 URL(http/https/mailto/file 之一,白名单 scheme). */
@@ -16,17 +19,8 @@ export interface IpcShellOpenExternalInput {
   readonly url: string;
 }
 
-export interface IpcShellExecInput {
-  readonly cmd: string;
-  readonly args: readonly string[];
-  readonly cwd?: string;
-  readonly env?: Readonly<Record<string, string>>;
-  readonly timeoutMs?: number;
-  readonly input?: string;
-  readonly maxOutputBytes?: number;
-  /** 发起的插件 id(scoped app 填入):只用于本窗口内按插件终止,不作授权依据。 */
-  readonly pluginId?: string;
-}
+/** shell:exec 入参:由 main 的 zod schema 推出(单一来源,见 shell-exec-schema.ts)。 */
+export type IpcShellExecInput = z.infer<typeof ShellExecInputSchema>;
 
 export interface IpcShellExecResult {
   readonly stdout: string;

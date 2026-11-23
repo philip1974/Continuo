@@ -4,7 +4,6 @@ import {
   safeHandleWithWindow,
 } from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { sessionIdSchema } from '../../shared/mcp-debug-schemas';
 import {
   DEBUG_VIEW_CHANNELS,
   type DebugGetStackInput,
@@ -14,17 +13,11 @@ import type { DebugService } from '../services/debug.service';
 import * as debugSessions from '../services/debug-sessions.service';
 import { codedError } from '../../shared/error-message';
 
-const debugSubscribeInputSchema = z.object({}).strict();
-
-// 面板只暴露它实际用到的入参;停住的线程、分页 / 展开深度 / 截断等一律走 debug.service 的默认值。
-const debugGetStackInputSchema = z.object({ sessionId: sessionIdSchema }).strict();
-
-const debugGetVariablesInputSchema = z
-  .object({
-    sessionId: sessionIdSchema,
-    variablesReference: z.number().int().positive(),
-  })
-  .strict();
+import {
+  debugGetStackInputSchema,
+  debugGetVariablesInputSchema,
+  debugSubscribeInputSchema,
+} from '../../shared/debug-view-schema';
 
 function requireOwnedDebugSession(sessionId: string, win: BrowserWindow) {
   const session = debugSessions.get(sessionId);

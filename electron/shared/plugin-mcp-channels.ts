@@ -7,6 +7,9 @@
 
 // ── channel 名常量 ─────────────────────────────────────────────
 
+import type { z } from 'zod';
+import type { InvokePayloadSchema, InvokeReplySchema } from './plugin-mcp-schemas';
+
 export const PLUGIN_MCP_CHANNELS = {
   /** renderer → main: 注册 tool 元数据. */
   REGISTER: 'plugin-mcp:register',
@@ -42,20 +45,6 @@ export const PLUGIN_MCP_ERROR_CODES = {
   RESULT_TOO_LARGE: 'RESULT_TOO_LARGE',
 } as const;
 
-// ── 纯类型(对应 plugin-mcp-schemas.ts 的 z.infer 形态)──────────
-// 手写而非 z.infer 导出,以避免 preload 触达 zod。
-
-export interface InvokePayload {
-  readonly requestId: string;
-  readonly name: string;
-  readonly input: unknown;
-}
-
-export type InvokeReply =
-  | { readonly requestId: string; readonly ok: true; readonly result: unknown }
-  | {
-      readonly requestId: string;
-      readonly ok: false;
-      readonly code: string;
-      readonly message: string;
-    };
+// ── 纯类型:由 plugin-mcp-schemas.ts 的 zod schema 推出(单一来源)。`import type` 被擦除,preload 不带 zod。
+export type InvokePayload = z.infer<typeof InvokePayloadSchema>;
+export type InvokeReply = z.infer<typeof InvokeReplySchema>;

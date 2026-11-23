@@ -2,7 +2,7 @@
 // stdout/stderr 已 cap,但 stdin/env/args 超大仍可让 main 持有大对象、spawn E2BIG/卡顿。超限 →
 // zod 校验失败(safeHandle 走 BAD_INPUT 拒绝)。镜像 TerminalCreateInputSchema(E11)。
 import { describe, it, expect } from 'vitest';
-import { ExecInput } from '../../../electron/main/ipc/shell.ipc';
+import { ShellExecInputSchema as ExecInput } from '../../../electron/shared/shell-exec-schema';
 
 describe('ExecInput 长度/数量上限 (E12)', () => {
   const base = { cmd: 'echo', args: [] as string[] };

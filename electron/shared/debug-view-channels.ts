@@ -1,3 +1,9 @@
+import type { z } from 'zod';
+import type {
+  debugGetStackInputSchema,
+  debugGetVariablesInputSchema,
+} from './debug-view-schema';
+
 export const DEBUG_VIEW_CHANNELS = {
   EVENT: 'debug:event',
   SUBSCRIBE: 'debug:subscribe',
@@ -87,11 +93,6 @@ export interface DebugViewSessionSnapshot {
   }[];
 }
 
-export interface DebugGetStackInput {
-  readonly sessionId: string;
-}
-
-export interface DebugGetVariablesInput {
-  readonly sessionId: string;
-  readonly variablesReference: number;
-}
+/** 面板 IPC 入参:由 main 的 zod schema 推出(单一来源,见 debug-view-schema.ts)。 */
+export type DebugGetStackInput = z.infer<typeof debugGetStackInputSchema>;
+export type DebugGetVariablesInput = z.infer<typeof debugGetVariablesInputSchema>;

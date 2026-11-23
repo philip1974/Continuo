@@ -17,7 +17,6 @@ import {
   allocateWindowSeq,
 } from '../persistence';
 import { EXPLORER_FILE_NAME } from '../../shared/explorer-persistence-schema';
-import { FS_PATH_MAX } from '../../shared/fs-limits';
 import {
   clearWindow as clearWindowRoot,
   setWorkspaceRoot,
@@ -29,18 +28,9 @@ function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
 }
 
-// 边界(E34,E11/E33 同族):workspace root 路径长度上限(CreateInput.workspace 与 notify-root 的 root 共用)。root 经 notify-root
-// 写入 windowId→root map 长期驻留主进程,并作为 MCP/terminal create 未传 cwd 时 agent session 的回退
-// 工作目录;畸形超长 absolute 串会带进后续 resolve/stat 路径 + 错误消息 → 内存 + 同步 fs 检查开销。
-// 与 renderer workspace root(PATH_STR_MAX)/ terminal workspaceRoot(PATH_MAX)同一路径上限:此前单独取 2048,
-// renderer 合法的 2049–8192 字符根目录 notify-root 被拒,MCP 终端 cwd 回退随之失效(只留一条 console.warn)。
-export const ROOT_MAX = FS_PATH_MAX;
+import { ROOT_MAX, WindowCreateInputSchema as CreateInput } from '../../shared/window-create-schema';
 
-const CreateInput = z
-  .object({
-    workspace: z.string().min(1).max(ROOT_MAX).optional(),
-  })
-  .strict();
+export { ROOT_MAX };
 
 /**
  * 开窗函数由组合根(main/index.ts)注入,不从 '../index' 导入 —— 否则形成
