@@ -132,7 +132,7 @@ export async function killProcessTreesNow(
 
 const GRACE_MS = 1000;
 
-export function killWithGrace(child: Killable): void {
+export function killWithGrace(child: Killable, graceMs: number = GRACE_MS): void {
   try {
     child.kill('SIGTERM');
   } catch {
@@ -144,7 +144,7 @@ export function killWithGrace(child: Killable): void {
     } catch {
       // ignore
     }
-  }, GRACE_MS);
+  }, graceMs);
   // 非 Node 计时器环境(测试里的 fake timers / jsdom)下 setTimeout 可能返回 number,故探测后再调。
   const timer = killGraceTimer as { unref?: () => void };
   if (typeof timer.unref === 'function') timer.unref();

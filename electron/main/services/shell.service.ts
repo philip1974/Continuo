@@ -12,6 +12,7 @@ import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
 import type { ChildProcess } from 'node:child_process';
 import {
   killProcessTreesNow,
+  killWithGrace,
   processTreeKillable,
   TREE_KILL_DETACHED,
 } from '../lib/kill-with-grace';
@@ -291,16 +292,8 @@ export function execShell(
     const tree = processTreeKillable(child);
     const timer = setTimeout(() => {
       timedOut = true;
-      try {
-        tree.kill('SIGTERM');
-      } catch { /* */ }
-      // grace period 后整组 SIGKILL(不看直接子进程是否已退出,见上 clearTimers 注释)
-      const killTimer = setTimeout(() => {
-        try {
-          tree.kill('SIGKILL');
-        } catch { /* */ }
-      }, SIGKILL_GRACE_MS);
-      killTimer.unref?.();
+      // SIGTERM,grace period 后整组 SIGKILL(不看直接子进程是否已退出,见上 clearTimers 注释)
+      killWithGrace(tree, SIGKILL_GRACE_MS);
       // 仍等不到 close(后代逃出进程组仍持管道)→ 销毁 stdio 强制结算,不无限等待。
       forceTimer = setTimeout(() => {
         forceTimer = null;
