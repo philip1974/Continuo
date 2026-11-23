@@ -44,7 +44,6 @@ type DebugState = {
     sessionId: string,
     variablesReference: number,
   ) => Promise<readonly DebugVariable[]>;
-  reset: () => void;
 };
 
 const EMPTY_DEBUG_SESSIONS = new Map<string, DebugSessionShadow>();
@@ -364,13 +363,6 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     });
     return variables;
   },
-
-  reset: () =>
-    set({
-      sessions: EMPTY_DEBUG_SESSIONS,
-      activeSessionId: null,
-      stoppedOrder: 0,
-    }),
 }));
 
 /**
@@ -459,5 +451,9 @@ export function resetDebugStoreForTest(): void {
   unsubscribeDebugEvents?.();
   unsubscribeDebugEvents = null;
   debugSyncGeneration += 1;
-  useDebugStore.getState().reset();
+  useDebugStore.setState({
+    sessions: EMPTY_DEBUG_SESSIONS,
+    activeSessionId: null,
+    stoppedOrder: 0,
+  });
 }

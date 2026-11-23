@@ -21,7 +21,7 @@ function Probe({
   enabled: boolean;
   delayMs?: number;
 }) {
-  useAutoSave(saveFile, { enabled, delayMs });
+  useAutoSave(saveFile, { enabled, delayMs: delayMs ?? 2000 });
   return null;
 }
 

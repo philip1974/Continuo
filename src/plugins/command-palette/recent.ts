@@ -28,7 +28,6 @@ export interface RecentEntry {
 interface RecentState {
   list: readonly RecentEntry[];
   record(id: string): void;
-  clear(): void;
 }
 
 // 可维护性 M22:RecentEntry 运行时校验集中到 type guard,与静态类型绑定(给 RecentEntry
@@ -144,20 +143,9 @@ export const useRecentCommandsStore = create<RecentState>((set, get) => ({
     set({ list: next });
     writeToStorage(next);
   },
-
-  clear() {
-    set((s) =>
-      s.list.length === 0 ? s : { list: EMPTY_RECENT_LIST },
-    );
-    try {
-      localStorage.removeItem(RECENT_STORAGE_KEY);
-    } catch {
-      /* */
-    }
-  },
 }));
 
-// race(R10):跨窗口同步 —— 别窗 record/clear 写了 localStorage 时,本窗重读收敛列表
+// race(R10):跨窗口同步 —— 别窗 record 写了 localStorage 时,本窗重读收敛列表
 // (与 values-store 同款),避免本窗 in-memory 长期陈旧 + 下次 record 基于旧内存(已由
 // live 读修;此处让 UI 即时反映别窗最近命令)。
 subscribeStorageKey(RECENT_STORAGE_KEY, () =>

@@ -134,31 +134,6 @@ describe('useRecentCommandsStore', () => {
     expect(list[0]?.id).toBe(`cmd-${MAX_RECENT + 4}`);
   });
 
-  it('clear() 清空 list + 清 localStorage', () => {
-    useRecentCommandsStore.getState().record('a');
-    expect(localStorage.getItem(RECENT_STORAGE_KEY)).not.toBeNull();
-    useRecentCommandsStore.getState().clear();
-    expect(useRecentCommandsStore.getState().list).toEqual([]);
-    expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
-  });
-
-  it('clear() 在 list 已为空时不通知订阅者但仍清 localStorage', () => {
-    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify([{ id: 'a', ts: 1 }]));
-    useRecentCommandsStore.setState({ list: [] });
-    const listener = vi.fn();
-    const unsubscribe = useRecentCommandsStore.subscribe(listener);
-
-    try {
-      useRecentCommandsStore.getState().clear();
-
-      expect(useRecentCommandsStore.getState().list).toEqual([]);
-      expect(localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
-      expect(listener).not.toHaveBeenCalled();
-    } finally {
-      unsubscribe();
-    }
-  });
-
   it('storage 同步读到相同列表内容时不通知订阅者', () => {
     const list = [{ id: 'a', ts: 1 }];
     useRecentCommandsStore.setState({ list });
@@ -221,20 +196,6 @@ describe('useRecentCommandsStore · localStorage 持久化', () => {
       expect(useRecentCommandsStore.getState().list[0]?.id).toBe('a');
     } finally {
       localStorage.setItem = original;
-    }
-  });
-
-  it('clear 抛(localStorage 不可用)→ 静默,in-memory 仍清空', () => {
-    useRecentCommandsStore.getState().record('a');
-    const original = localStorage.removeItem;
-    localStorage.removeItem = () => {
-      throw new Error('failed');
-    };
-    try {
-      expect(() => useRecentCommandsStore.getState().clear()).not.toThrow();
-      expect(useRecentCommandsStore.getState().list).toEqual([]);
-    } finally {
-      localStorage.removeItem = original;
     }
   });
 });

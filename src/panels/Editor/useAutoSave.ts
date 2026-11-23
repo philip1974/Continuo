@@ -20,19 +20,17 @@ import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 
-const DEFAULT_DELAY_MS = 2000;
-
 export interface UseAutoSaveOptions {
   enabled: boolean;
-  /** 默认 2000ms(决策 #3). */
-  delayMs?: number;
+  /** 防抖毫秒(默认值在 autoSave.delayMs 设置项上). */
+  delayMs: number;
 }
 
 export function useAutoSave(
   saveTab: (tabId: string) => Promise<unknown>,
   opts: UseAutoSaveOptions,
 ): void {
-  const { enabled, delayMs = DEFAULT_DELAY_MS } = opts;
+  const { enabled, delayMs } = opts;
   // 只订阅活跃 tab 的调度相关字段(打磨 R47):id/filePath/dirty/content 变化才重排
   // schedule。用 useShallow 返回扁平 primitive 对象,逐字段 Object.is 比较 ——
   // markSaved 推进 originalContent、reloadFromDisk 改 reloadEpoch 等不在此集合的字段

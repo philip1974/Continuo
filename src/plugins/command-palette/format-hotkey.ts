@@ -105,10 +105,7 @@ export function isKnownHotkeyModifier(lowerModifier: string): boolean {
  * - 修饰键别名按 compileCombo 同一映射:option≡alt;mod 在 mac≡cmd(metaKey)、其它平台≡ctrl
  * 含未知修饰符的串运行时不可匹配,原样返回(只与完全相同的串相等)。
  */
-export function canonicalHotkey(
-  combo: string,
-  platform: Platform = detectPlatform(),
-): string {
+export function canonicalHotkey(combo: string, platform: Platform): string {
   let meta = false;
   let ctrl = false;
   let alt = false;

@@ -26,8 +26,8 @@ export interface ColumnResizeOptions {
   getCurrent: () => number;
   /** mousemove 写新宽度. */
   setCurrent: (next: number) => void;
-  min?: number;
-  max?: number;
+  min: number;
+  max: number;
 }
 
 /**
@@ -40,12 +40,7 @@ export function useColumnResize(opts: ColumnResizeOptions) {
 
   return useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    const {
-      getCurrent,
-      setCurrent,
-      min = 200,
-      max = 500,
-    } = optsRef.current;
+    const { getCurrent, setCurrent, min, max } = optsRef.current;
     const startX = e.clientX;
     const startW = getCurrent();
 
