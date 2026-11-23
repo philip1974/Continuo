@@ -9,7 +9,7 @@ import { lazyPanel } from '@/lib/lazy-panel';
 import { loadEditorPanelModule } from '@/panels/Editor/editor-engine-loaders';
 
 const Editor = lazy(() =>
-  loadEditorPanelModule().then((m) => ({ default: m.Editor })),
+  loadEditorPanelModule().then((m) => ({ default: m.EditorPanel })),
 );
 
 export default class EditorPlugin extends Plugin {

@@ -23,7 +23,7 @@ export function cachedLoader<T>(load: () => Promise<T>): () => Promise<T> {
   };
 }
 
-export const loadEditorPanelModule = cachedLoader(() => import('./index'));
+export const loadEditorPanelModule = cachedLoader(() => import('./EditorPanel'));
 export const loadCodeEditorModule = cachedLoader(() => import('./CodeEditor'));
 export const loadMilkdownEditorModule = cachedLoader(() => import('./MilkdownEditor'));
 

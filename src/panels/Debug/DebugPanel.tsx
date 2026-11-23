@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge, Button, Card, ScrollArea, Tabs, type TabItem } from '@/design';
 import {
-  startDebugStoreSync,
   useDebugStore,
   type DebugScope,
   type DebugSessionShadow,
@@ -31,10 +30,6 @@ export function DebugPanel() {
     },
     [locale, t],
   );
-
-  useEffect(() => {
-    startDebugStoreSync();
-  }, []);
 
   if (!activeSessionId || !session) {
     return (

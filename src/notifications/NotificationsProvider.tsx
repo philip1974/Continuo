@@ -125,16 +125,9 @@ export function NotificationsProvider({
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const setNotificationList = useCallback(
-    (
-      next:
-        | readonly Notification[]
-        | ((
-            prev: readonly Notification[],
-          ) => readonly Notification[]),
-    ) => {
+    (update: (prev: readonly Notification[]) => readonly Notification[]) => {
       setNotifications((prev) => {
-        const resolved =
-          typeof next === 'function' ? next(prev) : next;
+        const resolved = update(prev);
         notificationsRef.current = resolved;
         return resolved;
       });

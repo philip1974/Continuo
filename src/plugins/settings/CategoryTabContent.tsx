@@ -20,14 +20,6 @@ interface CategoryTabContentProps {
   readonly registry?: SettingItemRegistry;
 }
 
-function useItems(
-  reg: SettingItemRegistry,
-  category: string,
-): readonly SettingItemSpec[] {
-  // category 进 deps:切换 tab 复用同 component 时 selector 闭包要重新跑
-  return useRegistry(reg, () => reg.getByCategory(category), [category]);
-}
-
 interface Bucket {
   /** undefined = default bucket(无 header).group 是身份 key,不直接展示. */
   readonly group: string | undefined;
@@ -56,7 +48,8 @@ export function CategoryTabContent({
   registry = coApp.settingItems,
 }: CategoryTabContentProps) {
   const t = useT();
-  const items = useItems(registry, category);
+  // category 进 deps:切换 tab 复用同 component 时 selector 闭包要重新跑
+  const items = useRegistry(registry, () => registry.getByCategory(category), [category]);
   const buckets = useMemo(() => groupItems(items), [items]);
   if (items.length === 0) {
     return <div className="text-fg-dim">{t('settings.category.empty')}</div>;

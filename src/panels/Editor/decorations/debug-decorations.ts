@@ -9,8 +9,8 @@ import { Decoration, type DecorationSet, EditorView, GutterMarker, gutter } from
 import { provideDebugDecorationsApplier } from './debug-decoration-sync';
 
 export type DebugDecorationsState = {
-  breakpointLines?: readonly number[];
-  execLine?: number | null;
+  breakpointLines: readonly number[];
+  execLine: number | null;
 };
 
 const setBreakpointLinesEffect = StateEffect.define<readonly number[]>();
@@ -137,16 +137,12 @@ export function debugDecorationsExtension(): Extension {
 }
 
 export function setDebugDecorations(view: EditorView, state: DebugDecorationsState): void {
-  const effects: StateEffect<unknown>[] = [];
-  if (state.breakpointLines !== undefined) {
-    effects.push(setBreakpointLinesEffect.of(state.breakpointLines));
-  }
-  if (state.execLine !== undefined) {
-    effects.push(setExecLineEffect.of(state.execLine));
-  }
-  if (effects.length > 0) {
-    view.dispatch({ effects });
-  }
+  view.dispatch({
+    effects: [
+      setBreakpointLinesEffect.of(state.breakpointLines),
+      setExecLineEffect.of(state.execLine),
+    ],
+  });
 }
 
 // perf E5:向随 EditorPanel 静态加载的同步模块注册实现(同步模块不得静态 import 本模块)。
