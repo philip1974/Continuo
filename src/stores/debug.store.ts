@@ -20,7 +20,6 @@ export type {
 export interface DebugStoppedLocation {
   readonly reason: string;
   readonly stopSeq: number;
-  readonly threadId?: number;
   readonly file?: string;
   readonly line?: number;
 }
@@ -85,7 +84,6 @@ function asFrame(value: unknown): DebugStackFrame | null {
       ? { source_path: raw.source_path }
       : {}),
     line: raw.line,
-    ...(typeof raw.column === 'number' ? { column: raw.column } : {}),
   };
 }
 
@@ -111,11 +109,9 @@ function asVariable(value: unknown): DebugVariable | null {
   return {
     name: raw.name,
     value: raw.value,
-    ...(typeof raw.type === 'string' ? { type: raw.type } : {}),
     ...(typeof raw.variables_reference === 'number'
       ? { variables_reference: raw.variables_reference }
       : {}),
-    ...(typeof raw.truncated === 'boolean' ? { truncated: raw.truncated } : {}),
   };
 }
 
@@ -131,7 +127,6 @@ function asBreakpoint(value: unknown): DebugBreakpoint | null {
   return {
     file: raw.file,
     line: raw.line,
-    ...(typeof raw.column === 'number' ? { column: raw.column } : {}),
     verified: raw.verified,
     ...(typeof raw.message === 'string' ? { message: raw.message } : {}),
   };
@@ -273,7 +268,6 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           stopped: {
             reason: event.reason,
             stopSeq: event.stopSeq,
-            ...(event.threadId !== undefined ? { threadId: event.threadId } : {}),
           },
           lastStoppedOrder: nextOrder,
         };
@@ -404,7 +398,6 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
         stopped: {
           reason: snapshot.stop.reason,
           stopSeq: snapshot.stop.stopSeq,
-          ...(snapshot.stop.threadId !== undefined ? { threadId: snapshot.stop.threadId } : {}),
         },
         lastStoppedOrder: stoppedOrder,
       });

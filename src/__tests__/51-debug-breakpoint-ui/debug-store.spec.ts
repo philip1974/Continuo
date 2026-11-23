@@ -142,7 +142,6 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     expect(session?.stopped).toMatchObject({
       file: '/repo/a.ts',
       line: 14,
-      threadId: 3,
       reason: 'breakpoint',
     });
     expect(session?.frames[0]?.name).toBe('main');
@@ -232,7 +231,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     await flushAsync();
     expect(useDebugStore.getState().activeSessionId).toBe('s2');
 
-    emit({ type: 'terminated', sessionId: 's2', reason: 'done' });
+    emit({ type: 'terminated', sessionId: 's2' });
 
     const state = useDebugStore.getState();
     expect(state.sessions.has('s2')).toBe(false);
@@ -293,7 +292,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
         { file: '/repo/a.ts', line: 14, verified: true },
         { file: '/repo/b.ts', line: 2, verified: false, message: 'pending' },
       ]);
-      expect(s1?.stopped).toMatchObject({ reason: 'breakpoint', stopSeq: 3, threadId: 0, file: '/repo/a.ts', line: 14 });
+      expect(s1?.stopped).toMatchObject({ reason: 'breakpoint', stopSeq: 3, file: '/repo/a.ts', line: 14 });
       expect(s1?.scopes).toEqual([{ name: 'Local', variables_reference: 44, expensive: false }]);
       expect(state.activeSessionId).toBe('s1');
       expect(state.sessions.get('s2')?.stopped).toBeUndefined();
@@ -321,7 +320,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
         breakpoints: [{ file: '/repo/a.ts', line: 20, verified: true }],
       });
       emit({ type: 'continued', sessionId: 's1' });
-      emit({ type: 'terminated', sessionId: 's2', reason: 'exit' });
+      emit({ type: 'terminated', sessionId: 's2' });
       resolveSubscribe({ ok: true, data: snapshot });
       await flushAsync();
       await flushAsync();

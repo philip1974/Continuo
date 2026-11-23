@@ -69,7 +69,6 @@ describe('topic51 Op5 · DebugPanel', () => {
             stopped: {
               reason: 'breakpoint',
               stopSeq: 1,
-              threadId: 3,
               file: '/repo/a.ts',
               line: 14,
             },

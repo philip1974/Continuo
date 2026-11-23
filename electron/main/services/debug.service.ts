@@ -1593,7 +1593,6 @@ export class DebugService {
                   stopSeq: stop.stop_seq,
                   reason: stop.reason,
                   ...(stop.thread_id !== undefined ? { threadId: stop.thread_id } : {}),
-                  ...(stop.description !== undefined ? { description: stop.description } : {}),
                 },
               }
             : {}),
@@ -2029,9 +2028,6 @@ export class DebugService {
       stopSeq,
       reason: output.reason,
       ...(output.thread_id !== undefined ? { threadId: output.thread_id } : {}),
-      ...(output.description !== undefined
-        ? { description: output.description }
-        : {}),
     });
 
     for (const waiter of Array.from(runtime.waiters)) {
@@ -2184,7 +2180,6 @@ export class DebugService {
       this.emitSessionEvent(sessionId, {
         type: 'terminated',
         sessionId,
-        reason,
       });
       debugSessions.remove(sessionId);
       this.runtimes.delete(sessionId);

@@ -1582,7 +1582,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       sessionId,
     });
     expect(events[3]).toMatchObject({
-      event: { type: 'terminated', sessionId, reason: 'window-closed' },
+      event: { type: 'terminated', sessionId },
       sessionVisibleAtEmit: true,
     });
     expect(debugSessions.get(sessionId)).toBeUndefined();
@@ -1624,7 +1624,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(service.viewSnapshot(21)).toEqual([
       {
         session_id: sessionId,
-        stop: { stopSeq: 1, reason: 'breakpoint', threadId: 0, description: 'Paused on breakpoint' },
+        stop: { stopSeq: 1, reason: 'breakpoint', threadId: 0 },
         breakpointsBySource: [
           {
             file: '/a.js',

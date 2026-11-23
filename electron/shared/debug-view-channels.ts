@@ -54,7 +54,6 @@ export type DebugViewEvent =
       readonly stopSeq: number;
       readonly reason: string;
       readonly threadId?: number;
-      readonly description?: string;
     }
   | {
       readonly type: 'continued';
@@ -63,7 +62,6 @@ export type DebugViewEvent =
   | {
       readonly type: 'terminated';
       readonly sessionId: string;
-      readonly reason: string;
     };
 
 /**
@@ -83,7 +81,6 @@ export interface DebugViewSessionSnapshot {
     readonly stopSeq: number;
     readonly reason: string;
     readonly threadId?: number;
-    readonly description?: string;
   };
   /** 按 source 的完整断点集合(同 breakpoints-changed 事件的 file / breakpoints)。 */
   readonly breakpointsBySource: readonly {
