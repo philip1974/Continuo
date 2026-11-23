@@ -1,6 +1,12 @@
 # preload-no-zod(preload sandbox zod 泄漏守卫)
 
-行为契约:**`electron/shared/*-channels.ts`(channel 常量文件)不得 `import ... from 'zod'`。**
+行为契约:**`electron/preload` 全部入口的值依赖闭包里不得出现 zod。**
+
+- 值依赖 = `import … from` / `export … from` / 副作用导入 / 动态 `import()` / `require()` / `import x = require()`;
+  `import type`、`export type`、全部成员都带 `type` 的导入编译时擦除,不算
+- 沿相对路径递归(不限目录、不看文件命名),出现 `zod`,或出现沿 dependencies / peerDependencies 递归依赖 zod 的包
+  (从包的真实位置解析,兼容 pnpm 布局)→ 泄漏,报出依赖链
+- 解析不到的相对路径、既不是 Node 内置 / `electron` 也找不到包的说明符(如 preload 未配置的别名)→ 同样报出,不静默跳过
 
 ## 背景(回归来源)
 
@@ -21,7 +27,7 @@ Error: module not found: zod  (at preloadRequire)
 ## 约定
 
 - channel 常量 + 跨进程**类型**(interface)放 `*-channels.ts`(zod-free,preload 可安全 value-import)。
-- zod 入参 schema(仅 main 用)放 `electron/main/ipc/*.ipc.ts`。
+- zod 入参 schema 放 `electron/main/ipc/*.ipc.ts`,或(需要与 shared 类型单一来源时)放 shared 的独立 schema 模块,由 main 值导入。
 - 跨进程**类型**若需从 zod schema 派生(`z.infer`),放在**独立的** shared 类型/schema 文件,
   且 preload 只 `import type`(被 bundler 擦除,不拖 zod)。
 

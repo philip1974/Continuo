@@ -202,7 +202,7 @@ function pendingCountForWindow(windowId: number): number {
 export interface AgentAuthInfo {
   readonly method: string;
   readonly ownerWindowId?: number;
-  /** 安全(F2):调用方是未绑定 Continuo 终端的外部客户端 → renderer 用独立的 external 授权状态并标注来源。 */
+  /** 安全(F2):调用方是未绑定 Continuo 终端的外部客户端 → main 按独立的调用方类别记授权,弹窗标注来源。 */
   readonly external?: boolean;
 }
 

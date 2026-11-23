@@ -109,7 +109,7 @@ export interface McpCallCtx {
   readonly signal?: AbortSignal;
   /**
    * 安全(F2):调用方是未绑定 Continuo 终端的外部客户端(stdio 连接未发 `_continuo/hello`,回落到主窗)。
-   * 授权请求据此带 external 标记,renderer 用独立的 external 授权状态,不复用 / 不写入窗口级授权。
+   * 授权请求据此带 external 标记:main 按独立的调用方类别判定放行,不复用 / 不写入窗口级授权(弹窗标注来源)。
    */
   readonly external?: boolean;
 }

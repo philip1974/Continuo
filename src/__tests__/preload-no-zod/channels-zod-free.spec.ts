@@ -9,11 +9,22 @@
 //
 // 判定:用 TypeScript AST 取每个模块的**值**依赖(import / export … from、副作用导入、动态 import()、require();
 // `import type` / `export type` / 全部成员都是 `type` 的导入编译时擦除,不算),从 electron/preload 的每个入口出发
-// 沿相对路径求闭包(不限目录、不看文件命名)。闭包里出现 `zod`,或出现(沿 dependencies / devDependencies 递归)
-// 依赖 zod 的包 → 泄漏。解析不到的相对路径、既不是 Node 内置 / electron 也找不到包的说明符(如未配置的别名)
+// 沿相对路径求闭包(不限目录、不看文件命名)。闭包里出现 `zod`,或出现(沿 dependencies / peerDependencies 递归,
+// 从包的真实位置解析,兼容 pnpm)依赖 zod 的包 → 泄漏。解析不到的相对路径、既不是 Node 内置 / electron 也找不到包的说明符(如未配置的别名)
 // → 同样报出,守卫不静默跳过。
 import { builtinModules } from 'node:module';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import ts from 'typescript';
@@ -78,16 +89,34 @@ function packageName(spec: string): string {
 
 const BUILTINS = new Set(builtinModules);
 
-/** 包是否(沿 dependencies / peerDependencies / devDependencies 递归)依赖 zod;找不到包 → null。 */
-function packageDependsOnZod(name: string, root: string, seen = new Set<string>()): boolean | null {
+/** 从 fromDir 起按 Node 解析规则逐级向上找包目录(跟随软链到真实位置,兼容 pnpm 的 .pnpm 布局);找不到 → null。 */
+function findPackageDir(name: string, fromDir: string): string | null {
+  let dir = fromDir;
+  for (;;) {
+    const cand = join(dir, 'node_modules', name);
+    if (existsSync(join(cand, 'package.json'))) return realpathSync(cand);
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * 包是否(沿 dependencies / peerDependencies 递归 —— 已安装包的 devDependencies 不会安装、不进产物)依赖 zod。
+ * 依赖从**该包的真实位置**向上解析(pnpm 下传递依赖不在根 node_modules)。顶层包找不到 → null。
+ */
+function packageDependsOnZod(name: string, fromDir: string, seen = new Set<string>()): boolean | null {
   if (name === 'zod') return true;
-  const pj = join(root, 'node_modules', name, 'package.json');
-  if (!existsSync(pj)) return null;
-  if (seen.has(name)) return false;
-  seen.add(name);
-  const json = JSON.parse(readFileSync(pj, 'utf-8')) as Record<string, Record<string, string> | undefined>;
-  const deps = ['dependencies', 'peerDependencies', 'devDependencies'].flatMap((k) => Object.keys(json[k] ?? {}));
-  return deps.some((d) => packageDependsOnZod(d, root, seen) === true);
+  const pkgDir = findPackageDir(name, fromDir);
+  if (pkgDir === null) return null;
+  if (seen.has(pkgDir)) return false;
+  seen.add(pkgDir);
+  const json = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8')) as Record<
+    string,
+    Record<string, string> | undefined
+  >;
+  const deps = ['dependencies', 'peerDependencies'].flatMap((k) => Object.keys(json[k] ?? {}));
+  return deps.some((d) => packageDependsOnZod(d, pkgDir, seen) === true);
 }
 
 /** 从 entries 出发求值依赖闭包,返回每条泄漏的依赖链(空 = 无泄漏)。 */
@@ -106,7 +135,7 @@ function zodLeakChains(entries: readonly string[], root: string): string[] {
       } else if (spec === 'electron' || spec.startsWith('node:') || BUILTINS.has(spec)) {
         continue;
       } else {
-        const dep = packageDependsOnZod(packageName(spec), root);
+        const dep = packageDependsOnZod(packageName(spec), dirname(file));
         if (dep === null) leaks.push(`${[...here, spec].join(' → ')}(找不到包)`);
         else if (dep) leaks.push([...here, spec].join(' → '));
       }
@@ -139,8 +168,14 @@ describe('preload sandbox:值依赖闭包里不得出现 zod', () => {
     try {
       mkdirSync(join(dir, 'node_modules/@x/proto'), { recursive: true });
       writeFileSync(join(dir, 'node_modules/@x/proto/package.json'), JSON.stringify({ dependencies: { zod: '4' } }));
-      mkdirSync(join(dir, 'node_modules/@x/indirect'), { recursive: true });
-      writeFileSync(join(dir, 'node_modules/@x/indirect/package.json'), JSON.stringify({ devDependencies: { '@x/proto': '1' } }));
+      // pnpm 布局:a 软链到 .pnpm/a@1/node_modules/a,其依赖 b 只在 .pnpm/a@1/node_modules/b(不在根上),b 依赖 zod
+      mkdirSync(join(dir, 'node_modules/.pnpm/a@1/node_modules/a'), { recursive: true });
+      mkdirSync(join(dir, 'node_modules/.pnpm/a@1/node_modules/b'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules/.pnpm/a@1/node_modules/a/package.json'), JSON.stringify({ dependencies: { b: '1' } }));
+      writeFileSync(join(dir, 'node_modules/.pnpm/a@1/node_modules/b/package.json'), JSON.stringify({ dependencies: { zod: '4' } }));
+      symlinkSync(join(dir, 'node_modules/.pnpm/a@1/node_modules/a'), join(dir, 'node_modules/a'));
+      mkdirSync(join(dir, 'node_modules/devonly'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules/devonly/package.json'), JSON.stringify({ devDependencies: { zod: '4' } }));
       mkdirSync(join(dir, 'node_modules/plain'), { recursive: true });
       writeFileSync(join(dir, 'node_modules/plain/package.json'), JSON.stringify({ dependencies: {} }));
       mkdirSync(join(dir, 'sub'));
@@ -169,7 +204,7 @@ describe('preload sandbox:值依赖闭包里不得出现 zod', () => {
         "export type { Foo }\nimport { z } from 'zod'",
         "export const U = 'http://x'; export { A } from './sub/a-schemas';",
         "export * from '@x/proto';",
-        "export * from '@x/indirect';", // 经二级依赖(devDependencies)
+        "export * from 'a';", // pnpm 布局下经二级依赖
         "import z = require('zod');",
         "import { X } from './missing';", // 解析不到 → 报出
         "import { X } from '@shared/x';", // 未知说明符(如未配置的别名)→ 报出
@@ -188,6 +223,7 @@ describe('preload sandbox:值依赖闭包里不得出现 zod', () => {
         "import { ipcRenderer } from 'electron';",
         "import { join } from 'node:path';",
         "import { x } from 'plain';",
+        "import { x } from 'devonly';", // devDependencies 不安装、不进产物
       ]) {
         expect(probe(ok), ok).toEqual([]);
       }

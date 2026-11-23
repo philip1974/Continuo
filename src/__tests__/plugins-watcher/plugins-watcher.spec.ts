@@ -459,15 +459,16 @@ describe('createPluginsWatcher', () => {
     });
 
     // 记账覆盖全部候选目录(不只是字典序最小的那个):renderer 实际在用哪个目录由它自己选。
+    // (改声明的新 id 与原 id 长度不同 → manifest size 必变,不依赖文件时间戳精度。)
     it('非字典序最小的候选目录改声明新 id → 新 id fire 一次', async () => {
       dupDirs();
       const fn = vi.fn();
       const w = createPluginsWatcher(tmp, fn);
       await w.tick();
-      writeFileSync(join(tmp, 'b.dir', 'manifest.json'), JSON.stringify({ id: 'y.id', name: 'Y', version: '0.1.0' }));
+      writeFileSync(join(tmp, 'b.dir', 'manifest.json'), JSON.stringify({ id: 'yy.id', name: 'Y', version: '0.1.0' }));
       await w.tick();
       await w.tick();
-      expect(fn.mock.calls).toEqual([['x.id'], ['y.id']]);
+      expect(fn.mock.calls).toEqual([['x.id'], ['yy.id']]);
     });
 
     it('tombstone 的非字典序最小候选目录改声明新 id → 新 id fire 一次', async () => {
@@ -479,11 +480,11 @@ describe('createPluginsWatcher', () => {
       rmSync(join(tmp, 'b.dir', 'main.js'));
       await w.tick(); // x.id 转 tombstone(候选 a.dir、b.dir)
       expect(fn).not.toHaveBeenCalled();
-      writeFileSync(join(tmp, 'b.dir', 'manifest.json'), JSON.stringify({ id: 'y.id', name: 'Y', version: '0.1.0' }));
+      writeFileSync(join(tmp, 'b.dir', 'manifest.json'), JSON.stringify({ id: 'yy.id', name: 'Y', version: '0.1.0' }));
       writeFileSync(join(tmp, 'b.dir', 'main.js'), '');
       await w.tick();
       await w.tick();
-      expect(fn.mock.calls).toEqual([['y.id']]);
+      expect(fn.mock.calls).toEqual([['yy.id']]);
     });
 
     it('代表目录改声明别的 id、同时另一候选 main 暂时缺失 → 记录转 tombstone,main 恢复后 fire', async () => {
@@ -491,7 +492,7 @@ describe('createPluginsWatcher', () => {
       const fn = vi.fn();
       const w = createPluginsWatcher(tmp, fn);
       await w.tick();
-      writeFileSync(join(tmp, 'a.dir', 'manifest.json'), JSON.stringify({ id: 'z.id', name: 'Z', version: '0.1.0' }));
+      writeFileSync(join(tmp, 'a.dir', 'manifest.json'), JSON.stringify({ id: 'zz.id', name: 'Z', version: '0.1.0' }));
       rmSync(join(tmp, 'b.dir', 'main.js'));
       await w.tick();
       fn.mockClear();
