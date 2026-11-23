@@ -24,36 +24,54 @@ export function isWithinStartupPathLimit(p: unknown): p is string {
   );
 }
 
+/**
+ * 冷启动目录收集(argv 与 macOS open-file 缓冲共用):按出现顺序去重,只收存在的目录。
+ * 边界(E58):目录数封顶;超长 / 非法路径先跳过、绝不 stat;候选检查预算(每次 isExistingDir 都计数,
+ * 无效候选同样消耗)耗尽即停;isExistingDir 抛错视为不存在。固定上限数组收集,不 push 扩容。
+ */
+export function collectExistingDirs(
+  candidates: Iterable<unknown>,
+  isExistingDir: (p: string) => boolean,
+): string[] {
+  const seen = new Set<string>();
+  const dirs = new Array<string>(MAX_STARTUP_DIRS);
+  let dirCount = 0;
+  let checks = 0;
+  for (const p of candidates) {
+    if (dirCount >= MAX_STARTUP_DIRS) break;
+    if (!isWithinStartupPathLimit(p)) continue;
+    if (seen.has(p)) continue;
+    if (checks >= MAX_STARTUP_DIR_CHECKS) break;
+    checks += 1;
+    seen.add(p);
+    let ok = false;
+    try {
+      ok = isExistingDir(p);
+    } catch {
+      ok = false;
+    }
+    if (ok) {
+      dirs[dirCount] = p;
+      dirCount += 1;
+    }
+  }
+  dirs.length = dirCount;
+  return dirs;
+}
+
+/** argv[start..] 中的绝对路径(相对路径不进 stat)。边界(E192):索引遍历原 argv,不 slice 物化尾部。 */
+function* absoluteArgvCandidates(argv: readonly string[], start: number): Generator<string> {
+  for (let i = start; i < argv.length; i++) {
+    const p = argv[i];
+    if (typeof p === 'string' && path.isAbsolute(p)) yield p;
+  }
+}
+
 export function pickArgvFolders(
   argv: readonly string[],
   isExistingDir: (p: string) => boolean,
   opts: { readonly skipFirstArg: boolean; readonly skipAll?: boolean },
 ): string[] {
   if (opts.skipAll) return [];
-
-  const start = opts.skipFirstArg ? 2 : 1;
-  const seen = new Set<string>();
-  const dirs = new Array<string>(MAX_STARTUP_DIRS);
-  let dirCount = 0;
-  let checks = 0;
-
-  // 边界(E192,E176/E189 有界迭代族):索引遍历原 argv,不 argv.slice(start) —— slice 在循环截断前
-  // 就把尾部全量复制成新数组,畸形超长 process.argv 冷启动即产生不必要内存峰值。索引推进,凑满即 break。
-  for (let i = start; i < argv.length; i++) {
-    if (dirCount >= MAX_STARTUP_DIRS) break; // 边界(E58):目录数封顶,停止收集 + 同步 stat
-    const p = argv[i];
-    // 边界(E58):超长/非法路径先跳过,绝不对其 isExistingDir(同步 stat)。
-    if (!isWithinStartupPathLimit(p)) continue;
-    if (!path.isAbsolute(p)) continue;
-    if (seen.has(p)) continue;
-    if (checks >= MAX_STARTUP_DIR_CHECKS) break; // 候选检查预算耗尽:停止同步 stat
-    checks += 1;
-    if (!isExistingDir(p)) continue;
-    seen.add(p);
-    dirs[dirCount] = p;
-    dirCount += 1;
-  }
-
-  dirs.length = dirCount;
-  return dirs;
+  return collectExistingDirs(absoluteArgvCandidates(argv, opts.skipFirstArg ? 2 : 1), isExistingDir);
 }
