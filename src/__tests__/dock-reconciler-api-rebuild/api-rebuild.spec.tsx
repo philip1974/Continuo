@@ -27,7 +27,11 @@ function makeApi() {
       api.activePanel = p;
       return p;
     }),
-    panels,
+    byId: panels,
+    // 真实 DockviewApi.panels 是数组
+    get panels() {
+      return Object.values(panels);
+    },
   };
   return api;
 }

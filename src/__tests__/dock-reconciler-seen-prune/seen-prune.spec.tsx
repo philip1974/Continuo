@@ -74,7 +74,11 @@ function makeApi() {
       api.activePanel = p;
       return p;
     }),
-    panels,
+    byId: panels,
+    // 真实 DockviewApi.panels 是数组
+    get panels() {
+      return Object.values(panels);
+    },
   };
   return api;
 }
@@ -99,18 +103,18 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
   it('workspace 隐藏再恢复:记录保留,切回不重新聚焦', () => {
     const api = mount();
     act(() => mocks.emit([session('t1', 10)]));
-    expect(api.panels['terminal-t1']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-t1']?.api.setActive).toHaveBeenCalledTimes(1);
     expect(__reconcilerSeenSessionCountForTest()).toBe(1);
 
     act(() => useWorkspaceStore.setState({ root: '/proj-b' }));
-    expect(api.panels['terminal-t1']).toBeUndefined();
+    expect(api.byId['terminal-t1']).toBeUndefined();
     // 快照再推一次(内容不变,仍含 t1)也不剪
     act(() => mocks.emit([session('t1', 10)]));
     expect(__reconcilerSeenSessionCountForTest()).toBe(1);
 
     act(() => useWorkspaceStore.setState({ root: '/proj-a' }));
-    expect(api.panels['terminal-t1']).toBeDefined();
-    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-t1']).toBeDefined();
+    expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
   });
 
   it('真正删除:记录被剪(不随历史创建数增长);同 id 重建按首次出现聚焦', () => {
@@ -124,7 +128,7 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
     expect(__reconcilerSeenSessionCountForTest()).toBe(0);
 
     act(() => mocks.emit([session('t0', 100)]));
-    expect(api.panels['terminal-t0']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-t0']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 
   // 本轮快照有项被 ingress 校验丢弃(shape-invalid / missing-owner / 超限等)时,过滤结果缺失 ≠ 真删除:
@@ -132,7 +136,7 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
   it('快照中有项被校验丢弃 → 该 id 不剪;恢复有效后不重新聚焦', () => {
     const api = mount();
     act(() => mocks.emit([session('t1', 10)]));
-    expect(api.panels['terminal-t1']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-t1']?.api.setActive).toHaveBeenCalledTimes(1);
 
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     act(() => mocks.emit([{ ...session('t1', 10), cwd: 42 }]));
@@ -141,8 +145,8 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
     expect(__reconcilerSeenSessionCountForTest()).toBe(1);
 
     act(() => mocks.emit([session('t1', 10)]));
-    expect(api.panels['terminal-t1']).toBeDefined();
-    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-t1']).toBeDefined();
+    expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
   });
 
   // 复审 r3 term#2:歧义丢弃只保护能解析出 id 的那些 session,不再整轮跳过剪除 —— 否则快照持续混入一个
@@ -159,7 +163,7 @@ describe('DockReconciler first-appearance 记录按权威快照剪除', () => {
 
     // t1 受保护:恢复有效后不被当首次出现而抢焦
     act(() => mocks.emit([session('t1', 10)]));
-    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
   });
 
   it('持续混入无 id 的畸形项 + 合法会话 churn → 记录仍有界', () => {

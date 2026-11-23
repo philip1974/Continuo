@@ -342,24 +342,11 @@ export async function handleTerminalPanelRemoved({
 }
 
 function findLastTerminalPanelId(api: DockviewApi): string | null {
-  // 真实 dockview 给 IDockviewPanel[];test 用 Record<id, panel> mock,做兼容。
-  if (Array.isArray(api.panels)) {
-    for (let i = api.panels.length - 1; i >= 0; i--) {
-      const panel = api.panels[i];
-      if (!panel) continue;
-      if (sessionIdFromPanel(panel)) return panel.api.id;
-    }
-    return null;
+  for (let i = api.panels.length - 1; i >= 0; i--) {
+    const panel = api.panels[i];
+    if (panel && sessionIdFromPanel(panel)) return panel.api.id;
   }
-
-  let lastId: string | null = null;
-  const panels = api.panels as unknown as Record<string, IDockviewPanel>;
-  for (const id in panels) {
-    if (!Object.prototype.hasOwnProperty.call(panels, id)) continue;
-    const panel = panels[id];
-    if (panel && sessionIdFromPanel(panel)) lastId = panel.api.id;
-  }
-  return lastId;
+  return null;
 }
 
 function deriveTitle(session: TerminalSession): string {

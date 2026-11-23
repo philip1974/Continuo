@@ -37,7 +37,11 @@ function makeApi() {
       api.activePanel = panel;
       return panel;
     }),
-    panels,
+    byId: panels,
+    // 真实 DockviewApi.panels 是数组
+    get panels() {
+      return Object.values(panels);
+    },
   };
   return api;
 }
@@ -45,8 +49,8 @@ function makeApi() {
 describe('agent create as new dockview panel', () => {
   it("agent session → addPanel direction='right',new panel 不 setActive,原 active panel focus 被恢复", () => {
     const api = makeApi();
-    api.panels['terminal-old'] = makePanel('terminal-old');
-    api.activePanel = api.panels['terminal-old']; // 原 active panel
+    api.byId['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.byId['terminal-old']; // 原 active panel
 
     reconcileTerminalPanels(api as unknown as DockviewApi, {
       previousSessions: [makeSession('old', { createdAt: 1 })],
@@ -71,35 +75,9 @@ describe('agent create as new dockview panel', () => {
     // 不能传 inactive: true(dockview inactive 让 xterm 渲染不可见)
     expect(api.addPanel.mock.calls[0]![0]).not.toHaveProperty('inactive');
     // agent 新 panel 自身不显式 setActive
-    expect(api.panels['terminal-agent-1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-agent-1']?.api.setActive).not.toHaveBeenCalled();
     // 原 active panel(terminal-old)被显式 setActive 回去,实现"agent 不抢 focus"
-    expect(api.panels['terminal-old']?.api.setActive).toHaveBeenCalledTimes(1);
-  });
-
-  it('Record panels fallback 不通过 Object.values 全量物化 panels', () => {
-    const valuesSpy = vi.spyOn(Object, 'values');
-    const api = makeApi();
-    api.panels['terminal-old'] = makePanel('terminal-old');
-    api.activePanel = api.panels['terminal-old'];
-
-    try {
-      reconcileTerminalPanels(api as unknown as DockviewApi, {
-        previousSessions: [makeSession('old', { createdAt: 1 })],
-        nextSessions: [
-          makeSession('old', { createdAt: 1 }),
-          makeSession('agent-1', { originHint: 'agent', createdAt: 2 }),
-        ],
-      });
-
-      expect(api.addPanel).toHaveBeenCalledWith(
-        expect.objectContaining({
-          position: { referencePanel: 'terminal-old', direction: 'right' },
-        }),
-      );
-      expect(valuesSpy).not.toHaveBeenCalled();
-    } finally {
-      valuesSpy.mockRestore();
-    }
+    expect(api.byId['terminal-old']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 
   it('user path: setPendingFocus 命中 → addPanel 后 setActive,并清空 pendingFocus', () => {
@@ -111,13 +89,13 @@ describe('agent create as new dockview panel', () => {
       nextSessions: [makeSession('user-1', { originHint: 'user' })],
     });
 
-    expect(api.panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 
   it("增量 user origin 新 session 即便没 setPendingFocus 也 setActive(IPC-vs-RPC 时序无关兜底)", () => {
     const api = makeApi();
-    api.panels['terminal-old'] = makePanel('terminal-old');
-    api.activePanel = api.panels['terminal-old'];
+    api.byId['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.byId['terminal-old'];
 
     // user 路径:terminal.create RPC 返回前 sessions-changed IPC 先到 →
     // reconciler 跑时 pendingFocus 还没 set。此时仍应让新 user session 抢 focus。
@@ -129,9 +107,9 @@ describe('agent create as new dockview panel', () => {
       ],
     });
 
-    expect(api.panels['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
     // 原 active panel 不再被 setActive 回去 — user 主动 create 就是要切到新 tab
-    expect(api.panels['terminal-old']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-old']?.api.setActive).not.toHaveBeenCalled();
   });
 
   it('user first create(prev=空 + 1 个 user session)也 setActive,符合 ActionHeader + 按钮路径直觉', () => {
@@ -145,7 +123,7 @@ describe('agent create as new dockview panel', () => {
       nextSessions: [makeSession('user-1', { originHint: 'user' })],
     });
 
-    expect(api.panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 
   it('batch add: 首次 hydrate 按 createdAt 升序逐个 add;首个默认位置,后续 reference 前一个', () => {
@@ -205,7 +183,11 @@ describe('agent create as new dockview panel', () => {
         api.activePanel = p;
         return p;
       }),
-      panels,
+      byId: panels,
+      // 真实 DockviewApi.panels 是数组
+      get panels() {
+        return Object.values(panels);
+      },
     };
     const s = makeSession('user-1', { originHint: 'user' });
 
@@ -257,7 +239,11 @@ describe('agent create as new dockview panel', () => {
         api.activePanel = p;
         return p;
       }),
-      panels,
+      byId: panels,
+      // 真实 DockviewApi.panels 是数组
+      get panels() {
+        return Object.values(panels);
+      },
     };
     const s = makeSession('user-1', { originHint: 'user' });
     reconcileTerminalPanels(api as unknown as DockviewApi, {
@@ -280,8 +266,8 @@ describe('agent create as new dockview panel', () => {
   // 较旧的 user-1 后到(仍是首次出现)不得 originHint 兜底抢焦点——它不是快照中最新 user session。
   it('R105 迟到的较旧 user session(非快照最新)不抢焦点', () => {
     const api = makeApi();
-    api.panels['terminal-old'] = makePanel('terminal-old');
-    api.activePanel = api.panels['terminal-old'];
+    api.byId['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.byId['terminal-old'];
 
     // 第一轮:较新的 user-2(createdAt=20)先到 → 聚焦
     reconcileTerminalPanels(api as unknown as DockviewApi, {
@@ -291,7 +277,7 @@ describe('agent create as new dockview panel', () => {
         makeSession('user-2', { originHint: 'user', createdAt: 20 }),
       ],
     });
-    expect(api.panels['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
 
     // 第二轮:较旧的 user-1(createdAt=10)乱序后到。它首次出现,但快照中 user-2(20)更新
     // → user-1 不是最新 user session → 不抢焦点(否则键盘输入落到较旧 PTY)。
@@ -306,17 +292,17 @@ describe('agent create as new dockview panel', () => {
         makeSession('user-1', { originHint: 'user', createdAt: 10 }),
       ],
     });
-    expect(api.panels['terminal-user-1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-user-1']?.api.setActive).not.toHaveBeenCalled();
     // user-1 不抢焦点 → reconciler 把焦点恢复回先前 active 的 user-2(restore 机制再调一次
     // setActive),即较新的 user-2 始终保持聚焦,不被迟到的较旧 user-1 覆盖。
-    expect(api.panels['terminal-user-2']?.api.setActive).toHaveBeenCalled();
+    expect(api.byId['terminal-user-2']?.api.setActive).toHaveBeenCalled();
   });
 
   // race(R105):较新的 user session 后到(乱序)仍应聚焦——它是快照中最新 user session。
   it('R105 后到的较新 user session(快照最新)正常聚焦', () => {
     const api = makeApi();
-    api.panels['terminal-old'] = makePanel('terminal-old');
-    api.activePanel = api.panels['terminal-old'];
+    api.byId['terminal-old'] = makePanel('terminal-old');
+    api.activePanel = api.byId['terminal-old'];
 
     // 较旧 user-1(10)先到 → 聚焦
     reconcileTerminalPanels(api as unknown as DockviewApi, {
@@ -326,7 +312,7 @@ describe('agent create as new dockview panel', () => {
         makeSession('user-1', { originHint: 'user', createdAt: 10 }),
       ],
     });
-    expect(api.panels['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-user-1']?.api.setActive).toHaveBeenCalledTimes(1);
 
     // 较新 user-2(20)后到 = 快照最新 user session → 聚焦(last create wins)
     reconcileTerminalPanels(api as unknown as DockviewApi, {
@@ -340,6 +326,6 @@ describe('agent create as new dockview panel', () => {
         makeSession('user-2', { originHint: 'user', createdAt: 20 }),
       ],
     });
-    expect(api.panels['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
+    expect(api.byId['terminal-user-2']?.api.setActive).toHaveBeenCalledTimes(1);
   });
 });

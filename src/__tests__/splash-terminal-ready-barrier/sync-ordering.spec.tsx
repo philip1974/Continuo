@@ -68,7 +68,11 @@ function makeApi() {
       panels[opts.id] = p;
       return p;
     }),
-    panels,
+    byId: panels,
+    // 真实 DockviewApi.panels 是数组
+    get panels() {
+      return Object.values(panels);
+    },
   };
   return api;
 }
@@ -120,8 +124,8 @@ describe('终端首个快照与 workspace 恢复的完成顺序', () => {
     await act(async () => {
       list.resolve({ ok: true, data: { sessions: [session('t1')] } });
     });
-    expect(api.panels['terminal-t1']).toBeDefined();
-    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-t1']).toBeDefined();
+    expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
     expect(onHydrated).toHaveBeenCalledTimes(1);
   });
 
@@ -134,8 +138,8 @@ describe('终端首个快照与 workspace 恢复的完成顺序', () => {
 
     act(() => restoreWorkspace('/proj'));
     expect(useTerminalStore.getState().hydrated).toBe(true);
-    expect(api.panels['terminal-t1']).toBeDefined();
-    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-t1']).toBeDefined();
+    expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
     expect(onHydrated).toHaveBeenCalledTimes(1);
   });
 
@@ -149,8 +153,8 @@ describe('终端首个快照与 workspace 恢复的完成顺序', () => {
 
     act(() => mocks.emit([session('t1')]));
     expect(useTerminalStore.getState().hydrated).toBe(true);
-    expect(api.panels['terminal-t1']).toBeDefined();
-    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-t1']).toBeDefined();
+    expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
   });
 
   it('root 已恢复、编辑器 tab 仍在读盘(未 hydrated)→ 不等 tab 恢复即完成首轮过滤与 Splash 放行', async () => {
@@ -164,8 +168,8 @@ describe('终端首个快照与 workspace 恢复的完成顺序', () => {
     });
     expect(useWorkspaceStore.getState().hydrated).toBe(false);
     expect(useTerminalStore.getState().hydrated).toBe(true);
-    expect(api.panels['terminal-t1']).toBeDefined();
-    expect(api.panels['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
+    expect(api.byId['terminal-t1']).toBeDefined();
+    expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();
     expect(onHydrated).toHaveBeenCalledTimes(1);
   });
 });
