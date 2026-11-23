@@ -38,7 +38,6 @@ export const ko: Record<TranslationKey, string> = {
   'errors.DEBUG_NOT_AUTHORIZED': '디버그 제어가 승인되지 않았습니다',
   'errors.DEBUG_NODE_RUNTIME_NOT_FOUND': '디버깅에 사용할 Node.js 런타임을 찾을 수 없습니다(Continuo는 자체 PATH에서 node를 찾습니다)',
   'errors.DEBUG_PROGRAM_OUTSIDE_WORKSPACE': '디버그 대상은 워크스페이스 안에 있어야 합니다',
-  'errors.DEBUG_RESULT_TOO_LARGE': '디버그 결과가 너무 큽니다',
   'errors.DEBUG_SESSION_NOT_FOUND': '디버그 세션을 찾을 수 없습니다',
   'errors.DEBUG_WAIT_TIMEOUT': '디버그 중지를 기다리다 시간이 초과되었습니다',
   'errors.EEXIST': '파일이 이미 있습니다',

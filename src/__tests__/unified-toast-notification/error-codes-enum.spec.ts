@@ -66,7 +66,7 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 边界(数量上限):+TOO_MANY_WINDOWS(55→56),renderer 发起的新建窗口超全局主窗口数上限。
     // 插件安装:+PLUGIN_REPO_TOO_LARGE(56→57),clone 体积 / 文件数超上限即终止并拒装。
     // −MCP_HOST_BIND_FORBIDDEN(57→56):MCP host 监听地址改为常量,不再有可被拒绝的绑定入参。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(56);
+    expect(Object.keys(ERROR_CODES)).toHaveLength(55);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

@@ -47,7 +47,6 @@ export const en = {
   'errors.DEBUG_NODE_RUNTIME_NOT_FOUND': 'Node.js runtime not found for debugging (Continuo looks up node on its own PATH)',
   'errors.DEBUG_PROGRAM_OUTSIDE_WORKSPACE':
     'Debug target must be inside the workspace',
-  'errors.DEBUG_RESULT_TOO_LARGE': 'Debug result too large',
   'errors.DEBUG_SESSION_NOT_FOUND': 'Debug session not found',
   'errors.DEBUG_WAIT_TIMEOUT': 'Timed out waiting for debug stop',
   'errors.EEXIST': 'File already exists',

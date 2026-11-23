@@ -38,7 +38,6 @@ export const zh: Record<TranslationKey, string> = {
   'errors.DEBUG_NOT_AUTHORIZED': '未授权调试控制',
   'errors.DEBUG_NODE_RUNTIME_NOT_FOUND': '找不到用于调试的 Node.js 运行时(Continuo 按自身 PATH 查找 node)',
   'errors.DEBUG_PROGRAM_OUTSIDE_WORKSPACE': '调试目标必须在工作区内',
-  'errors.DEBUG_RESULT_TOO_LARGE': '调试结果过大',
   'errors.DEBUG_SESSION_NOT_FOUND': '找不到调试会话',
   'errors.DEBUG_WAIT_TIMEOUT': '等待调试暂停超时',
   'errors.EEXIST': '文件已存在',
