@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OUTPUT_LAYOUT_RESTORED, OUTPUT_READY } from './helpers/output';
+import { OUTPUT_READY } from './helpers/output';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -53,19 +53,20 @@ async function waitForTestHook(page: Page): Promise<void> {
 
 async function openOutputPanel(page: Page): Promise<void> {
   await waitForTestHook(page);
-  await page.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          openOrFocusPanel: (id: string, c: string, t: string) => void;
-        };
-      }
-    ).__continuoTest;
-    t.openOrFocusPanel('output', 'output', 'Output');
-  });
-  await expect(page.getByText(OUTPUT_READY)).toBeVisible({
-    timeout: 10_000,
-  });
+  // testing hook 可能先于 dock 就绪暴露(此时 openOrFocusPanel 是 no-op):重试到面板出现。
+  await expect(async () => {
+    await page.evaluate(() => {
+      const t = (
+        window as unknown as {
+          __continuoTest: {
+            openOrFocusPanel: (id: string, c: string, t: string) => void;
+          };
+        }
+      ).__continuoTest;
+      t.openOrFocusPanel('output', 'output', 'Output');
+    });
+    await expect(page.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 // 与其它 e2e 一样,运行时不能同时开着打包版 Continuo(macOS NSApplication 注册会中止 Playwright 的 Electron 启动)。
@@ -183,10 +184,10 @@ test.describe('dock-layout-per-window-seq: v3 persist roundtrip', () => {
     const page2 = await app.firstWindow();
     await page2.waitForLoadState('domcontentloaded');
 
+    // 默认布局不含 Output panel:它在重启后出现即证明布局已从 explorer.json 恢复
     await expect(page2.getByText(OUTPUT_READY)).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page2.getByText(OUTPUT_LAYOUT_RESTORED)).toBeVisible();
 
     await app.close();
     app = null;

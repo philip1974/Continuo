@@ -34,11 +34,11 @@ test('右键 README.md → 复制 → 右键 src → 粘贴 → src/README.md �
   expect(orig).toBe(true);
 });
 
-test('右键 a.ts → 剪切 → 右键 src 自身(父=src)→ 粘贴 noop / 复制成功目录粘贴 → 新文件出现', async ({
+test('复制 a.ts → 粘贴到 src 自身 → 生成 copy 后缀副本', async ({
   window,
   workspaceRoot,
 }) => {
-  // 展开 src 后剪切 a.ts
+  // 展开 src 后复制 a.ts
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click({ button: 'right' });
   await window.getByRole('menuitem', { name: COPY }).click();

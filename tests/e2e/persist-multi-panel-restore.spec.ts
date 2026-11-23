@@ -62,7 +62,6 @@ test('Editor + Terminal 使用后重启不恢复 stale terminal panel', async ()
       win1.getByRole('textbox', { name: TERMINAL_INPUT }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // 等 layout-persist debounce 写盘(layout:write → explorer.json 的窗口段 layout)
     await app1.close();
     // 关窗 flush 握手确定性写入最终布局快照:此时读到的就是加终端之后的布局。
     expect(persistedPanelComponents(ud)).toContain('editor');

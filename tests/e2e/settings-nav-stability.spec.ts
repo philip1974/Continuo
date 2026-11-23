@@ -29,15 +29,15 @@ test('循环 nav tab 切换 → 各 tab 内容均渲染', async ({ window }) => 
     const btn = nav.getByRole('button', { name: label });
     if ((await btn.count()) === 0) continue;
     await btn.click();
-    // 主区域有 something
-    await expect(window.locator('main').first()).toBeVisible();
+    // 切到该 tab:导航项成为当前页
+    await expect(btn).toHaveAttribute('aria-current', 'page');
   }
   // 重复一次,验证状态不腐
   for (const label of tabs) {
     const btn = nav.getByRole('button', { name: label });
     if ((await btn.count()) === 0) continue;
     await btn.click();
-    await expect(window.locator('main').first()).toBeVisible();
+    await expect(btn).toHaveAttribute('aria-current', 'page');
   }
 
   // 通用 tab 文案

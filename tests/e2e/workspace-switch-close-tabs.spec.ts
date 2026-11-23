@@ -4,15 +4,15 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 import { explorerMoreActionsButton } from './helpers/explorer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 
-// 跳过原因:e2e 中 ⋯ 菜单 + 「打开最近」交互在 dockview overlay 下不可靠.
-// closeTabsOutsideRoot 行为由 editor.store 单测覆盖.
-test.skip('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcome)', async () => {
+// closeTabsOutsideRoot 的细粒度行为由 editor.store 单测覆盖;本用例验证端到端:切 workspace 后旧 root 下的 tab 关闭。
+test('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcome)', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-ws-switch-'));
   const ws1 = mkdtempSync(path.join(tmpdir(), 'continuo-ws1-'));
   const ws2 = mkdtempSync(path.join(tmpdir(), 'continuo-ws2-'));
@@ -57,12 +57,12 @@ test.skip('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcom
       .getByRole('menuitem', { name: ws2Name, exact: false })
       .click();
 
-    // 切到 ws2 后:Explorer aside 显示 ws2 名(workspace 切换成功);
-    // a.ts tab 由 closeTabsOutsideRoot 处理(此处不深测 editor UI 时序)
+    // 切到 ws2 后:Explorer aside 显示 ws2 名(workspace 切换成功),ws1 下的 a.ts tab 被关闭 → EditorWelcome
     const ws2Basename = path.basename(ws2);
     await expect(
       win.locator('main aside').nth(1).getByText(ws2Basename).first(),
     ).toBeVisible({ timeout: 10_000 });
+    await expect(win.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({ timeout: 10_000 });
 
     await app.close();
   } finally {

@@ -48,6 +48,6 @@ test('外部修改 a.ts → useExternalFileSync 自动同步 editor 内容', asy
   await expect(async () => {
     const status = await window.locator('footer').textContent();
     // 新内容 = 'export const a = 999; // updated by e2e\n' = 40 chars
-    expect(status).toMatch(/40/);
+    expect(status).toMatch(/\b40\s*(chars|字符|자)/);
   }).toPass({ timeout: 10_000 });
 });

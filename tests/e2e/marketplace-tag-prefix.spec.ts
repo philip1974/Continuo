@@ -2,7 +2,7 @@
 // 离线 / index 错 / 空 tags → 跳过.
 import { test, expect } from './fixtures/electron-app';
 import {
-  MARKETPLACE_INDEX_OK,
+  MARKETPLACE_INDEX_NONEMPTY,
   MARKETPLACE_POPULAR_TAGS,
   MARKETPLACE_TAB,
   SETTINGS,
@@ -19,9 +19,9 @@ test('Marketplace ok 态 → 显「热门标签」prefix', async ({ window }) =>
   }
   await marketplaceTab.click();
 
-  // 等 ok 文本(包含 N 个插件)
+  // 等索引加载成功且非空(空索引不渲染标签行)
   const okText = await window
-    .getByText(MARKETPLACE_INDEX_OK)
+    .getByText(MARKETPLACE_INDEX_NONEMPTY)
     .first()
     .waitFor({ timeout: 15_000 })
     .then(() => true)
@@ -30,10 +30,6 @@ test('Marketplace ok 态 → 显「热门标签」prefix', async ({ window }) =>
     test.skip(true, '索引未加载(可能离线)');
   }
 
-  // 「热门标签」prefix 应出现(allTags 多数 marketplace 索引都非空)
-  const prefix = window.getByText(MARKETPLACE_POPULAR_TAGS);
-  if ((await prefix.count()) === 0) {
-    test.skip(true, 'allTags 为空,无 prefix(空索引)');
-  }
-  await expect(prefix.first()).toBeVisible();
+  // 「热门标签」prefix 应出现(正式索引条目都带 tags)
+  await expect(window.getByText(MARKETPLACE_POPULAR_TAGS).first()).toBeVisible();
 });

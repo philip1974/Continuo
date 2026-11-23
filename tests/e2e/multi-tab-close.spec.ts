@@ -19,8 +19,8 @@ test('开 2 tab → 关其中一个 → 只剩 1 个 tab', async ({
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click();
   await expect(
-    window.locator('main [role=tablist]').first(),
-  ).toBeVisible({ timeout: 10_000 });
+    window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab'),
+  ).toHaveCount(2, { timeout: 10_000 });
 
   // TabNavItem close button 的可访问名由 basename 生成(见 helpers 的锚定正则).
   const closeReadme = window.getByRole('button', {

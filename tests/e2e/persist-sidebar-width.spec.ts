@@ -1,8 +1,7 @@
 // 侧栏宽度从 explorer.json 的 layoutUi 字段 hydrate.
 //
 // 注:本测试只验证 hydrate 一侧(layoutUi.sidebarWidth=420 → aside style.width=420px),
-// 而非拖拽 → 写回流程。拖拽走 useColumnResize 的 native mousemove,Playwright 在
-// dockview-react 的边界处难稳定模拟;真行为已被 use-column-resize 单测覆盖.
+// 而非拖拽 → 写回流程;拖拽 → 写回由 sidebar-drag-persist.spec.ts 覆盖.
 import { _electron as electron, expect, test } from '@playwright/test';
 import { SIDEBAR_HIDDEN_TEXT } from './helpers/explorer';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';

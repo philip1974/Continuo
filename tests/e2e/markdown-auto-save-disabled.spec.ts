@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+const UNSAVED_CHANGES = /^(未保存的更改|Unsaved changes|저장되지 않은 변경 사항)$/;
 
 test('autoSave.markdown.enabled=false → updateContent → 磁盘不变', async ({
   window,
@@ -58,6 +59,9 @@ test('autoSave.markdown.enabled=false → updateContent → 磁盘不变', async
     },
     { tabId, content: '# Should NOT auto save\n' },
   );
+  // 修改确实生效(tab 变 dirty),否则下面「未写盘」会空过
+  expect(tabId).toBeTruthy();
+  await expect(window.getByText(UNSAVED_CHANGES).first()).toBeVisible();
 
   // 等若干倍 delay 时间,确认仍未写盘
   // delayMs=50 被钳到 500ms 下限:等 3 倍以上,若自动保存错误启用此时必已写盘

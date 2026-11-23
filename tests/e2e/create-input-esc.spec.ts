@@ -1,5 +1,5 @@
 // CreateInput 的 Esc 取消 + Enter 空白也算取消(空 trim).
-import { stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EXPLORER_NEW_FILE as NEW_FILE } from './helpers/explorer';
@@ -41,11 +41,8 @@ test('Enter 空白名字 → 视为取消 → 无文件', async ({
   await input.press('Enter');
   await expect(input).toBeHidden();
 
-  // 落盘验证(没有任何 'undefined' / 'untitled' 之类)
-  const exists = await stat(path.join(workspaceRoot, 'src/'))
-    .then(() => true)
-    .catch(() => false);
-  expect(exists).toBe(true);
+  // 落盘验证:src 下没有多出任何文件(没有 'undefined' / 'untitled' 之类)
+  expect((await readdir(path.join(workspaceRoot, 'src'))).sort()).toEqual(['a.ts', 'b.ts']);
 });
 
 test('全空格名字 → 视为取消', async ({ window }) => {
