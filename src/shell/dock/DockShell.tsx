@@ -18,7 +18,7 @@ import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose, cancelPendingPanelClose } from './wrap-panel-close';
-import { handleTerminalPanelRemoved } from './DockReconciler';
+import { handleTerminalPanelRemoved, removeTerminalSessionWithFeedback } from './DockReconciler';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
@@ -313,7 +313,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
           void handleTerminalPanelRemoved({
             panel,
             api: event.api,
-            removeSession: (sid) => coApi.terminal.remove(sid).then(() => undefined),
+            removeSession: removeTerminalSessionWithFeedback,
           });
         }),
         // 拦截所有 panel 的 api.close,统一走"标记 closing → 220ms 延迟 → 真 close"。

@@ -30,8 +30,13 @@ That's it. No layout manipulation, no panel reordering — the store is the sour
 
 Dockview fires `onDidRemovePanel` for both genuine closes and "I'm moving this panel to another group" intermediate states. We can't tell which from the event payload alone, so:
 
-- **Real close path** (× button / middle-click / programmatic): `wrap-panel-close.ts`'s patched `api.close` calls `markPanelCloseSuppressed(id)` *before* the actual `close()`. Then `handleTerminalPanelRemoved` (called from `onDidRemovePanel`) sees the suppressed flag → does nothing (the PTY was already removed in the patch).
-- **Move path** (drag to another group): dockview synthesizes a remove+add. The suppressed flag is *not* set. `handleTerminalPanelRemoved` checks `await Promise.resolve()` + `api.getPanel(panelId)` — if the panel is still in the api after the microtask, it was a move, not a close. Bail out, do not remove the session.
+The session is deleted in exactly one place: `handleTerminalPanelRemoved` (called from `onDidRemovePanel`, wired in `DockShell.tsx`). It decides from two signals:
+
+- **Reconciler close** (the session left the visible snapshot: removed in main, or hidden by the workspace filter but still alive): `DockReconciler` calls `markPanelCloseSuppressed(id)` *before* `panel.api.close()`. `handleTerminalPanelRemoved` consumes the flag → does nothing (view-only convergence; the session must not be deleted).
+- **Move path** (drag to another group): dockview synthesizes a remove+add. `handleTerminalPanelRemoved` checks `await Promise.resolve()` + `api.getPanel(panelId)` — if the panel is still in the api after the microtask, it was a move, not a close. Bail out, do not remove the session.
+- **Everything else** (× button / middle-click / programmatic / group close): `removeTerminalSessionWithFeedback(sessionId)` — `terminal.remove` plus an error toast on failure.
+
+`wrap-panel-close.ts`'s patched `api.close` only delays the real close by the EXIT animation; it does not delete sessions itself. The one thing it does for this protocol: for a *user* close it clears a suppressed flag the reconciler may have added during the animation (the kind of close is decided when it was initiated).
 
 This keeps PTYs alive through drag-reorder while still tearing them down on genuine close.
 

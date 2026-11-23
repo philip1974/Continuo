@@ -1,11 +1,6 @@
 import type { IDockviewPanel } from 'dockview-react';
 import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
-import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import { t as translate } from '@/i18n';
-import { isTerminalPanelId, sessionIdFromPanel } from './terminal-panel-id';
-import { errorCodeOf } from '../../../electron/shared/error-message';
 
 const patched = new WeakSet<IDockviewPanel>();
 const suppressedPanelCloses = new Set<string>();
@@ -80,24 +75,14 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
       const timer = setTimeout(() => {
         pendingCloseTimers.delete(id);
         pendingReconcilerCloses.delete(id);
-        // race(R44):terminal PTY/session 删除 + cancel spawn 移到延迟 timer 内、紧挨 original()
-        // 前执行。此前在排定 close 时立即执行,早于这段可取消的真 close;用户在 EXIT 动画窗口内复活
-        // 面板(cancelPendingPanelClose 清 timer)时,close 被取消但 PTY/session 已删 → 留下 session
-        // 缺失的死面板。移入 timer:取消路径清掉 timer 即不会执行 terminal 删除,面板与会话都保留。
-        if (!closedByReconciler) removeTerminalPtysForPanel(panel);
-        // race(R80):按 src/shell/dock/README.md 约定,真实 close 路径必须在 original() 之前
-        // markPanelCloseSuppressed(id)。否则 original() 触发 dockview onDidRemovePanel →
-        // handleTerminalPanelRemoved 时 consumePanelCloseSuppressed 返回 false → 经 move-vs-close
-        // 兜底(panel 已删)再发**第二次** terminal.remove。两 remove IPC 并发:若第二个先删
-        // metadata,第一个(removeTerminalPtysForPanel 内)收 NOT_FOUND → 误报「关闭失败」,且重复
-        // kill 同一 PTY session。标记后 onDidRemovePanel 只负责 move-vs-close 兜底,不反向重复删除。
-        // 仅 terminal panel 需要(consume 端只对 terminal panel 接线);非 terminal id 不标记,
-        // 以免泄漏进 suppressedPanelCloses 集(无人 consume)。
-        if (isTerminalPanelId(id)) markPanelCloseSuppressed(id);
+        // 会话删除只有一个入口:original() 触发 dockview 的 onDidRemovePanel → handleTerminalPanelRemoved。
+        // 它凭 suppressed 标记区分「reconciler 关闭(只收敛视图)」与「用户关闭(删会话)」。用户关闭的 EXIT
+        // 动画期间 reconciler 可能补标(会话恰好从可见快照消失)—— 以发起关闭时为准,这里清掉补上的标记。
+        // 动画窗口内被复活(cancelPendingPanelClose 清 timer)则走不到这里,面板与会话都保留(R44)。
+        if (!closedByReconciler) suppressedPanelCloses.delete(id);
         try {
           original();
         } catch {
-          if (isTerminalPanelId(id)) suppressedPanelCloses.delete(id);
           // panel 已被其他路径(group teardown 等)移除,忽略。
         }
       }, EXIT_DURATION_MS);
@@ -105,26 +90,5 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
     },
     writable: true,
     configurable: true,
-  });
-}
-
-function removeTerminalPtysForPanel(panel: IDockviewPanel): void {
-  if (!isTerminalPanelId(panel.api.id)) return;
-  const sessionId = sessionIdFromPanel(panel);
-  if (!sessionId) return;
-  // a11y(A128):关闭终端 panel 时 remove 失败此前只 console.warn → panel 已消失但 PTY/session
-  // 可能未关,用户/SR 无失败反馈。ok:false 与 reject 都补 notify.error(保留 console.warn 作日志)。
-  void coApi.terminal.remove(sessionId).then((r) => {
-    if (!r.ok) {
-      console.warn('[terminal-panel] remove ok=false', sessionId, r);
-      notify.error(
-        translate('errors.terminal.remove_failed', { code: r.code ?? '?' }),
-        { code: r.code },
-      );
-    }
-  }, (err) => {
-    console.warn('[terminal-panel] remove rejected', sessionId, err);
-    const code = errorCodeOf(err);
-    notify.error(translate('errors.terminal.remove_failed', { code }), { code });
   });
 }

@@ -16,9 +16,17 @@ import {
 import { EXIT_DURATION_MS } from '../../shell/motion/tokens';
 import { useClosingStore } from '../../stores/closing.store';
 
+/** 模拟 dockview:真 close 同步触发 onDidRemovePanel → handleTerminalPanelRemoved(删会话的唯一入口)。 */
 function makeTermPanel(sessionId: string) {
-  const original = vi.fn();
-  const panel = { params: { sessionId }, api: { id: `terminal-${sessionId}`, close: original } };
+  const panel = { params: { sessionId }, api: { id: `terminal-${sessionId}`, close: vi.fn() } };
+  const original = panel.api.close;
+  original.mockImplementation(() => {
+    void handleTerminalPanelRemoved({
+      panel: panel as never,
+      api: { getPanel: () => undefined } as never,
+      removeSession: h.remove,
+    });
+  });
   wrapPanelClose(panel as never);
   return { panel, original };
 }
@@ -34,33 +42,33 @@ afterEach(() => {
 });
 
 describe('reconciler 关闭终端面板不删除会话', () => {
-  it('reconciler 关闭(先标记 suppressed)→ 只关面板,不 remove', () => {
+  it('reconciler 关闭(先标记 suppressed)→ 只关面板,不 remove', async () => {
     const { panel, original } = makeTermPanel('a');
     markPanelCloseSuppressed(panel.api.id);
     panel.api.close();
-    vi.advanceTimersByTime(EXIT_DURATION_MS);
+    await vi.advanceTimersByTimeAsync(EXIT_DURATION_MS);
     expect(original).toHaveBeenCalledTimes(1);
     expect(h.remove).not.toHaveBeenCalled();
-    consumePanelCloseSuppressed(panel.api.id);
+    expect(consumePanelCloseSuppressed(panel.api.id)).toBe(false); // 标记已被消费
   });
 
-  it('用户关闭 → remove 该会话', () => {
+  it('用户关闭 → remove 该会话', async () => {
     const { panel, original } = makeTermPanel('b');
     panel.api.close();
-    vi.advanceTimersByTime(EXIT_DURATION_MS);
+    await vi.advanceTimersByTimeAsync(EXIT_DURATION_MS);
     expect(original).toHaveBeenCalledTimes(1);
+    expect(h.remove).toHaveBeenCalledTimes(1);
     expect(h.remove).toHaveBeenCalledWith('b');
-    consumePanelCloseSuppressed(panel.api.id);
   });
 
-  it('用户先关、动画期间 reconciler 才标记 → 仍按用户关闭 remove', () => {
+  it('用户先关、动画期间 reconciler 才标记 → 仍按用户关闭 remove', async () => {
     const { panel } = makeTermPanel('c');
     panel.api.close();
     markPanelCloseSuppressed(panel.api.id);
     panel.api.close(); // reconciler 的 close:动画中,no-op
-    vi.advanceTimersByTime(EXIT_DURATION_MS);
+    await vi.advanceTimersByTimeAsync(EXIT_DURATION_MS);
     expect(h.remove).toHaveBeenCalledWith('c');
-    consumePanelCloseSuppressed(panel.api.id);
+    expect(consumePanelCloseSuppressed(panel.api.id)).toBe(false);
   });
 });
 

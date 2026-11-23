@@ -3,6 +3,10 @@ import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import type { TerminalSession } from '@/stores/terminal.store';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
+import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
+import { t as translate } from '@/i18n';
+import { errorCodeOf } from '../../../electron/shared/error-message';
 import {
   cancelReconcilerPanelClose,
   consumePanelCloseSuppressed,
@@ -322,6 +326,31 @@ export interface HandleTerminalPanelRemovedInput {
   removeSession: (sessionId: string) => void | Promise<void>;
 }
 
+/**
+ * 删除终端会话(PTY + metadata)并对失败给反馈。a11y(A128):panel 已消失但 PTY/session 可能未关,
+ * ok:false 与 reject 都 notify.error(保留 console.warn 作日志)。
+ */
+export function removeTerminalSessionWithFeedback(sessionId: string): Promise<void> {
+  return coApi.terminal.remove(sessionId).then(
+    (r) => {
+      if (r.ok) return;
+      console.warn('[terminal-panel] remove ok=false', sessionId, r);
+      notify.error(translate('errors.terminal.remove_failed', { code: r.code ?? '?' }), { code: r.code });
+    },
+    (err) => {
+      console.warn('[terminal-panel] remove rejected', sessionId, err);
+      const code = errorCodeOf(err);
+      notify.error(translate('errors.terminal.remove_failed', { code }), { code });
+    },
+  );
+}
+
+/**
+ * dockview onDidRemovePanel 的终端面板处理 —— 删会话的唯一入口。
+ * - reconciler 发起的关闭(已标记 suppressed):只收敛视图,不删会话;
+ * - 面板只是被移动(拖到别的 group:微任务后仍在 api 里):不删;
+ * - 其余(用户关闭 / group 整体关闭等):删会话。
+ */
 export async function handleTerminalPanelRemoved({
   panel,
   api,
