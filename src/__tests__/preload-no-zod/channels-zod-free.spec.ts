@@ -9,7 +9,10 @@
 //
 // 判定:用 TypeScript AST 取每个模块的**值**依赖(import / export … from、副作用导入、动态 import()、require();
 // `import type` / `export type` / 全部成员都是 `type` 的导入编译时擦除,不算),从 electron/preload 的每个入口出发
-// 沿相对路径求闭包(不限目录、不看文件命名)。闭包里出现 `zod`,或出现 package.json 声明依赖 zod 的包 → 泄漏。
+// 沿相对路径求闭包(不限目录、不看文件命名)。闭包里出现 `zod`,或出现(沿 dependencies / devDependencies 递归)
+// 依赖 zod 的包 → 泄漏。解析不到的相对路径、既不是 Node 内置 / electron 也找不到包的说明符(如未配置的别名)
+// → 同样报出,守卫不静默跳过。
+import { builtinModules } from 'node:module';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -41,6 +44,13 @@ function valueSpecifiers(file: string): string[] {
         node.isTypeOnly ||
         (clause !== undefined && ts.isNamedExports(clause) && clause.elements.length > 0 && clause.elements.every((e) => e.isTypeOnly));
       if (!typeOnly) out.push(node.moduleSpecifier.text);
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      !node.isTypeOnly &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      ts.isStringLiteralLike(node.moduleReference.expression)
+    ) {
+      out.push(node.moduleReference.expression.text);
     } else if (ts.isCallExpression(node)) {
       const [arg] = node.arguments;
       const isImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
@@ -55,7 +65,7 @@ function valueSpecifiers(file: string): string[] {
 
 function resolveLocal(fromFile: string, spec: string): string | null {
   const base = resolve(dirname(fromFile), spec.replace(/\.(js|ts)$/, ''));
-  for (const cand of [`${base}.ts`, `${base}.tsx`, join(base, 'index.ts')]) {
+  for (const cand of [`${base}.ts`, `${base}.tsx`, `${base}.mts`, `${base}.cts`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
     if (existsSync(cand) && statSync(cand).isFile()) return cand;
   }
   return null;
@@ -66,12 +76,18 @@ function packageName(spec: string): string {
   return spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
 }
 
-function packageDependsOnZod(name: string, root: string): boolean {
+const BUILTINS = new Set(builtinModules);
+
+/** 包是否(沿 dependencies / peerDependencies / devDependencies 递归)依赖 zod;找不到包 → null。 */
+function packageDependsOnZod(name: string, root: string, seen = new Set<string>()): boolean | null {
   if (name === 'zod') return true;
   const pj = join(root, 'node_modules', name, 'package.json');
-  if (!existsSync(pj)) return false;
+  if (!existsSync(pj)) return null;
+  if (seen.has(name)) return false;
+  seen.add(name);
   const json = JSON.parse(readFileSync(pj, 'utf-8')) as Record<string, Record<string, string> | undefined>;
-  return ['dependencies', 'peerDependencies'].some((k) => json[k]?.zod !== undefined);
+  const deps = ['dependencies', 'peerDependencies', 'devDependencies'].flatMap((k) => Object.keys(json[k] ?? {}));
+  return deps.some((d) => packageDependsOnZod(d, root, seen) === true);
 }
 
 /** 从 entries 出发求值依赖闭包,返回每条泄漏的依赖链(空 = 无泄漏)。 */
@@ -86,8 +102,13 @@ function zodLeakChains(entries: readonly string[], root: string): string[] {
       if (spec.startsWith('.')) {
         const next = resolveLocal(file, spec);
         if (next) walk(next, here);
-      } else if (packageDependsOnZod(packageName(spec), root)) {
-        leaks.push([...here, spec].join(' → '));
+        else leaks.push(`${[...here, spec].join(' → ')}(无法解析)`);
+      } else if (spec === 'electron' || spec.startsWith('node:') || BUILTINS.has(spec)) {
+        continue;
+      } else {
+        const dep = packageDependsOnZod(packageName(spec), root);
+        if (dep === null) leaks.push(`${[...here, spec].join(' → ')}(找不到包)`);
+        else if (dep) leaks.push([...here, spec].join(' → '));
       }
     }
   };
@@ -118,6 +139,10 @@ describe('preload sandbox:值依赖闭包里不得出现 zod', () => {
     try {
       mkdirSync(join(dir, 'node_modules/@x/proto'), { recursive: true });
       writeFileSync(join(dir, 'node_modules/@x/proto/package.json'), JSON.stringify({ dependencies: { zod: '4' } }));
+      mkdirSync(join(dir, 'node_modules/@x/indirect'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules/@x/indirect/package.json'), JSON.stringify({ devDependencies: { '@x/proto': '1' } }));
+      mkdirSync(join(dir, 'node_modules/plain'), { recursive: true });
+      writeFileSync(join(dir, 'node_modules/plain/package.json'), JSON.stringify({ dependencies: {} }));
       mkdirSync(join(dir, 'sub'));
       writeFileSync(join(dir, 'sub/a-schemas.ts'), "import { z } from 'zod';\nexport const A = z.string();\n");
       writeFileSync(join(dir, 'helper.ts'), "export { A } from './sub/a-schemas'\n");
@@ -144,6 +169,10 @@ describe('preload sandbox:值依赖闭包里不得出现 zod', () => {
         "export type { Foo }\nimport { z } from 'zod'",
         "export const U = 'http://x'; export { A } from './sub/a-schemas';",
         "export * from '@x/proto';",
+        "export * from '@x/indirect';", // 经二级依赖(devDependencies)
+        "import z = require('zod');",
+        "import { X } from './missing';", // 解析不到 → 报出
+        "import { X } from '@shared/x';", // 未知说明符(如未配置的别名)→ 报出
       ]) {
         expect(probe(leak), leak).not.toEqual([]);
       }
@@ -157,6 +186,8 @@ describe('preload sandbox:值依赖闭包里不得出现 zod', () => {
         "export const NAME = 'zod';",
         "type Z = typeof import('zod');",
         "import { ipcRenderer } from 'electron';",
+        "import { join } from 'node:path';",
+        "import { x } from 'plain';",
       ]) {
         expect(probe(ok), ok).toEqual([]);
       }

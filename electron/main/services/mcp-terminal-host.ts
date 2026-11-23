@@ -48,9 +48,9 @@ export interface MakeTerminalMcpToolsDeps
  *
  * 修复:把这些工具包一层与 create_session 同款的 ensureAuthorized 门控。用户未授权
  * 该窗口 agent terminal 控制时,任意工具调用都先触发授权弹窗;一旦拒绝即抛
- * AGENT_NOT_AUTHORIZED。合法 agent 流首个 create_session 已建立 session 授权,
- * 用户选「本次启动期间允许」后,后续读写由 main 直接放行(agent-auth.service 的 sessionGrants),
- * 不增加交互;选「仅本次」则每次调用都弹窗。
+ * AGENT_NOT_AUTHORIZED。若用户在首个 create_session 的弹窗选「本次启动期间允许」,后续读写由 main
+ * 直接放行(agent-auth.service 的 sessionGrants),不增加交互;选「仅本次」则每次调用都要重新授权
+ *(超速时被节流直接拒绝)。
  *
  * create_session 不在此包装:它已在工具内部门控;外层再包,用户选「仅本次」时一次调用会连弹两次。
  */

@@ -470,7 +470,23 @@ describe('createPluginsWatcher', () => {
       expect(fn.mock.calls).toEqual([['x.id'], ['y.id']]);
     });
 
-    it('代表目录改声明别的 id、同时另一候选 main 暂时缺失 → 记录转 tombstone,main 恢复(已变)后 fire', async () => {
+    it('tombstone 的非字典序最小候选目录改声明新 id → 新 id fire 一次', async () => {
+      dupDirs();
+      const fn = vi.fn();
+      const w = createPluginsWatcher(tmp, fn);
+      await w.tick();
+      rmSync(join(tmp, 'a.dir', 'main.js'));
+      rmSync(join(tmp, 'b.dir', 'main.js'));
+      await w.tick(); // x.id 转 tombstone(候选 a.dir、b.dir)
+      expect(fn).not.toHaveBeenCalled();
+      writeFileSync(join(tmp, 'b.dir', 'manifest.json'), JSON.stringify({ id: 'y.id', name: 'Y', version: '0.1.0' }));
+      writeFileSync(join(tmp, 'b.dir', 'main.js'), '');
+      await w.tick();
+      await w.tick();
+      expect(fn.mock.calls).toEqual([['y.id']]);
+    });
+
+    it('代表目录改声明别的 id、同时另一候选 main 暂时缺失 → 记录转 tombstone,main 恢复后 fire', async () => {
       dupDirs();
       const fn = vi.fn();
       const w = createPluginsWatcher(tmp, fn);

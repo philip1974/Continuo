@@ -14,7 +14,7 @@ import { codedError } from '../../shared/error-message';
 
 /**
  * agent 授权门控:owner 窗口 + 调用 method,返回三态决策。external=true 表示调用方是未绑定 Continuo 终端的
- * 外部客户端(ctx.external),renderer 用独立的 external 授权状态。
+ * 外部客户端(ctx.external),main 按独立的调用方类别记授权(不与窗口内 agent 互相放行)。
  */
 export type EnsureAuthorized = (
   ownerWindowId: number,
@@ -31,8 +31,9 @@ export interface AuthGateOptions {
 
 /**
  * 安全 S2:包一层授权门控。用户未授权该窗口 agent 控制时,工具调用先触发授权弹窗;拒绝即抛
- * AGENT_NOT_AUTHORIZED。已建立 session 授权后直接放行(renderer 的 agent-auth store 按域短路:
- * method 以 `debug.` 开头的看 debug 域,以 `plugin.` 开头的看插件工具域,其余看终端域,三个域互不放行)。
+ * AGENT_NOT_AUTHORIZED。用户选「本次启动期间允许」后直接放行(main agent-auth.service 的 sessionGrants 按
+ * 窗口 × 调用方类别 × 域判定,域由 agentAuthDomainOf 划分:`debug.` 开头为 debug 域,`plugin.` 开头为插件工具域,
+ * 其余为终端域,三个域互不放行)。
  */
 export function gateWithAuth(
   tool: AnyMcpTool,
