@@ -31,7 +31,7 @@ describe('49 · mcpHost.close() 不被挂在授权上的在途 HTTP 请求拖住
       run: (_input, ctx) => {
         started = true;
         signal = ctx.signal;
-        return new Promise(() => undefined); // 模拟等授权弹窗(5 分钟定时器)
+        return new Promise(() => undefined); // 模拟等授权弹窗(无应答超时 2 分钟)
       },
     };
     host = await createMcpHost({ initialTools: [tool] });

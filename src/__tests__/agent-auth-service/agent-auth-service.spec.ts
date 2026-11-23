@@ -214,7 +214,7 @@ describe('agent-auth-service: requestAgentAuth', () => {
     await expect(pending).resolves.toBe('session');
   });
 
-  // 安全(F2):外部客户端的授权请求带 external 标记推给 renderer(弹窗标注来源、只用 external 授权状态);
+  // 安全(F2):外部客户端的授权请求带 external 标记推给 renderer(弹窗标注来源;放行由 main 按调用方类别判定);
   // 窗口请求不带该字段。
   it('T1b: external=true → payload.external=true;未给 → payload 无 external 字段', async () => {
     const win = makeWin(1);

@@ -31,7 +31,7 @@
    不投递新 URL(新 URL 入队尾,受队列上限约束),保 FIFO 不乱序。
 
 6. **stdio server 不挡建首窗**:冷启动只 await HTTP host(首窗 / PTY env 依赖),stdio socket server 在首窗
-   创建后启动。就绪前「复制 MCP 配置」读到 `{ available:false }` → unavailable;插件 tool 集变更的
+   创建后启动。就绪前「复制 MCP 配置」读到空配置 `{}`(无 `claudeAddCommand`)→ unavailable;插件 tool 集变更的
    `tools/list_changed` 就绪前只推 HTTP、就绪后同时推 stdio(取值函数读最新引用);退出清理先等 stdio
    启动结束再 close。
 

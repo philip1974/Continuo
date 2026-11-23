@@ -13,7 +13,7 @@
 
 - `createScopedAppController(...)` 返回 `{ app, revoke(), recheckMcpPermission() }`;控制面由 `PluginManager`
   持有(`entry.scoped`),插件只拿到 `app`。`createScopedApp` 保留(只返回 `app`,给 core plugin / 测试)。
-- `deactivateEntry`(disable / uninstall / 远端卸载 / 远端禁用 / reload / shutdown 统一入口)在调用 `onunload`
+- `deactivateEntry`(disable / uninstall / 远端卸载 / 远端禁用 / reload 统一入口)在调用 `onunload`
   **之前**先 `revoke()`;激活失败(构造函数 / onload 抛错)同样 `revoke()`。
 - 吊销后的划线 —— **有外部副作用即阻断**,在 renderer 源头拒绝、不发 IPC:
 

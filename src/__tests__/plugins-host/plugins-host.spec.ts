@@ -301,8 +301,8 @@ describe('createWindowApiHost.readEnabledIds', () => {
     expect(Array.from(set).sort()).toEqual(['a', 'b']);
   });
 
-  // 数据安全(复查 P1):读失败必须**传播**而非降级空 Set —— 否则 mutateEnabledIds
-  // 的 RMW 会基于空集合写回,抹掉其它已启用插件。main 端仅 ENOENT 返回 [](ok=true 空),
+  // 数据安全(复查 P1):读失败必须**传播**而非由 host 降级空 Set —— 交调用方(init)决定如何降级。
+  // main 端仅 ENOENT 返回 [](ok=true 空),
   // ok=false 只在 EACCES/EIO 等真错误时出现 → host 抛带 code。
   it('ok=false → 抛 Error 带 code(不再降级空 Set)', async () => {
     installFakeApi({

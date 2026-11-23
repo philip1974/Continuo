@@ -283,7 +283,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
   // 删除的旧请求 → respond 失败 → 不得把界面授权位置 true(否则界面错误显示一个不存在的授权)。
   it.each([
     ['ok=false', async () => ({ ok: false, code: 'IPC_FAIL', message: 'x' }), true],
-    // NOT_PENDING = 请求已失效(main 已超时/撤销结算;main 与 renderer 计时起点相差 IPC 延迟仍有窗口)→
+    // NOT_PENDING = 请求已失效(main 已超时/撤销结算,agent-auth:cancelled 尚在路上时用户点了应答)→
     // 只 warn,不弹误导性的「授权响应失败」toast。
     ['NOT_PENDING', async () => ({ ok: false, code: 'AGENT_AUTH_REQUEST_NOT_PENDING', message: 'x' }), false],
     ['reject', async () => Promise.reject(new Error('ipc down')), true],

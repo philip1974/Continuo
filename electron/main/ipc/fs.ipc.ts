@@ -115,7 +115,7 @@ export const selectDirectoryInputSchema = z.undefined();
 const watchInputSchema = z.object({ path: fsPath() }).strict();
 const unwatchInputSchema = z.object({ path: fsPath() }).strict();
 
-// 类型导出(给 preload / renderer 用)
+// handler 入参类型(本文件内用;preload / renderer 的类型在 fs-channels.ts / fs-list-dir-schema.ts)
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
 export type ReadFileInput = z.infer<typeof readFileInputSchema>;
 export type StatInput = z.infer<typeof statInputSchema>;

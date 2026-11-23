@@ -371,9 +371,10 @@ describe('授权分域:plugin 域独立于 terminal / debug', () => {
   });
 });
 
-// 安全(F2):未发 `_continuo/hello` 的 stdio 连接(外部客户端,未绑定 Continuo 终端)用独立的 external 授权状态,
-// 不复用任何窗口的「本次启动期间允许」,也不写入窗口级授权。否则窗口 B 终端里的 agent 绕过 proxy 直连
-// mcp.sock 不发 hello,即可借主窗 A 已有的授权静默 create_session / debug_launch。
+// 安全(F2):未发 `_continuo/hello` 的 stdio 连接(外部客户端,未绑定 Continuo 终端)与窗口内 agent 的授权互不放行
+// (否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默执行)。放行隔离由 main 的
+// sessionGrants(键 窗口:调用方类别:域)负责,见 agent-auth-service.spec 的隔离用例;store 侧 external 请求照常弹窗,
+// 界面副本只记在 external 一侧、不写窗口级授权位。
 describe('授权分调用方:external(未绑定终端)独立于窗口级授权', () => {
   it('窗口级三个域均已 session 授权,external 请求仍然弹窗', () => {
     useAgentAuthStore.setState({

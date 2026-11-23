@@ -2,8 +2,8 @@
 
 行为契约:**`createWindowApiHost()` 把 `coApi.plugins.*` IPC 包成 PluginManager 期待的
 ManagerHost 形态:listDirs 列举项的 moduleUrl 是惰性源码引用(激活时才按目录名拉 main 源码转 Blob URL),
-readEnabled 转成 Set,removePluginDir / readEnabledIds / mutateEnabledId 失败抛带 code 的 Error(数据安全:
-读失败若降级成空集合、写失败若静默,会抹掉其它已启用插件或谎报已切换),importModule 直接走 dynamic import。
+readEnabled 转成 Set,removePluginDir / readEnabledIds / mutateEnabledId 失败抛带 code 的 Error(读失败交
+init 记录告警并降级为不激活任何插件、不写盘;写失败若静默会谎报已切换),importModule 直接走 dynamic import。
 listDirs 失败 console.warn 后降级为空数组。**
 
 ## 模块
@@ -28,7 +28,7 @@ listDirs 失败 console.warn 后降级为空数组。**
 
 ### readEnabledIds
 
-- ok=false → 抛带 code 的 Error(不降级为空 Set:调用方 init 降级、mutate 中止写)
+- ok=false → 抛带 code 的 Error(host 不自行降级;唯一调用方 init 记录告警并降级为不激活任何插件,不写盘)
 - ok=true → new Set(r.data)
 
 ### mutateEnabledId(id, enabled)

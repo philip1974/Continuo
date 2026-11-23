@@ -170,9 +170,9 @@ export function createWindowApiHost(): ManagerHost {
     readEnabledIds: async () => {
       const r = await coApi.plugins.readEnabled();
       if (!r.ok) {
-        // 数据安全:读失败必须**传播**(不再降级成空 Set)—— 否则 mutateEnabledIds 的 RMW
-        // 会基于空集合写回,抹掉其它已启用插件。调用方各自决定:init 降级、
-        // mutate 中止写。(main readEnabledIds 仅 ENOENT 返回 [],EACCES/EIO 才 fail。)
+        // 数据安全:读失败**传播**(host 不降级成空 Set),由调用方决定:唯一调用方 init 记录告警并降级为不激活
+        // 任何插件,不写盘(启用 / 禁用走 mutateEnabledId,在 main 内读写)。(main readEnabledIds 仅 ENOENT 返回 [],
+        // EACCES/EIO 才 fail。)
         throw codedError(r.code, r.message);
       }
       return new Set(r.data);

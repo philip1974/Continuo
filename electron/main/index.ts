@@ -1311,8 +1311,8 @@ app.whenReady().then(async () => {
   }
 
   // 冷启动性能:stdio socket server(mkdir/stat/lstat/unlink/listen/chmod 串行)不挡建首窗 ——
-  // 首窗与 PTY env 只依赖 HTTP host;stdio 配置仅「复制 MCP 配置」点击时读,未就绪时既有
-  // { available:false } 默认值 → 按钮显示 unavailable。启动失败在 startMcpStdioServer 内照旧告警。
+  // 首窗与 PTY env 只依赖 HTTP host;stdio 配置仅「复制 MCP 配置」点击时读,未就绪时读到默认的空配置
+  //(无 claudeAddCommand)→ 按钮显示 unavailable。启动失败在 startMcpStdioServer 内照旧告警。
   mcpStdioStarting = startMcpStdioServer();
   // 首窗已建:提前建立插件 watcher 基线,renderer 首次 LIST_DIRS 时通常已就绪(见 primePluginsWatcherBaseline)。
   primePluginsWatcherBaseline();

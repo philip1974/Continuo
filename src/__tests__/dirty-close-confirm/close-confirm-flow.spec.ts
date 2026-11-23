@@ -1125,7 +1125,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     await done;
     expect(termService.cleanupAll).toHaveBeenCalledTimes(1);
     expect(app.quit).toHaveBeenCalledTimes(1);
-    // 窗口已隐藏、无人应答授权弹窗:未决 agent 授权在关闭 MCP host 前同步拒绝,不拖到 5min 超时。
+    // 窗口已隐藏、无人应答授权弹窗:未决 agent 授权在关闭 MCP host 前同步拒绝,不拖到无应答超时(2 分钟)。
     expect(agentAuth.cancelAllAgentAuth).toHaveBeenCalledTimes(1);
     // 复审:全局最终检查通过后、不可逆清理(cleanupAll 可能数秒)前隐藏全部窗口(含 popout)形成退出屏障 ——
     // 否则清理期间窗口仍可编辑,且已入 flushedOnQuit,之后的编辑丢失、用户关窗也绕过确认。

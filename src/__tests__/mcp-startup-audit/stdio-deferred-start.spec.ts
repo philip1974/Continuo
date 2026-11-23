@@ -1,6 +1,6 @@
 // 冷启动性能:stdio MCP socket server(mkdir/stat/lstat/unlink/listen/chmod 串行)不再挡在建首窗前。
 // 首窗与 PTY env 只依赖 HTTP host;stdio 配置只在 StatusBar「复制 MCP 配置」点击时读(未就绪 →
-// getStdioConfig 默认 { available:false } → 按钮显示 unavailable)。
+// getStdioConfig 默认空配置 {}(无 claudeAddCommand)→ 按钮显示 unavailable)。
 // 插件 tool 集变更广播须在 stdio 就绪前安全(只推 HTTP)、就绪后同时推 stdio。
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -81,7 +81,7 @@ describe('stdio 就绪前后的插件 tool list_changed 广播', () => {
     expect(stdioBroadcast).toHaveBeenCalledWith(LIST_CHANGED);
   });
 
-  it('stdio 未就绪时「复制 MCP 配置」读到 available:false(StatusBar 走 unavailable 分支)', () => {
+  it('stdio 未就绪时「复制 MCP 配置」读到空配置(无 claudeAddCommand,StatusBar 走 unavailable 分支)', () => {
     expect(getStdioConfig()).toEqual({});
   });
 });
