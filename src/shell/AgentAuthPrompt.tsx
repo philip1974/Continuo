@@ -15,6 +15,7 @@ import { notify } from '@/notifications/notify';
 import { useT, t as translate, type TranslationKey } from '@/i18n';
 import {
   AGENT_AUTH_PLUGIN_METHOD_PREFIX,
+  isAgentAuthCancelledPayload,
   isAgentAuthRequestPayload,
 } from '@shared/agent-auth-channels';
 import { ERROR_CODES } from '@shared/error-codes';
@@ -64,6 +65,7 @@ export function AgentAuthPrompt() {
       // 安全(F2):外部客户端(未绑定 Continuo 终端)只读写 external 授权状态,不复用窗口级授权。
       const external = payload.external === true;
       const decision = await useAgentAuthStore.getState().ensure({
+        requestId,
         method,
         ...(external ? { external } : {}),
       });
@@ -82,7 +84,7 @@ export function AgentAuthPrompt() {
         }
         if (!r.ok) {
           console.warn('[agent-auth] respond failed', r.code, r.message);
-          // race:main 与本地弹窗计时起点相差 IPC 延迟 —— 本地尚未超时而 main 已结算 → NOT_PENDING =
+          // race:main 已结算该请求、CANCELLED 通知还在路上时用户点了应答 → NOT_PENDING =
           // 请求已失效(已按拒绝收场),不是应答失败,不弹误导性 toast。其它失败码照旧提示。
           if (r.code !== ERROR_CODES.AGENT_AUTH_REQUEST_NOT_PENDING) {
             notify.error(translate('permissions.agent.respond_failed'));
@@ -92,6 +94,14 @@ export function AgentAuthPrompt() {
         console.warn('[agent-auth] respond threw', err);
         notify.error(translate('permissions.agent.respond_failed'));
       }
+    });
+  }, []);
+
+  // main 已结算某个请求(无应答超时 / 排队兜底 / 取消)→ 撤掉对应弹窗(renderer 不自行计时)。
+  useEffect(() => {
+    return coApi.agentAuth.onCancelled((payload) => {
+      if (!isAgentAuthCancelledPayload(payload)) return;
+      useAgentAuthStore.getState().cancel(payload.requestId);
     });
   }, []);
 

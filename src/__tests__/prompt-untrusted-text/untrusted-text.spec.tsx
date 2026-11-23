@@ -101,6 +101,7 @@ describe('AgentAuthPrompt:对方可控字段', () => {
         agentAuth: {
           onRequest: vi.fn(() => () => {}),
           onRevoked: vi.fn(() => () => {}),
+          onCancelled: vi.fn(() => () => {}),
           respond: vi.fn(async () => ({ ok: true })),
         },
       },
@@ -117,7 +118,7 @@ describe('AgentAuthPrompt:对方可控字段', () => {
   });
   const popup = (method: string): void =>
     act(() => {
-      void useAgentAuthStore.getState().ensure({ method });
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method });
     });
 
   it('插件工具名带换行 + 伪系统提示 + U+202E → 一行、无控制字符、整个名字在 <code> 里', () => {

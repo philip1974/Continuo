@@ -2,7 +2,6 @@
 // 行为见同目录 README。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { _resetAgentAuthForTest, useAgentAuthStore } from '../../stores/agent-auth.store';
-import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../../electron/shared/agent-auth-channels';
 
 const store = () => useAgentAuthStore.getState();
 
@@ -17,8 +16,8 @@ afterEach(() => {
 
 describe('agent-auth store:按调用方类别分槽', () => {
   it('external 弹窗显示中 → 窗口内 agent 的首次请求不被自动拒绝,排在后面,external 落定后显示', async () => {
-    const ext = store().ensure({ method: 'terminal.send_text', external: true });
-    const inWindow = store().ensure({ method: 'terminal.create_session' });
+    const ext = store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.send_text', external: true });
+    const inWindow = store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
     let inWindowSettled = false;
     void inWindow.then(() => {
       inWindowSettled = true;
@@ -39,8 +38,8 @@ describe('agent-auth store:按调用方类别分槽', () => {
   });
 
   it('反向:窗口内弹窗显示中,external 请求排队', async () => {
-    const inWindow = store().ensure({ method: 'debug.launch' });
-    const ext = store().ensure({ method: 'terminal.send_text', external: true });
+    const inWindow = store().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' });
+    const ext = store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.send_text', external: true });
     expect(store().pending).toMatchObject({ method: 'debug.launch' });
     store().grant('once');
     await expect(inWindow).resolves.toBe('once');
@@ -50,42 +49,36 @@ describe('agent-auth store:按调用方类别分槽', () => {
   });
 
   it('同一类调用方已占槽(显示中或排队中)→ 再来的立即 denied', async () => {
-    void store().ensure({ method: 'terminal.send_text', external: true });
-    void store().ensure({ method: 'terminal.create_session' });
-    await expect(store().ensure({ method: 'debug.launch', external: true })).resolves.toBe('denied');
-    await expect(store().ensure({ method: 'debug.launch' })).resolves.toBe('denied');
+    void store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.send_text', external: true });
+    void store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
+    await expect(store().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch', external: true })).resolves.toBe('denied');
+    await expect(store().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' })).resolves.toBe('denied');
     expect(store().pending).toMatchObject({ external: true });
   });
 
-  it('各请求从开始显示起超时(cancelled);显示中的超时后,排队的显示出来并重新计满 2 分钟', async () => {
-    const ext = store().ensure({ method: 'terminal.send_text', external: true });
-    vi.advanceTimersByTime(60_000);
-    const inWindow = store().ensure({ method: 'terminal.create_session' });
-    let inWindowSettled = false;
-    void inWindow.then(() => {
-      inWindowSettled = true;
-    });
-    vi.advanceTimersByTime(AGENT_AUTH_PROMPT_TIMEOUT_MS - 60_000);
+  it('显示中的请求被 main 取消(超时等)→ cancelled 收口,排队的显示出来;排队中的也可被单独取消', async () => {
+    const ext = store().ensure({ requestId: 'ext-1', method: 'terminal.send_text', external: true });
+    const inWindow = store().ensure({ requestId: 'win-1', method: 'terminal.create_session' });
+    expect(store().pending).toMatchObject({ requestId: 'ext-1' });
+
+    store().cancel('ext-1');
     await expect(ext).resolves.toBe('cancelled');
-    // external 超时 → 排队的窗口请求显示出来,从此刻起计 2 分钟(与 main 一致)。
-    expect(store().pending).toMatchObject({ method: 'terminal.create_session' });
-    vi.advanceTimersByTime(AGENT_AUTH_PROMPT_TIMEOUT_MS - 1);
-    await Promise.resolve();
-    expect(inWindowSettled).toBe(false);
-    vi.advanceTimersByTime(1);
+    expect(store().pending).toMatchObject({ requestId: 'win-1', method: 'terminal.create_session' });
+
+    store().cancel('win-1');
     await expect(inWindow).resolves.toBe('cancelled');
     expect(store().pending).toBeNull();
   });
 
   it('main 撤销 → 显示中与排队中的请求都以 cancelled 收口,两个槽都释放', async () => {
-    const inWindow = store().ensure({ method: 'terminal.create_session' });
-    const ext = store().ensure({ method: 'terminal.send_text', external: true });
+    const inWindow = store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
+    const ext = store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.send_text', external: true });
     store().applyMainRevoked();
     await expect(inWindow).resolves.toBe('cancelled');
     await expect(ext).resolves.toBe('cancelled');
     expect(store().pending).toBeNull();
-    void store().ensure({ method: 'terminal.send_text', external: true });
-    void store().ensure({ method: 'terminal.create_session' });
+    void store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.send_text', external: true });
+    void store().ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
     expect(store().pending).toMatchObject({ external: true });
   });
 });

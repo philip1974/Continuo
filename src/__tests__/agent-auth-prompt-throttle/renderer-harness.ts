@@ -26,13 +26,21 @@ export function makeRendererWebContents(): RendererWebContents {
     getURL: () => 'file:///renderer/index.html',
     isLoadingMainFrame: () => false,
     send: (channel: string, raw: unknown) => {
+      if (channel === AGENT_AUTH_CHANNELS.CANCELLED) {
+        useAgentAuthStore.getState().cancel((raw as { requestId: string }).requestId);
+        return;
+      }
       if (channel !== AGENT_AUTH_CHANNELS.REQUEST) return;
       const payload = raw as AgentAuthRequestPayload;
       const external = payload.external === true;
       void (async () => {
         const decision = await useAgentAuthStore
           .getState()
-          .ensure({ method: payload.method, ...(external ? { external } : {}) });
+          .ensure({
+            requestId: payload.requestId,
+            method: payload.method,
+            ...(external ? { external } : {}),
+          });
         if (decision === 'cancelled') return;
         const epoch = getAgentAuthEpoch();
         try {

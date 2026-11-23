@@ -9,7 +9,6 @@ import {
 } from '../../lib/co-api';
 import { AgentAuthPrompt } from '../../shell/AgentAuthPrompt';
 import { PROMPT_GRANT_ARM_DELAY_MS as AGENT_AUTH_GRANT_ARM_DELAY_MS } from '../../lib/use-prompt-grant-guard';
-import { AGENT_AUTH_PROMPT_TIMEOUT_MS } from '../../../electron/shared/agent-auth-channels';
 import {
   _resetAgentAuthForTest,
   useAgentAuthStore,
@@ -28,11 +27,12 @@ interface FakeAuthApi {
   onRequest: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
   onRevoked?: ReturnType<typeof vi.fn>;
+  onCancelled?: ReturnType<typeof vi.fn>;
 }
 
 function installApi(auth: FakeAuthApi): void {
   Object.defineProperty(window, 'api', {
-    value: { agentAuth: { onRevoked: vi.fn(() => () => {}), ...auth } },
+    value: { agentAuth: { onRevoked: vi.fn(() => () => {}), onCancelled: vi.fn(() => () => {}), ...auth } },
     writable: true,
     configurable: true,
   });
@@ -102,7 +102,7 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     render(<AgentAuthPrompt />);
 
     act(() => {
-      void useAgentAuthStore.getState().ensure({
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(),
         method: 'terminal.create_session',
       });
     });
@@ -120,7 +120,7 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);
     act(() => {
-      void useAgentAuthStore.getState().ensure({ method });
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method });
     });
     const modal = document.querySelector('.wm-modal-content');
     expect(modal!.textContent).toContain(label);
@@ -131,7 +131,7 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);
     act(() => {
-      void useAgentAuthStore.getState().ensure({ method: 'debug.launch' });
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' });
     });
     const modal = document.querySelector('.wm-modal-content')!;
     expect(modal.textContent).toContain('Agent 请求控制调试器');
@@ -144,7 +144,7 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     render(<AgentAuthPrompt />);
     act(() => {
       // 安全 S2 后 terminal.* 全部有专属标签;plugin.* 归插件域;用未知 method 测 generic fallback。
-      void useAgentAuthStore.getState().ensure({ method: 'something.custom_tool' });
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'something.custom_tool' });
     });
     const modal = document.querySelector('.wm-modal-content')!;
     expect(modal.textContent).toContain('调用 something.custom_tool');
@@ -154,7 +154,7 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);
     act(() => {
-      void useAgentAuthStore.getState().ensure({ method: 'plugin.git.commit' });
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'plugin.git.commit' });
     });
     const modal = document.querySelector('.wm-modal-content')!;
     expect(modal.textContent).toContain('Agent 请求调用插件工具');
@@ -171,7 +171,7 @@ describe('AgentAuthPrompt — 外部客户端请求', () => {
     act(() => {
       void useAgentAuthStore
         .getState()
-        .ensure({ method: 'terminal.create_session', external: true });
+        .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session', external: true });
     });
     expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
       '外部客户端(未绑定 Continuo 终端)',
@@ -180,7 +180,7 @@ describe('AgentAuthPrompt — 外部客户端请求', () => {
       useAgentAuthStore.getState().deny();
     });
     act(() => {
-      void useAgentAuthStore.getState().ensure({ method: 'terminal.create_session' });
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
     });
     expect(document.querySelector('.wm-modal-content')!.textContent).not.toContain('外部客户端');
   });
@@ -217,7 +217,7 @@ describe('AgentAuthPrompt — 按钮', () => {
     act(() => {
       promise = useAgentAuthStore
         .getState()
-        .ensure({ method: 'terminal.create_session' });
+        .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
     });
     return promise!;
   }
@@ -421,6 +421,11 @@ describe('AgentAuthPrompt — main 已撤销', () => {
     notifyError.mockReset();
     let cb: ((p: { requestId: string; method: string }) => void) | null = null;
     let revokedCb: (() => void) | null = null;
+    let cancelledCb: ((p: unknown) => void) | null = null;
+    const onCancelled = vi.fn((fn: (p: unknown) => void) => {
+      cancelledCb = fn;
+      return vi.fn();
+    });
     const onRequest = vi.fn((fn: (p: never) => void) => {
       cb = fn as never;
       return vi.fn();
@@ -434,34 +439,35 @@ describe('AgentAuthPrompt — main 已撤销', () => {
       code: 'AGENT_AUTH_REQUEST_NOT_PENDING',
       message: 'x',
     }));
-    installApi({ onRequest, respond, onRevoked });
+    installApi({ onRequest, respond, onRevoked, onCancelled });
     const view = render(<AgentAuthPrompt />);
     return {
       view,
       onRevoked,
+      fireCancelled: (requestId: string) => cancelledCb!({ requestId }),
       respond,
       fireRequest: (id: string, method = 'terminal.create_session') => cb!({ requestId: id, method }),
       fireRevoked: () => revokedCb!(),
     };
   }
 
-  it('弹窗本地超时(与 main 同 TTL,main 已结算删除)→ 不 respond、不弹失败 toast', async () => {
-    vi.useFakeTimers();
-    try {
-      const { respond, fireRequest } = setupWithRequest();
-      act(() => {
-        void fireRequest('rq-timeout');
-      });
-      expect(useAgentAuthStore.getState().pending?.requestId).toBeDefined();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
-      });
-      expect(useAgentAuthStore.getState().pending).toBeNull();
-      expect(respond).not.toHaveBeenCalled();
-      expect(notifyError).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+  it('main 结算(超时 / 取消)经 CANCELLED 通知 → 撤掉弹窗,不 respond、不弹失败 toast;畸形通知忽略', async () => {
+    const { respond, fireRequest, fireCancelled } = setupWithRequest();
+    act(() => {
+      void fireRequest('rq-timeout');
+    });
+    expect(useAgentAuthStore.getState().pending?.requestId).toBe('rq-timeout');
+    await act(async () => {
+      fireCancelled('rq-other'); // 不是这个弹窗的 → 不动
+    });
+    expect(useAgentAuthStore.getState().pending?.requestId).toBe('rq-timeout');
+    await act(async () => {
+      fireCancelled('rq-timeout');
+      await Promise.resolve();
+    });
+    expect(useAgentAuthStore.getState().pending).toBeNull();
+    expect(respond).not.toHaveBeenCalled();
+    expect(notifyError).not.toHaveBeenCalled();
   });
 
   it('撤销成功后取消本地弹窗(applyMainRevoked)→ 不再向 main respond、不弹失败 toast', async () => {

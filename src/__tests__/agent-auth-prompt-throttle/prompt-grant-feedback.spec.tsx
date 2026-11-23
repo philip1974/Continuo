@@ -36,7 +36,7 @@ function prompt(method = 'terminal.send_text', external = false): () => Promise<
   let outcome: EnsureOutcome | null = null;
   act(() => {
     void store()
-      .ensure({ method, ...(external ? { external } : {}) })
+      .ensure({ requestId: crypto.randomUUID(), method, ...(external ? { external } : {}) })
       .then((o) => {
         outcome = o;
       });
@@ -59,6 +59,7 @@ beforeEach(() => {
       agentAuth: {
         onRequest: vi.fn(() => () => {}),
         onRevoked: vi.fn(() => () => {}),
+        onCancelled: vi.fn(() => () => {}),
         respond: vi.fn(async () => ({ ok: true })),
       },
     },

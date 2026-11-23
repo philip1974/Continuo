@@ -42,7 +42,11 @@ const MAX_PENDING_AUTH_GLOBAL = 256; // 全局未决授权上限
 const MAX_PENDING_AUTH_PER_WINDOW = 64; // 单窗口未决授权上限
 
 /** 结算原因:answer = renderer 应答(用户的决定);timeout = 无人应答;cancelled = 窗口关闭 / 撤销 / 退出 / 发送失败。 */
-type SettleCause = 'answer' | 'timeout' | 'cancelled';
+/**
+ * 结算原因。'bulk-cancelled' = 退出清理 / 撤销的批量结算:与 'cancelled' 同样不计入节流,但不逐个通知 renderer
+ *(退出时窗口已隐藏、无人应答;撤销另有 REVOKED 广播统一撤掉弹窗)。
+ */
+type SettleCause = 'answer' | 'timeout' | 'cancelled' | 'bulk-cancelled';
 
 interface PendingAuth {
   /** 弹窗目标窗口 id(调用方窗口)。窗口关闭即按它结算。 */
@@ -276,6 +280,15 @@ export async function requestAgentAuth(
           throttle.noteTimeout(subject);
         }
       }
+      // 非应答结算(超时 / 排队兜底 / 取消):通知该窗口撤掉对应弹窗(renderer 不自行计时)。窗口已销毁 / 发送失败
+      // 无弹窗可撤,忽略。撤销路径另有 REVOKED 广播,重复通知在 renderer 侧找不到槽即 no-op。
+      if (cause === 'timeout' || cause === 'cancelled') {
+        try {
+          if (!win.isDestroyed()) win.webContents.send(AGENT_AUTH_CHANNELS.CANCELLED, { requestId });
+        } catch {
+          // 发送时窗口恰好销毁
+        }
+      }
       // 调用方都是先从 pending 删除再 settle → 此刻窗口内最早的未决请求即 renderer 接着显示的那个。
       markDisplayed(win.id);
       if (granted) sessionGrantMirror.add(grantKey);
@@ -375,7 +388,7 @@ export function cancelAgentAuthByWindow(windowId: number): number {
 export function cancelAllAgentAuth(): number {
   const entries = [...pending.values()];
   pending.clear();
-  for (const entry of entries) entry.settle('denied', 'cancelled');
+  for (const entry of entries) entry.settle('denied', 'bulk-cancelled');
   return entries.length;
 }
 
@@ -398,7 +411,7 @@ export function setAgentAuthControllerTeardown(
 
 /** 测试用:清空所有 pending(test 隔离). */
 export function _resetPendingForTest(): void {
-  for (const [, r] of pending) r.settle('denied', 'cancelled');
+  for (const [, r] of pending) r.settle('denied', 'bulk-cancelled');
   pending.clear();
   throttle = newAuthThrottle();
   sessionGrantMirror.clear();

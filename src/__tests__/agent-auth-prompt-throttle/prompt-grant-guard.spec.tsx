@@ -35,7 +35,7 @@ function prompt(
   let outcome: EnsureOutcome | null = null;
   act(() => {
     void store()
-      .ensure(info)
+      .ensure({ requestId: crypto.randomUUID(), ...info })
       .then((o) => {
         outcome = o;
       });
@@ -57,6 +57,7 @@ beforeEach(() => {
       agentAuth: {
         onRequest: vi.fn(() => () => {}),
         onRevoked: vi.fn(() => () => {}),
+        onCancelled: vi.fn(() => () => {}),
         respond: vi.fn(async () => ({ ok: true })),
       },
     },

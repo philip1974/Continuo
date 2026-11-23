@@ -487,6 +487,9 @@ const api = {
       decision: AgentAuthDecision,
     ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.RESPOND, { requestId, decision }),
+    /** 订阅 main 对单个请求的结算通知(超时 / 取消):撤掉对应弹窗;返回 unsubscribe. */
+    onCancelled: (cb: (payload: unknown) => void): (() => void) =>
+      subscribeIpc(AGENT_AUTH_CHANNELS.CANCELLED, (_: unknown, payload: unknown) => cb(payload)),
     /** 订阅 main 广播的「撤销已生效」(任一窗口撤销后推给所有窗口);返回 unsubscribe. */
     onRevoked: (cb: () => void): (() => void) =>
       subscribeIpc(AGENT_AUTH_CHANNELS.REVOKED, () => cb()),

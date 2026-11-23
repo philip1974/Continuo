@@ -13,6 +13,11 @@ export const AGENT_AUTH_CHANNELS = {
   REVOKE: 'agent-auth:revoke',
   /** main → renderer push(广播所有窗口):撤销已生效,各窗口重置本地授权态 + 取消残留弹窗. */
   REVOKED: 'agent-auth:revoked',
+  /**
+   * main → renderer push(只发给目标窗口):该请求已在 main 侧结算(无应答超时 / 排队兜底 / 取消),
+   * renderer 撤掉对应弹窗、不再 respond。renderer 不自行计时 —— 过期只此一个来源。
+   */
+  CANCELLED: 'agent-auth:cancelled',
 } as const;
 
 export interface AgentAuthRequestPayload {
@@ -26,8 +31,7 @@ export interface AgentAuthRequestPayload {
 }
 
 /**
- * 授权弹窗无应答超时:main 到点把请求结算为 denied,renderer 同 TTL 关掉已失效的弹窗(两侧必须一致,
- * 否则弹窗滞留并挡住后续请求)。2 分钟(此前 5 分钟):只发起不应答的弹窗每次占屏时长与发起方干等时长都随之缩短;
+ * 授权弹窗无应答超时:main 到点把请求结算为 denied,并经 CANCELLED 通知 renderer 关掉已失效的弹窗。2 分钟(此前 5 分钟):只发起不应答的弹窗每次占屏时长与发起方干等时长都随之缩短;
  * 超时后的冷却上限(PROMPT_DENY_COOLDOWN_MAX_MS,5 分钟)不变。
  */
 export const AGENT_AUTH_PROMPT_TIMEOUT_MS = 2 * 60 * 1000;
@@ -57,6 +61,13 @@ export function agentAuthDomainOf(method: string): AgentAuthDomain {
 }
 
 /** agent-auth:request payload 的 runtime 形态 + 长度守卫(IPC ingress 纵深防御,E171)。 */
+/** agent-auth:cancelled payload 守卫(IPC ingress 纵深防御)。 */
+export function isAgentAuthCancelledPayload(v: unknown): v is { readonly requestId: string } {
+  if (v === null || typeof v !== 'object') return false;
+  const id = (v as Record<string, unknown>).requestId;
+  return typeof id === 'string' && id.length > 0 && id.length <= AGENT_AUTH_REQUEST_ID_MAX;
+}
+
 export function isAgentAuthRequestPayload(
   v: unknown,
 ): v is AgentAuthRequestPayload {

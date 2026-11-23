@@ -28,8 +28,8 @@
 - 仅本次 → store.grant('once')
 - 本次启动期间允许 → store.grant('session');respond ok 后才 `confirmSessionGrant`(域授权生效)
 - respond 失败(ok:false 或 reject)→ notify.error,且**不**改变未来授权状态
-- respond 返回 `AGENT_AUTH_REQUEST_NOT_PENDING`(main 已超时/撤销结算;main 与本地计时起点相差 IPC 延迟,
-  本地未超时仍可能命中)= 请求已失效 → 只 console.warn,**不**弹 toast,同样**不**改变未来授权状态
+- main 已结算某请求(超时 / 取消)→ 推 `agent-auth:cancelled`,弹窗撤掉、不 respond(畸形通知忽略)。
+- respond 返回 `AGENT_AUTH_REQUEST_NOT_PENDING`(main 已超时/撤销结算、取消通知尚在路上时用户点了应答)= 请求已失效 → 只 console.warn,**不**弹 toast,同样**不**改变未来授权状态
 
 ### method 标签
 

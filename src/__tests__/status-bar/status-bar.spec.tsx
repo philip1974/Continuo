@@ -703,7 +703,7 @@ describe('StatusBar — agent 撤销', () => {
     useAgentAuthStore.setState({ pending: null, sessionGranted: true });
     const decision = useAgentAuthStore
       .getState()
-      .ensure({ method: 'debug.launch' }); // debug 域未授权 → 弹出 pending
+      .ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' }); // debug 域未授权 → 弹出 pending
     expect(useAgentAuthStore.getState().pending).not.toBeNull();
 
     const { container } = render(<StatusBar />);

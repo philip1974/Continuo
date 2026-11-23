@@ -9,6 +9,7 @@ import {
   revokeAndKillAgentSessions,
 } from '../../../electron/main/services/agent-auth.service';
 import {
+  AGENT_AUTH_CHANNELS,
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
@@ -66,9 +67,12 @@ function makeWin(id: number): FakeWindow {
 }
 
 let win: FakeWindow;
-const prompts = (w: FakeWindow = win): number => w.webContents.send.mock.calls.length;
+// 只数授权请求(REQUEST);main 结算后另发的 CANCELLED 通知不算弹窗。
+const requestSends = (w: FakeWindow): unknown[][] =>
+  w.webContents.send.mock.calls.filter((c: unknown[]) => c[0] === AGENT_AUTH_CHANNELS.REQUEST);
+const prompts = (w: FakeWindow = win): number => requestSends(w).length;
 const lastRequestId = (w: FakeWindow = win): string =>
-  (w.webContents.send.mock.calls.at(-1)![1] as AgentAuthRequestPayload).requestId;
+  (requestSends(w).at(-1)![1] as AgentAuthRequestPayload).requestId;
 
 interface Req {
   readonly method?: string;
@@ -186,6 +190,15 @@ describe('agent 授权弹窗:拒绝冷却与退避', () => {
     await ask('denied');
     vi.advanceTimersByTime(BASE);
     await expect(ask('once')).resolves.toBe('once');
+  });
+
+  // 过期只有 main 一个来源:无应答超时结算后通知目标窗口撤掉该弹窗(renderer 不自行计时)。
+  it('无应答超时结算 → 向目标窗口发 CANCELLED(带该 requestId)', async () => {
+    const p = request();
+    const id = lastRequestId();
+    await vi.advanceTimersByTimeAsync(AGENT_AUTH_PROMPT_TIMEOUT_MS);
+    await expect(p).resolves.toBe('denied');
+    expect(win.webContents.send).toHaveBeenCalledWith(AGENT_AUTH_CHANNELS.CANCELLED, { requestId: id });
   });
 
   it('窗口关闭 / 撤销结算的请求不计为拒绝', async () => {
