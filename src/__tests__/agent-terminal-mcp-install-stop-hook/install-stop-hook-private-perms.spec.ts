@@ -43,7 +43,7 @@ describe.skipIf(process.platform === 'win32')('I10 hook 事件私有权限', () 
     it(`${label}: 真实 hook 命令(/bin/sh,宽松 umask 022)写出的目录 0700、事件文件 0600`, async () => {
       const cwd = await makeDir();
       const eventsDir = join(await makeDir(), 'hook-events');
-      const runner = inferRunner({ id: 't', cwd, agentLabel: label });
+      const runner = inferRunner(label);
       const command = await installedCommand(cwd, runner as 'cc' | 'codex', eventsDir);
 
       execFileSync('/bin/sh', ['-c', `umask 022; ${command}`], {

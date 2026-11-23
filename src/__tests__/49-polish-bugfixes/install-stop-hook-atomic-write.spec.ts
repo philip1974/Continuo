@@ -29,7 +29,7 @@ afterEach(async () => {
   await rm(cwd, { recursive: true, force: true });
 });
 
-const ccRunner = inferRunner({ id: 't', cwd: '/r', agentLabel: 'claude' });
+const ccRunner = inferRunner('claude');
 
 describe('topic49 R6 · install_stop_hook 原子写配置', () => {
   it('合并 Claude settings 用原子写:目标 inode 变化 + 原有配置键保留', async () => {
@@ -57,7 +57,7 @@ describe('topic49 R6 · install_stop_hook 原子写配置', () => {
   });
 
   it('合并 Codex config 用原子写:目标 inode 变化 + 原有内容保留', async () => {
-    const codexRunner = inferRunner({ id: 't', cwd: '/r', agentLabel: 'codex' });
+    const codexRunner = inferRunner('codex');
     const configPath = join(cwd, '.codex', 'config.toml');
     await mkdir(join(cwd, '.codex'), { recursive: true });
     await writeFile(configPath, 'personality = "pragmatic"\n', 'utf8');

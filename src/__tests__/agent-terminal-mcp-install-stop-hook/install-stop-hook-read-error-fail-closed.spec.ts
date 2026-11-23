@@ -55,7 +55,7 @@ describe('install_stop_hook 配置读错误 fail-closed(不覆盖用户配置)',
     await writeFile(settingsPath, original, 'utf8');
 
     failReadFor(settingsPath);
-    const runner = inferRunner({ id: 't', cwd, agentLabel: 'claude' });
+    const runner = inferRunner('claude');
     await expect(
       installStopHookForSession(cwd, runner, join(cwd, '.continuo', 'hk')),
     ).resolves.toEqual({ installed: false, reason: 'read-error' });
@@ -71,7 +71,7 @@ describe('install_stop_hook 配置读错误 fail-closed(不覆盖用户配置)',
     await writeFile(configPath, original, 'utf8');
 
     failReadFor(configPath);
-    const runner = inferRunner({ id: 't', cwd, agentLabel: 'codex' });
+    const runner = inferRunner('codex');
     await expect(
       installStopHookForSession(cwd, runner, join(cwd, '.continuo', 'hk')),
     ).resolves.toEqual({ installed: false, reason: 'read-error' });
@@ -93,7 +93,7 @@ describe('install_stop_hook 配置文件大小上限(E66)', () => {
     const huge = `{"pad":"${'x'.repeat(OVER)}"}`;
     await writeFile(settingsPath, huge, 'utf8');
 
-    const runner = inferRunner({ id: 't', cwd, agentLabel: 'claude' });
+    const runner = inferRunner('claude');
     await expect(
       installStopHookForSession(cwd, runner, join(cwd, '.continuo', 'hk')),
     ).resolves.toEqual({ installed: false, reason: 'config-too-large' });
@@ -108,7 +108,7 @@ describe('install_stop_hook 配置文件大小上限(E66)', () => {
     const huge = `model = "gpt-5.5"\n# ${'y'.repeat(OVER)}\n`;
     await writeFile(configPath, huge, 'utf8');
 
-    const runner = inferRunner({ id: 't', cwd, agentLabel: 'codex' });
+    const runner = inferRunner('codex');
     await expect(
       installStopHookForSession(cwd, runner, join(cwd, '.continuo', 'hk')),
     ).resolves.toEqual({ installed: false, reason: 'config-too-large' });

@@ -56,8 +56,8 @@ async function listBackups(dir: string): Promise<string[]> {
   return names.map(String).filter((n) => n.includes('.continuo-bak.'));
 }
 
-const cc = inferRunner({ id: 't', cwd: '/r', agentLabel: 'claude' });
-const codex = inferRunner({ id: 't', cwd: '/r', agentLabel: 'codex' });
+const cc = inferRunner('claude');
+const codex = inferRunner('codex');
 const SECRET = 'Host prod\n  IdentityFile ~/.ssh/id_secret\n';
 const GLOBAL_CODEX = 'notify = ["/usr/bin/true"]\n';
 const MANAGED_OLD_CODEX =

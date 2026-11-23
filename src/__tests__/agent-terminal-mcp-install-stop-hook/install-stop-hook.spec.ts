@@ -63,7 +63,7 @@ async function listBackups(cwd: string): Promise<string[]> {
 }
 
 function runnerFromAgentLabel(agentLabel: string): RunnerKind {
-  return inferRunner({ id: 'term', cwd: '/repo', agentLabel });
+  return inferRunner(agentLabel);
 }
 
 function installStopHookForSession(input: InstallStopHookInput) {
@@ -93,48 +93,19 @@ function makeDriver() {
 }
 
 describe('installStopHookForSession', () => {
-  it('inferRunner 对常见小写 label/autorun 不调用 toLowerCase', () => {
+  it('inferRunner 对常见小写 label 不调用 toLowerCase', () => {
     const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
 
     try {
-      expect(inferRunner({ id: 'term', cwd: '/repo', agentLabel: 'codex' })).toBe(
+      expect(inferRunner('codex')).toBe(
         'codex',
       );
-      expect(
-        inferRunner({ id: 'term', cwd: '/repo', autorun: 'claude --danger' }),
-      ).toBe('cc');
-      expect(
-        lowerSpy.mock.contexts.some(
-          (ctx) => String(ctx) === 'codex' || String(ctx) === 'claude --danger',
-        ),
-      ).toBe(false);
-      expect(inferRunner({ id: 'term', cwd: '/repo', agentLabel: 'CLAUDE' })).toBe(
+      expect(lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'codex')).toBe(false);
+      expect(inferRunner('CLAUDE')).toBe(
         'cc',
       );
     } finally {
       lowerSpy.mockRestore();
-    }
-  });
-
-  it('inferRunner autorun token 空白边界判断不调用 RegExp.test', () => {
-    const testSpy = vi.spyOn(RegExp.prototype, 'test');
-
-    try {
-      expect(
-        inferRunner({ id: 'term', cwd: '/repo', autorun: 'claude\t--danger' }),
-      ).toBe('cc');
-      expect(
-        inferRunner({ id: 'term', cwd: '/repo', autorun: 'codex\u00A0--yolo' }),
-      ).toBe('codex');
-      expect(
-        inferRunner({ id: 'term', cwd: '/repo', autorun: 'codexish --nope' }),
-      ).toBe('unknown');
-      const whitespaceRegexCalls = testSpy.mock.contexts.filter(
-        (context) => context instanceof RegExp && context.source === '\\s',
-      );
-      expect(whitespaceRegexCalls).toHaveLength(0);
-    } finally {
-      testSpy.mockRestore();
     }
   });
 

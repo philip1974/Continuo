@@ -1089,7 +1089,7 @@ async function startMcpHost(): Promise<void> {
         cwd,
         workspaceRoot: getWindowWorkspaceRoot(ownerWindowId),
         homeDir: os.homedir(),
-        runner: inferRunner({ id: '', cwd: cwd ?? '', agentLabel }),
+        runner: inferRunner(agentLabel),
         hookEventsDir,
         resolveCwd: resolveTerminalCwd,
       });

@@ -12,7 +12,7 @@ import {
 let cwd: string;
 let settingsPath: string;
 const hookEventsDir = '/tmp/continuo-hook-events-malformed-test';
-const ccRunner = inferRunner({ id: 't', cwd: '/r', agentLabel: 'claude' });
+const ccRunner = inferRunner('claude');
 
 beforeEach(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'stophook-malformed-'));

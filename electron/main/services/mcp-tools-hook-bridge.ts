@@ -41,7 +41,7 @@ import type { McpCallCtx, McpToolDef } from './mcp-host.service';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
-import { equalsAsciiIgnoreCase, startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
+import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { codedError } from '../../shared/error-message';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
@@ -57,7 +57,6 @@ interface TerminalSessionMetaLike {
   readonly id: string;
   readonly cwd: string;
   readonly agentLabel?: string;
-  readonly autorun?: string;
 }
 
 interface NormalizedPayload {
@@ -159,14 +158,6 @@ async function readHookDirCapped(dir: string, max: number): Promise<string[]> {
   return sortHookDirNames(names);
 }
 
-function startsWithRunnerToken(value: string, tokenLower: 'claude' | 'codex'): boolean {
-  if (!startsWithAsciiIgnoreCase(value, tokenLower)) return false;
-  return (
-    value.length === tokenLower.length ||
-    isEcmaWhitespaceCode(value.charCodeAt(tokenLower.length))
-  );
-}
-
 function skipEcmaWhitespace(text: string, index: number, limit = text.length): number {
   let i = index;
   while (i < limit && isEcmaWhitespaceCode(text.charCodeAt(i))) {
@@ -252,8 +243,7 @@ function findManagedCodexStopCommand(
   return null;
 }
 
-export function inferRunner(session: TerminalSessionMetaLike): RunnerKind {
-  const label = session.agentLabel;
+export function inferRunner(label: string | undefined): RunnerKind {
   if (label !== undefined) {
     if (
       equalsAsciiIgnoreCase(label, 'cc') ||
@@ -263,12 +253,6 @@ export function inferRunner(session: TerminalSessionMetaLike): RunnerKind {
       return 'cc';
     }
     if (equalsAsciiIgnoreCase(label, 'codex')) return 'codex';
-  }
-
-  const autorun = session.autorun;
-  if (autorun !== undefined) {
-    if (startsWithRunnerToken(autorun, 'claude')) return 'cc';
-    if (startsWithRunnerToken(autorun, 'codex')) return 'codex';
   }
   return 'unknown';
 }
@@ -1387,7 +1371,7 @@ export function createAwaitStopHookTool(
         throw codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `terminal session not found: ${echoId}`);
       }
 
-      const runner = inferRunner(meta);
+      const runner = inferRunner(meta.agentLabel);
       if (runner === 'unknown') {
         throw codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, `unknown runner for session ${echoId}; cannot await stop hook`,);
       }
