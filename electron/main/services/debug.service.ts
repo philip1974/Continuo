@@ -1122,17 +1122,9 @@ export class DebugService {
       const rolledBack = setBreakpointsArgs(adapterPath, rolledBackRecords);
       const liveClients = [runtime.parentClient, ...runtime.childClients];
       await Promise.allSettled(
-        liveClients.map(async (client) => {
-          const rollbackResponse = await client.sendRequest(
-            'setBreakpoints',
-            rolledBack,
-            Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
-          );
-          // 等待期间结束并被回收的 child 不再记回报。
-          if (client === runtime.parentClient || runtime.childClients.includes(client)) {
-            rememberBreakpointReports(runtime, client, rolledBackRecords, rollbackResponse);
-          }
-        }),
+        liveClients.map((client) =>
+          this.sendBreakpointsTo(runtime, client, rolledBack, rolledBackRecords, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
+        ),
       );
       throw err;
     }
@@ -1142,17 +1134,9 @@ export class DebugService {
     // 取快照(发送期间 childClients 可能增减;已结束的 child 已从中移除)、并行发送并用较短的超时:某个 child
     // 不应答(已退出的 worker 等)不能把整个工具调用拖到 N × requestTimeoutMs。
     await Promise.allSettled(
-      runtime.childClients.map(async (child) => {
-        const response = await child.sendRequest(
-          'setBreakpoints',
-          args,
-          Math.min(this.requestTimeoutMs, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
-        );
-        // 等待期间结束并被回收的 child:不再为它记回报(否则又留下对已回收连接的引用)。
-        if (runtime.childClients.includes(child)) {
-          rememberBreakpointReports(runtime, child, sourceBreakpoints, response);
-        }
-      }),
+      runtime.childClients.map((child) =>
+        this.sendBreakpointsTo(runtime, child, args, sourceBreakpoints, CHILD_BREAKPOINT_SYNC_TIMEOUT_MS),
+      ),
     );
     // 设断点本身不让程序起跑:起跑推迟到 wait_for_stop / continue / step(ensureProgramStarted),
     // 这样起跑前连设的多个断点都能在程序运行之前就位。
@@ -1787,16 +1771,14 @@ export class DebugService {
       // source 返回再登记会让旧的重放回报覆盖它。已被摘除(失败回滚 / 结束回收)的 child 不再登记;任一失败
       // 进 catch 回滚(forgetClient 清掉该 child 的全部回报,与串行时一致)。
       await Promise.all(
-        [...breakpointsBySource(runtime.breakpoints)].map(async ([source, records]) => {
-          const response = await child.sendRequest(
-            'setBreakpoints',
+        [...breakpointsBySource(runtime.breakpoints)].map(([source, records]) =>
+          this.sendBreakpointsTo(
+            runtime,
+            child,
             setBreakpointsArgs(runtime.adapterPaths.get(source) ?? source, records),
-            this.requestTimeoutMs,
-          );
-          if (runtime.childClients.includes(child)) {
-            rememberBreakpointReports(runtime, child, records, response);
-          }
-        }),
+            records,
+          ),
+        ),
       );
       await child.sendRequest('configurationDone', {}, this.requestTimeoutMs);
     } catch (err) {
@@ -1918,6 +1900,26 @@ export class DebugService {
     if (runtime.stoppedClient === client) this.markContinued(sessionId, client);
     if (runtime.activeClient === client) {
       runtime.activeClient = runtime.childClients[0] ?? runtime.parentClient;
+    }
+  }
+
+  /**
+   * 向一条连接下发某 source 的完整断点集合并登记它的回报。等待期间该连接已结束并被回收 → 不再登记
+   *(否则又留下对已回收连接的引用)。`timeoutCapMs` 给定时超时取 min(requestTimeoutMs, cap):同步 / 回滚
+   * 不能被某个不应答的 child 拖到整份超时;child 建立时的重放用完整超时。
+   */
+  private async sendBreakpointsTo(
+    runtime: RuntimeDebugSession,
+    client: DebugDapClientLike,
+    args: DapJson,
+    records: readonly BreakpointRecord[],
+    timeoutCapMs?: number,
+  ): Promise<void> {
+    const timeoutMs =
+      timeoutCapMs === undefined ? this.requestTimeoutMs : Math.min(this.requestTimeoutMs, timeoutCapMs);
+    const response = await client.sendRequest('setBreakpoints', args, timeoutMs);
+    if (client === runtime.parentClient || runtime.childClients.includes(client)) {
+      rememberBreakpointReports(runtime, client, records, response);
     }
   }
 
