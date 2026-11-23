@@ -324,9 +324,8 @@ export function makeResizeHandler(deps?: { service?: typeof termService }) {
   const service = deps?.service ?? termService;
   return async (input: ResizeInput, win: BrowserWindow): Promise<void> => {
     assertOwnedSession(terminalSessions, input.id, win);
-    if (!service.has(input.id)) throw ERR_NOT_FOUND(input.id);
     // race(R96):await 真实 resize 结果并在失败时上抛 → IPC 返回 ok:false,让 renderer 感知
-    // PTY resize 未成功、回滚 lastSize 以便同尺寸重试(否则 DOM/PTY 尺寸长期不一致)。
+    // PTY resize 未成功、回滚 lastSize 以便同尺寸重试(否则 DOM/PTY 尺寸长期不一致)。无实例时 resize 本就返回 false。
     const ok = await service.resize(input.id, input.cols, input.rows);
     if (!ok) throw ERR_NOT_FOUND(input.id);
   };
