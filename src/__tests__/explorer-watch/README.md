@@ -51,7 +51,6 @@ Explorer 自动反映,不需手动刷新。
 - has(path) 反映状态
 - size() 计数正确
 - 满 MAX_WATCHERS=64 时 watch 新 path → LRU 踢最早(close + 释放槽位)
-- closeAll() 清空所有
 - unwatch 不存在的 path → 无操作不抛
 
 ### `fs-watch-helpers.spec.ts`(渲染端纯函数)
