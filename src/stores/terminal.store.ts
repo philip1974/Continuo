@@ -35,25 +35,6 @@ export interface FilterDropOpts {
   ) => void;
 }
 
-/** attachTarget(optional)形态校验:undefined 或 3 个 discriminated 变体之一. */
-function isAttachTargetShape(v: unknown): boolean {
-  if (v === undefined) return true;
-  if (!v || typeof v !== 'object') return false;
-  const t = v as Record<string, unknown>;
-  if (t.kind === 'active') return true;
-  // 边界(E23):与 AttachTargetSchema 同步 —— panelId 限长、windowId 须非负安全整数,防畸形
-  // attachTarget 经 sessions_changed 广播进各 renderer metadata 膨胀/匹配逻辑失真。
-  if (t.kind === 'panel')
-    return typeof t.panelId === 'string' && t.panelId.length <= 256;
-  if (t.kind === 'window')
-    return (
-      typeof t.windowId === 'number' &&
-      Number.isSafeInteger(t.windowId) &&
-      t.windowId >= 0
-    );
-  return false;
-}
-
 /**
  * 可维护性 M16:IPC ingress 的完整 type guard —— 校验必填**与** optional 字段形态后
  * narrow 到 TerminalSession(= shared TerminalSessionSnapshot,M14),取代此前只校验必填
@@ -89,8 +70,7 @@ function isTerminalSessionShape(v: unknown): v is TerminalSession {
       obj.shellFamily === 'powershell') &&
     (obj.workspaceRoot === undefined ||
       (typeof obj.workspaceRoot === 'string' &&
-        obj.workspaceRoot.length <= PATH_MAX)) &&
-    isAttachTargetShape(obj.attachTarget)
+        obj.workspaceRoot.length <= PATH_MAX))
   );
 }
 
@@ -266,22 +246,14 @@ type TerminalState = {
   markSettled: () => void;
 };
 
-/** 字段值浅比较:Object.is;双方都是对象(如 attachTarget)时再逐键 Object.is 一层。 */
-function sameFieldValue(a: unknown, b: unknown): boolean {
-  if (Object.is(a, b)) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  return sameShallow(a as Record<string, unknown>, b as Record<string, unknown>, Object.is);
-}
-
 function sameShallow(
   a: Record<string, unknown>,
   b: Record<string, unknown>,
-  eq: (x: unknown, y: unknown) => boolean,
 ): boolean {
   const keys = Object.keys(a);
   if (keys.length !== Object.keys(b).length) return false;
   for (const k of keys) {
-    if (!Object.hasOwn(b, k) || !eq(a[k], b[k])) return false;
+    if (!Object.hasOwn(b, k) || !Object.is(a[k], b[k])) return false;
   }
   return true;
 }
@@ -295,7 +267,7 @@ function sameSessions(
   for (let i = 0; i < a.length; i++) {
     const x = a[i] as unknown as Record<string, unknown>;
     const y = b[i] as unknown as Record<string, unknown>;
-    if (x !== y && !sameShallow(x, y, sameFieldValue)) return false;
+    if (x !== y && !sameShallow(x, y)) return false;
   }
   return true;
 }

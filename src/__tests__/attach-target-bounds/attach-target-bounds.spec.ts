@@ -1,6 +1,5 @@
 // 边界(E23,E11/E21 同族):AttachTargetSchema 的 panelId/windowId 加长度/安全整数/非负边界。
-// 被 TerminalCreateInputSchema 复用;畸形 attachTarget 会进 session metadata 随 sessions_changed
-// 广播到所有 renderer 膨胀,或窗口匹配在不安全整数上失真。
+// MCP create_session 用它校验入参 target(接受、校验,但目前不消费)。
 import { describe, it, expect } from 'vitest';
 import { AttachTargetSchema } from '../../../electron/shared/terminal-attach';
 

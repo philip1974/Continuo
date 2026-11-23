@@ -9,7 +9,6 @@
 // 新增 renderer 可见的 session 元数据只改这一处,三层自动同步。
 
 import type { OriginHint } from './origin-hint';
-import type { AttachTarget } from './terminal-attach';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
 
 export interface TerminalSessionSnapshot {
@@ -29,8 +28,6 @@ export interface TerminalSessionSnapshot {
   readonly exitCode: number | null;
   /** owner BrowserWindow.id(Issue #28:renderer 不自报,由 IPC create handler 推断). */
   readonly ownerWindowId: number;
-  /** topic-05: agent attach hint;renderer 据此决定新 PTY 接管到哪个 panel/window. */
-  readonly attachTarget?: AttachTarget;
   /**
    * 创建时所在 workspace.root;undefined = 全局会话(所有 workspace 都可见)。
    * 主进程只存,renderer 端按当前 workspaceRoot 过滤可见 sessions。

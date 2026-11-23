@@ -210,11 +210,6 @@ export interface CreateSessionPtyInput {
   readonly agentLabel: string;
   /** spawn 后 delay 200ms(Windows 600)键入此命令 + \n. */
   readonly autorun?: string;
-  /** topic-05: optional attach target;透传给 sessionsService 让 renderer 决定 attach 落点。 */
-  readonly attachTarget?:
-    | { kind: 'active' }
-    | { kind: 'panel'; panelId: string }
-    | { kind: 'window'; windowId: number };
 }
 
 export interface CreateSessionToolDeps {
@@ -366,8 +361,6 @@ export function makeCreateSessionTool(
       ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.autorun !== undefined ? { autorun: input.autorun } : {}),
-      // topic-05: target hint 默认 'active'(无 hint 即 active panel)
-      attachTarget: input.target ?? { kind: 'active' },
     };
     const r = await deps.createSession(ptyInput, ctx);
     // race(R111 同族):createSession(异步 spawn)期间调用方断开 → 新会话无人持有。回收 PTY +

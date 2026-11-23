@@ -34,7 +34,6 @@ import {
   MAX_TERMINAL_SESSIONS_PER_WINDOW,
 } from '../../shared/terminal-session-limits';
 import type { OriginHint } from '../../shared/origin-hint';
-import type { AttachTarget } from '../../shared/terminal-attach';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 import type { ShellFamily } from '@continuo-terminal/shell-quote';
 import { codedError } from '../../shared/error-message';
@@ -59,7 +58,6 @@ export interface AddSessionInput {
   readonly originHint: OriginHint;
   readonly agentLabel?: string;
   readonly ownerWindowId: number;
-  readonly attachTarget?: AttachTarget;
   readonly workspaceRoot?: string;
   /** 跨平台:PTY shell 引号族(见 TerminalSessionSnapshot.shellFamily). */
   readonly shellFamily?: ShellFamily;
@@ -164,7 +162,6 @@ export function add(input: AddSessionInput): void {
     createdAt: Date.now(),
     exitCode: null,
     ownerWindowId: input.ownerWindowId,
-    ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
     ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
     ...(input.shellFamily !== undefined ? { shellFamily: input.shellFamily } : {}),
     ...(input.controllerToken !== undefined

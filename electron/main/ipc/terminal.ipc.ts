@@ -192,7 +192,6 @@ export function makeCreateHandler(deps?: {
       // 跨平台:按真实 shell 路径标注引号族(renderer 拖拽文件据此引用,不再盲猜平台)。
       shellFamily: shellFamilyForPath(shell),
       ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
-      ...(input.attachTarget !== undefined ? { attachTarget: input.attachTarget } : {}),
       ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
       ...(opts?.controllerToken !== undefined
         ? { controllerToken: opts.controllerToken }

@@ -158,9 +158,9 @@ describe('replaceSnapshot', () => {
 
   // perf:main 任一会话变化都给所有窗口推各自完整快照,IPC 反序列化每次都是新数组/新对象。内容未变的窗口
   // 不应 set(否则所有订阅者与 DockReconciler 白跑一轮)。
-  it('内容逐字段相同的新数组(含新的 attachTarget 对象)→ 不通知订阅者,保留旧引用', () => {
+  it('内容逐字段相同的新数组→ 不通知订阅者,保留旧引用', () => {
     const first = [
-      sess('/a', { agentLabel: 'codex', attachTarget: { kind: 'panel', panelId: 'p1' } }),
+      sess('/a', { agentLabel: 'codex' }),
       sess('/b'),
     ];
     useTerminalStore.getState().replaceSnapshot(first);
@@ -168,7 +168,7 @@ describe('replaceSnapshot', () => {
     const unsubscribe = useTerminalStore.subscribe(listener);
     try {
       useTerminalStore.getState().replaceSnapshot([
-        sess('/a', { agentLabel: 'codex', attachTarget: { kind: 'panel', panelId: 'p1' } }),
+        sess('/a', { agentLabel: 'codex' }),
         sess('/b'),
       ]);
       expect(listener).not.toHaveBeenCalled();
@@ -178,13 +178,12 @@ describe('replaceSnapshot', () => {
     }
   });
 
-  it('任一字段不同(cwd / 可选字段增减 / attachTarget 内字段)→ 照常替换', () => {
-    const base = sess('/a', { attachTarget: { kind: 'panel', panelId: 'p1' } });
+  it('任一字段不同(cwd / 可选字段增减)→ 照常替换', () => {
+    const base = sess('/a');
     useTerminalStore.getState().replaceSnapshot([base]);
     const variants: TerminalSession[][] = [
       [{ ...base, cwd: '/other' }],
       [{ ...base, agentLabel: 'codex' }],
-      [{ ...base, attachTarget: { kind: 'panel', panelId: 'p2' } }],
       [base, sess('/b')],
     ];
     for (const next of variants) {
