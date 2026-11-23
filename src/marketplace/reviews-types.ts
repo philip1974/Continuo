@@ -11,6 +11,7 @@ import {
 } from '../../electron/shared/marketplace-review-limits';
 import { isHttpUrl } from './url-safety'; // 边界(E109):review url/avatarUrl scheme 白名单(共享)
 import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):plugin id 形态契约(共享单一来源)
+import { PLUGIN_ID_MAX_LEN } from '../../electron/shared/permission-record-limits';
 
 export interface Review {
   /** 从 discussion title 第一对方括号 / body 表单字段抽出的 plugin id. */
@@ -54,7 +55,7 @@ export interface PluginAggregateRating {
 // E294:导出供 fresh-parse(reviews-parser.parseReview)复用同值 —— 此前 fresh 路径只 isHttpUrl 不限长,
 // 与 cache-read isValidReview(isStrMax REVIEW_URL_MAX)不对偶,超长合法 scheme URL 可绕 fresh 入 cache/DOM。
 export { REVIEW_URL_MAX }; // url / avatarUrl(单一来源 shared/marketplace-review-limits)
-const REVIEW_ID_MAX = 256; // pluginId(与 MP_ID_MAX 同量级)
+const REVIEW_ID_MAX = PLUGIN_ID_MAX_LEN; // pluginId
 const MAX_REVIEWS_PER_PLUGIN = REVIEW_TOTAL_NODES_MAX; // 对齐 main MAX_TOTAL_NODES(单插件 reviews 上限)
 const MAX_AGGREGATE_KEYS = REVIEW_TOTAL_NODES_MAX; // aggregate record 总 plugin 数上限(distinct plugin ≤ 总 node)
 // 边界(E210):全局累计 reviews 数上限(对齐 main marketplace-reviews.service MAX_TOTAL_NODES)。

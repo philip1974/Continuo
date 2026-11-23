@@ -12,6 +12,7 @@ import { isValidLeafName, FS_NAME_MAX } from '../../../electron/shared/leaf-name
 import { MAX_DROP_FILES } from '@/lib/window-drop';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { MAX_WRITE_BYTES } from '../../../electron/shared/fs-limits';
 
 export interface DropTargetEntry {
   path: string;
@@ -47,7 +48,7 @@ export function resolveDropTarget(
 // E115 把数量上限**提前到 partition 阶段**,防超大 DataTransferItemList 在读文件前就大量
 // webkitGetAsEntry/getAsFile 物化 File 数组(cap 此前只在 performDrop 太晚)。与 Terminal
 // MAX_TERMINAL_DROP_FILES / window-drop MAX_DROP_FILES(均 1000)对齐。
-const MAX_DROP_FILE_BYTES = 64 * 1024 * 1024; // 对齐主 fs.writeBinary 的 MAX_WRITE_BYTES(E13)
+const MAX_DROP_FILE_BYTES = MAX_WRITE_BYTES; // 须与主 fs.writeBinary 的上限一致(E13),否则校验过了写入被拒
 const MAX_DROP_TOTAL_BYTES = 512 * 1024 * 1024; // 单次 drop 累计字节上限
 export const MAX_DROP_FILE_COUNT = MAX_DROP_FILES; // 单次 drop 文件数量上限(限 arrayBuffer/IPC 次数)
 // 边界(E115):partition 总扫描上限(覆盖 file/dir/string 各 kind 项),防超大 items 列表

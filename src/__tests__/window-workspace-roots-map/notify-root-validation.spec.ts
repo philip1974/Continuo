@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WINDOW_CHANNELS } from '../../../electron/shared/window-channels';
 import { IPC_ERR } from '../../../electron/shared/ipc-result';
 import { MAX_BOUNDED_OBJECT_KEYS } from '../../../electron/shared/bounded-input';
-import { registerWindowIpc } from '../../../electron/main/ipc/window.ipc';
+import { registerWindowIpc, ROOT_MAX } from '../../../electron/main/ipc/window.ipc';
 import {
   _reset,
   clearWindow,
@@ -165,11 +165,11 @@ describe('window-workspace-roots-map: NotifyRoot validation', () => {
   });
 
   // 边界(E34,E11/E33 同族):root 无长度上限时超长 absolute 串会驻留 windowId→root map,
-  // 并作为 MCP/terminal create cwd 回退带进 resolve/stat/错误消息。root .max(2048),超限 BAD_ROOT。
+  // 并作为 MCP/terminal create cwd 回退带进 resolve/stat/错误消息。root .max(ROOT_MAX = FS_PATH_MAX),超限 BAD_ROOT。
   it('E34: rejects over-length absolute root as BAD_ROOT, does not store', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    const longRoot = '/' + 'x'.repeat(2048); // 2049 chars > ROOT_MAX
+    const longRoot = '/' + 'x'.repeat(ROOT_MAX); // ROOT_MAX + 1 chars
     const result = await notify({ root: longRoot });
 
     expect(result).toMatchObject({ ok: false, code: 'BAD_ROOT' });
@@ -178,7 +178,7 @@ describe('window-workspace-roots-map: NotifyRoot validation', () => {
   });
 
   it('E34: accepts an absolute root at the length limit', async () => {
-    const atLimit = '/' + 'x'.repeat(2047); // 2048 chars == ROOT_MAX
+    const atLimit = '/' + 'x'.repeat(ROOT_MAX - 1); // == ROOT_MAX
     const result = await notify({ root: atLimit });
 
     expect(result).toEqual({ ok: true });
