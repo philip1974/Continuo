@@ -2191,7 +2191,6 @@ export class DebugService {
     if (!first) return Promise.resolve();
 
     const task = this.doTeardownSession(sessionId, reason).finally(() => {
-      debugSessions.markDone(sessionId);
       this.emitSessionEvent(sessionId, {
         type: 'terminated',
         sessionId,

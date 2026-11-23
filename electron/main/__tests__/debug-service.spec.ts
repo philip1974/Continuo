@@ -2143,7 +2143,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     releaseTeardown?.();
     const ids = await cleanup;
     expect(ids).toContain('straggler');
-    expect(debugSessions.list().filter((s) => s.state !== 'done')).toEqual([]);
+    expect(debugSessions.list()).toEqual([]);
   });
 
   // 终审 P1(上一轮修复引入的回归):吊销记入永久集合后,stdio 连接的 callerSubject 固定不变,用户重新授权后

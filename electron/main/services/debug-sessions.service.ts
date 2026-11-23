@@ -1,6 +1,6 @@
 import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
 
-export type DebugTeardownState = 'active' | 'tearing_down' | 'done';
+export type DebugTeardownState = 'active' | 'tearing_down';
 export type DebugRuntimeState = 'starting' | 'running' | 'stopped' | 'terminated';
 
 const MAX_DEBUG_SESSIONS_GLOBAL = 32;
@@ -56,19 +56,13 @@ let reservedTotal = 0;
 function sessionCountForWindow(ownerWindowId: number): number {
   let count = reservations.get(ownerWindowId) ?? 0;
   for (const session of sessions.values()) {
-    if (session.ownerWindowId === ownerWindowId && session.state !== 'done') {
-      count += 1;
-    }
+    if (session.ownerWindowId === ownerWindowId) count += 1;
   }
   return count;
 }
 
 function activeSessionCount(): number {
-  let count = reservedTotal;
-  for (const session of sessions.values()) {
-    if (session.state !== 'done') count += 1;
-  }
-  return count;
+  return reservedTotal + sessions.size;
 }
 
 /** 会话数上限检查:已登记会话与在途 launch 的预占都计入。 */
@@ -169,7 +163,7 @@ export function get(id: string): DebugSession | undefined {
 
 export function list(): readonly DebugSession[] {
   if (sessions.size === 0) return EMPTY_DEBUG_SESSIONS;
-  return Array.from(sessions.values()).filter((session) => session.state !== 'done');
+  return Array.from(sessions.values());
 }
 
 export function byOwner(ownerWindowId: number): readonly DebugSession[] {
@@ -218,12 +212,6 @@ export function tryMarkTearingDown(id: string): boolean {
   if (!cur || cur.state !== 'active') return false;
   sessions.set(id, { ...cur, state: 'tearing_down' });
   return true;
-}
-
-export function markDone(id: string): void {
-  const cur = sessions.get(id);
-  if (!cur) return;
-  sessions.set(id, { ...cur, state: 'done', runtimeState: 'terminated' });
 }
 
 export function remove(id: string): void {
