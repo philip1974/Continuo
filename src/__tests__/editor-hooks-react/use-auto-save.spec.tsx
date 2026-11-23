@@ -9,7 +9,6 @@ import {
 import { useEditorStore } from '../../stores/editor.store';
 import {
   flushPendingAutoSave,
-  registerAutoSaveFlush,
 } from '../../panels/Editor/autosave-flush-registry';
 
 function Probe({
@@ -224,8 +223,6 @@ describe('useAutoSave · 已干净的 tab 不重复写盘', () => {
     dirty: true,
   });
 
-  beforeEach(() => registerAutoSaveFlush(null));
-  afterEach(() => registerAutoSaveFlush(null));
 
   it('输入 → 防抖窗口内 Cmd+S 保存成功 → 2s 到点不再写盘', async () => {
     const saveFile = vi.fn(async () => ({ ok: true }));
@@ -319,8 +316,6 @@ describe('useAutoSave · 切 tab 时卸载回写的编辑也落盘', () => {
     dirty: false,
   });
 
-  beforeEach(() => registerAutoSaveFlush(null));
-  afterEach(() => registerAutoSaveFlush(null));
 
   it('干净 .md tab 切走时卸载回写变脏 → 切 tab flush 仍按旧 tab 落盘', async () => {
     const saveFile = vi.fn(async () => ({ ok: true }));

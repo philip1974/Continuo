@@ -11,7 +11,6 @@ import { applyEditorWriteBack } from '../../panels/Editor/editor-file-actions';
 import { useAutoSave } from '../../panels/Editor/useAutoSave';
 import {
   flushPendingAutoSave,
-  registerAutoSaveFlush,
 } from '../../panels/Editor/autosave-flush-registry';
 import { createTab, useEditorStore } from '../../stores/editor.store';
 
@@ -434,10 +433,8 @@ describe('关窗 autosave flush 覆盖回写产生的未排队编辑', () => {
   }
 
   beforeEach(() => {
-    registerAutoSaveFlush(null);
     useEditorStore.setState({ tabs: [], activeTabId: null });
   });
-  afterEach(() => registerAutoSaveFlush(null));
 
   it('原本干净的 tab 被同步回写变脏(React 尚未重渲排队)→ flushPendingAutoSave 仍落盘', async () => {
     useEditorStore.getState().openTab(createTab('/a.md', 'hello'));

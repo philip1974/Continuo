@@ -27,6 +27,8 @@ const tab = (
   ...(dirtyGen === undefined ? {} : { dirtyGen }),
 });
 
+
+const noopFlush = async (): Promise<void> => {};
 describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   const owner = {};
   afterEach(() => releaseAutoSave(owner));
@@ -50,14 +52,14 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   });
 
   it('Markdown 自动保存开启时,活动 tab(持有 autosave scheduler)的脏 .md 不计入(关窗 flush 会落盘)', () => {
-    claimAutoSave('/a.md', owner);
+    claimAutoSave('/a.md', owner, noopFlush);
     expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
   });
 
   // 终审 P1:被排除的脏 .md 单独上报为 pendingAutoSave(身份同 ids)。main 据此判断:flush 超时(网络卷读盘挂起等)
   // 时这些改动尚未落盘,不能放行关闭;没有此类 .md 时不带该字段(超时照常放行,renderer 卡死也能关窗)。
   it('被排除的活动 tab 脏 .md 进入 pendingAutoSave;无此类 tab 时不带该字段', () => {
-    claimAutoSave('/a.md', owner);
+    claimAutoSave('/a.md', owner, noopFlush);
     expect(countDirtyForClose([tab('/a.md', true, '/a.md', 3), tab('/b.ts', true)], true)).toEqual({
       dirty: 1,
       untitled: 0,
@@ -72,7 +74,7 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   // 复审:非活动 tab 切走时 useAutoSave 已 flush,仍脏即失败或在途;关窗 flush 只持有活动 tab 的 scheduler,
   // 不会重试它 → 一律计入(此前按「失败记录」排除,重命名非活动失败 tab 后记录被清 → 无确认丢失)。
   it('非活动 tab 的脏 .md 一律计入(含被重命名的非活动 tab)', () => {
-    claimAutoSave('/a.md', owner);
+    claimAutoSave('/a.md', owner, noopFlush);
     expect(
       countDirtyForClose([tab('/a.md', true), tab('/b.md', true), tab('/renamed.md', true)], true),
     ).toMatchObject({ dirty: 2, ids: ['/b.md#0', '/renamed.md#0'] });
@@ -83,13 +85,13 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   });
 
   it('Markdown 自动保存关闭时脏 .md 计入', () => {
-    claimAutoSave('/a.md', owner);
+    claimAutoSave('/a.md', owner, noopFlush);
     expect(countDirtyForClose([tab('/a.md', true)], false).dirty).toBe(1);
   });
 
   // 活动 tab autosave 失败(ENOSPC/EACCES/EDITOR_DISK_CHANGED)后无 pending timer,关窗 flush 不会重试 → 计入。
   it('活动 tab 最近一次 autosave 失败 → 计入;再次 schedule / 成功 → 恢复排除', () => {
-    claimAutoSave('/a.md', owner);
+    claimAutoSave('/a.md', owner, noopFlush);
     setAutoSaveFailed(owner, true);
     expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(1);
     setAutoSaveFailed(owner, false);
@@ -99,18 +101,18 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   // 状态绑定 scheduler 实例:切 tab / 重命名 / 关闭重开都会换实例,旧实例的迟到结果不影响新实例。
   it('旧 scheduler 实例的迟到失败结果被丢弃', () => {
     const old = {};
-    claimAutoSave('/a.md', old);
+    claimAutoSave('/a.md', old, noopFlush);
     releaseAutoSave(old);
-    claimAutoSave('/a.md', owner);
+    claimAutoSave('/a.md', owner, noopFlush);
     setAutoSaveFailed(old, true);
     expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
   });
 
   it('换实例从「未失败」开始;释放后不再排除', () => {
     const old = {};
-    claimAutoSave('/a.md', old);
+    claimAutoSave('/a.md', old, noopFlush);
     setAutoSaveFailed(old, true);
-    claimAutoSave('/a.md', owner);
+    claimAutoSave('/a.md', owner, noopFlush);
     expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);
     releaseAutoSave(old); // 非当前实例:无效
     expect(countDirtyForClose([tab('/a.md', true)], true).dirty).toBe(0);

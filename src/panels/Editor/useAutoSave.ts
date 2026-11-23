@@ -11,7 +11,6 @@ import { makeAutoSaveScheduler, type AutoSaveScheduler } from './auto-save';
 import { isMarkdownPath } from './editor-path-utils';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import {
-  registerAutoSaveFlush,
   trackInFlightAutoSave,
 } from './autosave-flush-registry';
 import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from './autosave-failures';
@@ -137,10 +136,7 @@ export function useAutoSave(
   // 同时把当前 scheduler 的 flush 句柄注册进 registry,供关窗/退出的 flush 握手
   // (DockShell onFlushRequest)在 ack 前同步落盘 pending autosave(P1-AE)。
   useEffect(() => {
-    if (!scheduler || tabId === null) {
-      registerAutoSaveFlush(null);
-      return;
-    }
+    if (!scheduler || tabId === null) return;
     // 同步回写产生、schedule effect 尚未看到的编辑 → 先补排队(flush 时已不脏仍由 save 闭包跳过写盘)。
     const scheduleUnseenWriteBack = (): void => {
       const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
@@ -153,16 +149,15 @@ export function useAutoSave(
         scheduler.schedule();
       }
     };
-    registerAutoSaveFlush(() => {
+    // 本 scheduler 成为活动 tab 的 autosave 持有者(关窗计数据此豁免其脏 .md、关窗 flush 握手调它的落盘句柄,
+    // 见 autosave-failures.ts)。
+    claimAutoSave(tabId, scheduler, () => {
       scheduleUnseenWriteBack();
       return scheduler.flush();
     });
-    // 本 scheduler 成为活动 tab 的 autosave 持有者(关窗计数据此豁免其脏 .md,见 autosave-failures.ts)。
-    claimAutoSave(tabId, scheduler);
     // claim 重置失败态;本 tab 当前 autosave 暂停 / 禁用(schedule effect 已先于 claim 运行、其标记被丢弃)→ 补标。
     if (!seenEnabledRef.current) setAutoSaveFailed(scheduler, true);
     return () => {
-      registerAutoSaveFlush(null);
       releaseAutoSave(scheduler);
       // 切走该 tab:fire-and-forget 触发落盘,但登记进在途集合 —— 紧接着关窗时
       // flush 握手会 await 它,否则旧 tab 这次写盘 IPC 仍在飞就被退出截断(P1-AE 的

@@ -14,7 +14,6 @@ import { render, cleanup, act } from '@testing-library/react';
 import { useAutoSave } from '../../panels/Editor/useAutoSave';
 import {
   flushPendingAutoSave,
-  registerAutoSaveFlush,
   trackInFlightAutoSave,
 } from '../../panels/Editor/autosave-flush-registry';
 import { useEditorStore } from '../../stores/editor.store';
@@ -33,12 +32,10 @@ function deferred<T = void>() {
 }
 
 beforeEach(() => {
-  registerAutoSaveFlush(null);
   useEditorStore.setState({ tabs: [], activeTabId: null });
 });
 afterEach(() => {
   cleanup();
-  registerAutoSaveFlush(null);
 });
 
 describe('topic49 F2 · 切 tab 在途 flush 纳入关窗 ack', () => {

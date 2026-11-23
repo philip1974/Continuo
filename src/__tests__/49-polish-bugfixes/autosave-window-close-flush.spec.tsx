@@ -18,8 +18,8 @@ import { render, cleanup, act } from '@testing-library/react';
 import { useAutoSave } from '../../panels/Editor/useAutoSave';
 import {
   flushPendingAutoSave,
-  registerAutoSaveFlush,
 } from '../../panels/Editor/autosave-flush-registry';
+import { claimAutoSave, releaseAutoSave } from '../../panels/Editor/autosave-failures';
 import { makeAutoSaveScheduler } from '../../panels/Editor/auto-save';
 import { useEditorStore } from '../../stores/editor.store';
 
@@ -35,12 +35,10 @@ function Probe({
 }
 
 beforeEach(() => {
-  registerAutoSaveFlush(null);
   useEditorStore.setState({ tabs: [], activeTabId: null });
 });
 afterEach(() => {
   cleanup();
-  registerAutoSaveFlush(null);
 });
 
 describe('topic49 P1-AE · 关窗/退出 flush pending markdown autosave', () => {
@@ -133,7 +131,8 @@ describe('topic49 P1-AE · 关窗/退出 flush pending markdown autosave', () =>
   it('只有一个 active flush 时直接 await,不构造 Promise.allSettled', async () => {
     const allSettledSpy = vi.spyOn(Promise, 'allSettled');
     const flush = vi.fn(async () => {});
-    registerAutoSaveFlush(flush);
+    const owner = {};
+    claimAutoSave('/w/only.md', owner, flush);
 
     try {
       await flushPendingAutoSave();
@@ -141,6 +140,7 @@ describe('topic49 P1-AE · 关窗/退出 flush pending markdown autosave', () =>
       expect(flush).toHaveBeenCalledTimes(1);
       expect(allSettledSpy).not.toHaveBeenCalled();
     } finally {
+      releaseAutoSave(owner);
       allSettledSpy.mockRestore();
     }
   });

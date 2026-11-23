@@ -9,8 +9,15 @@
 // 开始,且 tab 仍脏时立即重新 schedule(关窗 flush 会重试);旧实例的迟到结果因实例不匹配被丢弃。
 // 再次 schedule(继续编辑 / 显式保存后再编辑)即清除失败态 —— 有 pending,flush 会落盘。
 // DockShell 订阅版本号,状态变化时重新上报。
+//
+// 持有者同时带着自己的立即落盘句柄(flush):关窗 flush 握手经 autosave-flush-registry 的 flushPendingAutoSave
+// 调它。持有关系只此一份 —— 此前 flush 句柄另存在 autosave-flush-registry,由 useAutoSave 同一个 effect 成对注册 / 注销。
 
-let owner: { readonly tabId: string; readonly token: object } | null = null;
+let owner: {
+  readonly tabId: string;
+  readonly token: object;
+  readonly flush: () => Promise<void>;
+} | null = null;
 let failed = false;
 const listeners = new Set<() => void>();
 let version = 0;
@@ -20,9 +27,9 @@ function notify(): void {
   for (const cb of listeners) cb();
 }
 
-/** useAutoSave:token(scheduler 实例)成为活动 tab 的 autosave 持有者。 */
-export function claimAutoSave(tabId: string, token: object): void {
-  owner = { tabId, token };
+/** useAutoSave:token(scheduler 实例)成为活动 tab 的 autosave 持有者;flush = 它的立即落盘句柄。 */
+export function claimAutoSave(tabId: string, token: object, flush: () => Promise<void>): void {
+  owner = { tabId, token, flush };
   failed = false;
   notify();
 }
@@ -40,6 +47,11 @@ export function setAutoSaveFailed(token: object, value: boolean): void {
   if (owner?.token !== token || failed === value) return;
   failed = value;
   notify();
+}
+
+/** 当前持有者的立即落盘句柄(无持有者 → null)。 */
+export function activeAutoSaveFlush(): (() => Promise<void>) | null {
+  return owner?.flush ?? null;
 }
 
 /** 该 tab 的脏改动会被关窗 flush 落盘(活动 autosave 持有者且最近一次未失败)。 */

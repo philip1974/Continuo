@@ -133,6 +133,8 @@ async function mountShell(): Promise<void> {
   await vi.waitFor(() => expect(h.flushCb.current).not.toBeNull());
 }
 
+
+const noopFlush = async (): Promise<void> => {};
 describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
   it('挂载时无脏 tab 不上报;脏代码文件出现 → 上报;保存后回到 0 → 再上报', async () => {
     await mountShell();
@@ -174,7 +176,7 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
   // 终审 P1:豁免的 .md 仍随上报带 pendingAutoSave(依赖关窗 flush 才能落盘),main 据此在 flush 超时时中止关闭。
   it('活动 tab 的脏 .md 不计但上报为 pendingAutoSave;其 autosave 失败 → 计入;恢复成功 → 再排除', async () => {
     const owner = {};
-    act(() => claimAutoSave('/w/a.md', owner));
+    act(() => claimAutoSave('/w/a.md', owner, noopFlush));
     await mountShell();
     openDirty('/w/a.md');
     await vi.waitFor(() =>
@@ -205,7 +207,7 @@ describe('DockShell 向 main 上报关窗会丢的脏 tab 计数', () => {
   // 复审:非活动 tab 切走时已 flush,仍脏即失败或在途,关窗 flush 不会重试 → 计入(含重命名后的非活动 tab)。
   it('非活动 tab 的脏 .md 计入;持有者切换时重新上报', async () => {
     const owner = {};
-    act(() => claimAutoSave('/w/a.md', owner));
+    act(() => claimAutoSave('/w/a.md', owner, noopFlush));
     await mountShell();
     openDirty('/w/b.md');
     openDirty('/w/a.md');

@@ -1,4 +1,4 @@
-// 编辑器「同步回写」句柄注册表(仿 autosave-flush-registry 的 registerAutoSaveFlush)。
+// 编辑器「同步回写」句柄注册表。
 //
 // Milkdown 的上抛有 200ms 起的防抖(plugin-listener 的 lodash debounce,大文档再按序列化耗时拉长),
 // 销毁时不 flush。关窗 flush 握手只落盘 store 里的内容 → 最后 <200ms 的输入还没进 store 就随
