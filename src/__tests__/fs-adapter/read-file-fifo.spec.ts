@@ -59,7 +59,7 @@ async function settle(p: Promise<unknown>): Promise<unknown> {
 describe.skipIf(process.platform === 'win32')('readFile 拒绝 FIFO(不挂死主进程线程池)', () => {
   it('直接打开 FIFO → 迅速抛 FS_NOT_FILE', async () => {
     const { fifo } = await makeFifo();
-    const r = await settle(readFile(fifo, { requireUtf8: true }));
+    const r = await settle(readFile(fifo));
     expect(r).not.toBe(TIMEOUT);
     expect(r).toMatchObject({ code: 'FS_NOT_FILE' });
   });
@@ -68,7 +68,7 @@ describe.skipIf(process.platform === 'win32')('readFile 拒绝 FIFO(不挂死主
     const { dir, fifo } = await makeFifo();
     const link = join(dir, 'README.md');
     await symlink(fifo, link);
-    const r = await settle(readFile(link, { requireUtf8: true }));
+    const r = await settle(readFile(link));
     expect(r).not.toBe(TIMEOUT);
     expect(r).toMatchObject({ code: 'FS_NOT_FILE' });
   });

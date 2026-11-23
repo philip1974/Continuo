@@ -4,11 +4,11 @@
 // 检测非法 UTF-8 → 抛 FS_NOT_UTF8,renderer 打开走既有失败提示、不进入可保存的编辑 tab。
 // UTF-8 BOM 处理保持现状(BOM 原样保留在文本里)。插件 fs readFile 契约不变(不加检测)。
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFile } from '../../../electron/main/ipc/fs/read-file';
+import { readFile, readFileFromHandle } from '../../../electron/main/ipc/fs/read-file';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { en } from '../../../electron/shared/i18n-locales/en';
 import { zh } from '../../../electron/shared/i18n-locales/zh';
@@ -47,22 +47,27 @@ const GBK = new Uint8Array([0xd6, 0xd0, 0xce, 0xc4]);
 describe('readFile requireUtf8:非法 UTF-8 拒绝打开', () => {
   it('GBK 字节 → FS_NOT_UTF8', async () => {
     const f = await tempFile(GBK);
-    expect(await codeOf(readFile(f, { requireUtf8: true }))).toBe('FS_NOT_UTF8');
+    expect(await codeOf(readFile(f))).toBe('FS_NOT_UTF8');
   });
 
   it('合法 UTF-8 照常返回', async () => {
     const f = await tempFile('hello 世界');
-    expect(await readFile(f, { requireUtf8: true })).toBe('hello 世界');
+    expect(await readFile(f)).toBe('hello 世界');
   });
 
   it('UTF-8 BOM 保持现状(原样保留 U+FEFF)', async () => {
     const f = await tempFile(new Uint8Array([0xef, 0xbb, 0xbf, 0x61]));
-    expect(await readFile(f, { requireUtf8: true })).toBe('﻿a');
+    expect(await readFile(f)).toBe('﻿a');
   });
 
-  it('不传选项(插件 fs 契约)保持旧的宽松解码', async () => {
+  it('插件 fs 的读取入口(readFileFromHandle,不传选项)保持宽松解码', async () => {
     const f = await tempFile(GBK);
-    expect(await readFile(f)).toContain('�');
+    const fh = await open(f, 'r');
+    try {
+      expect(await readFileFromHandle(fh, f)).toContain('�');
+    } finally {
+      await fh.close();
+    }
   });
 });
 

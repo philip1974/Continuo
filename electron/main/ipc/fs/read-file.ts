@@ -14,12 +14,13 @@ export interface ReadFileOptions {
   /**
    * 数据安全(独立审计):非法 UTF-8(GBK / Latin-1 / 二进制)抛 FS_NOT_UTF8,而非宽松解码成 U+FFFD ——
    * 编辑器打开后保存会把非法字节写回 EF BF BD,不可逆损坏原文件(参考 VSCode 不在文本编辑器中打开
-   * 二进制 / 不支持编码的文件)。仅编辑器入口 fs:read-file 开启;插件 fs readFile 契约不变。
+   * 二进制 / 不支持编码的文件)。编辑器入口 readFile 恒开启;插件 fs(readFileFromHandle)默认宽松,契约不变。
    */
   readonly requireUtf8?: boolean;
 }
 
-export async function readFile(filePath: string, opts: ReadFileOptions = {}): Promise<string> {
+/** 编辑器入口(fs:read-file)的整文件读取:恒要求合法 UTF-8(见 ReadFileOptions.requireUtf8)。 */
+export async function readFile(filePath: string): Promise<string> {
   const st = await lstatOrThrow(filePath);
   if (st.isDirectory()) {
     throw fsError(ERROR_CODES.FS_NOT_FILE, `not a file: ${filePath}`);
@@ -31,7 +32,7 @@ export async function readFile(filePath: string, opts: ReadFileOptions = {}): Pr
   // 恒有界。isDirectory 检查仍用上面 lstat(no-follow)保留 FS_NOT_FILE 语义。
   let read: CappedFdRead;
   try {
-    read = await readFileCappedFd(filePath, MAX_READ_BYTES, { requireUtf8: opts.requireUtf8 === true });
+    read = await readFileCappedFd(filePath, MAX_READ_BYTES, { requireUtf8: true });
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `readFile failed: ${filePath}`);
   }

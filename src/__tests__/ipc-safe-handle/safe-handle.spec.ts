@@ -10,9 +10,11 @@ import {
   ipcInputBounded,
   ERR_CODE_MAX,
   ERR_MESSAGE_MAX,
-  MAX_IPC_INPUT_KEYS,
-  MAX_IPC_INPUT_KEY_LEN,
 } from '../../../electron/main/safe-handle';
+import {
+  MAX_BOUNDED_OBJECT_KEYS as MAX_IPC_INPUT_KEYS,
+  MAX_BOUNDED_OBJECT_KEY_LEN as MAX_IPC_INPUT_KEY_LEN,
+} from '../../../electron/shared/bounded-input';
 import { formatZodErrorCapped } from '../../../electron/main/lib/format-zod-error';
 
 const trustAll = () => true;

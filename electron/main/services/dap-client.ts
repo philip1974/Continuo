@@ -129,7 +129,7 @@ export type StartDebuggingHandler = (
 ) => Promise<DapJson | undefined> | DapJson | undefined;
 
 export interface DapClientOptions {
-  readonly adapterPath?: string;
+  readonly adapterPath: string;
   readonly nodePath?: string;
   readonly readyTimeoutMs?: number;
   readonly requestTimeoutMs?: number;
@@ -141,15 +141,6 @@ export interface DapClientOptions {
   readonly traceId?: string;
 }
 
-export const defaultAdapterPath = path.join(
-  process.cwd(),
-  'scripts',
-  'debug-spike',
-  '.adapter',
-  'js-debug',
-  'src',
-  'dapDebugServer.js',
-);
 
 export function encodeDapMessage(message: DapMessage): Buffer {
   return frameDapBody(Buffer.from(JSON.stringify(message), 'utf8'));
@@ -496,8 +487,8 @@ export class DapClient {
   private readonly autoTcpPort: boolean;
   private adapterRun: AdapterRunState | null = null;
 
-  constructor(options: DapClientOptions = {}) {
-    this.adapterPath = options.adapterPath ?? defaultAdapterPath;
+  constructor(options: DapClientOptions) {
+    this.adapterPath = options.adapterPath;
     this.nodePath = options.nodePath ?? process.execPath;
     this.readyTimeoutMs = options.readyTimeoutMs ?? 15_000;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
@@ -627,7 +618,7 @@ export class DapClient {
     return this;
   }
 
-  createChildSession(options: DapClientOptions = {}): DapClient {
+  createChildSession(options: Partial<DapClientOptions> = {}): DapClient {
     const child = new DapClient({
       adapterPath: this.adapterPath,
       nodePath: this.nodePath,

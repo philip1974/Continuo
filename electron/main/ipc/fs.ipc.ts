@@ -151,7 +151,7 @@ export const listDirHandler = (input: ListDirInput) => listDir(input.path, input
 // leaf 为 symlink 时随结果带 realPath(见 FsReadFileData):与保存写穿复用 resolveSymlinkTarget;解析失败 /
 // 断链(返回原路径)/ 超长 → 不带,不影响读取结果。
 export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileData> => {
-  const content = await readFile(input.path, { requireUtf8: true });
+  const content = await readFile(input.path);
   const target = await resolveSymlinkTarget(input.path).catch(() => input.path);
   return target !== input.path && target.length <= FS_PATH_MAX
     ? { content, realPath: target }

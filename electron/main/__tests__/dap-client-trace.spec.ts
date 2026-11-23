@@ -32,7 +32,7 @@ describe('DapClient · dev-gated DAP transcript logger (#2 诊断)', () => {
   it('未设 CONTINUO_DEBUG_DAP_TRACE → 不写文件(零开销)', () => {
     const file = path.join(dir, 'trace.jsonl');
     delete process.env.CONTINUO_DEBUG_DAP_TRACE;
-    const client = new DapClient({});
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
     client.receiveMessage(stopped('breakpoint', 1));
     expect(existsSync(file)).toBe(false);
   });
@@ -40,7 +40,7 @@ describe('DapClient · dev-gated DAP transcript logger (#2 诊断)', () => {
   it('设置后 → stopped 事件落 JSONL,含 reason/threadId + dir + client 标识', () => {
     const file = path.join(dir, 'trace.jsonl');
     process.env.CONTINUO_DEBUG_DAP_TRACE = file;
-    const client = new DapClient({});
+    const client = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
     client.receiveMessage(stopped('breakpoint', 7));
     const lines = readFileSync(file, 'utf8').trim().split('\n');
     const parsed = JSON.parse(lines.at(-1)!);
@@ -56,7 +56,7 @@ describe('DapClient · dev-gated DAP transcript logger (#2 诊断)', () => {
   it('child session 的 trace 标识从 parent 派生 → 可区分 parent/child 的 stopped', () => {
     const file = path.join(dir, 'trace.jsonl');
     process.env.CONTINUO_DEBUG_DAP_TRACE = file;
-    const parent = new DapClient({});
+    const parent = new DapClient({ adapterPath: '/nonexistent/adapter.js' });
     const child = parent.createChildSession();
     parent.receiveMessage(stopped('entry', 1));
     child.receiveMessage(stopped('breakpoint', 2));

@@ -6,11 +6,7 @@ import type { IpcResult } from '../shared/ipc-result';
 import { IPC_ERR } from '../shared/ipc-result';
 import { formatZodErrorCapped } from './lib/format-zod-error';
 import { MAX_WINDOW_URL_LEN } from '../shared/url-limits';
-import {
-  boundedObjectAdmissible,
-  MAX_BOUNDED_OBJECT_KEYS,
-  MAX_BOUNDED_OBJECT_KEY_LEN,
-} from '../shared/bounded-input';
+import { boundedObjectAdmissible } from '../shared/bounded-input';
 import { capErrorText, codedError } from '../shared/error-message';
 
 // 边界(E157,E73 同族):BAD_INPUT 错误经 formatZodErrorCapped 限幅,但 handler 抛出的 Error 的
@@ -43,9 +39,7 @@ function toCappedErrorResult(err: unknown): IpcResult<never> {
 // 故在 safeParse **之前**对 plain object 做通用 bounded 预检:限制自有 key 数与单 key 长度,超限直接
 // BAD_INPUT 不进入 Zod。非 plain object(string/number/array 等合法 schema 输入)不拦,交给 schema。
 // 边界(E257 重构):核心逻辑收口到 shared boundedObjectAdmissible(三入口单一来源消漂移),此处只做
-// 领域错误文案映射,保持本入口既有契约(常量名 / message)。
-export const MAX_IPC_INPUT_KEYS = MAX_BOUNDED_OBJECT_KEYS;
-export const MAX_IPC_INPUT_KEY_LEN = MAX_BOUNDED_OBJECT_KEY_LEN;
+// 领域错误文案映射(上限常量见 shared/bounded-input)。
 
 /**
  * 边界(E256):IPC rawInput 的 bounded 预检(纯函数,便于测试)。在 safeParse 前调用。

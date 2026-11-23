@@ -70,6 +70,6 @@ describe('Windows 上 DAP 端点默认用随机名命名管道(不再监听 TCP)
 
   it('显式 socketPath: null 仍走 TCP(测试/诊断用途)', () => {
     stubPlatform('win32');
-    expect(new DapClient({ socketPath: null }).socketPath).toBeNull();
+    expect(new DapClient({ adapterPath: 'C:\\adapter\\dapDebugServer.js', socketPath: null }).socketPath).toBeNull();
   });
 });
