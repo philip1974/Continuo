@@ -242,6 +242,15 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true, maxRetries: 5 });
 });
 
+/** 该窗口最近一次 flush 请求的回执体(renderer 原样带回 requestId;main 只结算匹配的回执)。 */
+function ackBody(win: InstanceType<typeof electronMock.MockBrowserWindow>): { requestId?: unknown } {
+  const calls = (win.webContents.send as ReturnType<typeof vi.fn>).mock.calls.filter(
+    (c) => c[0] === 'layout:flush-request',
+  );
+  const last = calls[calls.length - 1]?.[1] as { requestId?: unknown } | undefined;
+  return { requestId: last?.requestId };
+}
+
 function ack(win: InstanceType<typeof electronMock.MockBrowserWindow>): void {
   const handler = electronMock.ipcHandlers.get('layout:flush-ack')?.[0];
   if (!handler) throw new Error('missing layout:flush-ack handler');
@@ -251,6 +260,7 @@ function ack(win: InstanceType<typeof electronMock.MockBrowserWindow>): void {
       senderFrame: { url: 'file:///renderer/index.html' },
     },
     win.id,
+    ackBody(win),
   );
 }
 
@@ -397,6 +407,7 @@ describe('window close layout flush', () => {
         senderFrame: { url: 'file:///renderer/index.html' },
       },
       win.id,
+      ackBody(win), // requestId 正确:只因 sender 不是该窗口而被拒
     );
     await tick();
     expect(win.destroyed).toBe(false);
@@ -421,6 +432,7 @@ describe('window close layout flush', () => {
         senderFrame: { url: 'https://evil.example/' },
       },
       win.id,
+      ackBody(win), // requestId 正确:只因 frame 不受信而被拒
     );
     await tick();
     expect(win.destroyed).toBe(false);

@@ -251,8 +251,13 @@ function reportDirty(
   );
 }
 
-function ack(win: MockWin, result?: unknown): void {
-  handlerOf('layout:flush-ack')({ sender: win.webContents, senderFrame: TRUSTED }, win.id, result);
+/** renderer 的回执:原样带回 requestId(未显式给出时取该窗口最近一次 flush 请求的)。 */
+function ack(win: MockWin, result?: Record<string, unknown>): void {
+  const requests = flushRequests(win) as { requestId?: unknown }[];
+  const latest = requests[requests.length - 1]?.requestId;
+  const payload =
+    result && 'requestId' in result ? result : { ...result, ...(latest === undefined ? {} : { requestId: latest }) };
+  handlerOf('layout:flush-ack')({ sender: win.webContents, senderFrame: TRUSTED }, win.id, payload);
 }
 
 function flushRequests(win: MockWin): unknown[] {
@@ -479,7 +484,7 @@ describe('关窗「保存」:flush 被跳过也视为保存未确认', () => {
 });
 
 describe('flush 回执按 requestId 匹配', () => {
-  it('requestId 不匹配的回执被忽略;匹配的才结算', async () => {
+  it('requestId 不匹配 / 缺失的回执被忽略;匹配的才结算', async () => {
     const win = createReadyWindow(33);
     reportDirty(win, ds(['/w/a.ts']));
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
@@ -488,6 +493,11 @@ describe('flush 回执按 requestId 匹配', () => {
     await settle();
     const id = requestIdOf(win, 0);
     ack(win, { saveFailed: false, requestId: id + 1000 });
+    await settle();
+    expect(win.destroyed).toBe(false);
+
+    // 不带 requestId 的回执同样不结算(即便该窗口只有一个在途请求)
+    ack(win, { saveFailed: false, requestId: undefined });
     await settle();
     expect(win.destroyed).toBe(false);
 

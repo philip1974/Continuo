@@ -69,7 +69,7 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
 
 - 每个 flush 请求带唯一 `requestId`,renderer 回执原样带回;main 按 requestId 结算,且仍校验受信 frame 与
   sender 窗口。单窗关闭与 Cmd+Q 交叉时两次请求互不覆盖,旧请求的回执不会结算新请求。
-- 兼容不带 requestId 的旧回执:仅当该窗口恰有一个在途请求时接受。
+- 不带 requestId 的回执不结算(main 与 renderer 同包发布,不存在旧版 renderer)。
 - 回执**始终**携带 flush 后的最终脏态 `state`(含空集合;autosave 已 flush,仍脏的 `.md` 也计入),main 以其更新
   脏态记账。「保存」后 tab 变干净,不必等之后的 effect 上报 —— 否则 main 可能拿旧脏集合做全局最终检查而误中止退出。
 

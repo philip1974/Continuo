@@ -270,12 +270,8 @@ ipcMain.on(
     const senderWin = BrowserWindow.fromWebContents(event.sender);
     if (!senderWin || senderWin.id !== windowId) return;
     const ack = parseFlushAck(result);
-    let entry = ack.requestId === null ? undefined : pendingFlushAcks.get(ack.requestId);
-    if (ack.requestId === null) {
-      // 兼容不带 requestId 的旧回执:仅当该窗口恰有一个在途请求(无歧义)时接受。
-      const mine = [...pendingFlushAcks.values()].filter((e) => e.windowId === windowId);
-      if (mine.length === 1) entry = mine[0];
-    }
+    // 只接受与在途请求匹配的回执(renderer 原样带回 requestId;关窗与 Cmd+Q 交叉时不串号)。
+    const entry = ack.requestId === null ? undefined : pendingFlushAcks.get(ack.requestId);
     if (!entry || entry.windowId !== windowId) return;
     // 按回执携带的最终脏态记账(始终携带,含空集合;旧回执只有 remaining)。remaining:flush 后仍有未保存改动
     // (防抖内 autosave 失败 / flush 期间继续输入 / 确认期间别窗变脏),中止本次关闭后再次关闭会看到确认框;
