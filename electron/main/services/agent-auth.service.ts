@@ -82,11 +82,10 @@ const newAuthThrottle = (): PromptThrottle =>
   new PromptThrottle(undefined, (subject) => subject.slice(0, subject.indexOf(':')));
 let throttle = newAuthThrottle();
 /**
- * main 对 renderer「本次启动期间允许」的镜像(`窗口:类别:域`)。真相源仍在 renderer;这里只用来决定是否走节流:
- * 已授权域的请求 renderer 直接放行、不弹窗,所以并发、高频都是正常使用,不能被单飞 / 速率上限拦住。
- * renderer 文档被换掉(reload / 渲染进程崩溃)时由 watchAgentAuthRenderer 清除。纵深:镜像说已授权时 renderer 只会秒回
- * 'session';按镜像放行的请求得到任何别的结果(仅本次 / 拒绝 / 超时 / 取消)都说明镜像已过期 → 清镜像,且这次的
- * 结果照常记入节流(否则过期镜像下每次点「仅本次」都不计速率、超时无冷却、被拒后立刻又弹)。
+ * 「本次启动期间允许」的唯一权威(`窗口:类别:域`):用户对某请求选「本次启动期间允许」且应答被接受时记入;已授权域的
+ * 请求在 main 直接放行,不发 IPC、不弹窗、不走节流。撤销 / 退出时清空;renderer 文档被换掉(reload / 渲染进程崩溃)
+ * 或窗口关闭时清掉该窗口的条目(watchAgentAuthRenderer / cancelAgentAuthByWindow)—— 与此前「renderer 状态随文档
+ * 消失」同一语义。renderer 只持有用于界面(状态栏撤销入口)的副本,不参与放行判断。
  */
 const sessionGrantMirror = new Set<string>();
 
@@ -235,8 +234,8 @@ export async function requestAgentAuth(
   const win = pickAuthTargetWindow(info.ownerWindowId);
   if (!win) return 'denied';
   // 边界(E229):全局 + per-window 未决授权双闸,超限直接终态 'denied'(不入 pending、不起 timer、
-  // 不发 IPC),防外部 agent spam 让 pending/timer/IPC 线性放大。renderer 合法并发由 store.ensure 处理,
-  // 此 backstop 远高于正常并发量,只挡恶意 spam。
+  // 不发 IPC),防外部 agent spam 让 pending/timer/IPC 线性放大。后备防线:已授权域的请求在下方直接放行、不入
+  // pending,未授权请求受单飞约束(每调用方类别至多一个未决),正常与恶意并发都碰不到这个上限。
   if (
     pending.size >= MAX_PENDING_AUTH_GLOBAL ||
     pendingCountForWindow(win.id) >= MAX_PENDING_AUTH_PER_WINDOW
@@ -254,31 +253,24 @@ export async function requestAgentAuth(
       'the Continuo window is reloading and cannot show an authorization prompt yet; retry in a few seconds',
     );
   }
-  // 该域已「本次启动期间允许」→ renderer 不弹窗,不走节流。
-  const throttled = !sessionGrantMirror.has(grantKey);
-  if (throttled) {
-    const admission = throttle.admit(subject, [domain]);
-    if (!admission.ok) throw throttledError(admission);
-  }
+  // 该域已「本次启动期间允许」→ 直接放行(不发 IPC、不弹窗、不走节流)。
+  if (sessionGrantMirror.has(grantKey)) return 'session';
+  const admission = throttle.admit(subject, [domain]);
+  if (!admission.ok) throw throttledError(admission);
   const requestId = `req-${crypto.randomUUID()}`;
   return new Promise<AgentAuthDecision>((resolve) => {
     const settle = (decision: AgentAuthDecision, cause: SettleCause): void => {
       clearTimeout(entry.timer);
       const granted = cause === 'answer' && decision === 'session';
-      // 未走节流(镜像说已授权)却不是 'session' → 镜像已过期:清掉,这次的结果照常记账。并发的同类请求只有
-      // 第一个发现过期的记账(其余是 renderer 因槽被占自动拒的,不是用户的决定)。没有 admit 过,不调 endPrompt。
-      const account = throttled || (!granted && sessionGrantMirror.delete(grantKey));
-      if (throttled) throttle.endPrompt(subject);
-      if (account) {
-        if (cause === 'answer') {
-          throttle.noteDecision(subject, [domain], decision === 'denied' ? 'deny' : 'grant');
-        } else if (
-          cause === 'timeout' &&
-          entry.shownAt !== null &&
-          Date.now() - entry.shownAt >= MIN_SHOWN_FOR_TIMEOUT_COOLDOWN_MS
-        ) {
-          throttle.noteTimeout(subject);
-        }
+      throttle.endPrompt(subject);
+      if (cause === 'answer') {
+        throttle.noteDecision(subject, [domain], decision === 'denied' ? 'deny' : 'grant');
+      } else if (
+        cause === 'timeout' &&
+        entry.shownAt !== null &&
+        Date.now() - entry.shownAt >= MIN_SHOWN_FOR_TIMEOUT_COOLDOWN_MS
+      ) {
+        throttle.noteTimeout(subject);
       }
       // 非应答结算(超时 / 排队兜底 / 取消):通知该窗口撤掉对应弹窗(renderer 不自行计时)。窗口已销毁 / 发送失败
       // 无弹窗可撤,忽略。撤销路径另有 REVOKED 广播,重复通知在 renderer 侧找不到槽即 no-op。

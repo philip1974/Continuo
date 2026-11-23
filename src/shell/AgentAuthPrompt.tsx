@@ -1,6 +1,6 @@
 // Agent Terminal MCP — 授权弹窗(Phase 2)。
 // 订阅 main 推的 'agent-auth:request' → 调 store.ensure → 等用户决定 → 应答 main。
-// 已 sessionGranted 时 ensure 立刻返回 'session',Modal 不渲染。
+// 已「本次启动期间允许」的域在 main 直接放行,不会推到这里。
 
 import { useEffect, type MouseEvent, type ReactNode } from 'react';
 import { Button, Modal } from '@/design';
@@ -51,8 +51,7 @@ export function AgentAuthPrompt() {
   // 请求首次出现、以及排队的下一个请求显示时,防误触延迟都重新计时。
   const guard = usePromptGrantGuard(pending?.requestId ?? null);
 
-  // 订阅 main 推的请求 — sessionGranted 时 ensure 自动短路返回 'session',
-  // Modal 不渲染;否则 ensure 设 pending,UI 弹出。
+  // 订阅 main 推的请求(已授权域的请求 main 直接放行,不会推到这里)→ ensure 设 pending,UI 弹出。
   useEffect(() => {
     return coApi.agentAuth.onRequest(async (payload) => {
       // 边界(E171):IPC ingress runtime 守卫 —— 畸形 payload(null/缺 requestId·method/超长)drop +

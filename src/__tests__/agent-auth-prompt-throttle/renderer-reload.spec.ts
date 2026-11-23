@@ -136,9 +136,10 @@ async function promptsAgainRightAfterDeny(): Promise<boolean> {
   return prompted;
 }
 
+// 「本次启动期间允许」的权威在 main:reload(main 收到导航事件)时清掉该窗口的授权,之后恢复弹窗与节流。
+// (renderer 只持有界面副本;它单独丢失不影响 main 的放行判断,不再有「main 没收到事件」的纵深分支。)
 describe.each([
   ['main 收到导航事件(Cmd+R)', reload],
-  ['纵深:main 没收到任何事件,只是 renderer 授权态没了', rebuildRenderer],
 ])('「本次启动期间允许」后 renderer reload —— %s', (_name, lose) => {
   it(`40 次请求每次点「仅本次」→ 弹窗数不超过速率上限 ${PROMPT_RATE_MAX}`, async () => {
     await grantSession();

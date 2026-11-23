@@ -232,14 +232,13 @@ describe('agent 授权弹窗:单飞与「本次启动期间允许」', () => {
     await expect(ask('once', { method: 'debug.launch' })).resolves.toBe('once');
   });
 
-  it('用户选了「本次启动期间允许」后,该域的并发请求全部转发给 renderer(不单飞、不计速率)', async () => {
+  // 「本次启动期间允许」的权威在 main:已授权域的请求在 main 直接放行 —— 不发 IPC、不弹窗、不入 pending、不走节流。
+  it('用户选了「本次启动期间允许」后,该域的并发请求在 main 直接放行(不发 IPC、不单飞、不计速率)', async () => {
     await expect(ask('session')).resolves.toBe('session');
+    const sendsBefore = prompts();
     const ps = Array.from({ length: PROMPT_RATE_MAX * 3 }, () => request());
-    expect(prompts()).toBe(1 + PROMPT_RATE_MAX * 3);
-    for (const [, payload] of win.webContents.send.mock.calls.slice(1)) {
-      answerAgentAuthRequest((payload as AgentAuthRequestPayload).requestId, 'session', 1);
-    }
     await expect(Promise.all(ps)).resolves.toEqual(ps.map(() => 'session'));
+    expect(prompts()).toBe(sendsBefore);
     // 只对被授予的域:debug 仍单飞。
     const d = request({ method: 'debug.launch' });
     await expectThrottled({ method: 'debug.launch' }, /already waiting/);
@@ -255,32 +254,6 @@ describe('agent 授权弹窗:单飞与「本次启动期间允许」', () => {
     answerAgentAuthRequest(lastRequestId(), 'denied', 1);
     await p;
     await expectThrottled({}, /not ask again for 30s/);
-  });
-
-  it('纵深:镜像过期(renderer 丢了授权态而 main 没收到事件)→ 按镜像放行的请求被拒即恢复节流,这次拒绝照常计冷却', async () => {
-    await ask('session');
-    // 对「已授权」域的请求真的弹了窗并被用户拒绝。
-    await expect(ask('denied')).resolves.toBe('denied');
-    await expectThrottled({}, /not ask again for 30s/);
-    vi.advanceTimersByTime(BASE);
-    // 镜像已清 → 恢复单飞。
-    const p = request();
-    await expectThrottled({}, /already waiting/);
-    answerAgentAuthRequest(lastRequestId(), 'once', 1);
-    await p;
-  });
-
-  it('纵深:镜像过期时并发的同域请求只记一次拒绝(其余是 renderer 因槽被占自动拒的)', async () => {
-    await ask('session');
-    const ps = Array.from({ length: 5 }, () => request());
-    for (const [, payload] of win.webContents.send.mock.calls.slice(1)) {
-      answerAgentAuthRequest((payload as AgentAuthRequestPayload).requestId, 'denied', 1);
-    }
-    await Promise.all(ps);
-    // 一次拒绝 → 30s;若 5 次都记,调用方级退避会到 120s。
-    await expectThrottled({}, /not ask again for 30s/);
-    vi.advanceTimersByTime(BASE);
-    await expect(ask('once')).resolves.toBe('once');
   });
 });
 

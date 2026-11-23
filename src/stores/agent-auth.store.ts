@@ -1,6 +1,6 @@
 // Agent Terminal MCP — 授权 store(Phase 2)。
-// 真相源:renderer 单一 store。main 端通过反向 IPC 调 ensure(),由 renderer
-// 决策(已 sessionGranted 直接通过,否则弹窗)。
+// 「本次启动期间允许」的权威在 main(agent-auth.service:已授权域的请求在 main 直接放行,不会发到这里);
+// 本 store 管弹窗(槽、排队)并持有授权位的界面副本(状态栏撤销入口据此显示),不参与放行判断。
 //
 // 决策(2026-05-05):
 //   - 一次性授权(本次启动有效),不持久化
@@ -162,10 +162,6 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     const key = grantKeyFor(info.method, info.external);
     // 纵深:不允许授权的组合(外部客户端调插件工具)直接拒,不弹窗。
     if (key === null) return Promise.resolve('denied' as const);
-    // 该请求所属域(按调用方类别区分窗口 / external)已 session 授权 → 直接通过,不设 pending(支持并发)
-    if (get()[key]) {
-      return Promise.resolve('session' as const);
-    }
     // 同类别调用方已占槽(显示中或排队中)→ 立即拒(简化并发,与 plugin permission-prompt 同型)
     const external = info.external === true;
     if (slots.some((slot) => (slot.req.external === true) === external)) {

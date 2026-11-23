@@ -314,32 +314,17 @@ describe('排队中的请求:超时从开始显示起算', () => {
     expect(await throttled('terminal.read_output', true)).toBe(true);
   });
 
-  it('排队兜底上限:前面的弹窗一直轮不完(renderer 无响应),排队 10 分钟仍未显示的请求按取消结算、不进冷却', async () => {
+  // 排队兜底上限(AGENT_AUTH_QUEUE_MAX_MS)防的是「已授权域的请求在 renderer 无响应时排成长队」。现在已授权域的
+  // 请求在 main 直接放行、不入队,未授权请求每调用方类别至多一个未决 —— 长队列的来源已消失,上限保留为后备防线。
+  it('renderer 无响应时,已授权域的请求不排队:在 main 直接放行', async () => {
     expect(QUEUE_MAX).toBe(10 * 60_000);
-    // 先让窗口内 terminal 域「本次启动期间允许」(之后该域请求不走单飞,可并发),再让 renderer 不再响应。
     const first = request('terminal.send_text');
     await flush();
     user('session');
     expect(await first).toBe('session');
     const wc = electronMock.windows[0] as unknown as { webContents: { send: () => void } };
     wc.webContents.send = () => {};
-    // 6 个已授权域的请求排成一队(各自显示到 120s 超时),external 请求排在最后:轮到它显示要 12 分钟。
-    for (let i = 0; i < 6; i += 1) void request('terminal.send_text');
-    let extSettled = false;
-    const ext = request('terminal.read_output', true);
-    void ext.then(() => {
-      extSettled = true;
-    });
-    await flush(QUEUE_MAX - 1);
-    expect(extSettled).toBe(false);
-    await flush(1);
-    expect(await ext).toBe('denied');
-    // 按取消结算:不进冷却(超时冷却早已过期,再请求不被节流)。
-    let throttledAgain = false;
-    void request('terminal.read_output', true).then((r) => {
-      throttledAgain = r === 'THROTTLED';
-    });
-    await flush();
-    expect(throttledAgain).toBe(false);
+    const results = await Promise.all(Array.from({ length: 6 }, () => request('terminal.send_text')));
+    expect(results).toEqual(results.map(() => 'session'));
   });
 });

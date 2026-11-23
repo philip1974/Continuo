@@ -81,13 +81,14 @@ describe('ensure', () => {
     });
   });
 
-  it("sessionGranted=true → 立即 resolve session,不设 pending", async () => {
+  // 放行判断的权威在 main(已授权域的请求不会发到 renderer);这里的授权位只是界面副本(状态栏撤销入口)。
+  it("sessionGranted=true 也照常弹窗:renderer 不据授权位放行", () => {
     useAgentAuthStore.setState({ sessionGranted: true });
-    const decision = await useAgentAuthStore
+    void useAgentAuthStore
       .getState()
       .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
-    expect(decision).toBe('session');
-    expect(useAgentAuthStore.getState().pending).toBeNull();
+    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.create_session');
+    useAgentAuthStore.getState().deny();
   });
 
   it("已有 pending → 第二条 ensure 立即 resolve denied", async () => {
@@ -117,18 +118,6 @@ describe('ensure', () => {
     expect(id1).not.toBe(id2);
   });
 
-  it('sessionGranted=true 时多个并发 ensure 都直接通过', async () => {
-    useAgentAuthStore.setState({ sessionGranted: true });
-    const a = useAgentAuthStore
-      .getState()
-      .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
-    const b = useAgentAuthStore
-      .getState()
-      .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
-    expect(await a).toBe('session');
-    expect(await b).toBe('session');
-    expect(useAgentAuthStore.getState().pending).toBeNull();
-  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -182,20 +171,16 @@ describe("grant('session')", () => {
     expect(s.sessionGranted).toBe(false);
   });
 
-  it("confirmSessionGrant 后,后续 ensure 直接 'session'", async () => {
+  it("confirmSessionGrant 记下界面授权位", async () => {
     const p = useAgentAuthStore
       .getState()
       .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
     useAgentAuthStore.getState().grant('session');
-    await p;
+    await expect(p).resolves.toBe('session');
     useAgentAuthStore
       .getState()
       .confirmSessionGrant('terminal.create_session', getAgentAuthEpoch());
     expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
-    const next = await useAgentAuthStore
-      .getState()
-      .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
-    expect(next).toBe('session');
   });
 
   it('确认前发生 revoke → 迟到的 confirmSessionGrant 被忽略(不复活已撤销授权)', async () => {
@@ -297,22 +282,6 @@ describe('revoke', () => {
     }
   });
 
-  it('revoke 后再 ensure → 重新弹窗(不再直接通过)', async () => {
-    useAgentAuthStore.setState({ sessionGranted: true });
-    // 先验证已授权
-    expect(
-      await useAgentAuthStore
-        .getState()
-        .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' }),
-    ).toBe('session');
-    // 撤销
-    useAgentAuthStore.getState().revoke();
-    // 再 ensure 应该挂起(等用户)
-    void useAgentAuthStore
-      .getState()
-      .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session' });
-    expect(useAgentAuthStore.getState().pending).not.toBeNull();
-  });
 });
 
 // main 已撤销(本窗口撤销成功 / 其它窗口撤销的 REVOKED 广播):main 已旋转 token 并把全部 pending 结算为
@@ -358,20 +327,13 @@ describe('授权分域:terminal 与 debug 各自记「本次启动期间允许�
     useAgentAuthStore.getState().deny();
   });
 
-  it('对 debug 授权 session 后:debug 请求直接通过,终端请求仍然弹窗', async () => {
+  it('对 debug 授权 session 后:只记 debug 域的界面授权位', async () => {
     const debug = useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' });
     useAgentAuthStore.getState().grant('session');
     await expect(debug).resolves.toBe('session');
     useAgentAuthStore.getState().confirmSessionGrant('debug.launch', getAgentAuthEpoch());
     expect(useAgentAuthStore.getState().debugSessionGranted).toBe(true);
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
-
-    await expect(useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'debug.*' })).resolves.toBe('session');
-    expect(useAgentAuthStore.getState().pending).toBeNull();
-
-    void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'terminal.send_input' });
-    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.send_input');
-    useAgentAuthStore.getState().deny();
   });
 
   it('revoke 同时撤销两个域', () => {
@@ -381,11 +343,10 @@ describe('授权分域:terminal 与 debug 各自记「本次启动期间允许�
     expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
   });
 
-  it('非 debug 的 method(含未知 method)归终端域', async () => {
-    useAgentAuthStore.setState({ sessionGranted: true });
-    await expect(useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'something.else' })).resolves.toBe(
-      'session',
-    );
+  it('非 debug 的 method(含未知 method)归终端域', () => {
+    useAgentAuthStore.getState().confirmSessionGrant('something.else', getAgentAuthEpoch());
+    expect(useAgentAuthStore.getState().sessionGranted).toBe(true);
+    expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
   });
 });
 
@@ -399,7 +360,7 @@ describe('授权分域:plugin 域独立于 terminal / debug', () => {
     useAgentAuthStore.getState().deny();
   });
 
-  it('plugin 域 session 授权后:插件工具直接通过,终端 / debug 请求仍然弹窗', async () => {
+  it('plugin 域 session 授权后:只记 plugin 域的界面授权位', async () => {
     const p = useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'plugin.git.stage' });
     useAgentAuthStore.getState().grant('session');
     await expect(p).resolves.toBe('session');
@@ -407,14 +368,6 @@ describe('授权分域:plugin 域独立于 terminal / debug', () => {
     expect(useAgentAuthStore.getState().pluginSessionGranted).toBe(true);
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
     expect(useAgentAuthStore.getState().debugSessionGranted).toBe(false);
-
-    await expect(
-      useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'plugin.other.tool' }),
-    ).resolves.toBe('session');
-
-    void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'terminal.send_input' });
-    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.send_input');
-    useAgentAuthStore.getState().deny();
   });
 
   it('revoke 同时撤销 plugin 域', () => {
@@ -442,7 +395,7 @@ describe('授权分调用方:external(未绑定终端)独立于窗口级授权',
     useAgentAuthStore.getState().deny();
   });
 
-  it('external session 授权只记在 external 同域:不写窗口级授权,窗口请求 / external 其它域仍弹窗', async () => {
+  it('external session 授权只记在 external 同域的界面授权位:不写窗口级授权', async () => {
     const p = useAgentAuthStore
       .getState()
       .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session', external: true });
@@ -453,19 +406,8 @@ describe('授权分调用方:external(未绑定终端)独立于窗口级授权',
       .confirmSessionGrant('terminal.create_session', getAgentAuthEpoch(), true);
     const s = useAgentAuthStore.getState();
     expect(s.externalSessionGranted).toBe(true);
+    expect(s.externalDebugSessionGranted).toBe(false);
     expect(s.sessionGranted).toBe(false);
-
-    await expect(
-      useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'terminal.read_output', external: true }),
-    ).resolves.toBe('session');
-
-    void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'terminal.read_output' });
-    expect(useAgentAuthStore.getState().pending?.method).toBe('terminal.read_output');
-    useAgentAuthStore.getState().deny();
-
-    void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch', external: true });
-    expect(useAgentAuthStore.getState().pending?.method).toBe('debug.launch');
-    useAgentAuthStore.getState().deny();
   });
 
   it('revoke 同时撤销 external 各域', () => {

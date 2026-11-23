@@ -10,13 +10,11 @@ import {
   resolveAgentAuthRequest,
   revokeAndKillAgentSessions,
   setMcpHostRef,
-  MAX_PENDING_AUTH_GLOBAL_FOR_TEST,
   MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST,
 } from '../../../electron/main/services/agent-auth.service';
 import {
   AGENT_AUTH_CHANNELS,
   AGENT_AUTH_PROMPT_TIMEOUT_MS,
-  AGENT_AUTH_QUEUE_MAX_MS,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
 } from '../../../electron/shared/agent-auth-channels';
@@ -350,116 +348,45 @@ describe('agent-auth-service: requestAgentAuth', () => {
   });
 
   // 边界(E229,E227/E228 pending 数量上限族):未决授权 pending 数量双闸。
-  it("E229-1: 单窗口未决授权到 per-window 上限后,再请求立即终态 'denied',不入 pending、不发 IPC", async () => {
+  // 「本次启动期间允许」的权威在 main:按 (窗口, 调用方类别, 域) 记,互不放行。
+  it('授权按窗口 × 调用方类别 × 域隔离:终端域授权不放行 debug / plugin 域、external 调用方与其它窗口', async () => {
+    const w1 = makeWin(1);
+    const w2 = makeWin(2);
+    electronMock.windows = [w1, w2];
+    await grantTerminalSession(w1);
+
+    await expect(requestAgentAuth({ method: 'terminal.send_text', ownerWindowId: 1 })).resolves.toBe('session');
+    expect(w1.webContents.send).not.toHaveBeenCalled();
+
+    for (const req of [
+      { method: 'debug.launch', ownerWindowId: 1 },
+      { method: 'plugin.git.stage', ownerWindowId: 1 },
+      { method: 'terminal.send_text', ownerWindowId: 1, external: true },
+      { method: 'terminal.send_text', ownerWindowId: 2 },
+    ]) {
+      const target = req.ownerWindowId === 1 ? w1 : w2;
+      target.webContents.send.mockClear();
+      const p = requestAgentAuth(req);
+      expect(target.webContents.send).toHaveBeenCalledTimes(1); // 照常弹窗
+      const payload = target.webContents.send.mock.calls[0]![1] as AgentAuthRequestPayload;
+      resolveAgentAuthRequest(payload.requestId, 'denied');
+      await expect(p).resolves.toBe('denied');
+    }
+  });
+
+  // E229:未决授权的全局 / per-window 上限防的是「已授权域的并发请求在 main 排成大量 pending + timer + IPC」。
+  // 「本次启动期间允许」现由 main 直接放行,这类请求不再入 pending;未授权请求又受单飞约束(每调用方类别至多一个
+  // 未决)—— 放大来源在源头消失,上限保留为后备防线。
+  it('E229: 已授权域的大量并发请求在 main 直接放行:不入 pending、不发 IPC', async () => {
     const win = makeWin(1);
     electronMock.windows = [win];
     await grantTerminalSession(win);
-    const max = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
-    // 凑满 per-window 未决
-    const ps: Promise<AgentAuthDecision>[] = [];
-    for (let i = 0; i < max; i++) {
-      ps.push(requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }));
-    }
-    expect(win.webContents.send).toHaveBeenCalledTimes(max);
-    // 第 max+1 个:立即 denied,不发 IPC
-    await expect(
+    const ps = Array.from({ length: MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST * 2 }, () =>
       requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
-    ).resolves.toBe('denied');
-    expect(win.webContents.send).toHaveBeenCalledTimes(max); // 没多发
-    // 清理:全部结算,避免悬挂 timer(超时从开始显示起算、逐个显示 → 推进到排队兜底上限,其余按取消结算)
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
-    await Promise.all(ps);
-  });
-
-  it("E229-2: 终态(resolve)释放槽位后,可再接受新授权请求(计数无漂移)", async () => {
-    const win = makeWin(1);
-    electronMock.windows = [win];
-    await grantTerminalSession(win);
-    const max = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
-    const ps: Promise<AgentAuthDecision>[] = [];
-    for (let i = 0; i < max; i++) {
-      ps.push(requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }));
-    }
-    // 满了 → 溢出
-    await expect(
-      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
-    ).resolves.toBe('denied');
-    // resolve 第一个,释放一个槽位
-    const firstPayload = firstAuthPayload(win);
-    resolveAgentAuthRequest(firstPayload.requestId, 'session');
-    await expect(ps[0]!).resolves.toBe('session');
-    // 现在能再接受一个:正常发 IPC
-    const sendsBefore = win.webContents.send.mock.calls.length;
-    const revived = requestAgentAuth({ method: 'terminal.write', ownerWindowId: 1 });
-    expect(win.webContents.send).toHaveBeenCalledTimes(sendsBefore + 1);
-    // 清理
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
-    await Promise.all([...ps.slice(1), revived]);
-  });
-
-  it("E229-3: per-window 是 per-window 的:win1 满了,win2 仍可请求", async () => {
-    const win1 = makeWin(1);
-    const win2 = makeWin(2);
-    electronMock.windows = [win1, win2];
-    await grantTerminalSession(win1);
-    const max = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
-    const ps: Promise<AgentAuthDecision>[] = [];
-    for (let i = 0; i < max; i++) {
-      // 显式路由到 win1
-      ps.push(
-        requestAgentAuth({
-          method: 'terminal.create_session',
-          ownerWindowId: 1,
-        }),
-      );
-    }
-    // win1 溢出
-    await expect(
-      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: 1 }),
-    ).resolves.toBe('denied');
-    // win2 不受影响
-    const onWin2 = requestAgentAuth({
-      method: 'terminal.write',
-      ownerWindowId: 2,
-    });
-    expect(win2.webContents.send).toHaveBeenCalledTimes(1);
-    const p2 = firstAuthPayload(win2);
-    resolveAgentAuthRequest(p2.requestId, 'session');
-    await expect(onWin2).resolves.toBe('session');
-    // 清理
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
-    await Promise.all(ps);
-  });
-
-  it("E229-4: 全局上限:跨多窗累计到全局上限后,新窗口请求也被全局闸拒", async () => {
-    const perWin = MAX_PENDING_AUTH_PER_WINDOW_FOR_TEST;
-    const global = MAX_PENDING_AUTH_GLOBAL_FOR_TEST;
-    const winCount = Math.ceil(global / perWin);
-    const wins = Array.from({ length: winCount + 1 }, (_, i) => makeWin(i + 1));
-    electronMock.windows = wins;
-    for (const w of wins.slice(0, winCount)) await grantTerminalSession(w);
-    const ps: Promise<AgentAuthDecision>[] = [];
-    let filled = 0;
-    let wi = 0;
-    while (filled < global) {
-      const id = wins[wi]!.id;
-      // 每窗填到 per-window 上限或补满全局剩余
-      const room = Math.min(perWin, global - filled);
-      for (let i = 0; i < room; i++) {
-        ps.push(requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: id }));
-        filled += 1;
-      }
-      wi += 1;
-    }
-    // 全局已满 → 全新窗口(per-window 计数为 0)也被全局闸拒
-    const freshId = wins[winCount]!.id;
-    await expect(
-      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: freshId }),
-    ).resolves.toBe('denied');
-    expect(wins[winCount]!.webContents.send).not.toHaveBeenCalled();
-    // 清理
-    await vi.advanceTimersByTimeAsync(AGENT_AUTH_QUEUE_MAX_MS);
-    await Promise.all(ps);
+    );
+    await expect(Promise.all(ps)).resolves.toEqual(ps.map(() => 'session'));
+    expect(win.webContents.send).not.toHaveBeenCalled();
+    expect(cancelAllAgentAuth()).toBe(0); // 无未决
   });
 });
 
