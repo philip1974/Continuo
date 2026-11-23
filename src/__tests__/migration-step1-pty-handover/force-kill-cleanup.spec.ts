@@ -118,10 +118,7 @@ describe('migration step1 PTY handover · forceKill cleanup', () => {
     terminalService.forceKill('k');
 
     expect(setExitedSpy).toHaveBeenCalledWith('k', -1);
-    expect(win.webContents.send).toHaveBeenCalledWith('terminal:exit', 'k', {
-      exitCode: -1,
-      signal: undefined,
-    });
+    expect(win.webContents.send).toHaveBeenCalledWith('terminal:exit', 'k');
     expect(byToken).toHaveBeenCalledWith('token-k');
     expect(terminalService.has('k')).toBe(false);
     expect(sessionManagerMock.kill).toHaveBeenCalledWith({

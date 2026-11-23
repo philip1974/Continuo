@@ -100,10 +100,6 @@ function handleExit(id: string, info: { exitCode: number; signal?: number }): vo
   // forceKill/killTimer-grace/cleanupAllForWindow paths sync-call cleanupSessionLocal
   // BEFORE sm.kill (which disposes this listener), so this handler is the idempotent
   // fallback for natural exits.
-  // Note: signal is currently dropped at the IPC boundary (baseline 'terminal:exit'
-  // payload uses { exitCode, signal }, our cleanupSessionLocal also uses
-  // { exitCode, signal: undefined }) — Op4/Op12 review may wire signal through if
-  // baseline preserves it; for now cleanupSessionLocal preserves baseline shape.
   cleanupSessionLocal(id, info.exitCode);
 }
 
@@ -336,9 +332,8 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
   // 退出强杀(cleanupAll)时不留:进程随即退出、快照无人读取,每个 PTY 拼最多 4MB 只白占主线程与堆。
   if (!shuttingDown) retainExitedHistory(id);
 
-  // 2. Push terminal:exit (only if target still alive — variadic baseline payload)
-  // Baseline shape: webContents.send('terminal:exit', id, { exitCode, signal })
-  safeSend(id, TERMINAL_CHANNELS.EXIT, id, { exitCode, signal: undefined });
+  // 2. Push terminal:exit (only if target still alive)。只带 id:退出码走 sessions 快照的 exitCode。
+  safeSend(id, TERMINAL_CHANNELS.EXIT, id);
 
   // 3. Clear all timers
   if (instance.killTimer) {

@@ -91,11 +91,6 @@ import {
 // export 是为了 ContinuoApi 跨 module 引用时 TS 能 name 这些类型(lib/lm-api.ts 需要)。
 export type TerminalCreateOptions = TerminalCreateInput;
 
-export interface TerminalExitPayload {
-  readonly exitCode: number | undefined;
-  readonly signal: number | undefined;
-}
-
 /**
  * main 推过来的 session 形态;renderer cast 为 TerminalSession。
  * 可维护性 M14:复用 shared TerminalSessionSnapshot 单一来源(此前内联重复了
@@ -333,14 +328,8 @@ const api = {
       ensureTerminalDataListener();
       return terminalDataDemux.add(id, cb);
     },
-    onExit: (
-      cb: (id: string, payload: TerminalExitPayload) => void,
-    ): (() => void) => {
-      const listener = (
-        _: unknown,
-        id: string,
-        payload: TerminalExitPayload,
-      ) => cb(id, payload);
+    onExit: (cb: (id: string) => void): (() => void) => {
+      const listener = (_: unknown, id: string) => cb(id);
       return subscribeIpc(TERMINAL_CHANNELS.EXIT, listener);
     },
   },
