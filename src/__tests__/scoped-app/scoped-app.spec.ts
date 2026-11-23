@@ -109,16 +109,14 @@ import {
   NETWORK_HEADERS_MAX,
   NETWORK_HEADER_VALUE_MAX,
 } from '../../../electron/shared/network-limits';
-import {
-  InMemoryPermissionStore,
-  PermissionError,
-} from '../../plugins/permissions';
+import { PermissionError } from '../../plugins/permissions';
 import type { CoApp } from '../../plugins/types';
 import {
   PluginMcpRegistry,
   type PluginMcpUpstream,
 } from '../../plugins/registries/PluginMcpRegistry';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { InMemoryPermissionStore } from '../../plugins/testing/in-memory-stores';
 
 const noopMcpUpstream: PluginMcpUpstream = {
   async register() {},

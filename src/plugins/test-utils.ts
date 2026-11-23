@@ -9,7 +9,6 @@ import { EventBus } from './EventBus';
 import { EditorActionRegistry } from './registries/EditorActionRegistry';
 import { ExplorerContextMenuRegistry } from './registries/ExplorerContextMenuRegistry';
 import { ExplorerDecoratorRegistry } from './registries/ExplorerDecoratorRegistry';
-import { InMemoryDataStore } from './PluginDataStore';
 import { PanelRegistry } from './registries/PanelRegistry';
 import {
   PluginMcpRegistry,
@@ -21,6 +20,7 @@ import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { createScopedApp } from './scoped-app';
 import type { CoApp, CoPluginApp } from './types';
+import { InMemoryDataStore } from './testing/in-memory-stores';
 
 const noopMcpUpstream: PluginMcpUpstream = {
   async register() {

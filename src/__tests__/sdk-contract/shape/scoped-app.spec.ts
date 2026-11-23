@@ -50,11 +50,9 @@ vi.mock('@/lib/co-api', () => ({
 }));
 
 import { createScopedApp } from '../../../plugins/scoped-app';
-import {
-  InMemoryPermissionStore,
-  PermissionError,
-} from '../../../plugins/permissions';
+import { PermissionError } from '../../../plugins/permissions';
 import type { CoApp } from '../../../plugins/types';
+import { InMemoryPermissionStore } from '../../../plugins/testing/in-memory-stores';
 
 function makeCoApp(): CoApp {
   return {

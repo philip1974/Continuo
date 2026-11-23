@@ -42,8 +42,8 @@ import {
   type ManagerHost,
   type PluginDirInfo,
 } from '../../plugins/PluginManager';
-import { InMemoryPermissionStore } from '../../plugins/permissions';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { InMemoryPermissionStore } from '../../plugins/testing/in-memory-stores';
 
 const fakeApp = createTestCoApp('1.0.0');
 

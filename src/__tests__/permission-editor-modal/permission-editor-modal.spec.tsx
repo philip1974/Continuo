@@ -7,12 +7,12 @@ import {
   PermissionEditorModal,
   splitPermissionDecisionsForSave,
 } from '../../plugins/permissions/PermissionEditorModal';
-import { InMemoryPermissionStore } from '../../plugins/permissions';
 import type {
   PermissionDecision,
   PermissionKey,
   PermissionStore,
 } from '../../plugins/permissions';
+import { InMemoryPermissionStore } from '../../plugins/testing/in-memory-stores';
 
 function makeStore(prior: PermissionDecision[] = []): PermissionStore & {
   grant: ReturnType<typeof vi.fn>;

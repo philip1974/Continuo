@@ -13,7 +13,7 @@ import { jsonStringLengthLowerBoundExceeds } from '../../electron/shared/json-by
 // 校验可序列化,但畸形/恶意插件传超大对象时该 stringify 已在 renderer 产生巨大字符串,且会跨 IPC
 // 传给主进程(主进程 16MiB cap 来不及保护)。stringify 后立即按主进程同一上限(共享常量)预检:
 // 超限直接抛,不发 IPC、不提交 cache。返回序列化结果给调用方复用(避免二次 stringify)。
-function serializeWithinLimit(data: unknown): string {
+export function serializeWithinLimit(data: unknown): string {
   // 边界(E306,E305 reorder 同族 / 校验顺序 fail-fast):先廉价字节下界 fail-fast(早停于上限)再
   // assertJsonValue 全量遍历 —— 否则超 16MiB 但 shape 合法(≤assertJsonValue 1M/10万/256 上限)的 data
   // 会被 assertJsonValue 完整遍历后才被字节 cap 拒。下界预检对任意输入安全(E288),可先跑。
@@ -47,24 +47,6 @@ export interface PluginDataStore {
    * 只由 PluginManager 在卸载时调用,不暴露给插件(scoped-app 只透传 read/write)。
    */
   forget?(pluginId: string): void;
-}
-
-export class InMemoryDataStore implements PluginDataStore {
-  private map = new Map<string, unknown>();
-
-  async read(pluginId: string): Promise<unknown | null> {
-    return this.map.has(pluginId) ? (this.map.get(pluginId) ?? null) : null;
-  }
-
-  async write(pluginId: string, data: unknown): Promise<void> {
-    // 走一遍 JSON 确保可序列化 + 大小上限(E43:与 IPC 实现同一上限,行为对齐)
-    serializeWithinLimit(data);
-    this.map.set(pluginId, data);
-  }
-
-  forget(pluginId: string): void {
-    this.map.delete(pluginId);
-  }
 }
 
 export class IpcPluginDataStore implements PluginDataStore {

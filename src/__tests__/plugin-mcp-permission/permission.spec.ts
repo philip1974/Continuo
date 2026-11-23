@@ -10,12 +10,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { createScopedApp } from '../../plugins/scoped-app';
-import {
-  InMemoryPermissionStore,
-  PermissionError,
-  PERMISSION_KEYS,
-  type PermissionKey,
-} from '../../plugins/permissions';
+import { PermissionError, PERMISSION_KEYS, type PermissionKey } from '../../plugins/permissions';
 import { parseManifest } from '../../plugins/manifest';
 import {
   PluginMcpRegistry,
@@ -24,6 +19,7 @@ import {
 } from '../../plugins/registries/PluginMcpRegistry';
 import type { CoApp } from '../../plugins/types';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { InMemoryPermissionStore } from '../../plugins/testing/in-memory-stores';
 
 // ─── helpers ─────────────────────────────────────────────────
 

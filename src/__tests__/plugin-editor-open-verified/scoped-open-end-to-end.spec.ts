@@ -54,7 +54,7 @@ const { registerPluginFsHandlers, _resetPluginOpenedPathsForTest, pluginFsIdenti
 const { registerFsIpc } = await import('../../../electron/main/ipc/fs.ipc');
 const { StubIpcMain, makeFakeEvent } = await import('../sdk-contract/integration/make-stub-ipc');
 const { createScopedApp } = await import('@/plugins/scoped-app');
-const { InMemoryPermissionStore } = await import('@/plugins/permissions');
+const { InMemoryPermissionStore } = await import('@/plugins/testing/in-memory-stores');
 const { coApp } = await import('@/plugins/co-app');
 const { useEditorStore } = await import('@/stores/editor.store');
 const { saveFile } = await import('@/panels/Editor/editor-file-actions');

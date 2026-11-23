@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createScopedApp } from '@/plugins/scoped-app';
-import { InMemoryPermissionStore } from '@/plugins/permissions';
 import type { CoApp } from '@/plugins/types';
 import { coApi } from '@/lib/co-api';
+import { InMemoryPermissionStore } from '@/plugins/testing/in-memory-stores';
 
 const pluginFsRawWithRead = coApi.pluginFsRaw as typeof coApi.pluginFsRaw & {
   readForEditor: ReturnType<typeof vi.fn>;

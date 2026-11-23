@@ -14,10 +14,10 @@ vi.mock('@/lib/co-api', () => ({
 
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost, type PluginDirInfo } from '../../plugins/PluginManager';
-import { InMemoryPermissionStore } from '../../plugins/permissions';
 import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
 import { createTestCoApp } from '../../plugins/test-utils';
 import type { CoApp } from '../../plugins/types';
+import { InMemoryPermissionStore } from '../../plugins/testing/in-memory-stores';
 
 const ID = 'com.x.p';
 

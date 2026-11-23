@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Plugin } from '../../plugins/Plugin';
-import { InMemoryDataStore } from '../../plugins/PluginDataStore';
 import { createTestApp } from '../../plugins/test-utils';
 import type { PluginManifest } from '../../plugins/types';
 import {
   utf8ByteLength,
   utf8BytesExceed,
 } from '../../../electron/shared/utf8-byte-length';
+import { InMemoryDataStore } from '../../plugins/testing/in-memory-stores';
 
 // 边界(E125,E124 同族):字节上限须按真实 UTF-8 字节,而非 String.length(UTF-16 code unit)。
 // 共享 helper 被 fs:write / plugin-fs / scoped-app / plugin-data / layout 等所有 *_BYTES 字符串入口复用。

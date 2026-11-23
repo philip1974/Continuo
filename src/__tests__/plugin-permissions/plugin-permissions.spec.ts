@@ -2,15 +2,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
-  InMemoryPermissionStore,
   ensureAuthorized,
-  keepGrantedDecisions,
-  replacePermissionDecisions,
   type PermissionDecision,
   type PermissionKey,
   type PermissionStore,
 } from '../../plugins/permissions';
 import { parseManifest } from '../../plugins/manifest';
+import { InMemoryPermissionStore, keepGrantedDecisions, replacePermissionDecisions } from '../../plugins/testing/in-memory-stores';
 
 describe('Manifest permissions schema', () => {
   it('manifest 不带 permissions → ok,permissions=undefined', () => {

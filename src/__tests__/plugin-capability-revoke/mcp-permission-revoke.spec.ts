@@ -15,12 +15,12 @@ vi.mock('@/lib/co-api', () => ({
 
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
-import { InMemoryPermissionStore } from '../../plugins/permissions';
 import {
   PluginMcpRegistry,
   type PluginMcpUpstream,
 } from '../../plugins/registries/PluginMcpRegistry';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { InMemoryPermissionStore } from '../../plugins/testing/in-memory-stores';
 
 const ID = 'com.x.mcp';
 const TOOL = 'x_echo';
