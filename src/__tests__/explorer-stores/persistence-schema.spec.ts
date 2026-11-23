@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -8,7 +8,6 @@ import {
   loadExplorer,
   migrateV1ToV2,
   migrateV2ToV3,
-  saveExplorer,
   type ExplorerPayloadV3,
   type ExplorerV1Payload,
 } from '../../../electron/main/persistence';
@@ -60,12 +59,10 @@ const v1ValidPayload: ExplorerV1Payload = {
 };
 
 describe('ExplorerSchema v2', () => {
-  it('完整 v2 对象 saveExplorer 后以 v3 读回', async () => {
-    await saveExplorer(file, v2ValidPayload);
+  it('磁盘上的完整 v2 对象以 v3 读回', async () => {
+    await writeFile(file, JSON.stringify(v2ValidPayload));
     const back = await loadExplorer(file);
     expect(back).toEqual(migrateV2ToV3(v2ValidPayload));
-    const raw = JSON.parse(await readFile(file, 'utf-8')) as ExplorerPayloadV3;
-    expect(raw.version).toBe(3);
   });
 
   it('缺失文件 → null(首次启动语义)', async () => {
@@ -190,12 +187,6 @@ describe('ExplorerSchema v2', () => {
     });
     expect(ok.windows).toHaveLength(2);
     expect(ok.windows[1]!.windowSeq).toBe(1);
-  });
-
-  it('saveExplorer 拒绝非 v2/v3 schema 对象', async () => {
-    await expect(saveExplorer(file, 'oops' as unknown)).rejects.toThrow();
-    // v1 payload 直接 save 拒绝(必须先 migrateV1ToV2)
-    await expect(saveExplorer(file, v1ValidPayload as unknown)).rejects.toThrow();
   });
 });
 

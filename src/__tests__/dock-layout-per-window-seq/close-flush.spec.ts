@@ -7,7 +7,6 @@ import {
   defaultExplorerV3,
   loadExplorer,
   MAX_PERSISTED_WINDOW_SEGMENTS,
-  saveExplorer,
 } from '../../../electron/main/persistence';
 import {
   _reset as resetWindowSeq,
@@ -472,7 +471,7 @@ describe('window close layout flush', () => {
         lastClosedAt: 1000 + i,
       })),
     ];
-    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(payload));
     const active = createMockMainWindow(100); // 段最旧但窗口活跃
     const closing = createMockMainWindow(300);
 
@@ -505,7 +504,7 @@ describe('window close layout flush', () => {
         ...(i < 2 ? {} : { lastClosedAt: 1000 + i }), // seq 100/101 无时间戳
       })),
     ];
-    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(payload));
     const closing = createMockMainWindow(300);
 
     closing.close();
@@ -543,7 +542,7 @@ describe('window close layout flush', () => {
           explorer: { activePath: null, expandedPaths: [], sort: sortDefault },
         },
       ];
-      await saveExplorer(path.join(dir, 'explorer.json'), payload);
+      await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(payload));
       const closing = createMockMainWindow(300);
 
       closing.close();
@@ -569,7 +568,7 @@ describe('window close layout flush', () => {
         lastClosedAt: 1000 + i,
       })),
     ];
-    await saveExplorer(path.join(dir, 'explorer.json'), payload);
+    await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(payload));
     const first = createMockMainWindow(300);
     const second = createMockMainWindow(100); // 段最旧,且与 first 同时关闭
 

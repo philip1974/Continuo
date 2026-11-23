@@ -15,13 +15,11 @@ import {
   migrateV1ToV2,
   migrateV2ToV3,
   MAX_PERSISTED_WINDOW_SEGMENTS,
-  pruneExplorerFileWindows,
   pruneLRUClosed,
   stampMissingClosedAt,
   closedAtNow,
-  saveExplorer,
+  prepareExplorerFileForBoot,
   type ExplorerPayload,
-  type ExplorerPayloadV3,
   type ExplorerV1Payload,
   type ExplorerWritablePayload,
 } from '../../../electron/main/persistence';
@@ -168,16 +166,6 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     expect(await loadExplorer(file)).toBeNull();
   });
 
-  it('T5: saveExplorer writes validated v3 JSON', async () => {
-    const payload = migrateV2ToV3(v2Payload);
-
-    await saveExplorer(file, payload);
-
-    const raw = JSON.parse(await fs.readFile(file, 'utf-8')) as ExplorerPayloadV3;
-    expect(raw.version).toBe(3);
-    expect(raw).toEqual(payload);
-  });
-
   it('T6: pruneLRUClosed removes the oldest closed windows by lastClosedAt', () => {
     const payload = defaultExplorerV3();
     payload.windows = [
@@ -260,9 +248,9 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
         // → 视为最新,不能当最旧摘掉
         closedWindow(400, undefined),
       ];
-      await saveExplorer(file, payload);
+      await fs.writeFile(file, JSON.stringify(payload));
 
-      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
 
       const after = (await loadExplorer(file))!;
       expect(after.windows).toHaveLength(64);
@@ -352,21 +340,21 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
     it('未超限时不写盘', async () => {
       const payload = defaultExplorerV3();
       payload.windows.push(closedWindow(1, 10));
-      await saveExplorer(file, payload);
+      await fs.writeFile(file, JSON.stringify(payload));
       const before = await fs.readFile(file, 'utf-8');
       const statBefore = await fs.stat(file);
 
-      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
 
       expect(await fs.readFile(file, 'utf-8')).toBe(before);
       expect((await fs.stat(file)).ino).toBe(statBefore.ino);
     });
 
     it('文件缺失或损坏时不写、不抛', async () => {
-      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
       await expect(fs.access(file)).rejects.toThrow();
       await fs.writeFile(file, '{ not json', 'utf-8');
-      await pruneExplorerFileWindows(file, 64, new Set([0]));
+      await prepareExplorerFileForBoot(file, path.join(dir, 'layout.json'), 64, new Set([0]));
       expect(await fs.readFile(file, 'utf-8')).toBe('{ not json');
     });
   });

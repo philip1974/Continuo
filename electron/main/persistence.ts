@@ -438,41 +438,10 @@ async function loadExplorerWithFormat(
   return null;
 }
 
-export async function saveExplorer(
-  filePath: string,
-  payload: unknown,
-): Promise<void> {
-  const v3 = ExplorerSchemaV3.safeParse(payload);
-  if (v3.success) {
-    await atomicWriteJson(filePath, v3.data);
-    return;
-  }
-
-  const v2 = ExplorerSchema.safeParse(payload);
-  if (v2.success) {
-    await atomicWriteJson(filePath, migrateV2ToV3(v2.data));
-    return;
-  }
-
-  ExplorerSchemaV3.parse(payload);
-}
-
 /**
- * 启动收敛:既有 explorer.json 段数超限时裁到上限(未超限 / 文件缺失 / 损坏 / 不可读 → 不写)。
- * 运行期只在关窗时裁剪,不做这一步的话超长文件要等到第一次关窗才收敛,期间每次写仍全量处理。
+ * 段数收敛核心(调用方须持 explorer 文件锁):未超限 / 裁剪无变化 → 不写。
+ * 运行期只在关窗时裁剪;启动时也跑一次(prepareExplorerFileForBoot),否则超长文件要等到第一次关窗才收敛。
  */
-export async function pruneExplorerFileWindows(
-  explorerFile: string,
-  maxSegments: number,
-  activeSeqs: ReadonlySet<number>,
-): Promise<void> {
-  await withExplorerFileMutex(async () => {
-    const payload = await loadExplorer(explorerFile);
-    if (payload !== null) await prunePayloadAndWrite(explorerFile, payload, maxSegments, activeSeqs);
-  });
-}
-
-/** 段数收敛核心(调用方须持 explorer 文件锁):未超限 / 裁剪无变化 → 不写。 */
 async function prunePayloadAndWrite(
   explorerFile: string,
   payload: ExplorerPayloadV3,
@@ -489,7 +458,7 @@ async function prunePayloadAndWrite(
 /**
  * 启动建窗前的 explorer.json 准备:v3 迁移 + 超长段数收敛,在**同一次**文件锁内共用**一次**加载。
  * 性能(冷启动关键路径):此前 migrate 读一次、判断是否已是 v3 再读一次、prune 又读一次 = 3 次
- * 读 + JSON.parse + Zod。语义与「先 migrateExplorerFileToV3 再 pruneExplorerFileWindows」一致:
+ * 读 + JSON.parse + Zod。语义与「先迁移到 v3、再做段数收敛」两步一致:
  * 迁移的数据安全分支(损坏 → .corrupt 快照且不覆盖 / 存在性未知 → 不写不删)原样保留,迁移读错误
  * 照旧抛出;收敛失败只告警不抛(原调用点 `.catch(warn)` 语义)。
  */
@@ -561,13 +530,6 @@ async function fileExists(p: string): Promise<boolean> {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw err;
   }
-}
-
-export async function migrateExplorerFileToV3(
-  explorerFile: string,
-  legacyLayoutFile: string,
-): Promise<void> {
-  await migrateExplorerFile(explorerFile, legacyLayoutFile);
 }
 
 const MIGRATE_UNKNOWN = Symbol('migrate-unknown');

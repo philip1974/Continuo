@@ -10,7 +10,7 @@
 | `src/stores/workspace.store.ts` | `root` / `recentRoots`(LRU 5) |
 | `src/stores/explorer.store.ts` | `expandedPaths` / `sort` + `toggleExpand` / `setExpandedPaths` / `setSort`(多选由 headless-tree selection state 驱动;`activePath`/`search` 是死字段已删,见下) |
 | `src/stores/pinned.store.ts` | `paths`(只随 explorer.json 读入 / 写回;当前无置顶 UI,不提供修改动作) |
-| `electron/main/persistence.ts` | 复用,追加 `ExplorerSchema` / `loadExplorer` / `saveExplorer` |
+| `electron/main/persistence.ts` | 复用,追加 `ExplorerSchema` / `loadExplorer` |
 | `electron/main/ipc.ts` | 追加 `explorer:read` / `explorer:write` 通道(走 safeHandle) |
 | `electron/preload/index.ts` | 追加 `explorer.{read,write}`(renderer 经 `coApi.explorer.*`) |
 | `src/lib/persist/explorer-persist.ts` | `initExplorerPersistence(api)`:hydrate + debounce 300ms 写 |
@@ -43,7 +43,7 @@
 |---|---|
 | `workspace.spec.ts` | LRU、setRoot 三态 |
 | `explorer.spec.ts` | toggleExpand / setExpandedPaths / setSort |
-| `persistence-schema.spec.ts` | ExplorerSchema strict + version 锁 + loadExplorer/saveExplorer round-trip |
+| `persistence-schema.spec.ts` | ExplorerSchema strict + version 锁 + loadExplorer 读回 |
 | `persistence-layer.spec.ts` | snapshot ↔ hydrate Set/array 转换、不持久化字段闭包、init flow(mock api) |
 
 ## 不在本主题验证

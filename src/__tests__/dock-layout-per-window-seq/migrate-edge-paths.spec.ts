@@ -7,9 +7,7 @@ import path from 'node:path';
 import {
   defaultExplorerV3,
   loadExplorer,
-  migrateExplorerFileToV3,
   prepareExplorerFileForBoot,
-  saveExplorer,
   type ExplorerPayload,
 } from '../../../electron/main/persistence';
 
@@ -46,9 +44,9 @@ const v2Payload: ExplorerPayload = {
   ],
 };
 
-describe('migrateExplorerFileToV3 edge paths', () => {
+describe('prepareExplorerFileForBoot · v3 迁移 edge paths', () => {
   it('T11: no explorer.json and no legacy layout.json is a no-op', async () => {
-    await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+    await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
 
     expect(existsSync(explorerFile)).toBe(false);
     expect(existsSync(legacyLayoutFile)).toBe(false);
@@ -57,7 +55,7 @@ describe('migrateExplorerFileToV3 edge paths', () => {
   it('T11: layout-only path creates default v3 explorer and removes legacy layout', async () => {
     await fs.writeFile(legacyLayoutFile, JSON.stringify({ version: 1, panels: {} }));
 
-    await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+    await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
 
     expect(await loadExplorer(explorerFile)).toEqual(defaultExplorerV3());
     expect(existsSync(legacyLayoutFile)).toBe(false);
@@ -66,7 +64,7 @@ describe('migrateExplorerFileToV3 edge paths', () => {
   it('T11: v2-only explorer path rewrites explorer.json as v3', async () => {
     await fs.writeFile(explorerFile, JSON.stringify(v2Payload));
 
-    await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+    await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
 
     const migrated = await loadExplorer(explorerFile);
     expect(migrated?.version).toBe(3);
@@ -79,7 +77,7 @@ describe('migrateExplorerFileToV3 edge paths', () => {
     await fs.writeFile(explorerFile, JSON.stringify(v2Payload));
     await fs.writeFile(legacyLayoutFile, JSON.stringify({ version: 1, panels: {} }));
 
-    await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+    await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
 
     const migrated = await loadExplorer(explorerFile);
     expect(migrated?.version).toBe(3);
@@ -92,7 +90,7 @@ describe('migrateExplorerFileToV3 edge paths', () => {
     await fs.writeFile(explorerFile, '{not json');
     await fs.writeFile(legacyLayoutFile, JSON.stringify({ version: 1 }));
 
-    await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+    await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
 
     expect(warn).toHaveBeenCalled();
     expect(await fs.readFile(explorerFile, 'utf-8')).toBe('{not json');
@@ -120,7 +118,7 @@ describe('migrateExplorerFileToV3 edge paths', () => {
       },
     );
 
-    await migrateExplorerFileToV3(explorerFile, legacyLayoutFile);
+    await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
 
     expect(warn).toHaveBeenCalled();
     // explorer.json 未被默认覆盖(SENTINEL 仍在),legacy 未删
@@ -145,7 +143,7 @@ describe('prepareExplorerFileForBoot(启动迁移 + 段数收敛单次加载)', 
   }
 
   it('常规 v3 启动:explorer.json 只读一次,且不写盘', async () => {
-    await saveExplorer(explorerFile, defaultExplorerV3());
+    await fs.writeFile(explorerFile, JSON.stringify(defaultExplorerV3()));
     const before = await fs.stat(explorerFile);
     const opens = countExplorerOpens();
 
@@ -167,7 +165,7 @@ describe('prepareExplorerFileForBoot(启动迁移 + 段数收敛单次加载)', 
       })),
     ];
     payload.nextWindowSeq = 100;
-    await saveExplorer(explorerFile, payload);
+    await fs.writeFile(explorerFile, JSON.stringify(payload));
     const opens = countExplorerOpens();
 
     await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
@@ -192,7 +190,7 @@ describe('prepareExplorerFileForBoot(启动迁移 + 段数收敛单次加载)', 
         ...(i < 3 ? {} : { lastClosedAt: 1000 + i }), // seq 1..3 无时间戳
       })),
     ];
-    await saveExplorer(explorerFile, payload);
+    await fs.writeFile(explorerFile, JSON.stringify(payload));
 
     await prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, 64, new Set([0]));
 
@@ -242,7 +240,7 @@ describe('prepareExplorerFileForBoot(启动迁移 + 段数收敛单次加载)', 
         lastClosedAt: 1000 + i,
       })),
     ];
-    await saveExplorer(explorerFile, payload);
+    await fs.writeFile(explorerFile, JSON.stringify(payload));
     vi.spyOn(fs, 'rename').mockRejectedValue(Object.assign(new Error('EIO'), { code: 'EIO' }));
 
     await expect(
