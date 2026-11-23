@@ -7,7 +7,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   generateToken,
-  verifyBearer,
   parseRpcMessage,
   formatRpcResult,
   formatRpcError,
@@ -51,61 +50,58 @@ describe('generateToken', () => {
 });
 
 // ────────────────────────────────────────────────────────────
-// verifyBearer
+// verifyAndResolveCtx(Bearer 鉴权的唯一生产入口)
 // ────────────────────────────────────────────────────────────
 
-describe('verifyBearer', () => {
-  const TOKEN = 'a'.repeat(32);
-
-  it('Bearer <token> 完全匹配 → true', () => {
-    expect(verifyBearer(`Bearer ${TOKEN}`, TOKEN)).toBe(true);
-  });
-
-  it('scheme 大小写不敏感', () => {
-    expect(verifyBearer(`bearer ${TOKEN}`, TOKEN)).toBe(true);
-    expect(verifyBearer(`BEARER ${TOKEN}`, TOKEN)).toBe(true);
-    expect(verifyBearer(`BeArEr ${TOKEN}`, TOKEN)).toBe(true);
-  });
-
-  it('Bearer header 解析走字符扫描,不调用 RegExp.exec', () => {
-    const execSpy = vi.spyOn(RegExp.prototype, 'exec');
+describe('verifyAndResolveCtx', () => {
+  async function withHost(
+    fn: (host: Awaited<ReturnType<typeof createMcpHost>>, token: string) => void,
+  ): Promise<void> {
+    const host = await createMcpHost({});
     try {
-      expect(verifyBearer(`BeArEr ${TOKEN}`, TOKEN)).toBe(true);
-      expect(verifyBearer(`Basic ${TOKEN}`, TOKEN)).toBe(false);
-      expect(verifyBearer(`Bearer ${TOKEN}\n`, TOKEN)).toBe(false);
-      expect(execSpy).not.toHaveBeenCalled();
+      fn(host, host.issueWindowToken(7));
     } finally {
-      execSpy.mockRestore();
+      await host.close();
     }
+  }
+
+  it('Bearer <已签发 token> → 解析出 owner 窗口与 callerSubject', async () => {
+    await withHost((host, token) => {
+      expect(host.verifyAndResolveCtx(`Bearer ${token}`)).toEqual({
+        ownerWindowId: 7,
+        callerSubject: token,
+      });
+    });
   });
 
-  it('header 缺失 → false', () => {
-    expect(verifyBearer(undefined, TOKEN)).toBe(false);
+  it('scheme 大小写不敏感', async () => {
+    await withHost((host, token) => {
+      expect(host.verifyAndResolveCtx(`bearer ${token}`)).not.toBeNull();
+      expect(host.verifyAndResolveCtx(`BEARER ${token}`)).not.toBeNull();
+      expect(host.verifyAndResolveCtx(`BeArEr ${token}`)).not.toBeNull();
+    });
   });
 
-  it('非 Bearer scheme → false', () => {
-    expect(verifyBearer(`Basic ${TOKEN}`, TOKEN)).toBe(false);
-    expect(verifyBearer(`${TOKEN}`, TOKEN)).toBe(false); // 裸 token 也拒
+  it('header 缺失 / 空 → null', async () => {
+    await withHost((host) => {
+      expect(host.verifyAndResolveCtx(undefined)).toBeNull();
+      expect(host.verifyAndResolveCtx('')).toBeNull();
+    });
   });
 
-  it('没空格分隔 → false', () => {
-    expect(verifyBearer(`Bearer${TOKEN}`, TOKEN)).toBe(false);
+  it('非 Bearer scheme / 裸 token / 没空格分隔 → null', async () => {
+    await withHost((host, token) => {
+      expect(host.verifyAndResolveCtx(`Basic ${token}`)).toBeNull();
+      expect(host.verifyAndResolveCtx(token)).toBeNull();
+      expect(host.verifyAndResolveCtx(`Bearer${token}`)).toBeNull();
+    });
   });
 
-  it('token 不匹配 → false', () => {
-    expect(verifyBearer(`Bearer ${TOKEN}`, 'b'.repeat(32))).toBe(false);
-  });
-
-  it('expected 为空 / 假值 → 一律 false(防未初始化绕过)', () => {
-    expect(verifyBearer(`Bearer ${TOKEN}`, '')).toBe(false);
-    expect(verifyBearer(`Bearer `, '')).toBe(false);
-    // @ts-expect-error 故意传非 string 验证守门
-    expect(verifyBearer(`Bearer ${TOKEN}`, undefined)).toBe(false);
-  });
-
-  it('长度不同的 token 不会因 timingSafeEqual 抛错(内部需先比长度)', () => {
-    expect(() => verifyBearer(`Bearer xxx`, TOKEN)).not.toThrow();
-    expect(verifyBearer(`Bearer xxx`, TOKEN)).toBe(false);
+  it('未签发的 token / 空 token → null', async () => {
+    await withHost((host) => {
+      expect(host.verifyAndResolveCtx(`Bearer ${'b'.repeat(32)}`)).toBeNull();
+      expect(host.verifyAndResolveCtx('Bearer ')).toBeNull();
+    });
   });
 });
 

@@ -17,7 +17,7 @@ JSON-RPC 2.0 收发解析 / bind 地址白名单。HTTP / SSE 真行为(socket �
 | 名字 | 签名 | 描述 |
 |---|---|---|
 | `generateToken()` | `() => string` | 启动 / rotate 时生成 |
-| `verifyBearer(authHeader, expected)` | `(string \| undefined, string) => boolean` | 校验 `Authorization` |
+| `host.verifyAndResolveCtx(authHeader)` | `(string \| undefined) => McpCallCtx \| null` | 校验 `Authorization` 并解析调用方 |
 | `parseRpcMessage(raw)` | `(unknown) => RpcRequest \| null` | JSON-RPC 2.0 输入校验 |
 | `formatRpcResult(id, result)` | `(id, unknown) => string` | 编码响应(返回 JSON 字符串) |
 | `formatRpcError(id, code, message, data?)` | `(id, number, string, unknown?) => string` | 编码错误 |
@@ -33,13 +33,11 @@ JSON-RPC 2.0 收发解析 / bind 地址白名单。HTTP / SSE 真行为(socket �
 - 字符集 URL-safe(无 `/`,`+`,`=`),便于直接放 `Authorization` header
 - 多次调返回值两两不同(熵充足,32 次抽样断言)
 
-### verifyBearer
+### verifyAndResolveCtx
 
-- header 形如 `Bearer <token>`,大小写不敏感(`bearer xxx` / `BEARER xxx` 通过)
-- token 与 expected 完全相等 → true
-- header 缺失 / 不是 Bearer scheme / 没空格分隔 / token 不匹配 → false
-- token 比对走**常量时间**(防 timing attack);本主题不直接测时序,只断 `crypto.timingSafeEqual` 被调一次(注入桩)
-- expected 为空 / 假值 → 一律 false(防 token 未初始化时被绕过)
+- header 形如 `Bearer <token>`,scheme 大小写不敏感(`bearer xxx` / `BEARER xxx` 通过)
+- token 是已签发的窗口 token → 返回 `{ ownerWindowId, callerSubject }`
+- header 缺失 / 不是 Bearer scheme / 没空格分隔 / token 未签发或为空 → null
 
 ### parseRpcMessage
 

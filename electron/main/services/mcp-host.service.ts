@@ -10,7 +10,7 @@
 //
 // BDD: src/__tests__/agent-terminal-mcp-host/(纯函数层)
 
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import type { IncomingMessage, ServerResponse, Server as HttpServer } from 'node:http';
 import type { z } from 'zod';
@@ -166,27 +166,6 @@ function bearerTokenFromHeader(authHeader: string): string | null {
     }
   }
   return authHeader.slice(7);
-}
-
-/**
- * 校验 `Authorization: Bearer <token>`,scheme 大小写不敏感,
- * token 与 expected 走常量时间比较;长度不同先短路,避免 timingSafeEqual 抛错。
- *
- * expected 为空 / 假值 → 一律 false(防 token 未初始化绕过)。
- */
-export function verifyBearer(
-  authHeader: string | undefined,
-  expected: string,
-): boolean {
-  if (typeof expected !== 'string' || expected.length === 0) return false;
-  if (typeof authHeader !== 'string' || authHeader.length === 0) return false;
-  const token = bearerTokenFromHeader(authHeader);
-  if (!token || token.length !== expected.length) return false;
-  try {
-    return timingSafeEqual(Buffer.from(token), Buffer.from(expected));
-  } catch {
-    return false;
-  }
 }
 
 // ── JSON-RPC 编解码 ─────────────────────────────────────────────
