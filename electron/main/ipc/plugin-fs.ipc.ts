@@ -33,19 +33,15 @@ export interface PluginFsIpcHandles {
  * Register plugin-fs IPC handlers. Returns the underlying registries so callers
  * can issue grant/revoke and listen to scope events in later wiring ops.
  */
-// 模块级引用,供窗口硬关闭时 cancelScopeRequestsForWebContents 结算该窗发起的
-// pending scope 授权请求(镜像 fs.ipc 的 releaseFsWatchersForWindow)。
-let activeCorrelator: ScopeRequestCorrelator | null = null;
-
 /**
  * 窗口关闭时,把该窗 webContents 发起的全部 pending scope 授权请求立即结算掉,
  * 否则 host 侧 `await promise` 要干等满 5min TTL 才被 sweep。返回结算条数。
  */
 export function cancelScopeRequestsForWebContents(webContentsId: number): number {
-  return activeCorrelator?.cancelBySender(webContentsId) ?? 0;
+  return activeHandles?.correlator.cancelBySender(webContentsId) ?? 0;
 }
 
-// 模块级引用,供插件卸载成功后 revokePluginFsAccess 撤销内存授权(同 activeCorrelator 手法)。
+// 模块级引用:窗口硬关闭时结算该窗的 pending scope 请求、插件卸载成功后撤销内存授权都经它。
 let activeHandles: PluginFsIpcHandles | null = null;
 
 /**
@@ -135,7 +131,6 @@ export function registerPluginFsIpc({
     identityCache: { getEpoch: pluginFsIdentityEpoch },
   });
   const correlator = new ScopeRequestCorrelator();
-  activeCorrelator = correlator;
 
   // path-scope 持久化落在 userData/plugins/_plugin-path-scopes.json,与决策同目录、分文件。
   const pluginsDir = join(app.getPath('userData'), 'plugins');

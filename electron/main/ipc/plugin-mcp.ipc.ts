@@ -94,11 +94,7 @@ export function startPluginMcpIpc(
   }, TOOLS_LIST_CHANGED_COALESCE_MS);
 
   const localBridge = createPluginMcpBridge({
-    host: {
-      registerTool: (t) => host.registerTool(t),
-      removeTool: (name) => host.removeTool(name),
-      tools: host.tools,
-    },
+    host,
     invokeRemote: localInvoke,
     ensureAuthorized,
     // 安全:跨窗调用拒绝的依据 —— 注册者 wc 当前所在窗口(wc 已销毁 / 无窗口 → null,fail-closed)。

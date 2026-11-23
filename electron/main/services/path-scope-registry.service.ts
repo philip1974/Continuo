@@ -6,7 +6,6 @@ import { conservativeFold, fileIdOf, isDarwinMagicPath, prefixesOf, type FileId 
 import {
   lexicalAbsolutePath,
   resolveForRead,
-  resolveForRenameDst,
   resolveForWrite,
   resolveNoFollowLeaf,
 } from './path-resolve.helper';
@@ -626,8 +625,9 @@ export class PathScopeRegistry extends EventEmitter {
       // 而非 realpath 跟随到目标。父目录仍 realpath + leaf 经 validateLeaf,无 scope 逃逸。
       return withFullPath(await resolveNoFollowLeaf(target));
     }
-    if (opType === 'write' || opType === 'mkdir') return withFullPath(await resolveForWrite(target));
-    if (opType === 'rename-dst') return withFullPath(await resolveForRenameDst(target));
+    if (opType === 'write' || opType === 'mkdir' || opType === 'rename-dst') {
+      return withFullPath(await resolveForWrite(target));
+    }
     throw new ScopeError(`unknown opType: ${opType as string}`, {
       target,
       reason: 'opType',

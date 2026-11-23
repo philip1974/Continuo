@@ -1179,7 +1179,7 @@ export function registerPluginFsHandlers(
       // 先做不依赖冷却键的廉价判定:未决数到顶、该插件已有未决弹窗 / 在退避期 / 弹窗超速 → 直接 deny。算冷却键要
       // 逐级 stat(下一步),被节流的请求不该再触发这份开销(此前 scopeThrottleKeys 在任何节流判定之前,插件可以
       // 不受限地反复触发)。下面 canAccept / tryPrompt 仍照常判一次(权威;await 期间状态可能变化)。
-      if (!correlator.canAccept(event.sender.id) || scopeThrottle.blocked(pluginId)) {
+      if (!correlator.canAccept(event.sender.id) || scopeThrottle.blockedRegardlessOfKeys(pluginId)) {
         return 'deny';
       }
 

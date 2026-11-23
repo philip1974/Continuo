@@ -141,12 +141,4 @@ export class ScopeRequestThrottle extends PromptThrottle {
   tryPrompt(pluginId: string, canonicalPaths: readonly string[], now: number = Date.now()): boolean {
     return this.admit(pluginId, canonicalPaths, now).ok;
   }
-
-  /**
-   * 不看路径就能确定这次请求不会弹窗(该插件已有未决弹窗 / 在退避期 / 弹窗超速)。算冷却键要逐级 stat,调用方在
-   * 算之前先问:被节流的请求直接 deny,不触发 stat。false 之后仍须调 tryPrompt。
-   */
-  blocked(pluginId: string, now: number = Date.now()): boolean {
-    return this.blockedRegardlessOfKeys(pluginId, now);
-  }
 }

@@ -111,7 +111,6 @@ export interface DebugServiceOptions {
     requestTimeoutMs: number;
   }) => DebugDapClientLike;
   readonly processOps?: DebugProcessOps;
-  readonly eventSink?: DebugEventSink;
   readonly workspace?: DebugWorkspaceGuard;
   /** 被调试程序的 node 绝对路径(注入式以便单测;默认按 main 进程自身 PATH 解析并缓存)。 */
   readonly resolveNodeRuntime?: () => Promise<string>;
@@ -822,7 +821,7 @@ export class DebugService {
   private readonly launches = new Set<InFlightLaunch>();
   /** cleanupAll(应用退出)已开始:此后 launch 一律拒绝 —— 只取消当时在途的 launch 时,之后新发起的照常 spawn。 */
   private shuttingDown = false;
-  private eventSink: DebugEventSink | null;
+  private eventSink: DebugEventSink | null = null;
 
   constructor(options: DebugServiceOptions = {}) {
     this.adapterPath =
@@ -839,7 +838,6 @@ export class DebugService {
     this.processOps = options.processOps ?? DEFAULT_PROCESS_OPS;
     this.workspace = options.workspace ?? DEFAULT_WORKSPACE_GUARD;
     this.resolveNodeRuntime = options.resolveNodeRuntime ?? defaultResolveNodeRuntime;
-    this.eventSink = options.eventSink ?? null;
   }
 
   // 安全闸:program/cwd 必须落在 owner window 的 workspace 内(realpath 后比较,防

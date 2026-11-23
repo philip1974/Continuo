@@ -150,7 +150,6 @@ export function resolveNoFollowLeaf(target: string): Promise<ResolveWriteResult>
   return resolveLeafPreserving(target, false);
 }
 
-export const resolveForRenameDst = resolveForWrite;
 
 /** 去掉尾部分隔符,但不越过路径根:POSIX `/` 保持 `/`;Windows `C:\` 保持 `C:\`(去掉后的 `C:` 是驱动器相对路径,
  *  指该盘的当前目录,不是根),UNC 根 `\\server\share\` 原样。 */
