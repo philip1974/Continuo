@@ -2,15 +2,15 @@
 // `{...readPermissions()}['constructor']` 命中 Object 构造函数 → `.decisions.filter` 抛错,授权流程失败;
 // readPluginPathScopes 返回 Object 函数而非数组。查表须只认自有属性。
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   mutatePluginPermissions,
   readPermissions,
   readPluginPathScopes,
+  removePluginPermissions,
   writePluginPathScopes,
-  writePluginPermissions,
 } from '../../../electron/main/services/plugins.service';
 
 let tmp: string;
@@ -42,13 +42,16 @@ describe('插件 id 为 Object.prototype 成员名:main 授权流程', () => {
     expect(existsSync(join(tmp, '_permissions.json'))).toBe(false);
   });
 
-  it('id=constructor writePluginPermissions 首次写入 / 清空 → 正常', async () => {
-    await writePluginPermissions(tmp, 'constructor', [
-      { permission: 'fs', granted: true, decidedAt: 1 },
-    ]);
-    const all = JSON.parse(readFileSync(join(tmp, '_permissions.json'), 'utf8'));
-    expect(all.constructor).toEqual([{ permission: 'fs', granted: true, decidedAt: 1 }]);
-    await writePluginPermissions(tmp, 'constructor', []);
+  it('id=constructor removePluginPermissions:无条目不触盘;有条目 → 删除', async () => {
+    await removePluginPermissions(tmp, 'constructor');
+    expect(existsSync(join(tmp, '_permissions.json'))).toBe(false);
+
+    writeFileSync(
+      join(tmp, '_permissions.json'),
+      JSON.stringify({ constructor: [{ permission: 'fs', granted: true, decidedAt: 1 }] }),
+    );
+    expect(Object.hasOwn(await readPermissions(tmp), 'constructor')).toBe(true);
+    await removePluginPermissions(tmp, 'constructor');
     expect(Object.hasOwn(await readPermissions(tmp), 'constructor')).toBe(false);
   });
 

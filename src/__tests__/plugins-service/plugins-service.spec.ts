@@ -704,7 +704,7 @@ describe('readPermissions / writePermissions', () => {
     expect(await readPermissions(tmp)).toEqual({});
   });
 
-  // 数据安全(复查 P1):非 ENOENT 读错误(EACCES/EIO)此前也降级 {},writePluginPermissions
+  // 数据安全(复查 P1):非 ENOENT 读错误(EACCES/EIO)此前也降级 {},写入方
   // 随后基于空表 RMW 会抹掉其它 plugin 授权。只 ENOENT→{},其它读错误抛出(与 path-scopes 同型)。
   // 边界(E159):readMetadataCapped 改单 fd 后,EACCES 经 fs.open 抛出透传(原 readFile 改 open)。
   it('非 ENOENT 读错误(EACCES 等)→ 抛出,不当空表', async () => {

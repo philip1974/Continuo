@@ -805,8 +805,8 @@ export async function readPermissions(
   const file = path.join(baseDir, PERMISSIONS_FILE);
   // 数据安全:区分「缺文件」与「损坏/IO 错误」(与 readAllPathScopes #12 同型)。只有
   // ENOENT 是首次启动 → {}。EACCES/EIO 等读错误是「当前态未知」,不能当空表 —— 否则
-  // writePluginPermissions 基于 {} 做整表 RMW,抹掉其它 plugin 已落盘的授权决策。抛出 →
-  // writePluginPermissions / uninstall 在删/写前中止,renderer 经 safeHandle 降级。
+  // 写入方基于 {} 做整表 RMW,抹掉其它 plugin 已落盘的授权决策。抛出 →
+  // mutatePluginPermissions / uninstall 在删/写前中止,renderer 经 safeHandle 降级。
   let text: string;
   try {
     text = await readMetadataCapped(file); // 边界(E68):读前 stat.size 硬拦
@@ -886,55 +886,15 @@ export async function writePermissions(
 const permissionsWriteQueue = createSerialQueue();
 
 /**
- * 数据安全:按**单个 plugin** 合并写 `_permissions.json`。此前 renderer 整表写回,
- * 每窗口各自缓存陈旧快照,多窗口/并发授权后写者会抹掉先写者对**其它 plugin** 的
- * 决策/pathScopes(lost update)。改为 main 端 read-merge-write 单条记录并串行化,
- * 写某 plugin 只覆盖该 id,保留其它 id 已落盘内容。空记录(无决策且无 pathScopes)
- * → 删除该 id 条目。非法 id 忽略(防注入畸形 key)。
+ * 删除某 plugin 在 `_permissions.json` 里的条目(卸载用,避免重装继承旧授权)。与 mutatePluginPermissions 走同一条
+ * 串行链做 read-modify-write:只动该 id,保留其它 id 已落盘内容;条目不存在 → 不触盘。非法 id 忽略。
  */
-export function writePluginPermissions(
-  baseDir: string,
-  id: string,
-  record: IpcPermissionRecord,
-): Promise<void> {
+export function removePluginPermissions(baseDir: string, id: string): Promise<void> {
   return permissionsWriteQueue.run(async () => {
     if (!isSafePluginId(id)) return;
-    // Array.isArray 不收窄 readonly[] union 分支,显式 cast 对象形态.
-    const decisionsRaw = Array.isArray(record)
-      ? record
-      : (record as { decisions: readonly IpcPermissionDecision[] }).decisions;
-    const scopesRaw = Array.isArray(record)
-      ? undefined
-      : (record as { pathScopes?: readonly IpcPathScope[] }).pathScopes;
-    // 边界(E247,E246 写读 cap 对称族 / E208 有界收集):服务层写端也按 MAX 上限收集,与 readPermissions
-    // 同步。此前裸 .filter() 无数量上限 —— exported service 入口可被测试/未来内部调用绕过 IPC schema
-    // (PATHSCOPES_MAX/DECISIONS_MAX),写入超量记录返回成功,但 readPermissions 又按上限截断 → 写成功读回
-    // 丢数据 + 写链全量物化卡顿。collectValidCapped:跳过非法 + 凑满 MAX 即停(保留 .filter 跳过非法语义)。
-    const decisions = collectValidCapped(
-      decisionsRaw ?? [],
-      isDecision,
-      MAX_DECISIONS_PER_PLUGIN,
-    );
-    const scopes =
-      scopesRaw === undefined
-        ? undefined
-        : collectValidCapped(
-            scopesRaw,
-            isIpcPathScope,
-            MAX_PERSISTED_SCOPES_PER_PLUGIN,
-          );
-    const isEmpty =
-      decisions.length === 0 && (scopes === undefined || scopes.length === 0);
-
     const all = { ...(await readPermissions(baseDir)) };
-    if (isEmpty) {
-      if (!Object.hasOwn(all, id)) return; // 无变化,不为删空条目而触盘
-      delete all[id];
-    } else {
-      if (permissionRecordEqual(ownValue(all, id), decisions, scopes)) return;
-      all[id] =
-        scopes === undefined ? decisions : { decisions, pathScopes: scopes };
-    }
+    if (!Object.hasOwn(all, id)) return;
+    delete all[id];
     await writePermissions(baseDir, all);
   });
 }
@@ -1113,7 +1073,7 @@ export function writePluginPathScopes(
     // 边界(E249,E247 兄弟入口):service 层写端按 MAX_PERSISTED_SCOPES_PER_PLUGIN 有界收集,与
     // readAllPathScopes 同步。此前裸 .filter().map() 无数量上限 —— exported service 入口可被进程内/未来
     // 调用绕过 IPC schema(PATHSCOPES_MAX=256),写超量 scope 落盘成功但 readAllPathScopes 只读回前 256 →
-    // 写成功重启读回丢数据 + 全量物化卡顿。collectValidCapped 凑满 MAX 即停(同 writePluginPermissions E247)。
+    // 写成功重启读回丢数据 + 全量物化卡顿。collectValidCapped 凑满 MAX 即停(E247)。
     const normalized = collectMappedValidCapped(
       scopes,
       isIpcPathScope,
@@ -1194,10 +1154,10 @@ export async function uninstallPlugin(
     await setEnabledId(baseDir, id, false);
 
     // 清 _permissions.json 中的 id(避免重装继承旧授权)。数据安全:与上方 enabled 同理必须走
-    // writePluginPermissions 的全局串行链(空记录 = 链内 RMW 删除该 id 条目,不存在则不触盘)——
+    // removePluginPermissions 的全局串行链(链内 RMW 删除该 id 条目,不存在则不触盘)——
     // 此前手写 readPermissions→delete→writePermissions 整表写绕过 permissionsWriteQueue,与跨窗口
     // 并发 grant/deny 交错时用旧快照写回 → 抹掉别的插件刚落盘的授权(enabled 修了、这里漏了)。
-    await writePluginPermissions(baseDir, id, []);
+    await removePluginPermissions(baseDir, id);
 
     // 清 _plugin-path-scopes.json 中的 id(避免重装继承旧 path scope,与上方对称)。
     // 仅「文件已损坏」放行:损坏文件本就不会被同 id 重装继承(readPluginPathScopes 损坏降级 []),

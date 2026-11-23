@@ -3,19 +3,24 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  mutatePluginPermissions,
   readPermissions,
   uninstallPlugin,
-  writePluginPermissions,
 } from '../services/plugins.service';
 
 // 数据安全(独立审计揪出的同族遗漏入口):uninstallPlugin 清 _permissions.json 此前手写
 // readPermissions → delete → writePermissions(整表写),绕过 permissionsWriteChain —— 与紧邻的
 // _enabled.json 清理(已改走 setEnabledId 入链)是同一个反模式,只修了兄弟。另一窗口同时给**别的**
 // 插件 grant/deny 时,卸载用旧快照整表写回 → 抹掉刚落盘的授权(跨窗口 lost update)。
-// 修复:卸载改走 writePluginPermissions(id, [])(链内 RMW,空记录 = 删除该 id 条目)。
+// 修复:卸载改走 removePluginPermissions(链内 RMW,只删该 id 条目)。
 describe('uninstallPlugin 清 permissions 走 permissionsWriteChain', () => {
   let baseDir: string;
   const decision = (permission: string) => ({ permission, granted: true, decidedAt: 1 });
+  /** 给已安装的插件授权(与跨窗口 grant 同一入口)。 */
+  const grantFs = async (id: string): Promise<void> => {
+    await mkdir(path.join(baseDir, id), { recursive: true });
+    await mutatePluginPermissions(baseDir, id, { kind: 'set', perms: ['fs'], granted: true });
+  };
 
   beforeEach(async () => {
     baseDir = await mkdtemp(path.join(os.tmpdir(), 'continuo-uninstall-perms-'));
@@ -34,7 +39,7 @@ describe('uninstallPlugin 清 permissions 走 permissionsWriteChain', () => {
 
     await Promise.all([
       uninstallPlugin(baseDir, 'b'),
-      writePluginPermissions(baseDir, 'a', [decision('fs')]),
+      grantFs('a'),
     ]);
 
     const perms = await readPermissions(baseDir);
@@ -45,11 +50,10 @@ describe('uninstallPlugin 清 permissions 走 permissionsWriteChain', () => {
     for (let round = 0; round < 5; round += 1) {
       const victim = `v${round}`;
       const keeper = `k${round}`;
-      await mkdir(path.join(baseDir, victim));
-      await writePluginPermissions(baseDir, victim, [decision('fs')]);
+      await grantFs(victim);
       const ops = [
         uninstallPlugin(baseDir, victim),
-        writePluginPermissions(baseDir, keeper, [decision('fs')]),
+        grantFs(keeper),
       ];
       await Promise.all(round % 2 === 0 ? ops : ops.reverse());
       const perms = await readPermissions(baseDir);
