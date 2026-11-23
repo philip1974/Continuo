@@ -19,7 +19,7 @@
 
 ### pending 非空
 
-- 渲染 Modal,文案带 method label / agentLabel
+- 渲染 Modal,文案带 method label
 - 三个按钮:拒绝 / 仅本次 / 本次启动期间允许
 
 ### 按钮行为

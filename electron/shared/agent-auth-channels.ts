@@ -18,7 +18,6 @@ export const AGENT_AUTH_CHANNELS = {
 export interface AgentAuthRequestPayload {
   readonly requestId: string;
   readonly method: string;
-  readonly agentLabel?: string;
   /**
    * 安全(F2):请求来自未绑定 Continuo 终端的外部客户端(stdio 未发 hello)。renderer 弹窗标注来源,且只读写
    * 独立的 external 授权状态,不复用 / 不写入窗口级「本次启动期间允许」。
@@ -27,8 +26,8 @@ export interface AgentAuthRequestPayload {
 }
 
 // 边界(E171,E168/E169/E170 同族 IPC ingress 纵深防御):agent-auth:request 驱动授权弹窗(安全敏感)。
-// AgentAuthPrompt 此前直接解构 payload({requestId, method, agentLabel}),畸形 push(null/缺 requestId·
-// method/超长 method·agentLabel)→ 解构 null 抛未处理 rejection、超长文本进弹窗状态并经 catalog 插值
+// AgentAuthPrompt 此前直接解构 payload({requestId, method}),畸形 push(null/缺 requestId·
+// method/超长 method)→ 解构 null 抛未处理 rejection、超长文本进弹窗状态并经 catalog 插值
 // 放大、缺 requestId 致 respond(undefined) → main pending 等到无应答超时。注册入口 runtime 守卫。
 /**
  * 授权弹窗无应答超时:main 到点把请求结算为 denied,renderer 同 TTL 关掉已失效的弹窗(两侧必须一致,
@@ -52,7 +51,6 @@ export const AGENT_AUTH_METHOD_MAX = 256;
  * renderer agent-auth store 据此归入独立的插件域(与 terminal / debug 域互不放行)。
  */
 export const AGENT_AUTH_PLUGIN_METHOD_PREFIX = 'plugin.';
-const AGENT_AUTH_LABEL_MAX = 512;
 
 /** 授权域:method 以 `debug.` 开头 → debug;以 `plugin.` 开头 → 插件工具;其余(终端工具及未知 method)→ 终端。 */
 export type AgentAuthDomain = 'terminal' | 'debug' | 'plugin';
@@ -79,13 +77,6 @@ export function isAgentAuthRequestPayload(
     typeof o.method !== 'string' ||
     o.method.length === 0 ||
     o.method.length > AGENT_AUTH_METHOD_MAX
-  ) {
-    return false;
-  }
-  if (
-    o.agentLabel !== undefined &&
-    (typeof o.agentLabel !== 'string' ||
-      o.agentLabel.length > AGENT_AUTH_LABEL_MAX)
   ) {
     return false;
   }

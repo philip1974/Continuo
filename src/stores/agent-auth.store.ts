@@ -25,14 +25,12 @@ export type EnsureOutcome = AuthDecision | 'cancelled';
 export interface PendingAuthRequest {
   readonly requestId: string;
   readonly method: string;
-  readonly agentLabel?: string;
   /** 来自未绑定 Continuo 终端的外部客户端(弹窗标注来源)。 */
   readonly external?: boolean;
 }
 
 interface EnsureInfo {
   readonly method: string;
-  readonly agentLabel?: string;
   /** 安全(F2):外部客户端请求 → 只读写 external 授权状态,不用窗口级授权。 */
   readonly external?: boolean;
 }
@@ -190,7 +188,6 @@ export const useAgentAuthStore = create<AgentAuthState>((set, get) => ({
     const req: PendingAuthRequest = {
       requestId: generateRequestId(),
       method: info.method,
-      ...(info.agentLabel !== undefined ? { agentLabel: info.agentLabel } : {}),
       ...(external ? { external: true } : {}),
     };
     return new Promise<EnsureOutcome>((resolve) => {

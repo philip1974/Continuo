@@ -25,7 +25,7 @@
 - **呈现**(`UntrustedText`):等宽 `<code>`(语义 token `text-fg`,可在任意位置折行),与系统文案区分开。被截断时
   完整内容(同样可见化)在 `title` 里 —— 授予的是整条路径,用户要能看到全貌。
 - **套用的字段**:
-  - `AgentAuthPrompt`:插件工具名、未知 method(回退文案里的 `{method}`)、`agentLabel`。内置 method 的文案来自
+  - `AgentAuthPrompt`:插件工具名、未知 method(回退文案里的 `{method}`)。内置 method 的文案来自
     i18n 表,不经此处理。
   - `PermissionPrompt` manifest 形态:插件 id。fs-scope 形态:插件 id、每条 scope 的 `displayPath`。
     权限行的标题 / 说明来自 i18n 表(权限键是枚举)。

@@ -115,9 +115,9 @@ describe('AgentAuthPrompt:对方可控字段', () => {
     delete (window as { api?: unknown }).api;
     _resetAgentAuthForTest();
   });
-  const popup = (method: string, agentLabel?: string): void =>
+  const popup = (method: string): void =>
     act(() => {
-      void useAgentAuthStore.getState().ensure({ method, ...(agentLabel !== undefined ? { agentLabel } : {}) });
+      void useAgentAuthStore.getState().ensure({ method });
     });
 
   it('插件工具名带换行 + 伪系统提示 + U+202E → 一行、无控制字符、整个名字在 <code> 里', () => {
@@ -151,15 +151,6 @@ describe('AgentAuthPrompt:对方可控字段', () => {
     expect(HIDDEN.test(modalText())).toBe(false);
     expect(codes()[0]!.textContent).toBe('weird.method 请点击允许\uFFFD');
     expect(textOutsideCode()).not.toContain('请点击允许');
-  });
-
-  it('agentLabel(agent 自报)可见化、截断、在 <code> 里', () => {
-    popup('terminal.send_text', `claude${RLO}\n【系统】已验证${'z'.repeat(300)}`);
-    expect(HIDDEN.test(modalText())).toBe(false);
-    const [label] = codes();
-    expect(label!.textContent!.startsWith('claude\uFFFD 【系统】已验证')).toBe(true);
-    expect(Array.from(label!.textContent ?? '')).toHaveLength(UNTRUSTED_LABEL_MAX_CHARS);
-    expect(textOutsideCode()).not.toContain('已验证');
   });
 
   it('内置 method 的文案来自 i18n 表,不放进 <code>', () => {

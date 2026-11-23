@@ -84,13 +84,6 @@ describe('ensure', () => {
     });
   });
 
-  it('agentLabel 传入 → 进 pending', () => {
-    void useAgentAuthStore
-      .getState()
-      .ensure({ method: 'terminal.create_session', agentLabel: 'codex' });
-    expect(useAgentAuthStore.getState().pending?.agentLabel).toBe('codex');
-  });
-
   it("sessionGranted=true → 立即 resolve session,不设 pending", async () => {
     useAgentAuthStore.setState({ sessionGranted: true });
     const decision = await useAgentAuthStore

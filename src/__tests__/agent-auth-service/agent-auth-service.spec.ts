@@ -191,7 +191,6 @@ describe('agent-auth-service: requestAgentAuth', () => {
 
     const pending = requestAgentAuth({
       method: 'terminal.create_session',
-      agentLabel: 'codex',
       ownerWindowId: 1,
     });
     const [channel, payload] = win.webContents.send.mock.calls[0]!;
@@ -199,7 +198,6 @@ describe('agent-auth-service: requestAgentAuth', () => {
     expect(payload).toEqual(
       expect.objectContaining({
         method: 'terminal.create_session',
-        agentLabel: 'codex',
         requestId: expect.stringMatching(/^req-/),
       }),
     );

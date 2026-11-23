@@ -104,14 +104,12 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     act(() => {
       void useAgentAuthStore.getState().ensure({
         method: 'terminal.create_session',
-        agentLabel: 'Claude Code',
       });
     });
 
     const modal = document.querySelector('.wm-modal-content');
     expect(modal).not.toBeNull();
     expect(modal!.textContent).toContain('新建一个 terminal');
-    expect(modal!.textContent).toContain('Claude Code');
   });
 
   // main 对 debug 工具发 method='debug.launch' / 'debug.*';此前标签表只有 terminal.*,弹窗显示原始串。
@@ -383,7 +381,6 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
       { requestId: 'rq', method: '' }, // 空 method
       { requestId: 'x'.repeat(257), method: 'terminal.kill' }, // 超长 requestId
       { requestId: 'rq', method: 'm'.repeat(257) }, // 超长 method
-      { requestId: 'rq', method: 'terminal.kill', agentLabel: 'z'.repeat(513) }, // 超长 label
     ];
     for (const p of bad) {
       // 不应抛(尤其 null 解构):用 act 包裹并断言不 throw
@@ -398,7 +395,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     warn.mockRestore();
   });
 
-  it('E171 合规 payload(含 agentLabel)→ 正常弹 Modal(回归)', async () => {
+  it('E171 合规 payload → 正常弹 Modal(回归)', async () => {
     let cb: ((p: unknown) => void) | null = null;
     const onRequest = vi.fn((fn: (p: never) => void) => {
       cb = fn as never;
@@ -408,7 +405,7 @@ describe('AgentAuthPrompt — 订阅 onRequest', () => {
     installApi({ onRequest, respond });
     render(<AgentAuthPrompt />);
     act(() => {
-      cb!({ requestId: 'rq-ok', method: 'terminal.create_session', agentLabel: 'codex' });
+      cb!({ requestId: 'rq-ok', method: 'terminal.create_session' });
     });
     await waitFor(() => {
       expect(document.querySelector('.wm-modal-content')).not.toBeNull();

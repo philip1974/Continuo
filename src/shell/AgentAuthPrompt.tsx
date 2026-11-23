@@ -60,12 +60,11 @@ export function AgentAuthPrompt() {
         console.warn('[agent-auth] invalid request payload, dropped', payload);
         return;
       }
-      const { requestId, method, agentLabel } = payload;
+      const { requestId, method } = payload;
       // 安全(F2):外部客户端(未绑定 Continuo 终端)只读写 external 授权状态,不复用窗口级授权。
       const external = payload.external === true;
       const decision = await useAgentAuthStore.getState().ensure({
         method,
-        ...(agentLabel !== undefined ? { agentLabel } : {}),
         ...(external ? { external } : {}),
       });
       // main 已撤销并结算了该请求(本地仅取消弹窗)→ 不再 respond:main 已无该 pending,会返回
@@ -165,13 +164,7 @@ function AgentAuthPromptBody({
         {t(titleKey)}
       </h2>
       <p className="mb-3 text-xs text-fg-muted">
-        {t('permissions.agent.body_prefix')}
-        {pending.agentLabel ? (
-          <>
-            {/* agentLabel 是 agent 自报的(terminal.create_session 的 agent_label)。 */}
-            {' '}(<UntrustedText text={pending.agentLabel} />)
-          </>
-        ) : null}{' '}
+        {t('permissions.agent.body_prefix')}{' '}
         {t('permissions.agent.body_via_mcp')}
         {methodLabel(pending.method)}
         {t('permissions.agent.body_suffix')}
