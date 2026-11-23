@@ -49,7 +49,6 @@ export const TerminalCreateInputSchema = z
     title: z.string().max(LABEL_MAX).optional(),
     originHint: z.enum(ORIGIN_HINTS).optional(),
     agentLabel: z.string().max(LABEL_MAX).optional(),
-    // topic-05: 透传到 sessionsService,让 renderer 端决定 attach 落点。
     /**
      * 创建时 renderer 当前 workspace.root,用于 sessions 跨 workspace 切换时的过滤。
      * 未传 = 全局会话(agent 多走这条),所有 workspace 都可见。

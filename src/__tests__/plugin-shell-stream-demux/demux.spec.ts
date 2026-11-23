@@ -88,6 +88,9 @@ describe('plugin-shell-stream preload 单 listener 分发', () => {
     const b = startStream();
     emit({ kind: 'stdout' });
     expect(warn).toHaveBeenCalledTimes(1);
+    // null / 非对象 / streamId 非串:同样只告警、不抛、不动任何流
+    for (const bad of [null, 's', 42, { streamId: 1 }]) emit(bad);
+    expect(warn).toHaveBeenCalledTimes(5);
 
     emit({ streamId: a.streamId, kind: 'bogus' });
     await expect(a.done).resolves.toEqual({ exitCode: -1, signal: null });

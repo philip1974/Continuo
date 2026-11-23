@@ -93,8 +93,7 @@ export type TerminalCreateOptions = TerminalCreateInput;
 
 /**
  * main 推过来的 session 形态;renderer cast 为 TerminalSession。
- * 可维护性 M14:复用 shared TerminalSessionSnapshot 单一来源(此前内联重复了
- * 同组字段 + attachTarget union)。
+ * 可维护性 M14:复用 shared TerminalSessionSnapshot 单一来源(此前内联重复了同组字段)。
  */
 export type PreloadTerminalSession = TerminalSessionSnapshot;
 

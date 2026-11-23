@@ -48,14 +48,14 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { codedError } from '../../shared/error-message';
 
 // 边界(E202,无消费的解析放大面):Continuo 的 create_session 工具只消费
-// cwd/name/agentLabel/autorun/target/install_stop_hook(见下方 ptyInput 构造;include_raw 是
-// await_stop_hook 自己的入参,这里不读),
+// cwd/name/agentLabel/autorun/install_stop_hook(见下方 ptyInput 构造;target 只校验后忽略,
+// include_raw 是 await_stop_hook 自己的入参、这里不读 —— 二者 zod 仍接受,但不在 jsonSchema 里宣告),
 // **不消费** shell/args/cols/rows/env —— 那些是 server-node(协议包另一消费者)才用的 PTY spawn 字段。
 // 协议 createSessionInputSchema(node_modules,与 server-node 共享契约,不可改)含 args: z.array /
 // env: z.record **无数量/长度上限**:外部 MCP client 可在 1MB body 塞海量 args/env,让 zod 在工具
 // 执行前(mcp-host safeParse)全量深校验这些数组/record,而本工具随即丢弃 = 纯放大面。
 // 故 Continuo 侧 omit 未消费字段:strict 下它们成 unrecognized key 被**浅拒**(不深校验内容),
-// inputSchema 与本工具 advertised jsonSchema(additionalProperties:false,仅列消费字段)对齐。
+// advertised jsonSchema(additionalProperties:false)只列消费字段。
 // 边界(E32):autorun 64KB backstop(远超任何真实命令)。run() 用 utf8BytesExceed 精确按字节兜底,
 // 此处 zod .max 是 code-unit 粗上限(advertised/parse 早拒超长),两者上限同值 MCP_AUTORUN_MAX 防漂移。
 const MCP_AUTORUN_MAX = 65536;
