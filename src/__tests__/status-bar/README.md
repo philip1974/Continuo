@@ -11,7 +11,7 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
 | 文件 | 职责 |
 |---|---|
 | `src/shell/StatusBar.tsx` | UI |
-| `src/lib/text-stats.ts` | line/word/charCount(已测) |
+| `src/lib/text-stats.ts` | `computeTextStats`(行 / 词 / 字符数,已测) |
 | `src/plugins/registries/StatusBarRegistry.ts` | 插件 statusBar items |
 
 ## 关键行为

@@ -39,7 +39,7 @@ renderer `init()` 原先先 `await coApi.i18n.getLocale()`,之后才发 explorer
 `PluginManager.init` 两阶段(登记全部 entry → 逐个串行激活)之间,对 `status==='enabled'` 的 entry 以并发 4
 调 `host.prefetchModule(moduleUrl)`:renderer host 只按目录名 `readMainByDir`(带列举快照 manifest 令牌)拉源码
 并生成 Blob URL,**不 import、不执行插件代码**(故可在权限门之前)。串行激活的 `importModule` 命中预取结果或
-加入同一引用的在途拉取(单飞),激活顺序与 `activationOrder` 不变,不并发激活。(`plugin-source-prefetch.spec.ts`)
+加入同一引用的在途拉取(单飞),激活顺序不变,不并发激活。(`plugin-source-prefetch.spec.ts`)
 
 - 第一个插件 onload 挂起时,其余已启用插件的源码读取已发出;每个插件源码只读一次。
 - 禁用插件不预取;轮到预取时已禁用 / 卸载 / 换了 dirInfo 的不再预取。
