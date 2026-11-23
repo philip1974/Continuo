@@ -7,25 +7,9 @@
 
 import type { MainT } from './i18n';
 import { PATH_ARRAY_MAX, PATH_STR_MAX } from '../shared/explorer-persistence-schema';
+import type { DirtyState } from '../shared/persistence-channels';
 
-export interface DirtyState {
-  /** 关窗会丢的脏 tab 数(含 untitled)。 */
-  readonly dirty: number;
-  /** 其中 untitled 草稿数(无路径,MVP 不支持另存为,「保存」时跳过)。 */
-  readonly untitled: number;
-  /**
-   * 脏 tab 的 id(file tab = 路径;untitled = 其 id)。退出前全局最终检查与「保存」的 untitled 放行按身份比较
-   * (复审:只比数量时,「不保存」后存了 X 又改了 Y / untitled 同数量替换都会被放行而丢改动)。
-   */
-  readonly ids: readonly string[];
-  /** 其中 untitled 的 id(⊆ ids)。 */
-  readonly untitledIds: readonly string[];
-  /**
-   * 未计入 ids、依赖关窗 flush 才能落盘的脏 .md(autosave 开启的活动 tab;非空才有)。终审 P1:读盘挂起的网络卷上
-   * flush 可能超时,未弹框的关闭此时不能放行(否则丢编辑);为空时超时照常放行(renderer 卡死也能关窗)。
-   */
-  readonly pendingAutoSave?: readonly string[];
-}
+export type { DirtyState };
 
 // 边界:id 列表上限对齐 openFilePaths(PATH_ARRAY_MAX)、单条对齐 PATH_STR_MAX,防畸形 / 篡改上报。
 // id 形如 `${tabId}#${dirtyGen}`:tabId 本身可达 PATH_STR_MAX(Windows 长路径),单条上限给代际后缀留余量,

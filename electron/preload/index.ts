@@ -3,6 +3,7 @@ import {
   EXPLORER_CHANNELS,
   LAYOUT_CHANNELS,
   WINDOW_ID_CHANNEL,
+  type DirtyState,
 } from '../shared/persistence-channels';
 import { subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
@@ -118,15 +119,8 @@ function ensureTerminalDataListener(): void {
   terminalDataListenerInstalled = true;
 }
 
-// 关窗脏态上报(计数 + 脏 tab id,id 供 main 按身份比较已接受范围)。
-type DirtyReport = {
-  dirty: number;
-  untitled: number;
-  ids: readonly string[];
-  untitledIds: readonly string[];
-  /** 未计入、依赖关窗 flush 落盘的脏 .md(非空才带;flush 超时时 main 据此中止关闭)。 */
-  pendingAutoSave?: readonly string[];
-};
+// 关窗脏态上报(计数 + 脏 tab id,id 供 main 按身份比较已接受范围),形态见 shared DirtyState。
+type DirtyReport = DirtyState;
 
 type FlushRequestPayload = {
   windowId: number;

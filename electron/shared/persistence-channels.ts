@@ -16,6 +16,29 @@ export const LAYOUT_CHANNELS = {
   DIRTY_STATE: 'layout:dirty-state',
 } as const;
 
+/**
+ * 关窗脏态(renderer 经 DIRTY_STATE 上报、FLUSH_ACK 回执里的 remaining / state;main 经 parseDirtyState 运行时校验)。
+ * main / preload / renderer 三处共用这一份形态。
+ */
+export interface DirtyState {
+  /** 关窗会丢的脏 tab 数(含 untitled)。 */
+  readonly dirty: number;
+  /** 其中 untitled 草稿数(无路径,MVP 不支持另存为,「保存」时跳过)。 */
+  readonly untitled: number;
+  /**
+   * 脏 tab 的身份 `${tabId}#${变脏代际}`(tabId:file tab = 路径;untitled = 其 id)。main 按身份比较「本轮已接受」
+   * 的范围(复审:只比数量会被同数量替换绕过;只比 tab id 会被「保存后再编辑同一文件」绕过)。
+   */
+  readonly ids: readonly string[];
+  /** 其中 untitled 的 id(⊆ ids)。 */
+  readonly untitledIds: readonly string[];
+  /**
+   * 未计入 ids、依赖关窗 flush 才能落盘的脏 .md(autosave 开启的活动 tab;非空才有)。终审 P1:读盘挂起的网络卷上
+   * flush 可能超时,未弹框的关闭此时不能放行(否则丢编辑);为空时超时照常放行(renderer 卡死也能关窗)。
+   */
+  readonly pendingAutoSave?: readonly string[];
+}
+
 export const EXPLORER_CHANNELS = {
   READ: 'explorer:read',
   WRITE: 'explorer:write',
