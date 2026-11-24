@@ -14,11 +14,7 @@ test('开 Output → 开 Settings(active)→ focusPanel("output") → Output act
 
   // focusPanel('output') → Output 重新 active
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: { focusPanel: (id: string) => void };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.focusPanel('output');
   });
 

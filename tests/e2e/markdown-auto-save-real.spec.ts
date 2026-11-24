@@ -12,17 +12,11 @@ test('打开 .md → updateContent(via hook)→ 等 delay → 磁盘写入新内
   workspaceRoot,
 }) => {
   // 等 testing hook 挂载
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 把 autoSave delay 设到下限(设 50ms 会被钳到 500ms)避免 e2e 等久
   await window.evaluate(() => {
-    (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: number) => void;
-        };
-      }
-    ).__continuoTest.setSettingValue('autoSave.delayMs', 50);
+    globalThis.__continuoTest!.setSettingValue('autoSave.delayMs', 50);
   });
 
   // 打开 README.md
@@ -33,11 +27,7 @@ test('打开 .md → updateContent(via hook)→ 等 delay → 磁盘写入新内
 
   const tabId = await window.evaluate(
     () =>
-      (
-        window as unknown as {
-          __continuoTest: { getEditorActiveTabId: () => string | null };
-        }
-      ).__continuoTest.getEditorActiveTabId(),
+      globalThis.__continuoTest!.getEditorActiveTabId(),
   );
   expect(tabId).toBeTruthy();
 
@@ -45,13 +35,7 @@ test('打开 .md → updateContent(via hook)→ 等 delay → 磁盘写入新内
   const NEW_CONTENT = '# Auto-saved by e2e\n\nbody.\n';
   await window.evaluate(
     ({ tabId, content }) => {
-      (
-        window as unknown as {
-          __continuoTest: {
-            setEditorContent: (id: string, c: string) => void;
-          };
-        }
-      ).__continuoTest.setEditorContent(tabId as string, content);
+      globalThis.__continuoTest!.setEditorContent(tabId as string, content);
     },
     { tabId, content: NEW_CONTENT },
   );

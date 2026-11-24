@@ -16,15 +16,11 @@ test('fontSize input 键入字母被拒、store 仍为合法数字;键入数字�
   const input = window.locator('input[type=number]').first();
   await expect(input).toHaveValue('13');
 
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   const readStored = () =>
     window.evaluate(
       () =>
-        (
-          window as unknown as {
-            __continuoTest: { getSettingValue: (id: string) => unknown };
-          }
-        ).__continuoTest.getSettingValue('editor.fontSize'),
+        globalThis.__continuoTest!.getSettingValue('editor.fontSize'),
     );
 
   // 键入字母:number input 不接受(fill 字母串会直接抛错,故用真实键入)

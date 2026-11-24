@@ -11,17 +11,11 @@ test('打开 a.ts → updateContent → 不自动保存(代码必须 ⌘S)', asy
   window,
   workspaceRoot,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // delay 短
   await window.evaluate(() => {
-    (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: number) => void;
-        };
-      }
-    ).__continuoTest.setSettingValue('autoSave.delayMs', 50);
+    globalThis.__continuoTest!.setSettingValue('autoSave.delayMs', 50);
   });
 
   await window.locator('text=src').first().click();
@@ -32,11 +26,7 @@ test('打开 a.ts → updateContent → 不自动保存(代码必须 ⌘S)', asy
 
   const tabId = await window.evaluate(
     () =>
-      (
-        window as unknown as {
-          __continuoTest: { getEditorActiveTabId: () => string | null };
-        }
-      ).__continuoTest.getEditorActiveTabId(),
+      globalThis.__continuoTest!.getEditorActiveTabId(),
   );
   const before = await readFile(
     path.join(workspaceRoot, 'src/a.ts'),
@@ -45,13 +35,7 @@ test('打开 a.ts → updateContent → 不自动保存(代码必须 ⌘S)', asy
 
   await window.evaluate(
     ({ tabId, content }) => {
-      (
-        window as unknown as {
-          __continuoTest: {
-            setEditorContent: (id: string, c: string) => void;
-          };
-        }
-      ).__continuoTest.setEditorContent(tabId as string, content);
+      globalThis.__continuoTest!.setEditorContent(tabId as string, content);
     },
     { tabId, content: 'export const a = 999;\n' },
   );

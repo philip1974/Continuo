@@ -11,7 +11,7 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('Tab→Enter 快速序列不授予;停顿后 Enter 授予;Shift+Tab 不从首元素回绕到授予按钮', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
     const w = window as unknown as {
@@ -65,7 +65,7 @@ test('Tab→Enter 快速序列不授予;停顿后 Enter 授予;Shift+Tab 不从�
 });
 
 test('过早的真实鼠标点击被拒后焦点不留在授予按钮上:停顿后的 Enter 不授予', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
     const w = window as unknown as {

@@ -7,13 +7,9 @@ const TERMINAL_TAB = /^(终端|Terminal|터미널)(\s|$)/;
 
 test('Terminal active + Cmd+P → Quick Open modal 显', async ({ window }) => {
   // 走真实 terminal.new command 创建 session-bound Terminal panel.
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   const created = await window.evaluate(() =>
-    (
-      window as unknown as {
-        __continuoTest: { executeCommand: (id: string) => Promise<boolean> };
-      }
-    ).__continuoTest.executeCommand('terminal.new'),
+    globalThis.__continuoTest!.executeCommand('terminal.new'),
   );
   expect(created).toBe(true);
   const terminalTab = window.getByRole('tab', { name: TERMINAL_TAB });

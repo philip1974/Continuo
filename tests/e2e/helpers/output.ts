@@ -14,17 +14,11 @@ export async function openOutputPanel(window: Page): Promise<void> {
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
     timeout: 10_000,
   });
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   // testing hook 可能先于 dock 就绪暴露(openOrFocusPanel 此时 no-op):重试到面板出现
   await expect(async () => {
     await window.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: {
-            openOrFocusPanel: (id: string, c: string, t: string) => void;
-          };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.openOrFocusPanel('output', 'output', 'Output');
     });
     await expect(window.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });

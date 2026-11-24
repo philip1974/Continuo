@@ -12,20 +12,11 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('请求 fs/network 权限 → modal 列出两条,默认全选 + 授权按钮显数', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 触发 prompt(fire-and-forget — 当前 spec 不验证 promise 结果)
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     void t.requestPermissions('com.example.test', ['fs', 'network']);
   });
 
@@ -53,20 +44,11 @@ test('请求 fs/network 权限 → modal 列出两条,默认全选 + 授权按�
 });
 
 test('点「授权选中」→ Promise resolve 含勾选项', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 让 evaluate 返 promise 结果
   const grantedPromise = window.evaluate(async () => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     return t.requestPermissions('com.example.x', ['fs']);
   });
 

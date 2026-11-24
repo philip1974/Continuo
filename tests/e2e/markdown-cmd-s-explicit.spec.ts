@@ -11,15 +11,9 @@ test('README.md autoSave delay=10s + 输入 + Cmd+S → 立即写盘', async ({
   workspaceRoot,
 }) => {
   // 拉长 autoSave delay 让 autoSave 不抢
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: number) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('autoSave.delayMs', 10000);
   });
 

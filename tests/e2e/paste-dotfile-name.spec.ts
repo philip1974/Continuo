@@ -16,13 +16,9 @@ test('copy .gitignore → paste 到 src → 出现 .gitignore copy', async ({
   await window.waitForTimeout(300);
 
   // 切 showHiddenFiles=true 让 tree 显
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: { setSettingValue: (id: string, v: boolean) => void };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('explorer.showHiddenFiles', true);
   });
 

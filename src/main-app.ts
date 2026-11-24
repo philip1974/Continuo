@@ -23,7 +23,8 @@ import { IpcPermissionStore } from './plugins/permissions/IpcPermissionStore';
 import { setUserPermissionStore } from './plugins/permissions/co-permission-store';
 import { usePermissionPromptStore } from './plugins/permissions/promptStore';
 import { startPluginFsScopeRequestBridge } from './plugins/permissions/usePluginFsScopeRequests';
-import { PermissionError, type PermissionKey } from './plugins/permissions';
+import { PermissionError } from './plugins/permissions';
+import type { ContinuoTestHooks } from './continuo-test-hooks';
 import { sandboxSweep } from './plugins/sandbox-sweep';
 import { captureLmApi, coApi } from './lib/co-api';
 import { isPopoutWindow } from './lib/popout-mode';
@@ -54,33 +55,7 @@ import './styles/tailwind.css';
 // preload 通过 process.env.CONTINUO_E2E 转发(主进程在 e2e 时设这个变量).
 declare const window: Window & {
   __continuoE2E?: boolean;
-  __continuoTest?: {
-    openOrFocusPanel: (id: string, component: string, title: string) => void;
-    focusPanel: (id: string) => void;
-    setEditorContent: (tabId: string, content: string) => void;
-    getEditorActiveTabId: () => string | null;
-    setSettingValue: (id: string, value: string | number | boolean) => void;
-    getSettingValue: (id: string) => unknown;
-    /** 触发权限弹窗(plugin install 流程的核心交互). */
-    // 可维护性 M9:复用真实权限键类型(与 promptStore.request 契约一致),不再用更宽的
-    // string[] + impl 处 `as never` 掩盖非法键。
-    requestPermissions: (
-      pluginId: string,
-      perms: readonly PermissionKey[],
-    ) => Promise<readonly PermissionKey[]>;
-    /** 命令数量(用于 e2e 验证内置命令注册数). */
-    commandCount: () => number;
-    /** 执行已注册命令(用于 e2e 走真实 command fn,不绕业务实现). */
-    executeCommand: (commandId: string) => Promise<boolean>;
-    /** 注册命令(测试动态命令出现).返 dispose. */
-    registerCommand: (
-      id: string,
-      title: string,
-      hotkey?: string,
-    ) => () => void;
-    /** 改 keybindings override(测试 hotkey 显示更新). */
-    setHotkey: (commandId: string, hotkey: string) => void;
-  };
+  __continuoTest?: ContinuoTestHooks;
 };
 
 function renderApp(container: HTMLElement): void {

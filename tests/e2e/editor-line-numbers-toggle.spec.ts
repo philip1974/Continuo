@@ -14,15 +14,9 @@ test('打开 a.ts → setting 改 lineNumbers=false → CM 加 cm-no-gutters', a
   await expect(cm).not.toHaveClass(/cm-no-gutters/);
 
   // 用 testing hook 改 setting
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: boolean) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('editor.lineNumbers', false);
   });
 

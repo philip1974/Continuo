@@ -4,18 +4,11 @@ import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('register + setHotkey override → palette 显示新 hotkey', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 注册带初始 hotkey 命令
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (id: string, title: string, hotkey?: string) => () => void;
-          setHotkey: (id: string, hotkey: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.dyn-override', 'DynOverride', 'mod+shift+x');
     // override 为 mod+shift+z
     t.setHotkey('e2e.dyn-override', 'mod+shift+z');

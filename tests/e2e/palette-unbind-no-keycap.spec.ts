@@ -8,7 +8,7 @@ import {
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('unbind settings.toggle → palette 该项无 KeyCap', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 先打开 palette,验证默认有 KeyCap
   await openCommandPalette(window);
@@ -21,13 +21,7 @@ test('unbind settings.toggle → palette 该项无 KeyCap', async ({ window }) =
   // 关 + unbind
   await window.keyboard.press('Escape');
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setHotkey: (commandId: string, hotkey: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setHotkey('settings.toggle', ''); // unbind
   });
 

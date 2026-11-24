@@ -27,17 +27,11 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
     });
 
     // 打开 Output panel
-    await waitForTestHooks(win)
+    await waitForTestHooks(win);
     // testing hook 可能先于 dock 就绪暴露(openOrFocusPanel 此时 no-op):重试到面板出现
     await expect(async () => {
       await win.evaluate(() => {
-        const t = (
-          window as unknown as {
-            __continuoTest: {
-              openOrFocusPanel: (id: string, c: string, t: string) => void;
-            };
-          }
-        ).__continuoTest;
+        const t = globalThis.__continuoTest!;
         t.openOrFocusPanel('output', 'output', 'Output');
       });
       await expect(win.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });

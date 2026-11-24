@@ -5,16 +5,10 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('setSettingValue("xxx.unknown", 42) → localStorage 仍记', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: number) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('xxx.unknown', 42);
   });
 

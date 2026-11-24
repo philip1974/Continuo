@@ -25,16 +25,10 @@ test('override settings.toggle 为 mod+shift+y → 按下新组合 → 打开 Se
   window,
 }) => {
   await appMounted(window);
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setHotkey: (commandId: string, hotkey: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setHotkey('settings.toggle', 'mod+shift+y');
   });
   await bindingsApplied(window);
@@ -48,7 +42,7 @@ test('override settings.toggle 为 mod+shift+y → 按下新组合 → 打开 Se
 
 test('override 后 → 旧 hotkey ⌘, 不再触发', async ({ window }) => {
   await appMounted(window);
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 正向对照:改键前 ⌘, 能打开 Settings(热键通路已就绪),再 ⌘, 关闭
   const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
@@ -59,13 +53,7 @@ test('override 后 → 旧 hotkey ⌘, 不再触发', async ({ window }) => {
 
   // override 走 setHotkey
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setHotkey: (commandId: string, hotkey: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setHotkey('settings.toggle', 'mod+shift+y');
   });
   await bindingsApplied(window);

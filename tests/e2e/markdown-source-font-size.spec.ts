@@ -14,13 +14,9 @@ test('README.md Source mode + fontSize=24 → CM 容器 24px', async ({ window }
   });
 
   // 改 fontSize
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: { setSettingValue: (id: string, v: number) => void };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('editor.fontSize', 24);
   });
 

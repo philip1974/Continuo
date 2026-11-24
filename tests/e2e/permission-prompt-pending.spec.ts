@@ -9,19 +9,10 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('连续 2 次 requestPermissions → 仍只 1 个 modal 渲染', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     void t.requestPermissions('com.first', ['fs']);
     // 立刻第二次
     void t.requestPermissions('com.second', ['network']);

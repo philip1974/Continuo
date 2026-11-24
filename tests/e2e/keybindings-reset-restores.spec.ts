@@ -23,18 +23,14 @@ async function bindingsApplied(window: Page): Promise<void> {
 
 async function setHotkey(window: Page, hotkey: string): Promise<void> {
   await window.evaluate((h) => {
-    (
-      window as unknown as {
-        __continuoTest: { setHotkey: (commandId: string, hotkey: string) => void };
-      }
-    ).__continuoTest.setHotkey('settings.toggle', h);
+    globalThis.__continuoTest!.setHotkey('settings.toggle', h);
   }, hotkey);
   await bindingsApplied(window);
 }
 
 test('override → 原 ⌘, 失效、新键生效;设回 mod+, → ⌘, 恢复打开 Settings', async ({ window }) => {
   await appMounted(window);
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
 
   // 改键为 mod+shift+y:⌘, 不再打开 Settings

@@ -20,15 +20,9 @@ test('setting fontSize=20 → CodeEditor 容器 fontSize=20px', async ({
   expect(beforeFontSize).toBe('13px');
 
   // 改 setting → 20
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: number) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('editor.fontSize', 20);
   });
 

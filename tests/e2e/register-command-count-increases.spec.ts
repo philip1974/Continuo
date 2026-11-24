@@ -5,28 +5,17 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('registerCommand → count + 1; dispose → count -1', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // initial count
   const initial = await window.evaluate(
     () =>
-      (
-        window as unknown as {
-          __continuoTest: { commandCount: () => number };
-        }
-      ).__continuoTest.commandCount(),
+      globalThis.__continuoTest!.commandCount(),
   );
 
   // register 3 命令,记下 dispose
   const disposed = await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (id: string, title: string) => () => void;
-          commandCount: () => number;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     const d1 = t.registerCommand('e2e.a', 'A');
     const d2 = t.registerCommand('e2e.b', 'B');
     const d3 = t.registerCommand('e2e.c', 'C');

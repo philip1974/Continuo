@@ -21,15 +21,9 @@ test('改 indentSize=32 → src/a.ts 行 paddingLeft 同步加大', async ({ win
   });
 
   // 改 indent → 32
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: number) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('explorer.indentSize', 32);
   });
 

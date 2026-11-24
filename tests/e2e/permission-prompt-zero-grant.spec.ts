@@ -8,19 +8,10 @@ import {
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('全部 uncheck → 「授权选中(0)」 → resolve []', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   const grantedPromise = window.evaluate(async () => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     return t.requestPermissions('com.zero', ['fs', 'network']);
   });
 

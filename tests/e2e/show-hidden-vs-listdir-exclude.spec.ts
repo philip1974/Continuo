@@ -20,13 +20,9 @@ test('切 showHiddenFiles=true → .env 显;node_modules 仍不显', async ({
     window.locator('[role=treeitem]').filter({ hasText: /^\.env$/ }),
   ).toHaveCount(0);
 
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: { setSettingValue: (id: string, v: boolean) => void };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('explorer.showHiddenFiles', true);
   });
 

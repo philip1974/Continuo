@@ -10,19 +10,10 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('请求 fs+network+clipboard → 默认全选 → 授权 → resolve 三项', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   const grantedPromise = window.evaluate(async () => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     return t.requestPermissions('com.all', ['fs', 'network', 'clipboard']);
   });
 

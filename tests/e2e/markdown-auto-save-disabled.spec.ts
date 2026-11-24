@@ -9,17 +9,11 @@ test('autoSave.markdown.enabled=false → updateContent → 磁盘不变', async
   window,
   workspaceRoot,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 关 autoSave + delay 短
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: boolean | number) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('autoSave.markdown.enabled', false);
     t.setSettingValue('autoSave.delayMs', 50);
   });
@@ -31,11 +25,7 @@ test('autoSave.markdown.enabled=false → updateContent → 磁盘不变', async
 
   const tabId = await window.evaluate(
     () =>
-      (
-        window as unknown as {
-          __continuoTest: { getEditorActiveTabId: () => string | null };
-        }
-      ).__continuoTest.getEditorActiveTabId(),
+      globalThis.__continuoTest!.getEditorActiveTabId(),
   );
   const before = await readFile(
     path.join(workspaceRoot, 'README.md'),
@@ -44,13 +34,7 @@ test('autoSave.markdown.enabled=false → updateContent → 磁盘不变', async
 
   await window.evaluate(
     ({ tabId, content }) => {
-      (
-        window as unknown as {
-          __continuoTest: {
-            setEditorContent: (id: string, c: string) => void;
-          };
-        }
-      ).__continuoTest.setEditorContent(tabId as string, content);
+      globalThis.__continuoTest!.setEditorContent(tabId as string, content);
     },
     { tabId, content: '# Should NOT auto save\n' },
   );

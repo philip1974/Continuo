@@ -7,7 +7,7 @@ const KEYBINDINGS_TOTAL =
   /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
 
 test('register e2e.X(hotkey)→ keybindings tab 计数 +1', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 打开 Settings → 快捷键 tab
   await openSettingsTab(window, KEYBINDINGS_TAB);
@@ -24,17 +24,7 @@ test('register e2e.X(hotkey)→ keybindings tab 计数 +1', async ({ window }) =
 
   // register
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (
-            id: string,
-            title: string,
-            hotkey?: string,
-          ) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.kbd-count', 'KbdCount', 'mod+alt+z');
   });
 

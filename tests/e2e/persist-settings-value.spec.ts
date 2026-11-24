@@ -14,15 +14,9 @@ test('autoSave.delayMs=1500 → 关 → 重启 → getSettingValue 仍 1500', as
     const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
-    await waitForTestHooks(win1)
+    await waitForTestHooks(win1);
     await win1.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: {
-            setSettingValue: (id: string, v: number) => void;
-          };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.setSettingValue('autoSave.delayMs', 1500);
     });
     // 等 localStorage flush
@@ -35,14 +29,10 @@ test('autoSave.delayMs=1500 → 关 → 重启 → getSettingValue 仍 1500', as
     const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
-    await waitForTestHooks(win2)
+    await waitForTestHooks(win2);
 
     const restored = await win2.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: { getSettingValue: (id: string) => unknown };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       return t.getSettingValue('autoSave.delayMs');
     });
     expect(restored).toBe(1500);

@@ -22,14 +22,10 @@ test('theme=light + 切 ws → 仍 light', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await waitForTestHooks(win)
+    await waitForTestHooks(win);
 
     await win.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: { setSettingValue: (id: string, v: string) => void };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.setSettingValue('general.theme', 'light');
     });
     await expect(win.locator('html')).not.toHaveClass(/dark/, {

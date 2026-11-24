@@ -4,19 +4,10 @@ import { PERMISSION_DENY_ALL } from './helpers/permission-prompt';
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('点「拒绝」 → Promise resolve []', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   const grantedPromise = window.evaluate(async () => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     return t.requestPermissions('com.deny', ['fs', 'network']);
   });
 

@@ -4,16 +4,10 @@ import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('动态命令 → palette → Enter → modal 关', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (id: string, title: string) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.execute-noop', 'ExecuteNoOp');
   });
 

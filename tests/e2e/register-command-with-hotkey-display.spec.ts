@@ -4,20 +4,10 @@ import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('动态注册命令 + hotkey → palette 显 KeyCap', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (
-            id: string,
-            title: string,
-            hotkey?: string,
-          ) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.kbd-display', 'KbdDisplay Test', 'mod+shift+t');
   });
 

@@ -5,20 +5,11 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('plugin id 含点 / 横杠 / 下划线 → modal 仍正常渲染', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   const ID = 'co.example-plugin_v2.test';
   await window.evaluate((id) => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     void t.requestPermissions(id, ['fs']);
   }, ID);
 

@@ -5,17 +5,11 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('theme=system + emulate light → html 移除 dark; 切 dark media → html 加 dark', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 设 setting=system
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('general.theme', 'system');
   });
 

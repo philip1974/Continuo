@@ -21,17 +21,12 @@ test('doc.markdown + delay=0(钳到 500ms)+ setEditorContent → 防抖后写盘
     await win.waitForFunction(
       () =>
         Boolean(
-          (window as unknown as { __continuoTest?: unknown })
-            .__continuoTest,
+          globalThis.__continuoTest!,
         ),
       { timeout: 5_000 },
     );
     await win.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: { setSettingValue: (id: string, v: number) => void };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.setSettingValue('autoSave.delayMs', 0);
     });
 
@@ -42,24 +37,14 @@ test('doc.markdown + delay=0(钳到 500ms)+ setEditorContent → 防抖后写盘
 
     const tabId = await win.evaluate(
       () =>
-        (
-          window as unknown as {
-            __continuoTest: { getEditorActiveTabId: () => string | null };
-          }
-        ).__continuoTest.getEditorActiveTabId(),
+        globalThis.__continuoTest!.getEditorActiveTabId(),
     );
     expect(tabId).toBeTruthy();
 
     const NEW = '# auto-saved markdown ext\n';
     await win.evaluate(
       ({ tabId, content }) => {
-        (
-          window as unknown as {
-            __continuoTest: {
-              setEditorContent: (id: string, c: string) => void;
-            };
-          }
-        ).__continuoTest.setEditorContent(tabId as string, content);
+        globalThis.__continuoTest!.setEditorContent(tabId as string, content);
       },
       { tabId, content: NEW },
     );

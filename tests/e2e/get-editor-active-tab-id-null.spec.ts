@@ -7,11 +7,7 @@ import type { Page } from '@playwright/test';
 async function activeTabId(window: Page): Promise<string | null> {
   return await window.evaluate(
     () =>
-      (
-        window as unknown as {
-          __continuoTest: { getEditorActiveTabId: () => string | null };
-        }
-      ).__continuoTest.getEditorActiveTabId(),
+      globalThis.__continuoTest!.getEditorActiveTabId(),
   );
 }
 

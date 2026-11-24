@@ -16,15 +16,9 @@ test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍�
     const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
-    await waitForTestHooks(win1)
+    await waitForTestHooks(win1);
     await win1.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: {
-            setHotkey: (commandId: string, hotkey: string) => void;
-          };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.setHotkey('settings.toggle', 'mod+shift+y');
     });
     await win1.waitForTimeout(200);
@@ -34,7 +28,7 @@ test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍�
     const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
-    await waitForTestHooks(win2)
+    await waitForTestHooks(win2);
 
     // 验证 override 已从 localStorage 恢复
     const restored = await win2.evaluate(() => {
@@ -46,11 +40,7 @@ test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍�
     // 给 plugin 注册一些时间(commands 注册可能异步)
     await win2.waitForTimeout(1_000);
     const cmdCount = await win2.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest?: { commandCount?: () => number };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       return t?.commandCount ? t.commandCount() : -1;
     });
     expect(cmdCount).toBeGreaterThan(0);

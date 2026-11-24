@@ -29,15 +29,9 @@ test('打开 .md → 关闭 autoSave 后 SegmentedControl 仍在 + Save 不显',
   expect(await saveBtn.count()).toBe(0);
 
   // 切 setting
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: boolean) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('autoSave.markdown.enabled', false);
   });
 
@@ -45,11 +39,7 @@ test('打开 .md → 关闭 autoSave 后 SegmentedControl 仍在 + Save 不显',
   await expect
     .poll(() =>
       window.evaluate(() =>
-        (
-          window as unknown as {
-            __continuoTest: { getSettingValue: (id: string) => unknown };
-          }
-        ).__continuoTest.getSettingValue('autoSave.markdown.enabled'),
+        globalThis.__continuoTest!.getSettingValue('autoSave.markdown.enabled'),
       ),
     )
     .toBe(false);

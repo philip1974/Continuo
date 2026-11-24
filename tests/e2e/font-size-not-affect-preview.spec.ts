@@ -16,13 +16,9 @@ test('Preview mode 改 fontSize → main 内 CodeMirror 不存在', async ({ win
   });
 
   // 改 fontSize 不抛
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: { setSettingValue: (id: string, v: number) => void };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('editor.fontSize', 22);
   });
 

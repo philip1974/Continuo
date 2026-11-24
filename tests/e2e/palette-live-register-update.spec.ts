@@ -4,7 +4,7 @@ import { COMMAND_NO_MATCH, commandPaletteInput, openCommandPalette } from './hel
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('palette 开 → register e2e.live → 列表立即含', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 开 palette
   await openCommandPalette(window);
@@ -15,13 +15,7 @@ test('palette 开 → register e2e.live → 列表立即含', async ({ window })
 
   // 注册命令
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (id: string, title: string) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.live', 'LiveRegistered Cmd');
   });
 

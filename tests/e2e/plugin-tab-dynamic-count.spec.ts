@@ -12,7 +12,7 @@ const REGISTERED_CONTRIBUTIONS =
   /^(已注册贡献点|Registered contribution points|등록된 기여 항목)$/;
 
 test('register 命令 → 插件 tab 命令计数 +1', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 打开 Settings → 插件 tab
   await openSettingsTab(window, PLUGINS_TAB);
@@ -28,13 +28,7 @@ test('register 命令 → 插件 tab 命令计数 +1', async ({ window }) => {
 
   // register 4 个新命令
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (id: string, title: string) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.pl1', 'PL1');
     t.registerCommand('e2e.pl2', 'PL2');
     t.registerCommand('e2e.pl3', 'PL3');

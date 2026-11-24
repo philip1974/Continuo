@@ -5,7 +5,7 @@ import { waitForTestHooks } from './helpers/app-ready';
 
 test('Mod+, → Settings nav 出现', async ({ window }) => {
   // 等命令面板 commands 注册到位 + listener 挂上
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.waitForTimeout(500);
 
   await window.evaluate(() => {

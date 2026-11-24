@@ -4,15 +4,9 @@ import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('Output active → Cmd+Shift+P → palette 显', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          openOrFocusPanel: (id: string, c: string, t: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.openOrFocusPanel('output', 'output', 'Output');
   });
   await window.waitForTimeout(200);

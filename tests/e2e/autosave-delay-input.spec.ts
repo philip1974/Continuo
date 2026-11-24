@@ -6,23 +6,13 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=4000', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   // dock 未就绪(DockShell onReady 前)时 openOrFocusPanel 按契约静默忽略;测试钩子可能更早可用。
   // 出现 dock 页签 = 布局已恢复(fromJSON / 默认布局);Splash 不在 = 就绪屏障已放行。
   await expect(window.getByRole('tab').first()).toBeVisible({ timeout: 10_000 });
   await expect(window.getByTestId('splash')).toHaveCount(0, { timeout: 10_000 });
   await window.evaluate(() => {
-    (
-      window as unknown as {
-        __continuoTest: {
-          openOrFocusPanel: (
-            id: string,
-            component: string,
-            title: string,
-          ) => void;
-        };
-      }
-    ).__continuoTest.openOrFocusPanel('settings', 'settings', 'Settings');
+    globalThis.__continuoTest!.openOrFocusPanel('settings', 'settings', 'Settings');
   });
 
   // openOrFocusPanel 幂等打开(布局恢复前会排队到恢复后执行);Settings 内容是懒加载 chunk,
@@ -33,13 +23,7 @@ test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=400
   await expect(editorTab).toBeVisible();
   await editorTab.dispatchEvent('click');
   await window.evaluate(() =>
-    (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, value: number) => void;
-        };
-      }
-    ).__continuoTest.setSettingValue('autoSave.delayMs', 3000),
+    globalThis.__continuoTest!.setSettingValue('autoSave.delayMs', 3000),
   );
 
   // 第一个 input(fontSize)+ 第二个(autoSave.delayMs)
@@ -52,11 +36,7 @@ test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=400
 
   const v = await window.evaluate(
     () =>
-      (
-        window as unknown as {
-          __continuoTest: { getSettingValue: (id: string) => unknown };
-        }
-      ).__continuoTest.getSettingValue('autoSave.delayMs'),
+      globalThis.__continuoTest!.getSettingValue('autoSave.delayMs'),
   );
   expect(v).toBe(4000);
 });

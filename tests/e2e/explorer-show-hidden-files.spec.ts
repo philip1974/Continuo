@@ -20,15 +20,9 @@ test('默认隐藏 .hidden → 切 setting=true → tree 显', async ({
   ).toHaveCount(0);
 
   // 切 true
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: boolean) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('explorer.showHiddenFiles', true);
   });
 

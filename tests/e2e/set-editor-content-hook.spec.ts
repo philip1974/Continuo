@@ -12,17 +12,10 @@ test('open a.ts → setEditorContent → CM 内容更新 + dirty 出', async ({
   await expect(cm).toBeVisible({ timeout: 10_000 });
   await expect(cm).toContainText('export const a = 1;');
 
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setEditorContent: (id: string, c: string) => void;
-          getEditorActiveTabId: () => string | null;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     const tabId = t.getEditorActiveTabId();
     if (tabId) t.setEditorContent(tabId, 'export const HOOK = 42;\n');
   });

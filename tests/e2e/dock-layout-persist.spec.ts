@@ -35,7 +35,7 @@ async function launch(userData: string): Promise<ElectronApplication> {
 }
 
 async function waitForTestHook(page: Page): Promise<void> {
-  await waitForTestHooks(page, 10_000)
+  await waitForTestHooks(page, 10_000);
 }
 
 async function openOutputPanel(page: Page): Promise<void> {
@@ -43,13 +43,7 @@ async function openOutputPanel(page: Page): Promise<void> {
   // testing hook 可能先于 dock 就绪暴露(此时 openOrFocusPanel 是 no-op):重试到面板出现。
   await expect(async () => {
     await page.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: {
-            openOrFocusPanel: (id: string, c: string, t: string) => void;
-          };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.openOrFocusPanel('output', 'output', 'Output');
     });
     await expect(page.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });

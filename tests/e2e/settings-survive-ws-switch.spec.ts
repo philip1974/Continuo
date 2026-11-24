@@ -22,15 +22,11 @@ test('改 fontSize=18 + 切 ws → fontSize 仍 18', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await waitForTestHooks(win)
+    await waitForTestHooks(win);
 
     // 改 fontSize=18
     await win.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: { setSettingValue: (id: string, v: number) => void };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.setSettingValue('editor.fontSize', 18);
     });
 
@@ -49,11 +45,7 @@ test('改 fontSize=18 + 切 ws → fontSize 仍 18', async () => {
     // fontSize 仍 18
     const v = await win.evaluate(
       () =>
-        (
-          window as unknown as {
-            __continuoTest: { getSettingValue: (id: string) => unknown };
-          }
-        ).__continuoTest.getSettingValue('editor.fontSize'),
+        globalThis.__continuoTest!.getSettingValue('editor.fontSize'),
     );
     expect(v).toBe(18);
 

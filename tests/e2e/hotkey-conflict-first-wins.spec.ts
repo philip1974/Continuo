@@ -9,24 +9,14 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('注册同 hotkey 第二条命令 → 第一条仍优先(getAll insertion 顺序)', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
     timeout: 10_000,
   });
 
   // settings.toggle 已注册 hotkey='mod+,';再注册一条 'e2e.dup' 也用 mod+,
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (
-            id: string,
-            title: string,
-            hotkey?: string,
-          ) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.dup', 'E2E Dup', 'mod+,');
   });
   // 新命令要经过一次 React 提交才会进入热键绑定表:让出两帧再按键,否则按键可能打到只有 settings.toggle 的旧表。

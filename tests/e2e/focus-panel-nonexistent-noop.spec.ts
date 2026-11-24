@@ -6,17 +6,13 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('focusPanel("does-not-exist") → 不抛 + EditorWelcome 仍显', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 默认 → Editor panel + EditorWelcome
   await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible();
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: { focusPanel: (id: string) => void };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.focusPanel('does-not-exist-panel-id');
   });
 

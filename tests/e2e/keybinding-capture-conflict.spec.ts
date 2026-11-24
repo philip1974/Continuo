@@ -13,21 +13,11 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('register e2e.X (mod+shift+t) → 编辑 settings.toggle → 按 t → 警告', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 注册一个用 mod+shift+t 的命令
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (
-            id: string,
-            title: string,
-            hotkey?: string,
-          ) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.registerCommand('e2e.conflict-target', 'Conflict Target', 'mod+shift+t');
   });
 

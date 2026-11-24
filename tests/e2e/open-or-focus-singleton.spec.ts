@@ -8,13 +8,7 @@ test('openOrFocusPanel("output") 调 2 次 → 只 1 个 Output close ✕', asyn
   await openOutputPanel(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          openOrFocusPanel: (id: string, c: string, t: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.openOrFocusPanel('output', 'output', 'Output');
   });
 

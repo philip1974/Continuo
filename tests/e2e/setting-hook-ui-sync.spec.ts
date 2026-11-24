@@ -16,15 +16,9 @@ test('SettingsPanel 显 + hook setValue → input 同步', async ({ window }) =>
   const fontInput = window.locator('input[type=number]').first();
   await expect(fontInput).toHaveValue('13');
 
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setSettingValue: (id: string, v: number) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setSettingValue('editor.fontSize', 18);
   });
 

@@ -24,7 +24,7 @@ test('unbind settings.toggle(空字符串)→ ⌘, 不再触发', async ({
   window,
 }) => {
   await appMounted(window);
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   // 正向对照:解绑前 ⌘, 能打开 Settings(证明热键通路已就绪),再关掉
   const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
@@ -37,13 +37,7 @@ test('unbind settings.toggle(空字符串)→ ⌘, 不再触发', async ({
 
   // unbind
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          setHotkey: (commandId: string, hotkey: string) => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     t.setHotkey('settings.toggle', '');
   });
   await bindingsApplied(window);

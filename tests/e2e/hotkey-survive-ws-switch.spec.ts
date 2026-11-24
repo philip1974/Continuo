@@ -27,16 +27,10 @@ test('override settings.toggle=mod+shift+y + 切 ws → 新 hotkey 仍触发', a
       timeout: 10_000,
     });
 
-    await waitForTestHooks(win)
+    await waitForTestHooks(win);
 
     await win.evaluate(() => {
-      const t = (
-        window as unknown as {
-          __continuoTest: {
-            setHotkey: (commandId: string, hotkey: string) => void;
-          };
-        }
-      ).__continuoTest;
+      const t = globalThis.__continuoTest!;
       t.setHotkey('settings.toggle', 'mod+shift+y');
     });
 

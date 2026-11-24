@@ -12,14 +12,10 @@ const COMMAND_LABELS = ['命令', 'Commands', '명령'];
 test('Plugin tab 显示的命令数 = testing hook commandCount()', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   const cmdCount = (await window.evaluate(() =>
-    (
-      window as unknown as {
-        __continuoTest: { commandCount: () => number };
-      }
-    ).__continuoTest.commandCount(),
+    globalThis.__continuoTest!.commandCount(),
   )) as number;
   expect(cmdCount).toBeGreaterThanOrEqual(1);
 

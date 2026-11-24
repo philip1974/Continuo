@@ -4,16 +4,10 @@ import { commandPaletteInput, openCommandPalette } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
 
 test('register 5 Bulk* + palette 输 Bulk → 列表 5 项', async ({ window }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          registerCommand: (id: string, title: string) => () => void;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     for (let i = 0; i < 5; i++) {
       t.registerCommand(`e2e.bulk-${i}`, `Bulk Cmd ${i}`);
     }

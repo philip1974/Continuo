@@ -175,11 +175,7 @@ test('输入途中切换主题:图按新主题重画,光标和输入不丢', asy
   await window.keyboard.type('X');
   // 编辑器保持可见的情况下切主题(设置面板是另一个 dock tab,会把编辑器换下去)
   await window.evaluate(() => {
-    (
-      window as unknown as {
-        __continuoTest: { setSettingValue: (id: string, v: string) => void };
-      }
-    ).__continuoTest.setSettingValue('general.theme', 'light');
+    globalThis.__continuoTest!.setSettingValue('general.theme', 'light');
   });
   await window.keyboard.type('Y');
   await expect(window.locator('html')).not.toHaveClass(/dark/, { timeout: 5_000 });

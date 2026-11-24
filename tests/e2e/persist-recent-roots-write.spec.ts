@@ -30,8 +30,7 @@ test('从 ws1 → 通过菜单切到 ws2 → recentRoots = [ws2, ws1]', async ()
     await win.waitForFunction(
       () =>
         Boolean(
-          (window as unknown as { __continuoTest?: unknown })
-            .__continuoTest,
+          globalThis.__continuoTest!,
         ),
       { timeout: 5_000 },
     );

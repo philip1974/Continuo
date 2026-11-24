@@ -10,19 +10,10 @@ import { waitForTestHooks } from './helpers/app-ready';
 test('请求 fs/network/clipboard → 显本地化 permission label', async ({
   window,
 }) => {
-  await waitForTestHooks(window)
+  await waitForTestHooks(window);
 
   await window.evaluate(() => {
-    const t = (
-      window as unknown as {
-        __continuoTest: {
-          requestPermissions: (
-            id: string,
-            perms: readonly string[],
-          ) => Promise<readonly string[]>;
-        };
-      }
-    ).__continuoTest;
+    const t = globalThis.__continuoTest!;
     void t.requestPermissions('com.i18n', ['fs', 'network', 'clipboard']);
   });
 
