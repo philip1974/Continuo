@@ -2,24 +2,9 @@
 import { test, expect } from './fixtures/electron-app';
 import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
+import { dispatchModKey } from './helpers/hotkeys';
 
 const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
-
-async function openPalette(window: import('@playwright/test').Page): Promise<void> {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
-        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
-        metaKey: navigator.platform.toLowerCase().includes('mac'),
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-}
 
 test('settings.toggle 行右侧显示 hotkey 切片', async ({ window }) => {
   const settingsButton = window.getByRole('button', { name: SETTINGS });
@@ -28,7 +13,7 @@ test('settings.toggle 行右侧显示 hotkey 切片', async ({ window }) => {
     (await settingsButton.getAttribute('title'))?.toLocaleLowerCase() ??
     'settings';
 
-  await openPalette(window);
+  await dispatchModKey(window, 'p', { shift: true });
   const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
   await expect(input).toBeVisible();
 

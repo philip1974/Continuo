@@ -3,24 +3,9 @@
 import { test, expect } from './fixtures/electron-app';
 import { SETTINGS, CLOSE_SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
+import { dispatchModKey } from './helpers/hotkeys';
 
 const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
-
-async function openPalette(window: import('@playwright/test').Page): Promise<void> {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
-        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
-        metaKey: navigator.platform.toLowerCase().includes('mac'),
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-}
 
 test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async ({
   window,
@@ -36,7 +21,7 @@ test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async
 
   // 三次执行 settings.toggle
   for (let i = 0; i < 3; i++) {
-    await openPalette(window);
+    await dispatchModKey(window, 'p', { shift: true });
     const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
     await expect(input).toBeVisible();
     await input.fill(settingsQuery);
@@ -57,7 +42,7 @@ test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async
   }
 
   // 第四次打开命令面板 → 第一项仍是 Settings 相关(LRU 头部不重复)
-  await openPalette(window);
+  await dispatchModKey(window, 'p', { shift: true });
   const options = window
     .getByRole('listbox', { name: COMMAND_LIST })
     .getByRole('option');

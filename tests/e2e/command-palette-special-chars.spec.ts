@@ -2,31 +2,16 @@
 import { test, expect } from './fixtures/electron-app';
 import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH } from './helpers/palette';
+import { dispatchModKey } from './helpers/hotkeys';
 
 const TRICKY = ['(.*)+?', '[abc\\]', '中文搜索', '😀✨', '"`<>$&|;'];
-
-async function openPalette(window: import('@playwright/test').Page): Promise<void> {
-  await window.evaluate(() => {
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'p',
-        // 平台主修饰键:mac = Cmd,其它 = Ctrl(mac 上面板热键只认 Cmd)
-        ctrlKey: !navigator.platform.toLowerCase().includes('mac'),
-        metaKey: navigator.platform.toLowerCase().includes('mac'),
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
-}
 
 test('特殊字符 query 不抛 + modal 仍开', async ({ window }) => {
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
     timeout: 10_000,
   });
 
-  await openPalette(window);
+  await dispatchModKey(window, 'p', { shift: true });
   const dialog = window.getByRole('dialog', { name: COMMAND_SEARCH });
   const input = dialog.getByRole('combobox', { name: COMMAND_SEARCH });
   await expect(input).toBeVisible();
