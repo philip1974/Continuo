@@ -12,16 +12,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../../electron/shared/plugin-shell-stream-channels';
 import { registerPluginShellStreamHandlers } from '../../../electron/main/services/plugin-shell-stream.service';
+import { StubIpcMain, type StubWebContents } from '../sdk-contract/integration/make-stub-ipc';
 
 interface NavDetails {
   isMainFrame: boolean;
   isSameDocument: boolean;
 }
-
-type Handler = (
-  event: { sender: MockWebContents; senderFrame?: { url: string } },
-  ...args: unknown[]
-) => Promise<void>;
 
 let nextWcId = 1;
 
@@ -62,25 +58,24 @@ class MockWebContents {
   }
 }
 
-class FakeIpcMain {
-  readonly handlers = new Map<string, Handler>();
-  handle(channel: string, handler: Handler): void {
-    this.handlers.set(channel, handler);
-  }
-  invoke(sender: MockWebContents, channel: string, ...args: unknown[]): Promise<void> {
-    const handler = this.handlers.get(channel);
-    if (!handler) throw new Error(`missing handler ${channel}`);
-    // trusted top frame(file://):START/ABORT 现在门控 defaultIsTrustedFrame(R8)。
-    return handler(
-      { sender, senderFrame: { url: 'file:///app/index.html' } },
-      ...args,
-    );
-  }
+interface Harness {
+  ipc: { invoke(sender: MockWebContents, channel: string, ...args: unknown[]): Promise<unknown> };
+  sender: MockWebContents;
 }
 
-function makeHarness(): { ipc: FakeIpcMain; sender: MockWebContents } {
-  const ipc = new FakeIpcMain();
-  registerPluginShellStreamHandlers(ipc as never);
+function makeHarness(): Harness {
+  const stub = new StubIpcMain();
+  registerPluginShellStreamHandlers(stub as never);
+  const ipc: Harness['ipc'] = {
+    // 以本用例的 MockWebContents 作 sender(要模拟导航);trusted top frame(file://):
+    // START/ABORT 现在门控 defaultIsTrustedFrame(R8)。
+    invoke: (sender, channel, ...args) =>
+      stub.invokeWithEvent(
+        { sender: sender as unknown as StubWebContents, senderFrame: { url: 'file:///app/index.html' } },
+        channel,
+        ...args,
+      ),
+  };
   return { ipc, sender: new MockWebContents() };
 }
 
