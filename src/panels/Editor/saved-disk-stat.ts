@@ -67,7 +67,7 @@ export function getSavedDiskStat(path: string): SavedDiskStat | undefined {
 }
 
 /** 磁盘当前 stat 是否就是该记录写入时的 stat. */
-export function isSameDiskStat(a: FsFileStat, b: FsFileStat): boolean {
+function isSameDiskStat(a: FsFileStat, b: FsFileStat): boolean {
   return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ino === b.ino;
 }
 

@@ -5,7 +5,7 @@ const EMPTY_USER_PLUGIN_LIST: readonly PluginListItem[] = [];
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
 /** user plugin manager 的已发现插件列表;manager 不存在(popout 窗口 / 尚未初始化)时为稳定空列表。 */
-export function readUserPluginList(): readonly PluginListItem[] {
+function readUserPluginList(): readonly PluginListItem[] {
   const m = getUserPluginManager();
   return m ? m.listAll() : EMPTY_USER_PLUGIN_LIST;
 }

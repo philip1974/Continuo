@@ -13,7 +13,7 @@ export const PLUGINS_TAB = /^(插件|Plugins|플러그인)$/;
 export const MARKETPLACE_TAB = /^(插件商店|Plugin Market|플러그인 마켓)$/;
 export const RESET_DEFAULT = /^(恢复默认|Reset to default|기본값으로 초기화)$/;
 export const RESET_DEFAULT_TEXT = /(恢复默认|Reset to default|기본값으로 초기화)/;
-export const RESET_DEFAULT_SELECTOR = [
+const RESET_DEFAULT_SELECTOR = [
   '[aria-label="恢复默认"]',
   '[aria-label="Reset to default"]',
   '[aria-label="기본값으로 초기화"]',
@@ -53,8 +53,6 @@ export const PLUGINS_SETTING_TABS_LABELS = [
 ] as const;
 export const MARKETPLACE_READY =
   /(显示\s*\d+\s*\/\s*共\s*\d+\s*个插件|Showing\s*\d+\s*\/\s*\d+\s*plugins|\d+\s*\/\s*\d+\s*플러그인 표시|暂无插件|No plugins|플러그인 없음|拉取索引失败|Failed to fetch index|인덱스 가져오기 실패)/;
-export const MARKETPLACE_INDEX_OK =
-  /(显示\s*\d+\s*\/\s*共\s*\d+\s*个插件|Showing\s*\d+\s*\/\s*\d+\s*plugins|\d+\s*\/\s*\d+\s*플러그인 표시|暂无插件|No plugins|플러그인 없음)/;
 /** 索引加载成功且非空(空索引提前返回、不渲染 Git URL 安装段)。 */
 export const MARKETPLACE_INDEX_NONEMPTY =
   /(显示\s*\d+\s*\/\s*共\s*\d+\s*个插件|Showing\s*\d+\s*\/\s*\d+\s*plugins|\d+\s*\/\s*\d+\s*플러그인 표시)/;

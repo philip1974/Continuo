@@ -15,7 +15,7 @@
 import type { Session } from 'electron';
 import { defaultIsTrustedFrame } from '../safe-handle';
 
-export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
+const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
   'clipboard-read',
   'clipboard-sanitized-write',
 ]);

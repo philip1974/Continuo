@@ -90,7 +90,7 @@ function recordGrantsFs(record: IpcPermissionRecord | undefined): boolean {
  * 重新授予 `fs` 后不经弹窗恢复旧路径。权限文件读失败 → 抛出,水合方按 [] 降级(fail-closed)。
  * 清残留不 await:走同 id 锁(FIFO,排在其后的授权持久化不受影响),不让水合等安装 / 更新持有的锁。
  */
-export async function loadPersistedScopesIfFsGranted(
+async function loadPersistedScopesIfFsGranted(
   pluginsDir: string,
   pluginId: string,
 ): Promise<PathScope[]> {

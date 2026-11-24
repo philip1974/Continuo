@@ -9,7 +9,7 @@ The dock layer wraps [`dockview-react`](https://dockview.dev) and keeps it in sy
 | `DockShell.tsx` | Mounts `<DockviewReact>`, wires `panelComponents` (the React components dockview will instantiate for each `addPanel({ component })`), and exposes its `DockviewApi` through `dock-api-ref.ts`. |
 | `DockReconciler.ts` | `reconcileTerminalPanels(api, { previousSessions, nextSessions })` — the 3-phase diff. Plus the React-side `useDockReconciler(api, hydrateBefore?, onHydrated?)` hook that subscribes to the terminal store (mounted by `DockShell.tsx`). |
 | `wrap-panel-close.ts` | Patches every panel's `api.close` to mark it for the EXIT animation via `closing.store`, then calls the original `close` after `EXIT_DURATION_MS`. It does not delete terminal sessions itself (that happens in `handleTerminalPanelRemoved`, see close-vs-move below); for a user-initiated close it only clears a suppressed flag the reconciler may have added during the animation. Re-opening the panel during the animation cancels the timer, so nothing is removed; if a reconciler-closed session becomes visible again during the animation, the reconciler cancels that close (`cancelReconcilerPanelClose`). Idempotent per panel. |
-| `terminal-panel-id.ts` | Stable mapping `panelIdFor(sessionId)` ↔ `sessionIdFromPanel(panel)` and an `isTerminalPanelId` predicate. |
+| `terminal-panel-id.ts` | Stable mapping `panelIdFor(sessionId)` ↔ `sessionIdFromPanel(panel)`. |
 | `layout.default.ts` | The initial dockview layout used on first launch (when no `explorer.json` per-window layout exists). |
 | `dock-api-ref.ts` | Mutable ref holding the live `DockviewApi`, so non-React code (event handlers, IPC plumbing) can reach it. |
 | `EmptyState.tsx` | Centerpiece shown when no panels are open. |

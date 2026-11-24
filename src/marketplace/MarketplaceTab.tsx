@@ -80,7 +80,7 @@ interface InstallState {
 }
 
 /** 当前已装 plugin id 集合(订阅 user plugin manager 的列表变化)。 */
-export function useInstalledIds(): ReadonlySet<string> {
+function useInstalledIds(): ReadonlySet<string> {
   const plugins = useUserPluginList();
   return useMemo(() => {
     if (plugins.length === 0) return EMPTY_INSTALLED_IDS;

@@ -3,10 +3,10 @@ import { z } from 'zod';
 const DEBUG_SESSION_ID_MAX = 256;
 const DEBUG_PATH_MAX = 4096;
 const DEBUG_EXPRESSION_MAX = 4096;
-export const DEBUG_VARIABLE_COUNT_MAX = 100;
+const DEBUG_VARIABLE_COUNT_MAX = 100;
 /** 单次 stackTrace 取的帧数上限(MCP debug.stack 入参上限;Debug 面板不传 levels,走默认帧数)。 */
-export const DEBUG_STACK_LEVELS_MAX = 100;
-export const DEBUG_VARIABLE_DEPTH_MAX = 5;
+const DEBUG_STACK_LEVELS_MAX = 100;
+const DEBUG_VARIABLE_DEPTH_MAX = 5;
 export const DEBUG_STRING_BYTES_DEFAULT = 65536;
 export const DEBUG_EVALUATE_RESULT_BYTES_MAX = 65536;
 // 未给值时的默认:MCP 工具经 zod .default 取,debug 面板 IPC(只传必需入参)经 DebugService 取 —— 两边共用这几个常量。
@@ -35,7 +35,7 @@ const nonNegativeIntSchema = z.number().int().min(0);
 const positiveIntSchema = z.number().int().min(1);
 // js-debug 的 Node 线程 id 是 0(DAP threadId 允许 0)。thread_id 用 nonNegative,
 // 可选:省略时引擎取最近停点的线程,无停点记录再发 threads 请求。历史上误设 min(1) 把合法的 0 拒了。
-export const threadIdSchema = nonNegativeIntSchema.optional();
+const threadIdSchema = nonNegativeIntSchema.optional();
 
 /**
  * launch 的 env 禁止的变量(大小写不敏感比较,覆盖 Windows):它们让 Node / 动态链接器 / OpenSSL / glibc 在目标程序之前
@@ -43,8 +43,8 @@ export const threadIdSchema = nonNegativeIntSchema.optional();
  * GCONV_PATH 下的 .so 等),绕过 program / cwd 的工作区闸。动态链接器与 OpenSSL 的变量族会随版本增加,按前缀整族拒绝,
  * 不逐个列名(逐个列名曾漏 DYLD_VERSIONED_* / OPENSSL_CONF 等)。
  */
-export const DEBUG_LAUNCH_FORBIDDEN_ENV_PREFIXES = ['DYLD_', 'LD_', 'OPENSSL_'] as const;
-export const DEBUG_LAUNCH_FORBIDDEN_ENV = [
+const DEBUG_LAUNCH_FORBIDDEN_ENV_PREFIXES = ['DYLD_', 'LD_', 'OPENSSL_'] as const;
+const DEBUG_LAUNCH_FORBIDDEN_ENV = [
   'NODE_OPTIONS',
   'NODE_PATH',
   'NODE_REPL_EXTERNAL_MODULE',

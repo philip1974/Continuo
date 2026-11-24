@@ -12,7 +12,6 @@ export const EXPLORER_OPEN_RECENT = /^(打开最近|Open recent|최근 항목 �
 export const EXPLORER_OPEN_FOLDER = /^(打开文件夹|Open Folder|폴더 열기)$/;
 export const EXPLORER_NO_FOLDER_OPEN = /^(未打开文件夹|No folder open|열린 폴더 없음)$/;
 export const EXPLORER_NO_FOLDER_OPEN_TEXT = /(未打开文件夹|No folder open|열린 폴더 없음)/;
-export const EXPLORER_RECENT = /^(最近打开|Recent|최근 열기)$/;
 export const EXPLORER_RECENT_TEXT = /(最近打开|Recent|최근 열기)/;
 export const EXPLORER_RENAME = /(重命名|Rename|이름 바꾸기)/;
 export const EXPLORER_TRASH = /(移到废纸篓|Move to Trash|휴지통으로 이동)/;
@@ -28,7 +27,7 @@ export const EXPLORER_SHOW = /^(显示 Explorer|Show Explorer|Explorer 표시)$/
 export const EXPLORER_TOGGLE =
   /^(显示 Explorer|隐藏 Explorer|Show Explorer|Hide Explorer|Explorer 표시|Explorer 숨기기)$/;
 export const SIDEBAR_HIDDEN_TEXT = /(侧栏已隐藏|Sidebar hidden|사이드바 숨김)/;
-export const SIDEBAR_RESIZE = /^(拖拽改变宽度|Drag to resize|드래그하여 너비 조절)$/;
+const SIDEBAR_RESIZE = /^(拖拽改变宽度|Drag to resize|드래그하여 너비 조절)$/;
 export const EXPLORER_OPEN_IN_TERMINAL =
   /^(在集成终端中打开|Open in Integrated Terminal|통합 터미널에서 열기)$/;
 export const EXPLORER_NEW_FILE_PLACEHOLDER = /^(新建文件名…|New file name…|새 파일 이름…)$/;
@@ -38,7 +37,7 @@ export function explorerSidebar(window: Page): Locator {
   return window.locator('main aside').nth(1);
 }
 
-export function sidebarResizeHandle(window: Page): Locator {
+function sidebarResizeHandle(window: Page): Locator {
   return explorerSidebar(window).getByRole('separator', {
     name: SIDEBAR_RESIZE,
   });

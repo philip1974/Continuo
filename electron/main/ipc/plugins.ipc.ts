@@ -84,7 +84,7 @@ export function broadcastPluginsChanged(id: string): void {
  * 卸载成功后向所有窗口广播(终审 P1):每个窗口各自持有插件实例与内存授权缓存,只在发起窗口本地撤销会让
  * 其它窗口里的已卸载插件继续运行、继续调用 shell/network/clipboard。watcher 只发现 main.js 变化,发现不了删除。
  */
-export function broadcastPluginUninstalled(id: string): void {
+function broadcastPluginUninstalled(id: string): void {
   broadcastToWindows(PLUGINS_CHANNELS.UNINSTALLED, () => ({ id }), '[plugins] PLUGINS_UNINSTALLED');
 }
 
@@ -92,7 +92,7 @@ export function broadcastPluginUninstalled(id: string): void {
  * 授权记录变更成功后向所有窗口广播(终审 P1):每个窗口各有内存授权缓存,A 撤销后 B 若不失效缓存,
  * 禁用再启用 / permission.check 仍按陈旧授权放行。
  */
-export function broadcastPluginPermissionsChanged(id: string): void {
+function broadcastPluginPermissionsChanged(id: string): void {
   broadcastToWindows(
     PLUGINS_CHANNELS.PERMISSIONS_CHANGED,
     () => ({ id }),
@@ -104,7 +104,7 @@ export function broadcastPluginPermissionsChanged(id: string): void {
  * 启用状态写入成功后向所有窗口广播(终审 P1):每个窗口各自持有插件实例,窗口 A 禁用只在 A 本地停用,
  * 其它窗口的实例会继续运行、继续使用能力。
  */
-export function broadcastPluginEnabledChanged(id: string, enabled: boolean): void {
+function broadcastPluginEnabledChanged(id: string, enabled: boolean): void {
   broadcastToWindows(
     PLUGINS_CHANNELS.ENABLED_CHANGED,
     () => ({ id, enabled }),

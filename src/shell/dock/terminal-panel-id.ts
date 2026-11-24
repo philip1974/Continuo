@@ -22,10 +22,6 @@ export function sessionIdFromPanel(panel: PanelLike): string | null {
     : null;
 }
 
-export function isTerminalPanelId(panelId: string): boolean {
-  return panelId.startsWith(TERMINAL_PANEL_ID_PREFIX);
-}
-
 /**
  * 终端 panel 标题的单一规则(DockReconciler 建 / 改 panel 与 TerminalPanelView 自校正共用;此前各写
  * 一份):session 标题 > `Terminal <id 前 6 位>`;

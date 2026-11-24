@@ -233,7 +233,7 @@ const MAX_STDIO_LINES_PER_CHUNK = 1024;
 // promise)→ main 内存无界增长。每连接排队中(含在途)的非空行数 / 累计 UTF-8 字节超上限 → 与 E1/E214
 // 同款 parse error + 断开(fail-closed)。正常 MCP client 一行一请求,远达不到。
 export const MAX_STDIO_PENDING_LINES = 1024;
-export const MAX_STDIO_PENDING_BYTES = 16_000_000;
+const MAX_STDIO_PENDING_BYTES = 16_000_000;
 /**
  * 每连接未被客户端读走的输出上限(socket 写缓冲 writableLength)。排队上限只计未完成的请求,响应一旦写进
  * 写缓冲就扣减;客户端只发不读时,输出在缓冲里无界堆积,可把主进程撑到 OOM。超限即断开该连接 —— 对端既然

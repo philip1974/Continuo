@@ -105,7 +105,7 @@ export async function cleanupAllShellExecs(): Promise<void> {
 }
 
 /** 立即终止 senderId 名下全部在途 exec 的进程树;close 后照常结算 Promise 并释放名额。 */
-export function killShellExecsForSender(senderId: number): Promise<void> {
+function killShellExecsForSender(senderId: number): Promise<void> {
   const matched: ChildProcess[] = [];
   for (const [child, owner] of inFlight) {
     if (owner === senderId) matched.push(child);

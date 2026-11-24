@@ -24,7 +24,6 @@ export const DOCK_CLOSE_TERMINAL =
   /^(关闭 (终端|Terminal|Terminal \d+)|Close (终端|Terminal|Terminal \d+)|(터미널|Terminal|Terminal \d+) 닫기)$/;
 export const DOCK_CLOSE_BUTTON = /^(关闭 .+|Close .+|.+ 닫기)$/;
 export const DOCK_POPOUT = /^(弹出到独立窗口|Pop out to standalone window|독립 창으로 팝아웃)$/;
-export const TERMINAL_NEW = /^(新建终端|New Terminal|새 터미널)$/;
 export const TERMINAL_INPUT = /^Terminal input$/;
 export const TERMINAL_PANEL_TAB = /Terminal \d+/;
 export const EDITOR_DISCARD_TITLE =

@@ -33,7 +33,7 @@ export const INTEGRATION_TOPICS = [
 ];
 
 /** 把 topic slugs 数组转成 vitest include glob 数组。 */
-export function toIncludeGlobs(slugs) {
+function toIncludeGlobs(slugs) {
   return slugs.map((s) => `src/__tests__/${s}/**/*.{spec,test}.{ts,tsx}`);
 }
 
