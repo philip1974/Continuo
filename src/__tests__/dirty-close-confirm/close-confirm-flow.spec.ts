@@ -33,6 +33,8 @@ const electronMock = vi.hoisted(() => {
       on: vi.fn(),
       getURL: vi.fn(() => ''),
       isDestroyed: vi.fn(() => this.destroyed),
+      reload: vi.fn(),
+      reloadIgnoringCache: vi.fn(),
     };
     readonly close = vi.fn(() => {
       const event = {
@@ -221,7 +223,7 @@ const termService = await import('../../../electron/main/services/terminal.servi
 const shellService = await import('../../../electron/main/services/shell.service');
 const shellStream = await import('../../../electron/main/services/plugin-shell-stream.service');
 const agentAuth = await import('../../../electron/main/services/agent-auth.service');
-const { createMainWindow, FLUSH_ACK_TIMEOUT_MS } = await import(
+const { createMainWindow, buildAppMenu, FLUSH_ACK_TIMEOUT_MS } = await import(
   '../../../electron/main/index'
 );
 
@@ -631,6 +633,151 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     await flushMicrotasks(10);
     expect(never.destroyed).toBe(true);
     expect(cleared.destroyed).toBe(true);
+  });
+});
+
+interface ReloadMenuItem {
+  readonly accelerator?: string;
+  readonly role?: string;
+  readonly submenu?: readonly ReloadMenuItem[];
+  readonly click?: (item: unknown, win: unknown, event: unknown) => void;
+}
+
+/** 应用菜单里 View 子菜单(Menu.buildFromTemplate 被 mock 成原样返回模板)。 */
+function viewSubmenu(): readonly ReloadMenuItem[] {
+  const template = buildAppMenu(((key: string) => key) as never) as unknown as ReloadMenuItem[];
+  const view = template.find((m) => m.role === 'viewMenu');
+  if (!view?.submenu) throw new Error('missing view submenu');
+  return view.submenu;
+}
+
+/** 以菜单方式(含其快捷键)对 win 触发 Reload / Force Reload。 */
+function menuReload(win: MockWin, force = false): void {
+  const accelerator = force ? 'Shift+CmdOrCtrl+R' : 'CmdOrCtrl+R';
+  const item = viewSubmenu().find((m) => m.accelerator === accelerator);
+  if (!item?.click) throw new Error(`missing reload item ${accelerator}`);
+  item.click(item, win, {});
+}
+
+describe('主窗 Reload / Force Reload:与关窗同一的脏确认 + flush', () => {
+  it('View 菜单保留其余默认项(DevTools / 缩放 / 全屏)', () => {
+    const roles = viewSubmenu().map((m) => m.role).filter(Boolean);
+    expect(roles).toEqual(['toggleDevTools', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']);
+  });
+
+  it('有脏 tab → 先弹确认框(挂在该窗口上),回答前不 reload、不 flush、不隐藏窗口', async () => {
+    const win = createReadyWindow(41);
+    reportDirty(win, ds(['/w/a.ts']));
+    electronMock.showMessageBox.mockReturnValueOnce(new Promise(() => undefined));
+
+    menuReload(win);
+    menuReload(win); // 确认框打开期间重复触发不叠框
+    await flushMicrotasks(10);
+
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(electronMock.showMessageBox.mock.calls[0]?.[0]).toBe(win);
+    expect(flushRequests(win)).toEqual([]);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+    expect(win.hide).not.toHaveBeenCalled();
+  });
+
+  it('取消 → 不 flush、不 reload;之后再刷新会再次确认', async () => {
+    const win = createReadyWindow(42);
+    reportDirty(win, ds(['/w/a.ts']));
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+
+    menuReload(win);
+    await flushMicrotasks(10);
+    expect(flushRequests(win)).toEqual([]);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
+    menuReload(win);
+    await flushMicrotasks(10);
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+  });
+
+  it('保存 → 先 flush(save:true),ack 之后才 reload', async () => {
+    const win = createReadyWindow(43);
+    reportDirty(win, ds(['/w/a.ts']));
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    menuReload(win);
+    await flushMicrotasks(10);
+    expect(flushRequests(win)).toEqual([
+      { windowId: win.id, save: true, requestId: expect.any(Number) },
+    ]);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+
+    ack(win);
+    await flushMicrotasks(10);
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+    expect(win.destroyed).toBe(false);
+  });
+
+  it('保存失败 → 不 reload', async () => {
+    const win = createReadyWindow(44);
+    reportDirty(win, ds(['/w/a.ts']));
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
+
+    menuReload(win);
+    await flushMicrotasks(10);
+    ack(win, { saveFailed: true });
+    await flushMicrotasks(10);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+  });
+
+  it('不保存 → flush(discard:true)后 reload', async () => {
+    const win = createReadyWindow(45);
+    reportDirty(win, ds(['/w/a.ts']));
+    electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
+
+    menuReload(win, true);
+    await flushMicrotasks(10);
+    expect(flushRequests(win)).toEqual([
+      { windowId: win.id, discard: true, requestId: expect.any(Number) },
+    ]);
+    ack(win);
+    await flushMicrotasks(10);
+    expect(win.webContents.reloadIgnoringCache).toHaveBeenCalledTimes(1);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+  });
+
+  it('无脏 tab → 不弹框,flush(落盘布局与待 autosave 的 .md)后 reload', async () => {
+    const win = createReadyWindow(46);
+
+    menuReload(win);
+    await flushMicrotasks(10);
+    expect(electronMock.showMessageBox).not.toHaveBeenCalled();
+    expect(flushRequests(win)).toEqual([{ windowId: win.id, requestId: expect.any(Number) }]);
+    ack(win);
+    await flushMicrotasks(10);
+    expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('无脏 tab 但 flush 后仍有未保存改动(.md autosave 失败)→ 不 reload', async () => {
+    const win = createReadyWindow(47);
+
+    menuReload(win);
+    await flushMicrotasks(10);
+    ack(win, { remaining: ds(['/w/a.md']) });
+    await flushMicrotasks(10);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+  });
+
+  it('popout 子窗:菜单 Reload 不生效(维持屏蔽刷新)', async () => {
+    const win = createReadyWindow(48);
+    win.webContents.getURL.mockReturnValue('file:///renderer/index.html?popout=1');
+    reportDirty(win, ds(['/w/a.ts']));
+
+    menuReload(win);
+    menuReload(win, true);
+    await flushMicrotasks(10);
+    expect(electronMock.showMessageBox).not.toHaveBeenCalled();
+    expect(flushRequests(win)).toEqual([]);
+    expect(win.webContents.reload).not.toHaveBeenCalled();
+    expect(win.webContents.reloadIgnoringCache).not.toHaveBeenCalled();
   });
 });
 

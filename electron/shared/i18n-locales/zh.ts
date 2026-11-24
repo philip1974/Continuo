@@ -12,6 +12,10 @@ export const zh: Record<TranslationKey, string> = {
   'menu.file.new_window': '新建窗口',
   'menu.file.open_folder_in_new_window': '在新窗口中打开文件夹…',
 
+  // menu.view
+  'menu.view.reload': '重新加载',
+  'menu.view.force_reload': '强制重新加载',
+
   // settings.general
   'settings.general.tab_title': '通用',
   'settings.general.theme.title': '主题',

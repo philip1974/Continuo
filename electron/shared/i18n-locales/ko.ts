@@ -12,6 +12,10 @@ export const ko: Record<TranslationKey, string> = {
   'menu.file.new_window': '새 창',
   'menu.file.open_folder_in_new_window': '새 창에서 폴더 열기…',
 
+  // menu.view
+  'menu.view.reload': '다시 로드',
+  'menu.view.force_reload': '강제 다시 로드',
+
   // settings.general
   'settings.general.tab_title': '일반',
   'settings.general.theme.title': '테마',

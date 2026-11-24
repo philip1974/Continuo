@@ -96,6 +96,18 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   (`cleanupAllShellExecs` / `cleanupAllShellStreams`)清理,随后 await MCP host / stdio 关闭,全部完成才 `app.quit()`。
 - popout 窗口不参与(与既有 flush 逻辑一致)。
 
+### 主窗 Reload / Force Reload(View 菜单,Cmd+R / Shift+Cmd+R)
+
+reload 换掉 renderer 文档,未落盘编辑与关窗一样会丢。View 菜单保留 Electron 默认 viewMenu 其余项(DevTools / 缩放 /
+全屏),只把 reload / forceReload 换成自定义项(role 项的 click 会被 role 动作抢先执行,无法拦截),点击时走与关窗同一的
+`confirmDirtyClose` + `requestWindowFlush` + `shouldAbortClose`,不隐藏窗口:
+
+- 有脏 tab → 先确认(挂在该窗口上),回答前不 flush、不 reload;确认框 / flush 在途期间重复触发不叠框。
+- **取消** → 不 flush、不 reload;**保存** → flush(`save: true`),ack 成功后才 reload,保存失败 / 未确认 → 不 reload;
+  **不保存** → flush(`discard: true`)后 reload。
+- 无脏 tab → 不弹框,flush(落盘布局与待 autosave 的 `.md`)后 reload;flush 后仍有未保存改动 → 不 reload。
+- popout 子窗:菜单 Reload 无效(维持屏蔽刷新)。reload 真正发生后的状态回收照旧由 `onRendererDocumentGone` 负责。
+
 ### 计数口径(renderer)
 
 - 计入:脏的代码文件 tab;untitled 草稿计入并单独计数(无路径,MVP 不支持另存为,「保存」时跳过,文案说明会被丢弃)。

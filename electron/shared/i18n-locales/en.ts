@@ -19,6 +19,10 @@ export const en = {
   'menu.file.new_window': 'New Window',
   'menu.file.open_folder_in_new_window': 'Open Folder in New Window…',
 
+  // menu.view
+  'menu.view.reload': 'Reload',
+  'menu.view.force_reload': 'Force Reload',
+
   // settings.general (10)
   'settings.general.tab_title': 'General',
   'settings.general.theme.title': 'Theme',

@@ -409,6 +409,35 @@ function requestWindowFlush(
   });
 }
 
+// 在途的菜单 Reload 流程(确认框打开 / flush 等回执期间),重复触发不叠框、不重复 flush。
+const reloadingWindowIds = new Set<number>();
+
+/**
+ * View → Reload / Force Reload(Cmd+R / Shift+Cmd+R)。reload 换掉 renderer 文档,未落盘的编辑与关窗一样会丢 →
+ * 走与关窗同一的「脏确认 + flush」(取消 / 保存未确认 / flush 后仍脏 → 不刷新),之后才 reload。
+ * popout 子窗维持屏蔽刷新(见 browser-window-created);reload 发生后的状态回收仍由 onRendererDocumentGone 负责。
+ */
+async function reloadMainWindow(win: BrowserWindow, ignoreCache: boolean): Promise<void> {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+  if (isPopoutUrl(win.webContents.getURL()) || reloadingWindowIds.has(win.id)) return;
+  reloadingWindowIds.add(win.id);
+  try {
+    const confirm = confirmDirtyClose(win);
+    let mode: FlushMode = 'none';
+    if (confirm) {
+      const choice = await confirm.choice;
+      if (choice === 'cancel') return;
+      mode = choice === 'save' ? 'save' : 'discard';
+    }
+    const outcome = await requestWindowFlush(win, mode, confirm?.state);
+    if (win.isDestroyed() || shouldAbortClose(mode, outcome, win.id)) return;
+    if (ignoreCache) win.webContents.reloadIgnoringCache();
+    else win.webContents.reload();
+  } finally {
+    reloadingWindowIds.delete(win.id);
+  }
+}
+
 // e2e 诊断:退出链路(app.quit 之后的窗口 close / closed、will-quit、quit)逐事件打点,定位偶发的退出不结束;
 // 仅 CONTINUO_E2E 下输出。
 function e2eQuitTrace(message: string): void {
@@ -753,7 +782,7 @@ async function openFolderInNewWindow(): Promise<void> {
   await openWorkspaceWindow(r.filePaths[0]!);
 }
 
-function buildAppMenu(t: MainT): Menu {
+export function buildAppMenu(t: MainT): Menu {
   const isMac = process.platform === 'darwin';
   const fileSubmenu: MenuItemConstructorOptions[] = [
     {
@@ -794,7 +823,34 @@ function buildAppMenu(t: MainT): Menu {
       : []),
     { label: t('menu.file.label'), submenu: fileSubmenu },
     { role: 'editMenu' },
-    { role: 'viewMenu' },
+    {
+      // 同 Electron 默认 viewMenu,只把 reload / forceReload 换成先走脏确认 + flush 的自定义项(role 项的
+      // click 会被 role 动作抢先执行,无法拦截)。
+      role: 'viewMenu',
+      submenu: [
+        {
+          label: t('menu.view.reload'),
+          accelerator: 'CmdOrCtrl+R',
+          click: (_item, win) => {
+            if (win instanceof BrowserWindow) void reloadMainWindow(win, false);
+          },
+        },
+        {
+          label: t('menu.view.force_reload'),
+          accelerator: 'Shift+CmdOrCtrl+R',
+          click: (_item, win) => {
+            if (win instanceof BrowserWindow) void reloadMainWindow(win, true);
+          },
+        },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
     { role: 'windowMenu' },
   ];
 
