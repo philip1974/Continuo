@@ -171,7 +171,7 @@ export function reconcileTerminalPanels(
       }
 
       const position = lastRefId
-        ? { referencePanel: lastRefId, direction: 'right' as const }
+        ? { referencePanel: lastRefId, direction: splitDirectionFor(api, lastRefId) }
         : gridFallbackPosition(api);
       // user 路径走 coApi.terminal.create → main 同时 RPC reply + IPC push
       // sessions-changed。renderer 的 IPC handler 可能比 RPC await resolve 先跑,
@@ -411,6 +411,36 @@ function gridFallbackPosition(
   if (!active || active.api.location.type === 'grid') return undefined;
   const grid = api.groups.find((g) => g.api.location.type === 'grid' && g.api.isVisible);
   return grid ? { referenceGroup: grid, direction: 'within' } : undefined;
+}
+
+/** 新终端向右分屏后每组的最小宽度(px);放不下时作为 tab 加进参照终端的组。 */
+export const MIN_TERMINAL_SPLIT_WIDTH = 160;
+
+/**
+ * 新终端放在参照终端右侧(分屏)还是作为 tab 加入其组:分屏会让组窄于 MIN_TERMINAL_SPLIT_WIDTH 时加入为 tab
+ * (VSCode 终端 / 编辑器组受最小宽度约束)。否则组越分越多,每组压到 dockview 的 100px 下限后总宽超出 dock,
+ * 右边的组被挤出窗口右边界、看不到也够不到。
+ *
+ * dockview 向右加组按 Sizing.Distribute 均分:参照组位于横排里 → 横排 k 个成员均分为 k+1 份;位于纵排(或独占)→
+ * 新建横排把参照组一分为二。横排各成员宽度取 splitview 写在 `.dv-view` 上的 inline width(jsdom 下也有)。
+ */
+function splitDirectionFor(api: DockviewApi, referencePanelId: string): 'right' | 'within' {
+  const group = api.getPanel(referencePanelId)?.group;
+  if (!group) return 'right';
+  return widthAfterSplitRight(group) < MIN_TERMINAL_SPLIT_WIDTH ? 'within' : 'right';
+}
+
+function widthAfterSplitRight(group: DockviewApi['groups'][number]): number {
+  const view = group.element.parentElement; // .dv-view
+  const row = view?.parentElement?.parentElement; // .dv-view-container → .dv-split-view-container
+  if (view?.classList.contains('dv-view') && row?.classList.contains('dv-horizontal')) {
+    const members = [...(view.parentElement?.children ?? [])].filter(
+      (el): el is HTMLElement => el instanceof HTMLElement && el.style.display !== 'none',
+    );
+    const total = members.reduce((sum, el) => sum + (Number.parseFloat(el.style.width) || 0), 0);
+    return total / (members.length + 1);
+  }
+  return group.api.width / 2;
 }
 
 function findLastGridTerminalPanelId(api: DockviewApi): string | null {

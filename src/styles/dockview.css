@@ -50,10 +50,11 @@
   box-shadow: -12px 0 8px -4px var(--dv-tabs-and-actions-container-background-color);
 }
 
-/* 活动 tab 总可见(VSCode):组里只有它一个时随组变窄收缩、标题截断(SharedTab 的 truncate),不被挤出 tab 条只剩
- * 「⌄1」溢出按钮;多 tab 时由 reveal-active-tab 把活动 tab 滚入可见区。 */
-.dockview-theme-abyss .dv-tabs-container > .dv-tab.dv-active-tab:only-child {
-  flex-shrink: 1;
+/* 活动 tab 总可见(VSCode):最宽不超过 tab 条可见宽度(百分比相对 tab 条这个 flex 容器),组变窄时标题截断显示省略号
+ * (SharedTab 的 truncate,min-width:0 链),不被 tab 条硬裁成「Terminal 1 (e」、也不被挤出只剩「⌄1」;
+ * 多 tab 时由 reveal-active-tab 把它滚入可见区。其余 tab 仍保持原宽(dockview flex-shrink:0),溢出进「⌄N」。 */
+.dockview-theme-abyss .dv-tabs-container > .dv-tab.dv-active-tab {
+  max-width: 100%;
   min-width: 0;
 }
 

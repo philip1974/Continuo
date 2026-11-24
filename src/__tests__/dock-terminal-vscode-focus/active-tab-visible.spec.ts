@@ -112,12 +112,87 @@ describe('trackActiveTabReveal(真实 dockview)', () => {
     expect(list.scrollLeft).toBe(4 * TAB_WIDTH - 100);
     tracker.dispose();
   });
+
+  it('滚入后 dockview 自绘滚动条随后的重算(窗口缩放时 tab 条 resize)不把 tab 条滚回原位', () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    for (const id of ['a', 'b', 'c', 'd']) api.addPanel({ id, component: 'x', title: id });
+    const list = api.getPanel('a')!.group.element.querySelector<HTMLElement>('.dv-tabs-container')!;
+    stubGeometry(list, 100);
+    Object.defineProperty(list, 'scrollWidth', { configurable: true, get: () => 4 * TAB_WIDTH });
+    // dockview 默认的自绘滚动条(.dv-scrollable 包住 tab 条)按自己记的偏移重设 scrollLeft。
+    const scrollable = list.parentElement!;
+    expect(scrollable.classList.contains('dv-scrollable')).toBe(true);
+    Object.defineProperty(scrollable, 'clientWidth', { configurable: true, get: () => 100 });
+
+    api.getPanel('d')!.api.setActive();
+    list.scrollLeft = 0;
+    revealActiveTab(list);
+    expect(list.scrollLeft).toBe(4 * TAB_WIDTH - 100);
+    // 真机:窗口缩放 → dockview 的 ResizeObserver 下一帧 calculateScrollbarStyles(此处用其 scroll 监听触发同一重算)。
+    scrollable.dispatchEvent(new Event('scroll'));
+    expect(list.scrollLeft).toBe(4 * TAB_WIDTH - 100);
+  });
+
+  it('tab 条自身尺寸变化(组尺寸事件未触发)后的下一帧,活动 tab 被滚入可见区', () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const dock = createDock();
+    // 记下每个元素上的观察者(dockview 自己也观察 tab 条),resize 时逐个回调。
+    type Cb = (entries: Array<{ target: Element }>) => void;
+    const observed = new Map<Element, Set<Cb>>();
+    const resize = (el: Element) => {
+      for (const cb of observed.get(el) ?? []) cb([{ target: el }]);
+    };
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private readonly cb: Cb) {}
+        observe(el: Element) {
+          if (!observed.has(el)) observed.set(el, new Set());
+          observed.get(el)!.add(this.cb);
+        }
+        unobserve(el: Element) {
+          observed.get(el)?.delete(this.cb);
+        }
+        disconnect() {}
+      },
+    );
+    const api = dock.api as DockviewApi;
+    for (const id of ['a', 'b', 'c', 'd']) api.addPanel({ id, component: 'x', title: id });
+    const tracker = trackActiveTabReveal(api);
+    const list = api.getPanel('a')!.group.element.querySelector<HTMLElement>('.dv-tabs-container')!;
+    stubGeometry(list, 400);
+    api.getPanel('d')!.api.setActive();
+    runFrames();
+    expect(list.scrollLeft).toBe(0);
+
+    stubGeometry(list, 100); // 窗口缩窄:tab 条变窄,活动 tab 落到可见区外
+    resize(list);
+    runFrames();
+    expect(list.scrollLeft).toBe(4 * TAB_WIDTH - 100);
+
+    const before = observed.get(list)!.size;
+    tracker.dispose();
+    expect(observed.get(list)!.size).toBe(before - 1);
+  });
 });
 
-describe('窄组样式:单个活动 tab 可收缩、标题截断', () => {
+describe('窄组样式:活动 tab 不宽于 tab 条、标题截断', () => {
   const css = readFileSync('src/styles/dockview.css', 'utf8');
-  it('组内唯一的活动 tab 可收缩(不被挤出 tab 条)', () => {
-    expect(css).toMatch(/\.dv-tab\.dv-active-tab:only-child\s*\{[^}]*flex-shrink:\s*1/);
+  it('活动 tab(无论组里几个 tab)最宽不超过 tab 条可见宽度,标题截断(省略号)而不是被 tab 条硬裁', () => {
+    const rule = css.match(/\.dv-tabs-container > \.dv-tab\.dv-active-tab\s*\{([^}]*)\}/);
+    expect(rule?.[1]).toMatch(/max-width:\s*100%/);
+    expect(rule?.[1]).toMatch(/min-width:\s*0/);
+    expect(css).not.toMatch(/dv-active-tab:only-child/);
   });
   it('极窄组(容器查询)让出 tab 内边距、关闭与弹出按钮的宽度给标题', () => {
     expect(css).toMatch(/\.dv-tabs-and-actions-container\s*\{[^}]*container-type:\s*inline-size/);

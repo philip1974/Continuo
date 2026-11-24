@@ -20,10 +20,17 @@
    一个子窗):主窗关组不把活动组挪进 popout 子窗,同窗无候选 → 不干预(交给 dockview 默认)。终端聚焦延到 microtask
    且仅当它仍是活动面板:拖动组里最后一个 tab 进另一组时 dockview 照常派发移除事件、随后自己激活目标组,键盘焦点
    不得被送进第三个终端。
-4. **活动 tab 总可见**(`active-tab-visible.spec.ts`):活动面板变化、组尺寸变化(窗口缩放 / 分屏)后的下一帧,按实际
-   几何把每个组的活动 tab 滚入 tab 条可见区(比可见区还宽时对齐起点),不留在「⌄N」溢出菜单里看不到(dockview 只在
-   激活那一刻按未布局的宽度算一次)。组里只有一个 tab 时,活动 tab 随组变窄收缩、标题截断显示,而不是整个被挤出。
+4. **活动 tab 总可见**(`active-tab-visible.spec.ts`):活动面板变化、组尺寸变化或 tab 条自身尺寸变化(窗口缩放 /
+   分屏)后的下一帧,按实际几何把每个组的活动 tab 滚入 tab 条可见区(比可见区还宽时对齐起点),不留在「⌄N」溢出菜单里
+   看不到(dockview 只在激活那一刻按未布局的宽度算一次)。滚入随即同步给 dockview 自绘滚动条,它随后的重算(窗口缩放
+   时 tab 条 resize)不把 tab 条滚回原位。活动 tab(无论组里几个 tab)最宽不超过 tab 条可见宽度,窄组里标题截断显示
+   省略号,而不是被 tab 条硬裁或整个被挤出。
 5. **终端默认名本地化**(`terminal-title-i18n.spec.ts`):未命名终端 main 侧 `title` 仍存英文稳定名 `Terminal N`
    (MCP `list_sessions` 原样给 agent,契约不变),另记 `defaultTitleIndex: N`;renderer 按当前语言显示
    `panels.terminal.default_title`(「终端 N」/「터미널 N」/「Terminal N」),随语言切换更新(含内容未挂载的面板),
    关闭确认框等用面板标题处同步本地化。显式命名的会话按原名显示。store ingress 只收正安全整数序号。
+6. **新终端分屏受组最小宽度约束**(`terminal-split-min-width.spec.ts`;e2e `terminal-split-min-width.spec.ts`):新终端
+   默认在最后一个 grid 终端右侧分屏;分屏会让组窄于 160px(dockview 向右加组按横排均分)时,改为作为 tab 加入那个
+   终端的组(VSCode 终端 / 编辑器组受最小宽度约束),组不会越分越多、压到下限后被挤出窗口右边界。连开 10 个终端,
+   每个组都在 dock 内、每个终端都能从 tab 条或「⌄N」到达。之后再把窗口缩窄到放不下全部组的最小宽度时仍会裁切
+   (VSCode 网格同样如此),不在本条范围内。
