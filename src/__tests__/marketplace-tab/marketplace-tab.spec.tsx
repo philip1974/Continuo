@@ -521,7 +521,7 @@ describe('MarketplaceTab — 安装按钮', () => {
     fireEvent.click(
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
     );
-    await waitFor(() => expect(container.textContent).toContain('Alpha 已安装(可能是在其它窗口安装的)'));
+    await waitFor(() => expect(container.textContent).toContain('Alpha 已安装 — 若尚未出现在插件列表中'));
     expect(container.textContent).not.toContain('文件已存在');
     expect(container.querySelector('[role=alert]')?.textContent ?? '').not.toContain('Alpha 已安装');
   });
@@ -1542,7 +1542,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     fireEvent.click(
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装扩展')!,
     );
-    await waitFor(() => expect(container.textContent).toContain('cool-ext 已安装(可能是在其它窗口安装的)'));
+    await waitFor(() => expect(container.textContent).toContain('cool-ext 已安装 — 若尚未出现在插件列表中'));
     expect(container.textContent).not.toContain('文件已存在');
   });
 

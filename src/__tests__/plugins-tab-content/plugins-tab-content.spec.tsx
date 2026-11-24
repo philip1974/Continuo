@@ -830,7 +830,7 @@ describe('PluginsTabContent — Git URL 安装', () => {
     fireEvent.click(
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
     );
-    await waitFor(() => expect(container.textContent).toContain('my-plugin 已安装(可能是在其它窗口安装的)'));
+    await waitFor(() => expect(container.textContent).toContain('my-plugin 已安装 — 若尚未出现在插件列表中'));
     expect(container.textContent).not.toContain('文件已存在');
     expect(container.querySelector('[role=alert]')?.textContent ?? '').not.toContain('my-plugin');
   });

@@ -465,6 +465,7 @@ export const en = {
   'keybindings.empty': 'No commands have hotkeys',
   'keybindings.no_match': 'No matching command',
   'keybindings.unbound': 'Unbound',
+  'keybindings.reserved_inactive': 'Reserved by Quick Open / Command Palette — not active',
   'keybindings.edit_hotkey': 'Edit hotkey',
   'keybindings.reset_default': 'Reset to default ({hotkey})',
   // a11y(A76):per-row aria-label includes command name to distinguish rows for SR.
@@ -502,7 +503,7 @@ export const en = {
   'marketplace.installed_pending_restart': 'Installed (restart pending)',
   'marketplace.install_success': 'Installed {name} v{version} — restart Continuo to activate',
   'marketplace.install_failed_code': 'Install failed [{code}] {message}',
-  'marketplace.install_already_installed': '{name} is already installed (possibly from another window) — restart Continuo to load it',
+  'marketplace.install_already_installed': '{name} is already installed — if it is not in the plugin list yet (e.g. installed from another window), restart Continuo to load it',
   'marketplace.update_to': 'Update to v{version}',
   'marketplace.updating': 'Updating…',
   'marketplace.update_success': 'Updated to {name} v{version} — reloaded',
