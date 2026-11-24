@@ -10,7 +10,42 @@
  * and Edit being an explicit opt-in.
  */
 export function isMilkdownUnsafe(content: string): boolean {
-  return hasYamlFrontmatter(content) || hasWikiLink(content);
+  // wiki-link 只看正文:围栏代码块 / 行内代码里的 `[[`(TOML `[[bin]]`、bash `if [[ … ]]`)原样往返,不是 wiki-link。
+  return hasYamlFrontmatter(content) || hasWikiLink(stripCode(content));
+}
+
+/** 围栏 ``` / ~~~ 的开栏(行首至多 3 空格,≥3 个同一字符;``` 的 info 不得含反引号)。返回 [字符, 长度] 或 null。 */
+function openingFence(line: string): readonly [string, number] | null {
+  const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+  if (!m) return null;
+  const run = m[1]!;
+  if (run[0] === '`' && m[2]!.includes('`')) return null;
+  return [run[0]!, run.length];
+}
+
+function isClosingFence(line: string, ch: string, len: number): boolean {
+  const m = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
+  return m !== null && m[1]![0] === ch && m[1]!.length >= len;
+}
+
+/** 去掉围栏代码块(未闭合则延续到文末,同 CommonMark)与行内代码片段(等长反引号串成对)后的正文。 */
+function stripCode(content: string): string {
+  if (!content.includes('`') && !content.includes('~~~')) return content;
+  const lines = content.split('\n');
+  const kept: string[] = [];
+  let fence: readonly [string, number] | null = null;
+  for (const line of lines) {
+    if (fence) {
+      if (isClosingFence(line.replace(/\r$/, ''), fence[0], fence[1])) fence = null;
+      kept.push('');
+      continue;
+    }
+    fence = openingFence(line.replace(/\r$/, ''));
+    kept.push(fence ? '' : line);
+  }
+  // 行内代码不跨空行(段落边界):否则一个孤立反引号会与后面段落的反引号配对,把其间真实的 wiki-link 藏掉 → 误判安全、
+  // 往返破坏。开栏须是完整反引号串(前后都不是反引号),闭栏等长。
+  return kept.join('\n').replace(/(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\r?\n)[\s\S])*?(?<!`)\1(?!`)/g, '');
 }
 
 function hasYamlFrontmatter(content: string): boolean {

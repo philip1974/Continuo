@@ -38,6 +38,24 @@ describe('isMilkdownUnsafe', () => {
     }
   });
 
+  it('ignores [[ inside fenced code blocks and inline code', () => {
+    expect(isMilkdownUnsafe('# Cargo\n\n```toml\n[[bin]]\nname = "x"\n```\n')).toBe(false);
+    expect(isMilkdownUnsafe('~~~bash\nif [[ -f x ]]; then :; fi\n~~~\n')).toBe(false);
+    expect(isMilkdownUnsafe('Use `[[ -n "$x" ]]` in bash.\n')).toBe(false);
+    expect(isMilkdownUnsafe('Use ``a ` [[b]] `` here.\r\n')).toBe(false);
+    // 未闭合围栏延续到文末(CommonMark)。
+    expect(isMilkdownUnsafe('````\n[[x]]\n```\n')).toBe(false);
+  });
+
+  it('still flags wiki-links outside code', () => {
+    expect(isMilkdownUnsafe('```\ncode\n```\n\nSee [[Note]].\n')).toBe(true);
+    expect(isMilkdownUnsafe('`code` and [[Note]]\n')).toBe(true);
+    // 孤立反引号不得跨段落与后面的反引号配对而把 wiki-link 藏掉。
+    expect(isMilkdownUnsafe('a ` stray\n\n[[Note]]\n\nb ` c\n')).toBe(true);
+    // 行首 4 空格以上不是围栏。
+    expect(isMilkdownUnsafe('    ```\n[[Note]]\n')).toBe(true);
+  });
+
   it('does not flag empty or broken wiki-link delimiters', () => {
     expect(isMilkdownUnsafe('[[]]')).toBe(false);
     expect(isMilkdownUnsafe('See [[note] tail')).toBe(false);

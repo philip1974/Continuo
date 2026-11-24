@@ -5,6 +5,7 @@ Markdown files that contain syntax Milkdown cannot preserve byte-for-byte must n
 ## Contracts
 
 - `isMilkdownUnsafe` detects YAML frontmatter and wiki-links, including BOM, CRLF, and EOF-terminated frontmatter variants.
+- `[[` inside fenced code blocks (``` / ~~~, unclosed fences run to EOF) and inline code spans is not a wiki-link (TOML `[[bin]]`, bash `if [[ … ]]`): such docs are not locked to Source, and typing such code in Edit does not swap the editor out. Inline code never spans a blank line, so a stray backtick cannot hide a real wiki-link in a later paragraph.
 - Unsafe Markdown rendered through `EditorPanel` uses CodeEditor and shows the preservation banner when the requested mode is Edit.
 - Preview mode renders unsafe Markdown through read-only Milkdown (no banner, no forced Source). Frontmatter is shown as a `yaml` code block instead of being mis-parsed as a rule + heading; the stored content is untouched.
 - Choosing Edit on unsafe Markdown asks for confirmation; "switch anyway" opts that tab (only that tab) into Milkdown Edit. Other unsafe tabs stay on Source. The opt-in follows the tab through edits, external reloads and save-as, and ends when the tab is closed.
