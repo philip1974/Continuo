@@ -8,6 +8,7 @@ import {
   renderMermaidPreview,
 } from '../../panels/Editor/mermaid-preview';
 import { ThemeContext } from '../../theme/ThemeProvider';
+import { markdownCodeBlockTheme } from '../../panels/Editor/code-editor-theme';
 import { getLocale, notifyLocaleChange, setLocale, t } from '../../i18n';
 
 interface CrepeOptions {
@@ -118,6 +119,18 @@ describe('MilkdownEditor code block wiring', () => {
     expect(config.previewToggleText(false)).toBe(
       t('panels.editor.codeBlock.previewHide'),
     );
+  });
+
+  // Crepe 不传 theme 时代码块用 oneDark(亮色主题下仍是深色配色):改用与代码编辑器同一套 --md-syntax-* token
+  // 主题,亮 / 暗同一个扩展(颜色随 <html class="dark"> 切换),故两主题下传入的是同一对象、切主题无需重挂。
+  it('code blocks use the token-based syntax theme (not Crepe default oneDark) in both themes', async () => {
+    expect(markdownCodeBlockTheme).toBeDefined();
+    for (const resolved of ['light', 'dark'] as const) {
+      render(themed(resolved, '# Title'));
+      await settle();
+      expect(lastOptions().featureConfigs['CodeMirror']?.['theme']).toBe(markdownCodeBlockTheme);
+      cleanup();
+    }
   });
 
   // 主题切换(含跟随系统的自动切换)可能发生在输入途中:不重挂载编辑器,只就地重画图。

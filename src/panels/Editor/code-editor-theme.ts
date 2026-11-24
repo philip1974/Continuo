@@ -96,3 +96,11 @@ const LIGHT: Extension = [chromeTheme(false), HIGHLIGHT];
 export function codeEditorTheme(resolved: 'light' | 'dark'): Extension {
   return resolved === 'dark' ? DARK : LIGHT;
 }
+
+/**
+ * Markdown 编辑模式(Crepe)代码块的 CodeMirror 主题。Crepe 不传 theme 时默认 oneDark,亮色主题下仍是深色配色。
+ * 代码块底色 / gutter 由 Crepe CSS 按 --crepe-color-surface 绘制(选择器更具体,压过这里的外观),这里只需同一套
+ * token 外观(光标 / 选区 / 当前行 / 面板)+ --md-syntax-* 语法色 —— 全部随 <html class="dark"> 变色,与 resolved
+ * 无关,故亮 / 暗共用这一个扩展,切主题不必重挂编辑器。不声明 dark:内建样式的亮 / 暗变体都被上面的 token 规则覆盖。
+ */
+export const markdownCodeBlockTheme: Extension = LIGHT;

@@ -8,7 +8,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Crepe } from '@milkdown/crepe';
-import { patchSanitizeLinkHref } from '../../../scripts/vite-milkdown-link-href';
+import { patchLinkTooltipConfirm, patchSanitizeLinkHref } from '../../../scripts/vite-milkdown-link-href';
 import { resolveLink } from '../../panels/Editor/link-resolve';
 
 const ROOT = path.resolve(__dirname, '../../..');
@@ -38,8 +38,8 @@ interface PmView {
   state: { doc: { descendants: (f: (node: { isText: boolean; marks: LinkMark[]; nodeSize: number }, pos: number) => void) => void } };
 }
 
-/** 打开第一个链接的编辑气泡,不改内容直接回车确认(用户「看一眼地址再回车」)。 */
-async function confirmFirstLinkUnchanged(crepe: Crepe, root: HTMLElement): Promise<void> {
+/** 打开第一个链接的编辑气泡,不改内容直接回车确认(用户「看一眼地址再回车」);给 `next` 则先改成它再确认。 */
+async function confirmFirstLinkUnchanged(crepe: Crepe, root: HTMLElement, next?: string): Promise<void> {
   const ctx = crepe.editor.ctx;
   const view = ctx.get<PmView, 'editorView'>('editorView');
   let hit: { mark: LinkMark; from: number; to: number } | null = null;
@@ -55,6 +55,11 @@ async function confirmFirstLinkUnchanged(crepe: Crepe, root: HTMLElement): Promi
   const input = (root.ownerDocument.querySelector('.milkdown-link-edit input') as HTMLInputElement | null);
   expect(input, '链接编辑气泡未出现').not.toBeNull();
   expect(input!.value).toBe(mark.attrs.href);
+  if (next !== undefined) {
+    input!.value = next;
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    await Promise.resolve();
+  }
   input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
 }
 
@@ -93,6 +98,36 @@ describe('Markdown 链接地址在 Milkdown 里不被清空', () => {
   });
 });
 
+// 危险 scheme 只在 DOM 里清空(<a href> 为空,不可被直接导航);文档模型里的地址是用户文件内容,
+// 确认编辑不改内容时必须原样保留,不能保存成 `[x]()`(与盘符 / 自定义 scheme 同类的数据丢失)。
+const DANGEROUS = [
+  ['file:', '[f](file:///tmp/a.md)', 'file:///tmp/a.md'],
+  ['data:', '[d](data:text/plain,hi)', 'data:text/plain,hi'],
+] as const;
+
+describe('危险 scheme 链接:DOM 中清空,确认编辑不丢地址', () => {
+  describe.each(DANGEROUS)('%s', (_name, markdown, href) => {
+    it('渲染出的 <a> 不带该地址,但解析 → 序列化不变', async () => {
+      const { crepe, root } = await open(`${markdown}\n`);
+      expect.soft(crepe.getMarkdown().trim()).toBe(markdown);
+      expect.soft(root.querySelector('.ProseMirror a')?.getAttribute('href') ?? '').not.toContain(href);
+    });
+
+    it('打开链接编辑气泡不改内容直接确认,保存的地址不变', async () => {
+      const { crepe, root } = await open(`${markdown}\n`);
+      await confirmFirstLinkUnchanged(crepe, root);
+      expect(crepe.getMarkdown().trim()).toBe(markdown);
+    });
+  });
+
+  it('在气泡里把地址改成另一个 file: 地址,保存的是用户输入的地址(不被抹成空)', async () => {
+    const { crepe, root } = await open('[f](https://e.com)\n');
+    await confirmFirstLinkUnchanged(crepe, root, 'file:///tmp/b.md');
+    expect(crepe.getMarkdown().trim()).toBe('[f](file:///tmp/b.md)');
+    expect(root.querySelector('.ProseMirror a')?.getAttribute('href') ?? '').not.toContain('file:');
+  });
+});
+
 describe('补丁本身', () => {
   // pnpm 布局:crepe → kit → preset-commonmark 都是同级 node_modules/@milkdown 下的符号链接
   const sibling = (dir: string, name: string): string => realpathSync(path.join(realpathSync(dir), '..', name));
@@ -122,6 +157,17 @@ describe('补丁本身', () => {
 
   it('锚点对不上(上游改了实现)时直接报错,不静默放过', () => {
     expect(() => patchSanitizeLinkHref('var unrelated=1;')).toThrow(/preset-commonmark/);
+    expect(() => patchLinkTooltipConfirm('var unrelated=1;')).toThrow(/components/);
+  });
+
+  it('链接气泡 confirmEdit 补丁:上游产物里锚点恰好命中一次,补丁后 confirmEdit 不再调 sanitizeLinkHref', () => {
+    const tooltip = path.join(sibling(kit, 'components'), 'lib/link-tooltip/index.js');
+    const code = readFileSync(tooltip, 'utf-8');
+    expect(code).toMatch(/const link = sanitizeLinkHref\(href\);/);
+    const patched = patchLinkTooltipConfirm(code);
+    expect(patched).not.toMatch(/const link = sanitizeLinkHref\(href\);/);
+    // 气泡里显示的预览链接(<a href>)仍经 sanitize
+    expect(patched).toMatch(/computed\(\(\) => sanitizeLinkHref\(src\.value\)\)/);
   });
 
   it('renderer 构建、dev 预打包与 vitest 都经过补丁', () => {

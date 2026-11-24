@@ -27,6 +27,7 @@ import {
 import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { rebindCodeMirrorRoots } from './codemirror-root';
+import { markdownCodeBlockTheme } from './code-editor-theme';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 
 interface MilkdownEditorProps {
@@ -179,6 +180,8 @@ function CrepeEditor({
           text: t('panels.editor.placeholder.start_writing'),
         },
         [CrepeFeature.CodeMirror]: {
+          // 不传则 Crepe 默认 oneDark(亮色主题下仍深色);token 主题亮 / 暗通用,切主题不重挂。
+          theme: markdownCodeBlockTheme,
           renderPreview: renderMermaidPreview,
           copyText: t('panels.editor.codeBlock.copy'),
           searchPlaceholder: t('panels.editor.codeBlock.searchLanguage'),

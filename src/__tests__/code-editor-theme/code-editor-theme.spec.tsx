@@ -10,6 +10,7 @@ import { EditorView } from '@codemirror/view';
 import { ensureSyntaxTree, highlightingFor } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 import { CodeEditor, pickLanguage } from '../../panels/Editor/CodeEditor';
+import { markdownCodeBlockTheme } from '../../panels/Editor/code-editor-theme';
 import { ThemeContext } from '../../theme/ThemeProvider';
 
 vi.mock('../../plugins/settings/values-store', () => ({
@@ -149,5 +150,47 @@ describe('语法高亮走 --md-syntax-* token', () => {
     cleanup();
     const dark = await mount('dark');
     expect(highlightingFor(dark.state, [tags.keyword])).toBe(lightClass);
+  });
+});
+
+// Markdown 编辑模式(Crepe)的代码块:不传 theme 时 Crepe 用 oneDark,亮色主题下仍是深色配色(正文 #abb2bf 压在
+// 浅底上)。改用同一套 --md-syntax-* HighlightStyle,亮 / 暗同一个扩展;代码块底色由 Crepe CSS 取
+// --crepe-color-surface(= --md-surface-container),语法色对它同样 ≥ 4.5。
+describe('Markdown 编辑模式代码块主题', () => {
+  const themeCss = readFileSync(join(process.cwd(), 'src/styles/theme.css'), 'utf8');
+  const tokensCss = readFileSync(join(process.cwd(), 'src/styles/design-tokens.css'), 'utf8');
+  const block = (css: string, sel: ':root' | '.dark'): string =>
+    css.match(new RegExp(`${sel === ':root' ? ':root' : '\\.dark'}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+  const hex = (h: string): number[] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  const lum = (h: string): number => {
+    const [r, g, b] = hex(h).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+
+  it('与代码编辑器同一套 HighlightStyle(同 tag 同 class),不声明 dark(亮 / 暗共用一个扩展)', async () => {
+    const editor = await mount('light');
+    const view = new EditorView({
+      state: EditorState.create({ doc: 'const a = 1;', extensions: [markdownCodeBlockTheme] }),
+    });
+    try {
+      expect(highlightingFor(view.state, [tags.keyword])).toBe(highlightingFor(editor.state, [tags.keyword]));
+      expect(view.state.facet(EditorView.darkTheme)).toBe(false);
+    } finally {
+      view.destroy();
+    }
+  });
+
+  it.each([':root', '.dark'] as const)('%s:每个语法色对代码块底色(--md-surface-container)≥ 4.5', (sel) => {
+    const surface = block(tokensCss, sel).match(/--md-surface-container:\s*(#[0-9a-f]{6});/i)?.[1] ?? '';
+    expect(surface).not.toBe('');
+    const slots = [...block(themeCss, sel).matchAll(/(--md-syntax-[a-z-]+):\s*(#[0-9a-f]{6});/gi)];
+    expect(slots.length).toBeGreaterThanOrEqual(8);
+    for (const [, name, color] of slots) {
+      expect(contrast(color!, surface), `${sel} ${name} ${color}`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

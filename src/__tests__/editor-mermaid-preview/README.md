@@ -22,6 +22,6 @@ Markdown 里的 ```` ```mermaid ```` 围栏代码块(流程图 / 时序图 / 甘
 | File | Role |
 |---|---|
 | `src/panels/Editor/mermaid-preview.ts` | mermaid 懒加载单例 + Crepe `renderPreview` 实现 + 主题切换时的就地重画 |
-| `src/panels/Editor/MilkdownEditor.tsx` | 把预览渲染器与本地化文案接进 Crepe CodeMirror 特性;主题变化时触发重画,语言变化时重挂载 |
+| `src/panels/Editor/MilkdownEditor.tsx` | 把预览渲染器、本地化文案与 token 语法主题(`markdownCodeBlockTheme`,替代 Crepe 默认 oneDark)接进 Crepe CodeMirror 特性;主题变化时触发重画,语言变化时重挂载 |
 | `src/styles/milkdown-font-override.css` | 图 / 错误提示在预览区内的样式(语义 token) |
 | `tests/e2e/markdown-mermaid-preview.spec.ts` | 真实 Electron 里 Preview / Edit 渲染出 SVG |
