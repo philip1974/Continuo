@@ -415,7 +415,6 @@ async function loadExplorerWithFormat(
   } catch {
     // JSON.parse 抛错 → 落到下面的损坏保留
   }
-  // 文件存在但既非合法 JSON 也不匹配任何已知 schema:保留快照后返回 null
   // 文件存在但无法解析为任何已知 schema:留一次性 .corrupt 快照。否则运行期写路径
   //(`(await loadExplorer()) ?? defaultExplorerV3()`)会在下一次窗口关闭 / 布局写时把整个 explorer.json
   // 静默覆盖成默认值 —— recentRoots / pinned / 所有 window 段全部丢失且不可恢复。

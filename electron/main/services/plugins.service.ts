@@ -523,6 +523,11 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw err;
   }
+  // 损坏 / 形态不合法 → [](既有契约);先留 .corrupt 快照 —— setEnabledId 随后以空集合 RMW 会覆盖原文件。
+  const malformed = async (): Promise<string[]> => {
+    await preserveCorruptSnapshot(file, text);
+    return [];
+  };
   try {
     const json = JSON.parse(text) as unknown;
     if (Array.isArray(json)) {
@@ -534,7 +539,7 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
       const out = new Array<string>(Math.min(json.length, MAX_ENABLED_IDS));
       let outCount = 0;
       for (const x of json) {
-        if (typeof x !== 'string') return [];
+        if (typeof x !== 'string') return malformed();
         if (!isSafePluginId(x)) continue;
         if (seen.has(x)) continue;
         seen.add(x);
@@ -545,11 +550,9 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
       out.length = outCount;
       return out;
     }
-    return [];
+    return malformed();
   } catch {
-    // JSON 损坏 → [](既有契约);先留 .corrupt 快照 —— setEnabledId 随后以空集合 RMW 会覆盖原文件。
-    await preserveCorruptSnapshot(file, text);
-    return [];
+    return malformed();
   }
 }
 
@@ -711,7 +714,10 @@ export async function readPermissions(
   }
   try {
     const json = JSON.parse(text) as unknown;
-    if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
+    if (!json || typeof json !== 'object' || Array.isArray(json)) {
+      await preserveCorruptSnapshot(file, text); // 形态不合法:同 JSON 损坏,降级 {} 前留证
+      return {};
+    }
     const out: Record<string, IpcPermissionRecord> = {};
     let keyCount = 0;
     // 边界(E199,E197/E198 同族有界迭代):for...in 单次惰性遍历,不先 Object.entries 把被污染数据文件
@@ -914,7 +920,10 @@ async function readAllPathScopes(
     await preserveCorruptSnapshot(file, text);
     throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
   }
-  if (!json || typeof json !== 'object' || Array.isArray(json)) return {};
+  if (!json || typeof json !== 'object' || Array.isArray(json)) {
+    await preserveCorruptSnapshot(file, text); // 形态不合法:降级 {} 前留证(写入方随后整表 RMW)
+    return {};
+  }
   const out: Record<string, IpcPathScope[]> = {};
   let keyCount = 0;
   // 边界(E199,E197/E198 同族有界迭代):for...in 单次惰性遍历,不先 Object.entries 全量物化(readPermissions 同步修)。

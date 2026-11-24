@@ -3,7 +3,7 @@
 // `{"type":"commonjs"}` 标记)不是同一机制,而当年正是 `.cjs` 掩盖了 ESM 误判导致的真机崩溃)。
 // electron/ 下测试不能从 src/ 导入(process-layering),故放在 electron 侧。
 import { execFile as execFileCb } from 'node:child_process';
-import { copyFile, cp, mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -25,19 +25,21 @@ export interface ProcessGroupEntry {
 }
 
 /**
- * 把适配器目录复制到临时目录并写 `{"type":"commonjs"}`(同生产):仓库根 package.json 是 type:module,
- * 不加标记时 CJS 适配器会被当成 ESM 加载。返回临时目录(调用方负责删除)与入口路径。
+ * 复现生产的加载环境:临时根目录放 `{"type":"module"}`(同仓库根 package.json),适配器目录复制到其下并写
+ * `{"type":"commonjs"}` 标记(同 scripts/fetch-debug-adapter)。少了标记时 CJS 适配器会被当成 ESM 加载
+ * 而崩溃 —— 只放在 os.tmpdir() 下(上级无 package.json)则无论有无标记都按 CJS 加载,测不出这个陷阱。
+ * 返回临时根目录(调用方负责删除)与入口路径。
  */
 export async function prepareCommonJsAdapter(
   adapterPath: string,
   tmpPrefix: string,
 ): Promise<{ dir: string; adapterPath: string }> {
   const dir = await mkdtemp(path.join(tmpdir(), tmpPrefix));
-  await cp(path.dirname(adapterPath), dir, { recursive: true });
-  const runnablePath = path.join(dir, path.basename(adapterPath));
-  await copyFile(adapterPath, runnablePath);
-  await writeFile(path.join(dir, 'package.json'), '{"type":"commonjs"}\n');
-  return { dir, adapterPath: runnablePath };
+  await writeFile(path.join(dir, 'package.json'), '{"type":"module"}\n');
+  const adapterDir = path.join(dir, 'adapter');
+  await cp(path.dirname(adapterPath), adapterDir, { recursive: true });
+  await writeFile(path.join(adapterDir, 'package.json'), '{"type":"commonjs"}\n');
+  return { dir, adapterPath: path.join(adapterDir, path.basename(adapterPath)) };
 }
 
 export async function processInfo(pid: number | undefined): Promise<ProcessInfo | null> {

@@ -402,3 +402,36 @@ describe('debug 事件入口校验', () => {
     expect(bps.every((bp) => typeof bp.line === 'number')).toBe(true);
   });
 });
+
+describe('debug 事件入口校验 — 字段与会话级上限', () => {
+  const emit = (event: unknown) => debugApi.events[0]!(event as DebugViewEvent);
+
+  it('断点的 column 字段保留(main breakpointSnapshot 会带)', () => {
+    startDebugStoreSync();
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/a.ts',
+      breakpoints: [{ file: '/a.ts', line: 3, column: 5, verified: true }],
+    });
+    expect(useDebugStore.getState().sessions.get('s1')?.breakpoints).toEqual([
+      { file: '/a.ts', line: 3, column: 5, verified: true },
+    ]);
+  });
+
+  it('跨文件累计的断点总数按会话上限截断(同 subscribe 快照口径)', () => {
+    startDebugStoreSync();
+    const half = Math.ceil(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX / 2) + 10;
+    for (const file of ['/a.ts', '/b.ts']) {
+      emit({
+        type: 'breakpoints-changed',
+        sessionId: 's1',
+        file,
+        breakpoints: Array.from({ length: half }, (_, i) => ({ file, line: i + 1, verified: true })),
+      });
+    }
+    expect(useDebugStore.getState().sessions.get('s1')?.breakpoints.length).toBe(
+      DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+    );
+  });
+});

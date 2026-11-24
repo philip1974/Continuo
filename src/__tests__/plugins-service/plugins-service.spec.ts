@@ -486,6 +486,15 @@ describe('readEnabledIds / writeEnabledIds', () => {
 
   // 数据安全(topic-54「损坏 ≠ 空」族,_plugin-path-scopes / explorer / data.json 同款):按空表降级前先留
   // 一次性 .corrupt 快照 —— 随后的 setEnabledId RMW 会以空集合覆盖原文件,不留证则启用列表不可恢复。
+  it.each([
+    ['非数组', '{"a":1}'],
+    ['数组混入非字符串', '[1,"com.a"]'],
+  ])('形态不合法(%s)→ 返 [] 且存 .corrupt 快照', async (_label, raw) => {
+    writeFileSync(join(tmp, '_enabled.json'), raw);
+    expect(await readEnabledIds(tmp)).toEqual([]);
+    expect(readFileSync(join(tmp, '_enabled.json.corrupt'), 'utf-8')).toBe(raw);
+  });
+
   it('文件 JSON 损坏 → 先存 .corrupt 快照(只保第一份)', async () => {
     writeFileSync(join(tmp, '_enabled.json'), '{{{');
     await readEnabledIds(tmp);
@@ -654,6 +663,12 @@ describe('readPermissions / writePermissions', () => {
   it('JSON 损坏 → {}', async () => {
     writeFileSync(join(tmp, '_permissions.json'), '{{{');
     expect(await readPermissions(tmp)).toEqual({});
+  });
+
+  it.each([['null', 'null'], ['数组', '[1]']])('形态不合法(%s)→ {} 且存 .corrupt 快照', async (_l, raw) => {
+    writeFileSync(join(tmp, '_permissions.json'), raw);
+    expect(await readPermissions(tmp)).toEqual({});
+    expect(readFileSync(join(tmp, '_permissions.json.corrupt'), 'utf-8')).toBe(raw);
   });
 
   it('JSON 损坏 → 先存 .corrupt 快照(写入方随后以空表 RMW 覆盖原文件)', async () => {
