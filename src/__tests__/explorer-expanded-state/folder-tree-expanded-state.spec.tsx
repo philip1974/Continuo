@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { TreeConfig } from '@headless-tree/core';
@@ -26,6 +26,7 @@ vi.mock('@/lib/co-api', () => ({
     fs: {
       listDir: vi.fn(async () => ({ ok: true, data: [] })),
       move: vi.fn(),
+      rename: vi.fn(async (_old: string, name: string) => ({ ok: true, data: `/work/${name}` })),
       copy: vi.fn(),
       trash: vi.fn(),
       reveal: vi.fn(),
@@ -144,3 +145,41 @@ describe('FolderTree · a11y(A25) tree 可访问名', () => {
     );
   });
 });
+
+// 「全部展开」批量期:库每步整份回传展开数组(可能还在展开旧子树的后代),批末整体写回 store。期间完成的改名
+// 须在写回前重放,否则旧路径(及其后代)被写回展开集合。
+describe('FolderTree · 全部展开期间改名', () => {
+  it('批量期改名后库继续回传旧路径 → 批末写回的是改名后的路径', async () => {
+    let finish!: () => void;
+    const tree = (config: TreeConfig<FileEntry>) => ({
+      ...fakeTree(config),
+      getConfig: () => config,
+      expandAll: vi.fn(() => new Promise<void>((r) => (finish = r))),
+    });
+    useTreeMock.mockImplementation(tree);
+    render(<FolderTree root="/work" />);
+    fireEvent.click(screen.getByRole('button', { name: t('panels.explorer.btn.more_actions') }));
+    fireEvent.click(screen.getByRole('menuitem', { name: t('panels.explorer.menu.expand_all') }));
+
+    const config = () => useTreeMock.mock.calls.at(-1)![0] as TreeConfig<FileEntry>;
+    act(() => config().setExpandedItems?.(['/work', '/work/old']));
+    const { coApi } = await import('@/lib/co-api');
+    act(() => config().onRename?.({ getId: () => '/work/old' } as never, 'new'));
+    await waitFor(() => expect(coApi.fs.rename).toHaveBeenCalledWith('/work/old', 'new'));
+    await act(async () => {
+      for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    });
+    // 库按旧内部状态继续展开旧子树的后代,整份回传(含旧路径)
+    await act(async () => {
+      await Promise.resolve();
+      config().setExpandedItems?.(['/work', '/work/old', '/work/old/a']);
+    });
+    await act(async () => {
+      finish();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect([...useExplorerStore.getState().expandedPaths].sort()).toEqual(['/work', '/work/new', '/work/new/a']);
+  });
+});
+

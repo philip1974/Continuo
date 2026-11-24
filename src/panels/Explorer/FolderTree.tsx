@@ -259,9 +259,15 @@ export function FolderTree({ root }: { root: string }) {
   // 批量期内只把库给的最新数组暂存在 latest,批末一次写 store。渲染期 config.state 也必须
   // 用 latest(与库内部 state 同一引用),否则重渲时 setConfig 会拿 store 旧值覆盖库内部
   // 已展开的状态。depth 计数允许多次点击重叠,最后一个结束才落盘。
-  const expandBatchRef = useRef<{ depth: number; latest: string[] | null }>({
+  // pathOps:批量期间发生的改名 / 删除对展开集合的改写,批末写回前重放(见 onPathMoved)。
+  const expandBatchRef = useRef<{
+    depth: number;
+    latest: string[] | null;
+    pathOps: ((paths: string[]) => string[] | null)[];
+  }>({
     depth: 0,
     latest: null,
+    pathOps: [],
   });
   const writeInRootExpanded = useCallback(
     (updater: string[] | ((old: string[]) => string[])) => {
@@ -322,27 +328,43 @@ export function FolderTree({ root }: { root: string }) {
       void tree.expandAll().finally(() => {
         batch.depth -= 1;
         if (batch.depth > 0) return;
-        const latest = batch.latest;
+        let latest = batch.latest;
+        const ops = batch.pathOps;
         batch.latest = null;
-        if (latest) writeInRootExpanded(latest);
+        batch.pathOps = [];
+        if (latest) {
+          for (const op of ops) latest = op(latest) ?? latest;
+          writeInRootExpanded(latest);
+        }
       });
     },
     [writeInRootExpanded],
   );
   // 批量期 render 用库内部同一引用(ref 读取:库每步 rebuildTree 都会触发重渲),批外用 store 派生值。
   const treeExpandedItems = expandBatchRef.current.latest ?? expandedItems;
-  // 路径移走 / 删除后的清理:除 store 外,「全部展开」批量期暂存的 latest 也须同样改写 —— 批末整体写回会覆盖
-  // store 里刚改好的展开集合,旧路径又回到展开集合。
-  const onPathMoved = useCallback((oldPath: string, newPath: string) => {
-    cleanupAfterPathMoved(oldPath, newPath);
+  // 路径移走 / 删除后的清理:除 store 外,「全部展开」批量期的改写还须在批末写回前重放 —— 批末整体写回会覆盖
+  // store 里刚改好的展开集合;且库内部另持一份展开状态、每步整份回传(还可能继续展开旧子树的后代),只改一次
+  // latest 会被下一步覆盖。故记下改写,写回前按序重放(同时就地改 latest,渲染期即生效)。
+  const applyBatchPathOp = useCallback((op: (paths: string[]) => string[] | null) => {
     const batch = expandBatchRef.current;
-    if (batch.latest) batch.latest = renameInExpanded(batch.latest, oldPath, newPath) ?? batch.latest;
+    if (batch.depth === 0) return;
+    batch.pathOps.push(op);
+    if (batch.latest) batch.latest = op(batch.latest) ?? batch.latest;
   }, []);
-  const onPathsRemoved = useCallback((paths: string[]) => {
-    cleanupAfterPathsRemoved(paths);
-    const batch = expandBatchRef.current;
-    if (batch.latest) batch.latest = forgetInExpanded(batch.latest, paths) ?? batch.latest;
-  }, []);
+  const onPathMoved = useCallback(
+    (oldPath: string, newPath: string) => {
+      cleanupAfterPathMoved(oldPath, newPath);
+      applyBatchPathOp((paths) => renameInExpanded(paths, oldPath, newPath));
+    },
+    [applyBatchPathOp],
+  );
+  const onPathsRemoved = useCallback(
+    (paths: string[]) => {
+      cleanupAfterPathsRemoved(paths);
+      applyBatchPathOp((expanded) => forgetInExpanded(expanded, paths));
+    },
+    [applyBatchPathOp],
+  );
 
   // 每目录刷新代际:同目录并发刷新只应用最后发起的那次 listDir(迟到的旧结果不覆盖新结果);
   // 卸载时清空 → 在途结果全部作废。编号取组件级单调序号(不按目录从 1 重新计数):完成后会删掉该目录
