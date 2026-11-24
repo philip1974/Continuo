@@ -78,6 +78,10 @@ vi.mock('dockview-react', () => ({
         onDidAddPanel: noopDisposable,
         onDidActivePanelChange: noopDisposable,
         onDidMaximizedGroupChange: noopDisposable,
+        // popout 文档跟踪(trackPopoutDocuments)。
+        onDidAddGroup: noopDisposable,
+        onDidRemoveGroup: noopDisposable,
+        groups: [],
       };
       h.api = self;
       return self;

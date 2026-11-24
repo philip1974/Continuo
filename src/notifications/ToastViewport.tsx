@@ -1,10 +1,18 @@
 // topic-15 unified-toast-notification: 容器层。fixed 右下,vertical stack,slice(-5)。
+// 主窗之外,还经 createPortal 渲染进每个 dockview popout 子窗(弹出面板的 notify.* 全进主窗 provider,
+// 子窗只能这样看到)。同一通知只让一个文档的副本作 live region,避免读屏重复播报。
 
+import { useRef, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNotify } from './NotificationsProvider';
 import { Toast } from './Toast';
 import type { Notification } from './types';
 import { useT } from '@/i18n';
+import {
+  getPopoutDocuments,
+  subscribePopoutDocuments,
+} from '@/shell/dock/popout-documents';
 import './ToastViewport.css';
 
 const VISIBLE_LIMIT = 5;
@@ -24,12 +32,19 @@ export function selectVisibleNotifications<T>(
 }
 
 export function ToastViewport(): ReactNode {
-  const { notifications, dismiss } = useNotify();
+  const { notifications, dismiss, pause, resume } = useNotify();
+  const popoutDocs = useSyncExternalStore(
+    subscribePopoutDocuments,
+    getPopoutDocuments,
+  );
   if (notifications.length === 0) return null;
   return (
-    <ToastViewportContent
+    <ToastViewportWindows
       notifications={notifications}
       dismiss={dismiss}
+      pause={pause}
+      resume={resume}
+      popoutDocs={popoutDocs}
     />
   );
 }
@@ -37,11 +52,54 @@ export function ToastViewport(): ReactNode {
 interface ToastViewportContentProps {
   readonly notifications: readonly Notification[];
   readonly dismiss: (id: string) => void;
+  readonly pause: (id: string) => void;
+  readonly resume: (id: string) => void;
+  /** 该文档的副本是否作 live region 播报此通知。 */
+  readonly announces: (id: string) => boolean;
+}
+
+/** 有焦点的 popout 子窗优先(用户正在看那一屏),否则主窗。 */
+function pickAnnouncingDocument(popoutDocs: readonly Document[]): Document {
+  for (const doc of popoutDocs) if (doc.hasFocus()) return doc;
+  return document;
+}
+
+function ToastViewportWindows({
+  popoutDocs,
+  ...props
+}: Omit<ToastViewportContentProps, 'announces'> & {
+  readonly popoutDocs: readonly Document[];
+}): ReactNode {
+  // 每条通知的播报文档在其首次渲染时决定且之后不变:事后改 role / aria-live 会让读屏把已有内容再读一遍。
+  const announcerRef = useRef(new Map<string, Document>());
+  const announcer = announcerRef.current;
+  const ids = new Set<string>();
+  for (const n of props.notifications) {
+    ids.add(n.id);
+    if (!announcer.has(n.id)) announcer.set(n.id, pickAnnouncingDocument(popoutDocs));
+  }
+  for (const id of announcer.keys()) if (!ids.has(id)) announcer.delete(id);
+  const announcesIn = (doc: Document) => (id: string) => announcer.get(id) === doc;
+  return (
+    <>
+      <ToastViewportContent {...props} announces={announcesIn(document)} />
+      {popoutDocs.map((doc, i) =>
+        createPortal(
+          <ToastViewportContent {...props} announces={announcesIn(doc)} />,
+          doc.body,
+          `popout-${String(i)}`,
+        ),
+      )}
+    </>
+  );
 }
 
 function ToastViewportContent({
   notifications,
   dismiss,
+  pause,
+  resume,
+  announces,
 }: ToastViewportContentProps): ReactNode {
   const t = useT();
   const visible = selectVisibleNotifications(notifications);
@@ -60,6 +118,9 @@ function ToastViewportContent({
           key={n.id}
           notification={n}
           onDismiss={dismiss}
+          onPause={pause}
+          onResume={resume}
+          announce={announces(n.id)}
           dismissLabel={dismissLabel}
         />
       ))}

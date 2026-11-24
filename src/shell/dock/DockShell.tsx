@@ -44,6 +44,7 @@ import {
 } from './dirty-close';
 import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
+import { trackPopoutDocuments } from './popout-documents';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import '@/styles/dockview.css';
@@ -338,6 +339,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
           if (panel.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
           focusTerminalPanel(panel.id);
         }),
+        // popout 子窗文档集合 → ToastViewport 把 toast 也渲染进子窗(弹出面板的 notify.* 进主窗 provider)。
+        trackPopoutDocuments(event.api),
       );
       event.api.panels.forEach(wrapPanelClose);
     },

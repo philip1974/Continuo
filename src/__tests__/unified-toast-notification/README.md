@@ -21,6 +21,11 @@ T10b a TypeScript compiler-API scan finds no `CallExpression` named `alert` in b
 T11 `Toast.tsx` uses design tokens rather than default Tailwind colors or hex literals;
 T11b `Toast.css` contains no naked hex/rgb color literals;
 T12 rendering `<NotificationsProvider><ToastViewport /></NotificationsProvider>` and calling `notify.error()` shows a status toast with the message and code.
+T15 hovering a toast pauses its auto-dismiss; leaving resumes with the remaining time (not a fresh full duration); a de-duplicated re-notify while paused refreshes the remaining time without restarting the timer (`toast-pause-focus.spec.tsx`);
+T16 focus inside a toast also pauses it — pause sources (hover, focus, each window's copy) are counted, so leaving with the mouse while the × is still focused keeps it paused;
+T17 when a toast unmounts (× clicked, expiry, cap/visible-limit eviction) while focus is inside it, focus returns to the element focused before entering the toast instead of falling to `document.body`; a toast that expires without focus inside never moves focus;
+T18 while dockview groups are popped out, every toast is also rendered (via `createPortal`) into each popout window's `document.body` (popout panels are rendered by the main window's React, so their `notify.*` lands in the main provider); the copy disappears when the group returns to the main window; dismiss and hover-pause work in the popout copy (`toast-popout-windows.spec.tsx`);
+T19 only one copy of each toast is a live region (`role=alert/status` + `aria-live`): the popout window that has focus when the toast first appears, else the main window; the choice never changes afterwards so screen readers do not re-announce.
 
 Key invariants:
 

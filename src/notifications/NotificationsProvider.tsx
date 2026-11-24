@@ -97,14 +97,30 @@ function updateNotificationCreatedAt(
 interface NotificationsContextValue {
   readonly notifications: readonly Notification[];
   readonly dismiss: (id: string) => void;
+  /** 悬停 / 焦点进入 toast 时暂停自动消失(可重入计数,每次 pause 配一次 resume)。 */
+  readonly pause: (id: string) => void;
+  /** 与 pause 成对;计数归零后按暂停时的剩余时间续算。 */
+  readonly resume: (id: string) => void;
 }
+
+// 自动消失计时:暂停时记下剩余时间,恢复时续算(悬停读长报错不会读到一半消失)。
+interface DismissTimer {
+  handle: ReturnType<typeof setTimeout> | null;
+  dueAt: number;
+  remaining: number;
+  pauses: number;
+}
+
+const noop = (): void => {
+  /* noop */
+};
 
 const NotificationsContext =
   createContext<NotificationsContextValue>({
     notifications: EMPTY_NOTIFICATIONS,
-    dismiss: () => {
-      /* noop */
-    },
+    dismiss: noop,
+    pause: noop,
+    resume: noop,
   });
 
 // ─── epoch race 防护 ──────────────────────
@@ -122,7 +138,7 @@ export function NotificationsProvider({
   );
   const notificationsRef = useRef<readonly Notification[]>(EMPTY_NOTIFICATIONS);
   const counterRef = useRef(0);
-  const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const timersRef = useRef(new Map<string, DismissTimer>());
 
   const setNotificationList = useCallback(
     (update: (prev: readonly Notification[]) => readonly Notification[]) => {
@@ -138,7 +154,7 @@ export function NotificationsProvider({
   const clearDismissTimer = useCallback((id: string) => {
     const t = timersRef.current.get(id);
     if (t !== undefined) {
-      clearTimeout(t);
+      if (t.handle !== null) clearTimeout(t.handle);
       timersRef.current.delete(id);
     }
   }, []);
@@ -161,21 +177,53 @@ export function NotificationsProvider({
     [clearDismissTimer, setNotificationList],
   );
 
-  const scheduleDismiss = useCallback(
-    (id: string, level: NotificationLevel) => {
-      const existing = timersRef.current.get(id);
-      if (existing !== undefined) clearTimeout(existing);
-      const t = setTimeout(() => {
+  const startDismissTimer = useCallback(
+    (id: string, timer: DismissTimer) => {
+      timer.dueAt = Date.now() + timer.remaining;
+      timer.handle = setTimeout(() => {
         timersRef.current.delete(id);
         notificationsRef.current = removeNotificationById(
           notificationsRef.current,
           id,
         );
         setNotificationList((prev) => removeNotificationById(prev, id));
-      }, DISMISS_MS[level]);
-      timersRef.current.set(id, t);
+      }, timer.remaining);
     },
     [setNotificationList],
+  );
+
+  const scheduleDismiss = useCallback(
+    (id: string, level: NotificationLevel) => {
+      const existing = timersRef.current.get(id);
+      if (existing?.handle != null) clearTimeout(existing.handle);
+      const timer: DismissTimer = existing ?? { handle: null, dueAt: 0, remaining: 0, pauses: 0 };
+      timer.handle = null;
+      timer.remaining = DISMISS_MS[level];
+      timersRef.current.set(id, timer);
+      // 暂停中(悬停 / 焦点在内)只刷新余量,等 resume 再起计时。
+      if (timer.pauses === 0) startDismissTimer(id, timer);
+    },
+    [startDismissTimer],
+  );
+
+  const pause = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer === undefined) return;
+    timer.pauses += 1;
+    if (timer.handle === null) return;
+    clearTimeout(timer.handle);
+    timer.handle = null;
+    timer.remaining = Math.max(0, timer.dueAt - Date.now());
+  }, []);
+
+  const resume = useCallback(
+    (id: string) => {
+      const timer = timersRef.current.get(id);
+      if (timer === undefined || timer.pauses === 0) return;
+      timer.pauses -= 1;
+      if (timer.pauses === 0 && timer.handle === null) startDismissTimer(id, timer);
+    },
+    [startDismissTimer],
   );
 
   const notify = useCallback(
@@ -254,14 +302,16 @@ export function NotificationsProvider({
   useEffect(() => {
     const timers = timersRef.current;
     return () => {
-      for (const t of timers.values()) clearTimeout(t);
+      for (const t of timers.values()) {
+        if (t.handle !== null) clearTimeout(t.handle);
+      }
       timers.clear();
     };
   }, []);
 
   const value = useMemo<NotificationsContextValue>(
-    () => ({ notifications, dismiss }),
-    [notifications, dismiss],
+    () => ({ notifications, dismiss, pause, resume }),
+    [notifications, dismiss, pause, resume],
   );
 
   return (
