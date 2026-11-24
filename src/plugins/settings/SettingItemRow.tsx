@@ -15,6 +15,7 @@ import {
   type SegmentedControlOption,
 } from '@/design';
 import { useLocale, useT } from '@/i18n';
+import { ResetIcon } from '@/lib/ui-icons';
 import {
   clampSettingNumber,
   coerceSettingValue,
@@ -104,22 +105,7 @@ function NumberSettingInput({
 }
 
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
-const RESET_DEFAULT_ICON = (
-  <svg
-    viewBox="0 0 16 16"
-    width="12"
-    height="12"
-    aria-hidden="true"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
-    <path d="M13 3v3h-3" />
-  </svg>
-);
+const RESET_DEFAULT_ICON = (<ResetIcon size={12} />);
 
 export function settingToggleSwitchClassName(checked: boolean): string {
   return checked

@@ -13,6 +13,7 @@ import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
 import { useMenuAnchor } from '@/lib/use-menu-anchor';
+import { MoreActionsIcon } from '@/lib/ui-icons';
 import { basename, recentRootLabelParts } from './path-utils';
 import { useT } from '@/i18n';
 import { ExplorerVisibleContext } from './visibility';
@@ -64,13 +65,7 @@ const COLLAPSE_ALL_ICON = (
   </svg>
 );
 
-const MORE_ACTIONS_ICON = (
-  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-    <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
-    <circle cx="8" cy="8" r="1.1" fill="currentColor" />
-    <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
-  </svg>
-);
+const MORE_ACTIONS_ICON = (<MoreActionsIcon size={12} />);
 
 export function ExplorerHeader({
   root,

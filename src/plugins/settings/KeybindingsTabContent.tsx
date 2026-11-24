@@ -22,6 +22,7 @@ import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureM
 import { useT, useTWithFallback, useLocale } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
+import { ResetIcon } from '@/lib/ui-icons';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -41,22 +42,7 @@ const EDIT_HOTKEY_ICON = (
     <path d="M11.5 1.5l3 3-9 9-3.5.5.5-3.5z" />
   </svg>
 );
-const RESET_HOTKEY_ICON = (
-  <svg
-    viewBox="0 0 16 16"
-    width="11"
-    height="11"
-    aria-hidden="true"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M3 8a5 5 0 0 1 8.5-3.5L13 6" />
-    <path d="M13 3v3h-3" />
-  </svg>
-);
+const RESET_HOTKEY_ICON = (<ResetIcon size={11} />);
 
 export interface DisplayCommand {
   readonly cmd: CommandSpec;

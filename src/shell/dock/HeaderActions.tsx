@@ -5,6 +5,7 @@ import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
 import { useMenuAnchor } from '@/lib/use-menu-anchor';
+import { MoreActionsIcon } from '@/lib/ui-icons';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -36,14 +37,7 @@ const POPOUT_ICON = (
     />
   </svg>
 );
-const MORE_ACTIONS_ICON = (
-  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-    {/* horizontal ellipsis ⋯ */}
-    <circle cx="3.5" cy="8" r="1.1" fill="currentColor" />
-    <circle cx="8" cy="8" r="1.1" fill="currentColor" />
-    <circle cx="12.5" cy="8" r="1.1" fill="currentColor" />
-  </svg>
-);
+const MORE_ACTIONS_ICON = (<MoreActionsIcon size={14} />);
 
 export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
