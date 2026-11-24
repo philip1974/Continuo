@@ -334,6 +334,10 @@
 
 - [`co-api.spec.ts`](./co-api/co-api.spec.ts)
 
+## [code-editor-theme](./code-editor-theme/README.md)
+
+- [`code-editor-theme.spec.tsx`](./code-editor-theme/code-editor-theme.spec.tsx)
+
 ## [cold-start-drag-folder (Issue #45)](./cold-start-drag-folder/README.md)
 
 - [`cold-start-drag-folder.spec.ts`](./cold-start-drag-folder/cold-start-drag-folder.spec.ts)

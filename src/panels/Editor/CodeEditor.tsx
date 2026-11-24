@@ -6,7 +6,7 @@
 //   2. markdown 的 Source mode(决策 #4:用 CodeMirror markdown 模式,
 //      比 Mind 原版 textarea 强,有语法高亮 + 折叠)
 //
-// 主题:dark 模式用 oneDark,light 模式用 basicSetup 自带浅色默认。
+// 主题:外观走设计 token(亮 / 暗共用),语法高亮暗色 oneDark、亮色 One Light(见 code-editor-theme.ts)。
 // 通过 Compartment.reconfigure 热切,无需重建 EditorView。
 
 import { useEffect, useRef } from 'react';
@@ -18,7 +18,7 @@ import { json } from '@codemirror/lang-json';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { yamlFrontmatter } from '@codemirror/lang-yaml';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   EDITOR_FONT_SIZE,
@@ -30,6 +30,7 @@ import { debugDecorationsExtension } from './decorations/debug-decorations';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { rebindCodeMirrorRoots } from './codemirror-root';
+import { codeEditorTheme } from './code-editor-theme';
 
 interface CodeEditorProps {
   tabId: string;
@@ -68,17 +69,17 @@ export function detectLineEnding(text: string): '\r\n' | '\n' {
 }
 
 const EMPTY_LANGUAGE_EXTENSIONS: Extension[] = [];
-const EMPTY_THEME_EXTENSIONS: Extension[] = [];
 
-function pickThemeExtension(resolved: string): Extension {
-  return resolved === 'dark' ? oneDark : EMPTY_THEME_EXTENSIONS;
+/** Markdown:文首 `---` 包起来的 YAML frontmatter 按 YAML 解析(否则 `key: v\n---` 会被当成 Setext 标题)。 */
+function markdownWithFrontmatter(): Extension {
+  return yamlFrontmatter({ content: markdown() });
 }
 
 export function pickLanguage(
   fileName: string,
   forceLanguage?: CodeEditorProps['forceLanguage'],
 ): Extension {
-  if (forceLanguage === 'markdown') return markdown();
+  if (forceLanguage === 'markdown') return markdownWithFrontmatter();
   const ext = fileExtensionLower(fileName);
   switch (ext) {
     case 'js':
@@ -98,7 +99,7 @@ export function pickLanguage(
       return html();
     case 'md':
     case 'markdown':
-      return markdown();
+      return markdownWithFrontmatter();
     default:
       return EMPTY_LANGUAGE_EXTENSIONS;
   }
@@ -135,7 +136,7 @@ export function CodeEditor({
   useEffect(() => {
     if (!containerRef.current) return;
     const lang = pickLanguage(fileName, forceLanguage);
-    const themeExt = pickThemeExtension(resolved);
+    const themeExt = codeEditorTheme(resolved);
     appliedLangKeyRef.current = `${fileName}\u0000${forceLanguage ?? ''}`;
     appliedThemeRef.current = resolved;
     eolRef.current = detectLineEnding(value);
@@ -166,9 +167,8 @@ export function CodeEditor({
           // CodeMirror theme 注入的 stylesheet 中 var() 不会响应外部容器 inline
           // style 变化,所以这里用 inherit 而非 var()。
           '&': { height: '100%', fontSize: 'inherit' },
+          // 字体族由 code-editor-theme 取 --wm-font-mono
           '.cm-scroller': {
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             overflow: 'auto',
             fontSize: 'inherit',
           },
@@ -253,13 +253,13 @@ export function CodeEditor({
     });
   }, [fileName, forceLanguage]);
 
-  // 主题切换 → 热替换 oneDark / 浅色默认,避免重建 editor
+  // 主题切换 → 热替换亮 / 暗主题,避免重建 editor
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     if (appliedThemeRef.current === resolved) return;
     appliedThemeRef.current = resolved;
-    const themeExt = pickThemeExtension(resolved);
+    const themeExt = codeEditorTheme(resolved);
     view.dispatch({
       effects: themeCompartment.current.reconfigure(themeExt),
     });

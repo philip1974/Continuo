@@ -1,0 +1,25 @@
+# code-editor-theme
+
+行为契约:**代码编辑器(代码文件 + Markdown Source 模式)与应用同一套设计 token,亮 / 暗都成立;Markdown 的 YAML frontmatter 不被误当标题。**
+
+## 行为
+
+- 编辑器背景、gutter、当前行、选区、光标、面板 / 提示框取自 `--md-*` token,字体取 `--wm-font-mono`;一套样式同时适配
+  `:root`(亮)与 `.dark`(暗),底色与画布 / 终端 / Markdown 编辑器一致(不再是 oneDark 的 `#282c34`)。
+- 语法高亮:暗色沿用 oneDark 的配色;亮色用同家族的 One Light 配色,标题只加粗、不加下划线。
+- 暗色向 CodeMirror 声明 dark 主题(内建样式选暗色变体),亮色不声明。切换主题热替换,不重建编辑器。
+- Markdown(`forceLanguage='markdown'` 或 `.md` / `.markdown` 文件):文首 `---` 包起来的 frontmatter 按 YAML 解析高亮;
+  不在文首的 `---` 等照常按 Markdown 解析。
+
+## Modules
+
+| File | Role |
+|---|---|
+| `src/panels/Editor/code-editor-theme.ts` | token 化的编辑器外观 + 亮 / 暗语法高亮 |
+| `src/panels/Editor/CodeEditor.tsx` | 按主题热切 `codeEditorTheme`;Markdown 用 `yamlFrontmatter({ content: markdown() })` |
+
+## Specs
+
+| File | 覆盖 |
+|---|---|
+| `code-editor-theme.spec.tsx` | frontmatter 解析树、注入样式取 token、dark facet、亮色标题无下划线、暗色 oneDark 配色 |
