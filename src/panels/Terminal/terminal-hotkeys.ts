@@ -1,5 +1,6 @@
 // 终端「让出给命令」的热键(终端拦下该键、不交给 xterm / PTY):命令注册(TerminalPlugin)与终端判定(useTerminal)
-// 同一来源,且按**生效绑定**判(resolveEffectiveHotkey:用户改绑 → 跟随新键;解绑 → 不再让出,按键照常进 shell)。
+// 同一来源,且按**实际生效绑定**判(resolveActiveHotkey:用户改绑 → 跟随新键;解绑或落在 ⌘P / ⌘⇧P 保留键 → 不再让出,
+// 按键照常进 shell / 交给 picker)。
 // 此前缩放用兄弟包 shouldSkipXtermKey(不分平台)、搜索用 isSearchHotkey(固定 mod+f),均不读改绑:mac 上
 // Shift+Ctrl+Enter、改绑 / 解绑后的原默认键被拦下不发给 shell、命令又不匹配,按键被吞。
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';

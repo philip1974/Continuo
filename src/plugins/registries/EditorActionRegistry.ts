@@ -19,7 +19,7 @@ import {
 } from './spec-guard';
 
 export interface EditorActionContext {
-  /** 当前 active tab 文件路径,可能为 null(未保存草稿). */
+  /** 当前 active tab 文件路径;无 active tab 时为 null. */
   readonly filePath: string | null;
   /** 当前 active tab 是否脏. */
   readonly dirty: boolean;

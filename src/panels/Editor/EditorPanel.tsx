@@ -286,7 +286,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     );
   } else {
     // 代码文件,或 Markdown 的源码模式(实际模式为 source:用户选的,或 unsafe 文档被强制):CodeEditor。
-    // Markdown 源码视图 key 带 -src 后缀、强制 markdown 高亮(草稿无扩展名也按 Markdown)。
+    // Markdown 源码视图 key 带 -src 后缀、强制 markdown 高亮。
     engine = 'code';
     body = (
       <CodeEditor
@@ -318,7 +318,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         // markdown 模式切换:tab 行下方独立一行,居中。
         // 不加 border — 与上方 tab 行 / 下方编辑器无缝衔接,只靠 SegmentedControl
         // 自身的 surface-container-low 背景与 canvas 形成视觉区分。
-        // 显示条件 = markdown 文件(含未保存草稿) — 与 autoSave 解耦,
+        // 显示条件 = markdown 文件 — 与 autoSave 解耦,
         //   关掉自动保存不会让模式切换跟着消失。
         <div className="flex h-9 shrink-0 items-center justify-center bg-canvas px-3">
           <SegmentedControl
