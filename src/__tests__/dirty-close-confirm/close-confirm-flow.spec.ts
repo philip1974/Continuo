@@ -681,6 +681,34 @@ describe('主窗 Reload / Force Reload:与关窗同一的脏确认 + flush', () 
     expect(win.hide).not.toHaveBeenCalled();
   });
 
+  it('确认框打开期间窗口被销毁 → 不 flush、不 reload、不抛错', async () => {
+    const win = createReadyWindow(48);
+    reportDirty(win, ds(['/w/a.ts']));
+    let answer!: (v: { response: number }) => void;
+    electronMock.showMessageBox.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    const unhandled: unknown[] = [];
+    const onUnhandled = (r: unknown): void => {
+      unhandled.push(r);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    const wc = win.webContents;
+    menuReload(win);
+    await flushMicrotasks(5);
+    // 真实 Electron:已销毁窗口的 webContents getter 抛 "Object has been destroyed"。
+    win.destroyed = true;
+    Object.defineProperty(win, 'webContents', {
+      get() {
+        throw new Error('Object has been destroyed');
+      },
+    });
+    answer({ response: 0 });
+    await flushMicrotasks(10);
+    await new Promise((r) => setTimeout(r, 0));
+    process.off('unhandledRejection', onUnhandled);
+    expect(unhandled).toEqual([]);
+    expect(wc.reload).not.toHaveBeenCalled();
+  });
+
   it('取消 → 不 flush、不 reload;之后再刷新会再次确认', async () => {
     const win = createReadyWindow(42);
     reportDirty(win, ds(['/w/a.ts']));

@@ -426,7 +426,8 @@ async function reloadMainWindow(win: BrowserWindow, ignoreCache: boolean): Promi
     let mode: FlushMode = 'none';
     if (confirm) {
       const choice = await confirm.choice;
-      if (choice === 'cancel') return;
+      // 确认框打开期间窗口可能已被关掉(关窗路径同位置有此检查):再 flush 会访问已销毁的 webContents 而抛出。
+      if (choice === 'cancel' || win.isDestroyed()) return;
       mode = choice === 'save' ? 'save' : 'discard';
     }
     const outcome = await requestWindowFlush(win, mode, confirm?.state);
