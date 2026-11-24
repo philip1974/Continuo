@@ -77,55 +77,97 @@ describe('isOwnRendererWindowUrl 边界', () => {
 });
 
 // 页面内容(如 Markdown 预览里的链接、mermaid 图的 click 链接)被点击时,窗口不能被导航到
-// 应用之外 —— 否则整个应用界面被一个网页顶替,且该网页跑在应用窗口里。
+// 应用之外 —— 否则整个应用界面被一个网页顶替,且该网页跑在应用窗口里。规则 dev 与打包版一致:
+// 页面发起的导航在任何 frame 一律拦,只放行 popout 子窗的首次加载。
 describe('installNavigationGuard', () => {
-  function setup(isOwn: (url: string) => boolean) {
-    let listener: ((event: { preventDefault(): void; url: string }) => void) | null = null;
+  const APP = 'file:///app/out/renderer/index.html';
+  const isOwn = (url: string): boolean => url.startsWith(APP);
+
+  function setup(opts: { isOwn?: (url: string) => boolean; currentUrl?: string } = {}) {
+    let listener:
+      | ((event: { preventDefault(): void; url: string; isMainFrame: boolean }) => void)
+      | null = null;
     const onBlocked = vi.fn();
-    installNavigationGuard(
-      {
-        on: (event, cb) => {
-          expect(event).toBe('will-navigate');
-          listener = cb;
-        },
+    const contents = {
+      currentUrl: opts.currentUrl ?? `${APP}?windowSeq=0`,
+      getURL: () => contents.currentUrl,
+      on: (event: string, cb: NonNullable<typeof listener>) => {
+        expect(event).toBe('will-frame-navigate');
+        listener = cb;
       },
-      isOwn,
-      onBlocked,
-    );
-    const navigate = (url: string) => {
+    };
+    installNavigationGuard(contents, opts.isOwn ?? isOwn, onBlocked);
+    const navigate = (url: string, isMainFrame = true) => {
       const preventDefault = vi.fn();
-      listener!({ preventDefault, url });
+      listener!({ preventDefault, url, isMainFrame });
       return preventDefault;
     };
-    return { navigate, onBlocked };
+    return { navigate, onBlocked, contents };
   }
-  const isOwn = (url: string): boolean =>
-    url.startsWith('file:///app/out/renderer/index.html');
 
   it('拦下离开本应用 renderer 入口的主框架导航', () => {
-    const { navigate } = setup(isOwn);
+    const { navigate } = setup();
     expect(navigate('https://example.com/')).toHaveBeenCalledTimes(1);
     expect(navigate('file:///tmp/evil.html')).toHaveBeenCalledTimes(1);
   });
 
   // 只拦不转交的话,漏网的链接点击对用户就是「没反应」。被拦的 URL 交给调用方
   //(index.ts 走与 window.open 拒绝分支相同的外链白名单 → 系统浏览器)。
-  it('把被拦下的 URL 交给 onBlocked 处理', () => {
-    const { navigate, onBlocked } = setup(isOwn);
+  it('把被拦下的离开本应用的 URL 交给 onBlocked 处理', () => {
+    const { navigate, onBlocked } = setup();
     navigate('https://example.com/docs');
     expect(onBlocked).toHaveBeenCalledTimes(1);
     expect(onBlocked).toHaveBeenCalledWith('https://example.com/docs');
   });
 
-  it('放行回到本应用 renderer 入口的导航(如 dev 重载)', () => {
-    const { navigate, onBlocked } = setup(isOwn);
-    expect(navigate('file:///app/out/renderer/index.html?windowSeq=0')).not.toHaveBeenCalled();
+  // 页面指回本应用入口的导航(location.reload()、Vite HMR 整页刷新、`<a href="index.html?workspace=…">`)
+  // 同样拦下:否则页面内容能以任意启动参数(workspace / fresh)重开当前窗口。也不转交外链(dev 下
+  // http://localhost 在白名单里,转交会把 dev 页面开到系统浏览器)。
+  it('拦下页面发起的、指回本应用入口的导航(含 reload),且不转交', () => {
+    const { navigate, onBlocked } = setup();
+    expect(navigate(`${APP}?windowSeq=0`)).toHaveBeenCalledTimes(1);
+    expect(navigate(`${APP}?workspace=%2F&fresh=1&windowSeq=0`)).toHaveBeenCalledTimes(1);
     expect(onBlocked).not.toHaveBeenCalled();
   });
 
-  it('不干涉 DevTools 自己的导航', () => {
-    const { navigate, onBlocked } = setup(() => false);
-    expect(navigate('devtools://devtools/bundled/devtools_app.html')).not.toHaveBeenCalled();
+  it('子 frame 的导航一律拦下且不转交', () => {
+    const { navigate, onBlocked } = setup();
+    expect(navigate('https://example.com/embed', false)).toHaveBeenCalledTimes(1);
+    expect(navigate(`${APP}?popout=1`, false)).toHaveBeenCalledTimes(1);
     expect(onBlocked).not.toHaveBeenCalled();
+  });
+
+  it('DevTools 自己的导航只拦不转交', () => {
+    const { navigate, onBlocked } = setup({ isOwn: () => false });
+    expect(navigate('devtools://devtools/bundled/devtools_app.html')).toHaveBeenCalledTimes(1);
+    expect(onBlocked).not.toHaveBeenCalled();
+  });
+
+  // window.open 被 windowOpenHandler 放行后,子窗的首次加载在子窗 webContents 上也是页面发起的导航;
+  // 拦下它 popout 就是一个空白窗口。
+  it('放行 popout 子窗的首次加载(尚无文档 + 本应用入口 + query 恰为 popout=1)', () => {
+    const { navigate, onBlocked } = setup({ currentUrl: '' });
+    expect(navigate(`${APP}?popout=1`)).not.toHaveBeenCalled();
+    expect(onBlocked).not.toHaveBeenCalled();
+  });
+
+  it('首次加载的例外只认纯 popout URL:其它 URL / 带启动参数 / 非本应用入口照拦', () => {
+    const { navigate, onBlocked } = setup({ currentUrl: '' });
+    expect(navigate('https://example.com/')).toHaveBeenCalledTimes(1);
+    expect(navigate(`${APP}?workspace=%2F&popout=1`)).toHaveBeenCalledTimes(1);
+    expect(navigate('file:///tmp/evil.html?popout=1')).toHaveBeenCalledTimes(1);
+    // 离开本应用的两条照常转交(由外链白名单决定是否打开),指回本应用的那条不转交
+    expect(onBlocked.mock.calls).toEqual([['https://example.com/'], ['file:///tmp/evil.html?popout=1']]);
+  });
+
+  it('已有文档的窗口再导航到 popout URL 照拦', () => {
+    const { navigate } = setup({ currentUrl: `${APP}?popout=1` });
+    expect(navigate(`${APP}?popout=1`)).toHaveBeenCalledTimes(1);
+  });
+
+  // index.ts 顶层有 app 副作用,不可直接 import:静态钉住守卫装在所有 webContents 上。
+  it('main 给每个 webContents 装导航守卫', () => {
+    const src = readFileSync(join(__dirname, '..', '..', '..', 'electron/main/index.ts'), 'utf-8');
+    expect(src).toContain('installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed);');
   });
 });

@@ -8,6 +8,7 @@
 // 此前只按「是否打包」分支:未打包且没有 dev server 时要求同源 dev URL,而它不存在 → 所有 popout 被拒。
 
 import { MAX_WINDOW_URL_LEN } from '../shared/url-limits';
+import { isPopoutOnlyUrl } from './popout-url';
 
 export function isOwnRendererWindowUrl(
   url: string,
@@ -25,27 +26,45 @@ export function isOwnRendererWindowUrl(
   }
 }
 
-interface NavigationGuardContents {
-  on(
-    event: 'will-navigate',
-    listener: (event: { preventDefault(): void; readonly url: string }) => void,
-  ): void;
+interface NavigationGuardEvent {
+  preventDefault(): void;
+  readonly url: string;
+  readonly isMainFrame: boolean;
 }
 
-// 主框架导航只允许回到本应用自己的 renderer 入口。页面内容里的 <a href>(只读 Markdown 预览的
-// 链接、mermaid 图的 click 链接等)被点击时,默认行为是把整个窗口导航过去 —— 应用界面被外部网页
-// 顶替。renderer 侧各自拦 click 是第一道,这里是兜底:拦下导航,把 URL 交给 onBlocked。
+interface NavigationGuardContents {
+  getURL(): string;
+  on(event: 'will-frame-navigate', listener: (event: NavigationGuardEvent) => void): void;
+}
+
+// 页面发起的跨文档导航(任何 frame:<a href> 点击、location 赋值、location.reload()、iframe 加载)一律拦下,
+// dev 与打包版同一套规则。窗口内容只由 main 经 loadURL / loadFile / webContents.reload() 加载 —— 浏览器侧
+// 发起,Electron 不为它们发 will-frame-navigate。挂 will-frame-navigate 而非 will-navigate:前者对主框架与
+// 子 frame 都发,且先于 will-navigate;在这里 preventDefault 后 will-navigate 不再发。
+// 页面内容里的链接(只读 Markdown 预览、mermaid 图的 click 链接等)renderer 侧各自拦 click 是第一道,这里是兜底。
 export function installNavigationGuard(
   contents: NavigationGuardContents,
   isOwnRendererUrl: (url: string) => boolean,
   onBlocked: (url: string) => void,
 ): void {
-  contents.on('will-navigate', (event) => {
-    // 守卫装在所有 webContents 上,包括 DevTools 前端 —— 它自己的 devtools:// 导航不归这里管。
-    if (event.url.startsWith('devtools://')) return;
-    if (isOwnRendererUrl(event.url)) return;
+  contents.on('will-frame-navigate', (event) => {
+    const { url, isMainFrame } = event;
+    // 唯一放行:popout 子窗的首次加载。windowOpenHandler 放行 window.open 后,子窗 webContents 的首次加载
+    // 也是页面发起的导航,拦下就是空白子窗。条件与 windowOpenHandler 的放行一致,且子窗尚未提交任何文档
+    //(之后的导航、opener 抢先改 w.location 指向别处,都照拦)。
+    if (isMainFrame && contents.getURL() === '' && isOwnRendererUrl(url) && isPopoutOnlyUrl(url)) {
+      return;
+    }
     event.preventDefault();
+    if (!isMainFrame) return;
+    // DevTools 自己的 devtools:// 导航与指回本应用入口的导航(含 location.reload()、Vite HMR 整页刷新)
+    // 只拦不转交:后者在 dev 下是 http://localhost,转交会被外链白名单放行、开到系统浏览器里。
+    if (url.startsWith('devtools://')) return;
+    if (isOwnRendererUrl(url)) {
+      console.warn('[nav-guard] blocked page-initiated navigation to the app entry; use View > Reload');
+      return;
+    }
     // 只拦不转交的话漏网的链接点击对用户就是「没反应」:交回调用方按外链白名单处理。
-    onBlocked(event.url);
+    onBlocked(url);
   });
 }
