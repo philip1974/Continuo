@@ -78,7 +78,10 @@ function start(ipc: FakeIpcMain, sender: MockWebContents, id: string): Promise<v
 }
 
 afterEach(() => {
+  // 结算全部在途 fake child,归还名额(名额登记是模块级的,跨用例 / 跨 register 实例共享)。
+  for (const c of spawnedChildren) c.emit('close', 0, null);
   spawnedChildren.length = 0;
+  vi.restoreAllMocks();
 });
 
 describe('plugin-shell-stream active 数量上限(E230)', () => {
@@ -145,5 +148,20 @@ describe('plugin-shell-stream active 数量上限(E230)', () => {
     const err = await start(ipc, fresh, 'fresh').catch((e: unknown) => e);
     expect((err as { code?: string }).code).toBe(ERROR_CODES.TOO_MANY_STREAMS);
     expect(spawnedChildren.length).toBe(global); // 没多 spawn
+  });
+});
+
+// 与一次性 exec 同一 clamp 规则(lib/plugin-shell-children.clampShellTimeoutMs):有限正数先取整。
+// 此前流式入口手写一份 clamp、无 Math.trunc,非整数 timeout 原样交给 setTimeout(与 exec 分叉)。
+describe('plugin-shell-stream timeoutMs clamp 与 exec 一致', () => {
+  it('非整数 timeoutMs 取整后作超时', async () => {
+    const { ipc } = makeHarness();
+    const sender = new MockWebContents();
+    const spy = vi.spyOn(globalThis, 'setTimeout');
+    await ipc.invoke(sender, PLUGIN_SHELL_STREAM_CHANNELS.START, 'frac', 'node', [], {
+      timeoutMs: 200.9,
+    });
+    expect(spy.mock.calls.map((c) => c[1])).toContain(200);
+    expect(spy.mock.calls.map((c) => c[1])).not.toContain(200.9);
   });
 });

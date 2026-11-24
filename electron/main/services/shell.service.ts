@@ -9,14 +9,12 @@ import { shell } from 'electron';
 import { codedError, errorMessage } from '../../shared/error-message';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
-import type { ChildProcess } from 'node:child_process';
+import { TREE_KILL_DETACHED } from '../lib/kill-with-grace';
 import {
-  killProcessTreesNow,
-  killWithGrace,
-  processTreeKillable,
-  TREE_KILL_DETACHED,
-} from '../lib/kill-with-grace';
-import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+  clampShellTimeoutMs,
+  createPluginShellChildren,
+  killTreeWithForceSettle,
+} from '../lib/plugin-shell-children';
 import {
   mergeSpawnEnv,
   stripInternalSecretEnv,
@@ -39,20 +37,15 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = SHELL_MAX_TIMEOUT_MS; // 30min,与 plugin-shell-stream 同一来源
 const DEFAULT_MAX_OUTPUT_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_OUTPUT_BYTES_CAP = 100 * 1024 * 1024; // 100MB 硬上限,防超大值钉住内存
+// 超时后 SIGTERM → SIGKILL 的宽限(流式 shell 用 killWithGrace 默认 1s;一次性 exec 历来更短,保留)。
 const SIGKILL_GRACE_MS = 500;
-// 超时终止进程树后仍等不到 close 时,最多再等这么久即强制结算。
-const FORCE_SETTLE_MS = 3000;
 
 // 边界(E248,E10/E122 clamp 非有限值族):helper 自身完整归一化,不依赖 IPC zod 前门。execShell 与这两个
-// helper 都是导出 service 入口(单测/SDK 集成/未来内部调用直接用,绕过 schema)。旧实现仅 Math.min(input,
-// MAX) —— input=NaN → Math.min(NaN,MAX)=NaN(setTimeout 立即触发 / 截断逻辑不可预期),input≤0/负 →
-// 原样返回(负 timeout 立即超时)。非有限/≤0 回默认值,有限正数再 Math.trunc(整数 ms/字节)+ 上限裁剪。
+// helper 都是导出 service 入口(单测/SDK 集成/未来内部调用直接用,绕过 schema)。非有限/≤0 回默认值,
+// 有限正数再 Math.trunc(整数 ms/字节)+ 上限裁剪。timeout 规则与流式 shell 共用(lib/plugin-shell-children)。
 /** timeoutMs 归一到 (0, MAX_TIMEOUT_MS];非有限/≤0/缺省走 DEFAULT。纯函数,便于测试 clamp。 */
 export function clampExecTimeoutMs(input?: number): number {
-  if (input === undefined || !Number.isFinite(input) || input <= 0) {
-    return DEFAULT_TIMEOUT_MS;
-  }
-  return Math.min(Math.trunc(input), MAX_TIMEOUT_MS);
+  return clampShellTimeoutMs(input, DEFAULT_TIMEOUT_MS);
 }
 
 /** maxOutputBytes 归一到 (0, MAX_OUTPUT_BYTES_CAP];非有限/≤0/缺省走 DEFAULT。纯函数。 */
@@ -70,53 +63,35 @@ export const EXEC_LIMITS_FOR_TEST = {
   MAX_OUTPUT_BYTES_CAP,
 } as const;
 
-// 在途(尚未 close)的 exec 子进程 → 发起方 senderId(内部调用为 undefined),供退出清理与按 sender 回收。
-// 子进程是 detached 进程组,不随 IDE 退出而终止。
-const inFlight = new Map<ChildProcess, number | undefined>();
-
 // 终审 P1(E230 同族,数量上限):在途 exec 子进程并发上限。插件循环调用 exec 不 await → 此前无限 spawn,耗尽
-// PID / FD。与 plugin-shell-stream 同款全局 + 单 sender 双闸,spawn 前 fail-fast 拒绝(不 spawn、不起 timer)。
+// PID / FD。与 plugin-shell-stream 同款全局 + 单 sender 双闸(无 senderId 的内部调用只计全局),spawn 前
+// fail-fast 拒绝(不 spawn、不起 timer)。名额在 close / error 时归还。
 const MAX_ACTIVE_EXECS_GLOBAL = 128;
 const MAX_ACTIVE_EXECS_PER_SENDER = 32;
-/** senderId → 在途 exec 数(无 senderId 的内部调用只计全局)。 */
-const inFlightBySender = new Map<number, number>();
 
 export const MAX_ACTIVE_EXECS_GLOBAL_FOR_TEST = MAX_ACTIVE_EXECS_GLOBAL;
 export const MAX_ACTIVE_EXECS_PER_SENDER_FOR_TEST = MAX_ACTIVE_EXECS_PER_SENDER;
 
-// 终审 P1:退出清理(cleanupAllShellExecs)已开始。只杀调用瞬间的快照时,插件收到结算后立即重启的任务在最终
-// app.quit 前启动、不在快照内,detached 进程组在 IDE 退出后存活;故此后 exec 一律拒绝(与 debug launch 同一闸)。
-let shuttingDown = false;
+// 在途登记 / 退出闸 / 退出清理 / 按 sender 与按插件终止,见 lib/plugin-shell-children。
+const children = createPluginShellChildren({
+  maxGlobal: MAX_ACTIVE_EXECS_GLOBAL,
+  maxPerSender: MAX_ACTIVE_EXECS_PER_SENDER,
+});
 
 /** 测试用:复位退出闸(模块级状态)。 */
 export function resetShellExecShutdownForTest(): void {
-  shuttingDown = false;
+  children.resetShutdownForTest();
 }
 
-/**
- * 退出清理(before-quit awaited):立即强杀所有在途 exec 的进程树并等待 close(有上限)。开始即置退出闸,
- * 结束前再查一遍登记表,强杀清理期间漏网登记的进程。
- */
-export async function cleanupAllShellExecs(): Promise<void> {
-  shuttingDown = true;
-  const snapshot = new Set(inFlight.keys());
-  await killProcessTreesNow(snapshot);
-  await killProcessTreesNow([...inFlight.keys()].filter((child) => !snapshot.has(child)));
-}
-
-/** 立即终止 senderId 名下全部在途 exec 的进程树;close 后照常结算 Promise 并释放名额。 */
-function killShellExecsForSender(senderId: number): Promise<void> {
-  const matched: ChildProcess[] = [];
-  for (const [child, owner] of inFlight) {
-    if (owner === senderId) matched.push(child);
-  }
-  return killProcessTreesNow(matched);
+/** 退出清理(before-quit awaited):立即强杀所有在途 exec 的进程树并等待 close(有上限);此后 exec 一律拒绝。 */
+export function cleanupAllShellExecs(): Promise<void> {
+  return children.cleanupAll();
 }
 
 // 终审 P1:窗口关闭 / 整页重载后回收该 sender 的 exec(此前 detached 进程跑到超时并占着名额)。
 // 与流式 shell 同一钩子(destroyed + main frame 非同文档导航),IPC 入口每次 exec 前挂(按 webContents 去重)。
 export const attachShellExecWcGoneHook = makeWcGoneHook((senderId) => {
-  void killShellExecsForSender(senderId);
+  void children.killForSender(senderId);
 });
 
 /**
@@ -128,16 +103,12 @@ export function execShell(
   input: IpcShellExecInput,
   senderId?: number,
 ): Promise<IpcShellExecResult> {
-  if (shuttingDown) {
+  if (children.isShuttingDown()) {
     return Promise.reject(
       codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'shell exec rejected: app is quitting'),
     );
   }
-  if (
-    inFlight.size >= MAX_ACTIVE_EXECS_GLOBAL ||
-    (senderId !== undefined &&
-      (inFlightBySender.get(senderId) ?? 0) >= MAX_ACTIVE_EXECS_PER_SENDER)
-  ) {
+  if (children.atCapacity(senderId)) {
     return Promise.reject(
       codedError(ERROR_CODES.TOO_MANY_STREAMS, 'too many active shell execs'),
     );
@@ -181,25 +152,8 @@ export function execShell(
       });
       return;
     }
-    const proc = child;
-    inFlight.set(proc, senderId);
-    if (senderId !== undefined) {
-      inFlightBySender.set(senderId, (inFlightBySender.get(senderId) ?? 0) + 1);
-    }
-    // close / error 可能先后都到:只释放一次名额。
-    let released = false;
-    const release = (): void => {
-      if (released) return;
-      released = true;
-      inFlight.delete(proc);
-      if (senderId === undefined) return;
-      const n = (inFlightBySender.get(senderId) ?? 1) - 1;
-      if (n > 0) inFlightBySender.set(senderId, n);
-      else inFlightBySender.delete(senderId);
-    };
-    proc.once('close', release);
-    proc.once('error', release);
-    if (senderId !== undefined) trackPluginShellProcess(proc, senderId, input.pluginId);
+    // close / error 时自动注销并归还名额;senderId + pluginId 登记归属,供按插件终止。
+    children.track(child, senderId, input.pluginId);
 
     // 按**字节**累加并封顶,最后一次性解码 —— 旧实现用 `string.length`(UTF-16
     // code unit)当字节比较,且对每个 data chunk 单独 toString,多字节 UTF-8 序列
@@ -280,28 +234,19 @@ export function execShell(
     // 若此时清掉它,同组内忽略 SIGTERM 且不持管道的后代会存活成孤儿。故一经发起进程树终止,宽限期满
     // 无论直接子进程是否已退出都对整组 SIGKILL(组已不存在 ESRCH 由 processTreeKillable 吞掉)。
     // timer 仅在超时后才挂、最多 SIGKILL_GRACE_MS 且 unref,不阻止进程退出(P2-AP 的资源顾虑有界)。
-    let forceTimer: NodeJS.Timeout | null = null;
+    let cancelForceSettle: (() => void) | null = null;
     const clearTimers = (): void => {
       clearTimeout(timer);
-      if (forceTimer) {
-        clearTimeout(forceTimer);
-        forceTimer = null;
-      }
+      cancelForceSettle?.();
+      cancelForceSettle = null;
     };
-    // 超时终止整棵进程树(只杀直接子进程时后台后代持管道 → close 不来 → Promise 挂住)。
-    const tree = processTreeKillable(child);
+    // 超时终止整棵进程树(只杀直接子进程时后台后代持管道 → close 不来 → Promise 挂住);仍等不到 close
+    // (后代逃出进程组仍持管道)→ 销毁 stdio 强制结算,不无限等待(lib/plugin-shell-children)。
     const timer = setTimeout(() => {
       timedOut = true;
-      // SIGTERM,grace period 后整组 SIGKILL(不看直接子进程是否已退出,见上 clearTimers 注释)
-      killWithGrace(tree, SIGKILL_GRACE_MS);
-      // 仍等不到 close(后代逃出进程组仍持管道)→ 销毁 stdio 强制结算,不无限等待。
-      forceTimer = setTimeout(() => {
-        forceTimer = null;
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        settle(child.exitCode, child.signalCode);
-      }, FORCE_SETTLE_MS);
-      forceTimer.unref?.();
+      cancelForceSettle = killTreeWithForceSettle(child, SIGKILL_GRACE_MS, () =>
+        settle(child.exitCode, child.signalCode),
+      );
     }, timeoutMs);
 
     child.on('error', (err) => {

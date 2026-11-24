@@ -16,8 +16,9 @@ const ROOT = join(__dirname, '..', '..', '..');
 // lib/kill-with-grace.ts,unref 只需在这一处保证;下方另断言三个调用点都走它、不再内联 SIGKILL。
 const FILES = ['electron/main/lib/kill-with-grace.ts'];
 
+// plugin-shell-stream / shell.service 的超时终止链再收口到 lib/plugin-shell-children.ts(killTreeWithForceSettle)。
 const CALLERS = [
-  'electron/main/services/plugin-shell-stream.service.ts',
+  'electron/main/lib/plugin-shell-children.ts',
   'electron/main/services/plugins.service.ts',
 ];
 

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { SHELL_CHANNELS } from '../../shared/shell-channels';
 import { attachShellExecWcGoneHook, execShell, openExternalUrl } from '../services/shell.service';
-import { killPluginShellProcesses } from '../lib/plugin-shell-owners';
+import { killPluginShellProcesses } from '../lib/plugin-shell-children';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { ShellExecInputSchema as ExecInput } from '../../shared/shell-exec-schema';
 import { MAX_EXTERNAL_URL_LEN } from '../../shared/url-limits';

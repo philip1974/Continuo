@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type { IpcMain } from 'electron';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { assertTrustedFrame } from '../safe-handle';
@@ -7,15 +7,14 @@ import { ERROR_CODES } from '../../shared/error-codes';
 // 上限(只 E10 修了 timeoutMs)。同仓 shell.exec(E12)已有 PATH/ARG 上限,但流式 spawn 入口漏了。
 // 畸形插件可经 app.shell.execStream() 传巨量 args/超长 cwd/cmd → IPC structured clone + 主进程内存/CPU
 // 放大,或触发 spawn 的 E2BIG/路径异常。与 shell.exec 对齐(E46:shared 单一来源),spawn 前 fail-closed。
-import { SHELL_MAX_TIMEOUT_MS, shellCommandShapeError } from '../../shared/shell-limits';
-import {
-  killProcessTreesNow,
-  killWithGrace,
-  processTreeKillable,
-  TREE_KILL_DETACHED,
-} from '../lib/kill-with-grace';
+import { shellCommandShapeError } from '../../shared/shell-limits';
+import { TREE_KILL_DETACHED } from '../lib/kill-with-grace';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
-import { trackPluginShellProcess } from '../lib/plugin-shell-owners';
+import {
+  clampShellTimeoutMs,
+  createPluginShellChildren,
+  killTreeWithForceSettle,
+} from '../lib/plugin-shell-children';
 import {
   resolveSpawnCommand,
   stripInternalSecretEnv,
@@ -26,42 +25,30 @@ import { codedError } from '../../shared/error-message';
 import { trySend } from '../lib/try-send';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
-const MAX_TIMEOUT_MS = SHELL_MAX_TIMEOUT_MS;
 const STREAM_ID_MAX = 256;
 
 // 边界(E230,E227/E228/E229 数量上限族):并发 active 流式子进程数量上限。此前 START 只 active.has(streamId)
 // 去重,无总量上限 —— 已授 shell 的插件可并发启动大量长跑 stream,每个占一个真实子进程 + timeoutTimer +
 // IPC listener + active 条目,直到 timeout(5-30min)/abort/window cleanup 才释放,极端输入可耗尽主进程/系统
-// 资源(fd / PID / 内存)。比 pending Map 族更重(对象是真实 OS 子进程)。spawn 前全局 + per-sender 双闸,
-// 超限 fail-fast 抛 TOO_MANY_STREAMS(不 spawn、不入 active、不起 timer)。计数随 active Map 增删自然维护。
+// 资源(fd / PID / 内存)。spawn 前全局 + per-sender 双闸,超限 fail-fast 抛 TOO_MANY_STREAMS(不 spawn、
+// 不入 active、不起 timer)。名额随 active 条目增删维护(ABORT / finalize 即归还,不等 close)。
 const MAX_ACTIVE_STREAMS_GLOBAL = 128; // 全局并发流上限(远超任何正常插件并发)
 const MAX_ACTIVE_STREAMS_PER_SENDER = 32; // 单 webContents 并发流上限
 
-// 终止进程树后仍等不到 close(后代逃出进程组仍持有管道)时,最多再等这么久即强制 finalize。
-const FORCE_FINALIZE_MS = 3000;
-
-// 在途(尚未 close)的流式子进程,跨所有 register 实例,供退出清理。子进程是 detached 进程组:
-// 窗口销毁路径的 SIGTERM + 定时 SIGKILL 不被等待,IDE 退出后命令会继续运行。
-const inFlight = new Set<ChildProcess>();
-
-// 终审 P1:退出清理已开始,此后 START 一律拒绝(同 shell.service 的 exec 退出闸:插件收到 exit 即重启的
-// stream 不在清理快照内,detached 进程组在 IDE 退出后存活)。
-let shuttingDown = false;
+// 在途登记(跨所有 register 实例)/ 退出闸 / 退出清理 / 按插件终止,见 lib/plugin-shell-children。
+const children = createPluginShellChildren({
+  maxGlobal: MAX_ACTIVE_STREAMS_GLOBAL,
+  maxPerSender: MAX_ACTIVE_STREAMS_PER_SENDER,
+});
 
 /** 测试用:复位退出闸(模块级状态)。 */
 export function resetShellStreamShutdownForTest(): void {
-  shuttingDown = false;
+  children.resetShutdownForTest();
 }
 
-/**
- * 退出清理(before-quit awaited):立即强杀所有在途 stream 的进程树并等待 close(有上限)。开始即置退出闸,
- * 结束前再查一遍登记表,强杀清理期间漏网登记的进程。
- */
-export async function cleanupAllShellStreams(): Promise<void> {
-  shuttingDown = true;
-  const snapshot = new Set(inFlight);
-  await killProcessTreesNow(snapshot);
-  await killProcessTreesNow([...inFlight].filter((child) => !snapshot.has(child)));
+/** 退出清理(before-quit awaited):立即强杀所有在途 stream 的进程树并等待 close(有上限);此后 START 一律拒绝。 */
+export function cleanupAllShellStreams(): Promise<void> {
+  return children.cleanupAll();
 }
 
 interface ActiveStream {
@@ -69,6 +56,8 @@ interface ActiveStream {
   terminate: () => void;
   timeoutTimer: NodeJS.Timeout | null;
   senderId: number;
+  /** 归还并发名额(幂等)。 */
+  releaseSlot: () => void;
 }
 
 /**
@@ -87,6 +76,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
   const forceKillStream = (key: string, handle: ActiveStream): void => {
     if (handle.timeoutTimer) clearTimeout(handle.timeoutTimer);
     active.delete(key);
+    handle.releaseSlot();
     handle.terminate();
   };
 
@@ -99,15 +89,6 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
     }
   };
   const attachWcGoneHook = makeWcGoneHook(killStreamsForSender);
-
-  // 边界(E230):某 sender 当前 active 流数。active 已封顶后 O(≤MAX_ACTIVE_STREAMS_GLOBAL)。
-  const activeCountForSender = (senderId: number): number => {
-    let n = 0;
-    for (const handle of active.values()) {
-      if (handle.senderId === senderId) n += 1;
-    }
-    return n;
-  };
 
   ipcMain.handle(
     PLUGIN_SHELL_STREAM_CHANNELS.START,
@@ -123,7 +104,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       // 隔离 iframe / 未来子 frame)即可绕过权限边界触发本机命令执行。与同仓所有写/敏感
       // IPC 的 defaultIsTrustedFrame 纪律一致(复审 loop R8,同 R7 族但 spawn 面更重)。
       assertTrustedFrame(event);
-      if (shuttingDown) {
+      if (children.isShuttingDown()) {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'shell stream rejected: app is quitting');
       }
       const key = activeKey(event.sender.id, streamId);
@@ -133,10 +114,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
 
       // 边界(E230):并发 active 流数量双闸,spawn 前 fail-fast(不 spawn、不入 active、不起 timer),
       // 防已授 shell 的插件并发 spam 长跑 stream 耗尽主进程/系统资源(fd/PID/内存)。
-      if (
-        active.size >= MAX_ACTIVE_STREAMS_GLOBAL ||
-        activeCountForSender(event.sender.id) >= MAX_ACTIVE_STREAMS_PER_SENDER
-      ) {
+      if (children.atCapacity(event.sender.id)) {
         throw codedError(ERROR_CODES.TOO_MANY_STREAMS, 'too many active shell streams');
       }
 
@@ -163,17 +141,10 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         badInput(`invalid pluginId (empty or > ${PLUGIN_ID_MAX_LEN})`);
       }
 
-      // 边界(E10):raw IPC 的 opts.timeoutMs 无运行时 schema。插件传 NaN/负数/0/Infinity/非数字时,
-      // 旧 `Math.min(x, MAX)` 会得到 NaN 或负值,`setTimeout(.., timeoutMs)` 退化为**立即触发** →
-      // 合法的流式 shell 命令一启动就被 SIGTERM,插件看到随机/立即退出。仅当有限正数才采用并 clamp
-      // 到 MAX,否则回默认值(fail-safe,不拒绝合法启动)。
-      const rawTimeout = opts?.timeoutMs;
-      const timeoutMs =
-        typeof rawTimeout === 'number' &&
-        Number.isFinite(rawTimeout) &&
-        rawTimeout > 0
-          ? Math.min(rawTimeout, MAX_TIMEOUT_MS)
-          : DEFAULT_TIMEOUT_MS;
+      // 边界(E10):raw IPC 的 opts.timeoutMs 无运行时 schema。NaN/负数/0/Infinity/非数字会让
+      // `setTimeout(.., timeoutMs)` 退化为立即触发 → 合法命令一启动就被 SIGTERM。与一次性 exec 同一规则:
+      // 有限正数取整并封顶,否则回默认值(fail-safe,不拒绝合法启动)。
+      const timeoutMs = clampShellTimeoutMs(opts?.timeoutMs, DEFAULT_TIMEOUT_MS);
       // 不用 shell:true(同 shell.service:破坏参数原子性 + 注入面)。
       // Windows .cmd/.bat 的正确启动方式需 PATHEXT 检测 + cmd.exe 包装 + quoting → DEFER。
       // 安全:git 命令行作用域 core.fsmonitor=false 兜底;Windows 裸命令名只在 PATH 绝对目录中解析、
@@ -187,12 +158,9 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         // 新进程组(POSIX),终止时整组发信号,后台后代不成孤儿(见 processTreeKillable)。
         detached: TREE_KILL_DETACHED,
       });
-      inFlight.add(child);
-      child.once('close', () => inFlight.delete(child));
-      child.once('error', () => inFlight.delete(child));
       const senderWc = event.sender;
       const senderId = senderWc.id;
-      trackPluginShellProcess(child, senderId, pluginId);
+      const releaseSlot = children.track(child, senderId, pluginId);
       // renderer reload / webContents 销毁时杀掉该 sender 名下所有在途 stream(reload 不会触发 iterator
       // 的 return() → 不发 ABORT,子进程会泄漏到 timeout)。时机与去重见 lib/wc-gone-hook。
       attachWcGoneHook(senderWc);
@@ -217,6 +185,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         const handle = active.get(key);
         if (handle?.timeoutTimer) clearTimeout(handle.timeoutTimer);
         active.delete(key);
+        releaseSlot();
         send('exit', { exitCode, signal });
       };
 
@@ -236,21 +205,16 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
 
       // 终止整棵进程树;若仍迟迟不 close(后代逃出进程组仍持管道),销毁 stdio 并强制 finalize,
       // 不让 done / active 槽位无限挂住。
+      // finalize 幂等,强制结算无需撤销(宽限 1s 为 killWithGrace 默认值)。
       const terminate = (): void => {
         if (settled) return;
-        killWithGrace(processTreeKillable(child));
-        const forceTimer = setTimeout(() => {
-          child.stdout.destroy();
-          child.stderr.destroy();
-          finalize(child.exitCode, child.signalCode);
-        }, FORCE_FINALIZE_MS);
-        forceTimer.unref?.();
+        killTreeWithForceSettle(child, undefined, () => finalize(child.exitCode, child.signalCode));
       };
 
       const timeoutTimer = setTimeout(terminate, timeoutMs);
       const maybeUnref = timeoutTimer as { unref?: () => void };
       if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
-      active.set(key, { terminate, timeoutTimer, senderId });
+      active.set(key, { terminate, timeoutTimer, senderId, releaseSlot });
     },
   );
 

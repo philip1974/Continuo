@@ -8,7 +8,7 @@
 ### main
 
 - `shell:exec` 输入可带 `pluginId`;`plugin-shell-stream:start` 的 opts 可带 `pluginId`。main 把子进程登记为
-  (发送方 webContents id, pluginId) 所有(`electron/main/lib/plugin-shell-owners.ts`),子进程 close/error 后注销。
+  (发送方 webContents id, pluginId) 所有(`electron/main/lib/plugin-shell-children.ts`),子进程 close/error 后注销。
 - 新 IPC `shell:kill-plugin-processes { pluginId }`:受信 frame 校验;只终止**发送方 webContents** 名下、
   该 `pluginId` 的进程树(`killProcessTreesNow`:整组 SIGTERM+SIGKILL,等待 close,有上限)。
   流式子进程被杀后照常走 close → exit 事件与 active 槽位回收;一次性 exec 的 Promise 照常结算。
