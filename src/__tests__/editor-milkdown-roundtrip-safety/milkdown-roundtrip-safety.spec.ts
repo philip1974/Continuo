@@ -38,16 +38,27 @@ describe('isMilkdownUnsafe', () => {
     }
   });
 
-  it('ignores [[ inside fenced code blocks and inline code', () => {
+  it('ignores [[ inside top-level fenced code blocks', () => {
     expect(isMilkdownUnsafe('# Cargo\n\n```toml\n[[bin]]\nname = "x"\n```\n')).toBe(false);
     expect(isMilkdownUnsafe('~~~bash\nif [[ -f x ]]; then :; fi\n~~~\n')).toBe(false);
-    expect(isMilkdownUnsafe('Use `[[ -n "$x" ]]` in bash.\n')).toBe(false);
-    expect(isMilkdownUnsafe('Use ``a ` [[b]] `` here.\r\n')).toBe(false);
+    expect(isMilkdownUnsafe('Intro.\r\n\r\n````md\r\n```\r\n[[x]]\r\n````\r\n')).toBe(false);
   });
 
   it('still flags wiki-links outside code', () => {
     expect(isMilkdownUnsafe('```\ncode\n```\n\nSee [[Note]].\n')).toBe(true);
     expect(isMilkdownUnsafe('`code` and [[Note]]\n')).toBe(true);
+    // 行内代码不剥(同段落可跨行,按行配对会把正文当代码):保守判不安全。
+    expect(isMilkdownUnsafe('Use `[[ -n "$x" ]]` in bash.\n')).toBe(true);
+    expect(isMilkdownUnsafe('Use `foo\nbar` and [[Note]] with `x`\n')).toBe(true);
+    // 缩进闭栏 / 缩进开栏 / HTML 块 / 段落内开栏 / 单独 \r 换行:按 CommonMark [[X]] 是正文。
+    expect(isMilkdownUnsafe('```\nfoo\n  ```\n[[X]]\n```\n')).toBe(true);
+    expect(isMilkdownUnsafe('  ```\nfoo\n\n```\n[[X]]\n```\n')).toBe(true);
+    expect(isMilkdownUnsafe('<div>\n```\n\n[[X]]\n```\n')).toBe(true);
+    expect(isMilkdownUnsafe('<!--\n\n```\n-->\n[[X]]\n```\n')).toBe(true);
+    expect(isMilkdownUnsafe('`a\r\r[[X]]\r`b`\n')).toBe(true);
+    // 段落后紧接的第 0 列围栏照样开栏(fuzz 对照 mdast 找到的反例)。
+    expect(isMilkdownUnsafe('\rtext\r```js\r\r````\r- [[X]]\r```\t\r````\r')).toBe(true);
+    expect(isMilkdownUnsafe('> quote\n```js\n    code\n\n```\n> [[X]]\n```\t\n')).toBe(true);
     // 孤立反引号不得跨段落与后面的反引号配对而把 wiki-link 藏掉。
     expect(isMilkdownUnsafe('a ` stray\n\n[[Note]]\n\nb ` c\n')).toBe(true);
     // 行首 4 空格以上不是围栏。
@@ -63,11 +74,13 @@ describe('isMilkdownUnsafe', () => {
     expect(isMilkdownUnsafe('````\n[[Note]]\n```\n')).toBe(true); // 未闭合:保守
   });
 
-  it('pathological backtick runs stay linear', () => {
+  it('pathological inputs stay linear', () => {
     let line = '[[';
     for (let n = 1; n <= 1500; n += 1) line += '`'.repeat(n) + 'x';
+    const fences = '\n```a'.repeat(100_000) + '\n[[X]]\n';
     const t0 = performance.now();
     isMilkdownUnsafe(line + '\n');
+    expect(isMilkdownUnsafe(fences)).toBe(true);
     expect(performance.now() - t0).toBeLessThan(500);
   });
 
