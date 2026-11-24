@@ -56,6 +56,17 @@ export interface SettingsValueState {
   reset: (id: string) => void;
 }
 
+// 本窗口用户主动「恢复默认」的通知(不随 storage 事件 / 跨窗同步触发)。需要把重置传给外部权威源的设置项
+// (如语言 → main settings.json)订阅它,而不是从「存储值消失」推断 —— 后者会把跨窗 lost update / 清站点数据
+// 误当成用户重置。
+const localResetListeners = new Set<(id: string) => void>();
+export function onLocalSettingReset(cb: (id: string) => void): () => void {
+  localResetListeners.add(cb);
+  return () => {
+    localResetListeners.delete(cb);
+  };
+}
+
 export const useSettingsValuesStore = create<SettingsValueState>((set, get) => ({
   values: readStored(),
   // race(R6 + R113 修订):单 key RMW 基于 live localStorage 重读而非本窗内存快照,**缓解**但
@@ -98,12 +109,14 @@ export const useSettingsValuesStore = create<SettingsValueState>((set, get) => (
     if (!Object.hasOwn(latest, id)) {
       // 别窗可能已删该 key;本窗内存若仍有则收敛到 latest。
       set((s) => (Object.hasOwn(s.values, id) ? { values: latest } : s));
-      return;
+    } else {
+      const next = { ...latest };
+      delete next[id];
+      writeStored(next);
+      set({ values: next });
     }
-    const next = { ...latest };
-    delete next[id];
-    writeStored(next);
-    set({ values: next });
+    // 用户本意是重置(即便 key 已被别窗删掉):通知订阅方同步外部权威源。
+    for (const cb of [...localResetListeners]) cb(id);
   },
 }));
 

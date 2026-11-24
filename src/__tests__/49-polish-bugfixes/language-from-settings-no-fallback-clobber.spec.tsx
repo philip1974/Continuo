@@ -139,3 +139,33 @@ describe('语言项恢复默认', () => {
     expect(setLocale).not.toHaveBeenCalledWith('en');
   });
 });
+
+describe('语言项恢复默认 — 只响应本窗口的 reset', () => {
+  it('别窗 / 外部把 key 删掉(非本窗 reset)→ 不改 main 语言', async () => {
+    const setLocale = vi.fn(() => Promise.resolve());
+    useSettingsStore.setState({ locale: 'zh', setLocale });
+    useSettingsValuesStore.setState({ values: { 'general.language': 'zh' } });
+    render(<LanguageFromSettings />);
+    // 模拟 storage 事件同步进来的「key 消失」(跨窗 lost update / 清站点数据),不经 reset()
+    act(() => {
+      useSettingsValuesStore.setState({ values: {} });
+    });
+    await Promise.resolve();
+    expect(setLocale).not.toHaveBeenCalledWith('en');
+  });
+
+  it('在途切换期间(main 仍是 en)点恢复默认 → 仍推 en,压过在途请求', async () => {
+    const setLocale = vi.fn(() => new Promise<void>(() => {})); // 永不落地
+    useSettingsStore.setState({ locale: 'en', setLocale });
+    useSettingsValuesStore.setState({ values: { 'general.language': 'en' } });
+    render(<LanguageFromSettings />);
+    act(() => {
+      useSettingsValuesStore.getState().setValue('general.language', 'zh');
+    });
+    await waitFor(() => expect(setLocale).toHaveBeenCalledWith('zh'));
+    act(() => {
+      useSettingsValuesStore.getState().reset('general.language');
+    });
+    await waitFor(() => expect(setLocale).toHaveBeenLastCalledWith('en'));
+  });
+});

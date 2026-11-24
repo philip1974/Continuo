@@ -1,9 +1,10 @@
 // topic 16 i18n: Settings values store ↔ main settings store 桥。
 // 沿用 src/theme/binding.ts useThemeBinding 的模式。
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  onLocalSettingReset,
   useSettingValue,
   useSettingsValuesStore,
 } from '@/plugins/settings/values-store';
@@ -56,17 +57,18 @@ export function LanguageFromSettings(): ReactNode {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawStored, value, storeLocale, setStoreLocale, setValue, localeReqGuard]);
 
-  // 「恢复默认」(values-store.reset 删 key):存储值从有变无 → 真实语言也回到默认,否则控件显示默认、界面仍是
-  // 旧语言。启动时本就缺失(从未有过)不算 —— 那是上面 R14 要挡的 fallback。只随 rawStored 变化判定。
-  const prevStoredRef = useRef(rawStored);
-  useEffect(() => {
-    const prev = prevStoredRef.current;
-    prevStoredRef.current = rawStored;
-    if (prev !== undefined && rawStored === undefined && storeLocale !== LANGUAGE_DEFAULT) {
-      pushLocale(LANGUAGE_DEFAULT);
-    }
+  // 「恢复默认」:只响应本窗口用户主动 reset(onLocalSettingReset),无条件推默认值(setLocale 幂等,latest 守卫让它
+  // 压过在途的切换请求)。不从「存储值消失」推断 —— 跨窗 lost update / 清站点数据也会让 key 消失,那不是用户重置,
+  // 不能据此改写 main 的权威语言。
+  useEffect(
+    () =>
+      onLocalSettingReset((id) => {
+        if (id === LANGUAGE_SETTING_ID) pushLocale(LANGUAGE_DEFAULT);
+      }),
+    // pushLocale 读最新闭包外的 store / guard(均稳定),订阅只需建立一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawStored]);
+    [],
+  );
 
   // 首次挂载：store locale 已是 main 真值（bootstrap inject），但 values 还没该 key →
   // 把 store.locale 写回 values（让 SegmentedControl 显示正确选中态）
