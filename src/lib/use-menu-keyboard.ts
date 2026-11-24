@@ -1,4 +1,5 @@
 import { useCallback, useRef, type KeyboardEvent, type RefObject } from 'react';
+import { indexOfElement, nextRovingIndex, type RovingMove } from '@/design/roving-index';
 
 /**
  * a11y(A18):role="menu" 弹层的键盘焦点管理 —— 共享单一来源。
@@ -58,16 +59,19 @@ export function useMenuKeyboard(opts: {
     }
     const items = getMenuItems(menuNode.current);
     if (!items || items.length === 0) return;
-    const current = document.activeElement as HTMLElement | null;
-    const idx = current ? indexOfMenuItem(items, current) : -1;
-    let next: number | null = null;
-    if (e.key === 'ArrowDown') next = idx < 0 ? 0 : (idx + 1) % items.length;
-    else if (e.key === 'ArrowUp') next = idx <= 0 ? items.length - 1 : idx - 1;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = items.length - 1;
-    if (next !== null) {
+    const move: RovingMove | null =
+      e.key === 'ArrowDown'
+        ? 'next'
+        : e.key === 'ArrowUp'
+          ? 'prev'
+          : e.key === 'Home'
+            ? 'first'
+            : e.key === 'End'
+              ? 'last'
+              : null;
+    if (move !== null) {
       e.preventDefault();
-      items[next]?.focus();
+      items[nextRovingIndex(move, indexOfElement(items, document.activeElement), items.length)]?.focus();
     }
   };
 
@@ -84,12 +88,3 @@ function getMenuItems(
   );
 }
 
-function indexOfMenuItem(
-  items: NodeListOf<HTMLButtonElement>,
-  current: HTMLElement,
-): number {
-  for (let i = 0; i < items.length; i += 1) {
-    if (items[i] === current) return i;
-  }
-  return -1;
-}

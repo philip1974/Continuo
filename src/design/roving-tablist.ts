@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react';
+import { indexOfElement, nextRovingIndex, type RovingMove } from './roving-index';
 
 /**
  * a11y(A23/A28):WAI-ARIA tablist 键盘导航(手动激活)—— 共享单一来源。
@@ -23,24 +24,16 @@ export function handleTablistArrowKeys(e: KeyboardEvent<HTMLElement>): void {
     '[role="tab"]:not([disabled])',
   );
   if (tabs.length === 0) return;
-  const active = document.activeElement as HTMLElement | null;
-  const idx = active ? indexOfTab(tabs, active) : -1;
-  let next: number;
-  if (key === 'Home') next = 0;
-  else if (key === 'End') next = tabs.length - 1;
-  else if (key === 'ArrowRight' || key === 'ArrowDown')
-    next = idx < 0 ? 0 : (idx + 1) % tabs.length;
-  else next = idx <= 0 ? tabs.length - 1 : idx - 1; // ArrowLeft / ArrowUp
+  const idx = indexOfElement(tabs, document.activeElement);
+  const move: RovingMove =
+    key === 'Home'
+      ? 'first'
+      : key === 'End'
+        ? 'last'
+        : key === 'ArrowRight' || key === 'ArrowDown'
+          ? 'next'
+          : 'prev'; // ArrowLeft / ArrowUp
   e.preventDefault();
-  tabs[next]?.focus();
+  tabs[nextRovingIndex(move, idx, tabs.length)]?.focus();
 }
 
-function indexOfTab(
-  tabs: NodeListOf<HTMLButtonElement>,
-  active: HTMLElement,
-): number {
-  for (let i = 0; i < tabs.length; i += 1) {
-    if (tabs[i] === active) return i;
-  }
-  return -1;
-}

@@ -398,6 +398,7 @@
 ## [design-system](./design-system/README.md)
 
 - [`components.spec.tsx`](./design-system/components.spec.tsx)
+- [`roving-index.spec.ts`](./design-system/roving-index.spec.ts)
 - [`theme-provider.spec.tsx`](./design-system/theme-provider.spec.tsx)
 - [`tokens.spec.ts`](./design-system/tokens.spec.ts)
 
