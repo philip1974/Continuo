@@ -5,12 +5,10 @@ import { ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
   PLUGIN_SHELL_STREAM_CHANNELS,
   parseShellStreamEvent,
+  type ShellChunk,
 } from '../shared/plugin-shell-stream-channels';
 
-// 可维护性 M7:单个 stream chunk(stdout/stderr)。迭代器 yield 此类型,**结束值为
-// void**(`{ value: undefined, done: true }`)。此前各结束分支用 `undefined as never`
-// 压过 TS —— 把迭代器结束语义用类型(IteratorResult<ShellChunk, void>)表达后即不需断言。
-type ShellChunk = { stream: 'stdout' | 'stderr'; chunk: Uint8Array };
+// 可维护性 M7:迭代器结束值为 void(见 shared ShellChunk),各结束分支共用此常量,免 `undefined as never`。
 const SHELL_STREAM_DONE: IteratorResult<ShellChunk, void> = {
   value: undefined,
   done: true,

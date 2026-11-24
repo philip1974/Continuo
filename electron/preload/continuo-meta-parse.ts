@@ -1,8 +1,13 @@
+import {
+  CONTINUO_HOSTNAME_ARG_PREFIX,
+  CONTINUO_WINDOWS_BUILD_ARG_PREFIX,
+} from '../shared/continuo-meta-args';
+
 // OSC7 acceptedHosts:解析 main 注入的 `--continuo-hostname=<host>`;缺失 / 空 → null。
 export function parseContinuoHostnameFromArgv(
   argv: readonly string[],
 ): string | null {
-  const prefix = '--continuo-hostname=';
+  const prefix = CONTINUO_HOSTNAME_ARG_PREFIX;
   const arg = argv.find((a) => a.startsWith(prefix));
   const host = arg?.slice(prefix.length);
   return host ? host : null;
@@ -12,7 +17,7 @@ export function parseContinuoHostnameFromArgv(
 export function parseContinuoWindowsBuildFromArgv(
   argv: readonly string[],
 ): number | null {
-  const prefix = '--continuo-windows-build=';
+  const prefix = CONTINUO_WINDOWS_BUILD_ARG_PREFIX;
   const value = argv.find((a) => a.startsWith(prefix))?.slice(prefix.length);
   return value !== undefined && /^\d+$/.test(value) ? Number(value) : null;
 }

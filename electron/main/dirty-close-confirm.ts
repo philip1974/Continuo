@@ -7,7 +7,7 @@
 
 import type { MainT } from './i18n';
 import { PATH_ARRAY_MAX, PATH_STR_MAX } from '../shared/explorer-persistence-schema';
-import type { DirtyState } from '../shared/persistence-channels';
+import type { DirtyState, FlushAckPayload } from '../shared/persistence-channels';
 
 export type { DirtyState };
 
@@ -113,7 +113,9 @@ export function parseFlushAck(raw: unknown): {
   remaining: DirtyState | null;
   state: DirtyState | null;
 } {
-  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  // 字段名受 shared FlushAckPayload 约束(与 preload 发送侧同一来源),值仍按 unknown 逐个校验。
+  const obj: { readonly [K in keyof FlushAckPayload]?: unknown } =
+    typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
   const saveFailed = obj['saveFailed'] === true;
   const id = obj['requestId'];
   const requestId = typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : null;

@@ -4,6 +4,7 @@ import {
   LAYOUT_CHANNELS,
   WINDOW_ID_CHANNEL,
   type DirtyState,
+  type FlushAckPayload,
   type FlushRequestPayload,
 } from '../shared/persistence-channels';
 import { guardedListener, subscribeAndAnnounce, subscribeIpc } from './subscribe-ipc';
@@ -41,6 +42,7 @@ import {
   type IpcPermissionsMap,
   type IpcPermissionRecord,
   type IpcPluginDirListing,
+  type InstallFromGitResult,
 } from '../shared/plugins-channels';
 import {
   SHELL_CHANNELS,
@@ -51,6 +53,7 @@ import {
   AGENT_AUTH_CHANNELS,
   type AgentAuthRequestPayload,
   type AgentAuthDecision,
+  type RevokeResult,
 } from '../shared/agent-auth-channels';
 import {
   MCP_CHANNELS,
@@ -141,17 +144,8 @@ const api = {
       // 请求、不等回执 —— 否则没人回 ack,只能干等满超时。
       return subscribeAndAnnounce(LAYOUT_CHANNELS.FLUSH_REQUEST, LAYOUT_CHANNELS.FLUSH_READY, listener);
     },
-    sendFlushAck: (
-      windowId: number,
-      // remaining:全部 flush 后仍有未保存改动(未选「不保存」时)的计数,main 据此中止关闭 / 退出。
-      // state:flush 后的最终脏态(始终携带,含空集合),main 以其更新脏态记账。
-      result?: {
-        saveFailed?: boolean;
-        requestId?: number;
-        remaining?: DirtyReport;
-        state?: DirtyReport;
-      },
-    ): void => {
+    // result 形态见 shared FlushAckPayload(remaining / state 语义注释在那里)。
+    sendFlushAck: (windowId: number, result?: FlushAckPayload): void => {
       ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_ACK, windowId, result);
     },
     /** 上报本窗口关窗会丢的脏 tab 计数与 id(main 关窗 / 退出前据此弹保存确认、按身份做最终检查)。 */
@@ -375,9 +369,7 @@ const api = {
       url: string,
       overwrite?: boolean,
       opts?: { branch?: string; expectedId?: string },
-    ): Promise<
-      IpcResult<{ id: string; name: string; version: string }>
-    > =>
+    ): Promise<IpcResult<InstallFromGitResult>> =>
       ipcRenderer.invoke(PLUGINS_CHANNELS.INSTALL_FROM_GIT, {
         url,
         overwrite,
@@ -459,7 +451,7 @@ const api = {
     onRevoked: (cb: () => void): (() => void) =>
       subscribeIpc(AGENT_AUTH_CHANNELS.REVOKED, () => cb()),
     /** 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发). */
-    revoke: (): Promise<IpcResult<{ killed: number; rotated: boolean }>> =>
+    revoke: (): Promise<IpcResult<RevokeResult>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
   },
   debug: {

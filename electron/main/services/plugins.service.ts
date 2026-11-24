@@ -15,6 +15,7 @@ import type {
   IpcPermissionRecord,
   IpcPermissionsMap,
   IpcPluginDirListing,
+  InstallFromGitResult,
 } from '../../shared/plugins-channels';
 import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
@@ -1154,12 +1155,6 @@ async function isPluginDataResidueDir(dir: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-export interface InstallFromGitResult {
-  readonly id: string;
-  readonly name: string;
-  readonly version: string;
 }
 
 // 仅允许 https(去掉 git://明文无认证、ssh://可被指向内网做 SSRF/探测)。

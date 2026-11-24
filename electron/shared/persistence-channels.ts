@@ -52,6 +52,19 @@ export interface FlushRequestPayload {
   readonly requestId?: number;
 }
 
+/**
+ * FLUSH_ACK 第二参(renderer → main;main 经 parseFlushAck 运行时校验并归一化)。
+ * remaining:全部 flush 后仍有未保存改动(未选「不保存」时)的计数,main 据此中止关闭 / 退出。
+ * state:flush 后的最终脏态(始终携带,含空集合),main 以其更新脏态记账。
+ */
+export interface FlushAckPayload {
+  readonly saveFailed?: boolean;
+  /** FlushRequestPayload.requestId 原样带回。 */
+  readonly requestId?: number;
+  readonly remaining?: DirtyState;
+  readonly state?: DirtyState;
+}
+
 export const EXPLORER_CHANNELS = {
   READ: 'explorer:read',
   WRITE: 'explorer:write',

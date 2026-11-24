@@ -1,5 +1,9 @@
 import { hostname as osHostname, release as osRelease } from 'node:os';
 import type { WebPreferences } from 'electron';
+import {
+  CONTINUO_HOSTNAME_ARG_PREFIX,
+  CONTINUO_WINDOWS_BUILD_ARG_PREFIX,
+} from '../shared/continuo-meta-args';
 
 interface BuildCommonWebPreferencesInput {
   readonly preload?: string;
@@ -14,13 +18,13 @@ interface BuildCommonWebPreferencesInput {
 // OSC7:shell 集成(bash/fish)与 oh-my-zsh 等发 `file://<真实 hostname>$PWD`,renderer 的 OSC7
 // parser 须接受本机 hostname;sandbox renderer 拿不到 os.hostname → 经 additionalArguments 注入。
 export function buildContinuoHostnameArg(hostname: string): string {
-  return `--continuo-hostname=${hostname}`;
+  return `${CONTINUO_HOSTNAME_ARG_PREFIX}${hostname}`;
 }
 
 // 终端:xterm 需知道 Windows build 号才能按 ConPTY 能力关 reflow(build < 21376 时 ConPTY 自行重绘,
 // xterm 再 reflow 既白做 O(scrollback) 又与之冲突);sandbox renderer 拿不到 os.release → 同通道注入。
 export function buildContinuoWindowsBuildArg(build: number): string {
-  return `--continuo-windows-build=${build}`;
+  return `${CONTINUO_WINDOWS_BUILD_ARG_PREFIX}${build}`;
 }
 
 /** Windows os.release() 形如 `10.0.19045`,第三段即 build 号;取不到 → null。 */

@@ -5,6 +5,10 @@ export const PLUGIN_SHELL_STREAM_CHANNELS = {
   EVENT: 'plugin-shell-stream:event',
 } as const;
 
+// 插件 execStream 迭代器 yield 的单个 chunk(preload 产出、renderer scoped app 转发,两侧共用此一份)。
+// 迭代器结束值为 void(`{ value: undefined, done: true }`),用类型表达结束语义,免 `undefined as never`。
+export type ShellChunk = { stream: 'stdout' | 'stderr'; chunk: Uint8Array };
+
 // 边界(E175,E168-E174 同族 IPC ingress 纵深防御):plugin-shell-stream:event preload handler 此前
 // 完全信任 TS 类型直接读 payload.streamId/kind/payload。畸形事件(null/非对象/streamId 非串/非法 kind/
 // stdout·stderr payload 非二进制/exit payload 非 {exitCode,signal})→ listener 抛(null.streamId)、

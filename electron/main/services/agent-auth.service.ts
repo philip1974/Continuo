@@ -14,6 +14,7 @@ import {
   agentAuthDomainOf,
   type AgentAuthDecision,
   type AgentAuthRequestPayload,
+  type RevokeResult,
 } from '../../shared/agent-auth-channels';
 import * as terminalSessions from './terminal-sessions.service';
 import * as termService from './terminal.service';
@@ -410,13 +411,6 @@ let mcpHostRef: McpHost | null = null;
 /** main/index.ts 启动 host 后调,把 host 引用注入,供 revoke 用. */
 export function setMcpHostRef(host: McpHost | null): void {
   mcpHostRef = host;
-}
-
-export interface RevokeResult {
-  /** 被终止的 agent session 数(originHint='agent'). */
-  readonly killed: number;
-  /** 是否成功 rotate token(无 mcpHost 时 false). */
-  readonly rotated: boolean;
 }
 
 /**

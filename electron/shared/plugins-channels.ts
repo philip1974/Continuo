@@ -117,6 +117,13 @@ export interface IpcPluginDirListing extends IpcPluginDirMeta {
   readonly manifestHash: string;
 }
 
+/** INSTALL_FROM_GIT 的返回:新装插件的 manifest 元信息. */
+export interface InstallFromGitResult {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+}
+
 /** READ_MAIN_BY_DIR 目录名长度上限(= 常见文件系统单级文件名上限 NAME_MAX). */
 export const PLUGIN_DIR_NAME_MAX_LEN = 255;
 

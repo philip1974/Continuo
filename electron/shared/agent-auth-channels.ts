@@ -20,6 +20,14 @@ export const AGENT_AUTH_CHANNELS = {
   CANCELLED: 'agent-auth:cancelled',
 } as const;
 
+/** REVOKE 的返回(main revokeAndKillAgentSessions → preload agentAuth.revoke)。 */
+export interface RevokeResult {
+  /** 被终止的 agent session 数(originHint='agent'). */
+  readonly killed: number;
+  /** 是否成功 rotate token(无 mcpHost 时 false). */
+  readonly rotated: boolean;
+}
+
 export interface AgentAuthRequestPayload {
   readonly requestId: string;
   readonly method: string;

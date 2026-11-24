@@ -39,6 +39,7 @@ import type {
   PluginShellApi,
 } from './types';
 import type { FileEntry } from '../../electron/shared/fs-entry';
+import type { ShellChunk } from '../../electron/shared/plugin-shell-stream-channels';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
 import { isSpecObject } from './registries/spec-guard';
 import type { PluginDataStore } from './PluginDataStore';
@@ -457,10 +458,6 @@ function makeNetwork(
     },
   };
 }
-
-// 可维护性 M7:shell stream chunk(与 preload 镜像)。迭代器 yield 此类型,结束值为 void
-// (`{ value: undefined, done: true }`),用类型表达迭代器结束语义,免 `undefined as never`。
-type ShellChunk = { stream: 'stdout' | 'stderr'; chunk: Uint8Array };
 
 function makeShell(
   pluginId: string,

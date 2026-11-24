@@ -1,6 +1,6 @@
 import { z } from 'zod';
+import { SESSION_ID_MAX } from './session-id-limits';
 
-const DEBUG_SESSION_ID_MAX = 256;
 const DEBUG_PATH_MAX = 4096;
 const DEBUG_EXPRESSION_MAX = 4096;
 const DEBUG_VARIABLE_COUNT_MAX = 100;
@@ -35,7 +35,7 @@ export const MCP_TOOL_DEBUG_DISCONNECT = 'debug.disconnect';
 export const MCP_TOOL_DEBUG_LIST_SESSIONS = 'debug.list_sessions';
 
 /** debug session id(MCP 工具入参与 Debug 面板 IPC 入参共用)。 */
-export const sessionIdSchema = z.string().min(1).max(DEBUG_SESSION_ID_MAX);
+export const sessionIdSchema = z.string().min(1).max(SESSION_ID_MAX);
 const pathSchema = z.string().min(1).max(DEBUG_PATH_MAX);
 const nonNegativeIntSchema = z.number().int().min(0);
 const positiveIntSchema = z.number().int().min(1);
@@ -284,7 +284,7 @@ const arraySchema = (items: JsonSchema, maxItems: number): JsonSchema => ({
   maxItems,
 });
 
-const sessionIdJson = stringSchema(DEBUG_SESSION_ID_MAX);
+const sessionIdJson = stringSchema(SESSION_ID_MAX);
 const pathJson = stringSchema(DEBUG_PATH_MAX);
 /** continue / step_over / step_in / step_out 共用的入参 JSON schema。 */
 export const debugThreadControlInputJsonSchema = objectSchema(
