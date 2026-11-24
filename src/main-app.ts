@@ -5,11 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { pluginZod } from './plugins/plugin-zod';
 import { App } from './shell/App';
 import { initExplorerPersistence } from './lib/persist/explorer-persist';
-import {
-  parseInitialFresh,
-  parseInitialWindowSeq,
-  parseInitialWorkspace,
-} from './lib/initial-workspace';
+import { consumeStartupQuery } from './lib/initial-workspace';
 import { bootCorePlugins } from './core-plugins';
 import { coApp } from './plugins/co-app';
 import { wirePluginDataInvalidation } from './plugins/PluginDataStore';
@@ -245,11 +241,13 @@ export async function init(): Promise<void> {
   // 多窗口 Phase 2B:从 query string 读 ?windowSeq=N(主窗 0,新窗自增)+
   // ?workspace=<path>。windowSeq 标识自己在 explorer.json windows[] 中的段,
   // 各窗 hydrate / persist 自己段不互相覆盖。query workspace 仅在自己段不存在
-  // (全新窗口编号)时启动用。见 issue #23。
-  const search = window.location.search;
-  const initialWindowSeq = parseInitialWindowSeq(search);
-  const initialWorkspace = parseInitialWorkspace(search);
-  const initialFresh = parseInitialFresh(search);
+  // (全新窗口编号)时启动用。见 issue #23。?fresh=1 是一次性参数,解析后即从地址栏去掉,
+  // 刷新不再被当成新窗口覆盖本窗段(见 consumeStartupQuery)。
+  const {
+    windowSeq: initialWindowSeq,
+    workspace: initialWorkspace,
+    fresh: initialFresh,
+  } = consumeStartupQuery(window.location, window.history);
   void initExplorerPersistence(
     {
       // 取用上方提前发起的 explorer.read(仅一次);之后若再调用则照常发新 IPC。

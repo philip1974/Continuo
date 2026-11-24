@@ -337,6 +337,7 @@
 ## [cold-start-drag-folder (Issue #45)](./cold-start-drag-folder/README.md)
 
 - [`cold-start-drag-folder.spec.ts`](./cold-start-drag-folder/cold-start-drag-folder.spec.ts)
+- [`reload-after-fresh.spec.ts`](./cold-start-drag-folder/reload-after-fresh.spec.ts)
 
 ## [column-resize (Sidebar 拖拽改宽)](./column-resize/README.md)
 

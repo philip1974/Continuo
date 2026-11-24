@@ -94,3 +94,36 @@ export function parseInitialFresh(search: string): boolean {
   if (!params) return false;
   return params.get(FRESH_PARAM) === WINDOW_QUERY_FLAG_ON;
 }
+
+export type StartupLocation = Pick<Location, 'pathname' | 'search' | 'hash'>;
+export type StartupHistory = Pick<History, 'state' | 'replaceState'>;
+
+export interface StartupQuery {
+  windowSeq: number;
+  workspace: string | null;
+  fresh: boolean;
+}
+
+/**
+ * 解析启动 query,并把一次性参数 fresh 从地址栏去掉(history.replaceState,不触发导航)。
+ * fresh 只属于用户显式开窗的首次加载;留在 URL 里会让之后的刷新(View → Reload / Force Reload、
+ * dev 同 URL 刷新、DevTools 刷新)都被当成新窗口,覆盖本窗段(root 回退、编辑器 tab 丢失)。
+ * 去掉后刷新的 URL 与 restore-loop 开窗一致(windowSeq + workspace、无 fresh):本窗段存在 → 按段恢复,
+ * 段缺失 → workspace 仍作 root 回退,故 workspace / windowSeq 保留。
+ * (对照 VSCode CodeWindow.reload:重载时清掉 filesToOpenOrCreate 等一次性配置、保留 workspace。)
+ */
+export function consumeStartupQuery(loc: StartupLocation, history: StartupHistory): StartupQuery {
+  const search = loc.search;
+  const query: StartupQuery = {
+    windowSeq: parseInitialWindowSeq(search),
+    workspace: parseInitialWorkspace(search),
+    fresh: parseInitialFresh(search),
+  };
+  const params = safeStartupParams(search);
+  if (params?.has(FRESH_PARAM)) {
+    params.delete(FRESH_PARAM);
+    const rest = params.toString();
+    history.replaceState(history.state, '', `${loc.pathname}${rest ? `?${rest}` : ''}${loc.hash}`);
+  }
+  return query;
+}
