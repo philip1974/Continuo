@@ -32,6 +32,9 @@ export interface Review {
   readonly thumbsUp: number;
 }
 
+/** main 未配置 GITHUB_TOKEN(评分功能不可用)时 reviews-fetcher 抛出的稳定 code;reviews-store 据此静默降级,不当错误。 */
+export const REVIEWS_NO_TOKEN_CODE = 'MARKETPLACE_REVIEWS_NO_TOKEN';
+
 export interface PluginAggregateRating {
   readonly pluginId: string;
   readonly count: number;

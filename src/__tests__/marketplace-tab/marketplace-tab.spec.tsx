@@ -89,6 +89,7 @@ beforeEach(() => {
     byPid: new Map(),
     loading: false,
     error: null,
+    unavailable: false,
     lastFetchedAt: null,
   });
 });
@@ -1636,5 +1637,108 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     );
     expect(alert).toBeTruthy();
     expect(alert!.textContent).not.toContain('✘');
+  });
+});
+
+describe('MarketplaceTab — 索引加载失败可重试', () => {
+  it('失败块有「重试」按钮(不在 alert 区内),点击重新拉取并显示结果', async () => {
+    installApi(vi.fn());
+    getMgr.mockReturnValue({ listAll: () => [] });
+    fetchIndexMock.mockRejectedValueOnce(new Error('offline'));
+    fetchIndexMock.mockResolvedValueOnce([entry({ id: 'a', name: 'Alpha' })]);
+    const { container, getByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('拉取索引失败'));
+    const retry = getByRole('button', { name: '重试' });
+    expect(retry.closest('[role=alert]')).toBeNull();
+    fireEvent.click(retry);
+    await waitFor(() => expect(container.textContent).toContain('Alpha'));
+    expect(container.textContent).not.toContain('拉取索引失败');
+    expect(fetchIndexMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('重试期间回到加载态', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockRejectedValueOnce(new Error('offline'));
+    fetchIndexMock.mockReturnValueOnce(new Promise(() => {}));
+    const { container, getByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('拉取索引失败'));
+    fireEvent.click(getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(container.textContent).toContain('正在加载'));
+  });
+});
+
+describe('MarketplaceTab — 未配置 GitHub token 时评分静默降级', () => {
+  it('unavailable 且未手动刷新 → 不显示任何错误 / 提示', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    useReviewsStore.setState({ unavailable: true, lastFetchedAt: 1 });
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('A'));
+    expect(container.textContent).not.toContain('刷新评分失败');
+    expect(container.textContent).not.toContain('GitHub token');
+    expect(container.querySelector('[role=alert]')).toBeNull();
+  });
+
+  it('手动点「刷新评分」后 unavailable → 中性提示(role=status、非错误色),无 alert', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    const refresh = vi.fn(async () => {
+      useReviewsStore.setState({ loading: false, error: null, unavailable: true });
+    });
+    useReviewsStore.setState({ unavailable: true, lastFetchedAt: 1, refresh });
+    const { container, getByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('A'));
+    fireEvent.click(getByRole('button', { name: '刷新评分' }));
+    await waitFor(() => expect(container.textContent).toContain('评分暂不可用'));
+    expect(refresh).toHaveBeenCalledWith(true);
+    const hint = Array.from(container.querySelectorAll('[role=status]')).find((el) =>
+      el.textContent?.includes('评分暂不可用'),
+    )!;
+    expect(hint.className).toContain('text-fg-dim');
+    expect(hint.className).not.toContain('text-error');
+    expect(container.querySelector('[role=alert]')).toBeNull();
+  });
+});
+
+describe('MarketplaceTab — 卡片窄宽布局', () => {
+  function cls(el: Element | null | undefined): string[] {
+    return (el?.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
+  }
+
+  it('卡片按自身宽度排版:头部窄时换行、操作按钮独占一行、头像窄时隐藏', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockResolvedValue([
+      entry({ id: 'com.example.long-plugin-id', name: 'Sample Plugin', verified: true }),
+    ]);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    const { container, getByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('Sample Plugin'));
+    const install = getByRole('button', { name: /安装.*Sample Plugin/ });
+    const actionBox = install.parentElement!;
+    expect(cls(actionBox)).toEqual(expect.arrayContaining(['shrink-0', '@max-md:basis-full']));
+    const header = actionBox.parentElement!;
+    expect(cls(header)).toContain('@max-md:flex-wrap');
+    expect(cls(header.parentElement)).toContain('@container');
+    expect(cls(header.firstElementChild)).toContain('@max-sm:hidden');
+  });
+
+  it('标题行可换行;id 与仓库链接可截断', async () => {
+    installApi(vi.fn());
+    fetchIndexMock.mockResolvedValue([
+      entry({ id: 'com.example.long-plugin-id', name: 'Sample Plugin', verified: true }),
+    ]);
+    getMgr.mockReturnValue({ listAll: () => [] });
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('Sample Plugin'));
+    const code = Array.from(container.querySelectorAll('code')).find(
+      (c) => c.textContent === 'com.example.long-plugin-id',
+    )!;
+    expect(cls(code)).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+    expect(cls(code.parentElement)).toContain('flex-wrap');
+    const repo = container.querySelector('a[href="https://github.com/me/com.example.long-plugin-id"]')!;
+    expect(cls(repo)).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
+    expect(cls(repo.parentElement)).toContain('flex-wrap');
   });
 });

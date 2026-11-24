@@ -48,6 +48,9 @@ const MARKETPLACE_REVIEW_SORT_BUTTON_ACTIVE_CLASS_NAME =
   `${MARKETPLACE_REVIEW_SORT_BUTTON_BASE_CLASS_NAME} bg-accent/20 text-accent`;
 const MARKETPLACE_REVIEW_SORT_BUTTON_INACTIVE_CLASS_NAME =
   `${MARKETPLACE_REVIEW_SORT_BUTTON_BASE_CLASS_NAME} hover:bg-hover`;
+/** 卡片头部(头像 / 标题区 / 操作按钮):卡片窄于 28rem 时允许换行,操作按钮独占下一行。 */
+export const MARKETPLACE_CARD_HEADER_CLASS_NAME = 'flex items-start gap-4 @max-md:flex-wrap @max-md:gap-y-3';
+export const MARKETPLACE_CARD_ACTION_CLASS_NAME = 'shrink-0 @max-md:basis-full';
 const EMPTY_INSTALLED_IDS: ReadonlySet<string> = new Set();
 const EMPTY_MARKETPLACE_ENTRIES: readonly MarketplaceEntry[] = [];
 const EMPTY_UPDATE_VERSION_MAP: ReadonlyMap<string, string> = new Map();
@@ -121,6 +124,11 @@ export function MarketplaceTab() {
   const reviewsByPid = useReviewsStore((s) => s.byPid);
   const reviewsLoading = useReviewsStore((s) => s.loading);
   const reviewsError = useReviewsStore((s) => s.error);
+  const reviewsUnavailable = useReviewsStore((s) => s.unavailable);
+  // 未配置 token 时评分静默不显示;只有用户手动点过「刷新评分」才给中性提示(否则点了没反应无从理解)。
+  const [reviewsRefreshClicked, setReviewsRefreshClicked] = useState(false);
+  // 索引加载失败后「重试」:递增即重跑拉取 effect(同 QuickOpenModal 扫描失败重试)。
+  const [reloadToken, setReloadToken] = useState(0);
   const refreshReviews = useReviewsStore((s) => s.refresh);
 
   // entry.id → 可用更新版本(若有)。useMemo 让 memo 子组件能受益:
@@ -146,6 +154,8 @@ export function MarketplaceTab() {
 
   useEffect(() => {
     let cancelled = false;
+    // 重试时回到加载态(首挂时已是 loading,函数式更新不产生多余渲染)。
+    setState((prev) => (prev.kind === 'loading' ? prev : { kind: 'loading' }));
     void (async () => {
       try {
         const entries = await fetchMarketplaceIndex();
@@ -165,7 +175,7 @@ export function MarketplaceTab() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
 
   // 卡片的「安装」与「更新」是同一流程(同步单飞 → installFromGitLocalized → 结果消息 → pending),只差
   // overwrite 标志与成功 / 失败文案 key(reject 与 ok:false 同走 *_failed_code)。返回是否成功,供调用方做后续。
@@ -279,14 +289,22 @@ export function MarketplaceTab() {
     return (
       // a11y(A66,A41 同族):索引异步加载失败的错误块须 live region(失败 → role=alert/assertive),
       // 否则焦点在面板/搜索入口附近时 SR 用户只感知"无内容",不知是加载失败。
-      <div
-        role="alert"
-        className="rounded border border-line bg-panel-soft/40 p-4 text-xs text-error"
-      >
-        {t('marketplace.index_fetch_failed', { message: state.message })}
-        <div className="mt-1 text-fg-dim">
-          {t('marketplace.index_fetch_hint')}
+      // 「重试」按钮放在 alert 区外,播报内容只含失败原因与提示。
+      <div className="rounded border border-line bg-panel-soft/40 p-4 text-xs">
+        <div role="alert" className="text-error">
+          {t('marketplace.index_fetch_failed', { message: state.message })}
+          <div className="mt-1 text-fg-dim">
+            {t('marketplace.index_fetch_hint')}
+          </div>
         </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="mt-3"
+          onClick={() => setReloadToken((n) => n + 1)}
+        >
+          {t('marketplace.retry')}
+        </Button>
       </div>
     );
   }
@@ -360,7 +378,7 @@ export function MarketplaceTab() {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 text-2xs text-fg-dim">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-2xs text-fg-dim">
         {/* a11y(A55,A53/A54 同族):搜索/标签过滤结果摘要随输入与 tag toggle 动态变化,焦点在
             搜索框/tag 按钮时须 live region(role=status/polite)播报筛选结果数量。 */}
         <span role="status">
@@ -372,11 +390,14 @@ export function MarketplaceTab() {
         {/* native button:摘要行内的紧凑文本按钮(同上,design Button 尺寸不适用);颜色走语义 token。 */}
         <button
           type="button"
-          onClick={() => void refreshReviews(true)}
+          onClick={() => {
+            setReviewsRefreshClicked(true);
+            void refreshReviews(true);
+          }}
           disabled={reviewsLoading}
           // a11y(A93,A51 同族):刷新进行中用 aria-busy 标注按钮忙碌态。
           aria-busy={reviewsLoading}
-          className="rounded px-2 py-0.5 text-fg-muted hover:bg-hover hover:text-fg disabled:opacity-50"
+          className="shrink-0 whitespace-nowrap rounded px-2 py-0.5 text-fg-muted hover:bg-hover hover:text-fg disabled:opacity-50"
           title={t('marketplace.reviews.refresh_title')}
         >
           {/* a11y(A90,A88 同族):刷新图标 ⟳ 纯视觉,catalog 已去符号 → aria-hidden 单独渲染,
@@ -404,6 +425,12 @@ export function MarketplaceTab() {
           {t('marketplace.reviews.refresh_failed', {
             message: localizeErrorByCode(reviewsError, reviewsError),
           })}
+        </div>
+      )}
+      {reviewsUnavailable && reviewsRefreshClicked && !reviewsLoading && (
+        // 未配置 token 是正常状态:中性提示(非 alert、非错误色),仅在用户主动刷新后出现。
+        <div className="text-2xs text-fg-dim" role="status">
+          {t('marketplace.reviews.unavailable')}
         </div>
       )}
       {filtered.length === 0 ? (
@@ -563,17 +590,19 @@ const MarketplaceCard = memo(function MarketplaceCard({
   const handleInstall = () => void onInstall(entry);
   const handleUpdate = () => void onUpdate(entry);
   return (
-    <div className="rounded-md border border-line bg-panel-soft/40 p-4 transition-colors hover:bg-panel-soft/70">
-      <div className="flex items-start justify-between gap-4">
+    // @container:卡片按自身宽度排版 —— 窄于 28rem 时操作按钮换到下一行、窄于 24rem 隐藏首字头像,
+    // 避免按钮盖住 Verified 徽标、id / 仓库链接画出卡片、描述一行一个词。
+    <div className="@container rounded-md border border-line bg-panel-soft/40 p-4 transition-colors hover:bg-panel-soft/70">
+      <div className={MARKETPLACE_CARD_HEADER_CLASS_NAME}>
         <div
           aria-hidden="true"
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-line bg-canvas text-base font-semibold uppercase text-fg-dim"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-line bg-canvas text-base font-semibold uppercase text-fg-dim @max-sm:hidden"
         >
           {entry.name.charAt(0)}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="font-medium text-fg">{entry.name}</span>
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="min-w-0 break-words font-medium text-fg">{entry.name}</span>
             {entry.verified && (
               <Badge
                 size="xs"
@@ -586,13 +615,15 @@ const MarketplaceCard = memo(function MarketplaceCard({
                 <span aria-hidden="true">✓</span> {t('marketplace.verified')}
               </Badge>
             )}
-            <code className="text-2xs text-fg-dim">{entry.id}</code>
+            <code className="min-w-0 max-w-full truncate text-2xs text-fg-dim" title={entry.id}>
+              {entry.id}
+            </code>
           </div>
           {entry.description && (
             <p className="mt-0.5 text-xs text-fg-dim">{entry.description}</p>
           )}
         </div>
-        <div className="shrink-0">
+        <div className={MARKETPLACE_CARD_ACTION_CLASS_NAME}>
           {installed && updateAvailable && !pendingRestart ? (
             <Button
               variant="primary"
@@ -664,8 +695,8 @@ const MarketplaceCard = memo(function MarketplaceCard({
       <ResultMessage msg={message} className="mt-1 text-2xs text-fg-muted" />
       <RatingRow entry={entry} rating={rating} />
 
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-fg-dim">
-        <div className="flex items-center gap-2">
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-2xs text-fg-dim">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span>
             {t('marketplace.author_by')}{' '}
             {entry.authorUrl ? (
@@ -682,7 +713,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
             )}
           </span>
           {entry.tags && entry.tags.length > 0 && (
-            <span className="flex gap-1">
+            <span className="flex flex-wrap gap-1">
               {entry.tags.map((t) => (
                 <span
                   key={t}
@@ -698,7 +729,8 @@ const MarketplaceCard = memo(function MarketplaceCard({
           href={`https://github.com/${entry.repo}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-accent hover:underline"
+          className="min-w-0 max-w-full truncate text-accent hover:underline"
+          title={entry.repo}
         >
           {/* a11y(A72,A70 同族装饰符号):链接目的已由仓库名表达,外链箭头 ↗ 纯视觉提示 →
               aria-hidden,否则混进链接可访问名读成"repo arrow"噪声。 */}

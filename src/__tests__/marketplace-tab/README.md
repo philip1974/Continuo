@@ -44,6 +44,23 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
   - ok → recordPendingInstall(已在列表的更新 / 覆盖重装不记),msg=「✔ 已安装 …」
   - 抛 / ok=false → msg=「✘ …」
 
+### 卡片窄宽布局(容器查询)
+
+- 卡片根节点是尺寸容器(`@container`);卡片窄于 28rem 时头部可换行、操作按钮独占下一行(`@max-md:basis-full`),
+  窄于 24rem 隐藏首字头像 —— 安装按钮不再盖住 Verified 徽标
+- 标题行 `flex-wrap`;插件 id 与底部仓库链接 `min-w-0 truncate`(`title` 给全文),不画出卡片;底部作者 / 标签行可换行
+
+### 索引加载失败
+
+- 失败块 `role=alert` 播报原因 + 提示;其外有「重试」按钮(不进 alert 播报内容)
+- 点「重试」→ 回到加载态并重新拉取索引(reloadToken 递增重跑拉取 effect,同 QuickOpenModal 扫描失败重试)
+
+### 评分刷新
+
+- 刷新失败(error 非空)→ 错误文案 `role=alert`
+- 未配置 GitHub token(store `unavailable`)是正常状态:默认静默不显示任何提示(对齐 VSCode 市场无鉴权时不报错);
+  仅当用户手动点过「刷新评分」才显示一行中性提示(`role=status`、`text-fg-dim`,三语 `marketplace.reviews.unavailable`)
+
 ### Git URL section
 
 - 见 GitUrlInstallSection(同 PluginsTabContent 内嵌但独立 component);成功同样记入待重启 store

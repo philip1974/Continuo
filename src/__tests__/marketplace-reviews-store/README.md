@@ -13,5 +13,7 @@
 
 - refresh 成功:byPid 写入 + loading=false + lastFetchedAt 设
 - refresh 抛 Error:error=err.message + loading=false
+- refresh 抛 `MARKETPLACE_REVIEWS_NO_TOKEN`(main 未配置 GitHub token):**不是错误** —— error=null、unavailable=true、
+  lastFetchedAt 设(本会话重开市场页不再反复请求);之后任一次成功清 unavailable
 - refresh 抛非 Error 对象:error=String(err)
 - force 参数透传 fetchAllReviews

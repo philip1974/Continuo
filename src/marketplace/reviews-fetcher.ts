@@ -15,6 +15,7 @@ import { coApi } from '../lib/co-api';
 import { parseReview } from './reviews-parser';
 import {
   isValidAggregateRecord,
+  REVIEWS_NO_TOKEN_CODE,
   type PluginAggregateRating,
   type Review,
 } from './reviews-types';
@@ -79,7 +80,7 @@ export async function fetchAllReviews(
     if (stale) return aggregateRecordToMap(stale);
     // i18n(I12,I5 同族):抛稳定 code(非中文 prose),UI 按 errors.<CODE> catalog 本地化
     // (en/ko 不泄漏中文)。网络等动态错误仍走原 message(无 catalog 回退)。
-    throw new Error('MARKETPLACE_REVIEWS_NO_TOKEN');
+    throw new Error(REVIEWS_NO_TOKEN_CODE);
   }
 
   // 边界(E243,E215 读端独立校验族):res.data.nodes 来自 IPC,renderer 不应只信 main 侧约束 ——

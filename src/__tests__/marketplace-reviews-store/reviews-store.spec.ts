@@ -15,6 +15,7 @@ beforeEach(() => {
     byPid: new Map(),
     loading: false,
     error: null,
+    unavailable: false,
     lastFetchedAt: null,
   });
 });
@@ -93,6 +94,32 @@ describe('useReviewsStore.refresh', () => {
     useReviewsStore.setState({ error: 'old error' });
     fetchMock.mockResolvedValue(new Map());
     await useReviewsStore.getState().refresh();
+    expect(useReviewsStore.getState().error).toBeNull();
+  });
+});
+
+describe('useReviewsStore.refresh — 未配置 GitHub token', () => {
+  // 未配置 token 是正常状态(评分功能不可用),不是刷新失败:不写 error(否则市场页每次打开都一行红字),
+  // 记 unavailable 供 UI 在用户手动刷新后给中性提示;记 lastFetchedAt,本会话重开市场页不再反复请求。
+  it('NO_TOKEN → unavailable=true、error=null、lastFetchedAt 设', async () => {
+    fetchMock.mockRejectedValue(new Error('MARKETPLACE_REVIEWS_NO_TOKEN'));
+    await useReviewsStore.getState().refresh();
+    const s = useReviewsStore.getState();
+    expect(s.error).toBeNull();
+    expect(s.unavailable).toBe(true);
+    expect(s.loading).toBe(false);
+    expect(s.lastFetchedAt).not.toBeNull();
+  });
+
+  it('其它失败仍写 error;之后成功则清 unavailable', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('MARKETPLACE_REVIEWS_NO_TOKEN'));
+    await useReviewsStore.getState().refresh();
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    await useReviewsStore.getState().refresh(true);
+    expect(useReviewsStore.getState().error).toBe('network down');
+    fetchMock.mockResolvedValueOnce(new Map());
+    await useReviewsStore.getState().refresh(true);
+    expect(useReviewsStore.getState().unavailable).toBe(false);
     expect(useReviewsStore.getState().error).toBeNull();
   });
 });
