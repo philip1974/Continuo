@@ -37,8 +37,8 @@ import {
   consumeMappedKeyOnData,
   createMappedKeyState,
   isSearchHotkey,
-  shouldSkipXtermKey,
 } from '@continuo-terminal/react-terminal';
+import { isTerminalZoomHotkey } from './zoom-hotkey';
 import { createOutputCoalescer } from './output-coalescer';
 import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
 import {
@@ -496,9 +496,9 @@ export function useTerminal(termId: string) {
         });
         return false;
       }
-      // topic-22: Shift+(Cmd|Ctrl)+Enter 让 xterm 不发 \r,document keydown
+      // topic-22: 缩放热键(shift+mod+enter,按平台)让 xterm 不发 \r,document keydown
       // 派发 terminal.zoom.toggle 命令。pending 不污染(命中即 return false 跳过)。
-      if (shouldSkipXtermKey(event)) return false;
+      if (isTerminalZoomHotkey(event)) return false;
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
       return true;
     });

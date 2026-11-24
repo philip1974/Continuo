@@ -7,6 +7,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { shouldSkipXtermKey } from '@continuo-terminal/react-terminal';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { isTerminalZoomHotkey } from '../../panels/Terminal/zoom-hotkey';
 
 function makeKey(init: Partial<KeyboardEventInit> & { type?: string; isComposing?: boolean }) {
   const type = init.type ?? 'keydown';
@@ -75,3 +78,26 @@ describe('shouldSkipXtermKey (T5)', () => {
     ).toBe(false);
   });
 });
+
+// 让出判定与命令同一热键串、按平台匹配(isTerminalZoomHotkey):mac 上 mod 只认 Cmd —— Shift+Ctrl+Enter 不让出(照常
+// 发回车给 PTY),否则既不发回车、缩放命令又不匹配,按键被吞。
+describe('isTerminalZoomHotkey(按平台)', () => {
+  it('mac:Shift+Cmd+Enter 让出;Shift+Ctrl+Enter 不让出', () => {
+    expect(isTerminalZoomHotkey(makeKey({ shiftKey: true, metaKey: true }), 'mac')).toBe(true);
+    expect(isTerminalZoomHotkey(makeKey({ shiftKey: true, ctrlKey: true }), 'mac')).toBe(false);
+  });
+  it('Windows / Linux:Shift+Ctrl+Enter 让出;Shift+Win(meta)+Enter 不让出', () => {
+    expect(isTerminalZoomHotkey(makeKey({ shiftKey: true, ctrlKey: true }), 'other')).toBe(true);
+    expect(isTerminalZoomHotkey(makeKey({ shiftKey: true, metaKey: true }), 'other')).toBe(false);
+  });
+  it('输入法组合中 / keyup → 不让出', () => {
+    expect(isTerminalZoomHotkey(makeKey({ shiftKey: true, metaKey: true, isComposing: true }), 'mac')).toBe(false);
+    expect(isTerminalZoomHotkey(makeKey({ type: 'keyup', shiftKey: true, metaKey: true }), 'mac')).toBe(false);
+  });
+  it('useTerminal 用 isTerminalZoomHotkey 判让出(不再用不分平台的 shouldSkipXtermKey)', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Terminal/useTerminal.ts'), 'utf-8');
+    expect(src).toContain('isTerminalZoomHotkey(event)');
+    expect(src).not.toContain('shouldSkipXtermKey');
+  });
+});
+

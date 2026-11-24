@@ -10,6 +10,7 @@ import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
+import { TERMINAL_ZOOM_HOTKEY } from '@/panels/Terminal/zoom-hotkey';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -33,7 +34,7 @@ export default class TerminalPlugin extends Plugin {
       titleKey: 'commands.terminal.zoom.title',
       category: 'Terminal',
       categoryKey: 'commands.terminal.category',
-      hotkey: 'shift+mod+enter',
+      hotkey: TERMINAL_ZOOM_HOTKEY,
       fn: () => {
         const api = getDockApi();
         if (!api) return;
