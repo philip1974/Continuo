@@ -29,7 +29,18 @@ export const FOCUSABLE_SELECTOR =
 // 若每个 Modal 都在 document 挂独立 keydown 监听,叠加时单次 Esc 会连带触发所有打开 Modal 的 onClose ——
 // CommandPalette 开着时 agent 推来的 AgentAuthPrompt(onClose=deny)/ PermissionPrompt(onClose=denyAll)
 // 会被这次 Esc 静默拒绝(安全决策被误触)。见第十八轮 P1-AU。
-const modalKeyStack: symbol[] = [];
+// 栈按 Modal 所在文档分开:dockview popout 子窗与主窗的按键互不传播,各文档只看自己的栈顶 —— 共用一个栈时,子窗
+// 确认框开着、主窗又弹出授权框,子窗框的 Esc / Tab 焦点陷阱就失效(反之亦然)。
+const modalKeyStacks = new WeakMap<Document, symbol[]>();
+
+function modalKeyStackOf(doc: Document): symbol[] {
+  let stack = modalKeyStacks.get(doc);
+  if (stack === undefined) {
+    stack = [];
+    modalKeyStacks.set(doc, stack);
+  }
+  return stack;
+}
 
 export function Modal({
   visible,
@@ -54,6 +65,7 @@ export function Modal({
     prevFocusRef.current = (doc.activeElement as HTMLElement | null) ?? null;
 
     const keyId = keyIdRef.current!;
+    const modalKeyStack = modalKeyStackOf(doc);
     modalKeyStack.push(keyId);
 
     const raf = requestAnimationFrame(() => {

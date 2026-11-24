@@ -47,7 +47,21 @@ import { basenameForChrome } from '@/lib/path-label';
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
-import { registerEditorPanelActions, SAVE_COMMAND } from './editor-commands';
+import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
+
+const ADJACENT_EDITOR_SPECS = editorCommandSpecs(detectPlatform()).filter(
+  (c) => c.id === NEXT_EDITOR_COMMAND_ID || c.id === PREVIOUS_EDITOR_COMMAND_ID,
+);
+
+/** 按生效绑定判定是否为下一个(1)/ 上一个(-1)编辑器;否则 0。 */
+function adjacentEditorDeltaFor(e: KeyboardEvent, overrides: Readonly<Record<string, string>>): 1 | -1 | 0 {
+  for (const spec of ADJACENT_EDITOR_SPECS) {
+    const combo = resolveActiveHotkey(spec, overrides);
+    if (combo !== undefined && matchesHotkey(combo, e)) return spec.id === NEXT_EDITOR_COMMAND_ID ? 1 : -1;
+  }
+  return 0;
+}
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -350,11 +364,23 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         //(否则一次按键保存两次)。面板外(Explorer 等)由全局命令保存;面板在 popout 子窗时全局分发不监听子窗
         // document,靠这里保存。按平台精确匹配修饰键(matchesHotkey,与全局热键同一规则,复审 loop R15);按生效绑定
         // 判定:用户改绑跟随新键、解绑后不再拦。
-        const combo = resolveActiveHotkey(SAVE_COMMAND, useKeybindingsStore.getState().overrides);
+        const overrides = useKeybindingsStore.getState().overrides;
+        const combo = resolveActiveHotkey(SAVE_COMMAND, overrides);
         if (combo !== undefined && matchesHotkey(combo, e.nativeEvent)) {
           e.preventDefault();
           e.stopPropagation();
           void handleSave();
+          return;
+        }
+        // 下一个 / 上一个编辑器同理在面板内处理:它们只切本编辑器的文件 tab,面板在 popout 子窗时全局分发不监听
+        // 子窗;且不放进子窗全局分发(编辑器不在该子窗时会切到主窗编辑器、子窗里看不到变化)。编辑器内容已处理的键
+        //(defaultPrevented,如 CodeMirror 自有绑定)不抢。
+        if (e.defaultPrevented) return;
+        const delta = adjacentEditorDeltaFor(e.nativeEvent, overrides);
+        if (delta !== 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          openAdjacentEditor(delta);
         }
       }}
     >

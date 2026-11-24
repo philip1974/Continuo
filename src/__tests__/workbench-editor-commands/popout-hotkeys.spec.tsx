@@ -54,10 +54,10 @@ afterEach(() => {
 });
 
 describe('popout 子窗按键分发(只限作用于活动面板的命令)', () => {
-  it('白名单 = 关闭编辑器 + 下一个 / 上一个编辑器(与命令 id 常量一致)', () => {
-    expect([...POPOUT_HOTKEY_COMMAND_IDS].sort()).toEqual(
-      [CLOSE_ACTIVE_EDITOR_COMMAND.id, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID].sort(),
-    );
+  it('白名单只有关闭编辑器(下一个 / 上一个编辑器由编辑器面板自己处理,编辑器不在该子窗时不切主窗编辑器)', () => {
+    expect([...POPOUT_HOTKEY_COMMAND_IDS]).toEqual([CLOSE_ACTIVE_EDITOR_COMMAND.id]);
+    expect(POPOUT_HOTKEY_COMMAND_IDS.has(NEXT_EDITOR_COMMAND_ID)).toBe(false);
+    expect(POPOUT_HOTKEY_COMMAND_IDS.has(PREVIOUS_EDITOR_COMMAND_ID)).toBe(false);
   });
 
   it('popout 子窗里按关闭编辑器的生效绑定 → 执行同一命令并截住事件', async () => {
@@ -69,9 +69,10 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
     await act(async () => { await Promise.resolve(); });
     expect(close).toHaveBeenCalledTimes(1);
     expect(ev.defaultPrevented).toBe(true);
+    // 下一个编辑器不经子窗全局分发(由编辑器面板自己处理,只作用于本编辑器)
     press(popDoc.body, { key: 'PageDown', ctrlKey: true });
     await act(async () => { await Promise.resolve(); });
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
     tracker.dispose();
   });
 

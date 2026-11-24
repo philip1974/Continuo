@@ -8,6 +8,7 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
+import { createPortal } from 'react-dom';
 import { Modal } from '../../design/Modal';
 
 afterEach(() => cleanup());
@@ -124,3 +125,37 @@ describe('topic49 P1-AU · 叠加 Modal 的 Esc 只关栈顶', () => {
     }
   });
 });
+
+// 栈按文档分开:popout 子窗(另一 document)里的 Modal 与主窗 Modal 各自处理本文档的 Esc,互不屏蔽。
+describe('Modal 键盘栈按文档区分(popout 子窗)', () => {
+  it('子窗 Modal 先开、主窗 Modal 后开 → 子窗内 Esc 仍关子窗 Modal,主窗 Esc 关主窗 Modal', () => {
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    const childDoc = frame.contentDocument!;
+    const onCloseChild = vi.fn();
+    const onCloseMain = vi.fn();
+    render(
+      <>
+        {createPortal(
+          <Modal visible onClose={onCloseChild}>
+            <button type="button">child</button>
+          </Modal>,
+          childDoc.body,
+        )}
+        <Modal visible onClose={onCloseMain}>
+          <button type="button">main</button>
+        </Modal>
+      </>,
+    );
+    act(() => {
+      childDoc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onCloseChild).toHaveBeenCalledTimes(1);
+    expect(onCloseMain).not.toHaveBeenCalled();
+    pressEsc();
+    expect(onCloseMain).toHaveBeenCalledTimes(1);
+    cleanup(); // 先卸载 portal 再移除子文档
+    frame.remove();
+  });
+});
+

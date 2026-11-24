@@ -223,4 +223,21 @@ describe('workbench.action.nextEditor / previousEditor', () => {
     openAdjacentEditor(1);
     expect(useEditorStore.getState()).toBe(before);
   });
+
+  it('编辑器面板内按下一个 / 上一个的生效绑定 → 切换本编辑器 tab(popout 内同样生效),只切一次', async () => {
+    useEditorStore.setState({ tabs: [tab(A), tab(B), tab(C)], activeTabId: A });
+    mountWorkbench();
+    const editor = await screen.findByTestId('code-editor');
+    const next = detectPlatform() === 'mac' ? { key: 'ArrowRight', metaKey: true, altKey: true } : { key: 'PageDown', ctrlKey: true };
+    // 面板内就地处理并截住:popout 子窗不在全局分发的监听范围,只能靠面板自己处理;截住也保证主窗不重复切换。
+    const reachedDocument = vi.fn();
+    document.addEventListener('keydown', reachedDocument);
+    await act(async () => {
+      fireEvent.keyDown(editor, next);
+    });
+    document.removeEventListener('keydown', reachedDocument);
+    expect(useEditorStore.getState().activeTabId).toBe(B);
+    expect(reachedDocument).not.toHaveBeenCalled();
+  });
 });
+

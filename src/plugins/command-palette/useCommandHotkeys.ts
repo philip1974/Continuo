@@ -17,12 +17,11 @@ import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popou
 /**
  * dockview popout 子窗里也经热键分发的命令:只作用于子窗内的活动面板(dock 的 activePanel 随焦点落在子窗面板上),
  * 不在主窗画东西。mac 上 ⌘W 此前由应用菜单 role:'close' 关掉聚焦的子窗,改为 closeActiveEditor 后须在子窗分发。
- * 保存由编辑器面板自己的按键处理覆盖(popout 内同样生效),不在此列。id 与 editor-commands 一致(规范守护)。
+ * 保存与下一个 / 上一个编辑器由编辑器面板自己的按键处理覆盖(popout 内同样生效,且只作用于本编辑器 —— 放进这里时
+ * 编辑器不在该子窗会切到主窗编辑器、子窗里看不到变化),不在此列。id 与 editor-commands 一致(规范守护)。
  */
 export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.closeActiveEditor',
-  'workbench.action.nextEditor',
-  'workbench.action.previousEditor',
 ]);
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
