@@ -6,6 +6,7 @@ import {
   pickArgvPathCandidates,
   isWithinStartupPathLimit,
   MAX_STARTUP_DIRS,
+  MAX_STARTUP_DIR_CHECKS,
   MAX_STARTUP_DIR_PATH_LEN,
 } from '../../../electron/main/services/cli-args.service';
 
@@ -202,6 +203,8 @@ describe('运行期 open-file 目录判定不阻塞 main', () => {
     expect(siBody).toMatch(/pickArgvPathCandidates\(argv/);
     expect(siBody).not.toMatch(/isDirectorySync|statSync\(/);
     expect(siBody).toMatch(/openPathInNewWindow\(/);
+    // 逐个判定、按实际打开数封顶(不并发占满 openInFlight)。
+    expect(siBody).toMatch(/opened >= MAX_STARTUP_DIRS/);
   });
 
   it('并发开窗计数在异步判定之前占位(在途 stat 也计入上限)', () => {
@@ -230,6 +233,15 @@ describe('pickArgvPathCandidates', () => {
       }),
     ).toEqual(['/a', '/b']);
     expect(pickArgvPathCandidates(['electron', '/cwd', '/a'], { skipFirstArg: true })).toEqual(['/a']);
+  });
+
+  // 数量按检查预算(MAX_STARTUP_DIR_CHECKS)封顶,不是「命中」数:前面一批无效路径不挤掉后面的真目录
+  //(实际打开数由调用方逐个判定后按 MAX_STARTUP_DIRS 封顶)。
+  it('候选数按检查预算封顶:前 40 个无效路径之后的目录仍在候选里', () => {
+    const argv = ['Continuo', ...Array.from({ length: 40 }, (_, i) => `/nope${i}`), '/real'];
+    expect(pickArgvPathCandidates(argv, { skipFirstArg: false })).toContain('/real');
+    const many = ['Continuo', ...Array.from({ length: MAX_STARTUP_DIR_CHECKS + 10 }, (_, i) => `/p${i}`)];
+    expect(pickArgvPathCandidates(many, { skipFirstArg: false })).toHaveLength(MAX_STARTUP_DIR_CHECKS);
   });
 });
 

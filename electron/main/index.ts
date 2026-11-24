@@ -904,8 +904,15 @@ if (!gotLock) {
     // Windows/Linux:运行中通过 OS/CLI 传入的目录 argv(如 "用 Continuo 打开文件夹")
     // 此前被忽略 → 在已有实例里按目录打开新窗口(跨平台审计 P2)。只按形态取候选、不同步 stat
     //(运行期同步 stat 遇失联网络盘会冻结 main);是否目录由 openPathInNewWindow 的异步闸判定。
+    // 逐个判定(不并发占满 openInFlight),实际打开数封顶 MAX_STARTUP_DIRS(与冷启动同):无效候选不挤掉后面的目录。
     const candidates = pickArgvPathCandidates(argv, { skipFirstArg: !!process.defaultApp });
-    for (const candidate of candidates) void openPathInNewWindow(candidate);
+    void (async () => {
+      let opened = 0;
+      for (const candidate of candidates) {
+        if (opened >= MAX_STARTUP_DIRS) break;
+        if (await openPathInNewWindow(candidate)) opened += 1;
+      }
+    })();
     const wins = BrowserWindow.getAllWindows();
     if (wins[0]) {
       if (wins[0].isMinimized()) wins[0].restore();
@@ -944,24 +951,26 @@ pendingOpenPaths.push(
 // 大量目录或超长路径 → 对每个先同步 statSync + 批量 allocateWindowSeq/createMainWindow,主进程
 // 同步 I/O 卡顿 + 批量开窗。复用启动路径长度守卫(超长不 stat)+ 运行期并发开窗上限;目录判定已改异步。
 let openInFlight = 0;
-async function openPathInNewWindow(absPath: string): Promise<void> {
+/** 按目录开新窗口;返回是否打开了(非目录 / 非法 / 并发超限 → false)。 */
+async function openPathInNewWindow(absPath: string): Promise<boolean> {
   // 超长/非法路径先跳过,绝不对其 stat。
   if (!isWithinStartupPathLimit(absPath)) {
     console.warn('[open-file] dropping invalid/oversize path');
-    return;
+    return false;
   }
   // 运行期并发开窗上限:挡 open-file 事件洪水批量开窗(冷启动有 pickStartupMode 上限,运行期靠此)。
   if (openInFlight >= MAX_STARTUP_DIRS) {
     console.warn(
       `[open-file] too many concurrent opens (>= ${MAX_STARTUP_DIRS}), dropping`,
     );
-    return;
+    return false;
   }
   openInFlight += 1;
   try {
     // 运行期异步判定:同步 stat 遇慢挂载 / 失联网络盘会冻结整个 main(在途判定也计入 openInFlight)。
-    if (!(await isDirectory(absPath))) return; // 路径不存在 / 无权限 / 非目录 → 跳过
+    if (!(await isDirectory(absPath))) return false; // 路径不存在 / 无权限 / 非目录 → 跳过
     await openWorkspaceWindow(absPath);
+    return true;
   } finally {
     openInFlight -= 1;
   }

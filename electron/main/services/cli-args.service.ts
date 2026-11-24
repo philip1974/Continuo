@@ -60,15 +60,24 @@ export function collectExistingDirs(
 }
 
 /**
- * 运行期(second-instance)的 argv 路径候选:只按形态过滤(绝对路径、长度、去重、数量上限),**不** stat ——
- * 运行中的 main 同步 stat 遇失联网络盘 / 慢挂载会冻结整个 main;目录判定交给调用方的异步闸(openPathInNewWindow)。
+ * 运行期(second-instance)的 argv 路径候选:只按形态过滤(绝对路径、长度、去重),**不** stat —— 运行中的 main 同步
+ * stat 遇失联网络盘 / 慢挂载会冻结整个 main;目录判定交给调用方逐个异步判定。数量按与冷启动相同的检查预算
+ *(MAX_STARTUP_DIR_CHECKS)封顶,调用方再按 MAX_STARTUP_DIRS 封顶「实际打开」数(前面的无效路径不挤掉后面的目录)。
  * 冷启动仍用 pickArgvFolders(启动期同步判定决定开哪些窗口)。
  */
 export function pickArgvPathCandidates(
   argv: readonly string[],
   opts: { readonly skipFirstArg: boolean },
 ): string[] {
-  return collectExistingDirs(absoluteArgvCandidates(argv, opts.skipFirstArg ? 2 : 1), () => true);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of absoluteArgvCandidates(argv, opts.skipFirstArg ? 2 : 1)) {
+    if (out.length >= MAX_STARTUP_DIR_CHECKS) break;
+    if (!isWithinStartupPathLimit(p) || seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
+  }
+  return out;
 }
 
 /** argv[start..] 中的绝对路径(相对路径不进 stat)。边界(E192):索引遍历原 argv,不 slice 物化尾部。 */

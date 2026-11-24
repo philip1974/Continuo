@@ -13,7 +13,7 @@
 //   mount 顺序里旧 Provider 卸载清新单例)。
 
 import type { NotificationLevel } from './types';
-// 边界(E311):本地 notify 路径与 SDK(co-app)对称限长,单一来源常量。
+// 边界(E311):所有通知(本地与 SDK co-app)的限长只在 notifyCore 一处做,上限取共享常量。
 import {
   NOTIFY_MESSAGE_MAX,
   NOTIFY_CODE_MAX,

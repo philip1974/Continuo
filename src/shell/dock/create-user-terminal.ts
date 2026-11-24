@@ -18,6 +18,17 @@ import { setPendingFocus } from './DockReconciler';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 
 /**
+ * 新终端的 COLORFGBG(「前景;背景」ANSI 色号):让 P10k 等 prompt 框架启动时检测到当前主题亮度。读 <html> 的 .dark
+ *(ThemeProvider 的切换结果)。已在跑的 PTY 不会因主题切换而重渲。所有新建入口经此统一带上(此前只有 Explorer
+ *「在终端中打开」传,Cmd+T / Dock 头部新建在浅色主题下拿不到背景亮度)。
+ */
+export function terminalColorFgBg(): string {
+  // 无 DOM(非 renderer 环境)按默认暗色主题。
+  const dark = typeof document === 'undefined' || document.documentElement.classList.contains('dark');
+  return dark ? '15;0' : '0;15';
+}
+
+/**
  * 新建一个 user terminal,返回新 terminal id(失败返 null)。
  *
  * 流程:
@@ -31,16 +42,6 @@ import { errorCodeOf } from '../../../electron/shared/error-message';
  *
  * UI 收尾(关闭菜单等)由调用方自理。
  */
-/**
- * 新终端的 COLORFGBG(「前景;背景」ANSI 色号):让 P10k 等 prompt 框架启动时检测到当前主题亮度。读 <html> 的 .dark
- *(ThemeProvider 的切换结果)。已在跑的 PTY 不会因主题切换而重渲。所有新建入口经此统一带上(此前只有 Explorer
- *「在终端中打开」传,Cmd+T / Dock 头部新建在浅色主题下拿不到背景亮度)。
- */
-export function terminalColorFgBg(): string {
-  // 无 DOM(非 renderer 环境)按默认暗色主题。
-  const dark = typeof document === 'undefined' || document.documentElement.classList.contains('dark');
-  return dark ? '15;0' : '0;15';
-}
 
 export async function createUserTerminal(
   opts: { readonly cwd?: string } = {},
