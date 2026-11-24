@@ -465,6 +465,16 @@ async function resolveContainedPluginMain(dir: string, mainName: string): Promis
   return { ok: true, mainPath, stat };
 }
 
+/** manifest 文本里的 id(字符串);解析失败 / 缺失 → null(manifest 错误由 renderer 端 parseManifest 报)。 */
+function manifestIdFromText(manifestText: string): string | null {
+  try {
+    const id = (JSON.parse(manifestText) as { id?: unknown } | null)?.id;
+    return typeof id === 'string' ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 /** manifest 文本里的入口名;解析失败按默认 main.js(manifest 错误由 renderer 端 parseManifest 报)。 */
 function mainNameFromManifestText(manifestText: string): string {
   try {
@@ -527,6 +537,15 @@ async function readOnePluginDirMeta(
 ): Promise<IpcPluginDirListing | null> {
   const m = await readPluginManifestText(baseDir, name);
   if (m === null) return null;
+  // 「插件目录 = plugins/<manifest.id>/」是 main 与 renderer 的唯一契约:main 的卸载 / 授权写入 / saveData / scope 持久化
+  // 都按 manifest.id 定位目录,renderer 却按 manifest.id 认插件、按目录名读 main。目录名 ≠ id(手动 git clone 成
+  // `hello-plugin/`)时插件照常激活,而授权报 NOT_INSTALLED、无法卸载、saveData 总失败,市场更新再建出第二份。
+  // 列举时跳过并告警(manifest 解析失败不在此判,交 renderer 报 manifest 错误)。
+  const declaredId = manifestIdFromText(m.manifestText);
+  if (declaredId !== null && declaredId !== name) {
+    warnSkippedMain(m.dir, `dir-name-mismatch(manifest id "${declaredId.slice(0, 128)}")`);
+    return null;
+  }
   if (!(await isPluginMainAvailable(m.dir, m.manifestText))) return null;
   return { id: name, manifestText: m.manifestText, manifestHash: pluginManifestHash(m.manifestText) };
 }

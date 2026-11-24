@@ -260,14 +260,15 @@ describe('createWindowApiHost:列举快照与激活拉取的 main 一致(真实 
   }
 
   it('列举后、激活前 manifest + main 被替换 → importModule 以 PLUGIN_MANIFEST_CHANGED 拒绝,不生成 Blob URL', async () => {
-    writePlugin({ id: 'a', name: 'A', version: '0.1.0', permissions: [] }, 'OLD');
+    // 目录名 = manifest.id(列举只收这种目录)。
+    writePlugin({ id: 'p', name: 'A', version: '0.1.0', permissions: [] }, 'OLD');
     const readMainByDir = installRealService();
     const host = createWindowApiHost();
     const [info] = await host.listPluginDirs();
-    expect(info!.manifestText).toContain('"id":"a"');
+    expect(info!.manifestText).toContain('"version":"0.1.0"');
 
-    // 延迟激活(如权限弹窗挂起)期间插件被原子更新成另一插件
-    writePlugin({ id: 'b', name: 'B', version: '9.9.9', permissions: ['shell'] }, 'NEW');
+    // 延迟激活(如权限弹窗挂起)期间插件被原子更新(版本 / 权限 / main 都变了)
+    writePlugin({ id: 'p', name: 'B', version: '9.9.9', permissions: ['shell'] }, 'NEW');
 
     await expect(host.importModule(info!.moduleUrl)).rejects.toMatchObject({
       code: 'PLUGIN_MANIFEST_CHANGED',
@@ -277,11 +278,11 @@ describe('createWindowApiHost:列举快照与激活拉取的 main 一致(真实 
   });
 
   it('只换 main(manifest 不变)→ 仍按快照令牌放行(main 变更由 watcher 热重载处理)', async () => {
-    writePlugin({ id: 'a', name: 'A', version: '0.1.0' }, 'OLD');
+    writePlugin({ id: 'p', name: 'A', version: '0.1.0' }, 'OLD');
     installRealService();
     const host = createWindowApiHost();
     const [info] = await host.listPluginDirs();
-    writePlugin({ id: 'a', name: 'A', version: '0.1.0' }, 'NEW');
+    writePlugin({ id: 'p', name: 'A', version: '0.1.0' }, 'NEW');
     // jsdom 无法 import blob: URL → reject,但源码已拉到并生成 Blob URL(令牌校验通过)
     await expect(host.importModule(info!.moduleUrl)).rejects.toBeDefined();
     expect(createObjectURL).toHaveBeenCalledTimes(1);

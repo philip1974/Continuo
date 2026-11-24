@@ -395,10 +395,10 @@ describe('readPluginMainByDir', () => {
   // P1:列举快照(manifest:id / 权限 / 入口)与激活时读到的 main 必须出自同一 manifest 版本。列举项带
   // manifestHash 令牌;读 main 前后各校验一次当前 manifest,不一致 → 抛 PLUGIN_MANIFEST_CHANGED(拒绝激活)。
   it('令牌与当前 manifest 不一致(列举后插件被更新)→ 抛 PLUGIN_MANIFEST_CHANGED,不返回新 main', async () => {
-    makeDir('upd', { id: 'a', name: 'A', version: '0.1.0' }, 'OLD');
+    makeDir('upd', { id: 'upd', name: 'A', version: '0.1.0' }, 'OLD');
     const [listed] = await listPluginDirs(tmp);
-    // 列举后、激活前:目录被更新为另一个插件(id / main 都变了)
-    makeDir('upd', { id: 'b', name: 'B', version: '0.2.0' }, 'NEW');
+    // 列举后、激活前:目录被更新(manifest / main 都变了)
+    makeDir('upd', { id: 'upd', name: 'B', version: '0.2.0' }, 'NEW');
     await expect(readPluginMainByDir(tmp, 'upd', listed!.manifestHash)).rejects.toMatchObject({
       code: 'PLUGIN_MANIFEST_CHANGED',
     });
@@ -407,12 +407,12 @@ describe('readPluginMainByDir', () => {
   });
 
   it('读 main 期间 manifest 被替换(读前校验已通过)→ 读后复核抛 PLUGIN_MANIFEST_CHANGED', async () => {
-    makeDir('race', { id: 'a', name: 'A', version: '0.1.0' }, 'OLD');
+    makeDir('race', { id: 'race', name: 'A', version: '0.1.0' }, 'OLD');
     const [listed] = await listPluginDirs(tmp);
     const realOpen = fsp.open.bind(fsp);
     vi.spyOn(fsp, 'open').mockImplementation(async (...args: Parameters<typeof fsp.open>) => {
       if (String(args[0]).endsWith('main.js')) {
-        writeFileSync(join(tmp, 'race', 'manifest.json'), JSON.stringify({ id: 'b', name: 'B', version: '1' }));
+        writeFileSync(join(tmp, 'race', 'manifest.json'), JSON.stringify({ id: 'race', name: 'B', version: '1' }));
       }
       return realOpen(...args);
     });
@@ -1038,3 +1038,17 @@ describe('插件元数据表 plugin key 上限:读写同一共享常量', () => 
     ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
   });
 });
+
+// 「插件目录 = plugins/<manifest.id>/」:目录名 ≠ id(手动 git clone 成 `hello-plugin/`)时 main 的卸载 / 授权 / saveData
+// 都按 id 找不到目录 → 列举跳过并告警(不让 renderer 激活一个写入全部报「未安装」的插件)。
+describe('listPluginDirs · 目录名与 manifest.id 不一致', () => {
+  it('跳过并告警;一致的照常列出;manifest 无法解析的不在此跳过(交 renderer 报错)', async () => {
+    makeDir('hello-plugin', { id: 'com.example.hello', name: 'H', version: '0.1.0' });
+    makeDir('com.example.ok', { id: 'com.example.ok', name: 'O', version: '0.1.0' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ids = (await listPluginDirs(tmp)).map((d) => d.id);
+    expect(ids).toEqual(['com.example.ok']);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('dir-name-mismatch'))).toBe(true);
+  });
+});
+
