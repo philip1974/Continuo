@@ -64,15 +64,23 @@ describe('KeybindingsTabContent — 列表', () => {
     expect(src).toContain('{RESET_HOTKEY_ICON}');
   });
 
-  it('一条命令都没注册 → 「暂无注册了快捷键的命令」', () => {
+  it('一条命令都没注册 → 「暂无命令」', () => {
     const { container } = render(<KeybindingsTabContent />);
-    expect(container.textContent).toContain('暂无注册了快捷键的命令');
+    expect(container.textContent).toContain('暂无命令');
   });
 
-  it('注册的命令都没 hotkey → 仍空态', () => {
-    coApp.commands.register({ id: 'a', title: 'A', fn: vi.fn() });
+  // 对齐 VSCode 键盘快捷方式编辑器:列出全部命令,无默认快捷键的显示「未绑定」并可直接录键。
+  it('无默认快捷键的命令也列出:显示「未绑定」+ 编辑按钮可录键', () => {
+    coApp.commands.register({ id: 'a', title: 'Plain Cmd', fn: vi.fn() });
     const { container } = render(<KeybindingsTabContent />);
-    expect(container.textContent).toContain('暂无注册了快捷键的命令');
+    const row = Array.from(container.querySelectorAll('li')).find((li) =>
+      li.textContent?.includes('Plain Cmd'),
+    );
+    expect(row).toBeDefined();
+    expect(row!.textContent).toContain('未绑定');
+    const edit = row!.querySelector<HTMLButtonElement>('button[aria-label*="编辑"]')!;
+    fireEvent.click(edit);
+    expect(document.querySelector('.wm-modal-content')).not.toBeNull();
   });
 
   it('有 hotkey 的命令 → 列出 + 显示 hotkey 切片', () => {
@@ -239,7 +247,7 @@ describe('KeybindingsTabContent — 搜索', () => {
     }
   });
 
-  it('过滤掉无 hotkey/override 命令时返回新数组', () => {
+  it('空 query 时无 hotkey 命令同样可见(列出全部命令,复用输入引用)', () => {
     const visible = {
       cmd: {
         id: 'a',
@@ -269,9 +277,8 @@ describe('KeybindingsTabContent — 搜索', () => {
     } satisfies DisplayCommand;
     const commands = [visible, hidden] satisfies readonly DisplayCommand[];
 
-    const selected = selectVisibleKeybindingCommands(commands, '');
-    expect(selected).not.toBe(commands);
-    expect(selected).toEqual([visible]);
+    expect(selectVisibleKeybindingCommands(commands, '')).toBe(commands);
+    expect(selectVisibleKeybindingCommands(commands, 'no hotkey')).toEqual([hidden]);
   });
 
   it('单个分组单个命令时走快路径,不构造 Map 且不调用 sort', () => {
@@ -405,7 +412,7 @@ describe('KeybindingsTabContent — 搜索', () => {
 });
 
 describe('KeybindingsTabContent — override', () => {
-  it('未 override → reset 按钮 invisible', () => {
+  it('未 override → reset 按钮宽时 invisible 占位、列表窄(@max-md)时 hidden 不占宽', () => {
     coApp.commands.register({
       id: 'a',
       title: 'A',
@@ -417,6 +424,7 @@ describe('KeybindingsTabContent — override', () => {
       'button[aria-label*="恢复默认"]',
     ) as HTMLButtonElement;
     expect(resetBtn.className).toContain('invisible');
+    expect(resetBtn.className).toContain('@max-md:hidden');
   });
 
   it('已 override → reset 可见 + 点击调 store.reset', () => {
@@ -432,6 +440,7 @@ describe('KeybindingsTabContent — override', () => {
       'button[aria-label*="恢复默认"]',
     ) as HTMLButtonElement;
     expect(resetBtn.className).not.toContain('invisible');
+    expect(resetBtn.className).not.toContain('hidden');
     fireEvent.click(resetBtn);
     expect(useKeybindingsStore.getState().overrides.a).toBeUndefined();
   });
@@ -574,7 +583,7 @@ describe('KeybindingsTabContent — registry 订阅', () => {
 });
 
 describe('KeybindingsTabContent — 计数', () => {
-  it('显示有 hotkey 的命令总数', () => {
+  it('统计「共 N 个命令,M 个已绑定」(按生效快捷键计;解绑的不算已绑定)', () => {
     coApp.commands.register({
       id: 'a',
       title: 'A',
@@ -588,7 +597,19 @@ describe('KeybindingsTabContent — 计数', () => {
       fn: vi.fn(),
     });
     coApp.commands.register({ id: 'c', title: 'C', fn: vi.fn() });
+    coApp.commands.register({ id: 'd', title: 'D', fn: vi.fn() });
+    useKeybindingsStore.setState({ overrides: { b: '', c: 'mod+c' } });
     const { container } = render(<KeybindingsTabContent />);
-    expect(container.textContent).toMatch(/共\s*2\s*个/);
+    expect(container.textContent).toContain('共 4 个命令，2 个已绑定');
+  });
+
+  // 窄宽(ko 640)下命令面板键帽 ⇧⌘ 与 P 不得被拆到两行:键帽组整体不换行。
+  it('命令面板提示的键帽组 inline-flex + whitespace-nowrap', () => {
+    coApp.commands.register({ id: 'a', title: 'A', hotkey: 'mod+a', fn: vi.fn() });
+    const { container } = render(<KeybindingsTabContent />);
+    const caps = container.querySelector('[data-testid="keybindings-palette-keys"]')!;
+    expect(caps.className).toContain('inline-flex');
+    expect(caps.className).toContain('whitespace-nowrap');
+    expect(caps.querySelectorAll('.wm-keycap').length).toBeGreaterThanOrEqual(2);
   });
 });

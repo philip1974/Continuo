@@ -35,7 +35,7 @@ export const SYSTEM_THEME = /^(跟随系统|System|시스템)$/;
 export const AUTO_SAVE_MARKDOWN =
   /^(自动保存 Markdown|Auto-save Markdown|Markdown 자동 저장)$/;
 export const KEYBINDINGS_TOTAL_SUMMARY =
-  /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
+  /(共\s*\d+\s*个命令[,，]\d+\s*个已绑定|\d+\s*commands, \d+ bound|명령어\s*\d+개, \d+개 바인딩됨)/;
 export const EDIT_HOTKEY_SELECTOR = [
   '[title="编辑快捷键"]',
   '[title="Edit hotkey"]',

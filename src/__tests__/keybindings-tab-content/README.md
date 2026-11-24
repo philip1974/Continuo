@@ -1,9 +1,9 @@
 # KeybindingsTabContent(快捷键参考表 SettingTab)
 
-行为契约:**列出 commands registry 中所有「有 hotkey 或显式 unbind 但有默认」的命令,
+行为契约:**列出 commands registry 中的全部命令(对齐 VSCode 键盘快捷方式编辑器;无快捷键的显示「未绑定」,可直接录键),
 按 category 分组(空 category → 「其他」)。展示 title / id chip / hotkey KeyCap,
 点击编辑 → 弹 KeybindingCaptureModal,onSave → store.setHotkey,onReset → store.reset。
-搜索框过滤 title/category/id/hotkey。无匹配 → 空状态文案;一条都没注册 → 「暂无注册了快捷键的命令」。**
+搜索框过滤 title/category/id/hotkey。无匹配 → 空状态文案;一条都没注册 → 「暂无命令」。**
 
 ## 模块
 
@@ -18,8 +18,9 @@
 
 ### 列表组成
 
-- 包含:`hotkey` 存在,**或** id 在 overrides 中(允许用户改回)
-- 不包含:从未注册 hotkey + 没改过
+- 全部命令(含从未注册 hotkey 的);无生效快捷键(无默认 / 显式解绑)显示「未绑定」
+- 统计行:「共 N 个命令，M 个已绑定」(M 按生效快捷键计,解绑不算)+「也可用 ⇧⌘P 在命令面板中搜索执行」;
+  键帽组 `inline-flex whitespace-nowrap`,窄宽不拆行
 
 ### 分组
 
@@ -35,12 +36,12 @@
 
 ### 空态
 
-- totalWithHotkey=0 → 「暂无注册了快捷键的命令」
+- 命令数=0 → 「暂无命令」
 - query 过滤后空 → 「无匹配命令」
 
 ### override 显示
 
-- 行末 reset 按钮 invisible(未 override)/ visible(override 中)
+- 行末 reset 按钮:未 override 时宽 invisible 占位、列表窄(`@max-md`)时 hidden 让出宽度;override 中始终可见
 - 点 reset → store.reset(cmd.id)
 - reset 提示「恢复默认(…)」里的默认快捷键用与键帽同一格式化(⇧ ⌘ ↵ / Shift Ctrl Enter),不显示原始串
 

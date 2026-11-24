@@ -161,6 +161,11 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return el.isContentEditable === true;
 }
 
+/**
+ * 预编译分发表。同一按键命中多条时 handler 取表中第一条,故顺序即优先级(对齐 VSCode:用户绑定压过默认):
+ * 先放有用户 override 的命令,再放默认绑定的命令;同一层内保持注册顺序。设置页的「冲突」标注
+ *(selectShadowedBindings)基于同一张表,两者不会分叉。
+ */
 export function buildCompiledBindings(
   commands: readonly CommandSpec[],
   platform: Platform,
@@ -168,19 +173,49 @@ export function buildCompiledBindings(
 ): readonly CompiledBinding[] {
   let out: CompiledBinding[] | undefined;
   let count = 0;
-  for (const cmd of commands) {
-    // 保留键(⌘P / ⌘⇧P 归 Quick Open / 命令面板)上的绑定(升级前已存的 override / 插件默认 hotkey)视为未绑定:
-    // 不入表,否则一键两动作(同 document 监听 stopPropagation 拦不住)。设置页对该行标注未生效。
-    const effective = resolveActiveHotkey(cmd, overrides, platform);
-    if (!effective) continue; // 无 hotkey、显式 unbind 或落在保留键
-    const sig = compileCombo(effective, platform);
-    if (!sig) continue; // 未知修饰符 → 不可匹配,不入表
-    out ??= new Array<CompiledBinding>(commands.length);
-    out[count++] = { sig, cmd };
+  for (let pass = 0; pass < 2; pass++) {
+    const userTier = pass === 0;
+    for (const cmd of commands) {
+      if (Object.hasOwn(overrides, cmd.id) !== userTier) continue; // 只认自有属性(toString 等命令 id)
+      // 保留键(⌘P / ⌘⇧P 归 Quick Open / 命令面板)上的绑定(升级前已存的 override / 插件默认 hotkey)视为未绑定:
+      // 不入表,否则一键两动作(同 document 监听 stopPropagation 拦不住)。设置页对该行标注未生效。
+      const effective = resolveActiveHotkey(cmd, overrides, platform);
+      if (!effective) continue; // 无 hotkey、显式 unbind 或落在保留键
+      const sig = compileCombo(effective, platform);
+      if (!sig) continue; // 未知修饰符 → 不可匹配,不入表
+      out ??= new Array<CompiledBinding>(commands.length);
+      out[count++] = { sig, cmd };
+    }
   }
   if (!out) return EMPTY_COMPILED_BINDINGS;
   out.length = count;
   return out;
+}
+
+function signatureKey(sig: ComboSignature): string {
+  return `${sig.wantMeta ? 'm' : ''}${sig.wantCtrl ? 'c' : ''}${sig.wantAlt ? 'a' : ''}${sig.wantShift ? 's' : ''}+${sig.key}`;
+}
+
+const EMPTY_SHADOWED: ReadonlyMap<string, CommandSpec> = new Map();
+
+/**
+ * 冲突落败的命令 id → 实际响应该按键的命令。与分发同一张表(buildCompiledBindings)、同一签名(修饰键 + 主键别名
+ * 归一)判定:表中同签名的第一条胜出,其余落败。保留键 / 解绑 / 未知修饰符不入表,不算冲突。
+ */
+export function selectShadowedBindings(
+  commands: readonly CommandSpec[],
+  platform: Platform,
+  overrides: Readonly<Record<string, string>>,
+): ReadonlyMap<string, CommandSpec> {
+  const winners = new Map<string, CommandSpec>();
+  let shadowed: Map<string, CommandSpec> | null = null;
+  for (const b of buildCompiledBindings(commands, platform, overrides)) {
+    const key = signatureKey(b.sig);
+    const winner = winners.get(key);
+    if (winner === undefined) winners.set(key, b.cmd);
+    else (shadowed ??= new Map()).set(b.cmd.id, winner);
+  }
+  return shadowed ?? EMPTY_SHADOWED;
 }
 
 function createHotkeyHandler(

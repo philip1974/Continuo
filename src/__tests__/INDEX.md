@@ -825,6 +825,10 @@
 
 - [`keybinding-capture-modal.spec.tsx`](./keybinding-capture-modal/keybinding-capture-modal.spec.tsx)
 
+## [keybinding-user-priority](./keybinding-user-priority/README.md)
+
+- [`keybinding-user-priority.spec.tsx`](./keybinding-user-priority/keybinding-user-priority.spec.tsx)
+
 ## [keybindings-store](./keybindings-store/)
 
 - [`keybindings-store.spec.ts`](./keybindings-store/keybindings-store.spec.ts)

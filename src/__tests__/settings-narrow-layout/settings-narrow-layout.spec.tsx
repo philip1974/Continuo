@@ -150,10 +150,10 @@ describe('KeybindingsTabContent — 窄宽命令行', () => {
     expect(li.querySelector('button[aria-label*="Find in Terminal"]')).not.toBeNull();
   });
 
-  it('顶部提示行可换行', () => {
+  it('顶部提示行可换行(键帽组自身不拆行,见 keybindings-tab-content)', () => {
     const { container } = render(<KeybindingsTabContent />);
-    const kbd = container.querySelector('.wm-keycap, kbd');
-    expect(classesOf(kbd?.parentElement)).toContain('flex-wrap');
+    const keys = container.querySelector('[data-testid="keybindings-palette-keys"]');
+    expect(classesOf(keys?.parentElement)).toContain('flex-wrap');
   });
 });
 

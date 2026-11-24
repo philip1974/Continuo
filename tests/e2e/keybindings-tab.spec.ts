@@ -3,17 +3,17 @@ import { test, expect } from './fixtures/electron-app';
 import { KEYBINDINGS_TAB, openSettingsTab } from './helpers/settings';
 
 const KEYBINDINGS_TOTAL =
-  /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
+  /(共\s*\d+\s*个命令[,，]\d+\s*个已绑定|\d+\s*commands, \d+ bound|명령어\s*\d+개, \d+개 바인딩됨)/;
 const EDIT_HOTKEY = /编辑.*快捷键|Edit hotkey|단축키 편집/;
 const RESET_DEFAULT_ARIA =
   'button[aria-label*="恢复默认"], button[aria-label*="default"], button[aria-label*="기본값"]';
 const SEARCH_COMMANDS = /^(搜索命令名|Search commands|명령어)/;
 const NO_MATCHING_COMMAND = /^(无匹配命令|No matching command|일치하는 명령어 없음)$/;
 
-test('快捷键 tab 列出有 hotkey 的命令 + 计数', async ({ window }) => {
+test('快捷键 tab 列出全部命令 + 计数', async ({ window }) => {
   await openSettingsTab(window, KEYBINDINGS_TAB);
 
-  // 「共 N 个有快捷键的命令」
+  // 「共 N 个命令，M 个已绑定」
   await expect(window.getByText(KEYBINDINGS_TOTAL)).toBeVisible({
     timeout: 10_000,
   });

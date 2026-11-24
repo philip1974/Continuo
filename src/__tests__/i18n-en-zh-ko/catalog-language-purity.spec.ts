@@ -66,9 +66,9 @@ describe('i18n 文案语言纯净', () => {
     expect(cjk).toEqual([]);
   });
 
-  it('点名回归:zh「切换设置」「切换资源管理器侧栏」「无快捷键的命令请用」', () => {
+  it('点名回归:zh「切换设置」「切换资源管理器侧栏」「在命令面板中搜索执行」', () => {
     expect(zh['commands.settings.toggle.title']).toBe('切换设置');
     expect(zh['settings.explorer.toggle_sidebar']).toBe('切换资源管理器侧栏');
-    expect(zh['keybindings.total_summary_prefix']).toContain('无快捷键的命令请用');
+    expect(zh['keybindings.palette_hint_suffix']).toContain('命令面板');
   });
 });

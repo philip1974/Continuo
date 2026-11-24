@@ -92,7 +92,8 @@ describe('打磨 R26 — 命令 hotkey 预编译', () => {
     const bindings = buildCompiledBindings(commands, 'other', { c: 'mod+c' });
 
     expect(bindings).toHaveLength(2);
-    expect(bindings.map((binding) => binding.cmd.id)).toEqual(['a', 'c']);
+    // 用户 override 的命令排前(用户绑定优先于默认,见 keybinding-user-priority)。
+    expect(bindings.map((binding) => binding.cmd.id)).toEqual(['c', 'a']);
     expect(getEffSpy).not.toHaveBeenCalled();
   });
 

@@ -16,7 +16,7 @@ import {
   KeybindingsTabContent,
   buildKeybindingDisplayCommands,
   buildCommandSearchHaystack,
-  countDefaultHotkeys,
+  countBoundCommands,
   groupByCategory,
   hasCommandId,
   keybindingRowClassName,
@@ -52,7 +52,7 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     expect(src).not.toContain("formatHotkeyParts('mod+shift+p', PLATFORM).map");
   });
 
-  it('displayCommands 构造时跳过无 hotkey/override 的命令,不调用 allCommands.map', () => {
+  it('displayCommands 列出全部命令(含无 hotkey 的,对齐 VSCode),不调用 allCommands.map', () => {
     const commands = [
       { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
       { id: 'toggle', title: 'Toggle', category: 'View', fn: vi.fn() },
@@ -66,13 +66,17 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     try {
       const out = buildKeybindingDisplayCommands(commands, tk, { toggle: 'mod+t' }, 'other');
 
-      expect(out.map((d) => d.cmd.id)).toEqual(['save', 'toggle']);
+      expect(out.map((d) => d.cmd.id)).toEqual(['save', 'toggle', 'plain-a', 'plain-b']);
       expect(out[0]?.hotkeyParts).toEqual(['Ctrl', 'S']);
       expect(out[1]?.effectiveHotkey).toBe('mod+t');
       expect(out[1]?.isOverridden).toBe(true);
       expect(out[1]?.searchHaystack).toContain('mod+t');
+      expect(out[2]?.effectiveHotkey).toBeUndefined();
+      expect(out[2]?.hotkeyParts).toEqual([]);
       expect(getEffSpy).not.toHaveBeenCalled();
-      expect(tk.mock.calls.map((call) => call[1])).toEqual(['Save', '', 'Toggle', 'View']);
+      expect(tk.mock.calls.map((call) => call[1])).toEqual([
+        'Save', '', 'Toggle', 'View', 'Plain A', '', 'Plain B', '',
+      ]);
       expect(mapSpy).not.toHaveBeenCalled();
     } finally {
       mapSpy.mockRestore();
@@ -91,34 +95,21 @@ describe('打磨 R29 — Keybindings hotkey 预计算', () => {
     expect(getEffSpy).not.toHaveBeenCalled();
   });
 
-  it('没有可显示命令时复用稳定空 displayCommands,不预分配结果数组', () => {
-    const commands = [
-      { id: 'plain-a', title: 'Plain A', fn: vi.fn() },
-      { id: 'plain-b', title: 'Plain B', fn: vi.fn() },
-    ];
-    const tk = vi.fn((_key: string | undefined, fallback: string) => fallback);
-
-    const out = buildKeybindingDisplayCommands(commands, tk, {}, 'other');
-
-    expect(out).toBe(
-      buildKeybindingDisplayCommands(commands, tk, {}, 'mac'),
+  it('统计已绑定命令数时不通过 filter(...).length 生成中间数组(按生效快捷键,解绑不算)', () => {
+    const commands = buildKeybindingDisplayCommands(
+      [
+        { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
+        { id: 'open', title: 'Open', fn: vi.fn() },
+        { id: 'find', title: 'Find', hotkey: 'mod+f', fn: vi.fn() },
+      ],
+      (_key, fallback) => fallback,
+      { find: '' },
+      'other',
     );
-    expect(tk).not.toHaveBeenCalled();
-    expect(buildKeybindingDisplayCommands.toString()).not.toMatch(
-      /const out = new Array\(allCommands\.length\)/,
-    );
-  });
-
-  it('统计默认 hotkey 数量时不通过 filter(...).length 生成中间数组', () => {
-    const commands = [
-      { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
-      { id: 'open', title: 'Open', fn: vi.fn() },
-      { id: 'find', title: 'Find', hotkey: 'mod+f', fn: vi.fn() },
-    ];
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
 
     try {
-      expect(countDefaultHotkeys(commands)).toBe(2);
+      expect(countBoundCommands(commands)).toBe(1);
       expect(filterSpy.mock.contexts.some((ctx) => ctx === commands)).toBe(false);
     } finally {
       filterSpy.mockRestore();

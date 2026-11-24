@@ -11,7 +11,7 @@ const THEME = /^(主题|Theme|테마)$/;
 const FONT_SIZE = /^(字号|Font size|글꼴 크기)$/;
 const CURSOR_STYLE = /^(光标样式|Cursor style|커서 스타일)$/;
 const KEYBINDINGS_TOTAL =
-  /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
+  /(共\s*\d+\s*个命令[,，]\d+\s*个已绑定|\d+\s*commands, \d+ bound|명령어\s*\d+개, \d+개 바인딩됨)/;
 const REGISTERED_CONTRIBUTIONS =
   /^(已注册贡献点|Registered contribution points|등록된 기여 항목)$/;
 

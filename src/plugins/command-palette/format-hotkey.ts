@@ -156,6 +156,15 @@ export function canonicalHotkey(combo: string, platform: Platform): string {
   );
 }
 
+/**
+ * 快捷键的「修饰键固定顺序英文名」(非 mac ctrl+shift+t;mac cmd+shift+t / option+…)。设置 › 快捷键的搜索文本含它,
+ * 按快捷键过滤列表(录键弹窗点冲突项)也用它作搜索串 —— 与注册串的段序 / 别名无关。
+ */
+export function hotkeyFilterQuery(hotkey: string, platform: Platform): string {
+  const named = canonicalHotkey(hotkey, platform);
+  return platform === 'mac' ? named.replace('meta+', 'cmd+').replace('alt+', 'option+') : named;
+}
+
 const EMPTY_HOTKEY_PARTS: string[] = [];
 
 function formatPart(part: string, platform: Platform): string {

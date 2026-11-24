@@ -1,16 +1,16 @@
 // 快捷键参考表(Settings → 快捷键 tab)。
-// 订阅 commands registry,只列有 hotkey 的命令,按 category 分组。
+// 订阅 commands registry,列出全部命令(对齐 VSCode 键盘快捷方式编辑器:无快捷键的显示「未绑定」,可直接录键),按 category 分组。
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
 
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Badge, IconButton, Input, KeyCap } from '@/design';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import {
-  canonicalHotkey,
   formatHotkey,
+  hotkeyFilterQuery,
   formatHotkeyParts,
   detectPlatform,
   type Platform,
@@ -29,6 +29,7 @@ import { isSortedBy } from '@/lib/is-sorted-by';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { byDisplayTitle } from '@/plugins/command-palette/by-display-title';
 import { reservedPickerHotkeyOf } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { selectShadowedBindings } from '@/plugins/command-palette/useCommandHotkeys';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -37,7 +38,7 @@ const KEYBINDING_ROW_CLASS_NAME = 'flex items-center gap-3 px-4 py-3 text-xs';
 const KEYBINDING_ROW_BORDER_CLASS_NAME = `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
 // 命令标题占据剩余宽度并可省略号截断(flex-1);flex-1 的 basis 为 0,空间不足时标题会先于徽标被挤成 0 宽,
 // 故给最小宽度 6rem,让 id 徽标(min-w-0,最多占 40%)先收缩;列表窄于 28rem 时徽标隐藏;键帽 / 编辑 /
-// 重置按钮均 shrink-0 始终完整可见。
+// 重置按钮均 shrink-0 始终完整可见。未覆盖时的重置按钮宽时 invisible 占位(各行键帽列对齐),窄时 hidden 让出宽度给标题。
 export const KEYBINDING_TITLE_CLASS_NAME = 'min-w-[6rem] flex-1 truncate text-sm text-fg';
 export const KEYBINDING_ID_BADGE_CLASS_NAME =
   'min-w-0 max-w-[40%] uppercase tracking-wider @max-md:hidden';
@@ -60,7 +61,7 @@ export interface DisplayCommand {
   readonly cmd: CommandSpec;
   readonly displayTitle: string;
   readonly displayCategory: string;
-  /** 预计算的 effective hotkey(含 user override;无则 undefined)(打磨 R29). */
+  /** 预计算的 effective hotkey(含 user override;无 / 解绑则 undefined)(打磨 R29). */
   readonly effectiveHotkey: string | undefined;
   /** 预计算的 hotkey 段(无则空数组). */
   readonly hotkeyParts: readonly string[];
@@ -137,7 +138,7 @@ export function selectVisibleKeybindingCommands(
 
   for (let i = 0; i < commands.length; i++) {
     const d = commands[i]!;
-    const visible = (d.cmd.hotkey || d.isOverridden) && (!hasQuery || matches(d, qLower));
+    const visible = !hasQuery || matches(d, qLower);
     if (!visible) {
       if (selected === null) {
         selected = new Array<DisplayCommand>(commands.length);
@@ -170,18 +171,14 @@ export function buildCommandSearchHaystack(
  * 都搜不到。两平台对称。
  */
 export function hotkeySearchText(hotkey: string, platform: Platform): string {
-  const display = formatHotkey(hotkey, platform);
-  let named = canonicalHotkey(hotkey, platform);
-  if (platform === 'mac') named = named.replace('meta+', 'cmd+').replace('alt+', 'option+');
-  return `${hotkey} ${display} ${named}`;
+  return `${hotkey} ${formatHotkey(hotkey, platform)} ${hotkeyFilterQuery(hotkey, platform)}`;
 }
 
-export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
+/** 已绑定(有生效快捷键)的命令数;解绑的不算。 */
+export function countBoundCommands(commands: readonly DisplayCommand[]): number {
   let count = 0;
-  for (const command of commands) {
-    if (command.hotkey) {
-      count += 1;
-    }
+  for (const d of commands) {
+    if (d.effectiveHotkey !== undefined) count += 1;
   }
   return count;
 }
@@ -195,17 +192,14 @@ export function buildKeybindingDisplayCommands(
   platform: Platform,
 ): DisplayCommand[] {
   if (allCommands.length === 0) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
-  let out: DisplayCommand[] | null = null;
-  let outCount = 0;
+  const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
     const isOverridden = Object.hasOwn(overrides, cmd.id); // 只认自有属性(toString 等命令 id)
-    if (!cmd.hotkey && !isOverridden) continue;
-    if (out === null) out = new Array<DisplayCommand>(allCommands.length);
     const effective = resolveEffectiveHotkey(cmd, overrides);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
-    out[outCount++] = {
+    out[i] = {
       cmd,
       displayTitle,
       displayCategory,
@@ -224,8 +218,6 @@ export function buildKeybindingDisplayCommands(
       ),
     };
   }
-  if (out === null) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
-  out.length = outCount;
   return out;
 }
 
@@ -258,12 +250,16 @@ export function KeybindingsTabContent() {
   }, [allCommands, tk, overrides, locale]);
 
   const buckets = useMemo(() => {
-    // 列出所有有「有效 hotkey」或「显式 unbind 但有默认」的命令(允许用户回头改)
     const filtered = selectVisibleKeybindingCommands(displayCommands, query);
     return groupByCategory(filtered, t('keybindings.default_group'));
   }, [displayCommands, query, t]);
 
-  const totalWithHotkey = useMemo(() => countDefaultHotkeys(allCommands), [allCommands]);
+  const boundCount = useMemo(() => countBoundCommands(displayCommands), [displayCommands]);
+  // 冲突落败行(与全局热键分发同一张表判定:用户绑定优先于默认,同层先注册者优先)→ 实际响应该键的命令。
+  const shadowed = useMemo(
+    () => selectShadowedBindings(allCommands, PLATFORM, overrides),
+    [allCommands, overrides],
+  );
   const searchPlaceholderLabel = t('keybindings.search_placeholder');
   const unboundLabel = t('keybindings.unbound');
   const editHotkeyLabel = t('keybindings.edit_hotkey');
@@ -275,10 +271,29 @@ export function KeybindingsTabContent() {
     setEditing(null),
   );
 
+  // 行内「恢复默认」后按钮变 disabled + invisible,焦点会掉到 body → 提交后移到同行的编辑按钮;该行被搜索过滤掉
+  //(按旧快捷键搜)时回到搜索框。
+  const rootRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const focusEditAfterResetRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const id = focusEditAfterResetRef.current;
+    if (id === null) return;
+    focusEditAfterResetRef.current = null;
+    for (const el of rootRef.current?.querySelectorAll<HTMLElement>('[data-keybinding-edit]') ?? []) {
+      if (el.dataset['keybindingEdit'] === id) {
+        el.focus();
+        return;
+      }
+    }
+    searchRef.current?.focus();
+  });
+
   return (
-    <div className="space-y-6">
+    <div ref={rootRef} className="space-y-6">
       <div className="space-y-2">
         <Input
+          ref={searchRef}
           size="sm"
           // a11y(A5 同族):placeholder 无参数 → 复用作 aria-label。
           aria-label={searchPlaceholderLabel}
@@ -287,11 +302,18 @@ export function KeybindingsTabContent() {
           onChange={(e) => setQuery(clampSearchQuery(e.target.value))}
         />
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
-          <span>{t('keybindings.total_summary_prefix', { count: totalWithHotkey })}</span>
-          {COMMAND_PALETTE_HOTKEY_PARTS.map((p, i) => (
-            <KeyCap key={i}>{p}</KeyCap>
-          ))}
-          <span>{t('keybindings.total_summary_suffix')}</span>
+          <span>
+            {t('keybindings.summary', { total: displayCommands.length, bound: boundCount })}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>{t('keybindings.palette_hint_prefix')}</span>
+          {/* 键帽组整体不换行:窄宽时 ⇧⌘ 与 P 不被拆到两行。 */}
+          <span data-testid="keybindings-palette-keys" className="inline-flex items-center gap-0.5 whitespace-nowrap">
+            {COMMAND_PALETTE_HOTKEY_PARTS.map((p, i) => (
+              <KeyCap key={i}>{p}</KeyCap>
+            ))}
+          </span>
+          <span>{t('keybindings.palette_hint_suffix')}</span>
         </div>
       </div>
 
@@ -304,6 +326,8 @@ export function KeybindingsTabContent() {
         allCommands={allCommands}
         overrides={overrides}
         onClose={() => setEditing(null)}
+        // 冲突项点击:按该快捷键过滤列表(VSCode「显示相同的键绑定」)。
+        onShowSameKeybindings={(combo) => setQuery(hotkeyFilterQuery(combo, PLATFORM))}
         onSave={(combo) => {
           // race(R50):保存瞬间从当前 registry 复检命令仍存在(覆盖 effect 关闭弹窗前的同帧
           // 点击);已移除则关弹窗不写,防 override 写到不存在的命令。
@@ -330,7 +354,7 @@ export function KeybindingsTabContent() {
           role="status"
           className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim"
         >
-          {totalWithHotkey === 0 ? t('keybindings.empty') : t('keybindings.no_match')}
+          {displayCommands.length === 0 ? t('keybindings.no_commands') : t('keybindings.no_match')}
         </div>
       ) : (
         <div className="space-y-8">
@@ -344,6 +368,7 @@ export function KeybindingsTabContent() {
                 {bucket.items.map((d, idx) => {
                   const cmd = d.cmd;
                   const { hotkeyParts, isOverridden } = d; // 预计算(打磨 R29)
+                  const shadowedBy = shadowed.get(cmd.id);
                   return (
                     <li key={cmd.id} className={keybindingRowClassName(idx)}>
                       <span className={KEYBINDING_TITLE_CLASS_NAME} title={d.displayTitle}>
@@ -354,6 +379,17 @@ export function KeybindingsTabContent() {
                       </Badge>
                       {d.reserved && (
                         <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>
+                      )}
+                      {shadowedBy && (
+                        <span
+                          data-testid="keybinding-conflict"
+                          className="shrink-0 text-2xs text-warning"
+                          title={t('keybindings.conflict_shadowed_by', {
+                            command: tk(shadowedBy.titleKey, shadowedBy.title),
+                          })}
+                        >
+                          {t('keybindings.conflict')}
+                        </span>
                       )}
                       {hotkeyParts.length > 0 ? (
                         <span className="flex shrink-0 items-center gap-0.5">
@@ -372,6 +408,7 @@ export function KeybindingsTabContent() {
                           command: d.displayTitle,
                         })}
                         onClick={() => setEditing(cmd)}
+                        data-keybinding-edit={cmd.id}
                       >
                         {EDIT_HOTKEY_ICON}
                       </IconButton>
@@ -386,10 +423,16 @@ export function KeybindingsTabContent() {
                         aria-label={t('keybindings.reset_default_for_aria', {
                           command: d.displayTitle,
                         })}
-                        onClick={() => isOverridden && reset(cmd.id)}
+                        onClick={() => {
+                          if (!isOverridden) return;
+                          focusEditAfterResetRef.current = cmd.id;
+                          reset(cmd.id);
+                        }}
                         // a11y(A12 同族):未覆盖时 disabled,避免键盘 Tab 到不可见无效按钮。
                         disabled={!isOverridden}
-                        className={isOverridden ? '' : 'pointer-events-none invisible'}
+                        // 未覆盖:宽时 invisible 占位(键帽列对齐);列表窄(@max-md)时 hidden 让出宽度给标题。
+                        // 有 override 时始终可见可达。
+                        className={isOverridden ? '' : 'pointer-events-none invisible @max-md:hidden'}
                       >
                         {RESET_HOTKEY_ICON}
                       </IconButton>

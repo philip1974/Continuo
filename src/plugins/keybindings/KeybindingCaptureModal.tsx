@@ -17,6 +17,7 @@ import { resolveEffectiveHotkey } from './keybindings-store';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { useStableCallback } from '@/lib/use-stable-callback';
 import { reservedPickerHotkeyOf, type ReservedPickerHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { selectShadowedBindings } from '@/plugins/command-palette/useCommandHotkeys';
 
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
@@ -40,6 +41,8 @@ interface KeybindingCaptureModalProps {
   readonly onSave: (hotkey: string) => void;
   readonly onClose: () => void;
   readonly onResetToDefault: () => void;
+  /** 点击冲突项:按该快捷键过滤列表(VSCode「显示相同的键绑定」);弹窗随即关闭、不保存。 */
+  readonly onShowSameKeybindings?: (hotkey: string) => void;
 }
 
 /** 把 keyboard event 编成 'mod+shift+x' 形式. 单独修饰键 → null(等用户继续按).
@@ -94,6 +97,22 @@ export function selectKeybindingConflicts(
   return conflicts;
 }
 
+/**
+ * 保存 captured 后仍压过本命令、实际响应该键的命令(用户绑定优先于默认、同层先注册者优先 —— 与分发同一判定);
+ * 本命令会胜出 → null。
+ */
+export function selectWinnerAfterSave(
+  allCommands: readonly CommandSpec[],
+  commandId: string,
+  captured: string,
+  overrides: Readonly<Record<string, string>>,
+): CommandSpec | null {
+  return (
+    selectShadowedBindings(allCommands, PLATFORM, { ...overrides, [commandId]: captured }).get(commandId) ??
+    null
+  );
+}
+
 export type { ReservedPickerHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 
 const RESERVED_MESSAGE_KEYS: Readonly<Record<ReservedPickerHotkey, string>> = {
@@ -131,6 +150,7 @@ function KeybindingCaptureModalBody({
   onSave,
   onClose,
   onResetToDefault,
+  onShowSameKeybindings,
 }: Omit<KeybindingCaptureModalProps, 'visible'>) {
   const t = useT();
   const tk = useTWithFallback();
@@ -215,8 +235,16 @@ function KeybindingCaptureModalBody({
   }, [captured, allCommands, commandId, overrides]);
 
   const reserved = useMemo(() => selectReservedPickerHotkey(captured), [captured]);
+  // 有冲突时:保存后实际响应该键的命令(本命令胜出 → null),决定冲突说明文案。
+  const winnerAfterSave = useMemo(
+    () =>
+      captured && conflicts.length > 0
+        ? selectWinnerAfterSave(allCommands, commandId, captured, overrides)
+        : null,
+    [captured, conflicts, allCommands, commandId, overrides],
+  );
 
-  // 保留键(保存被禁用)与冲突(保存后只有一个命令响应)时 Enter 不保存 —— 冲突须用户看过警告后显式点「保存」。
+  // 保留键(保存被禁用)与冲突(会让出 / 抢走别的命令的键)时 Enter 不保存 —— 冲突须用户看过警告后显式点「保存」(提示行同步改写)。
   acceptFromEnterRef.current = () => {
     if (captured === null || reserved !== null || conflicts.length > 0) return;
     onSave(captured);
@@ -278,7 +306,14 @@ function KeybindingCaptureModalBody({
       </div>
 
       <div data-testid="keybinding-capture-hints" className="mt-2 text-2xs leading-5 text-fg-dim">
-        {t('keybindings.modal.hint_press_save')} <KeyCap>Enter</KeyCap> {t('keybindings.modal.hint_save')}{' '}
+        {/* 有冲突时 Enter 不保存(见 acceptFromEnterRef),提示行与行为一致:改为点「保存」确认。 */}
+        {conflicts.length > 0 ? (
+          <>{t('keybindings.modal.hint_conflict_save')} </>
+        ) : (
+          <>
+            {t('keybindings.modal.hint_press_save')} <KeyCap>Enter</KeyCap> {t('keybindings.modal.hint_save')}{' '}
+          </>
+        )}
         <KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}{' '}
         <KeyCap>Esc</KeyCap> {t('keybindings.modal.hint_cancel')}
         {defaultHotkey && t('keybindings.modal.hint_default', { hotkey: defaultHotkeyLabel })}
@@ -306,14 +341,33 @@ function KeybindingCaptureModalBody({
                 aria-hidden 单独渲染,不混进 role=status 播报。 */}
             <span aria-hidden="true">⚠️</span> {t('keybindings.modal.conflict_title')}
           </div>
-          <ul className="mt-1 list-inside list-disc space-y-0.5">
+          <ul className="mt-1 space-y-0.5">
             {conflicts.map((c) => (
               <li key={c.id}>
-                {tk(c.titleKey, c.title)} <code className="text-2xs text-warning/70">{c.id}</code>
+                {/* 点击:关弹窗并按该快捷键过滤列表(VSCode「显示相同的键绑定」)。行内链接式紧凑按钮,design Button 的
+                    内边距 / 底色不适用;复用语义 token。 */}
+                <button
+                  type="button"
+                  className="cursor-pointer rounded-sm text-left text-warning underline-offset-2 outline-none hover:underline focus-visible:outline-solid focus-visible:outline-1 focus-visible:outline-focus-ring"
+                  title={t('keybindings.modal.conflict_show_same')}
+                  onClick={() => {
+                    if (!captured) return;
+                    onShowSameKeybindings?.(captured);
+                    onClose();
+                  }}
+                >
+                  {tk(c.titleKey, c.title)} <code className="text-2xs text-warning/70">{c.id}</code>
+                </button>
               </li>
             ))}
           </ul>
-          <div className="mt-1 text-warning/80">{t('keybindings.modal.conflict_advice')}</div>
+          <div className="mt-1 text-warning/80">
+            {winnerAfterSave
+              ? t('keybindings.modal.conflict_advice_still_other', {
+                  command: tk(winnerAfterSave.titleKey, winnerAfterSave.title),
+                })
+              : t('keybindings.modal.conflict_advice_override')}
+          </div>
         </div>
       )}
 
