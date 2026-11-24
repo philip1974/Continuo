@@ -473,6 +473,17 @@ function sourceKey(file: string): string {
 }
 
 /**
+ * adapter 回报的路径(Node 实际加载的真实路径拼写)反查已登记 source 的调用方拼写,与推给 renderer 的断点同规则
+ *(编辑器 tab 路径未必是真实路径,如 macOS 经 /tmp 打开 → /private/tmp)。adapterPaths 的值与其分组键满足
+ * sourceKey(值) === 键,故按 sourceKey 直接反查;未登记的 source 原样返回。
+ */
+function callerSpelling(runtime: RuntimeDebugSession, adapterPath: string): string {
+  const source = sourceKey(adapterPath);
+  if (!runtime.adapterPaths.has(source)) return adapterPath;
+  return runtime.sourcePaths.get(source) ?? adapterPath;
+}
+
+/**
  * 文件尚不存在时 realpath 失败,断点按调用方拼写分组(fallback 组);文件创建后同拼写 realpath 成功按真实路径
  * 分组。两组推给 renderer 的 file 相同,不合并的话后一次只下发自己那组,renderer 整组替换隐藏前一组。
  * 把 fallback 组并入真实路径组(同一行以真实路径组的为准,与「同 file+line 去重」一致),映射随之迁移。
@@ -1352,13 +1363,11 @@ export class DebugService {
     const body = asRecord(response.body);
     const frames = asArray(body.stackFrames).map((raw) => {
       const frame = asRecord(raw as DapJson);
-      const source = asRecord(frame.source as DapJson | undefined);
+      const sourcePath = stringField(asRecord(frame.source as DapJson | undefined), 'path');
       return {
         id: numberField(frame, 'id') ?? 0,
         name: stringField(frame, 'name') ?? '',
-        ...(stringField(source, 'path') !== undefined
-          ? { source_path: stringField(source, 'path') }
-          : {}),
+        ...(sourcePath !== undefined ? { source_path: callerSpelling(runtime, sourcePath) } : {}),
         line: numberField(frame, 'line') ?? 0,
         ...(numberField(frame, 'column') !== undefined
           ? { column: numberField(frame, 'column') }

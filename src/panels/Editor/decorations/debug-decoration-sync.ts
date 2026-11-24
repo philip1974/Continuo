@@ -1,10 +1,9 @@
 import type { EditorView } from '@codemirror/view';
-import { pathEquals } from '@/lib/path-cross';
 import { useDebugStore, type DebugSessionShadow } from '@/stores/debug.store';
-import { useEditorStore } from '@/stores/editor.store';
+import { useEditorStore, type EditorTab } from '@/stores/editor.store';
 import { isMarkdownPath } from '../editor-path-utils';
 import type { setDebugDecorations } from './debug-decorations';
-import { findEditorFileTabById } from '../editor-tab-lookup';
+import { findEditorFileTabById, tabMatchesDiskPath } from '../editor-tab-lookup';
 
 // perf E5:本模块随 EditorPanel 静态加载,不得静态 import ./debug-decorations(运行时依赖
 // @codemirror/view + state,~245KB),否则 Welcome / 未开代码 tab 也要付这笔下载解析。
@@ -25,12 +24,12 @@ let refCount = 0;
 
 function breakpointLinesForTab(
   sessions: ReadonlyMap<string, DebugSessionShadow>,
-  filePath: string,
+  tab: EditorTab,
 ): number[] {
   const lines: number[] = [];
   for (const session of sessions.values()) {
     for (const breakpoint of session.breakpoints) {
-      if (pathEquals(breakpoint.file, filePath)) lines.push(breakpoint.line);
+      if (tabMatchesDiskPath(tab, breakpoint.file)) lines.push(breakpoint.line);
     }
   }
   return lines;
@@ -38,13 +37,13 @@ function breakpointLinesForTab(
 
 function execLineForTab(
   session: DebugSessionShadow | undefined,
-  filePath: string,
+  tab: EditorTab,
 ): number | null {
   const stopped = session?.stopped;
   if (
     stopped?.file === undefined ||
     stopped.line === undefined ||
-    !pathEquals(stopped.file, filePath)
+    !tabMatchesDiskPath(tab, stopped.file)
   ) {
     return null;
   }
@@ -101,11 +100,11 @@ function syncDebugDecorations(): void {
       continue;
     }
 
-    const filePath = tab.filePath;
+    // 断点 / 帧路径通常是调用方拼写(main 已换回),但 agent 也可能直接用真实路径设断点:filePath / realPath 任一命中。
     applyDecorations(
       view,
-      breakpointLinesForTab(debugState.sessions, filePath),
-      execLineForTab(activeSession, filePath),
+      breakpointLinesForTab(debugState.sessions, tab),
+      execLineForTab(activeSession, tab),
     );
   }
 }

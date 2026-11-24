@@ -83,6 +83,8 @@ class FakeDapClient implements DebugDapClientLike {
   lastBreakpointIds: number[] = [];
   /** 下一个分配的断点 id(按连接各自编号)。 */
   nextBreakpointId = 1;
+  /** stackTrace 响应首帧的 source.path(模拟 adapter 回报 Node 实际加载的真实路径)。 */
+  stackFramePath = '/fixture.ts';
   private seq = 1;
   /**
    * beforeResponse 挂起中的在途请求的 reject。dispose 时以 socket closed 结算 —— 同真实 DapClient:关 socket
@@ -263,7 +265,7 @@ class FakeDapClient implements DebugDapClientLike {
     if (command === 'stackTrace') {
       return {
         stackFrames: [
-          { id: 7, name: 'runClosure', source: { path: '/fixture.ts' }, line: 14, column: 1 },
+          { id: 7, name: 'runClosure', source: { path: this.stackFramePath }, line: 14, column: 1 },
         ],
         totalFrames: 1,
       };
@@ -3202,6 +3204,29 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
       source: { path: '/real/a.js' },
       breakpoints: [{ line: 3 }, { line: 5 }],
     });
+  });
+
+  // 栈帧与断点同规则:adapter 回报的帧路径是真实路径,返回调用方拼写,renderer 停靠行才能按 tab 路径匹配。
+  it('stackTrace 帧路径为已登记断点源的 realpath 拼写 → 换回调用方拼写;未登记的原样返回', async () => {
+    const workspace: DebugWorkspaceGuard = {
+      getWorkspaceRoot: () => '/',
+      realpath: async (p) => p.replace(/^\/link\//, '/real/'),
+    };
+    const { service, parent } = makeFakeService(new FakeDapClient(1001), workspace);
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/real/fixture.js', cwd: '/real' },
+      ctx,
+    );
+    await service.setBreakpoints(sessionId, { file: '/link/a.js', line: 3 });
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+
+    parent.stackFramePath = '/real/a.js';
+    const mapped = await service.stackTrace(sessionId, {});
+    expect(mapped.frames[0]).toMatchObject({ source_path: '/link/a.js', line: 14 });
+
+    parent.stackFramePath = '/real/other.js';
+    const raw = await service.stackTrace(sessionId, {});
+    expect(raw.frames[0]).toMatchObject({ source_path: '/real/other.js' });
   });
 
   it('断点 file realpath 失败(文件不存在等)→ 沿用原路径,不报错', async () => {

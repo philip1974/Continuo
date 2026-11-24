@@ -34,7 +34,7 @@ afterEach(() => {
   });
 });
 
-function createView(tabId: string, filePath: string): EditorView {
+function createView(tabId: string, filePath: string, realPath?: string): EditorView {
   const parent = document.createElement('div');
   document.body.append(parent);
   const view = new EditorView({
@@ -46,7 +46,7 @@ function createView(tabId: string, filePath: string): EditorView {
   });
   createdViews.push(view);
   useEditorStore.setState((state) => ({
-    tabs: [...state.tabs, createTab(filePath, view.state.doc.toString())],
+    tabs: [...state.tabs, createTab(filePath, view.state.doc.toString(), realPath)],
     activeTabId: tabId,
     viewRefs: new Map(state.viewRefs).set(tabId, view),
   }));
@@ -268,5 +268,33 @@ describe('topic51 Op6 · debug decoration sync', () => {
       else delete (navigator as { platform?: string }).platform;
     }
   });
-});
 
+  // 经 /tmp(→ /private/tmp)或软链打开的 tab:filePath 是打开拼写,realPath 是读盘解析的真实路径。adapter 的
+  // 帧 / 断点路径可能是真实路径拼写,匹配 filePath 或 realPath 任一侧都应命中(同 useExternalFileSync 的 symlink tab)。
+  it('停靠行 / 断点路径为 tab 的 realPath 拼写时仍匹配到该 tab', () => {
+    const view = createView('/tmp/proj/a.js', '/tmp/proj/a.js', '/private/tmp/proj/a.js');
+    useDebugStore.setState({
+      activeSessionId: 's1',
+      sessions: new Map([
+        [
+          's1',
+          session('s1', {
+            breakpoints: [{ file: '/private/tmp/proj/a.js', line: 2, verified: true }],
+            stopped: {
+              reason: 'breakpoint',
+              stopSeq: 1,
+              file: '/private/tmp/proj/a.js',
+              line: 3,
+            },
+            lastStoppedOrder: 1,
+          }),
+        ],
+      ]),
+    });
+
+    stopSync = startDebugDecorationSync();
+
+    expect(view.dom.querySelector('.cm-debug-breakpoint-marker')).toBeTruthy();
+    expect(view.dom.querySelector('.cm-debug-exec-line')).toBeTruthy();
+  });
+});
