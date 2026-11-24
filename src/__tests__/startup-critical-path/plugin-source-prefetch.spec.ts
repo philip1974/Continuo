@@ -91,6 +91,11 @@ afterEach(() => {
 
 const ok = (dir: string) => ({ ok: true, data: `/* main ${dir} */` });
 
+// 真实 host 的 importModule 会对 blob: URL 动态 import(jsdom 下失败),其完成所需的宏任务数取决于模块解析器、
+// 全量并发跑时不定 —— 固定 flushMacrotasks(n) 会偶发不够(且失败用例的 init 继续跑、把 loaded 污染进下一个用例)。
+// 故按条件等待。
+const until = (cond: () => void) => vi.waitFor(cond, { timeout: 5_000, interval: 5 });
+
 describe('启动插件源码预取 (B-1)', () => {
   it('第一个插件 onload 完成前,其余已启用插件的 readMainByDir 已并行发出;每个只读一次', async () => {
     hang.set('a', deferred<void>());
@@ -100,8 +105,8 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: async (dir) => ok(dir),
     });
     const init = mgr.init();
-    await flushMacrotasks(10);
-    expect(loaded).toEqual(['a']); // a 的 onload 挂起中
+    await until(() => expect(loaded).toEqual(['a'])); // a 的 onload 挂起中
+    await until(() => expect(plugins.readMainByDir).toHaveBeenCalledTimes(3));
     expect(plugins.readMainByDir.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b', 'c']);
     expect(plugins.readMainByDir).toHaveBeenCalledWith('b', 'hash-b');
 
@@ -124,8 +129,9 @@ describe('启动插件源码预取 (B-1)', () => {
       },
     });
     const init = mgr.init();
+    await until(() => expect(plugins.readMainByDir).toHaveBeenCalledTimes(4));
     await flushMacrotasks(10);
-    expect(plugins.readMainByDir).toHaveBeenCalledTimes(4);
+    expect(plugins.readMainByDir).toHaveBeenCalledTimes(4); // 有界:不再多发
     // 逆序完成
     for (const id of [...ids].reverse()) {
       reads.get(id)?.resolve(ok(id));
@@ -170,7 +176,8 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: async (dir) => ok(dir),
     });
     const init = mgr.init();
-    await flushMacrotasks(10);
+    await until(() => expect(loaded).toEqual(['a']));
+    await until(() => expect(createObjectURL.mock.results.length).toBeGreaterThanOrEqual(2)); // b 的预取已生成 Blob
     // 热重载重新列举:b 换成新 manifest(新令牌)
     plugins.listDirs.mockResolvedValue({
       ok: true,
@@ -208,7 +215,8 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: async (dir) => ok(dir),
     });
     const init = mgr.init();
-    await flushMacrotasks(10);
+    await until(() => expect(loaded).toEqual(['a']));
+    await until(() => expect(createObjectURL.mock.results.length).toBeGreaterThanOrEqual(2)); // b 的预取已生成 Blob
     const bIdx = plugins.readMainByDir.mock.calls.findIndex((c) => c[0] === 'b');
     const prefetchedB = createObjectURL.mock.results[bIdx]!.value as string;
 
@@ -228,6 +236,7 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: (dir) => (++aCalls === 1 ? first.promise : Promise.resolve(ok(dir))),
     });
     const init = mgr.init();
+    await until(() => expect(plugins.readMainByDir).toHaveBeenCalledTimes(1));
     await flushMacrotasks(10); // 激活已在等预取的在途读取
     expect(plugins.readMainByDir).toHaveBeenCalledTimes(1);
     first.resolve({ ok: false, code: 'EIO', message: 'disk' });
@@ -239,13 +248,15 @@ describe('启动插件源码预取 (B-1)', () => {
   it('预取在途时插件被禁用 → 读取完成后生成的 Blob URL 立即 revoke(不泄漏、不写回)', async () => {
     hang.set('a', deferred<void>());
     const bRead = deferred<unknown>();
-    const { mgr } = setup({
+    const { mgr, plugins } = setup({
       ids: ['a', 'b'],
       enabled: ['a', 'b'],
       readMainByDir: (dir) => (dir === 'b' ? bRead.promise : Promise.resolve(ok(dir))),
     });
+    const bReadStarted = () => plugins.readMainByDir.mock.calls.some((c) => c[0] === 'b');
     const init = mgr.init();
-    await flushMacrotasks(10);
+    await until(() => expect(loaded).toEqual(['a']));
+    await until(() => expect(bReadStarted()).toBe(true));
     await mgr.disable('b');
     hang.get('a')!.resolve();
     await init;
@@ -253,8 +264,7 @@ describe('启动插件源码预取 (B-1)', () => {
 
     const created = createObjectURL.mock.results.length;
     bRead.resolve(ok('b'));
-    await flushMacrotasks(10);
-    expect(createObjectURL.mock.results.length).toBe(created + 1);
+    await until(() => expect(createObjectURL.mock.results.length).toBe(created + 1));
     const lateB = createObjectURL.mock.results[created]!.value as string;
     expect(revokeObjectURL).toHaveBeenCalledWith(lateB);
   });
