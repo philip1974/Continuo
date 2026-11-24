@@ -13,6 +13,7 @@ import {
   PROMPT_SUBJECT_DENY_STREAK,
   PromptThrottle,
 } from '../lib/prompt-throttle';
+import { mapInOrderBounded } from '../lib/map-in-order-bounded';
 
 // 安全:plugin-fs:request-scope 的弹窗节流。被用户拒绝后没有冷却时,有 fs 权限的插件可在拒绝回调里立刻再次
 // requestScope,弹窗关一个来一个,直到用户误点「允许」(correlator.canAccept 只限同时未决数)。
@@ -90,17 +91,9 @@ export async function scopeThrottleKeys(
 
   const ids = new Map<string, FileId | null>();
   for (const { prefixes } of chains) for (const p of prefixes ?? []) ids.set(p, null);
-  const pending = [...ids.keys()];
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const p = pending[next];
-      next += 1;
-      if (p === undefined) return;
-      ids.set(p, await statOf(p).then(fileIdOf, () => null));
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(SCOPE_KEY_STAT_CONCURRENCY, pending.length) }, worker));
+  await mapInOrderBounded([...ids.keys()], SCOPE_KEY_STAT_CONCURRENCY, async (p) => {
+    ids.set(p, await statOf(p).then(fileIdOf, () => null));
+  });
 
   return chains.map(({ path, prefixes }) => {
     if (prefixes === null) return path;

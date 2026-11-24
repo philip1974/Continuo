@@ -49,6 +49,7 @@ import {
   stripInternalSecretEnv,
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
+import { mapInOrderBounded } from '../lib/map-in-order-bounded';
 
 export interface PluginFsDeps {
   identityRegistry: IdentityRegistry;
@@ -571,27 +572,10 @@ async function readFileVerified(
 export async function canonicalizePathScopes(
   scopes: readonly PathScope[],
 ): Promise<PathScope[]> {
-  const canonicalScopes = new Array<PathScope>(scopes.length);
-  let nextIndex = 0;
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const i = nextIndex;
-      nextIndex += 1;
-      if (i >= scopes.length) return;
-      const scope = scopes[i]!;
-      canonicalScopes[i] = {
-        path: await canonicalizeScopePath(scope.path),
-        mode: scope.mode,
-      };
-    }
-  };
-  const workerCount = Math.min(CANONICALIZE_SCOPE_CONCURRENCY, scopes.length);
-  const workers = new Array<Promise<void>>(workerCount);
-  for (let i = 0; i < workerCount; i++) {
-    workers[i] = worker();
-  }
-  await Promise.all(workers);
-  return canonicalScopes;
+  return mapInOrderBounded(scopes, CANONICALIZE_SCOPE_CONCURRENCY, async (scope) => ({
+    path: await canonicalizeScopePath(scope.path),
+    mode: scope.mode,
+  }));
 }
 
 export function registerPluginFsHandlers(

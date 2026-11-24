@@ -42,6 +42,7 @@ import { runSerialPerKey } from './serialize-per-key';
 import { parseManifest } from '../../shared/plugin-manifest';
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { arraysEqual } from '../../shared/array-equal';
+import { mapInOrderBounded } from '../lib/map-in-order-bounded';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -329,7 +330,9 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirListi
   const entries = await readPluginDirEntriesCapped(baseDir);
   // perf:per-dir 读取(stat + manifest + main 可用性)有界并发(PLUGIN_DIR_IO_CONCURRENCY),
   // 结果按 entries 原顺序收集(激活顺序契约不变)。
-  const results = await mapInOrderBounded(entries, (name) => readOnePluginDirMeta(baseDir, name));
+  const results = await mapInOrderBounded(entries, PLUGIN_DIR_IO_CONCURRENCY, (name) =>
+    readOnePluginDirMeta(baseDir, name),
+  );
 
   const out = new Array<IpcPluginDirListing>(results.length);
   let outCount = 0;
@@ -345,29 +348,6 @@ export async function listPluginDirs(baseDir: string): Promise<IpcPluginDirListi
 /** 插件目录 I/O 的并发上限(列举 / watcher 轮询共用)。 */
 const PLUGIN_DIR_IO_CONCURRENCY = 8;
 
-/**
- * 以最多 PLUGIN_DIR_IO_CONCURRENCY 个并发对 items 运行 fn,结果按输入顺序对位。
- * fn 自行吞掉可预期错误(返回 null 等);意外抛错与旧串行循环一样让整体 reject。
- */
-async function mapInOrderBounded<T, R>(
-  items: readonly T[],
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const i = next;
-      next += 1;
-      results[i] = await fn(items[i]!);
-    }
-  };
-  const workerCount = Math.min(PLUGIN_DIR_IO_CONCURRENCY, items.length);
-  const workers = new Array<Promise<void>>(workerCount);
-  for (let i = 0; i < workerCount; i += 1) workers[i] = worker();
-  await Promise.all(workers);
-  return results;
-}
 
 /** 读单个插件目录的 manifest 文本(过滤 . / _ 前缀与非目录;缺失 / 超限 → null)。 */
 async function readPluginManifestText(
@@ -1804,7 +1784,7 @@ export function createPluginsWatcher(
     });
     truncationWarned = truncated;
     // perf:per-dir stat(+ 必要时读 manifest)有界并发;记录比较 / onChange 仍按枚举顺序串行(同旧版)。
-    const probes = await mapInOrderBounded(entries, probeEntry);
+    const probes = await mapInOrderBounded(entries, PLUGIN_DIR_IO_CONCURRENCY, probeEntry);
     if (manifestCache.size > 0) {
       const live = new Set(entries.map((dirent) => dirent.name));
       for (const name of manifestCache.keys()) {
