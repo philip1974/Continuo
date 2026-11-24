@@ -513,6 +513,11 @@
 
 - [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)
 
+## [打开文件后焦点进编辑器(VSCode 对齐)](./editor-focus-on-open/README.md)
+
+- [`editor-focus-registry.spec.ts`](./editor-focus-on-open/editor-focus-registry.spec.ts)
+- [`quick-open-focus.spec.tsx`](./editor-focus-on-open/quick-open-focus.spec.tsx)
+
 ## [EditorHeader(单行 Header,tabs + mode 切换)](./editor-header/README.md)
 
 - [`editor-header.spec.tsx`](./editor-header/editor-header.spec.tsx)
@@ -571,6 +576,11 @@
 ## [editor-store (M-Editor Step E1)](./editor-store/README.md)
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
+
+## [编辑器视图状态按 tab 保留(VSCode 对齐)](./editor-view-state/README.md)
+
+- [`code-editor-view-state.spec.tsx`](./editor-view-state/code-editor-view-state.spec.tsx)
+- [`milkdown-scroll-restore.spec.tsx`](./editor-view-state/milkdown-scroll-restore.spec.tsx)
 
 ## [EditorWelcome(无 tab 占位)](./editor-welcome/README.md)
 

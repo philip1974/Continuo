@@ -20,13 +20,13 @@ export function notifyOpenFailed(
 /**
  * 打开文件并在失败时提示:`ok:false` 结果与 reject 两个分支都走 notifyOpenFailed(此前 Explorer / Quick Open / 编辑器
  * 链接三处各自 try / then-catch,历史上多次只处理了一个分支 —— A127 / A141 / P1-AX)。给 logTag 时由这里记 console
- * 并关闭 toast 的 mirror(避免双写)。不抛。
+ * 并关闭 toast 的 mirror(避免双写)。不抛;返回是否打开成功(成功后要不要把焦点交给编辑器由调用方定)。
  */
 export async function openFileOrNotify(
   open: () => Promise<{ readonly ok: true } | ({ readonly ok: false } & Failure)>,
   name: string,
   logTag?: string,
-): Promise<void> {
+): Promise<boolean> {
   let failure: Failure | null = null;
   try {
     const r = await open();
@@ -34,12 +34,13 @@ export async function openFileOrNotify(
   } catch (err) {
     failure = failureOf(err);
   }
-  if (failure === null) return;
+  if (failure === null) return true;
   if (logTag === undefined) {
     notifyOpenFailed(name, failure);
-    return;
+    return false;
   }
   console.warn(`[${logTag}] open file failed:`, failure.code, failure.message);
   notifyOpenFailed(name, failure, { mirror: false });
+  return false;
 }
 

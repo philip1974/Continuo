@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // 新建文件 / 文件夹(对齐 VSCode Explorer):
-//   - 成功:父目录展开,新项被选中并获得树焦点;新建文件随即在编辑器打开(VSCode 新建文件后直接打开),
-//     新建文件夹则焦点留在树里、落在新文件夹上
+//   - 成功:父目录展开,新项被选中并获得树焦点;新建文件随即在编辑器打开且 DOM 焦点进入编辑器(VSCode 新建
+//     文件后直接打开并可接着输入),新建文件夹则焦点留在树里、落在新文件夹上
 //   - 失败(含同名冲突):输入框不关、已输入的名字保留,输入框下方显示本地化的错误原因(VSCode 的内联校验
 //     提示);修改名字后错误消失,可直接重试;Esc 放弃
 import React from 'react';
@@ -73,6 +73,8 @@ vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));
 
 import { coApi } from '@/lib/co-api';
+import { useEditorStore } from '../../stores/editor.store';
+import { registerEditorFocus } from '../../panels/Editor/editor-focus-registry';
 import { FolderTree } from '../../panels/Explorer/FolderTree';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
 
@@ -141,7 +143,15 @@ function submit(input: HTMLInputElement, value: string) {
 }
 
 describe('FolderTree · 新建成功后展开父目录、选中并打开', () => {
-  it('在折叠目录里新建文件 → 目录展开,新文件被选中 / 聚焦,并在编辑器打开', async () => {
+  it('在折叠目录里新建文件 → 目录展开,新文件被选中 / 聚焦,并在编辑器打开且焦点进编辑器', async () => {
+    // 打开即成为活动 tab(真实 openFileByPath 的效果);编辑器就绪后登记的聚焦句柄应被调用
+    h.openFileByPath = vi.fn(async (p: string) => {
+      useEditorStore.setState({ activeTabId: p });
+      return { ok: true as const };
+    });
+    h.editorFile = { openFileByPath: h.openFileByPath };
+    const focusEditor = vi.fn();
+    const unregister = registerEditorFocus('/work/alpha/new.ts', focusEditor);
     const r = await mount();
     expect(row(r.container, '/work/alpha')!.getAttribute('aria-expanded')).toBe('false');
     const input = await startCreateIn(r, '/work/alpha', NEW_FILE);
@@ -153,6 +163,26 @@ describe('FolderTree · 新建成功后展开父目录、选中并打开', () =>
     await waitFor(() => expect(row(r.container, '/work/alpha/new.ts')!.getAttribute('aria-selected')).toBe('true'));
     expect(row(r.container, '/work/alpha/new.ts')!.getAttribute('tabindex')).toBe('0');
     expect(document.querySelector('input[placeholder]')).toBeNull();
+    await waitFor(() => expect(focusEditor).toHaveBeenCalledTimes(1));
+    unregister();
+  });
+
+  it('普通单击打开已有文件 → 焦点留在树里,不请求聚焦编辑器(VSCode 单击预览同款)', async () => {
+    h.openFileByPath = vi.fn(async (p: string) => {
+      useEditorStore.setState({ activeTabId: p });
+      return { ok: true as const };
+    });
+    h.editorFile = { openFileByPath: h.openFileByPath };
+    const focusEditor = vi.fn();
+    const unregister = registerEditorFocus('/work/beta.ts', focusEditor);
+    const r = await mount();
+    act(() => {
+      fireEvent.click(row(r.container, '/work/beta.ts')!);
+    });
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts'));
+    await new Promise((res) => setTimeout(res, 50));
+    expect(focusEditor).not.toHaveBeenCalled();
+    unregister();
   });
 
   it('新建文件夹 → 新文件夹被选中且 DOM 焦点落在该行,不打开任何文件', async () => {

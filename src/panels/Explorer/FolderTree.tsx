@@ -53,6 +53,7 @@ import { useFsWatcher } from './hooks/useFsWatcher';
 import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
+import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { forgetInExpanded, renameInExpanded, useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -809,10 +810,9 @@ export function FolderTree({ root }: { root: string }) {
   // Explorer ↔ Editor 联动(Step E5):单击文件 → openFileByPath
   const { openFileByPath } = useEditorFile();
   const handleFileOpen = useCallback(
-    async (path: string) => {
+    (path: string): Promise<boolean> =>
       // 点击文件是 Explorer 的主操作:ok:false 与 reject 都必须给反馈(P1-AX / A141),由 openFileOrNotify 统一。
-      await openFileOrNotify(() => openFileByPath(path), basenamePreserveTrailing(path), 'explorer');
-    },
+      openFileOrNotify(() => openFileByPath(path), basenamePreserveTrailing(path), 'explorer'),
     [openFileByPath],
   );
 
@@ -942,7 +942,12 @@ export function FolderTree({ root }: { root: string }) {
       if (parent && !parent.isExpanded()) parent.expand();
     }
     setPendingReveal({ path: r.newPath, focusRow: type === 'dir' });
-    if (type === 'file') void handleFileOpen(r.newPath);
+    // 新建文件打开后焦点进编辑器,可接着输入(VSCode 同款;单击打开已有文件仍留在树里)
+    if (type === 'file') {
+      void handleFileOpen(r.newPath).then((ok) => {
+        if (ok) focusActiveEditor();
+      });
+    }
     return true;
   };
 

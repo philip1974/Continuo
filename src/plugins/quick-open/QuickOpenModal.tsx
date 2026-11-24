@@ -21,6 +21,7 @@ import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
+import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { normalizeSearchQuery } from '@/lib/search-query';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
@@ -158,7 +159,10 @@ function QuickOpenBody() {
     async (file: QuickOpenFile) => {
       close();
       // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应;P1-AX),按 code 本地化(I8)。
-      await openFileOrNotify(() => openFileByPath(file.absPath, editorFileDeps), file.name);
+      // 成功 → 焦点进编辑器(VSCode:回车后可直接打字;否则弹窗还焦点给的旧编辑器随即卸载,焦点掉到 body)。
+      if (await openFileOrNotify(() => openFileByPath(file.absPath, editorFileDeps), file.name)) {
+        focusActiveEditor();
+      }
     },
     [close],
   );

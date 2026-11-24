@@ -9,9 +9,9 @@
 // 主题:外观走设计 token(亮 / 暗共用),语法高亮走 --md-syntax-* token(见 code-editor-theme.ts)。
 // 通过 Compartment.reconfigure 热切,无需重建 EditorView。
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, type Extension } from '@codemirror/state';
 import type { ViewUpdate } from '@codemirror/view';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
@@ -31,6 +31,13 @@ import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { rebindCodeMirrorRoots } from './codemirror-root';
 import { codeEditorTheme } from './code-editor-theme';
+import {
+  saveCodeEditorViewState,
+  snapshotCodeEditorView,
+  takeCodeEditorViewState,
+  type CodeEditorViewState,
+} from './editor-view-state-cache';
+import { registerEditorFocus } from './editor-focus-registry';
 
 interface CodeEditorProps {
   tabId: string;
@@ -105,6 +112,34 @@ export function pickLanguage(
   }
 }
 
+/**
+ * 重挂时的初始状态。上次卸载时的文档与当前内容一致 → 整份 state 复用(撤销历史在 state field 里),配置整体换成
+ * 本实例的扩展(compartment / 更新监听闭包都属于新实例);两份配置共有的 state field(history、debug 装饰)保值。
+ * 不一致(切走期间别处改了内容)→ 新建 state,只把旧光标 / 选区收进新文档范围(滚动由 scrollTo 快照自动收进范围)。
+ */
+function restoreState(
+  saved: CodeEditorViewState | undefined,
+  value: string,
+  eol: '\r\n' | '\n',
+  extensions: Extension[],
+): EditorState {
+  if (saved) {
+    const doc = saved.state.doc;
+    if (doc.sliceString(0, doc.length, eol) === value) {
+      return saved.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state;
+    }
+  }
+  const state = EditorState.create({ doc: value, extensions });
+  if (!saved) return state;
+  const len = state.doc.length;
+  const { anchor, head } = saved.state.selection.main;
+  return EditorState.create({
+    doc: state.doc,
+    selection: { anchor: Math.min(anchor, len), head: Math.min(head, len) },
+    extensions,
+  });
+}
+
 export function CodeEditor({
   tabId,
   value,
@@ -132,7 +167,7 @@ export function CodeEditor({
   const appliedLangKeyRef = useRef<string | null>(null);
   const appliedThemeRef = useRef<string | null>(null);
 
-  // 创建 editor 一次,父用 key={tabId} 强制 remount 切 tab
+  // 创建 editor 一次,父用 key={tabId} 强制 remount 切 tab(视图状态经 editor-view-state-cache 按 tab 保留)
   useEffect(() => {
     if (!containerRef.current) return;
     const lang = pickLanguage(fileName, forceLanguage);
@@ -141,56 +176,57 @@ export function CodeEditor({
     appliedThemeRef.current = resolved;
     eolRef.current = detectLineEnding(value);
 
-    const state = EditorState.create({
-      doc: value,
-      extensions: [
-        basicSetup,
-        themeCompartment.current.of(themeExt),
-        langCompartment.current.of(lang),
-        debugDecorationsExtension(),
-        EditorView.updateListener.of((update: ViewUpdate) => {
-          if (
-            update.docChanged &&
-            !suppressNextChange.current &&
-            onChangeRef.current
-          ) {
-            const doc = update.state.doc;
-            const next = doc.sliceString(0, doc.length, eolRef.current);
-            // doc 现反映 next;记下来,value-sync effect 据此跳过本地回声(P6)。
-            lastSyncedValueRef.current = next;
-            onChangeRef.current(next);
-          }
-          suppressNextChange.current = false;
-        }),
-        EditorView.theme({
-          // fontSize 走 inherit 从外层 div 继承,改 settings 字号无需重建 EditorView。
-          // CodeMirror theme 注入的 stylesheet 中 var() 不会响应外部容器 inline
-          // style 变化,所以这里用 inherit 而非 var()。
-          '&': { height: '100%', fontSize: 'inherit' },
-          // 字体族由 code-editor-theme 取 --wm-font-mono
-          '.cm-scroller': {
-            overflow: 'auto',
-            fontSize: 'inherit',
-          },
-          // 横向 padding 16px:不让 markdown / 代码内容贴 editor 容器右边
-          // (尤其中文长段无空格 wrap 时贴边格外难读);左侧 gutter 之后加
-          // 16px 给视觉呼吸,无行号时(lineNumbers=false)整体往内缩。
-          '.cm-content': { padding: '12px 16px', fontSize: 'inherit' },
-          '.cm-gutters': { border: 'none', fontSize: 'inherit' },
-          // editor.lineNumbers=false 时:.cm-editor 加 .cm-no-gutters,
-          // 只隐藏 CodeMirror 自带行号/fold gutter,保留独立 debug 断点 gutter。
-          '&.cm-no-gutters .cm-lineNumbers': { display: 'none !important' },
-          '&.cm-no-gutters .cm-foldGutter': { display: 'none !important' },
-        }),
-      ],
-    });
+    const extensions: Extension[] = [
+      basicSetup,
+      themeCompartment.current.of(themeExt),
+      langCompartment.current.of(lang),
+      debugDecorationsExtension(),
+      EditorView.updateListener.of((update: ViewUpdate) => {
+        if (
+          update.docChanged &&
+          !suppressNextChange.current &&
+          onChangeRef.current
+        ) {
+          const doc = update.state.doc;
+          const next = doc.sliceString(0, doc.length, eolRef.current);
+          // doc 现反映 next;记下来,value-sync effect 据此跳过本地回声(P6)。
+          lastSyncedValueRef.current = next;
+          onChangeRef.current(next);
+        }
+        suppressNextChange.current = false;
+      }),
+      EditorView.theme({
+        // fontSize 走 inherit 从外层 div 继承,改 settings 字号无需重建 EditorView。
+        // CodeMirror theme 注入的 stylesheet 中 var() 不会响应外部容器 inline
+        // style 变化,所以这里用 inherit 而非 var()。
+        '&': { height: '100%', fontSize: 'inherit' },
+        // 字体族由 code-editor-theme 取 --wm-font-mono
+        '.cm-scroller': {
+          overflow: 'auto',
+          fontSize: 'inherit',
+        },
+        // 横向 padding 16px:不让 markdown / 代码内容贴 editor 容器右边
+        // (尤其中文长段无空格 wrap 时贴边格外难读);左侧 gutter 之后加
+        // 16px 给视觉呼吸,无行号时(lineNumbers=false)整体往内缩。
+        '.cm-content': { padding: '12px 16px', fontSize: 'inherit' },
+        '.cm-gutters': { border: 'none', fontSize: 'inherit' },
+        // editor.lineNumbers=false 时:.cm-editor 加 .cm-no-gutters,
+        // 只隐藏 CodeMirror 自带行号/fold gutter,保留独立 debug 断点 gutter。
+        '&.cm-no-gutters .cm-lineNumbers': { display: 'none !important' },
+        '&.cm-no-gutters .cm-foldGutter': { display: 'none !important' },
+      }),
+    ];
 
+    // 切 tab / 重命名 / 切模式后重挂:取回该 tab 上次卸载时的视图状态(BDD: src/__tests__/editor-view-state/)。
+    const saved = takeCodeEditorViewState(tabId);
     const view = new EditorView({
-      state,
+      state: restoreState(saved, value, eolRef.current, extensions),
       parent: containerRef.current,
+      ...(saved ? { scrollTo: saved.scroll } : {}),
     });
     viewRef.current = view;
     useEditorStore.getState().registerView(tabId, view);
+    const unregisterFocus = registerEditorFocus(tabId, () => view.focus());
     // popout 弹出 / 收回只移 DOM:按所在文档重绑 root(创建时面板 DOM 可能已不在主窗,先对齐一次)。
     const rebindRoot = () => rebindCodeMirrorRoots(view.dom);
     rebindRoot();
@@ -198,12 +234,27 @@ export function CodeEditor({
 
     return () => {
       unregisterRoot();
+      unregisterFocus();
       useEditorStore.getState().unregisterView(tabId, view);
       view.destroy();
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 卸载时存下视图状态供该 tab 重挂时取回。layout 清理:此时 DOM 尚未移除,滚动快照才准(passive 清理时已脱离文档)。
+  // tab 已关闭 / 已改名(旧 id 不在了;改名时 store 已把状态迁到新 id)→ 不存。
+  useLayoutEffect(
+    () => () => {
+      const view = viewRef.current;
+      if (!view) return;
+      const tabs = useEditorStore.getState().tabs;
+      if (tabs?.some((t) => t.id === tabId)) saveCodeEditorViewState(tabId, snapshotCodeEditorView(view));
+    },
+    // tabId 挂载时取定(父按 tab id 换 key 重挂)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // 外部 value 变化(rare:外部进程改盘后 reloadFromDisk,或程序化改 content)→ 同步到
   // editor。正常打字走 `cur === value` early-return,不进这里。

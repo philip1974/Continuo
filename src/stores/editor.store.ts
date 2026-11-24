@@ -19,6 +19,10 @@ import {
   PATH_STR_MAX,
 } from '../../electron/shared/explorer-persistence-schema';
 import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
+import {
+  renameEditorViewStates,
+  retainEditorViewStates,
+} from '@/panels/Editor/editor-view-state-cache';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -637,11 +641,22 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       getStateAfterRemovingPaths(tabs, active, paths),
     ),
 
-  // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃
-  renamePath: (oldPath, newPath) =>
-    changeTabsWithWriteBack(get, set, (tabs, active) =>
-      getStateAfterRenamingPath(tabs, active, oldPath, newPath),
-    ),
+  // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃。
+  // 编辑器视图状态(撤销历史 / 光标 / 滚动)随 tab 迁到新 id(BDD: src/__tests__/editor-view-state/)。
+  renamePath: (oldPath, newPath) => {
+    const { tabs, viewRefs } = get();
+    const renamed = getStateAfterRenamingPath(tabs, null, oldPath, newPath).tabs;
+    if (renamed !== tabs) {
+      const pairs: Array<readonly [string, string]> = [];
+      for (let i = 0; i < tabs.length; i++) {
+        if (tabs[i]!.id !== renamed[i]!.id) pairs.push([tabs[i]!.id, renamed[i]!.id]);
+      }
+      renameEditorViewStates(pairs, (id) => viewRefs.get(id));
+    }
+    changeTabsWithWriteBack(get, set, (cur, active) =>
+      getStateAfterRenamingPath(cur, active, oldPath, newPath),
+    );
+  },
 
   closeTabsOutsideRoot: (root) =>
     changeTabsWithWriteBack(get, set, (tabs, active) =>
@@ -788,6 +803,15 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
     });
   },
 }));
+
+// tab 关闭 / 移除(close / 删除路径 / 切 root)后丢弃其编辑器视图状态。tab 增删改名必 bump chromeVersion,
+// 只在它变化时比对(正文输入不触发)。BDD: src/__tests__/editor-view-state/
+useEditorStore.subscribe((s, prev) => {
+  if (s.chromeVersion === prev.chromeVersion) return;
+  const open = new Set<string>();
+  for (const t of s.tabs) open.add(t.id);
+  retainEditorViewStates((id) => open.has(id));
+});
 
 // 性能 P4:milkdownUnsafe 派生值的单一计算口径。content / filePath 任一变更时调一次,
 // 结果缓存进 tab.milkdownUnsafe。isMilkdownUnsafe 跑未锚定 wiki-link 正则(O(file)),

@@ -26,6 +26,8 @@ import {
 } from './mermaid-preview';
 import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
+import { registerEditorFocus } from './editor-focus-registry';
+import { markdownScrollTopOf, saveMarkdownScrollTop } from './editor-view-state-cache';
 import { rebindCodeMirrorRoots } from './codemirror-root';
 import { markdownCodeBlockTheme } from './code-editor-theme';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
@@ -142,13 +144,17 @@ interface WriteBackHandle {
   dispose: () => void;
 }
 
+/** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦句柄。 */
+type OnEditorReady = (focus: () => void) => void;
+
 function CrepeEditor({
   tabId,
   defaultValue,
   readonly = false,
   onChange,
   onWriteBack,
-}: MilkdownEditorProps) {
+  onReady,
+}: MilkdownEditorProps & { readonly onReady?: OnEditorReady }) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onWriteBackRef = useRef(onWriteBack);
@@ -294,6 +300,15 @@ function CrepeEditor({
 
     crepe.on((listener) => {
       listener.mounted(() => recordSelectionDoc(crepe));
+      listener.mounted(() =>
+        onReady?.(() => {
+          try {
+            crepe.editor.ctx.get<{ focus(): void }, 'editorView'>('editorView').focus();
+          } catch {
+            /* 已拆除 */
+          }
+        }),
+      );
       // 只读预览不回写也不上抛,不记基线、不挂其余 listener(省掉挂载时与防抖里的序列化)。
       if (readonly) return;
       listener.mounted(() => {
@@ -379,6 +394,33 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     [locale],
   );
 
+  // 视图状态按 tab 保留(BDD: src/__tests__/editor-view-state/):滚动位置随滚动记下,编辑器就绪后恢复 ——
+  // 切 tab / 切 Edit·Preview / 外部修改重载(reloadEpoch 重挂)都不跳回顶部。撤销历史在 ProseMirror 插件
+  // state 里,跨 Crepe 实例不复用。就绪时同时登记聚焦句柄(打开文件后焦点进编辑器,见 editor-focus-registry)。
+  const tabId = props.tabId;
+  const unregisterFocusRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => unregisterFocusRef.current?.(), []);
+  const handleReady = useCallback<OnEditorReady>(
+    (focus) => {
+      const el = wrapperRef.current;
+      const top = markdownScrollTopOf(tabId);
+      if (el && top !== undefined) {
+        el.scrollTop = top;
+        // 代码块 / mermaid 等节点视图可能下一帧才撑开高度
+        requestAnimationFrame(() => {
+          if (el.scrollTop !== top) el.scrollTop = top;
+        });
+      }
+      unregisterFocusRef.current?.();
+      unregisterFocusRef.current = registerEditorFocus(tabId, focus);
+    },
+    [tabId],
+  );
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => saveMarkdownScrollTop(tabId, e.currentTarget.scrollTop),
+    [tabId],
+  );
+
   // ref 跟踪最新 onLinkClick:外层 click handler 不重建,内部读最新值。
   const onLinkClickRef = useRef(props.onLinkClick);
   onLinkClickRef.current = props.onLinkClick;
@@ -462,8 +504,9 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         onAuxClick={handleAuxClick}
         onKeyDown={handleKeyDown}
         onPointerDownCapture={handlePointerDownCapture}
+        onScroll={handleScroll}
       >
-        <CrepeEditor {...props} />
+        <CrepeEditor {...props} onReady={handleReady} />
       </div>
     </MilkdownProvider>
   );
