@@ -31,7 +31,8 @@ const FENCE_CLOSE = /^(`{3,}|~{3,})[ \t]*$/;
 
 function stripCode(content: string): string {
   if (!content.includes('```') && !content.includes('~~~')) return content;
-  const lines = content.split(/\r\n|\n|\r/);
+  // 文首 BOM 被 CommonMark 预处理丢弃:不去掉则第 0 行的围栏认不出,后续开闭栏整体错位(把正文当代码)。
+  const lines = (content.charCodeAt(0) === 0xfeff ? content.slice(1) : content).split(/\r\n|\n|\r/);
   for (const line of lines) {
     if (FENCE_LIKE_INDENTED.test(line) || HTML_OR_MATH_LINE.test(line)) return content;
   }

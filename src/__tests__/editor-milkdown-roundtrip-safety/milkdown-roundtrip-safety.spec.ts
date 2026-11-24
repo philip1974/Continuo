@@ -41,6 +41,7 @@ describe('isMilkdownUnsafe', () => {
   it('ignores [[ inside top-level fenced code blocks', () => {
     expect(isMilkdownUnsafe('# Cargo\n\n```toml\n[[bin]]\nname = "x"\n```\n')).toBe(false);
     expect(isMilkdownUnsafe('~~~bash\nif [[ -f x ]]; then :; fi\n~~~\n')).toBe(false);
+    expect(isMilkdownUnsafe('\uFEFF```toml\n[[bin]]\n```\n')).toBe(false);
     expect(isMilkdownUnsafe('Intro.\r\n\r\n````md\r\n```\r\n[[x]]\r\n````\r\n')).toBe(false);
   });
 
@@ -56,6 +57,8 @@ describe('isMilkdownUnsafe', () => {
     expect(isMilkdownUnsafe('<div>\n```\n\n[[X]]\n```\n')).toBe(true);
     expect(isMilkdownUnsafe('<!--\n\n```\n-->\n[[X]]\n```\n')).toBe(true);
     expect(isMilkdownUnsafe('`a\r\r[[X]]\r`b`\n')).toBe(true);
+    // 文首 BOM 被 CommonMark 丢弃:第 0 行仍是围栏(否则开闭栏错位,把正文当代码)。
+    expect(isMilkdownUnsafe('\uFEFF```\n```\n[[X]]\n```\n')).toBe(true);
     // 段落后紧接的第 0 列围栏照样开栏(fuzz 对照 mdast 找到的反例)。
     expect(isMilkdownUnsafe('\rtext\r```js\r\r````\r- [[X]]\r```\t\r````\r')).toBe(true);
     expect(isMilkdownUnsafe('> quote\n```js\n    code\n\n```\n> [[X]]\n```\t\n')).toBe(true);
