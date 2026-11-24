@@ -233,6 +233,30 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     expect(state.activeSessionId).toBe('s1');
   });
 
+  // main 在 debuggee 自然结束时直接发 terminated(停住时被 kill 不一定先有 continued),teardown 时还会再发一次。
+  it('停住时自然结束:terminated(无 continued)清掉停点与断点;teardown 再发的 terminated 幂等', async () => {
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/repo/a.ts',
+      breakpoints: [{ file: '/repo/a.ts', line: 14, verified: true }],
+    });
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'breakpoint' });
+    await flushMicrotasks(2);
+    expect(useDebugStore.getState().activeSessionId).toBe('s1');
+
+    emit({ type: 'terminated', sessionId: 's1' });
+    expect(useDebugStore.getState().sessions.has('s1')).toBe(false);
+    expect(useDebugStore.getState().activeSessionId).toBeNull();
+
+    const before = useDebugStore.getState();
+    emit({ type: 'terminated', sessionId: 's1' });
+    await flushMicrotasks(2);
+    expect(useDebugStore.getState()).toBe(before);
+  });
+
   it('reuses variables within the same paused epoch and refetches after a new stop', async () => {
     startDebugStoreSync();
     const emit = debugApi.events[0]!;

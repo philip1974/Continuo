@@ -1617,6 +1617,59 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(debugSessions.get(sessionId)).toBeUndefined();
   });
 
+  // debuggee 自然结束(DAP terminated / exited)也要通知 renderer:否则面板徽章停在「运行中」、执行行 / 红点常驻,
+  // 直到 disconnect 或名额满回收;且重载后的快照(不含停点)与重载前显示不一致。
+  it('停住时 debuggee 自然结束(无 continued)→ 立即向 renderer 发 terminated;快照不再含该会话;之后不再推断点事件', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 12, controllerToken: 'agent-ended' },
+    );
+    await service.setBreakpoints(sessionId, { file: '/fixture.ts', line: 14 });
+    const waiting = service.waitForStop(sessionId, { timeoutMs: 5_000 });
+    await vi.waitFor(() => expect(parent.requestLog.some((r) => r.command === 'launch')).toBe(true));
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 3 });
+    await waiting;
+
+    parent.emit('terminated', {});
+    expect(events.map((event) => event.type)).toEqual(['breakpoints-changed', 'stopped', 'terminated']);
+    expect(events.at(-1)).toEqual({ type: 'terminated', sessionId });
+    // MCP 侧仍可列出(terminated),renderer 侧快照与已收到的 terminated 一致:不含该会话。
+    expect(service.listSessions()).toEqual([expect.objectContaining({ session_id: sessionId, state: 'terminated' })]);
+    expect(service.viewSnapshot(12)).toEqual([]);
+
+    // 结束后迟到的 exited / 断点变更不再推给 renderer(否则 renderer 按事件重新建出已结束的会话)。
+    parent.emit('exited', { exitCode: 0 });
+    await service.setBreakpoints(sessionId, { file: '/fixture.ts', line: 20 }).catch(() => undefined);
+    expect(events.map((event) => event.type)).toEqual(['breakpoints-changed', 'stopped', 'terminated']);
+
+    // 之后的 teardown 照常发 terminated(renderer 对未知会话的 terminated 幂等忽略)。
+    await service.disconnect(sessionId);
+    expect(events.map((event) => event.type)).toEqual([
+      'breakpoints-changed',
+      'stopped',
+      'terminated',
+      'terminated',
+    ]);
+  });
+
+  it('所有 child 都结束(会话整体结束)→ 同样向 renderer 发 terminated', async () => {
+    const { service, parent } = makeFakeService();
+    const events: DebugViewEvent[] = [];
+    service.setEventSink({ emit: (_owner, event) => events.push(event) });
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 13, controllerToken: 'agent-ended' },
+    );
+    await parent.triggerStartDebugging({ type: 'pwa-node' });
+    parent.children[0]!.emit('exited', {});
+    expect(events).toEqual([{ type: 'terminated', sessionId }]);
+    expect(service.viewSnapshot(13)).toEqual([]);
+    await service.cleanupAll('test');
+  });
+
   // 终审:renderer 重载(Cmd+R)后 store 清空,main 只推增量事件 → 订阅快照须足以恢复停点与断点。
   it('viewSnapshot:按窗口返回会话状态、当前停点与按 source 的断点快照(校正后行号)', async () => {
     let pid = 7000;

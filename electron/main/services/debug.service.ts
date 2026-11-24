@@ -1150,6 +1150,8 @@ export class DebugService {
     const { file, breakpoints } = this.breakpointSnapshot(runtime, source);
     runtime.breakpointEmitOrder.delete(source);
     runtime.breakpointEmitOrder.add(source);
+    // 已结束的会话 renderer 已移除:再推断点会按事件把它重新建出来。
+    if (runtime.endedMessage !== undefined) return;
     this.emitSessionEvent(sessionId, {
       type: 'breakpoints-changed',
       sessionId,
@@ -1527,7 +1529,8 @@ export class DebugService {
   viewSnapshot(ownerWindowId: number): DebugViewSessionSnapshot[] {
     return debugSessions
       .byOwner(ownerWindowId)
-      .filter((session) => session.state === 'active')
+      // 已自然结束的会话 renderer 已按 terminated 事件移除:快照不含它,重载前后显示一致。
+      .filter((session) => session.state === 'active' && session.runtimeState !== 'terminated')
       .map((session) => {
         const runtime = this.runtimes.get(session.id);
         const stop = session.runtimeState === 'stopped' ? runtime?.currentStop : undefined;
@@ -1927,12 +1930,17 @@ export class DebugService {
   }
 
   private endWholeSession(sessionId: string, runtime: RuntimeDebugSession, message: string): void {
+    // terminated 之后通常还有 exited:只结算一次(不重复通知 renderer)。
+    if (runtime.endedMessage !== undefined) return;
     this.rejectWaiters(sessionId, new Error(message));
     runtime.endedMessage = message;
     // 整个会话结束:debuggee 都已结束,清空 pid 记录(terminated 会话可能保留到名额满才回收,其间 pid 会被复用);
     // 此后清理只需回收 adapter。
     runtime.processIdsByClient.clear();
     debugSessions.update(sessionId, { runtimeState: 'terminated', systemProcessIds: [] });
+    // 通知 renderer 移除该会话(面板 / 执行行 / 红点)—— 停住时被 kill 的 adapter 可能不先发 continued。
+    // 会话本身留到 teardown(MCP 仍可 list);viewSnapshot 同样不含已结束会话;teardown 时再发的 terminated renderer 幂等忽略。
+    this.emitSessionEvent(sessionId, { type: 'terminated', sessionId });
   }
 
   private markStopped(
