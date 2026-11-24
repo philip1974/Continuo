@@ -501,7 +501,7 @@ function warnSkippedMain(dir: string, reason: string): void {
   const key = `${reason}\0${dir}`;
   if (skippedMainWarned.has(key) || skippedMainWarned.size >= SKIPPED_MAIN_WARN_MAX) return;
   skippedMainWarned.add(key);
-  console.warn(`[plugins] 跳过插件(main 入口不可用:${reason}): ${dir}`);
+  console.warn(`[plugins] 跳过插件(${reason}): ${dir}`);
 }
 
 /**
@@ -512,7 +512,7 @@ function warnSkippedMain(dir: string, reason: string): void {
 async function isPluginMainAvailable(dir: string, manifestText: string): Promise<boolean> {
   const main = await resolveContainedPluginMain(dir, mainNameFromManifestText(manifestText));
   if (!main.ok) {
-    warnSkippedMain(dir, main.reason === 'too-large' ? `too-large(> ${MAIN_MAX_BYTES})` : main.reason);
+    warnSkippedMain(dir, `main 入口不可用:${main.reason === 'too-large' ? `too-large(> ${MAIN_MAX_BYTES})` : main.reason}`);
     return false;
   }
   try {
@@ -521,7 +521,7 @@ async function isPluginMainAvailable(dir: string, manifestText: string): Promise
     await fh.close().catch(() => {});
     return true;
   } catch (err) {
-    warnSkippedMain(dir, `open-failed(${errorCodeOf(err)})`);
+    warnSkippedMain(dir, `main 入口不可用:open-failed(${errorCodeOf(err)})`);
     return false;
   }
 }
@@ -543,7 +543,7 @@ async function readOnePluginDirMeta(
   // 列举时跳过并告警(manifest 解析失败不在此判,交 renderer 报 manifest 错误)。
   const declaredId = manifestIdFromText(m.manifestText);
   if (declaredId !== null && declaredId !== name) {
-    warnSkippedMain(m.dir, `dir-name-mismatch(manifest id "${declaredId.slice(0, 128)}")`);
+    warnSkippedMain(m.dir, `目录名与 manifest.id 不一致:dir-name-mismatch(manifest id "${declaredId.slice(0, 128)}")`);
     return null;
   }
   if (!(await isPluginMainAvailable(m.dir, m.manifestText))) return null;

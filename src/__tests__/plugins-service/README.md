@@ -20,6 +20,9 @@ styles.css 不读取(renderer 不注入插件样式)**。
 - 非目录 → 忽略
 - 缺 manifest.json → 跳过该项(不抛)
 - 缺 main 入口(默认 `main.js`,可被 manifest.main 覆盖) → 跳过该项
+- 目录名 ≠ manifest.id(手动 clone 成 `hello-plugin/` 而 id 为 `com.example.hello`)→ 跳过并告警一次:main 的卸载 / 授权写入 /
+  saveData 都按 `plugins/<manifest.id>/` 定位,不一致时插件能激活却全部写入报「未安装」;manifest 无法解析的不在此判(交 renderer 报错)
+- 跳过的每种原因(main 入口不可用的各类、目录名不一致)都在主进程记一条告警,按目录 + 原因只记一次
 - 目录里的 styles.css 不读取,结果里没有 stylesText 字段
 - 结果只含 `{ id: 目录名, manifestText, manifestHash }`,**不含 mainText**;main 可用性用 open + fstat 判定(普通文件且 ≤8MiB),
   与读取口径一致(main 是目录 / 超限 / 越界 / 缺失 → 跳过)

@@ -20,7 +20,7 @@ import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 // ── Host 注入接口 ──────────────────────────────────────
 
 export interface PluginDirInfo {
-  /** 目录名(通常等于 manifest.id,实际以 manifest.id 为准). */
+  /** 目录名(main 列举只收目录名 = manifest.id 的目录,见 plugins.service readOnePluginDirMeta). */
   readonly id: string;
   /** manifest.json 文件文本. */
   readonly manifestText: string;
@@ -139,8 +139,9 @@ const EMPTY_PLUGIN_PERMISSIONS: readonly PermissionKey[] = [];
 const PREFETCH_CONCURRENCY = 4;
 
 /**
- * 多个目录声明同一 manifest.id 时的确定性取舍:目录名 == id 的优先(与安装器落地 plugins/<id>/、卸载按 id
- * 删目录一致),否则按目录名字典序取第一个。返回 candidate 是否应取代 current。
+ * 多个目录声明同一 manifest.id 时的确定性取舍:目录名 == id 的优先,否则按目录名字典序取第一个。main 列举已跳过
+ * 目录名 ≠ manifest.id 的目录(两端契约 plugins/<id>/),正常列举结果不会出现同 id 多目录;此函数保留为对 host 输入的
+ * 防御性确定取舍(测试 / 非 main host)。返回 candidate 是否应取代 current。
  */
 function preferPluginDir(candidate: PluginDirInfo, current: PluginDirInfo, id: string): boolean {
   const candidateExact = candidate.id === id;
@@ -511,7 +512,7 @@ export class PluginManager {
     // 已卸载、拆除尚在排队(如扫描前排队的文件变化随后收到卸载广播):目录已删 / 将删,拆除由排队的卸载负责 → 不重载、不报错。
     if (this.deactivationIntents.get(id) === 'uninstalled') return;
 
-    // 重新列举后用与启动同一个准入 + 选目录函数取目标 id(manifest.id 是真源,目录名可能不同):两者对同一份
+    // 重新列举后用与启动同一个准入 + 选目录函数取目标 id(manifest.id 是真源;main 列举已保证目录名 = id):两者对同一份
     // 磁盘状态总选同一目录、同样拒绝不兼容版本。没有合格目录 → 仍有目录声明该 id 时标 failed(下方),否则不存在。
     // 只看声明了该 id 的目录(其它目录不可能被选为该 id,也免得为无关插件告警)。
     const own = (await this.host.listPluginDirs()).filter((d) => rawManifestId(d.manifestText) === id);
