@@ -608,8 +608,8 @@ export function registerPluginFsHandlers(
       heavyRead(heavyReadKey(token), () => fn(event, token, ...args));
   const maybeSweepStaleTrash = createTrashSweepThrottle();
   const scopeThrottle = new ScopeRequestThrottle();
-  // 关窗(destroyed)/ renderer reload(主框架非同文档导航)时释放该 webContents 名下的身份 token 与
-  // pending scope 授权请求:两种情况都不会有 renderer 主动发的 _unregister-plugin,此前 token 永驻
+  // 关窗(destroyed)/ renderer 崩溃(render-process-gone)/ renderer reload(主框架非同文档导航)时释放该
+  // webContents 名下的身份 token 与 pending scope 授权请求:这几种情况都不会有 renderer 主动发的 _unregister-plugin,此前 token 永驻
   // entries;reload 前发起的授权请求也要干等满 TTL(关窗另有 releaseWindowResources 兜底,幂等)。
   // 时序:导航开始即撤旧,新文档脚本的重新注册在其后,不会被误撤。path-scope 按 pluginId 全局共享
   //(其它窗口同插件仍在用、且有持久化),不在此撤。

@@ -307,7 +307,7 @@ const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost);
 
 // watch 引用按 BrowserWindow id 记账,但 renderer reload(webContents 与窗口都不变)时旧文档不会
 // unwatch,新文档又重新 watch 已展开目录 → 旧引用永不释放(折叠后 fs.watch 关不掉、持续广播、占 LRU
-// 名额)。主框架非同文档导航即释放该窗口全部引用,与关窗 releaseFsWatchersForWindow 同一路径;
+// 名额)。主框架非同文档导航(及 renderer 崩溃)即释放该窗口全部引用,与关窗 releaseFsWatchersForWindow 同一路径;
 // 导航开始在新文档脚本之前,新文档的重新 watch 不受影响。destroyed 时关窗路径已释放,这里幂等。
 // dockview popout 的面板经 portal 由主窗 renderer 渲染,watch 的 sender 是主窗 webContents。
 const watchOwnerByWc = new Map<number, number>();

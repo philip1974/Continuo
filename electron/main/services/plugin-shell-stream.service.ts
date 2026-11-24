@@ -79,7 +79,7 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
     handle.terminate();
   };
 
-  // 窗口/插件 webContents 销毁时,杀掉它名下所有未结束的 stream 子进程,
+  // 窗口/插件 webContents 销毁、renderer 崩溃或 reload 时(makeWcGoneHook),杀掉它名下所有未结束的 stream 子进程,
   // 否则插件不调 ABORT 直接 unload / 关窗会泄漏子进程直到 timeout(审计 P1)。
   const killStreamsForSender = (senderId: number): void => {
     for (const [key, handle] of active) {

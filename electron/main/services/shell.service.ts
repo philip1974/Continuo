@@ -89,8 +89,8 @@ export function cleanupAllShellExecs(): Promise<void> {
   return children.cleanupAll();
 }
 
-// 终审 P1:窗口关闭 / 整页重载后回收该 sender 的 exec(此前 detached 进程跑到超时并占着名额)。
-// 与流式 shell 同一钩子(destroyed + main frame 非同文档导航),IPC 入口每次 exec 前挂(按 webContents 去重)。
+// 终审 P1:窗口关闭 / 整页重载 / renderer 崩溃后回收该 sender 的 exec(此前 detached 进程跑到超时并占着名额)。
+// 与流式 shell 同一钩子(destroyed + render-process-gone + main frame 非同文档导航),IPC 入口每次 exec 前挂(按 webContents 去重)。
 export const attachShellExecWcGoneHook = makeWcGoneHook((senderId) => {
   void children.killForSender(senderId);
 });

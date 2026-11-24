@@ -157,7 +157,7 @@ export function startPluginMcpIpc(
   return { invokeRemote: localInvoke };
 }
 
-// ── wc destroyed / reload hook ─────────────────────────────
+// ── wc destroyed / 崩溃 / reload hook ──────────────────────
 // 审计 #4:reload 时须摘掉 main 端残留 stub,否则 Agent 仍能在 tools/list 看到旧 tool(调用 reject
 // NO_SUCH_TOOL,重注册同名 throw TOOL_NAME_TAKEN)。清空后 renderer 在新文档里会重新 register,
 // handleWebContentsGone 幂等安全。时机与去重见 lib/wc-gone-hook。
