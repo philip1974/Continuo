@@ -3,8 +3,8 @@
 // 注册时仍用 `mod+x` 抽象形态(由 useCommandHotkeys 的 compileCombo 预编译后匹配,
 // 跨平台同 raw)。本模块只管 UI 显示,把 raw 转成视觉友好的 string。
 //
-// mac:Unicode 紧凑形式 `⌘⇧H` / `⌘,`
-// other:文字 + 分隔形式 `Ctrl+Shift+H` / `Ctrl+,`
+// mac:Unicode 紧凑形式 `⇧⌘H` / `⌘,`(修饰键固定 ⌃⌥⇧⌘ 顺序)
+// other:文字 + 分隔形式 `Ctrl+Shift+H` / `Ctrl+,`(修饰键固定 Ctrl+Alt+Shift+Win 顺序)
 //
 // BDD: src/__tests__/format-hotkey/
 
@@ -46,6 +46,8 @@ const SPECIAL_KEYS: Record<Platform, Record<string, string>> = {
     arrowdown: '↓',
     arrowleft: '←',
     arrowright: '→',
+    pageup: '⇞',
+    pagedown: '⇟',
   },
   other: {
     enter: 'Enter',
@@ -58,6 +60,8 @@ const SPECIAL_KEYS: Record<Platform, Record<string, string>> = {
     arrowdown: '↓',
     arrowleft: '←',
     arrowright: '→',
+    pageup: 'PageUp',
+    pagedown: 'PageDown',
   },
 };
 
@@ -98,6 +102,32 @@ export function isKnownHotkeyModifier(lowerModifier: string): boolean {
   return HOTKEY_MODIFIERS.has(lowerModifier);
 }
 
+// 修饰键的运行时语义位(compileCombo 同一映射):cmd / mac 上的 mod → meta;ctrl / 其它平台的 mod → ctrl;
+// option≡alt。canonicalHotkey(冲突比较)与显示排序共用。
+const MOD_META = 1;
+const MOD_CTRL = 2;
+const MOD_ALT = 4;
+const MOD_SHIFT = 8;
+
+/** (已小写、已 trim 的)修饰键段 → 语义位;未知修饰符 → 0。 */
+function modifierBit(mod: string, platform: Platform): number {
+  if (mod === 'cmd' || (mod === 'mod' && platform === 'mac')) return MOD_META;
+  if (mod === 'ctrl' || mod === 'mod') return MOD_CTRL;
+  if (mod === 'alt' || mod === 'option') return MOD_ALT;
+  if (mod === 'shift') return MOD_SHIFT;
+  return 0;
+}
+
+/**
+ * 修饰键**显示**顺序(与注册段序无关,否则 `shift+mod+enter` 显示 ⇧⌘↵、`mod+shift+n` 显示 ⌘⇧N):
+ * mac ⌃⌥⇧⌘(Apple HIG / VSCode mac 同序);其它 Ctrl+Alt+Shift+Win。
+ */
+const MOD_DISPLAY_ORDER = [MOD_CTRL, MOD_ALT, MOD_SHIFT, MOD_META] as const;
+const MOD_DISPLAY_LABEL: Record<Platform, Readonly<Record<number, string>>> = {
+  mac: { [MOD_CTRL]: '⌃', [MOD_ALT]: '⌥', [MOD_SHIFT]: '⇧', [MOD_META]: '⌘' },
+  other: { [MOD_CTRL]: 'Ctrl', [MOD_ALT]: 'Alt', [MOD_SHIFT]: 'Shift', [MOD_META]: 'Win' },
+};
+
 /**
  * 把整串快捷键归一成「运行时语义」签名,用于比较两个快捷键是否会被同一次按键触发:
  * - 主键别名归一(`mod+up` ≡ 录制出的 `mod+arrowup`)
@@ -106,28 +136,22 @@ export function isKnownHotkeyModifier(lowerModifier: string): boolean {
  * 含未知修饰符的串运行时不可匹配,原样返回(只与完全相同的串相等)。
  */
 export function canonicalHotkey(combo: string, platform: Platform): string {
-  let meta = false;
-  let ctrl = false;
-  let alt = false;
-  let shift = false;
+  let mask = 0;
   let start = 0;
   for (;;) {
     const plus = combo.indexOf('+', start);
     if (plus < 0) break;
-    const mod = lowerIfNeeded(combo.slice(start, plus).trim());
-    if (mod === 'cmd' || (mod === 'mod' && platform === 'mac')) meta = true;
-    else if (mod === 'ctrl' || mod === 'mod') ctrl = true;
-    else if (mod === 'alt' || mod === 'option') alt = true;
-    else if (mod === 'shift') shift = true;
-    else return combo;
+    const bit = modifierBit(lowerIfNeeded(combo.slice(start, plus).trim()), platform);
+    if (bit === 0) return combo;
+    mask |= bit;
     start = plus + 1;
   }
   const key = canonicalHotkeyKey(lowerIfNeeded(combo.slice(start).trim()));
   return (
-    (meta ? 'meta+' : '') +
-    (ctrl ? 'ctrl+' : '') +
-    (alt ? 'alt+' : '') +
-    (shift ? 'shift+' : '') +
+    (mask & MOD_META ? 'meta+' : '') +
+    (mask & MOD_CTRL ? 'ctrl+' : '') +
+    (mask & MOD_ALT ? 'alt+' : '') +
+    (mask & MOD_SHIFT ? 'shift+' : '') +
     key
   );
 }
@@ -161,9 +185,32 @@ function forEachHotkeySegment(
 }
 
 /**
+ * 修饰段(除最后一段外的非空段)的语义位掩码与主键段位置。任一修饰段不认识 → mask = -1(调用方按原段序显示,
+ * 不猜测其位置)。空 raw → keyStart = -1。
+ */
+function parseForDisplay(
+  raw: string,
+  platform: Platform,
+): { readonly mask: number; readonly keyStart: number; readonly keyEnd: number } {
+  let mask = 0;
+  let keyStart = -1;
+  let keyEnd = -1;
+  forEachHotkeySegment(raw, (start, end) => {
+    if (keyStart >= 0 && mask >= 0) {
+      const bit = modifierBit(lowerIfNeeded(raw.slice(keyStart, keyEnd)), platform);
+      mask = bit === 0 ? -1 : mask | bit;
+    }
+    keyStart = start;
+    keyEnd = end;
+  });
+  return { mask, keyStart, keyEnd };
+}
+
+/**
  * 拆 raw 为 platform-aware 的 parts 数组。给 KeyCap 渲染用(每个 part
- * 一个 keycap)。例:`mod+shift+h` mac → ['⌘','⇧','H'];other →
- * ['Ctrl','Shift','H']。
+ * 一个 keycap)。修饰键按固定顺序输出(见 MOD_DISPLAY_ORDER),同义修饰键去重。
+ * 例:`mod+shift+h` / `shift+mod+h` mac → ['⇧','⌘','H'];other → ['Ctrl','Shift','H']。
+ * 含未知修饰段时按原段序逐段格式化。
  *
  * 空字符串 / 全 + → 空数组(调用方判空)。
  */
@@ -171,12 +218,27 @@ export function formatHotkeyParts(
   raw: string,
   platform: Platform,
 ): string[] {
-  // 两趟:先数段数再按确切长度预分配(每次按键渲染都会走,避免数组扩容)。两趟共用同一个切分器。
+  const { mask, keyStart, keyEnd } = parseForDisplay(raw, platform);
+  if (keyStart < 0) return EMPTY_HOTKEY_PARTS;
+  if (mask < 0) return formatSegmentsInOrder(raw, platform);
+  let count = 1;
+  for (const bit of MOD_DISPLAY_ORDER) if (mask & bit) count += 1;
+  const parts = new Array<string>(count);
+  let index = 0;
+  for (const bit of MOD_DISPLAY_ORDER) {
+    if (mask & bit) parts[index++] = MOD_DISPLAY_LABEL[platform][bit]!;
+  }
+  parts[index] = formatPart(raw.slice(keyStart, keyEnd), platform);
+  return parts;
+}
+
+/** 按注册段序逐段格式化(含未知修饰段时的回退)。 */
+function formatSegmentsInOrder(raw: string, platform: Platform): string[] {
+  // 两趟:先数段数再按确切长度预分配。两趟共用同一个切分器。
   let count = 0;
   forEachHotkeySegment(raw, () => {
     count += 1;
   });
-  if (count === 0) return EMPTY_HOTKEY_PARTS;
   const parts = new Array<string>(count);
   let index = 0;
   forEachHotkeySegment(raw, (start, end) => {
@@ -186,15 +248,14 @@ export function formatHotkeyParts(
   return parts;
 }
 
+/** 字符串形式:mac 紧贴(⇧⌘H),其它 `+` 分隔(Ctrl+Shift+H)。与 formatHotkeyParts 同序。 */
 export function formatHotkey(raw: string, platform: Platform): string {
+  const parts = formatHotkeyParts(raw, platform);
   let formatted = '';
-  let needsSeparator = false;
-  forEachHotkeySegment(raw, (start, end) => {
-    const part = formatPart(raw.slice(start, end), platform);
-    if (platform !== 'mac' && needsSeparator) formatted += '+';
-    formatted += part;
-    needsSeparator = true;
-  });
+  for (let i = 0; i < parts.length; i += 1) {
+    if (platform !== 'mac' && i > 0) formatted += '+';
+    formatted += parts[i];
+  }
   return formatted;
 }
 

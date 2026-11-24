@@ -3,7 +3,7 @@
 行为契约:**把 raw hotkey 字面(`mod+,` / `mod+shift+h`)格式化为
 platform-aware 的展示串**。
 
-- mac:Unicode 符号紧凑形式 `⌘,` / `⌘⇧H` / `⌘⌥⇧K`
+- mac:Unicode 符号紧凑形式 `⌘,` / `⇧⌘H` / `⌥⇧⌘K`
 - others:文字 `+` 分隔 `Ctrl+,` / `Ctrl+Shift+H` / `Ctrl+Alt+Shift+K`
 
 > 注意:本 topic 只管**显示**;命令的 hotkey 注册值仍是 `mod+x` 形态由
@@ -49,6 +49,7 @@ export function detectPlatform(): Platform;
 | `down` | `↓` | `↓` |
 | `left` | `←` | `←` |
 | `right` | `→` | `→` |
+| `pageup` / `pagedown` | `⇞` / `⇟` | `PageUp` / `PageDown` |
 
 ### 一般字面
 
@@ -57,8 +58,16 @@ export function detectPlatform(): Platform;
 
 ### 拼接规则
 
-- mac:无分隔符紧贴 `⌘⇧H`
+- mac:无分隔符紧贴 `⇧⌘H`
 - other:`+` 分隔 `Ctrl+Shift+H`
+
+### 修饰键固定顺序(与注册段序无关)
+
+- mac:`⌃⌥⇧⌘`(Apple HIG / VSCode mac 同序)—— `shift+mod+enter` 与 `mod+shift+enter` 都显示 `⇧⌘↵`
+- other:`Ctrl+Alt+Shift+Win`
+- 同义修饰键去重(other 上 `ctrl+mod+x` → `Ctrl+X`)
+- 含未知修饰段(如 `hyper+x`)→ 不猜测,按原段序逐段显示
+- `formatHotkey`(字符串)与 `formatHotkeyParts`(键帽)同序;命令面板、快捷键设置页、录键弹窗、tooltip 都经此
 - 单键(无修饰)两平台都直接 `Esc` / `↵` / `K`
 
 ### 大小写不敏感

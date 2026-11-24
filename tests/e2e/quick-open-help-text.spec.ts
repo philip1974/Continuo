@@ -1,4 +1,4 @@
-// Quick Open 输入框 placeholder 含 ⌘⇧P 切到命令面板的提示.
+// Quick Open 输入框 placeholder 含 ⇧⌘P 切到命令面板的提示(修饰键固定 ⌃⌥⇧⌘ 顺序).
 import { test, expect } from './fixtures/electron-app';
 import {
   QUICK_OPEN_PLACEHOLDER,
@@ -6,7 +6,7 @@ import {
   quickOpenInput,
 } from './helpers/palette';
 
-test('Quick Open 输入框 placeholder 含「⌘⇧P 切到命令面板」', async ({
+test('Quick Open 输入框 placeholder 含「⇧⌘P 切到命令面板」', async ({
   window,
 }) => {
   await openQuickOpen(window);
@@ -14,6 +14,6 @@ test('Quick Open 输入框 placeholder 含「⌘⇧P 切到命令面板」', asy
   await expect(input).toBeVisible();
   const placeholder = await input.getAttribute('placeholder');
   expect(placeholder ?? '').toMatch(QUICK_OPEN_PLACEHOLDER);
-  // 提示用户 ⌘⇧P 是命令面板
-  expect(placeholder).toContain('⌘⇧P');
+  // 提示用户 ⇧⌘P 是命令面板
+  expect(placeholder).toContain('⇧⌘P');
 });

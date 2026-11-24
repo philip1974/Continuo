@@ -17,10 +17,10 @@ describe('formatHotkey · mac', () => {
   it.each<[string, string]>([
     ['mod+s', '⌘S'],
     ['mod+,', '⌘,'],
-    ['mod+shift+h', '⌘⇧H'],
-    ['mod+shift+p', '⌘⇧P'],
-    ['mod+alt+l', '⌘⌥L'],
-    ['mod+ctrl+space', '⌘⌃␣'],
+    ['mod+shift+h', '⇧⌘H'],
+    ['mod+shift+p', '⇧⌘P'],
+    ['mod+alt+l', '⌥⌘L'],
+    ['mod+ctrl+space', '⌃⌘␣'],
     ['shift+enter', '⇧↵'],
     ['mod+/', '⌘/'],
     ['mod+.', '⌘.'],
@@ -41,6 +41,8 @@ describe('formatHotkey · mac', () => {
     ['down', '↓'],
     ['left', '←'],
     ['right', '→'],
+    ['pageup', '⇞'],
+    ['pagedown', '⇟'],
   ])('特殊键 "%s" → "%s"', (raw, expected) => {
     expect(formatHotkey(raw, 'mac')).toBe(expected);
   });
@@ -71,6 +73,9 @@ describe('formatHotkey · other', () => {
     ['delete', 'Del'],
     ['up', '↑'],
     ['down', '↓'],
+    ['pageup', 'PageUp'],
+    ['pagedown', 'PageDown'],
+    ['ctrl+pagedown', 'Ctrl+PageDown'],
   ])('特殊键 "%s" → "%s"', (raw, expected) => {
     expect(formatHotkey(raw, 'other')).toBe(expected);
   });
@@ -82,18 +87,50 @@ describe('formatHotkey · other', () => {
 
 describe('formatHotkey · 大小写不敏感', () => {
   it('Mod+Shift+H = MOD+SHIFT+H = mod+shift+h', () => {
-    expect(formatHotkey('Mod+Shift+H', 'mac')).toBe('⌘⇧H');
-    expect(formatHotkey('MOD+SHIFT+H', 'mac')).toBe('⌘⇧H');
-    expect(formatHotkey('mod+shift+h', 'mac')).toBe('⌘⇧H');
+    expect(formatHotkey('Mod+Shift+H', 'mac')).toBe('⇧⌘H');
+    expect(formatHotkey('MOD+SHIFT+H', 'mac')).toBe('⇧⌘H');
+    expect(formatHotkey('mod+shift+h', 'mac')).toBe('⇧⌘H');
   });
 
   it('option 等价 alt(mac 习惯名)', () => {
-    expect(formatHotkey('mod+option+l', 'mac')).toBe('⌘⌥L');
+    expect(formatHotkey('mod+option+l', 'mac')).toBe('⌥⌘L');
     expect(formatHotkey('mod+option+l', 'other')).toBe('Ctrl+Alt+L');
   });
 
   it('return 等价 enter', () => {
     expect(formatHotkey('mod+return', 'mac')).toBe('⌘↵');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 修饰键固定显示顺序(与注册段序无关)
+// mac ⌃⌥⇧⌘(Apple HIG / VSCode 同序);其它 Ctrl+Alt+Shift+Win
+// ────────────────────────────────────────────────────────────
+
+describe('formatHotkey · 修饰键固定顺序', () => {
+  it('段序不同的同一组合显示一致(Toggle Terminal Zoom shift+mod+enter 与 New Window mod+shift+n 同序)', () => {
+    expect(formatHotkey('shift+mod+enter', 'mac')).toBe('⇧⌘↵');
+    expect(formatHotkey('mod+shift+enter', 'mac')).toBe('⇧⌘↵');
+    expect(formatHotkey('mod+shift+n', 'mac')).toBe('⇧⌘N');
+    expect(formatHotkey('shift+mod+enter', 'other')).toBe('Ctrl+Shift+Enter');
+    expect(formatHotkeyParts('shift+mod+enter', 'mac')).toEqual(['⇧', '⌘', '↵']);
+    expect(formatHotkeyParts('shift+mod+enter', 'other')).toEqual(['Ctrl', 'Shift', 'Enter']);
+  });
+
+  it('四修饰键全序:mac ⌃⌥⇧⌘,其它 Ctrl+Alt+Shift+Win', () => {
+    expect(formatHotkey('cmd+shift+alt+ctrl+k', 'mac')).toBe('⌃⌥⇧⌘K');
+    expect(formatHotkey('cmd+shift+option+ctrl+k', 'other')).toBe('Ctrl+Alt+Shift+Win+K');
+    expect(formatHotkey('alt+mod+left', 'mac')).toBe('⌥⌘←');
+    expect(formatHotkey('alt+mod+left', 'other')).toBe('Ctrl+Alt+←');
+  });
+
+  it('同义修饰键去重(其它平台 mod≡ctrl、mac mod≡cmd)', () => {
+    expect(formatHotkey('ctrl+mod+x', 'other')).toBe('Ctrl+X');
+    expect(formatHotkey('cmd+mod+x', 'mac')).toBe('⌘X');
+  });
+
+  it('含未知修饰段时按原段序显示(不猜测)', () => {
+    expect(formatHotkey('hyper+shift+x', 'other')).toBe('HYPER+Shift+X');
   });
 });
 
@@ -148,7 +185,7 @@ describe('formatHotkeyParts', () => {
           ['mod', 'shift', 'h', 'enter'].includes(String(ctx)),
         ),
       ).toBe(false);
-      expect(formatHotkey('MOD+SHIFT+H', 'mac')).toBe('⌘⇧H');
+      expect(formatHotkey('MOD+SHIFT+H', 'mac')).toBe('⇧⌘H');
     } finally {
       lowerSpy.mockRestore();
     }
@@ -173,7 +210,7 @@ describe('formatHotkeyParts', () => {
   it.each<[string, 'mac' | 'other', string[]]>([
     ['mod+s', 'mac', ['⌘', 'S']],
     ['mod+s', 'other', ['Ctrl', 'S']],
-    ['mod+shift+h', 'mac', ['⌘', '⇧', 'H']],
+    ['mod+shift+h', 'mac', ['⇧', '⌘', 'H']],
     ['mod+shift+h', 'other', ['Ctrl', 'Shift', 'H']],
     ['mod+,', 'mac', ['⌘', ',']],
     ['mod+,', 'other', ['Ctrl', ',']],

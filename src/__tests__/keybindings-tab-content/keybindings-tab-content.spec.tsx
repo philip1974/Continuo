@@ -444,7 +444,7 @@ describe('KeybindingsTabContent — override', () => {
       'button[aria-label*="恢复默认"]',
     ) as HTMLButtonElement;
     // jsdom = 非 mac 平台
-    expect(resetBtn.title).toContain('Shift Ctrl Enter');
+    expect(resetBtn.title).toContain('Ctrl Shift Enter'); // 修饰键固定顺序,与注册段序无关
     expect(resetBtn.title).not.toContain('shift+mod+enter');
   });
 
