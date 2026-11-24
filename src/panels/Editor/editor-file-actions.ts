@@ -103,8 +103,23 @@ export function openFileWithContent(
   requestedPath: string = path,
 ): Promise<IpcResult<boolean>> {
   const find = (tabs: readonly EditorTab[]): EditorTab | null =>
-    tabs.find((t) => tabMatchesDiskPath(t, path) || tabMatchesDiskPath(t, requestedPath)) ?? null;
+    findPluginOpenedTab(tabs, path, requestedPath);
   return openTabWith(path, async () => ({ ok: true, data: content }), find, path);
+}
+
+/**
+ * 插件打开的文件对应的已开标签:真实路径或插件原路径命中标签的 filePath / realPath 任一。openFileWithContent 判重与
+ * 插件 openFile 之后找标签跳行(co-app openInEditor)共用 —— 两处口径不同时会切到经链接路径打开的标签却找不到它跳行。
+ */
+export function findPluginOpenedTab(
+  tabs: readonly EditorTab[],
+  canonicalPath: string,
+  requestedPath: string = canonicalPath,
+): EditorTab | null {
+  return (
+    tabs.find((t) => tabMatchesDiskPath(t, canonicalPath) || tabMatchesDiskPath(t, requestedPath)) ??
+    null
+  );
 }
 
 /** data = 是否新建了标签(false:已开着只切换)。findExisting:判定「已开过」的查找(读前、读后各查一次)。 */

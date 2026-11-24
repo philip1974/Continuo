@@ -18,6 +18,7 @@ import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
 import {
+  findPluginOpenedTab,
   openFileByPath,
   openFileWithContent,
   type FileOpResult,
@@ -90,7 +91,7 @@ const invalidPathResult = {
 const editor: CoHostEditorApi = {
   async openFile(path, opts) {
     if (!isAbsolutePath(path)) return invalidPathResult;
-    return openInEditor(path, opts, () =>
+    return openInEditor(path, opts, undefined, () =>
       openFileByPath(path, editorFileDeps),
     );
   },
@@ -102,7 +103,7 @@ const editor: CoHostEditorApi = {
     let adopted = false;
     try {
       if (!isAbsolutePath(canonicalPath)) return invalidPathResult;
-      return await openInEditor(canonicalPath, opts, async () => {
+      return await openInEditor(canonicalPath, opts, requestedPath, async () => {
         const r = await openFileWithContent(canonicalPath, content, requestedPath);
         if (!r.ok) return r;
         adopted = r.data;
@@ -117,6 +118,8 @@ const editor: CoHostEditorApi = {
 async function openInEditor(
   path: string,
   opts: EditorOpenOptions | undefined,
+  /** 插件原路径(openVerifiedFile):找标签跳行与打开时的判重同一口径(findPluginOpenedTab)。 */
+  requestedPath: string | undefined,
   open: () => Promise<FileOpResult>,
 ): Promise<EditorOpenResult> {
   let openResult;
@@ -147,7 +150,10 @@ async function openInEditor(
   // 这里若用 `t.id === path` 找不到 activeTab、waitForViewRef 用错 key → 行号跳转失败。
   // viewRef 必须用**已开 tab 的真实 id**(大小写可能不同)查。
   const state = useEditorStore.getState();
-  const activeTab = findEditorFileTabByPath(state.tabs, path);
+  const activeTab =
+    requestedPath === undefined
+      ? findEditorFileTabByPath(state.tabs, path)
+      : findPluginOpenedTab(state.tabs, path, requestedPath);
   const viewKey = activeTab?.id ?? path;
   const inMilkdown = usesMilkdownEngine(path, activeTab ?? null);
   if (activeTab && inMilkdown) {

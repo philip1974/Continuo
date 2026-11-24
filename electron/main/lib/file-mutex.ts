@@ -7,7 +7,7 @@ import { createSerialQueue } from '../../shared/run-serial-per-key';
  *   await withExplorerFileMutex(async () => {
  *     const payload = await loadExplorer(file);
  *     // ... patch ...
- *     await atomicWriteJson(file, payload);
+ *     await writeExplorerFile(file, payload);
  *   });
  *
  * 约束:持锁区严禁发 IPC、严禁调用会再次拿同一锁的 helper(no reentrant)。

@@ -263,6 +263,20 @@ describe.skipIf(process.platform === 'win32')('用户已打开的文件,插件�
     expect(tabs[0]!.pluginOpenedPath).toBeUndefined();
   });
 
+  // 打开判重与之后找标签跳行同一口径(findPluginOpenedTab):否则切到了经链接路径打开的标签,却按 canonical 路径等
+  // view → 行号静默不跳(tab-not-mounted)。
+  it('带 line 打开经目录链接已开的文件 → 按已有标签 id 等 view 跳行', async () => {
+    const viaLink = join(work, 'linkB');
+    await symlink(dirA, viaLink);
+    const userPath = join(viaLink, 'secret.json');
+    await userOpens(userPath);
+    await moveActiveAway();
+    const waitSpy = vi.spyOn(useEditorStore.getState(), 'waitForViewRef').mockResolvedValue(null);
+    await plugin.editor.openFile(userPath, { line: 2 });
+    expect(waitSpy).toHaveBeenCalledWith(userPath, expect.any(Number));
+    waitSpy.mockRestore();
+  });
+
   it('用户经文件链接打开(标签带 realPath),插件用真实路径打开 → 切到该标签', async () => {
     const alias = join(work, 'alias.json');
     await symlink(P, alias);

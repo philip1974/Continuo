@@ -405,10 +405,10 @@ async function loadExplorerWithFormat(
 ): Promise<{ payload: ExplorerPayloadV3; isV3: boolean } | null> {
   // 只有「文件不存在」(ENOENT)才是首次启动语义 → null(调用方用默认值)。其它读错误
   // (EACCES/EIO/too-large 等)是「当前态未知」:绝不能当 null —— 否则调用方 `?? default` /
-  // mergeWritableIntoFull(null,...) 后 atomicWriteJson 会用默认/局部快照覆盖一个**仍存在但
+  // mergeWritableIntoFull(null,...) 后 writeExplorerFile 会用默认/局部快照覆盖一个**仍存在但
   // 暂不可读**的 explorer.json,丢 recentRoots/pinned/窗口段(数据安全 P1)。readExplorerCapped
   // 在 ENOENT 返 null、其它(含 too-large)throw → 写路径在 file-mutex 回调内 reject、
-  // atomicWriteJson 不执行 = 写中止;读路径经 safeHandle / 启动 try-catch 降级,均不覆盖磁盘。
+  // writeExplorerFile 不执行 = 写中止;读路径经 safeHandle / 启动 try-catch 降级,均不覆盖磁盘。
   const raw = await readExplorerCapped(filePath);
   if (raw === null) return null;
   try {

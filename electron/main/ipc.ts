@@ -149,7 +149,7 @@ export function registerIpc(deps: WindowIpcDeps): void {
       // 边界(E89,E67 对偶):LayoutSchema 是 .passthrough() 无序列化大小上限。畸形 renderer/
       // dockview 状态可写入超大 layout → explorer.json 撑爆 → 下次 loadExplorer 命中 16MiB
       // 上限(E67)拒读 → 布局/窗口/会话恢复整体失效 + 写路径 fail-closed 卡死。写盘前按序列化
-      // 字节上限校验(远小于 explorer 16MiB,确保整文件仍可读),超限拒写并保留旧 layout。
+      // 字节上限校验,超限拒写并保留旧 layout(整个文件 ≤16MiB 由写入口 writeExplorerFile 按总量保证)。
       // 边界(E308,E305-E307 reorder 同族 / 校验顺序 fail-fast):字节下界 fail-fast 在 assertJsonValue
       // 全量遍历之前 —— 超 2MiB 但 shape 合法(≤assertJsonValue 1M/10万/256 上限)的 layout 不被 assertJsonValue
       // 完整遍历后才拒。jsonByteLowerBoundExceeds 对任意输入安全(E288)可先跑。(仅「既非 JSON-safe 又超限」
