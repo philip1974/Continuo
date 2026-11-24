@@ -182,9 +182,12 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       ): void => {
         if (settled) return;
         settled = true;
-        const handle = active.get(key);
-        if (handle?.timeoutTimer) clearTimeout(handle.timeoutTimer);
-        active.delete(key);
+        // race:ABORT 已摘除本流条目后,同 streamId 可立即重新 START 占用同一 key —— 只清理仍属于本流的条目,
+        // 否则旧子进程迟到的 close 会删掉新流的条目与超时 timer(新流失去超时、可被重复 START)。
+        if (active.get(key) === self) {
+          if (self.timeoutTimer) clearTimeout(self.timeoutTimer);
+          active.delete(key);
+        }
         releaseSlot();
         send('exit', { exitCode, signal });
       };
@@ -214,7 +217,8 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       const timeoutTimer = setTimeout(terminate, timeoutMs);
       const maybeUnref = timeoutTimer as { unref?: () => void };
       if (typeof maybeUnref.unref === 'function') maybeUnref.unref();
-      active.set(key, { terminate, timeoutTimer, senderId, releaseSlot });
+      const self: ActiveStream = { terminate, timeoutTimer, senderId, releaseSlot };
+      active.set(key, self);
     },
   );
 

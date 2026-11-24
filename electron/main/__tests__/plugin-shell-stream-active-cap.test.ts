@@ -165,3 +165,18 @@ describe('plugin-shell-stream timeoutMs clamp 与 exec 一致', () => {
     expect(spy.mock.calls.map((c) => c[1])).not.toContain(200.9);
   });
 });
+
+describe('ABORT 后同 streamId 立即重新 START', () => {
+  it('旧子进程迟到的 close 不摘除新流的 active 条目(新流仍可被识别为在途)', async () => {
+    const { ipc } = makeHarness();
+    const sender = new MockWebContents();
+    await start(ipc, sender, 'same');
+    const oldChild = spawnedChildren[0]!;
+    await ipc.invoke(sender, PLUGIN_SHELL_STREAM_CHANNELS.ABORT, 'same');
+    await start(ipc, sender, 'same'); // 新流,同 key
+    oldChild.emit('close', null, 'SIGTERM'); // 旧子进程迟到结算
+
+    // 新流仍在途:同 streamId 再 START 须被拒(条目未被旧 finalize 误删)。
+    await expect(start(ipc, sender, 'same')).rejects.toThrow(/already active/);
+  });
+});
