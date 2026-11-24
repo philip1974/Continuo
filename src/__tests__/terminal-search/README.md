@@ -15,7 +15,8 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - S4b IME 组合中(`isComposing` / `keyCode 229`)的 Enter / Escape 不跳转、不关闭(属于输入法)。
 - S5 Regex / case-sensitive / whole-word toggles re-run search with updated options.
 - S6 Escape or close hides the search bar, clears decorations, clears query, resets result state, and refocuses the terminal.
-- S6b Escape 挂在搜索条根节点:焦点在选项(`.*` / `Aa` / `W`)或跳转(`^` / `v`)按钮上时同样关闭并把焦点还给终端;输入框内的 Escape 只关闭一次。
+- S6b Escape 挂在搜索条根节点:焦点在选项(`.*` / `Aa` / `W`)或跳转(上一个 / 下一个)按钮上时同样关闭并把焦点还给终端;输入框内的 Escape 只关闭一次。
+- S6c 上一个 / 下一个 / 关闭按钮是 design `IconButton` + `@/lib/ui-icons` 的 `ChevronUpIcon` / `ChevronDownIcon` / `CloseIcon`(16×16 stroke SVG,`aria-hidden`),不再用 ASCII「^ v x」(字形大小 / 基线与 `.*` / `Aa` / `W` 不齐);可访问名由 `aria-label` 提供(`search-bar.spec.tsx`)。
 - S7 Input blur clears only the active decoration, leaving match highlights intact.
 - S8 `isSearchHotkey` recognizes exact platform `mod+f` only. The terminal itself intercepts via
   `isTerminalSearchHotkey` (`src/panels/Terminal/terminal-hotkeys.ts`), which follows the user's effective binding of

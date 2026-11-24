@@ -342,3 +342,23 @@ describe('TerminalSearchBar UI', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('TerminalSearchBar 导航 / 关闭按钮图标', () => {
+  // 上一个 / 下一个 / 关闭此前是 ASCII「^ v x」:字形大小与基线和 .* / Aa / W 不齐。改为 SVG 图标(aria-hidden),
+  // 按钮可访问名仍由 aria-label 提供。
+  it.each([
+    ['panels.terminal.search.previous', 'M4 10l4-4 4 4'],
+    ['panels.terminal.search.next', 'M4 6l4 4 4-4'],
+    ['panels.terminal.search.close', 'M4.5 4.5l7 7M11.5 4.5l-7 7'],
+  ])('%s 按钮渲染 SVG 图标,无 ASCII 字符', (label, d) => {
+    const { getByLabelText } = render(
+      <TerminalSearchBar searchApi={makeApi()} onClose={vi.fn()} />,
+    );
+    const btn = getByLabelText(label);
+    expect(btn.classList.contains('wm-icon-button')).toBe(true);
+    expect(btn.textContent).toBe('');
+    const svg = btn.querySelector('svg');
+    expect(svg?.getAttribute('aria-hidden')).toBe('true');
+    expect(svg?.querySelector('path')?.getAttribute('d')).toBe(d);
+  });
+});

@@ -3,6 +3,7 @@ import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
 import { clampSearchQuery } from '@/lib/search-query';
 import { isImeComposing } from '@/design/ime';
+import { ChevronDownIcon, ChevronUpIcon, CloseIcon } from '@/lib/ui-icons';
 import type { SearchApi } from './useTerminal';
 import {
   TERMINAL_SEARCH_HIGHLIGHT_LIMIT,
@@ -14,6 +15,11 @@ interface TerminalSearchBarProps {
   readonly searchApi: SearchApi;
   readonly onClose: () => void;
 }
+
+// 上一个 / 下一个 / 关闭用 SVG 图标(此前是 ASCII「^ v x」,字形大小 / 基线与 .* / Aa / W 不齐)。模块级预创建。
+const PREV_MATCH_ICON = <ChevronUpIcon size={14} />;
+const NEXT_MATCH_ICON = <ChevronDownIcon size={14} />;
+const CLOSE_SEARCH_ICON = <CloseIcon size={14} />;
 
 function toggleOption(
   options: TerminalSearchOptions,
@@ -176,7 +182,7 @@ export function TerminalSearchBar({
         title={previousLabel}
         onClick={searchApi.prev}
       >
-        ^
+        {PREV_MATCH_ICON}
       </IconButton>
       <IconButton
         size="xs"
@@ -184,7 +190,7 @@ export function TerminalSearchBar({
         title={nextLabel}
         onClick={searchApi.next}
       >
-        v
+        {NEXT_MATCH_ICON}
       </IconButton>
       <IconButton
         size="xs"
@@ -196,7 +202,7 @@ export function TerminalSearchBar({
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClose}
       >
-        x
+        {CLOSE_SEARCH_ICON}
       </IconButton>
     </div>
   );
