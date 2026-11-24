@@ -283,7 +283,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       // a11y(A120):data-panel-id 供方向键导航后焦点跟随定位新 active tab。
       data-panel-id={api.id}
       onKeyDown={handleKeyDown}
-      className="group/tab relative flex h-full cursor-pointer items-center gap-2 pl-3 pr-2 text-sm text-fg"
+      className="group/tab relative flex h-full min-w-0 cursor-pointer items-center gap-2 pl-3 pr-2 text-sm text-fg"
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
@@ -294,13 +294,13 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       {active ? (
         <m.span
           layoutId={panelTitleLayoutId(api.id)}
-          className="select-none"
+          className="min-w-0 truncate select-none"
           transition={TAB_TITLE_SPRING}
         >
           {title}
         </m.span>
       ) : (
-        <span className="select-none">{title}</span>
+        <span className="min-w-0 truncate select-none">{title}</span>
       )}
       {isMaximized && (
         // iTerm2-style maximize indicator. 只在 group maximized 时显示,放在 close 前。
@@ -328,6 +328,8 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
         // a11y(A123,A29 同族):关闭按钮移出 Tab 顺序,保「一次 Tab 进 tablist、方向键移动」
         // 复合控件模型;键盘关闭由 tab 根 Delete 触发(见 handleKeyDown)。
         tabIndex={-1}
+        // 极窄组(dockview.css 容器查询)隐藏,让出宽度给标题;仍可 ⌘W / 中键 / Delete 关闭。
+        data-tab-close=""
         onPointerDown={(e) => e.preventDefault()}
         onClick={onClose}
         // 激活 tab 常显(同编辑器 tab,TabNav);其余悬停 / 键盘聚焦时显示。

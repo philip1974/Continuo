@@ -376,6 +376,11 @@ function isDismissKey(event: KeyboardEvent): boolean {
 export interface UseTerminalOptions {
   /** 进程非 0 退出(或 agent 会话退出)后用户按任意键:关闭该终端面板。 */
   readonly onExitDismiss?: () => void;
+  /**
+   * xterm 创建(可能因 0 尺寸推迟)那一刻询问:是否把焦点给它。面板挂载时已是活动面板(新建终端 setActive 早于
+   * lazy 面板挂载,激活事件已错过)→ 返回 true,用户可直接键入;后台创建(agent 会话不抢焦点)→ false。
+   */
+  readonly focusOnInit?: () => boolean;
 }
 
 /**
@@ -388,6 +393,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onExitDismissRef = useRef(options?.onExitDismiss);
   onExitDismissRef.current = options?.onExitDismiss;
+  const focusOnInitRef = useRef(options?.focusOnInit);
+  focusOnInitRef.current = options?.focusOnInit;
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
@@ -592,6 +599,7 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     });
     termRef.current = term;
     fitRef.current = fitAddon;
+    if (focusOnInitRef.current?.()) term.focus();
 
     // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS / CWD_REPORT_MAX_WAIT_MS):只发窗口内最新值,
     // 且与上次已发送值不同才发。

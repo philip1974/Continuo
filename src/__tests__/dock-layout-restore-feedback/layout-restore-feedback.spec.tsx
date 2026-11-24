@@ -45,6 +45,9 @@ vi.mock('dockview-react', () => ({
         onDidRemovePanel: fakeDisposable(),
         onDidAddPanel: fakeDisposable(),
         onDidMaximizedGroupChange: fakeDisposable(),
+        // 组 MRU(trackGroupMru)/ 活动 tab 可见(trackActiveTabReveal)。
+        onDidActiveGroupChange: fakeDisposable(),
+        onDidActivePanelChange: fakeDisposable(),
         // popout 文档跟踪(trackPopoutDocuments)。
         onDidAddGroup: fakeDisposable(),
         onDidRemoveGroup: fakeDisposable(),

@@ -49,3 +49,25 @@
   border-left: 1px solid var(--dv-tab-divider-color);
   box-shadow: -12px 0 8px -4px var(--dv-tabs-and-actions-container-background-color);
 }
+
+/* 活动 tab 总可见(VSCode):组里只有它一个时随组变窄收缩、标题截断(SharedTab 的 truncate),不被挤出 tab 条只剩
+ * 「⌄1」溢出按钮;多 tab 时由 reveal-active-tab 把活动 tab 滚入可见区。 */
+.dockview-theme-abyss .dv-tabs-container > .dv-tab.dv-active-tab:only-child {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* 极窄组(如十个终端并排):tab 内边距、关闭按钮(⌘W / 中键 / Delete 仍可关)与弹出按钮让出宽度,
+ * 活动 tab 至少露出截断的标题,而不是只剩「⌄1 ⤢ ⋯」。 */
+.dockview-theme-abyss .dv-tabs-and-actions-container {
+  container-type: inline-size;
+}
+@container (max-width: 180px) {
+  .dockview-theme-abyss .dv-tab {
+    padding: 0;
+  }
+  .dockview-theme-abyss .dv-tab [data-tab-close],
+  .dockview-theme-abyss [data-dock-popout] {
+    display: none;
+  }
+}

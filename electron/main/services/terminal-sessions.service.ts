@@ -61,6 +61,8 @@ export interface AddSessionInput {
   readonly workspaceRoot?: string;
   /** 跨平台:PTY shell 引号族(见 TerminalSessionSnapshot.shellFamily). */
   readonly shellFamily?: ShellFamily;
+  /** 默认名序号(见 TerminalSessionSnapshot.defaultTitleIndex). */
+  readonly defaultTitleIndex?: number;
   /** 安全 S3:创建该会话的 MCP 调用方身份(见 MainTerminalSession.controllerToken). */
   readonly controllerToken?: string;
 }
@@ -156,6 +158,7 @@ export function add(input: AddSessionInput): void {
   const session: MainTerminalSession = {
     id: input.id,
     title: input.title,
+    ...(input.defaultTitleIndex !== undefined ? { defaultTitleIndex: input.defaultTitleIndex } : {}),
     cwd: input.cwd,
     originHint: input.originHint,
     ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
@@ -265,14 +268,14 @@ export function setExited(id: string, exitCode: number): void {
 }
 
 /**
- * 单调递增的默认标题。remove 中间 session 不重用编号 — 修复 renderer 旧
- * `sessions.length + 1` 实现的撞号 bug。
+ * 单调递增的默认标题序号(title 用 defaultTerminalTitle(n),renderer 显示本地化名)。remove 中间 session 不重用
+ * 编号 — 修复 renderer 旧 `sessions.length + 1` 实现的撞号 bug。
  */
-export function nextDefaultTitle(ownerWindowId: number): string {
+export function nextDefaultTitleIndex(ownerWindowId: number): number {
   const cur = titleCounter.get(ownerWindowId) ?? 0;
   const next = cur + 1;
   titleCounter.set(ownerWindowId, next);
-  return `Terminal ${next}`;
+  return next;
 }
 
 export function subscribe(fn: SessionsSubscriber): () => void {

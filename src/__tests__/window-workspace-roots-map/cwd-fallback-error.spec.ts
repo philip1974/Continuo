@@ -76,7 +76,7 @@ describe('window-workspace-roots-map: terminal cwd fallback errors', () => {
     const createTerminal = vi.fn();
     const handler = makeCreateHandler({
       service: { createTerminal } as never,
-      sessionStore: { add, nextDefaultTitle: () => 't' } as never,
+      sessionStore: { add, nextDefaultTitleIndex: () => 1 } as never,
       resolveCwd: async () => {
         destroyed = true;
         return '/work';

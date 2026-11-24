@@ -83,3 +83,27 @@ test('mac:⌘K 清空屏幕与滚动缓冲', async ({ window }) => {
   await expect.poll(() => terminalText(window), { timeout: 5_000 }).not.toContain('line-200');
   expect(await terminalText(window)).not.toContain('line-1');
 });
+
+// 新建终端后焦点直接进 xterm(VSCode):焦点在编辑器时 ⌘T / Ctrl+T 后无需点击即可键入(BDD:dock-terminal-vscode-focus 第 2 条)。
+test('焦点在编辑器时 mod+T 新建终端 → 直接键入进终端', async ({ window }) => {
+  await waitForTestHooks(window);
+  const readme = window.locator('text=README.md').first();
+  await expect(readme).toBeVisible({ timeout: 10_000 });
+  await readme.click();
+  const editable = window.locator('[contenteditable="true"]').first();
+  await expect(editable).toBeVisible({ timeout: 10_000 });
+  await editable.click();
+  await expect.poll(() => window.evaluate(() => document.activeElement?.closest('[contenteditable="true"]') !== null)).toBe(true);
+
+  await window.keyboard.press(process.platform === 'darwin' ? 'Meta+KeyT' : 'Control+KeyT');
+  await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveAttribute('aria-selected', 'true', {
+    timeout: 15_000,
+  });
+  // 不手动 focus:焦点应已在 xterm 输入框
+  await expect(window.getByRole('textbox', { name: TERMINAL_INPUT })).toBeFocused({ timeout: 15_000 });
+  await expect
+    .poll(() => terminalText(window), { timeout: 15_000 })
+    .not.toBe('');
+  await run(window, 'echo focus-$((40+2))');
+  await expect.poll(() => terminalText(window), { timeout: 15_000 }).toContain('focus-42');
+});

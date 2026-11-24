@@ -47,6 +47,8 @@ import {
 import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
 import { trackPopoutDocuments } from './popout-documents';
+import { trackGroupMru } from './group-mru';
+import { trackActiveTabReveal } from './reveal-active-tab';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import '@/styles/dockview.css';
@@ -348,6 +350,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         }),
         // popout 子窗文档集合 → ToastViewport 把 toast 也渲染进子窗(弹出面板的 notify.* 进主窗 provider)。
         trackPopoutDocuments(event.api),
+        // 关掉活动组 / popout 子窗后激活最近使用的组、收回的面板获焦(VSCode),而非 dockview 默认的最早的组。
+        trackGroupMru(event.api),
+        // 每个组的活动 tab 总在 tab 条可见区内(VSCode),不被挤进「⌄N」溢出菜单看不到。
+        trackActiveTabReveal(event.api),
       );
       event.api.panels.forEach(wrapPanelCloseGuarded);
     },

@@ -26,18 +26,20 @@ export function sessionIdFromPanel(panel: PanelLike): string | null {
 
 /**
  * 终端 panel 标题的单一规则(DockReconciler 建 / 改 panel 与 TerminalPanelView 自校正共用;此前各写
- * 一份):session 标题 > `Terminal <id 前 6 位>`;
+ * 一份):未命名会话(有 defaultTitleIndex)按当前语言显示「终端 N」> session 标题 > `Terminal <id 前 6 位>`;
  * agent 发起的会话加 ` (agent)` 后缀;进程已退出再加本地化「(已退出)」后缀。
  */
 export function terminalPanelTitle(input: {
   readonly sessionId: string | undefined;
   readonly sessionTitle?: string;
+  readonly defaultTitleIndex?: number;
   readonly originHint?: string;
   readonly exited?: boolean;
 }): string {
   const base =
-    input.sessionTitle ??
-    `Terminal ${(input.sessionId ?? '').slice(0, 6) || '?'}`;
+    input.defaultTitleIndex !== undefined
+      ? t('panels.terminal.default_title', { n: input.defaultTitleIndex })
+      : (input.sessionTitle ?? `Terminal ${(input.sessionId ?? '').slice(0, 6) || '?'}`);
   const titled = input.originHint === 'agent' ? `${base} (agent)` : base;
   return input.exited ? `${titled} ${t('panels.terminal.exited_suffix')}` : titled;
 }

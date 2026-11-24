@@ -489,6 +489,14 @@
 - [`strip-terminal-layout-restore.spec.ts`](./dock-terminal-layout-strip/strip-terminal-layout-restore.spec.ts)
 - [`strip-terminal-layout.spec.ts`](./dock-terminal-layout-strip/strip-terminal-layout.spec.ts)
 
+## [dock / 终端的焦点与组行为对齐 VSCode](./dock-terminal-vscode-focus/README.md)
+
+- [`active-tab-visible.spec.ts`](./dock-terminal-vscode-focus/active-tab-visible.spec.ts)
+- [`group-mru.spec.ts`](./dock-terminal-vscode-focus/group-mru.spec.ts)
+- [`new-terminal-focus.spec.ts`](./dock-terminal-vscode-focus/new-terminal-focus.spec.ts)
+- [`popout-reference.spec.ts`](./dock-terminal-vscode-focus/popout-reference.spec.ts)
+- [`terminal-title-i18n.spec.ts`](./dock-terminal-vscode-focus/terminal-title-i18n.spec.ts)
+
 ## [DropdownMenu(触发按钮弹出的菜单)](./dropdown-menu/README.md)
 
 - [`dropdown-menu.spec.tsx`](./dropdown-menu/dropdown-menu.spec.tsx)

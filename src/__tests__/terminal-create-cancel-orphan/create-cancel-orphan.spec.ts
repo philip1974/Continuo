@@ -27,7 +27,7 @@ function makeStatefulStore() {
       if (!cur) return;
       cur.exitCode = code;
     },
-    nextDefaultTitle: () => 'Terminal 1',
+    nextDefaultTitleIndex: () => 1,
     subscribe: () => () => {},
     _reset: () => map.clear(),
   };

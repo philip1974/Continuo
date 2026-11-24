@@ -502,7 +502,7 @@
 
 ### P2-AS removeByOwner 清理 titleCounter 防泄漏 — `terminal-sessions-title-counter-cleanup.spec.ts`
 - `removeByOwner` 在 early-return 之前 `titleCounter.delete(ownerWindowId)`。
-- 根因: 每窗建终端时 `nextDefaultTitle` 在 titleCounter 写 windowId→n,窗口关闭走
+- 根因: 每窗建终端时 `nextDefaultTitleIndex` 在 titleCounter 写 windowId→n,窗口关闭走
   removeByOwner 旧实现只删 sessions、不删 titleCounter。BrowserWindow.id 单调不复用 →
   反复开关窗口该 Map 永久增长。量级可忽略但确为未清理项。
 

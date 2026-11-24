@@ -5,7 +5,7 @@ import { useTerminalStore } from '@/stores/terminal.store';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
-import { t as translate } from '@/i18n';
+import { t as translate, useLocale } from '@/i18n';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 import {
   addPanelKeepingActive,
@@ -155,7 +155,7 @@ export function reconcileTerminalPanels(
       added.sort((a, b) => a.createdAt - b.createdAt);
     }
 
-    let lastRefId = findLastTerminalPanelId(api);
+    let lastRefId = findLastGridTerminalPanelId(api);
     for (const session of added) {
       const panelId = panelIdFor(session.id);
       const existing = api.getPanel(panelId);
@@ -166,13 +166,13 @@ export function reconcileTerminalPanels(
           const title = deriveTitle(session);
           if (existing.api.title !== title) existing.api.setTitle(title);
         }
-        lastRefId = panelId;
+        if (isGridPanel(existing)) lastRefId = panelId;
         continue;
       }
 
       const position = lastRefId
         ? { referencePanel: lastRefId, direction: 'right' as const }
-        : undefined;
+        : gridFallbackPosition(api);
       // user 路径走 coApi.terminal.create → main 同时 RPC reply + IPC push
       // sessions-changed。renderer 的 IPC handler 可能比 RPC await resolve 先跑,
       // 此时 user 路径的 setPendingFocus 还没执行 → pendingFocus 命不中。
@@ -208,9 +208,22 @@ export function reconcileTerminalPanels(
         ...(position ? { position } : {}),
       };
       // agent 终端不抢 focus:addPanelKeepingActive(不用 `inactive: true`,见其注释)。
-      if (shouldFocus) api.addPanel(options).api.setActive();
-      else addPanelKeepingActive(api, options);
-      lastRefId = panelId;
+      // 单个面板加不进来(dockview 抛错)只报错,不中断本轮其余会话的加入 / 关闭 / 标题更新:否则订阅回调抛出,
+      // previousSessions 停在旧快照,之后每轮重复 diff 再抛。
+      let panel: IDockviewPanel;
+      try {
+        if (shouldFocus) {
+          panel = api.addPanel(options);
+          panel.api.setActive();
+        } else {
+          panel = addPanelKeepingActive(api, options);
+        }
+      } catch (err) {
+        console.warn('[dock-reconciler] addPanel failed', panelId, err);
+        notify.error(translate('errors.terminal.panel_open_failed'));
+        continue;
+      }
+      if (isGridPanel(panel)) lastRefId = panelId;
       // 如 workspace 切回时才重新可见的、期间已以 0 退出的会话。
       closePanelIfExitedCleanly(api, session);
     }
@@ -321,6 +334,12 @@ export function useDockReconciler(
     // 仅 mount 一次订阅,deps 内部用 ref 读最新值。
      
   }, []);
+
+  // 语言切换:终端默认名 / 退出后缀跟随(幂等:标题未变不 setTitle)。
+  const locale = useLocale();
+  useEffect(() => {
+    if (api) syncTerminalPanelTitles(api, useTerminalStore.getState().sessions);
+  }, [api, locale]);
 }
 
 export interface HandleTerminalPanelRemovedInput {
@@ -372,18 +391,57 @@ export async function handleTerminalPanelRemoved({
   await removeSession(sessionId);
 }
 
-function findLastTerminalPanelId(api: DockviewApi): string | null {
+/**
+ * 新终端的「右侧」参照只能是主窗 grid 里的终端:popout 组(在子窗 body 下)/ floating 组作参照时,dockview addPanel
+ * 走 getGridLocation(referenceGroup.element) 会抛错(popout)或并进浮动组。没有 grid 终端 → gridFallbackPosition。
+ * 缺 location 的面板(旧测试桩)按 grid 处理。
+ */
+function isGridPanel(panel: { readonly api: { readonly location?: { readonly type: string } } }): boolean {
+  return (panel.api.location?.type ?? 'grid') === 'grid';
+}
+
+/**
+ * 没有 grid 终端可作参照时:活动组在主窗 grid → 不传 position(落在活动组);活动组是 popout / floating(刚弹出过)
+ * → 落在主窗一个可见的 grid 组(VSCode 新终端默认进主窗面板区)。都没有 → 不传。
+ */
+function gridFallbackPosition(
+  api: DockviewApi,
+): { referenceGroup: DockviewApi['groups'][number]; direction: 'within' } | undefined {
+  const active = api.activeGroup;
+  if (!active || active.api.location.type === 'grid') return undefined;
+  const grid = api.groups.find((g) => g.api.location.type === 'grid' && g.api.isVisible);
+  return grid ? { referenceGroup: grid, direction: 'within' } : undefined;
+}
+
+function findLastGridTerminalPanelId(api: DockviewApi): string | null {
   for (let i = api.panels.length - 1; i >= 0; i--) {
     const panel = api.panels[i];
-    if (panel && sessionIdFromPanel(panel)) return panel.api.id;
+    if (panel && sessionIdFromPanel(panel) && isGridPanel(panel)) return panel.api.id;
   }
   return null;
+}
+
+/**
+ * 按当前语言重算全部终端面板标题(默认名「终端 N」与「(已退出)」后缀随语言切换)。TerminalPanelView 自身也会
+ * 随 locale 重算,但内容未挂载的面板(lazy / 从未显示过)只能靠这里。
+ */
+export function syncTerminalPanelTitles(
+  api: Pick<DockviewApi, 'getPanel'>,
+  sessions: readonly TerminalSession[],
+): void {
+  for (const session of sessions) {
+    const panel = api.getPanel(panelIdFor(session.id));
+    if (!panel) continue;
+    const title = deriveTitle(session);
+    if (panel.api.title !== title) panel.api.setTitle(title);
+  }
 }
 
 function deriveTitle(session: TerminalSession): string {
   return terminalPanelTitle({
     sessionId: session.id,
     sessionTitle: session.title,
+    defaultTitleIndex: session.defaultTitleIndex,
     originHint: session.originHint,
     exited: session.exitCode !== null,
   });

@@ -14,8 +14,13 @@ import type { ShellFamily } from '@continuo-terminal/shell-quote';
 export interface TerminalSessionSnapshot {
   /** 后端 PTY id (term-${uuid}). */
   readonly id: string;
-  /** Tab 显示名. */
+  /** Tab 显示名;未显式命名时为英文稳定名 `Terminal N`(MCP list_sessions 原样给 agent). */
   readonly title: string;
+  /**
+   * 未显式命名时 main 分配的默认名序号 N(每窗口单调)。renderer 据此按当前语言显示「终端 N」,并随语言切换更新;
+   * 显式命名的会话无此字段,按 title 原样显示。
+   */
+  readonly defaultTitleIndex?: number;
   /** PTY spawn 时的 cwd. */
   readonly cwd: string;
   /** session 来源:用户手开 / agent 通过 MCP 创建. */
@@ -39,4 +44,9 @@ export interface TerminalSessionSnapshot {
    * undefined = 旧会话 / 未知,renderer 回退平台默认。
    */
   readonly shellFamily?: ShellFamily;
+}
+
+/** 未命名终端的默认 title(英文稳定名,main 存储 / MCP 对外;renderer 显示用本地化名,见 defaultTitleIndex)。 */
+export function defaultTerminalTitle(index: number): string {
+  return `Terminal ${index}`;
 }

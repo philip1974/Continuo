@@ -12,7 +12,7 @@ PTY 进程由 `terminal.service.ts` 持(本主题不重测),session metadata
 
 | 文件 | 职责 |
 |---|---|
-| `electron/main/services/terminal-sessions.service.ts` | sessions Map + emitter + nextDefaultTitle 计数器 |
+| `electron/main/services/terminal-sessions.service.ts` | sessions Map + emitter + nextDefaultTitleIndex 计数器 |
 
 ## MainTerminalSession 模型
 
@@ -75,15 +75,16 @@ service 自动填 `createdAt = Date.now()` 和 `exitCode: null`。
 - 存在 → immutable 替换 → 推新快照
 - 重复 setExited 同 id 同 code → 仍触发(简化,不做去重)
 
-### `nextDefaultTitle()` → "Terminal N"
+### `nextDefaultTitleIndex()` → N(title 为 "Terminal N")
 
 **单调递增**(与现 renderer 的 `length+1` 实现不同,本 service 修复撞号 bug):
-- 第 1 次调 → "Terminal 1"
-- 第 2 次调 → "Terminal 2"
-- 第 3 次调 → "Terminal 3"
-- remove 中间一个,再调 → "Terminal 4"(不重用)
+- 第 1 次调 → 1("Terminal 1")
+- 第 2 次调 → 2
+- 第 3 次调 → 3
+- remove 中间一个,再调 → 4(不重用)
 
-调 nextDefaultTitle 本身**不**改 sessions Map,只递增内部计数器。
+IPC create 未命名时 title 存英文 `defaultTerminalTitle(N)`(MCP 给 agent 的稳定名),并记 `defaultTitleIndex: N`
+供 renderer 本地化显示(见 dock-terminal-vscode-focus 第 5 条)。调 nextDefaultTitleIndex 本身**不**改 sessions Map,只递增内部计数器。
 计数器在 `_reset()` 时归零。
 
 ### `subscribe(fn)` → unsubscribe

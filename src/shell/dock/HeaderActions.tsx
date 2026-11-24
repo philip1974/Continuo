@@ -129,6 +129,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
             aria-label={popoutLabel}
             title={popoutLabel}
             disabled={!activePanel}
+            // 极窄组(dockview.css 容器查询)隐藏,让出宽度给活动 tab 标题。
+            data-dock-popout=""
             onClick={popout}
             className="opacity-40 transition-opacity group-hover/header:opacity-100 focus-visible:opacity-100"
           >

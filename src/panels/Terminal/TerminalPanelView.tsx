@@ -39,12 +39,13 @@ export function TerminalPanelView(
   // 只订阅派生 primitive(打磨 R40 + R43 + P16):dock title 只需 title / originHint /
   // 是否存在。复用 terminal.store 的 sessionId 索引缓存,多终端面板收到同一 snapshot 时只
   // 为 sessions 引用建一次 Map;再用 useShallow 比较扁平 primitive,避免 JSON 签名串分配/解析。
-  const { sessionExists, sessionTitle, sessionOriginHint, sessionExited } = useTerminalStore(
+  const { sessionExists, sessionTitle, sessionDefaultTitleIndex, sessionOriginHint, sessionExited } = useTerminalStore(
     useShallow((s) => {
       const found = getIndexedTerminalSessionById(s.sessions, sessionId);
       return {
         sessionExists: found !== undefined,
         sessionTitle: found?.title,
+        sessionDefaultTitleIndex: found?.defaultTitleIndex,
         sessionOriginHint: found?.originHint,
         sessionExited: found !== undefined && found.exitCode !== null,
       };
@@ -54,6 +55,7 @@ export function TerminalPanelView(
   const derivedTitle = terminalPanelTitle({
     sessionId,
     sessionTitle,
+    defaultTitleIndex: sessionDefaultTitleIndex,
     originHint: sessionOriginHint ?? props.params.originHint,
     exited: sessionExited,
   });
@@ -92,8 +94,13 @@ function TerminalPanelContent({
   const t = useT();
   // 进程非 0 退出后「按任意键关闭」:走面板关闭的公共路径(关闭动画 + 删会话)。
   const onExitDismiss = useCallback(() => api.close(), [api]);
+  // 挂载时已是活动面板(新建终端的 setActive 早于本 lazy 面板挂载,下方 onDidActiveChange 订阅错过了那次激活)→
+  // xterm 一创建就聚焦。agent 会话由 Reconciler addPanelKeepingActive 加入、不是活动面板 → 不抢焦点(VSCode
+  // 扩展创建终端默认 preserveFocus)。搜索条打开时不抢(同下方 issue #38 R2)。
+  const searchOpenRef = useRef(false);
+  const focusOnInit = useCallback(() => api.isActive && !searchOpenRef.current, [api]);
   const { containerRef, isReady, fit, requestFit, focus, clear, readText, contextMenuActions, searchApi } =
-    useTerminal(sessionId, { onExitDismiss });
+    useTerminal(sessionId, { onExitDismiss, focusOnInit });
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
 
   // 对外句柄:focus 供 DockShell 在 exit-maximize 后拉回 xterm 焦点(topic-22:
@@ -106,7 +113,6 @@ function TerminalPanelContent({
   // issue #38 R2: ref-capture latest searchApi.isOpen so the
   // onDidActiveChange handler reads fresh value without re-creating
   // dockview disposables on every search open/close.
-  const searchOpenRef = useRef(searchApi.isOpen);
   searchOpenRef.current = searchApi.isOpen;
 
   useEffect(() => {

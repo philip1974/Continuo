@@ -34,7 +34,7 @@ function makeStatefulStore() {
       if (!cur) return; // 真实实现同款:不存在即 no-op
       cur.exitCode = code;
     },
-    nextDefaultTitle: () => 'Terminal 1',
+    nextDefaultTitleIndex: () => 1,
     subscribe: () => () => {},
     _reset: () => map.clear(),
   };

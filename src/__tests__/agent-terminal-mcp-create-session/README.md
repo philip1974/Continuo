@@ -68,7 +68,7 @@ deps:
   4. createSession 抛 → 透传(不吞)
   5. createSession 成功 → 返回 `{ session_id: r.id }`
 - agentLabel 缺省 → 用 `'agent'`(list_sessions 回显;不对应任何 Stop hook runner。tab 上的 agent 标记来自 `originHint`)
-- name 缺省 → 不传给 createSession(让 IPC handler 调 nextDefaultTitle)
+- name 缺省 → 不传给 createSession(让 IPC handler 调 nextDefaultTitleIndex)
 - cwd 缺省 → 不传(创建入口回退调用方窗口的 workspace 根,无则 `TERMINAL_CWD_UNRESOLVED`,不回退家目录)
 
 ### 字段透传

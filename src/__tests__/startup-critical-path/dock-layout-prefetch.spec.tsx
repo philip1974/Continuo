@@ -24,6 +24,7 @@ function makeApi() {
     onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
     onDidMaximizedGroupChange: vi.fn(() => ({ dispose: vi.fn() })),
     onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidActiveGroupChange: vi.fn(() => ({ dispose: vi.fn() })),
     // popout 文档跟踪(trackPopoutDocuments)。
     onDidAddGroup: vi.fn(() => ({ dispose: vi.fn() })),
     onDidRemoveGroup: vi.fn(() => ({ dispose: vi.fn() })),

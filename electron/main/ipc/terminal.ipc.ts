@@ -33,7 +33,7 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { broadcastToWindows, SKIP_BROADCAST } from '../lib/broadcast';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 import { codedError } from '../../shared/error-message';
-import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
+import { defaultTerminalTitle, type TerminalSessionSnapshot } from '../../shared/terminal-session';
 import { arraysEqual } from '../../shared/array-equal';
 import { TERMINAL_WRITE_MAX_BYTES } from '../../shared/terminal-session-limits';
 import { discardTerminalSession } from '../services/terminal-discard';
@@ -180,7 +180,13 @@ export function makeCreateHandler(deps?: {
     // 环境块,子进程可能取到用户值 → 用 mergeSpawnEnv 只留后者(内部)的键。
     const { env: internalEnv, mcpToken } = mcpEnvProvider(win.id);
     const mergedEnv = mergeSpawnEnv(input.env ?? {}, internalEnv) as Record<string, string>;
-    const title = input.name ?? sessionStore.nextDefaultTitle(win.id);
+    // 未命名:title 存英文稳定名(MCP list_sessions 给 agent),另记序号供 renderer 本地化显示。
+    let title = input.name;
+    let defaultTitleIndex: number | undefined;
+    if (title === undefined) {
+      defaultTitleIndex = sessionStore.nextDefaultTitleIndex(win.id);
+      title = defaultTerminalTitle(defaultTitleIndex);
+    }
     // 先登记 session metadata(reservation),再 spawn PTY。PTY 可能在 createTerminal 的
     // await 期间就极速退出(如 `sh -c 'exit 0'` / 启动即失败的 shell),其 onExit →
     // cleanupSessionLocal → setExited(id) 需要 metadata 已存在;否则 setExited 因 id 不在
@@ -194,6 +200,7 @@ export function makeCreateHandler(deps?: {
       sessionStore.add({
         id,
         title,
+        ...(defaultTitleIndex !== undefined ? { defaultTitleIndex } : {}),
         cwd,
         originHint: input.originHint ?? 'user',
         ownerWindowId: win.id,

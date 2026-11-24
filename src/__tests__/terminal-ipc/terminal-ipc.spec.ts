@@ -302,7 +302,7 @@ describe('makeCreateHandler', () => {
         map.delete(id);
       }),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
+      nextDefaultTitleIndex: vi.fn((_windowId: number) => 1),
       subscribe: vi.fn(() => () => {}),
       _reset: vi.fn(() => map.clear()),
     };
@@ -433,7 +433,7 @@ describe('makeCreateHandler', () => {
     expect('workspaceRoot' in added).toBe(false);
   });
 
-  it('input.name 缺省 → 调 nextDefaultTitle', async () => {
+  it('input.name 缺省 → 调 nextDefaultTitleIndex', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeHandlerWithDefaultCwd({
@@ -442,10 +442,10 @@ describe('makeCreateHandler', () => {
       generateId: () => 'x',
     });
     await handler({}, fakeWin);
-    expect(sessionStore.nextDefaultTitle).toHaveBeenCalledOnce();
+    expect(sessionStore.nextDefaultTitleIndex).toHaveBeenCalledOnce();
   });
 
-  it('input.name 给值 → 直接用,不调 nextDefaultTitle', async () => {
+  it('input.name 给值 → 直接用,不调 nextDefaultTitleIndex', async () => {
     const service = makeService();
     const sessionStore = makeSessionStore();
     const handler = makeHandlerWithDefaultCwd({
@@ -454,7 +454,7 @@ describe('makeCreateHandler', () => {
       generateId: () => 'x',
     });
     await handler({ name: 'My Terminal' }, fakeWin);
-    expect(sessionStore.nextDefaultTitle).not.toHaveBeenCalled();
+    expect(sessionStore.nextDefaultTitleIndex).not.toHaveBeenCalled();
     expect(sessionStore.add.mock.calls[0]![0].title).toBe('My Terminal');
   });
 
@@ -543,7 +543,7 @@ describe('makeListSessionsHandler', () => {
       remove: vi.fn(),
       removeByOwner: vi.fn(),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
+      nextDefaultTitleIndex: vi.fn((_windowId: number) => 1),
       subscribe: vi.fn(),
       _reset: vi.fn(),
     };
@@ -577,7 +577,7 @@ describe('makeRemoveHandler', () => {
       getAll: vi.fn(() => []),
       remove: vi.fn(),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
+      nextDefaultTitleIndex: vi.fn((_windowId: number) => 1),
       subscribe: vi.fn(),
       _reset: vi.fn(),
     };
@@ -610,7 +610,7 @@ describe('makeRemoveHandler', () => {
       getAll: vi.fn(() => []),
       remove: vi.fn(),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
+      nextDefaultTitleIndex: vi.fn((_windowId: number) => 1),
       subscribe: vi.fn(),
       _reset: vi.fn(),
     };
@@ -643,7 +643,7 @@ describe('makeRemoveHandler', () => {
       getAll: vi.fn(() => []),
       remove: vi.fn(),
       setExited: vi.fn(),
-      nextDefaultTitle: vi.fn((_windowId: number) => 'Terminal 1'),
+      nextDefaultTitleIndex: vi.fn((_windowId: number) => 1),
       subscribe: vi.fn(),
       _reset: vi.fn(),
     };

@@ -241,6 +241,7 @@ export const en = {
   'panels.terminal.exit_notice': 'The terminal process terminated with exit code: {code}.',
   'panels.terminal.exit_press_any_key': 'Press any key to close the terminal.',
   'panels.terminal.exited_suffix': '(exited)',
+  'panels.terminal.default_title': 'Terminal {n}',
   // VSCode terminal.integrated.confirmOnKill:关闭仍有子程序在跑的终端前确认。
   'panels.terminal.kill_confirm.title': 'Terminate running process?',
   'panels.terminal.kill_confirm.detail': '"{process}" is still running in "{title}". Closing the terminal will terminate it.',
@@ -426,6 +427,7 @@ export const en = {
   'errors.terminal.cwd_unresolved': 'Please open a workspace first',
   'errors.terminal.cwd_missing': 'Directory does not exist or is not accessible: {path}',
   'errors.terminal.create_failed': 'Failed to create terminal: {code}',
+  'errors.terminal.panel_open_failed': 'Could not show the terminal panel',
   // a11y(A128):feedback when closing a terminal panel fails to terminate its session.
   'errors.terminal.remove_failed': 'Failed to close terminal: {code}',
   // a11y(A130):feedback when restoring terminal sessions on startup fails.

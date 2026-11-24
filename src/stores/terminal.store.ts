@@ -53,6 +53,10 @@ function isTerminalSessionShape(v: unknown): v is TerminalSession {
     obj.id.length <= SESSION_ID_MAX &&
     typeof obj.title === 'string' &&
     obj.title.length <= LABEL_MAX &&
+    (obj.defaultTitleIndex === undefined ||
+      (typeof obj.defaultTitleIndex === 'number' &&
+        Number.isSafeInteger(obj.defaultTitleIndex) &&
+        obj.defaultTitleIndex > 0)) &&
     typeof obj.cwd === 'string' &&
     obj.cwd.length <= PATH_MAX &&
     (obj.originHint === 'user' || obj.originHint === 'agent') &&
