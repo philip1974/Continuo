@@ -1528,6 +1528,10 @@
 
 - [`use-command-hotkeys.spec.tsx`](./use-command-hotkeys/use-command-hotkeys.spec.tsx)
 
+## [useDismissOnOutsidePointer(弹出菜单点外部即关闭)](./use-dismiss-on-outside-pointer/README.md)
+
+- [`use-dismiss-on-outside-pointer.spec.tsx`](./use-dismiss-on-outside-pointer/use-dismiss-on-outside-pointer.spec.tsx)
+
 ## [useFsWatcher(Explorer 展开路径 ↔ fs.watch)](./use-fs-watcher/README.md)
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)

@@ -1,7 +1,6 @@
 import {
   type ReactElement,
   useContext,
-  useEffect,
   useRef,
   useState,
 } from 'react';
@@ -18,6 +17,7 @@ import { basename } from './path-utils';
 import { basenameForChrome } from '@/lib/path-label';
 import { useT } from '@/i18n';
 import { ExplorerVisibleContext } from './visibility';
+import { useDismissOnOutsidePointer } from '@/lib/use-dismiss-on-outside-pointer';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
 //(展开 / 折叠 / 切换 / 关闭)。
@@ -107,17 +107,7 @@ export function ExplorerHeader({
   const anchor = useMenuAnchor(triggerRef, menuOpen);
 
   // 点 trigger / menu 外:关菜单
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDocPointer = (e: PointerEvent) => {
-      const target = e.target as Node;
-      const inTrigger = triggerRef.current?.contains(target) ?? false;
-      const inMenu = menuNode.current?.contains(target) ?? false;
-      if (!inTrigger && !inMenu) setMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', onDocPointer);
-    return () => document.removeEventListener('pointerdown', onDocPointer);
-  }, [menuOpen, menuNode]);
+  useDismissOnOutsidePointer(menuOpen, [triggerRef, menuNode], () => setMenuOpen(false));
 
   // a11y(A30):拿到单飞锁后先关菜单并还原焦点到触发按钮,再开原生目录对话框。
   const switchFolder = (): void => void selectFolder(closeAndRestore);

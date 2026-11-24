@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
@@ -12,6 +12,7 @@ import { useRegistry } from '@/plugins/registries/useRegistry';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
+import { useDismissOnOutsidePointer } from '@/lib/use-dismiss-on-outside-pointer';
 
 let panelCounter = 0;
 /**
@@ -65,17 +66,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   // panel content 盖住。Portal 出去后 position:fixed 才真按 viewport 定位。
   const anchor = useMenuAnchor(triggerRef, open);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocPointer = (e: PointerEvent) => {
-      const target = e.target as Node;
-      const inTrigger = ref.current?.contains(target) ?? false;
-      const inMenu = menuNode.current?.contains(target) ?? false;
-      if (!inTrigger && !inMenu) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDocPointer);
-    return () => document.removeEventListener('pointerdown', onDocPointer);
-  }, [open, menuNode]);
+  // 点 header 容器(含 popout / 更多按钮)与菜单之外:关菜单
+  useDismissOnOutsidePointer(open, [ref, menuNode], () => setOpen(false));
 
   const addPanel = useCallback(
     async (
