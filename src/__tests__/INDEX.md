@@ -444,6 +444,10 @@
 
 - [`layout-restore-feedback.spec.tsx`](./dock-layout-restore-feedback/layout-restore-feedback.spec.tsx)
 
+## [dock-plugin-panel-placeholder — 未注册面板类型显示占位,布局不丢](./dock-plugin-panel-placeholder/README.md)
+
+- [`plugin-panel-placeholder.spec.tsx`](./dock-plugin-panel-placeholder/plugin-panel-placeholder.spec.tsx)
+
 ## [dock-reconciler-api-rebuild — dock api 变化 / 布局恢复后终端 panel 全量重建](./dock-reconciler-api-rebuild/README.md)
 
 - [`api-rebuild.spec.tsx`](./dock-reconciler-api-rebuild/api-rebuild.spec.tsx)
@@ -678,6 +682,10 @@
 ## [hook-broker-field-caps (E150)](./hook-broker-field-caps/README.md)
 
 - [`parse-stop-payload-caps.spec.ts`](./hook-broker-field-caps/parse-stop-payload-caps.spec.ts)
+
+## [hotkey-editor-handled](./hotkey-editor-handled/README.md)
+
+- [`hotkey-editor-handled.spec.tsx`](./hotkey-editor-handled/hotkey-editor-handled.spec.tsx)
 
 ## [快捷键键名词汇:捕获 / 匹配 / 显示 一致](./hotkey-key-vocabulary/README.md)
 
