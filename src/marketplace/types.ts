@@ -56,9 +56,8 @@ const MP_TAGS_COUNT_MAX = 64;
 // reviews/update 状态索引(MarketplaceTab installed.has/pending.has/updateByPid.get/reviewsByPid.get),
 // 而真实安装结果按 manifest.id 建索引 → id 不合契约时卡片状态长期错配;且 "See all" 链接把 entry.id
 // 直接插值进 discussions_q=%5B${entry.id}%5D 查询(未 encode),畸形字符可破坏/注入该 query。
-// 与 manifest ManifestSchema.id / main isSafePluginId 同一契约(electron/shared/plugin-id 的 isValidPluginId):
-// charset 收敛后 entry.id 即 URL/路径安全。非法 id 整条 entry 丢弃(不缓存)。
-// E113:isValidPluginId 抽到共享 ./plugin-id(reviews 链路同款复用)。
+// 与 main 同一契约(electron/shared/plugin-id 的 isSafePluginId:形态 + 长度):charset 收敛后 entry.id 即
+// URL/路径安全。非法 id 整条 entry 丢弃(不缓存)。reviews 链路同款复用。
 
 // E107/E104 段级字符契约与 branch 校验收口到 electron/shared/git-branch(main installFromGit
 // 的 `git clone --branch` 同源复用);isSafeRepoPathChar 原样再导出给 reviews-parser。

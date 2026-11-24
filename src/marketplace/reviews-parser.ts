@@ -74,7 +74,7 @@ export function parseReview(rawInput: unknown): Review | null {
     sections.get('plugin id') ?? extractPluginIdFromTitle(safeTitle);
   // 边界(E113):body section 路径此前只 trim() 不校验形态(title fallback 正则反而有
   // [a-z0-9._-]+ 约束,不对称)。pluginId 被用作 aggregate byPid key + 与 entry.id 对账,
-  // 畸形值(空格 / / .. / 超长)会污染聚合/缓存。两条路径统一复用共享 isValidPluginId。
+  // 畸形值(空格 / / .. / 超长)会污染聚合/缓存。两条路径统一复用共享 isSafePluginId(形态 + 长度)。
   if (!pluginId || !isSafePluginId(pluginId)) return null;
 
   const ratingRaw = sections.get('评分') ?? sections.get('rating');

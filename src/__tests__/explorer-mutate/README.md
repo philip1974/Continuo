@@ -11,7 +11,7 @@
 |---|---|
 | `src/panels/Explorer/mutate-actions.ts` | renameItem / removeItems / createNewFile / createNewDir |
 | `src/panels/Explorer/ContextMenu.tsx` | Radix UI ContextMenu 包装 |
-| `src/lib/ConfirmDialog.tsx` | design `Modal` 删除二次确认(通用确认框,多处共用) |
+| `src/lib/ConfirmDialog.tsx` | 通用确认框(design `Modal`;编辑器 / 插件卸载 / 撤销授权共用,Explorer 删除直接进回收站不经它) |
 | `src/panels/Explorer/FileRow.tsx` | 行内改名 input(headless-tree `getRenameInputProps`;Enter 提交 / Esc 取消) |
 | `src/panels/Explorer/CreateInput.tsx` | 顶部 sticky input(新建文件/夹) |
 
