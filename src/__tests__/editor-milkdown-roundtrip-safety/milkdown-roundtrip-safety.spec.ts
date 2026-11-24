@@ -43,8 +43,6 @@ describe('isMilkdownUnsafe', () => {
     expect(isMilkdownUnsafe('~~~bash\nif [[ -f x ]]; then :; fi\n~~~\n')).toBe(false);
     expect(isMilkdownUnsafe('Use `[[ -n "$x" ]]` in bash.\n')).toBe(false);
     expect(isMilkdownUnsafe('Use ``a ` [[b]] `` here.\r\n')).toBe(false);
-    // 未闭合围栏延续到文末(CommonMark)。
-    expect(isMilkdownUnsafe('````\n[[x]]\n```\n')).toBe(false);
   });
 
   it('still flags wiki-links outside code', () => {
@@ -54,6 +52,23 @@ describe('isMilkdownUnsafe', () => {
     expect(isMilkdownUnsafe('a ` stray\n\n[[Note]]\n\nb ` c\n')).toBe(true);
     // 行首 4 空格以上不是围栏。
     expect(isMilkdownUnsafe('    ```\n[[Note]]\n')).toBe(true);
+    // 误差只许偏向「不安全」:下列写法里 [[Note]] 都是正文(经 CommonMark 解析核对),不得被当代码藏掉。
+    expect(isMilkdownUnsafe('- press ` key\n- link [[Note]]\n- use ` again\n')).toBe(true);
+    expect(isMilkdownUnsafe('# Title `x\nsee [[Note]] and ` y\n')).toBe(true);
+    expect(isMilkdownUnsafe('Use \\` then [[Real]] then ` end\n')).toBe(true);
+    expect(isMilkdownUnsafe('<http://a.com/`>[[Note]] and `x`\n')).toBe(true);
+    expect(isMilkdownUnsafe('| `a | [[Note]] | b` |\n')).toBe(true);
+    expect(isMilkdownUnsafe('- item\n  ```\n  code\n- next [[Note]]\n')).toBe(true);
+    expect(isMilkdownUnsafe('1. item\n   ```js\n   code\n    ```\n\n[[Note]]\n')).toBe(true);
+    expect(isMilkdownUnsafe('````\n[[Note]]\n```\n')).toBe(true); // 未闭合:保守
+  });
+
+  it('pathological backtick runs stay linear', () => {
+    let line = '[[';
+    for (let n = 1; n <= 1500; n += 1) line += '`'.repeat(n) + 'x';
+    const t0 = performance.now();
+    isMilkdownUnsafe(line + '\n');
+    expect(performance.now() - t0).toBeLessThan(500);
   });
 
   it('does not flag empty or broken wiki-link delimiters', () => {

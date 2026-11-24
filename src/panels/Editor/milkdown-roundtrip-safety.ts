@@ -14,38 +14,80 @@ export function isMilkdownUnsafe(content: string): boolean {
   return hasYamlFrontmatter(content) || hasWikiLink(stripCode(content));
 }
 
-/** 围栏 ``` / ~~~ 的开栏(行首至多 3 空格,≥3 个同一字符;``` 的 info 不得含反引号)。返回 [字符, 长度] 或 null。 */
-function openingFence(line: string): readonly [string, number] | null {
-  const m = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-  if (!m) return null;
-  const run = m[1]!;
-  if (run[0] === '`' && m[2]!.includes('`')) return null;
-  return [run[0]!, run.length];
-}
+/*
+ * 去掉代码后的正文,只用于 wiki-link 判定。误差只许偏向「不安全」(多锁 Source 无害;把真实 wiki-link 当代码藏掉 →
+ * 判安全 → Milkdown 往返破坏数据)。故只认确定无歧义的形态,其余保留原文:
+ *  - 围栏:开栏与闭栏都在第 0 列(不在列表 / 引用 / 缩进内),且找得到闭栏;未闭合不剥。
+ *  - 行内代码:只在同一行内配对(不跨块边界:列表项 / 标题 / 段落);开栏不得被反斜杠转义;含 `<`(自动链接 / HTML
+ *    优先于代码片段)或 `|`(表格单元格先于代码片段切分)的行不剥。线性扫描,无回溯。
+ */
+const FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE = /^(`{3,}|~{3,})[ \t]*$/;
 
-function isClosingFence(line: string, ch: string, len: number): boolean {
-  const m = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line);
-  return m !== null && m[1]![0] === ch && m[1]!.length >= len;
-}
-
-/** 去掉围栏代码块(未闭合则延续到文末,同 CommonMark)与行内代码片段(等长反引号串成对)后的正文。 */
 function stripCode(content: string): string {
   if (!content.includes('`') && !content.includes('~~~')) return content;
-  const lines = content.split('\n');
-  const kept: string[] = [];
-  let fence: readonly [string, number] | null = null;
-  for (const line of lines) {
-    if (fence) {
-      if (isClosingFence(line.replace(/\r$/, ''), fence[0], fence[1])) fence = null;
-      kept.push('');
+  const lines = content.split('\n').map((l) => l.replace(/\r$/, ''));
+  for (let i = 0; i < lines.length; i += 1) {
+    const open = FENCE_OPEN.exec(lines[i]!);
+    if (!open) continue;
+    const run = open[1]!;
+    if (run[0] === '`' && open[2]!.includes('`')) continue; // 反引号围栏的 info 不得含反引号
+    let close = -1;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const m = FENCE_CLOSE.exec(lines[j]!);
+      if (m && m[1]![0] === run[0] && m[1]!.length >= run.length) {
+        close = j;
+        break;
+      }
+    }
+    if (close < 0) continue; // 未闭合:保守不剥
+    for (let k = i; k <= close; k += 1) lines[k] = '';
+    i = close;
+  }
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (line.includes('`') && line.includes('[[') && !line.includes('<') && !line.includes('|')) {
+      lines[i] = stripInlineCode(line);
+    }
+  }
+  return lines.join('\n');
+}
+
+/** 同一行内的行内代码片段(等长反引号串成对,开栏未被转义)→ 删去。O(n)。 */
+function stripInlineCode(line: string): string {
+  const runs: { start: number; len: number }[] = [];
+  for (let i = 0; i < line.length; ) {
+    if (line.charCodeAt(i) !== 96) {
+      i += 1;
       continue;
     }
-    fence = openingFence(line.replace(/\r$/, ''));
-    kept.push(fence ? '' : line);
+    let j = i;
+    while (j < line.length && line.charCodeAt(j) === 96) j += 1;
+    runs.push({ start: i, len: j - i });
+    i = j;
   }
-  // 行内代码不跨空行(段落边界):否则一个孤立反引号会与后面段落的反引号配对,把其间真实的 wiki-link 藏掉 → 误判安全、
-  // 往返破坏。开栏须是完整反引号串(前后都不是反引号),闭栏等长。
-  return kept.join('\n').replace(/(?<!`)(`+)(?!`)(?:(?!\n[ \t]*\r?\n)[\s\S])*?(?<!`)\1(?!`)/g, '');
+  // nextSame[k]:k 之后第一个同长度反引号串的下标。
+  const nextSame = new Array<number>(runs.length).fill(-1);
+  const lastByLen = new Map<number, number>();
+  for (let k = runs.length - 1; k >= 0; k -= 1) {
+    nextSame[k] = lastByLen.get(runs[k]!.len) ?? -1;
+    lastByLen.set(runs[k]!.len, k);
+  }
+  let out = '';
+  let pos = 0;
+  for (let k = 0; k < runs.length; k += 1) {
+    const r = runs[k]!;
+    if (r.start < pos) continue;
+    let backslashes = 0;
+    for (let b = r.start - 1; b >= 0 && line.charCodeAt(b) === 92; b -= 1) backslashes += 1;
+    if (backslashes % 2 === 1) continue; // 转义:字面反引号,不开栏
+    const c = nextSame[k]!;
+    if (c < 0) continue;
+    out += line.slice(pos, r.start);
+    pos = runs[c]!.start + runs[c]!.len;
+    k = c;
+  }
+  return out + line.slice(pos);
 }
 
 function hasYamlFrontmatter(content: string): boolean {
