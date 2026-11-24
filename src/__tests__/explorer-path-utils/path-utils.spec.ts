@@ -7,6 +7,7 @@ import {
   basenamePreserveTrailing,
   dirname,
   recentRootLabelParts,
+  renameStemEnd,
 } from '@/panels/Explorer/path-utils';
 
 describe('Explorer path-utils · dirname(跨平台)', () => {
@@ -145,5 +146,22 @@ describe('Explorer path-utils · recentRootLabelParts(保留旧 recent-root 显�
       parent: '',
     });
     expect(recentRootLabelParts('')).toEqual({ name: '', parent: '' });
+  });
+});
+
+describe('Explorer path-utils · renameStemEnd(F2 重命名预选主名,VSCode 同款)', () => {
+  it('文件:选到最后一个点之前', () => {
+    expect(renameStemEnd('beta.ts', false)).toBe(4);
+    expect(renameStemEnd('archive.tar.gz', false)).toBe(11);
+  });
+
+  it('无扩展名 / 点只在开头(.env)/ 目录:全选', () => {
+    expect(renameStemEnd('Makefile', false)).toBe(8);
+    expect(renameStemEnd('.env', false)).toBe(4);
+    expect(renameStemEnd('src.d', true)).toBe(5);
+  });
+
+  it('以点开头但还有扩展名:选到最后一个点之前', () => {
+    expect(renameStemEnd('.eslintrc.json', false)).toBe(9);
   });
 });

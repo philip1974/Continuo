@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
@@ -16,6 +16,7 @@ import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { clipboardPathSet, useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
 import { FileIcon } from './file-icon';
+import { renameStemEnd } from './path-utils';
 
 /**
  * 行状态快照(perf):由 FolderTree 在渲染期从 item 读出后作为 primitive 下传。FileRow 是 memo 组件,
@@ -206,6 +207,19 @@ export const FileRow = memo(function FileRow({
   // 右键菜单用的选中快照:contextmenu 事件(鼠标右键 / 键盘菜单键)里读取;与 Radix 打开菜单的 setState
   // 同批提交,菜单内容首帧即用到最新选中。
   const [menuSelectedPaths, setMenuSelectedPaths] = useState<ReadonlySet<string>>(getSelectedPaths);
+  // 重命名输入框挂载时聚焦并预选主名(VSCode:文件不含扩展名,目录 / 无扩展名全选)。稳定回调:内联 ref
+  // 每次渲染(每次键入)都会重调,把用户的光标 / 选区打回预选。下一帧再聚焦:让 Radix 右键菜单的焦点还原先跑完。
+  const name = data.name;
+  const renameInputRef = useCallback(
+    (el: HTMLInputElement | null) => {
+      if (!el) return;
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(0, renameStemEnd(name, isDir));
+      });
+    },
+    [name, isDir],
+  );
 
   const row = (
     <div
@@ -292,8 +306,15 @@ export const FileRow = memo(function FileRow({
           // 防超长 paste 跨 IPC 到 main 才失败(>FS_NAME_MAX 的名文件系统 ENAMETOOLONG 建不出)。
           maxLength={FS_NAME_MAX}
           size="xs"
-          ref={(el: HTMLInputElement | null) => {
-            if (el) requestAnimationFrame(() => el.focus());
+          ref={renameInputRef}
+          // 失焦 = 提交(VSCode 同款);库默认 onBlur 是放弃,改名到一半点别处会丢输入。Enter / Esc 已结束重命名时
+          // renamingItem 已清空,其后的失焦不再提交。不调库的 completeRenaming:它随后 updateDomFocus 会把焦点
+          // 从用户刚点的地方(编辑器等)拉回树行;这里只做它的提交与退出两步。
+          onBlur={() => {
+            const tree = item.getTree();
+            if (tree.getState().renamingItem !== item.getId()) return;
+            tree.getConfig().onRename?.(item, tree.getRenamingValue());
+            tree.applySubStateUpdate('renamingItem', null);
           }}
           className="w-full"
           spellCheck={false}

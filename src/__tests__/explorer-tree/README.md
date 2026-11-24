@@ -75,6 +75,13 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 
 - 普通单击文件 → 打开;⌘ / Ctrl / Shift + 单击文件只改选中(selectionFeature 的多选语义),不打开(VSCode 同款)
 
+## 行内重命名(`folder-tree-rename-input.spec.tsx`,VSCode 同款)
+
+- F2 进入:输入框聚焦并预选主名 —— 文件选 `[0, 最后一个点)`,目录 / 无扩展名 / 点只在开头(`.env`)全选
+  (`path-utils.renameStemEnd`);预选只在输入框挂载时做一次,键入不会把光标打回
+- 失焦 = 提交(库默认失焦是放弃);提交不把焦点拉回树(用户点到编辑器等处,焦点留在那里)
+- Esc 放弃,其后的失焦不提交;Enter 提交只发一次重命名
+
 ## 不在本主题验证
 
 - 真实浏览器虚拟滚动行为(留 E2E)

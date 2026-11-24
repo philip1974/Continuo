@@ -92,6 +92,16 @@ export function recentRootLabelParts(p: string): { name: string; parent: string 
   return { name, parent: name === p ? '' : p.slice(0, p.length - name.length - 1) };
 }
 
+/**
+ * F2 重命名时预选的范围终点(起点恒为 0),VSCode Explorer 同款:文件选到最后一个点之前(只留扩展名不选);
+ * 目录、无扩展名或点只在开头(.env)的文件全选。
+ */
+export function renameStemEnd(name: string, isDirectory: boolean): number {
+  if (isDirectory) return name.length;
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? dot : name.length;
+}
+
 /** 用户输入的文件 / 目录名:去首尾空白;空值 → null(视为取消)。新建与重命名共用。 */
 export function normalizeLeafNameInput(raw: string): string | null {
   const name = raw.trim();
