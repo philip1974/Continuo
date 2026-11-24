@@ -42,7 +42,7 @@
 
 - 输入空 + 按钮 disabled
 - 安装中 → 文案变「安装中…」+ disabled + Input disabled
-- ok=true → installMsg=「✔ 已安装 …」+ pendingInstall 设入 + gitUrl 清空
+- ok=true → installMsg=「✔ 已安装 …」+ 记入会话级待重启 store(跨页共享,见 `pending-installs-store/`)+ gitUrl 清空
 - ok=false → installMsg=「✘ [code] message」
 - 抛 → installMsg=「✘ ${err}」
 

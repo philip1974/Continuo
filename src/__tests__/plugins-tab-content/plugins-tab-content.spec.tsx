@@ -41,6 +41,7 @@ import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegis
 import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
 import type { PluginListItem } from '../../plugins/PluginManager';
+import { _resetPendingInstallsForTest } from '../../plugins/pending-installs-store';
 
 const getPerm = getUserPermissionStore as unknown as ReturnType<typeof vi.fn>;
 
@@ -88,6 +89,7 @@ beforeEach(() => {
     new ExplorerDecoratorRegistry();
   getMgr.mockReturnValue(null);
   getPerm.mockReturnValue(null);
+  _resetPendingInstallsForTest(); // 待重启记录是会话级模块 store,用例间隔离
 });
 
 afterEach(() => {
@@ -722,7 +724,7 @@ describe('PluginsTabContent — Git URL 安装', () => {
     expect(statuses.some((s) => (s.textContent ?? '').includes('已安装 Plugin X'))).toBe(true);
   });
 
-  // 落地(进入插件列表)即从待重启记录摘除(与市场 pruneLandedPending 同规则):只过滤不摘除时,卸载后过滤重新成立,
+  // 落地(进入插件列表)即从待重启记录摘除(pending-installs-store 订阅列表变化执行 pruneLandedPendingMap):只过滤不摘除时,卸载后过滤重新成立,
   // 「已安装,重启后加载」幽灵行回来。
   it('待重启插件落地后再卸载 → 不再出现幽灵待重启行', async () => {
     let list: PluginListItem[] = [];

@@ -1,7 +1,7 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/design';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '../co-app';
@@ -18,8 +18,7 @@ import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
 import { installFromGitLocalized } from '@/plugins/install-from-git';
-import type { InstallFromGitResult } from '../../../electron/shared/plugins-channels';
-import { pruneLandedPendingMap } from '@/marketplace/prune-landed-pending';
+import { clearPendingInstall, recordPendingInstall, usePendingInstalls } from '../pending-installs-store';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -30,8 +29,6 @@ interface ContributionRow {
 const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
 const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
 const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
-const NO_PENDING_INSTALLS: ReadonlyMap<string, InstallFromGitResult> =
-  new Map();
 
 const PLUGINS_TAB_ROW_CLASS_NAME = 'flex items-start gap-4 px-4 py-3 text-xs';
 const PLUGINS_TAB_ROW_BORDER_CLASS_NAME = `${PLUGINS_TAB_ROW_CLASS_NAME} border-t border-line/50`;
@@ -228,15 +225,9 @@ function UserPluginsSection() {
   const mgr = getUserPluginManager();
   // a11y(A42):结果消息带严重度 → 渲染时按语义选 live region(成功 status/polite,失败 alert)。
   const [installMsg, setInstallMsg] = useState<ResultMsg | null>(null);
-  // 已安装、待重启后才进列表的插件(按 id;连续安装多个时各占一行)。
-  const [pendingInstalls, setPendingInstalls] = useState<
-    ReadonlyMap<string, InstallFromGitResult>
-  >(NO_PENDING_INSTALLS);
-  // 已进列表(落地)即从待重启记录摘除(与市场同一规则,见 prune-landed-pending):只过滤不摘除时,卸载后过滤重新
-  // 成立,「已安装,重启后加载」幽灵行回来。渲染时仍过滤,覆盖落地到摘除之间的一帧。
-  useEffect(() => {
-    setPendingInstalls((prev) => pruneLandedPendingMap(prev, (id) => hasPluginId(plugins, id)));
-  }, [plugins]);
+  // 已安装、待重启后才进列表的插件(按 id;连续安装多个时各占一行)。与市场共用会话级 store(切页不丢、
+  // 市场装的这里也显示);落地摘除在 store 层。渲染时仍按列表过滤,兜住落地到摘除之间的一帧。
+  const pendingInstalls = usePendingInstalls((s) => s.byId);
   const pendingRows = [...pendingInstalls.values()].filter((p) => !hasPluginId(plugins, p.id));
   const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(null);
   const [permEditTarget, setPermEditTarget] = useState<PluginListItem | null>(null);
@@ -271,6 +262,7 @@ function UserPluginsSection() {
     setUninstallTarget(null);
     try {
       await mgr.uninstall(target.id);
+      clearPendingInstall(target.id);
     } catch (err) {
       console.warn(`[plugins-tab] uninstall ${target.id} failed`, err);
       // i18n(I10,I1-I9 同族,catch 抛错路径):uninstall 抛回带 code 的 Error
@@ -297,9 +289,9 @@ function UserPluginsSection() {
       });
       return false;
     }
-    // 已在列表(覆盖重装)→ watcher 热重载即生效;全新安装要等重启后的扫描(reload 对未知 id 抛错)。文案按此区分。
-    // 读 manager 最新列表(渲染期 plugins 可能已过时)。
-    const alreadyListed = hasPluginId(mgr?.listAll() ?? plugins, r.data.id);
+    // 已在列表(覆盖重装)→ watcher 热重载即生效、不记待重启;全新安装要等重启后的扫描(reload 对未知 id 抛错)。
+    // 文案按此区分(判定读 manager 最新列表,见 recordPendingInstall)。
+    const alreadyListed = !recordPendingInstall(r.data);
     setInstallMsg({
       text: t(alreadyListed ? 'plugins_tab.install.updated' : 'plugins_tab.install.success', {
         name: r.data.name,
@@ -307,10 +299,6 @@ function UserPluginsSection() {
       }),
       isError: false,
     });
-    // 已在列表不记待重启:此时 plugins 引用不变、摘除 effect 不跑,若在下次扫描前卸载,残留记录会成为幽灵行。
-    if (!alreadyListed) {
-      setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
-    }
     return true;
   };
 

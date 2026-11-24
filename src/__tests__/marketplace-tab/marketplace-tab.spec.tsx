@@ -40,6 +40,7 @@ import { setLocale as setI18nLocale } from '@/i18n';
 import { fetchMarketplaceIndex, fetchPluginManifest } from '../../marketplace/fetcher';
 import { useUpdateStore, type AvailableUpdate } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
+import { _resetPendingInstallsForTest } from '../../plugins/pending-installs-store';
 import type { PluginAggregateRating, Review } from '../../marketplace/reviews-types';
 import type { MarketplaceEntry } from '../../marketplace/types';
 
@@ -76,6 +77,7 @@ beforeEach(() => {
   fetchManifestMock.mockReset();
   fetchManifestMock.mockResolvedValue({ id: '_', name: '_', version: '0.0.0' });
   getMgr.mockReset();
+  _resetPendingInstallsForTest(); // 待重启记录是会话级模块 store,用例间隔离
   // 挂载时 MarketplaceTab 会 refresh 可用更新(见 marketplace-reviews-lazy-fetch);这里各用例直接设定 remoteVersions,
   // refresh 置为 no-op 以免按 mock 的远端清单覆盖用例设定。
   useUpdateStore.setState({

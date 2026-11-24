@@ -13,7 +13,7 @@ import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { clampSearchQuery } from '@/lib/search-query';
 import { useAvailableUpdates, useUpdateStore, type AvailableUpdate } from './update-store';
-import { pruneLandedPending } from './prune-landed-pending';
+import { recordPendingInstall, usePendingInstalls } from '@/plugins/pending-installs-store';
 import { useReviewsStore } from './reviews-store';
 import type { PluginAggregateRating, Review } from './reviews-types';
 import { isHttpUrl } from './url-safety';
@@ -75,8 +75,6 @@ interface InstallState {
   busy: string | null;
   /** 安装结果消息(per entry)。a11y(A44):带严重度 → 渲染按语义选 live region。 */
   msgs: ReadonlyMap<string, ResultMsg>;
-  /** 刚装成功但 PluginManager 还没扫到的 id(下次 LM 启动才入表). */
-  pending: ReadonlySet<string>;
 }
 
 /** 当前已装 plugin id 集合(订阅 user plugin manager 的列表变化)。 */
@@ -108,8 +106,9 @@ export function MarketplaceTab() {
   const [install, setInstall] = useState<InstallState>({
     busy: null,
     msgs: new Map(),
-    pending: new Set(),
   });
+  // 刚装成功但 PluginManager 还没扫到的 id(下次启动才入表):与设置页共用会话级 store,切页不丢;落地摘除在 store 层。
+  const pending = usePendingInstalls((s) => s.byId);
   // race(R8):同步 in-flight 闸门。install.busy 是 render 后异步状态,同一事件循环内双击
   // install/update 会在 busy 生效前重入 → 双 installFromGit(主进程 lock 要等 clone+manifest
   // 才串行,期间已双 clone)。一次只允许一个安装/更新操作,ref 同步占位。
@@ -129,15 +128,6 @@ export function MarketplaceTab() {
   const updateByPid = useMemo(() => {
     return buildUpdateVersionMap(updates);
   }, [updates]);
-
-  // install.pending 落地(出现在 installed 真实磁盘集)后摘除:防内存泄漏 + 防卸载后
-  // 卡片残留「已安装/待重启」幻影。见 prune-landed-pending。无变化时返同引用不 re-render。
-  useEffect(() => {
-    setInstall((prev) => {
-      const pruned = pruneLandedPending(prev.pending, installed);
-      return pruned === prev.pending ? prev : { ...prev, pending: pruned };
-    });
-  }, [installed]);
 
   // 首次挂载时拉 reviews(打磨 R53:从启动预拉移到这里)。store 持 lastFetchedAt,
   // 已拉过 / 正在拉则跳过,避免重复打 GitHub API;刷新按钮仍走 refreshReviews(true)。
@@ -205,12 +195,12 @@ export function MarketplaceTab() {
             message: r.message,
           });
       installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
+      // 已在列表(更新 / 覆盖重装)不记待重启,见 recordPendingInstall。
+      if (r.ok) recordPendingInstall(r.data);
       setInstall((prev) => {
         const nextMsgs = new Map(prev.msgs);
         nextMsgs.set(entry.id, { text: msg, isError: !success });
-        const nextPending = new Set(prev.pending);
-        if (success) nextPending.add(entry.id);
-        return { busy: null, msgs: nextMsgs, pending: nextPending };
+        return { busy: null, msgs: nextMsgs };
       });
       return success;
     },
@@ -421,10 +411,8 @@ export function MarketplaceTab() {
             <MarketplaceCard
               key={entry.id}
               entry={entry}
-              installed={installed.has(entry.id) || install.pending.has(entry.id)}
-              pendingRestart={
-                install.pending.has(entry.id) && !installed.has(entry.id)
-              }
+              installed={installed.has(entry.id) || pending.has(entry.id)}
+              pendingRestart={pending.has(entry.id) && !installed.has(entry.id)}
               updateAvailable={updateByPid.get(entry.id) ?? null}
               installing={install.busy === entry.id}
               installDisabled={install.busy !== null && install.busy !== entry.id}
@@ -443,7 +431,8 @@ export function MarketplaceTab() {
 
 // 从 Git URL 安装段(对齐 demo (3) 扩展商店底部「从 GIT URL 安装」)。
 // 走 v4.5 已有的 installFromGit IPC,与 PluginsTabContent 共用同一接口;
-// 装好后插件磁盘已就位,需重启 Continuo 后 PluginManager 才扫到。
+// 装好后插件磁盘已就位,需重启 Continuo 后 PluginManager 才扫到。成功同样记待重启(此前不记:装了市场里也有的插件后
+// 卡片仍给「安装」,点击 main 抛 EEXIST)。
 function GitUrlInstallSection() {
   const t = useT();
   // a11y(A43,A42 同族):结果消息带严重度 → 渲染时按语义选 live region(成功 status/失败 alert)。
@@ -467,6 +456,7 @@ function GitUrlInstallSection() {
       }),
       isError: false,
     });
+    recordPendingInstall(r.data);
     return true;
   };
 

@@ -889,6 +889,10 @@
 
 - [`path-cross.spec.ts`](./path-cross/path-cross.spec.ts)
 
+## [待重启记录跨入口 / 跨页共享](./pending-installs-store/README.md)
+
+- [`pending-installs-store.spec.tsx`](./pending-installs-store/pending-installs-store.spec.tsx)
+
 ## [perf-audit(性能优化审计)](./perf-audit/README.md)
 
 - [`code-editor-echo-skip.spec.tsx`](./perf-audit/code-editor-echo-skip.spec.tsx)

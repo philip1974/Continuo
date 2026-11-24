@@ -2,7 +2,7 @@
 
 行为契约:**启动调 fetchMarketplaceIndex,loading=spinner;ok=渲染卡片列表 + 搜索框 + tag 过滤 + Git URL 安装段;
 error=显示错误 + 提示。每张卡:已安装(installed map)显「已安装」,未装显「安装」按钮 →
-coApi.plugins.installFromGit + setInstall.pending;有可用更新(updateStore)→ 显「更新」按钮 →
+coApi.plugins.installFromGit + 记入会话级待重启 store;有可用更新(updateStore)→ 显「更新」按钮 →
 mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 
 ## 模块
@@ -41,9 +41,10 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 - updateAvailable=有 → 「更新」按钮
 - installing=true → 「安装中…」
 - 点「安装」 → coApi.plugins.installFromGit
-  - ok → setInstall.pending 加 entry.id,msg=「✔ 已安装 …」
+  - ok → recordPendingInstall(已在列表的更新 / 覆盖重装不记),msg=「✔ 已安装 …」
   - 抛 / ok=false → msg=「✘ …」
 
 ### Git URL section
 
-- 见 GitUrlInstallSection(同 PluginsTabContent 内嵌但独立 component)
+- 见 GitUrlInstallSection(同 PluginsTabContent 内嵌但独立 component);成功同样记入待重启 store
+  (跨页共享行为见 `pending-installs-store/`)
