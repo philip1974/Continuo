@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import { SharedTab } from '../../shell/motion/SharedTab';
 import { setLocale, notifyLocaleChange } from '@/i18n';
+import {
+  __resetTerminalPanelHandlesForTest,
+  registerTerminalPanelHandles,
+} from '@/panels/Terminal/terminal-panel-handles';
 
 interface FakeApi {
   id: string;
@@ -259,8 +263,8 @@ describe('SharedTab — a11y(A119)tab 语义 + 键盘激活', () => {
     expect(exitMaximizedGroup).not.toHaveBeenCalled();
   });
 
-  // a11y(A123,A29 同族):tab 内关闭按钮移出 Tab 顺序(tabIndex=-1)保 roving;Delete/Backspace 关闭。
-  it('关闭按钮 tabIndex=-1 + Delete/Backspace 关闭当前 tab', () => {
+  // a11y(A123,A29 同族):tab 内关闭按钮移出 Tab 顺序(tabIndex=-1)保 roving;键盘关闭只认 Delete。
+  it('关闭按钮 tabIndex=-1 + Delete 关闭当前 tab', () => {
     const api = makeApi();
     const { container } = renderTab(api);
     const closeBtn = container.querySelector(
@@ -270,8 +274,16 @@ describe('SharedTab — a11y(A119)tab 语义 + 键盘激活', () => {
     const root = container.querySelector('[role=tab]') as HTMLElement;
     fireEvent.keyDown(root, { key: 'Delete' });
     expect(api.close).toHaveBeenCalledTimes(1);
+  });
+
+  // 焦点停在 tab 上时用户以为在终端里打字,退格不得关闭 tab(终端 tab 关闭 = 杀 PTY)。
+  // VSCode 的 tab 上同样没有退格关闭。
+  it('Backspace 不关闭 tab', () => {
+    const api = makeApi();
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
     fireEvent.keyDown(root, { key: 'Backspace' });
-    expect(api.close).toHaveBeenCalledTimes(2);
+    expect(api.close).not.toHaveBeenCalled();
   });
 
   it('单 tab(panels.length<=1)→ 方向键不激活(无相邻)', () => {
@@ -338,6 +350,85 @@ describe('SharedTab — a11y(A119)tab 语义 + 键盘激活', () => {
     } finally {
       stripContainer.remove();
     }
+  });
+});
+
+describe('SharedTab — 鼠标点击后焦点回到面板内容(VSCode:点 tab = 聚焦该编辑器)', () => {
+  afterEach(() => {
+    __resetTerminalPanelHandlesForTest();
+    document.body.innerHTML = '';
+  });
+
+  function withContent(api: FakeApi, content: HTMLElement): void {
+    document.body.appendChild(content);
+    (api.group as { panels?: unknown }).panels = [
+      { id: api.id, api: { setActive: api.setActive }, view: { content: { element: content } } },
+    ];
+  }
+
+  it('终端面板:鼠标点 tab → 调该面板注册的 focus 句柄', () => {
+    const api = makeApi({ isActive: true });
+    const focus = vi.fn();
+    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn() });
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.click(root, { detail: 1 });
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it('其它面板:鼠标点 tab → 优先聚焦内容里的可编辑元素', () => {
+    const api = makeApi({ isActive: true });
+    const content = document.createElement('div');
+    content.innerHTML =
+      '<button>header</button><div class="cm-content" contenteditable="true" tabindex="0"></div>';
+    withContent(api, content);
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    root.focus();
+    fireEvent.click(root, { detail: 1 });
+    expect(document.activeElement).toBe(content.querySelector('.cm-content'));
+  });
+
+  it('其它面板无可编辑元素 → 聚焦第一个可 Tab 到的控件', () => {
+    const api = makeApi({ isActive: true });
+    const content = document.createElement('div');
+    content.innerHTML = '<span>text</span><button>first</button><button>second</button>';
+    withContent(api, content);
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.click(root, { detail: 1 });
+    expect(document.activeElement?.textContent).toBe('first');
+  });
+
+  it('键盘触发的 click(detail=0)不移走焦点(tablist 键盘模型保持)', () => {
+    const api = makeApi({ isActive: true });
+    const focus = vi.fn();
+    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn() });
+    const { container } = renderTab(api);
+    const root = container.querySelector('[role=tab]') as HTMLElement;
+    fireEvent.click(root, { detail: 0 });
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('点关闭按钮不触发聚焦面板', () => {
+    const api = makeApi({ isActive: true });
+    const focus = vi.fn();
+    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn() });
+    const { container } = renderTab(api);
+    const closeBtn = container.querySelector('button[aria-label^="关闭"]') as HTMLButtonElement;
+    fireEvent.click(closeBtn, { detail: 1 });
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('关闭 / 退出缩放图标按钮有 title 悬停提示(与可访问名一致)', () => {
+    const api = makeApi({ title: 'Hello' });
+    api.group.api.isMaximized = () => true;
+    const { container } = renderTab(api);
+    const closeBtn = container.querySelector('button[aria-label="关闭 Hello"]') as HTMLButtonElement;
+    expect(closeBtn.getAttribute('title')).toBe('关闭 Hello');
+    const zoomBtn = container.querySelector('[data-testid="tab-maximize-indicator"]') as HTMLButtonElement;
+    expect(zoomBtn.getAttribute('title')).toBe(zoomBtn.getAttribute('aria-label'));
+    expect(zoomBtn.getAttribute('title')).toBeTruthy();
   });
 });
 

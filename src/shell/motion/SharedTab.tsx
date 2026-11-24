@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react';
 import { m } from 'motion/react';
 import type {
   DockviewApi,
@@ -8,6 +8,7 @@ import type {
 } from 'dockview-react';
 import { IconButton } from '@/design';
 import { useT } from '@/i18n';
+import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import {
   panelTitleLayoutId,
   tabIndicatorLayoutId,
@@ -39,6 +40,34 @@ const CLOSE_TAB_ICON = (
     />
   </svg>
 );
+
+// 面板内容里优先接焦点的可编辑元素(CodeMirror / ProseMirror 的 contenteditable、输入框),
+// 没有则退到第一个可 Tab 到的控件(Editor 的 tab 行按钮在编辑区之前,故两轮查找)。
+const EDITABLE_SELECTOR =
+  '[contenteditable="true"], textarea:not([disabled]), input:not([disabled]):not([type="hidden"])';
+const TABBABLE_SELECTOR =
+  'button:not([disabled]), a[href], select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * 鼠标点 tab 后把焦点交给该面板内容(VSCode:点编辑器 tab 即聚焦该编辑器,可直接继续输入)。
+ * 终端走注册的 focus 句柄(xterm 隐藏 textarea);其它面板在内容 DOM 里找可编辑元素 / 首个可 Tab 控件。
+ * 找不到时焦点留在 tab 上(无害:tab 上只有 Delete 会关闭)。
+ */
+function focusPanelContent(api: DockviewPanelApi): void {
+  if (focusTerminalPanel(api.id)) return;
+  let content: HTMLElement | undefined;
+  for (const panel of api.group.panels) {
+    if (panel.id === api.id) {
+      content = panel.view.content.element;
+      break;
+    }
+  }
+  if (!content) return;
+  const target =
+    content.querySelector<HTMLElement>(EDITABLE_SELECTOR) ??
+    content.querySelector<HTMLElement>(TABBABLE_SELECTOR);
+  target?.focus();
+}
 
 function useIsActive(api: DockviewPanelApi): boolean {
   const [active, setActive] = useState(api.isActive);
@@ -156,6 +185,17 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
     isMiddleDown.current = false;
   }, []);
 
+  // 鼠标点 tab(含已激活的 tab):mousedown 默认把焦点放到可获焦的 tab 根上,用户接着打字时按键落在 tab 而非
+  // 终端 / 编辑器。click 时把焦点交回面板内容(VSCode 同款)。detail=0 是键盘(Enter/Space)合成的 click:
+  // 保持 tablist 键盘模型,焦点留在 tab。关闭 / 退出缩放按钮的 click 已 stopPropagation,不会到这里。
+  const handleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (event.detail === 0 || event.button !== 0) return;
+      focusPanelContent(api);
+    },
+    [api],
+  );
+
   // a11y(A119/A120):tab 根键盘模型。Enter/Space 激活当前 tab;A120 补完整 WAI-ARIA tablist
   // 方向键模型 —— ArrowLeft/Right 在同组 tab 间循环移动并激活,Home/End 到首尾,且焦点跟随到
   // 新 active tab(经 data-panel-id 定位)。否则键盘用户 Tab 只能落到 active tab,无法切其它。
@@ -167,8 +207,9 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
         return;
       }
       // a11y(A123,A29 同族):tab 内关闭按钮移出 Tab 顺序(下方 tabIndex=-1)保 roving 复合控件
-      // 模型;键盘关闭改由 tab 聚焦时 Delete/Backspace 触发。
-      if (event.key === 'Delete' || event.key === 'Backspace') {
+      // 模型;键盘关闭改由 tab 聚焦时 Delete 触发。不认 Backspace:焦点停在 tab 上时用户常以为还在终端 /
+      // 编辑器里打字,退格即关 tab(终端 = 杀 PTY)。VSCode 的 tab 上也没有退格关闭。
+      if (event.key === 'Delete') {
         event.preventDefault();
         api.close();
         return;
@@ -246,6 +287,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
+      onClick={handleClick}
     >
       {/* 落点 ③:active tab 标题挂 layoutId,跨 group 拖动后让标题"飞"过去。
           只对 active 加,避免 inactive tab 的 portal 测量噪声(R2)。 */}
@@ -266,6 +308,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
         <IconButton
           size="xs"
           aria-label={t('shell.tab.exit_zoom')}
+          title={t('shell.tab.exit_zoom')}
           data-testid="tab-maximize-indicator"
           // a11y(A123):移出 Tab 顺序保 tablist roving 复合控件模型(同关闭按钮)。
           tabIndex={-1}
@@ -281,8 +324,9 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
         // a11y(A105):icon-only 关闭按钮可访问名须本地化(原硬编码英文 `Close ${title}`,
         // zh/ko 界面 SR 读英文);含 title 区分多 tab。
         aria-label={t('shell.tab.close', { title })}
+        title={t('shell.tab.close', { title })}
         // a11y(A123,A29 同族):关闭按钮移出 Tab 顺序,保「一次 Tab 进 tablist、方向键移动」
-        // 复合控件模型;键盘关闭由 tab 根 Delete/Backspace 触发(见 handleKeyDown)。
+        // 复合控件模型;键盘关闭由 tab 根 Delete 触发(见 handleKeyDown)。
         tabIndex={-1}
         onPointerDown={(e) => e.preventDefault()}
         onClick={onClose}
