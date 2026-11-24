@@ -572,6 +572,32 @@ function applyTabStateChange(
 /**
  * 关闭 / 换 id 类的 tab 变更:先只回写受影响的 tab(按 pre-flush 状态算),再按同一纯函数应用到最新状态。
  */
+/**
+ * chromeVersion 覆盖的单 tab 字段(EditorHeader chrome / action 区的 effectiveMode、TitleBar、关窗脏确认上报的
+ * 变脏代际)。新增影响这些 UI 的 tab 字段只需加在这里(此前每个 action 各写一套「是否 bump」判定,markSaved
+ * 曾漏判 dirtyGen)。`!!` 归一化 undefined / false。
+ */
+function tabChromeChanged(prev: EditorTab, next: EditorTab): boolean {
+  return (
+    prev.id !== next.id ||
+    prev.filePath !== next.filePath ||
+    prev.dirty !== next.dirty ||
+    prev.dirtyGen !== next.dirtyGen ||
+    !!prev.milkdownUnsafe !== !!next.milkdownUnsafe ||
+    !!prev.unsafeEditAccepted !== !!next.unsafeEditAccepted
+  );
+}
+
+/** 替换第 idx 个 tab;chrome 字段变了才 bump chromeVersion(内容变而 chrome 不变时 selector O(1) 跳过)。 */
+function replaceTabBumpingChrome(
+  s: Pick<EditorState, 'tabs' | 'chromeVersion'>,
+  idx: number,
+  next: EditorTab,
+): Pick<EditorState, 'tabs'> & Partial<Pick<EditorState, 'chromeVersion'>> {
+  const tabs = replaceTabAt(s.tabs, idx, next);
+  return tabChromeChanged(s.tabs[idx]!, next) ? { tabs, chromeVersion: s.chromeVersion + 1 } : { tabs };
+}
+
 function changeTabsWithWriteBack(
   get: () => EditorState,
   set: (fn: (s: EditorState) => EditorState | Partial<EditorState>) => void,
@@ -654,7 +680,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       const base = withRealPath(cur, realPath);
       // 内容没变(stat 触发但实际未改):无需重渲;仅链接目标变了时同步 realPath(chrome 不变)
       if (cur.originalContent === content) {
-        return base === cur ? s : { tabs: replaceTabAt(s.tabs, idx, base) };
+        return base === cur ? s : replaceTabBumpingChrome(s, idx, base);
       }
       const { savedGen: _staleSave, ...rest } = base; // 基线已不是自己写盘的内容 → 保存记录失效
       const next: EditorTab = {
@@ -666,12 +692,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         reloadEpoch: (cur.reloadEpoch ?? 0) + 1,
         milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
       };
-      const tabs = replaceTabAt(s.tabs, idx, next);
-      // perf P14:外部 reload 改 content,chrome(id/filePath/dirty)不变,但若 milkdownUnsafe
-      // 翻转则 effectiveMode 变 → bump 让 EditorHeader action 区更新;否则不 bump。
-      return !!next.milkdownUnsafe !== !!cur.milkdownUnsafe
-        ? { tabs, chromeVersion: s.chromeVersion + 1 }
-        : { tabs };
+      // perf P14:外部 reload 改 content,chrome(id/filePath/dirty)不变,但 milkdownUnsafe 翻转会改 effectiveMode。
+      return replaceTabBumpingChrome(s, idx, next);
     });
   },
 
@@ -695,14 +717,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         dirty: content !== cur.originalContent,
         milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
       });
-      const tabs = replaceTabAt(s.tabs, idx, next);
-      // perf P12/P14:dirty 翻转 或 milkdownUnsafe 翻转(影响 EditorHeader action 区的
-      // effectiveMode)才 bump;持续在已脏 tab 输入(dirty 恒 true、unsafe 不变)不 bump
-      // → header chrome + action selector 均 O(1) 跳过。`!!` 归一化避免 undefined→false 误判。
-      return next.dirty !== cur.dirty ||
-        !!next.milkdownUnsafe !== !!cur.milkdownUnsafe
-        ? { tabs, chromeVersion: s.chromeVersion + 1 }
-        : { tabs };
+      // perf P12/P14:持续在已脏 tab 输入(dirty 恒 true、unsafe 不变)不 bump → header selector O(1) 跳过。
+      return replaceTabBumpingChrome(s, idx, next);
     }),
 
   markSaved: (id, savedContent, savedGen) =>
@@ -725,13 +741,9 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
         dirty,
         ...(savedGen === undefined ? {} : { savedGen }),
       });
-      const tabs = replaceTabAt(s.tabs, idx, next);
-      // perf P12:markSaved 改 dirty(脏标→已存)即 chrome 变;dirty 未变则不 bump。
-      // 例外:保存期间继续输入 → 仍脏但换了新变脏代际,也要 bump —— 关窗脏确认的上报 effect 只订阅
-      // chromeVersion,不 bump 则新代际不上报,main 仍按旧代际放行退出,丢失这段输入(终审 P1)。
-      return next.dirty !== cur.dirty || next.dirtyGen !== cur.dirtyGen
-        ? { tabs, chromeVersion: s.chromeVersion + 1 }
-        : { tabs };
+      // 保存期间继续输入 → 仍脏但换了新变脏代际,也须 bump —— 关窗脏确认的上报 effect 只订阅 chromeVersion,
+      // 不 bump 则新代际不上报,main 仍按旧代际放行退出,丢失这段输入(终审 P1;dirtyGen 已在 tabChromeChanged)。
+      return replaceTabBumpingChrome(s, idx, next);
     }),
 
   setMode: (mode) => {
@@ -747,9 +759,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
       if (cur.unsafeEditAccepted) return s;
-      const tabs = replaceTabAt(s.tabs, idx, { ...cur, unsafeEditAccepted: true });
       // effectiveMode 变 → bump 让 EditorHeader action 区更新(同 milkdownUnsafe 翻转)
-      return { tabs, chromeVersion: s.chromeVersion + 1 };
+      return replaceTabBumpingChrome(s, idx, { ...cur, unsafeEditAccepted: true });
     }),
 
   registerView: (tabId, view) =>
