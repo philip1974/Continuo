@@ -125,6 +125,8 @@ const NotifyRootInput = z
   })
   .strict();
 
+const CloseInput = z.object({}).strict();
+
 const NotifyThemeInput = z
   .object({
     theme: z.enum(['light', 'dark']),
@@ -169,6 +171,12 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.setBackgroundColor(color);
     }
+  });
+  // ⌘W 无可关面板 → 关闭发起方所在窗口。win.close()(非 destroy)触发 'close',走关窗脏确认 + flush。
+  safeHandleWithCtx(WINDOW_CHANNELS.CLOSE, CloseInput, (_input, { event }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    win.close();
   });
   // 窗口关闭清 map(防泄漏)。
   app.on('browser-window-created', (_event, win) => {

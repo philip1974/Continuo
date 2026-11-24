@@ -812,7 +812,18 @@ export function buildAppMenu(t: MainT): Menu {
       },
     },
     { type: 'separator' },
-    isMac ? { role: 'close' } : { role: 'quit' },
+    // 关窗口 = ⇧⌘W / Ctrl+Shift+W(对齐 VSCode workbench.action.closeWindow)。⌘W / Ctrl+W 归 renderer 的
+    // 「关闭编辑器」命令(workbench.action.closeActiveEditor:关当前文件 tab / 面板,无可关的才关窗口)。
+    // 不用 mac 的 { role: 'close' }:它自带 ⌘W,一按直接关整个窗口并杀掉窗内全部终端。
+    // win.close() 触发 'close' → 关窗脏确认;win 是聚焦窗口(含 popout 子窗)。
+    {
+      label: t('menu.file.close_window'),
+      accelerator: 'Shift+CmdOrCtrl+W',
+      click: (_item, win) => {
+        if (win instanceof BrowserWindow) win.close();
+      },
+    },
+    ...(isMac ? [] : ([{ role: 'quit' }] satisfies MenuItemConstructorOptions[])),
   ];
 
   const template: MenuItemConstructorOptions[] = [

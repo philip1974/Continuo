@@ -12,6 +12,7 @@ export const zh: Record<TranslationKey, string> = {
   'menu.file.new_window': '新建窗口',
   'menu.file.open_folder_in_new_window': '在新窗口中打开文件夹…',
   'menu.file.window_open_failed': '无法打开新窗口',
+  'menu.file.close_window': '关闭窗口',
 
   // menu.view
   'menu.view.reload': '重新加载',
@@ -124,6 +125,13 @@ export const zh: Record<TranslationKey, string> = {
   'commands.settings.toggle.title': '切换 Settings',
   'commands.settings.category': '设置',
   'commands.explorer.category': '资源管理器',
+  // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
+  'commands.editor.close.title': '关闭编辑器',
+  'commands.editor.next.title': '打开下一个编辑器',
+  'commands.editor.previous.title': '打开上一个编辑器',
+  'commands.view.category': '查看',
+  'commands.file.save.title': '保存',
+  'commands.file.category': '文件',
 
   // panels.*
   'panels.terminal.title': '终端',

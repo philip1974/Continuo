@@ -7,6 +7,8 @@ import { lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel } from '@/lib/lazy-panel';
 import { loadEditorPanelModule } from '@/panels/Editor/editor-engine-loaders';
+import { editorCommandSpecs } from '@/panels/Editor/editor-commands';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 const Editor = lazy(() =>
   loadEditorPanelModule().then((m) => ({ default: m.EditorPanel })),
@@ -20,5 +22,7 @@ export default class EditorPlugin extends Plugin {
       titleKey: 'panels.editor.title',
       factory: lazyPanel(Editor),
     });
+    // ⌘W 关闭编辑器 / ⌘S 保存 / 下一个·上一个编辑器(VSCode 同名命令)。
+    for (const spec of editorCommandSpecs(detectPlatform())) this.addCommand(spec);
   }
 }

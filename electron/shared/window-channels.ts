@@ -17,6 +17,11 @@ export const WINDOW_CHANNELS = {
    * 画布色,之后新建的窗口 / popout 也用它(否则亮色用户开窗 / 缩放时未绘制区闪深色)。
    */
   NOTIFY_THEME: 'window:notify-theme',
+  /**
+   * 关闭发起方所在窗口(⌘W「关闭编辑器」已无可关面板时,对齐 VSCode)。main 调 win.close() 走关窗脏确认;
+   * 不用 renderer 的 window.close()(不经 BrowserWindow 'close' 事件,会绕过脏确认)。
+   */
+  CLOSE: 'window:close',
 } as const;
 
 /** window:create 入参:由 main 的 zod schema 推出(单一来源,见 window-create-schema.ts)。 */

@@ -45,6 +45,9 @@ import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notification
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { basenameForChrome } from '@/lib/path-label';
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
+import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import { registerEditorPanelActions, SAVE_COMMAND } from './editor-commands';
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -256,6 +259,23 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     }
   }, [closeCandidate, closeTab, saveTab]);
 
+  // 全局命令 workbench.action.files.save / closeActiveEditor(⌘S / ⌘W,焦点在面板外也生效)经此调用面板内同一实现
+  //(覆盖确认 / 保存·不保存·取消 确认框状态在本组件)。BDD: src/__tests__/workbench-editor-commands/
+  useEffect(
+    () =>
+      registerEditorPanelActions({
+        save: handleSave,
+        closeActiveTab: () => {
+          const { tabs, activeTabId } = useEditorStore.getState();
+          const tab = findEditorFileTabById(tabs, activeTabId);
+          if (!tab) return false;
+          onTabCloseRequest(tab);
+          return true;
+        },
+      }),
+    [handleSave, onTabCloseRequest],
+  );
+
   // Unsafe markdown cannot be opened in Milkdown without an explicit warning.
   const [unsafeEditConfirmOpen, setUnsafeEditConfirmOpen] = useState(false);
   const requestModeChange = useCallback(
@@ -326,11 +346,14 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     <div
       className="flex h-full w-full flex-col bg-canvas"
       onKeyDown={(e) => {
-        // mod+S 显式保存(Crepe 不会拦 ⌘S)。按平台精确匹配修饰键(matchesHotkey,与全局热键同一规则):此前
-        // `metaKey || ctrlKey` 且不看 shift / alt → mac 上 Ctrl+S、Win/Linux 上 Super+S 也保存,绑到 mod+shift+s 的
-        // 命令在编辑器里一次按键触发保存 + 命令两个动作(复审 loop R15 同族)。
-        if (matchesHotkey('mod+s', e.nativeEvent)) {
+        // 保存命令(workbench.action.files.save)的生效绑定:面板内就地保存并截住冒泡,不再到 document 的全局分发
+        //(否则一次按键保存两次)。面板外(Explorer 等)由全局命令保存;面板在 popout 子窗时全局分发不监听子窗
+        // document,靠这里保存。按平台精确匹配修饰键(matchesHotkey,与全局热键同一规则,复审 loop R15);按生效绑定
+        // 判定:用户改绑跟随新键、解绑后不再拦。
+        const combo = resolveActiveHotkey(SAVE_COMMAND, useKeybindingsStore.getState().overrides);
+        if (combo !== undefined && matchesHotkey(combo, e.nativeEvent)) {
           e.preventDefault();
+          e.stopPropagation();
           void handleSave();
         }
       }}

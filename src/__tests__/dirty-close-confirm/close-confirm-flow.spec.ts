@@ -811,6 +811,37 @@ describe('主窗 Reload / Force Reload:与关窗同一的脏确认 + flush', () 
   });
 });
 
+// BDD: workbench-editor-commands —— ⌘W 归「关闭编辑器」命令;关窗口改为 ⇧⌘W / Ctrl+Shift+W 自定义菜单项。
+describe('File 菜单「关闭窗口」:Shift+CmdOrCtrl+W,经关窗脏确认', () => {
+  function fileSubmenu(): readonly (ReloadMenuItem & { readonly label?: string })[] {
+    const template = buildAppMenu(((key: string) => key) as never) as unknown as (ReloadMenuItem & {
+      readonly label?: string;
+    })[];
+    const file = template.find((m) => m.label === 'menu.file.label');
+    if (!file?.submenu) throw new Error('missing file submenu');
+    return file.submenu;
+  }
+
+  it('有「关闭窗口」项(三语 key),accelerator Shift+CmdOrCtrl+W;不再有自带 ⌘W 的 role close', () => {
+    const items = fileSubmenu();
+    const close = items.find((m) => m.label === 'menu.file.close_window');
+    expect(close?.accelerator).toBe('Shift+CmdOrCtrl+W');
+    expect(items.some((m) => m.role === 'close')).toBe(false);
+    expect(items.some((m) => m.accelerator === 'CmdOrCtrl+W')).toBe(false);
+  });
+
+  it('点击 → 关闭该窗口,有脏 tab 时先弹确认框', async () => {
+    const win = createReadyWindow(61);
+    reportDirty(win, ds(['/w/a.ts']));
+    electronMock.showMessageBox.mockReturnValueOnce(new Promise(() => undefined));
+    const close = fileSubmenu().find((m) => m.label === 'menu.file.close_window');
+    close?.click?.(close, win, {});
+    await flushMicrotasks(10);
+    expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(electronMock.showMessageBox.mock.calls[0]?.[0]).toBe(win);
+  });
+});
+
 describe('退出应用(before-quit):对每个有脏文件的主窗确认', () => {
   function beforeQuit(): { event: { preventDefault: ReturnType<typeof vi.fn> }; done: unknown } {
     const handler = electronMock.appHandlers.get('before-quit')?.[0];

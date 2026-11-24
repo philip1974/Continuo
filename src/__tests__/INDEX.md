@@ -1722,6 +1722,12 @@
 - [`service.spec.ts`](./window-workspace-roots-map/service.spec.ts)
 - [`workspace-store-empty-string.spec.ts`](./window-workspace-roots-map/workspace-store-empty-string.spec.ts)
 
+## [工作台编辑器命令(⌘W / ⌘S / 下一个·上一个编辑器)](./workbench-editor-commands/README.md)
+
+- [`editor-commands-registration.spec.ts`](./workbench-editor-commands/editor-commands-registration.spec.ts)
+- [`editor-commands.spec.tsx`](./workbench-editor-commands/editor-commands.spec.tsx)
+- [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)
+
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)
 
 - [`shared-guard.spec.ts`](./workspace-root-selection-guard/shared-guard.spec.ts)

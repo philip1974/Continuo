@@ -12,6 +12,7 @@ export const ko: Record<TranslationKey, string> = {
   'menu.file.new_window': '새 창',
   'menu.file.open_folder_in_new_window': '새 창에서 폴더 열기…',
   'menu.file.window_open_failed': '새 창을 열 수 없습니다',
+  'menu.file.close_window': '창 닫기',
 
   // menu.view
   'menu.view.reload': '다시 로드',
@@ -125,6 +126,13 @@ export const ko: Record<TranslationKey, string> = {
   'commands.settings.toggle.title': '설정 토글',
   'commands.settings.category': '설정',
   'commands.explorer.category': '탐색기',
+  // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
+  'commands.editor.close.title': '편집기 닫기',
+  'commands.editor.next.title': '다음 편집기 열기',
+  'commands.editor.previous.title': '이전 편집기 열기',
+  'commands.view.category': '보기',
+  'commands.file.save.title': '저장',
+  'commands.file.category': '파일',
 
   // panels.*
   'panels.terminal.title': '터미널',

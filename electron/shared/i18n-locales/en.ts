@@ -19,6 +19,7 @@ export const en = {
   'menu.file.new_window': 'New Window',
   'menu.file.open_folder_in_new_window': 'Open Folder in New Window…',
   'menu.file.window_open_failed': 'Could not open a new window',
+  'menu.file.close_window': 'Close Window',
 
   // menu.view
   'menu.view.reload': 'Reload',
@@ -136,6 +137,13 @@ export const en = {
   'commands.settings.toggle.title': 'Toggle Settings',
   'commands.settings.category': 'Settings',
   'commands.explorer.category': 'Explorer',
+  // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
+  'commands.editor.close.title': 'Close Editor',
+  'commands.editor.next.title': 'Open Next Editor',
+  'commands.editor.previous.title': 'Open Previous Editor',
+  'commands.view.category': 'View',
+  'commands.file.save.title': 'Save',
+  'commands.file.category': 'File',
 
   // panels.* (5)
   'panels.terminal.title': 'Terminal',
