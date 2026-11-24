@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { listDir, sortDirsFirst } from '../../../electron/main/ipc/fs/list-dir';
+import { LIST_DIR_MAX_DEPTH } from '../../../electron/shared/fs-limits';
 import { readFile } from '../../../electron/main/ipc/fs/read-file';
 import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
 import { renameEntry } from '../../../electron/main/ipc/fs/rename';
@@ -174,10 +175,21 @@ describe('listDir', () => {
     expect(inner!.path).toBe(path.join(dir, 'sub', 'inner.txt'));
   });
 
-  it('maxDepth 超过硬上限被截断到 10', async () => {
-    // 深度上限难以构造 11 层目录,这里只断言传 100 时不爆栈、能正常返回
+  it('maxDepth 超过硬上限被截断到 LIST_DIR_MAX_DEPTH(深层目录照常列出,超出硬上限的不再递归)', async () => {
+    // 硬上限只是递归深度兜底(不跟随 symlink,不会死循环;工作量由 maxFiles / 总条目上限约束)。
+    // 真实项目(Java 包路径、monorepo)十几层很常见,10 层的旧上限会让 Quick Open 漏掉深层文件。
+    const segs = (n: number): string[] => Array.from({ length: n }, (_, i) => `d${i}`);
+    const nested = path.join(dir, ...segs(15));
+    await mkdir(nested, { recursive: true });
+    await writeFile(path.join(nested, 'deep15.txt'), 'D');
+    const tooDeep = path.join(dir, ...segs(LIST_DIR_MAX_DEPTH));
+    await mkdir(tooDeep, { recursive: true });
+    await writeFile(path.join(tooDeep, 'beyond.txt'), 'B');
+
     const items = await listDir(dir, { maxDepth: 100 });
-    expect(Array.isArray(items)).toBe(true);
+    expect(items.some((i) => i.name === 'deep15.txt')).toBe(true);
+    // 文件位于第 LIST_DIR_MAX_DEPTH+1 层 → 截断
+    expect(items.some((i) => i.name === 'beyond.txt')).toBe(false);
   });
 
   it('symlink 默认不递归,标 isSymlink', async () => {

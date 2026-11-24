@@ -1,4 +1,4 @@
-import { LIST_DIR_TOTAL_ENTRIES_MAX } from '../../../shared/fs-limits';
+import { LIST_DIR_MAX_DEPTH, LIST_DIR_TOTAL_ENTRIES_MAX } from '../../../shared/fs-limits';
 import { lstat, opendir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { FileEntry } from '../../../shared/fs-entry';
@@ -7,7 +7,7 @@ import { fsError, mapNodeErrnoCode } from './path-utils';
 import { direntTypeIsReliable } from '../../lib/dirent-real-type';
 import { LIST_DIR_DEFAULT_EXCLUDE } from '../../../shared/fs-limits';
 
-const MAX_DEPTH_HARD_LIMIT = 10;
+const MAX_DEPTH_HARD_LIMIT = LIST_DIR_MAX_DEPTH;
 
 // 边界(E38,plugin-fs E30 主侧 twin):maxFiles 是可选业务上限(只数文件、达标早停返部分,QuickOpen
 // 用)。但默认 Infinity,Explorer/open-recent/drop 不传 maxFiles → 列超宽目录时 readdir+lstat+sort+
@@ -21,7 +21,7 @@ export const MAX_TOTAL_ENTRIES = LIST_DIR_TOTAL_ENTRIES_MAX;
 const DEFAULT_EXCLUDE_SET: ReadonlySet<string> = new Set(LIST_DIR_DEFAULT_EXCLUDE);
 
 export interface ListDirOptions {
-  /** 默认 1(只列当前层)。受 MAX_DEPTH_HARD_LIMIT=10 截断。 */
+  /** 默认 1(只列当前层)。受 MAX_DEPTH_HARD_LIMIT(= LIST_DIR_MAX_DEPTH)截断。 */
   readonly maxDepth?: number;
   /** basename 黑名单。默认见 LIST_DIR_DEFAULT_EXCLUDE,自定义完全替换默认。 */
   readonly exclude?: readonly string[];

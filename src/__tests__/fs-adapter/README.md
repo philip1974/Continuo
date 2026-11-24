@@ -20,7 +20,7 @@
 
 ### listDir(absPath, opts?)
 - `opts.maxDepth` 默认 1(只列当前层),传 >1 才递归
-- `MAX_DEPTH_HARD_LIMIT = 10`,即便传 100 也截断到 10(防 symlink 死循环)
+- 递归深度硬上限 `LIST_DIR_MAX_DEPTH = 32`(electron/shared/fs-limits.ts,main 与 Quick Open 共用),传 100 也截断到 32;只是递归兜底(不跟随 symlink 不会死循环,工作量由 maxFiles / 总条目上限约束)。旧值 10 会让 Quick Open 漏掉深层文件
 - `opts.exclude` 默认 `['.git', '.svn', '.hg', 'node_modules', '.DS_Store', 'Thumbs.db']`
 - 自定义 `exclude` 完全替换默认(传空数组 = 显式要看 `.git`)
 - 不跟随符号链接:用 `lstat`,symlink 标 `isSymlink: true` 不递归

@@ -9,10 +9,12 @@ import type { FileEntry } from '../../../electron/shared/fs-entry';
 import type { IpcResult } from '../../../electron/shared/ipc-result';
 import { QUICK_OPEN_MAX_FILES, type QuickOpenFile } from './store';
 import { stripRootPrefix } from '@/lib/path-cross';
-import { LIST_DIR_DEFAULT_EXCLUDE } from '../../../electron/shared/fs-limits';
+import { LIST_DIR_DEFAULT_EXCLUDE, LIST_DIR_MAX_DEPTH } from '../../../electron/shared/fs-limits';
 
 const DEFAULT_MAX_FILES = QUICK_OPEN_MAX_FILES;
-const DEFAULT_MAX_DEPTH = 8;
+// 搜全工作区(VSCode 同款,无业务深度限制):取 list-dir 的递归硬上限。此前写死 8 层,第 9 层起的文件不进
+// 候选(截图审计:8 层目录下的长文件名 .ts 搜「ts」搜不到)。扫描量仍由 maxFiles(5000)与总条目上限约束。
+const DEFAULT_MAX_DEPTH = LIST_DIR_MAX_DEPTH;
 const EMPTY_QUICK_OPEN_FILES: readonly QuickOpenFile[] = [];
 
 // listDir 内置已排:.git / .svn / .hg / node_modules / .DS_Store / Thumbs.db

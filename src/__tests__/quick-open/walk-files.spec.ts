@@ -2,7 +2,13 @@
 // walkWorkspaceFiles 纯函数:调 listDir + 过滤 isDirectory + slice maxFiles。
 
 import { describe, it, expect } from 'vitest';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { walkWorkspaceFiles } from '../../plugins/quick-open/walk-files';
+import { fuzzyFilter } from '../../plugins/command-palette/fuzzy';
+import { listDir as mainListDir } from '../../../electron/main/ipc/fs/list-dir';
+import { LIST_DIR_MAX_DEPTH } from '../../../electron/shared/fs-limits';
 import type { FileEntry } from '../../../electron/shared/fs-entry';
 import type { IpcResult } from '../../../electron/shared/ipc-result';
 
@@ -134,7 +140,7 @@ describe('walkWorkspaceFiles', () => {
       return { ok: true, data: [] };
     };
     await walkWorkspaceFiles({ rootPath: '/r', listDir });
-    expect(captured?.maxDepth).toBe(8);
+    expect(captured?.maxDepth).toBe(LIST_DIR_MAX_DEPTH);
     expect(captured?.exclude).toContain('dist');
     expect(captured?.exclude).toContain('out');
     expect(captured?.exclude).toContain('build');
@@ -296,5 +302,36 @@ describe('walkWorkspaceFiles', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('WORKSPACE_NOT_OPEN');
+  });
+});
+
+// 缺陷复现(截图审计):workspace 有 8 层目录下的长文件名 .ts,Quick Open 搜「ts」只出浅层 a.ts / b.ts。
+// 原因:Quick Open 以 maxDepth=8 扫描,第 9 层的文件根本不在候选里(模糊匹配 / 结果数都不是原因)。
+// VSCode 的 Quick Open 搜全工作区(无深度限制,只受 files.exclude / search.exclude 与结果上限约束)。
+describe('walkWorkspaceFiles · 深层目录(真实 listDir)', () => {
+  it('8 层目录下的长文件名 .ts 进入候选,搜「ts」能匹配到', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'qo-deep-'));
+    try {
+      const deep = path.join(root, 'packages/core/src/internal/utils/very/deep/nested');
+      await mkdir(deep, { recursive: true });
+      await mkdir(path.join(root, 'src'), { recursive: true });
+      await writeFile(path.join(root, 'src/a.ts'), '');
+      await writeFile(path.join(root, 'src/b.ts'), '');
+      const longName =
+        'this-is-an-extremely-long-file-name-that-should-be-truncated-somewhere-in-the-tree.ts';
+      await writeFile(path.join(deep, longName), '');
+
+      const r = await walkWorkspaceFiles({
+        rootPath: root,
+        listDir: async (p, opts) => ({ ok: true, data: await mainListDir(p, opts) }),
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const names = fuzzyFilter(r.data, 'ts', (f) => f.relPathLower).map((f) => f.name);
+      expect(names).toContain(longName);
+      expect(names).toContain('a.ts');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

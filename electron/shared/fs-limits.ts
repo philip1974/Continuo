@@ -9,6 +9,12 @@ export const MAX_WRITE_BYTES = 64 * 1024 * 1024; // 64 MiB:fs 写入内容上限
 export const FS_PATH_MAX = 8192; // 路径字符串上限(与 fs.ipc fsPath / plugin-fs scope path 一致)
 /** fs:list-dir 单次遍历的条目硬上限(main list-dir 早停;IPC schema 的 maxFiles 上界对齐到它,E275)。 */
 export const LIST_DIR_TOTAL_ENTRIES_MAX = 100_000;
+/**
+ * fs:list-dir 递归深度硬上限(main list-dir 截断;Quick Open 以它扫全工作区)。只是递归兜底:不跟随 symlink 不会
+ * 死循环,工作量由 maxFiles / LIST_DIR_TOTAL_ENTRIES_MAX 约束。取真实项目到不了的深度 —— 旧值 10(Quick Open
+ * 实用 8)会漏掉 Java 包路径 / monorepo 里的深层文件,而 VSCode 的 Quick Open 搜全工作区、无深度限制。
+ */
+export const LIST_DIR_MAX_DEPTH = 32;
 
 // 安全:路径**层级数**上限。长度上限(8192)挡不住「很短的段 × 很多级」:`/a/a/a/…` 可以有 4000 多级,而主进程里
 // 凡是「按层级逐级处理」的代码(逐级 stat 取文件身份、逐级找最近的已存在上级、逐级拼前缀)对它都是线性甚至二次方

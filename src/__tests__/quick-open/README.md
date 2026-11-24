@@ -39,7 +39,10 @@
 ```
 
 行为:
-- 调 `listDir(rootPath, { maxDepth: 8, exclude: [默认 + extraExclude] })`
+- 调 `listDir(rootPath, { maxDepth: LIST_DIR_MAX_DEPTH(32,list-dir 递归硬上限), exclude: [默认 + extraExclude] })`
+  —— 对齐 VSCode「搜全工作区」(无业务深度限制,只受排除规则与结果数上限约束)。此前写死 8 层:8 层目录下的
+  文件(截图审计里 `packages/core/src/internal/utils/very/deep/nested/<长文件名>.ts`)根本不进候选,搜「ts」只出浅层
+  a.ts / b.ts。模糊匹配与结果数上限(5000)都不是原因(见 walk-files.spec.ts「深层目录(真实 listDir)」)
 - 默认 extraExclude:`dist / out / build / .next / .nuxt / .cache / .vite`
   (listDir 内置已排:`.git / .svn / .hg / node_modules / .DS_Store / Thumbs.db`)
 - 过滤 isDirectory=false(只要文件,不要目录)
