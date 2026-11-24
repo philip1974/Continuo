@@ -18,6 +18,7 @@ import {
 } from '../../../electron/shared/url-limits';
 import { FS_PATH_MAX } from '../../../electron/shared/fs-limits';
 import { isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
+import { isAbsolutePath } from './editor-path-utils';
 
 export type LinkTarget =
   | { kind: 'file'; absPath: string }
@@ -97,11 +98,6 @@ function uncShareKey(p: string): string | null {
   return uncRoot.root.replaceAll('/', '\\').toLowerCase();
 }
 
-/** 跨平台绝对路径:POSIX `/`、Windows 盘符、UNC。 */
-function isAbsolutePathLike(p: string): boolean {
-  return p.charCodeAt(0) === 47 || isWindowsDriveAbsolute(p) || isUncPath(p);
-}
-
 /** 取 currentFilePath 所在目录(`/` 或 `\\` 作分隔符);裸文件名返 null. */
 function dirnameOf(p: string): string | null {
   const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
@@ -178,7 +174,7 @@ export function resolveLink(
   if (href.startsWith('#')) return null;
 
   // protocol 链接(先排除 Windows 盘符/UNC 绝对路径,它们不是 URL scheme)
-  if (!isAbsolutePathLike(href) && hasAnyScheme(href)) {
+  if (!isAbsolutePath(href) && hasAnyScheme(href)) {
     if (startsWithAllowedExternalScheme(href)) {
       // 边界(E179):外链上限对齐 openExternal,超限不进 IPC(否则超长 URL structured-clone 后才被主进程拒)。
       if (href.length > MAX_EXTERNAL_LINK_LEN) return null;
@@ -204,7 +200,7 @@ export function resolveLink(
   }
 
   let absPath: string;
-  if (isAbsolutePathLike(pathPart)) {
+  if (isAbsolutePath(pathPart)) {
     absPath = pathPart;
   } else {
     if (!currentFilePath) return null;
