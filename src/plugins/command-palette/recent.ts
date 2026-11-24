@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import { subscribeStorageKey } from '../storage/local-storage-record';
 import { CMD_ID_MAX } from '../registries/CommandRegistry';
+import { arraysEqual } from '@shared/array-equal';
 
 export const RECENT_STORAGE_KEY = 'continuo:command-palette:recent';
 export const MAX_RECENT = 20;
@@ -119,13 +120,7 @@ function recentListsEqual(
   a: readonly RecentEntry[],
   b: readonly RecentEntry[],
 ): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const left = a[i]!;
-    const right = b[i]!;
-    if (left.id !== right.id || left.ts !== right.ts) return false;
-  }
-  return true;
+  return arraysEqual(a, b, (left, right) => left.id === right.id && left.ts === right.ts);
 }
 
 export const useRecentCommandsStore = create<RecentState>((set, get) => ({

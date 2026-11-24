@@ -10,6 +10,7 @@
 
 import { create } from 'zustand';
 import { containmentFold, containmentKey, someContainmentCandidate } from '@/lib/path-cross';
+import { arraysEqual } from '@shared/array-equal';
 
 export type ClipboardKind = 'cut' | 'copy';
 
@@ -40,12 +41,7 @@ function clipboardPathsEqual(
   a: readonly string[],
   b: readonly string[],
 ): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
+  return arraysEqual(a, b);
 }
 
 export function pruneClipboardPaths(

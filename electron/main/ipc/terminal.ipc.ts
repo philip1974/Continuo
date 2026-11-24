@@ -35,6 +35,7 @@ import { broadcastToWindows, SKIP_BROADCAST } from '../lib/broadcast';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 import { codedError } from '../../shared/error-message';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
+import { arraysEqual } from '../../shared/array-equal';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
@@ -396,12 +397,7 @@ function sameSessionRefs(
   a: readonly terminalSessions.MainTerminalSession[],
   b: readonly terminalSessions.MainTerminalSession[],
 ): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
+  return arraysEqual(a, b);
 }
 
 /**

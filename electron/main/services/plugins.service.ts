@@ -41,6 +41,7 @@ import { isSameOrInsidePath } from '../lib/path-inside';
 import { runSerialPerKey } from './serialize-per-key';
 import { parseManifest } from '../../shared/plugin-manifest';
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
+import { arraysEqual } from '../../shared/array-equal';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -686,32 +687,24 @@ function pathScopesEqual(
   a: readonly IpcPathScope[] | undefined,
   b: readonly IpcPathScope[],
 ): boolean {
-  if (a === undefined || a.length !== b.length) return false;
-  for (let i = 0; i < b.length; i += 1) {
-    const left = a[i]!;
-    const right = b[i]!;
-    if (left.path !== right.path || left.mode !== right.mode) return false;
-  }
-  return true;
+  return (
+    a !== undefined &&
+    arraysEqual(a, b, (left, right) => left.path === right.path && left.mode === right.mode)
+  );
 }
 
 function permissionDecisionsEqual(
   a: readonly IpcPermissionDecision[],
   b: readonly IpcPermissionDecision[],
 ): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < b.length; i += 1) {
-    const left = a[i]!;
-    const right = b[i]!;
-    if (
-      left.permission !== right.permission ||
-      left.granted !== right.granted ||
-      left.decidedAt !== right.decidedAt
-    ) {
-      return false;
-    }
-  }
-  return true;
+  return arraysEqual(
+    a,
+    b,
+    (left, right) =>
+      left.permission === right.permission &&
+      left.granted === right.granted &&
+      left.decidedAt === right.decidedAt,
+  );
 }
 
 export async function readPermissions(

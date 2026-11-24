@@ -15,6 +15,7 @@ import { LABEL_MAX, PATH_MAX } from '../../electron/shared/terminal-create';
 import { SESSION_ID_MAX } from '../../electron/shared/session-id-limits';
 // E292:renderer IPC ingress 计数闸,复用 main 的全局会话上限单一来源。
 import { MAX_TERMINAL_SESSIONS_GLOBAL } from '../../electron/shared/terminal-session-limits';
+import { arraysEqual } from '@shared/array-equal';
 
 // 可维护性 M14:终端 session 形态复用 shared TerminalSessionSnapshot 单一来源
 // (此前 main/preload/renderer 三层平行声明同组字段并已漂移)。
@@ -263,13 +264,13 @@ function sameSessions(
   a: readonly TerminalSession[],
   b: readonly TerminalSession[],
 ): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const x = a[i] as unknown as Record<string, unknown>;
-    const y = b[i] as unknown as Record<string, unknown>;
-    if (x !== y && !sameShallow(x, y)) return false;
-  }
-  return true;
+  return arraysEqual(
+    a,
+    b,
+    (x, y) =>
+      x === y ||
+      sameShallow(x as unknown as Record<string, unknown>, y as unknown as Record<string, unknown>),
+  );
 }
 
 export const useTerminalStore = create<TerminalState>((set) => ({

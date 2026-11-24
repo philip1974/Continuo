@@ -6,6 +6,7 @@
 
 import { create } from 'zustand';
 import { createPickerSlice, type PickerSlice } from '../picker/picker-slice';
+import { arraysEqual } from '@shared/array-equal';
 
 /**
  * Quick Open 单次扫描的文件数上限:walk-files 到顶即截断,QuickOpenModal 据此显示「仅显示前 N 个」提示。
@@ -49,21 +50,15 @@ function quickOpenResultsEqual(
   a: readonly QuickOpenFile[],
   b: readonly QuickOpenFile[],
 ): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const left = a[i]!;
-    const right = b[i]!;
-    if (
-      left.absPath !== right.absPath ||
-      left.relPath !== right.relPath ||
-      left.relPathLower !== right.relPathLower ||
-      left.name !== right.name
-    ) {
-      return false;
-    }
-  }
-  return true;
+  return arraysEqual(
+    a,
+    b,
+    (left, right) =>
+      left.absPath === right.absPath &&
+      left.relPath === right.relPath &&
+      left.relPathLower === right.relPathLower &&
+      left.name === right.name,
+  );
 }
 
 export const useQuickOpenStore = create<QuickOpenState>((set) => ({
