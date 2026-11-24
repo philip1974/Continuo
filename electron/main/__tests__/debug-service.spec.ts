@@ -1694,6 +1694,27 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(total).toBe(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
     await service.cleanupAll('test');
   });
+
+  it('viewSnapshot 超限时最新优先(与 renderer debug.store 一致):最后设断点的文件完整保留,显示顺序不变', async () => {
+    const { service } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 24, controllerToken: 'agent-snap2' },
+    );
+    const runtime = (service as unknown as {
+      runtimes: Map<string, { breakpoints: unknown[] }>;
+    }).runtimes.get(sessionId)!;
+    const push = (source: string, line: number) =>
+      runtime.breakpoints.push({ source, line, reportedBy: new Map(), ids: new Map() });
+    for (let i = 0; i < DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX; i += 1) push('/old.js', i + 1);
+    push('/new.js', 7);
+    const [snapshot] = service.viewSnapshot(24);
+    const files = snapshot!.breakpointsBySource.map((g) => g.file);
+    expect(files).toEqual(['/old.js', '/new.js']);
+    const newGroup = snapshot!.breakpointsBySource.find((g) => g.file === '/new.js')!;
+    expect(newGroup.breakpoints).toHaveLength(1);
+    await service.cleanupAll('test');
+  });
 });
 
 // 审计修复:会话上限、未设断点时程序不启动、同文件多断点。

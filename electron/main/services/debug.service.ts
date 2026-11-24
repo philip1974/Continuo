@@ -1512,14 +1512,18 @@ export class DebugService {
         const runtime = this.runtimes.get(session.id);
         const stop = session.runtimeState === 'stopped' ? runtime?.currentStop : undefined;
         const groups: DebugViewSessionSnapshot['breakpointsBySource'][number][] = [];
+        // 超上限时最新优先(与 renderer debug.store 合并事件的截断一致):预算从最后设断点的 source 往前分配,
+        // 再翻回插入顺序,renderer 重载前后看到的集合与显示顺序一致。
         let budget = DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX;
-        for (const source of runtime ? breakpointsBySource(runtime.breakpoints).keys() : []) {
+        const sources = runtime ? [...breakpointsBySource(runtime.breakpoints).keys()] : [];
+        for (let i = sources.length - 1; i >= 0; i -= 1) {
           if (budget <= 0 || !runtime) break;
-          const group = this.breakpointSnapshot(runtime, source);
+          const group = this.breakpointSnapshot(runtime, sources[i]!);
           const breakpoints = group.breakpoints.slice(0, budget);
           budget -= breakpoints.length;
           groups.push({ file: group.file, breakpoints });
         }
+        groups.reverse();
         return {
           session_id: session.id,
           ...(stop
