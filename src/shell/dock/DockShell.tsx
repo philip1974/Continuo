@@ -21,7 +21,7 @@ import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose, activateDockPanel, addPanelKeepingActive } from './wrap-panel-close';
 import { handleTerminalPanelRemoved, removeTerminalSessionWithFeedback } from './DockReconciler';
-import { TerminalKillConfirmHost, terminalCloseGuard } from './terminal-close-confirm';
+import { TerminalKillConfirmHost, cancelTerminalCloseGuard, terminalCloseGuard } from './terminal-close-confirm';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
@@ -114,7 +114,7 @@ let lastSuccessfulLayoutPayload: string | null = null;
 // 已落盘 —— 期间的变更仍是脏的,后续 debounce / 关窗 flush 会再写(布尔标记会把它一并标干净而丢失)。
 // 关闭守卫:终端有子进程时先确认(VSCode confirmOnKill),× / 中键 / Delete / ⌘W 等所有 api.close 入口共用。
 function wrapPanelCloseGuarded(panel: IDockviewPanel): void {
-  wrapPanelClose(panel, terminalCloseGuard);
+  wrapPanelClose(panel, terminalCloseGuard, cancelTerminalCloseGuard);
 }
 
 const layoutVersions = new WeakMap<DockviewApi, number>();

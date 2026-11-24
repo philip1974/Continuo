@@ -2,7 +2,7 @@
 // BDD: terminal-vscode-parity / 4 关闭仍有子进程的终端须确认(VSCode terminal.integrated.confirmOnKill 默认 editor)
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { createElement } from 'react';
 
 const hoisted = vi.hoisted(() => ({ runningProcess: vi.fn() }));
@@ -13,9 +13,15 @@ vi.mock('@/lib/co-api', () => ({
 import { wrapPanelClose, markPanelCloseSuppressed } from '../../shell/dock/wrap-panel-close';
 import {
   TerminalKillConfirmHost,
+  cancelTerminalCloseGuard,
   terminalCloseGuard,
   useTerminalKillConfirmStore,
 } from '../../shell/dock/terminal-close-confirm';
+import { trackPopoutDocuments } from '../../shell/dock/popout-documents';
+import {
+  __resetTerminalPanelHandlesForTest,
+  registerTerminalPanelHandles,
+} from '../../panels/Terminal/terminal-panel-handles';
 import { useClosingStore } from '../../stores/closing.store';
 import { useTerminalStore, type TerminalSession } from '../../stores/terminal.store';
 import { EXIT_DURATION_MS } from '../../shell/motion/tokens';
@@ -26,12 +32,26 @@ function session(id: string, exitCode: number | null = null): TerminalSession {
   return { id, title: 'Terminal 1', cwd: '/w', originHint: 'user', createdAt: 1, exitCode, ownerWindowId: 1 };
 }
 
-function terminalPanel(sessionId: string, close = vi.fn()) {
+function terminalPanel(sessionId: string, close = vi.fn(), doc: Document = document) {
   return {
     params: { sessionId },
     view: { contentComponent: 'terminal' },
-    api: { id: `terminal-${sessionId}`, title: 'Terminal 1', close },
+    api: { id: `terminal-${sessionId}`, title: 'Terminal 1', close, getWindow: () => ({ document: doc }) },
   };
+}
+
+/** 模拟 popout 子窗文档(iframe 有自己的 window,事件可派发)。 */
+function popoutDocument(): Document {
+  const frame = document.createElement('iframe');
+  document.body.appendChild(frame);
+  return frame.contentDocument!;
+}
+
+/** 把 doc 登记为 popout 子窗文档(经 trackPopoutDocuments 的真实对账路径)。 */
+function trackAsPopout(doc: Document) {
+  const noop = { dispose: () => {} };
+  const group = { api: { location: { type: 'popout', getWindow: () => ({ document: doc }) }, onDidLocationChange: () => noop } };
+  return trackPopoutDocuments({ groups: [group], onDidAddGroup: () => noop, onDidRemoveGroup: () => noop } as never);
 }
 
 const flush = () => act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); });
@@ -44,6 +64,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  for (const frame of document.querySelectorAll('iframe')) frame.remove();
   vi.useRealTimers();
   setLocale('en');
 });
@@ -117,7 +138,7 @@ describe('wrapPanelClose 的关闭守卫(所有 api.close 入口共用)', () => 
   });
   it('DockShell 给每个面板挂终端关闭守卫,并渲染确认框宿主', () => {
     const src = readFileSync('src/shell/dock/DockShell.tsx', 'utf-8');
-    expect(src).toContain('wrapPanelClose(panel, terminalCloseGuard)');
+    expect(src).toContain('wrapPanelClose(panel, terminalCloseGuard, cancelTerminalCloseGuard)');
     expect(src).toContain('onDidAddPanel(wrapPanelCloseGuarded)');
     expect(src).toContain('panels.forEach(wrapPanelCloseGuarded)');
     expect(src).toContain('<TerminalKillConfirmHost />');
@@ -167,5 +188,101 @@ describe('terminalCloseGuard', () => {
       expect(cat['panels.terminal.kill_confirm.detail']).toContain('{process}');
       expect(cat['panels.terminal.kill_confirm.confirm']).toBeTruthy();
     }
+  });
+});
+
+describe('popout 子窗里的终端:确认框画在该子窗,取消后焦点还给终端', () => {
+  it('确认框经 portal 画进面板所在的 popout 文档(不在主窗)', async () => {
+    const popDoc = popoutDocument();
+    const tracker = trackAsPopout(popDoc);
+    useTerminalStore.setState({ sessions: [session('pop')] });
+    hoisted.runningProcess.mockResolvedValue({ ok: true, data: { process: 'sleep' } });
+    render(createElement(TerminalKillConfirmHost));
+    const verdict = terminalCloseGuard(terminalPanel('pop', vi.fn(), popDoc) as never) as Promise<boolean>;
+    await flush();
+    expect(within(popDoc.body).getByText('终止正在运行的进程?')).toBeTruthy();
+    expect(screen.queryByText('终止正在运行的进程?')).toBeNull();
+    fireEvent.click(within(popDoc.body).getByRole('button', { name: '取消' }));
+    await expect(verdict).resolves.toBe(false);
+    tracker.dispose();
+  });
+  it('确认期间 popout 子窗已关(文档不再是 popout)→ 改画在主窗,不会看不见、卡住', async () => {
+    const popDoc = popoutDocument();
+    const tracker = trackAsPopout(popDoc);
+    useTerminalStore.setState({ sessions: [session('gone')] });
+    hoisted.runningProcess.mockResolvedValue({ ok: true, data: { process: 'sleep' } });
+    render(createElement(TerminalKillConfirmHost));
+    void terminalCloseGuard(terminalPanel('gone', vi.fn(), popDoc) as never);
+    await flush();
+    act(() => tracker.dispose());
+    expect(screen.getByText('终止正在运行的进程?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  });
+  it('取消 → 焦点还给该终端', async () => {
+    __resetTerminalPanelHandlesForTest();
+    const focus = vi.fn();
+    registerTerminalPanelHandles('terminal-refocus', { focus, openSearch: vi.fn(), clear: vi.fn(), readText: () => '' });
+    useTerminalStore.setState({ sessions: [session('refocus')] });
+    hoisted.runningProcess.mockResolvedValue({ ok: true, data: { process: 'sleep' } });
+    render(createElement(TerminalKillConfirmHost));
+    void terminalCloseGuard(terminalPanel('refocus') as never);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await flush();
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('确认框等待期间 reconciler 的关闭不被吞', () => {
+  it('确认框开着时 reconciler 关闭:按取消结算、清掉确认框、照常收敛视图(不留僵尸面板)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    useTerminalStore.setState({ sessions: [session('rc')] });
+    hoisted.runningProcess.mockResolvedValue({ ok: true, data: { process: 'sleep' } });
+    render(createElement(TerminalKillConfirmHost));
+    const close = vi.fn();
+    const panel = terminalPanel('rc', close);
+    wrapPanelClose(panel as never, terminalCloseGuard, cancelTerminalCloseGuard);
+    panel.api.close();
+    await flush();
+    expect(screen.getByText('终止正在运行的进程?')).toBeTruthy();
+
+    markPanelCloseSuppressed('terminal-rc');
+    act(() => panel.api.close());
+    expect(useTerminalKillConfirmStore.getState().pending).toBeNull();
+    expect(screen.queryByText('终止正在运行的进程?')).toBeNull();
+    expect(useClosingStore.getState().ids.has('terminal-rc')).toBe(true);
+    await flush();
+    vi.advanceTimersByTime(EXIT_DURATION_MS);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+  it('还在查询子进程时 reconciler 关闭:查询回来后不再弹确认框', async () => {
+    let answer!: (r: unknown) => void;
+    hoisted.runningProcess.mockReturnValue(new Promise((r) => { answer = r; }));
+    useTerminalStore.setState({ sessions: [session('q')] });
+    render(createElement(TerminalKillConfirmHost));
+    const panel = terminalPanel('q');
+    wrapPanelClose(panel as never, terminalCloseGuard, cancelTerminalCloseGuard);
+    panel.api.close();
+    markPanelCloseSuppressed('terminal-q');
+    panel.api.close();
+    expect(useClosingStore.getState().ids.has('terminal-q')).toBe(true);
+    answer({ ok: true, data: { process: 'sleep' } });
+    await flush();
+    expect(useTerminalKillConfirmStore.getState().pending).toBeNull();
+    expect(screen.queryByText('终止正在运行的进程?')).toBeNull();
+  });
+  it('非 reconciler 的重复关闭仍不重复询问', async () => {
+    useTerminalStore.setState({ sessions: [session('dup')] });
+    hoisted.runningProcess.mockResolvedValue({ ok: true, data: { process: 'sleep' } });
+    const panel = terminalPanel('dup');
+    wrapPanelClose(panel as never, terminalCloseGuard, cancelTerminalCloseGuard);
+    panel.api.close();
+    await flush();
+    const first = useTerminalKillConfirmStore.getState().pending;
+    expect(first).not.toBeNull();
+    panel.api.close();
+    await flush();
+    expect(useTerminalKillConfirmStore.getState().pending).toBe(first);
+    expect(hoisted.runningProcess).toHaveBeenCalledTimes(1);
   });
 });

@@ -18,6 +18,9 @@ const guardingCloses = new Set<string>();
  */
 export type PanelCloseGuard = (panel: IDockviewPanel) => boolean | Promise<boolean>;
 
+/** 撤销某面板进行中的关闭守卫(如按「取消」结算并清掉确认框);之后守卫的 Promise 不应再放行。 */
+export type PanelCloseGuardCancel = (panel: IDockviewPanel) => void;
+
 /**
  * 撤销某 panel 排定中的延迟 close 并清掉它的 closing 标记。用于「关了又马上点开」
  * 的复活路径:wrapPanelClose 把真 close 延后 EXIT_DURATION_MS,这段时间里 panel
@@ -72,11 +75,16 @@ export function consumePanelCloseSuppressed(panelId: string): boolean {
 // 走 EXIT 动画),EXIT_DURATION_MS 后再真正调 close。统一拦在 api 层而不是
 // SharedTab,这样所有 close 路径(× 按钮 / 中键 / 群组级关闭 / 第三方调用)
 // 都自动走动画。guard(可选)同样拦在这一层:所有关闭入口(含 ⌘W)共用同一确认(终端 confirmOnKill);
-// reconciler 收敛视图的关闭(已标 suppressed)不询问。
+// reconciler 收敛视图的关闭(已标 suppressed)不询问;确认等待期间来的 reconciler 关闭(agent 杀会话 / 切工作区
+// 隐藏 / shell 以 0 退出)不被「询问中」去重吞掉:先 cancelGuard 撤销询问(确认框按取消结算),再照常关闭。
 //
 // 幂等:同一 panel 多次 patch 只生效第一次(WeakSet 守);同一 panel 多次 close
 // 调用,只有第一次进入 store + 设 timeout(closing-store.mark 自身去重)。
-export function wrapPanelClose(panel: IDockviewPanel, guard?: PanelCloseGuard): void {
+export function wrapPanelClose(
+  panel: IDockviewPanel,
+  guard?: PanelCloseGuard,
+  cancelGuard?: PanelCloseGuardCancel,
+): void {
   if (patched.has(panel)) return;
   patched.add(panel);
 
@@ -110,8 +118,16 @@ export function wrapPanelClose(panel: IDockviewPanel, guard?: PanelCloseGuard): 
   Object.defineProperty(panel.api, 'close', {
     value: () => {
       const id = panel.api.id;
-      if (useClosingStore.getState().ids.has(id) || guardingCloses.has(id)) return;
-      const verdict = !guard || suppressedPanelCloses.has(id) ? true : guard(panel);
+      if (useClosingStore.getState().ids.has(id)) return;
+      const byReconciler = suppressedPanelCloses.has(id);
+      if (guardingCloses.has(id)) {
+        if (!byReconciler) return;
+        guardingCloses.delete(id);
+        cancelGuard?.(panel);
+        startClose();
+        return;
+      }
+      const verdict = !guard || byReconciler ? true : guard(panel);
       if (verdict === true) {
         startClose();
         return;
