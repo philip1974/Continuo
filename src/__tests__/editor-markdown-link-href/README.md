@@ -1,7 +1,8 @@
 # editor-markdown-link-href
 
-行为契约:**Markdown 链接的地址在 Edit / Preview(Milkdown)里不被清空:盘符路径与 Continuo 用到的
-`co:` / `vscode:` 链接渲染、点击、复制、确认编辑后保存都保留原地址;`javascript:` 等危险 scheme 仍被拦。**
+行为契约:**Markdown 链接的地址在 Edit / Preview(Milkdown)里不被清空:盘符路径与任意自定义 scheme
+(`co:` / `vscode:` / `obsidian:` …)链接渲染、复制、确认编辑后保存都保留原地址;`javascript:` / `data:` /
+`vbscript:` / `file:` 仍被清空。能否点击打开另由 `resolveLink` 白名单决定。**
 
 ## 背景
 
@@ -20,9 +21,11 @@
 `scripts/vite-milkdown-link-href.ts` 在构建期修补上游产物(renderer 构建走 vite transform,dev 预打包走
 esbuild 插件,vitest 在单独的 `milkdown-patched` project 里把 `@milkdown/*` inline 后同样经过 transform):
 
-- `^[A-Za-z]:[\\/]`(盘符路径)按无 scheme 处理,原样放行;
-- scheme 白名单加入 `co:`、`vscode:`(只保证地址不被清空;点击能否打开仍由 `resolveLink` 白名单决定)。
-- `javascript:` / `data:` / `vbscript:` / `file:` 等其余 scheme 照旧清空。
+- 上游「白名单放行、其余清空」改为「只清空危险 scheme(`javascript:` / `data:` / `vbscript:` / `file:`)、其余原样保留」:
+  地址是用户文件内容,编辑器不认识的 scheme(`obsidian://` 等)也不能在确认编辑时被抹掉。盘符路径 `C:/…`(被当成
+  `C:` scheme)随之放行。
+- 安全:Milkdown 内链接点击一律 `preventDefault` 后交给 `resolveLink`(白名单外返回 null 不打开),DOM href
+  不会被直接导航;危险 scheme 在 DOM 中仍为空。
 
 升级 Milkdown 后锚点对不上即构建报错;上游修了就删补丁。
 

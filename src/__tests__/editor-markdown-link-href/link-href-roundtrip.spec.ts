@@ -62,6 +62,7 @@ const CASES = [
   ['盘符路径', '[x](C:/proj/a.md)', 'C:/proj/a.md'],
   ['co: scheme', '[y](co://open?x)', 'co://open?x'],
   ['vscode: scheme', '[z](vscode://file/a)', 'vscode://file/a'],
+  ['其它自定义 scheme', '[o](obsidian://open?vault=v)', 'obsidian://open?vault=v'],
 ] as const;
 
 describe('Markdown 链接地址在 Milkdown 里不被清空', () => {
@@ -109,12 +110,12 @@ describe('补丁本身', () => {
     expect(sanitize('co://open?x')).toBe('');
   });
 
-  it('补丁后:盘符路径(/ 与 \\)、co: / vscode: 原样放行;javascript: / data: / vbscript: / file: 仍清空', () => {
+  it('补丁后:只清空危险 scheme(javascript: / data: / vbscript: / file:),盘符路径与任意自定义 scheme 原样保留', () => {
     const sanitize = load(patchSanitizeLinkHref(readFileSync(file, 'utf-8')));
-    for (const ok of ['C:/proj/a.md', 'c:\\proj\\a.md', 'co://open?x', 'VSCODE://file/a', 'https://e.com', './a.md']) {
+    for (const ok of ['C:/proj/a.md', 'c:\\proj\\a.md', 'co://open?x', 'VSCODE://file/a', 'obsidian://open?v=1', 'zotero://select/x', 'https://e.com', './a.md']) {
       expect(sanitize(ok)).toBe(ok);
     }
-    for (const bad of ['javascript:alert(1)', 'JaVaScRiPt:x', 'java\tscript:x', 'data:text/html,x', 'vbscript:x', 'file:///etc/passwd', 'C:', 'C:x']) {
+    for (const bad of ['javascript:alert(1)', 'JaVaScRiPt:x', 'java\tscript:x', ' javascript:x', 'data:text/html,x', 'vbscript:x', 'file:///etc/passwd']) {
       expect(sanitize(bad), bad).toBe('');
     }
   });
