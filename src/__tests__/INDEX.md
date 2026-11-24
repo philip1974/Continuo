@@ -195,6 +195,7 @@
 - [`debug-store.spec.ts`](./51-debug-breakpoint-ui/debug-store.spec.ts)
 - [`debug-sync-boot.spec.ts`](./51-debug-breakpoint-ui/debug-sync-boot.spec.ts)
 - [`debug-view-get-stack.spec.ts`](./51-debug-breakpoint-ui/debug-view-get-stack.spec.ts)
+- [`debug-view-get-variables.spec.ts`](./51-debug-breakpoint-ui/debug-view-get-variables.spec.ts)
 - [`decorations.spec.tsx`](./51-debug-breakpoint-ui/decorations.spec.tsx)
 - [`fetch-failure-feedback.spec.tsx`](./51-debug-breakpoint-ui/fetch-failure-feedback.spec.tsx)
 - [`sync.spec.tsx`](./51-debug-breakpoint-ui/sync.spec.tsx)
@@ -1001,6 +1002,10 @@
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/)
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
+
+## [plugin-fs-win-reparse-dirent(Windows 上 dirent 报 symlink 时按 lstat 判真实类型)](./plugin-fs-win-reparse-dirent/README.md)
+
+- [`win-reparse-dirent.spec.ts`](./plugin-fs-win-reparse-dirent/win-reparse-dirent.spec.ts)
 
 ## [plugin-fs-write-nofollow(plugin-fs 写操作不跟随叶子符号链接,校验与操作同一策略)](./plugin-fs-write-nofollow/README.md)
 

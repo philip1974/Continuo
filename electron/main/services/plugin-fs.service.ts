@@ -33,6 +33,7 @@ import { atomicReplaceFileNoFollow } from '../ipc/fs/atomic-write';
 import { readFileFromHandle, type ReadFileOptions } from '../ipc/fs/read-file';
 import { openForReadNonBlocking } from '../lib/read-fh-capped';
 import { createRwLock } from '../lib/rw-lock';
+import { realDirentType } from '../lib/dirent-real-type';
 import {
   FS_PATH_MAX,
   FS_PATH_MAX_DEPTH,
@@ -71,6 +72,8 @@ export interface PluginFsDeps {
     pluginId: string,
     scopes: readonly PathScope[],
   ) => Promise<void>;
+  /** 仅测试注入:dirent 类型判定所按的平台(见 dirent-real-type),默认 process.platform。 */
+  platform?: NodeJS.Platform;
 }
 
 const TRASH_TTL_MS = 24 * 60 * 60 * 1000;
@@ -355,6 +358,7 @@ export async function resolveGitObjectStoreInScope(
   cwd: string,
   sha: string,
   realpathInScope: (p: string) => Promise<string>,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<GitObjectStorePin> {
   const env = gitBlobEnv();
   let stdout: string;
@@ -386,8 +390,12 @@ export async function resolveGitObjectStoreInScope(
       if (await lstatOrNull(p)) await realpathInScope(p);
     }
     // pack 目录内的条目(.pack / .idx / multi-pack-index)逐个 realpath 成本高,直接拒绝符号链接条目。
-    for (const e of await readdirOrEmpty(join(objectDir, 'pack'))) {
-      if (e.isSymbolicLink()) throw new Error(`symlink in pack dir: ${e.name}`);
+    // win32 上 dirent 对任何 reparse point 都报链接(OneDrive / Dedup 的普通文件也是),按 lstat 判真实类型;
+    // 真 symlink / junction 在 lstat 下仍是链接 → 拒;lstat 失败无法确认 → 拒。
+    const packDir = join(objectDir, 'pack');
+    for (const e of await readdirOrEmpty(packDir)) {
+      const t = await realDirentType(e, join(packDir, e.name), { platform });
+      if (!t || t.isSymlink) throw new Error(`symlink in pack dir: ${e.name}`);
     }
   } catch (err) {
     throw gitStoreOutOfScope(cwd, 'object store not within scope', err);
@@ -771,10 +779,13 @@ export function registerPluginFsHandlers(
           `directory has too many entries (> ${MAX_LIST_DIR_ENTRIES})`,
         );
       }
+      // win32 上 dirent 对任何 reparse point 都报链接(OneDrive 按需文件等在 lstat 下是普通文件/目录),
+      // 按 lstat 判真实类型(宿主 listDir 同口径);lstat 失败(边读边删)→ 沿用 dirent 报的类型。
+      const t = await realDirentType(e, join(r.canonical, e.name), { platform: deps.platform });
       out[out.length] = {
         name: e.name,
-        isDirectory: e.isDirectory(),
-        isSymlink: e.isSymbolicLink(),
+        isDirectory: t ? t.isDirectory : e.isDirectory(),
+        isSymlink: t ? t.isSymlink : e.isSymbolicLink(),
       };
     }
     return out;
@@ -1002,6 +1013,7 @@ export function registerPluginFsHandlers(
         cwd,
         sha,
         async (p) => (await checkScope(token, senderId, 'read', p, 'r')).canonical,
+        deps.platform,
       );
       return readGitBlob(cwd, sha, { pin });
     }),
