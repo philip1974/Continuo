@@ -7,7 +7,11 @@
 
 import type { Disposable } from '../types';
 import { KeyedRegistry, snapshotByPriority } from './keyed-registry';
-import { isSpecObject } from './spec-guard';
+import {
+  assertOptionalSpecString,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 
 export type SettingItemType = 'boolean' | 'select' | 'number' | 'text';
 
@@ -130,51 +134,25 @@ const SETTING_ITEM_TYPES: readonly SettingItemType[] = [
   'text',
 ];
 
+const TAG = 'setting-item-registry';
+
 function validateSettingItemSpec(spec: SettingItemSpec): void {
   // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[setting-item-registry] spec must be an object');
-  }
+  assertSpecObject(TAG, spec);
   // 边界(E154,E153/E36 兄弟 registry):SettingItemSpec 来自未类型化第三方 JS plugin,TS 类型不
   // 构成运行时保证。E36/E141 只对字符串字段做 .length 上限,假设它们都是 string;畸形 spec
   // (id:{}/category:123/title:true/titleKey:{})会绕过(`({}).length === undefined > max` 为
   // false)进 registry → 设置项排序/UI/values 写入链路出脏项、React 渲染异常,或非 string id 进
   // settings override 路径。必填 id/category/title 校验非空 string,可选字段校验前先 typeof。
-  if (typeof spec.id !== 'string' || spec.id.length === 0) {
-    throw new Error('[setting-item-registry] id must be a non-empty string');
-  }
-  if (typeof spec.category !== 'string' || spec.category.length === 0) {
-    throw new Error(
-      '[setting-item-registry] category must be a non-empty string',
-    );
-  }
-  if (typeof spec.title !== 'string' || spec.title.length === 0) {
-    throw new Error('[setting-item-registry] title must be a non-empty string');
-  }
-  const lenChecks: ReadonlyArray<readonly [string, unknown, number]> = [
-    ['id', spec.id, SI_ID_MAX],
-    ['category', spec.category, SI_CATEGORY_MAX],
-    ['group', spec.group, SI_GROUP_MAX],
-    ['groupKey', spec.groupKey, SI_KEY_MAX],
-    ['title', spec.title, SI_TITLE_MAX],
-    ['titleKey', spec.titleKey, SI_KEY_MAX],
-    ['description', spec.description, SI_DESC_MAX],
-    ['descriptionKey', spec.descriptionKey, SI_KEY_MAX],
-    ['unit', spec.unit, SI_UNIT_MAX],
-  ];
-  for (const [name, val, max] of lenChecks) {
-    if (val === undefined) continue;
-    if (typeof val !== 'string') {
-      throw new Error(
-        `[setting-item-registry] spec field "${name}" must be a string`,
-      );
-    }
-    if (val.length > max) {
-      throw new Error(
-        `[setting-item-registry] spec field "${name}" exceeds max length ${max}`,
-      );
-    }
-  }
+  assertSpecString(TAG, 'id', spec.id, SI_ID_MAX);
+  assertSpecString(TAG, 'category', spec.category, SI_CATEGORY_MAX);
+  assertSpecString(TAG, 'title', spec.title, SI_TITLE_MAX);
+  assertOptionalSpecString(TAG, 'group', spec.group, SI_GROUP_MAX);
+  assertOptionalSpecString(TAG, 'groupKey', spec.groupKey, SI_KEY_MAX);
+  assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, SI_KEY_MAX);
+  assertOptionalSpecString(TAG, 'description', spec.description, SI_DESC_MAX);
+  assertOptionalSpecString(TAG, 'descriptionKey', spec.descriptionKey, SI_KEY_MAX);
+  assertOptionalSpecString(TAG, 'unit', spec.unit, SI_UNIT_MAX);
   if (!SETTING_ITEM_TYPES.includes(spec.type)) {
     throw new Error(`[setting-item-registry] invalid type: "${spec.type}"`);
   }

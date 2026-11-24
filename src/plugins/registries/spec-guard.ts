@@ -12,7 +12,7 @@ export function isSpecObject(spec: unknown): boolean {
 }
 
 // ── 各 registry 的 validate*Spec 共用的字段断言 ───────────────────────────────────────────────
-// Ribbon / SettingTab / Panel / EditorAction / ExplorerContextMenu / StatusBar 六个 registry 的校验此前逐字同构
+// Ribbon / SettingTab / Panel / EditorAction / ExplorerContextMenu / StatusBar / Command / SettingItem 八个 registry 的校验此前逐字同构
 // (只差错误前缀与字段名),长度上限也各写一份。断言与上限收口到这里;错误消息格式 `[tag] field …` 不变。
 
 /** id / type / group / *Key(i18n key)等标识类字符串的长度上限。 */

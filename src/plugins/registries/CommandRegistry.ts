@@ -3,7 +3,12 @@
 
 import type { Disposable } from '../types';
 import { KeyedRegistry } from './keyed-registry';
-import { isSpecObject } from './spec-guard';
+import {
+  assertOptionalSpecString,
+  assertSpecFunction,
+  assertSpecObject,
+  assertSpecString,
+} from './spec-guard';
 import { isEcmaWhitespaceCode } from '../../../electron/shared/ecma-whitespace';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import {
@@ -72,47 +77,24 @@ export function isValidHotkeyShape(hotkey: string): boolean {
   return true;
 }
 
+const TAG = 'command-registry';
+
 function validateCommandSpec(spec: CommandSpec): void {
   // 边界(E273,E271 registry 族):先校验 spec 是对象,否则读 spec.id/字段对 null/undefined 抛 TypeError。
-  if (!isSpecObject(spec)) {
-    throw new Error('[command-registry] spec must be an object');
-  }
+  assertSpecObject(TAG, spec);
   // 边界(E153,E37/E35 兄弟 registry):CommandSpec 来自第三方未类型化 JS plugin,TS 类型不构成
   // 运行时保证。E35 此前只按 .length 做上限,假设字段都是 string;畸形 spec(id:{}/title:123/
   // hotkey:42/fn:'x' 等)会绕过(如 `(123).length === undefined > max` 为 false,hotkey:42 经
   // String 强转还能通过 regex),随后 CommandPalette/hotkey 分发/execute 按 string/function 使用
   // → 崩溃(execute 调 cmd.fn())或注册出不可触发命令(id 非 string 当 Map key)。注册边界显式
   // 校验运行时类型 + 必填非空(对齐 PanelRegistry E37)。
-  if (typeof spec.id !== 'string' || spec.id.length === 0) {
-    throw new Error('[command-registry] id must be a non-empty string');
-  }
-  if (typeof spec.title !== 'string' || spec.title.length === 0) {
-    throw new Error('[command-registry] title must be a non-empty string');
-  }
-  if (typeof spec.fn !== 'function') {
-    throw new Error('[command-registry] fn must be a function');
-  }
-  const lenChecks: ReadonlyArray<readonly [string, unknown, number]> = [
-    ['id', spec.id, CMD_ID_MAX],
-    ['title', spec.title, CMD_TITLE_MAX],
-    ['titleKey', spec.titleKey, CMD_KEY_MAX],
-    ['category', spec.category, CMD_CATEGORY_MAX],
-    ['categoryKey', spec.categoryKey, CMD_KEY_MAX],
-    ['hotkey', spec.hotkey, CMD_HOTKEY_MAX],
-  ];
-  for (const [name, val, max] of lenChecks) {
-    if (val === undefined) continue;
-    if (typeof val !== 'string') {
-      throw new Error(
-        `[command-registry] command spec field "${name}" must be a string`,
-      );
-    }
-    if (val.length > max) {
-      throw new Error(
-        `[command-registry] command spec field "${name}" exceeds max length ${max}`,
-      );
-    }
-  }
+  assertSpecString(TAG, 'id', spec.id, CMD_ID_MAX);
+  assertSpecString(TAG, 'title', spec.title, CMD_TITLE_MAX);
+  assertSpecFunction(TAG, 'fn', spec.fn);
+  assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, CMD_KEY_MAX);
+  assertOptionalSpecString(TAG, 'category', spec.category, CMD_CATEGORY_MAX);
+  assertOptionalSpecString(TAG, 'categoryKey', spec.categoryKey, CMD_KEY_MAX);
+  assertOptionalSpecString(TAG, 'hotkey', spec.hotkey, CMD_HOTKEY_MAX);
   // hotkey 此处已确认为 string(非 string 上面已抛),再校验形态。
   if (spec.hotkey !== undefined && !isValidHotkeyShape(spec.hotkey)) {
     throw new Error(
