@@ -198,13 +198,15 @@ describe('运行期 open-file 目录判定不阻塞 main', () => {
 
   it('second-instance 只按形态取 argv 候选,不同步 stat(目录判定交给 openPathInNewWindow)', () => {
     const siStart = src.indexOf("app.on('second-instance'");
-    const siBody = src.slice(siStart, src.indexOf('wins[0].focus()', siStart));
+    const siBody = src.slice(siStart, src.indexOf('target.focus()', siStart));
     expect(siStart).toBeGreaterThan(0);
     expect(siBody).toMatch(/pickArgvPathCandidates\(argv/);
     expect(siBody).not.toMatch(/isDirectorySync|statSync\(/);
     expect(siBody).toMatch(/openPathInNewWindow\(/);
     // 逐个判定、按实际打开数封顶(不并发占满 openInFlight)。
     expect(siBody).toMatch(/opened >= MAX_STARTUP_DIRS/);
+    // 聚焦主窗走 pickMainWindowPreferNonPopout,不取 getAllWindows()[0](可能是 popout / 关窗中间态)。
+    expect(siBody).toMatch(/pickMainWindowPreferNonPopout\(\)/);
   });
 
   it('并发开窗计数在异步判定之前占位(在途 stat 也计入上限)', () => {

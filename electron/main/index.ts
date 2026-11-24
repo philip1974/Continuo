@@ -32,6 +32,7 @@ import {
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
 import { isStartupRestoreInFlight, restoreStartupWindows } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
+import { pickMainWindowPreferNonPopout } from './services/main-window-picker.service';
 import {
   pickArgvFolders,
   pickArgvPathCandidates,
@@ -902,10 +903,11 @@ if (!gotLock) {
         if (await openPathInNewWindow(candidate)) opened += 1;
       }
     })();
-    const wins = BrowserWindow.getAllWindows();
-    if (wins[0]) {
-      if (wins[0].isMinimized()) wins[0].restore();
-      wins[0].focus();
+    // 聚焦主窗(优先非 popout、跳过关窗中间态),与其它「选一个主窗」入口同一规则。
+    const target = pickMainWindowPreferNonPopout();
+    if (target) {
+      if (target.isMinimized()) target.restore();
+      target.focus();
     }
   });
 }
