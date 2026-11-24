@@ -497,7 +497,7 @@ describe('KeybindingCaptureModal — Quick Open / 命令面板保留键', () => 
     render(<KeybindingCaptureModal {...props} />);
     dispatchKey({ key: 'p', ctrlKey: true });
     const alert = document.querySelector('.wm-modal-content [role="alert"]');
-    expect(alert?.textContent).toContain('Quick Open');
+    expect(alert?.textContent).toContain('快速打开');
     expect(getButton('保存').disabled).toBe(true);
   });
 

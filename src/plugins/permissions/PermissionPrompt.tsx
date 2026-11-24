@@ -147,7 +147,7 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
         <span className="text-fg">{t('permissions.prompt.note_partial')}</span>
         {t('permissions.prompt.note_suffix')}
       </p>
-      <ul className="mb-4 space-y-1">
+      <ul className="mb-1 space-y-1">
         {pending.perms.map((perm) => (
           <PermissionOptionRow
             key={perm}
@@ -157,6 +157,8 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
           />
         ))}
       </ul>
+      {/* 「尚未生效」提示的常驻 status 区域在按钮上方(见 prompt-grant-hint),底部不多出空白。 */}
+      <PromptGrantHint guard={guard} />
       <div className="flex justify-between gap-2">
         <Button
           variant="ghost"
@@ -195,7 +197,6 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
           </Button>
         </div>
       </div>
-      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }
@@ -233,7 +234,7 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
         <UntrustedText text={scope.pluginId} />
         {fsScopeBodyParts.suffix}
       </p>
-      <ul className="mb-4 space-y-1 text-xs">
+      <ul className="mb-1 space-y-1 text-xs">
         {scope.scopes.map((s, i) => (
           <li
             key={`${s.path}:${i}`}
@@ -253,6 +254,7 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
           </li>
         ))}
       </ul>
+      <PromptGrantHint guard={guard} />
       <div className="flex justify-end gap-2">
         <Button
           variant="ghost"
@@ -274,7 +276,6 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
           {t('permissions.fs_scope.grant')}
         </Button>
       </div>
-      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }

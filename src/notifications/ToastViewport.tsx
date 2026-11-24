@@ -1,11 +1,12 @@
-// topic-15 unified-toast-notification: 容器层。fixed 右下,vertical stack,slice(-5)。
+// topic-15 unified-toast-notification: 容器层。fixed 右下,vertical stack;同时只显示最早的 MAX_VISIBLE_NOTIFICATIONS 条,
+// 其余排队(计时也只给可见的,见 NotificationsProvider)。
 // 主窗之外,还经 createPortal 渲染进每个 dockview popout 子窗(弹出面板的 notify.* 全进主窗 provider,
 // 子窗只能这样看到)。同一通知只让一个文档的副本作 live region,避免读屏重复播报。
 
 import { useRef, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useNotify } from './NotificationsProvider';
+import { MAX_VISIBLE_NOTIFICATIONS, useNotify } from './NotificationsProvider';
 import { Toast } from './Toast';
 import type { Notification } from './types';
 import { useT } from '@/i18n';
@@ -15,19 +16,13 @@ import {
 } from '@/shell/dock/popout-documents';
 import './ToastViewport.css';
 
-const VISIBLE_LIMIT = 5;
-
+/** 可见区 = 列表前 MAX_VISIBLE_NOTIFICATIONS 条(最早的先显示,其余排队);未超上限时复用原数组。 */
 export function selectVisibleNotifications<T>(
   notifications: readonly T[],
 ): readonly T[] {
-  if (notifications.length <= VISIBLE_LIMIT) return notifications;
-  const start = notifications.length - VISIBLE_LIMIT;
-  const visible = new Array<T>(notifications.length - start);
-  let visibleCount = 0;
-  for (let i = start; i < notifications.length; i++) {
-    visible[visibleCount] = notifications[i]!;
-    visibleCount += 1;
-  }
+  if (notifications.length <= MAX_VISIBLE_NOTIFICATIONS) return notifications;
+  const visible = new Array<T>(MAX_VISIBLE_NOTIFICATIONS);
+  for (let i = 0; i < MAX_VISIBLE_NOTIFICATIONS; i++) visible[i] = notifications[i]!;
   return visible;
 }
 

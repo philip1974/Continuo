@@ -16,6 +16,9 @@
 - `setting-locale-fields.spec.ts`: setting registry 的 title/description/label key 在渲染时翻译。
 - `catalog-language-purity.spec.ts`: 文案语言纯净 —— zh / ko 不夹带 VSCode 本地化版会翻译的英文 UI 词(Settings / Explorer /
   Editor / Panel / Tab / tag / review / hotkey / terminal / workspace / token / Source·Edit 模式…;专有名词 Markdown / Git /
-  MCP / Quick Open / Agent / shell 等与代码标识可保留),en 不含中文 / 韩文。
+  MCP / Agent / shell 等与代码标识可保留),en 不含中文 / 韩文。
+- `catalog-zh-ko-style.spec.ts`: zh / ko 术语与标点一致(对齐 VSCode 中文 / 韩文版)—— Quick Open 译为「快速打开」/「빠른 열기」,
+  扩展统一叫「插件」/「플러그인」;zh 句内逗号 / 分号 / 问号 / 叹号 / 冒号用全角,含中文或紧跟汉字的括号用全角「（）」,引号统一「」;
+  反引号代码段与占位符之间(`{src}: {message}`)保留半角。
 - `html-lang.spec.ts`: `<html lang>` 随界面语言(en / zh-CN / ko)写入 —— 读屏按它选发音;`theme.css` 的 `:lang(ko)`
   让韩文按词断行(`word-break: keep-all`)。

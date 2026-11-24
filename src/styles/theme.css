@@ -140,11 +140,13 @@
 
   /* z-index 分层 token:把散落数字赋予语义,新代码意图明显,旧 z-N 按需迁移。
    * 已统计的层级(审计 round 2):
-   *   -z-10 backdrop,z-decor:1,z-sticky:10,z-overlay:30,z-modal:50,
+   *   -z-10 backdrop,z-decor:1,z-sticky:10,z-overlay:30,z-toast:40,z-modal:50,
    *   z-terminal-overlay:9999(issue #38 R2d,见 topic-26 memory L3) */
   --z-decor: 1;
   --z-sticky: 10;
   --z-overlay: 30;
+  /* 通知 toast(ToastViewport):高于普通浮层,低于模态层 —— 模态对话框打开时遮罩盖住 toast(VSCode 同款)。 */
+  --z-toast: 40;
   --z-modal: var(--wm-z-modal);
   /* xterm-host 内的浮层(SearchBar / 未来 menu / hover popup)必须用此
    * token,因为 z-modal(50)会被 dockview panel stacking context 困住,

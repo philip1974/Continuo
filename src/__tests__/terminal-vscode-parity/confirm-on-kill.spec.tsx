@@ -167,7 +167,7 @@ describe('terminalCloseGuard', () => {
 
     const first = terminalCloseGuard(terminalPanel('busy') as never) as Promise<boolean>;
     await flush();
-    expect(screen.getByText('终止正在运行的进程?')).toBeTruthy();
+    expect(screen.getByText('终止正在运行的进程？')).toBeTruthy();
     expect(screen.getByText(/sleep/)).toBeTruthy();
     const cancel = screen.getByRole('button', { name: '取消' });
     expect(cancel.getAttribute('data-autofocus')).not.toBeNull();
@@ -200,8 +200,8 @@ describe('popout 子窗里的终端:确认框画在该子窗,取消后焦点还�
     render(createElement(TerminalKillConfirmHost));
     const verdict = terminalCloseGuard(terminalPanel('pop', vi.fn(), popDoc) as never) as Promise<boolean>;
     await flush();
-    expect(within(popDoc.body).getByText('终止正在运行的进程?')).toBeTruthy();
-    expect(screen.queryByText('终止正在运行的进程?')).toBeNull();
+    expect(within(popDoc.body).getByText('终止正在运行的进程？')).toBeTruthy();
+    expect(screen.queryByText('终止正在运行的进程？')).toBeNull();
     fireEvent.click(within(popDoc.body).getByRole('button', { name: '取消' }));
     await expect(verdict).resolves.toBe(false);
     tracker.dispose();
@@ -215,7 +215,7 @@ describe('popout 子窗里的终端:确认框画在该子窗,取消后焦点还�
     void terminalCloseGuard(terminalPanel('gone', vi.fn(), popDoc) as never);
     await flush();
     act(() => tracker.dispose());
-    expect(screen.getByText('终止正在运行的进程?')).toBeTruthy();
+    expect(screen.getByText('终止正在运行的进程？')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
   });
   it('取消 → 焦点还给该终端', async () => {
@@ -244,12 +244,12 @@ describe('确认框等待期间 reconciler 的关闭不被吞', () => {
     wrapPanelClose(panel as never, terminalCloseGuard, cancelTerminalCloseGuard);
     panel.api.close();
     await flush();
-    expect(screen.getByText('终止正在运行的进程?')).toBeTruthy();
+    expect(screen.getByText('终止正在运行的进程？')).toBeTruthy();
 
     markPanelCloseSuppressed('terminal-rc');
     act(() => panel.api.close());
     expect(useTerminalKillConfirmStore.getState().pending).toBeNull();
-    expect(screen.queryByText('终止正在运行的进程?')).toBeNull();
+    expect(screen.queryByText('终止正在运行的进程？')).toBeNull();
     expect(useClosingStore.getState().ids.has('terminal-rc')).toBe(true);
     await flush();
     vi.advanceTimersByTime(EXIT_DURATION_MS);
@@ -269,7 +269,7 @@ describe('确认框等待期间 reconciler 的关闭不被吞', () => {
     answer({ ok: true, data: { process: 'sleep' } });
     await flush();
     expect(useTerminalKillConfirmStore.getState().pending).toBeNull();
-    expect(screen.queryByText('终止正在运行的进程?')).toBeNull();
+    expect(screen.queryByText('终止正在运行的进程？')).toBeNull();
   });
   it('非 reconciler 的重复关闭仍不重复询问', async () => {
     useTerminalStore.setState({ sessions: [session('dup')] });

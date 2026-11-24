@@ -269,6 +269,8 @@ export const en = {
   'panels.explorer.ctx.copy': 'Copy',
   'panels.explorer.ctx.rename': 'Rename',
   'panels.explorer.rename_input_aria': 'Rename {name}',
+  // VSCode explorer:重命名目标名已存在(FS_EEXIST)
+  'panels.explorer.rename_exists': 'A file or folder “{name}” already exists at this location. Please choose a different name.',
   'panels.explorer.ctx.copy_path': 'Copy Path',
   'panels.explorer.ctx.copy_relative_path': 'Copy Relative Path',
   'panels.explorer.ctx.reveal_in_finder': 'Reveal in Finder',
@@ -391,9 +393,7 @@ export const en = {
   'permissions.agent.respond_failed': 'Failed to send your authorization decision. Please try again.',
   // a11y(A126):error feedback when relaying the fs-scope grant/deny decision to main fails.
   'permissions.fs_scope.respond_failed': 'Failed to send your file-access decision. Please try again.',
-  'permissions.agent.body_prefix': 'External agent',
-  'permissions.agent.body_via_mcp': 'requests via MCP to',
-  'permissions.agent.body_suffix': '.',
+  'permissions.agent.body': 'External agent requests via MCP to {action}.',
   'permissions.agent.hint': 'Once granted, agents holding the MCP token can create / close / write / read terminals. The token is valid only for this launch and is invalidated when Continuo exits.',
   'permissions.agent.deny': 'Deny',
   'permissions.agent.grant_once': 'Just this time',

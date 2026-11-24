@@ -15,4 +15,6 @@ export interface Notification {
   readonly message: string;
   readonly code?: string;
   readonly createdAt: number;
+  /** 相同内容(同 level + 同 message)合并的次数;缺省 = 1。 */
+  readonly count?: number;
 }

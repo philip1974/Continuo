@@ -2,7 +2,7 @@
 // 文案语言纯净:zh / ko 界面文案不夹带可翻译的英文 UI 词(「切换 Settings」「Explorer 숨기기」),en 不夹带中文 / 韩文。
 // 判断标准对齐 VSCode 中文 / 韩文版:VSCode 本地化版本会翻译的词(Settings / Explorer / Editor / Panel / Status Bar /
 // Terminal / Workspace / Tab / Tag / Review / Hotkey…)必须翻;专有名词与产品名(Markdown / Git / GitHub / MCP /
-// Quick Open / Mermaid / Milkdown / Finder / Agent / shell / URL / API / Node.js…)与代码标识(export default /
+// Mermaid / Milkdown / Finder / Agent / shell / URL / API / Node.js…)与代码标识(export default /
 // sessionId / GITHUB_TOKEN / PermissionError)可保留。
 import { describe, expect, it } from 'vitest';
 import { en } from '../../../electron/shared/i18n-locales/en';

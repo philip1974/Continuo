@@ -70,6 +70,7 @@ vi.mock('../../panels/Explorer/ContextMenu', () => ({
 }));
 
 import { FolderTree } from '../../panels/Explorer/FolderTree';
+import { setLocale } from '../../i18n';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
 
 function fakeTree(config: TreeConfig<FileEntry>) {
@@ -123,6 +124,26 @@ describe('a11y(A133) — inline rename reject 须 notify.error', () => {
     await vi.waitFor(() => {
       expect(h.notifyError).toHaveBeenCalledTimes(1);
     });
+  });
+
+  // VSCode 同款:目标名已存在时提示带上这个名字(此前只有通用「已存在 [FS_EEXIST]」,看不出是哪个名字冲突)。
+  it.each([
+    ['en', 'A file or folder “b.txt” already exists at this location. Please choose a different name.'],
+    ['zh', '此位置已存在文件或文件夹「b.txt」。请选择其他名称。'],
+    ['ko', '이 위치에 파일 또는 폴더 “b.txt”이(가) 이미 있습니다. 다른 이름을 선택하세요.'],
+  ] as const)('%s:目标已存在(FS_EEXIST)→ 提示带目标名,错误码随附', async (locale, text) => {
+    setLocale(locale);
+    try {
+      h.renameItem.mockResolvedValue({ ok: false, code: 'FS_EEXIST', message: 'EEXIST: /repo/b.txt' });
+      const onRename = getOnRename();
+      onRename!({ getId: () => '/repo/a.txt' }, ' b.txt ');
+      await vi.waitFor(() => {
+        expect(h.notifyError).toHaveBeenCalledTimes(1);
+      });
+      expect(h.notifyError).toHaveBeenCalledWith(text, { code: 'FS_EEXIST' });
+    } finally {
+      setLocale('en');
+    }
   });
 
   it('renameItem {ok:false} → notify.error(既有行为保持)', async () => {

@@ -53,3 +53,26 @@ describe('ToastViewport 与状态栏', () => {
     expect(footer).not.toMatch(/\bh-6\b/);
   });
 });
+
+// toast 层在模态遮罩之下(VSCode:模态对话框盖住通知):z-index 用 token --z-toast,且低于 --z-modal;
+// 此前写死 9999,未保存确认框打开时 toast 浮在变暗遮罩之上。
+describe('ToastViewport 层级', () => {
+  const THEME = read('src/styles/theme.css');
+  const TOKENS = read('src/styles/design-tokens.css');
+  const num = (src: string, name: string): number => {
+    const m = src.match(new RegExp(`${name}:\\s*(\\d+)\\s*;`));
+    if (!m) throw new Error(`${name} not found`);
+    return Number(m[1]);
+  };
+
+  it('z-index 走 --z-toast token(不写字面数字)', () => {
+    expect(VIEWPORT_CSS).toMatch(/z-index:\s*var\(--z-toast\)/);
+    expect(VIEWPORT_CSS).not.toMatch(/z-index:\s*\d/);
+  });
+
+  it('--z-toast 低于模态层 --wm-z-modal(Modal 遮罩),高于普通浮层 --z-overlay', () => {
+    const toast = num(THEME, '--z-toast');
+    expect(toast).toBeLessThan(num(TOKENS, '--wm-z-modal'));
+    expect(toast).toBeGreaterThan(num(THEME, '--z-overlay'));
+  });
+});

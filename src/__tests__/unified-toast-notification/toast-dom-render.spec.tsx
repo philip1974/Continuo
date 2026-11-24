@@ -56,7 +56,8 @@ describe('unified-toast-notification: DOM rendering', () => {
     expect(viewportSrc.indexOf('const t = useT();')).toBeGreaterThan(contentStart);
   });
 
-  it('T12 renders a toast containing message and code without rendering full App', () => {
+  // 错误码不作为正文显示(此前「已存在 [FS_EEXIST]」);保留在 title(悬停可见)与 data-code,供支持排错。
+  it('T12 正文只显示 message;错误码在 title / data-code,不进正文', () => {
     render(
       <NotificationsProvider>
         <ToastViewport />
@@ -70,7 +71,28 @@ describe('unified-toast-notification: DOM rendering', () => {
     // a11y(A60):error toast 须 role=alert(assertive),非普通 status。
     const toast = screen.getByRole('alert');
     expect(toast.textContent).toContain('rendered toast');
-    expect(toast.textContent).toContain('TEST');
+    expect(toast.textContent).not.toContain('TEST');
+    expect(toast.querySelector('.toast__code')).toBeNull();
+    expect(toast.dataset.code).toBe('TEST');
+    expect(toast.querySelector<HTMLElement>('.toast__message')!.title).toBe('rendered toast (TEST)');
+  });
+
+  it('T22 合并的 toast 显示次数(×N);只有一次时不显示', () => {
+    render(
+      <NotificationsProvider>
+        <ToastViewport />
+      </NotificationsProvider>,
+    );
+    act(() => {
+      notify.error('dup');
+    });
+    expect(document.querySelector('.toast__count')).toBeNull();
+    act(() => {
+      notify.error('dup');
+      notify.error('dup');
+    });
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(document.querySelector('.toast__count')!.textContent).toBe('×3');
   });
 
   // a11y(A60):非错误(info/success/warning)toast 仍 role=status(polite);error 是 alert。
@@ -91,7 +113,7 @@ describe('unified-toast-notification: DOM rendering', () => {
     expect(screen.getByRole('alert').textContent).toContain('boom');
   });
 
-  it('可见 toast 列表不通过 notifications.slice(-limit) 构建', () => {
+  it('可见 toast 列表不通过 notifications.slice 构建', () => {
     render(
       <NotificationsProvider>
         <ToastViewport />
@@ -120,9 +142,10 @@ describe('unified-toast-notification: DOM rendering', () => {
       expect(readFileSync('src/notifications/ToastViewport.tsx', 'utf-8')).not.toContain(
         'visible.push(',
       );
-      expect(screen.getAllByRole('alert')).toHaveLength(5);
-      expect(screen.queryByText('boom-0')).toBeNull();
-      expect(screen.getByText(/boom-5/)).toBeTruthy();
+      // 同时最多显示 3 条(VSCode 同款),其余排队:先显示最早的三条
+      expect(screen.getAllByRole('alert')).toHaveLength(3);
+      expect(screen.getByText('boom-0')).toBeTruthy();
+      expect(screen.queryByText('boom-3')).toBeNull();
     } finally {
       sliceSpy.mockRestore();
     }

@@ -137,7 +137,7 @@ describe('待重启记录跨入口 / 跨页共享', () => {
     const { container } = await renderMarket();
     const input = container.querySelector('input[placeholder^="https"]') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'https://github.com/me/shared.git' } });
-    fireEvent.click(button(container, '安装扩展')!);
+    fireEvent.click(button(container, '安装插件')!);
     await waitFor(() => expect(container.textContent).toContain('已安装（待重启）'));
     expect(button(container, '安装')).toBeUndefined();
   });

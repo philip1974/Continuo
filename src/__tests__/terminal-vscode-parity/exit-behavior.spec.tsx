@@ -163,7 +163,7 @@ describe('useTerminal:退出后的终端内说明与输入', () => {
     await flush();
     act(() => useTerminalStore.setState({ sessions: [session('t-exit1', { exitCode: 2 })] }));
     const out = hoisted.writes.join('');
-    expect(out.indexOf('$ ')).toBeLessThan(out.indexOf('终端进程已终止,退出代码: 2'));
+    expect(out.indexOf('$ ')).toBeLessThan(out.indexOf('终端进程已终止，退出代码：2'));
     expect(out).toContain('按任意键关闭终端');
     for (const cb of hoisted.onDataCbs) cb('x');
     await flush();
@@ -191,7 +191,7 @@ describe('useTerminal:退出后的终端内说明与输入', () => {
     useTerminalStore.setState({ sessions: [session('t-exited', { exitCode: 127 })] });
     render(createElement(Host, { termId: 't-exited', onExitDismiss: vi.fn() }));
     await flush();
-    expect(hoisted.writes.join('')).toContain('退出代码: 127');
+    expect(hoisted.writes.join('')).toContain('退出代码：127');
   });
   it('运行中:键入照常发 IPC', async () => {
     useTerminalStore.setState({ sessions: [session('t-live')] });

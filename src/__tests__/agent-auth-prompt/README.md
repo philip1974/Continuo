@@ -20,6 +20,9 @@
 ### pending 非空
 
 - 渲染 Modal,文案带 method label
+- 说明句是一条带 `{action}` 插值的完整文案(`permissions.agent.body`;各语言自定空格 / 标点 / 语序),方法标签按占位符嵌入:
+  en「External agent requests via MCP to start a debug session.」、ko「…요청합니다: 디버그 세션 시작.」(不再四段拼接漏空格)
+- 「尚未生效」提示的常驻 status 区域在按钮行之上,弹窗最后一个子元素是按钮行(底部不多出空白)
 - 三个按钮:拒绝 / 仅本次 / 本次启动期间允许
 
 ### 按钮行为

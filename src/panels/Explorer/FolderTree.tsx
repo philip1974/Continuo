@@ -74,6 +74,7 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { ERROR_CODES } from '@shared/error-codes';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 
 interface CreatingState {
@@ -638,7 +639,10 @@ export function FolderTree({ root }: { root: string }) {
                 { invalidateChildrenIds: refreshParent },
               );
               if (!r.ok) {
-                notifyFailure(r);
+                // 目标名已存在:提示带上这个名字(VSCode 同款),通用的「已存在」看不出是哪个名字冲突。
+                if (r.code === ERROR_CODES.FS_EEXIST) {
+                  notify.error(t('panels.explorer.rename_exists', { name: target }), { code: r.code });
+                } else notifyFailure(r);
                 return;
               }
               // editor tab / 展开集合前缀改写 + 剪贴板剪除旧路径(目录 rename 时其下全部路径同步)

@@ -1493,7 +1493,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     });
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === '安装扩展')!;
+    ).find((b) => b.textContent === '安装插件')!;
     expect(btn.disabled).toBe(true);
   });
 
@@ -1517,7 +1517,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     fireEvent.click(
       Array.from(
         container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '安装扩展')!,
+      ).find((b) => b.textContent === '安装插件')!,
     );
     await waitFor(() => {
       expect(installFromGit).toHaveBeenCalledWith(
@@ -1541,7 +1541,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     const input = container.querySelector('input[placeholder^="https"]') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'https://github.com/x/cool-ext.git' } });
     fireEvent.click(
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装扩展')!,
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装插件')!,
     );
     await waitFor(() => expect(container.textContent).toContain('cool-ext 已安装 — 若尚未出现在插件列表中'));
     expect(container.textContent).not.toContain('文件已存在');
@@ -1560,7 +1560,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     ) as HTMLInputElement;
     const installBtn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => b.textContent === '安装扩展')!;
+    ).find((b) => b.textContent === '安装插件')!;
     const trimSpy = vi.spyOn(String.prototype, 'trim');
 
     try {
@@ -1598,7 +1598,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     fireEvent.click(
       Array.from(
         container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '安装扩展')!,
+      ).find((b) => b.textContent === '安装插件')!,
     );
     await waitFor(() => {
       expect(container.textContent).toContain('oops');
@@ -1627,7 +1627,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     fireEvent.click(
       Array.from(
         container.querySelectorAll<HTMLButtonElement>('button'),
-      ).find((b) => b.textContent === '安装扩展')!,
+      ).find((b) => b.textContent === '安装插件')!,
     );
     await waitFor(() => {
       expect(container.textContent).toContain('disk full');

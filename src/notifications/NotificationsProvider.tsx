@@ -23,11 +23,14 @@ const DISMISS_MS: Record<NotificationLevel, number> = {
   success: 5000,
   error: 15000,
 };
-const DEDUPE_WINDOW_MS = 1000;
-// 审计 P2-C:底层数组硬上限。error 级不参与 dedupe 且存活 15s,15s 内的 error
-// 突发(批量安装失败 / 循环 IPC 报错)会在 state 里无界堆积。显示层只 slice 可见区,
-// 不限制底层数组本身,故在 push 时按上限丢最旧(并清其 timer)。
+// 审计 P2-C:底层数组硬上限。内容各不相同的突发(批量安装失败 / 循环 IPC 报错)会在 state 里无界堆积
+//(显示层只取可见区),故在 push 时按上限丢最旧(并清其 timer)。
 export const MAX_NOTIFICATIONS = 50;
+/**
+ * 同时可见的 toast 上限(VSCode 通知 toast 同为 3):列表前这么多条可见,其余排队。只有可见的挂自动消失计时 ——
+ * 排队中的不计时(否则在用户看到前就过期),前面的消失后依次补上并从那时开始计时。ToastViewport 按同一常量取可见区。
+ */
+export const MAX_VISIBLE_NOTIFICATIONS = 3;
 const EMPTY_NOTIFICATIONS: readonly Notification[] = [];
 
 function appendCappedNotification(
@@ -65,7 +68,8 @@ function removeNotificationById(
   );
 }
 
-function updateNotificationCreatedAt(
+/** 合并一次相同内容的通知:计数 +1、createdAt 刷新为本次(位置不变)。 */
+function mergeRepeatedNotification(
   notifications: readonly Notification[],
   id: string,
   createdAt: number,
@@ -76,7 +80,6 @@ function updateNotificationCreatedAt(
     const notification = notifications[i]!;
     let current = notification;
     if (notification.id === id) {
-      if (notification.createdAt === createdAt) return notifications;
       if (next === null) {
         next = new Array<Notification>(notifications.length);
         for (let j = 0; j < i; j++) {
@@ -84,7 +87,7 @@ function updateNotificationCreatedAt(
         }
         nextCount = i;
       }
-      current = { ...notification, createdAt };
+      current = { ...notification, createdAt, count: (notification.count ?? 1) + 1 };
     }
     if (next !== null) {
       next[nextCount] = current;
@@ -139,6 +142,8 @@ export function NotificationsProvider({
   const notificationsRef = useRef<readonly Notification[]>(EMPTY_NOTIFICATIONS);
   const counterRef = useRef(0);
   const timersRef = useRef(new Map<string, DismissTimer>());
+  // 到期移除后补位(armVisibleTimers);经 ref 调用,避免计时回调与补位互相依赖。
+  const promoteRef = useRef<() => void>(noop);
 
   const setNotificationList = useCallback(
     (update: (prev: readonly Notification[]) => readonly Notification[]) => {
@@ -173,6 +178,7 @@ export function NotificationsProvider({
         id,
       );
       setNotificationList((prev) => removeNotificationById(prev, id));
+      promoteRef.current();
     },
     [clearDismissTimer, setNotificationList],
   );
@@ -187,6 +193,7 @@ export function NotificationsProvider({
           id,
         );
         setNotificationList((prev) => removeNotificationById(prev, id));
+        promoteRef.current();
       }, timer.remaining);
     },
     [setNotificationList],
@@ -205,6 +212,19 @@ export function NotificationsProvider({
     },
     [startDismissTimer],
   );
+
+  // 可见区(列表前 MAX_VISIBLE_NOTIFICATIONS 条)里还没计时的(新入列 / 刚从排队补上)开始计时。读同步的 ref。
+  const armVisibleTimers = useCallback(() => {
+    const list = notificationsRef.current;
+    const visible = Math.min(list.length, MAX_VISIBLE_NOTIFICATIONS);
+    for (let i = 0; i < visible; i++) {
+      const n = list[i]!;
+      if (!timersRef.current.has(n.id)) scheduleDismiss(n.id, n.level);
+    }
+  }, [scheduleDismiss]);
+  useEffect(() => {
+    promoteRef.current = armVisibleTimers;
+  }, [armVisibleTimers]);
 
   const pause = useCallback((id: string) => {
     const timer = timersRef.current.get(id);
@@ -235,37 +255,22 @@ export function NotificationsProvider({
       const now = Date.now();
       const code = opts?.code;
 
-      if (level !== 'error') {
-        let existing: Notification | undefined;
-        for (let i = notificationsRef.current.length - 1; i >= 0; i--) {
-          const n: Notification | undefined = notificationsRef.current[i];
-          if (
-            n !== undefined &&
-            n.level === level &&
-            n.message === message &&
-            (n.code ?? null) === (code ?? null) &&
-            now - n.createdAt < DEDUPE_WINDOW_MS
-          ) {
-            existing = n;
-            break;
-          }
+      // VSCode 通知同款:同 level + 同 message 的通知还在列表里(显示中或排队中)就合并为一条 —— 计数 +1、
+      // 刷新自动消失计时(排队中的没有计时,补位时才开始),不再堆出多条相同 toast。error 同样合并。
+      let existing: Notification | undefined;
+      for (let i = notificationsRef.current.length - 1; i >= 0; i--) {
+        const n: Notification | undefined = notificationsRef.current[i];
+        if (n !== undefined && n.level === level && n.message === message) {
+          existing = n;
+          break;
         }
-        if (existing) {
-          notificationsRef.current = updateNotificationCreatedAt(
-            notificationsRef.current,
-            existing.id,
-            now,
-          );
-          setNotificationList((prev) =>
-            updateNotificationCreatedAt(
-              prev,
-              existing.id,
-              now,
-            ),
-          );
-          scheduleDismiss(existing.id, level);
-          return;
-        }
+      }
+      if (existing) {
+        const existingId = existing.id;
+        notificationsRef.current = mergeRepeatedNotification(notificationsRef.current, existingId, now);
+        setNotificationList((prev) => mergeRepeatedNotification(prev, existingId, now));
+        if (timersRef.current.has(existingId)) scheduleDismiss(existingId, level);
+        return;
       }
 
       const id = `notif-${String(++counterRef.current)}`;
@@ -282,9 +287,9 @@ export function NotificationsProvider({
         onDrop,
       );
       setNotificationList((prev) => appendCappedNotification(prev, n, onDrop));
-      scheduleDismiss(id, level);
+      armVisibleTimers();
     },
-    [clearDismissTimer, scheduleDismiss, setNotificationList],
+    [armVisibleTimers, clearDismissTimer, scheduleDismiss, setNotificationList],
   );
 
   // epoch race 防护:mount 时注册,unmount 时仅当自身 epoch === 当前 currentEpoch 才清空

@@ -763,6 +763,7 @@
 
 - [`bootstrap-locale-sync.spec.ts`](./i18n-en-zh-ko/bootstrap-locale-sync.spec.ts)
 - [`catalog-language-purity.spec.ts`](./i18n-en-zh-ko/catalog-language-purity.spec.ts)
+- [`catalog-zh-ko-style.spec.ts`](./i18n-en-zh-ko/catalog-zh-ko-style.spec.ts)
 - [`design-layer-no-keys.spec.ts`](./i18n-en-zh-ko/design-layer-no-keys.spec.ts)
 - [`error-codes-message-catalog.spec.ts`](./i18n-en-zh-ko/error-codes-message-catalog.spec.ts)
 - [`html-lang.spec.ts`](./i18n-en-zh-ko/html-lang.spec.ts)

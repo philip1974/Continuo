@@ -48,19 +48,24 @@
 
 .toast__body {
   flex: 1 1 auto;
+  min-width: 0;
   color: var(--md-on-surface);
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .toast__message {
+  flex: 1 1 auto;
+  min-width: 0;
   word-break: break-word;
 }
 
-.toast__code {
-  font-size: 11px;
-  opacity: 0.75;
+/* 相同内容合并后的次数(×N),紧跟正文、弱化色。 */
+.toast__count {
+  flex: 0 0 auto;
+  font-size: var(--wm-text-2xs);
+  font-variant-numeric: tabular-nums;
   color: var(--md-on-surface-variant);
 }
 

@@ -30,7 +30,7 @@ export function Toast({
   onResume,
   announce = true,
 }: ToastProps): ReactNode {
-  const { id, level, message, code } = notification;
+  const { id, level, message, code, count = 1 } = notification;
   const [hovered, setHovered] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -77,6 +77,7 @@ export function Toast({
       role={announce ? (level === 'error' ? 'alert' : 'status') : undefined}
       aria-live={announce ? (level === 'error' ? 'assertive' : 'polite') : undefined}
       data-level={level}
+      data-code={code}
       className={`toast toast--${level}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -85,8 +86,12 @@ export function Toast({
     >
       <span className="toast__icon" aria-hidden="true" />
       <div className="toast__body">
-        <span className="toast__message">{message}</span>
-        {code !== undefined ? <span className="toast__code">[{code}]</span> : null}
+        {/* 错误码不进正文(用户看不懂、占地方),悬停 title 与 data-code 保留给支持排错。 */}
+        <span className="toast__message" title={code !== undefined ? `${message} (${code})` : undefined}>
+          {message}
+        </span>
+        {/* 相同内容合并后的次数(见 NotificationsProvider)。 */}
+        {count > 1 ? <span className="toast__count">×{count}</span> : null}
       </div>
       {/* native button:样式由 toast.css 的 .toast__dismiss 定义(token-only),toast 暂留本目录未并入 design。 */}
       <button

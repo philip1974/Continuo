@@ -2,7 +2,8 @@
 //
 // 守卫拒掉的激活此前没有任何反馈:过早的点击、Tab 后立刻回车、辅助技术合成的点击(detail=0、没有 keydown、
 // DOM 焦点可能不在按钮上)都只是「没反应」。role=status 的区域常驻(读屏只播报之后出现的内容),被拒时写入提示,
-// 可见且会被播报;常驻一行高度,提示出现时弹窗不跳动。
+// 可见且会被播报;常驻一行高度,提示出现时弹窗不跳动。调用方把它放在按钮行**之上**(占用正文与按钮之间原有的
+// 间距):放在按钮下方时空着也垫出一行,弹窗底部比顶部多出约 24px 空白。
 
 import { useSyncExternalStore } from 'react';
 import { useT } from '@/i18n';
@@ -12,7 +13,7 @@ export function PromptGrantHint({ guard }: { readonly guard: PromptGrantGuard })
   const t = useT();
   const rejected = useSyncExternalStore(guard.subscribeRejected, guard.wasRejected);
   return (
-    <p role="status" className="mt-2 min-h-4 text-right text-2xs text-fg-dim">
+    <p role="status" className="mb-2 min-h-4 text-right text-2xs text-fg-dim">
       {rejected ? t('permissions.grant_guard.rejected') : null}
     </p>
   );

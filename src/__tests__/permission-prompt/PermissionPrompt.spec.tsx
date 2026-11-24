@@ -346,3 +346,34 @@ describe('PermissionPrompt UI', () => {
     expect(Array.from(checkboxes).every((c) => c.checked)).toBe(true);
   });
 });
+
+// 「尚未生效」提示的常驻 status 区域放在按钮行之上(同 AgentAuthPrompt),底部不多出一行空白。
+describe('PermissionPrompt — 授予被拒提示的位置', () => {
+  afterEach(() => {
+    usePermissionPromptStore.setState({ fsScopePending: {}, fsScopeQueue: [], currentFsScope: null });
+  });
+  const expectStatusBeforeButtons = (): void => {
+    const content = document.querySelector('.wm-modal-content')!;
+    const status = content.querySelector<HTMLElement>('[role="status"]')!;
+    expect(status).not.toBeNull();
+    expect(status.nextElementSibling).toBe(content.lastElementChild);
+    expect(content.lastElementChild!.querySelector('button')).not.toBeNull();
+  };
+
+  it('manifest 权限弹窗', () => {
+    void usePermissionPromptStore.getState().request('plugin.a', ['fs']);
+    render(<PermissionPrompt />);
+    expectStatusBeforeButtons();
+  });
+
+  it('fs-scope 弹窗', () => {
+    usePermissionPromptStore.setState({ fsScopePending: {}, fsScopeQueue: [], currentFsScope: null });
+    void usePermissionPromptStore.getState().requestFsScope({
+      requestId: 'r1',
+      pluginId: 'plugin.x',
+      scopes: [{ path: '/p', mode: 'r', displayPath: '/p' }],
+    });
+    render(<PermissionPrompt />);
+    expectStatusBeforeButtons();
+  });
+});

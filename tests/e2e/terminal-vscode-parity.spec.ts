@@ -31,7 +31,7 @@ async function run(window: Page, command: string) {
 test('exit 1:终端内显示退出说明,之后按键不再报错,任意键关闭', async ({ window }) => {
   const tab = await newTerminal(window);
   await run(window, 'exit 1');
-  await expect.poll(() => terminalText(window), { timeout: 15_000 }).toMatch(/exit code: 1|退出代码: 1|종료 코드: 1/);
+  await expect.poll(() => terminalText(window), { timeout: 15_000 }).toMatch(/exit code: 1|退出代码：1|종료 코드: 1/);
   await expect(tab).toHaveText(/\((exited|已退出|종료됨)\)/);
   // 非「任意键」的方向键:此前会发 IPC → NOT_FOUND 错误 toast;现在不再发
   await window.keyboard.press('ArrowUp');

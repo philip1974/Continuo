@@ -8,6 +8,7 @@ import {
   captureLmApi,
 } from '../../lib/co-api';
 import { AgentAuthPrompt } from '../../shell/AgentAuthPrompt';
+import { getLocale, setLocale, type Locale } from '../../i18n';
 import { PROMPT_GRANT_ARM_DELAY_MS as AGENT_AUTH_GRANT_ARM_DELAY_MS } from '../../lib/use-prompt-grant-guard';
 import {
   _resetAgentAuthForTest,
@@ -184,6 +185,64 @@ describe('AgentAuthPrompt — 渲染条件', () => {
   });
 });
 
+// 说明句是一条带 {action} 插值的完整文案(此前「前缀 + via MCP + 方法 + 后缀」四段拼接,en 少空格成
+// 「to start」→「tostart」、ko 冒号后无空格)。方法标签仍是独立节点(插件工具名等不可信文本要可见化)。
+describe('AgentAuthPrompt — 说明句', () => {
+  let saved: Locale;
+  beforeEach(() => {
+    saved = getLocale();
+  });
+  afterEach(() => {
+    setLocale(saved);
+  });
+
+  it.each([
+    ['en', 'External agent requests via MCP to start a debug session.'],
+    ['zh', '外部 agent 通过 MCP 请求启动调试会话。'],
+    ['ko', '외부 에이전트가 MCP를 통해 다음을 요청합니다: 디버그 세션 시작.'],
+  ] as const)('%s:方法标签与前后文的空格 / 标点正确', (locale, sentence) => {
+    setLocale(locale);
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' });
+    });
+    const paragraphs = Array.from(document.querySelectorAll('.wm-modal-content p'), (p) => p.textContent);
+    expect(paragraphs).toContain(sentence);
+  });
+
+  it('插件工具名仍以可见化的 <code> 嵌在句中', () => {
+    setLocale('en');
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'plugin.git.commit' });
+    });
+    const code = document.querySelector('.wm-modal-content p code');
+    expect(code?.textContent).toBe('git.commit');
+    expect(code?.closest('p')?.textContent).toBe('External agent requests via MCP to call plugin tool git.commit.');
+  });
+});
+
+// 「尚未生效」提示的 status 区域常驻(读屏播报之后写入的内容),但不再垫在按钮下方:放在按钮行之上、占用说明与按钮
+// 之间原有的间距,底部不多出一行空白;提示出现时弹窗高度不变。
+describe('AgentAuthPrompt — 授予被拒提示的位置', () => {
+  it('status 区域在按钮行之前,弹窗最后一个子元素是按钮行', () => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method: 'debug.launch' });
+    });
+    const content = document.querySelector('.wm-modal-content')!;
+    const status = content.querySelector<HTMLElement>('[role="status"]')!;
+    expect(status).not.toBeNull();
+    const last = content.lastElementChild!;
+    expect(last.querySelectorAll('button').length).toBe(3);
+    expect(status.nextElementSibling).toBe(last);
+    expect(status.className).toMatch(/\bmin-h-4\b/);
+  });
+});
+
 // 安全(F2):外部客户端(stdio 未发 hello)的请求在弹窗中标注来源,且「本次启动期间允许」只记入 external 授权。
 describe('AgentAuthPrompt — 外部客户端请求', () => {
   it('external 请求的弹窗标注「外部客户端(未绑定 Continuo 终端)」;窗口请求不显示', () => {
@@ -195,7 +254,7 @@ describe('AgentAuthPrompt — 外部客户端请求', () => {
         .ensure({ requestId: crypto.randomUUID(), method: 'terminal.create_session', external: true });
     });
     expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      '外部客户端(未绑定 Continuo 终端)',
+      '外部客户端（未绑定 Continuo 终端）',
     );
     act(() => {
       useAgentAuthStore.getState().deny();

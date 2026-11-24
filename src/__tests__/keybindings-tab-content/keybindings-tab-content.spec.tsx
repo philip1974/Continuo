@@ -103,7 +103,7 @@ describe('KeybindingsTabContent — 列表', () => {
     coApp.commands.register({ id: 'res', title: 'Reserved Cmd', hotkey: 'mod+k', fn: vi.fn() });
     useKeybindingsStore.setState({ overrides: { res: 'mod+p' } });
     const { container } = render(<KeybindingsTabContent />);
-    expect(container.textContent).toContain('与 Quick Open / 命令面板保留键冲突,未生效');
+    expect(container.textContent).toContain('与快速打开 / 命令面板保留键冲突，未生效');
   });
 
   // a11y(A76,A75 同族):多命令行的编辑/重置按钮可访问名须含命令名以区分(否则全读「编辑快捷键」)。

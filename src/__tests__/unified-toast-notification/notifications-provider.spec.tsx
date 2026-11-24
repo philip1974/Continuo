@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { act, cleanup, render } from '@testing-library/react';
 import {
+  MAX_VISIBLE_NOTIFICATIONS,
   NotificationsProvider,
   useNotify,
 } from '@/notifications/NotificationsProvider';
@@ -16,6 +17,7 @@ interface ProbeState {
   readonly ids: readonly string[];
   readonly messages: readonly string[];
   readonly createdAt: readonly number[];
+  readonly counts: readonly number[];
   readonly dismiss: (id: string) => void;
 }
 
@@ -29,6 +31,7 @@ function Probe() {
     ids: api.notifications.map((n) => n.id),
     messages: api.notifications.map((n) => n.message),
     createdAt: api.notifications.map((n) => n.createdAt),
+    counts: api.notifications.map((n) => n.count ?? 1),
     dismiss: api.dismiss,
   };
   return (
@@ -132,45 +135,110 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     vi.useFakeTimers();
     renderProvider();
 
+    // 同时可见上限 3(T21),每批不超过 3 条,各自从出现起计时。
     act(() => {
       notify.info('info');
       notify.warn('warning');
       notify.success('success');
-      notify.error('error');
     });
-    expect(latest?.count).toBe(4);
-
+    expect(latest?.count).toBe(3);
     act(() => {
       vi.advanceTimersByTime(5001);
     });
-    expect(latest?.messages).toEqual(['error']);
+    expect(latest?.count).toBe(0);
 
     act(() => {
-      vi.advanceTimersByTime(10000);
+      notify.error('error');
+    });
+    act(() => {
+      vi.advanceTimersByTime(14_998);
+    });
+    expect(latest?.messages).toEqual(['error']);
+    act(() => {
+      vi.advanceTimersByTime(3);
     });
     expect(latest?.count).toBe(0);
   });
 
-  it('T5 de-dupes non-error code+message inside 1000ms, but never de-dupes error', () => {
+  // VSCode 通知同款:相同内容(同 level + 同 message)不再堆出多条 —— 只要还在列表里(显示中或排队中)就合并为一条、
+  // 计数 +1 并刷新自动消失计时;error 同样合并(重命名冲突连按 5 次此前堆出 5 条相同 toast)。
+  it('T5 同 level + 同 message 合并为一条:计数 +1、刷新计时(含 error);不同 level / message 不合并', () => {
     vi.useFakeTimers();
     renderProvider();
 
     act(() => {
-      notify.info('same', { code: 'SAME' });
+      notify.error('dup', { code: 'FS_EEXIST' });
     });
-    const firstCreatedAt = latest?.createdAt[0];
     act(() => {
-      vi.advanceTimersByTime(500);
-      notify.info('same', { code: 'SAME' });
+      vi.advanceTimersByTime(10_000);
+      notify.error('dup', { code: 'FS_EEXIST' });
+      notify.error('dup', { code: 'FS_EEXIST' });
     });
-    expect(latest?.count).toBe(1);
-    expect(latest?.createdAt[0]).toBeGreaterThanOrEqual(firstCreatedAt ?? 0);
+    expect(latest?.messages).toEqual(['dup']);
+    expect(latest?.counts).toEqual([3]);
+    // 计时从最后一次合并起重新算:原本 15s 到期的时刻(再过 5s)仍在
+    act(() => {
+      vi.advanceTimersByTime(5_001);
+    });
+    expect(latest?.counts).toEqual([3]);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(latest?.count).toBe(0);
 
     act(() => {
-      notify.error('same-error', { code: 'SAME_ERROR' });
-      notify.error('same-error', { code: 'SAME_ERROR' });
+      notify.info('same');
+      notify.warn('same');
+      notify.info('other');
     });
-    expect(latest?.messages.filter((m) => m === 'same-error')).toHaveLength(2);
+    expect(latest?.messages).toEqual(['same', 'same', 'other']);
+    expect(latest?.counts).toEqual([1, 1, 1]);
+  });
+
+  // VSCode 同时最多显示 3 条 toast;其余排队,不计时(否则排队中的在用户看到前就过期),前面的消失后依次补上并从那时计时。
+  it('T21 同时可见上限 3:其余排队且不计时;可见的消失后下一条补上并开始计时', () => {
+    vi.useFakeTimers();
+    renderProvider();
+    act(() => {
+      notify.info('a');
+      notify.info('b');
+      notify.info('c');
+      notify.info('d');
+    });
+    expect(MAX_VISIBLE_NOTIFICATIONS).toBe(3);
+    expect(latest?.messages).toEqual(['a', 'b', 'c', 'd']);
+    act(() => {
+      vi.advanceTimersByTime(5_001);
+    });
+    // a/b/c 到期;排队的 d 此刻才变为可见并开始 5s 计时
+    expect(latest?.messages).toEqual(['d']);
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(latest?.messages).toEqual(['d']);
+    act(() => {
+      vi.advanceTimersByTime(1_001);
+    });
+    expect(latest?.count).toBe(0);
+  });
+
+  it('T21b 手动关掉一条可见 toast → 排队的下一条立即补上并开始计时', () => {
+    vi.useFakeTimers();
+    renderProvider();
+    act(() => {
+      notify.error('e1');
+      notify.error('e2');
+      notify.error('e3');
+      notify.info('queued');
+    });
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+      latest?.dismiss(latest.ids[0]!);
+    });
+    act(() => {
+      vi.advanceTimersByTime(5_001);
+    });
+    expect(latest?.messages).toEqual(['e2', 'e3']);
   });
 
   // race(R13):同一事件循环内连续两次同源非 error notify 也须去重 —— 去重读 notificationsRef,
@@ -286,23 +354,5 @@ describe('unified-toast-notification: NotificationsProvider', () => {
     } finally {
       mapSpy.mockRestore();
     }
-  });
-
-  it('dedupe 命中但 createdAt 未变化时复用通知列表引用', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(1000);
-    renderSlimProvider();
-
-    act(() => {
-      notify.info('same-tick', { code: 'SAME_TICK' });
-    });
-    const firstRef = slimApi?.notifications;
-
-    act(() => {
-      notify.info('same-tick', { code: 'SAME_TICK' });
-    });
-
-    expect(slimApi?.notifications).toBe(firstRef);
-    expect(slimApi?.notifications.length).toBe(1);
   });
 });

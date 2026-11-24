@@ -6,7 +6,8 @@
   right: 12px;
   /* 无状态栏的窗口(popout 子窗 / PopoutHost)贴窗口底边留 12px;有状态栏时见下方 :has 规则。 */
   bottom: 12px;
-  z-index: 9999;
+  /* 在模态遮罩之下(Modal 打开时 toast 不浮在变暗遮罩上,同 VSCode),高于普通浮层;见 theme.css --z-toast。 */
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;

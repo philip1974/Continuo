@@ -31,16 +31,16 @@ describe('CreateInput — 渲染', () => {
   it('type=file → placeholder「新建文件名…」+ 父目录显示', () => {
     const { container, input } = setup({ type: 'file', parentDir: '/proj' });
     expect(input.placeholder).toBe('新建文件名…');
-    expect(container.textContent).toContain('在: /proj');
+    expect(container.textContent).toContain('在：/proj');
   });
 
   it('传 rootPath:父目录显示相对 workspace 的路径(根目录显示 workspace 名),完整路径放 title', () => {
     const nested = setup({ parentDir: '/home/u/proj/src/components', rootPath: '/home/u/proj' });
-    const label = nested.getByText('在: src/components');
+    const label = nested.getByText('在：src/components');
     expect(label.getAttribute('title')).toBe('/home/u/proj/src/components');
     cleanup();
     const atRoot = setup({ parentDir: '/home/u/proj', rootPath: '/home/u/proj' });
-    expect(atRoot.getByText('在: proj').getAttribute('title')).toBe('/home/u/proj');
+    expect(atRoot.getByText('在：proj').getAttribute('title')).toBe('/home/u/proj');
   });
 
   it('type=dir → placeholder「新建文件夹名…」', () => {

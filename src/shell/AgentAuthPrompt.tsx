@@ -171,6 +171,9 @@ function AgentAuthPromptBody({
       </>
     );
   }
+  const [bodyBefore = '', bodyAfter = ''] = t('permissions.agent.body', { action: UNTRUSTED_SLOT }).split(
+    UNTRUSTED_SLOT,
+  );
   const titleKey: TranslationKey = isDebug
     ? 'permissions.agent.title_debug'
     : isPlugin
@@ -188,19 +191,22 @@ function AgentAuthPromptBody({
       <h2 id="agent-auth-title" className="mb-1 text-sm font-medium text-fg">
         {t(titleKey)}
       </h2>
+      {/* 一条带 {action} 插值的完整句子(各语言自己决定空格 / 标点 / 语序);方法标签是 ReactNode(插件工具名等
+          不可信文本要可见化),按占位符拆成前后两段嵌入。 */}
       <p className="mb-3 text-xs text-fg-muted">
-        {t('permissions.agent.body_prefix')}{' '}
-        {t('permissions.agent.body_via_mcp')}
+        {bodyBefore}
         {methodLabel(pending.method)}
-        {t('permissions.agent.body_suffix')}
+        {bodyAfter}
       </p>
       {/* 安全(F2):外部客户端请求标注来源 —— 弹窗出现在主窗,但调用方并非该窗口终端里的 agent。 */}
       {pending.external ? (
         <p className="mb-3 text-xs text-fg">{t('permissions.agent.external_caller')}</p>
       ) : null}
-      <p className="mb-4 text-2xs text-fg-dim">
+      <p className="mb-1 text-2xs text-fg-dim">
         {t(hintKey)}
       </p>
+      {/* 「尚未生效」提示的常驻 status 区域放在按钮上方(占说明与按钮之间的间距),底部不多出空白。 */}
+      <PromptGrantHint guard={guard} />
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={deny}>
           {t('permissions.agent.deny')}
@@ -222,7 +228,6 @@ function AgentAuthPromptBody({
           {t('permissions.agent.grant_session')}
         </Button>
       </div>
-      <PromptGrantHint guard={guard} />
     </Modal>
   );
 }
