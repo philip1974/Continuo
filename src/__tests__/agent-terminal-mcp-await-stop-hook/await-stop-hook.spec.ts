@@ -2,8 +2,7 @@
 // terminal.await_stop_hook MCP tool 契约层。
 
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -20,6 +19,7 @@ import {
   type HookFileBroker,
   type HookWatchFactory,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const DONE_BUFFER_CAP = 500;
 const DONE_ENTRY_MAX_AGE_MS = 10 * 60 * 1000;
@@ -40,25 +40,19 @@ interface AwaitStopHookInput {
   readonly include_raw?: boolean;
 }
 
-const tmpRoots: string[] = [];
 const brokers: HookFileBroker[] = [];
 const noopWatchFactory: HookWatchFactory = () => ({
   close() {},
 });
 
+const tmp = setupTempDirs();
 afterEach(async () => {
   await Promise.all(brokers.splice(0).map((broker) => broker.stop()));
   vi.useRealTimers();
-  await Promise.all(
-    tmpRoots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true }),
-    ),
-  );
 });
 
 async function makeDoneDir(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'continuo-await-stop-hook-'));
-  tmpRoots.push(root);
+  const root = await tmp.make('continuo-await-stop-hook-');
   return root;
 }
 

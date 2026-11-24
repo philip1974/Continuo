@@ -5,24 +5,20 @@
 // `umask 077` 下创建目录与事件文件(0700 / 0600)。
 
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   ensureHookEventsDir,
   inferRunner,
   installStopHookForSession,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const roots: string[] = [];
-afterEach(async () => {
-  for (const r of roots.splice(0)) await rm(r, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 async function makeDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-hook-perms-'));
-  roots.push(d);
+  const d = await tmp.make('continuo-hook-perms-');
   return d;
 }
 

@@ -3,9 +3,7 @@
 // 无权 disconnect;不回收就永久占名额、adapter 常驻。stdio server 在连接 close 时回调
 // onCallerClosed(subject),main 据此回收该 subject 的 debug 会话。
 
-import { mkdtemp, rm } from 'node:fs/promises';
 import { createConnection, type Socket } from 'node:net';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -27,20 +25,20 @@ import type {
   McpCallCtx,
   ServerInfo,
 } from '../../../electron/main/services/mcp-host.service';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const serverInfo: ServerInfo = { name: 'test', version: '0', protocolVersion: '2024-11-05' };
 
-const dirs: string[] = [];
 const sockets: Socket[] = [];
 let server: StdioSocketServer | null = null;
 
+const tmp = setupTempDirs();
 afterEach(async () => {
   for (const s of sockets.splice(0)) s.destroy();
   if (server) {
     await server.close().catch(() => undefined);
     server = null;
   }
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
 // 返回本次调用的 callerSubject,测试据此知道每条连接的 subject。
@@ -82,8 +80,7 @@ async function connectAndGetSubject(socketPath: string): Promise<{ socket: Socke
 
 describe.skipIf(process.platform === 'win32')('50 · stdio 连接断开回收该调用方的 debug 会话', () => {
   it('连接 close → onCallerClosed 收到该连接的 callerSubject;其它连接不受影响', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'continuo-stdio-closed-'));
-    dirs.push(dir);
+    const dir = await tmp.make('continuo-stdio-closed-');
     const socketPath = path.join(dir, 'mcp.sock');
     const onCallerClosed = vi.fn();
     server = await createStdioSocketServer({
@@ -105,8 +102,7 @@ describe.skipIf(process.platform === 'win32')('50 · stdio 连接断开回收该
   });
 
   it('server 关闭(destroy 全部连接)→ 每个连接同样经 onCallerClosed 回收', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'continuo-stdio-closed-'));
-    dirs.push(dir);
+    const dir = await tmp.make('continuo-stdio-closed-');
     const socketPath = path.join(dir, 'mcp.sock');
     const onCallerClosed = vi.fn();
     const srv = await createStdioSocketServer({
@@ -127,8 +123,7 @@ describe.skipIf(process.platform === 'win32')('50 · stdio 连接断开回收该
   });
 
   it('从未发起调用的连接(未分配 subject)断开 → 不回调', async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), 'continuo-stdio-closed-'));
-    dirs.push(dir);
+    const dir = await tmp.make('continuo-stdio-closed-');
     const socketPath = path.join(dir, 'mcp.sock');
     const onCallerClosed = vi.fn();
     const closed = vi.fn();

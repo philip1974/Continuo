@@ -3,13 +3,10 @@
 
 import {
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
-  rm,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -17,6 +14,7 @@ import {
   installStopHookForSession as installStopHookForRunner,
   type RunnerKind,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 interface InstallStopHookInput {
   readonly cwd: string;
@@ -25,20 +23,13 @@ interface InstallStopHookInput {
   readonly windowId: number;
 }
 
-const tmpRoots: string[] = [];
-
 afterEach(async () => {
-  await Promise.all(
-    tmpRoots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true }),
-    ),
-  );
   vi.useRealTimers();
 });
+const tmp = setupTempDirs();
 
 async function makeCwd(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'continuo-install-stop-hook-'));
-  tmpRoots.push(root);
+  const root = await tmp.make('continuo-install-stop-hook-');
   return root;
 }
 

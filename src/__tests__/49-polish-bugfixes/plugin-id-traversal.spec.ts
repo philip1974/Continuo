@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   isSafePluginId,
   listPluginDirs,
@@ -9,6 +9,7 @@ import {
 } from '../../../electron/main/services/plugins.service';
 import { parseManifest } from '../../../electron/shared/plugin-manifest';
 import { isValidPluginId } from '../../plugins/plugin-id';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 // P1 安全回归:旧正则 `^[a-z0-9._-]+$` 允许纯点段,manifest.id='..' 通过校验 →
 // path.join(baseDir,'..') 解析到 baseDir 父目录,overwrite 安装(marketplace「更新」)
@@ -70,10 +71,7 @@ describe('49 · isSafePluginId 拒绝路径穿越 id', () => {
 // 回归:`-` 开头的 id 此前一直合法。首字符收紧若连 `-` 一并拒,已装的这类插件被 renderer
 // parseManifest 静默跳过(UI 不可见)、卸载又报 INVALID_ID → 目录永久残留。`-` 不属 . / _ 元数据命名空间,保留放行。
 describe('49 · `-` 开头的已装插件仍可见、可卸载', () => {
-  const roots: string[] = [];
-  afterEach(() => {
-    for (const d of roots.splice(0)) rmSync(d, { recursive: true, force: true });
-  });
+  const tmp = setupTempDirs();
 
   it('id 校验与 manifest 解析放行 `-` 开头', () => {
     expect(isSafePluginId('-legacy')).toBe(true);
@@ -85,8 +83,7 @@ describe('49 · `-` 开头的已装插件仍可见、可卸载', () => {
   });
 
   it('列举可见、卸载成功删除目录', async () => {
-    const base = mkdtempSync(join(tmpdir(), 'continuo-dash-id-'));
-    roots.push(base);
+    const base = tmp.makeSync('continuo-dash-id-');
     mkdirSync(join(base, '-legacy'));
     writeFileSync(
       join(base, '-legacy', 'manifest.json'),

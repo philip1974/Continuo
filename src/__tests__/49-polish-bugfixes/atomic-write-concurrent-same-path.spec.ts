@@ -9,21 +9,17 @@
 // 自愈(第十四轮一度用唯一 tmp 名,但自审发现唯一名 crash 后累积不可回收的孤儿 .tmp,
 // 故改回固定名 + 串行化)。
 
-import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const dirs: string[] = [];
 async function tempDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-aw-conc-'));
-  dirs.push(d);
+  const d = await tmp.make('continuo-aw-conc-');
   return d;
 }
-afterEach(async () => {
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 describe('49 P1-AL · atomicWriteFile 同路径并发写不损坏', () => {
   it('两次并发写同一路径:都成功,最终是某次完整内容(非半截)', async () => {

@@ -4,11 +4,10 @@
 // revokeAll,且 `_plugin-path-scopes.json` 不动。权限编辑里撤销 `fs` 后再勾上,以前批准的所有路径不经弹窗
 // 直接恢复(request-scope 命中 covers() 静默授予;重启后从磁盘水合同样恢复)。
 // 真实 plugins.ipc + plugin-fs.ipc + plugins.service(临时 userData 目录),只替换 electron 与插件目录 watcher。
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 
@@ -54,10 +53,11 @@ import {
 } from '../../../electron/main/services/plugins.service';
 import { PLUGINS_CHANNELS } from '../../../electron/shared/plugins-channels';
 import { PLUGIN_FS_CHANNELS } from '../../../electron/shared/plugin-fs-channels';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const ID = 'com.x.fsrevoke';
 const OTHER = 'com.x.other';
-const roots: string[] = [];
+const tmp = setupTempDirs();
 let fsHandles: ReturnType<typeof registerPluginFsIpc>;
 let scopeDir: string;
 
@@ -91,8 +91,7 @@ async function persistedScopes(): Promise<Record<string, unknown>> {
 beforeEach(async () => {
   h.loadGate = null;
   h.loads = 0;
-  const base = await mkdtemp(join(tmpdir(), 'continuo-fs-revoke-'));
-  roots.push(base);
+  const base = await tmp.make('continuo-fs-revoke-');
   h.userData = join(base, 'userData');
   await mkdir(join(h.userData, 'plugins', ID), { recursive: true });
   await mkdir(join(h.userData, 'plugins', OTHER), { recursive: true });
@@ -106,10 +105,6 @@ beforeEach(async () => {
   fsHandles = registerPluginFsIpc({
     ipcMain: { handle: (c: string, fn: Handler) => h.handlers.set(c, fn) } as never,
   });
-});
-
-afterEach(async () => {
-  for (const d of roots.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
 /** 模拟「之前授予过 fs 并批准过 scopeDir」:内存 grant + 持久化。 */

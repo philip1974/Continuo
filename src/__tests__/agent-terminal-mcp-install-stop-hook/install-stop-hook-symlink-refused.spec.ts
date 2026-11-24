@@ -11,30 +11,26 @@ import {
   link,
   lstat,
   mkdir,
-  mkdtemp,
   readdir,
   readFile,
-  rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   inferRunner,
   installStopHookForSession,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const roots: string[] = [];
+const tmp = setupTempDirs();
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const r of roots.splice(0)) await rm(r, { recursive: true, force: true });
 });
 
 async function makeDir(prefix: string): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), prefix));
-  roots.push(d);
+  const d = await tmp.make(prefix);
   return d;
 }
 

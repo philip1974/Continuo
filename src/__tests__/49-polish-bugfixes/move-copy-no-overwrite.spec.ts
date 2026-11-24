@@ -4,21 +4,17 @@
 // 完全依赖该选项);moveEntry 的 EXDEV cp fallback / plugin-fs:cp 同族。修:fs.cp 传 force:false
 // 让 errorOnExist 真正生效,并把 ERR_FS_CP_EEXIST 映射到 FS_EEXIST。
 
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { copyEntry } from '../../../electron/main/ipc/fs/move-copy';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const dirs: string[] = [];
 async function tmp(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-mc-'));
-  dirs.push(d);
+  const d = await tmpDirs.make('continuo-mc-');
   return d;
 }
-afterEach(async () => {
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
-});
+const tmpDirs = setupTempDirs();
 
 describe('move-copy copyEntry 非覆盖契约(fs.cp force:false)', () => {
   it('目标已存在 → 抛 FS_EEXIST 且不覆盖原内容', async () => {

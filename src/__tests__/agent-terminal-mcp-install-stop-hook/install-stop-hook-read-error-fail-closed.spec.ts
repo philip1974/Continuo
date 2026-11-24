@@ -7,29 +7,27 @@
 // `fs.open`)。故 EACCES 用 spyOn(fsp,'open') 模拟(原 mock node:fs/promises 的 readFile)——与
 // plugins-service / explorer 的 TOCTOU 测试一致,spy 落在 read-fh-capped 实际使用的 node:fs promises。
 import { promises as fsp } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   inferRunner,
   installStopHookForSession,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const realReadFile = fsp.readFile;
 
-const roots: string[] = [];
 beforeEach(() => {
   vi.restoreAllMocks();
 });
+const tmp = setupTempDirs();
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const r of roots.splice(0)) await rm(r, { recursive: true, force: true });
 });
 
 async function makeCwd(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'continuo-hook-readerr-'));
-  roots.push(root);
+  const root = await tmp.make('continuo-hook-readerr-');
   return root;
 }
 

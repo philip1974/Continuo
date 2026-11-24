@@ -7,20 +7,16 @@
 // 普通文件,链接目标不受影响;同名普通文件照旧静默原子覆盖(产品行为不变)。fs:write-binary 只有拖放一个
 // 调用方(编辑器保存走 fs:write-file,仍写穿链接)。
 
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { writeBinaryHandler, writeFileHandler } from '../../../electron/main/ipc/fs.ipc';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const roots: string[] = [];
-afterEach(async () => {
-  for (const r of roots.splice(0)) await rm(r, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 async function setup(): Promise<{ ws: string; outside: string }> {
-  const root = await mkdtemp(join(tmpdir(), 'continuo-drop-nofollow-'));
-  roots.push(root);
+  const root = await tmp.make('continuo-drop-nofollow-');
   const ws = join(root, 'ws');
   const outside = join(root, 'authorized_keys');
   await writeFile(outside, 'ssh-ed25519 VICTIM\n', 'utf8');

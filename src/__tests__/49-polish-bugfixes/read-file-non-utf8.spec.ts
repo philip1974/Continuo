@@ -4,15 +4,15 @@
 // 检测非法 UTF-8 → 抛 FS_NOT_UTF8,renderer 打开走既有失败提示、不进入可保存的编辑 tab。
 // UTF-8 BOM 处理保持现状(BOM 原样保留在文本里)。插件 fs readFile 契约不变(不加检测)。
 
-import { mkdtemp, open, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { open, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFile, readFileFromHandle } from '../../../electron/main/ipc/fs/read-file';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { en } from '../../../electron/shared/i18n-locales/en';
 import { zh } from '../../../electron/shared/i18n-locales/zh';
 import { ko } from '../../../electron/shared/i18n-locales/ko';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
@@ -20,17 +20,13 @@ vi.mock('electron', () => ({
   shell: {},
 }));
 
-const dirs: string[] = [];
 async function tempFile(bytes: Uint8Array | string): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-read-utf8-'));
-  dirs.push(d);
+  const d = await tmp.make('continuo-read-utf8-');
   const f = join(d, 'f.txt');
   await writeFile(f, bytes);
   return f;
 }
-afterEach(async () => {
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 async function codeOf(p: Promise<unknown>): Promise<string | undefined> {
   try {

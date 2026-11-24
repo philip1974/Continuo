@@ -4,8 +4,7 @@
 // 修复:清理失败 → 抛 PATH_SCOPE_CLEANUP_FAILED,不删目录,可整体重试。scopes 文件已损坏(JSON 解析失败)
 // 时读端本就降级为 [],不会被继承 → 仍放行卸载(既有契约,见 plugins-path-scopes.test.ts)。
 import { existsSync } from 'node:fs';
-import fsp, { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import fsp, { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -13,18 +12,16 @@ import {
   uninstallPlugin,
   writePluginPathScopes,
 } from '../../../electron/main/services/plugins.service';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const SCOPES_FILE = '_plugin-path-scopes.json';
-const roots: string[] = [];
-
+const tmp = setupTempDirs();
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const d of roots.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
 async function installedPlugin(id: string): Promise<string> {
-  const base = await mkdtemp(join(tmpdir(), 'continuo-uninstall-scope-'));
-  roots.push(base);
+  const base = await tmp.make('continuo-uninstall-scope-');
   await mkdir(join(base, id), { recursive: true });
   await writeFile(join(base, id, 'manifest.json'), JSON.stringify({ id }), 'utf-8');
   await writePluginPathScopes(base, id, [{ path: '/ws/secret', mode: 'rw' }]);

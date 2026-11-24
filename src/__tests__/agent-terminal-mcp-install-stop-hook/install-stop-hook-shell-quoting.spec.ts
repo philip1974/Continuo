@@ -6,22 +6,18 @@
 // 不嵌进 `${VAR:-…}`;已装的旧形态 managed 命令在下次 install 时原地升级。全部用真实 /bin/sh 执行验证。
 
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { installStopHookForSession } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 type Runner = 'cc' | 'codex';
 
-const roots: string[] = [];
-afterEach(async () => {
-  for (const r of roots.splice(0)) await rm(r, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 async function makeDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-hook-quote-'));
-  roots.push(d);
+  const d = await tmp.make('continuo-hook-quote-');
   return d;
 }
 

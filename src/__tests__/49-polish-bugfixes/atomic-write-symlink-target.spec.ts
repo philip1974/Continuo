@@ -3,24 +3,20 @@
 // 普通文件替换链接本身,target 未更新,用户编辑落在断链副本里(读/写语义不对称)。
 // 与 plugin-fs 的 rm/lstat/rename「实体操作不跟随 symlink」区分:内容读/写应对称跟随。
 
-import { chmod, lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, lstat, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   atomicReplaceFileNoFollow,
   atomicWriteFile,
 } from '../../../electron/main/ipc/fs/atomic-write';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const dirs: string[] = [];
 async function tempDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-aw-symlink-'));
-  dirs.push(d);
+  const d = await tmp.make('continuo-aw-symlink-');
   return d;
 }
-afterEach(async () => {
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 describe('atomicWriteFile 保存 symlink 写穿到 target,不断链', () => {
   it('保存 symlink 路径 → target 内容更新,链接保留', async () => {

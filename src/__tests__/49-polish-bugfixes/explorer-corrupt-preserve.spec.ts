@@ -1,22 +1,17 @@
 import { promises as fs } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   defaultExplorerV3,
   loadExplorer,
 } from '../../../electron/main/persistence';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const dirs: string[] = [];
 async function tempDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-explorer-'));
-  dirs.push(d);
+  const d = await tmp.make('continuo-explorer-');
   return d;
 }
-afterEach(async () => {
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 // P2 回归:explorer.json 损坏时旧实现 loadExplorer 直接返 null,运行期写路径
 // `(await loadExplorer()) ?? defaultExplorerV3()` 会在下一次窗口关闭/布局写时把

@@ -1,7 +1,6 @@
 // 停用/卸载插件终止它启动的 shell 进程(终审 P1)。真实子进程:后代把自己的 pid 写进临时文件,
 // 终止后断言其已不存在(ESRCH);未匹配的进程断言仍存活。见同目录 README.md。
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,13 +31,14 @@ import {
   resetShellStreamShutdownForTest,
 } from '../../../electron/main/services/plugin-shell-stream.service';
 import { StubIpcMain, makeFakeEvent, type StubIpcEvent } from '../sdk-contract/integration/make-stub-ipc';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 // 进程组 / `sh` 语义仅 POSIX(同 49-polish-bugfixes/shell-process-tree-kill)。
 const HAS_SH = process.platform !== 'win32' && existsSync('/bin/sh');
 
-const dirs: string[] = [];
 const pids: number[] = [];
 // 只按测试自己记录的 pid 清理(不 pkill),再走在途清理兜底。
+const tmp = setupTempDirs();
 afterEach(async () => {
   for (const pid of pids.splice(0)) {
     try {
@@ -52,12 +52,10 @@ afterEach(async () => {
   // 在途清理会置退出闸(模块级),复位以免后续用例的 exec / START 被拒。
   resetShellExecShutdownForTest();
   resetShellStreamShutdownForTest();
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
 function pidFile(): string {
-  const d = mkdtempSync(join(tmpdir(), 'plugin-shell-kill-'));
-  dirs.push(d);
+  const d = tmp.makeSync('plugin-shell-kill-');
   return join(d, 'pid');
 }
 

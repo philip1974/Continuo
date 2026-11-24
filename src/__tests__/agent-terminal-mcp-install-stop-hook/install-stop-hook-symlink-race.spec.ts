@@ -10,10 +10,10 @@
 //
 // 用 vi.mock 包住 readFileCappedFd,在「检查之后读之前」或「读之后写之前」执行替换,确定性复现竞态窗口。
 
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 type Swap = { readonly when: 'before-read' | 'after-read'; readonly run: () => Promise<void> };
 const swapState = vi.hoisted(() => ({ swap: null as Swap | null, configPath: '' }));
@@ -38,16 +38,14 @@ const { inferRunner, installStopHookForSession } = await import(
   '../../../electron/main/services/mcp-tools-hook-bridge'
 );
 
-const roots: string[] = [];
+const tmp = setupTempDirs();
 afterEach(async () => {
   swapState.swap = null;
   swapState.configPath = '';
-  for (const r of roots.splice(0)) await rm(r, { recursive: true, force: true });
 });
 
 async function makeDir(prefix: string): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), prefix));
-  roots.push(d);
+  const d = await tmp.make(prefix);
   return d;
 }
 

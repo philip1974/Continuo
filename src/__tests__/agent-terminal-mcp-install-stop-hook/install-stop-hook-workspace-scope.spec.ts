@@ -6,8 +6,7 @@
 // 用户 home 或其祖先;否则拒绝安装(installed:false),不写任何文件、不建目录。会话本身仍照常创建。
 
 import { existsSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readdir, realpath, rm, stat, symlink } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { lstat, mkdir, readdir, realpath, stat, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -16,16 +15,15 @@ import {
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
 import { makeCreateSessionTool } from '../../../electron/main/services/mcp-tools-terminal';
 import type { McpCallCtx } from '../../../electron/main/services/mcp-host.service';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const roots: string[] = [];
+const tmp = setupTempDirs();
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
 
 async function makeRoot(): Promise<string> {
-  const r = await mkdtemp(join(tmpdir(), 'continuo-hook-ws-'));
-  roots.push(r);
+  const r = await tmp.make('continuo-hook-ws-');
   return r;
 }
 

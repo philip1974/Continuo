@@ -4,21 +4,17 @@
 // 前继承原文件 `mode & 0o777`(不保留 setuid/setgid/sticky);新建文件行为不变。Windows mode 语义有限,
 // 跳过断言。
 
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { atomicWriteFile } from '../../../electron/main/ipc/fs/atomic-write';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
-const dirs: string[] = [];
 async function tempDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-aw-mode-'));
-  dirs.push(d);
+  const d = await tmp.make('continuo-aw-mode-');
   return d;
 }
-afterEach(async () => {
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
-});
+const tmp = setupTempDirs();
 
 describe.skipIf(process.platform === 'win32')('atomicWriteFile 覆盖保存保留原文件权限位', () => {
   it('0755 可执行脚本保存后仍为 0755', async () => {

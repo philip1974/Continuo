@@ -1,7 +1,5 @@
 import { connect, type Socket } from 'node:net';
-import { mkdtemp, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +13,7 @@ import {
   type StdioSocketServer,
 } from '../../../electron/main/services/mcp-stdio-server.service';
 import type { ServerInfo } from '../../../electron/main/services/mcp-host.service';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const serverInfo: ServerInfo = {
   name: 'test',
@@ -22,17 +21,16 @@ const serverInfo: ServerInfo = {
   protocolVersion: '2024-11-05',
 };
 
-const dirs: string[] = [];
 const clients: Socket[] = [];
 let server: StdioSocketServer | null = null;
 
+const tmp = setupTempDirs();
 afterEach(async () => {
   for (const c of clients.splice(0)) c.destroy();
   if (server) {
     await server.close().catch(() => {});
     server = null;
   }
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
 const isWin = process.platform === 'win32';
@@ -42,8 +40,7 @@ const isWin = process.platform === 'win32';
 // 永久挂起,socket 文件也来不及 unlink 残留。修复:close 前 destroy 所有连接。
 describe.skipIf(isWin)('49 · stdio close() 有活动连接也不挂起', () => {
   it('客户端连接中调 close() → 及时 resolve 且 socket 文件被清', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'continuo-stdio-'));
-    dirs.push(dir);
+    const dir = await tmp.make('continuo-stdio-');
     const socketPath = join(dir, 'mcp.sock');
 
     server = await createStdioSocketServer({

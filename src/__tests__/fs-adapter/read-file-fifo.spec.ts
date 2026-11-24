@@ -11,13 +11,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { closeSync, constants, openSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readFile } from '../../../electron/main/ipc/fs/read-file';
 import { readFileCappedFd } from '../../../electron/main/lib/read-fh-capped';
 import { listPluginDirs } from '../../../electron/main/services/plugins.service';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const TIMEOUT = Symbol('timeout');
 
@@ -36,16 +36,14 @@ function unblockReaders(fifo: string): void {
   }
 }
 
-const roots: string[] = [];
 const fifos: string[] = [];
+const tmp = setupTempDirs();
 afterEach(async () => {
   for (const f of fifos.splice(0)) unblockReaders(f);
-  for (const r of roots.splice(0)) await rm(r, { recursive: true, force: true });
 });
 
 async function makeFifo(): Promise<{ dir: string; fifo: string }> {
-  const dir = await mkdtemp(join(tmpdir(), 'continuo-fifo-'));
-  roots.push(dir);
+  const dir = await tmp.make('continuo-fifo-');
   const fifo = join(dir, 'pipe');
   execFileSync('mkfifo', [fifo]);
   fifos.push(fifo);

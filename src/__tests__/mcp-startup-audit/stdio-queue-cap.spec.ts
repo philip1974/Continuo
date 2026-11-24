@@ -3,8 +3,6 @@
 // 超限时错误必须真正送达客户端:此前 write(error) 后立即 destroy(),对端可能因 RST 丢掉错误行
 // → 改为 end(error) 半关闭 + 兜底超时 destroy。这里从真实客户端读取,断言收到完整 PARSE_ERROR。
 import { connect, Socket } from 'node:net';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,28 +24,27 @@ import {
 } from '../../../electron/main/services/mcp-stdio-server.service';
 import type { AnyMcpTool, ServerInfo } from '../../../electron/main/services/mcp-host.service';
 import { gateWithAuth } from '../../../electron/main/services/mcp-tool-gates';
+import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const serverInfo: ServerInfo = { name: 't', version: '0', protocolVersion: '2024-11-05' };
 
-const dirs: string[] = [];
 const clients: Socket[] = [];
 let server: StdioSocketServer | null = null;
 
+const tmp = setupTempDirs();
 afterEach(async () => {
   for (const c of clients.splice(0)) c.destroy();
   if (server) {
     await server.close().catch(() => {});
     server = null;
   }
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
 const isWin = process.platform === 'win32';
 
 describe.skipIf(isWin)('规则 3 · stdio 每连接排队上限', () => {
   it('首请求阻塞时持续发小 chunk → 超排队上限即 PARSE_ERROR + 断开', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'continuo-stdio-cap-'));
-    dirs.push(dir);
+    const dir = await tmp.make('continuo-stdio-cap-');
     const socketPath = join(dir, 'mcp.sock');
     const block: AnyMcpTool = {
       name: 'block',
@@ -166,8 +163,7 @@ describe.skipIf(isWin)('规则 3 · 拒绝后不再写响应 / 不再处理排�
   }
 
   async function start(tools: AnyMcpTool[]): Promise<Socket> {
-    const dir = await mkdtemp(join(tmpdir(), 'continuo-stdio-rej-'));
-    dirs.push(dir);
+    const dir = await tmp.make('continuo-stdio-rej-');
     const socketPath = join(dir, 'mcp.sock');
     server = await createStdioSocketServer({
       socketPath,
