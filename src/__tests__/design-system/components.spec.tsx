@@ -1,8 +1,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createRef } from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import {
+  Badge,
   Button,
   Card,
   IconButton,
@@ -31,6 +33,23 @@ describe('Card', () => {
     const src = readFileSync(join(process.cwd(), 'src/design/Card.tsx'), 'utf8');
     expect(src).toContain('data-tone={tone ?? undefined}');
     expect(src).not.toContain("...(tone != null ? { 'data-tone': tone } : {})");
+  });
+});
+
+describe('Badge', () => {
+  it('默认 variant=neutral size=sm(胶囊);size=xs 写入 data-size', () => {
+    const { container, rerender } = render(<Badge>x</Badge>);
+    const el = container.querySelector('.wm-badge')!;
+    expect(el.getAttribute('data-variant')).toBe('neutral');
+    expect(el.getAttribute('data-size')).toBe('sm');
+    rerender(<Badge size="xs" variant="accent-soft">x</Badge>);
+    expect(el.getAttribute('data-size')).toBe('xs');
+    expect(el.getAttribute('data-variant')).toBe('accent-soft');
+  });
+
+  it('className 合并而非覆盖 wm-badge', () => {
+    const { container } = render(<Badge className="uppercase">x</Badge>);
+    expect(container.querySelector('span')!.className).toBe('wm-badge uppercase');
   });
 });
 
@@ -99,6 +118,42 @@ describe('MenuItem', () => {
   it('a11y · role=menuitem 不在 Tab 顺序(tabIndex=-1)', () => {
     const { container } = render(<MenuItem onClick={() => {}}>X</MenuItem>);
     expect(container.querySelector('button')!.tabIndex).toBe(-1);
+  });
+
+  // 可作 Radix 菜单原语(ContextMenu.Item asChild)的子元素:Radix 经 Slot 注入 ref / data-highlighted /
+  // onKeyDown / onPointerMove 等,MenuItem 须透传到 button,否则方向键漫游与高亮失效。
+  it('透传 ref 与其余 button 属性(data-* / 事件),onClick 可省略', () => {
+    const ref = createRef<HTMLButtonElement>();
+    const onKeyDown = vi.fn();
+    const { container } = render(
+      <MenuItem ref={ref} data-highlighted="" onKeyDown={onKeyDown}>
+        X
+      </MenuItem>,
+    );
+    const btn = container.querySelector('button')!;
+    expect(ref.current).toBe(btn);
+    expect(btn.hasAttribute('data-highlighted')).toBe(true);
+    fireEvent.keyDown(btn, { key: 'ArrowDown' });
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
+    expect(btn.className).toBe('wm-menu-item');
+    expect(btn.getAttribute('role')).toBe('menuitem');
+  });
+
+  it('trailing(快捷键 / 计数)渲染在截断内容之外、靠右', () => {
+    const { container } = render(
+      <MenuItem onClick={() => {}} trailing="F2">
+        Rename
+      </MenuItem>,
+    );
+    const trailing = container.querySelector('.wm-menu-item__trailing')!;
+    expect(trailing.textContent).toBe('F2');
+    expect(trailing.closest('.wm-menu-item__content')).toBeNull();
+    expect(container.querySelector('.wm-menu-item__content')!.textContent).toBe('Rename');
+  });
+
+  it('未传 trailing → 不渲染 trailing 节点', () => {
+    const { container } = render(<MenuItem onClick={() => {}}>X</MenuItem>);
+    expect(container.querySelector('.wm-menu-item__trailing')).toBeNull();
   });
 });
 

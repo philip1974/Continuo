@@ -1,7 +1,7 @@
 // design 基础组件层(源自已废弃的 Nous shell-ui,现由本仓库维护,不再同步)。
 // Token 来源:src/styles/design-tokens.css(--md-* / --wm-*)
 
-export { Badge, type BadgeProps, type BadgeVariant } from './Badge';
+export { Badge, type BadgeProps, type BadgeSize, type BadgeVariant } from './Badge';
 export {
   Button,
   type ButtonProps,
@@ -46,4 +46,5 @@ export { Modal, type ModalProps } from './Modal';
 export { ScrollArea, type ScrollAreaProps } from './ScrollArea';
 export { Separator, type SeparatorProps } from './Separator';
 export { Spinner, type SpinnerProps, type SpinnerSize } from './Spinner';
+export { Switch, type SwitchProps } from './Switch';
 export { Tabs, type TabsProps, type TabItem } from './Tabs';

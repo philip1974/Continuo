@@ -100,3 +100,10 @@ ContextMenu UI 里的内置 4 项(新建文件 / 新建文件夹 / 重命名 / �
   仅测 registry + filterVisible 纯函数 + Plugin proxy 集成
 - Plugin 生命周期(registerExplorerContextMenuItem 拿到的 Disposable
   会被 _deactivate LIFO 清理)— 由 plugin-base topic 持有
+
+## 菜单项外观(`context-menu-items.spec.tsx`)
+
+- 菜单项 = Radix `ContextMenu.Item asChild` 包 design `MenuItem`(与 DropdownMenu 同一实现),全部 `.wm-menu-item`
+- 键盘漫游 / Enter 选中 / 关闭焦点还原 / 越界定位仍由 Radix 负责(MenuItem 透传 Radix 注入的 ref 与事件)
+- 菜单容器 `shadow-popover`(两主题各有取值,不用 Tailwind 默认 `shadow-xl`)
+- 重命名项快捷键 `F2`、多选计数走 `MenuItem` `trailing`;「移到废纸篓」为 `danger` 变体

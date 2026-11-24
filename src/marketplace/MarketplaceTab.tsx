@@ -5,7 +5,7 @@
 // installFromGit(走 v4.5 已有 IPC)。安装成功 toast 在卡片下方提示。
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Spinner } from '@/design';
+import { Badge, Button, Input, Spinner } from '@/design';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager } from '@/plugins/PluginManager';
 import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './types';
@@ -537,9 +537,9 @@ interface CardProps {
 }
 
 /** 把 0-5 平均分渲染成 5 个 ★/☆,半星向就近整数.
- *  调用点用 `text-amber-400` 着色 — 这是评分星级业内约定色,与 design token
- *  warning(#efc15e) 语义不同(rating ≠ warning),故保留为 design system 合法例外,
- *  不再扩 --color-rating 槽以免过度设计。 */
+ *  调用点用 `text-rating` 着色:评分星级业内约定琥珀色,与 warning 语义不同(rating ≠ warning),
+ *  故用 Continuo 自有槽位 --md-rating(theme.css,亮 / 暗各自取值保证 ≥ 4.5:1;原 Tailwind amber 400
+ *  在亮色底仅 1.63:1)。 */
 function renderStars(avg: number): string {
   const full = Math.round(avg);
   return '★'.repeat(Math.max(0, Math.min(5, full))) + '☆'.repeat(5 - Math.max(0, Math.min(5, full)));
@@ -575,14 +575,16 @@ const MarketplaceCard = memo(function MarketplaceCard({
           <div className="flex items-baseline gap-2">
             <span className="font-medium text-fg">{entry.name}</span>
             {entry.verified && (
-              <span
-                className="rounded bg-accent/20 px-1.5 py-0.5 text-2xs text-accent"
+              <Badge
+                size="xs"
+                variant="accent-soft"
+                className="gap-1"
                 title={t('marketplace.reviews.official_review')}
               >
                 {/* a11y(A72 同族装饰符号):"Verified" 文本已表义,勾 ✓ 纯视觉 → aria-hidden,
                     否则 SR 额外读出 checkmark 造成徽标名称噪声。 */}
                 <span aria-hidden="true">✓</span> {t('marketplace.verified')}
-              </span>
+              </Badge>
             )}
             <code className="text-2xs text-fg-dim">{entry.id}</code>
           </div>
@@ -777,7 +779,7 @@ function RatingRow({
           }
         >
           <span
-            className="text-amber-400"
+            className="text-rating"
             aria-label={t('marketplace.reviews.stars_aria', { avg: rating.avg.toFixed(1) })}
           >
             {renderStars(rating.avg)}
@@ -903,19 +905,23 @@ function ReviewItem({ review: r, nowMs }: { review: Review; nowMs: number }) {
             {r.author.handle}
           </a>
           {isMaintainer && (
-            <span
-              className="rounded bg-accent/20 px-1 py-0.5 text-[9px] text-accent"
+            <Badge
+              size="xs"
+              variant="accent-soft"
+              className="gap-1"
               title={t('marketplace.reviews.maintainer')}
             >
               {/* a11y(A92,A88 同族):视觉盾牌 🛡 纯装饰,catalog 已去符号 → aria-hidden;
                   "维护者"文本已表义。 */}
               <span aria-hidden="true">🛡</span>{' '}
               {t('marketplace.reviews.maintainer_badge')}
-            </span>
+            </Badge>
           )}
           {!isMaintainer && isNewAccount && (
-            <span
-              className="rounded bg-warning/20 px-1 py-0.5 text-[9px] text-warning"
+            <Badge
+              size="xs"
+              variant="warning-soft"
+              className="gap-1"
               title={t('marketplace.reviews.new_account_warn', { days: NEW_ACCOUNT_DAYS })}
             >
               {/* a11y(A91):视觉 ⚠ 纯装饰 → aria-hidden(catalog 已去符号)。 */}
@@ -927,10 +933,10 @@ function ReviewItem({ review: r, nowMs }: { review: Review; nowMs: number }) {
                 {' '}
                 {t('marketplace.reviews.new_account_warn', { days: NEW_ACCOUNT_DAYS })}
               </span>
-            </span>
+            </Badge>
           )}
           <span
-            className="text-amber-400"
+            className="text-rating"
             // a11y(A38,A37 同族 + 镜像聚合评分):星级是纯视觉符号 ★/☆,须给 AT 可访问名,
             // 否则只听到一串星号。复用聚合评分同款 stars_aria 模式。
             aria-label={t('marketplace.reviews.stars_aria', {

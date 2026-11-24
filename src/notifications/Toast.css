@@ -16,7 +16,8 @@
   line-height: 1.4;
   min-width: 280px;
   max-width: 420px;
-  box-shadow: 0 2px 8px var(--md-shadow-color, transparent);
+  /* 浮层阴影统一 --wm-shadow-popover(design-tokens.css 两主题各有取值) */
+  box-shadow: var(--wm-shadow-popover);
 }
 
 .toast--error {
@@ -73,6 +74,15 @@
   line-height: 1;
   padding: 0 4px;
 }
+/* hover 反馈:MD3 state layer 背景(此前 color: currentColor 与常态同色,无反馈) */
+.toast__dismiss {
+  border-radius: 4px;
+  transition: background-color var(--wm-duration-fast) var(--wm-ease-default);
+}
 .toast__dismiss:hover {
-  color: currentColor;
+  background-color: var(--md-state-hover);
+}
+.toast__dismiss:focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: 1px;
 }

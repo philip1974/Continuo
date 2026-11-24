@@ -407,12 +407,17 @@
 
 - [`components.spec.tsx`](./design-system/components.spec.tsx)
 - [`roving-index.spec.ts`](./design-system/roving-index.spec.ts)
+- [`style-contracts.spec.ts`](./design-system/style-contracts.spec.ts)
 - [`theme-provider.spec.tsx`](./design-system/theme-provider.spec.tsx)
 - [`tokens.spec.ts`](./design-system/tokens.spec.ts)
 
 ## [design Modal — focus trap / overlay / escape / tab cycle](./design-system-modal/README.md)
 
 - [`modal.spec.tsx`](./design-system-modal/modal.spec.tsx)
+
+## [design Switch(开关)](./design-system-switch/README.md)
+
+- [`switch.spec.tsx`](./design-system-switch/switch.spec.tsx)
 
 ## [design Tabs(垂直 tab 列表)](./design-system-tabs/README.md)
 
@@ -567,6 +572,7 @@
 
 ## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)
 
+- [`context-menu-items.spec.tsx`](./explorer-context-menu/context-menu-items.spec.tsx)
 - [`explorer-context-menu.spec.ts`](./explorer-context-menu/explorer-context-menu.spec.ts)
 - [`menu-close-focus.spec.ts`](./explorer-context-menu/menu-close-focus.spec.ts)
 

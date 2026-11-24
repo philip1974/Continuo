@@ -4,6 +4,7 @@
   gap: var(--wm-space-0_5);
   border-radius: 4px;
   padding: var(--wm-space-0_5);
+  border: 1px solid var(--md-outline-variant);
   background-color: var(--md-surface-container-low);
   font-family: var(--wm-font-sans);
 }
@@ -12,7 +13,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 0;
+  /* 透明同宽描边:选中项只换 border-color,切换时不抖动布局 */
+  border: 1px solid transparent;
   border-radius: 4px;
   padding: var(--wm-space-0_5) var(--wm-space-2);
   background-color: transparent;
@@ -48,9 +50,13 @@
   outline-offset: 1px;
 }
 
+/* 选中指示(对齐 VSCode inputOption.activeBorder:淡底 + 强描边):secondary-container 底色与轨道
+ * (surface-container-low)只差 1.85:1(暗)/ 1.17:1(亮),不足以单独指示;1px primary 描边对轨道
+ * 10.12:1 / 5.85:1、对自身底色 5.48:1 / 4.98:1,满足 WCAG 1.4.11 的 ≥ 3:1。 */
 .wm-segmented-option[data-active="true"] {
-  background-color: var(--md-surface-container-high);
-  color: var(--md-on-surface);
+  background-color: var(--md-secondary-container);
+  border-color: var(--md-primary);
+  color: var(--md-on-secondary-container);
 }
 
 .wm-segmented-option:disabled {

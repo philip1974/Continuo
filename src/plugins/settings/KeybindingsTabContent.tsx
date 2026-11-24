@@ -3,7 +3,7 @@
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
 
 import { useMemo, useState } from 'react';
-import { IconButton, Input, KeyCap } from '@/design';
+import { Badge, IconButton, Input, KeyCap } from '@/design';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
@@ -340,9 +340,9 @@ export function KeybindingsTabContent() {
                   return (
                     <li key={cmd.id} className={keybindingRowClassName(idx)}>
                       <span className="truncate text-sm text-fg">{d.displayTitle}</span>
-                      <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
-                        {cmd.id}
-                      </code>
+                      <Badge size="xs" className="ml-auto shrink-0 uppercase tracking-wider">
+                        <code>{cmd.id}</code>
+                      </Badge>
                       {d.reserved && (
                         <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>
                       )}

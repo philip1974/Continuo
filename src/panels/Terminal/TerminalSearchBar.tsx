@@ -79,7 +79,7 @@ export function TerminalSearchBar({
       // memory L3): xterm-host 内的浮层必须用此 token,否则 z-modal 被 dockview
       // panel stacking context 困住,xterm canvas hit-test 上去。`isolation:
       // isolate` 强建独立 stacking context 配合 token 一起用。
-      className="absolute right-2 top-2 z-terminal-overlay flex items-center gap-1 rounded-md border border-line bg-panel px-2 py-1 shadow"
+      className="absolute right-2 top-2 z-terminal-overlay flex items-center gap-1 rounded-md border border-line bg-panel px-2 py-1 shadow-popover"
       style={{ isolation: 'isolate' }}
       // R2c: stop mousedown propagation so dockview / xterm host's
       // mousedown handlers don't refocus xterm textarea when user clicks

@@ -4,7 +4,7 @@
  *   1. 引入 design-tokens.css(唯一色板来源:完整 47 个 --md-* + --wm-* 亮/暗双套,
  *      含 Continuo IDE 暗色值;源自已废弃的 Nous shell-ui,现由本仓库维护)。
  *      本文件不再覆盖其中任何 --md-* —— 改色直接改 design-tokens.css。
- *   2. Continuo 自有槽位(MD3 无对应:--md-debug-* / --md-fg-dim,及 --wm-radius-* 等),
+ *   2. Continuo 自有槽位(MD3 无对应:--md-debug-* / --md-fg-dim / --md-rating,及 --wm-radius-* 等),
  *      light(:root)与 dark(.dark)各给值。
  *   3. @theme inline 把 Continuo 自有的 --color-* 私有 token 映射到 --md-*,
  *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility。
@@ -35,8 +35,13 @@
   --md-debug-breakpoint: #d32f2f;
   --md-debug-exec-line: rgba(211, 47, 47, 0.14);
 
-  /* 次要弱化文字(MD3 无对应槽;light 占位沿用暗色值) */
-  --md-fg-dim: #6c6f7e;
+  /* 次要弱化文字(MD3 无对应槽)。大量用作 10–12px 正文,须对 surface / container / container-high
+   * ≥ 4.5:1(5.91 / 5.21 / 4.94);亮色 --md-outline(#79747e)在 container-low 上只有 4.14,故另取。 */
+  --md-fg-dim: #5f6270;
+
+  /* 评分星(业内约定琥珀色,与 warning 语义不同):亮色深琥珀,对 surface / container-low / container
+   * 5.41 / 5.03 / 4.77(Tailwind amber-400 在亮色底仅 1.63)。 */
+  --md-rating: #8a6100;
 }
 
 /* ── Continuo 自有槽位的暗色值(MD3 色板本体在 design-tokens.css .dark)── */
@@ -45,8 +50,12 @@
   --md-debug-breakpoint: #ff6b6b;
   --md-debug-exec-line: rgba(255, 107, 107, 0.16);
 
-  /* 次要弱化文字(MD3 无对应槽,与色板配套) */
-  --md-fg-dim: #6c6f7e;
+  /* 次要弱化文字(MD3 无对应槽,取 --md-outline 同值):对 surface / panel / hover 5.85 / 5.19 / 4.52。
+   * 原 #6c6f7e 在 panel 上仅 3.30、hover 上 2.87。 */
+  --md-fg-dim: #8d90a0;
+
+  /* 评分星:琥珀(原 amber-400),对 surface / container-low / container 11.10 / 10.29 / 9.85 */
+  --md-rating: #fbbf24;
 }
 
 /* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */
@@ -76,6 +85,8 @@
   --color-info: var(--md-info);
   --color-debug-breakpoint: var(--md-debug-breakpoint);
   --color-debug-exec-line: var(--md-debug-exec-line);
+  /* 评分星 text-rating(Continuo 自有 --md-rating,两主题各有取值) */
+  --color-rating: var(--md-rating);
 
   /* 浮层阴影:shadow-popover(design Modal 同款 --wm-shadow-popover,light/dark 各有取值),
    * 替代手写弹出菜单上的 shadow-lg shadow-black/40。 */

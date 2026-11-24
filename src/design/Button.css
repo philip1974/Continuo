@@ -25,7 +25,9 @@
 .wm-button[data-variant="primary"]:hover:not(:disabled) { background-color: var(--md-primary-container); color: var(--md-on-primary-container); }
 
 .wm-button[data-variant="secondary"] { background-color: var(--md-secondary-container); color: var(--md-on-secondary-container); border-color: var(--md-secondary); }
-.wm-button[data-variant="secondary"]:hover:not(:disabled) { background-color: var(--md-state-hover); }
+/* hover 用 MD3 state layer:在不透明 secondary-container 底色上叠一层 --md-state-hover(而非把底色换成
+ * 8% 半透明 —— 那样 hover 反而变淡)。 */
+.wm-button[data-variant="secondary"]:hover:not(:disabled) { background-image: linear-gradient(var(--md-state-hover), var(--md-state-hover)); }
 
 .wm-button[data-variant="ghost"] {
   background-color: transparent;
@@ -46,6 +48,12 @@
 .wm-button[data-variant="outlined"]:hover:not(:disabled) {
   background-color: var(--md-primary);
   color: var(--md-on-primary);
+}
+
+/* 键盘焦点环:与 IconButton / NavRailButton / SegmentedControl / TabNav 一致(基类 outline:none 只去掉鼠标点击轮廓)。 */
+.wm-button:focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: 2px;
 }
 
 .wm-button:disabled { opacity: 0.5; cursor: not-allowed; }

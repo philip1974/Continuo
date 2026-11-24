@@ -132,7 +132,7 @@ export function IconSidebar() {
             {renderItem(settingsItem, SETTINGS_UPDATE_BADGE_ID)}
             <span
               id={SETTINGS_UPDATE_BADGE_ID}
-              className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-1 text-[9px] font-medium leading-none text-on-error"
+              className="pointer-events-none absolute right-0.5 top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-1 text-2xs font-medium leading-none text-on-error"
               title={settingsUpdateTooltip}
               aria-label={settingsUpdateTooltip}
             >

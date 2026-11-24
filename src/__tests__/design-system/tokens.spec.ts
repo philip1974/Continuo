@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const DESIGN_TOKENS = readFileSync(
@@ -75,7 +76,7 @@ describe('theme.css 单层色板与 @theme inline 链路', () => {
   });
 
   it('Continuo 自有 --md-* 槽位在 theme.css 的 :root 与 .dark 都给值', () => {
-    const own = ['--md-debug-breakpoint:', '--md-debug-exec-line:', '--md-fg-dim:'];
+    const own = ['--md-debug-breakpoint:', '--md-debug-exec-line:', '--md-fg-dim:', '--md-rating:'];
     const light = extractMdVars(getRootBlock(LM_THEME));
     const dark = extractMdVars(getDarkBlock(LM_THEME));
     for (const v of own) {
@@ -140,3 +141,91 @@ describe('终端与窗口底色跟随画布色(--md-surface)', () => {
   });
 });
 
+
+// 次要弱化文字(--md-fg-dim)大量用作 10–12px 正文(状态栏 / 版本号 / 单位等),须在两主题的常用承载面
+// (canvas / panel / hover)上达到 WCAG AA 正文 4.5:1;两主题各自取值(不能共用一个灰)。
+describe('--md-fg-dim 正文对比度', () => {
+  const hex = (block: string, name: string): string =>
+    block.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6});`, 'i'))?.[1] ?? '';
+  const lum = (h: string): number => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((c) =>
+      c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+
+  for (const [theme, pick] of [
+    ['light', getRootBlock],
+    ['dark', getDarkBlock],
+  ] as const) {
+    it(`${theme}:fg-dim 对 surface / surface-container / surface-container-high ≥ 4.5`, () => {
+      const fgDim = hex(pick(LM_THEME), '--md-fg-dim');
+      expect(fgDim).toMatch(/^#[0-9a-f]{6}$/i);
+      for (const bg of ['--md-surface', '--md-surface-container', '--md-surface-container-high']) {
+        expect(contrast(fgDim, hex(pick(DESIGN_TOKENS), bg)), `${theme} ${bg}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+
+  it('fg-dim / fg-muted 文字不叠透明度(text-fg-dim/60 等会把对比压到 AA 以下)', () => {
+    const files = execFileSync('git', ['ls-files', 'src/*.tsx', 'src/*.ts'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f !== '' && !f.includes('__tests__'));
+    const hits = files.flatMap((f) =>
+      (readFileSync(resolve(process.cwd(), f), 'utf-8').match(/\btext-fg-(?:dim|muted)\/\d+/g) ?? []).map(
+        (m) => `${f}: ${m}`,
+      ),
+    );
+    expect(hits).toEqual([]);
+  });
+});
+
+// 评分星(MD3 无对应槽):Continuo 自有 --md-rating。暗色沿用业内约定琥珀色,亮色另取深琥珀 —— Tailwind amber-400
+// 在亮色底上仅 1.63:1。两主题对常用承载面 ≥ 4.5,经 @theme inline 暴露为 text-rating。
+describe('--md-rating 评分色', () => {
+  const hex = (block: string, name: string): string =>
+    block.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6});`, 'i'))?.[1] ?? '';
+  const lum = (h: string): number => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((c) =>
+      c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+
+  for (const [theme, pick] of [
+    ['light', getRootBlock],
+    ['dark', getDarkBlock],
+  ] as const) {
+    it(`${theme}:rating 对 surface / surface-container-low / surface-container ≥ 4.5`, () => {
+      const rating = hex(pick(LM_THEME), '--md-rating');
+      expect(rating).toMatch(/^#[0-9a-f]{6}$/i);
+      for (const bg of ['--md-surface', '--md-surface-container-low', '--md-surface-container']) {
+        expect(contrast(rating, hex(pick(DESIGN_TOKENS), bg)), `${theme} ${bg}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+
+  it('@theme inline 暴露 --color-rating: var(--md-rating)', () => {
+    expect(LM_THEME).toMatch(/--color-rating:\s*var\(--md-rating\);/);
+  });
+
+  it('组件不用 Tailwind 默认色板(text-amber-400 等),统一走语义 token', () => {
+    const files = execFileSync('git', ['ls-files', 'src/*.tsx', 'src/*.ts'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f !== '' && !f.includes('__tests__'));
+    const re =
+      /\b(?:text|bg|border|ring|fill|stroke)-(?:amber|yellow|red|green|blue|sky|neutral|gray|slate|zinc|stone|orange|emerald|lime|teal|cyan|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/g;
+    const hits = files.flatMap((f) =>
+      (readFileSync(resolve(process.cwd(), f), 'utf-8').match(re) ?? []).map((m) => `${f}: ${m}`),
+    );
+    expect(hits).toEqual([]);
+  });
+});

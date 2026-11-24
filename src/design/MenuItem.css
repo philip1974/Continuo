@@ -21,13 +21,16 @@
     opacity var(--wm-duration-fast) var(--wm-ease-default);
 }
 
+/* [data-highlighted]:菜单原语(Radix ContextMenu.Item asChild)的键盘 / 指针高亮态 */
 .wm-menu-item:hover:not(:disabled),
-.wm-menu-item:focus-visible:not(:disabled) {
+.wm-menu-item:focus-visible:not(:disabled),
+.wm-menu-item[data-highlighted]:not(:disabled) {
   background-color: var(--md-state-hover);
 }
 
 .wm-menu-item[data-variant="danger"]:hover:not(:disabled),
-.wm-menu-item[data-variant="danger"]:focus-visible:not(:disabled) {
+.wm-menu-item[data-variant="danger"]:focus-visible:not(:disabled),
+.wm-menu-item[data-variant="danger"][data-highlighted]:not(:disabled) {
   color: var(--md-error);
 }
 
@@ -41,4 +44,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 右侧次要内容(快捷键 / 计数):不参与 label 截断,靠右、弱化 */
+.wm-menu-item__trailing {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: var(--wm-space-3);
+  color: var(--md-fg-dim);
+  font-size: var(--wm-text-2xs);
 }

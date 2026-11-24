@@ -1318,7 +1318,7 @@ describe('MarketplaceTab — 评论刷新失败反馈', () => {
 
     // a11y(A38):单条 review 星级须有 aria-label(纯 ★/☆ 符号不可读)。展开后应有聚合 +
     // 单条两处带 aria-label 的星级 span(此前仅聚合 1 处)。
-    const starSpans = container.querySelectorAll('.text-amber-400[aria-label]');
+    const starSpans = container.querySelectorAll('.text-rating[aria-label]');
     expect(starSpans.length).toBeGreaterThanOrEqual(2);
   });
 

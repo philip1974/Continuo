@@ -2,7 +2,7 @@
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
 
 import { useState } from 'react';
-import { Button } from '@/design';
+import { Badge, Button } from '@/design';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
@@ -187,9 +187,9 @@ export function PluginsTabContent() {
                 </div>
                 <div className="mt-1 text-fg-muted">{t(p.descKey)}</div>
               </div>
-              <code className="shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
-                {p.id}
-              </code>
+              <Badge size="xs" className="shrink-0 uppercase tracking-wider">
+                <code>{p.id}</code>
+              </Badge>
             </div>
           ))}
         </div>
@@ -357,9 +357,9 @@ function UserPluginsSection() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-medium text-fg">{pending.name}</span>
-                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
-                    {pending.id}
-                  </code>
+                  <Badge size="xs" className="uppercase tracking-wider">
+                    <code>{pending.id}</code>
+                  </Badge>
                   <span className="text-2xs text-fg-dim">v{pending.version}</span>
                 </div>
                 <div className="mt-1 text-fg-muted">{t('plugins_tab.user.pending_hint')}</div>
@@ -371,9 +371,9 @@ function UserPluginsSection() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>
-                  <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
-                    {p.id}
-                  </code>
+                  <Badge size="xs" className="uppercase tracking-wider">
+                    <code>{p.id}</code>
+                  </Badge>
                   <span className="text-2xs text-fg-dim">v{p.manifest.version}</span>
                 </div>
                 {p.manifest.description && (

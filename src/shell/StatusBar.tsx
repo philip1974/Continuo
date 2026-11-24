@@ -303,10 +303,10 @@ export function StatusBar() {
             {basenameForChrome(root)}
           </span>
         ) : (
-          <span className="text-fg-dim/60">{t('statusbar.no_workspace')}</span>
+          <span>{t('statusbar.no_workspace')}</span>
         )}
         {!sidebarOpen && (
-          <span className="text-fg-dim/60">{t('statusbar.sidebar_hidden')}</span>
+          <span>{t('statusbar.sidebar_hidden')}</span>
         )}
         {/* 插件贡献的左侧 statusBar items(race R56:render 时 live 复查) */}
         {leftItems.map((item) => (

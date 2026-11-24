@@ -1,7 +1,7 @@
 # SettingItemRow(单个设置项的通用渲染器)
 
 行为契约:**根据 spec.type 渲染对应控件:**
-- **boolean → 内嵌 ToggleSwitch(role=switch,aria-checked)**
+- **boolean → design `Switch`(role=switch,aria-checked;见 `design-system-switch`)**
 - **select → SegmentedControl,options 来自 spec.enum**
 - **number → Input type=number + 可选 unit chip**
 - **text → Input type=text**
@@ -29,7 +29,7 @@
 ### boolean
 
 - 切换 → setValue(id, !value)
-- ToggleSwitch role=switch,aria-checked 反映当前 value
+- design `Switch`(`wm-switch`)role=switch,aria-checked / data-checked 反映当前 value,aria-label = 设置标题
 
 ### select
 

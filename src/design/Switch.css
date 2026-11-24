@@ -1,0 +1,60 @@
+/* 紧凑开关(MD3 Switch 配色,IDE 尺寸 32×16)。
+ * 打开:轨道 primary + 滑块 on-primary(轨道对 panel 9.68 / 5.55,滑块对轨道 7.72 / 6.44,暗 / 亮);
+ * 关闭:轨道 surface-container-highest + outline 描边(对 panel 5.19 / 3.92),滑块 outline(对轨道 3.91 / 3.51)。
+ * 不用 accent-fill(primary-container):亮色值对 panel 仅 1.11:1。 */
+.wm-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  box-sizing: border-box;
+  width: 32px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--md-outline);
+  border-radius: var(--wm-radius-full);
+  background-color: var(--md-surface-container-highest);
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color var(--wm-duration-fast) var(--wm-ease-default),
+    border-color var(--wm-duration-fast) var(--wm-ease-default),
+    opacity var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-switch__thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--wm-radius-full);
+  background-color: var(--md-outline);
+  transform: translateX(2px);
+  transition:
+    transform var(--wm-duration-fast) var(--wm-ease-default),
+    background-color var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-switch[data-checked="true"] {
+  border-color: var(--md-primary);
+  background-color: var(--md-primary);
+}
+
+.wm-switch[data-checked="true"] .wm-switch__thumb {
+  background-color: var(--md-on-primary);
+  /* 32 - 2(描边)- 10(滑块)- 2(右侧留白)= 18 */
+  transform: translateX(18px);
+}
+
+/* hover:MD3 state layer 叠在轨道底色上 */
+.wm-switch:hover:not(:disabled) {
+  background-image: linear-gradient(var(--md-state-hover), var(--md-state-hover));
+}
+
+.wm-switch:focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: 2px;
+}
+
+.wm-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}

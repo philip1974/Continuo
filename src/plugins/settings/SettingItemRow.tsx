@@ -1,7 +1,7 @@
 // 单个设置项的通用渲染器(M-Settings v6 / UI polish)。
 // 视觉对齐 demo(Industrial IDE Dark):
 //   - title 后 inline id chip(浅底 uppercase),取代独占一行
-//   - boolean → toggle switch(滑块,占空间小)
+//   - boolean → design Switch(滑块,占空间小)
 //   - select  → SegmentedControl(spec.enum)
 //   - number  → Input + 单位 chip(右侧)
 //   - text    → Input
@@ -9,9 +9,11 @@
 
 import { useMemo, useState } from 'react';
 import {
+  Badge,
   IconButton,
   Input,
   SegmentedControl,
+  Switch,
   type SegmentedControlOption,
 } from '@/design';
 import { useLocale, useT } from '@/i18n';
@@ -26,19 +28,6 @@ import {
 import { useSettingsValuesStore } from './values-store';
 import { ownValue } from '@shared/own-value';
 
-const SETTING_TOGGLE_SWITCH_BASE_CLASS_NAME =
-  'relative inline-flex h-4 w-8 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40';
-const SETTING_TOGGLE_SWITCH_ON_CLASS_NAME =
-  `${SETTING_TOGGLE_SWITCH_BASE_CLASS_NAME} bg-accent`;
-const SETTING_TOGGLE_SWITCH_OFF_CLASS_NAME =
-  `${SETTING_TOGGLE_SWITCH_BASE_CLASS_NAME} border border-line bg-panel-soft`;
-
-const SETTING_TOGGLE_KNOB_BASE_CLASS_NAME =
-  'absolute h-2.5 w-2.5 rounded-full transition-transform';
-const SETTING_TOGGLE_KNOB_ON_CLASS_NAME =
-  `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-[18px] bg-fg`;
-const SETTING_TOGGLE_KNOB_OFF_CLASS_NAME =
-  `${SETTING_TOGGLE_KNOB_BASE_CLASS_NAME} translate-x-1 bg-fg-muted`;
 /** 把输入框文本解析成可提交的数字;空串 / 非有限数 → null。 */
 function parseSettingNumber(raw: string): number | null {
   if (raw.trim() === '') return null;
@@ -106,18 +95,6 @@ function NumberSettingInput({
 
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
 const RESET_DEFAULT_ICON = <ResetIcon size={12} />;
-
-export function settingToggleSwitchClassName(checked: boolean): string {
-  return checked
-    ? SETTING_TOGGLE_SWITCH_ON_CLASS_NAME
-    : SETTING_TOGGLE_SWITCH_OFF_CLASS_NAME;
-}
-
-export function settingToggleKnobClassName(checked: boolean): string {
-  return checked
-    ? SETTING_TOGGLE_KNOB_ON_CLASS_NAME
-    : SETTING_TOGGLE_KNOB_OFF_CLASS_NAME;
-}
 
 interface SettingItemRowProps {
   readonly spec: SettingItemSpec;
@@ -191,10 +168,10 @@ export function SettingItemRow({
           <span id={titleId} className="text-sm text-fg">
             {title}
           </span>
-          {/* id chip:demo 同款浅底 uppercase 紧贴 title 显示,取代独占一行 */}
-          <code className="rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
-            {spec.id}
-          </code>
+          {/* id chip:design Badge xs(uppercase)紧贴 title 显示,取代独占一行 */}
+          <Badge size="xs" className="uppercase tracking-wider">
+            <code>{spec.id}</code>
+          </Badge>
         </div>
         {description && (
           <div className="mt-1 text-xs text-fg-muted">{description}</div>
@@ -202,10 +179,11 @@ export function SettingItemRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {spec.type === 'boolean' && (
-          <ToggleSwitch
+          // a11y(A4):role=switch 须有可访问名(= 设置标题),否则 AT 只读「switch checked」不知切换哪个设置。
+          <Switch
             checked={Boolean(value)}
-            onChange={(v) => setValue(spec.id, v)}
-            ariaLabel={title}
+            onCheckedChange={(v) => setValue(spec.id, v)}
+            aria-label={title}
           />
         )}
         {spec.type === 'select' && spec.enum && (
@@ -226,9 +204,9 @@ export function SettingItemRow({
               onCommit={(n) => setValue(spec.id, n)}
             />
             {spec.unit && (
-              <span className="select-none rounded bg-panel-soft px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-dim">
+              <Badge size="xs" className="select-none uppercase tracking-wider">
                 {spec.unit}
-              </span>
+              </Badge>
             )}
           </div>
         )}
@@ -268,31 +246,5 @@ export function SettingItemRow({
         </IconButton>
       </div>
     </div>
-  );
-}
-
-// ── 内嵌业务级 toggle switch(design system 暂无,且仅在 Settings 用)──
-// 真要 native:design system 没有 Toggle 组件,SegmentedControl「启用/禁用」
-// 视觉太重占位多;这里写一个紧凑滑块沿用语义 token,不引入新 design 依赖。
-
-interface ToggleSwitchProps {
-  readonly checked: boolean;
-  readonly onChange: (next: boolean) => void;
-  /** a11y(A4):role=switch 须有可访问名,否则 AT 只读「switch checked」不知切换哪个设置。 */
-  readonly ariaLabel: string;
-}
-
-function ToggleSwitch({ checked, onChange, ariaLabel }: ToggleSwitchProps) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={ariaLabel}
-      onClick={() => onChange(!checked)}
-      className={settingToggleSwitchClassName(checked)}
-    >
-      <span className={settingToggleKnobClassName(checked)} />
-    </button>
   );
 }

@@ -23,8 +23,12 @@
 
 - `design-tokens.css` 在 `:root`(light)与 `.dark` 下的 `--md-*` 变量数量必须**严格相等**(亮/暗对称)
 - `theme.css` 必须导入 `design-tokens.css`;色板单层:`theme.css` 不覆盖 `design-tokens.css` 已定义的任何 `--md-*`,Continuo IDE 暗色值直接写在 `design-tokens.css` 的 `.dark`
-- Continuo 自有 `--md-*` 槽位(`--md-debug-*` / `--md-fg-dim`)在 `theme.css` 的 `:root` 与 `.dark` 都给值
+- Continuo 自有 `--md-*` 槽位(`--md-debug-*` / `--md-fg-dim` / `--md-rating`)在 `theme.css` 的 `:root` 与 `.dark` 都给值
 - Continuo 的 `--color-*` 私有 token 必须全部通过 `var(--md-*)` 解析(不许字面 hex)
+- `--md-fg-dim`(次要弱化正文)两主题各自取值,对 `surface` / `surface-container` / `surface-container-high` 均 ≥ 4.5:1;
+  `text-fg-dim` / `text-fg-muted` 不叠透明度修饰(`/60` 等会把正文压到 AA 以下)
+- `--md-rating`(评分星,`text-rating`)两主题各自取值,对 `surface` / `surface-container-low` / `surface-container` ≥ 4.5:1
+- 组件不用 Tailwind 默认色板(`text-amber-400` 等),统一走语义 token
 
 ### Design 组件契约
 
@@ -32,3 +36,21 @@
 - 渲染时附带 `data-variant` / `data-size` / `data-active` 等 data-attribute 用于 CSS 选择
 - 接受 `className` prop,合并到 `wm-*` 基类后(不覆盖)
 - 完全用 `--md-*` / `--wm-*` token,组件 CSS 不出现字面 hex
+
+### 样式契约(`style-contracts.spec.ts`,按 CSS 源码钉)
+
+- 可聚焦控件键盘焦点一致:`Button` 与 IconButton / NavRailButton / SegmentedControl / TabNav 同为 `:focus-visible` 2px `--md-focus-ring` 轮廓
+- 有不透明底色的控件 hover 用 MD3 state layer 叠加(`background-image` 叠 `--md-state-hover`),不把底色换成半透明
+- `SegmentedControl`:轨道 1px `outline-variant` 描边;选中项 `secondary-container` 底 + `on-secondary-container` 字 +
+  1px `primary` 描边(指示对轨道 ≥ 3:1);未选中项同宽透明描边,切换不抖动
+- `MenuItem`:Radix 菜单原语注入的 `[data-highlighted]` 与 hover / focus-visible 同为 state-hover 底;`trailing`(快捷键 / 计数)靠右、`--md-fg-dim`
+- 浮层阴影统一:Explorer 右键菜单 / DropdownMenu / 终端搜索条用 `shadow-popover`,Toast 用 `var(--wm-shadow-popover)`;
+  Toast 关闭按钮 hover 为 state-hover 背景
+- `Badge`:`size="xs"` 为 4px 圆角矩形小标签;`accent-soft` 与其它 `*-soft` 同构;设置 / 插件 / 快捷键 id 与单位、市场
+  Verified / 维护者 / 新账号标签统一用 `Badge`,不手写;全应用无小于 10px 的任意字号
+
+### MenuItem / Badge 组件契约(`components.spec.tsx`)
+
+- `MenuItem` 透传 `ref` 与其余 button 属性(可作 Radix `ContextMenu.Item asChild` 的子元素),`onClick` 可省略;
+  `trailing` 渲染在截断 label 之外
+- `Badge` 默认 `size="sm"`(胶囊),`data-size` / `data-variant` 写入 DOM

@@ -16,6 +16,15 @@
 .wm-badge[data-variant="danger"]  { background-color: var(--md-error-container); color: var(--md-on-error-container); border-color: var(--md-error); }
 .wm-badge[data-variant="info"]    { background-color: var(--md-info-container); color: var(--md-on-info-container); border-color: var(--md-info); }
 
+.wm-badge[data-variant="accent-soft"]  { background-color: var(--md-surface-container-high); color: var(--md-primary); border-color: var(--md-primary); }
 .wm-badge[data-variant="success-soft"] { background-color: var(--md-surface-container-high); color: var(--md-success); border-color: var(--md-success); }
 .wm-badge[data-variant="warning-soft"] { background-color: var(--md-surface-container-high); color: var(--md-warning); border-color: var(--md-warning); }
 .wm-badge[data-variant="danger-soft"]  { background-color: var(--md-surface-container-high); color: var(--md-error); border-color: var(--md-error); }
+
+/* xs:紧凑矩形标签(设置项 id / 单位、插件 id、市场 Verified / 维护者等行内小标签),与胶囊状态徽标区分;
+ * 字号仍为 --wm-text-2xs(全应用最小字号 10px)。 */
+.wm-badge[data-size="xs"] {
+  border-radius: 4px;
+  padding: var(--wm-space-0_5) var(--wm-space-1_5);
+  font-weight: var(--wm-font-medium);
+}

@@ -1,0 +1,142 @@
+// design 组件的样式契约(jsdom 不解析组件 .css,故按源码钉规则):键盘焦点环、state layer 叠加等
+// 视觉行为在各组件间须一致。
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+
+const css = (rel: string): string => readFileSync(join(process.cwd(), rel), 'utf8');
+
+/** 取某选择器(精确匹配,含伪类)对应规则体;多处出现时拼接。 */
+function ruleBody(src: string, selector: string): string {
+  const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?:^|[}\\s,])${esc}\\s*(?:,[^{]*)?\\{([^}]*)\\}`, 'gm');
+  return Array.from(src.matchAll(re), (m) => m[1] ?? '').join('\n');
+}
+
+describe('Button 样式契约', () => {
+  const BUTTON = css('src/design/Button.css');
+
+  it('键盘焦点:.wm-button:focus-visible 给 2px focus-ring 轮廓(与 IconButton / SegmentedControl / TabNav 一致)', () => {
+    const body = ruleBody(BUTTON, '.wm-button:focus-visible');
+    expect(body).toMatch(/outline:\s*2px solid var\(--md-focus-ring\)/);
+    expect(body).toMatch(/outline-offset:\s*\d+px/);
+  });
+
+  it('secondary hover 在原底色上叠加 state layer,不替换成半透明底色(否则 hover 反而变淡)', () => {
+    const hover = ruleBody(BUTTON, '.wm-button[data-variant="secondary"]:hover:not(:disabled)');
+    expect(hover).not.toBe('');
+    expect(hover).not.toMatch(/background-color:\s*var\(--md-state-hover\)/);
+    expect(hover).toMatch(/background-image:\s*linear-gradient\(var\(--md-state-hover\),\s*var\(--md-state-hover\)\)/);
+  });
+});
+
+describe('SegmentedControl 样式契约', () => {
+  const SEG = css('src/design/SegmentedControl.css');
+
+  it('轨道有 1px outline-variant 描边,与所在面板区分', () => {
+    expect(ruleBody(SEG, '.wm-segmented')).toMatch(/border:\s*1px solid var\(--md-outline-variant\)/);
+  });
+
+  // 选中指示须对相邻色(轨道 surface-container-low)≥ 3:1(WCAG 1.4.11):secondary-container 底色本身与轨道
+  // 只有 1.85(暗)/ 1.17(亮),故以 1px primary 描边承载指示(10.12 / 5.85),底色 + on-secondary-container 字辅助。
+  it('选中项:secondary-container 底 + on-secondary-container 字 + primary 描边', () => {
+    const active = ruleBody(SEG, '.wm-segmented-option[data-active="true"]');
+    expect(active).toMatch(/background-color:\s*var\(--md-secondary-container\)/);
+    expect(active).toMatch(/color:\s*var\(--md-on-secondary-container\)/);
+    expect(active).toMatch(/border-color:\s*var\(--md-primary\)/);
+    expect(active).not.toMatch(/surface-container-high/);
+  });
+
+  it('未选中项保留同宽透明描边,选中切换不抖动布局', () => {
+    expect(ruleBody(SEG, '.wm-segmented-option')).toMatch(/border:\s*1px solid transparent/);
+  });
+});
+
+describe('MenuItem 样式契约', () => {
+  const MENU = css('src/design/MenuItem.css');
+
+  it('Radix 菜单高亮([data-highlighted])与 hover / focus-visible 同为 state-hover 底', () => {
+    expect(MENU).toMatch(/\.wm-menu-item\[data-highlighted\]:not\(:disabled\)[^{]*\{[^}]*background-color:\s*var\(--md-state-hover\)/);
+  });
+
+  it('trailing 靠右、弱化色', () => {
+    const body = ruleBody(MENU, '.wm-menu-item__trailing');
+    expect(body).toMatch(/margin-left:\s*auto/);
+    expect(body).toMatch(/color:\s*var\(--md-fg-dim\)/);
+  });
+});
+
+// 浮层(菜单 / 右键菜单 / 终端搜索条 / toast / 模态)阴影统一走 --wm-shadow-popover(Tailwind 侧 shadow-popover),
+// 两主题各有取值;Tailwind 默认 shadow / shadow-xl 在暗色底上几乎不可见。
+describe('浮层阴影统一 shadow-popover', () => {
+  const SHADOW_UTILITY = /(?:^|[^\w-])(shadow(?:-[a-z0-9]+(?:\/\d+)?|-\[[^\]]+\])?)(?=[^\w-]|$)/gm;
+  for (const file of [
+    'src/panels/Explorer/ContextMenu.tsx',
+    'src/lib/dropdown-menu.tsx',
+    'src/panels/Terminal/TerminalSearchBar.tsx',
+  ]) {
+    it(`${file} 只用 shadow-popover`, () => {
+      const used = Array.from(css(file).matchAll(SHADOW_UTILITY), (m) => m[1]);
+      expect(used.length).toBeGreaterThan(0);
+      expect(used.filter((u) => u !== 'shadow-popover')).toEqual([]);
+    });
+  }
+
+  it('Toast.css 用 var(--wm-shadow-popover),不引用未定义的 --md-shadow-color', () => {
+    const toast = css('src/notifications/Toast.css');
+    expect(ruleBody(toast, '.toast')).toMatch(/box-shadow:\s*var\(--wm-shadow-popover\)/);
+    expect(toast).not.toContain('--md-shadow-color');
+  });
+
+  it('Toast 关闭按钮 hover 有 state-hover 背景反馈(不再是 color: currentColor 空操作)', () => {
+    const hover = ruleBody(css('src/notifications/Toast.css'), '.toast__dismiss:hover');
+    expect(hover).toMatch(/background-color:\s*var\(--md-state-hover\)/);
+    expect(hover).not.toMatch(/color:\s*currentColor/);
+  });
+});
+
+describe('Badge 样式契约', () => {
+  const BADGE = css('src/design/Badge.css');
+
+  it('size=xs:矩形小圆角(4px)标签,字号不小于 --wm-text-2xs', () => {
+    const xs = ruleBody(BADGE, '.wm-badge[data-size="xs"]');
+    expect(xs).toMatch(/border-radius:\s*4px/);
+    expect(BADGE).not.toMatch(/font-size:\s*[0-9]px/);
+  });
+
+  it('accent-soft:surface-container-high 底 + primary 字 / 描边(与其它 *-soft 同构)', () => {
+    const body = ruleBody(BADGE, '.wm-badge[data-variant="accent-soft"]');
+    expect(body).toMatch(/background-color:\s*var\(--md-surface-container-high\)/);
+    expect(body).toMatch(/color:\s*var\(--md-primary\)/);
+    expect(body).toMatch(/border-color:\s*var\(--md-primary\)/);
+  });
+});
+
+// 小标签(设置项 id / 单位、插件 id、快捷键命令 id、市场 Verified / 维护者 / 新账号)统一 design Badge,
+// 不再各自手写 rounded + bg-*/NN + px-1.5 py-0.5 一套;文字最小 text-2xs(10px)。
+describe('徽标统一 design Badge', () => {
+  const HAND_CHIP = /rounded bg-(?:panel-soft|accent|warning)(?:\/\d+)? px-1(?:\.5)? py-0\.5/;
+  for (const file of [
+    'src/marketplace/MarketplaceTab.tsx',
+    'src/plugins/settings/SettingItemRow.tsx',
+    'src/plugins/settings/PluginsTabContent.tsx',
+    'src/plugins/settings/KeybindingsTabContent.tsx',
+  ]) {
+    it(`${file} 不手写徽标,用 <Badge`, () => {
+      const src = css(file);
+      expect(src).not.toMatch(HAND_CHIP);
+      expect(src).toMatch(/<Badge\b/);
+    });
+  }
+
+  it('src 不出现小于 10px 的任意字号(text-[9px] 等)', () => {
+    const files = execFileSync('git', ['ls-files', 'src/*.tsx', 'src/*.ts'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f !== '' && !f.includes('__tests__'));
+    const hits = files.flatMap((f) =>
+      (css(f).match(/\btext-\[[0-9](?:\.\d+)?px\]/g) ?? []).map((m) => `${f}: ${m}`),
+    );
+    expect(hits).toEqual([]);
+  });
+});

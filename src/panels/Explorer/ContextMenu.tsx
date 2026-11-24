@@ -1,5 +1,6 @@
 import * as Menu from '@radix-ui/react-context-menu';
-import { useContext, useLayoutEffect, useRef, useState } from 'react';
+import { useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { MenuItem, type MenuItemVariant } from '@/design';
 import { ExplorerVisibleContext } from './visibility';
 import { createMenuFocusRestore, type MenuFocusRestore } from './menu-close-focus';
 import type { FileEntry } from '@/lib/fs/types';
@@ -55,13 +56,33 @@ interface ContextMenuProps {
   children: React.ReactNode;
 }
 
-const itemCls =
-  'flex items-center gap-2 rounded px-2 py-1 text-xs text-fg outline-none data-[highlighted]:bg-hover data-[disabled]:opacity-40';
-
 const sepCls = 'my-1 h-px bg-line';
 
+// 与 DropdownMenu(src/lib/dropdown-menu.tsx)同一浮层外观:panel 底 + line 描边 + shadow-popover(两主题各有取值)。
 const contentCls =
-  'min-w-[180px] rounded-md border border-line bg-panel p-1 shadow-xl outline-none';
+  'min-w-[180px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover outline-none';
+
+interface CtxItemProps {
+  readonly onSelect: () => void;
+  readonly variant?: MenuItemVariant;
+  /** 右侧快捷键 / 计数(design MenuItem trailing 槽)。 */
+  readonly trailing?: ReactNode;
+  readonly children: ReactNode;
+}
+
+/**
+ * 菜单项 = Radix ContextMenu.Item(asChild)包 design MenuItem:外观与 DropdownMenu 等其它菜单同一实现,
+ * 键盘漫游 / Enter·Space 选中 / 关闭焦点还原 / 越界定位仍由 Radix 负责(MenuItem 透传 Radix 注入的 ref 与事件)。
+ */
+function CtxItem({ onSelect, variant, trailing, children }: CtxItemProps) {
+  return (
+    <Menu.Item asChild onSelect={onSelect}>
+      <MenuItem variant={variant} trailing={trailing}>
+        {children}
+      </MenuItem>
+    </Menu.Item>
+  );
+}
 
 /** group 渲染顺序:内置 4 类固定,其它(plugin 自定义)按字母序追加. */
 const BUILTIN_GROUP_ORDER: readonly string[] = ['new', 'edit', 'plugin', 'danger'];
@@ -201,6 +222,11 @@ function ContextMenuContent({
   // target 自身。ContextMenuContent 仅打开时挂载,因此这里不会影响关闭态行渲染。
   const actionTargets = getContextActionTargets(target, selectedPaths);
   const actionTargetCount = actionTargets.length;
+  // 多选时「复制路径 / 复制相对路径 / 移到废纸篓」右侧显示条目数(MenuItem trailing 槽)。
+  const countTrailing =
+    actionTargetCount > 1
+      ? t('panels.explorer.ctx.items_count', { count: actionTargetCount })
+      : undefined;
 
   // 创建上下文目录:文件夹 right-click → 它本身;空白 → root(文件行不显示「新建 / 粘贴」)。
   const createParent = (): string => (isFolder ? target!.path : rootPath);
@@ -217,28 +243,26 @@ function ContextMenuContent({
       >
         {(isFolder || isBlank) && (
           <>
-            <Menu.Item
-              className={itemCls}
+            <CtxItem
               onSelect={() => {
                 focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
                 actions.onNewFile(createParent());
               }}
             >
               {t('panels.explorer.ctx.new_file')}
-            </Menu.Item>
-            <Menu.Item
-              className={itemCls}
+            </CtxItem>
+            <CtxItem
               onSelect={() => {
                 focusRestore.skipOnce(); // 将打开 CreateInput 并自聚焦 → 跳过还原
                 actions.onNewDir(createParent());
               }}
             >
               {t('panels.explorer.ctx.new_folder')}
-            </Menu.Item>
+            </CtxItem>
             {hasClipboard && (
-              <Menu.Item className={itemCls} onSelect={() => actions.onPaste(createParent())}>
+              <CtxItem onSelect={() => actions.onPaste(createParent())}>
                 {t('panels.explorer.ctx.paste')}
-              </Menu.Item>
+              </CtxItem>
             )}
             {!isBlank && <Menu.Separator className={sepCls} />}
           </>
@@ -247,71 +271,56 @@ function ContextMenuContent({
         {!isBlank && (
           <>
             {/* 剪切 / 复制(in-app 剪贴板) */}
-            <Menu.Item className={itemCls} onSelect={() => actions.onCut(actionTargets)}>
+            <CtxItem onSelect={() => actions.onCut(actionTargets)}>
               {t('panels.explorer.ctx.cut')}
-            </Menu.Item>
-            <Menu.Item className={itemCls} onSelect={() => actions.onCopy(actionTargets)}>
+            </CtxItem>
+            <CtxItem onSelect={() => actions.onCopy(actionTargets)}>
               {t('panels.explorer.ctx.copy')}
-            </Menu.Item>
+            </CtxItem>
             <Menu.Separator className={sepCls} />
 
-            <Menu.Item
-              className={itemCls}
+            <CtxItem
               onSelect={() => {
                 focusRestore.skipOnce(); // 将打开 RenameInput 并自聚焦 → 跳过还原
                 actions.onRename(target!.path);
               }}
+              trailing="F2"
             >
               {t('panels.explorer.ctx.rename')}
-              <span className="ml-auto text-2xs text-fg-dim">F2</span>
-            </Menu.Item>
+            </CtxItem>
             <Menu.Separator className={sepCls} />
 
             {/* 路径剪贴板段:多选时复制全部(\n 拼接,VSCode 同款) */}
-            <Menu.Item className={itemCls} onSelect={() => actions.onCopyPath(actionTargets)}>
+            <CtxItem onSelect={() => actions.onCopyPath(actionTargets)} trailing={countTrailing}>
               {t('panels.explorer.ctx.copy_path')}
-              {actionTargetCount > 1 && (
-                <span className="ml-auto text-2xs text-fg-dim">
-                  {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
-                </span>
-              )}
-            </Menu.Item>
-            <Menu.Item
-              className={itemCls}
+            </CtxItem>
+            <CtxItem
               onSelect={() => actions.onCopyRelativePath(actionTargets)}
+              trailing={countTrailing}
             >
               {t('panels.explorer.ctx.copy_relative_path')}
-              {actionTargetCount > 1 && (
-                <span className="ml-auto text-2xs text-fg-dim">
-                  {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
-                </span>
-              )}
-            </Menu.Item>
+            </CtxItem>
             <Menu.Separator className={sepCls} />
 
             {/* 系统集成段 */}
-            <Menu.Item className={itemCls} onSelect={() => actions.onRevealInFinder(target!.path)}>
+            <CtxItem onSelect={() => actions.onRevealInFinder(target!.path)}>
               {t('panels.explorer.ctx.reveal_in_finder')}
-            </Menu.Item>
+            </CtxItem>
             {isFolder && (
-              <Menu.Item
-                className={itemCls}
-                onSelect={() => actions.onOpenInTerminal(target!.path)}
-              >
+              <CtxItem onSelect={() => actions.onOpenInTerminal(target!.path)}>
                 {t('panels.explorer.ctx.open_in_terminal')}
-              </Menu.Item>
+              </CtxItem>
             )}
             <Menu.Separator className={sepCls} />
 
             {/* 移到废纸篓(安全删除,可恢复) */}
-            <Menu.Item className={itemCls} onSelect={() => actions.onTrash(actionTargets)}>
+            <CtxItem
+              variant="danger"
+              onSelect={() => actions.onTrash(actionTargets)}
+              trailing={countTrailing}
+            >
               {t('panels.explorer.ctx.trash')}
-              {actionTargetCount > 1 && (
-                <span className="ml-auto text-2xs text-fg-dim">
-                  {t('panels.explorer.ctx.items_count', { count: actionTargetCount })}
-                </span>
-              )}
-            </Menu.Item>
+            </CtxItem>
           </>
         )}
 
@@ -323,9 +332,8 @@ function ContextMenuContent({
           <div key={bucket.group}>
             {gi > 0 && <Menu.Separator className={sepCls} />}
             {bucket.items.map((item) => (
-              <Menu.Item
+              <CtxItem
                 key={item.id}
-                className={itemCls}
                 // 插件右键项抛错经 runContributedAction 弹 error toast,不再只
                 // console.warn(菜单已关,用户看不到失败)。见第二十一轮 P1-AX。
                 // race(R54,R51/R52/R53 同族):select 时按 id 从 live coApp.explorerContextMenu
@@ -341,9 +349,9 @@ function ContextMenuContent({
                   })
                 }
               >
-                {item.icon && <span className="inline-flex shrink-0">{item.icon}</span>}
-                <span className="truncate">{item.label}</span>
-              </Menu.Item>
+                {item.icon && <span className="mr-2 inline-flex shrink-0 align-middle">{item.icon}</span>}
+                {item.label}
+              </CtxItem>
             ))}
           </div>
         ))}
