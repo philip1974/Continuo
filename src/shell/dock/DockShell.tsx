@@ -7,6 +7,7 @@ import {
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { usePanelComponents } from './panel-components';
+import { coApp } from '@/plugins/co-app';
 import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
@@ -287,6 +288,10 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
           /* ignore */
         }
       }
+      // 单例面板类型(editor / settings / 插件面板,见 PanelSpec.multiInstance)只允许固定 id(= type)那一个:旧版「⋯」
+      // 菜单曾多开出 `editor-1` / `settings-1`,恢复后两个 EditorPanel 各自自动保存互相覆盖、⌘, 关不掉多出的设置面板。
+      // 关闭非固定 id 的实例(内容来自共享 store,不丢数据;editor 缺失时下方按固定 id 补建)。
+      closeDuplicateSingletonPanels(event.api, coApp.panels);
 
       setEmpty(event.api.totalPanels === 0);
 
@@ -563,3 +568,22 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     </div>
   );
 }
+
+/** 关闭单例类型(未声明 multiInstance)中 id 不等于 type 的面板实例。 */
+export function closeDuplicateSingletonPanels(
+  api: Pick<DockviewApi, 'panels'>,
+  panels: { get(type: string): { readonly multiInstance?: boolean } | undefined },
+): void {
+  for (const panel of [...api.panels]) {
+    const type = panel.view?.contentComponent;
+    if (typeof type !== 'string' || panel.id === type) continue;
+    const spec = panels.get(type);
+    if (!spec || spec.multiInstance === true) continue;
+    try {
+      panel.api.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+

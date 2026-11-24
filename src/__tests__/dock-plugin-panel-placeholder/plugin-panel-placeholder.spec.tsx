@@ -102,3 +102,33 @@ describe('布局含未注册的插件面板类型', () => {
     expect(screen.getByText(PLACEHOLDER)).toBeTruthy();
   });
 });
+
+// factory 可能直接是用了 hooks 的组件(`factory: MyPanel`):占位 ↔ 真实内容切换时须整体重挂,不得在宿主里直接调用
+// (否则 hooks 数量变化,React 抛 "Rendered more / fewer hooks")。
+describe('占位 ↔ 真实内容切换 · hooks 组件作 factory', () => {
+  it('插件晚到注册一个用 hooks 的 factory 组件,随后注销 → 不抛错', async () => {
+    const { createPanelComponents } = await import('../../shell/dock/panel-components');
+    const { PanelRegistry } = await import('../../plugins/registries/PanelRegistry');
+    const { render, act } = await import('@testing-library/react');
+    const React = await import('react');
+    const reg = new PanelRegistry();
+    const comps = createPanelComponents(reg, reg.getAll());
+    const Host = comps['hooky.panel']!;
+    function HookyPanel(): React.ReactElement {
+      const [n] = React.useState(1);
+      const r = React.useRef(n);
+      return React.createElement('div', null, `hooky ${r.current}`);
+    }
+    const props = { api: { id: 'hooky.panel' }, containerApi: {}, params: {} } as never;
+    const view = render(React.createElement(Host, props));
+    let d: { dispose(): void } | undefined;
+    act(() => {
+      d = reg.register({ type: 'hooky.panel', title: 'H', factory: HookyPanel as never });
+    });
+    expect(view.container.textContent).toContain('hooky 1');
+    act(() => d!.dispose());
+    expect(view.container.textContent).not.toContain('hooky');
+    view.unmount();
+  });
+});
+

@@ -559,7 +559,7 @@ export const ko: Record<TranslationKey, string> = {
   // permissions editor UI
   'permissions.editor.title': '권한 편집',
   'permissions.editor.plugin_id_label': '플러그인',
-  'permissions.editor.next_enable_note_prefix': 'ⓘ 권한 취소는 즉시 적용됩니다. MCP 도구 권한을 다시 부여한 후에는 플러그인을',
+  'permissions.editor.next_enable_note_prefix': 'ⓘ 권한 취소는 즉시 적용됩니다. MCP 도구 권한을 다시 부여한 후에는 플러그인을 ',
   'permissions.editor.next_enable_emphasis': '비활성화 후 다시 활성화',
   'permissions.editor.next_enable_note_suffix': '해야 도구가 다시 등록됩니다.',
   'permissions.editor.cancel': '취소',

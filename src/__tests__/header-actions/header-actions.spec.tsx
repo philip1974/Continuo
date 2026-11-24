@@ -546,3 +546,31 @@ describe('HeaderActions — 单例面板类型', () => {
     }
   });
 });
+
+// 旧版「⋯」菜单曾多开出 `editor-1` / `settings-1`:恢复布局后关闭单例类型中 id ≠ type 的实例(多实例类型、未注册类型不动)。
+describe('closeDuplicateSingletonPanels', () => {
+  it('关闭单例的非固定 id 实例;保留固定 id、多实例类型与未注册类型', async () => {
+    const { closeDuplicateSingletonPanels } = await import('../../shell/dock/DockShell');
+    const mk = (id: string, type: string) => ({ id, view: { contentComponent: type }, api: { close: vi.fn() } });
+    const list = [
+      mk('editor', 'editor'),
+      mk('editor-1', 'editor'),
+      mk('settings-2', 'settings'),
+      mk('terminal-3', 'terminal'),
+      mk('git.viewer-1', 'git.viewer'),
+    ];
+    const specs: Record<string, { multiInstance?: boolean }> = {
+      editor: {},
+      settings: {},
+      terminal: { multiInstance: true },
+    };
+    closeDuplicateSingletonPanels({ panels: list } as never, { get: (t) => specs[t] });
+    expect(list.map((p) => p.api.close.mock.calls.length)).toEqual([0, 1, 1, 0, 0]);
+  });
+  it('接线:DockShell 恢复布局后调用(与清理旧 explorer 面板同处)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(`${process.cwd()}/src/shell/dock/DockShell.tsx`, 'utf8');
+    expect(src).toContain('closeDuplicateSingletonPanels(event.api, coApp.panels)');
+  });
+});
+

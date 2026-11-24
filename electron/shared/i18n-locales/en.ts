@@ -588,7 +588,7 @@ export const en = {
   // permissions editor UI
   'permissions.editor.title': 'Edit permissions',
   'permissions.editor.plugin_id_label': 'Plugin',
-  'permissions.editor.next_enable_note_prefix': 'ⓘ Revoking takes effect immediately; after re-granting MCP tools,',
+  'permissions.editor.next_enable_note_prefix': 'ⓘ Revoking takes effect immediately; after re-granting MCP tools, ',
   'permissions.editor.next_enable_emphasis': 'disable and re-enable',
   'permissions.editor.next_enable_note_suffix': ' the plugin so it registers its tools again.',
   'permissions.editor.cancel': 'Cancel',

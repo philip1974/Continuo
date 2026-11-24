@@ -55,14 +55,34 @@ function createPanelHost(panels: PanelRegistry, type: string): React.FC<IDockvie
     const live = useSyncExternalStore(subscribe, getLive);
     return (
       <PanelMount panelId={p.api.id}>
-        {live ? (
-          (live.factory(isThirdPartyContribution(live) ? toPluginPanelProps(p) : p) as React.ReactNode)
-        ) : (
-          <PluginPanelPlaceholder />
-        )}
+        {live ? <FactoryContent key={specKey(live)} spec={live} panelProps={p} /> : <PluginPanelPlaceholder />}
       </PanelMount>
     );
   };
+}
+
+// 每个注册 spec 一个稳定 key:占位 ↔ 真实内容、插件 reload 换新 spec 时整体重新挂载 factory 产物。factory 可能直接
+// 是用了 hooks 的组件(`factory: MyPanel`,类型允许);若在 PanelHost 里直接调用,切换时 hooks 数量变化 → React 抛
+// "Rendered more / fewer hooks"。放进带 key 的子组件,hooks 归属子组件、切换即重挂。
+const specKeys = new WeakMap<PanelSpec, number>();
+let nextSpecKey = 0;
+function specKey(spec: PanelSpec): number {
+  let k = specKeys.get(spec);
+  if (k === undefined) {
+    k = ++nextSpecKey;
+    specKeys.set(spec, k);
+  }
+  return k;
+}
+
+function FactoryContent({
+  spec,
+  panelProps,
+}: {
+  readonly spec: PanelSpec;
+  readonly panelProps: IDockviewPanelProps;
+}): React.ReactNode {
+  return spec.factory(isThirdPartyContribution(spec) ? toPluginPanelProps(panelProps) : panelProps) as React.ReactNode;
 }
 
 /**

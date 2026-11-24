@@ -1,9 +1,9 @@
 // 权限编辑 Modal(M-Plugin v4.7)。
 //
 // 让用户事后改主意:展示插件 manifest 声明的所有权限,checkbox 表示
-// granted/denied(prior decision 来自 PermissionStore),保存只写 store +
-// 提示"下次启用生效"。当前 enabled 实例不会被强制 disable(避免插件
-// 状态丢失);用户要立即生效手动 [禁用] → [启用]。
+// granted/denied(prior decision 来自 PermissionStore),保存只写 store。当前 enabled 实例不会被强制 disable
+// (避免插件状态丢失):撤销即时生效(各能力调用时现读 store,MCP 工具随 recheck 注销);只有重新授予
+// MCP 工具权限需用户 [禁用] → [启用] 让插件重新注册工具(提示文案同此)。
 
 import { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@/design';
