@@ -25,6 +25,7 @@ import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useUserPluginList } from '@/plugins/use-user-plugin-list';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { MARKETPLACE_REPO_SLUG } from '../../electron/shared/marketplace-channels';
+import { ResultMessage, type ResultMsg } from '@/lib/result-message';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -74,7 +75,7 @@ interface InstallState {
   /** 正在装的 entry id. */
   busy: string | null;
   /** 安装结果消息(per entry)。a11y(A44):带严重度 → 渲染按语义选 live region。 */
-  msgs: ReadonlyMap<string, { text: string; isError: boolean }>;
+  msgs: ReadonlyMap<string, ResultMsg>;
   /** 刚装成功但 PluginManager 还没扫到的 id(下次 LM 启动才入表). */
   pending: ReadonlySet<string>;
 }
@@ -469,9 +470,7 @@ export function MarketplaceTab() {
 function GitUrlInstallSection() {
   const t = useT();
   // a11y(A43,A42 同族):结果消息带严重度 → 渲染时按语义选 live region(成功 status/失败 alert)。
-  const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(
-    null,
-  );
+  const [msg, setMsg] = useState<ResultMsg | null>(null);
 
   const install = async (url: string): Promise<boolean> => {
     setMsg(null);
@@ -520,15 +519,8 @@ function GitUrlInstallSection() {
         installingLabel={t('marketplace.installing')}
         install={install}
       />
-      {msg && (
-        // a11y(A43,A42 同族):异步安装结果须 live region 主动播报(失败 alert/成功 status)。
-        <div
-          className="mt-2 text-xs text-fg-muted"
-          role={msg.isError ? 'alert' : 'status'}
-        >
-          {msg.text}
-        </div>
-      )}
+      {/* a11y(A43,A42 同族):异步安装结果须 live region 主动播报。 */}
+      <ResultMessage msg={msg} className="mt-2 text-xs text-fg-muted" />
       <div className="mt-3 flex items-start gap-2 rounded-md border border-accent/20 bg-accent/5 p-3 text-xs text-fg-muted">
         <span aria-hidden className="mt-0.5 leading-none text-accent">
           ⓘ
@@ -573,7 +565,7 @@ interface CardProps {
   updateAvailable: string | null;
   installing: boolean;
   installDisabled: boolean;
-  message: { text: string; isError: boolean } | null;
+  message: ResultMsg | null;
   /** 评分聚合(reviews Phase 1),null 或 count=0 不显. */
   rating: PluginAggregateRating | null;
   /** 父组件 useCallback 稳定;card 内 onClick 闭包 entry 给它. */
@@ -703,15 +695,8 @@ const MarketplaceCard = memo(function MarketplaceCard({
       <span style={SR_ONLY_STYLE} role="status">
         {installing ? t('marketplace.installing') : ''}
       </span>
-      {message && (
-        // a11y(A44,A42/A43 同族):卡片级安装/更新结果须 live region 主动播报(失败 alert/成功 status)。
-        <div
-          className="mt-1 text-2xs text-fg-muted"
-          role={message.isError ? 'alert' : 'status'}
-        >
-          {message.text}
-        </div>
-      )}
+      {/* a11y(A44,A42/A43 同族):卡片级安装/更新结果须 live region 主动播报。 */}
+      <ResultMessage msg={message} className="mt-1 text-2xs text-fg-muted" />
       <RatingRow entry={entry} rating={rating} />
 
       <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-fg-dim">

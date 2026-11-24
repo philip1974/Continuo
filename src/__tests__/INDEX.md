@@ -1197,6 +1197,10 @@
 - [`check-no-secrets.spec.ts`](./release-supply-chain/check-no-secrets.spec.ts)
 - [`sibling-ref-pinned.spec.ts`](./release-supply-chain/sibling-ref-pinned.spec.ts)
 
+## [ResultMessage(带严重度的操作结果 live region)](./result-message/README.md)
+
+- [`result-message.spec.tsx`](./result-message/result-message.spec.tsx)
+
 ## [ribbon-registry(IconSidebar 活动栏图标贡献)](./ribbon-registry/README.md)
 
 - [`ribbon-registry.spec.ts`](./ribbon-registry/ribbon-registry.spec.ts)

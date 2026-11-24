@@ -19,6 +19,7 @@ import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
 import { errorMessage } from '../../../electron/shared/error-message';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
+import { ResultMessage, type ResultMsg } from '@/lib/result-message';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -226,10 +227,7 @@ function UserPluginsSection() {
   const plugins = useUserPluginList();
   const mgr = getUserPluginManager();
   // a11y(A42):结果消息带严重度 → 渲染时按语义选 live region(成功 status/polite,失败 alert)。
-  const [installMsg, setInstallMsg] = useState<{
-    text: string;
-    isError: boolean;
-  } | null>(null);
+  const [installMsg, setInstallMsg] = useState<ResultMsg | null>(null);
   // 已安装、待重启后才进列表的插件(按 id;连续安装多个时各占一行)。
   const [pendingInstalls, setPendingInstalls] = useState<
     ReadonlyMap<string, { id: string; name: string; version: string }>
@@ -359,16 +357,8 @@ function UserPluginsSection() {
           installingLabel={t('plugins_tab.install.installing')}
           install={install}
         />
-        {installMsg && (
-          // a11y(A42,A41 同族):异步安装/卸载结果须 live region 主动播报(焦点仍在按钮/对话框)。
-          // 失败用 role=alert(assertive),成功用 role=status(polite)。
-          <div
-            className="mt-2 text-xs text-fg-muted"
-            role={installMsg.isError ? 'alert' : 'status'}
-          >
-            {installMsg.text}
-          </div>
-        )}
+        {/* a11y(A42,A41 同族):异步安装/卸载结果须 live region 主动播报(焦点仍在按钮/对话框)。 */}
+        <ResultMessage msg={installMsg} className="mt-2 text-xs text-fg-muted" />
       </div>
       {plugins.length === 0 && pendingRows.length === 0 ? (
         <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
