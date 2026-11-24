@@ -40,9 +40,14 @@ describe('49 · onTrash 走规范 removeItems 而非内联早退', () => {
     );
   });
 
-  it('onTrash 调用 trashItemsAndCleanup(内部走规范批量删除 removeItems)', () => {
+  it('onTrash(确认后)经 runTrash 调用 trashItemsAndCleanup(内部走规范批量删除 removeItems)', () => {
     const body = onTrashBody(src);
-    expect(body).toMatch(/trashItemsAndCleanup\(/);
+    expect(body).toMatch(/runTrash\(/);
+    const start = src.indexOf('const runTrash');
+    expect(start).toBeGreaterThan(0);
+    const end = src.indexOf('const contextActions', start);
+    expect(end).toBeGreaterThan(start);
+    expect(src.slice(start, end)).toMatch(/trashItemsAndCleanup\(/);
   });
 
   it('onTrash 不再用「裸 await coApi.fs.trash(p) 后 return」的内联早退模式', () => {

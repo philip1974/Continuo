@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_TABS, editorTab } from './helpers/editor';
-import { EXPLORER_TRASH } from './helpers/explorer';
+import { EXPLORER_TRASH, confirmExplorerTrash } from './helpers/explorer';
 
 test('开 a.ts + b.ts → trash a.ts → a tab 关 + b 保留', async ({
   window,
@@ -22,6 +22,7 @@ test('开 a.ts + b.ts → trash a.ts → a tab 关 + b 保留', async ({
     .first()
     .click({ button: 'right' });
   await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
+  await confirmExplorerTrash(window);
 
   // 先确认 a.ts 已从磁盘删除(trash 真的发生),再断言编辑器 tab:只剩 b.ts,a.ts 的 tab 已关闭
   await expect

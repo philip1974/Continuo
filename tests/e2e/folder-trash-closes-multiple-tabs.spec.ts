@@ -1,5 +1,5 @@
 import { EDITOR_NO_FILE_OPEN, EDITOR_TABS } from './helpers/editor';
-import { EXPLORER_TRASH } from './helpers/explorer';
+import { EXPLORER_TRASH, confirmExplorerTrash } from './helpers/explorer';
 // trash src/ → 内部所有 tab 一并关闭(removePaths 前缀匹配).
 import { test, expect } from './fixtures/with-workspace';
 
@@ -23,6 +23,7 @@ test('开 src/a.ts + src/b.ts → trash src → 两 tabs 都关 + EditorWelcome'
     .first()
     .click({ button: 'right' });
   await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
+  await confirmExplorerTrash(window);
 
   // 两 tabs 都关 → EditorWelcome
   await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({

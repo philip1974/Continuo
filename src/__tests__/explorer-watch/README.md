@@ -120,7 +120,9 @@ dir-changed 不是 changeOnly → Explorer 刷新所在目录。listDir 便宜,�
 - `refreshParent` 先 listDir,与缓存子项比较(`sameTreeChildren`:顺序 + path + name + isDirectory + isSymlink;
   size / mtime / ctime 不显示且按 FileEntry 契约是快照,不比较)→ 完全相同则不 invalidate / 不 rebuild
 - 新增 / 删除 / 改名 / 类型变化 / 符号链接标记变化 → 用这次 listDir 结果写缓存并 rebuild 一次(不二次 listDir)
-- 外部原子保存:tmp 出现与 rename 落在同一 debounce 窗口 → 最终列表不变,不 rebuild;比较时 tmp 仍在 →
-  刷新(无论是否显示隐藏文件,缓存须如实),rename 后再刷新一次
+- 外部原子保存:tmp 出现与 rename 落在同一 debounce 窗口 → 最终列表不变,不 rebuild;比较时(可显示的)tmp 仍在 →
+  刷新,rename 后再刷新一次
+- 缓存与比较都按 `explorer.showHiddenFiles` 过滤后的列表(与 loader 一致,见 explorer-tree「showHidden」):
+  未显示隐藏文件时只多出 `.` 开头的 tmp(vim `.swp`、本应用 `.continuo.tmp`)→ 不 rebuild
 - 同目录并发刷新只应用最后发起的那次(乱序完成亦然:最早的请求最慢、中间的先完成后再发起新刷新 → 仍只应用最新);比较期间折叠 → 缓存照常更新;卸载 → 在途结果丢弃
 - listDir 失败 / 缓存已失效 → 走原 invalidateChildrenIds 路径(原失败告警与清空语义)

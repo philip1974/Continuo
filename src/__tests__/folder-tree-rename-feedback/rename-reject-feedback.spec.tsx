@@ -347,13 +347,15 @@ describe('a11y(A148) — tree listDir 失败须限流 notify', () => {
     return config.dataLoader;
   }
 
-  it('dataLoader listDir {ok:false} → notify.error', async () => {
+  it('dataLoader 子目录 listDir {ok:false} → notify.error;根目录失败只走内联提示,不弹', async () => {
     const { coApi } = (await import('@/lib/co-api')) as unknown as {
       coApi: { fs: { listDir: ReturnType<typeof vi.fn> } };
     };
     coApi.fs.listDir.mockResolvedValue({ ok: false, code: 'FS_DENIED', message: 'no perm' });
     const loader = await getDataLoader();
     await loader.getChildrenWithData('/repo');
+    expect(h.notifyError).not.toHaveBeenCalled();
+    await loader.getChildrenWithData('/repo/sub');
     expect(h.notifyError).toHaveBeenCalledTimes(1);
   });
 

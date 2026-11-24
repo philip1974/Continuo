@@ -144,18 +144,29 @@ describe('FolderTree · 目录内容不变的刷新不 rebuild', () => {
   it('外部原子保存:比较时 tmp 仍可见 → 刷新;rename 后再次刷新,tmp 消失', async () => {
     const { rebuild, delta } = await mountLoaded();
     const original = fsTree.get('/work')!;
-    fsTree.set('/work', [...original, { path: '/work/.a.md.swp', name: '.a.md.swp', isDirectory: false }]);
+    fsTree.set('/work', [...original, { path: '/work/a.md.tmp', name: 'a.md.tmp', isDirectory: false }]);
     act(() => hoisted.cb!('/work'));
     await waitFor(() => expect(delta('/work')).toBe(1));
     await settle();
     expect(rebuild).toHaveBeenCalledTimes(1);
-    expect(ids()).toContain('/work/.a.md.swp');
+    expect(ids()).toContain('/work/a.md.tmp');
 
     fsTree.set('/work', original);
     act(() => hoisted.cb!('/work'));
     await waitFor(() => expect(delta('/work')).toBe(2));
     await settle();
     expect(rebuild).toHaveBeenCalledTimes(2);
+    expect(ids()).toEqual(['/work/a', '/work/a.md']);
+  });
+
+  it('未显示隐藏文件时只多出 . 开头的 tmp(如 vim .swp)→ 按过滤后的列表比较,不 rebuild', async () => {
+    const { rebuild, delta } = await mountLoaded();
+    const original = fsTree.get('/work')!;
+    fsTree.set('/work', [...original, { path: '/work/.a.md.swp', name: '.a.md.swp', isDirectory: false }]);
+    act(() => hoisted.cb!('/work'));
+    await waitFor(() => expect(delta('/work')).toBe(1));
+    await settle();
+    expect(rebuild).not.toHaveBeenCalled();
     expect(ids()).toEqual(['/work/a', '/work/a.md']);
   });
 });

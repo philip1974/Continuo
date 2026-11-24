@@ -170,6 +170,7 @@ export const en = {
   'settings.explorer.toggle_sidebar': 'Toggle Explorer sidebar',
   'settings.explorer.show_hidden_files': 'Show hidden files',
   'settings.explorer.indent_width': 'Indent width',
+  'settings.explorer.confirm_delete': 'Confirm delete',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': 'No settings in this category',
@@ -185,6 +186,7 @@ export const en = {
   'settings.terminal.cursor_style.bar': 'Bar',
   'settings.explorer.show_hidden_files.desc': 'Show dotfiles such as .git / .env.',
   'settings.explorer.indent_width.desc': 'Per-level indentation of the file tree (visual depth).',
+  'settings.explorer.confirm_delete.desc': 'Ask for confirmation before moving files to the Trash.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   'editor.welcome.title': 'No file open',
@@ -209,6 +211,11 @@ export const en = {
   'panels.explorer.empty_folder': 'This folder is empty',
   'panels.explorer.load_failed': 'Unable to read this folder: {message}',
   'panels.explorer.retry': 'Retry',
+  'panels.explorer.trash_confirm.file': "Are you sure you want to delete '{name}'?",
+  'panels.explorer.trash_confirm.folder': "Are you sure you want to delete '{name}' and its contents?",
+  'panels.explorer.trash_confirm.multiple': 'Are you sure you want to delete the following {count} files/folders?',
+  'panels.explorer.trash_confirm.more': '…and {count} more not shown',
+  'panels.explorer.trash_confirm.detail': 'You can restore from the Trash.',
   'panels.explorer.tree_aria': 'File tree',
   'panels.explorer.copy_path_failed': 'Failed to copy path to clipboard',
   'panels.terminal.starting_shell': 'Starting shell…',

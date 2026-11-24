@@ -1,4 +1,4 @@
-// Settings 资源管理器 tab 含 显示隐藏文件 + 缩进宽度 setting.
+// Settings 资源管理器 tab 含 显示隐藏文件 + 缩进宽度 + 删除前确认 setting.
 import { test, expect } from './fixtures/electron-app';
 import {
   EXPLORER_TAB,
@@ -23,5 +23,8 @@ test('资源管理器 tab 显 showHiddenFiles + indentSize', async ({ window }) 
   ).toBeVisible();
   await expect(
     main.locator('code').filter({ hasText: 'explorer.indentSize' }),
+  ).toBeVisible();
+  await expect(
+    main.locator('code').filter({ hasText: 'explorer.confirmDelete' }),
   ).toBeVisible();
 });

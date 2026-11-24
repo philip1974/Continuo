@@ -247,6 +247,7 @@ describe('createDataLoader · getChildrenWithData', () => {
     expect(onIpcWarn).toHaveBeenCalledWith(
       expect.stringContaining('/work/missing'),
       'FS_NOT_FOUND',
+      '/work/missing',
     );
   });
 
@@ -263,6 +264,43 @@ describe('createDataLoader · getChildrenWithData', () => {
       code: 'FS_EACCES',
       message: 'permission denied',
     });
+  });
+
+  it('列目录失败的 onIpcWarn 第三参是该目录(调用方据此让根目录失败只走内联提示,不再弹 toast)', async () => {
+    const onIpcWarn = vi.fn();
+    const fs = makeFs(() => fail('FS_EACCES', 'denied'));
+    const loader = createDataLoader({ root: '/work', fs, onIpcWarn });
+    await loader.getChildrenWithData('/work/sub');
+    expect(onIpcWarn).toHaveBeenLastCalledWith(expect.any(String), 'FS_EACCES', '/work/sub');
+    const throwing = {
+      listDir: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    };
+    await createDataLoader({ root: '/work', fs: throwing, onIpcWarn }).getChildrenWithData('/work');
+    expect(onIpcWarn).toHaveBeenLastCalledWith(expect.any(String), 'IPC_HANDLER_ERROR', '/work');
+  });
+
+  it('showHidden() 为 false → 子项去掉 . 开头的项(库看到的 items 与渲染一致);为 true → 全保留;每次加载时读取', async () => {
+    let show = false;
+    const fs = makeFs(() =>
+      ok([entry('/work/.env'), entry('/work/.github', true), entry('/work/a.ts'), entry('/work/b', true)]),
+    );
+    const loader = createDataLoader({ root: '/work', fs, showHidden: () => show });
+    expect((await loader.getChildrenWithData('/work')).map((c) => c.id)).toEqual(['/work/a.ts', '/work/b']);
+    show = true;
+    expect((await loader.getChildrenWithData('/work')).map((c) => c.id)).toEqual([
+      '/work/.env',
+      '/work/.github',
+      '/work/a.ts',
+      '/work/b',
+    ]);
+  });
+
+  it('未给 showHidden → 不过滤(保持原契约)', async () => {
+    const fs = makeFs(() => ok([entry('/work/.env'), entry('/work/a.ts')]));
+    const loader = createDataLoader({ root: '/work', fs });
+    expect((await loader.getChildrenWithData('/work')).map((c) => c.id)).toEqual(['/work/.env', '/work/a.ts']);
   });
 
   it('listDir 抛异常 → onChildrenLoad 回报 IPC_HANDLER_ERROR', async () => {

@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
-import { EXPLORER_TRASH } from './helpers/explorer';
+import { EXPLORER_TRASH, confirmExplorerTrash } from './helpers/explorer';
 
 test('dirty a.ts → trash → dirty tab 保留 + 文件被删', async ({
   window,
@@ -24,6 +24,7 @@ test('dirty a.ts → trash → dirty tab 保留 + 文件被删', async ({
     .first()
     .click({ button: 'right' });
   await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
+  await confirmExplorerTrash(window);
 
   // dirty tab 保留,避免删除文件时静默丢失未保存编辑.
   await expect(window.locator('header').first()).toContainText('a.ts ●', {

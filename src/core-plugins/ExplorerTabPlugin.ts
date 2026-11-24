@@ -5,6 +5,7 @@
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import {
+  EXPLORER_CONFIRM_DELETE,
   EXPLORER_INDENT_SIZE,
   EXPLORER_SHOW_HIDDEN_FILES,
 } from '@/plugins/settings/core-setting-specs';
@@ -38,5 +39,7 @@ export default class ExplorerTabPlugin extends Plugin {
     this.addSettingItem(EXPLORER_SHOW_HIDDEN_FILES);
 
     this.addSettingItem(EXPLORER_INDENT_SIZE);
+
+    this.addSettingItem(EXPLORER_CONFIRM_DELETE);
   }
 }

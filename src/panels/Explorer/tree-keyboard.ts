@@ -144,9 +144,15 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
     tree.getDataRef<HotkeysCoreDataRef>().current.pressedKeys?.delete(e.code || e.key);
   }
 
-  const focused = items.length > 0 ? tree.getFocusedItem() : undefined;
+  // 焦点项须是实际渲染的行:不在其中(如被过滤的隐藏文件、刷新途中已不显示的项)时不对它执行任何命令 ——
+  // 否则 Delete 会删掉用户看不见的项。
+  const rawFocused = items.length > 0 ? tree.getFocusedItem() : undefined;
+  const focusedId = rawFocused?.getId();
+  const focused =
+    rawFocused && items.some((it) => it.getId() === focusedId) ? rawFocused : undefined;
   const command = matchTreeKeyCommand(e, ctx.platform);
   if (command !== null) {
+    if (rawFocused && !focused) return false;
     const consume = (): true => {
       e.preventDefault();
       e.stopPropagation();
@@ -179,10 +185,14 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
     if (command === 'copy') ctx.actions.onCopy(targets);
     else if (command === 'cut') ctx.actions.onCut(targets);
     else {
+      // 按住 Delete 的自动重复不连删(第一次按下已发起删除 / 确认)
+      if (e.repeat) return consume();
       const index = items.findIndex((it) => it.getId() === focused.getId());
       const next = neighborAfterRemoval(items, index, targets);
-      ctx.actions.onTrash(targets);
-      if (next) focusAndSelect(tree, next);
+      // 焦点落点在确认后才移(取消删除则焦点 / 选中不动)
+      ctx.actions.onTrash(targets, () => {
+        if (next) focusAndSelect(tree, next);
+      });
     }
     return consume();
   }
@@ -190,10 +200,8 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
   const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
   // 焦点移动已由 headless-tree 在同一 keydown 的更早监听里完成;这里让选中跟上(Shift 扩选由库处理)。
   if (NAVIGATION_KEYS.has(e.key)) {
-    if (plain && !e.shiftKey && focused && !tree.getState().dnd) {
-      const now = tree.getFocusedItem();
-      if (now) selectOnly(tree, now.getId());
-    }
+    // focused 已是库移动后的焦点项(且是渲染行,见上)
+    if (plain && !e.shiftKey && focused && !tree.getState().dnd) selectOnly(tree, focused.getId());
     return false;
   }
 

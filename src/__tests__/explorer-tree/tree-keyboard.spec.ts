@@ -1,6 +1,14 @@
+// @vitest-environment jsdom
 // 文件树键盘操作的纯逻辑(tree-keyboard.ts):键位匹配(平台感知)与键入跳转查找。
-import { describe, expect, it } from 'vitest';
-import { findTypeAheadIndex, matchTreeKeyCommand } from '../../panels/Explorer/tree-keyboard';
+import { describe, expect, it, vi } from 'vitest';
+import type { ItemInstance, TreeInstance } from '@headless-tree/core';
+import type { FileEntry } from '../../lib/fs/types';
+import {
+  findTypeAheadIndex,
+  handleTreeKeyDown,
+  matchTreeKeyCommand,
+  type TreeKeyContext,
+} from '../../panels/Explorer/tree-keyboard';
 
 const ev = (init: Partial<KeyboardEvent>): KeyboardEvent =>
   ({ key: '', metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...init }) as KeyboardEvent;
@@ -52,5 +60,71 @@ describe('findTypeAheadIndex', () => {
     expect(findTypeAheadIndex(names, 0, 'z')).toBe(-1);
     expect(findTypeAheadIndex([], 0, 'a')).toBe(-1);
     expect(findTypeAheadIndex(names, 0, '')).toBe(-1);
+  });
+});
+
+describe('handleTreeKeyDown · 删除防误触', () => {
+  const fakeItem = (id: string) =>
+    ({
+      getId: () => id,
+      isFolder: () => false,
+      getItemData: () => ({ path: id, name: id.split('/').pop()!, isDirectory: false }),
+      setFocused: vi.fn(),
+    }) as unknown as ItemInstance<FileEntry>;
+  const makeCtx = (focused: ItemInstance<FileEntry>, items: ItemInstance<FileEntry>[]) => {
+    const tree = {
+      isRenamingItem: () => false,
+      getDataRef: () => ({ current: {} }),
+      getFocusedItem: () => focused,
+      getState: () => ({ selectedItems: [focused.getId()] }),
+      setSelectedItems: vi.fn(),
+      updateDomFocus: vi.fn(),
+    } as unknown as TreeInstance<FileEntry>;
+    const actions = { onTrash: vi.fn(), onCopy: vi.fn(), onCut: vi.fn(), onPaste: vi.fn() };
+    const ctx: TreeKeyContext = {
+      tree,
+      items,
+      actions,
+      openFile: vi.fn(),
+      rootPath: '/work',
+      platform: 'other',
+      typeAhead: { query: '', at: 0 },
+    };
+    return { ctx, actions };
+  };
+  const keyEv = (init: KeyboardEventInit) => new KeyboardEvent('keydown', { cancelable: true, ...init });
+
+  it('焦点项不在渲染列表(如被过滤的隐藏文件)→ Delete / 复制 / 剪切 / 粘贴都不执行', () => {
+    const hidden = fakeItem('/work/.env');
+    const { ctx, actions } = makeCtx(hidden, [fakeItem('/work/a.ts')]);
+    handleTreeKeyDown(keyEv({ key: 'Delete' }), ctx);
+    handleTreeKeyDown(keyEv({ key: 'c', ctrlKey: true }), ctx);
+    handleTreeKeyDown(keyEv({ key: 'x', ctrlKey: true }), ctx);
+    handleTreeKeyDown(keyEv({ key: 'v', ctrlKey: true }), ctx);
+    expect(actions.onTrash).not.toHaveBeenCalled();
+    expect(actions.onCopy).not.toHaveBeenCalled();
+    expect(actions.onCut).not.toHaveBeenCalled();
+    expect(actions.onPaste).not.toHaveBeenCalled();
+  });
+
+  it('按住 Delete 的自动重复(e.repeat)不再删;首次按下照常', () => {
+    const a = fakeItem('/work/a.ts');
+    const { ctx, actions } = makeCtx(a, [a, fakeItem('/work/b.ts')]);
+    handleTreeKeyDown(keyEv({ key: 'Delete', repeat: true }), ctx);
+    expect(actions.onTrash).not.toHaveBeenCalled();
+    handleTreeKeyDown(keyEv({ key: 'Delete' }), ctx);
+    expect(actions.onTrash).toHaveBeenCalledTimes(1);
+    expect(actions.onTrash.mock.calls[0]![0]).toEqual(['/work/a.ts']);
+  });
+
+  it('确认前不移动焦点 / 选中:焦点落点只在 onTrash 的确认回调里执行', () => {
+    const a = fakeItem('/work/a.ts');
+    const b = fakeItem('/work/b.ts');
+    const { ctx, actions } = makeCtx(a, [a, b]);
+    handleTreeKeyDown(keyEv({ key: 'Delete' }), ctx);
+    expect(b.setFocused).not.toHaveBeenCalled();
+    const onConfirmed = actions.onTrash.mock.calls[0]![1] as () => void;
+    onConfirmed();
+    expect(b.setFocused).toHaveBeenCalled();
   });
 });

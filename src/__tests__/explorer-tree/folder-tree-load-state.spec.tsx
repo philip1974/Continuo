@@ -3,6 +3,8 @@
 //   - 根目录还在读取 → 「加载中」
 //   - 读取成功但没有可显示的项 → 「此文件夹为空」
 //   - 读取失败 → 本地化的失败原因 + 「重试」按钮(调与 Header 刷新同一实现);重试成功后列出文件
+//   - 根目录读取失败只走内联提示(不再另弹 toast,读屏不重复播报);子目录读取失败仍 toast
+//   - 点「重试」后焦点不掉到 body:成功 → 树内焦点行;仍失败 → 新的「重试」按钮
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
@@ -63,6 +65,7 @@ vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));
 
 import { coApi } from '@/lib/co-api';
+import { notify } from '@/notifications/notify';
 import { FolderTree } from '../../panels/Explorer/FolderTree';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
 
@@ -82,11 +85,13 @@ beforeEach(() => {
   vi.mocked(coApi.fs.listDir).mockClear();
   h.rootListDir = null;
   vi.mocked(coApi.fs.copy).mockClear();
+  vi.spyOn(notify, 'error').mockImplementation(() => '');
   useExplorerStore.setState({ expandedPaths: new Set(), sort: { by: 'name', reverse: false } });
   useExplorerClipboardStore.setState({ kind: null, paths: [] });
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   if (originalPlatform) Object.defineProperty(window.navigator, 'platform', originalPlatform);
   else delete (window.navigator as { platform?: string }).platform;
 });
@@ -126,5 +131,59 @@ describe('FolderTree · 空列表三态', () => {
     await waitFor(() => expect(row(r.container, '/work/beta.ts')).not.toBeNull());
     expect(vi.mocked(coApi.fs.listDir).mock.calls.filter((c) => c[0] === '/work').length).toBeGreaterThan(calls);
     expect(r.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('FolderTree · 读取失败反馈', () => {
+  it('根目录读取失败 → 只有一处 role=alert 的内联提示,不另弹 toast', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'EACCES: permission denied' });
+    const r = render(<FolderTree root="/work" />);
+    await r.findByRole('alert');
+    await new Promise((res) => setTimeout(res, 20));
+    expect(r.getAllByRole('alert')).toHaveLength(1);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('子目录读取失败 → 仍弹 toast(树里无内联位置)', async () => {
+    const listDir = vi.mocked(coApi.fs.listDir);
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    listDir.mockImplementationOnce(async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' }));
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+  });
+});
+
+describe('FolderTree · 重试后的焦点', () => {
+  it('重试成功 → 焦点移到树内焦点行(不掉到 body)', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    const r = render(<FolderTree root="/work" />);
+    const retry = await r.findByRole('button', { name: RETRY });
+    retry.focus();
+    h.rootListDir = null;
+    act(() => {
+      fireEvent.click(retry);
+    });
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    await waitFor(() => {
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.closest('[role="tree"]')).not.toBeNull();
+    });
+  });
+
+  it('重试仍失败 → 焦点落在新的「重试」按钮', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    const r = render(<FolderTree root="/work" />);
+    const retry = await r.findByRole('button', { name: RETRY });
+    retry.focus();
+    act(() => {
+      fireEvent.click(retry);
+    });
+    await waitFor(() => {
+      const again = r.getByRole('button', { name: RETRY });
+      expect(document.activeElement).toBe(again);
+    });
   });
 });

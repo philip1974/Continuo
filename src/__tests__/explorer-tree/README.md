@@ -22,7 +22,9 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - `dataLoader.getItem(root)` 返回构造的 root entry(`name` = `basename(root)`,`isDirectory: true`)
 - `dataLoader.getChildrenWithData(parentPath)` 调 `fs.listDir(parentPath)`:
   - 成功:把 `FileEntry[]` 映射为 `{ id: entry.path, data: entry }[]`
-  - 失败:返回 `[]`,`onIpcWarn` 回调被调(默认 console.warn)
+  - 失败:返回 `[]`,`onIpcWarn(message, code, 该目录)` 回调被调(默认 console.warn)
+  - `showHidden()` 返回 false 时去掉 `.` 开头的项(每次加载时读取;缺省不过滤)。在 loader 层而非只在渲染时过滤:
+    headless-tree 的 ↑/↓/Home/End、全选、Shift 范围选都基于 `tree.getItems()`,须与渲染一致
   - 每次结果回报 `onChildrenLoad(itemId, failure | null)`(成功 null;失败 / 抛错带 code + message),
     调用方据此区分读取失败与空目录
 - `dataLoader.getItem(child)`(非 root)调 `fs.listDir(parent)` 查找,找不到时降级返回最小信息
@@ -65,7 +67,13 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   库在每次行单击(含 ⌘ / Shift 多选单击)都调它
 - 方向键 / Home / End:库移动焦点后选中改为焦点项(Shift 扩选仍由库处理)
 - Delete(mac 另有 ⌘⌫):移到废纸篓,与右键「移到废纸篓」同一 `onTrash`;多选且焦点在选中集内时作用于整组;
-  焦点与选中移到下一项(没有则上一项)
+  确认后焦点与选中移到下一项(没有则上一项),取消则不动;按住不放的自动重复(`e.repeat`)不连删
+- 删除确认(VSCode `explorer.confirmDelete`,默认开,设置页可关):键盘与右键共用一处 `ConfirmDialog`(destructive,
+  初始焦点在「取消」)。单项标题「确定要删除“x”吗?」/ 文件夹「…及其内容吗?」;多项「确定要删除以下 N 个文件 /
+  文件夹吗?」并列出名字(最多 10 个,其余「另有 N 项未列出」);说明「可以从废纸篓恢复」;确认按钮「移到废纸篓」
+- 未显示隐藏文件时(loader 已过滤),方向键 / Home / End 不会把焦点 / 选中落到隐藏项;防御:焦点项不在实际渲染的
+  行里时 Delete / 复制 / 剪切 / 粘贴都不执行
+- 切换「显示隐藏文件」→ 刷新全部已加载目录(loader 缓存按旧设置过滤),隐藏项随之出现 / 消失
 - mod+C / mod+X / mod+V(mac ⌘、其它 Ctrl,平台判定同全局命令热键 `matchesHotkey`):与右键剪切 / 复制 /
   粘贴同一实现;粘贴落点 = 焦点目录,焦点是文件则其父目录
 - macOS 按住 ⌘ 时其它键无 keyup:按 ⌘ 组合后从库的 pressedKeys 摘掉该键,之后方向键照常
@@ -101,6 +109,8 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 根目录读取失败(`onChildrenLoad` 回报)→ `role="alert"` 显示「无法读取此文件夹:{按错误码本地化的原因}」+
   「重试」按钮(与 Header「刷新」同一 `refreshAll`);重试成功后列出文件、失败态消失。不经 loader 的
   `refreshParent` 读到根目录时同样置为已读到
+- 根目录失败只走内联提示,不另弹 toast(两个 role=alert 读屏会播报两次);子目录读取失败树里无内联位置,仍限流 toast
+- 点「重试」后焦点不掉到 body:成功且有项 → 树的焦点行;仍失败 → 新的「重试」按钮
 
 ## 不在本主题验证
 

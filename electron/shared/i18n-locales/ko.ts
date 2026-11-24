@@ -159,6 +159,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.toggle_sidebar': '탐색기 사이드바 토글',
   'settings.explorer.show_hidden_files': '숨김 파일 표시',
   'settings.explorer.indent_width': '들여쓰기 너비',
+  'settings.explorer.confirm_delete': '삭제 전 확인',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '이 카테고리에 설정이 없습니다',
@@ -174,6 +175,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.terminal.cursor_style.bar': '바',
   'settings.explorer.show_hidden_files.desc': '.git / .env 같이 .으로 시작하는 파일 표시.',
   'settings.explorer.indent_width.desc': '파일 트리 단계별 들여쓰기(시각적 깊이에 영향).',
+  'settings.explorer.confirm_delete.desc': '휴지통으로 이동하기 전에 확인을 요청합니다.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   'editor.welcome.title': '열린 파일 없음',
@@ -197,6 +199,11 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.empty_folder': '이 폴더는 비어 있습니다',
   'panels.explorer.load_failed': '이 폴더를 읽을 수 없습니다: {message}',
   'panels.explorer.retry': '다시 시도',
+  'panels.explorer.trash_confirm.file': "'{name}'을(를) 삭제하시겠습니까?",
+  'panels.explorer.trash_confirm.folder': "'{name}' 및 해당 내용을 삭제하시겠습니까?",
+  'panels.explorer.trash_confirm.multiple': '다음 {count}개 파일/폴더를 삭제하시겠습니까?',
+  'panels.explorer.trash_confirm.more': '…외 {count}개 항목은 표시되지 않음',
+  'panels.explorer.trash_confirm.detail': '휴지통에서 복원할 수 있습니다.',
   'panels.explorer.tree_aria': '파일 트리',
   'panels.explorer.copy_path_failed': '클립보드에 경로 복사 실패',
   'panels.terminal.starting_shell': '셸 시작 중…',

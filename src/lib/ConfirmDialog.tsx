@@ -20,8 +20,8 @@ interface ConfirmDialogProps {
   onAlternative?: () => void;
 }
 
-// 通用确认对话框(design Modal):编辑器关闭 / 覆盖确认、插件卸载、状态栏撤销授权共用(原在 panels/Explorer 下,
-// Explorer 删除已改为直接进回收站不再确认,故移到 lib)。
+// 通用确认对话框(design Modal):编辑器关闭 / 覆盖确认、插件卸载、状态栏撤销授权、Explorer 删除确认共用(原在 panels/Explorer 下,
+// 已移到 lib 供各处复用)。
 // design Modal 自带 ESC + overlay 点击 → onClose,这里把 onClose 接到 onCancel。
 export function ConfirmDialog({
   open,

@@ -28,8 +28,11 @@ export interface ContextMenuActions {
   onRevealInFinder: (path: string) => void;
   /** 新建终端,cwd 设为目录路径. */
   onOpenInTerminal: (dir: string) => void;
-  /** 移到系统废纸篓(可恢复). 删除路径只此一项,VSCode 同款. */
-  onTrash: (paths: string[]) => void;
+  /**
+   * 移到系统废纸篓(可恢复). 删除路径只此一项,VSCode 同款;按 explorer.confirmDelete 先确认。
+   * afterConfirm:确认(或无需确认)后、实际删除前调用(键盘删除用它移动焦点;取消则不调)。
+   */
+  onTrash: (paths: string[], afterConfirm?: () => void) => void;
   /** 剪切到 in-app 剪贴板(粘贴时移动). */
   onCut: (paths: string[]) => void;
   /** 复制到 in-app 剪贴板(粘贴时复制). */

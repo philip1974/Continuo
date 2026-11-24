@@ -130,6 +130,18 @@ export const EXPLORER_INDENT_SIZE: CoreSettingSpec<number> = {
   priority: 2,
 };
 
+// VSCode explorer.confirmDelete(默认开):移到废纸篓前确认。
+export const EXPLORER_CONFIRM_DELETE: CoreSettingSpec<boolean> = {
+  id: 'explorer.confirmDelete',
+  category: 'explorer',
+  title: 'Confirm delete',
+  titleKey: 'settings.explorer.confirm_delete',
+  descriptionKey: 'settings.explorer.confirm_delete.desc',
+  type: 'boolean',
+  default: true,
+  priority: 3,
+};
+
 // ── 通用(general)────────────────────────────────────────────────────────────
 
 // Record<ThemeMode, …>:新增主题模式漏配选项即编译报错。

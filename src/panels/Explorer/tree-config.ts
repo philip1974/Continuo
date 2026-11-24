@@ -29,8 +29,17 @@ export interface FsForTree {
 export interface CreateTreeConfigDeps {
   root: string;
   fs: FsForTree;
-  /** spec 注入断言;默认 console.warn. */
-  onIpcWarn?: (message: string, code: string) => void;
+  /**
+   * spec 注入断言;默认 console.warn。列子项失败时第三参 = 该目录(调用方据此让根目录失败只走内联提示)。
+   */
+  onIpcWarn?: (message: string, code: string, childrenOf?: string) => void;
+  /**
+   * 是否显示 . 开头的项(explorer.showHiddenFiles),每次列子项时读取;缺省全显示。
+   * 在 loader 层过滤而非只在渲染时过滤:headless-tree 的 ↑/↓/Home/End、全选、Shift 范围选都基于
+   * tree.getItems(),只在渲染时过滤会让焦点 / 选中落到看不见的隐藏项上(键盘 Delete 删掉它)。
+   * 切换后由调用方刷新已加载目录。
+   */
+  showHidden?: () => boolean;
   /**
    * 每次 getChildrenWithData 的结果:成功 null,失败 { code, message }。失败时 loader 仍返回 [],
    * 调用方据此区分「读取失败」与「空目录」(FolderTree 用于根目录的失败态 + 重试)。
@@ -109,6 +118,15 @@ export function sameTreeChildren(
   return true;
 }
 
+/** showHidden=false 时去掉 . 开头的项(无隐藏项时原样返回同一数组)。loader 与不经 loader 的刷新共用。 */
+export function filterHiddenEntries(
+  entries: readonly FileEntry[],
+  showHidden: boolean,
+): readonly FileEntry[] {
+  if (showHidden || !entries.some((e) => e.name.startsWith('.'))) return entries;
+  return entries.filter((e) => !e.name.startsWith('.'));
+}
+
 export function findFileEntryByPath(
   entries: readonly FileEntry[],
   path: string,
@@ -120,7 +138,13 @@ export function findFileEntryByPath(
 }
 
 export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader {
-  const { root, fs, onIpcWarn = (m, c) => console.warn('[explorer-tree]', m, c), onChildrenLoad } = deps;
+  const {
+    root,
+    fs,
+    onIpcWarn = (m, c) => console.warn('[explorer-tree]', m, c),
+    onChildrenLoad,
+    showHidden,
+  } = deps;
 
   return {
     getItem: async (itemId) => {
@@ -153,15 +177,15 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
       try {
         const r = await fs.listDir(itemId);
         if (!r.ok) {
-          onIpcWarn(`listDir failed for ${itemId}: ${r.message}`, r.code);
+          onIpcWarn(`listDir failed for ${itemId}: ${r.message}`, r.code, itemId);
           onChildrenLoad?.(itemId, { code: r.code, message: r.message });
           return EMPTY_TREE_CHILDREN;
         }
         onChildrenLoad?.(itemId, null);
-        return buildTreeChildrenWithData(r.data);
+        return buildTreeChildrenWithData(filterHiddenEntries(r.data, showHidden?.() ?? true));
       } catch (err) {
         const message = (err as Error).message;
-        onIpcWarn(`listDir threw for ${itemId}: ${message}`, 'IPC_HANDLER_ERROR');
+        onIpcWarn(`listDir threw for ${itemId}: ${message}`, 'IPC_HANDLER_ERROR', itemId);
         onChildrenLoad?.(itemId, { code: 'IPC_HANDLER_ERROR', message });
         return EMPTY_TREE_CHILDREN;
       }

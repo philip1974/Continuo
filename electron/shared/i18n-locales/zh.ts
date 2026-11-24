@@ -158,6 +158,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.toggle_sidebar': '切换 Explorer 侧栏',
   'settings.explorer.show_hidden_files': '显示隐藏文件',
   'settings.explorer.indent_width': '缩进宽度',
+  'settings.explorer.confirm_delete': '删除前确认',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '本类暂无设置项',
@@ -173,6 +174,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.terminal.cursor_style.bar': '竖线',
   'settings.explorer.show_hidden_files.desc': '是否显示以 . 开头的文件(如 .git / .env)。',
   'settings.explorer.indent_width.desc': '文件树每级缩进(影响视觉层级)。',
+  'settings.explorer.confirm_delete.desc': '移到废纸篓前是否弹出确认。',
 
   // editor welcome / empty states (post-topic-21 round 2)
   'editor.welcome.title': '未打开文件',
@@ -195,6 +197,11 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.empty_folder': '此文件夹为空',
   'panels.explorer.load_failed': '无法读取此文件夹:{message}',
   'panels.explorer.retry': '重试',
+  'panels.explorer.trash_confirm.file': '确定要删除“{name}”吗?',
+  'panels.explorer.trash_confirm.folder': '确定要删除“{name}”及其内容吗?',
+  'panels.explorer.trash_confirm.multiple': '确定要删除以下 {count} 个文件 / 文件夹吗?',
+  'panels.explorer.trash_confirm.more': '…另有 {count} 项未列出',
+  'panels.explorer.trash_confirm.detail': '可以从废纸篓恢复。',
   'panels.explorer.tree_aria': '文件树',
   'panels.explorer.copy_path_failed': '复制路径到剪贴板失败',
   'panels.terminal.starting_shell': '启动 shell…',

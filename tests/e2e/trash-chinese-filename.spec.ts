@@ -1,6 +1,6 @@
 // 中文文件名 trash → 文件被移走.
 import { expect, test } from '@playwright/test';
-import { EXPLORER_TRASH } from './helpers/explorer';
+import { EXPLORER_TRASH, confirmExplorerTrash } from './helpers/explorer';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,6 +24,7 @@ test('右键 中文文件 → trash → 不在', async () => {
       .first()
       .click({ button: 'right' });
     await win.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
+    await confirmExplorerTrash(win);
 
     await expect(async () => {
       let exists = true;

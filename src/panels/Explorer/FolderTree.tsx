@@ -16,7 +16,12 @@ import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
-import { buildTreeChildrenWithData, createTreeConfig, sameTreeChildren } from './tree-config';
+import {
+  buildTreeChildrenWithData,
+  createTreeConfig,
+  filterHiddenEntries,
+  sameTreeChildren,
+} from './tree-config';
 import { focusAndSelect, handleTreeKeyDown, selectOnly, type TypeAheadState } from './tree-keyboard';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
@@ -40,9 +45,11 @@ import { copyToClipboardOrNotify } from './copy-to-clipboard';
 import { revealPathOrNotify } from './reveal-or-notify';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
+  EXPLORER_CONFIRM_DELETE,
   EXPLORER_INDENT_SIZE,
   EXPLORER_SHOW_HIDDEN_FILES,
 } from '@/plugins/settings/core-setting-specs';
+import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useExplorerClipboardStore } from './clipboard-store';
@@ -71,6 +78,15 @@ interface PendingReveal {
 const ROOT_LOADING = 'loading';
 const ROOT_LOADED = 'loaded';
 type RootLoadState = typeof ROOT_LOADING | typeof ROOT_LOADED | { code: string; message: string };
+
+/** 待确认的删除(VSCode explorer.confirmDelete)。afterConfirm:确认后、实际删除前调用(键盘删除移焦点)。 */
+interface TrashConfirmState {
+  paths: string[];
+  afterConfirm?: () => void;
+}
+
+// 删除确认框最多列出的名字数(VSCode 同为 10,其余以「另有 N 项」概括)。
+const TRASH_CONFIRM_MAX_NAMES = 10;
 
 // 新项若始终不出现(如新建的是隐藏文件且未显示隐藏文件),到期放弃定位。
 const PENDING_REVEAL_TTL_MS = 3000;
@@ -245,6 +261,18 @@ export function FolderTree({ root }: { root: string }) {
     if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
   }, []);
   const [creating, setCreating] = useState<CreatingState | null>(null);
+  // explorer.showHiddenFiles=false(默认)不显示 . 开头的项(.git / .env 等)。在 loader 层过滤(见 tree-config
+  // showHidden):库的键盘导航 / 全选 / 范围选都基于 tree.getItems(),须与渲染一致。loader 与刷新经 ref 读最新值。
+  const showHidden = useSettingValue(EXPLORER_SHOW_HIDDEN_FILES.id, EXPLORER_SHOW_HIDDEN_FILES.default);
+  const showHiddenRef = useRef(showHidden);
+  showHiddenRef.current = showHidden;
+  const confirmDelete = useSettingValue(EXPLORER_CONFIRM_DELETE.id, EXPLORER_CONFIRM_DELETE.default);
+  const confirmDeleteRef = useRef(confirmDelete);
+  confirmDeleteRef.current = confirmDelete;
+  const [trashConfirm, setTrashConfirm] = useState<TrashConfirmState | null>(null);
+  // 根目录「重试」后焦点去向(重试按钮随加载态卸载,不处理焦点会掉到 body):成功 → 树;仍失败 → 新的重试按钮。
+  const retryFocusPendingRef = useRef(false);
+  const loadFailedRef = useRef<HTMLDivElement>(null);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   // 根目录读取状态(loader 经 onChildrenLoad 回报):列表为空时据此区分加载中 / 读取失败 / 空文件夹。
   const [rootLoad, setRootLoad] = useState<RootLoadState>(ROOT_LOADING);
@@ -428,6 +456,7 @@ export function FolderTree({ root }: { root: string }) {
       gens.delete(parentPath);
       // 不经 loader 的刷新路径:根目录读到了 → 清掉失败态(失败则下方 invalidate 经 loader 回报)
       if (entries !== null && parentPath === root) setRootLoad(ROOT_LOADED);
+      if (entries !== null) entries = filterHiddenEntries(entries, showHiddenRef.current);
       const data = t.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current;
       const cachedIds = data.childrenIds?.[parentPath];
       // 缓存缺失 = 该目录被别处 invalidate、正在重新加载 → 原路径会复用那次在途加载。
@@ -507,8 +536,10 @@ export function FolderTree({ root }: { root: string }) {
         root,
         fs: coApi.fs,
         // a11y(A148):listDir 失败 → console.warn(诊断)+ 限流 notify.error(用户/AT 可感知)。
-        onIpcWarn: (message: string, code: string) => {
+        // 根目录列子项失败不弹:已有内联提示 + 重试(两个 role=alert 会让读屏播报两次)。
+        onIpcWarn: (message: string, code: string, childrenOf?: string) => {
           console.warn('[explorer-tree]', message, code);
+          if (childrenOf === root) return;
           const now = Date.now();
           if (now - lastIpcWarnAtRef.current < 3000) return;
           lastIpcWarnAtRef.current = now;
@@ -561,6 +592,7 @@ export function FolderTree({ root }: { root: string }) {
           suppressNextDropScroll();
           void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent);
         },
+        showHidden: () => showHiddenRef.current,
         expandedItems: treeExpandedItems,
         setExpandedItems,
         scrollToItem,
@@ -580,8 +612,7 @@ export function FolderTree({ root }: { root: string }) {
   treeRef.current = tree;
 
   const allItems = tree.getItems();
-  // explorer.showHiddenFiles=false(默认)过滤 . 开头的 entries(.git / .env 等)
-  const showHidden = useSettingValue(EXPLORER_SHOW_HIDDEN_FILES.id, EXPLORER_SHOW_HIDDEN_FILES.default);
+  // loader 已按 showHidden 过滤;切换为隐藏后、已加载目录刷新完成前缓存里仍有隐藏项,渲染这里再滤一次。
   const items = useMemo(() => selectVisibleTreeItems(allItems, showHidden), [allItems, showHidden]);
   renderedItemsRef.current = items;
 
@@ -641,6 +672,17 @@ export function FolderTree({ root }: { root: string }) {
     for (const p of dirty) refreshParent(p);
   }, [visible, refreshParent]);
 
+  // 切换「显示隐藏文件」→ 刷新全部已加载目录(loader 缓存是按旧设置过滤的)。首次挂载不刷。
+  const lastShowHiddenRef = useRef(showHidden);
+  useEffect(() => {
+    if (lastShowHiddenRef.current === showHidden) return;
+    lastShowHiddenRef.current = showHidden;
+    const t = treeRef.current;
+    if (t === null) return;
+    const loaded = t.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds ?? {};
+    for (const dir of Object.keys(loaded)) refreshParent(dir);
+  }, [showHidden, refreshParent]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   // 侧栏保活:隐藏(display:none)期间滚动容器没有布局盒,浏览器可能把 scrollTop 归零;记下可见时
   // 最后的滚动位置,再次显示时(绘制前)恢复。
@@ -697,6 +739,34 @@ export function FolderTree({ root }: { root: string }) {
   const platform = useMemo(() => detectPlatform(), []);
   const typeAheadRef = useRef<TypeAheadState>({ query: '', at: 0 });
 
+  // 实际移到废纸篓(键盘 / 右键共用;确认在 onTrash 里)。
+  const runTrash = useCallback(
+    (paths: string[]) => {
+      void (async () => {
+        // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
+        // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
+        // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
+        // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用)。见第七 session
+        // R6 完整性批判。「路径已删除」清理(editor tab / 展开集合 / 剪贴板)只对 result.removed 做,在
+        // trashItemsAndCleanup 一处完成(已测)。
+        const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved);
+        if (!result.ok) {
+          for (const f of result.failures) {
+            console.warn('[explorer] trash failed', f.path, f.code, f.message);
+            notify.error(
+              t('errors.folder.trash_failed', {
+                path: f.path,
+                message: localizeErrorByCode(f.code, f.message),
+              }),
+              { code: f.code, mirror: false },
+            );
+          }
+        }
+      })();
+    },
+    [mutateDeps, onPathsRemoved, treeApi],
+  );
+
   const contextActions = useMemo<ContextMenuActions>(
     () => ({
       onRename: (path) => treeRef.current?.getItemInstance(path)?.startRenaming(),
@@ -724,28 +794,14 @@ export function FolderTree({ root }: { root: string }) {
         // 归属当前 workspace(虽然 cwd 是子目录),便于跨 workspace 切换时该 terminal 跟随显示/隐藏。
         void createUserTerminal({ cwd: dir });
       },
-      onTrash: (paths: string[]) => {
-        void (async () => {
-          // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
-          // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
-          // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
-          // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用)。见第七 session
-          // R6 完整性批判。「路径已删除」清理(editor tab / 展开集合 / 剪贴板)只对 result.removed 做,在
-          // trashItemsAndCleanup 一处完成(已测)。
-          const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved);
-          if (!result.ok) {
-            for (const f of result.failures) {
-              console.warn('[explorer] trash failed', f.path, f.code, f.message);
-              notify.error(
-                t('errors.folder.trash_failed', {
-                  path: f.path,
-                  message: localizeErrorByCode(f.code, f.message),
-                }),
-                { code: f.code, mirror: false },
-              );
-            }
-          }
-        })();
+      onTrash: (paths: string[], afterConfirm?: () => void) => {
+        if (paths.length === 0) return;
+        if (confirmDeleteRef.current) {
+          setTrashConfirm({ paths, afterConfirm });
+          return;
+        }
+        afterConfirm?.();
+        runTrash(paths);
       },
       onCut: (paths: string[]) => {
         useExplorerClipboardStore.getState().set('cut', paths);
@@ -767,7 +823,7 @@ export function FolderTree({ root }: { root: string }) {
         );
       },
     }),
-    [mutateDeps, onPathsRemoved, root, runBatchTransfer, treeApi, tt],
+    [root, runBatchTransfer, runTrash, tt],
   );
 
   // 新建(VSCode 同款):成功 → 关输入框、展开父目录、新项选中并获得树焦点,文件随即在编辑器打开;
@@ -821,7 +877,7 @@ export function FolderTree({ root }: { root: string }) {
   const renderEmptyState = () => {
     if (typeof rootLoad === 'object') {
       return (
-        <div className="flex flex-col items-start gap-2 p-4 text-xs">
+        <div ref={loadFailedRef} className="flex flex-col items-start gap-2 p-4 text-xs">
           <div role="alert" className="break-words text-error">
             {tt('panels.explorer.load_failed', {
               message: localizeErrorByCode(rootLoad.code, rootLoad.message),
@@ -831,6 +887,7 @@ export function FolderTree({ root }: { root: string }) {
             variant="outlined"
             size="sm"
             onClick={() => {
+              retryFocusPendingRef.current = true;
               setRootLoad(ROOT_LOADING);
               refreshAll();
             }}
@@ -844,6 +901,71 @@ export function FolderTree({ root }: { root: string }) {
       <div className="p-4 text-xs text-fg-dim" role="status">
         {rootLoad === ROOT_LOADING ? tt('common.loading') : tt('panels.explorer.empty_folder')}
       </div>
+    );
+  };
+
+  // 「重试」有结果后放焦点:成功且有项 → 树的焦点行;仍失败 → 新的重试按钮(VSCode 列表重载后焦点回列表)。
+  const hasItems = items.length > 0;
+  useEffect(() => {
+    if (!retryFocusPendingRef.current || rootLoad === ROOT_LOADING) return;
+    if (typeof rootLoad === 'object') {
+      retryFocusPendingRef.current = false;
+      loadFailedRef.current?.querySelector('button')?.focus();
+    } else if (hasItems) {
+      retryFocusPendingRef.current = false;
+      tree.updateDomFocus();
+    }
+  }, [rootLoad, hasItems, tree]);
+
+  // 删除确认框文案(VSCode explorer.confirmDelete):单项按文件 / 文件夹区分,多项列出名字(最多 10 个)。
+  const renderTrashConfirm = () => {
+    const paths = trashConfirm?.paths ?? EMPTY_PATH_LIST;
+    let title = '';
+    let names: string[] = EMPTY_PATH_LIST;
+    if (paths.length === 1) {
+      const p = paths[0]!;
+      const data = tree.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current.itemData?.[p];
+      title = tt(
+        data?.isDirectory ? 'panels.explorer.trash_confirm.folder' : 'panels.explorer.trash_confirm.file',
+        { name: basenamePreserveTrailing(p) },
+      );
+    } else if (paths.length > 1) {
+      title = tt('panels.explorer.trash_confirm.multiple', { count: paths.length });
+      names = paths.slice(0, TRASH_CONFIRM_MAX_NAMES).map(basenamePreserveTrailing);
+    }
+    const more = paths.length > 1 ? paths.length - names.length : 0;
+    return (
+      <ConfirmDialog
+        open={trashConfirm !== null}
+        title={title}
+        description={
+          <>
+            {names.length > 0 && (
+              <ul className="mb-2 list-none">
+                {names.map((n, i) => (
+                  <li key={i} className="truncate text-fg">
+                    {n}
+                  </li>
+                ))}
+                {more > 0 && (
+                  <li>{tt('panels.explorer.trash_confirm.more', { count: more })}</li>
+                )}
+              </ul>
+            )}
+            <p>{tt('panels.explorer.trash_confirm.detail')}</p>
+          </>
+        }
+        confirmLabel={tt('panels.explorer.ctx.trash')}
+        destructive
+        onCancel={() => setTrashConfirm(null)}
+        onConfirm={() => {
+          const pending = trashConfirm;
+          setTrashConfirm(null);
+          if (pending === null) return;
+          pending.afterConfirm?.();
+          runTrash(pending.paths);
+        }}
+      />
     );
   };
 
@@ -1033,6 +1155,7 @@ export function FolderTree({ root }: { root: string }) {
           )}
         </div>
       </ContextMenu>
+      {renderTrashConfirm()}
     </div>
   );
 }
