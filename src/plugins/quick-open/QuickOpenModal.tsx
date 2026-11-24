@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
+import { pickerRowClassName } from '../picker/picker-row';
 import { Button, Input, Modal, Spinner } from '@/design';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
@@ -28,16 +29,6 @@ const QUICK_OPEN_SHORTCUT_LABEL = formatHotkey(
   'mod+shift+p',
   detectPlatform(),
 );
-const QUICK_OPEN_ROW_BASE_CLASS_NAME =
-  'flex cursor-pointer items-center gap-2 px-3 text-xs';
-const QUICK_OPEN_ROW_SELECTED_CLASS_NAME =
-  `${QUICK_OPEN_ROW_BASE_CLASS_NAME} bg-hover text-fg`;
-const QUICK_OPEN_ROW_IDLE_CLASS_NAME =
-  `${QUICK_OPEN_ROW_BASE_CLASS_NAME} text-fg-muted hover:bg-hover/50`;
-
-export function quickOpenRowClassName(selected: boolean): string {
-  return selected ? QUICK_OPEN_ROW_SELECTED_CLASS_NAME : QUICK_OPEN_ROW_IDLE_CLASS_NAME;
-}
 
 /**
  * 轻量 shell(打磨 R33,仿 R32 CommandPalette):QuickOpenModal 常驻挂在 App 顶层。
@@ -251,8 +242,8 @@ function QuickOpenBody() {
                   <li
                     key={f.absPath}
                     {...getOptionProps(vRow)}
-                    // 键盘 selectedIndex 走 active bg(深色),独立于鼠标 hover
-                    className={quickOpenRowClassName(idx === selectedIndex)}
+                    // 键盘 selectedIndex 走选中样式(accent 底 + 左竖条),独立于鼠标 hover
+                    className={pickerRowClassName(idx === selectedIndex)}
                     onClick={() => void openFile(f)}
                   >
                     <span className="truncate font-medium">{f.name}</span>

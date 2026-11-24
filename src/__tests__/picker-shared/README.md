@@ -30,6 +30,13 @@ DOM 输出与收口前逐属性一致。
 10. 两个 picker 互斥:按 ⌘P 打开 Quick Open 前关掉命令面板,按 ⌘⇧P 打开命令面板前关掉 Quick Open
     (占位文案「⌘⇧P 切到命令面板」);同一热键再按仍只 toggle 自身。
 
+### 规则(pickerRowClassName,选中行可辨识)
+
+11. 弹窗内容区背景是 `--md-surface-container-high`(= `bg-hover`),选中行不得用 `bg-hover`(计算值与背景
+    完全相同,看不出选中)。两个 picker 共用 `src/plugins/picker/picker-row.ts`:选中 = `border-l-2 border-accent
+    bg-accent/15`,未选中 = 同宽透明边 + 悬停 `bg-accent/10`。竖条色 `--md-primary` 对弹窗背景两主题 ≥ 3:1
+    (WCAG 1.4.11)。对照 VSCode Quick Input:选中行是与弹窗底色明显不同的强调色(list.activeSelectionBackground)。
+
 ### 接线守卫
 
 9. 两个 store 都用 `createPickerSlice`;两个组件都用 `usePickerList`,不再直接 `useVirtualizer`。

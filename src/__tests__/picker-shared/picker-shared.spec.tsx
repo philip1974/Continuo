@@ -313,3 +313,57 @@ describe('接线守卫:两个 picker 走共享实现', () => {
     },
   );
 });
+
+// 选中行样式(两个 picker 共用 pickerRowClassName):弹窗内容区背景是 --md-surface-container-high(= bg-hover),
+// 选中行若用 bg-hover 与背景计算值完全相同、看不出选中。改为 accent 低透明度底 + 左侧 accent 竖条,竖条对弹窗
+// 背景在两主题下都 ≥ 3:1(WCAG 1.4.11 非文本对比)。
+describe('picker 选中行可辨识', () => {
+  const read = (rel: string): string => readFileSync(join(__dirname, '..', '..', rel), 'utf-8');
+  const block = (css: string, sel: ':root' | '.dark'): string =>
+    css.match(new RegExp(`${sel === ':root' ? ':root' : '\\.dark'}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+  const hex = (b: string, name: string): string =>
+    b.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6});`, 'i'))?.[1] ?? '';
+  const lum = (h: string): number => {
+    const [r, g, b] = [1, 3, 5]
+      .map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+
+  it('选中行:不用 bg-hover,带 accent 左竖条;未选中行占同宽透明边(不跳动)', async () => {
+    const { pickerRowClassName } = await import('../../plugins/picker/picker-row');
+    const selected = pickerRowClassName(true);
+    const idle = pickerRowClassName(false);
+    expect(selected).not.toMatch(/(^|\s)bg-hover(\s|$)/);
+    expect(selected).toContain('border-accent');
+    expect(selected).toContain('border-l-2');
+    expect(idle).toContain('border-l-2');
+    expect(idle).toContain('border-transparent');
+    expect(idle).not.toMatch(/hover:bg-hover/);
+  });
+
+  it('竖条颜色(--md-primary)对弹窗背景(Modal 的 --md-surface-container-high)两主题均 ≥ 3:1', () => {
+    expect(read('design/Modal.css')).toMatch(
+      /\.wm-modal-content\s*\{[^}]*background-color:\s*var\(--md-surface-container-high\)/,
+    );
+    const tokens = read('styles/design-tokens.css');
+    for (const sel of [':root', '.dark'] as const) {
+      const b = block(tokens, sel);
+      const ratio = contrast(hex(b, '--md-primary'), hex(b, '--md-surface-container-high'));
+      expect(ratio, sel).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it.each(['plugins/command-palette/CommandPalette.tsx', 'plugins/quick-open/QuickOpenModal.tsx'])(
+    '%s 的行样式走共享 pickerRowClassName',
+    (rel) => {
+      const src = read(rel);
+      expect(src).toContain('pickerRowClassName(');
+      expect(src).not.toMatch(/bg-hover text-fg/);
+    },
+  );
+});

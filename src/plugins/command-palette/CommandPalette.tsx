@@ -10,6 +10,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
+import { pickerRowClassName } from '../picker/picker-row';
 import { Input, KeyCap, Modal } from '@/design';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
@@ -30,13 +31,6 @@ import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 const PLATFORM = detectPlatform();
 
 const RECENT_TOP_N = 5;
-const COMMAND_PALETTE_ROW_BASE_CLASS_NAME = 'flex cursor-pointer items-center gap-2 px-3 text-xs';
-const COMMAND_PALETTE_ROW_SELECTED_CLASS_NAME = `${COMMAND_PALETTE_ROW_BASE_CLASS_NAME} bg-hover text-fg`;
-const COMMAND_PALETTE_ROW_IDLE_CLASS_NAME = `${COMMAND_PALETTE_ROW_BASE_CLASS_NAME} text-fg-muted hover:bg-hover/50`;
-
-export function commandPaletteRowClassName(selected: boolean): string {
-  return selected ? COMMAND_PALETTE_ROW_SELECTED_CLASS_NAME : COMMAND_PALETTE_ROW_IDLE_CLASS_NAME;
-}
 
 /** 渲染中间体:已 localize 的 title/category（topic-19 P1-2）。 */
 export interface DisplayCommand {
@@ -343,7 +337,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
                   key={d.cmd.id}
                   {...getOptionProps(vRow)}
                   // selectedIndex 跟键盘走;鼠标 hover 用独立的 hover:bg-hover/50
-                  className={commandPaletteRowClassName(idx === selectedIndex)}
+                  className={pickerRowClassName(idx === selectedIndex)}
                   onClick={() => execute(d)}
                 >
                   {d.displayCategory && (

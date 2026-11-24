@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { pickerRowClassName } from '../../plugins/picker/picker-row';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -20,7 +21,6 @@ vi.mock('../../notifications/notify', () => ({
 
 import {
   CommandPalette,
-  commandPaletteRowClassName,
 } from '../../plugins/command-palette/CommandPalette';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
@@ -63,9 +63,9 @@ describe('CommandPalette UI', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 
     try {
-      expect(commandPaletteRowClassName(true)).toContain('bg-hover text-fg');
-      expect(commandPaletteRowClassName(false)).toContain(
-        'text-fg-muted hover:bg-hover/50',
+      expect(pickerRowClassName(true)).toContain('border-accent bg-accent/15 text-fg');
+      expect(pickerRowClassName(false)).toContain(
+        'border-transparent text-fg-muted hover:bg-accent/10',
       );
       expect(joinSpy).not.toHaveBeenCalled();
     } finally {

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { pickerRowClassName } from '../../plugins/picker/picker-row';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
@@ -31,7 +32,6 @@ import {
 } from '../../lib/co-api';
 import {
   QuickOpenModal,
-  quickOpenRowClassName,
 } from '../../plugins/quick-open/QuickOpenModal';
 import {
   useQuickOpenStore,
@@ -118,9 +118,9 @@ describe('QuickOpenModal — 渲染态', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 
     try {
-      expect(quickOpenRowClassName(true)).toContain('bg-hover text-fg');
-      expect(quickOpenRowClassName(false)).toContain(
-        'text-fg-muted hover:bg-hover/50',
+      expect(pickerRowClassName(true)).toContain('border-accent bg-accent/15 text-fg');
+      expect(pickerRowClassName(false)).toContain(
+        'border-transparent text-fg-muted hover:bg-accent/10',
       );
       expect(joinSpy).not.toHaveBeenCalled();
     } finally {
