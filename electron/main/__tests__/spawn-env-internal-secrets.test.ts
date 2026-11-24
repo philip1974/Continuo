@@ -2,21 +2,10 @@
 // 的终端启动时 process.env 即含它;插件也可能显式透传)。持有 token 即可经 MCP HTTP 以该窗口身份调用工具。
 // 同时钉住 git 两个入口的离线 / 协议白名单 env:readGitBlob 用 GIT_OFFLINE_ENV,插件 git 安装(runGit)限 https。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EventEmitter } from 'node:events';
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn() } }));
 
 const spawnEnvs: NodeJS.ProcessEnv[] = [];
-class FakeChild extends EventEmitter {
-  readonly stdout = new EventEmitter();
-  readonly stderr = new EventEmitter();
-  readonly stdin = Object.assign(new EventEmitter(), { write() {}, end() {} });
-  exitCode: number | null = null;
-  signalCode: NodeJS.Signals | null = null;
-  kill(): boolean {
-    return true;
-  }
-}
 vi.mock('node:child_process', async (orig) => ({
   ...(await orig<typeof import('node:child_process')>()),
   spawn: (_cmd: string, _args: string[], opts: { env: NodeJS.ProcessEnv }) => {
@@ -35,6 +24,7 @@ import { registerPluginShellStreamHandlers } from '../services/plugin-shell-stre
 import { readGitBlob } from '../services/plugin-fs.service';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { installFromGit } from '../services/plugins.service';
+import { FakeChild } from './_helpers/fake-child';
 
 const realToken = process.env.CONTINUO_MCP_TOKEN;
 beforeEach(() => {

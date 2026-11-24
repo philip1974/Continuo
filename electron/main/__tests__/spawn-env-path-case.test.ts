@@ -3,21 +3,10 @@
 // 解析时被忽略,且解析用的 env 与子进程实际 env 不一致。契约:Windows 上合并 env 大小写不敏感(后者覆盖前者,只留
 // 一个键),解析与传给 spawn 的 env 一致。mock platform=win32 + lstatSync,验证 shell.exec 入口。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EventEmitter } from 'node:events';
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn() } }));
 
 const spawnCalls: Array<{ cmd: string; env: NodeJS.ProcessEnv }> = [];
-class FakeChild extends EventEmitter {
-  readonly stdout = new EventEmitter();
-  readonly stderr = new EventEmitter();
-  readonly stdin = Object.assign(new EventEmitter(), { write() {}, end() {} });
-  exitCode: number | null = null;
-  signalCode: NodeJS.Signals | null = null;
-  kill(): boolean {
-    return true;
-  }
-}
 vi.mock('node:child_process', async (orig) => ({
   ...(await orig<typeof import('node:child_process')>()),
   spawn: (cmd: string, _args: string[], opts: { env: NodeJS.ProcessEnv }) => {
@@ -38,6 +27,7 @@ vi.mock('node:fs', async (orig) => {
 });
 
 import { execShell } from '../services/shell.service';
+import { FakeChild } from './_helpers/fake-child';
 
 const realPlatform = process.platform;
 const realPath = process.env.PATH;

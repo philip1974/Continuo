@@ -2,21 +2,10 @@
 // (cwd=workspace)即执行它。三个 spawn 入口须先经 resolveSpawnCommand 在 PATH 的绝对目录中解析;
 // 解析不到 fail-closed(不 spawn)。mock platform=win32 + 空 PATH,验证三入口都不把裸名交给 spawn。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EventEmitter } from 'node:events';
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn() } }));
 
 const spawnCalls: string[] = [];
-class FakeChild extends EventEmitter {
-  readonly stdout = new EventEmitter();
-  readonly stderr = new EventEmitter();
-  readonly stdin = Object.assign(new EventEmitter(), { write() {}, end() {} });
-  exitCode: number | null = null;
-  signalCode: NodeJS.Signals | null = null;
-  kill(): boolean {
-    return true;
-  }
-}
 vi.mock('node:child_process', async (orig) => ({
   ...(await orig<typeof import('node:child_process')>()),
   spawn: (cmd: string) => {
@@ -33,6 +22,7 @@ import { readGitBlob } from '../services/plugin-fs.service';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { installFromGit } from '../services/plugins.service';
 import { processTreeKillable } from '../lib/kill-with-grace';
+import { FakeChild } from './_helpers/fake-child';
 
 const realPlatform = process.platform;
 const realPath = process.env.PATH;

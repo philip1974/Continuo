@@ -3,21 +3,10 @@
 // 用 mock 的 child_process.spawn(fake child,手动 emit close),廉价、确定地验证双闸与名额释放。
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EventEmitter } from 'node:events';
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn() } }));
 
 const spawnedChildren: FakeChild[] = [];
-class FakeChild extends EventEmitter {
-  readonly stdout = new EventEmitter();
-  readonly stderr = new EventEmitter();
-  readonly stdin = Object.assign(new EventEmitter(), { write() {}, end() {} });
-  exitCode: number | null = null;
-  signalCode: NodeJS.Signals | null = null;
-  kill(): boolean {
-    return true;
-  }
-}
 
 vi.mock('node:child_process', () => ({
   spawn: () => {
@@ -33,6 +22,7 @@ import {
   MAX_ACTIVE_EXECS_GLOBAL_FOR_TEST,
   MAX_ACTIVE_EXECS_PER_SENDER_FOR_TEST,
 } from '../services/shell.service';
+import { FakeChild } from './_helpers/fake-child';
 
 const input = { cmd: 'node', args: [], pluginId: 'com.x.p' };
 
