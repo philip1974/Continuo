@@ -58,18 +58,10 @@ query Reviews($owner: String!, $name: String!, $first: Int!, $after: String) {
   }
 }`.trim();
 
-interface GraphqlNode {
-  readonly title: string;
-  readonly body: string;
-  readonly url: string;
-  readonly createdAt: string;
-  readonly author: {
-    readonly login: string;
-    readonly avatarUrl: string;
-    readonly createdAt?: string;
-  } | null;
+/** GraphQL 原始节点:与对外形态只差点赞数(reactions.totalCount 未拍平成 thumbsUp)。 */
+type GraphqlNode = Omit<MarketplaceReviewNode, 'thumbsUp'> & {
   readonly reactions: { readonly totalCount: number };
-}
+};
 
 interface GraphqlResp {
   readonly data?: {
