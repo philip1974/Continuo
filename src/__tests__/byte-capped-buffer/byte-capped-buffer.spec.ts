@@ -42,4 +42,19 @@ describe('createByteCappedBuffer (E131)', () => {
     cap.push(Buffer.from('bbbb', 'utf8')); // 忽略
     expect(cap.text()).toBe('aaaaa');
   });
+
+  // 「截断」= 确实丢了字节:输出恰好等于上限且之后没有更多数据不算(此前算,stderr 恰好 64KiB 时 git 报错误加
+  // 「(stderr truncated)」)。full 表示已写满(流式调用方据此摘 data 监听);写满后再来数据才记截断。
+  it('恰好写满 → full 但不 truncated;之后再来数据 → truncated', () => {
+    const cap = createByteCappedBuffer(4);
+    cap.push(Buffer.from('ab'));
+    cap.push(Buffer.from('cd'));
+    expect(cap.full).toBe(true);
+    expect(cap.truncated).toBe(false);
+    expect(cap.text()).toBe('abcd');
+    cap.push(Buffer.from('e'));
+    expect(cap.truncated).toBe(true);
+    expect(cap.text()).toBe('abcd');
+  });
 });
+

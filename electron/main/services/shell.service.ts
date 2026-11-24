@@ -10,6 +10,7 @@ import { codedError, errorMessage } from '../../shared/error-message';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
 import { TREE_KILL_DETACHED } from '../lib/kill-with-grace';
+import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import {
   clampShellTimeoutMs,
   createPluginShellChildren,
@@ -159,48 +160,30 @@ export function execShell(
     // code unit)当字节比较,且对每个 data chunk 单独 toString,多字节 UTF-8 序列
     // 被切到两个 chunk 时边界产生替换字符(乱码)。收集 Buffer 后 concat 再 decode
     // 消除跨 chunk 乱码;按 byteLength 封顶兑现 maxOutputBytes 的字节语义(审计 P2)。
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    let truncated = false;
-    let timedOut = false;
-
-    const append = (which: 'stdout' | 'stderr', chunk: Buffer): void => {
-      const chunks = which === 'stdout' ? stdoutChunks : stderrChunks;
-      const curBytes = which === 'stdout' ? stdoutBytes : stderrBytes;
-      if (curBytes >= maxBytes) {
-        truncated = true;
-        return;
-      }
-      const room = maxBytes - curBytes;
-      const take = chunk.length <= room ? chunk : chunk.subarray(0, room);
-      chunks.push(take);
-      if (which === 'stdout') stdoutBytes += take.length;
-      else stderrBytes += take.length;
-      if (chunk.length > room) truncated = true;
+    // 两路各一个 createByteCappedBuffer(与 dap-client / plugin-fs / plugins.service 同一实现,此前手写一份)。
+    const outputs = {
+      stdout: createByteCappedBuffer(maxBytes),
+      stderr: createByteCappedBuffer(maxBytes),
     };
-
-    const decode = (chunks: Buffer[]): string =>
-      Buffer.concat(chunks).toString('utf-8');
+    const isTruncated = (): boolean => outputs.stdout.truncated || outputs.stderr.truncated;
+    let timedOut = false;
 
     // 性能:某流写满 maxBytes 后摘掉其 JS data 处理,切为丢弃式 drain —— 否则 `yes` / 失控日志在截断后
     // 仍逐 chunk 进 JS 回调,main 热路径空转到超时。流保持 flowing(无 data listener 时 chunk 直接丢弃,
     // 不反压子进程,exit/close 照常)。恰好写满时尚不知是否还有后续输出:挂一次性 listener,再来数据才置
     // truncated(与旧实现「满后再收到 chunk 即 truncated」一致),之后无任何 listener。
-    const markTruncated = (): void => {
-      truncated = true;
-    };
     const capped = (
       stream: NodeJS.ReadableStream | null,
       which: 'stdout' | 'stderr',
     ): void => {
       if (!stream) return;
+      const buf = outputs[which];
       const onData = (c: Buffer): void => {
-        append(which, c);
-        if ((which === 'stdout' ? stdoutBytes : stderrBytes) < maxBytes) return;
+        buf.push(c);
+        if (!buf.full) return;
         stream.removeListener('data', onData);
-        if (!truncated) stream.once('data', markTruncated);
+        // 再来数据即丢字节 → 记为截断(push 写满后只置 truncated)。
+        if (!buf.truncated) stream.once('data', (more: Buffer) => buf.push(more));
         stream.resume();
       };
       stream.on('data', onData);
@@ -252,24 +235,24 @@ export function execShell(
     child.on('error', (err) => {
       clearTimers();
       resolve({
-        stdout: decode(stdoutChunks),
-        stderr: decode(stderrChunks) + `\nspawn error: ${err.message}`,
+        stdout: outputs.stdout.text(),
+        stderr: outputs.stderr.text() + `\nspawn error: ${err.message}`,
         exitCode: null,
         signal: null,
         timedOut,
-        truncated,
+        truncated: isTruncated(),
       });
     });
 
     function settle(code: number | null, signal: NodeJS.Signals | null): void {
       clearTimers();
       resolve({
-        stdout: decode(stdoutChunks),
-        stderr: decode(stderrChunks),
+        stdout: outputs.stdout.text(),
+        stderr: outputs.stderr.text(),
         exitCode: code,
         signal: typeof signal === 'string' ? signal : null,
         timedOut,
-        truncated,
+        truncated: isTruncated(),
       });
     }
     child.on('close', settle);

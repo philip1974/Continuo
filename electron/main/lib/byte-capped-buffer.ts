@@ -7,10 +7,12 @@
 // 本 helper 累积原始 Buffer、按字节计数/截断,`text()` 时 `Buffer.concat(...).toString('utf8')` 一次性
 // 解码(跨 chunk 多字节字符正确还原;字节截断处末尾的半个字符由 toString 容错为 U+FFFD)。
 export interface ByteCappedBuffer {
-  /** 追加一段输出(Buffer);已截断后忽略。 */
+  /** 追加一段输出(Buffer);写满后再来的字节丢弃并记为截断。 */
   push(chunk: Buffer): void;
-  /** 是否已达字节上限被截断。 */
+  /** 是否**确实丢了字节**(输出恰好等于上限、之后没有更多数据 → false)。 */
   readonly truncated: boolean;
+  /** 已累积到字节上限(之后的数据都会被丢弃;流式调用方据此摘掉 data 监听)。 */
+  readonly full: boolean;
   /** 整体解码为 UTF-8 字符串(累积字节 ≤ maxBytes)。 */
   text(): string;
 }
@@ -21,10 +23,14 @@ export function createByteCappedBuffer(maxBytes: number): ByteCappedBuffer {
   let truncated = false;
   return {
     push(chunk: Buffer): void {
-      if (truncated) return;
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      if (buf.length === 0) return;
       const remaining = maxBytes - bytes;
-      if (buf.length >= remaining) {
+      if (remaining <= 0) {
+        truncated = true;
+        return;
+      }
+      if (buf.length > remaining) {
         chunks.push(buf.subarray(0, remaining)); // 字节边界截断(末尾可能切在多字节中)
         bytes = maxBytes;
         truncated = true;
@@ -35,6 +41,9 @@ export function createByteCappedBuffer(maxBytes: number): ByteCappedBuffer {
     },
     get truncated(): boolean {
       return truncated;
+    },
+    get full(): boolean {
+      return bytes >= maxBytes;
     },
     text(): string {
       return Buffer.concat(chunks).toString('utf8');
