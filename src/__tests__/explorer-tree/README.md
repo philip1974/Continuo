@@ -71,6 +71,10 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   同首字母项间循环),选中跟随
 - 重命名输入框内的按键、重命名进行中:以上都不触发
 
+## 修饰键单击(`folder-tree-click-modifiers.spec.tsx`)
+
+- 普通单击文件 → 打开;⌘ / Ctrl / Shift + 单击文件只改选中(selectionFeature 的多选语义),不打开(VSCode 同款)
+
 ## 不在本主题验证
 
 - 真实浏览器虚拟滚动行为(留 E2E)

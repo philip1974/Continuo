@@ -108,6 +108,11 @@ const FILE_ROW_DROP_CLASS_NAME =
 const FILE_ROW_SELECTED_CLASS_NAME = 'bg-hover text-fg';
 const FILE_ROW_IDLE_CLASS_NAME = 'text-fg-muted hover:bg-panel-soft';
 
+/** 多选修饰键(⌘ / Ctrl / Shift):与 headless-tree selectionFeature 判定多选的键一致。 */
+function hasSelectionModifier(e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }): boolean {
+  return e.metaKey || e.ctrlKey || e.shiftKey;
+}
+
 export interface FileRowClassNameState {
   readonly isFocused: boolean;
   readonly isSelected: boolean;
@@ -210,8 +215,8 @@ export const FileRow = memo(function FileRow({
       onPointerDown={(e) => {
         // 保留上游可能注入的 pointerdown(当前 headless-tree 未注入,防御升级)
         (item.getProps() as { onPointerDown?: (e: React.PointerEvent) => void }).onPointerDown?.(e);
-        // 仅主键且无 Ctrl:右键 / macOS Ctrl+点击打开上下文菜单而非文件,不预热(Windows Ctrl+点击仍会
-        // 打开,届时由 openFileByPath 预热,只少一点提前量)。
+        // 仅主键且无 Ctrl:右键 / macOS Ctrl+点击打开上下文菜单而非文件,不预热(⌘ / Shift 多选单击
+        // 不打开文件,仅多一次无害的预热)。
         if (e.button === 0 && !e.ctrlKey && !isDir && !isRenaming) onFileIntent?.(data.path);
       }}
       onClick={(e) => {
@@ -220,8 +225,9 @@ export const FileRow = memo(function FileRow({
           .onClick;
         upstream?.(e);
         // 单击文件 → 通知 FolderTree 触发 Editor 打开;
-        // 单击目录由 headless-tree 默认行为处理(展开/折叠)
-        if (!isDir && !isRenaming) {
+        // 单击目录由 headless-tree 默认行为处理(展开/折叠)。
+        // 带 ⌘ / Ctrl / Shift 的单击是多选(selectionFeature 已改选中),只改选中不打开(VSCode 同款)。
+        if (!isDir && !isRenaming && !hasSelectionModifier(e)) {
           onFileOpen?.(data.path);
         }
       }}
