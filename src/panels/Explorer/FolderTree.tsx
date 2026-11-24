@@ -16,7 +16,7 @@ import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { buildTreeChildrenWithData, createTreeConfig, sameTreeChildren } from './tree-config';
-import { handleTreeKeyDown, type TypeAheadState } from './tree-keyboard';
+import { focusAndSelect, handleTreeKeyDown, selectOnly, type TypeAheadState } from './tree-keyboard';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
@@ -55,7 +55,19 @@ import { openFileOrNotify } from '@/notifications/notify-open-failed';
 interface CreatingState {
   type: 'file' | 'dir';
   parentDir: string;
+  /** 上次提交失败的原因(已本地化);输入框保留,显示在其下方。 */
+  error?: string;
 }
+
+/** 新建成功后待在树里定位的新项(等父目录刷新 / 展开后出现在渲染列表里)。 */
+interface PendingReveal {
+  path: string;
+  /** 文件夹:DOM 焦点移到新行;文件:只改树的焦点 / 选中并滚动,不抢刚打开的编辑器的焦点。 */
+  focusRow: boolean;
+}
+
+// 新项若始终不出现(如新建的是隐藏文件且未显示隐藏文件),到期放弃定位。
+const PENDING_REVEAL_TTL_MS = 3000;
 
 const EMPTY_SELECTED_PATHS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_ITEMS: readonly string[] = [];
@@ -227,6 +239,7 @@ export function FolderTree({ root }: { root: string }) {
     if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
   }, []);
   const [creating, setCreating] = useState<CreatingState | null>(null);
+  const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
   const [hoverTarget, setHoverTarget] = useState<DropTargetEntry | null>(null);
@@ -632,6 +645,27 @@ export function FolderTree({ root }: { root: string }) {
   });
   virtualizerRef.current = virtualizer;
 
+  // 新建成功后,新项一出现在渲染列表里就把树焦点 / 选中移过去(见 submitCreate)。
+  useEffect(() => {
+    if (pendingReveal === null) return;
+    const index = items.findIndex((it) => it.getId() === pendingReveal.path);
+    if (index < 0) return;
+    const item = items[index]!;
+    setPendingReveal(null);
+    if (pendingReveal.focusRow) {
+      focusAndSelect(tree, item);
+    } else {
+      item.setFocused();
+      selectOnly(tree, item.getId());
+      virtualizer.scrollToIndex(index, { align: 'auto' });
+    }
+  }, [items, pendingReveal, tree, virtualizer]);
+  useEffect(() => {
+    if (pendingReveal === null) return;
+    const timer = setTimeout(() => setPendingReveal(null), PENDING_REVEAL_TTL_MS);
+    return () => clearTimeout(timer);
+  }, [pendingReveal]);
+
   const treeApi = useMemo(() => ({ invalidateChildrenIds: refreshParent }), [refreshParent]);
   const mutateDeps = useMemo(() => ({ fs: coApi.fs }), []);
 
@@ -723,13 +757,29 @@ export function FolderTree({ root }: { root: string }) {
     [mutateDeps, onPathsRemoved, root, runBatchTransfer, treeApi, tt],
   );
 
-  const submitCreate = async (name: string) => {
-    if (!creating) return;
+  // 新建(VSCode 同款):成功 → 关输入框、展开父目录、新项选中并获得树焦点,文件随即在编辑器打开;
+  // 失败(含同名冲突)→ 输入框与已输入的名字保留,下方内联显示本地化原因,可改名重试或 Esc 放弃。
+  const submitCreate = async (name: string): Promise<boolean> => {
+    if (!creating) return true;
     const { type, parentDir } = creating;
-    setCreating(null);
     const action = type === 'dir' ? createNewDir : createNewFile;
     const r = await action(parentDir, name, mutateDeps, treeApi);
-    if (!r.ok) notifyFailure(r);
+    if (!r.ok) {
+      const error = localizeErrorByCode(r.code, r.message);
+      // 只回写仍是这次新建的输入框(等待期间已 Esc / 换了新建目标则不动)
+      setCreating((c) =>
+        c !== null && c.type === type && c.parentDir === parentDir ? { ...c, error } : c,
+      );
+      return false;
+    }
+    setCreating(null);
+    if (parentDir !== root) {
+      const parent = treeRef.current?.getItemInstance(parentDir);
+      if (parent && !parent.isExpanded()) parent.expand();
+    }
+    setPendingReveal({ path: r.newPath, focusRow: type === 'dir' });
+    if (type === 'file') void handleFileOpen(r.newPath);
+    return true;
   };
 
   // ── Drop 上传(Step 5d) ───────────────────────────────────────
@@ -866,6 +916,8 @@ export function FolderTree({ root }: { root: string }) {
           parentDir={creating.parentDir}
           onSubmit={submitCreate}
           onCancel={() => setCreating(null)}
+          error={creating.error}
+          onEdit={() => setCreating((c) => (c?.error ? { ...c, error: undefined } : c))}
         />
       )}
       <ContextMenu

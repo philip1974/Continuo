@@ -105,13 +105,15 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
 }
 
-function selectOnly(tree: TreeInstance<FileEntry>, id: string): void {
+/** 只选中 id 这一项,并把 Shift 扩选的锚点设到它。 */
+export function selectOnly(tree: TreeInstance<FileEntry>, id: string): void {
   tree.setSelectedItems([id]);
   // Shift+单击 / Shift+方向键的范围起点也跟到这里(同库单击的锚点语义)
   tree.getDataRef<SelectionDataRef>().current.selectUpToAnchorId = id;
 }
 
-function focusAndSelect(tree: TreeInstance<FileEntry>, item: ItemInstance<FileEntry>): void {
+/** 焦点 + 选中都移到 item,并把 DOM 焦点移到该行(滚动到可见)。 */
+export function focusAndSelect(tree: TreeInstance<FileEntry>, item: ItemInstance<FileEntry>): void {
   item.setFocused();
   selectOnly(tree, item.getId());
   tree.updateDomFocus();

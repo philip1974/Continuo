@@ -26,6 +26,14 @@
 - 其它键 → 正常输入
 - IME 组合中(`isComposing` / `keyCode 229`)的 Enter / Esc → 不提交也不取消(属于输入法确认候选 / 取消组合)
 
+### 提交失败(重试 / 内联错误)
+
+- `onSubmit` 可返回 `Promise<boolean>`:结果为 `false`(创建失败)→ once 守卫复位,保留已输入的名字,
+  再按 Enter 重新提交;其它结果(成功,等父层卸载)→ 守卫保持,快速重复 Enter 只提交一次
+- `error` 非空 → 输入框下方 `role="alert"` 显示原因(VSCode 内联校验提示),输入框 `aria-invalid` +
+  `aria-describedby` 指向提示
+- 修改输入 → 调 `onEdit`(父层据此清除错误)
+
 ### 关闭按钮
 
 - 点叉号 → onCancel

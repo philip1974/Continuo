@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { fireEvent, render, cleanup } from '@testing-library/react';
+import { act, fireEvent, render, cleanup } from '@testing-library/react';
 import { CreateInput } from '../../panels/Explorer/CreateInput';
 
 afterEach(() => cleanup());
@@ -139,5 +139,48 @@ describe('CreateInput — 卸载', () => {
     unmount();
     fireKey(input, 'Enter');
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('CreateInput — 提交失败可重试 + 内联错误', () => {
+  it('onSubmit 结果为 false(创建失败)→ once 守卫复位,再按 Enter 重新提交', async () => {
+    const onSubmit = vi.fn(async () => false);
+    const { input } = setup({ onSubmit });
+    fireEvent.change(input, { target: { value: 'a.ts' } });
+    fireKey(input, 'Enter');
+    await act(async () => {});
+    fireKey(input, 'Enter');
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+  });
+
+  it('onSubmit 结果为 true(成功,等父层卸载)→ 仍只提交一次', async () => {
+    const onSubmit = vi.fn(async () => true);
+    const { input } = setup({ onSubmit });
+    fireEvent.change(input, { target: { value: 'a.ts' } });
+    fireKey(input, 'Enter');
+    await act(async () => {});
+    fireKey(input, 'Enter');
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('error → 输入框下方 role=alert 显示原因,输入框 aria-invalid 并关联描述', () => {
+    const { input, getByRole } = setup({ error: '已存在' });
+    const alert = getByRole('alert');
+    expect(alert.textContent).toBe('已存在');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.getAttribute('aria-describedby')).toBe(alert.id);
+  });
+
+  it('无 error → 不渲染提示,aria-invalid 缺省', () => {
+    const { input, queryByRole } = setup();
+    expect(queryByRole('alert')).toBeNull();
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+  });
+
+  it('修改输入 → 回调 onEdit(父层据此清除错误)', () => {
+    const onEdit = vi.fn();
+    const { input } = setup({ error: '已存在', onEdit });
+    fireEvent.change(input, { target: { value: 'b.ts' } });
+    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 });

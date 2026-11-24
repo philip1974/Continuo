@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
@@ -9,8 +9,16 @@ import { FS_NAME_MAX } from '../../../electron/shared/leaf-name';
 interface CreateInputProps {
   type: 'file' | 'dir';
   parentDir: string;
-  onSubmit: (name: string) => void;
+  /**
+   * 提交名字。可返回 Promise<boolean>:结果为 false 表示创建失败 → 输入框保留已输入的名字,可改名重试;
+   * 其它结果视为成功(父层随后卸载本输入)。
+   */
+  onSubmit: (name: string) => void | Promise<boolean>;
   onCancel: () => void;
+  /** 上次提交失败的原因(已本地化),显示在输入框下方;修改输入时父层经 onEdit 清除。 */
+  error?: string | null;
+  /** 输入内容变化(父层据此清除 error)。 */
+  onEdit?: () => void;
 }
 
 const ICON_SIZE = 14;
@@ -26,10 +34,13 @@ export function CreateInput({
   parentDir,
   onSubmit,
   onCancel,
+  error,
+  onEdit,
 }: CreateInputProps) {
   const ref = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
   const tx = useT();
+  const errorId = useId();
 
   const onSubmitRef = useRef(onSubmit);
   const onCancelRef = useRef(onCancel);
@@ -38,7 +49,8 @@ export function CreateInput({
   // race(R82):同步 once 守卫。父层 submitCreate 的 setCreating(null)(卸载本输入)要等 React
   // commit,期间快速双 Enter 会在同一挂载实例里两次调 onSubmit → 并发两次 createFile/createDir
   // IPC:第一笔成功、第二笔通常 EEXIST 失败弹错 → 用户见「创建成功却报错」。首次提交即置位,
-  // 后续 Enter 忽略(ref 同步生效,不依赖 React state commit)。
+  // 后续 Enter 忽略(ref 同步生效,不依赖 React state commit)。创建失败(onSubmit 结果为 false)时复位,
+  // 用户改名后可重试。
   const submittedRef = useRef(false);
 
   useEffect(() => {
@@ -63,7 +75,12 @@ export function CreateInput({
         const t = normalizeLeafNameInput(el.value);
         if (t !== null) {
           submittedRef.current = true;
-          onSubmitRef.current(t);
+          const result = onSubmitRef.current(t);
+          if (result) {
+            void result.then((ok) => {
+              if (ok === false) submittedRef.current = false;
+            });
+          }
         } else {
           onCancelRef.current();
         }
@@ -77,54 +94,67 @@ export function CreateInput({
   }, []);
 
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-panel-soft px-2 py-1 text-xs">
-      <span className="inline-flex shrink-0" aria-hidden="true">
-        {type === 'dir' ? (
-          <Folder width={ICON_SIZE} height={ICON_SIZE} />
-        ) : (
-          <Document width={ICON_SIZE} height={ICON_SIZE} />
-        )}
-      </span>
-      <Input
-        ref={ref}
-        size="sm"
-        type="text"
-        value={value}
-        // 边界(E290,E279-E282 before-IPC 输入截断族):leaf 名 onChange 截断到 FS_NAME_MAX。
-        // 超长 paste 否则整段进受控 React state(巨值 controlled input 反复 re-render)+ Enter 后跨 IPC
-        // 到 main 才失败。>FS_NAME_MAX 的名在任何文件系统都 ENAMETOOLONG 建不出,
-        // 截断不丢任何可创建的名。maxLength 作原生兜底(键入/paste 双拦)。
-        onChange={(e) => setValue(e.target.value.slice(0, FS_NAME_MAX))}
-        maxLength={FS_NAME_MAX}
-        // a11y(A5 同族):placeholder 本身是标签(新建文件夹/文件名)→ 同值复用作 aria-label。
-        aria-label={
-          type === 'dir'
-            ? tx('panels.explorer.placeholder.new_folder')
-            : tx('panels.explorer.placeholder.new_file')
-        }
-        placeholder={
-          type === 'dir'
-            ? tx('panels.explorer.placeholder.new_folder')
-            : tx('panels.explorer.placeholder.new_file')
-        }
-        className="flex-1"
-        spellCheck={false}
-        autoComplete="off"
-      />
-      <span
-        className="max-w-[40%] truncate text-2xs text-fg-dim"
-        title={parentDir}
-      >
-        {tx('panels.explorer.create.in_label', { dir: parentDir })}
-      </span>
-      <IconButton
-        size="xs"
-        onClick={onCancel}
-        title={tx('panels.explorer.confirm.cancel_esc')}
-        aria-label={tx('panels.explorer.confirm.cancel')}
-      >
-        ✕
-      </IconButton>
+    <div className="shrink-0 border-b border-line bg-panel-soft px-2 py-1 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex shrink-0" aria-hidden="true">
+          {type === 'dir' ? (
+            <Folder width={ICON_SIZE} height={ICON_SIZE} />
+          ) : (
+            <Document width={ICON_SIZE} height={ICON_SIZE} />
+          )}
+        </span>
+        <Input
+          ref={ref}
+          size="sm"
+          type="text"
+          value={value}
+          // 边界(E290,E279-E282 before-IPC 输入截断族):leaf 名 onChange 截断到 FS_NAME_MAX。
+          // 超长 paste 否则整段进受控 React state(巨值 controlled input 反复 re-render)+ Enter 后跨 IPC
+          // 到 main 才失败。>FS_NAME_MAX 的名在任何文件系统都 ENAMETOOLONG 建不出,
+          // 截断不丢任何可创建的名。maxLength 作原生兜底(键入/paste 双拦)。
+          onChange={(e) => {
+            setValue(e.target.value.slice(0, FS_NAME_MAX));
+            onEdit?.();
+          }}
+          maxLength={FS_NAME_MAX}
+          // a11y(A5 同族):placeholder 本身是标签(新建文件夹/文件名)→ 同值复用作 aria-label。
+          aria-label={
+            type === 'dir'
+              ? tx('panels.explorer.placeholder.new_folder')
+              : tx('panels.explorer.placeholder.new_file')
+          }
+          placeholder={
+            type === 'dir'
+              ? tx('panels.explorer.placeholder.new_folder')
+              : tx('panels.explorer.placeholder.new_file')
+          }
+          className="flex-1"
+          spellCheck={false}
+          autoComplete="off"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        />
+        <span
+          className="max-w-[40%] truncate text-2xs text-fg-dim"
+          title={parentDir}
+        >
+          {tx('panels.explorer.create.in_label', { dir: parentDir })}
+        </span>
+        <IconButton
+          size="xs"
+          onClick={onCancel}
+          title={tx('panels.explorer.confirm.cancel_esc')}
+          aria-label={tx('panels.explorer.confirm.cancel')}
+        >
+          ✕
+        </IconButton>
+      </div>
+      {/* 创建失败原因(VSCode 同款:输入框下方内联提示,不关输入框)。role=alert 让读屏即时播报。 */}
+      {error && (
+        <div id={errorId} role="alert" className="mt-1 break-words text-2xs text-error">
+          {error}
+        </div>
+      )}
     </div>
   );
 }
