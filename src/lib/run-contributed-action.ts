@@ -32,3 +32,20 @@ export function runContributedAction(label: string, fn: () => unknown): void {
     fail(err);
   }
 }
+
+/**
+ * 按 id 从 live registry 重查再执行已注册命令(race R51:列表 / 热键绑定缓存的 spec 可能已被插件 disable /
+ * reload 注销,重查使死命令静默忽略、不执行已卸载插件代码);失败经 runContributedAction 弹 toast。
+ * 命令面板 execute 与全局热键分发共用。
+ */
+export function runRegisteredCommand(
+  registry: { get(id: string): { fn: () => unknown } | undefined },
+  id: string,
+  label: string,
+): void {
+  runContributedAction(label, () => {
+    const live = registry.get(id);
+    if (!live) return;
+    return live.fn();
+  });
+}

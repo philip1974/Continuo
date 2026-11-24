@@ -22,7 +22,7 @@ import {
   useKeybindingsStore,
 } from '../keybindings/keybindings-store';
 import { useTWithFallback, useT, useLocale } from '@/i18n';
-import { runContributedAction } from '@/lib/run-contributed-action';
+import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { isSortedBy } from '@/lib/is-sorted-by';
 
@@ -291,11 +291,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
       // 不再只 console.warn —— 面板已关,旧实现下用户看不到任何失败反馈。见第二十一轮 P1-AX。
       // race(R51):按 id 从 live registry 重查再执行,而非调列表项缓存的 d.cmd.fn()。命令被插件
       // disable/reload unregister 后,filtered 快照仍持旧 CommandSpec;重查使死命令静默忽略。
-      runContributedAction(d.displayTitle, () => {
-        const live = commands.get(d.cmd.id);
-        if (!live) return;
-        return live.fn();
-      });
+      runRegisteredCommand(commands, d.cmd.id, d.displayTitle);
     },
     [close, recordRecent, commands],
   );

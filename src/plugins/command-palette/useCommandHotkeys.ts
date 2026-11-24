@@ -11,7 +11,7 @@ import {
   useKeybindingsStore,
 } from '../keybindings/keybindings-store';
 import { tWithFallback } from '@/i18n';
-import { runContributedAction } from '@/lib/run-contributed-action';
+import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
@@ -203,11 +203,7 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
           // race(R51):触发时按 id 从 live registry 重查再执行,而非调缓存的 b.cmd.fn()。命令被
           // 插件 disable/reload 同步 unregister 后、到 React 重渲替换本 handler 前的窗口内,旧
           // bindings 闭包仍持已卸载命令的 fn;重查使死命令静默忽略,不再执行已卸载插件代码。
-          runContributedAction(tWithFallback(b.cmd.titleKey, b.cmd.title), () => {
-            const live = commands.get(b.cmd.id);
-            if (!live) return;
-            return live.fn();
-          });
+          runRegisteredCommand(commands, b.cmd.id, tWithFallback(b.cmd.titleKey, b.cmd.title));
           return;
         }
       }

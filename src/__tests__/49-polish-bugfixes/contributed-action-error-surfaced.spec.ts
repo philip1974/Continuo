@@ -9,7 +9,7 @@ vi.mock('@/notifications/notify', () => ({
   notify: { error: (...a: unknown[]) => errorSpy(...a) },
 }));
 
-import { runContributedAction } from '@/lib/run-contributed-action';
+import { runContributedAction, runRegisteredCommand } from '@/lib/run-contributed-action';
 import { setLocale } from '@/i18n';
 import { PermissionError } from '@/plugins/permissions';
 
@@ -93,5 +93,23 @@ describe('runContributedAction', () => {
     const msg = String(errorSpy.mock.calls[0]?.[0]);
     expect(msg).toContain('Permission denied: fs');
     expect(msg).not.toContain('未授权'); // 不泄漏中文
+  });
+});
+
+describe('runRegisteredCommand(按 id 从 live registry 重查再执行,race R51)', () => {
+  it('已注销的 id → 静默忽略,不调用、不弹 toast', () => {
+    const registry = { get: vi.fn(() => undefined) };
+    runRegisteredCommand(registry, 'gone.cmd', 'Gone');
+    expect(registry.get).toHaveBeenCalledWith('gone.cmd');
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('执行的是 live 查到的 fn;抛错 → toast 带 label', () => {
+    const fn = vi.fn(() => {
+      throw new Error('boom');
+    });
+    runRegisteredCommand({ get: () => ({ fn }) }, 'x.cmd', 'Do X');
+    expect(fn).toHaveBeenCalledOnce();
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('Do X: boom');
   });
 });
