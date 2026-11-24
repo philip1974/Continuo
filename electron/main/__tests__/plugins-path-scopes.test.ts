@@ -49,6 +49,23 @@ describe('plugins.service path-scope persistence', () => {
     expect(existsSync(`${file}.corrupt`)).toBe(true);
   });
 
+  // 能解析但形态不合法(null / 数组 / 字符串)与 JSON 损坏同一处理(用户确认:都拒绝写入):此前降级 {} 后
+  // 写入照常整表覆盖,与 JSON 损坏的「写入中止」相反。
+  it.each([['null', 'null'], ['数组', '[1,2]'], ['字符串', '"x"']])(
+    'P-corrupt 形态不合法(%s)同样写入中止、保留原文件并留快照;水合读降级 []',
+    async (_label, raw) => {
+      const base = await makeBaseDir();
+      const file = join(base, SCOPES_FILE);
+      await writeFile(file, raw, 'utf-8');
+      await expect(
+        writePluginPathScopes(base, 'com.b', [{ path: '/ws/b', mode: 'rw' }]),
+      ).rejects.toThrow();
+      expect(await readFile(file, 'utf-8')).toBe(raw);
+      expect(existsSync(`${file}.corrupt`)).toBe(true);
+      await expect(readPluginPathScopes(base, 'com.a')).resolves.toEqual([]);
+    },
+  );
+
   it('P-corrupt 水合读损坏时降级返回 [](不抛,fail-safe)', async () => {
     const base = await makeBaseDir();
     await writeFile(join(base, SCOPES_FILE), 'corrupt}}}', 'utf-8');

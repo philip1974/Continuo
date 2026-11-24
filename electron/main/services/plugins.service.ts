@@ -892,7 +892,7 @@ const MAX_PERSISTED_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER
 const MAX_PERSISTED_PLUGIN_KEYS = 4096; // 持久化表的 plugin key 数上限
 
 /**
- * scopes 文件 JSON 解析失败(已存 .corrupt 快照)。与 IO 错误区分:损坏文件的读端恒降级 [],
+ * scopes 文件 JSON 解析失败或形态不合法(已存 .corrupt 快照)。与 IO 错误区分:损坏文件的读端恒降级 [],
  * 不会被同 id 重装继承,卸载清理遇到它可放行;IO 错误(EACCES/EMFILE 等)可能是暂时的,
  * 之后读回旧 scope → 卸载必须中止。
  */
@@ -921,8 +921,9 @@ async function readAllPathScopes(
     throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
   }
   if (!json || typeof json !== 'object' || Array.isArray(json)) {
-    await preserveCorruptSnapshot(file, text); // 形态不合法:降级 {} 前留证(写入方随后整表 RMW)
-    return {};
+    // 形态不合法与 JSON 损坏同一处理:留证后抛错,写入中止(不以空表整表覆盖)、水合读降级 []。
+    await preserveCorruptSnapshot(file, text);
+    throw new PathScopesCorruptError(`path-scopes file malformed: ${file}`);
   }
   const out: Record<string, IpcPathScope[]> = {};
   let keyCount = 0;
