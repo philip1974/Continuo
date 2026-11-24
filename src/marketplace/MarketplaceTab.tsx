@@ -148,6 +148,12 @@ export function MarketplaceTab() {
     }
   }, [refreshReviews]);
 
+  // 打开市场页时顺带刷新「可用更新」(remoteVersions):此前只在启动时拉一次,启动时离线则整个会话卡片无更新按钮、
+  // 侧栏无角标,直到重启。refresh 自带最新代际守卫(并发 / 过期结果不落库),失败只记日志。
+  useEffect(() => {
+    void useUpdateStore.getState().refresh();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {

@@ -7,7 +7,8 @@ import { diffSets, makeDebouncePerPath } from '../fs-watch-helpers';
 const DEBOUNCE_MS = 100;
 // 持续事件(如目录内持续创建/删除临时文件)下纯 trailing debounce 永不触发;至多每 1s 刷新一次。
 const DEBOUNCE_MAX_WAIT_MS = 1000;
-// fs:watch-lost 重装退避:首次 2s,同一 path 连续失效逐次翻倍,上限 60s(卷持续断开时不紧密重试)。
+// fs:watch-lost 重装退避:首次 2s,同一 path 每次失效逐次翻倍,上限 60s(卷持续断开时不紧密重试)。重装成功**不**复位:
+// 卷反复抖动(装上即失效)时复位会退化成每 2s 一次的紧密重装;只在目录折叠(不再需要 watch)时复位。
 const LOST_RETRY_BASE_MS = 2000;
 const LOST_RETRY_MAX_MS = 60_000;
 

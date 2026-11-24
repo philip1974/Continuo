@@ -56,3 +56,14 @@ describe('打磨 R53 — reviews 延迟到 MarketplaceTab 挂载', () => {
     expect(fetchAllReviewsMock).not.toHaveBeenCalled();
   });
 });
+
+// 打开市场页即刷新可用更新:此前 update-store.refresh 只在启动时调一次,启动时离线则整个会话看不到更新按钮 / 角标。
+describe('MarketplaceTab 挂载 → 刷新可用更新', () => {
+  it('挂载时调用 update-store refresh', () => {
+    const refresh = vi.spyOn(useUpdateStore.getState(), 'refresh').mockResolvedValue(undefined);
+    render(<MarketplaceTab />);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    refresh.mockRestore();
+  });
+});
+

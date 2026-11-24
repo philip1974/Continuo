@@ -76,7 +76,13 @@ beforeEach(() => {
   fetchManifestMock.mockReset();
   fetchManifestMock.mockResolvedValue({ id: '_', name: '_', version: '0.0.0' });
   getMgr.mockReset();
-  useUpdateStore.setState({ remoteVersions: new Map(), dismissed: new Map() });
+  // 挂载时 MarketplaceTab 会 refresh 可用更新(见 marketplace-reviews-lazy-fetch);这里各用例直接设定 remoteVersions,
+  // refresh 置为 no-op 以免按 mock 的远端清单覆盖用例设定。
+  useUpdateStore.setState({
+    remoteVersions: new Map(),
+    dismissed: new Map(),
+    refresh: async () => {},
+  });
   useReviewsStore.setState({
     byPid: new Map(),
     loading: false,
