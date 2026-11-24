@@ -9,6 +9,15 @@ function isAsciiCharCaseInsensitive(
   return code === lowerCode || code === lowerCode - 32;
 }
 
+/**
+ * 编辑 tab 是否按 Markdown 处理(决定 Milkdown / 模式切换 / unsafe 守卫):草稿(无路径)按 Markdown;有路径看扩展名。
+ * 编辑面板与 editor.store 的 unsafe 判定共用 —— 此前面板判草稿是 Markdown、store 判不是,草稿的 unsafe 守卫失效。
+ * 注意与「能否自动保存」无关(草稿无路径,自动保存另行判定)。
+ */
+export function isMarkdownTab(filePath: string | null): boolean {
+  return filePath === null || filePath === '' ? true : isMarkdownPath(filePath);
+}
+
 export function isMarkdownPath(path: string): boolean {
   const len = path.length;
   if (len >= 3 && path.charCodeAt(len - 3) === 46) {

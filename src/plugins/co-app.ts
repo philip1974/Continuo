@@ -31,11 +31,8 @@ import {
 } from '@/panels/Editor/editor-tab-lookup';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import type { EditorView } from '@codemirror/view';
-import {
-  isAbsolutePath,
-  isMarkdownPath,
-} from '@/panels/Editor/editor-path-utils';
-import { getEffectiveMode, useEditorStore } from '@/stores/editor.store';
+import { isAbsolutePath } from '@/panels/Editor/editor-path-utils';
+import { useEditorStore, usesMilkdownEngine } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { notify } from '@/notifications/notify';
@@ -157,8 +154,7 @@ async function openInEditor(
   const state = useEditorStore.getState();
   const activeTab = findEditorFileTabByPath(state.tabs, path);
   const viewKey = activeTab?.id ?? path;
-  const inMilkdown =
-    isMarkdownPath(path) && getEffectiveMode(activeTab ?? null) !== 'source';
+  const inMilkdown = usesMilkdownEngine(path, activeTab ?? null);
   if (activeTab && inMilkdown) {
     return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
   }
@@ -189,7 +185,7 @@ async function openInEditor(
     // 当前态复核:目标仍为活动 tab、仍处 CodeMirror 模式(与上方 inMilkdown 同口径)。
     const now = useEditorStore.getState();
     const nowTab = findEditorFileTabById(now.tabs, viewKey);
-    if (isMarkdownPath(path) && getEffectiveMode(nowTab) !== 'source') {
+    if (usesMilkdownEngine(path, nowTab)) {
       return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
     }
     if (now.activeTabId !== viewKey || now.viewRefs.get(viewKey) !== view) {

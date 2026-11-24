@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';
 import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
-import { isMarkdownPath } from '@/panels/Editor/editor-path-utils';
+import { isMarkdownTab } from '@/panels/Editor/editor-path-utils';
 import {
   containmentFold,
   containmentKey,
@@ -43,7 +43,7 @@ export interface EditorTab {
    */
   readonly reloadEpoch?: number;
   /**
-   * 性能 P4:派生缓存 = `isMarkdownFilePath(filePath) && isMilkdownUnsafe(content)`。
+   * 性能 P4:派生缓存 = `isMarkdownTab(filePath) && isMilkdownUnsafe(content)`。
    * 仅在 content / filePath 变更时(createTab / updateContent / reloadFromDisk /
    * 改名)算一次,避免 getEffectiveMode 在每次渲染 / Header selector 里对
    * 全文重复跑未锚定的 wiki-link 正则(长 Markdown 输入时 ~3 次 O(file)/按键)。
@@ -797,12 +797,6 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   },
 }));
 
-function isMarkdownFilePath(filePath: string | null): boolean {
-  // 可维护性 M13:markdown 扩展名判定共用 editor-path-utils.isMarkdownPath。
-  if (!filePath) return false;
-  return isMarkdownPath(filePath);
-}
-
 // 性能 P4:milkdownUnsafe 派生值的单一计算口径。content / filePath 任一变更时调一次,
 // 结果缓存进 tab.milkdownUnsafe。isMilkdownUnsafe 跑未锚定 wiki-link 正则(O(file)),
 // 故只在 markdown 文件上算(非 markdown 短路为 false,不扫描)。
@@ -810,7 +804,7 @@ function computeMilkdownUnsafe(
   filePath: string | null,
   content: string,
 ): boolean {
-  return isMarkdownFilePath(filePath) && isMilkdownUnsafe(content);
+  return isMarkdownTab(filePath) && isMilkdownUnsafe(content);
 }
 
 // 性能 P4/P5:tab 是否 milkdown-unsafe 的**单一读取口径**。优先读派生缓存,缺省
@@ -827,4 +821,12 @@ export function getEffectiveMode(tab: EditorTab | null): EditorMode {
   const requestedMode = useEditorStore.getState().mode;
   if (requestedMode !== 'edit' || !isTabMilkdownUnsafe(tab)) return requestedMode;
   return tab?.unsafeEditAccepted ? 'edit' : 'source';
+}
+
+/**
+ * 该路径 / tab 当前用 Milkdown 引擎渲染(Markdown 且实际模式不是 source)。编辑面板、引擎预热与插件 SDK 跳行
+ * 判定共用 —— 此前各写一份「isMarkdownPath && getEffectiveMode !== 'source'」并靠「同口径」注释维持一致。
+ */
+export function usesMilkdownEngine(filePath: string | null, tab: EditorTab | null): boolean {
+  return isMarkdownTab(filePath) && getEffectiveMode(tab) !== 'source';
 }

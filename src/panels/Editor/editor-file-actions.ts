@@ -14,7 +14,7 @@ import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import {
   beginUserActivation,
   createTab,
-  getEffectiveMode,
+  usesMilkdownEngine,
   getUserActivationGen,
   useEditorStore,
 } from '@/stores/editor.store';
@@ -24,7 +24,6 @@ import {
   findEditorFileTabById,
   findEditorFileTabByPath,
 } from './editor-tab-lookup';
-import { isMarkdownPath } from './editor-path-utils';
 import { getSavedDiskStat, ownSaveStatCheck, recordSavedDiskStat } from './saved-disk-stat';
 import {
   loadCodeEditorModule,
@@ -39,7 +38,7 @@ const ignoreWarmupError = (): void => {};
 
 /**
  * perf:首次打开文件时与 readFile 并行预热即将渲染的编辑引擎 chunk(此前要等 readFile + openTab 提交后
- * EditorPanel 渲染 lazy 引擎才开始拉)。引擎选择与 EditorPanel 同口径:Markdown 且 getEffectiveMode 非 source
+ * EditorPanel 渲染 lazy 引擎才开始拉)。引擎选择与 EditorPanel 同口径(usesMilkdownEngine):Markdown 且 getEffectiveMode 非 source
  * → Milkdown,否则 CodeEditor(读文件前无 tab,按 null tab 判定;unsafe 内容落 Source 时仅多拉一个 chunk)。
  * 共享 loader 去重、失败不缓存;fire-and-forget,失败吞掉(真正渲染时由引擎错误边界处理)。
  * 也供 Explorer 文件行 pointerdown 调用(意图早于 click,提前量更大)。
@@ -47,7 +46,7 @@ const ignoreWarmupError = (): void => {};
 export function warmEditorEngineFor(path: string): void {
   loadEditorPanelModule().catch(ignoreWarmupError);
   const engine =
-    isMarkdownPath(path) && getEffectiveMode(null) !== 'source'
+    usesMilkdownEngine(path, null)
       ? loadMilkdownEditorModule()
       : loadCodeEditorModule();
   engine.catch(ignoreWarmupError);

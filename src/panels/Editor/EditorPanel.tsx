@@ -15,7 +15,7 @@ import {
   type EditorMode,
 } from '@/stores/editor.store';
 import { t as translate, useLocale } from '@/i18n';
-import { isMarkdownPath as isMarkdownPathExact } from './editor-path-utils';
+import { isMarkdownTab } from './editor-path-utils';
 import { basename as pathBasename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
@@ -61,13 +61,6 @@ let lazyEngines: LazyEngines = {
   code: createLazyCodeEditor(),
   milkdown: createLazyMilkdownEditor(),
 };
-
-function isMarkdownPath(p: string | null): boolean {
-  // 可维护性 M13:非空判定共用 editor-path-utils.isMarkdownPath;此处只保留「草稿(null)默认
-  // 按 markdown 处理」的 EditorPanel 业务语义。
-  if (!p) return true;
-  return isMarkdownPathExact(p);
-}
 
 function basename(p: string | null): string {
   // 非空 basename 规则共用 path-cross.basename;null fallback 文案各自处理。
@@ -130,7 +123,7 @@ export function EditorPanel() {
   // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
   const unsafeMarkdown = isTabMilkdownUnsafe(activeTab);
   const forcedSource = unsafeMarkdown && effective !== mode;
-  const activeIsMarkdown = activeTab !== null && isMarkdownPath(activeTab.filePath);
+  const activeIsMarkdown = activeTab !== null && isMarkdownTab(activeTab.filePath);
 
   const { saveActive, saveTab, openFileByPath } = useEditorFile();
 
