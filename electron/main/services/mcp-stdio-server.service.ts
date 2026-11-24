@@ -256,8 +256,8 @@ export const MAX_STDIO_PENDING_LINES = 1024;
 const MAX_STDIO_PENDING_BYTES = 16_000_000;
 /**
  * 每连接未被客户端读走的输出上限(socket 写缓冲 writableLength)。排队上限只计未完成的请求,响应一旦写进
- * 写缓冲就扣减;客户端只发不读时,输出在缓冲里无界堆积,可把主进程撑到 OOM。超限即断开该连接 —— 对端既然
- * 不读,写错误帧也送不达。正常客户端边写边读,缓冲远小于此。
+ * 写缓冲就扣减;客户端只发不读时,输出在缓冲里无界堆积,可把主进程撑到 OOM。下一次写入前积压已超限即断开该连接
+ * —— 对端既然不读,写错误帧也送不达。正常客户端边写边读,积压远小于此(单条大帧不计入判定,见 writeLine)。
  */
 export const MAX_STDIO_UNREAD_OUTPUT_BYTES = 16_000_000;
 
@@ -539,8 +539,14 @@ async function handleLine(
  */
 function writeLine(sock: Socket, data: string): void {
   if (sock.writableEnded || sock.destroyed) return;
+  // 只按写入前的积压判「客户端不读」:单条合法响应(host 按 RESULT_BYTES_MAX 放行,包帧时 text 再转义可近 2 倍)
+  // 可超过上限,写入后再判会在客户端读到任何字节前就断开(stdio bridge 随之退出,agent 整个掉线)。
+  // 积压封顶 = 上限 + 一帧。
+  if (sock.writableLength > MAX_STDIO_UNREAD_OUTPUT_BYTES) {
+    sock.destroy();
+    return;
+  }
   sock.write(data + '\n');
-  if (sock.writableLength > MAX_STDIO_UNREAD_OUTPUT_BYTES) sock.destroy();
 }
 
 /**

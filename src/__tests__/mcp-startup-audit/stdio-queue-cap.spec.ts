@@ -274,6 +274,28 @@ describe.skipIf(isWin)('规则 3 · 拒绝后不再写响应 / 不再处理排�
   });
   // 终审 P1:输出缺少背压。客户端只发不读时,响应在 socket 写缓冲里无界堆积(排队上限只计未完成的请求,
   // 响应写进缓冲即扣减),主进程可被撑到 OOM。未读输出超过上限 → 断开该连接。
+  // 单条合法响应(host 已按 RESULT_BYTES_MAX 放行)包成 JSON-RPC 帧后可超过未读输出上限(text 里的 \ 与 " 再转义一次):
+  // 断连判定只看写入前的积压,不能让单条响应在客户端读到任何字节前就把连接打断(stdio bridge 随之退出,agent 掉线)。
+  it('单条帧超过未读输出上限但客户端在读 → 完整送达,不断开', async () => {
+    const quotes = echo('quotes', async () => ({ text: '"'.repeat(5_000_000) }));
+    const client = await start([quotes]);
+    let received = '';
+    client.setEncoding('utf8');
+    client.on('data', (chunk: string) => {
+      received += chunk;
+    });
+    client.write(call(1, 'quotes'));
+    await vi.waitFor(
+      () => {
+        if (!received.endsWith('\n')) throw new Error('not yet');
+      },
+      { timeout: 20_000, interval: 50 },
+    );
+    expect(received.length).toBeGreaterThan(MAX_STDIO_UNREAD_OUTPUT_BYTES);
+    expect(JSON.parse(received.trim())).toMatchObject({ id: 1, result: { content: [{ type: 'text' }] } });
+    expect(client.destroyed).toBe(false);
+  }, 30_000);
+
   it('客户端不读响应、未读输出超过上限 → 断开连接(不无界堆积)', async () => {
     const big = echo('big', async () => ({ text: 'y'.repeat(64 * 1024) }));
     const client = await start([big]);
