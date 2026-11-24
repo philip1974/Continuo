@@ -73,11 +73,13 @@ test('只有 shell 时关闭 tab 不确认', async ({ window }) => {
   await expect(window.getByRole('dialog')).toHaveCount(0);
 });
 
-test('⌘K / Ctrl+K 清空屏幕与滚动缓冲', async ({ window }) => {
+// terminal.clear 默认键同 VSCode 只 mac 有(⌘K);Win/Linux 无默认键,Ctrl+K 进 shell(见 skip-shell-hotkeys 规范)。
+test('mac:⌘K 清空屏幕与滚动缓冲', async ({ window }) => {
+  test.skip(process.platform !== 'darwin', 'terminal.clear 仅 mac 有默认键');
   await newTerminal(window);
   await run(window, 'for i in $(seq 1 200); do echo line-$i; done');
   await expect.poll(() => terminalText(window), { timeout: 15_000 }).toContain('line-200');
-  await window.keyboard.press('ControlOrMeta+KeyK');
+  await window.keyboard.press('Meta+KeyK');
   await expect.poll(() => terminalText(window), { timeout: 5_000 }).not.toContain('line-200');
   expect(await terminalText(window)).not.toContain('line-1');
 });
