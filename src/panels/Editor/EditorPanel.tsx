@@ -8,6 +8,7 @@
 //   activeTab 为 null → Welcome
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import type { DockviewPanelApi } from 'dockview-react';
 import {
   getEffectiveMode,
   isTabMilkdownUnsafe,
@@ -26,6 +27,7 @@ import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
+import { rebindEditorRoots } from './editor-root-registry';
 import { applyEditorWriteBack, EDITOR_DISK_CHANGED } from './editor-file-actions';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
@@ -64,8 +66,12 @@ let lazyEngines: LazyEngines = {
 };
 
 
+export interface EditorPanelProps {
+  /** dockview 面板 api(经 PanelHost 传入;测试直接渲染时缺省)。 */
+  readonly api?: Pick<DockviewPanelApi, 'onDidLocationChange'>;
+}
 
-export function EditorPanel() {
+export function EditorPanel({ api }: EditorPanelProps = {}) {
   // 只订阅 active tab 对象(打磨 R27,延续 R22-R24 正文热路径收敛)。editor store
   // 的 updateContent/reloadFromDisk/markSaved 只替换被改的 tab 对象 → 非 active tab
   // 变化时 active tab 引用不变 → selector 返同一对象 → EditorPanel 主体不重渲;
@@ -163,6 +169,15 @@ export function EditorPanel() {
   // 外部进程修改文件时自动同步 non-dirty tab:useExternalFileSync 由常驻 MainApp 承载(见 App.tsx)。
 
   useEffect(() => startDebugDecorationSync(), []);
+
+  // popout 弹出 / 收回只移动面板 DOM、不重挂编辑器:移动落定后(同终端拖放 topic-25 的 microtask)让已挂载的
+  // CodeMirror / ProseMirror 按所在文档重绑 root,否则子窗里仍按主窗文档取选区。
+  // BDD: src/__tests__/editor-popout-root/
+  useEffect(() => {
+    if (!api) return;
+    const sub = api.onDidLocationChange(() => queueMicrotask(rebindEditorRoots));
+    return () => sub.dispose();
+  }, [api]);
 
   // 打磨 P2-BL:显式保存遇磁盘被外部改过(EDITOR_DISK_CHANGED)→ 确认覆盖,不静默写。
   // 轻量 TabChrome 子集(确认框只需 filePath,覆盖只需 id),同 closeCandidate。

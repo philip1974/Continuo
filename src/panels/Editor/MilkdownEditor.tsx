@@ -25,6 +25,8 @@ import {
   renderMermaidPreview,
 } from './mermaid-preview';
 import { registerEditorWriteBack } from './editor-writeback-registry';
+import { registerEditorRootRebind } from './editor-root-registry';
+import { rebindCodeMirrorRoots } from './codemirror-root';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 
 interface MilkdownEditorProps {
@@ -79,6 +81,29 @@ function emitDelayMs(serializeMs: number): number {
   );
 }
 
+/** ProseMirror 视图里重绑 root 用到的部分(按 slice 名取,同 readEditor)。 */
+interface PmRootView {
+  readonly dom: HTMLElement;
+  readonly root: Document | ShadowRoot;
+  updateRoot(): void;
+}
+
+/**
+ * popout 弹出 / 收回只移 DOM(见 editor-root-registry.ts):ProseMirror 视图 root 不是当前所在文档则 updateRoot,
+ * 正文里的 CodeMirror 代码块(创建时取 ProseMirror 的 root)同样重绑。视图未就绪 / 已拆除时跳过。
+ */
+function rebindMilkdownRoot(crepe: Crepe): void {
+  let view: PmRootView;
+  try {
+    view = crepe.editor.ctx.get<PmRootView, 'editorView'>('editorView');
+  } catch {
+    return;
+  }
+  if (typeof view.updateRoot !== 'function') return; // slice 初值是空对象
+  if (view.root !== view.dom.ownerDocument) view.updateRoot();
+  rebindCodeMirrorRoots(view.dom);
+}
+
 interface WriteBackHandle {
   writeBack: () => void;
   dispose: () => void;
@@ -96,6 +121,7 @@ function CrepeEditor({
   const onWriteBackRef = useRef(onWriteBack);
   onWriteBackRef.current = onWriteBack;
   const writeBackRef = useRef<WriteBackHandle | null>(null);
+  const crepeRef = useRef<Crepe | null>(null);
 
   // 注:useEditor 的 callback 在 mount 时执行,defaultValue 只在挂载时生效。
   // 切 tab 时通过 EditorPanel 上的 key={activeTabId} 强制 remount,
@@ -136,6 +162,7 @@ function CrepeEditor({
     });
 
     if (readonly) crepe.setReadonly(true);
+    crepeRef.current = crepe;
 
     // 回写状态(每个 Crepe 实例独立):baseDoc = 编辑器最近一次已处理的文档(挂载时 / 每次上抛 /
     // 回写),据此判断有无尚未上抛的编辑 —— ProseMirror 文档不可变,引用相等即未变,不必序列化
@@ -273,8 +300,12 @@ function CrepeEditor({
   // 父组件的卸载清理先于子组件 <Milkdown/> 里的 editor.destroy(),此时仍可取全文。
   useEffect(() => {
     const unregister = registerEditorWriteBack(tabId, () => writeBackRef.current?.writeBack());
+    const unregisterRoot = registerEditorRootRebind(() => {
+      if (crepeRef.current) rebindMilkdownRoot(crepeRef.current);
+    });
     return () => {
       unregister();
+      unregisterRoot();
       const handle = writeBackRef.current;
       handle?.writeBack();
       handle?.dispose();

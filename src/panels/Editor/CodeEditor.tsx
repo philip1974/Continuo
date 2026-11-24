@@ -28,6 +28,8 @@ import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
 import { debugDecorationsExtension } from './decorations/debug-decorations';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { registerEditorRootRebind } from './editor-root-registry';
+import { rebindCodeMirrorRoots } from './codemirror-root';
 
 interface CodeEditorProps {
   tabId: string;
@@ -189,8 +191,13 @@ export function CodeEditor({
     });
     viewRef.current = view;
     useEditorStore.getState().registerView(tabId, view);
+    // popout 弹出 / 收回只移 DOM:按所在文档重绑 root(创建时面板 DOM 可能已不在主窗,先对齐一次)。
+    const rebindRoot = () => rebindCodeMirrorRoots(view.dom);
+    rebindRoot();
+    const unregisterRoot = registerEditorRootRebind(rebindRoot);
 
     return () => {
+      unregisterRoot();
       useEditorStore.getState().unregisterView(tabId, view);
       view.destroy();
       viewRef.current = null;

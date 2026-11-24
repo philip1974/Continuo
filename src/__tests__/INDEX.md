@@ -532,6 +532,10 @@
 
 - [`pending-input-flush.spec.tsx`](./editor-pending-input-flush/pending-input-flush.spec.tsx)
 
+## [editor-popout-root(Editor 弹出 popout 后编辑器跟随所在文档取选区)](./editor-popout-root/README.md)
+
+- [`editor-popout-root.spec.tsx`](./editor-popout-root/editor-popout-root.spec.tsx)
+
 ## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)
 
 - [`editor-session-restore.spec.ts`](./editor-session-restore/editor-session-restore.spec.ts)
@@ -1591,6 +1595,8 @@
 - [`notify-public-api.spec.tsx`](./unified-toast-notification/notify-public-api.spec.tsx)
 - [`toast-component-tokens.spec.ts`](./unified-toast-notification/toast-component-tokens.spec.ts)
 - [`toast-dom-render.spec.tsx`](./unified-toast-notification/toast-dom-render.spec.tsx)
+- [`toast-pause-focus.spec.tsx`](./unified-toast-notification/toast-pause-focus.spec.tsx)
+- [`toast-popout-windows.spec.tsx`](./unified-toast-notification/toast-popout-windows.spec.tsx)
 
 ## [useCloseWhenGone(弹窗目标从实时列表消失即关闭)](./use-close-when-gone/README.md)
 
