@@ -958,6 +958,7 @@
 
 ## [plugin-data-cross-window(插件 data.json 跨窗口缓存失效)](./plugin-data-cross-window/README.md)
 
+- [`install-invalidates.spec.ts`](./plugin-data-cross-window/install-invalidates.spec.ts)
 - [`main-broadcast.spec.ts`](./plugin-data-cross-window/main-broadcast.spec.ts)
 - [`renderer-invalidate.spec.ts`](./plugin-data-cross-window/renderer-invalidate.spec.ts)
 

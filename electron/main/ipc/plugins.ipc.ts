@@ -28,6 +28,7 @@ import {
 import { ERROR_CODES } from '../../shared/error-codes';
 import { errorCodeOf } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
+import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { revokePluginFsAccess, revokePluginPathScopes } from './plugin-fs.ipc';
 import { PermissionMutationSchema } from '../../shared/plugin-permission-schema';
 import { GIT_BRANCH_MAX, isValidGitBranch } from '../../shared/git-branch';
@@ -216,8 +217,18 @@ export function registerPluginsIpc(): void {
   safeHandle(
     PLUGINS_CHANNELS.INSTALL_FROM_GIT,
     InstallFromGitInput,
-    ({ url, overwrite, branch, expectedId }) =>
-      installFromGit(url, pluginsDir, { overwrite, branch, expectedId, appVersion: app.getVersion() }),
+    async ({ url, overwrite, branch, expectedId }) => {
+      const result = await installFromGit(url, pluginsDir, {
+        overwrite,
+        branch,
+        expectedId,
+        appVersion: app.getVersion(),
+      });
+      // 安装 / 更新可能改写盘上的 data.json(旧目录无 data.json 时新版仓库自带的那份原样落地):各窗口(含发起者)
+      // 的插件数据缓存须失效,否则新版 loadData() 读到旧缓存(如 v1 缓存的 null),首次 saveData 即覆盖仓库那份。
+      broadcastToWindows(PLUGIN_DATA_CHANNELS.CHANGED, () => ({ id: result.id }), '[plugin-data] CHANGED');
+      return result;
+    },
   );
 
   // v4.6 卸载

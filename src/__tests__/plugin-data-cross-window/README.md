@@ -31,3 +31,7 @@
 
 - `main-broadcast.spec.ts`:save 成功 → 发给其它窗口、不发给发起窗口;失败不广播。
 - `renderer-invalidate.spec.ts`:A 写后 B 的下一次 read 得到新值;B 的整份读-改-写不再抹掉 A 的改动;畸形 payload 被丢弃。
+
+- 安装 / 更新插件成功后,main 同样向所有窗口(含发起者)广播 `plugin-data:changed { id }`:更新可能改写盘上 data.json
+  (旧目录无 data.json 时新版仓库自带的那份原样落地),各窗口缓存失效后新版 `loadData()` 读到盘上的值。失败不广播。
+
