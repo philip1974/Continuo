@@ -4,7 +4,7 @@ import {
   terminalSearchReducer as wrapperReducer,
   toSearchAddonOptions,
   applyTerminalSearchEffect,
-  TERMINAL_SEARCH_DECORATIONS,
+  getTerminalSearchDecorations,
   DEFAULT_TERMINAL_SEARCH_OPTIONS,
   INITIAL_TERMINAL_SEARCH_STATE,
   type SearchAddonLike,
@@ -107,9 +107,9 @@ describe('terminal-search wrapper byte-identical', () => {
   });
 
   describe('T5 toSearchAddonOptions decoration 注入', () => {
-    it('default options 返回的 decorations === TERMINAL_SEARCH_DECORATIONS', () => {
+    it('default options 返回的 decorations === 当前主题装饰色', () => {
       const result = toSearchAddonOptions(DEFAULT_TERMINAL_SEARCH_OPTIONS);
-      expect(result.decorations).toEqual(TERMINAL_SEARCH_DECORATIONS);
+      expect(result.decorations).toEqual(getTerminalSearchDecorations());
     });
 
     it('options 字段 (regex/caseSensitive/wholeWord) 透传', () => {
@@ -142,7 +142,7 @@ describe('terminal-search wrapper byte-identical', () => {
       });
       expect(addon.findNext).toHaveBeenCalledWith(
         'apple',
-        expect.objectContaining({ decorations: TERMINAL_SEARCH_DECORATIONS }),
+        expect.objectContaining({ decorations: getTerminalSearchDecorations() }),
       );
     });
 
@@ -152,7 +152,7 @@ describe('terminal-search wrapper byte-identical', () => {
       applyTerminalSearchEffect(addon, state, { type: 'next' });
       expect(addon.findNext).toHaveBeenCalledWith(
         'apple',
-        expect.objectContaining({ decorations: TERMINAL_SEARCH_DECORATIONS }),
+        expect.objectContaining({ decorations: getTerminalSearchDecorations() }),
       );
     });
 
@@ -162,7 +162,7 @@ describe('terminal-search wrapper byte-identical', () => {
       applyTerminalSearchEffect(addon, state, { type: 'prev' });
       expect(addon.findPrevious).toHaveBeenCalledWith(
         'apple',
-        expect.objectContaining({ decorations: TERMINAL_SEARCH_DECORATIONS }),
+        expect.objectContaining({ decorations: getTerminalSearchDecorations() }),
       );
     });
 

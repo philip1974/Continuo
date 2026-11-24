@@ -1,7 +1,7 @@
 // Continuo-local thin wrapper for @continuo-terminal/react-terminal search-state.
 // Re-exports package types/reducer/effect with explicit named exports (not `export *`)
 // to avoid leaking the package's 4-arg applyTerminalSearchEffect into Continuo call sites.
-// host-specific bindings (DECORATIONS palette) stay here.
+// host-specific bindings (decoration colors read from theme tokens) stay here.
 //
 // Migrated per dev-loop topic 25.
 
@@ -30,23 +30,57 @@ import {
   type TerminalSearchState,
 } from '@continuo-terminal/react-terminal';
 import type { ISearchOptions } from '@xterm/addon-search';
+import { readThemeTokens } from '@/theme/read-theme-tokens';
 
-// legacy literal hex — 后续 token 化 follow-up topic（plan-v4 P1-3 决议留 wrapper 不进 constants.ts）
-// Resolved from Continuo theme tokens: accent-fill #2563eb, accent #b4c5ff.
-export const TERMINAL_SEARCH_DECORATIONS: NonNullable<ISearchOptions['decorations']> = {
+type SearchDecorations = NonNullable<ISearchOptions['decorations']>;
+
+// 搜索装饰色 ← 主题 token(light / dark 各有值)。xterm 只收 #RRGGBB 字面色,故运行时读计算值。
+const DECORATION_TOKENS: Readonly<Record<keyof SearchDecorations & string, string>> = {
+  matchBackground: '--md-primary-container',
+  matchBorder: '--md-primary',
+  matchOverviewRuler: '--md-primary',
+  activeMatchBackground: '--md-primary',
+  activeMatchBorder: '--md-on-primary-container',
+  activeMatchColorOverviewRuler: '--md-on-primary-container',
+};
+
+/** token 读不到或不是 #RRGGBB 时的兜底(暗色色板取值)。 */
+export const FALLBACK_TERMINAL_SEARCH_DECORATIONS: SearchDecorations = {
   matchBackground: '#2563eb',
   matchBorder: '#b4c5ff',
   matchOverviewRuler: '#b4c5ff',
   activeMatchBackground: '#b4c5ff',
-  activeMatchBorder: '#ffffff',
-  activeMatchColorOverviewRuler: '#ffffff',
+  activeMatchBorder: '#eeefff',
+  activeMatchColorOverviewRuler: '#eeefff',
 };
+
+const HEX_RRGGBB = /^#[0-9a-f]{6}$/i;
+let cachedDecorations: SearchDecorations | null = null;
+
+/**
+ * 当前主题下的搜索装饰色。首次调用读 token 并缓存(读不到不缓存,下次重试);
+ * 主题切换后由 invalidateTerminalSearchDecorations 作废缓存,下一次搜索重新取色。
+ * 惰性读取而非在主题 effect 里读:子组件 effect 先于 ThemeProvider 切 <html class> 执行。
+ */
+export function getTerminalSearchDecorations(): SearchDecorations {
+  if (cachedDecorations) return cachedDecorations;
+  const values = readThemeTokens(DECORATION_TOKENS);
+  if (values === null || !Object.values(values).every((v) => HEX_RRGGBB.test(v))) {
+    return FALLBACK_TERMINAL_SEARCH_DECORATIONS;
+  }
+  cachedDecorations = values;
+  return values;
+}
+
+export function invalidateTerminalSearchDecorations(): void {
+  cachedDecorations = null;
+}
 
 // satisfies ISearchOptions 锁 return type；若 satisfies typecheck 红
 // → 修包侧 SearchDecorations/TerminalSearchAddonOptions 字段名/可选性匹配 ISearchOptions
 // 禁用 `as ISearchOptions` 兜底（plan-v4 P1-3 决议）
 export function toSearchAddonOptions(options: TerminalSearchOptions): ISearchOptions {
-  return packageToOpts(options, TERMINAL_SEARCH_DECORATIONS) satisfies ISearchOptions;
+  return packageToOpts(options, getTerminalSearchDecorations()) satisfies ISearchOptions;
 }
 
 /** 本次 action 会以 regex 模式搜索、且搜索词不是合法正则 → true。 */
@@ -78,7 +112,7 @@ function searchesInvalidRegex(
   }
 }
 
-// 本地 API(addon, state, action, term?)：内部注入 DECORATIONS(包版第 4 参是 decorations,本地第 4 参是可选的 term,
+// 本地 API(addon, state, action, term?)：内部注入当前主题的装饰色(包版第 4 参是 decorations,本地第 4 参是可选的 term,
 // 用于清 selection)；与包同名版本通过 `as packageApply` 别名隔离
 // 返回 false = 搜索词是非法正则、未交给 addon:xterm SearchEngine 内直接 RegExp(term) 无 try/catch,
 // 非法正则(`[` / `(` / `\`)会抛 SyntaxError 穿透事件处理器,且 addon 记下的搜索选项会让其
@@ -96,6 +130,6 @@ export function applyTerminalSearchEffect(
     term?.clearSelection();
     return false;
   }
-  packageApply(addon, state, action, TERMINAL_SEARCH_DECORATIONS);
+  packageApply(addon, state, action, getTerminalSearchDecorations());
   return true;
 }

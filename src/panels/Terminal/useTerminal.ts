@@ -43,6 +43,7 @@ import { createOutputCoalescer } from './output-coalescer';
 import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
 import {
   applyTerminalSearchEffect,
+  invalidateTerminalSearchDecorations,
   INITIAL_TERMINAL_SEARCH_STATE,
   terminalSearchReducer,
   type TerminalSearchAction,
@@ -760,6 +761,16 @@ export function useTerminal(termId: string) {
     term.options.theme = resolved === 'dark' ? DARK_THEME : LIGHT_THEME;
     // 同步 minimumContrastRatio,避免 dark→light 残留 1 / light→dark 拔亮 dim prompt
     term.options.minimumContrastRatio = resolved === 'dark' ? 1 : 7;
+  }, [resolved]);
+
+  // 主题切换 → 搜索装饰色作废,下一次搜索按新主题 token 取色。addon 不比较 decorations
+  // (同词重搜不重画高亮),故清掉旧高亮连带其缓存词,下一次搜索整体重画。首次挂载跳过。
+  const decoratedThemeRef = useRef(resolved);
+  useEffect(() => {
+    if (decoratedThemeRef.current === resolved) return;
+    decoratedThemeRef.current = resolved;
+    invalidateTerminalSearchDecorations();
+    searchAddonRef.current?.clearDecorations();
   }, [resolved]);
 
   // sidebar(显示 / 隐藏 / 拖宽)→ 强制重 fit。

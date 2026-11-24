@@ -9,6 +9,7 @@ import { EditorView } from '@codemirror/view';
 import DOMPurify from 'dompurify';
 import { t } from '@/i18n';
 import { errorMessage } from '@shared/error-message';
+import { readThemeTokens } from '@/theme/read-theme-tokens';
 
 type ApplyPreview = (value: null | string | HTMLElement) => void;
 
@@ -39,7 +40,7 @@ function loadMermaid(): Promise<MermaidApi> {
   return mermaidPromise;
 }
 
-// mermaid `base` 主题变量 ← 应用语义 token(theme.css 的 --md-*,light / dark 各有值)。
+// mermaid `base` 主题变量 ← 应用语义 token(design-tokens.css 的 --md-*,light / dark 各有值)。
 // 图落在代码块里,底色取代码块底色(Crepe surface = --md-surface-container)。
 const THEME_TOKENS: Readonly<Record<string, string>> = {
   background: '--md-surface-container',
@@ -57,15 +58,10 @@ const THEME_TOKENS: Readonly<Record<string, string>> = {
 function currentThemeConfig(): Record<string, unknown> {
   const root = document.documentElement;
   const darkMode = root.classList.contains('dark');
-  const style = getComputedStyle(root);
-  const themeVariables: Record<string, unknown> = { darkMode };
-  for (const [variable, token] of Object.entries(THEME_TOKENS)) {
-    const value = style.getPropertyValue(token).trim();
-    // token 读不到(样式表未加载等)→ 退回 mermaid 内置配色,不拿残缺的变量去拼
-    if (value === '') return { theme: darkMode ? 'dark' : 'default' };
-    themeVariables[variable] = value;
-  }
-  return { theme: 'base', themeVariables };
+  const values = readThemeTokens(THEME_TOKENS, root);
+  // token 读不到(样式表未加载等)→ 退回 mermaid 内置配色,不拿残缺的变量去拼
+  if (values === null) return { theme: darkMode ? 'dark' : 'default' };
+  return { theme: 'base', themeVariables: { darkMode, ...values } };
 }
 
 interface RenderedSvg {

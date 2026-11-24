@@ -1464,6 +1464,7 @@
 - [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)
 - [`search-debounce.spec.ts`](./terminal-search/search-debounce.spec.ts)
 - [`state-machine.spec.ts`](./terminal-search/state-machine.spec.ts)
+- [`theme-decorations.spec.ts`](./terminal-search/theme-decorations.spec.ts)
 
 ## [terminal-service (M-Terminal Step T1)](./terminal-service/README.md)
 
