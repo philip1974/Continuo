@@ -26,3 +26,7 @@
 ## 不在本主题验证
 
 - 真实 Electron popout 窗口里的键盘手感;⌘P / ⌘⇧P 打开的面板仍渲染在主窗(子窗按下后需切到主窗操作)。
+
+- tablist 方向键轮转(`handleTablistArrowKeys`,TabNav / Tabs 共用)按 tablist 所在文档的焦点计算;dock tab 条
+  (SharedTab)键盘切换后在 tab 所在文档里查找目标 tab 聚焦 —— 面板弹出到子窗后方向键切 tab 与焦点跟随照常。
+

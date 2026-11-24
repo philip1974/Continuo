@@ -24,7 +24,9 @@ export function handleTablistArrowKeys(e: KeyboardEvent<HTMLElement>): void {
     '[role="tab"]:not([disabled])',
   );
   if (tabs.length === 0) return;
-  const idx = indexOfElement(tabs, document.activeElement);
+  // tablist 所在文档的焦点:面板弹出到 dockview popout 子窗时(React 经 portal 渲染,全局 document 是主窗)读全局
+  // document.activeElement 恒不在列表里 → → 总到首项、← 总到末项。
+  const idx = indexOfElement(tabs, e.currentTarget.ownerDocument.activeElement);
   const move: RovingMove =
     key === 'Home'
       ? 'first'

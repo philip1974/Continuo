@@ -218,8 +218,10 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       // 焦点跟随到新 active tab(roving:WAI-ARIA tablist 焦点须随选中移动)。best-effort:
       // setActive 触发重渲后该 tab tabIndex 变 0,下一帧用 data-panel-id 定位并聚焦。
       const targetId = target.id;
+      // 在 tab 所在文档里找(popout 子窗的 tab 条经 portal 渲染,全局 document 是主窗,找不到 → 焦点不跟随)。
+      const doc = rootRef.current?.ownerDocument ?? document;
       requestAnimationFrame(() => {
-        const el = document.querySelector<HTMLElement>(
+        const el = doc.querySelector<HTMLElement>(
           `[role="tab"][data-panel-id="${targetId}"]`,
         );
         el?.focus();
