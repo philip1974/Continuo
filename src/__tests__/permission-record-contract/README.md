@@ -9,3 +9,7 @@
 2. path scope:`path` **非空**且 ≤ `SCOPE_PATH_MAX`;`mode` 为 `'r' | 'rw'`。
 3. main 写端的 plugin id 也按读端同一上限(`PLUGIN_ID_MAX_LEN`)校验 —— 否则超长合法字符 id「写成功、读回被丢」。
 4. 接线:main `plugins.service`、renderer `IpcPermissionStore` 都委托 shared 谓词;IPC schema 用同一枚举与下限。
+5. 记录两种形态(旧:决策数组;新:`{ decisions, pathScopes? }`)取字段统一走 `recordDecisions()` / `recordPathScopes()`:
+   数组形态的决策即其本身、无 pathScopes;缺记录 → 决策为空、无 pathScopes。main 的 `plugin-fs.ipc`(fs 授权判定)与
+   `plugins.service`(增量变更)共用,不再各自手写分支 + `as` 强转。`IpcPermissionDecision.permission` 类型即 `PermissionKey`
+   (读端谓词已运行时保证),renderer `PermissionDecision` 是它的别名。

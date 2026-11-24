@@ -1,4 +1,5 @@
 import type { PathScope } from './plugin-fs-contract';
+import type { PermissionKey } from './permission-keys';
 import type { z } from 'zod';
 import type { PermissionMutationSchema } from './plugin-permission-schema';
 import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
@@ -132,7 +133,8 @@ export const PLUGIN_MANIFEST_HASH_RE = /^[0-9a-f]{64}$/;
 
 /** v4.2 权限决策存储的磁盘格式. */
 export interface IpcPermissionDecision {
-  readonly permission: string;        // 'fs' | 'network' | 'shell' | 'clipboard'(运行时校验)
+  /** 权限枚举成员(读端由 permission-record 的 isIpcPermissionDecision 运行时保证)。 */
+  readonly permission: PermissionKey;
   readonly granted: boolean;
   readonly decidedAt: number;
 }

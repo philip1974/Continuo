@@ -11,7 +11,11 @@
 
 import { PERMISSION_KEYS } from './permission-keys';
 import { PERMISSION_RECORD_LIMITS } from './permission-record-limits';
-import type { IpcPathScope, IpcPermissionDecision } from './plugins-channels';
+import type {
+  IpcPathScope,
+  IpcPermissionDecision,
+  IpcPermissionRecord,
+} from './plugins-channels';
 import { isPlainRecord } from './as-record';
 
 const PERMISSION_KEY_SET: ReadonlySet<string> = new Set(PERMISSION_KEYS);
@@ -38,4 +42,28 @@ export function isIpcPathScope(x: unknown): x is IpcPathScope {
     path.length <= PERMISSION_RECORD_LIMITS.SCOPE_PATH_MAX &&
     (x['mode'] === 'r' || x['mode'] === 'rw')
   );
+}
+
+// 两种记录形态(旧:决策数组;新:`{ decisions, pathScopes? }`)取字段的单一入口。
+// Array.isArray 收窄不了 readonly[] 联合,此前各调用方各自 `as` 强转对象形态。
+function isDecisionArray(
+  record: IpcPermissionRecord,
+): record is readonly IpcPermissionDecision[] {
+  return Array.isArray(record);
+}
+
+/** 记录里的决策(旧数组形态即其本身;缺记录 → 空)。 */
+export function recordDecisions(
+  record: IpcPermissionRecord | undefined,
+): readonly IpcPermissionDecision[] {
+  if (record === undefined) return [];
+  return isDecisionArray(record) ? record : record.decisions;
+}
+
+/** 记录里的路径 scope(旧数组形态 / 缺记录 / 未带 pathScopes → undefined)。 */
+export function recordPathScopes(
+  record: IpcPermissionRecord | undefined,
+): readonly IpcPathScope[] | undefined {
+  if (record === undefined || isDecisionArray(record)) return undefined;
+  return record.pathScopes;
 }

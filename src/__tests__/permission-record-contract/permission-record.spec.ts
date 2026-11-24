@@ -8,6 +8,8 @@ vi.mock('electron', () => ({ app: {}, BrowserWindow: {}, ipcMain: {} }));
 import {
   isIpcPathScope,
   isIpcPermissionDecision,
+  recordDecisions,
+  recordPathScopes,
 } from '../../../electron/shared/permission-record';
 import { PERMISSION_RECORD_LIMITS, PLUGIN_ID_MAX_LEN } from '../../../electron/shared/permission-record-limits';
 import { isSafePluginId } from '../../../electron/shared/plugin-id';
@@ -49,6 +51,36 @@ describe('isIpcPathScope', () => {
     ['path 非 string', { path: 42, mode: 'r' }],
   ])('拒:%s', (_label, value) => {
     expect(isIpcPathScope(value)).toBe(false);
+  });
+});
+
+describe('recordDecisions / recordPathScopes:两种记录形态取字段的单一入口', () => {
+  const d = { permission: 'fs', granted: true, decidedAt: 1 } as const;
+  const sc = { path: '/a', mode: 'r' } as const;
+
+  it('旧数组形态:决策即数组本身,无 pathScopes', () => {
+    expect(recordDecisions([d])).toEqual([d]);
+    expect(recordPathScopes([d])).toBeUndefined();
+  });
+
+  it('新对象形态:取 decisions / pathScopes', () => {
+    expect(recordDecisions({ decisions: [d], pathScopes: [sc] })).toEqual([d]);
+    expect(recordPathScopes({ decisions: [d], pathScopes: [sc] })).toEqual([sc]);
+    expect(recordPathScopes({ decisions: [d] })).toBeUndefined();
+  });
+
+  it('缺记录:决策为空、无 pathScopes', () => {
+    expect(recordDecisions(undefined)).toEqual([]);
+    expect(recordPathScopes(undefined)).toBeUndefined();
+  });
+
+  it('main 两处不再各自手写形态分支 + as 强转', () => {
+    const read = (rel: string): string => readFileSync(join(process.cwd(), rel), 'utf-8');
+    for (const rel of ['electron/main/ipc/plugin-fs.ipc.ts', 'electron/main/services/plugins.service.ts']) {
+      const src = read(rel);
+      expect(src).toContain('recordDecisions(');
+      expect(src).not.toMatch(/as \{ decisions: readonly IpcPermissionDecision\[\] \}/);
+    }
   });
 });
 

@@ -52,7 +52,7 @@ const MAX_READ_ATTEMPTS = 3;
 function parseDecision(value: unknown): PermissionDecision | null {
   if (!isIpcPermissionDecision(value)) return null;
   return {
-    permission: value.permission as PermissionKey,
+    permission: value.permission,
     granted: value.granted,
     decidedAt: value.decidedAt,
   };

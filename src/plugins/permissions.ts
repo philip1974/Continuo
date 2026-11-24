@@ -4,6 +4,7 @@
 // 权限枚举(PERMISSION_KEYS / PermissionKey)是跨进程契约,定义在 electron/shared/permission-keys.ts。
 export { PERMISSION_KEYS, type PermissionKey } from '../../electron/shared/permission-keys';
 import type { PermissionKey } from '../../electron/shared/permission-keys';
+import type { IpcPermissionDecision } from '../../electron/shared/plugins-channels';
 
 /**
  * v5 Phase 1:plugin 调 fs/network/shell/clipboard 时若未授权,
@@ -22,11 +23,8 @@ export class PermissionError extends Error {
   }
 }
 
-export interface PermissionDecision {
-  readonly permission: PermissionKey;
-  readonly granted: boolean;
-  readonly decidedAt: number;
-}
+/** 单条授权决策 —— 与 IPC / 磁盘形态同一契约(shared 单一来源)。 */
+export type PermissionDecision = IpcPermissionDecision;
 
 export interface PermissionStore {
   get(pluginId: string): Promise<readonly PermissionDecision[]>;

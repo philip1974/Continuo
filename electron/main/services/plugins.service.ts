@@ -24,7 +24,12 @@ import { isSafePluginId } from '../../shared/plugin-id';
 import { ownValue } from '../../shared/own-value';
 import { isValidGitBranch } from '../../shared/git-branch';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
-import { isIpcPathScope, isIpcPermissionDecision } from '../../shared/permission-record';
+import {
+  isIpcPathScope,
+  isIpcPermissionDecision,
+  recordDecisions,
+  recordPathScopes,
+} from '../../shared/permission-record';
 import { killWithGrace } from '../lib/kill-with-grace';
 import {
   mergeSpawnEnv,
@@ -853,20 +858,12 @@ async function mutatePluginPermissionsQueued(
   const all = { ...(await readPermissions(baseDir)) };
   // 只认自有属性:插件 id `constructor` 合法,普通对象上 all['constructor'] 会命中 Object 构造函数。
   const existing = ownValue(all, id);
-  const decisions: readonly IpcPermissionDecision[] =
-    existing === undefined
-      ? []
-      : Array.isArray(existing)
-        ? existing
-        : (existing as { decisions: readonly IpcPermissionDecision[] }).decisions;
-  const scopes =
-    existing === undefined || Array.isArray(existing)
-      ? undefined
-      : (existing as { pathScopes?: readonly IpcPathScope[] }).pathScopes;
+  const decisions = recordDecisions(existing);
+  const scopes = recordPathScopes(existing);
 
   let next: IpcPermissionDecision[];
   if (mutation.kind === 'set') {
-    const replaced = new Set<string>(mutation.perms);
+    const replaced = new Set(mutation.perms);
     const decidedAt = Date.now();
     next = decisions.filter((d) => !replaced.has(d.permission));
     for (const permission of replaced) {

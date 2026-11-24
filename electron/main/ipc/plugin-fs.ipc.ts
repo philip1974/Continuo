@@ -12,7 +12,8 @@ import {
   readPluginPathScopes,
 } from '../services/plugins.service';
 import { ownValue } from '../../shared/own-value';
-import type { IpcPermissionDecision, IpcPermissionRecord } from '../../shared/plugins-channels';
+import type { IpcPermissionRecord } from '../../shared/plugins-channels';
+import { recordDecisions } from '../../shared/permission-record';
 import { ScopeRequestCorrelator } from '../services/scope-request-correlator';
 import type { PathScope } from '../../shared/plugin-fs-contract';
 import { withTrustedFrameGate } from '../safe-handle';
@@ -76,12 +77,7 @@ export function revokePluginPathScopes(pluginId: string): void {
 }
 
 function recordGrantsFs(record: IpcPermissionRecord | undefined): boolean {
-  if (record === undefined) return false;
-  // Array.isArray 不收窄 readonly[] union 分支(同 plugins.service),显式 cast 对象形态。
-  const decisions: readonly IpcPermissionDecision[] = Array.isArray(record)
-    ? record
-    : (record as { decisions: readonly IpcPermissionDecision[] }).decisions;
-  return decisions.some((d) => d.permission === 'fs' && d.granted);
+  return recordDecisions(record).some((d) => d.permission === 'fs' && d.granted);
 }
 
 /**
