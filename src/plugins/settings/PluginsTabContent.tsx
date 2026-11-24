@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/design';
-import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
+import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';

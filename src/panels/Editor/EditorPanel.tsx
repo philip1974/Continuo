@@ -17,7 +17,7 @@ import {
 } from '@/stores/editor.store';
 import { t as translate, useLocale } from '@/i18n';
 import { editorTabTitle, isMarkdownTab } from './editor-path-utils';
-import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
+import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';

@@ -26,7 +26,7 @@ describe('useStableCallback', () => {
 
 describe('接线守卫:传给 Modal 的 onClose 都经 useStableCallback', () => {
   it.each([
-    'panels/Explorer/ConfirmDialog.tsx',
+    'lib/ConfirmDialog.tsx',
     'plugins/permissions/PermissionEditorModal.tsx',
     'plugins/keybindings/KeybindingCaptureModal.tsx',
   ])('%s', (rel) => {

@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, cleanup } from '@testing-library/react';
-import { ConfirmDialog } from '../../panels/Explorer/ConfirmDialog';
+import { ConfirmDialog } from '../../lib/ConfirmDialog';
 
 afterEach(() => cleanup());
 
@@ -23,7 +23,7 @@ function renderD(over: Partial<Parameters<typeof ConfirmDialog>[0]> = {}) {
 describe('ConfirmDialog', () => {
   it('open=false shell 直接返回,不订阅 i18n', () => {
     const src = readFileSync(
-      join(process.cwd(), 'src/panels/Explorer/ConfirmDialog.tsx'),
+      join(process.cwd(), 'src/lib/ConfirmDialog.tsx'),
       'utf8',
     );
     const shellStart = src.indexOf('export function ConfirmDialog(');

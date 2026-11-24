@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Button, Modal } from '@/design';
 import { useT } from '@/i18n';
 import { useStableCallback } from '@/lib/use-stable-callback';
@@ -13,7 +14,8 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
-// 通用确认对话框(design Modal)。删除走这条;以后扩展(覆盖确认等)同模式。
+// 通用确认对话框(design Modal):Explorer 删除、编辑器关闭 / 覆盖确认、插件卸载、状态栏撤销授权共用(原在
+// panels/Explorer 下,已移到 lib)。
 // design Modal 自带 ESC + overlay 点击 → onClose,这里把 onClose 接到 onCancel。
 export function ConfirmDialog({
   open,
@@ -33,6 +35,8 @@ function ConfirmDialogBody({
   onCancel,
 }: Omit<ConfirmDialogProps, 'open'>) {
   const t = useT();
+  // 标题 id 每个实例唯一(此前写死 confirm-dialog-title,同时挂载多个时 aria-labelledby 指向错乱)。
+  const titleId = useId();
   const confirmText = confirmLabel ?? t('panels.explorer.confirm.confirm');
   const cancelText = cancelLabel ?? t('panels.explorer.confirm.cancel');
   // 引用必须稳定(同 PermissionPrompt handleClose):调用方都传内联 onCancel,Modal 的焦点 /
@@ -40,9 +44,9 @@ function ConfirmDialogBody({
   // [data-autofocus] 确认(危险)按钮、键盘栈重排。Esc / overlay 仍调最新的。
   const handleClose = useStableCallback(onCancel);
   return (
-    <Modal visible onClose={handleClose} aria-labelledby="confirm-dialog-title">
+    <Modal visible onClose={handleClose} aria-labelledby={titleId}>
       <h2
-        id="confirm-dialog-title"
+        id={titleId}
         className="mb-2 text-sm font-medium text-fg"
       >
         {title}

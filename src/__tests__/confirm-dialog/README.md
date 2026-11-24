@@ -8,7 +8,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/panels/Explorer/ConfirmDialog.tsx` | UI |
+| `src/lib/ConfirmDialog.tsx` | UI |
 
 ## 规范文件
 
