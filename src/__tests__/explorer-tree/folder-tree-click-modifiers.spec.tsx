@@ -74,25 +74,6 @@ async function mount() {
   return r;
 }
 
-/** 单击某行(聚焦 + 选中),再在该行上按键。 */
-async function focusRow(container: HTMLElement, p: string) {
-  act(() => {
-    fireEvent.click(row(container, p)!);
-  });
-  await waitFor(() => expect(row(container, p)!.getAttribute('tabindex')).toBe('0'));
-}
-
-function key(el: HTMLElement, init: KeyboardEventInit) {
-  act(() => {
-    fireEvent.keyDown(el, init);
-  });
-}
-function keyUp(el: HTMLElement, init: KeyboardEventInit) {
-  act(() => {
-    fireEvent.keyUp(el, init);
-  });
-}
-
 beforeEach(() => {
   originalPlatform = Object.getOwnPropertyDescriptor(window.navigator, 'platform');
   setPlatform('Win32');
