@@ -208,6 +208,9 @@ export const zh: Record<TranslationKey, string> = {
   'panels.terminal.starting_shell': '启动 shell…',
   'panels.terminal.missing_session_id': '终端面板缺少 sessionId(自动关闭)',
   'panels.terminal.session_not_available': '会话不可用',
+  'panels.terminal.exit_notice': '终端进程已终止,退出代码: {code}。',
+  'panels.terminal.exit_press_any_key': '按任意键关闭终端。',
+  'panels.terminal.exited_suffix': '(已退出)',
   'panels.terminal.drag_drop.no_os_path':
     '拖入项目没有系统路径（网页拖拽），未插入任何内容。',
   'panels.terminal.drag_drop.partial_skip':

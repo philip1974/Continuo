@@ -210,6 +210,9 @@ export const ko: Record<TranslationKey, string> = {
   'panels.terminal.starting_shell': '셸 시작 중…',
   'panels.terminal.missing_session_id': 'sessionId 없는 터미널 패널(자동 닫힘)',
   'panels.terminal.session_not_available': '세션을 사용할 수 없습니다',
+  'panels.terminal.exit_notice': '터미널 프로세스가 종료되었습니다. 종료 코드: {code}.',
+  'panels.terminal.exit_press_any_key': '아무 키나 눌러 터미널을 닫으세요.',
+  'panels.terminal.exited_suffix': '(종료됨)',
   'panels.terminal.drag_drop.no_os_path':
     '드롭한 항목에 OS 경로가 없습니다(웹 드래그). 아무것도 삽입하지 않았습니다.',
   'panels.terminal.drag_drop.partial_skip':

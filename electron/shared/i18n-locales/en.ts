@@ -222,6 +222,10 @@ export const en = {
   'panels.terminal.starting_shell': 'Starting shell…',
   'panels.terminal.missing_session_id': 'Terminal panel without sessionId (auto-closing)',
   'panels.terminal.session_not_available': 'Session not available',
+  // VSCode 对齐:进程退出说明(终端内提示行)与 tab 标题后缀。
+  'panels.terminal.exit_notice': 'The terminal process terminated with exit code: {code}.',
+  'panels.terminal.exit_press_any_key': 'Press any key to close the terminal.',
+  'panels.terminal.exited_suffix': '(exited)',
   'panels.terminal.drag_drop.no_os_path':
     'Dropped items have no OS path (web drag) — nothing inserted.',
   'panels.terminal.drag_drop.partial_skip':

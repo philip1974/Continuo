@@ -1601,6 +1601,7 @@
 
 ## [终端与 dock tab 交互对齐 VSCode 集成终端](./terminal-vscode-parity/README.md)
 
+- [`exit-behavior.spec.tsx`](./terminal-vscode-parity/exit-behavior.spec.tsx)
 - [`skip-shell-hotkeys.spec.ts`](./terminal-vscode-parity/skip-shell-hotkeys.spec.ts)
 
 ## [terminal-webgl-atlas-page-version](./terminal-webgl-atlas-page-version/README.md)

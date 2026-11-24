@@ -79,7 +79,8 @@ describe('打磨 R40 — TerminalPanelView 订阅派生 title primitive', () => 
     }
   });
 
-  it('无关字段(exitCode)变化 → 面板不重渲', () => {
+  // exitCode 由 null 变为数字会给标题加「(已退出)」后缀(terminal-vscode-parity),不再是无关字段;这里用 cwd。
+  it('无关字段(cwd)变化 → 面板不重渲', () => {
     const onRender = vi.fn();
     render(
       <Profiler id="tpv" onRender={onRender}>
@@ -89,11 +90,11 @@ describe('打磨 R40 — TerminalPanelView 订阅派生 title primitive', () => 
     const base = onRender.mock.calls.length;
     expect(base).toBeGreaterThan(0);
 
-    // 改 t1 的 exitCode(与 title/originHint 无关)+ 改别的 session
+    // 改 t1 的 cwd(与 title/originHint/是否退出无关)
     act(() => {
       useTerminalStore.setState((s) => ({
         sessions: s.sessions.map((x) =>
-          x.id === 't1' ? { ...x, exitCode: 0 } : x,
+          x.id === 't1' ? { ...x, cwd: '/elsewhere' } : x,
         ),
       }));
     });

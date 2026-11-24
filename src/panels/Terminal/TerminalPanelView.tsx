@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useShallow } from 'zustand/react/shallow';
 import { Spinner } from '@/design';
@@ -38,30 +38,24 @@ export function TerminalPanelView(
   // 只订阅派生 primitive(打磨 R40 + R43 + P16):dock title 只需 title / originHint /
   // 是否存在。复用 terminal.store 的 sessionId 索引缓存,多终端面板收到同一 snapshot 时只
   // 为 sessions 引用建一次 Map;再用 useShallow 比较扁平 primitive,避免 JSON 签名串分配/解析。
-  const { sessionExists, sessionTitle, sessionOriginHint } = useTerminalStore(
+  const { sessionExists, sessionTitle, sessionOriginHint, sessionExited } = useTerminalStore(
     useShallow((s) => {
       const found = getIndexedTerminalSessionById(s.sessions, sessionId);
       return {
         sessionExists: found !== undefined,
         sessionTitle: found?.title,
         sessionOriginHint: found?.originHint,
+        sessionExited: found !== undefined && found.exitCode !== null,
       };
     }),
   );
-  const derivedTitle = useMemo(
-    () =>
-      terminalPanelTitle({
-        sessionId,
-        sessionTitle,
-        originHint: sessionOriginHint ?? props.params.originHint,
-      }),
-    [
-      props.params.originHint,
-      sessionOriginHint,
-      sessionTitle,
-      sessionId,
-    ],
-  );
+  // 每次渲染直接算(便宜的字符串拼接):useT 已订阅 locale,「(已退出)」后缀随语言切换重算。
+  const derivedTitle = terminalPanelTitle({
+    sessionId,
+    sessionTitle,
+    originHint: sessionOriginHint ?? props.params.originHint,
+    exited: sessionExited,
+  });
 
   useEffect(() => {
     if (props.api.title !== derivedTitle) {
@@ -95,8 +89,10 @@ function TerminalPanelContent({
   sessionId: string;
 }) {
   const t = useT();
+  // 进程非 0 退出后「按任意键关闭」:走面板关闭的公共路径(关闭动画 + 删会话)。
+  const onExitDismiss = useCallback(() => api.close(), [api]);
   const { containerRef, isReady, fit, requestFit, focus, clear, searchApi } =
-    useTerminal(sessionId);
+    useTerminal(sessionId, { onExitDismiss });
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
 
   // 对外句柄:focus 供 DockShell 在 exit-maximize 后拉回 xterm 焦点(topic-22:

@@ -60,6 +60,8 @@ import {
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 import { debounce } from '@/lib/debounce';
+import { t } from '@/i18n';
+import { shouldAutoCloseExitedSession } from '@/shell/dock/terminal-panel-id';
 
 
 export interface SearchApi {
@@ -342,14 +344,36 @@ export function terminalWindowsPtyOptions(
   };
 }
 
+/** 终端内提示行(VSCode formatMessageForTerminal 同款:反显的「 * 」前缀,复位属性)。 */
+export function formatTerminalNotice(message: string, leadingNewLine = true): string {
+  return `${leadingNewLine ? '\r\n' : ''}\x1b[0m\x1b[7m * \x1b[0m ${message} \x1b[0m\n\r`;
+}
+
+/**
+ * 退出后「按任意键关闭」认的键(对齐 VSCode 监听 keypress):产生字符的键与 Enter;带 ⌘/Ctrl/Alt 的组合(复制等)、
+ * 单独的修饰键、输入法组合中都不算。
+ */
+function isDismissKey(event: KeyboardEvent): boolean {
+  if (event.type !== 'keydown' || event.isComposing) return false;
+  if (event.metaKey || event.ctrlKey || event.altKey) return false;
+  return event.key.length === 1 || event.key === 'Enter';
+}
+
+export interface UseTerminalOptions {
+  /** 进程非 0 退出(或 agent 会话退出)后用户按任意键:关闭该终端面板。 */
+  readonly onExitDismiss?: () => void;
+}
+
 /**
  * 挂在 div container 上,创建 xterm 实例,监听数据流与 resize。
  * unmount 时彻底清理(订阅、observer、queue、term.dispose)。
  *
  * 注意:返回的 ref 必须由调用方放在容器 div 上;termId 变化会重建实例。
  */
-export function useTerminal(termId: string) {
+export function useTerminal(termId: string, options?: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onExitDismissRef = useRef(options?.onExitDismiss);
+  onExitDismissRef.current = options?.onExitDismiss;
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
@@ -489,6 +513,10 @@ export function useTerminal(termId: string) {
       );
     });
     const __mappedKeyState__ = createMappedKeyState();
+    // 进程退出(见 onSessionMaybeExited):inputClosed = 不再把输入发给已不存在的 PTY(否则每次键入都 NOT_FOUND
+    // 限流 toast);awaitingDismiss = 已写出退出说明,任意键关闭面板。
+    let inputClosed = false;
+    let awaitingDismiss = false;
     // Shift+Enter 等额外按键映射:keydown 只暂存映射结果,onData 转发器再把
     // xterm 默认发出的 \r 替换为映射字节,避免 \x1b\r\r 双写。见 issue #18。
     term.attachCustomKeyEventHandler((event) => {
@@ -516,6 +544,11 @@ export function useTerminal(termId: string) {
       const yielded = terminalYieldedCommandId(event);
       if (yielded) {
         runTerminalCommandFromKey(event, yielded);
+        return false;
+      }
+      // 进程已退出:按键不再交给 xterm;已显示「按任意键关闭」时任意键关闭面板。
+      if (inputClosed) {
+        if (awaitingDismiss && isDismissKey(event)) onExitDismissRef.current?.();
         return false;
       }
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
@@ -614,13 +647,26 @@ export function useTerminal(termId: string) {
     // readHistory 两条 set-true 入口,漏了 exit 这条终态(典型「标记建了未覆盖所有
     // 终态」)。退出后终端缓冲(含任何错误输出)已可见,移掉 overlay 才能让用户看到。
     // 「已退出」的唯一事实源是会话快照的 exitCode(main 的 setExited 经 sessions_changed 广播)。
-    const sessionExited = (): boolean => {
+    // 退出后(对齐 VSCode _onProcessExit):停止向 PTY 发输入;用户会话以 0 退出 → 面板由 reconciler 关闭,不写说明;
+    // 其余在终端内写退出码说明 +「按任意键关闭」。说明须排在历史回放之后:回放未完成时只关输入,
+    // 由 readHistory 回调再调一次补写。
+    let exitHandled = false;
+    const onSessionMaybeExited = (): void => {
+      if (teardownDone || exitHandled) return;
       const session = getIndexedTerminalSessionById(useTerminalStore.getState().sessions, termId);
-      return session !== undefined && session.exitCode !== null;
+      if (session === undefined || session.exitCode === null) return;
+      clearLoadingOverlay();
+      inputClosed = true;
+      if (liveBeforeHistory) return;
+      exitHandled = true;
+      if (shouldAutoCloseExitedSession(session)) return;
+      awaitingDismiss = true;
+      writeOutput(
+        formatTerminalNotice(t('panels.terminal.exit_notice', { code: session.exitCode })) +
+          formatTerminalNotice(t('panels.terminal.exit_press_any_key'), false),
+      );
     };
-    const unsubExit = useTerminalStore.subscribe(() => {
-      if (!teardownDone && sessionExited()) clearLoadingOverlay();
-    });
+    const unsubExit = useTerminalStore.subscribe(onSessionMaybeExited);
 
     // a11y(A143):readHistory 失败(reject 或 !r.ok)此前只 return / 无 .catch,而 lazy-mount
     // 终端的初始输出(prompt)在 PTY 已 spawn 后、panel mount 前产出,只在 history 里 —— history
@@ -638,6 +684,7 @@ export function useTerminal(termId: string) {
           clearLoadingOverlay();
           notifyFailure(r);
           releaseLiveAfterHistory(undefined);
+          onSessionMaybeExited();
           return;
         }
         // 订阅到回复之间涌入的输出超过 ring buffer 容量 → 快照开头已被挤掉,而暂存队列从更早处连续
@@ -653,14 +700,15 @@ export function useTerminal(termId: string) {
           if (r.data.data) writeOutput(r.data.data);
           releaseLiveAfterHistory(r.data.endOffset);
         }
-        // 挂载前就已退出、且无可回放输出(零输出 / 快照被淘汰)→ 之后不会再有快照变更,不清就永挂 loading。
-        if (sessionExited()) clearLoadingOverlay();
+        // 挂载前就已退出(含零输出 / 快照被淘汰)→ 之后不会再有快照变更:清 loading、关输入、补写退出说明。
+        onSessionMaybeExited();
       })
       .catch((err) => {
         if (teardownDone) return;
         clearLoadingOverlay();
         notifyThrownError(err);
         releaseLiveAfterHistory(undefined);
+        onSessionMaybeExited();
       });
 
     // 用户输入 → IPC write
@@ -676,6 +724,7 @@ export function useTerminal(termId: string) {
       notifyFailure({ code, message });
     };
     const onDataDisposable = term.onData((data: string) => {
+      if (inputClosed) return; // 进程已退出(粘贴 / 鼠标上报等也不再发)
       const outgoing = consumeMappedKeyOnData(__mappedKeyState__, data);
       void coApi.terminal
         .write(termId, outgoing)

@@ -16,6 +16,7 @@ import {
 import {
   panelIdFor,
   sessionIdFromPanel,
+  shouldAutoCloseExitedSession,
   terminalPanelTitle,
 } from './terminal-panel-id';
 
@@ -210,6 +211,8 @@ export function reconcileTerminalPanels(
       if (shouldFocus) api.addPanel(options).api.setActive();
       else addPanelKeepingActive(api, options);
       lastRefId = panelId;
+      // 如 workspace 切回时才重新可见的、期间已以 0 退出的会话。
+      closePanelIfExitedCleanly(api, session);
     }
   }
 
@@ -229,7 +232,17 @@ export function reconcileTerminalPanels(
     if (panel.api.title !== title) {
       panel.api.setTitle(title);
     }
+    if (prevById.get(session.id) !== session) closePanelIfExitedCleanly(api, session);
   }
+}
+
+/**
+ * 用户终端以 0 退出 → 关闭面板(VSCode 静默关闭)。走普通 api.close(不标 suppressed):随后 onDidRemovePanel 删除 main
+ * 侧会话,与用户点 × 同一路径;关闭守卫对已退出会话直接放行。
+ */
+function closePanelIfExitedCleanly(api: DockviewApi, session: TerminalSession): void {
+  if (!shouldAutoCloseExitedSession(session)) return;
+  api.getPanel(panelIdFor(session.id))?.api.close();
 }
 
 /**
@@ -372,5 +385,6 @@ function deriveTitle(session: TerminalSession): string {
     sessionId: session.id,
     sessionTitle: session.title,
     originHint: session.originHint,
+    exited: session.exitCode !== null,
   });
 }
