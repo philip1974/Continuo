@@ -25,6 +25,7 @@ import { broadcastToWindows } from '../lib/broadcast';
 import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
 import { onRendererDocumentGone } from '../lib/renderer-document-gone';
+import { discardTerminalSession } from './terminal-discard';
 
 // 弹窗显示 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)。
 // 从请求成为窗口的显示中弹窗起算(见 markDisplayed),到点后经 CANCELLED 通知 renderer 撤掉弹窗;此前从到达起算,排在别的
@@ -450,12 +451,10 @@ export function revokeAndKillAgentSessions(): RevokeResult {
   const snapshot = terminalSessions.getAll();
   for (const s of snapshot) {
     if (s.originHint !== 'agent') continue;
-    terminalSessions.remove(s.id);
-    // 用户**显式撤销** agent 授权是安全动作:用 forceKill(立即 SIGKILL)而非
-    // kill()(先 Ctrl+C、3s grace 后才 SIGKILL)。否则吞 SIGINT / 正在跑破坏性
-    // 命令的 agent 子进程在撤销后还能继续运行最长 3s。token 已 rotate 挡住新
-    // MCP 调用,但已在跑的本地子进程不受 token 影响,必须立即强杀。
-    if (termService.has(s.id)) termService.forceKill(s.id);
+    // 用户**显式撤销** agent 授权是安全动作:force(立即 SIGKILL)而非 Ctrl+C + 3s grace。否则吞 SIGINT /
+    // 正在跑破坏性命令的 agent 子进程在撤销后还能继续运行最长 3s。token 已 rotate 挡住新 MCP 调用,但已在跑的
+    // 本地子进程不受 token 影响,必须立即强杀。
+    discardTerminalSession({ sessionStore: terminalSessions, service: termService }, s.id, { force: true });
     killed += 1;
   }
   // debug 会话与在途 launch 按调用方回收(listControllerTokens 已含全部已登记会话与在途 launch 的调用方;

@@ -18,6 +18,7 @@ import {
   makeSendTextTool,
   type CreateSessionToolDeps,
 } from './mcp-tools-terminal';
+import { discardTerminalSession } from './terminal-discard';
 
 // createSession / installStopHook 的签名以 create_session 工具的 deps 为单一来源。
 export interface MakeTerminalMcpToolsDeps
@@ -105,10 +106,7 @@ export function makeTerminalMcpTools(
       createSession: deps.createSession,
       installStopHook: deps.installStopHook,
       // 同 revokeAndKillAgentSessions:先删 metadata 再 forceKill(无调用方的会话不留 3s grace)。
-      discardSession: (id) => {
-        deps.sessionStore.remove(id);
-        if (deps.service.has(id)) deps.service.forceKill(id);
-      },
+      discardSession: (id) => discardTerminalSession(deps, id, { force: true }),
     }),
     gateOwned(
       makeSendInputTool({

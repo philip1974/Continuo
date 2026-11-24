@@ -37,6 +37,7 @@ import { codedError } from '../../shared/error-message';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 import { arraysEqual } from '../../shared/array-equal';
 import { TERMINAL_WRITE_MAX_BYTES } from '../../shared/terminal-session-limits';
+import { discardTerminalSession } from '../services/terminal-discard';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = TERMINAL_WRITE_MAX_BYTES; // 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
@@ -355,8 +356,7 @@ export function makeRemoveHandler(deps?: {
   return (input: IdOnlyInput, win: BrowserWindow): void => {
     assertOwnedSession(sessionStore, input.id, win);
     // 立即删 metadata(用户点 X 立刻消失);PTY 在后台异步 SIGINT + 3s grace。
-    sessionStore.remove(input.id);
-    if (service.has(input.id)) service.kill(input.id);
+    discardTerminalSession({ sessionStore, service }, input.id, { force: false });
   };
 }
 
