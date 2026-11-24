@@ -14,6 +14,7 @@ import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/Comma
 import { useT, useTWithFallback } from '@/i18n';
 import { resolveEffectiveHotkey } from './keybindings-store';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { useStableCallback } from '@/lib/use-stable-callback';
 
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
@@ -176,10 +177,14 @@ function KeybindingCaptureModalBody({
     return selectKeybindingConflicts(allCommands, commandId, captured, overrides);
   }, [captured, allCommands, commandId, overrides]);
 
+  // 引用必须稳定(同 ConfirmDialog):调用方传内联 onClose,命令注册表变化等重渲会让 Modal 焦点 / 键盘栈
+  // effect 重跑,把捕获中的焦点拉回、叠在上层的弹窗被挤下栈顶。
+  const handleModalClose = useStableCallback(onClose);
+
   return (
     <Modal
       visible
-      onClose={onClose}
+      onClose={handleModalClose}
       className="w-[420px] p-5"
       aria-labelledby="keybinding-capture-title"
     >

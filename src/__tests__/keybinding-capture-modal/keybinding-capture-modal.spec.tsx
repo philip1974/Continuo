@@ -520,3 +520,38 @@ describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
     expect(eventToCombo(ev({ key: 'Shift', shiftKey: true }))).toBeNull();
   });
 });
+
+describe('onClose 引用不稳定时焦点不被重置', () => {
+  it('父组件以新的内联 onClose 重渲染 → 弹窗内焦点保持;Escape 调用最新的 onClose', async () => {
+    const frame = () => act(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    const first = vi.fn();
+    const { rerender, getAllByRole } = render(
+      <KeybindingCaptureModal
+        {...defaultProps({ onClose: first, currentHotkey: 'mod+j', defaultHotkey: 'mod+k' })}
+      />,
+    );
+    await frame(); // Modal 打开时的初始聚焦在 rAF 里
+    const enabled = (getAllByRole('button') as HTMLButtonElement[]).filter((b) => !b.disabled);
+    // 选一个不是 Modal 初始聚焦目标的按钮,否则「焦点被拉回」与「焦点未动」无法区分。
+    const initial = document.activeElement;
+    const target = enabled.find((b) => b !== initial)!;
+    expect(target).toBeDefined();
+    act(() => target.focus());
+    expect(document.activeElement).toBe(target);
+
+    const latest = vi.fn();
+    rerender(
+      <KeybindingCaptureModal
+        {...defaultProps({ onClose: latest, currentHotkey: 'mod+j', defaultHotkey: 'mod+k' })}
+      />,
+    );
+    await frame(); // Modal 的焦点 effect 若重跑,会在下一帧把焦点拉回首个可聚焦元素
+    expect(document.activeElement).toBe(target);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(latest).toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+  });
+});

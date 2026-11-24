@@ -1528,6 +1528,10 @@
 
 - [`use-fs-watcher.spec.tsx`](./use-fs-watcher/use-fs-watcher.spec.tsx)
 
+## [useStableCallback(引用恒定的最新回调)](./use-stable-callback/README.md)
+
+- [`use-stable-callback.spec.tsx`](./use-stable-callback/use-stable-callback.spec.tsx)
+
 ## [wc-gone-hook · 何时回收 webContents 名下的 main 侧资源](./wc-gone-hook/README.md)
 
 - [`wc-gone-hook-navigation.spec.ts`](./wc-gone-hook/wc-gone-hook-navigation.spec.ts)

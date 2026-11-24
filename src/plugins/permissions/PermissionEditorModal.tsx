@@ -5,7 +5,7 @@
 // 提示"下次启用生效"。当前 enabled 实例不会被强制 disable(避免插件
 // 状态丢失);用户要立即生效手动 [禁用] → [启用]。
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from '@/design';
 import type {
   PermissionDecision,
@@ -14,6 +14,7 @@ import type {
 } from '../permissions';
 import { useT } from '@/i18n';
 import { PermissionOptionRow } from './PermissionOptionRow';
+import { useStableCallback } from '@/lib/use-stable-callback';
 
 interface PermissionEditorModalProps {
   open: boolean;
@@ -207,10 +208,8 @@ function PermissionEditorModalBody({
 
   // 引用必须稳定(同 PermissionPrompt handleClose / ConfirmDialog):调用方传内联 onClose,
   // 打开期间父组件(安装进度 / 插件列表更新)重渲换新引用会让 Modal 焦点 effect 重跑,
-  // 把焦点拉回第一个 checkbox。ref 存最新回调,Esc / overlay 仍调最新的。
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  const handleModalClose = useCallback(() => onCloseRef.current(), []);
+  // 把焦点拉回第一个 checkbox。Esc / overlay 仍调最新的。
+  const handleModalClose = useStableCallback(onClose);
 
   return (
     <Modal visible onClose={handleModalClose} aria-labelledby="permission-editor-title">
