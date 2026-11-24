@@ -9,7 +9,8 @@
 - `popout-locale-broadcast.spec.ts`: 多窗口语言变更广播到其他窗口。
 - `pty-lang-env.spec.ts`: PTY 创建时保留合法用户 locale,修正缺失或不支持的 locale;按有效 locale(`LC_ALL` > `LC_CTYPE` > `LANG`)判断是否 UTF-8。
 - `settings-service.spec.ts`: `settings.json` load/save、corrupt 备份与系统 locale 映射。
-- `bootstrap-locale-sync.spec.ts`: renderer 启动先等待 main locale,再 boot core plugins。
+- `bootstrap-locale-sync.spec.ts`: renderer 启动先等待 main locale(及系统默认 locale),再 boot core plugins。
+- 语言设置项的默认值 = main 系统默认 locale(`i18n:get-system-locale`,即首启默认):中文 / 韩文系统首启未改过不显示「已修改」,「恢复默认」回到系统语言(见 `49-polish-bugfixes/language-from-settings-no-fallback-clobber.spec.tsx`、`setting-item-row/setting-item-row.spec.tsx`)。
 - `design-layer-no-keys.spec.ts`: `src/design` 共享层不直接依赖 i18n。
 - `locale-concurrent.spec.ts`: 连续 `setLocale` 用 generation token 丢弃过期广播。
 - `setting-locale-fields.spec.ts`: setting registry 的 title/description/label key 在渲染时翻译。

@@ -163,7 +163,7 @@ const LOCALE_SELF_NAMES: Record<Locale, string> = {
   ko: '한국어',
 };
 
-/** 界面语言(main settings.json 为权威,LanguageFromSettings 双向桥接)。 */
+/** 界面语言(main settings.json 为权威,LanguageFromSettings 双向桥接)。default 'en' 仅为未注入系统语言时的兜底。 */
 export const GENERAL_LANGUAGE: CoreSettingSpec<Locale> = {
   id: 'general.language',
   category: 'general',
@@ -179,3 +179,8 @@ export const GENERAL_LANGUAGE: CoreSettingSpec<Locale> = {
   })),
   priority: 2,
 };
+
+/** 注册用的语言项:默认值 = main 的系统默认 locale(与首启默认一致),「已修改」/「恢复默认」都以它为准。 */
+export function languageSettingSpec(systemDefault: Locale): CoreSettingSpec<Locale> {
+  return { ...GENERAL_LANGUAGE, default: systemDefault };
+}

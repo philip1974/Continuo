@@ -114,6 +114,15 @@ export async function init(): Promise<void> {
     explorerReadPrefetch.catch(() => {});
   }
 
+  // 系统默认 locale(语言设置项的默认值)与 getLocale 并发取,不拉长启动关键路径;失败保持 'en'(旧行为)。
+  let systemLocaleReq: ReturnType<typeof coApi.i18n.getSystemLocale> | null = null;
+  try {
+    systemLocaleReq = Promise.resolve(coApi.i18n.getSystemLocale());
+    systemLocaleReq.catch(() => {}); // 下方 await 前 reject 不算 unhandled(await 仍拿到 reject)
+  } catch (err) {
+    console.warn('[i18n] bootstrap getSystemLocale failed', err);
+  }
+
   try {
     const initial = await coApi.i18n.getLocale();
     if (initial.ok) {
@@ -123,6 +132,12 @@ export async function init(): Promise<void> {
     }
   } catch (err) {
     console.warn('[i18n] bootstrap getLocale failed', err);
+  }
+  try {
+    const sys = await systemLocaleReq;
+    if (sys?.ok) useSettingsStore.setState({ systemLocale: sys.data });
+  } catch (err) {
+    console.warn('[i18n] bootstrap getSystemLocale failed', err);
   }
 
   subscribeToI18nBroadcast();

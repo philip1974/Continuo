@@ -12,6 +12,7 @@ type SettingsServiceModule = {
   readonly loadSettings: () => Promise<SettingsData>;
   readonly saveSettings: (settings: SettingsData) => Promise<void>;
   readonly _resetSettingsForTest: () => void;
+  readonly getSystemDefaultLocale: () => Locale;
 };
 
 let currentTmpDir = '';
@@ -48,6 +49,16 @@ afterEach(async () => {
 });
 
 describe('settings.service (settings.json) — P2-1 表驱动', () => {
+  it('getSystemDefaultLocale = mapSystemLocale(app.getLocale()),不受已存 locale 影响', async () => {
+    const service = await importPending<SettingsServiceModule>(
+      '../../../electron/main/services/settings.service',
+    );
+    await service.saveSettings({ version: 1, locale: 'en' });
+    expect(service.getSystemDefaultLocale()).toBe('zh');
+    electronMock.app.getLocale.mockReturnValueOnce('en-US');
+    expect(service.getSystemDefaultLocale()).toBe('en');
+  });
+
   it('缺文件时返回默认 { version:1, locale: mapSystemLocale(app.getLocale()) }', async () => {
     const service = await importPending<SettingsServiceModule>(
       '../../../electron/main/services/settings.service',

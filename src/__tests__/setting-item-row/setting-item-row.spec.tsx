@@ -13,6 +13,7 @@ import {
   type SettingItemSpec,
 } from '../../plugins/registries/SettingItemRegistry';
 import { useSettingsValuesStore } from '../../plugins/settings/values-store';
+import { languageSettingSpec } from '../../plugins/settings/core-setting-specs';
 
 beforeEach(() => {
   useSettingsValuesStore.setState({ values: {} });
@@ -470,5 +471,31 @@ describe('SettingItemRow — reset', () => {
     expect(
       useSettingsValuesStore.getState().values['general.x'],
     ).toBeUndefined();
+  });
+});
+
+// 语言项默认值随系统语言(main 首启按 app.getLocale() 取默认):中文系统首启从未改过 → 不显示「已修改」;
+// 用户改成 en → 显示,重置标签写系统默认语言名(中文)而非写死的 English / 原始值 'zh'。
+describe('SettingItemRow — 语言项默认 = 系统语言', () => {
+  it('languageSettingSpec(zh) 的 default 为 zh,其余与 GENERAL_LANGUAGE 一致', () => {
+    const s = languageSettingSpec('zh');
+    expect(s.default).toBe('zh');
+    expect(s.id).toBe('general.language');
+  });
+
+  it('中文系统、未存值 → 选中中文且不显示已修改', () => {
+    const { container } = render(<SettingItemRow spec={languageSettingSpec('zh')} />);
+    const resetBtn = container.querySelector('button[aria-label=恢复默认]') as HTMLButtonElement;
+    expect(resetBtn.disabled).toBe(true);
+    expect(container.querySelector('[aria-checked="true"]')?.textContent).toBe('中文');
+  });
+
+  it('中文系统、用户改成 en → 显示已修改,重置标签为系统默认语言名', () => {
+    useSettingsValuesStore.setState({ values: { 'general.language': 'en' } });
+    const { container } = render(<SettingItemRow spec={languageSettingSpec('zh')} />);
+    const resetBtn = container.querySelector('button[aria-label=恢复默认]') as HTMLButtonElement;
+    expect(resetBtn.disabled).toBe(false);
+    expect(resetBtn.title).toContain('中文');
+    expect(resetBtn.title).not.toContain('English');
   });
 });

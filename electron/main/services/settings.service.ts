@@ -47,6 +47,11 @@ function defaultSettings(): Settings {
   return { version: 1, locale: sysLocale };
 }
 
+/** 系统默认 locale(= 首启默认,mapSystemLocale(app.getLocale()));renderer 语言设置项的「默认值」用它。 */
+export function getSystemDefaultLocale(): Locale {
+  return defaultSettings().locale;
+}
+
 /** 损坏的 settings.json(超大 / JSON 坏 / schema 不符):改名 .corrupt.<ts> 留证 + 重置默认并写 cache。 */
 async function quarantineCorruptSettings(file: string): Promise<Settings> {
   try {

@@ -22,6 +22,7 @@ import { useSettingsValuesStore } from '../../plugins/settings/values-store';
 
 beforeEach(() => {
   localStorage.clear();
+  useSettingsStore.setState({ systemLocale: 'en' });
   useSettingsValuesStore.setState({ values: {} });
   notifyErrorMock.mockReset();
 });
@@ -167,5 +168,42 @@ describe('语言项恢复默认 — 只响应本窗口的 reset', () => {
       useSettingsValuesStore.getState().reset('general.language');
     });
     await waitFor(() => expect(setLocale).toHaveBeenLastCalledWith('en'));
+  });
+});
+
+// 默认值 = 系统语言(main 首启 mapSystemLocale(app.getLocale())):中文 / 韩文系统首启界面已是系统语言,用户
+// 从未改过 → 不得写进 values-store(否则设置行显示「已修改」);恢复默认回到系统语言而非写死的 en。
+describe('语言项默认 = 系统语言', () => {
+  it('中文系统首启(main=zh、values 缺)→ 不 seed values、不调 setLocale', async () => {
+    const setLocale = vi.fn(() => Promise.resolve());
+    useSettingsStore.setState({ locale: 'zh', systemLocale: 'zh', setLocale });
+    render(<LanguageFromSettings />);
+    await Promise.resolve();
+    expect(useSettingsValuesStore.getState().values['general.language']).toBeUndefined();
+    expect(setLocale).not.toHaveBeenCalled();
+  });
+
+  it('中文系统、用户改成 en → 推 en;恢复默认 → 推回 zh', async () => {
+    const setLocale = vi.fn(() => Promise.resolve());
+    useSettingsStore.setState({ locale: 'zh', systemLocale: 'zh', setLocale });
+    render(<LanguageFromSettings />);
+    act(() => {
+      useSettingsValuesStore.getState().setValue('general.language', 'en');
+    });
+    await waitFor(() => expect(setLocale).toHaveBeenCalledWith('en'));
+    act(() => {
+      useSettingsValuesStore.getState().reset('general.language');
+    });
+    await waitFor(() => expect(setLocale).toHaveBeenLastCalledWith('zh'));
+  });
+
+  it('中文系统、用户选了 ko 后重启(main=ko、values 缺)→ 仍 seed ko', async () => {
+    const setLocale = vi.fn(() => Promise.resolve());
+    useSettingsStore.setState({ locale: 'ko', systemLocale: 'zh', setLocale });
+    render(<LanguageFromSettings />);
+    await waitFor(() => {
+      expect(useSettingsValuesStore.getState().values['general.language']).toBe('ko');
+    });
+    expect(setLocale).not.toHaveBeenCalled();
   });
 });

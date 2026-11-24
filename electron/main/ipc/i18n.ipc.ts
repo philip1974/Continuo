@@ -4,6 +4,7 @@ import { I18N_CHANNELS, type I18nChangedPayload } from '../../shared/i18n-channe
 import { LocaleSchema, type Locale } from '../../shared/i18n-types';
 import {
   getCurrentLocale,
+  getSystemDefaultLocale,
   setCurrentLocale,
   commitSetLocaleGen,
 } from '../services/settings.service';
@@ -28,6 +29,12 @@ export function registerI18nIpc(): void {
     I18N_CHANNELS.GET_LOCALE,
     NoInput,
     () => getCurrentLocale(),
+  );
+
+  safeHandle<undefined, Locale>(
+    I18N_CHANNELS.GET_SYSTEM_LOCALE,
+    NoInput,
+    () => getSystemDefaultLocale(),
   );
 
   safeHandle<Locale, I18nChangedPayload>(

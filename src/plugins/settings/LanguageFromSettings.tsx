@@ -15,10 +15,11 @@ import { createLatestGuard } from '@/lib/latest-wins';
 import { GENERAL_LANGUAGE } from './core-setting-specs';
 
 const LANGUAGE_SETTING_ID = GENERAL_LANGUAGE.id;
-const LANGUAGE_DEFAULT: Locale = GENERAL_LANGUAGE.default;
 
 export function LanguageFromSettings(): ReactNode {
-  const value = useSettingValue<Locale>(LANGUAGE_SETTING_ID, LANGUAGE_DEFAULT);
+  // 默认值 = main 的系统默认 locale(首启默认),与注册的语言项 spec.default 同源(languageSettingSpec)。
+  const systemLocale = useSettingsStore((s) => s.systemLocale);
+  const value = useSettingValue<Locale>(LANGUAGE_SETTING_ID, systemLocale);
   const rawStored = useSettingsValuesStore(
     (s) => s.values[LANGUAGE_SETTING_ID],
   );
@@ -63,7 +64,7 @@ export function LanguageFromSettings(): ReactNode {
   useEffect(
     () =>
       onLocalSettingReset((id) => {
-        if (id === LANGUAGE_SETTING_ID) pushLocale(LANGUAGE_DEFAULT);
+        if (id === LANGUAGE_SETTING_ID) pushLocale(useSettingsStore.getState().systemLocale);
       }),
     // pushLocale 读最新闭包外的 store / guard(均稳定),订阅只需建立一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,9 +72,10 @@ export function LanguageFromSettings(): ReactNode {
   );
 
   // 首次挂载：store locale 已是 main 真值（bootstrap inject），但 values 还没该 key →
-  // 把 store.locale 写回 values（让 SegmentedControl 显示正确选中态）
+  // 把 store.locale 写回 values（让 SegmentedControl 显示正确选中态）。等于系统默认则不写:
+  // 那就是默认值,写进去会让设置行显示「已修改」(中文 / 韩文系统首启从未改过却出现 ↺)。
   useEffect(() => {
-    if (rawStored === undefined && storeLocale !== LANGUAGE_DEFAULT) {
+    if (rawStored === undefined && storeLocale !== systemLocale) {
       setValue(LANGUAGE_SETTING_ID, storeLocale);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

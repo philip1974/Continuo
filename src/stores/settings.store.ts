@@ -25,12 +25,15 @@ export interface SettingsState {
   readonly locale: Locale;
   /** 最新一次本端发起或收到的 in-flight gen；过期 callback 丢弃。 */
   readonly currentGen: number;
+  /** main 的系统默认 locale(首启默认)—— 语言设置项的默认值;bootstrap 注入,失败保持 'en'。 */
+  readonly systemLocale: Locale;
   setLocale: (locale: Locale) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>(() => ({
   locale: 'en',
   currentGen: 0,
+  systemLocale: 'en',
   setLocale: async (locale: Locale) => {
     // 调 main 持久化，等待返回 gen
     const result = await coApi.i18n.setLocale(locale);
@@ -77,6 +80,6 @@ export function subscribeToI18nBroadcast(): void {
 
 /** Test helper. */
 export function _resetSettingsStoreForTest(): void {
-  useSettingsStore.setState({ locale: 'en', currentGen: 0 });
+  useSettingsStore.setState({ locale: 'en', currentGen: 0, systemLocale: 'en' });
   _subscribed = false;
 }

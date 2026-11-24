@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     captureLmApi: vi.fn(),
     i18nGetLocale: vi.fn<() => Promise<{ ok: true; data: 'zh' }>>(),
     i18nOnChange: vi.fn(() => () => undefined),
+    i18nGetSystemLocale: vi.fn<() => Promise<{ ok: true; data: 'ko' }>>(),
     pluginsOnChanged: vi.fn(),
     pluginsOnProtocolUrl: vi.fn(),
     explorerRead: vi.fn(),
@@ -137,6 +138,7 @@ vi.mock('@/lib/co-api', () => ({
   coApi: {
     i18n: {
       getLocale: mocks.i18nGetLocale,
+      getSystemLocale: mocks.i18nGetSystemLocale,
       onChange: mocks.i18nOnChange,
     },
     plugins: {
@@ -185,6 +187,7 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="root"></div>';
   useSettingsStore.setState({ locale: 'en', currentGen: 0 });
   mocks.i18nGetLocale.mockResolvedValue({ ok: true, data: 'zh' });
+  mocks.i18nGetSystemLocale.mockResolvedValue({ ok: true, data: 'ko' });
   vi.clearAllMocks();
 });
 
@@ -204,6 +207,8 @@ describe('renderer bootstrap locale sync — P0-2', () => {
     expect(mocks.i18nGetLocale).toHaveBeenCalledTimes(1);
     expect(useSettingsStore.getState().locale).toBe('zh');
     expect(getLocale()).toBe('zh');
+    // 语言设置项的默认值 = main 的系统默认 locale,同在 createRoot / bootCorePlugins 前就绪
+    expect(useSettingsStore.getState().systemLocale).toBe('ko');
     expect(mocks.createRoot).toHaveBeenCalledWith(
       document.getElementById('root'),
     );

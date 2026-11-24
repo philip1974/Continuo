@@ -476,6 +476,10 @@ const api = {
     getLocale(): Promise<IpcResult<Locale>> {
       return ipcRenderer.invoke(I18N_CHANNELS.GET_LOCALE);
     },
+    /** 系统默认 locale(首启默认);语言设置项的「默认值」/「恢复默认」目标。 */
+    getSystemLocale(): Promise<IpcResult<Locale>> {
+      return ipcRenderer.invoke(I18N_CHANNELS.GET_SYSTEM_LOCALE);
+    },
     /** 设置新 locale；main 持久化 + 广播 i18n:changed；返回 { locale, gen }。 */
     setLocale(locale: Locale): Promise<IpcResult<I18nChangedPayload>> {
       return ipcRenderer.invoke(I18N_CHANNELS.SET_LOCALE, locale);

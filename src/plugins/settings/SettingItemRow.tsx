@@ -155,6 +155,14 @@ export function SettingItemRow({
   const value = coerceSettingValue(spec, stored ?? spec.default);
   // values 中存在 override → 显示 reset;undefined 表示走 default,无需 reset
   const isOverridden = stored !== undefined;
+  // 重置提示里的默认值:select 显示选项文案(如语言「中文」),其余显示原始值。
+  const defaultOption =
+    spec.type === 'select' ? spec.enum?.find((o) => o.value === spec.default) : undefined;
+  const defaultLabel = defaultOption
+    ? defaultOption.labelKey
+      ? t(defaultOption.labelKey)
+      : defaultOption.label
+    : String(spec.default);
   // a11y(A21,A4 同族):把设置标题与控件建立可访问关联 —— 标题给稳定 id,number/text/select
   // 控件 aria-labelledby 指向它,否则 AT 聚焦只读「spinbutton/edit text/radiogroup」不知编辑哪项。
   const titleId = `setting-title-${spec.id}`;
@@ -252,7 +260,7 @@ export function SettingItemRow({
           // a11y(A12):未覆盖时仅 invisible 仍可 Tab 聚焦到不可见无效按钮 → disabled 从 tab
           // 顺序移除 + 不可点(常驻占位保留布局不跳动,但键盘/AT 不再触达)。
           disabled={!isOverridden}
-          title={t('settings.item.reset_default', { default: String(spec.default) })}
+          title={t('settings.item.reset_default', { default: defaultLabel })}
           aria-label={t('settings.item.reset_default_aria')}
           className={isOverridden ? '' : 'pointer-events-none invisible'}
         >

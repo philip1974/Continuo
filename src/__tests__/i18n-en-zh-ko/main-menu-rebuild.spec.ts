@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   // race(R36):handler 改用 commitSetLocaleGen 判广播(true=最新成功提交)。
   commitSetLocaleGen: vi.fn<(gen: number) => boolean>(() => true),
   getCurrentLocale: vi.fn<() => Locale>(() => 'en'),
+  getSystemDefaultLocale: vi.fn<() => Locale>(() => 'zh'),
   BrowserWindow: {
     getAllWindows: vi.fn<() => PopoutWindow[]>(() => []),
   },
@@ -43,6 +44,7 @@ vi.mock('../../../electron/main/safe-handle', () => ({
 
 vi.mock('../../../electron/main/services/settings.service', () => ({
   getCurrentLocale: mocks.getCurrentLocale,
+  getSystemDefaultLocale: mocks.getSystemDefaultLocale,
   setCurrentLocale: mocks.setCurrentLocale,
   commitSetLocaleGen: mocks.commitSetLocaleGen,
 }));
@@ -75,11 +77,17 @@ describe('main menu rebuild on setLocale', () => {
     setMenuRebuilder(rebuild);
     await setLocaleHandler()('zh');
 
-    expect(mocks.safeHandle).toHaveBeenCalledTimes(2);
+    expect(mocks.safeHandle).toHaveBeenCalledTimes(3);
     expect(mocks.safeHandleCalls.map((call) => call.channel)).toEqual([
       I18N_CHANNELS.GET_LOCALE,
+      I18N_CHANNELS.GET_SYSTEM_LOCALE,
       I18N_CHANNELS.SET_LOCALE,
     ]);
+    // GET_SYSTEM_LOCALE 返回系统默认 locale(语言设置项的默认值),与当前 locale 无关
+    const sysCall = mocks.safeHandleCalls.find(
+      (call) => call.channel === I18N_CHANNELS.GET_SYSTEM_LOCALE,
+    );
+    expect(await sysCall!.handler(undefined)).toBe('zh');
     expect(mocks.setCurrentLocale).toHaveBeenCalledWith('zh');
     expect(rebuild).toHaveBeenCalledTimes(1);
   });
