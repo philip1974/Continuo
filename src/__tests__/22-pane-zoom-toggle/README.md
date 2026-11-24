@@ -41,6 +41,8 @@ group 区**。再次触发或切 tab 时复原。PTY / scrollback / 各类 id �
 - ❌ mac 上 Shift+Ctrl+Enter / 其它平台 Shift+Win+Enter → 不让出(照常发回车,不被吞)
 - ❌ 用户改绑后原默认键 / 解绑 → 不让出;改绑的新键 → 让出
 - ❌ isComposing(IME)/ keyup → 不让出
+- 让出后由终端直接执行 `terminal.zoom.toggle` 并截住冒泡(`runTerminalZoomFromKey`):不依赖冒泡到 document 的全局分发
+  (后者对来自 xterm textarea 且无 ctrl/meta/alt 的绑定放行,改绑为 F2 时会被吞),也不会被执行两次
 - 兄弟包 `shouldSkipXtermKey`(不分平台)保留其自身规范,终端不再使用
 
 ### Focus 回路(T6, T6b, T6c)

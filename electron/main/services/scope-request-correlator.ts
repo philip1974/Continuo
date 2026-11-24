@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ScopeRequestTimeoutError } from '../../shared/plugin-fs-contract';
+import { AGENT_AUTH_QUEUE_MAX_MS } from '../../shared/agent-auth-channels';
 
 interface PendingEntry {
   token: string;
@@ -24,9 +25,9 @@ export interface CreateRequestResult {
 // 计时用 setTimeout(与 agent-auth 一致):libuv 定时器走单调时钟,不计入系统睡眠;此前按 Date.now 比较 + 每分钟扫描,
 // 弹窗开着合盖超过 5 分钟,唤醒后一分钟内就被清掉。
 const DEFAULT_TTL_MS = 300_000;
-// 排队兜底(与 AGENT_AUTH_QUEUE_MAX_MS 同值):这么久仍没轮到显示(前面的弹窗一直轮不完 / renderer 没回报)→ 同样
+// 排队兜底(与 agent 授权弹窗同一常量):这么久仍没轮到显示(前面的弹窗一直轮不完 / renderer 没回报)→ 同样
 // 按超时收口,请求不会无限挂起。
-const DEFAULT_QUEUE_MAX_MS = 600_000;
+const DEFAULT_QUEUE_MAX_MS = AGENT_AUTH_QUEUE_MAX_MS;
 /** cancelByToken 的 reject 原因(request-scope handler 据此按 deny 静默收口)。 */
 export const SCOPE_REQUEST_PLUGIN_UNREGISTERED = 'plugin unregistered';
 // 边界(E227):未决 scope 请求数量上限。单次 request-scope 的 scopes 已限,但插件可连续 spam 大量未决

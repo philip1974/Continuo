@@ -31,7 +31,7 @@ export interface PluginFsIpcHandles {
 
 /**
  * 窗口关闭时,把该窗 webContents 发起的全部 pending scope 授权请求立即结算掉,
- * 否则 host 侧 `await promise` 要干等满 5min TTL 才被 sweep。返回结算条数。
+ * 否则 host 侧 `await promise` 要干等到该请求的计时器到期(排队上限 / 显示后无应答超时)。返回结算条数。
  */
 export function cancelScopeRequestsForWebContents(webContentsId: number): number {
   return activeHandles?.correlator.cancelBySender(webContentsId) ?? 0;

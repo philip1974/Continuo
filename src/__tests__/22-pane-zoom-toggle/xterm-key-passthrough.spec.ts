@@ -1,9 +1,8 @@
 // BDD: 22-pane-zoom-toggle / xterm Shift+(Cmd|Ctrl)+Enter passthrough
 //
-// shouldSkipXtermKey 命中条件:
-//   keydown + Enter + Shift + (Meta || Ctrl) + !Alt + !isComposing
-// 命中后 customKeyEventHandler return false → xterm 不发 \r 到 PTY,
-// document keydown bubble 到 useCommandHotkeys 派发 terminal.zoom.toggle。
+// 兄弟包 shouldSkipXtermKey(不分平台,终端已不再使用)保留其自身规范;终端实际按 isTerminalZoomHotkey 判定
+//(生效绑定、按平台),命中后 customKeyEventHandler return false → xterm 不发 \r 到 PTY,
+// 并由 runTerminalZoomFromKey 直接执行 terminal.zoom.toggle、截住冒泡(不依赖 document 分发)。
 
 import { describe, it, expect, vi } from 'vitest';
 import { shouldSkipXtermKey } from '@continuo-terminal/react-terminal';

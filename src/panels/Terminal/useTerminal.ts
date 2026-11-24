@@ -495,8 +495,8 @@ export function useTerminal(termId: string) {
         });
         return false;
       }
-      // topic-22: 缩放热键(生效绑定,默认 shift+mod+enter,按平台)让 xterm 不发 \r,document keydown
-      // 派发 terminal.zoom.toggle 命令。pending 不污染(命中即 return false 跳过)。
+      // topic-22: 缩放热键(生效绑定,默认 shift+mod+enter,按平台)让 xterm 不发 \r,由终端直接执行
+      // terminal.zoom.toggle 并截住冒泡(runTerminalZoomFromKey)。pending 不污染(命中即 return false 跳过)。
       if (isTerminalZoomHotkey(event)) {
         runTerminalZoomFromKey(event);
         return false;
