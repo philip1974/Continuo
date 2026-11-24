@@ -1,6 +1,7 @@
 // 用户改快捷键的按键捕获 modal(M-Settings v6.5)。
 // 监听全局 keydown,实时把组合呈现成 'mod+shift+x' 形式;Esc=取消,
-// Backspace=清空(用户可保存空 = unbind),其它键 = 当前组合。
+// Backspace=清空(用户可保存空 = unbind),无修饰 Enter=保存已录组合(VSCode 录键框同款,故 Enter 单键不可录),
+// 其它键 = 当前组合。打开时焦点落在录制区(data-autofocus)。
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
@@ -138,6 +139,8 @@ function KeybindingCaptureModalBody({
   // string non-empty = 新组合
   const [captured, setCaptured] = useState<string | null>(null);
   const statusRef = useRef<HTMLDivElement>(null);
+  // keydown 监听只挂一次:Enter 保存经 ref 读最新的 captured / 保留键 / 冲突(赋值见下方 reserved 之后)。
+  const acceptFromEnterRef = useRef<() => void>(() => {});
 
   // Body 只在弹窗可见时挂载(外层 visible=false 直接不渲染)→ 每次打开都是全新 state,无需手动复位。
   useEffect(() => {
@@ -159,10 +162,21 @@ function KeybindingCaptureModalBody({
       const isActivationKey = e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar';
       const hasComboModifier = e.metaKey || e.ctrlKey || e.altKey;
       if (isActivationKey && !hasComboModifier) {
-        const target = e.target as HTMLElement | null;
-        if (target?.closest('button, a[href], input, select, textarea, [role="button"]')) {
+        const target = e.target as Partial<Pick<Element, 'closest'>> | null;
+        if (
+          typeof target?.closest === 'function' &&
+          target.closest('button, a[href], input, select, textarea, [role="button"]')
+        ) {
           return;
         }
+      }
+      // VSCode 录键框(DefineKeybindingWidget):无修饰 Enter = 接受已录组合并关闭,不录成按键;
+      // Shift/Ctrl/Cmd/Alt+Enter 仍按组合录。焦点在按钮上的 Enter 已在上面放行给按钮。
+      if (e.key === 'Enter' && !hasComboModifier && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        acceptFromEnterRef.current();
+        return;
       }
       if (e.key === 'Backspace') {
         e.preventDefault();
@@ -202,6 +216,13 @@ function KeybindingCaptureModalBody({
 
   const reserved = useMemo(() => selectReservedPickerHotkey(captured), [captured]);
 
+  // 保留键(保存被禁用)与冲突(保存后只有一个命令响应)时 Enter 不保存 —— 冲突须用户看过警告后显式点「保存」。
+  acceptFromEnterRef.current = () => {
+    if (captured === null || reserved !== null || conflicts.length > 0) return;
+    onSave(captured);
+    onClose();
+  };
+
   // 引用必须稳定(同 ConfirmDialog):调用方传内联 onClose,命令注册表变化等重渲会让 Modal 焦点 / 键盘栈
   // effect 重跑,把捕获中的焦点拉回、叠在上层的弹窗被挤下栈顶。
   const handleModalClose = useStableCallback(onClose);
@@ -226,10 +247,20 @@ function KeybindingCaptureModalBody({
           框内容随每次按键在「按下新组合」/组合键/「未绑定」间动态切换。无 live region 时 AT
           用户按下组合后听不到是否已捕获/清空,只能盲目保存。捕获结果是中性进度 → role=status
           (polite,不打断);A52 修的是冲突警告(下方),这是捕获结果框本身。 */}
+      {/* 录制区可获焦并是初始焦点(data-autofocus):否则 Modal 把初始焦点给第一个按钮「取消」,用户按 Enter
+          想确认却等于点了取消。焦点在这里时无修饰 Enter = 保存(VSCode 录键框的输入框同款)。 */}
+      <div
+        data-testid="keybinding-capture-area"
+        role="group"
+        aria-label={t('keybindings.modal.press_combo')}
+        tabIndex={0}
+        data-autofocus
+        className="mt-4 rounded border border-line bg-panel-soft/50 outline-none focus-visible:border-accent"
+      >
       <div
         ref={statusRef}
         role="status"
-        className="mt-4 flex min-h-[60px] items-center justify-center rounded border border-line bg-panel-soft/50 p-4"
+        className="flex min-h-[60px] items-center justify-center p-4"
       >
         {isUnbind ? (
           <span className="text-xs text-fg-dim">{t('keybindings.modal.unbound')}</span>
@@ -243,9 +274,11 @@ function KeybindingCaptureModalBody({
           <span className="text-xs text-fg-dim">{t('keybindings.modal.press_combo')}</span>
         )}
       </div>
+      </div>
 
       <div className="mt-2 text-2xs text-fg-dim">
         {t('keybindings.modal.hint_press_save')}
+        <KeyCap>Enter</KeyCap> {t('keybindings.modal.hint_save')}
         <KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}
         <KeyCap>Esc</KeyCap> {t('keybindings.modal.hint_cancel')}
         {defaultHotkey && (

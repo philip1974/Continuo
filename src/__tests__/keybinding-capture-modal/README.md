@@ -1,7 +1,7 @@
 # KeybindingCaptureModal(快捷键捕获 modal)
 
 行为契约:**用户改某 command 的 hotkey:监听 keydown,把组合编成 'mod+shift+x' 形式呈现;
-Backspace=unbind('');其它键 → 完整组合。Esc 由 Modal 自身处理 onClose。
+Backspace=unbind('');无修饰 Enter=保存已录组合;其它键 → 完整组合。Esc 由 Modal 自身处理 onClose。
 保存按钮在 captured!==null 时启用,点击 → onSave + onClose。
 重置默认仅在有 defaultHotkey 或已 captured='' 时启用,点击 → onResetToDefault + onClose。
 冲突检测:captured 非空时扫描其它命令 effective hotkey 命中 → 显示警告(不阻止保存)。**
@@ -30,6 +30,17 @@ Backspace=unbind('');其它键 → 完整组合。Esc 由 Modal 自身处理 onC
 - Backspace → captured=''
 - 'a' → captured='a'
 - meta + shift + 'x' → captured='mod+shift+x'
+
+### 录制区焦点 + Enter 保存(对齐 VSCode 录键框 DefineKeybindingWidget)
+
+- 录制区 `data-testid="keybinding-capture-area"` 可获焦(tabIndex=0)且 `data-autofocus` → 打开即聚焦录制区
+  (此前无 data-autofocus,初始焦点落在第一个按钮「取消」,Enter 等于点了取消)
+- 无修饰 Enter(焦点不在按钮上)= 接受:已录组合(含 Backspace 清空的 '')→ onSave + onClose;不被录成按键
+  (与 VSCode 一致:录键框里 Enter 是确认,无修饰 Enter 单键不可录;Shift/Ctrl/Cmd/Alt+Enter 仍可录)
+- 未录到组合 / 录到保留键 / 与其它命令冲突 → Enter 不保存(冲突须看过警告后显式点「保存」;VSCode 此处
+  直接接受,这里刻意更保守,因为冲突时只有先注册的命令会响应)
+- 焦点在按钮上的 Enter / Space 仍放行给按钮激活(A63)
+- Esc 由 Modal 处理 → onClose(取消)
 
 ### visible 切换
 

@@ -484,6 +484,95 @@ describe('KeybindingCaptureModal — Quick Open / 命令面板保留键', () => 
   });
 });
 
+// VSCode 录键框(DefineKeybindingWidget):焦点在录制输入框,Enter = 接受已录组合,Esc = 取消;
+// 无修饰的 Enter 不可录成按键(带修饰的 Shift/Ctrl+Enter 照常可录)。
+describe('KeybindingCaptureModal — 录制区焦点 + Enter 保存(VSCode 录键框)', () => {
+  function captureArea(): HTMLElement {
+    const el = document.querySelector<HTMLElement>('[data-testid="keybinding-capture-area"]');
+    expect(el).not.toBeNull();
+    return el!;
+  }
+
+  function pressEnterOn(target: EventTarget): KeyboardEvent {
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    act(() => {
+      target.dispatchEvent(ev);
+    });
+    return ev;
+  }
+
+  it('打开后初始焦点落在录制区(不在「取消」按钮上)', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      render(<KeybindingCaptureModal {...defaultProps()} />);
+      expect(captureArea().tabIndex).toBe(0);
+      expect(document.activeElement).toBe(captureArea());
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
+  it('录到组合后在录制区按 Enter → onSave(组合) + onClose,Enter 不被录成按键', () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    render(<KeybindingCaptureModal {...defaultProps({ onSave, onClose })} />);
+    dispatchKey({ key: 'k', ctrlKey: true });
+    const ev = pressEnterOn(captureArea());
+    expect(ev.defaultPrevented).toBe(true);
+    expect(onSave).toHaveBeenCalledWith('mod+k');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Backspace 清空后按 Enter → 保存空(解绑)', () => {
+    const onSave = vi.fn();
+    render(<KeybindingCaptureModal {...defaultProps({ onSave, currentHotkey: 'mod+s' })} />);
+    dispatchKey({ key: 'Backspace' });
+    pressEnterOn(captureArea());
+    expect(onSave).toHaveBeenCalledWith('');
+  });
+
+  it('尚未录到组合时按 Enter → 不保存、不关闭,也不把 Enter 录成按键', () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    render(<KeybindingCaptureModal {...defaultProps({ onSave, onClose })} />);
+    pressEnterOn(captureArea());
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(getButton('保存').disabled).toBe(true);
+    expect(document.querySelector('.wm-modal-content')!.textContent).toContain('按下新组合…');
+  });
+
+  it('录到保留键时按 Enter → 不保存', () => {
+    const onSave = vi.fn();
+    render(<KeybindingCaptureModal {...defaultProps({ onSave })} />);
+    dispatchKey({ key: 'p', ctrlKey: true });
+    pressEnterOn(captureArea());
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('录到与其它命令冲突的组合时按 Enter → 不保存(须显式点「保存」确认)', () => {
+    const onSave = vi.fn();
+    const all: CommandSpec[] = [{ id: 'cmd.b', title: 'B', hotkey: 'mod+x', fn: () => {} }];
+    render(<KeybindingCaptureModal {...defaultProps({ onSave, allCommands: all })} />);
+    dispatchKey({ key: 'x', ctrlKey: true });
+    pressEnterOn(captureArea());
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(getButton('保存'));
+    expect(onSave).toHaveBeenCalledWith('mod+x');
+  });
+
+  it('Shift+Enter 仍可录成组合', () => {
+    render(<KeybindingCaptureModal {...defaultProps()} />);
+    dispatchKey({ key: 'Enter', shiftKey: true });
+    expect(getButton('保存').disabled).toBe(false);
+  });
+});
+
 describe('KeybindingCaptureModal — visible 切换 → captured 复位', () => {
   it('false → true 时新一轮捕获从 null 开始', () => {
     const props = defaultProps({ visible: true });
