@@ -13,7 +13,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { OUTPUT_READY } from './helpers/output';
+import { OUTPUT_EMPTY } from './helpers/output';
 import { launchContinuo } from './helpers/launch';
 import { waitForTestHooks } from './helpers/app-ready';
 
@@ -46,7 +46,7 @@ async function openOutputPanel(page: Page): Promise<void> {
       const t = globalThis.__continuoTest!;
       t.openOrFocusPanel('output', 'output', 'Output');
     });
-    await expect(page.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });
+    await expect(page.getByText(OUTPUT_EMPTY)).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
 }
 
@@ -166,7 +166,7 @@ test.describe('dock-layout-per-window-seq: v3 persist roundtrip', () => {
     await page2.waitForLoadState('domcontentloaded');
 
     // 默认布局不含 Output panel:它在重启后出现即证明布局已从 explorer.json 恢复
-    await expect(page2.getByText(OUTPUT_READY)).toBeVisible({
+    await expect(page2.getByText(OUTPUT_EMPTY)).toBeVisible({
       timeout: 15_000,
     });
 

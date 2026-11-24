@@ -1,6 +1,6 @@
 // openOrFocusPanel 二次 → 仍单例(不重复 addPanel).
 import { test, expect } from './fixtures/electron-app';
-import { OUTPUT_CLOSE, OUTPUT_READY, openOutputPanel } from './helpers/output';
+import { OUTPUT_CLOSE, OUTPUT_EMPTY, openOutputPanel } from './helpers/output';
 
 test('openOrFocusPanel("output") 调 2 次 → 只 1 个 Output close ✕', async ({
   window,
@@ -12,7 +12,7 @@ test('openOrFocusPanel("output") 调 2 次 → 只 1 个 Output close ✕', asyn
     t.openOrFocusPanel('output', 'output', 'Output');
   });
 
-  await expect(window.getByText(OUTPUT_READY)).toBeVisible({
+  await expect(window.getByText(OUTPUT_EMPTY)).toBeVisible({
     timeout: 10_000,
   });
   // 留时间让可能的重复 addPanel 渲染出来,再数

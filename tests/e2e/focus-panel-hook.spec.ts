@@ -1,7 +1,7 @@
 // focusPanel testing hook → 切 active panel.
 import { test, expect } from './fixtures/electron-app';
 import { openSettings } from './helpers/settings';
-import { OUTPUT_READY, openOutputPanel } from './helpers/output';
+import { OUTPUT_EMPTY, openOutputPanel } from './helpers/output';
 
 test('开 Output → 开 Settings(active)→ focusPanel("output") → Output active', async ({
   window,
@@ -19,7 +19,7 @@ test('开 Output → 开 Settings(active)→ focusPanel("output") → Output act
   });
 
   // Output 内容显
-  await expect(window.getByText(OUTPUT_READY)).toBeVisible({
+  await expect(window.getByText(OUTPUT_EMPTY)).toBeVisible({
     timeout: 5_000,
   });
 });

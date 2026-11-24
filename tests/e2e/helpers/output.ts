@@ -5,10 +5,8 @@ import { waitForTestHooks } from './app-ready';
 export const OUTPUT_PANEL = /^(输出|Output|출력)$/;
 export const OUTPUT_CLOSE =
   /^(关闭 (输出|Output)|Close (输出|Output)|(출력|Output) 닫기)$/;
-export const OUTPUT_READY =
-  /(Continuo 就绪|Continuo ready|Continuo 준비됨)/;
-export const OUTPUT_LAYOUT_RESTORED =
-  /(已恢复停靠布局|dock layout restored|도크 레이아웃 복원됨)/;
+// Output 面板目前无写入方,只渲染空状态文案(panels.output.empty);其出现即表示面板内容已挂载。
+export const OUTPUT_EMPTY = /(暂无输出。|No output yet\.|아직 출력이 없습니다\.)/;
 
 export async function openOutputPanel(window: Page): Promise<void> {
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
@@ -21,6 +19,6 @@ export async function openOutputPanel(window: Page): Promise<void> {
       const t = globalThis.__continuoTest!;
       t.openOrFocusPanel('output', 'output', 'Output');
     });
-    await expect(window.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });
+    await expect(window.getByText(OUTPUT_EMPTY)).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
 }

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { explorerMoreActionsButton } from './helpers/explorer';
-import { OUTPUT_READY } from './helpers/output';
+import { OUTPUT_EMPTY } from './helpers/output';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 import { waitForTestHooks } from './helpers/app-ready';
@@ -34,7 +34,7 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
         const t = globalThis.__continuoTest!;
         t.openOrFocusPanel('output', 'output', 'Output');
       });
-      await expect(win.getByText(OUTPUT_READY)).toBeVisible({ timeout: 2_000 });
+      await expect(win.getByText(OUTPUT_EMPTY)).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
 
     // 切 root
@@ -46,7 +46,7 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
     await expect(
       win.locator('main aside').nth(1).getByText(wsName2).first(),
     ).toBeVisible({ timeout: 10_000 });
-    await expect(win.getByText(OUTPUT_READY)).toBeVisible({
+    await expect(win.getByText(OUTPUT_EMPTY)).toBeVisible({
       timeout: 5_000,
     });
 
