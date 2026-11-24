@@ -6,7 +6,11 @@
 
 - 编辑器背景、gutter、当前行、选区、光标、面板 / 提示框取自 `--md-*` token,字体取 `--wm-font-mono`;一套样式同时适配
   `:root`(亮)与 `.dark`(暗),底色与画布 / 终端 / Markdown 编辑器一致(不再是 oneDark 的 `#282c34`)。
-- 语法高亮:暗色沿用 oneDark 的配色;亮色用同家族的 One Light 配色,标题只加粗、不加下划线。
+- 语法高亮:一套 HighlightStyle,颜色只引用 `theme.css` 的 Continuo 自有槽位 `--md-syntax-*`(keyword / name / function /
+  constant / definition / type / operator / comment / string / heading / link / invalid),`:root` 与 `.dark` 各一套值:
+  暗色 = oneDark 原值,亮色 = One Light 同色相加深;两主题每个语法色对编辑器底色 `--md-surface` ≥ 4.5(原亮色 One Light
+  注释 2.51 / 字符串 3.13 / 类型 3.12 / 属性 3.58)。组件里不写字面 hex;标题只加粗、不加下划线。切主题靠 `<html class="dark">`
+  即时换色(亮 / 暗挂的是同一个 HighlightStyle)。
 - 暗色向 CodeMirror 声明 dark 主题(内建样式选暗色变体),亮色不声明。切换主题热替换,不重建编辑器。
 - Markdown(`forceLanguage='markdown'` 或 `.md` / `.markdown` 文件):文首 `---` 包起来的 frontmatter 按 YAML 解析高亮;
   不在文首的 `---` 等照常按 Markdown 解析。
@@ -22,4 +26,4 @@
 
 | File | 覆盖 |
 |---|---|
-| `code-editor-theme.spec.tsx` | frontmatter 解析树、注入样式取 token、dark facet、亮色标题无下划线、暗色 oneDark 配色 |
+| `code-editor-theme.spec.tsx` | frontmatter 解析树、注入样式取 token、dark facet、亮色标题无下划线、`--md-syntax-*` 两主题对偶 + ≥ 4.5 + 无字面 hex + 亮暗同一 HighlightStyle |

@@ -85,6 +85,13 @@ describe('theme.css 单层色板与 @theme inline 链路', () => {
     }
   });
 
+  it('theme.css 自有 --md-* 槽位(含 --md-syntax-*)在 :root 与 .dark 名称集合一致', () => {
+    const light = new Set(extractMdVars(getRootBlock(LM_THEME)));
+    const dark = new Set(extractMdVars(getDarkBlock(LM_THEME)));
+    expect(light.has('--md-syntax-keyword:')).toBe(true);
+    expect([...light].sort()).toEqual([...dark].sort());
+  });
+
   it('@theme inline 暴露 14 个 --color-* 语义 token,全部 var(--md-*) 解析', () => {
     const themeBlock = LM_THEME.match(/@theme\s+inline\s*\{([\s\S]*?)\n\}/);
     expect(themeBlock).not.toBeNull();

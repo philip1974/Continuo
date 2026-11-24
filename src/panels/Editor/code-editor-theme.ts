@@ -5,13 +5,12 @@
 // 编辑器同底色。此前暗色直接用 oneDark(底色 #282c34 与 --md-surface #11131b 割裂),亮色用 CodeMirror
 // 默认主题(标题粗体加下划线、gutter #f5f5f5)。
 //
-// 语法高亮:暗色沿用 oneDark 的 HighlightStyle;亮色用同一家族的 One Light 配色(Atom One Light),
-// 标题只加粗不加下划线。语法色板是代码配色方案(同 oneDark 内置色值),不进 --md-* 语义 token。
+// 语法高亮:一套 HighlightStyle 取 theme.css 的 --md-syntax-* 槽位(暗色 = oneDark 原值,亮色 = One Light 色相
+// 加深到 AA),标题只加粗不加下划线。
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import type { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
-import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
 
 const SELECTION = 'color-mix(in srgb, var(--md-primary) 28%, transparent)';
 
@@ -63,31 +62,36 @@ function chromeTheme(dark: boolean): Extension {
   );
 }
 
-// Atom One Light 配色(与 oneDark 同一家族),标题只加粗。
-const oneLightHighlightStyle = HighlightStyle.define([
-  { tag: t.keyword, color: '#a626a4' },
-  { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: '#e45649' },
-  { tag: [t.function(t.variableName), t.labelName], color: '#4078f2' },
-  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#986801' },
-  { tag: [t.definition(t.name), t.separator], color: '#383a42' },
+// 语法高亮:一套 HighlightStyle,颜色全取 theme.css 的 --md-syntax-*(light / dark 各一套值),切主题靠
+// <html class="dark"> 即时生效。tag 分组沿用 oneDark;标题只加粗不加下划线。
+const codeHighlightStyle = HighlightStyle.define([
+  { tag: t.keyword, color: 'var(--md-syntax-keyword)' },
+  { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: 'var(--md-syntax-name)' },
+  { tag: [t.function(t.variableName), t.labelName], color: 'var(--md-syntax-function)' },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: 'var(--md-syntax-constant)' },
+  { tag: [t.definition(t.name), t.separator], color: 'var(--md-syntax-definition)' },
   {
     tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace],
-    color: '#c18401',
+    color: 'var(--md-syntax-type)',
   },
-  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: '#0184bc' },
-  { tag: [t.meta, t.comment], color: '#a0a1a7', fontStyle: 'italic' },
+  {
+    tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.special(t.string)],
+    color: 'var(--md-syntax-operator)',
+  },
+  { tag: [t.meta, t.comment], color: 'var(--md-syntax-comment)', fontStyle: 'italic' },
   { tag: t.strong, fontWeight: 'bold' },
   { tag: t.emphasis, fontStyle: 'italic' },
   { tag: t.strikethrough, textDecoration: 'line-through' },
-  { tag: t.link, textDecoration: 'underline' },
-  { tag: t.heading, fontWeight: 'bold', color: '#e45649' },
-  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#986801' },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: '#50a14f' },
-  { tag: t.invalid, color: '#ca1243' },
+  { tag: t.link, color: 'var(--md-syntax-link)', textDecoration: 'underline' },
+  { tag: t.heading, fontWeight: 'bold', color: 'var(--md-syntax-heading)' },
+  { tag: [t.atom, t.bool, t.special(t.variableName)], color: 'var(--md-syntax-constant)' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: 'var(--md-syntax-string)' },
+  { tag: t.invalid, color: 'var(--md-syntax-invalid)' },
 ]);
 
-const DARK: Extension = [chromeTheme(true), syntaxHighlighting(oneDarkHighlightStyle)];
-const LIGHT: Extension = [chromeTheme(false), syntaxHighlighting(oneLightHighlightStyle)];
+const HIGHLIGHT: Extension = syntaxHighlighting(codeHighlightStyle);
+const DARK: Extension = [chromeTheme(true), HIGHLIGHT];
+const LIGHT: Extension = [chromeTheme(false), HIGHLIGHT];
 
 export function codeEditorTheme(resolved: 'light' | 'dark'): Extension {
   return resolved === 'dark' ? DARK : LIGHT;

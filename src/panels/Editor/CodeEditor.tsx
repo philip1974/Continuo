@@ -6,7 +6,7 @@
 //   2. markdown 的 Source mode(决策 #4:用 CodeMirror markdown 模式,
 //      比 Mind 原版 textarea 强,有语法高亮 + 折叠)
 //
-// 主题:外观走设计 token(亮 / 暗共用),语法高亮暗色 oneDark、亮色 One Light(见 code-editor-theme.ts)。
+// 主题:外观走设计 token(亮 / 暗共用),语法高亮走 --md-syntax-* token(见 code-editor-theme.ts)。
 // 通过 Compartment.reconfigure 热切,无需重建 EditorView。
 
 import { useEffect, useRef } from 'react';

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 // 代码编辑器(CodeEditor:代码文件 + Markdown Source 模式)的外观与 Markdown frontmatter 解析。
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EditorState } from '@codemirror/state';
@@ -80,7 +82,7 @@ describe('CodeEditor 主题接设计 token', () => {
     expect((await mount('light')).state.facet(EditorView.darkTheme)).toBe(false);
   });
 
-  it('亮色有语法高亮且标题不加下划线;暗色沿用 oneDark 配色', async () => {
+  it('亮色有语法高亮且标题不加下划线', async () => {
     const light = await mount('light');
     expect(highlightingFor(light.state, [tags.keyword])).toBeTruthy();
     const headingClass = highlightingFor(light.state, [tags.heading]);
@@ -88,10 +90,64 @@ describe('CodeEditor 主题接设计 token', () => {
     const css = injectedCss();
     const rule = css.split('}').find((r) => headingClass!.split(' ').some((c) => r.includes(`.${c}`)));
     expect(rule ?? '').not.toContain('underline');
-    cleanup();
+  });
+});
 
+// 语法色进 theme.css 自有槽位 --md-syntax-*(light / dark 各一套),HighlightStyle 只引用 var(--md-syntax-*):
+// 一套高亮两主题通用,切主题靠 <html class="dark"> 即时生效;组件里不再有字面 hex。
+describe('语法高亮走 --md-syntax-* token', () => {
+  const read = (rel: string): string => readFileSync(join(__dirname, '..', '..', rel), 'utf-8');
+  const block = (css: string, sel: ':root' | '.dark'): string =>
+    css.match(new RegExp(`${sel === ':root' ? ':root' : '\\.dark'}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+  const slots = (b: string): Map<string, string> =>
+    new Map([...b.matchAll(/(--md-syntax-[a-z-]+):\s*(#[0-9a-f]{6});/gi)].map((m) => [m[1]!, m[2]!]));
+  const lum = (h: string): number => {
+    const [r, g, b] = [1, 3, 5]
+      .map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+  const themeCss = read('styles/theme.css');
+  const tokensCss = read('styles/design-tokens.css');
+
+  it('theme.css 的 :root 与 .dark 定义同一组 --md-syntax-* 槽位', () => {
+    const light = slots(block(themeCss, ':root'));
+    const dark = slots(block(themeCss, '.dark'));
+    expect(light.size).toBeGreaterThanOrEqual(8);
+    expect([...light.keys()].sort()).toEqual([...dark.keys()].sort());
+  });
+
+  it.each([':root', '.dark'] as const)('%s:每个语法色对编辑器底色(--md-surface)≥ 4.5', (sel) => {
+    const surface = block(tokensCss, sel).match(/--md-surface:\s*(#[0-9a-f]{6});/i)?.[1] ?? '';
+    expect(surface).not.toBe('');
+    for (const [name, color] of slots(block(themeCss, sel))) {
+      expect(contrast(color, surface), `${sel} ${name} ${color}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('暗色沿用 oneDark 配色(keyword 紫 #c678dd)', () => {
+    expect(slots(block(themeCss, '.dark')).get('--md-syntax-keyword')?.toLowerCase()).toBe('#c678dd');
+  });
+
+  it('code-editor-theme.ts 不含字面 hex 色值,HighlightStyle 引用的槽位都在 theme.css 定义', () => {
+    const src = read('panels/Editor/code-editor-theme.ts');
+    expect(src).not.toMatch(/['"]#[0-9a-f]{3,8}['"]/i);
+    const used = [...src.matchAll(/var\((--md-syntax-[a-z-]+)\)/g)].map((m) => m[1]!);
+    expect(used.length).toBeGreaterThan(0);
+    const defined = slots(block(themeCss, ':root'));
+    for (const name of used) expect(defined.has(name), name).toBe(true);
+  });
+
+  it('亮 / 暗挂同一套 HighlightStyle(同 tag 同 class),注入样式取 var(--md-syntax-*)', async () => {
+    const light = await mount('light');
+    const lightClass = highlightingFor(light.state, [tags.keyword]);
+    expect(injectedCss()).toContain('var(--md-syntax-keyword)');
+    cleanup();
     const dark = await mount('dark');
-    expect(highlightingFor(dark.state, [tags.keyword])).toBeTruthy();
-    expect(injectedCss()).toMatch(/#c678dd/i); // oneDark keyword 紫
+    expect(highlightingFor(dark.state, [tags.keyword])).toBe(lightClass);
   });
 });

@@ -4,7 +4,7 @@
  *   1. 引入 design-tokens.css(唯一色板来源:完整 47 个 --md-* + --wm-* 亮/暗双套,
  *      含 Continuo IDE 暗色值;源自已废弃的 Nous shell-ui,现由本仓库维护)。
  *      本文件不再覆盖其中任何 --md-* —— 改色直接改 design-tokens.css。
- *   2. Continuo 自有槽位(MD3 无对应:--md-debug-* / --md-fg-dim / --md-rating,及 --wm-radius-* 等),
+ *   2. Continuo 自有槽位(MD3 无对应:--md-debug-* / --md-fg-dim / --md-rating / --md-syntax-*,及 --wm-radius-* 等),
  *      light(:root)与 dark(.dark)各给值。
  *   3. @theme inline 把 Continuo 自有的 --color-* 私有 token 映射到 --md-*,
  *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility。
@@ -45,6 +45,24 @@
   /* 评分星(业内约定琥珀色,与 warning 语义不同):亮色深琥珀,对 surface / container-low / container
    * 5.41 / 5.03 / 4.77(Tailwind amber-400 在亮色底仅 1.63)。 */
   --md-rating: #8a6100;
+
+  /* 代码语法高亮(CodeEditor 的 HighlightStyle 只引用 var(--md-syntax-*),一套高亮两主题通用)。
+   * 亮色:Atom One Light 同色相加深到对 --md-surface ≥ 4.5(原 One Light 注释 #a0a1a7 2.51 / 字符串 #50a14f 3.13 /
+   * 类型 #c18401 3.12 / 属性 #e45649 3.58),对 surface 依次:keyword 5.97 / name 5.36 / function 5.52 /
+   * constant 5.62 / definition 11.07 / type 6.11 / operator 5.63 / comment 5.74 / string 5.80 / invalid 5.57;
+   * 叠当前行底(--md-state-hover)后仍全部 ≥ 4.5(最低 name 4.57)。 */
+  --md-syntax-keyword: #a626a4;
+  --md-syntax-name: #c4321f;
+  --md-syntax-function: #2c5fd6;
+  --md-syntax-constant: #8a5d00;
+  --md-syntax-definition: #383a42;
+  --md-syntax-type: #9a4a00;
+  --md-syntax-operator: #0b6d96;
+  --md-syntax-comment: #63646c;
+  --md-syntax-string: #297229;
+  --md-syntax-heading: #c4321f;
+  --md-syntax-link: #0b6d96;
+  --md-syntax-invalid: #ca1243;
 }
 
 /* ── Continuo 自有槽位的暗色值(MD3 色板本体在 design-tokens.css .dark)── */
@@ -59,6 +77,20 @@
 
   /* 评分星:琥珀(原 amber-400),对 surface / container-low / container 11.10 / 10.29 / 9.85 */
   --md-rating: #fbbf24;
+
+  /* 代码语法高亮:oneDark 原值(@codemirror/theme-one-dark),对 --md-surface #11131b 均 ≥ 5.1。 */
+  --md-syntax-keyword: #c678dd;
+  --md-syntax-name: #e06c75;
+  --md-syntax-function: #61afef;
+  --md-syntax-constant: #d19a66;
+  --md-syntax-definition: #abb2bf;
+  --md-syntax-type: #e5c07b;
+  --md-syntax-operator: #56b6c2;
+  --md-syntax-comment: #7d8799;
+  --md-syntax-string: #98c379;
+  --md-syntax-heading: #e06c75;
+  --md-syntax-link: #7d8799;
+  --md-syntax-invalid: #ffffff;
 }
 
 /* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */
