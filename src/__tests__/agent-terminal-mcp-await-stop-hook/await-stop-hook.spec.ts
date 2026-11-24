@@ -12,6 +12,7 @@ import {
   MCP_TOOL_AWAIT_STOP_HOOK,
 } from '../../../electron/shared/mcp-terminal-schemas';
 import {
+  cancelStopHookWaitersOnSessionEnd,
   createAwaitStopHookTool,
   createHookFileBroker,
   installStopHookForSession,
@@ -19,6 +20,9 @@ import {
   type HookFileBroker,
   type HookWatchFactory,
 } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { makeTerminalMcpTools } from '../../../electron/main/services/mcp-terminal-host';
+import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
+import type { AnyMcpTool } from '../../../electron/main/services/mcp-host.service';
 import { setupTempDirs } from '../_helpers/tmp-dir';
 
 const DONE_BUFFER_CAP = 500;
@@ -868,5 +872,110 @@ describe('S9 tool description 提示返回内容不可信', () => {
     expect(tool.description).toMatch(/transcript_path/);
     expect(tool.description).toMatch(/untrusted/i);
     expect(tool.description).toMatch(/data, not instructions/i);
+  });
+});
+
+// S10:会话已退出 / 被关闭时,await_stop_hook 进入与等待中用同一判定(会话存在且 exitCode === null)。
+// 旧实现进入只判存在与归属 → 已退出会话白等 600s 后报误导的「已撤销」,期间同会话 ALREADY_PENDING;
+// 等待中关 tab / kill / 进程退出不唤醒等待;缓冲里的 Stop 事件先被取出删除、返回校验失败 → 事件丢失。
+describe('S10 会话结束:进入即拒、等待即止、缓冲事件不被吞', () => {
+  const WIN = 4;
+  const ME = 'subj-me';
+  const callCtx = { ownerWindowId: WIN, callerSubject: ME };
+  let unwire: (() => void) | null = null;
+  afterEach(() => {
+    unwire?.();
+    unwire = null;
+    terminalSessions._reset();
+  });
+
+  async function setup(doneDir: string) {
+    terminalSessions._reset();
+    terminalSessions.add({
+      id: 'term-x',
+      title: 't',
+      cwd: '/repo',
+      originHint: 'agent',
+      agentLabel: 'codex',
+      ownerWindowId: WIN,
+      controllerToken: ME,
+    });
+    const broker = createHookFileBroker(doneDir, { watchFactory: noopWatchFactory });
+    await broker.start();
+    brokers.push(broker);
+    unwire = cancelStopHookWaitersOnSessionEnd(broker, terminalSessions);
+    const tools = makeTerminalMcpTools({
+      sessionStore: terminalSessions,
+      service: {} as never,
+      getSessionOwner: (id) => terminalSessions.get(id)?.ownerWindowId ?? null,
+      getSessionController: (id) => terminalSessions.getController(id),
+      ensureAuthorized: async () => 'session',
+      createSession: vi.fn(async () => ({ id: 'x' })),
+      awaitStopHookTool: createAwaitStopHookTool({
+        broker,
+        getSessionMeta: (id, c) => {
+          const s = terminalSessions.get(id);
+          return s && s.ownerWindowId === c.ownerWindowId ? s : null;
+        },
+      }) as unknown as AnyMcpTool,
+    });
+    const tool = tools.find((t) => t.name === MCP_TOOL_AWAIT_STOP_HOOK)!;
+    return (timeout_sec: number) =>
+      tool.run({ session_id: 'term-x', timeout_sec }, callCtx) as Promise<unknown>;
+  }
+
+  /** 200ms 内未结算视为「仍在等待」(旧实现会挂到 timeout_sec)。 */
+  function settledWithin(p: Promise<unknown>, ms = 200): Promise<unknown> {
+    return Promise.race([
+      p.then(
+        (v) => ({ resolved: v }),
+        (e: unknown) => ({ rejected: e }),
+      ),
+      new Promise((r) => setTimeout(() => r('still-waiting'), ms)),
+    ]);
+  }
+
+  it('已退出会话进入 → 立即 TERMINAL_SESSION_NOT_FOUND,缓冲中的 Stop 事件不被消费删除', async () => {
+    const doneDir = await makeDoneDir();
+    const file = await writeFixture(doneDir, {
+      runner: 'codex',
+      windowId: WIN,
+      sid: 'term-x',
+      ns: 'stop',
+      payload: { session_id: 'cli-x', cwd: '/repo' },
+    });
+    const call = await setup(doneDir);
+    terminalSessions.setExited('term-x', 0);
+
+    const r = await settledWithin(call(600));
+    expect(r).toMatchObject({ rejected: { code: 'TERMINAL_SESSION_NOT_FOUND' } });
+    await expect(readFile(file, 'utf8')).resolves.toContain('cli-x');
+  });
+
+  it('等待中进程退出(exited-retained)→ 等待立即以 TERMINAL_SESSION_NOT_FOUND 结束,不占位 ALREADY_PENDING', async () => {
+    const call = await setup(await makeDoneDir());
+    const pending = call(600);
+    await new Promise((r) => setTimeout(r, 20));
+    terminalSessions.setExited('term-x', 0);
+
+    expect(await settledWithin(pending)).toMatchObject({
+      rejected: { code: 'TERMINAL_SESSION_NOT_FOUND' },
+    });
+  });
+
+  it('等待中关 tab / MCP kill(metadata 删除)→ 等待立即结束', async () => {
+    const call = await setup(await makeDoneDir());
+    const pending = call(600);
+    await new Promise((r) => setTimeout(r, 20));
+    terminalSessions.remove('term-x');
+
+    const r = await settledWithin(pending);
+    expect(r).not.toBe('still-waiting');
+    expect(r).toHaveProperty('rejected');
+  });
+
+  it('接线守卫:index.ts 在 broker 启动后把会话结束接到等待者取消', async () => {
+    const src = await readFile(join(__dirname, '..', '..', '..', 'electron', 'main', 'index.ts'), 'utf8');
+    expect(src).toMatch(/cancelStopHookWaitersOnSessionEnd\(broker, terminalSessions\)/);
   });
 });

@@ -149,17 +149,25 @@ export function makeTerminalMcpTools(
     // 安全:await_stop_hook 可 block 数分钟,入口 capability 只在开始时校验一次。等待期间用户
     // 「撤销全部授权 / 终止 agent terminal」(删会话 metadata)或会话被杀 / PTY 退出 → 返回前复查会话
     // 仍 live 且属本调用方,否则不交出 transcript_path / last_assistant_message。
+    // 进入与返回用同一「仍 live」判定:已退出(exited-retained)/ 已删的会话进入即拒,不进 broker
+    //(否则白等到 timeout 再报「已撤销」,期间同会话 ALREADY_PENDING,且会先取走并删除缓冲中的 Stop 事件)。
+    // 等待中会话结束由 cancelStopHookWaitersOnSessionEnd 立即唤醒。
     const inner = deps.awaitStopHookTool;
+    const isLive = (sid: unknown): sid is string =>
+      typeof sid === 'string' && deps.sessionStore.get(sid)?.exitCode === null;
     const recheckOnReturn: AnyMcpTool = {
       ...inner,
       run: async (input: unknown, ctx) => {
-        const result: unknown = await inner.run(input, ctx);
         const sid = (input as { session_id?: unknown } | null)?.session_id;
+        // 仅本窗口会话给「已退出」;跨窗 / 不存在交内部工具抛 TERMINAL_SESSION_NOT_FOUND(不泄漏存在性)。
+        if (typeof sid === 'string' && deps.getSessionOwner(sid) === ctx.ownerWindowId && !isLive(sid)) {
+          throw codedError(ERROR_CODES.TERMINAL_SESSION_NOT_FOUND, 'terminal session exited');
+        }
+        const result: unknown = await inner.run(input, ctx);
         // 还须仍 live:PTY 已退出时 metadata 处于 exited-retained(exitCode !== null),owner /
         // controller 均不变,只比对它们会漏判。
         const stillOwned =
-          typeof sid === 'string' &&
-          deps.sessionStore.get(sid)?.exitCode === null &&
+          isLive(sid) &&
           deps.getSessionOwner(sid) === ctx.ownerWindowId &&
           ctx.callerSubject != null &&
           deps.getSessionController(sid) === ctx.callerSubject;

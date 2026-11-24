@@ -139,6 +139,7 @@ async function start(): Promise<Harness> {
     start: async () => undefined,
     stop: async () => undefined,
     cancelByWindow: () => 0,
+    cancelEndedSessions: () => 0,
     // 故意不理会 signal:即使 broker 仍交出事件,结果也不得写回。
     awaitNext: async (_filter, signal) => {
       stopHook.signal = signal ?? null;

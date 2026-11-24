@@ -105,6 +105,7 @@ import {
 } from './services/mcp-stdio-cli-install';
 import { warnIfLegacyUnstableClaudeConfig } from './services/mcp-stdio-legacy-config';
 import {
+  cancelStopHookWaitersOnSessionEnd,
   createAwaitStopHookTool,
   createHookFileBroker,
   ensureHookEventsDir,
@@ -1075,6 +1076,8 @@ async function startMcpHost(): Promise<void> {
           // ignore — 关闭路径尽力而为
         }
       });
+      // 会话退出 / 关 tab / kill 时立即结束其 await_stop_hook 等待者(否则挂到 timeout_sec)。
+      cancelStopHookWaitersOnSessionEnd(broker, terminalSessions);
     } catch (err) {
       console.warn(
         '[hook-bridge] broker.start failed, await_stop_hook will be unavailable:',
