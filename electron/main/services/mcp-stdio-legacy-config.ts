@@ -11,6 +11,7 @@ import path from 'node:path';
 import type { MainT } from '../i18n';
 import { readFileCappedFd } from '../lib/read-fh-capped';
 import { STDIO_CLI_FILE_NAME, isInUnstableLinuxLocation } from './mcp-stdio-cli-install';
+import { asRecord } from '../../shared/as-record';
 
 /** ~/.claude.json 读取上限:它含各项目历史,常达数 MB;超出即跳过检查(不整文件读入主进程)。 */
 export const CLAUDE_JSON_MAX_BYTES = 16 * 1024 * 1024;
@@ -32,10 +33,6 @@ function displayName(n: string): string {
   return cps.length > MAX_NAME_LEN ? `${cps.slice(0, MAX_NAME_LEN).join('')}…` : cps.join('');
 }
 
-function asObject(v: unknown): Record<string, unknown> | null {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-}
-
 function pointsToUnstableCli(v: unknown, tmpDir: string): boolean {
   return (
     typeof v === 'string' &&
@@ -45,11 +42,9 @@ function pointsToUnstableCli(v: unknown, tmpDir: string): boolean {
 }
 
 function collectFrom(servers: unknown, tmpDir: string, out: Set<string>): void {
-  const obj = asObject(servers);
-  if (!obj) return;
-  for (const [name, entry] of Object.entries(obj)) {
-    const e = asObject(entry);
-    if (!e) continue;
+  // 非对象 → asRecord 给空对象:无条目 / 无 command、args,自然不命中。
+  for (const [name, entry] of Object.entries(asRecord(servers))) {
+    const e = asRecord(entry);
     const args = Array.isArray(e['args']) ? (e['args'] as unknown[]) : [];
     if (pointsToUnstableCli(e['command'], tmpDir) || args.some((a) => pointsToUnstableCli(a, tmpDir))) {
       out.add(name);
@@ -62,13 +57,11 @@ function collectFrom(servers: unknown, tmpDir: string, out: Set<string>): void {
  * 覆盖顶层 `mcpServers`(user scope)与 `projects.<dir>.mcpServers`(local scope,`claude mcp add` 的默认)。
  */
 export function findUnstableStdioCliEntries(config: unknown, tmpDir: string): string[] {
-  const root = asObject(config);
-  if (!root) return [];
+  const root = asRecord(config);
   const out = new Set<string>();
   collectFrom(root['mcpServers'], tmpDir, out);
-  const projects = asObject(root['projects']);
-  if (projects) {
-    for (const proj of Object.values(projects)) collectFrom(asObject(proj)?.['mcpServers'], tmpDir, out);
+  for (const proj of Object.values(asRecord(root['projects']))) {
+    collectFrom(asRecord(proj)['mcpServers'], tmpDir, out);
   }
   return [...out];
 }
