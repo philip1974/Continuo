@@ -151,6 +151,7 @@ vi.mock('@/lib/co-api', () => ({
       onUninstalled: vi.fn(),
       onPermissionsChanged: mocks.pluginsOnPermissionsChanged,
       onEnabledChanged: vi.fn(),
+      onInstalled: vi.fn(),
       onProtocolUrl: mocks.pluginsOnProtocolUrl,
     },
     pluginDataRaw: {

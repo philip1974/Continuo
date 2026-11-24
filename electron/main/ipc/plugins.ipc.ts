@@ -5,7 +5,7 @@ import { app } from 'electron';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import path from 'node:path';
 import { z } from 'zod';
-import { safeHandle } from '../safe-handle';
+import { safeHandle, safeHandleWithCtx } from '../safe-handle';
 import {
   PLUGINS_CHANNELS,
   GIT_URL_MAX,
@@ -27,7 +27,7 @@ import {
 } from '../services/plugins.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { errorCodeOf } from '../../shared/error-message';
-import { broadcastToWindows } from '../lib/broadcast';
+import { broadcastToWindows, SKIP_BROADCAST } from '../lib/broadcast';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { revokePluginFsAccess, revokePluginPathScopes } from './plugin-fs.ipc';
 import { PermissionMutationSchema } from '../../shared/plugin-permission-schema';
@@ -214,10 +214,10 @@ export function registerPluginsIpc(): void {
   );
 
   // v4.5 从 git URL 安装
-  safeHandle(
+  safeHandleWithCtx(
     PLUGINS_CHANNELS.INSTALL_FROM_GIT,
     InstallFromGitInput,
-    async ({ url, overwrite, branch, expectedId }) => {
+    async ({ url, overwrite, branch, expectedId }, { event }) => {
       const result = await installFromGit(url, pluginsDir, {
         overwrite,
         branch,
@@ -227,6 +227,12 @@ export function registerPluginsIpc(): void {
       // 安装 / 更新可能改写盘上的 data.json(旧目录无 data.json 时新版仓库自带的那份原样落地):各窗口(含发起者)
       // 的插件数据缓存须失效,否则新版 loadData() 读到旧缓存(如 v1 缓存的 null),首次 saveData 即覆盖仓库那份。
       broadcastToWindows(PLUGIN_DATA_CHANNELS.CHANGED, () => ({ id: result.id }), '[plugin-data] CHANGED');
+      // 其它窗口不重启即登记新插件(对齐 VSCode);发起窗口已自行 adoptInstalled,跳过。更新 / 覆盖安装也发:已在列表即无操作。
+      broadcastToWindows(
+        PLUGINS_CHANNELS.INSTALLED,
+        (win) => (win.webContents === event.sender ? SKIP_BROADCAST : { id: result.id }),
+        '[plugins] PLUGINS_INSTALLED',
+      );
       return result;
     },
   );

@@ -84,7 +84,10 @@ const CI_WINDOWS_UNIT_EXCLUDE =
 // 需要 renderer 构建期补丁的 Milkdown 规范(真实 Crepe 跑打过补丁的 @milkdown 产物)。补丁只在 vite transform
 // 里生效,@milkdown 须 inline,且要整组 inline —— 只 inline preset-commonmark 会与 Node 原生加载的
 // kit / crepe 各持一份实例。inline 后首次加载 Crepe 明显变慢,故单独成 project,不拖慢其它用到 Crepe 的规范。
-const MILKDOWN_PATCHED_INCLUDE = ['src/__tests__/editor-markdown-link-href/**/*.spec.ts'];
+const MILKDOWN_PATCHED_INCLUDE = [
+  'src/__tests__/editor-markdown-link-href/**/*.spec.ts',
+  'src/__tests__/editor-markdown-ime-composition/**/*.spec.ts',
+];
 
 export default defineWorkspace([
   {

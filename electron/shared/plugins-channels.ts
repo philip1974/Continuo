@@ -63,6 +63,11 @@ export const PLUGINS_CHANNELS = {
    * PluginManager,启用 / 禁用成功后广播给所有窗口(含发起者),各自同步实例(幂等,不触盘)。
    */
   ENABLED_CHANGED: 'plugins:enabled-changed',
+  /**
+   * main → renderer push:插件 `{ id }` 已安装(install-from-git 成功)。只发给发起窗口以外的窗口(发起窗口已自行
+   * adoptInstalled),各自不重启即登记进列表(对齐 VSCode:其它窗口立即显示已安装)。
+   */
+  INSTALLED: 'plugins:installed',
 } as const;
 
 /** 深链 scheme(main 注册 / argv 匹配与 renderer 解析共用;electron-builder.yml 的 protocols.schemes 须同值)。 */

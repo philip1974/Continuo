@@ -353,6 +353,14 @@ const api = {
         guardedListener(isPluginsChangedPayload, '[plugins] dropped malformed plugins:uninstalled payload', (payload) => cb(payload.id)),
       );
     },
+    /** 订阅「插件已在别的窗口安装」广播(main 推给发起窗口以外的窗口),返 unsubscribe. */
+    onInstalled: (cb: (id: string) => void): (() => void) => {
+      // 同 onChanged:payload 形态 `{ id }`,复用同一守卫(畸形 warn+drop)。
+      return subscribeIpc(
+        PLUGINS_CHANNELS.INSTALLED,
+        guardedListener(isPluginsChangedPayload, '[plugins] dropped malformed plugins:installed payload', (payload) => cb(payload.id)),
+      );
+    },
     /** 订阅「插件启用状态已变更」广播(任一窗口启用 / 禁用成功后 main 推给所有窗口),返 unsubscribe. */
     onEnabledChanged: (cb: (id: string, enabled: boolean) => void): (() => void) => {
       return subscribeIpc(

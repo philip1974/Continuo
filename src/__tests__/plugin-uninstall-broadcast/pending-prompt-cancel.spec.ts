@@ -155,6 +155,7 @@ describe('init 激活挂在授权弹窗上时收到卸载广播(init 未完成)'
       b.mgr,
       {
         onChanged: () => {},
+        onInstalled: () => {},
         onUninstalled: (fn) => {
           onUninstalled = fn;
         },

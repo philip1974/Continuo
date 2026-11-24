@@ -51,6 +51,7 @@ function wire(mgr: PluginManager): { emitEnabled: (id: string, enabled: boolean)
     mgr,
     {
       onChanged: () => {},
+      onInstalled: () => {},
       onUninstalled: () => {},
       onEnabledChanged: (cb) => {
         onEnabled = cb;

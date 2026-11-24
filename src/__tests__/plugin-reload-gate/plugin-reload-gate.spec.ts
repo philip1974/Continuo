@@ -101,6 +101,7 @@ function makeWindow(opts: { holdScan?: boolean; dirs?: string[] } = {}): Window 
     {
       onChanged: (cb) => (onChanged = cb),
       onEnabledChanged: (cb) => (onEnabled = cb),
+      onInstalled: () => {},
       onUninstalled: (cb) => (onUninstalled = cb),
     },
     onError,
@@ -169,7 +170,7 @@ describe('扫描完成前到达的事件(R16)', () => {
     void mgr.init().catch(() => {});
     wirePluginEvents(
       mgr,
-      { onChanged: (cb) => (onChanged = cb), onEnabledChanged: () => {}, onUninstalled: () => {} },
+      { onChanged: (cb) => (onChanged = cb), onEnabledChanged: () => {}, onUninstalled: () => {}, onInstalled: () => {} },
       onError,
     );
     onChanged('x');

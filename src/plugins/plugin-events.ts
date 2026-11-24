@@ -2,6 +2,7 @@
 // - plugins.onChanged(mtime watch)→ reload(M-Plugin v4.3.1 热重载)
 // - plugins.onUninstalled(终审 P1:跨窗口卸载)→ handleUninstalled
 // - plugins.onEnabledChanged(终审 P1:跨窗口启停)→ handleEnabledChanged
+// - plugins.onInstalled(别的窗口全新安装)→ adoptInstalled(id, { prompt: false }):不重启即进列表,授权弹窗只在发起窗口
 // 启动期门控(R16)在 PluginManager 内:扫描完成前到达的事件等条目登记后再处理,不等全部插件激活完;
 // 禁用 / 卸载 / 启用的同步部分(吊销、取消授权弹窗、清停用意图)在各方法开头立即执行。
 // 调用方须先发起 init()。处理失败只交给 onError,不抛。
@@ -13,12 +14,13 @@ export interface PluginEventSources {
   readonly onChanged: (cb: (id: string) => void) => void;
   readonly onUninstalled: (cb: (id: string) => void) => void;
   readonly onEnabledChanged: (cb: (id: string, enabled: boolean) => void) => void;
+  readonly onInstalled: (cb: (id: string) => void) => void;
 }
 
-export type PluginEventKind = 'reload' | 'uninstalled' | 'enabled-changed';
+export type PluginEventKind = 'reload' | 'uninstalled' | 'enabled-changed' | 'installed';
 
 export function wirePluginEvents(
-  mgr: Pick<PluginManager, 'reload' | 'handleUninstalled' | 'handleEnabledChanged'>,
+  mgr: Pick<PluginManager, 'reload' | 'handleUninstalled' | 'handleEnabledChanged' | 'adoptInstalled'>,
   sources: PluginEventSources,
   onError: (where: PluginEventKind, err: unknown) => void,
 ): void {
@@ -33,5 +35,8 @@ export function wirePluginEvents(
   });
   sources.onEnabledChanged((id, enabled) => {
     void mgr.handleEnabledChanged(id, enabled).catch((err) => onError('enabled-changed', err));
+  });
+  sources.onInstalled((id) => {
+    void mgr.adoptInstalled(id, { prompt: false }).catch((err) => onError('installed', err));
   });
 }

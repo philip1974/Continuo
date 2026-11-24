@@ -404,8 +404,12 @@ export class PluginManager {
    * 本窗口刚装好的新插件(尚不在列表):不重启即登记,并按 _enabled.json 的启用状态激活 —— main 在全新安装时已写入启用
    *(对齐 VSCode 安装即启用),激活照常走权限授权。与启动同一准入 + 选目录(selectPluginDirs)。已在列表 → 无操作(更新由
    * 文件监视热重载)。返回该 id 是否已在列表(目录不存在 / 准入不过 → false,调用方保留「待重启」)。per-id 串行。
+   *
+   * `prompt: false`:别的窗口装的(main 广播 plugins:installed)。授权弹窗只在发起安装的窗口出现(不多窗同时弹):激活
+   * 需要弹窗(声明的权限尚有未决定的)→ 只登记为禁用(列表 / 市场显示已安装),用户在本窗口启用或下次启动时再激活;
+   * 无需弹窗(无权限 / 已全部决定)→ 照常激活。
    */
-  async adoptInstalled(id: string): Promise<boolean> {
+  async adoptInstalled(id: string, { prompt = true }: { readonly prompt?: boolean } = {}): Promise<boolean> {
     // 重装是显式意图:清掉同 id 先前卸载留下的停用意图(否则同会话卸载后重装永不激活)。须在进锁前同步清 ——
     // 之后到达的卸载 / 禁用会重新记下,登记时按停用处理。
     const reinstall = this.deactivationIntents.get(id) === 'uninstalled';
@@ -425,19 +429,34 @@ export class PluginManager {
         enabledIds = new Set();
       }
       const intended = enabledIds.has(id) && !this.deactivationIntents.has(id);
+      // 只登记的不记启用意图:否则之后的热重载会按意图激活、在本窗口弹授权。
+      const activate = intended && (prompt || !(await this.needsPermissionPrompt(id, selected.manifest)));
       const entry: PluginEntry = {
         id,
         manifest: selected.manifest,
         dirInfo: selected.dir,
-        status: intended ? 'enabled' : 'disabled',
-        enabledIntent: intended,
+        status: activate ? 'enabled' : 'disabled',
+        enabledIntent: activate,
         ...(reinstall ? { adoptedManifestText: selected.dir.manifestText } : {}),
       };
       this.entries.set(id, entry);
       this.invalidateListCache();
-      if (intended) await this.activateEntry(entry);
+      if (activate) await this.activateEntry(entry);
       return true;
     });
+  }
+
+  /** 激活该插件是否会弹授权窗(权限门生效且声明的权限尚有未决定的);读授权失败按「会弹」处理。 */
+  private async needsPermissionPrompt(id: string, manifest: PluginManifest): Promise<boolean> {
+    const requested = manifest.permissions ?? EMPTY_PLUGIN_PERMISSIONS;
+    const { permissionStore, promptFn } = this.host;
+    if (requested.length === 0 || !permissionStore || !promptFn) return false;
+    try {
+      const decided = new Set((await permissionStore.get(id)).map((d) => d.permission));
+      return requested.some((p) => !decided.has(p));
+    } catch {
+      return true;
+    }
   }
 
   /** 启用单个插件(若已 active 幂等). per-id 串行. */

@@ -20,6 +20,9 @@ vi.mock('../../../electron/main/safe-handle', () => ({
   safeHandle: (channel: string, _schema: unknown, fn: (input: unknown) => Promise<unknown>) => {
     h.handlers.set(channel, fn);
   },
+  safeHandleWithCtx: (channel: string, _schema: unknown, fn: (input: unknown) => Promise<unknown>) => {
+    h.handlers.set(channel, fn);
+  },
 }));
 
 vi.mock('../../../electron/main/lib/broadcast', () => ({

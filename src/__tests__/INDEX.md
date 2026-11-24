@@ -547,6 +547,10 @@
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
 
+## [editor-markdown-ime-composition](./editor-markdown-ime-composition/README.md)
+
+- [`ime-composition.spec.ts`](./editor-markdown-ime-composition/ime-composition.spec.ts)
+
 ## [editor-markdown-link-href](./editor-markdown-link-href/README.md)
 
 - [`link-href-roundtrip.spec.ts`](./editor-markdown-link-href/link-href-roundtrip.spec.ts)
@@ -1145,6 +1149,7 @@
 ## [plugin-install-enable](./plugin-install-enable/README.md)
 
 - [`adopt-installed.spec.ts`](./plugin-install-enable/adopt-installed.spec.ts)
+- [`cross-window-installed.spec.ts`](./plugin-install-enable/cross-window-installed.spec.ts)
 - [`install-writes-enabled.spec.ts`](./plugin-install-enable/install-writes-enabled.spec.ts)
 - [`pending-row-restart.spec.tsx`](./plugin-install-enable/pending-row-restart.spec.tsx)
 - [`relaunch-guard.spec.ts`](./plugin-install-enable/relaunch-guard.spec.ts)

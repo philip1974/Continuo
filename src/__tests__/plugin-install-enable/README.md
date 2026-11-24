@@ -10,6 +10,12 @@
   重装后 main 文件监视因卸载留下的 tombstone 必广播一次 `PLUGINS_CHANGED`:随后排队的 `reload(id)` 若该 id 的目录仍是
   adopt 时那份 manifest,就跳过(已按它登记并激活,不再 onunload / onload 一遍);只跳过这一次,之后的文件变化照常热重载;
   manifest 已变照常重载。全新安装(无先前卸载)不受影响 —— 没有 tombstone,首个 reload 即真实文件变化。
+- **跨窗口**(对齐 VSCode:其它窗口立即显示已安装):main `install-from-git` 成功后向**发起窗口以外**的窗口广播
+  `plugins:installed { id }`(发起窗口已自行 adopt,不重复;失败不广播;更新 / 覆盖安装也发,已在列表即无操作)。收到的窗口经
+  `wirePluginEvents` 调 `adoptInstalled(id, { prompt: false })`:登记进列表(插件页 / 市场卡片显示已安装)。授权弹窗只在发起
+  窗口出现、不多窗同时弹:声明的权限尚有未决定的 → 只登记为禁用、不激活、不加载插件代码,用户在该窗口启用(授权已由发起窗口
+  决定则不再弹)或下次启动时激活;无权限 / 已全部决定 → 照常激活。取舍:发起窗口授权后,其它窗口不自动跟进激活(需在该窗口
+  手动启用或重启),换来不出现多窗重复授权弹窗。
 - `recordPendingInstall`(设置页 Git 安装、市场卡片、市场底部 Git URL 三个入口共用)在记待重启行的同时发起 `adoptInstalled`;
   插件进列表即摘除待重启行。热激活失败(如准入不过)时待重启行保留。
 - 待重启行带「立即重启」按钮 → `coApi.window.relaunchApp()` → main 走**与 ⌘Q 相同的退出流程**(各窗口脏文件确认、flush、清理),
@@ -26,4 +32,6 @@
 | `electron/main/index.ts` | 组合根:`relaunchApp` = 记重启请求 + `app.quit()`;退出清理完成后 `app.relaunch()` |
 | `src/plugins/PluginManager.ts` | `adoptInstalled` |
 | `src/plugins/pending-installs-store.ts` | 安装后发起热激活 |
+| `electron/main/ipc/plugins.ipc.ts` + `electron/shared/plugins-channels.ts` + `electron/preload/index.ts` | `plugins:installed` 广播(跳过发起窗口)/ `plugins.onInstalled` |
+| `src/plugins/plugin-events.ts` | `onInstalled` → `adoptInstalled(id, { prompt: false })` |
 | `src/plugins/settings/PluginsTabContent.tsx` | 待重启行「立即重启」 |

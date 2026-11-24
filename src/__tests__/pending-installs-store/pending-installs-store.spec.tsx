@@ -219,6 +219,7 @@ describe('跨窗口卸载广播清除待重启记录', () => {
       } as never,
       {
         onChanged: () => {},
+        onInstalled: () => {},
         onUninstalled: (cb) => {
           uninstalled = cb;
         },

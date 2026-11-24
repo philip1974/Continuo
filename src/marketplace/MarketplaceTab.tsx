@@ -212,8 +212,8 @@ export function MarketplaceTab() {
       // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message —— 失败严重度由 isError+role=alert 表达。
       const r = await installFromGitLocalized(entryToGitUrl(entry), isUpdate, entryInstallOptions(entry));
       const success = r.ok;
-      // 全新安装撞 EEXIST:插件已在盘上但不在本窗口列表(别的窗口刚装、要重启才进列表;待重启记录不跨窗口)→ 如实说明
-      // 已安装、重启后加载,不报「文件已存在」这类无从下手的错误(本窗口列表里没有它,用户也没法「卸载后再装」)。
+      // 全新安装撞 EEXIST:插件已在盘上但不在本窗口列表(别的窗口刚装、plugins:installed 广播尚未登记到本窗口,或登记
+      // 没过准入;待重启记录不跨窗口)→ 如实说明已安装、重启后加载,不报「文件已存在」这类无从下手的错误。
       const alreadyInstalled = !r.ok && r.alreadyInstalled;
       const msg = r.ok
         ? translate(isUpdate ? 'marketplace.update_success' : 'marketplace.install_success', {

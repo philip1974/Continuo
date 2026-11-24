@@ -65,6 +65,7 @@ function wire(mgr: PluginManager): {
     mgr,
     {
       onChanged: () => {},
+      onInstalled: () => {},
       onUninstalled: (cb) => {
         onUninstalled = cb;
       },

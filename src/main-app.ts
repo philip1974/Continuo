@@ -210,7 +210,7 @@ export async function init(): Promise<void> {
   void initPluginsThenCheckUpdates(userPluginManager, () => useUpdateStore.getState().refresh()).catch(
     (err) => console.warn('[main] user plugin manager init failed', err),
   );
-  // M-Plugin v4.3.1 mtime watch → 热重载;终审 P1 跨窗口卸载 / 启停广播 → 本窗口同步(幂等、不触盘)。
+  // M-Plugin v4.3.1 mtime watch → 热重载;终审 P1 跨窗口卸载 / 启停 / 新安装广播 → 本窗口同步(幂等、不触盘)。
   // race(R16):启动门控在 PluginManager 内 —— 扫描完成前到达的事件等条目登记后再处理,不等全部插件激活完
   //(某插件授权弹窗无人理会时 init 可能永不结束,其它插件的事件须照常生效)。须在 init() 发起之后接线。
   wirePluginEvents(
@@ -219,6 +219,7 @@ export async function init(): Promise<void> {
       onChanged: (cb) => coApi.plugins.onChanged(cb),
       onUninstalled: (cb) => coApi.plugins.onUninstalled(cb),
       onEnabledChanged: (cb) => coApi.plugins.onEnabledChanged(cb),
+      onInstalled: (cb) => coApi.plugins.onInstalled(cb),
     },
     (where, err) => console.warn(`[main] user plugin manager ${where} failed`, err),
   );
