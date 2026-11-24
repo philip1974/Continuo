@@ -562,6 +562,27 @@ describe('terminal.await_stop_hook', () => {
     await waitForFileRemoved(victimFile);
   });
 
+  // 「最多保留 10 分钟」:超期淘汰只在每 60s 的清理里做,两次清理之间命中须按同一判定剔除超期事件,不得把很早那一轮的
+  // Stop 当成本轮返回。
+  it('缓冲事件超过 maxAgeMs 后、下一次清理前调用 → 不返回该超期事件', async () => {
+    vi.useFakeTimers();
+    const doneDir = await makeDoneDir();
+    await writeFixture(doneDir, {
+      runner: 'cc',
+      windowId: 4,
+      sid: 'term-a',
+      cliSessionId: 'claude-a',
+      ns: '1',
+      payload: { session_id: 'claude-a', cwd: '/repo', last_assistant_message: 'old turn' },
+    });
+    const driver = await makeDriver(doneDir, [{ id: 'term-a', windowId: 4, runner: 'cc', cwd: '/repo' }]);
+    // 越过 maxAgeMs(600s)半个清理周期:t=600s 的清理时尚未「超过」,下一次在 660s。
+    await vi.advanceTimersByTimeAsync(DONE_ENTRY_MAX_AGE_MS + 30_000);
+    const r = driver.awaitStopHook({ session_id: 'term-a', timeout_sec: 1 });
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(r).resolves.toMatchObject({ status: 'timeout' });
+  });
+
   it('S8a 已缓冲的他会话事件也不交给攻击会话(缓冲命中路径)', async () => {
     vi.useFakeTimers();
     const doneDir = await makeDoneDir();

@@ -638,11 +638,14 @@ export function createHookFileBroker(
     }
   }
 
+  // 缓存事件是否已超期(cleanupStale 淘汰与 awaitNext 命中同一判定)。
+  const isExpired = (entry: BufferedEntry, now: number): boolean => now - entry.ingestedAt > maxAgeMs;
+
   async function cleanupStale(): Promise<void> {
     const now = Date.now();
     for (let i = buffered.length - 1; i >= 0; i -= 1) {
       const entry = buffered[i];
-      if (entry !== undefined && now - entry.ingestedAt > maxAgeMs) {
+      if (entry !== undefined && isExpired(entry, now)) {
         for (const stale of bufferRemove(i)) unlinkEntry(stale);
       }
     }
@@ -761,8 +764,16 @@ export function createHookFileBroker(
           return;
         }
 
+        // 命中前按同一判定剔除超期事件:超期淘汰只在每 60s 一次的 cleanupStale 里做,两次清理之间(10:00–约 11:00)
+        // 命中会立即返回一条超期事件 → agent 把很早那一轮的结束误当成本轮(工具描述承诺「最多保留 10 分钟」)。
+        const now = Date.now();
         for (let i = 0; i < buffered.length; i += 1) {
           const hit = buffered[i];
+          if (hit !== undefined && isExpired(hit, now)) {
+            for (const stale of bufferRemove(i)) unlinkEntry(stale);
+            i -= 1;
+            continue;
+          }
           if (hit !== undefined && matchesFilter(hit, filter)) {
             bufferRemove(i);
             unlinkEntry(hit);
