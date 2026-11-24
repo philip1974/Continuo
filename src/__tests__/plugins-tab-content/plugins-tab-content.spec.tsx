@@ -762,7 +762,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
     fireEvent.click(
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
     );
-    await waitFor(() => expect(container.textContent).toContain('已安装 Dup v2.0.0'));
+    // 覆盖重装已在列表的插件:watcher 热重载即生效,提示「已更新 … 已重新加载」而非「重启后加载」。
+    await waitFor(() => expect(container.textContent).toContain('已更新 Dup v2.0.0'));
+    expect(container.textContent).not.toContain('重启 Continuo 后插件加载');
     act(() => {
       list = [];
       notifyUserPluginListChanged();

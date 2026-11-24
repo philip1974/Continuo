@@ -297,16 +297,18 @@ function UserPluginsSection() {
       });
       return false;
     }
+    // 已在列表(覆盖重装)→ watcher 热重载即生效;全新安装要等重启后的扫描(reload 对未知 id 抛错)。文案按此区分。
+    // 读 manager 最新列表(渲染期 plugins 可能已过时)。
+    const alreadyListed = hasPluginId(mgr?.listAll() ?? plugins, r.data.id);
     setInstallMsg({
-      text: t('plugins_tab.install.success', {
+      text: t(alreadyListed ? 'plugins_tab.install.updated' : 'plugins_tab.install.success', {
         name: r.data.name,
         version: r.data.version,
       }),
       isError: false,
     });
-    // 已在列表(覆盖重装)不记待重启:watcher 会热重载;此时 plugins 引用不变、摘除 effect 不跑,
-    // 若在下次扫描前卸载,残留记录会成为幽灵行。读 manager 最新列表(渲染期 plugins 可能已过时)。
-    if (!hasPluginId(mgr?.listAll() ?? plugins, r.data.id)) {
+    // 已在列表不记待重启:此时 plugins 引用不变、摘除 effect 不跑,若在下次扫描前卸载,残留记录会成为幽灵行。
+    if (!alreadyListed) {
       setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
     }
     return true;
