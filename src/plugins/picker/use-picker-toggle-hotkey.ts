@@ -4,7 +4,7 @@
 // 的语义;否则两个 Modal 叠加,执行命令 / Esc 后底下那个还开着挡住结果)。
 
 import { useEffect } from 'react';
-import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
+import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import type { PickerSlice } from './picker-slice';
 
 /**
@@ -16,6 +16,24 @@ export const PICKER_TOGGLE_HOTKEYS = {
   quick_open: 'mod+p',
   command_palette: 'mod+shift+p',
 } as const;
+
+export type ReservedPickerHotkey = keyof typeof PICKER_TOGGLE_HOTKEYS;
+
+/**
+ * combo 是否撞上 Quick Open / 命令面板的保留键(⌘P / ⌘⇧P,平台感知,与下方监听同一判定)。录键弹窗拒绝保存、命令分发
+ * 忽略此类绑定(含升级前已存的 override)、快捷键设置页标注「保留键,未生效」—— 三处共用。
+ */
+export function reservedPickerHotkeyOf(
+  combo: string | null | undefined,
+  platform: Platform = detectPlatform(),
+): ReservedPickerHotkey | null {
+  if (!combo) return null;
+  const c = canonicalHotkey(combo, platform);
+  for (const name of Object.keys(PICKER_TOGGLE_HOTKEYS) as ReservedPickerHotkey[]) {
+    if (canonicalHotkey(PICKER_TOGGLE_HOTKEYS[name], platform) === c) return name;
+  }
+  return null;
+}
 
 function isPKey(key: string): boolean {
   return key === 'p' || key === 'P';

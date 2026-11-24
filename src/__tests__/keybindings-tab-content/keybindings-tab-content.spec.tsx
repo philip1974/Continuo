@@ -90,6 +90,14 @@ describe('KeybindingsTabContent — 列表', () => {
     expect(container.textContent).toMatch(/S/);
   });
 
+  // 升级前已存的 override 落在 Quick Open / 命令面板保留键(⌘P / ⌘⇧P)上:分发忽略,行内须标注「未生效」,否则用户不知其失效。
+  it('effective hotkey 为保留键 → 行内标注未生效', () => {
+    coApp.commands.register({ id: 'res', title: 'Reserved Cmd', hotkey: 'mod+k', fn: vi.fn() });
+    useKeybindingsStore.setState({ overrides: { res: 'mod+p' } });
+    const { container } = render(<KeybindingsTabContent />);
+    expect(container.textContent).toContain('与 Quick Open / 命令面板保留键冲突,未生效');
+  });
+
   // a11y(A76,A75 同族):多命令行的编辑/重置按钮可访问名须含命令名以区分(否则全读「编辑快捷键」)。
   it('a11y · 编辑按钮 aria-label 含命令名(多行可区分)', () => {
     coApp.commands.register({

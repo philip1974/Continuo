@@ -15,7 +15,7 @@ import { useT, useTWithFallback } from '@/i18n';
 import { resolveEffectiveHotkey } from './keybindings-store';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { useStableCallback } from '@/lib/use-stable-callback';
-import { PICKER_TOGGLE_HOTKEYS } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { reservedPickerHotkeyOf, type ReservedPickerHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
@@ -93,7 +93,7 @@ export function selectKeybindingConflicts(
   return conflicts;
 }
 
-export type ReservedPickerHotkey = keyof typeof PICKER_TOGGLE_HOTKEYS;
+export type { ReservedPickerHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 
 const RESERVED_MESSAGE_KEYS: Readonly<Record<ReservedPickerHotkey, string>> = {
   quick_open: 'keybindings.modal.reserved_quick_open',
@@ -109,12 +109,7 @@ export function selectReservedPickerHotkey(
   captured: string | null,
   platform: Platform = PLATFORM,
 ): ReservedPickerHotkey | null {
-  if (!captured) return null;
-  const capturedCanonical = canonicalHotkey(captured, platform);
-  for (const name of Object.keys(PICKER_TOGGLE_HOTKEYS) as ReservedPickerHotkey[]) {
-    if (canonicalHotkey(PICKER_TOGGLE_HOTKEYS[name], platform) === capturedCanonical) return name;
-  }
-  return null;
+  return reservedPickerHotkeyOf(captured, platform);
 }
 
 export function KeybindingCaptureModal({

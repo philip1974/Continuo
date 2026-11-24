@@ -114,3 +114,18 @@ describe('打磨 R26 — 命令 hotkey 预编译', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });
+
+// 保留键(⌘P / ⌘⇧P 归 Quick Open / 命令面板):升级前已存的 override / 插件默认 hotkey 落在这里 → 不入分发表(否则一键两动作)。
+describe('buildCompiledBindings · 保留键', () => {
+  it('effective hotkey 为 mod+p / mod+shift+p → 不入表;其它照常', () => {
+    const fn = () => {};
+    const cmds = [
+      { id: 'a', title: 'A', hotkey: 'mod+k', fn },
+      { id: 'b', title: 'B', hotkey: 'mod+p', fn },
+      { id: 'c', title: 'C', hotkey: 'mod+j', fn },
+    ];
+    const ids = buildCompiledBindings(cmds as never, 'other', { c: 'mod+shift+p' }).map((b) => b.cmd.id);
+    expect(ids).toEqual(['a']);
+  });
+});
+

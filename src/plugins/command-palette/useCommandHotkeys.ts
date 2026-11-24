@@ -14,6 +14,7 @@ import { tWithFallback } from '@/i18n';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { reservedPickerHotkeyOf } from '@/plugins/picker/use-picker-toggle-hotkey';
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
 interface ComboSignature {
@@ -162,6 +163,9 @@ export function buildCompiledBindings(
   for (const cmd of commands) {
     const effective = resolveEffectiveHotkey(cmd, overrides);
     if (!effective) continue; // 无 hotkey 或显式 unbind
+    // 保留键(⌘P / ⌘⇧P 归 Quick Open / 命令面板):录键弹窗已拒绝保存,但升级前已存的 override / 插件默认 hotkey
+    // 仍可能落在这里 —— 不入表,否则一键两动作(同 document 监听 stopPropagation 拦不住)。设置页对该行标注未生效。
+    if (reservedPickerHotkeyOf(effective, platform) !== null) continue;
     const sig = compileCombo(effective, platform);
     if (!sig) continue; // 未知修饰符 → 不可匹配,不入表
     out ??= new Array<CompiledBinding>(commands.length);

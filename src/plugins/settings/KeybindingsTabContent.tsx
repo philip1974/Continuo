@@ -28,6 +28,7 @@ import { ResetIcon } from '@/lib/ui-icons';
 import { isSortedBy } from '@/lib/is-sorted-by';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { byDisplayTitle } from '@/plugins/command-palette/by-display-title';
+import { reservedPickerHotkeyOf } from '@/plugins/picker/use-picker-toggle-hotkey';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -59,6 +60,8 @@ export interface DisplayCommand {
   readonly hotkeyParts: readonly string[];
   /** 该命令是否被用户 override(决定 reset 按钮可见). */
   readonly isOverridden: boolean;
+  /** effective hotkey 落在 Quick Open / 命令面板保留键上(分发忽略,行内标注「未生效」)。 */
+  readonly reserved?: boolean;
   /** 搜索用小写 haystack,随命令/语言/override 变化预计算. */
   readonly searchHaystack: string;
 }
@@ -202,6 +205,7 @@ export function buildKeybindingDisplayCommands(
       effectiveHotkey: effective,
       hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
       isOverridden,
+      reserved: reservedPickerHotkeyOf(effective, platform) !== null,
       // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
       // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
       // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
@@ -338,6 +342,9 @@ export function KeybindingsTabContent() {
                       <code className="ml-auto shrink-0 rounded bg-panel-soft/70 px-1.5 py-0.5 text-2xs uppercase tracking-wider text-fg-muted/70">
                         {cmd.id}
                       </code>
+                      {d.reserved && (
+                        <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>
+                      )}
                       {hotkeyParts.length > 0 ? (
                         <span className="flex shrink-0 items-center gap-0.5">
                           {hotkeyParts.map((p) => (
