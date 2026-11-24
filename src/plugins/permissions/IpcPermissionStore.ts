@@ -18,7 +18,7 @@ import {
 } from '../../../electron/shared/permission-record';
 import { codedError } from '../../../electron/shared/error-message';
 import { ownValue } from '../../../electron/shared/own-value';
-import { isValidPluginId } from '../plugin-id';
+import { isSafePluginId } from '../../../electron/shared/plugin-id';
 
 /** renderer 只关心授权决定;记录里的 pathScopes(落盘格式的一部分)由 main 读写,这里不解析。 */
 export interface PermissionRecord {
@@ -86,18 +86,18 @@ export function parsePermissionState(raw: unknown): PermissionState {
   for (const pluginId in raw) {
     if (!Object.prototype.hasOwnProperty.call(raw, pluginId)) continue;
     // 安全:key 来自磁盘 JSON,非法 id(如 `__proto__`,首字符 `_`)写入 `out[pluginId]` 会改写结果对象原型。
-    // 与主进程 readPermissions 读端同规则:非法 id 跳过且不计数。
-    if (!isValidPluginId(pluginId)) continue;
+    // 与主进程读端(canonicalizePermissions)同规则:非法 / 超长 id 跳过;只有有效记录计入条目上限。
+    // 刻意差异:main 读端遇非法 decision 整条记录丢弃,这里逐条跳过 —— renderer 读到的是 main 已规范化的数据,
+    // 宽松解析只作纵深防御。
+    if (!isSafePluginId(pluginId)) continue;
     if (keyCount >= MAX_PERMISSION_PLUGIN_KEYS) break;
-    keyCount += 1;
     const record: unknown = (raw as Record<string, unknown>)[pluginId];
-    if (Array.isArray(record)) {
-      out[pluginId] = { decisions: parseDecisionList(record) };
-      continue;
-    }
-    if (isRecord(record)) {
-      out[pluginId] = { decisions: parseDecisionList(record.decisions) };
-    }
+    let decisions: PermissionDecision[] | null = null;
+    if (Array.isArray(record)) decisions = parseDecisionList(record);
+    else if (isRecord(record)) decisions = parseDecisionList(record.decisions);
+    if (decisions === null) continue;
+    out[pluginId] = { decisions };
+    keyCount += 1;
   }
   return out;
 }

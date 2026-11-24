@@ -355,6 +355,17 @@ describe('E245 parsePermissionState 有界解析 + 字段校验', () => {
     expect(Object.keys(r).length).toBe(10_000);
   });
 
+  // 与主进程读端(canonicalizePermissions)同规则:超长 id 跳过;形态不对(非数组 / 非对象)的记录不占名额。
+  it('超长 plugin id 跳过;非法记录不计入条目上限', () => {
+    const raw: Record<string, unknown> = { ['a'.repeat(257)]: [], bad: 'not-a-record' };
+    for (let i = 0; i < 10_000; i++) raw[`p${i}`] = [];
+    const r = parsePermissionState(raw);
+    expect(r['a'.repeat(257)]).toBeUndefined();
+    expect(r.bad).toBeUndefined();
+    expect(Object.keys(r).length).toBe(10_000);
+    expect(r['p9999']).toBeDefined(); // 非法记录没占掉合法条目的名额
+  });
+
   it('单插件 decisions 超 1000 → 截断到 1000', () => {
     const decisions = Array.from({ length: 1100 }, () => ({
       permission: 'fs',
