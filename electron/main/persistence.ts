@@ -1,7 +1,9 @@
 import fs from 'node:fs/promises';
-import { atomicWriteJson } from './lib/atomic-write';
+import { atomicWriteText } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { readTextCappedOrThrow } from './lib/read-fh-capped';
+import { ERROR_CODES } from '../shared/error-codes';
+import { codedError } from '../shared/error-message';
 
 // 可维护性 M15:Explorer 持久化 zod schema 抽到 electron/shared/explorer-persistence-schema.ts
 // 单一来源(renderer 也复用),此处 re-export 保持对外 API 不变 + import 供内部读写/迁移使用。
@@ -319,6 +321,24 @@ const MAX_EXPLORER_FILE_BYTES = 16 * 1024 * 1024;
  *   也不进 readFile/JSON.parse/preserveCorrupt 整块读)
  * - 其它读错误 → throw(当前态未知,绝不覆盖)
  */
+/**
+ * explorer.json 唯一写入口:按落盘时的序列化(atomicWriteJson 同款 2 空格缩进)量字节,超过读端上限
+ * MAX_EXPLORER_FILE_BYTES 拒写(抛 PAYLOAD_TOO_LARGE,原文件保持可读)。此前 6 个写入点直接 atomicWriteJson:单段
+ * 2MiB × 最多 64 段远超 16MiB,一旦写出超限文件,之后读取一律抛错(当前态未知、有意不降级)→ 布局 / explorer
+ * 写入、分配窗口编号、启动恢复全部失败且不自愈。
+ */
+export async function writeExplorerFile(filePath: string, payload: ExplorerPayloadV3): Promise<void> {
+  const text = JSON.stringify(payload, null, 2);
+  // UTF-16 长度 ×3 ≥ UTF-8 字节:未超时免一次全量编码。
+  if (text.length * 3 > MAX_EXPLORER_FILE_BYTES && Buffer.byteLength(text, 'utf8') > MAX_EXPLORER_FILE_BYTES) {
+    throw codedError(
+      ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `explorer file would exceed ${MAX_EXPLORER_FILE_BYTES} bytes; write rejected`,
+    );
+  }
+  await atomicWriteText(filePath, text);
+}
+
 async function readExplorerCapped(filePath: string): Promise<string | null> {
   // 边界(E160,E158/E159 兄弟 TOCTOU 修正):此前 `fs.stat(path).size` 预检 + `fs.readFile(path)` 两次
   // 独立路径解析,检查与读取之间 explorer.json 可被替换/增长绕过 16MiB 上限 → 整块读入 + JSON.parse,
@@ -428,7 +448,7 @@ async function prunePayloadAndWrite(
   const before = payload.windows.length;
   pruneLRUClosed(payload, MAX_PERSISTED_WINDOW_SEGMENTS, activeSeqs);
   if (payload.windows.length === before) return;
-  await atomicWriteJson(explorerFile, payload);
+  await writeExplorerFile(explorerFile, payload);
 }
 
 /**
@@ -489,7 +509,7 @@ export async function allocateWindowSeq(explorerFile: string): Promise<number> {
       }
     }
     payload.nextWindowSeq = seq + 1;
-    await atomicWriteJson(explorerFile, payload);
+    await writeExplorerFile(explorerFile, payload);
     return seq;
   });
 }
@@ -535,7 +555,7 @@ async function migrateExplorerFile(
 
   if (!explorerExists && legacyExists) {
     const fresh = defaultExplorerV3();
-    await atomicWriteJson(explorerFile, fresh);
+    await writeExplorerFile(explorerFile, fresh);
     await fs
       .unlink(legacyLayoutFile)
       .catch((err) => console.warn('[boot] legacy unlink failed', err));
@@ -550,7 +570,7 @@ async function migrateExplorerFile(
   const { payload } = loaded;
   // 磁盘原文已是合法 v3 且无旧 layout → 无需回写(复用本次加载的判定,不再二次读 + 解析)。
   if (!legacyExists && loaded.isV3) return payload;
-  await atomicWriteJson(explorerFile, payload);
+  await writeExplorerFile(explorerFile, payload);
   if (legacyExists) {
     await fs
       .unlink(legacyLayoutFile)

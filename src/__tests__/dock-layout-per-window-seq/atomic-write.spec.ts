@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { atomicWriteJson } from '../../../electron/main/lib/atomic-write';
+import { defaultExplorerV3, loadExplorer, writeExplorerFile } from '../../../electron/main/persistence';
 
 let dir: string;
 let file: string;
@@ -125,3 +126,17 @@ describe('atomic explorer persistence writes', () => {
     expect(entries.filter((entry) => entry.endsWith('.tmp'))).toEqual([]);
   });
 });
+
+// 写端总量上限与读端(16MiB)对齐:超限文件一旦写出,之后读取一律抛错且不自愈 → 写入口拒写,原文件保持可读。
+describe('writeExplorerFile 总量上限', () => {
+  it('序列化后超过 16MiB → 抛 PAYLOAD_TOO_LARGE,原文件不变且仍可读', async () => {
+    const ok = defaultExplorerV3();
+    await writeExplorerFile(file, ok);
+    const before = await fs.readFile(file, 'utf8');
+    const huge = { ...ok, filler: 'x'.repeat(16 * 1024 * 1024 + 1) } as never;
+    await expect(writeExplorerFile(file, huge)).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    await expect(loadExplorer(file)).resolves.not.toBeNull();
+  });
+});
+

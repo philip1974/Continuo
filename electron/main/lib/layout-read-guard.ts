@@ -1,7 +1,7 @@
 // dock layout 持久化字节上限 + 读端守卫(单一来源)。
 //
-// 边界(E89):单窗口 dockview layout 序列化字节上限(远小于 explorer.json 16MiB E67 上限,确保写入后
-// 整个 explorer.json 仍可读)。正常 layout 仅 KB 级,2MiB 留足余量。写端(layout:write)与读端
+// 边界(E89):单窗口 dockview layout 序列化字节上限。正常 layout 仅 KB 级,2MiB 留足余量。整个 explorer.json
+// 仍可读(≤ 16MiB 读端上限,E67)不靠本常量保证(最多 64 段 × 2MiB 远超),由唯一写入口 writeExplorerFile 按总量拒写。写端(layout:write)与读端
 // (layout:read)共用此常量与守卫逻辑。
 import { assertJsonValue } from '../../shared/assert-json-value';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';

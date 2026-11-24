@@ -12,10 +12,10 @@ import {
   mergeWritableIntoFull,
   type ExplorerPayloadV3,
   type ExplorerWritablePayload,
+  writeExplorerFile,
 } from './persistence';
 import { EXPLORER_FILE_NAME, MAIN_OWNED_WINDOW_FIELDS } from '../shared/explorer-persistence-schema';
 import { safeHandle, safeHandleWithCtx, withTrustedFrameGate } from './safe-handle';
-import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { getWindowSeq } from './services/window-seq.service';
 import { registerFsIpc } from './ipc/fs.ipc';
@@ -185,7 +185,7 @@ export function registerIpc(deps: WindowIpcDeps): void {
           return;
         }
         entry.layout = layout;
-        await atomicWriteJson(explorerFile, payload);
+        await writeExplorerFile(explorerFile, payload);
       });
     },
   );
@@ -216,7 +216,7 @@ export function registerIpc(deps: WindowIpcDeps): void {
         const current = await loadExplorer(explorerFile);
         const merged = mergeWritableIntoFull(current, ownOnly);
         if (current !== null && isDeepStrictEqual(merged, current)) return;
-        await atomicWriteJson(explorerFile, merged);
+        await writeExplorerFile(explorerFile, merged);
       });
     },
   );

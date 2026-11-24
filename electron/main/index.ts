@@ -28,6 +28,7 @@ import {
   pruneLRUClosed,
   stampMissingClosedAt,
   closedAtNow,
+  writeExplorerFile,
 } from './persistence';
 import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
 import { isStartupRestoreInFlight, restoreStartupWindows } from './services/window-restore.service';
@@ -50,7 +51,6 @@ import {
   setWindowSeq,
 } from './services/window-seq.service';
 import { withExplorerFileMutex } from './lib/file-mutex';
-import { atomicWriteJson } from './lib/atomic-write';
 import { createKeyedCounter } from './lib/keyed-counter';
 import { statDirGated } from './lib/dir-stat-gate';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
@@ -661,7 +661,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
         // 启动恢复未结束时不补写:即将被恢复的段还不在保护集(恢复后开着,补写的启动时刻会让它下次偏旧)。
         if (!isStartupRestoreInFlight()) stampMissingClosedAt(payload, protectedSeqs);
         pruneLRUClosed(payload, LRU_MAX_CLOSED, protectedSeqs);
-        await atomicWriteJson(explorerFile, payload);
+        await writeExplorerFile(explorerFile, payload);
       } finally {
         // 自身段已落盘(或写失败)→ 解除保护;放在 mutex 体内,不另起派生 promise 制造未处理拒绝。
         closingSeqRefs.dec(seq);
