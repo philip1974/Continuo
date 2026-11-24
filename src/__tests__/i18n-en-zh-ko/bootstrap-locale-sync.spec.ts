@@ -145,6 +145,9 @@ vi.mock('@/lib/co-api', () => ({
       onEnabledChanged: vi.fn(),
       onProtocolUrl: mocks.pluginsOnProtocolUrl,
     },
+    pluginDataRaw: {
+      onChanged: vi.fn(),
+    },
     explorer: {
       read: mocks.explorerRead,
       write: mocks.explorerWrite,

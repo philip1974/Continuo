@@ -8,6 +8,7 @@ import { MAX_PLUGIN_DATA_BYTES } from '../../electron/shared/plugin-data-limits'
 import { assertJsonValue } from '../../electron/shared/assert-json-value';
 import { utf8ByteLength, utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
 import { jsonStringLengthLowerBoundExceeds } from '../../electron/shared/json-byte-budget';
+import { isPluginsChangedPayload } from '../../electron/shared/plugins-channels';
 
 // 边界(E43,E41/E42 同族 — renderer 在主进程 cap 前先构造大对象):write() 必须先 JSON.stringify
 // 校验可序列化,但畸形/恶意插件传超大对象时该 stringify 已在 renderer 产生巨大字符串,且会跨 IPC
@@ -44,9 +45,24 @@ export interface PluginDataStore {
   write(pluginId: string, data: unknown): Promise<void>;
   /**
    * 插件卸载后淘汰该 id 的内存缓存(perf:进程级单例 store,单插件数据可达 16MiB)。可选:
-   * 只由 PluginManager 在卸载时调用,不暴露给插件(scoped-app 只透传 read/write)。
+   * 由 PluginManager 在卸载时、wirePluginDataInvalidation 在别窗写入后调用,不暴露给插件(scoped-app 只透传 read/write)。
    */
   forget?(pluginId: string): void;
+}
+
+/**
+ * 跨窗口缓存失效:别的窗口写入某插件 data.json 后 main 广播 `{ id }`,本窗口 forget 该插件缓存(同时作废在途
+ * load / save 的回填代际),下一次 read() 从盘重读 —— 否则插件整份读-改-写时用陈旧缓存抹掉别窗的改动。
+ * payload 来自 IPC,按 `{ id }` 守卫校验,畸形丢弃。返回 unsubscribe。SDK 无 dataStore 变更事件,插件不另行通知。
+ */
+export function wirePluginDataInvalidation(store: PluginDataStore): () => void {
+  return coApi.pluginDataRaw.onChanged((payload) => {
+    if (!isPluginsChangedPayload(payload)) {
+      console.warn('[plugin-data] dropped malformed plugin-data:changed payload', payload);
+      return;
+    }
+    store.forget?.(payload.id);
+  });
 }
 
 export class IpcPluginDataStore implements PluginDataStore {

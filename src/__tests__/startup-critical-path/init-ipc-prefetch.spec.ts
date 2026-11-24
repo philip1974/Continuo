@@ -153,6 +153,9 @@ vi.mock('@/lib/co-api', () => ({
       onEnabledChanged: vi.fn(),
       onProtocolUrl: mocks.pluginsOnProtocolUrl,
     },
+    pluginDataRaw: {
+      onChanged: vi.fn(),
+    },
     layout: {
       read: mocks.layoutRead,
     },

@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import type { IpcMain } from 'electron';
+import type { IpcMain, IpcMainInvokeEvent } from 'electron';
 import lockfile from 'proper-lockfile';
 import { atomicWriteText } from '../lib/atomic-write';
 import { readFileCappedFd } from '../lib/read-fh-capped';
@@ -25,6 +25,8 @@ const LOCK_OPTS: lockfile.LockOptions = {
 
 export interface PluginDataStoreDeps {
   userDataPath: string;
+  /** 落盘成功后回调(IPC 层据此向其它窗口广播缓存失效);失败不调用。 */
+  onSaved?: (pluginId: string, event: IpcMainInvokeEvent) => void;
 }
 
 // plugin id 必须是单段安全标识符 —— 与 plugins.service / loader 的 id 正则一致。
@@ -102,7 +104,7 @@ export function registerPluginDataStoreHandlers(
   //(JSON.parse 产物本身不含 NaN / undefined / function)。
   ipcMain.handle(
     PLUGIN_DATA_CHANNELS.SAVE_SERIALIZED,
-    async (_event, pluginId: string, serializedValue: unknown) => {
+    async (event, pluginId: string, serializedValue: unknown) => {
       assertPluginId(pluginId);
       if (typeof serializedValue !== 'string') {
         throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data must be a serialized JSON string');
@@ -118,6 +120,7 @@ export function registerPluginDataStoreHandlers(
         throw codedError(ERROR_CODES.BAD_INPUT, 'plugin data not JSON-safe');
       }
       await writeSerialized(pluginId, serialized);
+      deps.onSaved?.(pluginId, event);
     },
   );
 
