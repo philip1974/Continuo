@@ -39,6 +39,8 @@ import {
 import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyOpenFailed, openFailureOf } from '@/notifications/notify-open-failed';
+import { basenameForChrome } from '@/lib/path-label';
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -142,7 +144,13 @@ export function EditorPanel() {
       if (target.kind === 'file') {
         // a11y(A127,A117 同族):本地文件链接打开须检查 FileOpResult.ok + catch reject,否则
         // 目标文件不存在/读取失败时无 toast/live 反馈,用户只感知链接「没反应」(同外链分支)。
-        notifyIfFailed(openFileByPath(target.absPath));
+        // 失败提示与 Explorer / Quick Open 一致:「打开失败 <文件名>: <按 code 本地化的原因>」。
+        const name = basenameForChrome(target.absPath);
+        openFileByPath(target.absPath)
+          .then((r) => {
+            if (!r.ok) notifyOpenFailed(name, r);
+          })
+          .catch((err: unknown) => notifyOpenFailed(name, openFailureOf(err)));
       } else {
         // a11y(A117,A50/A116 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被
         // 白名单拒绝或系统打开失败时无 toast/live 反馈,用户只感知链接「没反应」。

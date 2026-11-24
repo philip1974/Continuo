@@ -131,6 +131,8 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
       expect(h.openFileByPath).toHaveBeenCalled();
       expect(notifyErrorMock).toHaveBeenCalledTimes(1);
     });
+    // 与 Explorer / Quick Open 同一「打开失败 <文件名>: 原因」提示(notifyOpenFailed),带文件名。
+    expect(String(notifyErrorMock.mock.calls[0]?.[0])).toContain('other.md');
   });
 
   it('本地文件链接 openFileByPath reject → notify.error', async () => {
@@ -143,5 +145,6 @@ describe('a11y(A117) — Markdown 外链打开失败须有反馈', () => {
     await waitFor(() => {
       expect(notifyErrorMock).toHaveBeenCalledTimes(1);
     });
+    expect(String(notifyErrorMock.mock.calls[0]?.[0])).toContain('other.md');
   });
 });

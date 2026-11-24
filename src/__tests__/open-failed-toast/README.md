@@ -2,7 +2,7 @@
 
 行为契约:**用户主动打开文件失败时,弹一条 `「打开失败」 <文件名>: <原因>` 的 error toast,原因按错误码本地化,toast 附带错误码。**
 
-Explorer 点击文件(`FolderTree`)与 Quick Open 选中文件(`QuickOpenModal`)共用 `notifyOpenFailed`
+Explorer 点击文件(`FolderTree`)、Quick Open 选中文件(`QuickOpenModal`)与 Markdown 内链打开本地文件(`EditorPanel`)共用 `notifyOpenFailed`
 (此前各写一份并已分叉:Quick Open 不附 code、抛错时不本地化;Explorer 抛出非 Error 时原因显示成 `undefined`)。
 
 ## 行为
@@ -14,4 +14,4 @@ Explorer 点击文件(`FolderTree`)与 Quick Open 选中文件(`QuickOpenModal`)
 
 ## 接线守卫
 
-两个调用方源码都调用 `notifyOpenFailed(`,且不再内联 `t('quick_open.open_failed')`。
+三个调用方源码都调用 `notifyOpenFailed(`,且不再内联 `t('quick_open.open_failed')`。

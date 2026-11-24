@@ -63,8 +63,12 @@ describe('openFailureOf(抛出值 → 失败描述)', () => {
   });
 });
 
-describe('接线守卫:两个打开入口共用 notifyOpenFailed', () => {
-  it.each(['panels/Explorer/FolderTree.tsx', 'plugins/quick-open/QuickOpenModal.tsx'])('%s', (rel) => {
+describe('接线守卫:三个打开入口共用 notifyOpenFailed', () => {
+  it.each([
+    'panels/Explorer/FolderTree.tsx',
+    'plugins/quick-open/QuickOpenModal.tsx',
+    'panels/Editor/EditorPanel.tsx',
+  ])('%s', (rel) => {
     const src = readFileSync(path.join(SRC_ROOT, rel), 'utf-8');
     expect(src).toContain('notifyOpenFailed(');
     expect(src).not.toContain("t('quick_open.open_failed')");
