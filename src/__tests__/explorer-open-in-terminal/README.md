@@ -4,7 +4,7 @@
 
 ## 行为契约
 
-- 与 Cmd+T / header 新建同走 `createUserTerminal({ cwd: <目录>, env: { COLORFGBG } })`:`terminal.create` 带
+- 与 Cmd+T / header 新建同走 `createUserTerminal({ cwd: <目录> })`(COLORFGBG 由 createUserTerminal 按当前主题统一设置,所有新建入口一致):`terminal.create` 带
   `cwd: <目录>, workspaceRoot: <当前 root>`,成功 → `setPendingFocus(<新 session id>)`,由 Reconciler 建
   session-bound 面板并聚焦。
 - **不**调通用 `openOrFocusPanel('terminal', ...)`:`getPanel('terminal')` 恒为空,会 addPanel 出 id='terminal'、

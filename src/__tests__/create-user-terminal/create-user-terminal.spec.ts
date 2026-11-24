@@ -50,17 +50,23 @@ describe('createUserTerminal — 共用创建流程', () => {
       originHint: 'user',
       cwd: '/repo',
       workspaceRoot: '/repo',
+      env: { COLORFGBG: '0;15' }, // 测试环境 <html> 无 .dark → 浅色
     });
     expect(id).toBe('term-1');
     expect(mocks.setPendingFocus).toHaveBeenCalledWith('term-1');
   });
 
-  // Explorer「在终端中打开」同走本流程:cwd 设到所选目录(归属仍是 workspace root),并可带额外 env。
-  it('传入 cwd / env → create 用该 cwd,workspaceRoot 仍取 workspace root,env 透传', async () => {
+  // Explorer「在终端中打开」同走本流程:cwd 设到所选目录(归属仍是 workspace root)。所有新建入口按当前主题带
+  // COLORFGBG(P10k 等 prompt 框架据此判断背景亮度;此前只有 Explorer 入口带)。
+  it('传入 cwd → create 用该 cwd,workspaceRoot 仍取 workspace root;COLORFGBG 跟随 <html>.dark', async () => {
     mocks.getState.mockReturnValue({ root: '/repo' });
     mocks.create.mockResolvedValue({ ok: true, data: { id: 'term-2' } });
-
-    await createUserTerminal({ cwd: '/repo/sub', env: { COLORFGBG: '15;0' } });
+    document.documentElement.classList.add('dark');
+    try {
+      await createUserTerminal({ cwd: '/repo/sub' });
+    } finally {
+      document.documentElement.classList.remove('dark');
+    }
 
     expect(mocks.create).toHaveBeenCalledWith({
       originHint: 'user',
@@ -89,7 +95,7 @@ describe('createUserTerminal — 共用创建流程', () => {
 
     await createUserTerminal();
 
-    expect(mocks.create).toHaveBeenCalledWith({ originHint: 'user' });
+    expect(mocks.create).toHaveBeenCalledWith({ originHint: 'user', env: { COLORFGBG: '0;15' } });
   });
 
   it('CWD_UNRESOLVED 失败 → notify.error workspace 引导 + 返 null,不 focus', async () => {

@@ -42,7 +42,6 @@ import {
 } from '@/plugins/settings/core-setting-specs';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
-import { useTheme } from '@/theme';
 import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
@@ -226,7 +225,6 @@ export function FolderTree({ root }: { root: string }) {
     const index = renderedItemsRef.current.findIndex((it) => it.getId() === id);
     if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
   }, []);
-  const { resolved: theme } = useTheme();
   const [creating, setCreating] = useState<CreatingState | null>(null);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
@@ -650,13 +648,9 @@ export function FolderTree({ root }: { root: string }) {
         void revealPathOrNotify(path);
       },
       onOpenInTerminal: (dir: string) => {
-        // 与 Cmd+T / header 新建同一条创建流程(createUserTerminal):cwd 设到该目录,归属当前 workspace
-        // (虽然 cwd 是子目录),便于跨 workspace 切换时该 terminal 跟随显示/隐藏。COLORFGBG 让 P10k 等
-        // prompt 框架启动时检测到当前主题亮度 —— 已在跑的 PTY 不会因主题切换而重渲。
-        void createUserTerminal({
-          cwd: dir,
-          env: { COLORFGBG: theme === 'dark' ? '15;0' : '0;15' },
-        });
+        // 与 Cmd+T / header 新建同一条创建流程(createUserTerminal,含按主题设 COLORFGBG):cwd 设到该目录,
+        // 归属当前 workspace(虽然 cwd 是子目录),便于跨 workspace 切换时该 terminal 跟随显示/隐藏。
+        void createUserTerminal({ cwd: dir });
       },
       onTrash: (paths: string[]) => {
         void (async () => {
@@ -703,7 +697,7 @@ export function FolderTree({ root }: { root: string }) {
         );
       },
     }),
-    [mutateDeps, root, runBatchTransfer, theme, treeApi, tt],
+    [mutateDeps, root, runBatchTransfer, treeApi, tt],
   );
 
   const submitCreate = async (name: string) => {

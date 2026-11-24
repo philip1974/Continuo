@@ -4,7 +4,7 @@
 // 恒为空 → addPanel 出 id='terminal'、无 params.sessionId 的坏面板(TerminalPanelView 自动关闭);布局恢复期间
 // 还会被排队重放。契约:该入口不调 openOrFocusPanel,改与 Cmd+T 相同用 setPendingFocus 请求 Reconciler 聚焦。
 // 该入口与 Cmd+T / header 新建同走 createUserTerminal(单一创建流程:等 root 恢复、预热 chunk、CANCELLED 静默、
-// 失败本地化提示),只额外指定 cwd 与 COLORFGBG。
+// 失败本地化提示、按主题设 COLORFGBG),只额外指定 cwd。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';

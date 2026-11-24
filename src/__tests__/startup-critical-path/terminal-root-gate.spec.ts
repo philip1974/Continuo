@@ -109,6 +109,7 @@ describe('createUserTerminal 不等编辑器 tab 读盘', () => {
       originHint: 'user',
       cwd: '/w',
       workspaceRoot: '/w',
+      env: { COLORFGBG: '0;15' },
     });
 
     release();

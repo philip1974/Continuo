@@ -31,8 +31,19 @@ import { errorCodeOf } from '../../../electron/shared/error-message';
  *
  * UI 收尾(关闭菜单等)由调用方自理。
  */
+/**
+ * 新终端的 COLORFGBG(「前景;背景」ANSI 色号):让 P10k 等 prompt 框架启动时检测到当前主题亮度。读 <html> 的 .dark
+ *(ThemeProvider 的切换结果)。已在跑的 PTY 不会因主题切换而重渲。所有新建入口经此统一带上(此前只有 Explorer
+ *「在终端中打开」传,Cmd+T / Dock 头部新建在浅色主题下拿不到背景亮度)。
+ */
+export function terminalColorFgBg(): string {
+  // 无 DOM(非 renderer 环境)按默认暗色主题。
+  const dark = typeof document === 'undefined' || document.documentElement.classList.contains('dark');
+  return dark ? '15;0' : '0;15';
+}
+
 export async function createUserTerminal(
-  opts: { readonly cwd?: string; readonly env?: Record<string, string> } = {},
+  opts: { readonly cwd?: string } = {},
 ): Promise<string | null> {
   // 性能(Phase-5 终端新建加载):用户点了「新建终端」= 明确 intent。立即 fire-and-forget
   // 预取 6MB+ xterm 面板 chunk,使其下载/解析与下面的 root 恢复等待 + IPC create + PTY
@@ -52,7 +63,7 @@ export async function createUserTerminal(
       originHint: 'user',
       ...(cwd !== undefined ? { cwd } : {}),
       ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
-      ...(opts.env !== undefined ? { env: opts.env } : {}),
+      env: { COLORFGBG: terminalColorFgBg() },
     });
     if (!r.ok) {
       // 退出闸(终审 P1):退出清理开始后 main 以 CANCELLED 拒绝新建;窗口已隐藏,静默即可(同下方 catch)。
