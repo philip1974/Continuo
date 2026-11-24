@@ -505,10 +505,6 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
   });
 }
 
-// dockview popout 走 window.open(url),url 默认是当前 renderer URL。
-// 同源 → allow + 注入我们的 preload + 安全 webPreferences。
-// 外站 → 转交系统浏览器,deny 弹窗。
-// 判定与主窗加载方式一致,见 window-open-policy。dev URL 经 parseDevRendererUrl(限长 + total,E304)。
 /**
  * 主窗加载的 dev server URL(仅 dev 且 ELECTRON_RENDERER_URL 可解析;否则 null → loadFile)。主窗加载方式、
  * 自有入口判定(isOwnRendererUrl)与受信 dev origin 三处共用 —— 三者分叉即重现「popout 全拒」或误信 dev origin。
@@ -517,6 +513,10 @@ function devRendererUrl(): URL | null {
   return isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null;
 }
 
+// dockview popout 走 window.open(url),url 默认是当前 renderer URL。
+// 同源 → allow + 注入我们的 preload + 安全 webPreferences。
+// 外站 → 转交系统浏览器,deny 弹窗。
+// 判定与主窗加载方式一致,见 window-open-policy。dev URL 经 parseDevRendererUrl(限长 + total,E304)。
 function isOwnRendererUrl(url: string): boolean {
   return isOwnRendererWindowUrl(
     url,

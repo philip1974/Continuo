@@ -27,7 +27,7 @@ describe('useCloseWhenGone', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('判定函数取最新一次渲染传入的', () => {
+  it('目标与列表未变 → 不重新判定(同原 effect 依赖)', () => {
     const close = vi.fn();
     const live = ['a'] as const;
     const { rerender } = renderHook(
@@ -35,9 +35,22 @@ describe('useCloseWhenGone', () => {
       { initialProps: { present: true } },
     );
     rerender({ present: false });
-    expect(close).not.toHaveBeenCalled(); // 目标与列表都没变 → 不重新判定(同原 effect 依赖)
-    rerender({ present: false });
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('同一次重渲染同时换列表与判定函数 → 按新判定关闭', () => {
+    const close = vi.fn();
+    const { rerender } = renderHook(
+      ({ live, isPresent }) => useCloseWhenGone('a', live, isPresent, close),
+      {
+        initialProps: {
+          live: ['a'] as readonly string[],
+          isPresent: (l: readonly string[], t: string) => l.includes(t),
+        },
+      },
+    );
+    rerender({ live: ['a', 'b'], isPresent: () => false });
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });
 

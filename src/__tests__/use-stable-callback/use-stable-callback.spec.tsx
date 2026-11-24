@@ -30,6 +30,10 @@ describe('接线守卫:传给 Modal 的 onClose 都经 useStableCallback', () =>
     'plugins/permissions/PermissionEditorModal.tsx',
     'plugins/keybindings/KeybindingCaptureModal.tsx',
   ])('%s', (rel) => {
-    expect(readFileSync(path.join(SRC_ROOT, rel), 'utf-8')).toContain('useStableCallback(');
+    const src = readFileSync(path.join(SRC_ROOT, rel), 'utf-8');
+    // 包装结果须真的传给 Modal:取 `const X = useStableCallback(` 的变量名,断言 `onClose={X}`。
+    const m = /const (\w+) = useStableCallback\(/.exec(src);
+    expect(m).not.toBeNull();
+    expect(src).toContain(`onClose={${m![1]}}`);
   });
 });
