@@ -52,6 +52,7 @@ import {
   type ExplorerPayloadV3,
   type WindowEntryV3,
 } from '../../../electron/shared/explorer-persistence-schema';
+import { notifyIfFailed } from '@/notifications/notify-thrown-error';
 
 const DEBOUNCE_MS = 300;
 const VERSION = 3 as const;
@@ -635,12 +636,9 @@ function wireRecentRootsSync(api: ExplorerPersistApi, startupPicks: readonly str
   api.onRecentChanged?.((list) => applyWithoutTouch(collectNormalizedWorkspaceRoots(list)));
   // 移除:先发 IPC(与之后的 touch 同序到达 main),再立即改本窗(移除头部时不把新头部当作「置顶」回发 touch)。
   recentRootRemover = (path) => {
-    api.removeRecent?.(path).then(
-      (r) => {
-        if (!r.ok) console.warn('[explorer-persist] removeRecent failed', r.code, r.message);
-      },
-      (err: unknown) => console.warn('[explorer-persist] removeRecent threw', err),
-    );
+    // 用户显式操作:失败须有可见反馈(否则本窗已移除、下次广播又冒出来,用户不知原因)。
+    const removing = api.removeRecent?.(path);
+    if (removing) notifyIfFailed(removing);
     applyWithoutTouch(withoutRecentRoot(useWorkspaceStore.getState().recentRoots, path));
   };
   if (!touch) return;

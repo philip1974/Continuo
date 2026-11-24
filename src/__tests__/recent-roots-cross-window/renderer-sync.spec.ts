@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 // 「最近打开」多窗口同步:renderer 侧 setRoot → touch、广播 → 更新 store。见同目录 README.md。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const notifyError = vi.hoisted(() => vi.fn());
+vi.mock('../../notifications/notify', () => ({ notify: { error: notifyError, info: vi.fn(), warn: vi.fn(), success: vi.fn() } }));
 import { useWorkspaceStore } from '../../stores/workspace.store';
 import { useExplorerStore } from '../../stores/explorer.store';
 import { usePinnedStore } from '../../stores/pinned.store';
@@ -108,5 +111,16 @@ describe('recentRoots 移除 · renderer', () => {
     expect(api.removeRecent).toHaveBeenCalledWith('/a');
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/b', '/c']);
     expect(api.touchRecent).not.toHaveBeenCalled();
+  });
+
+  it('removeRecent 失败(ok:false / reject)→ 有可见反馈,不只 console', async () => {
+    const { api } = makeApi(async () => ({ ok: true, data: snap(['/a', '/b']) }));
+    await initExplorerPersistence(api);
+    api.removeRecent.mockResolvedValueOnce({ ok: false, code: 'FS_DENIED', message: 'denied' } as never);
+    forgetRecentRoot('/a');
+    await vi.waitFor(() => expect(notifyError).toHaveBeenCalledTimes(1));
+    api.removeRecent.mockRejectedValueOnce(new Error('ipc gone'));
+    forgetRecentRoot('/b');
+    await vi.waitFor(() => expect(notifyError).toHaveBeenCalledTimes(2));
   });
 });

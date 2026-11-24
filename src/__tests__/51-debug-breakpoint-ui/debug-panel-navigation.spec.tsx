@@ -124,6 +124,23 @@ describe('点栈帧 / 断点 → 打开源码并定位到行', () => {
   });
 });
 
+describe('源码跳转 · 非绝对路径', () => {
+  beforeEach(seedStoppedSession);
+  it('适配器给的非绝对伪路径(如 node 内部模块)→ 不可点,不弹 INVALID_PATH', () => {
+    useDebugStore.setState((s) => {
+      const cur = s.sessions.get('s1')!;
+      return {
+        sessions: new Map([['s1', { ...cur, frames: [{ id: 9, name: 'internal', source_path: 'node:internal/timers', line: 3 }] }]]),
+      };
+    });
+    render(<DebugPanel />);
+    const btn = screen.getByRole('button', { name: /internal/ }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(h.openFile).not.toHaveBeenCalled();
+  });
+});
+
 describe('变量页', () => {
   it('进入变量页自动加载第一个作用域(不必点「加载」),其余作用域仍可手动加载', async () => {
     render(<DebugPanel />);

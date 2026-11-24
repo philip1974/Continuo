@@ -16,7 +16,7 @@ import {
 } from '@/stores/debug.store';
 import { useLocale, useT } from '@/i18n';
 import { coApp } from '@/plugins/co-app';
-import { basename } from '@/lib/path-cross';
+import { basename, isAbsolutePath } from '@/lib/path-cross';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 
 const EMPTY_VARIABLES: readonly [] = [];
@@ -111,14 +111,16 @@ function SourceRow({
   readonly line: number;
   readonly badge: ReactNode;
 }) {
+  // 只有绝对路径能打开:适配器给的 source.path 可能是内部伪路径(如 node 内部模块),点了只会报 INVALID_PATH。
+  const openable = path !== undefined && isAbsolutePath(path);
   return (
     <Card className="flex items-center justify-between gap-3">
       <Button
         variant="ghost"
         size="sm"
         className="min-w-0 flex-1 flex-col items-start text-left"
-        disabled={path === undefined}
-        onClick={path === undefined ? undefined : () => openSource(path, line)}
+        disabled={!openable}
+        onClick={openable ? () => openSource(path, line) : undefined}
         title={path === undefined ? undefined : `${path}:${line}`}
       >
         <span className="w-full truncate text-sm font-medium text-fg">{title}</span>
