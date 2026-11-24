@@ -16,6 +16,7 @@ import {
   debugSetBreakpointInputSchema,
   debugVariablesInputSchema,
 } from '../../../electron/shared/mcp-debug-schemas';
+import { SESSION_ID_MAX } from '../../../electron/shared/session-id-limits';
 
 function collectObjectSchemas(schema: unknown, out: unknown[] = []): unknown[] {
   if (!schema || typeof schema !== 'object') return out;
@@ -45,6 +46,9 @@ const ADVERTISED_INPUT_SCHEMAS = [
   debugListSessionsInputJsonSchema,
 ];
 
+type JsonProps = Record<string, Record<string, unknown>>;
+const propsOf = (schema: unknown): JsonProps => (schema as { properties: JsonProps }).properties;
+
 describe('50 · debug_* schemas', () => {
   it('所有 advertised object schema 都关闭 additionalProperties', () => {
     for (const inputJsonSchema of ADVERTISED_INPUT_SCHEMAS) {
@@ -56,6 +60,42 @@ describe('50 · debug_* schemas', () => {
         );
       }
     }
+  });
+
+  // 对外 JSON schema 从 zod 派生(z.toJSONSchema io:'input'),不再手写双份 —— 手写版曾漏 minLength
+  // (空串 session_id / 路径 / expression 对外合法、运行时 INVALID_PARAMS)与 evaluate frame_id 下界不一致。
+  it('advertised session_id / 路径 / expression 声明 minLength 1 与上限,与运行时 zod 一致', () => {
+    for (const inputJsonSchema of ADVERTISED_INPUT_SCHEMAS) {
+      const sessionId = propsOf(inputJsonSchema).session_id;
+      if (sessionId === undefined) continue;
+      expect(sessionId).toMatchObject({ type: 'string', minLength: 1, maxLength: SESSION_ID_MAX });
+    }
+    expect(propsOf(debugLaunchInputJsonSchema).program).toMatchObject({ minLength: 1 });
+    expect(propsOf(debugSetBreakpointInputJsonSchema).file).toMatchObject({ minLength: 1 });
+    expect(propsOf(debugEvaluateInputJsonSchema).expression).toMatchObject({ minLength: 1 });
+    expect(debugEvaluateInputSchema.safeParse({ session_id: '', expression: 'x' }).success).toBe(false);
+  });
+
+  it('evaluate 的 frame_id 是非负整数:运行时拒 -1,对外 schema minimum 0', () => {
+    expect(
+      debugEvaluateInputSchema.safeParse({ session_id: 'debug-1', expression: 'x', frame_id: -1 }).success,
+    ).toBe(false);
+    expect(
+      debugEvaluateInputSchema.safeParse({ session_id: 'debug-1', expression: 'x', frame_id: 0 }).success,
+    ).toBe(true);
+    expect(propsOf(debugEvaluateInputJsonSchema).frame_id).toMatchObject({ type: 'integer', minimum: 0 });
+  });
+
+  it('advertised schema 不带 $schema 与安全整数默认上下界,保留字段说明', () => {
+    for (const inputJsonSchema of ADVERTISED_INPUT_SCHEMAS) {
+      expect(inputJsonSchema).not.toHaveProperty('$schema');
+      expect(JSON.stringify(inputJsonSchema)).not.toContain(String(Number.MAX_SAFE_INTEGER));
+    }
+    expect(propsOf(debugThreadControlInputJsonSchema).thread_id?.description).toMatch(/thread id as 0/);
+    expect(propsOf(debugStackInputJsonSchema).thread_id?.description).toMatch(/Omit to let the engine/);
+    expect(propsOf(debugScopesInputJsonSchema).frame_id?.description).toMatch(/debug\.stack/);
+    expect(propsOf(debugSetBreakpointInputJsonSchema).condition?.description).toMatch(/rejected in the MVP/);
+    expect(propsOf(debugDisconnectInputJsonSchema).terminate_debuggee?.description).toMatch(/only true/);
   });
 
   it('variables 输入有分页与输出边界默认值,并限制 count≤100', () => {
@@ -94,7 +134,7 @@ describe('50 · debug_* schemas', () => {
   });
 
   // 会话都由 Continuo launch,teardown 按进程组整组回收;「只断开、让 debuggee 继续跑」会留下 Continuo
-  // 管不到的孤儿。此前 false 被静默忽略(仍终止),现在入口显式拒绝,zod 与手写 JSON schema 一致。
+  // 管不到的孤儿。此前 false 被静默忽略(仍终止),现在入口显式拒绝,派生出的 JSON schema 为 const:true。
   it('disconnect 只接受 terminate_debuggee=true(或省略),false 显式拒绝', () => {
     expect(
       debugDisconnectInputSchema.parse({ session_id: 'debug-1' }).terminate_debuggee,

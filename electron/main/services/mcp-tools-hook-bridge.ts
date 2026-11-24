@@ -38,8 +38,8 @@ import { isSameOrInsidePath } from '../lib/path-inside';
 import { posixSingleQuote } from '../lib/posix-shell-quote';
 import { truncateSessionIdForEcho } from '../lib/session-id-echo';
 import type { McpCallCtx, McpToolDef } from './mcp-host.service';
-import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+import { sessionIdSchema } from '../../shared/session-id-schema';
 import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { codedError } from '../../shared/error-message';
@@ -47,9 +47,9 @@ import { CONTINUO_HOOK_EVENTS_DIR_ENV } from '../lib/continuo-env-keys';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
 // 1MB session_id 校验通过后进 broker / Map / 错误回显路径(回显已截断 E151,但运行期仍处理超长 key)。
-// .extend 收窄 session_id 加 .max(SESSION_ID_MAX),保留 timeout_sec/include_raw 的 .default()(z.output 不变)。
+// .extend 把 session_id 换成共享 sessionIdSchema(含 .max(SESSION_ID_MAX)),保留 timeout_sec/include_raw 的 .default()(z.output 不变)。
 const awaitStopHookBoundedSchema = awaitStopHookInputSchema.extend({
-  session_id: z.string().min(1).max(SESSION_ID_MAX),
+  session_id: sessionIdSchema,
 });
 
 export type RunnerKind = 'cc' | 'codex' | 'unknown';

@@ -45,6 +45,7 @@ import type { EnsureAuthorized } from './mcp-tool-gates';
 import { trackAgentTerminalCreate } from './agent-terminal-inflight';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
+import { sessionIdSchema } from '../../shared/session-id-schema';
 import { codedError } from '../../shared/error-message';
 import { TERMINAL_WRITE_MAX_BYTES } from '../../shared/terminal-session-limits';
 
@@ -85,7 +86,7 @@ type CreateSessionBoundedInput = z.infer<typeof createSessionBoundedSchema>;
 // minLength:1)。外部 MCP client 可传 1MB session_id,校验通过后进 deps.has/getSessionOwner/write/read/kill
 // 的 Map/lookup,虽错误回显已截断(E148/E151),运行期仍反复处理超长 key。Continuo 侧 .extend 把 session_id
 // 收窄到 .max(SESSION_ID_MAX)(同 string 类型,z.infer 不变 → 无需改工厂类型)。不改协议包(server-node 共用)。
-const sessionIdBounded = z.string().min(1).max(SESSION_ID_MAX);
+// session_id 的 zod 用 shared/session-id-schema(与 hook-bridge / debug 同一常量)。
 // 边界(E220,E219 兄弟,字节 vs code-unit 族):send_input/send_text 的 data/text 协议用
 // z.string().max(SEND_INPUT_MAX_CHARS) 是 UTF-16 code unit;下游写 PTY 按真实字节。CJK/emoji 多字节
 // 输入 length≤上限时真实字节数倍超 → 与 terminal:write(E219)字节语义统一。Continuo 侧 extend 改字节 refine。
@@ -96,15 +97,15 @@ const sendDataBounded = z
     message: `超过上限 ${SEND_DATA_MAX_BYTES} 字节`,
   });
 const sendInputBoundedSchema = sendInputInputSchema.extend({
-  session_id: sessionIdBounded,
+  session_id: sessionIdSchema,
   data: sendDataBounded,
 });
 const sendTextBoundedSchema = sendTextInputSchema.extend({
-  session_id: sessionIdBounded,
+  session_id: sessionIdSchema,
   text: sendDataBounded,
 });
 const pressKeyBoundedSchema = pressKeyInputSchema.extend({
-  session_id: sessionIdBounded,
+  session_id: sessionIdSchema,
 });
 const PRESS_KEY_ENUM: ReadonlyArray<keyof typeof KEY_BYTES> = [
   'enter',
@@ -120,10 +121,10 @@ const PRESS_KEY_ENUM: ReadonlyArray<keyof typeof KEY_BYTES> = [
   'left',
 ];
 const readOutputBoundedSchema = readOutputInputSchema.extend({
-  session_id: sessionIdBounded,
+  session_id: sessionIdSchema,
 });
 const killBoundedSchema = killInputSchema.extend({
-  session_id: sessionIdBounded,
+  session_id: sessionIdSchema,
 });
 
 // ── 输入侧的 store 形态(handler 期望的字段) ────────────────────

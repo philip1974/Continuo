@@ -819,6 +819,10 @@
 - [`startup-check-after-init.spec.ts`](./marketplace-update-store/startup-check-after-init.spec.ts)
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 
+## [MCP session_id schema 单一来源](./mcp-session-id-schema/README.md)
+
+- [`session-id-schema.spec.ts`](./mcp-session-id-schema/session-id-schema.spec.ts)
+
 ## [mcp-startup-audit(main 侧 MCP / 启动路径审计修复)](./mcp-startup-audit/README.md)
 
 - [`abort-after-auth.spec.ts`](./mcp-startup-audit/abort-after-auth.spec.ts)
