@@ -7,6 +7,7 @@ import type {
   FetchReviewsResult,
   MarketplaceReviewNode,
 } from '../../shared/marketplace-channels';
+import { MARKETPLACE_REPO_NAME, MARKETPLACE_REPO_OWNER } from '../../shared/marketplace-channels';
 import { capJoinedMessagesFrom } from '../../shared/cap-joined-messages';
 import {
   REVIEW_BODY_MAX,
@@ -18,8 +19,8 @@ import {
 import { readResponseTextCapped } from '../../shared/read-capped';
 
 const GRAPHQL_URL = 'https://api.github.com/graphql';
-const OWNER = 'philip1974';
-const NAME = 'continuo-plugins';
+const OWNER = MARKETPLACE_REPO_OWNER;
+const NAME = MARKETPLACE_REPO_NAME;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 50; // safety bound,对齐旧 renderer 实现
 

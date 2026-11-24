@@ -10,6 +10,7 @@ import type { DirtyState } from '../../../electron/shared/persistence-channels';
 import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
 import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
+import { EDITOR_DISK_CHANGED } from '@/panels/Editor/editor-file-actions';
 
 type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty' | 'dirtyGen'>;
 
@@ -121,7 +122,7 @@ export async function saveDirtyTabsForClose(
     const r = s.status === 'fulfilled' ? s.value : ({ ok: false } as const);
     if (!r.ok) {
       failed += 1;
-      if ('code' in r && r.code === 'EDITOR_DISK_CHANGED') diskChanged += 1;
+      if ('code' in r && r.code === EDITOR_DISK_CHANGED) diskChanged += 1;
     } else if (current.some((tab) => tab.id === targets[i]!.id && tab.dirty)) {
       failed += 1;
     }

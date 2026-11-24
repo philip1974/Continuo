@@ -17,9 +17,9 @@ import {
 import { createSessionCache } from './session-cache';
 import { readResponseTextCapped } from '../../electron/shared/read-capped';
 import { MANIFEST_MAX_BYTES } from '../../electron/shared/plugin-manifest';
+import { MARKETPLACE_REPO_SLUG } from '../../electron/shared/marketplace-channels';
 
-const INDEX_URL =
-  'https://raw.githubusercontent.com/philip1974/continuo-plugins/main/index.json';
+const INDEX_URL = `https://raw.githubusercontent.com/${MARKETPLACE_REPO_SLUG}/main/index.json`;
 
 // 边界(E64,E57 reviews 同族,renderer 网络输入):index.json/manifest.json 是外部仓库数据。
 // 此前直接 await r.json() 无响应体上限,恶意/异常响应可让 renderer 解析超大 JSON / 超大数组

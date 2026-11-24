@@ -24,6 +24,7 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useUserPluginList } from '@/plugins/use-user-plugin-list';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
+import { MARKETPLACE_REPO_SLUG } from '../../electron/shared/marketplace-channels';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -327,12 +328,12 @@ export function MarketplaceTab() {
       >
         {t('marketplace.empty_index_prefix')}
         <a
-          href="https://github.com/philip1974/continuo-plugins"
+          href={`https://github.com/${MARKETPLACE_REPO_SLUG}`}
           target="_blank"
           rel="noopener noreferrer"
           className="ml-1 text-accent hover:underline"
         >
-          philip1974/continuo-plugins
+          {MARKETPLACE_REPO_SLUG}
         </a>
       </div>
     );
@@ -894,7 +895,7 @@ function RatingRow({
             <div className="pt-1 text-2xs text-fg-dim">
               {t('marketplace.reviews.show_first_10')}
               <a
-                href={`https://github.com/philip1974/continuo-plugins/discussions?discussions_q=%5B${entry.id}%5D`}
+                href={`https://github.com/${MARKETPLACE_REPO_SLUG}/discussions?discussions_q=%5B${entry.id}%5D`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ml-1 text-accent hover:underline"
@@ -1095,7 +1096,7 @@ export function selectDisplayReviews(
 /** 跳 GitHub 写新评论(预填 title 含 plugin id). */
 function buildNewReviewUrl(pluginId: string): string {
   const title = encodeURIComponent(`[${pluginId}] `);
-  return `https://github.com/philip1974/continuo-plugins/discussions/new?category=general&title=${title}`;
+  return `https://github.com/${MARKETPLACE_REPO_SLUG}/discussions/new?category=general&title=${title}`;
 }
 
 export function isNewAccountCreatedAt(createdAt: string, nowMs: number): boolean {

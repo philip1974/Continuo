@@ -32,6 +32,9 @@ import {
   loadMilkdownEditorModule,
 } from './editor-engine-loaders';
 
+/** renderer 内部错误码:保存时发现磁盘已被外部修改(未覆盖)。EditorPanel 据此弹覆盖确认,dirty-close 单独计数。 */
+export const EDITOR_DISK_CHANGED = 'EDITOR_DISK_CHANGED';
+
 const ignoreWarmupError = (): void => {};
 
 /**
@@ -200,7 +203,7 @@ async function checkDiskBeforeSave(
   if (r.data === originalContent) return null;
   return {
     ok: false,
-    code: 'EDITOR_DISK_CHANGED',
+    code: EDITOR_DISK_CHANGED,
     message: `file changed on disk since last load/save: ${filePath}`,
   };
 }

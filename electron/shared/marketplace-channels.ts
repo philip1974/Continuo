@@ -13,6 +13,11 @@
 // 若混入 zod schema 会把 zod 拖进 preload 产物致 `require('zod')` 加载失败。zod 入参
 // schema(仅 main 用)放在 ipc/marketplace.ipc.ts。(修复 S4 引入的 preload zod 泄漏)
 
+/** 插件市场仓库:index.json 来源、reviews 所在 Discussions(读写须同一仓库)。 */
+export const MARKETPLACE_REPO_OWNER = 'philip1974';
+export const MARKETPLACE_REPO_NAME = 'continuo-plugins';
+export const MARKETPLACE_REPO_SLUG = `${MARKETPLACE_REPO_OWNER}/${MARKETPLACE_REPO_NAME}`;
+
 export const MARKETPLACE_CHANNELS = {
   /** main 用运行时 GITHUB_TOKEN 拉 philip1974/continuo-plugins 的 reviews discussions. */
   FETCH_REVIEWS: 'marketplace:fetch-reviews',

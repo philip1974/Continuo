@@ -26,7 +26,7 @@ import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
-import { applyEditorWriteBack } from './editor-file-actions';
+import { applyEditorWriteBack, EDITOR_DISK_CHANGED } from './editor-file-actions';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
@@ -187,7 +187,7 @@ export function EditorPanel() {
     const target = findEditorFileTabById(tabs, activeTabId);
     const r = await saveActive();
     if (!r.ok) {
-      if (r.code === 'EDITOR_DISK_CHANGED' && target) {
+      if (r.code === EDITOR_DISK_CHANGED && target) {
         setOverwriteCandidate({ id: target.id, filePath: target.filePath });
         return;
       }
