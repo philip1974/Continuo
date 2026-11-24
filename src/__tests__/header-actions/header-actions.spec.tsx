@@ -9,6 +9,9 @@ import { coApp } from '../../plugins/co-app';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
 import { notify } from '../../notifications/notify';
 
+const createUserTerminalMock = vi.hoisted(() => vi.fn(async (): Promise<string | null> => null));
+vi.mock('../../shell/dock/create-user-terminal', () => ({ createUserTerminal: createUserTerminalMock }));
+
 const notifyError = vi.fn();
 vi.mock('../../notifications/notify', () => ({
   notify: { error: (...a: unknown[]) => notifyError(...a) },
@@ -296,10 +299,32 @@ describe('HeaderActions — 更多操作菜单', () => {
         expect(notifyError).toHaveBeenCalledWith(t('shell.dock.add_panel_failed'));
       });
       expect(document.querySelector('[role=menu]')).toBeNull();
+      // 失败分支焦点还给触发按钮(不落到 body)
+      expect(document.activeElement?.getAttribute('aria-label')).toBe(
+        t('panels.explorer.btn.more_actions'),
+      );
     } finally {
       notifyError.mockRestore();
       warn.mockRestore();
     }
+  });
+
+  it('新建终端失败(createUserTerminal 返回 null)→ 关菜单并把焦点还给触发按钮', async () => {
+    coApp.panels.register({ type: 'terminal', title: 'Terminal', factory: () => null });
+    createUserTerminalMock.mockResolvedValueOnce(null);
+    const { container } = render(
+      <HeaderActions {...(makeProps() as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    fireEvent.click(
+      container.querySelector(
+        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+      ) as HTMLButtonElement,
+    );
+    fireEvent.click(document.querySelector('[role=menuitem]') as HTMLElement);
+    await vi.waitFor(() => expect(document.querySelector('[role=menu]')).toBeNull());
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(
+      t('panels.explorer.btn.more_actions'),
+    );
   });
 
   // race(R60,R59 同族):菜单打开期间该 panel type 被插件 unregister(快照仍渲染该项,但 live

@@ -238,3 +238,51 @@ describe('S13 终端搜索装饰色取自主题 token', () => {
     );
   });
 });
+
+describe('S13 主题切换时无终端挂载 / 搜索条开着', () => {
+  afterEach(() => document.documentElement.classList.remove('dark'));
+
+  it('缓存按 <html>.dark 做键:未调 invalidate、主题已切 → 下一次取色按新主题', () => {
+    document.documentElement.classList.add('dark');
+    setTokens(DARK);
+    expect(getTerminalSearchDecorations().matchBackground).toBe('#2563eb');
+    // 关掉所有终端后切主题:无人调 invalidateTerminalSearchDecorations
+    document.documentElement.classList.remove('dark');
+    setTokens(LIGHT);
+    expect(getTerminalSearchDecorations().matchBackground).toBe('#eaddff');
+  });
+
+  it('搜索条开着且有词 → 主题切换后下一帧按当前词重搜(新色重画,计数同步)', async () => {
+    let rafCb: (() => void) | null = null;
+    Object.defineProperty(globalThis, 'requestAnimationFrame', {
+      configurable: true,
+      value: (cb: () => void) => {
+        rafCb = cb;
+        return 1;
+      },
+    });
+    vi.useFakeTimers();
+    setTokens(DARK);
+    const { rerender } = render(createElement(Host, { termId: 'term-b' }));
+    act(() => api!.open());
+    const addon = hoisted.addon!;
+    act(() => api!.setTerm('x'));
+    act(() => vi.runOnlyPendingTimers());
+    const before = addon.findNext.mock.calls.length;
+
+    setTokens(LIGHT);
+    hoisted.resolved = 'light';
+    rerender(createElement(Host, { termId: 'term-b' }));
+    expect(addon.clearDecorations).toHaveBeenCalled();
+    act(() => rafCb?.());
+    act(() => vi.runOnlyPendingTimers());
+    vi.useRealTimers();
+    expect(addon.findNext.mock.calls.length).toBeGreaterThan(before);
+    expect(addon.findNext).toHaveBeenLastCalledWith(
+      'x',
+      expect.objectContaining({
+        decorations: expect.objectContaining({ matchBackground: '#eaddff' }),
+      }),
+    );
+  });
+});

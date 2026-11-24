@@ -763,14 +763,22 @@ export function useTerminal(termId: string) {
     term.options.minimumContrastRatio = resolved === 'dark' ? 1 : 7;
   }, [resolved]);
 
-  // 主题切换 → 搜索装饰色作废,下一次搜索按新主题 token 取色。addon 不比较 decorations
-  // (同词重搜不重画高亮),故清掉旧高亮连带其缓存词,下一次搜索整体重画。首次挂载跳过。
+  // 主题切换 → 搜索装饰色作废并重画。addon 不比较 decorations(同词重搜不重画高亮),故先清旧高亮连带其缓存词;
+  // 搜索条开着且有词时,下一帧(ThemeProvider 已切 <html class>,取到新 token)按当前词重搜:按新色重画,
+  // 计数经 onDidChangeResults 同步(只清不重搜会让高亮消失而计数仍显示旧值)。首次挂载跳过。
   const decoratedThemeRef = useRef(resolved);
   useEffect(() => {
     if (decoratedThemeRef.current === resolved) return;
     decoratedThemeRef.current = resolved;
     invalidateTerminalSearchDecorations();
     searchAddonRef.current?.clearDecorations();
+    const raf = requestAnimationFrame(() => {
+      const s = searchStateRef.current;
+      if (s.isOpen && s.term.length > 0) {
+        dispatchSearchActionRef.current?.({ type: 'setTerm', term: s.term });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
   }, [resolved]);
 
   // sidebar(显示 / 隐藏 / 拖宽)→ 强制重 fit。

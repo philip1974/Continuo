@@ -60,8 +60,10 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         // createUserTerminal → coApi.terminal.create → SessionsSync → DockReconciler
         // addPanel(含 sessionId)。创建流程(等 workspace root 恢复 / 错误提示 / setPendingFocus)与
         // 命令面板 terminal.new 共用(可维护性 M1);此处只负责关闭菜单 UI 收尾。
-        await createUserTerminal();
-        menu.close();
+        // 失败(无可解析 cwd / IPC reject 等,内部已 notify)返回 null → 焦点还给触发按钮,不落到 body。
+        const id = await createUserTerminal();
+        if (id) menu.close();
+        else menu.closeAndRestore();
         return;
       }
       try {

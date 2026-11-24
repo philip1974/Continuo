@@ -55,20 +55,26 @@ export const FALLBACK_TERMINAL_SEARCH_DECORATIONS: SearchDecorations = {
 };
 
 const HEX_RRGGBB = /^#[0-9a-f]{6}$/i;
-let cachedDecorations: SearchDecorations | null = null;
+// 缓存按取色时的主题(<html> 是否带 .dark)做键:主题切换时即使没有任何终端挂载(无人调 invalidate),下一次
+// 取色也会因键不符而重读 token,不沿用旧主题色板。
+let cachedDecorations: { readonly dark: boolean; readonly values: SearchDecorations } | null = null;
+
+function currentThemeIsDark(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+}
 
 /**
- * 当前主题下的搜索装饰色。首次调用读 token 并缓存(读不到不缓存,下次重试);
- * 主题切换后由 invalidateTerminalSearchDecorations 作废缓存,下一次搜索重新取色。
+ * 当前主题下的搜索装饰色。读 token 并按主题缓存(读不到不缓存,下次重试)。
  * 惰性读取而非在主题 effect 里读:子组件 effect 先于 ThemeProvider 切 <html class> 执行。
  */
 export function getTerminalSearchDecorations(): SearchDecorations {
-  if (cachedDecorations) return cachedDecorations;
+  const dark = currentThemeIsDark();
+  if (cachedDecorations && cachedDecorations.dark === dark) return cachedDecorations.values;
   const values = readThemeTokens(DECORATION_TOKENS);
   if (values === null || !Object.values(values).every((v) => HEX_RRGGBB.test(v))) {
     return FALLBACK_TERMINAL_SEARCH_DECORATIONS;
   }
-  cachedDecorations = values;
+  cachedDecorations = { dark, values };
   return values;
 }
 
