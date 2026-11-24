@@ -21,7 +21,7 @@
 // 全部深链命令默认拒绝;未来若需放行某个明确只读/导航类**内置**命令,把其 id 加入。
 
 import type { CoApp } from '../types';
-import { PROTOCOL_URL_MAX_LEN } from '../../../electron/shared/plugins-channels';
+import { PROTOCOL_SCHEME, PROTOCOL_URL_MAX_LEN } from '../../../electron/shared/plugins-channels';
 
 /**
  * 安全 S5:允许被外部 co://command 深链唤起的命令 id 白名单(core 独有,插件无法修改)。
@@ -74,7 +74,7 @@ export function parseProtocolUrl(url: string): ParsedProtocolUrl | null {
   } catch {
     return null;
   }
-  if (parsed.protocol !== 'co:') return null;
+  if (parsed.protocol !== `${PROTOCOL_SCHEME}:`) return null;
   // co://command/<id>:host='command',pathname='/<id>'
   const action = parsed.host;
   const target = stripLeadingSlashes(parsed.pathname);

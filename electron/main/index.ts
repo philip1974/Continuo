@@ -54,7 +54,7 @@ import { statDirGated } from './lib/dir-stat-gate';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
 import { resolveUserDataPath } from './user-data-path';
-import { PLUGINS_CHANNELS } from '../shared/plugins-channels';
+import { PLUGINS_CHANNELS, PROTOCOL_SCHEME } from '../shared/plugins-channels';
 import { AGENT_AUTH_CHANNELS } from '../shared/agent-auth-channels';
 import {
   createMcpHost,
@@ -864,7 +864,7 @@ app.on('browser-window-created', (_evt, win) => {
 // M-Plugin v4.4:co:// 协议处理(原 co://,v0.2 改名 Continuo)
 // macOS:open-url(用户点 co://...);Windows / Linux:single-instance argv
 
-const PROTOCOL = 'co';
+const PROTOCOL = PROTOCOL_SCHEME;
 
 function dispatchProtocolUrl(url: string): void {
   // race(R39):只投给已就绪(renderer 经 preload 上报 PROTOCOL_READY、onProtocolUrl 已挂)的窗口;

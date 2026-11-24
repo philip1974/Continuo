@@ -38,6 +38,7 @@ import { createSerialQueue } from '../../shared/run-serial-per-key';
 import { createNdjsonLineDecoder } from '../lib/ndjson-line-decoder';
 import { atomicWriteText } from '../lib/atomic-write';
 import { pickMainWindowPreferNonPopout } from './main-window-picker.service';
+import { MCP_MAX_MESSAGE_BYTES } from '../lib/mcp-limits';
 
 /**
  * Windows stdio MCP 命名管道名:`\\.\pipe\continuo-mcp-<用户哈希>-<128 bit 随机>`,每次启动新生成。
@@ -222,7 +223,7 @@ const REVOKED_TOKEN_CTX_MESSAGE = `${NO_WINDOW_CTX_MESSAGE}; the terminal's Cont
 // 行解码器(E135 createNdjsonLineDecoder)的残行 buffer 在 main 进程无限累积 → 内存增长甚至 OOM(HTTP MCP 有
 // MAX_BODY_BYTES,stdio 传输此前缺同等保护)。超限即回 parse 错误并断开连接。与 HTTP 的
 // MAX_BODY_BYTES(1MB)对齐 —— 单条 JSON-RPC 行 1MB 对正常 tools/call 充裕。
-const MAX_STDIO_LINE_BYTES = 1_000_000;
+const MAX_STDIO_LINE_BYTES = MCP_MAX_MESSAGE_BYTES;
 // 边界(E214):单次 data chunk 解出的**非空行数**上限。MAX_STDIO_LINE_BYTES 只限单行字节,不限行数 ——
 // 畸形/恶意客户端可发 1MB 的 `\n\n\n...` 或海量极短 JSON 行(每行都不超字节上限),for...of 会为每行挂
 // promise + 持有 line 字符串 → CPU/内存放大。空白行(NDJSON 约定忽略,handleLine 本就早返)入链前同步跳过;

@@ -29,6 +29,7 @@ import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { capErrorText, codedError } from '../../shared/error-message';
 import { waitAtMost } from '../lib/wait-at-most';
+import { MCP_MAX_MESSAGE_BYTES } from '../lib/mcp-limits';
 
 // 冷启动:ESM 值导入 node:http 时 Node 会读取其全部导出(含 WebSocket 等懒 getter),连带加载并编译整个
 // undici(实测 main 求值 +17–18ms);CJS require 不触发。这里只用 createServer。
@@ -555,7 +556,7 @@ const DEFAULT_SERVER_INFO: ServerInfo = {
   protocolVersion: '2024-11-05',
 };
 
-const MAX_BODY_BYTES = 1_000_000; // 1MB,防 body bomb
+const MAX_BODY_BYTES = MCP_MAX_MESSAGE_BYTES; // 防 body bomb
 const SSE_KEEPALIVE_MS = 25_000;   // SSE 心跳,防中间件 idle 断
 /**
  * 每个 SSE 连接未被客户端读走的输出上限(写缓冲 writableLength)。同 stdio 的 MAX_STDIO_UNREAD_OUTPUT_BYTES:

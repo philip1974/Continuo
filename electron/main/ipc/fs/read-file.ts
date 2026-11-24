@@ -2,13 +2,14 @@ import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FileHandle } from 'node:fs/promises';
 import { readCappedFromHandle, readFileCappedFd, type CappedFdRead } from '../../lib/read-fh-capped';
 import { fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
+import { MAX_WRITE_BYTES } from '../../../shared/fs-limits';
 
 // 边界(E18,E13 读侧对偶):readFile 整文件读入内存(fspReadFile utf-8)+ 经 IPC 发送。无上限时
 // 打开超大文件或恢复多个超大 tab 会一次性分配巨大字符串 → 主进程/IPC 卡死或崩溃。读前用
 // stat.size 做明确上限,超限抛 FS_FILE_TOO_LARGE。上限取 64 MiB,与 fs.write 的 MAX_WRITE_BYTES
 // (E13)一致 —— 可打开的文件都可保存,无「能开不能存」的数据丢失缺口;编辑器本就无法流畅处理
 // 这么大的文本。
-const MAX_READ_BYTES = 64 * 1024 * 1024;
+const MAX_READ_BYTES = MAX_WRITE_BYTES;
 
 export interface ReadFileOptions {
   /**
