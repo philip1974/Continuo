@@ -358,6 +358,88 @@ describe('picker 选中行可辨识', () => {
     }
   });
 
+  // 行内次要文字(命令分类前缀 / 文件相对路径)叠在 accent 半透明底上:按 token 实值把 accent 以行底透明度
+  // 合成到弹窗背景上(sRGB 线性混合近似 Tailwind 的 color-mix),次要文字对合成底两主题均须 ≥ 4.5(WCAG 1.4.3)。
+  describe('选中 / 悬停行上的次要文字 ≥ 4.5', () => {
+    const TOKEN_OF_TEXT_CLASS: Record<string, string> = {
+      'text-fg': '--md-on-surface',
+      'text-fg-muted': '--md-on-surface-variant',
+      'text-fg-dim': '--md-fg-dim',
+    };
+    const mix = (fg: string, bg: string, alpha: number): string =>
+      '#' +
+      [1, 3, 5]
+        .map((i) => {
+          const f = parseInt(fg.slice(i, i + 2), 16);
+          const b = parseInt(bg.slice(i, i + 2), 16);
+          return Math.round(alpha * f + (1 - alpha) * b)
+            .toString(16)
+            .padStart(2, '0');
+        })
+        .join('');
+    const tokenHex = (sel: ':root' | '.dark', name: string): string =>
+      hex(block(read('styles/design-tokens.css'), sel), name) ||
+      hex(block(read('styles/theme.css'), sel), name);
+    const textToken = (cls: string, variant: '' | 'hover:' | 'group-hover:'): string => {
+      const m = cls
+        .split(/\s+/)
+        .map((c) => (variant ? (c.startsWith(variant) ? c.slice(variant.length) : '') : c.includes(':') ? '' : c))
+        .find((c) => c in TOKEN_OF_TEXT_CLASS);
+      return m ? TOKEN_OF_TEXT_CLASS[m]! : '';
+    };
+    const alphaOf = (cls: string, variant: '' | 'hover:'): number => {
+      const m = cls.match(new RegExp(`(?:^|\\s)${variant}bg-accent/(\\d+)(?:\\s|$)`));
+      return m ? Number(m[1]) / 100 : NaN;
+    };
+
+    it('选中行:次要文字对 accent 底(合成)两主题 ≥ 4.5;竖条对合成底仍 ≥ 3', async () => {
+      const { pickerRowClassName, pickerRowSecondaryClassName } = await import(
+        '../../plugins/picker/picker-row'
+      );
+      const alpha = alphaOf(pickerRowClassName(true), '');
+      expect(alpha).toBeGreaterThan(0);
+      const token = textToken(pickerRowSecondaryClassName(true), '');
+      expect(token).not.toBe('');
+      for (const sel of [':root', '.dark'] as const) {
+        const bg = mix(tokenHex(sel, '--md-primary'), tokenHex(sel, '--md-surface-container-high'), alpha);
+        expect(contrast(tokenHex(sel, token), bg), `${sel} ${token}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(tokenHex(sel, '--md-primary'), bg), `${sel} bar`).toBeGreaterThanOrEqual(3);
+      }
+    });
+
+    it('未选中行:常态次要文字对弹窗背景 ≥ 4.5;悬停时次要文字对 accent 悬停底(合成)≥ 4.5', async () => {
+      const { pickerRowClassName, pickerRowSecondaryClassName } = await import(
+        '../../plugins/picker/picker-row'
+      );
+      const row = pickerRowClassName(false);
+      const alpha = alphaOf(row, 'hover:');
+      expect(alpha).toBeGreaterThan(0);
+      const secondary = pickerRowSecondaryClassName(false);
+      const idleToken = textToken(secondary, '');
+      // 悬停态:行带 group 时取 group-hover: 变体,否则沿用常态色
+      const hoverToken =
+        (/(^|\s)group(\s|$)/.test(row) && textToken(secondary, 'group-hover:')) || idleToken;
+      expect(idleToken).not.toBe('');
+      for (const sel of [':root', '.dark'] as const) {
+        const panel = tokenHex(sel, '--md-surface-container-high');
+        const hoverBg = mix(tokenHex(sel, '--md-primary'), panel, alpha);
+        expect(contrast(tokenHex(sel, idleToken), panel), `${sel} idle`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(tokenHex(sel, hoverToken), hoverBg), `${sel} hover`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it.each(['plugins/command-palette/CommandPalette.tsx', 'plugins/quick-open/QuickOpenModal.tsx'])(
+      '%s 的行内次要文字走 pickerRowSecondaryClassName,不在行内写死 text-fg-dim',
+      (rel) => {
+        const src = read(rel);
+        expect(src).toContain('pickerRowSecondaryClassName(');
+        const listStart = src.indexOf('virtualItems.map(');
+        const rowBody = src.slice(listStart, src.indexOf('</li>', listStart));
+        expect(rowBody).not.toContain('text-fg-dim');
+      },
+    );
+  });
+
   it.each(['plugins/command-palette/CommandPalette.tsx', 'plugins/quick-open/QuickOpenModal.tsx'])(
     '%s 的行样式走共享 pickerRowClassName',
     (rel) => {

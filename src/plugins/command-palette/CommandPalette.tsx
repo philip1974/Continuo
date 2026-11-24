@@ -10,7 +10,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
-import { pickerRowClassName } from '../picker/picker-row';
+import { pickerRowClassName, pickerRowSecondaryClassName } from '../picker/picker-row';
 import { Input, KeyCap, Modal } from '@/design';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
@@ -341,7 +341,9 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
                   onClick={() => execute(d)}
                 >
                   {d.displayCategory && (
-                    <span className="shrink-0 text-fg-dim">{d.displayCategory}:</span>
+                    <span className={`shrink-0 ${pickerRowSecondaryClassName(idx === selectedIndex)}`}>
+                      {d.displayCategory}:
+                    </span>
                   )}
                   <span className="truncate">{d.displayTitle}</span>
                   {d.hotkeyParts.length > 0 && (

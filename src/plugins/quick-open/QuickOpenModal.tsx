@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
-import { pickerRowClassName } from '../picker/picker-row';
+import { pickerRowClassName, pickerRowSecondaryClassName } from '../picker/picker-row';
 import { Button, Input, Modal, Spinner } from '@/design';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
@@ -247,7 +247,11 @@ function QuickOpenBody() {
                     onClick={() => void openFile(f)}
                   >
                     <span className="truncate font-medium">{f.name}</span>
-                    <span className="ml-auto truncate text-2xs text-fg-dim">{f.relPath}</span>
+                    <span
+                      className={`ml-auto truncate text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}
+                    >
+                      {f.relPath}
+                    </span>
                   </li>
                 );
               })}

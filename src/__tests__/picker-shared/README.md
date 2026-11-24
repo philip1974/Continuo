@@ -36,6 +36,11 @@ DOM 输出与收口前逐属性一致。
     完全相同,看不出选中)。两个 picker 共用 `src/plugins/picker/picker-row.ts`:选中 = `border-l-2 border-accent
     bg-accent/15`,未选中 = 同宽透明边 + 悬停 `bg-accent/10`。竖条色 `--md-primary` 对弹窗背景两主题 ≥ 3:1
     (WCAG 1.4.11)。对照 VSCode Quick Input:选中行是与弹窗底色明显不同的强调色(list.activeSelectionBackground)。
+12. 行内次要文字(命令分类前缀 / 文件相对路径)走 `pickerRowSecondaryClassName(selected)`:常态 `text-fg-dim`;
+    选中行与悬停行(行带 `group`,`group-hover:`)改 `text-fg-muted`。按 token 实值把 `--md-primary` 以行底透明度
+    合成到 `--md-surface-container-high` 上,次要文字两主题 ≥ 4.5(选中 亮 6.25 / 暗 5.97,悬停 6.68 / 6.69;
+    原 fg-dim 选中 4.05 / 3.20、暗色悬停 3.58 不达 AA)。对照 VSCode:选中行描述文字随
+    `list.activeSelectionForeground` 提亮。
 
 ### 接线守卫
 
