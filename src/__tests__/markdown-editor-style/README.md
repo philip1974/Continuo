@@ -12,6 +12,7 @@
 - 正文内边距随编辑区宽度收缩(宽屏封顶 Crepe 原值 60px / 120px,窄宽最少 16px);Edit 模式左侧下限 88px,
   放得下块手柄(2×32px 按钮 + 2px 间距 + 16px 偏移 = 82px),窄宽下手柄不翻到右侧、不被裁;只读 Preview 无手柄,左侧同右侧。
 - 表格按内容分配列宽,列不窄于最长单词(表头不在单词中间断开),放不下时横向滚动。
+- 列表序号 / 圆点 / 勾选框盒高度与行高按段落同一公式(1.5em 行高 + 上下 4px)随字号计算,任意字号下与首行文字对齐(Crepe 固定 32px 只在 16px 时对齐)。
 
 ## Modules
 
@@ -24,6 +25,6 @@
 
 | File | 覆盖 |
 |---|---|
-| `milkdown-style-override.spec.ts` | 覆写 CSS 的声明契约(变量接 token、字号继承、内边距 clamp / 手柄下限、表格 auto 布局) |
+| `milkdown-style-override.spec.ts` | 覆写 CSS 的声明契约(变量接 token、字号继承、内边距 clamp / 手柄下限、表格 auto 布局、列表序号盒随字号) |
 | `wrapper-font-size-var.spec.tsx` | 外层容器同时写入字号与 `--crepe-base-font-size` |
-| `tests/e2e/markdown-editor-style.spec.ts` | 真实 Electron 计算样式:字体、字号随设置(含代码块占位层)、窄宽内边距与块手柄位置、表头不断词 |
+| `tests/e2e/markdown-editor-style.spec.ts` | 真实 Electron 计算样式:字体、字号随设置(含代码块占位层)、窄宽内边距与块手柄位置、表头不断词、有序列表序号与首行文字同一行(10 / 28px) |

@@ -122,3 +122,30 @@ test('Source / 代码编辑器:底色与画布同为 --md-surface,字体取 --wm
   expect(s.gutterBg).toBe(s.want.bg);
   expect(s.font).toBe(s.want.font);
 });
+
+// Crepe 序号盒固定 32px,只在 16px 时与首行文字对齐;覆写为随字号计算后,任意字号下序号与首行文字同一行。
+test('Edit:有序列表序号与首行文字对齐(10 / 13 / 28px)', async ({ window, workspaceRoot }) => {
+  writeFileSync(path.join(workspaceRoot, 'list.md'), '1. first item\n2. second item\n');
+  await openWorkspaceFile(window, ['list.md']);
+  await editorModeButton(window, EDITOR_MODE_EDIT).click();
+  const pm = window.locator('main .milkdown .ProseMirror');
+  await expect(pm.locator('li p').first()).toContainText('first item', { timeout: 10_000 });
+  await waitForTestHooks(window);
+  for (const size of [10, 13, 28]) {
+    await window.evaluate((s) => globalThis.__continuoTest!.setSettingValue('editor.fontSize', s), size);
+    await expect
+      .poll(() => window.locator('main .milkdown').first().evaluate((el) => getComputedStyle(el).fontSize))
+      .toBe(`${size}px`);
+    // 序号文字与段落首行文字的行盒上缘之差(同字号同行高时为 0)
+    const delta = await pm.evaluate((el) => {
+      const textTop = (node: Element): number => {
+        const r = document.createRange();
+        r.selectNodeContents(node);
+        return r.getClientRects()[0]!.top;
+      };
+      const li = el.querySelector('li')!;
+      return textTop(li.querySelector('.label')!) - textTop(li.querySelector('p')!);
+    });
+    expect(Math.abs(delta), `fontSize ${size}px`).toBeLessThan(1);
+  }
+});

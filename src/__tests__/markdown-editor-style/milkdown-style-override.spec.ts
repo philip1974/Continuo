@@ -54,4 +54,13 @@ describe('Milkdown 样式覆写', () => {
   it('表格按内容分配列宽', () => {
     expect(block('.milkdown .ProseMirror table')).toMatch(/table-layout:\s*auto/);
   });
+
+  // Crepe 列表序号 / 圆点盒固定 32px(= 16px 段落的 1.5 行高 + 上下 4px),其它字号下与首行文字错位(13px 时低约 2px)。
+  it('列表序号盒高度与行高跟随段落(1.5em 行高 + 上下 4px),任意字号下与首行文字对齐', () => {
+    const wrapper = block('.milkdown .milkdown-list-item-block li .label-wrapper');
+    const label = block('.milkdown .milkdown-list-item-block li .label-wrapper .label');
+    expect(wrapper).toMatch(/height:\s*calc\(1\.5em \+ 8px\)/);
+    expect(label).toMatch(/height:\s*calc\(1\.5em \+ 8px\)/);
+    expect(label).toMatch(/line-height:\s*1\.5(;|\s|$)/);
+  });
 });

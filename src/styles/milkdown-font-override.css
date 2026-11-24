@@ -85,6 +85,16 @@
   font-size: 0.875em; /* 14 / 16(crepe 用 87.5%) */
 }
 
+/* 列表序号 / 圆点 / 勾选框盒:Crepe 固定 32px(= 16px 段落的 1.5 行高 + 上下 4px 内边距),其它字号下与
+ * 首行文字错位(13px 段落盒 27.5px,序号低约 2px;字号越大越偏)。改为按段落同一公式随字号算。 */
+.milkdown .milkdown-list-item-block li .label-wrapper {
+  height: calc(1.5em + 8px);
+}
+.milkdown .milkdown-list-item-block li .label-wrapper .label {
+  height: calc(1.5em + 8px);
+  line-height: 1.5;
+}
+
 /* ```mermaid 代码块的图预览(mermaid-preview.ts 产出,落在 Crepe 的 .preview 容器里)。
  * 图居中、超宽时横向滚动;错误提示用语义色,保留换行。 */
 .milkdown .milkdown-code-block .preview .continuo-mermaid {
