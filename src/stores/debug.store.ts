@@ -11,6 +11,7 @@ import {
   type DebugViewEvent,
 } from '../../electron/shared/debug-view-channels';
 import { createLatestGuard } from '@/lib/latest-wins';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 export type {
   DebugBreakpoint,
@@ -247,9 +248,24 @@ function updateActiveSession(
 
 // stopSeq:发起本次拉取的那一停。连续 step 时上一停的 stack/scopes 可能晚到,回写前比对,过期丢弃
 //(否则旧栈帧与旧停靠行会写进新一停,编辑器高亮停在错误的行)。
+// 失败(ok:false / reject)提示 —— 但仅当仍停在发起拉取的那一停:continue / 下一停后迟到的旧失败不提示(避免刷屏)。
+// 自身吞掉 reject,调用方 void 调用不会产生未处理 rejection。
+function isCurrentStop(sessionId: string, stopSeq: number): boolean {
+  return useDebugStore.getState().sessions.get(sessionId)?.stopped?.stopSeq === stopSeq;
+}
+
 async function pullStackAndScopes(sessionId: string, stopSeq: number): Promise<void> {
-  const stack = await coApi.debug.getStack({ sessionId });
-  if (!stack.ok) return;
+  let stack: Awaited<ReturnType<typeof coApi.debug.getStack>>;
+  try {
+    stack = await coApi.debug.getStack({ sessionId });
+  } catch (err) {
+    if (isCurrentStop(sessionId, stopSeq)) notifyThrownError(err);
+    return;
+  }
+  if (!stack.ok) {
+    if (isCurrentStop(sessionId, stopSeq)) notifyFailure(stack);
+    return;
+  }
   const frames = Array.isArray(asRecord(stack.data).frames)
     ? (asRecord(stack.data).frames as readonly unknown[])
         .map(asFrame)
@@ -379,8 +395,18 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     const cached = session?.variableRefs.get(variablesReference);
     if (cached) return cached;
 
-    const result = await coApi.debug.getVariables({ sessionId, variablesReference });
-    if (!result.ok) return [];
+    // 用户点「加载作用域」触发:失败(ok:false / reject)提示并返回空,不向面板抛出。
+    let result: Awaited<ReturnType<typeof coApi.debug.getVariables>>;
+    try {
+      result = await coApi.debug.getVariables({ sessionId, variablesReference });
+    } catch (err) {
+      notifyThrownError(err);
+      return [];
+    }
+    if (!result.ok) {
+      notifyFailure(result);
+      return [];
+    }
     const variables = Array.isArray(asRecord(result.data).variables)
       ? (asRecord(result.data).variables as readonly unknown[])
           .map(asVariable)
@@ -476,7 +502,7 @@ export function startDebugStoreSync(): void {
       return;
     }
     if (!snapshotApplied) touched.add(event.sessionId);
-    void useDebugStore.getState().ingestEvent(event);
+    useDebugStore.getState().ingestEvent(event).catch(notifyThrownError);
   });
   void coApi.debug.subscribe().then(
     (result) => {

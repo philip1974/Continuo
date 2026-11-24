@@ -196,6 +196,7 @@
 - [`debug-sync-boot.spec.ts`](./51-debug-breakpoint-ui/debug-sync-boot.spec.ts)
 - [`debug-view-get-stack.spec.ts`](./51-debug-breakpoint-ui/debug-view-get-stack.spec.ts)
 - [`decorations.spec.tsx`](./51-debug-breakpoint-ui/decorations.spec.tsx)
+- [`fetch-failure-feedback.spec.tsx`](./51-debug-breakpoint-ui/fetch-failure-feedback.spec.tsx)
 - [`sync.spec.tsx`](./51-debug-breakpoint-ui/sync.spec.tsx)
 
 ## [AgentAuthPrompt(Agent MCP 授权弹窗)](./agent-auth-prompt/README.md)

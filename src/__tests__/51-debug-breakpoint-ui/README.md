@@ -11,3 +11,4 @@
 - `breakpoints-changed` 事件携带该 source(`file`)的完整断点集合(adapter 校正后的行号),`debug.store` 整组替换该文件的记录、其它文件保留:同文件多个断点同时显示,同一逻辑断点被重新校正到别的行时不留旧红点。
 - Debug 事件同步(`startDebugStoreSync`)在 renderer 启动入口(`main-app` 的 `init()`,首次渲染前)开始,不依赖 Debug 面板挂载;重复调用幂等(只订阅一次);Debug 面板自身不再调用。main 按 owner window 只把事件发给本窗口。
 - renderer 重载(Cmd+R)后恢复现有调试会话:`subscribe` 返回本窗口(按 owner window 过滤)会话的快照 —— 当前停点(stopSeq / reason;栈帧由 main 按当前停点的线程取)、按 source 的完整断点集合(每会话断点总数封顶 `DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX`,超限**最新优先**:文件按最后一次发事件先后排列,保留最近的;main 快照、renderer 事件累计 / 快照校验 / 快照与事件合并共用 `capGroupsNewestFirst`)。`debug.store` 据此初始化并拉取停点的栈帧 / 作用域,之后事件照常增量;快照送达前已收到事件的会话以事件为准(不改停点、只补缺的 source,补入的排在前,与 main 顺序一致),已结束的会话不复活。
+- 拉取失败不静默(`fetch-failure-feedback.spec.tsx`):停下后取栈 / 作用域失败(`ok:false` 或 reject)按错误码本地化提示,但仅当会话仍停在发起拉取的那一停(`stopSeq` 未变)—— continue 或进入下一停后迟到的旧失败不提示;用户点「加载作用域」取变量失败同样提示、按钮恢复可点;所有失败路径都不产生未处理 rejection。
