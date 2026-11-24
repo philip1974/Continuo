@@ -51,7 +51,7 @@ export interface PluginAggregateRating {
 // 缓存只要整体 < raw cap(16MiB)就能塞入超长 body/handle/url、超多 reviews 或超多 aggregate key
 // 通过 isValidAggregateRecord,Marketplace 打开后直接渲染到 DOM → 面板卡顿/冻结。镜像 main
 // marketplace-reviews.service.ts(E57)的 clampStr 上限 + MAX_TOTAL_NODES,超限当 cache miss
-// (validate 返 false → 重拉,main 侧再 clamp)。renderer 不可 import electron/main,故本地镜像常量。
+// (validate 返 false → 重拉,main 侧再 clamp)。上限常量与 main 共用 electron/shared 单一来源。
 // E294:导出供 fresh-parse(reviews-parser.parseReview)复用同值 —— 此前 fresh 路径只 isHttpUrl 不限长,
 // 与 cache-read isValidReview(isStrMax REVIEW_URL_MAX)不对偶,超长合法 scheme URL 可绕 fresh 入 cache/DOM。
 export { REVIEW_URL_MAX }; // url / avatarUrl(单一来源 shared/marketplace-review-limits)

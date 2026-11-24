@@ -210,8 +210,7 @@ function getSessionById(sessionId: string): TerminalSession | undefined {
 
 export function getShellFamily(sessionId: string): ShellFamily {
   const session = getSessionById(sessionId);
-  const shellFamily = (session as (TerminalSession & { shellFamily?: ShellFamily }) | undefined)
-    ?.shellFamily;
+  const shellFamily = session?.shellFamily;
   if (shellFamily) return shellFamily;
 
   console.warn(
