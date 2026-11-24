@@ -42,8 +42,8 @@ const FILE_ALLOWLIST: ReadonlyArray<string> = [
   'src/panels/Explorer/file-icon.tsx',
   'src/panels/Explorer/drop-handlers.ts',
   'src/panels/Explorer/clipboard-store.ts',
-  // LanguageSettingPlugin 的 enum option '中文'/'한국어' 是语言自称写法不翻译
-  'src/core-plugins/LanguageSettingPlugin.ts',
+  // core-setting-specs 的 LOCALE_SELF_NAMES('中文'/'한국어')是语言自称写法不翻译
+  'src/plugins/settings/core-setting-specs.ts',
   // editor-file-actions.ts: throw new Error 是 dev signal，用户经 notify.error 看到的是不同消息
   'src/panels/Editor/editor-file-actions.ts',
   // registry console.warn 全是 dev signal — 7 个 registry 文件

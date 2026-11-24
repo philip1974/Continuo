@@ -12,9 +12,10 @@ import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import { isLocale, type Locale } from '@shared/i18n-types';
 import { createLatestGuard } from '@/lib/latest-wins';
+import { GENERAL_LANGUAGE } from './core-setting-specs';
 
-const LANGUAGE_SETTING_ID = 'general.language';
-const LANGUAGE_DEFAULT: Locale = 'en';
+const LANGUAGE_SETTING_ID = GENERAL_LANGUAGE.id;
+const LANGUAGE_DEFAULT: Locale = GENERAL_LANGUAGE.default;
 
 export function LanguageFromSettings(): ReactNode {
   const value = useSettingValue<Locale>(LANGUAGE_SETTING_ID, LANGUAGE_DEFAULT);

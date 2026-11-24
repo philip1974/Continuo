@@ -16,6 +16,7 @@ import {
   useSettingValue,
   useSettingsValuesStore,
 } from '@/plugins/settings/values-store';
+import { GENERAL_THEME } from '@/plugins/settings/core-setting-specs';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -25,8 +26,8 @@ export interface ThemeContextValue {
   setMode: (mode: ThemeMode) => void;
 }
 
-const THEME_SETTING_ID = 'general.theme';
-const THEME_DEFAULT: ThemeMode = 'dark';
+const THEME_SETTING_ID = GENERAL_THEME.id;
+const THEME_DEFAULT: ThemeMode = GENERAL_THEME.default;
 // 旧版独立存储键(沿用前身 LayoutMotion 的名字),只用于一次性迁移。
 const LEGACY_STORAGE_KEY = 'layoutmotion.theme.mode';
 

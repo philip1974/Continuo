@@ -7,6 +7,7 @@ import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { renderCategoryTab } from './lazy-category-tab';
 import { GeneralIcon } from '@/plugins/settings/tab-icons';
+import { GENERAL_THEME } from '@/plugins/settings/core-setting-specs';
 
 export default class GeneralTabPlugin extends Plugin {
   onload(): void {
@@ -20,22 +21,7 @@ export default class GeneralTabPlugin extends Plugin {
       render: () => renderCategoryTab('general'),
     });
 
-    // 主题 setting item:select 类型,选项 light / dark / system
-    // ThemeProvider 直接订阅本值,变化即时切换
-    this.addSettingItem({
-      id: 'general.theme',
-      category: 'general',
-      title: 'Theme',
-      titleKey: 'settings.general.theme.title',
-      descriptionKey: 'settings.general.theme.description',
-      type: 'select',
-      default: 'dark',
-      enum: [
-        { value: 'light', label: 'Light', labelKey: 'settings.general.theme.light' },
-        { value: 'dark', label: 'Dark', labelKey: 'settings.general.theme.dark' },
-        { value: 'system', label: 'System', labelKey: 'settings.general.theme.system' },
-      ],
-      priority: 1,
-    });
+    // 主题 setting item(spec 单一来源见 core-setting-specs;ThemeProvider 直接以它为唯一存储)
+    this.addSettingItem(GENERAL_THEME);
   }
 }

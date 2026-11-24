@@ -1,3 +1,5 @@
+import type { Locale } from './i18n-types';
+
 /**
  * topic 16 i18n IPC channel constants（沿 electron/shared/*-channels.ts 命名风格）。
  *
@@ -13,6 +15,6 @@ export const I18N_CHANNELS = {
 
 /** CHANGED broadcast payload,也是 SET_LOCALE handler 的返回 shape（含 in-flight gen，renderer 可丢弃过期）。 */
 export interface I18nChangedPayload {
-  readonly locale: 'en' | 'zh' | 'ko';
+  readonly locale: Locale;
   readonly gen: number;
 }

@@ -5,6 +5,8 @@
 // 纯数据模块(只 import type),组件引用它不会把插件运行时带进来。
 
 import type { SettingItemSpec, SettingItemValue } from '../registries/SettingItemRegistry';
+import type { ThemeMode } from '@/theme/ThemeProvider';
+import type { Locale } from '../../../electron/shared/i18n-types';
 
 /** 带值类型的内置设置项 spec(default 的类型即消费方拿到的值类型)。 */
 export type CoreSettingSpec<T extends SettingItemValue> = SettingItemSpec & { readonly default: T };
@@ -125,5 +127,55 @@ export const EXPLORER_INDENT_SIZE: CoreSettingSpec<number> = {
   max: 32,
   step: 2,
   unit: 'px',
+  priority: 2,
+};
+
+// ── 通用(general)────────────────────────────────────────────────────────────
+
+// Record<ThemeMode, …>:新增主题模式漏配选项即编译报错。
+const THEME_OPTION_LABELS: Record<ThemeMode, { label: string; labelKey: string }> = {
+  light: { label: 'Light', labelKey: 'settings.general.theme.light' },
+  dark: { label: 'Dark', labelKey: 'settings.general.theme.dark' },
+  system: { label: 'System', labelKey: 'settings.general.theme.system' },
+};
+
+/** 主题(ThemeProvider 直接以本值为唯一存储)。 */
+export const GENERAL_THEME: CoreSettingSpec<ThemeMode> = {
+  id: 'general.theme',
+  category: 'general',
+  title: 'Theme',
+  titleKey: 'settings.general.theme.title',
+  descriptionKey: 'settings.general.theme.description',
+  type: 'select',
+  default: 'dark',
+  enum: (Object.keys(THEME_OPTION_LABELS) as ThemeMode[]).map((value) => ({
+    value,
+    ...THEME_OPTION_LABELS[value],
+  })),
+  priority: 1,
+};
+
+// 选项文案是该语言的自称(用户看到「中文」而非「Chinese」),不走 i18n。Record<Locale, …>:新增 locale
+// 漏配即编译报错(枚举随 electron/shared/i18n-types 的 LOCALES 走,不再手抄)。
+const LOCALE_SELF_NAMES: Record<Locale, string> = {
+  en: 'English',
+  zh: '中文',
+  ko: '한국어',
+};
+
+/** 界面语言(main settings.json 为权威,LanguageFromSettings 双向桥接)。 */
+export const GENERAL_LANGUAGE: CoreSettingSpec<Locale> = {
+  id: 'general.language',
+  category: 'general',
+  title: 'Language',
+  titleKey: 'settings.general.language.title',
+  description: "Choose Continuo's UI language. Changes take effect immediately.",
+  descriptionKey: 'settings.general.language.description',
+  type: 'select',
+  default: 'en',
+  enum: (Object.keys(LOCALE_SELF_NAMES) as Locale[]).map((value) => ({
+    value,
+    label: LOCALE_SELF_NAMES[value],
+  })),
   priority: 2,
 };
