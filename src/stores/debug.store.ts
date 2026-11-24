@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { asRecord } from '../../electron/shared/as-record';
 import { coApi } from '@/lib/co-api';
 import {
+  capGroupsNewestFirst,
   DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
   type DebugBreakpoint,
   type DebugScope,
@@ -179,19 +180,37 @@ function asSessionSnapshot(value: unknown): SessionSnapshot | null {
     typeof stopRaw.stopSeq === 'number' && typeof stopRaw.reason === 'string'
       ? { stopSeq: stopRaw.stopSeq, reason: stopRaw.reason }
       : undefined;
-  const breakpointsBySource = new Map<string, readonly DebugBreakpoint[]>();
-  let budget = DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX;
+  const parsed: Array<{ file: string; breakpoints: readonly DebugBreakpoint[] }> = [];
   for (const group of Array.isArray(raw.breakpointsBySource) ? raw.breakpointsBySource : []) {
     const groupRaw = asRecord(group);
     if (typeof groupRaw.file !== 'string' || !Array.isArray(groupRaw.breakpoints)) continue;
+    // 先按上限截掉组内超长部分,避免畸形巨数组整段 map
     const breakpoints = (groupRaw.breakpoints as readonly unknown[])
+      .slice(0, DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX + 1)
       .map(asBreakpoint)
-      .filter((bp): bp is DebugBreakpoint => bp !== null)
-      .slice(0, budget);
-    budget -= breakpoints.length;
-    breakpointsBySource.set(groupRaw.file, breakpoints);
+      .filter((bp): bp is DebugBreakpoint => bp !== null);
+    parsed.push({ file: groupRaw.file, breakpoints });
   }
+  // 与 main 同一截断规则(最新优先,末尾组最新)。
+  const capped = capGroupsNewestFirst(
+    parsed.map((g) => g.breakpoints),
+    DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+  );
+  const offset = parsed.length - capped.length;
+  const breakpointsBySource = new Map<string, readonly DebugBreakpoint[]>();
+  capped.forEach((breakpoints, i) => breakpointsBySource.set(parsed[offset + i]!.file, breakpoints));
   return { id: raw.session_id, ...(stop ? { stop } : {}), breakpointsBySource };
+}
+
+/** 按 file 分组(组序 = 首次出现顺序;store 内同一文件的断点本就相邻)。 */
+function groupBreakpointsByFile(list: readonly DebugBreakpoint[]): DebugBreakpoint[][] {
+  const groups = new Map<string, DebugBreakpoint[]>();
+  for (const bp of list) {
+    const group = groups.get(bp.file);
+    if (group) group.push(bp);
+    else groups.set(bp.file, [bp]);
+  }
+  return [...groups.values()];
 }
 
 function updateActiveSession(
@@ -257,11 +276,13 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         const current = getOrCreateSession(state.sessions, event.sessionId);
         // main 推的是该 source 的完整集合(adapter 校正后的行号):整组替换该文件的记录、其它文件保留。
         // 按 file+行号增量合并时,同一逻辑断点被重新校正到别的行会留下旧红点。文件分组与 main 一致(===)。
-        // 会话断点总数按 subscribe 快照同一上限截断(单个事件已按此上限截断,跨文件累计仍须再截)。
-        // 超限时截掉的是其它文件的旧记录,本次事件(用户 / agent 刚设的)完整保留(最新优先);显示顺序不变。
+        // 会话断点总数按 subscribe 快照同一上限、同一规则截断(capGroupsNewestFirst:本文件挪到末尾 = 最新,
+        // 超限时截掉最早发过事件的文件;单个事件已按此上限截断,本次事件完整保留)。显示顺序不变。
         const others = current.breakpoints.filter((bp) => bp.file !== event.file);
-        const room = Math.max(0, DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX - event.breakpoints.length);
-        const breakpoints = [...others.slice(0, room), ...event.breakpoints];
+        const breakpoints = capGroupsNewestFirst(
+          [...groupBreakpointsByFile(others), event.breakpoints],
+          DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+        ).flat();
         const nextSession: DebugSessionShadow = {
           ...current,
           breakpoints,
@@ -392,9 +413,15 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
         const known = new Set(current.breakpoints.map((bp) => bp.file));
         const missing = [...snapshot.breakpointsBySource]
           .filter(([file]) => !known.has(file))
-          .flatMap(([, breakpoints]) => breakpoints);
+          .map(([, breakpoints]) => breakpoints);
         if (missing.length > 0) {
-          sessions.set(snapshot.id, { ...current, breakpoints: [...current.breakpoints, ...missing] });
+          // 本端没收到过事件的文件更早(或从未)发出 → 排在前,刚收到事件的在后(与 main 快照顺序一致);
+          // 合并后同样按上限最新优先截断(此前直接拼接,可超上限)。
+          const breakpoints = capGroupsNewestFirst(
+            [...missing, ...groupBreakpointsByFile(current.breakpoints)],
+            DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+          ).flat();
+          sessions.set(snapshot.id, { ...current, breakpoints });
         }
         continue;
       }

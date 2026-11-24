@@ -26,6 +26,7 @@ import {
   isDebugLaunchEnvForbidden,
 } from '../../shared/mcp-debug-schemas';
 import {
+  capGroupsNewestFirst,
   DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
   type DebugBreakpoint,
   type DebugViewEvent,
@@ -1524,8 +1525,7 @@ export class DebugService {
         const stop = session.runtimeState === 'stopped' ? runtime?.currentStop : undefined;
         const groups: DebugViewSessionSnapshot['breakpointsBySource'][number][] = [];
         // 顺序与截断都对齐 renderer debug.store:从未发过事件的 source 按首次出现顺序在前,发过的按最后一次发送
-        // 先后在后(renderer 每个事件把该文件挪到末尾);超上限时最新优先 —— 预算从末尾往前分配再翻回。
-        let budget = DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX;
+        // 先后在后(renderer 每个事件把该文件挪到末尾);超上限时最新优先(capGroupsNewestFirst,与 renderer 同一规则)。
         const present = runtime ? [...breakpointsBySource(runtime.breakpoints).keys()] : [];
         const sources = runtime
           ? [
@@ -1533,14 +1533,14 @@ export class DebugService {
               ...[...runtime.breakpointEmitOrder].filter((src) => present.includes(src)),
             ]
           : [];
-        for (let i = sources.length - 1; i >= 0; i -= 1) {
-          if (budget <= 0 || !runtime) break;
-          const group = this.breakpointSnapshot(runtime, sources[i]!);
-          const breakpoints = group.breakpoints.slice(0, budget);
-          budget -= breakpoints.length;
-          groups.push({ file: group.file, breakpoints });
-        }
-        groups.reverse();
+        const full = runtime ? sources.map((src) => this.breakpointSnapshot(runtime, src)) : [];
+        const capped = capGroupsNewestFirst(
+          full.map((group) => group.breakpoints),
+          DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
+        );
+        // 保留的是末尾 capped.length 组(截断只丢前面的整组)。
+        const offset = full.length - capped.length;
+        capped.forEach((breakpoints, i) => groups.push({ file: full[offset + i]!.file, breakpoints }));
         return {
           session_id: session.id,
           ...(stop

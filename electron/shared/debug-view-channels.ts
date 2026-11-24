@@ -76,6 +76,22 @@ export type DebugViewEvent =
 export const DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX = 1000;
 
 /**
+ * 按组截断总条数,**最新优先**:组按「最后一次变更」先后排列(最新在末尾),预算从最后一组往前分配,组内保留前段;
+ * 整组被截掉的不返回,保留的组维持原顺序。main 的 subscribe 快照与 renderer debug.store(事件累计 / 快照解析 /
+ * 快照与事件合并)共用 —— 两端规则不一致时重载前后看到的断点不同。
+ */
+export function capGroupsNewestFirst<T>(groups: readonly (readonly T[])[], max: number): T[][] {
+  const kept: T[][] = [];
+  let budget = max;
+  for (let i = groups.length - 1; i >= 0 && budget > 0; i -= 1) {
+    const items = groups[i]!.slice(0, budget);
+    budget -= items.length;
+    kept.push(items);
+  }
+  return kept.reverse();
+}
+
+/**
  * subscribe 返回的会话快照:renderer 重载(Cmd+R)后 store 为空、main 只推增量事件,据此恢复停点与断点,
  * 之后的事件照常增量。stop / breakpointsBySource 与 stopped / breakpoints-changed 事件同形。
  */

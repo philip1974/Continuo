@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  capGroupsNewestFirst,
   DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX,
   type DebugViewEvent,
 } from '../../../electron/shared/debug-view-channels';
@@ -320,9 +321,11 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       await flushMicrotasks(2);
 
       const state = useDebugStore.getState();
+      // 快照里本端没收到过事件的文件(b.ts,更早发出)排在前,刚收到事件的 a.ts 在后 —— 与 main 快照顺序一致
+      //(从未发过事件 / 更早发过的在前,最新的在后),超上限时据此最新优先截断。
       expect(state.sessions.get('s1')?.breakpoints).toEqual([
-        { file: '/repo/a.ts', line: 20, verified: true },
         { file: '/repo/b.ts', line: 2, verified: false, message: 'pending' },
+        { file: '/repo/a.ts', line: 20, verified: true },
       ]);
       expect(state.sessions.get('s1')?.stopped).toBeUndefined();
       expect(state.sessions.has('s2')).toBe(false);
@@ -461,3 +464,64 @@ describe('会话断点超限时最新优先', () => {
     expect(bps.some((bp) => bp.file === '/new.ts' && bp.line === 7)).toBe(true);
   });
 });
+
+// 会话断点总数上限按「最新优先」截断,main(viewSnapshot)与 renderer(事件 / 快照 / 合并)共用 capGroupsNewestFirst:
+// 文件按最后一次发事件先后排列,预算从最后一组往前分配,组内保留前段。此前 renderer 事件路径留下的是最早的文件,
+// 与 main 快照相反 → 重载前后看到的断点不同。
+describe('断点上限:最新优先(main / renderer 同一规则)', () => {
+  const bps = (file: string, n: number) =>
+    Array.from({ length: n }, (_, i) => ({ file, line: i + 1, verified: true }));
+  const countByFile = (list: readonly { file: string }[]) => {
+    const out: Record<string, number> = {};
+    for (const bp of list) out[bp.file] = (out[bp.file] ?? 0) + 1;
+    return out;
+  };
+
+  it('capGroupsNewestFirst:预算从末组往前分配,组内取前段,整组被截掉的不返回,顺序不变', () => {
+    expect(capGroupsNewestFirst([[1, 2, 3], [4, 5], [6]], 4)).toEqual([[1], [4, 5], [6]]);
+    expect(capGroupsNewestFirst([[1, 2], [3, 4]], 2)).toEqual([[3, 4]]);
+    expect(capGroupsNewestFirst([[1], [2]], 10)).toEqual([[1], [2]]);
+  });
+
+  it('事件累计超上限:保留最近发过事件的文件(A600 → B600 → C300 ⇒ A100 / B600 / C300)', () => {
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    for (const [file, n] of [['/a.ts', 600], ['/b.ts', 600], ['/c.ts', 300]] as const) {
+      emit({ type: 'breakpoints-changed', sessionId: 's1', file, breakpoints: bps(file, n) });
+    }
+    const list = useDebugStore.getState().sessions.get('s1')!.breakpoints;
+    expect(list).toHaveLength(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
+    expect(countByFile(list)).toEqual({ '/a.ts': 100, '/b.ts': 600, '/c.ts': 300 });
+  });
+
+  it('快照到达前已收到事件:合并后同样按上限最新优先截断(不超上限)', async () => {
+    let resolveSubscribe!: (value: unknown) => void;
+    debugApi.subscribe.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSubscribe = resolve;
+      }) as never,
+    );
+    startDebugStoreSync();
+    debugApi.events[0]!({ type: 'breakpoints-changed', sessionId: 's1', file: '/c.ts', breakpoints: bps('/c.ts', 300) });
+    resolveSubscribe({
+      ok: true,
+      data: {
+        sessions: [
+          {
+            session_id: 's1',
+            breakpointsBySource: [
+              { file: '/a.ts', breakpoints: bps('/a.ts', 600) },
+              { file: '/b.ts', breakpoints: bps('/b.ts', 400) },
+            ],
+          },
+        ],
+      },
+    });
+    await flushMicrotasks(2);
+    await flushMicrotasks(2);
+    const list = useDebugStore.getState().sessions.get('s1')!.breakpoints;
+    expect(list).toHaveLength(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
+    expect(countByFile(list)).toEqual({ '/a.ts': 300, '/b.ts': 400, '/c.ts': 300 });
+  });
+});
+
