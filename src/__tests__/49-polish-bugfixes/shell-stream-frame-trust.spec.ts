@@ -31,7 +31,9 @@ function makeIpc(): { handlers: Map<string, Handler> } {
     // Electron 的 ipcMain.handle 把 handler 的同步抛错转成 invoke 的 reject:假 ipc 同样包进 promise。
     withTrustedFrameGate({
       handle: (ch: string, fn: Handler) =>
-        handlers.set(ch, (...a: unknown[]) => Promise.resolve().then(() => fn(...a))),
+        handlers.set(ch, (event: unknown, ...rest: unknown[]) =>
+          Promise.resolve().then(() => fn(event, ...rest)),
+        ),
     } as never),
   );
   return { handlers };
