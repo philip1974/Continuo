@@ -26,9 +26,11 @@ export const DOCK_CLOSE_BUTTON = /^(关闭 .+|Close .+|.+ 닫기)$/;
 export const DOCK_POPOUT = /^(弹出到独立窗口|Pop out to standalone window|독립 창으로 팝아웃)$/;
 export const TERMINAL_INPUT = /^Terminal input$/;
 export const TERMINAL_PANEL_TAB = /Terminal \d+/;
-export const EDITOR_DISCARD_TITLE =
-  /(放弃未保存的修改\?|Discard unsaved changes\?|저장되지 않은 변경 사항을 버리시겠습니까\?)/;
-export const EDITOR_DISCARD_CONFIRM = /(不保存关闭|Close without saving|저장하지 않고 닫기)/;
+// 关闭脏 tab 的 VSCode 式确认框「是否要保存对 X 的更改?」+ 保存 / 不保存 / 取消。
+export const EDITOR_SAVE_CHANGES_TITLE =
+  /(是否要保存对「.+」的更改\?|Do you want to save the changes you made to .+\?|.+의 변경 내용을 저장하시겠습니까\?)/;
+export const EDITOR_DONT_SAVE = /^(不保存|Don't Save|저장 안 함)$/;
+export const EDITOR_SAVE = /^(保存|Save|저장)$/;
 export const EDITOR_CANCEL = /(取消|Cancel|취소)/;
 
 export const EDITOR_UNSAVED_CHANGES_SELECTOR = [

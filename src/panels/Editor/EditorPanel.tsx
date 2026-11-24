@@ -182,10 +182,10 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   // 打磨 P2-BL:显式保存遇磁盘被外部改过(EDITOR_DISK_CHANGED)→ 确认覆盖,不静默写。
   // 轻量 TabChrome 子集(确认框只需 filePath,覆盖只需 id),同 closeCandidate。
-  const [overwriteCandidate, setOverwriteCandidate] = useState<Pick<
-    TabChrome,
-    'id' | 'filePath'
-  > | null>(null);
+  // closeAfter:来自关闭脏 tab 时选「保存」—— 覆盖写盘成功后接着关闭该 tab。
+  const [overwriteCandidate, setOverwriteCandidate] = useState<
+    (Pick<TabChrome, 'id' | 'filePath'> & { readonly closeAfter?: boolean }) | null
+  >(null);
 
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {
@@ -210,10 +210,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     try {
       const r = await saveTab(candidate.id, { force: true });
       if (!r.ok) notifyFailure(r);
+      else if (candidate.closeAfter) closeTab(candidate.id);
     } catch (err) {
       notifyThrownError(err);
     }
-  }, [overwriteCandidate, saveTab]);
+  }, [overwriteCandidate, saveTab, closeTab]);
 
   // 关闭脏 tab 二次确认(closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave)。
   const onTabCloseRequest = useCallback(
@@ -233,6 +234,27 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     if (closeCandidate) closeTab(closeCandidate.id);
     setCloseCandidate(null);
   }, [closeCandidate, closeTab]);
+  // 「保存」(VSCode 关闭脏编辑器的默认按钮):保存成功才关闭;磁盘已被外部修改 → 走覆盖确认(确认并写盘成功后
+  // 关闭);其它失败不关闭、按 code 提示,改动留在 tab 里。
+  const confirmSaveAndClose = useCallback(async () => {
+    const candidate = closeCandidate;
+    setCloseCandidate(null);
+    if (!candidate) return;
+    try {
+      const r = await saveTab(candidate.id);
+      if (r.ok) {
+        closeTab(candidate.id);
+        return;
+      }
+      if (r.code === EDITOR_DISK_CHANGED) {
+        setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, closeAfter: true });
+        return;
+      }
+      notifyFailure(r);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  }, [closeCandidate, closeTab, saveTab]);
 
   // Unsafe markdown cannot be opened in Milkdown without an explicit warning.
   const [unsafeEditConfirmOpen, setUnsafeEditConfirmOpen] = useState(false);
@@ -348,22 +370,22 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         </EditorEngineErrorBoundary>
       </div>
 
+      {/* VSCode 式「保存 / 不保存 / 取消」:保存是主按钮且为初始焦点(非 destructive → ConfirmDialog 把
+          data-autofocus 给确认按钮),弹出后紧接着的回车只会保存、不会丢改动。 */}
       <ConfirmDialog
         open={closeCandidate !== null}
-        title={translate('panels.editor.discard_title')}
-        description={
-          closeCandidate ? (
-            <>
-              <code className="text-fg">
-                {basename(closeCandidate.filePath)}
-              </code>{' '}
-              {translate('panels.editor.discard_body')}
-            </>
-          ) : null
+        title={
+          closeCandidate
+            ? translate('panels.editor.save_changes_title', {
+                name: basename(closeCandidate.filePath),
+              })
+            : ''
         }
-        confirmLabel={translate('panels.editor.discard_confirm')}
-        destructive
-        onConfirm={confirmDiscard}
+        description={translate('dialog.unsaved_close.detail')}
+        confirmLabel={translate('common.save')}
+        onConfirm={() => void confirmSaveAndClose()}
+        alternativeLabel={translate('dialog.unsaved_close.dont_save')}
+        onAlternative={confirmDiscard}
         onCancel={() => setCloseCandidate(null)}
       />
       <ConfirmDialog

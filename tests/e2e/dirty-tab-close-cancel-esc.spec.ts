@@ -2,7 +2,7 @@
 import { test, expect } from './fixtures/with-workspace';
 import {
   EDITOR_CLOSE_A_TS,
-  EDITOR_DISCARD_TITLE,
+  EDITOR_SAVE_CHANGES_TITLE,
   EDITOR_UNSAVED_CHANGES_SELECTOR,
 } from './helpers/editor';
 
@@ -23,7 +23,7 @@ test('dirty + 关 → 弹 ConfirmDialog → ESC → dialog 关 + tab 仍 open', 
   await window.getByRole('button', { name: EDITOR_CLOSE_A_TS }).click();
   const dialog = window.locator('.wm-modal-content');
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText(EDITOR_DISCARD_TITLE);
+  await expect(dialog).toContainText(EDITOR_SAVE_CHANGES_TITLE);
 
   // ESC → ConfirmDialog onCancel(Modal 监听 ESC)
   await window.keyboard.press('Escape');

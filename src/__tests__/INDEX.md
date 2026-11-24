@@ -496,6 +496,10 @@
 
 - [`code-editor-crlf.spec.tsx`](./editor-crlf-line-endings/code-editor-crlf.spec.tsx)
 
+## [关闭未保存的编辑器 tab(保存 / 不保存 / 取消)](./editor-dirty-close/README.md)
+
+- [`dirty-close-save.spec.tsx`](./editor-dirty-close/dirty-close-save.spec.tsx)
+
 ## [editor-external-link-feedback](./editor-external-link-feedback/)
 
 - [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)

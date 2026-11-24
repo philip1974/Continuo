@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 关闭脏 .md tab 弹「放弃修改?」确认框 × Markdown autosave(2s 防抖)。
+// 关闭脏 .md tab 弹「保存 / 不保存 / 取消」确认框(选「不保存」即放弃) × Markdown autosave(2s 防抖)。
 // - 防抖窗口内确认放弃:closeTab 先移除 tab,随后切走 flush 的保存找不到 tab —— 这不是保存失败,
 //   不得弹「自动保存失败: TAB_NOT_FOUND」。
 // - 确认框开着期间暂停 autosave:停留超过 delay 也不把待放弃的内容写盘;关窗计数不再豁免该 tab
@@ -63,7 +63,7 @@ async function openDiscardDialog() {
   render(<EditorPanel />);
   await flushLazyEditors();
   fireEvent.click(screen.getByRole('button', { name: t('shell.tab.close', { title: 'a.md' }) }));
-  expect(screen.getByText(t('panels.editor.discard_title'))).toBeTruthy();
+  expect(screen.getByText(t('panels.editor.save_changes_title', { name: 'a.md' }))).toBeTruthy();
 }
 
 beforeEach(() => {
@@ -86,7 +86,7 @@ describe('关闭脏 .md 确认放弃 × autosave', () => {
   it('防抖窗口内确认放弃 → 不写盘,也不弹「自动保存失败」', async () => {
     await openDiscardDialog();
     await advance(300);
-    fireEvent.click(screen.getByRole('button', { name: t('panels.editor.discard_confirm') }));
+    fireEvent.click(screen.getByRole('button', { name: t('dialog.unsaved_close.dont_save') }));
     await advance(DELAY * 3);
 
     expect(useEditorStore.getState().tabs).toHaveLength(0);
@@ -102,7 +102,7 @@ describe('关闭脏 .md 确认放弃 × autosave', () => {
     expect(mocks.writeFile).not.toHaveBeenCalled();
     expect(willAutoSaveOnClose(PATH)).toBe(false);
 
-    fireEvent.click(screen.getByRole('button', { name: t('panels.editor.discard_confirm') }));
+    fireEvent.click(screen.getByRole('button', { name: t('dialog.unsaved_close.dont_save') }));
     await advance(DELAY * 3);
     expect(mocks.writeFile).not.toHaveBeenCalled();
     expect(mocks.warn).not.toHaveBeenCalled();

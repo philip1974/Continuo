@@ -93,13 +93,13 @@ afterEach(() => {
 });
 
 describe('EditorPanel:决定前先回写未上抛输入', () => {
-  it('关闭 store 里仍干净、但编辑器有未上抛输入的 tab → 弹「放弃修改?」,不直接关闭丢弃', async () => {
+  it('关闭 store 里仍干净、但编辑器有未上抛输入的 tab → 弹「保存 / 不保存 / 取消」确认,不直接关闭丢弃', async () => {
     await renderPanel();
     harness.pending = 'hello typed';
 
     fireEvent.click(screen.getByRole('button', { name: t('shell.tab.close', { title: 'a.md' }) }));
 
-    expect(screen.getByText(t('panels.editor.discard_title'))).toBeTruthy();
+    expect(screen.getByText(t('panels.editor.save_changes_title', { name: 'a.md' }))).toBeTruthy();
     const tab = useEditorStore.getState().tabs[0];
     expect(tab?.content).toBe('hello typed');
     expect(tab?.dirty).toBe(true);

@@ -161,6 +161,45 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  // 可选第三按钮(如 VSCode 关闭脏文件的「保存 / 不保存 / 取消」中的「不保存」):两者都给才渲染。
+  it('alternativeLabel + onAlternative → 渲染第三个按钮,顺序 [备选, 取消, 确认]', () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    const onAlternative = vi.fn();
+    renderD({ onConfirm, onCancel, alternativeLabel: '不保存', onAlternative });
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+    );
+    expect(buttons.map((b) => b.textContent)).toEqual(['不保存', '取消', '确认']);
+    fireEvent.click(buttons[0]!);
+    expect(onAlternative).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('未给 onAlternative → 只有两个按钮', () => {
+    renderD({ alternativeLabel: '不保存' });
+    expect(document.querySelectorAll('.wm-modal-content button')).toHaveLength(2);
+  });
+
+  it('三按钮 + 非 destructive → 初始焦点仍在确认按钮', () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      renderD({ alternativeLabel: '不保存', onAlternative: vi.fn() });
+      const confirm = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+      ).find((b) => b.textContent === '确认')!;
+      expect(document.activeElement).toBe(confirm);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
   // 调用方(StatusBar / EditorPanel / PluginsTabContent)都传内联 onCancel:父组件在弹窗
   // 打开期间重渲时,若原样交给 Modal(effect 依赖 onClose),Modal 会 cleanup 再重跑 →
   // 焦点被拉回 [data-autofocus] 确认(危险)按钮、键盘栈重排。onCancel 引用变化不得影响焦点,

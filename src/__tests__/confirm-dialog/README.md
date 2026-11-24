@@ -19,6 +19,7 @@
 
 - open=false → 不渲染
 - open=true → 渲染 title / description / 两个按钮
+- 可选第三按钮:alternativeLabel + onAlternative 都给才渲染,排在取消左侧(顺序 [备选, 取消, 确认]),点击只调 onAlternative;不参与初始焦点
 - 默认按钮文案: '确认' / '取消',可由 confirmLabel / cancelLabel 覆盖
 - destructive=true → 确认按钮 .wm-btn-danger;false → primary
 - 初始焦点:非 destructive → 确认按钮(`data-autofocus`);destructive → 取消按钮(破坏性操作须显式选择,防止异步弹出时用户继续敲的空格 / 回车误触发)

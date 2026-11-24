@@ -12,6 +12,12 @@ interface ConfirmDialogProps {
   destructive?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * 可选第三按钮(如关闭脏文件的「保存 / 不保存 / 取消」里的「不保存」),排在取消左侧、ghost 样式;
+   * alternativeLabel 与 onAlternative 都给才渲染。不参与初始焦点(仍按 destructive 规则落在确认或取消)。
+   */
+  alternativeLabel?: string;
+  onAlternative?: () => void;
 }
 
 // 通用确认对话框(design Modal):编辑器关闭 / 覆盖确认、插件卸载、状态栏撤销授权共用(原在 panels/Explorer 下,
@@ -33,6 +39,8 @@ function ConfirmDialogBody({
   destructive = false,
   onConfirm,
   onCancel,
+  alternativeLabel,
+  onAlternative,
 }: Omit<ConfirmDialogProps, 'open'>) {
   const t = useT();
   // 标题 id 每个实例唯一(此前写死 confirm-dialog-title,同时挂载多个时 aria-labelledby 指向错乱)。
@@ -55,6 +63,11 @@ function ConfirmDialogBody({
         {description}
       </div>
       <div className="flex justify-end gap-2">
+        {alternativeLabel !== undefined && onAlternative !== undefined && (
+          <Button variant="ghost" size="sm" onClick={onAlternative}>
+            {alternativeLabel}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
