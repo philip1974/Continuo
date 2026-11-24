@@ -18,6 +18,7 @@ import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
 import { installFromGitLocalized } from '@/plugins/install-from-git';
+import type { InstallFromGitResult } from '../../../electron/shared/plugins-channels';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -28,7 +29,7 @@ interface ContributionRow {
 const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
 const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
 const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
-const NO_PENDING_INSTALLS: ReadonlyMap<string, { id: string; name: string; version: string }> =
+const NO_PENDING_INSTALLS: ReadonlyMap<string, InstallFromGitResult> =
   new Map();
 
 const PLUGINS_TAB_ROW_CLASS_NAME = 'flex items-start gap-4 px-4 py-3 text-xs';
@@ -228,7 +229,7 @@ function UserPluginsSection() {
   const [installMsg, setInstallMsg] = useState<ResultMsg | null>(null);
   // 已安装、待重启后才进列表的插件(按 id;连续安装多个时各占一行)。
   const [pendingInstalls, setPendingInstalls] = useState<
-    ReadonlyMap<string, { id: string; name: string; version: string }>
+    ReadonlyMap<string, InstallFromGitResult>
   >(NO_PENDING_INSTALLS);
   // 已进列表的(重启后加载 / 覆盖重装已有 id)不再显示待重启行,避免同一插件两行。
   const pendingRows = [...pendingInstalls.values()].filter((p) => !hasPluginId(plugins, p.id));

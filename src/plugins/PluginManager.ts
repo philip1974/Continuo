@@ -15,6 +15,7 @@ import type { CoApp, PluginManifest } from './types';
 import { codedError, errorCodeOf, errorMessage } from '../../electron/shared/error-message';
 import { coApi } from '@/lib/co-api';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
+import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 
 // ── Host 注入接口 ──────────────────────────────────────
 
@@ -377,28 +378,20 @@ export class PluginManager {
       urls.set(entry, url);
       queue.push([entry, url]);
     }
-    let next = 0;
-    const worker = async (): Promise<void> => {
-      while (next < queue.length) {
-        const [entry, url] = queue[next++]!;
-        // 轮到时已不会按这份 dirInfo 激活(禁用 / 卸载 / 已换 dirInfo)→ 不再预取。
-        if (
-          this.entries.get(entry.id) !== entry ||
-          entry.status !== 'enabled' ||
-          entry.instance ||
-          entry.dirInfo.moduleUrl !== url ||
-          this.deactivationIntents.has(entry.id)
-        ) {
-          continue;
-        }
-        try {
-          await prefetch(url);
-        } catch {
-          // host 契约不 reject;防御:失败不影响激活(激活照常拉取)。
-        }
+    // 有界并发;fn 在轮到该项时才调用 —— 轮到时已不会按这份 dirInfo 激活(禁用 / 卸载 / 已换 dirInfo)→ 不再预取。
+    // host 契约不 reject;防御:单项失败记为 rejected,不影响其它项与激活(激活照常拉取)。
+    void allSettledWithConcurrency(queue, PREFETCH_CONCURRENCY, async ([entry, url]) => {
+      if (
+        this.entries.get(entry.id) !== entry ||
+        entry.status !== 'enabled' ||
+        entry.instance ||
+        entry.dirInfo.moduleUrl !== url ||
+        this.deactivationIntents.has(entry.id)
+      ) {
+        return;
       }
-    };
-    for (let i = 0; i < Math.min(PREFETCH_CONCURRENCY, queue.length); i++) void worker();
+      await prefetch(url);
+    });
     return urls;
   }
 

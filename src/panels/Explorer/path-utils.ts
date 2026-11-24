@@ -1,8 +1,5 @@
-// Explorer 跨平台路径 helper(可维护性 M4:消除四处复制的 dirname)。
-//
-// 不引 path-browserify:规则简单且要同时吃 `/` 与 `\`(Windows)。tree-config /
-// FolderTree / drop-handlers / mutate-actions 曾各自手写同一段 dirname,路径边界
-// 规则一改要同步四处易漂移 → 收敛到此单一来源。
+// Explorer 路径 helper。跨平台基础判定(dirname / basename / 绝对路径 / 包含关系)的单一来源在 src/lib/path-cross,
+// 这里转出 dirname / basename 供 Explorer 既有调用方,并放 Explorer 专用的批量路径处理。
 
 import {
   containmentFold,
