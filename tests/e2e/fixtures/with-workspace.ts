@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { captureMainProcessLog, closeDiscardingUnsaved } from '../helpers/close-app';
 import { launchContinuo } from '../helpers/launch';
+import { seedExplorerJson } from '../helpers/seed-explorer';
 
 interface Fixtures {
   electronApp: ElectronApplication;
@@ -51,23 +52,7 @@ export const test = base.extend<Fixtures>({
 
   electronApp: async ({ userDataDir, workspaceRoot }, use, testInfo) => {
     // 写入 explorer.json,让 hydrate 自动设 root
-    const explorerJson = {
-      version: 1,
-      workspace: {
-        root: workspaceRoot,
-        recentRoots: [workspaceRoot],
-      },
-      explorer: {
-        activePath: null,
-        expandedPaths: [workspaceRoot],
-        sort: { by: 'name' as const, reverse: false },
-      },
-      pinned: { paths: [] },
-    };
-    writeFileSync(
-      path.join(userDataDir, 'explorer.json'),
-      JSON.stringify(explorerJson),
-    );
+    seedExplorerJson(userDataDir, { root: workspaceRoot });
 
     const app = await launchContinuo(userDataDir);
     captureMainProcessLog(app, testInfo.outputDir);

@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 const MORE_ACTIONS = /^(更多操作|More actions|추가 작업)$/;
 const CLOSE_FOLDER = /^(关闭文件夹|Close folder|폴더 닫기)$/;
@@ -26,19 +27,7 @@ test('关 folder + 重启 → EmptyWorkspace 显「最近打开」+ ws', async (
   let app2: ElectronApplication | undefined;
   try {
     writeFileSync(path.join(ws, 'a.md'), '# 1\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     // 第一次:关 folder
     app1 = await launchContinuo(ud);

@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('Component.tsx → 不显示 Save button', async () => {
   test.setTimeout(30_000);
@@ -15,19 +16,7 @@ test('Component.tsx → 不显示 Save button', async () => {
       path.join(ws, 'Component.tsx'),
       'export const X = () => null;\n',
     );
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { openTreeItem } from './helpers/explorer';
 import { statusLines } from './helpers/status-bar';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('多行 file → footer N 行计数正确', async () => {
   test.setTimeout(30_000);
@@ -14,19 +15,7 @@ test('多行 file → footer N 行计数正确', async () => {
   try {
     // 5 行(4 个 \n + 末尾 \n)
     writeFileSync(path.join(ws, 'multi.txt'), 'a\nb\nc\nd\ne\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { waitForAppReady } from './helpers/app-ready';
 import { explorerTreeItem } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('explorer.json 缺 layoutUi → sidebarOpen=true + width=280(默认)', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-no-lui-'));
@@ -15,19 +16,7 @@ test('explorer.json 缺 layoutUi → sidebarOpen=true + width=280(默认)', asyn
     mkdirSync(path.join(ws, 'src'), { recursive: true });
     writeFileSync(path.join(ws, 'README.md'), '# x\n');
     // 不写 layoutUi 字段
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

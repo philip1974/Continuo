@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { waitForAppReady } from './helpers/app-ready';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 async function launchAndAssertEmpty(ud: string): Promise<void> {
   const app = await launchContinuo(ud);
@@ -75,19 +76,7 @@ test('对照:合法 explorer.json(v1 + 存在的 ws)→ 恢复出文件树(证�
   try {
     mkdirSync(path.join(ws, 'src'), { recursive: true });
     writeFileSync(path.join(ws, 'restored.txt'), 'x\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');

@@ -1,28 +1,17 @@
 // 打开一个空文件夹 workspace → Explorer 显示 workspace 名 + 空内容.
 import { expect, test } from '@playwright/test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { EXPLORER_LOADING_OR_EMPTY } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('空 workspace → 渲染 workspace name + 没有 treeitem', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-empty-ws-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-empty-ws-root-'));
   try {
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

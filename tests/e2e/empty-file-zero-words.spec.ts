@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('empty file → footer 显「0 词」', async () => {
   test.setTimeout(30_000);
@@ -12,19 +13,7 @@ test('empty file → footer 显「0 词」', async () => {
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-zw-ws-'));
   try {
     writeFileSync(path.join(ws, 'empty2.txt'), '');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

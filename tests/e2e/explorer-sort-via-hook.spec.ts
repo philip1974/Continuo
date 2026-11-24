@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 // 跳过原因:Explorer 排序尚未接到树上(explorer.store 的 sort 是预留脚手架,FolderTree 直接用 listDir 顺序);
 // 接入排序后取消 skip.
@@ -17,19 +18,7 @@ test.skip('sort.by=name + reverse=true → 文件名 z→a 倒序渲染', async 
     writeFileSync(path.join(ws, 'src/a.ts'), '');
     writeFileSync(path.join(ws, 'src/b.ts'), '');
     writeFileSync(path.join(ws, 'src/c.ts'), '');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: true }, // z→a
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws, sort: { by: 'name', reverse: true } });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

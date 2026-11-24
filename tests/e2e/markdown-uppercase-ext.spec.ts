@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('NOTES.MD → SegmentedControl 显(大小写不敏感)', async () => {
   test.setTimeout(30_000);
@@ -12,19 +13,7 @@ test('NOTES.MD → SegmentedControl 显(大小写不敏感)', async () => {
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-mdup-ws-'));
   try {
     writeFileSync(path.join(ws, 'NOTES.MD'), '# upper\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

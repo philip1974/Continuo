@@ -6,6 +6,7 @@ import path from 'node:path';
 import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('开 ws1/a.ts → ⋯ 切 ws2 → a.ts tab 关 + EditorWelcome', async () => {
   test.setTimeout(60_000);
@@ -16,19 +17,7 @@ test('开 ws1/a.ts → ⋯ 切 ws2 → a.ts tab 关 + EditorWelcome', async () =
     mkdirSync(path.join(ws1, 'src'), { recursive: true });
     writeFileSync(path.join(ws1, 'src/a.ts'), 'export const a = 1;\n');
     writeFileSync(path.join(ws2, 'CHANGELOG.md'), '# 2\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1, path.join(ws1, 'src')],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2], expandedPaths: [ws1, path.join(ws1, 'src')] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

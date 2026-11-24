@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openWorkspaceFile } from './helpers/editor';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', async () => {
   test.setTimeout(60_000);
@@ -13,19 +14,7 @@ test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', asyn
   try {
     mkdirSync(path.join(ws, 'src'), { recursive: true });
     writeFileSync(path.join(ws, 'src/a.ts'), 'export const a = 1;\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws, path.join(ws, 'src')],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws, expandedPaths: [ws, path.join(ws, 'src')] });
 
     // 第一次启
     const app1 = await launchContinuo(ud);

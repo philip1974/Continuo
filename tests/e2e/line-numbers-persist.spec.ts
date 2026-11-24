@@ -6,21 +6,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openWorkspaceFile } from './helpers/editor';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 function writeExplorerSeed(userDataDir: string, workspaceRoot: string): void {
-  writeFileSync(
-    path.join(userDataDir, 'explorer.json'),
-    JSON.stringify({
-      version: 1,
-      workspace: { root: workspaceRoot, recentRoots: [workspaceRoot] },
-      explorer: {
-        activePath: null,
-        expandedPaths: [workspaceRoot],
-        sort: { by: 'name', reverse: false },
-      },
-      pinned: { paths: [] },
-    }),
-  );
+  seedExplorerJson(userDataDir, { root: workspaceRoot });
 }
 
 test('toggle lineNumbers off → 重启 → CM 仍 cm-no-gutters', async () => {

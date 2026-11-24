@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expandTreeItem, explorerTreeItem, openTreeItem } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('深 3 层目录:逐级展开 + 打开 leaf.ts', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-deep-'));
@@ -12,19 +13,7 @@ test('深 3 层目录:逐级展开 + 打开 leaf.ts', async () => {
   try {
     mkdirSync(path.join(ws, 'src/sub1/sub2'), { recursive: true });
     writeFileSync(path.join(ws, 'src/sub1/sub2/leaf.ts'), 'export const leaf = true;\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

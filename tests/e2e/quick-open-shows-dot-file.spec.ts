@@ -6,6 +6,7 @@ import path from 'node:path';
 import { explorerTreeItem } from './helpers/explorer';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('Cmd+P 列表含 .secret.md(虽 tree 默认不显)', async () => {
   test.setTimeout(30_000);
@@ -14,19 +15,7 @@ test('Cmd+P 列表含 .secret.md(虽 tree 默认不显)', async () => {
   try {
     writeFileSync(path.join(ws, '.secret.md'), '# secret\n');
     writeFileSync(path.join(ws, 'visible.txt'), 'x\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

@@ -7,6 +7,7 @@ import { explorerMoreActionsButton } from './helpers/explorer';
 import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS_NAV } from './helpers/settings';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('override settings.toggle=mod+shift+y + 切 ws → 新 hotkey 仍触发', async () => {
   test.setTimeout(60_000);
@@ -16,19 +17,7 @@ test('override settings.toggle=mod+shift+y + 切 ws → 新 hotkey 仍触发', a
   try {
     writeFileSync(path.join(ws1, 'a.md'), '# 1\n');
     writeFileSync(path.join(ws2, 'b.md'), '# 2\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

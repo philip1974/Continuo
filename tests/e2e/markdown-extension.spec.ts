@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('打开 .markdown 文件 → SegmentedControl Edit/Source/Preview 显', async () => {
   test.setTimeout(30_000);
@@ -16,19 +17,7 @@ test('打开 .markdown 文件 → SegmentedControl Edit/Source/Preview 显', asy
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-md-ext-ws-'));
   try {
     writeFileSync(path.join(ws, 'doc.markdown'), '# extension test\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

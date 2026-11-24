@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('长 workspace 名 → ExplorerHeader 标题 class 含 truncate', async () => {
   test.setTimeout(30_000);
@@ -13,19 +14,7 @@ test('长 workspace 名 → ExplorerHeader 标题 class 含 truncate', async () 
   const ws = mkdtempSync(path.join(tmpdir(), `continuo-${longName}-`));
   try {
     writeFileSync(path.join(ws, 'README.md'), '# x\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

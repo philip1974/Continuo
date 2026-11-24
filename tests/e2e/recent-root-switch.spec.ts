@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('点 ⋯ → 打开最近 → ws2 → root 切到 ws2', async () => {
   test.setTimeout(30_000);
@@ -15,19 +16,7 @@ test('点 ⋯ → 打开最近 → ws2 → root 切到 ws2', async () => {
     mkdirSync(path.join(ws1, 'src'), { recursive: true });
     writeFileSync(path.join(ws1, 'README.md'), '# ws1\n');
     writeFileSync(path.join(ws2, 'CHANGELOG.md'), '# ws2\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

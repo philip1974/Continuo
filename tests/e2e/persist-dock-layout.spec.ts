@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { waitForAppReady } from './helpers/app-ready';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('加 Terminal session → 关 → 重启同 userData → 不恢复 stale terminal panel', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-dock-'));
@@ -21,19 +22,7 @@ test('加 Terminal session → 关 → 重启同 userData → 不恢复 stale te
   try {
     mkdirSync(path.join(workspaceRoot, 'src'), { recursive: true });
     writeFileSync(path.join(workspaceRoot, 'README.md'), '# Test Workspace\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: workspaceRoot, recentRoots: [workspaceRoot] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [workspaceRoot],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: workspaceRoot });
 
     // ── 第一次启动:加 Terminal panel ──
     const app1 = await launchContinuo(ud);

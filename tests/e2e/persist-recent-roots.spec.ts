@@ -9,6 +9,7 @@ import {
   explorerMoreActionsButton,
 } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('recentRoots 中的旧 root → ExplorerHeader ⋯ 「打开最近」列表', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-rr-'));
@@ -18,19 +19,7 @@ test('recentRoots 中的旧 root → ExplorerHeader ⋯ 「打开最近」列表
     // 当前 root = ws1,recentRoots 含 ws1 + ws2(ws2 是「最近打开过」的另一个)
     mkdirSync(path.join(ws1, 'src'), { recursive: true });
     writeFileSync(path.join(ws1, 'README.md'), '# x\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

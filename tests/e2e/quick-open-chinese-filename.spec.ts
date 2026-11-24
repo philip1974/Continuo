@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('Cmd+P 输 笔记 → 列出 我的笔记.md', async () => {
   test.setTimeout(30_000);
@@ -13,19 +14,7 @@ test('Cmd+P 输 笔记 → 列出 我的笔记.md', async () => {
   try {
     writeFileSync(path.join(ws, '我的笔记.md'), '# x\n');
     writeFileSync(path.join(ws, 'other.txt'), 'x\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

@@ -7,6 +7,7 @@ import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('dirty ws1/a.ts + 切 ws2 → dirty tab 保留', async () => {
   test.setTimeout(60_000);
@@ -17,19 +18,7 @@ test('dirty ws1/a.ts + 切 ws2 → dirty tab 保留', async () => {
     mkdirSync(path.join(ws1, 'src'), { recursive: true });
     writeFileSync(path.join(ws1, 'src/a.ts'), 'export const a = 1;\n');
     writeFileSync(path.join(ws2, 'README.md'), '# 2\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1, path.join(ws1, 'src')],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2], expandedPaths: [ws1, path.join(ws1, 'src')] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

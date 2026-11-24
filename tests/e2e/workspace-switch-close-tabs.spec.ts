@@ -6,6 +6,7 @@ import path from 'node:path';
 import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 // closeTabsOutsideRoot 的细粒度行为由 editor.store 单测覆盖;本用例验证端到端:切 workspace 后旧 root 下的 tab 关闭。
 test('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcome)', async () => {
@@ -17,19 +18,7 @@ test('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcome)', 
     writeFileSync(path.join(ws1, 'src/a.ts'), 'export const a = 1;\n');
     writeFileSync(path.join(ws1, 'README.md'), '# x\n');
     writeFileSync(path.join(ws2, 'README.md'), '# y\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

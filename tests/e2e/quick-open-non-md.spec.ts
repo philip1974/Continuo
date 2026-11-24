@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('walk 列出 .md / .ts / Makefile(无扩展)三种文件', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-qo-mix-'));
@@ -14,19 +15,7 @@ test('walk 列出 .md / .ts / Makefile(无扩展)三种文件', async () => {
     writeFileSync(path.join(ws, 'doc.md'), '# x');
     writeFileSync(path.join(ws, 'src/lib.ts'), '');
     writeFileSync(path.join(ws, 'Makefile'), 'all:\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

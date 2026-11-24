@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('doc.markdown + delay=0(钳到 500ms)+ setEditorContent → 防抖后写盘', async () => {
   test.setTimeout(30_000);
@@ -11,19 +12,7 @@ test('doc.markdown + delay=0(钳到 500ms)+ setEditorContent → 防抖后写盘
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-mdas-ws-'));
   try {
     writeFileSync(path.join(ws, 'doc.markdown'), '# v1\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

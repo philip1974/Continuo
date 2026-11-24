@@ -6,6 +6,7 @@ import path from 'node:path';
 import { EXPLORER_MORE_ACTIONS } from './helpers/explorer';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('切 root → Cmd+P 列新 workspace 文件', async () => {
   test.setTimeout(60_000);
@@ -17,19 +18,7 @@ test('切 root → Cmd+P 列新 workspace 文件', async () => {
     writeFileSync(path.join(ws1, 'README-WS1.md'), '# ws1\n');
     writeFileSync(path.join(ws1, 'src/old.ts'), 'old\n');
     writeFileSync(path.join(ws2, 'CHANGELOG-WS2.md'), '# ws2\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

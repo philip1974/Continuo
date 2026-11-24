@@ -6,6 +6,7 @@ import path from 'node:path';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { OUTPUT_READY } from './helpers/output';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('打开 Output → 切 root → Output panel 仍在', async () => {
   test.setTimeout(60_000);
@@ -15,19 +16,7 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
   try {
     writeFileSync(path.join(ws1, 'README.md'), '# 1\n');
     writeFileSync(path.join(ws2, 'README.md'), '# 2\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

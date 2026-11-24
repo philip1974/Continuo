@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('ws1 → 切 ws2 → ⋯ 「打开最近」 含 ws1', async () => {
   test.setTimeout(30_000);
@@ -14,19 +15,7 @@ test('ws1 → 切 ws2 → ⋯ 「打开最近」 含 ws1', async () => {
   try {
     writeFileSync(path.join(ws1, 'a.md'), '# 1\n');
     writeFileSync(path.join(ws2, 'b.md'), '# 2\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws1, recentRoots: [ws1, ws2] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws1],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws2] });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();

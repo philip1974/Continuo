@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { seedExplorerJson } from './helpers/seed-explorer';
 
 test('我的笔记.md / with space.txt 都可打开', async () => {
   test.setTimeout(30_000);
@@ -12,19 +13,7 @@ test('我的笔记.md / with space.txt 都可打开', async () => {
   try {
     writeFileSync(path.join(ws, '我的笔记.md'), '# zh\n');
     writeFileSync(path.join(ws, 'with space.txt'), 'spaced\n');
-    writeFileSync(
-      path.join(ud, 'explorer.json'),
-      JSON.stringify({
-        version: 1,
-        workspace: { root: ws, recentRoots: [ws] },
-        explorer: {
-          activePath: null,
-          expandedPaths: [ws],
-          sort: { by: 'name', reverse: false },
-        },
-        pinned: { paths: [] },
-      }),
-    );
+    seedExplorerJson(ud, { root: ws });
 
     const app = await launchContinuo(ud);
     const win = await app.firstWindow();
