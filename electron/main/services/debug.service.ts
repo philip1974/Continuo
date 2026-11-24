@@ -196,6 +196,7 @@ export interface WaitForStopOutput {
 // 形态定义在 shared(与 renderer 的 debug.store 共用),这里转出供 main 侧既有 import 使用。
 export type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
 import type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
+import { sleep, waitAtMost } from '../lib/wait-at-most';
 
 interface StopWaiter {
   readonly afterStopSeq: number;
@@ -284,11 +285,6 @@ interface RuntimeDebugSession {
   readonly queuedStops: Array<{ client: DebugDapClientLike; body: DapJson | undefined }>;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : [];
@@ -1576,15 +1572,9 @@ export class DebugService {
   async cleanupAll(reason: string): Promise<readonly string[]> {
     this.shuttingDown = true;
     const pending = this.cancelLaunches(() => true);
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const [ids] = await Promise.all([
       this.teardownMany(debugSessions.list(), reason),
-      Promise.race([
-        Promise.all(pending),
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, DEBUG_LAUNCH_SETTLE_WAIT_MS);
-        }),
-      ]).finally(() => clearTimeout(timer)),
+      waitAtMost(Promise.all(pending), DEBUG_LAUNCH_SETTLE_WAIT_MS),
     ]);
     const stragglers = debugSessions.list().filter((session) => session.state === 'active');
     return [...ids, ...(await this.teardownMany(stragglers, reason))];
@@ -2171,8 +2161,7 @@ export class DebugService {
     const clients = [runtime.parentClient, ...runtime.childClients];
     // DAP adapters often stop replying while the debuggee is already exiting.
     // Lifecycle cleanup is judged by the process-group/tree kill below.
-    let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
+    await waitAtMost(
       Promise.allSettled(
         clients.map((client) =>
           client.sendRequest(
@@ -2182,11 +2171,8 @@ export class DebugService {
           ),
         ),
       ),
-      new Promise<void>((resolve) => {
-        disconnectTimer = setTimeout(resolve, DEBUG_TEARDOWN_DISCONNECT_TIMEOUT_MS);
-      }),
-    ]);
-    clearTimeout(disconnectTimer);
+      DEBUG_TEARDOWN_DISCONNECT_TIMEOUT_MS,
+    );
 
     try {
       // 不依据已知失效的 pid 杀进程:adapter 已退出则不再对其 pid 发信号;已结束的 debuggee 其 pid 已在

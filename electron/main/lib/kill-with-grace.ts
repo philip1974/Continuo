@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { resolveSpawnCommand } from './child-spawn-hardening';
+import { waitAtMost } from './wait-at-most';
 
 interface Killable {
   kill(signal?: NodeJS.Signals | number): boolean;
@@ -116,13 +117,7 @@ export async function killProcessTreesNow(
     }
     return done;
   });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const capped = new Promise<'timeout'>((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), capMs);
-  });
-  const r = await Promise.race([Promise.all(closed), capped]);
-  clearTimeout(timer);
-  if (r === 'timeout') {
+  if ((await waitAtMost(Promise.all(closed), capMs)) === 'timeout') {
     for (const child of list) {
       child.stdout?.destroy();
       child.stderr?.destroy();

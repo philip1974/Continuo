@@ -28,6 +28,7 @@ import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { capErrorText, codedError } from '../../shared/error-message';
+import { waitAtMost } from '../lib/wait-at-most';
 
 // 冷启动:ESM 值导入 node:http 时 Node 会读取其全部导出(含 WebSocket 等懒 getter),连带加载并编译整个
 // undici(实测 main 求值 +17–18ms);CJS require 不触发。这里只用 createServer。
@@ -1151,13 +1152,7 @@ export async function createMcpHost(
       // (在途请求经 req/res 'close' abort,客户端收到连接断开),并为整个关闭设上限。
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
-      let timer: NodeJS.Timeout | undefined;
-      const capped = new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, MCP_HOST_CLOSE_TIMEOUT_MS);
-        timer.unref?.();
-      });
-      await Promise.race([closed, capped]);
-      clearTimeout(timer);
+      await waitAtMost(closed, MCP_HOST_CLOSE_TIMEOUT_MS, { unref: true });
     },
   };
   return host;

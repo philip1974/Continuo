@@ -9,6 +9,7 @@ import path from 'node:path';
 import { mergeSpawnEnv, stripInternalSecretEnv } from '../lib/child-spawn-hardening';
 import { errorMessage, toError } from '../../shared/error-message';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
+import { sleep, waitAtMost } from '../lib/wait-at-most';
 
 type DapPrimitive = string | number | boolean | null;
 export type DapJson =
@@ -231,11 +232,6 @@ export class DapStreamDecoder {
 
 const SERVER_STDERR_MAX_BYTES = 64 * 1024;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 // unix socket 路径上限 macOS 104 / Linux 108 字节(含结尾 NUL),留余量。
 const SOCKET_PATH_MAX_BYTES = 100;
@@ -531,7 +527,7 @@ export class DapClient {
 
   private async exitedEarlyError(run: AdapterRunState): Promise<Error> {
     // 'exit' 可能早于 stderr 读完:等 stdio 关闭(有界)再取 stderr 进报错。
-    await Promise.race([run.closed, sleep(1_000)]);
+    await waitAtMost(run.closed, 1_000);
     return new Error(
       `DAP server exited before ready (${run.exited}).\nserver stderr:\n${this.serverStderr.text()}`,
     );
@@ -817,11 +813,7 @@ export class DapClient {
       return;
     }
     this.server.kill('SIGTERM');
-    const exited = Promise.race([
-      once(this.server, 'exit'),
-      sleep(1_000).then(() => 'timeout' as const),
-    ]);
-    if ((await exited) === 'timeout') {
+    if ((await waitAtMost(once(this.server, 'exit'), 1_000)) === 'timeout') {
       this.server.kill('SIGKILL');
     }
   }
