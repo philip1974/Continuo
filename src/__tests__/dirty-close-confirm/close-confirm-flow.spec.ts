@@ -696,11 +696,13 @@ describe('主窗 Reload / Force Reload:与关窗同一的脏确认 + flush', () 
     await flushMicrotasks(5);
     // 真实 Electron:已销毁窗口的 webContents getter 抛 "Object has been destroyed"。
     win.destroyed = true;
-    Object.defineProperty(win, 'webContents', {
-      get() {
-        throw new Error('Object has been destroyed');
-      },
-    });
+    for (const key of ['webContents', 'id'] as const) {
+      Object.defineProperty(win, key, {
+        get() {
+          throw new Error('Object has been destroyed');
+        },
+      });
+    }
     answer({ response: 0 });
     await flushMicrotasks(10);
     await new Promise((r) => setTimeout(r, 0));

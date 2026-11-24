@@ -97,7 +97,7 @@ export function useAvailableUpdates(): readonly AvailableUpdate[] {
   );
 }
 
-export const useUpdateStore = create<UpdateState>((set) => ({
+export const useUpdateStore = create<UpdateState>((set, get) => ({
   remoteVersions: EMPTY_REMOTE_VERSIONS,
   dismissed: new Map(),
 
@@ -144,6 +144,9 @@ export const useUpdateStore = create<UpdateState>((set) => ({
       }
       relevant.length = relevantCount;
       const remoteVersions = new Map<string, string>();
+      // manifest 拉取失败(离线 / 临时错误)的插件沿用上次已知的远端版本:index 离线时回退缓存不抛,若按「本次没拉到」清空,
+      // 断网时打开市场页(每次挂载都 refresh)会抹掉已显示的更新按钮与角标。
+      const previous = get().remoteVersions;
 
       // 只拉「已安装插件命中的 entries」的 manifest(M ≤ N);单个失败不影响其它。
       // 边界(E234):有界并发池(MAX_MANIFEST_FETCH_CONCURRENCY)钳定最大在途 fetch 数,
@@ -155,6 +158,11 @@ export const useUpdateStore = create<UpdateState>((set) => ({
       );
       for (let i = 0; i < relevant.length; i++) {
         const r = results[i];
+        if (r && r.status === 'rejected') {
+          const known = previous.get(relevant[i]!.id);
+          if (known !== undefined) remoteVersions.set(relevant[i]!.id, known);
+          continue;
+        }
         if (r && r.status === 'fulfilled') {
           // 远端 manifest.id ≠ entry.id:entry 指向另一身份的仓库,其版本不能当作任何已装插件的
           // 更新(否则错配,且「更新」会去覆盖安装别的仓库;main 侧 expectedId 也会拒)。跳过。

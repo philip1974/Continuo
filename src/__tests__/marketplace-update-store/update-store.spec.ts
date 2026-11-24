@@ -207,6 +207,28 @@ describe('useUpdateStore.refresh', () => {
     expect(available().map((u) => u.id)).toEqual(['b']);
   });
 
+  // 离线 / 临时失败:index 回退缓存不抛,manifest 全失败。拉取失败的插件沿用上次已知远端版本 —— 否则每次打开市场页
+  //(挂载即 refresh)都会在断网时抹掉已显示的更新按钮与角标。
+  it('manifest 拉取失败 → 沿用上次已知远端版本,不清掉已知更新', async () => {
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }, { id: 'b', version: '0.1.0' }]));
+    fetchIndex.mockResolvedValue([entry('a'), entry('b')]);
+    fetchManifest.mockImplementation(async (e: MarketplaceEntry) => manifest(e.id, '0.5.0'));
+    await useUpdateStore.getState().refresh();
+    expect(available().map((u) => u.id)).toEqual(['a', 'b']);
+
+    fetchManifest.mockImplementation(async (e: MarketplaceEntry) => {
+      if (e.id === 'a') throw new Error('offline');
+      return manifest('b', '0.6.0');
+    });
+    await useUpdateStore.getState().refresh();
+    expect(useUpdateStore.getState().remoteVersions.get('a')).toBe('0.5.0');
+    expect(useUpdateStore.getState().remoteVersions.get('b')).toBe('0.6.0');
+
+    fetchManifest.mockRejectedValue(new Error('offline'));
+    await useUpdateStore.getState().refresh();
+    expect(available().map((u) => u.id)).toEqual(['a', 'b']);
+  });
+
   it('本地未装 → 不入 available', async () => {
     fetchIndex.mockResolvedValue([entry('a')]);
     fetchManifest.mockResolvedValue(manifest('a', '9.9.9'));

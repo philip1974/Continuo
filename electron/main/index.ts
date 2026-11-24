@@ -419,8 +419,10 @@ const reloadingWindowIds = new Set<number>();
  */
 async function reloadMainWindow(win: BrowserWindow, ignoreCache: boolean): Promise<void> {
   if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-  if (isPopoutUrl(win.webContents.getURL()) || reloadingWindowIds.has(win.id)) return;
-  reloadingWindowIds.add(win.id);
+  // 先取 id:窗口销毁后 win.id 与 webContents 一样是会抛 "Object has been destroyed" 的原生 getter(关窗路径同样提前取)。
+  const windowId = win.id;
+  if (isPopoutUrl(win.webContents.getURL()) || reloadingWindowIds.has(windowId)) return;
+  reloadingWindowIds.add(windowId);
   try {
     const confirm = confirmDirtyClose(win);
     let mode: FlushMode = 'none';
@@ -431,11 +433,11 @@ async function reloadMainWindow(win: BrowserWindow, ignoreCache: boolean): Promi
       mode = choice === 'save' ? 'save' : 'discard';
     }
     const outcome = await requestWindowFlush(win, mode, confirm?.state);
-    if (win.isDestroyed() || shouldAbortClose(mode, outcome, win.id)) return;
+    if (win.isDestroyed() || shouldAbortClose(mode, outcome, windowId)) return;
     if (ignoreCache) win.webContents.reloadIgnoringCache();
     else win.webContents.reload();
   } finally {
-    reloadingWindowIds.delete(win.id);
+    reloadingWindowIds.delete(windowId);
   }
 }
 
