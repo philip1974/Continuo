@@ -60,6 +60,19 @@ export function isBareWindowsDrive(value: string): boolean {
   );
 }
 
+/**
+ * 去尾部分隔符但保留根:`/a/b/` → `/a/b`;`/` → `/`;`C:\\` → `C:\\`;`C:\\x\\` → `C:\\x`。工作区根的规范形 ——
+ * 子项路径(main `path.join`)不带尾分隔符,根若带(shell Tab 补全出的 `~/proj/`)则 `dirname(child) === root` 等字符串比较
+ * 全部失配(拖到空白处误判可移动 → 文件被改名成 `x copy`;外部变更同步对不上根;最近列表重复)。
+ */
+export function trimTrailingSeparatorsKeepRoot(value: string): string {
+  const trimmed = trimTrailingSeparators(value);
+  if (trimmed === value) return value;
+  if (trimmed === '') return value.slice(0, 1);
+  if (isBareWindowsDrive(trimmed)) return value.slice(0, 3);
+  return trimmed;
+}
+
 export function trimTrailingSeparators(value: string): string {
   let end = value.length;
   while (end > 0 && isPathSeparatorCode(value.charCodeAt(end - 1))) {

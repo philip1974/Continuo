@@ -186,3 +186,27 @@ describe('window-workspace-roots-map: workspace root normalization', () => {
     expect(ExplorerWritableSnapshotSchema.safeParse(snap).success).toBe(true);
   });
 });
+
+// 工作区根的规范形:去尾分隔符但保留根(子项路径来自 main path.join,不带尾分隔符)。shell Tab 补全出的 `~/proj/` 此前原样
+// 成为根 → dirname(child) === root 等比较全部失配(拖到空白处把根下文件改名成 `x copy`、外部变更同步对不上、最近列表重复)。
+describe('normalizeWorkspaceRoot · 尾分隔符', () => {
+  it.each([
+    ['/home/u/proj/', '/home/u/proj'],
+    ['/home/u/proj//', '/home/u/proj'],
+    ['/home/u/proj', '/home/u/proj'],
+    ['/', '/'],
+    ['C:\\proj\\', 'C:\\proj'],
+    ['C:\\', 'C:\\'],
+    ['C:/', 'C:/'],
+  ])('%s → %s', (raw, expected) => {
+    expect(normalizeWorkspaceRoot(raw)).toBe(expected);
+  });
+
+  it('setRoot 带尾斜杠 → store 中为规范形,最近列表不出现两项', () => {
+    useWorkspaceStore.getState().setRoot('/home/u/proj');
+    useWorkspaceStore.getState().setRoot('/home/u/proj/');
+    expect(useWorkspaceStore.getState().root).toBe('/home/u/proj');
+    expect(useWorkspaceStore.getState().recentRoots.filter((r) => r === '/home/u/proj')).toHaveLength(1);
+  });
+});
+

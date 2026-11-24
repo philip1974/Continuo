@@ -15,6 +15,7 @@ import { basename } from './path-utils';
 import { basenameForChrome } from '@/lib/path-label';
 import { useT } from '@/i18n';
 import { ExplorerVisibleContext } from './visibility';
+import { pathEquals } from '@/lib/path-cross';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
 //(展开 / 折叠 / 切换 / 关闭)。
@@ -172,7 +173,7 @@ export function ExplorerHeader({
               const recentItems = new Array<ReactElement>(recentRoots.length);
               let recentItemCount = 0;
               for (const p of recentRoots) {
-                if (p === root) continue;
+                if (root !== null && pathEquals(p, root)) continue;
                 const name = basenameForChrome(p);
                 recentItems[recentItemCount++] = (
                   <MenuItem

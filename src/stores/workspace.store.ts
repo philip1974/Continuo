@@ -5,6 +5,7 @@ import {
   PATH_STR_MAX,
   WORKSPACE_RECENT_LIMIT as RECENT_LIMIT,
 } from '../../electron/shared/explorer-persistence-schema';
+import { pathEquals, trimTrailingSeparatorsKeepRoot } from '../lib/path-cross';
 
 export function buildRecentRoots(
   recentRoots: readonly string[],
@@ -19,7 +20,7 @@ export function buildRecentRoots(
         break;
       }
       for (let j = 0; j < i; j++) {
-        if (recentRoots[j] === p) {
+        if (pathEquals(recentRoots[j]!, p)) {
           canReuse = false;
           break;
         }
@@ -35,7 +36,8 @@ export function buildRecentRoots(
   for (const raw of recentRoots) {
     if (count >= RECENT_LIMIT) break;
     const p = normalizeWorkspaceRoot(raw);
-    if (p !== null && p !== normalized) next[count++] = p;
+    // 平台感知去重(Windows 大小写不敏感:`C:\\Proj` 与 `c:\\proj` 是同一目录),与 main promoteRecentRoot 同口径。
+    if (p !== null && !pathEquals(p, normalized) && !next.slice(0, count).some((q) => pathEquals(q, p))) next[count++] = p;
   }
   next.length = count;
   return next;
@@ -81,7 +83,8 @@ type WorkspaceState = {
 export function normalizeWorkspaceRoot(path: unknown): string | null {
   if (typeof path !== 'string') return null;
   if (path.length > PATH_STR_MAX) return null;
-  return isBlankString(path) ? null : path;
+  // 去尾分隔符(保留根):各入口(命令行 / 拖入 / 对话框 / 恢复)给出的根同一规范形,见 trimTrailingSeparatorsKeepRoot。
+  return isBlankString(path) ? null : trimTrailingSeparatorsKeepRoot(path);
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({

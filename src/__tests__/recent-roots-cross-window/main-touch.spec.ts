@@ -122,6 +122,11 @@ afterEach(async () => {
 });
 
 describe('promoteRecentRoot', () => {
+  it('win32:大小写不同的同一目录去重(与 renderer pathEquals 同口径);其它平台按字节区分', () => {
+    expect(promoteRecentRoot(['C:\\Code\\Proj', 'D:\\x'], 'c:\\code\\proj', 'win32')).toEqual(['c:\\code\\proj', 'D:\\x']);
+    expect(promoteRecentRoot(['/a/B'], '/a/b', 'darwin')).toEqual(['/a/b', '/a/B']);
+  });
+
   it('置顶、去重、保持其余顺序', () => {
     expect(promoteRecentRoot(['/a', '/b', '/c'], '/c')).toEqual(['/c', '/a', '/b']);
     expect(promoteRecentRoot(['/a', '/b'], '/x')).toEqual(['/x', '/a', '/b']);

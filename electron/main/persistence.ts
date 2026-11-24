@@ -318,11 +318,21 @@ export function mergeWritableIntoFull(
  * 「最近打开」LRU 置顶:`path` 放到最前,其余按原顺序去重接后,截断到 WORKSPACE_RECENT_LIMIT
  *(与 renderer workspace.store 的 buildRecentRoots 同一上限)。explorer:touch-recent 在文件锁内对盘上列表调用。
  */
-export function promoteRecentRoot(list: readonly string[], path: string): string[] {
+export function promoteRecentRoot(
+  list: readonly string[],
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  // 平台感知去重(Windows 大小写不敏感,与 renderer pathEquals 同口径):先用对话框打开 `C:\Code\Proj`、再命令行
+  // `continuo c:\code\proj` 不应出现两项。
+  const key = (s: string): string => (platform === 'win32' ? s.toLowerCase() : s);
   const next = [path];
+  const seen = new Set([key(path)]);
   for (const p of list) {
     if (next.length >= WORKSPACE_RECENT_LIMIT) break;
-    if (p !== path && !next.includes(p)) next.push(p);
+    if (seen.has(key(p))) continue;
+    seen.add(key(p));
+    next.push(p);
   }
   return next;
 }
