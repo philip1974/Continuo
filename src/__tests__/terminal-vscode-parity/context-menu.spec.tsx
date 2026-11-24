@@ -22,10 +22,7 @@ function actions(over: Partial<TerminalContextMenuActions> = {}): TerminalContex
 
 function open(a: TerminalContextMenuActions) {
   render(
-    createElement(TerminalContextMenu, {
-      actions: a,
-      children: createElement('div', { 'data-testid': 'term' }, 'xterm'),
-    }),
+    createElement(TerminalContextMenu, { actions: a }, createElement('div', { 'data-testid': 'term' }, 'xterm')),
   );
   fireEvent.contextMenu(screen.getByTestId('term'));
 }
