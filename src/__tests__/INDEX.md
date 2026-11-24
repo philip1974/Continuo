@@ -557,6 +557,10 @@
 - [`mermaid-preview.spec.ts`](./editor-mermaid-preview/mermaid-preview.spec.ts)
 - [`milkdown-code-block-config.spec.tsx`](./editor-mermaid-preview/milkdown-code-block-config.spec.tsx)
 
+## [editor-milkdown-chrome-i18n](./editor-milkdown-chrome-i18n/README.md)
+
+- [`milkdown-chrome-i18n.spec.tsx`](./editor-milkdown-chrome-i18n/milkdown-chrome-i18n.spec.tsx)
+
 ## [editor-milkdown-roundtrip-safety](./editor-milkdown-roundtrip-safety/README.md)
 
 - [`editor-panel-unsafe.spec.tsx`](./editor-milkdown-roundtrip-safety/editor-panel-unsafe.spec.tsx)

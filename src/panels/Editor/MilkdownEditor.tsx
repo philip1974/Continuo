@@ -17,7 +17,7 @@ import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   EDITOR_FONT_SIZE,
 } from '@/plugins/settings/core-setting-specs';
-import { t, useLocale } from '@/i18n';
+import { t, useLocale, type TranslationKey } from '@/i18n';
 import { useTheme } from '@/theme';
 import {
   redrawMermaidPreviews,
@@ -52,6 +52,36 @@ interface MilkdownEditorProps {
    * `base` = 最近一次上抛(或挂载时)的内容,供上层判断 store 是否已被别处改过。缺省走 onChange。
    */
   onWriteBack?: (markdown: string, base: string) => void;
+}
+
+/** 斜杠菜单(BlockEdit)分组与条目名;icon 不传,沿用 Crepe 默认。 */
+function crepeSlashMenuLabels() {
+  const item = (key: TranslationKey) => ({ label: t(key) });
+  return {
+    textGroup: {
+      label: t('panels.editor.md.slash.textGroup'),
+      text: item('panels.editor.md.slash.text'),
+      h1: item('panels.editor.md.slash.h1'),
+      h2: item('panels.editor.md.slash.h2'),
+      h3: item('panels.editor.md.slash.h3'),
+      h4: item('panels.editor.md.slash.h4'),
+      h5: item('panels.editor.md.slash.h5'),
+      h6: item('panels.editor.md.slash.h6'),
+      quote: item('panels.editor.md.slash.quote'),
+      divider: item('panels.editor.md.slash.divider'),
+    },
+    listGroup: {
+      label: t('panels.editor.md.slash.listGroup'),
+      bulletList: item('panels.editor.md.slash.bulletList'),
+      orderedList: item('panels.editor.md.slash.orderedList'),
+      taskList: item('panels.editor.md.slash.taskList'),
+    },
+    advancedGroup: {
+      label: t('panels.editor.md.slash.advancedGroup'),
+      codeBlock: item('panels.editor.md.slash.codeBlock'),
+      table: item('panels.editor.md.slash.table'),
+    },
+  };
 }
 
 // ProseMirror 文档(Node)只用作引用比较与序列化入参,不依赖其结构。
@@ -184,6 +214,19 @@ function CrepeEditor({
       featureConfigs: {
         [CrepeFeature.Placeholder]: {
           text: t('panels.editor.placeholder.start_writing'),
+        },
+        // Crepe 浮层文案默认英文,逐项接 catalog(语言切换靠 Provider 的 locale key 重挂)。
+        // 只配启用特性里会显示的项:图片 / 数学公式特性已关,其菜单项不出现。
+        [CrepeFeature.BlockEdit]: crepeSlashMenuLabels(),
+        [CrepeFeature.Toolbar]: {
+          boldLabel: t('panels.editor.md.toolbar.bold'),
+          italicLabel: t('panels.editor.md.toolbar.italic'),
+          strikethroughLabel: t('panels.editor.md.toolbar.strikethrough'),
+          codeLabel: t('panels.editor.md.toolbar.code'),
+          linkLabel: t('panels.editor.md.toolbar.link'),
+        },
+        [CrepeFeature.LinkTooltip]: {
+          inputPlaceholder: t('panels.editor.md.link.placeholder'),
         },
         [CrepeFeature.CodeMirror]: {
           // 不传则 Crepe 默认 oneDark(亮色主题下仍深色);token 主题亮 / 暗通用,切主题不重挂。
