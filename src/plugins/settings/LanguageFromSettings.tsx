@@ -1,5 +1,4 @@
 // topic 16 i18n: Settings values store ↔ main settings store 桥。
-// 沿用 src/theme/binding.ts useThemeBinding 的模式。
 
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';

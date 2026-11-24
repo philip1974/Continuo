@@ -1215,8 +1215,10 @@ export function registerPluginFsHandlers(
               pluginId,
               pathScopeRegistry.getScopes(pluginId),
             );
-          } catch {
-            // ignore persist failure: 本会话已 grant,仅下次重启会回退到弹窗。
+          } catch (err) {
+            // 本会话已 grant,仅下次重启会回退到弹窗。scopes 文件损坏(PathScopesCorruptError)时会持续失败,
+            // 留日志便于定位「每次重启都要重新授权」。
+            console.warn('[plugin-fs] persist path scopes failed', pluginId, err);
           }
         }
       }

@@ -79,7 +79,7 @@ Plugins talk to the app only through **CoApp**, a scoped facade over the rendere
 
 ## Deep design references
 
-The code and the sub-area READMEs are the source of truth. Continuo was previously called **LayoutMotion** ("LM"); that name survives in a few identifiers (e.g. the `minLMVersion` manifest field, the `layoutmotion.theme.mode` storage key) and in older issues. Some code comments and READMEs mention `doc/…`, `.claude/dev-loop/…`, or "ContinuoWiki" — those are the maintainer's local notes and are not published; you don't need them to build or contribute.
+The code and the sub-area READMEs are the source of truth. Continuo was previously called **LayoutMotion** ("LM"); that name survives in a few identifiers (e.g. the `minLMVersion` manifest field; the old `layoutmotion.theme.mode` storage key is only read once to migrate the theme setting) and in older issues. Some code comments and READMEs mention `doc/…`, `.claude/dev-loop/…`, or "ContinuoWiki" — those are the maintainer's local notes and are not published; you don't need them to build or contribute.
 
 ## Questions / Issues
 

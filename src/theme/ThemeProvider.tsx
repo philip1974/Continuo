@@ -120,7 +120,8 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     applyThemeClass(resolved);
   }, [resolved]);
 
-  // 写设置值(values-store 自带存储异常兜底:写失败只丢持久化,内存态与 DOM class 照常更新)。
+  // 写设置值。values-store 兜底:quota / security 异常只丢持久化,内存态与 DOM class 照常更新;整份设置记录
+  // 序列化超读端上限(too-large)时拒写且不提交内存态 —— 此时主题不切换(与其它设置项一致,防内存与磁盘发散)。
   const setMode = useCallback(
     (next: ThemeMode) => {
       if (next !== mode) setValue(THEME_SETTING_ID, next);
