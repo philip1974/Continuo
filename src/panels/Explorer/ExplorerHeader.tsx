@@ -14,7 +14,8 @@ import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard'
 import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
 import { useMenuAnchor } from '@/lib/use-menu-anchor';
 import { MoreActionsIcon } from '@/lib/ui-icons';
-import { basename, recentRootLabelParts } from './path-utils';
+import { basename } from './path-utils';
+import { basenameForChrome } from '@/lib/path-label';
 import { useT } from '@/i18n';
 import { ExplorerVisibleContext } from './visibility';
 
@@ -209,7 +210,7 @@ export function ExplorerHeader({
               let recentItemCount = 0;
               for (const p of recentRoots) {
                 if (p === root) continue;
-                const { name } = recentRootLabelParts(p);
+                const name = basenameForChrome(p);
                 recentItems[recentItemCount++] = (
                   <MenuItem
                     key={p}

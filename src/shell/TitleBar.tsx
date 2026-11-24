@@ -8,7 +8,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useT } from '@/i18n';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
-import { basenameForChrome } from './path-label';
+import { basenameForChrome } from '@/lib/path-label';
 
 export function TitleBar() {
   const t = useT();

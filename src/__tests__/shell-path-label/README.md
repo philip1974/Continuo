@@ -2,7 +2,9 @@
 
 可维护性 M11:`TitleBar.tsx` 与 `StatusBar.tsx` 各自复制同一段
 `basename(p) = p.match(/[^/\\]+$/) ? m[0] : p`,用于 workspace / active file 在标题栏 /
-状态栏的展示名。收敛到 `src/shell/path-label.ts` 的 `basenameForChrome`,两文件 import 使用。
+状态栏的展示名。收敛到 `src/lib/path-label.ts` 的 `basenameForChrome`,两文件 import 使用。
+Explorer 最近打开列表的 `recentRootLabelParts` / ExplorerHeader 最近打开菜单的名称也基于它(此前各自手写同一段
+分隔符扫描)。
 
 ## 行为契约 — `basenameForChrome(p)`
 

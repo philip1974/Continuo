@@ -11,6 +11,7 @@ import {
   someContainmentCandidate,
   trimTrailingSeparators,
 } from '@/lib/path-cross';
+import { basenameForChrome } from '@/lib/path-label';
 
 /**
  * 跨平台 dirname:吃 `/` 与 `\`。先去尾部分隔符,取最后一个分隔符位置;
@@ -95,21 +96,10 @@ export function basenamePreserveTrailing(p: string): string {
 }
 
 /**
- * Recent root 的显示 helper:逐字保留旧 `p.match(/[^/\\]+$/)` 语义,但不走正则匹配分配。
- * 尾部是分隔符时旧逻辑匹配不到 → name=原路径,parent=''。
+ * Recent root 的显示 helper:name 即 basenameForChrome(旧 `p.match(/[^/\\]+$/)` 语义),parent 是最后一个
+ * 分隔符之前的部分。尾部是分隔符 / 无分隔符时 name=原路径,parent=''。
  */
 export function recentRootLabelParts(p: string): { name: string; parent: string } {
-  let end = p.length - 1;
-  if (end < 0 || p.charCodeAt(end) === 47 || p.charCodeAt(end) === 92) {
-    return { name: p, parent: '' };
-  }
-
-  while (end >= 0) {
-    const code = p.charCodeAt(end);
-    if (code === 47 || code === 92) break;
-    end -= 1;
-  }
-
-  // 循环停在最后一个分隔符(end)或走到 -1(无分隔符):parent 取分隔符之前的部分。
-  return { name: p.slice(end + 1), parent: p.slice(0, Math.max(end, 0)) };
+  const name = basenameForChrome(p);
+  return { name, parent: name === p ? '' : p.slice(0, p.length - name.length - 1) };
 }

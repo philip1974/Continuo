@@ -23,7 +23,7 @@ import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate } from '@/i18n';
-import { basenameForChrome } from './path-label';
+import { basenameForChrome } from '@/lib/path-label';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 import { createLatestGuard } from '@/lib/latest-wins';

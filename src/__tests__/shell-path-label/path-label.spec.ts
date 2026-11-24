@@ -1,8 +1,8 @@
 // 可维护性 M11:TitleBar 与 StatusBar 各自复制同一套 chrome 路径展示名
-// (`p.match(/[^/\\]+$/)`),收敛到 src/shell/path-label.ts 的 basenameForChrome。本规范锁定
+// (`p.match(/[^/\\]+$/)`),收敛到 src/lib/path-label.ts 的 basenameForChrome。本规范锁定
 // 其语义(与 Explorer path-utils.basename 不同:这里用正则、不 trim 尾斜杠)。
 import { describe, it, expect, vi } from 'vitest';
-import { basenameForChrome } from '@/shell/path-label';
+import { basenameForChrome } from '@/lib/path-label';
 
 describe('shell path-label · basenameForChrome', () => {
   it('取最后一段(/ 与 \\ 都吃)', () => {
