@@ -127,6 +127,27 @@ describe('AgentAuthPrompt — 渲染条件', () => {
     expect(modal!.textContent).not.toContain(method);
   });
 
+  // 经授权门控的 terminal 工具(main mcp-terminal-host)都须有专属标签:此前标签表手抄工具名,漏了
+  // terminal.await_stop_hook → 弹窗回退成「调用 terminal.await_stop_hook」原始串。
+  it.each([
+    'terminal.list_sessions',
+    'terminal.create_session',
+    'terminal.send_input',
+    'terminal.send_text',
+    'terminal.press_key',
+    'terminal.read_output',
+    'terminal.kill',
+    'terminal.await_stop_hook',
+  ])('门控 terminal 工具 %s → 专属标签,不显示原始 method', (method) => {
+    installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
+    render(<AgentAuthPrompt />);
+    act(() => {
+      void useAgentAuthStore.getState().ensure({ requestId: crypto.randomUUID(), method });
+    });
+    const modal = document.querySelector('.wm-modal-content')!;
+    expect(modal.textContent).not.toContain(method);
+  });
+
   it('debug 请求的弹窗标题与说明讲的是调试,不是终端', () => {
     installApi({ onRequest: vi.fn(() => () => {}), respond: vi.fn() });
     render(<AgentAuthPrompt />);

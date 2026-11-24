@@ -27,20 +27,36 @@ import {
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
 import { UntrustedText } from '@/lib/untrusted-text';
+import {
+  MCP_TOOL_AWAIT_STOP_HOOK,
+  MCP_TOOL_CREATE_SESSION,
+  MCP_TOOL_KILL,
+  MCP_TOOL_LIST_SESSIONS,
+  MCP_TOOL_PRESS_KEY,
+  MCP_TOOL_READ_OUTPUT,
+  MCP_TOOL_SEND_INPUT,
+  MCP_TOOL_SEND_TEXT,
+} from '../../electron/shared/mcp-terminal-schemas';
+import {
+  DEBUG_AUTH_METHOD_CONTROL,
+  DEBUG_AUTH_METHOD_LAUNCH,
+} from '../../electron/shared/mcp-debug-schemas';
 
 // method → i18n key 表（P2-1）；未知 method 走 generic('{method}') fallback
+// 键取自工具名 / 授权 method 的共享常量(main 门控按同一常量发 method),不手抄字符串。
 const METHOD_LABEL_KEYS: Record<string, TranslationKey> = {
-  'terminal.create_session': 'permissions.agent.terminal_create_session',
+  [MCP_TOOL_CREATE_SESSION]: 'permissions.agent.terminal_create_session',
   // 安全 S2:读/写/杀类工具也走授权门控,各自给清晰标签,帮用户识别异常访问。
-  'terminal.list_sessions': 'permissions.agent.terminal_list_sessions',
-  'terminal.read_output': 'permissions.agent.terminal_read_output',
-  'terminal.send_input': 'permissions.agent.terminal_send_input',
-  'terminal.send_text': 'permissions.agent.terminal_send_text',
-  'terminal.press_key': 'permissions.agent.terminal_press_key',
-  'terminal.kill': 'permissions.agent.terminal_kill',
-  // debug 工具(main:mcp-debug-host)—— launch 单列,其余统一 debug.*
-  'debug.launch': 'permissions.agent.debug_launch',
-  'debug.*': 'permissions.agent.debug_control',
+  [MCP_TOOL_LIST_SESSIONS]: 'permissions.agent.terminal_list_sessions',
+  [MCP_TOOL_READ_OUTPUT]: 'permissions.agent.terminal_read_output',
+  [MCP_TOOL_SEND_INPUT]: 'permissions.agent.terminal_send_input',
+  [MCP_TOOL_SEND_TEXT]: 'permissions.agent.terminal_send_text',
+  [MCP_TOOL_PRESS_KEY]: 'permissions.agent.terminal_press_key',
+  [MCP_TOOL_KILL]: 'permissions.agent.terminal_kill',
+  [MCP_TOOL_AWAIT_STOP_HOOK]: 'permissions.agent.terminal_await_stop_hook',
+  // debug 工具(main:mcp-debug-host)—— launch 单列,其余统一一个 method
+  [DEBUG_AUTH_METHOD_LAUNCH]: 'permissions.agent.debug_launch',
+  [DEBUG_AUTH_METHOD_CONTROL]: 'permissions.agent.debug_control',
 };
 
 /** 文案模板里对方可控字段的占位(先按它拆开模板,再把字段作为独立的 <code> 元素放进去)。 */

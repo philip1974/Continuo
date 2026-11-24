@@ -304,6 +304,7 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.terminal_send_text': '터미널에 텍스트 입력',
   'permissions.agent.terminal_press_key': '터미널에서 키 누르기',
   'permissions.agent.terminal_kill': '터미널 종료',
+  'permissions.agent.terminal_await_stop_hook': '터미널의 에이전트가 이번 응답을 마칠 때까지 대기(stop hook)',
   'permissions.agent.debug_launch': '디버그 세션 시작',
   'permissions.agent.debug_control': '디버그 세션 제어(중단점, 단계 실행, 변수)',
   'permissions.agent.generic': '{method} 호출',

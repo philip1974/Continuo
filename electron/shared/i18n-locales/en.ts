@@ -318,6 +318,7 @@ export const en = {
   'permissions.agent.terminal_send_text': 'type text into a terminal',
   'permissions.agent.terminal_press_key': 'press a key in a terminal',
   'permissions.agent.terminal_kill': 'terminate a terminal',
+  'permissions.agent.terminal_await_stop_hook': 'wait for the agent in a terminal to finish its turn (stop hook)',
   'permissions.agent.debug_launch': 'start a debug session',
   'permissions.agent.debug_control': 'control a debug session (breakpoints, stepping, variables)',
   'permissions.agent.generic': 'call {method}',

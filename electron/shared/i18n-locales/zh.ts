@@ -301,6 +301,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.agent.terminal_send_text': '向某个终端输入文本',
   'permissions.agent.terminal_press_key': '在某个终端按键',
   'permissions.agent.terminal_kill': '终止某个终端',
+  'permissions.agent.terminal_await_stop_hook': '等待某个终端里的 agent 完成本轮回复(stop hook)',
   'permissions.agent.debug_launch': '启动调试会话',
   'permissions.agent.debug_control': '控制调试会话(断点、单步、查看变量)',
   'permissions.agent.generic': '调用 {method}',

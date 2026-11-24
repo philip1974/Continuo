@@ -1,4 +1,6 @@
 import {
+  DEBUG_AUTH_METHOD_CONTROL,
+  DEBUG_AUTH_METHOD_LAUNCH,
   MCP_TOOL_DEBUG_LAUNCH,
   MCP_TOOL_DEBUG_LIST_SESSIONS,
 } from '../../shared/mcp-debug-schemas';
@@ -35,7 +37,7 @@ function debugSessionNotFound(): Error {
  */
 const DEBUG_AUTH_GATE = {
   methodFor: (tool: AnyMcpTool): string =>
-    tool.name === MCP_TOOL_DEBUG_LAUNCH ? 'debug.launch' : 'debug.*',
+    tool.name === MCP_TOOL_DEBUG_LAUNCH ? DEBUG_AUTH_METHOD_LAUNCH : DEBUG_AUTH_METHOD_CONTROL,
   deniedMessage: 'agent debug not authorized by user',
 } as const;
 

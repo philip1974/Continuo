@@ -15,6 +15,12 @@ export const DEBUG_VARIABLE_COUNT_DEFAULT = 100;
 export const DEBUG_VARIABLE_DEPTH_DEFAULT = 1;
 
 export const MCP_TOOL_DEBUG_LAUNCH = 'debug.launch';
+/**
+ * debug 工具的授权 method 名(main mcp-debug-host 门控发出、renderer 授权弹窗按它取文案):launch 单列,
+ * 其余 debug 工具统一为一个 method。
+ */
+export const DEBUG_AUTH_METHOD_LAUNCH = MCP_TOOL_DEBUG_LAUNCH;
+export const DEBUG_AUTH_METHOD_CONTROL = 'debug.*';
 export const MCP_TOOL_DEBUG_SET_BREAKPOINT = 'debug.set_breakpoint';
 export const MCP_TOOL_DEBUG_WAIT_FOR_STOP = 'debug.wait_for_stop';
 export const MCP_TOOL_DEBUG_CONTINUE = 'debug.continue';
