@@ -9,6 +9,24 @@ import { useUpdateStore } from '../../marketplace/update-store';
 import { coApp } from '../../plugins/co-app';
 import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 
+// 角标 = 已安装列表 × 远端版本现算:用可订阅的假 manager 提供已安装列表。
+const { getMgr } = vi.hoisted(() => ({ getMgr: vi.fn() }));
+vi.mock('../../plugins/PluginManager', async () => {
+  const { asSubscribableManager } = await import('../plugins-tab-content/fake-user-plugin-manager');
+  return {
+    getUserPluginManager: () => asSubscribableManager(getMgr()),
+    setUserPluginManager: vi.fn(),
+  };
+});
+
+/** n 个已安装 @1.0.0 且远端 2.0.0 的插件 → n 个可用更新。 */
+function setUpdatable(n: number): void {
+  const ids = Array.from({ length: n }, (_, i) => `p${i}`);
+  const list = ids.map((id) => ({ id, manifest: { id, name: id, version: '1.0.0' }, status: 'enabled' }));
+  getMgr.mockReturnValue({ listAll: () => list });
+  useUpdateStore.setState({ remoteVersions: new Map(ids.map((id) => [id, '2.0.0'])) });
+}
+
 vi.mock('../../shell/dock/dock-api-ref', () => ({
   openOrFocusPanel: vi.fn(),
   setDockApi: vi.fn(),
@@ -27,9 +45,8 @@ const toggleSettingsMock = toggleSettingsPanel as unknown as ReturnType<
 
 beforeEach(() => {
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
-  useUpdateStore.setState({
-    available: [],
-  });
+  getMgr.mockReturnValue(null);
+  useUpdateStore.setState({ remoteVersions: new Map(), dismissed: new Map() });
   (coApp as { ribbon: RibbonRegistry }).ribbon = new RibbonRegistry();
   toggleSettingsMock.mockClear();
 });
@@ -225,13 +242,7 @@ describe('IconSidebar — updateCount 角标', () => {
   });
 
   it('=3 → 角标显「3」', () => {
-    useUpdateStore.setState({
-      available: [
-        { id: 'a' } as never,
-        { id: 'b' } as never,
-        { id: 'c' } as never,
-      ],
-    });
+    setUpdatable(3);
     const { container } = render(<IconSidebar />);
     const badge = container.querySelector(
       '[aria-label="3 个插件可更新"]',
@@ -249,9 +260,7 @@ describe('IconSidebar — updateCount 角标', () => {
   });
 
   it('≥10 → 角标显「9+」', () => {
-    useUpdateStore.setState({
-      available: Array.from({ length: 12 }, (_, i) => ({ id: `${i}` })) as never,
-    });
+    setUpdatable(12);
     const { container } = render(<IconSidebar />);
     const badge = container.querySelector(
       '[aria-label="12 个插件可更新"]',

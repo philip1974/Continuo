@@ -14,6 +14,7 @@ vi.mock('../../plugins/PluginManager', () => ({
 }));
 
 import {
+  computeAvailableUpdates,
   useUpdateStore,
   MAX_MANIFEST_FETCH_CONCURRENCY,
 } from '../../marketplace/update-store';
@@ -46,21 +47,28 @@ function manifest(id: string, version: string): RemoteManifestSnapshot {
   return { id, name: id, version };
 }
 
+// 与真 PluginManager 一致:两次变化之间 listAll 返回同一引用(manifest 引用也稳定)。
 function fakeMgr(installed: { id: string; version: string }[]) {
-  return {
-    listAll: () =>
-      installed.map((i) => ({
-        id: i.id,
-        manifest: { id: i.id, name: i.id, version: i.version },
-        status: 'enabled',
-      })),
-  };
+  const list = installed.map((i) => ({
+    id: i.id,
+    manifest: { id: i.id, name: i.id, version: i.version },
+    status: 'enabled',
+  }));
+  return { listAll: () => list };
+}
+
+/** 当前派生出的可用更新(= 角标 / 卡片读到的值):用此刻 mgr 的已安装列表现算。 */
+function available() {
+  const s = useUpdateStore.getState();
+  const mgr = getMgr() as ReturnType<typeof fakeMgr> | null | undefined;
+  return computeAvailableUpdates((mgr?.listAll() ?? []) as never, s.remoteVersions, s.dismissed);
 }
 
 describe('useUpdateStore.refresh', () => {
   beforeEach(() => {
     useUpdateStore.setState({
-      available: [],
+      remoteVersions: new Map(),
+      dismissed: new Map(),
     });
     fetchIndex.mockReset();
     fetchManifest.mockReset();
@@ -81,8 +89,7 @@ describe('useUpdateStore.refresh', () => {
     getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
 
     await useUpdateStore.getState().refresh();
-    const s = useUpdateStore.getState();
-    expect(s.available).toHaveLength(0); // 畸形远端版本不误判有更新
+    expect(available()).toHaveLength(0); // 畸形远端版本不误判有更新
   });
 
   // 远端 manifest.id ≠ index entry.id:entry 指向另一身份的仓库,其版本不能算作 entry.id(或
@@ -102,8 +109,7 @@ describe('useUpdateStore.refresh', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     await useUpdateStore.getState().refresh();
-    const s = useUpdateStore.getState();
-    expect(s.available).toHaveLength(0);
+    expect(available()).toHaveLength(0);
   });
 
   it('正路径:remote > local → available 收录;remote = local → 不收', async () => {
@@ -120,11 +126,7 @@ describe('useUpdateStore.refresh', () => {
     );
 
     await useUpdateStore.getState().refresh();
-    const s = useUpdateStore.getState();
-
-    expect(s.available).toHaveLength(1);
-    expect(s.available[0]?.id).toBe('a');
-    expect(s.available[0]?.to).toBe('0.2.0');
+    expect(available()).toEqual([{ id: 'a', to: '0.2.0' }]);
   });
 
   it('并发 refresh:慢的旧 refresh 后 resolve 不覆盖新 refresh 结果(topic49 第八轮 P2-X)', async () => {
@@ -146,26 +148,26 @@ describe('useUpdateStore.refresh', () => {
     const p1 = useUpdateStore.getState().refresh(); // 慢,挂起
     const p2 = useUpdateStore.getState().refresh(); // 快,先完成
     await p2;
-    expect(useUpdateStore.getState().available).toHaveLength(0); // refresh2:无更新
+    expect(available()).toHaveLength(0); // refresh2:无更新
 
     resolveSlowIndex([entry('a')]); // 现在放行慢的 refresh1
     await p1;
     // 关键:过期的 refresh1 即使算出 [a@0.2.0] 也被 gen 守卫丢弃,不覆盖最新结果
-    expect(useUpdateStore.getState().available).toHaveLength(0);
+    expect(available()).toHaveLength(0);
   });
 
-  // race(R7):refresh 网络期间用户卸载插件 → 提交前 live 重读 installed,不把已卸载插件
-  // 重新加入 available(否则在 dismiss 之后落库 = 角标/更新列表复活)。
-  it('R7 网络期间卸载插件 → 提交时用 live installed,不复活已卸载插件', async () => {
+  // race(R7,派生后天然成立):可用更新由「当前」已安装列表现算 —— refresh 网络期间 / 之后插件被卸载
+  // (本窗口或别的窗口),不会再计入,refresh 无需在提交前重读 live installed。
+  it('R7 refresh 之后插件被卸载 → 可用更新随当前列表不再计入', async () => {
     fetchIndex.mockResolvedValue([entry('a')]);
-    fetchManifest.mockResolvedValue(manifest('a', '0.2.0')); // remote > local,旧快照会算出有更新
-    // 第一次 listAll(请求前快照)含 a;第二次(提交前 live)a 已被卸载。
-    getMgr
-      .mockReturnValueOnce(fakeMgr([{ id: 'a', version: '0.1.0' }]))
-      .mockReturnValueOnce(fakeMgr([]));
+    fetchManifest.mockResolvedValue(manifest('a', '0.2.0'));
+    getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
 
     await useUpdateStore.getState().refresh();
-    expect(useUpdateStore.getState().available).toEqual([]);
+    expect(available().map((u) => u.id)).toEqual(['a']);
+
+    getMgr.mockReturnValue(fakeMgr([])); // a 被卸载
+    expect(available()).toEqual([]);
   });
 
   it('某 manifest 失败 → 跳过它,其它正常处理', async () => {
@@ -182,9 +184,7 @@ describe('useUpdateStore.refresh', () => {
     );
 
     await useUpdateStore.getState().refresh();
-    const s = useUpdateStore.getState();
-
-    expect(s.available.map((u) => u.id)).toEqual(['b']);
+    expect(available().map((u) => u.id)).toEqual(['b']);
   });
 
   it('本地未装 → 不入 available', async () => {
@@ -193,7 +193,7 @@ describe('useUpdateStore.refresh', () => {
     getMgr.mockReturnValue(fakeMgr([])); // 没装
 
     await useUpdateStore.getState().refresh();
-    expect(useUpdateStore.getState().available).toEqual([]);
+    expect(available()).toEqual([]);
   });
 
   it('PluginManager 未初始化(null) → installed 视为空,不抛', async () => {
@@ -202,7 +202,7 @@ describe('useUpdateStore.refresh', () => {
     getMgr.mockReturnValue(null);
 
     await useUpdateStore.getState().refresh();
-    expect(useUpdateStore.getState().available).toEqual([]);
+    expect(available()).toEqual([]);
   });
 
   it('index fetch 失败 → console.warn,不抛,available 不变', async () => {
@@ -212,9 +212,7 @@ describe('useUpdateStore.refresh', () => {
     getMgr.mockReturnValue(fakeMgr([{ id: 'a', version: '0.1.0' }]));
 
     await useUpdateStore.getState().refresh();
-    const s = useUpdateStore.getState();
-
-    expect(s.available).toEqual([]);
+    expect(available()).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('refresh failed'),
       expect.any(Error),
@@ -229,7 +227,7 @@ describe('useUpdateStore.refresh', () => {
     await useUpdateStore.getState().refresh();
     expect(fetchIndex).not.toHaveBeenCalled();
     expect(fetchManifest).not.toHaveBeenCalled();
-    expect(useUpdateStore.getState().available).toEqual([]);
+    expect(available()).toEqual([]);
   });
 
   it('PluginManager 缺失时复用稳定空 installed 快照', () => {
@@ -240,7 +238,6 @@ describe('useUpdateStore.refresh', () => {
 
     expect(src).toContain('EMPTY_INSTALLED_PLUGINS');
     expect(src).not.toContain('mgr ? mgr.listAll() : []');
-    expect(src).not.toContain('liveMgr ? liveMgr.listAll() : []');
   });
 
   it('R54:只拉已安装插件命中的 entries 的 manifest(M≤N)', async () => {
@@ -263,7 +260,7 @@ describe('useUpdateStore.refresh', () => {
     await useUpdateStore.getState().refresh();
 
     expect(fetchManifest).not.toHaveBeenCalled();
-    expect(useUpdateStore.getState().available).toEqual([]);
+    expect(available()).toEqual([]);
 
     const src = readFileSync(
       join(process.cwd(), 'src/marketplace/update-store.ts'),
@@ -302,7 +299,7 @@ describe('useUpdateStore.refresh', () => {
     expect(useUpdateStore.getState().refresh.toString()).not.toContain(
       'available.push(',
     );
-    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual(['a']);
+    expect(available().map((u) => u.id)).toEqual(['a']);
   });
 
   it('扫描 marketplace entries 时不再 filter 二次遍历 index 快照', async () => {
@@ -327,20 +324,14 @@ describe('useUpdateStore.refresh', () => {
     expect(useUpdateStore.getState().refresh.toString()).not.toContain(
       'const available = new Array<AvailableUpdate>(liveInstalled.length)',
     );
-    expect(useUpdateStore.getState().refresh.toString()).toContain(
-      'let available',
-    );
-    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual(['b']);
+    expect(available().map((u) => u.id)).toEqual(['b']);
   });
 
-  // race(R78):dismiss(id) 只乐观删 available,不让在途 refresh 失效。旧 refresh 在 dismiss 之后、
-  // mgr.reload() 落地之前提交时,用仍是旧版本的 mgr 快照重算出同一 update 覆盖回 available(角标复活)。
-  // 修复:dismiss 记目标版本,refresh 提交前过滤同版本。
+  // race(R78):更新成功的乐观 dismiss 之后、mgr.reload() 落地之前,在途 refresh 提交(mgr 仍报旧版本)
+  // 不得复活该 update。派生后 refresh 只写远端版本表,dismissed 在派生时过滤「同一实例 + 同目标版本」。
   it('R78 dismiss 后在途 refresh 用旧快照不复活该 update', async () => {
     useUpdateStore.setState({
-      available: [
-        { id: 'a', to: '2.0.0' },
-      ],
+      remoteVersions: new Map([['a', '2.0.0']]),
       dismissed: new Map(),
     });
     // reload 尚未落地:mgr 仍报 a@1.0.0(< 远程 2.0.0)。
@@ -359,14 +350,14 @@ describe('useUpdateStore.refresh', () => {
       if (fetchManifest.mock.calls.length === 0) throw new Error('manifest 未请求');
     });
 
-    // 更新成功的乐观 dismiss(此时 available 仍含 a,记录目标版本 2.0.0)。
+    // 更新成功的乐观 dismiss(此时 a 仍有可用更新,记录当前实例 + 目标版本 2.0.0)。
     useUpdateStore.getState().dismiss('a');
-    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual([]);
+    expect(available().map((u) => u.id)).toEqual([]);
 
-    // 在途 refresh 提交:mgr 仍 a@1.0.0 < 2.0.0,但 dismissed{a:2.0.0} 过滤掉 → 不复活。
+    // 在途 refresh 提交:mgr 仍 a@1.0.0 < 2.0.0,但 dismissed{a:同实例@2.0.0} 过滤掉 → 不复活。
     resolveM(manifest('a', '2.0.0'));
     await p;
-    expect(useUpdateStore.getState().available.map((u) => u.id)).toEqual([]);
+    expect(available().map((u) => u.id)).toEqual([]);
   });
 
   // 边界(E234,E216 并发 fan-out 同族):manifest 拉取用有界并发池,最大同时在途 fetch 数

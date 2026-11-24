@@ -23,9 +23,7 @@ const ACCOUNT_TITLE = 'Continuo Dev · PRO Plan';
 
 beforeEach(() => {
   useLayoutUiStore.setState({ sidebarOpen: true, sidebarWidth: 280 });
-  useUpdateStore.setState({
-    available: [],
-  });
+  useUpdateStore.setState({ remoteVersions: new Map(), dismissed: new Map() });
   (coApp as { ribbon: RibbonRegistry }).ribbon = new RibbonRegistry();
 });
 afterEach(() => cleanup());

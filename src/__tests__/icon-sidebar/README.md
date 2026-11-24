@@ -2,7 +2,7 @@
 
 行为契约:**顶部 Explorer toggle(active=sidebarOpen,点击 → toggleSidebar)+ ribbon
 插件贡献按钮(有时显示分隔线);底部 Settings 齿轮(点击 → toggleSettingsPanel)+ AccountChip。
-Marketplace updateStore.available > 0 时,Settings 角标红圈显数(>9 显「9+」)。**
+Marketplace 可用更新数(`useAvailableUpdates()`:已安装列表 × 远端版本现算)> 0 时,Settings 角标红圈显数(>9 显「9+」)。**
 
 ## 模块
 
@@ -10,7 +10,7 @@ Marketplace updateStore.available > 0 时,Settings 角标红圈显数(>9 显「9
 |---|---|
 | `src/shell/IconSidebar.tsx` | UI |
 | `src/stores/layout-ui.store.ts` | sidebarOpen / toggleSidebar |
-| `src/marketplace/update-store.ts` | available 数 |
+| `src/marketplace/update-store.ts` | useAvailableUpdates(可用更新数) |
 | `src/plugins/registries/RibbonRegistry.ts` | ribbon 贡献 |
 
 ## 关键行为

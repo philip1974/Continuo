@@ -27,6 +27,7 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
+import { notifyUserPluginListChanged } from '../plugins-tab-content/fake-user-plugin-manager';
 import {
   buildUpdateVersionMap,
   formatDateAt,
@@ -75,9 +76,7 @@ beforeEach(() => {
   fetchManifestMock.mockReset();
   fetchManifestMock.mockResolvedValue({ id: '_', name: '_', version: '0.0.0' });
   getMgr.mockReset();
-  useUpdateStore.setState({
-    available: [],
-  });
+  useUpdateStore.setState({ remoteVersions: new Map(), dismissed: new Map() });
   useReviewsStore.setState({
     byPid: new Map(),
     loading: false,
@@ -346,28 +345,11 @@ describe('MarketplaceTab — 列表 + 计数', () => {
     }
   });
 
-  it('构建更新版本索引时不对 available updates 先 map 成中间数组', async () => {
-    const updatesSnapshot = [
-      {
-        id: 'a',
-        to: '2.0.0',
-      },
-    ];
-    useUpdateStore.setState({ available: updatesSnapshot });
-    getMgr.mockReturnValue({
-      listAll: () => [
-        { id: 'a', manifest: { id: 'a', name: 'A', version: '1.0.0' } },
-      ],
-    });
-    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
-    installApi(vi.fn());
-
+  it('构建更新版本索引时不对 available updates 先 map 成中间数组', () => {
+    const updatesSnapshot: readonly AvailableUpdate[] = [{ id: 'a', to: '2.0.0' }];
     const mapSpy = vi.spyOn(Array.prototype, 'map');
     try {
-      const { container } = render(<MarketplaceTab />);
-      await waitFor(() => {
-        expect(container.textContent).toContain('更新到 v2.0.0');
-      });
+      expect(buildUpdateVersionMap(updatesSnapshot).get('a')).toBe('2.0.0');
       const mapCallsOnUpdates = mapSpy.mock.contexts.filter(
         (ctx) => ctx === updatesSnapshot,
       ).length;
@@ -993,14 +975,7 @@ describe('MarketplaceTab — 更新按钮', () => {
       uninstall,
       reload: vi.fn().mockResolvedValue(undefined),
     });
-    useUpdateStore.setState({
-      available: [
-        {
-          id: 'a',
-          to: '2.0.0',
-        },
-      ],
-    });
+    useUpdateStore.setState({ remoteVersions: new Map([['a', '2.0.0']]) });
 
     const { container } = render(<MarketplaceTab />);
     await waitFor(() => {
@@ -1025,40 +1000,34 @@ describe('MarketplaceTab — 更新按钮', () => {
     });
   });
 
-  // 第二十二轮 P2-BB:更新成功后先 reload 本地 PluginManager 版本再 refresh,否则
-  // refreshUpdates 读到陈旧旧版本 → 把刚 dismiss 的更新条目又加回 available(复活)。
-  it('更新成功 → reload 推进本地版本后 refresh 不复活更新条目', async () => {
+  // 第二十二轮 P2-BB / P2-BD(派生后):更新成功 → 乐观 dismiss 让按钮即时收起(防二次覆盖安装),
+  // 并主动 reload 推进本地版本;reload 失败时压制仍在,按钮不复活。可用更新由已安装列表现算,不再 refresh 对账。
+  it.each([
+    ['reload 成功推进本地版本', true],
+    ['reload 失败(内存仍旧版)', false],
+  ])('更新成功 → 按钮即时收起且不复活:%s', async (_label, reloadOk) => {
     const installFromGit = vi.fn().mockResolvedValue({
       ok: true,
       data: { id: 'a', name: 'A', version: '2.0.0' },
     });
     installApi(installFromGit);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
-    // 远程 manifest = 2.0.0(refreshUpdates 比较用)
-    fetchManifestMock.mockResolvedValue({ id: 'a', name: 'A', version: '2.0.0' });
-    // 本地初始 1.0.0;reload 模拟磁盘已是 2.0.0 → 内存版本推进
-    let localVer = '1.0.0';
+    let localManifest = { id: 'a', name: 'A', version: '1.0.0' };
     const reload = vi.fn().mockImplementation(async () => {
-      localVer = '2.0.0';
+      if (!reloadOk) throw new Error('lock busy');
+      localManifest = { id: 'a', name: 'A', version: '2.0.0' };
+      notifyUserPluginListChanged();
     });
     getMgr.mockReturnValue({
-      listAll: () => [
-        { id: 'a', manifest: { id: 'a', name: 'A', version: localVer } },
-      ],
+      listAll: () => [{ id: 'a', manifest: localManifest }],
       reload,
     });
-    useUpdateStore.setState({
-      available: [
-        {
-          id: 'a',
-          to: '2.0.0',
-        },
-      ],
-    });
+    useUpdateStore.setState({ remoteVersions: new Map([['a', '2.0.0']]) });
 
     const { container } = render(<MarketplaceTab />);
     await waitFor(() => {
-      expect(container.textContent).toContain('A');
+      expect(container.textContent).toContain('更新到 v2.0.0');
     });
     fireEvent.click(
       Array.from(
@@ -1068,12 +1037,10 @@ describe('MarketplaceTab — 更新按钮', () => {
     await waitFor(() => {
       expect(reload).toHaveBeenCalledWith('a');
     });
-    // refresh 后:本地已 2.0.0 == 远程 2.0.0,非 newer → 不复活
     await waitFor(() => {
-      expect(
-        useUpdateStore.getState().available.some((u) => u.id === 'a'),
-      ).toBe(false);
+      expect(container.textContent).toContain('更新到 A v2.0.0');
     });
+    expect(container.textContent).not.toContain('更新到 v2.0.0');
   });
 });
 

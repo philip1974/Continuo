@@ -1,8 +1,9 @@
 # marketplace update-store(Phase 3 — 更新检查)
 
 行为契约:**`useUpdateStore.refresh()` 拉远程 index,只为本地已安装插件对应的 entry 拉远程 manifest
-(有界并发,上限 `MAX_MANIFEST_FETCH_CONCURRENCY`;本地未装插件则不发请求),跟本地 PluginManager.listAll 比对,把 remote > local 的攒成 `available[]`。
-单个 manifest 失败不影响其它;index fetch 失败 → 静默 console.warn,store 不抛。**
+(有界并发,上限 `MAX_MANIFEST_FETCH_CONCURRENCY`;本地未装插件则不发请求),把合法 semver 的远端版本存成 `remoteVersions`。
+可用更新不存状态:`useAvailableUpdates()` / `computeAvailableUpdates()` 用**当前**已安装列表 × `remoteVersions` × `dismissed`
+现算 remote > local 的项。单个 manifest 失败不影响其它;index fetch 失败 → 静默 console.warn,store 不抛。**
 
 ## 模块
 
@@ -17,33 +18,41 @@
 ### refresh 正路径
 
 1. 拉 index → 为已安装插件对应的 entry 有界并发 `fetchPluginManifest`
-2. 对 `mgr.listAll()` 中每条 installed,若 `isNewerVersion(remote, local)` → push 到 `available`
-3. set `available`(store 只暴露 `available` / `dismissed`;远端版本表只是 refresh 内的局部变量)
+2. 记下 `remoteVersions`(id → 远端版本;非法 semver 不记)
+3. 可用更新 = 当前已安装列表中 `isNewerVersion(remote, local)` 且未被 dismiss 压制的项(派生,不落库)
 
 ### 部分 manifest 失败
 
 - 用 `allSettledWithConcurrency`(有界并发版 allSettled),失败的 entry 不记远端版本
-- 该 entry 在 available 中也跳(因为没 remoteV)
+- 该 entry 也不计入可用更新(因为没 remoteV)
 
 ### 远端 manifest.id ≠ entry.id
 
-- 跳过该 entry(warn),不记远端版本、不计入 available(防更新检查错配)
+- 跳过该 entry(warn),不记远端版本、不计入可用更新(防更新检查错配)
 
 ### 本地未装 manifest 中的某 plugin
 
-- 不计入 available(只对 installed 检查)
+- 不计入可用更新(只对 installed 检查)
 
 ### remote 版本不新
 
-- 不计入 available
+- 不计入可用更新
 
 ### 本地无 PluginManager(getUserPluginManager 返 null)
 
-- `installed = []`,available 空
+- `installed = []`,可用更新为空
 
 ### index fetch 抛
 
-- catch + console.warn,`available` 保持不变
+- catch + console.warn,`remoteVersions` 保持不变
+
+### 可用更新随已安装列表现算(available-derived.spec.tsx)
+
+- 别的窗口卸载 / 更新插件(本窗口经 `handleUninstalled` / 文件监视 reload 改列表)→ 设置齿轮角标与市场卡片
+  「更新到 vX」立即不再计入,无需任何手工同步。
+- 设置页卸载不写 `dismissed`;卸载后重装旧版本 → 更新重新显示。
+- `dismiss(id)`(市场页更新成功后的乐观收起)只压制「当时的已安装实例(manifest 引用)+ 目标版本」:
+  reload 失败时仍收起(防二次覆盖安装),实例被替换(reload 成功 / 重装)或远端出现更新版本后失效。
 
 ### 启动检查排在插件扫描完成之后(startup-check-after-init.spec.ts)
 

@@ -11,7 +11,7 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 |---|---|
 | `src/marketplace/MarketplaceTab.tsx` | UI |
 | `src/marketplace/fetcher.ts` | fetchMarketplaceIndex |
-| `src/marketplace/update-store.ts` | available updates |
+| `src/marketplace/update-store.ts` | useAvailableUpdates(可用更新,派生) |
 | `src/marketplace/reviews-store.ts` | rating 数据 |
 | `src/marketplace/filter.ts` | applyFilter / collectAllTags |
 

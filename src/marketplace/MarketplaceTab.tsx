@@ -12,8 +12,7 @@ import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './typ
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { clampSearchQuery } from '@/lib/search-query';
-import { useUpdateStore, type AvailableUpdate } from './update-store';
-import { reconcileAfterUpdate } from './reconcile-after-update';
+import { useAvailableUpdates, useUpdateStore, type AvailableUpdate } from './update-store';
 import { pruneLandedPending } from './prune-landed-pending';
 import { useReviewsStore } from './reviews-store';
 import type { PluginAggregateRating, Review } from './reviews-types';
@@ -104,8 +103,7 @@ export function MarketplaceTab() {
   const t = useT();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const installed = useInstalledIds();
-  const updates = useUpdateStore((s) => s.available);
-  const refreshUpdates = useUpdateStore((s) => s.refresh);
+  const updates = useAvailableUpdates();
   const dismissUpdate = useUpdateStore((s) => s.dismiss);
   const [install, setInstall] = useState<InstallState>({
     busy: null,
@@ -127,7 +125,7 @@ export function MarketplaceTab() {
   const refreshReviews = useReviewsStore((s) => s.refresh);
 
   // entry.id → 可用更新版本(若有)。useMemo 让 memo 子组件能受益:
-  // updates 来自 zustand store,Array.prototype.map 否则每次 render 创新 Map ref.
+  // updates 由 useAvailableUpdates 记忆化,Array.prototype.map 否则每次 render 创新 Map ref.
   const updateByPid = useMemo(() => {
     return buildUpdateVersionMap(updates);
   }, [updates]);
@@ -223,30 +221,18 @@ export function MarketplaceTab() {
   const onUpdate = useCallback(
     async (entry: MarketplaceEntry) => {
       const success = await runCardInstall(entry, 'update');
-      // 更新成功后:先乐观从 available 摘掉这条让更新按钮即时收起(否则到异步
-      // refresh 完成前用户可重复点击触发对已是最新版的二次 overwrite 安装),
-      // 再异步刷新 update-store 与磁盘对账。
+      // 更新成功后:先乐观收起这条更新,否则在 reload 推进内存版本前(或 reload 失败时)按钮仍在,
+      // 用户可重复点击触发对已是最新版的二次 overwrite 安装。可用更新由已安装列表现算,无需再 refresh 对账。
       if (success) {
         dismissUpdate(entry.id);
-        // installFromGit 已原子覆盖磁盘,但 renderer 内存里的 PluginManager 版本要等
-        // 2s mtime watcher reload 才更新。这里主动 reload 让本地版本即时推进 —— 否则
-        // 紧随的 refreshUpdates 读到陈旧旧版本 → 误判仍可更新 → 把刚 dismiss 的条目
-        // 又加回 available(更新按钮/角标复活并滞留到下次手动刷新)。reload 走 per-id
-        // 生命周期锁,与 watcher 并发安全。见第二十二轮 P2-BB。
-        // P2-BD:reload 失败时**不能**再 refresh(内存仍旧版会复活已 dismiss 的条目),
-        // 由 reconcileAfterUpdate 做 reload→refresh 的成功门控。
-        const mgr = getUserPluginManager();
-        if (mgr) {
-          void reconcileAfterUpdate({
-            reload: () => mgr.reload(entry.id),
-            refresh: () => void refreshUpdates(),
-          });
-        } else {
-          void refreshUpdates();
-        }
+        // installFromGit 已原子覆盖磁盘,主动 reload 让新版本即时生效(不等 2s mtime watcher);
+        // reload 走 per-id 生命周期锁,与 watcher 并发安全。失败时乐观压制仍在,watcher 随后重试。
+        getUserPluginManager()
+          ?.reload(entry.id)
+          .catch((err: unknown) => console.warn('[marketplace] reload after update failed', err));
       }
     },
-    [runCardInstall, refreshUpdates, dismissUpdate],
+    [runCardInstall, dismissUpdate],
   );
 
   // useCallback 让 TagButton memo 不被 inline arrow 撑破。

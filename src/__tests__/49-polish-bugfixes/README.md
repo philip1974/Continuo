@@ -407,9 +407,12 @@
   折叠/展开即把 store 替换成 B-only,A 的展开从内存 + explorer.json 一并丢失,切回 A 全收起。
   且旧代码读整个 store 的 `current` 是死代码(headless-tree 从不传函数 updater)。
 
-### P2-AG update-store 乐观摘除关闭重复更新点击窗口 — `update-store-dismiss-optimistic.spec.ts`
+### P2-AG update-store 乐观摘除关闭重复更新点击窗口 — 现由 `marketplace-tab` / `marketplace-update-store` 覆盖
 - update-store 加 `dismiss(id)`(no-op 时返回原引用不触发渲染);MarketplaceTab `onUpdate`
-  成功后立即 `dismissUpdate(entry.id)` 让更新按钮即时收起,再 `void refreshUpdates()` 对账。
+  成功后立即 `dismissUpdate(entry.id)` 让更新按钮即时收起。
+- (调用链简化后)可用更新改为由已安装列表现算,`dismiss` 只压制「当时的已安装实例 + 目标版本」,
+  原 `update-store-dismiss-optimistic.spec.ts`(测已删的 `dismissAvailableUpdateFromList`)并入
+  `marketplace-update-store/available-derived.spec.tsx`。
 - 根因: 更新按钮显示 `installed && updateAvailable && !pendingRestart`。in-place 更新成功后
   只异步 `refreshUpdates()`,在它完成前 `updateByPid` 仍含旧版本 → 按钮继续可点 → 用户可对
   已是最新版的插件重复点击触发二次 overwrite 安装(多一次 clone + staging swap)。`pending.add`
@@ -608,6 +611,11 @@
   2s mtime watcher 才更新。紧随的 `refreshUpdates` 读 `mgr.listAll()` 陈旧旧版本 →
   `isNewerVersion(remote, old)` 为真 → 把刚 dismiss 的条目又加回 `available` → 更新按钮 +
   IconSidebar 角标复活,且无人再触发 refresh,滞留到下次手动刷新/重启。
+- (调用链简化后)可用更新改为由已安装列表现算,不再 refresh 对账:reload 只为让新版本即时生效,
+  reload 失败时乐观 dismiss 仍压制按钮。`reconcile-after-update.ts` 及其
+  `marketplace-reload-fail-no-resurrect.spec.ts`、设置页卸载后 dismiss 的
+  `uninstall-dismisses-available-update.spec.tsx` 一并删除,行为由 `marketplace-tab` 与
+  `marketplace-update-store/available-derived.spec.tsx` 覆盖。
 
 ### P2-BC marketplace 刷新评论失败给反馈 — `marketplace-tab` 回归
 - `MarketplaceTab` 订阅 `useReviewsStore(s => s.error)` 并在刷新按钮下渲染错误反馈(失败且非

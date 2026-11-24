@@ -75,7 +75,6 @@
 - [`language-from-settings-no-fallback-clobber.spec.tsx`](./49-polish-bugfixes/language-from-settings-no-fallback-clobber.spec.tsx)
 - [`locale-reactive-display.spec.tsx`](./49-polish-bugfixes/locale-reactive-display.spec.tsx)
 - [`marketplace-prune-landed-pending.spec.ts`](./49-polish-bugfixes/marketplace-prune-landed-pending.spec.ts)
-- [`marketplace-reload-fail-no-resurrect.spec.ts`](./49-polish-bugfixes/marketplace-reload-fail-no-resurrect.spec.ts)
 - [`marketplace-reviews-lazy-fetch.spec.tsx`](./49-polish-bugfixes/marketplace-reviews-lazy-fetch.spec.tsx)
 - [`marketplace-reviews-sort-on-expand.spec.tsx`](./49-polish-bugfixes/marketplace-reviews-sort-on-expand.spec.tsx)
 - [`marketplace-verified-i18n.spec.tsx`](./49-polish-bugfixes/marketplace-verified-i18n.spec.tsx)
@@ -170,11 +169,9 @@
 - [`titlebar-narrow-subscription.spec.tsx`](./49-polish-bugfixes/titlebar-narrow-subscription.spec.tsx)
 - [`toast-dismiss-i18n.spec.tsx`](./49-polish-bugfixes/toast-dismiss-i18n.spec.tsx)
 - [`trash-uses-canonical-removeitems.spec.ts`](./49-polish-bugfixes/trash-uses-canonical-removeitems.spec.ts)
-- [`uninstall-dismisses-available-update.spec.tsx`](./49-polish-bugfixes/uninstall-dismisses-available-update.spec.tsx)
 - [`uninstall-id-traversal.spec.ts`](./49-polish-bugfixes/uninstall-id-traversal.spec.ts)
 - [`uninstall-scope-cleanup-fail-closed.spec.ts`](./49-polish-bugfixes/uninstall-scope-cleanup-fail-closed.spec.ts)
 - [`uninstall-scope-persist-race.spec.ts`](./49-polish-bugfixes/uninstall-scope-persist-race.spec.ts)
-- [`update-store-dismiss-optimistic.spec.ts`](./49-polish-bugfixes/update-store-dismiss-optimistic.spec.ts)
 - [`watch-error-evict.spec.ts`](./49-polish-bugfixes/watch-error-evict.spec.ts)
 - [`watch-pool-evict-after-create.spec.ts`](./49-polish-bugfixes/watch-pool-evict-after-create.spec.ts)
 - [`watch-unwatch-owner-ownership.spec.ts`](./49-polish-bugfixes/watch-unwatch-owner-ownership.spec.ts)
@@ -818,6 +815,7 @@
 
 ## [marketplace update-store(Phase 3 — 更新检查)](./marketplace-update-store/README.md)
 
+- [`available-derived.spec.tsx`](./marketplace-update-store/available-derived.spec.tsx)
 - [`startup-check-after-init.spec.ts`](./marketplace-update-store/startup-check-after-init.spec.ts)
 - [`update-store.spec.ts`](./marketplace-update-store/update-store.spec.ts)
 

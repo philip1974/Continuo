@@ -10,7 +10,7 @@ import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
 import { coApp } from '@/plugins/co-app';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
-import { useUpdateStore } from '@/marketplace/update-store';
+import { useAvailableUpdates } from '@/marketplace/update-store';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { useT } from '@/i18n';
 
@@ -55,7 +55,7 @@ export function IconSidebar() {
   const toggleSidebar = useLayoutUiStore((s) => s.toggleSidebar);
   const ribbonActions = useRegistry(coApp.ribbon);
   // Marketplace 更新数 → Settings 齿轮右上角红圈
-  const updateCount = useUpdateStore((s) => s.available.length);
+  const updateCount = useAvailableUpdates().length;
 
   const explorerItem: IconBarItemConfig = {
     id: 'explorer',

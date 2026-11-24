@@ -49,7 +49,7 @@ function installApi(): void {
 beforeEach(() => {
   _resetLmApiForTest();
   fetchIndexMock.mockReset();
-  useUpdateStore.setState({ available: [] });
+  useUpdateStore.setState({ remoteVersions: new Map(), dismissed: new Map() });
   useReviewsStore.setState({ byPid: new Map(), loading: false, error: null, lastFetchedAt: null });
 });
 afterEach(() => {
