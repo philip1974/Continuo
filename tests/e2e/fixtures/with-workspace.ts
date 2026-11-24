@@ -5,18 +5,13 @@
 //   import { test, expect } from '../fixtures/with-workspace';
 //   test('xx', async ({ window, workspaceRoot }) => { ... });
 
-import { test as base, expect, _electron as electron } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import type { Page, ElectronApplication } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { captureMainProcessLog, closeDiscardingUnsaved } from '../helpers/close-app';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '../../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from '../helpers/launch';
 
 interface Fixtures {
   electronApp: ElectronApplication;
@@ -74,14 +69,7 @@ export const test = base.extend<Fixtures>({
       JSON.stringify(explorerJson),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
-      env: {
-        ...process.env,
-        ELECTRON_DISABLE_GPU: '1',
-        CONTINUO_E2E: '1',
-      },
-    });
+    const app = await launchContinuo(userDataDir);
     captureMainProcessLog(app, testInfo.outputDir);
     await use(app);
     await closeDiscardingUnsaved(app);

@@ -2,16 +2,12 @@
 //
 // 注:本测试只验证 hydrate 一侧(layoutUi.sidebarWidth=420 → aside style.width=420px),
 // 而非拖拽 → 写回流程;拖拽 → 写回由 sidebar-drag-persist.spec.ts 覆盖.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { SIDEBAR_HIDDEN_TEXT } from './helpers/explorer';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('explorer.json 的 layoutUi.sidebarWidth → aside style.width', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-sb-'));
@@ -35,10 +31,7 @@ test('explorer.json 的 layoutUi.sidebarWidth → aside style.width', async () =
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
@@ -79,10 +72,7 @@ test('explorer.json 的 layoutUi.sidebarOpen=false → aside 不渲染', async (
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

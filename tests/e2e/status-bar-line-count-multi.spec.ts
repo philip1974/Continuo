@@ -1,15 +1,11 @@
 // 含多行的 file → footer 行数 = 实际行数.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openTreeItem } from './helpers/explorer';
 import { statusLines } from './helpers/status-bar';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('多行 file → footer N 行计数正确', async () => {
   test.setTimeout(30_000);
@@ -32,10 +28,7 @@ test('多行 file → footer N 行计数正确', async () => {
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

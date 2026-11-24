@@ -1,15 +1,11 @@
 // 切换 workspace → root 外的 file tab 自动关闭(closeTabsOutsideRoot).
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { EDITOR_NO_FILE_OPEN } from './helpers/editor';
 import { explorerMoreActionsButton } from './helpers/explorer';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 // closeTabsOutsideRoot 的细粒度行为由 editor.store 单测覆盖;本用例验证端到端:切 workspace 后旧 root 下的 tab 关闭。
 test('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcome)', async () => {
@@ -35,10 +31,7 @@ test('打开 ws1/a.ts → 切到 ws2 → a.ts tab 自动关闭(EditorWelcome)', 
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

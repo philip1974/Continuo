@@ -4,15 +4,11 @@
 // 但可以验证:启第二个时,第一个 window 收到 second-instance 信号(触发 focus + 处理 argv).
 // 这个不太好测,改测「连续启 2 次,第二次立即退出」.
 
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test.skip('single-instance:第二次启同 userData 不创建新进程(由 main app.requestSingleInstanceLock)', async () => {
   // 跳过原因:main 无条件 requestSingleInstanceLock(),锁按 --user-data-dir 生效 —— 第二个实例启动即退出,
@@ -20,18 +16,11 @@ test.skip('single-instance:第二次启同 userData 不创建新进程(由 main 
   // 要启用需改为断言第二次 launch 被拒 / 进程退出 + app1 窗口数仍为 1。真行为暂留人工 QA.
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-mw-'));
   try {
-    const app1 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app1 = await launchContinuo(ud);
     await app1.firstWindow();
 
     // 第二次:requestSingleInstanceLock 应返 false → app.quit
-    const app2 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-      timeout: 5_000,
-    });
+    const app2 = await launchContinuo(ud, { timeout: 5_000 });
     // app2 应该立即退出
     await app2.close();
 

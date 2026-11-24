@@ -1,14 +1,11 @@
 // 空 workspace + Cmd+P → 模态打开 + 列表 0 项.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
+import { launchContinuo } from './helpers/launch';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 const QO_EMPTY = /(工作区无文件|No files in workspace|워크스페이스에 파일이 없습니다)/;
 const QO_NO_WORKSPACE = /(请先在 Explorer 打开工作区|Please open a workspace in Explorer first|먼저 Explorer에서 워크스페이스를 여세요)/;
 
@@ -31,10 +28,7 @@ test('空 ws + Cmd+P → modal 显占位 + 0 li', async () => {
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

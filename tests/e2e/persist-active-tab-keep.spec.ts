@@ -1,24 +1,17 @@
 // 打开的文件与 active 路径持久化在 explorer.json 的 editor 字段(不入 dock layout);dock layout 另行持久化.
 //
 // 这条测验证「关 Editor panel + 重启」后的恢复行为(见用例断言).
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { DOCK_CLOSE_EDITOR } from './helpers/editor';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('关 Editor panel → 重启 → EmptyState(layout 记忆 0 panel)', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-empty-after-'));
   try {
-    const app1 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
@@ -34,10 +27,7 @@ test('关 Editor panel → 重启 → EmptyState(layout 记忆 0 panel)', async 
     await app1.close();
 
     // 重启
-    const app2 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 

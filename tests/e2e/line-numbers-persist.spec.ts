@@ -1,15 +1,11 @@
 import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // lineNumbers UI toggle off → 重启同 ud → CM 含 cm-no-gutters.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openWorkspaceFile } from './helpers/editor';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 function writeExplorerSeed(userDataDir: string, workspaceRoot: string): void {
   writeFileSync(
@@ -37,10 +33,7 @@ test('toggle lineNumbers off → 重启 → CM 仍 cm-no-gutters', async () => {
     writeExplorerSeed(ud, ws);
 
     // 第一次:toggle off
-    const app1 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
@@ -58,10 +51,7 @@ test('toggle lineNumbers off → 重启 → CM 仍 cm-no-gutters', async () => {
     writeExplorerSeed(ud, ws);
 
     // 第二次:reload
-    const app2 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 

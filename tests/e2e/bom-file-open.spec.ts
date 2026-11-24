@@ -1,13 +1,9 @@
 // BOM(﻿)开头的 file → 打开不崩.  @edge
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('BOM file → 打开 + CodeMirror 渲', async () => {
   test.setTimeout(30_000);
@@ -29,10 +25,7 @@ test('BOM file → 打开 + CodeMirror 渲', async () => {
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

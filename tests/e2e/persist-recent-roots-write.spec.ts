@@ -1,5 +1,5 @@
 // 切 root → recentRoots 写盘 + 顺序(LRU 最新在前).
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
   mkdtempSync,
   readFileSync,
@@ -9,12 +9,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { explorerMoreActionsButton } from './helpers/explorer';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('从 ws1 → 通过菜单切到 ws2 → recentRoots = [ws2, ws1]', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-rr-'));
@@ -38,10 +34,7 @@ test('从 ws1 → 通过菜单切到 ws2 → recentRoots = [ws2, ws1]', async ()
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

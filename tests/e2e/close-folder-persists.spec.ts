@@ -1,6 +1,5 @@
 // 关闭文件夹 → explorer.json root=null + recentRoots 不丢.
 import {
-  _electron as electron,
   expect,
   test,
   type ElectronApplication,
@@ -8,11 +7,8 @@ import {
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { launchContinuo } from './helpers/launch';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 const MORE_ACTIONS = /^(更多操作|More actions|추가 작업)$/;
 const CLOSE_FOLDER = /^(关闭文件夹|Close folder|폴더 닫기)$/;
 const NO_FOLDER_OPEN = /^(未打开文件夹|No folder open|열린 폴더 없음)$/;
@@ -38,10 +34,7 @@ test('⋯ 关闭文件夹 → explorer.json root=null,recentRoots 仍 [ws1]', as
       }),
     );
 
-    app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

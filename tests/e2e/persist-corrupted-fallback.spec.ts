@@ -1,23 +1,16 @@
 // explorer.json 损坏 / 不合 schema → 启动时 fallback 默认 store(EmptyWorkspace).  @edge
 // 用户不丢信任,UI 仍可用(无 pageerror)。UI 在持久化读完前即以 root=null 渲染空态,故先等就绪屏障
 // (Splash 消失)再断言;另有合法文件的对照用例证明同一路径能恢复出文件树。
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { EXPLORER_NO_FOLDER_OPEN, explorerTreeItem } from './helpers/explorer';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { waitForAppReady } from './helpers/app-ready';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 async function launchAndAssertEmpty(ud: string): Promise<void> {
-  const app = await electron.launch({
-    args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-    env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-  });
+  const app = await launchContinuo(ud);
   const win = await app.firstWindow();
   const pageErrors: string[] = [];
   win.on('pageerror', (err) => pageErrors.push(err.message));
@@ -95,10 +88,7 @@ test('对照:合法 explorer.json(v1 + 存在的 ws)→ 恢复出文件树(证�
         pinned: { paths: [] },
       }),
     );
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
     await waitForAppReady(win);

@@ -1,14 +1,10 @@
 // 综合流:workspace + 编辑 + Cmd+S + 关 → 重启 → workspace 还原 + 磁盘内容仍是新值.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openWorkspaceFile } from './helpers/editor';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', async () => {
   test.setTimeout(60_000);
@@ -32,10 +28,7 @@ test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', asyn
     );
 
     // 第一次启
-    const app1 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
@@ -56,10 +49,7 @@ test('编辑 a.ts + Cmd+S + 关 → 重启同 ud + ws → 磁盘新值在', asyn
     await app1.close();
 
     // 第二次启 → 磁盘内容仍在
-    const app2 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 

@@ -6,14 +6,12 @@
 // 不量整个进程的退出耗时:will-quit 之后 Chromium 原生收尾偶有数十秒抖动(见 doc/follow-ups.md),与应用
 // 逻辑无关,会让基于墙钟的断言偶发误报。改为直接断言主进程 CONTINUO_E2E 下的退出打点:flush 只发给主窗
 //(popout 不在 flush 目标内),且 flush 阶段远低于一个回执超时(10s)。
-import { test, _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test';
+import { test, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { launchContinuo } from './helpers/launch';
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
 const SETTINGS = /^(设置|Settings|설정)$/;
 const FLUSH_ACK_TIMEOUT_MS = 10_000;
 
@@ -24,10 +22,7 @@ async function launch(): Promise<{
   dispose: () => void;
 }> {
   const userDataDir = mkdtempSync(path.join(tmpdir(), 'continuo-e2e-popout-quit-'));
-  const app = await electron.launch({
-    args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
-    env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-  });
+  const app = await launchContinuo(userDataDir);
   let out = '';
   app.process().stdout?.on('data', (chunk: Buffer) => {
     out += chunk.toString('utf8');

@@ -4,25 +4,18 @@ import { LIGHT_THEME, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // 默认 fixture 每个 spec 启全新 app + 用 afterEach 删 userDataDir。
 // 这里手动管 userDataDir + 启两次 Electron,验证 theme 持久化.
 
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { waitForAppReady } from './helpers/app-ready';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('theme=light 持久化:重启同 userData 仍 light', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-theme-persist-'));
   try {
     // ── 第一次启动 ──
-    const app1 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
@@ -47,10 +40,7 @@ test('theme=light 持久化:重启同 userData 仍 light', async () => {
     await app1.close();
 
     // ── 第二次启动同 userData ──
-    const app2 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 

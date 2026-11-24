@@ -1,15 +1,11 @@
 // explorer.json 中 explorer.sort 可解析、hydrate 不报错 + 文件树正常渲染.
 // 排序尚未接到树上(explorer.store 的 sort 是预留脚手架,FolderTree 直接用 listDir 顺序),故不断言顺序.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expandTreeItem, explorerTreeItem } from './helpers/explorer';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('explorer.sort=mtime+reverse 可解析 → 文件树正常渲染(排序尚未实现)', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-sort-'));
@@ -40,10 +36,7 @@ test('explorer.sort=mtime+reverse 可解析 → 文件树正常渲染(排序尚�
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

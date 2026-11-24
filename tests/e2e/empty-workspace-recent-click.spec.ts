@@ -1,5 +1,5 @@
 // EmptyWorkspace 「最近打开」list 点击 → setRoot → Explorer 切到 FolderTree.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
   mkdirSync,
   mkdtempSync,
@@ -8,15 +8,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   EXPLORER_NO_FOLDER_OPEN_TEXT,
   EXPLORER_RECENT_TEXT,
 } from './helpers/explorer';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('explorer.json: root=null + recentRoots=[ws] → 点击 ws 项 → 切 FolderTree', async () => {
   test.setTimeout(60_000);
@@ -45,10 +41,7 @@ test('explorer.json: root=null + recentRoots=[ws] → 点击 ws 项 → 切 Fold
     JSON.stringify(explorerJson),
   );
 
-  const app = await electron.launch({
-    args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-    env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-  });
+  const app = await launchContinuo(ud);
   try {
     const window = await app.firstWindow();
     await window.waitForLoadState('domcontentloaded');

@@ -9,17 +9,12 @@
 //     localStorage。
 //   - test 作用域 fixture:每个用例结束时清理,删除整个 tmp 目录。
 
-import { test as base, _electron as electron, type Page, type ElectronApplication } from '@playwright/test';
+import { test as base, type Page, type ElectronApplication } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { captureMainProcessLog, closeDiscardingUnsaved } from '../helpers/close-app';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '../../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from '../helpers/launch';
 
 interface Fixtures {
   /** Electron app handle. 通过 fixture 自动 launch + close. */
@@ -43,16 +38,7 @@ export const test = base.extend<Fixtures>({
   },
 
   electronApp: async ({ userDataDir }, use, testInfo) => {
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
-      env: {
-        ...process.env,
-        // disable GPU 让 CI / headless 环境更稳;本地也无副作用
-        ELECTRON_DISABLE_GPU: '1',
-        // E2E 环境标识(main 与 preload 据此启用 e2e 行为 / testing helpers)
-        CONTINUO_E2E: '1',
-      },
-    });
+    const app = await launchContinuo(userDataDir);
     captureMainProcessLog(app, testInfo.outputDir);
     await use(app);
     await closeDiscardingUnsaved(app);

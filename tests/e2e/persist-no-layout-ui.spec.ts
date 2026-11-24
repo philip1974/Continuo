@@ -1,16 +1,12 @@
 // 老版本 explorer.json 缺 layoutUi 字段(向下兼容)→ 用 store 默认值
 // (sidebarOpen=true, sidebarWidth=280).
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { waitForAppReady } from './helpers/app-ready';
 import { explorerTreeItem } from './helpers/explorer';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('explorer.json 缺 layoutUi → sidebarOpen=true + width=280(默认)', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-no-lui-'));
@@ -33,10 +29,7 @@ test('explorer.json 缺 layoutUi → sidebarOpen=true + width=280(默认)', asyn
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

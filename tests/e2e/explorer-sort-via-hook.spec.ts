@@ -1,15 +1,11 @@
 // 通过 testing hook(直接用 explorer.store.setSort)切排序;
 // 没暴露 explorer store 的 setSort,改用磁盘 explorer.json 预置 sort=name reverse
 // 后启动验证 — 这条测「reverse name 顺序」.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 // 跳过原因:Explorer 排序尚未接到树上(explorer.store 的 sort 是预留脚手架,FolderTree 直接用 listDir 顺序);
 // 接入排序后取消 skip.
@@ -35,10 +31,7 @@ test.skip('sort.by=name + reverse=true → 文件名 z→a 倒序渲染', async 
       }),
     );
 
-    const app = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app = await launchContinuo(ud);
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 

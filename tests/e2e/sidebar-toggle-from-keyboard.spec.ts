@@ -3,7 +3,7 @@
 // 同样的开关也应该可以通过命令面板 / hotkey 触发?查 commands 注册.
 // ExplorerSidebar 有命令 explorer.toggleSidebar(mod+b);本用例测:点击 → toggle → 重启状态保留
 // (layoutUi.sidebarOpen).
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
   EXPLORER_HIDE,
   EXPLORER_SHOW,
@@ -12,19 +12,12 @@ import {
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 test('点 Explorer 关闭 sidebar → 关 → 重启 → sidebar 仍关', async () => {
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-sb-toggle-'));
   try {
-    const app1 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
@@ -35,10 +28,7 @@ test('点 Explorer 关闭 sidebar → 关 → 重启 → sidebar 仍关', async 
     await app1.close();
 
     // 重启
-    const app2 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 

@@ -1,16 +1,12 @@
 import { EXPLORER_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 // indentSize 通过 Settings UI input 改 → 立即 + 重启同 ud 仍生效.
-import { _electron as electron, expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openWorkspaceFile } from './helpers/editor';
 import { explorerTreeItem } from './helpers/explorer';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../..');
-const MAIN_ENTRY = path.join(REPO_ROOT, 'out/main/index.js');
+import { launchContinuo } from './helpers/launch';
 
 function writeExplorerSeed(userDataDir: string, workspaceRoot: string): void {
   writeFileSync(
@@ -38,10 +34,7 @@ test('Settings 改 indentSize=24 → 重启 → padding 同步', async () => {
     writeExplorerSeed(ud, ws);
 
     // 第一次:改 setting
-    const app1 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
@@ -58,10 +51,7 @@ test('Settings 改 indentSize=24 → 重启 → padding 同步', async () => {
     writeExplorerSeed(ud, ws);
 
     // 第二次:重启同 ud
-    const app2 = await electron.launch({
-      args: [MAIN_ENTRY, `--user-data-dir=${ud}`],
-      env: { ...process.env, ELECTRON_DISABLE_GPU: '1', CONTINUO_E2E: '1' },
-    });
+    const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 
