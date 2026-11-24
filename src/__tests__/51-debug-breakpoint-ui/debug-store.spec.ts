@@ -525,3 +525,32 @@ describe('断点上限:最新优先(main / renderer 同一规则)', () => {
   });
 });
 
+// activeSessionId 始终是「最近停下的会话」(updateActiveSession 的派生)。快照里带来的已停会话实际停得比订阅之后
+// 收到 stopped 事件的会话早 → 排在其前。此前快照会话被赋更大的序号(active 靠「已有则保留」才没变),排序依据与
+// active 不一致。
+describe('activeSessionId:快照会话排在事件会话之前', () => {
+  it('快照到达前 A 已停(事件),快照带来已停 B → active 仍是 A;A continue 后才轮到 B', async () => {
+    let resolveSubscribe!: (value: unknown) => void;
+    debugApi.subscribe.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSubscribe = resolve;
+      }) as never,
+    );
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    emit({ type: 'stopped', sessionId: 'a', stopSeq: 1, reason: 'breakpoint' });
+    resolveSubscribe({
+      ok: true,
+      data: { sessions: [{ session_id: 'b', stop: { stopSeq: 4, reason: 'breakpoint' }, breakpointsBySource: [] }] },
+    });
+    await flushMicrotasks(2);
+    await flushMicrotasks(2);
+    const state = useDebugStore.getState();
+    expect(state.activeSessionId).toBe('a');
+    expect(state.sessions.get('a')!.lastStoppedOrder).toBeGreaterThan(state.sessions.get('b')!.lastStoppedOrder);
+
+    emit({ type: 'continued', sessionId: 'a' });
+    expect(useDebugStore.getState().activeSessionId).toBe('b');
+  });
+});
+

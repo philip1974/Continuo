@@ -213,6 +213,10 @@ function groupBreakpointsByFile(list: readonly DebugBreakpoint[]): DebugBreakpoi
   return [...groups.values()];
 }
 
+/**
+ * activeSessionId 的唯一来源:最近停下的会话(lastStoppedOrder 最大)。stopped / continued / terminated / 快照 hydrate
+ * 四处都用它重算(此前各写一套「是否沿用旧值」的条件,hydrate 后与排序依据不一致)。
+ */
 function updateActiveSession(
   sessions: ReadonlyMap<string, DebugSessionShadow>,
 ): string | null {
@@ -311,11 +315,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         };
         const sessions = new Map(state.sessions);
         sessions.set(event.sessionId, nextSession);
-        return {
-          sessions,
-          activeSessionId: event.sessionId,
-          stoppedOrder: nextOrder,
-        };
+        return { sessions, activeSessionId: updateActiveSession(sessions), stoppedOrder: nextOrder };
       });
       await pullStackAndScopes(event.sessionId, event.stopSeq);
       return;
@@ -336,10 +336,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         sessions.set(event.sessionId, nextSession);
         return {
           sessions,
-          activeSessionId:
-            state.activeSessionId === event.sessionId
-              ? updateActiveSession(sessions)
-              : state.activeSessionId,
+          activeSessionId: updateActiveSession(sessions),
         };
       });
       return;
@@ -352,10 +349,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         sessions.delete(event.sessionId);
         return {
           sessions,
-          activeSessionId:
-            state.activeSessionId === event.sessionId
-              ? updateActiveSession(sessions)
-              : state.activeSessionId,
+          activeSessionId: updateActiveSession(sessions),
         };
       });
     }
@@ -405,7 +399,9 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
   const pulls: Array<{ id: string; stopSeq: number }> = [];
   useDebugStore.setState((state) => {
     const sessions = new Map(state.sessions);
-    let stoppedOrder = state.stoppedOrder;
+    // 快照里的已停会话实际停在订阅之前,比订阅后经 stopped 事件记序(从 1 起递增)的会话都早 → 序号取 ≤ 0,
+    // 排在事件会话之前(快照内部按快照顺序)。
+    let snapshotOrder = -snapshots.length;
     for (const snapshot of snapshots) {
       const current = sessions.get(snapshot.id);
       if (touched.has(snapshot.id)) {
@@ -431,7 +427,7 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
         sessions.set(snapshot.id, { ...base, breakpoints });
         continue;
       }
-      stoppedOrder += 1;
+      snapshotOrder += 1;
       sessions.set(snapshot.id, {
         ...base,
         breakpoints,
@@ -439,15 +435,11 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
           reason: snapshot.stop.reason,
           stopSeq: snapshot.stop.stopSeq,
         },
-        lastStoppedOrder: stoppedOrder,
+        lastStoppedOrder: snapshotOrder,
       });
       pulls.push({ id: snapshot.id, stopSeq: snapshot.stop.stopSeq });
     }
-    return {
-      sessions,
-      stoppedOrder,
-      activeSessionId: state.activeSessionId ?? updateActiveSession(sessions),
-    };
+    return { sessions, activeSessionId: updateActiveSession(sessions) };
   });
   for (const pull of pulls) void pullStackAndScopes(pull.id, pull.stopSeq);
 }
