@@ -4,6 +4,7 @@
 .toast-viewport {
   position: fixed;
   right: 12px;
+  /* 无状态栏的窗口(popout 子窗 / PopoutHost)贴窗口底边留 12px;有状态栏时见下方 :has 规则。 */
   bottom: 12px;
   z-index: 9999;
   display: flex;
@@ -13,4 +14,9 @@
 }
 .toast-viewport > * {
   pointer-events: auto;
+}
+/* 窗口里有底部状态栏(主窗):toast 放在状态栏上方 8px,不盖住状态栏。按各自文档判断 —— toast 经 portal
+ * 渲染进 popout 子窗时,子窗文档里没有状态栏,沿用上面的 12px,不留状态栏高度的空白。 */
+:root:has([data-statusbar]) .toast-viewport {
+  bottom: calc(var(--wm-statusbar-height) + 8px);
 }

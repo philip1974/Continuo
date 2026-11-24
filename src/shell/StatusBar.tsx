@@ -296,7 +296,11 @@ export function StatusBar() {
       : t('statusbar.agent_revoke_grant_tooltip');
 
   return (
-    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none">
+    // data-statusbar:ToastViewport.css 据此(:has)在有状态栏的窗口把 toast 抬到状态栏上方;高度 token 两处共用。
+    <footer
+      data-statusbar=""
+      className="flex h-statusbar shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none"
+    >
       <div className="flex items-center gap-3 min-w-0">
         {root ? (
           <span className="truncate" title={root}>

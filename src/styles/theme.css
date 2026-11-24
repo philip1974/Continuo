@@ -31,6 +31,9 @@
   --wm-delay-spotlight: 400ms;        /* spotlight 启动前等一拍 */
   --wm-blur-sm: 4px;                  /* Modal 背板毛玻璃 */
 
+  /* 底部状态栏高度(StatusBar 的 h-statusbar;ToastViewport 据此把 toast 放在状态栏上方,不盖住它)。 */
+  --wm-statusbar-height: 24px;
+
   /* Debug 可视化:断点 gutter 红点 + 当前命中行背景(light 占位也给完整槽位) */
   --md-debug-breakpoint: #d32f2f;
   --md-debug-exec-line: rgba(211, 47, 47, 0.14);
@@ -91,6 +94,9 @@
   /* 浮层阴影:shadow-popover(design Modal 同款 --wm-shadow-popover,light/dark 各有取值),
    * 替代手写弹出菜单上的 shadow-lg shadow-black/40。 */
   --shadow-popover: var(--wm-shadow-popover);
+
+  /* 状态栏高度:h-statusbar(StatusBar 与 ToastViewport.css 共用 --wm-statusbar-height)。 */
+  --spacing-statusbar: var(--wm-statusbar-height);
 
   /* 字号补漏:wm-text-2xs(10px)暴露成 Tailwind utility text-2xs,
    * 消灭组件里散落的 ~44 处 text-[10px] arbitrary value。
