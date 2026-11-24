@@ -23,6 +23,7 @@ import { useT, useTWithFallback, useLocale } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { ResetIcon } from '@/lib/ui-icons';
+import { isSortedBy } from '@/lib/is-sorted-by';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -71,22 +72,12 @@ export function keybindingRowClassName(index: number): string {
   return index > 0 ? KEYBINDING_ROW_BORDER_CLASS_NAME : KEYBINDING_ROW_CLASS_NAME;
 }
 
-function isSortedByDisplayTitle(commands: readonly DisplayCommand[]): boolean {
-  for (let i = 1; i < commands.length; i++) {
-    if (commands[i - 1]!.displayTitle.localeCompare(commands[i]!.displayTitle) > 0) {
-      return false;
-    }
-  }
-  return true;
+function byDisplayTitle(a: DisplayCommand, b: DisplayCommand): number {
+  return a.displayTitle.localeCompare(b.displayTitle);
 }
 
-function areBucketsSortedByCategory(buckets: readonly Bucket[]): boolean {
-  for (let i = 1; i < buckets.length; i++) {
-    if (buckets[i - 1]!.category.localeCompare(buckets[i]!.category) > 0) {
-      return false;
-    }
-  }
-  return true;
+function byCategory(a: Bucket, b: Bucket): number {
+  return a.category.localeCompare(b.category);
 }
 
 /** 按 displayCategory 分组,每组按 displayTitle 字母序;空 category 归 defaultGroup. */
@@ -100,16 +91,16 @@ export function groupByCategory(
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i]!;
     let items = group.items;
-    if (items.length > 1 && !isSortedByDisplayTitle(items)) {
+    if (items.length > 1 && !isSortedBy(items, byDisplayTitle)) {
       // owned=false 时 items 就是入参数组,不能原地排 → 拷一份再排。
       const sortable = group.owned ? (items as DisplayCommand[]) : copyCommands(items);
-      sortable.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+      sortable.sort(byDisplayTitle);
       items = sortable;
     }
     buckets[i] = { category: group.key, items };
   }
-  if (buckets.length > 1 && !areBucketsSortedByCategory(buckets)) {
-    buckets.sort((a, b) => a.category.localeCompare(b.category));
+  if (buckets.length > 1 && !isSortedBy(buckets, byCategory)) {
+    buckets.sort(byCategory);
   }
   return buckets;
 }

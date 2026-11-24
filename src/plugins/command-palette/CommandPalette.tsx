@@ -24,6 +24,7 @@ import {
 import { useTWithFallback, useT, useLocale } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { isSortedBy } from '@/lib/is-sorted-by';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -94,21 +95,16 @@ export function buildRecentCommandIds(recentList: readonly RecentEntry[]): strin
   return out;
 }
 
-function isSortedByDisplayTitle(items: readonly DisplayCommand[]): boolean {
-  for (let i = 1; i < items.length; i++) {
-    if (items[i - 1]!.displayTitle.localeCompare(items[i]!.displayTitle) > 0) {
-      return false;
-    }
-  }
-  return true;
+function byDisplayTitle(a: DisplayCommand, b: DisplayCommand): number {
+  return a.displayTitle.localeCompare(b.displayTitle);
 }
 
 /** 按 displayTitle 字母序;已有序时原样返回入参(不拷贝、不排序)。 */
 function sortedByDisplayTitle(items: readonly DisplayCommand[]): DisplayCommand[] {
-  if (isSortedByDisplayTitle(items)) return items as DisplayCommand[];
+  if (isSortedBy(items, byDisplayTitle)) return items as DisplayCommand[];
   const out = new Array<DisplayCommand>(items.length);
   for (let i = 0; i < items.length; i++) out[i] = items[i]!;
-  out.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+  out.sort(byDisplayTitle);
   return out;
 }
 
@@ -150,8 +146,8 @@ export function sortByRecent(
       if (i !== recentIndex) others[otherCount++] = items[i]!;
     }
     others.length = otherCount;
-    if (otherCount > 1 && !isSortedByDisplayTitle(others)) {
-      others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+    if (otherCount > 1 && !isSortedBy(others, byDisplayTitle)) {
+      others.sort(byDisplayTitle);
     }
     const out = new Array<DisplayCommand>(items.length);
     let count = 0;
@@ -188,8 +184,8 @@ export function sortByRecent(
     return sortedByDisplayTitle(items);
   }
   others.length = otherCount;
-  if (otherCount > 1 && !isSortedByDisplayTitle(others)) {
-    others.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
+  if (otherCount > 1 && !isSortedBy(others, byDisplayTitle)) {
+    others.sort(byDisplayTitle);
   }
   const out = new Array<DisplayCommand>(items.length);
   let count = 0;

@@ -334,7 +334,7 @@
 
 - [`cli-args-folder.spec.ts`](./cli-args-folder/cli-args-folder.spec.ts)
 
-## [lm-api(Continuo UI 内部 IPC 入口)](./co-api/README.md) `[contract]`
+## [co-api(Continuo UI 内部 IPC 入口)](./co-api/README.md) `[contract]`
 
 - [`co-api.spec.ts`](./co-api/co-api.spec.ts)
 
@@ -374,7 +374,7 @@
 - [`confirm-dialog.spec.tsx`](./confirm-dialog/confirm-dialog.spec.tsx)
 - [`overwrite-confirm-focus.spec.tsx`](./confirm-dialog/overwrite-confirm-focus.spec.tsx)
 
-## [core-plugins(内置插件:editor / terminal / output)](./core-plugins/README.md)
+## [core-plugins(内置插件)](./core-plugins/README.md)
 
 - [`core-plugins.spec.ts`](./core-plugins/core-plugins.spec.ts)
 - [`settings-chunk-parallel.spec.tsx`](./core-plugins/settings-chunk-parallel.spec.tsx)
@@ -727,6 +727,10 @@
 ## [IPC safeHandle 契约 (跨里程碑)](./ipc-safe-handle/README.md)
 
 - [`safe-handle.spec.ts`](./ipc-safe-handle/safe-handle.spec.ts)
+
+## [isSortedBy(「已有序则跳过排序」判断的共享实现)](./is-sorted-by/README.md)
+
+- [`is-sorted-by.spec.ts`](./is-sorted-by/is-sorted-by.spec.ts)
 
 ## [json-byte-budget (E286)](./json-byte-budget/README.md)
 

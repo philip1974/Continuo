@@ -13,6 +13,7 @@ import {
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { coApp } from '@/plugins/co-app';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
+import { isSortedBy } from '@/lib/is-sorted-by';
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
@@ -77,15 +78,6 @@ function comparePluginItemBuckets(a: PluginItemBucket, b: PluginItemBucket): num
   return a.group.localeCompare(b.group);
 }
 
-function arePluginItemBucketsSorted(buckets: readonly PluginItemBucket[]): boolean {
-  for (let i = 1; i < buckets.length; i++) {
-    if (comparePluginItemBuckets(buckets[i - 1]!, buckets[i]!) > 0) {
-      return false;
-    }
-  }
-  return true;
-}
-
 interface PluginItemBucket {
   readonly group: string;
   readonly items: readonly ExplorerContextMenuItemSpec[];
@@ -122,7 +114,7 @@ export function groupPluginItems(
   for (let i = 0; i < groups.length; i++) {
     buckets[i] = { group: groups[i]!.key, items: groups[i]!.items };
   }
-  if (!arePluginItemBucketsSorted(buckets)) {
+  if (!isSortedBy(buckets, comparePluginItemBuckets)) {
     buckets.sort(comparePluginItemBuckets);
   }
   return buckets;
