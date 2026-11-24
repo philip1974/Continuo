@@ -371,6 +371,15 @@ describe('KeybindingsTabContent — 搜索', () => {
     expect(selectVisibleKeybindingCommands([other!], 'cmd')).toHaveLength(0);
   });
 
+  it('修饰键按常规顺序输入在两个平台都能搜到(注册串段序为 shift+mod+enter)', () => {
+    const cmds = [{ id: 'z', title: 'Zoom', hotkey: 'shift+mod+enter', fn: vi.fn() }];
+    const tk = (_k: string | undefined, fallback: string): string => fallback;
+    const [other] = buildKeybindingDisplayCommands(cmds, tk, {}, 'other');
+    const [mac] = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    expect(selectVisibleKeybindingCommands([other!], 'ctrl+shift+enter')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([mac!], 'cmd+shift+enter')).toHaveLength(1);
+  });
+
   it('界面搜索框输入 ctrl+t(jsdom 非 mac)能搜到 mod+t 命令', () => {
     coApp.commands.register({ id: 'a', title: 'New Terminal', hotkey: 'mod+t', fn: vi.fn() });
     coApp.commands.register({ id: 'b', title: 'Open File', hotkey: 'mod+o', fn: vi.fn() });

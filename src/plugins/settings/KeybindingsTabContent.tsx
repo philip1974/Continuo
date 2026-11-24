@@ -158,14 +158,15 @@ export function buildCommandSearchHaystack(
 }
 
 /**
- * 快捷键的搜索文本:原始串(mod+t)+ 平台显示形式(mac `⌘T`、其它 `Ctrl+T`)+ mac 上的修饰键英文名
- * (cmd+t —— 键帽只有符号,用户常输 cmd)。否则占位写「可搜索快捷键」,Windows 输 ctrl+t、mac 输 ⌘ / cmd
- * 都搜不到。
+ * 快捷键的搜索文本:原始串(mod+t)+ 平台显示形式(mac `⌘T`、其它 `Ctrl+T`)+ 按固定修饰键顺序的英文名
+ *(mac cmd+shift+t;其它 ctrl+shift+t —— 原始串与显示形式保留注册时的段序,`shift+mod+enter` 不按常规顺序
+ * 输入就搜不到;mac 键帽只有符号,用户常输 cmd)。否则占位写「可搜索快捷键」,Windows 输 ctrl+t、mac 输 ⌘ / cmd
+ * 都搜不到。两平台对称。
  */
 export function hotkeySearchText(hotkey: string, platform: Platform): string {
   const display = formatHotkey(hotkey, platform);
-  if (platform !== 'mac') return `${hotkey} ${display}`;
-  const named = canonicalHotkey(hotkey, platform).replace('meta+', 'cmd+').replace('alt+', 'option+');
+  let named = canonicalHotkey(hotkey, platform);
+  if (platform === 'mac') named = named.replace('meta+', 'cmd+').replace('alt+', 'option+');
   return `${hotkey} ${display} ${named}`;
 }
 
