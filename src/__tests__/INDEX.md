@@ -475,6 +475,7 @@
 
 ## [dock-terminal-layout-strip — 持久化布局剥离终端 panel](./dock-terminal-layout-strip/README.md)
 
+- [`strip-terminal-layout-restore.spec.ts`](./dock-terminal-layout-strip/strip-terminal-layout-restore.spec.ts)
 - [`strip-terminal-layout.spec.ts`](./dock-terminal-layout-strip/strip-terminal-layout.spec.ts)
 
 ## [DropdownMenu(触发按钮弹出的菜单)](./dropdown-menu/README.md)

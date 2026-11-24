@@ -250,6 +250,72 @@ describe('stripTerminalPanelsFromLayout', () => {
     }
   });
 
+  describe('grid 只剩终端时,popout / floating 中的非终端布局仍须保留', () => {
+    const panels = {
+      editor: { contentComponent: 'editor' },
+      'term-1': { contentComponent: 'terminal' },
+    };
+    const popout = (id: string, views: string[], gridReferenceGroup?: string) => ({
+      data: { id, views, activeView: views[0] },
+      gridReferenceGroup,
+      position: { top: 0, left: 0, width: 600, height: 400 },
+      url: 'popout.html?popout=1',
+    });
+
+    it('editor 与终端同组后 editor 弹出 → 保留 popout 及其引用组(剥终端后为空),不为 null', () => {
+      const l = layout([leaf('1', ['term-1'], 'term-1')], panels, {
+        popoutGroups: [popout('2', ['editor'], '1')],
+        activeGroup: '1',
+      });
+      const r = out(l)!;
+      expect(r).not.toBeNull();
+      expect(Object.keys(r.panels)).toEqual(['editor']);
+      expect(r.popoutGroups).toHaveLength(1);
+      expect(r.popoutGroups![0]!.data.views).toEqual(['editor']);
+      expect(r.grid.root.data).toHaveLength(1);
+      expect(r.grid.root.data[0]!.data).toMatchObject({ id: '1', views: [] });
+      expect(r.grid.root.data[0]!.data.activeView).toBeUndefined();
+      expect(r.activeGroup).toBe('1');
+    });
+
+    it('整组弹出后 grid 留下的原本就空的引用组 → 保留;仅含终端的 leaf 仍摘除', () => {
+      const l = layout(
+        [
+          leaf('1', [], undefined, { hidden: true }),
+          leaf('3', ['term-1'], 'term-1'),
+        ],
+        panels,
+        { popoutGroups: [popout('2', ['editor'], '1')] },
+      );
+      const r = out(l)!;
+      expect(r.grid.root.data).toHaveLength(1);
+      expect(r.grid.root.data[0]!.data).toMatchObject({ id: '1', views: [] });
+      expect(r.popoutGroups![0]!.data.views).toEqual(['editor']);
+    });
+
+    it('grid 只剩终端 + editor 在 floating → 不为 null,grid 剪成空 root,floating 保留', () => {
+      const l = layout([leaf('1', ['term-1'], 'term-1')], panels, {
+        floatingGroups: [{ data: { id: '2', views: ['editor'], activeView: 'editor' }, position: {} }],
+      });
+      const r = out(l)!;
+      expect(r).not.toBeNull();
+      expect(r.grid.root.data).toEqual([]);
+      expect(r.floatingGroups![0]!.data.views).toEqual(['editor']);
+    });
+
+    it('grid / floating / popout 全都只有终端 → 仍返回 null', () => {
+      const l = layout([leaf('1', ['term-1'], 'term-1')], {
+        'term-1': { contentComponent: 'terminal' },
+        'term-2': { contentComponent: 'terminal' },
+        'term-3': { contentComponent: 'terminal' },
+      }, {
+        floatingGroups: [{ data: { id: '2', views: ['term-2'] }, position: {} }],
+        popoutGroups: [popout('3', ['term-3'], '1')],
+      });
+      expect(stripTerminalPanelsFromLayout(l)).toBeNull();
+    });
+  });
+
   it('缺 grid 但 panels 含终端 → 返回 null(无法安全剥离)', () => {
     const l = { panels: { 'term-1': { contentComponent: 'terminal' } } } as unknown as SerializedDockview;
     expect(stripTerminalPanelsFromLayout(l)).toBeNull();

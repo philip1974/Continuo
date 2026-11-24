@@ -30,11 +30,17 @@ dockview 反序列化(`gridview._deserializeNode`)按**深度自动分配 orient
 - 无终端 → 返回**原对象**(引用不变,回归友好)。
 - leaf 含「editor + 终端」→ 剥终端,`views` 仅剩 editor;若 `activeView` 原指终端 → 回退到首个存活 view。
 - leaf 仅含终端 → 整个 leaf 摘除;父 branch 子节点全空 → 父 branch 也摘除。
+- **只剪「剥掉终端之后才变空」的 leaf**:原本就空的 leaf(如整组弹出后 dockview 留在 grid 里的隐藏引用组)
+  原样保留;popout 的 `gridReferenceGroup` 指向的 leaf 即便剥终端后变空也保留为空组 —— 否则 `fromJSON`
+  时 popout 无锚点,弹窗关闭 / 被拦截时面板无处回归。无终端时这些空 leaf 本就原样持久化,有无终端结果一致。
+- grid 被剪空但 floating / popout 仍有非终端 panel → grid root 保留为空 branch,布局照常持久化。
+  (缺陷:默认布局下「+」开终端与 Editor 同组、再弹出 Editor → 旧实现整份返 `null`,重启回默认布局。)
 - `panels` map 同步剔除终端条目。
 - 悬空 `activeGroup`(指向被摘除的 group)→ 清除。
 - `floatingGroups` / `popoutGroups` 同样过滤 views,丢弃变空的组。
 - `tabGroups`(罕见)同步剔除终端 `panelIds`,丢弃变空的 tabGroup。
-- 整棵树无非终端 panel,或缺 `grid` 无法安全处理 → 返回 `null`(上层静默走默认布局,**不报错**)。
+- grid、floating、popout 三处都没有非终端 panel,或缺 `grid` 无法安全处理 → 返回 `null`(上层静默走默认布局,**不报错**)。
+- `strip-terminal-layout-restore.spec.ts`:剥离结果交给真实 dockview `fromJSON` 可恢复(popout 锚点有效、floating 保留)。
 - 写端(`writeDockLayoutSnapshot`)strip 返 `null` 时**不**回落原始快照(含终端 sessionId/cwd),而是写空布局
   `{version:1}`;读端 `sanitizePersistedDockLayout` 对既无 `grid` 也无 `panels` 的空布局返 `null` → 默认布局。
   终端绝不进持久化。
