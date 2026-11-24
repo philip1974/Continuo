@@ -77,11 +77,12 @@ const createSessionBoundedSchema = createSessionInputSchema
   .extend({
     // 空串 = 未给(LLM 客户端常把可选字符串填成 ""):归一为 undefined → 按文档回退窗口工作区根。此前 '' 原样透传,
     // `cwd ?? workspaceRoot ?? …` 不回退(非 nullish)→ TERMINAL_CWD_UNRESOLVED;install_stop_hook 同样 no-cwd。
+    // transform 在 optional 之内:输出类型仍是可选键(调用方 / 测试构造入参不必显式给 cwd)。
     cwd: z
       .string()
       .max(PATH_MAX)
-      .optional()
-      .transform((v) => (v === '' ? undefined : v)),
+      .transform((v) => (v === '' ? undefined : v))
+      .optional(),
     name: z.string().max(LABEL_MAX).optional(),
     agentLabel: z.string().max(LABEL_MAX).optional(),
     autorun: z.string().max(MCP_AUTORUN_MAX).optional(),
