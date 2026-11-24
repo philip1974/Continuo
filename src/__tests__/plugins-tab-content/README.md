@@ -24,13 +24,13 @@
 
 ### 内置插件清单
 
-- 4 条静态:core.editor / core.terminal / core.output / core.plugins
+- 4 条静态:core.editor / core.terminal / core.output / core.plugins;名称与描述走 catalog(三语,zh 显示编辑器 / 终端 / 输出 / 插件管理),第三方插件仍显示 manifest 名
 
 ### 第三方插件清单
 
 - getUserPluginManager()=null → 视为空
 - listAll()=[] + 无 pendingInstall → 「暂无第三方插件」
-- pendingInstall 存在 → 显示 ⏳ 行 + 待重启提示;连续安装多个 → 每个一行;
+- pendingInstall 存在 → 显示 ⏳ 行 + 待重启提示 +「立即重启」(见 `plugin-install-enable/`);连续安装多个 → 每个一行;
   id 已出现在插件列表(已加载 / 覆盖重装)→ 不再显示待重启行
 - plugin status='enabled' → 显「禁用」按钮
 - plugin status='disabled' → 显「启用」(primary)

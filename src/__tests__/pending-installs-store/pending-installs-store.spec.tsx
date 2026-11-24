@@ -123,7 +123,7 @@ describe('待重启记录跨入口 / 跨页共享', () => {
     await installViaSettings();
     const { container } = render(<PluginsTabContent />);
     expect(container.textContent).toContain('p.shared');
-    expect(container.textContent).toContain('重启 Continuo 后出现在列表');
+    expect(container.textContent).toContain('需重启 Continuo 才能加载');
   });
 
   it('市场卡片安装后切页再回来 → 卡片显示「已安装（待重启）」,不再给「安装」', async () => {
@@ -153,7 +153,7 @@ describe('待重启记录跨入口 / 跨页共享', () => {
     await installViaCard();
     const { container } = render(<PluginsTabContent />);
     expect(container.textContent).toContain('p.shared');
-    expect(container.textContent).toContain('重启 Continuo 后出现在列表');
+    expect(container.textContent).toContain('需重启 Continuo 才能加载');
   });
 
   it('落地(进插件列表)即摘除,无需任何页面挂载;随后卸载 → 两页都无幽灵', async () => {
@@ -196,7 +196,9 @@ describe('待重启记录跨入口 / 跨页共享', () => {
     fireEvent.click(confirm);
     await waitFor(() => expect(uninstall).toHaveBeenCalledWith('p.shared'));
     await waitFor(() => expect(usePendingInstalls.getState().byId.size).toBe(0));
-    expect(container.textContent).not.toContain('p.shared');
+    // 不留幽灵行(「已卸载 p.shared」成功播报里含 id,故按行内 id 徽标判断)。
+    expect(Array.from(container.querySelectorAll('code')).some((c) => c.textContent === 'p.shared')).toBe(false);
+    expect(container.textContent).not.toContain('需重启 Continuo 才能加载');
   });
 });
 

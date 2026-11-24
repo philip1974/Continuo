@@ -7,7 +7,7 @@
 //   - text    → Input
 //   - reset   → 始终占位的 ↺,override 时可见
 
-import { useMemo, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
   Badge,
   IconButton,
@@ -95,6 +95,8 @@ function useNumberSettingDraft(
 }
 
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
+/** 行内编辑控件(开关 / 输入框 / 分段控件里当前可 Tab 的那一项);重置后焦点移到这里。 */
+const ROW_CONTROL_SELECTOR = 'input, [role="switch"], [role="radio"][tabindex="0"]';
 const RESET_DEFAULT_ICON = <ResetIcon size={12} />;
 /** 设置项主体布局:窄于 32rem(行自身宽度)上下排列,否则左右并排(控件靠右)。导出供规范断言。 */
 export const SETTING_ROW_LAYOUT_CLASS_NAME =
@@ -128,8 +130,19 @@ export function SettingItemRow({
   const setValue = (id: string, v: SettingItemValue): void => {
     if (isStillRegistered(id)) setValueRaw(id, v);
   };
+  // 重置后按钮立刻 disabled + invisible,焦点会掉到 body → 提交后把焦点移到同行编辑控件(select 须等重渲后
+  // 新选中项才是 tabindex=0,故在 layout effect 里聚焦)。
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const focusControlAfterResetRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusControlAfterResetRef.current) return;
+    focusControlAfterResetRef.current = false;
+    controlsRef.current?.querySelector<HTMLElement>(ROW_CONTROL_SELECTOR)?.focus();
+  });
   const reset = (id: string): void => {
-    if (isStillRegistered(id)) resetRaw(id);
+    if (!isStillRegistered(id)) return;
+    focusControlAfterResetRef.current = true;
+    resetRaw(id);
   };
   // 与消费者(useSettingValue)同一 coerceSettingValue 规整:越界 number clamp、非法
   // select 回退 default —— 否则设置页显示篡改/旧版 localStorage 原始脏值,与实际生效值不一致。
@@ -193,7 +206,7 @@ export function SettingItemRow({
             </div>
           )}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div ref={controlsRef} className="flex shrink-0 flex-wrap items-center gap-2">
         {spec.type === 'boolean' && (
           // a11y(A4):role=switch 须有可访问名(= 设置标题),否则 AT 只读「switch checked」不知切换哪个设置。
           <Switch

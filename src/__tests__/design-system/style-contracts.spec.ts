@@ -24,7 +24,7 @@ describe('Button 样式契约', () => {
   });
 
   it('secondary hover 在原底色上叠加 state layer,不替换成半透明底色(否则 hover 反而变淡)', () => {
-    const hover = ruleBody(BUTTON, '.wm-button[data-variant="secondary"]:hover:not(:disabled)');
+    const hover = ruleBody(BUTTON, '.wm-button[data-variant="secondary"]:hover:not(:disabled, [aria-disabled="true"])');
     expect(hover).not.toBe('');
     expect(hover).not.toMatch(/background-color:\s*var\(--md-state-hover\)/);
     expect(hover).toMatch(/background-image:\s*linear-gradient\(var\(--md-state-hover\),\s*var\(--md-state-hover\)\)/);

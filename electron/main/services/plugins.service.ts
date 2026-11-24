@@ -1419,6 +1419,12 @@ export async function installFromGit(
       }
       if (backup) {
         await rm(backup, { recursive: true, force: true }).catch(() => {});
+      } else {
+        // 对齐 VSCode「安装即启用」:全新安装写入启用状态(下次启动 / 本窗口热激活时照常走权限授权)。更新(覆盖)保留
+        // 用户原有启停。写失败不回滚安装(插件已在盘上,可在插件页手动启用)。走 setEnabledId 全局串行链(同卸载)。
+        await setEnabledId(baseDir, pluginId, true).catch((err: unknown) => {
+          console.warn(`[plugins] 安装 ${pluginId} 后写启用状态失败`, err);
+        });
       }
 
       return { id: pluginId, name: pluginName, version: pluginVersion };

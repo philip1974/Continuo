@@ -22,6 +22,11 @@ export const WINDOW_CHANNELS = {
    * 不用 renderer 的 window.close()(不经 BrowserWindow 'close' 事件,会绕过脏确认)。
    */
   CLOSE: 'window:close',
+  /**
+   * 重启应用(插件安装后「立即重启」)。main 走与 ⌘Q 相同的退出流程(各窗口脏文件确认 / flush / 清理),全部通过后
+   * app.relaunch() 再退出;用户取消 → 不退出也不重启。
+   */
+  RELAUNCH_APP: 'window:relaunch-app',
 } as const;
 
 /** window:create 入参:由 main 的 zod schema 推出(单一来源,见 window-create-schema.ts)。 */

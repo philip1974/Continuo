@@ -1,7 +1,7 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge, Button } from '@/design';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '../co-app';
@@ -19,6 +19,7 @@ import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
 import { installFromGitLocalized, repoNameFromGitUrl } from '@/plugins/install-from-git';
 import { clearPendingInstall, recordPendingInstall, usePendingInstalls } from '../pending-installs-store';
+import { coApi } from '@/lib/co-api';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -136,21 +137,16 @@ function useContributionSnapshot(): readonly ContributionRow[] {
   );
 }
 
+// 内置插件名 / 描述走 catalog(随语言);第三方插件显示其 manifest 名。
 const CORE_PLUGINS: ReadonlyArray<{
   readonly id: string;
-  readonly nameKey?: string;
-  readonly name: string;
+  readonly nameKey: string;
   readonly descKey: string;
 }> = [
-  { id: 'core.editor', name: 'Editor', descKey: 'plugins_tab.core.editor_desc' },
-  { id: 'core.terminal', name: 'Terminal', descKey: 'plugins_tab.core.terminal_desc' },
-  { id: 'core.output', name: 'Output', descKey: 'plugins_tab.core.output_desc' },
-  {
-    id: 'core.plugins',
-    name: 'Plugin management',
-    nameKey: 'plugins_tab.core.plugins_name',
-    descKey: 'plugins_tab.core.plugins_desc',
-  },
+  { id: 'core.editor', nameKey: 'plugins_tab.core.editor_name', descKey: 'plugins_tab.core.editor_desc' },
+  { id: 'core.terminal', nameKey: 'plugins_tab.core.terminal_name', descKey: 'plugins_tab.core.terminal_desc' },
+  { id: 'core.output', nameKey: 'plugins_tab.core.output_name', descKey: 'plugins_tab.core.output_desc' },
+  { id: 'core.plugins', nameKey: 'plugins_tab.core.plugins_name', descKey: 'plugins_tab.core.plugins_desc' },
 ];
 
 export function PluginsTabContent() {
@@ -189,9 +185,7 @@ export function PluginsTabContent() {
           {CORE_PLUGINS.map((p, i) => (
             <div key={p.id} className={pluginsTabRowClassName(i > 0)}>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-fg">
-                  {p.nameKey ? t(p.nameKey) : p.name}
-                </div>
+                <div className="text-sm font-medium text-fg">{t(p.nameKey)}</div>
                 <div className="mt-1 text-fg-muted">{t(p.descKey)}</div>
               </div>
               <Badge size="xs" className="min-w-0 max-w-[40%] uppercase tracking-wider">
@@ -263,13 +257,30 @@ function UserPluginsSection() {
     () => setUninstallTarget(null),
   );
 
+  // 卸载成功后被卸载行(连同焦点所在的「卸载」按钮)消失 → 焦点移到原位置的下一行(没有则上一行)的「卸载」,
+  // 列表空了则移到本段标题。等该 id 真正离开列表(列表变化可能早于 / 晚于 uninstall 结算)再移。
+  const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [focusAfterUninstall, setFocusAfterUninstall] = useState<{ id: string; index: number } | null>(null);
+  useEffect(() => {
+    if (focusAfterUninstall === null || hasPluginId(plugins, focusAfterUninstall.id)) return;
+    setFocusAfterUninstall(null);
+    const buttons = listRef.current?.querySelectorAll<HTMLElement>('[data-plugin-uninstall]');
+    const next = buttons && buttons.length > 0 ? buttons[Math.min(focusAfterUninstall.index, buttons.length - 1)] : null;
+    (next ?? sectionHeadingRef.current)?.focus();
+  }, [focusAfterUninstall, plugins]);
+
   const onConfirmUninstall = async () => {
     if (!uninstallTarget || !mgr) return;
     const target = uninstallTarget;
+    const index = plugins.findIndex((p) => p.id === target.id);
     setUninstallTarget(null);
     try {
       await mgr.uninstall(target.id);
       clearPendingInstall(target.id);
+      // a11y:卸载成功经 live region(role=status)播报;焦点移到相邻行(见上)。
+      setInstallMsg({ text: t('plugins_tab.uninstall.success', { name: target.manifest.name }), isError: false });
+      setFocusAfterUninstall({ id: target.id, index: Math.max(index, 0) });
     } catch (err) {
       console.warn(`[plugins-tab] uninstall ${target.id} failed`, err);
       // i18n(I10,I1-I9 同族,catch 抛错路径):uninstall 抛回带 code 的 Error
@@ -331,7 +342,12 @@ function UserPluginsSection() {
 
   return (
     <section>
-      <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
+      {/* tabIndex=-1:卸载掉最后一个插件后焦点的落点(程序化聚焦,不进 Tab 序)。 */}
+      <h3
+        ref={sectionHeadingRef}
+        tabIndex={-1}
+        className="mb-3 border-b border-line pb-3 text-base font-medium text-fg outline-none"
+      >
         {t('plugins_tab.section.user')}
       </h3>
       {/* git URL 安装(对齐 demo (3) 的「从 GIT URL 安装」段:浅底 + 标题 +
@@ -358,7 +374,7 @@ function UserPluginsSection() {
           {t('plugins_tab.user.no_plugins')}
         </div>
       ) : (
-        <div className="rounded-md border border-line bg-panel-soft/40">
+        <div ref={listRef} className="rounded-md border border-line bg-panel-soft/40">
           {pendingRows.map((pending, i) => (
             <div key={pending.id} className={pluginsTabRowClassName(i > 0)}>
               <div className="min-w-0 flex-1">
@@ -371,6 +387,22 @@ function UserPluginsSection() {
                 </div>
                 <div className="mt-1 text-fg-muted">{t('plugins_tab.user.pending_hint')}</div>
               </div>
+              {/* main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动;失败(用户取消不算失败)经 live region 反馈。 */}
+              <Button
+                variant="primary"
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  void coApi.window
+                    .relaunchApp()
+                    .then((r) => {
+                      if (!r.ok) reportActionError(r);
+                    })
+                    .catch(reportActionError);
+                }}
+              >
+                {t('plugins_tab.btn.restart_now')}
+              </Button>
             </div>
           ))}
           {plugins.map((p, i) => (
@@ -477,6 +509,7 @@ function UserPluginsSection() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setUninstallTarget(p)}
+                  data-plugin-uninstall={p.id}
                   title={t('plugins_tab.action.uninstall_tooltip')}
                   aria-label={t('plugins_tab.action.row_button_aria', {
                     action: t('plugins_tab.btn.uninstall'),

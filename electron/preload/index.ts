@@ -442,6 +442,8 @@ const api = {
       ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_THEME, mode === undefined ? { theme } : { theme, mode }),
     /** 关闭本窗口(经 main win.close(),走关窗脏确认)。⌘W 已无可关的编辑器 / 面板时调用(对齐 VSCode)。 */
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
+    /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */
+    relaunchApp: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.RELAUNCH_APP, {}),
     /**
      * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
      * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。

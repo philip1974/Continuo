@@ -14,6 +14,10 @@
 //
 // 退出可被用户中止(脏文件确认点「取消」/ 「保存」失败):cancel() 把 started 复位,
 // 下次 Cmd+Q 重新 'run'(否则守卫卡在「在途」,之后所有 quit 都被 block,应用再也退不出)。
+//
+// 「立即重启」(插件安装后):requestRelaunch() 记请求后走同一退出流程;清理完成、内部 app.quit() 之前查
+// relaunchRequested() 决定是否 app.relaunch()。退出被中止时 cancel() 一并作废请求 —— 否则 Electron 的
+// relaunch 标记一旦设上无法撤销,之后用户普通退出也会被意外重启,故 app.relaunch() 只在退出确定发生时才调。
 
 export type QuitCleanupAction = 'run' | 'block' | 'allow';
 
@@ -22,13 +26,18 @@ export interface QuitCleanupGuard {
   onBeforeQuit: () => QuitCleanupAction;
   /** 清理全部完成、即将调用内部 app.quit() 之前调用 —— 让随后的重入放行。 */
   markFinished: () => void;
-  /** 本次退出被中止(清理尚未开始收尾):复位为未开始,下次 before-quit 重新 'run'。finished 后无效。 */
+  /** 本次退出被中止(清理尚未开始收尾):复位为未开始并作废重启请求,下次 before-quit 重新 'run'。finished 后无效。 */
   cancel: () => void;
+  /** 记下「退出后重新启动」请求(随后由调用方 app.quit() 进入退出流程)。 */
+  requestRelaunch: () => void;
+  /** 退出清理完成时:是否应在退出前 app.relaunch()。 */
+  relaunchRequested: () => boolean;
 }
 
 export function makeQuitCleanupGuard(): QuitCleanupGuard {
   let started = false;
   let finished = false;
+  let relaunch = false;
   return {
     onBeforeQuit() {
       if (finished) return 'allow';
@@ -40,7 +49,15 @@ export function makeQuitCleanupGuard(): QuitCleanupGuard {
       finished = true;
     },
     cancel() {
-      if (!finished) started = false;
+      if (finished) return;
+      started = false;
+      relaunch = false;
+    },
+    requestRelaunch() {
+      relaunch = true;
+    },
+    relaunchRequested() {
+      return relaunch;
     },
   };
 }

@@ -648,12 +648,14 @@ const MarketplaceCard = memo(function MarketplaceCard({
           )}
         </div>
         <div className={MARKETPLACE_CARD_ACTION_CLASS_NAME}>
+          {/* 进行中 / 已安装用 aria-disabled 而非原生 disabled:按钮保持可聚焦(三个分支同位同类型,React 复用同一 DOM
+              节点 → 安装中 → 已安装焦点一直在它上面);重复点击由 runCardInstall 的同步单飞闸门挡掉。 */}
           {installed && updateAvailable && !pendingRestart ? (
             <Button
               variant="primary"
               size="sm"
               onClick={handleUpdate}
-              disabled={installing || installDisabled}
+              aria-disabled={installing || installDisabled}
               title={t('marketplace.update_tooltip', { version: updateAvailable })}
               aria-busy={installing}
               // a11y(A77,A75 同族):多卡片操作按钮可见文本通用,aria-label 补插件名以区分。
@@ -672,7 +674,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
             <Button
               variant="ghost"
               size="sm"
-              disabled
+              aria-disabled
               title={
                 pendingRestart
                   ? t('marketplace.install.disk_ready_hint')
@@ -694,7 +696,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
               variant="primary"
               size="sm"
               onClick={handleInstall}
-              disabled={installing || installDisabled}
+              aria-disabled={installing || installDisabled}
               aria-busy={installing}
               aria-label={t('marketplace.card_action_aria', {
                 action: installing

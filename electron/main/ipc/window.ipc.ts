@@ -45,6 +45,8 @@ export interface WindowIpcDeps {
     workspace?: string;
     fresh?: boolean;
   }) => { readonly id: number };
+  /** 重启应用:走正常退出流程(脏文件确认等),退出确定发生后再 relaunch(见 index.ts relaunchApp)。 */
+  readonly relaunchApp: () => void;
 }
 
 // 边界(数量上限):renderer 发起的新建窗口(「新建窗口」命令 / 在新窗口打开文件夹)此前无上限。第三方插件经
@@ -126,6 +128,7 @@ const NotifyRootInput = z
   .strict();
 
 const CloseInput = z.object({}).strict();
+const RelaunchInput = z.object({}).strict();
 
 const NotifyThemeInput = z
   .object({
@@ -177,6 +180,10 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     win.close();
+  });
+  // 「立即重启」(插件安装后):交给组合根走退出流程,不在这里直接 app.relaunch()/exit()(会绕过脏文件确认丢未保存内容)。
+  safeHandle(WINDOW_CHANNELS.RELAUNCH_APP, RelaunchInput, () => {
+    deps.relaunchApp();
   });
   // 窗口关闭清 map(防泄漏)。
   app.on('browser-window-created', (_event, win) => {

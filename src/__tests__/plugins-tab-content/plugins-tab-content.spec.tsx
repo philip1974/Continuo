@@ -269,6 +269,26 @@ describe('PluginsTabContent — 内置插件', () => {
     expect(container.textContent).toContain('core.output');
     expect(container.textContent).toContain('core.plugins');
   });
+
+  // i18n:内置插件名走 catalog(zh 不再显示 Editor / Terminal / Output);第三方插件仍显示 manifest 名。
+  it('内置插件名按当前语言显示(zh:编辑器 / 终端 / 输出 / 插件管理)', () => {
+    const { container } = render(<PluginsTabContent />);
+    const builtin = Array.from(container.querySelectorAll('section'))[1]!;
+    const names = Array.from(builtin.querySelectorAll('.text-sm.font-medium')).map((n) => n.textContent);
+    expect(names).toEqual(['编辑器', '终端', '输出', '插件管理']);
+  });
+
+  it('切到 en → Editor / Terminal / Output / Plugin management', () => {
+    act(() => setI18nLocale('en'));
+    try {
+      const { container } = render(<PluginsTabContent />);
+      const builtin = Array.from(container.querySelectorAll('section'))[1]!;
+      const names = Array.from(builtin.querySelectorAll('.text-sm.font-medium')).map((n) => n.textContent);
+      expect(names).toEqual(['Editor', 'Terminal', 'Output', 'Plugin management']);
+    } finally {
+      act(() => setI18nLocale('zh'));
+    }
+  });
 });
 
 describe('PluginsTabContent — 第三方插件:空态', () => {
@@ -765,9 +785,10 @@ describe('PluginsTabContent — Git URL 安装', () => {
     fireEvent.click(
       Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
     );
-    // 覆盖重装已在列表的插件:watcher 热重载即生效,提示「已更新 … 已重新加载」而非「重启后加载」。
+    // 覆盖重装已在列表的插件:watcher 热重载即生效,提示「已更新 … 已重新加载」而非「已安装 … 已启用」,也不出待重启行。
     await waitFor(() => expect(container.textContent).toContain('已更新 Dup v2.0.0'));
-    expect(container.textContent).not.toContain('重启 Continuo 后插件加载');
+    expect(container.textContent).not.toContain('已安装 Dup');
+    expect(container.textContent).not.toContain('需重启 Continuo 才能加载');
     act(() => {
       list = [];
       notifyUserPluginListChanged();

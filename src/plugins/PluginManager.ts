@@ -394,6 +394,44 @@ export class PluginManager {
     });
   }
 
+  /**
+   * 本窗口刚装好的新插件(尚不在列表):不重启即登记,并按 _enabled.json 的启用状态激活 —— main 在全新安装时已写入启用
+   *(对齐 VSCode 安装即启用),激活照常走权限授权。与启动同一准入 + 选目录(selectPluginDirs)。已在列表 → 无操作(更新由
+   * 文件监视热重载)。返回该 id 是否已在列表(目录不存在 / 准入不过 → false,调用方保留「待重启」)。per-id 串行。
+   */
+  async adoptInstalled(id: string): Promise<boolean> {
+    // 重装是显式意图:清掉同 id 先前卸载留下的停用意图(否则同会话卸载后重装永不激活)。须在进锁前同步清 ——
+    // 之后到达的卸载 / 禁用会重新记下,登记时按停用处理。
+    if (this.deactivationIntents.get(id) === 'uninstalled') this.deactivationIntents.delete(id);
+    const scanning = this.untilScanned();
+    if (scanning) await scanning;
+    return this.withLifecycleLock(id, async () => {
+      if (this.entries.has(id)) return true;
+      const own = (await this.host.listPluginDirs()).filter((d) => rawManifestId(d.manifestText) === id);
+      const selected = selectPluginDirs(own, this.app.version).get(id);
+      if (!selected) return false;
+      let enabledIds: ReadonlySet<string>;
+      try {
+        enabledIds = await this.host.readEnabledIds();
+      } catch (err) {
+        console.warn(`[PluginManager] readEnabledIds failed adopting ${id} — registering disabled`, err);
+        enabledIds = new Set();
+      }
+      const intended = enabledIds.has(id) && !this.deactivationIntents.has(id);
+      const entry: PluginEntry = {
+        id,
+        manifest: selected.manifest,
+        dirInfo: selected.dir,
+        status: intended ? 'enabled' : 'disabled',
+        enabledIntent: intended,
+      };
+      this.entries.set(id, entry);
+      this.invalidateListCache();
+      if (intended) await this.activateEntry(entry);
+      return true;
+    });
+  }
+
   /** 启用单个插件(若已 active 幂等). per-id 串行. */
   async enable(id: string): Promise<void> {
     // 显式启用:同步清除停用意图(须在进锁前 —— 若在锁内清,排在本次启用之后的禁用请求会被抹掉,

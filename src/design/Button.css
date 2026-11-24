@@ -22,22 +22,22 @@
 .wm-button[data-size="lg"] { padding: var(--wm-space-2_5) var(--wm-space-4); font-size: var(--wm-text-base); }
 
 .wm-button[data-variant="primary"] { background-color: var(--md-primary); color: var(--md-on-primary); }
-.wm-button[data-variant="primary"]:hover:not(:disabled) { background-color: var(--md-primary-container); color: var(--md-on-primary-container); }
+.wm-button[data-variant="primary"]:hover:not(:disabled, [aria-disabled="true"]) { background-color: var(--md-primary-container); color: var(--md-on-primary-container); }
 
 .wm-button[data-variant="secondary"] { background-color: var(--md-secondary-container); color: var(--md-on-secondary-container); border-color: var(--md-secondary); }
 /* hover 用 MD3 state layer:在不透明 secondary-container 底色上叠一层 --md-state-hover(而非把底色换成
  * 8% 半透明 —— 那样 hover 反而变淡)。 */
-.wm-button[data-variant="secondary"]:hover:not(:disabled) { background-image: linear-gradient(var(--md-state-hover), var(--md-state-hover)); }
+.wm-button[data-variant="secondary"]:hover:not(:disabled, [aria-disabled="true"]) { background-image: linear-gradient(var(--md-state-hover), var(--md-state-hover)); }
 
 .wm-button[data-variant="ghost"] {
   background-color: transparent;
   color: var(--md-on-surface-variant);
   border-color: transparent;
 }
-.wm-button[data-variant="ghost"]:hover:not(:disabled) { background-color: var(--md-state-hover); color: var(--md-on-surface); border-color: var(--md-outline-variant); }
+.wm-button[data-variant="ghost"]:hover:not(:disabled, [aria-disabled="true"]) { background-color: var(--md-state-hover); color: var(--md-on-surface); border-color: var(--md-outline-variant); }
 
 .wm-button[data-variant="danger"] { background-color: var(--md-error-container); color: var(--md-on-error-container); border-color: var(--md-error); }
-.wm-button[data-variant="danger"]:hover:not(:disabled) { background-color: var(--md-error); color: var(--md-on-error); }
+.wm-button[data-variant="danger"]:hover:not(:disabled, [aria-disabled="true"]) { background-color: var(--md-error); color: var(--md-on-error); }
 
 /* LM-local 扩展:outlined — 透明 + accent 边/字,IDE empty state CTA 不抢镜. */
 .wm-button[data-variant="outlined"] {
@@ -45,7 +45,7 @@
   color: var(--md-primary);
   border-color: var(--md-primary);
 }
-.wm-button[data-variant="outlined"]:hover:not(:disabled) {
+.wm-button[data-variant="outlined"]:hover:not(:disabled, [aria-disabled="true"]) {
   background-color: var(--md-primary);
   color: var(--md-on-primary);
 }
@@ -56,4 +56,6 @@
   outline-offset: 2px;
 }
 
-.wm-button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* aria-disabled="true":不可用但仍可聚焦(进行中的操作按钮,焦点不丢),视觉与 :disabled 一致;点击由调用方忽略。 */
+.wm-button:disabled,
+.wm-button[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }

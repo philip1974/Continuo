@@ -115,7 +115,7 @@ beforeEach(async () => {
   resetWindowSeq();
   setWindowSeq(101, 0);
   setWindowSeq(202, 1);
-  registerIpc({ createMainWindow: vi.fn() });
+  registerIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn() });
 });
 
 afterEach(async () => {

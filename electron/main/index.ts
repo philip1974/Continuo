@@ -221,6 +221,12 @@ export const FLUSH_ACK_TIMEOUT_MS = 10_000;
 // 守卫区分 started/finished:清理在途时用户再次 quit 必须继续拦截,不能放行绕过 cleanupAll
 // (复审 F1,见 quit-cleanup-guard.ts)。
 const quitGuard = makeQuitCleanupGuard();
+
+/** 重启应用(插件安装后「立即重启」):记重启请求后走正常退出流程(脏文件确认 / flush / 清理);用户取消 → 请求作废。 */
+function relaunchApp(): void {
+  quitGuard.requestRelaunch();
+  app.quit();
+}
 const debugService = new DebugService();
 
 debugService.setEventSink({
@@ -1352,7 +1358,7 @@ app.whenReady().then(async () => {
     setDockMenu();
   }
 
-  registerIpc({ createMainWindow });
+  registerIpc({ createMainWindow, relaunchApp });
   // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
   setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY
@@ -1579,5 +1585,7 @@ app.on('before-quit', async (event) => {
   ]);
   quitTrace('quit');
   quitGuard.markFinished();
+  // 「立即重启」:只在退出确定发生时才设 relaunch 标记(Electron 无法撤销),见 quit-cleanup-guard。
+  if (quitGuard.relaunchRequested()) app.relaunch();
   app.quit();
 });

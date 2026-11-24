@@ -1121,6 +1121,14 @@
 
 - [`clone-size-cap.spec.ts`](./plugin-install-clone-size-cap/clone-size-cap.spec.ts)
 
+## [plugin-install-enable](./plugin-install-enable/README.md)
+
+- [`adopt-installed.spec.ts`](./plugin-install-enable/adopt-installed.spec.ts)
+- [`install-writes-enabled.spec.ts`](./plugin-install-enable/install-writes-enabled.spec.ts)
+- [`pending-row-restart.spec.tsx`](./plugin-install-enable/pending-row-restart.spec.tsx)
+- [`relaunch-guard.spec.ts`](./plugin-install-enable/relaunch-guard.spec.ts)
+- [`relaunch-ipc.spec.ts`](./plugin-install-enable/relaunch-ipc.spec.ts)
+
 ## [plugin-ipc-frame-trust(plugin-data / plugin-fs raw IPC 的 frame-trust 门)](./plugin-ipc-frame-trust/README.md)
 
 - [`frame-trust-gate.spec.ts`](./plugin-ipc-frame-trust/frame-trust-gate.spec.ts)
@@ -1416,6 +1424,10 @@
 ## [setting-tab-registry(设置标签贡献)](./setting-tab-registry/README.md)
 
 - [`setting-tab-registry.spec.ts`](./setting-tab-registry/setting-tab-registry.spec.ts)
+
+## [settings-focus-after-action](./settings-focus-after-action/README.md)
+
+- [`settings-focus-after-action.spec.tsx`](./settings-focus-after-action/settings-focus-after-action.spec.tsx)
 
 ## [设置页窄宽布局(settings-narrow-layout)](./settings-narrow-layout/README.md)
 
