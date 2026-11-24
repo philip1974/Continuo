@@ -16,7 +16,7 @@ import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { codedError } from '../../shared/error-message';
 import { withInstalledPluginLock } from './plugins.service';
-import { preserveCorruptSnapshot } from '../lib/corrupt-snapshot';
+import { preserveCorruptSnapshot, quarantineCorruptFile } from '../lib/corrupt-snapshot';
 
 const LOCK_OPTS: lockfile.LockOptions = {
   // Op12.5 spike not executed in this batch; using library defaults/recommendation.
@@ -75,7 +75,7 @@ export function registerPluginDataStoreHandlers(
       throw err; // 权限等真正的 IO 错误仍抛
     }
     if (r.tooLarge) {
-      await fs.rename(file, `${file}.corrupt`).catch(() => {});
+      await quarantineCorruptFile(file);
       return {};
     }
     const buf = r.text as string; // tooLarge=false 时 text 必为 string

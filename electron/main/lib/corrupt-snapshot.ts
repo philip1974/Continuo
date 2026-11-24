@@ -11,3 +11,23 @@ export async function preserveCorruptSnapshot(file: string, raw: string): Promis
     // 快照已存在(EEXIST)或写失败 → best-effort,忽略
   }
 }
+
+/**
+ * 把无法读取的持久化文件(如超大)整个移走隔离,不读其内容。不覆盖已有证据:`${file}.corrupt` 已存在(先前的
+ * 损坏快照)时改名到 `${file}.corrupt.<ts>`。best-effort,失败不影响主流程。
+ */
+export async function quarantineCorruptFile(file: string): Promise<void> {
+  const primary = `${file}.corrupt`;
+  let exists: boolean;
+  try {
+    await fs.access(primary);
+    exists = true;
+  } catch {
+    exists = false;
+  }
+  try {
+    await fs.rename(file, exists ? `${primary}.${Date.now()}` : primary);
+  } catch {
+    // 原文件无法改名 → 忽略
+  }
+}

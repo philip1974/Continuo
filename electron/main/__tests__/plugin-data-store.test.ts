@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, promises as fsp } from 'node:fs';
-import { mkdir, readFile, truncate, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import { describe, expect, it, vi } from 'vitest';
@@ -120,6 +120,21 @@ describe('plugin-data-store.service', () => {
     await expect(ipc.invoke('plugin-data:load', 'p.huge')).resolves.toEqual({});
     expect(existsSync(`${file}.corrupt`)).toBe(true); // 隔离
     expect(existsSync(file)).toBe(false); // 原超大文件已移走
+  });
+
+  // 隔离不覆盖已有证据:此前超大分支 rename 到 .corrupt 会冲掉先前 JSON 损坏时留的第一份快照。
+  it('超大 data.json 且已有 .corrupt 快照 → 另存 .corrupt.<ts>,旧快照保留', async () => {
+    const { root, ipc } = await makeHarness();
+    const dir = join(root, 'plugins', 'p.huge2');
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, 'data.json');
+    await writeFile(`${file}.corrupt`, 'earlier-evidence');
+    await writeFile(file, '{}');
+    await truncate(file, 16 * 1024 * 1024 + 1);
+    await expect(ipc.invoke('plugin-data:load', 'p.huge2')).resolves.toEqual({});
+    expect(await readFile(`${file}.corrupt`, 'utf-8')).toBe('earlier-evidence');
+    const moved = (await readdir(dir)).filter((n) => /^data\.json\.corrupt\.\d+$/.test(n));
+    expect(moved).toHaveLength(1);
   });
 
   // 边界(E161,stat-before-read TOCTOU 修正):load 改用共享单 fd readFileCappedFd,EACCES 等非
