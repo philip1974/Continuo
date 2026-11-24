@@ -3,7 +3,6 @@
 // (文件),带 shift = 命令面板(对齐 VSCode)。
 
 import { useEffect } from 'react';
-import { addAppDocumentsListener } from '@/lib/app-documents';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import type { PickerSlice } from './picker-slice';
 
@@ -31,7 +30,9 @@ export function usePickerToggleHotkey(
         else open();
       }
     };
-    // 主窗 + dockview popout 子窗都挂(子窗的按键只派发到子窗 document)。
-    return addAppDocumentsListener('keydown', handler);
+    // 只挂主窗 document,不挂 popout 子窗:picker 是主窗 App 层的 Modal,从子窗打开时画在主窗、焦点却留在子窗
+    //(无激活主窗的通路)→ 接着输入的字进了子窗的编辑器 / 终端,且该 Modal 在子窗里 Esc 关不掉,比不响应更糟。
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
   }, [getState, shift]);
 }

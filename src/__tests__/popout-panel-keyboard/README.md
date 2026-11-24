@@ -16,16 +16,18 @@
 
 - 在弹窗所在文档(capture 阶段)录制按键:Settings 弹出到子窗后,在子窗按组合键能录到。
 
-### 全局热键(命令热键 `useCommandHotkeys`、⌘P / ⌘⇧P `usePickerToggleHotkey`)
+### 全局命令热键(`useCommandHotkeys`)
 
 - 监听挂在「所有应用文档」上 = 主窗 document + 当前 dockview popout 子窗的 document(`src/lib/app-documents.ts`)。
 - popout 子窗打开(组位置变为 `popout`)即加入,子窗关闭 / 组回到主窗 / 组被移除即移出
   (`src/shell/dock/popout-documents.ts` 跟踪 dockview 组位置,DockShell onReady 时挂上)。
 - 同一按键只触发一次:一个按键事件只在其所在文档派发;同一文档重复登记只挂一个监听。
+- ⌘P / ⌘⇧P(`usePickerToggleHotkey`)**只认主窗**:picker 是主窗 App 层 Modal,从子窗打开会画在主窗而焦点留在子窗
+  (无激活主窗的通路;接着输入的字进子窗编辑器 / 终端,Esc 关不掉),比不响应更糟。
 
 ## 不在本主题验证
 
-- 真实 Electron popout 窗口里的键盘手感;⌘P / ⌘⇧P 打开的面板仍渲染在主窗(子窗按下后需切到主窗操作)。
+- 真实 Electron popout 窗口里的键盘手感。
 
 - tablist 方向键轮转(`handleTablistArrowKeys`,TabNav / Tabs 共用)按 tablist 所在文档的焦点计算;dock tab 条
   (SharedTab)键盘切换后在 tab 所在文档里查找目标 tab 聚焦 —— 面板弹出到子窗后方向键切 tab 与焦点跟随照常。

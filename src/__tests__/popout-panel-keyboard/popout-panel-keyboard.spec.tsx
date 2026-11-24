@@ -164,7 +164,8 @@ describe('应用文档集合(主窗 + popout 子窗)', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it('⌘P(Quick Open)在子窗生效', () => {
+  // picker 是主窗 App 层 Modal:从子窗打开会画在主窗而焦点留在子窗(输入串到子窗编辑器 / 终端,Esc 关不掉)→ 子窗不响应。
+  it('⌘P(Quick Open)在子窗不打开(只认主窗)', () => {
     const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
     Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
     cleanups.push(() => {
@@ -174,6 +175,8 @@ describe('应用文档集合(主窗 + popout 子窗)', () => {
     cleanups.push(registerAppDocument(child.doc));
     renderHook(() => useQuickOpenHotkey());
     keydown(child.doc.body, { key: 'p', metaKey: true });
+    expect(useQuickOpenStore.getState().isOpen).toBe(false);
+    keydown(document.body, { key: 'p', metaKey: true });
     expect(useQuickOpenStore.getState().isOpen).toBe(true);
     useQuickOpenStore.setState({ isOpen: false });
   });
