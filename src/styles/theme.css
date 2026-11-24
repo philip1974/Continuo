@@ -122,6 +122,8 @@
   --color-debug-exec-line: var(--md-debug-exec-line);
   /* 评分星 text-rating(Continuo 自有 --md-rating,两主题各有取值) */
   --color-rating: var(--md-rating);
+  /* 键盘焦点轮廓 outline-focus-ring(design 控件焦点环同色 --md-focus-ring),供非 design 控件的可聚焦行使用。 */
+  --color-focus-ring: var(--md-focus-ring);
 
   /* 浮层阴影:shadow-popover(design Modal 同款 --wm-shadow-popover,light/dark 各有取值),
    * 替代手写弹出菜单上的 shadow-lg shadow-black/40。 */

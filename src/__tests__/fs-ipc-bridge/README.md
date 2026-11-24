@@ -26,7 +26,7 @@
 | `fs:rename`           | `{ path, newName }`  | `renameEntry(path, newName)` | `string`(新路径) |
 | `fs:create-file`      | `{ dir, name }`      | `createFile(dir, name)` | `string` |
 | `fs:create-dir`       | `{ parent, name }`   | `createDir(parent, name)` | `string` |
-| `fs:trash`            | `{ path }`           | `shell.trashItem(path)` | `void` |
+| `fs:trash`            | `{ path }`           | `shell.trashItem(path)`;失败且路径已不存在 → 抛 `FS_NOT_FOUND`(trashItem 只给平台文案无 errno) | `void` |
 | `fs:select-directory` | `undefined`          | `dialog.showOpenDialog(...)` | `string \| null` |
 
 ## 关键行为

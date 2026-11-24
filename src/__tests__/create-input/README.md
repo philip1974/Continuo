@@ -16,7 +16,8 @@
 - type='file' → Document icon
 - type='dir' → Folder icon
 - placeholder 对应「新建文件名…」/「新建文件夹名…」
-- 「在: ${parentDir}」标注
+- 「在: …」标注:传 `rootPath` 时显示相对工作区根的路径(根目录本身显示工作区名),完整绝对路径放 `title`;
+  不传则显示 parentDir 原值
 
 ### 键盘
 

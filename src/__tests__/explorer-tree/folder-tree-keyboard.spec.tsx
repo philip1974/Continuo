@@ -312,6 +312,43 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledWith('/work/beta.ts'));
   });
 
+  it('右键「移到废纸篓」→ 确认框打开期间焦点在框内;Esc 取消 → 焦点回到右键的那一行', async () => {
+    const { container, findByText } = await mount();
+    act(() => {
+      fireEvent.contextMenu(row(container, '/work/bravo.ts')!);
+    });
+    const item = await findByText(TRASH_LABEL);
+    act(() => {
+      fireEvent.click(item.closest('[role="menuitem"]')!);
+    });
+    const dialog = await screen.findByRole('dialog');
+    const cancel = within(dialog).getByRole('button', { name: CANCEL_LABEL });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    // Radix 菜单关闭后的焦点还原(setTimeout)不得把焦点抢回遮罩后的树行
+    await new Promise((r) => setTimeout(r, 30));
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    act(() => {
+      fireEvent.keyDown(document.activeElement!, { key: 'Escape', code: 'Escape' });
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/bravo.ts')));
+    expect(coApi.fs.trash).not.toHaveBeenCalled();
+  });
+
+  it('右键「移到废纸篓」确认后 → 焦点落到下一项(不掉到 body)', async () => {
+    const { container, findByText } = await mount();
+    act(() => {
+      fireEvent.contextMenu(row(container, '/work/bravo.ts')!);
+    });
+    const item = await findByText(TRASH_LABEL);
+    act(() => {
+      fireEvent.click(item.closest('[role="menuitem"]')!);
+    });
+    await confirmTrash();
+    await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledWith('/work/bravo.ts'));
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/charlie.ts')));
+  });
+
   it('explorer.confirmDelete 关闭 → 不弹确认直接移到废纸篓', async () => {
     h.settings = { 'explorer.confirmDelete': false };
     const { container } = await mount();
@@ -347,6 +384,42 @@ describe('FolderTree · 未显示隐藏文件时键盘不触及隐藏项', () =>
     await confirmTrash();
     await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalled());
     expect(vi.mocked(coApi.fs.trash).mock.calls.map((c) => c[0])).toEqual(['/work/alpha']);
+  });
+
+  it('关掉「显示隐藏文件」→ 选中集合里的隐藏项被移出:Delete / 复制只作用于仍可见的选中项', async () => {
+    h.settings = { 'explorer.showHiddenFiles': true };
+    const r = await mount();
+    await waitFor(() => expect(row(r.container, '/work/.env')).not.toBeNull());
+    await focusRow(r.container, '/work/.env');
+    act(() => {
+      fireEvent.click(row(r.container, '/work/beta.ts')!, { ctrlKey: true });
+    });
+    act(() => {
+      fireEvent.click(row(r.container, '/work/charlie.ts')!, { ctrlKey: true });
+    });
+    await waitFor(() => expect(row(r.container, '/work/charlie.ts')!.getAttribute('aria-selected')).toBe('true'));
+    h.settings = { 'explorer.showHiddenFiles': false };
+    r.rerender(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/.env')).toBeNull());
+    // 右键菜单按选中集合作用(不经键盘的防御过滤)→ 验证的是选中集合本身已修剪
+    act(() => {
+      fireEvent.contextMenu(row(r.container, '/work/charlie.ts')!);
+    });
+    const copyItem = await r.findByText(/^(复制|Copy)$/);
+    act(() => {
+      fireEvent.click(copyItem.closest('[role="menuitem"]')!);
+    });
+    expect([...useExplorerClipboardStore.getState().paths].sort()).toEqual([
+      '/work/beta.ts',
+      '/work/charlie.ts',
+    ]);
+    key(row(r.container, '/work/charlie.ts')!, { key: 'Delete', code: 'Delete' });
+    await confirmTrash();
+    await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(coApi.fs.trash).mock.calls.map((c) => c[0]).sort()).toEqual([
+      '/work/beta.ts',
+      '/work/charlie.ts',
+    ]);
   });
 
   it('切换「显示隐藏文件」→ 已加载目录刷新,隐藏项出现;再关 → 消失', async () => {

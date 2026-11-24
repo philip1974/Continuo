@@ -211,6 +211,7 @@ export const zh: Record<TranslationKey, string> = {
   'dock.panel.plugin_unavailable': '插件面板未加载。插件可能仍在启动,或已被禁用 / 卸载 —— 可关闭此面板。',
   'panels.explorer.empty_folder': '此文件夹为空',
   'panels.explorer.load_failed': '无法读取此文件夹:{message}',
+  'panels.explorer.load_failed_named': '无法读取“{name}”:{message}',
   'panels.explorer.retry': '重试',
   'panels.explorer.trash_confirm.file': '确定要删除“{name}”吗?',
   'panels.explorer.trash_confirm.folder': '确定要删除“{name}”及其内容吗?',

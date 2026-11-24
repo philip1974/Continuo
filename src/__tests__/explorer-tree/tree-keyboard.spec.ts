@@ -71,12 +71,16 @@ describe('handleTreeKeyDown · 删除防误触', () => {
       getItemData: () => ({ path: id, name: id.split('/').pop()!, isDirectory: false }),
       setFocused: vi.fn(),
     }) as unknown as ItemInstance<FileEntry>;
-  const makeCtx = (focused: ItemInstance<FileEntry>, items: ItemInstance<FileEntry>[]) => {
+  const makeCtx = (
+    focused: ItemInstance<FileEntry>,
+    items: ItemInstance<FileEntry>[],
+    selectedItems: string[] = [focused.getId()],
+  ) => {
     const tree = {
       isRenamingItem: () => false,
       getDataRef: () => ({ current: {} }),
       getFocusedItem: () => focused,
-      getState: () => ({ selectedItems: [focused.getId()] }),
+      getState: () => ({ selectedItems }),
       setSelectedItems: vi.fn(),
       updateDomFocus: vi.fn(),
     } as unknown as TreeInstance<FileEntry>;
@@ -105,6 +109,18 @@ describe('handleTreeKeyDown · 删除防误触', () => {
     expect(actions.onCopy).not.toHaveBeenCalled();
     expect(actions.onCut).not.toHaveBeenCalled();
     expect(actions.onPaste).not.toHaveBeenCalled();
+  });
+
+  it('选中集合里有不在渲染列表的项(如刚隐藏的 .env)→ Delete / 复制 / 剪切只作用于可见的选中项', () => {
+    const a = fakeItem('/work/a.ts');
+    const b = fakeItem('/work/b.ts');
+    const { ctx, actions } = makeCtx(a, [a, b], ['/work/.env', '/work/a.ts', '/work/b.ts']);
+    handleTreeKeyDown(keyEv({ key: 'Delete' }), ctx);
+    handleTreeKeyDown(keyEv({ key: 'c', ctrlKey: true }), ctx);
+    handleTreeKeyDown(keyEv({ key: 'x', ctrlKey: true }), ctx);
+    expect(actions.onTrash.mock.calls[0]![0]).toEqual(['/work/a.ts', '/work/b.ts']);
+    expect(actions.onCopy.mock.calls[0]![0]).toEqual(['/work/a.ts', '/work/b.ts']);
+    expect(actions.onCut.mock.calls[0]![0]).toEqual(['/work/a.ts', '/work/b.ts']);
   });
 
   it('按住 Delete 的自动重复(e.repeat)不再删;首次按下照常', () => {

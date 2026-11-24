@@ -666,6 +666,7 @@
 
 ## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
 
+- [`file-row-focus-style.spec.ts`](./explorer-tree/file-row-focus-style.spec.ts)
 - [`folder-tree-click-modifiers.spec.tsx`](./explorer-tree/folder-tree-click-modifiers.spec.tsx)
 - [`folder-tree-create.spec.tsx`](./explorer-tree/folder-tree-create.spec.tsx)
 - [`folder-tree-keyboard.spec.tsx`](./explorer-tree/folder-tree-keyboard.spec.tsx)

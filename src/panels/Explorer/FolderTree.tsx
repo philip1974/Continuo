@@ -20,11 +20,26 @@ import {
   buildTreeChildrenWithData,
   createTreeConfig,
   filterHiddenEntries,
+  isHiddenWithinRoot,
   sameTreeChildren,
 } from './tree-config';
-import { focusAndSelect, handleTreeKeyDown, selectOnly, type TypeAheadState } from './tree-keyboard';
+import {
+  focusAndSelect,
+  handleTreeKeyDown,
+  neighborAfterRemoval,
+  selectOnly,
+  type TypeAheadState,
+} from './tree-keyboard';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
+import {
+  DIR_LOAD_ERROR_ROW_HEIGHT,
+  DirLoadErrorRow,
+  insertDirLoadErrorRows,
+  isDirLoadErrorRow,
+  type DirLoadFailure,
+  type TreeRow,
+} from './DirLoadErrorRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { cleanupAfterPathMoved, cleanupAfterPathsRemoved } from './path-gone-cleanup';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
@@ -77,7 +92,7 @@ interface PendingReveal {
 // 根目录读取状态:加载中 / 已读到 / 读取失败(原因)。
 const ROOT_LOADING = 'loading';
 const ROOT_LOADED = 'loaded';
-type RootLoadState = typeof ROOT_LOADING | typeof ROOT_LOADED | { code: string; message: string };
+type RootLoadState = typeof ROOT_LOADING | typeof ROOT_LOADED | DirLoadFailure;
 
 /** 待确认的删除(VSCode explorer.confirmDelete)。afterConfirm:确认后、实际删除前调用(键盘删除移焦点)。 */
 interface TrashConfirmState {
@@ -94,6 +109,29 @@ const PENDING_REVEAL_TTL_MS = 3000;
 const EMPTY_SELECTED_PATHS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_ITEMS: readonly string[] = [];
 const EMPTY_PATH_LIST: string[] = [];
+const EMPTY_DIR_ERRORS: ReadonlyMap<string, DirLoadFailure> = new Map();
+
+/** 子目录读取结果写回失败表(成功删除、失败记录);无变化返回原表。 */
+function updateDirErrors(
+  prev: ReadonlyMap<string, DirLoadFailure>,
+  dir: string,
+  failure: DirLoadFailure | null,
+): ReadonlyMap<string, DirLoadFailure> {
+  if (failure === null) {
+    if (!prev.has(dir)) return prev;
+    const next = new Map(prev);
+    next.delete(dir);
+    return next;
+  }
+  const old = prev.get(dir);
+  if (old !== undefined && old.code === failure.code && old.message === failure.message) return prev;
+  return new Map(prev).set(dir, failure);
+}
+
+/** 树行(含子目录读取失败的内联错误行)里某项的下标;找不到 -1。 */
+function rowIndexOf(rows: readonly TreeRow[], id: string): number {
+  return rows.findIndex((r) => !isDirLoadErrorRow(r) && r.getId() === id);
+}
 
 // 跨平台(复查 P2):复用单一来源 path-cross.isSameOrInsidePath —— 此前手写
 // startsWith 对 Windows 大小写敏感,持久化的 expandedPaths(`C:\Repo\src`)与 root
@@ -229,6 +267,8 @@ export function FolderTree({ root }: { root: string }) {
   // 创建,故经 ref 持有;找不到下标(目标被过滤)则不滚。
   const virtualizerRef = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const renderedItemsRef = useRef<readonly ItemInstance<FileEntry>[]>([]);
+  // 虚拟列表的实际行(renderedItems 之外插入了子目录读取失败的错误行):滚动下标按它算。
+  const treeRowsRef = useRef<readonly TreeRow[]>([]);
   // 拖放结束不滚:headless-tree 行 onDrop 在 config.onDrop / onDropForeignDragObject 之后
   // draggedItems[0].setFocused() + updateDomFocus(),后者在 setTimeout 里调 scrollToItem(无焦点回退首项)
   // → 长列表拖到下方目录 / 从 Finder 拖入后列表跳回源行或首项。drop 回调里置一次性标志,scrollToItem
@@ -256,8 +296,7 @@ export function FolderTree({ root }: { root: string }) {
       suppressDropScrollRef.current = false;
       return;
     }
-    const id = item.getId();
-    const index = renderedItemsRef.current.findIndex((it) => it.getId() === id);
+    const index = rowIndexOf(treeRowsRef.current, item.getId());
     if (index >= 0) virtualizerRef.current?.scrollToIndex(index, { align: 'auto' });
   }, []);
   const [creating, setCreating] = useState<CreatingState | null>(null);
@@ -270,9 +309,13 @@ export function FolderTree({ root }: { root: string }) {
   const confirmDeleteRef = useRef(confirmDelete);
   confirmDeleteRef.current = confirmDelete;
   const [trashConfirm, setTrashConfirm] = useState<TrashConfirmState | null>(null);
-  // 根目录「重试」后焦点去向(重试按钮随加载态卸载,不处理焦点会掉到 body):成功 → 树;仍失败 → 新的重试按钮。
+  // 根目录「重试」后焦点去向(重试按钮随加载态卸载,不处理焦点会掉到 body):成功 → 树;成功但为空 → 空态提示;
+  // 仍失败 → 新的重试按钮。
   const retryFocusPendingRef = useRef(false);
   const loadFailedRef = useRef<HTMLDivElement>(null);
+  const emptyStateRef = useRef<HTMLDivElement>(null);
+  // 子目录读取失败(VSCode:展开失败的目录下显示错误行):目录 → 原因;读到即删除。
+  const [dirErrors, setDirErrors] = useState<ReadonlyMap<string, DirLoadFailure>>(EMPTY_DIR_ERRORS);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   // 根目录读取状态(loader 经 onChildrenLoad 回报):列表为空时据此区分加载中 / 读取失败 / 空文件夹。
   const [rootLoad, setRootLoad] = useState<RootLoadState>(ROOT_LOADING);
@@ -454,8 +497,11 @@ export function FolderTree({ root }: { root: string }) {
       }
       if (gens.get(parentPath) !== gen) return; // 已被更新的刷新取代,或已卸载
       gens.delete(parentPath);
-      // 不经 loader 的刷新路径:根目录读到了 → 清掉失败态(失败则下方 invalidate 经 loader 回报)
-      if (entries !== null && parentPath === root) setRootLoad(ROOT_LOADED);
+      // 不经 loader 的刷新路径:目录读到了 → 清掉失败态(失败则下方 invalidate 经 loader 回报)
+      if (entries !== null) {
+        if (parentPath === root) setRootLoad(ROOT_LOADED);
+        else setDirErrors((prev) => updateDirErrors(prev, parentPath, null));
+      }
       if (entries !== null) entries = filterHiddenEntries(entries, showHiddenRef.current);
       const data = t.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current;
       const cachedIds = data.childrenIds?.[parentPath];
@@ -530,23 +576,49 @@ export function FolderTree({ root }: { root: string }) {
     [makeUniqueDestPicker, onPathMoved, refreshParent, root],
   );
 
+  // 树里读取失败的反馈限流(3s,对齐 A144):展开深树可能连续多次 listDir 失败,无差别弹会刷屏。
+  const takeIpcWarnSlot = useCallback((): boolean => {
+    const now = Date.now();
+    if (now - lastIpcWarnAtRef.current < 3000) return false;
+    lastIpcWarnAtRef.current = now;
+    return true;
+  }, []);
+  // 目录此刻是否展开(loader 回报时 React 可能尚未重渲:读 store 与「全部展开」批量期的最新集合,不读 tree state)。
+  const isExpandedNow = useCallback((dir: string): boolean => {
+    const latest = expandBatchRef.current.latest;
+    if (latest !== null && latest.includes(dir)) return true;
+    return useExplorerStore.getState().expandedPaths.has(dir);
+  }, []);
+
   const config = useMemo(
     () =>
       createTreeConfig({
         root,
         fs: coApi.fs,
         // a11y(A148):listDir 失败 → console.warn(诊断)+ 限流 notify.error(用户/AT 可感知)。
-        // 根目录列子项失败不弹:已有内联提示 + 重试(两个 role=alert 会让读屏播报两次)。
+        // 列子项失败由 onChildrenLoad 反馈(内联错误行 / 带目录名的 toast),这里只处理其余(getItem 兜底)。
         onIpcWarn: (message: string, code: string, childrenOf?: string) => {
           console.warn('[explorer-tree]', message, code);
-          if (childrenOf === root) return;
-          const now = Date.now();
-          if (now - lastIpcWarnAtRef.current < 3000) return;
-          lastIpcWarnAtRef.current = now;
+          if (childrenOf !== undefined) return;
+          if (!takeIpcWarnSlot()) return;
           notifyFailure({ code, message });
         },
+        // 根目录失败 → 内联提示 + 重试;子目录失败 → 记入失败表,展开着的目录下显示内联错误行 + 重试(VSCode 同款)。
+        // 已折叠目录的后台刷新失败看不到错误行 → 限流 toast:按错误码本地化 + 目录名(不显示原始诊断串)。
         onChildrenLoad: (itemId, failure) => {
-          if (itemId === root) setRootLoad(failure ?? ROOT_LOADED);
+          if (itemId === root) {
+            setRootLoad(failure ?? ROOT_LOADED);
+            return;
+          }
+          setDirErrors((prev) => updateDirErrors(prev, itemId, failure));
+          if (failure === null || isExpandedNow(itemId) || !takeIpcWarnSlot()) return;
+          notify.error(
+            t('panels.explorer.load_failed_named', {
+              name: basenamePreserveTrailing(itemId),
+              message: localizeErrorByCode(failure.code, failure.message),
+            }),
+            { code: failure.code, mirror: false },
+          );
         },
         onRename: (item: ItemInstance<FileEntry>, newName: string) => {
           // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions
@@ -598,6 +670,8 @@ export function FolderTree({ root }: { root: string }) {
         scrollToItem,
       }),
     [
+      isExpandedNow,
+      takeIpcWarnSlot,
       treeExpandedItems,
       onPathMoved,
       refreshParent,
@@ -615,6 +689,8 @@ export function FolderTree({ root }: { root: string }) {
   // loader 已按 showHidden 过滤;切换为隐藏后、已加载目录刷新完成前缓存里仍有隐藏项,渲染这里再滤一次。
   const items = useMemo(() => selectVisibleTreeItems(allItems, showHidden), [allItems, showHidden]);
   renderedItemsRef.current = items;
+  const rows = useMemo(() => insertDirLoadErrorRows(items, dirErrors), [items, dirErrors]);
+  treeRowsRef.current = rows;
 
   // 多选集合数据源 = headless-tree selectionFeature 真实状态。
   // 数组引用变 → Set 重建;Click/Cmd-Click/Shift-Click 由 selectionFeature 内部
@@ -673,15 +749,21 @@ export function FolderTree({ root }: { root: string }) {
   }, [visible, refreshParent]);
 
   // 切换「显示隐藏文件」→ 刷新全部已加载目录(loader 缓存是按旧设置过滤的)。首次挂载不刷。
+  // 关掉时还要把隐藏项(及隐藏目录下的项)移出选中集合:否则多选里看不见的项仍会被删除 / 剪切 / 复制 / 拖动。
   const lastShowHiddenRef = useRef(showHidden);
   useEffect(() => {
     if (lastShowHiddenRef.current === showHidden) return;
     lastShowHiddenRef.current = showHidden;
     const t = treeRef.current;
     if (t === null) return;
+    if (!showHidden) {
+      const selected = t.getState().selectedItems ?? EMPTY_PATH_LIST;
+      const kept = selected.filter((id) => !isHiddenWithinRoot(root, id));
+      if (kept.length !== selected.length) t.setSelectedItems(kept);
+    }
     const loaded = t.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds ?? {};
     for (const dir of Object.keys(loaded)) refreshParent(dir);
-  }, [showHidden, refreshParent]);
+  }, [showHidden, refreshParent, root]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   // 侧栏保活:隐藏(display:none)期间滚动容器没有布局盒,浏览器可能把 scrollTop 归零;记下可见时
@@ -693,9 +775,9 @@ export function FolderTree({ root }: { root: string }) {
     if (el.scrollTop !== lastScrollTopRef.current) el.scrollTop = lastScrollTopRef.current;
   }, [visible]);
   const virtualizer = useVirtualizer({
-    count: items.length,
+    count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => FILE_ROW_HEIGHT,
+    estimateSize: (i) => (isDirLoadErrorRow(rows[i]) ? DIR_LOAD_ERROR_ROW_HEIGHT : FILE_ROW_HEIGHT),
     overscan: 8,
   });
   virtualizerRef.current = virtualizer;
@@ -703,9 +785,9 @@ export function FolderTree({ root }: { root: string }) {
   // 新建成功后,新项一出现在渲染列表里就把树焦点 / 选中移过去(见 submitCreate)。
   useEffect(() => {
     if (pendingReveal === null) return;
-    const index = items.findIndex((it) => it.getId() === pendingReveal.path);
+    const index = rowIndexOf(rows, pendingReveal.path);
     if (index < 0) return;
-    const item = items[index]!;
+    const item = rows[index] as ItemInstance<FileEntry>;
     setPendingReveal(null);
     if (pendingReveal.focusRow) {
       focusAndSelect(tree, item);
@@ -714,7 +796,7 @@ export function FolderTree({ root }: { root: string }) {
       selectOnly(tree, item.getId());
       virtualizer.scrollToIndex(index, { align: 'auto' });
     }
-  }, [items, pendingReveal, tree, virtualizer]);
+  }, [rows, pendingReveal, tree, virtualizer]);
   useEffect(() => {
     if (pendingReveal === null) return;
     const timer = setTimeout(() => setPendingReveal(null), PENDING_REVEAL_TTL_MS);
@@ -767,6 +849,17 @@ export function FolderTree({ root }: { root: string }) {
     [mutateDeps, onPathsRemoved, treeApi],
   );
 
+  // 删除后焦点落点:树焦点项(右键时已移到该行)的相邻项。DOM 焦点随之移过去(右键菜单跳过了 Radix 的焦点还原)。
+  const focusNeighborOf = useCallback((paths: readonly string[]) => {
+    const t = treeRef.current;
+    if (t === null) return;
+    const rendered = renderedItemsRef.current;
+    const focusedId = t.getState().focusedItem;
+    const index = rendered.findIndex((it) => it.getId() === focusedId);
+    const next = neighborAfterRemoval(rendered, index, paths);
+    if (next) focusAndSelect(t, next);
+  }, []);
+
   const contextActions = useMemo<ContextMenuActions>(
     () => ({
       onRename: (path) => treeRef.current?.getItemInstance(path)?.startRenaming(),
@@ -796,11 +889,13 @@ export function FolderTree({ root }: { root: string }) {
       },
       onTrash: (paths: string[], afterConfirm?: () => void) => {
         if (paths.length === 0) return;
+        // 右键菜单删除(无 afterConfirm)同键盘:确认后焦点与选中移到相邻项(VSCode:下一项,没有则上一项)。
+        const moveFocus = afterConfirm ?? (() => focusNeighborOf(paths));
         if (confirmDeleteRef.current) {
-          setTrashConfirm({ paths, afterConfirm });
+          setTrashConfirm({ paths, afterConfirm: moveFocus });
           return;
         }
-        afterConfirm?.();
+        moveFocus();
         runTrash(paths);
       },
       onCut: (paths: string[]) => {
@@ -823,7 +918,7 @@ export function FolderTree({ root }: { root: string }) {
         );
       },
     }),
-    [root, runBatchTransfer, runTrash, tt],
+    [focusNeighborOf, root, runBatchTransfer, runTrash, tt],
   );
 
   // 新建(VSCode 同款):成功 → 关输入框、展开父目录、新项选中并获得树焦点,文件随即在编辑器打开;
@@ -850,6 +945,17 @@ export function FolderTree({ root }: { root: string }) {
     if (type === 'file') void handleFileOpen(r.newPath);
     return true;
   };
+
+  // 子目录错误行「重试」:焦点先回到该目录行(错误行随后卸载,不掉到 body),再重新读取。
+  const retryDirLoad = useCallback(
+    (dir: string) => {
+      const item = tree.getItemInstance(dir);
+      item.setFocused();
+      tree.updateDomFocus();
+      void item.invalidateChildrenIds();
+    },
+    [tree],
+  );
 
   // Header「刷新」与根目录读取失败时的「重试」共用。
   const refreshAll = () => {
@@ -898,24 +1004,29 @@ export function FolderTree({ root }: { root: string }) {
       );
     }
     return (
-      <div className="p-4 text-xs text-fg-dim" role="status">
+      // tabIndex=-1:「重试」成功但根目录为空时焦点落在这里(重试按钮已卸载,不掉到 body)
+      <div ref={emptyStateRef} tabIndex={-1} className="p-4 text-xs text-fg-dim outline-none" role="status">
         {rootLoad === ROOT_LOADING ? tt('common.loading') : tt('panels.explorer.empty_folder')}
       </div>
     );
   };
 
-  // 「重试」有结果后放焦点:成功且有项 → 树的焦点行;仍失败 → 新的重试按钮(VSCode 列表重载后焦点回列表)。
-  const hasItems = items.length > 0;
+  // 「重试」有结果后放焦点:成功且有项 → 树的焦点行;成功但为空 → 空态提示;仍失败 → 新的重试按钮
+  // (VSCode 列表重载后焦点回列表)。标记在每种结果下都清掉 —— 残留的标记会在之后根目录出现文件时
+  // 把用户在编辑器 / 终端的焦点拉回树。「为空」须等根目录子项真正写入缓存(rootLoad 可能先于树重建到达)。
   useEffect(() => {
     if (!retryFocusPendingRef.current || rootLoad === ROOT_LOADING) return;
     if (typeof rootLoad === 'object') {
       retryFocusPendingRef.current = false;
       loadFailedRef.current?.querySelector('button')?.focus();
-    } else if (hasItems) {
+    } else if (items.length > 0) {
       retryFocusPendingRef.current = false;
       tree.updateDomFocus();
+    } else if (tree.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds?.[root] !== undefined) {
+      retryFocusPendingRef.current = false;
+      emptyStateRef.current?.focus();
     }
-  }, [rootLoad, hasItems, tree]);
+  }, [rootLoad, items, root, tree]);
 
   // 删除确认框文案(VSCode explorer.confirmDelete):单项按文件 / 文件夹区分,多项列出名字(最多 10 个)。
   const renderTrashConfirm = () => {
@@ -957,7 +1068,12 @@ export function FolderTree({ root }: { root: string }) {
         }
         confirmLabel={tt('panels.explorer.ctx.trash')}
         destructive
-        onCancel={() => setTrashConfirm(null)}
+        // 焦点显式还给树(不依赖 Modal 记录的 prevFocus:右键打开时那是已卸载的菜单项 → body)。
+        // updateDomFocus 在 setTimeout 里聚焦,晚于 Modal 卸载时的焦点还原。
+        onCancel={() => {
+          setTrashConfirm(null);
+          tree.updateDomFocus();
+        }}
         onConfirm={() => {
           const pending = trashConfirm;
           setTrashConfirm(null);
@@ -1011,8 +1127,9 @@ export function FolderTree({ root }: { root: string }) {
   const findRenderedRowId = (node: EventTarget | null): string | null => {
     if (!node) return null;
     for (const v of virtualizer.getVirtualItems()) {
-      const it = items[v.index];
-      if (it?.getElement()?.contains(node as Node)) return it.getId();
+      const it = rows[v.index];
+      if (it === undefined || isDirLoadErrorRow(it)) continue;
+      if (it.getElement()?.contains(node as Node)) return it.getId();
     }
     return null;
   };
@@ -1083,6 +1200,7 @@ export function FolderTree({ root }: { root: string }) {
         <CreateInput
           type={creating.type}
           parentDir={creating.parentDir}
+          rootPath={root}
           onSubmit={submitCreate}
           onCancel={() => setCreating(null)}
           error={creating.error}
@@ -1129,8 +1247,19 @@ export function FolderTree({ root }: { root: string }) {
               }}
             >
               {virtualizer.getVirtualItems().map((vRow) => {
-                const item = items[vRow.index];
+                const item = rows[vRow.index];
                 if (!item) return null;
+                if (isDirLoadErrorRow(item)) {
+                  return (
+                    <DirLoadErrorRow
+                      key={`error:${item.dir}`}
+                      row={item}
+                      start={vRow.start}
+                      indent={indent}
+                      onRetry={retryDirLoad}
+                    />
+                  );
+                }
                 return (
                   <FileRow
                     key={item.getId()}

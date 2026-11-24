@@ -40,6 +40,8 @@
 - 全成功 → `{ ok: true, removed }`;有失败 → `{ ok: false, failures: [{path, code, message}], removed }`
 - `removed` 只列实际删掉的(最外层)路径;调用方的成功后清理(关 editor tab、剪贴板 prune)只基于它
 - paths 空数组 → 直接返回 `{ ok: true, removed: [] }`,不调任何 IPC,不刷
+- 目标已不存在(`FS_NOT_FOUND` / `ENOENT`,含 IPC reject,如删除确认框打开期间被外部删掉)→ 按已删除处理:
+  计入 `removed`、父目录刷新,不进 `failures`(不弹「移到废纸篓失败」)
 
 ### createNewFile(parent, name, deps, tree) / createNewDir(parent, name, deps, tree)
 - 调 `fs.createFile(parent, name)` / `fs.createDir(parent, name)`

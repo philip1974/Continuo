@@ -183,7 +183,18 @@ export interface TrashDeps {
 }
 export const makeTrashHandler =
   (deps: TrashDeps) => async (input: TrashInput): Promise<void> => {
-    await deps.trashItem(input.path);
+    try {
+      await deps.trashItem(input.path);
+    } catch (err) {
+      // shell.trashItem 对已不存在的路径只给平台文案、无 errno code:探测一次,不存在则报业务码 FS_NOT_FOUND
+      //(renderer 据此按「已删除」做清理,不弹错误 —— 如删除确认框打开期间文件被外部删掉)。
+      const gone = await fs.promises.lstat(input.path).then(
+        () => false,
+        (e: unknown) => (e as { code?: string }).code === 'ENOENT',
+      );
+      if (gone) throw fsError(ERROR_CODES.FS_NOT_FOUND, `not found: ${input.path}`);
+      throw err;
+    }
   };
 
 export interface SelectDirectoryDeps {

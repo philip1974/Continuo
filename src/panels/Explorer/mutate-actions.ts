@@ -10,6 +10,9 @@ import { failureOf } from '@/lib/failure-of';
 // 批量删除的最大在途 IPC 数(trash 走 shell.trashItem,过高并发对回收站/磁盘无益)。
 const REMOVE_CONCURRENCY = 4;
 
+// 删除目标已不存在的错误码(main 业务码 / 原始 errno)。
+const GONE_CODES: ReadonlySet<string> = new Set(['FS_NOT_FOUND', 'ENOENT']);
+
 export interface MutateDeps {
   fs: Pick<FsApi, 'rename' | 'trash' | 'createFile' | 'createDir'>;
 }
@@ -96,21 +99,18 @@ export async function removeItems(
     // removeItems 整体 reject;而调用点(Explorer onTrash)是 fire-and-forget async 不被
     // await → unhandled rejection + 该项不计入 failures → 批量删除错误反馈漏报。归类到
     // failures(镜像 !r.ok 分支),removeItems 自此恒返回 RemoveResult 不 reject。
-    if (outcome.status === 'rejected') {
-      const { code, message } = toActionFail(outcome.reason);
-      failures[failureCount++] = { path: p, code, message };
-      continue;
-    }
-    const r = outcome.value;
-    if (!r.ok) {
-      failures[failureCount++] = {
-        path: p,
-        code: r.code,
-        message: r.message,
-      };
-    } else {
+    const failure =
+      outcome.status === 'rejected'
+        ? toActionFail(outcome.reason)
+        : outcome.value.ok
+          ? null
+          : outcome.value;
+    // 已不存在(如确认框打开期间被外部删除)= 目的已达成:按已删除处理(刷新父目录、关 tab 等清理),不报错。
+    if (failure === null || GONE_CODES.has(failure.code)) {
       successParents.add(dirname(p));
       removed.push(p);
+    } else {
+      failures[failureCount++] = { path: p, code: failure.code, message: failure.message };
     }
   }
 

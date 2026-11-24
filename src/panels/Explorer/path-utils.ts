@@ -7,6 +7,7 @@ import {
   containmentKey,
   isSameOrInsidePath,
   someContainmentCandidate,
+  stripRootPrefix,
 } from '@/lib/path-cross';
 import { basenameForChrome } from '@/lib/path-label';
 
@@ -90,6 +91,14 @@ export function basenamePreserveTrailing(p: string): string {
 export function recentRootLabelParts(p: string): { name: string; parent: string } {
   const name = basenameForChrome(p);
   return { name, parent: name === p ? '' : p.slice(0, p.length - name.length - 1) };
+}
+
+/**
+ * 新建输入框「在: …」的目录标签:相对工作区根的路径;根目录本身显示工作区名;不在根内则原样(绝对路径)。
+ */
+export function createDirLabel(root: string, dir: string): string {
+  if (!isSameOrInsidePath(root, dir)) return dir;
+  return stripRootPrefix(root, dir) || basenameForChrome(root);
 }
 
 /**

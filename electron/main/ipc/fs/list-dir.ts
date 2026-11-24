@@ -192,7 +192,14 @@ async function walk(
   // 边读边按 LSTAT_CHUNK 成块处理 —— 不用 readdir 一次性把整目录所有 dirent 物化进主进程数组 + 再
   // filter 物化一份(超宽目录会在 MAX_TOTAL_ENTRIES 检查前内存峰值/OOM)。totalCount 仍在处理阶段
   // 计数(语义/上限不变);for await 在 break/throw/完成时自动 close Dir。
-  const dirHandle = await opendir(dir);
+  // 入口 stat 只证明路径存在且是目录;无读权限(EACCES / EPERM)到 opendir 才暴露。原始 errno 映射成业务码
+  //(FS_DENIED 等),renderer 按码本地化,不把 `EACCES: permission denied, opendir '<路径>'` 原样显示给用户。
+  let dirHandle;
+  try {
+    dirHandle = await opendir(dir);
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `opendir failed: ${dir}`);
+  }
   const chunk = new Array<DirEntryLike>(LSTAT_CHUNK);
   let chunkCount = 0;
   let stop = false;

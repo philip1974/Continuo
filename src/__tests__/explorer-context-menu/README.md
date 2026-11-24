@@ -107,3 +107,5 @@ ContextMenu UI 里的内置 4 项(新建文件 / 新建文件夹 / 重命名 / �
 - 键盘漫游 / Enter 选中 / 关闭焦点还原 / 越界定位仍由 Radix 负责(MenuItem 透传 Radix 注入的 ref 与事件)
 - 菜单容器 `shadow-popover`(两主题各有取值,不用 Tailwind 默认 `shadow-xl`)
 - 重命名项快捷键 `F2`、多选计数走 `MenuItem` `trailing`;「移到废纸篓」为 `danger` 变体
+- 关闭焦点还原:普通项(剪切等)关闭后还原到打开前的焦点;「移到废纸篓」跳过还原(会打开自聚焦的删除确认框,
+  Radix 的 setTimeout 还原会把焦点抢回遮罩后的树行),焦点由 `onTrash` 的实现方(FolderTree)负责

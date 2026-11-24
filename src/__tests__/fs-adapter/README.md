@@ -28,6 +28,8 @@
 - 排序(借鉴 Lokus):**目录优先,再按 `localeCompare`**
 - 路径不存在 → 抛 `code: 'FS_NOT_FOUND'`
 - 路径是文件不是目录 → 抛 `code: 'FS_NOT_DIRECTORY'`
+- 目录不可读(`opendir` 报 EACCES / EPERM,含递归时的子目录)→ 抛 `code: 'FS_DENIED'`(原始 errno 经
+  `mapNodeErrnoCode` 映射,renderer 按码本地化,不显示 `EACCES: permission denied, opendir '<路径>'`)
 
 ### readFile(absPath)
 - utf-8 字符串

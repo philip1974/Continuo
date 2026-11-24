@@ -69,3 +69,25 @@ test('Delete 弹确认,初始焦点在「取消」:直接回车 → 关闭确认
   await expect(readme).toBeFocused();
   await expect(readme).toHaveAttribute('aria-selected', 'true');
 });
+
+test('右键「移到废纸篓」→ 确认框打开期间焦点在框内;Esc 取消 → 焦点回到右键的那一行,不删除', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const readme = rowOf(window, path.join(workspaceRoot, 'README.md'));
+  await expect(readme).toBeVisible({ timeout: 10_000 });
+  await readme.click({ button: 'right' });
+  await window.getByRole('menuitem', { name: /^(移到废纸篓|Move to Trash|휴지통으로 이동)/ }).click();
+  const dialog = window.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 5_000 });
+  const cancel = dialog.getByRole('button', { name: /^(取消|Cancel|취소)$/ });
+  await expect(cancel).toBeFocused();
+  // 菜单关闭后的焦点还原(异步)不得把焦点抢回遮罩后的树行
+  await window.waitForTimeout(200);
+  await expect(cancel).toBeFocused();
+
+  await window.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(readme).toBeFocused();
+  expect(await exists(path.join(workspaceRoot, 'README.md'))).toBe(true);
+});

@@ -120,7 +120,7 @@ export function focusAndSelect(tree: TreeInstance<FileEntry>, item: ItemInstance
 }
 
 /** 删除后焦点落点(VSCode:下一项,没有则上一项),跳过被删项及其子孙。 */
-function neighborAfterRemoval(
+export function neighborAfterRemoval(
   items: readonly ItemInstance<FileEntry>[],
   fromIndex: number,
   removed: readonly string[],
@@ -178,10 +178,13 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
       }
       return consume();
     }
-    const targets = getContextActionTargets(
-      focused.getItemData(),
-      new Set(tree.getState().selectedItems ?? []),
-    );
+    // 选中集合与实际渲染的行取交集(防御:关掉「显示隐藏文件」时 FolderTree 已修剪选中,这里再挡一次)——
+    // 看不见的项不被删除 / 剪切 / 复制。
+    const rendered = new Set<string>();
+    for (const it of items) rendered.add(it.getId());
+    const selected = new Set<string>();
+    for (const id of tree.getState().selectedItems ?? []) if (rendered.has(id)) selected.add(id);
+    const targets = getContextActionTargets(focused.getItemData(), selected);
     if (command === 'copy') ctx.actions.onCopy(targets);
     else if (command === 'cut') ctx.actions.onCut(targets);
     else {

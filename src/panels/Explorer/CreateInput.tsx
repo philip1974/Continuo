@@ -2,13 +2,15 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
-import { normalizeLeafNameInput } from './path-utils';
+import { createDirLabel, normalizeLeafNameInput } from './path-utils';
 import { isImeComposing } from '@/design/ime';
 import { FS_NAME_MAX } from '../../../electron/shared/leaf-name';
 
 interface CreateInputProps {
   type: 'file' | 'dir';
   parentDir: string;
+  /** 工作区根:传入时父目录显示为相对它的路径(根目录显示工作区名),完整路径放 title。 */
+  rootPath?: string;
   /**
    * 提交名字。可返回 Promise<boolean>:结果为 false 表示创建失败 → 输入框保留已输入的名字,可改名重试;
    * 其它结果视为成功(父层随后卸载本输入)。
@@ -32,6 +34,7 @@ const ICON_SIZE = 14;
 export function CreateInput({
   type,
   parentDir,
+  rootPath,
   onSubmit,
   onCancel,
   error,
@@ -138,7 +141,9 @@ export function CreateInput({
           className="max-w-[40%] truncate text-2xs text-fg-dim"
           title={parentDir}
         >
-          {tx('panels.explorer.create.in_label', { dir: parentDir })}
+          {tx('panels.explorer.create.in_label', {
+            dir: rootPath === undefined ? parentDir : createDirLabel(rootPath, parentDir),
+          })}
         </span>
         <IconButton
           size="xs"

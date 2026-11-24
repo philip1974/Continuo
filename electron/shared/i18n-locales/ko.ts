@@ -213,6 +213,7 @@ export const ko: Record<TranslationKey, string> = {
   'dock.panel.plugin_unavailable': '플러그인 패널이 로드되지 않았습니다. 플러그인이 아직 시작 중이거나 비활성화 / 제거되었을 수 있습니다 — 이 패널을 닫을 수 있습니다.',
   'panels.explorer.empty_folder': '이 폴더는 비어 있습니다',
   'panels.explorer.load_failed': '이 폴더를 읽을 수 없습니다: {message}',
+  'panels.explorer.load_failed_named': '“{name}”을(를) 읽을 수 없습니다: {message}',
   'panels.explorer.retry': '다시 시도',
   'panels.explorer.trash_confirm.file': "'{name}'을(를) 삭제하시겠습니까?",
   'panels.explorer.trash_confirm.folder': "'{name}' 및 해당 내용을 삭제하시겠습니까?",

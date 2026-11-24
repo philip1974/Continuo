@@ -34,6 +34,15 @@ describe('CreateInput — 渲染', () => {
     expect(container.textContent).toContain('在: /proj');
   });
 
+  it('传 rootPath:父目录显示相对 workspace 的路径(根目录显示 workspace 名),完整路径放 title', () => {
+    const nested = setup({ parentDir: '/home/u/proj/src/components', rootPath: '/home/u/proj' });
+    const label = nested.getByText('在: src/components');
+    expect(label.getAttribute('title')).toBe('/home/u/proj/src/components');
+    cleanup();
+    const atRoot = setup({ parentDir: '/home/u/proj', rootPath: '/home/u/proj' });
+    expect(atRoot.getByText('在: proj').getAttribute('title')).toBe('/home/u/proj');
+  });
+
   it('type=dir → placeholder「新建文件夹名…」', () => {
     const { input } = setup({ type: 'dir' });
     expect(input.placeholder).toBe('新建文件夹名…');

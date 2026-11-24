@@ -31,6 +31,7 @@ export interface ContextMenuActions {
   /**
    * 移到系统废纸篓(可恢复). 删除路径只此一项,VSCode 同款;按 explorer.confirmDelete 先确认。
    * afterConfirm:确认(或无需确认)后、实际删除前调用(键盘删除用它移动焦点;取消则不调)。
+   * 右键菜单调用时跳过 Radix 的关闭焦点还原:焦点去向由实现方负责。
    */
   onTrash: (paths: string[], afterConfirm?: () => void) => void;
   /** 剪切到 in-app 剪贴板(粘贴时移动). */
@@ -319,7 +320,12 @@ function ContextMenuContent({
             {/* 移到废纸篓(安全删除,可恢复) */}
             <CtxItem
               variant="danger"
-              onSelect={() => actions.onTrash(actionTargets)}
+              onSelect={() => {
+                // 焦点由 onTrash 接管(FolderTree:确认框打开期间在框内,取消回到该行,删除后到相邻项)。
+                // Radix 的还原在 setTimeout 里把焦点还给触发行,会抢走确认框的自聚焦(焦点落在遮罩后的树行)。
+                focusRestore.skipOnce();
+                actions.onTrash(actionTargets);
+              }}
               trailing={countTrailing}
             >
               {t('panels.explorer.ctx.trash')}

@@ -225,6 +225,7 @@ export const en = {
   'dock.panel.plugin_unavailable': 'Plugin panel not loaded. The plugin may still be starting, or it has been disabled or uninstalled — you can close this panel.',
   'panels.explorer.empty_folder': 'This folder is empty',
   'panels.explorer.load_failed': 'Unable to read this folder: {message}',
+  'panels.explorer.load_failed_named': 'Unable to read “{name}”: {message}',
   'panels.explorer.retry': 'Retry',
   'panels.explorer.trash_confirm.file': "Are you sure you want to delete '{name}'?",
   'panels.explorer.trash_confirm.folder': "Are you sure you want to delete '{name}' and its contents?",

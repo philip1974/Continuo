@@ -4,6 +4,7 @@
 
 import { basename, dirname, isDestInsideSource } from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
+import { stripRootPrefix } from '@/lib/path-cross';
 import { isImeComposing } from '@/design/ime';
 import {
   asyncDataLoaderFeature,
@@ -125,6 +126,16 @@ export function filterHiddenEntries(
 ): readonly FileEntry[] {
   if (showHidden || !entries.some((e) => e.name.startsWith('.'))) return entries;
   return entries.filter((e) => !e.name.startsWith('.'));
+}
+
+/**
+ * path 在 showHidden=false 时是否不可见:相对 root 的任一段以 . 开头(隐藏项本身,或隐藏目录下的项)。
+ * root 自身的路径段不计(工作区本身可以在 . 开头的目录里)。
+ */
+export function isHiddenWithinRoot(root: string, path: string): boolean {
+  const rel = stripRootPrefix(root, path);
+  for (const seg of rel.split(/[\\/]/)) if (seg.startsWith('.')) return true;
+  return false;
 }
 
 export function findFileEntryByPath(

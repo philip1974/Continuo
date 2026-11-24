@@ -497,6 +497,28 @@ describe('makeTrashHandler', () => {
   });
 });
 
+describe('makeTrashHandler · 目标已不存在', () => {
+  it('trashItem 失败且路径已不存在 → 抛 FS_NOT_FOUND(renderer 据此按已删除处理)', async () => {
+    const handler = makeTrashHandler({
+      trashItem: async () => {
+        throw new Error('Failed to move item to trash');
+      },
+    });
+    const missing = path.join(tmpdir(), `continuo-trash-missing-${process.pid}-${Date.now()}`);
+    await expect(handler({ path: missing })).rejects.toMatchObject({ code: 'FS_NOT_FOUND' });
+  });
+
+  it('trashItem 失败但路径仍在 → 原错误透传(不误报为不存在)', async () => {
+    const err = Object.assign(new Error('denied'), { code: 'EACCES' });
+    const handler = makeTrashHandler({
+      trashItem: async () => {
+        throw err;
+      },
+    });
+    await expect(handler({ path: tmpdir() })).rejects.toBe(err);
+  });
+});
+
 describe('makeSelectDirectoryHandler', () => {
   // 显式标 mock 参数类型,确保 mock.calls[0][0] 类型可索引
   type DialogOpts = { properties: ReadonlyArray<string> };

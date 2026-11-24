@@ -102,8 +102,10 @@ interface FileRowProps extends FileRowState {
 const ICON_SIZE = 16;
 // 28px 比 24 更松,Lokus / VSCode 同档(他们用 32);保持紧凑同时呼吸感更好
 const ROW_HEIGHT = 28;
+// 键盘焦点:去掉浏览器默认焦点环(macOS 为系统强调色框),:focus-visible 时画 1px 内嵌 focus-ring 轮廓
+// (设计系统焦点色 --md-focus-ring;内嵌避免被滚动容器裁掉)。树焦点行另有左侧 accent 指示(isFocused)。
 const FILE_ROW_BASE_CLASS_NAME =
-  'flex items-center gap-1 text-xs select-none border-l-2';
+  'flex items-center gap-1 text-xs select-none border-l-2 outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring';
 const FILE_ROW_DROP_CLASS_NAME =
   'bg-accent/30 text-fg ring-1 ring-inset ring-accent/60';
 const FILE_ROW_SELECTED_CLASS_NAME = 'bg-hover text-fg';
@@ -245,7 +247,11 @@ export const FileRow = memo(function FileRow({
           onFileOpen?.(data.path);
         }
       }}
-      onContextMenu={() => setMenuSelectedPaths(getSelectedPaths())}
+      onContextMenu={() => {
+        setMenuSelectedPaths(getSelectedPaths());
+        // VSCode 同款:右键把列表焦点移到该行(选中不变)。菜单操作结束后(如取消删除确认)焦点据此回到这一行。
+        item.setFocused();
+      }}
       onDragEnter={(e) => {
         if (!hasFiles(e.dataTransfer)) return;
         // 文件夹 → 自身;文件 → 父目录(由 resolveDropTarget 算)

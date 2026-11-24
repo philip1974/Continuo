@@ -86,4 +86,40 @@ describe('Explorer 右键菜单 — design MenuItem + shadow-popover', () => {
     fireEvent.keyDown(cut, { key: 'Enter' });
     expect(actions.onCut).toHaveBeenCalledTimes(1);
   });
+
+  // 「移到废纸篓」可能打开删除确认框(自聚焦):Radix 关闭后的焦点还原(setTimeout)若照常执行,会把焦点抢回遮罩后的
+  // 触发行。故该项跳过还原,焦点由 onTrash 的实现方负责;普通项(剪切等)仍还原到触发行。
+  it('选「移到废纸篓」→ 跳过 Radix 焦点还原(不把焦点还给触发行);选「剪切」→ 照常还原', async () => {
+    const actions = makeActions();
+    const r = render(
+      <ContextMenu
+        target={file}
+        selectedPaths={new Set(['/work/a.ts'])}
+        rootPath="/work"
+        actions={actions}
+        hasClipboard={false}
+        pluginItems={[]}
+      >
+        <div data-testid="trigger" tabIndex={0}>
+          row
+        </div>
+      </ContextMenu>,
+    );
+    const trigger = r.getByTestId('trigger');
+    // 右键前焦点在该行(Radix 关闭时还原到打开前的焦点)
+    trigger.focus();
+    fireEvent.contextMenu(trigger);
+    const trash = items().find((el) => el.dataset.variant === 'danger')!;
+    fireEvent.click(trash);
+    expect(actions.onTrash).toHaveBeenCalledWith(['/work/a.ts']);
+    await new Promise((res) => setTimeout(res, 20));
+    expect(document.activeElement).not.toBe(trigger);
+
+    trigger.focus();
+    fireEvent.contextMenu(trigger);
+    const cut = items().find((el) => el.textContent?.includes('Cut') || el.textContent?.includes('剪切'))!;
+    fireEvent.click(cut);
+    await new Promise((res) => setTimeout(res, 20));
+    expect(document.activeElement).toBe(trigger);
+  });
 });

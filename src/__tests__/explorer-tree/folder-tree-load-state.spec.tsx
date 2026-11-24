@@ -16,6 +16,9 @@ const h = vi.hoisted(() => ({
   rootListDir: null as null | (() => Promise<unknown>),
   openFileByPath: null as null | ((p: string) => Promise<{ ok: true }>),
   editorFile: null as null | { openFileByPath: (p: string) => Promise<{ ok: true }> },
+  settings: {} as Record<string, unknown>,
+  // 读取失败的目录(EACCES 等,main 已映射为 FS_DENIED)
+  failDirs: new Set<string>(),
 }));
 
 const entries: FileEntry[] = [
@@ -33,7 +36,11 @@ vi.mock('@/lib/co-api', () => ({
   coApi: {
     fs: {
       listDir: vi.fn(async (p: string) =>
-        p === '/work' && h.rootListDir ? h.rootListDir() : { ok: true, data: fsTree.get(p) ?? [] },
+        h.failDirs.has(p)
+          ? { ok: false, code: 'FS_DENIED', message: `EACCES: permission denied, opendir '${p}'` }
+          : p === '/work' && h.rootListDir
+            ? h.rootListDir()
+            : { ok: true, data: fsTree.get(p) ?? [] },
       ),
       move: vi.fn(async (_s: string, d: string) => ({ ok: true, data: d })),
       copy: vi.fn(async (_s: string, d: string) => ({ ok: true, data: d })),
@@ -59,7 +66,7 @@ vi.mock('@/panels/Editor/useEditorFile', () => ({
   useEditorFile: () => h.editorFile,
 }));
 vi.mock('@/plugins/settings/values-store', () => ({
-  useSettingValue: (_key: string, fallback: unknown) => fallback,
+  useSettingValue: (key: string, fallback: unknown) => (key in h.settings ? h.settings[key] : fallback),
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));
@@ -84,6 +91,8 @@ beforeEach(() => {
   h.editorFile = { openFileByPath: h.openFileByPath };
   vi.mocked(coApi.fs.listDir).mockClear();
   h.rootListDir = null;
+  h.settings = {};
+  h.failDirs = new Set();
   vi.mocked(coApi.fs.copy).mockClear();
   vi.spyOn(notify, 'error').mockImplementation(() => '');
   useExplorerStore.setState({ expandedPaths: new Set(), sort: { by: 'name', reverse: false } });
@@ -144,15 +153,62 @@ describe('FolderTree · 读取失败反馈', () => {
     expect(notify.error).not.toHaveBeenCalled();
   });
 
-  it('子目录读取失败 → 仍弹 toast(树里无内联位置)', async () => {
-    const listDir = vi.mocked(coApi.fs.listDir);
+  it('子目录读取失败 → 该目录下内联错误行(本地化原因 + 重试),不弹 toast', async () => {
     const r = render(<FolderTree root="/work" />);
     await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
-    listDir.mockImplementationOnce(async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' }));
+    h.failDirs.add('/work/alpha');
     act(() => {
       fireEvent.click(row(r.container, '/work/alpha')!);
     });
+    const alert = await r.findByRole('alert');
+    expect(alert.textContent).toMatch(/拒绝访问|Access denied/);
+    expect(alert.textContent).not.toMatch(/EACCES|listDir|\/work/);
+    // 错误行紧跟在失败目录之后
+    const tree = r.container.querySelector('[role="tree"]')!;
+    expect(tree.contains(alert)).toBe(true);
+    await new Promise((res) => setTimeout(res, 20));
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('子目录错误行「重试」成功 → 列出子项、错误行消失,焦点回到该目录行', async () => {
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    h.failDirs.add('/work/alpha');
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    await r.findByRole('alert');
+    h.failDirs.delete('/work/alpha');
+    const retry = r.getByRole('button', { name: RETRY });
+    retry.focus();
+    act(() => {
+      fireEvent.click(retry);
+    });
+    await waitFor(() => expect(row(r.container, '/work/alpha/inner.ts')).not.toBeNull());
+    expect(r.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(row(r.container, '/work/alpha')));
+  });
+
+  it('已折叠目录在后台刷新时读取失败 → toast 按错误码本地化并带目录名,不含原始诊断串', async () => {
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    await waitFor(() => expect(row(r.container, '/work/alpha/inner.ts')).not.toBeNull());
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    await waitFor(() => expect(row(r.container, '/work/alpha/inner.ts')).toBeNull());
+    h.failDirs.add('/work/alpha');
+    // 切换「显示隐藏文件」刷新全部已加载目录(含已折叠的 alpha)
+    h.settings = { 'explorer.showHiddenFiles': true };
+    r.rerender(<FolderTree root="/work" />);
     await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    const text = vi.mocked(notify.error).mock.calls[0]![0];
+    expect(text).toMatch(/alpha/);
+    expect(text).toMatch(/拒绝访问|Access denied/);
+    expect(text).not.toMatch(/EACCES|listDir|\/work\/alpha/);
   });
 });
 
@@ -171,6 +227,31 @@ describe('FolderTree · 重试后的焦点', () => {
       const active = document.activeElement as HTMLElement | null;
       expect(active?.closest('[role="tree"]')).not.toBeNull();
     });
+  });
+
+  it('重试成功但根目录为空 → 焦点落到空态提示;之后根目录出现文件也不把焦点从别处拉回树', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    const r = render(<FolderTree root="/work" />);
+    const retry = await r.findByRole('button', { name: RETRY });
+    retry.focus();
+    h.rootListDir = async () => ({ ok: true, data: [] });
+    act(() => {
+      fireEvent.click(retry);
+    });
+    const empty = await r.findByText(EMPTY);
+    await waitFor(() => expect(document.activeElement).toBe(empty));
+    // 用户把焦点移到别处(编辑器 / 终端)
+    const outside = document.createElement('input');
+    document.body.appendChild(outside);
+    outside.focus();
+    // 根目录随后出现文件(刷新全部已加载目录)
+    h.rootListDir = null;
+    h.settings = { 'explorer.showHiddenFiles': true };
+    r.rerender(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/beta.ts')).not.toBeNull());
+    await new Promise((res) => setTimeout(res, 30));
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 
   it('重试仍失败 → 焦点落在新的「重试」按钮', async () => {

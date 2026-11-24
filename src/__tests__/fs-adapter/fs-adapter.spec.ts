@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdir, mkdtemp, readFile as fspReadFile, rm, symlink, truncate, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile as fspReadFile, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -205,6 +205,21 @@ describe('listDir', () => {
 
   it('路径不存在 → FS_NOT_FOUND', async () => {
     await expectErrCode(() => listDir(path.join(dir, 'nope')), 'FS_NOT_FOUND');
+  });
+
+  // 无读权限的目录(EACCES / EPERM):opendir 的原始 errno 须映射成业务码 FS_DENIED(renderer 据此本地化
+  // 「拒绝访问」,不显示 `EACCES: permission denied, opendir '<路径>'` 原始诊断串)。root 用户 / Windows 无此语义,跳过。
+  const canTestPermissions = process.platform !== 'win32' && process.getuid?.() !== 0;
+  it.skipIf(!canTestPermissions)('目录不可读(EACCES)→ FS_DENIED;递归时子目录不可读同样', async () => {
+    const locked = path.join(dir, 'locked');
+    await mkdir(locked);
+    await chmod(locked, 0o000);
+    try {
+      await expectErrCode(() => listDir(locked), 'FS_DENIED');
+      await expectErrCode(() => listDir(dir, { maxDepth: 2 }), 'FS_DENIED');
+    } finally {
+      await chmod(locked, 0o755);
+    }
   });
 
   it('路径是文件 → FS_NOT_DIRECTORY', async () => {

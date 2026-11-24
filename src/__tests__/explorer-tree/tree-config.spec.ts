@@ -14,6 +14,7 @@ import {
   createDataLoader,
   createTreeConfig,
   findFileEntryByPath,
+  isHiddenWithinRoot,
   sameTreeChildren,
 } from '../../panels/Explorer/tree-config';
 import type { FileEntry, IpcResult } from '../../lib/fs/types';
@@ -539,5 +540,15 @@ describe('sameTreeChildren · 目录刷新比对', () => {
 
   it('缓存缺该子项数据 → false', () => {
     expect(sameTreeChildren(['/w/a'], {}, [a])).toBe(false);
+  });
+});
+
+describe('isHiddenWithinRoot(关掉「显示隐藏文件」时修剪选中集合用)', () => {
+  it('隐藏项本身与隐藏目录下的项 → true;普通项 → false;root 自身的 . 段不计', () => {
+    expect(isHiddenWithinRoot('/work', '/work/.env')).toBe(true);
+    expect(isHiddenWithinRoot('/work', '/work/.github/workflows/ci.yml')).toBe(true);
+    expect(isHiddenWithinRoot('/work', '/work/src/a.ts')).toBe(false);
+    expect(isHiddenWithinRoot('/home/u/.config/proj', '/home/u/.config/proj/src/a.ts')).toBe(false);
+    expect(isHiddenWithinRoot('C:\\work', 'C:\\work\\.vscode\\settings.json')).toBe(true);
   });
 });

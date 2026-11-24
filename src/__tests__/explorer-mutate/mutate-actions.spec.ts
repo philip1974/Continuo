@@ -151,6 +151,22 @@ describe('removeItems', () => {
     expect(new Set(invalidatedParents)).toEqual(new Set(['/a', '/c']));
   });
 
+  it('确认期间已被外部删除(FS_NOT_FOUND / ENOENT,含 reject)→ 当作已删除:计入 removed、父目录刷新,不报失败', async () => {
+    const trash = vi
+      .fn<(p: string) => Promise<IpcResult<void>>>()
+      .mockResolvedValueOnce(fail('FS_NOT_FOUND', 'not found: /a/x'))
+      .mockResolvedValueOnce(fail('ENOENT', 'ENOENT'))
+      .mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'FS_NOT_FOUND' }));
+    const fs = makeFs({ trash });
+    const tree = makeTree();
+    const r = await removeItems(['/a/x', '/b/y', '/c/z'], { fs }, tree);
+    expect(r).toEqual({ ok: true, removed: ['/a/x', '/b/y', '/c/z'] });
+    const invalidatedParents = (
+      tree.invalidateChildrenIds as ReturnType<typeof vi.fn>
+    ).mock.calls.map((c) => c[0]);
+    expect(new Set(invalidatedParents)).toEqual(new Set(['/a', '/b', '/c']));
+  });
+
   it('paths 空数组 → 不调任何 IPC,直接 ok', async () => {
     const fs = makeFs();
     const tree = makeTree();
