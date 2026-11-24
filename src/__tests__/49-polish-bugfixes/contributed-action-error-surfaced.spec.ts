@@ -50,6 +50,21 @@ describe('runContributedAction', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it('reject(null) / throw undefined → 仍弹 toast,不在 catch 里二次抛 TypeError', async () => {
+    runContributedAction('Null', () => Promise.reject(null));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('Null: null');
+    errorSpy.mockReset();
+    expect(() =>
+      runContributedAction('Undef', () => {
+        throw undefined;
+      }),
+    ).not.toThrow();
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('Undef: undefined');
+  });
+
   it('抛非 Error(字符串)→ String() 兜底进 message', () => {
     runContributedAction('Weird', () => {
       throw 'just a string';

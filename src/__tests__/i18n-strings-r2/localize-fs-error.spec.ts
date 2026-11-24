@@ -5,7 +5,7 @@
 // errors.<CODE> catalog 翻译,未收录 code 回退原 message。
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { localizeErrorByCode } from '@/lib/localize-error';
+import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
 import { setLocale } from '@/i18n';
 
 afterEach(() => setLocale('en'));
@@ -85,5 +85,25 @@ describe('localizeErrorByCode(code, message)', () => {
     const r = localizeErrorByCode('NO_WINDOW_SEQ', 'no window seq');
     expect(r).not.toBe('no window seq');
     expect(r.length).toBeGreaterThan(0);
+  });
+});
+
+describe('localizeThrown(err)', () => {
+  it('带 string code 的 Error → 按 catalog 本地化', () => {
+    setLocale('en');
+    expect(localizeThrown(Object.assign(new Error('already exists'), { code: 'FS_EEXIST' }))).toBe(
+      'Already exists',
+    );
+  });
+
+  it('无 code / code 非 string → 原 message', () => {
+    expect(localizeThrown(new Error('boom'))).toBe('boom');
+    expect(localizeThrown(Object.assign(new Error('boom'), { code: 42 }))).toBe('boom');
+    expect(localizeThrown('raw string')).toBe('raw string');
+  });
+
+  it('null / undefined 不抛,回退 String()', () => {
+    expect(localizeThrown(null)).toBe('null');
+    expect(localizeThrown(undefined)).toBe('undefined');
   });
 });

@@ -17,7 +17,7 @@ import { useUpdateStore } from '@/marketplace/update-store';
 import type { PluginListItem } from '../PluginManager';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
-import { localizeErrorByCode } from '@/lib/localize-error';
+import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { errorMessage } from '../../../electron/shared/error-message';
 
@@ -293,9 +293,7 @@ function UserPluginsSection() {
       // (main RM_FAILED message 是中文「删除失败:…」/ NOT_SUPPORTED),只 errorMessage()
       // 会丢 code 且把中文/英文 raw 塞进本地化外壳 → 双向泄漏。有 code 时按 code 经 catalog
       // 本地化,无 code(如 "Plugin x not found")回退原文。
-      const code = (err as { code?: unknown }).code;
-      const message =
-        typeof code === 'string' ? localizeErrorByCode(code, errorMessage(err)) : errorMessage(err);
+      const message = localizeThrown(err);
       setInstallMsg({
         text: t('plugins_tab.install.uninstall_fail', { message }),
         isError: true,
@@ -346,9 +344,7 @@ function UserPluginsSection() {
   // a11y(A47,A46 同族):生命周期操作(reload/disable/enable/retry)失败此前只 console.warn,
   // 用户看似无响应。统一把失败经 installMsg live region(A42:role=alert)反馈,带 code 本地化。
   const reportActionError = (err: unknown) => {
-    const code = (err as { code?: unknown }).code;
-    const message =
-      typeof code === 'string' ? localizeErrorByCode(code, errorMessage(err)) : errorMessage(err);
+    const message = localizeThrown(err);
     setInstallMsg({
       text: t('plugins_tab.error.generic', { message }),
       isError: true,

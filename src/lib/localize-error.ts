@@ -1,4 +1,5 @@
 import { tWithFallback } from '@/i18n';
+import { errorMessage } from '@shared/error-message';
 
 function isPlaceholderStart(code: number): boolean {
   return (
@@ -48,4 +49,14 @@ export function localizeErrorByCode(code: string, message: string): string {
   // 绝大多数)正常本地化。
   if (hasCatalogPlaceholder(localized)) return message;
   return localized;
+}
+
+/**
+ * catch 到的任意值 → 展示文本:带 string `code` 按 catalog 本地化(localizeErrorByCode),否则原 message。
+ * 与 errorCodeOf 不同,无 code 时不兜底成 'EXCEPTION'。null / undefined 也安全(插件回调可 reject(null))。
+ */
+export function localizeThrown(err: unknown): string {
+  const message = errorMessage(err);
+  const code = (err as { code?: unknown } | null | undefined)?.code;
+  return typeof code === 'string' ? localizeErrorByCode(code, message) : message;
 }
