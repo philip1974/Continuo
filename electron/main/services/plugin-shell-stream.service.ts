@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { IpcMain } from 'electron';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
-import { assertTrustedFrame } from '../safe-handle';
 import { ERROR_CODES } from '../../shared/error-codes';
 // 边界(E45,E12 shell.exec 同族):plugin-shell-stream:start 的 cmd/args/cwd/streamId 此前无长度/数量
 // 上限(只 E10 修了 timeoutMs)。同仓 shell.exec(E12)已有 PATH/ARG 上限,但流式 spawn 入口漏了。
@@ -99,11 +98,8 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
       args: string[],
       opts?: { timeoutMs?: number; cwd?: string; pluginId?: string },
     ) => {
-      // frame-trust 兜底:START 在 main 端直接 spawn,而 'shell' 权限只在 renderer 的
-      // scoped-app 包装层检查。不加这道门,能触达 raw IPC 的不可信 frame(ADR-Plugin-5
-      // 隔离 iframe / 未来子 frame)即可绕过权限边界触发本机命令执行。与同仓所有写/敏感
-      // IPC 的 defaultIsTrustedFrame 纪律一致(复审 loop R8,同 R7 族但 spawn 面更重)。
-      assertTrustedFrame(event);
+      // frame-trust 门在注册点统一加(ipc.ts 的 withTrustedFrameGate,同 plugin-fs / plugin-data):START 在 main
+      // 端直接 spawn,'shell' 权限只在 renderer scoped-app 包装层检查,不可信 frame 必须在这之前被拒(复审 loop R8)。
       if (children.isShuttingDown()) {
         throw codedError(ERROR_CODES.AGENT_NOT_AUTHORIZED, 'shell stream rejected: app is quitting');
       }
@@ -225,8 +221,6 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(
     PLUGIN_SHELL_STREAM_CHANNELS.ABORT,
     async (event, streamId: string) => {
-      // 同 START 的 frame-trust 兜底(R8)。
-      assertTrustedFrame(event);
       const key = activeKey(event.sender.id, streamId);
       const handle = active.get(key);
       // 归属:active 的 key 含 sender id,别的 sender 按同一 streamId 查不到这条(无法 abort 别人的 stream)。

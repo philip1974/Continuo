@@ -88,9 +88,11 @@ describe('接线守卫:生产注册点传入 gated ipcMain', () => {
     );
   });
 
-  it('plugin-shell-stream 用同一个 assertTrustedFrame', () => {
+  // plugin-shell-stream 同样在注册点经 withTrustedFrameGate(此前在 service 内逐 handler 手写 assertTrustedFrame,
+  // 新增 channel 易漏门)。
+  it('plugin-shell-stream 注册点同样传入 gated ipcMain,service 内不再逐 handler 手写', () => {
+    expect(read('ipc.ts')).toMatch(/registerPluginShellStreamHandlers\(\s*withTrustedFrameGate\(/);
     const src = read('services/plugin-shell-stream.service.ts');
-    expect((src.match(/assertTrustedFrame\(event\)/g) ?? []).length).toBe(2);
-    expect(src).not.toContain('defaultIsTrustedFrame(event.senderFrame)');
+    expect(src).not.toMatch(/assertTrustedFrame\(|defaultIsTrustedFrame\(event\.senderFrame\)/);
   });
 });

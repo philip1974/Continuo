@@ -14,7 +14,7 @@ import {
   type ExplorerWritablePayload,
 } from './persistence';
 import { EXPLORER_FILE_NAME, MAIN_OWNED_WINDOW_FIELDS } from '../shared/explorer-persistence-schema';
-import { safeHandle, safeHandleWithCtx } from './safe-handle';
+import { safeHandle, safeHandleWithCtx, withTrustedFrameGate } from './safe-handle';
 import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { getWindowSeq } from './services/window-seq.service';
@@ -242,8 +242,9 @@ export function registerIpc(deps: WindowIpcDeps): void {
   // plugin app.dataStore IPC-backed persistence(topic 01)
   registerPluginDataIpc();
 
-  // plugin app.shell.execStream backend(topic 01)
-  registerPluginShellStreamHandlers(ipcMain);
+  // plugin app.shell.execStream backend(topic 01)。注册点统一加 frame-trust 门(同 plugin-fs / plugin-data):
+  // START 直接 spawn,service 内新增 channel 也不会漏门。
+  registerPluginShellStreamHandlers(withTrustedFrameGate(ipcMain));
 
   // 多窗口支持(issue #23 Phase 1):window.create
   registerWindowIpc(deps);

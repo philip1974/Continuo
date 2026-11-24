@@ -15,7 +15,10 @@ import { describe, it, expect, vi } from 'vitest';
 const spawnMock = vi.hoisted(() => vi.fn());
 vi.mock('node:child_process', () => ({ spawn: spawnMock }));
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { registerPluginShellStreamHandlers } from '../../../electron/main/services/plugin-shell-stream.service';
+import { withTrustedFrameGate } from '../../../electron/main/safe-handle';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../../electron/shared/plugin-shell-stream-channels';
 import { IPC_ERR } from '../../../electron/shared/ipc-result';
 
@@ -23,9 +26,14 @@ type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 
 function makeIpc(): { handlers: Map<string, Handler> } {
   const handlers = new Map<string, Handler>();
-  registerPluginShellStreamHandlers({
-    handle: (ch: string, fn: Handler) => handlers.set(ch, fn),
-  } as never);
+  // 与 ipc.ts 的真实接线一致:注册点经 withTrustedFrameGate(见下方接线守卫)。
+  registerPluginShellStreamHandlers(
+    // Electron 的 ipcMain.handle 把 handler 的同步抛错转成 invoke 的 reject:假 ipc 同样包进 promise。
+    withTrustedFrameGate({
+      handle: (ch: string, fn: Handler) =>
+        handlers.set(ch, (...a: unknown[]) => Promise.resolve().then(() => fn(...a))),
+    } as never),
+  );
   return { handlers };
 }
 
@@ -67,3 +75,11 @@ describe('topic49 R8 · shell-stream frame-trust', () => {
     ).rejects.toMatchObject({ code: IPC_ERR.DENIED });
   });
 });
+
+describe('topic49 R8 · 接线守卫', () => {
+  it('ipc.ts 注册 shell-stream handlers 时经 withTrustedFrameGate', () => {
+    const src = readFileSync(join(__dirname, '../../../electron/main/ipc.ts'), 'utf-8');
+    expect(src).toContain('registerPluginShellStreamHandlers(withTrustedFrameGate(ipcMain))');
+  });
+});
+
