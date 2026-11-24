@@ -1,15 +1,12 @@
 import { useT } from '@/i18n';
 
+/**
+ * 输出面板:目前没有任何写入方(宿主与插件都不向它写日志),只显示空状态。此前写死「Continuo 就绪 / 已恢复停靠布局」
+ * 两行假日志(首次启动用默认布局时仍显示「已恢复」),与插件页「输出日志面板」的描述都不实。
+ */
 export function Output() {
-  // i18n(I15,I14 同类硬编码 UI):状态文案走 catalog,zh/ko 不再显英文。`[info]` 是
-  // 语言无关的日志级别标记,保留字面;消息部分用 useT 本地化(响应 locale)。
   const t = useT();
   return (
-    <div className="h-full w-full overflow-auto p-3 font-mono text-xs text-fg">
-      <div className="text-fg-dim">[info] {t('panels.output.ready')}</div>
-      <div className="text-fg-dim">
-        [info] {t('panels.output.layout_restored')}
-      </div>
-    </div>
+    <div className="h-full w-full overflow-auto p-3 font-mono text-xs text-fg-dim">{t('panels.output.empty')}</div>
   );
 }

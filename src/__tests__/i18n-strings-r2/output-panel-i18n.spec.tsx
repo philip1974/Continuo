@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// i18n(I15,I14 同类硬编码 UI):Output 面板状态文案此前硬编码英文 '[info] Continuo ready' /
-// '[info] dock layout restored',zh/ko 显英文。改用 panels.output.* catalog + useT 渲染。
+// i18n(I15):Output 面板文案走 panels.output.* catalog + useT(zh / ko 不显英文)。面板目前没有任何写入方,
+// 只显示空状态 —— 不再写死「Continuo 就绪 / 已恢复停靠布局」两行假日志(首启默认布局时「已恢复」也不实)。
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -12,19 +12,17 @@ afterEach(() => {
   setLocale('en');
 });
 
-describe('i18n I15 · Output 面板状态文案本地化', () => {
-  it('locale=zh → 显中文状态文案(不是硬编码英文)', () => {
+describe('i18n I15 · Output 面板文案本地化', () => {
+  it('locale=zh → 显中文空状态,无假日志', () => {
     setLocale('zh');
     const { container } = render(<Output />);
-    expect(container.textContent).toContain('Continuo 就绪');
-    expect(container.textContent).toContain('已恢复停靠布局');
-    expect(container.textContent).not.toContain('dock layout restored');
+    expect(container.textContent).toBe('暂无输出。');
   });
 
-  it('locale=en → 显英文状态文案', () => {
+  it('locale=en → 显英文空状态,无假日志', () => {
     setLocale('en');
     const { container } = render(<Output />);
-    expect(container.textContent).toContain('Continuo ready');
-    expect(container.textContent).toContain('dock layout restored');
+    expect(container.textContent).toBe('No output yet.');
+    expect(container.textContent).not.toContain('dock layout restored');
   });
 });
