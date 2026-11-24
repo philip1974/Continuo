@@ -1,16 +1,15 @@
 /* 设计系统(MD3 token 层)。
  *
  * 结构:
- *   1. 引入 design-tokens.css(基础 token:完整 47 个 --md-* + --wm-* 亮/暗双套;源自已废弃的
- *      Nous shell-ui,现由本仓库维护)。
- *   2. 在 .dark 下覆盖 MD3 关键值,保留 Continuo 的 slate + sky 视觉身份
- *      (基础层默认是暖灰 + lavender)。
+ *   1. 引入 design-tokens.css(唯一色板来源:完整 47 个 --md-* + --wm-* 亮/暗双套,
+ *      含 Continuo IDE 暗色值;源自已废弃的 Nous shell-ui,现由本仓库维护)。
+ *      本文件不再覆盖其中任何 --md-* —— 改色直接改 design-tokens.css。
+ *   2. Continuo 自有槽位(MD3 无对应:--md-debug-* / --md-fg-dim,及 --wm-radius-* 等),
+ *      light(:root)与 dark(.dark)各给值。
  *   3. @theme inline 把 Continuo 自有的 --color-* 私有 token 映射到 --md-*,
- *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility,
- *      LM 现有 className 零修改。
+ *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility。
  *
- * 默认 dark 模式(index.html <html class="dark">),light 暂用基础层默认值
- * 作为亮色切换的占位,后续若做亮色再细调。
+ * 默认 dark 模式(index.html <html class="dark">),light 为占位色板。
  */
 
 @import './design-tokens.css';
@@ -40,54 +39,13 @@
   --md-fg-dim: #6c6f7e;
 }
 
-/* ── Continuo 暗色身份(对齐 demo Industrial IDE Dark)──────── */
-/* 色板换装:从中性 slate + sky-600 → 蓝紫 surface + royal blue。
- * 变化:
- *   - surface 从纯黑 #020617 → 蓝紫调 #11131b(profession instrument 感)
- *   - container 阶梯化(low/normal/high/highest)用 demo 推荐的 5 档
- *   - on-surface #f5f5f5 → #e1e2ed(轻微降亮,长时间编辑减疲劳)
- *   - outline 加深到 #434655(分隔更清晰)
- *   - primary 从 sky-600 #0284c7 → royal blue #2563eb(更专业)
- * 参考:demo/stitch_desktop_design_reviewer (2)/DESIGN.md
- */
+/* ── Continuo 自有槽位的暗色值(MD3 色板本体在 design-tokens.css .dark)── */
 .dark {
-  /* 表面层(5 档 surface tiering,demo 同款) */
-  --md-surface: #11131b;                /* canvas — 全局底色 */
-  --md-surface-dim: #11131b;
-  --md-surface-bright: #373942;
-  --md-surface-container-lowest: #0c0e16;
-  --md-surface-container-low: #191b23;  /* panel-soft */
-  --md-surface-container: #1d1f27;      /* panel */
-  --md-surface-container-high: #282a32; /* hover */
-  --md-surface-container-highest: #32343d;
-
-  /* 文本 */
-  --md-on-surface: #e1e2ed;             /* fg(柔和,适合长时间编辑) */
-  --md-on-surface-variant: #c3c6d7;     /* fg-muted(对比度提升) */
-
-  /* 边框 */
-  --md-outline: #8d90a0;
-  --md-outline-variant: #434655;        /* line(更明显的分隔) */
-
-  /* 主色:demo DESIGN.md 的 MD3 双槽 ──
-   *   --md-primary           = #b4c5ff(淡天蓝):text/border/alpha-blend 的 accent,
-   *                            在深色面板上对比度比 royal blue 高,长时间看更舒服
-   *   --md-on-primary        = #002a78(深海军蓝):light primary 上的可读文字
-   *   --md-primary-container = #2563eb(royal blue):filled button bg,需要更强视觉重量时用
-   *   --md-on-primary-container = #eeefff:royal blue 上的浅文字
-   * Button[variant=primary] 的 idle→hover 自然走 light blue → royal blue 的 MD3 tonal 过渡。
-   */
-  --md-primary: #b4c5ff;
-  --md-on-primary: #002a78;
-  --md-primary-container: #2563eb;
-  --md-on-primary-container: #eeefff;
-  --md-focus-ring: #2563eb;
-
   /* Debug 可视化 */
   --md-debug-breakpoint: #ff6b6b;
   --md-debug-exec-line: rgba(255, 107, 107, 0.16);
 
-  /* 次要弱化文字(MD3 无对应槽,与新色板配套) */
+  /* 次要弱化文字(MD3 无对应槽,与色板配套) */
   --md-fg-dim: #6c6f7e;
 }
 

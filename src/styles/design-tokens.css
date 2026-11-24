@@ -91,24 +91,26 @@
   --wm-z-modal: 50;
 }
 
+/* 暗色:Continuo IDE 色板(蓝紫 surface 5 档 + 淡天蓝 / royal blue 双槽 primary,
+ * 参考 demo Industrial IDE Dark);其余状态色沿用 MD3 基线暗色值。 */
 .dark {
-  --md-surface: #141218;
-  --md-surface-dim: #141218;
-  --md-surface-bright: #3b383e;
-  --md-surface-container-lowest: #0f0d13;
-  --md-surface-container-low: #1d1b20;
-  --md-surface-container: #211f26;
-  --md-surface-container-high: #2b2930;
-  --md-surface-container-highest: #36343b;
-  --md-on-surface: #e6e0e9;
-  --md-on-surface-variant: #cac4d0;
-  --md-outline: #938f99;
-  --md-outline-variant: #49454f;
+  --md-surface: #11131b;                /* canvas — 全局底色 */
+  --md-surface-dim: #11131b;
+  --md-surface-bright: #373942;
+  --md-surface-container-lowest: #0c0e16;
+  --md-surface-container-low: #191b23;  /* panel-soft */
+  --md-surface-container: #1d1f27;      /* panel */
+  --md-surface-container-high: #282a32; /* hover */
+  --md-surface-container-highest: #32343d;
+  --md-on-surface: #e1e2ed;             /* fg(柔和,适合长时间编辑) */
+  --md-on-surface-variant: #c3c6d7;     /* fg-muted */
+  --md-outline: #8d90a0;
+  --md-outline-variant: #434655;        /* line */
 
-  --md-primary: #d0bcff;
-  --md-on-primary: #371e73;
-  --md-primary-container: #4f378b;
-  --md-on-primary-container: #eaddff;
+  --md-primary: #b4c5ff;                /* accent:淡天蓝,stroke / 文字 / alpha 混合 */
+  --md-on-primary: #002a78;
+  --md-primary-container: #2563eb;      /* accent-fill:royal blue,filled 控件 */
+  --md-on-primary-container: #eeefff;
   --md-secondary: #ccc2dc;
   --md-on-secondary: #332d41;
   --md-secondary-container: #4a4458;
@@ -135,7 +137,7 @@
   --md-on-info: #002e69;
   --md-info-container: #17448f;
   --md-on-info-container: #d8e2ff;
-  --md-focus-ring: #d0bcff;
+  --md-focus-ring: #2563eb;
   --md-scrim: rgba(0, 0, 0, 0.62);
   --md-state-hover: rgba(230, 224, 233, 0.08);
   --md-state-focus: rgba(230, 224, 233, 0.12);

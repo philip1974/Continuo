@@ -3,8 +3,8 @@
 | 文件 | 职责 |
 |---|---|
 | `src/theme/ThemeProvider.tsx` | 主题模式 / 系统跟随 / `.dark` class 切换;mode 唯一存储为设置值 `general.theme` |
-| `src/styles/design-tokens.css` | 基础 MD3 token(亮+暗双套;源自已废弃的 Nous shell-ui,现由本仓库维护) |
-| `src/styles/theme.css` | Continuo 暗色覆盖 + `@theme inline` 把 `--color-*` 私有 token 映射到 `--md-*` |
+| `src/styles/design-tokens.css` | 唯一 MD3 色板(亮+暗双套,暗色即 Continuo IDE 色板;源自已废弃的 Nous shell-ui,现由本仓库维护) |
+| `src/styles/theme.css` | Continuo 自有槽位(`--md-debug-*` / `--md-fg-dim` / `--wm-radius-*` 等)+ `@theme inline` 把 `--color-*` 私有 token 映射到 `--md-*` |
 | `src/design/*` | design 基础组件(本仓库维护) |
 
 ## 关键行为
@@ -22,7 +22,8 @@
 ### Token 完整性
 
 - `design-tokens.css` 在 `:root`(light)与 `.dark` 下的 `--md-*` 变量数量必须**严格相等**(亮/暗对称)
-- `theme.css` 必须导入 `design-tokens.css`;Continuo 覆盖只动 `.dark` 块的 surface / primary 等 IDE 关键值
+- `theme.css` 必须导入 `design-tokens.css`;色板单层:`theme.css` 不覆盖 `design-tokens.css` 已定义的任何 `--md-*`,Continuo IDE 暗色值直接写在 `design-tokens.css` 的 `.dark`
+- Continuo 自有 `--md-*` 槽位(`--md-debug-*` / `--md-fg-dim`)在 `theme.css` 的 `:root` 与 `.dark` 都给值
 - Continuo 的 `--color-*` 私有 token 必须全部通过 `var(--md-*)` 解析(不许字面 hex)
 
 ### Design 组件契约

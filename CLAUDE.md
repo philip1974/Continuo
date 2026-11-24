@@ -55,7 +55,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 * **必须**用语义 token：`bg-canvas / bg-panel / bg-panel-soft / bg-hover / text-fg / text-fg-muted / text-fg-dim / border-line / accent`（解析自 `--md-*`，由 `src/styles/theme.css` 的 `@theme inline` 映射）。
 
-* 新增颜色场景 → 改 `theme.css` 加 `--md-*` 槽位 → 在 `@theme inline` 暴露成 `--color-*` utility，**不要**在组件局部硬编码。
+* 新增颜色场景 → MD3 已有槽位直接改 `design-tokens.css`；MD3 无对应的在 `theme.css` 加 Continuo 自有 `--md-*` 槽位 → 在 `@theme inline` 暴露成 `--color-*` utility，**不要**在组件局部硬编码。
 
 ### 组件
 
@@ -69,7 +69,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 * `src/design/` 可直接修改与扩展（新 variant、a11y 增强等），改动要保持组件 API 通用、不夹带业务逻辑，并补对应测试。
 
-* `src/styles/design-tokens.css` 是基础 token 层：`:root`（light）与 `.dark` 两套 `--md-*` 必须一一对应（`design-system/tokens.spec.ts` 守护）；Continuo 的 IDE 调色板覆盖仍写在 `theme.css` 的 `.dark` 块，不在基础层里混改。
+* `src/styles/design-tokens.css` 是基础 token 层：`:root`（light）与 `.dark` 两套 `--md-*` 必须一一对应（`design-system/tokens.spec.ts` 守护），且是唯一色板来源（Continuo IDE 暗色值直接写在其 `.dark`）；`theme.css` 不覆盖其中任何 `--md-*`，只放 MD3 无对应的 Continuo 自有槽位（如 `--md-debug-*`、`--md-fg-dim`，light/dark 都给值）与 `@theme inline` 映射。
 
 ### 主题切换
 

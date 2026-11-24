@@ -16,7 +16,7 @@ Before proposing any change:
 2. **Read existing tests.** This repo enforces BDD + TDD (see `CLAUDE.md`); existing `src/__tests__/<topic>/` BDD specs and module-level `*.spec.ts` are the authoritative spec for current behavior.
 3. **Run the lint + typecheck baseline.** `pnpm lint && pnpm typecheck` must be green before your change. If it's red on `main`, surface that to the human before proceeding.
 4. **Write the BDD or TDD test first** when introducing or changing observable behavior. See `CLAUDE.md` § "BDD+TDD 驱动开发规则".
-5. **Respect the design-system constraints** in `CLAUDE.md` (no raw Tailwind colors, no native `<button>` / `<input>` className, keep `src/styles/design-tokens.css` light/dark symmetric; IDE palette overrides go in `theme.css`).
+5. **Respect the design-system constraints** in `CLAUDE.md` (no raw Tailwind colors, no native `<button>` / `<input>` className, keep `src/styles/design-tokens.css` light/dark symmetric; it is the single palette source — `theme.css` must not re-override its `--md-*`, only add Continuo-specific slots and the `@theme inline` mapping).
 
 ## 3 · Cross-repo boundary (asymmetric — read carefully)
 

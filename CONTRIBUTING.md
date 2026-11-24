@@ -75,7 +75,7 @@ Plugins talk to the app only through **CoApp**, a scoped facade over the rendere
 
 - Never use raw Tailwind colors (`bg-neutral-*`, `bg-sky-*`, literal hex). Use semantic tokens (`bg-canvas`, `bg-panel`, `text-fg`, `border-line`, `accent`) defined in `src/styles/theme.css`.
 - Reuse `@/design` components (`Button`, `IconButton`, `Modal`, `Input`, …) instead of writing raw `<button>` / `<input>` className.
-- `src/design/` and `src/styles/design-tokens.css` are maintained in this repo (they originated from a now-retired design system and are no longer synced). Keep the tokens file's light/dark sets symmetric and put IDE palette overrides in `theme.css` (see `CLAUDE.md`).
+- `src/design/` and `src/styles/design-tokens.css` are maintained in this repo (they originated from a now-retired design system and are no longer synced). Keep the tokens file's light/dark sets symmetric; it is the single palette source (the IDE dark palette lives in its `.dark` block), and `theme.css` only adds Continuo-specific slots plus the `@theme inline` mapping without re-overriding any `--md-*` (see `CLAUDE.md`).
 
 ## Deep design references
 

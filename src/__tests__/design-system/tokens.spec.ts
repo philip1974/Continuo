@@ -54,16 +54,34 @@ describe('design-tokens.css MD3 完整性', () => {
   });
 });
 
-describe('theme.css Continuo 暗色覆盖与 @theme inline 链路', () => {
+describe('theme.css 单层色板与 @theme inline 链路', () => {
   it('引入 design-tokens.css', () => {
     expect(LM_THEME).toMatch(/@import\s+['"]\.\/design-tokens\.css['"]/);
   });
 
-  it('.dark 块覆盖核心 surface / primary 槽位(Continuo slate + sky 身份)', () => {
-    const lmDark = getDarkBlock(LM_THEME);
-    expect(lmDark).toMatch(/--md-surface\s*:/);
-    expect(lmDark).toMatch(/--md-primary\s*:/);
-    expect(lmDark).toMatch(/--md-on-surface\s*:/);
+  it('色板单层:theme.css 不覆盖 design-tokens.css 已定义的任何 --md-*', () => {
+    const baseVars = new Set(extractMdVars(DESIGN_TOKENS));
+    const themeOutsideMapping = LM_THEME.replace(/@theme\s+inline\s*\{[\s\S]*?\n\}/, '');
+    const overridden = extractMdVars(themeOutsideMapping).filter((v) => baseVars.has(v));
+    expect(overridden).toEqual([]);
+  });
+
+  it('design-tokens.css .dark 直接承载 Continuo IDE 暗色(蓝紫 surface + 淡天蓝 / royal blue primary)', () => {
+    const dark = getDarkBlock(DESIGN_TOKENS);
+    expect(dark).toMatch(/--md-surface:\s*#11131b;/);
+    expect(dark).toMatch(/--md-primary:\s*#b4c5ff;/);
+    expect(dark).toMatch(/--md-primary-container:\s*#2563eb;/);
+    expect(dark).toMatch(/--md-on-surface:\s*#e1e2ed;/);
+  });
+
+  it('Continuo 自有 --md-* 槽位在 theme.css 的 :root 与 .dark 都给值', () => {
+    const own = ['--md-debug-breakpoint:', '--md-debug-exec-line:', '--md-fg-dim:'];
+    const light = extractMdVars(getRootBlock(LM_THEME));
+    const dark = extractMdVars(getDarkBlock(LM_THEME));
+    for (const v of own) {
+      expect(light).toContain(v);
+      expect(dark).toContain(v);
+    }
   });
 
   it('@theme inline 暴露 14 个 --color-* 语义 token,全部 var(--md-*) 解析', () => {
