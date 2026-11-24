@@ -12,7 +12,6 @@ import {
 } from './lib/initial-workspace';
 import { bootCorePlugins } from './core-plugins';
 import { coApp } from './plugins/co-app';
-import { wirePluginDataInvalidation } from './plugins/PluginDataStore';
 import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager, setUserPluginManager } from './plugins/PluginManager';
@@ -180,9 +179,6 @@ export async function init(): Promise<void> {
       usePermissionPromptStore.getState().cancel(pid, reason),
   });
   setUserPluginManager(userPluginManager);
-  // 别的窗口写入某插件 data.json → main 广播,本窗口失效该插件数据缓存(下次 loadData 从盘重读),
-  // 防陈旧缓存的整份读-改-写抹掉别窗改动。
-  wirePluginDataInvalidation(coApp.dataStore);
   // 终审 P1:任一窗口(含本窗口)变更插件授权成功 → main 广播,本窗口失效授权缓存(下次读重新加载),
   // 再重查该插件 mcp-tools 授权:已撤销 → 注销其 MCP 工具(调用期逐次重查是兜底)。
   coApi.plugins.onPermissionsChanged((id) => {
@@ -244,6 +240,8 @@ export async function init(): Promise<void> {
         return p;
       },
       write: (snap) => coApi.explorer.write(snap),
+      touchRecent: (path) => coApi.explorer.touchRecent(path),
+      onRecentChanged: (cb) => coApi.explorer.onRecentChanged(cb),
     },
     {
       fs: { readFile: (p) => coApi.fs.readFile(p) },

@@ -10,11 +10,14 @@ import {
   ensureWindowEntry,
   loadExplorer,
   mergeWritableIntoFull,
+  promoteRecentRoot,
   type ExplorerPayloadV3,
   type ExplorerWritablePayload,
   writeExplorerFile,
 } from './persistence';
-import { EXPLORER_FILE_NAME, MAIN_OWNED_WINDOW_FIELDS } from '../shared/explorer-persistence-schema';
+import { EXPLORER_FILE_NAME, MAIN_OWNED_WINDOW_FIELDS, PATH_STR_MAX } from '../shared/explorer-persistence-schema';
+import { isBlankString } from '../shared/ecma-whitespace';
+import { broadcastToWindows } from './lib/broadcast';
 import { safeHandle, safeHandleWithCtx, withTrustedFrameGate } from './safe-handle';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { getWindowSeq } from './services/window-seq.service';
@@ -45,6 +48,9 @@ import { codedError } from '../shared/error-message';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
+const TouchRecentInput = z
+  .object({ path: z.string().max(PATH_STR_MAX).refine((p) => !isBlankString(p)) })
+  .strict();
 
 export function filterWritableSnapshotForWindowSeq(
   writable: ExplorerWritablePayload,
@@ -217,6 +223,29 @@ export function registerIpc(deps: WindowIpcDeps): void {
         const merged = mergeWritableIntoFull(current, ownOnly);
         if (current !== null && isDeepStrictEqual(merged, current)) return;
         await writeExplorerFile(explorerFile, merged);
+      });
+    },
+  );
+
+  // 全局「最近打开」增量置顶(多窗口:explorer:write 不再整表覆盖 recentRoots,见 mergeWritableIntoFull)。
+  // 锁内重读盘 → promoteRecentRoot → 写盘 → 锁内广播(多次 touch 的广播与写盘同序)。盘上尚无文件(首启)
+  // 不写不广播:该窗口随后的 explorer:write 以 writable 值创建文件。
+  safeHandle(
+    EXPLORER_CHANNELS.TOUCH_RECENT,
+    TouchRecentInput,
+    async ({ path: root }) => {
+      await withExplorerFileMutex(async () => {
+        const current = await loadExplorer(explorerFile);
+        if (!current) return;
+        const recentRoots = promoteRecentRoot(current.workspace.recentRoots, root);
+        if (!isDeepStrictEqual(recentRoots, current.workspace.recentRoots)) {
+          await writeExplorerFile(explorerFile, { ...current, workspace: { ...current.workspace, recentRoots } });
+        }
+        broadcastToWindows(
+          EXPLORER_CHANNELS.RECENT_CHANGED,
+          () => ({ recentRoots }),
+          '[explorer] RECENT_CHANGED',
+        );
       });
     },
   );

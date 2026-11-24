@@ -3,6 +3,7 @@ import {
   EXPLORER_CHANNELS,
   LAYOUT_CHANNELS,
   WINDOW_ID_CHANNEL,
+  isRecentRootsChangedPayload,
   type DirtyState,
   type FlushAckPayload,
   type FlushRequestPayload,
@@ -164,6 +165,17 @@ const api = {
       ipcRenderer.invoke(EXPLORER_CHANNELS.READ),
     write: (json: unknown): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(EXPLORER_CHANNELS.WRITE, json),
+    /** 把一项置顶到全局「最近打开」(main 锁内与盘上合并后广播 onRecentChanged). */
+    touchRecent: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(EXPLORER_CHANNELS.TOUCH_RECENT, { path }),
+    /** 订阅「最近打开」变更广播(任一窗口 touch 成功后 main 推给所有窗口),返 unsubscribe. */
+    onRecentChanged: (cb: (recentRoots: string[]) => void): (() => void) =>
+      subscribeIpc(
+        EXPLORER_CHANNELS.RECENT_CHANGED,
+        guardedListener(isRecentRootsChangedPayload, '[explorer] dropped malformed recent-changed payload', (payload) =>
+          cb(payload.recentRoots),
+        ),
+      ),
   },
   fs: {
     listDir: (

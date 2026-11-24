@@ -89,6 +89,13 @@ export type ExplorerSnapshot = DeepReadonly<
 export interface ExplorerPersistApi {
   read: () => Promise<IpcResult<unknown | null>>;
   write: (snap: ExplorerSnapshot) => Promise<IpcResult<void>>;
+  /**
+   * 把一项置顶到全局「最近打开」(main 在文件锁内与盘上合并并广播)。explorer:write 不再整表覆盖 recentRoots
+   *(多窗口互相抹掉),新增 / 置顶只走这里。缺省(测试)则不发。
+   */
+  touchRecent?: (path: string) => Promise<IpcResult<void>>;
+  /** 订阅 main 广播的最新 recentRoots(任一窗口 touch 后推给所有窗口),返 unsubscribe。 */
+  onRecentChanged?: (cb: (recentRoots: string[]) => void) => () => void;
 }
 
 /** Editor session 异步 hydrate 所需的 fs 子集(只用 readFile). */
@@ -431,6 +438,8 @@ export async function initExplorerPersistence(
   // 合法 snapshot / 损坏都算成功读到磁盘当前态)→ 可信;!ok(EACCES/EIO 经 safeHandle)/
   // reject → 磁盘真实态未知、store 仍默认态,**不可信**。仅可信时才注册写订阅(见步骤 3)。
   let loadTrusted = false;
+  // R38:读盘期间用户选过的 root(store 默认空,故即启动期选择,最近在前),hydrate 后补发 touch。
+  let startupPicks: string[] = [];
   try {
     const r = await api.read();
     if (r.ok) {
@@ -443,8 +452,9 @@ export async function initExplorerPersistence(
           '[explorer-persist] user selected workspace during hydrate — skip stale restore',
         );
         // 数据安全:窗口段跳过,但快照里与 root 选择无关的全局段(pinned / recentRoots)仍须 hydrate。
-        // main 合并以 writable 顶层为准(...writable),若保留 store 默认值,随后的写会把磁盘上的
-        // 全局 pinned / recentRoots 覆盖为空 / 仅含用户刚选的 root。
+        // main 合并 pinned 以 writable 为准,若保留 store 默认值,随后的写会把磁盘上的 pinned 覆盖为空;
+        // recentRoots 盘上已有时由 main 保留,本窗的启动期选择经下方 wireRecentRootsSync 补发 touch。
+        startupPicks = [...useWorkspaceStore.getState().recentRoots];
         if (r.data && isExplorerSnapshot(r.data)) {
           hydrateGlobalSegmentsKeepingUserRoot(r.data);
         }
@@ -475,6 +485,10 @@ export async function initExplorerPersistence(
   } catch (err) {
     console.warn('[explorer-persist] read failed', err);
   }
+
+  // 「最近打开」跨窗同步:hydrate 之后、编辑器 tab 读盘之前接线(期间用户可能已开始选 root / 别窗已广播)。
+  // 读失败(不可信)时不接:与写订阅同理,不在磁盘态未知时发增量。
+  if (loadTrusted) wireRecentRootsSync(api, startupPicks);
 
   // root 已定(恢复 / 新窗 / 读失败保持默认):先放行只依赖 root 的消费方(终端首轮过滤 / Splash 屏障),
   // 不让它们等下方编辑器 tab 并发读盘。
@@ -567,6 +581,41 @@ export async function initExplorerPersistence(
     if (s.activeTabId !== prev.activeTabId || s.chromeVersion !== prev.chromeVersion) {
       markDirtyAndPersist();
     }
+  });
+}
+
+/**
+ * 「最近打开」跨窗同步(多窗口:各窗只在启动时 hydrate,explorer:write 又不再整表写 recentRoots):
+ * - 本窗 setRoot 把新 root 置顶(列表头变化)→ 立即 touchRecent(head),由 main 锁内与盘上合并并广播;
+ * - main 广播 → 以 main 列表覆盖本窗 store(main 权威、按序推送;本窗刚置顶的项随其自己的 touch 广播回来)。
+ *   这次 store 变化不回发 touch。
+ */
+function wireRecentRootsSync(api: ExplorerPersistApi, startupPicks: readonly string[]): void {
+  const touch = api.touchRecent;
+  let applyingRemote = false;
+  api.onRecentChanged?.((list) => {
+    applyingRemote = true;
+    try {
+      useWorkspaceStore.setState({ recentRoots: collectNormalizedWorkspaceRoots(list) });
+    } finally {
+      applyingRemote = false;
+    }
+  });
+  if (!touch) return;
+  const send = (path: string): void => {
+    touch(path).then(
+      (r) => {
+        if (!r.ok) console.warn('[explorer-persist] touchRecent failed', r.code, r.message);
+      },
+      (err: unknown) => console.warn('[explorer-persist] touchRecent threw', err),
+    );
+  };
+  // 启动期选择旧→新依次发,最新的最终置顶。
+  for (let i = startupPicks.length - 1; i >= 0; i--) send(startupPicks[i]!);
+  useWorkspaceStore.subscribe((s, prev) => {
+    if (applyingRemote || s.recentRoots === prev.recentRoots) return;
+    const head = s.recentRoots[0];
+    if (head !== undefined && head !== prev.recentRoots[0]) send(head);
   });
 }
 

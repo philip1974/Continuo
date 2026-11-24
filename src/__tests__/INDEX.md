@@ -944,11 +944,6 @@
 - [`plugin-data.spec.ts`](./plugin-data/plugin-data.spec.ts)
 - [`serialize-order.spec.ts`](./plugin-data/serialize-order.spec.ts)
 
-## [plugin-data-cross-window(插件 data.json 跨窗口缓存失效)](./plugin-data-cross-window/README.md)
-
-- [`main-broadcast.spec.ts`](./plugin-data-cross-window/main-broadcast.spec.ts)
-- [`renderer-invalidate.spec.ts`](./plugin-data-cross-window/renderer-invalidate.spec.ts)
-
 ## [plugin-data-uninstall-zombie(卸载后迟到的 saveData 不复活插件目录)](./plugin-data-uninstall-zombie/README.md)
 
 - [`plugin-data-uninstall-zombie.spec.ts`](./plugin-data-uninstall-zombie/plugin-data-uninstall-zombie.spec.ts)
@@ -1205,6 +1200,11 @@
 ## [QuickOpenModal(VSCode ⌘P 文件搜索)](./quick-open-modal/README.md)
 
 - [`quick-open-modal.spec.tsx`](./quick-open-modal/quick-open-modal.spec.tsx)
+
+## [recent-roots-cross-window(「最近打开」多窗口不互相覆盖)](./recent-roots-cross-window/README.md)
+
+- [`main-touch.spec.ts`](./recent-roots-cross-window/main-touch.spec.ts)
+- [`renderer-sync.spec.ts`](./recent-roots-cross-window/renderer-sync.spec.ts)
 
 ## [reconciler-close-keeps-session](./reconciler-close-keeps-session/README.md)
 

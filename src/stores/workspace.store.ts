@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { useEditorStore } from './editor.store';
 import { isBlankString } from '../lib/blank-string';
-import { PATH_STR_MAX } from '../../electron/shared/explorer-persistence-schema';
-
-const RECENT_LIMIT = 5;
+import {
+  PATH_STR_MAX,
+  WORKSPACE_RECENT_LIMIT as RECENT_LIMIT,
+} from '../../electron/shared/explorer-persistence-schema';
 
 export function buildRecentRoots(
   recentRoots: readonly string[],

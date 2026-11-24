@@ -61,7 +61,8 @@ describe('mergeWritableIntoFull current-window-only preservation', () => {
 
     const merged = mergeWritableIntoFull(current, writablePayload);
 
-    expect(merged.workspace).toEqual(writablePayload.workspace);
+    // 全局 recentRoots 盘上已有时 main-owned(只经 explorer:touch-recent 增量置顶,见 recent-roots-cross-window)
+    expect(merged.workspace).toEqual(current.workspace);
     expect(merged.pinned).toEqual(writablePayload.pinned);
     expect(merged.nextWindowSeq).toBe(3);
     expect(merged.windows).toHaveLength(3);

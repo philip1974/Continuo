@@ -20,7 +20,9 @@ import { z } from 'zod';
 // 拒整份 → explorer 持久化全失败。
 export const PATH_STR_MAX = 8192; // 单条路径字符串(远超真实路径)
 export const PATH_ARRAY_MAX = 100_000; // expandedPaths / openFilePaths(大树/多 tab)(E277 运行时同守)
-const RECENT_ROOTS_MAX = 1000; // recentRoots
+const RECENT_ROOTS_MAX = 1000; // recentRoots(schema 宽容上限;运行时 LRU 只保留 WORKSPACE_RECENT_LIMIT 项)
+/** 「最近打开」LRU 上限:renderer workspace.store 与 main explorer:touch-recent 合并共用。 */
+export const WORKSPACE_RECENT_LIMIT = 5;
 const PINNED_MAX = 10_000; // pinned.paths
 const WINDOWS_MAX = 10_000; // windows 段数
 const pathStr = (): z.ZodString => z.string().max(PATH_STR_MAX);

@@ -68,7 +68,23 @@ export interface FlushAckPayload {
 export const EXPLORER_CHANNELS = {
   READ: 'explorer:read',
   WRITE: 'explorer:write',
+  // invoke(renderer → main){ path }:把一项置顶到全局「最近打开」(main 锁内与盘上合并,不整表覆盖)。
+  TOUCH_RECENT: 'explorer:touch-recent',
+  // main → renderer push { recentRoots }:touch 写盘后广播给所有窗口(含发起者)。
+  RECENT_CHANGED: 'explorer:recent-changed',
 } as const;
+
+/** explorer:recent-changed push payload 守卫(preload 用,畸形 warn+drop;纯函数无 zod)。 */
+export function isRecentRootsChangedPayload(p: unknown): p is { recentRoots: string[] } {
+  if (p === null || typeof p !== 'object') return false;
+  const list = (p as { recentRoots?: unknown }).recentRoots;
+  // 上限对齐 explorer-persistence-schema 的 RECENT_ROOTS_MAX / PATH_STR_MAX(main 实际只发 ≤5 项)。
+  return (
+    Array.isArray(list) &&
+    list.length <= 1000 &&
+    list.every((x) => typeof x === 'string' && x.length <= 8192)
+  );
+}
 
 /** preload 启动时 sendSync 取本窗口 id。 */
 export const WINDOW_ID_CHANNEL = 'window:id';
