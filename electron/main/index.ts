@@ -509,10 +509,18 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
 // 同源 → allow + 注入我们的 preload + 安全 webPreferences。
 // 外站 → 转交系统浏览器,deny 弹窗。
 // 判定与主窗加载方式一致,见 window-open-policy。dev URL 经 parseDevRendererUrl(限长 + total,E304)。
+/**
+ * 主窗加载的 dev server URL(仅 dev 且 ELECTRON_RENDERER_URL 可解析;否则 null → loadFile)。主窗加载方式、
+ * 自有入口判定(isOwnRendererUrl)与受信 dev origin 三处共用 —— 三者分叉即重现「popout 全拒」或误信 dev origin。
+ */
+function devRendererUrl(): URL | null {
+  return isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null;
+}
+
 function isOwnRendererUrl(url: string): boolean {
   return isOwnRendererWindowUrl(
     url,
-    isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null,
+    devRendererUrl(),
     isTrustedRendererFileUrl,
   );
 }
@@ -676,7 +684,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 
   // 边界(E299):dev env URL 解析失败(缺失/畸形,开发误配)→ parseDevRendererUrl 返 null,回退 loadFile,
   // 不让 new URL 同步抛崩溃 createMainWindow(应用启动无窗口)。
-  const devUrl = isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null;
+  const devUrl = devRendererUrl();
   if (devUrl) {
     for (const key in queryParts) {
       if (!Object.prototype.hasOwnProperty.call(queryParts, key)) continue;
@@ -1227,7 +1235,7 @@ app.whenReady().then(async () => {
   // dev server origin 同样在此注入,且以 isDev 为闸:打包版即使环境里带着 ELECTRON_RENDERER_URL
   // 也不信该 origin(与 isOwnRendererUrl / createMainWindow 的 dev 判定一致)。
   setTrustedDevOrigin(
-    isDev ? (parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL'])?.origin ?? null) : null,
+    devRendererUrl()?.origin ?? null,
   );
   // 安全:Chromium 权限默认拒绝,仅受信 renderer 入口的剪贴板读写放行(见 permission-policy)。
   // 须在建任何窗口之前注册,否则首窗加载期的权限请求走 Electron 默认放行。

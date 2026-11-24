@@ -348,8 +348,10 @@ describe('defaultIsTrustedFrame', () => {
     const read = (f: string) => readFileSync(join(process.cwd(), 'electron', 'main', f), 'utf8');
     expect(read('safe-handle.ts')).not.toContain('process.env');
     const index = read('index.ts').replace(/\s+/g, ' ');
+    // 注入值来自 devRendererUrl()(与主窗加载方式 / isOwnRendererUrl 共用),后者以 isDev 为闸。
+    expect(index).toMatch(/setTrustedDevOrigin\(\s?devRendererUrl\(\)\?\.origin \?\? null,?\s?\);/);
     expect(index).toContain(
-      "setTrustedDevOrigin( isDev ? (parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL'])?.origin ?? null) : null, );",
+      "function devRendererUrl(): URL | null { return isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null; }",
     );
   });
 });
