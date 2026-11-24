@@ -697,6 +697,10 @@
 
 - [`fs-ipc-bridge.spec.ts`](./fs-ipc-bridge/fs-ipc-bridge.spec.ts)
 
+## [「从 Git URL 安装」输入行(GitUrlInstallForm)](./git-url-install-form/README.md)
+
+- [`git-url-install-form.spec.tsx`](./git-url-install-form/git-url-install-form.spec.tsx)
+
 ## [groupKeepingOrder(按 key 分组的共享实现)](./group-keeping-order/README.md)
 
 - [`group-keeping-order.spec.ts`](./group-keeping-order/group-keeping-order.spec.ts)

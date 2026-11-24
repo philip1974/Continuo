@@ -4,8 +4,10 @@
 // 只管输入、按钮与忙碌态;安装调用与结果消息(文案、live region、成功后的附加动作)留给调用方 ——
 // 两处的文案不同,设置页的消息区还被卸载 / 生命周期操作共用。
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Button, Input } from '@/design';
+import { isImeComposing } from '@/design/ime';
 import { useSingleFlight } from '@/lib/use-single-flight';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { clampGitUrl } from '../../electron/shared/plugins-channels';
@@ -33,30 +35,56 @@ export function GitUrlInstallForm({
   // onInstall,启动两次 installFromGit(主进程双 clone,第二个常 EEXIST 把成功覆盖成失败)。
   const { busy, run } = useSingleFlight();
 
-  const onInstall = (): Promise<void> | void => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  const onInstall = async (): Promise<void> => {
     if (!trimmedUrl) return;
-    return run(async () => {
+    await run(async () => {
       if (await install(trimmedUrl)) setUrl('');
     });
+    // 从按钮发起时,busy 期间按钮 disabled 会把焦点甩回 body(Chrome 里 activeElement 还可能停在已禁用的按钮上):
+    // 结束后还给输入框;焦点已被用户移到本行之外则不抢。
+    const input = inputRef.current;
+    if (!input) return;
+    const active = input.ownerDocument.activeElement;
+    if (
+      active === null ||
+      active === input.ownerDocument.body ||
+      (active !== input && rowRef.current?.contains(active))
+    ) {
+      input.focus();
+    }
+  };
+
+  // Enter 提交(VSCode 输入框同款);IME 组合中的 Enter 是确认候选词,不算提交。
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key !== 'Enter' || isImeComposing(e.nativeEvent)) return;
+    e.preventDefault();
+    void onInstall();
   };
 
   return (
     <>
-      <div className="mt-3 flex items-center gap-2">
+      <div ref={rowRef} className="mt-3 flex items-center gap-2">
         <Input
+          ref={inputRef}
           size="sm"
           aria-label={ariaLabel}
           placeholder={placeholder}
           value={url}
           // 边界(E282):截断超长 git URL(防 paste 撑 React state + IPC structured-clone 放大,main schema 才拒)。
           onChange={(e) => setUrl(clampGitUrl(e.target.value))}
-          disabled={busy}
+          onKeyDown={onKeyDown}
+          // 安装中 readOnly 而非 disabled:disabled 会让正在输入框里的焦点掉回 body。
+          readOnly={busy}
+          aria-busy={busy}
           className="flex-1"
         />
         <Button
           variant="primary"
           size="sm"
-          onClick={onInstall}
+          onClick={() => void onInstall()}
           disabled={busy || !trimmedUrl}
           // a11y(A94/A95):安装中标 aria-busy。
           aria-busy={busy}
