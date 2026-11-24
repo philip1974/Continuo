@@ -35,14 +35,22 @@
   --crepe-shadow-2: var(--wm-shadow-popover);
 
   /* Crepe ≥7.22 在 .milkdown 上写死 font-size: var(--crepe-base-font-size, 16px),会挡住外层容器按
-   * editor.fontSize 设的字号;改回继承,下面的 em 字号都以设置值为基准。 */
+   * editor.fontSize 设的字号;改回继承,下面的 em 字号都以设置值为基准。
+   * frame-dark 同样把 --crepe-base-font-size 写死 16px(代码块占位层等按它算字号,与真实 CodeMirror
+   * 不一致时懒创建 / 回收会高度跳变);改为继承 MilkdownEditor 外层容器写入的设置值。 */
   font-size: inherit;
+  --crepe-base-font-size: inherit;
 }
 
 /* Crepe reset 的正文内边距固定 60px 120px,窄宽下正文被挤成一窄条(表头在单词中间断行)。
- * 改为随编辑区宽度收缩(百分比相对编辑区宽度),宽屏仍封顶在原值。 */
+ * 改为随编辑区宽度收缩(百分比相对编辑区宽度),宽屏仍封顶在原值。
+ * 左侧下限要放得下块手柄:Crepe 的手柄是 2 个 32px 按钮 + 2px 间距,距块左缘 16px,共 82px;
+ * 不够时 floating-ui 把它翻到块右侧或被滚动容器裁掉。只读(Preview)没有手柄,左侧同右侧。 */
 .milkdown .ProseMirror {
-  padding: clamp(16px, 4%, 60px) clamp(16px, 6%, 120px);
+  padding: clamp(16px, 4%, 60px) clamp(16px, 6%, 120px) clamp(16px, 4%, 60px) clamp(88px, 6%, 120px);
+}
+.milkdown .ProseMirror[contenteditable='false'] {
+  padding-left: clamp(16px, 6%, 120px);
 }
 
 /* 表格:prosemirror-tables 默认 table-layout: fixed + width 100%,列宽均分,窄宽下长单词被拆开。

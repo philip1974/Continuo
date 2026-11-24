@@ -453,7 +453,8 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       <div
         ref={wrapperRef}
         className="h-full w-full overflow-auto"
-        style={{ fontSize: `${fontSize}px` }}
+        // --crepe-base-font-size:Crepe 代码块占位层等按它算字号(覆写 CSS 让 .milkdown 继承此值)
+        style={{ fontSize: `${fontSize}px`, '--crepe-base-font-size': `${fontSize}px` } as React.CSSProperties}
         onClick={handleClick}
         onAuxClick={handleAuxClick}
         onKeyDown={handleKeyDown}

@@ -33,9 +33,21 @@ describe('Milkdown 样式覆写', () => {
     expect(block('.milkdown')).toMatch(/(^|[\s;])font-size:\s*inherit/);
   });
 
-  it('正文内边距随宽度收缩,宽屏封顶原值', () => {
-    expect(block('.milkdown .ProseMirror')).toMatch(
-      /padding:\s*clamp\(16px,\s*[\d.]+%,\s*60px\)\s+clamp\(16px,\s*[\d.]+%,\s*120px\)/,
+  it('Crepe 内部按 --crepe-base-font-size 算字号的部件(代码块占位层等)也跟随外层容器给的字号', () => {
+    expect(block('.milkdown')).toMatch(/--crepe-base-font-size:\s*inherit/);
+  });
+
+  it('正文内边距随宽度收缩,宽屏封顶原值;左侧下限容纳块手柄(2×32px 按钮 + 2px 间距 + 16px 偏移 = 82px)', () => {
+    const m = /padding:\s*clamp\(16px,\s*[\d.]+%,\s*60px\)\s+clamp\(16px,\s*[\d.]+%,\s*120px\)\s+clamp\(16px,\s*[\d.]+%,\s*60px\)\s+clamp\((\d+)px,\s*[\d.]+%,\s*120px\)/.exec(
+      block('.milkdown .ProseMirror'),
+    );
+    expect(m, '缺少四值 padding(上 右 下 左)').not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(82);
+  });
+
+  it('只读(Preview,无块手柄)左内边距不必为手柄留位', () => {
+    expect(block(".milkdown .ProseMirror[contenteditable='false']")).toMatch(
+      /padding-left:\s*clamp\(16px,\s*[\d.]+%,\s*120px\)/,
     );
   });
 

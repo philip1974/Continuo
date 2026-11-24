@@ -10,6 +10,10 @@ const DOC = [
   '',
   'Body text.',
   '',
+  '```js',
+  'const a = 1;',
+  '```',
+  '',
   '| Col A | Col B | A very long column header text |',
   '| --- | --- | --- |',
   '| 1 | two | three three three three three three |',
@@ -53,11 +57,31 @@ test('Edit:字体取 token、字号跟随 editor.fontSize、窄宽内边距收�
   await expect
     .poll(() => window.locator('main .milkdown').first().evaluate((el) => getComputedStyle(el).fontSize))
     .toBe('20px');
+  // 代码块占位层(CodeMirror 懒创建前 / 回收后显示)按 --crepe-base-font-size 算字号,须同样跟随设置
+  expect(
+    await window
+      .locator('main .milkdown')
+      .first()
+      .evaluate((el) => getComputedStyle(el).getPropertyValue('--crepe-base-font-size').trim()),
+  ).toBe('20px');
 
   await setWidth(electronApp, 800);
   await expect
-    .poll(() => pm.evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft)))
+    .poll(() => pm.evaluate((el) => parseFloat(getComputedStyle(el).paddingRight)))
     .toBeLessThan(120);
+
+  // 窄宽下悬停段落,块手柄仍在段落左侧且不超出编辑区左边界
+  await pm.locator('p', { hasText: 'Body text.' }).hover();
+  const handle = window.locator('main .milkdown .milkdown-block-handle');
+  await expect(handle).toHaveAttribute('data-show', 'true');
+  const pos = await pm.evaluate((el) => {
+    const h = el.closest('.milkdown')!.querySelector('.milkdown-block-handle')!.getBoundingClientRect();
+    const p = [...el.querySelectorAll('p')].find((x) => x.textContent === 'Body text.')!.getBoundingClientRect();
+    const scroller = el.closest('.overflow-auto')!.getBoundingClientRect();
+    return { handleLeft: h.left, handleRight: h.right, pLeft: p.left, scrollerLeft: scroller.left };
+  });
+  expect(pos.handleRight).toBeLessThanOrEqual(pos.pLeft);
+  expect(pos.handleLeft).toBeGreaterThanOrEqual(pos.scrollerLeft);
 
   // 表头每个单词都完整落在一行内:单元格内容宽度 ≥ 最长单词宽度
   const fits = await pm.locator('th').evaluateAll((ths) =>

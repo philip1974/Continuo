@@ -846,6 +846,7 @@
 ## [markdown-editor-style](./markdown-editor-style/README.md)
 
 - [`milkdown-style-override.spec.ts`](./markdown-editor-style/milkdown-style-override.spec.ts)
+- [`wrapper-font-size-var.spec.tsx`](./markdown-editor-style/wrapper-font-size-var.spec.tsx)
 
 ## [markdown-link-keyboard](./markdown-link-keyboard/)
 
