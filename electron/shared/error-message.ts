@@ -11,6 +11,11 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** 把 unknown 形态的 catch error 收敛为 Error(已是 Error 原样返回,否则 `new Error(String(err))`)。 */
+export function toError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
+}
+
 /**
  * 把回传给外部(IPC / JSON-RPC)的错误文本限幅:超长时截断并标注省略的字符数。safe-handle 与 MCP host
  * 两个出口共用(上限各自定义)。

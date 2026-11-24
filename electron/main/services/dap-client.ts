@@ -7,6 +7,7 @@ import net, { type Socket } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { mergeSpawnEnv, stripInternalSecretEnv } from '../lib/child-spawn-hardening';
+import { errorMessage, toError } from '../../shared/error-message';
 
 type DapPrimitive = string | number | boolean | null;
 export type DapJson =
@@ -512,7 +513,7 @@ export class DapClient {
       try {
         socket = await this.connectOnce();
       } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
+        lastError = toError(err);
         await sleep(this.connectIntervalMs);
         continue;
       }
@@ -560,7 +561,7 @@ export class DapClient {
         // 畸形流(缺 Content-Length / 帧头超限 / body 非 JSON):解码器缓冲不会前进,之后每个 chunk 都会重抛。
         // 在 data 回调里抛出就是主进程未捕获异常 —— 结算在途请求并断开这条连接。
         this.rejectAllPending(
-          new Error(`malformed DAP stream: ${err instanceof Error ? err.message : String(err)}`),
+          new Error(`malformed DAP stream: ${errorMessage(err)}`),
         );
         socket.destroy();
         return;
@@ -610,7 +611,7 @@ export class DapClient {
     try {
       this.sendMessage(request);
     } catch (err) {
-      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+      return Promise.reject(toError(err));
     }
     return withTimeout(
       new Promise<DapResponseMessage>((resolve, reject) => {
@@ -704,7 +705,7 @@ export class DapClient {
           body: body ?? {},
         });
       } catch (err) {
-        const messageText = err instanceof Error ? err.message : String(err);
+        const messageText = errorMessage(err);
         this.sendReverseResponse({
           seq: this.seq++,
           type: 'response',

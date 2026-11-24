@@ -31,7 +31,7 @@ import {
   type DebugViewEvent,
   type DebugViewSessionSnapshot,
 } from '../../shared/debug-view-channels';
-import { codedError } from '../../shared/error-message';
+import { codedError, toError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
 import { processTreeKillable } from '../lib/kill-with-grace';
@@ -1306,7 +1306,7 @@ export class DebugService {
       this.ensureProgramStarted(runtime).catch((err: unknown) => {
         if (!runtime.waiters.delete(waiter)) return;
         clearTimeout(waiter.timer);
-        reject(err instanceof Error ? err : new Error(String(err)));
+        reject(toError(err));
       });
     });
   }
@@ -1713,7 +1713,7 @@ export class DebugService {
         runtime.launch.cwd,
       );
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = toError(err);
       this.rejectWaiters(runtime.id, error);
       void this.teardownSession(runtime.id, 'launch-outside-workspace').catch(() => undefined);
       throw error;
@@ -2224,13 +2224,13 @@ export class DebugService {
         }
       }
     } catch (err) {
-      firstError ??= err instanceof Error ? err : new Error(String(err));
+      firstError ??= toError(err);
     }
 
     try {
       await runtime.parentClient.dispose();
     } catch (err) {
-      firstError ??= err instanceof Error ? err : new Error(String(err));
+      firstError ??= toError(err);
     }
     if (firstError) throw firstError;
   }
