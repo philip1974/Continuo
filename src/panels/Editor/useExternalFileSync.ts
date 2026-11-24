@@ -14,7 +14,7 @@ import { useEffect } from 'react';
 import { coApi } from '@/lib/co-api';
 import { onWatchRestored } from '@/lib/fs-watch-restored';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
-import { dirname } from '@/panels/Explorer/path-utils';
+import { dirname } from '@/lib/path-cross';
 import { basename, isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
