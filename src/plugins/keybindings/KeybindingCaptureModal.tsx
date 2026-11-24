@@ -15,6 +15,7 @@ import { useT, useTWithFallback } from '@/i18n';
 import { resolveEffectiveHotkey } from './keybindings-store';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { useStableCallback } from '@/lib/use-stable-callback';
+import { PICKER_TOGGLE_HOTKEYS } from '@/plugins/picker/use-picker-toggle-hotkey';
 
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
@@ -90,6 +91,30 @@ export function selectKeybindingConflicts(
   if (conflicts === null) return EMPTY_CONFLICTS;
   conflicts.length = conflictCount;
   return conflicts;
+}
+
+export type ReservedPickerHotkey = keyof typeof PICKER_TOGGLE_HOTKEYS;
+
+const RESERVED_MESSAGE_KEYS: Readonly<Record<ReservedPickerHotkey, string>> = {
+  quick_open: 'keybindings.modal.reserved_quick_open',
+  command_palette: 'keybindings.modal.reserved_command_palette',
+};
+
+/**
+ * captured 是否撞上 Quick Open / 命令面板的保留键(⌘P / ⌘⇧P,平台感知)。这两个键是 document 级写死监听、
+ * 不在 CommandRegistry:与命令挂在同一 document,stopPropagation 拦不住 → 一键两动作;编辑器焦点下
+ * 又只弹 picker、命令永不执行。故作为保留键拒绝保存(不是可覆盖的警告)。
+ */
+export function selectReservedPickerHotkey(
+  captured: string | null,
+  platform: Platform = PLATFORM,
+): ReservedPickerHotkey | null {
+  if (!captured) return null;
+  const capturedCanonical = canonicalHotkey(captured, platform);
+  for (const name of Object.keys(PICKER_TOGGLE_HOTKEYS) as ReservedPickerHotkey[]) {
+    if (canonicalHotkey(PICKER_TOGGLE_HOTKEYS[name], platform) === capturedCanonical) return name;
+  }
+  return null;
 }
 
 export function KeybindingCaptureModal({
@@ -180,6 +205,8 @@ function KeybindingCaptureModalBody({
     return selectKeybindingConflicts(allCommands, commandId, captured, overrides);
   }, [captured, allCommands, commandId, overrides]);
 
+  const reserved = useMemo(() => selectReservedPickerHotkey(captured), [captured]);
+
   // 引用必须稳定(同 ConfirmDialog):调用方传内联 onClose,命令注册表变化等重渲会让 Modal 焦点 / 键盘栈
   // effect 重跑,把捕获中的焦点拉回、叠在上层的弹窗被挤下栈顶。
   const handleModalClose = useStableCallback(onClose);
@@ -231,6 +258,16 @@ function KeybindingCaptureModalBody({
         )}
       </div>
 
+      {reserved !== null && (
+        // 保留键拒绝保存(下方保存按钮 disabled):用 role=alert 立即播报,区别于可覆盖的冲突警告。
+        <div
+          role="alert"
+          className="mt-2 rounded border border-warning/40 bg-warning/10 p-2 text-[11px] text-warning"
+        >
+          {t(RESERVED_MESSAGE_KEYS[reserved])}
+        </div>
+      )}
+
       {conflicts.length > 0 && (
         // a11y(A52,A41 同族):捕获后动态出现的冲突警告须 live region,否则焦点在弹窗内的 AT
         // 用户听不到冲突、可能保存一个已冲突的快捷键。冲突是可覆盖的警告 → polite(role=status)。
@@ -272,9 +309,9 @@ function KeybindingCaptureModalBody({
         <Button
           size="sm"
           variant="primary"
-          disabled={!hasPending}
+          disabled={!hasPending || reserved !== null}
           onClick={() => {
-            if (captured === null) return;
+            if (captured === null || reserved !== null) return;
             onSave(captured);
             onClose();
           }}

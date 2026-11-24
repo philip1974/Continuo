@@ -42,9 +42,17 @@ Backspace=unbind('');其它键 → 完整组合。Esc 由 Modal 自身处理 onC
   mod 按平台映射(mac≡cmd / 其它≡ctrl)、主键别名归一 → `shift+mod+enter` 与 `mod+shift+enter` 判冲突
 - 显示「⚠️ 此组合已绑定到其它命令」
 
+### Quick Open / 命令面板保留键
+
+- ⌘P / ⌘⇧P(平台感知:mac 仅 Cmd、其它仅 Ctrl;与 `usePickerToggleHotkey` 同源 `PICKER_TOGGLE_HOTKEYS`)
+  是 document 级写死监听、不在 CommandRegistry,绑上会一键两动作 / 编辑器焦点下命令永不执行
+- captured 命中 → role=alert 提示「与 Quick Open / 命令面板冲突,是保留快捷键」,**保存 disabled**(拒绝,不是可覆盖警告)
+- mac 上 Ctrl+P 不是保留键(picker 不认)
+
 ### 保存
 
 - captured===null → disabled
+- captured 命中保留键 → disabled
 - 否则 → onSave(captured) + onClose
 
 ### 重置默认

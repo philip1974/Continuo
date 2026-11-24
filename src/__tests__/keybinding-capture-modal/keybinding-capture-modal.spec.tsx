@@ -15,6 +15,7 @@ import {
   KeybindingCaptureModal,
   eventToCombo,
   selectKeybindingConflicts,
+  selectReservedPickerHotkey,
 } from '../../plugins/keybindings/KeybindingCaptureModal';
 import {
   getEffectiveHotkey,
@@ -442,6 +443,44 @@ describe('KeybindingCaptureModal — 冲突检测', () => {
     const props = defaultProps({ allCommands: all });
     render(<KeybindingCaptureModal {...props} />);
     expect(document.querySelector('.wm-modal-content')!.textContent).not.toContain('此组合已绑定');
+  });
+});
+
+describe('KeybindingCaptureModal — Quick Open / 命令面板保留键', () => {
+  it('selectReservedPickerHotkey 平台感知:mod+p / mod+shift+p 为保留键,其它不是', () => {
+    expect(selectReservedPickerHotkey('mod+p', 'other')).toBe('quick_open');
+    expect(selectReservedPickerHotkey('shift+mod+p', 'other')).toBe('command_palette');
+    expect(selectReservedPickerHotkey('ctrl+p', 'other')).toBe('quick_open');
+    expect(selectReservedPickerHotkey('mod+p', 'mac')).toBe('quick_open');
+    expect(selectReservedPickerHotkey('mod+shift+p', 'mac')).toBe('command_palette');
+    // mac 上 picker 只认 Cmd:Ctrl+P 不被拦,可绑定
+    expect(selectReservedPickerHotkey('ctrl+p', 'mac')).toBeNull();
+    expect(selectReservedPickerHotkey('mod+alt+p', 'other')).toBeNull();
+    expect(selectReservedPickerHotkey('mod+o', 'other')).toBeNull();
+    expect(selectReservedPickerHotkey('', 'other')).toBeNull();
+    expect(selectReservedPickerHotkey(null, 'other')).toBeNull();
+  });
+
+  it('录到 Quick Open 的 ⌘P(jsdom other = Ctrl+P)→ 提示冲突且保存 disabled', () => {
+    const props = defaultProps();
+    render(<KeybindingCaptureModal {...props} />);
+    dispatchKey({ key: 'p', ctrlKey: true });
+    const alert = document.querySelector('.wm-modal-content [role="alert"]');
+    expect(alert?.textContent).toContain('Quick Open');
+    expect(getButton('保存').disabled).toBe(true);
+  });
+
+  it('录到命令面板的 ⌘⇧P → 提示冲突且保存 disabled;改按其它组合恢复可保存', () => {
+    const props = defaultProps();
+    render(<KeybindingCaptureModal {...props} />);
+    dispatchKey({ key: 'P', ctrlKey: true, shiftKey: true });
+    expect(document.querySelector('.wm-modal-content [role="alert"]')?.textContent).toContain(
+      '命令面板',
+    );
+    expect(getButton('保存').disabled).toBe(true);
+    dispatchKey({ key: 'k', ctrlKey: true });
+    expect(document.querySelector('.wm-modal-content [role="alert"]')).toBeNull();
+    expect(getButton('保存').disabled).toBe(false);
   });
 });
 
