@@ -16,6 +16,7 @@ vi.mock('@/lib/co-api', () => ({
 
 import { IpcPluginDataStore } from '../../../plugins/PluginDataStore';
 import { MAX_PLUGIN_DATA_BYTES } from '../../../../electron/shared/plugin-data-limits';
+import { deferred } from '../../_helpers/async';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -100,14 +101,6 @@ describe('sdk-contract integration: IpcPluginDataStore wrapper', () => {
   // perf(#2):进程级单例 store 的 cache 在插件卸载后必须可淘汰(单插件最多 16MiB,每 renderer 一份),
   // 且迟到的 load / save 不得把已卸载插件的数据回填;同 id 重装后读到新数据。
   describe('forget(pluginId):卸载后淘汰缓存', () => {
-    function deferred<T>() {
-      let resolve!: (v: T) => void;
-      const promise = new Promise<T>((r) => {
-        resolve = r;
-      });
-      return { promise, resolve };
-    }
-
     it('forget 后缓存清空:再次 read 重新走 load', async () => {
       const store = new IpcPluginDataStore();
       await store.write('plugin.data', { big: 'old' });

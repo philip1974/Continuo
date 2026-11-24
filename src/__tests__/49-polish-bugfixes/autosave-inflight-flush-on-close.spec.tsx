@@ -17,18 +17,11 @@ import {
   trackInFlightAutoSave,
 } from '../../panels/Editor/autosave-flush-registry';
 import { useEditorStore } from '../../stores/editor.store';
+import { deferred } from '../_helpers/async';
 
 function Probe({ saveTab }: { saveTab: (tabId: string) => Promise<unknown> }) {
   useAutoSave(saveTab, { enabled: true, delayMs: 2000 });
   return null;
-}
-
-function deferred<T = void>() {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
 }
 
 beforeEach(() => {

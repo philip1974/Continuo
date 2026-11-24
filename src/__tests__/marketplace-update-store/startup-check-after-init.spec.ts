@@ -7,16 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { initPluginsThenCheckUpdates } from '../../marketplace/startup-update-check';
-
-function deferred() {
-  let resolve!: () => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<void>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+import { deferred } from '../_helpers/async';
 
 function fakeManager() {
   const init = deferred();

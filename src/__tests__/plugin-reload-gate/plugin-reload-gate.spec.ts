@@ -2,16 +2,7 @@
 // 逐个 reload,避免启动窗口期变更被「Plugin not found」丢弃。
 import { describe, it, expect, vi } from 'vitest';
 import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
-
-function deferred<T = void>() {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+import { deferred } from '../_helpers/async';
 
 describe('wirePluginReloadGate (R16)', () => {
   it('init 完成前的 onChanged 缓冲,完成后逐个 reload(去重)', async () => {

@@ -27,14 +27,7 @@ vi.mock('@/stores/editor.store', () => ({
 }));
 
 import { useExternalFileSync } from '../../panels/Editor/useExternalFileSync';
-
-function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
+import { deferred } from '../_helpers/async';
 
 beforeEach(() => {
   vi.clearAllMocks();

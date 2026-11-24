@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { deferred as makeDeferred } from '../_helpers/async';
 
 type Locale = 'en' | 'zh' | 'ko';
 type IpcOk<T> = { readonly ok: true; readonly data: T };
 type SetLocaleData = { readonly locale: Locale; readonly gen: number };
-type Deferred<T> = { readonly promise: Promise<T>; readonly resolve: (v: T) => void };
 
 type SettingsStoreModule = {
   readonly useSettingsStore: {
@@ -15,14 +15,6 @@ type SettingsStoreModule = {
   };
   readonly _resetSettingsStoreForTest: () => void;
 };
-
-function makeDeferred<T>(): Deferred<T> {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
 
 const mockCoApi = vi.hoisted(() => ({
   i18n: {

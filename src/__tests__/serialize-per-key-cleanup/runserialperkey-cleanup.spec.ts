@@ -1,16 +1,7 @@
 // race(R100):runSerialPerKey 链排空后必须删除 chains 条目,否则 Map 随用过的 key 单调增长 = 内存泄漏。
 import { describe, expect, it } from 'vitest';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
-
-function deferred<T = void>() {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
+import { deferred } from '../_helpers/async';
 
 describe('runSerialPerKey 链排空回收(R100)', () => {
   it('成功任务排空后删除 key(防 Map 单调增长)', async () => {

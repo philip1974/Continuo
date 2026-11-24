@@ -44,20 +44,11 @@ import {
   cancelAgentTerminalCreates,
   hasAgentTerminalCreates,
 } from '../../../electron/main/services/agent-terminal-inflight';
+import { deferred, type Deferred } from '../_helpers/async';
 
 const NO_WINDOW_CTX = -32002;
 const WINDOW = 7;
 const SECRET = 'SECRET-TRANSCRIPT-CONTENT';
-
-interface Deferred<T> {
-  readonly promise: Promise<T>;
-  resolve(value: T): void;
-}
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => (resolve = r));
-  return { promise, resolve };
-}
 
 interface Reply {
   readonly errorCode: number | string | null;

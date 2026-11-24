@@ -13,6 +13,7 @@ import { TerminalSessionsSync } from '../../shell/dock/TerminalSessionsSync';
 import { __resetReconcilerForTest, useDockReconciler } from '../../shell/dock/DockReconciler';
 import { useTerminalStore, type TerminalSession } from '../../stores/terminal.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
+import { deferred } from '../_helpers/async';
 
 const mocks = vi.hoisted(() => {
   let onChanged: ((sessions: unknown) => void) | null = null;
@@ -75,16 +76,6 @@ function makeApi() {
     },
   };
   return api;
-}
-
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  let reject!: (e: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
 }
 
 function mount() {

@@ -9,22 +9,11 @@ import { createWindowApiHost } from '../../lib/plugins-host';
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { deferred, type Deferred } from '../_helpers/async';
 
 const flush = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
 };
-
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (v: T) => void;
-}
-function deferred<T>(): Deferred<T> {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
 
 const loaded: string[] = [];
 const hang = new Map<string, Deferred<void>>();

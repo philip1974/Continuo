@@ -10,14 +10,7 @@ import {
 import { cancelAgentTerminalCreates } from '../../../electron/main/services/agent-terminal-inflight';
 import type { McpCallCtx } from '../../../electron/main/services/mcp-host.service';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
-
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
+import { deferred } from '../_helpers/async';
 
 afterEach(() => {
   cancelAgentTerminalCreates();
