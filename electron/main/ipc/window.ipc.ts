@@ -24,6 +24,7 @@ import {
 import { codedError, errorMessage, thrownFields } from '../../shared/error-message';
 import { mapNodeErrnoCode } from './fs/path-utils';
 import { windowSeqCount } from '../services/window-seq.service';
+import { WINDOW_BACKGROUND_COLORS, type ResolvedTheme } from '../../shared/window-background';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
@@ -123,6 +124,20 @@ const NotifyRootInput = z
   })
   .strict();
 
+const NotifyThemeInput = z
+  .object({
+    theme: z.enum(['light', 'dark']),
+  })
+  .strict();
+
+// 最近一次 renderer 上报的主题(主题设置所有窗口共享)。进程冷启动、尚无上报时 = 默认主题(dark)。
+let windowTheme: ResolvedTheme = 'dark';
+
+/** 新建主窗 / popout 用的底色:最近上报主题的画布色(VSCode ThemeMainService.getBackgroundColor 同思路)。 */
+export function currentWindowBackgroundColor(): string {
+  return WINDOW_BACKGROUND_COLORS[windowTheme];
+}
+
 export function registerWindowIpc(deps: WindowIpcDeps): void {
   safeHandle(
     WINDOW_CHANNELS.CREATE,
@@ -143,6 +158,14 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     }
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     setWorkspaceRoot(win.id, root);
+  });
+  // 主题变化:记住并把所有已开窗口(主窗 + popout)的底色改为对应画布色。
+  safeHandle(WINDOW_CHANNELS.NOTIFY_THEME, NotifyThemeInput, (input) => {
+    windowTheme = input.theme;
+    const color = WINDOW_BACKGROUND_COLORS[windowTheme];
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.setBackgroundColor(color);
+    }
   });
   // 窗口关闭清 map(防泄漏)。
   app.on('browser-window-created', (_event, win) => {

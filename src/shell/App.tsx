@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { LazyMotion, MotionConfig } from 'motion/react';
 import { ThemeProvider } from '@/theme';
+import { WindowBackgroundSync } from '@/theme/WindowBackgroundSync';
 import { DockShell } from './dock/DockShell';
 import { TerminalSessionsSync } from './dock/TerminalSessionsSync';
 import { Splash } from './decor/Splash';
@@ -178,6 +179,7 @@ const loadMotionFeatures = () => motionFeatures;
 export function App() {
   return (
     <ThemeProvider>
+      <WindowBackgroundSync />
       <LanguageFromSettings />
       <NotificationsProvider>
         <ToastViewport />

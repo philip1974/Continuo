@@ -426,6 +426,11 @@ const api = {
       root: string | null,
     ): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),
     /**
+     * renderer 解析出的主题(light / dark)变化时通知 main:所有窗口底色改为对应画布色,新窗口 / popout 沿用。
+     */
+    notifyTheme: (theme: 'light' | 'dark'): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_THEME, { theme }),
+    /**
      * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
      * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。
      * 此 helper 在 preload realm 调 webUtils,sandbox renderer 拿不到原生对象。

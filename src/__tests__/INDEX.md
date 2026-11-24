@@ -1651,6 +1651,10 @@
 - [`cross-window-isolation.spec.ts`](./window-aware-agent-session/cross-window-isolation.spec.ts)
 - [`mcp-tools-host-factory.spec.ts`](./window-aware-agent-session/mcp-tools-host-factory.spec.ts)
 
+## [窗口底色跟随主题(主进程 BrowserWindow backgroundColor)](./window-background-theme/README.md)
+
+- [`window-background-theme.spec.tsx`](./window-background-theme/window-background-theme.spec.tsx)
+
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
 
 - [`explorer-vs-window-folder-drop.spec.tsx`](./window-drop/explorer-vs-window-folder-drop.spec.tsx)

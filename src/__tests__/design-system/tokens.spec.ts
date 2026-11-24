@@ -133,11 +133,14 @@ describe('终端与窗口底色跟随画布色(--md-surface)', () => {
     expect(bg('LIGHT_THEME')).toBe(surface(getRootBlock(DESIGN_TOKENS)));
   });
 
-  it('窗口首帧底色(WINDOW_BACKGROUND_COLOR,默认暗色)= .dark 的 --md-surface', () => {
-    const src = read('../electron/main/index.ts');
-    const color = src.match(/const WINDOW_BACKGROUND_COLOR = '(#[0-9a-f]{6})'/i)?.[1];
-    expect(color).toBe(surface(getDarkBlock(DESIGN_TOKENS)));
-    expect(src).not.toMatch(/backgroundColor:\s*'#/); // 两处窗口都经常量
+  it('窗口首帧底色(WINDOW_BACKGROUND_COLORS,按主题)= .dark / :root 的 --md-surface', () => {
+    const src = read('../electron/shared/window-background.ts');
+    const color = (k: string): string =>
+      src.match(new RegExp(`${k}: '(#[0-9a-f]{6})'`, 'i'))?.[1] ?? '';
+    expect(color('dark')).toBe(surface(getDarkBlock(DESIGN_TOKENS)));
+    expect(color('light')).toBe(surface(getRootBlock(DESIGN_TOKENS)));
+    // 两处窗口都经 currentWindowBackgroundColor()(详见 window-background-theme/)
+    expect(read('../electron/main/index.ts')).not.toMatch(/backgroundColor:\s*'#/);
   });
 });
 

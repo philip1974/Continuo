@@ -12,6 +12,11 @@ export const WINDOW_CHANNELS = {
    * 供 MCP agent terminal_create_session 的默认 cwd 解析使用。
    */
   NOTIFY_ROOT: 'window:notify-root',
+  /**
+   * renderer 解析出的主题(light / dark)变化时调 → main 记住最近主题,把所有窗口的 backgroundColor 改为对应
+   * 画布色,之后新建的窗口 / popout 也用它(否则亮色用户开窗 / 缩放时未绘制区闪深色)。
+   */
+  NOTIFY_THEME: 'window:notify-theme',
 } as const;
 
 /** window:create 入参:由 main 的 zod schema 推出(单一来源,见 window-create-schema.ts)。 */
