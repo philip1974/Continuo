@@ -5,12 +5,21 @@ import {
   basename,
   containmentFold,
   containmentKey,
+  isSameOrInsidePath,
   someContainmentCandidate,
 } from '@/lib/path-cross';
 import { basenameForChrome } from '@/lib/path-label';
 
 // dirname 与 basename 同在 renderer 跨平台路径单一来源 src/lib/path-cross(Editor 等其它模块直接从那里引)。
 export { dirname } from '@/lib/path-cross';
+
+/**
+ * 目标目录 destDir 是否就是 src 本身或在其子树内(把 src 移动 / 复制进去会自我嵌套)。拖动的 canDrop 与
+ * 批量传输漏斗 transferEntriesInto 共用此判定,粘贴不再漏掉。分隔符无关 + 平台感知大小写(isSameOrInsidePath)。
+ */
+export function isDestInsideSource(src: string, destDir: string): boolean {
+  return isSameOrInsidePath(src, destDir);
+}
 
 /**
  * 批量操作只处理最外层路径:剔除「祖先也在批次里」的后代项,重复路径只留首个,其余保持输入顺序。

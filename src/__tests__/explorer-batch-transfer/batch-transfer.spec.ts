@@ -7,6 +7,10 @@ import {
   transferEntriesInto,
   type BatchTransferDeps,
 } from '../../panels/Explorer/batch-transfer';
+import { isDestInsideSource } from '../../panels/Explorer/path-utils';
+import { en } from '@shared/i18n-locales/en';
+import { zh } from '@shared/i18n-locales/zh';
+import { ko } from '@shared/i18n-locales/ko';
 
 type Result = { ok: true; data: undefined } | { ok: false; code: string; message: string };
 const OK: Result = { ok: true, data: undefined };
@@ -100,19 +104,81 @@ describe('transferEntriesInto — move', () => {
     expect(spies.refreshDir).not.toHaveBeenCalled();
   });
 
-  it('源父目录即目标目录:目标目录只刷新一次', async () => {
+  it('已在目标目录的源跳过(拖到原父目录 / 剪切后粘贴回原目录都是 no-op)', async () => {
     const { deps, spies } = makeDeps();
-    await transferEntriesInto('move', ['/dest/x.txt'], '/dest', deps);
-    expect(spies.refreshDir.mock.calls).toEqual([['/dest']]);
-  });
-
-  it('skipSameParent:已在目标目录的源跳过(拖到原父目录 no-op)', async () => {
-    const { deps, spies } = makeDeps();
-    await transferEntriesInto('move', ['/dest/x.txt', '/a/y.txt'], '/dest', deps, {
-      skipSameParent: true,
-    });
+    await transferEntriesInto('move', ['/dest/x.txt', '/a/y.txt'], '/dest', deps);
     expect(spies.fs.move.mock.calls).toEqual([['/a/y.txt', '/dest/y.txt']]);
     expect(spies.onMoved.mock.calls).toEqual([['/a/y.txt', '/dest/y.txt']]);
+  });
+});
+
+// 粘贴入口此前缺拖动入口已有的两道判定(拖动靠 canDrop + 调用方传 skipSameParent),现收进漏斗本身。
+describe('transferEntriesInto — 目标与源的相对位置(粘贴 / 拖动共用)', () => {
+  // 模拟 listDir 快照:existing[dir] 中已有的名字 → 加 ` copy`(真实 picker 见 makeNamePicker)。
+  const pickerWith = (existing: Record<string, string[]>): BatchTransferDeps['makeUniqueDestPicker'] =>
+    async (dir) => (name) =>
+      (existing[dir] ?? []).includes(name) ? `${dir}/${name} copy` : `${dir}/${name}`;
+
+  it('剪切 X/a.ts 后粘贴回 X:no-op,不改名成 `a copy.ts`、不提示错误、不刷新', async () => {
+    const { deps, spies } = makeDeps({ picker: pickerWith({ '/X': ['a.ts'] }) });
+    await transferEntriesInto('move', ['/X/a.ts'], '/X', deps);
+    expect(spies.fs.move).not.toHaveBeenCalled();
+    expect(spies.onMoved).not.toHaveBeenCalled();
+    expect(spies.onItemFailed).not.toHaveBeenCalled();
+    expect(spies.onException).not.toHaveBeenCalled();
+    expect(spies.refreshDir).not.toHaveBeenCalled();
+  });
+
+  it('复制文件夹 A 后粘贴到 A 自身 → 在父目录生成 `A copy`(VSCode 同款)', async () => {
+    const { deps, spies } = makeDeps({ picker: pickerWith({ '/r': ['A'] }) });
+    await transferEntriesInto('copy', ['/r/A'], '/r/A', deps);
+    expect(spies.fs.copy.mock.calls).toEqual([['/r/A', '/r/A copy']]);
+    expect(spies.refreshDir.mock.calls.map((c) => c[0])).toContain('/r');
+    expect(spies.onItemFailed).not.toHaveBeenCalled();
+  });
+
+  it('复制文件夹 A 后粘贴到其子目录 A/B → 同样改为父目录 `A copy`(不让 fs.cp 自我嵌套报 I/O 错误)', async () => {
+    const { deps, spies } = makeDeps({ picker: pickerWith({ '/r': ['A'] }) });
+    await transferEntriesInto('copy', ['/r/A', '/s/y.txt'], '/r/A/B', deps);
+    expect(spies.fs.copy.mock.calls).toEqual([
+      ['/r/A', '/r/A copy'],
+      ['/s/y.txt', '/r/A/B/y.txt'],
+    ]);
+    expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/r', '/r/A/B']);
+  });
+
+  it('剪切文件夹 A 后粘贴到 A/B → 明确错误(FS_MOVE_INTO_SELF),不触发 fs、不刷新', async () => {
+    const { deps, spies } = makeDeps();
+    await transferEntriesInto('move', ['/r/A'], '/r/A/B', deps);
+    expect(spies.fs.move).not.toHaveBeenCalled();
+    expect(spies.onMoved).not.toHaveBeenCalled();
+    expect(spies.onItemFailed).toHaveBeenCalledTimes(1);
+    expect(spies.onItemFailed.mock.calls[0]?.slice(0, 2)).toEqual(['/r/A', 'FS_MOVE_INTO_SELF']);
+    expect(spies.refreshDir).not.toHaveBeenCalled();
+  });
+
+  it('剪切文件夹 A 后粘贴到 A 自身 → 同样 FS_MOVE_INTO_SELF', async () => {
+    const { deps, spies } = makeDeps();
+    await transferEntriesInto('move', ['/r/A'], '/r/A', deps);
+    expect(spies.fs.move).not.toHaveBeenCalled();
+    expect(spies.onItemFailed.mock.calls[0]?.slice(0, 2)).toEqual(['/r/A', 'FS_MOVE_INTO_SELF']);
+  });
+
+  it('FS_MOVE_INTO_SELF 有三语本地化文案', () => {
+    for (const dict of [en, zh, ko] as Record<string, string>[]) {
+      expect(dict['errors.FS_MOVE_INTO_SELF']).toBeTruthy();
+    }
+  });
+
+  it('拖动 canDrop 与漏斗共用同一判定 helper(isDestInsideSource)', () => {
+    const read = (f: string) =>
+      readFileSync(join(__dirname, '..', '..', 'panels', 'Explorer', f), 'utf-8');
+    expect(read('tree-config.ts')).toMatch(/isDestInsideSource\(srcId, destDir\)/);
+    expect(read('batch-transfer.ts')).toMatch(/isDestInsideSource\(src, destDir\)/);
+    expect(isDestInsideSource('/r/A', '/r/A')).toBe(true);
+    expect(isDestInsideSource('/r/A', '/r/A/B')).toBe(true);
+    expect(isDestInsideSource('/r/A', '/r/AB')).toBe(false);
+    expect(isDestInsideSource('/r/A/B', '/r/A')).toBe(false);
   });
 });
 

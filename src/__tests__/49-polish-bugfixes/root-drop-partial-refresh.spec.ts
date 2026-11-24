@@ -30,7 +30,7 @@ describe('topic49 6thS · root-drop 部分成功刷新契约', () => {
     const start = SRC.lastIndexOf(marker);
     expect(start).toBeGreaterThan(-1);
     const branch = SRC.slice(start, start + 1200);
-    // 嵌套选择修复(explorer-transfer-integrity)后交给漏斗的是全部拖动路径 + skipSameParent。
+    // 嵌套选择修复(explorer-transfer-integrity)后交给漏斗的是全部拖动路径(同父跳过在漏斗内)。
     expect(branch).toMatch(/runBatchTransfer\(\s*'move',\s*selectDraggedItemPaths\(dnd\.draggedItems\),\s*root,/);
   });
 
@@ -42,7 +42,9 @@ describe('topic49 6thS · root-drop 部分成功刷新契约', () => {
 
   it('共享实现在 finally 内刷新目标目录 + 源父目录', () => {
     const fin = HELPER.slice(HELPER.search(/}\s*finally\s*{/));
-    expect(fin).toMatch(/deps\.refreshDir\(destDir\)/);
-    expect(fin).toMatch(/deps\.refreshDir\(sp\)/);
+    // 目标目录与 move 的源父目录收进同一集合 toRefresh(行为见 explorer-batch-transfer)。
+    expect(fin).toMatch(/for \(const \w+ of toRefresh\) deps\.refreshDir\(/);
+    expect(HELPER).toMatch(/toRefresh\.add\(dir\)/);
+    expect(HELPER).toMatch(/toRefresh\.add\(dirname\(src\)\)/);
   });
 });

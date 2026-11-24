@@ -20,7 +20,14 @@ FolderTree 有三个「把一批路径移动/复制进同一目录」的入口:�
    某项 `ok:false` 也刷新目标目录(move 另刷新该项源父目录):失败可能已部分落盘(跨盘 move 已复制
    但源未删净 / 递归 cp 中途失败);失败项不调 `onMoved`。
 5. 目标名探测或 fs 调用 reject → `onException(err)`,不产生 unhandled rejection;规则 4 仍执行。
-6. `skipSameParent`:源已在目标目录(`dirname(src) === destDir`)→ 跳过(拖到原父目录是 no-op)。
+6. 目标与源的相对位置(漏斗内判定,不靠调用方传参;拖动与粘贴同一行为,`canDrop` 与漏斗共用
+   `path-utils.isDestInsideSource`):
+   - move 且源已在目标目录(`dirname(src)` 与 `destDir` 平台感知相等)→ 跳过(拖到原父目录 / 剪切后
+     粘贴回原目录是 no-op,不改名成 ` copy`、不提示、不刷新)。
+   - move 且目标是源本身或在其子树内 → 整批不触发 fs,`onItemFailed(src, 'FS_MOVE_INTO_SELF', …)`
+     (三语「不能把文件夹移动到它自身或子文件夹中」;此前落到 rename EINVAL →「文件 I/O 错误」)。
+   - copy 且目标是源本身或在其子树内 → 改投源的父目录,由 picker 生成 `A copy`(VSCode 同款;此前
+     fs.cp 报 ERR_FS_CP_EINVAL →「文件 I/O 错误」)。
 
 ### 规则(dropForeignFilesInto)
 

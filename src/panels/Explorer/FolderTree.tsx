@@ -450,7 +450,6 @@ export function FolderTree({ root }: { root: string }) {
       destDir: string,
       logLabel: string,
       failedKey: 'errors.folder.move_failed' | 'errors.folder.paste_failed',
-      opts?: { skipSameParent?: boolean },
     ): Promise<void> =>
       transferEntriesInto(
         kind,
@@ -472,7 +471,6 @@ export function FolderTree({ root }: { root: string }) {
             notifyThrownError(err);
           },
         },
-        opts,
       ),
     [makeUniqueDestPicker, onPathMoved, refreshParent],
   );
@@ -520,14 +518,13 @@ export function FolderTree({ root }: { root: string }) {
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
           suppressNextDropScroll();
-          // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身,父同位置只跳)
+          // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身;同父跳过在 transferEntriesInto 内)
           void runBatchTransfer(
             'move',
             selectDraggedItemPaths(items),
             destDir,
             'drop move',
             'errors.folder.move_failed',
-            { skipSameParent: true },
           );
         },
         // 外部 OS 文件 drop 到具体 row → 走与容器 onDrop 同一套 performDrop
@@ -703,6 +700,7 @@ export function FolderTree({ root }: { root: string }) {
         const { kind, paths } = useExplorerClipboardStore.getState();
         if (!kind || paths.length === 0) return;
         // cut = move(部分成功只从剪贴板剪走已移走的,未移项留供重试);copy 不动源。
+        // 粘贴回原目录 / 粘贴进自身或子目录的处理在 transferEntriesInto 内(与拖动同一判定)。
         void runBatchTransfer(
           kind === 'cut' ? 'move' : 'copy',
           paths,
@@ -794,7 +792,7 @@ export function FolderTree({ root }: { root: string }) {
       if (!dnd?.draggedItems || dnd.draggedItems.length === 0) return;
       e.preventDefault();
       // 已经在 root 下的不动(VSCode 同款)。selectRootDropMoveablePaths 只用于「全在 root 下」早退;
-      // 实际交给漏斗的是全部拖动路径 + skipSameParent —— 漏斗先剔后代再跳过同父项。若交预筛结果,
+      // 实际交给漏斗的是全部拖动路径 —— 漏斗先剔后代再跳过同父项。若交预筛结果,
       // 多选 root 下的 A 与 A/B 时 A 被预先剔掉,只剩 A/B 被移到 root,层级被拆散。
       if (selectRootDropMoveablePaths(dnd.draggedItems, root).length === 0) return;
       await runBatchTransfer(
@@ -803,7 +801,6 @@ export function FolderTree({ root }: { root: string }) {
         root,
         'root drop move',
         'errors.folder.move_failed',
-        { skipSameParent: true },
       );
       return;
     }

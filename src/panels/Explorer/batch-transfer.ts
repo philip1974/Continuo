@@ -14,6 +14,9 @@
 //   - move 已移走的源旧路径回报给调用方(剪贴板 prune:避免幻影 cut 灰显 + 失效 Paste)。
 //   - 目标名探测 / fs 调用 reject 走 onException(调用点是 fire-and-forget async,无 catch 即
 //     unhandled rejection 且无 toast/live region 反馈)。
+//   - 目标与源的相对位置判定在这里,不靠调用方传参(此前只有拖动有 canDrop + skipSameParent,粘贴两道都漏):
+//     move 源已在目标目录 → 跳过(no-op,不改名成 ` copy`);move 目标是源本身或在其子树内 → 整批不动,
+//     报 FS_MOVE_INTO_SELF;copy 目标是源本身或在其子树内 → 改投源的父目录(生成 `A copy`,VSCode 同款)。
 //
 // BDD: src/__tests__/explorer-batch-transfer/
 
@@ -21,7 +24,14 @@ import type { FsApi } from '@/lib/fs/api';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
-import { basenamePreserveTrailing, dirname, outermostPaths } from './path-utils';
+import { pathEquals } from '@/lib/path-cross';
+import { ERROR_CODES } from '@shared/error-codes';
+import {
+  basenamePreserveTrailing,
+  dirname,
+  isDestInsideSource,
+  outermostPaths,
+} from './path-utils';
 import {
   partitionDropItems,
   performDrop,
@@ -64,48 +74,58 @@ export interface BatchTransferDeps {
   onException: (err: unknown) => void;
 }
 
-export interface BatchTransferOptions {
-  /** 跳过已在目标目录的源(拖到原父目录是 no-op)。 */
-  readonly skipSameParent?: boolean;
-}
-
 export async function transferEntriesInto(
   kind: BatchTransferKind,
   srcs: readonly string[],
   destDir: string,
   deps: BatchTransferDeps,
-  opts: BatchTransferOptions = {},
 ): Promise<void> {
-  const touchedSrcParents = new Set<string>();
-  let refreshDest = false;
+  // 结束时要刷新的目录:实际写入的目标目录(copy 进自身改投父目录时含该父目录)+ move 的源父目录。
+  const toRefresh = new Set<string>();
   try {
-    const pickDest = await deps.makeUniqueDestPicker(destDir);
     // 先剔后代再判同父跳过:祖先因已在目标目录被跳过时,其后代也不该被单独移出来。
-    for (const src of outermostPaths(srcs)) {
-      if (opts.skipSameParent && dirname(src) === destDir) continue;
-      // dest = destDir + src basename;已存在则自动加 ` copy` 后缀(picker 负责)。
-      const dest = pickDest(basenamePreserveTrailing(src));
+    // move 已在目标目录 → no-op(拖到原父目录 / 剪切后粘贴回原目录;不跳过则 picker 见同名改成 ` copy`)。
+    const items = outermostPaths(srcs).filter(
+      (src) => !(kind === 'move' && pathEquals(dirname(src), destDir)),
+    );
+    if (kind === 'move') {
+      // 移进自身 / 子树:底层 rename 报 EINVAL → 被映射成误导的「文件 I/O 错误」。整批先判,不做半截。
+      const bad = items.find((src) => isDestInsideSource(src, destDir));
+      if (bad !== undefined) {
+        deps.onItemFailed(bad, ERROR_CODES.FS_MOVE_INTO_SELF, t('errors.FS_MOVE_INTO_SELF'));
+        return;
+      }
+    }
+    // 目标名每个目标目录只探测一次(listDir 快照)。
+    const pickers = new Map<string, (name: string) => string>();
+    const pickerFor = async (dir: string): Promise<(name: string) => string> => {
+      let pick = pickers.get(dir);
+      if (!pick) {
+        pick = await deps.makeUniqueDestPicker(dir);
+        pickers.set(dir, pick);
+      }
+      return pick;
+    };
+    await pickerFor(destDir);
+    for (const src of items) {
+      // copy 进自身 / 子树(fs.cp 报 ERR_FS_CP_EINVAL)→ 改投源的父目录,由 picker 生成 `A copy`。
+      const dir = kind === 'copy' && isDestInsideSource(src, destDir) ? dirname(src) : destDir;
+      // dest = dir + src basename;已存在则自动加 ` copy` 后缀(picker 负责)。
+      const dest = (await pickerFor(dir))(basenamePreserveTrailing(src));
       const r = kind === 'move' ? await deps.fs.move(src, dest) : await deps.fs.copy(src, dest);
+      // 失败项可能已部分落盘 → 照样刷新目标 / 源父目录,但不算移走(不 onMoved)。
+      toRefresh.add(dir);
+      if (kind === 'move') toRefresh.add(dirname(src));
       if (!r.ok) {
-        // 失败项可能已部分落盘 → 照样刷新目标 / 源父目录,但不算移走(不 onMoved)。
-        refreshDest = true;
-        if (kind === 'move') touchedSrcParents.add(dirname(src));
         deps.onItemFailed(src, r.code, r.message);
         return;
       }
-      if (kind === 'move') {
-        deps.onMoved(src, dest);
-        touchedSrcParents.add(dirname(src));
-      }
-      refreshDest = true;
+      if (kind === 'move') deps.onMoved(src, dest);
     }
   } catch (err) {
     deps.onException(err);
   } finally {
-    if (refreshDest) deps.refreshDir(destDir);
-    for (const sp of touchedSrcParents) {
-      if (sp !== destDir) deps.refreshDir(sp);
-    }
+    for (const d of toRefresh) deps.refreshDir(d);
   }
 }
 

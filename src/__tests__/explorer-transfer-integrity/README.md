@@ -10,7 +10,7 @@
    层级也不对已随祖先移走的子项报 FS_NOT_FOUND、删除不对已随祖先删除的子项报错。`removeItems` 回报实际删掉的路径 `removed`,
    onTrash 经 `trashItemsAndCleanup` 只对它做「路径已删除」清理(关 editor tab / 剪除展开集合 / prune 剪贴板) —— 祖先删失败时被折叠的后代同样未删,不得当成功清理。祖先判断用
    `isSameOrInsidePath`(分隔符无关 + 平台感知大小写)。root-drop 把全部拖动路径交给漏斗
-   (`skipSameParent`),先剔后代再跳过同父项,不在漏斗外预先剔掉 root 下的祖先。
+   (同父跳过在漏斗内),先剔后代再跳过同父项,不在漏斗外预先剔掉 root 下的祖先。
 2. **跨盘移动 rm 失败须报错**(`move-exdev-rm-fail.spec.ts`):`moveEntry` 的 EXDEV fallback 中
    cp 成功但 rm(src) 失败 → 抛 rm 的映射 errno,消息说明目标已复制但源未能完全删除;不宣告成功。
    `transferEntriesInto` 某项 `ok:false` 时仍刷新目标目录(move 另刷新该项源父目录),让已复制 /

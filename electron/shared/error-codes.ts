@@ -81,6 +81,8 @@ export const FS_ERROR_CODES = {
   FS_DIR_TOO_LARGE: 'FS_DIR_TOO_LARGE',
   // 边界(内存峰值):插件 fs 的大块读取(read-file / list-dir / 仓库对象读取 / editor.openFile)全局并发闸排队已满。
   FS_BUSY: 'FS_BUSY',
+  // Explorer 批量移动(粘贴 / 拖动)把文件夹移进它自身或子文件夹:renderer 漏斗先拦,不发 IPC。
+  FS_MOVE_INTO_SELF: 'FS_MOVE_INTO_SELF',
 } as const;
 
 export const ERROR_CODES = {

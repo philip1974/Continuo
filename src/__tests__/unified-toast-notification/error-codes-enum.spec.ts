@@ -68,7 +68,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // −MCP_HOST_BIND_FORBIDDEN(57→56):MCP host 监听地址改为常量,不再有可被拒绝的绑定入参。
     // 边界(数量上限):+TOO_MANY_DEBUG_SESSIONS(55→56),debug 会话超全局 / 每窗口上限(此前抛无 code 的 Error)。
     // 插件安装:+PLUGIN_INCOMPATIBLE(56→57),manifest.minLMVersion 高于应用版本时覆盖前拒装。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(57);
+    // Explorer:+FS_MOVE_INTO_SELF(57→58),批量移动目标是源本身或其子文件夹时明确报错(此前落成 FS_IO)。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(58);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

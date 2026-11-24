@@ -2,9 +2,8 @@
 // 纯逻辑层,不依赖 React;UI 组件 import 后传给 useTree。
 // fs 通过 deps 注入便于单测,默认调 coApi.fs(由调用方在 deps 注入).
 
-import { basename, dirname } from './path-utils';
+import { basename, dirname, isDestInsideSource } from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
-import { isSameOrInsidePath } from '@/lib/path-cross';
 import { isImeComposing } from '@/design/ime';
 import {
   asyncDataLoaderFeature,
@@ -198,15 +197,15 @@ export function createTreeConfig(
         const srcId = it.getId();
         // drop 到自身
         if (srcId === target.item.getId()) return false;
-        // 目录 drop 到自身子树:srcId 是 destDir 的祖先(含相等)。跨平台(复查 P2):
-        // 复用 path-cross.isSameOrInsidePath —— 此前大小写敏感,Windows 源/目标仅大小写
-        // 不同时误判可 drop → 放行 move-into-self/descendant → 底层 move 报错/UI 错乱。
-        if (isSameOrInsidePath(srcId, destDir)) return false;
+        // 目录 drop 到自身子树:srcId 是 destDir 的祖先(含相等)。跨平台(复查 P2):基于
+        // path-cross.isSameOrInsidePath —— 此前大小写敏感,Windows 源/目标仅大小写不同时误判可 drop。
+        // 与批量传输漏斗(粘贴同走)共用 isDestInsideSource。
+        if (isDestInsideSource(srcId, destDir)) return false;
       }
       // 注意:dirname(srcId) === destDir(拖到当前父目录 = no-op)在这里 *不* 拦,
       // 否则 headless-tree 的 getDragTarget(canReorder=false)会因 canBecomeSibling=false
       // 递归到 parent 把 target 解析回源的当前父目录,反而触发整体 silent fail。
-      // 实际处理时(onDropItems)再按 src parent === destDir skip 即可(VSCode 同款)。
+      // 实际处理时由 transferEntriesInto 按 src parent === destDir skip(VSCode 同款)。
       return true;
     },
     onDrop: (items, target) => {

@@ -68,9 +68,9 @@ describe('transferEntriesInto — 嵌套选择', () => {
     expect(spies.onItemFailed).not.toHaveBeenCalled();
   });
 
-  it('skipSameParent:祖先因已在目标目录被跳过时,其后代也不单独移动', async () => {
+  it('同父跳过:祖先因已在目标目录被跳过时,其后代也不单独移动', async () => {
     const { deps, spies } = makeDeps();
-    await transferEntriesInto('move', ['/r/A', '/r/A/B'], '/r', deps, { skipSameParent: true });
+    await transferEntriesInto('move', ['/r/A', '/r/A/B'], '/r', deps);
     expect(spies.fs.move).not.toHaveBeenCalled();
   });
 });
@@ -155,7 +155,7 @@ describe('onTrash 删除后只对实际删除的路径做清理', () => {
 });
 
 describe('接线:root-drop 不在漏斗外预先剔掉 root 下的祖先', () => {
-  it('root-drop 把全部拖动路径交给漏斗(skipSameParent),由漏斗先剔后代再跳过同父项', () => {
+  it('root-drop 把全部拖动路径交给漏斗,由漏斗先剔后代再跳过同父项', () => {
     const src = readFileSync(
       join(__dirname, '..', '..', 'panels', 'Explorer', 'FolderTree.tsx'),
       'utf-8',
@@ -164,7 +164,7 @@ describe('接线:root-drop 不在漏斗外预先剔掉 root 下的祖先', () =>
     // 被移到 root,层级被拆散。
     expect(src).not.toMatch(/runBatchTransfer\('move', moveable,/);
     expect(src).toMatch(
-      /runBatchTransfer\(\s*'move',\s*selectDraggedItemPaths\(dnd\.draggedItems\),\s*root,[\s\S]*?skipSameParent: true/,
+      /runBatchTransfer\(\s*'move',\s*selectDraggedItemPaths\(dnd\.draggedItems\),\s*root,/,
     );
   });
 });
