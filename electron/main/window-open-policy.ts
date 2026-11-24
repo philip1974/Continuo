@@ -37,8 +37,22 @@ interface NavigationGuardContents {
   on(event: 'will-frame-navigate', listener: (event: NavigationGuardEvent) => void): void;
 }
 
+/**
+ * 唯一放行的「页面自行刷新」:dev(有 dev server,allowSameUrlReload)下主框架刷新到**当前同一 URL**(Vite HMR
+ * 整页刷新 / location.reload())。打包版不放行(页面无权自行刷新:漏网的空链接会丢未保存内容);带别的参数 /
+ * 别的入口照拦(防页面以任意启动参数重开窗口)。导航守卫与 wc-gone-hook 共用本判定:放行 ⇔ 视为 reload 回收资源。
+ */
+export function isAllowedPageReload(
+  url: string,
+  currentUrl: string,
+  allowSameUrlReload: boolean,
+  isOwnRendererUrl: (url: string) => boolean,
+): boolean {
+  return allowSameUrlReload && currentUrl !== '' && url === currentUrl && isOwnRendererUrl(url);
+}
+
 // 页面发起的跨文档导航(任何 frame:<a href> 点击、location 赋值、location.reload()、iframe 加载)一律拦下,
-// dev 与打包版同一套规则。窗口内容只由 main 经 loadURL / loadFile / webContents.reload() 加载 —— 浏览器侧
+// dev 与打包版同一套规则(唯一差异:dev 下放行同 URL 刷新,见 isAllowedPageReload)。窗口内容只由 main 经 loadURL / loadFile / webContents.reload() 加载 —— 浏览器侧
 // 发起,Electron 不为它们发 will-frame-navigate。挂 will-frame-navigate 而非 will-navigate:前者对主框架与
 // 子 frame 都发,且先于 will-navigate;在这里 preventDefault 后 will-navigate 不再发。
 // 页面内容里的链接(只读 Markdown 预览、mermaid 图的 click 链接等)renderer 侧各自拦 click 是第一道,这里是兜底。
@@ -46,6 +60,7 @@ export function installNavigationGuard(
   contents: NavigationGuardContents,
   isOwnRendererUrl: (url: string) => boolean,
   onBlocked: (url: string) => void,
+  isPageReloadAllowed: (url: string, currentUrl: string) => boolean = () => false,
 ): void {
   contents.on('will-frame-navigate', (event) => {
     const { url, isMainFrame } = event;
@@ -55,9 +70,10 @@ export function installNavigationGuard(
     if (isMainFrame && contents.getURL() === '' && isOwnRendererUrl(url) && isPopoutOnlyUrl(url)) {
       return;
     }
+    if (isMainFrame && isPageReloadAllowed(url, contents.getURL())) return;
     event.preventDefault();
     if (!isMainFrame) return;
-    // DevTools 自己的 devtools:// 导航与指回本应用入口的导航(含 location.reload()、Vite HMR 整页刷新)
+    // DevTools 自己的 devtools:// 导航与指回本应用入口的导航(含打包版的 location.reload())
     // 只拦不转交:后者在 dev 下是 http://localhost,转交会被外链白名单放行、开到系统浏览器里。
     if (url.startsWith('devtools://')) return;
     if (isOwnRendererUrl(url)) {

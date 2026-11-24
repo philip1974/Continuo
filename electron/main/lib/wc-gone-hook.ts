@@ -15,6 +15,7 @@
 import type { WebContents } from 'electron';
 
 let isReloadUrl: ((url: string) => boolean) | null = null;
+let isPageReload: ((url: string, currentUrl: string) => boolean) | null = null;
 
 /**
  * main 启动时注入「本应用 renderer 入口」判定(index.ts 的 isOwnRendererUrl)。未注入(单测)时退化为
@@ -22,6 +23,15 @@ let isReloadUrl: ((url: string) => boolean) | null = null;
  */
 export function setReloadUrlPredicate(fn: ((url: string) => boolean) | null): void {
   isReloadUrl = fn;
+}
+
+/**
+ * main 启动时注入导航守卫放行的「页面自行刷新」判定(window-open-policy 的 isAllowedPageReload,dev 下同 URL 刷新)。
+ * 被放行的页面发起导航会真的替换文档 → 视为 reload 回收;与守卫共用同一函数,放行 ⇔ 回收。未注入 → 页面发起的
+ * 导航一律不回收。
+ */
+export function setPageReloadPredicate(fn: ((url: string, currentUrl: string) => boolean) | null): void {
+  isPageReload = fn;
 }
 
 export function makeWcGoneHook(onGone: (wcId: number) => void): (wc: WebContents) => void {
@@ -33,7 +43,8 @@ export function makeWcGoneHook(onGone: (wcId: number) => void): (wc: WebContents
     wc.once('destroyed', () => onGone(wcId));
     wc.on('did-start-navigation', (details) => {
       if (!details.isMainFrame || details.isSameDocument) return;
-      if (details.initiator) return; // 页面发起:会被导航守卫拦下(popout 首次加载时尚无资源可回收)
+      // 页面发起:会被导航守卫拦下(popout 首次加载时尚无资源可回收)—— 守卫放行的同 URL 刷新除外。
+      if (details.initiator && !isPageReload?.(details.url, wc.getURL())) return;
       if (isReloadUrl !== null && !isReloadUrl(details.url)) return; // 外链:会被导航守卫拦下
       onGone(wcId);
     });

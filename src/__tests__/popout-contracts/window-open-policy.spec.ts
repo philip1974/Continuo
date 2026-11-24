@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { isPopoutOnlyUrl } from '../../../electron/main/popout-url';
 import {
   installNavigationGuard,
+  isAllowedPageReload,
   isOwnRendererWindowUrl,
 } from '../../../electron/main/window-open-policy';
 
@@ -83,7 +84,9 @@ describe('installNavigationGuard', () => {
   const APP = 'file:///app/out/renderer/index.html';
   const isOwn = (url: string): boolean => url.startsWith(APP);
 
-  function setup(opts: { isOwn?: (url: string) => boolean; currentUrl?: string } = {}) {
+  function setup(
+    opts: { isOwn?: (url: string) => boolean; currentUrl?: string; allowSameUrlReload?: boolean } = {},
+  ) {
     let listener:
       | ((event: { preventDefault(): void; url: string; isMainFrame: boolean }) => void)
       | null = null;
@@ -96,7 +99,10 @@ describe('installNavigationGuard', () => {
         listener = cb;
       },
     };
-    installNavigationGuard(contents, opts.isOwn ?? isOwn, onBlocked);
+    const own = opts.isOwn ?? isOwn;
+    installNavigationGuard(contents, own, onBlocked, (url, currentUrl) =>
+      isAllowedPageReload(url, currentUrl, opts.allowSameUrlReload ?? false, own),
+    );
     const navigate = (url: string, isMainFrame = true) => {
       const preventDefault = vi.fn();
       listener!({ preventDefault, url, isMainFrame });
@@ -160,6 +166,29 @@ describe('installNavigationGuard', () => {
     expect(onBlocked.mock.calls).toEqual([['https://example.com/'], ['file:///tmp/evil.html?popout=1']]);
   });
 
+  // dev(有 dev server)下 Vite 整页刷新 = location.reload() → 页面发起的、指向当前同一 URL 的主框架导航。
+  // 只放行这一种:打包版不放行(页面无权自行刷新,漏网的空链接不会丢未保存内容);带别的参数 / 别的入口照拦。
+  it('dev 下放行页面刷新到当前同一 URL;打包版照拦', () => {
+    const cur = `${APP}?windowSeq=0`;
+    const dev = setup({ currentUrl: cur, allowSameUrlReload: true });
+    expect(dev.navigate(cur)).not.toHaveBeenCalled();
+    expect(dev.navigate(`${APP}?windowSeq=0&fresh=1`)).toHaveBeenCalledTimes(1);
+    expect(dev.navigate(`${APP}?windowSeq=1`)).toHaveBeenCalledTimes(1);
+    expect(dev.navigate(cur, false)).toHaveBeenCalledTimes(1); // 子 frame 照拦
+    expect(dev.onBlocked).not.toHaveBeenCalled();
+
+    const packaged = setup({ currentUrl: cur, allowSameUrlReload: false });
+    expect(packaged.navigate(cur)).toHaveBeenCalledTimes(1);
+  });
+
+  it('isAllowedPageReload:须 dev 放开 + 已有文档 + 同一 URL + 本应用入口', () => {
+    const cur = `${APP}?windowSeq=0`;
+    expect(isAllowedPageReload(cur, cur, true, isOwn)).toBe(true);
+    expect(isAllowedPageReload(cur, cur, false, isOwn)).toBe(false);
+    expect(isAllowedPageReload('', '', true, () => true)).toBe(false);
+    expect(isAllowedPageReload('https://x/', 'https://x/', true, isOwn)).toBe(false);
+  });
+
   it('已有文档的窗口再导航到 popout URL 照拦', () => {
     const { navigate } = setup({ currentUrl: `${APP}?popout=1` });
     expect(navigate(`${APP}?popout=1`)).toHaveBeenCalledTimes(1);
@@ -168,6 +197,10 @@ describe('installNavigationGuard', () => {
   // index.ts 顶层有 app 副作用,不可直接 import:静态钉住守卫装在所有 webContents 上。
   it('main 给每个 webContents 装导航守卫', () => {
     const src = readFileSync(join(__dirname, '..', '..', '..', 'electron/main/index.ts'), 'utf-8');
-    expect(src).toContain('installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed);');
+    expect(src).toContain(
+      'installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed, isPageReloadAllowed);',
+    );
+    // wc-gone 回收与守卫共用同一放行判定(放行 ⇔ 回收)。
+    expect(src).toContain('setPageReloadPredicate(isPageReloadAllowed);');
   });
 });

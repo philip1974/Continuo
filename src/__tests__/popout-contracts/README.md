@@ -31,9 +31,10 @@
 ## 窗口不被页面内容带离应用
 
 - 页面发起的跨文档导航(点击链接、`location` 赋值、`location.reload()`、iframe 加载)在**任何 frame** 一律拦下(`installNavigationGuard` 挂在 `will-frame-navigate` 上);dev 与打包版同一套规则。窗口内容只由 main 经 `loadURL` / `loadFile` / `webContents.reload()`(菜单 View → Reload)加载,这些由浏览器侧发起,不经守卫。
+- 唯一差异:dev(有 dev server)下放行**主框架刷新到当前同一 URL**(Vite HMR 整页刷新 / `location.reload()`,`isAllowedPageReload`);带别的参数 / 别的入口 / 子 frame 照拦。打包版不放行。
 - 唯一放行:popout 子窗的**首次**加载 —— 尚未提交任何文档的窗口,主框架导航到 `windowOpenHandler` 放行的那种 URL(本应用入口且 query 恰为 `popout=1`)。子窗已有文档后,或目标是别的 URL(如 opener 抢先改 `w.location`),照拦。
-- 被拦下的主框架 URL:离开本应用的按与 `window.open` 拒绝分支相同的外链白名单(http / https / mailto,限长)转交系统打开,其余静默丢弃;指回本应用入口的(含 `location.reload()`、Vite HMR 整页刷新)与 DevTools 自身的导航只拦不转交。子 frame 的导航只拦不转交。
-- 取舍:打包版此前就是这样全拦(由 topic-45 plugin-isolation spike 守卫顺带承担,该守卫已随 spike 删除),这里显式化并让 dev 一致。代价是 dev 下 Vite 的整页刷新不再自动生效,需手动 Cmd+R / View → Reload。
+- 被拦下的主框架 URL:离开本应用的按与 `window.open` 拒绝分支相同的外链白名单(http / https / mailto,限长)转交系统打开,其余静默丢弃;指回本应用入口的(含打包版的 `location.reload()`)与 DevTools 自身的导航只拦不转交。子 frame 的导航只拦不转交。
+- 取舍:打包版此前就是这样全拦(由 topic-45 plugin-isolation spike 守卫顺带承担,该守卫已随 spike 删除),这里显式化并让 dev 一致。dev 下另放行同 URL 刷新,保住 Vite 整页刷新;打包版页面无权自行刷新(漏网的空链接不会让窗口刷新、丢未保存内容)。
 
 ## 安全
 

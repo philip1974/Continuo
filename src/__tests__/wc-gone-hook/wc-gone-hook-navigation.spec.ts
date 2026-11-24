@@ -8,22 +8,27 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   makeWcGoneHook,
+  setPageReloadPredicate,
   setReloadUrlPredicate,
 } from '../../../electron/main/lib/wc-gone-hook';
 
 type Listener = (...args: unknown[]) => void;
 
-function fakeWc(id: number) {
+function fakeWc(id: number, currentUrl = 'app://renderer/index.html') {
   const on = new Map<string, Listener[]>();
   return {
     id,
+    getURL: () => currentUrl,
     once: (ev: string, fn: Listener) => on.set(ev, [...(on.get(ev) ?? []), fn]),
     on: (ev: string, fn: Listener) => on.set(ev, [...(on.get(ev) ?? []), fn]),
     emit: (ev: string, ...args: unknown[]) => (on.get(ev) ?? []).forEach((fn) => fn(...args)),
   };
 }
 
-afterEach(() => setReloadUrlPredicate(null));
+afterEach(() => {
+  setReloadUrlPredicate(null);
+  setPageReloadPredicate(null);
+});
 
 describe('wc-gone-hook · 被拦下的外链导航不算 reload', () => {
   it('注入 reload URL 判定后:外链导航不触发 onGone,本应用入口导航(reload)触发', () => {
@@ -65,6 +70,33 @@ describe('wc-gone-hook · 被拦下的外链导航不算 reload', () => {
       initiator: null,
     });
     expect(onGone).toHaveBeenCalledWith(9);
+  });
+
+  // dev 下导航守卫放行「页面刷新到当前同一 URL」(Vite 整页刷新):文档真的会被替换 → 须照常回收。
+  // 判定与导航守卫共用同一注入函数(放行 ⇔ 回收),其余页面发起的导航仍不回收。
+  it('被导航守卫放行的页面刷新(同一 URL)触发 onGone;其它页面发起的导航仍不触发', () => {
+    setReloadUrlPredicate((url) => url.startsWith('app://renderer/'));
+    setPageReloadPredicate((url, currentUrl) => url === currentUrl);
+    const onGone = vi.fn();
+    const wc = fakeWc(11, 'app://renderer/index.html?windowSeq=0');
+    makeWcGoneHook(onGone)(wc as never);
+    const initiator = { url: 'app://renderer/index.html?windowSeq=0' };
+
+    wc.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'app://renderer/index.html?windowSeq=0&fresh=1',
+      initiator,
+    });
+    expect(onGone).not.toHaveBeenCalled();
+
+    wc.emit('did-start-navigation', {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: 'app://renderer/index.html?windowSeq=0',
+      initiator,
+    });
+    expect(onGone).toHaveBeenCalledWith(11);
   });
 
   it('destroyed 始终触发', () => {

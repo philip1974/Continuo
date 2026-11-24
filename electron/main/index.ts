@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session, shell } from 'electron';
-import { installNavigationGuard, isOwnRendererWindowUrl } from './window-open-policy';
-import { setReloadUrlPredicate } from './lib/wc-gone-hook';
+import { installNavigationGuard, isAllowedPageReload, isOwnRendererWindowUrl } from './window-open-policy';
+import { setPageReloadPredicate, setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { installPermissionHandlers } from './lib/permission-policy';
 import { installFileRequestGuard } from './lib/file-request-policy';
 import { showOpenDialogRemembering } from './lib/open-dialog';
@@ -541,6 +541,12 @@ function isOwnRendererUrl(url: string): boolean {
 // wc-gone 资源回收只把目标为本应用入口的导航视为 reload(被导航守卫拦下的外链不算,见 wc-gone-hook)。
 setReloadUrlPredicate(isOwnRendererUrl);
 
+// dev 下放行页面刷新到当前同一 URL(Vite 整页刷新);打包版不放行。导航守卫与 wc-gone 回收共用(放行 ⇔ 回收)。
+function isPageReloadAllowed(url: string, currentUrl: string): boolean {
+  return isAllowedPageReload(url, currentUrl, devRendererUrl() !== null, isOwnRendererUrl);
+}
+setPageReloadPredicate(isPageReloadAllowed);
+
 function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   // 边界(E190,E179/E152 同族外链长度):window.open url 的类型/长度前置闸,先于 new URL 解析与
   // shell.openExternal。否则超长 url 让主进程先做大字符串 URL 解析,并可能把巨大 URL 交给系统协议
@@ -714,7 +720,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 // 这样从 popout 再 popout 也走我们的同一套安全策略;导航规则 dev 与打包版一致(见 window-open-policy)。
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler(windowOpenHandler);
-  installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed);
+  installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed, isPageReloadAllowed);
 });
 
 // ─────────────────────────────────────────────────────
