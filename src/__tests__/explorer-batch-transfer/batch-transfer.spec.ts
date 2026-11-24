@@ -155,6 +155,15 @@ describe('transferEntriesInto — 目标与源的相对位置(粘贴 / 拖动共
     expect(spies.refreshDir).not.toHaveBeenCalled();
   });
 
+  // 切换 root 后剪贴板仍持有旧 root 下的目录,恰等于新 root:其父目录在工作区外 → 不改投,按粘贴到自身报错(不在树外
+  // 静默写出副本;VSCode 中 root 元素无 parent 同样失败)。
+  it('复制的目录恰是当前工作区根,粘贴到根 → FS_MOVE_INTO_SELF,不写到工作区外', async () => {
+    const { deps, spies } = makeDeps({ picker: pickerWith({ '/ws': ['A'] }) });
+    await transferEntriesInto('copy', ['/ws/A'], '/ws/A', { ...deps, root: '/ws/A' });
+    expect(spies.fs.copy).not.toHaveBeenCalled();
+    expect(spies.onItemFailed.mock.calls[0]?.slice(0, 2)).toEqual(['/ws/A', 'FS_MOVE_INTO_SELF']);
+  });
+
   it('剪切文件夹 A 后粘贴到 A 自身 → 目标改投父目录即原处,no-op(VSCode 同款),不报错、不改名', async () => {
     const { deps, spies } = makeDeps();
     await transferEntriesInto('move', ['/r/A'], '/r/A', deps);

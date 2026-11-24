@@ -72,6 +72,8 @@ export interface BatchTransferDeps {
   onItemFailed: (src: string, code: string, message: string) => void;
   /** 目标名探测 / fs 调用抛出。 */
   onException: (err: unknown) => void;
+  /** 当前工作区根:源就是根时不改投其父目录(那在工作区之外,副本会静默落到树外)。 */
+  root?: string;
 }
 
 export async function transferEntriesInto(
@@ -86,8 +88,12 @@ export async function transferEntriesInto(
     // 对齐 VSCode(explorer paste):目标就是源本身 → 改投源的父目录(copy 生成 `A copy`;move 于是落回原父目录 → no-op)。
     // 先剔后代再判同父跳过:祖先因已在目标目录被跳过时,其后代也不该被单独移出来。
     // move 已在(实际)目标目录 → no-op(拖到原父目录 / 剪切后粘贴回原目录;不跳过则 picker 见同名改成 ` copy`)。
+    // 源就是工作区根(切换 root 后剪贴板仍持有旧 root 下的该目录):父目录在工作区外 → 不改投,按「粘贴到自身」报错
+    //(VSCode 中 root 元素无 parent,同样失败而不写到外面)。
+    const redirectable = (src: string): boolean =>
+      pathEquals(src, destDir) && !(deps.root !== undefined && pathEquals(src, deps.root));
     const items = outermostPaths(srcs)
-      .map((src) => ({ src, dir: pathEquals(src, destDir) ? dirname(src) : destDir }))
+      .map((src) => ({ src, dir: redirectable(src) ? dirname(src) : destDir }))
       .filter(({ src, dir }) => !(kind === 'move' && pathEquals(dirname(src), dir)));
     // 目标严格在源内部(粘贴到自身的子文件夹):VSCode 报「要粘贴的文件是目标文件夹的上级」。move 底层 rename 报 EINVAL、
     // copy 的 fs.cp 报 ERR_FS_CP_EINVAL,都会被映射成误导的「文件 I/O 错误」。整批先判,不做半截。

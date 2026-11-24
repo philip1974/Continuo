@@ -460,6 +460,7 @@ export function FolderTree({ root }: { root: string }) {
           makeUniqueDestPicker,
           refreshDir: refreshParent,
           onMoved: onPathMoved,
+          root,
           onItemFailed: (src, code, message) => {
             console.warn(`[explorer] ${logLabel} failed`, src, code, message);
             notify.error(t(failedKey, { src, message: localizeErrorByCode(code, message) }), {
@@ -472,7 +473,7 @@ export function FolderTree({ root }: { root: string }) {
           },
         },
       ),
-    [makeUniqueDestPicker, onPathMoved, refreshParent],
+    [makeUniqueDestPicker, onPathMoved, refreshParent, root],
   );
 
   const config = useMemo(
