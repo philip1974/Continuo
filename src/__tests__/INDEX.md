@@ -1642,6 +1642,10 @@
 - [`window-count-cap.spec.ts`](./window-ipc-create/window-count-cap.spec.ts)
 - [`window-create-handler.spec.ts`](./window-ipc-create/window-create-handler.spec.ts)
 
+## [主进程开新窗口失败的用户提示](./window-open-failure/README.md)
+
+- [`main-entry-wiring.spec.ts`](./window-open-failure/main-entry-wiring.spec.ts)
+
 ## [多窗口启动恢复(`pickWindowsToRestore`)](./window-restore/README.md)
 
 - [`startup-restore-cancel-wiring.spec.ts`](./window-restore/startup-restore-cancel-wiring.spec.ts)

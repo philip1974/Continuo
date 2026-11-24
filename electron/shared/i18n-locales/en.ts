@@ -18,6 +18,7 @@ export const en = {
   'menu.file.label': 'File',
   'menu.file.new_window': 'New Window',
   'menu.file.open_folder_in_new_window': 'Open Folder in New Window…',
+  'menu.file.window_open_failed': 'Could not open a new window',
 
   // menu.view
   'menu.view.reload': 'Reload',

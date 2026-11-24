@@ -142,6 +142,7 @@ import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
 import { sendToWindow } from './lib/broadcast';
 import { openWorkspaceWindowWith } from './ipc/window.ipc';
+import { runWindowOpen, type WindowOpenFailureUi } from './lib/run-window-open';
 import { onRendererDocumentGone } from './lib/renderer-document-gone';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
@@ -776,6 +777,21 @@ function openWorkspaceWindow(workspace?: string): Promise<void> {
   return openWorkspaceWindowWith(createMainWindow, workspace);
 }
 
+/**
+ * 主进程开窗入口(菜单 / Dock 菜单 / open-file / second-instance / 冷启动多目录)失败时的提示:无 main→renderer
+ * 推送通道,弹原生错误框(有聚焦窗口则挂其上)。经 runWindowOpen 调用,见 lib/run-window-open。
+ */
+const windowOpenFailureUi: WindowOpenFailureUi = {
+  t: getMainT,
+  showError: (message, detail) => {
+    const opts = { type: 'error' as const, message, detail };
+    const parent = BrowserWindow.getFocusedWindow();
+    (parent ? dialog.showMessageBox(parent, opts) : dialog.showMessageBox(opts)).catch((err: unknown) => {
+      console.warn('[window-open] showMessageBox failed', err);
+    });
+  },
+};
+
 async function openFolderInNewWindow(): Promise<void> {
   const r = await showOpenDialogRemembering({ properties: ['openDirectory'] });
   if (r.canceled || r.filePaths.length === 0) return;
@@ -789,13 +805,13 @@ export function buildAppMenu(t: MainT): Menu {
       label: t('menu.file.new_window'),
       accelerator: 'CmdOrCtrl+Shift+N',
       click: () => {
-        void openWorkspaceWindow();
+        void runWindowOpen(() => openWorkspaceWindow(), windowOpenFailureUi);
       },
     },
     {
       label: t('menu.file.open_folder_in_new_window'),
       click: () => {
-        void openFolderInNewWindow();
+        void runWindowOpen(openFolderInNewWindow, windowOpenFailureUi);
       },
     },
     { type: 'separator' },
@@ -867,13 +883,13 @@ function setDockMenu(): void {
       {
         label: t('menu.file.new_window'),
         click: () => {
-          void openWorkspaceWindow();
+          void runWindowOpen(() => openWorkspaceWindow(), windowOpenFailureUi);
         },
       },
       {
         label: t('menu.file.open_folder_in_new_window'),
         click: () => {
-          void openFolderInNewWindow();
+          void runWindowOpen(openFolderInNewWindow, windowOpenFailureUi);
         },
       },
     ]),
@@ -955,13 +971,14 @@ if (!gotLock) {
     //(运行期同步 stat 遇失联网络盘会冻结 main);是否目录由 openPathInNewWindow 的异步闸判定。
     // 逐个判定(不并发占满 openInFlight),实际打开数封顶 MAX_STARTUP_DIRS(与冷启动同):无效候选不挤掉后面的目录。
     const candidates = pickArgvPathCandidates(argv, { skipFirstArg: !!process.defaultApp });
-    void (async () => {
+    // 开窗失败(explorer.json 读写失败)在首个失败处停止,只提示一次。
+    void runWindowOpen(async () => {
       let opened = 0;
       for (const candidate of candidates) {
         if (opened >= MAX_STARTUP_DIRS) break;
         if (await openPathInNewWindow(candidate)) opened += 1;
       }
-    })();
+    }, windowOpenFailureUi);
     // 聚焦主窗(优先非 popout、跳过关窗中间态),与其它「选一个主窗」入口同一规则。
     const target = pickMainWindowPreferNonPopout();
     if (target) {
@@ -1032,7 +1049,7 @@ app.on('open-file', (event, filePath) => {
     pendingOpenPaths.push(filePath);
     return;
   }
-  void openPathInNewWindow(filePath);
+  void runWindowOpen(() => openPathInNewWindow(filePath), windowOpenFailureUi);
 });
 
 // Agent Terminal MCP host(P1):启动 HTTP server,把 token / url 通过 env
@@ -1350,11 +1367,11 @@ app.whenReady().then(async () => {
       fresh: true,
     });
     if (startup.dirs.length > 1) {
-      void (async () => {
+      void runWindowOpen(async () => {
         for (let i = 1; i < startup.dirs.length; i += 1) {
           await openWorkspaceWindow(startup.dirs[i]!);
         }
-      })();
+      }, windowOpenFailureUi);
     }
   } else {
     // 正常启动:主窗 windowSeq=0(workspace 由 renderer 从 explorer.json 段恢复)
