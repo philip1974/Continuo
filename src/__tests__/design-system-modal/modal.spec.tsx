@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
-import { Modal } from '../../design/Modal';
+import { Modal, hasOpenModal, subscribeOpenModals } from '../../design/Modal';
 
 afterEach(() => cleanup());
 
@@ -368,5 +368,60 @@ describe('Modal — 焦点恢复', () => {
     expect(document.activeElement).toBe(trigger);
 
     document.body.removeChild(trigger);
+  });
+});
+
+describe('Modal — 打开状态订阅(hasOpenModal / subscribeOpenModals)', () => {
+  it('visible Modal 挂载 → hasOpenModal() 为 true;全部关闭 → false;只在有 / 无切换时通知', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeOpenModals(listener);
+    expect(hasOpenModal()).toBe(false);
+
+    const { rerender } = render(
+      <>
+        <Modal visible>a</Modal>
+        <Modal visible={false}>b</Modal>
+      </>,
+    );
+    expect(hasOpenModal()).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <>
+        <Modal visible>a</Modal>
+        <Modal visible>b</Modal>
+      </>,
+    );
+    expect(listener).toHaveBeenCalledTimes(1); // 叠加第二个不再通知
+
+    rerender(
+      <>
+        <Modal visible={false}>a</Modal>
+        <Modal visible>b</Modal>
+      </>,
+    );
+    expect(hasOpenModal()).toBe(true);
+    rerender(
+      <>
+        <Modal visible={false}>a</Modal>
+        <Modal visible={false}>b</Modal>
+      </>,
+    );
+    expect(hasOpenModal()).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    rerender(<Modal visible>a</Modal>);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('popout 子窗文档里的 Modal 同样计入', () => {
+    const child = document.implementation.createHTMLDocument('popout');
+    const host = child.createElement('div');
+    child.body.appendChild(host);
+    const { unmount } = render(<Modal visible>p</Modal>, { container: host });
+    expect(hasOpenModal()).toBe(true);
+    unmount();
+    expect(hasOpenModal()).toBe(false);
   });
 });

@@ -99,6 +99,12 @@ interface PluginEntry {
   error?: PluginError;
   /** v5 Phase 2:partial grant 标记. i18n(I3):存结构化 code+params,不存可见文本. */
   warning?: PluginWarning;
+  /**
+   * 同会话卸载后重装、由 adoptInstalled 登记时所用的 manifest 文本(一次性):main 文件监视对该 id 留有卸载 tombstone,
+   * 重装后必广播一次 PLUGINS_CHANGED → 排队的 reload 若目录仍是这份 manifest 就跳过(否则 onload / onunload / onload
+   * 各一遍)。首个 reload 消费后清除;全新安装不设(没有 tombstone,不会有这次广播)。
+   */
+  adoptedManifestText?: string;
 }
 
 /**
@@ -402,7 +408,8 @@ export class PluginManager {
   async adoptInstalled(id: string): Promise<boolean> {
     // 重装是显式意图:清掉同 id 先前卸载留下的停用意图(否则同会话卸载后重装永不激活)。须在进锁前同步清 ——
     // 之后到达的卸载 / 禁用会重新记下,登记时按停用处理。
-    if (this.deactivationIntents.get(id) === 'uninstalled') this.deactivationIntents.delete(id);
+    const reinstall = this.deactivationIntents.get(id) === 'uninstalled';
+    if (reinstall) this.deactivationIntents.delete(id);
     const scanning = this.untilScanned();
     if (scanning) await scanning;
     return this.withLifecycleLock(id, async () => {
@@ -424,6 +431,7 @@ export class PluginManager {
         dirInfo: selected.dir,
         status: intended ? 'enabled' : 'disabled',
         enabledIntent: intended,
+        ...(reinstall ? { adoptedManifestText: selected.dir.manifestText } : {}),
       };
       this.entries.set(id, entry);
       this.invalidateListCache();
@@ -560,6 +568,10 @@ export class PluginManager {
     const rejection = selected
       ? null
       : admitManifest(own.reduce((best, d) => (preferPluginDir(d, best, id) ? d : best)).manifestText, this.app.version);
+    // 重装后 tombstone 引发的那次广播:目录仍是 adopt 时那份 manifest → 已按它登记并激活,不再停用再激活(一次性)。
+    const adoptedManifestText = entry.adoptedManifestText;
+    entry.adoptedManifestText = undefined;
+    if (adoptedManifestText !== undefined && selected?.dir.manifestText === adoptedManifestText) return;
 
     // race(R77):据「用户启用意图」而非瞬时 status 判是否重激活。否则连续热重载中先读到
     // 坏 manifest 把已启用插件置 'failed',文件修好再 reload 时 status 已非 'enabled' →

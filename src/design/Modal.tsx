@@ -42,6 +42,31 @@ function modalKeyStackOf(doc: Document): symbol[] {
   return stack;
 }
 
+// 打开中的 Modal 总数(所有文档合计)与订阅者:供上层在「有模态遮罩」时调整行为(如暂停被遮住的浮层计时)。
+let openModalCount = 0;
+const openModalListeners = new Set<() => void>();
+
+function changeOpenModalCount(delta: 1 | -1): void {
+  const before = openModalCount > 0;
+  openModalCount += delta;
+  if (before !== openModalCount > 0) {
+    for (const listener of [...openModalListeners]) listener();
+  }
+}
+
+/** 当前是否有打开(visible)的 Modal —— 任一文档(主窗或 popout 子窗)均计入。 */
+export function hasOpenModal(): boolean {
+  return openModalCount > 0;
+}
+
+/** 订阅「是否有打开的 Modal」的变化(仅在有 / 无切换时调用 listener);返回退订函数。 */
+export function subscribeOpenModals(listener: () => void): () => void {
+  openModalListeners.add(listener);
+  return () => {
+    openModalListeners.delete(listener);
+  };
+}
+
 export function Modal({
   visible,
   children,
@@ -67,6 +92,7 @@ export function Modal({
     const keyId = keyIdRef.current!;
     const modalKeyStack = modalKeyStackOf(doc);
     modalKeyStack.push(keyId);
+    changeOpenModalCount(1);
 
     const raf = requestAnimationFrame(() => {
       const root = contentRef.current;
@@ -131,6 +157,7 @@ export function Modal({
       doc.removeEventListener('keydown', handleKey);
       const idx = modalKeyStack.lastIndexOf(keyId);
       if (idx >= 0) modalKeyStack.splice(idx, 1);
+      changeOpenModalCount(-1);
       const prev = prevFocusRef.current;
       if (prev != null && typeof prev.focus === 'function') {
         prev.focus();

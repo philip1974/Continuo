@@ -21,8 +21,12 @@ const app = createTestCoApp('1.0.0');
 
 class Loaded extends Plugin {
   static ids: string[] = [];
+  static unloads: string[] = [];
   onload() {
     Loaded.ids.push(this.manifest.id);
+  }
+  onunload() {
+    Loaded.unloads.push(this.manifest.id);
   }
 }
 
@@ -58,6 +62,7 @@ function host(state: State, over: Partial<ManagerHost> = {}): ManagerHost {
 
 beforeEach(() => {
   Loaded.ids = [];
+  Loaded.unloads = [];
 });
 
 describe('PluginManager.adoptInstalled', () => {
@@ -155,5 +160,61 @@ describe('PluginManager.adoptInstalled', () => {
     await adopting;
 
     expect(Loaded.ids).toEqual([]);
+  });
+
+  it('卸载后重装:随后文件监视的 reload(目录未变)不再停用再激活;之后的 reload 照常', async () => {
+    const state: State = { dirs: [dir('x')], enabled: new Set(['x']) };
+    const mgr = new PluginManager(app, host(state));
+    await mgr.init();
+    await mgr.uninstall('x');
+    state.dirs.push(dir('x'));
+    state.enabled.add('x');
+    await mgr.adoptInstalled('x');
+    Loaded.ids = [];
+    Loaded.unloads = [];
+
+    // main watcher 的 tombstone 使重装后签名变化 → 广播 PLUGINS_CHANGED → reload(x)
+    await mgr.reload('x');
+    expect(Loaded.unloads).toEqual([]);
+    expect(Loaded.ids).toEqual([]);
+    expect(mgr.listAll().find((p) => p.id === 'x')?.status).toBe('enabled');
+
+    // 只跳过一次:之后真实的文件变化照常热重载
+    await mgr.reload('x');
+    expect(Loaded.unloads).toEqual(['x']);
+    expect(Loaded.ids).toEqual(['x']);
+  });
+
+  it('卸载后重装:reload 时 manifest 已变 → 照常重载', async () => {
+    const state: State = { dirs: [dir('x')], enabled: new Set(['x']) };
+    const mgr = new PluginManager(app, host(state));
+    await mgr.init();
+    await mgr.uninstall('x');
+    state.dirs.push(dir('x'));
+    state.enabled.add('x');
+    await mgr.adoptInstalled('x');
+    Loaded.ids = [];
+    Loaded.unloads = [];
+
+    state.dirs = [dir('x', { version: '0.2.0' })];
+    await mgr.reload('x');
+
+    expect(Loaded.unloads).toEqual(['x']);
+    expect(Loaded.ids).toEqual(['x']);
+  });
+
+  it('全新安装(无先前卸载)后的 reload 不跳过(开发时改 main 照常热重载)', async () => {
+    const state: State = { dirs: [], enabled: new Set() };
+    const mgr = new PluginManager(app, host(state));
+    await mgr.init();
+    state.dirs.push(dir('x'));
+    state.enabled.add('x');
+    await mgr.adoptInstalled('x');
+    Loaded.ids = [];
+
+    await mgr.reload('x');
+
+    expect(Loaded.unloads).toEqual(['x']);
+    expect(Loaded.ids).toEqual(['x']);
   });
 });

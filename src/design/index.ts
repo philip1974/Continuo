@@ -43,7 +43,7 @@ export {
   type InputVariant,
   type InputSize,
 } from './Input';
-export { Modal, type ModalProps } from './Modal';
+export { Modal, hasOpenModal, subscribeOpenModals, type ModalProps } from './Modal';
 export { ScrollArea, type ScrollAreaProps } from './ScrollArea';
 export { Separator, type SeparatorProps } from './Separator';
 export { Spinner, type SpinnerProps, type SpinnerSize } from './Spinner';

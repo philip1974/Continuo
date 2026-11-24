@@ -7,6 +7,9 @@
 - renderer `PluginManager.adoptInstalled(id)`:本窗口刚装好的新插件不必重启 —— 重新列举该 id 的目录(与启动同一准入 / 选目录),
   登记进列表,并按 `_enabled.json` 的启用状态激活(激活照常走权限授权弹窗)。已在列表 → 无操作(更新由文件监视热重载)。
   同会话内卸载后重装同 id:重装是显式意图,清掉先前卸载留下的停用意图;之后到达的卸载 / 禁用照常生效。
+  重装后 main 文件监视因卸载留下的 tombstone 必广播一次 `PLUGINS_CHANGED`:随后排队的 `reload(id)` 若该 id 的目录仍是
+  adopt 时那份 manifest,就跳过(已按它登记并激活,不再 onunload / onload 一遍);只跳过这一次,之后的文件变化照常热重载;
+  manifest 已变照常重载。全新安装(无先前卸载)不受影响 —— 没有 tombstone,首个 reload 即真实文件变化。
 - `recordPendingInstall`(设置页 Git 安装、市场卡片、市场底部 Git URL 三个入口共用)在记待重启行的同时发起 `adoptInstalled`;
   插件进列表即摘除待重启行。热激活失败(如准入不过)时待重启行保留。
 - 待重启行带「立即重启」按钮 → `coApi.window.relaunchApp()` → main 走**与 ⌘Q 相同的退出流程**(各窗口脏文件确认、flush、清理),

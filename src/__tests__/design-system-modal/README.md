@@ -42,3 +42,9 @@ Shift+Tab 在第一个上循环到最后一个;overlay click 调 onClose;关闭�
 - Tab 在 last 上 → preventDefault + first.focus()
 - Shift+Tab 在 first 上 → preventDefault + last.focus()
 - 中间位置 Tab → 浏览器默认(我们不动)
+
+### 打开状态订阅
+
+- `hasOpenModal()`:当前是否有 visible 的 Modal(主窗与 popout 子窗文档合计)
+- `subscribeOpenModals(listener)`:仅在「有 / 无打开的 Modal」切换时调用 listener(叠加第二个不通知);返回退订函数
+- 通用 API,不含业务;toast 用它在模态遮罩期间暂停自动消失(`unified-toast-notification` T24)

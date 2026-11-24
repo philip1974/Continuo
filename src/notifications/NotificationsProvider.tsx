@@ -15,6 +15,7 @@ import type { Notification, NotificationLevel } from './types';
 import { __registerHandle } from './notify';
 import type { NotifyApi, NotifyOpts } from './notify';
 import { filterKeepingIdentity } from '@/lib/filter-keeping-identity';
+import { hasOpenModal, subscribeOpenModals } from '@/design';
 
 // ─── auto-dismiss 配置 ─────────────────────
 const DISMISS_MS: Record<NotificationLevel, number> = {
@@ -142,6 +143,8 @@ export function NotificationsProvider({
   const notificationsRef = useRef<readonly Notification[]>(EMPTY_NOTIFICATIONS);
   const counterRef = useRef(0);
   const timersRef = useRef(new Map<string, DismissTimer>());
+  // 有打开的模态时为 true:toast 层在模态遮罩之下(看不到、无法悬停),每个计时多计一次暂停,全部模态关闭后续算。
+  const modalPausedRef = useRef(false);
   // 到期移除后补位(armVisibleTimers);经 ref 调用,避免计时回调与补位互相依赖。
   const promoteRef = useRef<() => void>(noop);
 
@@ -203,7 +206,13 @@ export function NotificationsProvider({
     (id: string, level: NotificationLevel) => {
       const existing = timersRef.current.get(id);
       if (existing?.handle != null) clearTimeout(existing.handle);
-      const timer: DismissTimer = existing ?? { handle: null, dueAt: 0, remaining: 0, pauses: 0 };
+      // 新计时在模态打开期间创建 → 带上模态那一次暂停(模态关闭时与已有计时一同 resume)。
+      const timer: DismissTimer = existing ?? {
+        handle: null,
+        dueAt: 0,
+        remaining: 0,
+        pauses: modalPausedRef.current ? 1 : 0,
+      };
       timer.handle = null;
       timer.remaining = DISMISS_MS[level];
       timersRef.current.set(id, timer);
@@ -245,6 +254,22 @@ export function NotificationsProvider({
     },
     [startDismissTimer],
   );
+
+  // 模态打开 / 全部关闭:给每个现存计时各 pause / resume 一次(与悬停 / 焦点暂停共用计数)。任一文档(主窗或 popout 子窗)
+  // 有模态即暂停:toast 在每个窗口都有副本,不按窗口区分,规则简单一致。
+  useEffect(() => {
+    const sync = (): void => {
+      const open = hasOpenModal();
+      if (open === modalPausedRef.current) return;
+      modalPausedRef.current = open;
+      for (const id of [...timersRef.current.keys()]) {
+        if (open) pause(id);
+        else resume(id);
+      }
+    };
+    sync();
+    return subscribeOpenModals(sync);
+  }, [pause, resume]);
 
   const notify = useCallback(
     (

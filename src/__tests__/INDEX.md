@@ -1708,6 +1708,7 @@
 - [`toast-component-tokens.spec.ts`](./unified-toast-notification/toast-component-tokens.spec.ts)
 - [`toast-dom-render.spec.tsx`](./unified-toast-notification/toast-dom-render.spec.tsx)
 - [`toast-pause-focus.spec.tsx`](./unified-toast-notification/toast-pause-focus.spec.tsx)
+- [`toast-pause-modal.spec.tsx`](./unified-toast-notification/toast-pause-modal.spec.tsx)
 - [`toast-popout-windows.spec.tsx`](./unified-toast-notification/toast-popout-windows.spec.tsx)
 
 ## [useCloseWhenGone(弹窗目标从实时列表消失即关闭)](./use-close-when-gone/README.md)
