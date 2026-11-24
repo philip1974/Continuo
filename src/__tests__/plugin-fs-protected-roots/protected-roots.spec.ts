@@ -528,6 +528,27 @@ describe.skipIf(!volumeFoldsLongS)(
       expect(await readFile(join(docs, 'a.txt'), 'utf-8')).toBe('hello'); // 删的是链接,不是目标
     });
 
+    // 无 d_type 的文件系统(dirent 三个类型判定皆 false):链接条目也须 lstat 比 dev/ino,不能当「非链接」跳过 ——
+    // 否则找不到磁盘条目名,祖先链上的合法链接操作被 fail-closed 误拒。
+    it('符号链接叶子:目录条目类型未知(DT_UNKNOWN)时仍按 dev/ino 找到磁盘条目名,不被误拒', async () => {
+      await symlink(docs, join(home, 'Shortcut'));
+      const realOpendir = fsp.opendir.bind(fsp);
+      vi.spyOn(fsp, 'opendir').mockImplementation((async (p: string) => {
+        const dir = await realOpendir(p);
+        return (async function* () {
+          for await (const e of dir) {
+            yield Object.assign(Object.create(Object.getPrototypeOf(e) as object) as typeof e, e, {
+              isFile: () => false,
+              isDirectory: () => false,
+              isSymbolicLink: () => false,
+            });
+          }
+        })();
+      }) as never);
+      expect(await outcome(call(C.RENAME, join(home, 'ſhortcut'), join(home, 'Renamed')))).toBe('ok');
+      expect(await readlink(join(home, 'Renamed'))).toBe(docs);
+    });
+
     it('找不出链接叶子的磁盘条目名(扫描超限)时:祖先链上的目录 fail-closed 拒绝;其它目录不受影响', async () => {
       const limited = await extraStack({ onDiskNameScanLimit: 1 });
       await symlink(docs, join(home, 'Shortcut')); // `home` 是受保护根的祖先,条目数 > 1

@@ -18,6 +18,7 @@ import {
 import { ScopeError, type PathScope } from '../../shared/plugin-fs-contract';
 import { FS_PATH_MAX } from '../../shared/fs-limits';
 import { PERMISSION_RECORD_LIMITS } from '../../shared/permission-record-limits';
+import { direntTypeIsReliable } from '../lib/dirent-real-type';
 
 // 'lstat' / 'remove' / 'rename-src' 走「不跟随 leaf 符号链接」解析 —— 作用在链接本身。
 // 'read-tree':解析同 'read',用于会递归进入目标子树的读(cp 的源)—— 子树含受保护根时拒绝。
@@ -475,7 +476,9 @@ export class PathScopeRegistry {
         scanned += 1;
         if (scanned > this.onDiskNameScanLimit) return null;
         if (entry.name === leaf) return [join(parent, leaf)];
-        if (!entry.isSymbolicLink()) continue;
+        // 只跳过「可采信为非链接」的条目:d_type 未知(三者皆 false)的条目也须 lstat 比 dev/ino,否则无 d_type 的
+        // 文件系统上漏掉链接的其它硬链接名(win32 上报链接的 reparse 条目 lstat 后 ino 自然不等,只多一次 lstat)。
+        if (direntTypeIsReliable(entry) && !entry.isSymbolicLink()) continue;
         const candidate = join(parent, entry.name);
         const s = await fs.lstat(candidate, { bigint: true }).catch(() => null);
         if (s !== null && s.dev === stat.dev && s.ino === stat.ino) found.push(candidate);

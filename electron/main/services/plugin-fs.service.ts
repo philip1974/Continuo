@@ -391,11 +391,18 @@ export async function resolveGitObjectStoreInScope(
     }
     // pack 目录内的条目(.pack / .idx / multi-pack-index)逐个 realpath 成本高,直接拒绝符号链接条目。
     // win32 上 dirent 对任何 reparse point 都报链接(OneDrive / Dedup 的普通文件也是),按 lstat 判真实类型;
-    // 真 symlink / junction 在 lstat 下仍是链接 → 拒;lstat 失败无法确认 → 拒。
+    // 真 symlink / junction 在 lstat 下仍是链接 → 拒。lstat 失败:条目已不存在(git gc / repack 并发删 tmp_pack 等)→
+    // 跳过(无可经由的链接);其它错误无法确认 → lstatOrNull 抛出 → 拒。
     const packDir = join(objectDir, 'pack');
     for (const e of await readdirOrEmpty(packDir)) {
-      const t = await realDirentType(e, join(packDir, e.name), { platform });
-      if (!t || t.isSymlink) throw new Error(`symlink in pack dir: ${e.name}`);
+      const full = join(packDir, e.name);
+      let isSymlink = (await realDirentType(e, full, { platform }))?.isSymlink;
+      if (isSymlink === undefined) {
+        const st = await lstatOrNull(full);
+        if (st === null) continue;
+        isSymlink = st.isSymbolicLink();
+      }
+      if (isSymlink) throw new Error(`symlink in pack dir: ${e.name}`);
     }
   } catch (err) {
     throw gitStoreOutOfScope(cwd, 'object store not within scope', err);

@@ -2,6 +2,7 @@
 // 安全:插件仓库里的符号链接不能把宿主的读写引到插件目录之外(详见同目录 README)。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  readFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -253,3 +254,15 @@ describe('已安装目录:manifest / main 经链接逃出插件目录 → 插件
     expect(await readPluginMainByDir(baseDir, 'dev', listed[0]!.manifestHash)).toBe('// built');
   });
 });
+
+// 克隆树检查的条目类型判定与宿主 listDir / 插件 listDir / pack 检查同一来源(realDirentType):win32 上 libuv 对任何
+// reparse point 都报链接,OneDrive / Dedup 的普通文件被误判为符号链接 → 插件装不上。win32 行为见 dirent-real-type 单测。
+describe('assertNoSymlinksInClone 用共享的真实类型判定', () => {
+  it('源码接线', () => {
+    const src = readFileSync(path.join(process.cwd(), 'electron/main/services/plugins.service.ts'), 'utf-8');
+    const body = src.slice(src.indexOf('async function assertNoSymlinksInClone'), src.indexOf('function cloneTooLargeError'));
+    expect(body).toContain('realDirentType(dirent, full)');
+    expect(body).not.toMatch(/dirent\.isSymbolicLink\(\)/);
+  });
+});
+

@@ -128,6 +128,20 @@ describe.skipIf(process.platform === 'win32')('readGitBlob pack 目录检查:win
     expect(Buffer.from((await read()) as Uint8Array).toString()).toBe('own');
   });
 
+  // readdir 与 lstat 之间条目被删(git gc / repack 并发删 tmp_pack 等):无可经由的链接 → 跳过,不误报越界。
+  it('win32:pack 条目 readdir 后即被删除(lstat ENOENT)→ 跳过,正常读取', async () => {
+    const withPackEntries = fsp.readdir as unknown as (p: string, o: { withFileTypes: true }) => Promise<Dirent[]>;
+    vi.spyOn(fsp, 'readdir').mockImplementation((async (p: string, o: { withFileTypes: true }) => {
+      const entries = await withPackEntries(p, o);
+      if (basename(String(p)) !== 'pack' || entries.length === 0) return entries;
+      const ghost = asReparse(Object.assign(Object.create(Object.getPrototypeOf(entries[0]) as object) as Dirent, entries[0], { name: 'tmp_pack_gone' }), new Set(['tmp_pack_gone']));
+      return [...entries, ghost];
+    }) as never);
+    await setup('win32');
+    scopes.grant(PLUGIN, [{ path: repo, mode: 'r' }]);
+    expect(Buffer.from((await read()) as Uint8Array).toString()).toBe('own');
+  });
+
   it('win32:pack 目录里的真符号链接 → 仍拒', async () => {
     await symlink(join(repo, 'blob-src'), join(repo, '.git', 'objects', 'pack', 'pack-l.pack'));
     await setup('win32');

@@ -56,6 +56,7 @@ import { mapInOrderBounded } from '../lib/map-in-order-bounded';
 import { preserveCorruptSnapshot } from '../lib/corrupt-snapshot';
 import { isPlainRecord } from '../../shared/as-record';
 import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
+import { realDirentType } from '../lib/dirent-real-type';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -1439,15 +1440,20 @@ async function assertNoSymlinksInClone(cloneDir: string): Promise<void> {
     for (const dirent of await fs.readdir(dir, { withFileTypes: true })) {
       if (dir === cloneDir && dirent.name === '.git') continue;
       const full = path.join(dir, dirent.name);
-      // 部分文件系统 d_type 未知(三个判定都为 false)→ lstat 补判。
-      const st = dirent.isDirectory() || dirent.isFile() || dirent.isSymbolicLink() ? dirent : await fs.lstat(full);
-      if (st.isSymbolicLink()) {
+      // dirent 类型不可采信(d_type 未知;win32 上任何 reparse point 都报链接,OneDrive / Dedup 普通文件也是)→ lstat
+      // 判真实类型(共享 realDirentType;真 symlink / junction 在 lstat 下仍是链接 → 拒)。lstat 失败 → 再 lstat 抛出原错误。
+      let st: { readonly isSymlink: boolean; readonly isDirectory: boolean } | null = await realDirentType(dirent, full);
+      if (st === null) {
+        const s: Stats = await fs.lstat(full);
+        st = { isSymlink: s.isSymbolicLink(), isDirectory: s.isDirectory() };
+      }
+      if (st.isSymlink) {
         throw codedError(
           ERROR_CODES.PLUGIN_SYMLINK_REJECTED,
           `插件仓库含符号链接,拒绝安装: ${path.relative(cloneDir, full).slice(0, 256)}`,
         );
       }
-      if (st.isDirectory()) pending.push(full);
+      if (st.isDirectory) pending.push(full);
     }
   }
 }
