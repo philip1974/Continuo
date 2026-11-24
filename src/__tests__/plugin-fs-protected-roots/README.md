@@ -19,7 +19,7 @@ path-scope 判定是纯前缀匹配,此前不排除应用自己的 `userData`。
 | 根 | 说明 |
 |---|---|
 | 本实例的 `app.getPath('userData')` | 含 e2e 的 `--user-data-dir`、用户自定义位置 |
-| `<appData>/Continuo` 与 `<appData>/Continuo Dev` | 两种发行形态的默认 userData 都列入:dev 实例里的插件不能改 packaged 实例的权限文件,反之亦然 |
+| `<appData>/continuo`(打包版 = package.json name,小写)与 `<appData>/Continuo Dev` | 两种发行形态的默认 userData 都列入:dev 实例里的插件不能改 packaged 实例的权限文件,反之亦然 |
 | 打包版的 `process.resourcesPath` 与安装目录 | macOS 是整个 `.app` 包,其它平台是 resources 的上级目录;dev 下不加(那是仓库里的 `node_modules/electron`) |
 
 每条根同时按「词法绝对形」与「realpath 形」比较(根尚不存在时解析最近的已存在上级)。macOS / Windows 上比较
@@ -165,13 +165,13 @@ Linux(默认大小写敏感,比较本就不折叠)不做,行为不变。
 - 「叶子按真实名字判定」的边界:
   - 只管 plugin-fs 自己的调用。校验与操作之间由外部进程(有 `shell` 权限的插件、用户自己的程序)改名不在此列。
   - 尚不存在的受保护根:保守折叠不保证与每种文件系统的折叠表逐字一致(如 NTFS 的 `$UpCase` 对个别字符的映射、
-    土耳其语带点 `İ`)。默认的 `Continuo` / `Continuo Dev` 与 `Application Support` / `AppData\Roaming` /
+    土耳其语带点 `İ`)。默认的 `continuo` / `Continuo Dev` 与 `Application Support` / `AppData\Roaming` /
     `.config` 都是纯 ASCII、且祖先在正常系统上已存在,只有自定义 userData 路径里含此类字符、且该路径尚未被
     创建时才有缝。
   - Linux 上开了 casefold 的目录(ext4 `+F`)、挂载的大小写不敏感卷:比较不折叠,也不解析真实名字(同此前)。
   - 受保护根祖先目录里条目极多(> 10 000)时,对其中**符号链接**条目用「非磁盘原名」的写法做
     `rm / rename / lstat` 会被拒(用磁盘上的原名通常也要扫到它才放行,扫描按目录顺序,超限即拒)。
-- 日志目录(macOS `~/Library/Logs/Continuo`)等 userData 之外的应用文件不在受保护根内。
+- 日志目录(macOS `~/Library/Logs/continuo`)等 userData 之外的应用文件不在受保护根内。
 
 ## 规范
 

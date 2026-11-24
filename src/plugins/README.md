@@ -103,7 +103,7 @@ With this `manifest.json`:
 
 `minLMVersion` is the minimum Continuo app version the plugin needs (the field keeps the project's old working name).
 
-Drop both into `<userData>/plugins/com.example.hello/`, restart Continuo, and enable it in Settings → Plugins. `<userData>` is `Continuo` (installed app) or `Continuo Dev` (`pnpm dev`) under the OS app-data folder — e.g. `~/Library/Application Support/Continuo Dev/` on macOS, `%APPDATA%\Continuo Dev\` on Windows, `~/.config/Continuo Dev/` on Linux.
+Drop both into `<userData>/plugins/com.example.hello/`, restart Continuo, and enable it in Settings → Plugins. `<userData>` is `continuo` (installed app; lowercase — it is the package name) or `Continuo Dev` (`pnpm dev`) under the OS app-data folder — e.g. `~/Library/Application Support/continuo/` / `~/Library/Application Support/Continuo Dev/` on macOS, `%APPDATA%\continuo\` on Windows, `~/.config/continuo/` on Linux.
 
 ## See also
 

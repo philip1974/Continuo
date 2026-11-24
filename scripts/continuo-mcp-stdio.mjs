@@ -18,7 +18,7 @@
 //      Linux = ".../Continuo Dev/mcp.sock"
 //   Windows = 每次启动随机的 named pipe(\\.\pipe\continuo-mcp-<用户哈希>-<随机>):
 //             Continuo 终端里由 CONTINUO_MCP_SOCKET 注入;否则读发现文件
-//             %APPDATA%\Continuo\mcp-pipe → %APPDATA%\Continuo Dev\mcp-pipe(内容是「管道名 + 主进程 pid」
+//             %APPDATA%\continuo\mcp-pipe → %APPDATA%\Continuo Dev\mcp-pipe(内容是「管道名 + 主进程 pid」
 //             两行;只认合法名,且该 pid 须仍存活 —— 崩溃残留的发现文件不用),
 //             都读不到即报错退出 —— 不回落可预测名(同机其它用户可抢注同名管道骗走 hello token)
 //   2/3(及 Windows 的两个发现文件)是**候选**:按序连接,连不上(崩溃残留的 socket / 过期管道名 →
@@ -236,7 +236,7 @@ const windowId =
 if (candidates.length === 0) {
   process.stderr.write(
     (process.platform === 'win32'
-      ? `[continuo-mcp-stdio] no valid pipe discovery file under ${windowsAppDataDir()}\\{Continuo,Continuo Dev}\\mcp-pipe\n`
+      ? `[continuo-mcp-stdio] no valid pipe discovery file under ${windowsAppDataDir()}\\{continuo,Continuo Dev}\\mcp-pipe\n`
       : `[continuo-mcp-stdio] socket not found: ${packagedSocketPath()} (nor ${devSocketPath()})\n`) +
       '  Continuo app appears not to be running. Start Continuo first (or set CONTINUO_MCP_SOCKET).\n',
   );
