@@ -1,10 +1,11 @@
-// Ctrl+S 显式保存:在编辑器内修改 → Ctrl+S(EditorPanel 容器 onKeyDown,meta / ctrl 均可)→ 磁盘写入;
+// mod+S 显式保存:在编辑器内修改 → mod+S(EditorPanel 容器 onKeyDown,按平台精确匹配:mac ⌘S、其它 Ctrl+S,
+// 见 cf01b7dd;mac 上 Ctrl+S 不保存)→ 磁盘写入;
 // 外部修改 → useExternalFileSync 自动同步 editor 内容.
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 
-test('打开 a.ts → 编辑器内修改 → Ctrl+S → 磁盘写入', async ({
+test('打开 a.ts → 编辑器内修改 → mod+S → 磁盘写入', async ({
   window,
   workspaceRoot,
 }) => {
@@ -18,7 +19,7 @@ test('打开 a.ts → 编辑器内修改 → Ctrl+S → 磁盘写入', async ({
   await editor.click();
   await window.keyboard.press('ControlOrMeta+End');
   await window.keyboard.type('\n// saved-by-ctrl-s');
-  await window.keyboard.press('Control+s');
+  await window.keyboard.press('ControlOrMeta+s');
 
   const aPath = path.join(workspaceRoot, 'src/a.ts');
   await expect
