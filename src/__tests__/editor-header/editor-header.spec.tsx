@@ -128,24 +128,68 @@ describe('EditorHeader — tab 栏溢出', () => {
     expect(right.className).toContain('opacity-0');
   });
 
-  it('激活 tab 变化时滚入可见区(scrollIntoView nearest)', () => {
-    const a = tab({ id: '/a.md', filePath: '/a.md' });
-    const b = tab({ id: '/b.md', filePath: '/b.md' });
-    useEditorStore.setState({ tabs: [a, b], activeTabId: a.id });
-    const spy = vi.fn();
-    const original = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = spy;
+  // 直接按 tab 与 tab 栏的可视矩形算 scrollLeft(不用 scrollIntoView:它会连带滚动 dock 等外层容器,
+  // 且只在激活变化时跑 —— 窗口 / 面板变窄后当前 tab 被挤出可见区不会再校正)。
+  function rect(left: number, width: number): DOMRect {
+    return { left, right: left + width, width, top: 0, bottom: 28, height: 28, x: left, y: 0, toJSON: () => ({}) } as DOMRect;
+  }
+  /** 模拟布局:tab 栏可视宽 listWidth;第 i 个 tab 宽 100、内容坐标 i*100(随 scrollLeft 平移)。 */
+  function layout(container: HTMLElement, listWidth: { current: number }) {
+    const nav = container.querySelector('.wm-tab-nav') as HTMLElement;
+    nav.getBoundingClientRect = () => rect(0, listWidth.current);
+    container.querySelectorAll<HTMLElement>('.wm-tab-nav-item').forEach((el, i) => {
+      el.getBoundingClientRect = () => rect(i * 100 - nav.scrollLeft, 100);
+    });
+    return nav;
+  }
+
+  it('激活 tab 在可视区右侧外 → tab 栏滚动到该 tab 右缘贴齐可视区右缘', () => {
+    const tabs = Array.from({ length: 20 }, (_, i) => tab({ id: `/f${i}.ts`, filePath: `/f${i}.ts` }));
+    useEditorStore.setState({ tabs, activeTabId: tabs[0]!.id });
+    const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
+    const nav = layout(container, { current: 300 });
+    act(() => useEditorStore.setState({ activeTabId: tabs[19]!.id }));
+    // 第 20 个 tab 内容坐标 [1900, 2000],可视宽 300 → scrollLeft = 1700
+    expect(nav.scrollLeft).toBe(1700);
+    // 回到第 1 个(在左侧外)→ 左缘贴齐
+    act(() => useEditorStore.setState({ activeTabId: tabs[0]!.id }));
+    expect(nav.scrollLeft).toBe(0);
+  });
+
+  it('激活 tab 已在可视区内 → 不滚动', () => {
+    const tabs = Array.from({ length: 5 }, (_, i) => tab({ id: `/f${i}.ts`, filePath: `/f${i}.ts` }));
+    useEditorStore.setState({ tabs, activeTabId: tabs[0]!.id });
+    const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
+    const nav = layout(container, { current: 300 });
+    nav.scrollLeft = 50;
+    act(() => useEditorStore.setState({ activeTabId: tabs[2]!.id }));
+    expect(nav.scrollLeft).toBe(50);
+  });
+
+  it('tab 栏变窄(窗口 / 面板缩小)把激活 tab 挤出可视区 → 重新滚入', () => {
+    const observers: Array<() => void> = [];
+    const OriginalRO = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb: () => void) {
+        observers.push(cb);
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
     try {
+      const tabs = Array.from({ length: 20 }, (_, i) => tab({ id: `/f${i}.ts`, filePath: `/f${i}.ts` }));
+      useEditorStore.setState({ tabs, activeTabId: tabs[5]!.id });
+      const width = { current: 2400 };
       const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
-      spy.mockClear();
-      act(() => useEditorStore.setState({ activeTabId: b.id }));
-      expect(spy).toHaveBeenCalled();
-      const target = spy.mock.contexts.at(-1) as Element;
-      expect(target.closest('.wm-tab-nav-item')?.getAttribute('data-active')).toBe('true');
-      expect(container.contains(target)).toBe(true);
-      expect(spy.mock.calls.at(-1)?.[0]).toMatchObject({ block: 'nearest', inline: 'nearest' });
+      const nav = layout(container, width);
+      expect(nav.scrollLeft).toBe(0);
+      width.current = 300;
+      act(() => observers.forEach((cb) => cb()));
+      // 第 6 个 tab [500, 600],可视宽 300 → scrollLeft = 300
+      expect(nav.scrollLeft).toBe(300);
     } finally {
-      Element.prototype.scrollIntoView = original;
+      globalThis.ResizeObserver = OriginalRO;
     }
   });
 });

@@ -62,5 +62,6 @@
 - tab 栏横向滚动(`overflow-x-auto`,不显示滚动条;竖向滚轮也横向滚动,VSCode 同款)
 - 两侧 `from-canvas` 渐隐遮罩(`aria-hidden`):只在该方向确有被遮住的 tab 时显示(按 scrollLeft / clientWidth /
   scrollWidth,滚动与尺寸变化时更新)
-- 激活 tab 变化(切换 / 新开 / 关闭后落到别的 tab)时 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`,
-  当前 tab 总可见
+- 激活 tab 总在可见区(VSCode revealActiveTab):激活 tab 变化(切换 / 新开 / 关闭后落到别的 tab)以及 tab 栏尺寸变化
+  (窗口 / 面板缩小,ResizeObserver)时,按 tab 与 tab 栏的可视矩形直接设 tab 栏 `scrollLeft` —— 在左侧外左缘贴齐、
+  在右侧外右缘贴齐、已可见不动。不用 `scrollIntoView`(会连带滚动 dock 等外层容器,且尺寸变化后不再校正)

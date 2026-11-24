@@ -8,7 +8,7 @@
 //   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 内的模式切换行(SegmentedControl)
 //     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject, type WheelEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject, type WheelEvent } from 'react';
 import {
   getEffectiveMode,
   useEditorStore,
@@ -98,6 +98,37 @@ function useTabOverflowFades(wrapper: RefObject<HTMLDivElement | null>, tabsKey:
     };
   }, [wrapper, tabsKey]);
   return fades;
+}
+
+/**
+ * 把激活 tab 滚入 tab 栏可视区(VSCode revealActiveTab):在左侧外 → 左缘贴齐;在右侧外 → 右缘贴齐(比可视区还宽时
+ * 左缘贴齐)。只改 tab 栏自身的 scrollLeft —— scrollIntoView 会连带滚动 dock 等外层容器。
+ */
+function revealActiveTab(list: HTMLElement): void {
+  const active = list.querySelector<HTMLElement>('[role=tab][aria-selected="true"]');
+  if (!active) return;
+  const item = active.closest<HTMLElement>('.wm-tab-nav-item') ?? active;
+  const view = list.getBoundingClientRect();
+  const tab = item.getBoundingClientRect();
+  const before = tab.left - view.left;
+  const after = tab.right - view.right;
+  if (before < 0) list.scrollLeft += before;
+  else if (after > 0) list.scrollLeft += Math.min(after, before);
+}
+
+/** 激活 tab 变化(切换 / 新开 / 关闭后落到别的 tab)以及 tab 栏尺寸变化(窗口 / 面板缩放)时把激活 tab 滚入可见区。 */
+function useRevealActiveTab(wrapper: RefObject<HTMLDivElement | null>, activeTabId: string | null, tabsKey: unknown) {
+  useLayoutEffect(() => {
+    const list = wrapper.current?.querySelector<HTMLElement>('[role=tablist]');
+    if (list) revealActiveTab(list);
+  }, [wrapper, activeTabId, tabsKey]);
+  useEffect(() => {
+    const list = wrapper.current?.querySelector<HTMLElement>('[role=tablist]');
+    if (!list || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => revealActiveTab(list));
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [wrapper, tabsKey]);
 }
 
 /** 竖向滚轮在 tab 栏上横向滚动(VSCode 同款;触控板横向手势照常)。 */
@@ -239,12 +270,7 @@ export const EditorHeader = memo(function EditorHeader({
   const descriptions = useMemo(() => tabLabelDescriptions(tabsChrome.map((c) => c.filePath)), [tabsChrome]);
   const tabsWrapperRef = useRef<HTMLDivElement>(null);
   const fades = useTabOverflowFades(tabsWrapperRef, tabsChrome);
-  // 激活 tab 变化(切换 / 新开 / 关闭后落到别的 tab)时滚入可见区:tab 栏溢出时当前 tab 总可见。
-  useEffect(() => {
-    tabsWrapperRef.current
-      ?.querySelector('[role=tab][aria-selected="true"]')
-      ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-  }, [activeTabId, tabsChrome]);
+  useRevealActiveTab(tabsWrapperRef, activeTabId, tabsChrome);
 
   if (tabsChrome.length === 0) return null;
 
