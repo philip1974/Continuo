@@ -6,10 +6,10 @@
 // 即以自身身份执行它。故 resources 不在稳定位置时,把脚本复制到 `<userData>/bin/`(0700)并只对外给该副本路径;
 // 复制失败 fail-closed(不提供命令),绝不回退到临时挂载路径。macOS / Windows / 稳定安装的 Linux 行为不变。
 
-import { chmod, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
-import crypto from 'node:crypto';
+import { chmod, lstat, mkdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { atomicWriteText } from '../lib/atomic-write';
 import { isSameOrInsidePath } from '../lib/path-inside';
 
 export const STDIO_CLI_FILE_NAME = 'continuo-mcp-stdio.mjs';
@@ -61,21 +61,9 @@ export async function ensureStableStdioCli(sourcePath: string, userDataDir: stri
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
 
-  const tmp = path.join(binDir, `.${STDIO_CLI_FILE_NAME}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
-  const fh = await open(tmp, 'wx', 0o700);
-  try {
-    try {
-      await fh.writeFile(content);
-      await fh.sync();
-    } finally {
-      await fh.close();
-    }
-    await chmod(tmp, 0o700); // umask 可能去掉执行位;非 win 命令直接 exec 该文件(shebang)
-    await rename(tmp, target); // rename 替换路径本身(若是链接则替换链接,不写穿)
-  } catch (err) {
-    await unlink(tmp).catch(() => undefined);
-    throw err;
-  }
+  // mode 0700 显式 chmod(umask 可能去掉执行位;非 win 命令直接 exec 该文件,shebang);rename 替换路径本身
+  // (若是链接则替换链接,不写穿)。
+  await atomicWriteText(target, content, { mode: 0o700 });
   return target;
 }
 

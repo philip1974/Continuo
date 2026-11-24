@@ -5,12 +5,16 @@
 // 修复:非稳定位置时把脚本复制到 `<userData>/bin/`(0700 目录,0700 文件),命令只指向该稳定副本;复制失败
 // fail-closed(不提供命令),绝不回退到临时挂载路径。
 import { chmod, mkdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ensureStableStdioCli, isUnstableResourcesPath, resolveStdioCliPathForConfig } from '../services/mcp-stdio-cli-install';
 import { setupTempDirs } from './_helpers/temp-dirs';
 
 const tempDirs = setupTempDirs();
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 function tempDir(): Promise<string> {
   return tempDirs.make('continuo-stdio-cli-');
 }
@@ -97,6 +101,30 @@ describe.skipIf(process.platform === 'win32')('ensureStableStdioCli', () => {
     await chmod(target, 0o777);
     await ensureStableStdioCli(f.source, f.userData);
     expect(await modeOf(target)).toBe(0o700);
+  });
+
+  it('umask 去掉执行位时仍落成 0700(可执行)', async () => {
+    const f = await fixture();
+    const prev = process.umask(0o177);
+    try {
+      expect(await modeOf(await ensureStableStdioCli(f.source, f.userData))).toBe(0o700);
+    } finally {
+      process.umask(prev);
+    }
+  });
+
+  it('临时文件名撞到已有文件 → 换名重试成功,不截断 / 删除撞名文件', async () => {
+    const f = await fixture('payload');
+    const bin = join(f.userData, 'bin');
+    await mkdir(bin, { mode: 0o700 });
+    const colliding = join(bin, `.continuo-mcp-stdio.mjs.${process.pid}.deadbeef.tmp`);
+    await writeFile(colliding, 'PRE-EXISTING');
+    vi.spyOn(crypto, 'randomBytes')
+      .mockReturnValueOnce(Buffer.from('deadbeef', 'hex') as never)
+      .mockReturnValueOnce(Buffer.from('cafebabe', 'hex') as never);
+    const target = await ensureStableStdioCli(f.source, f.userData);
+    expect(await readFile(target, 'utf-8')).toBe('payload');
+    expect(await readFile(colliding, 'utf-8')).toBe('PRE-EXISTING');
   });
 
   it('目标是指向他处的 symlink → 替换成普通文件,不写穿链接目标', async () => {

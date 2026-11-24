@@ -18,13 +18,19 @@ export async function atomicWriteJson(
   await atomicWriteText(filePath, JSON.stringify(payload, null, 2));
 }
 
+export interface AtomicWriteOptions {
+  /** 目标文件的最终权限(创建后再 chmod,不受 umask 削减);缺省 0600(以 0600 创建,受 umask)。 */
+  readonly mode?: number;
+}
+
 /**
- * 原子写已序列化文本(语义同 atomicWriteJson,见上)。供调用方已持有序列化结果时复用,
- * 避免为落盘再 stringify 一次(perf:大 payload 的第二次全量遍历 + 第二份大字符串)。
+ * 原子写已序列化内容(文本按 UTF-8;二进制逐字节;语义同 atomicWriteJson,见上)。供调用方已持有序列化结果时
+ * 复用,避免为落盘再 stringify 一次(perf:大 payload 的第二次全量遍历 + 第二份大字符串)。
  */
 export async function atomicWriteText(
   filePath: string,
-  data: string,
+  data: string | Uint8Array,
+  options: AtomicWriteOptions = {},
 ): Promise<void> {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
@@ -45,7 +51,7 @@ export async function atomicWriteText(
       // 安全(多用户 Linux):本 helper 只写 userData 内部文件(explorer/settings/插件授权与数据/stdio
       // 发现文件),以 0600 创建 temp;rename 后目标即 0600(覆盖既有 0644 也随之收紧)。默认 0666&umask
       // 会让同机其他用户读到工作区路径、插件授权与插件数据。Windows 上 mode 仅影响只读位,无副作用。
-      fh = await fs.open(tempPath, 'wx', 0o600);
+      fh = await fs.open(tempPath, 'wx', options.mode ?? 0o600);
       break;
     } catch (err) {
       // EEXIST = 撞名(非本次创建,绝不截断/清理它)→ 换新随机名重试;其它错误直接抛。
@@ -59,6 +65,8 @@ export async function atomicWriteText(
   try {
     try {
       await fh.writeFile(data, 'utf-8');
+      // 显式 mode(如可执行脚本 0700)须原样落地:umask 可能去掉执行位。
+      if (options.mode !== undefined) await fh.chmod(options.mode);
       await fh.sync();
     } finally {
       await fh.close();
