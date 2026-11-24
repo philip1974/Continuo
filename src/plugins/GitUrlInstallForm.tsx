@@ -1,0 +1,74 @@
+// 「从 Git URL 安装」输入行的单一实现(设置 → 插件、插件商店两处共用;此前各写一份,R8 单飞 / E282 截断 /
+// A94-A95 aria-busy 与忙碌镜像等修复都在两处各补一次)。
+//
+// 只管输入、按钮与忙碌态;安装调用与结果消息(文案、live region、成功后的附加动作)留给调用方 ——
+// 两处的文案不同,设置页的消息区还被卸载 / 生命周期操作共用。
+
+import { useMemo, useState } from 'react';
+import { Button, Input } from '@/design';
+import { useSingleFlight } from '@/lib/use-single-flight';
+import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { clampGitUrl } from '../../electron/shared/plugins-channels';
+
+export interface GitUrlInstallFormProps {
+  /** 输入框可访问名(placeholder 是 URL 示例而非标签)。 */
+  readonly ariaLabel: string;
+  readonly placeholder: string;
+  readonly installLabel: string;
+  readonly installingLabel: string;
+  /** 用已 trim 的 URL 执行安装;返回 true 时清空输入(安装成功)。 */
+  readonly install: (url: string) => Promise<boolean>;
+}
+
+export function GitUrlInstallForm({
+  ariaLabel,
+  placeholder,
+  installLabel,
+  installingLabel,
+  install,
+}: GitUrlInstallFormProps) {
+  const [url, setUrl] = useState('');
+  const trimmedUrl = useMemo(() => url.trim(), [url]);
+  // race(R8):同步单飞闸门 —— disabled={busy} 是 render 后状态,同一 tick 内双击 / Enter 会两次进入
+  // onInstall,启动两次 installFromGit(主进程双 clone,第二个常 EEXIST 把成功覆盖成失败)。
+  const { busy, run } = useSingleFlight();
+
+  const onInstall = (): Promise<void> | void => {
+    if (!trimmedUrl) return;
+    return run(async () => {
+      if (await install(trimmedUrl)) setUrl('');
+    });
+  };
+
+  return (
+    <>
+      <div className="mt-3 flex items-center gap-2">
+        <Input
+          size="sm"
+          aria-label={ariaLabel}
+          placeholder={placeholder}
+          value={url}
+          // 边界(E282):截断超长 git URL(防 paste 撑 React state + IPC structured-clone 放大,main schema 才拒)。
+          onChange={(e) => setUrl(clampGitUrl(e.target.value))}
+          disabled={busy}
+          className="flex-1"
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={onInstall}
+          disabled={busy || !trimmedUrl}
+          // a11y(A94/A95):安装中标 aria-busy。
+          aria-busy={busy}
+        >
+          {busy ? installingLabel : installLabel}
+        </Button>
+      </div>
+      {/* a11y(A94/A95,A51 同族):安装 loading 瞬时态,焦点在按钮时文字变化不一定被播报 → 视觉隐藏
+          role=status 镜像「安装中」(仅 busy 时输出;结果由调用方的消息 live region 播报)。 */}
+      <span style={SR_ONLY_STYLE} role="status">
+        {busy ? installingLabel : ''}
+      </span>
+    </>
+  );
+}

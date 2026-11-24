@@ -1,12 +1,10 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
 
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Input } from '@/design';
-import { clampGitUrl } from '../../../electron/shared/plugins-channels';
+import { useEffect, useState } from 'react';
+import { Button } from '@/design';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
-import { useSingleFlight } from '@/lib/use-single-flight';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';
@@ -18,8 +16,8 @@ import type { PluginListItem } from '../PluginManager';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
 import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
-import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { errorMessage } from '../../../electron/shared/error-message';
+import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -226,12 +224,6 @@ function UserPluginsSection() {
   const t = useT();
   const plugins = useUserPluginList();
   const mgr = getUserPluginManager();
-  const [gitUrl, setGitUrl] = useState('');
-  const trimmedGitUrl = useMemo(() => gitUrl.trim(), [gitUrl]);
-  // race(R8):同步单飞闸门(useSingleFlight)。disabled={installing} 是 render 后状态,异步滞后 —— 同一
-  // 事件循环内双击/Enter 会在其生效前两次进 onInstall,启动两次 installFromGit(主进程 install lock 要等
-  // clone+manifest 解析才按 pluginId 串行,期间已双 clone,第二个常 EEXIST 把成功覆盖成失败)。
-  const { busy: installing, run: runInstall } = useSingleFlight();
   // a11y(A42):结果消息带严重度 → 渲染时按语义选 live region(成功 status/polite,失败 alert)。
   const [installMsg, setInstallMsg] = useState<{
     text: string;
@@ -301,44 +293,42 @@ function UserPluginsSection() {
     }
   };
 
-  const onInstall = (): Promise<void> | void => {
-    if (!trimmedGitUrl) return;
-    return runInstall(async () => {
-      setInstallMsg(null);
-      try {
-        const r = await coApi.plugins.installFromGit(trimmedGitUrl);
-        if (!r.ok) {
-          // i18n(复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
-          // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
-          // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
-          // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
-          const localized = localizeErrorByCode(r.code, r.message);
-          setInstallMsg({
-            text: t('plugins_tab.error.generic', {
-              message: `[${r.code}] ${localized}`,
-            }),
-            isError: true,
-          });
-        } else {
-          setInstallMsg({
-            text: t('plugins_tab.install.success', {
-              name: r.data.name,
-              version: r.data.version,
-            }),
-            isError: false,
-          });
-          setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
-          setGitUrl('');
-        }
-      } catch (err) {
+  const install = async (url: string): Promise<boolean> => {
+    setInstallMsg(null);
+    try {
+      const r = await coApi.plugins.installFromGit(url);
+      if (!r.ok) {
+        // i18n(复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
+        // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
+        // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
+        // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
+        const localized = localizeErrorByCode(r.code, r.message);
         setInstallMsg({
           text: t('plugins_tab.error.generic', {
-            message: errorMessage(err),
+            message: `[${r.code}] ${localized}`,
           }),
           isError: true,
         });
+        return false;
       }
-    });
+      setInstallMsg({
+        text: t('plugins_tab.install.success', {
+          name: r.data.name,
+          version: r.data.version,
+        }),
+        isError: false,
+      });
+      setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
+      return true;
+    } catch (err) {
+      setInstallMsg({
+        text: t('plugins_tab.error.generic', {
+          message: errorMessage(err),
+        }),
+        isError: true,
+      });
+      return false;
+    }
   };
 
   // a11y(A47,A46 同族):生命周期操作(reload/disable/enable/retry)失败此前只 console.warn,
@@ -363,35 +353,15 @@ function UserPluginsSection() {
           {t('plugins_tab.section.install_from_git')}
         </div>
         <div className="mt-1 text-xs text-fg-muted">{t('plugins_tab.section.install_warning')}</div>
-        <div className="mt-3 flex items-center gap-2">
-          <Input
-            size="sm"
-            // a11y(A5 同族):placeholder 是 URL 示例(格式提示)非标签 → 用 section 标题作
-            // aria-label,给屏幕阅读器「从 Git URL 安装」的可访问名。
-            aria-label={t('plugins_tab.section.install_from_git')}
-            placeholder="https://github.com/user/plugin.git"
-            value={gitUrl}
-            // 边界(E282):截断超长 git URL(防 paste 撑 React state + IPC structured-clone 放大)。
-            onChange={(e) => setGitUrl(clampGitUrl(e.target.value))}
-            disabled={installing}
-            className="flex-1"
-          />
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={onInstall}
-            disabled={installing || !trimmedGitUrl}
-            // a11y(A95,A94 同族):安装中标 aria-busy(Marketplace loading 修复的兄弟入口)。
-            aria-busy={installing}
-          >
-            {installing ? t('plugins_tab.install.installing') : t('plugins_tab.install.install')}
-          </Button>
-        </div>
-        {/* a11y(A95,A51 同族):安装 loading 瞬时态 → 视觉隐藏 role=status 镜像「安装中」
-            (仅 installing 时输出;成功/失败结果由下方 installMsg live region 播报)。 */}
-        <span style={SR_ONLY_STYLE} role="status">
-          {installing ? t('plugins_tab.install.installing') : ''}
-        </span>
+        <GitUrlInstallForm
+          // a11y(A5 同族):placeholder 是 URL 示例(格式提示)非标签 → 用 section 标题作
+          // aria-label,给屏幕阅读器「从 Git URL 安装」的可访问名。
+          ariaLabel={t('plugins_tab.section.install_from_git')}
+          placeholder="https://github.com/user/plugin.git"
+          installLabel={t('plugins_tab.install.install')}
+          installingLabel={t('plugins_tab.install.installing')}
+          install={install}
+        />
         {installMsg && (
           // a11y(A42,A41 同族):异步安装/卸载结果须 live region 主动播报(焦点仍在按钮/对话框)。
           // 失败用 role=alert(assertive),成功用 role=status(polite)。

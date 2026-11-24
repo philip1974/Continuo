@@ -7,14 +7,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
 import { coApi } from '@/lib/co-api';
-import { useSingleFlight } from '@/lib/use-single-flight';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager } from '@/plugins/PluginManager';
 import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { clampSearchQuery } from '@/lib/search-query';
-import { clampGitUrl } from '../../electron/shared/plugins-channels';
 import { useUpdateStore, type AvailableUpdate } from './update-store';
 import { reconcileAfterUpdate } from './reconcile-after-update';
 import { pruneLandedPending } from './prune-landed-pending';
@@ -25,6 +23,7 @@ import { useT, t as translate } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useUserPluginList } from '@/plugins/use-user-plugin-list';
+import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -468,47 +467,40 @@ export function MarketplaceTab() {
 // 装好后插件磁盘已就位,需重启 Continuo 后 PluginManager 才扫到。
 function GitUrlInstallSection() {
   const t = useT();
-  const [url, setUrl] = useState('');
-  const trimmedUrl = useMemo(() => url.trim(), [url]);
-  // race(R8):同步单飞闸门(useSingleFlight)—— disabled={busy} render 滞后,同 tick 双击/Enter 会双
-  // installFromGit。
-  const { busy, run: runInstall } = useSingleFlight();
   // a11y(A43,A42 同族):结果消息带严重度 → 渲染时按语义选 live region(成功 status/失败 alert)。
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(
     null,
   );
 
-  const onInstall = (): Promise<void> | void => {
-    if (!trimmedUrl) return;
-    return runInstall(async () => {
-      setMsg(null);
-      try {
-        const r = await coApi.plugins.installFromGit(trimmedUrl);
-        if (!r.ok) {
-          // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
-          // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
-          setMsg({
-            text: translate('marketplace.install_failed_code', {
-              code: r.code,
-              message: localizeErrorByCode(r.code, r.message),
-            }),
-            isError: true,
-          });
-        } else {
-          setMsg({
-            text: translate('marketplace.install_success', {
-              name: r.data.name,
-              version: r.data.version,
-            }),
-            isError: false,
-          });
-          setUrl('');
-        }
-      } catch (err) {
-        // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
-        setMsg({ text: errorMessage(err), isError: true });
+  const install = async (url: string): Promise<boolean> => {
+    setMsg(null);
+    try {
+      const r = await coApi.plugins.installFromGit(url);
+      if (!r.ok) {
+        // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
+        // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
+        setMsg({
+          text: translate('marketplace.install_failed_code', {
+            code: r.code,
+            message: localizeErrorByCode(r.code, r.message),
+          }),
+          isError: true,
+        });
+        return false;
       }
-    });
+      setMsg({
+        text: translate('marketplace.install_success', {
+          name: r.data.name,
+          version: r.data.version,
+        }),
+        isError: false,
+      });
+      return true;
+    } catch (err) {
+      // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
+      setMsg({ text: errorMessage(err), isError: true });
+      return false;
+    }
   };
 
   return (
@@ -519,36 +511,14 @@ function GitUrlInstallSection() {
       <p className="mt-1 text-xs text-fg-muted">
         {t('marketplace.git_url_section_hint')}
       </p>
-      <div className="mt-3 flex items-center gap-2">
-        <Input
-          size="sm"
-          // a11y(A5 同族):placeholder 是 URL 示例非标签 → 用 section 标题作 aria-label。
-          aria-label={t('marketplace.git_url_section_title')}
-          placeholder="https://github.com/user/extension-repo.git"
-          value={url}
-          // 边界(E282):截断超长 git URL(防 paste 撑 React state + IPC structured-clone 放大,main schema 才拒)。
-          onChange={(e) => setUrl(clampGitUrl(e.target.value))}
-          disabled={busy}
-          className="flex-1"
-        />
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onInstall}
-          disabled={busy || !trimmedUrl}
-          // a11y(A94,A93 同族):安装中标 aria-busy(忙碌语义)。
-          aria-busy={busy}
-        >
-          {busy
-            ? t('marketplace.installing')
-            : t('marketplace.install_extension')}
-        </Button>
-      </div>
-      {/* a11y(A94,A51 同族):安装 loading 瞬时态,焦点在按钮时文字变化不一定被播报 →
-          视觉隐藏 role=status 镜像「安装中」(仅 busy 时输出)。 */}
-      <span style={SR_ONLY_STYLE} role="status">
-        {busy ? t('marketplace.installing') : ''}
-      </span>
+      <GitUrlInstallForm
+        // a11y(A5 同族):placeholder 是 URL 示例非标签 → 用 section 标题作 aria-label。
+        ariaLabel={t('marketplace.git_url_section_title')}
+        placeholder="https://github.com/user/extension-repo.git"
+        installLabel={t('marketplace.install_extension')}
+        installingLabel={t('marketplace.installing')}
+        install={install}
+      />
       {msg && (
         // a11y(A43,A42 同族):异步安装结果须 live region 主动播报(失败 alert/成功 status)。
         <div

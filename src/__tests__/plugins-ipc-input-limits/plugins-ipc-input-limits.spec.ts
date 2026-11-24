@@ -80,16 +80,20 @@ describe('plugins IPC input limits (E16)', () => {
       ).toBe(false);
     });
 
-    // 家族接线守卫:两个 Git URL 输入 onChange 都经 clampGitUrl(防某入口漏接/回归)。
+    // 家族接线守卫:Git URL 输入只有 GitUrlInstallForm 一份实现,其 onChange 经 clampGitUrl;两个入口
+    // (插件商店 / 设置 → 插件)都用它、不再自带 Input(防某入口另写一份漏接截断)。
+    const readRel = (rel: string) =>
+      readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), rel), 'utf-8');
+    it('GitUrlInstallForm 调用 clampGitUrl', () => {
+      expect(readRel('../../../src/plugins/GitUrlInstallForm.tsx')).toContain('clampGitUrl(');
+    });
     it.each([
       '../../../src/marketplace/MarketplaceTab.tsx',
       '../../../src/plugins/settings/PluginsTabContent.tsx',
-    ])('%s 调用 clampGitUrl', (rel) => {
-      const src = readFileSync(
-        path.join(path.dirname(fileURLToPath(import.meta.url)), rel),
-        'utf-8',
-      );
-      expect(src).toContain('clampGitUrl(');
+    ])('%s 经 GitUrlInstallForm 渲染 Git URL 输入', (rel) => {
+      const src = readRel(rel);
+      expect(src).toContain('<GitUrlInstallForm');
+      expect(src).not.toContain('clampGitUrl(');
     });
   });
 
