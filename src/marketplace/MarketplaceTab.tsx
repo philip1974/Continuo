@@ -6,7 +6,6 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@/design';
-import { coApi } from '@/lib/co-api';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager } from '@/plugins/PluginManager';
 import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './types';
@@ -26,6 +25,7 @@ import { useUserPluginList } from '@/plugins/use-user-plugin-list';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { MARKETPLACE_REPO_SLUG } from '../../electron/shared/marketplace-channels';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
+import { installFromGitLocalized } from '@/plugins/install-from-git';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -184,37 +184,23 @@ export function MarketplaceTab() {
       installBusyRef.current = true;
       setInstall((prev) => ({ ...prev, busy: entry.id }));
       const isUpdate = mode === 'update';
-      let msg: string;
-      let success = false;
-      try {
-        // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦卸载成功但重装失败
-        // (网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。overwrite 在 main 端做 staging+rename
-        // swap,失败保留旧版本;且保留 _enabled / _permissions,更新后无需重新授权。
-        // entryInstallOptions:clone entry.branch(与更新检查读的 manifest 同源)+ main 校验 manifest.id。
-        const r = await coApi.plugins.installFromGit(
-          entryToGitUrl(entry),
-          isUpdate,
-          entryInstallOptions(entry),
-        );
-        success = r.ok;
-        // i18n(复查 P1,I1 同族):installFromGit 各错误站点 Error.message 是硬编码中文,直接展示
-        // 会让 en/ko 看到中文。改用稳定 r.code 经 catalog(errors.<CODE>)翻译,未知 code 回退原
-        // message,再套本地化外壳。
-        msg = r.ok
-          ? translate(isUpdate ? 'marketplace.update_success' : 'marketplace.install_success', {
-              name: r.data.name,
-              version: r.data.version,
-            })
-          : translate(
-              isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code',
-              { code: r.code, message: localizeErrorByCode(r.code, r.message) },
-            );
-      } catch (err) {
-        // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message 字符串 —— 失败严重度由 isError+role=alert 表达。
-        msg = isUpdate
-          ? translate('marketplace.update_failed_msg', { message: errorMessage(err) })
-          : errorMessage(err);
-      }
+      // 更新 = 原子覆盖安装(overwrite=true)。不再「先卸载后重装」:旧实现一旦卸载成功但重装失败
+      // (网络/clone 错),插件就从磁盘消失且无回滚(审计 #2)。overwrite 在 main 端做 staging+rename
+      // swap,失败保留旧版本;且保留 _enabled / _permissions,更新后无需重新授权。
+      // entryInstallOptions:clone entry.branch(与更新检查读的 manifest 同源)+ main 校验 manifest.id。
+      // i18n(复查 P1,I1 同族):失败(含 reject)按稳定 code 经 catalog 翻译,再套本地化外壳。
+      // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message —— 失败严重度由 isError+role=alert 表达。
+      const r = await installFromGitLocalized(entryToGitUrl(entry), isUpdate, entryInstallOptions(entry));
+      const success = r.ok;
+      const msg = r.ok
+        ? translate(isUpdate ? 'marketplace.update_success' : 'marketplace.install_success', {
+            name: r.data.name,
+            version: r.data.version,
+          })
+        : translate(isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code', {
+            code: r.code,
+            message: r.message,
+          });
       installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
       setInstall((prev) => {
         const nextMsgs = new Map(prev.msgs);
@@ -474,33 +460,23 @@ function GitUrlInstallSection() {
 
   const install = async (url: string): Promise<boolean> => {
     setMsg(null);
-    try {
-      const r = await coApi.plugins.installFromGit(url);
-      if (!r.ok) {
-        // i18n(I1 同族,Git URL 安装段兄弟入口):同卡片安装,按 r.code 经 catalog 翻译,
-        // 未知 code 回退原 message,再套本地化外壳,避免 en/ko 看到 main 硬编码中文。
-        setMsg({
-          text: translate('marketplace.install_failed_code', {
-            code: r.code,
-            message: localizeErrorByCode(r.code, r.message),
-          }),
-          isError: true,
-        });
-        return false;
-      }
+    // 同卡片安装:失败(含 reject)按 code 本地化;不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
+    const r = await installFromGitLocalized(url);
+    if (!r.ok) {
       setMsg({
-        text: translate('marketplace.install_success', {
-          name: r.data.name,
-          version: r.data.version,
-        }),
-        isError: false,
+        text: translate('marketplace.install_failed_code', { code: r.code, message: r.message }),
+        isError: true,
       });
-      return true;
-    } catch (err) {
-      // a11y(A85,A84 同族):同上,不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
-      setMsg({ text: errorMessage(err), isError: true });
       return false;
     }
+    setMsg({
+      text: translate('marketplace.install_success', {
+        name: r.data.name,
+        version: r.data.version,
+      }),
+      isError: false,
+    });
+    return true;
   };
 
   return (

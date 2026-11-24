@@ -869,6 +869,25 @@ describe('PluginsTabContent — Git URL 安装', () => {
   });
 });
 
+describe('PluginsTabContent — 安装 reject 带 code', () => {
+  it('reject 的 Error 带 code → 按 code 本地化,不露 main 原文', async () => {
+    const installFromGit = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('main 原文 raw'), { code: 'FS_EEXIST' }));
+    installPluginsApi(installFromGit);
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/x/p.git' } });
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (b) => b.textContent === '安装',
+      )!,
+    );
+    await waitFor(() => expect(container.textContent).toContain('[FS_EEXIST]'));
+    expect(container.textContent).not.toContain('main 原文 raw');
+  });
+});
+
 describe('PluginsTabContent — 卸载流程', () => {
   it('点卸载 → 弹 ConfirmDialog', () => {
     installPluginsApi(vi.fn());

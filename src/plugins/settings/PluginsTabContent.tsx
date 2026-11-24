@@ -4,7 +4,6 @@
 import { useState } from 'react';
 import { Button } from '@/design';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
-import { coApi } from '@/lib/co-api';
 import { coApp } from '../co-app';
 import { useMultiRegistry } from '../registries/useRegistry';
 import { getUserPluginManager } from '../PluginManager';
@@ -16,10 +15,10 @@ import type { PluginListItem } from '../PluginManager';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
 import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
-import { errorMessage } from '../../../electron/shared/error-message';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
+import { installFromGitLocalized } from '@/plugins/install-from-git';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -290,40 +289,25 @@ function UserPluginsSection() {
 
   const install = async (url: string): Promise<boolean> => {
     setInstallMsg(null);
-    try {
-      const r = await coApi.plugins.installFromGit(url);
-      if (!r.ok) {
-        // i18n(复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文
-        // (不支持的 git URL / manifest 缺字段 / main 入口非法 / 删除失败…),经 safeHandle
-        // 原样传到 renderer。直接展示 r.message → en/ko 界面看到中文。改用稳定 r.code 经
-        // catalog 翻译(errors.<CODE> 三语言已齐);未纳入 catalog 的 code 才回退原 message。
-        const localized = localizeErrorByCode(r.code, r.message);
-        setInstallMsg({
-          text: t('plugins_tab.error.generic', {
-            message: `[${r.code}] ${localized}`,
-          }),
-          isError: true,
-        });
-        return false;
-      }
+    // i18n(复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文,经 installFromGitLocalized
+    // 按稳定 code 经 catalog 翻译(reject 分支同样处理)。
+    const r = await installFromGitLocalized(url);
+    if (!r.ok) {
       setInstallMsg({
-        text: t('plugins_tab.install.success', {
-          name: r.data.name,
-          version: r.data.version,
-        }),
-        isError: false,
-      });
-      setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
-      return true;
-    } catch (err) {
-      setInstallMsg({
-        text: t('plugins_tab.error.generic', {
-          message: errorMessage(err),
-        }),
+        text: t('plugins_tab.error.generic', { message: `[${r.code}] ${r.message}` }),
         isError: true,
       });
       return false;
     }
+    setInstallMsg({
+      text: t('plugins_tab.install.success', {
+        name: r.data.name,
+        version: r.data.version,
+      }),
+      isError: false,
+    });
+    setPendingInstalls((prev) => new Map(prev).set(r.data.id, r.data));
+    return true;
   };
 
   // a11y(A47,A46 同族):生命周期操作(reload/disable/enable/retry)失败此前只 console.warn,
