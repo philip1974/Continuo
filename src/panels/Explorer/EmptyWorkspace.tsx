@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { Button, IconButton } from '@/design';
+import { Button, IconButton, TruncateStart } from '@/design';
 import { forgetRecentRoot } from '@/lib/persist/explorer-persist';
 import { useRecentRootMissingPrompt } from './RecentRootMissingDialog';
 import { openRecentRootOrNotify } from './open-recent-root';
@@ -97,10 +97,12 @@ export function EmptyWorkspace() {
                       path: p,
                     })}
                   >
-                    <span className="flex items-baseline gap-2 min-w-0">
-                      <span className="truncate font-medium">{name}</span>
+                    {/* 名称优先(VSCode 最近列表同款):名称不收缩(上限 60%),父路径占剩余宽度并从前截断,
+                        保留靠近名称的末尾目录;完整路径在 title。 */}
+                    <span className="flex w-full min-w-0 items-baseline gap-2">
+                      <span className="max-w-[60%] shrink-0 truncate font-medium">{name}</span>
                       {parent && (
-                        <span className="truncate text-2xs text-fg-dim">{parent}</span>
+                        <TruncateStart text={parent} title={p} className="min-w-0 flex-1 text-2xs text-fg-dim" />
                       )}
                     </span>
                   </Button>

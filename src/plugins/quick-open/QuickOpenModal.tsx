@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
 import { pickerRowClassName, pickerRowSecondaryClassName } from '../picker/picker-row';
-import { Button, Input, Modal, Spinner } from '@/design';
+import { Button, Input, Modal, Spinner, TruncateStart } from '@/design';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
 import { fuzzyFilter } from '../command-palette/fuzzy';
@@ -250,12 +250,13 @@ function QuickOpenBody() {
                     className={pickerRowClassName(idx === selectedIndex)}
                     onClick={() => void openFile(f)}
                   >
-                    <span className="truncate font-medium">{f.name}</span>
-                    <span
-                      className={`ml-auto truncate text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}
-                    >
-                      {f.relPath}
-                    </span>
+                    {/* 文件名优先(VSCode Quick Open 同款):名称不收缩(上限 60%),相对路径占剩余宽度并从前截断,
+                        保留靠近文件的目录;完整路径在 title。 */}
+                    <span className="max-w-[60%] shrink-0 truncate font-medium">{f.name}</span>
+                    <TruncateStart
+                      text={f.relPath}
+                      className={`min-w-0 flex-1 text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}
+                    />
                   </li>
                 );
               })}

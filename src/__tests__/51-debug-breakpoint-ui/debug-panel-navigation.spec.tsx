@@ -99,7 +99,7 @@ describe('点栈帧 / 断点 → 打开源码并定位到行', () => {
   it('点断点 → editor.openFile(file, { line })', async () => {
     render(<DebugPanel />);
     fireEvent.click(screen.getByRole('tab', { name: 'Breakpoints' }));
-    fireEvent.click(screen.getByRole('button', { name: /\/repo\/b\.ts:3/ }));
+    fireEvent.click(screen.getByRole('button', { name: /b\.ts:3/ }));
     await waitFor(() => expect(h.openFile).toHaveBeenCalledWith('/repo/b.ts', { line: 3 }));
   });
 

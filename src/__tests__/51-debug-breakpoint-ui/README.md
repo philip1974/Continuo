@@ -8,7 +8,13 @@
 - Markdown/Milkdown tab 不显示 debug 装饰,避免编辑/预览模式混入 CodeMirror 断点 UI。
 - `continued`、`terminated`、session 消失、tab 关闭或关窗时必须清理旧 exec-line 与断点,防止陈旧装饰。
 - debuggee 自然结束(DAP `terminated` / `exited`,含所有 child 都结束)时 main 立即向 renderer 发 `terminated`(只发一次;停住时被 kill、adapter 未先发 `continued` 也同样清掉停点),renderer 移除该会话(面板消失、执行行与红点清掉),不必等 disconnect / 关窗 / 名额满回收。MCP 侧会话仍保留到 teardown(`debug_list_sessions` 显示 `terminated`);`subscribe` 快照不含已结束会话(重载前后一致),之后不再推它的 `breakpoints-changed`(不把已移除的会话重新建出来);teardown 时再发的 `terminated` 对 renderer 是幂等空操作。
-- Debug panel 使用 `@/design` 组件与 renderer i18n catalog,不写硬编码可见文案。
+- Debug panel 使用 `@/design` 组件与 renderer i18n catalog,不写硬编码可见文案。空态(无会话 / 无栈帧 / 无变量 / 无断点)用
+  design `EmptyState`(与 Output 面板同一空态);视图切换用 design `Tabs`(选中样式同设置页导航)。
+- 会话标题显示会话名(VSCode 调用栈 / 调试工具栏同):main 在 `breakpoints-changed` / `stopped` 事件与 `subscribe` 快照里带
+  `label`(launch 的 `name`,未给则被调试程序的文件名),`debug.store` 记为 `label`(之后不带 label 的事件不清掉;非字符串忽略);
+  缺省时回退内部 sessionId。
+- 源码位置(停点行、栈帧、断点)以「文件名:行号」为主,父目录弱化放其后并从前截断(design `TruncateStart`,保留靠近文件的
+  目录),完整「路径:行号」在 title;路径未知显示「未知:行号」。
 - `breakpoints-changed` 事件携带该 source(`file`)的完整断点集合(adapter 校正后的行号),`debug.store` 整组替换该文件的记录、其它文件保留:同文件多个断点同时显示,同一逻辑断点被重新校正到别的行时不留旧红点。
 - Debug 事件同步(`startDebugStoreSync`)在 renderer 启动入口(`main-app` 的 `init()`,首次渲染前)开始,不依赖 Debug 面板挂载;重复调用幂等(只订阅一次);Debug 面板自身不再调用。main 按 owner window 只把事件发给本窗口。
 - renderer 重载(Cmd+R)后恢复现有调试会话:`subscribe` 返回本窗口(按 owner window 过滤)会话的快照 —— 当前停点(stopSeq / reason;栈帧由 main 按当前停点的线程取)、按 source 的完整断点集合(每会话断点总数封顶 `DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX`,超限**最新优先**:文件按最后一次发事件先后排列,保留最近的;main 快照、renderer 事件累计 / 快照校验 / 快照与事件合并共用 `capGroupsNewestFirst`)。`debug.store` 据此初始化并拉取停点的栈帧 / 作用域,之后事件照常增量;快照送达前已收到事件的会话以事件为准(不改停点、只补缺的 source,补入的排在前,与 main 顺序一致),已结束的会话不复活。

@@ -25,4 +25,12 @@ describe('i18n I15 · Output 面板文案本地化', () => {
     expect(container.textContent).toBe('No output yet.');
     expect(container.textContent).not.toContain('dock layout restored');
   });
+
+  // 与 Debug 等相邻面板同一空态(design EmptyState,居中、正文字体),不再是左上角等宽字。
+  it('空状态用 design EmptyState', () => {
+    const { container } = render(<Output />);
+    const empty = container.querySelector<HTMLElement>('.wm-empty-state');
+    expect(empty?.textContent).toBe('No output yet.');
+    expect(container.querySelector('.font-mono')).toBeNull();
+  });
 });

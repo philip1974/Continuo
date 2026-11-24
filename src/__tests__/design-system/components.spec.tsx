@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   IconButton,
   KeyCap,
   MenuItem,
@@ -14,6 +15,7 @@ import {
   SegmentedControl,
   TabNav,
   TabNavItem,
+  TruncateStart,
 } from '../../design';
 
 afterEach(() => cleanup());
@@ -580,5 +582,39 @@ describe('TabNav + TabNavItem', () => {
         container.querySelector('.wm-tab-nav-item__select')!,
       ),
     ).not.toThrow();
+  });
+});
+
+// 路径等「尾部更重要」的文本:从前截断(省略号在左),完整文本进 title。CSS 侧(direction:rtl + 内层 ltr 隔离)
+// 见 style-contracts.spec.ts。
+describe('TruncateStart', () => {
+  it('外层 wm-truncate-start + title=完整文本;文本放在 dir=ltr 的内层(标点 / 双向文本不被 rtl 重排)', () => {
+    const { container } = render(<TruncateStart text="/Users/me/projects" className="text-fg-dim" />);
+    const outer = container.querySelector<HTMLElement>('.wm-truncate-start')!;
+    expect(outer.className).toBe('wm-truncate-start text-fg-dim');
+    expect(outer.title).toBe('/Users/me/projects');
+    const inner = outer.firstElementChild as HTMLElement;
+    expect(inner.getAttribute('dir')).toBe('ltr');
+    expect(inner.textContent).toBe('/Users/me/projects');
+  });
+
+  it('title 可覆盖(如传更完整的路径)', () => {
+    const { container } = render(<TruncateStart text="/a/b" title="/a/b/c" />);
+    expect(container.querySelector<HTMLElement>('.wm-truncate-start')!.title).toBe('/a/b/c');
+  });
+});
+
+// 面板内容为空时的统一占位(Debug / Output 等共用):居中、弱化正文色,无边框卡片。
+describe('EmptyState', () => {
+  it('渲染 wm-empty-state,内容为 children,透传其余属性与 className', () => {
+    const { container } = render(
+      <EmptyState className="p-3" data-testid="x">
+        Nothing here
+      </EmptyState>,
+    );
+    const el = container.querySelector<HTMLElement>('.wm-empty-state')!;
+    expect(el.textContent).toBe('Nothing here');
+    expect(el.className).toBe('wm-empty-state p-3');
+    expect(el.dataset.testid).toBe('x');
   });
 });

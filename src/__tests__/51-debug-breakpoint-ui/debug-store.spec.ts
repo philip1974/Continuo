@@ -74,6 +74,19 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     ]);
   });
 
+  // 面板会话标题用会话名(main 随 breakpoints-changed / stopped 事件与快照发 label),不显示内部 id。
+  it('事件的 label 记为会话名;后续不带 label 的事件不清掉它;非字符串 label 忽略', () => {
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    emit({ type: 'breakpoints-changed', sessionId: 's1', label: 'prog.js', file: '/a.ts', breakpoints: [] });
+    expect(useDebugStore.getState().sessions.get('s1')?.label).toBe('prog.js');
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'step' });
+    expect(useDebugStore.getState().sessions.get('s1')?.label).toBe('prog.js');
+    emit({ type: 'stopped', sessionId: 's2', label: 42, stopSeq: 1, reason: 'step' } as unknown as DebugViewEvent);
+    expect(useDebugStore.getState().sessions.get('s2')).toBeDefined();
+    expect(useDebugStore.getState().sessions.get('s2')).not.toHaveProperty('label');
+  });
+
   // 启动入口与 DebugPanel(StrictMode 双挂载)都会调用:重复调用不重复订阅。
   it('startDebugStoreSync 幂等:多次调用只订阅一次', () => {
     startDebugStoreSync();
@@ -280,6 +293,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       sessions: [
         {
           session_id: 's1',
+          label: 'app',
           state: 'stopped',
           owner_window_id: 1,
           stopped_reason: 'breakpoint',
@@ -314,7 +328,9 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       expect(s1?.stopped).toMatchObject({ reason: 'breakpoint', stopSeq: 3, file: '/repo/a.ts', line: 14 });
       expect(s1?.scopes).toEqual([{ name: 'Local', variables_reference: 44, expensive: false }]);
       expect(state.activeSessionId).toBe('s1');
+      expect(s1?.label).toBe('app');
       expect(state.sessions.get('s2')?.stopped).toBeUndefined();
+      expect(state.sessions.get('s2')).not.toHaveProperty('label');
       expect(debugApi.getStack).toHaveBeenCalledWith({ sessionId: 's1' });
 
       // 之后的事件照常增量。

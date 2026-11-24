@@ -1,19 +1,20 @@
+/* 竖向视图切换(面板内):选中样式与设置页左侧导航一致 —— 左侧 2px primary 竖条 + surface-container-high 底
+ *(设置页 border-accent bg-hover),未选中弱化色、悬停 state-hover。 */
 .wm-tabs {
   display: flex;
   flex-direction: column;
-  gap: var(--wm-space-2);
 }
 
 .wm-tab-button {
   display: block;
   width: 100%;
-  border: 1px solid transparent;
-  border-radius: var(--wm-radius-xl);
-  padding: var(--wm-space-2_5) var(--wm-space-3);
+  border: 0;
+  border-left: 2px solid transparent;
+  padding: var(--wm-space-2) var(--wm-space-3);
   text-align: left;
   cursor: pointer;
   font-family: var(--wm-font-sans);
-  font-size: var(--wm-text-base);
+  font-size: var(--wm-text-xs);
   font-weight: var(--wm-font-medium);
   background-color: transparent;
   color: var(--md-on-surface-variant);
@@ -25,13 +26,16 @@
 
 .wm-tab-button:hover {
   background-color: var(--md-state-hover);
-  border-color: var(--md-outline-variant);
   color: var(--md-on-surface);
 }
 
+.wm-tab-button:focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: -2px;
+}
+
 .wm-tab-button[data-active="true"] {
-  background-color: var(--md-secondary-container);
-  border-color: var(--md-secondary);
-  color: var(--md-on-secondary-container);
-  font-weight: var(--wm-font-semibold);
+  border-left-color: var(--md-primary);
+  background-color: var(--md-surface-container-high);
+  color: var(--md-on-surface);
 }

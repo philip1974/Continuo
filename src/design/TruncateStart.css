@@ -1,0 +1,14 @@
+/* 从前截断的单行文本(路径等):省略号在左,见 TruncateStart.tsx。 */
+.wm-truncate-start {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.wm-truncate-start > [dir="ltr"] {
+  unicode-bidi: isolate;
+}

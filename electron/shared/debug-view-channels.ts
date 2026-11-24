@@ -50,6 +50,8 @@ export type DebugViewEvent =
   | {
       readonly type: 'breakpoints-changed';
       readonly sessionId: string;
+      /** 面板显示的会话名(launch 的 name,无则程序文件名);renderer 缺省回退 sessionId。 */
+      readonly label?: string;
       /** 该 source 的完整断点集合(adapter 校正后的行号),renderer 用它整组替换 file 的记录。 */
       readonly file: string;
       readonly breakpoints: readonly DebugBreakpoint[];
@@ -57,6 +59,8 @@ export type DebugViewEvent =
   | {
       readonly type: 'stopped';
       readonly sessionId: string;
+      /** 同 breakpoints-changed 的 label。 */
+      readonly label?: string;
       readonly stopSeq: number;
       readonly reason: string;
     }
@@ -97,6 +101,8 @@ export function capGroupsNewestFirst<T>(groups: readonly (readonly T[])[], max: 
  */
 export interface DebugViewSessionSnapshot {
   readonly session_id: string;
+  /** 面板显示的会话名(同事件的 label)。 */
+  readonly label?: string;
   /** 当前停点(会话停住时才有)。 */
   readonly stop?: {
     readonly stopSeq: number;

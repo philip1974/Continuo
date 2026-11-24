@@ -1,0 +1,14 @@
+/* 面板 / 区块空态:占满可用空间并居中,弱化正文色,无边框卡片(Debug / Output 等共用)。 */
+.wm-empty-state {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 6rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wm-space-2);
+  padding: var(--wm-space-4);
+  text-align: center;
+  font-size: var(--wm-text-xs);
+  color: var(--md-on-surface-variant);
+}

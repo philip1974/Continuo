@@ -6,7 +6,16 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Badge, Button, Card, ScrollArea, Tabs, type TabItem } from '@/design';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ScrollArea,
+  Tabs,
+  TruncateStart,
+  type TabItem,
+} from '@/design';
 import {
   selectDisplayedSession,
   useDebugStore,
@@ -16,7 +25,7 @@ import {
 } from '@/stores/debug.store';
 import { useLocale, useT } from '@/i18n';
 import { coApp } from '@/plugins/co-app';
-import { basename, isAbsolutePath } from '@/lib/path-cross';
+import { basename, dirname, isAbsolutePath } from '@/lib/path-cross';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 
 const EMPTY_VARIABLES: readonly [] = [];
@@ -41,10 +50,8 @@ export function DebugPanel() {
 
   if (!session) {
     return (
-      <div className="flex h-full w-full bg-canvas p-3 text-fg">
-        <Card className="flex flex-1 items-center justify-center text-xs text-fg-muted">
-          {t('panels.debug.empty_session')}
-        </Card>
+      <div className="flex h-full w-full bg-canvas text-fg">
+        <EmptyState>{t('panels.debug.empty_session')}</EmptyState>
       </div>
     );
   }
@@ -73,17 +80,22 @@ export function DebugPanel() {
 
 function DebugSessionHeader({ session }: { readonly session: DebugSessionShadow }) {
   const t = useT();
+  const stopped = session.stopped;
   // 运行中不显示位置行(徽章已标「运行中」);已停下但栈帧未到 → 「已暂停」。
-  const location = !session.stopped
-    ? null
-    : session.stopped.file !== undefined && session.stopped.line !== undefined
-      ? `${session.stopped.file}:${session.stopped.line}`
-      : t('panels.debug.paused');
+  const location = !stopped ? null : stopped.file !== undefined && stopped.line !== undefined ? (
+    <SourceLocation path={stopped.file} line={stopped.line} />
+  ) : (
+    <div className="truncate text-xs text-fg-muted">{t('panels.debug.paused')}</div>
+  );
+  // 会话名(VSCode 调用栈 / 调试工具栏同样显示会话名):程序名或 launch name,main 没给时回退内部 id。
+  const title = session.label ?? session.id;
   return (
     <Card className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-fg">{session.id}</div>
-        {location !== null && <div className="truncate text-xs text-fg-muted">{location}</div>}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-fg" title={title}>
+          {title}
+        </div>
+        {location}
       </div>
       <Badge variant={session.stopped ? 'warning-soft' : 'neutral'}>
         {session.stopped?.reason ?? t('panels.debug.running')}
@@ -97,7 +109,36 @@ function openSource(path: string, line: number): void {
   void openFileOrNotify(() => coApp.editor.openFile(path, { line }), basename(path));
 }
 
-/** 栈帧 / 断点行:整行是一个按钮(点击跳源码),右侧徽章在按钮外。 */
+/**
+ * 源码位置一行(VSCode 调用栈同款):「文件名:行号」为主,父目录弱化放其后并从前截断(保留靠近文件的目录);
+ * 完整「路径:行号」在 title。路径未知 → 「未知:行号」。
+ */
+function SourceLocation({
+  path,
+  line,
+  emphasized = false,
+}: {
+  readonly path: string | undefined;
+  readonly line: number;
+  readonly emphasized?: boolean;
+}) {
+  const t = useT();
+  const name = path === undefined ? t('panels.debug.unknown') : basename(path) || path;
+  const parent = path === undefined || name === path ? '' : dirname(path);
+  const full = path === undefined ? undefined : `${path}:${line}`;
+  return (
+    <span className="flex w-full min-w-0 items-baseline gap-1.5" title={full}>
+      <span
+        className={`max-w-[70%] shrink-0 truncate ${emphasized ? 'text-sm font-medium text-fg' : 'text-xs text-fg-muted'}`}
+      >
+        {`${name}:${line}`}
+      </span>
+      {parent !== '' && <TruncateStart text={parent} title={full} className="min-w-0 flex-1 text-2xs text-fg-dim" />}
+    </span>
+  );
+}
+
+/** 栈帧 / 断点行:整行是一个按钮(点击跳源码),右侧徽章在按钮外。title 省略时位置行即标题(断点)。 */
 function SourceRow({
   title,
   detail,
@@ -105,7 +146,7 @@ function SourceRow({
   line,
   badge,
 }: {
-  readonly title: string;
+  readonly title?: string;
   readonly detail?: string;
   readonly path: string | undefined;
   readonly line: number;
@@ -123,7 +164,8 @@ function SourceRow({
         onClick={openable ? () => openSource(path, line) : undefined}
         title={path === undefined ? undefined : `${path}:${line}`}
       >
-        <span className="w-full truncate text-sm font-medium text-fg">{title}</span>
+        {title !== undefined && <span className="w-full truncate text-sm font-medium text-fg">{title}</span>}
+        <SourceLocation path={path} line={line} emphasized={title === undefined} />
         {detail !== undefined && <span className="w-full truncate text-xs text-fg-muted">{detail}</span>}
       </Button>
       {badge}
@@ -134,7 +176,7 @@ function SourceRow({
 function StackSection({ session }: { readonly session: DebugSessionShadow }) {
   const t = useT();
   if (session.frames.length === 0) {
-    return <EmptyCard label={t('panels.debug.empty_stack')} />;
+    return <EmptyState>{t('panels.debug.empty_stack')}</EmptyState>;
   }
   return (
     <div className="flex flex-col gap-2">
@@ -142,7 +184,6 @@ function StackSection({ session }: { readonly session: DebugSessionShadow }) {
         <SourceRow
           key={frame.id}
           title={frame.name}
-          detail={`${frame.source_path ?? t('panels.debug.unknown')}:${frame.line}`}
           path={frame.source_path}
           line={frame.line}
           badge={<Badge variant="info">#{frame.id}</Badge>}
@@ -155,7 +196,7 @@ function StackSection({ session }: { readonly session: DebugSessionShadow }) {
 function VariablesSection({ session }: { readonly session: DebugSessionShadow }) {
   const t = useT();
   if (session.scopes.length === 0) {
-    return <EmptyCard label={t('panels.debug.empty_variables')} />;
+    return <EmptyState>{t('panels.debug.empty_variables')}</EmptyState>;
   }
   // 每一停重挂(variables_reference 跨停复用,展开状态与自动加载都只属于这一停)。
   const stopSeq = session.stopped?.stopSeq ?? 0;
@@ -410,14 +451,13 @@ function BreakpointsSection({ session }: { readonly session: DebugSessionShadow 
   const t = useT();
   const rows = session.breakpoints;
   if (rows.length === 0) {
-    return <EmptyCard label={t('panels.debug.empty_breakpoints')} />;
+    return <EmptyState>{t('panels.debug.empty_breakpoints')}</EmptyState>;
   }
   return (
     <div className="flex flex-col gap-2">
       {rows.map((breakpoint) => (
         <SourceRow
           key={`${breakpoint.file}:${breakpoint.line}`}
-          title={`${breakpoint.file}:${breakpoint.line}`}
           {...(breakpoint.message ? { detail: breakpoint.message } : {})}
           path={breakpoint.file}
           line={breakpoint.line}
@@ -431,13 +471,5 @@ function BreakpointsSection({ session }: { readonly session: DebugSessionShadow 
         />
       ))}
     </div>
-  );
-}
-
-function EmptyCard({ label }: { readonly label: string }) {
-  return (
-    <Card className="flex min-h-24 items-center justify-center text-xs text-fg-muted">
-      {label}
-    </Card>
   );
 }

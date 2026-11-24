@@ -1,3 +1,4 @@
+import { EmptyState } from '@/design';
 import { useT } from '@/i18n';
 
 /**
@@ -7,6 +8,9 @@ import { useT } from '@/i18n';
 export function Output() {
   const t = useT();
   return (
-    <div className="h-full w-full overflow-auto p-3 font-mono text-xs text-fg-dim">{t('panels.output.empty')}</div>
+    // 空态与 Debug 等相邻面板一致(design EmptyState);将来有写入方时日志区再用等宽字。
+    <div className="flex h-full w-full overflow-auto">
+      <EmptyState>{t('panels.output.empty')}</EmptyState>
+    </div>
   );
 }

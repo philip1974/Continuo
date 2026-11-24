@@ -1594,15 +1594,18 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
       'continued',
       'terminated',
     ]);
+    // label:面板显示的会话名 —— launch 未给 name 时用被调试程序的文件名(会建出 renderer 会话的两类事件都带)。
     expect(events[0]!.event).toMatchObject({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/fixture.ts',
       breakpoints: [{ file: '/fixture.ts', line: 14, verified: true }],
     });
     expect(events[1]!.event).toMatchObject({
       type: 'stopped',
       sessionId,
+      label: 'fixture.js',
       stopSeq: 1,
       reason: 'breakpoint',
     });
@@ -1706,6 +1709,8 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(service.viewSnapshot(21)).toEqual([
       {
         session_id: sessionId,
+        // launch 给了 name → 面板会话名用它
+        label: 'app',
         stop: { stopSeq: 1, reason: 'breakpoint' },
         breakpointsBySource: [
           {
@@ -1723,6 +1728,7 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(service.viewSnapshot(22)).toEqual([
       expect.objectContaining({
         session_id: otherId,
+        label: 'fixture.js',
         breakpointsBySource: [{ file: '/c.js', breakpoints: [{ file: '/c.js', line: 1, verified: true }] }],
       }),
     ]);
@@ -2594,6 +2600,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [
         { file: '/a.js', line: 4, verified: true },
@@ -2864,6 +2871,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 5, verified: true }],
     });
@@ -2886,6 +2894,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 5, verified: true }],
     });
@@ -2992,6 +3001,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     const changed = {
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 4, verified: true }],
     };
@@ -3032,6 +3042,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [
         { file: '/a.js', line: 3, verified: true },
@@ -3065,6 +3076,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 3, verified: true }],
     });
@@ -3076,6 +3088,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [
         { file: '/a.js', line: 4, verified: true },
@@ -3125,6 +3138,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 3, verified: false, message: 'pending' }],
     });
@@ -3164,6 +3178,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.filter((e) => e.type === 'breakpoints-changed').at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [
         { file: '/a.js', line: 3, verified: true },
@@ -3474,6 +3489,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(events.at(-1)).toEqual({
       type: 'breakpoints-changed',
       sessionId,
+      label: 'fixture.js',
       file: '/a.js',
       breakpoints: [{ file: '/a.js', line: 4, verified: true }],
     });

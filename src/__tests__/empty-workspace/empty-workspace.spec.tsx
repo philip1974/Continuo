@@ -151,6 +151,26 @@ describe('EmptyWorkspace', () => {
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/stale/dir']);
   });
 
+  // 窄侧栏下名称不被长父路径挤成「w…」:名称不收缩(上限 60%),父路径占剩余宽度并从前截断(保留末尾目录),完整路径 title。
+  it('名称优先:名称不收缩(max 60%),父路径从前截断且 title 为完整路径', () => {
+    installFs(vi.fn());
+    useWorkspaceStore.setState({
+      root: null,
+      recentRoots: ['/private/tmp/very/long/parent/path/workspace'],
+    });
+    const { container } = render(<EmptyWorkspace />);
+    const item = container.querySelector<HTMLButtonElement>('li button')!;
+    const name = Array.from(item.querySelectorAll('span')).find((el) => el.textContent === 'workspace')!;
+    expect(name.className).toMatch(/\bshrink-0\b/);
+    expect(name.className).toMatch(/max-w-\[60%\]/);
+    expect(name.className).toMatch(/\btruncate\b/);
+    const parent = item.querySelector<HTMLElement>('.wm-truncate-start')!;
+    expect(parent.textContent).toBe('/private/tmp/very/long/parent/path');
+    expect(parent.className).toMatch(/\bflex-1\b/);
+    expect(parent.className).toMatch(/\bmin-w-0\b/);
+    expect(parent.title).toBe('/private/tmp/very/long/parent/path/workspace');
+  });
+
   // a11y(A80,A78 同族):空 workspace 最近目录按钮可见 basename 可截断/同名 → aria-label 含完整路径。
   it('a11y · 同 basename 的 recent 按钮 aria-label 含完整路径可区分', () => {
     installFs(vi.fn());

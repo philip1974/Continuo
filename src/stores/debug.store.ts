@@ -29,6 +29,8 @@ export interface DebugStoppedLocation {
 
 export interface DebugSessionShadow {
   readonly id: string;
+  /** 面板显示的会话名(main 随事件 / 快照发来:launch 的 name,无则程序文件名);缺省时面板回退 id。 */
+  readonly label?: string;
   readonly breakpoints: readonly DebugBreakpoint[];
   readonly frames: readonly DebugStackFrame[];
   readonly scopes: readonly DebugScope[];
@@ -146,12 +148,14 @@ function asDebugViewEvent(value: unknown): DebugViewEvent | null {
   const raw = asRecord(value);
   if (typeof raw.sessionId !== 'string') return null;
   const sessionId = raw.sessionId;
+  const label = asLabel(raw.label);
   switch (raw.type) {
     case 'breakpoints-changed':
       if (typeof raw.file !== 'string' || !Array.isArray(raw.breakpoints)) return null;
       return {
         type: 'breakpoints-changed',
         sessionId,
+        ...label,
         file: raw.file,
         breakpoints: (raw.breakpoints as readonly unknown[])
           .map(asBreakpoint)
@@ -160,7 +164,7 @@ function asDebugViewEvent(value: unknown): DebugViewEvent | null {
       };
     case 'stopped':
       if (typeof raw.stopSeq !== 'number' || typeof raw.reason !== 'string') return null;
-      return { type: 'stopped', sessionId, stopSeq: raw.stopSeq, reason: raw.reason };
+      return { type: 'stopped', sessionId, ...label, stopSeq: raw.stopSeq, reason: raw.reason };
     case 'continued':
     case 'terminated':
       return { type: raw.type, sessionId };
@@ -169,8 +173,15 @@ function asDebugViewEvent(value: unknown): DebugViewEvent | null {
   }
 }
 
+const DEBUG_SESSION_LABEL_MAX = 256;
+/** IPC 来的会话名:非空字符串才收(封顶长度),否则不带。 */
+function asLabel(value: unknown): { readonly label?: string } {
+  return typeof value === 'string' && value !== '' ? { label: value.slice(0, DEBUG_SESSION_LABEL_MAX) } : {};
+}
+
 interface SessionSnapshot {
   readonly id: string;
+  readonly label?: string;
   readonly stop?: { readonly stopSeq: number; readonly reason: string };
   /** 按 source 分组(file → 该 source 的完整集合),总数已按上限截断。 */
   readonly breakpointsBySource: ReadonlyMap<string, readonly DebugBreakpoint[]>;
@@ -204,7 +215,7 @@ function asSessionSnapshot(value: unknown): SessionSnapshot | null {
   const offset = parsed.length - capped.length;
   const breakpointsBySource = new Map<string, readonly DebugBreakpoint[]>();
   capped.forEach((breakpoints, i) => breakpointsBySource.set(parsed[offset + i]!.file, breakpoints));
-  return { id: raw.session_id, ...(stop ? { stop } : {}), breakpointsBySource };
+  return { id: raw.session_id, ...asLabel(raw.label), ...(stop ? { stop } : {}), breakpointsBySource };
 }
 
 /** 按 file 分组(组序 = 首次出现顺序;store 内同一文件的断点本就相邻)。 */
@@ -326,6 +337,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         ).flat();
         const nextSession: DebugSessionShadow = {
           ...current,
+          ...(event.label !== undefined ? { label: event.label } : {}),
           breakpoints,
         };
         const sessions = new Map(state.sessions);
@@ -341,6 +353,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         const current = getOrCreateSession(state.sessions, event.sessionId);
         const nextSession: DebugSessionShadow = {
           ...current,
+          ...(event.label !== undefined ? { label: event.label } : {}),
           frames: [],
           scopes: [],
           variableRefs: new Map(),
@@ -502,7 +515,10 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
         }
         continue;
       }
-      const base = emptySession(snapshot.id);
+      const base: DebugSessionShadow = {
+        ...emptySession(snapshot.id),
+        ...(snapshot.label !== undefined ? { label: snapshot.label } : {}),
+      };
       const breakpoints = [...snapshot.breakpointsBySource.values()].flat();
       if (!snapshot.stop) {
         sessions.set(snapshot.id, { ...base, breakpoints });

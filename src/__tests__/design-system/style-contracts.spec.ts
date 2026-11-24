@@ -141,6 +141,53 @@ describe('徽标统一 design Badge', () => {
   });
 });
 
+describe('TruncateStart 样式契约', () => {
+  const SRC = css('src/design/TruncateStart.css');
+
+  it('单行、溢出省略,方向 rtl 使截断与省略号落在开头;文本仍左对齐', () => {
+    const body = ruleBody(SRC, '.wm-truncate-start');
+    expect(body).toMatch(/overflow:\s*hidden/);
+    expect(body).toMatch(/white-space:\s*nowrap/);
+    expect(body).toMatch(/text-overflow:\s*ellipsis/);
+    expect(body).toMatch(/direction:\s*rtl/);
+    expect(body).toMatch(/text-align:\s*left/);
+    expect(body).toMatch(/min-width:\s*0/);
+  });
+
+  it('内层按 ltr 隔离:路径开头的 / 等中性标点不被 rtl 挪到末尾', () => {
+    const body = ruleBody(SRC, '.wm-truncate-start > [dir="ltr"]');
+    expect(body).toMatch(/unicode-bidi:\s*isolate/);
+  });
+});
+
+describe('EmptyState 样式契约', () => {
+  const SRC = css('src/design/EmptyState.css');
+
+  it('占满可用空间并居中,弱化正文色、无边框', () => {
+    const body = ruleBody(SRC, '.wm-empty-state');
+    expect(body).toMatch(/flex:\s*1 1 auto/);
+    expect(body).toMatch(/align-items:\s*center/);
+    expect(body).toMatch(/justify-content:\s*center/);
+    expect(body).toMatch(/text-align:\s*center/);
+    expect(body).toMatch(/color:\s*var\(--md-on-surface-variant\)/);
+    expect(body).not.toMatch(/border/);
+  });
+});
+
+describe('Tabs 样式契约(与设置页导航同一选中样式)', () => {
+  const SRC = css('src/design/Tabs.css');
+
+  it('选中项:左侧 2px primary 竖条 + surface-container-high 底(同设置页 border-accent bg-hover),不再是填充描边药丸', () => {
+    const base = ruleBody(SRC, '.wm-tab-button');
+    expect(base).toMatch(/border-left:\s*2px solid transparent/);
+    expect(base).not.toMatch(/border-radius:\s*var\(--wm-radius-xl\)/);
+    const active = ruleBody(SRC, '.wm-tab-button[data-active="true"]');
+    expect(active).toMatch(/border-left-color:\s*var\(--md-primary\)/);
+    expect(active).toMatch(/background-color:\s*var\(--md-surface-container-high\)/);
+    expect(active).not.toMatch(/secondary-container/);
+  });
+});
+
 // design CSS 必须在 Tailwind 的 components 层里:Tailwind v4 的 utility 在 `@layer utilities`,不在任何 layer 里的
 // 样式(unlayered)无论选择器多弱都压过所有 layer —— 调用方传给 design 组件的 className(如 `@max-md:hidden`、
 // `w-24`、`overflow-x-auto`)会被组件基类静默覆盖。层顺序 theme < base < components < utilities。

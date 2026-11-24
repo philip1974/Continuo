@@ -43,7 +43,9 @@ describe('topic51 Op5 · DebugPanel', () => {
     const { container } = render(<DebugPanel />);
 
     expect(screen.getByText('No debug session')).toBeTruthy();
-    expect(container.querySelector('.wm-card')).toBeTruthy();
+    // 与 Output 等面板同一空态(design EmptyState):居中、无边框卡片。
+    expect(container.querySelector('.wm-empty-state')?.textContent).toBe('No debug session');
+    expect(container.querySelector('.wm-card')).toBeNull();
   });
 
   it('renders stack, variables, and breakpoint sections with design components', async () => {
@@ -54,6 +56,7 @@ describe('topic51 Op5 · DebugPanel', () => {
           's1',
           {
             id: 's1',
+            label: 'prog.js',
             breakpoints: [{ file: '/repo/a.ts', line: 14, verified: true }],
             frames: [
               {
@@ -84,7 +87,14 @@ describe('topic51 Op5 · DebugPanel', () => {
     expect(screen.getByText('Variables')).toBeTruthy();
     expect(screen.getByText('Breakpoints')).toBeTruthy();
     expect(screen.getByText('main')).toBeTruthy();
-    expect(screen.getAllByText('/repo/a.ts:14')).toHaveLength(2);
+    // 会话标题用会话名(程序名),不显示内部 id。
+    expect(screen.getByText('prog.js')).toBeTruthy();
+    expect(screen.queryByText('s1')).toBeNull();
+    // 位置(停点行与栈帧)以「文件名:行号」为主,父目录弱化并从前截断(完整路径在 title)。
+    expect(screen.getAllByText('a.ts:14')).toHaveLength(2);
+    const parents = Array.from(container.querySelectorAll<HTMLElement>('.wm-truncate-start'));
+    expect(parents.map((el) => el.textContent)).toEqual(['/repo', '/repo']);
+    expect(parents.every((el) => el.title === '/repo/a.ts:14')).toBe(true);
     expect(container.querySelector('.wm-tabs')).toBeTruthy();
     expect(container.querySelector('.wm-card')).toBeTruthy();
     expect(container.querySelector('.wm-badge')).toBeTruthy();

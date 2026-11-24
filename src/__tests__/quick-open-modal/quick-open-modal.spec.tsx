@@ -264,6 +264,30 @@ describe('QuickOpenModal — 渲染态', () => {
     );
   });
 
+  // 长文件名不被路径挤掉:文件名不收缩(上限 60%),相对路径占剩余宽度并从前截断(保留靠近文件的目录),完整路径 title。
+  it('结果行:文件名优先,相对路径从前截断', async () => {
+    installFs();
+    walkMock.mockResolvedValue({
+      ok: true,
+      data: [file('a.ts', 'deep/level-one/level-two/a.ts')],
+    });
+    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
+    useQuickOpenStore.setState({ isOpen: true });
+    render(<QuickOpenModal />);
+    const row = await waitFor(() => {
+      const li = document.querySelector<HTMLElement>('ul li');
+      expect(li).not.toBeNull();
+      return li!;
+    });
+    const name = Array.from(row.querySelectorAll('span')).find((el) => el.textContent === 'a.ts')!;
+    expect(name.className).toMatch(/\bshrink-0\b/);
+    expect(name.className).toMatch(/max-w-\[60%\]/);
+    const path = row.querySelector<HTMLElement>('.wm-truncate-start')!;
+    expect(path.textContent).toBe('deep/level-one/level-two/a.ts');
+    expect(path.className).toMatch(/\bflex-1\b/);
+    expect(path.title).toBe('deep/level-one/level-two/a.ts');
+  });
+
   // a11y(A65,A56 同族):结果达 5000 截断提示是动态出现的信息,焦点锁搜索框时 SR 须能播报。
   it('a11y · 结果达 5000 截断时 limit_hint 在 role=status', async () => {
     installFs();

@@ -53,6 +53,13 @@
 - `Badge`:`size="xs"` 为 4px 圆角矩形小标签;`accent-soft` 与其它 `*-soft` 同构;设置 / 插件 / 快捷键 id 与单位、市场
   Verified / 维护者 / 新账号标签统一用 `Badge`,不手写;全应用无小于 10px 的任意字号
 
+- `TruncateStart`(路径等尾部更重要的单行文本):外层 `direction: rtl` + `text-overflow: ellipsis` + `text-align: left`,
+  溢出从行首截断、省略号在左;文本在 `dir="ltr"` 内层(`unicode-bidi: isolate`),开头的 `/` 等中性标点不被重排;
+  完整文本默认进 `title`
+- `EmptyState`(面板 / 区块空态):占满可用空间(`flex: 1 1 auto`)并居中,`on-surface-variant` 正文色,无边框
+- `Tabs`(面板内竖向视图切换):选中项与设置页导航同一样式 —— 左侧 2px `primary` 竖条 + `surface-container-high` 底,
+  不用填充描边药丸
+
 ### MenuItem / Badge 组件契约(`components.spec.tsx`)
 
 - `MenuItem` 透传 `ref` 与其余 button 属性(可作 Radix `ContextMenu.Item asChild` 的子元素),`onClick` 可省略;

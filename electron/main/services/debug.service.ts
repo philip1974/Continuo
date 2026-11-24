@@ -1155,6 +1155,7 @@ export class DebugService {
     this.emitSessionEvent(sessionId, {
       type: 'breakpoints-changed',
       sessionId,
+      label: this.sessionLabel(sessionId, runtime),
       file,
       breakpoints,
     });
@@ -1554,6 +1555,7 @@ export class DebugService {
         capped.forEach((breakpoints, i) => groups.push({ file: full[offset + i]!.file, breakpoints }));
         return {
           session_id: session.id,
+          ...(runtime ? { label: this.sessionLabel(session.id, runtime) } : {}),
           ...(stop
             ? {
                 stop: { stopSeq: stop.stop_seq, reason: stop.reason },
@@ -1992,6 +1994,7 @@ export class DebugService {
     this.emitSessionEvent(sessionId, {
       type: 'stopped',
       sessionId,
+      label: this.sessionLabel(sessionId, runtime),
       stopSeq,
       reason: output.reason,
     });
@@ -2029,6 +2032,14 @@ export class DebugService {
     });
     const next = runtime.queuedStops.shift();
     if (next) this.markStopped(sessionId, next.body, next.client);
+  }
+
+  /**
+   * Debug 面板显示的会话名(VSCode 调用栈 / 调试工具栏同样显示会话名而非内部 id):launch 给的 name,
+   * 没给则用被调试程序的文件名。会建出 renderer 会话的事件(breakpoints-changed / stopped)与 subscribe 快照都带它。
+   */
+  private sessionLabel(sessionId: string, runtime: RuntimeDebugSession): string {
+    return debugSessions.get(sessionId)?.name ?? path.basename(runtime.launch.program);
   }
 
   private emitSessionEvent(sessionId: string, event: DebugViewEvent): void {
