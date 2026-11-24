@@ -122,7 +122,7 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 根目录失败只走内联提示,不另弹 toast(两个 role=alert 读屏会播报两次)
 - 子目录读取失败(VSCode:展开失败的目录下显示错误行):展开着的失败目录之后插入一行内联错误(`DirLoadErrorRow`,
   同根目录文案的普通文本 + 「重试」),不弹 toast;重试 → 焦点先回到该目录行,再重新读取,成功后列出子项、错误行消失
-  - 读屏播报:每次读取失败经 FolderTree 常驻的视觉隐藏 `aria-live="assertive"` 区域播一次「无法读取“目录名”:原因」;
+  - 读屏播报:每次读取失败经全局常驻播报区(`src/lib/announce` 的 `announce(text, { politeness: 'assertive' })`,与 toast / Debug 共用)播一次「无法读取“目录名”:原因」;
     错误行自身不是 live region —— 随虚拟滚动出入 overscan、收起再展开重新挂载时不重播
   - 「重试」上的按键不触发树命令:Enter / ← / → / F2 / Delete / Ctrl(⌘)+C 等不收起、不改名、不删除、不复制失败目录,
     焦点留在「重试」;按钮自身的 Enter / 空格激活照常重试(`handleTreeKeyDown` 只处理来自行本身的按键;

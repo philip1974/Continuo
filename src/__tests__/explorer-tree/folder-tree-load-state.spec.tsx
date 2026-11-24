@@ -277,11 +277,13 @@ describe('FolderTree · 子目录读取失败的播报', () => {
       fireEvent.click(row(r.container, '/work/alpha')!);
     });
     await r.findByRole('button', { name: RETRY });
-    const live = r.container.querySelector('[aria-live="assertive"]') as HTMLElement | null;
-    expect(live).not.toBeNull();
-    await waitFor(() => expect(live!.textContent).toMatch(/alpha/));
-    expect(live!.textContent).toMatch(/拒绝访问|Access denied/);
-    const announced = live!.firstElementChild;
+    // 经全局常驻播报区(src/lib/announce):不在 FolderTree 自己维护第二套 live region
+    expect(r.container.querySelector('[aria-live]')).toBeNull();
+    const liveOf = () => document.querySelector('[data-live-announcer] [aria-live="assertive"]') as HTMLElement | null;
+    await waitFor(() => expect(liveOf()?.textContent).toMatch(/alpha/));
+    const live = liveOf()!;
+    expect(live.textContent).toMatch(/拒绝访问|Access denied/);
+    const announcedCount = live.childElementCount;
     // 错误行里没有 role=alert / aria-live
     const message = r.getByText(/^(无法读取此文件夹|Unable to read this folder)/);
     expect(message.closest('[role="alert"],[aria-live]')).toBeNull();
@@ -294,8 +296,8 @@ describe('FolderTree · 子目录读取失败的播报', () => {
       fireEvent.click(row(r.container, '/work/alpha')!);
     });
     await r.findByRole('button', { name: RETRY });
-    await new Promise((res) => setTimeout(res, 20));
-    expect(live!.firstElementChild).toBe(announced);
+    await new Promise((res) => setTimeout(res, 150));
+    expect(live.childElementCount).toBe(announcedCount);
   });
 
   it('已折叠目录在后台刷新时读取失败 → toast 按错误码本地化并带目录名,不含原始诊断串', async () => {

@@ -71,13 +71,13 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
-import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { ERROR_CODES } from '@shared/error-codes';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
+import { announce } from '@/lib/announce';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -322,13 +322,6 @@ export function FolderTree({ root }: { root: string }) {
   const emptyStateRef = useRef<HTMLDivElement>(null);
   // 子目录读取失败(VSCode:展开失败的目录下显示错误行):目录 → 原因;读到即删除。
   const [dirErrors, setDirErrors] = useState<ReadonlyMap<string, DirLoadFailure>>(EMPTY_DIR_ERRORS);
-  // 子目录读取失败的读屏播报(VSCode aria.alert):每次读取失败在这里播一次。错误行在虚拟列表里随滚动出入
-  // overscan、收起再展开而重新挂载,自身不能是 live region(否则每次挂载都重播)。seq 作 key:同一文案再次失败
-  // (如重试仍失败)也换节点 → 再播一次。
-  const [dirErrorAnnouncement, setDirErrorAnnouncement] = useState<{
-    readonly seq: number;
-    readonly text: string;
-  } | null>(null);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   // 根目录读取状态(loader 经 onChildrenLoad 回报):列表为空时据此区分加载中 / 读取失败 / 空文件夹。
   const [rootLoad, setRootLoad] = useState<RootLoadState>(ROOT_LOADING);
@@ -629,9 +622,11 @@ export function FolderTree({ root }: { root: string }) {
             name: basenamePreserveTrailing(itemId),
             message: localizeErrorByCode(failure.code, failure.message),
           });
-          // 展开着 → 看得到错误行:读屏经常驻 live region 播一次;已折叠 → 限流 toast(toast 自带播报)
+          // 展开着 → 看得到错误行:读屏经全局常驻播报区播一次(VSCode aria.alert;错误行在虚拟列表里随滚动出入
+          // overscan、收起再展开而重新挂载,自身不能是 live region,否则每次挂载都重播;重试仍失败再播一次)。
+          // 已折叠 → 限流 toast(toast 自带播报)。
           if (isExpandedNow(itemId)) {
-            setDirErrorAnnouncement((prev) => ({ seq: (prev?.seq ?? 0) + 1, text }));
+            announce(text, { politeness: 'assertive' });
             return;
           }
           if (!takeIpcWarnSlot()) return;
@@ -1315,9 +1310,6 @@ export function FolderTree({ root }: { root: string }) {
           )}
         </div>
       </ContextMenu>
-      <div aria-live="assertive" aria-atomic="true" style={SR_ONLY_STYLE}>
-        {dirErrorAnnouncement && <span key={dirErrorAnnouncement.seq}>{dirErrorAnnouncement.text}</span>}
-      </div>
       {renderTrashConfirm()}
     </div>
   );
