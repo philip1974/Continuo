@@ -161,7 +161,7 @@ export function collectEditorSnapshot(
   for (const tab of tabs) {
     // 安全:插件经 editor.openFile 打开的标签不持久化 —— 主进程对它的「路径没被换入链接」确认只在内存里,
     // 重启后按路径恢复就不再受保护,插件此前换入的链接会让宿主读到 / 保存到 scope 外(见 EditorTab.pluginOpenedPath)。
-    if (tab.filePath !== null && tab.pluginOpenedPath === undefined) {
+    if (tab.pluginOpenedPath === undefined) {
       openFilePaths ??= new Array<string>(tabs.length);
       openFilePaths[count++] = tab.filePath;
       if (tab.id === activeTabId) activePath = tab.filePath;
@@ -211,7 +211,6 @@ export function snapshotFromStores(
   const p = usePinnedStore.getState();
   const ui = useLayoutUiStore.getState();
   const ed = useEditorStore.getState();
-  // 过滤掉 untitled tab(filePath=null)— 没有路径无法恢复
   const { openFilePaths, activePath } = collectEditorSnapshot(
     ed.tabs,
     ed.activeTabId,

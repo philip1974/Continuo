@@ -31,7 +31,7 @@ import {
   isEditorActionVisible,
   type EditorActionSpec,
 } from '@/plugins/registries/EditorActionRegistry';
-import { editorTabTitle } from './editor-path-utils';
+import { basename } from '@/lib/path-cross';
 
 /**
  * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
@@ -39,7 +39,7 @@ import { editorTabTitle } from './editor-path-utils';
  */
 export interface TabChrome {
   readonly id: string;
-  readonly filePath: string | null;
+  readonly filePath: string;
   readonly dirty: boolean;
 }
 
@@ -186,7 +186,7 @@ export const EditorHeader = memo(function EditorHeader({
         ariaLabel={t('shell.tab.editor_tablist')}
       >
         {tabsChrome.map((tab) => {
-          const tabTitle = editorTabTitle(tab.filePath);
+          const tabTitle = basename(tab.filePath);
           return (
             <TabNavItem
               key={tab.id}
@@ -196,7 +196,7 @@ export const EditorHeader = memo(function EditorHeader({
               dirtyLabel={t('panels.editor.unsaved_indicator')}
               // a11y(A106):icon-only 关闭按钮可访问名本地化(design 层无 i18n,调用点注入)。
               closeLabel={t('shell.tab.close', { title: tabTitle })}
-              title={tab.filePath ?? t('panels.editor.unsaved_draft')}
+              title={tab.filePath}
               onSelect={() => switchTab(tab.id)}
               onClose={() => onCloseRequest(tab)}
             >

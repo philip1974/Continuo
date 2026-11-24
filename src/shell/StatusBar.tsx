@@ -355,15 +355,10 @@ export function StatusBar() {
               : t('statusbar.agent_authorized')}
           </button>
         )}
-        {activeTabId !== null ? (
+        {activeFilePath !== null ? (
           <>
-            <span
-              className="truncate max-w-[280px]"
-              title={activeFilePath ?? t('statusbar.untitled_file')}
-            >
-              {activeFilePath
-                ? basenameForChrome(activeFilePath)
-                : t('statusbar.untitled_file')}
+            <span className="truncate max-w-[280px]" title={activeFilePath}>
+              {basenameForChrome(activeFilePath)}
               {activeDirty && (
                 <>
                   {/* a11y(A37):● 仅视觉;未保存状态用视觉隐藏的真实文本给 AT(状态栏文本流可读)。 */}

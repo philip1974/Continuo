@@ -11,7 +11,7 @@ import { editorFileDeps } from './editor-file-deps';
 export interface EditorFileApi {
   /** Explorer 单击文件触发. 返 IpcResult,UI 决定如何提示. */
   openFileByPath: (path: string) => Promise<FileOpResult>;
-  /** Cmd+S 触发. activeTab 没有 path → 返 UNSAVED_DRAFT;磁盘被外部改过 → EDITOR_DISK_CHANGED. */
+  /** Cmd+S 触发. 磁盘被外部改过 → EDITOR_DISK_CHANGED. */
   saveActive: () => Promise<FileOpResult>;
   /** 按 tabId 保存(自动保存 / 确认覆盖用,不依赖当前 active tab). */
   saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<FileOpResult>;

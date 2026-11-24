@@ -60,21 +60,3 @@ describe('getEffectiveMode for unsafe markdown', () => {
     expect(useEditorStore.getState()).toBe(state);
   });
 });
-
-// 草稿(无路径)在编辑面板里按 Markdown 处理(走 Milkdown、显示模式切换),unsafe 守卫须同一口径:此前 store
-// 判草稿「不是 markdown」→ milkdownUnsafe 恒 false,草稿 Source 里写 frontmatter / wiki-link 后切 Edit 直接进
-// Milkdown,序列化回写改坏内容(issue-44 要防的情形)。
-describe('草稿 tab 与 unsafe 守卫同口径', () => {
-  it('草稿内容 unsafe → Edit 落到 Source;编辑成 unsafe 后同样', () => {
-    useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'edit' });
-    const draft = createTab(null, unsafe);
-    useEditorStore.getState().openTab(draft);
-    expect(getEffectiveMode(activeTab())).toBe('source');
-
-    const clean = createTab(null, '# plain\n');
-    useEditorStore.getState().openTab(clean);
-    expect(getEffectiveMode(activeTab())).toBe('edit');
-    useEditorStore.getState().updateContent(clean.id, '[[wiki]] link\n');
-    expect(getEffectiveMode(activeTab())).toBe('source');
-  });
-});

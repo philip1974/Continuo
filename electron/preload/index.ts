@@ -134,7 +134,7 @@ const api = {
     onFlushRequest: (
       cb: (payload?: FlushRequestPayload) => void | Promise<void>,
     ): (() => void) => {
-      // main 发 `{ windowId, requestId, save?, discard?, untitledIds? }`(save / discard:用户在脏文件确认框选了「保存」/
+      // main 发 `{ windowId, requestId, save?, discard?, pendingAutoSave? }`(save / discard:用户在脏文件确认框选了「保存」/
       // 「不保存」;requestId 须在回执里原样带回,main 只接受匹配在途请求的回执);透传给回调(不暴露 IpcRendererEvent)。
       const listener = (_event: unknown, payload?: FlushRequestPayload) => {
         void cb(payload);

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createTab,
   getStateAfterClosingTabsOutsideRoot,
   type EditorTab,
 } from '../../stores/editor.store';
@@ -16,8 +15,7 @@ function tab(overrides: Partial<EditorTab> & { id: string }): EditorTab {
 }
 
 // P2 数据丢失回归:切换 workspace root 时,旧实现只按 filePath 位置判定,落在新 root
-// 外的**脏(未保存)**真实文件 tab 被直接关闭、编辑静默丢失。修复:dirty tab 与 untitled
-// 草稿一样始终保留。
+// 外的**脏(未保存)**真实文件 tab 被直接关闭、编辑静默丢失。修复:dirty tab 始终保留。
 describe('49 · 切 root 保留 root 外的脏 tab', () => {
   it('root 外的脏文件 tab 保留,clean 文件 tab 关闭', () => {
     const tabs = [
@@ -31,16 +29,12 @@ describe('49 · 切 root 保留 root 外的脏 tab', () => {
   });
 
   it('root=null(关文件夹)也保留脏 tab', () => {
-    const draft = createTab(null, 'draft');
     const tabs = [
       tab({ id: '/old/dirty.md', dirty: true }),
       tab({ id: '/old/clean.md', dirty: false }),
-      draft,
     ];
     const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/clean.md', null);
-    expect(r.tabs.map((t) => t.id).sort()).toEqual(
-      ['/old/dirty.md', draft.id].sort(),
-    );
+    expect(r.tabs.map((t) => t.id)).toEqual(['/old/dirty.md']);
   });
 
   it('active 是被关的 clean tab → 切到保留的脏 tab', () => {

@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 import type { EditorView } from '@codemirror/view';
 import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
-import { isMarkdownTab } from '@/panels/Editor/editor-path-utils';
+import { isMarkdownPath } from '@/panels/Editor/editor-path-utils';
 import {
   containmentFold,
   containmentKey,
@@ -25,10 +25,9 @@ import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry
 export type EditorMode = 'edit' | 'source' | 'preview';
 
 export interface EditorTab {
-  /** filePath 或 `untitled-${uuid}`. */
+  /** = filePath(打开时的路径拼写). */
   readonly id: string;
-  /** null = 未保存草稿. */
-  readonly filePath: string | null;
+  readonly filePath: string;
   /** 当前内容(编辑器实时同步). */
   readonly content: string;
   /** 上次磁盘内容(dirty 比对依据). */
@@ -43,7 +42,7 @@ export interface EditorTab {
    */
   readonly reloadEpoch?: number;
   /**
-   * 性能 P4:派生缓存 = `isMarkdownTab(filePath) && isMilkdownUnsafe(content)`。
+   * 性能 P4:派生缓存 = `isMarkdownPath(filePath) && isMilkdownUnsafe(content)`。
    * 仅在 content / filePath 变更时(createTab / updateContent / reloadFromDisk /
    * 改名)算一次,避免 getEffectiveMode 在每次渲染 / Header selector 里对
    * 全文重复跑未锚定的 wiki-link 正则(长 Markdown 输入时 ~3 次 O(file)/按键)。
@@ -100,12 +99,12 @@ const EMPTY_EDITOR_TABS: EditorTab[] = [];
 // ── 纯函数 helpers(便于单测) ────────────────────────────────
 
 export function createTab(
-  filePath: string | null,
+  filePath: string,
   content: string,
   realPath?: string,
 ): EditorTab {
   const tab: EditorTab = {
-    id: filePath ?? `untitled-${crypto.randomUUID()}`,
+    id: filePath,
     filePath,
     content,
     originalContent: content,
@@ -218,7 +217,6 @@ function flushWriteBacksForAffectedTabs(
  * 文件 / 目录被重命名 / 移动后的 tab 状态:
  * - 精确匹配 filePath === oldPath → 改 id+filePath 为 newPath
  * - 子文件(`oldPath/` 或 `oldPath\\` 前缀)→ 前缀 rewrite
- * - untitled(filePath=null)tab 不受影响
  * - dirty / content / originalContent 全部保留
  * - activeTabId 跟随目标 tab id 改变
  */
@@ -242,10 +240,6 @@ export function getStateAfterRenamingPath(
 
   for (let i = 0; i < tabs.length; i++) {
     const t = tabs[i]!;
-    if (t.filePath === null) {
-      if (newTabs !== null) newTabs[i] = t;
-      continue;
-    }
     const np = rewrite(t.filePath);
     let nextTab = t;
 
@@ -348,7 +342,6 @@ function filterTabsTrackingActive(
 
 /**
  * 工作区 root 切换后的 tab 状态:
- * - untitled(filePath=null)tab 与 root 无关,始终保留
  * - **dirty(未保存编辑)tab 始终保留** —— 切 root 不得静默丢弃用户改动(审计):
  *   旧实现只按 filePath 位置判定,root 外的脏真实文件 tab 被直接关闭、编辑丢失
  * - filePath 等于 root 或位于其下(见 isSameOrInsidePath:跨平台分隔符 + 大小写)→ 保留
@@ -369,7 +362,6 @@ export function getStateAfterClosingTabsOutsideRoot(
  * 文件 / 目录被删除后的 tab 状态(单条参照实现;store 走批量版 getStateAfterRemovingPaths,测试用它做对照):
  * - 精确匹配 filePath === removedPath
  * - 或位于该目录下(`removedPath/` 或 `removedPath\\` 前缀)
- * - untitled(filePath=null)tab 不受影响
  * - 同前缀但非子(如 `/x/foo` 删 vs `/x/foobar.md`)不误关
  * - active 被关 → 取原序后向第一个 remaining,否则前一个,否则 null
  */
@@ -420,7 +412,7 @@ function removeMatchingCleanTabs(
 
 /**
  * 按条件关闭 **clean 的文件 tab**(切 root / 删除共用,此前两份逐段同构、活动 tab 回退规则不一):
- * - untitled(filePath=null)与 dirty(未保存编辑)tab 始终保留 —— 否则绕过 dirty 关闭确认、静默丢失内存增量
+ * - dirty(未保存编辑)tab 始终保留 —— 否则绕过 dirty 关闭确认、静默丢失内存增量
  *  (参考 VSCode:删除 / 切走有未保存改动的文件保留其编辑器)
  * - 其余 clean 文件 tab 由 keepCleanFile 决定
  * - 活动 tab 被关 → 原序后向第一个保留项,否则前向;活动 tab 本就不在列表里(null / 已失效)而仍有保留项 → 首个
@@ -433,7 +425,7 @@ function closeCleanFileTabsUnless(
   const r = filterTabsTrackingActive(
     tabs,
     activeTabId,
-    (tab) => tab.filePath === null || tab.dirty || keepCleanFile(tab.filePath),
+    (tab) => tab.dirty || keepCleanFile(tab.filePath),
   );
   if (!r.changed) return { tabs, activeTabId };
   if (r.remaining.length === 0) {
@@ -517,7 +509,7 @@ type EditorState = {
    * 结果的符号链接真实目标(缺省 = 非链接,移除旧值)。
    */
   reloadFromDisk: (tabId: string, content: string, realPath?: string) => void;
-  /** 工作区切换时调用:关闭 root 外的 file tabs;untitled 始终保留. */
+  /** 工作区切换时调用:关闭 root 外的 clean file tabs(dirty 保留). */
   closeTabsOutsideRoot: (root: string | null) => void;
   switchTab: (id: string, opts?: EditorFocusOpts) => void;
   /** 编辑器 onChange 时调用;dirty 自动比对. */
@@ -618,11 +610,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):file tab 经 snapshotFromStores 序列化成
       // editor.openFilePaths(持久化 PATH_ARRAY_MAX=100000 cap + 单条 PATH_STR_MAX)。插件经 SDK openFile
       // 循环开海量文件 → tabs 超量 → openFilePaths 超上限 → explorer:write 拒整份 → 全 explorer 持久化失败。
-      // 总 tab 数 ≥ PATH_ARRAY_MAX(untitled 极少,近似 file-tab 数)或 filePath 超 PATH_STR_MAX → 拒开(no-op)。
-      if (
-        s.tabs.length >= PATH_ARRAY_MAX ||
-        (tab.filePath !== null && tab.filePath.length > PATH_STR_MAX)
-      ) {
+      // 总 tab 数 ≥ PATH_ARRAY_MAX 或 filePath 超 PATH_STR_MAX → 拒开(no-op)。
+      if (s.tabs.length >= PATH_ARRAY_MAX || tab.filePath.length > PATH_STR_MAX) {
         return s;
       }
       return {
@@ -803,11 +792,8 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 // 性能 P4:milkdownUnsafe 派生值的单一计算口径。content / filePath 任一变更时调一次,
 // 结果缓存进 tab.milkdownUnsafe。isMilkdownUnsafe 跑未锚定 wiki-link 正则(O(file)),
 // 故只在 markdown 文件上算(非 markdown 短路为 false,不扫描)。
-function computeMilkdownUnsafe(
-  filePath: string | null,
-  content: string,
-): boolean {
-  return isMarkdownTab(filePath) && isMilkdownUnsafe(content);
+function computeMilkdownUnsafe(filePath: string, content: string): boolean {
+  return isMarkdownPath(filePath) && isMilkdownUnsafe(content);
 }
 
 // 性能 P4/P5:tab 是否 milkdown-unsafe 的**单一读取口径**。优先读派生缓存,缺省
@@ -830,6 +816,6 @@ export function getEffectiveMode(tab: EditorTab | null): EditorMode {
  * 该路径 / tab 当前用 Milkdown 引擎渲染(Markdown 且实际模式不是 source)。编辑面板、引擎预热与插件 SDK 跳行
  * 判定共用 —— 此前各写一份「isMarkdownPath && getEffectiveMode !== 'source'」并靠「同口径」注释维持一致。
  */
-export function usesMilkdownEngine(filePath: string | null, tab: EditorTab | null): boolean {
-  return isMarkdownTab(filePath) && getEffectiveMode(tab) !== 'source';
+export function usesMilkdownEngine(filePath: string, tab: EditorTab | null): boolean {
+  return isMarkdownPath(filePath) && getEffectiveMode(tab) !== 'source';
 }

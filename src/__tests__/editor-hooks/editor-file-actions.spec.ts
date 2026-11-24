@@ -520,14 +520,6 @@ describe('saveFile', () => {
     });
   });
 
-  it('untitled tab(无 filePath)→ ok:false code=UNSAVED_DRAFT', async () => {
-    const draft = createTab(null, 'draft');
-    useEditorStore.setState({ tabs: [draft], activeTabId: draft.id });
-    const r = await saveFile(draft.id, makeDeps());
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.code).toBe('UNSAVED_DRAFT');
-  });
-
   it('fs.writeFile IpcFail → 透传,store 不 markSaved', async () => {
     useEditorStore.setState({
       tabs: [

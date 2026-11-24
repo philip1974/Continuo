@@ -275,7 +275,7 @@ function recordDirtyState(win: BrowserWindow, state: DirtyState): void {
 
 /**
  * 有脏 tab 的窗口弹确认框(挂在该窗口上);无脏 tab → null(不弹框)。state:确认框告知用户的脏 tab
- * (「保存」时 renderer 只放过其中的 untitled id;退出前全局最终检查据此判断是否超出用户已接受的范围)。
+ * (退出前全局最终检查据此判断是否超出用户已接受的范围)。
  */
 function confirmDirtyClose(
   win: BrowserWindow,
@@ -292,7 +292,7 @@ function confirmDirtyClose(
  * 退出前全局最终检查(复审):多窗 Cmd+Q 时 A 已 flush+ACK、等待别窗保存 / 确认期间,用户仍可在 A 里继续编辑,
  * A 不会再被 renderer 最终检查覆盖。用 main 持续接收的脏态上报判断是否超出本轮用户已接受的范围(按 id 身份,
  * 当前脏 id 须是已接受集合的子集;复审:只比数量会被同数量替换绕过):
- * 未弹框 → 不接受任何脏;「保存」→ 只接受确认框告知的 untitled;「不保存」→ 接受确认时的脏 tab。
+ * 未弹框 / 「保存」→ 不接受任何脏;「不保存」→ 接受确认时的脏 tab。
  * pendingAutoSave(未计入 dirty 的活动 .md)同样按身份检查(见函数内)。
  */
 function exceedsAccepted(
@@ -302,9 +302,7 @@ function exceedsAccepted(
   flushedPending?: readonly string[],
 ): boolean {
   if (current === undefined) return false;
-  const ok = new Set(
-    mode === 'save' ? accepted?.untitledIds : mode === 'discard' ? accepted?.ids : undefined,
-  );
+  const ok = new Set(mode === 'discard' ? accepted?.ids : undefined);
   if (current.ids.some((id) => !ok.has(id))) return true;
   // 终审 P1:ACK 之后在活动 .md 输入,防抖触发前该 tab 只进 pendingAutoSave(dirty 仍 0),本轮 flush 已结束、
   // 不会再落盘 → 同样超出接受范围。放过:已接受集合内的 id(「不保存」确认的脏 .md 改归 pendingAutoSave)与
@@ -390,11 +388,9 @@ function requestWindowFlush(
     timer = setTimeout(() => done('timeout'), FLUSH_ACK_TIMEOUT_MS);
     try {
       // requestId:renderer 回执原样带回,只结算对应请求。
-      // untitledIds:「保存」时确认框告知会丢弃的 untitled id,renderer 只放过这些 id。
-      const untitledIds = accepted?.untitledIds ?? [];
       const flag =
         mode === 'save'
-          ? { save: true, ...(untitledIds.length > 0 ? { untitledIds: [...untitledIds] } : {}) }
+          ? { save: true }
           : mode === 'discard'
             ? {
                 discard: true,

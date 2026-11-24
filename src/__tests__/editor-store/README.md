@@ -12,8 +12,8 @@
 
 ```ts
 interface EditorTab {
-  id: string;              // filePath || `untitled-${uuid}`
-  filePath: string | null; // null = 未保存草稿
+  id: string;              // = filePath
+  filePath: string;        // 打开时的路径拼写(只有 explorer / 恢复路径经 createTab 构造,无无路径草稿)
   content: string;         // 当前内容(编辑器实时同步)
   originalContent: string; // 上次磁盘内容(dirty 比对依据)
   dirty: boolean;          // = content !== originalContent
@@ -53,7 +53,7 @@ interface EditorTab {
 - 全局编辑模式切换:`'edit' | 'source' | 'preview'`
 
 ### `createTab(filePath, content)` 纯 helper
-- 返回 EditorTab,id = filePath ?? `untitled-${crypto.randomUUID()}`
+- 返回 EditorTab,id = filePath
 - originalContent = content,dirty = false
 
 ## 不在本主题验证

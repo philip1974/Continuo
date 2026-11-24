@@ -442,12 +442,6 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       await Promise.all([layoutFlush, explorerFlush, autosaveFlush]);
       // 统一规则:全部 flush 完成后、ACK 前最终脏检查。本轮未选「不保存」且仍有未保存改动(防抖内 autosave
       // 失败 / flush 期间继续输入 / 确认期间变脏)→ 回执 remaining,main 中止关闭 / 退出并按此记账。
-      // 「保存」只放过确认框告知用户的 untitled id(main 随请求带 untitledIds);确认后新建 / 同数量替换的
-      // untitled 不在其中即计入。
-      const untitledIds = payload?.save ? payload.untitledIds : undefined;
-      const allowedUntitledIds = new Set(
-        Array.isArray(untitledIds) ? untitledIds.filter((id) => typeof id === 'string') : [],
-      );
       const tabs = useEditorStore.getState().tabs;
       // 「不保存」:框里列出的文件照常丢弃,但确认时未列入框的待 autosave .md(pendingAutoSave)仍脏 → remaining。
       const pendingAutoSave = payload?.discard ? payload.pendingAutoSave : undefined;
@@ -458,7 +452,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
               ? pendingAutoSave.filter((id): id is string => typeof id === 'string')
               : [],
           )
-        : remainingAfterFlush(tabs, allowedUntitledIds);
+        : remainingAfterFlush(tabs);
       // 回执始终携带 flush 后的最终脏态(含空集合),main 以其记账(复审:「保存」后 tab 变干净,但干净状态
       // 此前要等之后的 effect 上报,main 可能先用旧脏集合做退出前全局最终检查而误中止退出)。
       // autosave 已 flush 过,仍脏的 .md 也计入(同 remainingAfterFlush)。

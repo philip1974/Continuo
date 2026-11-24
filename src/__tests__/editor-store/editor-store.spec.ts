@@ -94,18 +94,6 @@ describe('createTab', () => {
     });
     expect(isTabMilkdownUnsafe(uncached)).toBe(true);
   });
-
-  it('无 filePath → id 以 untitled- 开头', () => {
-    const t = createTab(null, '');
-    expect(t.id.startsWith('untitled-')).toBe(true);
-    expect(t.filePath).toBeNull();
-  });
-
-  it('两次无 filePath 创建 → id 不重复', () => {
-    const t1 = createTab(null, '');
-    const t2 = createTab(null, '');
-    expect(t1.id).not.toBe(t2.id);
-  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -568,14 +556,6 @@ describe('getStateAfterRemovingPath', () => {
     expect(r.tabs.map((t) => t.id)).toEqual(['/x/dirty.md', '/y/c.md']);
   });
 
-  it('untitled tab(filePath=null)不受任何路径影响', () => {
-    const draft = createTab(null, 'd');
-    const tabs = [draft, makeTab({ id: '/x/a.md', filePath: '/x/a.md' })];
-    const r = getStateAfterRemovingPath(tabs, draft.id, '/x');
-    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
-    expect(r.activeTabId).toBe(draft.id);
-  });
-
   it('Windows 反斜杠路径:删除目录关其下子文件', () => {
     const tabs = [
       makeTab({ id: 'C:\\x\\a.md', filePath: 'C:\\x\\a.md' }),
@@ -715,15 +695,6 @@ describe('getStateAfterRenamingPath', () => {
     ]);
   });
 
-  it('untitled tab(filePath=null)不受影响', () => {
-    const draft = createTab(null, 'd');
-    const tabs = [draft, makeTab({ id: '/x/a.md', filePath: '/x/a.md' })];
-    const r = getStateAfterRenamingPath(tabs, draft.id, '/x/a.md', '/x/b.md');
-    expect(r.tabs[0]?.id).toBe(draft.id); // untitled 不动
-    expect(r.tabs[1]?.id).toBe('/x/b.md');
-    expect(r.activeTabId).toBe(draft.id);
-  });
-
   it('active 是被改的目录子文件 → activeTabId 跟到新路径', () => {
     const tabs = [
       makeTab({ id: '/x/foo/a.md', filePath: '/x/foo/a.md' }),
@@ -809,8 +780,7 @@ describe('renamePath(store method)', () => {
 
 // ────────────────────────────────────────────────────────────
 // getStateAfterClosingTabsOutsideRoot / closeTabsOutsideRoot
-// 切换工作区 root 时,旧 root 下的 file tab 应自动关闭;
-// untitled tab(filePath=null)始终保留。
+// 切换工作区 root 时,旧 root 外的 clean file tab 应自动关闭(dirty 保留)。
 // ────────────────────────────────────────────────────────────
 
 describe('getStateAfterClosingTabsOutsideRoot', () => {
@@ -882,37 +852,29 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
 
   it('POSIX 路径保持大小写敏感:/repo 不含 /Repo/a.md(应关闭)', () => {
     setPlatform('MacIntel');
-    const draft = createTab(null, 'd');
     const tabs = [
       makeTab({ id: '/Repo/a.md', filePath: '/Repo/a.md' }), // 大小写不同 → root 外
-      draft,
     ];
     const r = getStateAfterClosingTabsOutsideRoot(tabs, '/Repo/a.md', '/repo');
-    // POSIX 大小写敏感:/Repo/a.md 不在 /repo 下 → 关;untitled 保留
-    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
+    // POSIX 大小写敏感:/Repo/a.md 不在 /repo 下 → 关
+    expect(r.tabs.map((t) => t.id)).toEqual([]);
   });
 
-  it('切换到不重叠 root → 全部 file tab 关闭,untitled 保留', () => {
-    const draft = createTab(null, 'd');
+  it('切换到不重叠 root → 全部 clean file tab 关闭', () => {
     const tabs = [
       makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
-      draft,
       makeTab({ id: '/old/b.md', filePath: '/old/b.md' }),
     ];
     const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', '/new');
-    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
-    expect(r.activeTabId).toBe(draft.id);
+    expect(r.tabs.map((t) => t.id)).toEqual([]);
+    expect(r.activeTabId).toBeNull();
   });
 
-  it('root=null(关闭文件夹)→ 关所有 file tab,只剩 untitled', () => {
-    const draft = createTab(null, 'd');
-    const tabs = [
-      makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
-      draft,
-    ];
+  it('root=null(关闭文件夹)→ 关所有 clean file tab', () => {
+    const tabs = [makeTab({ id: '/old/a.md', filePath: '/old/a.md' })];
     const r = getStateAfterClosingTabsOutsideRoot(tabs, '/old/a.md', null);
-    expect(r.tabs.map((t) => t.id)).toEqual([draft.id]);
-    expect(r.activeTabId).toBe(draft.id);
+    expect(r.tabs.map((t) => t.id)).toEqual([]);
+    expect(r.activeTabId).toBeNull();
   });
 
   it('root=null + 全是 file tab → 全关,activeTabId null', () => {
@@ -982,11 +944,11 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
   });
 
   it('active 被关时单次分类 tabs,不再 filter+map 重算删除集合', () => {
-    const draft = createTab(null, 'd');
+    const kept = makeTab({ id: '/old/dirty.md', filePath: '/old/dirty.md', dirty: true });
     const tabs = [
       makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
       makeTab({ id: '/new/b.md', filePath: '/new/b.md' }),
-      draft,
+      kept,
     ];
     const filterSpy = vi.spyOn(Array.prototype, 'filter');
 
@@ -1003,7 +965,7 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
       expect(getStateAfterClosingTabsOutsideRoot.toString()).not.toContain(
         'new Set',
       );
-      expect(r.tabs.map((t) => t.id)).toEqual(['/new/b.md', draft.id]);
+      expect(r.tabs.map((t) => t.id)).toEqual(['/new/b.md', kept.id]);
       expect(r.activeTabId).toBe('/new/b.md');
     } finally {
       filterSpy.mockRestore();
@@ -1012,22 +974,21 @@ describe('getStateAfterClosingTabsOutsideRoot', () => {
 });
 
 describe('closeTabsOutsideRoot(store method)', () => {
-  it('切换 root → outside file tab 关,untitled 留,active 切到剩余', () => {
-    const draft = createTab(null, 'd');
+  it('切换 root → outside clean file tab 关,dirty 留,active 切到剩余', () => {
+    const kept = makeTab({ id: '/old/dirty.md', filePath: '/old/dirty.md', dirty: true });
     useEditorStore.setState({
       tabs: [
         makeTab({ id: '/old/a.md', filePath: '/old/a.md' }),
-        draft,
+        kept,
         makeTab({ id: '/new/b.md', filePath: '/new/b.md' }),
       ],
       activeTabId: '/old/a.md',
     });
     useEditorStore.getState().closeTabsOutsideRoot('/new');
     const s = useEditorStore.getState();
-    expect(s.tabs.map((t) => t.id)).toEqual([draft.id, '/new/b.md']);
-    // active 被关 → 取原序后向第一个 remaining(原 idx 顺序:draft 比
-    // /new/b.md 更靠前,所以是 draft;untitled 也算合法 active)
-    expect(s.activeTabId).toBe(draft.id);
+    expect(s.tabs.map((t) => t.id)).toEqual([kept.id, '/new/b.md']);
+    // active 被关 → 取原序后向第一个 remaining(原 idx 顺序:kept 比 /new/b.md 更靠前)
+    expect(s.activeTabId).toBe(kept.id);
   });
 });
 
@@ -1126,13 +1087,11 @@ describe('removePaths / getStateAfterRemovingPaths(批量 ≡ 逐条)', () => {
     for (const p of removed) cur = getStateAfterRemovingPath(cur.tabs, cur.activeTabId, p);
     return cur;
   };
-  const tabsOf = (paths: readonly (string | null)[], dirty: ReadonlySet<string> = new Set()) =>
-    paths.map((p, i) =>
-      makeTab({ id: p ?? `untitled-${i}`, filePath: p, dirty: p !== null && dirty.has(p) }),
-    );
+  const tabsOf = (paths: readonly string[], dirty: ReadonlySet<string> = new Set()) =>
+    paths.map((p) => makeTab({ id: p, filePath: p, dirty: dirty.has(p) }));
 
   const posixTabs = tabsOf(
-    ['/r/a.md', '/r/d/x.md', null, '/r/d/y/z.md', '/r/dd.md', '/r/b.md', '/R/b.md', '/r/e/f.md', '/r/dirty.md'],
+    ['/r/a.md', '/r/d/x.md', '/r/d/y/z.md', '/r/dd.md', '/r/b.md', '/R/b.md', '/r/e/f.md', '/r/dirty.md'],
     new Set(['/r/dirty.md']),
   );
   const removedSets: readonly (readonly string[])[] = [
@@ -1151,7 +1110,7 @@ describe('removePaths / getStateAfterRemovingPaths(批量 ≡ 逐条)', () => {
   it.each(['MacIntel', 'Win32'])('%s:任意 active × 删除集合,批量结果与逐条一致', (platform) => {
     setPlatform(platform);
     const tabs = platform === 'Win32'
-      ? tabsOf(['C:\\R\\a.md', 'c:\\r\\D\\x.md', null, 'C:/r/d/y.md', 'C:\\r\\dd.md', 'C:\\r\\b.md'])
+      ? tabsOf(['C:\\R\\a.md', 'c:\\r\\D\\x.md', 'C:/r/d/y.md', 'C:\\r\\dd.md', 'C:\\r\\b.md'])
       : posixTabs;
     const sets: readonly (readonly string[])[] = platform === 'Win32'
       ? [[], ['c:\\r\\d'], ['C:\\R\\D\\', 'c:/R/B.md'], ['C:\\'], ['c:\\r\\A.MD', 'C:\\r\\dd.md'], ['c:/r']]

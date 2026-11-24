@@ -62,7 +62,6 @@ export const ko: Record<TranslationKey, string> = {
   'errors.NOT_SUPPORTED': '지원되지 않는 작업입니다',
   'errors.NO_ACTIVE_TAB': '활성 탭이 없습니다',
   'errors.TAB_NOT_FOUND': '탭을 찾을 수 없습니다',
-  'errors.UNSAVED_DRAFT': '경로가 없는 제목 없는 초안은 저장할 수 없습니다',
   'errors.EDITOR_DISK_CHANGED': '디스크의 파일이 변경되어 덮어쓰지 않았습니다(Cmd/Ctrl+S로 선택)',
   'errors.NO_DEFAULT_EXPORT': '플러그인에 default export가 없습니다',
   'errors.NOT_PLUGIN_CLASS': '플러그인 default export가 Plugin 하위 클래스가 아닙니다',
@@ -183,8 +182,6 @@ export const ko: Record<TranslationKey, string> = {
 
   'dialog.unsaved_close.message': '{count}개 파일의 변경 내용을 저장하시겠습니까?',
   'dialog.unsaved_close.detail': '저장하지 않으면 변경 내용이 손실됩니다.',
-  'dialog.unsaved_close.untitled_note':
-    '제목 없는 초안 {count}개는 저장할 수 없으며(다른 이름으로 저장 미지원) 삭제됩니다.',
   'dialog.unsaved_close.dont_save': '저장 안 함',
   'dialog.unsaved_close.save_failed': '{count}개 파일을 저장하지 못해 창을 닫지 않았습니다.',
   'dialog.unsaved_close.disk_changed_note':
@@ -277,8 +274,6 @@ export const ko: Record<TranslationKey, string> = {
   'panels.terminal.search.close': '검색 닫기',
 
   // panels.editor.*
-  'panels.editor.untitled': '제목 없음',
-  'panels.editor.unsaved_draft': '저장되지 않은 초안',
   'panels.editor.unsaved_indicator': '저장되지 않은 변경 사항',
   'panels.editor.placeholder.start_writing': '작성을 시작하세요…',
   'panels.editor.mode.edit': '편집',
@@ -363,7 +358,6 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소합니다(모든 창의 agent terminal도 함께 종료됩니다)',
   'statusbar.no_workspace': '작업 공간 없음',
   'statusbar.sidebar_hidden': '사이드바 숨김',
-  'statusbar.untitled_file': '제목 없음',
   'statusbar.unsaved_changes': '저장되지 않은 변경 사항',
   'statusbar.editor_stats': '{lines}줄 · {words}단어 · {chars}자',
 

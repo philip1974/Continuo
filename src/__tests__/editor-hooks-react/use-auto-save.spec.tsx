@@ -84,27 +84,6 @@ describe('useAutoSave', () => {
     expect(saveFile).not.toHaveBeenCalled();
   });
 
-  it('filePath=null(草稿) → 不触发', async () => {
-    const saveFile = vi.fn(async () => true);
-    useEditorStore.setState({
-      tabs: [
-        {
-          id: 'untitled-1',
-          filePath: null,
-          content: 'x',
-          originalContent: '',
-          dirty: true,
-        },
-      ],
-      activeTabId: 'untitled-1',
-    });
-    render(<Probe saveFile={saveFile} enabled={true} delayMs={50} />);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(200);
-    });
-    expect(saveFile).not.toHaveBeenCalled();
-  });
-
   it('dirty=false → 不触发', async () => {
     const saveFile = vi.fn(async () => true);
     useEditorStore.setState({

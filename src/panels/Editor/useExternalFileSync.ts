@@ -158,7 +158,6 @@ export function useExternalFileSync(): void {
     ): EditorTab[] => {
       const out: EditorTab[] = [];
       for (const tab of useEditorStore.getState().tabs) {
-        if (tab.filePath === null) continue;
         if (tab.dirty) continue; // 保留用户改动,不覆盖
         if (match(tab.filePath, tab.realPath)) out.push(tab);
       }

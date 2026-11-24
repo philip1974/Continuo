@@ -32,7 +32,7 @@ let unsubscribe: (() => void) | null = null;
 function prune(tabs: readonly EditorTab[]): void {
   if (records.size === 0) return;
   const live = new Map<string, number | undefined>();
-  for (const t of tabs) if (t.filePath !== null) live.set(t.filePath, t.savedGen);
+  for (const t of tabs) live.set(t.filePath, t.savedGen);
   for (const [path, rec] of records) {
     if (live.get(path) !== rec.gen) records.delete(path);
   }

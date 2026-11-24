@@ -217,16 +217,3 @@ describe('EditorHeader — 插件 editor action', () => {
     expect(container.textContent).toContain('动态');
   });
 });
-
-describe('EditorHeader — basename 兜底', () => {
-  it('filePath=null → 「未命名」', () => {
-    const t = tab({ id: 'untitled-1', filePath: null });
-    useEditorStore.setState({ tabs: [t], activeTabId: t.id });
-    const { container } = render(
-      <EditorHeader
-        onCloseRequest={vi.fn()}
-      />,
-    );
-    expect(container.textContent).toContain('未命名');
-  });
-});

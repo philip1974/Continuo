@@ -33,17 +33,6 @@ describe('localizeErrorByCode(code, message)', () => {
     expect(r.length).toBeGreaterThan(0);
   });
 
-  // I7:Editor 保存失败的 UNSAVED_DRAFT message 含中文,直接展示双向泄漏 → 改 catalog。
-  it('UNSAVED_DRAFT(原 message 含中文)→ en 显英文 catalog,不泄漏中文', () => {
-    setLocale('en');
-    const r = localizeErrorByCode(
-      'UNSAVED_DRAFT',
-      'untitled draft cannot save without a path (MVP 不支持另存为)',
-    );
-    expect(r).toBe('Untitled draft cannot be saved without a path');
-    expect(r).not.toContain('不支持'); // 不泄漏中文 fallback
-  });
-
   it('catalog 未收录的 code → 回退原 message(保留动态错误细节)', () => {
     setLocale('zh');
     expect(localizeErrorByCode('SOME_UNKNOWN_CODE', 'weird detail')).toBe(

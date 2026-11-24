@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { basename } from '../../lib/path-cross';
-import {
-  editorTabTitle,
-  isAbsolutePath,
-  isMarkdownPath,
-} from '@/panels/Editor/editor-path-utils';
-import { setLocale } from '../../i18n/translate';
+import { isAbsolutePath, isMarkdownPath } from '@/panels/Editor/editor-path-utils';
 
 describe('editor path utils', () => {
   it('T1 detects markdown paths by extension', () => {
@@ -93,15 +88,3 @@ describe('editor path utils', () => {
     }
   });
 });
-
-// 同一个草稿 tab 在 tab 条与关闭 / 覆盖确认框里同一个名字(此前分别是「未命名」与「草稿」)。
-describe('editorTabTitle', () => {
-  it('有路径取 basename;草稿(null)为「未命名」', () => {
-    setLocale('zh');
-    expect(editorTabTitle('/work/notes/a.md')).toBe('a.md');
-    expect(editorTabTitle(null)).toBe('未命名');
-    setLocale('en');
-    expect(editorTabTitle(null)).toBe('Untitled');
-  });
-});
-

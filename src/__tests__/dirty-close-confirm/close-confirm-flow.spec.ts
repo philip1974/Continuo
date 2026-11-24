@@ -277,8 +277,8 @@ function requestIdOf(win: MockWin, index: number): number {
 }
 
 /** 合法脏态上报(计数由 id 列表推出;main 按 id 身份比较已接受范围)。 */
-function ds(ids: string[], untitledIds: string[] = []) {
-  return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
+function ds(ids: string[]) {
+  return { dirty: ids.length, ids };
 }
 
 /** 让 dialog / flush 的 promise 链跑完。 */
@@ -1077,29 +1077,6 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     b.destroyed = true;
   });
 
-  it('多窗退出:「保存」的窗口等待期间 untitled 被同数量替换(新草稿)→ 中止退出', async () => {
-    const a = createReadyWindow(53);
-    const b = createReadyWindow(54);
-    reportDirty(a, ds(['untitled-1'], ['untitled-1']));
-    reportDirty(b, ds(['/w/b.ts']));
-    electronMock.showMessageBox
-      .mockResolvedValueOnce({ response: 0 }) // A:保存(untitled-1 已告知会丢弃)
-      .mockResolvedValueOnce({ response: 0 }); // B:保存
-
-    const { done } = beforeQuit();
-    await flushMicrotasks(10);
-    ack(a, { saveFailed: false, requestId: requestIdOf(a, 0) });
-    await flushMicrotasks(10);
-    reportDirty(a, ds(['untitled-2'], ['untitled-2']));
-    reportDirty(b, ds([]));
-    ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
-    await done;
-    expect(app.quit).not.toHaveBeenCalled();
-    expect(a.show).toHaveBeenCalled();
-    a.destroyed = true;
-    b.destroyed = true;
-  });
-
   // 复审:「不保存」按 id 接受;等待期间用户保存 /x.ts 再编辑同一文件 → 只比 tab id 时仍是 /x.ts → 放行退出丢新改动。
   // renderer 上报的身份带「变脏代际」(clean→dirty 跃迁递增,形如 `${tabId}#${gen}`),再次变脏即新身份。
   it('多窗退出:「不保存」的窗口等待期间保存后再编辑同一文件(变脏代际递增)→ 中止退出', async () => {
@@ -1175,27 +1152,6 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     b.destroyed = true;
   });
 
-  // 复审:「保存」时 renderer 只能放过确认框告知用户的 untitled(按 id;此前按数量,同数量替换被放过)。
-  it('「保存」的 flush 请求带上确认框告知的 untitled id', async () => {
-    const a = createReadyWindow(49);
-    reportDirty(a, ds(['/w/a.ts', 'untitled-1', 'untitled-2'], ['untitled-1', 'untitled-2']));
-    electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
-
-    const { done } = beforeQuit();
-    await flushMicrotasks(10);
-    expect(flushRequests(a)).toEqual([
-      {
-        windowId: a.id,
-        save: true,
-        untitledIds: ['untitled-1', 'untitled-2'],
-        requestId: expect.any(Number),
-      },
-    ]);
-    ack(a, { saveFailed: true, requestId: requestIdOf(a, 0) });
-    await done;
-    a.destroyed = true;
-  });
-
   // 复审:退出被取消时,被本轮接管的旧单窗关闭流程所在窗口此前仍隐藏、守卫仍在途,要等旧 ACK / 10s 超时才恢复。
   it('退出中止 → 立即恢复被接管的隐藏窗口并释放其关窗守卫;旧流程迟到 ACK 无副作用', async () => {
     const win = createReadyWindow(50);
@@ -1265,7 +1221,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     const popout = new electronMock.MockBrowserWindow();
     popout.webContents.getURL.mockReturnValue('file:///renderer/index.html?popout=1');
     reportDirty(a, ds(['/w/a.ts']));
-    reportDirty(b, ds(['/w/a.ts', 'untitled-1'], ['untitled-1']));
+    reportDirty(b, ds(['/w/a.ts', '/w/c.ts']));
     electronMock.showMessageBox
       .mockResolvedValueOnce({ response: 0 }) // a 保存
       .mockResolvedValueOnce({ response: 1 }); // b 不保存
@@ -1284,7 +1240,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     // 这里 a 不再另发脏态上报,只靠回执。
     ack(a, { saveFailed: false, state: ds([]) });
     // 全局最终检查:a 保存后干净;b「不保存」仍是确认时的脏数(在接受范围内)→ 照常退出。
-    reportDirty(b, ds(['/w/a.ts', 'untitled-1'], ['untitled-1']));
+    reportDirty(b, ds(['/w/a.ts', '/w/c.ts']));
     // 插件 shell 子进程清理在途时不得退出(须被 await,否则 detached 进程组在 IDE 退出后继续运行)。
     let releaseShell: () => void = () => {};
     vi.mocked(shellService.cleanupAllShellExecs).mockImplementationOnce(

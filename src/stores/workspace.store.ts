@@ -56,7 +56,7 @@ type WorkspaceState = {
    */
   rootRestored: boolean;
   /** 切换 root;同时 LRU 维护 recentRoots. null 时只清 root,不动 recent.
-   *  副作用:旧 root 外的 file tab 自动关闭(untitled 草稿保留). */
+   *  副作用:旧 root 外的 clean file tab 自动关闭(dirty 保留). */
   setRoot: (path: string | null) => void;
   /** 持久化层调用,置 rootRestored=true。幂等。 */
   markRootRestored: () => void;

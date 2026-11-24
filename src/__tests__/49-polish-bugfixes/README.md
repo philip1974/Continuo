@@ -171,9 +171,9 @@
 
 ### P2-Q 切 workspace 保留 root 外的脏 tab — `switch-root-keep-dirty-tab.spec.ts`
 - `getStateAfterClosingTabsOutsideRoot` 的保留判定改为 tab-aware 的 `keep(tab)`:
-  untitled 草稿与 **dirty(未保存)tab** 一律保留,只关 root 外的 clean 文件 tab。
+  **dirty(未保存)tab** 一律保留,只关 root 外的 clean 文件 tab。
 - 根因: 旧实现只按 `filePath` 位置判定,落在新 root 外的脏真实文件 tab 被直接关闭、
-  未保存编辑静默丢失(untitled 因 filePath=null 被保护,真实路径脏 tab 不受保护)。
+  未保存编辑静默丢失。
   与 issue-45 drag-folder 切根同源场景,脏 tab 保护缺口此前未覆盖。
 
 ### P2-R plugin-data 原子写 + 损坏降级 — `plugin-data-corrupt-degrade.spec.ts`

@@ -61,7 +61,6 @@ export const zh: Record<TranslationKey, string> = {
   'errors.NOT_SUPPORTED': '不支持该操作',
   'errors.NO_ACTIVE_TAB': '没有活动标签页',
   'errors.TAB_NOT_FOUND': '找不到标签页',
-  'errors.UNSAVED_DRAFT': '未命名草稿没有路径，无法保存',
   'errors.EDITOR_DISK_CHANGED': '文件已在磁盘上被修改，未覆盖（按 Cmd/Ctrl+S 选择是否覆盖）',
   'errors.NO_DEFAULT_EXPORT': '插件没有 export default',
   'errors.NOT_PLUGIN_CLASS': '插件的 default export 不是 Plugin 子类',
@@ -182,7 +181,6 @@ export const zh: Record<TranslationKey, string> = {
 
   'dialog.unsaved_close.message': '是否要保存对 {count} 个文件的更改?',
   'dialog.unsaved_close.detail': '如果不保存,你的更改将丢失。',
-  'dialog.unsaved_close.untitled_note': '{count} 个未命名草稿无法保存(暂不支持另存为),将被丢弃。',
   'dialog.unsaved_close.dont_save': '不保存',
   'dialog.unsaved_close.save_failed': '{count} 个文件保存失败,窗口未关闭。',
   'dialog.unsaved_close.disk_changed_note': '其中 {count} 个文件已在磁盘上被其它程序修改,未覆盖。请在编辑器中按 Cmd/Ctrl+S 解决冲突,或选择「不保存」。',
@@ -274,8 +272,6 @@ export const zh: Record<TranslationKey, string> = {
   'panels.terminal.search.close': '关闭搜索',
 
   // panels.editor.*
-  'panels.editor.untitled': '未命名',
-  'panels.editor.unsaved_draft': '未保存草稿',
   'panels.editor.unsaved_indicator': '未保存的更改',
   'panels.editor.placeholder.start_writing': '开始书写…',
   'panels.editor.mode.edit': '编辑',
@@ -360,7 +356,6 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端、调试与插件工具授权(任一窗口中的 agent terminal 也会被一并终止)',
   'statusbar.no_workspace': '无工作区',
   'statusbar.sidebar_hidden': '侧栏已隐藏',
-  'statusbar.untitled_file': '未命名',
   'statusbar.unsaved_changes': '未保存的更改',
   'statusbar.editor_stats': '{lines} 行 · {words} 词 · {chars} 字符',
 

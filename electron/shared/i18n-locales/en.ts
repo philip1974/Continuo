@@ -71,7 +71,6 @@ export const en = {
   'errors.NOT_SUPPORTED': 'Operation not supported',
   'errors.NO_ACTIVE_TAB': 'No active tab',
   'errors.TAB_NOT_FOUND': 'Tab not found',
-  'errors.UNSAVED_DRAFT': 'Untitled draft cannot be saved without a path',
   'errors.EDITOR_DISK_CHANGED': 'The file was changed on disk; not overwritten (press Cmd/Ctrl+S to choose)',
   'errors.NO_DEFAULT_EXPORT': 'Plugin has no default export',
   'errors.NOT_PLUGIN_CLASS': 'Plugin default export is not a Plugin subclass',
@@ -195,8 +194,6 @@ export const en = {
   // 关窗 / 退出时的未保存确认(main dialog.showMessageBox)+ 保存失败提示(renderer toast)
   'dialog.unsaved_close.message': 'Do you want to save the changes you made to {count} file(s)?',
   'dialog.unsaved_close.detail': "Your changes will be lost if you don't save them.",
-  'dialog.unsaved_close.untitled_note':
-    '{count} untitled draft(s) cannot be saved (Save As is not supported yet) and will be discarded.',
   'dialog.unsaved_close.dont_save': "Don't Save",
   'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
   'dialog.unsaved_close.disk_changed_note':
@@ -292,8 +289,6 @@ export const en = {
   'panels.terminal.search.close': 'Close search',
 
   // panels.editor.*
-  'panels.editor.untitled': 'Untitled',
-  'panels.editor.unsaved_draft': 'Unsaved draft',
   'panels.editor.unsaved_indicator': 'Unsaved changes',
   'panels.editor.placeholder.start_writing': 'Start writing…',
   'panels.editor.mode.edit': 'Edit',
@@ -379,7 +374,6 @@ export const en = {
   'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal, debugger and plugin tool authorization granted to agents (agent terminals in any window are also terminated)',
   'statusbar.no_workspace': 'No workspace',
   'statusbar.sidebar_hidden': 'Sidebar hidden',
-  'statusbar.untitled_file': 'Untitled',
   'statusbar.unsaved_changes': 'Unsaved changes',
   'statusbar.editor_stats': '{lines} lines · {words} words · {chars} chars',
 

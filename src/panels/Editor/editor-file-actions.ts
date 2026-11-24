@@ -176,7 +176,7 @@ async function openTabWith(
 }
 
 /**
- * Cmd+S 触发。已存在 filePath 才能保存;无 path → UNSAVED_DRAFT(MVP 不支持另存为)。
+ * Cmd+S 触发。
  * 成功后 store.markSaved。
  */
 export interface SaveFileOptions {
@@ -241,7 +241,7 @@ async function saveFileNow(
   const { fs } = deps;
   const store = useEditorStore;
   let tab = findEditorFileTabById(store.getState().tabs, tabId);
-  if (opts?.force !== true && tab?.filePath) {
+  if (opts?.force !== true && tab) {
     const blocked = await checkDiskBeforeSave(fs, tab.filePath, tab.originalContent, tab.savedGen);
     if (blocked) return blocked;
   }
@@ -254,14 +254,6 @@ async function saveFileNow(
       message: `tab not found: ${tabId}`,
     };
   }
-  if (!tab.filePath) {
-    return {
-      ok: false,
-      code: 'UNSAVED_DRAFT',
-      message: 'untitled draft cannot save without a path (MVP 不支持另存为)',
-    };
-  }
-
   // 快照本次写盘的内容。markSaved 用它判定写盘 await 期间是否发生并发编辑:
   // 若 store 里 content 已领先此快照,保留 dirty 不被静默清掉。
   const savedContent = tab.content;

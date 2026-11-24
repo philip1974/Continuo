@@ -104,10 +104,9 @@ describe('snapshotFromStores · editor 字段', () => {
     expect(JSON.stringify(snap)).not.toContain('AGENTS');
   });
 
-  it('含 untitled tab(filePath=null)→ 不进 openFilePaths', () => {
-    const untitled = createTab(null, 'draft');
-    const tabs = [createTab('/x.md', 'x'), untitled, createTab('/y.md', 'y')];
-    useEditorStore.setState({ tabs, activeTabId: untitled.id });
+  it('collectEditorSnapshot 不走 tabs.map / push', () => {
+    const tabs = [createTab('/x.md', 'x'), createTab('/y.md', 'y')];
+    useEditorStore.setState({ tabs, activeTabId: '/y.md' });
     const mapSpy = vi.spyOn(tabs, 'map');
 
     try {
@@ -118,8 +117,7 @@ describe('snapshotFromStores · editor 字段', () => {
       expect(collectEditorSnapshot.toString()).not.toContain(
         'openFilePaths.push(',
       );
-      // active 是 untitled → activePath=null
-      expect(snap.windows[0]!.editor!.activePath).toBeNull();
+      expect(snap.windows[0]!.editor!.activePath).toBe('/y.md');
     } finally {
       mapSpy.mockRestore();
     }

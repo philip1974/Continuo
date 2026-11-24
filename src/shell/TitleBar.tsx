@@ -20,11 +20,10 @@ export function TitleBar() {
   // getState() 读 active tab。持续输入已脏 tab(dirty 不变)→ 两 selector 都不变 → O(1) 跳过。
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const chromeVersion = useEditorStore((s) => s.chromeVersion);
-  const { hasActiveTab, activeFilePath, activeDirty } = useMemo(() => {
+  const { activeFilePath, activeDirty } = useMemo(() => {
     const found =
       findEditorFileTabById(useEditorStore.getState().tabs, activeTabId);
     return {
-      hasActiveTab: found !== null,
       activeFilePath: found?.filePath ?? null,
       activeDirty: found?.dirty ?? false,
     };
@@ -32,9 +31,7 @@ export function TitleBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, chromeVersion]);
 
-  const fileName = hasActiveTab
-    ? basenameForChrome(activeFilePath ?? t('panels.editor.untitled'))
-    : null;
+  const fileName = activeFilePath !== null ? basenameForChrome(activeFilePath) : null;
   const wsLabel = root ? basenameForChrome(root) : null;
   // 拼接:[file ●] · [workspace] || Continuo。dirty ● 仅视觉(aria-hidden),
   // 未保存语义改由视觉隐藏的本地化文本承载(a11y A40,同 A35/A37 dirty 族)。

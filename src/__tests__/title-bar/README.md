@@ -16,4 +16,3 @@
 - 仅有 active.filePath → basename(filePath)
 - active 与 root 都有 → `${file}  ·  ${ws}`
 - active.dirty=true → 文件名后追加 ' ●'
-- active.filePath=null → 显示'未命名'

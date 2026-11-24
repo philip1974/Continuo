@@ -17,7 +17,6 @@ const h = vi.hoisted(() => ({
           windowId: number;
           save?: boolean;
           discard?: boolean;
-          untitledIds?: string[];
           pendingAutoSave?: string[];
           requestId?: number;
         }) => Promise<void>)
@@ -63,7 +62,6 @@ vi.mock('@/lib/co-api', () => ({
           windowId: number;
           save?: boolean;
           discard?: boolean;
-          untitledIds?: string[];
           pendingAutoSave?: string[];
           requestId?: number;
         }) => Promise<void>,
@@ -117,8 +115,8 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 /** 期望的脏态上报 / remaining / 回执 state(计数由 id 列表推出;id = `${tabId}#${变脏代际}`)。 */
-function ds(ids: string[], untitledIds: string[] = []) {
-  return { dirty: ids.length, untitled: untitledIds.length, ids, untitledIds };
+function ds(ids: string[]) {
+  return { dirty: ids.length, ids };
 }
 
 /** tab 当前的上报身份(变脏代际取自全局单调计数器,只能从 store 读出)。 */
@@ -469,44 +467,6 @@ describe('flush 握手的最终脏检查', () => {
       await h.flushCb.current!({ windowId: 1, requestId: 12 });
     });
     expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, { state: ds([]), requestId: 12 });
-  });
-});
-
-// 复审:「保存」只放过确认框告知的 untitled id(main 随请求带 untitledIds);此前按数量放过,确认后新建 /
-// 同数量替换的 untitled 草稿被静默丢弃。
-describe('flush「保存」分支的 untitled 放行范围', () => {
-  function openDirtyUntitled(): string {
-    const t = createTab(null, '');
-    act(() => {
-      useEditorStore.getState().openTab(t);
-      useEditorStore.getState().updateContent(t.id, 'draft');
-    });
-    return t.id;
-  }
-
-  it('untitled 都在告知的 id 里 → 不带 remaining;有不在其中的(同数量替换)→ 回执 remaining', async () => {
-    await mountShell();
-    const u1 = openDirtyUntitled();
-    const u2 = openDirtyUntitled();
-
-    await act(async () => {
-      await h.flushCb.current!({ windowId: 1, save: true, untitledIds: [g(u1), g(u2)], requestId: 13 });
-    });
-    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
-      saveFailed: false,
-      state: ds([g(u1), g(u2)], [g(u1), g(u2)]),
-      requestId: 13,
-    });
-
-    await act(async () => {
-      await h.flushCb.current!({ windowId: 1, save: true, untitledIds: [g(u1), 'untitled-gone#1'], requestId: 14 });
-    });
-    expect(h.sendFlushAck).toHaveBeenLastCalledWith(1, {
-      saveFailed: false,
-      state: ds([g(u1), g(u2)], [g(u1), g(u2)]),
-      remaining: ds([g(u1), g(u2)], [g(u1), g(u2)]),
-      requestId: 14,
-    });
   });
 });
 

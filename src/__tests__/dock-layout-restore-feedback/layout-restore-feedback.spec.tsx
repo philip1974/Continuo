@@ -113,7 +113,7 @@ beforeEach(() => {
 });
 
 // flush 回执始终携带最终脏态(无脏 tab → 空集合),见 dirty-close-confirm/README.md。
-const CLEAN_ACK = { state: { dirty: 0, untitled: 0, ids: [], untitledIds: [] } };
+const CLEAN_ACK = { state: { dirty: 0, ids: [] } };
 
 // globals:false 下 testing-library 不会自动 cleanup:须显式卸载,否则 DockShell 的终端就绪计时器在环境销毁后触发。
 afterEach(cleanup);

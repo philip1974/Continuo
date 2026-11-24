@@ -28,18 +28,12 @@ export function parseDirtyState(raw: unknown): DirtyState | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const obj = raw as Record<string, unknown>;
   const ids = parseIds(obj['ids']);
-  const untitledIds = parseIds(obj['untitledIds']);
-  if (!ids || !untitledIds) return null;
-  if (obj['dirty'] !== ids.length || obj['untitled'] !== untitledIds.length) return null;
-  const all = new Set(ids);
-  if (!untitledIds.every((id) => all.has(id))) return null;
+  if (!ids || obj['dirty'] !== ids.length) return null;
   const pending = obj['pendingAutoSave'] === undefined ? [] : parseIds(obj['pendingAutoSave']);
   if (!pending) return null;
   return {
     dirty: ids.length,
-    untitled: untitledIds.length,
     ids,
-    untitledIds,
     ...(pending.length > 0 ? { pendingAutoSave: pending } : {}),
   };
 }
@@ -66,10 +60,6 @@ export interface DirtyCloseDialogOptions {
 }
 
 export function buildDirtyCloseDialog(state: DirtyState, t: MainT): DirtyCloseDialogOptions {
-  let detail = t('dialog.unsaved_close.detail');
-  if (state.untitled > 0) {
-    detail += `\n\n${t('dialog.unsaved_close.untitled_note', { count: state.untitled })}`;
-  }
   return {
     type: 'warning',
     buttons: [t('common.save'), t('dialog.unsaved_close.dont_save'), t('common.cancel')],
@@ -77,7 +67,7 @@ export function buildDirtyCloseDialog(state: DirtyState, t: MainT): DirtyCloseDi
     cancelId: CANCEL_ID,
     noLink: true,
     message: t('dialog.unsaved_close.message', { count: state.dirty }),
-    detail,
+    detail: t('dialog.unsaved_close.detail'),
   };
 }
 

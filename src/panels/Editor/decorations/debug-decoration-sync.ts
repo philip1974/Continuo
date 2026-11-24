@@ -95,7 +95,7 @@ function syncDebugDecorations(): void {
 
   for (const [tabId, view] of editorState.viewRefs) {
     const tab = findEditorFileTabById(editorState.tabs, tabId);
-    if (tab === null || tab.filePath === null || isMarkdownPath(tab.filePath)) {
+    if (tab === null || isMarkdownPath(tab.filePath)) {
       clearView(view);
       continue;
     }

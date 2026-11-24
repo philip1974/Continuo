@@ -185,24 +185,6 @@ describe('StatusBar — 右侧文件信息', () => {
     rerender(<StatusBar />);
     expect(container.textContent).not.toContain('未保存的更改');
   });
-
-  it('active.filePath=null(草稿) → 「未命名」', () => {
-    installApi({});
-    useEditorStore.setState({
-      tabs: [
-        {
-          id: 'untitled-1',
-          filePath: null,
-          content: 'x',
-          originalContent: '',
-          dirty: false,
-        },
-      ],
-      activeTabId: 'untitled-1',
-    });
-    const { container } = render(<StatusBar />);
-    expect(container.textContent).toContain('未命名');
-  });
 });
 
 describe('StatusBar — agent 计数', () => {

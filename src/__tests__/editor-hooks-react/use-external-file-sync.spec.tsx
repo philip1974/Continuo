@@ -189,36 +189,6 @@ describe('useExternalFileSync', () => {
     expect(unsub).toHaveBeenCalledTimes(1);
   });
 
-  it('filePath null(草稿)→ 跳过', async () => {
-    let dirCb: ((dir: string) => void) | null = null;
-    const readFile = vi.fn(async () => ({ ok: true, data: 'x' }));
-    installFsApi({
-      onDirChanged: (cb) => {
-        dirCb = cb;
-        return () => {};
-      },
-      readFile,
-    });
-
-    useEditorStore.setState({
-      tabs: [
-        {
-          id: 'untitled-1',
-          filePath: null,
-          content: 'x',
-          originalContent: '',
-          dirty: false,
-        },
-      ],
-      activeTabId: 'untitled-1',
-    });
-
-    renderHook(() => useExternalFileSync());
-    dirCb!('/');
-    await Promise.resolve();
-    expect(readFile).not.toHaveBeenCalled();
-  });
-
   it('目录 watcher 失效后重新可观察(本地 watch-restored)→ 同 dir-changed 重读其中 clean tab', async () => {
     const readFile = vi.fn(async () => ({ ok: true, data: 'changed while lost' }));
     installFsApi({ onDirChanged: () => () => {}, readFile });

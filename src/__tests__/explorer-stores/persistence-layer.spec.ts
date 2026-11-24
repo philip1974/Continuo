@@ -117,14 +117,15 @@ describe('snapshotFromStores', () => {
       collectEditorSnapshot(
         [
           {
-            id: 'untitled-1',
-            filePath: null,
+            id: '/p.md',
+            filePath: '/p.md',
             content: '',
             originalContent: '',
             dirty: false,
+            pluginOpenedPath: '/p.md',
           },
         ],
-        'untitled-1',
+        '/p.md',
       ).openFilePaths,
     ).toBe(empty.openFilePaths);
   });

@@ -16,8 +16,8 @@
 
 ```ts
 editor?: {
-  openFilePaths: string[];   // 顺序 = useEditorStore.tabs(过滤 filePath=null)
-  activePath: string | null; // active tab 的 filePath;active 是 untitled → null
+  openFilePaths: string[];   // 顺序 = useEditorStore.tabs(过滤插件打开的 tab)
+  activePath: string | null; // active tab 的 filePath;无 active → null
 }
 ```
 
@@ -33,9 +33,8 @@ editor?: {
 
 - 起始 tabs=[] → `editor.openFilePaths=[]` + `activePath=null`
 - 多个 file tab → openFilePaths **顺序与 store.tabs 一致**
-- 含 untitled tab(filePath=null)→ 不进 openFilePaths(无路径无法恢复)
 - active 是 file tab → activePath = 该 tab 的 filePath
-- active 是 untitled / activeTabId=null → activePath=null
+- activeTabId=null → activePath=null
 
 ### hydrateEditorTabs(snap, fs) · async
 

@@ -28,17 +28,15 @@
 - 确认框挂在该窗口上(`dialog.showMessageBox(win, …)`),回答前不 hide、不 flush;框打开期间重复关闭不叠框。
 - **取消** → 窗口保持打开;再次关闭会再次确认。
 - **不保存** → 照旧 hide + flush 后关闭(请求带 `discard: true`,renderer 跳过最终脏检查)。
-- **保存** → flush 请求带 `save: true`,renderer 先保存所有有路径的脏 tab 再 flush;
+- **保存** → flush 请求带 `save: true`,renderer 先保存所有脏 tab 再 flush;
   回执 `saveFailed: true`、超时无回执或请求被跳过(renderer 未就绪 / send 抛错)→ 中止关闭、窗口重新显示
   (renderer 已 toast)。「不保存」时跳过仍照常关闭。
 
 ### 最终脏检查(统一规则)
 
 「是否允许关闭」不再只取决于弹框前的脏计数。renderer 在 flush 握手里**全部** flush(批量保存、layout、explorer、
-markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(有路径的都算,autosave 已 flush 过,仍脏的
-`.md` 也算;untitled 计入,但本轮选「保存」时只放过确认框告知的 untitled **id** —— main 随 flush 请求带
-`untitledIds`,确认后新建 / 同数量替换的 untitled 草稿不在其中即计入)。本轮**未**选「不保存」
-且仍有 → 回执带 `remaining: { dirty, untitled, ids, untitledIds }`:
+markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(autosave 已 flush 过,仍脏的
+`.md` 也算)。本轮**未**选「不保存」且仍有 → 回执带 `remaining: { dirty, ids }`:
 
 - main 中止本次关闭 / 退出,窗口重新显示,`quitGuard` 复位(与保存失败路径一致),并按 `remaining` 记账 →
   用户再次关闭时看到确认框。
@@ -81,9 +79,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(�
   单窗关闭流程不受影响(回答后本就 hide + 关闭)。
 - 按各窗选择 flush;任一「保存」失败或回执 `remaining` → 中止退出、显示该窗口、守卫复位(不记 flushedOnQuit,之后关窗仍走确认)。
 - 全局最终检查:全部 flush 完成后、破坏性清理(`cleanupAll` 杀 PTY / debug)之前,按 main 持续接收的脏态上报判断
-  各主窗是否超出本轮已接受范围 —— **按 id 身份**:当前脏 id 须是已接受集合的子集(未弹框 → 空集;「保存」→ 确认框
-  告知的 untitled id;「不保存」→ 确认时的全部脏 id)。只比数量会被同数量替换绕过(「不保存」后存了 X、改了 Y;
-  untitled 换成新草稿)。超出(如 A 已回执后、等待 B 保存期间在 A 里继续编辑)→ 中止退出、显示该窗口、守卫复位。
+  各主窗是否超出本轮已接受范围 —— **按 id 身份**:当前脏 id 须是已接受集合的子集(未弹框 / 「保存」→ 空集;
+  「不保存」→ 确认时的全部脏 id)。只比数量会被同数量替换绕过(「不保存」后存了 X、改了 Y)。超出(如 A 已回执后、等待 B 保存期间在 A 里继续编辑)→ 中止退出、显示该窗口、守卫复位。
   各窗记账以回执携带的 `state` 为准,之后的脏态上报继续更新。
 - 全局最终检查同样按身份检查 `pendingAutoSave`(终审 P1):A 已回执后在 A 的活动 `.md` 输入,防抖触发前该 tab 只进
   `pendingAutoSave`(`dirty` 仍 0),本轮 flush 已结束不会再落盘 → 不在已接受集合内即超出,中止退出。放过:已接受集合内
@@ -110,12 +107,12 @@ reload 换掉 renderer 文档,未落盘编辑与关窗一样会丢。View 菜单
 
 ### 计数口径(renderer)
 
-- 计入:脏的代码文件 tab;untitled 草稿计入并单独计数(无路径,MVP 不支持另存为,「保存」时跳过,文案说明会被丢弃)。
-- 上报附带脏 tab 的身份列表 `${tabId}#${变脏代际}`(tabId:file tab = 路径,untitled = 其 id;`ids` / `untitledIds`)。
+- 计入:脏的代码文件 tab(编辑 tab 都有路径,无无路径草稿)。
+- 上报附带脏 tab 的身份列表 `ids`:`${tabId}#${变脏代际}`(tabId = 路径)。
   变脏代际(`EditorTab.dirtyGen`)取自进程内全局单调计数器(永不复用),在 clean→dirty 跃迁、以及保存推进了已落盘
   基线但 tab 仍脏(保存期间继续输入)时赋新值,持续输入不变 —— 「不保存」后保存再编辑同一文件、关闭重开同一路径再编辑、
   保存期间的新增量都是新身份,不在已接受范围内(复审:只比 tab id / 按 tab 实例计数会放行退出丢新改动)。main 解析时校验计数与 id
-  列表一致、`untitledIds ⊆ ids`、无重复,id 列表上限 `PATH_ARRAY_MAX`、单条上限 `PATH_STR_MAX`,不合法整体忽略。
+  列表一致、无重复,id 列表上限 `PATH_ARRAY_MAX`、单条上限 `PATH_STR_MAX`,不合法整体忽略。
 - 代际变化即重新上报:上报 effect 只订阅 `chromeVersion`,保存期间继续输入时 dirty 不翻转但代际换新,`markSaved`
   也递增 `chromeVersion`,否则新代际不上报、main 仍按旧代际放行退出(终审 P1)。
 - 不计入:Markdown 自动保存开启时,**活动** tab(持有 autosave scheduler)且其最近一次 autosave 未失败的脏 `.md`
@@ -126,7 +123,7 @@ reload 换掉 renderer 文档,未落盘编辑与关窗一样会丢。View 菜单
   不会重试。状态绑定 scheduler 实例(`src/panels/Editor/autosave-failures.ts`):切 tab / 重命名 / 关闭重开都换实例,
   新实例从「未失败」开始且 tab 仍脏时立即重新 schedule(关窗 flush 会重试);旧实例迟到结果丢弃;再次 schedule
   (继续编辑 / 显式保存后再编辑)即清除失败态。编辑器未挂载(无持有者)→ 计入。变化时重新上报。
-- 「保存」分支保存所有有路径的脏 tab(含 `.md`,无害);全部完成后复查,仍脏(保存期间继续输入)同样视为失败。
+- 「保存」分支保存所有脏 tab(含 `.md`,无害);全部完成后复查,仍脏(保存期间继续输入)同样视为失败。
 - 保存失败提示里,因磁盘已被外部修改(EDITOR_DISK_CHANGED)而未写的文件单独说明(引导 Cmd+S 解决冲突
   或选「不保存」;关窗流程不弹覆盖框),文案 `dialog.unsaved_close.disk_changed_note`。
 
@@ -136,7 +133,7 @@ reload 换掉 renderer 文档,未落盘编辑与关窗一样会丢。View 菜单
 |---|---|
 | `dirty-close-dialog.spec.ts` | main 纯函数:上报解析 / 是否弹框 / 按钮与文案 / 选择映射 / 回执解析 |
 | `close-confirm-flow.spec.ts` | main 端到端握手(electron 全 mock):关窗各分支 + before-quit 取消 / 保存失败 / 回执 remaining 中止 / pendingAutoSave + 超时中止 / ACK 后新增 pendingAutoSave 中止 / 关闭流程代际 / 成功退出 |
-| `renderer-dirty-close.spec.ts` | renderer 纯函数:计数口径(活动 / 非活动 / 失败 / 旧实例)/ 批量保存失败计数 / 最终脏检查(untitled 按 id 放行) |
+| `renderer-dirty-close.spec.ts` | renderer 纯函数:计数口径(活动 / 非活动 / 失败 / 旧实例)/ 批量保存失败计数 / 最终脏检查 |
 | `dockshell-save-on-close.spec.tsx` | DockShell 脏态上报 + flush「保存」分支回执 + 最终脏检查回执 `remaining` |
 | `../49-polish-bugfixes/quit-cleanup-guard-reentry.spec.ts` | 守卫 `cancel()` 复位 |
 | `../49-polish-bugfixes/autosave-resolved-failure.spec.tsx` | `useAutoSave` 持有 / 失败 / 重新 schedule / 重命名 / 卸载 |

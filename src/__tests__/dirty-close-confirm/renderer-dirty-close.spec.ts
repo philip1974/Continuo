@@ -15,12 +15,7 @@ import {
   setAutoSaveFailed,
 } from '../../panels/Editor/autosave-failures';
 
-const tab = (
-  filePath: string | null,
-  dirty: boolean,
-  id = filePath ?? 'untitled-1',
-  dirtyGen?: number,
-) => ({
+const tab = (filePath: string, dirty: boolean, id = filePath, dirtyGen?: number) => ({
   id,
   filePath,
   dirty,
@@ -34,21 +29,13 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   afterEach(() => releaseAutoSave(owner));
 
   it('无脏 tab → 0', () => {
-    expect(countDirtyForClose([tab('/a.ts', false)], true)).toEqual({
-      dirty: 0,
-      untitled: 0,
-      ids: [],
-      untitledIds: [],
-    });
+    expect(countDirtyForClose([tab('/a.ts', false)], true)).toEqual({ dirty: 0, ids: [] });
   });
 
-  it('脏代码文件计入;untitled 草稿计入并单独计数(附带 id 列表)', () => {
+  it('脏代码文件计入(附带 id 列表)', () => {
     expect(
-      countDirtyForClose(
-        [tab('/a.ts', true), tab('/b.json', true), tab(null, true), tab('/c.ts', false)],
-        true,
-      ),
-    ).toEqual({ dirty: 3, untitled: 1, ids: ['/a.ts#0', '/b.json#0', 'untitled-1#0'], untitledIds: ['untitled-1#0'] });
+      countDirtyForClose([tab('/a.ts', true), tab('/b.json', true), tab('/c.ts', false)], true),
+    ).toEqual({ dirty: 2, ids: ['/a.ts#0', '/b.json#0'] });
   });
 
   it('Markdown 自动保存开启时,活动 tab(持有 autosave scheduler)的脏 .md 不计入(关窗 flush 会落盘)', () => {
@@ -62,9 +49,7 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
     claimAutoSave('/a.md', owner, noopFlush);
     expect(countDirtyForClose([tab('/a.md', true, '/a.md', 3), tab('/b.ts', true)], true)).toEqual({
       dirty: 1,
-      untitled: 0,
       ids: ['/b.ts#0'],
-      untitledIds: [],
       pendingAutoSave: ['/a.md#3'],
     });
     expect(countDirtyForClose([tab('/a.md', true)], false)).not.toHaveProperty('pendingAutoSave');
@@ -121,11 +106,11 @@ describe('countDirtyForClose:只统计关窗会丢的脏 tab', () => {
   });
 });
 
-describe('saveDirtyTabsForClose:「保存」分支保存所有有路径的脏 tab', () => {
-  it('跳过 clean 与 untitled,失败数 0', async () => {
+describe('saveDirtyTabsForClose:「保存」分支保存所有脏 tab', () => {
+  it('跳过 clean,失败数 0', async () => {
     const saveTab = vi.fn(async (_id: string) => ({ ok: true as const }));
     const r = await saveDirtyTabsForClose(
-      [tab('/a.ts', true), tab('/b.md', true), tab(null, true), tab('/c.ts', false)],
+      [tab('/a.ts', true), tab('/b.md', true), tab('/c.ts', false)],
       saveTab,
       () => [],
     );
@@ -214,55 +199,21 @@ describe('remainingAfterDiscard:「不保存」后仍脏的待 autosave .md', ()
   it('pendingAutoSave 的 tab 仍脏(含再次变脏、代际不同)→ 全部脏 tab', () => {
     expect(
       remainingAfterDiscard([tab('/a.md', true, '/a.md', 5), tab('/b.ts', true)], ['/a.md#3']),
-    ).toEqual({ dirty: 2, untitled: 0, ids: ['/a.md#5', '/b.ts#0'], untitledIds: [] });
+    ).toEqual({ dirty: 2, ids: ['/a.md#5', '/b.ts#0'] });
   });
 });
 
-// 统一规则:全部 flush(含 markdown autosave flush)完成后最终脏检查。autosave 已 flush 过,仍脏的 .md 也算;
-// untitled 计入 —— 但本轮选了「保存」时用户已被告知的 untitled(按 id)不因它们中止。
+// 统一规则:全部 flush(含 markdown autosave flush)完成后最终脏检查。autosave 已 flush 过,仍脏的 .md 也算。
 describe('remainingAfterFlush:flush 后仍未保存的改动', () => {
-  const none = new Set<string>();
-
   it('全部干净 → null', () => {
-    expect(remainingAfterFlush([tab('/a.ts', false), tab('/b.md', false)], none)).toBeNull();
+    expect(remainingAfterFlush([tab('/a.ts', false), tab('/b.md', false)])).toBeNull();
   });
 
   it('仍脏的 .md(autosave flush 失败)与代码文件都计入,不看 autosave 设置', () => {
-    expect(remainingAfterFlush([tab('/a.md', true), tab('/b.ts', true)], none)).toEqual({
+    expect(remainingAfterFlush([tab('/a.md', true), tab('/b.ts', true)])).toEqual({
       dirty: 2,
-      untitled: 0,
       ids: ['/a.md#0', '/b.ts#0'],
-      untitledIds: [],
     });
-  });
-
-  it('未弹框(非保存,放过 0 个)时 untitled 草稿计入', () => {
-    expect(remainingAfterFlush([tab(null, true)], none)).toMatchObject({ dirty: 1, untitled: 1 });
-  });
-
-  it('「保存」分支只剩已告知的 untitled → null;有路径的仍脏 → 计数含 untitled', () => {
-    const told = new Set(['untitled-1#0']);
-    expect(remainingAfterFlush([tab(null, true)], told)).toBeNull();
-    expect(remainingAfterFlush([tab(null, true), tab('/a.ts', true)], told)).toMatchObject({
-      dirty: 2,
-      untitled: 1,
-    });
-  });
-
-  // 复审:此前按数量放过 → 确认后才新建的 untitled 草稿(同数量替换)被静默丢弃。只放过确认框告知的 id。
-  it('「保存」分支 untitled 不在告知的 id 集合里(新建 / 同数量替换)→ 计入 remaining', () => {
-    const told = new Set(['untitled-1#0']);
-    expect(
-      remainingAfterFlush([tab(null, true, 'untitled-1'), tab(null, true, 'untitled-2')], told),
-    ).toMatchObject({ dirty: 2, untitled: 2 });
-    expect(remainingAfterFlush([tab(null, true, 'untitled-2')], told)).toMatchObject({
-      dirty: 1,
-      ids: ['untitled-2#0'],
-    });
-  });
-
-  it('告知集合只放过 untitled:同 id 的有路径 tab 不被放过', () => {
-    expect(remainingAfterFlush([tab('/a.ts', true)], new Set(['/a.ts#0']))).toMatchObject({ dirty: 1 });
   });
 });
 
@@ -271,8 +222,8 @@ describe('remainingAfterFlush:flush 后仍未保存的改动', () => {
 describe('脏 tab 身份带变脏代际', () => {
   it('上报 id 形如 `${tabId}#${gen}`(无代际按 0)', () => {
     expect(
-      countDirtyForClose([tab('/a.ts', true, '/a.ts', 2), tab(null, true, 'untitled-1', 1)], true),
-    ).toEqual({ dirty: 2, untitled: 1, ids: ['/a.ts#2', 'untitled-1#1'], untitledIds: ['untitled-1#1'] });
+      countDirtyForClose([tab('/a.ts', true, '/a.ts', 2), tab('/b.ts', true, '/b.ts', 1)], true),
+    ).toEqual({ dirty: 2, ids: ['/a.ts#2', '/b.ts#1'] });
   });
 
   it('editor store:clean→dirty 跃迁取新代际;持续输入不变;保存后再编辑同一文件 → 新代际', () => {

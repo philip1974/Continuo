@@ -19,16 +19,11 @@ const t = (key: string, params?: Record<string, string | number>) => {
 };
 
 /** 构造合法脏态(计数由 id 列表推出)。 */
-const ds = (ids: string[], untitledIds: string[] = []) => ({
-  dirty: ids.length,
-  untitled: untitledIds.length,
-  ids,
-  untitledIds,
-});
+const ds = (ids: string[]) => ({ dirty: ids.length, ids });
 
 describe('parseDirtyState:renderer 上报的脏态只接受合法计数与 id 列表', () => {
   it('合法对象原样返回', () => {
-    const s = ds(['/a.ts', '/b.ts', 'untitled-1'], ['untitled-1']);
+    const s = ds(['/a.ts', '/b.ts']);
     expect(parseDirtyState(s)).toEqual(s);
     expect(parseDirtyState(ds([]))).toEqual(ds([]));
   });
@@ -46,14 +41,13 @@ describe('parseDirtyState:renderer 上报的脏态只接受合法计数与 id �
     null,
     undefined,
     'x',
-    { dirty: 1, untitled: 0 }, // 缺 id 列表(复审:main 按身份比较)
-    { dirty: 2, untitled: 0, ids: ['/a.ts'], untitledIds: [] }, // 计数与 id 列表不一致
-    { dirty: 1, untitled: 1, ids: ['/a.ts'], untitledIds: ['untitled-1'] }, // untitled 不是 ids 子集
-    { dirty: 2, untitled: 0, ids: ['/a.ts', '/a.ts'], untitledIds: [] }, // 重复 id
-    { dirty: 1, untitled: 0, ids: [''], untitledIds: [] },
-    { dirty: 1, untitled: 0, ids: [1], untitledIds: [] },
-    { dirty: 1, untitled: 0, ids: ['x'.repeat(PATH_STR_MAX + 33)], untitledIds: [] }, // 单条超上限(路径上限 + 代际后缀余量)
-    { dirty: 1, untitled: 0, ids: 'x', untitledIds: [] },
+    { dirty: 1 }, // 缺 id 列表(复审:main 按身份比较)
+    { dirty: 2, ids: ['/a.ts'] }, // 计数与 id 列表不一致
+    { dirty: 2, ids: ['/a.ts', '/a.ts'] }, // 重复 id
+    { dirty: 1, ids: [''] },
+    { dirty: 1, ids: [1] },
+    { dirty: 1, ids: ['x'.repeat(PATH_STR_MAX + 33)] }, // 单条超上限(路径上限 + 代际后缀余量)
+    { dirty: 1, ids: 'x' },
   ])('非法输入 #%# → null', (raw) => {
     expect(parseDirtyState(raw)).toBeNull();
   });
@@ -97,13 +91,7 @@ describe('buildDirtyCloseDialog:参考 VSCode 的 保存 / 不保存 / 取消', 
     expect(opts.defaultId).toBe(0);
     expect(opts.cancelId).toBe(2);
     expect(opts.message).toContain('2');
-    expect(opts.detail).not.toMatch(/untitled/i);
-  });
-
-  it('含 untitled 草稿时说明它们无法保存', () => {
-    const opts = buildDirtyCloseDialog(ds(['/a.ts', '/b.ts', 'untitled-1'], ['untitled-1']), t);
-    expect(opts.message).toContain('3');
-    expect(opts.detail).toMatch(/untitled/i);
+    expect(opts.detail).toBe(en['dialog.unsaved_close.detail']);
   });
 });
 
@@ -157,9 +145,9 @@ describe('parseFlushAck:renderer flush 回执', () => {
   // 统一规则:renderer 全部 flush 完成后最终脏检查,仍有未保存改动 → 回执 remaining(计数,main 据此中止并
   // 记账,下次关闭会弹确认)。畸形 / 计数为 0 → null(不中止)。
   it('remaining:合法且 dirty>0 才采纳,畸形 / 0 → null', () => {
-    const s = ds(['/a.ts', 'untitled-1'], ['untitled-1']);
+    const s = ds(['/a.ts', '/b.ts']);
     expect(parseFlushAck({ remaining: s }).remaining).toEqual(s);
-    for (const bad of [ds([]), { dirty: 1, untitled: 0 }, { dirty: -1 }, 'x', 1]) {
+    for (const bad of [ds([]), { dirty: 1 }, { dirty: -1 }, 'x', 1]) {
       expect(parseFlushAck({ remaining: bad }).remaining).toBeNull();
     }
   });
@@ -169,7 +157,7 @@ describe('parseFlushAck:renderer flush 回执', () => {
     expect(parseFlushAck({ state: ds([]) }).state).toEqual(ds([]));
     const s = ds(['/a.ts#2']);
     expect(parseFlushAck({ state: s }).state).toEqual(s);
-    for (const bad of [{ dirty: 1, untitled: 0 }, 'x', 1, undefined]) {
+    for (const bad of [{ dirty: 1 }, 'x', 1, undefined]) {
       expect(parseFlushAck({ state: bad }).state).toBeNull();
     }
   });

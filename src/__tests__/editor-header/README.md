@@ -41,7 +41,3 @@
 - 订阅 coApp.editorActions;dispatch 时按 ctx 过滤
 - 有 icon → IconButton,无 icon → ghost Button
 - 点击调 spec.fn()
-
-### activeTab.filePath null
-
-- basename 显示「未命名」

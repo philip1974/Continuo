@@ -100,21 +100,4 @@ describe('TitleBar', () => {
     rerender(<TitleBar />);
     expect(container.textContent).not.toContain('未保存的更改');
   });
-
-  it('active.filePath=null(草稿)→ "未命名"', () => {
-    useEditorStore.setState({
-      tabs: [
-        {
-          id: 'untitled-1',
-          filePath: null,
-          content: '',
-          originalContent: '',
-          dirty: false,
-        },
-      ],
-      activeTabId: 'untitled-1',
-    });
-    const { container } = render(<TitleBar />);
-    expect(container.textContent).toContain('未命名');
-  });
 });

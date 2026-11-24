@@ -6,7 +6,7 @@ export function findEditorFileTabByPath(
   path: string,
 ): EditorTab | null {
   for (const tab of tabs) {
-    if (pathEquals(tab.filePath ?? tab.id, path)) return tab;
+    if (pathEquals(tab.filePath, path)) return tab;
   }
   return null;
 }
@@ -20,7 +20,7 @@ export function tabMatchesDiskPath(
   p: string,
 ): boolean {
   return (
-    (tab.filePath !== null && pathEquals(tab.filePath, p)) ||
+    pathEquals(tab.filePath, p) ||
     (tab.realPath !== undefined && pathEquals(tab.realPath, p))
   );
 }

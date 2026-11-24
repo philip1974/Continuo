@@ -17,7 +17,8 @@ import {
   type EditorMode,
 } from '@/stores/editor.store';
 import { t as translate, useLocale } from '@/i18n';
-import { editorTabTitle, isMarkdownTab } from './editor-path-utils';
+import { isMarkdownPath } from './editor-path-utils';
+import { basename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { EditorHeader, type TabChrome } from './EditorHeader';
@@ -122,7 +123,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
   const unsafeMarkdown = isTabMilkdownUnsafe(activeTab);
   const forcedSource = unsafeMarkdown && effective !== mode;
-  const activeIsMarkdown = activeTab !== null && isMarkdownTab(activeTab.filePath);
+  const activeIsMarkdown = activeTab !== null && isMarkdownPath(activeTab.filePath);
 
   const { saveActive, saveTab, openFileByPath } = useEditorFile();
 
@@ -196,8 +197,8 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         setOverwriteCandidate({ id: target.id, filePath: target.filePath });
         return;
       }
-      // i18n(I7,复查 P1):UNSAVED_DRAFT / TAB_NOT_FOUND / NO_ACTIVE_TAB / FS_* 都到
-      // 这里,r.message 是 main/动作层的 raw(FS_* 英文、UNSAVED_DRAFT 含中文)→ 双向泄漏。
+      // i18n(I7,复查 P1):TAB_NOT_FOUND / NO_ACTIVE_TAB / FS_* 都到
+      // 这里,r.message 是 main/动作层的 raw(FS_* 英文)→ 双向泄漏。
       // 按 code 经 catalog 本地化(单一来源 localizeErrorByCode),未收录 code 回退原 message。
       notifyFailure(r);
     }
@@ -292,7 +293,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         key={activeIsMarkdown ? `${activeTab.id}-src` : activeTab.id}
         tabId={activeTab.id}
         value={activeTab.content}
-        fileName={activeTab.filePath ?? ''}
+        fileName={activeTab.filePath}
         {...(activeIsMarkdown ? { forceLanguage: 'markdown' as const } : {})}
         onChange={(v) => updateContent(activeTab.id, v)}
       />
@@ -354,7 +355,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
           closeCandidate ? (
             <>
               <code className="text-fg">
-                {editorTabTitle(closeCandidate.filePath)}
+                {basename(closeCandidate.filePath)}
               </code>{' '}
               {translate('panels.editor.discard_body')}
             </>
@@ -372,7 +373,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
           overwriteCandidate ? (
             <>
               <code className="text-fg">
-                {editorTabTitle(overwriteCandidate.filePath)}
+                {basename(overwriteCandidate.filePath)}
               </code>{' '}
               {translate('panels.editor.disk_changed_body')}
             </>
