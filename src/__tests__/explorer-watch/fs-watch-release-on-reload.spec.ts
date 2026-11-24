@@ -113,3 +113,19 @@ describe('fs:watch · renderer reload 释放该窗口的 watcher 引用', () => 
     expect(closeOf('/proj/shared')).toHaveBeenCalledTimes(1);
   });
 });
+
+// 取不到 sender 窗口(窗口销毁过程中到达)→ NO_WINDOW,不建 watcher:此前降级为无 owner 的 watch,既不进 owner 记账也
+// 不挂 wc-gone 钩子,窗口释放时回收不到,引用常驻(与 terminal / debug-view 的 safeHandleWithWindow 同口径)。
+describe('fs:watch · 无所属窗口', () => {
+  it('sender 不属于任何窗口 → NO_WINDOW,不创建 fs.watch', async () => {
+    const orphan = Object.assign(new EventEmitter(), { id: nextWcId++ });
+    const r = (await m.handlers.get(FS_CHANNELS.WATCH)!(
+      { sender: orphan, senderFrame: { url: 'file:///app/index.html' } },
+      { path: '/orphan' },
+    )) as { ok: boolean; code?: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('NO_WINDOW');
+    expect(m.closes.get('/orphan')).toBeUndefined();
+  });
+});
+

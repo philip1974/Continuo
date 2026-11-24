@@ -2,10 +2,7 @@ import { BrowserWindow, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import {
-  safeHandle,
-  safeHandleWithCtx,
-} from '../safe-handle';
+import { safeHandle, safeHandleWithCtx, senderWindowOrThrow } from '../safe-handle';
 import {
   FS_CHANNELS,
   type FsDirChangedPayload,
@@ -14,6 +11,7 @@ import {
 } from '../../shared/fs-channels';
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
+import { ERROR_CODES } from '../../shared/error-codes';
 import { listDir } from './fs/list-dir';
 import { FS_IPC_NAME_MAX, ListDirOptionsSchema } from '../../shared/fs-list-dir-schema';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
@@ -383,34 +381,27 @@ export function registerFsIpc(): void {
   );
 
   // ── fs.watch 增量更新(Step 6) ──────────────────────────────
-  // ctx-aware:记录发起 watch 的窗口 id,供窗口硬关闭时 releaseFsWatchersForWindow
-  // 批量释放(React unmount cleanup 在硬关窗/崩溃时不保证执行,审计 P2)。
+  // 记录发起 watch 的窗口 id,供窗口硬关闭时 releaseFsWatchersForWindow 批量释放(React unmount cleanup 在
+  // 硬关窗 / 崩溃时不保证执行,审计 P2)。取不到 sender 窗口(销毁过程中到达)→ NO_WINDOW,与 terminal / debug-view
+  // 同口径:此前降级为无 owner 的 watch,既不进 owner 记账也不挂 wc-gone 钩子,窗口释放时回收不到,引用常驻。
   safeHandleWithCtx(
     FS_CHANNELS.WATCH,
     watchInputSchema,
     (input, { event }) => {
-      const ownerId = BrowserWindow.fromWebContents(event.sender)?.id;
-      if (ownerId !== undefined) {
-        watchOwnerByWc.set(event.sender.id, ownerId);
-        attachWatchWcGoneHook(event.sender);
-      }
+      const ownerId = senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW).id;
+      watchOwnerByWc.set(event.sender.id, ownerId);
+      attachWatchWcGoneHook(event.sender);
       // 广播 creator 上抛的真实变更路径(可能 = input.path,也可能是其
       // recursive 子目录,见 issue #20)。
-      watcherPool.watch(
-        input.path,
-        queueDirChangedBroadcast,
-        ownerId,
-      );
+      watcherPool.watch(input.path, queueDirChangedBroadcast, ownerId);
     },
   );
 
   safeHandleWithCtx(
     FS_CHANNELS.UNWATCH,
     unwatchInputSchema,
-    (input, { event }) => {
-      const ownerId = BrowserWindow.fromWebContents(event.sender)?.id;
-      watcherPool.unwatch(input.path, ownerId);
-    },
+    (input, { event }) =>
+      watcherPool.unwatch(input.path, senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW).id),
   );
 }
 
