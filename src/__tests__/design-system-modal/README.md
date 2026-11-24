@@ -24,7 +24,8 @@ Shift+Tab 在第一个上循环到最后一个;overlay click 调 onClose;关闭�
 
 ### onClose
 
-- 点击 overlay → onClose
+- 点击 overlay → onClose:仅当 **mousedown 与 click 的 target 都是 overlay 本身**;在内容区按下、拖到遮罩上松开
+  (click 落在公共祖先 overlay)不关闭(避免拖选文字误关命令面板 / Quick Open、误拒授权弹窗)
 - 点击 content → e.stopPropagation,**不**调 onClose
 - Esc → preventDefault + onClose
 - onClose 缺省 → overlay 不带 onClick(无 hover handler)

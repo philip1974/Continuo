@@ -15,7 +15,7 @@ export interface ModalProps extends HTMLAttributes<HTMLDivElement> {
   readonly visible: boolean;
   /** Dialog content. No default. */
   readonly children: ReactNode;
-  /** Called on overlay click or Escape. Optional. */
+  /** Called on Escape, or on an overlay click whose press also started on the overlay. Optional. */
   readonly onClose?: () => void;
   /** Width preset.`sm` (480px / 默认 / permission / auth) | `md` (560px / command palette) |
    * `lg` (640px / quick open / file picker). 取代调用方 `!max-w-[Npx]` 的零散写法。 */
@@ -43,6 +43,7 @@ export function Modal({
   const contentRef = useRef<HTMLDivElement>(null);
   const prevFocusRef = useRef<HTMLElement | null>(null);
   const keyIdRef = useRef<symbol | null>(null);
+  const overlayPressedRef = useRef(false);
   if (keyIdRef.current == null) keyIdRef.current = Symbol('modal');
 
   useEffect(() => {
@@ -131,7 +132,20 @@ export function Modal({
   return (
     <div
       className="wm-modal-overlay"
-      onClick={onClose != null ? onClose : undefined}
+      // 只有「按下与松开都在遮罩本身」才算点遮罩:在内容区按下(拖选输入框文字)、拖到遮罩上松开时,
+      // 浏览器把 click 派给公共祖先(遮罩),据此关闭会丢掉命令面板 / Quick Open 的查询、误拒授权弹窗。
+      onMouseDown={(e) => {
+        overlayPressedRef.current = e.target === e.currentTarget;
+      }}
+      onClick={
+        onClose != null
+          ? (e) => {
+              const pressedOnOverlay = overlayPressedRef.current;
+              overlayPressedRef.current = false;
+              if (pressedOnOverlay && e.target === e.currentTarget) onClose();
+            }
+          : undefined
+      }
     >
       {/* Continuo-local 微调(a11y):content 标记为 role=dialog + aria-modal,配合已有 focus
           trap 成完整无障碍弹窗。**移除 overlay 原 aria-hidden="true"** —— 它包裹了 content,

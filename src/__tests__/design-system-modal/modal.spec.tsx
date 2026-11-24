@@ -147,15 +147,50 @@ describe('Modal — a11y(A20) 初始焦点', () => {
 });
 
 describe('Modal — onClose 路径', () => {
-  it('点 overlay → onClose', () => {
+  it('点 overlay(按下与松开都在遮罩上)→ onClose', () => {
     const onClose = vi.fn();
     render(
       <Modal visible onClose={onClose}>
         <span>x</span>
       </Modal>,
     );
-    fireEvent.click(document.querySelector('.wm-modal-overlay')!);
+    const overlay = document.querySelector('.wm-modal-overlay')!;
+    fireEvent.mouseDown(overlay);
+    fireEvent.click(overlay);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // 在内容区按下(如拖选输入框文字)、拖到遮罩上松开 → 浏览器把 click 派给两者的公共祖先(遮罩)。
+  // 这不是「点遮罩」,不应关闭(命令面板 / Quick Open 会丢查询,授权弹窗的 onClose 是拒绝)。
+  it('在内容区按下、拖到遮罩上松开 → 不调 onClose', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal visible onClose={onClose}>
+        <input data-testid="q" />
+      </Modal>,
+    );
+    const overlay = document.querySelector('.wm-modal-overlay')!;
+    fireEvent.mouseDown(document.querySelector('[data-testid="q"]')!);
+    fireEvent.click(overlay);
+    expect(onClose).not.toHaveBeenCalled();
+    // 下一次完整的遮罩点击仍能关闭(按下目标不残留)
+    fireEvent.mouseDown(overlay);
+    fireEvent.click(overlay);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('无前置 mousedown 的遮罩 click(如合成点击)→ 不调 onClose', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal visible onClose={onClose}>
+        <span>x</span>
+      </Modal>,
+    );
+    const overlay = document.querySelector('.wm-modal-overlay')!;
+    fireEvent.mouseDown(document.querySelector('.wm-modal-content')!);
+    fireEvent.click(overlay);
+    fireEvent.click(overlay);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('点 content → 不调 onClose(stopPropagation)', () => {
