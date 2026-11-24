@@ -448,6 +448,10 @@ export const en = {
   'settings.panel.matched': 'Matched {count} for "{q}"',
   'settings.item.reset_default': 'Reset to default ({default})',
   'settings.item.reset_default_aria': 'Reset to default',
+  'settings.item.number_range': 'Value must be between {min} and {max}.',
+  'settings.item.number_min': 'Value must be at least {min}.',
+  'settings.item.number_max': 'Value must be at most {max}.',
+  'settings.item.number_nan': 'Value must be a number.',
 
   // plugins_tab.* (topic-20)
   'plugins_tab.label.panels': 'Panel types',

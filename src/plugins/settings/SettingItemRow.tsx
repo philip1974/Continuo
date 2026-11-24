@@ -7,7 +7,7 @@
 //   - text    → Input
 //   - reset   → 始终占位的 ↺,override 时可见
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
   Badge,
   IconButton,
@@ -35,22 +35,31 @@ function parseSettingNumber(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** 允许范围提示(对齐 VSCode 设置的校验文案);合法值返回 null。 */
+function numberRangeError(
+  spec: SettingItemSpec,
+  n: number | null,
+  t: ReturnType<typeof useT>,
+): string | null {
+  if (n !== null && clampSettingNumber(spec, n) === n) return null;
+  const { min, max } = spec;
+  if (typeof min === 'number' && typeof max === 'number') return t('settings.item.number_range', { min, max });
+  if (typeof min === 'number') return t('settings.item.number_min', { min });
+  if (typeof max === 'number') return t('settings.item.number_max', { max });
+  return t('settings.item.number_nan');
+}
+
 /**
- * number 设置项输入框。键入中的文本先放在本地草稿里:范围内的值即时生效;越界的中间值(把 13 改成 16 时
- * 先出现的 "1")不钳制回写 —— 否则输入框被改成 min,后续按键拼在后面,永远输不进目标值。失焦 / Enter
- * 时才按 spec 钳制提交(E6:min/max 属性不阻止键入越界),并丢弃草稿回显实际值。
+ * number 设置项输入框的草稿状态(对齐 VSCode 设置编辑器):键入中的文本放本地草稿,范围内的值即时生效;
+ * 越界 / 非数字的草稿不保存、也不静默钳制改值(此前失焦时把 99 改成 24、把空改回原值,用户不知道输入被改了),
+ * 而是保留草稿并返回允许范围提示,由调用方在行内显示;改成合法值后提示消失。
  */
-function NumberSettingInput({
-  spec,
-  value,
-  titleId,
-  onCommit,
-}: {
-  spec: SettingItemSpec;
-  value: SettingItemValue;
-  titleId: string;
-  onCommit: (n: number) => void;
-}) {
+function useNumberSettingDraft(
+  spec: SettingItemSpec,
+  value: SettingItemValue,
+  onCommit: (n: number) => void,
+) {
+  const t = useT();
   // 草稿记下它对应的「已知值」:键入范围内的值会立即提交(已知值 = 提交的数),越界的中间值不提交(已知值 =
   // 当时的值)。之后 value 若不再等于已知值,说明被别处改了(点了重置、别的窗口改了设置)→ 草稿作废,显示
   // 新值;否则键入的旧文本会一直遮住它。
@@ -58,39 +67,31 @@ function NumberSettingInput({
     null,
   );
   // 已作废的草稿在渲染期就清掉(React 允许对本组件的 state 这样做):只把它当「派生为 null」的话,值之后
-  // 若又变回 forValue,旧文本会复活并在失焦时被提交。
+  // 若又变回 forValue,旧文本会复活。
   if (draftState !== null && !Object.is(draftState.forValue, value)) setDraftState(null);
   const draft = draftState !== null && Object.is(draftState.forValue, value) ? draftState.text : null;
-  const commitClamped = (raw: string): void => {
-    // 没键入过(无有效草稿)→ 不提交:否则 Tab 经过 / 点一下就会写出一条等于当前值的 override。
-    if (draft === null) return;
-    const n = parseSettingNumber(raw);
-    if (n !== null) onCommit(clampSettingNumber(spec, n));
-    setDraftState(null);
+  const error = draft === null ? null : numberRangeError(spec, parseSettingNumber(draft), t);
+  // 失焦 / Enter:合法草稿已在键入时提交,丢弃草稿回显规整后的值(「016」→「16」);非法草稿保留(连同提示)。
+  const settle = (): void => {
+    if (draft !== null && error === null) setDraftState(null);
   };
-  return (
-    <Input
-      type="number"
-      size="sm"
-      aria-labelledby={titleId}
-      value={draft ?? String(value)}
-      min={spec.min}
-      max={spec.max}
-      step={spec.step}
-      onChange={(e) => {
-        const raw = (e.target as HTMLInputElement).value;
+  return {
+    error,
+    inputProps: {
+      value: draft ?? String(value),
+      onChange: (e: ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value;
         const n = parseSettingNumber(raw);
         const inRange = n !== null && clampSettingNumber(spec, n) === n;
         setDraftState({ text: raw, forValue: inRange ? n : value });
         if (inRange) onCommit(n);
-      }}
-      onBlur={(e) => commitClamped((e.target as HTMLInputElement).value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') commitClamped((e.target as HTMLInputElement).value);
-      }}
-      className="w-24 text-right"
-    />
-  );
+      },
+      onBlur: settle,
+      onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') settle();
+      },
+    },
+  };
 }
 
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
@@ -146,6 +147,9 @@ export function SettingItemRow({
   // a11y(A21,A4 同族):把设置标题与控件建立可访问关联 —— 标题给稳定 id,number/text/select
   // 控件 aria-labelledby 指向它,否则 AT 聚焦只读「spinbutton/edit text/radiogroup」不知编辑哪项。
   const titleId = `setting-title-${spec.id}`;
+  const numberErrorId = `setting-error-${spec.id}`;
+  // number 草稿 / 越界提示(其它类型不用,hook 须无条件调用)
+  const numberDraft = useNumberSettingDraft(spec, value, (n) => setValue(spec.id, n));
   const selectOptions = useMemo<
     readonly SegmentedControlOption<string>[]
   >(() => {
@@ -183,6 +187,11 @@ export function SettingItemRow({
           {description && (
             <div className="mt-1 text-xs text-fg-muted">{description}</div>
           )}
+          {spec.type === 'number' && numberDraft.error !== null && (
+            <div id={numberErrorId} className="mt-1 text-xs text-error">
+              {numberDraft.error}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
         {spec.type === 'boolean' && (
@@ -204,11 +213,17 @@ export function SettingItemRow({
         )}
         {spec.type === 'number' && (
           <div className="flex items-center gap-1">
-            <NumberSettingInput
-              spec={spec}
-              value={value}
-              titleId={titleId}
-              onCommit={(n) => setValue(spec.id, n)}
+            <Input
+              type="number"
+              size="sm"
+              aria-labelledby={titleId}
+              aria-invalid={numberDraft.error !== null ? true : undefined}
+              aria-describedby={numberDraft.error !== null ? numberErrorId : undefined}
+              min={spec.min}
+              max={spec.max}
+              step={spec.step}
+              {...numberDraft.inputProps}
+              className="w-24 text-right"
             />
             {spec.unit && (
               <Badge size="xs" className="select-none uppercase tracking-wider">

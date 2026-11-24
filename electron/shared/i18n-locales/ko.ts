@@ -425,6 +425,10 @@ export const ko: Record<TranslationKey, string> = {
   'settings.panel.matched': '"{q}"에 대해 {count}개 일치',
   'settings.item.reset_default': '기본값으로 초기화 ({default})',
   'settings.item.reset_default_aria': '기본값으로 초기화',
+  'settings.item.number_range': '값은 {min}–{max} 사이여야 합니다',
+  'settings.item.number_min': '값은 {min} 이상이어야 합니다',
+  'settings.item.number_max': '값은 {max} 이하여야 합니다',
+  'settings.item.number_nan': '값은 숫자여야 합니다',
 
   // plugins_tab.*
   'plugins_tab.label.panels': '패널 유형',

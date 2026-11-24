@@ -304,16 +304,50 @@ describe('SettingItemRow — number', () => {
     expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBe(16);
   });
 
-  it('失焦时越界值钳制到范围并回显', () => {
+  // 对齐 VSCode:越界 / 非法的草稿不保存、不静默改值,行内用 text-error 提示允许范围,输入框 aria-invalid +
+  // aria-describedby 指向提示;改成合法值后提示消失并保存。
+  it('越界草稿:行内提示允许范围,aria-invalid;失焦 / Enter 不钳制、不保存,保留草稿', () => {
     const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: '99' } });
-    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBeUndefined();
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    const errId = input.getAttribute('aria-describedby');
+    expect(errId).toBeTruthy();
+    const err = container.ownerDocument.getElementById(errId!)!;
+    expect(err.textContent).toBe('值须在 10–24 之间');
+    expect(err.className).toContain('text-error');
+
     fireEvent.blur(input);
-    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBe(24);
-    expect(input.value).toBe('24');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+    expect(input.value).toBe('99');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+
+    fireEvent.change(input, { target: { value: '20' } });
+    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBe(20);
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    expect(input.getAttribute('aria-describedby')).toBeNull();
+    expect(container.ownerDocument.getElementById(errId!)).toBeNull();
+  });
+
+  it('只有下限 / 只有上限 / 无范围时的提示文案', () => {
+    const cases = [
+      [{ min: 8 }, '3', '值须不小于 8'],
+      [{ max: 30 }, '31', '值须不大于 30'],
+      [{}, '', '值须为数字'],
+    ] as const;
+    for (const [range, raw, msg] of cases) {
+      const { container, unmount } = render(
+        <SettingItemRow spec={spec({ id: 'x.n', type: 'number', default: 13, ...range })} />,
+      );
+      const input = container.querySelector('input[type=number]') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: raw } });
+      const err = container.ownerDocument.getElementById(input.getAttribute('aria-describedby')!);
+      expect(err?.textContent).toBe(msg);
+      unmount();
+    }
   });
 
   // 没键入过就失焦 / Enter(Tab 经过、点一下再点别处)不能写出 override:否则重置图标亮起,
@@ -373,15 +407,16 @@ describe('SettingItemRow — number', () => {
     expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
   });
 
-  it('清空后失焦 → 不提交,回显原值', () => {
+  it('清空后失焦 → 不提交,保留空草稿并提示范围', () => {
     const s = spec({ id: 'terminal.fontSize', type: 'number', default: 13, min: 10, max: 24 });
     const { container } = render(<SettingItemRow spec={s} />);
     const input = container.querySelector('input[type=number]') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: '' } });
-    expect(useSettingsValuesStore.getState().values['terminal.fontSize']).toBeUndefined();
     fireEvent.blur(input);
-    expect(input.value).toBe('13');
+    expect('terminal.fontSize' in useSettingsValuesStore.getState().values).toBe(false);
+    expect(input.value).toBe('');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
   });
 
   it('NaN guard:onChange 给非 finite 字符串不抛(jsdom 会先剥非数字字符)', () => {

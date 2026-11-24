@@ -423,6 +423,10 @@ export const zh: Record<TranslationKey, string> = {
   'settings.panel.matched': '匹配 {count} 项「{q}」',
   'settings.item.reset_default': '恢复默认（{default}）',
   'settings.item.reset_default_aria': '恢复默认',
+  'settings.item.number_range': '值须在 {min}–{max} 之间',
+  'settings.item.number_min': '值须不小于 {min}',
+  'settings.item.number_max': '值须不大于 {max}',
+  'settings.item.number_nan': '值须为数字',
 
   // plugins_tab.*
   'plugins_tab.label.panels': '面板类型',
