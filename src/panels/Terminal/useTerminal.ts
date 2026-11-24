@@ -807,19 +807,15 @@ export function useTerminal(termId: string) {
   // subscribe + 尾随防抖:拖动停下后必定补一次 fit。
   useEffect(() => {
     let prevWidth = useLayoutUiStore.getState().sidebarWidth;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const settleFit = debounce(() => resizeDebouncerRef.current?.request(), SIDEBAR_WIDTH_FIT_SETTLE_MS);
     const unsubscribe = useLayoutUiStore.subscribe((state) => {
       if (state.sidebarWidth === prevWidth) return;
       prevWidth = state.sidebarWidth;
-      if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        resizeDebouncerRef.current?.request();
-      }, SIDEBAR_WIDTH_FIT_SETTLE_MS);
+      settleFit();
     });
     return () => {
       unsubscribe();
-      if (timer !== null) clearTimeout(timer);
+      settleFit.cancel();
     };
   }, [termId]);
 
@@ -875,8 +871,7 @@ export function useTerminal(termId: string) {
   // 立即执行挂起的「按当前词搜索」:与未防抖时最后一次按键触发的 findNext 等价。
   const flushPendingSearch = useCallback(() => {
     if (pendingSearchTimerRef.current === null) return;
-    clearTimeout(pendingSearchTimerRef.current);
-    pendingSearchTimerRef.current = null;
+    cancelTimer(pendingSearchTimerRef);
     runSearchAction({ type: 'setTerm', term: searchStateRef.current.term });
   }, [runSearchAction]);
 
@@ -887,9 +882,7 @@ export function useTerminal(termId: string) {
         const next = terminalSearchReducer(searchStateRef.current, action);
         searchStateRef.current = next;
         setSearchState(next);
-        if (pendingSearchTimerRef.current !== null) {
-          clearTimeout(pendingSearchTimerRef.current);
-        }
+        cancelTimer(pendingSearchTimerRef);
         pendingSearchTimerRef.current = setTimeout(() => {
           pendingSearchTimerRef.current = null;
           runSearchAction({ type: 'setTerm', term: searchStateRef.current.term });

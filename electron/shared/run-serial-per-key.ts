@@ -1,6 +1,5 @@
 // 按 key 串行化异步任务并**返回本次任务的真实结果/异常**的跨进程单一来源(重构:renderer
-// src/lib/serialize-per-key.ts 与 main electron/main/services/serialize-per-key.ts 此前各持一份
-// 逐字相同的实现;race R15/R21 提炼,R100/R101 排空回收)。
+// src/lib/serialize-per-key.ts 与 main 侧此前各持一份逐字相同的实现;race R15/R21 提炼,R100/R101 排空回收)。
 //
 // 任务接到该 key 的 Promise 链尾,按调用顺序依次执行;前一个任务成功或失败都不阻断后续
 // (prev.then(task, task));链尾吞错。用于「同一资源的多个异步写不可乱序完成」(同一 editor tab

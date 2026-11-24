@@ -1,6 +1,6 @@
 // race(R17/R100/R101):runSerialPerKey 把按 key 的异步任务串行化(按调用顺序依次执行,前次失败不阻断后续)。
 import { describe, expect, it } from 'vitest';
-import { runSerialPerKey } from '../services/serialize-per-key';
+import { runSerialPerKey } from '../../shared/run-serial-per-key';
 
 function deferred<T = void>() {
   let resolve!: (v: T) => void;

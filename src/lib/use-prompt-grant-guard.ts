@@ -9,6 +9,7 @@
 // 被拒掉的激活要让用户感知得到:弹窗里放一个 <PromptGrantHint guard={guard} />(lib/prompt-grant-hint)。
 
 import { useLayoutEffect, useRef, useState } from 'react';
+import { FOCUSABLE_SELECTOR } from '@/design/Modal';
 
 /**
  * 防误触的时间窗:弹窗出现 / 内容切换后忽略授予方向激活的时长(覆盖一次双击的间隔);也是键盘激活授予按钮前
@@ -23,9 +24,6 @@ export const PROMPT_GRANT_HINT_MS = 4000;
 export const PROMPT_GRANT_BUTTON_PROPS = { 'data-prompt-grant': '' } as const;
 const GRANT_BUTTON_SELECTOR = '[data-prompt-grant]';
 
-// 与 design Modal 焦点陷阱用的选择器一致(那边未导出)。
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** click 事件里守卫用到的部分(React.MouseEvent 满足)。 */
 export interface GrantClick {

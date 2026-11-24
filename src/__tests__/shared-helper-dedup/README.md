@@ -22,7 +22,7 @@
 5. i18n 字典与 `{param}` 插值(`LOCALE_DICTS` / `hasTranslateParams` / `interpolateTemplate`):跨进程
    单一来源 `electron/shared/i18n-interpolate.ts`;renderer `translate` 与 main `getMainT` 共用。
 6. `runSerialPerKey`:跨进程单一来源 `electron/shared/run-serial-per-key.ts`;renderer
-   `src/lib/serialize-per-key.ts` 与 main `services/serialize-per-key.ts` 均 re-export 同一函数。
+   `src/lib/serialize-per-key.ts` re-export,main 直接从 shared 导入(原 main 转导出文件已删)。
 7. 「弹原生目录选择器 → 切 workspace root」:Explorer 两个入口(EmptyWorkspace「打开文件夹」/
    ExplorerHeader「切换文件夹」)共用 `hooks/useSelectWorkspaceFolder`(单飞闸门 R106 + 过期守卫 R27 +
    失败反馈 A146;行为契约见 `empty-workspace` / `explorer-header` / `workspace-root-selection-guard`)。

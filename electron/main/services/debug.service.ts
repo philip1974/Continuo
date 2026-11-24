@@ -33,7 +33,7 @@ import {
   type DebugViewSessionSnapshot,
 } from '../../shared/debug-view-channels';
 import { codedError, toError } from '../../shared/error-message';
-import { runSerialPerKey } from './serialize-per-key';
+import { runSerialPerKey } from '../../shared/run-serial-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
 import { processTreeKillable } from '../lib/kill-with-grace';
 import { stripInternalSecretEnv } from '../lib/child-spawn-hardening';

@@ -21,7 +21,8 @@ export interface ModalProps extends HTMLAttributes<HTMLDivElement> {
   readonly size?: ModalSize;
 }
 
-const FOCUSABLE_SELECTOR =
+/** 焦点陷阱认定的可聚焦元素(授权弹窗的防误触守卫复用,须同一口径)。 */
+export const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // Continuo-local 微调:多 Modal 叠加时,键盘(Esc/Tab)只由最顶层(最后打开)的 Modal 处理。

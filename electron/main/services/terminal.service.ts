@@ -15,7 +15,7 @@ import { TERMINAL_SESSION_ENV, hookEventsDirFor } from './mcp-tools-hook-bridge'
 import { getCurrentLocale } from './settings.service';
 import { withPtyLangEnv } from './pty-lang';
 import { defaultShellArgs, skipsShellIntegration } from './shell-args';
-import { runSerialPerKey } from './serialize-per-key';
+import { runSerialPerKey } from '../../shared/run-serial-per-key';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
 import { TERMINAL_CHANNELS, type TerminalHistorySnapshot } from '../../shared/terminal-channels';
 import { ERROR_CODES } from '../../shared/error-codes';

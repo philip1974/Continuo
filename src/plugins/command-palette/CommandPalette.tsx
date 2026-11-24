@@ -25,6 +25,7 @@ import { useTWithFallback, useT, useLocale } from '@/i18n';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { isSortedBy } from '@/lib/is-sorted-by';
+import { byDisplayTitle } from './by-display-title';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -95,9 +96,6 @@ export function buildRecentCommandIds(recentList: readonly RecentEntry[]): strin
   return out;
 }
 
-function byDisplayTitle(a: DisplayCommand, b: DisplayCommand): number {
-  return a.displayTitle.localeCompare(b.displayTitle);
-}
 
 /** 按 displayTitle 字母序;已有序时原样返回入参(不拷贝、不排序)。 */
 function sortedByDisplayTitle(items: readonly DisplayCommand[]): DisplayCommand[] {

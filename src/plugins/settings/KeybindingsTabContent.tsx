@@ -25,6 +25,7 @@ import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { ResetIcon } from '@/lib/ui-icons';
 import { isSortedBy } from '@/lib/is-sorted-by';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
+import { byDisplayTitle } from '@/plugins/command-palette/by-display-title';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -73,9 +74,6 @@ export function keybindingRowClassName(index: number): string {
   return index > 0 ? KEYBINDING_ROW_BORDER_CLASS_NAME : KEYBINDING_ROW_CLASS_NAME;
 }
 
-function byDisplayTitle(a: DisplayCommand, b: DisplayCommand): number {
-  return a.displayTitle.localeCompare(b.displayTitle);
-}
 
 function byCategory(a: Bucket, b: Bucket): number {
   return a.category.localeCompare(b.category);

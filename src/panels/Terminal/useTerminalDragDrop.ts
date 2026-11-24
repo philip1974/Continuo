@@ -82,14 +82,8 @@ export function useTerminalDragDrop({
       return pointInRect(e.clientX, e.clientY, dropZone.getBoundingClientRect());
     };
 
-    const onDragEnter = (e: DragEvent) => {
-      if (!isTerminalFileDrag(e)) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      e.dataTransfer.dropEffect = 'copy';
-    };
-
-    const onDragOver = (e: DragEvent) => {
+    // dragenter / dragover 同一处理:接管本终端的文件拖拽(否则浏览器默认拒绝 drop)。
+    const onDragEnterOrOver = (e: DragEvent) => {
       if (!isTerminalFileDrag(e)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -219,8 +213,8 @@ export function useTerminalDragDrop({
     };
 
     const unbind = (doc: Document) => {
-      doc.removeEventListener('dragenter', onDragEnter, listenerOptions);
-      doc.removeEventListener('dragover', onDragOver, listenerOptions);
+      doc.removeEventListener('dragenter', onDragEnterOrOver, listenerOptions);
+      doc.removeEventListener('dragover', onDragEnterOrOver, listenerOptions);
       doc.removeEventListener('drop', onDrop, listenerOptions);
       boundDoc = null; // 两个调用点传的都是 boundDoc
     };
@@ -230,8 +224,8 @@ export function useTerminalDragDrop({
       const doc = ref.current.ownerDocument || document;
       if (doc === boundDoc) return;
       if (boundDoc !== null) unbind(boundDoc);
-      doc.addEventListener('dragenter', onDragEnter, listenerOptions);
-      doc.addEventListener('dragover', onDragOver, listenerOptions);
+      doc.addEventListener('dragenter', onDragEnterOrOver, listenerOptions);
+      doc.addEventListener('dragover', onDragEnterOrOver, listenerOptions);
       doc.addEventListener('drop', onDrop, listenerOptions);
       boundDoc = doc;
       if (import.meta.env.DEV) {

@@ -9,6 +9,7 @@
 //
 // 本 helper 流式累计 chunk.byteLength,超限即 cancel + 抛;读完后整体 TextDecoder.decode(正确处理
 // 跨 chunk 的多字节字符)。renderer 与 main 共用(electron/shared)。
+import { utf8BytesExceed } from './utf8-byte-length';
 export async function readResponseTextCapped(
   r: Response,
   maxBytes: number,
@@ -22,7 +23,7 @@ export async function readResponseTextCapped(
   if (!body) {
     // 无 ReadableStream(罕见环境 / 某些 mock):回退 text() + **真实字节**校验(修缺陷 2)。
     const text = await r.text();
-    if (new TextEncoder().encode(text).byteLength > maxBytes) throw tooLargeError();
+    if (utf8BytesExceed(text, maxBytes)) throw tooLargeError();
     return text;
   }
 

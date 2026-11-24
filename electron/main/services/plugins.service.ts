@@ -35,7 +35,7 @@ import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { openForReadNonBlocking, readFileCappedFd, readTextCappedOrThrow } from '../lib/read-fh-capped';
 import { isSameOrInsidePath } from '../lib/path-inside';
-import { runSerialPerKey } from './serialize-per-key';
+import { runSerialPerKey } from '../../shared/run-serial-per-key';
 import {
   DEFAULT_PLUGIN_MAIN,
   MANIFEST_MAIN_MAX,

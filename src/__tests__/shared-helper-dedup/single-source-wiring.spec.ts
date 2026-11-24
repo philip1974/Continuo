@@ -14,7 +14,6 @@ import {
 } from '../../../electron/shared/i18n-interpolate';
 import { runSerialPerKey } from '../../../electron/shared/run-serial-per-key';
 import { runSerialPerKey as rendererRunSerialPerKey } from '../../lib/serialize-per-key';
-import { runSerialPerKey as mainRunSerialPerKey } from '../../../electron/main/services/serialize-per-key';
 import { isBlankString as rendererIsBlankString } from '../../lib/blank-string';
 import { isValidPluginId as rendererIsValidPluginId } from '../../plugins/plugin-id';
 import {
@@ -149,7 +148,6 @@ describe('i18n 插值单一来源(electron/shared/i18n-interpolate.ts)', () => {
 describe('runSerialPerKey 单一来源(electron/shared/run-serial-per-key.ts)', () => {
   it('renderer / main 入口是同一函数,且只定义一次', () => {
     expect(rendererRunSerialPerKey).toBe(runSerialPerKey);
-    expect(mainRunSerialPerKey).toBe(runSerialPerKey);
     expect(definers('runSerialPerKey')).toEqual(['electron/shared/run-serial-per-key.ts']);
   });
 });
