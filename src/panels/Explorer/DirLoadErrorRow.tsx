@@ -6,6 +6,7 @@ import { Button } from '@/design';
 import type { FileEntry } from '@/lib/fs/types';
 import { useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
+import { TREE_ITEM_PLAIN_KEYS } from './tree-keyboard';
 
 export interface DirLoadFailure {
   readonly code: string;
@@ -69,14 +70,14 @@ export function DirLoadErrorRow({ row, start, indent, onRetry }: DirLoadErrorRow
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // headless-tree 的 hotkeys 在树容器上原生监听 keydown,对「焦点项」执行(Enter / ← 收起、→ 展开、F2 改名、
-  // ↑↓ Home End 移焦点 …),不看按键来自哪里 →「重试」上的无修饰按键在本行截住,不冒泡到树容器。
-  // 按钮自身的 Enter / 空格激活是默认动作,不受影响;带 ⌘ / Ctrl / Alt 的组合键照常冒泡到全局命令热键
-  // (树自己的 ⌘C 等由 handleTreeKeyDown 按来源过滤)。
+  // ↑↓ Home End 移焦点 …),不看按键来自哪里 →「重试」上的这些树键(TREE_ITEM_PLAIN_KEYS)在本行截住,不冒泡到
+  // 树容器;其它无修饰键(F5 等用户自绑的单键全局命令)照常冒泡。按钮自身的 Enter / 空格激活是默认动作,不受影响;
+  // 带 ⌘ / Ctrl / Alt 的组合键照常冒泡到全局命令热键(树自己的 ⌘C 等由 handleTreeKeyDown 按来源过滤)。
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.metaKey && !e.ctrlKey && !e.altKey) e.stopPropagation();
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && TREE_ITEM_PLAIN_KEYS.has(e.key)) e.stopPropagation();
     };
     el.addEventListener('keydown', onKeyDown);
     return () => el.removeEventListener('keydown', onKeyDown);

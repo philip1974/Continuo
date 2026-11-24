@@ -505,24 +505,25 @@ function warnSkippedMain(dir: string, reason: string): void {
 }
 
 /**
- * main 入口是否可用:resolveContainedPluginMain 判定 + 可打开(读权限),不读全文。不可用时插件从列表里整个消失
+ * main 入口是否可用(可用 → 返回其 mtime,供 renderer 判断 main 是否改过;不可用 → null):resolveContainedPluginMain
+ * 判定 + 可打开(读权限),不读全文。不可用时插件从列表里整个消失
  *(到不了 renderer,manifest 报错路径也走不到),故每种原因都记一次告警(此前只记超大),便于排障:例如
  * manifest 写了 `dist/main.js` 却尚未构建、main 是指向插件目录外的链接。
  */
-async function isPluginMainAvailable(dir: string, manifestText: string): Promise<boolean> {
+async function availablePluginMainMtime(dir: string, manifestText: string): Promise<number | null> {
   const main = await resolveContainedPluginMain(dir, mainNameFromManifestText(manifestText));
   if (!main.ok) {
     warnSkippedMain(dir, `main 入口不可用:${main.reason === 'too-large' ? `too-large(> ${MAIN_MAX_BYTES})` : main.reason}`);
-    return false;
+    return null;
   }
   try {
     // O_NONBLOCK:判定后被换成 FIFO 时,阻塞 open 会永久占住 libuv 线程池线程。
     const fh = await openForReadNonBlocking(main.mainPath);
     await fh.close().catch(() => {});
-    return true;
+    return main.stat.mtimeMs;
   } catch (err) {
     warnSkippedMain(dir, `main 入口不可用:open-failed(${errorCodeOf(err)})`);
-    return false;
+    return null;
   }
 }
 
@@ -546,8 +547,9 @@ async function readOnePluginDirMeta(
     warnSkippedMain(m.dir, `目录名与 manifest.id 不一致:dir-name-mismatch(manifest id "${declaredId.slice(0, 128)}")`);
     return null;
   }
-  if (!(await isPluginMainAvailable(m.dir, m.manifestText))) return null;
-  return { id: name, manifestText: m.manifestText, manifestHash: pluginManifestHash(m.manifestText) };
+  const mainMtime = await availablePluginMainMtime(m.dir, m.manifestText);
+  if (mainMtime === null) return null;
+  return { id: name, manifestText: m.manifestText, manifestHash: pluginManifestHash(m.manifestText), mainMtime };
 }
 
 /**

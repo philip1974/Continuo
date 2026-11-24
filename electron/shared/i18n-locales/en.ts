@@ -504,6 +504,7 @@ export const en = {
   'plugins_tab.error.generic': '{message}',
   'plugins_tab.warning.partial_grant': 'Partial grant — granted: {granted}; not granted: {denied}',
   'plugins_tab.user.pending_hint': '⏳ Installed and enabled — restart Continuo to load it',
+  'plugins_tab.user.awaiting_grant_elsewhere': 'Installed in another window — it loads here once permissions are granted there, or click Enable to grant and load it in this window',
   'plugins_tab.btn.reload': 'Reload',
   'plugins_tab.btn.disable': 'Disable',
   'plugins_tab.btn.enable': 'Enable',

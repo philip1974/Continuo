@@ -98,6 +98,19 @@ const NAVIGATION_KEYS: ReadonlySet<string> = new Set([
 ]);
 const MODIFIER_KEYS: ReadonlySet<string> = new Set(['Meta', 'Control', 'Shift', 'Alt']);
 
+/**
+ * 树对焦点项执行动作的无 ⌘ / Ctrl / Alt 按键(e.key;Shift 不论):headless-tree 在树容器上原生监听的
+ * hotkeysCore / selection / renaming(方向键与 Shift+方向键、Home、End、F2、Enter)+ 本文件的 Enter / Delete
+ * 与键入跳转里的空格。树内非行元素(读取失败行的「重试」)只截这些,其余(F5 等用户自绑的单键全局命令)照常冒泡。
+ */
+export const TREE_ITEM_PLAIN_KEYS: ReadonlySet<string> = new Set([
+  ...NAVIGATION_KEYS,
+  'Enter',
+  'F2',
+  'Delete',
+  ' ',
+]);
+
 function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el || typeof el.tagName !== 'string') return false;

@@ -240,6 +240,22 @@ describe('FolderTree · 错误行「重试」上的按键', () => {
     expect(useExplorerClipboardStore.getState().paths).toEqual([]);
   });
 
+  it('只截树用到的键:F5 / 单字母等其它无修饰键照常冒泡到全局热键(用户自绑的单键命令仍生效)', async () => {
+    const { retry } = await renderFailedAlpha();
+    const reached: string[] = [];
+    const onDoc = (e: KeyboardEvent) => reached.push(e.key);
+    document.addEventListener('keydown', onDoc);
+    try {
+      for (const key of ['F5', 'q', 'Escape', 'Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'F2', 'Delete', ' ']) {
+        press(retry, { key });
+      }
+      press(retry, { key: 'ArrowDown', shiftKey: true }); // Shift+↓ 扩选同样是树的键
+    } finally {
+      document.removeEventListener('keydown', onDoc);
+    }
+    expect(reached).toEqual(['F5', 'q', 'Escape']);
+  });
+
   it('「重试」按钮激活(Enter 的默认动作 = click)→ 重新读取该目录', async () => {
     const { r, retry } = await renderFailedAlpha();
     h.failDirs.delete('/work/alpha');

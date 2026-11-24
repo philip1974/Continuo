@@ -439,7 +439,7 @@ describe('createPluginsWatcher', () => {
       expect(fn.mock.calls).toEqual([['x.id']]);
     });
 
-    // 候选口径与列举(isPluginMainAvailable:main 为普通文件且 ≤8MiB)一致:无效目录不进签名,合法后备目录的变化照常 fire。
+    // 候选口径与列举(availablePluginMainMtime:main 为普通文件且 ≤8MiB)一致:无效目录不进签名,合法后备目录的变化照常 fire。
     it.each([
       ['main 是目录', (dir: string) => {
         rmSync(join(tmp, dir, 'main.js'));

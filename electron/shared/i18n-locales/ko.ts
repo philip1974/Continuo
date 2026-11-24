@@ -479,6 +479,7 @@ export const ko: Record<TranslationKey, string> = {
   'plugins_tab.error.generic': '{message}',
   'plugins_tab.warning.partial_grant': '부분 승인 — 허용: {granted}; 미허용: {denied}',
   'plugins_tab.user.pending_hint': '⏳ 설치 및 활성화됨 — 로드하려면 Continuo를 재시작하세요',
+  'plugins_tab.user.awaiting_grant_elsewhere': '다른 창에서 설치됨 — 그 창에서 권한을 승인하면 자동으로 로드됩니다. 「활성」을 눌러 이 창에서 승인하고 로드할 수도 있습니다',
   'plugins_tab.btn.reload': '다시 로드',
   'plugins_tab.btn.disable': '비활성',
   'plugins_tab.btn.enable': '활성',

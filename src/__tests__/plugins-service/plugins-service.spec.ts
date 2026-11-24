@@ -6,6 +6,7 @@ import {
   readFileSync,
   mkdirSync,
   existsSync,
+  statSync,
   promises as fsp,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -106,6 +107,8 @@ describe('listPluginDirs', () => {
         id: 'com.foo',
         manifestText: expect.stringContaining('"id":"com.foo"'),
         manifestHash: createHash('sha256').update(r[0]!.manifestText).digest('hex'),
+        // main 的 mtime(与 main 文件监视同一变化信号):renderer 不读源码即可判断 main 是否改过
+        mainMtime: statSync(join(tmp, 'com.foo', 'main.js')).mtimeMs,
       },
     ]);
     expect('mainText' in r[0]!).toBe(false);

@@ -57,9 +57,9 @@ afterEach(() => {
 describe('Blob URL 生命周期', () => {
   it('listPluginDirs 构造与读取 moduleUrl 都不生成 Blob URL(激活 import 时才生成);moduleUrl 稳定', () => {
     const infos = buildPluginDirInfos([
-      { id: 'a', manifestText: '{}', manifestHash: '0'.repeat(64) },
-      { id: 'b', manifestText: '{}', manifestHash: '0'.repeat(64) },
-      { id: 'c', manifestText: '{}', manifestHash: '0'.repeat(64) },
+      { id: 'a', manifestText: '{}', manifestHash: '0'.repeat(64), mainMtime: 1 },
+      { id: 'b', manifestText: '{}', manifestHash: '0'.repeat(64), mainMtime: 1 },
+      { id: 'c', manifestText: '{}', manifestHash: '0'.repeat(64), mainMtime: 1 },
     ]);
     expect(infos[1]!.moduleUrl).toBe(infos[1]!.moduleUrl);
     expect(createObjectURL).not.toHaveBeenCalled();
@@ -89,6 +89,7 @@ describe('createWindowApiHost.listPluginDirs', () => {
         id: 'p1',
         manifestText: '{"id":"p1"}',
         manifestHash: 'a'.repeat(64),
+        mainMtime: 7,
       },
     ];
     const mapSpy = vi.spyOn(dirs, 'map');
@@ -98,6 +99,7 @@ describe('createWindowApiHost.listPluginDirs', () => {
         {
           id: 'p1',
           manifestText: '{"id":"p1"}',
+          mainMtime: 7, // 列举带 main mtime 透传(renderer 判断 main 是否改过)
           moduleUrl: expect.any(String),
         },
       ]);

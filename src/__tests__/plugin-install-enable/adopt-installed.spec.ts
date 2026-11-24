@@ -203,6 +203,54 @@ describe('PluginManager.adoptInstalled', () => {
     expect(Loaded.ids).toEqual(['x']);
   });
 
+  /** 卸载后重装,且那次 tombstone 广播的 reload 先于登记到达(条目不存在、抛错)—— 跳过标记无人消费。 */
+  async function reinstallWithLostBroadcast(state: State, mgr: PluginManager) {
+    await mgr.init();
+    await mgr.uninstall('x');
+    state.dirs.push({ ...dir('x'), mainMtime: 1 });
+    state.enabled.add('x');
+    await expect(mgr.reload('x')).rejects.toThrow(/not found/);
+    await mgr.adoptInstalled('x');
+    Loaded.ids = [];
+    Loaded.unloads = [];
+  }
+
+  it('卸载后重装:跳过标记未被消费时,之后只改 main(manifest 未变)照常热重载', async () => {
+    const state: State = { dirs: [{ ...dir('x'), mainMtime: 1 }], enabled: new Set(['x']) };
+    const mgr = new PluginManager(app, host(state));
+    await reinstallWithLostBroadcast(state, mgr);
+
+    state.dirs = [{ ...dir('x'), mainMtime: 2 }];
+    await mgr.reload('x');
+
+    expect(Loaded.unloads).toEqual(['x']);
+    expect(Loaded.ids).toEqual(['x']);
+  });
+
+  it('卸载后重装:跳过标记只在 adopt 后数秒内有效,过期后的 reload(含手动「重新加载」)照常执行', async () => {
+    const now = vi.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000_000);
+      const state: State = { dirs: [{ ...dir('x'), mainMtime: 1 }], enabled: new Set(['x']) };
+      const mgr = new PluginManager(app, host(state));
+      await mgr.init();
+      await mgr.uninstall('x');
+      state.dirs.push({ ...dir('x'), mainMtime: 1 });
+      state.enabled.add('x');
+      await mgr.adoptInstalled('x');
+      Loaded.ids = [];
+      Loaded.unloads = [];
+
+      now.mockReturnValue(1_000_000 + 60_000);
+      await mgr.reload('x');
+
+      expect(Loaded.unloads).toEqual(['x']);
+      expect(Loaded.ids).toEqual(['x']);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('全新安装(无先前卸载)后的 reload 不跳过(开发时改 main 照常热重载)', async () => {
     const state: State = { dirs: [], enabled: new Set() };
     const mgr = new PluginManager(app, host(state));

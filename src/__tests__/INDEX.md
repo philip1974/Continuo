@@ -1159,6 +1159,7 @@
 ## [plugin-install-enable](./plugin-install-enable/README.md)
 
 - [`adopt-installed.spec.ts`](./plugin-install-enable/adopt-installed.spec.ts)
+- [`cross-window-grant-follow.spec.tsx`](./plugin-install-enable/cross-window-grant-follow.spec.tsx)
 - [`cross-window-installed.spec.ts`](./plugin-install-enable/cross-window-installed.spec.ts)
 - [`install-writes-enabled.spec.ts`](./plugin-install-enable/install-writes-enabled.spec.ts)
 - [`pending-row-restart.spec.tsx`](./plugin-install-enable/pending-row-restart.spec.tsx)

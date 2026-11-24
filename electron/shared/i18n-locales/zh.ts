@@ -477,6 +477,7 @@ export const zh: Record<TranslationKey, string> = {
   'plugins_tab.error.generic': '{message}',
   'plugins_tab.warning.partial_grant': '部分授权：已授 {granted}；未授 {denied}',
   'plugins_tab.user.pending_hint': '⏳ 已安装并启用，需重启 Continuo 才能加载',
+  'plugins_tab.user.awaiting_grant_elsewhere': '已在其他窗口安装，等待该窗口授权后自动加载；也可点「启用」在本窗口授权并加载',
   'plugins_tab.btn.reload': '重载',
   'plugins_tab.btn.disable': '禁用',
   'plugins_tab.btn.enable': '启用',

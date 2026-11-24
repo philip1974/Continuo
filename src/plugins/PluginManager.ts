@@ -26,6 +26,8 @@ export interface PluginDirInfo {
   readonly manifestText: string;
   /** 插件入口的惰性源码引用(激活时 host.importModule 才按目录名 + manifest 令牌拉 main 源码). */
   readonly moduleUrl: string;
+  /** main 入口文件的 mtime(ms,与 main 文件监视同一变化信号);列举不读 main 源码,据此判断 main 是否改过。 */
+  readonly mainMtime?: number;
 }
 
 export interface ManagerHost {
@@ -100,11 +102,19 @@ interface PluginEntry {
   /** v5 Phase 2:partial grant 标记. i18n(I3):存结构化 code+params,不存可见文本. */
   warning?: PluginWarning;
   /**
-   * 同会话卸载后重装、由 adoptInstalled 登记时所用的 manifest 文本(一次性):main 文件监视对该 id 留有卸载 tombstone,
-   * 重装后必广播一次 PLUGINS_CHANGED → 排队的 reload 若目录仍是这份 manifest 就跳过(否则 onload / onunload / onload
-   * 各一遍)。首个 reload 消费后清除;全新安装不设(没有 tombstone,不会有这次广播)。
+   * 同会话卸载后重装、由 adoptInstalled 登记时的目录快照(一次性):main 文件监视对该 id 留有卸载 tombstone,
+   * 重装后必广播一次 PLUGINS_CHANGED → 排队的 reload 若目录仍是这份 manifest 且 main 未改、且在 adopt 后
+   * ADOPT_RELOAD_SKIP_MS 内,就跳过(否则 onload / onunload / onload 各一遍)。首个 reload 消费后清除;全新安装不设
+   *(没有 tombstone,不会有这次广播)。那次广播若先于登记到达(reload 因条目不存在抛错),标记无人消费 ——
+   * main 校验与时限保证之后的真实热重载 / 手动重新加载不被它吞掉。
    */
-  adoptedManifestText?: string;
+  adoptedSnapshot?: { readonly manifestText: string; readonly mainMtime: number | undefined; readonly until: number };
+  /**
+   * 别的窗口装的(adoptInstalled prompt:false)、因授权尚未决定只登记为禁用:授权由发起窗口的弹窗决定。该窗口授权后
+   * 本窗口收到 permissions-changed → 盘上仍启用且已无未决定权限即激活(handlePermissionsChanged)。任一次激活尝试 /
+   * 停用后清除。插件页据此显示「已在其他窗口安装,等待授权」。
+   */
+  awaitingGrantElsewhere?: boolean;
 }
 
 /**
@@ -137,10 +147,14 @@ export interface PluginListItem {
   readonly error?: PluginError;
   /** v5 Phase 2:partial grant 标记(plugin 已激活但部分权限未授). */
   readonly warning?: PluginWarning;
+  /** 别的窗口装的、等待该窗口授权(见 PluginEntry.awaitingGrantElsewhere)。 */
+  readonly awaitingGrantElsewhere?: true;
 }
 
 const EMPTY_PLUGIN_LIST: readonly PluginListItem[] = [];
 const EMPTY_PLUGIN_PERMISSIONS: readonly PermissionKey[] = [];
+/** 重装后跳过 tombstone 那次 reload 的时限(main 文件监视 2s 一轮,广播在此之内到达)。 */
+const ADOPT_RELOAD_SKIP_MS = 10_000;
 /** init 预取插件源码的并发上限(读源码 IPC + Blob 生成;激活本身仍串行)。 */
 const PREFETCH_CONCURRENCY = 4;
 
@@ -437,7 +451,16 @@ export class PluginManager {
         dirInfo: selected.dir,
         status: activate ? 'enabled' : 'disabled',
         enabledIntent: activate,
-        ...(reinstall ? { adoptedManifestText: selected.dir.manifestText } : {}),
+        ...(intended && !activate ? { awaitingGrantElsewhere: true } : {}),
+        ...(reinstall
+          ? {
+              adoptedSnapshot: {
+                manifestText: selected.dir.manifestText,
+                mainMtime: selected.dir.mainMtime,
+                until: Date.now() + ADOPT_RELOAD_SKIP_MS,
+              },
+            }
+          : {}),
       };
       this.entries.set(id, entry);
       this.invalidateListCache();
@@ -508,6 +531,7 @@ export class PluginManager {
   private async markDisabled(entry: PluginEntry, label: string): Promise<void> {
     if (entry.instance) await this.deactivateEntry(entry, label);
     entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
+    entry.awaitingGrantElsewhere = undefined;
     this.setStatus(entry, 'disabled');
   }
 
@@ -529,7 +553,7 @@ export class PluginManager {
       const entry = this.entries.get(id);
       if (!entry) return;
       if (!enabled) {
-        if (entry.status === 'disabled' && !entry.instance && !entry.enabledIntent) return;
+        if (entry.status === 'disabled' && !entry.instance && !entry.enabledIntent && !entry.awaitingGrantElsewhere) return;
         await this.markDisabled(entry, `disabled elsewhere ${id}`);
         return;
       }
@@ -551,6 +575,34 @@ export class PluginManager {
    */
   async handlePermissionsChanged(id: string): Promise<void> {
     await this.entries.get(id)?.scoped?.recheckMcpPermission();
+    if (this.entries.get(id)?.awaitingGrantElsewhere) {
+      await this.withLifecycleLock(id, () => this.followGrantElsewhereLocked(id));
+    }
+  }
+
+  /**
+   * 别的窗口装的、只登记的条目:发起窗口授权后跟进激活(不弹窗)—— 盘上仍启用、无停用意图、已无未决定权限。
+   * 仍有未决定的 → 继续等待;盘上已不启用(别处已禁用)→ 不激活。激活结果(成功 / 拒绝致 failed)与发起窗口一致。
+   */
+  private async followGrantElsewhereLocked(id: string): Promise<void> {
+    const entry = this.entries.get(id);
+    if (!entry?.awaitingGrantElsewhere || entry.status !== 'disabled' || this.deactivationIntents.has(id)) return;
+    let enabledIds: ReadonlySet<string>;
+    try {
+      enabledIds = await this.host.readEnabledIds();
+    } catch (err) {
+      console.warn(`[PluginManager] readEnabledIds failed following grant of ${id}`, err);
+      return;
+    }
+    if (!enabledIds.has(id)) {
+      entry.awaitingGrantElsewhere = undefined;
+      this.invalidateListCache();
+      return;
+    }
+    if (await this.needsPermissionPrompt(id, entry.manifest)) return;
+    await this.activateEntry(entry);
+    const after = this.entries.get(id);
+    if (after?.status === 'enabled') after.enabledIntent = true;
   }
 
   /**
@@ -587,10 +639,18 @@ export class PluginManager {
     const rejection = selected
       ? null
       : admitManifest(own.reduce((best, d) => (preferPluginDir(d, best, id) ? d : best)).manifestText, this.app.version);
-    // 重装后 tombstone 引发的那次广播:目录仍是 adopt 时那份 manifest → 已按它登记并激活,不再停用再激活(一次性)。
-    const adoptedManifestText = entry.adoptedManifestText;
-    entry.adoptedManifestText = undefined;
-    if (adoptedManifestText !== undefined && selected?.dir.manifestText === adoptedManifestText) return;
+    // 重装后 tombstone 引发的那次广播:目录仍是 adopt 时那份 manifest、main 未改、未过时限 → 已按它登记并激活,
+    // 不再停用再激活(一次性)。
+    const adopted = entry.adoptedSnapshot;
+    entry.adoptedSnapshot = undefined;
+    if (
+      adopted !== undefined &&
+      Date.now() <= adopted.until &&
+      selected?.dir.manifestText === adopted.manifestText &&
+      selected.dir.mainMtime === adopted.mainMtime
+    ) {
+      return;
+    }
 
     // race(R77):据「用户启用意图」而非瞬时 status 判是否重激活。否则连续热重载中先读到
     // 坏 manifest 把已启用插件置 'failed',文件修好再 reload 时 status 已非 'enabled' →
@@ -787,6 +847,7 @@ export class PluginManager {
         status: e.status,
         error: e.error,
         warning: e.warning,
+        ...(e.awaitingGrantElsewhere ? { awaitingGrantElsewhere: true as const } : {}),
       };
     }
     this.cachedList = list;
@@ -802,6 +863,7 @@ export class PluginManager {
    */
   private async activateEntry(entry: PluginEntry): Promise<void> {
     entry.activating = true;
+    entry.awaitingGrantElsewhere = undefined; // 已在本窗口尝试激活(授权已决定或本窗口弹窗),不再等待别的窗口
     try {
       await this.activateEntryUnguarded(entry);
     } catch (err) {

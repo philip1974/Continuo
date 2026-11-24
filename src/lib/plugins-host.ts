@@ -54,6 +54,7 @@ function deferredPluginDirInfo(dir: PluginDirMeta): PluginDirInfo {
   const info: PluginDirInfo = {
     id: dir.id,
     manifestText: dir.manifestText,
+    mainMtime: dir.mainMtime,
     get moduleUrl(): string {
       if (ref === null) {
         ref = `${MAIN_REF_PREFIX}${nextMainRef++}`;

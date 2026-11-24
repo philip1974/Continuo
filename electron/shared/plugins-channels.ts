@@ -121,6 +121,8 @@ export interface IpcPluginDirMeta {
 export interface IpcPluginDirListing extends IpcPluginDirMeta {
   /** manifestText 的 sha256(小写 hex);激活时随 READ_MAIN_BY_DIR 提交,校验 manifest 未变. */
   readonly manifestHash: string;
+  /** main 入口文件 mtime(ms,与 main 文件监视同一信号);renderer 据此判断 main 是否改过(列举不带 main 源码). */
+  readonly mainMtime: number;
 }
 
 /** INSTALL_FROM_GIT 的返回:新装插件的 manifest 元信息. */

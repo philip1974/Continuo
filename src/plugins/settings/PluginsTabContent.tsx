@@ -437,6 +437,12 @@ function UserPluginsSection() {
                     <span aria-hidden="true">⚠</span> {t(p.warning.code, p.warning.params)}
                   </div>
                 )}
+                {p.awaitingGrantElsewhere && (
+                  // 别的窗口装的、授权弹窗在那个窗口:这里的「启用」不是「被禁用了」,说明为何未加载与两条出路。
+                  <div role="status" className="mt-1 text-2xs text-fg-muted">
+                    {t('plugins_tab.user.awaiting_grant_elsewhere')}
+                  </div>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Button

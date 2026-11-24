@@ -103,6 +103,21 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
     tracker.dispose();
   });
 
+  it('与主窗同一张表裁决:别的命令经用户改绑占了关闭编辑器的键 → 子窗该键不关 tab、也不执行该命令', async () => {
+    // 用户把「新终端」绑到 mod+w:快捷键页标关闭编辑器落败、主窗执行新终端;子窗不得先滤出关闭编辑器再匹配。
+    useKeybindingsStore.setState({ overrides: { 'terminal.new': 'mod+w' } });
+    const popDoc = popoutDocument();
+    const tracker = trackAsPopout(popDoc);
+    const { reg, close, newTerminal } = registry();
+    renderHook(() => useCommandHotkeys(reg));
+    const ev = press(popDoc.body, { key: 'w', ctrlKey: true });
+    await act(async () => { await Promise.resolve(); });
+    expect(close).not.toHaveBeenCalled();
+    expect(newTerminal).not.toHaveBeenCalled(); // 胜者不在子窗白名单 → 子窗不分发(效果画在主窗)
+    expect(ev.defaultPrevented).toBe(false);
+    tracker.dispose();
+  });
+
   it('子窗关闭(文档不再是 popout)→ 移除监听;卸载 hook 同样移除', async () => {
     const popDoc = popoutDocument();
     const tracker = trackAsPopout(popDoc);

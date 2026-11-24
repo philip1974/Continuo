@@ -303,6 +303,7 @@ export function isModalOpenFor(e: Event): boolean {
 function createHotkeyHandler(
   bindings: readonly CompiledBinding[],
   commands: CommandRegistry,
+  allowedIds?: ReadonlySet<string>,
 ): (e: KeyboardEvent) => void {
   return (e: KeyboardEvent) => {
     // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
@@ -316,8 +317,10 @@ function createHotkeyHandler(
     // 事件所在文档有打开的 Modal(删除确认 / Agent 授权 / 保存三按钮框、Quick Open…)→ 不执行、不 preventDefault:
     // 否则 ⌘T 在背后新建终端并抢走焦点、⌘W 关掉背后的 tab。Esc / Tab / Enter 交给 Modal 与其中的控件。
     if (isModalOpenFor(e)) return;
+    // 在完整表上裁决胜者(与主窗、设置页冲突标注同一张表);限定命令集(popout 子窗)只在胜者属于其中时执行 ——
+    // 先滤再匹配会让落败的命令在子窗里复活(用户把别的命令绑到 ⌘W 后,子窗 ⌘W 仍关 tab)。
     const b = firstMatchingBinding(bindings, e);
-    if (b) {
+    if (b && (!allowedIds || allowedIds.has(b.cmd.id))) {
       // 同一事件命中的绑定签名相同(修饰键 + 主键精确比较),A64 放行对它们一致 → 只看第一条。
       if (!isEditableTarget(e.target) || b.sig.wantMeta || b.sig.wantCtrl || b.sig.wantAlt) {
         e.preventDefault();
@@ -348,8 +351,8 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
   const bindings = useMemo<readonly CompiledBinding[]>(() => {
     return buildCompiledBindings(snap, platform, overrides);
   }, [snap, overrides, platform]);
-  const popoutBindings = useMemo(
-    () => bindings.filter((b) => POPOUT_HOTKEY_COMMAND_IDS.has(b.cmd.id)),
+  const hasPopoutBinding = useMemo(
+    () => bindings.some((b) => POPOUT_HOTKEY_COMMAND_IDS.has(b.cmd.id)),
     [bindings],
   );
 
@@ -365,12 +368,12 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
   }, [bindings, commands]);
 
   useEffect(() => {
-    if (popoutBindings.length === 0 || popoutDocs.length === 0) return;
-    const handler = createHotkeyHandler(popoutBindings, commands);
+    if (!hasPopoutBinding || popoutDocs.length === 0) return;
+    const handler = createHotkeyHandler(bindings, commands, POPOUT_HOTKEY_COMMAND_IDS);
     for (const doc of popoutDocs) doc.addEventListener('keydown', handler);
     // 子窗关闭 → popoutDocs 变化 → 移除旧监听(不泄漏已关子窗的 document)。
     return () => {
       for (const doc of popoutDocs) doc.removeEventListener('keydown', handler);
     };
-  }, [popoutBindings, popoutDocs, commands]);
+  }, [bindings, hasPopoutBinding, popoutDocs, commands]);
 }
