@@ -412,8 +412,7 @@ export class PluginManager {
       if (this.entries.get(entry.id) !== entry || entry.status !== 'enabled' || entry.instance) return;
       // 登记后到达的禁用 / 卸载意图 → 不激活,落 disabled(同 activateEntry 中止收尾:启用意图由排队的停用清除 / 落盘)。
       if (this.deactivationIntents.has(entry.id)) {
-        entry.status = 'disabled';
-        this.invalidateListCache();
+        this.setStatus(entry, 'disabled');
         return;
       }
       await this.activateEntry(entry);
@@ -468,15 +467,8 @@ export class PluginManager {
   /** 停用实例(若有)并落到 disabled + 清启用意图;不写盘(本地禁用与远端禁用广播共用). */
   private async markDisabled(entry: PluginEntry, label: string): Promise<void> {
     if (entry.instance) await this.deactivateEntry(entry, label);
-    entry.status = 'disabled';
-    // partial-grant warning(及 error)只对 enabled+active 插件有意义。disable 后
-    // 必须清,否则 PluginsTab 行无条件渲染 p.warning(无 status 门控)→ 已禁用的
-    // 插件仍挂着「⚠ 部分授权」陈旧标记。deactivateEntry 不碰这两字段,activateEntry
-    // 只在重新激活时清(activateEntry)→ 离开 active 的转换此前漏清(对称性缺口)。
-    entry.error = undefined;
-    entry.warning = undefined;
     entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
-    this.invalidateListCache();
+    this.setStatus(entry, 'disabled');
   }
 
   /**
@@ -567,25 +559,23 @@ export class PluginManager {
 
     // 新 manifest(可能 version / permissions 等变了)未通过准入 → failed
     if (!selected) {
-      entry.status = 'failed';
-      entry.error =
+      this.setStatus(
+        entry,
+        'failed',
         rejection && !rejection.ok
           ? { code: rejection.code, message: rejection.message }
           : // 类型兜底:own 中的目录都声明了该 id,没被选中即准入失败,走不到这里。
-            { code: 'SCHEMA_ERROR', message: `no admissible directory for ${id}` };
-      entry.warning = undefined; // 失败转换清陈旧 partial-grant warning(否则 failed 行同显 error+旧 warning)
-      this.invalidateListCache();
+            { code: 'SCHEMA_ERROR', message: `no admissible directory for ${id}` },
+      );
       return;
     }
 
     entry.manifest = selected.manifest;
     entry.dirInfo = selected.dir;
-    entry.status = wasEnabled ? 'enabled' : 'disabled';
+    // reload→enabled 随后走 activateEntry(先清 error / warning、再按本次授权重设);此处一并清亦无害。
     entry.error = undefined;
-    // reload→disabled 不会走 activateEntry(只 wasEnabled 才走),warning 须在此清;
-    // reload→enabled 会走 activateEntry(先清、再按本次授权重设),此处清亦无害。
     entry.warning = undefined;
-    this.invalidateListCache();
+    this.setStatus(entry, wasEnabled ? 'enabled' : 'disabled');
 
     if (wasEnabled) {
       await this.activateEntry(entry);
@@ -773,20 +763,13 @@ export class PluginManager {
     } catch (err) {
       console.warn(`[plugin-manager] activate ${entry.id} failed`, err);
       entry.instance = undefined;
-      entry.status = 'failed';
-      entry.error = { code: errorCodeOf(err), message: errorMessage(err) };
+      this.setStatus(entry, 'failed', { code: errorCodeOf(err), message: errorMessage(err) });
       await this.revokePluginFsToken(entry);
-      this.invalidateListCache();
     } finally {
       entry.activating = false;
       entry.abortActivation = undefined;
       // 被禁用 / 卸载中止的激活落到 disabled(非失败);启用意图由排队的停用清除 / 落盘。
-      if (this.deactivationIntents.has(entry.id) && !entry.instance) {
-        entry.status = 'disabled';
-        entry.error = undefined;
-        entry.warning = undefined;
-        this.invalidateListCache();
-      }
+      if (this.deactivationIntents.has(entry.id) && !entry.instance) this.setStatus(entry, 'disabled');
     }
   }
 
@@ -836,12 +819,10 @@ export class PluginManager {
           `[plugin-manager] ${entry.id} permission denied:`,
           auth.deniedPerms,
         );
-        entry.status = 'failed';
-        entry.error = {
+        this.setStatus(entry, 'failed', {
           code: 'PERMISSION_DENIED',
           message: auth.deniedPerms.join(', '),
-        };
-        this.invalidateListCache();
+        });
         return;
       }
       // v5 Phase 2:partial grant → 设 warning,plugin 仍激活
@@ -881,9 +862,7 @@ export class PluginManager {
       console.warn(
         `[plugin-manager] load ${entry.id} failed: ${loaded.code} ${loaded.message}`,
       );
-      entry.status = 'failed';
-      entry.error = { code: loaded.code, message: loaded.message };
-      this.invalidateListCache();
+      this.setStatus(entry, 'failed', { code: loaded.code, message: loaded.message });
       return;
     }
 
@@ -926,21 +905,35 @@ export class PluginManager {
       // 终审 P1:失败实例已排程的延迟回调不能再使用能力 —— 先吊销 scoped app。
       scoped.revoke();
       entry.scoped = undefined;
-      entry.status = 'failed';
-      entry.error = { code: errorCodeOf(err), message: errorMessage(err) };
+      this.setStatus(entry, 'failed', { code: errorCodeOf(err), message: errorMessage(err) });
       await this.revokePluginFsToken(entry);
       // 终审 P1:构造函数 / onload 抛错前可能已 exec / execStream 启动 shell 进程;失败实例不挂
       // entry.instance,之后禁用 / 卸载都走不到 deactivateEntry → 此处同样终止。
       await this.killPluginShellProcesses(entry.id, `activate ${entry.id}`);
-      this.invalidateListCache();
       return;
     }
 
     entry.instance = instance;
-    entry.status = 'enabled';
-    this.invalidateListCache();
+    this.setStatus(entry, 'enabled');
     // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
     // warning 若 partial grant 已在权限段设了)
+  }
+
+  /**
+   * 状态转换单一出口(此前 10 处各自手写 status + error / warning + 失效缓存,失败转换漏清 warning):
+   * - failed:记 error,清 warning(partial-grant 只对 active 插件有意义;否则行同显错误与「⚠ 部分授权」)。
+   * - disabled:清 error 与 warning(PluginsTab 行无 status 门控地渲染二者)。
+   * - enabled:只改状态(保留本次激活权限段设的 partial-grant warning)。
+   */
+  private setStatus(entry: PluginEntry, status: 'failed', error: PluginError): void;
+  private setStatus(entry: PluginEntry, status: 'enabled' | 'disabled'): void;
+  private setStatus(entry: PluginEntry, status: Status, error?: PluginError): void {
+    entry.status = status;
+    if (status !== 'enabled') {
+      entry.error = error;
+      entry.warning = undefined;
+    }
+    this.invalidateListCache();
   }
 
   private invalidateListCache(): void {

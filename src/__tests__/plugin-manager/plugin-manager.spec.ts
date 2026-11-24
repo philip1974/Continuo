@@ -1035,6 +1035,37 @@ describe('权限门 ensureAuthorized 集成', () => {
     expect(item.error).toBeUndefined();
   });
 
+  it.each([
+    ['模块加载失败', new Map<string, { default: typeof Plugin }>()],
+    ['onload 抛错', new Map([['mod://a', { default: FailingOnloadPlugin }]])],
+  ])('partial grant 后激活失败(%s)→ status=failed,不残留「部分授权」warning', async (_label, modules) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs', 'network'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules,
+      enabledWritten: new Set(),
+    };
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: new InMemoryPermissionStore(),
+      promptFn: async () => ['fs'] as never, // 只授 fs → 先设 partial-grant warning
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    const item = mgr.listAll()[0]!;
+    expect(item.status).toBe('failed');
+    expect(item.error).toBeDefined();
+    expect(item.warning).toBeUndefined();
+    warn.mockRestore();
+  });
+
   it('v5 partial grant 后用户改主意全授 → reload 时 warning 清空', async () => {
     const state: MockHostState = {
       dirs: [
