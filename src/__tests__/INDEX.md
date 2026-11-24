@@ -191,6 +191,7 @@
 
 ## [topic-51 debug breakpoint UI](./51-debug-breakpoint-ui/README.md)
 
+- [`debug-panel-navigation.spec.tsx`](./51-debug-breakpoint-ui/debug-panel-navigation.spec.tsx)
 - [`debug-panel.spec.tsx`](./51-debug-breakpoint-ui/debug-panel.spec.tsx)
 - [`debug-store.spec.ts`](./51-debug-breakpoint-ui/debug-store.spec.ts)
 - [`debug-sync-boot.spec.ts`](./51-debug-breakpoint-ui/debug-sync-boot.spec.ts)
@@ -515,6 +516,7 @@
 ## [EditorHeader(单行 Header,tabs + mode 切换)](./editor-header/README.md)
 
 - [`editor-header.spec.tsx`](./editor-header/editor-header.spec.tsx)
+- [`tab-label-description.spec.ts`](./editor-header/tab-label-description.spec.ts)
 
 ## [editor-hooks (M-Editor Step E2)](./editor-hooks/README.md)
 
@@ -665,6 +667,7 @@
 
 ## [explorer-tree (M-Explorer Step 4)](./explorer-tree/README.md)
 
+- [`file-row-focus-style.spec.ts`](./explorer-tree/file-row-focus-style.spec.ts)
 - [`folder-tree-click-modifiers.spec.tsx`](./explorer-tree/folder-tree-click-modifiers.spec.tsx)
 - [`folder-tree-create.spec.tsx`](./explorer-tree/folder-tree-create.spec.tsx)
 - [`folder-tree-keyboard.spec.tsx`](./explorer-tree/folder-tree-keyboard.spec.tsx)
@@ -741,8 +744,10 @@
 ## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
 
 - [`bootstrap-locale-sync.spec.ts`](./i18n-en-zh-ko/bootstrap-locale-sync.spec.ts)
+- [`catalog-language-purity.spec.ts`](./i18n-en-zh-ko/catalog-language-purity.spec.ts)
 - [`design-layer-no-keys.spec.ts`](./i18n-en-zh-ko/design-layer-no-keys.spec.ts)
 - [`error-codes-message-catalog.spec.ts`](./i18n-en-zh-ko/error-codes-message-catalog.spec.ts)
+- [`html-lang.spec.ts`](./i18n-en-zh-ko/html-lang.spec.ts)
 - [`locale-concurrent.spec.ts`](./i18n-en-zh-ko/locale-concurrent.spec.ts)
 - [`locale-store.spec.ts`](./i18n-en-zh-ko/locale-store.spec.ts)
 - [`main-i18n.spec.ts`](./i18n-en-zh-ko/main-i18n.spec.ts)
@@ -1606,7 +1611,10 @@
 ## [终端与 dock tab 交互对齐 VSCode 集成终端](./terminal-vscode-parity/README.md)
 
 - [`confirm-on-kill.spec.tsx`](./terminal-vscode-parity/confirm-on-kill.spec.tsx)
+- [`context-menu.spec.tsx`](./terminal-vscode-parity/context-menu.spec.tsx)
+- [`dock-tab-chrome.spec.tsx`](./terminal-vscode-parity/dock-tab-chrome.spec.tsx)
 - [`exit-behavior.spec.tsx`](./terminal-vscode-parity/exit-behavior.spec.tsx)
+- [`link-modifier-click.spec.ts`](./terminal-vscode-parity/link-modifier-click.spec.ts)
 - [`running-process-main.spec.ts`](./terminal-vscode-parity/running-process-main.spec.ts)
 - [`skip-shell-hotkeys.spec.ts`](./terminal-vscode-parity/skip-shell-hotkeys.spec.ts)
 
@@ -1717,6 +1725,12 @@
 - [`renderer-fail-feedback.spec.ts`](./window-workspace-roots-map/renderer-fail-feedback.spec.ts)
 - [`service.spec.ts`](./window-workspace-roots-map/service.spec.ts)
 - [`workspace-store-empty-string.spec.ts`](./window-workspace-roots-map/workspace-store-empty-string.spec.ts)
+
+## [工作台编辑器命令(⌘W / ⌘S / 下一个·上一个编辑器)](./workbench-editor-commands/README.md)
+
+- [`editor-commands-registration.spec.ts`](./workbench-editor-commands/editor-commands-registration.spec.ts)
+- [`editor-commands.spec.tsx`](./workbench-editor-commands/editor-commands.spec.tsx)
+- [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)
 
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)
 

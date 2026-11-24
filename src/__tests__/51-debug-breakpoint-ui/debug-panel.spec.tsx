@@ -90,9 +90,10 @@ describe('topic51 Op5 · DebugPanel', () => {
     expect(container.querySelector('.wm-badge')).toBeTruthy();
     expect(container.querySelector('.wm-scroll-area')).toBeTruthy();
 
+    // 第一个作用域进入变量页即自动加载(不必点「Load Local」),加载后按钮收起。
     fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Load Local' }));
     await waitFor(() => expect(screen.getByText('sum')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Load Local' })).toBeNull();
     expect(screen.getByText('21')).toBeTruthy();
     // 不满页(无 next_start)→ 不显示「加载更多」。
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
@@ -158,7 +159,6 @@ describe('topic51 Op5 · DebugPanel', () => {
     });
     render(<DebugPanel />);
     fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Load Local' }));
     await waitFor(() => expect(screen.getByText('first')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));

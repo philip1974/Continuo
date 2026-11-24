@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Debug 面板拉取失败须有反馈(此前全部静默):
 //   - 停下后取栈失败(ok:false / reject)→ 提示;但仅当仍是发起拉取的那一停(continue / 下一停后迟到的失败不提示);
-//   - 用户点「加载作用域」失败(ok:false / reject)→ 提示;
+//   - 进入变量页自动加载第一个作用域 / 用户点「加载作用域」失败(ok:false / reject)→ 提示,「加载」按钮可点重试;
 //   - 任何失败都不产生未处理 rejection。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -134,7 +134,7 @@ describe('停下后取栈失败 → 提示(仅限当前这一停)', () => {
   });
 });
 
-describe('点「加载作用域」失败 → 提示', () => {
+describe('加载作用域失败(自动加载第一个作用域同样)→ 提示', () => {
   async function renderStoppedPanel(): Promise<void> {
     startDebugStoreSync();
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'breakpoint' });
@@ -143,10 +143,10 @@ describe('点「加载作用域」失败 → 提示', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
   }
 
-  it('getVariables ok:false → 提示,按钮恢复可点', async () => {
+  it('getVariables ok:false → 提示,「加载」按钮可点(重试)', async () => {
     debugApi.getVariables.mockResolvedValueOnce(failure);
+    // 进入变量页即自动加载 Local(首个作用域),失败后「Load Local」按钮可点重试。
     await renderStoppedPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Load Local' }));
     await waitFor(() => expect(h.notifyError).toHaveBeenCalledTimes(1));
     expect(h.notifyError.mock.calls[0]![1]).toMatchObject({ code: 'DEBUG_SESSION_NOT_FOUND' });
     await waitFor(() =>
@@ -156,8 +156,8 @@ describe('点「加载作用域」失败 → 提示', () => {
 
   it('getVariables reject → 提示,且无未处理 rejection', async () => {
     debugApi.getVariables.mockRejectedValueOnce(new Error('ipc down'));
+    // 进入变量页即自动加载 Local(首个作用域),失败后「Load Local」按钮可点重试。
     await renderStoppedPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Load Local' }));
     await waitFor(() => expect(h.notifyError).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect((screen.getByRole('button', { name: 'Load Local' }) as HTMLButtonElement).disabled).toBe(false),

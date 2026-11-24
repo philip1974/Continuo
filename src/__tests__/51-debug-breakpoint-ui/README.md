@@ -14,3 +14,8 @@
 - renderer 重载(Cmd+R)后恢复现有调试会话:`subscribe` 返回本窗口(按 owner window 过滤)会话的快照 —— 当前停点(stopSeq / reason;栈帧由 main 按当前停点的线程取)、按 source 的完整断点集合(每会话断点总数封顶 `DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX`,超限**最新优先**:文件按最后一次发事件先后排列,保留最近的;main 快照、renderer 事件累计 / 快照校验 / 快照与事件合并共用 `capGroupsNewestFirst`)。`debug.store` 据此初始化并拉取停点的栈帧 / 作用域,之后事件照常增量;快照送达前已收到事件的会话以事件为准(不改停点、只补缺的 source,补入的排在前,与 main 顺序一致),已结束的会话不复活。
 - 拉取失败不静默(`fetch-failure-feedback.spec.tsx`):停下后取栈 / 作用域失败(`ok:false` 或 reject)按错误码本地化提示,但仅当会话仍停在发起拉取的那一停(`stopSeq` 未变)—— continue 或进入下一停后迟到的旧失败不提示;用户点「加载作用域」取变量失败同样提示、按钮恢复可点;所有失败路径都不产生未处理 rejection。
 - 变量分页(`debug-view-get-variables.spec.ts`、`debug-store.spec.ts`、`debug-panel.spec.tsx`):`debug:getVariables` 收可选 `start`(非负整数,同 MCP `debug.variables` 的 `start`),每页条数仍走 `DEBUG_VARIABLE_COUNT_DEFAULT`,满页回 `truncated` + `next_start`。`debug.store` 按 reference 记 `next_start`(`variableNextStart`,随 `variableRefs` 在 stopped / continued 时清空);面板有下一页时在该作用域变量列表末尾显示「加载更多」,点击从 `next_start` 取下一页并追加进同一 reference 的缓存,取完即消失,不满页不显示。过期守卫同首页:发起后继续运行 / 进入下一停的迟到结果不回写、迟到失败不提示。
+- 面板交互对齐 VSCode(`debug-panel-navigation.spec.tsx`):
+  - 点栈帧 / 断点 → 经编辑器打开 API(`coApp.editor.openFile(path, { line })`,同插件 SDK)打开源码并定位到该行;打开失败按错误码本地化提示(`openFileOrNotify`),不静默;无源码路径的栈帧不可点。
+  - 变量名 / 值超长截断时悬停(`title`)可看全文。
+  - 变量列表是 WAI-ARIA 树(每个作用域一棵 `role="tree"`,节点 `role="treeitem"` + `aria-level`):`variables_reference > 0` 的对象变量可展开(`aria-expanded`),展开时按需加载子变量(`loadVariables(childRef)`,同一停内缓存);键盘 ↑↓ 移动焦点,→ 展开 / 进入第一个子节点,← 收起 / 回到父节点,Enter 切换。子节点同样支持「加载更多」。
+  - 进入变量页自动加载第一个作用域(通常是 Locals,`expensive` 的除外),其余作用域仍点「加载」;已加载的作用域不再显示「加载」按钮,加载失败则保留按钮可重试。每一停重置展开状态与自动加载。
