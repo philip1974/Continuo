@@ -26,6 +26,7 @@ import {
   ExplorerSchema,
   ExplorerSchemaV3,
   ExplorerV1Schema,
+  MAIN_OWNED_WINDOW_FIELDS,
 } from '../shared/explorer-persistence-schema';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import type {
@@ -211,16 +212,16 @@ export function pruneLRUClosed(
   payload.windows = kept;
 }
 
-/** renderer 写入的窗口段 + 保留 current 的 main-owned 字段(layout / lastClosedAt;renderer 不能写)。 */
+/** renderer 写入的窗口段 + 保留 current 的 main-owned 字段(MAIN_OWNED_WINDOW_FIELDS;renderer 不能写)。 */
 function withMainOwnedFields(
   w: ExplorerWritablePayload['windows'][number],
   cur: WindowEntryV3,
 ): WindowEntryV3 {
-  return {
-    ...w,
-    ...(cur.layout !== undefined ? { layout: cur.layout } : {}),
-    ...(cur.lastClosedAt !== undefined ? { lastClosedAt: cur.lastClosedAt } : {}),
-  };
+  const out: Record<string, unknown> = { ...w };
+  for (const field of MAIN_OWNED_WINDOW_FIELDS) {
+    if (cur[field] !== undefined) out[field] = cur[field];
+  }
+  return out as WindowEntryV3;
 }
 
 export function mergeWritableIntoFull(

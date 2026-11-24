@@ -149,14 +149,18 @@ export type WindowEntry = z.infer<typeof WritableWindowEntrySchema>;
 
 // ─── v3 schema ──────────────────────────────────────────
 
-/** main-owned 字段集合:renderer 不能写,merge 时必须 preserve. */
-export const MAIN_OWNED_WINDOW_FIELDS = ['layout', 'lastClosedAt'] as const;
-
-/** Full WindowEntry v3:writable + main-owned. */
-const WindowEntrySchemaV3 = WritableWindowEntrySchema.extend({
+/**
+ * main-owned 窗口字段(renderer 不能写;写入合并时保留盘上值,explorer:read 返回前剥离)。字段清单与 schema 由同一个
+ * shape 派生 —— 此前常量、schema extend、写入合并三处各写一遍,新增字段时合并漏保留即每次 renderer 写盘把它抹掉。
+ */
+const MAIN_OWNED_WINDOW_SHAPE = {
   layout: LayoutSchema.optional(),
   lastClosedAt: z.number().int().nonnegative().nullable().optional(),
-}).strict();
+};
+export const MAIN_OWNED_WINDOW_FIELDS = Object.keys(MAIN_OWNED_WINDOW_SHAPE) as readonly (keyof typeof MAIN_OWNED_WINDOW_SHAPE)[];
+
+/** Full WindowEntry v3:writable + main-owned. */
+const WindowEntrySchemaV3 = WritableWindowEntrySchema.extend(MAIN_OWNED_WINDOW_SHAPE).strict();
 
 /** Writable Explorer Snapshot(renderer 用此 shape 写). */
 export const ExplorerWritableSnapshotSchema = z
