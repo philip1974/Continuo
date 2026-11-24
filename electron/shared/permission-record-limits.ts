@@ -9,7 +9,10 @@ export const PLUGIN_ID_MAX_LEN = 256;
 export const PLUGIN_VERSION_MAX_LEN = 128;
 
 export const PERMISSION_RECORD_LIMITS = {
-  /** permission record 条目数(plugin key 数)。 */
+  /**
+   * 插件元数据表的 plugin key 数上限:_permissions.json(main 读写 + renderer IpcPermissionStore 读)、
+   * _enabled.json、_plugin-path-scopes.json 三表共用,读端截断、写端超限 fail-closed(PAYLOAD_TOO_LARGE)。
+   */
   PLUGIN_KEYS_MAX: 10_000,
   /** 单插件 decisions 数量。 */
   DECISIONS_PER_PLUGIN_MAX: 1000,

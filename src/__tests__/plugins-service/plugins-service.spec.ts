@@ -5,13 +5,16 @@ import {
   writeFileSync,
   readFileSync,
   mkdirSync,
+  existsSync,
   promises as fsp,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   listPluginDirs,
+  mutatePluginPermissions,
   readEnabledIds,
+  setEnabledId,
   readPluginMainByDir,
   pluginManifestHash,
   readFileCapped,
@@ -24,6 +27,7 @@ import {
   writePluginPathScopes,
 } from '../../../electron/main/services/plugins.service';
 import type { IpcPermissionRecord } from '../../../electron/shared/plugins-channels';
+import { PERMISSION_RECORD_LIMITS } from '../../../electron/shared/permission-record-limits';
 import { createHash } from 'node:crypto';
 
 let tmp: string;
@@ -461,22 +465,24 @@ describe('readEnabledIds / writeEnabledIds', () => {
     expect(await readEnabledIds(tmp)).toEqual(['com.good', 'com.also-ok']);
   });
 
-  it('E85 超过数量上限 → 截断到 MAX_ENABLED_IDS', async () => {
-    const many = Array.from({ length: 5000 }, (_, i) => `com.p${i}`);
+  it('E85 超过数量上限 → 截断到 PLUGIN_KEYS_MAX', async () => {
+    const max = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
+    const many = Array.from({ length: max + 100 }, (_, i) => `com.p${i}`);
     writeFileSync(join(tmp, '_enabled.json'), JSON.stringify(many));
-    expect(await readEnabledIds(tmp)).toHaveLength(4096);
+    expect(await readEnabledIds(tmp)).toHaveLength(max);
   });
 
   // 边界(E206,E197-E199 有界迭代族-数组变体):类型校验并入 capped 循环,不先 json.every() 全量遍历。
-  // 非字符串在数量上限之后 → 凑满 MAX_ENABLED_IDS 即 break,从不扫到末尾的非字符串 → 返前 4096。
+  // 非字符串在数量上限之后 → 凑满 PLUGIN_KEYS_MAX 即 break,从不扫到末尾的非字符串 → 返前 PLUGIN_KEYS_MAX 个。
   // (中和回 json.every() 全量预扫 → 扫到末尾非字符串会返 [],该测失败。)
-  it('E206 非字符串在数量上限之后 → 不全量预扫(凑满即停,返 4096)', async () => {
-    const many = Array.from({ length: 4096 }, (_, i) => `com.p${i}`);
+  it('E206 非字符串在数量上限之后 → 不全量预扫(凑满即停,返 PLUGIN_KEYS_MAX 个)', async () => {
+    const max = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
+    const many = Array.from({ length: max }, (_, i) => `com.p${i}`);
     writeFileSync(
       join(tmp, '_enabled.json'),
-      JSON.stringify([...many, 12345]), // 末尾混入非字符串,但在 4096 上限之后
+      JSON.stringify([...many, 12345]), // 末尾混入非字符串,但在上限之后
     );
-    expect(await readEnabledIds(tmp)).toHaveLength(4096);
+    expect(await readEnabledIds(tmp)).toHaveLength(max);
   });
 
   it('文件 JSON 损坏 → 返 []', async () => {
@@ -959,5 +965,76 @@ describe('readPluginPathScopes / writePluginPathScopes 读盘 canonicalize (E86)
     expect(raw['com.write']).toHaveLength(256);
     expect(raw['com.write']![0]).toEqual({ path: '/w/0', mode: 'r' });
     expect(raw['com.write']![255]).toEqual({ path: '/w/255', mode: 'r' });
+  });
+});
+
+// 一致性(调用链简化):三张插件元数据表(_enabled.json / _permissions.json / _plugin-path-scopes.json)的
+// plugin key 数上限是同一个共享常量 PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX,读写两端同用。此前三表各写一个值
+//(4096 / 10_000 / 4096),且 setEnabledId / writePluginPathScopes 写端不限 key 数 →「写成功、读回被截」。
+// 写端超上限 fail-closed:抛 PAYLOAD_TOO_LARGE、不触盘(已有 key 的更新 / 删除不受影响)。
+describe('插件元数据表 plugin key 上限:读写同一共享常量', () => {
+  const MAX = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `com.p${i}`);
+
+  it('读端:三表都截断到 PLUGIN_KEYS_MAX', async () => {
+    const many = ids(MAX + 5);
+    writeFileSync(join(tmp, '_enabled.json'), JSON.stringify(many));
+    writeFileSync(
+      join(tmp, '_permissions.json'),
+      JSON.stringify(Object.fromEntries(many.map((id) => [id, []]))),
+    );
+    writeFileSync(
+      join(tmp, '_plugin-path-scopes.json'),
+      JSON.stringify(Object.fromEntries(many.map((id) => [id, [{ path: '/a', mode: 'r' }]]))),
+    );
+    expect(await readEnabledIds(tmp)).toHaveLength(MAX);
+    expect(Object.keys(await readPermissions(tmp))).toHaveLength(MAX);
+    expect(await readPluginPathScopes(tmp, `com.p${MAX - 1}`)).toHaveLength(1);
+    expect(await readPluginPathScopes(tmp, `com.p${MAX}`)).toEqual([]);
+  });
+
+  it('_enabled.json 满额:启用新 id → PAYLOAD_TOO_LARGE 且不触盘;禁用 / 重复启用照常', async () => {
+    const full = JSON.stringify(ids(MAX));
+    writeFileSync(join(tmp, '_enabled.json'), full);
+    await expect(setEnabledId(tmp, 'com.new', true)).rejects.toMatchObject({
+      code: 'PAYLOAD_TOO_LARGE',
+    });
+    expect(readFileSync(join(tmp, '_enabled.json'), 'utf-8')).toBe(full);
+    await expect(setEnabledId(tmp, 'com.p0', true)).resolves.toBeUndefined();
+    await setEnabledId(tmp, 'com.p0', false);
+    expect(await readEnabledIds(tmp)).toHaveLength(MAX - 1);
+  });
+
+  it('writeEnabledIds 超上限 → PAYLOAD_TOO_LARGE 且不写文件', async () => {
+    await expect(writeEnabledIds(tmp, ids(MAX + 1))).rejects.toMatchObject({
+      code: 'PAYLOAD_TOO_LARGE',
+    });
+    expect(existsSync(join(tmp, '_enabled.json'))).toBe(false);
+  });
+
+  it('_plugin-path-scopes.json 满额:新 id 写 scope → PAYLOAD_TOO_LARGE 且不触盘;已有 id 更新照常', async () => {
+    const full = JSON.stringify(
+      Object.fromEntries(ids(MAX).map((id) => [id, [{ path: '/a', mode: 'r' }]])),
+    );
+    writeFileSync(join(tmp, '_plugin-path-scopes.json'), full);
+    await expect(
+      writePluginPathScopes(tmp, 'com.new', [{ path: '/n', mode: 'r' }]),
+    ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    expect(readFileSync(join(tmp, '_plugin-path-scopes.json'), 'utf-8')).toBe(full);
+    await writePluginPathScopes(tmp, 'com.p0', [{ path: '/b', mode: 'rw' }]);
+    expect(await readPluginPathScopes(tmp, 'com.p0')).toEqual([{ path: '/b', mode: 'rw' }]);
+  });
+
+  it('_permissions.json 满额:新 id 授权 → PAYLOAD_TOO_LARGE 且不触盘;writePermissions 超上限同样拒', async () => {
+    const full = JSON.stringify(Object.fromEntries(ids(MAX).map((id) => [id, []])));
+    writeFileSync(join(tmp, '_permissions.json'), full);
+    mkdirSync(join(tmp, 'com.new'));
+    await expect(
+      mutatePluginPermissions(tmp, 'com.new', { kind: 'set', perms: ['fs'], granted: true }),
+    ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    expect(readFileSync(join(tmp, '_permissions.json'), 'utf-8')).toBe(full);
+    await expect(
+      writePermissions(tmp, Object.fromEntries(ids(MAX + 1).map((id) => [id, []]))),
+    ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
   });
 });

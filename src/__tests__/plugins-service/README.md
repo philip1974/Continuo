@@ -39,6 +39,16 @@ styles.css 不读取(renderer 不注入插件样式)**。
 - 文件不存在 / 解析失败 → []
 - 必须是 string[];非数组或含非 string → []
 
+### 插件元数据表 plugin key 上限(读写对称)
+
+- `_enabled.json` / `_permissions.json` / `_plugin-path-scopes.json` 的 plugin key 数上限统一为
+  `PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX`(`electron/shared/permission-record-limits.ts`),读写两端同用
+- 读端:超上限截断到前 `PLUGIN_KEYS_MAX` 个合法 key
+- 写端:写入后 key 数会超上限(只可能是新增 key)→ 抛 `PAYLOAD_TOO_LARGE`,不触盘(`setEnabledId` / `writeEnabledIds` /
+  `mutatePluginPermissions` / `writePermissions` / `writePluginPathScopes`);已有 key 的更新 / 删除不受影响
+- 三表共用读取底层(有界读 → 仅 ENOENT 当缺文件 → JSON.parse → 形态校验,损坏留 `.corrupt` 快照);损坏后处理照旧:
+  `_enabled.json` / `_permissions.json` 当空读取,`_plugin-path-scopes.json` 拒绝写入
+
 ### writeEnabledIds(baseDir, ids)
 
 - baseDir 不存在 → 自动 mkdir -p 后写

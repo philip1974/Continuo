@@ -300,6 +300,66 @@ async function readMetadataCapped(filePath: string): Promise<string> {
   return readTextCappedOrThrow(filePath, METADATA_MAX_BYTES, 'plugin metadata file');
 }
 
+/** 插件元数据表的读取结果:缺文件 / 损坏(JSON 解析失败或形态不合法,已留 .corrupt 快照)/ 正常。 */
+type PluginMetadataRead<T> =
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'corrupt'; readonly reason: 'json' | 'shape' }
+  | { readonly kind: 'ok'; readonly value: T };
+
+/**
+ * 三张插件元数据表(_enabled.json / _permissions.json / _plugin-path-scopes.json)共用的读取底层:
+ * 有界读(E68)→ 仅 ENOENT 当「缺文件」(其余 IO 错误 / too-large 透传:当前态未知,调用方绝不降级空表
+ * 触发 RMW 抹其它 plugin)→ JSON.parse → canonicalize(返 null = 形态不合法)。损坏两种情形都先留一次
+ * .corrupt 快照再返回 corrupt —— 损坏后怎么办(当空读 / 拒写)由各表调用方决定。
+ */
+async function readPluginMetadataJson<T>(
+  file: string,
+  canonicalize: (json: unknown) => T | null,
+): Promise<PluginMetadataRead<T>> {
+  let text: string;
+  try {
+    text = await readMetadataCapped(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' };
+    throw err;
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    await preserveCorruptSnapshot(file, text);
+    return { kind: 'corrupt', reason: 'json' };
+  }
+  const value = canonicalize(json);
+  if (value === null) {
+    await preserveCorruptSnapshot(file, text);
+    return { kind: 'corrupt', reason: 'shape' };
+  }
+  return { kind: 'ok', value };
+}
+
+/** plain object(非 null、非数组):_permissions.json / _plugin-path-scopes.json 顶层形态。 */
+function isPlainRecord(json: unknown): json is Record<string, unknown> {
+  return !!json && typeof json === 'object' && !Array.isArray(json);
+}
+
+// 三张元数据表的 plugin key 数上限:读端截断与写端拒写用同一共享常量(此前三表各一个值 4096 / 10_000 /
+// 4096,且 _enabled / path-scopes 写端不限 → 写成功、读回被截)。
+const MAX_PLUGIN_METADATA_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
+
+/**
+ * 写端 key 数上限(fail-closed):超上限抛 PAYLOAD_TOO_LARGE、不写盘,不静默截断丢掉其它 plugin 的条目。
+ * 读回的表本就 ≤ 上限,故只有「新增 key」会触发;已有 key 的更新 / 删除不受影响。
+ */
+function assertPluginKeyCountWithinLimit(count: number, file: string): void {
+  if (count > MAX_PLUGIN_METADATA_KEYS) {
+    throw codedError(
+      ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `plugin metadata ${path.basename(file)} has too many plugin keys (> ${MAX_PLUGIN_METADATA_KEYS})`,
+    );
+  }
+}
+
 /**
  * 扫描 baseDir/<id>/manifest.json 模式;返回所有合法目录的 manifestText(不含 main 源码)。
  * main 入口(默认 main.js 或 manifest.main 指向)只判定可用(open + fstat:是普通文件且 ≤8MiB,不读全文),
@@ -487,61 +547,48 @@ const ENABLED_FILE = '_enabled.json';
 // id 格式/长度/数量。手工/旧版本残留的 1MiB JSON(E68 文件大小已封顶,但内可塞数十万短串或非法/
 // 超长 id)能通过 array-of-string 校验 → readEnabledIds → new Set → PluginManager.init 放大 CPU/内存,
 // 且 setEnabledId 的 RMW 把这些非法/超量 id 原样写回,绕过写 IPC schema 上限。读盘按写端同一契约
-// canonicalize:仅保留 isSafePluginId(含长度上限 PLUGIN_ID_MAX_LEN)的 id、去重、数量≤MAX_ENABLED_IDS。
-const MAX_ENABLED_IDS = 4096; // 远超任何现实启用插件数
+// canonicalize:仅保留 isSafePluginId(含长度上限 PLUGIN_ID_MAX_LEN)的 id、去重、数量≤MAX_PLUGIN_METADATA_KEYS。
+
+/** _enabled.json 形态:string[];任一非字符串(上限内)→ null(整文件非法)。 */
+function canonicalizeEnabledIds(json: unknown): string[] | null {
+  if (!Array.isArray(json)) return null;
+  // 边界(E206,E197-E199 有界迭代族-数组变体):类型校验并入 capped 循环,不先 json.every() 全量
+  // 遍历 —— 畸形 _enabled.json 的海量短串否则在数量上限生效前被完整扫描(削弱数量上限防放大)。
+  // 遇非字符串即判整文件非法(保持 every 的"任一非字符串→整文件非法",且早停不续扫)。
+  // 边界(E85):按写端契约 canonicalize —— 合法 id(isSafePluginId + 长度上限)+ 去重 + 数量封顶。
+  const seen = new Set<string>();
+  const out = new Array<string>(Math.min(json.length, MAX_PLUGIN_METADATA_KEYS));
+  let outCount = 0;
+  for (const x of json) {
+    if (typeof x !== 'string') return null;
+    if (!isSafePluginId(x)) continue;
+    if (seen.has(x)) continue;
+    seen.add(x);
+    out[outCount] = x;
+    outCount += 1;
+    if (outCount >= MAX_PLUGIN_METADATA_KEYS) break;
+  }
+  out.length = outCount;
+  return out;
+}
 
 export async function readEnabledIds(baseDir: string): Promise<string[]> {
-  const file = path.join(baseDir, ENABLED_FILE);
   // 数据安全:区分「缺文件」与「损坏/IO 错误」(与 readPermissions/readAllPathScopes 同型)。
   // 仅 ENOENT 是首次启动 → []。EACCES/EIO 等读错误是「当前态未知」,不能当空列表 —— 否则
   // setEnabledId 基于 [] 做 RMW 写回,抹掉其它已启用插件。抛出 → setEnabledId 中止写;READ_ENABLED 侧
   // 经 host.readEnabledIds 抛出(见 plugins-host),init 降级为不激活任何插件。
-  let text: string;
-  try {
-    text = await readMetadataCapped(file); // 边界(E68):读前 stat.size 硬拦
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw err;
-  }
-  // 损坏 / 形态不合法 → [](既有契约);先留 .corrupt 快照 —— setEnabledId 随后以空集合 RMW 会覆盖原文件。
-  const malformed = async (): Promise<string[]> => {
-    await preserveCorruptSnapshot(file, text);
-    return [];
-  };
-  try {
-    const json = JSON.parse(text) as unknown;
-    if (Array.isArray(json)) {
-      // 边界(E206,E197-E199 有界迭代族-数组变体):类型校验并入 capped 循环,不先 json.every() 全量
-      // 遍历 —— 畸形 _enabled.json 的海量短串否则在 MAX_ENABLED_IDS 生效前被完整扫描(削弱数量上限防放大)。
-      // 遇非字符串即按既有契约返 [](保持 every 的"任一非字符串→整文件非法",且早停不续扫)。
-      // 边界(E85):按写端契约 canonicalize —— 合法 id(isSafePluginId + 长度上限)+ 去重 + 数量封顶。
-      const seen = new Set<string>();
-      const out = new Array<string>(Math.min(json.length, MAX_ENABLED_IDS));
-      let outCount = 0;
-      for (const x of json) {
-        if (typeof x !== 'string') return malformed();
-        if (!isSafePluginId(x)) continue;
-        if (seen.has(x)) continue;
-        seen.add(x);
-        out[outCount] = x;
-        outCount += 1;
-        if (outCount >= MAX_ENABLED_IDS) break;
-      }
-      out.length = outCount;
-      return out;
-    }
-    return malformed();
-  } catch {
-    return malformed();
-  }
+  // 损坏 / 形态不合法 → [](既有契约);.corrupt 快照已由读取底层留存 —— setEnabledId 随后以空集合 RMW 会覆盖原文件。
+  const r = await readPluginMetadataJson(path.join(baseDir, ENABLED_FILE), canonicalizeEnabledIds);
+  return r.kind === 'ok' ? r.value : [];
 }
 
 export async function writeEnabledIds(
   baseDir: string,
   ids: readonly string[],
 ): Promise<void> {
-  await fs.mkdir(baseDir, { recursive: true });
   const file = path.join(baseDir, ENABLED_FILE);
+  assertPluginKeyCountWithinLimit(ids.length, file);
+  await fs.mkdir(baseDir, { recursive: true });
   // 数据安全:与 writePermissions / writePluginPathScopes 同族 —— 裸 writeFile 截断窗口
   // 会留半截 JSON,readEnabledIds 损坏即降级 [] → 重启后所有插件被禁用。atomicWriteJson
   // 已导入,原子写成本为零,三个持久化写入口统一(原「列表小不投资 atomic」理由已不成立)。
@@ -588,7 +635,6 @@ const PERMISSIONS_FILE = '_permissions.json';
 // finite(1e400 经 JSON.parse=Infinity 但 typeof 仍 number,同 E5)。每插件 decisions 数 + plugin key 数
 // 封顶(上限来自共享的 PERMISSION_RECORD_LIMITS,读写两端同一口径)。
 const MAX_DECISIONS_PER_PLUGIN = PERMISSION_RECORD_LIMITS.DECISIONS_PER_PLUGIN_MAX;
-const MAX_PERMISSION_PLUGIN_KEYS = PERMISSION_RECORD_LIMITS.PLUGIN_KEYS_MAX;
 
 // 单条 decision / scope 的形态判定取 shared 单一来源(与 renderer 读端、IPC schema 同一规则)。
 const isDecision = isIpcPermissionDecision;
@@ -677,87 +723,75 @@ function permissionDecisionsEqual(
   );
 }
 
+/** _permissions.json 形态:顶层 plain object(否则 null);按写端 + 业务枚举 canonicalize 每条 plugin 记录。 */
+function canonicalizePermissions(json: unknown): IpcPermissionsMap | null {
+  if (!isPlainRecord(json)) return null;
+  const out: Record<string, IpcPermissionRecord> = {};
+  let keyCount = 0;
+  // 边界(E199,E197/E198 同族有界迭代):for...in 单次惰性遍历,不先 Object.entries 把被污染数据文件
+  // 的所有 plugin key 全量物化(再 break=上限失效)。E68 raw-size cap 是 backstop,但其内仍可塞大量短 key。
+  for (const pid in json) {
+    if (!Object.prototype.hasOwnProperty.call(json, pid)) continue;
+    const value = json[pid];
+    // 边界(E87):读盘按写端契约 canonicalize —— 非法/超长 plugin key 跳过、key 数封顶。
+    if (!isSafePluginId(pid)) continue;
+    if (keyCount >= MAX_PLUGIN_METADATA_KEYS) break;
+    let rec: IpcPermissionRecord | null = null;
+    // 边界(E207,E206 同族):用 cappedAllValid 有界校验,替代 `value.every(isDecision)`(在 slice 前
+    // 全量扫描数组)+ isPermissionRecordObject 的 `.every`。凑满上限即停,上限内任一非法 → 整条丢弃。
+    if (Array.isArray(value)) {
+      // 旧数组形态:capped 校验 decisions(上限内任一非法 → null → 整条 plugin 记录丢弃)
+      rec = cappedAllValid(value, isDecision, MAX_DECISIONS_PER_PLUGIN);
+    } else if (value !== null && typeof value === 'object') {
+      // 新 { decisions, pathScopes? } 形态:decisions 必为数组且上限内全合法;pathScopes 同理(若存在)
+      const o = value as Record<string, unknown>;
+      if (Array.isArray(o.decisions)) {
+        const decisions = cappedAllValid(o.decisions, isDecision, MAX_DECISIONS_PER_PLUGIN);
+        if (decisions !== null) {
+          if (o.pathScopes === undefined) {
+            rec = { decisions };
+          } else if (Array.isArray(o.pathScopes)) {
+            const pathScopes = cappedAllValid(
+              o.pathScopes,
+              isIpcPathScope,
+              MAX_PERSISTED_SCOPES_PER_PLUGIN,
+            );
+            if (pathScopes !== null) rec = { decisions, pathScopes };
+          }
+        }
+      }
+    }
+    if (rec !== null) {
+      out[pid] = rec;
+      keyCount += 1;
+    }
+  }
+  return out;
+}
+
 export async function readPermissions(
   baseDir: string,
 ): Promise<IpcPermissionsMap> {
-  const file = path.join(baseDir, PERMISSIONS_FILE);
   // 数据安全:区分「缺文件」与「损坏/IO 错误」(与 readAllPathScopes #12 同型)。只有
   // ENOENT 是首次启动 → {}。EACCES/EIO 等读错误是「当前态未知」,不能当空表 —— 否则
   // 写入方基于 {} 做整表 RMW,抹掉其它 plugin 已落盘的授权决策。抛出 →
   // mutatePluginPermissions / uninstall 在删/写前中止,renderer 经 safeHandle 降级。
-  let text: string;
-  try {
-    text = await readMetadataCapped(file); // 边界(E68):读前 stat.size 硬拦
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
-    throw err;
-  }
-  try {
-    const json = JSON.parse(text) as unknown;
-    if (!json || typeof json !== 'object' || Array.isArray(json)) {
-      await preserveCorruptSnapshot(file, text); // 形态不合法:同 JSON 损坏,降级 {} 前留证
-      return {};
-    }
-    const out: Record<string, IpcPermissionRecord> = {};
-    let keyCount = 0;
-    // 边界(E199,E197/E198 同族有界迭代):for...in 单次惰性遍历,不先 Object.entries 把被污染数据文件
-    // 的所有 plugin key 全量物化(再 break=上限失效)。E68 raw-size cap 是 backstop,但其内仍可塞大量短 key。
-    const rec0 = json as Record<string, unknown>;
-    for (const pid in rec0) {
-      if (!Object.prototype.hasOwnProperty.call(rec0, pid)) continue;
-      const value = rec0[pid];
-      // 边界(E87):读盘按写端契约 canonicalize —— 非法/超长 plugin key 跳过、key 数封顶。
-      if (!isSafePluginId(pid)) continue;
-      if (keyCount >= MAX_PERMISSION_PLUGIN_KEYS) break;
-      let rec: IpcPermissionRecord | null = null;
-      // 边界(E207,E206 同族):用 cappedAllValid 有界校验,替代 `value.every(isDecision)`(在 slice 前
-      // 全量扫描数组)+ isPermissionRecordObject 的 `.every`。凑满上限即停,上限内任一非法 → 整条丢弃。
-      if (Array.isArray(value)) {
-        // 旧数组形态:capped 校验 decisions(上限内任一非法 → null → 整条 plugin 记录丢弃)
-        rec = cappedAllValid(value, isDecision, MAX_DECISIONS_PER_PLUGIN);
-      } else if (value !== null && typeof value === 'object') {
-        // 新 { decisions, pathScopes? } 形态:decisions 必为数组且上限内全合法;pathScopes 同理(若存在)
-        const o = value as Record<string, unknown>;
-        if (Array.isArray(o.decisions)) {
-          const decisions = cappedAllValid(
-            o.decisions,
-            isDecision,
-            MAX_DECISIONS_PER_PLUGIN,
-          );
-          if (decisions !== null) {
-            if (o.pathScopes === undefined) {
-              rec = { decisions };
-            } else if (Array.isArray(o.pathScopes)) {
-              const pathScopes = cappedAllValid(
-                o.pathScopes,
-                isIpcPathScope,
-                MAX_PERSISTED_SCOPES_PER_PLUGIN,
-              );
-              if (pathScopes !== null) rec = { decisions, pathScopes };
-            }
-          }
-        }
-      }
-      if (rec !== null) {
-        out[pid] = rec;
-        keyCount += 1;
-      }
-    }
-    return out;
-  } catch {
-    // JSON 损坏 → {}(既有契约,见 plugins-service.spec「JSON 损坏 → {}」);先留 .corrupt 快照 —— 写入方
-    // 随后以空表 RMW 会覆盖原文件。
-    await preserveCorruptSnapshot(file, text);
-    return {};
-  }
+  // JSON 损坏 / 形态不合法 → {}(既有契约,见 plugins-service.spec「JSON 损坏 → {}」);.corrupt 快照已由
+  // 读取底层留存 —— 写入方随后以空表 RMW 会覆盖原文件。
+  const r = await readPluginMetadataJson(
+    path.join(baseDir, PERMISSIONS_FILE),
+    canonicalizePermissions,
+  );
+  return r.kind === 'ok' ? r.value : {};
 }
 
 export async function writePermissions(
   baseDir: string,
   data: IpcPermissionsMap,
 ): Promise<void> {
-  await fs.mkdir(baseDir, { recursive: true });
   const file = path.join(baseDir, PERMISSIONS_FILE);
+  assertPluginKeyCountWithinLimit(Object.keys(data).length, file);
+  await fs.mkdir(baseDir, { recursive: true });
   // 数据安全(复查 P1):裸 writeFile('w') 先截断再写,ENOSPC/进程被杀/写中断会把
   // 整张授权表留成空/半截 JSON → 重启 readPermissions 按既有契约把损坏 JSON 降级为 {},
   // 所有 plugin 授权决策丢失。改 temp+fsync+rename 原子写:rename 前原文件始终完好,
@@ -869,7 +903,6 @@ const PATH_SCOPES_FILE = '_plugin-path-scopes.json';
 // isIpcPathScope」校验,进 readPluginPathScopes→hydrate→mergeScopes 前先构造整表,且
 // writePluginPathScopes 的 RMW 会把其它非法/超量 plugin 条目原样写回(绕过写端契约)。
 const MAX_PERSISTED_SCOPES_PER_PLUGIN = PERMISSION_RECORD_LIMITS.PATH_SCOPES_PER_PLUGIN_MAX; // 对齐 PathScopeRegistry MAX_SCOPES_PER_PLUGIN(E81)
-const MAX_PERSISTED_PLUGIN_KEYS = 4096; // 持久化表的 plugin key 数上限
 
 /**
  * scopes 文件 JSON 解析失败或形态不合法(已存 .corrupt 快照)。与 IO 错误区分:损坏文件的读端恒降级 [],
@@ -878,60 +911,49 @@ const MAX_PERSISTED_PLUGIN_KEYS = 4096; // 持久化表的 plugin key 数上限
  */
 class PathScopesCorruptError extends Error {}
 
-async function readAllPathScopes(
-  baseDir: string,
-): Promise<Record<string, IpcPathScope[]>> {
-  const file = path.join(baseDir, PATH_SCOPES_FILE);
-  // 数据安全:必须区分「缺文件」(正常空表)与「损坏/IO 错误」(当前态未知)。此前两者
-  // 都 catch→{},而 writePluginPathScopes 基于此做整表 RMW → 文件临时损坏时任意 plugin
-  // grant/uninstall 会以空表覆盖,抹掉其它 plugin 已持久化的 scope。损坏时存 .corrupt
-  // 快照后抛错,让写入中止(磁盘保留)、让水合读降级返回 [](见 readPluginPathScopes)。
-  let text: string;
-  try {
-    text = await readMetadataCapped(file); // 边界(E68):读前 stat.size 硬拦
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}; // 缺文件:正常空表
-    throw err; // 权限等 IO 错误 / too-large:不可当空表(否则 RMW 整表覆盖抹掉已有)
-  }
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    await preserveCorruptSnapshot(file, text);
-    throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
-  }
-  if (!json || typeof json !== 'object' || Array.isArray(json)) {
-    // 形态不合法与 JSON 损坏同一处理:留证后抛错,写入中止(不以空表整表覆盖)、水合读降级 []。
-    await preserveCorruptSnapshot(file, text);
-    throw new PathScopesCorruptError(`path-scopes file malformed: ${file}`);
-  }
+/** _plugin-path-scopes.json 形态:顶层 plain object(否则 null);按写端契约 canonicalize。 */
+function canonicalizePathScopes(json: unknown): Record<string, IpcPathScope[]> | null {
+  if (!isPlainRecord(json)) return null;
   const out: Record<string, IpcPathScope[]> = {};
   let keyCount = 0;
   // 边界(E199,E197/E198 同族有界迭代):for...in 单次惰性遍历,不先 Object.entries 全量物化(readPermissions 同步修)。
-  const rec0 = json as Record<string, unknown>;
-  for (const pid in rec0) {
-    if (!Object.prototype.hasOwnProperty.call(rec0, pid)) continue;
-    const value = rec0[pid];
+  for (const pid in json) {
+    if (!Object.prototype.hasOwnProperty.call(json, pid)) continue;
+    const value = json[pid];
     // 边界(E86):读盘按写端契约 canonicalize —— 非法/超长 key 跳过(防注入畸形 key + 元数据放大),
     // key 数封顶。isSafePluginId 与 writePluginPathScopes 写端门控一致。
     if (!isSafePluginId(pid)) continue;
-    if (keyCount >= MAX_PERSISTED_PLUGIN_KEYS) break;
+    if (keyCount >= MAX_PLUGIN_METADATA_KEYS) break;
     if (!Array.isArray(value)) continue;
     // 边界(E86):scope 经 isIpcPathScope(含 path 长度上限)过滤,且每插件 scope 数封顶
     //(对齐 PathScopeRegistry 上限,防整表在 hydrate 前放大 + RMW 写回超量)。
     // 边界(E208,E206/E207 有界迭代族):collectValidCapped 凑满 MAX 即停,不先 filter 全量扫描+物化再 slice
     //(畸形 _plugin-path-scopes.json 单 plugin 塞大量 scope 否则冷启动水合时被完整遍历)。
-    const scopes = collectValidCapped(
-      value,
-      isIpcPathScope,
-      MAX_PERSISTED_SCOPES_PER_PLUGIN,
-    );
+    const scopes = collectValidCapped(value, isIpcPathScope, MAX_PERSISTED_SCOPES_PER_PLUGIN);
     if (scopes.length > 0) {
       out[pid] = scopes;
       keyCount += 1;
     }
   }
   return out;
+}
+
+async function readAllPathScopes(
+  baseDir: string,
+): Promise<Record<string, IpcPathScope[]>> {
+  const file = path.join(baseDir, PATH_SCOPES_FILE);
+  // 数据安全:必须区分「缺文件」(正常空表)与「损坏/IO 错误」(当前态未知)。此前两者
+  // 都 catch→{},而 writePluginPathScopes 基于此做整表 RMW → 文件临时损坏时任意 plugin
+  // grant/uninstall 会以空表覆盖,抹掉其它 plugin 已持久化的 scope。IO 错误 / too-large 由读取底层透传;
+  // JSON 损坏与形态不合法同一处理:.corrupt 快照已留,抛错让写入中止(磁盘保留)、水合读降级 [](见 readPluginPathScopes)。
+  const r = await readPluginMetadataJson(file, canonicalizePathScopes);
+  if (r.kind === 'missing') return {};
+  if (r.kind === 'corrupt') {
+    throw new PathScopesCorruptError(
+      `path-scopes file ${r.reason === 'json' ? 'corrupt' : 'malformed'}: ${file}`,
+    );
+  }
+  return r.value;
 }
 
 /** 读取单个 plugin 上次会话持久化的 path scope(canonical);无则空数组。 */
@@ -980,8 +1002,9 @@ export function writePluginPathScopes(
       if (pathScopesEqual(ownValue(all, id), normalized)) return;
       all[id] = normalized;
     }
-    await fs.mkdir(baseDir, { recursive: true });
     const file = path.join(baseDir, PATH_SCOPES_FILE);
+    assertPluginKeyCountWithinLimit(Object.keys(all).length, file);
+    await fs.mkdir(baseDir, { recursive: true });
     // 数据安全:同 writePermissions —— 裸 writeFile 截断窗口会留半截 JSON,
     // readAllPathScopes 损坏即抛 → 水合降级 [],已授 path scope 丢失。原子写。
     await atomicWriteJson(file, all);
