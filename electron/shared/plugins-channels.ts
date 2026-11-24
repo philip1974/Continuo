@@ -69,8 +69,8 @@ export const PROTOCOL_SCHEME = 'co';
 
 // 边界(E242,E168-E175 IPC push ingress 守卫族):main→renderer push 事件的 payload runtime 守卫。
 // preload 的 onChanged / onProtocolUrl 此前直接 `payload.id` / `payload.url` 解包,信任 main 发来的形态:
-// null payload 在 listener 中抛(未捕获),超长/非字符串 id 会进 plugin-reload-gate pending Set 或触发
-// reload(污染启动期缓冲/错误路径),超长 url 进 protocol-dispatch。纯函数守卫(无 zod,preload 可 import),
+// null payload 在 listener 中抛(未捕获),超长/非字符串 id 会进插件生命周期事件(启动期等待 / 错误路径)
+// 或触发 reload,超长 url 进 protocol-dispatch。纯函数守卫(无 zod,preload 可 import),
 // preload 不合法则 warn+drop 不调 cb。与 fs:dir-changed / agent-auth 的 push 守卫同款纵深防御。
 export const PROTOCOL_URL_MAX_LEN = 8192; // co:// URL 长度上限(对齐 path 类上限)
 

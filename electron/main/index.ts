@@ -1184,15 +1184,9 @@ async function startMcpStdioServer(): Promise<void> {
       serverInfo: mcpHost.serverInfo,
       resolveWindowId: (token) => mcpHost!.resolveWindowId(token),
       // 安全:token 吊销 / 轮换 → 已绑定的 stdio 连接立即失效、在途调用取消、其身份名下的在途创建与 debug 会话回收。
+      // 连接断开 → 回收其 debug 会话(见 mcp-revoker-wiring)。HTTP subject 随 session 释放 / token 吊销 /
+      // 窗口关闭 / 撤销回收,同在该模块。
       ...mcpRevokerWiring?.stdioOptions,
-      // stdio 连接断开 → 其 subject 永久失效:回收它创建的 debug 会话(否则无人能 disconnect,
-      // 名额被占满、adapter 常驻)。终端会话对用户可见、可手动关,不在此回收。HTTP subject 是终端 token
-      //(带 Mcp-Session-Id 时为 token + session id),随 session 释放 / token 吊销 / 窗口关闭 / 撤销回收(见 mcp-revoker-wiring)。
-      onCallerClosed: (subject) => {
-        void debugService.killByController(subject, 'caller-disconnected').catch((err) => {
-          console.warn('[debug] killByController failed on stdio close', err);
-        });
-      },
     });
     console.log(`[mcp-stdio] listening on ${mcpStdio.socketPath}`);
     const cliPath = await resolveStdioCliPath();

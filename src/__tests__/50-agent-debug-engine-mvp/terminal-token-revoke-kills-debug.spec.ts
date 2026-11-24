@@ -47,4 +47,23 @@ describe('终端 token 吊销同步回收其 debug 会话', () => {
     );
     await vi.waitFor(() => expect(warn).toHaveBeenCalled());
   });
+
+  it('stdio 连接断开 → killByController(subject, caller-disconnected),不取消在途创建(已随连接 abort)', async () => {
+    const killByController = vi.fn(async (_subject: string, _reason: string): Promise<unknown> => []);
+    const cancelAgentTerminalCreates = vi.fn();
+    const wiring = createMcpRevokerWiring({
+      debugService: { killByController, listControllerTokens: () => [] },
+      cancelAgentTerminalCreates,
+      hasAgentTerminalCreates: () => false,
+      hasLiveSessionForController: () => false,
+    });
+    killByController.mockRejectedValueOnce(new Error('teardown failed'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    wiring.stdioOptions.onCallerClosed('stdio:abc');
+
+    expect(killByController).toHaveBeenCalledWith('stdio:abc', 'caller-disconnected');
+    expect(cancelAgentTerminalCreates).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+  });
 });

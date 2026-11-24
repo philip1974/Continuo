@@ -32,18 +32,22 @@ export interface McpRevokerWiring {
   readonly stdioOptions: {
     readonly onTokensRevoked: (listener: () => void) => void;
     readonly onCallerRevoked: (callerSubject: string) => void;
+    readonly onCallerClosed: (callerSubject: string) => void;
   };
   /** host 建好后传给 setMcpRevokers。 */
   revokers(host: Pick<McpHost, 'revokeToken' | 'revokeWindowTokens'>): McpRevokers;
 }
 
 export function createMcpRevokerWiring(deps: McpRevokerWiringDeps): McpRevokerWiring {
-  const reclaim = (subject: string, reason: string, logCtx: string): void => {
-    // 在途 create_session 同样失去调用方(同 stdio 断连 abort ctx.signal):取消,不留孤儿会话。
-    deps.cancelAgentTerminalCreates(subject);
+  const killDebug = (subject: string, reason: string, logCtx: string): void => {
     void deps.debugService.killByController(subject, reason).catch((err) => {
       console.warn(`[debug] killByController failed on ${logCtx}`, err);
     });
+  };
+  const reclaim = (subject: string, reason: string, logCtx: string): void => {
+    // 在途 create_session 同样失去调用方(同 stdio 断连 abort ctx.signal):取消,不留孤儿会话。
+    deps.cancelAgentTerminalCreates(subject);
+    killDebug(subject, reason, logCtx);
   };
 
   const tokensRevokedListeners = new Set<() => void>();
@@ -54,6 +58,9 @@ export function createMcpRevokerWiring(deps: McpRevokerWiringDeps): McpRevokerWi
         tokensRevokedListeners.add(listener);
       },
       onCallerRevoked: (subject) => reclaim(subject, 'token-revoked', 'stdio token revoke'),
+      // stdio 连接断开 → 其 subject 永久失效:回收它创建的 debug 会话(否则无人能 disconnect,名额被占满、
+      // adapter 常驻)。在途 create_session 已随连接 abort 的 ctx.signal 取消;终端会话对用户可见、可手动关,不在此回收。
+      onCallerClosed: (subject) => killDebug(subject, 'caller-disconnected', 'stdio close'),
     },
     hostOptions: {
       onTokensRevoked: () => {
