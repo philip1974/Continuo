@@ -835,6 +835,10 @@
 
 - [`map-with-concurrency.spec.ts`](./map-with-concurrency/map-with-concurrency.spec.ts)
 
+## [markdown-editor-style](./markdown-editor-style/README.md)
+
+- [`milkdown-style-override.spec.ts`](./markdown-editor-style/milkdown-style-override.spec.ts)
+
 ## [markdown-link-keyboard](./markdown-link-keyboard/)
 
 - [`link-keyboard-activate.spec.tsx`](./markdown-link-keyboard/link-keyboard-activate.spec.tsx)

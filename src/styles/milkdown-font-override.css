@@ -6,7 +6,7 @@
  *
  * 同时把 Crepe 的 --crepe-color-* 桥接到项目语义 token,使 markdown 编辑器
  * 自动跟随 :root(light)与 .dark(dark)。MilkdownEditor 仍 import frame-dark
- * (拿 font / shadow / 结构样式),颜色由本文件覆写。
+ * (拿结构样式),颜色 / 字体 / 阴影 / 正文内边距由本文件覆写。
  */
 .milkdown {
   --crepe-color-background: var(--md-surface);
@@ -26,6 +26,29 @@
   --crepe-color-hover: var(--md-surface-container-high);
   --crepe-color-selected: var(--md-surface-container-highest);
   --crepe-color-inline-area: var(--md-surface-container-high);
+
+  /* 字体 / 阴影同样接项目 token(frame-dark 默认是 Noto Serif 标题 + Space Mono 代码 + 白色辉光阴影)。 */
+  --crepe-font-default: var(--wm-font-sans);
+  --crepe-font-title: var(--wm-font-sans);
+  --crepe-font-code: var(--wm-font-mono);
+  --crepe-shadow-1: var(--wm-shadow-popover);
+  --crepe-shadow-2: var(--wm-shadow-popover);
+
+  /* Crepe ≥7.22 在 .milkdown 上写死 font-size: var(--crepe-base-font-size, 16px),会挡住外层容器按
+   * editor.fontSize 设的字号;改回继承,下面的 em 字号都以设置值为基准。 */
+  font-size: inherit;
+}
+
+/* Crepe reset 的正文内边距固定 60px 120px,窄宽下正文被挤成一窄条(表头在单词中间断行)。
+ * 改为随编辑区宽度收缩(百分比相对编辑区宽度),宽屏仍封顶在原值。 */
+.milkdown .ProseMirror {
+  padding: clamp(16px, 4%, 60px) clamp(16px, 6%, 120px);
+}
+
+/* 表格:prosemirror-tables 默认 table-layout: fixed + width 100%,列宽均分,窄宽下长单词被拆开。
+ * 改为按内容分配列宽(列不窄于最长单词),放不下时由 .tableWrapper 横向滚动。 */
+.milkdown .ProseMirror table {
+  table-layout: auto;
 }
 
 .milkdown .ProseMirror p {
