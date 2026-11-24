@@ -1730,6 +1730,7 @@
 
 - [`editor-commands-registration.spec.ts`](./workbench-editor-commands/editor-commands-registration.spec.ts)
 - [`editor-commands.spec.tsx`](./workbench-editor-commands/editor-commands.spec.tsx)
+- [`popout-hotkeys.spec.tsx`](./workbench-editor-commands/popout-hotkeys.spec.tsx)
 - [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)
 
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)

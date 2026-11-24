@@ -16,6 +16,10 @@
 4. **`workbench.action.nextEditor` / `workbench.action.previousEditor`**:在编辑器文件 tab 间循环切换(首尾相接);
    默认键按平台对齐 VSCode:mac `⌥⌘→` / `⌥⌘←`(`mod+alt+right` / `mod+alt+left`),其它 `Ctrl+PageDown` /
    `Ctrl+PageUp`。tab 数 < 2 → no-op。
+5. **popout 子窗里同样生效**:焦点在 dockview popout 子窗时,关闭编辑器与下一个 / 上一个编辑器按**生效绑定**在该子窗
+   分发,执行同一命令(作用于 dock 活动面板,即焦点所在的子窗面板);mac 上 ⌘W 不再因去掉菜单 `role: 'close'` 而在
+   子窗里无反应。其它命令(新终端、设置等效果画在主窗)不在子窗分发;保存由编辑器面板自己的按键处理覆盖。子窗关闭 /
+   hook 卸载时移除该文档上的监听。
 
 ## 模块
 
@@ -24,6 +28,7 @@
 | `src/panels/Editor/editor-commands.ts` | 命令 id / 默认键、命令 spec、closeActiveEditor / saveActiveEditor / openAdjacentEditor,EditorPanel 动作注册 |
 | `src/panels/Editor/EditorPanel.tsx` | 挂载时注册「保存 / 关当前 tab」实现(依赖面板内确认框状态) |
 | `src/core-plugins/EditorPlugin.ts` | 注册上述命令 |
+| `src/plugins/command-palette/useCommandHotkeys.ts` | 全局热键分发;`POPOUT_HOTKEY_COMMAND_IDS` 在 popout 子窗文档分发 |
 | `electron/main/index.ts` | File 菜单「关闭窗口」`Shift+CmdOrCtrl+W` |
 | `electron/main/ipc/window.ipc.ts` | `window:close`:关闭发起方所在窗口(`win.close()`,走关窗脏确认) |
 
@@ -31,4 +36,5 @@
 
 - `editor-commands.spec.tsx`:关闭 / 保存 / 切换行为(jsdom,渲染 EditorPanel + 全局热键分发)
 - `editor-commands-registration.spec.ts`:核心插件注册的 id / 默认键 / 三语标题
+- `popout-hotkeys.spec.tsx`:popout 子窗按键分发(白名单、生效绑定、监听随子窗移除)
 - 菜单项见 `dirty-close-confirm/close-confirm-flow.spec.ts`「File 菜单关闭窗口」;`window:close` 见 `window-close-ipc.spec.ts`

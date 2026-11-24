@@ -3,7 +3,7 @@
 // 'mod' 跨平台:macOS 走 metaKey,其它走 ctrlKey。
 // 单 hotkey 字符串 'mod+shift+h' = mod 键 + shift + 'h'。
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
 import { useKeybindingsStore } from '../keybindings/keybindings-store';
@@ -12,6 +12,18 @@ import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
+
+/**
+ * dockview popout 子窗里也经热键分发的命令:只作用于子窗内的活动面板(dock 的 activePanel 随焦点落在子窗面板上),
+ * 不在主窗画东西。mac 上 ⌘W 此前由应用菜单 role:'close' 关掉聚焦的子窗,改为 closeActiveEditor 后须在子窗分发。
+ * 保存由编辑器面板自己的按键处理覆盖(popout 内同样生效),不在此列。id 与 editor-commands 一致(规范守护)。
+ */
+export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
+  'workbench.action.closeActiveEditor',
+  'workbench.action.nextEditor',
+  'workbench.action.previousEditor',
+]);
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
 interface ComboSignature {
@@ -172,11 +184,48 @@ export function buildCompiledBindings(
   return out;
 }
 
+function createHotkeyHandler(
+  bindings: readonly CompiledBinding[],
+  commands: CommandRegistry,
+): (e: KeyboardEvent) => void {
+  return (e: KeyboardEvent) => {
+    // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
+    // 「无 ctrl/meta/alt 修饰」的绑定(单键如 'x' 或仅 shift 如 'X')—— 否则用户在搜索框/
+    // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。
+    // 带 ctrl/meta/alt 的全局组合(如 mod+s 保存)在编辑器内仍需生效,故只跳过无修饰类。
+    // 编辑器(ProseMirror / CodeMirror)已用该键执行了自己的动作(preventDefault)→ 不再执行全局命令:否则 Markdown
+    // 里 ⌘B 同时加粗与切换侧栏、用户改绑到 mod+d / mod+/ 等编辑器键位时一键两动作(与终端让出 / 编辑器 ⌘S 同族)。
+    // 只认编辑器区域:其它可编辑控件(xterm textarea 等)可能对未处理的组合也 preventDefault,不据此拦命令。
+    if (e.defaultPrevented && isInsideCodeEditor(e.target)) return;
+    const editable = isEditableTarget(e.target);
+    const keyLower = lowerIfNeeded(e.key);
+    for (const b of bindings) {
+      if (signatureMatchesKey(b.sig, e, keyLower)) {
+        if (editable && !b.sig.wantMeta && !b.sig.wantCtrl && !b.sig.wantAlt) {
+          continue;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        // 经 runContributedAction 走:命令(任意插件代码,可 network/fs)同步 throw 或
+        // async reject 时弹 error toast,与命令面板 execute 路径(CommandPalette.tsx)
+        // 一致。旧实现裸 `void cmd.fn()` → hotkey 触发的失败"按了没反应"完全静默。
+        // label 用 localize 后 title 与面板对齐。
+        // race(R51):触发时按 id 从 live registry 重查再执行,而非调缓存的 b.cmd.fn()。命令被
+        // 插件 disable/reload 同步 unregister 后、到 React 重渲替换本 handler 前的窗口内,旧
+        // bindings 闭包仍持已卸载命令的 fn;重查使死命令静默忽略,不再执行已卸载插件代码。
+        runRegisteredCommand(commands, b.cmd.id, tWithFallback(b.cmd.titleKey, b.cmd.title));
+        return;
+      }
+    }
+  };
+}
+
 export function useCommandHotkeys(commands: CommandRegistry): void {
   const snap = useRegistry(commands);
   // 用户改键时也要重排监听 — 订阅 keybindings overrides 让预编译表重建
   const overrides = useKeybindingsStore((s) => s.overrides);
   const platform = useMemo(() => detectPlatform(), []);
+  const popoutDocs = useSyncExternalStore(subscribePopoutDocuments, getPopoutDocuments);
 
   // 预编译有效 hotkey 绑定表(打磨 R26):只在命令集 / overrides / 平台变化时重算,
   // 每个 hotkey 解析一次。高频 keydown 路径只做字段比较,不再逐键 split/lowercase/Set
@@ -184,44 +233,29 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
   const bindings = useMemo<readonly CompiledBinding[]>(() => {
     return buildCompiledBindings(snap, platform, overrides);
   }, [snap, overrides, platform]);
+  const popoutBindings = useMemo(
+    () => bindings.filter((b) => POPOUT_HOTKEY_COMMAND_IDS.has(b.cmd.id)),
+    [bindings],
+  );
 
   useEffect(() => {
     if (bindings.length === 0) return;
-
-    const handler = (e: KeyboardEvent) => {
-      // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
-      // 「无 ctrl/meta/alt 修饰」的绑定(单键如 'x' 或仅 shift 如 'X')—— 否则用户在搜索框/
-      // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。
-      // 带 ctrl/meta/alt 的全局组合(如 mod+s 保存)在编辑器内仍需生效,故只跳过无修饰类。
-      // 编辑器(ProseMirror / CodeMirror)已用该键执行了自己的动作(preventDefault)→ 不再执行全局命令:否则 Markdown
-      // 里 ⌘B 同时加粗与切换侧栏、用户改绑到 mod+d / mod+/ 等编辑器键位时一键两动作(与终端让出 / 编辑器 ⌘S 同族)。
-      // 只认编辑器区域:其它可编辑控件(xterm textarea 等)可能对未处理的组合也 preventDefault,不据此拦命令。
-      if (e.defaultPrevented && isInsideCodeEditor(e.target)) return;
-      const editable = isEditableTarget(e.target);
-      const keyLower = lowerIfNeeded(e.key);
-      for (const b of bindings) {
-        if (signatureMatchesKey(b.sig, e, keyLower)) {
-          if (editable && !b.sig.wantMeta && !b.sig.wantCtrl && !b.sig.wantAlt) {
-            continue;
-          }
-          e.preventDefault();
-          e.stopPropagation();
-          // 经 runContributedAction 走:命令(任意插件代码,可 network/fs)同步 throw 或
-          // async reject 时弹 error toast,与命令面板 execute 路径(CommandPalette.tsx)
-          // 一致。旧实现裸 `void cmd.fn()` → hotkey 触发的失败"按了没反应"完全静默。
-          // label 用 localize 后 title 与面板对齐。
-          // race(R51):触发时按 id 从 live registry 重查再执行,而非调缓存的 b.cmd.fn()。命令被
-          // 插件 disable/reload 同步 unregister 后、到 React 重渲替换本 handler 前的窗口内,旧
-          // bindings 闭包仍持已卸载命令的 fn;重查使死命令静默忽略,不再执行已卸载插件代码。
-          runRegisteredCommand(commands, b.cmd.id, tWithFallback(b.cmd.titleKey, b.cmd.title));
-          return;
-        }
-      }
-    };
-    // 只挂主窗 document,不挂 dockview popout 子窗:命令效果(新终端、设置面板等)都画在主窗,从子窗触发时系统焦点
-    // 留在子窗(renderer 无激活主窗的通路),接着输入的字进了子窗的编辑器 / 终端。与 ⌘P / ⌘⇧P 同一规则。
+    const handler = createHotkeyHandler(bindings, commands);
+    // 主窗 document 分发全部命令。popout 子窗只分发 POPOUT_HOTKEY_COMMAND_IDS(见下):其它命令效果(新终端、设置面板等)
+    // 都画在主窗,从子窗触发时系统焦点留在子窗(renderer 无激活主窗的通路),接着输入的字进了子窗的编辑器 / 终端。
+    // 与 ⌘P / ⌘⇧P 同一规则。
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
     // commands 是稳定 registry 实例(挂载期不变);handler 内 commands.get 做 R51 live 查找。
   }, [bindings, commands]);
+
+  useEffect(() => {
+    if (popoutBindings.length === 0 || popoutDocs.length === 0) return;
+    const handler = createHotkeyHandler(popoutBindings, commands);
+    for (const doc of popoutDocs) doc.addEventListener('keydown', handler);
+    // 子窗关闭 → popoutDocs 变化 → 移除旧监听(不泄漏已关子窗的 document)。
+    return () => {
+      for (const doc of popoutDocs) doc.removeEventListener('keydown', handler);
+    };
+  }, [popoutBindings, popoutDocs, commands]);
 }
