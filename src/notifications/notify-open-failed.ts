@@ -1,4 +1,4 @@
-// 用户主动打开文件失败的统一提示(Explorer 点击文件 / Quick Open 选中文件共用;此前两处各写一份并已分叉)。
+// 用户主动打开文件失败的统一提示(Explorer 点击文件 / Quick Open 选中文件 / 编辑器内文件链接共用;此前两处各写一份并已分叉)。
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf, type Failure } from '@/lib/failure-of';

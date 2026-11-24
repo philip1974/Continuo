@@ -749,6 +749,27 @@ describe('PluginsTabContent — Git URL 安装', () => {
     expect(container.textContent).not.toContain('p.ghost');
   });
 
+  // 覆盖重装已在列表的 id:不记待重启(plugins 引用不变,摘除 effect 不会跑);随后在 watcher 扫描前卸载 → 不得出现幽灵行。
+  it('覆盖重装已在列表的插件后立即卸载 → 无幽灵待重启行', async () => {
+    let list: PluginListItem[] = [plugin({ id: 'p.dup' })];
+    getMgr.mockReturnValue({ listAll: () => list });
+    installPluginsApi(
+      vi.fn().mockResolvedValue({ ok: true, data: { id: 'p.dup', name: 'Dup', version: '2.0.0' } }),
+    );
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/me/dup.git' } });
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
+    );
+    await waitFor(() => expect(container.textContent).toContain('已安装 Dup v2.0.0'));
+    act(() => {
+      list = [];
+      notifyUserPluginListChanged();
+    });
+    expect(container.textContent).not.toContain('p.dup');
+  });
+
   it('连续安装两个插件 → 两条待重启行都保留(后装的不顶掉先装的)', async () => {
     const installFromGit = vi
       .fn()
