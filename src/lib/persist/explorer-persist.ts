@@ -464,20 +464,20 @@ export async function initExplorerPersistence(
         const myEntry = findWindowEntryBySeq(r.data.windows, windowSeq);
         if (fresh && initialWorkspace !== undefined) {
           // Issue #45:dock 模式 / CLI argv / 用户拖文件夹打开新窗口 ⇒ 强制覆盖该段
-          hydrateStoresForNewWindow(r.data, initialWorkspace);
+          startupPicks = rootAsPick(hydrateStoresForNewWindow(r.data, initialWorkspace));
         } else if (myEntry) {
           // 重启恢复(restore-loop / 老窗段已存在)⇒ 按段恢复(含 workspace.root、UI、editor)
           hydrateStores(r.data, windowSeq);
         } else if (initialWorkspace !== undefined) {
           // 段缺失但 query 有 workspace(首次启动 / corrupted snap)⇒ 用 query 作 root
-          hydrateStoresForNewWindow(r.data, initialWorkspace);
+          startupPicks = rootAsPick(hydrateStoresForNewWindow(r.data, initialWorkspace));
         } else {
           // 新窗(本来不该走到 — main-app.ts 不会缺 windowSeq + 缺 query)→ 默认
           hydrateStores(r.data, windowSeq);
         }
       } else if (initialWorkspace !== undefined) {
         // 读成功但无 explorer.json / 损坏 → 按新窗 default 处理(既有契约)
-        hydrateStoresForNewWindow(null, initialWorkspace);
+        startupPicks = rootAsPick(hydrateStoresForNewWindow(null, initialWorkspace));
       }
     } else {
       // read 失败:不 hydrate、不可信(下方跳过写订阅,避免用默认态覆盖磁盘真实数据)
@@ -640,15 +640,22 @@ function hydrateGlobalSegmentsKeepingUserRoot(snap: ExplorerSnapshot): void {
  * 用 query 指定值,UI 状态(expandedPaths / layoutUi / editor)全用默认。
  * snap 为 null 时(没有 explorer.json),所有字段用默认 + initialWorkspace。
  */
+function rootAsPick(root: string | null): string[] {
+  return root === null ? [] : [root];
+}
+
 function hydrateStoresForNewWindow(
   snap: ExplorerSnapshot | null,
   initialWorkspace: string,
-): void {
+): string | null {
+  const root = normalizeWorkspaceRoot(initialWorkspace);
+  const persisted = snap ? collectNormalizedWorkspaceRoots(snap.workspace.recentRoots) : [];
   useWorkspaceStore.setState({
-    root: normalizeWorkspaceRoot(initialWorkspace),
-    recentRoots: snap
-      ? collectNormalizedWorkspaceRoots(snap.workspace.recentRoots)
-      : [],
+    root,
+    // 新窗口打开的目录(「在新窗口打开文件夹」/ 命令行 / 拖到 Dock)同样进「最近打开」:置顶本窗列表,并由调用方
+    // 作为启动期选择经 wireRecentRootsSync 补发 touch(main 合并落盘 + 广播)。此前直接 setState 不经 setRoot,
+    // 这类目录永远进不了最近列表。
+    recentRoots: root === null ? persisted : buildRecentRoots(persisted, root),
   });
   // 主窗段的 sort 拿来当默认(同项目两窗口偏好排序应一致),无则 by:name
   const primary = snap ? findWindowEntryBySeq(snap.windows, PRIMARY_WINDOW_SEQ) : null;
@@ -663,4 +670,5 @@ function hydrateStoresForNewWindow(
     sidebarOpen: true,
     sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   });
+  return root;
 }

@@ -572,7 +572,8 @@ describe('initExplorerPersistence', () => {
         windowSeq: NEW_SEQ,
         initialWorkspace: '/new/proj',
       });
-      expect(useWorkspaceStore.getState().recentRoots).toEqual(['/work', '/old']);
+      // 新窗口打开的目录置顶进「最近打开」,其余仍读全局段。
+      expect(useWorkspaceStore.getState().recentRoots).toEqual(['/new/proj', '/work', '/old']);
       expect(usePinnedStore.getState().paths).toEqual(['/work/star.md']);
     });
 
@@ -631,7 +632,7 @@ describe('initExplorerPersistence', () => {
           initialWorkspace: '/fresh',
         });
         expect(useWorkspaceStore.getState().root).toBe('/fresh');
-        expect(useWorkspaceStore.getState().recentRoots).toEqual([]);
+        expect(useWorkspaceStore.getState().recentRoots).toEqual(['/fresh']);
         useExplorerStore.getState().setExpandedPaths(['/fresh/x']);
         await vi.advanceTimersByTimeAsync(400);
         const written = (api.write as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as ExplorerSnapshot;

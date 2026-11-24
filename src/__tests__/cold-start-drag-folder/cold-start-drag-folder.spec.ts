@@ -33,10 +33,11 @@ function resetAll(): void {
 
 beforeEach(resetAll);
 
-function makeApi(snap: ExplorerSnapshot | null): ExplorerPersistApi {
+function makeApi(snap: ExplorerSnapshot | null): ExplorerPersistApi & { touchRecent: ReturnType<typeof vi.fn> } {
   return {
     read: vi.fn(async () => ({ ok: true as const, data: snap })),
     write: vi.fn(async () => ({ ok: true as const, data: undefined })),
+    touchRecent: vi.fn(async () => ({ ok: true as const, data: undefined })),
   };
 }
 
@@ -101,7 +102,8 @@ describe('cold-start drag folder', () => {
     });
     const fs = makeFs({ '/old/a.md': 'old' });
 
-    await initExplorerPersistence(makeApi(data), {
+    const api = makeApi(data);
+    await initExplorerPersistence(api, {
       fs,
       windowSeq: 0,
       initialWorkspace: '/dragged',
@@ -109,7 +111,9 @@ describe('cold-start drag folder', () => {
     });
 
     expect(useWorkspaceStore.getState().root).toBe('/dragged');
-    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/old']);
+    // 新窗口打开的目录进「最近打开」:本窗列表置顶,并补发 touch 交 main 合并落盘与广播。
+    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/dragged', '/old']);
+    expect(api.touchRecent).toHaveBeenCalledWith('/dragged');
     expect(useExplorerStore.getState().expandedPaths.size).toBe(0);
     expect(useEditorStore.getState().tabs).toHaveLength(0);
     expect(fs.readFile).not.toHaveBeenCalled();
@@ -183,7 +187,8 @@ describe('cold-start drag folder', () => {
     });
 
     expect(useWorkspaceStore.getState().root).toBe('/restore');
-    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/old']);
+    // 按 query 用作 root 的目录同样进「最近打开」(置顶)。
+    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/restore', '/old']);
   });
 
   it('workspace query without fresh does not override an existing entry', async () => {
