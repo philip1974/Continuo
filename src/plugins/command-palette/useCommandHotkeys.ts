@@ -137,6 +137,12 @@ interface CompiledBinding {
 
 const EMPTY_COMPILED_BINDINGS: readonly CompiledBinding[] = [];
 
+/** 事件目标是否在富文本 / 代码编辑器内(Milkdown 的 ProseMirror、CodeMirror 6)。 */
+function isInsideCodeEditor(target: EventTarget | null): boolean {
+  const el = target as Element | null;
+  return typeof el?.closest === 'function' && el.closest('.ProseMirror, .cm-editor') !== null;
+}
+
 /** 事件目标是否可编辑文本控件(input/textarea/select/contenteditable). */
 function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -187,6 +193,10 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
       // 「无 ctrl/meta/alt 修饰」的绑定(单键如 'x' 或仅 shift 如 'X')—— 否则用户在搜索框/
       // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。
       // 带 ctrl/meta/alt 的全局组合(如 mod+s 保存)在编辑器内仍需生效,故只跳过无修饰类。
+      // 编辑器(ProseMirror / CodeMirror)已用该键执行了自己的动作(preventDefault)→ 不再执行全局命令:否则 Markdown
+      // 里 ⌘B 同时加粗与切换侧栏、用户改绑到 mod+d / mod+/ 等编辑器键位时一键两动作(与终端让出 / 编辑器 ⌘S 同族)。
+      // 只认编辑器区域:其它可编辑控件(xterm textarea 等)可能对未处理的组合也 preventDefault,不据此拦命令。
+      if (e.defaultPrevented && isInsideCodeEditor(e.target)) return;
       const editable = isEditableTarget(e.target);
       const keyLower = lowerIfNeeded(e.key);
       for (const b of bindings) {
