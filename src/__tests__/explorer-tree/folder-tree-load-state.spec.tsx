@@ -160,12 +160,12 @@ describe('FolderTree · 读取失败反馈', () => {
     act(() => {
       fireEvent.click(row(r.container, '/work/alpha')!);
     });
-    const alert = await r.findByRole('alert');
-    expect(alert.textContent).toMatch(/拒绝访问|Access denied/);
-    expect(alert.textContent).not.toMatch(/EACCES|listDir|\/work/);
+    const message = await r.findByText(/^(无法读取此文件夹|Unable to read this folder)/);
+    expect(message.textContent).toMatch(/拒绝访问|Access denied/);
+    expect(message.textContent).not.toMatch(/EACCES|listDir|\/work/);
     // 错误行紧跟在失败目录之后
     const tree = r.container.querySelector('[role="tree"]')!;
-    expect(tree.contains(alert)).toBe(true);
+    expect(tree.contains(message)).toBe(true);
     await new Promise((res) => setTimeout(res, 20));
     expect(notify.error).not.toHaveBeenCalled();
   });
@@ -177,7 +177,7 @@ describe('FolderTree · 读取失败反馈', () => {
     act(() => {
       fireEvent.click(row(r.container, '/work/alpha')!);
     });
-    await r.findByRole('alert');
+    await r.findByRole('button', { name: RETRY });
     h.failDirs.delete('/work/alpha');
     const retry = r.getByRole('button', { name: RETRY });
     retry.focus();
@@ -185,8 +185,101 @@ describe('FolderTree · 读取失败反馈', () => {
       fireEvent.click(retry);
     });
     await waitFor(() => expect(row(r.container, '/work/alpha/inner.ts')).not.toBeNull());
-    expect(r.queryByRole('alert')).toBeNull();
+    expect(r.queryByRole('button', { name: RETRY })).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(row(r.container, '/work/alpha')));
+  });
+});
+
+// 错误行里的「重试」是树里的普通按钮(不是 treeitem):树的键盘命令(Enter 切换展开 / Delete 删除 / F2 改名 /
+// 方向键收起展开 / ⌘C 复制 …)只作用于来自行本身的按键,焦点在「重试」上时一概不动失败目录;按钮自身的
+// Enter / 空格激活(浏览器默认动作)照常执行重试。
+describe('FolderTree · 错误行「重试」上的按键', () => {
+  async function renderFailedAlpha() {
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    h.failDirs.add('/work/alpha');
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    const retry = await r.findByRole('button', { name: RETRY });
+    retry.focus();
+    return { r, retry };
+  }
+  const press = (el: HTMLElement, init: KeyboardEventInit) => {
+    act(() => {
+      fireEvent.keyDown(el, init);
+      fireEvent.keyUp(el, init);
+    });
+  };
+
+  it('Enter / ← / → / F2 → 失败目录不收起、不改名,错误行与焦点留在「重试」', async () => {
+    const { r, retry } = await renderFailedAlpha();
+    for (const init of [
+      { key: 'Enter', code: 'Enter' },
+      { key: 'ArrowLeft', code: 'ArrowLeft' },
+      { key: 'ArrowRight', code: 'ArrowRight' },
+      { key: 'F2', code: 'F2' },
+    ]) {
+      press(retry, init);
+    }
+    await new Promise((res) => setTimeout(res, 20));
+    expect(row(r.container, '/work/alpha')!.getAttribute('aria-expanded')).toBe('true');
+    expect(r.getByRole('button', { name: RETRY })).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(r.container.querySelector('input')).toBeNull();
+  });
+
+  it('Delete / Ctrl+C → 不对失败目录发起删除 / 复制', async () => {
+    const { r, retry } = await renderFailedAlpha();
+    press(retry, { key: 'Delete', code: 'Delete' });
+    press(retry, { key: 'c', code: 'KeyC', ctrlKey: true });
+    await new Promise((res) => setTimeout(res, 20));
+    expect(coApi.fs.trash).not.toHaveBeenCalled();
+    expect(r.queryByRole('alertdialog')).toBeNull();
+    expect(r.queryByRole('dialog')).toBeNull();
+    expect(useExplorerClipboardStore.getState().paths).toEqual([]);
+  });
+
+  it('「重试」按钮激活(Enter 的默认动作 = click)→ 重新读取该目录', async () => {
+    const { r, retry } = await renderFailedAlpha();
+    h.failDirs.delete('/work/alpha');
+    act(() => {
+      fireEvent.click(retry);
+    });
+    await waitFor(() => expect(row(r.container, '/work/alpha/inner.ts')).not.toBeNull());
+  });
+});
+
+// 读屏:子目录读取失败在记入失败表时经常驻的 live region 播报一次(带目录名);虚拟列表里的错误行只放普通文本 ——
+// 错误行随滚动出入 overscan、收起再展开而重新挂载时不再重播。
+describe('FolderTree · 子目录读取失败的播报', () => {
+  it('失败时播报一次(带目录名与原因);错误行本身不是 live region;收起再展开不重播', async () => {
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    h.failDirs.add('/work/alpha');
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    await r.findByRole('button', { name: RETRY });
+    const live = r.container.querySelector('[aria-live="assertive"]') as HTMLElement | null;
+    expect(live).not.toBeNull();
+    await waitFor(() => expect(live!.textContent).toMatch(/alpha/));
+    expect(live!.textContent).toMatch(/拒绝访问|Access denied/);
+    const announced = live!.firstElementChild;
+    // 错误行里没有 role=alert / aria-live
+    const message = r.getByText(/^(无法读取此文件夹|Unable to read this folder)/);
+    expect(message.closest('[role="alert"],[aria-live]')).toBeNull();
+    // 收起再展开:错误行重新挂载,播报区内容不变(不重播)
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    await waitFor(() => expect(r.queryByRole('button', { name: RETRY })).toBeNull());
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    await r.findByRole('button', { name: RETRY });
+    await new Promise((res) => setTimeout(res, 20));
+    expect(live!.firstElementChild).toBe(announced);
   });
 
   it('已折叠目录在后台刷新时读取失败 → toast 按错误码本地化并带目录名,不含原始诊断串', async () => {

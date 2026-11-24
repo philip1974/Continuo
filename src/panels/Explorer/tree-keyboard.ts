@@ -105,6 +105,17 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
 }
 
+/**
+ * 树里非行元素上的按键(如子目录读取失败行里的「重试」按钮):树命令只作用于来自行本身(或树容器)的按键 ——
+ * 否则焦点在「重试」上按 Enter 会收起焦点所在的失败目录、按 Delete 会删除它。
+ */
+function isNonItemTarget(target: EventTarget | null): boolean {
+  // 鸭子类型而非 instanceof Element:popout 窗口里的元素属于另一个 realm
+  const el = target as Element | null;
+  if (!el || typeof el.closest !== 'function' || el.getAttribute('role') === 'tree') return false;
+  return el.closest('[role="treeitem"]') === null;
+}
+
 /** 只选中 id 这一项,并把 Shift 扩选的锚点设到它。 */
 export function selectOnly(tree: TreeInstance<FileEntry>, id: string): void {
   tree.setSelectedItems([id]);
@@ -137,7 +148,7 @@ export function neighborAfterRemoval(
  */
 export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolean {
   const { tree, items } = ctx;
-  if (isEditableTarget(e.target) || tree.isRenamingItem()) return false;
+  if (isEditableTarget(e.target) || isNonItemTarget(e.target) || tree.isRenamingItem()) return false;
 
   // macOS 按住 ⌘ 时其它键不派发 keyup:从库的按键集合里摘掉,否则之后的方向键全部失配。
   if (e.metaKey && !MODIFIER_KEYS.has(e.key)) {

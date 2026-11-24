@@ -3,7 +3,7 @@
 // 进入变量页自动加载第一个作用域。见同目录 README。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const h = vi.hoisted(() => ({
   openFile: vi.fn(),
@@ -210,5 +210,144 @@ describe('变量页', () => {
 
     fireEvent.keyDown(obj, { key: 'ArrowUp' });
     expect(document.activeElement).toBe(sum);
+  });
+});
+
+// APG Tree View / VSCode 变量视图:roving tabindex —— 整棵树只有一个 tabindex=0,跟随焦点;Tab 离开再回来回到
+// 上次的节点。收起父节点时其内的焦点记忆回到该父节点。
+describe('变量树 · roving tabindex', () => {
+  const tabbables = () =>
+    screen.getAllByRole('treeitem').filter((el) => el.getAttribute('tabindex') === '0');
+
+  it('初始只有第一个节点可 Tab 到;↓ 移动后 tabindex=0 跟到焦点节点', async () => {
+    render(<DebugPanel />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
+    const sum = await screen.findByRole('treeitem', { name: /sum/ });
+    expect(tabbables()).toEqual([sum]);
+    sum.focus();
+    fireEvent.keyDown(sum, { key: 'ArrowDown' });
+    const obj = screen.getByRole('treeitem', { name: /obj/ });
+    fireEvent.keyDown(obj, { key: 'ArrowDown' });
+    const other = screen.getByRole('treeitem', { name: /other/ });
+    expect(document.activeElement).toBe(other);
+    expect(tabbables()).toEqual([other]);
+  });
+
+  it('焦点在子节点时收起父节点(点击)→ 父节点成为唯一可 Tab 到的节点', async () => {
+    render(<DebugPanel />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
+    const obj = await screen.findByRole('treeitem', { name: /obj/ });
+    fireEvent.click(obj);
+    const childA = await screen.findByRole('treeitem', { name: /^a/ });
+    act(() => childA.focus());
+    expect(tabbables()).toEqual([childA]);
+    fireEvent.click(obj);
+    expect(tabbables()).toEqual([obj]);
+  });
+});
+
+describe('变量树 · 加载中 / 加载更多', () => {
+  it('展开尚未加载完的对象 → 该节点 aria-busy,加载完成后去掉', async () => {
+    let release: () => void = () => undefined;
+    h.getVariables.mockImplementation(async ({ variablesReference }: { variablesReference: number }) => {
+      if (variablesReference === 44) return page([{ name: 'obj', value: '{…}', variables_reference: 50 }]);
+      await new Promise<void>((res) => {
+        release = res;
+      });
+      return page([{ name: 'a', value: '1', variables_reference: 0 }]);
+    });
+    render(<DebugPanel />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
+    const obj = await screen.findByRole('treeitem', { name: /obj/ });
+    fireEvent.click(obj);
+    expect(obj.getAttribute('aria-busy')).toBe('true');
+    release();
+    await screen.findByRole('treeitem', { name: /^a/ });
+    expect(obj.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  it('「加载更多」是树节点:↓ 可到达,Enter 加载下一页,焦点移到新加载的第一项;点击不收起父节点', async () => {
+    h.getVariables.mockImplementation(
+      async ({ variablesReference, start }: { variablesReference: number; start?: number }) => {
+        if (variablesReference === 44) return page([{ name: 'obj', value: '{…}', variables_reference: 50 }]);
+        if (variablesReference === 50 && start === undefined) {
+          return { ok: true, data: { variables: [{ name: 'a', value: '1' }], truncated: true, next_start: 1 } };
+        }
+        if (variablesReference === 50 && start === 1) {
+          return { ok: true, data: { variables: [{ name: 'b', value: '2' }], truncated: true, next_start: 2 } };
+        }
+        return page([{ name: 'c', value: '3' }]);
+      },
+    );
+    render(<DebugPanel />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
+    const obj = await screen.findByRole('treeitem', { name: /obj/ });
+    fireEvent.click(obj);
+    const childA = await screen.findByRole('treeitem', { name: /^a/ });
+    childA.focus();
+    fireEvent.keyDown(childA, { key: 'ArrowDown' });
+    const more = screen.getByRole('treeitem', { name: 'Load more' });
+    expect(document.activeElement).toBe(more);
+    expect(more.getAttribute('aria-level')).toBe('2');
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+
+    fireEvent.keyDown(more, { key: 'Enter' });
+    const childB = await screen.findByRole('treeitem', { name: /^b/ });
+    await waitFor(() => expect(document.activeElement).toBe(childB));
+    expect(h.getVariables).toHaveBeenLastCalledWith({ sessionId: 's1', variablesReference: 50, start: 1 });
+
+    // 点击「加载更多」只加载,不冒泡成父节点的展开 / 收起
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Load more' }));
+    await screen.findByRole('treeitem', { name: /^c/ });
+    expect(obj.getAttribute('aria-expanded')).toBe('true');
+  });
+});
+
+// VSCode:停下时 aria.status 播报「已在断点处暂停」及位置,继续运行同样播报。面板里常驻视觉隐藏的 role=status。
+describe('停点 / 恢复运行播报', () => {
+  const status = () => screen.getByRole('status');
+  const setStopped = (stopped: Record<string, unknown> | undefined) =>
+    useDebugStore.setState((s) => {
+      const cur = s.sessions.get('s1')!;
+      return { sessions: new Map([['s1', { ...cur, stopped } as typeof cur]]) };
+    });
+
+  it('挂载时不播报;新的一停 → 「Paused on 原因 at 文件:行」;继续运行 → 「running」', async () => {
+    render(<DebugPanel />);
+    expect(status().textContent).toBe('');
+    act(() => setStopped(undefined));
+    expect(status().textContent).toBe('running');
+    act(() => setStopped({ reason: 'step', stopSeq: 2, file: '/repo/a.ts', line: 20 }));
+    expect(status().textContent).toBe('Paused on step at a.ts:20');
+  });
+
+  it('停点位置稍后才到 → 等位置到了再播一次(不先播一遍无位置的)', async () => {
+    render(<DebugPanel />);
+    act(() => setStopped({ reason: 'breakpoint', stopSeq: 2 }));
+    expect(status().textContent).toBe('');
+    act(() => setStopped({ reason: 'breakpoint', stopSeq: 2, file: '/repo/c.ts', line: 40 }));
+    expect(status().textContent).toBe('Paused on breakpoint at c.ts:40');
+  });
+
+  it('位置一直没到(取栈失败)→ 稍后只播「Paused: 原因」', async () => {
+    vi.useFakeTimers();
+    try {
+      render(<DebugPanel />);
+      act(() => setStopped({ reason: 'exception', stopSeq: 2 }));
+      expect(status().textContent).toBe('');
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(status().textContent).toBe('Paused: exception');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('zh:全角冒号与逗号', async () => {
+    setLocale('zh');
+    render(<DebugPanel />);
+    act(() => setStopped({ reason: 'breakpoint', stopSeq: 2, file: '/repo/a.ts', line: 3 }));
+    expect(status().textContent).toBe('已暂停：breakpoint，a.ts:3');
   });
 });

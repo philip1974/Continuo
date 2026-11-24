@@ -106,7 +106,7 @@ describe('topic51 Op5 · DebugPanel', () => {
     expect(screen.queryByRole('button', { name: 'Load Local' })).toBeNull();
     expect(screen.getByText('21')).toBeTruthy();
     // 不满页(无 next_start)→ 不显示「加载更多」。
-    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+    expect(screen.queryByRole('treeitem', { name: 'Load more' })).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Breakpoints' }));
     expect(screen.getByText('verified')).toBeTruthy();
@@ -171,10 +171,10 @@ describe('topic51 Op5 · DebugPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
     await waitFor(() => expect(screen.getByText('first')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Load more' }));
     await waitFor(() => expect(screen.getByText('second')).toBeTruthy());
     expect(screen.getByText('first')).toBeTruthy();
     expect(getVariables).toHaveBeenLastCalledWith({ sessionId: 's1', variablesReference: 44, start: 1 });
-    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+    expect(screen.queryByRole('treeitem', { name: 'Load more' })).toBeNull();
   });
 });

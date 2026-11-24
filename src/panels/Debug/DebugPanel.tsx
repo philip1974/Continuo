@@ -1,9 +1,13 @@
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
+  type MutableRefObject,
   type ReactNode,
 } from 'react';
 import {
@@ -27,6 +31,7 @@ import { useLocale, useT } from '@/i18n';
 import { coApp } from '@/plugins/co-app';
 import { basename, dirname, isAbsolutePath } from '@/lib/path-cross';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
+import { SR_ONLY_STYLE } from '@/lib/sr-only';
 
 const EMPTY_VARIABLES: readonly [] = [];
 
@@ -100,7 +105,55 @@ function DebugSessionHeader({ session }: { readonly session: DebugSessionShadow 
       <Badge variant={session.stopped ? 'warning-soft' : 'neutral'}>
         {session.stopped?.reason ?? t('panels.debug.running')}
       </Badge>
+      <DebugStatusAnnouncer session={session} />
     </Card>
+  );
+}
+
+/** 停点位置未到时,最多等这么久再只播原因(取栈失败 / 无源码帧时位置永远不来)。 */
+const PAUSE_LOCATION_WAIT_MS = 1000;
+
+/**
+ * 停下 / 继续运行的读屏播报(VSCode aria.status「已暂停」+ 位置):常驻视觉隐藏 role=status,每一停播一次。
+ * 位置(首帧)随栈帧稍后才到 → 等位置到了再播(不先播一遍无位置的);一直没来则超时后只播原因。挂载时不播。
+ */
+function DebugStatusAnnouncer({ session }: { readonly session: DebugSessionShadow }) {
+  const t = useT();
+  const [text, setText] = useState('');
+  const stopped = session.stopped;
+  const stopSeq = stopped?.stopSeq;
+  const reason = stopped?.reason;
+  const location =
+    stopped?.file !== undefined && stopped.line !== undefined
+      ? `${basename(stopped.file) || stopped.file}:${stopped.line}`
+      : undefined;
+  // 已播报(或挂载时已存在、不播)的状态:会话 + 停点序号(运行中为 undefined)
+  const announcedRef = useRef({ id: session.id, stopSeq });
+  useEffect(() => {
+    const announced = announcedRef.current;
+    if (announced.id === session.id && announced.stopSeq === stopSeq) return;
+    const announce = (next: string) => {
+      announcedRef.current = { id: session.id, stopSeq };
+      setText(next);
+    };
+    if (stopSeq === undefined || reason === undefined) {
+      announce(t('panels.debug.running'));
+      return;
+    }
+    if (location !== undefined) {
+      announce(t('panels.debug.paused_at', { reason, location }));
+      return;
+    }
+    const timer = setTimeout(
+      () => announce(t('common.label_detail', { label: t('panels.debug.paused'), detail: reason })),
+      PAUSE_LOCATION_WAIT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [session.id, stopSeq, reason, location, t]);
+  return (
+    <div role="status" style={SR_ONLY_STYLE}>
+      {text}
+    </div>
   );
 }
 
@@ -269,11 +322,74 @@ function ScopeCard({
           aria-label={scope.name}
           className="mt-3 flex flex-col gap-0.5 border-t border-line pt-2"
         >
-          <VariableList sessionId={sessionId} reference={reference} level={1} />
+          <VariableTreeFocusProvider>
+            <VariableList sessionId={sessionId} reference={reference} level={1} parentKey="" />
+          </VariableTreeFocusProvider>
         </div>
       )}
     </Card>
   );
+}
+
+/**
+ * 变量树的 roving tabindex(APG Tree View / VSCode 变量视图):整棵树只有一个节点 tabindex=0,跟随焦点;
+ * Tab 离开再回来回到上次的节点。activeKey 为 null 时第一个节点可 Tab 到。节点 key = 父 key + "/" + 序号:名称
+ * (「加载更多」为父 key + "/more")。pendingFocus:异步加载后要把焦点交给的节点 key(节点渲染时认领)。
+ */
+interface VariableTreeFocus {
+  readonly activeKey: string | null;
+  readonly setActiveKey: (key: string) => void;
+  readonly pendingFocus: MutableRefObject<string | null>;
+}
+const VariableTreeFocusContext = createContext<VariableTreeFocus | null>(null);
+
+function VariableTreeFocusProvider({ children }: { readonly children: ReactNode }) {
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const pendingFocus = useRef<string | null>(null);
+  const value = useMemo(() => ({ activeKey, setActiveKey, pendingFocus }), [activeKey]);
+  return <VariableTreeFocusContext.Provider value={value}>{children}</VariableTreeFocusContext.Provider>;
+}
+
+/** 树节点的焦点接线:是否可 Tab 到、获得焦点时记为 active、认领异步加载后的待定焦点。 */
+function useTreeItemFocus(key: string, first: boolean) {
+  const focus = useContext(VariableTreeFocusContext)!;
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus.pendingFocus.current !== key) return;
+    focus.pendingFocus.current = null;
+    ref.current?.focus();
+  });
+  return {
+    focus,
+    props: {
+      ref,
+      tabIndex: focus.activeKey === key || (focus.activeKey === null && first) ? 0 : -1,
+      onFocus: (e: { target: EventTarget; currentTarget: EventTarget }) => {
+        if (e.target === e.currentTarget) focus.setActiveKey(key);
+      },
+    },
+  };
+}
+
+/**
+ * 树节点共用的键盘:↑↓ 在可见节点间移动,← 回到父节点;其余键交给 onKey(返回是否处理)。
+ * 节点嵌套:只处理焦点所在的这一层,不冒泡到父节点。
+ */
+function handleTreeItemKey(e: KeyboardEvent<HTMLDivElement>, onKey: (key: string) => boolean): void {
+  if (e.target !== e.currentTarget) return;
+  const self = e.currentTarget;
+  const move = (delta: number) => {
+    const items = visibleTreeItems(self);
+    items[items.indexOf(self) + delta]?.focus();
+  };
+  if (e.key === 'ArrowDown') move(1);
+  else if (e.key === 'ArrowUp') move(-1);
+  else if (!onKey(e.key)) {
+    if (e.key !== 'ArrowLeft') return;
+    self.parentElement?.closest<HTMLElement>('[role="treeitem"]')?.focus();
+  }
+  e.preventDefault();
+  e.stopPropagation();
 }
 
 /** 某 reference(作用域或对象变量)下已加载的变量,满页时末尾「加载更多」。作用域与展开的子节点共用。 */
@@ -281,14 +397,18 @@ function VariableList({
   sessionId,
   reference,
   level,
+  parentKey,
 }: {
   readonly sessionId: string;
   readonly reference: number;
   readonly level: number;
+  readonly parentKey: string;
 }) {
   const t = useT();
   const loadMoreVariables = useDebugStore((state) => state.loadMoreVariables);
   const [loadingMore, setLoadingMore] = useState(false);
+  const moreKey = `${parentKey}/more`;
+  const more = useTreeItemFocus(moreKey, false);
   const variables = useDebugStore(
     (state) => state.sessions.get(sessionId)?.variableRefs.get(reference) ?? EMPTY_VARIABLES,
   );
@@ -298,11 +418,23 @@ function VariableList({
   );
 
   const loadMore = async () => {
+    if (loadingMore) return;
+    const el = more.props.ref.current;
+    const hadFocus = el !== null && el.ownerDocument.activeElement === el;
+    const before = variables.length;
     setLoadingMore(true);
     try {
       await loadMoreVariables(sessionId, reference);
     } finally {
       setLoadingMore(false);
+    }
+    // VSCode:加载更多后焦点到新加载的第一项(「加载更多」可能随末页消失,焦点不掉到 body)
+    const loaded = useDebugStore.getState().sessions.get(sessionId)?.variableRefs.get(reference);
+    const first = loaded?.[before];
+    if (hadFocus && first !== undefined) {
+      const key = `${parentKey}/${before}:${first.name}`;
+      more.focus.pendingFocus.current = key;
+      more.focus.setActiveKey(key);
     }
   };
 
@@ -314,20 +446,34 @@ function VariableList({
           sessionId={sessionId}
           variable={variable}
           level={level}
-          tabbable={level === 1 && index === 0}
+          nodeKey={`${parentKey}/${index}:${variable.name}`}
+          first={level === 1 && index === 0}
         />
       ))}
       {hasMore && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          style={{ marginLeft: indentOf(level) }}
-          onClick={loadMore}
-          disabled={loadingMore}
+        // 「加载更多」是树节点(VSCode 变量视图同):方向键可到达,Enter / 空格加载下一页
+        <div
+          role="treeitem"
+          aria-level={level}
+          aria-disabled={loadingMore || undefined}
+          {...more.props}
+          className="cursor-default rounded text-xs text-accent outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+          style={{ paddingLeft: `calc(${indentOf(level)} + 0.75rem + 0.375rem)` }}
+          onKeyDown={(e) =>
+            handleTreeItemKey(e, (key) => {
+              if (key !== 'Enter' && key !== ' ') return false;
+              void loadMore();
+              return true;
+            })
+          }
+          onClick={(e) => {
+            // 不冒泡成父节点的展开 / 收起
+            e.stopPropagation();
+            void loadMore();
+          }}
         >
           {loadingMore ? t('common.loading') : t('panels.debug.load_more')}
-        </Button>
+        </div>
       )}
     </>
   );
@@ -349,14 +495,17 @@ function VariableNode({
   sessionId,
   variable,
   level,
-  tabbable,
+  nodeKey,
+  first,
 }: {
   readonly sessionId: string;
   readonly variable: DebugVariable;
   readonly level: number;
-  readonly tabbable: boolean;
+  readonly nodeKey: string;
+  readonly first: boolean;
 }) {
   const t = useT();
+  const { focus, props: focusProps } = useTreeItemFocus(nodeKey, first);
   const loadVariables = useDebugStore((state) => state.loadVariables);
   const childRef = variable.variables_reference ?? 0;
   const expandable = childRef > 0;
@@ -368,40 +517,29 @@ function VariableNode({
   const setOpen = (open: boolean) => {
     if (!expandable) return;
     if (open) void loadVariables(sessionId, childRef);
+    // 收起:焦点记忆在其子孙上 → 回到本节点(否则整棵树没有可 Tab 到的节点)
+    else if (focus.activeKey?.startsWith(`${nodeKey}/`)) focus.setActiveKey(nodeKey);
     setExpanded(open);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    // 节点嵌套:只处理焦点所在的这一层,不冒泡到父节点。
-    if (e.target !== e.currentTarget) return;
     const self = e.currentTarget;
-    const move = (delta: number) => {
-      const items = visibleTreeItems(self);
-      items[items.indexOf(self) + delta]?.focus();
-    };
-    switch (e.key) {
-      case 'ArrowDown':
-        move(1);
-        break;
-      case 'ArrowUp':
-        move(-1);
-        break;
-      case 'ArrowRight':
+    handleTreeItemKey(e, (key) => {
+      if (key === 'ArrowRight') {
         if (expandable && !expanded) setOpen(true);
         else if (expanded) self.querySelector<HTMLElement>('[role="treeitem"]')?.focus();
-        break;
-      case 'ArrowLeft':
-        if (expanded) setOpen(false);
-        else self.parentElement?.closest<HTMLElement>('[role="treeitem"]')?.focus();
-        break;
-      case 'Enter':
+        return true;
+      }
+      if (key === 'ArrowLeft' && expanded) {
+        setOpen(false);
+        return true;
+      }
+      if (key === 'Enter') {
         setOpen(!expanded);
-        break;
-      default:
-        return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
+        return true;
+      }
+      return false;
+    });
   };
 
   return (
@@ -409,8 +547,10 @@ function VariableNode({
       role="treeitem"
       aria-level={level}
       aria-expanded={expandable ? expanded : undefined}
+      // APG:展开中、子节点还没加载到 → aria-busy
+      aria-busy={expanded && !childrenLoaded ? true : undefined}
       aria-label={`${variable.name}: ${variable.value}`}
-      tabIndex={tabbable ? 0 : -1}
+      {...focusProps}
       className="rounded outline-none focus-visible:ring-1 focus-visible:ring-accent"
       onKeyDown={onKeyDown}
       onClick={(e) => {
@@ -435,9 +575,10 @@ function VariableNode({
       {expanded && (
         <div role="group" className="flex flex-col gap-0.5">
           {childrenLoaded ? (
-            <VariableList sessionId={sessionId} reference={childRef} level={level + 1} />
+            <VariableList sessionId={sessionId} reference={childRef} level={level + 1} parentKey={nodeKey} />
           ) : (
-            <div className="text-xs text-fg-dim" style={{ paddingLeft: indentOf(level + 1) }}>
+            // 视觉提示;读屏经父节点 aria-busy 得知(不是树节点,方向键不经过)
+            <div aria-hidden="true" className="text-xs text-fg-dim" style={{ paddingLeft: indentOf(level + 1) }}>
               {t('common.loading')}
             </div>
           )}

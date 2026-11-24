@@ -151,6 +151,7 @@ export const zh: Record<TranslationKey, string> = {
   'panels.debug.empty_variables': '无变量',
   'panels.debug.empty_breakpoints': '无断点',
   'panels.debug.paused': '已暂停',
+  'panels.debug.paused_at': '已暂停：{reason}，{location}',
   'panels.debug.running': '运行中',
   'panels.debug.unknown': '未知',
   'panels.debug.scope_ref': '引用 {ref}',

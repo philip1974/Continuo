@@ -24,4 +24,7 @@
   - 点栈帧 / 断点 → 经编辑器打开 API(`coApp.editor.openFile(path, { line })`,同插件 SDK)打开源码并定位到该行;打开失败按错误码本地化提示(`openFileOrNotify`),不静默;无源码路径的栈帧不可点。
   - 变量名 / 值超长截断时悬停(`title`)可看全文。
   - 变量列表是 WAI-ARIA 树(每个作用域一棵 `role="tree"`,节点 `role="treeitem"` + `aria-level`):`variables_reference > 0` 的对象变量可展开(`aria-expanded`),展开时按需加载子变量(`loadVariables(childRef)`,同一停内缓存);键盘 ↑↓ 移动焦点,→ 展开 / 进入第一个子节点,← 收起 / 回到父节点,Enter 切换。子节点同样支持「加载更多」。
+  - 焦点(APG Tree View / VSCode 变量视图):roving tabindex —— 每棵树只有一个节点 `tabindex=0`,跟随焦点(Tab 离开再回来回到上次的节点;初始为第一个节点);收起父节点时若焦点记忆在其子孙上则回到该父节点。
+  - 「加载更多」是树节点(`role="treeitem"`,与同级变量同 `aria-level`):↑↓ 可到达,Enter / 空格加载下一页,加载后焦点移到新加载的第一项;点击不冒泡成父节点的展开 / 收起。展开中、子变量尚未加载到的节点 `aria-busy="true"`(「加载中」只是视觉提示,不是树节点)。
+  - 读屏播报(VSCode aria.status):会话头里常驻视觉隐藏 `role="status"`,每一停播一次「已暂停：原因，文件名:行」(`panels.debug.paused_at`);位置随栈帧稍后才到时等位置到了再播,1 秒内没到(取栈失败)只播「已暂停：原因」(`common.label_detail`);继续运行播「运行中」;挂载时不播。
   - 进入变量页自动加载第一个作用域(通常是 Locals,`expensive` 的除外),其余作用域仍点「加载」;已加载的作用域不再显示「加载」按钮,加载失败则保留按钮可重试。每一停重置展开状态与自动加载。

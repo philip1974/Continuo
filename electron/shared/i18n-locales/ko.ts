@@ -152,6 +152,7 @@ export const ko: Record<TranslationKey, string> = {
   'panels.debug.empty_variables': '변수 없음',
   'panels.debug.empty_breakpoints': '중단점 없음',
   'panels.debug.paused': '일시 중지됨',
+  'panels.debug.paused_at': '일시 중지됨: {reason}, {location}',
   'panels.debug.running': '실행 중',
   'panels.debug.unknown': '알 수 없음',
   'panels.debug.scope_ref': '참조 {ref}',

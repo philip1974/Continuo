@@ -164,6 +164,7 @@ export const en = {
   'panels.debug.empty_variables': 'No variables',
   'panels.debug.empty_breakpoints': 'No breakpoints',
   'panels.debug.paused': 'Paused',
+  'panels.debug.paused_at': 'Paused on {reason} at {location}',
   'panels.debug.running': 'running',
   'panels.debug.unknown': 'unknown',
   'panels.debug.scope_ref': 'ref {ref}',
