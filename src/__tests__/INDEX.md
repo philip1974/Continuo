@@ -520,6 +520,10 @@
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
 
+## [editor-markdown-lists](./editor-markdown-lists/README.md)
+
+- [`markdown-list-roundtrip.spec.ts`](./editor-markdown-lists/markdown-list-roundtrip.spec.ts)
+
 ## [editor-mermaid-preview](./editor-mermaid-preview/README.md)
 
 - [`mermaid-directive-css.spec.ts`](./editor-mermaid-preview/mermaid-directive-css.spec.ts)

@@ -14,6 +14,51 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
     }) as MediaQueryList;
 }
 
+// jsdom 不内置 IntersectionObserver。@milkdown/components ≥7.21 的代码块在进入视口时才创建
+// CodeMirror(离屏时显示纯文本占位),构造时即 observe。jsdom 无布局,按「全部可见」处理:
+// observe 后异步(同真实浏览器的首次回调)报告 isIntersecting=true。
+if (typeof window !== 'undefined' && typeof window.IntersectionObserver !== 'function') {
+  class VisibleIntersectionObserver implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = '0px';
+    readonly thresholds = [0];
+    private readonly targets = new Set<Element>();
+    constructor(private readonly callback: IntersectionObserverCallback) {}
+    observe(target: Element): void {
+      this.targets.add(target);
+      queueMicrotask(() => {
+        if (!this.targets.has(target)) return;
+        const rect = target.getBoundingClientRect();
+        this.callback(
+          [
+            {
+              target,
+              isIntersecting: true,
+              intersectionRatio: 1,
+              boundingClientRect: rect,
+              intersectionRect: rect,
+              rootBounds: null,
+              time: Date.now(),
+            },
+          ],
+          this,
+        );
+      });
+    }
+    unobserve(target: Element): void {
+      this.targets.delete(target);
+    }
+    disconnect(): void {
+      this.targets.clear();
+    }
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+  Object.defineProperty(window, 'IntersectionObserver', { configurable: true, value: VisibleIntersectionObserver });
+  Object.defineProperty(globalThis, 'IntersectionObserver', { configurable: true, value: VisibleIntersectionObserver });
+}
+
 // Node 25 exposes an experimental global localStorage when launched without a
 // valid --localstorage-file. Touching that getter in Vitest jsdom emits a
 // warning and returns a non-browser-shaped object. Detect via descriptor so we
