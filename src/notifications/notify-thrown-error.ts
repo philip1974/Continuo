@@ -8,13 +8,10 @@
 
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { notify } from './notify';
-import { errorCodeOf } from '../../electron/shared/error-message';
+import { failureOf } from '@/lib/failure-of';
 
 export function notifyThrownError(err: unknown): void {
-  const code = errorCodeOf(err);
-  notify.error(localizeErrorByCode(code, (err as Error | null | undefined)?.message ?? code), {
-    code,
-  });
+  notifyFailure(failureOf(err));
 }
 
 /**
@@ -26,7 +23,8 @@ export function notifyFailure(
   failure: { readonly code: string; readonly message?: string },
   opts?: { readonly mirror: false },
 ): void {
-  const text = localizeErrorByCode(failure.code, failure.message ?? failure.code);
+  // 空串 message 同缺省(否则未收录的 code 弹空 toast)。
+  const text = localizeErrorByCode(failure.code, failure.message || failure.code);
   notify.error(text, opts ? { code: failure.code, mirror: false } : { code: failure.code });
 }
 

@@ -4,8 +4,8 @@
 
 import type { FsApi } from '@/lib/fs/api';
 import { dirname, outermostPaths } from './path-utils';
-import { errorCodeOf } from '../../../electron/shared/error-message';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
+import { failureOf } from '@/lib/failure-of';
 
 // 批量删除的最大在途 IPC 数(trash 走 shell.trashItem,过高并发对回收站/磁盘无益)。
 const REMOVE_CONCURRENCY = 4;
@@ -158,8 +158,8 @@ export async function trashItemsAndCleanup(
 // unhandled rejection + 不进 !r.ok 分支 → 新建文件/文件夹失败无 toast/live region 反馈。
 // catch 归类成 ActionFail(code 取 err.code ?? 'EXCEPTION'),helper 自此恒返回 ActionResult。
 function toActionFail(err: unknown): ActionFail {
-  const code = errorCodeOf(err);
-  return { ok: false, code, message: (err as Error)?.message ?? String(err) };
+  const { code, message } = failureOf(err);
+  return { ok: false, code, message: message ?? code };
 }
 
 // 新建文件 / 目录同构(只差调哪个 fs 方法):IPC reject → 结构化失败;成功 → 刷新父目录。

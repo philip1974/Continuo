@@ -39,7 +39,8 @@ import {
 import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
-import { notifyOpenFailed, openFailureOf } from '@/notifications/notify-open-failed';
+import { notifyOpenFailed } from '@/notifications/notify-open-failed';
+import { failureOf } from '@/lib/failure-of';
 import { basenameForChrome } from '@/lib/path-label';
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
@@ -143,7 +144,7 @@ export function EditorPanel() {
           .then((r) => {
             if (!r.ok) notifyOpenFailed(name, r);
           })
-          .catch((err: unknown) => notifyOpenFailed(name, openFailureOf(err)));
+          .catch((err: unknown) => notifyOpenFailed(name, failureOf(err)));
       } else {
         // a11y(A117,A50/A116 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被
         // 白名单拒绝或系统打开失败时无 toast/live 反馈,用户只感知链接「没反应」。

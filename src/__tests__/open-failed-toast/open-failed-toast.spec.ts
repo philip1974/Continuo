@@ -7,7 +7,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { errorSpy } = vi.hoisted(() => ({ errorSpy: vi.fn() }));
 vi.mock('../../notifications/notify', () => ({ notify: { error: errorSpy } }));
 
-import { notifyOpenFailed, openFailureOf } from '../../notifications/notify-open-failed';
+import { notifyOpenFailed } from '../../notifications/notify-open-failed';
+import { failureOf } from '../../lib/failure-of';
+import { notifyFailure, notifyThrownError } from '../../notifications/notify-thrown-error';
 import { setLocale } from '../../i18n/translate';
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -45,21 +47,21 @@ describe('notifyOpenFailed', () => {
   });
 });
 
-describe('openFailureOf(抛出值 → 失败描述)', () => {
+describe('failureOf(抛出值 → 失败描述)', () => {
   it('带 code 的 Error → 该 code + message', () => {
-    expect(openFailureOf(Object.assign(new Error('nope'), { code: 'FS_DENIED' }))).toEqual({
+    expect(failureOf(Object.assign(new Error('nope'), { code: 'FS_DENIED' }))).toEqual({
       code: 'FS_DENIED',
       message: 'nope',
     });
   });
 
   it('非 Error 抛出值 → EXCEPTION,无 message(提示回退 code,不显示 undefined)', () => {
-    const f = openFailureOf('weird');
+    const f = failureOf('weird');
     expect(f.code).toBe('EXCEPTION');
     expect(f.message).toBeUndefined();
     notifyOpenFailed('a.md', f);
     expect(String(errorSpy.mock.calls[0]?.[0])).not.toContain('undefined');
-    expect(openFailureOf(null).code).toBe('EXCEPTION');
+    expect(failureOf(null).code).toBe('EXCEPTION');
   });
 });
 
@@ -72,5 +74,22 @@ describe('接线守卫:三个打开入口共用 notifyOpenFailed', () => {
     const src = readFileSync(path.join(SRC_ROOT, rel), 'utf-8');
     expect(src).toContain('notifyOpenFailed(');
     expect(src).not.toContain("t('quick_open.open_failed')");
+  });
+});
+
+describe('空 message 不弹空提示(failureOf 与 notifyFailure 共用回退)', () => {
+  it('failureOf:空串 message 视同缺省', () => {
+    expect(failureOf(Object.assign(new Error(''), { code: 'X_CODE' }))).toEqual({ code: 'X_CODE' });
+  });
+
+  it('notifyFailure:未收录 code + 空串 message → 文案回退 code', () => {
+    notifyFailure({ code: 'NO_SUCH_CODE_Y', message: '' });
+    expect(errorSpy).toHaveBeenCalledWith('NO_SUCH_CODE_Y', { code: 'NO_SUCH_CODE_Y' });
+  });
+
+  it('notifyThrownError:非 Error 抛出值 → 文案为 EXCEPTION 的本地化 / code,非空', () => {
+    notifyThrownError({ ok: false });
+    expect(String(errorSpy.mock.calls[0]?.[0])).not.toBe('');
+    expect(errorSpy.mock.calls[0]?.[1]).toEqual({ code: 'EXCEPTION' });
   });
 });

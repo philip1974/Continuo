@@ -17,7 +17,7 @@ import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from './autosave-fa
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
-import { errorCodeOf } from '../../../electron/shared/error-message';
+import { failureOf } from '@/lib/failure-of';
 
 export interface UseAutoSaveOptions {
   enabled: boolean;
@@ -91,12 +91,9 @@ export function useAutoSave(
       // 打磨 P2-BK:err 可能是 resolve 的 {ok:false,code,message} 失败结果 → 与 Cmd+S 失败
       // 同走 localizeErrorByCode(按 code 本地化,未收录回退原 message)。
       (err) => {
-        const message = (err as { message?: unknown } | null | undefined)?.message;
+        const { code, message } = failureOf(err);
         notify.warn(
-          `${t('editor.autosave_failed')}: ${localizeErrorByCode(
-            errorCodeOf(err),
-            typeof message === 'string' ? message : String(err),
-          )}`,
+          `${t('editor.autosave_failed')}: ${localizeErrorByCode(code, message ?? code)}`,
           { mirror: false },
         );
       },

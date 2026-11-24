@@ -7,7 +7,7 @@
 // coApi.window.getPathForFile(webUtils 包装),isDir 来自 coApi.fs.listDir
 // 调用成功判定。
 
-import { errorCodeOf } from '../../electron/shared/error-message';
+import { failureOf } from './failure-of';
 
 export interface DataTransferLike {
   readonly files: ReadonlyArray<File>;
@@ -206,10 +206,8 @@ export async function resolveDroppedWorkspace(
       }
       return true;
     } catch (err) {
-      errBox.value = {
-        code: errorCodeOf(err),
-        message: (err as Error)?.message ?? '',
-      };
+      const { code, message } = failureOf(err);
+      errBox.value = { code, message: message ?? code };
       return false;
     }
   });

@@ -18,7 +18,8 @@ import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
-import { notifyOpenFailed, openFailureOf } from '@/notifications/notify-open-failed';
+import { notifyOpenFailed } from '@/notifications/notify-open-failed';
+import { failureOf } from '@/lib/failure-of';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
@@ -175,7 +176,7 @@ function QuickOpenBody() {
           notifyOpenFailed(file.name, r);
         }
       } catch (err) {
-        notifyOpenFailed(file.name, openFailureOf(err));
+        notifyOpenFailed(file.name, failureOf(err));
       }
     },
     [close],

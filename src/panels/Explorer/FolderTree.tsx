@@ -49,7 +49,8 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
-import { notifyOpenFailed, openFailureOf } from '@/notifications/notify-open-failed';
+import { notifyOpenFailed } from '@/notifications/notify-open-failed';
+import { failureOf } from '@/lib/failure-of';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -616,7 +617,7 @@ export function FolderTree({ root }: { root: string }) {
           notifyOpenFailed(basenamePreserveTrailing(path), r, { mirror: false });
         }
       } catch (err) {
-        const failure = openFailureOf(err);
+        const failure = failureOf(err);
         console.warn('[explorer] open file rejected:', failure.code, err);
         notifyOpenFailed(basenamePreserveTrailing(path), failure, { mirror: false });
       }
