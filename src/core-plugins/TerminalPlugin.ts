@@ -10,7 +10,7 @@ import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
-import { TERMINAL_ZOOM_HOTKEY } from '@/panels/Terminal/zoom-hotkey';
+import { TERMINAL_SEARCH_COMMAND, TERMINAL_ZOOM_COMMAND } from '@/panels/Terminal/terminal-hotkeys';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -29,12 +29,12 @@ export default class TerminalPlugin extends Plugin {
       ),
     });
     this.addCommand({
-      id: 'terminal.zoom.toggle',
+      id: TERMINAL_ZOOM_COMMAND.id,
       title: 'Toggle Terminal Zoom',
       titleKey: 'commands.terminal.zoom.title',
       category: 'Terminal',
       categoryKey: 'commands.terminal.category',
-      hotkey: TERMINAL_ZOOM_HOTKEY,
+      hotkey: TERMINAL_ZOOM_COMMAND.hotkey,
       fn: () => {
         const api = getDockApi();
         if (!api) return;
@@ -42,13 +42,13 @@ export default class TerminalPlugin extends Plugin {
       },
     });
     this.addCommand({
-      id: 'terminal.search.toggle',
+      id: TERMINAL_SEARCH_COMMAND.id,
       title: 'Find in Terminal',
       // i18n(I17):补 titleKey,命令面板/快捷键设置经 tk(titleKey, title) 渲染本地化
       titleKey: 'commands.terminal.search.title',
       category: 'Terminal',
       categoryKey: 'commands.terminal.category',
-      hotkey: 'mod+f',
+      hotkey: TERMINAL_SEARCH_COMMAND.hotkey,
       fn: () => {
         const api = getDockApi();
         const active = api?.activePanel;

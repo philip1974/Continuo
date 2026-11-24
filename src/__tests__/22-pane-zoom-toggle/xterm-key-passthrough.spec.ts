@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { shouldSkipXtermKey } from '@continuo-terminal/react-terminal';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isTerminalZoomHotkey } from '../../panels/Terminal/zoom-hotkey';
+import { isTerminalSearchHotkey, isTerminalZoomHotkey } from '../../panels/Terminal/terminal-hotkeys';
 
 function makeKey(init: Partial<KeyboardEventInit> & { type?: string; isComposing?: boolean }) {
   const type = init.type ?? 'keydown';
@@ -97,7 +97,30 @@ describe('isTerminalZoomHotkey(按平台)', () => {
   it('useTerminal 用 isTerminalZoomHotkey 判让出(不再用不分平台的 shouldSkipXtermKey)', () => {
     const src = readFileSync(join(process.cwd(), 'src/panels/Terminal/useTerminal.ts'), 'utf-8');
     expect(src).toContain('isTerminalZoomHotkey(event)');
+    expect(src).toContain('isTerminalSearchHotkey(event)');
     expect(src).not.toContain('shouldSkipXtermKey');
+    expect(src).not.toContain('isSearchHotkey(');
+  });
+});
+
+// 让出判定按生效绑定:改绑 → 跟随新键、原默认键照常进 shell;解绑 → 不再让出。
+describe('终端让出热键按生效绑定(含用户改绑 / 解绑)', () => {
+  const f = (init: KeyboardEventInit) => new KeyboardEvent('keydown', init);
+  it('缩放改绑为 mod+shift+z:原 Shift+Cmd+Enter 不让出,新键让出', () => {
+    const o = { 'terminal.zoom.toggle': 'mod+shift+z' };
+    expect(isTerminalZoomHotkey(makeKey({ shiftKey: true, metaKey: true }), 'mac', o)).toBe(false);
+    expect(isTerminalZoomHotkey(f({ key: 'z', shiftKey: true, metaKey: true }), 'mac', o)).toBe(true);
+  });
+  it('缩放解绑:不让出', () => {
+    expect(
+      isTerminalZoomHotkey(makeKey({ shiftKey: true, metaKey: true }), 'mac', { 'terminal.zoom.toggle': '' }),
+    ).toBe(false);
+  });
+  it('搜索:默认 Ctrl+F(非 mac)让出;解绑后 Ctrl+F 进 shell', () => {
+    expect(isTerminalSearchHotkey(f({ key: 'f', ctrlKey: true }), 'other', {})).toBe(true);
+    expect(isTerminalSearchHotkey(f({ key: 'f', ctrlKey: true }), 'other', { 'terminal.search.toggle': '' })).toBe(false);
+    expect(isTerminalSearchHotkey(f({ key: 'f', metaKey: true }), 'mac', {})).toBe(true);
+    expect(isTerminalSearchHotkey(f({ key: 'f', metaKey: true, shiftKey: true }), 'mac', {})).toBe(false);
   });
 });
 

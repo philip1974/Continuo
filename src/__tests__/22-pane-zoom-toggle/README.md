@@ -8,11 +8,11 @@ group 区**。再次触发或切 tab 时复原。PTY / scrollback / 各类 id �
 
 | 文件 | 职责 |
 |---|---|
-| `@continuo-terminal/react-terminal` (key-mapping) | `shouldSkipXtermKey(event)` 命中 Shift+(Cmd\|Ctrl)+Enter → customKeyEventHandler `return false` 跳过 xterm 默认(已上游化到共享包) |
+| `src/panels/Terminal/terminal-hotkeys.ts` | `isTerminalZoomHotkey(event)`:按**生效绑定**(默认 `shift+mod+enter`,经 matchesHotkey 按平台)命中 → customKeyEventHandler `return false` 跳过 xterm 默认;命令注册与之同一来源(`TERMINAL_ZOOM_COMMAND`) |
 | `src/shell/dock/terminal-panel-zoom.ts` | `toggleActiveTerminalZoom(api)` guard-first(terminal+grid),只对主 grid terminal 起作用;floating/popout/edge no-op |
 | `src/panels/Terminal/terminal-panel-handles.ts` | per-panel 句柄注册表 `{ focus, openSearch }`;exit-maximize 后 DockShell 经 `focusTerminalPanel` 显式 focus 回 xterm(`openSearch` 供终端搜索命令) |
-| `src/core-plugins/TerminalPlugin.ts` | 注册 command `terminal.zoom.toggle`(hotkey `shift+mod+enter`) + null api guard |
-| `src/panels/Terminal/useTerminal.ts` | 返回 `focus()`(stale-safe via `termRef.current?.focus()`);customKeyEventHandler 头部加 shouldSkipXtermKey 分支 |
+| `src/core-plugins/TerminalPlugin.ts` | 注册 command `terminal.zoom.toggle`(hotkey `TERMINAL_ZOOM_COMMAND.hotkey`) + null api guard |
+| `src/panels/Terminal/useTerminal.ts` | 返回 `focus()`(stale-safe via `termRef.current?.focus()`);customKeyEventHandler 头部加 isTerminalZoomHotkey 分支 |
 | `src/panels/Terminal/TerminalPanelView.tsx` | mount 时 `registerTerminalPanelHandles(panelId, { focus, openSearch })`(一个 effect);onDidActiveChange 同时 fit + focus |
 | `src/shell/dock/DockShell.tsx` | onReady 订阅 `onDidMaximizedGroupChange`,`isMaximized=false` 时调 `focusTerminalPanel(event.group.activePanel.id)` |
 | `electron/shared/i18n-locales/{en,zh,ko}.ts` | `commands.terminal.zoom.title` 三套词条 |
@@ -21,7 +21,7 @@ group 区**。再次触发或切 tab 时复原。PTY / scrollback / 各类 id �
 
 ### 命令注册 + 快捷键(T1, T1b)
 
-- `terminal.zoom.toggle` 命令注册,hotkey = `shift+mod+enter`(`mod` ≡ metaKey || ctrlKey)
+- `terminal.zoom.toggle` 命令注册,hotkey = `shift+mod+enter`(`mod` 按平台:mac = Cmd,其它 = Ctrl)
 - 命令 fn 在 `getDockApi() === null` 时直接 return,**不**把 null 传进 toggle(P0-2 v1)
 
 ### Toggle 主路径 — guard-first(T2-T4 + T4e,P1-1 v2)
@@ -36,13 +36,12 @@ group 区**。再次触发或切 tab 时复原。PTY / scrollback / 各类 id �
 
 ### xterm 跳过(T5)
 
-`shouldSkipXtermKey(event)` 6 case:
-- ✅ Shift+Cmd+Enter / Shift+Ctrl+Enter → true
-- ❌ Shift+Enter(无 mod) → false(仍走 Shift+Enter mapping)
-- ❌ Enter / Cmd+Enter → false
-- ❌ altKey 干扰 → false
-- ❌ isComposing(IME) → false
-- ❌ keyup / keypress 类型 → false
+终端让出判定 `isTerminalZoomHotkey(event)`(按生效绑定、按平台):
+- ✅ mac:Shift+Cmd+Enter;其它平台:Shift+Ctrl+Enter → 让出
+- ❌ mac 上 Shift+Ctrl+Enter / 其它平台 Shift+Win+Enter → 不让出(照常发回车,不被吞)
+- ❌ 用户改绑后原默认键 / 解绑 → 不让出;改绑的新键 → 让出
+- ❌ isComposing(IME)/ keyup → 不让出
+- 兄弟包 `shouldSkipXtermKey`(不分平台)保留其自身规范,终端不再使用
 
 ### Focus 回路(T6, T6b, T6c)
 

@@ -36,9 +36,8 @@ import {
   applyMappedKeyOnKeydown,
   consumeMappedKeyOnData,
   createMappedKeyState,
-  isSearchHotkey,
 } from '@continuo-terminal/react-terminal';
-import { isTerminalZoomHotkey } from './zoom-hotkey';
+import { isTerminalSearchHotkey, isTerminalZoomHotkey } from './terminal-hotkeys';
 import { createOutputCoalescer } from './output-coalescer';
 import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
 import {
@@ -482,7 +481,7 @@ export function useTerminal(termId: string) {
     // Shift+Enter 等额外按键映射:keydown 只暂存映射结果,onData 转发器再把
     // xterm 默认发出的 \r 替换为映射字节,避免 \x1b\r\r 双写。见 issue #18。
     term.attachCustomKeyEventHandler((event) => {
-      if (event.type === 'keydown' && isSearchHotkey(event)) {
+      if (isTerminalSearchHotkey(event)) {
         queueMicrotask(() => {
           // race(R84):用本次 init 作用域的 teardownDone 守卫,而非 hook 级 mountedRef。session
           // 切换 / StrictMode remount 同一 tick 内,旧 term 排队的这个微任务会在新 term 已 mount
@@ -496,7 +495,7 @@ export function useTerminal(termId: string) {
         });
         return false;
       }
-      // topic-22: 缩放热键(shift+mod+enter,按平台)让 xterm 不发 \r,document keydown
+      // topic-22: 缩放热键(生效绑定,默认 shift+mod+enter,按平台)让 xterm 不发 \r,document keydown
       // 派发 terminal.zoom.toggle 命令。pending 不污染(命中即 return false 跳过)。
       if (isTerminalZoomHotkey(event)) return false;
       applyMappedKeyOnKeydown(__mappedKeyState__, event);

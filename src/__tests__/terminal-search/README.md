@@ -14,7 +14,9 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - S5 Regex / case-sensitive / whole-word toggles re-run search with updated options.
 - S6 Escape or close hides the search bar, clears decorations, clears query, resets result state, and refocuses the terminal.
 - S7 Input blur clears only the active decoration, leaving match highlights intact.
-- S8 `isSearchHotkey` recognizes exact platform `mod+f` only.
+- S8 `isSearchHotkey` recognizes exact platform `mod+f` only. The terminal itself intercepts via
+  `isTerminalSearchHotkey` (`src/panels/Terminal/terminal-hotkeys.ts`), which follows the user's effective binding of
+  `terminal.search.toggle` (rebound → new key; unbound → Ctrl/Cmd+F reaches the shell).
 - S9 Late `onDidChangeResults` events after unmount are ignored.
 - S10 Search command scopes to the active terminal panel and does not open hidden or non-terminal panels.
 - S11 正则模式下非法正则(`[` / `(` / `\`)不抛错:调用侧预校验,不交给 SearchAddon,清高亮并把结果置为「无匹配」,搜索条照常可用;改回合法正则后照常搜索;之前合法搜索留下的 xterm 选中(selection)一并清除(`invalid-regex.spec.ts`)。
