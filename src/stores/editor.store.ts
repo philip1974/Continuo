@@ -360,26 +360,9 @@ export function getStateAfterClosingTabsOutsideRoot(
   activeTabId: string | null,
   root: string | null,
 ): CloseTabResult {
-  const keep = (tab: EditorTab): boolean => {
-    if (tab.filePath === null) return true; // untitled 永远保留
-    if (tab.dirty) return true; // 未保存编辑 → 保留,切 root 不静默丢数据
-    if (root === null) return false;
-    return isSameOrInsidePath(root, tab.filePath);
-  };
-
-  const r = filterTabsTrackingActive(tabs, activeTabId, keep);
-  if (!r.changed) return { tabs, activeTabId };
-  if (r.remaining.length === 0) {
-    return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
-  }
-  if (r.activeKept) {
-    return { tabs: r.remaining, activeTabId };
-  }
-  // active 被关:取原序后向第一个 remaining,否则前向,否则首个
-  if (r.activeFound) {
-    return { tabs: r.remaining, activeTabId: r.neighbor?.id ?? null };
-  }
-  return { tabs: r.remaining, activeTabId: r.remaining[0]!.id };
+  return closeCleanFileTabsUnless(tabs, activeTabId, (filePath) =>
+    root !== null && isSameOrInsidePath(root, filePath),
+  );
 }
 
 /**
@@ -432,24 +415,33 @@ function removeMatchingCleanTabs(
   activeTabId: string | null,
   isRemoved: (filePath: string) => boolean,
 ): CloseTabResult {
-  // 数据安全:dirty(未保存编辑)tab 不随文件删除/trash 自动关闭 —— 否则会绕过
-  // EditorPanel 的 dirty 关闭确认,静默丢失内存里的未保存增量(磁盘旧版本进废纸篓
-  // 可恢复,但内存增量无处可寻)。参考 VSCode:删除有未保存改动的文件保留 dirty
-  // 编辑器。仅 clean tab 自动关闭;dirty tab 留给用户显式保存或经确认丢弃。
+  return closeCleanFileTabsUnless(tabs, activeTabId, (filePath) => !isRemoved(filePath));
+}
+
+/**
+ * 按条件关闭 **clean 的文件 tab**(切 root / 删除共用,此前两份逐段同构、活动 tab 回退规则不一):
+ * - untitled(filePath=null)与 dirty(未保存编辑)tab 始终保留 —— 否则绕过 dirty 关闭确认、静默丢失内存增量
+ *  (参考 VSCode:删除 / 切走有未保存改动的文件保留其编辑器)
+ * - 其余 clean 文件 tab 由 keepCleanFile 决定
+ * - 活动 tab 被关 → 原序后向第一个保留项,否则前向;活动 tab 本就不在列表里(null / 已失效)而仍有保留项 → 首个
+ */
+function closeCleanFileTabsUnless(
+  tabs: EditorTab[],
+  activeTabId: string | null,
+  keepCleanFile: (filePath: string) => boolean,
+): CloseTabResult {
   const r = filterTabsTrackingActive(
     tabs,
     activeTabId,
-    (tab) => tab.filePath === null || tab.dirty || !isRemoved(tab.filePath),
+    (tab) => tab.filePath === null || tab.dirty || keepCleanFile(tab.filePath),
   );
   if (!r.changed) return { tabs, activeTabId };
   if (r.remaining.length === 0) {
     return { tabs: EMPTY_EDITOR_TABS, activeTabId: null };
   }
-  // active 仍在(或本就不在 tabs 里)→ 不动 activeTabId。
-  if (r.activeKept || !r.activeFound) {
-    return { tabs: r.remaining, activeTabId };
-  }
-  return { tabs: r.remaining, activeTabId: r.neighbor?.id ?? null };
+  if (r.activeKept) return { tabs: r.remaining, activeTabId };
+  if (r.activeFound) return { tabs: r.remaining, activeTabId: r.neighbor?.id ?? null };
+  return { tabs: r.remaining, activeTabId: r.remaining[0]!.id };
 }
 
 // ── Zustand store ────────────────────────────────────────────

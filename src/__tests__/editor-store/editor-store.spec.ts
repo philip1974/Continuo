@@ -449,6 +449,18 @@ describe('closeTab', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('getStateAfterRemovingPath', () => {
+  // 删除与切 root 共用 closeCleanFileTabsUnless:活动 tab 本就不在列表里(null / 已失效)而仍有保留项 → 取首个
+  //(此前删除路径保留失效 id、切 root 取首个,两处规则不一)。
+  it('活动 tab 为 null / 已失效 → 关闭后取首个保留项(与切 root 同规则)', () => {
+    const tabs = [
+      makeTab({ id: '/x/a.md', filePath: '/x/a.md' }),
+      makeTab({ id: '/x/b.md', filePath: '/x/b.md' }),
+    ];
+    expect(getStateAfterRemovingPath(tabs, null, '/x/a.md').activeTabId).toBe('/x/b.md');
+    expect(getStateAfterRemovingPath(tabs, '/gone.md', '/x/a.md').activeTabId).toBe('/x/b.md');
+    expect(getStateAfterClosingTabsOutsideRoot(tabs, '/gone.md', '/y').activeTabId).toBeNull();
+  });
+
   it('没有 tab 匹配 → 状态不变(同引用)', () => {
     const tabs = [makeTab({ id: '/x/a.md' })];
     const r = getStateAfterRemovingPath(tabs, '/x/a.md', '/y/none.md');
