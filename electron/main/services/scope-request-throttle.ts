@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
 import { FS_PATH_MAX, MAX_SCOPE_PATH_DEPTH, pathDepthExceeds } from '../../shared/fs-limits';
-import { fileIdOf, prefixesOf, type FileId } from '../lib/file-identity';
+import { fileIdOf, foldPathForCompare, prefixesOf, type FileId } from '../lib/file-identity';
 import { isSameOrInsidePath } from '../lib/path-inside';
 import {
   PROMPT_DENY_COOLDOWN_BASE_MS,
@@ -59,13 +59,9 @@ const ID_MAX_CHARS = 41;
 /** 单个键的字符数上限(路径 + 每级一个身份);超出退回纯路径键。 */
 export const SCOPE_KEY_MAX_CHARS = FS_PATH_MAX + (SCOPE_KEY_MAX_LEVELS + 1) * (ID_MAX_CHARS + 1);
 
-/** 尚不存在的名字的比较形:大小写不敏感的平台(macOS / Windows 默认)折叠大小写与 Unicode 规范化形式。 */
-const foldMissingName = (name: string): string =>
-  process.platform === 'linux' ? name : name.normalize('NFC').toLowerCase();
-
 /** 缺失的一级的伪身份:由上一级(已存在上级的 dev:ino,或上一级缺失层的伪身份)与本级名字(折叠后)链式摘要,定长。 */
 const missingId = (parentId: string, name: string): string =>
-  `~${createHash('sha256').update(parentId).update(KEY_SEP).update(foldMissingName(name)).digest('hex').slice(0, 32)}`;
+  `~${createHash('sha256').update(parentId).update(KEY_SEP).update(foldPathForCompare(name)).digest('hex').slice(0, 32)}`;
 
 /**
  * 把请求里各 scope 的 canonical 路径变成冷却键(顺序不变)。每条路径自身及各级上级逐级 stat:已存在的一级记

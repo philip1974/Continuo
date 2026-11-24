@@ -33,7 +33,7 @@ import {
 } from '../../shared/mcp-terminal-schemas';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { readFileCappedFd } from '../lib/read-fh-capped';
-import { fileIdOf, isDarwinMagicPath, prefixesOf } from '../lib/file-identity';
+import { fileIdOf, foldPathForCompare, isDarwinMagicPath, prefixesOf } from '../lib/file-identity';
 import { isSameOrInsidePath } from '../lib/path-inside';
 import { posixSingleQuote } from '../lib/posix-shell-quote';
 import { truncateSessionIdForEcho } from '../lib/session-id-echo';
@@ -1076,9 +1076,8 @@ export async function installStopHookInWorkspace(opts: {
   } catch {
     // home 不可 realpath:按字面路径比较
   }
-  // 大小写不敏感文件系统(macOS / Windows 默认)上按折叠后比较,只会多拒不会漏拒。
-  const fold = (p: string) => (process.platform === 'linux' ? p : p.toLowerCase());
-  if (isSameOrInsidePath(fold(realCwd), fold(realHome))) {
+  // 大小写 / 规范化形式不敏感的文件系统(macOS / Windows 默认)上按折叠后比较,只会多拒不会漏拒。
+  if (isSameOrInsidePath(foldPathForCompare(realCwd), foldPathForCompare(realHome))) {
     return { installed: false, reason: 'cwd-is-home-or-ancestor' };
   }
   let cwdId: string | null;

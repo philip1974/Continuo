@@ -24,6 +24,14 @@ export function prefixesOf(p: string): string[] {
 }
 
 /**
+ * 路径比较用的折叠:macOS / Windows(默认文件系统大小写不敏感,APFS 还不区分 Unicode 规范化形式)上 NFC + 小写;
+ * Linux 原样。只用于「多判相同」无害的地方(词法预判、受保护根 / home 判定、冷却键),最终授权另有精确判定。
+ */
+export function foldPathForCompare(p: string): string {
+  return process.platform === 'linux' ? p : p.normalize('NFC').toLowerCase();
+}
+
+/**
  * 「尚不存在的名字」专用的保守折叠:比文件系统折得更狠(兼容分解、大小写往返 —— `ſ`→`s`、`ß`→`ss`、连字、
  * final sigma;去掉默认可忽略码位)。只用来判断「新建的名字会不会与受保护根应在位置上的名字撞」,多拒无害;
  * 不求与任何一种文件系统的折叠表逐字一致(见 plugin-fs-protected-roots README 残余)。

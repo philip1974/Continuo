@@ -213,6 +213,23 @@ describe('I12b home 判定不看路径字符串(文件系统别名)', () => {
     expect(await readdir(sub)).toEqual([]);
   });
 
+  it.skipIf(process.platform === 'linux')(
+    'macOS / Windows:home 不存在且按 NFD 字面写、cwd 是其 NFC 写法的祖先 → 字符串判定折叠规范化形式后拒绝',
+    async () => {
+      const root = await realpath(await makeRoot());
+      const cwd = join(root, 'caf\u00e9');
+      await mkdir(cwd);
+      const r = await install({
+        cwd,
+        workspaceRoot: root,
+        homeDir: join(root, 'cafe\u0301', 'missing-home'), // 不存在 → 按字面比较
+        stat: async () => ({ dev: 1n, ino: 0n }), // 不提供 inode:只剩字符串判定
+      });
+      expect(r).toEqual({ installed: false, reason: 'cwd-is-home-or-ancestor' });
+      expect(await readdir(cwd)).toEqual([]);
+    },
+  );
+
   // 真实别名只在 macOS 上有(其余平台由上面的 stat 桩证明「inode 相同即拒」)。
   const dataVolume = '/System/Volumes/Data';
   it.runIf(process.platform === 'darwin' && existsSync(dataVolume))(

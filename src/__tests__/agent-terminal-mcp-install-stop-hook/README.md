@@ -116,6 +116,7 @@ ordering 语义,后续 Op 再补 broker 与 tool wiring 实装。
 - 安装前 cwd 与会话同一解析(`resolveTerminalCwd`:须已存在且为目录;缺省回退窗口 workspace 根)。
 - realpath 后须在调用方窗口 workspace 根之内(无 workspace 根 / 经链接逃出 → `cwd-outside-workspace`)。
 - cwd 为用户 home 或其祖先 → `cwd-is-home-or-ancestor`(该处配置即全局配置;workspace 就是 home 也拒)。
+  字符串判定在 macOS / Windows 上折叠大小写与 Unicode 规范化形式(NFC)后比较,只会多拒。
 - 「home 或其祖先」在字符串判定之外按 (dev, ino) 再判(I12b):同一目录有 realpath 不归一的别名(macOS
   `/System/Volumes/Data/<绝对路径>`、`/.nofollow/<绝对路径>`;Linux bind mount;Windows subst),workspace 是 home
   的祖先(`/`、`/Users`)时用别名写 cwd 即绕过字符串比较。cwd 自身 stat 失败 → 拒绝(fail-closed)。

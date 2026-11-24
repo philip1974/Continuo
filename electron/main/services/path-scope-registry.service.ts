@@ -1,7 +1,14 @@
 import { promises as fs, realpathSync, type BigIntStats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { IdentityRegistry } from './identity-registry.service';
-import { conservativeFold, fileIdOf, isDarwinMagicPath, prefixesOf, type FileId } from '../lib/file-identity';
+import {
+  conservativeFold,
+  fileIdOf,
+  foldPathForCompare,
+  isDarwinMagicPath,
+  prefixesOf,
+  type FileId,
+} from '../lib/file-identity';
 import {
   lexicalAbsolutePath,
   resolveForRead,
@@ -51,24 +58,16 @@ function isWithinScope(scopePath: string, probe: string): boolean {
 }
 
 /**
- * 词法预判用的包含判定。macOS / Windows 默认文件系统大小写不敏感(realpath 会还原真实大小写,此前
- * `/Users/x/Proj` 访问 `/Users/x/proj` 的 scope 可用),这两个平台忽略大小写;只决定「要不要碰文件系统」,
- * 最终授权仍由 realpath 后的精确匹配决定。
+ * 词法预判用的包含判定。macOS / Windows 默认文件系统大小写不敏感、APFS 不区分 Unicode 规范化形式(realpath
+ * 会还原磁盘上的写法,`/Users/x/Proj` 或 NFD 写法访问 `/Users/x/proj` 的 scope 可用),这两个平台按
+ * foldPathForCompare 折叠;只决定「要不要碰文件系统」,最终授权仍由 realpath 后的精确匹配决定。
  */
 function isLexicallyWithin(root: string, probe: string): boolean {
-  return process.platform === 'linux'
-    ? isWithinScope(root, probe)
-    : isWithinScope(root.toLowerCase(), probe.toLowerCase());
+  return isWithinScope(foldPathForCompare(root), foldPathForCompare(probe));
 }
 
-/**
- * 受保护根比较用的折叠:macOS / Windows(默认大小写不敏感、APFS 还不区分 Unicode 规范化形式)上忽略大小写与
- * 规范化形式。写类操作的叶子名不经 realpath,保留插件给的写法 —— 不折叠的话 `…/continuo dev` 就绕过了
- * `…/Continuo Dev`。多拒(大小写敏感卷上名字只差大小写的另一个目录)是 fail-closed。
- */
-function foldForProtection(p: string): string {
-  return process.platform === 'linux' ? p : p.normalize('NFC').toLowerCase();
-}
+// 受保护根比较同样用 foldPathForCompare:写类操作的叶子名不经 realpath,保留插件给的写法 —— 不折叠的话
+// `…/continuo dev` 就绕过了 `…/Continuo Dev`。多拒(大小写敏感卷上名字只差大小写的另一个目录)是 fail-closed。
 
 // 找符号链接叶子的磁盘条目名时最多扫描的目录条目数;只对「父目录是受保护根祖先」的目录生效,超限 fail-closed。
 const ON_DISK_NAME_SCAN_LIMIT = 10_000;
@@ -113,7 +112,7 @@ function protectedRootForms(raw: string): string[] {
 /** 受保护根各写法的字符串比较键(macOS 再加各自的数据卷别名),去重、已折叠。 */
 function protectedRootKeys(forms: readonly string[]): string[] {
   const all = process.platform === 'darwin' ? [...forms, ...forms.map(darwinDataVolumeAlias)] : forms;
-  return [...new Set(all.map(foldForProtection))];
+  return [...new Set(all.map(foldPathForCompare))];
 }
 
 /** 受保护根此刻在文件系统里的身份(每次校验现算:祖先可被改名 / 替换,根可能尚不存在)。 */
@@ -289,18 +288,18 @@ export class PathScopeRegistry {
    */
   isProtectedPath(p: string): boolean {
     if (isDarwinMagicPath(p)) return true;
-    const probe = foldForProtection(p);
+    const probe = foldPathForCompare(p);
     return this.protectedKeys.some((root) => isWithinScope(root, probe));
   }
 
   /** 路径是否是某条受保护根的祖先(其子树包含受保护根)。 */
   private containsProtectedRoot(p: string): boolean {
-    const probe = foldForProtection(p);
+    const probe = foldPathForCompare(p);
     return this.protectedKeys.some((root) => root !== probe && isWithinScope(probe, root));
   }
 
   /**
-   * 安全(文件系统折叠 ≠ JS 折叠):不跟随叶子的操作,probe 的叶子是插件给的写法,而 `foldForProtection` 只是
+   * 安全(文件系统折叠 ≠ JS 折叠):不跟随叶子的操作,probe 的叶子是插件给的写法,而 `foldPathForCompare` 只是
    * JS 的 NFC + toLowerCase。大小写不敏感的文件系统折得更多 —— APFS 上长 s `ſ` ≡ `s`(`Application ſupport`
    * 就是 `Application Support`)、连字、`ß`,Windows 还有 8.3 短名 —— 插件换个写法就绕过了「受保护根 / 其祖先」
    * 判定:把整棵 `Application Support` 改名移走后随意读写,再移回或删光。不枚举字符,改让文件系统报出叶子
@@ -437,7 +436,7 @@ export class PathScopeRegistry {
       if (missing.length >= root.segments.length) return 'is inside a not-yet-created protected app directory';
       // 根的某级尚不存在的上级:标准写法只拒会连带整棵子树的操作(同已存在的上级);变体写法(文件系统会把它与
       // 标准名当成同一个名字)一律拒,否则应用之后按标准写法访问就落进插件建的目录。
-      const variant = missing.some((name, i) => foldForProtection(name) !== foldForProtection(root.segments[i]!));
+      const variant = missing.some((name, i) => foldPathForCompare(name) !== foldPathForCompare(root.segments[i]!));
       if (ancestorOp || variant) return 'would create an ancestor of a not-yet-created protected app directory';
     }
     return null;
@@ -473,9 +472,9 @@ export class PathScopeRegistry {
    * 建出来,应用之后按标准写法访问就落进插件建的目录,而 realpath 报出的变体名与受保护根的比较键对不上。
    */
   private collidesWithProtectedSegment(parent: string, leaf: string): boolean {
-    const base = foldForProtection(parent);
+    const base = foldPathForCompare(parent);
     const prefix = base.endsWith(sep) ? base : base + sep;
-    const folded = foldForProtection(leaf);
+    const folded = foldPathForCompare(leaf);
     const loose = conservativeFold(leaf);
     return this.protectedKeys.some((root) => {
       if (!root.startsWith(prefix)) return false;

@@ -184,6 +184,17 @@ describe('scope 内:原有细节与功能不变', () => {
     );
     if (insensitive) expect(await call(C.READ_FILE, upper)).toBe('in');
   });
+
+  it.skipIf(process.platform === 'linux')('Unicode 规范化形式不同(NFD 写法访问 NFC 的 scope)仍可访问', async () => {
+    const nfcScope = join(root, 'caf\u00e9');
+    await mkdir(nfcScope);
+    await writeFile(join(nfcScope, 'in.txt'), 'nfc');
+    scopes.grant(PLUGIN, [{ path: nfcScope, mode: 'r' }]);
+    const nfd = join(root, 'cafe\u0301', 'in.txt');
+    // 仅当文件系统确实不区分规范化形式、且 realpath 还原磁盘写法时才有意义(APFS)。
+    const canonical = await realpath(nfd).catch(() => null);
+    if (canonical === join(nfcScope, 'in.txt')) expect(await call(C.READ_FILE, nfd)).toBe('nfc');
+  });
 });
 
 describe('经符号链接的 scope 根:插件用请求时的写法访问', () => {
