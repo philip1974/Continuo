@@ -124,10 +124,10 @@ describe('打磨 R23 — EditorHeader 窄订阅', () => {
       'utf-8',
     );
 
-    expect(src).toContain('const tabTitle = basename(tab.filePath);');
+    expect(src).toContain('const tabTitle = editorTabTitle(tab.filePath);');
     expect(src).toContain("closeLabel={t('shell.tab.close', { title: tabTitle })}");
     expect(src).toContain('{tabTitle}');
-    expect(src).not.toContain("closeLabel={t('shell.tab.close', { title: basename(tab.filePath) })}");
+    expect(src).not.toContain("closeLabel={t('shell.tab.close', { title: editorTabTitle(tab.filePath) })}");
   });
 
   it('content-only 变化 → EditorHeader 不重渲(commit 次数不变)', () => {
