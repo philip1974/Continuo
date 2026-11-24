@@ -3,14 +3,12 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { copyFile, cp, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
-import { execFile as execFileCb } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
+import { prepareCommonJsAdapter, processInfo, pidsInProcessGroup, waitForDead } from './_helpers/debug-adapter';
+import { sleep } from '../lib/wait-at-most';
 
-const execFile = promisify(execFileCb);
 const root = process.cwd();
 const spikeDir = path.join(root, 'scripts/debug-spike');
 const adapterPath = path.join(
@@ -22,99 +20,6 @@ const breakpointFile = path.join(spikeDir, 'fixture.ts');
 const breakpointLine = 14;
 const adapterExists = existsSync(adapterPath);
 const describeWithAdapter = adapterExists ? describe : describe.skip;
-
-type ProcessInfo = {
-  pid: number;
-  ppid: number;
-  pgid: number;
-  command: string;
-};
-
-type ProcessGroupEntry = {
-  pid: number;
-  pgid: number;
-  command: string;
-};
-
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function prepareCommonJsAdapter() {
-  const dir = await mkdtemp(path.join(tmpdir(), 'continuo-main-dap-cjs-'));
-  await cp(path.dirname(adapterPath), dir, { recursive: true });
-  const cjsPath = path.join(dir, 'dapDebugServer.cjs');
-  await copyFile(adapterPath, cjsPath);
-  return { dir, adapterPath: cjsPath };
-}
-
-async function processInfo(pid: number | undefined): Promise<ProcessInfo | null> {
-  if (!pid || process.platform === 'win32') return null;
-  try {
-    const { stdout } = await execFile('ps', [
-      '-o',
-      'pid=,ppid=,pgid=,command=',
-      '-p',
-      String(pid),
-    ]);
-    const match = /^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(stdout.trim());
-    if (!match) return null;
-    return {
-      pid: Number(match[1]),
-      ppid: Number(match[2]),
-      pgid: Number(match[3]),
-      command: match[4] ?? '',
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function pidsInProcessGroup(pgid: number): Promise<ProcessGroupEntry[]> {
-  if (!pgid || process.platform === 'win32') return [];
-  try {
-    const { stdout } = await execFile('ps', ['-axo', 'pid=,pgid=,command=']);
-    return stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const match = /^(\d+)\s+(\d+)\s+(.*)$/.exec(line);
-        return match
-          ? {
-              pid: Number(match[1]),
-              pgid: Number(match[2]),
-              command: match[3] ?? '',
-            }
-          : null;
-      })
-      .filter((entry): entry is ProcessGroupEntry => entry !== null)
-      .filter((entry) => entry.pgid === pgid);
-  } catch {
-    return [];
-  }
-}
-
-function pidAlive(pid: number) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function waitForDead(pids: number[], timeoutMs: number) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const alive = pids.filter(pidAlive);
-    if (alive.length === 0) return [];
-    await sleep(100);
-  }
-  return pids.filter(pidAlive);
-}
 
 describeWithAdapter('Phase 0b DAP teardown in electron/main context', () => {
   it(
@@ -130,7 +35,7 @@ describeWithAdapter('Phase 0b DAP teardown in electron/main context', () => {
       const { DapClient } = await import('../../../scripts/debug-spike/dap-client.mjs');
       // @ts-expect-error spike helper is an ESM .mjs file without a declaration file.
       const { runClosedLoop } = await import('../../../scripts/debug-spike/dap-driver.mjs');
-      const adapterCopy = await prepareCommonJsAdapter();
+      const adapterCopy = await prepareCommonJsAdapter(adapterPath, 'continuo-main-dap-cjs-');
       const transcript: unknown[] = [];
       const client = new DapClient({
         adapterPath: adapterCopy.adapterPath,

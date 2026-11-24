@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { copyFile, cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import net, { type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -15,6 +15,7 @@ import {
   type DapMessage,
   type DapResponseMessage,
 } from '../services/dap-client';
+import { prepareCommonJsAdapter } from './_helpers/debug-adapter';
 
 const root = process.cwd();
 const adapterPath = path.join(
@@ -22,15 +23,6 @@ const adapterPath = path.join(
   'scripts/debug-spike/.adapter/js-debug/src/dapDebugServer.js',
 );
 const adapterExists = existsSync(adapterPath);
-
-async function prepareCommonJsAdapter() {
-  const dir = await mkdtemp(path.join(tmpdir(), 'continuo-debug-adapter-smoke-'));
-  await cp(path.dirname(adapterPath), dir, { recursive: true });
-  const runnablePath = path.join(dir, 'dapDebugServer.js');
-  await copyFile(adapterPath, runnablePath);
-  await writeFile(path.join(dir, 'package.json'), '{"type":"commonjs"}\n');
-  return { dir, adapterPath: runnablePath };
-}
 
 function endpointForTest(): string {
   if (process.platform === 'win32') {
@@ -136,7 +128,7 @@ async function killAdapter(pid: number | undefined): Promise<void> {
 
 describe.skipIf(!adapterExists)('Debug adapter smoke', () => {
   it('starts dapDebugServer in node mode, answers initialize, and exits on kill', async () => {
-    const adapterCopy = await prepareCommonJsAdapter();
+    const adapterCopy = await prepareCommonJsAdapter(adapterPath, 'continuo-debug-adapter-smoke-');
     const endpoint = endpointForTest();
     let stderr = '';
     // TCP 端点(Windows)显式传 host:默认 localhost 可能监听 ::1,与上面连 127.0.0.1 不一致。

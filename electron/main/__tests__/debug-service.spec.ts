@@ -1,11 +1,9 @@
 // @vitest-environment node
 
-import { execFile as execFileCb } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, copyFile, cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -35,8 +33,7 @@ import {
 } from '../../shared/debug-view-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
-
-const execFile = promisify(execFileCb);
+import { prepareCommonJsAdapter, pidsInProcessGroup, processInfo, waitForDead } from './_helpers/debug-adapter';
 
 // 模拟 Windows 平台(debug.service 经 node:os 的 platform() 判平台)。
 const platformMock = vi.hoisted(() => ({ value: null as NodeJS.Platform | null }));
@@ -3567,87 +3564,6 @@ const program = path.join(spikeDir, '.out/fixture.js');
 const breakpointFile = path.join(spikeDir, 'fixture.ts');
 const adapterExists = existsSync(adapterPath);
 
-async function prepareCommonJsAdapter() {
-  const dir = await mkdtemp(path.join(tmpdir(), 'continuo-debug-service-cjs-'));
-  await cp(path.dirname(adapterPath), dir, { recursive: true });
-  const runnablePath = path.join(dir, 'dapDebugServer.js');
-  await copyFile(adapterPath, runnablePath);
-  await writeFile(path.join(dir, 'package.json'), '{"type":"commonjs"}\n');
-  return { dir, adapterPath: runnablePath };
-}
-
-async function processInfo(pid: number | undefined) {
-  if (!pid || process.platform === 'win32') return null;
-  try {
-    const { stdout } = await execFile('ps', [
-      '-o',
-      'pid=,ppid=,pgid=,command=',
-      '-p',
-      String(pid),
-    ]);
-    const match = /^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(stdout.trim());
-    if (!match) return null;
-    return {
-      pid: Number(match[1]),
-      ppid: Number(match[2]),
-      pgid: Number(match[3]),
-      command: match[4] ?? '',
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function pidsInProcessGroup(pgid: number) {
-  if (!pgid || process.platform === 'win32') return [];
-  try {
-    const { stdout } = await execFile('ps', ['-axo', 'pid=,pgid=,command=']);
-    return stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const match = /^(\d+)\s+(\d+)\s+(.*)$/.exec(line);
-        return match
-          ? {
-              pid: Number(match[1]),
-              pgid: Number(match[2]),
-              command: match[3] ?? '',
-            }
-          : null;
-      })
-      .filter((entry): entry is { pid: number; pgid: number; command: string } => entry !== null)
-      .filter((entry) => entry.pgid === pgid);
-  } catch {
-    return [];
-  }
-}
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-async function waitForDead(pids: readonly number[], timeoutMs: number) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const alive = pids.filter(pidAlive);
-    if (alive.length === 0) return [];
-    await sleep(100);
-  }
-  return pids.filter(pidAlive);
-}
-
 function findVariable(
   variables: readonly DebugVariable[],
   name: string,
@@ -3663,7 +3579,7 @@ describe.skipIf(!adapterExists)('DebugService real adapter', () => {
   it(
     'launch→breakpoint→variables/evaluate→continue; killByOwner 反收 adapter/debuggee 树',
     async () => {
-      const adapterCopy = await prepareCommonJsAdapter();
+      const adapterCopy = await prepareCommonJsAdapter(adapterPath, 'continuo-debug-service-cjs-');
       const teardownSnapshots: Array<{
         pgid: number;
         watchedPids: readonly number[];
@@ -3837,7 +3753,7 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
     files: Record<string, string>,
     run: (ctx: { service: DebugService; dir: string }) => Promise<T>,
   ): Promise<T> {
-    const adapterCopy = await prepareCommonJsAdapter();
+    const adapterCopy = await prepareCommonJsAdapter(adapterPath, 'continuo-debug-service-cjs-');
     // 刻意**不**取真实路径:macOS 的 tmpdir 在 /var(→ /private/var 的软链)下,用户选的 workspace / 编辑器 tab
     // 路径同样可能是软链拼写。js-debug 按 Node 加载的真实路径匹配已加载脚本,DebugService 须自己 realpath 断点
     // file 再发给 adapter(否则运行后再设的断点回 Unbound)。
@@ -3865,7 +3781,7 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
   it(
     '起跑前的 provisional 断点 → child 的 breakpoint changed 事件把快照更新为 verified',
     async () => {
-      const adapterCopy = await prepareCommonJsAdapter();
+      const adapterCopy = await prepareCommonJsAdapter(adapterPath, 'continuo-debug-service-cjs-');
       const service = new DebugService({
         adapterPath: adapterCopy.adapterPath,
         requestTimeoutMs: 30_000,
@@ -3941,7 +3857,7 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
   it(
     '经软链路径在运行后设断点 → verified 且命中;推给 renderer 的 file 保持软链拼写',
     async () => {
-      const adapterCopy = await prepareCommonJsAdapter();
+      const adapterCopy = await prepareCommonJsAdapter(adapterPath, 'continuo-debug-service-cjs-');
       const realDir = await mkdtemp(path.join(tmpdir(), 'continuo-debug-symlink-'));
       const linkDir = `${realDir}-link`;
       await symlink(realDir, linkDir, 'dir');
