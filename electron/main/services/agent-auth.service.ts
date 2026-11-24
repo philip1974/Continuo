@@ -24,6 +24,7 @@ import { codedError } from '../../shared/error-message';
 import { broadcastToWindows } from '../lib/broadcast';
 import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
+import { onRendererDocumentGone } from '../lib/renderer-document-gone';
 
 // 弹窗显示 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)。
 // 从请求成为窗口的显示中弹窗起算(见 markDisplayed),到点后经 CANCELLED 通知 renderer 撤掉弹窗;此前从到达起算,排在别的
@@ -104,8 +105,6 @@ const rendererGoneWatched = new WeakSet<object>();
  * 经 AGENT_AUTH_CHANNELS.READY 上报(markAgentAuthRendererReady)才恢复。
  */
 const rendererNotReady = new Set<number>();
-/** Chromium net::ERR_ABORTED。 */
-const ERR_ABORTED = -3;
 
 /**
  * 「文档被换掉」以**已提交**的导航为准(did-navigate:主框架、非同文档、已提交),不用 lib/wc-gone-hook 的
@@ -124,16 +123,8 @@ export function watchAgentAuthRenderer(win: BrowserWindow): void {
     rendererNotReady.add(windowId);
     cancelAgentAuthByWindow(windowId);
   };
-  wc.on('did-navigate', onGone);
-  wc.on('render-process-gone', onGone);
-  // 主框架加载失败:Chromium 提交的是错误页,不发 did-navigate,但旧文档同样没了。
-  // ERR_ABORTED(-3)除外,它不代表文档被换掉(真机实测 Electron 对主框架发 -3 的两种情况):
-  // - 文档已提交但仍在加载时又 reload:did-fail-load(-3) → did-navigate → 就绪,换文档由随后的 did-navigate 处理;
-  // - 文档提交后主进程调 wc.stop():-3 在就绪**之后**才到,文档原样留着、不会再上报就绪 —— 按换文档处理会让该
-  //   窗口的授权请求被永久拒绝。
-  wc.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
-    if (isMainFrame && errorCode !== ERR_ABORTED) onGone();
-  });
+  // 文档换掉(提交导航 / 崩溃 / 主框架加载失败,-3 除外)的判定见 lib/renderer-document-gone(与深链、关窗 flush 共用)。
+  onRendererDocumentGone(wc, onGone);
   // 窗口销毁:结算发往它的未决请求,之后不会再有请求发给它。
   wc.once('destroyed', () => {
     cancelAgentAuthByWindow(windowId);

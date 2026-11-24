@@ -107,9 +107,12 @@ describe('co:// 协议监听就绪握手 · main 接线', () => {
     expect(body).toContain('drainOnProtocolReady(');
   });
 
-  it('路由按就绪集合判定,主 frame 重新导航后就绪作废;不再在 did-finish-load 排空', () => {
+  it('路由按就绪集合判定,文档换掉(提交导航 / 崩溃 / 主框架加载失败)后就绪作废;不再在 did-finish-load 排空', () => {
     expect(indexSrc).toMatch(/isReady:\s*\(w\)\s*=>\s*protocolReadyContents\.has\(w\.webContents\)/);
-    expect(indexSrc).toMatch(/'did-navigate',[^)]*\)\s*=>\s*\{?\s*protocolReadyContents\.delete/);
+    // 作废判定与 agent 授权共用 lib/renderer-document-gone(其行为由 renderer-document-gone.test 覆盖)。
+    expect(indexSrc).toMatch(
+      /onRendererDocumentGone\(win\.webContents,\s*\(\)\s*=>\s*protocolReadyContents\.delete/,
+    );
     expect(indexSrc).not.toContain('attachWindowDrain(');
   });
 });

@@ -6,7 +6,7 @@ import {
   type DirtyState,
   type FlushRequestPayload,
 } from '../shared/persistence-channels';
-import { subscribeIpc } from './subscribe-ipc';
+import { subscribeAndAnnounce, subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
@@ -139,11 +139,9 @@ const api = {
       const listener = (_event: unknown, payload?: FlushRequestPayload) => {
         void cb(payload);
       };
-      const unsubscribe = subscribeIpc(LAYOUT_CHANNELS.FLUSH_REQUEST, listener);
-      // 告诉 main「本窗口现在能应答 flush 请求了」。没上报过的窗口(启动中 / 加载失败)关窗时 main 不发
+      // 挂上后告诉 main「本窗口现在能应答 flush 请求了」。没上报过的窗口(启动中 / 加载失败)关窗时 main 不发
       // 请求、不等回执 —— 否则没人回 ack,只能干等满超时。
-      ipcRenderer.send(LAYOUT_CHANNELS.FLUSH_READY);
-      return unsubscribe;
+      return subscribeAndAnnounce(LAYOUT_CHANNELS.FLUSH_REQUEST, LAYOUT_CHANNELS.FLUSH_READY, listener);
     },
     sendFlushAck: (
       windowId: number,
@@ -391,10 +389,8 @@ const api = {
         }
         cb(payload.url);
       };
-      const unsubscribe = subscribeIpc(PLUGINS_CHANNELS.PROTOCOL_URL, listener);
-      // 监听已挂上 → 告诉 main「本窗口能接收 co:// 了」,main 才排空冷启动期间缓冲的深链(同 FLUSH_READY)。
-      ipcRenderer.send(PLUGINS_CHANNELS.PROTOCOL_READY);
-      return unsubscribe;
+      // 监听挂上 → 告诉 main「本窗口能接收 co:// 了」,main 才排空冷启动期间缓冲的深链(同 FLUSH_READY)。
+      return subscribeAndAnnounce(PLUGINS_CHANNELS.PROTOCOL_URL, PLUGINS_CHANNELS.PROTOCOL_READY, listener);
     },
     /**
      * v4.5 从 git URL 安装插件,返回 manifest 元信息.
@@ -472,11 +468,9 @@ const api = {
     ): (() => void) => {
       const listener = (_: unknown, payload: AgentAuthRequestPayload) =>
         cb(payload);
-      const unsubscribe = subscribeIpc(AGENT_AUTH_CHANNELS.REQUEST, listener);
-      // 监听已挂上 → 告诉 main「本窗口能显示授权弹窗了」(同 PROTOCOL_READY):reload 后新文档就绪之前到达的
+      // 监听挂上 → 告诉 main「本窗口能显示授权弹窗了」(同 PROTOCOL_READY):reload 后新文档就绪之前到达的
       // 请求 main 直接拒绝,不发给收不到的文档。
-      ipcRenderer.send(AGENT_AUTH_CHANNELS.READY);
-      return unsubscribe;
+      return subscribeAndAnnounce(AGENT_AUTH_CHANNELS.REQUEST, AGENT_AUTH_CHANNELS.READY, listener);
     },
     /** 用户决定后回应 main(对应 requestId). */
     respond: (

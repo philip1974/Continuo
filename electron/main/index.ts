@@ -146,6 +146,7 @@ import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
 import { sendToWindow } from './lib/broadcast';
 import { openWorkspaceWindowWith } from './ipc/window.ipc';
+import { onRendererDocumentGone } from './lib/renderer-document-gone';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -369,7 +370,9 @@ const flushReadyWindowIds = new Set<number>();
 ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
   if (!defaultIsTrustedFrame(event.senderFrame)) return;
   const win = BrowserWindow.fromWebContents(event.sender);
-  if (win) flushReadyWindowIds.add(win.id);
+  // 同 PROTOCOL_READY / AGENT_AUTH READY:只认窗口自己的主 webContents 上报。
+  if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
+  flushReadyWindowIds.add(win.id);
 });
 
 /**
@@ -433,6 +436,15 @@ function e2eQuitTrace(message: string): void {
 
 function wireWindowCloseFlush(win: BrowserWindow): void {
   const windowId = win.id; // closed 之后窗口已销毁,提前取 id
+  // 文档换掉(Cmd+R reload / 渲染进程崩溃 / 主框架加载失败):flush 就绪与脏态都只属于旧文档 —— 不作废则
+  // 崩溃后关窗空等满 FLUSH_ACK_TIMEOUT_MS(「保存」时还会中止关闭),reload 后关窗弹出列着已不存在文件的
+  // 确认框、macOS 关闭按钮的未保存圆点常驻。新文档挂载后重新上报就绪,有脏 tab 时重新上报脏态。
+  onRendererDocumentGone(win.webContents, () => {
+    flushReadyWindowIds.delete(windowId);
+    if (dirtyStates.delete(windowId) && process.platform === 'darwin' && !win.isDestroyed()) {
+      win.setDocumentEdited(false);
+    }
+  });
   win.on('closed', () => {
     e2eQuitTrace(`win ${windowId} closed`);
     flushReadyWindowIds.delete(windowId);
@@ -696,8 +708,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   }
 
   // race(R41):每个新窗口上报协议监听就绪(PROTOCOL_READY)后都排空协议队列 —— 无就绪窗口期入队的
-  // co:// 由「下一个就绪的任意窗口」消费。reload 后旧文档的监听随之失效 → 就绪作废,等新文档重新上报。
-  win.webContents.on('did-navigate', () => protocolReadyContents.delete(win.webContents));
+  // co:// 由「下一个就绪的任意窗口」消费。文档换掉(reload / 崩溃 / 主框架加载失败)后旧文档的监听随之失效 →
+  // 就绪作废,等新文档重新上报(判定与 agent 授权共用 lib/renderer-document-gone)。
+  onRendererDocumentGone(win.webContents, () => protocolReadyContents.delete(win.webContents));
 
   return win;
 }

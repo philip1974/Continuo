@@ -17,3 +17,18 @@ export function subscribeIpc<A extends unknown[]>(
     ipcRenderer.removeListener(channel, wrapped);
   };
 }
+
+/**
+ * 先挂监听、再告诉 main「本文档已能接收该推送」(readyChannel)。关窗 flush 请求、co:// 深链、agent 授权请求三条
+ * 就绪握手共用:顺序反过来,main 在监听挂上前推送的那条会丢。main 侧在文档换掉时作废就绪(见
+ * electron/main/lib/renderer-document-gone),新文档重新订阅即重新上报。
+ */
+export function subscribeAndAnnounce<A extends unknown[]>(
+  channel: string,
+  readyChannel: string,
+  listener: (event: IpcRendererEvent, ...args: A) => void,
+): () => void {
+  const unsubscribe = subscribeIpc(channel, listener);
+  ipcRenderer.send(readyChannel);
+  return unsubscribe;
+}
