@@ -112,9 +112,22 @@ export function startPluginFsScopeRequestBridge(): () => void {
     cancelledByMain.add(requestId);
     store.denyFsScope(requestId);
   });
+  // 弹窗开始显示某个请求时回报 main 一次:main 的无应答超时从此刻起算(排队期间不计,否则排在后面的请求轮到显示时
+  // 已所剩无几)。manifest 权限弹窗优先占屏(PermissionPrompt),那时 fs-scope 队首并未显示。
+  let lastShown: string | null = null;
+  const reportShown = (state: ReturnType<typeof usePermissionPromptStore.getState>): void => {
+    const shownId = state.pending ? null : (state.currentFsScope?.requestId ?? null);
+    if (shownId === null || shownId === lastShown) return;
+    lastShown = shownId;
+    // 回报失败(请求已在 main 收口等)无需处理:main 的排队兜底仍会收口该请求。
+    coApi.pluginFsRaw._scopeShown(shownId).catch(() => undefined);
+  };
+  const unsubShown = usePermissionPromptStore.subscribe(reportShown);
+  reportShown(usePermissionPromptStore.getState());
   return () => {
     active = false; // race(R99):失效在途 requestFsScope 的迟到回传
     unsub();
     unsubCancelled();
+    unsubShown();
   };
 }

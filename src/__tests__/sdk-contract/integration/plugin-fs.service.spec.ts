@@ -53,7 +53,6 @@ async function makeHarness(persistence?: PersistenceDeps): Promise<FsHarness> {
   const scopes = new PathScopeRegistry(identity);
   const correlator = new ScopeRequestCorrelator({
     ttlMs: 60_000,
-    gcIntervalMs: 60_000,
   });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,

@@ -66,7 +66,7 @@ beforeEach(async () => {
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
   scopes = new PathScopeRegistry(identity);
-  correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+  correlator = new ScopeRequestCorrelator({ ttlMs: 60_000 });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,
     pathScopeRegistry: scopes,

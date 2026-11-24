@@ -25,6 +25,8 @@ export const PLUGIN_FS_CHANNELS = {
   USER_HOME: 'plugin-fs:user-home',
   REQUEST_SCOPE: 'plugin-fs:request-scope',
   SCOPE_DECISION: 'plugin-fs:scope-decision',
+  /** renderer -> main:某个 scope-request 的弹窗开始显示,main 从此刻起计无应答超时(排队期间不计)。 */
+  SCOPE_REQUEST_SHOWN: 'plugin-fs:scope-request-shown',
   /** main -> renderer event (sent via webContents.send) */
   SCOPE_REQUEST: 'plugin-fs:scope-request',
   /** main -> renderer event:某个已发出的 scope-request 在 main 侧已收口(超时 / 插件已注销),撤掉对应弹窗 */

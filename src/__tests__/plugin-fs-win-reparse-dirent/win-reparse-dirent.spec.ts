@@ -42,7 +42,7 @@ async function setup(platform: NodeJS.Platform): Promise<void> {
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
   scopes = new PathScopeRegistry(identity);
-  correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+  correlator = new ScopeRequestCorrelator({ ttlMs: 60_000 });
   registerPluginFsHandlers(ipc as never, { identityRegistry: identity, pathScopeRegistry: scopes, correlator, platform });
   token = ((await ipc.invokeWithEvent(event, PLUGIN_FS_CHANNELS.REGISTER_PLUGIN, PLUGIN)) as { token: string }).token;
 }

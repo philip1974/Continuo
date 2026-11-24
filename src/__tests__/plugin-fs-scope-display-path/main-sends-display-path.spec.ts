@@ -32,7 +32,7 @@ async function requestScopes(
 ): Promise<unknown> {
   const ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
-  const corr = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+  const corr = new ScopeRequestCorrelator({ ttlMs: 60_000 });
   correlator = corr;
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,

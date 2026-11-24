@@ -41,7 +41,7 @@ async function makeHarness(senderId: number): Promise<Harness> {
   const ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
   const scopes = new PathScopeRegistry(identity);
-  const corr = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+  const corr = new ScopeRequestCorrelator({ ttlMs: 60_000 });
   correlator = corr;
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,

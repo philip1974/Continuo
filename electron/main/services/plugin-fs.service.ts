@@ -1171,7 +1171,7 @@ export function registerPluginFsHandlers(
         const { requestId, promise } = correlator.createRequest(token, event.sender.id);
         // race(R73,agent-auth R62 同族):createRequest 登记 pending 后、send 前 sender 可能销毁
         // (renderer reload/关窗),send 抛 "Object has been destroyed"。下方 try 只裹 `await promise`,
-        // 不裹这次 send;若 send 裸抛,该 pending 会泄漏到 5min TTL 才被 sweep —— 插件侧
+        // 不裹这次 send;若 send 裸抛,该 pending 会泄漏到超时才被收口 —— 插件侧
         // requestScope() 一直挂着,且用户从未看到授权弹窗(发送失败),形成「授权请求假死」。投递失败
         // (trySend 返回 false)时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
         // 收口。promise.catch 吞掉 cancel 触发的 reject,避免 unhandled rejection(此处不再 await 它)。
@@ -1263,6 +1263,19 @@ export function registerPluginFsHandlers(
       correlator.resolve(requestId, decision, event.sender.id);
     },
   );
+
+  // renderer 显示 fs-scope 弹窗队首时回报一次:无应答超时从此刻起算(见 ScopeRequestCorrelator.markShown)。
+  // frame-trust 门由注册点 withTrustedFrameGate 统一施加;correlator 只认发给本 sender 的请求、只生效一次。
+  ipcMain.handle(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_SHOWN, (event, requestId: unknown): void => {
+    if (
+      typeof requestId !== 'string' ||
+      requestId.length === 0 ||
+      requestId.length > SCOPE_REQUEST_ID_MAX
+    ) {
+      throw fsError(ERROR_CODES.BAD_INPUT, 'invalid scope-request-shown requestId');
+    }
+    correlator.markShown(requestId, event.sender.id);
+  });
 
 }
 

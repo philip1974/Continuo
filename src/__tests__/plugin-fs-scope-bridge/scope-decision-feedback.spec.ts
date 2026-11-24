@@ -16,6 +16,7 @@ vi.mock('@/lib/co-api', () => ({
       onScopeRequestCancelled: vi.fn(() => () => {}),
       onScopeRequest: h.onScopeRequest,
       _scopeDecision: h.scopeDecision,
+      _scopeShown: vi.fn(() => Promise.resolve()),
     },
   },
 }));
@@ -23,6 +24,7 @@ vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
 vi.mock('../../plugins/permissions/promptStore', () => ({
   usePermissionPromptStore: {
     getState: () => ({ requestFsScope: h.requestFsScope }),
+    subscribe: () => () => {},
   },
 }));
 

@@ -145,7 +145,7 @@ describe('request-scope:冷启动水合在途时插件被卸载 → 不把卸载
     const ipc = new StubIpcMain();
     const identity = new IdentityRegistry();
     const scopes = new PathScopeRegistry(identity);
-    const correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+    const correlator = new ScopeRequestCorrelator({ ttlMs: 60_000 });
     let releaseLoad!: (v: readonly { path: string; mode: 'r' | 'rw' }[]) => void;
     const loadStarted = vi.fn();
     registerPluginFsHandlers(ipc as never, {

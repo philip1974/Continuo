@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   onScopeRequest: vi.fn(),
   onScopeRequestCancelled: vi.fn(),
   scopeDecision: vi.fn(),
+  scopeShown: vi.fn(),
   notifyError: vi.fn(),
 }));
 
@@ -16,6 +17,7 @@ vi.mock('@/lib/co-api', () => ({
       onScopeRequest: h.onScopeRequest,
       onScopeRequestCancelled: h.onScopeRequestCancelled,
       _scopeDecision: h.scopeDecision,
+      _scopeShown: h.scopeShown,
     },
   },
 }));
@@ -51,6 +53,7 @@ beforeEach(() => {
   h.onScopeRequest.mockReturnValue(unsubRequest);
   h.onScopeRequestCancelled.mockReturnValue(unsubCancelled);
   h.scopeDecision.mockResolvedValue(undefined);
+  h.scopeShown.mockResolvedValue(undefined);
   const store = usePermissionPromptStore.getState();
   for (const id of [...store.fsScopeQueue]) store.denyFsScope(id);
 });

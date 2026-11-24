@@ -51,7 +51,8 @@ interface PromptState {
   denyFsScope: (requestId: string) => void;
 }
 
-// fs-scope 请求的过期不在这里计时:main 的 scope-request-correlator 在 TTL 到点 / 插件注销时发
+// fs-scope 请求的过期不在这里计时:usePluginFsScopeRequests 在队首开始显示时回报 main,main 的
+// scope-request-correlator 从那时起计无应答超时(排队另有兜底上限);到点 / 插件注销时发
 // SCOPE_REQUEST_CANCELLED,usePluginFsScopeRequests 收到后调 denyFsScope 撤弹窗并推进队列。
 const EMPTY_FS_SCOPE_QUEUE: string[] = [];
 

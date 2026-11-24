@@ -1004,6 +1004,11 @@
 - [`scope-request-fanout-bounds.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-fanout-bounds.spec.ts)
 - [`scope-request-throttle.spec.ts`](./plugin-fs-scope-request-throttle/scope-request-throttle.spec.ts)
 
+## [plugin-fs-scope-shown-timeout(文件夹授权弹窗的无应答超时从开始显示起算)](./plugin-fs-scope-shown-timeout/README.md)
+
+- [`bridge-reports-shown.spec.ts`](./plugin-fs-scope-shown-timeout/bridge-reports-shown.spec.ts)
+- [`scope-shown-timeout.spec.ts`](./plugin-fs-scope-shown-timeout/scope-shown-timeout.spec.ts)
+
 ## [plugin-fs-token-revoke-retry](./plugin-fs-token-revoke-retry/)
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
@@ -1163,6 +1168,7 @@
 ## [popout 子窗里的面板弹窗与全局热键](./popout-panel-keyboard/README.md)
 
 - [`popout-panel-keyboard.spec.tsx`](./popout-panel-keyboard/popout-panel-keyboard.spec.tsx)
+- [`tablist-roving.spec.ts`](./popout-panel-keyboard/tablist-roving.spec.ts)
 
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 

@@ -106,7 +106,7 @@ beforeEach(async () => {
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
   scopes = new PathScopeRegistry(identity, { protectedRoots: allRoots, identityCache });
-  correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+  correlator = new ScopeRequestCorrelator({ ttlMs: 60_000 });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
@@ -125,7 +125,7 @@ async function extraStack(
   const stubIpc = new StubIpcMain();
   const identity = new IdentityRegistry();
   const registry = new PathScopeRegistry(identity, { protectedRoots: allRoots, identityCache, ...opts });
-  const c = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+  const c = new ScopeRequestCorrelator({ ttlMs: 60_000 });
   extraCorrelators.push(c);
   registerPluginFsHandlers(stubIpc as never, {
     identityRegistry: identity,

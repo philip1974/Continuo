@@ -120,6 +120,7 @@ vi.mock('@/plugins/permissions/co-permission-store', () => ({
 vi.mock('@/plugins/permissions/promptStore', () => ({
   usePermissionPromptStore: {
     getState: () => ({ request: mocks.permissionRequest }),
+    subscribe: () => () => {},
   },
 }));
 

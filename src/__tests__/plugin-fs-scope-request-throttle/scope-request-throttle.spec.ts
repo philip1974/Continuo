@@ -100,7 +100,7 @@ beforeEach(async () => {
   ipc = new StubIpcMain();
   const identity = new IdentityRegistry();
   scopes = new PathScopeRegistry(identity);
-  correlator = new ScopeRequestCorrelator({ ttlMs: 60 * 60_000, gcIntervalMs: 60 * 60_000 });
+  correlator = new ScopeRequestCorrelator({ ttlMs: 60 * 60_000 });
   registerPluginFsHandlers(ipc as never, {
     identityRegistry: identity,
     pathScopeRegistry: scopes,
@@ -432,24 +432,24 @@ describe('每插件单飞(同一插件同时最多一个未决授权弹窗)', ()
       await expectReleased('p', 'deny');
     });
 
-    it('TTL 超时(主进程 sweep)→ 请求 reject,并通知 renderer 撤掉弹窗', async () => {
+    it('超时(主进程计时到点)→ 请求 reject,并通知 renderer 撤掉弹窗', async () => {
       const first = await fire('p', [join(root, 'a')]);
       await expectBlocked('p', 'ttl');
       vi.advanceTimersByTime(60 * 60_000);
-      correlator._sweep();
       await expect(first.pending).rejects.toThrow('request expired');
       expect(cancelledIds()).toEqual([first.requestId]);
       await expectReleased('p', 'ttl');
     });
 
-    it('过期后才到的决定(resolve 时发现已过期,sweep 尚未跑)', async () => {
+    it('超时收口后才到的决定 → 被拒收(unknown requestId),不授予', async () => {
       const first = await fire('p', [join(root, 'a')]);
       await expectBlocked('p', 'late');
-      vi.setSystemTime(Date.now() + 60 * 60_000); // 只拨时钟,不触发 correlator 的 GC 定时器
+      vi.advanceTimersByTime(60 * 60_000);
       await expect(
         ipc.invokeWithEvent(event, C.SCOPE_DECISION, first.requestId, 'grant'),
-      ).rejects.toThrow('request expired');
+      ).rejects.toThrow('unknown requestId');
       await expect(first.pending).rejects.toThrow('request expired');
+      expect(scopes.getScopes('p')).toEqual([]);
       await expectReleased('p', 'late');
     });
 

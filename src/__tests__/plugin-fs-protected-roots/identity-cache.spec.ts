@@ -185,7 +185,7 @@ describe.skipIf(process.platform === 'win32')('身份缓存接到 plugin-fs 全�
       protectedRoots: [appLink],
       identityCache: { getEpoch: pluginFsIdentityEpoch, now: () => clock },
     });
-    const correlator = new ScopeRequestCorrelator({ ttlMs: 60_000, gcIntervalMs: 60_000 });
+    const correlator = new ScopeRequestCorrelator({ ttlMs: 60_000 });
     correlators.push(correlator);
     registerPluginFsHandlers(ipc as never, {
       identityRegistry: identity,

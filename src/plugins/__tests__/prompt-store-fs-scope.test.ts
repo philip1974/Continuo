@@ -91,6 +91,7 @@ describe('permission prompt store fs-scope flow', () => {
       value: {
         pluginFsRaw: {
           onScopeRequestCancelled: vi.fn(() => () => {}),
+          _scopeShown: vi.fn(() => Promise.resolve()),
           onScopeRequest: vi.fn((cb: ScopeRequestHandler) => {
             handler = cb;
             return () => {

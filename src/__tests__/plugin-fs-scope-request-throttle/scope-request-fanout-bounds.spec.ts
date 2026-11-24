@@ -162,7 +162,7 @@ describe('plugin-fs 入口', () => {
     ipc = new StubIpcMain();
     const identity = new IdentityRegistry();
     scopes = new PathScopeRegistry(identity);
-    correlator = new ScopeRequestCorrelator({ ttlMs: 60 * 60_000, gcIntervalMs: 60 * 60_000 });
+    correlator = new ScopeRequestCorrelator({ ttlMs: 60 * 60_000 });
     registerPluginFsHandlers(ipc as never, {
       identityRegistry: identity,
       pathScopeRegistry: scopes,

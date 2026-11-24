@@ -59,6 +59,8 @@ export interface PluginFsRaw {
   requestScope(token: string, scopes: readonly PathScope[]): Promise<'grant' | 'deny'>;
   /** Called by Op20 PromptStore after user grants/denies; not by plugin code. */
   _scopeDecision(requestId: string, decision: 'grant' | 'deny'): Promise<void>;
+  /** 宿主 scope 弹窗开始显示该请求时回报(main 从此刻起计无应答超时);not by plugin code. */
+  _scopeShown(requestId: string): Promise<void>;
 
   /**
    * 订阅 main 推的 scope 授权请求(形态见 shared ScopeRequestPayload)。payload 原样转发、未经校验
@@ -118,6 +120,8 @@ export const pluginFsRaw: PluginFsRaw = {
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.REQUEST_SCOPE, token, scopes),
   _scopeDecision: (requestId, decision) =>
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.SCOPE_DECISION, requestId, decision),
+  _scopeShown: (requestId) =>
+    ipcRenderer.invoke(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_SHOWN, requestId),
 
   onScopeRequest: (handler) => {
     const wrap = (_event: IpcRendererEvent, payload: unknown) => handler(payload);
