@@ -35,6 +35,7 @@ import type { EnsureAuthorized } from '../services/mcp-tool-gates';
 import type { StdioSocketServer } from '../services/mcp-stdio-server.service';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { createTrailingNotifier } from '../lib/trailing-notifier';
+import { trySend } from '../lib/try-send';
 
 /** MCP 标准 method:tool 集变更通知. */
 const TOOLS_LIST_CHANGED = 'notifications/tools/list_changed';
@@ -69,15 +70,10 @@ export function startPluginMcpIpc(
 
   const localInvoke = createInvokeRemote({
     send(owner: PluginMcpToolOwner, channel, payload): boolean {
-      const wc = webContents.fromId(owner.wcId);
-      if (!wc || wc.isDestroyed()) {
-        // race(R32):wc 已销毁(插件窗口刚关 / reload)。返 false 让 createInvokeRemote 立即清
-        // pending + reject PLUGIN_GONE,而非静默 noop 让在途 invoke 干等满 30s timeout
-        // (登记 pending 与本次 send 之间 destroyed-cleanup 可能已先跑完,新 pending 无人 abort)。
-        return false;
-      }
-      wc.send(channel, payload);
-      return true;
+      // race(R32):wc 已销毁(插件窗口刚关 / reload)或 send 时恰好销毁 → false,让 createInvokeRemote 立即清
+      // pending + reject PLUGIN_GONE,而非静默 noop 让在途 invoke 干等满 30s timeout
+      // (登记 pending 与本次 send 之间 destroyed-cleanup 可能已先跑完,新 pending 无人 abort)。
+      return trySend(webContents.fromId(owner.wcId), channel, payload);
     },
   });
 

@@ -23,6 +23,7 @@ import {
 } from '../lib/child-spawn-hardening';
 import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { codedError } from '../../shared/error-message';
+import { trySend } from '../lib/try-send';
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const MAX_TIMEOUT_MS = SHELL_MAX_TIMEOUT_MS;
@@ -201,22 +202,10 @@ export function registerPluginShellStreamHandlers(ipcMain: IpcMain): void {
         kind: 'stdout' | 'stderr' | 'exit',
         payload: unknown,
       ): void => {
-        if (senderWc.isDestroyed()) return;
-        // race(R72,R71 同构):isDestroyed() 检查后、send 前 webContents 可能销毁(renderer
-        // reload/关窗),send 抛 "Object has been destroyed"。send 在 stdout/stderr data 回调
-        // (裸抛成主进程未捕获异常)和 child.on('error') 的「send('stderr') 再 finalize(-1)」
-        // 序列里被调:若 send 抛,后面的 finalize **不执行** → active 条目 + timeoutTimer 泄漏
-        // (spawn error 的子进程不发 'close',finalize 永不被触发,插件侧 stream 也等不到 exit)。
-        // send 包 try/catch 不冒泡,保证 child error/close 路径的 finalize 始终执行清 active/timer。
-        try {
-          senderWc.send(PLUGIN_SHELL_STREAM_CHANNELS.EVENT, {
-            streamId,
-            kind,
-            payload,
-          });
-        } catch {
-          // sender 已销毁:静默丢弃本次事件;stream 由 did-start-navigation/finalize 清理。
-        }
+        // race(R72,R71 同构):send 在 stdout/stderr data 回调与 child.on('error') 的「send('stderr') 再
+        // finalize(-1)」序列里被调,若抛则 finalize 不执行 → active 条目 + timeoutTimer 泄漏。trySend 不冒泡;
+        // sender 已销毁时静默丢弃本次事件,stream 由 did-start-navigation / finalize 清理。
+        trySend(senderWc, PLUGIN_SHELL_STREAM_CHANNELS.EVENT, { streamId, kind, payload });
       };
 
       const finalize = (

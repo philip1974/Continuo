@@ -50,6 +50,7 @@ import {
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
 import { mapInOrderBounded } from '../lib/map-in-order-bounded';
+import { trySend } from '../lib/try-send';
 
 export interface PluginFsDeps {
   identityRegistry: IdentityRegistry;
@@ -1152,24 +1153,23 @@ export function registerPluginFsHandlers(
         // race(R73,agent-auth R62 同族):createRequest 登记 pending 后、send 前 sender 可能销毁
         // (renderer reload/关窗),send 抛 "Object has been destroyed"。下方 try 只裹 `await promise`,
         // 不裹这次 send;若 send 裸抛,该 pending 会泄漏到 5min TTL 才被 sweep —— 插件侧
-        // requestScope() 一直挂着,且用户从未看到授权弹窗(发送失败),形成「授权请求假死」。send 包
-        // try/catch:失败时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
+        // requestScope() 一直挂着,且用户从未看到授权弹窗(发送失败),形成「授权请求假死」。投递失败
+        // (trySend 返回 false)时立即 cancelBySender 清掉本 sender 的 pending(sender 已死),按终态 deny
         // 收口。promise.catch 吞掉 cancel 触发的 reject,避免 unhandled rejection(此处不再 await 它)。
-        try {
-          // displayPath:弹窗展示用户实际授予的路径(`~` 已展开、符号链接已解析,与下方 grant 落地同源)。
-          // sandbox renderer 没有 process,自己展开不了 `~`。
-          event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, {
-            requestId,
-            pluginId,
-            scopes: scopes.map((s, i) => {
-              const displayPath = canonicalScopes[i]!.path;
-              // 展开后超长 → 不带(renderer 守卫会把超长 displayPath 判畸形并丢弃整个请求),回退显示原始 path。
-              return displayPath.length <= FS_PATH_MAX
-                ? { path: s.path, mode: s.mode, displayPath }
-                : { path: s.path, mode: s.mode };
-            }),
-          });
-        } catch {
+        // displayPath:弹窗展示用户实际授予的路径(`~` 已展开、符号链接已解析,与下方 grant 落地同源)。
+        // sandbox renderer 没有 process,自己展开不了 `~`。
+        const delivered = trySend(event.sender, PLUGIN_FS_CHANNELS.SCOPE_REQUEST, {
+          requestId,
+          pluginId,
+          scopes: scopes.map((s, i) => {
+            const displayPath = canonicalScopes[i]!.path;
+            // 展开后超长 → 不带(renderer 守卫会把超长 displayPath 判畸形并丢弃整个请求),回退显示原始 path。
+            return displayPath.length <= FS_PATH_MAX
+              ? { path: s.path, mode: s.mode, displayPath }
+              : { path: s.path, mode: s.mode };
+          }),
+        });
+        if (!delivered) {
           promise.catch(() => undefined);
           correlator.cancelBySender(event.sender.id);
           return 'deny';
@@ -1187,11 +1187,7 @@ export function registerPluginFsHandlers(
             if (event.sender.isDestroyed()) return 'deny';
             // renderer 还在而请求已在 main 侧收口(TTL / 插件注销):让它撤掉弹窗,否则弹窗滞留,用户点了才发现
             // 决定送不出去。
-            try {
-              event.sender.send(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, { requestId });
-            } catch {
-              // sender 恰好销毁:无弹窗可撤
-            }
+            trySend(event.sender, PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, { requestId });
             // 插件实例已注销(卸载 / 禁用 / reload):不是错误,也不是用户的拒绝(不记入冷却)。
             if (err.message === SCOPE_REQUEST_PLUGIN_UNREGISTERED) return 'deny';
           }

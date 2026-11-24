@@ -1,4 +1,5 @@
 import { PROTOCOL_URL_MAX_LEN } from '../shared/plugins-channels';
+import { trySend } from './lib/try-send';
 
 // race(R39/R40):co:// 深链分发到 renderer 的「先就绪后发送 + FIFO 缓冲」路由(main 侧)。
 //
@@ -40,9 +41,7 @@ export function drainPendingProtocolUrls(
   let sent = 0;
   while (sent < pending.length) {
     const url = pending[sent]!;
-    try {
-      wc.send(channel, { url });
-    } catch {
+    if (!trySend(wc, channel, { url })) {
       if (sent > 0) pending.splice(0, sent);
       return; // wc 已销毁:保留 url 在队列,停止本次 drain。
     }
@@ -127,12 +126,8 @@ export function routeProtocolUrl(url: string, deps: RouteProtocolUrlDeps): void 
   let delivered = false;
   for (let i = 0; i < readyCount; i++) {
     const w = ready![i]!;
-    try {
-      w.webContents.send(channel, { url });
-      delivered = true;
-    } catch {
-      // 该窗口已销毁:跳过,继续投其它就绪窗口。
-    }
+    // 该窗口已销毁:跳过,继续投其它就绪窗口。
+    if (trySend(w.webContents, channel, { url })) delivered = true;
   }
   if (!delivered) {
     // 所有就绪窗口都在 send 时销毁(极端竞态):入队,留给下一个报告

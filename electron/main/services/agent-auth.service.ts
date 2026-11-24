@@ -26,6 +26,7 @@ import { cancelAgentTerminalCreates } from './agent-terminal-inflight';
 import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
 import { onRendererDocumentGone } from '../lib/renderer-document-gone';
 import { discardTerminalSession } from './terminal-discard';
+import { trySend } from '../lib/try-send';
 
 // 弹窗显示 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)。
 // 从请求成为窗口的显示中弹窗起算(见 markDisplayed),到点后经 CANCELLED 通知 renderer 撤掉弹窗;此前从到达起算,排在别的
@@ -267,11 +268,7 @@ export async function requestAgentAuth(
       // 非应答结算(超时 / 排队兜底 / 取消):通知该窗口撤掉对应弹窗(renderer 不自行计时)。窗口已销毁 / 发送失败
       // 无弹窗可撤,忽略。撤销路径另有 REVOKED 广播,重复通知在 renderer 侧找不到槽即 no-op。
       if (cause === 'timeout' || cause === 'cancelled') {
-        try {
-          if (!win.isDestroyed()) win.webContents.send(AGENT_AUTH_CHANNELS.CANCELLED, { requestId });
-        } catch {
-          // 发送时窗口恰好销毁
-        }
+        trySend(win.isDestroyed() ? null : win.webContents, AGENT_AUTH_CHANNELS.CANCELLED, { requestId });
       }
       // 调用方都是先从 pending 删除再 settle → 此刻窗口内最早的未决请求即 renderer 接着显示的那个。
       markDisplayed(win.id);
@@ -296,9 +293,7 @@ export async function requestAgentAuth(
     // 而非抛),且已登记的 pending 条目 + timer 会泄漏到无应答超时才清 —— 期间发起请求的、
     // 仍存活的外部 agent 进程干等假死。投递失败立即清 pending + timer 并 resolve('denied'),
     // 与 plugin-mcp send-fail-abort 同族(那条已修,这是未传播的兄弟入口)。
-    try {
-      win.webContents.send(AGENT_AUTH_CHANNELS.REQUEST, payload);
-    } catch {
+    if (!trySend(win.isDestroyed() ? null : win.webContents, AGENT_AUTH_CHANNELS.REQUEST, payload)) {
       if (pending.delete(requestId)) settle('denied', 'cancelled');
     }
   });
