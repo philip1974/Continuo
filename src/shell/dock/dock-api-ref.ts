@@ -3,7 +3,7 @@
 //
 // 用法:focusPanel('editor') 切到对应 panel(若不存在不报错)。
 
-import type { DockviewApi } from 'dockview-react';
+import type { AddPanelOptions, DockviewApi } from 'dockview-react';
 import { activateDockPanel } from './wrap-panel-close';
 import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
@@ -90,12 +90,17 @@ export function openOrFocusPanel(
   });
 }
 
-function openOrFocusPanelNow(
-  api: DockviewApi,
+/**
+ * openOrFocusPanel 的同步版本:直接作用于给定 api,不排队。供已持有 api、布局已恢复的入口
+ *(Dock「⋯」菜单打开单例面板)复用;`position` 指定新建时落在哪(如菜单所在 group)。
+ */
+export function openOrFocusPanelNow(
+  api: Pick<DockviewApi, 'getPanel' | 'addPanel'>,
   id: string,
   component: string,
   title: string,
   titleKey?: string,
+  position?: AddPanelOptions['position'],
 ): void {
   const existing = api.getPanel(id);
   if (existing) {
@@ -106,6 +111,7 @@ function openOrFocusPanelNow(
     id,
     component,
     title,
+    ...(position ? { position } : {}),
     ...(titleKey ? { params: { titleKey } } : {}),
   });
 }

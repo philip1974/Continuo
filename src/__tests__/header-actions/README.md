@@ -9,7 +9,8 @@ activePanel=null 时 popout 按钮 disabled;popout 窗口内(组 `group.api.loca
 | 文件 | 职责 |
 |---|---|
 | `src/shell/dock/HeaderActions.tsx` | UI |
-| `src/plugins/registries/PanelRegistry.ts` | 可选 panel 类型 |
+| `src/plugins/registries/PanelRegistry.ts` | 可选 panel 类型(`multiInstance` 单例/多实例标记) |
+| `src/shell/dock/dock-api-ref.ts` | `openOrFocusPanelNow`(单例打开/聚焦) |
 
 ## 关键行为
 
@@ -24,8 +25,12 @@ activePanel=null 时 popout 按钮 disabled;popout 窗口内(组 `group.api.loca
 - 默认关闭(open=false)
 - 点击切换 open
 - open=true → role=menu 渲染 PanelRegistry.getAll() 每条
-- 点 menu item → containerApi.addPanel({ id, component, title, position }) + 关菜单(terminal 类型改走 `createUserTerminal`;菜单打开期间该类型已被注销 → 只关菜单,不创建)
-- panel id 自增计数(同 type 多次点产生不同 id);生成的 id 已被现有面板占用(计数器每次启动归零,
+- 点 menu item → 按 PanelSpec 打开 + 关菜单(terminal 类型改走 `createUserTerminal`;菜单打开期间该类型已被注销 → 只关菜单,不创建)
+- **单例类型**(PanelSpec 未声明 `multiInstance: true`:editor / settings / 插件面板)→ 按固定 id = type
+  打开(`openOrFocusPanelNow`,新建时落在菜单所在 group):已有同 id 面板 → 只聚焦,不另开。与 ⌘, toggle、
+  DockShell editor 激活、`app.dock.openPanel` 用同一 id,故 ⋯ 打开的 Settings 能被 ⌘, 关闭,不会出现两个 EditorPanel
+- **多实例类型**(`multiInstance: true`:terminal / output / debug)→ containerApi.addPanel({ id, component, title, position }),
+  panel id 自增计数(同 type 多次点产生不同 id);生成的 id 已被现有面板占用(计数器每次启动归零,
   而持久化布局会恢复旧 id)→ 跳到下一个空闲 id
 - addPanel 抛错 → 菜单仍关闭 + notify.error(`shell.dock.add_panel_failed`)
 

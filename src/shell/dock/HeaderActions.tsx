@@ -8,6 +8,7 @@ import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
+import { openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
 import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
 
@@ -53,6 +54,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       key: string,
       label: string,
       titleKey: string | undefined,
+      multiInstance: boolean,
       menu: DropdownMenuControls,
     ) => {
       if (key === TERMINAL_PANEL_TYPE) {
@@ -67,13 +69,20 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         return;
       }
       try {
-        containerApi.addPanel({
-          id: nextPanelId(key, (id) => containerApi.getPanel(id) != null),
-          component: key,
-          title: label,
-          position: { referenceGroup: group },
-          ...(titleKey ? { params: { titleKey } } : {}),
-        });
+        const position = { referenceGroup: group };
+        if (multiInstance) {
+          containerApi.addPanel({
+            id: nextPanelId(key, (id) => containerApi.getPanel(id) != null),
+            component: key,
+            title: label,
+            position,
+            ...(titleKey ? { params: { titleKey } } : {}),
+          });
+        } else {
+          // 单例(PanelSpec 未声明 multiInstance):与 ⌘, / DockShell editor / app.dock.openPanel 同按固定
+          // id = type 打开,已有则聚焦。
+          openOrFocusPanelNow(containerApi, key, key, label, titleKey, position);
+        }
       } catch (err) {
         // addPanel 同步抛(id 冲突 / component 不存在等):给可见反馈,菜单关闭并还原焦点。
         console.warn('[dock] add panel failed', err);
@@ -164,7 +173,13 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
                     menu.closeAndRestore();
                     return;
                   }
-                  void addPanel(c.type, tk(live.titleKey, live.title), live.titleKey, menu);
+                  void addPanel(
+                    c.type,
+                    tk(live.titleKey, live.title),
+                    live.titleKey,
+                    live.multiInstance === true,
+                    menu,
+                  );
                 }}
               >
                 {label}

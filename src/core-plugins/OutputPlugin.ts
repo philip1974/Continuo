@@ -8,6 +8,7 @@ export default class OutputPlugin extends Plugin {
       type: 'output',
       title: 'Output',
       titleKey: 'panels.output.title',
+      multiInstance: true,
       factory: () => createElement(Output),
     });
   }

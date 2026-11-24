@@ -26,7 +26,7 @@ A `Plugin` subclass calls these from inside `onload()`. Each returns a `Disposab
 
 | Method on `Plugin` | What it contributes |
 |---|---|
-| `registerPanel(spec)` | A dockview panel type that the user (header "more" menu) or the plugin itself (`app.dock.openPanel(id)`) can open. |
+| `registerPanel(spec)` | A dockview panel type that the user (header "more" menu) or the plugin itself (`app.dock.openPanel(id)`) can open. Singleton by default (panel id = type, the menu focuses an existing one); set `multiInstance: true` to let the menu open several. |
 | `addCommand(spec)` | A command + optional hotkey; surfaces in the command palette. |
 | `addStatusBarItem(spec)` | A status-bar segment (left or right side, with priority). |
 | `addRibbonAction(spec)` | A clickable icon in the IconSidebar ribbon. |

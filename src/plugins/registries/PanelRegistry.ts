@@ -25,6 +25,12 @@ export interface PanelSpec {
    * useDockLocaleSync 在 locale 变化时遍历 panels 调 panel.api.setTitle(tWithFallback(titleKey, title))。
    */
   readonly titleKey?: string;
+  /**
+   * true = 允许多开(Dock「⋯」菜单每次新建 `<type>-N`)。缺省为单例:面板 id 固定为 type,
+   * 与 ⌘, toggle / DockShell editor 激活 / app.dock.openPanel 等按固定 id 打开的入口一致 ——
+   * 「⋯」遇已存在的同 id 面板只聚焦,不另开(否则 ⌘, 关不掉、两个 EditorPanel 互相覆盖内容)。
+   */
+  readonly multiInstance?: boolean;
 }
 
 // 边界(E37,E35/E36 兄弟 registry):register 接受插件 PanelSpec 无运行时校验。type/title/titleKey

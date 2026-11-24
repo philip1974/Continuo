@@ -12,6 +12,7 @@ export default class DebugPanelPlugin extends Plugin {
       type: 'debug',
       title: 'Debug',
       titleKey: 'panels.debug.title',
+      multiInstance: true,
       factory: lazyPanel(DebugPanel),
     });
   }

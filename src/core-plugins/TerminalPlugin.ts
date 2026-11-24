@@ -24,6 +24,7 @@ export default class TerminalPlugin extends Plugin {
       type: TERMINAL_PANEL_TYPE,
       title: 'Terminal',
       titleKey: 'panels.terminal.title',
+      multiInstance: true,
       factory: lazyPanel<IDockviewPanelProps<TerminalPanelViewParams>>(
         TerminalPanelView,
       ),

@@ -8,6 +8,10 @@ import { HeaderActions } from '../../shell/dock/HeaderActions';
 import { coApp } from '../../plugins/co-app';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
 import { notify } from '../../notifications/notify';
+import type { DockviewApi } from 'dockview-react';
+import { setDockApi } from '../../shell/dock/dock-api-ref';
+import { toggleSettingsPanel } from '../../lib/toggle-settings-panel';
+import { bootCorePlugins, shutdownCorePlugins } from '../../core-plugins';
 
 const createUserTerminalMock = vi.hoisted(() => vi.fn(async (): Promise<string | null> => null));
 vi.mock('../../shell/dock/create-user-terminal', () => ({ createUserTerminal: createUserTerminalMock }));
@@ -215,10 +219,11 @@ describe('HeaderActions — 更多操作菜单', () => {
     expect(menu!.textContent).toContain('Terminal');
   });
 
-  it('点 menu item → addPanel({id,component,title,position}) + 关菜单', () => {
+  it('点 menu item(多实例类型)→ addPanel({id,component,title,position}) + 关菜单', () => {
     coApp.panels.register({
       type: 'explorer',
       title: 'Explorer',
+      multiInstance: true,
       factory: () => null,
     });
     const props = makeProps();
@@ -249,7 +254,7 @@ describe('HeaderActions — 更多操作菜单', () => {
 
   // 计数器每次启动归零,而持久化布局会恢复 `output-1` 这类 id;dockview 对重复 id 直接抛错。
   it('生成的 panel id 已被占用(重启后恢复的面板)→ 跳过,用下一个空闲 id', () => {
-    coApp.panels.register({ type: 'explorer', title: 'Explorer', factory: () => null });
+    coApp.panels.register({ type: 'explorer', title: 'Explorer', multiInstance: true, factory: () => null });
     const taken = new Set<string>();
     const props = makeProps({
       containerApi: { getPanel: vi.fn((id: string) => (taken.has(id) ? { id } : undefined)) },
@@ -398,5 +403,146 @@ describe('HeaderActions — 更多操作菜单', () => {
     expect(document.querySelector('[role=menu]')!.textContent).toContain(
       'NewType',
     );
+  });
+});
+
+// 单例面板(PanelSpec 未声明 multiInstance:editor / settings / 插件面板):其它入口(⌘, toggle、
+// DockShell editor 激活、app.dock.openPanel)都按固定 id = type 打开。⋯ 菜单若另生成 `settings-1` /
+// `editor-1`,⌘, 关不掉它反而再开一个;两个 EditorPanel 各挂一份编辑器互相覆盖内容。
+describe('HeaderActions — 单例面板类型', () => {
+  interface FakePanel {
+    id: string;
+    api: { id: string; isActive: boolean; setActive: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> };
+  }
+  function makeDock() {
+    const panels = new Map<string, FakePanel>();
+    const addPanel = vi.fn((opts: { id: string }) => {
+      if (panels.has(opts.id)) throw new Error(`panel with id ${opts.id} already exists`);
+      const panel: FakePanel = {
+        id: opts.id,
+        api: {
+          id: opts.id,
+          isActive: true,
+          setActive: vi.fn(),
+          close: vi.fn(() => panels.delete(opts.id)),
+        },
+      };
+      panels.set(opts.id, panel);
+      return panel;
+    });
+    const getPanel = vi.fn((id: string) => panels.get(id));
+    return { panels, addPanel, getPanel };
+  }
+  function openMenuAndPick(container: HTMLElement, label: string): void {
+    fireEvent.click(
+      container.querySelector(
+        `button[aria-label="${t('panels.explorer.btn.more_actions')}"]`,
+      ) as HTMLButtonElement,
+    );
+    const item = [...document.querySelectorAll('[role=menuitem]')].find(
+      (el) => el.textContent === label,
+    ) as HTMLElement;
+    fireEvent.click(item);
+  }
+
+  afterEach(() => setDockApi(null));
+
+  it.each([
+    ['editor', 'Editor'],
+    ['settings', 'Settings'],
+  ])('⋯ 打开 %s 两次 → 只一个面板(id = type),第二次聚焦已有', (type, title) => {
+    coApp.panels.register({ type, title, factory: () => null });
+    const dock = makeDock();
+    const props = makeProps({ containerApi: { addPanel: dock.addPanel, getPanel: dock.getPanel } });
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    openMenuAndPick(container, title);
+    expect(dock.addPanel).toHaveBeenCalledTimes(1);
+    expect(dock.addPanel.mock.calls[0]![0]).toMatchObject({
+      id: type,
+      component: type,
+      position: { referenceGroup: props.group },
+    });
+
+    openMenuAndPick(container, title);
+    expect(dock.addPanel).toHaveBeenCalledTimes(1);
+    expect([...dock.panels.keys()]).toEqual([type]);
+    expect(dock.panels.get(type)!.api.setActive).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role=menu]')).toBeNull();
+  });
+
+  it('插件面板(未声明 multiInstance)同为单例,与 app.dock.openPanel 的固定 id 一致', () => {
+    coApp.panels.register({ type: 'acme.viewer', title: 'Viewer', factory: () => null });
+    const dock = makeDock();
+    const props = makeProps({ containerApi: { addPanel: dock.addPanel, getPanel: dock.getPanel } });
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    openMenuAndPick(container, 'Viewer');
+    openMenuAndPick(container, 'Viewer');
+    expect([...dock.panels.keys()]).toEqual(['acme.viewer']);
+  });
+
+  it('⋯ 打开的 Settings 能被 ⌘,(toggleSettingsPanel)切换关闭,且不另开一个', () => {
+    coApp.panels.register({ type: 'settings', title: 'Settings', factory: () => null });
+    const dock = makeDock();
+    const props = makeProps({ containerApi: { addPanel: dock.addPanel, getPanel: dock.getPanel } });
+    setDockApi(props.containerApi as unknown as DockviewApi);
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    openMenuAndPick(container, 'Settings');
+    const opened = dock.panels.get('settings')!;
+    expect(opened).toBeDefined();
+
+    toggleSettingsPanel();
+    expect(opened.api.close).toHaveBeenCalledTimes(1);
+    expect(dock.addPanel).toHaveBeenCalledTimes(1);
+    expect(dock.panels.size).toBe(0);
+  });
+
+  it('多实例类型(multiInstance: true)仍每次新开不同 id', () => {
+    coApp.panels.register({ type: 'output', title: 'Output', multiInstance: true, factory: () => null });
+    const dock = makeDock();
+    const props = makeProps({ containerApi: { addPanel: dock.addPanel, getPanel: dock.getPanel } });
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    openMenuAndPick(container, 'Output');
+    openMenuAndPick(container, 'Output');
+    expect(dock.panels.size).toBe(2);
+    for (const id of dock.panels.keys()) expect(id).toMatch(/^output-\d+$/);
+  });
+
+  it('terminal 仍可多开:每次都走 createUserTerminal', async () => {
+    coApp.panels.register({ type: 'terminal', title: 'Terminal', multiInstance: true, factory: () => null });
+    createUserTerminalMock.mockReset();
+    createUserTerminalMock.mockResolvedValue('t-x');
+    const dock = makeDock();
+    const props = makeProps({ containerApi: { addPanel: dock.addPanel, getPanel: dock.getPanel } });
+    const { container } = render(
+      <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
+    );
+    openMenuAndPick(container, 'Terminal');
+    await vi.waitFor(() => expect(document.querySelector('[role=menu]')).toBeNull());
+    openMenuAndPick(container, 'Terminal');
+    await vi.waitFor(() => expect(createUserTerminalMock).toHaveBeenCalledTimes(2));
+    expect(dock.addPanel).not.toHaveBeenCalled();
+  });
+
+  it('内置面板标记:terminal / output / debug 多实例,editor / settings 单例', async () => {
+    await bootCorePlugins();
+    try {
+      const multi = (type: string) => coApp.panels.get(type)?.multiInstance === true;
+      expect(coApp.panels.get('editor')).toBeDefined();
+      expect(multi('editor')).toBe(false);
+      expect(multi('settings')).toBe(false);
+      expect(multi('terminal')).toBe(true);
+      expect(multi('output')).toBe(true);
+      expect(multi('debug')).toBe(true);
+    } finally {
+      await shutdownCorePlugins();
+    }
   });
 });
