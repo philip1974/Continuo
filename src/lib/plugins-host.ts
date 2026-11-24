@@ -3,22 +3,13 @@
 //
 // main.js 文本 → Blob URL → dynamic import,绕过 file:// 跨进程加载限制。
 
-import type { ManagerHost } from '@/plugins/PluginManager';
+import type { ManagerHost, PluginDirInfo } from '@/plugins/PluginManager';
+import type { IpcPluginDirListing } from '../../electron/shared/plugins-channels';
 import { coApi } from './co-api';
 import { codedError } from '../../electron/shared/error-message';
 
-interface PluginDirMeta {
-  readonly id: string;
-  readonly manifestText: string;
-  /** 列举时 manifest 的版本令牌,拉 main 时回传给 main 端校验(manifest 未变才给源码). */
-  readonly manifestHash: string;
-}
-
-type PluginDirInfo = {
-  readonly id: string;
-  readonly manifestText: string;
-  readonly moduleUrl: string;
-};
+// 列举项(含 manifest 版本令牌,拉 main 时回传校验)与 PluginManager 的目录信息:取各自的单一来源,不再逐字段手抄。
+type PluginDirMeta = IpcPluginDirListing;
 
 const EMPTY_PLUGIN_DIR_INFOS: PluginDirInfo[] = [];
 
