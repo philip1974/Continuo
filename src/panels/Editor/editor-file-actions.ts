@@ -17,12 +17,14 @@ import {
   usesMilkdownEngine,
   getUserActivationGen,
   useEditorStore,
+  type EditorTab,
 } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
 import type { FsReadFileResult } from '../../../electron/shared/fs-channels';
 import {
   findEditorFileTabById,
   findEditorFileTabByPath,
+  tabMatchesDiskPath,
 } from './editor-tab-lookup';
 import { getSavedDiskStat, ownSaveStatCheck, recordSavedDiskStat } from './saved-disk-stat';
 import {
@@ -78,7 +80,9 @@ export async function openFileByPath(
   path: string,
   deps: EditorFileDeps,
 ): Promise<FileOpResult> {
-  const r = await openTabWith(path, () => deps.fs.readFile(path));
+  const r = await openTabWith(path, () => deps.fs.readFile(path), (tabs) =>
+    findEditorFileTabByPath(tabs, path),
+  );
   return r.ok ? OPENED : r;
 }
 
@@ -88,19 +92,26 @@ const OPENED: FileOpResult = { ok: true, data: undefined };
  * 安全(插件 editor.openFile):用主进程已校验并读出的内容开标签,不再经宿主受信通道按路径另读一次(见
  * src/__tests__/plugin-editor-open-verified/)。path 必须是主进程返回的 canonical 路径(不含链接,所以不带 realPath)。
  * 其余与 openFileByPath 相同:已开过 → 只切换(不覆盖已开标签的内容);用户激活代际;读后复检并发打开。
+ * 「已开过」:canonical 路径或插件给的原路径 requestedPath 命中已有标签的打开路径或 realPath —— 用户经链接
+ *(/tmp → /private/tmp、工作区软链)打开的标签 filePath 不是 canonical,只比 canonical 会多开一个同文件标签、各自记脏。
+ * 只是切换到已有标签,内容仍只来自主进程校验后的读取(不按 requestedPath 读任何东西)。
  * 新建的标签带 pluginOpenedPath 标记(不进会话快照,关闭时释放主进程记录)。data = 是否新建了标签。
  */
 export function openFileWithContent(
   path: string,
   content: string,
+  requestedPath: string = path,
 ): Promise<IpcResult<boolean>> {
-  return openTabWith(path, async () => ({ ok: true, data: content }), path);
+  const find = (tabs: readonly EditorTab[]): EditorTab | null =>
+    tabs.find((t) => tabMatchesDiskPath(t, path) || tabMatchesDiskPath(t, requestedPath)) ?? null;
+  return openTabWith(path, async () => ({ ok: true, data: content }), find, path);
 }
 
-/** data = 是否新建了标签(false:已开着只切换)。 */
+/** data = 是否新建了标签(false:已开着只切换)。findExisting:判定「已开过」的查找(读前、读后各查一次)。 */
 async function openTabWith(
   path: string,
   read: () => Promise<FsReadFileResult>,
+  findExisting: (tabs: readonly EditorTab[]) => EditorTab | null,
   pluginOpenedPath?: string,
 ): Promise<IpcResult<boolean>> {
   const store = useEditorStore;
@@ -108,7 +119,7 @@ async function openTabWith(
   // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
   // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
   // (大小写可能与传入 path 不同)。POSIX 大小写敏感不变(pathEquals 在非 Windows 即 ===)。
-  const existing = findEditorFileTabByPath(store.getState().tabs, path);
+  const existing = findExisting(store.getState().tabs);
   if (existing) {
     store.getState().switchTab(existing.id);
     return { ok: true, data: false };
@@ -134,7 +145,7 @@ async function openTabWith(
   // existing,读后各自 createTab → 同一磁盘文件出现两个 tab,分别保存互相覆盖(重现 X10
   // pathEquals 想防的数据丢失)。读后、建 tab 前再用 pathEquals 复检 store,已存在则只切换。
   const latest = my === getUserActivationGen();
-  const raced = findEditorFileTabByPath(store.getState().tabs, path);
+  const raced = findExisting(store.getState().tabs);
   if (raced) {
     if (latest) store.getState().switchTab(raced.id);
     return { ok: true, data: false };

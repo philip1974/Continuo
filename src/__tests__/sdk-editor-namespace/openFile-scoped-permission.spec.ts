@@ -86,7 +86,7 @@ describe('createScopedApp editor permission gate', () => {
       'token-a',
       '/work/a.ts',
     );
-    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/work/a.ts', 'verified content', { line: 4 });
+    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/work/a.ts', 'verified content', { line: 4 }, '/work/a.ts');
     expect(app.editor.openFile).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: true, lineApplied: false });
   });
@@ -138,7 +138,7 @@ describe('createScopedApp editor permission gate', () => {
     const scoped = createScopedApp(app, 'plugin.a', store, 'token-a');
     const result = await scoped.editor.openFile('/work/ok.ts');
     expect(result).toMatchObject({ ok: true });
-    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/work/ok.ts', 'verified content', undefined);
+    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/work/ok.ts', 'verified content', undefined, '/work/ok.ts');
   });
   // 安全(L1):主进程持锁读取的失败码映射到既有 SDK 失败分类;canonicalPath 与插件给的路径不同时按 canonical 开。
   it('L1 主进程读取失败 → 既有失败分类(FS_NOT_FILE 原样,FS_NOT_UTF8 等归 EXCEPTION),不开标签', async () => {
@@ -153,13 +153,13 @@ describe('createScopedApp editor permission gate', () => {
     expect(app.editor.openVerifiedFile).not.toHaveBeenCalled();
   });
 
-  it('L1 经链接打开 → 按主进程返回的 canonicalPath 开标签', async () => {
+  it('L1 经链接打开 → 按主进程返回的 canonicalPath 开标签;原路径只随附用于判定已开标签', async () => {
     const app = makeCoApp();
     const store = new InMemoryPermissionStore();
     await store.grant('plugin.a', ['fs']);
     const scoped = createScopedApp(app, 'plugin.a', store, 'token-a');
     vi.mocked(pluginFsRawWithRead.readForEditor).mockResolvedValueOnce(verified('/real/a.ts', 'x'));
     await scoped.editor.openFile('/work/alias.ts');
-    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/real/a.ts', 'x', undefined);
+    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/real/a.ts', 'x', undefined, '/work/alias.ts');
   });
 });

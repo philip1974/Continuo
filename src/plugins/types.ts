@@ -111,12 +111,14 @@ export interface CoEditorApi {
  *(plugin-fs:read-for-editor),再用这份已校验内容在 canonicalPath 上开标签,不按插件给的路径另读一次。
  * 调用方把那次读取在主进程记下的一份「插件打开的路径」交给它处置(新建了标签则由标签持有,否则当即释放);
  * 读取成功却不调用它时(如插件已吊销)调用方须自行 releasePluginOpenedPath(见 plugin-opened-tabs)。
+ * requestedPath:插件给的原路径,只用于判定「已开着」(命中用户经该路径打开的标签 → 只切换),不据它读取。
  */
 export interface CoHostEditorApi extends CoEditorApi {
   openVerifiedFile(
     canonicalPath: string,
     content: string,
     opts?: EditorOpenOptions,
+    requestedPath?: string,
   ): Promise<EditorOpenResult>;
 }
 

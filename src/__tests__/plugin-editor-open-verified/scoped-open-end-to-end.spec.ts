@@ -57,7 +57,7 @@ const { createScopedApp } = await import('@/plugins/scoped-app');
 const { InMemoryPermissionStore } = await import('@/plugins/testing/in-memory-stores');
 const { coApp } = await import('@/plugins/co-app');
 const { useEditorStore } = await import('@/stores/editor.store');
-const { saveFile } = await import('@/panels/Editor/editor-file-actions');
+const { openFileByPath, saveFile } = await import('@/panels/Editor/editor-file-actions');
 
 const PLUGIN = 'plugin.opener';
 const SECRET = '{"ORIGINAL":1}';
@@ -232,5 +232,47 @@ describe.skipIf(process.platform === 'win32')('插件打开的标签:打开后�
     useEditorStore.getState().updateContent(P, 'user edit');
     expect(await saveFile(P, { fs: coApi.fs })).toMatchObject({ ok: true });
     expect(await readFile(P, 'utf-8')).toBe('user edit');
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('用户已打开的文件,插件经别名路径再打开 → 只切换到用户的标签', () => {
+  const OTHER = 'other.txt';
+  const userOpens = async (path: string): Promise<void> => {
+    expect(await openFileByPath(path, { fs: coApi.fs })).toMatchObject({ ok: true });
+  };
+  /** 再开一个别的标签让活动标签移走,才能看出插件打开是否切回用户的标签。 */
+  const moveActiveAway = async (): Promise<void> => {
+    const other = join(work, OTHER);
+    await writeFile(other, 'x');
+    await userOpens(other);
+  };
+
+  it('用户经目录链接(如 /tmp → /private/tmp)打开,插件用同一原路径打开 → 不新建 canonical 标签', async () => {
+    const viaLink = join(work, 'linkA');
+    await symlink(dirA, viaLink);
+    const userPath = join(viaLink, 'secret.json');
+    await userOpens(userPath);
+    useEditorStore.getState().updateContent(userPath, 'unsaved user edit');
+    await moveActiveAway();
+
+    expect(await plugin.editor.openFile(userPath)).toMatchObject({ ok: true });
+    const { tabs, activeTabId } = useEditorStore.getState();
+    expect(tabs.map((t) => t.filePath)).toEqual([userPath, join(work, OTHER)]);
+    expect(activeTabId).toBe(userPath);
+    expect(tabs[0]!.content).toBe('unsaved user edit');
+    expect(tabs[0]!.pluginOpenedPath).toBeUndefined();
+  });
+
+  it('用户经文件链接打开(标签带 realPath),插件用真实路径打开 → 切到该标签', async () => {
+    const alias = join(work, 'alias.json');
+    await symlink(P, alias);
+    await userOpens(alias);
+    expect(useEditorStore.getState().tabs[0]!.realPath).toBe(P);
+    await moveActiveAway();
+
+    expect(await plugin.editor.openFile(P)).toMatchObject({ ok: true });
+    const { tabs, activeTabId } = useEditorStore.getState();
+    expect(tabs.map((t) => t.filePath)).toEqual([alias, join(work, OTHER)]);
+    expect(activeTabId).toBe(alias);
   });
 });

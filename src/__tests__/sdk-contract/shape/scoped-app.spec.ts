@@ -206,9 +206,12 @@ describe('sdk-contract shape: ScopedApp permission and token contract', () => {
       'token-a',
       '/tmp/a.txt',
     );
-    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith('/tmp/a.txt', 'verified', {
-      line: 2,
-    });
+    expect(app.editor.openVerifiedFile).toHaveBeenCalledWith(
+      '/tmp/a.txt',
+      'verified',
+      { line: 2 },
+      '/tmp/a.txt',
+    );
     expect(app.editor.openFile).not.toHaveBeenCalled();
   });
 });

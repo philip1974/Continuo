@@ -726,7 +726,7 @@ function makeEditor(
         releasePluginOpenedPath(read.canonicalPath);
         return revokedResult;
       }
-      return rawEditor.openVerifiedFile(read.canonicalPath, read.content, opts);
+      return rawEditor.openVerifiedFile(read.canonicalPath, read.content, opts, path);
     },
   };
 }

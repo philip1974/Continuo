@@ -97,13 +97,13 @@ const editor: CoHostEditorApi = {
   // 安全:插件发起的 openFile 由 scoped app 先经主进程「持锁校验 + 读取」,再用这份内容开标签(见 CoHostEditorApi)。
   // 那次读取在主进程记下的一份「插件打开的路径」归这里处置:新建了标签 → 交给标签(关闭时释放,见
   // plugin-opened-tabs);否则当即释放。
-  async openVerifiedFile(canonicalPath, content, opts) {
+  async openVerifiedFile(canonicalPath, content, opts, requestedPath) {
     ensurePluginOpenedTabTracking();
     let adopted = false;
     try {
       if (!isAbsolutePath(canonicalPath)) return invalidPathResult;
       return await openInEditor(canonicalPath, opts, async () => {
-        const r = await openFileWithContent(canonicalPath, content);
+        const r = await openFileWithContent(canonicalPath, content, requestedPath);
         if (!r.ok) return r;
         adopted = r.data;
         return OPENED;
