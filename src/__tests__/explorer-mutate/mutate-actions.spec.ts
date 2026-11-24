@@ -315,6 +315,8 @@ describe('normalizeLeafNameInput / renameTarget', () => {
     expect(renameTarget('/w/a.md', '')).toBeNull();
     expect(renameTarget('/w/a.md', ' b.md ')).toBe('b.md');
     expect(renameTarget('/w/a.md', 'A.md')).toBe('A.md');
+    // 原名本身带前导空格(合法名):不改直接回车 → null,不得被 trim 成另一个名字静默改名。
+    expect(renameTarget('/w/ a.md', ' a.md')).toBeNull();
   });
 });
 

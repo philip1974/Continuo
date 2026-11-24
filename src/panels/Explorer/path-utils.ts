@@ -94,7 +94,10 @@ export function normalizeLeafNameInput(raw: string): string | null {
  *(初值即原名),不拦则「改名到自身」成功后剪贴板 prune 掉该路径、剪切标记凭空消失。仅大小写不同仍是改名。
  */
 export function renameTarget(oldPath: string, raw: string): string | null {
+  const current = basename(oldPath);
+  // 先比原始输入:原名本身可带前导空格(合法),trim 后再比会把「未改名」误判为改名而静默改掉文件名。
+  if (raw === current) return null;
   const name = normalizeLeafNameInput(raw);
-  return name === null || name === basename(oldPath) ? null : name;
+  return name === null || name === current ? null : name;
 }
 
