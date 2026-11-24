@@ -1,10 +1,7 @@
 // 开 Settings → 关 → Cmd+Shift+P → CommandPalette 仍可唤起.
 import { test, expect } from './fixtures/electron-app';
-
-const SETTINGS = /^(设置|Settings|설정)$/;
-const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
+import { SETTINGS, CLOSE_SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { COMMAND_SEARCH } from './helpers/palette';
 
 test('Settings 开关后 Cmd+Shift+P 仍唤起 CommandPalette', async ({
   window,

@@ -1,10 +1,8 @@
 // Settings panel 是 dockview panel,close × 关闭后回到默认 Editor 视图.
 import { test, expect } from './fixtures/electron-app';
 import { openOutputPanel } from './helpers/output';
+import { SETTINGS, CLOSE_SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 const NO_FILE_OPEN = /^(未打开文件|No file open|열린 파일 없음)$/;
 
 test('打开 Settings → 关闭 → 回到 Editor', async ({ window }) => {

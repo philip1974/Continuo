@@ -1,8 +1,7 @@
 // Settings 内多 nav tab 切换 → 内容区随之切换.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 const GENERAL = /^(通用|General|일반)$/;
 const EDITOR = /^(编辑器|Editor|편집기)$/;
 const TERMINAL = /^(终端|Terminal|터미널)$/;

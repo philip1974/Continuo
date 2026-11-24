@@ -1,8 +1,6 @@
 // registerCommand 注册一条命令 → CommandPalette 输入命令名能匹配到.
 import { test, expect } from './fixtures/electron-app';
-
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
-const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
+import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 
 test('动态注册 e2e.test → 命令面板搜「e2e.test」可见', async ({ window }) => {
   await window.waitForFunction(

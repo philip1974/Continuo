@@ -1,10 +1,8 @@
 // Settings panel 在 dock 中作为 panel 渲染,不是 Modal。
 // 测左侧 nav 切换 + 搜索过滤模式。
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV, SEARCH_SETTINGS } from './helpers/settings';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
-const SEARCH_SETTINGS = /^(搜索设置|Search settings|설정 검색)/;
 const GENERAL = /^(通用|General|일반)$/;
 const EDITOR = /^(编辑器|Editor|편집기)$/;
 const EXPLORER = /^(资源管理器|Explorer|탐색기)$/;

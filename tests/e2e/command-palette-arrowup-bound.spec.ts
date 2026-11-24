@@ -1,10 +1,7 @@
 // CommandPalette ArrowUp 在 selectedIndex=0 → wrap 到末项.
 import { test, expect } from './fixtures/electron-app';
-import { ROW_SELECTED } from './helpers/palette';
-
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
-const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
+import { ROW_SELECTED, COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
+import { SETTINGS } from './helpers/settings';
 
 test('ArrowUp 在第一项 → wrap 到末项', async ({ window }) => {
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({

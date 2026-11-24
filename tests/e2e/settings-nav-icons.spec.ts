@@ -1,8 +1,6 @@
 // Settings nav 各 tab 行渲染 svg 图标(GeneralIcon / EditorIcon / ExplorerIcon 等).
 import { test, expect } from './fixtures/electron-app';
-
-const SETTINGS = /^(设置|Settings|설정)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('Settings nav 各 tab 按钮含 svg 图标', async ({ window }) => {
   await window.getByRole('button', { name: SETTINGS }).click();

@@ -1,9 +1,9 @@
 // 切 tab 再切回 → editor.store 中 tab.content 保留(CodeMirror remount,但
 // content 来自 store 已修改值).
 import { test, expect } from './fixtures/with-workspace';
+import { EDITOR_TABS } from './helpers/editor';
 
 const UNSAVED_CHANGES = /^(未保存的更改|Unsaved changes|저장되지 않은 변경 사항)$/;
-const EDITOR_TABS = /^(编辑器标签|Editor tabs|편집기 탭)$/;
 
 test('编辑 a.ts → 切 b.ts → 切回 a.ts → content 保留(未保存)', async ({
   window,

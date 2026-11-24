@@ -1,9 +1,8 @@
 // CommandPalette 列表项右侧显示 hotkey 后缀(KeyCap 切片).
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS } from './helpers/settings';
+import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
-const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
 const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
 
 async function openPalette(window: import('@playwright/test').Page): Promise<void> {

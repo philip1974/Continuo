@@ -1,8 +1,7 @@
 // Quick Open 选 a.ts 打开 → 原 README.md tab 保留,a.ts 作为新 tab 打开(成为 active).
 import { test, expect } from './fixtures/with-workspace';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
-
-const EDITOR_TABS = /^(编辑器标签|Editor tabs|편집기 탭)$/;
+import { EDITOR_TABS } from './helpers/editor';
 
 test('打开 README.md → Quick Open 选 a.ts → README.md tab 仍在 + a.ts 新 tab', async ({
   window,

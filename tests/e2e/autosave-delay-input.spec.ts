@@ -1,8 +1,6 @@
 // autoSave.delayMs input 显示 store 值 + 改后 store 同步.
 import { test, expect } from './fixtures/electron-app';
-
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
-const EDITOR_TAB = /^(编辑器|Editor|편집기)$/;
+import { SETTINGS_NAV, EDITOR_TAB } from './helpers/settings';
 
 test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=4000', async ({
   window,

@@ -11,8 +11,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { SETTINGS } from './helpers/settings';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
 const FLUSH_ACK_TIMEOUT_MS = 10_000;
 
 async function launch(): Promise<{

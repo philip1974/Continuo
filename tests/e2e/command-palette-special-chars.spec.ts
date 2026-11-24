@@ -1,8 +1,8 @@
 // CommandPalette 输入 regex 元字符 / 中文 / emoji,fuzzy 不抛 + UI 仍正常.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS } from './helpers/settings';
+import { COMMAND_SEARCH } from './helpers/palette';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
 const TRICKY = ['(.*)+?', '[abc\\]', '中文搜索', '😀✨', '"`<>$&|;'];
 
 async function openPalette(window: import('@playwright/test').Page): Promise<void> {

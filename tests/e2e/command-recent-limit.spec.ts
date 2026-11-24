@@ -1,12 +1,10 @@
 // CommandPalette recent:MAX_RECENT=20,LRU 顺序;
 // 重复执行同 id → 移到头部不重复.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, CLOSE_SETTINGS } from './helpers/settings';
+import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
-const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
 const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
-const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
 
 async function openPalette(window: import('@playwright/test').Page): Promise<void> {
   await window.evaluate(() => {

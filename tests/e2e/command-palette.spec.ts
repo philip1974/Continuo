@@ -6,10 +6,9 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS } from './helpers/settings';
+import { COMMAND_SEARCH, QUICK_OPEN_SEARCH } from './helpers/palette';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
-const QUICK_OPEN_SEARCH = /^(搜索文件|Search files|파일 검색)$/;
 const QUICK_OPEN_NO_WORKSPACE =
   /^(请先在 Explorer 打开工作区|Please open a workspace in Explorer first|먼저 Explorer에서 워크스페이스를 여세요)$/;
 const COMMAND_NO_MATCH = /^(无匹配命令|No matching command|일치하는 명령어 없음)$/;

@@ -1,8 +1,8 @@
 // CommandPalette 无匹配时按 Enter → 无 cmd 可执行,modal 仍开 + 不抛.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS } from './helpers/settings';
+import { COMMAND_SEARCH } from './helpers/palette';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
 const NO_MATCH = /^(无匹配命令|No matching command|일치하는 명령어 없음)$/;
 
 async function openPalette(window: import('@playwright/test').Page): Promise<void> {

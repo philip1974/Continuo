@@ -1,10 +1,8 @@
 // 启动 → 打开 Settings → 切 5 个 tab → 关 → console 不应产 error 级日志.
 // 已知误差:某些第三方包(dockview / xterm)startup 可能 warn,只 fail 'error' 级别.
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV, CLOSE_SETTINGS } from './helpers/settings';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
-const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
 const SETTING_TABS = [
   /^(通用|General|일반)$/,
   /^(编辑器|Editor|편집기)$/,

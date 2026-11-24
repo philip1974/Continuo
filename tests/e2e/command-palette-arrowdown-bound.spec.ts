@@ -2,11 +2,8 @@
 // store.moveSelection(delta, max) 实现:wrap 到 (cur+delta+max) % max.
 // 多次按下 ArrowDown 不会越界,顶到末尾后回 0.
 import { test, expect } from './fixtures/electron-app';
-import { ROW_SELECTED } from './helpers/palette';
-
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
-const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
+import { ROW_SELECTED, COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
+import { SETTINGS } from './helpers/settings';
 
 test('ArrowDown N 次 → wrap 回 0 / 不越界', async ({ window }) => {
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({

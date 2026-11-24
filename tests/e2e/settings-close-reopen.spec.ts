@@ -1,9 +1,6 @@
 // Settings panel × 关 → 齿轮 → 重开;3 次循环不抛.
 import { test, expect } from './fixtures/electron-app';
-
-const SETTINGS = /^(设置|Settings|설정)$/;
-const CLOSE_SETTINGS = /^(关闭 (Settings|设置)|Close Settings|(Settings|설정) 닫기)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
+import { SETTINGS, CLOSE_SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('Settings: 开 → ×关 → 再开 → ×关 → 再开 (3次)', async ({ window }) => {
   const gear = window.getByRole('button', { name: SETTINGS });

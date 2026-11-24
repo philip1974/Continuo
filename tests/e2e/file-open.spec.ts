@@ -1,8 +1,8 @@
 // 单击文件 → Editor 打开 tab + 内容显示.
 import { test, expect } from './fixtures/with-workspace';
+import { QUICK_OPEN_SEARCH } from './helpers/palette';
 
 const LINE_COUNT = /(行|lines|줄)/;
-const QUICK_OPEN_SEARCH = /^(搜索文件|Search files|파일 검색)$/;
 
 test('点击 README.md → Editor 打开 + StatusBar 显示行/词/字符', async ({
   window,

@@ -1,8 +1,6 @@
 // Settings Panel 是 dockview panel 不是 Modal:Esc 不关闭.
 import { test, expect } from './fixtures/electron-app';
-
-const SETTINGS = /^(设置|Settings|설정)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 test('Settings panel 打开后,Esc 不关闭', async ({ window }) => {
   await window.getByRole('button', { name: SETTINGS }).click();

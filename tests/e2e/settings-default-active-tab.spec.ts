@@ -1,8 +1,7 @@
 // 首次打开 Settings → 默认 active tab = 通用(priority=1).
 import { test, expect } from './fixtures/electron-app';
+import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
-const SETTINGS = /^(设置|Settings|설정)$/;
-const SETTINGS_NAV = /^(设置分类|Setting categories|설정 카테고리)$/;
 const GENERAL = /^(通用|General|일반)$/;
 const THEME = /^(主题|Theme|테마)$/;
 

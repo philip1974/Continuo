@@ -1,7 +1,6 @@
 // 点 active tab(已经 selected)→ 视为 noop,store activeTabId 不变.
 import { test, expect } from './fixtures/with-workspace';
-
-const EDITOR_TABS = /^(编辑器标签|Editor tabs|편집기 탭)$/;
+import { EDITOR_TABS } from './helpers/editor';
 
 test('单击当前 active 文件 → tab 仍唯一 + 不重复创建', async ({
   window,

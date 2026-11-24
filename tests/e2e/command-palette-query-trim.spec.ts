@@ -1,10 +1,8 @@
 // CommandPalette 输入空格 → trim 后视为空 query → 显 recent / 全部命令.
 // 实际行为:fuzzy 匹配空字符串 → 全匹配.
 import { test, expect } from './fixtures/electron-app';
-
-const SETTINGS = /^(设置|Settings|설정)$/;
-const COMMAND_SEARCH = /^(输入命令名…|Type a command…|명령어 입력…)$/;
-const COMMAND_LIST = /^(命令列表|Command list|명령어 목록)$/;
+import { SETTINGS } from './helpers/settings';
+import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 
 async function openPalette(window: import('@playwright/test').Page): Promise<void> {
   await window.evaluate(() => {
