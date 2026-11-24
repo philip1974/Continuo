@@ -4,9 +4,9 @@
 
 ## 1 — 只依赖 root 的消费方等 `rootRestored`,不等编辑器 tab 读盘
 
-`workspace.hydrated` 在 `hydrateEditorTabs`(最多 256 tab、并发 32 读盘)完成后才置位;`rootRestored`
-在 root 恢复后、tab 读盘前置位(`hydrated ⇒ rootRestored`)。`waitForWorkspaceRootRestored()` 等
-`rootRestored || hydrated`(subscribe 后再查一次,防丢事件)。
+`rootRestored` 在 root 恢复后、`hydrateEditorTabs`(最多 256 tab、并发 32 读盘)之前置位。
+`waitForWorkspaceRootRestored()` 等 `rootRestored`(subscribe 后再查一次,防丢事件)。(原 `workspace.hydrated`
+在 tab 读盘后置位,无消费方,已删除。)
 
 - `createUserTerminal`:tab 读盘在途时即以恢复出的 root 作 cwd/workspaceRoot 发起 `terminal.create`;
   root 恢复前仍等待(不以初始 null root 创建,R10 契约不变)。(`terminal-root-gate.spec.ts`)

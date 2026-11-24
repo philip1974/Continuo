@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 // 性能(冷启动关键路径):首个用户终端只需 workspace root,不等编辑器 tab 恢复读盘。
-// workspace.hydrated 在 hydrateEditorTabs(最多 256 tab、并发 32 读盘)完成后才置位;
-// rootRestored 在 root 恢复后、读盘前置位(hydrated ⇒ rootRestored)。createUserTerminal 改等后者。
+// rootRestored 在 root 恢复后、hydrateEditorTabs(最多 256 tab、并发 32 读盘)之前置位;createUserTerminal 等它。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({

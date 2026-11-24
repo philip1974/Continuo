@@ -7,10 +7,10 @@
 // 不带 cwd → main resolveTerminalCwd 抛 TERMINAL_CWD_UNRESOLVED → 首次新建失败且不重试。
 // (「契约建了消费方漏用」族;违反文档契约 = 真 bug。)
 //
-// 修:两入口在读 root 前先等持久化恢复(已恢复立即返回;markHydrated
-// 在 init 成功/失败/无文件都会调,故不会挂死)。
-// 后续(冷启动关键路径):入口改等 waitForWorkspaceRootRestored()(rootRestored || hydrated)——只需 root,
-// 不等编辑器 tab 恢复读盘;见 startup-critical-path。本文件用 markHydrated(⇒ rootRestored)仍成立。
+// 修:两入口在读 root 前先等持久化恢复(已恢复立即返回)。
+// 后续(冷启动关键路径):入口改等 waitForWorkspaceRootRestored()——只需 root,不等编辑器 tab 恢复读盘;
+// 见 startup-critical-path。workspace 的 hydrated 标志此后无消费方、已删除,只剩 rootRestored
+//(init 成功/失败/无文件都会置位,故不会挂死)。
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
