@@ -17,6 +17,13 @@ describe('resolvePluginMainPath', () => {
     expect(resolvePluginMainPath(root, '/tmp/evil.js')).toBeNull();
   });
 
+  it('以 .. 开头的普通文件名(非 .. 路径段)在插件目录内 → 接受;指向目录本身 → 拒绝', () => {
+    const root = path.resolve('/tmp/continuo-plugin');
+    expect(resolvePluginMainPath(root, '..main.js')).toBe(path.join(root, '..main.js'));
+    expect(resolvePluginMainPath(root, 'dist/..bundle.js')).toBe(path.join(root, 'dist/..bundle.js'));
+    expect(resolvePluginMainPath(root, '.')).toBeNull();
+  });
+
   it('检测点点路径段不通过 split 物化全部片段', () => {
     const splitSpy = vi.spyOn(String.prototype, 'split');
 

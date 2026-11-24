@@ -91,8 +91,8 @@ export function resolvePluginMainPath(
 
   const root = path.resolve(pluginDir);
   const resolved = path.resolve(root, mainName);
-  const rel = path.relative(root, resolved);
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  // 须严格在插件目录内(等于目录本身不算)。
+  if (resolved === root || !isSameOrInsidePath(root, resolved)) return null;
   return resolved;
 }
 

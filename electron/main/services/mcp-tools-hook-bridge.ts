@@ -885,8 +885,7 @@ async function guardConfigPath(
   try {
     const realCwd = await realpath(cwd);
     const realDir = await realpath(configDir);
-    const rel = path.relative(realCwd, realDir);
-    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return 'unsafe-config-path';
+    if (realDir === realCwd || !isSameOrInsidePath(realCwd, realDir)) return 'unsafe-config-path';
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return 'read-error';
   }
