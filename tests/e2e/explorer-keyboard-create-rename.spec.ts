@@ -1,0 +1,69 @@
+// Explorer 交互对齐 VSCode 的真机路径:键盘 Enter 打开、新建文件后自动打开并选中、重命名失焦提交 + F2 预选主名。
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
+import { test, expect } from './fixtures/with-workspace';
+import { EXPLORER_NEW_FILE, EXPLORER_NEW_FILE_PLACEHOLDER } from './helpers/explorer';
+
+const rowOf = (window: import('@playwright/test').Page, p: string) =>
+  window.locator(`[role=treeitem][title="${p}"]`);
+
+test('方向键移到文件(选中跟随)+ Enter → 在编辑器打开', async ({ window, workspaceRoot }) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  await src.click(); // 展开 src + 焦点
+  const a = rowOf(window, path.join(workspaceRoot, 'src/a.ts'));
+  await expect(a).toBeVisible();
+  await src.press('ArrowDown');
+  await expect(a).toBeFocused();
+  await expect(a).toHaveAttribute('aria-selected', 'true');
+  await expect(src).toHaveAttribute('aria-selected', 'false');
+  await a.press('Enter');
+  await expect(window.locator('header').first()).toContainText('a.ts', { timeout: 10_000 });
+});
+
+test('右键 src → 新建文件 → 落盘后在编辑器打开,树里新文件被选中', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  // src 折叠状态下新建:成功后应自动展开
+  await src.click({ button: 'right' });
+  const newFile = window.getByRole('menuitem', { name: EXPLORER_NEW_FILE });
+  await expect(newFile).toBeVisible({ timeout: 5_000 });
+  await newFile.click();
+  const input = window.getByRole('textbox', { name: EXPLORER_NEW_FILE_PLACEHOLDER });
+  await expect(input).toBeVisible();
+  await input.fill('hello.ts');
+  await input.press('Enter');
+
+  await expect(async () => {
+    await stat(path.join(workspaceRoot, 'src/hello.ts'));
+  }).toPass({ timeout: 5_000 });
+  await expect(window.locator('header').first()).toContainText('hello.ts', { timeout: 10_000 });
+  const hello = rowOf(window, path.join(workspaceRoot, 'src/hello.ts'));
+  await expect(hello).toBeVisible();
+  await expect(hello).toHaveAttribute('aria-selected', 'true');
+  await expect(input).toBeHidden();
+});
+
+test('F2 预选主名,键入替换主名后点别处(失焦)→ 提交重命名', async ({ window, workspaceRoot }) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  await src.click();
+  await src.press('ArrowDown'); // 焦点 + 选中移到 a.ts(不经单击,不打开编辑器)
+  const a = rowOf(window, path.join(workspaceRoot, 'src/a.ts'));
+  await expect(a).toBeFocused();
+  await a.press('F2');
+  const input = window.locator('[role=treeitem] input');
+  await expect(input).toBeFocused({ timeout: 5_000 });
+  // 预选 "a"(不含 .ts):直接键入即替换主名
+  await window.keyboard.type('renamed');
+  await expect(input).toHaveValue('renamed.ts');
+  // 点到树外(状态栏)→ 失焦提交
+  await window.locator('footer').first().click();
+  await expect(async () => {
+    await stat(path.join(workspaceRoot, 'src/renamed.ts'));
+  }).toPass({ timeout: 5_000 });
+  await expect(input).toBeHidden();
+});

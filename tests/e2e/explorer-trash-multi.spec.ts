@@ -8,15 +8,15 @@ test('Cmd-click 多选 a.ts + b.ts → 移到废纸篓 → 都消失', async ({
   window,
   workspaceRoot,
 }) => {
-  await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
-  await window
-    .locator('text=b.ts')
-    .first()
-    .click({ modifiers: ['ControlOrMeta'] });
+  // 定位树行(role=treeitem),不用 text=:单击 a.ts 后编辑器标题栏也含「a.ts」,⌘ 单击 b.ts 只改选中不打开,
+  // 标题栏保持 a.ts,`text=a.ts` 的首个匹配会落到标题栏上。
+  const tree = window.getByRole('tree');
+  await tree.getByRole('treeitem', { name: 'src' }).click();
+  await tree.getByRole('treeitem', { name: 'a.ts' }).click();
+  await tree.getByRole('treeitem', { name: 'b.ts' }).click({ modifiers: ['ControlOrMeta'] });
 
   // 右键 a.ts(在选中集合内)
-  await window.locator('text=a.ts').first().click({
+  await tree.getByRole('treeitem', { name: 'a.ts' }).click({
     button: 'right',
     modifiers: ['ControlOrMeta'],
   });
