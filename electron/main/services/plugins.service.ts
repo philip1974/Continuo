@@ -36,7 +36,7 @@ import {
 } from '../lib/child-spawn-hardening';
 import { atomicWriteJson } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
-import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped';
+import { openForReadNonBlocking, readFileCappedFd, readTextCappedOrThrow } from '../lib/read-fh-capped';
 import { isSameOrInsidePath } from '../lib/path-inside';
 import { runSerialPerKey } from './serialize-per-key';
 import {
@@ -308,16 +308,7 @@ async function readMetadataCapped(filePath: string): Promise<string> {
   // 边界(E159,E158 兄弟 TOCTOU 修正):改用共享 readFileCappedFd(单 fd open→fstat 同 inode→有界读)。
   // **错误契约保持**:open 的 ENOENT/EACCES 直接透传(ENOENT=调用方「缺文件=空表」;非 ENOENT=当前态
   // 未知绝不降级空表触发 RMW);too-large 抛无 code 的普通 Error → 调用方走「非 ENOENT→throw」路径。
-  const { text, tooLarge, size } = await readFileCappedFd(
-    filePath,
-    METADATA_MAX_BYTES,
-  );
-  if (tooLarge) {
-    throw new Error(
-      `plugin metadata file too large (${size} > ${METADATA_MAX_BYTES}): ${filePath}`,
-    );
-  }
-  return text as string; // tooLarge=false 时 text 必为 string
+  return readTextCappedOrThrow(filePath, METADATA_MAX_BYTES, 'plugin metadata file');
 }
 
 /**

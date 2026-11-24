@@ -134,3 +134,17 @@ export async function readCappedFromHandle(
   }
   return { text: bytes.toString('utf-8'), tooLarge: false, size: total, ...(identity && { identity }) };
 }
+
+/**
+ * 读文本且必须在上限内:超限抛无 code 的普通 Error(调用方按「非 ENOENT → 当前态未知,不当空表」处理);
+ * open 的 ENOENT / EACCES 等原样透传。explorer.json 与插件元数据(_enabled / _permissions / path-scopes)共用。
+ */
+export async function readTextCappedOrThrow(
+  filePath: string,
+  maxBytes: number,
+  label: string,
+): Promise<string> {
+  const { text, tooLarge, size } = await readFileCappedFd(filePath, maxBytes);
+  if (tooLarge) throw new Error(`${label} too large (${size} > ${maxBytes}): ${filePath}`);
+  return text as string; // tooLarge=false 时 text 必为 string
+}

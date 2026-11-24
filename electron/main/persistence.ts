@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { atomicWriteJson } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
-import { readFileCappedFd } from './lib/read-fh-capped';
+import { readTextCappedOrThrow } from './lib/read-fh-capped';
 
 // 可维护性 M15:Explorer 持久化 zod schema 抽到 electron/shared/explorer-persistence-schema.ts
 // 单一来源(renderer 也复用),此处 re-export 保持对外 API 不变 + import 供内部读写/迁移使用。
@@ -324,19 +324,12 @@ async function readExplorerCapped(filePath: string): Promise<string | null> {
   // 损坏路径还把超大 raw 写 .corrupt 放大 I/O。改用共享 readFileCappedFd(单 fd open→fstat 同 inode→
   // 有界读)。错误契约保持:ENOENT→null(首次启动);其它 open 错误(EACCES 等)→throw(当前态未知,
   // 绝不返 null 触发 `?? default` 覆盖);too-large→throw(同 EACCES,且不整块读入)。
-  let r: Awaited<ReturnType<typeof readFileCappedFd>>;
   try {
-    r = await readFileCappedFd(filePath, MAX_EXPLORER_FILE_BYTES);
+    return await readTextCappedOrThrow(filePath, MAX_EXPLORER_FILE_BYTES, 'explorer file');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
   }
-  if (r.tooLarge) {
-    throw new Error(
-      `explorer file too large (${r.size} > ${MAX_EXPLORER_FILE_BYTES})`,
-    );
-  }
-  return r.text;
 }
 
 // 边界(E84,数据完整性):ExplorerSchemaV3 只限 windows 数量,不校验 windowSeq 唯一。畸形/手工编辑的
