@@ -62,8 +62,9 @@ export interface TabNavItemProps {
    */
   readonly onMouseSelect?: () => void;
   /**
-   * Called by the optional close affordance, by a middle-click on the tab, and by Delete / Backspace on the
-   * focused tab. Defaults to no close button (and no middle-click close).
+   * Called by the optional close affordance, by a middle-click on the tab, and by Delete on the focused tab
+   * (Backspace is deliberately ignored so a stray backspace never closes a tab). Defaults to no close button
+   * (and no middle-click close).
    */
   readonly onClose?: () => void;
   /**
@@ -211,7 +212,7 @@ export function TabNavItem({
           aria-label={closeLabel}
           disabled={disabled}
           // a11y(A29):移出 Tab 顺序,避免 tablist 内混入非 tab 的额外 tab stop(鼠标仍可点;
-          // 键盘经聚焦 tab 后 Delete/Backspace 关闭)。
+          // 键盘经聚焦 tab 后 Delete 关闭;不认 Backspace)。
           tabIndex={-1}
           onClick={handleClose}
         >

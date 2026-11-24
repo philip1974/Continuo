@@ -1667,6 +1667,58 @@ describe('MarketplaceTab — 索引加载失败可重试', () => {
   });
 });
 
+// a11y:「重试」按钮随加载态卸载,焦点不能掉到 body。重试中焦点停在加载状态块;成功后移到列表区的搜索框,
+// 再次失败移到新的「重试」按钮。首次加载(用户没点重试)不抢焦点。
+describe('MarketplaceTab — 重试后焦点不丢', () => {
+  it('重试 → 加载中焦点在加载状态块 → 成功后焦点在搜索框', async () => {
+    installApi(vi.fn());
+    getMgr.mockReturnValue({ listAll: () => [] });
+    fetchIndexMock.mockRejectedValueOnce(new Error('offline'));
+    let resolveIndex: (v: MarketplaceEntry[]) => void = () => {};
+    fetchIndexMock.mockReturnValueOnce(
+      new Promise<MarketplaceEntry[]>((r) => {
+        resolveIndex = r;
+      }),
+    );
+    const { container, getByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('拉取索引失败'));
+    const retry = getByRole('button', { name: '重试' });
+    retry.focus();
+    fireEvent.click(retry);
+    await waitFor(() => expect(container.textContent).toContain('正在加载'));
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement?.textContent).toContain('正在加载');
+    resolveIndex([entry({ id: 'a', name: 'Alpha' })]);
+    await waitFor(() => expect(container.textContent).toContain('Alpha'));
+    expect(document.activeElement?.tagName).toBe('INPUT');
+    expect(container.contains(document.activeElement)).toBe(true);
+  });
+
+  it('重试后再次失败 → 焦点在新的「重试」按钮', async () => {
+    installApi(vi.fn());
+    getMgr.mockReturnValue({ listAll: () => [] });
+    fetchIndexMock.mockRejectedValueOnce(new Error('offline'));
+    fetchIndexMock.mockRejectedValueOnce(new Error('still offline'));
+    const { container, getByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('offline'));
+    const first = getByRole('button', { name: '重试' });
+    first.focus();
+    fireEvent.click(first);
+    await waitFor(() => expect(container.textContent).toContain('still offline'));
+    const second = getByRole('button', { name: '重试' });
+    expect(document.activeElement).toBe(second);
+  });
+
+  it('首次加载成功(未点重试)不抢焦点', async () => {
+    installApi(vi.fn());
+    getMgr.mockReturnValue({ listAll: () => [] });
+    fetchIndexMock.mockResolvedValueOnce([entry({ id: 'a', name: 'Alpha' })]);
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('Alpha'));
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
 describe('MarketplaceTab — 未配置 GitHub token 时评分静默降级', () => {
   it('unavailable 且未手动刷新 → 不显示任何错误 / 提示', async () => {
     installApi(vi.fn());

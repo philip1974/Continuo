@@ -129,6 +129,12 @@ export function MarketplaceTab() {
   const [reviewsRefreshClicked, setReviewsRefreshClicked] = useState(false);
   // 索引加载失败后「重试」:递增即重跑拉取 effect(同 QuickOpenModal 扫描失败重试)。
   const [reloadToken, setReloadToken] = useState(0);
+  // a11y:「重试」按钮随加载态卸载,焦点会掉到 body。点重试置位,加载中焦点暂放加载状态块,结束后
+  // 成功 → 列表区搜索框、再次失败 → 新的「重试」按钮(VSCode 扩展视图刷新后焦点回到搜索框)。首次加载不置位,不抢焦点。
+  const focusAfterReloadRef = useRef(false);
+  const loadingBlockRef = useRef<HTMLDivElement>(null);
+  const errorBlockRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const refreshReviews = useReviewsStore((s) => s.refresh);
 
   // entry.id → 可用更新版本(若有)。useMemo 让 memo 子组件能受益:
@@ -176,6 +182,17 @@ export function MarketplaceTab() {
       cancelled = true;
     };
   }, [reloadToken]);
+
+  useEffect(() => {
+    if (!focusAfterReloadRef.current) return;
+    if (state.kind === 'loading') {
+      loadingBlockRef.current?.focus();
+      return;
+    }
+    focusAfterReloadRef.current = false;
+    if (state.kind === 'error') errorBlockRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    else searchInputRef.current?.focus();
+  }, [state.kind]);
 
   // 卡片的「安装」与「更新」是同一流程(同步单飞 → installFromGitLocalized → 结果消息 → pending),只差
   // overwrite 标志与成功 / 失败文案 key(reject 与 ok:false 同走 *_failed_code)。返回是否成功,供调用方做后续。
@@ -275,9 +292,12 @@ export function MarketplaceTab() {
     return (
       // a11y(A104,A102 同族):初始索引加载须 role=status 播报具体「正在加载插件市场」语义,
       // Spinner aria-hidden 抑制泛化 Loading(否则 SR 只听通用加载,不知等的是市场索引)。
+      // tabIndex=-1:点「重试」后焦点暂放这里(只可程序聚焦,不进 Tab 顺序)。
       <div
+        ref={loadingBlockRef}
+        tabIndex={-1}
         role="status"
-        className="flex h-32 items-center justify-center gap-2 text-fg-dim"
+        className="flex h-32 items-center justify-center gap-2 text-fg-dim outline-none"
       >
         <Spinner aria-hidden />
         <span className="text-xs">{t('marketplace.loading')}</span>
@@ -290,7 +310,7 @@ export function MarketplaceTab() {
       // a11y(A66,A41 同族):索引异步加载失败的错误块须 live region(失败 → role=alert/assertive),
       // 否则焦点在面板/搜索入口附近时 SR 用户只感知"无内容",不知是加载失败。
       // 「重试」按钮放在 alert 区外,播报内容只含失败原因与提示。
-      <div className="rounded border border-line bg-panel-soft/40 p-4 text-xs">
+      <div ref={errorBlockRef} className="rounded border border-line bg-panel-soft/40 p-4 text-xs">
         <div role="alert" className="text-error">
           {t('marketplace.index_fetch_failed', { message: state.message })}
           <div className="mt-1 text-fg-dim">
@@ -301,7 +321,10 @@ export function MarketplaceTab() {
           size="sm"
           variant="secondary"
           className="mt-3"
-          onClick={() => setReloadToken((n) => n + 1)}
+          onClick={() => {
+            focusAfterReloadRef.current = true;
+            setReloadToken((n) => n + 1);
+          }}
         >
           {t('marketplace.retry')}
         </Button>
@@ -334,6 +357,7 @@ export function MarketplaceTab() {
     <div className="flex flex-col gap-3">
       <div className="space-y-2">
         <Input
+          ref={searchInputRef}
           size="sm"
           // a11y(A3,A1 同族):placeholder 无参数 → 复用作 aria-label 给屏幕阅读器稳定可访问名。
           aria-label={searchPlaceholderLabel}

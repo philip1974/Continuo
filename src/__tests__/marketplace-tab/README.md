@@ -54,6 +54,7 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 
 - 失败块 `role=alert` 播报原因 + 提示;其外有「重试」按钮(不进 alert 播报内容)
 - 点「重试」→ 回到加载态并重新拉取索引(reloadToken 递增重跑拉取 effect,同 QuickOpenModal 扫描失败重试)
+- 重试后焦点不丢(「重试」按钮随加载态卸载):加载中焦点在加载状态块(`tabIndex=-1`),成功后移到搜索框,再次失败移到新的「重试」按钮;首次加载不抢焦点
 
 ### 评分刷新
 
