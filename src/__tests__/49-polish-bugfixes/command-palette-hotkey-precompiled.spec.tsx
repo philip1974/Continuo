@@ -87,6 +87,16 @@ describe('打磨 R28 — CommandPalette hotkey 预计算', () => {
     expect(getEffSpy).not.toHaveBeenCalled();
   });
 
+  // 保留键(⌘P / ⌘⇧P)上的绑定按下是 picker、命令分发已忽略 → 面板不得仍显示该快捷键。
+  it('生效绑定落在保留键 → 不显示快捷键', () => {
+    const commands: CommandSpec[] = [
+      { id: 'a', title: 'A', hotkey: 'mod+p', fn: vi.fn() },
+      { id: 'b', title: 'B', hotkey: 'mod+b', fn: vi.fn() },
+    ];
+    const out = buildDisplayCommands(commands, (_key, fallback) => fallback, 'other', { b: 'mod+shift+p' });
+    expect(out.map((d) => d.hotkeyParts)).toEqual([[], []]);
+  });
+
   it('已小写搜索源不调用 toLowerCase', () => {
     const commands: CommandSpec[] = [{ id: 'a', title: 'save', category: 'file', fn: vi.fn() }];
     const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');

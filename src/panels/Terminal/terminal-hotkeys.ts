@@ -4,7 +4,8 @@
 // Shift+Ctrl+Enter、改绑 / 解绑后的原默认键被拦下不发给 shell、命令又不匹配,按键被吞。
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
-import { resolveEffectiveHotkey, useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { coApp } from '@/plugins/co-app';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { tWithFallback } from '@/i18n';
@@ -21,7 +22,7 @@ function matchesEffective(
   overrides: Overrides,
 ): boolean {
   if (event.type !== 'keydown' || event.isComposing) return false;
-  const combo = resolveEffectiveHotkey(command, overrides);
+  const combo = resolveActiveHotkey(command, overrides, platform); // 保留键上的绑定不让出(与命令分发同判)
   return combo !== undefined && matchesHotkey(combo, event, platform);
 }
 

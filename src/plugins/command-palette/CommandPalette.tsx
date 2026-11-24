@@ -17,16 +17,14 @@ import { useCommandPaletteStore } from './store';
 import { fuzzyFilter } from './fuzzy';
 import { useRecentCommandsStore, type RecentEntry } from './recent';
 import { formatHotkeyParts, detectPlatform, type Platform } from './format-hotkey';
-import {
-  resolveEffectiveHotkey,
-  useKeybindingsStore,
-} from '../keybindings/keybindings-store';
+import { useKeybindingsStore } from '../keybindings/keybindings-store';
 import { useTWithFallback, useT, useLocale } from '@/i18n';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { isSortedBy } from '@/lib/is-sorted-by';
 import { byDisplayTitle } from './by-display-title';
 import { normalizeSearchQuery } from '@/lib/search-query';
+import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -71,7 +69,7 @@ export function buildDisplayCommands(
   const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
-    const effective = resolveEffectiveHotkey(cmd, overrides);
+    const effective = resolveActiveHotkey(cmd, overrides, platform); // 保留键上的绑定不显示(按下是 picker)
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     const source = displayCategory ? `${displayCategory} ${displayTitle}` : displayTitle;

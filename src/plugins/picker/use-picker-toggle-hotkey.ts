@@ -6,6 +6,8 @@
 import { useEffect } from 'react';
 import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import type { PickerSlice } from './picker-slice';
+import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
+import { resolveEffectiveHotkey } from '@/plugins/keybindings/keybindings-store';
 
 /**
  * 这两个组合由下方 document 监听写死处理,不在 CommandRegistry 里:改绑命令时的冲突检测
@@ -33,6 +35,19 @@ export function reservedPickerHotkeyOf(
     if (canonicalHotkey(PICKER_TOGGLE_HOTKEYS[name], platform) === c) return name;
   }
   return null;
+}
+
+/**
+ * 命令实际生效(参与按键分发、对外显示)的 hotkey:生效绑定落在保留键上则视为未绑定。命令分发、终端让出判定、命令面板
+ * 显示三处共用 —— 否则一处跳过、一处仍认,同一键既打开 picker 又执行命令,或显示 ⌘P 却按不出。设置页另显「未生效」标注。
+ */
+export function resolveActiveHotkey(
+  spec: Pick<CommandSpec, 'id' | 'hotkey'>,
+  overrides: Readonly<Record<string, string>>,
+  platform: Platform = detectPlatform(),
+): string | undefined {
+  const effective = resolveEffectiveHotkey(spec, overrides);
+  return reservedPickerHotkeyOf(effective, platform) === null ? effective : undefined;
 }
 
 function isPKey(key: string): boolean {

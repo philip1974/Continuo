@@ -145,3 +145,16 @@ describe('runTerminalZoomFromKey', () => {
   });
 });
 
+// 升级前已存的 override 把终端命令绑到保留键(⌘P / ⌘⇧P):与命令分发同判视为未绑定 → 终端不拦下,交给 picker;
+// 否则搜索条与 Quick Open 一键两动作,或缩放截住冒泡使 Quick Open 打不开(与设置页「未生效」标注相反)。
+describe('终端热键 · 保留键上的绑定不让出', () => {
+  it('search / zoom 改绑到 mod+p / mod+shift+p → 不命中', () => {
+    const p = makeKey({ key: 'p', metaKey: true });
+    const sp = makeKey({ key: 'p', metaKey: true, shiftKey: true });
+    expect(isTerminalSearchHotkey(p, 'mac', { 'terminal.search.toggle': 'mod+p' })).toBe(false);
+    expect(isTerminalZoomHotkey(sp, 'mac', { 'terminal.zoom.toggle': 'mod+shift+p' })).toBe(false);
+    // 对照:改绑到非保留键照常命中。
+    expect(isTerminalSearchHotkey(makeKey({ key: 'k', metaKey: true }), 'mac', { 'terminal.search.toggle': 'mod+k' })).toBe(true);
+  });
+});
+
