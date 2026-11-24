@@ -38,8 +38,9 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 选中 / 展开 / 剪切灰显 / 重命名受控输入 / 兄弟增删后的 aria-setsize 均正确反映到对应行
 - OS 文件拖过同一行:行内子元素冒泡的多次 dragenter 回报同一落点(path + isDirectory 相同)时
   FolderTree 不逐次重渲;换行照常更新落点
-- 已知:选中集合变化与剪贴板空↔非空翻转仍会重渲全部可见行(selectedPaths / hasClipboard 供每行
-  ContextMenu 使用),属低频交互
+- 选中集合不作为 prop 下传:行接稳定的 `getSelectedPaths()`,只在右键(contextmenu 事件)时取快照给本行
+  ContextMenu —— 方向键让选中高频变化,只重渲新旧选中行;右键多选中的一项,菜单仍按整组
+- 已知:剪贴板空↔非空翻转仍会重渲全部可见行(hasClipboard 供每行 ContextMenu 使用),属低频交互
 
 ## 键盘导航滚动到窗口外的行(`folder-tree-scroll-to-item.spec.tsx`)
 
@@ -52,6 +53,23 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   之后键盘导航照常滚动
 - 长列表 drop 后焦点落在实际松手的那一行(库 updateDomFocus 轮询取不到焦点项会重置到首项):内部拖动源行已滚出
   窗口 / OS 文件拖入,焦点都在松手行、列表不跳回;之后方向键从该行继续
+
+## 键盘操作(`folder-tree-keyboard.spec.tsx` + `tree-keyboard.spec.ts`,对齐 VSCode Explorer)
+
+焦点在树内(非输入框)时,`tree-keyboard.ts` 的 `handleTreeKeyDown` 挂在树容器 keydown 冒泡阶段
+(晚于 headless-tree hotkeys 的原生监听):
+
+- Enter:文件 → 打开(与单击同一 `openFileByPath`);目录 → 切换展开。不接库的 `onPrimaryAction`:
+  库在每次行单击(含 ⌘ / Shift 多选单击)都调它
+- 方向键 / Home / End:库移动焦点后选中改为焦点项(Shift 扩选仍由库处理)
+- Delete(mac 另有 ⌘⌫):移到废纸篓,与右键「移到废纸篓」同一 `onTrash`;多选且焦点在选中集内时作用于整组;
+  焦点与选中移到下一项(没有则上一项)
+- mod+C / mod+X / mod+V(mac ⌘、其它 Ctrl,平台判定同全局命令热键 `matchesHotkey`):与右键剪切 / 复制 /
+  粘贴同一实现;粘贴落点 = 焦点目录,焦点是文件则其父目录
+- macOS 按住 ⌘ 时其它键无 keyup:按 ⌘ 组合后从库的 pressedKeys 摘掉该键,之后方向键照常
+- 键入可打印字符:跳到名称以已键入前缀开头的项(不分大小写、环绕;停顿 800ms 重置;同一字母重复按则在
+  同首字母项间循环),选中跟随
+- 重命名输入框内的按键、重命名进行中:以上都不触发
 
 ## 不在本主题验证
 

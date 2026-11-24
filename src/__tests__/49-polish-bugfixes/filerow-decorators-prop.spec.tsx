@@ -58,7 +58,7 @@ function renderRow(decorators: readonly DecoratorFn[]) {
       item={mockItem('/work/a.ts', 'a.ts')}
       {...rowState(mockItem('/work/a.ts', 'a.ts'))}
       start={0}
-      selectedPaths={new Set()}
+      getSelectedPaths={() => new Set()}
       rootPath="/work"
       contextActions={{} as never}
       decorators={decorators}
@@ -185,7 +185,7 @@ describe('a11y(A110) — 目录行加载态可被 AT 感知', () => {
         item={loadingItem()}
         {...rowState(loadingItem())}
         start={0}
-        selectedPaths={new Set()}
+        getSelectedPaths={() => new Set()}
         rootPath="/work"
         contextActions={{} as never}
         decorators={[]}
@@ -233,7 +233,7 @@ describe('a11y(A71) — 目录行展开箭头 aria-hidden', () => {
         item={dirItem(expanded)}
         {...rowState(dirItem(expanded))}
         start={0}
-        selectedPaths={new Set()}
+        getSelectedPaths={() => new Set()}
         rootPath="/work"
         contextActions={{} as never}
         decorators={[]}
@@ -286,7 +286,7 @@ describe('a11y(A26) — inline rename input 可访问名', () => {
         item={item}
         {...rowState(item)}
         start={0}
-        selectedPaths={new Set()}
+        getSelectedPaths={() => new Set()}
         rootPath="/work"
         contextActions={{} as never}
         decorators={[]}

@@ -16,6 +16,8 @@ import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
 import { ExplorerHeader } from './ExplorerHeader';
 import { buildTreeChildrenWithData, createTreeConfig, sameTreeChildren } from './tree-config';
+import { handleTreeKeyDown, type TypeAheadState } from './tree-keyboard';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
 import { cleanupAfterPathMoved, cleanupAfterPathsRemoved } from './path-gone-cleanup';
@@ -565,6 +567,10 @@ export function FolderTree({ root }: { root: string }) {
     () => buildSelectedPathSet(selectedItemsArr),
     [selectedItemsArr],
   );
+  // 行只在打开右键菜单时读取选中(见 FileRow.getSelectedPaths):稳定引用,选中变化不击穿行 memo。
+  const selectedPathsRef = useRef(selectedPaths);
+  selectedPathsRef.current = selectedPaths;
+  const getSelectedPaths = useCallback(() => selectedPathsRef.current, []);
 
   // 插件装饰器 registry 一次订阅(打磨 R7):下传给每个 FileRow,避免虚拟列表
   // N 行各自 useRegistry(N 份订阅 + 插件启停时每行各取一次快照)。
@@ -640,6 +646,9 @@ export function FolderTree({ root }: { root: string }) {
   );
 
   const hasClipboard = useExplorerClipboardStore((s) => s.kind !== null && s.paths.length > 0);
+  // 键盘操作(Enter / Delete / 剪切复制粘贴 / 键入跳转 / 选中跟随焦点),见 tree-keyboard.ts
+  const platform = useMemo(() => detectPlatform(), []);
+  const typeAheadRef = useRef<TypeAheadState>({ query: '', at: 0 });
 
   const contextActions = useMemo<ContextMenuActions>(
     () => ({
@@ -881,6 +890,17 @@ export function FolderTree({ root }: { root: string }) {
               // a11y(A25):headless-tree role="tree" 默认 aria-label="" → 屏幕阅读器进主文件树
               // 只感知无名 tree。传本地化 treeLabel 给容器一个可访问名。
               {...tree.getContainerProps(tt('panels.explorer.tree_aria'))}
+              onKeyDown={(e) => {
+                handleTreeKeyDown(e.nativeEvent, {
+                  tree,
+                  items,
+                  actions: contextActions,
+                  openFile: (path) => void handleFileOpen(path),
+                  rootPath: root,
+                  platform,
+                  typeAhead: typeAheadRef.current,
+                });
+              }}
               style={{
                 height: virtualizer.getTotalSize(),
                 width: '100%',
@@ -896,7 +916,7 @@ export function FolderTree({ root }: { root: string }) {
                     item={item}
                     {...readFileRowState(item, tree)}
                     start={vRow.start}
-                    selectedPaths={selectedPaths}
+                    getSelectedPaths={getSelectedPaths}
                     rootPath={root}
                     contextActions={contextActions}
                     onHoverDropTarget={reportHoverTarget}

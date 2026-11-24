@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
@@ -73,7 +73,11 @@ interface FileRowProps extends FileRowState {
   item: ItemInstance<FileEntry>;
   /** react-virtual 行起点(px);绝对定位 style 在行内构造,避免每次父渲染新建 style 对象击穿 memo. */
   start: number;
-  selectedPaths: ReadonlySet<string>;
+  /**
+   * 当前选中集合(稳定引用的读取函数)。只在打开本行右键菜单时读取一次作快照:选中随方向键高频变化,
+   * 若作为 prop 直接下传,每次选中变化都会击穿全部可见行的 memo(perf)。
+   */
+  getSelectedPaths: () => ReadonlySet<string>;
   rootPath: string;
   contextActions: ContextMenuActions;
   /** dnd:鼠标拖入此行时回报本 entry,供 FolderTree 计算落点. */
@@ -172,7 +176,7 @@ export const FileRow = memo(function FileRow({
   isRenaming,
   level,
   isDraggingOver: isInternalDropOver,
-  selectedPaths,
+  getSelectedPaths,
   rootPath,
   contextActions,
   onHoverDropTarget,
@@ -194,6 +198,9 @@ export const FileRow = memo(function FileRow({
   );
   // headless-tree 内部 drag 时,drop 目标行高亮(isDraggingOver):drag preview 可能遮挡视线,
   // 没有这个 hover 反馈用户看不清要 drop 到哪。
+  // 右键菜单用的选中快照:contextmenu 事件(鼠标右键 / 键盘菜单键)里读取;与 Radix 打开菜单的 setState
+  // 同批提交,菜单内容首帧即用到最新选中。
+  const [menuSelectedPaths, setMenuSelectedPaths] = useState<ReadonlySet<string>>(getSelectedPaths);
 
   const row = (
     <div
@@ -218,6 +225,7 @@ export const FileRow = memo(function FileRow({
           onFileOpen?.(data.path);
         }
       }}
+      onContextMenu={() => setMenuSelectedPaths(getSelectedPaths())}
       onDragEnter={(e) => {
         if (!hasFiles(e.dataTransfer)) return;
         // 文件夹 → 自身;文件 → 父目录(由 resolveDropTarget 算)
@@ -317,7 +325,7 @@ export const FileRow = memo(function FileRow({
   return (
     <ContextMenu
       target={data}
-      selectedPaths={selectedPaths}
+      selectedPaths={menuSelectedPaths}
       rootPath={rootPath}
       actions={contextActions}
       hasClipboard={hasClipboard}
