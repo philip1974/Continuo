@@ -56,10 +56,8 @@ export interface BatchTransferDeps {
   makeUniqueDestPicker: (destDir: string) => Promise<(name: string) => string>;
   /** 刷新某目录的树节点(invalidateChildrenIds)。 */
   refreshDir: (dir: string) => void;
-  /** move 成功一项:同步 editor tab 路径(目录则前缀 rewrite 其下全部 tab)。 */
+  /** move 成功一项:调用方做「路径已移走」清理(editor tab / 展开集合 / 剪贴板,见 path-gone-cleanup)。 */
   onMoved: (src: string, dest: string) => void;
-  /** move 批次结束:已移走的源旧路径(非空才调)。 */
-  onSourcesGone: (srcs: string[]) => void;
   /** 某项 fs 返回 ok:false(其后各项不再尝试)。 */
   onItemFailed: (src: string, code: string, message: string) => void;
   /** 目标名探测 / fs 调用抛出。 */
@@ -79,7 +77,6 @@ export async function transferEntriesInto(
   opts: BatchTransferOptions = {},
 ): Promise<void> {
   const touchedSrcParents = new Set<string>();
-  const movedSrcs: string[] = [];
   let refreshDest = false;
   try {
     const pickDest = await deps.makeUniqueDestPicker(destDir);
@@ -90,7 +87,7 @@ export async function transferEntriesInto(
       const dest = pickDest(basenamePreserveTrailing(src));
       const r = kind === 'move' ? await deps.fs.move(src, dest) : await deps.fs.copy(src, dest);
       if (!r.ok) {
-        // 失败项可能已部分落盘 → 照样刷新目标 / 源父目录,但不算移走(不 onMoved / onSourcesGone)。
+        // 失败项可能已部分落盘 → 照样刷新目标 / 源父目录,但不算移走(不 onMoved)。
         refreshDest = true;
         if (kind === 'move') touchedSrcParents.add(dirname(src));
         deps.onItemFailed(src, r.code, r.message);
@@ -99,15 +96,12 @@ export async function transferEntriesInto(
       if (kind === 'move') {
         deps.onMoved(src, dest);
         touchedSrcParents.add(dirname(src));
-        movedSrcs.push(src);
       }
       refreshDest = true;
     }
   } catch (err) {
     deps.onException(err);
   } finally {
-    // move 的源旧路径已失效 → 回报(部分成功也只报已移走的,未移项留给调用方重试)。
-    if (movedSrcs.length > 0) deps.onSourcesGone(movedSrcs);
     if (refreshDest) deps.refreshDir(destDir);
     for (const sp of touchedSrcParents) {
       if (sp !== destDir) deps.refreshDir(sp);

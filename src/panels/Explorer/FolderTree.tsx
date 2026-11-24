@@ -18,6 +18,7 @@ import { ExplorerHeader } from './ExplorerHeader';
 import { buildTreeChildrenWithData, createTreeConfig, sameTreeChildren } from './tree-config';
 import { FILE_ROW_HEIGHT, FileRow, readFileRowState } from './FileRow';
 import { createNewDir, createNewFile, renameItem, trashItemsAndCleanup } from './mutate-actions';
+import { cleanupAfterPathMoved, cleanupAfterPathsRemoved } from './path-gone-cleanup';
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
   dropForeignFilesInto,
@@ -29,7 +30,6 @@ import { useFsWatcher } from './hooks/useFsWatcher';
 import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
-import { useEditorStore } from '@/stores/editor.store';
 import { useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -406,8 +406,8 @@ export function FolderTree({ root }: { root: string }) {
     [],
   );
 
-  // 三个批量入口(onDropItems / root-drop / onPaste)共用的移动/复制流程:部分成功刷新、editor tab
-  // 路径同步、剪贴板 prune、失败/异常反馈都在 transferEntriesInto 一处(见 batch-transfer.ts)。
+  // 三个批量入口(onDropItems / root-drop / onPaste)共用的移动/复制流程:部分成功刷新、「路径已移走」
+  // 清理(cleanupAfterPathMoved)、失败/异常反馈都在 transferEntriesInto 一处(见 batch-transfer.ts)。
   // logLabel / failedKey 只区分各入口的日志前缀与失败文案。
   const runBatchTransfer = useCallback(
     (
@@ -426,9 +426,7 @@ export function FolderTree({ root }: { root: string }) {
           fs: coApi.fs,
           makeUniqueDestPicker,
           refreshDir: refreshParent,
-          onMoved: (src, dest) => useEditorStore.getState().renamePath(src, dest),
-          // 移走的源旧路径已不存在 → 剪除剪贴板里引用它的 cut/copy 项。
-          onSourcesGone: (movedSrcs) => useExplorerClipboardStore.getState().prune(movedSrcs),
+          onMoved: cleanupAfterPathMoved,
           onItemFailed: (src, code, message) => {
             console.warn(`[explorer] ${logLabel} failed`, src, code, message);
             notify.error(t(failedKey, { src, message: localizeErrorByCode(code, message) }), {
@@ -478,10 +476,8 @@ export function FolderTree({ root }: { root: string }) {
                 notifyFailure(r);
                 return;
               }
-              // 同步打开的 editor tab 路径(目录 rename 时其下所有 tab 也会前缀 rewrite)
-              useEditorStore.getState().renamePath(oldPath, r.newPath);
-              // 改名后旧路径已不存在 → 剪除剪贴板里引用旧路径的 cut/copy 项。
-              useExplorerClipboardStore.getState().prune([oldPath]);
+              // editor tab / 展开集合前缀改写 + 剪贴板剪除旧路径(目录 rename 时其下全部路径同步)
+              cleanupAfterPathMoved(oldPath, r.newPath);
             } catch (err) {
               notifyThrownError(err);
             }
@@ -645,12 +641,9 @@ export function FolderTree({ root }: { root: string }) {
           // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
           // 静默跳过其余选中项(多选删除时后续项既不删也不报错)。removeItems 是
           // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用)。见第七 session
-          // R6 完整性批判。editor tab 关闭与剪贴板 prune 只对 result.removed 做,在
+          // R6 完整性批判。「路径已删除」清理(editor tab / 展开集合 / 剪贴板)只对 result.removed 做,在
           // trashItemsAndCleanup 一处完成(已测)。
-          const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, {
-            removePaths: (ps) => useEditorStore.getState().removePaths(ps),
-            prune: (removed) => useExplorerClipboardStore.getState().prune(removed),
-          });
+          const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, cleanupAfterPathsRemoved);
           if (!result.ok) {
             for (const f of result.failures) {
               console.warn('[explorer] trash failed', f.path, f.code, f.message);

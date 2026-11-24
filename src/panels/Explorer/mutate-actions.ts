@@ -127,14 +127,6 @@ export async function removeItems(
 // create file / dir
 // ────────────────────────────────────────────────────────────
 
-/** 删除完成后的清理出口(Explorer onTrash 注入 editor store / 剪贴板 store)。 */
-export interface RemoveCleanup {
-  /** 关闭这些路径的 editor tab(目录则关其下所有 tab);批量一次完成(perf:免 R 次全 tab 扫描 + R 次 set)。 */
-  removePaths(paths: readonly string[]): void;
-  /** 从剪贴板剪除已删除的源(避免幻影 cut 灰显 + 失效 Paste)。 */
-  prune(paths: string[]): void;
-}
-
 /**
  * 移到回收站 + 清理。只清理实际删掉的路径(result.removed),不遍历原始选择:多选 A 与 A/B 时 A/B
  * 被折叠,删 A 失败则 A/B 也没删,但它不在 failures 里,按「原始选择 − failures」会被误当成功。
@@ -143,13 +135,11 @@ export async function trashItemsAndCleanup(
   paths: ReadonlyArray<string>,
   deps: MutateDeps,
   tree: TreeMutationApi,
-  cleanup: RemoveCleanup,
+  /** 「路径已删除」清理(Explorer onTrash 注入 path-gone-cleanup);批量一次完成(perf:免 R 次全 tab 扫描 + R 次 set)。 */
+  cleanup: (removed: string[]) => void,
 ): Promise<RemoveResult> {
   const result = await removeItems(paths, deps, tree);
-  if (result.removed.length > 0) {
-    cleanup.removePaths(result.removed);
-    cleanup.prune(result.removed);
-  }
+  if (result.removed.length > 0) cleanup(result.removed);
   return result;
 }
 

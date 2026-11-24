@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { isSameOrInsidePath } from '@/lib/path-cross';
+import { pruneClipboardPaths } from '@/panels/Explorer/clipboard-store';
 import {
   PATH_ARRAY_MAX,
   PATH_STR_MAX,
@@ -28,12 +30,16 @@ type ExplorerState = {
   sort: ExplorerSort;
 
   setExpandedPaths: (paths: Iterable<string>) => void;
+  /** 路径已移走(改名 / 移动):旧路径及其后代前缀替换为新路径,保留展开状态。 */
+  renameExpanded: (oldPath: string, newPath: string) => void;
+  /** 路径已删除:移除这些路径及其后代的展开状态。 */
+  forgetExpanded: (removedPaths: readonly string[]) => void;
   setSort: (sort: ExplorerSort) => void;
 };
 
 const EMPTY_EXPANDED_PATHS: ReadonlySet<string> = new Set();
 
-export const useExplorerStore = create<ExplorerState>((set) => ({
+export const useExplorerStore = create<ExplorerState>((set, get) => ({
   expandedPaths: EMPTY_EXPANDED_PATHS,
   sort: { by: 'name', reverse: false },
 
@@ -60,6 +66,31 @@ export const useExplorerStore = create<ExplorerState>((set) => ({
       }
       return { expandedPaths: next.size === 0 ? EMPTY_EXPANDED_PATHS : next };
     }),
+
+  // 包含判断与前缀切片同 editor.store getStateAfterRenamingPath(isSameOrInsidePath:分隔符无关 +
+  // 平台感知大小写;大小写折叠不改长度,故按 oldPath.length 切片)。无命中 → 不写 store。
+  renameExpanded: (oldPath, newPath) => {
+    const current = get().expandedPaths;
+    let changed = false;
+    const next: string[] = [];
+    for (const p of current) {
+      if (isSameOrInsidePath(oldPath, p)) {
+        changed = true;
+        next.push(newPath + p.slice(oldPath.length));
+      } else {
+        next.push(p);
+      }
+    }
+    if (changed) get().setExpandedPaths(next);
+  },
+
+  // 「路径及其后代」剪除与剪贴板 prune 同一实现(祖先索引,见 pruneClipboardPaths)。
+  forgetExpanded: (removedPaths) => {
+    if (removedPaths.length === 0) return;
+    const current = [...get().expandedPaths];
+    const remaining = pruneClipboardPaths(current, removedPaths);
+    if (remaining !== current) get().setExpandedPaths(remaining);
+  },
 
   setSort: (sort) =>
     set((s) =>

@@ -93,6 +93,64 @@ describe('explorer.store · setExpandedPaths', () => {
 
 });
 
+// 路径已移走 / 已删除 → 展开集合同步(否则旧路径留在持久化的 expandedPaths:改名后新目录折叠,
+// 刷新 / watcher 对旧路径 listDir / watchDir 反复失败,重启后依旧)。
+describe('explorer.store · renameExpanded', () => {
+  it('旧路径及其后代前缀替换为新路径,保留展开;同名前缀的兄弟不动', () => {
+    useExplorerStore.getState().setExpandedPaths(['/r', '/r/foo', '/r/foo/a', '/r/foobar']);
+    useExplorerStore.getState().renameExpanded('/r/foo', '/r/bar');
+    expect(useExplorerStore.getState().expandedPaths).toEqual(
+      new Set(['/r', '/r/bar', '/r/bar/a', '/r/foobar']),
+    );
+  });
+
+  it('Windows 分隔符的后代也改写', () => {
+    useExplorerStore.getState().setExpandedPaths(['C:\\r\\foo', 'C:\\r\\foo\\a']);
+    useExplorerStore.getState().renameExpanded('C:\\r\\foo', 'C:\\r\\bar');
+    expect(useExplorerStore.getState().expandedPaths).toEqual(
+      new Set(['C:\\r\\bar', 'C:\\r\\bar\\a']),
+    );
+  });
+
+  it('不涉及展开集合时引用不变、不通知订阅者', () => {
+    useExplorerStore.getState().setExpandedPaths(['/r', '/r/a']);
+    const before = useExplorerStore.getState().expandedPaths;
+    const listener = vi.fn();
+    const unsub = useExplorerStore.subscribe(listener);
+    try {
+      useExplorerStore.getState().renameExpanded('/r/x', '/r/y');
+      expect(useExplorerStore.getState().expandedPaths).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
+  });
+});
+
+describe('explorer.store · forgetExpanded', () => {
+  it('删除路径及其后代,同名前缀的兄弟保留', () => {
+    useExplorerStore
+      .getState()
+      .setExpandedPaths(['/r', '/r/foo', '/r/foo/a', '/r/foobar', '/r/x', 'C:\\w\\d', 'C:\\w\\d\\e']);
+    useExplorerStore.getState().forgetExpanded(['/r/foo', '/r/x', 'C:\\w\\d']);
+    expect(useExplorerStore.getState().expandedPaths).toEqual(new Set(['/r', '/r/foobar']));
+  });
+
+  it('无命中时引用不变、不通知订阅者', () => {
+    useExplorerStore.getState().setExpandedPaths(['/r', '/r/a']);
+    const before = useExplorerStore.getState().expandedPaths;
+    const listener = vi.fn();
+    const unsub = useExplorerStore.subscribe(listener);
+    try {
+      useExplorerStore.getState().forgetExpanded(['/r/zz']);
+      expect(useExplorerStore.getState().expandedPaths).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      unsub();
+    }
+  });
+});
+
 describe('explorer.store · setSort', () => {
   it('setSort 替换 sort', () => {
     useExplorerStore.getState().setSort({ by: 'mtime', reverse: true });

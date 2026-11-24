@@ -15,15 +15,15 @@ const EXPLORER = join(__dirname, '..', '..', 'panels', 'Explorer');
 const SRC = readFileSync(join(EXPLORER, 'FolderTree.tsx'), 'utf-8');
 const HELPER = readFileSync(join(EXPLORER, 'batch-transfer.ts'), 'utf-8');
 
-// 重构后(explorer-batch-transfer):三个 move 入口的内联循环收口到 transferEntriesInto,prune 经其
-// onSourcesGone 回调接入(唯一一处);rename 仍在 FolderTree 直接 prune,trash 经注入 trashItemsAndCleanup 的 prune 出口。
+// 重构后(explorer-batch-transfer):三个 move 入口的内联循环收口到 transferEntriesInto;「路径已移走 /
+// 已删除」清理(含剪贴板 prune)再收口到 path-gone-cleanup:rename 与 move 入口调 cleanupAfterPathMoved,
+// trash 把 cleanupAfterPathsRemoved 注入 trashItemsAndCleanup(行为测试见 explorer-expanded-state/path-gone-cleanup)。
+const CLEANUP = readFileSync(join(EXPLORER, 'path-gone-cleanup.ts'), 'utf-8');
+
 describe('49 第八 session · clipboard prune 传播到所有源失效入口', () => {
-  it('trash / rename 直接 prune;三个 move 入口经共享 onSourcesGone → prune', () => {
-    const pruneCalls = SRC.match(/useExplorerClipboardStore\.getState\(\)\.prune\(/g) ?? [];
-    expect(pruneCalls.length).toBeGreaterThanOrEqual(3);
-    expect(SRC).toMatch(
-      /onSourcesGone: \(movedSrcs\) => useExplorerClipboardStore\.getState\(\)\.prune\(movedSrcs\)/,
-    );
+  it('两个清理函数都 prune 剪贴板', () => {
+    const pruneCalls = CLEANUP.match(/useExplorerClipboardStore\.getState\(\)\.prune\(/g) ?? [];
+    expect(pruneCalls.length).toBe(2);
   });
 
   it('三个 move 入口(onDropItems/root-drop/onPaste)都走 runBatchTransfer', () => {
@@ -31,21 +31,17 @@ describe('49 第八 session · clipboard prune 传播到所有源失效入口', 
     expect(calls.length).toBeGreaterThanOrEqual(3);
   });
 
-  // trash 只 prune result.removed 由 trashItemsAndCleanup 保证(行为测试见
-  // explorer-transfer-integrity/nested-selection.spec),FolderTree 只注入 prune 出口。
-  it('rename 入口 prune([oldPath])、trash 入口把 prune 注入 trashItemsAndCleanup', () => {
-    expect(SRC).toMatch(/prune\(\[oldPath\]\)/);
-    expect(SRC).toMatch(
-      /prune: \(removed\) => useExplorerClipboardStore\.getState\(\)\.prune\(removed\)/,
-    );
+  it('rename / move 入口走 cleanupAfterPathMoved、trash 把 cleanupAfterPathsRemoved 注入 trashItemsAndCleanup', () => {
+    expect(SRC).toMatch(/cleanupAfterPathMoved\(oldPath, r\.newPath\)/);
+    expect(SRC).toMatch(/onMoved: cleanupAfterPathMoved/);
+    expect(SRC).toMatch(/trashItemsAndCleanup\(paths, mutateDeps, treeApi, cleanupAfterPathsRemoved\)/);
   });
 
-  it('共享实现:部分成功也回报已移走项(无 allOk 门控),在 finally 内', () => {
-    // 修复前是 `if (kind === 'cut' && allOk) ...clear()`;现由 transferEntriesInto 的 finally
-    // 对已移走的 movedSrcs 调 onSourcesGone(行为测试见 explorer-batch-transfer)。
+  it('共享实现:部分成功也逐项回报已移走项(无 allOk 门控)', () => {
+    // 修复前是 `if (kind === 'cut' && allOk) ...clear()`;现由 transferEntriesInto 每项 move 成功即
+    // onMoved(行为测试见 explorer-batch-transfer)。
     expect(SRC).not.toMatch(/allOk/);
     expect(HELPER).not.toMatch(/allOk/);
-    const fin = HELPER.slice(HELPER.search(/}\s*finally\s*{/));
-    expect(fin).toMatch(/if \(movedSrcs\.length > 0\) deps\.onSourcesGone\(movedSrcs\)/);
+    expect(HELPER).toMatch(/deps\.onMoved\(src, dest\)/);
   });
 });

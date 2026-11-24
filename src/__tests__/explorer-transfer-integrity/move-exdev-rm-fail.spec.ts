@@ -66,7 +66,6 @@ describe('moveEntry — EXDEV fallback rm 失败', () => {
 describe('transferEntriesInto — 某项失败仍刷新目标与源父目录', () => {
   it('首项 move 失败(目标可能已部分写入)→ 刷新目标目录 + 源父目录,但不当成已移走', async () => {
     const refreshDir = vi.fn();
-    const onSourcesGone = vi.fn();
     const onMoved = vi.fn();
     await transferEntriesInto('move', ['/a/x'], '/dest', {
       fs: {
@@ -76,12 +75,10 @@ describe('transferEntriesInto — 某项失败仍刷新目标与源父目录', (
       makeUniqueDestPicker: async (dir) => (name) => `${dir}/${name}`,
       refreshDir,
       onMoved,
-      onSourcesGone,
       onItemFailed: vi.fn(),
       onException: vi.fn(),
     });
     expect(refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/dest']);
     expect(onMoved).not.toHaveBeenCalled();
-    expect(onSourcesGone).not.toHaveBeenCalled();
   });
 });

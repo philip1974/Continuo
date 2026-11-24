@@ -28,7 +28,6 @@ function makeDeps(over: {
     ),
     refreshDir: vi.fn((dir: string) => void events.push(`refresh:${dir}`)),
     onMoved: vi.fn((src: string, dest: string) => void events.push(`moved:${src}->${dest}`)),
-    onSourcesGone: vi.fn((srcs: string[]) => void events.push(`gone:${srcs.join(',')}`)),
     onItemFailed: vi.fn((src: string, code: string) => void events.push(`failed:${src}:${code}`)),
     onException: vi.fn(() => void events.push('exception')),
   };
@@ -36,7 +35,7 @@ function makeDeps(over: {
 }
 
 describe('transferEntriesInto — move', () => {
-  it('全部成功:逐项 move + onMoved,刷新目标与源父目录,回报已移走的源', async () => {
+  it('全部成功:逐项 move + onMoved,刷新目标与源父目录', async () => {
     const { deps, spies } = makeDeps();
     await transferEntriesInto('move', ['/a/x.txt', '/b/y.txt'], '/dest', deps);
 
@@ -50,12 +49,11 @@ describe('transferEntriesInto — move', () => {
       ['/b/y.txt', '/dest/y.txt'],
     ]);
     expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/b', '/dest']);
-    expect(spies.onSourcesGone).toHaveBeenCalledWith(['/a/x.txt', '/b/y.txt']);
     expect(spies.onItemFailed).not.toHaveBeenCalled();
     expect(spies.onException).not.toHaveBeenCalled();
   });
 
-  it('中途失败:中止其余项,但已成功项仍刷新 + 回报(P2-BB / R7)', async () => {
+  it('中途失败:中止其余项,但已成功项仍刷新 + onMoved(P2-BB / R7)', async () => {
     const { deps, spies } = makeDeps({
       move: async (src) => (src === '/b/y.txt' ? fail('EACCES') : OK),
     });
@@ -65,17 +63,17 @@ describe('transferEntriesInto — move', () => {
     expect(spies.onItemFailed).toHaveBeenCalledWith('/b/y.txt', 'EACCES', 'EACCES msg');
     // 失败项 /b/y.txt 的源父目录也刷新(可能已部分落盘),但不回报为已移走
     expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/b', '/dest']);
-    expect(spies.onSourcesGone).toHaveBeenCalledWith(['/a/x.txt']);
+    expect(spies.onMoved.mock.calls).toEqual([['/a/x.txt', '/dest/x.txt']]);
   });
 
-  it('首项即失败:不回报已移走;仍刷新目标与该项源父目录(失败可能已部分落盘)', async () => {
+  it('首项即失败:不 onMoved;仍刷新目标与该项源父目录(失败可能已部分落盘)', async () => {
     const { deps, spies } = makeDeps({ move: async () => fail('EPERM') });
     await transferEntriesInto('move', ['/a/x.txt'], '/dest', deps);
     expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/dest']);
-    expect(spies.onSourcesGone).not.toHaveBeenCalled();
+    expect(spies.onMoved).not.toHaveBeenCalled();
   });
 
-  it('move reject:onException,不抛;已成功项仍刷新 + 回报(A134/A136)', async () => {
+  it('move reject:onException,不抛;已成功项仍刷新 + onMoved(A134/A136)', async () => {
     const { deps, spies } = makeDeps({
       move: async (src) => {
         if (src === '/b/y.txt') throw new Error('ipc down');
@@ -87,7 +85,7 @@ describe('transferEntriesInto — move', () => {
     ).resolves.toBeUndefined();
     expect(spies.onException).toHaveBeenCalledTimes(1);
     expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/a', '/dest']);
-    expect(spies.onSourcesGone).toHaveBeenCalledWith(['/a/x.txt']);
+    expect(spies.onMoved.mock.calls).toEqual([['/a/x.txt', '/dest/x.txt']]);
   });
 
   it('目标名探测 reject:onException,不调 fs', async () => {
@@ -114,18 +112,17 @@ describe('transferEntriesInto — move', () => {
       skipSameParent: true,
     });
     expect(spies.fs.move.mock.calls).toEqual([['/a/y.txt', '/dest/y.txt']]);
-    expect(spies.onSourcesGone).toHaveBeenCalledWith(['/a/y.txt']);
+    expect(spies.onMoved.mock.calls).toEqual([['/a/y.txt', '/dest/y.txt']]);
   });
 });
 
 describe('transferEntriesInto — copy', () => {
-  it('复制不动源:不调 onMoved / onSourcesGone,只刷新目标目录', async () => {
+  it('复制不动源:不调 onMoved,只刷新目标目录', async () => {
     const { deps, spies } = makeDeps();
     await transferEntriesInto('copy', ['/a/x.txt', '/b/y.txt'], '/dest', deps);
     expect(spies.fs.copy).toHaveBeenCalledTimes(2);
     expect(spies.fs.move).not.toHaveBeenCalled();
     expect(spies.onMoved).not.toHaveBeenCalled();
-    expect(spies.onSourcesGone).not.toHaveBeenCalled();
     expect(spies.refreshDir.mock.calls).toEqual([['/dest']]);
   });
 

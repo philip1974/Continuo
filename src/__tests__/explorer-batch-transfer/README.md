@@ -13,11 +13,12 @@ FolderTree 有三个「把一批路径移动/复制进同一目录」的入口:�
 0. 只处理最外层路径:父目录与其子项同批时剔除子项(`outermostPaths`,见 `explorer-transfer-integrity/`)。
 1. 目标名:整批只探测一次目标目录(`makeUniqueDestPicker(destDir)`),逐项 `pickDest(basename)`。
 2. 逐项顺序执行;某项 `ok:false` → `onItemFailed(src, code, message)` 后**中止其余项**。
-3. move 成功一项 → `onMoved(src, dest)`(调用方同步 editor tab 路径)。
+3. move 成功一项 → `onMoved(src, dest)`(调用方做「路径已移走」清理:editor tab / 展开集合 / 剪贴板,
+   见 `explorer-expanded-state/path-gone-cleanup.spec.ts`)。部分成功也只对已移走项调,未移项留给调用方重试。
 4. 无论中途失败 / 抛异常,结束时:有成功项 → 刷新目标目录 + (move)已成功项的源父目录(≠目标目录);
-   move 有成功项 → `onSourcesGone(已移走的源)`(调用方 prune 剪贴板)。copy 不动源,不调。
+   copy 不动源,不调 `onMoved`。
    某项 `ok:false` 也刷新目标目录(move 另刷新该项源父目录):失败可能已部分落盘(跨盘 move 已复制
-   但源未删净 / 递归 cp 中途失败);失败项不计入 `onSourcesGone`。
+   但源未删净 / 递归 cp 中途失败);失败项不调 `onMoved`。
 5. 目标名探测或 fs 调用 reject → `onException(err)`,不产生 unhandled rejection;规则 4 仍执行。
 6. `skipSameParent`:源已在目标目录(`dirname(src) === destDir`)→ 跳过(拖到原父目录是 no-op)。
 

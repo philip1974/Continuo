@@ -568,6 +568,7 @@
 - [`folder-tree-expand-all-batch.spec.tsx`](./explorer-expanded-state/folder-tree-expand-all-batch.spec.tsx)
 - [`folder-tree-expand-all-watcher.spec.tsx`](./explorer-expanded-state/folder-tree-expand-all-watcher.spec.tsx)
 - [`folder-tree-expanded-state.spec.tsx`](./explorer-expanded-state/folder-tree-expanded-state.spec.tsx)
+- [`path-gone-cleanup.spec.ts`](./explorer-expanded-state/path-gone-cleanup.spec.ts)
 
 ## [ExplorerHeader(FolderTree 顶部 Header)](./explorer-header/README.md)
 
