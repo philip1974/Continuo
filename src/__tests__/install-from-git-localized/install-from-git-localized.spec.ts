@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({ install: vi.fn() }));
 vi.mock('@/lib/co-api', () => ({ coApi: { plugins: { installFromGit: h.install } } }));
 
-import { installFromGitLocalized, repoNameFromGitUrl } from '../../plugins/install-from-git';
+import { gitFailureDetail, installFromGitLocalized, repoNameFromGitUrl } from '../../plugins/install-from-git';
 
 afterEach(() => h.install.mockReset());
 
@@ -34,3 +34,25 @@ describe('repoNameFromGitUrl', () => {
     expect(repoNameFromGitUrl(url)).toBe(name);
   });
 });
+
+// GIT_FAILED 的本地化标题会整段替换 main 原文 → 附上 git 的报错行,否则断网 / 404 / 需鉴权 / 分支不存在都只显示「Git 命令失败」。
+describe('installFromGitLocalized · GIT_FAILED 保留 git 报错', () => {
+  it('附上 stderr 中的 fatal 行', async () => {
+    h.install.mockResolvedValue({
+      ok: false,
+      code: 'GIT_FAILED',
+      message: "git clone exit 128: Cloning into 'x'...\nfatal: repository 'https://h/x/' not found",
+    });
+    const r = await installFromGitLocalized('u');
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.message).toContain("fatal: repository 'https://h/x/' not found");
+  });
+
+  it('gitFailureDetail:优先 fatal / error 行,否则首个非空行;无 stderr → undefined', () => {
+    expect(gitFailureDetail('git fetch exit 1: \n  warning: x\nerror: pathspec y\n')).toBe('error: pathspec y');
+    expect(gitFailureDetail('git clone exit 128: Could not resolve host: h')).toBe('Could not resolve host: h');
+    expect(gitFailureDetail('git clone exit 1: ')).toBeUndefined();
+    expect(gitFailureDetail(undefined)).toBeUndefined();
+  });
+});
+

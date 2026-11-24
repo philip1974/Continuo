@@ -20,12 +20,18 @@ export async function installFromGitLocalized(
   ...args: Parameters<typeof coApi.plugins.installFromGit>
 ): Promise<GitInstallOutcome> {
   const overwrite = args[1] === true;
-  const fail = (code: string, message: string | undefined): GitInstallOutcome => ({
-    ok: false,
-    code,
-    message: localizeErrorByCode(code, message),
-    alreadyInstalled: !overwrite && code === 'EEXIST',
-  });
+  const fail = (code: string, message: string | undefined): GitInstallOutcome => {
+    const localized = localizeErrorByCode(code, message);
+    const detail = code === 'GIT_FAILED' ? gitFailureDetail(message) : undefined;
+    return {
+      ok: false,
+      code,
+      // GIT_FAILED 的本地化标题(「Git 命令失败」)会整段替换 main 原文,原因(断网 / 404 / 需鉴权 / 分支不存在)随之丢失 →
+      // 附上 git 自己的报错行(git 输出,不属于硬编码文案泄漏)。
+      message: detail ? `${localized}: ${detail}` : localized,
+      alreadyInstalled: !overwrite && code === 'EEXIST',
+    };
+  };
   try {
     const r = await coApi.plugins.installFromGit(...args);
     if (r.ok) return { ok: true, data: r.data };
@@ -34,6 +40,17 @@ export async function installFromGitLocalized(
     const { code, message } = failureOf(err);
     return fail(code, message);
   }
+}
+
+/**
+ * main 的 GIT_FAILED 原文形如 `git clone exit 128: <stderr>`:取 stderr 中最有信息量的一行(优先 fatal: / error:,
+ * 否则首个非空行);无 stderr 返回 undefined。
+ */
+export function gitFailureDetail(message: string | undefined): string | undefined {
+  if (!message) return undefined;
+  const m = /^git \S+ exit [^:]*: ?([\s\S]*)$/.exec(message);
+  const lines = (m ? m[1]! : '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+  return lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines[0];
 }
 
 /** Git URL 的仓库名(末段去 `.git`),用于尚不知插件名时的提示。 */
