@@ -55,51 +55,54 @@
 - 带权限门的能力在授权读取 `await` 前后各查一次吊销状态:授权读取期间被吊销,返回后也不放行。
 - main 侧 `killPluginShellProcesses` 兜底仍在(回收已登记的进程);本条是在源头拒绝新请求。
 
-### 1b. onload 挂起不得绕过禁用 / 卸载(`PluginManager` / `Plugin._activate` / `plugin-reload-gate.ts`)
+### 1b. onload 挂起不得绕过禁用 / 卸载(`PluginManager` / `Plugin._activate`)
 
 插件在 `onload` 起定时器 / shell 后 await 永不结束的 Promise → 激活一直持有生命周期锁、init 一直不完成;禁用 / 卸载
-排在锁后或被 reload-gate 缓冲,且 `entry.scoped` 要等 `onload` 返回才写入,无法提前吊销。
+排在锁后,且 `entry.scoped` 要等 `onload` 返回才写入,无法提前吊销。
 
 - 激活在执行插件代码(构造 / `onload`)**之前**就把 scoped 控制面挂到 entry,并备好中止。
 - `PluginManager.revokeImmediately(id)`(同步、锁外、幂等):吊销当前 scoped app、中止挂起的激活等待(`_activate`
   不再等 `onload`,按 `onload` 抛错同样收尾,迟到结果吞掉),激活落到 `disabled`(非 failed)、锁随之释放,排队的锁内
-  停用 / 卸载照常执行。激活挂起或 init 未完成时立即 `killPluginShellProcesses(id)`;正常运行的实例锁空闲,进程终止
-  仍在 `onunload` 之后(让插件先自行收尾)。
-- 调用点:本地 `disable` / `uninstall`(进锁前);`markUninstalled`(卸载广播,含 init 前);reload-gate 收到
-  `enabled=false` 广播时立即调用(不受 init 缓冲影响),`enabledChanged` 仍按缓冲规则排队。
+  停用 / 卸载照常执行。激活挂起时立即 `killPluginShellProcesses(id)`;未在激活中的实例锁内停用很快执行(事件在扫描
+  完成后即进锁,不等 init 结束),进程终止仍在 `onunload` 之后(让插件先自行收尾)。
+- 调用点:本地 `disable` / `uninstall`(进锁前);`markUninstalled`(卸载广播,含扫描完成前);`handleEnabledChanged(id,
+  false)` 开头同步调用(不等扫描 / 锁),锁内停用随后排队。
 - 激活进行中(授权弹窗 / import / token 注册 await 期间)被要求吊销 → 不加载 / 不构造实例。
 - 本地禁用:有启用意图但无实例(激活被中止)仍停用并落盘 `enabled=false`(否则下次启动复活)。
 
-### 1c. 激活早期的禁用 / 卸载(`PluginManager` / `plugin-reload-gate.ts`)
+### 1c. 激活早期的禁用 / 卸载(`PluginManager`)
 
 - init 期间尚无 entry 的插件收到禁用(终审 P1):init 读完启用快照后逐个激活,前一个插件挂在授权弹窗上时,后面的插件
-  尚未写入 entries;其禁用广播此前只被 reload-gate 缓冲 → init 仍按旧快照 import 并激活。`revokeImmediately` 记下
+  尚未写入 entries;其禁用广播此前只被缓冲 → init 仍按旧快照 import 并激活。`revokeImmediately` 记下
   停用意图(见 1d,不要求 entry 已存在);init 建 entry 时据此按 `disabled` 建 entry、不 import / 不构造。
-  reload-gate 收到 `enabled=true` 广播时立即调用 `markEnabled(id)` 清除意图(之后按快照照常激活)。
+  `handleEnabledChanged(id, true)` 开头同步调用 `markEnabled(id)` 清除意图(之后照常激活 —— 扫描已完成时立即激活,
+  不等排在前面的插件授权)。
   两阶段 init 后(见 plugin-manager「扫描完成信号」):后面的插件已登记 entry 但尚未激活;激活循环在锁内、激活前
   重新检查停用意图,存在 → 落 `disabled`、不 import / 不构造(语义同上)。
 - 模块顶层 await 永不结束(终审 P1):中止句柄在开始 import **之前**就挂到 entry,import 与中止 `Promise.race`。禁用 /
   卸载 → 管理器停止等待 import,激活按禁用收尾、释放生命周期锁,排队的停用 / 卸载照常完成(落盘 `enabled=false`)。
   import 无法真正取消:迟到完成的结果被丢弃,不构造实例。不设固定超时。
 
-### 1d. 停用意图:热重载不得绕过禁用 / 卸载(`PluginManager.deactivationIntents` / `plugin-reload-gate.ts`)
+### 1d. 停用意图:热重载不得绕过禁用 / 卸载(`PluginManager.deactivationIntents`)
 
 终审 P1:旧实例 `onunload` 挂起期间(热重载正在拆旧实例)点禁用 / 卸载,此前只在 `activating` 时记中止、只吊销旧 scoped
 app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell / 网络 / fs 写能力(新实例 `onload` 挂起时禁用 / 卸载永远
-排不上)。init 期间排队的 reload 先于缓冲的禁用执行,按旧启用意图重新激活。
+排不上)。init 期间排在锁后的 reload 先于禁用执行,按旧启用意图重新激活。
 
 - per-id **停用意图**(`'disabled' | 'uninstalled'`)是唯一机制,取代此前三套标记(已卸载 id 集合 / 激活中的
   `revokeRequested` / init 期间尚无 entry 的禁用标记)。
 - 写入:禁用 / 卸载**请求到达时同步**写入 —— 本地 `disable` / `uninstall` 进锁前;禁用广播(`revokeImmediately`)、卸载广播
-  (`markUninstalled`)经 reload-gate 立即调用。不依赖 entry 是否存在 / 是否激活中,不等生命周期锁 / init。
+  (`markUninstalled`)在 `handleEnabledChanged` / `handleUninstalled` 开头立即调用。不依赖 entry 是否存在 / 是否激活中,
+  不等扫描 / 生命周期锁 / init。
   `'uninstalled'` 不被 `'disabled'` 覆盖。
 - 检查:所有激活路径(init、本地启用、热重载、`enabled=true` 广播)在导入模块 / 构造实例**之前**检查(激活开头及每个
   await 之后);存在 → 不激活,落 `disabled`(卸载为 `NOT_INSTALLED`);热重载只拆旧实例、刷新源码 / manifest 快照。
   排队的禁用 / 卸载随后照常完成并落盘。激活**不**清除意图。
 - 清除:只有显式启用 —— 本地 `enable(id)` 调用时(进锁前,同步)、`enabled=true` 广播到达时(`markEnabled`)。
   `'uninstalled'` 不被启用清除;本地卸载失败(entry 仍在)时降为 `'disabled'`,用户可重新启用。
-- reload-gate:init 完成前收到卸载 → 丢弃该插件待处理的 reload。收到禁用**不丢弃**:reload 按意图不激活,只刷新快照
-  (插件源码以 Blob 快照保存,丢弃会让之后的显式启用加载旧源码)。
+- 热重载遇到 `'uninstalled'` 意图 → 直接返回(不报错;拆除由排队的卸载负责),等价于丢弃扫描完成前排队、随后收到卸载
+  的 reload。`'disabled'` **不跳过**:reload 按意图不激活,只刷新快照(插件源码以 Blob 快照保存,跳过会让之后的显式启用
+  加载旧源码)。
 - 已知取舍:本地禁用后立即本地启用,若本窗口自身的 `enabled=false` 广播晚于启用点击到达,会重新记下意图 → 这次启用
   按禁用收尾(偏安全方向;再次启用即可)。
 
@@ -109,8 +112,8 @@ app → 重载随后建全新 scoped app 并激活,新实例继续持有 shell /
   `plugins:enabled-changed { id, enabled }`;写入失败不广播。
 - preload `plugins.onEnabledChanged(cb)`:payload 守卫 `isPluginEnabledChangedPayload`(id 约束同
   `isPluginsChangedPayload` + `enabled` 为 boolean),畸形 warn + drop。
-- `wirePluginReloadGate` 订阅并交给 `PluginManager.handleEnabledChanged(id, enabled)`;init 完成前到达的先缓冲
-  (同 id 以最后一次为准),init 完成后再处理。
+- `wirePluginEvents` 订阅并交给 `PluginManager.handleEnabledChanged(id, enabled)`;扫描完成前到达的等条目登记后按到达
+  顺序处理(同 id 最终以最后一次为准),不等全部激活完(见 plugin-reload-gate)。
 - `handleEnabledChanged`(生命周期锁内,**不写盘**,幂等):
   - `enabled=false`:与本地禁用相同的停用(吊销 / 注销贡献点 / 回收 token / 终止 shell 进程),状态 `disabled`,
     清启用意图(之后热重载不复活)。已是 disabled → 无操作。
@@ -163,11 +166,11 @@ plugin-fs 主进程不看 `fs` 权限项(只靠 renderer 的 `ensurePerm`),路�
   disabled;随后的 enabled=true 广播清除标记;import 挂起时本地禁用 / 别窗禁用 / 本地卸载均完成、锁释放,import 迟到
   完成不构造实例。
 - `reload-deactivation-intent.spec.ts`:热重载拆旧实例(`onunload` 挂起)期间本地禁用 / 别窗禁用 / 本地卸载 → 不构造新
-  实例、`shell.exec` 被拒、禁用落盘 / 卸载删目录;init 期间文件变化排队 reload 后别窗禁用 / 卸载 → 不重新激活;显式启用
+  实例、`shell.exec` 被拒、禁用落盘 / 卸载删目录;init 期间文件变化的 reload 排在锁后、随后别窗禁用 / 卸载 → 不重新激活;显式启用
   (本地 / `enabled=true` 广播)后正常激活。
 - `enabled-main-broadcast.spec.ts`:main 广播(成功才广播、跳过已销毁窗口)与 payload 守卫。
 - `enabled-renderer-sync.spec.ts`:A 禁用 → B 停用、命令注销、不写盘、热重载不复活;发起窗口幂等;A 启用 → B
-  激活(不弹窗、不写盘);未知 id 忽略;reload-gate 接线与 init 前缓冲。
+  激活(不弹窗、不写盘);未知 id 忽略;`wirePluginEvents` 接线与扫描完成前到达的广播。
 - `fs-permission-revoke-scopes.spec.ts`:授予 scope → 撤销 fs → 重新授予 fs → 原路径重新弹窗;持久化条目删除、其它插件不受影响;
   撤销后本会话不再水合;撤销其它权限项不动 scope;撤销与「授权」交错后盘上不残留、「重启」后仍弹窗;水合对照 fs 授权
   (未授权不水合并清残留、已授权照常水合)。

@@ -28,7 +28,7 @@ vi.mock('@/lib/co-api', () => ({
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost, type PluginDirInfo } from '../../plugins/PluginManager';
 import { IpcPermissionStore } from '../../plugins/permissions/IpcPermissionStore';
-import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
+import { wirePluginEvents } from '../../plugins/plugin-events';
 import { createTestCoApp } from '../../plugins/test-utils';
 import type { CoApp } from '../../plugins/types';
 
@@ -178,44 +178,46 @@ describe('renderer:收到 plugins:uninstalled 后撤销本窗口的插件实例�
   });
 });
 
-describe('renderer 接线:wirePluginReloadGate 订阅 plugins:uninstalled', () => {
-  it('init 完成后的卸载广播直接交给 handleUninstalled', async () => {
-    const uninstalled = vi.fn().mockResolvedValue(undefined);
+describe('renderer 接线:wirePluginEvents 订阅 plugins:uninstalled', () => {
+  it('卸载广播直接交给 handleUninstalled', () => {
+    const handleUninstalled = vi.fn().mockResolvedValue(undefined);
     let cb!: (id: string) => void;
-    wirePluginReloadGate({
-      init: async () => {},
-      reload: vi.fn().mockResolvedValue(undefined),
-      onChanged: () => {},
-      onUninstalled: (fn) => {
-        cb = fn;
+    wirePluginEvents(
+      { reload: vi.fn(), handleUninstalled, handleEnabledChanged: vi.fn() },
+      {
+        onChanged: () => {},
+        onUninstalled: (fn) => {
+          cb = fn;
+        },
+        onEnabledChanged: () => {},
       },
-      uninstalled,
-    });
-    await Promise.resolve();
-    await Promise.resolve();
+      () => {},
+    );
     cb(ID);
-    expect(uninstalled).toHaveBeenCalledWith(ID);
+    expect(handleUninstalled).toHaveBeenCalledWith(ID);
   });
 
-  it('init 完成前到达的卸载广播先缓冲,init 完成后再处理(不被 init 的旧快照复活)', async () => {
-    let finishInit!: () => void;
-    const uninstalled = vi.fn().mockResolvedValue(undefined);
+  it('扫描完成前到达的卸载广播:等条目登记后再拆除(不被 init 的旧快照复活、不留幽灵条目)', async () => {
+    const shared = freshShared();
+    const b = makeWindow(shared);
     let cb!: (id: string) => void;
-    wirePluginReloadGate({
-      init: () => new Promise<void>((r) => (finishInit = r)),
-      reload: vi.fn().mockResolvedValue(undefined),
-      onChanged: () => {},
-      onUninstalled: (fn) => {
-        cb = fn;
+    const init = b.mgr.init();
+    wirePluginEvents(
+      b.mgr,
+      {
+        onChanged: () => {},
+        onUninstalled: (fn) => {
+          cb = fn;
+        },
+        onEnabledChanged: () => {},
       },
-      uninstalled,
-    });
-    cb(ID);
-    await Promise.resolve();
-    expect(uninstalled).not.toHaveBeenCalled();
-    finishInit();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(uninstalled).toHaveBeenCalledWith(ID);
+      () => {},
+    );
+    cb(ID); // 扫描尚未完成:entry 未登记
+    await init;
+    await b.mgr.handleUninstalled(ID); // 排在已到达广播之后(幂等)
+    expect(ShellPlugin.instances).toHaveLength(0);
+    expect(b.mgr.listAll()).toEqual([]);
+    expect(b.removePluginDir).not.toHaveBeenCalled();
   });
 });

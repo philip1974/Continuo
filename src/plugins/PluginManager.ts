@@ -242,23 +242,26 @@ export class PluginManager {
   /**
    * per-id「停用意图」(终审 P1:热重载绕过禁用 / 卸载)—— 统一取代此前三套标记(已卸载 id 集合、激活中的
    * revokeRequested、init 期间尚无 entry 的禁用标记)。
-   * - 写入:禁用 / 卸载**请求到达时同步**写入(本地 disable / uninstall 进锁前;禁用 / 卸载广播经 reload-gate 立即调用
-   *   revokeImmediately / markUninstalled),不依赖 entry 是否存在、是否 activating,不等生命周期锁 / init。
+   * - 写入:禁用 / 卸载**请求到达时同步**写入(本地 disable / uninstall 进锁前;禁用 / 卸载广播的 handleEnabledChanged /
+   *   handleUninstalled 开头同步调用 revokeImmediately / markUninstalled),不依赖 entry 是否存在、是否 activating,
+   *   不等扫描 / 生命周期锁 / init。
    * - 检查:所有激活路径(init、enable、热重载、enabled=true 广播)在 activateEntryUnguarded 中、导入模块 / 构造实例之前
    *   检查,存在 → 不激活,按禁用收尾(落 disabled;启用意图由排队的锁内停用清除并落盘)。init 与 reload 先查,存在
    *   则直接不激活。激活不会清除它。
-   * - 清除:只有显式启用 —— 本地 enable() 调用时、enabled=true 广播到达时(markEnabled)同步清除。'uninstalled'
-   *   (目录已删)不被启用清除;本地卸载失败(entry 仍在)时降为 'disabled',用户可重新启用。
-   * 否则:旧实例 onunload 挂起期间的禁用只吊销旧 scoped app,重载随后建全新 scoped app 并激活;init 期间排队的 reload
-   * 先于缓冲的禁用执行,按旧启用意图重新激活。
+   * - 清除:只有显式启用 —— 本地 enable() 调用时、enabled=true 广播到达时(handleEnabledChanged 开头 markEnabled)同步
+   *   清除。'uninstalled'(目录已删)不被启用清除;本地卸载失败(entry 仍在)时降为 'disabled',用户可重新启用。
+   * 否则:旧实例 onunload 挂起期间的禁用只吊销旧 scoped app,重载随后建全新 scoped app 并激活;排在禁用之前的 reload
+   * 按旧启用意图重新激活。
    */
   private readonly deactivationIntents = new Map<string, 'disabled' | 'uninstalled'>();
-  /** init 进行中(终审 P1):期间到达的广播被 reload-gate 缓冲到 init 完成,锁内停用不会及时执行。 */
-  private initializing = false;
   /**
    * 扫描完成信号(见 whenScanned):init 登记完全部插件 entry、进入激活循环前 resolve;init 失败(扫描抛)也 resolve。
    * 激活可能 await 授权弹窗 / 插件 onload 挂起,init 可能长时间不完成 —— 只需 manifest 的消费者不应被它拖住。
+   * 也是 main 推送事件的启动门控(R16):reload / handleUninstalled / handleEnabledChanged 在扫描完成前到达时先等它
+   *(否则条目未登记 → 「Plugin not found」丢弃 / 被 init 的旧快照复活),之后经生命周期锁与 init 的激活按 id 排序;
+   * 不等全部激活完(某插件授权弹窗无人理会时,其它插件的事件照常生效)。
    */
+  private scanDone = false;
   private resolveScanned!: () => void;
   private readonly scanned = new Promise<void>((resolve) => {
     this.resolveScanned = resolve;
@@ -278,13 +281,24 @@ export class PluginManager {
 
   /** 扫描全部目录 + 解析 manifest + 激活 enabled. */
   async init(): Promise<void> {
-    this.initializing = true;
     try {
       await this.initUnlocked();
     } finally {
-      this.initializing = false;
-      this.resolveScanned(); // 扫描抛错时也放行等待者(幂等)
+      this.markScanned(); // 扫描抛错时也放行等待者(幂等)
     }
+  }
+
+  private markScanned(): void {
+    this.scanDone = true;
+    this.resolveScanned();
+  }
+
+  /**
+   * main 推送事件的启动门控(见 scanned):扫描完成前 → 等扫描;之后同步返回 null,调用方同步进生命周期锁(不多让一拍,
+   * 与本地操作的先后不被打乱)。扫描前到达的多个事件按到达顺序恢复(同一 Promise 的回调 FIFO)。须先调 init()。
+   */
+  private untilScanned(): Promise<void> | null {
+    return this.scanDone ? null : this.scanned;
   }
 
   /**
@@ -331,7 +345,7 @@ export class PluginManager {
       registered.push(entry);
     }
     this.invalidateListCache();
-    this.resolveScanned();
+    this.markScanned();
 
     // perf:串行激活前,有界并发预取已启用插件的源码(不 import、不执行插件代码);激活仍按原顺序串行,命中预取。
     const prefetched = this.prefetchEnabledModules(registered);
@@ -473,6 +487,12 @@ export class PluginManager {
    * 本窗口不认识的 id(此窗口启动后才安装)→ 忽略,沿用「重载窗口后生效」。
    */
   async handleEnabledChanged(id: string, enabled: boolean): Promise<void> {
+    // 同步部分(终审 P1):不等扫描 / 生命周期锁 —— 禁用立即吊销并中止挂起的激活(激活可能挂在 onload 上、锁永不释放);
+    // 启用立即清除停用意图(否则 init / 热重载 / 下方锁内启用仍按该意图跳过激活)。
+    if (enabled) this.markEnabled(id);
+    else this.revokeImmediately(id);
+    const scanning = this.untilScanned();
+    if (scanning) await scanning;
     return this.withLifecycleLock(id, async () => {
       const entry = this.entries.get(id);
       if (!entry) return;
@@ -514,12 +534,16 @@ export class PluginManager {
    * per-id 串行:auto-reload watcher 每 2s fire-and-forget + 用户操作易并发同 id。
    */
   async reload(id: string): Promise<void> {
+    const scanning = this.untilScanned();
+    if (scanning) await scanning;
     return this.withLifecycleLock(id, () => this.reloadLocked(id));
   }
 
   private async reloadLocked(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (!entry) throw new Error(`Plugin ${id} not found`);
+    // 已卸载、拆除尚在排队(如扫描前排队的文件变化随后收到卸载广播):目录已删 / 将删,拆除由排队的卸载负责 → 不重载、不报错。
+    if (this.deactivationIntents.get(id) === 'uninstalled') return;
 
     // 重新列举后用与启动同一个准入 + 选目录函数取目标 id(manifest.id 是真源,目录名可能不同):两者对同一份
     // 磁盘状态总选同一目录、同样拒绝不兼容版本。没有合格目录 → 仍有目录声明该 id 时标 failed(下方),否则不存在。
@@ -631,6 +655,9 @@ export class PluginManager {
     // 先立即标记 + 取消弹窗 + 失效授权(等锁期间实例仍在,但已拿不到权限);锁内拆除后再清一次授权缓存
     //(防锁内在途激活写回)。
     this.markUninstalled(id);
+    // 扫描完成前到达:等条目登记(init 已按停用意图把它建成 disabled)再拆除,否则 entry 残留为幽灵条目。
+    const scanning = this.untilScanned();
+    if (scanning) await scanning;
     return this.withLifecycleLock(id, async () => {
       const entry = this.entries.get(id);
       if (entry) {
@@ -649,7 +676,7 @@ export class PluginManager {
   }
 
   /**
-   * 卸载广播到达时的同步部分(终审 P1,不等生命周期锁;reload-gate 在 init 完成前也立即调用):标记已卸载、
+   * 卸载广播到达时的同步部分(终审 P1,不等扫描 / 生命周期锁;handleUninstalled 开头调用):标记已卸载、
    * 取消该插件待决的授权弹窗(在途激活以 NOT_INSTALLED 失败、不写授权)、失效授权缓存。幂等。
    * 锁内拆除仍由 handleUninstalled 排队执行。
    */
@@ -662,7 +689,7 @@ export class PluginManager {
   /**
    * 禁用 / 卸载的同步部分(终审 P1:onload 挂起绕过禁用 / 卸载):不等生命周期锁、不等 init,立即吊销该插件当前
    * scoped app(激活中的实例在执行插件代码前就已挂上)、中止挂起的激活等待(锁随之释放),必要时立即终止其 shell 进程。
-   * 锁内停用 / 卸载照旧排队执行。本地 disable / uninstall、远端禁用(reload-gate)与 markUninstalled 共用。幂等。
+   * 锁内停用 / 卸载照旧排队执行。本地 disable / uninstall、远端禁用(handleEnabledChanged)与 markUninstalled 共用。幂等。
    */
   revokeImmediately(id: string): void {
     this.requestDeactivation(id, 'disabled');
@@ -673,19 +700,19 @@ export class PluginManager {
     if (kind === 'uninstalled' || !this.deactivationIntents.has(id)) {
       this.deactivationIntents.set(id, kind);
     }
-    // 尚无 entry(init 未建到它):意图已记下,init 建 entry 时按禁用处理。
+    // 尚无 entry(扫描未完成):意图已记下,init 建 entry 时按禁用处理。
     const entry = this.entries.get(id);
     if (!entry) return;
     entry.scoped?.revoke();
     entry.abortActivation?.();
     // 正常运行的实例:锁空闲,锁内停用很快执行 —— 进程终止留在 onunload 之后(让插件先自行收尾)。
-    // 激活挂起 / init 未完成(广播被缓冲)时锁内停用无法及时执行 → 此处立即终止。
-    if (entry.activating || this.initializing) {
+    // 激活挂起时锁内停用无法及时执行 → 此处立即终止。
+    if (entry.activating) {
       void this.killPluginShellProcesses(id, `revoke ${id}`);
     }
   }
 
-  /** 启用广播的同步部分(终审 P1):显式启用 → 清除停用意图(见 deactivationIntents)。幂等。 */
+  /** 启用广播的同步部分(终审 P1,handleEnabledChanged 开头调用):显式启用 → 清除停用意图(见 deactivationIntents)。幂等。 */
   markEnabled(id: string): void {
     this.clearDisabledIntent(id);
   }

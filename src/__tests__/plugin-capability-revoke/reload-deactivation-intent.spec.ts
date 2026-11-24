@@ -2,8 +2,8 @@
 // 热重载不得绕过禁用 / 卸载意图(终审 P1):
 // A. 旧实例 onunload 挂起期间(热重载正在拆旧实例)点禁用 / 卸载 —— 此前 revokeImmediately 只在 activating 时记中止,
 //    重载随后创建全新 scoped app 并激活,新实例继续持有 shell 等能力;新实例 onload 挂起时禁用 / 卸载永远排不上。
-// B. init 期间(onload 挂起)插件文件变化 → reload 进 reload-gate 待处理队列;随后别窗禁用 —— gate 在 init 结束后
-//    先执行 reload(读到旧的启用意图)再执行禁用 → 重新激活。
+// B. init 期间(onload 挂起)插件文件变化 → reload 排在挂起的激活之后;随后别窗禁用 —— 激活被中止后先执行 reload
+//    (读到旧的启用意图)再执行禁用 → 重新激活。
 // 修复:per-id「停用意图」在禁用 / 卸载请求到达时同步记录,所有激活路径在导入模块前检查;只有显式启用清除。
 // 见同目录 README.md「1d」。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,7 +22,7 @@ vi.mock('@/lib/co-api', () => ({
 
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
-import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
+import { wirePluginEvents } from '../../plugins/plugin-events';
 import { createTestCoApp } from '../../plugins/test-utils';
 import { flushMacrotasks } from '../_helpers/async';
 
@@ -68,7 +68,7 @@ function makeManager(enabled: boolean): {
   return { mgr: new PluginManager(createTestCoApp('1.0.0'), host), mutate, removeDir };
 }
 
-/** 按 main-app 的接线方式接 reload-gate,返回文件变化 / 广播触发器。 */
+/** 按 main-app 的接线方式(先发起 init,再 wirePluginEvents),返回文件变化 / 广播触发器。 */
 function wire(mgr: PluginManager): {
   emitChanged: (id: string) => void;
   emitEnabled: (id: string, enabled: boolean) => void;
@@ -77,24 +77,22 @@ function wire(mgr: PluginManager): {
   let onChanged!: (id: string) => void;
   let onEnabled!: (id: string, enabled: boolean) => void;
   let onUninstalled!: (id: string) => void;
-  wirePluginReloadGate({
-    init: () => mgr.init(),
-    reload: (id) => mgr.reload(id),
-    onChanged: (cb) => {
-      onChanged = cb;
+  void mgr.init().catch(() => {});
+  wirePluginEvents(
+    mgr,
+    {
+      onChanged: (cb) => {
+        onChanged = cb;
+      },
+      onUninstalled: (cb) => {
+        onUninstalled = cb;
+      },
+      onEnabledChanged: (cb) => {
+        onEnabled = cb;
+      },
     },
-    onUninstalled: (cb) => {
-      onUninstalled = cb;
-    },
-    uninstalled: (id) => mgr.handleUninstalled(id),
-    markUninstalled: (id) => mgr.markUninstalled(id),
-    onEnabledChanged: (cb) => {
-      onEnabled = cb;
-    },
-    enabledChanged: (id, on) => mgr.handleEnabledChanged(id, on),
-    revokeImmediately: (id) => mgr.revokeImmediately(id),
-    markEnabled: (id) => mgr.markEnabled(id),
-  });
+    () => {},
+  );
   return {
     emitChanged: (id) => onChanged(id),
     emitEnabled: (id, on) => onEnabled(id, on),
@@ -145,7 +143,7 @@ describe('A. 热重载拆旧实例(onunload 挂起)期间禁用 / 卸载 → 重
 
   it('别窗禁用广播:不构造新实例;禁用完成', async () => {
     const { mgr, reloading } = await startReloadWithHangingUnload();
-    // init 已完成 → 按 reload-gate 就绪后的处理:同步部分立即执行,锁内部分随后排队。
+    // init 已完成(扫描早已完成):同步部分立即执行,锁内部分随后排队。
     mgr.revokeImmediately(ID);
     const handling = mgr.handleEnabledChanged(ID, false);
     releaseUnload!();
@@ -204,7 +202,7 @@ describe('本地卸载失败(目录未删、entry 仍在)', () => {
   });
 });
 
-describe('B. init 期间(onload 挂起)文件变化排队 reload,随后禁用 / 卸载 → reload 不重新激活', () => {
+describe('B. init 期间(onload 挂起)文件变化的 reload 排在锁后,随后禁用 / 卸载 → reload 不重新激活', () => {
   it('别窗禁用广播:init 结束后不重新激活,shell.exec 被拒,最终 disabled', async () => {
     hangOnload = true;
     const { mgr } = makeManager(true);
@@ -212,7 +210,7 @@ describe('B. init 期间(onload 挂起)文件变化排队 reload,随后禁用 / 
     await flushMacrotasks(5);
     expect(execs).toHaveLength(1); // init 的激活挂在 onload
 
-    emitChanged(ID); // init 未完成 → 进 gate 待处理队列
+    emitChanged(ID); // 扫描已完成、init 未完成 → reload 排在挂起的激活之后(生命周期锁)
     emitEnabled(ID, false);
     await flushMacrotasks(5);
 

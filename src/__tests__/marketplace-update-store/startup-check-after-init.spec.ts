@@ -32,7 +32,7 @@ describe('启动更新检查排在插件扫描完成之后', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it('返回值即 init 的结果(含失败),原样交给 reload-gate', async () => {
+  it('返回值即 init 的结果(含失败),原样交给调用方', async () => {
     const { manager, init, scanned } = fakeManager();
     const done = initPluginsThenCheckUpdates(manager, vi.fn(() => Promise.resolve()));
     const err = new Error('scan failed');

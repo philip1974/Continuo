@@ -58,4 +58,4 @@ I/O 全部抽象为接口注入(`ManagerHost`),便于 jsdom 单测。
 - `init()`:扫描 + 激活全部 enabled。两阶段:先登记全部插件 entry(`whenScanned()` resolve,`listAll()` 已含全部插件),
   再按同一顺序逐个在生命周期锁内激活;激活前在锁内重查 —— 已被卸载(entry 移除)/ 已禁用 / 有停用意图 → 不激活(落 `disabled`)
 - `whenScanned()`:扫描完成信号,不等激活(某插件授权弹窗 / onload 挂起时 init 可能长时间不完成);init 扫描失败也 resolve。
-  启动更新检查挂在它上面(见 marketplace-update-store)。规范:`when-scanned.spec.ts`
+  启动更新检查挂在它上面(见 marketplace-update-store);main 推送事件的启动门控也是它(见 plugin-reload-gate)。规范:`when-scanned.spec.ts`

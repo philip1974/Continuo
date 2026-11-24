@@ -116,7 +116,7 @@ describe('PluginManager.whenScanned', () => {
     expect(mutate).toHaveBeenCalledWith('b', false);
   });
 
-  it('扫描后、激活前到达的禁用广播(revokeImmediately,锁内停用被 gate 缓冲)→ 不激活', async () => {
+  it('扫描后、激活前到达的禁用(仅同步部分 revokeImmediately,锁内停用尚未执行)→ 不激活', async () => {
     const { mgr } = makeManager();
     const initP = mgr.init();
     await mgr.whenScanned();
@@ -130,7 +130,7 @@ describe('PluginManager.whenScanned', () => {
     expect(warn.mock.calls.some((c) => String(c[0]).includes('activate b failed'))).toBe(false);
     warn.mockRestore();
     expect(mgr.listAll().find((x) => x.id === 'b')?.status).toBe('disabled');
-    await mgr.handleEnabledChanged('b', false); // gate flush 后的锁内停用
+    await mgr.handleEnabledChanged('b', false); // 随后的锁内停用
     expect(mgr.listAll().find((x) => x.id === 'b')?.status).toBe('disabled');
   });
 

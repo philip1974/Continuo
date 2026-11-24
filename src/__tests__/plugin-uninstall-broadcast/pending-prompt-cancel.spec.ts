@@ -27,7 +27,7 @@ import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { IpcPermissionStore } from '../../plugins/permissions/IpcPermissionStore';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
-import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
+import { wirePluginEvents } from '../../plugins/plugin-events';
 import { createTestCoApp } from '../../plugins/test-utils';
 import { flushMicrotasks } from '../_helpers/async';
 
@@ -145,33 +145,37 @@ describe('授权弹窗挂起期间收到卸载广播', () => {
   });
 });
 
-describe('init 激活挂在授权弹窗上时收到卸载广播(reload-gate 尚未 ready)', () => {
-  it('gate 立即标记并取消弹窗,init 不加载插件代码、不写权限;init 完成后再执行卸载清理', async () => {
-    const b = makeWindow([ID]);
+describe('init 激活挂在授权弹窗上时收到卸载广播(init 未完成)', () => {
+  it('立即标记并取消弹窗,init 不加载插件代码、不写权限;卸载清理随即执行(不等 init 结束)', async () => {
+    const b = makeWindow([ID, OTHER]);
     let onUninstalled!: (id: string) => void;
-    const uninstalled = vi.fn((id: string) => b.mgr.handleUninstalled(id));
-    wirePluginReloadGate({
-      init: () => b.mgr.init(),
-      reload: vi.fn().mockResolvedValue(undefined),
-      onChanged: () => {},
-      onUninstalled: (fn) => {
-        onUninstalled = fn;
+    const handleUninstalled = vi.spyOn(b.mgr, 'handleUninstalled');
+    void b.mgr.init();
+    wirePluginEvents(
+      b.mgr,
+      {
+        onChanged: () => {},
+        onUninstalled: (fn) => {
+          onUninstalled = fn;
+        },
+        onEnabledChanged: () => {},
       },
-      uninstalled,
-      markUninstalled: (id) => b.mgr.markUninstalled(id),
-    });
+      () => {},
+    );
     await flushMicrotasks(20);
     expect(usePermissionPromptStore.getState().pending).toMatchObject({ pluginId: ID });
 
     onUninstalled(ID);
-    expect(usePermissionPromptStore.getState().pending).toBeNull();
+    expect(usePermissionPromptStore.getState().pending).toBeNull(); // 同步取消 ID 的弹窗
     await flushMicrotasks(20);
     await flushMicrotasks(20);
+    expect(usePermissionPromptStore.getState().pending).toMatchObject({ pluginId: OTHER });
 
-    expect(b.importModule).not.toHaveBeenCalled();
-    expect(constructed).not.toHaveBeenCalled();
+    expect(b.importModule).not.toHaveBeenCalledWith(`mod://${ID}`);
+    expect(constructed).not.toHaveBeenCalledWith(ID);
     expect(h.mutate).not.toHaveBeenCalled();
-    expect(uninstalled).toHaveBeenCalledWith(ID);
+    expect(handleUninstalled).toHaveBeenCalledWith(ID);
+    // init 仍挂在 OTHER 的授权弹窗上,ID 的卸载清理已完成
     expect(b.mgr.listAll().map((p) => p.id)).toEqual([OTHER]);
   });
 });

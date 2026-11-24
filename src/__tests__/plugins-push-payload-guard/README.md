@@ -2,7 +2,7 @@
 
 main→renderer push 事件(`plugins:changed` / `plugins:protocol-url`)的 payload runtime 守卫。preload 的
 onChanged / onProtocolUrl 此前直接解包 `payload.id` / `payload.url`,信任 main 形态:null payload 在
-listener 抛、超长/非字符串 id 进 plugin-reload-gate pending Set 或触发 reload。
+listener 抛、超长/非字符串 id 触发 reload(当时还会进启动期 reload 缓冲集合)。
 
 ## 行为契约
 

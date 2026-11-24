@@ -14,7 +14,7 @@ vi.mock('@/lib/co-api', () => ({
 
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost, type PluginDirInfo } from '../../plugins/PluginManager';
-import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
+import { wirePluginEvents } from '../../plugins/plugin-events';
 import { createTestCoApp } from '../../plugins/test-utils';
 import type { CoApp } from '../../plugins/types';
 import { InMemoryPermissionStore } from '../../plugins/testing/in-memory-stores';
@@ -153,46 +153,47 @@ describe('renderer:收到 plugins:enabled-changed 后同步本窗口实例', () 
   });
 });
 
-describe('renderer 接线:wirePluginReloadGate 订阅 plugins:enabled-changed', () => {
-  it('init 完成后的广播直接交给 enabledChanged', async () => {
-    const enabledChanged = vi.fn().mockResolvedValue(undefined);
+describe('renderer 接线:wirePluginEvents 订阅 plugins:enabled-changed', () => {
+  it('广播直接交给 handleEnabledChanged', () => {
+    const handleEnabledChanged = vi.fn().mockResolvedValue(undefined);
     let cb!: (id: string, enabled: boolean) => void;
-    wirePluginReloadGate({
-      init: async () => {},
-      reload: vi.fn().mockResolvedValue(undefined),
-      onChanged: () => {},
-      onEnabledChanged: (fn) => {
-        cb = fn;
+    wirePluginEvents(
+      { reload: vi.fn(), handleUninstalled: vi.fn(), handleEnabledChanged },
+      {
+        onChanged: () => {},
+        onUninstalled: () => {},
+        onEnabledChanged: (fn) => {
+          cb = fn;
+        },
       },
-      enabledChanged,
-    });
-    await Promise.resolve();
-    await Promise.resolve();
+      () => {},
+    );
     cb(ID, false);
-    expect(enabledChanged).toHaveBeenCalledWith(ID, false);
+    expect(handleEnabledChanged).toHaveBeenCalledWith(ID, false);
   });
 
-  it('init 完成前到达的广播先缓冲(同 id 以最后一次为准),init 完成后再处理', async () => {
-    let finishInit!: () => void;
-    const enabledChanged = vi.fn().mockResolvedValue(undefined);
+  it('扫描完成前到达的广播:等条目登记后按到达顺序处理,以最后一次为准(不被 init 的旧快照覆盖)', async () => {
+    const shared = await freshShared(true);
+    const b = makeWindow(shared);
     let cb!: (id: string, enabled: boolean) => void;
-    wirePluginReloadGate({
-      init: () => new Promise<void>((r) => (finishInit = r)),
-      reload: vi.fn().mockResolvedValue(undefined),
-      onChanged: () => {},
-      onEnabledChanged: (fn) => {
-        cb = fn;
+    const init = b.mgr.init();
+    wirePluginEvents(
+      b.mgr,
+      {
+        onChanged: () => {},
+        onUninstalled: () => {},
+        onEnabledChanged: (fn) => {
+          cb = fn;
+        },
       },
-      enabledChanged,
-    });
+      () => {},
+    );
     cb(ID, true);
-    cb(ID, false);
-    await Promise.resolve();
-    expect(enabledChanged).not.toHaveBeenCalled();
-    finishInit();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(enabledChanged).toHaveBeenCalledTimes(1);
-    expect(enabledChanged).toHaveBeenCalledWith(ID, false);
+    cb(ID, false); // 扫描尚未完成:entry 未登记
+    await init;
+    await b.mgr.handleEnabledChanged(ID, false); // 排在已到达广播之后
+    expect(CmdPlugin.loaded).toBe(0);
+    expect(b.mgr.listAll()[0]!.status).toBe('disabled');
+    expect(b.mutateEnabledId).not.toHaveBeenCalled();
   });
 });

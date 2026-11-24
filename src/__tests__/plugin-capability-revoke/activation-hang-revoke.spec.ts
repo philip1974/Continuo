@@ -18,7 +18,7 @@ vi.mock('@/lib/co-api', () => ({
 
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
-import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
+import { wirePluginEvents } from '../../plugins/plugin-events';
 import { createTestCoApp } from '../../plugins/test-utils';
 import { flushMacrotasks } from '../_helpers/async';
 
@@ -53,28 +53,27 @@ function makeManager(enabled: boolean): {
   return { mgr: new PluginManager(createTestCoApp('1.0.0'), host), kill, mutate };
 }
 
-/** 按 main-app 的接线方式接 reload-gate,返回广播触发器。 */
+/** 按 main-app 的接线方式(先发起 init,再 wirePluginEvents),返回广播触发器。 */
 function wire(mgr: PluginManager): {
   emitEnabled: (id: string, enabled: boolean) => void;
   emitUninstalled: (id: string) => void;
 } {
   let onEnabled!: (id: string, enabled: boolean) => void;
   let onUninstalled!: (id: string) => void;
-  wirePluginReloadGate({
-    init: () => mgr.init(),
-    reload: (id) => mgr.reload(id),
-    onChanged: () => {},
-    onUninstalled: (cb) => {
-      onUninstalled = cb;
+  void mgr.init().catch(() => {});
+  wirePluginEvents(
+    mgr,
+    {
+      onChanged: () => {},
+      onUninstalled: (cb) => {
+        onUninstalled = cb;
+      },
+      onEnabledChanged: (cb) => {
+        onEnabled = cb;
+      },
     },
-    uninstalled: (id) => mgr.handleUninstalled(id),
-    markUninstalled: (id) => mgr.markUninstalled(id),
-    onEnabledChanged: (cb) => {
-      onEnabled = cb;
-    },
-    enabledChanged: (id, on) => mgr.handleEnabledChanged(id, on),
-    revokeImmediately: (id) => mgr.revokeImmediately(id),
-  });
+    () => {},
+  );
   return { emitEnabled: (id, on) => onEnabled(id, on), emitUninstalled: (id) => onUninstalled(id) };
 }
 
@@ -97,7 +96,7 @@ describe('onload 挂起期间收到禁用 / 卸载 → 立即吊销,不等 onloa
     await expect(later!()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     expect(h.shellExec).not.toHaveBeenCalled();
 
-    // 挂起的激活被中止 → 锁释放、init 完成,缓冲的禁用随后落地
+    // 挂起的激活被中止 → 锁释放、init 完成,排在锁后的停用随后落地
     await flushMacrotasks(1);
     await flushMacrotasks(1);
     expect(mgr.listAll()[0]!.status).toBe('disabled');

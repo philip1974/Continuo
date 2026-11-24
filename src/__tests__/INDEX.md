@@ -1077,7 +1077,7 @@
 
 - [`plugin-permissions.spec.ts`](./plugin-permissions/plugin-permissions.spec.ts)
 
-## [plugin-reload-gate](./plugin-reload-gate/)
+## [plugin-reload-gate(插件启动期事件门控)](./plugin-reload-gate/README.md)
 
 - [`plugin-reload-gate.spec.ts`](./plugin-reload-gate/plugin-reload-gate.spec.ts)
 

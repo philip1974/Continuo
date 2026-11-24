@@ -23,7 +23,7 @@ import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { IpcPermissionStore } from '../../plugins/permissions/IpcPermissionStore';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
-import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
+import { wirePluginEvents } from '../../plugins/plugin-events';
 import { createTestCoApp } from '../../plugins/test-utils';
 import { flushMacrotasks } from '../_helpers/async';
 
@@ -43,23 +43,21 @@ function manifest(id: string, permissions?: string[]): string {
   return JSON.stringify({ id, name: id, version: '0.1.0', ...(permissions ? { permissions } : {}) });
 }
 
-/** 按 main-app 的接线方式接 reload-gate,返回广播触发器。 */
+/** 按 main-app 的接线方式(先发起 init,再 wirePluginEvents),返回广播触发器。 */
 function wire(mgr: PluginManager): { emitEnabled: (id: string, enabled: boolean) => void } {
   let onEnabled!: (id: string, enabled: boolean) => void;
-  wirePluginReloadGate({
-    init: () => mgr.init(),
-    reload: (id) => mgr.reload(id),
-    onChanged: () => {},
-    onUninstalled: () => {},
-    uninstalled: (id) => mgr.handleUninstalled(id),
-    markUninstalled: (id) => mgr.markUninstalled(id),
-    onEnabledChanged: (cb) => {
-      onEnabled = cb;
+  void mgr.init().catch(() => {});
+  wirePluginEvents(
+    mgr,
+    {
+      onChanged: () => {},
+      onUninstalled: () => {},
+      onEnabledChanged: (cb) => {
+        onEnabled = cb;
+      },
     },
-    enabledChanged: (id, on) => mgr.handleEnabledChanged(id, on),
-    revokeImmediately: (id) => mgr.revokeImmediately(id),
-    markEnabled: (id) => mgr.markEnabled(id),
-  });
+    () => {},
+  );
   return { emitEnabled: (id, on) => onEnabled(id, on) };
 }
 

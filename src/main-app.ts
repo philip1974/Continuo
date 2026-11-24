@@ -15,7 +15,7 @@ import { coApp } from './plugins/co-app';
 import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
 import { Plugin } from './plugins/Plugin';
 import { PluginManager, setUserPluginManager } from './plugins/PluginManager';
-import { wirePluginReloadGate } from './plugins/plugin-reload-gate';
+import { wirePluginEvents } from './plugins/plugin-events';
 import { initPluginsThenCheckUpdates } from './marketplace/startup-update-check';
 import { wireProtocolUrl } from './plugins/protocol/wire-protocol-url';
 import { createWindowApiHost } from './lib/plugins-host';
@@ -188,32 +188,24 @@ export async function init(): Promise<void> {
       .catch((err) => console.warn('[main] plugin permissions-changed recheck failed', err));
   });
 
-  // M-Plugin v4.3.1:主进程 mtime watch 推 changed → 自动 reload。
-  // race(R16):init() 与 onChanged 订阅经 reload-gate 解耦 —— init 仍在扫描时到达的变更先
-  // 缓冲(去重),init 完成(成功/失败)后逐个 reload,避免窗口期变更被「Plugin not found」丢弃。
-  wirePluginReloadGate({
-    // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用),排在插件扫描完成之后 —— refresh 按
-    // listAll() 裁剪,扫描前为空会直接落空;不等激活(可能挂在授权弹窗上)。popout 已在上方早退,此处恒为主窗。
-    // fire-and-forget,不阻塞 UI 渲染;失败 console.warn 不抛。
-    init: () =>
-      initPluginsThenCheckUpdates(userPluginManager, () => useUpdateStore.getState().refresh()),
-    reload: (id) => userPluginManager.reload(id),
-    onChanged: (cb) => coApi.plugins.onChanged(cb),
-    // 终审 P1:任一窗口卸载成功 → main 广播,本窗口撤销该插件实例 / 贡献点 / 权限缓存(幂等、不触盘)。
-    onUninstalled: (cb) => coApi.plugins.onUninstalled(cb),
-    uninstalled: (id) => userPluginManager.handleUninstalled(id),
-    // 广播一到立即标记已卸载 + 取消授权弹窗(不等 init / 生命周期锁)。
-    markUninstalled: (id) => userPluginManager.markUninstalled(id),
-    // 终审 P1:任一窗口启用 / 禁用成功 → main 广播,本窗口同步实例启停(幂等、不触盘)。
-    onEnabledChanged: (cb) => coApi.plugins.onEnabledChanged(cb),
-    enabledChanged: (id, enabled) => userPluginManager.handleEnabledChanged(id, enabled),
-    // 禁用广播一到立即吊销 + 中止挂起的激活(不等 init / 生命周期锁)。
-    revokeImmediately: (id) => userPluginManager.revokeImmediately(id),
-    // 启用广播一到立即清除 init 期间记下的「已禁用」标记。
-    markEnabled: (id) => userPluginManager.markEnabled(id),
-    onError: (where, err) =>
-      console.warn(`[main] user plugin manager ${where} failed`, err),
-  });
+  // Marketplace Phase 3:启动时静默拉一次更新清单(IconSidebar 角标用),排在插件扫描完成之后 —— refresh 按
+  // listAll() 裁剪,扫描前为空会直接落空;不等激活(可能挂在授权弹窗上)。popout 已在上方早退,此处恒为主窗。
+  // fire-and-forget,不阻塞 UI 渲染;失败 console.warn 不抛。
+  void initPluginsThenCheckUpdates(userPluginManager, () => useUpdateStore.getState().refresh()).catch(
+    (err) => console.warn('[main] user plugin manager init failed', err),
+  );
+  // M-Plugin v4.3.1 mtime watch → 热重载;终审 P1 跨窗口卸载 / 启停广播 → 本窗口同步(幂等、不触盘)。
+  // race(R16):启动门控在 PluginManager 内 —— 扫描完成前到达的事件等条目登记后再处理,不等全部插件激活完
+  //(某插件授权弹窗无人理会时 init 可能永不结束,其它插件的事件须照常生效)。须在 init() 发起之后接线。
+  wirePluginEvents(
+    userPluginManager,
+    {
+      onChanged: (cb) => coApi.plugins.onChanged(cb),
+      onUninstalled: (cb) => coApi.plugins.onUninstalled(cb),
+      onEnabledChanged: (cb) => coApi.plugins.onEnabledChanged(cb),
+    },
+    (where, err) => console.warn(`[main] user plugin manager ${where} failed`, err),
+  );
 
   // M-Plugin v4.4:co:// 外部唤起 → 路由到 commands.execute
   // race(R33):同步注册 onProtocolUrl 监听、handler 懒加载。此前订阅写在 import().then 里,
