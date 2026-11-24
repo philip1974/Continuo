@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, act } from '@testing-library/react';
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
+import { detectPlatform } from '../../plugins/command-palette/format-hotkey';
 
 vi.mock('../../panels/Editor/CodeEditor', () => ({
   CodeEditor: ({ value }: { value: string }) => (
@@ -123,19 +124,19 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
     expect(getByTestId('code-editor').textContent).toBe('aaa typed more');
   });
 
-  it('Cmd/Ctrl+S 大写 key 不调用 toLowerCase 也走保存快捷键判断', () => {
+  // 保存快捷键按平台精确匹配(matchesHotkey('mod+s'),与全局热键同一规则):大写 key 照常识别;多带 shift / 另一个
+  // 修饰键不算保存(此前 `metaKey || ctrlKey` 不看 shift / alt,绑到 mod+shift+s 的命令会连带触发保存)。
+  // fireEvent 返回 false = 处理器 preventDefault(被当作保存接管)。
+  it('mod+S(含大写 key)走保存;mod+shift+S / 另一平台修饰键不走', () => {
     const { container } = render(<EditorPanel />);
     const root = container.firstElementChild;
     if (!root) throw new Error('missing editor root');
-    const lowerSpy = vi.spyOn(String.prototype, 'toLowerCase');
-
-    try {
-      fireEvent.keyDown(root, { key: 'S', metaKey: true });
-      expect(
-        lowerSpy.mock.contexts.some((ctx) => String(ctx) === 'S'),
-      ).toBe(false);
-    } finally {
-      lowerSpy.mockRestore();
-    }
+    const mac = detectPlatform() === 'mac';
+    const MOD = mac ? { metaKey: true } : { ctrlKey: true };
+    const OTHER = mac ? { ctrlKey: true } : { metaKey: true };
+    expect(fireEvent.keyDown(root, { key: 'S', ...MOD })).toBe(false);
+    expect(fireEvent.keyDown(root, { key: 's', ...MOD })).toBe(false);
+    expect(fireEvent.keyDown(root, { key: 'S', shiftKey: true, ...MOD })).toBe(true);
+    expect(fireEvent.keyDown(root, { key: 's', ...OTHER })).toBe(true);
   });
 });

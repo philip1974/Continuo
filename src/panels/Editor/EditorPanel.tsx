@@ -42,6 +42,7 @@ import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notification
 import { notifyOpenFailed } from '@/notifications/notify-open-failed';
 import { failureOf } from '@/lib/failure-of';
 import { basenameForChrome } from '@/lib/path-label';
+import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -64,9 +65,6 @@ let lazyEngines: LazyEngines = {
 };
 
 
-function isSKey(key: string): boolean {
-  return key === 's' || key === 'S';
-}
 
 export function EditorPanel() {
   // 只订阅 active tab 对象(打磨 R27,延续 R22-R24 正文热路径收敛)。editor store
@@ -295,8 +293,10 @@ export function EditorPanel() {
     <div
       className="flex h-full w-full flex-col bg-canvas"
       onKeyDown={(e) => {
-        // Cmd/Ctrl+S 显式保存(Crepe 不会拦 ⌘S,所以可以放心)
-        if ((e.metaKey || e.ctrlKey) && isSKey(e.key)) {
+        // mod+S 显式保存(Crepe 不会拦 ⌘S)。按平台精确匹配修饰键(matchesHotkey,与全局热键同一规则):此前
+        // `metaKey || ctrlKey` 且不看 shift / alt → mac 上 Ctrl+S、Win/Linux 上 Super+S 也保存,绑到 mod+shift+s 的
+        // 命令在编辑器里一次按键触发保存 + 命令两个动作(复审 loop R15 同族)。
+        if (matchesHotkey('mod+s', e.nativeEvent)) {
           e.preventDefault();
           void handleSave();
         }

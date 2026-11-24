@@ -7,6 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
 import { t } from '../../i18n';
+import { detectPlatform } from '../../plugins/command-palette/format-hotkey';
+
+// mod 键按当前平台(保存快捷键按平台精确匹配:mac=Cmd,其它=Ctrl)。
+const MOD = detectPlatform() === 'mac' ? { metaKey: true } : { ctrlKey: true };
 
 const mocks = vi.hoisted(() => ({
   readFile: vi.fn(),
@@ -63,7 +67,7 @@ async function saveAndWaitForOverwriteDialog() {
   render(<EditorPanel />);
   const editor = await screen.findByTestId('code-editor');
   await act(async () => {
-    fireEvent.keyDown(editor, { key: 's', metaKey: true });
+    fireEvent.keyDown(editor, { key: 's', ...MOD });
   });
   await screen.findByText(t('panels.editor.disk_changed_title'));
 }
