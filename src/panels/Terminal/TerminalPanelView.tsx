@@ -8,8 +8,7 @@ import {
 } from '@/stores/terminal.store';
 import { useTerminal } from './useTerminal';
 import { useTerminalDragDrop } from './useTerminalDragDrop';
-import { registerTerminalFocus } from './terminal-focus-registry';
-import { registerTerminalSearch } from './terminal-search-registry';
+import { registerTerminalPanelHandles } from './terminal-panel-handles';
 import { TerminalSearchBar } from './TerminalSearchBar';
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
@@ -100,17 +99,12 @@ function TerminalPanelContent({
     useTerminal(sessionId);
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
 
-  // topic-22: register focus callback so DockShell can pull focus back to
-  // xterm after onDidMaximizedGroupChange (exit-maximize doesn't re-fire
-  // onDidActiveChange when the same panel was already active).
+  // 对外句柄:focus 供 DockShell 在 exit-maximize 后拉回 xterm 焦点(topic-22:
+  // 同一 panel 已 active 时 onDidActiveChange 不会再触发);openSearch 供
+  // terminal.search.toggle command 打开搜索条。
   useEffect(() => {
-    return registerTerminalFocus(api.id, focus);
-  }, [api.id, focus]);
-
-  useEffect(() => {
-    const disposable = registerTerminalSearch(api.id, searchApi.open);
-    return () => disposable.dispose();
-  }, [api.id, searchApi.open]);
+    return registerTerminalPanelHandles(api.id, { focus, openSearch: searchApi.open });
+  }, [api.id, focus, searchApi.open]);
 
   // issue #38 R2: ref-capture latest searchApi.isOpen so the
   // onDidActiveChange handler reads fresh value without re-creating

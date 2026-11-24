@@ -26,11 +26,8 @@ vi.mock('../../panels/Terminal/useTerminal', () => ({
 vi.mock('../../panels/Terminal/useTerminalDragDrop', () => ({
   useTerminalDragDrop: () => ({ ref: { current: null } }),
 }));
-vi.mock('../../panels/Terminal/terminal-focus-registry', () => ({
-  registerTerminalFocus: () => vi.fn(),
-}));
-vi.mock('../../panels/Terminal/terminal-search-registry', () => ({
-  registerTerminalSearch: () => ({ dispose: vi.fn() }),
+vi.mock('../../panels/Terminal/terminal-panel-handles', () => ({
+  registerTerminalPanelHandles: () => vi.fn(),
 }));
 vi.mock('../../panels/Terminal/TerminalSearchBar', () => ({
   TerminalSearchBar: () => null,

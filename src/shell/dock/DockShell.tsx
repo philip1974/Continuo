@@ -11,7 +11,7 @@ import { applyDefaultLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { markDockLayoutRestored, setDockApi } from './dock-api-ref';
-import { focusTerminalPanel } from '@/panels/Terminal/terminal-focus-registry';
+import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
 import { makeJsonSafe } from '../../../electron/shared/make-json-safe';

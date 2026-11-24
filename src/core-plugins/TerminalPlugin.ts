@@ -8,7 +8,7 @@ import type { TerminalPanelViewParams } from '@/panels/Terminal/TerminalPanelVie
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
-import { openTerminalSearch } from '@/panels/Terminal/terminal-search-registry';
+import { openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 
 const TerminalPanelView = lazy(() =>

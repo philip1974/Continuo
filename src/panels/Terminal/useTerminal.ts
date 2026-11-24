@@ -36,9 +36,9 @@ import {
   applyMappedKeyOnKeydown,
   consumeMappedKeyOnData,
   createMappedKeyState,
+  isSearchHotkey,
   shouldSkipXtermKey,
 } from '@continuo-terminal/react-terminal';
-import { isSearchHotkey } from './terminal-search-keymap';
 import { createOutputCoalescer } from './output-coalescer';
 import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
 import {

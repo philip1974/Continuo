@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { isSearchHotkey } from '@/panels/Terminal/terminal-search-keymap';
+import { isSearchHotkey } from '@continuo-terminal/react-terminal';
 
 function setPlatform(platform: string): void {
   Object.defineProperty(window.navigator, 'platform', {

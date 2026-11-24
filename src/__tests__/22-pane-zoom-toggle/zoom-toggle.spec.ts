@@ -249,16 +249,16 @@ describe('i18n catalog 三套 commands.terminal.zoom.title (T9)', () => {
 
 describe('onDidMaximizedGroupChange focus dispatch (T6 / T6c)', () => {
   beforeEach(async () => {
-    const mod = await import('@/panels/Terminal/terminal-focus-registry');
-    mod.__resetTerminalFocusRegistryForTest();
+    const mod = await import('@/panels/Terminal/terminal-panel-handles');
+    mod.__resetTerminalPanelHandlesForTest();
   });
 
   it('T6: isMaximized=false + group.activePanel terminal → focusTerminalPanel called', async () => {
-    const { registerTerminalFocus, focusTerminalPanel } = await import(
-      '@/panels/Terminal/terminal-focus-registry'
+    const { registerTerminalPanelHandles, focusTerminalPanel } = await import(
+      '@/panels/Terminal/terminal-panel-handles'
     );
     const fn = vi.fn();
-    registerTerminalFocus('terminal-foo', fn);
+    registerTerminalPanelHandles('terminal-foo', { focus: fn, openSearch: vi.fn() });
 
     // simulate DockShell onDidMaximizedGroupChange handler
     const handler = (evt: {
@@ -280,11 +280,11 @@ describe('onDidMaximizedGroupChange focus dispatch (T6 / T6c)', () => {
   });
 
   it('T6c (P2-1): isMaximized=true → focusTerminalPanel 0 次 (避免二次 focus)', async () => {
-    const { registerTerminalFocus, focusTerminalPanel } = await import(
-      '@/panels/Terminal/terminal-focus-registry'
+    const { registerTerminalPanelHandles, focusTerminalPanel } = await import(
+      '@/panels/Terminal/terminal-panel-handles'
     );
     const fn = vi.fn();
-    registerTerminalFocus('terminal-bar', fn);
+    registerTerminalPanelHandles('terminal-bar', { focus: fn, openSearch: vi.fn() });
 
     const handler = (evt: {
       isMaximized: boolean;
@@ -305,11 +305,11 @@ describe('onDidMaximizedGroupChange focus dispatch (T6 / T6c)', () => {
   });
 
   it('exit-maximize + group.activePanel 非 terminal → focusTerminalPanel 0 次', async () => {
-    const { registerTerminalFocus, focusTerminalPanel } = await import(
-      '@/panels/Terminal/terminal-focus-registry'
+    const { registerTerminalPanelHandles, focusTerminalPanel } = await import(
+      '@/panels/Terminal/terminal-panel-handles'
     );
     const fn = vi.fn();
-    registerTerminalFocus('editor', fn);
+    registerTerminalPanelHandles('editor', { focus: fn, openSearch: vi.fn() });
 
     const handler = (evt: {
       isMaximized: boolean;
