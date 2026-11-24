@@ -27,4 +27,5 @@
   - 焦点(APG Tree View / VSCode 变量视图):roving tabindex —— 每棵树只有一个节点 `tabindex=0`,跟随焦点(Tab 离开再回来回到上次的节点;初始为第一个节点);收起父节点时若焦点记忆在其子孙上则回到该父节点。
   - 「加载更多」是树节点(`role="treeitem"`,与同级变量同 `aria-level`):↑↓ 可到达,Enter / 空格加载下一页,加载后焦点移到新加载的第一项;点击不冒泡成父节点的展开 / 收起。展开中、子变量尚未加载到的节点 `aria-busy="true"`(「加载中」只是视觉提示,不是树节点)。
   - 读屏播报(VSCode aria.status):经全局 `announce()`(`src/lib/announce`,`live-announcer`)写进主窗 / 有焦点 popout 子窗的常驻 polite 区域 —— 面板被 dockview 隐藏(DOM 不在文档)时照样播。每一停播一次「已暂停：原因，文件名:行」(`panels.debug.paused_at`,每次新节点,同位置同文本也会再读);位置随栈帧稍后才到时等位置到了再播,1 秒内没到(取栈失败)只播「已暂停：原因」(`common.label_detail`);继续运行后 `RUNNING_ANNOUNCE_DELAY_MS`(300ms)仍在运行才播「运行中」,期间新的一停到达即取消(连按单步不堆积);多个调试会话时前缀会话名(`会话名: …`);挂载时不播。
+  - 停下原因按当前语言显示(徽章与播报共用 `STOP_REASON_KEYS` → `panels.debug.stop_reason.*`):DAP 规范列出的 step / breakpoint / exception / pause / entry / goto / function breakpoint / data breakpoint / instruction breakpoint 映射为本地化名称;未知原因(adapter 自定义)不露原始值 —— 徽章显示「已暂停」,播报为「已暂停：文件名:行」/「已暂停」。
   - 进入变量页自动加载第一个作用域(通常是 Locals,`expensive` 的除外),其余作用域仍点「加载」;已加载的作用域不再显示「加载」按钮,加载失败则保留按钮可重试。每一停重置展开状态与自动加载。

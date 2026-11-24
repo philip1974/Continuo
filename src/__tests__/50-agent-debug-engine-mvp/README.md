@@ -10,6 +10,7 @@
 - 跨窗口 debug session 对当前调用方表现为 not found，不暴露 capability 细节。
 - DebugService 在抛出点直接带稳定 debug 错误码(codedError),避免向 MCP client 回显超长 session id、program 或 adapter path;MCP 层只把 launch 的无码错误收敛为 `DEBUG_ADAPTER_LAUNCH_FAILED` 短消息。
 - `variables` / `evaluate` 保持分页、深度、字节预算与默认值边界。
+- `variables` 分页(`start` / `count`)按 DAP `indexedVariables` 取:子列表 = 具名项在前、索引项在后(同 VSCode);本停内见过带 `indexedVariables` 的 reference 用 `filter: 'named'` + `filter: 'indexed'` 带 `start` / `count` 取该页,其余 reference 不带分页参数取全部再本地截取(js-debug 不带 filter 时忽略 `start` / `count` 恒从 0 回全部 —— 否则「加载更多」追加的是第一页)。各页拼起来连续不重复;`next_start` 只在本页之后确有子项时出现(恰好取满最后一页不报)。reference 只在本停内有效,停住 / 恢复即作废记录。`supportsVariablePaging` 是客户端在 `initialize` 参数里声明的能力,adapter 的 Capabilities 里没有对应字段。由 `electron/main/__tests__/debug-service.spec.ts`(fake adapter + 真实 js-debug 300 元素数组)覆盖。
 - `variables` 深度展开有整次总预算(节点数、DAP 请求数,以及返回内容字节 4MiB —— 名称 + 值 + 类型的 UTF-8 字节,低于 MCP 10MiB 结果上限):用尽即停;字节预算截断顶层这一页时 `next_start` 接在已返回的最后一项之后(顶层至少返回一项),未展开的节点保留 `variables_reference` 并标 `truncated`,顶层 `truncated: true`;调用方断连(`ctx.signal`)时停止继续展开。
 - 资源上限:结束的 child session(worker 退出等)当即回收(移出、清掉各断点记录里该连接的条目并重推受影响 source 的快照;连接等其在途请求结算后再 dispose —— js-debug 可能在 terminated 之后才回 continue 等请求的响应,当即关连接会让调用方收到「DAP socket closed」),teardown 不再对它发 disconnect。
 - 安全(提示注入): `debug.stack` / `debug.scopes` / `debug.variables` / `debug.evaluate` / `debug.wait_for_stop` 返回的函数名、变量值、异常 description、表达式结果由被调试程序控制,工具描述须提示 agent 这些内容不可信、作为数据而非指令处理(措辞同 `terminal.await_stop_hook`)。

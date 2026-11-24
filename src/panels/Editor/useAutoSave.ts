@@ -14,6 +14,7 @@ import {
   trackInFlightAutoSave,
 } from './autosave-flush-registry';
 import { claimAutoSave, releaseAutoSave, setAutoSaveFailed } from './autosave-failures';
+import { useAutoSaveHeld } from './autosave-hold';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
@@ -32,7 +33,7 @@ export function useAutoSave(
   saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<unknown>,
   opts: UseAutoSaveOptions,
 ): void {
-  const { enabled, delayMs } = opts;
+  const { delayMs } = opts;
   // 只订阅活跃 tab 的调度相关字段(打磨 R47):id/filePath/dirty/content 变化才重排
   // schedule。用 useShallow 返回扁平 primitive 对象,逐字段 Object.is 比较 ——
   // markSaved 推进 originalContent、reloadFromDisk 改 reloadEpoch 等不在此集合的字段
@@ -52,6 +53,9 @@ export function useAutoSave(
     }),
   );
   const tabId = active.id;
+  // Explorer 删除确认 / 移到废纸篓在途期间暂停该文件的自动保存(见 autosave-hold.ts),同 !enabled。
+  const held = useAutoSaveHeld(active.filePath);
+  const enabled = opts.enabled && !held;
   // 关窗 / 切 tab flush 用:schedule effect 最近一次看到的内容与 enabled(都属于该 effect 当时的 tab)。
   // 关窗握手先同步回写编辑器里尚未上抛的输入(editor-writeback-registry)再 flush,中间没有 React 重渲;
   // 切 tab 时编辑器卸载回写(被删子树的 passive destroy)也先于本 hook 的 cleanup —— 两种情况下 schedule

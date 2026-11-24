@@ -36,6 +36,25 @@ import { getAnnouncingDocument } from '@/shell/dock/popout-documents';
 
 const EMPTY_VARIABLES: readonly [] = [];
 
+/** DAP stopped 事件的 reason(规范列出的取值)→ catalog 键;徽章与读屏播报共用。 */
+const STOP_REASON_KEYS: Readonly<Record<string, string>> = {
+  step: 'panels.debug.stop_reason.step',
+  breakpoint: 'panels.debug.stop_reason.breakpoint',
+  exception: 'panels.debug.stop_reason.exception',
+  pause: 'panels.debug.stop_reason.pause',
+  entry: 'panels.debug.stop_reason.entry',
+  goto: 'panels.debug.stop_reason.goto',
+  'function breakpoint': 'panels.debug.stop_reason.function_breakpoint',
+  'data breakpoint': 'panels.debug.stop_reason.data_breakpoint',
+  'instruction breakpoint': 'panels.debug.stop_reason.instruction_breakpoint',
+};
+
+/** 停下原因的本地化名称;未知原因(adapter 自定义)返回 undefined,调用方只显示「已暂停」,不露原始值。 */
+function stopReasonLabel(t: (key: string) => string, reason: string): string | undefined {
+  const key = Object.hasOwn(STOP_REASON_KEYS, reason) ? STOP_REASON_KEYS[reason] : undefined;
+  return key === undefined ? undefined : t(key);
+}
+
 export function DebugPanel() {
   const t = useT();
   const locale = useLocale();
@@ -105,7 +124,9 @@ function DebugSessionHeader({ session }: { readonly session: DebugSessionShadow 
         {location}
       </div>
       <Badge variant={session.stopped ? 'warning-soft' : 'neutral'}>
-        {session.stopped?.reason ?? t('panels.debug.running')}
+        {session.stopped
+          ? (stopReasonLabel(t, session.stopped.reason) ?? t('panels.debug.paused'))
+          : t('panels.debug.running')}
       </Badge>
     </Card>
   );
@@ -151,11 +172,18 @@ function useDebugStatusAnnouncements(session: DebugSessionShadow): void {
     if (stopSeq === undefined || reason === undefined) {
       text = t('panels.debug.running');
       delay = RUNNING_ANNOUNCE_DELAY_MS;
-    } else if (location !== undefined) {
-      text = t('panels.debug.paused_at', { reason, location });
     } else {
-      text = t('common.label_detail', { label: t('panels.debug.paused'), detail: reason });
-      delay = PAUSE_LOCATION_WAIT_MS;
+      const reasonLabel = stopReasonLabel(t, reason);
+      const paused = t('panels.debug.paused');
+      if (location !== undefined) {
+        text =
+          reasonLabel !== undefined
+            ? t('panels.debug.paused_at', { reason: reasonLabel, location })
+            : t('common.label_detail', { label: paused, detail: location });
+      } else {
+        text = reasonLabel !== undefined ? t('common.label_detail', { label: paused, detail: reasonLabel }) : paused;
+        delay = PAUSE_LOCATION_WAIT_MS;
+      }
     }
     if (delay === 0) {
       say(text);

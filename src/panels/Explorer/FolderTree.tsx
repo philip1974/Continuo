@@ -78,6 +78,7 @@ import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { ERROR_CODES } from '@shared/error-codes';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { announce } from '@/lib/announce';
+import { holdAutoSave } from '@/panels/Editor/autosave-hold';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -315,6 +316,10 @@ export function FolderTree({ root }: { root: string }) {
   const confirmDeleteRef = useRef(confirmDelete);
   confirmDeleteRef.current = confirmDelete;
   const [trashConfirm, setTrashConfirm] = useState<TrashConfirmState | null>(null);
+  // 删除确认框打开期间暂停被删文件的自动保存:框里说未保存修改保留在编辑器、不写回磁盘,停留超过自动保存延迟
+  // 也须如此(确认后由 runTrash 接着暂停到删除完成)。
+  const trashConfirmPaths = trashConfirm?.paths;
+  useEffect(() => (trashConfirmPaths === undefined ? undefined : holdAutoSave(trashConfirmPaths)), [trashConfirmPaths]);
   // 根目录「重试」后焦点去向(重试按钮随加载态卸载,不处理焦点会掉到 body):成功 → 树;成功但为空 → 空态提示;
   // 仍失败 → 新的重试按钮。
   const retryFocusPendingRef = useRef(false);
@@ -838,6 +843,8 @@ export function FolderTree({ root }: { root: string }) {
   // 实际移到废纸篓(键盘 / 右键共用;确认在 onTrash 里)。
   const runTrash = useCallback(
     (paths: string[]) => {
+      // 在途期间暂停被删文件的自动保存(确认框关闭到删除完成之间同样不写盘,见 autosave-hold.ts)。
+      const releaseAutoSave = holdAutoSave(paths);
       void (async () => {
         // 走规范的 mutate-actions.removeItems(遍历全部项、收集所有失败、刷新所有
         // 成功项父目录),而非内联首失早退 —— 旧实现一旦某项 trash 失败就 return,
@@ -845,7 +852,9 @@ export function FolderTree({ root }: { root: string }) {
         // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用)。见第七 session
         // R6 完整性批判。「路径已删除」清理(editor tab / 展开集合 / 剪贴板)只对 result.removed 做,在
         // trashItemsAndCleanup 一处完成(已测)。
-        const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved);
+        const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved).finally(
+          releaseAutoSave,
+        );
         if (!result.ok) {
           for (const f of result.failures) {
             console.warn('[explorer] trash failed', f.path, f.code, f.message);

@@ -379,10 +379,65 @@ describe('停点 / 恢复运行播报', () => {
     expect(spoken()).toEqual(['Paused: exception']);
   });
 
-  it('zh:全角冒号与逗号', () => {
+  it('zh:全角冒号与逗号;原因按当前语言显示', () => {
     setLocale('zh');
     render(<DebugPanel />);
     act(() => setStopped({ reason: 'breakpoint', stopSeq: 2, file: '/repo/a.ts', line: 3 }));
-    expect(spoken()).toEqual(['已暂停：breakpoint，a.ts:3']);
+    expect(spoken()).toEqual(['已暂停：断点，a.ts:3']);
+  });
+
+  it('ko:原因按当前语言显示;位置未到时只播「일시 중지됨: 원인」', () => {
+    vi.useFakeTimers();
+    setLocale('ko');
+    render(<DebugPanel />);
+    act(() => setStopped({ reason: 'pause', stopSeq: 2 }));
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(spoken()).toEqual(['일시 중지됨: 일시 중지']);
+  });
+
+  it('未知原因 → 只播「已暂停」(+ 位置),不念出原始 reason', () => {
+    vi.useFakeTimers();
+    setLocale('zh');
+    render(<DebugPanel />);
+    act(() => setStopped({ reason: 'weird-adapter-reason', stopSeq: 2, file: '/repo/a.ts', line: 3 }));
+    act(() => setStopped({ reason: 'weird-adapter-reason', stopSeq: 3 }));
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(spoken()).toEqual(['已暂停：a.ts:3', '已暂停']);
+  });
+});
+
+// 停点徽章显示 DAP stopped.reason 的本地化名称(同播报共用一张表);未知原因回退「已暂停」。
+describe('停点徽章', () => {
+  const badgeFor = (reason: string): string | null => {
+    seedStoppedSession();
+    useDebugStore.setState((s) => {
+      const cur = s.sessions.get('s1')!;
+      return { sessions: new Map([['s1', { ...cur, stopped: { ...cur.stopped!, reason } }]]) };
+    });
+    const { container, unmount } = render(<DebugPanel />);
+    const text = container.querySelector('.wm-card .wm-badge')?.textContent ?? null;
+    unmount();
+    return text;
+  };
+
+  it('zh / ko / en 按 DAP 常见原因显示本地化名称', () => {
+    setLocale('zh');
+    expect(
+      ['step', 'breakpoint', 'exception', 'pause', 'entry', 'goto', 'function breakpoint', 'data breakpoint', 'instruction breakpoint'].map(badgeFor),
+    ).toEqual(['单步', '断点', '异常', '暂停', '入口', '跳转', '函数断点', '数据断点', '指令断点']);
+    setLocale('ko');
+    expect(badgeFor('pause')).toBe('일시 중지');
+    expect(badgeFor('breakpoint')).toBe('중단점');
+    setLocale('en');
+    expect(badgeFor('function breakpoint')).toBe('function breakpoint');
+  });
+
+  it('未知原因 → 「已暂停」', () => {
+    setLocale('zh');
+    expect(badgeFor('weird-adapter-reason')).toBe('已暂停');
   });
 });

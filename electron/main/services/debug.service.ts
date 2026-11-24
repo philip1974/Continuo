@@ -291,6 +291,12 @@ interface RuntimeDebugSession {
    * 其余在此排队;当前停点恢复后依次呈现 —— 否则后停的会把先停的顶掉,先停的那条连接再也没法被继续。
    */
   readonly queuedStops: Array<{ client: DebugDapClientLike; body: DapJson | undefined }>;
+  /**
+   * 本停内见过的 variablesReference → 其 indexedVariables(DAP:子项可分页)。js-debug 只对带
+   * filter:'indexed' 的请求按 start/count 取,其余忽略分页从 0 回全部;据此决定怎么取一页。
+   * reference 只在本停内有效:停住 / 恢复时清空。
+   */
+  readonly indexedChildCounts: Map<number, number>;
 }
 
 
@@ -640,6 +646,15 @@ export const DEBUG_VARIABLES_EXPAND_MAX_REQUESTS = 200;
  */
 export const DEBUG_VARIABLES_EXPAND_MAX_BYTES = 4 * 1024 * 1024;
 
+/** 记下带 indexedVariables 的 reference(scope / variable / evaluate 结果),取其子项时按索引分页。 */
+function rememberIndexedChildren(runtime: RuntimeDebugSession, record: Record<string, unknown>): void {
+  const ref = numberField(record, 'variablesReference');
+  const indexed = numberField(record, 'indexedVariables');
+  if (ref !== undefined && ref > 0 && indexed !== undefined && indexed > 0) {
+    runtime.indexedChildCounts.set(ref, indexed);
+  }
+}
+
 interface VariablesBudget {
   nodes: number;
   requests: number;
@@ -960,6 +975,7 @@ export class DebugService {
       waiters: new Set(),
       childEnded: false,
       queuedStops: [],
+      indexedChildCounts: new Map(),
       breakpoints: [],
       sourcePaths: new Map(),
       breakpointEmitOrder: new Set(),
@@ -1398,6 +1414,7 @@ export class DebugService {
     const body = asRecord(response.body);
     const scopes = asArray(body.scopes).map((raw) => {
       const scope = asRecord(raw as DapJson);
+      rememberIndexedChildren(runtime, scope);
       return {
         name: stringField(scope, 'name') ?? '',
         variables_reference: numberField(scope, 'variablesReference') ?? 0,
@@ -1435,7 +1452,7 @@ export class DebugService {
       exhausted: false,
       ...(input.signal !== undefined ? { signal: input.signal } : {}),
     };
-    const { variables, cut } = await this.readVariables(
+    const { variables, cut, more } = await this.readVariables(
       runtime,
       input.variablesReference,
       start,
@@ -1445,10 +1462,10 @@ export class DebugService {
       budget,
       true,
     );
-    // 本页取满 count 条 = 可能还有更多:truncated 与 next_start 同步(此前 truncated 写死 false)。
+    // 本页之后还有子项:truncated 与 next_start 同步(此前 truncated 写死 false)。
     // 本页被字节预算截断同样还有更多,next_start 接在已返回的最后一项之后。
     // 展开预算用尽(有节点未展开,各自标了 truncated)同样报 truncated。
-    const hasMore = cut || variables.length >= count;
+    const hasMore = cut || more;
     return {
       variables,
       truncated: hasMore || budget.exhausted,
@@ -1481,6 +1498,7 @@ export class DebugService {
       this.requestTimeoutMs,
     );
     const body = asRecord(response.body);
+    rememberIndexedChildren(runtime, body);
     const truncated = truncateUtf8(
       stringField(body, 'result') ?? '',
       input.maxResultBytes ?? DEBUG_EVALUATE_RESULT_BYTES_MAX,
@@ -1969,6 +1987,7 @@ export class DebugService {
     // 停在哪条连接上,后续的 stack / scopes / variables / continue 就发给哪条连接(主线程或某个 worker)。
     runtime.activeClient = client;
     runtime.stoppedClient = client;
+    runtime.indexedChildCounts.clear();
     const body = asRecord(bodyJson);
     const session = this.requireSession(sessionId);
     const stopSeq = session.stopSeq + 1;
@@ -2025,6 +2044,7 @@ export class DebugService {
     }
     runtime.currentStop = undefined;
     runtime.stoppedClient = undefined;
+    runtime.indexedChildCounts.clear();
     debugSessions.update(sessionId, { runtimeState: 'running' });
     this.emitSessionEvent(sessionId, {
       type: 'continued',
@@ -2069,25 +2089,19 @@ export class DebugService {
     maxStringBytes: number,
     budget: VariablesBudget,
     topLevel = false,
-  ): Promise<{ readonly variables: readonly DebugVariable[]; readonly cut: boolean }> {
-    if (budget.signal?.aborted) throw variablesCancelledError();
-    budget.requests -= 1;
-    const response = await runtime.activeClient.sendRequest(
-      'variables',
-      {
-        variablesReference,
-        start,
-        count,
-      },
-      this.requestTimeoutMs,
-    );
-    const body = asRecord(response.body);
+  ): Promise<{
+    readonly variables: readonly DebugVariable[];
+    readonly cut: boolean;
+    /** 本页之后还有子项。 */
+    readonly more: boolean;
+  }> {
+    const { items, total } = await this.fetchVariablePage(runtime, variablesReference, start, count, budget);
+    const more = start + items.length < total;
     const variables: DebugVariable[] = [];
-    // adapter 多回的项不收(节点预算按 count 预留)。
-    const items = asArray(body.variables).slice(0, count);
     budget.nodes -= items.length;
     for (const raw of items) {
       const variable = asRecord(raw as DapJson);
+      rememberIndexedChildren(runtime, variable);
       const name = stringField(variable, 'name') ?? '';
       const type = stringField(variable, 'type');
       const rawValue = stringField(variable, 'value') ?? '';
@@ -2096,7 +2110,7 @@ export class DebugService {
       const itemBytes = utf8ByteLength(name) + utf8ByteLength(truncated.value) + utf8ByteLength(type ?? '');
       if (itemBytes > budget.bytes && !(topLevel && variables.length === 0)) {
         budget.exhausted = true;
-        return { variables, cut: true };
+        return { variables, cut: true, more: true };
       }
       budget.bytes -= itemBytes;
       const childRef = numberField(variable, 'variablesReference') ?? 0;
@@ -2131,7 +2145,46 @@ export class DebugService {
         ...(children !== undefined ? { children } : {}),
       });
     }
-    return { variables, cut: false };
+    return { variables, cut: false, more };
+  }
+
+  /**
+   * 取 reference 子列表的 [start, start + count) 项。子列表 = 具名项在前、索引项在后(同 VSCode)。
+   * DAP:adapter 以 Variable.indexedVariables 表示子项可分页,客户端带 filter:'indexed' + start/count 取;
+   * 不带 filter 时 js-debug 忽略 start/count、恒从 0 回全部 —— 未声明 indexedVariables 的一次取全部再本地截取
+   * (adapter 本就会回全部,不增加开销)。返回本页条目与子列表总数。
+   */
+  private async fetchVariablePage(
+    runtime: RuntimeDebugSession,
+    variablesReference: number,
+    start: number,
+    count: number,
+    budget: VariablesBudget,
+  ): Promise<{ readonly items: readonly unknown[]; readonly total: number }> {
+    const request = async (args: Record<string, DapJson>): Promise<readonly unknown[]> => {
+      if (budget.signal?.aborted) throw variablesCancelledError();
+      budget.requests -= 1;
+      const response = await runtime.activeClient.sendRequest(
+        'variables',
+        { variablesReference, ...args },
+        this.requestTimeoutMs,
+      );
+      return asArray(asRecord(response.body).variables);
+    };
+    const indexedCount = runtime.indexedChildCounts.get(variablesReference);
+    if (indexedCount === undefined) {
+      const all = await request({});
+      return { items: all.slice(start, start + count), total: all.length };
+    }
+    const named = await request({ filter: 'named' });
+    const items = named.slice(start, start + count);
+    const indexedStart = Math.max(0, start - named.length);
+    const want = Math.min(count - items.length, indexedCount - indexedStart);
+    if (want > 0) {
+      // adapter 多回的项不收(节点预算按 count 预留)。
+      items.push(...(await request({ filter: 'indexed', start: indexedStart, count: want })).slice(0, want));
+    }
+    return { items, total: named.length + indexedCount };
   }
 
   private async teardownMany(

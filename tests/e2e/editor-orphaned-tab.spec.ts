@@ -53,6 +53,32 @@ test('Explorer 删除编辑过的 .md:确认框有未保存警告;tab 显示已�
   await expect(tab).not.toContainText(DELETED);
 });
 
+test('Explorer 删除编辑过的 .md:确认框停留超过自动保存延迟再确认 → tab 仍保留并显示已删除,文件不被写回', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const file = path.join(workspaceRoot, 'README.md');
+  await openReadmeAndEdit(window);
+  await window
+    .locator('[role=treeitem]')
+    .filter({ hasText: /^README\.md$/ })
+    .first()
+    .click({ button: 'right' });
+  await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
+  await expect(window.getByRole('alertdialog')).toContainText(UNSAVED_WARNING);
+  // 确认框开着时自动保存暂停:修复前到点把修改写盘,删除后 tab 已不脏被直接关掉。
+  await window.waitForTimeout(3_000); // > 自动保存延迟(2s)
+  await confirmExplorerTrash(window);
+
+  const tab = editorTab(window, /README\.md/);
+  await expect(tab).toContainText(DELETED, { timeout: 5_000 });
+  await expect(tab.locator('.line-through')).toHaveText('README.md');
+  await expect(async () => expect(await exists(file)).toBe(false)).toPass({ timeout: 5_000 });
+  await window.waitForTimeout(3_000);
+  expect(await exists(file)).toBe(false);
+  await expect(tab).toContainText(DELETED);
+});
+
 test('外部删除编辑过的 .md:tab 显示已删除,2 秒后文件不被写回', async ({ window, workspaceRoot }) => {
   const file = path.join(workspaceRoot, 'README.md');
   await openReadmeAndEdit(window);

@@ -3582,7 +3582,10 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
     await service.cleanupAll('test');
   });
 
-  /** 每个 variables 请求都回满 count 个可展开成员(每个成员一个新的 variablesReference)。 */
+  /**
+   * 每个 variables 请求都回满 count 个可展开成员(每个成员一个新的 variablesReference)。未声明 indexedVariables
+   * 的 reference 不带 start/count 取全部(同 js-debug 忽略分页),此时回 100 个。
+   */
   function wideVariablesAdapter(
     parent: FakeDapClient,
     onRequest?: () => void,
@@ -3595,7 +3598,7 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
       if (command !== 'variables') return original(command, args, timeoutMs);
       requests += 1;
       onRequest?.();
-      const count = (args as { count: number }).count;
+      const count = (args as { count?: number }).count ?? 100;
       return {
         seq: requests,
         type: 'response',
@@ -3679,6 +3682,118 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
     expect(result.variables.length).toBeGreaterThan(0);
     expect(result.variables.length).toBeLessThan(100);
     expect(result.next_start).toBe(result.variables.length);
+  });
+
+  // 分页(DAP Variable.indexedVariables + VariablesArguments.filter):js-debug 只在 filter:'indexed' 时按
+  // start/count 取索引项;不带 filter 时忽略 start/count、恒从 0 返回全部(此前「加载更多」追加的又是第一页)。
+  describe('debug.variables 分页', () => {
+    const squares = (from: number, to: number): DapJson[] =>
+      Array.from({ length: to - from }, (_, k) => ({ name: String(from + k), value: String((from + k) ** 2) }));
+    const namedOfBig: DapJson[] = [
+      { name: 'length', value: '300' },
+      { name: '[[Prototype]]', value: 'Array(0)', variablesReference: 51 },
+    ];
+    /** 照 js-debug 行为的 adapter:44=作用域,50=300 元素数组(indexedVariables),60=250 个属性的对象。 */
+    type VariablesArgs = { variablesReference: number; filter?: string; start?: number; count?: number };
+    function jsDebugLikeAdapter(parent: FakeDapClient): { calls: VariablesArgs[] } {
+      const calls: VariablesArgs[] = [];
+      const original = parent.sendRequest.bind(parent);
+      parent.sendRequest = async (command, args, timeoutMs) => {
+        if (command !== 'variables') return original(command, args, timeoutMs);
+        const a = args as VariablesArgs;
+        calls.push(a);
+        let variables: DapJson[] = [];
+        if (a.variablesReference === 44) {
+          variables = [
+            { name: 'big', value: 'Array(300)', variablesReference: 50, indexedVariables: 300, namedVariables: 1 },
+            { name: 'obj', value: 'Object', variablesReference: 60 },
+          ];
+        } else if (a.variablesReference === 50) {
+          if (a.filter === 'indexed') {
+            const s = a.start ?? 0;
+            variables = squares(s, Math.min(300, s + (a.count ?? 300)));
+          } else if (a.filter === 'named') {
+            variables = namedOfBig;
+          } else {
+            variables = [...namedOfBig, ...squares(0, 300)];
+          }
+        } else if (a.variablesReference === 60) {
+          variables = Array.from({ length: 250 }, (_, i) => ({ name: `p${i}`, value: String(i) }));
+        }
+        return { seq: 1, type: 'response', request_seq: 1, success: true, command, body: { variables } };
+      };
+      return { calls };
+    }
+
+    async function pageAll(service: DebugService, sessionId: string, ref: number): Promise<string[]> {
+      const names: string[] = [];
+      let start: number | undefined = 0;
+      for (let guard = 0; start !== undefined && guard < 10; guard += 1) {
+        const page: Awaited<ReturnType<DebugService['variables']>> = await service.variables(sessionId, {
+          variablesReference: ref,
+          start,
+          count: 100,
+          maxDepth: 1,
+        });
+        names.push(...page.variables.map((v) => v.name));
+        expect(page.truncated).toBe(page.next_start !== undefined);
+        start = page.next_start;
+      }
+      return names;
+    }
+
+    it('reference 声明了 indexedVariables → 带 filter 分页取,具名项在前、索引项连续不重复,末页无 next_start', async () => {
+      const { service, parent } = makeFakeService();
+      const { session_id: sessionId } = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+      parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+      const adapter = jsDebugLikeAdapter(parent);
+      await service.variables(sessionId, { variablesReference: 44, maxDepth: 1 });
+
+      const names = await pageAll(service, sessionId, 50);
+      expect(names).toEqual(['length', '[[Prototype]]', ...Array.from({ length: 300 }, (_, i) => String(i))]);
+      const indexedCalls = adapter.calls.filter((c) => c.filter === 'indexed');
+      expect(indexedCalls.length).toBeGreaterThan(1);
+      for (const call of indexedCalls) expect(call).toMatchObject({ start: expect.any(Number), count: expect.any(Number) });
+      // 索引项只按页取,从不整表拉全部。
+      expect(adapter.calls.some((c) => c.variablesReference === 50 && c.filter === undefined)).toBe(false);
+    });
+
+    it('reference 未声明 indexedVariables(adapter 忽略 start/count 从 0 回全部)→ 本地按页截取,两页连续不重复', async () => {
+      const { service, parent } = makeFakeService();
+      const { session_id: sessionId } = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+      parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+      jsDebugLikeAdapter(parent);
+      await service.variables(sessionId, { variablesReference: 44, maxDepth: 1 });
+
+      const second = await service.variables(sessionId, { variablesReference: 60, start: 100, count: 100, maxDepth: 1 });
+      expect(second.variables.map((v) => v.name)).toEqual(Array.from({ length: 100 }, (_, i) => `p${100 + i}`));
+      expect(second.next_start).toBe(200);
+      expect(await pageAll(service, sessionId, 60)).toEqual(Array.from({ length: 250 }, (_, i) => `p${i}`));
+    });
+
+    it('恰好取满一页且再无更多 → 不报 next_start(不会多出一个空的「加载更多」)', async () => {
+      const { service, parent } = makeFakeService();
+      const { session_id: sessionId } = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+      parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+      jsDebugLikeAdapter(parent);
+      const page = await service.variables(sessionId, { variablesReference: 60, start: 150, count: 100, maxDepth: 1 });
+      expect(page.variables).toHaveLength(100);
+      expect(page.next_start).toBeUndefined();
+      expect(page.truncated).toBe(false);
+    });
+
+    it('恢复运行后 reference 失效:新一停同号 reference 未再声明 indexedVariables 就不再按索引分页', async () => {
+      const { service, parent } = makeFakeService();
+      const { session_id: sessionId } = await service.launchSession({ program: '/fixture.js', cwd: '/work' }, ctx);
+      parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+      const adapter = jsDebugLikeAdapter(parent);
+      await service.variables(sessionId, { variablesReference: 44, maxDepth: 1 });
+      parent.emit('continued', { threadId: 1 });
+      parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+      adapter.calls.length = 0;
+      await service.variables(sessionId, { variablesReference: 50, start: 0, count: 100, maxDepth: 1 });
+      expect(adapter.calls).toEqual([{ variablesReference: 50 }]);
+    });
   });
 
   it('debug.variables 展开中调用方断连(signal abort)→ 停止继续请求,以取消错误结束', async () => {
@@ -4121,6 +4236,52 @@ describe.skipIf(!adapterExists)('DebugService real adapter · 晚设断点与 wo
             { file, line: 5, verified: true },
           ],
         });
+      });
+    },
+    120_000,
+  );
+
+  // 真实 js-debug:300 元素数组回 indexedVariables:300;不带 filter 的 variables 请求忽略 start/count。
+  // 逐页取(每页 100)拼起来:索引项 0..299 各出现一次、顺序连续,值为 i*i;末页无 next_start。
+  it(
+    '300 元素数组分页:各页索引项连续不重复,末页无 next_start',
+    async () => {
+      const source = [
+        'const big = Array.from({ length: 300 }, (_, i) => i * i);', // 1
+        'console.log(big.length);', // 2 ← 断点
+        '',
+      ].join('\n');
+      await withRealService({ 'big.js': source }, async ({ service, dir }) => {
+        const file = path.join(dir, 'big.js');
+        const { session_id: sessionId } = await service.launchSession({ program: file, cwd: dir }, ctx);
+        await service.setBreakpoints(sessionId, { file, line: 2 });
+        const stopped = await service.waitForStop(sessionId, { afterStopSeq: 0, timeoutMs: 40_000 });
+        const stack = await service.stackTrace(sessionId, { threadId: stopped.thread_id ?? 0, startFrame: 0, levels: 1 });
+        const { scopes } = await service.scopes(sessionId, { frameId: stack.frames[0]!.id });
+        let big: DebugVariable | undefined;
+        for (const scope of scopes.filter((s) => s.name !== 'Global')) {
+          const page = await service.variables(sessionId, { variablesReference: scope.variables_reference, maxDepth: 1 });
+          big ??= findVariable(page.variables, 'big');
+        }
+        expect(big?.variables_reference).toBeGreaterThan(0);
+
+        const indexed: DebugVariable[] = [];
+        let start: number | undefined = 0;
+        let pages = 0;
+        while (start !== undefined && pages < 10) {
+          const page: Awaited<ReturnType<DebugService['variables']>> = await service.variables(sessionId, {
+            variablesReference: big!.variables_reference!,
+            start,
+            count: 100,
+            maxDepth: 1,
+          });
+          indexed.push(...page.variables.filter((v) => /^\d+$/.test(v.name)));
+          start = page.next_start;
+          pages += 1;
+        }
+        expect(pages).toBeGreaterThanOrEqual(3);
+        expect(indexed.map((v) => v.name)).toEqual(Array.from({ length: 300 }, (_, i) => String(i)));
+        expect(indexed.map((v) => v.value)).toEqual(Array.from({ length: 300 }, (_, i) => String(i * i)));
       });
     },
     120_000,
