@@ -311,6 +311,15 @@ function UserPluginsSection() {
       isError: true,
     });
   };
+  // 行内生命周期按钮共用:执行 → 失败 console.warn + 经 live region 反馈(此前 4 个按钮各写一遍)。
+  const runLifecycle = (label: string, id: string, op: () => Promise<unknown> | undefined) => async () => {
+    try {
+      await op();
+    } catch (err) {
+      console.warn(`[plugins-tab] ${label} ${id} failed`, err);
+      reportActionError(err);
+    }
+  };
 
   return (
     <section>
@@ -392,14 +401,7 @@ function UserPluginsSection() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={async () => {
-                    try {
-                      await mgr?.reload(p.id);
-                    } catch (err) {
-                      console.warn(`[plugins-tab] reload ${p.id} failed`, err);
-                      reportActionError(err);
-                    }
-                  }}
+                  onClick={runLifecycle('reload', p.id, () => mgr?.reload(p.id))}
                   title={t('plugins_tab.action.reload_tooltip')}
                   // a11y(A75):行内操作按钮可见文本通用(多行同名),aria-label 补插件名以区分。
                   aria-label={t('plugins_tab.action.row_button_aria', {
@@ -413,14 +415,7 @@ function UserPluginsSection() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={async () => {
-                      try {
-                        await mgr?.disable(p.id);
-                      } catch (err) {
-                        console.warn(`[plugins-tab] disable ${p.id} failed`, err);
-                        reportActionError(err);
-                      }
-                    }}
+                    onClick={runLifecycle('disable', p.id, () => mgr?.disable(p.id))}
                     aria-label={t('plugins_tab.action.row_button_aria', {
                       action: t('plugins_tab.btn.disable'),
                       name: p.manifest.name,
@@ -432,14 +427,7 @@ function UserPluginsSection() {
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={async () => {
-                      try {
-                        await mgr?.enable(p.id);
-                      } catch (err) {
-                        console.warn(`[plugins-tab] enable ${p.id} failed`, err);
-                        reportActionError(err);
-                      }
-                    }}
+                    onClick={runLifecycle('enable', p.id, () => mgr?.enable(p.id))}
                     aria-label={t('plugins_tab.action.row_button_aria', {
                       action: t('plugins_tab.btn.enable'),
                       name: p.manifest.name,
@@ -452,14 +440,7 @@ function UserPluginsSection() {
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={async () => {
-                      try {
-                        await mgr?.enable(p.id);
-                      } catch (err) {
-                        console.warn(`[plugins-tab] retry ${p.id} failed`, err);
-                        reportActionError(err);
-                      }
-                    }}
+                    onClick={runLifecycle('retry', p.id, () => mgr?.enable(p.id))}
                     title={t('plugins_tab.action.retry_enable_tooltip')}
                     aria-label={t('plugins_tab.action.row_button_aria', {
                       action: t('plugins_tab.btn.enable'),
