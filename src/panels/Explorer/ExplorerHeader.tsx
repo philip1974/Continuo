@@ -7,6 +7,7 @@ import {
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
 import { openRecentRootOrNotify } from './open-recent-root';
+import { useRecentRootMissingPrompt } from './RecentRootMissingDialog';
 import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
 import { MoreActionsIcon } from '@/lib/ui-icons';
@@ -77,6 +78,8 @@ export function ExplorerHeader({
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   const recentRoots = useWorkspaceStore((s) => s.recentRoots);
   const { busy, selectFolder } = useSelectWorkspaceFolder();
+  // 打开最近项时目录已不存在 → 询问是否从列表删除(VSCode 同款)
+  const missingPrompt = useRecentRootMissingPrompt();
   const [menuOpen, setMenuOpen] = useState(false);
   // 交互回归修复:侧栏关闭为保活隐藏(aside hidden),portal 到 body 的菜单不会随之消失 → 隐藏即
   // 关闭(render 期同步本组件 state,隐藏帧即不渲染菜单);复位 state 保证再次显示不自动重开。
@@ -185,7 +188,7 @@ export function ExplorerHeader({
                     })}
                     onClick={() => {
                       closeAndRestore(); // a11y(A30):激活后还原焦点到触发按钮
-                      void openRecentRootOrNotify(p, setRoot);
+                      void openRecentRootOrNotify(p, setRoot, missingPrompt.onMissing);
                     }}
                   >
                     <span className="truncate">{name}</span>
@@ -234,6 +237,7 @@ export function ExplorerHeader({
           </>
         )}
       </DropdownMenu>
+      {missingPrompt.dialog}
     </div>
   );
 }

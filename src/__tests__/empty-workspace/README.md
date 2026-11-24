@@ -17,9 +17,17 @@
 
 ### recentRoots 非空
 
-- role="menu" 列出每条
-- 点击 → setRoot(p)
+- `ul` 列表(非 menu)列出每条,行项是普通 button
+- 点击 → listDir 校验后 setRoot(p);不可读 → toast,不切换
 - basename 与 parent 分两段显示
+
+### 从最近列表删除(VSCode「从最近打开中删除」)
+
+- 每条右侧 ×(悬停条目或键盘聚焦时显示,aria-label 含完整路径):删除该项,不打开
+- 焦点在条目上按 Delete:同上
+- 点已不存在的目录(`FS_NOT_FOUND` / `WORKSPACE_NOT_FOUND`)→ 不弹 toast,询问是否从列表删除;[删除] → 删除,[取消] → 保留
+- 删除后焦点留在列表:原位置的下一项,没有则上一项;删空 → 「打开文件夹」按钮
+- 删除经 `forgetRecentRoot`(main 锁内从盘上移除并广播给所有窗口,见 recent-roots-cross-window)
 
 ### 点「打开文件夹」
 

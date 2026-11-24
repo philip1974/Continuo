@@ -11,6 +11,7 @@ import {
   loadExplorer,
   mergeWritableIntoFull,
   promoteRecentRoot,
+  removeRecentRoot,
   type ExplorerPayloadV3,
   type ExplorerWritablePayload,
   writeExplorerFile,
@@ -49,6 +50,7 @@ import { codedError } from '../shared/error-message';
 
 // layout:read 入参为空(renderer ipcRenderer.invoke 不传第二参 → undefined)
 const NoInput = z.undefined();
+// touch-recent / remove-recent 共用入参
 const TouchRecentInput = z
   .object({ path: z.string().max(PATH_STR_MAX).refine((p) => !isBlankString(p)) })
   .strict();
@@ -228,17 +230,18 @@ export function registerIpc(deps: WindowIpcDeps): void {
     },
   );
 
-  // 全局「最近打开」增量置顶(多窗口:explorer:write 不再整表覆盖 recentRoots,见 mergeWritableIntoFull)。
-  // 锁内重读盘 → promoteRecentRoot → 写盘 → 锁内广播(多次 touch 的广播与写盘同序)。盘上尚无文件(首启)
-  // 不写不广播:该窗口随后的 explorer:write 以 writable 值创建文件。
-  safeHandle(
-    EXPLORER_CHANNELS.TOUCH_RECENT,
-    TouchRecentInput,
-    async ({ path: root }) => {
+  // 全局「最近打开」增量变更(多窗口:explorer:write 不再整表覆盖 recentRoots,见 mergeWritableIntoFull)。
+  // 锁内重读盘 → 变更 → 写盘 → 锁内广播(多次变更的广播与写盘同序)。盘上尚无文件(首启)不写不广播:
+  // 该窗口随后的 explorer:write 以 writable 值创建文件。
+  const mutateRecentRoots = (
+    channel: string,
+    change: (list: readonly string[], path: string) => string[],
+  ): void => {
+    safeHandle(channel, TouchRecentInput, async ({ path: root }) => {
       await withExplorerFileMutex(async () => {
         const current = await loadExplorer(explorerFile);
         if (!current) return;
-        const recentRoots = promoteRecentRoot(current.workspace.recentRoots, root);
+        const recentRoots = change(current.workspace.recentRoots, root);
         if (!isDeepStrictEqual(recentRoots, current.workspace.recentRoots)) {
           await writeExplorerFile(explorerFile, { ...current, workspace: { ...current.workspace, recentRoots } });
         }
@@ -248,8 +251,11 @@ export function registerIpc(deps: WindowIpcDeps): void {
           '[explorer] RECENT_CHANGED',
         );
       });
-    },
-  );
+    });
+  };
+  mutateRecentRoots(EXPLORER_CHANNELS.TOUCH_RECENT, (list, p) => promoteRecentRoot(list, p));
+  // VSCode「从最近打开列表中删除」:最近项上的 × / Delete、或打开时发现目录已不存在后确认移除。
+  mutateRecentRoots(EXPLORER_CHANNELS.REMOVE_RECENT, (list, p) => removeRecentRoot(list, p));
 
   // 资源管理器 fs.*(Step 2)
   registerFsIpc();

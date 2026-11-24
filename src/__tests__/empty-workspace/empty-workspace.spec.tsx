@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fireEvent, render, cleanup, waitFor } from '@testing-library/react';
+import { fireEvent, render, cleanup, waitFor, within } from '@testing-library/react';
 import {
   _resetLmApiForTest,
   captureLmApi,
@@ -75,11 +75,11 @@ describe('EmptyWorkspace', () => {
   });
 
   // a11y(A147):点已失效的 recent root(listDir !ok)→ notify.error 且不切 root。
-  it('点 recent root 但 listDir {ok:false} → notify.error 不切 root', async () => {
+  it('点 recent root 但 listDir {ok:false}(如无权限)→ notify.error 不切 root', async () => {
     const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
     installFs(
       vi.fn(),
-      vi.fn().mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' }),
+      vi.fn().mockResolvedValue({ ok: false, code: 'FS_DENIED', message: 'denied' }),
     );
     useWorkspaceStore.setState({ root: null, recentRoots: ['/stale/dir'] });
     const { container } = render(<EmptyWorkspace />);
@@ -87,6 +87,68 @@ describe('EmptyWorkspace', () => {
     fireEvent.click(item);
     await waitFor(() => expect(errSpy).toHaveBeenCalledTimes(1));
     expect(useWorkspaceStore.getState().root).toBeNull();
+  });
+
+  // VSCode:「最近打开」项可从列表删除 —— 悬停 / 聚焦时出现 ×;焦点在条目上按 Delete 同效。删除后焦点留在列表
+  //(下一项,没有则上一项,列表空则「打开文件夹」)。
+  it('点条目右侧 × → 从最近列表删除,不打开;焦点移到下一项', async () => {
+    const listDir = vi.fn().mockResolvedValue({ ok: true, data: [] });
+    installFs(vi.fn(), listDir);
+    useWorkspaceStore.setState({ root: null, recentRoots: ['/a/one', '/b/two', '/c/three'] });
+    const r = render(<EmptyWorkspace />);
+    const removeBtns = r
+      .getAllByRole('button')
+      .filter((b) => /\/b\/two/.test(b.getAttribute('aria-label') ?? '') && /删除|Remove|제거/.test(b.getAttribute('aria-label') ?? ''));
+    expect(removeBtns).toHaveLength(1);
+    fireEvent.click(removeBtns[0]!);
+    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/a/one', '/c/three']);
+    expect(listDir).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute('aria-label') ?? '').toContain('/c/three'),
+    );
+  });
+
+  it('焦点在条目上按 Delete → 删除该项;删到列表为空 → 焦点回到「打开文件夹」', async () => {
+    installFs(vi.fn());
+    useWorkspaceStore.setState({ root: null, recentRoots: ['/a/one'] });
+    const { container } = render(<EmptyWorkspace />);
+    const item = container.querySelector('li button') as HTMLButtonElement;
+    item.focus();
+    fireEvent.keyDown(item, { key: 'Delete', code: 'Delete' });
+    expect(useWorkspaceStore.getState().recentRoots).toEqual([]);
+    await waitFor(() => expect(document.activeElement?.textContent).toBe('打开文件夹'));
+  });
+
+  it('点已不存在的最近目录(FS_NOT_FOUND)→ 询问是否从列表删除(不弹 toast);确认 → 删除', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    installFs(
+      vi.fn(),
+      vi.fn().mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' }),
+    );
+    useWorkspaceStore.setState({ root: null, recentRoots: ['/stale/dir', '/ok/dir'] });
+    const r = render(<EmptyWorkspace />);
+    fireEvent.click(r.container.querySelector('li button') as HTMLButtonElement);
+    const dialog = await r.findByRole('dialog');
+    expect(dialog.textContent).toContain('/stale/dir');
+    expect(errSpy).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: /^(删除|Remove)$/ }));
+    await waitFor(() => expect(r.queryByRole('dialog')).toBeNull());
+    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/ok/dir']);
+    expect(useWorkspaceStore.getState().root).toBeNull();
+  });
+
+  it('询问框点取消 → 保留该项', async () => {
+    installFs(
+      vi.fn(),
+      vi.fn().mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' }),
+    );
+    useWorkspaceStore.setState({ root: null, recentRoots: ['/stale/dir'] });
+    const r = render(<EmptyWorkspace />);
+    fireEvent.click(r.container.querySelector('li button') as HTMLButtonElement);
+    const dialog = await r.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /^(取消|Cancel)$/ }));
+    await waitFor(() => expect(r.queryByRole('dialog')).toBeNull());
+    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/stale/dir']);
   });
 
   // a11y(A80,A78 同族):空 workspace 最近目录按钮可见 basename 可截断/同名 → aria-label 含完整路径。

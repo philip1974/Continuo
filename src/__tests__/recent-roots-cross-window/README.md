@@ -20,7 +20,9 @@ A、B 两窗,A 打开 /x 落盘后盘上为 `[/x, …]`;B 任意一次落盘(展
   不写不广播(由该窗口随后的 `explorer:write` 带上首份列表)。
 - `explorer:write`:盘上已有文件时 `workspace.recentRoots` 是 main-owned(保留盘上值,同 `nextWindowSeq` /
   `restoreAllWindowsOnLaunch`),renderer 携带的陈旧列表不再覆盖;仅首启(盘上无文件)采用 writable 值。
-- 目前**没有**「从最近列表移除一项」的入口;将来若加,须走显式删除 IPC,不能靠整表写回。
+- `removeRecentRoot(list, path)`:移除同一项(比较键同 `promoteRecentRoot`),其余顺序不变。
+- IPC `explorer:remove-recent { path }`(入参校验同 touch):文件锁内重读盘 → 移除 → 写盘 → 广播
+  `explorer:recent-changed`;盘上无文件不写不广播。陈旧窗口随后的 `explorer:write` 不会把已移除项写回。
 - `pinned` 同形,但目前无运行时修改入口(各窗写回的都是盘上同一份),暂不处理;加 pin/unpin 时须同样改增量。
 
 ### renderer(`src/lib/persist/explorer-persist.ts`)
@@ -28,6 +30,8 @@ A、B 两窗,A 打开 /x 落盘后盘上为 `[/x, …]`;B 任意一次落盘(展
 - 写订阅注册后,`workspace.recentRoots` 头部变化(`setRoot` 置顶新 root)→ 立即 `touchRecent(head)`。
 - 启动读盘期间用户已选 root(R38 分支)→ hydrate 后补发这些选择的 touch(旧→新,最新置顶)。
 - 收到 `onRecentChanged(list)` → 以 main 列表覆盖本窗 store(main 权威、按序推送);这次 store 变化不回发 touch。
+- `forgetRecentRoot(path)`(最近列表的 × / Delete / 不存在时确认删除):先发 `removeRecent(path)`,再立即从本窗
+  store 去掉该项;移除头部时不把新头部当作置顶回发 touch。未接上持久化时只改本窗。
 
 ## 规范文件
 

@@ -64,7 +64,9 @@ export const EXPLORER_CHANNELS = {
   WRITE: 'explorer:write',
   // invoke(renderer → main){ path }:把一项置顶到全局「最近打开」(main 锁内与盘上合并,不整表覆盖)。
   TOUCH_RECENT: 'explorer:touch-recent',
-  // main → renderer push { recentRoots }:touch 写盘后广播给所有窗口(含发起者)。
+  // invoke(renderer → main){ path }:从全局「最近打开」移除一项(锁内重读盘 → 移除 → 写盘 → 广播)。
+  REMOVE_RECENT: 'explorer:remove-recent',
+  // main → renderer push { recentRoots }:touch / remove 写盘后广播给所有窗口(含发起者)。
   RECENT_CHANGED: 'explorer:recent-changed',
 } as const;
 

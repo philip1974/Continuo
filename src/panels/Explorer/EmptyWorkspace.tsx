@@ -1,5 +1,8 @@
+import { useEffect, useRef } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { Button } from '@/design';
+import { Button, IconButton } from '@/design';
+import { forgetRecentRoot } from '@/lib/persist/explorer-persist';
+import { useRecentRootMissingPrompt } from './RecentRootMissingDialog';
 import { openRecentRootOrNotify } from './open-recent-root';
 import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { useT } from '@/i18n';
@@ -16,8 +19,31 @@ export function EmptyWorkspace() {
 
   const open = (): void => void selectFolder();
 
+  // 从最近列表删除(VSCode:悬停条目出现 ×;焦点在条目上按 Delete 同效)。删除后焦点留在列表:原位置的下一项,
+  // 没有则上一项;列表删空则回到「打开文件夹」(被删按钮卸载,不处理焦点会掉到 body)。
+  const rootRef = useRef<HTMLDivElement>(null);
+  const refocusIndexRef = useRef<number | null>(null);
+  const removeRecent = (path: string): void => {
+    refocusIndexRef.current = Math.max(0, recentRoots.indexOf(path));
+    forgetRecentRoot(path);
+  };
+  useEffect(() => {
+    const index = refocusIndexRef.current;
+    const el = rootRef.current;
+    if (index === null || el === null) return;
+    refocusIndexRef.current = null;
+    const items = el.querySelectorAll<HTMLButtonElement>('[data-recent-open]');
+    const target = items[Math.min(index, items.length - 1)] ?? el.querySelector<HTMLButtonElement>('[data-open-folder]');
+    target?.focus();
+  }, [recentRoots]);
+  // 打开时发现目录已不存在 → 询问是否从列表删除(焦点在被点的条目上,删除后同样移到相邻项)。
+  const missingPrompt = useRecentRootMissingPrompt(removeRecent);
+
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6 text-center text-sm text-fg-muted">
+    <div
+      ref={rootRef}
+      className="flex h-full w-full flex-col items-center justify-center gap-4 p-6 text-center text-sm text-fg-muted"
+    >
       <div className="text-xs uppercase tracking-wider text-fg-dim">
         {t('panels.explorer.empty.no_folder')}
       </div>
@@ -26,6 +52,7 @@ export function EmptyWorkspace() {
         size="md"
         onClick={open}
         disabled={busy}
+        data-open-folder
         // a11y(A96,A93 同族):打开系统目录选择器进行中标 aria-busy(忙碌语义)。
         aria-busy={busy}
       >
@@ -51,13 +78,19 @@ export function EmptyWorkspace() {
             {recentRoots.map((p) => {
               const { name, parent } = recentRootLabelParts(p);
               return (
-                <li key={p}>
+                <li key={p} className="group flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="w-full justify-start"
-                    onClick={() => void openRecentRootOrNotify(p, setRoot)}
+                    className="min-w-0 flex-1 justify-start"
+                    onClick={() => void openRecentRootOrNotify(p, setRoot, missingPrompt.onMissing)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Delete') return;
+                      e.preventDefault();
+                      removeRecent(p);
+                    }}
                     title={p}
+                    data-recent-open
                     // a11y(A80,A78 同族):可见 basename/parent 可截断且同名不可区分 → aria-label
                     // 注入完整路径(复用 A78 recent 项 key)。
                     aria-label={t('panels.explorer.menu.open_recent_item_aria', {
@@ -71,12 +104,23 @@ export function EmptyWorkspace() {
                       )}
                     </span>
                   </Button>
+                  {/* 悬停条目或键盘聚焦到 × 时显示(VSCode 最近项的删除按钮);键盘用户也可在条目上按 Delete。 */}
+                  <IconButton
+                    size="xs"
+                    className="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    onClick={() => removeRecent(p)}
+                    title={t('panels.explorer.empty.remove_recent')}
+                    aria-label={t('panels.explorer.empty.remove_recent_aria', { path: p })}
+                  >
+                    ✕
+                  </IconButton>
                 </li>
               );
             })}
           </ul>
         </div>
       )}
+      {missingPrompt.dialog}
     </div>
   );
 }

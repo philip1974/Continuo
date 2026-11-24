@@ -7,6 +7,7 @@ import { usePinnedStore } from '../../stores/pinned.store';
 import { useEditorStore } from '../../stores/editor.store';
 import { workspaceRootSelectionGuard } from '../../lib/workspace-root-guard';
 import {
+  forgetRecentRoot,
   initExplorerPersistence,
   type ExplorerPersistApi,
   type ExplorerSnapshot,
@@ -41,6 +42,7 @@ function makeApi(read: ExplorerPersistApi['read']) {
     read,
     write: vi.fn(async () => ({ ok: true as const, data: undefined })),
     touchRecent: vi.fn(async (_path: string) => ({ ok: true as const, data: undefined })),
+    removeRecent: vi.fn(async (_path: string) => ({ ok: true as const, data: undefined })),
     onRecentChanged: vi.fn((cb: (list: string[]) => void) => {
       listener = cb;
       return () => {
@@ -92,5 +94,19 @@ describe('recentRoots 跨窗口同步 · renderer', () => {
     await init;
 
     expect(api.touchRecent.mock.calls.map((c) => c[0])).toEqual(['/p1', '/p2']);
+  });
+});
+
+describe('recentRoots 移除 · renderer', () => {
+  it('forgetRecentRoot → 发 removeRecent(main 锁内移除并广播),本窗列表立即去掉该项;移除头部也不发 touch', async () => {
+    const { api } = makeApi(async () => ({ ok: true, data: snap(['/a', '/b', '/c']) }));
+    await initExplorerPersistence(api);
+    useWorkspaceStore.setState({ recentRoots: ['/a', '/b', '/c'] });
+
+    forgetRecentRoot('/a');
+
+    expect(api.removeRecent).toHaveBeenCalledWith('/a');
+    expect(useWorkspaceStore.getState().recentRoots).toEqual(['/b', '/c']);
+    expect(api.touchRecent).not.toHaveBeenCalled();
   });
 });

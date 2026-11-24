@@ -8,6 +8,7 @@ import {
   defaultExplorerV3,
   loadExplorer,
   promoteRecentRoot,
+  removeRecentRoot,
   type ExplorerPayloadV3,
 } from '../../../electron/main/persistence';
 import { registerIpc } from '../../../electron/main/ipc';
@@ -195,5 +196,44 @@ describe('explorer:touch-recent · 多窗口', () => {
     expect(blank.ok).toBe(false);
     expect(long.ok).toBe(false);
     expect((await loadExplorer(explorerFile))?.workspace.recentRoots).toEqual(['/old']);
+  });
+});
+
+describe('removeRecentRoot', () => {
+  it('移除同一项(去尾分隔符;win32 大小写不敏感),其余顺序不变;不在列表 → 原样', () => {
+    expect(removeRecentRoot(['/a', '/b', '/c'], '/b')).toEqual(['/a', '/c']);
+    expect(removeRecentRoot(['/u/proj/', '/x'], '/u/proj', 'darwin')).toEqual(['/x']);
+    expect(removeRecentRoot(['C:\\Proj', 'D:\\x'], 'c:\\proj', 'win32')).toEqual(['D:\\x']);
+    expect(removeRecentRoot(['/a/B'], '/a/b', 'darwin')).toEqual(['/a/B']);
+    expect(removeRecentRoot(['/a'], '/zzz')).toEqual(['/a']);
+  });
+});
+
+describe('explorer:remove-recent · 多窗口', () => {
+  it('锁内重读盘移除该项 → 写盘并向所有窗口广播;别窗刚新增的项不受影响', async () => {
+    await fs.writeFile(explorerFile, JSON.stringify(diskWith(['/old', '/gone'])), 'utf-8');
+    await invoke(EXPLORER_CHANNELS.TOUCH_RECENT, { path: '/x' }, senderB);
+
+    const r = await invoke(EXPLORER_CHANNELS.REMOVE_RECENT, { path: '/gone' }, senderA);
+
+    expect(r).toEqual({ ok: true, data: undefined });
+    expect((await loadExplorer(explorerFile))?.workspace.recentRoots).toEqual(['/x', '/old']);
+    expect(recentSends(winA).at(-1)).toEqual({ recentRoots: ['/x', '/old'] });
+    expect(recentSends(winB).at(-1)).toEqual({ recentRoots: ['/x', '/old'] });
+  });
+
+  it('陈旧窗口随后整表落盘不会把已移除项写回', async () => {
+    await fs.writeFile(explorerFile, JSON.stringify(diskWith(['/old', '/gone'])), 'utf-8');
+    await invoke(EXPLORER_CHANNELS.REMOVE_RECENT, { path: '/gone' }, senderA);
+    await invoke(EXPLORER_CHANNELS.WRITE, writableFor(1, ['/old', '/gone']), senderB);
+    expect((await loadExplorer(explorerFile))?.workspace.recentRoots).toEqual(['/old']);
+  });
+
+  it('盘上无 explorer.json → 不写不广播;非法路径 → 拒绝', async () => {
+    await invoke(EXPLORER_CHANNELS.REMOVE_RECENT, { path: '/x' }, senderA);
+    expect(await loadExplorer(explorerFile)).toBeNull();
+    expect(recentSends(winA)).toEqual([]);
+    const blank = (await invoke(EXPLORER_CHANNELS.REMOVE_RECENT, { path: ' ' }, senderA)) as { ok: boolean };
+    expect(blank.ok).toBe(false);
   });
 });

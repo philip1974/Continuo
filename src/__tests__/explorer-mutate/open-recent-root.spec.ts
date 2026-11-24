@@ -44,6 +44,26 @@ describe('openRecentRootOrNotify (A147)', () => {
     expect(String(notifyError.mock.calls[0]![0])).toContain('gone');
   });
 
+  it('目录已不存在(FS_NOT_FOUND / WORKSPACE_NOT_FOUND)且传了 onMissing → 交给 onMissing(询问是否从列表移除),不弹 toast', async () => {
+    const setRoot = vi.fn();
+    const onMissing = vi.fn();
+    listDir.mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' });
+    await openRecentRootOrNotify('/stale', setRoot, onMissing);
+    listDir.mockResolvedValue({ ok: false, code: 'WORKSPACE_NOT_FOUND', message: 'gone' });
+    await openRecentRootOrNotify('/stale2', setRoot, onMissing);
+    expect(onMissing.mock.calls.map((c) => c[0])).toEqual(['/stale', '/stale2']);
+    expect(notifyError).not.toHaveBeenCalled();
+    expect(setRoot).not.toHaveBeenCalled();
+  });
+
+  it('其它失败(如 FS_DENIED)即使传了 onMissing 仍 toast', async () => {
+    const onMissing = vi.fn();
+    listDir.mockResolvedValue({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    await openRecentRootOrNotify('/locked', vi.fn(), onMissing);
+    expect(onMissing).not.toHaveBeenCalled();
+    expect(notifyError).toHaveBeenCalledTimes(1);
+  });
+
   it('listDir reject → notify.error 不 setRoot(不抛)', async () => {
     listDir.mockRejectedValue(Object.assign(new Error('ipc down'), { code: 'EIO' }));
     const setRoot = vi.fn();

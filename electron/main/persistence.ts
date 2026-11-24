@@ -299,7 +299,7 @@ export function mergeWritableIntoFull(
   // 全局「最近打开」(workspace.recentRoots)盘上已有时 main-owned:各窗口只在启动时 hydrate、之后列表可能陈旧,
   // 裸 `...writable` 会让任一窗口的落盘(展开目录 / 开关 tab / 关窗)把别窗刚新增的项整段抹掉。新增 / 置顶改走
   // explorer:touch-recent(锁内 promoteRecentRoot + 广播),此处保留盘上值;首启盘上无文件才采用 writable 值。
-  // 目前没有「从最近列表移除一项」的入口,将来要加须走显式删除 IPC,不能靠整表写回。
+  // 移除一项走显式的 explorer:remove-recent(锁内 removeRecentRoot + 广播),不靠整表写回。
   // pinned 同形但目前无运行时修改入口(各窗写回的是盘上同一份),加 pin/unpin 时须同样改为增量。
   const workspace = current?.workspace ?? writable.workspace;
 
@@ -315,6 +315,18 @@ export function mergeWritableIntoFull(
 }
 
 /**
+ * 「最近打开」比较键:平台感知去重(Windows 大小写不敏感,与 renderer pathEquals 同口径):先用对话框打开
+ * `C:\Code\Proj`、再命令行 `continuo c:\code\proj` 不应出现两项。另去尾分隔符(保留根):升级前盘上可能存有
+ * 带尾分隔符的旧条目(`/u/proj/`),须与规范形 `/u/proj` 视为同一项。
+ */
+function recentRootKey(s: string, platform: NodeJS.Platform): string {
+  let end = s.length;
+  while (end > 1 && (s[end - 1] === '/' || s[end - 1] === '\\') && !/^[A-Za-z]:[\\/]$/.test(s.slice(0, end))) end -= 1;
+  const t = s.slice(0, end);
+  return platform === 'win32' ? t.toLowerCase() : t;
+}
+
+/**
  * 「最近打开」LRU 置顶:`path` 放到最前,其余按原顺序去重接后,截断到 WORKSPACE_RECENT_LIMIT
  *(与 renderer workspace.store 的 buildRecentRoots 同一上限)。explorer:touch-recent 在文件锁内对盘上列表调用。
  */
@@ -323,24 +335,29 @@ export function promoteRecentRoot(
   path: string,
   platform: NodeJS.Platform = process.platform,
 ): string[] {
-  // 平台感知去重(Windows 大小写不敏感,与 renderer pathEquals 同口径):先用对话框打开 `C:\Code\Proj`、再命令行
-  // `continuo c:\code\proj` 不应出现两项。
-  // 比较键另去尾分隔符(保留根):升级前盘上可能存有带尾分隔符的旧条目(`/u/proj/`),须与规范形 `/u/proj` 视为同一项。
-  const key = (s: string): string => {
-    let end = s.length;
-    while (end > 1 && (s[end - 1] === '/' || s[end - 1] === '\\') && !/^[A-Za-z]:[\\/]$/.test(s.slice(0, end))) end -= 1;
-    const t = s.slice(0, end);
-    return platform === 'win32' ? t.toLowerCase() : t;
-  };
   const next = [path];
-  const seen = new Set([key(path)]);
+  const seen = new Set([recentRootKey(path, platform)]);
   for (const p of list) {
     if (next.length >= WORKSPACE_RECENT_LIMIT) break;
-    if (seen.has(key(p))) continue;
-    seen.add(key(p));
+    const k = recentRootKey(p, platform);
+    if (seen.has(k)) continue;
+    seen.add(k);
     next.push(p);
   }
   return next;
+}
+
+/**
+ * 从「最近打开」移除 `path`(比较键同 promoteRecentRoot),其余顺序不变。explorer:remove-recent 在文件锁内对盘上
+ * 列表调用(VSCode「从最近打开列表中删除」)。
+ */
+export function removeRecentRoot(
+  list: readonly string[],
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const k = recentRootKey(path, platform);
+  return list.filter((p) => recentRootKey(p, platform) !== k);
 }
 
 // 边界(E67,E18/E26/E66 stat-before-read 族):explorer.json 是磁盘持久化文件,可能损坏或被

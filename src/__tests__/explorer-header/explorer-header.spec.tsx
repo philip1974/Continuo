@@ -593,7 +593,7 @@ describe('ExplorerHeader — 最近打开列表', () => {
   });
 
   // a11y(A147):点已失效 recent root(listDir !ok)→ notify.error 且不切 root。
-  it('点 recent root 但 listDir {ok:false} → notify.error 不切 root', async () => {
+  it('点 recent root 但 listDir {ok:false}(如无权限)→ notify.error 不切 root', async () => {
     const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
     useWorkspaceStore.setState({
       root: '/proj',
@@ -601,7 +601,7 @@ describe('ExplorerHeader — 最近打开列表', () => {
     });
     installFs(
       vi.fn(),
-      vi.fn().mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' }),
+      vi.fn().mockResolvedValue({ ok: false, code: 'FS_DENIED', message: 'denied' }),
     );
     const { container } = render(<ExplorerHeader root="/proj" />);
     fireEvent.click(
@@ -612,6 +612,36 @@ describe('ExplorerHeader — 最近打开列表', () => {
     ).find((b) => b.textContent?.trim() === 'older')!;
     fireEvent.click(olderItem);
     await waitFor(() => expect(errSpy).toHaveBeenCalledTimes(1));
+    expect(useWorkspaceStore.getState().root).toBe('/proj');
+  });
+
+  it('点已不存在的 recent root(FS_NOT_FOUND)→ 询问是否从列表删除,确认后删除(不弹 toast)', async () => {
+    const errSpy = vi.spyOn(notify, 'error').mockImplementation(() => {});
+    useWorkspaceStore.setState({
+      root: '/proj',
+      recentRoots: ['/proj', '/Users/foo/older'],
+    });
+    installFs(
+      vi.fn(),
+      vi.fn().mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' }),
+    );
+    const { container, findByRole } = render(<ExplorerHeader root="/proj" />);
+    fireEvent.click(
+      container.querySelector('button[aria-label=更多操作]') as HTMLButtonElement,
+    );
+    const olderItem = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
+    ).find((b) => b.textContent?.trim() === 'older')!;
+    fireEvent.click(olderItem);
+    const dialog = await findByRole('dialog');
+    expect(dialog.textContent).toContain('/Users/foo/older');
+    fireEvent.click(
+      Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === '删除')!,
+    );
+    await waitFor(() =>
+      expect(useWorkspaceStore.getState().recentRoots).toEqual(['/proj']),
+    );
+    expect(errSpy).not.toHaveBeenCalled();
     expect(useWorkspaceStore.getState().root).toBe('/proj');
   });
 });

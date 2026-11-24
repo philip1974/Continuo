@@ -94,7 +94,9 @@ export interface ExplorerPersistApi {
    *(多窗口互相抹掉),新增 / 置顶只走这里。缺省(测试)则不发。
    */
   touchRecent?: (path: string) => Promise<IpcResult<void>>;
-  /** 订阅 main 广播的最新 recentRoots(任一窗口 touch 后推给所有窗口),返 unsubscribe。 */
+  /** 从全局「最近打开」移除一项(main 锁内移除并广播)。缺省(测试)则只改本窗。 */
+  removeRecent?: (path: string) => Promise<IpcResult<void>>;
+  /** 订阅 main 广播的最新 recentRoots(任一窗口 touch / remove 后推给所有窗口),返 unsubscribe。 */
   onRecentChanged?: (cb: (recentRoots: string[]) => void) => () => void;
 }
 
@@ -593,6 +595,25 @@ export async function initExplorerPersistence(
   if (hydratedAsNewWindow) persist();
 }
 
+function withoutRecentRoot(list: readonly string[], path: string): string[] {
+  return list.filter((p) => !pathEquals(p, path));
+}
+
+// 由 wireRecentRootsSync 接上(持久化可信加载后);未接上时 forgetRecentRoot 只改本窗。
+let recentRootRemover: ((path: string) => void) | null = null;
+
+/**
+ * 从「最近打开」移除一项(VSCode「从最近打开列表中删除」):main 锁内从盘上移除并广播给所有窗口,本窗立即更新。
+ */
+export function forgetRecentRoot(path: string): void {
+  if (recentRootRemover !== null) {
+    recentRootRemover(path);
+    return;
+  }
+  const { recentRoots } = useWorkspaceStore.getState();
+  useWorkspaceStore.setState({ recentRoots: withoutRecentRoot(recentRoots, path) });
+}
+
 /**
  * 「最近打开」跨窗同步(多窗口:各窗只在启动时 hydrate,explorer:write 又不再整表写 recentRoots):
  * - 本窗 setRoot 把新 root 置顶(列表头变化)→ 立即 touchRecent(head),由 main 锁内与盘上合并并广播;
@@ -602,14 +623,26 @@ export async function initExplorerPersistence(
 function wireRecentRootsSync(api: ExplorerPersistApi, startupPicks: readonly string[]): void {
   const touch = api.touchRecent;
   let applyingRemote = false;
-  api.onRecentChanged?.((list) => {
+  // 不回发 touch 的本窗列表更新(main 广播 / 本窗移除)。
+  const applyWithoutTouch = (recentRoots: string[]): void => {
     applyingRemote = true;
     try {
-      useWorkspaceStore.setState({ recentRoots: collectNormalizedWorkspaceRoots(list) });
+      useWorkspaceStore.setState({ recentRoots });
     } finally {
       applyingRemote = false;
     }
-  });
+  };
+  api.onRecentChanged?.((list) => applyWithoutTouch(collectNormalizedWorkspaceRoots(list)));
+  // 移除:先发 IPC(与之后的 touch 同序到达 main),再立即改本窗(移除头部时不把新头部当作「置顶」回发 touch)。
+  recentRootRemover = (path) => {
+    api.removeRecent?.(path).then(
+      (r) => {
+        if (!r.ok) console.warn('[explorer-persist] removeRecent failed', r.code, r.message);
+      },
+      (err: unknown) => console.warn('[explorer-persist] removeRecent threw', err),
+    );
+    applyWithoutTouch(withoutRecentRoot(useWorkspaceStore.getState().recentRoots, path));
+  };
   if (!touch) return;
   const send = (path: string): void => {
     touch(path).then(

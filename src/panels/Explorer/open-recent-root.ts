@@ -15,9 +15,14 @@ import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-
  *
  * race(R19):listDir 探测是异步,连点 A→B 时旧探测结果不得乱序覆盖新选择 → latest 守卫。
  */
+// 目录已不存在(删除 / 移走)的错误码:VSCode 此时询问是否从「最近打开」列表删除,而不是只报错。
+const MISSING_CODES: ReadonlySet<string> = new Set(['FS_NOT_FOUND', 'WORKSPACE_NOT_FOUND']);
+
 export async function openRecentRootOrNotify(
   path: string,
   setRoot: (p: string) => void,
+  /** 目录已不存在时调用(代替 toast;调用方询问是否从列表删除)。缺省则照常 toast。 */
+  onMissing?: (p: string) => void,
 ): Promise<void> {
   const isLatest = workspaceRootSelectionGuard.begin();
   try {
@@ -26,7 +31,8 @@ export async function openRecentRootOrNotify(
     // 期间有更新的「打开最近」发起 → 本次过期,丢弃(不 setRoot 不报),由最新一次负责。
     if (!isLatest()) return;
     if (!r.ok) {
-      notifyFailure(r);
+      if (onMissing !== undefined && MISSING_CODES.has(r.code)) onMissing(path);
+      else notifyFailure(r);
       return;
     }
     setRoot(path);

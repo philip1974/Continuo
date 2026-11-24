@@ -63,7 +63,8 @@ test('关 folder + 重启 → EmptyWorkspace 显「最近打开」+ ws', async (
     // 「最近打开」 list 含 ws
     await expect(win2.getByRole('list', { name: RECENT })).toBeVisible();
     await expect(
-      win2.getByRole('button', { name: new RegExp(escapeRegExp(ws)) }),
+      // 只匹配「打开最近」按钮(同一条目右侧的「从最近打开中删除」× 的名字也含路径)
+      win2.getByRole('button', { name: new RegExp(`^(打开最近|Open recent|최근 항목 열기)[::]\\s*${escapeRegExp(ws)}$`) }),
     ).toBeVisible();
   } finally {
     await app2?.close();

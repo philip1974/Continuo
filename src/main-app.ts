@@ -259,6 +259,7 @@ export async function init(): Promise<void> {
       },
       write: (snap) => coApi.explorer.write(snap),
       touchRecent: (path) => coApi.explorer.touchRecent(path),
+      removeRecent: (path) => coApi.explorer.removeRecent(path),
       onRecentChanged: (cb) => coApi.explorer.onRecentChanged(cb),
     },
     {
