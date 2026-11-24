@@ -28,7 +28,7 @@ import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { capErrorText, codedError } from '../../shared/error-message';
-import { waitAtMost } from '../lib/wait-at-most';
+import { waitAtMost } from '../../shared/wait-at-most';
 import { MCP_MAX_MESSAGE_BYTES } from '../lib/mcp-limits';
 
 // 冷启动:ESM 值导入 node:http 时 Node 会读取其全部导出(含 WebSocket 等懒 getter),连带加载并编译整个

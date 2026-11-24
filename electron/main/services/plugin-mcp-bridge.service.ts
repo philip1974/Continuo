@@ -183,10 +183,11 @@ export function createInvokeRemote(
       } catch (err) {
         if (removePending(requestId)) {
           timer.cancel();
+          // 新建带 code 的错误(不就地改写 send 抛出的对象:它可能是别处共享 / 已带 code 的错误)。
           reject(
-            Object.assign(
-              err instanceof Error ? err : new Error('plugin mcp send threw'),
-              { code: PLUGIN_MCP_ERROR_CODES.PLUGIN_GONE },
+            codedError(
+              PLUGIN_MCP_ERROR_CODES.PLUGIN_GONE,
+              err instanceof Error ? err.message : 'plugin mcp send threw',
             ),
           );
         }

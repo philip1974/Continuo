@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { sleep, waitAtMost } from '../lib/wait-at-most';
+import { sleep, waitAtMost } from '../../shared/wait-at-most';
 
 afterEach(() => {
   vi.useRealTimers();

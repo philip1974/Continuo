@@ -7,7 +7,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { prepareCommonJsAdapter, processInfo, pidsInProcessGroup, waitForDead } from './_helpers/debug-adapter';
-import { sleep } from '../lib/wait-at-most';
+import { sleep } from '../../shared/wait-at-most';
 
 const root = process.cwd();
 const spikeDir = path.join(root, 'scripts/debug-spike');

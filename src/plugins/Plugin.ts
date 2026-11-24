@@ -15,6 +15,7 @@ import type { DecoratorFn } from './registries/ExplorerDecoratorRegistry';
 import type { EditorActionSpec } from './registries/EditorActionRegistry';
 import type { ExplorerContextMenuItemSpec } from './registries/ExplorerContextMenuRegistry';
 import type { PluginMcpToolSpec } from './registries/PluginMcpRegistry';
+import { waitAtMost } from '../../electron/shared/wait-at-most';
 
 export type { Disposable } from './types';
 
@@ -213,19 +214,11 @@ export abstract class Plugin {
     this.disposed = true;
     this.disposeCollected();
     if (!this.onunload) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timedOut = new Promise<'timeout'>((resolve) => {
-      timer = setTimeout(() => resolve('timeout'), PLUGIN_UNLOAD_TIMEOUT_MS);
-    });
-    try {
-      const r = await Promise.race([Promise.resolve(this.onunload()), timedOut]);
-      if (r === 'timeout') {
-        console.warn(
-          `[plugin:${this.manifest.id}] onunload did not settle within ${PLUGIN_UNLOAD_TIMEOUT_MS}ms, continuing deactivation`,
-        );
-      }
-    } finally {
-      clearTimeout(timer);
+    const r = await waitAtMost(Promise.resolve(this.onunload()), PLUGIN_UNLOAD_TIMEOUT_MS);
+    if (r === 'timeout') {
+      console.warn(
+        `[plugin:${this.manifest.id}] onunload did not settle within ${PLUGIN_UNLOAD_TIMEOUT_MS}ms, continuing deactivation`,
+      );
     }
   }
 

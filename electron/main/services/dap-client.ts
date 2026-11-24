@@ -9,7 +9,7 @@ import path from 'node:path';
 import { mergeSpawnEnv, stripInternalSecretEnv } from '../lib/child-spawn-hardening';
 import { errorMessage, toError } from '../../shared/error-message';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
-import { sleep, waitAtMost } from '../lib/wait-at-most';
+import { sleep, waitAtMost } from '../../shared/wait-at-most';
 import { TREE_KILL_DETACHED } from '../lib/kill-with-grace';
 
 type DapPrimitive = string | number | boolean | null;

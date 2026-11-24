@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { resolveSpawnCommand } from './child-spawn-hardening';
-import { waitAtMost } from './wait-at-most';
+import { waitAtMost } from '../../shared/wait-at-most';
 
 interface Killable {
   kill(signal?: NodeJS.Signals | number): boolean;

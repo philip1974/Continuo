@@ -197,7 +197,7 @@ export interface WaitForStopOutput {
 // 形态定义在 shared(与 renderer 的 debug.store 共用),这里转出供 main 侧既有 import 使用。
 export type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
 import type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
-import { sleep, waitAtMost } from '../lib/wait-at-most';
+import { sleep, waitAtMost } from '../../shared/wait-at-most';
 import { truncateUtf8, utf8ByteLength } from '../../shared/utf8-byte-length';
 
 interface StopWaiter {

@@ -1,5 +1,5 @@
 // 「最多等 N ms 就放行」的有界等待(关闭 / 清理路径共用;此前 kill-with-grace、mcp-host、debug.service、
-// dap-client 各写一份 setTimeout + Promise.race + clearTimeout)。
+// dap-client、renderer 插件 onunload 各写一份 setTimeout + Promise.race + clearTimeout)。无 node 依赖,main / renderer 共用。
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

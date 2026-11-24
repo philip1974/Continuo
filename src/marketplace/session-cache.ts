@@ -7,6 +7,7 @@
 //
 // 序列化形态 `{ fetchedAt, data }` 由本 helper 对称读写;sessionStorage 不跨应用重启,
 // 故内部 wrapper 形态非外部契约,旧条目读不出时按 cache-miss 处理(无害,触发一次重拉)。
+import { readStoredJson } from '@/plugins/storage/local-storage-record';
 
 interface Wrapped<T> {
   readonly fetchedAt: number;
@@ -23,6 +24,14 @@ const FUTURE_SKEW_MS = 60_000;
 // 默认上限须覆盖最大合法缓存:index ≤ ~4MiB(E64 MAX_INDEX_BYTES)、reviews 多节点累积也在数 MiB,
 // 16MiB 留足余量;调用方可按需传更紧的 maxRawLength。
 const DEFAULT_MAX_RAW_LENGTH = 16 * 1024 * 1024;
+
+function getSessionStorage(): Storage | undefined {
+  try {
+    return globalThis.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface SessionCache<T> {
   /** memory 优先(miss 则 hydrate from sessionStorage);新鲜则返数据,过期/无 → null. */
@@ -54,21 +63,20 @@ export function createSessionCache<T>(opts: {
   }
 
   function readStorage(): Wrapped<T> | null {
+    // 边界(E71):解析前按原始串长度拦,防超大缓存的 JSON.parse 卡顿;超限 / 解析失败 = 篡改 / 旧残留 →
+    // cache-miss + 清毒(readStoredJson 负责,同 localStorage 记录)。
+    const parsed = readStoredJson(
+      opts.key,
+      opts.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH,
+      getSessionStorage(),
+    ) as { fetchedAt?: unknown; data?: unknown } | null | undefined;
+    if (parsed === undefined) return null;
     try {
-      const raw = sessionStorage.getItem(opts.key);
-      if (!raw) return null;
-      // 边界(E71):解析前按原始串长度拦,防超大缓存的 JSON.parse 卡顿。超限 = 篡改/旧残留 →
-      // cache-miss + 清毒(removeItem),避免坏缓存反复触发解析。
-      if (raw.length > (opts.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH)) {
-        clearStorage();
-        return null;
-      }
-      const parsed = JSON.parse(raw) as { fetchedAt?: unknown; data?: unknown };
       // 边界(E5):时间戳须有限、非负、非明显未来。畸形 sessionStorage 可写 1e309(JSON.parse →
       // Infinity,typeof 仍是 'number')或超大未来值,使 `Date.now() - fetchedAt < ttlMs` 恒为真 →
       // marketplace index/reviews 永久用陈旧缓存,远端更新/修复不可见直到手动清。非法 wrapper 按
       // cache miss(返 null → 触发重拉)。
-      const ts = parsed.fetchedAt;
+      const ts = parsed?.fetchedAt;
       if (
         typeof ts !== 'number' ||
         !Number.isFinite(ts) ||
@@ -78,11 +86,11 @@ export function createSessionCache<T>(opts: {
         clearStorage();
         return null;
       }
-      if (!opts.validate(parsed.data)) {
+      if (!opts.validate(parsed?.data)) {
         clearStorage();
         return null;
       }
-      return { fetchedAt: ts, data: parsed.data };
+      return { fetchedAt: ts, data: parsed!.data as T };
     } catch {
       clearStorage();
       return null;

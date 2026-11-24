@@ -7,7 +7,7 @@ import { cp, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { sleep } from '../../lib/wait-at-most';
+import { sleep } from '../../../shared/wait-at-most';
 
 const execFile = promisify(execFileCb);
 
