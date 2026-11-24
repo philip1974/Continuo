@@ -48,7 +48,10 @@ export function Modal({
   useEffect(() => {
     if (!visible) return undefined;
 
-    prevFocusRef.current = (globalThis.document.activeElement as HTMLElement | null) ?? null;
+    // 键盘 / 焦点都按 Modal 内容所在文档处理:面板弹出到 dockview popout 子窗时,Modal 随面板经 portal
+    // 渲染在子窗 DOM,而代码运行在主窗(globalThis.document 是主窗)。Modal 自身不 portal,内容即在此文档。
+    const doc = contentRef.current?.ownerDocument ?? globalThis.document;
+    prevFocusRef.current = (doc.activeElement as HTMLElement | null) ?? null;
 
     const keyId = keyIdRef.current!;
     modalKeyStack.push(keyId);
@@ -99,7 +102,7 @@ export function Modal({
         e.preventDefault();
         return;
       }
-      const active = globalThis.document.activeElement;
+      const active = doc.activeElement;
       if (e.shiftKey && active === first) {
         e.preventDefault();
         last.focus();
@@ -109,11 +112,11 @@ export function Modal({
       }
     };
 
-    globalThis.document.addEventListener('keydown', handleKey);
+    doc.addEventListener('keydown', handleKey);
 
     return () => {
       cancelAnimationFrame(raf);
-      globalThis.document.removeEventListener('keydown', handleKey);
+      doc.removeEventListener('keydown', handleKey);
       const idx = modalKeyStack.lastIndexOf(keyId);
       if (idx >= 0) modalKeyStack.splice(idx, 1);
       const prev = prevFocusRef.current;

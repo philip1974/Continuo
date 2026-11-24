@@ -14,6 +14,7 @@ The dock layer wraps [`dockview-react`](https://dockview.dev) and keeps it in sy
 | `dock-api-ref.ts` | Mutable ref holding the live `DockviewApi`, so non-React code (event handlers, IPC plumbing) can reach it. |
 | `EmptyState.tsx` | Centerpiece shown when no panels are open. |
 | `HeaderActions.tsx` | Tab-strip right-side actions: popout (hidden for groups whose `group.api.location.type` is `'popout'` — the header is portalled from the main window, so `window.location` cannot tell) and the "more" menu for adding panels. |
+| `popout-documents.ts` | `trackPopoutDocuments(api)` (mounted by `DockShell.tsx` onReady): registers each popout group's window `document` into `src/lib/app-documents.ts` while the group is in a popout window, so global hotkeys also listen there (popout content is portalled from the main window; its key events only reach the popout's own document). |
 | `TerminalSessionsSync.tsx` | Syncs main's sessions into `terminal.store` (initial `listSessions` + live `onSessionsChanged`, filtered by owner window and workspace root). |
 
 ## Reconciler — 3 phases

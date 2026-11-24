@@ -75,6 +75,9 @@ vi.mock('dockview-react', () => ({
         onDidAddPanel: noopDisposable,
         onDidActivePanelChange: noopDisposable,
         onDidMaximizedGroupChange: noopDisposable,
+        onDidAddGroup: noopDisposable,
+        onDidRemoveGroup: noopDisposable,
+        groups: [],
       };
       h.api = self;
       return self;

@@ -1155,6 +1155,10 @@
 
 - [`popout-header-menu.spec.tsx`](./popout-header-menu/popout-header-menu.spec.tsx)
 
+## [popout 子窗里的面板弹窗与全局热键](./popout-panel-keyboard/README.md)
+
+- [`popout-panel-keyboard.spec.tsx`](./popout-panel-keyboard/popout-panel-keyboard.spec.tsx)
+
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 
 - [`channels-zod-free.spec.ts`](./preload-no-zod/channels-zod-free.spec.ts)

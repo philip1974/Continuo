@@ -4,6 +4,9 @@
 visible=false 不渲染;Esc 调 onClose;Tab 在最后一个 focusable 上循环到第一个,
 Shift+Tab 在第一个上循环到最后一个;overlay click 调 onClose;关闭后焦点返还触发前元素。**
 
+键盘(Esc / Tab)与焦点(触发前元素、陷阱内当前焦点)都按 **Modal 内容所在文档**处理,面板弹出到 popout 子窗时
+同样生效(见 `popout-panel-keyboard`)。
+
 ## 模块
 
 | 文件 | 职责 |

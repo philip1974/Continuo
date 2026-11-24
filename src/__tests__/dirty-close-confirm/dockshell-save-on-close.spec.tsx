@@ -39,6 +39,9 @@ vi.mock('dockview-react', () => ({
         onDidRemovePanel: disposable,
         onDidAddPanel: disposable,
         onDidMaximizedGroupChange: disposable,
+        onDidAddGroup: disposable,
+        onDidRemoveGroup: disposable,
+        groups: [],
         panels: [],
       };
     }, []);

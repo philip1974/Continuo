@@ -2,7 +2,7 @@
 // 监听全局 keydown,实时把组合呈现成 'mod+shift+x' 形式;Esc=取消,
 // Backspace=清空(用户可保存空 = unbind),其它键 = 当前组合。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
 import {
   canonicalHotkey,
@@ -117,6 +117,7 @@ function KeybindingCaptureModalBody({
   // ''  = 显式 unbind(用户按了 Backspace)
   // string non-empty = 新组合
   const [captured, setCaptured] = useState<string | null>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
 
   // Body 只在弹窗可见时挂载(外层 visible=false 直接不渲染)→ 每次打开都是全新 state,无需手动复位。
   useEffect(() => {
@@ -156,9 +157,11 @@ function KeybindingCaptureModalBody({
         setCaptured(combo);
       }
     };
-    // capture 阶段拦截,避免 useCommandHotkeys 抢先 dispatch
-    document.addEventListener('keydown', handler, true);
-    return () => document.removeEventListener('keydown', handler, true);
+    // capture 阶段拦截,避免 useCommandHotkeys 抢先 dispatch。挂在弹窗所在文档:Settings 面板弹出到
+    // dockview popout 子窗时弹窗在子窗 DOM,按键只派发到子窗 document(全局 document 是主窗)。
+    const doc = statusRef.current?.ownerDocument ?? document;
+    doc.addEventListener('keydown', handler, true);
+    return () => doc.removeEventListener('keydown', handler, true);
   }, []);
 
   const display = captured ?? currentHotkey ?? '';
@@ -202,6 +205,7 @@ function KeybindingCaptureModalBody({
           用户按下组合后听不到是否已捕获/清空,只能盲目保存。捕获结果是中性进度 → role=status
           (polite,不打断);A52 修的是冲突警告(下方),这是捕获结果框本身。 */}
       <div
+        ref={statusRef}
         role="status"
         className="mt-4 flex min-h-[60px] items-center justify-center rounded border border-line bg-panel-soft/50 p-4"
       >

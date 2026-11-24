@@ -20,6 +20,9 @@ vi.mock('dockview-react', () => ({
         onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidMaximizedGroupChange: vi.fn(() => ({ dispose: vi.fn() })), // topic-22
+        onDidAddGroup: vi.fn(() => ({ dispose: vi.fn() })),
+        onDidRemoveGroup: vi.fn(() => ({ dispose: vi.fn() })),
+        groups: [],
         panels: [],
       }),
       [],

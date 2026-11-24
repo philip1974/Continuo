@@ -3,6 +3,7 @@
 // (文件),带 shift = 命令面板(对齐 VSCode)。
 
 import { useEffect } from 'react';
+import { addAppDocumentsListener } from '@/lib/app-documents';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import type { PickerSlice } from './picker-slice';
 
@@ -30,7 +31,7 @@ export function usePickerToggleHotkey(
         else open();
       }
     };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    // 主窗 + dockview popout 子窗都挂(子窗的按键只派发到子窗 document)。
+    return addAppDocumentsListener('keydown', handler);
   }, [getState, shift]);
 }

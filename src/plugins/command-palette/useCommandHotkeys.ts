@@ -12,6 +12,7 @@ import {
 } from '../keybindings/keybindings-store';
 import { tWithFallback } from '@/i18n';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
+import { addAppDocumentsListener } from '@/lib/app-documents';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
@@ -208,8 +209,8 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
         }
       }
     };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    // 主窗 + dockview popout 子窗都挂(子窗的按键只派发到子窗 document)。
+    return addAppDocumentsListener('keydown', handler);
     // commands 是稳定 registry 实例(挂载期不变);handler 内 commands.get 做 R51 live 查找。
   }, [bindings, commands]);
 }
