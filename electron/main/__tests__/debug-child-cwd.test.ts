@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DapClient } from '../services/dap-client';
 import { defaultExecLoginShell } from '../services/debug.service';
+import { CONTINUO_MCP_TOKEN_ENV } from '../lib/continuo-env-keys';
 
 let dir: string | null = null;
 afterEach(async () => {
@@ -23,6 +24,25 @@ describe('debug 子进程的 cwd', () => {
     const stdout = await defaultExecLoginShell('/bin/sh', ['-c', 'pwd -P'], 5_000);
     expect(stdout.trim()).toBe(await realpath(homedir()));
   });
+
+  it.skipIf(process.platform === 'win32')(
+    '登录 shell 探测不继承 Continuo 内部凭据 env(Continuo 从其终端启动时主进程 env 带 MCP token)',
+    async () => {
+      const prev = process.env[CONTINUO_MCP_TOKEN_ENV];
+      process.env[CONTINUO_MCP_TOKEN_ENV] = 'secret-token';
+      try {
+        const stdout = await defaultExecLoginShell(
+          '/bin/sh',
+          ['-c', `printf %s "\${${CONTINUO_MCP_TOKEN_ENV}-unset}"`],
+          5_000,
+        );
+        expect(stdout).toBe('unset');
+      } finally {
+        if (prev === undefined) delete process.env[CONTINUO_MCP_TOKEN_ENV];
+        else process.env[CONTINUO_MCP_TOKEN_ENV] = prev;
+      }
+    },
+  );
 
   it('debug adapter 在用户主目录启动', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'dap-cwd-'));

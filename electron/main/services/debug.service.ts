@@ -35,6 +35,7 @@ import { codedError, toError } from '../../shared/error-message';
 import { runSerialPerKey } from './serialize-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
 import { processTreeKillable } from '../lib/kill-with-grace';
+import { stripInternalSecretEnv } from '../lib/child-spawn-hardening';
 import { isSameOrInsidePath } from '../lib/path-inside';
 
 const execFile = promisify(execFileCb);
@@ -366,8 +367,10 @@ const LOGIN_SHELL_PATH_MARKER = '__CONTINUO_LOGIN_PATH_b7e3f1__';
 export const defaultExecLoginShell: LoginShellExec = async (shell, args, timeoutMs) => {
   // 安全:cwd 显式设为用户主目录,不继承主进程 cwd —— CLI 从不可信仓库目录启动时主进程 cwd 即该目录,
   // 用户 rc 里「启动即读 cwd」的片段(nvm load-nvmrc、direnv 等)会读到仓库里的文件。
+  // 安全:剥离 Continuo 内部凭据 env(Continuo 从其终端启动时主进程 env 带 MCP token),同其它子进程 spawn。
   const { stdout } = await execFile(shell, [...args], {
     cwd: homedir(),
+    env: stripInternalSecretEnv(process.env),
     timeout: timeoutMs,
     maxBuffer: 1024 * 1024,
   });
