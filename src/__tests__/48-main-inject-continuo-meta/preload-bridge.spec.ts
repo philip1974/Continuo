@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   parseContinuoHostnameFromArgv,
-  parseContinuoPackagedFromArgv,
 } from '../../../electron/preload/continuo-meta-parse';
 
 vi.mock('electron', () => ({
@@ -22,30 +21,6 @@ vi.mock('electron', () => ({
 }));
 
 describe('topic 48 preload metadata bridge', () => {
-  it('parses a true packaged argument', () => {
-    expect(
-      parseContinuoPackagedFromArgv([
-        'node',
-        'exe.cjs',
-        '--continuo-packaged=true',
-      ]),
-    ).toBe(true);
-  });
-
-  it('parses a false packaged argument', () => {
-    expect(
-      parseContinuoPackagedFromArgv([
-        'node',
-        'exe.cjs',
-        '--continuo-packaged=false',
-      ]),
-    ).toBe(false);
-  });
-
-  it('preserves unknown state when the packaged argument is absent', () => {
-    expect(parseContinuoPackagedFromArgv(['node', 'exe.cjs'])).toBeNull();
-  });
-
   it('parses the hostname argument; absent / empty → null', () => {
     expect(
       parseContinuoHostnameFromArgv(['node', 'exe.cjs', '--continuo-hostname=my-mac.local']),
@@ -54,7 +29,7 @@ describe('topic 48 preload metadata bridge', () => {
     expect(parseContinuoHostnameFromArgv(['node', 'exe.cjs'])).toBeNull();
   });
 
-  it('exposes frozen Continuo metadata through contextBridge', async () => {
+  it('exposes Continuo metadata through coApi.system only (no __continuoMeta)', async () => {
     vi.resetModules();
     const electron = await import('electron');
     const exposeInMainWorld = vi.mocked(electron.contextBridge.exposeInMainWorld);
@@ -63,7 +38,6 @@ describe('topic 48 preload metadata bridge', () => {
     process.argv = [
       'node',
       'exe.cjs',
-      '--continuo-packaged=true',
       '--continuo-hostname=my-mac.local',
       '--continuo-windows-build=19045',
     ];
@@ -73,11 +47,8 @@ describe('topic 48 preload metadata bridge', () => {
       process.argv = originalArgv;
     }
 
-    expect(exposeInMainWorld).toHaveBeenCalledTimes(2);
-    expect(exposeInMainWorld).toHaveBeenCalledWith('__continuoMeta', {
-      appIsPackaged: true,
-    });
-    expect(Object.isFrozen(exposeInMainWorld.mock.calls[1]?.[1])).toBe(true);
+    expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
+    expect(exposeInMainWorld.mock.calls.some(([key]) => key === '__continuoMeta')).toBe(false);
     // 本机 hostname 经 coApi.system.hostname 同步暴露(OSC7 acceptedHosts 用)
     const bootstrap = exposeInMainWorld.mock.calls[0]?.[1] as {
       claimRendererApi: () => {

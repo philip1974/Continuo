@@ -118,11 +118,7 @@ import {
   setTrustedDevOrigin,
   setTrustedRendererFile,
 } from './safe-handle';
-import {
-  buildRendererQuery,
-  installSpikeGate,
-  parseDevRendererUrl,
-} from './spike-gate';
+import { buildRendererQuery, parseDevRendererUrl } from './renderer-url';
 import { buildCommonWebPreferences } from './continuo-meta-args';
 import { isPopoutOnlyUrl, isPopoutUrl } from './popout-url';
 import {
@@ -559,7 +555,7 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   // 安全 S1:只允许指向本应用自己的 renderer 入口(dev server 同源 / 受信的 renderer 文件,精确 pathname)。
   // 安全 L1:且只为 dockview popout 放行 —— query 恰好只有 popout=1。否则页面内容(Markdown 预览中键点
   // 链接、target=_blank)可用 `index.html?workspace=%2F&fresh=1&windowSeq=0` 开出带完整 preload、以攻击者
-  // 指定目录为根的应用窗口。packaged 下的 `?spike=` 窗口也因此在这里被拒(原 spike-gate guardOpen 的意图)。
+  // 指定目录为根的应用窗口。
   const allow = isOwnRendererUrl(url) && isPopoutOnlyUrl(url);
 
   if (allow) {
@@ -573,10 +569,7 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
         //   - 给用户一个明确的可拖区域(主窗口 hiddenInset 把 Continuo 文字
         //     做成可拖,popout 子窗里没有这条,需要原生 titlebar)
         //   - 避免 dockview tab bar 撞 macOS 红绿灯按钮
-        webPreferences: buildCommonWebPreferences({
-          preload: PRELOAD,
-          isPackaged: app.isPackaged,
-        }),
+        webPreferences: buildCommonWebPreferences({ preload: PRELOAD }),
       },
     };
   }
@@ -652,10 +645,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     // (Windows/Linux 的自定义 chrome + 窗口控件 overlay 精修留作 follow-up。跨平台审计 P2)
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#020617',
-    webPreferences: buildCommonWebPreferences({
-      preload: PRELOAD,
-      isPackaged: app.isPackaged,
-    }),
+    webPreferences: buildCommonWebPreferences({ preload: PRELOAD }),
   });
 
   const seq = opts.windowSeq;
@@ -692,7 +682,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   // 多窗口:opts.workspace + opts.windowSeq 走 query string,renderer
   // parseInitialWorkspace / parseInitialWindowSeq 接收。dev loadURL 与 prod
   // loadFile 都加 query;loadFile 第二参支持 query 字段。
-  // query 由 main 自己构造,只含这三项(不含 spike:spike 页面只能经导航进入,由 installSpikeGate 把关)。
+  // query 由 main 自己构造,只含这三项。
   const queryParts = buildRendererQuery({
     windowSeq: String(seq),
     workspace: opts.workspace,
@@ -720,11 +710,10 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   return win;
 }
 
-// 给所有新创建的 webContents(包括 dockview popout 的子窗口)装上 windowOpenHandler。
-// 这样从 popout 再 popout 也走我们的同一套安全策略。
+// 给所有新创建的 webContents(包括 dockview popout 的子窗口)装上 windowOpenHandler 与导航守卫。
+// 这样从 popout 再 popout 也走我们的同一套安全策略;导航规则 dev 与打包版一致(见 window-open-policy)。
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler(windowOpenHandler);
-  installSpikeGate(contents, app.isPackaged); // [topic 45 spike gate 第一道] will-navigate + will-frame-navigate
   installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed);
 });
 

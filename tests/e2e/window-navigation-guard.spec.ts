@@ -28,3 +28,31 @@ test('页面内 <a href> 指向应用外的默认导航被主进程拦下', asyn
     ),
   ).toBe(`${appUrl}|true`);
 });
+
+// dev 与打包版同一套规则:页面发起的导航即便指回本应用入口(location.reload() / 带启动参数的入口 URL)
+// 也拦下 —— 否则页面内容能以任意 workspace / fresh 重开当前窗口。窗口刷新只走 main 侧(View → Reload)。
+test('页面发起的、指回本应用入口的导航(location.reload / 带启动参数)同样被拦下', async ({ window, electronApp }) => {
+  await expect(window.locator('main')).toBeVisible({ timeout: 10_000 });
+  const appUrl = window.url();
+
+  await window.evaluate((url) => {
+    const marker = document.createElement('div');
+    marker.id = 'nav-guard-reload-probe';
+    document.body.appendChild(marker);
+    const target = new URL(url);
+    target.search = '?workspace=%2F&fresh=1&windowSeq=0';
+    setTimeout(() => location.reload(), 0);
+    setTimeout(() => {
+      location.href = target.toString();
+    }, 50);
+  }, appUrl);
+  await window.waitForTimeout(1_000);
+
+  expect(
+    await electronApp.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScript(
+        "location.href + '|' + Boolean(document.getElementById('nav-guard-reload-probe'))",
+      ),
+    ),
+  ).toBe(`${appUrl}|true`);
+});

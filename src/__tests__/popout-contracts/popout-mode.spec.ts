@@ -7,7 +7,7 @@ describe('popout 模式 URL 编码', () => {
   });
 
   // 安全 L1:主进程 windowOpenHandler 只放行 query 恰好为 popout=1 的 URL(见 window-open-policy.spec);
-  // popout 子窗只看这个标记,主窗的启动参数(workspace / windowSeq / fresh / spike)一律不带过去。
+  // popout 子窗只看这个标记,主窗的启动参数(workspace / windowSeq / fresh)一律不带过去。
   it('已有查询的 URL → 丢弃其他参数,只留 popout=1', () => {
     const out = popoutUrlFor('http://localhost:5173/?foo=bar');
     expect(out).toBe('http://localhost:5173/?popout=1');
@@ -63,7 +63,7 @@ describe('E195 · popout query 长度上限(同一外部输入族)', () => {
 
   it('popoutUrlFor:上限内的主窗启动 query 也不携带(安全 L1,只留 popout=1)', () => {
     const out = popoutUrlFor(
-      'file:///app/out/renderer/index.html?workspace=%2Fx&windowSeq=2&fresh=1&spike=plugin-isolation',
+      'file:///app/out/renderer/index.html?workspace=%2Fx&windowSeq=2&fresh=1&foo=bar',
     );
     expect(out).toBe('file:///app/out/renderer/index.html?popout=1');
   });

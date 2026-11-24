@@ -87,7 +87,6 @@ import { pluginShellStreamRaw } from './plugin-shell-stream.preload';
 import {
   parseContinuoHostnameFromArgv,
   parseContinuoWindowsBuildFromArgv,
-  parseContinuoPackagedFromArgv,
 } from './continuo-meta-parse';
 
 // 可维护性 M24:terminal create 入参复用 shared TerminalCreateInput(= main zod schema
@@ -566,13 +565,3 @@ contextBridge.exposeInMainWorld('__lmApi', {
 if (process.env['CONTINUO_E2E'] === '1') {
   contextBridge.exposeInMainWorld('__continuoE2E', true);
 }
-
-// topic 48: main injects `--continuo-packaged=<bool>` via
-// webPreferences.additionalArguments so renderer-side spike probes can read
-// packaged state synchronously without changing their existing access path.
-contextBridge.exposeInMainWorld(
-  '__continuoMeta',
-  Object.freeze({
-    appIsPackaged: parseContinuoPackagedFromArgv(process.argv),
-  } as Readonly<{ appIsPackaged: boolean | null }>),
-);

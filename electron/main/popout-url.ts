@@ -26,7 +26,7 @@ export function isPopoutUrl(rawUrl: string): boolean {
 /**
  * window.open 放行用(安全 L1):query 恰好只有 `popout=1` 一项。windowOpenHandler 对本应用入口
  * 放行并注入完整 preload,只为 dockview popout;popout 子窗只看这个标记(App 短路成 PopoutHost),
- * 用不到 workspace / windowSeq / fresh / spike。带任何其它参数 —— 例如 Markdown 预览里中键点
+ * 用不到 workspace / windowSeq / fresh。带任何其它参数 —— 例如 Markdown 预览里中键点
  * `index.html?workspace=%2F&fresh=1&windowSeq=0` —— 一律拒,否则会开出以攻击者指定目录为根的完整应用窗口。
  * renderer 侧 popoutUrlFor 只产出这种形态。
  */

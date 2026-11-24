@@ -9,7 +9,7 @@ export function isPopoutWindow(): boolean {
   if (typeof window === 'undefined') return false;
   // 边界(E195,E193/E194 兄弟入口):isPopoutWindow 在每次 App 渲染时调用(render-path 无条件解析)。
   // 复用 safeStartupParams 的启动 query 长度闸 —— 畸形超长 location.search 否则每次渲染被完整解析一次,
-  // 绕过同一外部输入族(E193 parseInitial* / E194 main.tsx spike)的保护。超长 → null → 非 popout(默认主窗)。
+  // 绕过同一外部输入族(E193 parseInitial*)的保护。超长 → null → 非 popout(默认主窗)。
   const params = safeStartupParams(window.location.search);
   return params?.get(POPOUT_FLAG) === WINDOW_QUERY_FLAG_ON;
 }
@@ -26,7 +26,7 @@ export function popoutUrlFor(baseHref: string): string {
     return baseHref;
   }
   // 安全 L1:query 只留 popout=1。主进程 windowOpenHandler 只放行这种纯 popout URL(isPopoutOnlyUrl),
-  // 带 workspace / windowSeq / fresh / spike 的应用入口一律拒 —— 否则页面内容可借 window.open 开出以任意
+  // 带 workspace / windowSeq / fresh 等启动参数的应用入口一律拒 —— 否则页面内容可借 window.open 开出以任意
   // 目录为根的完整应用窗口。popout 子窗只看这个标记(main-app 早退、App 只渲染 PopoutHost),用不到主窗
   // 的启动参数。顺带也不会把超长 query 带进子窗(E195)。
   url.search = '';

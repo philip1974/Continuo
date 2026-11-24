@@ -34,21 +34,21 @@ describe('isOwnRendererWindowUrl', () => {
 // 安全 L1:window.open 放行(注入完整 preload)只为 dockview popout。Markdown 预览中键点
 // `file:///…/app.asar/out/renderer/index.html?workspace=%2F&fresh=1&windowSeq=0` 时,只比 pathname
 // 会开出一个以攻击者指定目录为根的完整权限应用窗口。popout 子窗只看 `popout` 标记(App 短路成
-// PopoutHost,不读 workspace / windowSeq / fresh / spike),故放行要求 query 恰好只有 popout=1。
+// PopoutHost,不读 workspace / windowSeq / fresh),故放行要求 query 恰好只有 popout=1。
 describe('L1 · window.open 只放行纯 popout URL', () => {
   it('纯 popout URL 放行(file / dev 两种入口)', () => {
     expect(isPopoutOnlyUrl('file:///app/out/renderer/index.html?popout=1')).toBe(true);
     expect(isPopoutOnlyUrl('http://localhost:5173/?popout=1')).toBe(true);
   });
 
-  it('带 workspace / fresh / windowSeq / spike 等启动参数的应用入口 URL 拒绝', () => {
+  it('带 workspace / fresh / windowSeq 等启动参数或其它参数的应用入口 URL 拒绝', () => {
     const base = 'file:///app/out/renderer/index.html';
     for (const q of [
       '?workspace=%2F&fresh=1&windowSeq=0',
       '?workspace=%2F&popout=1',
       '?popout=1&fresh=1',
       '?windowSeq=0&popout=1',
-      '?spike=plugin-isolation&popout=1',
+      '?foo=bar&popout=1',
       '?popout=1&popout=1',
     ]) {
       expect(isPopoutOnlyUrl(`${base}${q}`), q).toBe(false);

@@ -25,7 +25,7 @@
   - 有 dev server(未打包且设了 `ELECTRON_RENDERER_URL`)→ 只认同源 URL;
   - 否则(已打包,或未打包但直接跑构建产物:预览 / e2e)→ 只认受信的 renderer 文件入口(精确 pathname)。
 - 此前只按「是否打包」分支:未打包且没有 dev server 时所有 popout 都被拒,子窗开不出来。
-- 且只为 popout 放行:URL 的 query 必须**恰好只有** `popout=1`(`isPopoutOnlyUrl`)。带 `workspace` / `fresh` / `windowSeq` / `spike` 等启动参数的本应用入口一律拒 —— 否则页面内容(Markdown 预览中键点链接、`target=_blank`)能开出带完整 preload、以攻击者指定目录为根的应用窗口(安全 L1)。
+- 且只为 popout 放行:URL 的 query 必须**恰好只有** `popout=1`(`isPopoutOnlyUrl`)。带 `workspace` / `fresh` / `windowSeq` 等启动参数的本应用入口一律拒 —— 否则页面内容(Markdown 预览中键点链接、`target=_blank`)能开出带完整 preload、以攻击者指定目录为根的应用窗口(安全 L1)。
 - 有 popout 窗口时退出应用:不因 popout 窗口不应答关窗 flush 而等满 10s(e2e `quit-with-popout`)。
 
 ## 窗口不被页面内容带离应用
@@ -33,7 +33,7 @@
 - 页面发起的跨文档导航(点击链接、`location` 赋值、`location.reload()`、iframe 加载)在**任何 frame** 一律拦下(`installNavigationGuard` 挂在 `will-frame-navigate` 上);dev 与打包版同一套规则。窗口内容只由 main 经 `loadURL` / `loadFile` / `webContents.reload()`(菜单 View → Reload)加载,这些由浏览器侧发起,不经守卫。
 - 唯一放行:popout 子窗的**首次**加载 —— 尚未提交任何文档的窗口,主框架导航到 `windowOpenHandler` 放行的那种 URL(本应用入口且 query 恰为 `popout=1`)。子窗已有文档后,或目标是别的 URL(如 opener 抢先改 `w.location`),照拦。
 - 被拦下的主框架 URL:离开本应用的按与 `window.open` 拒绝分支相同的外链白名单(http / https / mailto,限长)转交系统打开,其余静默丢弃;指回本应用入口的(含 `location.reload()`、Vite HMR 整页刷新)与 DevTools 自身的导航只拦不转交。子 frame 的导航只拦不转交。
-- 取舍:打包版此前就是这样全拦(由已删除的 topic-45 spike 守卫顺带承担),这里显式化并让 dev 一致。代价是 dev 下 Vite 的整页刷新不再自动生效,需手动 Cmd+R / View → Reload。
+- 取舍:打包版此前就是这样全拦(由 topic-45 plugin-isolation spike 守卫顺带承担,该守卫已随 spike 删除),这里显式化并让 dev 一致。代价是 dev 下 Vite 的整页刷新不再自动生效,需手动 Cmd+R / View → Reload。
 
 ## 安全
 
