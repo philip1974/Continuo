@@ -71,6 +71,85 @@ describe('EditorHeader — tab 数量', () => {
   });
 });
 
+describe('EditorHeader — 同名文件 tab 区分', () => {
+  it('同名文件在文件名后用弱化色显示最短区分父路径;不重名的不显示', () => {
+    const a = tab({ id: '/w/a/index.ts', filePath: '/w/a/index.ts' });
+    const b = tab({ id: '/w/b/index.ts', filePath: '/w/b/index.ts' });
+    const c = tab({ id: '/w/c.ts', filePath: '/w/c.ts' });
+    useEditorStore.setState({ tabs: [a, b, c], activeTabId: a.id });
+    const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
+    const tabs = Array.from(container.querySelectorAll('[role=tab]'));
+    expect(tabs.map((t) => t.textContent)).toEqual(['index.tsa', 'index.tsb', 'c.ts']);
+    const desc = tabs[0]!.querySelector('[data-testid="tab-description"]')!;
+    expect(desc.textContent).toBe('a');
+    expect(desc.className).toContain('text-fg-dim');
+    expect(tabs[2]!.querySelector('[data-testid="tab-description"]')).toBeNull();
+  });
+});
+
+describe('EditorHeader — tab 栏溢出', () => {
+  it('tab 栏可横向滚动,两侧有 token 色渐隐遮罩(溢出提示)', () => {
+    const a = tab({ id: '/a.md', filePath: '/a.md' });
+    useEditorStore.setState({ tabs: [a], activeTabId: a.id });
+    const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
+    const nav = container.querySelector('.wm-tab-nav') as HTMLElement;
+    expect(nav.className).toContain('overflow-x-auto');
+    const fades = container.querySelectorAll('[data-testid^="tab-overflow-fade-"]');
+    expect(fades).toHaveLength(2);
+    for (const f of fades) {
+      expect(f.getAttribute('aria-hidden')).toBe('true');
+      expect(f.className).toMatch(/from-canvas/);
+    }
+  });
+
+  it('只在对应方向确有被遮住的内容时显示渐隐(scrollLeft / scrollWidth 驱动)', () => {
+    const a = tab({ id: '/a.md', filePath: '/a.md' });
+    useEditorStore.setState({ tabs: [a], activeTabId: a.id });
+    const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
+    const nav = container.querySelector('.wm-tab-nav') as HTMLElement;
+    const left = container.querySelector('[data-testid="tab-overflow-fade-start"]') as HTMLElement;
+    const right = container.querySelector('[data-testid="tab-overflow-fade-end"]') as HTMLElement;
+    // 不溢出:两侧都隐藏
+    expect(left.className).toContain('opacity-0');
+    expect(right.className).toContain('opacity-0');
+    Object.defineProperty(nav, 'scrollWidth', { configurable: true, value: 1000 });
+    Object.defineProperty(nav, 'clientWidth', { configurable: true, value: 300 });
+    nav.scrollLeft = 0;
+    act(() => {
+      nav.dispatchEvent(new Event('scroll'));
+    });
+    expect(left.className).toContain('opacity-0');
+    expect(right.className).not.toContain('opacity-0');
+    nav.scrollLeft = 700;
+    act(() => {
+      nav.dispatchEvent(new Event('scroll'));
+    });
+    expect(left.className).not.toContain('opacity-0');
+    expect(right.className).toContain('opacity-0');
+  });
+
+  it('激活 tab 变化时滚入可见区(scrollIntoView nearest)', () => {
+    const a = tab({ id: '/a.md', filePath: '/a.md' });
+    const b = tab({ id: '/b.md', filePath: '/b.md' });
+    useEditorStore.setState({ tabs: [a, b], activeTabId: a.id });
+    const spy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = spy;
+    try {
+      const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
+      spy.mockClear();
+      act(() => useEditorStore.setState({ activeTabId: b.id }));
+      expect(spy).toHaveBeenCalled();
+      const target = spy.mock.contexts.at(-1) as Element;
+      expect(target.closest('.wm-tab-nav-item')?.getAttribute('data-active')).toBe('true');
+      expect(container.contains(target)).toBe(true);
+      expect(spy.mock.calls.at(-1)?.[0]).toMatchObject({ block: 'nearest', inline: 'nearest' });
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});
+
 describe('EditorHeader — 与 VSCode 对齐:无保存按钮 + 不再持有 mode 切换', () => {
   // dirty 真假都不显示文字「保存」按钮 — dirty 由文件名旁的 ● 指示,
   // 保存走 ⌘S(EditorPanel keydown 已挂)。

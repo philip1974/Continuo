@@ -39,4 +39,7 @@ test('root/a.ts + src/a.ts 都打开 → 两个 tab 独立', async ({ window, wo
   // tablist 中应有 2 个 tab(都叫 a.ts)
   const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).locator('[role=tab]');
   await expect(tabs).toHaveCount(2, { timeout: 5_000 });
+  // 同名 tab 在文件名后显示最短区分父路径(VSCode 同款):根 a.ts 显示工作区目录名,src/a.ts 显示 src
+  const desc = tabs.locator('[data-testid="tab-description"]');
+  await expect(desc).toHaveText([path.basename(workspaceRoot), 'src']);
 });

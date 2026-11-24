@@ -516,6 +516,7 @@
 ## [EditorHeader(单行 Header,tabs + mode 切换)](./editor-header/README.md)
 
 - [`editor-header.spec.tsx`](./editor-header/editor-header.spec.tsx)
+- [`tab-label-description.spec.ts`](./editor-header/tab-label-description.spec.ts)
 
 ## [editor-hooks (M-Editor Step E2)](./editor-hooks/README.md)
 

@@ -15,6 +15,7 @@
 | 文件 | 职责 |
 |---|---|
 | `src/panels/Editor/EditorHeader.tsx` | UI |
+| `src/panels/Editor/tab-label-description.ts` | 同名 tab 的最短区分父路径后缀(纯函数,`tab-label-description.spec.ts`) |
 | `src/plugins/registries/EditorActionRegistry.ts` | actions 注册 + filterVisible |
 
 ## 关键行为
@@ -49,3 +50,17 @@
   tab 上,接着打字的按键落在 tab(与 dock tab SharedTab 同规则)
 - 键盘激活(Enter / Space 合成 click,detail=0)焦点留在 tab(tablist 键盘模型);经 design `TabNavItem.onMouseSelect` 接线
 - 找不到可编辑元素(预览模式 / 编辑器仍在加载)焦点留在 tab —— 无害,tab 上只有 Delete 会关闭
+
+### 同名文件 tab 区分(VSCode labelFormat=default)
+
+- basename 重复的 tab 在文件名后用 `text-fg-dim`(对 tab 底色 surface / surface-container-high 均 ≥ 4.5)显示能区分
+  彼此的**最短**父路径后缀:`a` / `b`,父目录同名时向上取 `a/src` / `b/src`;各 tab 各自取最短;不重名的不显示
+- 父链用尽仍不能区分(一个是另一个的后缀路径、同一路径重复)时显示完整父目录;Windows 路径按 `\` 分段并沿用 `\`
+
+### tab 栏溢出
+
+- tab 栏横向滚动(`overflow-x-auto`,不显示滚动条;竖向滚轮也横向滚动,VSCode 同款)
+- 两侧 `from-canvas` 渐隐遮罩(`aria-hidden`):只在该方向确有被遮住的 tab 时显示(按 scrollLeft / clientWidth /
+  scrollWidth,滚动与尺寸变化时更新)
+- 激活 tab 变化(切换 / 新开 / 关闭后落到别的 tab)时 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`,
+  当前 tab 总可见

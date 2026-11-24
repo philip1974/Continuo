@@ -8,7 +8,7 @@
 //   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 内的模式切换行(SegmentedControl)
 //     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject, type WheelEvent } from 'react';
 import {
   getEffectiveMode,
   useEditorStore,
@@ -32,6 +32,7 @@ import {
   type EditorActionSpec,
 } from '@/plugins/registries/EditorActionRegistry';
 import { basename } from '@/lib/path-cross';
+import { tabLabelDescriptions } from './tab-label-description';
 
 /**
  * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
@@ -70,6 +71,41 @@ function focusEditorContentNextFrame(header: HTMLElement | null): void {
   });
 }
 
+
+/** tab 栏两侧渐隐遮罩:只在该方向确有被遮住的 tab 时显示(溢出提示)。 */
+const TAB_FADE_BASE_CLASS_NAME =
+  'pointer-events-none absolute inset-y-0 z-decor w-6 from-canvas to-transparent transition-opacity';
+
+function useTabOverflowFades(wrapper: RefObject<HTMLDivElement | null>, tabsKey: unknown) {
+  const [fades, setFades] = useState({ start: false, end: false });
+  useEffect(() => {
+    const host = wrapper.current;
+    const list = host?.querySelector<HTMLElement>('[role=tablist]');
+    if (!host || !list) return;
+    const update = (): void => {
+      const start = list.scrollLeft > 0;
+      const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+      setFades((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+    };
+    update();
+    // scroll 不冒泡:在外层用捕获阶段监听 tablist 的滚动。
+    host.addEventListener('scroll', update, true);
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    ro?.observe(list);
+    return () => {
+      host.removeEventListener('scroll', update, true);
+      ro?.disconnect();
+    };
+  }, [wrapper, tabsKey]);
+  return fades;
+}
+
+/** 竖向滚轮在 tab 栏上横向滚动(VSCode 同款;触控板横向手势照常)。 */
+function scrollTabsOnWheel(e: WheelEvent<HTMLDivElement>): void {
+  if (e.deltaX !== 0 || e.deltaY === 0) return;
+  const list = e.currentTarget.querySelector<HTMLElement>('[role=tablist]');
+  if (list && list.scrollWidth > list.clientWidth) list.scrollLeft += e.deltaY;
+}
 
 export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
   if (tabs.length === 0) return EMPTY_TAB_CHROME;
@@ -199,18 +235,31 @@ export const EditorHeader = memo(function EditorHeader({
 
   const headerRef = useRef<HTMLDivElement>(null);
   const focusEditorContent = useCallback(() => focusEditorContentNextFrame(headerRef.current), []);
+  // 同名文件 tab 的区分后缀(VSCode:重名时文件名后弱化显示最短区分父路径)。
+  const descriptions = useMemo(() => tabLabelDescriptions(tabsChrome.map((c) => c.filePath)), [tabsChrome]);
+  const tabsWrapperRef = useRef<HTMLDivElement>(null);
+  const fades = useTabOverflowFades(tabsWrapperRef, tabsChrome);
+  // 激活 tab 变化(切换 / 新开 / 关闭后落到别的 tab)时滚入可见区:tab 栏溢出时当前 tab 总可见。
+  useEffect(() => {
+    tabsWrapperRef.current
+      ?.querySelector('[role=tab][aria-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [activeTabId, tabsChrome]);
 
   if (tabsChrome.length === 0) return null;
 
   return (
     <div ref={headerRef} className="flex h-9 shrink-0 items-stretch bg-canvas">
+      {/* 溢出:tab 栏横向滚动(不显示滚动条,竖向滚轮也可滚),两侧渐隐遮罩提示还有被遮住的 tab。 */}
+      <div ref={tabsWrapperRef} className="relative flex min-w-0 flex-1" onWheel={scrollTabsOnWheel}>
       {/* a11y(A107):给 tablist 注入本地化组名(design 层无 i18n)。 */}
       <TabNav
-        className="min-w-0 flex-1 overflow-x-auto"
+        className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]"
         ariaLabel={t('shell.tab.editor_tablist')}
       >
-        {tabsChrome.map((tab) => {
+        {tabsChrome.map((tab, i) => {
           const tabTitle = basename(tab.filePath);
+          const description = descriptions[i];
           return (
             <TabNavItem
               key={tab.id}
@@ -226,10 +275,26 @@ export const EditorHeader = memo(function EditorHeader({
               onClose={() => onCloseRequest(tab)}
             >
               {tabTitle}
+              {description != null && (
+                <span data-testid="tab-description" className="ml-1.5 text-fg-dim">
+                  {description}
+                </span>
+              )}
             </TabNavItem>
           );
         })}
       </TabNav>
+      <div
+        aria-hidden="true"
+        data-testid="tab-overflow-fade-start"
+        className={`${TAB_FADE_BASE_CLASS_NAME} left-0 bg-linear-to-r ${fades.start ? '' : 'opacity-0'}`}
+      />
+      <div
+        aria-hidden="true"
+        data-testid="tab-overflow-fade-end"
+        className={`${TAB_FADE_BASE_CLASS_NAME} right-0 bg-linear-to-l ${fades.end ? '' : 'opacity-0'}`}
+      />
+      </div>
 
       {/* empty:hidden — 当无可见插件 action 时,本 div 的 children 全是 falsy
           /空 fragment,DOM 上是 :empty。隐藏避免空边框 + padding 在 tab 右侧
