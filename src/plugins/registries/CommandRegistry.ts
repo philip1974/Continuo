@@ -8,6 +8,8 @@ import {
   assertSpecFunction,
   assertSpecObject,
   assertSpecString,
+  SPEC_ID_MAX,
+  SPEC_TITLE_MAX,
 } from './spec-guard';
 import { isEcmaWhitespaceCode } from '../../../electron/shared/ecma-whitespace';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
@@ -46,10 +48,9 @@ export interface CommandSpec {
 // 预编译(compileCombo)、日志 warning、UI 渲染都携带大字符串 → renderer 卡顿;异常 hotkey 还会被
 // compileCombo 当有效签名参与全局 keydown 扫描。注册边界统一校验长度 + hotkey 形态,非法拒绝(抛
 // 可诊断错误,由插件加载错误处理捕获)。上限远超任何真实贡献项,只挡滥用。
-export const CMD_ID_MAX = 256;
-const CMD_TITLE_MAX = 512;
-const CMD_KEY_MAX = 256; // titleKey / categoryKey(i18n key)
-const CMD_CATEGORY_MAX = 256;
+// id / category / *Key 用 SPEC_ID_MAX、title 用 SPEC_TITLE_MAX(spec-guard 收口);CMD_ID_MAX 是其别名,
+// 供 keybindings-store / recent 与注册侧用同一上限。
+export const CMD_ID_MAX = SPEC_ID_MAX;
 export const CMD_HOTKEY_MAX = 64;
 // hotkey 形态(宽松):'+'-连接的非空段,段内无空白/'+'(允许 mod+, mod+/ 等标点主键)。挡空段
 // (mod++p)、含空白、超长 —— 不强限字符集以免误伤合法标点快捷键。
@@ -88,12 +89,12 @@ function validateCommandSpec(spec: CommandSpec): void {
   // String 强转还能通过 regex),随后 CommandPalette/hotkey 分发/execute 按 string/function 使用
   // → 崩溃(execute 调 cmd.fn())或注册出不可触发命令(id 非 string 当 Map key)。注册边界显式
   // 校验运行时类型 + 必填非空(对齐 PanelRegistry E37)。
-  assertSpecString(TAG, 'id', spec.id, CMD_ID_MAX);
-  assertSpecString(TAG, 'title', spec.title, CMD_TITLE_MAX);
+  assertSpecString(TAG, 'id', spec.id, SPEC_ID_MAX);
+  assertSpecString(TAG, 'title', spec.title, SPEC_TITLE_MAX);
   assertSpecFunction(TAG, 'fn', spec.fn);
-  assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, CMD_KEY_MAX);
-  assertOptionalSpecString(TAG, 'category', spec.category, CMD_CATEGORY_MAX);
-  assertOptionalSpecString(TAG, 'categoryKey', spec.categoryKey, CMD_KEY_MAX);
+  assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, SPEC_ID_MAX);
+  assertOptionalSpecString(TAG, 'category', spec.category, SPEC_ID_MAX);
+  assertOptionalSpecString(TAG, 'categoryKey', spec.categoryKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'hotkey', spec.hotkey, CMD_HOTKEY_MAX);
   // hotkey 此处已确认为 string(非 string 上面已抛),再校验形态。
   if (spec.hotkey !== undefined && !isValidHotkeyShape(spec.hotkey)) {

@@ -11,6 +11,9 @@ import {
   assertOptionalSpecString,
   assertSpecObject,
   assertSpecString,
+  isSpecObject,
+  SPEC_ID_MAX,
+  SPEC_TITLE_MAX,
 } from './spec-guard';
 
 export type SettingItemType = 'boolean' | 'select' | 'number' | 'text';
@@ -117,11 +120,7 @@ export function coerceSettingValue(
 // 让排序/输入控件行为异常(clampSettingNumber 对 NaN min/max 也会算错)。注册入口集中校验:字符串
 // 长度、enum 数量与 option 长度、default 与 type 匹配、number 参数 finite 且 min≤max、step>0。
 // 非法 spec 抛可诊断错误、不入 registry。上限远超任何真实设置项,只挡滥用。
-const SI_ID_MAX = 256;
-const SI_CATEGORY_MAX = 256;
-const SI_GROUP_MAX = 256;
-const SI_TITLE_MAX = 512;
-const SI_KEY_MAX = 256; // *Key i18n key
+// id / category / group / *Key 用 SPEC_ID_MAX、title 用 SPEC_TITLE_MAX(spec-guard 收口);下面只留本 registry 特有的上限。
 const SI_DESC_MAX = 2048;
 const SI_UNIT_MAX = 64;
 const SI_OPTION_MAX = 512; // enum option value/label
@@ -144,14 +143,14 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
   // (id:{}/category:123/title:true/titleKey:{})会绕过(`({}).length === undefined > max` 为
   // false)进 registry → 设置项排序/UI/values 写入链路出脏项、React 渲染异常,或非 string id 进
   // settings override 路径。必填 id/category/title 校验非空 string,可选字段校验前先 typeof。
-  assertSpecString(TAG, 'id', spec.id, SI_ID_MAX);
-  assertSpecString(TAG, 'category', spec.category, SI_CATEGORY_MAX);
-  assertSpecString(TAG, 'title', spec.title, SI_TITLE_MAX);
-  assertOptionalSpecString(TAG, 'group', spec.group, SI_GROUP_MAX);
-  assertOptionalSpecString(TAG, 'groupKey', spec.groupKey, SI_KEY_MAX);
-  assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, SI_KEY_MAX);
+  assertSpecString(TAG, 'id', spec.id, SPEC_ID_MAX);
+  assertSpecString(TAG, 'category', spec.category, SPEC_ID_MAX);
+  assertSpecString(TAG, 'title', spec.title, SPEC_TITLE_MAX);
+  assertOptionalSpecString(TAG, 'group', spec.group, SPEC_ID_MAX);
+  assertOptionalSpecString(TAG, 'groupKey', spec.groupKey, SPEC_ID_MAX);
+  assertOptionalSpecString(TAG, 'titleKey', spec.titleKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'description', spec.description, SI_DESC_MAX);
-  assertOptionalSpecString(TAG, 'descriptionKey', spec.descriptionKey, SI_KEY_MAX);
+  assertOptionalSpecString(TAG, 'descriptionKey', spec.descriptionKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'unit', spec.unit, SI_UNIT_MAX);
   if (!SETTING_ITEM_TYPES.includes(spec.type)) {
     throw new Error(`[setting-item-registry] invalid type: "${spec.type}"`);
@@ -176,6 +175,11 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
       );
     }
     for (const opt of spec.enum) {
+      // 边界(E273 同族):enum 元素同样来自未类型化插件,非对象(null/primitive/数组)在读 opt.value 前拒绝,
+      // 否则 null/undefined 抛无结构的 TypeError。
+      if (!isSpecObject(opt)) {
+        throw new Error('[setting-item-registry] enum option must be an object');
+      }
       if (typeof opt.value !== 'string' || opt.value.length > SI_OPTION_MAX) {
         throw new Error('[setting-item-registry] invalid enum option value');
       }
@@ -183,18 +187,7 @@ function validateSettingItemSpec(spec: SettingItemSpec): void {
         throw new Error('[setting-item-registry] invalid enum option label');
       }
       // 边界(E154):可选 labelKey 先 typeof 再长度(对齐 value/label 的 typeof 校验)。
-      if (opt.labelKey !== undefined) {
-        if (typeof opt.labelKey !== 'string') {
-          throw new Error(
-            '[setting-item-registry] enum option labelKey must be a string',
-          );
-        }
-        if (opt.labelKey.length > SI_KEY_MAX) {
-          throw new Error(
-            '[setting-item-registry] enum option labelKey too long',
-          );
-        }
-      }
+      assertOptionalSpecString(TAG, 'enum option labelKey', opt.labelKey, SPEC_ID_MAX);
     }
   }
   const numChecks: ReadonlyArray<readonly [string, number | undefined]> = [

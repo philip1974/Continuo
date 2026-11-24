@@ -702,6 +702,27 @@ describe('SettingItemRegistry register 边界校验 (E36)', () => {
         })(r),
       ).toThrow(/labelKey must be a string/i);
     });
+
+    // 边界(E273 同族):enum 元素同样来自未类型化插件,非对象元素须报结构化校验错误,
+    // 而非在读 opt.value 时抛无结构的 TypeError。
+    it.each([null, undefined, 'light', 42, ['light']])(
+      'enum 元素非对象(%j)→ 抛结构化校验错误,不入 registry',
+      (opt) => {
+        const r = new SettingItemRegistry();
+        let err: unknown;
+        try {
+          bad({ ...valid, enum: [opt], default: 'light' })(r);
+        } catch (e) {
+          err = e;
+        }
+        expect(err).toBeInstanceOf(Error);
+        expect(err).not.toBeInstanceOf(TypeError);
+        expect((err as Error).message).toMatch(
+          /^\[setting-item-registry\] enum option must be an object$/,
+        );
+        expect(r.getAll()).toHaveLength(0);
+      },
+    );
   });
 
   // 边界(E156):type='select' 语义上必须带非空 enum 数组(SettingItemRow 仅在 select && enum
