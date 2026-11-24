@@ -10,6 +10,7 @@ import { mergeSpawnEnv, stripInternalSecretEnv } from '../lib/child-spawn-harden
 import { errorMessage, toError } from '../../shared/error-message';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { sleep, waitAtMost } from '../lib/wait-at-most';
+import { TREE_KILL_DETACHED } from '../lib/kill-with-grace';
 
 type DapPrimitive = string | number | boolean | null;
 export type DapJson =
@@ -426,7 +427,7 @@ export class DapClient {
     const adapterEnv = stripInternalSecretEnv(mergeSpawnEnv(process.env, { ELECTRON_RUN_AS_NODE: '1' }));
     const server = spawn(this.nodePath, [this.adapterPath, endpoint], {
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: process.platform !== 'win32',
+      detached: TREE_KILL_DETACHED,
       env: adapterEnv,
       // 安全:不继承主进程 cwd(CLI 从不可信仓库目录启动时即该目录)。adapter 的参数都是绝对路径,
       // 被调试程序的 cwd 经 DAP launch 参数显式传入,均不依赖进程 cwd。

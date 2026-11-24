@@ -1,4 +1,6 @@
 import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
+import { codedError } from '../../shared/error-message';
+import { ERROR_CODES } from '../../shared/error-codes';
 
 export type DebugTeardownState = 'active' | 'tearing_down';
 export type DebugRuntimeState = 'starting' | 'running' | 'stopped' | 'terminated';
@@ -60,12 +62,14 @@ function activeSessionCount(): number {
 /** 会话数上限检查:已登记会话与在途 launch 的预占都计入。 */
 export function assertCapacity(ownerWindowId: number): void {
   if (activeSessionCount() >= MAX_DEBUG_SESSIONS_GLOBAL) {
-    throw new Error(
+    throw codedError(
+      ERROR_CODES.TOO_MANY_DEBUG_SESSIONS,
       `debug session global limit (${MAX_DEBUG_SESSIONS_GLOBAL}) reached`,
     );
   }
   if (sessionCountForWindow(ownerWindowId) >= MAX_DEBUG_SESSIONS_PER_WINDOW) {
-    throw new Error(
+    throw codedError(
+      ERROR_CODES.TOO_MANY_DEBUG_SESSIONS,
       `debug session per-window limit (${MAX_DEBUG_SESSIONS_PER_WINDOW}) reached`,
     );
   }

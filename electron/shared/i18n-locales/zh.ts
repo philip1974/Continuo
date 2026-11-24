@@ -80,6 +80,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.TOO_MANY_STREAMS': '活动流过多',
   'errors.TOO_MANY_WINDOWS': '打开的窗口过多',
   'errors.TOO_MANY_TERMINALS': '终端会话过多',
+  'errors.TOO_MANY_DEBUG_SESSIONS': '调试会话过多',
   'errors.WORKSPACE_NOT_ABSOLUTE': '工作区路径必须是绝对路径：{path}',
   'errors.WORKSPACE_NOT_DIRECTORY': '工作区不是一个目录：{workspace}',
   'errors.WORKSPACE_NOT_FOUND': '找不到工作区：{workspace}',

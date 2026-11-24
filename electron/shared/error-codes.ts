@@ -51,6 +51,8 @@ const MAIN_ERROR_CODES = {
   TERMINAL_SESSION_NOT_FOUND: 'TERMINAL_SESSION_NOT_FOUND',
   // 边界(E235,E230 数量上限族):终端会话(真实 PTY)数超全局/每窗口上限。
   TOO_MANY_TERMINALS: 'TOO_MANY_TERMINALS',
+  // 边界(数量上限):debug 会话(含在途 launch 预占)超全局 / 每窗口上限(同 TOO_MANY_TERMINALS)。
+  TOO_MANY_DEBUG_SESSIONS: 'TOO_MANY_DEBUG_SESSIONS',
   TERMINAL_WRITE_FAILED: 'TERMINAL_WRITE_FAILED',
   // 边界(E230,E227/E228/E229 数量上限族):并发 active 资源(流式 shell 子进程)超全局/per-sender 上限。
   TOO_MANY_STREAMS: 'TOO_MANY_STREAMS',

@@ -1962,7 +1962,11 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
       new Promise((resolve) => setTimeout(() => resolve('timeout'), 1_000)),
     ]);
     expect(early).not.toBe('timeout');
-    for (const err of early as unknown[]) expect(String(err)).toMatch(/per-window limit/);
+    for (const err of early as unknown[]) {
+      expect(String(err)).toMatch(/per-window limit/);
+      // 带稳定 code(同 TOO_MANY_TERMINALS),renderer / agent 可按 code 本地化与区分。
+      expect((err as { code?: unknown }).code).toBe('TOO_MANY_DEBUG_SESSIONS');
+    }
     releaseGate();
 
     expect((await Promise.all(launches)).filter((r) => r === 'ok')).toHaveLength(8);
