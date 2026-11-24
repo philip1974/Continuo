@@ -8,6 +8,7 @@ import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { PROMPT_GRANT_ARM_DELAY_MS as DELAY } from '../../lib/use-prompt-grant-guard';
 import type { PermissionKey } from '../../plugins/permissions';
+import { advanceInAct as advance } from '../_helpers/react-timers';
 
 const store = () => usePermissionPromptStore.getState();
 const buttons = (): HTMLButtonElement[] =>
@@ -17,7 +18,6 @@ const grantButton = (): HTMLButtonElement => buttons().at(-1)!;
 const denyButton = (): HTMLButtonElement => buttons().at(-2)!;
 const checkboxes = (): HTMLInputElement[] =>
   Array.from(document.querySelectorAll<HTMLInputElement>('.wm-modal-content input[type="checkbox"]'));
-const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
 const focused = (): HTMLElement => document.activeElement as HTMLElement;
 
 function press(key: string): void {

@@ -14,6 +14,7 @@ import {
   useAgentAuthStore,
   type EnsureOutcome,
 } from '../../stores/agent-auth.store';
+import { advanceInAct as advance } from '../_helpers/react-timers';
 
 vi.mock('../../notifications/notify', () => ({ notify: { error: vi.fn() } }));
 
@@ -25,7 +26,6 @@ function button(label: string): HTMLButtonElement {
   if (!found) throw new Error(`button not found: ${label}`);
   return found;
 }
-const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
 const status = (): HTMLElement => {
   const el = document.querySelector<HTMLElement>('.wm-modal-content [role="status"]');
   if (!el) throw new Error('status region not found');

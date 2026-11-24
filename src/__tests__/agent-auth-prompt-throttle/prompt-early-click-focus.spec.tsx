@@ -15,6 +15,7 @@ import {
   useAgentAuthStore,
   type EnsureOutcome,
 } from '../../stores/agent-auth.store';
+import { advanceInAct as advance } from '../_helpers/react-timers';
 
 vi.mock('../../notifications/notify', () => ({ notify: { error: vi.fn() } }));
 
@@ -26,7 +27,6 @@ function button(label: string): HTMLButtonElement {
   if (!found) throw new Error(`button not found: ${label}`);
   return found;
 }
-const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
 const focused = (): HTMLElement => document.activeElement as HTMLElement;
 
 function press(key: string): void {

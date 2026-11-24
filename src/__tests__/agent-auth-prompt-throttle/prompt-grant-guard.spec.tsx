@@ -11,6 +11,7 @@ import {
   useAgentAuthStore,
   type EnsureOutcome,
 } from '../../stores/agent-auth.store';
+import { advanceInAct as advance } from '../_helpers/react-timers';
 
 // 指针点击(浏览器里鼠标 click 的 detail ≥ 1;fireEvent.click 默认 detail=0,会被当作键盘激活,授予按钮对键盘
 // 激活另有「停顿后的有意按键」要求,见 keyboard-grant-guard 规范)。
@@ -143,7 +144,6 @@ describe('AgentAuthPrompt:授予方向的防误触延迟', () => {
 // 出现延迟只按「出现时刻」计:一次双击的第一击落在延迟内被拒,第二击跨过 500ms 就成了授予。
 describe('AgentAuthPrompt:双击 / 过早的点击不能跨过出现延迟', () => {
   const D = AGENT_AUTH_GRANT_ARM_DELAY_MS;
-  const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
 
   it('审计复现:出现后 +350ms 第一击(无效)、+560ms 第二击(detail=2)落在「本次启动期间允许」→ 不授予', async () => {
     const outcome = prompt();

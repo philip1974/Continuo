@@ -8,6 +8,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { PROMPT_GRANT_ARM_DELAY_MS as DELAY } from '../../lib/use-prompt-grant-guard';
+import { advanceInAct as advance } from '../_helpers/react-timers';
 
 const store = () => usePermissionPromptStore.getState();
 const buttons = (): HTMLButtonElement[] =>
@@ -15,7 +16,6 @@ const buttons = (): HTMLButtonElement[] =>
 /** 两种弹窗的按钮顺序都以「拒绝」「授予」收尾。 */
 const grantButton = (): HTMLButtonElement => buttons().at(-1)!;
 const denyButton = (): HTMLButtonElement => buttons().at(-2)!;
-const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
 const focused = (): HTMLElement => document.activeElement as HTMLElement;
 
 /** 在当前焦点元素上按一个键;补上浏览器的按钮键盘激活(Enter / Space = 一次 detail=0 的 click)。 */

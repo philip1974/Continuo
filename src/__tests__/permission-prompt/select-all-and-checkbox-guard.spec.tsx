@@ -8,6 +8,7 @@ import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { PROMPT_GRANT_ARM_DELAY_MS as DELAY } from '../../lib/use-prompt-grant-guard';
 import type { PermissionKey } from '../../plugins/permissions';
+import { advanceInAct as advance } from '../_helpers/react-timers';
 
 const store = () => usePermissionPromptStore.getState();
 const pointerClick = (el: Element): boolean => fireEvent.click(el, { detail: 1 });
@@ -19,7 +20,6 @@ const grantButton = (): HTMLButtonElement => buttons().at(-1)!;
 const checkboxes = (): HTMLInputElement[] =>
   Array.from(document.querySelectorAll<HTMLInputElement>('.wm-modal-content input[type="checkbox"]'));
 const checked = (): boolean[] => checkboxes().map((c) => c.checked);
-const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
 const focused = (): HTMLElement => document.activeElement as HTMLElement;
 
 /** 在当前焦点元素上按一个键;补上浏览器的键盘激活(按钮:Enter / Space;勾选框:Space = 一次 detail=0 的 click)。 */

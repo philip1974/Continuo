@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { PermissionPrompt } from '../../plugins/permissions/PermissionPrompt';
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { PROMPT_GRANT_ARM_DELAY_MS } from '../../lib/use-prompt-grant-guard';
+import { advanceInAct as advance } from '../_helpers/react-timers';
 
 // 指针点击(浏览器里鼠标 click 的 detail ≥ 1;fireEvent.click 默认 detail=0,会被当作键盘激活,授予按钮对键盘
 // 激活另有「停顿后的有意按键」要求,见 keyboard-grant-guard 规范)。
@@ -18,7 +19,6 @@ const buttons = (): HTMLButtonElement[] =>
 /** 两种弹窗的按钮顺序都以「拒绝」「授予」收尾。 */
 const grantButton = (): HTMLButtonElement => buttons().at(-1)!;
 const denyButton = (): HTMLButtonElement => buttons().at(-2)!;
-const advance = (ms: number): void => act(() => void vi.advanceTimersByTime(ms));
 const flush = (): Promise<void> => act(async () => {});
 
 /** 发起一个请求(弹窗随之出现),返回其结算结果的读取器(未结算 → null)。 */
