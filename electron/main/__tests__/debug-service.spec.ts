@@ -1715,6 +1715,29 @@ describe('DebugService fake adapter · teardown 与 wait 状态机', () => {
     expect(newGroup.breakpoints).toHaveLength(1);
     await service.cleanupAll('test');
   });
+
+  it('viewSnapshot:在较早设过断点的文件里再变更(发 breakpoints-changed)→ 该文件排到末尾并完整保留(同 renderer)', async () => {
+    const { service } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      { ownerWindowId: 25, controllerToken: 'agent-snap3' },
+    );
+    const internals = service as unknown as {
+      runtimes: Map<string, { breakpoints: unknown[] }>;
+      emitBreakpointSnapshot: (sid: string, runtime: unknown, source: string) => void;
+    };
+    const runtime = internals.runtimes.get(sessionId)!;
+    const push = (source: string, line: number) =>
+      runtime.breakpoints.push({ source, line, reportedBy: new Map(), ids: new Map() });
+    push('/a.js', 1);
+    for (let i = 0; i < DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX; i += 1) push('/b.js', i + 1);
+    push('/a.js', 2);
+    internals.emitBreakpointSnapshot.call(service, sessionId, runtime, '/a.js');
+    const [snapshot] = service.viewSnapshot(25);
+    expect(snapshot!.breakpointsBySource.map((g) => g.file)).toEqual(['/b.js', '/a.js']);
+    expect(snapshot!.breakpointsBySource.find((g) => g.file === '/a.js')!.breakpoints).toHaveLength(2);
+    await service.cleanupAll('test');
+  });
 });
 
 // 审计修复:会话上限、未设断点时程序不启动、同文件多断点。

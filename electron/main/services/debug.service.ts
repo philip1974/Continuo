@@ -247,6 +247,11 @@ interface RuntimeDebugSession {
   /** source 分组键 → 该 source 首次记录的调用方拼写(推给 renderer 用它,同一 source 恒定)。 */
   readonly sourcePaths: Map<string, string>;
   /**
+   * 发过 breakpoints-changed 的 source,按最后一次发送的先后排列(每次发送先删后加)。renderer 每收到一次该事件
+   * 就把对应文件挪到末尾;viewSnapshot 据此排序截断,重载前后显示的集合与顺序一致。
+   */
+  readonly breakpointEmitOrder: Set<string>;
+  /**
    * source 分组键 → 发给 adapter 的拼写(realpath 后 normalize)。js-debug 按 Node 实际加载的真实路径匹配脚本,
    * 软链拼写(macOS /var → /private/var)的断点加载后回 Unbound;renderer 仍用 sourcePaths(编辑器 tab 路径
    * 来自用户选的 workspace root,未必是真实路径)。
@@ -943,6 +948,7 @@ export class DebugService {
       queuedStops: [],
       breakpoints: [],
       sourcePaths: new Map(),
+      breakpointEmitOrder: new Set(),
       adapterPaths: new Map(),
       resolvedSources: new Map(),
       pendingBreakpointChanges: new Map(),
@@ -1128,6 +1134,8 @@ export class DebugService {
     source: string,
   ): void {
     const { file, breakpoints } = this.breakpointSnapshot(runtime, source);
+    runtime.breakpointEmitOrder.delete(source);
+    runtime.breakpointEmitOrder.add(source);
     this.emitSessionEvent(sessionId, {
       type: 'breakpoints-changed',
       sessionId,
@@ -1512,10 +1520,16 @@ export class DebugService {
         const runtime = this.runtimes.get(session.id);
         const stop = session.runtimeState === 'stopped' ? runtime?.currentStop : undefined;
         const groups: DebugViewSessionSnapshot['breakpointsBySource'][number][] = [];
-        // 超上限时最新优先(与 renderer debug.store 合并事件的截断一致):预算从最后设断点的 source 往前分配,
-        // 再翻回插入顺序,renderer 重载前后看到的集合与显示顺序一致。
+        // 顺序与截断都对齐 renderer debug.store:从未发过事件的 source 按首次出现顺序在前,发过的按最后一次发送
+        // 先后在后(renderer 每个事件把该文件挪到末尾);超上限时最新优先 —— 预算从末尾往前分配再翻回。
         let budget = DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX;
-        const sources = runtime ? [...breakpointsBySource(runtime.breakpoints).keys()] : [];
+        const present = runtime ? [...breakpointsBySource(runtime.breakpoints).keys()] : [];
+        const sources = runtime
+          ? [
+              ...present.filter((src) => !runtime.breakpointEmitOrder.has(src)),
+              ...[...runtime.breakpointEmitOrder].filter((src) => present.includes(src)),
+            ]
+          : [];
         for (let i = sources.length - 1; i >= 0; i -= 1) {
           if (budget <= 0 || !runtime) break;
           const group = this.breakpointSnapshot(runtime, sources[i]!);
