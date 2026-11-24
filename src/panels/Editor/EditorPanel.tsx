@@ -38,7 +38,7 @@ import {
 } from '@/plugins/settings/core-setting-specs';
 import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
-import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -142,28 +142,11 @@ export function EditorPanel() {
       if (target.kind === 'file') {
         // a11y(A127,A117 同族):本地文件链接打开须检查 FileOpResult.ok + catch reject,否则
         // 目标文件不存在/读取失败时无 toast/live 反馈,用户只感知链接「没反应」(同外链分支)。
-        openFileByPath(target.absPath)
-          .then((r) => {
-            if (!r.ok) {
-              notifyFailure(r);
-            }
-          })
-          .catch((err) => {
-            notifyThrownError(err);
-          });
+        notifyIfFailed(openFileByPath(target.absPath));
       } else {
         // a11y(A117,A50/A116 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被
         // 白名单拒绝或系统打开失败时无 toast/live 反馈,用户只感知链接「没反应」。
-        coApi.shell
-          .openExternal(target.url)
-          .then((r) => {
-            if (!r.ok) {
-              notifyFailure(r);
-            }
-          })
-          .catch((err) => {
-            notifyThrownError(err);
-          });
+        notifyIfFailed(coApi.shell.openExternal(target.url));
       }
     },
     [activeTab?.filePath, openFileByPath],

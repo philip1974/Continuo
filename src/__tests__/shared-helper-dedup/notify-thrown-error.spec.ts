@@ -8,7 +8,7 @@ const { errorSpy } = vi.hoisted(() => ({ errorSpy: vi.fn() }));
 vi.mock('../../notifications/notify', () => ({ notify: { error: errorSpy } }));
 
 import { errorCodeOf } from '../../../electron/shared/error-message';
-import { notifyThrownError } from '../../notifications/notify-thrown-error';
+import { notifyIfFailed, notifyThrownError } from '../../notifications/notify-thrown-error';
 import { setLocale } from '../../i18n/translate';
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -63,6 +63,38 @@ describe('notifyThrownError', () => {
   it('抛出值无 message(非 Error)→ 回退 code,不弹空 toast', () => {
     notifyThrownError(undefined);
     expect(errorSpy).toHaveBeenCalledWith('EXCEPTION', { code: 'EXCEPTION' });
+  });
+});
+
+describe('notifyIfFailed', () => {
+  const flush = async () => {
+    for (let i = 0; i < 3; i++) await Promise.resolve();
+  };
+
+  it('ok:true → 不弹', async () => {
+    notifyIfFailed(Promise.resolve({ ok: true as const }));
+    await flush();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('ok:false → 按 code 本地化弹 toast(同 notifyFailure)', async () => {
+    notifyIfFailed(Promise.resolve({ ok: false as const, code: 'NO_SUCH_CODE_X', message: 'nope' }));
+    await flush();
+    expect(errorSpy).toHaveBeenCalledWith('nope', { code: 'NO_SUCH_CODE_X' });
+  });
+
+  it('reject → 走 notifyThrownError,不产生 unhandled rejection', async () => {
+    notifyIfFailed(Promise.reject(new Error('ipc died')));
+    await flush();
+    expect(errorSpy).toHaveBeenCalledWith('ipc died', { code: 'EXCEPTION' });
+  });
+});
+
+describe('接线守卫:打开链接的结果反馈都走 notifyIfFailed', () => {
+  it.each(['panels/Editor/EditorPanel.tsx', 'panels/Terminal/useTerminal.ts'])('%s', (rel) => {
+    const src = readFileSync(path.join(SRC_ROOT, rel), 'utf-8');
+    expect(src).toContain('notifyIfFailed(');
+    expect(src).not.toMatch(/\.then\(\(r\) => \{\s*if \(!r\.ok\) \{\s*notifyFailure\(r\);/);
   });
 });
 

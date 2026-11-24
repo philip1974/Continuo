@@ -29,3 +29,20 @@ export function notifyFailure(
   const text = localizeErrorByCode(failure.code, failure.message ?? failure.code);
   notify.error(text, opts ? { code: failure.code, mirror: false } : { code: failure.code });
 }
+
+/**
+ * fire-and-forget 的结果型 Promise(IpcResult / FileOpResult 等)统一反馈:`ok:false` → notifyFailure,
+ * reject → notifyThrownError。用于点击链接等「发起即返回」的入口,保证失败必有 toast 且无 unhandled rejection。
+ */
+export function notifyIfFailed(
+  result: Promise<
+    | { readonly ok: true }
+    | { readonly ok: false; readonly code: string; readonly message?: string }
+  >,
+): void {
+  result
+    .then((r) => {
+      if (!r.ok) notifyFailure(r);
+    })
+    .catch(notifyThrownError);
+}

@@ -52,7 +52,7 @@ import {
   type TerminalSearchResult,
   type TerminalSearchState,
 } from './terminal-search-state';
-import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 
 
@@ -431,16 +431,7 @@ export function useTerminal(termId: string) {
       new WebLinksAddon((_event, url) => {
         // a11y(A118,A117 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被拒绝
         // 或系统打开失败时无 toast/live 反馈,用户只感知链接「无响应」。与 EditorPanel 同步。
-        coApi.shell
-          .openExternal(url)
-          .then((r) => {
-            if (!r.ok) {
-              notifyFailure(r);
-            }
-          })
-          .catch((err) => {
-            notifyThrownError(err);
-          });
+        notifyIfFailed(coApi.shell.openExternal(url));
       }),
     );
     term.open(container);
