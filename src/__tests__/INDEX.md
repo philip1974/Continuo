@@ -232,6 +232,7 @@
 
 - [`auth-store.spec.ts`](./agent-terminal-mcp-auth/auth-store.spec.ts)
 - [`revoke-copy-matches-behavior.spec.ts`](./agent-terminal-mcp-auth/revoke-copy-matches-behavior.spec.ts)
+- [`revoke-global-count.spec.ts`](./agent-terminal-mcp-auth/revoke-global-count.spec.ts)
 
 ## [agent-terminal-mcp-await-stop-hook](./agent-terminal-mcp-await-stop-hook/README.md)
 

@@ -351,9 +351,9 @@ export const en = {
   'permissions.agent.grant_session': 'Allow this launch',
   'permissions.revoke_all.title': 'Revoke agent terminal access?',
   'permissions.revoke_all.confirm_grant_only':
-    'Will revoke the terminal, debugger and plugin tool authorization granted to agents during this launch, and end their debug sessions.\n\nRunning agent CLIs holding tokens will 401 immediately; agents in existing terminals cannot request authorization again — restart them in a new terminal.\n\nContinue?',
+    'Will revoke the terminal, debugger and plugin tool authorization granted to agents during this launch, and end their debug sessions. Agent terminals in any window will also be terminated.\n\nRunning agent CLIs holding tokens will 401 immediately; agents in existing terminals cannot request authorization again — restart them in a new terminal.\n\nContinue?',
   'permissions.revoke_all.confirm':
-    'Will terminate {count} agent terminal(s) and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
+    'Will terminate {count} agent terminal(s) across all windows and revoke authorization granted during this launch.\n\nRunning agent CLIs holding tokens will 401 immediately; new terminals can re-authorize.\n\nContinue?',
   'permissions.revoke_all.failed':
     'Revoke failed — agent terminals may still be running. Please retry.',
 
@@ -368,7 +368,7 @@ export const en = {
   'statusbar.mcp.unavailable': 'MCP unavailable',
   'statusbar.mcp.tooltip':
     "Copy 'claude mcp add' command to clipboard. Run it in any shell to configure Claude Code (stdio transport, one-time setup).",
-  'statusbar.mcp.revoke_tooltip': 'Terminate all {count} agent terminal(s) and revoke authorization',
+  'statusbar.mcp.revoke_tooltip': 'Revoke authorization and terminate agent terminals in all windows ({count} in this window)',
   'statusbar.agent_sessions': '{count} agent',
   'statusbar.agent_authorized': 'Agent authorized',
   'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal, debugger and plugin tool authorization granted to agents',

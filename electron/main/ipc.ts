@@ -40,6 +40,7 @@ import { jsonStringLengthLowerBoundExceeds } from '../shared/json-byte-budget';
 import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import {
   answerAgentAuthRequest,
+  countAgentTerminalSessions,
   revokeAndKillAgentSessions,
 } from './services/agent-auth.service';
 import { MCP_CHANNELS } from '../shared/mcp-channels';
@@ -297,6 +298,13 @@ export function registerIpc(deps: WindowIpcDeps): void {
     AGENT_AUTH_CHANNELS.REVOKE,
     agentAuthRevokeSchema,
     () => revokeAndKillAgentSessions(),
+  );
+
+  // 撤销确认框的数量:撤销终止的是**所有窗口**的 agent terminal,renderer 只知道本窗口的,故由 main 给全局数。
+  safeHandle(
+    AGENT_AUTH_CHANNELS.COUNT_AGENT_TERMINALS,
+    z.object({}).strict(),
+    () => ({ count: countAgentTerminalSessions() }),
   );
 
   // 状态栏"复制 MCP 配置"按钮:返回当前 stdio config(命令字符串可直接 copy 跑)

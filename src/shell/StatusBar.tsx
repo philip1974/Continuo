@@ -141,6 +141,19 @@ async function handleRevokeAgentTerminals(): Promise<void> {
   }
 }
 
+/**
+ * 撤销会终止**所有窗口**的 agent terminal,本窗口 terminal store 只含本窗口会话 → 确认框的数量向 main 现取全局数。
+ * 取不到(IPC 失败 / reject)→ null,确认框改用不带数量、点明「任一窗口的 agent terminal 都会被终止」的文案。
+ */
+async function fetchGlobalAgentTerminalCount(): Promise<number | null> {
+  try {
+    const r = await coApi.agentAuth.countAgentTerminals();
+    return r.ok ? r.data.count : null;
+  } catch {
+    return null;
+  }
+}
+
 async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
   // a11y(A115,A50 同族):整体 try/catch —— getStdioConfig() IPC reject 时若不捕获,
   // onCopyMcp() 会 reject,而点击处 void onCopyMcp() 丢弃异常 → 无失败文本/无 live 播报。
@@ -229,8 +242,18 @@ export function StatusBar() {
     [statusItems],
   );
 
-  // 非 null = 撤销确认弹窗打开,值为打开时的 agent 会话数。
-  const [revokeConfirmCount, setRevokeConfirmCount] = useState<number | null>(null);
+  // 非 null = 撤销确认弹窗打开;count 为 main 给的全局 agent 终端数(取数中 / 取不到为 null)。
+  const [revokeConfirm, setRevokeConfirm] = useState<{ count: number | null } | null>(null);
+  const [revokeCountGuard] = useState(createLatestGuard);
+  const openRevokeConfirm = async () => {
+    const isLatest = revokeCountGuard.begin();
+    setRevokeConfirm({ count: null });
+    const count = await fetchGlobalAgentTerminalCount();
+    // 过期(其后又打开过一次)不写;取数期间弹窗已关 → 保持关闭。
+    if (!isLatest()) return;
+    setRevokeConfirm((cur) => (cur ? { count } : cur));
+  };
+  const revokeConfirmCount = revokeConfirm?.count ?? null;
   const [mcpCopyState, setMcpCopyState] = useState<
     'idle' | 'ok' | 'unavailable' | 'fail'
   >('idle');
@@ -318,7 +341,7 @@ export function StatusBar() {
           <button
             type="button"
             data-agent-revoke
-            onClick={() => setRevokeConfirmCount(agentSessionCount)}
+            onClick={() => void openRevokeConfirm()}
             title={agentRevokeTooltip}
             // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
             //(SR 有可见文本时不一定读 title)→ aria-label 用含撤销语义的 revoke_tooltip 作可访问名。
@@ -359,19 +382,19 @@ export function StatusBar() {
       </div>
       {/* 撤销确认走 design Modal(项目约束:对话框不用原生确认框)。 */}
       <ConfirmDialog
-        open={revokeConfirmCount !== null}
+        open={revokeConfirm !== null}
         title={t('permissions.revoke_all.title')}
         description={
           <span className="whitespace-pre-line">
-            {(revokeConfirmCount ?? 0) > 0
-              ? t('permissions.revoke_all.confirm', { count: revokeConfirmCount ?? 0 })
+            {revokeConfirmCount !== null && revokeConfirmCount > 0
+              ? t('permissions.revoke_all.confirm', { count: revokeConfirmCount })
               : t('permissions.revoke_all.confirm_grant_only')}
           </span>
         }
         destructive
-        onCancel={() => setRevokeConfirmCount(null)}
+        onCancel={() => setRevokeConfirm(null)}
         onConfirm={() => {
-          setRevokeConfirmCount(null);
+          setRevokeConfirm(null);
           void handleRevokeAgentTerminals();
         }}
       />

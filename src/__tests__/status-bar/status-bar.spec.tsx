@@ -42,7 +42,7 @@ import { ko } from '../../../electron/shared/i18n-locales/ko';
 
 interface FakeApi {
   mcp?: { getStdioConfig: ReturnType<typeof vi.fn> };
-  agentAuth?: { revoke: ReturnType<typeof vi.fn> };
+  agentAuth?: { revoke: ReturnType<typeof vi.fn>; countAgentTerminals?: ReturnType<typeof vi.fn> };
 }
 
 function installApi(api: FakeApi): void {
@@ -874,5 +874,66 @@ describe('StatusBar — agent 撤销', () => {
     // 关键:sessionGranted 保持 false(后发 B 已成功撤销,A 迟到失败未覆盖)。
     expect(useAgentAuthStore.getState().sessionGranted).toBe(false);
     errSpy.mockRestore();
+  });
+});
+
+// 撤销是全局动作:main 终止**所有窗口**的 agent terminal。确认框的数量须取 main 的全局计数(打开时经 IPC 现取),
+// 不能用本窗口 terminal store 的计数(main 推给每个窗口的会话快照只含该窗口)。
+describe('StatusBar — 撤销确认框显示全局 agent 终端数', () => {
+  const agentSession = (id: string) => ({
+    id, title: id, cwd: '/', originHint: 'agent' as const, createdAt: 0, exitCode: null, ownerWindowId: 1,
+  });
+  const dialogText = () => document.querySelector('.wm-modal-content')?.textContent ?? '';
+  const firstLine = (s: string) => s.split('\n')[0]!;
+
+  it('本窗 1 个、其它窗 2 个 → 确认框显示全局 3 个', async () => {
+    const countAgentTerminals = vi.fn().mockResolvedValue({ ok: true, data: { count: 3 } });
+    installApi({ agentAuth: { revoke: vi.fn(), countAgentTerminals } });
+    useTerminalStore.setState({ sessions: [agentSession('t1')] });
+
+    const { container } = render(<StatusBar />);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-agent-revoke]')!);
+
+    const expected = firstLine(zh['permissions.revoke_all.confirm'].replace('{count}', '3'));
+    await waitFor(() => expect(dialogText()).toContain(expected));
+    expect(countAgentTerminals).toHaveBeenCalledTimes(1);
+  });
+
+  it('本窗 0 个、其它窗有 → 确认框说明将终止(全局数),而不是只说撤销授权', async () => {
+    const countAgentTerminals = vi.fn().mockResolvedValue({ ok: true, data: { count: 2 } });
+    installApi({ agentAuth: { revoke: vi.fn(), countAgentTerminals } });
+    useTerminalStore.setState({ sessions: [] });
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+
+    const { container } = render(<StatusBar />);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-agent-revoke]')!);
+
+    const expected = firstLine(zh['permissions.revoke_all.confirm'].replace('{count}', '2'));
+    await waitFor(() => expect(dialogText()).toContain(expected));
+  });
+
+  it('计数取不到 → 确认框仍提示任一窗口的 agent terminal 会被终止', async () => {
+    const countAgentTerminals = vi.fn().mockResolvedValue({ ok: false, code: 'DENIED' });
+    installApi({ agentAuth: { revoke: vi.fn(), countAgentTerminals } });
+    useTerminalStore.setState({ sessions: [agentSession('t1')] });
+
+    const { container } = render(<StatusBar />);
+    fireEvent.click(container.querySelector<HTMLButtonElement>('[data-agent-revoke]')!);
+
+    await waitFor(() => expect(countAgentTerminals).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(dialogText()).toContain(firstLine(zh['permissions.revoke_all.confirm_grant_only'])),
+    );
+  });
+
+  it.each([
+    ['en', en, /any window/i, /all windows/i, /this window/i],
+    ['zh', zh, /任一窗口/, /所有窗口/, /本窗口/],
+    ['ko', ko, /모든 창/, /모든 창/, /이 창/],
+  ] as const)('%s:文案点明撤销作用于所有窗口;状态栏提示的数量只是本窗口', (_l, dict, anyWin, allWin, thisWin) => {
+    expect(dict['permissions.revoke_all.confirm_grant_only']).toMatch(anyWin);
+    expect(dict['permissions.revoke_all.confirm']).toMatch(allWin);
+    expect(dict['statusbar.mcp.revoke_tooltip']).toMatch(allWin);
+    expect(dict['statusbar.mcp.revoke_tooltip']).toMatch(thisWin);
   });
 });

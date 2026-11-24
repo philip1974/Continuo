@@ -414,6 +414,18 @@ export function setMcpHostRef(host: McpHost | null): void {
 }
 
 /**
+ * 全部窗口的 agent terminal 数 —— 即撤销会终止的会话数(与下方 revoke 的筛选同口径)。
+ * 撤销确认框据此显示数量:renderer 的 terminal store 只含本窗口会话,不能代表撤销的作用范围。
+ */
+export function countAgentTerminalSessions(): number {
+  let count = 0;
+  for (const s of terminalSessions.getAll()) {
+    if (s.originHint === 'agent') count += 1;
+  }
+  return count;
+}
+
+/**
  * 撤销 session 授权:
  *  1. rotate MCP token(已运行的 agent CLI 持的旧 token 立刻 401)
  *  2. 终止所有 originHint='agent' 的 PTY + 删 metadata

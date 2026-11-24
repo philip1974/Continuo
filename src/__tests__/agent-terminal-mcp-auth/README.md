@@ -123,6 +123,12 @@ interface AgentAuthState {
   `missing window context; the terminal's Continuo token was revoked — start the agent in a new Continuo terminal`
   (`stdio-revoked-token-binding/`)。未发 hello 且无窗口可回落的外部客户端仍是 `missing window context`。
 
+### 撤销确认框的数量
+
+撤销终止的是**所有窗口**的 agent terminal,renderer 只知道本窗口的会话。main 提供 `agent-auth:count-agent-terminals`
+(`safeHandle`:受信 frame、入参空对象)返回 `{ count }`,与撤销实际终止的集合同口径(`countAgentTerminalSessions`)。
+不受信 frame → `DENIED`,多余入参 → `BAD_INPUT` —— `revoke-global-count.spec.ts`;界面侧见 `status-bar/`。
+
 ### 边界
 
 - 无 pending 时调 `grant` / `deny` → no-op,不抛

@@ -455,6 +455,9 @@ const api = {
     /** 撤销 session 授权 + 终止全部 agent terminal(状态栏按钮触发). */
     revoke: (): Promise<IpcResult<RevokeResult>> =>
       ipcRenderer.invoke(AGENT_AUTH_CHANNELS.REVOKE, {}),
+    /** 全部窗口的 agent terminal 数(撤销会终止的数量;撤销确认框用). */
+    countAgentTerminals: (): Promise<IpcResult<{ count: number }>> =>
+      ipcRenderer.invoke(AGENT_AUTH_CHANNELS.COUNT_AGENT_TERMINALS, {}),
   },
   debug: {
     subscribe: (): Promise<IpcResult<unknown>> =>

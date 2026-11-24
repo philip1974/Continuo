@@ -336,9 +336,9 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.agent.grant_session': '이번 실행 동안 허용',
   'permissions.revoke_all.title': '에이전트 터미널 권한을 취소할까요?',
   'permissions.revoke_all.confirm_grant_only':
-    '이번 실행 중 에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소하고 디버그 세션을 종료합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 기존 터미널의 에이전트는 다시 인증을 요청할 수 없으므로 새 터미널에서 다시 시작해야 합니다.\n\n계속하시겠습니까?',
+    '이번 실행 중 에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소하고 디버그 세션을 종료합니다. 모든 창의 에이전트 터미널도 함께 종료됩니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 기존 터미널의 에이전트는 다시 인증을 요청할 수 없으므로 새 터미널에서 다시 시작해야 합니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.confirm':
-    '{count}개의 에이전트 터미널을 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
+    '모든 창의 에이전트 터미널 {count}개를 종료하고 이번 실행 중 부여된 인증을 취소합니다.\n\n실행 중인 에이전트 CLI의 토큰은 즉시 401이 되며, 새 터미널은 다시 인증할 수 있습니다.\n\n계속하시겠습니까?',
   'permissions.revoke_all.failed':
     '취소 실패 — 에이전트 터미널이 아직 실행 중일 수 있습니다. 다시 시도해 주세요.',
 
@@ -353,7 +353,7 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.mcp.unavailable': 'MCP 사용 불가',
   'statusbar.mcp.tooltip':
     "'claude mcp add' 명령을 클립보드에 복사합니다. 모든 셸에서 실행하여 Claude Code를 설정할 수 있습니다 (stdio transport, 한 번 설정).",
-  'statusbar.mcp.revoke_tooltip': '전체 {count}개의 에이전트 터미널을 종료하고 인증을 취소합니다',
+  'statusbar.mcp.revoke_tooltip': '인증을 취소하고 모든 창의 에이전트 터미널을 종료합니다(이 창 {count}개)',
   'statusbar.agent_sessions': 'agent {count}개',
   'statusbar.agent_authorized': '에이전트 인증됨',
   'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소합니다',

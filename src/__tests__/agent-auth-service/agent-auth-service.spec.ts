@@ -6,6 +6,7 @@ import {
   _resetPendingForTest,
   answerAgentAuthRequest,
   cancelAllAgentAuth,
+  countAgentTerminalSessions,
   MAX_PENDING_AUTH_GLOBAL_FOR_TEST,
   requestAgentAuth,
   resolveAgentAuthRequest,
@@ -558,6 +559,21 @@ describe('agent-auth-service: pending lifecycle', () => {
 });
 
 describe('agent-auth-service: revokeAndKillAgentSessions', () => {
+  // 撤销确认框的数量来源:与撤销实际终止的集合一致 —— 所有窗口的 agent 终端,而非只算发起撤销的窗口。
+  it('countAgentTerminalSessions 计全部窗口的 agent 终端,与撤销实际终止数一致', () => {
+    terminalServiceMock.has.mockReturnValue(true);
+    sessionStore.list = [
+      makeSession({ id: 'a1', originHint: 'agent', ownerWindowId: 1 }),
+      makeSession({ id: 'b1', originHint: 'agent', ownerWindowId: 2 }),
+      makeSession({ id: 'b2', originHint: 'agent', ownerWindowId: 2 }),
+      makeSession({ id: 'u1', originHint: 'user', ownerWindowId: 1 }),
+    ];
+
+    expect(countAgentTerminalSessions()).toBe(3);
+    expect(revokeAndKillAgentSessions().killed).toBe(3);
+    expect(countAgentTerminalSessions()).toBe(0);
+  });
+
   // race(R91,安全):撤销须同步结算所有 pending 授权请求为 denied + 清空。否则撤销前卡在授权
   // 等待的请求收到迟到 respond('session') 仍被放行 → 撤销后那次 tool call 仍执行一次。
   it('R91: revoke 把 in-flight 授权请求结算为 denied,迟到 respond 不再放行', async () => {

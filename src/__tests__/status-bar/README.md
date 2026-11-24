@@ -53,5 +53,17 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
 - 撤销 IPC 失败时回滚全部授权位(`SESSION_GRANT_KEYS`,含外部客户端):放行权威在 main,授权位只决定撤销入口
   是否显示;失败时 main 可能仍有授权,不能把它藏起来。
 - 既无 agent 会话也无任何授权时不显示入口。
-- 无会话时确认框用 `permissions.revoke_all.confirm_grant_only` 文案(不提「终止 N 个 terminal」)。
+- 无会话时确认框用 `permissions.revoke_all.confirm_grant_only` 文案(不提「终止 N 个 terminal」,但点明任一窗口的
+  agent terminal 也会被一并终止)。
 - 该确认文案与撤销入口提示 `statusbar.agent_revoke_grant_tooltip` 在 en / zh / ko 中都须列出插件工具域。
+
+## 撤销确认框的数量是全局数
+
+撤销作用于**所有窗口**(main 终止全部 agent terminal、清空全部窗口的授权、轮换 token),而本窗口 terminal store
+只含本窗口会话。故:
+
+- 打开确认框时经 `coApi.agentAuth.countAgentTerminals()`(main 通道 `agent-auth:count-agent-terminals`)现取全局数;
+  A 窗 1 个、B 窗 2 个,在 A 撤销 → 确认框写 3 个;本窗 0 个而其它窗有 → 照样写「将终止所有窗口共 N 个」。
+- 全局数为 0、取数中或取不到 → `confirm_grant_only` 文案(点明任一窗口的 agent terminal 也会被终止,不误导)。
+- 状态栏按钮与提示里的数量仍是本窗口数,提示 `statusbar.mcp.revoke_tooltip` 写明「终止所有窗口的 agent terminal
+  (本窗口 N 个)」。三语对齐。
