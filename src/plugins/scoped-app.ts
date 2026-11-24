@@ -59,6 +59,7 @@ import {
 } from '../../electron/shared/fs-limits';
 import { utf8BytesExceed } from '../../electron/shared/utf8-byte-length';
 import { codedError } from '../../electron/shared/error-message';
+import { envBoundedError } from '../../electron/shared/validate-env-bounded';
 import { PLUGIN_FS_EDITOR_READ_SCOPE_DENIED } from '../../electron/shared/plugin-fs-contract';
 import { mapFsCodeToEditorCode } from './editor-open-codes';
 import { releasePluginOpenedPath } from './plugin-opened-tabs';
@@ -108,22 +109,13 @@ function validateShellInput(
   )
     bad(`invalid input (> ${SHELL_STDIN_MAX} 字节)`);
   if (opts?.env !== undefined) {
-    const env = opts.env;
-    if (typeof env !== 'object' || env === null) bad('invalid env');
-    const rec = env as Record<string, unknown>;
-    // 边界(E198,E197 同族有界迭代):for...in 单次遍历,边计数边校验,超 SHELL_ENV_MAX_ENTRIES 立即
-    // bad() —— 不先 Object.keys 把插件传入的 env 所有 key 全量物化(再判上限=上限失效)。
-    let count = 0;
-    for (const k in rec) {
-      if (!Object.prototype.hasOwnProperty.call(rec, k)) continue;
-      count += 1;
-      if (count > SHELL_ENV_MAX_ENTRIES)
-        bad(`env entries > ${SHELL_ENV_MAX_ENTRIES}`);
-      if (k.length > SHELL_ENV_KEY_MAX) bad(`env key > ${SHELL_ENV_KEY_MAX}`);
-      const v = rec[k];
-      if (typeof v !== 'string' || v.length > SHELL_ENV_VAL_MAX)
-        bad(`env value > ${SHELL_ENV_VAL_MAX}`);
-    }
+    // 边界(E198,E197 同族有界迭代):与 main 入口同一早停判定(超条目上限即停,不全量物化 key;拒数组)。
+    const envError = envBoundedError(opts.env, {
+      keyMax: SHELL_ENV_KEY_MAX,
+      valMax: SHELL_ENV_VAL_MAX,
+      maxEntries: SHELL_ENV_MAX_ENTRIES,
+    });
+    if (envError !== null) bad(envError);
   }
 }
 

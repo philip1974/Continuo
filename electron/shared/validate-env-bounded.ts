@@ -16,48 +16,43 @@ interface BoundedRecordLimits {
   readonly label?: string;
 }
 
+/**
+ * 有界早停校验的纯判定(无 zod):合法 → null,否则返回首个问题的描述。zod 校验器与 renderer 侧插件 API 预检
+ *(scoped-app,此前手写一份且放行数组)共用。
+ */
+function boundedRecordError(v: unknown, limits: BoundedRecordLimits): string | null {
+  const { keyMax, maxEntries, valueOk, label = 'record' } = limits;
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return `${label} 必须是对象`;
+  const obj = v as Record<string, unknown>;
+  let count = 0;
+  // 边界(E201):曾考虑用 Reflect.ownKeys/descriptor 拒 symbol key
+  // 与 non-enumerable own property。**不采纳**,理由:
+  //  (1) 不可达:本校验器的消费者(shell.ipc / terminal-create 的 env)都是 IPC ingress 的
+  //      zod schema,在 main 校验**经 structured clone 的对象** —— Electron structured clone 不复制 symbol
+  //      key、不复制 non-enumerable own property,故这些属性在校验器运行前就已被剥离。
+  //  (2) for...in(仅枚举 enumerable string own key)与所有真实消费者(JSON.stringify / structured clone /
+  //      child_process spawn env)的枚举语义一致 —— 三者同样跳过 symbol/non-enumerable,无"校验↔使用"分歧。
+  //  (3) 该方案抵触 E185 刻意设计:本工厂存在的全部意义是**早停**(达 maxEntries+1 即拒,O(min(N,
+  //      maxEntries+1)),不 Object.keys/Reflect.ownKeys 全量物化)。捕获 non-enumerable string key 必须
+  //      getOwnPropertyNames 全量物化,直接回退 E185 的防放大。
+  // 与 assert-json-value(E140/E200)的区别:那里校验的是同进程内待 JSON.stringify 的活对象(可含 symbol/
+  // 非枚举),故须用 Reflect.ownKeys 显式拒;这里是 post-IPC 已净化对象 + 早停契约,语义不同。
+  for (const key in obj) {
+    if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+    count += 1;
+    if (count > maxEntries) return `${label} 条目超过上限 ${maxEntries}`; // 早停:不继续遍历超大对象
+    if (key.length > keyMax) return `${label} key 超长(> ${keyMax})`;
+    if (!valueOk(obj[key])) return `${label} value 非法`;
+  }
+  return null;
+}
+
 function makeBoundedRecordValidator(
   limits: BoundedRecordLimits,
 ): (v: unknown, ctx: z.RefinementCtx) => void {
-  const { keyMax, maxEntries, valueOk, label = 'record' } = limits;
   return (v, ctx) => {
-    if (v === null || typeof v !== 'object' || Array.isArray(v)) {
-      ctx.addIssue({ code: 'custom', message: `${label} 必须是对象` });
-      return;
-    }
-    const obj = v as Record<string, unknown>;
-    let count = 0;
-    // 边界(E201):曾考虑用 Reflect.ownKeys/descriptor 拒 symbol key
-    // 与 non-enumerable own property。**不采纳**,理由:
-    //  (1) 不可达:本校验器的消费者(shell.ipc / terminal-create 的 env)都是 IPC ingress 的
-    //      zod schema,在 main 校验**经 structured clone 的对象** —— Electron structured clone 不复制 symbol
-    //      key、不复制 non-enumerable own property,故这些属性在校验器运行前就已被剥离。
-    //  (2) for...in(仅枚举 enumerable string own key)与所有真实消费者(JSON.stringify / structured clone /
-    //      child_process spawn env)的枚举语义一致 —— 三者同样跳过 symbol/non-enumerable,无"校验↔使用"分歧。
-    //  (3) 该方案抵触 E185 刻意设计:本工厂存在的全部意义是**早停**(达 maxEntries+1 即拒,O(min(N,
-    //      maxEntries+1)),不 Object.keys/Reflect.ownKeys 全量物化)。捕获 non-enumerable string key 必须
-    //      getOwnPropertyNames 全量物化,直接回退 E185 的防放大。
-    // 与 assert-json-value(E140/E200)的区别:那里校验的是同进程内待 JSON.stringify 的活对象(可含 symbol/
-    // 非枚举),故须用 Reflect.ownKeys 显式拒;这里是 post-IPC 已净化对象 + 早停契约,语义不同。
-    for (const key in obj) {
-      if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
-      count += 1;
-      if (count > maxEntries) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `${label} 条目超过上限 ${maxEntries}`,
-        });
-        return; // 早停:不继续遍历超大对象
-      }
-      if (key.length > keyMax) {
-        ctx.addIssue({ code: 'custom', message: `${label} key 超长(> ${keyMax})` });
-        return;
-      }
-      if (!valueOk(obj[key])) {
-        ctx.addIssue({ code: 'custom', message: `${label} value 非法` });
-        return;
-      }
-    }
+    const message = boundedRecordError(v, limits);
+    if (message !== null) ctx.addIssue({ code: 'custom', message });
   };
 }
 
@@ -67,14 +62,23 @@ export interface EnvBoundedLimits {
   readonly maxEntries: number;
 }
 
-/** env(string→string record)的有界早停校验,薄封装 makeBoundedRecordValidator。 */
-export function makeEnvBoundedValidator(
-  limits: EnvBoundedLimits,
-): (v: unknown, ctx: z.RefinementCtx) => void {
-  return makeBoundedRecordValidator({
+function envRecordLimits(limits: EnvBoundedLimits): BoundedRecordLimits {
+  return {
     keyMax: limits.keyMax,
     maxEntries: limits.maxEntries,
     valueOk: (val) => typeof val === 'string' && val.length <= limits.valMax,
     label: 'env',
-  });
+  };
+}
+
+/** env(string→string record)的有界早停校验,薄封装 makeBoundedRecordValidator。 */
+export function makeEnvBoundedValidator(
+  limits: EnvBoundedLimits,
+): (v: unknown, ctx: z.RefinementCtx) => void {
+  return makeBoundedRecordValidator(envRecordLimits(limits));
+}
+
+/** 同 makeEnvBoundedValidator 的纯判定版(无 zod):合法 → null,否则问题描述。 */
+export function envBoundedError(v: unknown, limits: EnvBoundedLimits): string | null {
+  return boundedRecordError(v, envRecordLimits(limits));
 }

@@ -991,6 +991,16 @@ describe('授后转发 — fs / shell / clipboard / mcp / network 行为', () =>
     expect(coApiMocks.shellExec).not.toHaveBeenCalled();
   });
 
+  it('env 是数组 → BAD_INPUT 不发 IPC(与 main 入口同一判定;此前 renderer 预检放行数组)', async () => {
+    const store = new InMemoryPermissionStore();
+    await store.grant('p', ['shell']);
+    const scoped = createScopedApp(makeLmApp(), 'p', store);
+    await expect(
+      scoped.shell.exec('echo', [], { env: ['A=b'] as never }),
+    ).rejects.toMatchObject({ code: 'BAD_INPUT' });
+    expect(coApiMocks.shellExec).not.toHaveBeenCalled();
+  });
+
   it('E46 上限内正常 shell.exec → 正常透传', async () => {
     const store = new InMemoryPermissionStore();
     await store.grant('p', ['shell']);
