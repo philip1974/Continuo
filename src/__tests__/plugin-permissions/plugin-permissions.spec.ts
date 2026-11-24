@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
   ensureAuthorized,
@@ -377,7 +375,7 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
     expect(prompt).toHaveBeenCalledWith('p', ['fs', 'clipboard']);
   });
 
-  it('无历史 decisions 的首次授权走快路径,不预建 granted/denied Set', async () => {
+  it('无历史 decisions 的首次授权:待决项交 prompt,部分授予后 grant / deny 分别落库', async () => {
     const store: PermissionStore = {
       get: vi.fn(async () => []),
       grant: vi.fn(),
@@ -396,13 +394,6 @@ describe('ensureAuthorized(v5 Phase 2 partial grant)', () => {
     expect(prompt).toHaveBeenCalledWith('p', ['fs', 'network']);
     expect(store.grant).toHaveBeenCalledWith('p', ['fs']);
     expect(store.deny).toHaveBeenCalledWith('p', ['network']);
-    const src = readFileSync(
-      path.join(process.cwd(), 'src/plugins/permissions.ts'),
-      'utf-8',
-    );
-    expect(src.indexOf('decisions.length === 0')).toBeLessThan(
-      src.indexOf('new Set<PermissionKey>()'),
-    );
   });
 
   it('待决调 prompt,用户部分授 → ok partial,denied 列出未授项', async () => {

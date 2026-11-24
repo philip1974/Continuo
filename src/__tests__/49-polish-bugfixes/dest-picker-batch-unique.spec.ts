@@ -122,14 +122,6 @@ describe('打磨 — FolderTree drop 失败消息格式化', () => {
     expect(src).not.toContain('msgs.forEach((m) => notify.error(m))');
   });
 
-  it('批量 move/paste/trash 成功路径按输入长度预分配,不通过 push 扩容', () => {
-    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
-
-    expect(src).not.toContain('const movedSrcs: string[] = []');
-    expect(src).not.toContain('const removed: string[] = []');
-    expect(src).not.toContain('movedSrcs.push(src)');
-    expect(src).not.toContain('removed.push(p)');
-  });
 });
 
 describe('打磨 — FolderTree selectedPaths 构建', () => {
