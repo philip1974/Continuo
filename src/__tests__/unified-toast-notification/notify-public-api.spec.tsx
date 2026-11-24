@@ -10,8 +10,10 @@ import {
 } from '@/notifications/NotificationsProvider';
 import { notify } from '@/notifications/notify';
 import {
+  NOTIFY_LEVELS,
   NOTIFY_MESSAGE_MAX,
   NOTIFY_CODE_MAX,
+  isNotifyLevel,
 } from '../../../electron/shared/notify-channels';
 
 let seenLevels: string[] = [];
@@ -162,4 +164,18 @@ describe('unified-toast-notification: notify public API', () => {
     });
     expect(seenCount).toBe(1);
   });
+});
+
+describe('T2b 通知级别单一来源(shared NOTIFY_LEVELS)', () => {
+  it('守卫接受全部级别', () => {
+    expect(NOTIFY_LEVELS).toEqual(['info', 'warning', 'error', 'success']);
+    for (const level of NOTIFY_LEVELS) expect(isNotifyLevel(level)).toBe(true);
+  });
+
+  it.each([['warn'], ['bogus'], [''], ['INFO'], [null], [undefined], [1], [{}]])(
+    '守卫拒未知值:%j',
+    (value) => {
+      expect(isNotifyLevel(value)).toBe(false);
+    },
+  );
 });

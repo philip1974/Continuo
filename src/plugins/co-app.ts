@@ -35,7 +35,7 @@ import { useEditorStore, usesMilkdownEngine } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { notify } from '@/notifications/notify';
-import { isNotificationLevel } from '@/notifications/types';
+import { isNotifyLevel } from '../../electron/shared/notify-channels';
 import type {
   CoApp,
   CoDockApi,
@@ -234,7 +234,7 @@ const notifications: CoNotificationsApi = {
       message?: unknown;
       code?: unknown;
     };
-    const level = isNotificationLevel(kind) ? kind : 'info';
+    const level = isNotifyLevel(kind) ? kind : 'info';
     if (typeof message !== 'string' || message.length === 0) return; // 非法 message 不渲染
     // 这里只做类型校验;限长(message 截断、超长 / 空 code 丢弃)统一在 notify 的唯一入口 notifyCore。
     notify(message, level, typeof code === 'string' ? { code } : undefined);

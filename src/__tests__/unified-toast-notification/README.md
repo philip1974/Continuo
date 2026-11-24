@@ -7,6 +7,7 @@ Behavior contract checklist T1-T12:
 T1 `NotificationsProvider` queues notifications, supports `dismiss(id)`, and clears per-notification timers;
 T1b provider registration is epoch-guarded so an old unmount cannot clear a newer provider handle;
 T2 public `notify.error/warn/info/success` helpers forward to the shared notification API with `warn -> warning`;
+T2b notification levels have one source: `electron/shared/notify-channels.ts` `NOTIFY_LEVELS` (the `NotifyLevel` type derives from it) and its `isNotifyLevel` guard accepts every level and rejects anything else (plugin `notifications.show` falls back to `info` through it);
 T3 notification calls mirror to `console.error/warn/log` by default;
 T3b `mirror:false` suppresses console mirroring;
 T3c calling the public API before a provider mounts does not throw, mirrors to console, and does not buffer stale messages;
