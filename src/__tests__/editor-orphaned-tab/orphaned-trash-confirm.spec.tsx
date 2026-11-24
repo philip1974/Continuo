@@ -86,7 +86,7 @@ afterEach(() => cleanup());
 describe('Explorer 删除有未保存修改的文件', () => {
   it('确认框追加未保存警告;确认后 tab 保留并标记已删除', async () => {
     await deleteRow('/work/beta.md');
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toContain(WARNING());
     act(() => {
       fireEvent.click(within(dialog).getByRole('button', { name: t('panels.explorer.ctx.trash') }));
@@ -97,14 +97,14 @@ describe('Explorer 删除有未保存修改的文件', () => {
 
   it('没有未保存 tab → 无警告', async () => {
     await deleteRow('/work/clean.md');
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).not.toContain(WARNING());
   });
 
   it('关掉「删除前确认」设置时,涉及未保存 tab 仍弹确认(VSCode 未保存警告不受该设置控制)', async () => {
     h.settings = { 'explorer.confirmDelete': false };
     await deleteRow('/work/beta.md');
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toContain(WARNING());
     expect(coApi.fs.trash).not.toHaveBeenCalled();
   });
@@ -113,6 +113,6 @@ describe('Explorer 删除有未保存修改的文件', () => {
     h.settings = { 'explorer.confirmDelete': false };
     await deleteRow('/work/clean.md');
     await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledWith('/work/clean.md'));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

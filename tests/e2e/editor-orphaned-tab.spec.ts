@@ -38,7 +38,7 @@ test('Explorer 删除编辑过的 .md:确认框有未保存警告;tab 显示已�
     .first()
     .click({ button: 'right' });
   await window.getByRole('menuitem', { name: EXPLORER_TRASH }).click();
-  await expect(window.getByRole('dialog')).toContainText(UNSAVED_WARNING);
+  await expect(window.getByRole('alertdialog')).toContainText(UNSAVED_WARNING);
   await confirmExplorerTrash(window);
 
   const tab = editorTab(window, /README\.md/);

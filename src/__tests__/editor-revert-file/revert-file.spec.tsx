@@ -88,7 +88,7 @@ async function saveIntoConflict() {
 describe('磁盘冲突:覆盖 / 放弃更改并重新加载 / 取消', () => {
   it('覆盖确认框提供「放弃更改并重新加载」', async () => {
     await saveIntoConflict();
-    const labels = Array.from(screen.getByRole('dialog').querySelectorAll('button')).map((b) => b.textContent);
+    const labels = Array.from(screen.getByRole('alertdialog').querySelectorAll('button')).map((b) => b.textContent);
     expect(labels).toEqual([
       t('panels.editor.disk_changed_revert'),
       t('panels.explorer.confirm.cancel'),

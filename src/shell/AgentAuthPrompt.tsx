@@ -2,7 +2,7 @@
 // 订阅 main 推的 'agent-auth:request' → 调 store.ensure → 等用户决定 → 应答 main。
 // 已「本次启动期间允许」的域在 main 直接放行,不会推到这里。
 
-import { useEffect, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useId, type MouseEvent, type ReactNode } from 'react';
 import { Button, Modal } from '@/design';
 import { coApi } from '@/lib/co-api';
 import {
@@ -147,6 +147,7 @@ function AgentAuthPromptBody({
   };
   const deny = useAgentAuthStore((s) => s.deny);
   const t = useT();
+  const descriptionId = useId();
   // debug 域的请求:标题与说明讲调试器能做什么(授权也只记在 debug 域)。
   const isDebug = isDebugAuthMethod(pending.method);
   // 插件工具域(main plugin-mcp-bridge,method=plugin.<tool 名>):标题 / 说明讲插件工具。
@@ -186,25 +187,34 @@ function AgentAuthPromptBody({
       : 'permissions.agent.hint';
 
   return (
-    <Modal visible onClose={deny} aria-labelledby="agent-auth-title">
+    <Modal
+      visible
+      onClose={deny}
+      aria-labelledby="agent-auth-title"
+      aria-describedby={descriptionId}
+    >
       {/* a11y(A13):dialog 关联标题。 */}
       <h2 id="agent-auth-title" className="mb-1 text-sm font-medium text-fg">
         {t(titleKey)}
       </h2>
-      {/* 一条带 {action} 插值的完整句子(各语言自己决定空格 / 标点 / 语序);方法标签是 ReactNode(插件工具名等
-          不可信文本要可见化),按占位符拆成前后两段嵌入。 */}
-      <p className="mb-3 text-xs text-fg-muted">
-        {bodyBefore}
-        {methodLabel(pending.method)}
-        {bodyAfter}
-      </p>
-      {/* 安全(F2):外部客户端请求标注来源 —— 弹窗出现在主窗,但调用方并非该窗口终端里的 agent。 */}
-      {pending.external ? (
-        <p className="mb-3 text-xs text-fg">{t('permissions.agent.external_caller')}</p>
-      ) : null}
-      <p className="mb-1 text-2xs text-fg-dim">
-        {t(hintKey)}
-      </p>
+      {/* a11y:请求说明(动作名 / 外部调用方 / 授权后果)经 aria-describedby 关联 —— 初始焦点在按钮上,
+          不关联时读屏只读标题与按钮,听不到请求的是什么。 */}
+      <div id={descriptionId}>
+        {/* 一条带 {action} 插值的完整句子(各语言自己决定空格 / 标点 / 语序);方法标签是 ReactNode(插件工具名等
+            不可信文本要可见化),按占位符拆成前后两段嵌入。 */}
+        <p className="mb-3 text-xs text-fg-muted">
+          {bodyBefore}
+          {methodLabel(pending.method)}
+          {bodyAfter}
+        </p>
+        {/* 安全(F2):外部客户端请求标注来源 —— 弹窗出现在主窗,但调用方并非该窗口终端里的 agent。 */}
+        {pending.external ? (
+          <p className="mb-3 text-xs text-fg">{t('permissions.agent.external_caller')}</p>
+        ) : null}
+        <p className="mb-1 text-2xs text-fg-dim">
+          {t(hintKey)}
+        </p>
+      </div>
       {/* 「尚未生效」提示的常驻 status 区域放在按钮上方(占说明与按钮之间的间距),底部不多出空白。 */}
       <PromptGrantHint guard={guard} />
       <div className="flex justify-end gap-2">

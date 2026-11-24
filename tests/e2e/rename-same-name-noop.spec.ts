@@ -31,7 +31,7 @@ test('rename a.ts → a.ts 同名 → noop + 内容不变', async ({
     timeout: 5_000,
   });
   await window.waitForTimeout(300);
-  await expect(window.getByRole('alert')).toHaveCount(0);
+  await expect(window.locator('.toast[data-level="error"]')).toHaveCount(0);
   // 文件仍存在 + 内容不变
   const after = await readFile(path.join(workspaceRoot, 'src/a.ts'), 'utf8');
   expect(after).toBe(before);

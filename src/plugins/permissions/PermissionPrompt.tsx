@@ -1,7 +1,7 @@
 // 权限授权 Modal(M-Plugin v3.4)。
 // 订阅 promptStore,无 pending 时不渲染。
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
@@ -95,6 +95,7 @@ export function PermissionPrompt() {
 
 function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: PromptGrantGuard }) {
   const t = useT();
+  const descriptionId = useId();
   const grant = usePermissionPromptStore((s) => s.grant);
   const denyAll = usePermissionPromptStore((s) => s.denyAll);
   const promptBodyTemplate = t('permissions.prompt.body', {
@@ -131,22 +132,27 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
       // Esc(键重复)/ 点遮罩也是「全部拒绝」入口,与拒绝按钮同一守卫(只在切换后短时间内无效)。
       onClose={handleClose}
       aria-labelledby="permission-prompt-title"
+      aria-describedby={descriptionId}
     >
       {/* a11y(A13):dialog(A10)须经 aria-labelledby 关联标题,否则 AT 只听到无名 dialog。 */}
       <h2 id="permission-prompt-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.prompt.title')}
       </h2>
-      <p className="mb-2 text-xs text-fg-muted">
-        {/* tpl 含 {pluginId}；inline <code> 渲染 — 拆 prefix/suffix */}
-        {promptBodyParts.prefix}
-        <UntrustedText text={pending.pluginId} />
-        {promptBodyParts.suffix}
-      </p>
-      <p className="mb-3 text-2xs text-fg-dim">
-        {t('permissions.prompt.note_prefix')}
-        <span className="text-fg">{t('permissions.prompt.note_partial')}</span>
-        {t('permissions.prompt.note_suffix')}
-      </p>
+      {/* a11y:说明句(插件 id)与「部分授予」提示经 aria-describedby 关联(初始焦点在「全部拒绝」,不关联时读屏听不到
+          是哪个插件在申请);权限勾选项本身可聚焦、各有标签,不放进说明。 */}
+      <div id={descriptionId}>
+        <p className="mb-2 text-xs text-fg-muted">
+          {/* tpl 含 {pluginId}；inline <code> 渲染 — 拆 prefix/suffix */}
+          {promptBodyParts.prefix}
+          <UntrustedText text={pending.pluginId} />
+          {promptBodyParts.suffix}
+        </p>
+        <p className="mb-3 text-2xs text-fg-dim">
+          {t('permissions.prompt.note_prefix')}
+          <span className="text-fg">{t('permissions.prompt.note_partial')}</span>
+          {t('permissions.prompt.note_suffix')}
+        </p>
+      </div>
       <ul className="mb-1 space-y-1">
         {pending.perms.map((perm) => (
           <PermissionOptionRow
@@ -204,6 +210,7 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
 // 以 requestId 为 key 挂载(shell 端):换请求即 remount。
 function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: PromptGrantGuard }) {
   const t = useT();
+  const descriptionId = useId();
   const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
   const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
   const fsScopeBodyTemplate = t('permissions.fs_scope.body', {
@@ -223,37 +230,41 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
       visible
       onClose={handleClose}
       aria-labelledby="permission-fs-scope-title"
+      aria-describedby={descriptionId}
     >
       {/* a11y(A13):同上,fs-scope 弹窗关联标题。 */}
       <h2 id="permission-fs-scope-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.fs_scope.title')}
       </h2>
-      <p className="mb-3 text-xs text-fg-muted">
-        {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
-        {fsScopeBodyParts.prefix}
-        <UntrustedText text={scope.pluginId} />
-        {fsScopeBodyParts.suffix}
-      </p>
-      <ul className="mb-1 space-y-1 text-xs">
-        {scope.scopes.map((s, i) => (
-          <li
-            key={`${s.path}:${i}`}
-            className="rounded border border-line bg-panel-soft p-2"
-          >
-            {/* 安全:路径由插件给出(≤ 8192 字符)。可见化(换行 / 控制字符 / 双向控制字符)并从中间截断,
-                保留首尾 —— 否则超长路径把按钮挤出视野、U+202E 让显示的路径与实际授予的不符。 */}
-            <div>
-              <UntrustedText text={s.displayPath} max={UNTRUSTED_PATH_MAX_CHARS} />
-            </div>
-            <div className="text-fg-dim">
-              {t('common.label_detail', {
-                label: t('permissions.fs_scope.mode_label'),
-                detail: t(s.mode === 'rw' ? 'permissions.fs_scope.mode_rw' : 'permissions.fs_scope.mode_ro'),
-              })}
-            </div>
-          </li>
-        ))}
-      </ul>
+      {/* a11y:说明句与申请的路径 / 模式列表经 aria-describedby 关联(同 manifest 分支)。 */}
+      <div id={descriptionId}>
+        <p className="mb-3 text-xs text-fg-muted">
+          {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
+          {fsScopeBodyParts.prefix}
+          <UntrustedText text={scope.pluginId} />
+          {fsScopeBodyParts.suffix}
+        </p>
+        <ul className="mb-1 space-y-1 text-xs">
+          {scope.scopes.map((s, i) => (
+            <li
+              key={`${s.path}:${i}`}
+              className="rounded border border-line bg-panel-soft p-2"
+            >
+              {/* 安全:路径由插件给出(≤ 8192 字符)。可见化(换行 / 控制字符 / 双向控制字符)并从中间截断,
+                  保留首尾 —— 否则超长路径把按钮挤出视野、U+202E 让显示的路径与实际授予的不符。 */}
+              <div>
+                <UntrustedText text={s.displayPath} max={UNTRUSTED_PATH_MAX_CHARS} />
+              </div>
+              <div className="text-fg-dim">
+                {t('common.label_detail', {
+                  label: t('permissions.fs_scope.mode_label'),
+                  detail: t(s.mode === 'rw' ? 'permissions.fs_scope.mode_rw' : 'permissions.fs_scope.mode_ro'),
+                })}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
       <PromptGrantHint guard={guard} />
       <div className="flex justify-end gap-2">
         <Button

@@ -91,7 +91,7 @@ export async function dragSidebarResize(window: Page, deltaX: number): Promise<v
  * 初始焦点在「取消」,须显式点确认按钮。
  */
 export async function confirmExplorerTrash(window: Page): Promise<void> {
-  const dialog = window.getByRole('dialog');
+  const dialog = window.getByRole('alertdialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
   await dialog.getByRole('button', { name: EXPLORER_TRASH }).click();
   await expect(dialog).toBeHidden();

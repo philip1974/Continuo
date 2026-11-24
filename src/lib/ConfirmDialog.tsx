@@ -45,6 +45,9 @@ function ConfirmDialogBody({
   const t = useT();
   // 标题 id 每个实例唯一(此前写死 confirm-dialog-title,同时挂载多个时 aria-labelledby 指向错乱)。
   const titleId = useId();
+  // a11y:说明区经 aria-describedby 关联(WAI-ARIA APG Dialog / Alert Dialog)。初始焦点常在「取消」,不关联时读屏只读
+  // 标题 + 焦点按钮,听不到文件名 / 进程名 / 删除列表 / 未保存警告等正文。
+  const descriptionId = useId();
   const confirmText = confirmLabel ?? t('panels.explorer.confirm.confirm');
   const cancelText = cancelLabel ?? t('panels.explorer.confirm.cancel');
   // 引用必须稳定(同 PermissionPrompt handleClose):调用方都传内联 onCancel,Modal 的焦点 /
@@ -52,14 +55,21 @@ function ConfirmDialogBody({
   // [data-autofocus] 确认(危险)按钮、键盘栈重排。Esc / overlay 仍调最新的。
   const handleClose = useStableCallback(onCancel);
   return (
-    <Modal visible onClose={handleClose} aria-labelledby={titleId}>
+    <Modal
+      visible
+      onClose={handleClose}
+      // destructive(可能丢数据、须立即决定)用 alertdialog;Modal 的 role 可由调用方覆盖。
+      role={destructive ? 'alertdialog' : 'dialog'}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+    >
       <h2
         id={titleId}
         className="mb-2 text-sm font-medium text-fg"
       >
         {title}
       </h2>
-      <div className="mb-5 text-xs leading-relaxed text-fg-muted">
+      <div id={descriptionId} className="mb-5 text-xs leading-relaxed text-fg-muted">
         {description}
       </div>
       <div className="flex justify-end gap-2">

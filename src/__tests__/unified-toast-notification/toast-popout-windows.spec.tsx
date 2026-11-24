@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// BDD:面板弹出到 popout 子窗后,toast 同时显示在主窗与每个 popout 子窗;只有一个副本是 live region。见同目录 README T18-T19。
+// BDD:面板弹出到 popout 子窗后,toast 同时显示在主窗与每个 popout 子窗;每次播报只写进一个窗口的 live region。见同目录 README T18-T19。
 import type { DockviewApi } from 'dockview-react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
@@ -132,24 +132,26 @@ describe('popout 子窗显示 toast', () => {
     expect(mainToasts()).toHaveLength(0);
   });
 
-  it('T19 只有一个副本是 live region(默认主窗;子窗有焦点时归子窗),读屏不重复播报', () => {
+  it('T19 每个窗口都有常驻 live region,但每次播报只写进一个窗口(首次出现时有焦点的子窗,否则主窗),读屏不重复播报', () => {
     const dock = fakeDock();
     dock.addGroup(popout());
     tracker = trackPopoutDocuments(dock.api);
     renderApp();
-
+    const spokenIn = (doc: Document) =>
+      [...doc.querySelectorAll('[data-toast-announcer]')].map((el) => el.textContent ?? '').join('');
+    expect(child.doc.querySelectorAll('[data-toast-announcer][aria-live]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-toast-announcer][aria-live]')).toHaveLength(2);
+    // toast 副本本身都不是 live region
     act(() => notify.error('first'));
-    const liveIn = (doc: Document) => doc.querySelectorAll('[aria-live]').length;
-    expect(liveIn(document)).toBe(1);
-    expect(liveIn(child.doc)).toBe(0);
-    expect(child.doc.querySelector('[role="alert"]')).toBeNull();
+    expect(document.querySelectorAll('.toast[aria-live], .toast[role]')).toHaveLength(0);
+    expect(child.doc.querySelectorAll('.toast[aria-live], .toast[role]')).toHaveLength(0);
+    expect(spokenIn(document)).toBe('first');
+    expect(spokenIn(child.doc)).toBe('');
 
     vi.spyOn(child.doc, 'hasFocus').mockReturnValue(true);
     vi.spyOn(document, 'hasFocus').mockReturnValue(false);
     act(() => notify.error('second'));
-    // 已有的 first 不改变播报位置;second 只在子窗播报。
-    expect(liveIn(document)).toBe(1);
-    expect(liveIn(child.doc)).toBe(1);
-    expect(child.doc.querySelector('[role="alert"]')?.textContent).toContain('second');
+    expect(spokenIn(child.doc)).toBe('second');
+    expect(spokenIn(document)).toBe('');
   });
 });

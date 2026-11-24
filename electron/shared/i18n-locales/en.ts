@@ -439,6 +439,7 @@ export const en = {
   // statusbar.* (8)
   // notifications (toast)
   'notifications.dismiss': 'Dismiss',
+  'notifications.repeat_announce': '{message} ({count} times)',
   'notifications.viewport_label': 'Notifications',
 
   'statusbar.mcp.copy': 'Copy MCP config',

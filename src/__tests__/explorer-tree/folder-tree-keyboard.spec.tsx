@@ -106,11 +106,11 @@ const CANCEL_LABEL = /^(取消|Cancel)$/;
 
 /** 删除确认框弹出后点「移到废纸篓」。 */
 async function confirmTrash(): Promise<HTMLElement> {
-  const dialog = await screen.findByRole('dialog');
+  const dialog = await screen.findByRole('alertdialog');
   act(() => {
     fireEvent.click(within(dialog).getByRole('button', { name: TRASH_LABEL }));
   });
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   return dialog;
 }
 
@@ -260,7 +260,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     const { container } = await mount();
     await focusRow(container, '/work/bravo.ts');
     key(row(container, '/work/bravo.ts')!, { key: 'Delete', code: 'Delete' });
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(/bravo\.ts/);
     expect(dialog.textContent).toMatch(/废纸篓|Trash/);
     const cancel = within(dialog).getByRole('button', { name: CANCEL_LABEL });
@@ -268,7 +268,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     act(() => {
       fireEvent.click(cancel);
     });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(coApi.fs.trash).not.toHaveBeenCalled();
     expect(row(container, '/work/bravo.ts')!.getAttribute('aria-selected')).toBe('true');
   });
@@ -281,7 +281,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     });
     await waitFor(() => expect(row(container, '/work/charlie.ts')!.getAttribute('aria-selected')).toBe('true'));
     key(row(container, '/work/charlie.ts')!, { key: 'Delete', code: 'Delete' });
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(/2/);
     expect(dialog.textContent).toMatch(/beta\.ts/);
     expect(dialog.textContent).toMatch(/charlie\.ts/);
@@ -292,7 +292,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     await focusRow(container, '/work/bravo.ts');
     key(row(container, '/work/bravo.ts')!, { key: 'Delete', code: 'Delete', repeat: true });
     await new Promise((r) => setTimeout(r, 30));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(coApi.fs.trash).not.toHaveBeenCalled();
   });
 
@@ -305,7 +305,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     act(() => {
       fireEvent.click(item.closest('[role="menuitem"]')!);
     });
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(/beta\.ts/);
     expect(coApi.fs.trash).not.toHaveBeenCalled();
     await confirmTrash();
@@ -321,7 +321,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     act(() => {
       fireEvent.click(item.closest('[role="menuitem"]')!);
     });
-    const dialog = await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('alertdialog');
     const cancel = within(dialog).getByRole('button', { name: CANCEL_LABEL });
     await waitFor(() => expect(document.activeElement).toBe(cancel));
     // Radix 菜单关闭后的焦点还原(setTimeout)不得把焦点抢回遮罩后的树行
@@ -330,7 +330,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     act(() => {
       fireEvent.keyDown(document.activeElement!, { key: 'Escape', code: 'Escape' });
     });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/bravo.ts')));
     expect(coApi.fs.trash).not.toHaveBeenCalled();
   });
@@ -355,7 +355,7 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
     await focusRow(container, '/work/bravo.ts');
     key(row(container, '/work/bravo.ts')!, { key: 'Delete', code: 'Delete' });
     await waitFor(() => expect(coApi.fs.trash).toHaveBeenCalledWith('/work/bravo.ts'));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
 

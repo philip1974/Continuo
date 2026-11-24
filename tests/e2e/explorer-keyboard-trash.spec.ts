@@ -34,7 +34,7 @@ test('隐藏文件存在时:首个可见项上按 ↑ / Home 再 Delete → 只�
   await expect(src).toHaveAttribute('aria-selected', 'true');
 
   await src.press('Delete');
-  const dialog = window.getByRole('dialog');
+  const dialog = window.getByRole('alertdialog');
   await expect(dialog).toContainText('src');
   await confirmExplorerTrash(window);
 
@@ -58,7 +58,7 @@ test('Delete 弹确认,初始焦点在「取消」:直接回车 → 关闭确认
   await expect(readme).toBeFocused();
 
   await readme.press('Delete');
-  const dialog = window.getByRole('dialog');
+  const dialog = window.getByRole('alertdialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
   await expect(dialog).toContainText('README.md');
   await expect(dialog.getByRole('button', { name: /^(取消|Cancel|취소)$/ })).toBeFocused();
@@ -78,7 +78,7 @@ test('右键「移到废纸篓」→ 确认框打开期间焦点在框内;Esc �
   await expect(readme).toBeVisible({ timeout: 10_000 });
   await readme.click({ button: 'right' });
   await window.getByRole('menuitem', { name: /^(移到废纸篓|Move to Trash|휴지통으로 이동)/ }).click();
-  const dialog = window.getByRole('dialog');
+  const dialog = window.getByRole('alertdialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
   const cancel = dialog.getByRole('button', { name: /^(取消|Cancel|취소)$/ });
   await expect(cancel).toBeFocused();

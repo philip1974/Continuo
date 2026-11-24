@@ -19,7 +19,7 @@ test('改脏 a.ts → 外部改盘 → ⌘S 冲突 → 放弃更改并重新加�
   const THEIRS = 'export const theirs = 1;\n';
   await writeFile(file, THEIRS);
   await window.keyboard.press('ControlOrMeta+s');
-  const dialog = window.getByRole('dialog');
+  const dialog = window.getByRole('alertdialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
   await dialog.getByRole('button', { name: REVERT }).click();
   await expect(dialog).toBeHidden();

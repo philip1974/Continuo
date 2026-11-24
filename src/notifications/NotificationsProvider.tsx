@@ -16,6 +16,7 @@ import { __registerHandle } from './notify';
 import type { NotifyApi, NotifyOpts } from './notify';
 import { filterKeepingIdentity } from '@/lib/filter-keeping-identity';
 import { hasOpenModal, subscribeOpenModals } from '@/design';
+import { t } from '@/i18n';
 
 // ─── auto-dismiss 配置 ─────────────────────
 const DISMISS_MS: Record<NotificationLevel, number> = {
@@ -98,8 +99,20 @@ function mergeRepeatedNotification(
   return next ?? notifications;
 }
 
+/**
+ * 一次读屏播报(写进 ToastViewport 常驻的 live region,与 toast 是否可见无关 —— VSCode 通知同款在创建时播报)。
+ * seq 每次播报递增:同样的文本再次出现时也换新节点,读屏会再读一次。
+ */
+export interface ToastAnnouncement {
+  readonly seq: number;
+  readonly politeness: 'polite' | 'assertive';
+  readonly text: string;
+}
+
 interface NotificationsContextValue {
   readonly notifications: readonly Notification[];
+  /** 最近一次播报;尚无通知时为 null。 */
+  readonly announcement: ToastAnnouncement | null;
   readonly dismiss: (id: string) => void;
   /** 悬停 / 焦点进入 toast 时暂停自动消失(可重入计数,每次 pause 配一次 resume)。 */
   readonly pause: (id: string) => void;
@@ -122,6 +135,7 @@ const noop = (): void => {
 const NotificationsContext =
   createContext<NotificationsContextValue>({
     notifications: EMPTY_NOTIFICATIONS,
+    announcement: null,
     dismiss: noop,
     pause: noop,
     resume: noop,
@@ -141,6 +155,8 @@ export function NotificationsProvider({
     EMPTY_NOTIFICATIONS,
   );
   const notificationsRef = useRef<readonly Notification[]>(EMPTY_NOTIFICATIONS);
+  const [announcement, setAnnouncement] = useState<ToastAnnouncement | null>(null);
+  const announceSeqRef = useRef(0);
   const counterRef = useRef(0);
   const timersRef = useRef(new Map<string, DismissTimer>());
   // 有打开的模态时为 true:toast 层在模态遮罩之下(看不到、无法悬停),每个计时多计一次暂停,全部模态关闭后续算。
@@ -292,12 +308,25 @@ export function NotificationsProvider({
       }
       if (existing) {
         const existingId = existing.id;
+        // a11y:合并只以 polite 播一句「正文(第 N 次)」—— 不整条重读(toast 本身不是 live region),error 也不再打断。
+        const count = (existing.count ?? 1) + 1;
+        setAnnouncement({
+          seq: ++announceSeqRef.current,
+          politeness: 'polite',
+          text: t('notifications.repeat_announce', { message, count }),
+        });
         notificationsRef.current = mergeRepeatedNotification(notificationsRef.current, existingId, now);
         setNotificationList((prev) => mergeRepeatedNotification(prev, existingId, now));
         if (timersRef.current.has(existingId)) scheduleDismiss(existingId, level);
         return;
       }
 
+      // a11y:新通知创建时即播报正文(排队中、尚未显示的也播;之后补位显示不再播)。error → assertive,其余 polite。
+      setAnnouncement({
+        seq: ++announceSeqRef.current,
+        politeness: level === 'error' ? 'assertive' : 'polite',
+        text: message,
+      });
       const id = `notif-${String(++counterRef.current)}`;
       const n: Notification = { id, level, message, code, createdAt: now };
       // race(R13):同步把新通知写入 notificationsRef,使同一事件循环内后续 notify 的去重能看到
@@ -340,8 +369,8 @@ export function NotificationsProvider({
   }, []);
 
   const value = useMemo<NotificationsContextValue>(
-    () => ({ notifications, dismiss, pause, resume }),
-    [notifications, dismiss, pause, resume],
+    () => ({ notifications, announcement, dismiss, pause, resume }),
+    [notifications, announcement, dismiss, pause, resume],
   );
 
   return (

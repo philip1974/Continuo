@@ -26,7 +26,7 @@ test('终端弹出到子窗后再新建终端 → 不报错;关闭子窗 → 收
   await window.bringToFront();
   expect(await newTerminal()).toBe(true);
   await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(1, { timeout: 15_000 });
-  await expect(window.getByRole('alert')).toHaveCount(0);
+  await expect(window.locator('.toast[data-level="error"]')).toHaveCount(0);
   expect(pageErrors.filter((m) => /parentElement|referencePanel/.test(m))).toEqual([]);
 
   // 关闭子窗:终端收回主窗,成为活动面板并获焦

@@ -416,6 +416,7 @@ export const zh: Record<TranslationKey, string> = {
   // statusbar.*
   // notifications (toast)
   'notifications.dismiss': '关闭',
+  'notifications.repeat_announce': '{message}（第 {count} 次）',
   'notifications.viewport_label': '通知',
 
   'statusbar.mcp.copy': '复制 MCP 配置',

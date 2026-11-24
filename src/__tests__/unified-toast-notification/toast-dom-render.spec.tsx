@@ -43,7 +43,7 @@ describe('unified-toast-notification: DOM rendering', () => {
     expect(toastSrc).not.toContain("aria-label={t('notifications.dismiss')}");
   });
 
-  it('空通知视口先返回,不订阅 i18n 翻译 hook', () => {
+  it('空通知视口不渲染 toast 容器,外壳不订阅 i18n 翻译 hook(常驻的只有播报 live region)', () => {
     const viewportSrc = readFileSync('src/notifications/ToastViewport.tsx', 'utf8');
     const shellStart = viewportSrc.indexOf('export function ToastViewport()');
     const contentStart = viewportSrc.indexOf('function ToastViewportContent');
@@ -51,9 +51,16 @@ describe('unified-toast-notification: DOM rendering', () => {
 
     expect(shellStart).toBeGreaterThanOrEqual(0);
     expect(contentStart).toBeGreaterThan(shellStart);
-    expect(shellSrc).toContain('if (notifications.length === 0) return null;');
+    expect(shellSrc).toContain('notifications.length === 0 ? null');
     expect(shellSrc).not.toContain('useT(');
     expect(viewportSrc.indexOf('const t = useT();')).toBeGreaterThan(contentStart);
+
+    render(
+      <NotificationsProvider>
+        <ToastViewport />
+      </NotificationsProvider>,
+    );
+    expect(document.querySelector('.toast-viewport')).toBeNull();
   });
 
   // 错误码不作为正文显示(此前「已存在 [FS_EEXIST]」);保留在 title(悬停可见)与 data-code,供支持排错。
@@ -68,8 +75,7 @@ describe('unified-toast-notification: DOM rendering', () => {
       notify.error('rendered toast', { code: 'TEST' });
     });
 
-    // a11y(A60):error toast 须 role=alert(assertive),非普通 status。
-    const toast = screen.getByRole('alert');
+    const toast = document.querySelector<HTMLElement>('.toast')!;
     expect(toast.textContent).toContain('rendered toast');
     expect(toast.textContent).not.toContain('TEST');
     expect(toast.querySelector('.toast__code')).toBeNull();
@@ -91,12 +97,13 @@ describe('unified-toast-notification: DOM rendering', () => {
       notify.error('dup');
       notify.error('dup');
     });
-    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(document.querySelectorAll('.toast')).toHaveLength(1);
     expect(document.querySelector('.toast__count')!.textContent).toBe('×3');
   });
 
-  // a11y(A60):非错误(info/success/warning)toast 仍 role=status(polite);error 是 alert。
-  it('T13 non-error toast is role=status; error toast is role=alert', () => {
+  // a11y(A60):级别语义由播报的 live region 承担(error → assertive,其余 → polite,见 toast-live-announcer T26);
+  // toast 元素本身不再是 role=alert / status(否则合并时整条带「×N 关闭」重读、排队项不播报)。
+  it('T13 toast 以 data-level 标级别,自身不是 live region', () => {
     render(
       <NotificationsProvider>
         <ToastViewport />
@@ -104,13 +111,12 @@ describe('unified-toast-notification: DOM rendering', () => {
     );
     act(() => {
       notify.info('just info');
-    });
-    expect(screen.getByRole('status').textContent).toContain('just info');
-    expect(screen.queryByRole('alert')).toBeNull();
-    act(() => {
       notify.error('boom');
     });
-    expect(screen.getByRole('alert').textContent).toContain('boom');
+    const toasts = [...document.querySelectorAll<HTMLElement>('.toast')];
+    expect(toasts.map((el) => el.dataset.level)).toEqual(['info', 'error']);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('可见 toast 列表不通过 notifications.slice 构建', () => {
@@ -143,7 +149,7 @@ describe('unified-toast-notification: DOM rendering', () => {
         'visible.push(',
       );
       // 同时最多显示 3 条(VSCode 同款),其余排队:先显示最早的三条
-      expect(screen.getAllByRole('alert')).toHaveLength(3);
+      expect(document.querySelectorAll('.toast')).toHaveLength(3);
       expect(screen.getByText('boom-0')).toBeTruthy();
       expect(screen.queryByText('boom-3')).toBeNull();
     } finally {

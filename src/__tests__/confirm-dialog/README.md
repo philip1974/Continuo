@@ -26,4 +26,5 @@
 - 点确认 → onConfirm
 - 点取消 → onCancel
 - Esc → Modal 内部触发 onClose,该 hook 接到 onCancel
+- 说明区经 `aria-describedby` 关联、destructive 为 `role="alertdialog"`:见 `dialog-accessible-description` 主题
 - 打开期间父组件重渲换新 onCancel 引用 → Modal 焦点/键盘 effect 不重跑(焦点留在用户所在按钮),Esc 调最新 onCancel

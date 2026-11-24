@@ -36,7 +36,7 @@ test('exit 1:终端内显示退出说明,之后按键不再报错,任意键关�
   // 非「任意键」的方向键:此前会发 IPC → NOT_FOUND 错误 toast;现在不再发
   await window.keyboard.press('ArrowUp');
   await window.waitForTimeout(500);
-  await expect(window.getByRole('alert')).toHaveCount(0);
+  await expect(window.locator('.toast[data-level="error"]')).toHaveCount(0);
   await window.keyboard.press('a');
   await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 5_000 });
 });
@@ -45,7 +45,7 @@ test('exit 0:终端面板自动关闭', async ({ window }) => {
   await newTerminal(window);
   await run(window, 'exit 0');
   await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 15_000 });
-  await expect(window.getByRole('alert')).toHaveCount(0);
+  await expect(window.locator('.toast[data-level="error"]')).toHaveCount(0);
 });
 
 test('运行 sleep 30 时关闭 tab → 弹终止确认;取消保留,终止后关闭', async ({ window }) => {
@@ -54,7 +54,7 @@ test('运行 sleep 30 时关闭 tab → 弹终止确认;取消保留,终止后�
   await window.waitForTimeout(500); // 等 sleep 成为前台进程
   const close = tab.getByRole('button');
   await close.last().click();
-  const dialog = window.getByRole('dialog');
+  const dialog = window.getByRole('alertdialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
   await expect(dialog).toContainText('sleep');
   await dialog.getByRole('button', { name: /^(Cancel|取消|취소)$/ }).click();
@@ -62,7 +62,7 @@ test('运行 sleep 30 时关闭 tab → 弹终止确认;取消保留,终止后�
   await expect(tab).toBeVisible();
 
   await close.last().click();
-  await window.getByRole('dialog').getByRole('button', { name: /^(Terminate|终止|종료)$/ }).click();
+  await window.getByRole('alertdialog').getByRole('button', { name: /^(Terminate|终止|종료)$/ }).click();
   await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 5_000 });
 });
 
@@ -70,7 +70,7 @@ test('只有 shell 时关闭 tab 不确认', async ({ window }) => {
   const tab = await newTerminal(window);
   await tab.getByRole('button').last().click();
   await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 5_000 });
-  await expect(window.getByRole('dialog')).toHaveCount(0);
+  await expect(window.getByRole('alertdialog')).toHaveCount(0);
 });
 
 // terminal.clear 默认键同 VSCode 只 mac 有(⌘K);Win/Linux 无默认键,Ctrl+K 进 shell(见 skip-shell-hotkeys 规范)。

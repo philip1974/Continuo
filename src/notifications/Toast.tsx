@@ -15,11 +15,6 @@ export interface ToastProps {
   /** 悬停 / 焦点在 toast 内时暂停自动消失,离开后恢复(provider 按剩余时间续算)。 */
   readonly onPause: (id: string) => void;
   readonly onResume: (id: string) => void;
-  /**
-   * 是否作为 live region 播报(role=alert/status + aria-live)。同一通知可能同时渲染在主窗与 popout 子窗,
-   * 只让一个副本播报,否则读屏重复读(由 ToastViewport 按通知首次出现时决定,之后不变)。
-   */
-  readonly announce?: boolean;
 }
 
 export function Toast({
@@ -28,7 +23,6 @@ export function Toast({
   dismissLabel,
   onPause,
   onResume,
-  announce = true,
 }: ToastProps): ReactNode {
   const { id, level, message, code, count = 1 } = notification;
   const [hovered, setHovered] = useState(false);
@@ -71,11 +65,9 @@ export function Toast({
   return (
     <div
       ref={rootRef}
-      // a11y(A60):错误 toast 须 role="alert"(assertive,语义=错误/告警),其余 role="status"
-      // (polite)。此前固定 role=status 让 AT 把失败也读成普通状态消息;notify.error 是 A46-A59
-      // 大量静默失败修复的可访问反馈出口,出口语义必须正确。role 与 aria-live 严重度保持一致。
-      role={announce ? (level === 'error' ? 'alert' : 'status') : undefined}
-      aria-live={announce ? (level === 'error' ? 'assertive' : 'polite') : undefined}
+      // a11y:toast 自身不是 live region(不设 role=alert/status / aria-live)。播报由 ToastViewport 常驻的
+      // polite / assertive live region 承担(error → assertive,A60):toast 有可见上限,排队的不在 DOM、创建时播不出;
+      // role=alert/status 隐含 aria-atomic,合并时整条连「×N」「关闭」一起重读。
       data-level={level}
       data-code={code}
       className={`toast toast--${level}`}
