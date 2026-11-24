@@ -12,3 +12,11 @@ export const REVIEW_URL_MAX = 2048;
 export const REVIEW_FIELD_MAX = 512;
 /** 累计 review 节点上限(main 分页累计、renderer 单插件 / 全局累计 / 单次 IPC nodes 共用)。 */
 export const REVIEW_TOTAL_NODES_MAX = 2000;
+
+/**
+ * 点赞数 / 评论计数须为非负安全整数(边界 E93/E144:负数 / 小数 / 超安全整数 / 非数会污染显示、"Helpful"
+ * 排序与缓存)。main 截断(toNode)、renderer 新拉解析(parseReview)与缓存读回(isValidReview)同一判定。
+ */
+export function isReviewCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+}

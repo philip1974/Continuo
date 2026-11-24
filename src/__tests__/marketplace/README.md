@@ -40,3 +40,10 @@ entryToGitUrl / entryToManifestUrl 把 entry.repo + branch 拼成可用 URL。**
 - fetch 失败 + 有 cache → 返 cache(过期也返,better than nothing)
 - fetch 失败 + 无 cache → 抛
 - forceRefresh=true → 跳缓存直接 fetch
+
+### 点赞数 / 计数判定(`isReviewCount`)
+
+- 「非负安全整数」判定在 `electron/shared/marketplace-review-limits.ts` 单一来源:main `toNode` 截断、renderer
+  `parseReview` 新拉解析、`isValidReview` / `isValidAggregateRecord` 缓存读回共用;不合法的点赞数归 0、缓存当 miss。
+- `parseReview` 的入参形态 `RawDiscussion` 由 shared `MarketplaceReviewNode` 派生(仅 thumbsUp 可选),不再逐字段手抄。
+

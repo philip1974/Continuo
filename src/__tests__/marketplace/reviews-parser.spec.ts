@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
+import { isReviewCount } from '../../../electron/shared/marketplace-review-limits';
 import { parseReview } from '../../marketplace/reviews-parser';
 import {
   isGitHubLogin,
@@ -650,3 +653,29 @@ describe('parseReview ≡ isValidReview', () => {
   });
 });
 
+
+describe('点赞数 / 计数判定:shared isReviewCount 单一来源(main toNode / parseReview / isValidReview 共用)', () => {
+  it('接受非负安全整数', () => {
+    for (const v of [0, 1, 42, Number.MAX_SAFE_INTEGER]) expect(isReviewCount(v)).toBe(true);
+  });
+
+  it.each([[-1], [1.5], [Number.MAX_SAFE_INTEGER + 1], [Number.NaN], [Number.POSITIVE_INFINITY], ['3'], [null], [undefined]])(
+    '拒:%j',
+    (v) => {
+      expect(isReviewCount(v)).toBe(false);
+    },
+  );
+
+  it('三处接线都委托 shared 判定,不再各自手写', () => {
+    const read = (rel: string): string => readFileSync(join(process.cwd(), rel), 'utf-8');
+    for (const rel of [
+      'electron/main/services/marketplace-reviews.service.ts',
+      'src/marketplace/reviews-parser.ts',
+      'src/marketplace/reviews-types.ts',
+    ]) {
+      const src = read(rel);
+      expect(src).toContain('isReviewCount(');
+      expect(src).not.toMatch(/Number\.isSafeInteger\(/);
+    }
+  });
+});

@@ -8,6 +8,7 @@ import {
   REVIEW_FIELD_MAX,
   REVIEW_TOTAL_NODES_MAX,
   REVIEW_URL_MAX,
+  isReviewCount,
 } from '../../electron/shared/marketplace-review-limits';
 import { isHttpUrl } from './url-safety'; // 边界(E109):review url/avatarUrl scheme 白名单(共享)
 import { isSafePluginId } from '../../electron/shared/plugin-id'; // 边界(E111/E113/E123):plugin id 形态 + 长度(共享单一来源)
@@ -102,10 +103,6 @@ export function isGitHubLogin(s: string): boolean {
   return true;
 }
 
-// 边界(E93):thumbsUp 须非负安全整数(点赞数不可为负/小数);与 main toNode canonicalize 对齐。
-const isNonNegSafeInt = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
-
 /** 单条评论形态校验(缓存读回与新拉解析 parseReview 收尾共用 —— 两侧此前各写一套,pluginId 长度曾分叉)。 */
 export function isValidReview(v: unknown): v is Review {
   if (typeof v !== 'object' || v === null) return false;
@@ -129,7 +126,7 @@ export function isValidReview(v: unknown): v is Review {
   // 边界(E111):URL 长度上限(对齐 main REVIEW_URL_MAX)。
   if (!isStrMax(r.url, REVIEW_URL_MAX) || !isHttpUrl(r.url)) return false;
   if (!isStrMax(r.createdAt, REVIEW_FIELD_MAX)) return false; // 边界(E111)
-  if (!isNonNegSafeInt(r.thumbsUp)) return false; // 边界(E93):非负安全整数,脏缓存当 miss
+  if (!isReviewCount(r.thumbsUp)) return false; // 边界(E93):非负安全整数(shared 判定),脏缓存当 miss
   if (typeof r.author !== 'object' || r.author === null) return false;
   const a = r.author as Record<string, unknown>;
   // 边界(E111 长度 + E112 GitHub login 形态):handle 拼进 github.com 个人主页 + maintainer 判断。
@@ -149,7 +146,7 @@ function isValidAggregate(v: unknown): v is PluginAggregateRating {
   if (typeof g.pluginId !== 'string' || !isSafePluginId(g.pluginId)) return false;
   // 边界(E94):count 须非负安全整数,avg 须 finite 且 1..5(评分均值值域)。只校验 finite
   // 会让负评价数 / 999.0 stars 渲染 + 污染排序。
-  if (!isNonNegSafeInt(g.count)) return false;
+  if (!isReviewCount(g.count)) return false;
   if (!isFiniteNumber(g.avg) || g.avg < 1 || g.avg > 5) return false;
   if (!Array.isArray(g.reviews)) return false; // reviews.length / map 须数组
   // 边界(E111):单插件 reviews 数量上限(对齐 main MAX_TOTAL_NODES),防超多 review 渲染放大。

@@ -16,7 +16,9 @@ import {
   REVIEW_BODY_MAX,
   REVIEW_FIELD_MAX,
   REVIEW_TITLE_MAX,
+  isReviewCount,
 } from '../../electron/shared/marketplace-review-limits';
+import type { MarketplaceReviewNode } from '../../electron/shared/marketplace-channels';
 import type { Review } from './reviews-types';
 import { isGitHubLogin, isValidReview, REVIEW_URL_MAX } from './reviews-types';
 import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
@@ -24,20 +26,10 @@ import { isSafePluginId } from '../../electron/shared/plugin-id'; // 边界(E113
 import { isSafeRepoPathChar } from './types';
 import { isHttpUrl } from './url-safety'; // 边界(E143,E109 fresh-fetch 对偶):url/avatarUrl scheme 白名单
 
-interface RawDiscussion {
-  readonly title: string;
-  readonly body: string;
-  readonly url: string;
-  readonly createdAt: string;
-  readonly author: {
-    readonly login: string;
-    readonly avatarUrl: string;
-    /** Phase 3:GraphQL `User { createdAt }`. 缺时给 epoch 0(被标新账号). */
-    readonly createdAt?: string;
-  } | null;
-  /** Phase 3:THUMBS_UP reaction 总数,缺给 0. */
+/** main 回传的 discussion node(shared 契约);thumbsUp 缺时给 0,故此处可选。各字段仍逐一运行时校验。 */
+type RawDiscussion = Omit<MarketplaceReviewNode, 'thumbsUp'> & {
   readonly thumbsUp?: number;
-}
+};
 
 // 边界(E57):renderer 防御性长度上限 —— 即便 main 已逐字段截断(E57),parseReview 也自带
 // body/title 上限,挡绕过 main 的 cache-hydrate / 测试 / 未来入口(body.split / section 聚合会被
@@ -127,12 +119,7 @@ export function parseReview(rawInput: unknown): Review | null {
     // 边界(E144,E93 fresh-fetch 对偶):thumbsUp 须非负安全整数 —— 防负数/小数/超安全整数/非数
     // 进入 helpful 排序(b.thumbsUp - a.thumbsUp 出现 NaN/错序)。生产 fresh 路径经 main toNode(E93)
     // 已 canonicalize,此为 parseReview 自守(与 cache-read isValidReview / 导出函数对偶,defense-in-depth)。
-    thumbsUp:
-      typeof raw.thumbsUp === 'number' &&
-      Number.isSafeInteger(raw.thumbsUp) &&
-      raw.thumbsUp >= 0
-        ? raw.thumbsUp
-        : 0,
+    thumbsUp: isReviewCount(raw.thumbsUp) ? raw.thumbsUp : 0,
     url: raw.url,
     createdAt: raw.createdAt,
   };

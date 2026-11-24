@@ -15,6 +15,7 @@ import {
   REVIEW_TITLE_MAX,
   REVIEW_TOTAL_NODES_MAX,
   REVIEW_URL_MAX,
+  isReviewCount,
 } from '../../shared/marketplace-review-limits';
 import { readResponseTextCapped } from '../../shared/read-capped';
 
@@ -89,12 +90,7 @@ function toNode(n: GraphqlNode): MarketplaceReviewNode {
   // 边界(E93):thumbsUp 须非负安全整数 —— 只校验 finite 会让畸形 GraphQL 把点赞数设成负数/
   // 小数(👍-3 / 👍1.5),污染显示 + "Helpful" 排序 + 缓存。canonicalize 为非负安全整数,否则 0。
   const rawThumbs = n.reactions?.totalCount;
-  const thumbsUp =
-    typeof rawThumbs === 'number' &&
-    Number.isSafeInteger(rawThumbs) &&
-    rawThumbs >= 0
-      ? rawThumbs
-      : 0;
+  const thumbsUp = isReviewCount(rawThumbs) ? rawThumbs : 0;
   return {
     title: clampStr(n.title, REVIEW_TITLE_MAX),
     body: clampStr(n.body, REVIEW_BODY_MAX),
