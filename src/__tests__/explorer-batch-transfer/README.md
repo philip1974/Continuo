@@ -22,12 +22,12 @@ FolderTree 有三个「把一批路径移动/复制进同一目录」的入口:�
 5. 目标名探测或 fs 调用 reject → `onException(err)`,不产生 unhandled rejection;规则 4 仍执行。
 6. 目标与源的相对位置(漏斗内判定,不靠调用方传参;拖动与粘贴同一行为,`canDrop` 与漏斗共用
    `path-utils.isDestInsideSource`):
-   - move 且源已在目标目录(`dirname(src)` 与 `destDir` 平台感知相等)→ 跳过(拖到原父目录 / 剪切后
-     粘贴回原目录是 no-op,不改名成 ` copy`、不提示、不刷新)。
-   - move 且目标是源本身或在其子树内 → 整批不触发 fs,`onItemFailed(src, 'FS_MOVE_INTO_SELF', …)`
-     (三语「不能把文件夹移动到它自身或子文件夹中」;此前落到 rename EINVAL →「文件 I/O 错误」)。
-   - copy 且目标是源本身或在其子树内 → 改投源的父目录,由 picker 生成 `A copy`(VSCode 同款;此前
-     fs.cp 报 ERR_FS_CP_EINVAL →「文件 I/O 错误」)。
+   (对齐 VSCode explorer 粘贴)
+   - 目标就是源本身 → 实际目标改为源的父目录:copy 由 picker 生成 `A copy`;move 于是落回原父目录 → no-op。
+   - move 且源已在(实际)目标目录(`dirname(src)` 与目标平台感知相等)→ 跳过(拖到原父目录 / 剪切后
+     粘贴回原目录 / 剪切 A 后粘贴到 A 都是 no-op,不改名成 ` copy`、不提示、不刷新)。
+   - 目标严格在源的子树内(move 或 copy)→ 整批不触发 fs,`onItemFailed(src, 'FS_MOVE_INTO_SELF', …)`
+     (三语「不能把文件夹移动或粘贴到它自己的子文件夹中」;此前 rename EINVAL / fs.cp ERR_FS_CP_EINVAL →「文件 I/O 错误」)。
 
 ### 规则(dropForeignFilesInto)
 

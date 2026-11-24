@@ -80,21 +80,21 @@ export async function transferEntriesInto(
   destDir: string,
   deps: BatchTransferDeps,
 ): Promise<void> {
-  // 结束时要刷新的目录:实际写入的目标目录(copy 进自身改投父目录时含该父目录)+ move 的源父目录。
+  // 结束时要刷新的目录:实际写入的目标目录(粘贴到源自身时改投其父目录)+ move 的源父目录。
   const toRefresh = new Set<string>();
   try {
+    // 对齐 VSCode(explorer paste):目标就是源本身 → 改投源的父目录(copy 生成 `A copy`;move 于是落回原父目录 → no-op)。
     // 先剔后代再判同父跳过:祖先因已在目标目录被跳过时,其后代也不该被单独移出来。
-    // move 已在目标目录 → no-op(拖到原父目录 / 剪切后粘贴回原目录;不跳过则 picker 见同名改成 ` copy`)。
-    const items = outermostPaths(srcs).filter(
-      (src) => !(kind === 'move' && pathEquals(dirname(src), destDir)),
-    );
-    if (kind === 'move') {
-      // 移进自身 / 子树:底层 rename 报 EINVAL → 被映射成误导的「文件 I/O 错误」。整批先判,不做半截。
-      const bad = items.find((src) => isDestInsideSource(src, destDir));
-      if (bad !== undefined) {
-        deps.onItemFailed(bad, ERROR_CODES.FS_MOVE_INTO_SELF, t('errors.FS_MOVE_INTO_SELF'));
-        return;
-      }
+    // move 已在(实际)目标目录 → no-op(拖到原父目录 / 剪切后粘贴回原目录;不跳过则 picker 见同名改成 ` copy`)。
+    const items = outermostPaths(srcs)
+      .map((src) => ({ src, dir: pathEquals(src, destDir) ? dirname(src) : destDir }))
+      .filter(({ src, dir }) => !(kind === 'move' && pathEquals(dirname(src), dir)));
+    // 目标严格在源内部(粘贴到自身的子文件夹):VSCode 报「要粘贴的文件是目标文件夹的上级」。move 底层 rename 报 EINVAL、
+    // copy 的 fs.cp 报 ERR_FS_CP_EINVAL,都会被映射成误导的「文件 I/O 错误」。整批先判,不做半截。
+    const bad = items.find(({ src, dir }) => isDestInsideSource(src, dir));
+    if (bad !== undefined) {
+      deps.onItemFailed(bad.src, ERROR_CODES.FS_MOVE_INTO_SELF, t('errors.FS_MOVE_INTO_SELF'));
+      return;
     }
     // 目标名每个目标目录只探测一次(listDir 快照)。
     const pickers = new Map<string, (name: string) => string>();
@@ -106,10 +106,7 @@ export async function transferEntriesInto(
       }
       return pick;
     };
-    await pickerFor(destDir);
-    for (const src of items) {
-      // copy 进自身 / 子树(fs.cp 报 ERR_FS_CP_EINVAL)→ 改投源的父目录,由 picker 生成 `A copy`。
-      const dir = kind === 'copy' && isDestInsideSource(src, destDir) ? dirname(src) : destDir;
+    for (const { src, dir } of items) {
       // dest = dir + src basename;已存在则自动加 ` copy` 后缀(picker 负责)。
       const dest = (await pickerFor(dir))(basenamePreserveTrailing(src));
       const r = kind === 'move' ? await deps.fs.move(src, dest) : await deps.fs.copy(src, dest);

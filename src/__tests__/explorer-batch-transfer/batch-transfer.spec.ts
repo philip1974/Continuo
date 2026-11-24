@@ -137,14 +137,12 @@ describe('transferEntriesInto — 目标与源的相对位置(粘贴 / 拖动共
     expect(spies.onItemFailed).not.toHaveBeenCalled();
   });
 
-  it('复制文件夹 A 后粘贴到其子目录 A/B → 同样改为父目录 `A copy`(不让 fs.cp 自我嵌套报 I/O 错误)', async () => {
+  it('复制文件夹 A 后粘贴到其子目录 A/B → 明确错误(FS_MOVE_INTO_SELF,VSCode 同款),整批不触发 fs', async () => {
     const { deps, spies } = makeDeps({ picker: pickerWith({ '/r': ['A'] }) });
     await transferEntriesInto('copy', ['/r/A', '/s/y.txt'], '/r/A/B', deps);
-    expect(spies.fs.copy.mock.calls).toEqual([
-      ['/r/A', '/r/A copy'],
-      ['/s/y.txt', '/r/A/B/y.txt'],
-    ]);
-    expect(spies.refreshDir.mock.calls.map((c) => c[0]).sort()).toEqual(['/r', '/r/A/B']);
+    expect(spies.fs.copy).not.toHaveBeenCalled();
+    expect(spies.onItemFailed.mock.calls[0]?.slice(0, 2)).toEqual(['/r/A', 'FS_MOVE_INTO_SELF']);
+    expect(spies.refreshDir).not.toHaveBeenCalled();
   });
 
   it('剪切文件夹 A 后粘贴到 A/B → 明确错误(FS_MOVE_INTO_SELF),不触发 fs、不刷新', async () => {
@@ -157,11 +155,12 @@ describe('transferEntriesInto — 目标与源的相对位置(粘贴 / 拖动共
     expect(spies.refreshDir).not.toHaveBeenCalled();
   });
 
-  it('剪切文件夹 A 后粘贴到 A 自身 → 同样 FS_MOVE_INTO_SELF', async () => {
+  it('剪切文件夹 A 后粘贴到 A 自身 → 目标改投父目录即原处,no-op(VSCode 同款),不报错、不改名', async () => {
     const { deps, spies } = makeDeps();
     await transferEntriesInto('move', ['/r/A'], '/r/A', deps);
     expect(spies.fs.move).not.toHaveBeenCalled();
-    expect(spies.onItemFailed.mock.calls[0]?.slice(0, 2)).toEqual(['/r/A', 'FS_MOVE_INTO_SELF']);
+    expect(spies.onItemFailed).not.toHaveBeenCalled();
+    expect(spies.onMoved).not.toHaveBeenCalled();
   });
 
   it('FS_MOVE_INTO_SELF 有三语本地化文案', () => {
@@ -174,7 +173,7 @@ describe('transferEntriesInto — 目标与源的相对位置(粘贴 / 拖动共
     const read = (f: string) =>
       readFileSync(join(__dirname, '..', '..', 'panels', 'Explorer', f), 'utf-8');
     expect(read('tree-config.ts')).toMatch(/isDestInsideSource\(srcId, destDir\)/);
-    expect(read('batch-transfer.ts')).toMatch(/isDestInsideSource\(src, destDir\)/);
+    expect(read('batch-transfer.ts')).toMatch(/isDestInsideSource\(src, dir\)/);
     expect(isDestInsideSource('/r/A', '/r/A')).toBe(true);
     expect(isDestInsideSource('/r/A', '/r/A/B')).toBe(true);
     expect(isDestInsideSource('/r/A', '/r/AB')).toBe(false);
