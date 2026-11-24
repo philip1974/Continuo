@@ -26,6 +26,7 @@ import { useT, t as translate } from '@/i18n';
 import { basenameForChrome } from './path-label';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
+import { createLatestGuard } from '@/lib/latest-wins';
 
 const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
 const EMPTY_STATUS_SPLIT = {
@@ -105,10 +106,10 @@ export function countAgentSessions(sessions: readonly TerminalSession[]): number
 
 // race(R92):revoke 代际。两次 revoke 并发时,失败回滚必须只由「最新」那次执行 —— 否则先发的
 // 迟到失败会用其调用开始时的旧快照把授权位写回 true,覆盖后发已成功撤销的界面状态(凭空显示一个不存在的授权)。
-let revokeGen = 0;
+const revokeGuard = createLatestGuard();
 
 async function handleRevokeAgentTerminals(): Promise<void> {
-  const myGen = ++revokeGen; // race(R92):本次 revoke 代际
+  const isLatest = revokeGuard.begin(); // race(R92):本次 revoke 代际
   // 本地先撤,UI 即时反馈;main 推 sessions_changed 后 sessions 也清空。
   // 放行的权威在 main,这里的授权位只决定撤销入口是否显示。撤销失败时 main 可能仍有授权(例如 IPC 没到达 main),
   // 所以失败回滚恢复**全部**域(含外部客户端):宁可多显示一个撤销入口,也不能把仍有效的授权藏起来、让用户无从撤销。
@@ -131,7 +132,7 @@ async function handleRevokeAgentTerminals(): Promise<void> {
   } catch (err) {
     // race(R92):仅当本次仍是最新 revoke(无更晚的 revoke 覆盖)才回滚/报错。更晚的成功 revoke
     // 已把状态正确置为 revoked,先发的迟到失败不得用旧快照把授权位翻回 true。
-    if (myGen !== revokeGen) return;
+    if (!isLatest()) return;
     // 只恢复、不降级:撤销在途期间用户若又新授权了某个域,失败回滚不能把它写回 false。
     for (const k of wasGranted) useAgentAuthStore.setState({ [k]: true });
     notify.error(translate('permissions.revoke_all.failed'), {
@@ -237,7 +238,7 @@ export function StatusBar() {
   // 复制时第一轮的 1500ms timeout 会在第二轮反馈刚显示后把状态清回 idle(SR/用户错过真实结果);
   // 慢 handleCopyMcpConfig 先后返回也可能旧结果覆盖新结果。
   const mcpCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mcpCopyTokenRef = useRef(0);
+  const [mcpCopyGuard] = useState(createLatestGuard);
   useEffect(
     () => () => {
       if (mcpCopyTimerRef.current !== null) clearTimeout(mcpCopyTimerRef.current);
@@ -245,16 +246,16 @@ export function StatusBar() {
     [],
   );
   const onCopyMcp = async () => {
-    const token = ++mcpCopyTokenRef.current;
+    const isLatest = mcpCopyGuard.begin();
     const r = await handleCopyMcpConfig();
     // 过期请求(其后已有更新的复制发起)→ 不更新状态,由最新请求负责。
-    if (token !== mcpCopyTokenRef.current) return;
+    if (!isLatest()) return;
     if (mcpCopyTimerRef.current !== null) clearTimeout(mcpCopyTimerRef.current);
     setMcpCopyState(r);
     mcpCopyTimerRef.current = setTimeout(() => {
       mcpCopyTimerRef.current = null;
       // 仅当仍是本次反馈(无更新复制)才清回 idle —— 旧 timer 不得清掉新反馈。
-      if (token === mcpCopyTokenRef.current) setMcpCopyState('idle');
+      if (isLatest()) setMcpCopyState('idle');
     }, 1500);
   };
   const mcpLabel =

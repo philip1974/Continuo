@@ -15,6 +15,7 @@ import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { fetchMarketplaceIndex, fetchPluginManifest } from './fetcher';
 import { isNewerVersion, isValidSemver } from './semver';
 import type { MarketplaceEntry } from './types';
+import { createLatestGuard } from '@/lib/latest-wins';
 
 // 边界(E234):manifest 拉取最大并发数。8-16 区间足以掩盖网络延迟又不打爆本地/远端。
 export const MAX_MANIFEST_FETCH_CONCURRENCY = 12;
@@ -49,7 +50,7 @@ interface UpdateState {
 // 单调代际:并发 refresh 时,慢的网络请求可能在快的之后才 resolve。捕获本次
 // 代际,只有仍是最新代际时才落库,避免过期结果覆盖更新的结果(mirror settings.store
 // 的 gen 乱序防护)。
-let refreshGen = 0;
+const refreshGuard = createLatestGuard();
 
 interface DismissAvailableUpdateResult {
   readonly target: AvailableUpdate;
@@ -97,7 +98,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     }),
 
   refresh: async () => {
-    const myGen = ++refreshGen;
+    const isLatest = refreshGuard.begin();
     // 没有可能的更新 → 清空(已为空则不通知订阅者)。
     const clearAvailable = (): void =>
       set((s) => (s.available.length === 0 ? s : { available: EMPTY_AVAILABLE_UPDATES }));
@@ -107,7 +108,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       const mgr = getUserPluginManager();
       const installed = mgr ? mgr.listAll() : EMPTY_INSTALLED_PLUGINS;
       if (installed.length === 0) {
-        if (myGen !== refreshGen) return;
+        if (!isLatest()) return;
         clearAvailable();
         return;
       }
@@ -124,7 +125,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         }
       }
       if (relevant === null) {
-        if (myGen !== refreshGen) return;
+        if (!isLatest()) return;
         clearAvailable();
         return;
       }
@@ -155,7 +156,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       }
 
       // race(R7):提交前用 live installed 重算,而非网络请求前拍下的旧 `installed` 快照。
-      // refreshGen 只防并发 refresh,卸载/更新不 bump gen;网络期间用户卸载插件后,旧快照
+      // refreshGuard 只防并发 refresh,卸载/更新不开新代际;网络期间用户卸载插件后,旧快照
       // 仍含该插件 → 会把已卸载插件重新加进 available(在 dismiss 之后落库 = 过期更新提示/
       // 角标复活)。重读当前已安装集合,卸载的插件不在其中即不会被重新加入。
       const liveMgr = getUserPluginManager();
@@ -185,7 +186,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         available === null ? EMPTY_AVAILABLE_UPDATES : available;
 
       // 更晚的 refresh 已开始 → 丢弃本次过期结果(由最新代际负责落库)
-      if (myGen !== refreshGen) return;
+      if (!isLatest()) return;
       set({ available: nextAvailable });
     } catch (err) {
       console.warn('[update-store] refresh failed', err);

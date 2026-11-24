@@ -9,6 +9,7 @@ import {
   type DebugVariable,
   type DebugViewEvent,
 } from '../../electron/shared/debug-view-channels';
+import { createLatestGuard } from '@/lib/latest-wins';
 
 export type {
   DebugBreakpoint,
@@ -48,7 +49,7 @@ type DebugState = {
 const EMPTY_DEBUG_SESSIONS = new Map<string, DebugSessionShadow>();
 let unsubscribeDebugEvents: (() => void) | null = null;
 /** 同步代际:resetDebugStoreForTest 之后迟到的 subscribe 快照不写回。 */
-let debugSyncGeneration = 0;
+const debugSyncGuard = createLatestGuard();
 
 function emptySession(id: string): DebugSessionShadow {
   return {
@@ -398,7 +399,7 @@ function hydrateFromSnapshot(data: unknown, touched: ReadonlySet<string>): void 
 // renderer 重载(Cmd+R)后 store 为空:subscribe 返回本窗口会话的快照(停点 + 断点),据此恢复。
 export function startDebugStoreSync(): void {
   if (unsubscribeDebugEvents) return;
-  const generation = ++debugSyncGeneration;
+  const isLatest = debugSyncGuard.begin();
   const touched = new Set<string>();
   let snapshotApplied = false;
   unsubscribeDebugEvents = coApi.debug.onEvent((event) => {
@@ -408,7 +409,7 @@ export function startDebugStoreSync(): void {
   void coApi.debug.subscribe().then(
     (result) => {
       snapshotApplied = true;
-      if (!result.ok || generation !== debugSyncGeneration) return;
+      if (!result.ok || !isLatest()) return;
       hydrateFromSnapshot(result.data, touched);
     },
     () => {
@@ -420,7 +421,7 @@ export function startDebugStoreSync(): void {
 export function resetDebugStoreForTest(): void {
   unsubscribeDebugEvents?.();
   unsubscribeDebugEvents = null;
-  debugSyncGeneration += 1;
+  debugSyncGuard.begin(); // 作废在途的 subscribe 快照
   useDebugStore.setState({
     sessions: EMPTY_DEBUG_SESSIONS,
     activeSessionId: null,

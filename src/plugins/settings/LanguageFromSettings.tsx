@@ -1,7 +1,7 @@
 // topic 16 i18n: Settings values store ↔ main settings store 桥。
 // 沿用 src/theme/binding.ts useThemeBinding 的模式。
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   useSettingValue,
@@ -11,6 +11,7 @@ import { useSettingsStore } from '@/stores/settings.store';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import { isLocale, type Locale } from '@shared/i18n-types';
+import { createLatestGuard } from '@/lib/latest-wins';
 
 const LANGUAGE_SETTING_ID = 'general.language';
 const LANGUAGE_DEFAULT: Locale = 'en';
@@ -25,7 +26,7 @@ export function LanguageFromSettings(): ReactNode {
   const setStoreLocale = useSettingsStore((s) => s.setLocale);
   // race(R1):单调请求 token —— 快速切换语言时多个 setLocale 并发,旧请求稍后失败不得
   // 用过期闭包覆盖后发成功的选择。仅最新请求的失败才反馈/回滚。
-  const latestReqRef = useRef(0);
+  const [localeReqGuard] = useState(createLatestGuard);
 
   // values 变化 → call main settings store setLocale（持久化进 settings.json + 广播）。
   // 必须 gate 到「确实有显式 stored value」(rawStored !== undefined):value 在 localStorage
@@ -39,17 +40,17 @@ export function LanguageFromSettings(): ReactNode {
       // throw,此前 void 丢弃 → 用户改语言后界面仍旧语言但控件显示新值,无反馈。catch 时
       // notify.error + 把控件值回滚到真实 storeLocale(保持一致,value===storeLocale 后 effect
       // 守卫不再重触发)。
-      const reqId = ++latestReqRef.current;
+      const isLatest = localeReqGuard.begin();
       setStoreLocale(value).catch(() => {
         // race(R1):乱序的旧请求失败(已有更新的切换发起)直接忽略,不反馈不回滚 —— 否则
         // 先发失败会反向覆盖后发成功。
-        if (reqId !== latestReqRef.current) return;
+        if (!isLatest()) return;
         notify.error(translate('settings.general.language.save_failed'));
         // 回滚读 live store locale(不用闭包捕获的旧 storeLocale,catch 异步执行时它可能已过期)。
         setValue(LANGUAGE_SETTING_ID, useSettingsStore.getState().locale);
       });
     }
-  }, [rawStored, value, storeLocale, setStoreLocale, setValue]);
+  }, [rawStored, value, storeLocale, setStoreLocale, setValue, localeReqGuard]);
 
   // 首次挂载：store locale 已是 main 真值（bootstrap inject），但 values 还没该 key →
   // 把 store.locale 写回 values（让 SegmentedControl 显示正确选中态）
