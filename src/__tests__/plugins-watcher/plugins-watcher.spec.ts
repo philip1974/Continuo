@@ -624,6 +624,25 @@ describe('createPluginsWatcher', () => {
     }
   });
 
+  // 候选口径与列举同一 helper(resolveContainedPluginMain):main 经链接解析到插件目录外 → 不算候选,
+  // 链接目标的 mtime 变化不触发广播(此前 watcher 只 stat 跟随链接,列举跳过的目录却进了签名)。
+  it('main.js 是指向插件目录外文件的符号链接 → 不算候选,目标变化不 fire', async () => {
+    const target = join(tmp, 'outside-main.js'); // baseDir 下的普通文件:不是插件目录,枚举时被跳过
+    writeFileSync(target, '/* outside */');
+    const dir = join(tmp, 'evil');
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ id: 'evil', name: 'E', version: '0.1.0' }));
+    symlinkSync(target, join(dir, 'main.js'));
+    const fn = vi.fn();
+    const w = createPluginsWatcher(tmp, fn);
+    await w.tick();
+    const t = (Date.now() + 5000) / 1000;
+    utimesSync(target, t, t);
+    await w.tick();
+    await w.tick();
+    expect(fn).not.toHaveBeenCalled();
+  });
+
   it('manifest.json 是指向插件目录内文件的符号链接 → 照常监控', async () => {
     const dir = join(tmp, 'linked');
     mkdirSync(dir);

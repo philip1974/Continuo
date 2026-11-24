@@ -431,52 +431,61 @@ async function staysInsidePluginDir(dir: string, filePath: string): Promise<bool
   }
 }
 
-/** 按 manifest.main(解析失败 → 默认 main.js)读 main 文本;越界 / 缺失 / 超限 → null。 */
-async function readPluginMainText(dir: string, manifestText: string): Promise<string | null> {
-  // 解析 manifest.main(若失败用默认 main.js,M20:共用 getPluginMainName)
-  let mainName = DEFAULT_PLUGIN_MAIN;
-  try {
-    mainName = getPluginMainName(JSON.parse(manifestText));
-  } catch {
-    // manifest 解析失败由 renderer 端 parseManifest 报错,我们继续给 mainText 尝试默认
-  }
-  const mainPath = resolvePluginMainPath(dir, mainName);
-  if (!mainPath || !(await staysInsidePluginDir(dir, mainPath))) return null;
-  // 边界(E24):main 超 8MiB(或缺失/不可读)→ 跳过整个 plugin。
-  return readFileCapped(mainPath, MAIN_MAX_BYTES);
-}
+type PluginMainResolution =
+  | { readonly ok: true; readonly mainPath: string; readonly stat: Stats }
+  | { readonly ok: false; readonly reason: 'bad-name' | 'unreachable' | 'not-file' | 'too-large' };
 
 /**
- * main 入口是否可用:与 readPluginMainText 同口径(同一 main 解析、越界 → 不可用、普通文件且 ≤ MAIN_MAX_BYTES、
- * 可打开),但只 open + fstat,不读全文。
+ * 插件 main 入口是否可用的唯一判定(列举 / 激活 / watcher / 安装共用,防口径分叉):入口名合法
+ *(resolvePluginMainPath)、真实路径仍在插件目录内(staysInsidePluginDir;缺失也算 unreachable)、
+ * 跟随链接后是普通文件且 ≤ MAIN_MAX_BYTES。stat 用于判定,不 open(FIFO 不会卡 open)。
  */
-async function isPluginMainAvailable(dir: string, manifestText: string): Promise<boolean> {
-  let mainName = DEFAULT_PLUGIN_MAIN;
-  try {
-    mainName = getPluginMainName(JSON.parse(manifestText));
-  } catch {
-    // 同 readPluginMainText:manifest 解析失败按默认 main.js
-  }
+async function resolveContainedPluginMain(dir: string, mainName: string): Promise<PluginMainResolution> {
   const mainPath = resolvePluginMainPath(dir, mainName);
-  if (!mainPath || !(await staysInsidePluginDir(dir, mainPath))) return false;
-  let fh: import('node:fs/promises').FileHandle;
+  if (!mainPath) return { ok: false, reason: 'bad-name' };
+  if (!(await staysInsidePluginDir(dir, mainPath))) return { ok: false, reason: 'unreachable' };
+  let stat: Stats;
   try {
-    // O_NONBLOCK:main 若是 FIFO(或指向 FIFO 的链接),阻塞 open 会永久占住 libuv 线程池线程。
-    fh = await openForReadNonBlocking(mainPath);
+    stat = await fs.stat(mainPath);
   } catch {
+    return { ok: false, reason: 'unreachable' };
+  }
+  if (!stat.isFile()) return { ok: false, reason: 'not-file' };
+  if (stat.size > MAIN_MAX_BYTES) return { ok: false, reason: 'too-large' };
+  return { ok: true, mainPath, stat };
+}
+
+/** manifest 文本里的入口名;解析失败按默认 main.js(manifest 错误由 renderer 端 parseManifest 报)。 */
+function mainNameFromManifestText(manifestText: string): string {
+  try {
+    return getPluginMainName(JSON.parse(manifestText)); // M20:共用 getPluginMainName
+  } catch {
+    return DEFAULT_PLUGIN_MAIN;
+  }
+}
+
+/** 按 manifest.main 读 main 文本;不可用(见 resolveContainedPluginMain)/ 读失败 → null。 */
+async function readPluginMainText(dir: string, manifestText: string): Promise<string | null> {
+  const main = await resolveContainedPluginMain(dir, mainNameFromManifestText(manifestText));
+  if (!main.ok) return null;
+  // 边界(E24):仍走有界读 —— 判定与读取之间文件可能被换大。
+  return readFileCapped(main.mainPath, MAIN_MAX_BYTES);
+}
+
+/** main 入口是否可用:resolveContainedPluginMain 判定 + 可打开(读权限),不读全文。 */
+async function isPluginMainAvailable(dir: string, manifestText: string): Promise<boolean> {
+  const main = await resolveContainedPluginMain(dir, mainNameFromManifestText(manifestText));
+  if (!main.ok) {
+    if (main.reason === 'too-large') console.warn(`[plugins] 跳过超大 main(> ${MAIN_MAX_BYTES}): ${dir}`);
     return false;
   }
   try {
-    const st = await fh.stat();
-    if (st.size > MAIN_MAX_BYTES) {
-      console.warn(`[plugins] 跳过超大文件(> ${MAIN_MAX_BYTES}): ${mainPath}`);
-      return false;
-    }
-    return st.isFile();
+    // O_NONBLOCK:判定后被换成 FIFO 时,阻塞 open 会永久占住 libuv 线程池线程。
+    const fh = await openForReadNonBlocking(main.mainPath);
+    await fh.close().catch(() => {});
+    return true;
   } catch {
     return false;
-  } finally {
-    await fh.close().catch(() => {});
   }
 }
 
@@ -1272,20 +1281,18 @@ export async function installFromGit(
       );
     }
 
+    // 与列举同口径(resolveContainedPluginMain):列举会跳过的 main(非法名 / 越界 / 非普通文件 / 超 8MiB)
+    // 当场拒装,否则报「安装成功」而插件下次扫描静默消失。
     const mainName = getPluginMainName(manifest); // M20:共用 getPluginMainName
-    const mainPath = resolvePluginMainPath(cloneDir, mainName);
-    if (!mainPath) {
-      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口非法: ${mainName}`);
-    }
-    // 须是普通文件:fs.access 对目录也成功 → 报安装成功,但下次扫描读 main 失败静默跳过。
-    let mainIsFile = false;
-    try {
-      mainIsFile = (await fs.stat(mainPath)).isFile();
-    } catch {
-      /* 不存在/不可读 → 下方 BAD_MAIN */
-    }
-    if (!mainIsFile) {
-      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口不存在或不是文件: ${mainName}`);
+    const main = await resolveContainedPluginMain(cloneDir, mainName);
+    if (!main.ok) {
+      const why = {
+        'bad-name': '入口名非法',
+        unreachable: '不存在或越界',
+        'not-file': '不是普通文件',
+        'too-large': `超过 ${MAIN_MAX_BYTES / (1024 * 1024)}MiB`,
+      }[main.reason];
+      throw codedError(ERROR_CODES.BAD_MAIN, `main 入口不可用(${why}): ${mainName}`);
     }
 
     // 验证已通过 → 收窄成 string 常量,带进下面的闭包。
@@ -1778,23 +1785,18 @@ export function createPluginsWatcher(
     }
     if (cached.info === null) return null;
 
-    try {
-      const mainPath = resolvePluginMainPath(dir, cached.info.mainName);
-      if (!mainPath) return null;
-      const fileStat = await fs.stat(mainPath);
-      // 与列举 isPluginMainAvailable 同口径(普通文件且 ≤ MAIN_MAX_BYTES),否则重复 id 时列举跳过的无效目录
-      // 会被算作候选、进签名与记账(误广播或漏判)。只用 stat 结果判定,不为每插件每轮 open;「可打开(读权限)」
-      // 无法从 stat 廉价等价判断,取舍:不校验(插件目录归用户所有,main 有 stat 无读权限极罕见)。
-      if (!fileStat.isFile() || fileStat.size > MAIN_MAX_BYTES) return null;
-      return {
-        name,
-        pluginId: cached.info.pluginId,
-        mtime: fileStat.mtimeMs,
-        manifestHash: cached.info.manifestHash,
-      };
-    } catch {
-      return null;
-    }
+    // 与列举同一判定(resolveContainedPluginMain:包含校验 + 普通文件且 ≤ MAIN_MAX_BYTES),否则重复 id 时列举
+    // 跳过的无效目录(含 main 链到目录外)会被算作候选、进签名与记账。包含校验每轮都做(每插件 2 次 realpath):
+    // main / 中间目录换成外链不改 manifest 签名,按签名缓存会漏判。不为每插件每轮 open;「可打开(读权限)」
+    // 无法从 stat 廉价等价判断,取舍:不校验(插件目录归用户所有,main 有 stat 无读权限极罕见)。
+    const main = await resolveContainedPluginMain(dir, cached.info.mainName);
+    if (!main.ok) return null;
+    return {
+      name,
+      pluginId: cached.info.pluginId,
+      mtime: main.stat.mtimeMs,
+      manifestHash: cached.info.manifestHash,
+    };
   };
 
   const runScan = async (): Promise<void> => {

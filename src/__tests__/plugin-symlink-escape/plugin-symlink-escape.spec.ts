@@ -9,6 +9,7 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -126,6 +127,25 @@ describe('安装:克隆树含符号链接 → 拒绝', () => {
     const err = await installFromGit(URL, baseDir).catch((e: unknown) => e as Error & { code?: string });
     expect(err).toMatchObject({ code: 'PLUGIN_SYMLINK_REJECTED' });
     expect((err as Error).message).not.toContain(SECRET);
+  });
+
+  it('main.js 是指向仓库外的链接 → 拒绝安装,不落地', async () => {
+    ctl.populate = (d) => {
+      rmSync(path.join(d, 'main.js'));
+      symlinkSync(path.join(outside, 'secret.txt'), path.join(d, 'main.js'));
+    };
+    await expect(installFromGit(URL, baseDir)).rejects.toMatchObject({ code: 'PLUGIN_SYMLINK_REJECTED' });
+    expect(readdirSync(baseDir)).toEqual([]);
+  });
+
+  // 安装与列举同口径(resolveContainedPluginMain):main 超 8MiB 时列举会跳过 → 安装须当场拒绝,
+  // 否则报「安装成功」而插件静默不出现。
+  it('main 超 8MiB → BAD_MAIN 拒绝安装,不落地', async () => {
+    ctl.populate = (d) => {
+      truncateSync(path.join(d, 'main.js'), 8 * 1024 * 1024 + 1);
+    };
+    await expect(installFromGit(URL, baseDir)).rejects.toMatchObject({ code: 'BAD_MAIN' });
+    expect(readdirSync(baseDir)).toEqual([]);
   });
 
   it('无符号链接的仓库照常安装', async () => {

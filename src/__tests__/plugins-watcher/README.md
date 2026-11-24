@@ -42,8 +42,9 @@
 - watcher 只决定**是否广播**,不选目录:选哪个目录由 renderer `PluginManager.selectPluginDirs` 统一决定(它还看
   manifest schema 与 minLMVersion)。多个目录声明同一 manifest.id 时,每个 id 记一份全部候选目录
   (目录名 + main mtime + manifest 哈希)的合并签名:任一候选目录的 main / manifest 变化、候选目录增减 → fire 一次
-- 候选口径与列举 `isPluginMainAvailable` 一致:main 须为普通文件且 ≤8MiB(仅凭 stat 判定,不逐轮 open;
-  读权限不校验),否则不算候选 —— 首选目录 main 无效时合法后备目录的 main 变化照常 fire
+- 候选口径与列举共用 `resolveContainedPluginMain`:main 真实路径须在插件目录内、普通文件且 ≤8MiB(包含校验每轮做,
+  仅凭 realpath + stat 判定,不逐轮 open;读权限不校验),否则不算候选 —— 首选目录 main 无效时合法后备目录的
+  main 变化照常 fire;main 链到目录外 → 不算候选,链接目标变化不 fire
 - 各目录都未变化 → 多轮扫描都不 fire(此前 mtime 表以 id 为键,两目录轮流写入 → 每轮都广播)
 - 候选目录增减(新增一个声明该 id 的目录 / 某候选目录消失)→ fire 一次,之后稳定
 - 记账(陈旧判定、tombstone 索引、「目录改声明新 id」)覆盖**全部**候选目录:任一候选目录(含 tombstone 的)改声明

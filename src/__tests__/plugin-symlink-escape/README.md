@@ -13,6 +13,8 @@
 
 - **安装**:克隆树(不含 `.git`)里出现任何符号链接(文件 / 目录 / 悬空;树内树外不区分)→
   `installFromGit` 抛 `PLUGIN_SYMLINK_REJECTED`,在读 manifest 之前中止,不落地、无残留。
+- **安装与列举同口径**:main 入口用与列举 / 激活 / watcher 同一判定(`resolveContainedPluginMain`:入口名合法、
+  真实路径在目录内、普通文件且 ≤8MiB);不满足 → `BAD_MAIN` 拒装(如 main 超 8MiB),不出现「安装成功但列举跳过」。
 - **`plugin-data:load`**:`data.json` 是符号链接或硬链接 → 当作无数据返回 `{}`,不读目标、不生成 `.corrupt`。
 - **`plugin-data:save-serialized`**:`data.json` 是符号链接(含悬空)→ 先删掉链接再写,结果是插件目录里的普通文件;
   链接目标不被改写,也不在目标旁留锁目录。
