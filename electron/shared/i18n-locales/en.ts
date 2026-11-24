@@ -497,6 +497,7 @@ export const en = {
   'marketplace.installed_pending_restart': 'Installed (restart pending)',
   'marketplace.install_success': 'Installed {name} v{version} — restart Continuo to activate',
   'marketplace.install_failed_code': 'Install failed [{code}] {message}',
+  'marketplace.install_already_installed': '{name} is already installed (possibly from another window) — restart Continuo to load it',
   'marketplace.update_to': 'Update to v{version}',
   'marketplace.updating': 'Updating…',
   'marketplace.update_success': 'Updated to {name} v{version} — reloaded',

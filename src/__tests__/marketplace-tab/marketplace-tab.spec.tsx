@@ -510,6 +510,22 @@ describe('MarketplaceTab — 安装按钮', () => {
     expect(statuses.some((s) => (s.textContent ?? '').includes('安装中'))).toBe(true);
   });
 
+  // 全新安装撞 EEXIST(别的窗口已装、本窗口列表里没有,待重启记录不跨窗口):如实说明已安装、重启后加载,而非报
+  // 「文件已存在」(本窗口没有它,用户无法「卸载后再装」)。
+  it('卡片安装返回 EEXIST → 提示已安装、重启后加载(非错误)', async () => {
+    const installFromGit = vi.fn().mockResolvedValue({ ok: false, code: 'EEXIST', message: 'exists' });
+    installApi(installFromGit);
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'Alpha' })]);
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('Alpha'));
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
+    );
+    await waitFor(() => expect(container.textContent).toContain('Alpha 已安装(可能是在其它窗口安装的)'));
+    expect(container.textContent).not.toContain('文件已存在');
+    expect(container.querySelector('[role=alert]')?.textContent ?? '').not.toContain('Alpha 已安装');
+  });
+
   // race(R8):卡片安装 handler 须同步 in-flight 闸门 —— 同一事件循环内双击(render disabled 尚未
   // 生效)不得启动两次 installFromGit(主进程双 clone,第二个 EEXIST 覆盖成功为失败)。
   it('R8 卡片安装同 tick 双击 → installFromGit 只调一次(同步单飞)', async () => {

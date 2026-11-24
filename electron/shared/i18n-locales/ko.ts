@@ -471,6 +471,7 @@ export const ko: Record<TranslationKey, string> = {
   'marketplace.installed_pending_restart': '설치됨 (재시작 대기)',
   'marketplace.install_success': '{name} v{version} 설치 완료 — Continuo 재시작 후 활성화',
   'marketplace.install_failed_code': '설치 실패 [{code}] {message}',
+  'marketplace.install_already_installed': '{name}은(는) 이미 설치되어 있습니다(다른 창에서 설치했을 수 있음) — Continuo를 재시작하면 로드됩니다',
   'marketplace.update_to': 'v{version}로 업데이트',
   'marketplace.updating': '업데이트 중…',
   'marketplace.update_success': '{name} v{version}로 업데이트됨 — 다시 로드됨',

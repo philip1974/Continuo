@@ -468,6 +468,7 @@ export const zh: Record<TranslationKey, string> = {
   'marketplace.installed_pending_restart': '已安装（待重启）',
   'marketplace.install_success': '已安装 {name} v{version} — 重启 Continuo 后激活',
   'marketplace.install_failed_code': '安装失败 [{code}] {message}',
+  'marketplace.install_already_installed': '{name} 已安装(可能是在其它窗口安装的)— 重启 Continuo 后加载',
   'marketplace.update_to': '更新到 v{version}',
   'marketplace.updating': '更新中…',
   'marketplace.update_success': '已更新到 {name} v{version} — 已重新加载',

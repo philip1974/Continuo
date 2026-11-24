@@ -185,21 +185,26 @@ export function MarketplaceTab() {
       // a11y(A85,A84 同族):不把装饰性 ✘ 拼进 message —— 失败严重度由 isError+role=alert 表达。
       const r = await installFromGitLocalized(entryToGitUrl(entry), isUpdate, entryInstallOptions(entry));
       const success = r.ok;
+      // 全新安装撞 EEXIST:插件已在盘上但不在本窗口列表(别的窗口刚装、要重启才进列表;待重启记录不跨窗口)→ 如实说明
+      // 已安装、重启后加载,不报「文件已存在」这类无从下手的错误(本窗口列表里没有它,用户也没法「卸载后再装」)。
+      const alreadyInstalled = !r.ok && !isUpdate && r.code === 'EEXIST';
       const msg = r.ok
         ? translate(isUpdate ? 'marketplace.update_success' : 'marketplace.install_success', {
             name: r.data.name,
             version: r.data.version,
           })
-        : translate(isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code', {
-            code: r.code,
-            message: r.message,
-          });
+        : alreadyInstalled
+          ? translate('marketplace.install_already_installed', { name: entry.name })
+          : translate(isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code', {
+              code: r.code,
+              message: r.message,
+            });
       installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
       // 已在列表(更新 / 覆盖重装)不记待重启,见 recordPendingInstall。
       if (r.ok) recordPendingInstall(r.data);
       setInstall((prev) => {
         const nextMsgs = new Map(prev.msgs);
-        nextMsgs.set(entry.id, { text: msg, isError: !success });
+        nextMsgs.set(entry.id, { text: msg, isError: !success && !alreadyInstalled });
         return { busy: null, msgs: nextMsgs };
       });
       return success;
