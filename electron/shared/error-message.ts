@@ -25,12 +25,8 @@ export function capErrorText(s: string, max: number): string {
 }
 
 /**
- * 抛出值(catch 的 unknown)的稳定错误码:IPC reject / main 抛出的 Error 带 `code`;没有则归为
- * `'EXCEPTION'`。renderer 各 catch 分支此前逐处手写 `(err as { code?: string })?.code ?? 'EXCEPTION'`。
- */
-/**
  * catch 到的任意值里的字符串 `code` / `message`(null / undefined / 原始值安全;非字符串字段视为缺失)。IPC 通用兜底
- *(safe-handle)与 MCP 工具错误(mcp-host)共用 —— 前者此前直接 `(err as {...}).code`,handler `throw null` 时整理错误
+ *(safe-handle)、MCP 工具错误(mcp-host)与插件 MCP 回包(plugin-mcp-invoke-bridge)共用 —— 前者此前直接 `(err as {...}).code`,handler `throw null` 时整理错误
  * 本身再抛 TypeError。上限与回退文案由调用方各自决定。
  */
 export function thrownFields(err: unknown): { readonly code?: string; readonly message?: string } {
@@ -42,6 +38,10 @@ export function thrownFields(err: unknown): { readonly code?: string; readonly m
   };
 }
 
+/**
+ * 抛出值(catch 的 unknown)的稳定错误码:IPC reject / main 抛出的 Error 带 `code`;没有则归为
+ * `'EXCEPTION'`。renderer 各 catch 分支此前逐处手写 `(err as { code?: string })?.code ?? 'EXCEPTION'`。
+ */
 export function errorCodeOf(err: unknown): string {
   return (err as { code?: string } | null | undefined)?.code ?? 'EXCEPTION';
 }

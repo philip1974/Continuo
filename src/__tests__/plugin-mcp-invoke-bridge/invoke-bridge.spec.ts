@@ -252,6 +252,27 @@ describe('startPluginMcpInvokeBridge', () => {
     ]);
   });
 
+  // 插件 run() throw null / undefined:catch 分支整理错误时不得再抛(否则不回包,main 空等 INVOKE_TIMEOUT)。
+  it.each([null, undefined])('run() 抛 %s → 立即回 UNKNOWN / unknown error', async (thrown) => {
+    const api = makeApi();
+    Object.defineProperty(window, 'api', {
+      value: { pluginMcp: api },
+      writable: true,
+      configurable: true,
+    });
+    captureLmApi();
+    startPluginMcpInvokeBridge(
+      fakeRegistry(async () => {
+        throw thrown;
+      }),
+    );
+    api.emit({ requestId: 'rn', name: 't', input: null });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(api.replies).toEqual([
+      { requestId: 'rn', ok: false, code: 'UNKNOWN', message: 'unknown error' },
+    ]);
+  });
+
   it('返回的 unsub 调用 → 解订阅', () => {
     const api = makeApi();
     Object.defineProperty(window, 'api', {

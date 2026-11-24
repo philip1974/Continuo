@@ -13,6 +13,7 @@ import {
 import { PLUGIN_MCP_ERROR_CODES } from '../../electron/shared/plugin-mcp-channels';
 import { coApi } from '@/lib/co-api';
 import type { ContinuoApi } from '../../electron/preload';
+import { thrownFields } from '../../electron/shared/error-message';
 
 // 直接取 preload 的签名(此前手抄一份)。
 type PluginMcpPreloadApi = Pick<ContinuoApi['pluginMcp'], 'onInvoke' | 'replyInvoke'>;
@@ -90,7 +91,7 @@ export function startPluginMcpInvokeBridge(
       })
       .catch((err: unknown) => {
         if (!active) return;
-        const e = err as { code?: unknown; message?: unknown };
+        const e = thrownFields(err); // 插件 run() 可 throw null:直接读 .code 会再抛,回包丢失、main 空等超时
         // 边界(E263,E262 兄弟 / 校验太晚):catch 分支此前把 err.code/err.message **原样** replyInvoke,
         // 而 code≤256/message≤8192 的校验在 main 侧、preload→main IPC 之后才生效 → 插件 run() 抛超长
         // Error.message/code 仍先跨 IPC 放大内存/卡顿。发 IPC 前用 makeInvokeErrorReply 裁剪到 schema 同源
@@ -98,8 +99,8 @@ export function startPluginMcpInvokeBridge(
         api.replyInvoke(
           makeInvokeErrorReply(
             valid.requestId,
-            typeof e.code === 'string' ? e.code : 'UNKNOWN',
-            typeof e.message === 'string' ? e.message : 'unknown error',
+            e.code ?? 'UNKNOWN',
+            e.message ?? 'unknown error',
           ),
         );
       });
