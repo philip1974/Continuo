@@ -31,6 +31,7 @@
 - 调 `fs.rename(oldPath, newName)`
 - 成功 → `tree.invalidateChildrenIds(dirname(oldPath))` → 返 `{ ok, newPath }`
 - 失败 → 不刷,返 `{ ok: false, code, message }`(透传 IpcFail)
+- IPC reject → 同样返结构化失败(code 取 err.code ?? 'EXCEPTION',同 createNewFile / createNewDir),helper 恒返回 ActionResult
 
 ### removeItems(paths, deps, tree)
 - 逐项调 `fs.trash(p)`(移到系统回收站)

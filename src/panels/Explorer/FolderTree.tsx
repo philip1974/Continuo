@@ -464,8 +464,8 @@ export function FolderTree({ root }: { root: string }) {
           // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions
           void (async () => {
             const oldPath = item.getId();
-            // a11y(A133,A50 同族):try/catch 包住 —— renameItem 的 fs.rename IPC reject 此前
-            // 被 fire-and-forget void 丢弃(只处理 ok:false),键盘用户重命名异常时无反馈。
+            // a11y(A133,A50 同族):renameItem 已把 IPC reject 归为 ok:false;try/catch 兜的是其后的 editor /
+            // 剪贴板同步抛错 —— fire-and-forget 下不兜即 unhandled rejection、用户无反馈。
             try {
               const r = await renameItem(
                 oldPath,

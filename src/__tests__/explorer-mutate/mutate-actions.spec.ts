@@ -64,6 +64,18 @@ describe('renameItem', () => {
     expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
   });
 
+  it('IPC reject → 返结构化失败(同 createNewFile / createNewDir),不刷、不抛', async () => {
+    const fs = makeFs({
+      rename: vi.fn(async () => {
+        throw Object.assign(new Error('ipc down'), { code: 'EIO' });
+      }),
+    });
+    const tree = makeTree();
+    const r = await renameItem('/x/a', 'b', { fs }, tree);
+    expect(r).toEqual({ ok: false, code: 'EIO', message: 'ipc down' });
+    expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
+  });
+
   it('newName 与 oldName 同名 → 仍调 fs.rename(由 IPC 层判定)', async () => {
     const fs = makeFs();
     const tree = makeTree();

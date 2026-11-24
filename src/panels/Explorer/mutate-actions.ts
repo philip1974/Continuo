@@ -52,7 +52,13 @@ export async function renameItem(
   deps: MutateDeps,
   tree: TreeMutationApi,
 ): Promise<ActionResult<{ newPath: string }>> {
-  const r = await deps.fs.rename(oldPath, newName);
+  // IPC reject 归类成结构化失败(同 createEntry),helper 恒返回 ActionResult。
+  let r;
+  try {
+    r = await deps.fs.rename(oldPath, newName);
+  } catch (err) {
+    return toActionFail(err);
+  }
   if (!r.ok) return { ok: false, code: r.code, message: r.message };
   tree.invalidateChildrenIds(dirname(oldPath));
   return { ok: true, newPath: r.data };
