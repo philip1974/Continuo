@@ -391,6 +391,10 @@
 
 - [`socket-safety.spec.ts`](./ct-b3-socket-safety/socket-safety.spec.ts)
 
+## [debounce(尾随防抖,可选 maxWait)](./debounce/README.md)
+
+- [`debounce.spec.ts`](./debounce/debounce.spec.ts)
+
 ## [装饰层契约 (M4)](./decor-contracts/README.md) `[contract]`
 
 - [`beams-reduced-motion-render.spec.tsx`](./decor-contracts/beams-reduced-motion-render.spec.tsx)

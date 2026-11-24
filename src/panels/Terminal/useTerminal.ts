@@ -52,6 +52,7 @@ import {
 } from './terminal-search-state';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
+import { debounce } from '@/lib/debounce';
 
 
 export interface SearchApi {
@@ -503,15 +504,9 @@ export function useTerminal(termId: string) {
     // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS / CWD_REPORT_MAX_WAIT_MS):只发窗口内最新值,
     // 且与上次已发送值不同才发。
     let lastSentCwd: string | undefined;
-    let pendingCwd: string | undefined;
-    let cwdTimer: ReturnType<typeof setTimeout> | null = null;
-    let cwdFirstAt: number | undefined; // 本轮(上次发送之后)首个 OSC7 时刻,用于 maxWait 截止
-    const flushCwd = () => {
-      cwdTimer = null;
-      cwdFirstAt = undefined;
-      const cwd = pendingCwd;
-      pendingCwd = undefined;
-      if (cwd === undefined || cwd === lastSentCwd) return;
+    const reportCwd = debounce(
+      (cwd: string) => {
+        if (cwd === lastSentCwd) return;
       lastSentCwd = cwd;
       // 发送失败(ok:false / reject)→ 复位去重基线,否则同一 cwd 之后永不重发、main 停在旧 cwd。
       // 仅当基线仍是本值时复位:期间已发出更新的 cwd 则保持其去重。
@@ -523,20 +518,13 @@ export function useTerminal(termId: string) {
           if (!r.ok) forget();
         })
         .catch(forget);
-    };
+      },
+      CWD_REPORT_DEBOUNCE_MS,
+      { maxWait: CWD_REPORT_MAX_WAIT_MS },
+    );
     const osc7Disposable = registerOsc7Cwd(
       term,
-      (cwd) => {
-        pendingCwd = cwd;
-        if (cwdTimer !== null) clearTimeout(cwdTimer);
-        const now = Date.now();
-        cwdFirstAt ??= now;
-        const wait = Math.max(
-          0,
-          Math.min(CWD_REPORT_DEBOUNCE_MS, cwdFirstAt + CWD_REPORT_MAX_WAIT_MS - now),
-        );
-        cwdTimer = setTimeout(flushCwd, wait);
-      },
+      reportCwd,
       // 测试桩常不带 system → 可选链。
       { acceptedHosts: osc7AcceptedHosts(coApi.system?.hostname) },
     );
@@ -712,7 +700,7 @@ export function useTerminal(termId: string) {
         onDataDisposable.dispose();
         disposePasteSanitizer();
         osc7Disposable.dispose();
-        if (cwdTimer !== null) clearTimeout(cwdTimer); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
+        reportCwd.cancel(); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
         searchResultsDisposable.dispose();
         ro.disconnect();
         resizeDebouncer.dispose();

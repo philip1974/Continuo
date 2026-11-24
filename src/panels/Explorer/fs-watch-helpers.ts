@@ -1,5 +1,7 @@
 // useFsWatcher 用到的纯函数。抽出来便于单测。
 
+import { debounce, type DebouncedFn } from '@/lib/debounce';
+
 export interface SetDiff<T> {
   added: ReadonlySet<T>;
   removed: ReadonlySet<T>;
@@ -55,27 +57,28 @@ export function makeDebouncePerPath(
   delayMs: number,
   maxWaitMs?: number,
 ): PerPathDebouncer {
-  // firstAt:本轮(上次调用 fn 之后)首次触发时刻,用于 maxWait 截止。
-  const timers = new Map<string, { t: ReturnType<typeof setTimeout>; firstAt: number }>();
+  // 每个 path 一个 debounce 实例(含 maxWait 截止);触发后移除,下次同 path 重新开始一轮。
+  const perPath = new Map<string, DebouncedFn<[]>>();
 
   const debounced = (path: string) => {
-    const existing = timers.get(path);
-    if (existing) clearTimeout(existing.t);
-    const firstAt = existing?.firstAt ?? Date.now();
-    const wait =
-      maxWaitMs === undefined
-        ? delayMs
-        : Math.max(0, Math.min(delayMs, firstAt + maxWaitMs - Date.now()));
-    const t = setTimeout(() => {
-      timers.delete(path);
-      fn(path);
-    }, wait);
-    timers.set(path, { t, firstAt });
+    let d = perPath.get(path);
+    if (!d) {
+      d = debounce(
+        () => {
+          perPath.delete(path);
+          fn(path);
+        },
+        delayMs,
+        maxWaitMs === undefined ? {} : { maxWait: maxWaitMs },
+      );
+      perPath.set(path, d);
+    }
+    d();
   };
 
   debounced.cancel = () => {
-    for (const e of timers.values()) clearTimeout(e.t);
-    timers.clear();
+    for (const d of perPath.values()) d.cancel();
+    perPath.clear();
   };
 
   return debounced as PerPathDebouncer;
