@@ -95,6 +95,9 @@ function NumberSettingInput({
 
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
 const RESET_DEFAULT_ICON = <ResetIcon size={12} />;
+/** 设置项主体布局:窄于 32rem(行自身宽度)上下排列,否则左右并排(控件靠右)。导出供规范断言。 */
+export const SETTING_ROW_LAYOUT_CLASS_NAME =
+  'flex flex-col items-start gap-3 @lg:flex-row @lg:justify-between @lg:gap-6';
 
 interface SettingItemRowProps {
   readonly spec: SettingItemSpec;
@@ -161,23 +164,27 @@ export function SettingItemRow({
     return options;
   }, [locale, spec.enum, spec.type, t]);
 
+  // 窄宽(设置面板被挤到几百像素)时按行自身宽度(容器查询 @container)改为上下排列:标题 / 描述在上、控件
+  // 在下(VSCode 设置项本就是上下排列);宽于 32rem 才左右并排。左右并排时控件区 shrink-0,若不换行,
+  // 左侧只剩几十像素 → 描述一行一个词、标题被截断。标题行可换行;id 徽标过长时省略号截断而不撑破行。
   return (
-    <div className="flex items-start justify-between gap-6 border-b border-line/50 py-5 last:border-b-0">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span id={titleId} className="text-sm text-fg">
-            {title}
-          </span>
-          {/* id chip:design Badge xs(uppercase)紧贴 title 显示,取代独占一行 */}
-          <Badge size="xs" className="uppercase tracking-wider">
-            <code>{spec.id}</code>
-          </Badge>
+    <div className="@container border-b border-line/50 py-5 last:border-b-0">
+      <div className={SETTING_ROW_LAYOUT_CLASS_NAME}>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span id={titleId} className="min-w-0 break-words text-sm text-fg">
+              {title}
+            </span>
+            {/* id chip:design Badge xs(uppercase)紧贴 title 显示,取代独占一行 */}
+            <Badge size="xs" className="min-w-0 max-w-full uppercase tracking-wider">
+              <code className="truncate">{spec.id}</code>
+            </Badge>
+          </div>
+          {description && (
+            <div className="mt-1 text-xs text-fg-muted">{description}</div>
+          )}
         </div>
-        {description && (
-          <div className="mt-1 text-xs text-fg-muted">{description}</div>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
         {spec.type === 'boolean' && (
           // a11y(A4):role=switch 须有可访问名(= 设置标题),否则 AT 只读「switch checked」不知切换哪个设置。
           <Switch
@@ -244,6 +251,7 @@ export function SettingItemRow({
         >
           {RESET_DEFAULT_ICON}
         </IconButton>
+        </div>
       </div>
     </div>
   );

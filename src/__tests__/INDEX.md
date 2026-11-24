@@ -1381,6 +1381,10 @@
 
 - [`setting-tab-registry.spec.ts`](./setting-tab-registry/setting-tab-registry.spec.ts)
 
+## [设置页窄宽布局(settings-narrow-layout)](./settings-narrow-layout/README.md)
+
+- [`settings-narrow-layout.spec.tsx`](./settings-narrow-layout/settings-narrow-layout.spec.tsx)
+
 ## [settings-panel(设置 Panel · VSCode 同款)](./settings-panel/README.md)
 
 - [`settings-panel.spec.tsx`](./settings-panel/settings-panel.spec.tsx)

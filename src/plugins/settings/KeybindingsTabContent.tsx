@@ -35,6 +35,11 @@ const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
 const EMPTY_KEYBINDING_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const KEYBINDING_ROW_CLASS_NAME = 'flex items-center gap-3 px-4 py-3 text-xs';
 const KEYBINDING_ROW_BORDER_CLASS_NAME = `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
+// 命令标题占据剩余宽度并可省略号截断(min-w-0 flex-1);命令 id 徽标可收缩(最多占 40%),列表窄于
+// 28rem 时隐藏;键帽 / 编辑 / 重置按钮均 shrink-0 始终完整可见。
+export const KEYBINDING_TITLE_CLASS_NAME = 'min-w-0 flex-1 truncate text-sm text-fg';
+export const KEYBINDING_ID_BADGE_CLASS_NAME =
+  'min-w-0 max-w-[40%] uppercase tracking-wider @max-md:hidden';
 const EDIT_HOTKEY_ICON = (
   <svg
     viewBox="0 0 16 16"
@@ -280,7 +285,7 @@ export function KeybindingsTabContent() {
           value={query}
           onChange={(e) => setQuery(clampSearchQuery(e.target.value))}
         />
-        <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
           <span>{t('keybindings.total_summary_prefix', { count: totalWithHotkey })}</span>
           {COMMAND_PALETTE_HOTKEY_PARTS.map((p, i) => (
             <KeyCap key={i}>{p}</KeyCap>
@@ -333,15 +338,18 @@ export function KeybindingsTabContent() {
               <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
                 {bucket.category}
               </h3>
-              <ul className="overflow-hidden rounded-md border border-line bg-panel-soft/40">
+              {/* @container:行内按列表自身宽度决定是否显示命令 id 徽标(窄时隐藏,标题 / 键帽 / 编辑按钮优先)。 */}
+              <ul className="@container overflow-hidden rounded-md border border-line bg-panel-soft/40">
                 {bucket.items.map((d, idx) => {
                   const cmd = d.cmd;
                   const { hotkeyParts, isOverridden } = d; // 预计算(打磨 R29)
                   return (
                     <li key={cmd.id} className={keybindingRowClassName(idx)}>
-                      <span className="truncate text-sm text-fg">{d.displayTitle}</span>
-                      <Badge size="xs" className="ml-auto shrink-0 uppercase tracking-wider">
-                        <code>{cmd.id}</code>
+                      <span className={KEYBINDING_TITLE_CLASS_NAME} title={d.displayTitle}>
+                        {d.displayTitle}
+                      </span>
+                      <Badge size="xs" className={KEYBINDING_ID_BADGE_CLASS_NAME}>
+                        <code className="truncate">{cmd.id}</code>
                       </Badge>
                       {d.reserved && (
                         <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>

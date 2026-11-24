@@ -30,8 +30,12 @@ const EMPTY_PLUGIN_TAB_STRINGS: string[] = [];
 const EMPTY_CONTRIBUTION_SAMPLES: readonly string[] = [];
 const EMPTY_DECLARED_PERMISSIONS: readonly PermissionKey[] = [];
 
-const PLUGINS_TAB_ROW_CLASS_NAME = 'flex items-start gap-4 px-4 py-3 text-xs';
+const PLUGINS_TAB_ROW_CLASS_NAME = 'flex flex-wrap items-start gap-4 px-4 py-3 text-xs';
 const PLUGINS_TAB_ROW_BORDER_CLASS_NAME = `${PLUGINS_TAB_ROW_CLASS_NAME} border-t border-line/50`;
+
+// 贡献点统计行:窄宽时示例列(samplesText)换到下一行占满,而不是被前两列挤成 0 宽。
+export const PLUGINS_CONTRIB_ROW_CLASS_NAME = 'flex flex-wrap items-start gap-x-4 gap-y-1 px-4 py-3 text-xs';
+const PLUGINS_CONTRIB_ROW_BORDER_CLASS_NAME = `${PLUGINS_CONTRIB_ROW_CLASS_NAME} border-t border-line/50`;
 
 export function pluginsTabRowClassName(hasTopBorder: boolean): string {
   return hasTopBorder ? PLUGINS_TAB_ROW_BORDER_CLASS_NAME : PLUGINS_TAB_ROW_CLASS_NAME;
@@ -162,10 +166,13 @@ export function PluginsTabContent() {
         </h3>
         <div className="rounded-md border border-line bg-panel-soft/40">
           {contribs.map((row, i) => (
-            <div key={row.labelKey} className={pluginsTabRowClassName(i > 0)}>
+            <div
+              key={row.labelKey}
+              className={i > 0 ? PLUGINS_CONTRIB_ROW_BORDER_CLASS_NAME : PLUGINS_CONTRIB_ROW_CLASS_NAME}
+            >
               <div className="w-32 shrink-0 text-fg-muted">{t(row.labelKey)}</div>
               <div className="w-8 shrink-0 text-right tabular-nums text-fg">{row.count}</div>
-              <div className="min-w-0 flex-1 truncate font-mono text-2xs text-fg-dim">
+              <div className="min-w-32 flex-1 truncate font-mono text-2xs text-fg-dim">
                 {row.samplesText}
               </div>
             </div>
@@ -187,8 +194,8 @@ export function PluginsTabContent() {
                 </div>
                 <div className="mt-1 text-fg-muted">{t(p.descKey)}</div>
               </div>
-              <Badge size="xs" className="shrink-0 uppercase tracking-wider">
-                <code>{p.id}</code>
+              <Badge size="xs" className="min-w-0 max-w-[40%] uppercase tracking-wider">
+                <code className="truncate">{p.id}</code>
               </Badge>
             </div>
           ))}
@@ -355,10 +362,10 @@ function UserPluginsSection() {
           {pendingRows.map((pending, i) => (
             <div key={pending.id} className={pluginsTabRowClassName(i > 0)}>
               <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-sm font-medium text-fg">{pending.name}</span>
-                  <Badge size="xs" className="uppercase tracking-wider">
-                    <code>{pending.id}</code>
+                  <Badge size="xs" className="min-w-0 max-w-full uppercase tracking-wider">
+                    <code className="truncate">{pending.id}</code>
                   </Badge>
                   <span className="text-2xs text-fg-dim">v{pending.version}</span>
                 </div>
@@ -368,11 +375,12 @@ function UserPluginsSection() {
           ))}
           {plugins.map((p, i) => (
             <div key={p.id} className={pluginsTabRowClassName(i > 0 || pendingRows.length > 0)}>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
+              {/* min-w-48:窄宽时右侧操作按钮换到下一行,而不是把插件名 / 描述挤成一行一个词。 */}
+              <div className="min-w-48 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>
-                  <Badge size="xs" className="uppercase tracking-wider">
-                    <code>{p.id}</code>
+                  <Badge size="xs" className="min-w-0 max-w-full uppercase tracking-wider">
+                    <code className="truncate">{p.id}</code>
                   </Badge>
                   <span className="text-2xs text-fg-dim">v{p.manifest.version}</span>
                 </div>

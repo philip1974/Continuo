@@ -115,7 +115,8 @@ describe('PluginsTabContent — 贡献点统计', () => {
     const joinSpy = vi.spyOn(Array.prototype, 'join');
 
     try {
-      expect(pluginsTabRowClassName(false)).toContain('flex items-start gap-4 px-4 py-3 text-xs');
+      // flex-wrap:窄宽时第三方插件行的操作按钮换到下一行(见 settings-narrow-layout)。
+      expect(pluginsTabRowClassName(false)).toContain('flex flex-wrap items-start gap-4 px-4 py-3 text-xs');
       expect(pluginsTabRowClassName(false)).not.toContain('border-t');
       expect(pluginsTabRowClassName(true)).toContain('border-t border-line/50');
       expect(joinSpy).not.toHaveBeenCalled();

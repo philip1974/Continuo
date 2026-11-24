@@ -27,13 +27,24 @@ interface SettingsPanelProps {
   readonly itemRegistry?: SettingItemRegistry;
 }
 
+// 窄面板(设置面板宽 < 42rem,容器查询 @container/settings)时左侧导航收成只显示图标的窄栏(文字转 sr-only,
+// 悬停 title 提示),把宽度让给右侧设置内容 —— 对齐 VSCode 设置编辑器窄宽时收起目录(TOC)。固定 180px 时
+// 800 宽窗口里右侧只剩 ~230px,设置描述一行一个词。
 const SETTINGS_NAV_BASE_CLASS_NAME =
-  'flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity';
+  'flex w-[180px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel-soft py-2 text-xs transition-opacity @max-2xl/settings:w-auto';
 const SETTINGS_NAV_SEARCH_CLASS_NAME = `${SETTINGS_NAV_BASE_CLASS_NAME} pointer-events-none opacity-40`;
 const SETTINGS_NAV_NORMAL_CLASS_NAME = `${SETTINGS_NAV_BASE_CLASS_NAME} opacity-100`;
 
 const SETTINGS_TAB_BUTTON_BASE_CLASS_NAME =
-  'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition';
+  'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition @max-2xl/settings:justify-center @max-2xl/settings:px-3';
+/** 导航项文字:窄面板时视觉隐藏(仍是按钮可访问名),由图标 / 首字占位。 */
+export const SETTINGS_TAB_LABEL_COLLAPSIBLE_CLASS_NAME = 'truncate @max-2xl/settings:sr-only';
+/** 无图标的(插件)导航项窄面板时显示首字代替图标。 */
+const SETTINGS_TAB_INITIAL_CLASS_NAME =
+  'hidden h-4 w-4 shrink-0 items-center justify-center font-medium uppercase before:content-[attr(data-initial)] @max-2xl/settings:inline-flex';
+/** 右侧内容区:窄面板时缩小内边距。 */
+export const SETTINGS_CONTENT_CLASS_NAME =
+  'min-w-0 flex-1 overflow-y-auto px-4 py-4 text-xs text-fg-muted @2xl/settings:px-8 @2xl/settings:py-6';
 const SETTINGS_TAB_BUTTON_ACTIVE_CLASS_NAME = `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-accent bg-hover text-fg`;
 const SETTINGS_TAB_BUTTON_INACTIVE_CLASS_NAME = `${SETTINGS_TAB_BUTTON_BASE_CLASS_NAME} border-transparent text-fg-muted hover:bg-hover/50`;
 
@@ -151,7 +162,7 @@ export function SettingsPanel({
   const inSearch = trimmed.length > 0;
 
   return (
-    <div className="flex h-full flex-col bg-canvas">
+    <div className="@container/settings flex h-full flex-col bg-canvas">
       <div className="border-b border-line bg-panel-soft/50 p-3">
         <Input
           size="sm"
@@ -183,18 +194,29 @@ export function SettingsPanel({
                 // aria-current 而非 role=tab/aria-selected,避免不完整的 tab 交互模型)。
                 aria-current={active?.id === tab.id ? 'page' : undefined}
                 className={settingsTabButtonClassName(active?.id === tab.id)}
+                // 窄面板只剩图标时悬停仍能看到分类名。
+                title={tWithFallback(tab.titleKey, tab.title)}
               >
-                {tab.icon && (
+                {tab.icon ? (
                   <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
                     {tab.icon}
                   </span>
+                ) : (
+                  // 首字经伪元素 content 渲染,不进 textContent / 可访问名(可访问名仍是完整标题)。
+                  <span
+                    aria-hidden="true"
+                    data-initial={tWithFallback(tab.titleKey, tab.title).charAt(0)}
+                    className={SETTINGS_TAB_INITIAL_CLASS_NAME}
+                  />
                 )}
-                <span className="truncate">{tWithFallback(tab.titleKey, tab.title)}</span>
+                <span className={SETTINGS_TAB_LABEL_COLLAPSIBLE_CLASS_NAME}>
+                  {tWithFallback(tab.titleKey, tab.title)}
+                </span>
               </button>
             ))
           )}
         </nav>
-        <div className="min-w-0 flex-1 overflow-y-auto px-8 py-6 text-xs text-fg-muted">
+        <div className={SETTINGS_CONTENT_CLASS_NAME}>
           {inSearch ? (
             <SettingsSearchResults itemRegistry={itemRegistry} trimmed={trimmed} />
           ) : active ? (
