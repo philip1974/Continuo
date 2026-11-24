@@ -5,7 +5,7 @@
 // 监听 `storage` 事件按 key 重读。抽成 helper,各 store 只保留自己的 key / 值类型 / setState 映射。
 
 import { jsonStringLengthLowerBoundExceeds } from '../../../electron/shared/json-byte-budget';
-import { setOwnValue } from '../../../electron/shared/own-value';
+import { ownValue, setOwnValue } from '../../../electron/shared/own-value';
 
 /**
  * 读 localStorage[key] 的 JSON 对象;无/非对象/解析失败/无 localStorage → {}.
@@ -67,14 +67,16 @@ export function readStoredJson(key: string, maxRawLength = DEFAULT_MAX_RAW_LENGT
   }
 }
 
+export interface ReadRecordOptions<V> {
+  readonly valueGuard?: (v: unknown) => v is V;
+  readonly maxEntries?: number;
+  readonly maxKeyLength?: number;
+  readonly maxRawLength?: number;
+}
+
 export function readRecord<V>(
   key: string,
-  opts?: {
-    readonly valueGuard?: (v: unknown) => v is V;
-    readonly maxEntries?: number;
-    readonly maxKeyLength?: number;
-    readonly maxRawLength?: number;
-  },
+  opts?: ReadRecordOptions<V>,
 ): Record<string, V> {
   const parsed = readStoredJson(key, opts?.maxRawLength);
   if (parsed === undefined) return {};
@@ -187,6 +189,77 @@ export function subscribeStorageKey(key: string, onChange: () => void): () => vo
   };
   window.addEventListener('storage', handler);
   return () => window.removeEventListener('storage', handler);
+}
+
+export interface RecordStoreOps<V> {
+  /** 按 readOpts 重读 live localStorage(含净化/上限)。 */
+  read: () => Record<string, V>;
+  /** 单 key 写入(读-改-写);值等于 live 记录时不写盘,只把内存收敛到 live。 */
+  setEntry: (k: string, v: V) => void;
+  /** 删除单 key(读-改-写);live 已无该 key 时不写盘,内存若仍有则收敛到 live。 */
+  removeEntry: (k: string) => void;
+}
+
+/**
+ * localStorage「string→V 对象」型 zustand store 的读-改-写 / 重置 / 跨窗同步样板单一来源
+ *(settings values-store 与 keybindings overrides-store 共用;此前两边逐段同构,每次修复须各补一次)。
+ * 值的净化(写端校验 / 截断)与 store 特有逻辑(如 reset 通知)留在调用方。
+ *
+ * - race(R6 + R113):单 key RMW 基于 live localStorage 重读而非本窗内存快照,**缓解但不根除**多窗口
+ *   lost update —— Chromium 各 renderer 缓存 localStorage、跨窗写异步广播,两窗仍可基于旧快照互相覆盖。
+ *   R113 DEFER(用户决策 2026-06-25):稳健修法=迁主进程串行 delta 写,暂缓。详见 doc/race-condition-audit.md R113。
+ * - E260(写读 cap 对称):整份记录序列化超读端 raw cap → 拒写且**不提交内存态**,避免下次启动 readRecord
+ *   整表返 {} = 所有 override 静默丢失(保留上次有效状态)。
+ * - 跨窗同步(P2-BA):zustand 内存快照只在启动时读一次;监听 `storage` 事件(仅别 document 改时 fire),
+ *   同 key 重读让各窗收敛一致(两类配置语义上都是 app 级全局)。
+ *
+ * `getRecord` / `setRecord` 是对 store 字段的惰性访问器(只在操作 / 事件发生时调用,故可引用稍后才创建的 store)。
+ */
+export function createRecordStoreOps<V>(opts: {
+  readonly key: string;
+  readonly readOpts: ReadRecordOptions<V>;
+  readonly getRecord: () => Record<string, V>;
+  readonly setRecord: (next: Record<string, V>) => void;
+  /** E260 拒写时 console.warn 的文案。 */
+  readonly tooLargeWarning: string;
+}): RecordStoreOps<V> {
+  const { key, readOpts, getRecord, setRecord, tooLargeWarning } = opts;
+  const read = (): Record<string, V> => readRecord<V>(key, readOpts);
+  // 写端 cap 与读端同一来源(E260 写读对称;未传 maxRawLength 时两端都用默认 1MiB)。
+  const write = (next: Record<string, V>): WriteRecordResult =>
+    writeRecord(key, next, { maxRawLength: readOpts.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH });
+  const convergeTo = (latest: Record<string, V>): void => {
+    if (!recordsShallowEqual(getRecord(), latest)) setRecord(latest);
+  };
+  subscribeStorageKey(key, () => convergeTo(read()));
+  return {
+    read,
+    setEntry: (k, v) => {
+      const latest = read();
+      if (Object.is(ownValue(latest, k), v)) {
+        convergeTo(latest);
+        return;
+      }
+      const next = { ...latest, [k]: v };
+      if (write(next) === 'too-large') {
+        console.warn(tooLargeWarning);
+        return;
+      }
+      setRecord(next);
+    },
+    removeEntry: (k) => {
+      const latest = read();
+      if (!Object.hasOwn(latest, k)) {
+        // 别窗可能已删该 key;本窗内存若仍有则收敛到 latest。
+        if (Object.hasOwn(getRecord(), k)) setRecord(latest);
+        return;
+      }
+      const next = { ...latest };
+      delete next[k];
+      write(next);
+      setRecord(next);
+    },
+  };
 }
 
 /** 两个 record 的自有可枚举键集合相同且各值 Object.is 相等(store 无变化时返回原 state 用)。 */

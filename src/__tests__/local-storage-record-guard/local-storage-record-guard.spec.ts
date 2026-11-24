@@ -4,6 +4,7 @@
 // 守卫 + 上限,非法 value 丢弃、超长 key 跳过、超条目数截断;不传 opts 保持旧行为。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  createRecordStoreOps,
   readRecord,
   subscribeStorageKey,
   writeRecord,
@@ -248,5 +249,116 @@ describe('readRecord constrained · `__proto__` 键', () => {
     expect(Object.getPrototypeOf(r)).toBe(Object.prototype);
     expect(Object.hasOwn(r, '__proto__')).toBe(true);
     expect(JSON.stringify(r)).toBe('{"__proto__":"mod+k","a":"mod+j"}');
+  });
+});
+
+// createRecordStoreOps:settings values-store / keybindings-store 共用的读-改-写 / 重置 / 跨窗同步样板。
+describe('createRecordStoreOps', () => {
+  let seq = 0;
+  /** 每例独立 key(helper 注册的 storage 监听不注销,避免跨例串扰)+ 内存态替身。 */
+  function setup(maxRawLength?: number) {
+    const key = `test.ops.${++seq}`;
+    let mem: Record<string, string> = {};
+    const setRecord = vi.fn((next: Record<string, string>) => {
+      mem = next;
+    });
+    const ops = createRecordStoreOps<string>({
+      key,
+      readOpts: {
+        valueGuard: (v): v is string => typeof v === 'string',
+        ...(maxRawLength !== undefined ? { maxRawLength } : {}),
+      },
+      getRecord: () => mem,
+      setRecord,
+      tooLargeWarning: 'too large!',
+    });
+    mem = ops.read();
+    return { key, ops, setRecord, getMem: () => mem };
+  }
+
+  it('read 走 readOpts 净化(非法 value 丢弃)', () => {
+    const key = `test.ops.${++seq}`;
+    globalThis.localStorage.setItem(key, JSON.stringify({ a: 'x', b: 1 }));
+    const ops = createRecordStoreOps<string>({
+      key,
+      readOpts: { valueGuard: (v): v is string => typeof v === 'string' },
+      getRecord: () => ({}),
+      setRecord: () => {},
+      tooLargeWarning: '',
+    });
+    expect(ops.read()).toEqual({ a: 'x' });
+  });
+
+  it('setEntry 基于 live localStorage 合并(保留别窗写入的 key)并提交内存', () => {
+    const { key, ops, getMem } = setup();
+    globalThis.localStorage.setItem(key, JSON.stringify({ other: 'o' }));
+    ops.setEntry('a', 'x');
+    expect(JSON.parse(globalThis.localStorage.getItem(key)!)).toEqual({ other: 'o', a: 'x' });
+    expect(getMem()).toEqual({ other: 'o', a: 'x' });
+  });
+
+  it('setEntry 值与 live 相同 → 不写盘;内存陈旧则收敛到 live,已一致则不 set', () => {
+    const { key, ops, setRecord, getMem } = setup();
+    globalThis.localStorage.setItem(key, JSON.stringify({ a: 'x', b: 'y' }));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    ops.setEntry('a', 'x');
+    expect(setItem).not.toHaveBeenCalled();
+    expect(getMem()).toEqual({ a: 'x', b: 'y' });
+    setRecord.mockClear();
+    ops.setEntry('a', 'x');
+    expect(setRecord).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
+  it('setEntry 超 raw cap → 拒写、warn、不提交内存(E260)', () => {
+    const { key, ops, setRecord } = setup(50);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ops.setEntry('a', 'x'.repeat(100));
+    expect(warn).toHaveBeenCalledWith('too large!');
+    expect(setRecord).not.toHaveBeenCalled();
+    expect(globalThis.localStorage.getItem(key)).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('setEntry 对 `__proto__` 键写成自有属性', () => {
+    const { ops, getMem } = setup();
+    ops.setEntry('__proto__', 'x');
+    expect(Object.hasOwn(getMem(), '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(getMem())).toBe(Object.prototype);
+  });
+
+  it('removeEntry 删除 live 中的 key 并写盘', () => {
+    const { key, ops, getMem } = setup();
+    ops.setEntry('a', 'x');
+    ops.setEntry('b', 'y');
+    ops.removeEntry('a');
+    expect(JSON.parse(globalThis.localStorage.getItem(key)!)).toEqual({ b: 'y' });
+    expect(getMem()).toEqual({ b: 'y' });
+  });
+
+  it('removeEntry:live 已无该 key(别窗已删)→ 不写盘;内存仍有则收敛,没有则不 set', () => {
+    const { key, ops, setRecord, getMem } = setup();
+    ops.setEntry('a', 'x');
+    globalThis.localStorage.setItem(key, JSON.stringify({ c: 'z' }));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    ops.removeEntry('a');
+    expect(setItem).not.toHaveBeenCalled();
+    expect(getMem()).toEqual({ c: 'z' });
+    setRecord.mockClear();
+    ops.removeEntry('a');
+    expect(setRecord).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
+  it('跨窗 storage 事件:仅同 key 触发重读;内容不变不 set', () => {
+    const { key, setRecord, getMem } = setup();
+    globalThis.localStorage.setItem(key, JSON.stringify({ a: 'x' }));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'other.key' }));
+    expect(setRecord).not.toHaveBeenCalled();
+    window.dispatchEvent(new StorageEvent('storage', { key }));
+    expect(getMem()).toEqual({ a: 'x' });
+    expect(setRecord).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new StorageEvent('storage', { key }));
+    expect(setRecord).toHaveBeenCalledTimes(1);
   });
 });
