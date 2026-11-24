@@ -295,8 +295,8 @@ export function safeHandleWithWindow<I>(
 
 /**
  * 单向 IPC(ipcMain.on:就绪握手 / 回执 / 脏态上报)的发送方窗口:sender frame 可信,且 sender 正是该窗口自己的主
- * webContents(子 webContents 的上报不得记到宿主窗口);否则 null。index.ts 的 5 个 on 入口共用(此前 3 处判了
- * 主 webContents、2 处只 fromWebContents)。
+ * webContents(子 webContents 的上报不得记到宿主窗口);否则 null。index.ts 的 6 个 on 入口共用(此前 3 处判了
+ * 主 webContents、3 处只 fromWebContents)。
  */
 export function trustedSenderWindow(
   event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>,

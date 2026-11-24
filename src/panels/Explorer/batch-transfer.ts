@@ -41,7 +41,9 @@ export function formatDropFailureLines(failed: readonly DropFailureLine[]): stri
   for (let i = 0; i < failed.length; i += 1) {
     const f = failed[i]!;
     if (i > 0) out += '\n';
-    out += `  ${f.name}: [${f.code}] ${localizeErrorByCode(f.code, f.message)}`;
+    // 原因与 code 相同(未收录 code 且无原文)时不再重复显示「[X] X」。
+    const reason = localizeErrorByCode(f.code, f.message);
+    out += reason === f.code ? `  ${f.name}: [${f.code}]` : `  ${f.name}: [${f.code}] ${reason}`;
   }
   return out;
 }

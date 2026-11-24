@@ -238,3 +238,16 @@ describe('perf — 只用名字/探测的 listDir 不取 stat', () => {
     expect(src).not.toContain('(p) => coApi.fs.listDir(p),');
   });
 });
+
+describe('formatDropFailureLines', () => {
+  // 未收录 code 且原文为空时,localizeErrorByCode 回退为 code 本身 —— 不再显示成「[X] X」。
+  it('原因与 code 相同时只显示 [code];否则 [code] 原因', () => {
+    expect(formatDropFailureLines([{ name: 'a.txt', code: 'NO_SUCH_CODE_Q', message: '' }])).toBe(
+      '  a.txt: [NO_SUCH_CODE_Q]',
+    );
+    expect(formatDropFailureLines([{ name: 'b.txt', code: 'NO_SUCH_CODE_Q', message: 'disk full' }])).toBe(
+      '  b.txt: [NO_SUCH_CODE_Q] disk full',
+    );
+  });
+});
+

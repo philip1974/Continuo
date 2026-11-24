@@ -34,7 +34,7 @@ Exceptions:
 
 - `plugin-data`, `plugin-fs` and `plugin-shell-stream` register `ipcMain.handle` directly behind the trusted-frame check (`withTrustedFrameGate` / `assertTrustedFrame`); they return plain values and reject on failure instead of using the envelope (exception: `PLUGIN_FS_CHANNELS.READ_FOR_EDITOR` resolves `{ ok: false, code, message }` on failure).
 - `window.ipc.ts` (`NOTIFY_ROOT`) and `plugin-mcp.ipc.ts` use `safeHandleWithCtx` to reach `event.sender` (same trusted-frame check and `IpcResult` envelope); `plugin-mcp.ipc.ts` also has a one-way `ipcMain.on` for `INVOKE_REPLY` (trusted-frame checked, no envelope).
-- `ipcMain.on` listeners in `index.ts` do their own `defaultIsTrustedFrame` check and use no envelope: one-way notifications (`LAYOUT_CHANNELS.DIRTY_STATE` / `FLUSH_ACK` / `FLUSH_READY`, `PLUGINS_CHANNELS.PROTOCOL_READY`, `AGENT_AUTH_CHANNELS.READY`) and the synchronous `WINDOW_ID_CHANNEL` (answers via `event.returnValue`, `0` for untrusted frames).
+- `ipcMain.on` listeners in `index.ts` resolve the sender window through `trustedSenderWindow` (`safe-handle.ts`: trusted frame **and** the sender is that window's own main `webContents`, otherwise `null`) and use no envelope: one-way notifications (`LAYOUT_CHANNELS.DIRTY_STATE` / `FLUSH_ACK` / `FLUSH_READY`, `PLUGINS_CHANNELS.PROTOCOL_READY`, `AGENT_AUTH_CHANNELS.READY`) and the synchronous `WINDOW_ID_CHANNEL` (answers via `event.returnValue`, `0` when no trusted sender window).
 
 New request/response channels should use `safeHandle`.
 
