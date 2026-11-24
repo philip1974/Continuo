@@ -66,6 +66,7 @@ import { debounce } from '@/lib/debounce';
 import { t } from '@/i18n';
 import { shouldAutoCloseExitedSession } from '@/shell/dock/terminal-panel-id';
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
+import { hasOpenModalIn } from '@/design/Modal';
 
 
 export interface SearchApi {
@@ -599,7 +600,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     });
     termRef.current = term;
     fitRef.current = fitAddon;
-    if (focusOnInitRef.current?.()) term.focus();
+    // 有 Modal 开着(删除确认 / 授权框等)时不抢焦点:xterm 晚挂载(0 尺寸延后创建)时把焦点从对话框夺走,
+    // 之后的 Enter 就进了 shell。
+    if (focusOnInitRef.current?.() && !hasOpenModalIn(container.ownerDocument)) term.focus();
 
     // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS / CWD_REPORT_MAX_WAIT_MS):只发窗口内最新值,
     // 且与上次已发送值不同才发。

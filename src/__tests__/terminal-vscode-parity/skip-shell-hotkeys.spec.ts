@@ -19,7 +19,10 @@ import {
 
 const key = (init: KeyboardEventInit, type = 'keydown') =>
   new KeyboardEvent(type, { cancelable: true, bubbles: true, ...init });
-const noRegistry = { get: () => undefined };
+const noRegistry = { getAll: () => [] };
+const specs = (list: ReadonlyArray<{ id: string; hotkey?: string }>) => ({
+  getAll: () => list.map((c) => ({ ...c, title: c.id, fn: () => {} })),
+});
 
 describe('命令 id / 默认键与注册方约定一致', () => {
   it('closeActiveEditor = mod+w,save = mod+s,clear 仅 mac 默认 mod+k', () => {
@@ -47,7 +50,11 @@ describe('终端让出的键按生效绑定判定', () => {
     }
   });
   it('Windows / Linux:已注册命令的默认键也不让 Ctrl+W / Ctrl+S 离开终端', () => {
-    const registry = { get: (id: string) => ({ id, hotkey: id === 'terminal.clear' ? undefined : id.endsWith('save') ? 'mod+s' : 'mod+w' }) };
+    const registry = specs([
+      { id: 'terminal.clear', hotkey: undefined },
+      { id: 'workbench.action.files.save', hotkey: 'mod+s' },
+      { id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' },
+    ]);
     expect(terminalYieldedCommandId(key({ key: 'w', ctrlKey: true }), 'other', {}, registry)).toBeNull();
     expect(terminalYieldedCommandId(key({ key: 's', ctrlKey: true }), 'other', {}, registry)).toBeNull();
     expect(terminalYieldedCommandId(key({ key: 'k', ctrlKey: true }), 'other', {}, registry)).toBeNull();
@@ -75,9 +82,20 @@ describe('终端让出的键按生效绑定判定', () => {
     expect(terminalYieldedCommandId(key({ key: 'k', metaKey: true }), 'mac', { 'terminal.clear': '' }, noRegistry)).toBeNull();
   });
   it('命令已注册时以注册的默认 hotkey 为准(不依赖兜底常量)', () => {
-    const registry = { get: (id: string) => (id === 'workbench.action.closeActiveEditor' ? { id, hotkey: 'mod+alt+w' } : undefined) };
+    const registry = specs([{ id: 'workbench.action.closeActiveEditor', hotkey: 'mod+alt+w' }]);
     expect(terminalYieldedCommandId(key({ key: 'w', metaKey: true }), 'mac', {}, registry)).toBeNull();
     expect(terminalYieldedCommandId(key({ key: 'w', metaKey: true, altKey: true }), 'mac', {}, registry)).toBe('workbench.action.closeActiveEditor');
+  });
+  it('一张表裁决:别的命令占了该键(用户绑定优先)→ 终端不清屏 / 不保存,按键交给全局分发', () => {
+    const registry = specs([
+      { id: 'terminal.new', hotkey: 'mod+t' },
+      { id: 'terminal.clear', hotkey: 'mod+k' },
+      { id: 'workbench.action.files.save', hotkey: 'mod+s' },
+    ]);
+    const o = { 'terminal.new': 'mod+s', 'workbench.action.files.save': 'mod+k' };
+    expect(terminalYieldedCommandId(key({ key: 's', metaKey: true }), 'mac', o, registry)).toBeNull();
+    expect(terminalYieldedCommandId(key({ key: 'k', metaKey: true }), 'mac', o, registry)).toBe('workbench.action.files.save');
+    expect(terminalYieldedCommandId(key({ key: 'k', metaKey: true }), 'mac', { 'terminal.new': 'mod+k' }, registry)).toBeNull();
   });
   it('输入法组合中 / keyup 不让出', () => {
     const composing = key({ key: 'w', metaKey: true });

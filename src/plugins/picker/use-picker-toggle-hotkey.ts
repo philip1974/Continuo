@@ -8,6 +8,7 @@ import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/comman
 import type { PickerSlice } from './picker-slice';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { resolveEffectiveHotkey } from '@/plugins/keybindings/keybindings-store';
+import { hasOpenModalIn } from '@/design/Modal';
 
 /**
  * 这两个组合由下方 document 监听写死处理,不在 CommandRegistry 里:改绑命令时的冲突检测
@@ -73,6 +74,12 @@ export function usePickerToggleHotkey(
     const handler = (e: KeyboardEvent): void => {
       const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
       if (mod && !e.altKey && e.shiftKey === shift && isPKey(e.key)) {
+        // 有别的 Modal(确认框 / 授权框)开着 → 不打开、不切换、不 preventDefault(对话框期间工作台快捷键不触发,
+        // 对齐 VSCode)。picker 自己也是 Modal:只有它自己开着时(再按关闭 / 互斥切换)扣掉这一层。picker 之上
+        // 又叠了授权框时栈深 2 → 同样不动,免得切出的命令面板盖在授权框上。
+        let pickerOpen = false;
+        for (const picker of mountedPickers) if (picker().isOpen) pickerOpen = true;
+        if (hasOpenModalIn(document, pickerOpen ? 1 : 0)) return;
         e.preventDefault();
         const { isOpen, open, close } = getState();
         if (isOpen) {

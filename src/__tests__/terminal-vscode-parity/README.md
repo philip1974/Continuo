@@ -10,7 +10,9 @@
      Ctrl+S(XOFF)照常进 shell**,不关终端、不触发保存(与 VSCode 一致,有意不偏离)。
    按生效绑定判定:用户改绑 → 跟随新键,原键照常进 shell;解绑 → 不再让出。命令已注册 → 终端直接执行该命令并截住
    冒泡;尚未注册 → 只让出(不发给 shell),交给全局分发。默认键取已注册命令的 hotkey,未注册时用与注册方约定的
-   默认键兜底(不依赖注册时序)。
+   默认键兜底(不依赖注册时序)。**与全局分发一张表裁决**(`winningCommandFor`):该键的胜出命令是别的命令(如用户把
+   新建终端绑到 ⌘K)→ 不让出、不清屏 / 不保存,按键交给全局分发执行胜出命令(见 `keybinding-user-priority`)。
+   事件所在文档有打开的 Modal → 不让出(见 `hotkey-modal-suppression`)。
 2. **⌘K 清屏**:命令 `terminal.clear`(三语标题)清空当前活动终端的屏幕与滚动缓冲(VSCode
    `workbench.action.terminal.clear`),经 terminal-panel-handles 的 `clear` 句柄执行;活动面板不是终端 → no-op。
    默认键同 VSCode(`primary: 0, mac: Cmd+K`):**仅 mac ⌘K**;Windows / Linux 不设默认键,Ctrl+K 照常进 shell

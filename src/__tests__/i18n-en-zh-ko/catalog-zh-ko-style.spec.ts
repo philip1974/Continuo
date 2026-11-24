@@ -27,15 +27,11 @@ const KO_RULES: ReadonlyArray<readonly [string, RegExp]> = [
 ];
 
 /**
- * 由组件拼接、与相邻的命令名 / 键帽 / 英文标题之间**由代码补半角空格**的片段:改成全角会出现「命令： Command A」
- * 「Terminal 1 （已退出）」这样的双重间距,须连同拼接处一起改(KeybindingCaptureModal / terminal-panel-id),暂豁免。
+ * 由组件拼接、与相邻的英文标题之间**由代码补半角空格**的片段:改成全角会出现「Terminal 1 （已退出）」这样的双重间距,
+ * 须连同拼接处一起改(terminal-panel-id),暂豁免。快捷键录制弹窗的提示行 / 命令行已改为整句模板(占位换成键帽 /
+ * 命令名),不再豁免。
  */
 const ZH_FRAGMENT_KEYS: ReadonlySet<string> = new Set([
-  'keybindings.modal.command_label',
-  'keybindings.modal.hint_press_save',
-  'keybindings.modal.hint_save',
-  'keybindings.modal.hint_clear',
-  'keybindings.modal.hint_default',
   'panels.terminal.exited_suffix',
 ]);
 

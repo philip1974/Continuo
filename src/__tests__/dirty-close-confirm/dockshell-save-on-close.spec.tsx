@@ -395,7 +395,8 @@ describe('flush 握手的「保存」分支', () => {
 
     expect(h.writeFile).not.toHaveBeenCalled();
     const text = String(h.notifyError.mock.calls[0]?.[0]);
-    expect(text).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1 }));
+    // 保存键填当前生效绑定(jsdom = 'other' → Ctrl+S),不写死 Cmd/Ctrl+S
+    expect(text).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1, hotkey: 'Ctrl+S' }));
     expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
       saveFailed: true,
       state: ds([g('/w/a.ts')]),

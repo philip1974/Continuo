@@ -59,6 +59,14 @@ export function hasOpenModal(): boolean {
   return openModalCount > 0;
 }
 
+/**
+ * 该文档(主窗或某个 popout 子窗)里打开的 Modal 是否多于 `besides` 个。工作台快捷键据此在对话框打开时不执行
+ *(对齐 VSCode);调用方自己的 Modal 不算时传 1(如 Quick Open / 命令面板的开关键)。
+ */
+export function hasOpenModalIn(doc: Document, besides = 0): boolean {
+  return (modalKeyStacks.get(doc)?.length ?? 0) > besides;
+}
+
 /** 订阅「是否有打开的 Modal」的变化(仅在有 / 无切换时调用 listener);返回退订函数。 */
 export function subscribeOpenModals(listener: () => void): () => void {
   openModalListeners.add(listener);

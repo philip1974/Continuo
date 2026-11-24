@@ -71,7 +71,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.NOT_SUPPORTED': '지원되지 않는 작업입니다',
   'errors.NO_ACTIVE_TAB': '활성 탭이 없습니다',
   'errors.TAB_NOT_FOUND': '탭을 찾을 수 없습니다',
-  'errors.EDITOR_DISK_CHANGED': '디스크의 파일이 변경되어 덮어쓰지 않았습니다(Cmd/Ctrl+S로 덮어쓰거나 변경 내용을 취소하고 다시 로드)',
+  'errors.EDITOR_DISK_CHANGED': '디스크의 파일이 변경되어 덮어쓰지 않았습니다({hotkey}로 덮어쓰거나 변경 내용을 취소하고 다시 로드)',
   'errors.NO_DEFAULT_EXPORT': '플러그인에 default export가 없습니다',
   'errors.NOT_PLUGIN_CLASS': '플러그인 default export가 Plugin 하위 클래스가 아닙니다',
   'errors.PATH_SCOPE_CLEANUP_FAILED': '플러그인 폴더 접근 권한을 정리하지 못해 제거를 중단했습니다. 다시 시도하세요.',
@@ -205,7 +205,7 @@ export const ko: Record<TranslationKey, string> = {
   'dialog.unsaved_close.dont_save': '저장 안 함',
   'dialog.unsaved_close.save_failed': '{count}개 파일을 저장하지 못해 창을 닫지 않았습니다.',
   'dialog.unsaved_close.disk_changed_note':
-    '그중 {count}개 파일은 디스크에서 다른 프로그램이 수정하여 덮어쓰지 않았습니다. 편집기에서 Cmd/Ctrl+S로 충돌을 해결하거나 \'저장 안 함\'을 선택하세요.',
+    '그중 {count}개 파일은 디스크에서 다른 프로그램이 수정하여 덮어쓰지 않았습니다. 편집기에서 {hotkey}로 충돌을 해결하거나 \'저장 안 함\'을 선택하세요.',
   'dialog.mcp_legacy_config.message': 'Claude Code의 Continuo MCP 설정이 임시 경로를 가리키고 있습니다',
   'dialog.mcp_legacy_config.detail':
     "~/.claude.json의 MCP 서버 {names}이(가) 이전 AppImage의 임시 마운트 경로를 가리킵니다. Continuo가 종료된 후 이 컴퓨터의 다른 사용자가 그 위치에 같은 이름의 스크립트를 두면 Claude Code가 사용자 권한으로 실행합니다. 해당 프로젝트 디렉터리에서 `claude mcp remove {first}`를 실행한 뒤(user 범위 설정은 `-s user` 추가) 상태 표시줄의 'MCP 설정 복사'에 있는 새 명령을 실행하세요.",
@@ -268,19 +268,16 @@ export const ko: Record<TranslationKey, string> = {
 
   // keybinding capture modal (13)
   'keybindings.modal.title': '단축키 설정',
-  'keybindings.modal.command_label': '명령:',
+  'keybindings.modal.command_line': '명령: {command}',
   'keybindings.modal.unbound': '바인딩 없음',
   'keybindings.modal.press_combo': '새 조합을 누르세요…',
-  'keybindings.modal.hint_press_save': '새 조합을 누른 뒤',
-  'keybindings.modal.hint_save': '저장;',
-  'keybindings.modal.hint_clear': '지우기;',
-  'keybindings.modal.hint_cancel': '취소',
+  'keybindings.modal.hint_keys': '새 조합을 누른 뒤 {enter} 저장; {backspace} 지우기; {escape} 취소',
   'keybindings.modal.hint_default': '; 기본 {hotkey}',
   'keybindings.modal.conflict_title': '이 조합은 다른 명령에 이미 바인딩되어 있습니다',
   'keybindings.modal.conflict_advice_override': '저장하면 이 명령이 이 조합에 반응합니다(사용자 설정 단축키가 기본값보다 우선). 위 명령은 더 이상 반응하지 않습니다.',
   'keybindings.modal.conflict_advice_still_other': '「{command}」의 이 단축키도 사용자가 설정했고 우선하므로 저장 후에도 「{command}」이(가) 반응합니다. 먼저 그쪽 바인딩을 해제하세요.',
   'keybindings.modal.conflict_show_same': '이 단축키를 쓰는 명령을 목록에 표시',
-  'keybindings.modal.hint_conflict_save': '충돌이 있습니다. 「저장」을 클릭해 확인하세요;',
+  'keybindings.modal.hint_keys_conflict': '충돌이 있습니다. 「저장」을 클릭해 확인하세요; {backspace} 지우기; {escape} 취소',
   'keybindings.modal.reset_default': '기본값으로 재설정',
   'keybindings.modal.reserved_quick_open': '이 조합은 빠른 열기와 충돌합니다. 예약된 단축키이므로 명령에 바인딩할 수 없습니다.',
   'keybindings.modal.reserved_command_palette': '이 조합은 명령 팔레트와 충돌합니다. 예약된 단축키이므로 명령에 바인딩할 수 없습니다.',
@@ -418,7 +415,6 @@ export const ko: Record<TranslationKey, string> = {
   // statusbar.*
   // notifications (toast)
   'notifications.dismiss': '닫기',
-  'notifications.repeat_announce': '{message}({count}회째)',
   'notifications.viewport_label': '알림',
 
   'statusbar.mcp.copy': 'MCP 설정 복사',

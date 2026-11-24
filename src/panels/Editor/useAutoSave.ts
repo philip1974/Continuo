@@ -18,7 +18,8 @@ import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf } from '@/lib/failure-of';
-import type { SaveFileOptions } from './editor-file-actions';
+import { EDITOR_DISK_CHANGED, type SaveFileOptions } from './editor-file-actions';
+import { saveHotkeyLabel } from './editor-commands';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 export interface UseAutoSaveOptions {
@@ -108,7 +109,12 @@ export function useAutoSave(
         notify.warn(
           t('common.label_detail', {
             label: t('editor.autosave_failed'),
-            detail: localizeErrorByCode(code, message),
+            // 磁盘冲突的说明里写着保存键:填当前生效绑定(改绑后跟随)。
+            detail: localizeErrorByCode(
+              code,
+              message,
+              code === EDITOR_DISK_CHANGED ? { hotkey: saveHotkeyLabel() } : undefined,
+            ),
           }),
           { mirror: false },
         );

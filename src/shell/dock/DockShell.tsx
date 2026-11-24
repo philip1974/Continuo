@@ -29,6 +29,7 @@ import { debounce } from '@/lib/debounce';
 import { flushExplorerPersistence } from '@/lib/persist/explorer-persist';
 import { flushPendingAutoSave } from '@/panels/Editor/autosave-flush-registry';
 import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
+import { saveHotkeyLabel } from '@/panels/Editor/editor-commands';
 import {
   getAutoSaveFailureVersion,
   subscribeAutoSaveFailures,
@@ -409,9 +410,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         if (failed > 0) {
           saveFailed = true;
           let message = translate('dialog.unsaved_close.save_failed', { count: failed });
-          // 磁盘冲突单独说明(关窗流程不弹覆盖框,引导用户 Cmd+S 解决或选「不保存」)。
+          // 磁盘冲突单独说明(关窗流程不弹覆盖框,引导用户按保存键解决或选「不保存」;保存键填当前生效绑定)。
           if (diskChanged > 0) {
-            message += ` ${translate('dialog.unsaved_close.disk_changed_note', { count: diskChanged })}`;
+            message += ` ${translate('dialog.unsaved_close.disk_changed_note', { count: diskChanged, hotkey: saveHotkeyLabel() })}`;
           }
           notify.error(message);
         }

@@ -202,7 +202,7 @@ describe('KeybindingCaptureModal — 显示态', () => {
 });
 
 // 标签与命令名、提示文案与键帽之间要有空格(读屏同样连读):此前渲染成「Command:Command A」「then[Enter]」
-// 「to cancel;default」。zh 沿用目录里的标点,只补空格。
+// 「to cancel;default」。间距与标点随各语言的整句模板(占位换成命令名 / 键帽):zh 用全角标点、全角冒号后不加空格。
 describe('KeybindingCaptureModal — 文案间距', () => {
   const original = getLocale();
   afterEach(() => {
@@ -215,7 +215,7 @@ describe('KeybindingCaptureModal — 文案间距', () => {
   const CASES = [
     ['en', 'Command: Command A', 'Press a new combination, then Enter to save; Backspace to clear; Esc to cancel; default '],
     ['ko', '명령: Command A', '새 조합을 누른 뒤 Enter 저장; Backspace 지우기; Esc 취소; 기본 '],
-    ['zh', '命令: Command A', '按下新组合后, Enter 保存; Backspace 清空; Esc 取消; 默认 '],
+    ['zh', '命令：Command A', '按下新组合后，Enter 保存；Backspace 清空；Esc 取消；默认 '],
   ] as const;
 
   it.each(CASES)('%s:标签与命令名、提示与键帽之间有空格', (locale, commandLine, hint) => {

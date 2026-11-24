@@ -70,7 +70,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.NOT_SUPPORTED': '不支持该操作',
   'errors.NO_ACTIVE_TAB': '没有活动标签页',
   'errors.TAB_NOT_FOUND': '找不到标签页',
-  'errors.EDITOR_DISK_CHANGED': '文件已在磁盘上被修改，未覆盖（按 Cmd/Ctrl+S 选择覆盖，或放弃更改并重新加载）',
+  'errors.EDITOR_DISK_CHANGED': '文件已在磁盘上被修改，未覆盖（按 {hotkey} 选择覆盖，或放弃更改并重新加载）',
   'errors.NO_DEFAULT_EXPORT': '插件没有 export default',
   'errors.NOT_PLUGIN_CLASS': '插件的 default export 不是 Plugin 子类',
   'errors.PATH_SCOPE_CLEANUP_FAILED': '插件目录访问授权清理失败，已中止卸载，请重试',
@@ -203,7 +203,7 @@ export const zh: Record<TranslationKey, string> = {
   'dialog.unsaved_close.detail': '如果不保存，你的更改将丢失。',
   'dialog.unsaved_close.dont_save': '不保存',
   'dialog.unsaved_close.save_failed': '{count} 个文件保存失败，窗口未关闭。',
-  'dialog.unsaved_close.disk_changed_note': '其中 {count} 个文件已在磁盘上被其它程序修改，未覆盖。请在编辑器中按 Cmd/Ctrl+S 解决冲突，或选择「不保存」。',
+  'dialog.unsaved_close.disk_changed_note': '其中 {count} 个文件已在磁盘上被其它程序修改，未覆盖。请在编辑器中按 {hotkey} 解决冲突，或选择「不保存」。',
   'dialog.mcp_legacy_config.message': 'Claude Code 中的 Continuo MCP 配置指向临时路径，存在安全风险',
   'dialog.mcp_legacy_config.detail':
     '~/.claude.json 中的 MCP 服务器 {names} 指向旧版 AppImage 的临时挂载路径。Continuo 退出后，同机其他用户可在该位置放置同名脚本，由 Claude Code 以你的身份执行。请先在对应项目目录执行 `claude mcp remove {first}`（user 级配置加 `-s user`），再执行状态栏「复制 MCP 配置」中的新命令。',
@@ -266,19 +266,16 @@ export const zh: Record<TranslationKey, string> = {
 
   // keybinding capture modal (13)
   'keybindings.modal.title': '设置快捷键',
-  'keybindings.modal.command_label': '命令:',
+  'keybindings.modal.command_line': '命令：{command}',
   'keybindings.modal.unbound': '未绑定',
   'keybindings.modal.press_combo': '按下新组合…',
-  'keybindings.modal.hint_press_save': '按下新组合后,',
-  'keybindings.modal.hint_save': '保存;',
-  'keybindings.modal.hint_clear': '清空;',
-  'keybindings.modal.hint_cancel': '取消',
-  'keybindings.modal.hint_default': '; 默认 {hotkey}',
+  'keybindings.modal.hint_keys': '按下新组合后，{enter} 保存；{backspace} 清空；{escape} 取消',
+  'keybindings.modal.hint_default': '；默认 {hotkey}',
   'keybindings.modal.conflict_title': '此组合已绑定到其它命令',
   'keybindings.modal.conflict_advice_override': '保存后由本命令响应此快捷键（用户设置的快捷键优先于默认），上述命令不再响应它。',
   'keybindings.modal.conflict_advice_still_other': '「{command}」的这个快捷键也是你设置的且优先，保存后仍由「{command}」响应；请先在那边解绑。',
   'keybindings.modal.conflict_show_same': '在列表中显示使用此快捷键的命令',
-  'keybindings.modal.hint_conflict_save': '有冲突，点击「保存」确认保存；',
+  'keybindings.modal.hint_keys_conflict': '有冲突，点击「保存」确认保存；{backspace} 清空；{escape} 取消',
   'keybindings.modal.reset_default': '重置默认',
   'keybindings.modal.reserved_quick_open': '此组合与快速打开冲突，是保留快捷键，不能绑定到命令。',
   'keybindings.modal.reserved_command_palette': '此组合与命令面板冲突，是保留快捷键，不能绑定到命令。',
@@ -416,7 +413,6 @@ export const zh: Record<TranslationKey, string> = {
   // statusbar.*
   // notifications (toast)
   'notifications.dismiss': '关闭',
-  'notifications.repeat_announce': '{message}（第 {count} 次）',
   'notifications.viewport_label': '通知',
 
   'statusbar.mcp.copy': '复制 MCP 配置',

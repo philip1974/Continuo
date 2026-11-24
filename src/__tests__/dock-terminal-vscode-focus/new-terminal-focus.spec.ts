@@ -73,6 +73,7 @@ vi.mock('@/plugins/settings/values-store', () => ({
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: h.resolved }) }));
 
 import { useTerminal } from '../../panels/Terminal/useTerminal';
+import { Modal, type ModalProps } from '../../design/Modal';
 
 function Host({ active }: { active: () => boolean }) {
   const { containerRef } = useTerminal('term-1', { focusOnInit: active });
@@ -126,6 +127,17 @@ describe('新建终端挂载即聚焦', () => {
     active = false; // 创建前用户已切走
     h.size = 400;
     act(() => h.resizeCallbacks.forEach((cb) => cb()));
+    expect(h.focusCalls).toBe(0);
+  });
+
+  it('有 Modal 开着(删除确认 / 授权框):xterm 晚挂载也不抢焦点', () => {
+    h.size = 0;
+    render(
+      createElement('div', null, createElement(Host, { active: () => true }), createElement(Modal, { visible: true } as ModalProps, 'confirm')),
+    );
+    h.size = 400;
+    act(() => h.resizeCallbacks.forEach((cb) => cb()));
+    expect(h.terminalOptions).toHaveLength(1);
     expect(h.focusCalls).toBe(0);
   });
 

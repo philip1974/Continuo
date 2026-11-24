@@ -45,24 +45,15 @@ import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { basenameForChrome } from '@/lib/path-label';
-import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
-import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
-import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
+import { coApp } from '@/plugins/co-app';
 import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
-const ADJACENT_EDITOR_SPECS = editorCommandSpecs(detectPlatform()).filter(
-  (c) => c.id === NEXT_EDITOR_COMMAND_ID || c.id === PREVIOUS_EDITOR_COMMAND_ID,
+/** 面板就地处理的命令(保存 / 下一个 / 上一个编辑器)的约定默认键:命令尚未注册时兜底,已注册以注册的 spec 为准。 */
+const PANEL_DEFAULT_COMMANDS = editorCommandSpecs(detectPlatform()).filter(
+  (c) => c.id === SAVE_COMMAND.id || c.id === NEXT_EDITOR_COMMAND_ID || c.id === PREVIOUS_EDITOR_COMMAND_ID,
 );
-
-/** 按生效绑定判定是否为下一个(1)/ 上一个(-1)编辑器;否则 0。 */
-function adjacentEditorDeltaFor(e: KeyboardEvent, overrides: Readonly<Record<string, string>>): 1 | -1 | 0 {
-  for (const spec of ADJACENT_EDITOR_SPECS) {
-    const combo = resolveActiveHotkey(spec, overrides);
-    if (combo !== undefined && matchesHotkey(combo, e)) return spec.id === NEXT_EDITOR_COMMAND_ID ? 1 : -1;
-  }
-  return 0;
-}
 
 // i18n(I14):模式切换 label 走 catalog —— 此前硬编码英文 'Edit'/'Source'/'Preview',
 // zh/ko 工具栏显英文且不随 locale 切换。id 稳定,label 在组件内用 useT 生成(响应 locale)。
@@ -374,28 +365,22 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     <div
       className="flex h-full w-full flex-col bg-canvas"
       onKeyDown={(e) => {
-        // 保存命令(workbench.action.files.save)的生效绑定:面板内就地保存并截住冒泡,不再到 document 的全局分发
-        //(否则一次按键保存两次)。面板外(Explorer 等)由全局命令保存;面板在 popout 子窗时全局分发不监听子窗
-        // document,靠这里保存。按平台精确匹配修饰键(matchesHotkey,与全局热键同一规则,复审 loop R15);按生效绑定
-        // 判定:用户改绑跟随新键、解绑后不再拦。
-        const overrides = useKeybindingsStore.getState().overrides;
-        const combo = resolveActiveHotkey(SAVE_COMMAND, overrides);
-        if (combo !== undefined && matchesHotkey(combo, e.nativeEvent)) {
-          e.preventDefault();
-          e.stopPropagation();
-          void handleSave();
-          return;
-        }
-        // 下一个 / 上一个编辑器同理在面板内处理:它们只切本编辑器的文件 tab,面板在 popout 子窗时全局分发不监听
-        // 子窗;且不放进子窗全局分发(编辑器不在该子窗时会切到主窗编辑器、子窗里看不到变化)。编辑器内容已处理的键
-        //(defaultPrevented,如 CodeMirror 自有绑定)不抢。
-        if (e.defaultPrevented) return;
-        const delta = adjacentEditorDeltaFor(e.nativeEvent, overrides);
-        if (delta !== 0) {
-          e.preventDefault();
-          e.stopPropagation();
-          openAdjacentEditor(delta);
-        }
+        // 保存 / 下一个 / 上一个编辑器在面板内就地处理并截住冒泡:不再到 document 的全局分发(否则一次按键执行两次);
+        // 面板在 popout 子窗时全局分发不监听子窗 document,靠这里处理;切换只作用于本编辑器的文件 tab。
+        // 裁决与全局分发同一张表(winningCommandFor):只有胜出命令是这三个之一才处理 —— 用户把别的命令绑到 ⌘S 时
+        // 这里不保存(交给全局分发执行那个命令);改绑 / 解绑都跟随。
+        // 不处理:面板内确认框开着(按键冒泡自框内,对话框期间工作台快捷键不触发);编辑器内容已处理的键
+        //(defaultPrevented,如保存改绑到 ⌘D / ⌘/ 时 CodeMirror 的选中下一处 / 切换注释)不再叠一个动作。
+        if (e.defaultPrevented || isModalOpenFor(e.nativeEvent)) return;
+        const winner = winningCommandFor(
+          e.nativeEvent,
+          withDefaultCommands(coApp.commands.getAll(), PANEL_DEFAULT_COMMANDS),
+        )?.id;
+        if (winner !== SAVE_COMMAND.id && winner !== NEXT_EDITOR_COMMAND_ID && winner !== PREVIOUS_EDITOR_COMMAND_ID) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (winner === SAVE_COMMAND.id) void handleSave();
+        else openAdjacentEditor(winner === NEXT_EDITOR_COMMAND_ID ? 1 : -1);
       }}
     >
       <EditorHeader onCloseRequest={onTabCloseRequest} />

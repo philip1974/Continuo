@@ -1,4 +1,4 @@
-import { tWithFallback } from '@/i18n';
+import { tWithFallback, type TranslateParams } from '@/i18n';
 import { errorMessage } from '@shared/error-message';
 
 function isPlaceholderStart(code: number): boolean {
@@ -40,13 +40,13 @@ function hasCatalogPlaceholder(text: string): boolean {
  * 所有「error toast / 错误反馈展示」入口的单一来源(Explorer FolderTree FS toast、Editor
  * 保存失败、等)。新增展示 main error 的入口都应走这里,不要直接 notify.error(r.message)。
  */
-export function localizeErrorByCode(code: string, message?: string | null): string {
+export function localizeErrorByCode(code: string, message?: string | null, params?: TranslateParams): string {
   // 原文缺省 / 空串 → 回退 code(未收录 code 时不显示空原因)。此前由各调用点自带回退,写法分成 `||` / `??` / 不回退三种。
   const fallback = message || code;
-  const localized = tWithFallback(`errors.${code}`, fallback);
+  const localized = tWithFallback(`errors.${code}`, fallback, params);
   // 占位符守卫:有些 catalog 模板含插值参数(如 errors.FS_NOT_FOUND='File not found:
   // {path}'、errors.WORKSPACE_NOT_FOUND='...: {workspace}')。本 helper 只有 code+message
-  // 无 params,直接返回会渲染**字面 `{path}`**。这类情形退回原 message(main 的 raw message
+  // 无 params(调用方未传),直接返回会渲染**字面 `{path}`**。这类情形退回原 message(main 的 raw message
   // 通常已含具体路径/细节,比露占位符好)。非参数化 code(FS_DENIED/FS_IO/FS_EEXIST 等
   // 绝大多数)正常本地化。
   if (hasCatalogPlaceholder(localized)) return fallback;

@@ -81,7 +81,7 @@ export const en = {
   'errors.NOT_SUPPORTED': 'Operation not supported',
   'errors.NO_ACTIVE_TAB': 'No active tab',
   'errors.TAB_NOT_FOUND': 'Tab not found',
-  'errors.EDITOR_DISK_CHANGED': 'The file was changed on disk; not overwritten (press Cmd/Ctrl+S to overwrite it or discard your changes and reload)',
+  'errors.EDITOR_DISK_CHANGED': 'The file was changed on disk; not overwritten (press {hotkey} to overwrite it or discard your changes and reload)',
   'errors.NO_DEFAULT_EXPORT': 'Plugin has no default export',
   'errors.NOT_PLUGIN_CLASS': 'Plugin default export is not a Plugin subclass',
   'errors.PATH_SCOPE_CLEANUP_FAILED':
@@ -218,7 +218,7 @@ export const en = {
   'dialog.unsaved_close.dont_save': "Don't Save",
   'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
   'dialog.unsaved_close.disk_changed_note':
-    '{count} file(s) were changed on disk by another program and were not overwritten. Press Cmd/Ctrl+S in the editor to resolve the conflict, or choose "Don\'t Save".',
+    '{count} file(s) were changed on disk by another program and were not overwritten. Press {hotkey} in the editor to resolve the conflict, or choose "Don\'t Save".',
   'dialog.mcp_legacy_config.message': 'Your Continuo MCP config in Claude Code points to a temporary path',
   'dialog.mcp_legacy_config.detail':
     'MCP server(s) {names} in ~/.claude.json point to an old AppImage temporary mount path. After Continuo exits, another user on this machine can place a script with the same name there, which Claude Code would then run as you. Run `claude mcp remove {first}` in the corresponding project directory (add `-s user` for user-scoped config), then run the new command from "Copy MCP config" in the status bar.',
@@ -284,19 +284,16 @@ export const en = {
 
   // keybinding capture modal (13)
   'keybindings.modal.title': 'Set hotkey',
-  'keybindings.modal.command_label': 'Command:',
+  'keybindings.modal.command_line': 'Command: {command}',
   'keybindings.modal.unbound': 'Unbound',
   'keybindings.modal.press_combo': 'Press a new combination…',
-  'keybindings.modal.hint_press_save': 'Press a new combination, then',
-  'keybindings.modal.hint_save': 'to save;',
-  'keybindings.modal.hint_clear': 'to clear;',
-  'keybindings.modal.hint_cancel': 'to cancel',
+  'keybindings.modal.hint_keys': 'Press a new combination, then {enter} to save; {backspace} to clear; {escape} to cancel',
   'keybindings.modal.hint_default': '; default {hotkey}',
   'keybindings.modal.conflict_title': 'This combination is already bound to other commands',
   'keybindings.modal.conflict_advice_override': 'After saving, this command responds to the combination (your keybindings take precedence over defaults); the commands above no longer do.',
   'keybindings.modal.conflict_advice_still_other': 'You also set this combination for “{command}”, which takes precedence — it will keep responding after saving. Unbind it there first.',
   'keybindings.modal.conflict_show_same': 'Show commands using this combination in the list',
-  'keybindings.modal.hint_conflict_save': 'Conflict — click Save to confirm;',
+  'keybindings.modal.hint_keys_conflict': 'Conflict — click Save to confirm; {backspace} to clear; {escape} to cancel',
   'keybindings.modal.reset_default': 'Reset to default',
   'keybindings.modal.reserved_quick_open': 'This combination conflicts with Quick Open. It is reserved and cannot be bound to a command.',
   'keybindings.modal.reserved_command_palette': 'This combination conflicts with the Command Palette. It is reserved and cannot be bound to a command.',
@@ -439,7 +436,6 @@ export const en = {
   // statusbar.* (8)
   // notifications (toast)
   'notifications.dismiss': 'Dismiss',
-  'notifications.repeat_announce': '{message} ({count} times)',
   'notifications.viewport_label': 'Notifications',
 
   'statusbar.mcp.copy': 'Copy MCP config',

@@ -15,7 +15,10 @@ import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { revertFile } from './editor-file-actions';
 import { editorFileDeps } from './editor-file-deps';
 import { findEditorFileTabById } from './editor-tab-lookup';
-import type { Platform } from '@/plugins/command-palette/format-hotkey';
+import { detectPlatform, formatHotkey, type Platform } from '@/plugins/command-palette/format-hotkey';
+import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { tWithFallback } from '@/i18n';
 
 /** 命令 id 与默认键(终端按生效绑定让出 ⌘W / ⌘S 时与此约定一致)。 */
 export const CLOSE_ACTIVE_EDITOR_COMMAND = { id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' } as const;
@@ -23,6 +26,15 @@ export const SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s'
 export const NEXT_EDITOR_COMMAND_ID = 'workbench.action.nextEditor';
 export const PREVIOUS_EDITOR_COMMAND_ID = 'workbench.action.previousEditor';
 export const REVERT_COMMAND_ID = 'workbench.action.files.revert';
+
+/**
+ * 保存命令当前生效绑定的显示文本(按平台:⌘S / Ctrl+S),供提示文案的 `{hotkey}` 占位(「按 {hotkey} 选择覆盖」等):
+ * 改绑后跟随,不写死 Cmd/Ctrl+S。未绑定 → 命令标题。
+ */
+export function saveHotkeyLabel(platform: Platform = detectPlatform()): string {
+  const combo = resolveActiveHotkey(SAVE_COMMAND, useKeybindingsStore.getState().overrides, platform);
+  return combo ? formatHotkey(combo, platform) : tWithFallback('commands.file.save.title', 'Save');
+}
 
 /** EditorPanel 提供的动作(依赖面板内确认框状态)。 */
 export interface EditorPanelActions {

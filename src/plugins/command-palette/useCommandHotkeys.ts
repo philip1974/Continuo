@@ -13,6 +13,7 @@ import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotk
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
+import { hasOpenModalIn } from '@/design/Modal';
 
 /**
  * dockview popout 子窗里也经热键分发的命令:只作用于子窗内的活动面板(dock 的 activePanel 随焦点落在子窗面板上),
@@ -218,6 +219,87 @@ export function selectShadowedBindings(
   return shadowed ?? EMPTY_SHADOWED;
 }
 
+function firstMatchingBinding(
+  bindings: readonly CompiledBinding[],
+  e: KeyboardEvent,
+): CompiledBinding | undefined {
+  const keyLower = lowerIfNeeded(e.key);
+  for (const b of bindings) if (signatureMatchesKey(b.sig, e, keyLower)) return b;
+  return undefined;
+}
+
+// winningCommandFor 的预编译表缓存(面板 / 终端每次按键都要查):命令快照(registry.getAll() 引用稳定)、平台、
+// overrides 三者不变即复用。
+let cachedTable: {
+  readonly commands: readonly CommandSpec[];
+  readonly platform: Platform;
+  readonly overrides: Readonly<Record<string, string>>;
+  readonly bindings: readonly CompiledBinding[];
+} | null = null;
+
+function cachedBindings(
+  commands: readonly CommandSpec[],
+  platform: Platform,
+  overrides: Readonly<Record<string, string>>,
+): readonly CompiledBinding[] {
+  const c = cachedTable;
+  if (c && c.commands === commands && c.platform === platform && c.overrides === overrides) return c.bindings;
+  const bindings = buildCompiledBindings(commands, platform, overrides);
+  cachedTable = { commands, platform, overrides, bindings };
+  return bindings;
+}
+
+/**
+ * 按键在分发表里胜出的命令:与全局分发、设置页「冲突」标注同一张表同一顺序(buildCompiledBindings,表中同签名
+ * 第一条)。编辑器面板 / 终端只在胜出命令是自己负责的命令时就地处理 —— 一键一个动作(对齐 VSCode 单表裁决):
+ * 用户把别的命令绑到 ⌘S 后,焦点在编辑器 / 终端里 ⌘S 也不再保存。无绑定命中 → undefined。
+ */
+export function winningCommandFor(
+  e: KeyboardEvent,
+  commands: readonly CommandSpec[],
+  platform: Platform = detectPlatform(),
+  overrides: Readonly<Record<string, string>> = useKeybindingsStore.getState().overrides,
+): CommandSpec | undefined {
+  return firstMatchingBinding(cachedBindings(commands, platform, overrides), e)?.cmd;
+}
+
+const augmentedCache = new WeakMap<readonly CommandSpec[], Map<readonly DefaultCommand[], readonly CommandSpec[]>>();
+
+/** 约定的命令 id + 默认键(命令由别的模块注册,尚未注册时兜底)。 */
+export type DefaultCommand = Pick<CommandSpec, 'id' | 'hotkey'>;
+
+const NOOP = (): void => {};
+
+/**
+ * 命令快照 + 尚未注册的约定命令(按默认键排在默认层末尾)。面板 / 终端裁决时用:注册时序未到(或测试未注册)时
+ * 仍按约定默认键处理自己的命令;已注册则以注册的 spec 为准。结果按 (快照, defaults) 缓存,引用稳定。
+ */
+export function withDefaultCommands(
+  registered: readonly CommandSpec[],
+  defaults: readonly DefaultCommand[],
+): readonly CommandSpec[] {
+  let byDefaults = augmentedCache.get(registered);
+  const hit = byDefaults?.get(defaults);
+  if (hit) return hit;
+  let out: CommandSpec[] | null = null;
+  for (const d of defaults) {
+    if (registered.some((c) => c.id === d.id)) continue;
+    (out ??= [...registered]).push({ id: d.id, title: d.id, hotkey: d.hotkey, fn: NOOP });
+  }
+  const result = out ?? registered;
+  if (!byDefaults) augmentedCache.set(registered, (byDefaults = new Map()));
+  byDefaults.set(defaults, result);
+  return result;
+}
+
+/** 事件所在文档有打开的 Modal(对话框期间工作台快捷键不执行,按键留给对话框;对齐 VSCode)。 */
+export function isModalOpenFor(e: Event): boolean {
+  // 未派发的事件(target 为空)按主窗文档判;target 是 document 本身时 ownerDocument 为 null。
+  const target = e.target as Node | null;
+  const doc = target?.ownerDocument ?? (target as Document | null) ?? (typeof document === 'undefined' ? null : document);
+  return doc !== null && hasOpenModalIn(doc);
+}
+
 function createHotkeyHandler(
   bindings: readonly CompiledBinding[],
   commands: CommandRegistry,
@@ -231,13 +313,13 @@ function createHotkeyHandler(
     // 里 ⌘B 同时加粗与切换侧栏、用户改绑到 mod+d / mod+/ 等编辑器键位时一键两动作(与终端让出 / 编辑器 ⌘S 同族)。
     // 只认编辑器区域:其它可编辑控件(xterm textarea 等)可能对未处理的组合也 preventDefault,不据此拦命令。
     if (e.defaultPrevented && isInsideCodeEditor(e.target)) return;
-    const editable = isEditableTarget(e.target);
-    const keyLower = lowerIfNeeded(e.key);
-    for (const b of bindings) {
-      if (signatureMatchesKey(b.sig, e, keyLower)) {
-        if (editable && !b.sig.wantMeta && !b.sig.wantCtrl && !b.sig.wantAlt) {
-          continue;
-        }
+    // 事件所在文档有打开的 Modal(删除确认 / Agent 授权 / 保存三按钮框、Quick Open…)→ 不执行、不 preventDefault:
+    // 否则 ⌘T 在背后新建终端并抢走焦点、⌘W 关掉背后的 tab。Esc / Tab / Enter 交给 Modal 与其中的控件。
+    if (isModalOpenFor(e)) return;
+    const b = firstMatchingBinding(bindings, e);
+    if (b) {
+      // 同一事件命中的绑定签名相同(修饰键 + 主键精确比较),A64 放行对它们一致 → 只看第一条。
+      if (!isEditableTarget(e.target) || b.sig.wantMeta || b.sig.wantCtrl || b.sig.wantAlt) {
         e.preventDefault();
         e.stopPropagation();
         // 经 runContributedAction 走:命令(任意插件代码,可 network/fs)同步 throw 或
@@ -248,7 +330,6 @@ function createHotkeyHandler(
         // 插件 disable/reload 同步 unregister 后、到 React 重渲替换本 handler 前的窗口内,旧
         // bindings 闭包仍持已卸载命令的 fn;重查使死命令静默忽略,不再执行已卸载插件代码。
         runRegisteredCommand(commands, b.cmd.id, tWithFallback(b.cmd.titleKey, b.cmd.title));
-        return;
       }
     }
   };

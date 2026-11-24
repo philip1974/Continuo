@@ -428,10 +428,6 @@
 
 - [`tabs.spec.tsx`](./design-system-tabs/tabs.spec.tsx)
 
-## [对话框的可访问说明(aria-describedby / alertdialog)](./dialog-accessible-description/README.md)
-
-- [`dialog-description.spec.tsx`](./dialog-accessible-description/dialog-description.spec.tsx)
-
 ## [dirty-close-confirm](./dirty-close-confirm/README.md)
 
 - [`close-confirm-flow.spec.ts`](./dirty-close-confirm/close-confirm-flow.spec.ts)
@@ -550,10 +546,6 @@
 - [`use-auto-save.spec.tsx`](./editor-hooks-react/use-auto-save.spec.tsx)
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
-
-## [editor-markdown-ime-composition](./editor-markdown-ime-composition/README.md)
-
-- [`ime-composition.spec.ts`](./editor-markdown-ime-composition/ime-composition.spec.ts)
 
 ## [editor-markdown-link-href](./editor-markdown-link-href/README.md)
 
@@ -786,6 +778,10 @@
 
 - [`key-vocabulary.spec.ts`](./hotkey-key-vocabulary/key-vocabulary.spec.ts)
 
+## [hotkey-modal-suppression(Modal 打开时不执行工作台快捷键)](./hotkey-modal-suppression/README.md)
+
+- [`hotkey-modal-suppression.spec.tsx`](./hotkey-modal-suppression/hotkey-modal-suppression.spec.tsx)
+
 ## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
 
 - [`bootstrap-locale-sync.spec.ts`](./i18n-en-zh-ko/bootstrap-locale-sync.spec.ts)
@@ -853,10 +849,12 @@
 ## [KeybindingCaptureModal(快捷键捕获 modal)](./keybinding-capture-modal/README.md)
 
 - [`keybinding-capture-modal.spec.tsx`](./keybinding-capture-modal/keybinding-capture-modal.spec.tsx)
+- [`keycap-platform.spec.tsx`](./keybinding-capture-modal/keycap-platform.spec.tsx)
 
 ## [keybinding-user-priority](./keybinding-user-priority/README.md)
 
 - [`keybinding-user-priority.spec.tsx`](./keybinding-user-priority/keybinding-user-priority.spec.tsx)
+- [`panel-arbitration.spec.tsx`](./keybinding-user-priority/panel-arbitration.spec.tsx)
 
 ## [keybindings-store](./keybindings-store/)
 
@@ -1153,7 +1151,6 @@
 ## [plugin-install-enable](./plugin-install-enable/README.md)
 
 - [`adopt-installed.spec.ts`](./plugin-install-enable/adopt-installed.spec.ts)
-- [`cross-window-installed.spec.ts`](./plugin-install-enable/cross-window-installed.spec.ts)
 - [`install-writes-enabled.spec.ts`](./plugin-install-enable/install-writes-enabled.spec.ts)
 - [`pending-row-restart.spec.tsx`](./plugin-install-enable/pending-row-restart.spec.tsx)
 - [`relaunch-guard.spec.ts`](./plugin-install-enable/relaunch-guard.spec.ts)
@@ -1721,7 +1718,6 @@
 - [`toast-above-statusbar.spec.ts`](./unified-toast-notification/toast-above-statusbar.spec.ts)
 - [`toast-component-tokens.spec.ts`](./unified-toast-notification/toast-component-tokens.spec.ts)
 - [`toast-dom-render.spec.tsx`](./unified-toast-notification/toast-dom-render.spec.tsx)
-- [`toast-live-announcer.spec.tsx`](./unified-toast-notification/toast-live-announcer.spec.tsx)
 - [`toast-pause-focus.spec.tsx`](./unified-toast-notification/toast-pause-focus.spec.tsx)
 - [`toast-pause-modal.spec.tsx`](./unified-toast-notification/toast-pause-modal.spec.tsx)
 - [`toast-popout-windows.spec.tsx`](./unified-toast-notification/toast-popout-windows.spec.tsx)
@@ -1797,6 +1793,7 @@
 - [`editor-commands-registration.spec.ts`](./workbench-editor-commands/editor-commands-registration.spec.ts)
 - [`editor-commands.spec.tsx`](./workbench-editor-commands/editor-commands.spec.tsx)
 - [`popout-hotkeys.spec.tsx`](./workbench-editor-commands/popout-hotkeys.spec.tsx)
+- [`save-hotkey-label.spec.tsx`](./workbench-editor-commands/save-hotkey-label.spec.tsx)
 - [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)
 
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)

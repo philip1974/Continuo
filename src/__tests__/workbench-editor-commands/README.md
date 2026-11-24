@@ -13,6 +13,9 @@
 3. **`workbench.action.files.save`(默认 `mod+s`,三语标题「保存」)**:保存当前活动文件 tab,焦点在哪都生效
   (Explorer、终端让出后、dock 其它面板);与编辑器面板内 ⌘S 同一实现(含磁盘已被外部修改时的「仍然覆盖」确认),
    一次按键只保存一次;命令面板里可见可执行。编辑器面板内按键按**生效绑定**判定(用户改绑 / 解绑后跟随)。
+   提示里写到保存键的文案(磁盘冲突的 `errors.EDITOR_DISK_CHANGED`、关窗保存失败的
+   `dialog.unsaved_close.disk_changed_note`,三语)用 `{hotkey}` 填**当前生效绑定**(`saveHotkeyLabel`,按平台格式化;
+   未绑定 → 命令标题),改绑保存后提示跟随,不再写死 Cmd/Ctrl+S(`save-hotkey-label.spec.tsx`)。
 4. **`workbench.action.nextEditor` / `workbench.action.previousEditor`**:在编辑器文件 tab 间循环切换(首尾相接);
    默认键按平台对齐 VSCode:mac `⌥⌘→` / `⌥⌘←`(`mod+alt+right` / `mod+alt+left`),其它 `Ctrl+PageDown` /
    `Ctrl+PageUp`。tab 数 < 2 → no-op。
@@ -38,5 +41,6 @@
 
 - `editor-commands.spec.tsx`:关闭 / 保存 / 切换行为(jsdom,渲染 EditorPanel + 全局热键分发)
 - `editor-commands-registration.spec.ts`:核心插件注册的 id / 默认键 / 三语标题
+- `save-hotkey-label.spec.tsx`:保存键文案填当前生效绑定
 - `popout-hotkeys.spec.tsx`:popout 子窗按键分发(白名单、生效绑定、监听随子窗移除)
 - 菜单项见 `dirty-close-confirm/close-confirm-flow.spec.ts`「File 菜单关闭窗口」;`window:close` 见 `window-close-ipc.spec.ts`

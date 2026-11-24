@@ -3,11 +3,19 @@
 // 按键照常进 shell / 交给 picker)。
 // 此前缩放用兄弟包 shouldSkipXtermKey(不分平台)、搜索用 isSearchHotkey(固定 mod+f),均不读改绑:mac 上
 // Shift+Ctrl+Enter、改绑 / 解绑后的原默认键被拦下不发给 shell、命令又不匹配,按键被吞。
-import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
+// 让出与否按**同一张分发表**裁决(winningCommandFor,与全局分发 / 设置页「冲突」标注同表同序):只有胜出命令是终端
+// 负责的命令才让出 —— 用户把别的命令绑到 ⌘K / ⌘S 时,终端里不再清屏 / 保存(一键一个动作,对齐 VSCode)。
+// 事件所在文档有打开的 Modal → 一律不让出、不执行(对话框期间工作台快捷键不触发)。
+import {
+  isModalOpenFor,
+  winningCommandFor,
+  withDefaultCommands,
+  type DefaultCommand,
+} from '@/plugins/command-palette/useCommandHotkeys';
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
-import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { coApp } from '@/plugins/co-app';
+import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { tWithFallback } from '@/i18n';
 
@@ -34,35 +42,48 @@ export function terminalClearDefaultHotkey(platform: Platform): string | undefin
 /**
  * 终端让出、交给命令的键(缩放 / 搜索另有专门处理,不在此列)。对齐 VSCode terminalInstance 的判定
  *(`event.metaKey || shouldCommandSkipShell(commandId)`):
- * - terminal.clear 在 commandsToSkipShell 默认列表里 → 匹配生效绑定即让出;
+ * - terminal.clear 在 commandsToSkipShell 默认列表里 → 胜出即让出;
  * - 关闭编辑器 / 保存不在列表里 → 只有按键带 Meta(mac ⌘)才让出。Win/Linux 上 Ctrl+W(删前一词)/ Ctrl+S
  *  (XOFF)照常进 shell,与 VSCode 一致。
  */
-const SKIP_SHELL_COMMANDS: readonly {
-  readonly id: string;
-  readonly defaultHotkey: (platform: Platform) => string | undefined;
-  readonly metaOnly: boolean;
-}[] = [
-  { id: TERMINAL_CLEAR_COMMAND.id, defaultHotkey: terminalClearDefaultHotkey, metaOnly: false },
-  { id: WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND.id, defaultHotkey: () => WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND.hotkey, metaOnly: true },
-  { id: WORKBENCH_SAVE_COMMAND.id, defaultHotkey: () => WORKBENCH_SAVE_COMMAND.hotkey, metaOnly: true },
-];
+const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> = new Map([
+  [TERMINAL_CLEAR_COMMAND.id, { metaOnly: false }],
+  [WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND.id, { metaOnly: true }],
+  [WORKBENCH_SAVE_COMMAND.id, { metaOnly: true }],
+]);
+
+/** 终端判定涉及的命令的约定默认键(命令尚未注册时兜底;已注册以注册的 hotkey 为准)。按平台(clear 仅 mac 有默认键)。 */
+const TERMINAL_DEFAULTS: Readonly<Record<Platform, readonly DefaultCommand[]>> = {
+  mac: terminalDefaults('mac'),
+  other: terminalDefaults('other'),
+};
+
+function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
+  return [
+    TERMINAL_ZOOM_COMMAND,
+    TERMINAL_SEARCH_COMMAND,
+    { id: TERMINAL_CLEAR_COMMAND.id, hotkey: terminalClearDefaultHotkey(platform) },
+    WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND,
+    WORKBENCH_SAVE_COMMAND,
+  ];
+}
 
 interface CommandLookup {
-  get(id: string): { readonly id: string; readonly hotkey?: string } | undefined;
+  getAll(): readonly CommandSpec[];
 }
 
 type Overrides = Readonly<Record<string, string>>;
 
-function matchesEffective(
-  command: { readonly id: string; readonly hotkey?: string },
+/** 按键在分发表里胜出的命令 id(含未注册命令的约定默认键);输入法组合中 / 非 keydown / 有 Modal → null。 */
+function terminalWinner(
   event: KeyboardEvent,
   platform: Platform,
   overrides: Overrides,
-): boolean {
-  if (event.type !== 'keydown' || event.isComposing) return false;
-  const combo = resolveActiveHotkey(command, overrides, platform); // 保留键上的绑定不让出(与命令分发同判)
-  return combo !== undefined && matchesHotkey(combo, event, platform);
+  registry: CommandLookup,
+): string | null {
+  if (event.type !== 'keydown' || event.isComposing || isModalOpenFor(event)) return null;
+  const commands = withDefaultCommands(registry.getAll(), TERMINAL_DEFAULTS[platform]);
+  return winningCommandFor(event, commands, platform, overrides)?.id ?? null;
 }
 
 /** 终端应让出给缩放命令的按键。 */
@@ -70,8 +91,9 @@ export function isTerminalZoomHotkey(
   event: KeyboardEvent,
   platform: Platform = detectPlatform(),
   overrides: Overrides = useKeybindingsStore.getState().overrides,
+  registry: CommandLookup = coApp.commands,
 ): boolean {
-  return matchesEffective(TERMINAL_ZOOM_COMMAND, event, platform, overrides);
+  return terminalWinner(event, platform, overrides, registry) === TERMINAL_ZOOM_COMMAND.id;
 }
 
 /** 终端应拦下并打开搜索条的按键。 */
@@ -79,14 +101,14 @@ export function isTerminalSearchHotkey(
   event: KeyboardEvent,
   platform: Platform = detectPlatform(),
   overrides: Overrides = useKeybindingsStore.getState().overrides,
+  registry: CommandLookup = coApp.commands,
 ): boolean {
-  return matchesEffective(TERMINAL_SEARCH_COMMAND, event, platform, overrides);
+  return terminalWinner(event, platform, overrides, registry) === TERMINAL_SEARCH_COMMAND.id;
 }
 
 /**
  * 终端应让出给工作台命令(clear / closeActiveEditor / save)的按键 → 命令 id;否则 null。
- * 默认键:命令已注册取注册的 hotkey(注册方改默认键也跟随),未注册取约定默认键;再叠加用户改绑 / 解绑。
- * 关闭 / 保存另须按键带 Meta(见 SKIP_SHELL_COMMANDS)。
+ * 胜出命令按分发表裁决(用户改绑 / 解绑 / 别的命令占了该键都跟随);关闭 / 保存另须按键带 Meta(见 SKIP_SHELL_COMMANDS)。
  */
 export function terminalYieldedCommandId(
   event: KeyboardEvent,
@@ -94,13 +116,11 @@ export function terminalYieldedCommandId(
   overrides: Overrides = useKeybindingsStore.getState().overrides,
   registry: CommandLookup = coApp.commands,
 ): string | null {
-  for (const command of SKIP_SHELL_COMMANDS) {
-    if (command.metaOnly && !event.metaKey) continue;
-    const live = registry.get(command.id);
-    const spec = { id: command.id, hotkey: live ? live.hotkey : command.defaultHotkey(platform) };
-    if (matchesEffective(spec, event, platform, overrides)) return command.id;
-  }
-  return null;
+  const id = terminalWinner(event, platform, overrides, registry);
+  if (id === null) return null;
+  const rule = SKIP_SHELL_COMMANDS.get(id);
+  if (!rule || (rule.metaOnly && !event.metaKey)) return null;
+  return id;
 }
 
 /**

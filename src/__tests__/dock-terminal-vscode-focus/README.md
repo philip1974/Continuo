@@ -11,7 +11,8 @@
 2. **新建终端后焦点直接进 xterm**(`new-terminal-focus.spec.ts`;e2e `terminal-vscode-parity.spec.ts`):新终端
    面板在 setActive 之后才 lazy 挂载,错过了激活事件。xterm 创建(含 0 尺寸推迟创建)那一刻若面板已是活动面板且
    搜索条未开 → 聚焦,焦点在编辑器时 ⌘T 后可直接键入。agent(MCP)创建的会话以「不抢激活」方式加入、不是活动
-   面板 → 不抢焦点(VSCode 扩展创建终端默认 preserveFocus)。
+   面板 → 不抢焦点(VSCode 扩展创建终端默认 preserveFocus)。xterm 创建那一刻所在文档有打开的 Modal(删除确认 /
+   授权框等)→ 不抢焦点(见 `hotkey-modal-suppression`)。
 3. **关掉活动组 / popout 子窗后激活最近使用的组**(`group-mru.spec.ts`):dockview 默认激活最早的组
    (groups[0])。改为按组的最近使用顺序(MRU)激活下一个存活组,是终端则聚焦 xterm(VSCode 关闭编辑器组后激活
    最近使用的组)。popout 子窗关闭、面板收回主窗时,收回的面板成为活动面板并获焦(VSCode 辅助窗口关闭后收回的

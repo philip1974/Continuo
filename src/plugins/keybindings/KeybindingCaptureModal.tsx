@@ -3,10 +3,11 @@
 // Backspace=清空(用户可保存空 = unbind),无修饰 Enter=保存已录组合(VSCode 录键框同款,故 Enter 单键不可录),
 // 其它键 = 当前组合。打开时焦点落在录制区(data-autofocus)。
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button, KeyCap, Modal } from '@/design';
 import {
   canonicalHotkey,
+  formatHotkey,
   formatHotkeyParts,
   detectPlatform,
   type Platform,
@@ -22,6 +23,25 @@ import { selectShadowedBindings } from '@/plugins/command-palette/useCommandHotk
 const PLATFORM = detectPlatform();
 const EMPTY_CONFLICTS: readonly CommandSpec[] = [];
 const EMPTY_OVERRIDES: Readonly<Record<string, string>> = {};
+
+/** 提示行里的键帽:与同框录到的组合同一套符号(formatHotkeyParts,mac ↵ / ⌫ / ⎋)。 */
+const HINT_KEYCAPS: Readonly<Record<string, ReactNode>> = {
+  enter: <KeyCap>{formatHotkeyParts('enter', PLATFORM)}</KeyCap>,
+  backspace: <KeyCap>{formatHotkeyParts('backspace', PLATFORM)}</KeyCap>,
+  escape: <KeyCap>{formatHotkeyParts('escape', PLATFORM)}</KeyCap>,
+};
+
+/**
+ * 按 `{name}` 占位把整句文案切成文本与节点(键帽 / 命令名)。标点与间距由各语言的整句模板决定(zh 全角标点),
+ * 不再由组件在片段之间补半角空格。未知占位原样保留。
+ */
+function renderTemplate(template: string, nodes: Readonly<Record<string, ReactNode>>): ReactNode[] {
+  return template.split(/(\{[a-z]+\})/).map((part, i) => {
+    const name = /^\{[a-z]+\}$/.test(part) ? part.slice(1, -1) : '';
+    const node = name && Object.hasOwn(nodes, name) ? nodes[name] : undefined;
+    return <Fragment key={i}>{node ?? part}</Fragment>;
+  });
+}
 
 function appendComboPart(combo: string, part: string): string {
   return combo ? `${combo}+${part}` : part;
@@ -225,7 +245,7 @@ function KeybindingCaptureModalBody({
     return formatHotkeyParts(display, PLATFORM);
   }, [display]);
   const defaultHotkeyLabel = useMemo(() => {
-    return defaultHotkey ? formatHotkeyParts(defaultHotkey, PLATFORM).join(' ') : '';
+    return defaultHotkey ? formatHotkey(defaultHotkey, PLATFORM) : '';
   }, [defaultHotkey]);
 
   // 冲突检测:只在用户已捕获新组合(captured 非空)时检查;扫描其它命令的
@@ -266,10 +286,11 @@ function KeybindingCaptureModalBody({
       <h2 id="keybinding-capture-title" className="text-sm font-medium text-fg">
         {t('keybindings.modal.title')}
       </h2>
-      {/* 标签与命令名之间、提示文案与键帽之间用文本空格(不是 flex gap):视觉与读屏连读都不粘连。 */}
+      {/* 标签与命令名之间、提示文案与键帽之间是整句模板里的文本空格 / 标点(不是 flex gap):视觉与读屏连读都不粘连。 */}
       <div className="mt-1 text-xs text-fg-muted">
-        {t('keybindings.modal.command_label')}{' '}
-        <span className="text-fg">{commandTitle}</span>
+        {renderTemplate(t('keybindings.modal.command_line'), {
+          command: <span className="text-fg">{commandTitle}</span>,
+        })}
       </div>
 
       {/* a11y(A61,A52 同族:捕获结果框本身):按键由 document capture 处理,焦点不在此框上,
@@ -307,15 +328,10 @@ function KeybindingCaptureModalBody({
 
       <div data-testid="keybinding-capture-hints" className="mt-2 text-2xs leading-5 text-fg-dim">
         {/* 有冲突时 Enter 不保存(见 acceptFromEnterRef),提示行与行为一致:改为点「保存」确认。 */}
-        {conflicts.length > 0 ? (
-          <>{t('keybindings.modal.hint_conflict_save')} </>
-        ) : (
-          <>
-            {t('keybindings.modal.hint_press_save')} <KeyCap>Enter</KeyCap> {t('keybindings.modal.hint_save')}{' '}
-          </>
+        {renderTemplate(
+          t(conflicts.length > 0 ? 'keybindings.modal.hint_keys_conflict' : 'keybindings.modal.hint_keys'),
+          HINT_KEYCAPS,
         )}
-        <KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}{' '}
-        <KeyCap>Esc</KeyCap> {t('keybindings.modal.hint_cancel')}
         {defaultHotkey && t('keybindings.modal.hint_default', { hotkey: defaultHotkeyLabel })}
       </div>
 
