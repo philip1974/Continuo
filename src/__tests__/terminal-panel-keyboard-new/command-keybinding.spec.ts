@@ -5,7 +5,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 
 beforeEach(() => {
   // terminal.new 会 await waitForWorkspaceRootRestored()(R10;hydrated ⇒ rootRestored);测试里置 hydrated 防挂死。
-  useWorkspaceStore.setState({ hydrated: true });
+  useWorkspaceStore.setState({ rootRestored: true });
 });
 
 const mocks = vi.hoisted(() => ({

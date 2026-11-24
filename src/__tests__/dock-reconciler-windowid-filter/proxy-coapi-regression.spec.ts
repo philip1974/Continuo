@@ -57,7 +57,7 @@ vi.mock('@/lib/co-api', () => {
 
 beforeEach(() => {
   // TerminalSessionsSync 首轮可见过滤等 workspace 持久化恢复完成(复审 r3 term#1)。
-  useWorkspaceStore.setState({ hydrated: true });
+  useWorkspaceStore.setState({ rootRestored: true });
   _resetTerminalDropWarningsForTest();
   mocks.windowId = 2;
   mocks.listSessions.mockReset();

@@ -359,9 +359,9 @@ describe('initExplorerPersistence + editor', () => {
   }
 
   // 性能(r3 复核):root 恢复后、编辑器 tab 并发读盘前即置 rootRestored —— 终端首轮过滤 / Splash 放行
-  // 只依赖 root,不必等全部恢复 tab 读完;hydrated 仍在 tab 恢复后才置位(TerminalPanel 等既有契约不变)。
-  it('编辑器 tab 读盘在途 → rootRestored 已置位且 root 已恢复,hydrated 仍为 false', async () => {
-    useWorkspaceStore.setState({ hydrated: false, rootRestored: false });
+  // 只依赖 root,不必等全部恢复 tab 读完。
+  it('编辑器 tab 读盘在途 → rootRestored 已置位且 root 已恢复', async () => {
+    useWorkspaceStore.setState({ rootRestored: false });
     const snap = snapV2({
       workspaceRoot: '/w',
       recentRoots: ['/w'],
@@ -379,10 +379,8 @@ describe('initExplorerPersistence + editor', () => {
     await vi.waitFor(() => expect(fs.readFile).toHaveBeenCalled());
     expect(useWorkspaceStore.getState().rootRestored).toBe(true);
     expect(useWorkspaceStore.getState().root).toBe('/w');
-    expect(useWorkspaceStore.getState().hydrated).toBe(false);
     release();
     await done;
-    expect(useWorkspaceStore.getState().hydrated).toBe(true);
   });
 
   it('extras.fs 提供 + windows[0].editor 有 → hydrate editor tabs', async () => {

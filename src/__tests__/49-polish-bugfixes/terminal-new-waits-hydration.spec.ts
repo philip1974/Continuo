@@ -50,11 +50,11 @@ function terminalNewCmd(): CommandSpec {
 
 beforeEach(() => {
   mocks.createTerminal.mockClear();
-  useWorkspaceStore.setState({ hydrated: false, rootRestored: false, root: null, recentRoots: [] });
+  useWorkspaceStore.setState({ rootRestored: false, root: null, recentRoots: [] });
 });
 
 describe('topic49 R10 · terminal.new 等 hydrate', () => {
-  it('hydrated=false 时不立即创建终端;hydrate(带 root)后用真实 cwd 创建', async () => {
+  it('root 未恢复时不立即创建终端;恢复(带 root)后用真实 cwd 创建', async () => {
     const cmd = terminalNewCmd();
 
     let done = false;
@@ -69,7 +69,7 @@ describe('topic49 R10 · terminal.new 等 hydrate', () => {
 
     // 持久化层 hydrate 完成,root 已就绪
     useWorkspaceStore.getState().setRoot('/repo');
-    useWorkspaceStore.getState().markHydrated();
+    useWorkspaceStore.getState().markRootRestored();
 
     await p;
     expect(done).toBe(true);

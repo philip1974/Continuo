@@ -47,7 +47,7 @@ function session(id: string): TerminalSession {
 beforeEach(() => {
   mocks.listSessions.mockReset();
   useTerminalStore.setState({ sessions: [], hydrated: false, settled: false });
-  useWorkspaceStore.setState({ root: null, hydrated: true });
+  useWorkspaceStore.setState({ root: null, rootRestored: true });
 });
 afterEach(() => cleanup());
 

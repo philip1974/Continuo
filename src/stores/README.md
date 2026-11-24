@@ -17,7 +17,7 @@ All stores currently use `import { create } from 'zustand'` (React-coupled). A f
 | `pinned.store.ts` | Ordered list of pinned file paths (no pin / unpin UI yet; the data only round-trips through persistence) | Yes (`explorer.json.pinned`) | local |
 | `debug.store.ts` | Debug panel view: sessions, breakpoints, stack frames, scopes / variables of the stopped session | No | **main** (debug service pushes view events) |
 | `settings.store.ts` | UI locale (en / zh / ko), applied across all windows | Yes (by main's settings) | **main** (`i18n:changed` broadcast) |
-| `workspace.store.ts` | Workspace root + recent roots LRU (max 5) + `rootRestored` / `hydrated` flags for the persistence layer | Yes | local; consumers must wait on `rootRestored` (root only) or `hydrated` (root + editor tabs) before reading `root` |
+| `workspace.store.ts` | Workspace root + recent roots LRU (max 5) + `rootRestored` flag for the persistence layer | Yes | local; consumers must wait on `rootRestored` before reading `root` |
 
 ## Why some stores are mirrors and some are local
 
@@ -26,21 +26,23 @@ All stores currently use `import { create } from 'zustand'` (React-coupled). A f
 - **`debug.store`** and **`settings.store`** are also mirrors: main pushes debug view events and `i18n:changed` broadcasts.
 - Everything else is renderer-local.
 
-## `rootRestored` / `hydrated` gates (workspace store)
+## `rootRestored` gate (workspace store)
 
 ```
 workspace.rootRestored === false → persistence layer hasn't finished reading explorer.json
                                  → workspace.root may still be null even if a saved root exists
                                  → consumers that race may emit IPC calls with no cwd → main responds
                                    with TERMINAL_CWD_UNRESOLVED
-workspace.hydrated === false     → additionally, restored editor tabs may still be loading
-                                   (hydrateEditorTabs: up to 256 tabs, 32 concurrent reads)
 ```
 
-`initExplorerPersistence` flips `rootRestored = true` right after the root is restored (before the editor-tab reads), and `hydrated = true` after the tab reads. Both flip whether the read succeeds, fails, or finds no file, and `hydrated ⇒ rootRestored`.
+`initExplorerPersistence` flips `rootRestored = true` right after the root is restored — before the restored editor
+tabs are read (hydrateEditorTabs: up to 256 tabs, 32 concurrent reads), so waiting on it never puts those disk reads on
+the cold-start critical path. It flips whether the read succeeds, fails, or finds no file.
 
-- Consumers that only need `root` (new user terminal cwd — `createUserTerminal`; window→root push to main — `MainApp` notifyRoot; first-pass terminal filter — `TerminalSessionsSync`, which checks the same predicate inline) wait on `waitForWorkspaceRootRestored()` (`rootRestored || hydrated`). Waiting on `hydrated` here would put the editor-tab disk reads on the cold-start critical path.
-- Consumers that also depend on the restored editor tabs must wait for `hydrated` (none exist today).
+- Consumers that need `root` (new user terminal cwd — `createUserTerminal`; window→root push to main — `MainApp`
+  notifyRoot; first-pass terminal filter — `TerminalSessionsSync`, which checks the same predicate inline) wait on
+  `waitForWorkspaceRootRestored()`.
+- (A separate `hydrated` flag that flipped after the tab reads had no consumer and was removed.)
 
 ## Adding a new store
 

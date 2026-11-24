@@ -57,14 +57,13 @@ beforeEach(() => {
   useWorkspaceStore.setState({
     root: null,
     recentRoots: [],
-    hydrated: false,
     rootRestored: false,
   });
   useEditorStore.setState({ tabs: [], activeTabId: null });
 });
 
 describe('waitForWorkspaceRootRestored', () => {
-  it('rootRestored / hydrated 都为 false 时挂起;markRootRestored 后 resolve', async () => {
+  it('rootRestored 为 false 时挂起;markRootRestored 后 resolve', async () => {
     let done = false;
     const p = waitForWorkspaceRootRestored().then(() => {
       done = true;
@@ -77,14 +76,14 @@ describe('waitForWorkspaceRootRestored', () => {
     expect(done).toBe(true);
   });
 
-  it('已 hydrated(⇒ rootRestored)时立即 resolve', async () => {
-    useWorkspaceStore.setState({ hydrated: true, rootRestored: false });
+  it('已 rootRestored 时立即 resolve', async () => {
+    useWorkspaceStore.setState({ rootRestored: true });
     await expect(waitForWorkspaceRootRestored()).resolves.toBeUndefined();
   });
 });
 
 describe('createUserTerminal 不等编辑器 tab 读盘', () => {
-  it('tab 读盘在途(hydrated=false)时已用恢复出的 root 发起 terminal.create', async () => {
+  it('tab 读盘在途时已用恢复出的 root 发起 terminal.create', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => {
       release = r;
@@ -106,7 +105,6 @@ describe('createUserTerminal 不等编辑器 tab 读盘', () => {
 
     const id = await createUserTerminal();
 
-    expect(useWorkspaceStore.getState().hydrated).toBe(false); // 读盘仍在途
     expect(id).toBe('term-1');
     expect(mocks.create).toHaveBeenCalledWith({
       originHint: 'user',
@@ -116,7 +114,6 @@ describe('createUserTerminal 不等编辑器 tab 读盘', () => {
 
     release();
     await persistDone;
-    expect(useWorkspaceStore.getState().hydrated).toBe(true);
   });
 
   it('root 尚未恢复时仍等待(不以初始 null root 创建)', async () => {

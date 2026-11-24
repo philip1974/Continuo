@@ -48,7 +48,7 @@ vi.mock('../../panels/Terminal/useTerminal', () => ({
 
 beforeEach(async () => {
   // TerminalSessionsSync 首轮可见过滤等 workspace 持久化恢复完成(复审 r3 term#1)。
-  useWorkspaceStore.setState({ hydrated: true });
+  useWorkspaceStore.setState({ rootRestored: true });
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   mocks.windowId = 1;
   mocks.listSessions.mockReset();

@@ -44,7 +44,6 @@ function resetStores(): void {
   useWorkspaceStore.setState({
     root: null,
     recentRoots: [],
-    hydrated: false,
   });
   useExplorerStore.setState({
     expandedPaths: new Set(),

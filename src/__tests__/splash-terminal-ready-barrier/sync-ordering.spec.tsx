@@ -88,17 +88,17 @@ function mount() {
   return { api, onHydrated };
 }
 
-/** 模拟 initExplorerPersistence:先 setRoot 恢复 root,再 markHydrated。 */
+/** 模拟 initExplorerPersistence:先 setRoot 恢复 root,再 markRootRestored。 */
 function restoreWorkspace(root: string) {
   useWorkspaceStore.getState().setRoot(root);
-  useWorkspaceStore.getState().markHydrated();
+  useWorkspaceStore.getState().markRootRestored();
 }
 
 beforeEach(() => {
   __resetReconcilerForTest();
   mocks.listSessions.mockReset();
   useTerminalStore.setState({ sessions: [], hydrated: false, settled: false });
-  useWorkspaceStore.setState({ root: null, hydrated: false, rootRestored: false });
+  useWorkspaceStore.setState({ root: null, rootRestored: false });
 });
 afterEach(() => cleanup());
 
@@ -157,7 +157,6 @@ describe('终端首个快照与 workspace 恢复的完成顺序', () => {
       useWorkspaceStore.getState().setRoot('/proj');
       useWorkspaceStore.getState().markRootRestored();
     });
-    expect(useWorkspaceStore.getState().hydrated).toBe(false);
     expect(useTerminalStore.getState().hydrated).toBe(true);
     expect(api.byId['terminal-t1']).toBeDefined();
     expect(api.byId['terminal-t1']?.api.setActive).not.toHaveBeenCalled();

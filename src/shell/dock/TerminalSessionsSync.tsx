@@ -92,8 +92,8 @@ export function TerminalSessionsSync(): null {
       const workspace = useWorkspaceStore.getState();
       // workspace 尚未完成持久化恢复时 root 仍是初始 null:此时过滤会把存量 workspace 终端滤掉、恢复后
       // 再当普通新增(兜底聚焦抢焦)。首轮可见过滤等 workspace root 恢复(由下方订阅触发);
-      // 只需 root,不等编辑器 tab 读盘(rootRestored 早于 hydrated,hydrated ⇒ rootRestored)。
-      if (!workspace.rootRestored && !workspace.hydrated) return;
+      // 只需 root,不等编辑器 tab 读盘(rootRestored 置于 tab 读盘之前)。
+      if (!workspace.rootRestored) return;
       const store = useTerminalStore.getState();
       store.replaceSnapshot(filterByWorkspaceRoot(rawOwned, workspace.root));
       // 空快照时 replaceSnapshot 不产生变化 → 显式标记已收到首个权威快照(非空时已原子置位,此处 no-op)。
@@ -141,11 +141,7 @@ export function TerminalSessionsSync(): null {
 
     // 当前 workspace 切换 / 首次恢复完成 → 用最新 raw 重新过滤(契约:visible = global || workspaceRoot===root)。
     const unsubWorkspace = useWorkspaceStore.subscribe((s, prev) => {
-      if (
-        s.root !== prev.root ||
-        s.hydrated !== prev.hydrated ||
-        s.rootRestored !== prev.rootRestored
-      ) {
+      if (s.root !== prev.root || s.rootRestored !== prev.rootRestored) {
         applyWorkspaceFilter();
       }
     });

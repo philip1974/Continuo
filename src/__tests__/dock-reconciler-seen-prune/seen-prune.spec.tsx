@@ -85,7 +85,7 @@ function makeApi() {
 
 beforeEach(() => {
   // TerminalSessionsSync 首轮可见过滤等 workspace 持久化恢复完成(复审 r3 term#1)。
-  useWorkspaceStore.setState({ hydrated: true });
+  useWorkspaceStore.setState({ rootRestored: true });
   __resetReconcilerForTest();
   useTerminalStore.setState({ sessions: [] });
   useWorkspaceStore.setState({ root: '/proj-a' });

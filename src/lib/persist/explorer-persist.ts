@@ -489,12 +489,6 @@ export async function initExplorerPersistence(
     }
   }
 
-  // 同步 workspace 已 hydrate 标志 — TerminalPanel 等消费方需要这个信号才
-  // 敢拿 workspaceRoot 决策新 PTY cwd,否则 race 到 root=null → terminal.create 报错
-  // (TERMINAL_CWD_UNRESOLVED)。
-  // 不论 read 是否成功(包含没有 explorer.json 的首次启动)都置 true。
-  useWorkspaceStore.getState().markHydrated();
-
   // 数据安全(复查 P1):仅在「可信加载」后才注册写订阅/flush。read 失败(!ok/reject)
   // 时磁盘真实态未知、store 仍默认/未恢复态:若注册写订阅,后续任意 root/tab/expanded 变化会把
   // 默认态 snapshot 写回 → main 端 explorer:write 重读 merge 后把真实 recentRoots/pinned/

@@ -113,13 +113,13 @@ describe('workspace.store', () => {
     }
   });
 
-  it('markHydrated 已 hydrated 时 no-op,不触发订阅', () => {
-    useWorkspaceStore.setState({ hydrated: true });
+  it('markRootRestored 已置位时 no-op,不触发订阅(重复调用)', () => {
+    useWorkspaceStore.setState({ rootRestored: true });
     const listener = vi.fn();
     const unsub = useWorkspaceStore.subscribe(listener);
 
     try {
-      useWorkspaceStore.getState().markHydrated();
+      useWorkspaceStore.getState().markRootRestored();
       expect(listener).not.toHaveBeenCalled();
     } finally {
       unsub();

@@ -43,7 +43,6 @@ beforeEach(() => {
   useWorkspaceStore.setState({
     root: null,
     recentRoots: [],
-    hydrated: false,
     rootRestored: false,
   });
 });
@@ -52,7 +51,7 @@ afterEach(() => {
 });
 
 describe('MainApp notifyRoot 门控 = root 已恢复', () => {
-  it('root 恢复前不推送;rootRestored 后(tab 读盘在途,hydrated=false)即推恢复出的 root', async () => {
+  it('root 恢复前不推送;rootRestored 后(tab 读盘在途)即推恢复出的 root', async () => {
     render(<App />);
     await act(async () => {
       await Promise.resolve();
@@ -66,6 +65,5 @@ describe('MainApp notifyRoot 门控 = root 已恢复', () => {
       await Promise.resolve();
     });
     await vi.waitFor(() => expect(hoisted.notifyRoot).toHaveBeenCalledWith('/w'));
-    expect(useWorkspaceStore.getState().hydrated).toBe(false);
   });
 });

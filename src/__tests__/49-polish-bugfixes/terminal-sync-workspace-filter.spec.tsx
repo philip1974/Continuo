@@ -59,7 +59,7 @@ function session(id: string, workspaceRoot?: string): TerminalSession {
 
 beforeEach(() => {
   // TerminalSessionsSync 首轮可见过滤等 workspace 持久化恢复完成(复审 r3 term#1)。
-  useWorkspaceStore.setState({ hydrated: true });
+  useWorkspaceStore.setState({ rootRestored: true });
   mocks.listSessions.mockReset();
   mocks.listSessions.mockResolvedValue({ ok: true, data: { sessions: [] } });
   mocks.unsubscribe.mockReset();
