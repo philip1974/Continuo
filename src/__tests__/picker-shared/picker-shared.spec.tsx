@@ -29,6 +29,8 @@ import { createPickerSlice, type PickerSlice } from '../../plugins/picker/picker
 import { isVirtualIndexRendered, usePickerList } from '../../plugins/picker/use-picker-list';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { useQuickOpenStore } from '../../plugins/quick-open/store';
+import { useCommandPaletteHotkey } from '../../plugins/command-palette/useCommandPaletteHotkey';
+import { useQuickOpenHotkey } from '../../plugins/quick-open/useQuickOpenHotkey';
 import { MAX_SEARCH_QUERY_LEN } from '../../lib/search-query';
 
 afterEach(() => cleanup());
@@ -239,6 +241,55 @@ describe('usePickerList', () => {
     const rows = [{ index: 0 }, { index: 1 }];
     expect(isVirtualIndexRendered(rows, 1)).toBe(true);
     expect(isVirtualIndexRendered(rows, 3)).toBe(false);
+  });
+});
+
+describe('两个 picker 互斥(Quick Open ⇄ 命令面板)', () => {
+  const origPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+  function BothHotkeys() {
+    useQuickOpenHotkey();
+    useCommandPaletteHotkey();
+    return null;
+  }
+  const press = (shiftKey: boolean): void => {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: shiftKey ? 'P' : 'p', metaKey: true, shiftKey }),
+    );
+  };
+
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
+    useQuickOpenStore.getState().close();
+    useCommandPaletteStore.getState().close();
+  });
+  afterEach(() => {
+    if (origPlatform) Object.defineProperty(navigator, 'platform', origPlatform);
+  });
+
+  it('Quick Open 开着按 ⌘⇧P → 切到命令面板(Quick Open 关闭)', () => {
+    render(<BothHotkeys />);
+    press(false);
+    expect(useQuickOpenStore.getState().isOpen).toBe(true);
+    press(true);
+    expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+    expect(useQuickOpenStore.getState().isOpen).toBe(false);
+  });
+
+  it('命令面板开着按 ⌘P → 切到 Quick Open(命令面板关闭)', () => {
+    render(<BothHotkeys />);
+    press(true);
+    expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+    press(false);
+    expect(useQuickOpenStore.getState().isOpen).toBe(true);
+    expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+  });
+
+  it('同一热键再按仍是 toggle 关闭自身,不影响另一个', () => {
+    render(<BothHotkeys />);
+    press(false);
+    press(false);
+    expect(useQuickOpenStore.getState().isOpen).toBe(false);
+    expect(useCommandPaletteStore.getState().isOpen).toBe(false);
   });
 });
 

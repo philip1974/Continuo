@@ -25,6 +25,11 @@ DOM 输出与收口前逐属性一致。
 7. `count` 变化 → `clampSelection(count)`;`selectedIndex` 变化且 `count>0` → `scrollToIndex`。
 8. option:`id` / `role=option` / `aria-selected` / 绝对定位样式由 `getOptionProps(row)` 给出。
 
+### 规则(usePickerToggleHotkey)
+
+10. 两个 picker 互斥:按 ⌘P 打开 Quick Open 前关掉命令面板,按 ⌘⇧P 打开命令面板前关掉 Quick Open
+    (占位文案「⌘⇧P 切到命令面板」);同一热键再按仍只 toggle 自身。
+
 ### 接线守卫
 
 9. 两个 store 都用 `createPickerSlice`;两个组件都用 `usePickerList`,不再直接 `useVirtualizer`。
