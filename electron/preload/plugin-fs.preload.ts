@@ -5,6 +5,7 @@ import { ipcRenderer, type IpcRendererEvent } from 'electron';
 import { subscribeIpc } from './subscribe-ipc';
 import { PLUGIN_FS_CHANNELS } from '../shared/plugin-fs-channels';
 import type {
+  PathScope,
   PluginFsEditorRead,
   PluginFsRawListEntry,
   PluginFsRawStat,
@@ -55,23 +56,20 @@ export interface PluginFsRaw {
   ): Promise<void>;
   userHome(token: string): Promise<string>;
 
-  requestScope(
-    token: string,
-    scopes: readonly { path: string; mode: 'r' | 'rw' }[],
-  ): Promise<'grant' | 'deny'>;
+  requestScope(token: string, scopes: readonly PathScope[]): Promise<'grant' | 'deny'>;
   /** Called by Op20 PromptStore after user grants/denies; not by plugin code. */
   _scopeDecision(requestId: string, decision: 'grant' | 'deny'): Promise<void>;
 
-  onScopeRequest(
-    handler: (payload: {
-      requestId: string;
-      pluginId: string;
-      /** displayPath:main 归一化后的路径(弹窗展示用);path 仍是插件请求的原始值。 */
-      scopes: readonly { path: string; mode: 'r' | 'rw'; displayPath?: string }[];
-    }) => void,
-  ): () => void;
-  /** main 侧已收口(超时 / 插件已注销)的 scope 请求:撤掉对应弹窗,不回传决定。 */
-  onScopeRequestCancelled(handler: (payload: { requestId: string }) => void): () => void;
+  /**
+   * 订阅 main 推的 scope 授权请求(形态见 shared ScopeRequestPayload)。payload 原样转发、未经校验
+   * (renderer usePluginFsScopeRequests 的 isScopeRequestPayload 校验),如实标 unknown。
+   */
+  onScopeRequest(handler: (payload: unknown) => void): () => void;
+  /**
+   * main 侧已收口(超时 / 插件已注销)的 scope 请求:撤掉对应弹窗,不回传决定。payload(ScopeRequestCancelledPayload)
+   * 同样未经校验,如实标 unknown。
+   */
+  onScopeRequestCancelled(handler: (payload: unknown) => void): () => void;
 }
 
 export const pluginFsRaw: PluginFsRaw = {
@@ -122,17 +120,11 @@ export const pluginFsRaw: PluginFsRaw = {
     ipcRenderer.invoke(PLUGIN_FS_CHANNELS.SCOPE_DECISION, requestId, decision),
 
   onScopeRequest: (handler) => {
-    const wrap = (
-      _event: IpcRendererEvent,
-      payload: Parameters<typeof handler>[0],
-    ) => handler(payload);
+    const wrap = (_event: IpcRendererEvent, payload: unknown) => handler(payload);
     return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_REQUEST, wrap);
   },
   onScopeRequestCancelled: (handler) => {
-    const wrap = (
-      _event: IpcRendererEvent,
-      payload: Parameters<typeof handler>[0],
-    ) => handler(payload);
+    const wrap = (_event: IpcRendererEvent, payload: unknown) => handler(payload);
     return subscribeIpc(PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, wrap);
   },
 };

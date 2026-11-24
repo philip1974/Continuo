@@ -4,7 +4,12 @@ import type { FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { IpcMain } from 'electron';
-import { PLUGIN_FS_CHANNELS, SCOPE_REQUEST_ID_MAX } from '../../shared/plugin-fs-channels';
+import {
+  PLUGIN_FS_CHANNELS,
+  SCOPE_REQUEST_ID_MAX,
+  type ScopeRequestCancelledPayload,
+  type ScopeRequestPayload,
+} from '../../shared/plugin-fs-channels';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { IdentityRegistry } from './identity-registry.service';
@@ -1168,7 +1173,7 @@ export function registerPluginFsHandlers(
               ? { path: s.path, mode: s.mode, displayPath }
               : { path: s.path, mode: s.mode };
           }),
-        });
+        } satisfies ScopeRequestPayload);
         if (!delivered) {
           promise.catch(() => undefined);
           correlator.cancelBySender(event.sender.id);
@@ -1187,7 +1192,9 @@ export function registerPluginFsHandlers(
             if (event.sender.isDestroyed()) return 'deny';
             // renderer 还在而请求已在 main 侧收口(TTL / 插件注销):让它撤掉弹窗,否则弹窗滞留,用户点了才发现
             // 决定送不出去。
-            trySend(event.sender, PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, { requestId });
+            trySend(event.sender, PLUGIN_FS_CHANNELS.SCOPE_REQUEST_CANCELLED, {
+              requestId,
+            } satisfies ScopeRequestCancelledPayload);
             // 插件实例已注销(卸载 / 禁用 / reload):不是错误,也不是用户的拒绝(不记入冷却)。
             if (err.message === SCOPE_REQUEST_PLUGIN_UNREGISTERED) return 'deny';
           }

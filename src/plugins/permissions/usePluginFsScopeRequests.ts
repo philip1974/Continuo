@@ -1,22 +1,14 @@
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
-import type { PathScope } from '../types';
 import { isSafePluginId } from '../../../electron/shared/plugin-id';
 import { FS_PATH_MAX, validateScopesShape } from '../../../electron/shared/fs-limits';
 import { usePermissionPromptStore, type FsScopePromptScope } from './promptStore';
-import { SCOPE_REQUEST_ID_MAX } from '../../../electron/shared/plugin-fs-channels';
-
-/** main 推来的 scope:displayPath 是归一化后的路径(`~` 已展开),旧形态可能不带。 */
-interface RequestedScope extends PathScope {
-  readonly displayPath?: string;
-}
-
-interface ScopeRequestPayload {
-  readonly requestId: string;
-  readonly pluginId: string;
-  readonly scopes: readonly RequestedScope[];
-}
+import {
+  SCOPE_REQUEST_ID_MAX,
+  type ScopeRequestPayload,
+  type ScopeRequestScope,
+} from '../../../electron/shared/plugin-fs-channels';
 
 // 边界(E169,E168 同族 IPC ingress 纵深防御):plugin-fs:scope-request 驱动 fs 授权弹窗(安全敏感)。
 // 此前 bridge 直接 `payload.scopes.map(...)` 信任 TS 类型,畸形 payload(null/scopes 非数组/scope 非
@@ -53,7 +45,7 @@ function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
 }
 
 export function buildFsScopePromptScopes(
-  scopes: readonly RequestedScope[],
+  scopes: readonly ScopeRequestScope[],
 ): FsScopePromptScope[] {
   if (scopes.length === 0) return EMPTY_FS_SCOPE_PROMPT_SCOPES;
   const out = new Array<FsScopePromptScope>(scopes.length);
@@ -77,8 +69,8 @@ export function startPluginFsScopeRequestBridge(): () => void {
   let active = true;
   // main 侧已收口(超时 / 插件已注销)的请求:main 已无此 pending,撤掉弹窗但不回传决定(回传只会失败并报错)。
   const cancelledByMain = new Set<string>();
-  const unsub =coApi.pluginFsRaw.onScopeRequest(
-    (payload: ScopeRequestPayload) => {
+  const unsub = coApi.pluginFsRaw.onScopeRequest(
+    (payload: unknown) => {
       // 边界(E169):IPC ingress runtime 守卫,畸形 payload drop + warn,不进 prompt store/不抛。
       if (!isScopeRequestPayload(payload)) {
         console.warn(
@@ -111,6 +103,7 @@ export function startPluginFsScopeRequestBridge(): () => void {
     },
   );
   const unsubCancelled = coApi.pluginFsRaw.onScopeRequestCancelled((payload: unknown) => {
+    // payload 未经校验(形态应为 ScopeRequestCancelledPayload):逐字段判型,不信任类型。
     const requestId = (payload as { requestId?: unknown } | null)?.requestId;
     if (typeof requestId !== 'string') return;
     const store = usePermissionPromptStore.getState();

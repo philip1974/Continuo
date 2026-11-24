@@ -1,6 +1,8 @@
 // Single source of truth for plugin-fs IPC channel names.
 // Renderer (preload) + main both import from here.
 
+import type { PathScope } from './plugin-fs-contract';
+
 export const PLUGIN_FS_CHANNELS = {
   REGISTER_PLUGIN: 'plugin-fs:_register-plugin',
   UNREGISTER_PLUGIN: 'plugin-fs:_unregister-plugin',
@@ -32,3 +34,18 @@ export const PLUGIN_FS_CHANNELS = {
 
 /** scope 授权请求 requestId 长度上限(renderer 入口守卫;与 agent-auth requestId 同量级)。 */
 export const SCOPE_REQUEST_ID_MAX = 256;
+
+/** main 推来的 scope:displayPath 是 main 归一化后的路径(`~` 已展开,弹窗展示用),超长时不带;path 仍是插件请求的原始值。 */
+export type ScopeRequestScope = PathScope & { readonly displayPath?: string };
+
+/** main -> renderer `SCOPE_REQUEST` 的 payload(renderer 收到时未经校验,须先过运行时守卫)。 */
+export interface ScopeRequestPayload {
+  readonly requestId: string;
+  readonly pluginId: string;
+  readonly scopes: readonly ScopeRequestScope[];
+}
+
+/** main -> renderer `SCOPE_REQUEST_CANCELLED` 的 payload(同上,未经校验)。 */
+export interface ScopeRequestCancelledPayload {
+  readonly requestId: string;
+}
