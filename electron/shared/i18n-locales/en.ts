@@ -249,6 +249,8 @@ export const en = {
   'keybindings.modal.conflict_title': 'This combination is already bound to other commands',
   'keybindings.modal.conflict_advice': 'Only one of the two commands will respond after saving (the one registered first) — unbind the original first so this binding takes effect.',
   'keybindings.modal.reset_default': 'Reset to default',
+  'keybindings.modal.reserved_quick_open': 'This combination conflicts with Quick Open. It is reserved and cannot be bound to a command.',
+  'keybindings.modal.reserved_command_palette': 'This combination conflicts with the Command Palette. It is reserved and cannot be bound to a command.',
 
   // panels.explorer.* (11)
   'panels.explorer.btn.new_file': 'New file',
@@ -278,6 +280,8 @@ export const en = {
   'panels.terminal.search.placeholder': 'Find',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': 'No match',
+  // Shown when the active match is outside the collected results (addon highlightLimit); total may be "1000+".
+  'panels.terminal.search.match_total': '{total} matches',
   // a11y(A99):accessible name for the search-options toggle group (regex/case/whole-word).
   'panels.terminal.search.options_group': 'Search options',
   'panels.terminal.search.regex': 'Use regular expression',

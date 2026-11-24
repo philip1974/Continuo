@@ -4,7 +4,11 @@ import { useT } from '@/i18n';
 import { clampSearchQuery } from '@/lib/search-query';
 import { isImeComposing } from '@/design/ime';
 import type { SearchApi } from './useTerminal';
-import type { TerminalSearchOptions } from './terminal-search-state';
+import {
+  TERMINAL_SEARCH_HIGHLIGHT_LIMIT,
+  type TerminalSearchOptions,
+  type TerminalSearchResult,
+} from './terminal-search-state';
 
 interface TerminalSearchBarProps {
   readonly searchApi: SearchApi;
@@ -16,6 +20,20 @@ function toggleOption(
   key: keyof TerminalSearchOptions,
 ): TerminalSearchOptions {
   return { ...options, [key]: !options[key] };
+}
+
+/** 结果计数文案:达 addon 上限显示「1000+」;当前匹配不在已收集结果内(index=-1)时只显示总数。 */
+function formatCount(
+  result: TerminalSearchResult,
+  t: ReturnType<typeof useT>,
+): string {
+  if (result.count <= 0) return t('panels.terminal.search.no_match');
+  const total =
+    result.count >= TERMINAL_SEARCH_HIGHLIGHT_LIMIT
+      ? `${TERMINAL_SEARCH_HIGHLIGHT_LIMIT}+`
+      : String(result.count);
+  if (result.index < 0) return t('panels.terminal.search.match_total', { total });
+  return t('panels.terminal.search.match_count', { n: result.index + 1, total });
 }
 
 export function TerminalSearchBar({
@@ -37,24 +55,23 @@ export function TerminalSearchBar({
   // issue #38 R2: `autoFocus` 偶尔被 xterm textarea 在下一帧 refocus 抢走。
   // useLayoutEffect 在 paint 前同步 focus,raf 再补一次保险(xterm 内部
   // 的 refocus 通常发生在 keydown 的 microtask/animation frame 链路上)。
+  // 依赖 focusRequest:已打开时再按 ⌘F 搜索条不重挂,靠它重新聚焦并全选已有词(VSCode 行为),
+  // 否则焦点留在终端,输入与回车进 shell。
+  const focusRequest = searchApi.focusRequest;
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
     el.focus();
+    el.select();
     const id = requestAnimationFrame(() => {
       if (inputRef.current && document.activeElement !== inputRef.current) {
         inputRef.current.focus();
+        inputRef.current.select();
       }
     });
     return () => cancelAnimationFrame(id);
-  }, []);
-  const countText =
-    result.count > 0
-      ? t('panels.terminal.search.match_count', {
-          n: result.index + 1,
-          total: result.count,
-        })
-      : t('panels.terminal.search.no_match');
+  }, [focusRequest]);
+  const countText = formatCount(result, t);
 
   return (
     <div
@@ -68,6 +85,13 @@ export function TerminalSearchBar({
       // mousedown handlers don't refocus xterm textarea when user clicks
       // back into the search input.
       onMouseDown={(e) => e.stopPropagation()}
+      // Esc 挂在根节点:点过选项 / 跳转按钮后焦点在按钮上,Esc 也须关闭并把焦点还给终端(onClose)。
+      // IME 组合中的 Esc 属于输入法(取消组合),不关闭。
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || isImeComposing(event.nativeEvent)) return;
+        event.preventDefault();
+        onClose();
+      }}
     >
       <Input
         ref={inputRef}
@@ -80,13 +104,8 @@ export function TerminalSearchBar({
           searchApi.setTerm(clampSearchQuery(event.target.value))
         }
         onKeyDown={(event) => {
-          // IME 组合中的 Enter / Esc 属于输入法(确认候选 / 取消组合),不跳转也不关闭搜索框。
+          // IME 组合中的 Enter 属于输入法(确认候选),不跳转。Esc 由根节点统一处理。
           if (isImeComposing(event.nativeEvent)) return;
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            onClose();
-            return;
-          }
           if (event.key !== 'Enter') return;
           event.preventDefault();
           if (event.shiftKey) {

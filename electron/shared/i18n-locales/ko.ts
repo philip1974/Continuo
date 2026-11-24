@@ -237,6 +237,8 @@ export const ko: Record<TranslationKey, string> = {
   'keybindings.modal.conflict_title': '이 조합은 다른 명령에 이미 바인딩되어 있습니다',
   'keybindings.modal.conflict_advice': '저장 후 두 명령 중 하나(먼저 등록된 명령)만 반응합니다. 여기 바인딩이 적용되려면 먼저 원래 명령의 바인딩을 해제하세요.',
   'keybindings.modal.reset_default': '기본값으로 재설정',
+  'keybindings.modal.reserved_quick_open': '이 조합은 Quick Open과 충돌합니다. 예약된 단축키이므로 명령에 바인딩할 수 없습니다.',
+  'keybindings.modal.reserved_command_palette': '이 조합은 명령 팔레트와 충돌합니다. 예약된 단축키이므로 명령에 바인딩할 수 없습니다.',
 
   // panels.explorer.*
   'panels.explorer.btn.new_file': '새 파일',
@@ -265,6 +267,7 @@ export const ko: Record<TranslationKey, string> = {
   'panels.terminal.search.placeholder': '찾기',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': '일치 없음',
+  'panels.terminal.search.match_total': '{total}개 일치',
   'panels.terminal.search.options_group': '검색 옵션',
   'panels.terminal.search.regex': '정규식 사용',
   'panels.terminal.search.case_sensitive': '대소문자 구분',

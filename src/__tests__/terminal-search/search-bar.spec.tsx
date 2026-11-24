@@ -23,6 +23,9 @@ vi.mock('@/i18n', () => ({
     if (key === 'panels.terminal.search.match_count') {
       return `${params?.['n']} / ${params?.['total']}`;
     }
+    if (key === 'panels.terminal.search.match_total') {
+      return `total ${params?.['total']}`;
+    }
     return key;
   },
 }));
@@ -38,6 +41,7 @@ function makeApi(overrides: Partial<SearchApi> = {}): SearchApi {
     term: '',
     options: { regex: false, caseSensitive: false, wholeWord: false },
     result: { index: -1, count: 0 },
+    focusRequest: 1,
     open: vi.fn(),
     close: vi.fn(),
     next: vi.fn(),
@@ -249,6 +253,92 @@ describe('TerminalSearchBar UI', () => {
     fireEvent.click(closeBtn);
 
     expect(api.clearActiveDecoration).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // 缺陷 A:搜索条已开时再按 ⌘F(焦点已离开输入框)—— 搜索条不重挂,须按 focusRequest 变化重新聚焦并全选,
+  // 否则用户以为在搜索框里输入,字符与回车却进了 shell。
+  it('S1b 已打开时再次 open(focusRequest 递增)→ 输入框重新获得焦点且全选已有搜索词', () => {
+    const api = makeApi({ term: 'foo', focusRequest: 1 });
+    const { getByPlaceholderText, rerender } = render(
+      <TerminalSearchBar searchApi={api} onClose={vi.fn()} />,
+    );
+    const input = getByPlaceholderText(
+      'panels.terminal.search.placeholder',
+    ) as HTMLInputElement;
+    input.blur();
+    expect(document.activeElement).not.toBe(input);
+
+    rerender(
+      <TerminalSearchBar searchApi={{ ...api, focusRequest: 2 }} onClose={vi.fn()} />,
+    );
+
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(3);
+  });
+
+  // 缺陷 B:SearchAddon 只收集前 TERMINAL_SEARCH_HIGHLIGHT_LIMIT 个结果;当前匹配不在其中时 resultIndex=-1,
+  // 不能显示成「0 / 1000」。达上限时总数显示「1000+」,序号未知时只显示总数。
+  it('S2b 达上限显示「1000+」;resultIndex=-1 时不显示序号', () => {
+    const { getByRole, rerender } = render(
+      <TerminalSearchBar
+        searchApi={makeApi({ result: { index: -1, count: 1000 } })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(getByRole('status').textContent).toBe('total 1000+');
+
+    rerender(
+      <TerminalSearchBar
+        searchApi={makeApi({ result: { index: 4, count: 1000 } })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(getByRole('status').textContent).toBe('5 / 1000+');
+
+    rerender(
+      <TerminalSearchBar
+        searchApi={makeApi({ result: { index: -1, count: 20 } })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(getByRole('status').textContent).toBe('total 20');
+
+    rerender(
+      <TerminalSearchBar
+        searchApi={makeApi({ result: { index: 2, count: 20 } })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(getByRole('status').textContent).toBe('3 / 20');
+  });
+
+  // 缺陷 C:点击选项 / 上下按钮后焦点落在按钮上,Esc 也须关闭搜索条(处理挂在搜索条根节点)。
+  it('S6b 焦点在选项 / 跳转按钮上时 Escape 也关闭', () => {
+    const onClose = vi.fn();
+    const { getByLabelText } = render(
+      <TerminalSearchBar searchApi={makeApi()} onClose={onClose} />,
+    );
+    for (const label of [
+      'panels.terminal.search.regex',
+      'panels.terminal.search.next',
+    ]) {
+      const btn = getByLabelText(label);
+      btn.focus();
+      fireEvent.keyDown(btn, { key: 'Escape' });
+    }
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('S6c Escape 只关闭一次(输入框内 Esc 冒泡到根节点不重复关闭)', () => {
+    const onClose = vi.fn();
+    const { getByPlaceholderText } = render(
+      <TerminalSearchBar searchApi={makeApi()} onClose={onClose} />,
+    );
+    fireEvent.keyDown(getByPlaceholderText('panels.terminal.search.placeholder'), {
+      key: 'Escape',
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

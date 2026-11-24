@@ -7,12 +7,15 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 ## Scenarios
 
 - S1 `Cmd/Ctrl+F` opens search for the active terminal without writing `f` / `^F` to the PTY.
+- S1b 搜索条已打开时再次 open(`Cmd/Ctrl+F` / 命令面板):`focusRequest` 递增,输入框重新获得焦点并全选已有搜索词(VSCode 行为),不让后续输入与回车落进 shell(`search-bar.spec.tsx` / `search-debounce.spec.ts` S14)。
 - S2 Typing a query calls `findNext` with decorations and updates match count from `onDidChangeResults`.
+- S2b `SearchAddon` 以显式 `highlightLimit = TERMINAL_SEARCH_HIGHLIGHT_LIMIT`(1000)构造,结果收集到上限即停:计数达上限时总数显示「1000+」;当前匹配不在已收集结果内(`resultIndex = -1`)时只显示总数(`match_total`),不显示「0 / 1000」。
 - S3 Empty query clears decorations and resets result state.
 - S4 Enter navigates to next match; Shift+Enter navigates to previous match.
 - S4b IME 组合中(`isComposing` / `keyCode 229`)的 Enter / Escape 不跳转、不关闭(属于输入法)。
 - S5 Regex / case-sensitive / whole-word toggles re-run search with updated options.
 - S6 Escape or close hides the search bar, clears decorations, clears query, resets result state, and refocuses the terminal.
+- S6b Escape 挂在搜索条根节点:焦点在选项(`.*` / `Aa` / `W`)或跳转(`^` / `v`)按钮上时同样关闭并把焦点还给终端;输入框内的 Escape 只关闭一次。
 - S7 Input blur clears only the active decoration, leaving match highlights intact.
 - S8 `isSearchHotkey` recognizes exact platform `mod+f` only. The terminal itself intercepts via
   `isTerminalSearchHotkey` (`src/panels/Terminal/terminal-hotkeys.ts`), which follows the user's effective binding of
@@ -32,6 +35,9 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - [ ] Toggle regex / match case / whole word -> search reruns and counter updates.
 - [ ] Clear the query -> highlights disappear and counter resets.
 - [ ] Press Escape -> search bar closes, decorations clear, terminal focus returns.
+- [ ] Click `Aa` then press Escape -> search bar closes, terminal focus returns.
+- [ ] Type `foo`, click the terminal body, press Cmd/Ctrl+F again -> input refocuses with `foo` selected.
+- [ ] Search a term with >1000 matches -> counter shows `n / 1000+` (or `1000+ matches` when the active match is beyond the first 1000).
 - [ ] Click close -> search bar closes, decorations clear, terminal focus returns.
 - [ ] Pop out a terminal panel -> Cmd/Ctrl+F still opens search in the popout without PTY leakage.
 - [ ] With editor active, press Cmd/Ctrl+F -> terminal search does not open for a hidden or inactive terminal.

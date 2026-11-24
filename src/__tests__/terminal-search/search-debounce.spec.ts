@@ -218,3 +218,30 @@ describe('S12 搜索词输入防抖', () => {
     expect(addon.findNext).not.toHaveBeenCalled();
   });
 });
+
+// 缺陷 A(hook 侧):⌘F / 命令面板在搜索条已打开时再次 open,须发出新的聚焦请求(focusRequest 递增),
+// 搜索条据此重新聚焦并全选输入框(VSCode 行为);不能因 isOpen 已为 true 而无事发生。
+describe('S14 已打开时再次 open 发出聚焦请求', () => {
+  it('每次 open 都递增 focusRequest(包括已打开时);其它动作不递增', () => {
+    render(createElement(Host, { termId: 'term-a' }));
+    act(() => api!.open());
+    const first = api!.focusRequest;
+    act(() => api!.setTerm('foo'));
+    act(() => api!.next());
+    expect(api!.focusRequest).toBe(first);
+    act(() => api!.open());
+    expect(api!.isOpen).toBe(true);
+    expect(api!.focusRequest).toBe(first + 1);
+  });
+
+  it('SearchAddon 以显式 highlightLimit 构造(与计数显示的上限同一常量)', async () => {
+    const { SearchAddon } = await import('@xterm/addon-search');
+    const { TERMINAL_SEARCH_HIGHLIGHT_LIMIT } = await import(
+      '../../panels/Terminal/terminal-search-state'
+    );
+    render(createElement(Host, { termId: 'term-a' }));
+    expect(SearchAddon).toHaveBeenCalledWith({
+      highlightLimit: TERMINAL_SEARCH_HIGHLIGHT_LIMIT,
+    });
+  });
+});

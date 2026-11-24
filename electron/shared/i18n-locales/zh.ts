@@ -234,6 +234,8 @@ export const zh: Record<TranslationKey, string> = {
   'keybindings.modal.conflict_title': '此组合已绑定到其它命令',
   'keybindings.modal.conflict_advice': '保存后只有其中一个命令会响应(先注册的那个),请先在原命令上解绑,这里的绑定才会生效。',
   'keybindings.modal.reset_default': '重置默认',
+  'keybindings.modal.reserved_quick_open': '此组合与 Quick Open 冲突,是保留快捷键,不能绑定到命令。',
+  'keybindings.modal.reserved_command_palette': '此组合与命令面板冲突,是保留快捷键,不能绑定到命令。',
 
   // panels.explorer.*
   'panels.explorer.btn.new_file': '新建文件',
@@ -262,6 +264,7 @@ export const zh: Record<TranslationKey, string> = {
   'panels.terminal.search.placeholder': '搜索',
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': '无匹配',
+  'panels.terminal.search.match_total': '{total} 个匹配',
   'panels.terminal.search.options_group': '搜索选项',
   'panels.terminal.search.regex': '使用正则表达式',
   'panels.terminal.search.case_sensitive': '区分大小写',

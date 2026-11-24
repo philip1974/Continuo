@@ -34,6 +34,12 @@ import { readThemeTokens } from '@/theme/read-theme-tokens';
 
 type SearchDecorations = NonNullable<ISearchOptions['decorations']>;
 
+/**
+ * SearchAddon 收集 / 高亮结果的上限(显式传入 `new SearchAddon({ highlightLimit })`,即 0.16 默认值)。
+ * 结果收集到此数即停:resultCount 达上限表示「至少这么多」,当前匹配不在前这么多个时 resultIndex = -1。
+ */
+export const TERMINAL_SEARCH_HIGHLIGHT_LIMIT = 1000;
+
 // 搜索装饰色 ← 主题 token(light / dark 各有值)。xterm 只收 #RRGGBB 字面色,故运行时读计算值。
 const DECORATION_TOKENS: Readonly<Record<keyof SearchDecorations & string, string>> = {
   matchBackground: '--md-primary-container',

@@ -44,6 +44,7 @@ import {
   applyTerminalSearchEffect,
   invalidateTerminalSearchDecorations,
   INITIAL_TERMINAL_SEARCH_STATE,
+  TERMINAL_SEARCH_HIGHLIGHT_LIMIT,
   terminalSearchReducer,
   type TerminalSearchAction,
   type TerminalSearchOptions,
@@ -60,6 +61,8 @@ export interface SearchApi {
   readonly term: string;
   readonly options: TerminalSearchOptions;
   readonly result: TerminalSearchResult;
+  /** 每次 open(含已打开时再 open)递增;搜索条据此重新聚焦并全选输入框。 */
+  readonly focusRequest: number;
   readonly open: () => void;
   readonly close: () => void;
   readonly next: () => void;
@@ -365,6 +368,8 @@ export function useTerminal(termId: string) {
   const [searchState, setSearchState] = useState(
     INITIAL_TERMINAL_SEARCH_STATE,
   );
+  // 搜索条聚焦请求序号(见 SearchApi.focusRequest);每次 open 递增。
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   // issue #42 #1: single mirror ref of searchState replaces previous
   // separate searchTermRef / searchOptionsRef. dispatchSearchAction reads
   // pre-reduce state here. issue #42 v2 (review round 2 A.1/B.1):
@@ -446,7 +451,7 @@ export function useTerminal(termId: string) {
     // WebGL。在 webglRaf 回调里安装(见下方 listener 注册之后)。
     let webgl: WebglAddon | null = null;
     let atlasGuards: ReturnType<typeof installAtlasGuards> | null = null;
-    const searchAddon = new SearchAddon();
+    const searchAddon = new SearchAddon({ highlightLimit: TERMINAL_SEARCH_HIGHLIGHT_LIMIT });
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
     const searchResultsDisposable = searchAddon.onDidChangeResults((event) => {
@@ -891,6 +896,9 @@ export function useTerminal(termId: string) {
         }, TERMINAL_SEARCH_DEBOUNCE_MS);
         return;
       }
+      // 已打开时再 open(⌘F / 命令面板)reducer 无可见变化、搜索条不重挂 → 发聚焦请求让搜索条重新聚焦并全选,
+      // 否则焦点留在终端,用户以为在搜索框输入,字符与回车却进了 shell。
+      if (action.type === 'open') setSearchFocusRequest((n) => n + 1);
       if (action.type === 'close' || action.type === 'setTerm') {
         // 关闭会清高亮、空词会清高亮:挂起的搜索已无意义,直接取消
         cancelTimer(pendingSearchTimerRef);
@@ -947,6 +955,7 @@ export function useTerminal(termId: string) {
       term: searchState.term,
       options: searchState.options,
       result: searchState.result,
+      focusRequest: searchFocusRequest,
       open: openSearch,
       close: closeSearch,
       next: nextSearch,
@@ -957,6 +966,7 @@ export function useTerminal(termId: string) {
     }),
     [
       searchState,
+      searchFocusRequest,
       openSearch,
       closeSearch,
       nextSearch,
