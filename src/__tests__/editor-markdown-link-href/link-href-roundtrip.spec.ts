@@ -132,4 +132,15 @@ describe('补丁本身', () => {
     const workspace = readFileSync(path.join(ROOT, 'vitest.workspace.ts'), 'utf-8');
     expect(workspace).toMatch(/plugins:\s*\[milkdownLinkHrefPlugin\(\)\][\s\S]*?name:\s*'milkdown-patched'/);
   });
+
+  // unit project 排除了这些规范;CI 只跑 test:unit / --project unit —— 不显式带上 milkdown-patched,补丁失效时 CI 仍绿。
+  it('CI 的单测入口(test:unit 脚本与 Windows 步骤)都包含 milkdown-patched project', () => {
+    const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf-8')) as { scripts: Record<string, string> };
+    expect(pkg.scripts['test:unit']).toMatch(/--project milkdown-patched/);
+    const ci = readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf-8');
+    // 只看跑整个 unit project 的命令(Windows 稳定 worker 步骤);带具体规范路径的定向运行不需要。
+    const whole = ci.split('\n').filter((l) => /vitest run --project unit\b/.test(l) && !/\ssrc\//.test(l));
+    expect(whole.length).toBeGreaterThan(0);
+    for (const line of whole) expect(line).toMatch(/--project milkdown-patched/);
+  });
 });

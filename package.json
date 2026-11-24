@@ -44,7 +44,7 @@
     "pretest": "node scripts/check-no-skip.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:unit": "vitest run --project unit",
+    "test:unit": "vitest run --project unit --project milkdown-patched",
     "test:integration": "vitest run --project integration",
     "test:contract": "vitest run --project contract",
     "e2e": "playwright test",
