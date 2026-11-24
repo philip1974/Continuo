@@ -195,6 +195,36 @@ describe('Editor popout:已挂载编辑器跟随面板所在文档', () => {
     expect(block.root).toBe(document);
   });
 
+  it('Markdown 编辑:ProseMirror 的 selectionchange 监听随弹出 / 收回迁移(旧文档移除、新文档挂上)', async () => {
+    useEditorStore.setState({
+      tabs: [createTab('/w/a.md', '# T\n')],
+      activeTabId: '/w/a.md',
+      mode: 'edit',
+    });
+    const loc = createLocationApi();
+    const container = await renderPanel(loc.api);
+    const pm = await waitFor(() => {
+      const crepe = instances.at(-1);
+      const v = crepe ? (pmViewOf(crepe) as PmView & { domObserver?: { onSelectionChange: EventListener } }) : null;
+      return v?.state ? v : null;
+    });
+    const handler = pm.domObserver!.onSelectionChange;
+    const selectionCalls = (spy: { mock: { calls: unknown[][] } }) =>
+      spy.mock.calls.filter(([type, fn]) => type === 'selectionchange' && fn === handler).length;
+    const mainAdd = vi.spyOn(document, 'addEventListener');
+    const mainRemove = vi.spyOn(document, 'removeEventListener');
+    const childAdd = vi.spyOn(child.doc, 'addEventListener');
+    const childRemove = vi.spyOn(child.doc, 'removeEventListener');
+
+    await moveTo(container, child.host, loc, 'popout');
+    expect(selectionCalls(mainRemove)).toBe(1);
+    expect(selectionCalls(childAdd)).toBe(1);
+
+    await moveTo(container, document.body, loc, 'grid');
+    expect(selectionCalls(childRemove)).toBe(1);
+    expect(selectionCalls(mainAdd)).toBe(1);
+  });
+
   it('面板卸载时退订 location 变化', async () => {
     useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'edit' });
     const loc = createLocationApi();

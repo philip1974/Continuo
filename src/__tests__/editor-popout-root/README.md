@@ -14,16 +14,19 @@ selectionchange 监听与样式也挂在该文档上。不处理时子窗里移�
 - `EditorPanel` 订阅面板 `api.onDidLocationChange`,移动落定后(microtask)让当前挂载的编辑器按各自 DOM 的
   `ownerDocument` 重绑 root;面板卸载时退订。无 `api`(测试直接渲染)时不订阅。
 - CodeEditor:`view.setRoot(ownerDocument)`(CodeMirror 同时迁移 selectionchange 监听窗口与样式)。
-- MilkdownEditor:ProseMirror 视图 `updateRoot()`;正文里的 CodeMirror 代码块(Crepe CodeMirror 特性,创建时取
-  ProseMirror 的 root)同样 `setRoot`。
+- MilkdownEditor:ProseMirror 视图 `updateRoot()`,并把 selectionchange 监听从旧文档迁到当前文档(`updateRoot()`
+  不迁移;prosemirror-view 1.42.x 的 `DOMObserver` 按调用时 `dom.ownerDocument` 挂 / 移,公开 API 无迁移手段,
+  故用内部 `domObserver.onSelectionChange` / `connectSelection()`;DOM 移走后拿不到旧文档,挂载时与每次重绑后记下);
+  否则旧文档永远持有已销毁视图,且弹出后首次事务前纯鼠标改选区不进 state。正文里的 CodeMirror 代码块
+  (Crepe CodeMirror 特性,创建时取 ProseMirror 的 root)同样 `setRoot`。
 - 重绑幂等:root 已是当前文档则不动;引擎挂载时也按当前文档对齐一次(覆盖「创建时面板 DOM 尚未进子窗」)。
 - 不重挂编辑器:不丢未保存输入、光标、撤销历史。
 - 弹出与收回(popout → grid)同一路径,往返后 root 回到主窗文档。
 
 ## 已知边界
 
-- ProseMirror 的 selectionchange 监听挂在构造时的 `ownerDocument`,`updateRoot()` 不迁移;子窗里首个事务
-  (输入 / 程序化选区更新)的 `domObserver.start()` 会按新文档重挂。此前纯鼠标改选区不进 state —— 需真机确认。
+- 监听迁移依赖 prosemirror-view 内部 `DOMObserver` API(1.42.x);升级 prosemirror-view 时由本规范的
+  selectionchange 迁移用例守护。
 
 ## 规范
 

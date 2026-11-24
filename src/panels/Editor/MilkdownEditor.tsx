@@ -86,21 +86,53 @@ interface PmRootView {
   readonly dom: HTMLElement;
   readonly root: Document | ShadowRoot;
   updateRoot(): void;
+  /**
+   * 内部 API(prosemirror-view 1.42.x 的 DOMObserver):selectionchange 监听按调用时 `dom.ownerDocument`
+   * 挂 / 移,`updateRoot()` 只清 root 缓存、不迁移监听;公开 API 无迁移手段。`connectSelection` 不先移除旧监听。
+   */
+  readonly domObserver?: {
+    readonly onSelectionChange: EventListener;
+    connectSelection(): void;
+  };
 }
 
-/**
- * popout 弹出 / 收回只移 DOM(见 editor-root-registry.ts):ProseMirror 视图 root 不是当前所在文档则 updateRoot,
- * 正文里的 CodeMirror 代码块(创建时取 ProseMirror 的 root)同样重绑。视图未就绪 / 已拆除时跳过。
- */
-function rebindMilkdownRoot(crepe: Crepe): void {
+function readPmRootView(crepe: Crepe): PmRootView | null {
   let view: PmRootView;
   try {
     view = crepe.editor.ctx.get<PmRootView, 'editorView'>('editorView');
   } catch {
-    return;
+    return null;
   }
-  if (typeof view.updateRoot !== 'function') return; // slice 初值是空对象
-  if (view.root !== view.dom.ownerDocument) view.updateRoot();
+  return typeof view.updateRoot === 'function' ? view : null; // slice 初值是空对象
+}
+
+// 各 ProseMirror 视图的 selectionchange 监听当前挂在哪个文档:挂载时记,每次重绑后更新。
+// DOM 已移走后无从得知旧文档,只能事先记下。
+const selectionDocs = new WeakMap<PmRootView, Document>();
+
+/** 视图挂载后记下 selectionchange 监听所在文档(构造时按 `dom.ownerDocument` 挂)。 */
+function recordSelectionDoc(crepe: Crepe): void {
+  const view = readPmRootView(crepe);
+  if (view) selectionDocs.set(view, view.dom.ownerDocument);
+}
+
+/**
+ * popout 弹出 / 收回只移 DOM(见 editor-root-registry.ts):ProseMirror 视图 root 不是当前所在文档则 updateRoot,
+ * selectionchange 监听从旧文档移到当前文档(否则旧文档一直持有视图,且首次事务前鼠标改选区不进 state);
+ * 正文里的 CodeMirror 代码块(创建时取 ProseMirror 的 root)同样重绑。视图未就绪 / 已拆除时跳过。
+ */
+function rebindMilkdownRoot(crepe: Crepe): void {
+  const view = readPmRootView(crepe);
+  if (!view) return;
+  const doc = view.dom.ownerDocument;
+  const prevDoc = selectionDocs.get(view);
+  const observer = view.domObserver;
+  if (prevDoc && prevDoc !== doc && observer) {
+    prevDoc.removeEventListener('selectionchange', observer.onSelectionChange);
+    observer.connectSelection();
+  }
+  selectionDocs.set(view, doc);
+  if (view.root !== doc) view.updateRoot();
   rebindCodeMirrorRoots(view.dom);
 }
 
@@ -258,7 +290,8 @@ function CrepeEditor({
     };
 
     crepe.on((listener) => {
-      // 只读预览不回写也不上抛,不记基线、不挂 listener(省掉挂载时与防抖里的序列化)。
+      listener.mounted(() => recordSelectionDoc(crepe));
+      // 只读预览不回写也不上抛,不记基线、不挂其余 listener(省掉挂载时与防抖里的序列化)。
       if (readonly) return;
       listener.mounted(() => {
         try {
