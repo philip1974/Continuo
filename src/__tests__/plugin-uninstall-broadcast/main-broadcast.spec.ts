@@ -36,13 +36,10 @@ import { registerPluginsIpc } from '../../../electron/main/ipc/plugins.ipc';
 import { PLUGINS_CHANNELS } from '../../../electron/shared/plugins-channels';
 
 import { setTrustedDevOrigin } from '../../../electron/main/safe-handle';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 const RENDERER_URL = 'http://localhost:5173';
 const TRUSTED = { senderFrame: { url: `${RENDERER_URL}/` } };
-
-function makeWin(destroyed = false): MockWin {
-  return { isDestroyed: () => destroyed, webContents: { send: vi.fn() } };
-}
 
 function uninstall(id: string): Promise<unknown> {
   const fn = h.handlers.get(PLUGINS_CHANNELS.UNINSTALL);
@@ -73,9 +70,9 @@ afterEach(() => {
 
 describe('main:卸载成功后广播 plugins:uninstalled', () => {
   it('向所有存活窗口(含发起卸载的窗口)广播 { id };跳过已销毁窗口', async () => {
-    const a = makeWin();
-    const b = makeWin();
-    const dead = makeWin(true);
+    const a = makeFakeWin();
+    const b = makeFakeWin();
+    const dead = makeFakeWin({ destroyed: true });
     h.windows.push(a, dead, b);
 
     await expect(uninstall('com.x.p')).resolves.toMatchObject({ ok: true });
@@ -87,11 +84,11 @@ describe('main:卸载成功后广播 plugins:uninstalled', () => {
   });
 
   it('某窗口 send 抛错 → 不影响其它窗口,也不影响卸载结果', async () => {
-    const broken = makeWin();
+    const broken = makeFakeWin();
     broken.webContents.send.mockImplementation(() => {
       throw new Error('Object has been destroyed');
     });
-    const ok = makeWin();
+    const ok = makeFakeWin();
     h.windows.push(broken, ok);
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -101,7 +98,7 @@ describe('main:卸载成功后广播 plugins:uninstalled', () => {
   });
 
   it('卸载失败 → 不广播(其它窗口的插件照常运行)', async () => {
-    const a = makeWin();
+    const a = makeFakeWin();
     h.windows.push(a);
     uninstallImpl.mockRejectedValueOnce(Object.assign(new Error('rm failed'), { code: 'RM_FAILED' }));
 

@@ -4,6 +4,7 @@
 // Dock/Terminal 面板停在旧 session 列表。修复:每个窗口 send 独立 try/catch。
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 type FakeWin = {
   id: number;
@@ -27,13 +28,6 @@ vi.mock('../../../electron/main/services/terminal-sessions.service', () => ({
   subscribe: vi.fn(() => () => undefined),
 }));
 
-function makeWin(id: number, opts: { throwOnSend?: boolean } = {}): FakeWin {
-  const send = vi.fn(() => {
-    if (opts.throwOnSend) throw new Error('Object has been destroyed');
-  });
-  return { id, isDestroyed: () => false, webContents: { send } };
-}
-
 afterEach(() => {
   mocks.windows = [];
   vi.clearAllMocks();
@@ -41,8 +35,8 @@ afterEach(() => {
 
 describe('race(R68) · terminal broadcastSessionsChanged 单窗口 send 抛错不中断', () => {
   it('第一个窗口 send 抛错 → 不抛 + 其后窗口仍收到 owner 过滤的 SESSIONS_CHANGED', async () => {
-    const dead = makeWin(11, { throwOnSend: true });
-    const healthy = makeWin(22);
+    const dead = makeFakeWin({ id: 11, throwOnSend: true });
+    const healthy = makeFakeWin({ id: 22 });
     mocks.windows = [dead, healthy];
     vi.spyOn(console, 'error').mockImplementation(() => {});
 

@@ -23,6 +23,7 @@ import {
   makeListSessionsHandler,
 } from '../../../electron/main/ipc/terminal.ipc';
 import { TERMINAL_CHANNELS } from '../../../electron/shared/terminal-channels';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 const SECRET = 'bearer-secret-token';
 
@@ -55,8 +56,9 @@ describe('controllerToken 不跨 IPC 到 renderer', () => {
 
   it('sessions_changed 广播快照不含 controllerToken', () => {
     addAgentSession();
-    const send = vi.fn();
-    mocks.windows = [{ id: 7, isDestroyed: () => false, webContents: { send } }];
+    const win = makeFakeWin({ id: 7 });
+    const send = win.webContents.send;
+    mocks.windows = [win];
     broadcastSessionsChanged();
     expect(send).toHaveBeenCalledWith(TERMINAL_CHANNELS.SESSIONS_CHANGED, expect.any(Array));
     expect(JSON.stringify(send.mock.calls)).not.toContain(SECRET);

@@ -1,18 +1,14 @@
 // 规则 5:co:// 旧队列优先 —— 依次尝试各就绪窗口排空 pending;旧队列未全部交付前不投递新 URL。
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { routeProtocolUrl, type ProtoWindow } from '../../../electron/main/protocol-dispatch';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 const CH = 'plugins:protocol-url';
 
 function win(dead = false) {
-  const send = vi.fn((_ch: string, _p: unknown) => {
-    if (dead) throw new Error('Object has been destroyed');
-  });
-  const w: ProtoWindow = {
-    isDestroyed: () => false,
-    webContents: { send },
-  };
-  return { w, send };
+  const fake = makeFakeWin({ throwOnSend: dead });
+  const w: ProtoWindow = fake;
+  return { w, send: fake.webContents.send };
 }
 
 describe('规则 5 · co:// FIFO 不乱序', () => {

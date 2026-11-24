@@ -40,13 +40,10 @@ import {
 } from '../../../electron/shared/plugins-channels';
 
 import { setTrustedDevOrigin } from '../../../electron/main/safe-handle';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 const RENDERER_URL = 'http://localhost:5173';
 const TRUSTED = { senderFrame: { url: `${RENDERER_URL}/` } };
-
-function makeWin(destroyed = false): MockWin {
-  return { isDestroyed: () => destroyed, webContents: { send: vi.fn() } };
-}
 
 function mutate(id: string, enabled: boolean): Promise<unknown> {
   const fn = h.handlers.get(PLUGINS_CHANNELS.MUTATE_ENABLED);
@@ -77,9 +74,9 @@ afterEach(() => {
 
 describe('main:启用状态写入成功后广播 plugins:enabled-changed', () => {
   it('禁用 / 启用成功 → 向所有存活窗口(含发起者)广播 { id, enabled };跳过已销毁窗口', async () => {
-    const a = makeWin();
-    const b = makeWin();
-    const dead = makeWin(true);
+    const a = makeFakeWin();
+    const b = makeFakeWin();
+    const dead = makeFakeWin({ destroyed: true });
     h.windows.push(a, dead, b);
 
     await expect(mutate('com.x.p', false)).resolves.toMatchObject({ ok: true });
@@ -96,7 +93,7 @@ describe('main:启用状态写入成功后广播 plugins:enabled-changed', () =>
   });
 
   it('写入失败 → 不广播', async () => {
-    const a = makeWin();
+    const a = makeFakeWin();
     h.windows.push(a);
     setImpl.mockRejectedValueOnce(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
     await expect(mutate('com.x.p', false)).resolves.toMatchObject({ ok: false });

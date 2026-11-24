@@ -4,6 +4,7 @@
 // per-entry catch 吞掉 → mtimes 不推进(R67-B)→ 同一变更反复触发。修复:每个窗口 send 独立 try/catch。
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 type FakeWin = {
   isDestroyed: () => boolean;
@@ -17,13 +18,6 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/continuo-test-userdata' },
 }));
 
-function makeWin(opts: { throwOnSend?: boolean } = {}): FakeWin {
-  const send = vi.fn(() => {
-    if (opts.throwOnSend) throw new Error('Object has been destroyed');
-  });
-  return { isDestroyed: () => false, webContents: { send } };
-}
-
 afterEach(() => {
   mocks.windows = [];
   vi.clearAllMocks();
@@ -31,8 +25,8 @@ afterEach(() => {
 
 describe('race(R67-A) · plugins broadcastPluginsChanged 单窗口 send 抛错不中断', () => {
   it('第一个窗口 send 抛错 → 不抛 + 其后窗口仍收到 PLUGINS_CHANGED', async () => {
-    const dead = makeWin({ throwOnSend: true });
-    const healthy = makeWin();
+    const dead = makeFakeWin({ throwOnSend: true });
+    const healthy = makeFakeWin();
     mocks.windows = [dead, healthy];
     vi.spyOn(console, 'error').mockImplementation(() => {});
 

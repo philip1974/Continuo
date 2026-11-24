@@ -39,14 +39,11 @@ import {
 import { PLUGINS_CHANNELS } from '../../../electron/shared/plugins-channels';
 
 import { setTrustedDevOrigin } from '../../../electron/main/safe-handle';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 const RENDERER_URL = 'http://localhost:5173';
 const TRUSTED = { senderFrame: { url: `${RENDERER_URL}/` } };
 const ID = 'com.x.p';
-
-function makeWin(): MockWin {
-  return { isDestroyed: () => false, webContents: { send: vi.fn() } };
-}
 
 function mutate(raw: unknown, event: unknown = TRUSTED): Promise<unknown> {
   const fn = h.handlers.get(PLUGINS_CHANNELS.MUTATE_PLUGIN_PERMISSIONS);
@@ -83,8 +80,8 @@ describe('main:plugins:mutate-plugin-permissions', () => {
   it('成功 → 返回合并记录,并向所有窗口(含发起者)广播 { id }', async () => {
     const merged = [{ permission: 'shell', granted: false, decidedAt: 5 }];
     mutateImpl.mockResolvedValue(merged);
-    const a = makeWin();
-    const b = makeWin();
+    const a = makeFakeWin();
+    const b = makeFakeWin();
     h.windows.push(a, b);
 
     const mutation = { kind: 'set', perms: ['shell'], granted: false };
@@ -97,7 +94,7 @@ describe('main:plugins:mutate-plugin-permissions', () => {
 
   it('写失败 → 不广播', async () => {
     mutateImpl.mockRejectedValue(Object.assign(new Error('disk'), { code: 'EIO' }));
-    const a = makeWin();
+    const a = makeFakeWin();
     h.windows.push(a);
     await expect(
       mutate({ id: ID, mutation: { kind: 'clear-denied' } }),
@@ -106,7 +103,7 @@ describe('main:plugins:mutate-plugin-permissions', () => {
   });
 
   it('不受信 frame → 拒绝,不写不广播', async () => {
-    const a = makeWin();
+    const a = makeFakeWin();
     h.windows.push(a);
     await expect(
       mutate({ id: ID, mutation: { kind: 'clear-denied' } }, { senderFrame: { url: 'https://evil.example/' } }),

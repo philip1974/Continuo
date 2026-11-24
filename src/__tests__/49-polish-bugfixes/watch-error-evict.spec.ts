@@ -6,6 +6,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createWatcherPool, type WatcherCreator } from '../../../electron/main/ipc/fs/watch';
+import { makeFakeWin } from '../_helpers/fake-window';
 
 const mocks = vi.hoisted(() => ({
   watchers: [] as Array<EventEmitter & { close: () => void }>,
@@ -106,9 +107,9 @@ describe('WatcherPool:失效驱逐上报持有者窗口(onLost)', () => {
     const { FS_CHANNELS } = await import('../../../electron/shared/fs-channels');
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const w1 = { isDestroyed: () => false, webContents: { send: vi.fn(() => { throw new Error('destroyed'); }) } };
-    const w2 = { isDestroyed: () => false, webContents: { send: vi.fn() } };
-    const w3 = { isDestroyed: () => true, webContents: { send: vi.fn() } };
-    const w4 = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+    const w2 = makeFakeWin();
+    const w3 = makeFakeWin({ destroyed: true });
+    const w4 = makeFakeWin();
     mocks.windows.set(1, w1);
     mocks.windows.set(2, w2);
     mocks.windows.set(3, w3);
