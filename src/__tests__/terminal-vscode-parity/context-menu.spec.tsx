@@ -3,7 +3,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { createElement } from 'react';
 import { TerminalContextMenu, type TerminalContextMenuActions } from '../../panels/Terminal/TerminalContextMenu';
 import { isTerminalContextMenuKey } from '../../panels/Terminal/terminal-hotkeys';
 import { setLocale } from '../../i18n';
@@ -22,7 +21,9 @@ function actions(over: Partial<TerminalContextMenuActions> = {}): TerminalContex
 
 function open(a: TerminalContextMenuActions) {
   render(
-    createElement(TerminalContextMenu, { actions: a }, createElement('div', { 'data-testid': 'term' }, 'xterm')),
+    <TerminalContextMenu actions={a}>
+      <div data-testid="term">xterm</div>
+    </TerminalContextMenu>,
   );
   fireEvent.contextMenu(screen.getByTestId('term'));
 }
