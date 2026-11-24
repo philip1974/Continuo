@@ -154,6 +154,8 @@ describe('FolderTree · 全部展开期间改名', () => {
     const tree = (config: TreeConfig<FileEntry>) => ({
       ...fakeTree(config),
       getConfig: () => config,
+      // 改名成功后 refreshParent 读 dataRef 的子项缓存(缺则抛,成为未处理错误)。
+      getDataRef: () => ({ current: {} }),
       expandAll: vi.fn(() => new Promise<void>((r) => (finish = r))),
     });
     useTreeMock.mockImplementation(tree);

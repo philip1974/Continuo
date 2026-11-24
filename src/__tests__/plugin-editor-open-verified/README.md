@@ -18,7 +18,8 @@ SDK 并发 `rename(A → A_)` + `rename(L → A)`(L 是 scope 内既有的、指
   `app.editor` 只有 `openFile`),不再经 `fs:read-file` 另读。已开着同一路径的标签 → 只切换,不覆盖其内容。
   「同一路径」:canonical 路径或插件给的原路径,命中已有标签的打开路径(filePath)或其 realPath 任一即算 —— 用户经链接
   (macOS `/tmp` → `/private/tmp`、工作区软链、文件链接)打开的标签 filePath 不是 canonical,只比 canonical 会多开一个
-  同文件标签、两份各自记脏。原路径只用于这次判重,不据它读取任何内容。
+  同文件标签、两份各自记脏。原路径只用于判重与之后找该标签跳行(findPluginOpenedTab,同一口径;引擎按标签 filePath 判),
+  不据它读取任何内容。
 - SDK 对插件的返回值不变:成功 `{ ok: true, lineApplied, reason? }`;scope 拒绝 → `PERMISSION_DENIED`(消息同前);
   `FS_NOT_FILE` 等原样,其余 FS 码(`FS_NOT_UTF8` / `FS_FILE_TOO_LARGE`)归 `EXCEPTION`(与此前宿主读取失败的映射相同)。
 - 之后的保存 / 保存前比对 / 外部同步重载:主进程记下插件打开过的 canonical 路径(每插件 1024、合计 4096,见下)。宿主 `fs:read-file` /

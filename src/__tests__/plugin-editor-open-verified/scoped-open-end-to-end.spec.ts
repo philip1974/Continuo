@@ -277,6 +277,21 @@ describe.skipIf(process.platform === 'win32')('用户已打开的文件,插件�
     waitSpy.mockRestore();
   });
 
+  // 引擎按标签实际打开路径判(与 EditorPanel 同口径):alias.md → secret.json,界面是 Milkdown,不得按 canonical 扩展名
+  // 当成 CodeMirror 去等 view(超时谎报 tab-not-mounted)。
+  it('带 line 打开经 .md 链接已开的文件(Milkdown 模式)→ milkdown-engine', async () => {
+    const alias = join(work, 'alias-note.md');
+    await symlink(P, alias);
+    await userOpens(alias);
+    useEditorStore.getState().setMode('edit');
+    await moveActiveAway();
+    expect(await plugin.editor.openFile(P, { line: 2 })).toMatchObject({
+      ok: true,
+      lineApplied: false,
+      reason: 'milkdown-engine',
+    });
+  });
+
   it('用户经文件链接打开(标签带 realPath),插件用真实路径打开 → 切到该标签', async () => {
     const alias = join(work, 'alias.json');
     await symlink(P, alias);

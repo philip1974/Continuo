@@ -155,7 +155,8 @@ async function openInEditor(
       ? findEditorFileTabByPath(state.tabs, path)
       : findPluginOpenedTab(state.tabs, path, requestedPath);
   const viewKey = activeTab?.id ?? path;
-  const inMilkdown = usesMilkdownEngine(path, activeTab ?? null);
+  // 按标签实际的打开路径判引擎(与 EditorPanel 同口径):经链接打开时其扩展名可能与 canonical 不同。
+  const inMilkdown = usesMilkdownEngine(activeTab?.filePath ?? path, activeTab ?? null);
   if (activeTab && inMilkdown) {
     return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
   }
@@ -186,7 +187,7 @@ async function openInEditor(
     // 当前态复核:目标仍为活动 tab、仍处 CodeMirror 模式(与上方 inMilkdown 同口径)。
     const now = useEditorStore.getState();
     const nowTab = findEditorFileTabById(now.tabs, viewKey);
-    if (usesMilkdownEngine(path, nowTab)) {
+    if (usesMilkdownEngine(nowTab?.filePath ?? path, nowTab)) {
       return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
     }
     if (now.activeTabId !== viewKey || now.viewRefs.get(viewKey) !== view) {
