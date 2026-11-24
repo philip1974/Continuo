@@ -3,6 +3,7 @@
 
 import { test, expect } from './fixtures/electron-app';
 import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { EXPLORER_TOGGLE } from './helpers/explorer';
 
 test('app 启动后渲染基本 shell 框架', async ({ window }) => {
   // 标题栏:无工作区 + 无 active tab 时 fallback 「Continuo」
@@ -12,11 +13,8 @@ test('app 启动后渲染基本 shell 框架', async ({ window }) => {
   const iconSidebar = window.locator('aside').first();
   await expect(iconSidebar).toBeVisible();
 
-  // Explorer 切换按钮(通过 aria-label 或 title 定位)
-  const explorerToggle = window.locator(
-    'button[title*="Explorer"]',
-  );
-  await expect(explorerToggle).toHaveCount(1);
+  // Explorer 切换按钮(按三语可访问名定位:zh 文案已译为「显示 / 隐藏资源管理器」,不再含英文 Explorer)
+  await expect(iconSidebar.getByRole('button', { name: EXPLORER_TOGGLE })).toHaveCount(1);
 
   // 底部 StatusBar(footer)
   await expect(window.locator('footer')).toBeVisible();
