@@ -42,7 +42,7 @@ import {
   isValidGitBlobSha,
 } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { fsError, isCaseOrNormalizationOnlyRename, mapNodeErrnoCode } from '../ipc/fs/path-utils';
+import { fsError, isRenameOntoSelf, mapNodeErrnoCode } from '../ipc/fs/path-utils';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { errorMessage } from '../../shared/error-message';
 import { isSafePluginId } from '../../shared/plugin-id';
@@ -874,12 +874,7 @@ export function registerPluginFsHandlers(
         } catch {
           srcStat = null;
         }
-        const sameEntry =
-          srcStat != null &&
-          dstStat.ino === srcStat.ino &&
-          dstStat.dev === srcStat.dev &&
-          isCaseOrNormalizationOnlyRename(srcPath, rDst.fullPath);
-        if (!sameEntry) {
+        if (!isRenameOntoSelf(srcStat, dstStat, srcPath, rDst.fullPath)) {
           throw new ScopeError('rename: destination already exists', {
             target: dst,
             reason: 'EEXIST',

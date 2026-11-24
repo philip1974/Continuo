@@ -53,6 +53,25 @@ export function assertValidBasename(name: string): void {
  * 名字不同,POSIX rename 对其是 no-op 却返回成功 → 必须按目标已存在拒绝。调用方均已保证同父目录,
  * 故只比 basename。
  */
+/**
+ * 改名的目标已存在时,是否其实是「改名到自身」(同 dev+inode,且名字只差大小写 / 规范化)—— 大小写不敏感盘上
+ * File.txt→file.txt 放行;同 inode 的不同硬链接(a.txt→b.txt)名字不同,POSIX rename 对其 no-op 却返回成功 → 不算,
+ * 仍按已存在拒绝。Explorer 改名与插件 fs.rename 共用(此前各写一份)。源 stat 缺失 → 不算(从严拒绝)。
+ */
+export function isRenameOntoSelf(
+  srcSt: { readonly ino: number | bigint; readonly dev: number | bigint } | null,
+  dstSt: { readonly ino: number | bigint; readonly dev: number | bigint },
+  srcPath: string,
+  destPath: string,
+): boolean {
+  return (
+    srcSt !== null &&
+    dstSt.ino === srcSt.ino &&
+    dstSt.dev === srcSt.dev &&
+    isCaseOrNormalizationOnlyRename(srcPath, destPath)
+  );
+}
+
 export function isCaseOrNormalizationOnlyRename(srcPath: string, destPath: string): boolean {
   const fold = (p: string): string => path.basename(p).normalize('NFC').toLowerCase();
   return fold(srcPath) === fold(destPath);

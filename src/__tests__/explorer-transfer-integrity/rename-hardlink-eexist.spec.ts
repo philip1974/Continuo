@@ -10,6 +10,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renameEntry } from '../../../electron/main/ipc/fs/rename';
 import { isCaseOrNormalizationOnlyRename } from '../../../electron/main/ipc/fs/path-utils';
+import { isRenameOntoSelf } from '../../../electron/main/ipc/fs/path-utils';
 
 let dir: string;
 beforeEach(async () => {
@@ -58,3 +59,18 @@ describe('isCaseOrNormalizationOnlyRename — 只比 basename', () => {
     );
   });
 });
+
+// Explorer 改名与插件 fs.rename 共用的「改名到自身」判定(此前两份手写)。
+describe('isRenameOntoSelf', () => {
+  const st = (ino: number, dev = 1) => ({ ino, dev });
+  it('同 dev+inode 且名字只差大小写 / 规范化 → true', () => {
+    expect(isRenameOntoSelf(st(5), st(5), '/d/File.txt', '/d/file.txt')).toBe(true);
+  });
+  it('同 inode 的不同硬链接(名字不同)/ inode 不同 / dev 不同 / 源 stat 缺失 → false', () => {
+    expect(isRenameOntoSelf(st(5), st(5), '/d/a.txt', '/d/b.txt')).toBe(false);
+    expect(isRenameOntoSelf(st(5), st(6), '/d/File.txt', '/d/file.txt')).toBe(false);
+    expect(isRenameOntoSelf(st(5, 1), st(5, 2), '/d/File.txt', '/d/file.txt')).toBe(false);
+    expect(isRenameOntoSelf(null, st(5), '/d/File.txt', '/d/file.txt')).toBe(false);
+  });
+});
+

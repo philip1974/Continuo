@@ -4,7 +4,7 @@ import { ERROR_CODES } from '../../../shared/error-codes';
 import {
   assertValidBasename,
   fsError,
-  isCaseOrNormalizationOnlyRename,
+  isRenameOntoSelf,
   lstatOrThrow,
   mapNodeErrnoCode,
 } from './path-utils';
@@ -35,11 +35,7 @@ export async function renameEntry(
   // 硬链接(a.txt→b.txt)名字不同,POSIX rename 对其是 no-op 却返回成功 → 仍按已存在拒绝。
   try {
     const dstSt = await lstat(newPath);
-    const sameEntry =
-      dstSt.ino === srcSt.ino &&
-      dstSt.dev === srcSt.dev &&
-      isCaseOrNormalizationOnlyRename(oldPath, newPath);
-    if (!sameEntry) {
+    if (!isRenameOntoSelf(srcSt, dstSt, oldPath, newPath)) {
       throw fsError(ERROR_CODES.FS_EEXIST, `destination already exists: ${newPath}`);
     }
   } catch (err) {
