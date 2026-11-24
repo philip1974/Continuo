@@ -484,6 +484,17 @@ describe('readEnabledIds / writeEnabledIds', () => {
     expect(await readEnabledIds(tmp)).toEqual([]);
   });
 
+  // 数据安全(topic-54「损坏 ≠ 空」族,_plugin-path-scopes / explorer / data.json 同款):按空表降级前先留
+  // 一次性 .corrupt 快照 —— 随后的 setEnabledId RMW 会以空集合覆盖原文件,不留证则启用列表不可恢复。
+  it('文件 JSON 损坏 → 先存 .corrupt 快照(只保第一份)', async () => {
+    writeFileSync(join(tmp, '_enabled.json'), '{{{');
+    await readEnabledIds(tmp);
+    expect(readFileSync(join(tmp, '_enabled.json.corrupt'), 'utf-8')).toBe('{{{');
+    writeFileSync(join(tmp, '_enabled.json'), '[[[');
+    await readEnabledIds(tmp);
+    expect(readFileSync(join(tmp, '_enabled.json.corrupt'), 'utf-8')).toBe('{{{');
+  });
+
   // 数据安全(复查 P1):非 ENOENT 读错误(EACCES/EIO)此前也降级 [],启用状态的 RMW(现为 main setEnabledId)
   // 随后基于空集合写回,抹掉其它已启用插件。只 ENOENT→[],其它读错误抛出(同型清扫第 4 个读点)。
   // 边界(E159):readMetadataCapped 改单 fd 后,EACCES 经 fs.open 抛出透传(原 readFile 改 open)。
@@ -643,6 +654,12 @@ describe('readPermissions / writePermissions', () => {
   it('JSON 损坏 → {}', async () => {
     writeFileSync(join(tmp, '_permissions.json'), '{{{');
     expect(await readPermissions(tmp)).toEqual({});
+  });
+
+  it('JSON 损坏 → 先存 .corrupt 快照(写入方随后以空表 RMW 覆盖原文件)', async () => {
+    writeFileSync(join(tmp, '_permissions.json'), '{{{');
+    await readPermissions(tmp);
+    expect(readFileSync(join(tmp, '_permissions.json.corrupt'), 'utf-8')).toBe('{{{');
   });
 
   // 数据安全(复查 P1):非 ENOENT 读错误(EACCES/EIO)此前也降级 {},写入方

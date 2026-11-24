@@ -16,6 +16,7 @@ import { isValidPluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { codedError } from '../../shared/error-message';
 import { withInstalledPluginLock } from './plugins.service';
+import { preserveCorruptSnapshot } from '../lib/corrupt-snapshot';
 
 const LOCK_OPTS: lockfile.LockOptions = {
   // Op12.5 spike not executed in this batch; using library defaults/recommendation.
@@ -89,7 +90,7 @@ export function registerPluginDataStoreHandlers(
         typeof parsed !== 'object' ||
         Array.isArray(parsed)
       ) {
-        await fs.writeFile(`${file}.corrupt`, buf, { flag: 'wx', mode: 0o600 }).catch(() => {});
+        await preserveCorruptSnapshot(file, buf);
         return {};
       }
       return parsed as Record<string, unknown>;
@@ -97,7 +98,7 @@ export function registerPluginDataStoreHandlers(
       // 文件存在但 JSON 损坏(旧实现非原子写,崩溃/掉电会截断)。旧实现在这里直接
       // rethrow → IPC 永久 reject,该插件持久化数据"假死"丢失。改为:保留一次性
       // `.corrupt` 快照后降级返回 {},不阻塞插件继续运行(与 loadExplorer 同款)。
-      await fs.writeFile(`${file}.corrupt`, buf, { flag: 'wx', mode: 0o600 }).catch(() => {});
+      await preserveCorruptSnapshot(file, buf);
       return {};
     }
   });

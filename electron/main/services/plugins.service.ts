@@ -48,6 +48,7 @@ import {
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { arraysEqual } from '../../shared/array-equal';
 import { mapInOrderBounded } from '../lib/map-in-order-bounded';
+import { preserveCorruptSnapshot } from '../lib/corrupt-snapshot';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -546,7 +547,9 @@ export async function readEnabledIds(baseDir: string): Promise<string[]> {
     }
     return [];
   } catch {
-    return []; // JSON 损坏 → [](既有契约)
+    // JSON 损坏 → [](既有契约);先留 .corrupt 快照 —— setEnabledId 随后以空集合 RMW 会覆盖原文件。
+    await preserveCorruptSnapshot(file, text);
+    return [];
   }
 }
 
@@ -756,7 +759,10 @@ export async function readPermissions(
     }
     return out;
   } catch {
-    return {}; // JSON 损坏 → {}(既有契约,见 plugins-service.spec「JSON 损坏 → {}」)
+    // JSON 损坏 → {}(既有契约,见 plugins-service.spec「JSON 损坏 → {}」);先留 .corrupt 快照 —— 写入方
+    // 随后以空表 RMW 会覆盖原文件。
+    await preserveCorruptSnapshot(file, text);
+    return {};
   }
 }
 
@@ -905,7 +911,7 @@ async function readAllPathScopes(
   try {
     json = JSON.parse(text);
   } catch {
-    await fs.writeFile(`${file}.corrupt`, text, { flag: 'wx', mode: 0o600 }).catch(() => {});
+    await preserveCorruptSnapshot(file, text);
     throw new PathScopesCorruptError(`path-scopes file corrupt: ${file}`);
   }
   if (!json || typeof json !== 'object' || Array.isArray(json)) return {};

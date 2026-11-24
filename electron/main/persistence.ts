@@ -36,6 +36,7 @@ import type {
   WindowEntry,
   WindowEntryV3,
 } from '../shared/explorer-persistence-schema';
+import { preserveCorruptSnapshot } from './lib/corrupt-snapshot';
 
 const DEFAULT_SORT = { by: 'name' as const, reverse: false };
 
@@ -303,24 +304,6 @@ export function mergeWritableIntoFull(
   };
 }
 
-/**
- * 文件存在但无法解析为任何已知 schema 时,把损坏内容保留成一次性 sidecar
- * `${filePath}.corrupt`。否则运行期写路径(`(await loadExplorer()) ?? defaultExplorerV3()`)
- * 会在下一次窗口关闭/布局写时把整个 explorer.json 静默覆盖成默认值 —— recentRoots /
- * pinned / 所有 window 段全部丢失且不可恢复。用 `flag:'wx'` 只保第一次损坏快照,
- * 不覆盖更早的备份,也不在每次损坏读时重复写。best-effort,失败不影响主流程。
- */
-async function preserveCorruptExplorer(
-  filePath: string,
-  raw: string,
-): Promise<void> {
-  try {
-    await fs.writeFile(`${filePath}.corrupt`, raw, { flag: 'wx', mode: 0o600 });
-  } catch {
-    // 备份已存在(EEXIST)或写失败 → best-effort,忽略
-  }
-}
-
 // 边界(E67,E18/E26/E66 stat-before-read 族):explorer.json 是磁盘持久化文件,可能损坏或被
 // 手工放大。此前 loadExplorer 直接整块 readFile + JSON.parse,大小/数组/字符串上限都在
 // ExplorerSchemaV3.safeParse(解析之后)才生效 → 超大文件在启动/窗口恢复/布局读写前就
@@ -433,7 +416,10 @@ async function loadExplorerWithFormat(
     // JSON.parse 抛错 → 落到下面的损坏保留
   }
   // 文件存在但既非合法 JSON 也不匹配任何已知 schema:保留快照后返回 null
-  await preserveCorruptExplorer(filePath, raw);
+  // 文件存在但无法解析为任何已知 schema:留一次性 .corrupt 快照。否则运行期写路径
+  //(`(await loadExplorer()) ?? defaultExplorerV3()`)会在下一次窗口关闭 / 布局写时把整个 explorer.json
+  // 静默覆盖成默认值 —— recentRoots / pinned / 所有 window 段全部丢失且不可恢复。
+  await preserveCorruptSnapshot(filePath, raw);
   return null;
 }
 
