@@ -35,9 +35,10 @@ const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
 const EMPTY_KEYBINDING_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const KEYBINDING_ROW_CLASS_NAME = 'flex items-center gap-3 px-4 py-3 text-xs';
 const KEYBINDING_ROW_BORDER_CLASS_NAME = `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
-// 命令标题占据剩余宽度并可省略号截断(min-w-0 flex-1);命令 id 徽标可收缩(最多占 40%),列表窄于
-// 28rem 时隐藏;键帽 / 编辑 / 重置按钮均 shrink-0 始终完整可见。
-export const KEYBINDING_TITLE_CLASS_NAME = 'min-w-0 flex-1 truncate text-sm text-fg';
+// 命令标题占据剩余宽度并可省略号截断(flex-1);flex-1 的 basis 为 0,空间不足时标题会先于徽标被挤成 0 宽,
+// 故给最小宽度 6rem,让 id 徽标(min-w-0,最多占 40%)先收缩;列表窄于 28rem 时徽标隐藏;键帽 / 编辑 /
+// 重置按钮均 shrink-0 始终完整可见。
+export const KEYBINDING_TITLE_CLASS_NAME = 'min-w-[6rem] flex-1 truncate text-sm text-fg';
 export const KEYBINDING_ID_BADGE_CLASS_NAME =
   'min-w-0 max-w-[40%] uppercase tracking-wider @max-md:hidden';
 const EDIT_HOTKEY_ICON = (

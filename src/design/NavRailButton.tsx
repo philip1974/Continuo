@@ -1,4 +1,3 @@
-import './NavRailButton.css';
 import type { ReactNode } from 'react';
 
 /**

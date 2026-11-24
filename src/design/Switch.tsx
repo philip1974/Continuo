@@ -1,4 +1,3 @@
-import './Switch.css';
 import type { ButtonHTMLAttributes, MouseEvent } from 'react';
 
 /**

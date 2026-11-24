@@ -1,4 +1,3 @@
-import './Spinner.css';
 import type { HTMLAttributes } from 'react';
 
 export type SpinnerSize = 'sm' | 'md' | 'lg';

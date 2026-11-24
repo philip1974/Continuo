@@ -1,4 +1,3 @@
-import './Separator.css';
 import type { HTMLAttributes } from 'react';
 
 /**

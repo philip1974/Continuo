@@ -1,4 +1,3 @@
-import './ScrollArea.css';
 import { forwardRef, type HTMLAttributes } from 'react';
 
 /**

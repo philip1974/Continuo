@@ -1,4 +1,3 @@
-import './Card.css';
 import type { HTMLAttributes } from 'react';
 
 export type ChatCardTone =

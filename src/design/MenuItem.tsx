@@ -1,4 +1,3 @@
-import './MenuItem.css';
 import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 
 export type MenuItemVariant = 'default' | 'danger';

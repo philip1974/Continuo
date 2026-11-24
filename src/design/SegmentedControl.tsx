@@ -1,4 +1,3 @@
-import './SegmentedControl.css';
 import type { KeyboardEvent } from 'react';
 
 export type SegmentedControlSize = 'sm' | 'md';

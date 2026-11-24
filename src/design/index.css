@@ -1,5 +1,7 @@
-/* design 组件 CSS 集中入口。
- * 由 src/styles/tailwind.css 顶层导入,确保 utility 优先级靠前。 */
+/* design 组件 CSS 集中入口(全部组件 CSS 只从这里进入,组件 .tsx 不再各自 import)。
+ * 由 src/styles/tailwind.css 以 `layer(components)` 导入:Tailwind v4 层顺序 theme < base < components <
+ * utilities,调用方传给 design 组件的 className(utility)能覆盖组件基类;若不在 layer 里(unlayered),
+ * 组件基类会压过所有 utility。 */
 @import './Badge.css';
 @import './Button.css';
 @import './IconButton.css';
@@ -9,8 +11,10 @@
 @import './SegmentedControl.css';
 @import './Card.css';
 @import './Input.css';
+@import './KeyCap.css';
 @import './Modal.css';
 @import './ScrollArea.css';
 @import './Separator.css';
 @import './Spinner.css';
+@import './Switch.css';
 @import './Tabs.css';

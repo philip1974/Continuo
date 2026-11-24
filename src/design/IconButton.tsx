@@ -1,7 +1,6 @@
 // LM-local 微调:加 forwardRef,让 HeaderActions 的弹层锚点等需要
 // .getBoundingClientRect() / .focus() 的场景能直接拿到 inner <button>。
 
-import './IconButton.css';
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
 export type IconButtonSize = 'xs' | 'sm' | 'md';

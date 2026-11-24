@@ -1,4 +1,3 @@
-import './Modal.css';
 import { useEffect, useRef, type HTMLAttributes, type ReactNode } from 'react';
 import { isImeComposing } from './ime';
 

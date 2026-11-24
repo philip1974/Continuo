@@ -1,7 +1,6 @@
 // Continuo-local 微调:加 draggable + onDragStart / onDragEnd props 支撑 terminal
 // tab 拖拽分屏(topic-05),在 terminal panel 内嵌 tab 上启用。drag handler 挂在 wrap div(根)而非 select button,避免
 // button click/drag 互相干扰。
-import './TabNav.css';
 import { useId } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { handleTablistArrowKeys } from './roving-tablist';

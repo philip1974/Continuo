@@ -1,4 +1,3 @@
-import './Tabs.css';
 import { handleTablistArrowKeys } from './roving-tablist';
 
 /**

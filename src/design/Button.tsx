@@ -1,4 +1,3 @@
-import './Button.css';
 import type { ButtonHTMLAttributes } from 'react';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outlined';

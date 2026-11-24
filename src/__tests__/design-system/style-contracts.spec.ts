@@ -140,3 +140,48 @@ describe('徽标统一 design Badge', () => {
     expect(hits).toEqual([]);
   });
 });
+
+// design CSS 必须在 Tailwind 的 components 层里:Tailwind v4 的 utility 在 `@layer utilities`,不在任何 layer 里的
+// 样式(unlayered)无论选择器多弱都压过所有 layer —— 调用方传给 design 组件的 className(如 `@max-md:hidden`、
+// `w-24`、`overflow-x-auto`)会被组件基类静默覆盖。层顺序 theme < base < components < utilities。
+describe('design CSS 层级', () => {
+  const TAILWIND = css('src/styles/tailwind.css');
+  const INDEX = css('src/design/index.css');
+  const designFiles = execFileSync('git', ['ls-files', 'src/design/*.css', 'src/design/*.tsx'], { encoding: 'utf8' })
+    .split('\n')
+    .filter((f) => f !== '');
+
+  it('tailwind.css 以 layer(components) 引入 design/index.css,且在 tailwindcss 之后', () => {
+    const lines = TAILWIND.split('\n').map((l) => l.trim());
+    const tw = lines.findIndex((l) => /^@import\s+["']tailwindcss["']/.test(l));
+    const design = lines.findIndex((l) => /^@import\s+["']\.\.\/design\/index\.css["']/.test(l));
+    expect(tw).toBeGreaterThanOrEqual(0);
+    expect(design).toBeGreaterThan(tw);
+    expect(lines[design]).toMatch(/layer\(components\)\s*;$/);
+  });
+
+  it('index.css 汇总全部 design 组件 CSS(无遗漏 → 无 unlayered 漏网)', () => {
+    const imported = Array.from(INDEX.matchAll(/@import\s+['"]\.\/([\w-]+\.css)['"]/g), (m) => m[1]).sort();
+    const all = designFiles
+      .filter((f) => f.endsWith('.css') && !f.endsWith('/index.css'))
+      .map((f) => f.slice('src/design/'.length))
+      .sort();
+    expect(imported).toEqual(all);
+  });
+
+  // design CSS 进 Tailwind 管线后由 lightningcss 按目标浏览器补前缀:源码同时写 `backdrop-filter` 与
+  // `-webkit-backdrop-filter` 时,产物只剩带前缀那条 —— Chromium(Electron)不认,遮罩模糊整个丢失。
+  it('design CSS 不手写 -webkit- 前缀属性(前缀交给构建按目标补)', () => {
+    const hits = designFiles
+      .filter((f) => f.endsWith('.css'))
+      .flatMap((f) => (css(f).match(/^\s*-webkit-[a-z-]+\s*:/gm) ?? []).map((m) => `${f}: ${m.trim()}`));
+    expect(hits).toEqual([]);
+  });
+
+  it('design 组件不在 TS 里直接 import 自身 CSS(否则打出一份 unlayered 副本,仍压过 utilities)', () => {
+    const hits = designFiles
+      .filter((f) => f.endsWith('.tsx') || f.endsWith('.ts'))
+      .filter((f) => /^\s*import\s+['"][^'"]+\.css['"]/m.test(css(f)));
+    expect(hits).toEqual([]);
+  });
+});

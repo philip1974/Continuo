@@ -136,7 +136,9 @@ describe('KeybindingsTabContent — 窄宽命令行', () => {
     expect(classesOf(ul)).toContain('@container');
     const li = ul.querySelector('li')!;
     const title = Array.from(li.querySelectorAll('span')).find((s) => s.textContent === 'Find in Terminal')!;
-    expect(classesOf(title)).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'truncate']));
+    // 标题有最小宽度:flex-1(basis 0)在空间不足时会先被挤成 0 宽,徽标(min-w-0)应先收缩
+    expect(classesOf(title)).toEqual(expect.arrayContaining(['min-w-[6rem]', 'flex-1', 'truncate']));
+    expect(classesOf(title)).not.toContain('min-w-0');
     expect(title.getAttribute('title')).toBe('Find in Terminal');
     const code = li.querySelector('code')!;
     expect(classesOf(code)).toContain('truncate');
