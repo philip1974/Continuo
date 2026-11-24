@@ -12,6 +12,7 @@ import {
   getEffectiveMode,
   isTabMilkdownUnsafe,
   useEditorStore,
+  usesMilkdownEngine,
   type EditorMode,
 } from '@/stores/editor.store';
 import { t as translate, useLocale } from '@/i18n';
@@ -251,51 +252,40 @@ export function EditorPanel() {
   if (!activeTab) {
     engine = 'welcome';
     body = <EditorWelcome />;
-  } else if (activeIsMarkdown) {
-    if (effective === 'source') {
-      engine = 'code';
-      body = (
-        <CodeEditor
-          key={`${activeTab.id}-src`}
-          tabId={activeTab.id}
-          value={activeTab.content}
-          fileName={activeTab.filePath ?? ''}
-          forceLanguage="markdown"
-          onChange={(v) => updateContent(activeTab.id, v)}
-        />
-      );
-    } else {
-      engine = 'milkdown';
-      body = (
-        <MilkdownEditor
-          // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
-          // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
-          // 用户输入/保存不动 epoch,故不会每次按键 remount。
-          key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
-          tabId={activeTab.id}
-          // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
-          defaultValue={
-            effective === 'preview'
-              ? toPreviewMarkdown(activeTab.content)
-              : activeTab.content
-          }
-          readonly={effective === 'preview'}
-          onChange={(md) => updateContent(activeTab.id, md)}
-          onWriteBack={(md, base) =>
-            applyEditorWriteBack(activeTab.id, md, base)
-          }
-          onLinkClick={handleLinkClick}
-        />
-      );
-    }
+  } else if (usesMilkdownEngine(activeTab.filePath, activeTab)) {
+    engine = 'milkdown';
+    body = (
+      <MilkdownEditor
+        // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
+        // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
+        // 用户输入/保存不动 epoch,故不会每次按键 remount。
+        key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
+        tabId={activeTab.id}
+        // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
+        defaultValue={
+          effective === 'preview'
+            ? toPreviewMarkdown(activeTab.content)
+            : activeTab.content
+        }
+        readonly={effective === 'preview'}
+        onChange={(md) => updateContent(activeTab.id, md)}
+        onWriteBack={(md, base) =>
+          applyEditorWriteBack(activeTab.id, md, base)
+        }
+        onLinkClick={handleLinkClick}
+      />
+    );
   } else {
+    // 代码文件,或 Markdown 的源码模式(实际模式为 source:用户选的,或 unsafe 文档被强制):CodeEditor。
+    // Markdown 源码视图 key 带 -src 后缀、强制 markdown 高亮(草稿无扩展名也按 Markdown)。
     engine = 'code';
     body = (
       <CodeEditor
-        key={activeTab.id}
+        key={activeIsMarkdown ? `${activeTab.id}-src` : activeTab.id}
         tabId={activeTab.id}
         value={activeTab.content}
         fileName={activeTab.filePath ?? ''}
+        {...(activeIsMarkdown ? { forceLanguage: 'markdown' as const } : {})}
         onChange={(v) => updateContent(activeTab.id, v)}
       />
     );

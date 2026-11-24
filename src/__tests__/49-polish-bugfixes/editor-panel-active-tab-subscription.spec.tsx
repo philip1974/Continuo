@@ -84,7 +84,9 @@ describe('打磨 R27 — EditorPanel 只订阅 active tab', () => {
     const src = readFileSync(join(process.cwd(), 'src/panels/Editor/EditorPanel.tsx'), 'utf8');
 
     expect(src).toContain('const activeIsMarkdown =');
-    expect(src).toContain('} else if (activeIsMarkdown) {');
+    // 引擎选择走共用判定 usesMilkdownEngine(与引擎预热 / SDK 跳行同口径),代码 / 源码视图复用 activeIsMarkdown。
+    expect(src).toContain('} else if (usesMilkdownEngine(activeTab.filePath, activeTab)) {');
+    expect(src).toContain('key={activeIsMarkdown ?');
     expect(src).toContain('{activeIsMarkdown && (');
     expect(src).not.toContain('} else if (isMarkdownPath(activeTab.filePath)) {');
     expect(src).not.toContain('{activeTab && isMarkdownPath(activeTab.filePath) && (');
