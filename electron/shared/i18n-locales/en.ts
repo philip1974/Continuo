@@ -315,6 +315,7 @@ export const en = {
   'panels.editor.codeBlock.previewEdit': 'Edit',
   'panels.editor.codeBlock.previewHide': 'Hide',
   'panels.editor.mermaid.renderError': 'Failed to render Mermaid diagram',
+  'panels.editor.link.copy_failed': 'Failed to copy link',
 
   // permissions.* (3)
   'permissions.agent.terminal_create_session': 'open a new terminal',

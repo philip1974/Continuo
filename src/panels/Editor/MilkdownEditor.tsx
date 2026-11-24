@@ -25,6 +25,7 @@ import {
   renderMermaidPreview,
 } from './mermaid-preview';
 import { registerEditorWriteBack } from './editor-writeback-registry';
+import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 
 interface MilkdownEditorProps {
   /**
@@ -368,6 +369,19 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     activateLink(a, e);
   }, [activateLink]);
 
+  // 链接气泡的「复制链接」(Crepe LinkTooltip 的 .link-preview .link-icon):上游处理器挂在该图标的
+  // pointerdown 上,且只在 navigator.clipboard 存在时复制 —— PROD 的 sandboxSweep 把它清掉了,点了
+  // 没反应;onCopyLink 配置项只是复制成功后的回调,改不了复制本身。故在外层捕获阶段截下该事件
+  // (上游处理器不再执行),改走启动时缓存的剪贴板;失败给可见提示(同其它复制入口)。
+  const handlePointerDownCapture = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const icon = (e.target as Element | null)?.closest?.('.link-preview .link-icon');
+    if (!icon) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const link = icon.closest('.link-preview')?.querySelector('a.link-display')?.getAttribute('href');
+    if (link) void copyToClipboardOrNotify(link, t('panels.editor.link.copy_failed'));
+  }, []);
+
   return (
     <MilkdownProvider key={locale}>
       <div
@@ -377,6 +391,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         onClick={handleClick}
         onAuxClick={handleAuxClick}
         onKeyDown={handleKeyDown}
+        onPointerDownCapture={handlePointerDownCapture}
       >
         <CrepeEditor {...props} />
       </div>

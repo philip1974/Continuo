@@ -301,6 +301,7 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.codeBlock.previewEdit': '편집',
   'panels.editor.codeBlock.previewHide': '숨기기',
   'panels.editor.mermaid.renderError': 'Mermaid 다이어그램 렌더링 실패',
+  'panels.editor.link.copy_failed': '링크 복사 실패',
 
   // permissions.*
   'permissions.agent.terminal_create_session': '새 터미널 열기',

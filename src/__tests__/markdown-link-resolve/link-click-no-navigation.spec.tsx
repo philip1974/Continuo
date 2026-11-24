@@ -4,6 +4,12 @@ import React from 'react';
 import { cleanup, createEvent, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const h = vi.hoisted(() => ({ writeText: vi.fn(), notifyError: vi.fn() }));
+vi.mock('@/plugins/sandbox-sweep', () => ({
+  getCachedClipboard: () => ({ readText: vi.fn(), writeText: h.writeText }),
+}));
+vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
+
 vi.mock('@milkdown/crepe', () => ({
   CrepeFeature: {},
   Crepe: vi.fn().mockImplementation(() => ({
@@ -128,5 +134,54 @@ describe('Milkdown 链接点击不导航应用窗口', () => {
 
     expect(click(wrapper)).toBe(false);
     expect(onLinkClick).not.toHaveBeenCalled();
+  });
+});
+
+// 打包版(PROD)sandboxSweep 把 navigator.clipboard 置为 undefined;Crepe 链接气泡的复制按钮
+// 直接用 navigator.clipboard,会静默无反应。应改走启动时缓存的剪贴板(getCachedClipboard)。
+describe('链接气泡「复制链接」在 PROD 剪贴板被清洗后仍可用', () => {
+  function setupTooltip() {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true, writable: true });
+    h.writeText.mockReset().mockResolvedValue(undefined);
+    h.notifyError.mockReset();
+    const { container } = render(<MilkdownEditor tabId="/t.md" defaultValue="x" />);
+    const wrapper = container.querySelector('.overflow-auto') as HTMLElement;
+    // 结构照 @milkdown/components link-tooltip 的 PreviewLink:Icon 是 span,处理器挂在 pointerdown 上
+    const tooltip = document.createElement('div');
+    tooltip.className = 'milkdown-link-preview';
+    tooltip.innerHTML =
+      '<div class="link-preview">' +
+      '<span class="milkdown-icon button link-icon"><svg><path></path></svg></span>' +
+      '<a href="https://example.com/doc" target="_blank" class="link-display">https://example.com/doc</a>' +
+      '</div>';
+    wrapper.appendChild(tooltip);
+    const icon = tooltip.querySelector('.link-icon') as HTMLElement;
+    const upstream = vi.fn();
+    icon.addEventListener('pointerdown', upstream);
+    return { icon, upstream, path: tooltip.querySelector('path') as Element };
+  }
+
+  function pointerDown(target: Element): boolean {
+    const event = new MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  it('点复制图标(含内部 svg)→ 写入缓存剪贴板,不再走上游处理', async () => {
+    const { upstream, path } = setupTooltip();
+
+    expect(pointerDown(path)).toBe(true);
+    expect(h.writeText).toHaveBeenCalledWith('https://example.com/doc');
+    expect(upstream).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+
+  it('写入失败 → 可见的失败提示,不静默', async () => {
+    const { icon } = setupTooltip();
+    h.writeText.mockRejectedValue(new Error('denied'));
+
+    pointerDown(icon);
+    await vi.waitFor(() => expect(h.notifyError).toHaveBeenCalledTimes(1));
   });
 });

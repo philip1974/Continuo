@@ -298,6 +298,7 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.codeBlock.previewEdit': '编辑',
   'panels.editor.codeBlock.previewHide': '隐藏',
   'panels.editor.mermaid.renderError': 'Mermaid 图表渲染失败',
+  'panels.editor.link.copy_failed': '复制链接失败',
 
   // permissions.*
   'permissions.agent.terminal_create_session': '新建一个 terminal',
