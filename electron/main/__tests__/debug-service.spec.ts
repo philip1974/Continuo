@@ -287,6 +287,13 @@ class FakeDapClient implements DebugDapClientLike {
 }
 
 // 默认宽松 workspace guard:root='/' → 任意绝对路径在内;realpath 恒等(测试文件不必真实存在)。
+/** 该会话当前的 child DAP 连接数(上限判定的权威来源 runtime.childClients;此前另存的 childSessionCount 已删)。 */
+function childClientCount(service: DebugService, sessionId: string): number {
+  return (service as unknown as { runtimes: Map<string, { childClients: readonly unknown[] }> }).runtimes.get(
+    sessionId,
+  )!.childClients.length;
+}
+
 const PERMISSIVE_WORKSPACE: DebugWorkspaceGuard = {
   getWorkspaceRoot: () => '/',
   realpath: async (p) => p,
@@ -523,7 +530,7 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     for (let i = 1; i < debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION; i += 1) {
       await main.triggerStartDebugging({ type: 'pwa-node', name: `[worker ${i}]` });
     }
-    expect(debugSessions.list()[0]?.childSessionCount).toBe(
+    expect(childClientCount(service, debugSessions.list()[0]!.id)).toBe(
       debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION,
     );
 
@@ -533,7 +540,7 @@ describe('DebugService fake adapter · launch / 子会话 / 终止 的错误路�
     await expect(parent.triggerStartDebugging({ type: 'pwa-node' })).rejects.toThrow(/child session limit/);
     expect(main.children).toHaveLength(debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION - 1);
     expect(parent.children).toHaveLength(1);
-    expect(debugSessions.list()[0]?.childSessionCount).toBe(
+    expect(childClientCount(service, debugSessions.list()[0]!.id)).toBe(
       debugSessions.MAX_DEBUG_CHILD_SESSIONS_PER_SESSION,
     );
 
@@ -2646,7 +2653,7 @@ describe('DebugService fake adapter · 会话上限 / 程序起跑时机 / 按 s
     expect(child.requestLog.some((r) => r.command === 'configurationDone')).toBe(false);
     expect(child.requestLog.some((r) => r.command === 'launch')).toBe(false);
     expect(child.disposeCalls).toBe(1);
-    expect(debugSessions.get(sessionId)?.childSessionCount).toBe(0);
+    expect(childClientCount(service, sessionId)).toBe(0);
     // a 的成功回报不残留(快照仍是父连接的回报)。
     expect(service.viewSnapshot(ctx.ownerWindowId)[0]?.breakpointsBySource).toEqual([
       { file: '/a.js', breakpoints: [{ file: '/a.js', line: 3, verified: true }] },
@@ -3432,7 +3439,6 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
 
     const runtime = runtimeOf(service, sessionId);
     expect(runtime.childClients).toEqual([main]);
-    expect(debugSessions.get(sessionId)?.childSessionCount).toBe(1);
     for (const bp of runtime.breakpoints) {
       expect(bp.reportedBy.size).toBe(2); // 父连接 + main
       expect(bp.ids.size).toBe(2);
@@ -3694,7 +3700,7 @@ describe.skipIf(!adapterExists)('DebugService real adapter', () => {
         const stoppedSession = debugSessions.get(sessionId);
         expect(stoppedSession?.adapterPid).toBeGreaterThan(0);
         expect(stoppedSession?.adapterPgid).toBeGreaterThan(0);
-        expect(stoppedSession?.childSessionCount).toBeGreaterThanOrEqual(1);
+        expect(childClientCount(service, sessionId)).toBeGreaterThanOrEqual(1);
 
         const groupWhileStopped = await pidsInProcessGroup(stoppedSession!.adapterPgid!);
         expect(groupWhileStopped.map((entry) => entry.pid)).toContain(

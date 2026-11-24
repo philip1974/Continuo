@@ -1744,9 +1744,6 @@ export class DebugService {
     const child = requester.createChildSession();
     child.setStartDebuggingHandler((nested) => this.handleStartDebugging(sessionId, nested, child));
     runtime.childClients.push(child);
-    debugSessions.update(sessionId, {
-      childSessionCount: runtime.childClients.length,
-    });
     this.wireClient(sessionId, child);
     try {
       await child.connectToServer();
@@ -1774,7 +1771,6 @@ export class DebugService {
       const index = runtime.childClients.indexOf(child);
       if (index >= 0) runtime.childClients.splice(index, 1);
       forgetClient(runtime, child);
-      debugSessions.update(sessionId, { childSessionCount: runtime.childClients.length });
       await child.dispose().catch(() => undefined);
       // 摘除后重新判定:若其余 child 在这次握手期间都已结束,存活的 child 已全部结束 → 整个会话结束
       //(否则要等父 client 的 terminated 才收敛)。
@@ -1851,7 +1847,6 @@ export class DebugService {
       if (index < 0) return;
       runtime.childClients.splice(index, 1);
       runtime.childEnded = true;
-      debugSessions.update(sessionId, { childSessionCount: runtime.childClients.length });
       // 它的 debuggee 已结束:pid 移出记录,之后的清理不再按这个(可能被复用的)pid 杀进程。
       debugSessions.removeSystemProcessIds(sessionId, runtime.processIdsByClient.get(client) ?? []);
       runtime.processIdsByClient.delete(client);

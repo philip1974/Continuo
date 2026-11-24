@@ -25,7 +25,6 @@ export interface DebugSession {
   readonly adapterPid?: number;
   readonly adapterPgid?: number;
   readonly systemProcessIds: readonly number[];
-  readonly childSessionCount: number;
   readonly stopSeq: number;
   readonly createdAt: number;
 }
@@ -135,7 +134,6 @@ export function add(input: AddDebugSessionInput, reservation?: CapacityReservati
     ...(input.name !== undefined ? { name: input.name } : {}),
     ...(input.adapterPid !== undefined ? { adapterPid: input.adapterPid } : {}),
     systemProcessIds: [],
-    childSessionCount: 0,
     stopSeq: 0,
     createdAt: Date.now(),
   };
