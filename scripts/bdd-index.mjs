@@ -28,10 +28,14 @@ async function firstHeading(file) {
   return m ? m[1].trim() : null;
 }
 
-async function listSpecs(dir) {
+// 递归列出主题目录下的 spec(相对主题目录的 posix 路径):sdk-contract 等主题把 spec 放在 shape/ / integration/
+// 子目录,只扫第一层会让整个主题从索引里静默消失。
+async function listSpecs(dir, prefix = '') {
   const out = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (entry.isFile() && /\.spec\.tsx?$/.test(entry.name)) out.push(entry.name);
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isFile() && /\.spec\.tsx?$/.test(entry.name)) out.push(rel);
+    else if (entry.isDirectory()) out.push(...(await listSpecs(path.join(dir, entry.name), rel)));
   }
   return out.sort();
 }

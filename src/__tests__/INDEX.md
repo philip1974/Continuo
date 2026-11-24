@@ -304,6 +304,10 @@
 
 - [`attach-target-bounds.spec.ts`](./attach-target-bounds/attach-target-bounds.spec.ts)
 
+## [bdd-index-integrity](./bdd-index-integrity/README.md)
+
+- [`bdd-index-integrity.spec.ts`](./bdd-index-integrity/bdd-index-integrity.spec.ts)
+
 ## [bounded-input-preflight(E255/E256/E257 schema-阶段放大族)](./bounded-input-preflight/README.md)
 
 - [`plugin-mcp-reply-preflight.spec.ts`](./bounded-input-preflight/plugin-mcp-reply-preflight.spec.ts)
@@ -1266,6 +1270,20 @@
 - [`host-command-rate-limit.spec.ts`](./scoped-app/host-command-rate-limit.spec.ts)
 - [`sandbox-sweep.spec.ts`](./scoped-app/sandbox-sweep.spec.ts)
 - [`scoped-app.spec.ts`](./scoped-app/scoped-app.spec.ts)
+
+## [SDK Contract BDD](./sdk-contract/README.md) `[contract]`
+
+- [`integration/ipc-plugin-data-store.spec.ts`](./sdk-contract/integration/ipc-plugin-data-store.spec.ts)
+- [`integration/path-scope-registry.spec.ts`](./sdk-contract/integration/path-scope-registry.spec.ts)
+- [`integration/plugin-data-store.service.spec.ts`](./sdk-contract/integration/plugin-data-store.service.spec.ts)
+- [`integration/plugin-fs.service.spec.ts`](./sdk-contract/integration/plugin-fs.service.spec.ts)
+- [`integration/plugin-shell-stream.service.spec.ts`](./sdk-contract/integration/plugin-shell-stream.service.spec.ts)
+- [`integration/shell.service.spec.ts`](./sdk-contract/integration/shell.service.spec.ts)
+- [`shape/co-app-version.spec.ts`](./sdk-contract/shape/co-app-version.spec.ts)
+- [`shape/runtime-existence.spec.ts`](./sdk-contract/shape/runtime-existence.spec.ts)
+- [`shape/scoped-app.spec.ts`](./sdk-contract/shape/scoped-app.spec.ts)
+- [`shape/types-contract.spec.ts`](./sdk-contract/shape/types-contract.spec.ts)
+- [`shape/web-compat.spec.ts`](./sdk-contract/shape/web-compat.spec.ts)
 
 ## [SDK dock namespace](./sdk-dock-namespace/README.md)
 
