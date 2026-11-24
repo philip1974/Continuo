@@ -36,7 +36,7 @@ import { codedError, toError } from '../../shared/error-message';
 import { runSerialPerKey } from '../../shared/run-serial-per-key';
 import { lowerIfNeeded } from '../../shared/lower-if-needed';
 import { processTreeKillable } from '../lib/kill-with-grace';
-import { stripInternalSecretEnv } from '../lib/child-spawn-hardening';
+import { absolutePathDirs, stripInternalSecretEnv } from '../lib/child-spawn-hardening';
 import { isSameOrInsidePath } from '../lib/path-inside';
 
 const execFile = promisify(execFileCb);
@@ -343,8 +343,7 @@ function toEnvObject(
  */
 export async function findNodeRuntimeOnPath(pathValue: string | undefined): Promise<string> {
   const exe = platform() === 'win32' ? 'node.exe' : 'node';
-  for (const dir of (pathValue ?? '').split(path.delimiter)) {
-    if (dir === '' || !path.isAbsolute(dir)) continue;
+  for (const dir of absolutePathDirs(pathValue ?? '', platform())) {
     try {
       const real = await realpath(path.join(dir, exe));
       if (!(await stat(real)).isFile()) continue;

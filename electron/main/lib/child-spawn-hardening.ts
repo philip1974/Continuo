@@ -194,6 +194,18 @@ function splitWindowsPath(value: string): string[] {
 }
 
 /**
+ * PATH 中的**绝对**目录(按平台切分:Windows 按 libuv 规则处理引号项,其它平台按 `:`)。空项与相对项跳过 —— 相对项
+ * 按 cwd 解析(cwd 即不可信 workspace)。spawn 命令解析与 debug 的 node 运行时查找共用(此前后者自己
+ * `split(path.delimiter)`,Windows 上带引号的 `"C:\Program Files\nodejs"` 项被判为相对而跳过)。
+ */
+export function absolutePathDirs(pathValue: string, platform: NodeJS.Platform = process.platform): string[] {
+  if (platform === 'win32') {
+    return splitWindowsPath(pathValue).filter((dir) => dir !== '' && path.win32.isAbsolute(dir));
+  }
+  return pathValue.split(':').filter((dir) => dir !== '' && path.posix.isAbsolute(dir));
+}
+
+/**
  * Windows:把不含路径成分的命令名解析为 PATH(仅绝对目录,不含 cwd)中的绝对路径;解析不到抛 ENOENT。
  * 含路径分隔符 / 盘符的命令由调用方显式指定,原样返回。非 Windows 原样返回。
  * @param env 子进程将使用的 env(libuv 也按子进程 env 的 PATH 搜索)
@@ -212,9 +224,7 @@ export function resolveSpawnCommand(
     `${cmd}.com`,
     `${cmd}.exe`,
   ];
-  for (const dir of splitWindowsPath(pathValue)) {
-    // 空项 / 相对项按 cwd 解析(cwd 即不可信 workspace),跳过。
-    if (dir === '' || !path.win32.isAbsolute(dir)) continue;
+  for (const dir of absolutePathDirs(pathValue, 'win32')) {
     for (const name of names) {
       const candidate = path.win32.join(dir, name);
       if (deps.isFile(candidate)) return candidate;

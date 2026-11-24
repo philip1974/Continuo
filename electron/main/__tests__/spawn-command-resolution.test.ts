@@ -22,6 +22,7 @@ import { readGitBlob } from '../services/plugin-fs.service';
 import { PLUGIN_SHELL_STREAM_CHANNELS } from '../../shared/plugin-shell-stream-channels';
 import { installFromGit } from '../services/plugins.service';
 import { processTreeKillable } from '../lib/kill-with-grace';
+import { absolutePathDirs } from '../lib/child-spawn-hardening';
 import { FakeChild } from './_helpers/fake-child';
 
 const realPlatform = process.platform;
@@ -95,3 +96,17 @@ describe('Windows 主进程自身 spawn 不从 cwd 解析(git clone / taskkill)'
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
   });
 });
+
+// spawn 命令解析与 debug 的 node 运行时查找共用(此前 debug 自己 split(path.delimiter),Windows 带引号项被跳过)。
+describe('absolutePathDirs', () => {
+  it('Windows:按 libuv 规则剥引号(引号内的 ; 不切分),跳过空项与相对项', () => {
+    expect(
+      absolutePathDirs('"C:\\Program Files\\nodejs";;relative;C:\\bin;"D:\\a;b"', 'win32'),
+    ).toEqual(['C:\\Program Files\\nodejs', 'C:\\bin', 'D:\\a;b']);
+  });
+
+  it('POSIX:按 : 切分,跳过空项与相对项', () => {
+    expect(absolutePathDirs('/usr/bin::bin:/opt/node/bin', 'darwin')).toEqual(['/usr/bin', '/opt/node/bin']);
+  });
+});
+
