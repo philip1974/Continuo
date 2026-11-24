@@ -734,6 +734,10 @@
 
 - [`initial-workspace.spec.ts`](./initial-workspace/initial-workspace.spec.ts)
 
+## [install-from-git-localized](./install-from-git-localized/README.md)
+
+- [`install-from-git-localized.spec.ts`](./install-from-git-localized/install-from-git-localized.spec.ts)
+
 ## [IpcPermissionStore(磁盘 backed 权限存储)](./ipc-permission-store/README.md)
 
 - [`ipc-permission-store.spec.ts`](./ipc-permission-store/ipc-permission-store.spec.ts)

@@ -1532,6 +1532,20 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     ).toBe(true);
   });
 
+  it('Git URL 安装返回 EEXIST → 提示已安装、重启后加载(非错误,名称取仓库名)', async () => {
+    installApi(vi.fn().mockResolvedValue({ ok: false, code: 'EEXIST', message: 'exists' }));
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a' })]);
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('从 Git URL 安装'));
+    const input = container.querySelector('input[placeholder^="https"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/x/cool-ext.git' } });
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装扩展')!,
+    );
+    await waitFor(() => expect(container.textContent).toContain('cool-ext 已安装(可能是在其它窗口安装的)'));
+    expect(container.textContent).not.toContain('文件已存在');
+  });
+
   it('Git URL trim 只在输入变化后派生一次,点击安装复用结果', async () => {
     const installFromGit = vi.fn().mockReturnValue(new Promise(() => {}));
     installApi(installFromGit);

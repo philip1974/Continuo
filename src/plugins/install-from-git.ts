@@ -9,18 +9,35 @@ type Installed = Extract<InstallResult, { ok: true }>['data'];
 
 export type GitInstallOutcome =
   | { readonly ok: true; readonly data: Installed }
-  /** message 已按 code 本地化(未收录的 code 回退原文,原文缺省回退 code)。 */
-  | { readonly ok: false; readonly code: string; readonly message: string };
+  /**
+   * message 已按 code 本地化(未收录的 code 回退原文,原文缺省回退 code)。alreadyInstalled:全新安装(非 overwrite)撞
+   * EEXIST —— 插件已在盘上但不在本窗口列表(别的窗口刚装、要重启才进列表;待重启记录不跨窗口)。三个入口据此如实提示
+   * 「已安装、重启后加载」,而非无从下手的「文件已存在」。
+   */
+  | { readonly ok: false; readonly code: string; readonly message: string; readonly alreadyInstalled: boolean };
 
 export async function installFromGitLocalized(
   ...args: Parameters<typeof coApi.plugins.installFromGit>
 ): Promise<GitInstallOutcome> {
+  const overwrite = args[1] === true;
+  const fail = (code: string, message: string | undefined): GitInstallOutcome => ({
+    ok: false,
+    code,
+    message: localizeErrorByCode(code, message),
+    alreadyInstalled: !overwrite && code === 'EEXIST',
+  });
   try {
     const r = await coApi.plugins.installFromGit(...args);
     if (r.ok) return { ok: true, data: r.data };
-    return { ok: false, code: r.code, message: localizeErrorByCode(r.code, r.message) };
+    return fail(r.code, r.message);
   } catch (err) {
     const { code, message } = failureOf(err);
-    return { ok: false, code, message: localizeErrorByCode(code, message) };
+    return fail(code, message);
   }
+}
+
+/** Git URL 的仓库名(末段去 `.git`),用于尚不知插件名时的提示。 */
+export function repoNameFromGitUrl(url: string): string {
+  const tail = url.trim().replace(/[/\\]+$/, '').split(/[/\\:]/).pop() ?? url;
+  return tail.replace(/\.git$/i, '') || url;
 }

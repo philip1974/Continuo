@@ -24,7 +24,7 @@ import { useUserPluginList } from '@/plugins/use-user-plugin-list';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { MARKETPLACE_REPO_SLUG } from '../../electron/shared/marketplace-channels';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
-import { installFromGitLocalized } from '@/plugins/install-from-git';
+import { installFromGitLocalized, repoNameFromGitUrl } from '@/plugins/install-from-git';
 
 /** 项目维护者(角标用),hard-coded. */
 const MAINTAINERS: ReadonlySet<string> = new Set(['philip1974']);
@@ -187,7 +187,7 @@ export function MarketplaceTab() {
       const success = r.ok;
       // 全新安装撞 EEXIST:插件已在盘上但不在本窗口列表(别的窗口刚装、要重启才进列表;待重启记录不跨窗口)→ 如实说明
       // 已安装、重启后加载,不报「文件已存在」这类无从下手的错误(本窗口列表里没有它,用户也没法「卸载后再装」)。
-      const alreadyInstalled = !r.ok && !isUpdate && r.code === 'EEXIST';
+      const alreadyInstalled = !r.ok && r.alreadyInstalled;
       const msg = r.ok
         ? translate(isUpdate ? 'marketplace.update_success' : 'marketplace.install_success', {
             name: r.data.name,
@@ -448,10 +448,11 @@ function GitUrlInstallSection() {
     // 同卡片安装:失败(含 reject)按 code 本地化;不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
     const r = await installFromGitLocalized(url);
     if (!r.ok) {
-      setMsg({
-        text: translate('marketplace.install_failed_code', { code: r.code, message: r.message }),
-        isError: true,
-      });
+      setMsg(
+        r.alreadyInstalled
+          ? { text: translate('marketplace.install_already_installed', { name: repoNameFromGitUrl(url) }), isError: false }
+          : { text: translate('marketplace.install_failed_code', { code: r.code, message: r.message }), isError: true },
+      );
       return false;
     }
     setMsg({

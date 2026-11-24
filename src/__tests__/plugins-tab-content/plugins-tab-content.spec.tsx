@@ -820,6 +820,21 @@ describe('PluginsTabContent — Git URL 安装', () => {
     }
   });
 
+  // 全新安装撞 EEXIST(别的窗口已装、本窗口列表里没有):三个安装入口同规则提示「已安装、重启后加载」(非错误),
+  // 不报「文件已存在」。名称取 URL 的仓库名。
+  it('Git 安装返回 EEXIST → 提示已安装、重启后加载(非错误)', async () => {
+    installPluginsApi(vi.fn().mockResolvedValue({ ok: false, code: 'EEXIST', message: 'exists' }));
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/x/my-plugin.git' } });
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
+    );
+    await waitFor(() => expect(container.textContent).toContain('my-plugin 已安装(可能是在其它窗口安装的)'));
+    expect(container.textContent).not.toContain('文件已存在');
+    expect(container.querySelector('[role=alert]')?.textContent ?? '').not.toContain('my-plugin');
+  });
+
   it('安装失败 ok=false → 「✘ [code] message」', async () => {
     const installFromGit = vi.fn().mockResolvedValue({
       ok: false,

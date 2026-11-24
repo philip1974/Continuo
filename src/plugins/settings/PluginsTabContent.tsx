@@ -17,7 +17,7 @@ import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
-import { installFromGitLocalized } from '@/plugins/install-from-git';
+import { installFromGitLocalized, repoNameFromGitUrl } from '@/plugins/install-from-git';
 import { clearPendingInstall, recordPendingInstall, usePendingInstalls } from '../pending-installs-store';
 
 interface ContributionRow {
@@ -283,10 +283,11 @@ function UserPluginsSection() {
     // 按稳定 code 经 catalog 翻译(reject 分支同样处理)。
     const r = await installFromGitLocalized(url);
     if (!r.ok) {
-      setInstallMsg({
-        text: t('plugins_tab.error.generic', { message: `[${r.code}] ${r.message}` }),
-        isError: true,
-      });
+      setInstallMsg(
+        r.alreadyInstalled
+          ? { text: t('marketplace.install_already_installed', { name: repoNameFromGitUrl(url) }), isError: false }
+          : { text: t('plugins_tab.error.generic', { message: `[${r.code}] ${r.message}` }), isError: true },
+      );
       return false;
     }
     // 已在列表(覆盖重装)→ watcher 热重载即生效、不记待重启;全新安装要等重启后的扫描(reload 对未知 id 抛错)。
