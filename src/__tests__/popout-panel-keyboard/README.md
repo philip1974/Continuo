@@ -16,14 +16,11 @@
 
 - 在弹窗所在文档(capture 阶段)录制按键:Settings 弹出到子窗后,在子窗按组合键能录到。
 
-### 全局命令热键(`useCommandHotkeys`)
+### 全局热键只认主窗(命令热键 `useCommandHotkeys`、⌘P / ⌘⇧P `usePickerToggleHotkey`)
 
-- 监听挂在「所有应用文档」上 = 主窗 document + 当前 dockview popout 子窗的 document(`src/lib/app-documents.ts`)。
-- popout 子窗打开(组位置变为 `popout`)即加入,子窗关闭 / 组回到主窗 / 组被移除即移出
-  (`src/shell/dock/popout-documents.ts` 跟踪 dockview 组位置,DockShell onReady 时挂上)。
-- 同一按键只触发一次:一个按键事件只在其所在文档派发;同一文档重复登记只挂一个监听。
-- ⌘P / ⌘⇧P(`usePickerToggleHotkey`)**只认主窗**:picker 是主窗 App 层 Modal,从子窗打开会画在主窗而焦点留在子窗
-  (无激活主窗的通路;接着输入的字进子窗编辑器 / 终端,Esc 关不掉),比不响应更糟。
+- 只挂主窗 `document`,在 popout 子窗按下不响应:命令 / picker 的效果都画在主窗(新终端、设置面板、Quick Open),
+  从子窗触发时系统焦点留在子窗(renderer 无激活主窗的通路),接着输入的字会进子窗的编辑器 / 终端;picker 的 Modal
+  在子窗里也 Esc 关不掉。面板内的弹窗与改键录制(见上)按所在文档处理,在子窗照常。
 
 ## 不在本主题验证
 

@@ -43,7 +43,6 @@ import {
 } from './dirty-close';
 import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
-import { trackPopoutDocuments } from './popout-documents';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import '@/styles/dockview.css';
@@ -334,8 +333,6 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
           if (panel.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
           focusTerminalPanel(panel.id);
         }),
-        // popout 子窗的 document 登记进应用文档集合 → 全局热键在子窗同样生效(lib/app-documents)。
-        trackPopoutDocuments(event.api),
       );
       event.api.panels.forEach(wrapPanelClose);
     },

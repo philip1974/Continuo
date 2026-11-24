@@ -1,11 +1,8 @@
 // @vitest-environment jsdom
 // BDD:popout 子窗里的面板弹窗与全局热键。见同目录 README。
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, renderHook, within } from '@testing-library/react';
-import type { DockviewApi } from 'dockview-react';
 import { Modal } from '../../design/Modal';
 import { KeybindingCaptureModal } from '../../plugins/keybindings/KeybindingCaptureModal';
 import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
@@ -13,12 +10,6 @@ import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotke
 import { useQuickOpenHotkey } from '../../plugins/quick-open/useQuickOpenHotkey';
 import { useQuickOpenStore } from '../../plugins/quick-open/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
-import {
-  addAppDocumentsListener,
-  getAppDocuments,
-  registerAppDocument,
-} from '../../lib/app-documents';
-import { trackPopoutDocuments } from '../../shell/dock/popout-documents';
 import { makeChildDocument, keydown, type ChildDocument } from '../_helpers/child-document';
 
 let child: ChildDocument;
@@ -129,42 +120,20 @@ describe('改键录制弹窗挂在子窗', () => {
   });
 });
 
-describe('应用文档集合(主窗 + popout 子窗)', () => {
-  it('登记的子窗文档收到监听;重复登记只触发一次;注销 / 释放后不再触发', () => {
-    const fn = vi.fn();
-    const off = addAppDocumentsListener('keydown', fn);
-    const unregA = registerAppDocument(child.doc);
-    const unregB = registerAppDocument(child.doc);
-    keydown(child.doc, { key: 'x' });
-    expect(fn).toHaveBeenCalledTimes(1);
-    keydown(document, { key: 'x' });
-    expect(fn).toHaveBeenCalledTimes(2);
-    unregA();
-    keydown(child.doc, { key: 'x' });
-    expect(fn).toHaveBeenCalledTimes(3); // 仍有一次登记
-    unregB();
-    keydown(child.doc, { key: 'x' });
-    expect(fn).toHaveBeenCalledTimes(3);
-    expect(getAppDocuments()).toEqual([document]);
-    const unregC = registerAppDocument(child.doc);
-    off();
-    keydown(child.doc, { key: 'x' });
-    keydown(document, { key: 'x' });
-    expect(fn).toHaveBeenCalledTimes(3);
-    unregC();
-  });
-
-  it('命令热键在子窗生效,且只触发一次', () => {
-    cleanups.push(registerAppDocument(child.doc));
+describe('全局热键只认主窗(子窗不响应)', () => {
+  // 命令 / picker 的效果都画在主窗(新终端、设置面板、Quick Open),而从子窗触发时系统焦点留在子窗(renderer 无激活主窗的
+  // 通路)—— 接着输入的字进子窗编辑器 / 终端。故全局热键只挂主窗 document;面板内弹窗与改键录制(上方)按所在文档。
+  it('命令热键:主窗触发,子窗不触发', () => {
     const reg = new CommandRegistry();
     const fn = vi.fn();
     reg.register({ id: 'a', title: 'A', hotkey: 'mod+k', fn });
     renderHook(() => useCommandHotkeys(reg));
     keydown(child.doc.body, { key: 'k', ctrlKey: true });
+    expect(fn).not.toHaveBeenCalled();
+    keydown(document.body, { key: 'k', ctrlKey: true });
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  // picker 是主窗 App 层 Modal:从子窗打开会画在主窗而焦点留在子窗(输入串到子窗编辑器 / 终端,Esc 关不掉)→ 子窗不响应。
   it('⌘P(Quick Open)在子窗不打开(只认主窗)', () => {
     const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
     Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
@@ -172,84 +141,11 @@ describe('应用文档集合(主窗 + popout 子窗)', () => {
       if (orig) Object.defineProperty(navigator, 'platform', orig);
     });
     useQuickOpenStore.setState({ isOpen: false });
-    cleanups.push(registerAppDocument(child.doc));
     renderHook(() => useQuickOpenHotkey());
     keydown(child.doc.body, { key: 'p', metaKey: true });
     expect(useQuickOpenStore.getState().isOpen).toBe(false);
     keydown(document.body, { key: 'p', metaKey: true });
     expect(useQuickOpenStore.getState().isOpen).toBe(true);
     useQuickOpenStore.setState({ isOpen: false });
-  });
-});
-
-describe('跟踪 dockview popout 组的窗口', () => {
-  type Listener<T> = (v: T) => void;
-  function emitter<T>() {
-    const ls = new Set<Listener<T>>();
-    return {
-      event: (l: Listener<T>) => {
-        ls.add(l);
-        return { dispose: () => ls.delete(l) };
-      },
-      fire: (v: T) => {
-        for (const l of [...ls]) l(v);
-      },
-      size: () => ls.size,
-    };
-  }
-  function fakeGroup() {
-    const loc = emitter<unknown>();
-    const group = {
-      api: {
-        location: { type: 'grid' } as { type: string; getWindow?: () => Window },
-        onDidLocationChange: loc.event,
-      },
-    };
-    const moveTo = (location: typeof group.api.location) => {
-      group.api.location = location;
-      loc.fire({ location });
-    };
-    return { group, moveTo, loc };
-  }
-  function fakeApi() {
-    const add = emitter<unknown>();
-    const remove = emitter<unknown>();
-    const groups: unknown[] = [];
-    const api = {
-      groups,
-      onDidAddGroup: add.event,
-      onDidRemoveGroup: remove.event,
-    };
-    return { api: api as unknown as DockviewApi, groups, add, remove };
-  }
-
-  it('组弹出 → 子窗文档加入;回到主窗 → 移出;再弹出后组被移除 → 移出;dispose 释放全部', () => {
-    const f = fakeApi();
-    const g = fakeGroup();
-    const tracker = trackPopoutDocuments(f.api);
-    f.groups.push(g.group);
-    f.add.fire(g.group);
-    expect(getAppDocuments()).toEqual([document]);
-    g.moveTo({ type: 'popout', getWindow: () => child.win });
-    expect(getAppDocuments()).toEqual([document, child.doc]);
-    g.moveTo({ type: 'grid' });
-    expect(getAppDocuments()).toEqual([document]);
-    g.moveTo({ type: 'popout', getWindow: () => child.win });
-    f.groups.splice(0);
-    f.remove.fire(g.group);
-    expect(getAppDocuments()).toEqual([document]);
-    expect(g.loc.size()).toBe(0);
-    f.groups.push(g.group);
-    f.add.fire(g.group);
-    expect(getAppDocuments()).toEqual([document, child.doc]);
-    tracker.dispose();
-    expect(getAppDocuments()).toEqual([document]);
-    expect(g.loc.size()).toBe(0);
-    expect(f.add.size() + f.remove.size()).toBe(0);
-  });
-
-  it('接线守卫:DockShell onReady 挂上跟踪并随 dock 监听一起释放', () => {
-    const src = readFileSync(join(process.cwd(), 'src/shell/dock/DockShell.tsx'), 'utf8');
-    expect(src).toContain('trackPopoutDocuments(event.api)');
   });
 });
