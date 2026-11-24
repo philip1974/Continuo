@@ -353,7 +353,7 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.mcp.revoke_tooltip': '撤销授权并终止所有窗口的 agent terminal(本窗口 {count} 个)',
   'statusbar.agent_sessions': '{count} 个 agent',
   'statusbar.agent_authorized': 'Agent 已授权',
-  'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端、调试与插件工具授权',
+  'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端、调试与插件工具授权(任一窗口中的 agent terminal 也会被一并终止)',
   'statusbar.no_workspace': '无工作区',
   'statusbar.sidebar_hidden': '侧栏已隐藏',
   'statusbar.untitled_file': '未命名',

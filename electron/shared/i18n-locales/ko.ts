@@ -356,7 +356,7 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.mcp.revoke_tooltip': '인증을 취소하고 모든 창의 에이전트 터미널을 종료합니다(이 창 {count}개)',
   'statusbar.agent_sessions': 'agent {count}개',
   'statusbar.agent_authorized': '에이전트 인증됨',
-  'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소합니다',
+  'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소합니다(모든 창의 agent terminal도 함께 종료됩니다)',
   'statusbar.no_workspace': '작업 공간 없음',
   'statusbar.sidebar_hidden': '사이드바 숨김',
   'statusbar.untitled_file': '제목 없음',

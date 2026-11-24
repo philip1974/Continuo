@@ -642,6 +642,15 @@ describe('StatusBar — agent 撤销', () => {
     expect(dict['statusbar.agent_revoke_grant_tooltip']).toMatch(re);
   });
 
+  // 本窗口 0 个 agent 终端时的撤销提示同样须点明会终止其它窗口的 agent terminal(与确认框 confirm_grant_only 同口径)。
+  it.each([
+    ['en', en, /any window/i],
+    ['zh', zh, /任一窗口/],
+    ['ko', ko, /모든 창/],
+  ] as const)('%s:撤销入口提示点明会终止任一窗口的 agent terminal', (_l, dict, re) => {
+    expect(dict['statusbar.agent_revoke_grant_tooltip']).toMatch(re);
+  });
+
   it('既无 agent 会话也无任何授权 → 不显示撤销入口', () => {
     installApi({});
     useTerminalStore.setState({ sessions: [] });

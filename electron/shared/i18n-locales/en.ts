@@ -371,7 +371,7 @@ export const en = {
   'statusbar.mcp.revoke_tooltip': 'Revoke authorization and terminate agent terminals in all windows ({count} in this window)',
   'statusbar.agent_sessions': '{count} agent',
   'statusbar.agent_authorized': 'Agent authorized',
-  'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal, debugger and plugin tool authorization granted to agents',
+  'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal, debugger and plugin tool authorization granted to agents (agent terminals in any window are also terminated)',
   'statusbar.no_workspace': 'No workspace',
   'statusbar.sidebar_hidden': 'Sidebar hidden',
   'statusbar.untitled_file': 'Untitled',
