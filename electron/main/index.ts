@@ -20,7 +20,6 @@ import { loadSettings } from './services/settings.service';
 import { getMainT, type MainT } from './i18n';
 import { setMenuRebuilder } from './ipc/i18n.ipc';
 import {
-  allocateWindowSeq,
   defaultExplorerV3,
   ensureWindowEntry,
   loadExplorer,
@@ -146,6 +145,7 @@ import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
 import { sendToWindow } from './lib/broadcast';
+import { openWorkspaceWindowWith } from './ipc/window.ipc';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -741,11 +741,8 @@ async function isDirectory(p: string): Promise<boolean> {
  * 开一个新主窗:分配新的 windowSeq;给了 workspace 则以它为 root 且 fresh(用户显式打开,不沿用该
  * seq 的历史持久化段),不给则是空白新窗。菜单 / Dock 菜单 / argv / open-file / 冷启动多目录共用。
  */
-async function openWorkspaceWindow(workspace?: string): Promise<void> {
-  const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
-  const windowSeq = await allocateWindowSeq(explorerFile);
-  if (workspace === undefined) createMainWindow({ windowSeq });
-  else createMainWindow({ windowSeq, workspace, fresh: true });
+function openWorkspaceWindow(workspace?: string): Promise<void> {
+  return openWorkspaceWindowWith(createMainWindow, workspace);
 }
 
 async function openFolderInNewWindow(): Promise<void> {

@@ -89,14 +89,22 @@ async function createWindowNow(
     }
   }
 
+  await openWorkspaceWindowWith(createMainWindow, input.workspace);
+}
+
+/**
+ * 开一个新主窗的单一规则:分配新 windowSeq;给了 workspace 则以它为 root 且 fresh(用户显式打开,不沿用该
+ * seq 的历史持久化段 —— 漏写 fresh 即恢复成旧 workspace,见 index.ts MainWindowOpts.fresh),不给则空白新窗。
+ * renderer window.new IPC 与 main 的菜单 / Dock 菜单 / argv / open-file / 冷启动多目录(index.ts
+ * openWorkspaceWindow)共用。调用方负责校验 workspace。
+ */
+export async function openWorkspaceWindowWith(
+  createMainWindow: WindowIpcDeps['createMainWindow'],
+  workspace?: string,
+): Promise<void> {
   const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
-  const newWindowSeq = await allocateWindowSeq(explorerFile);
-  createMainWindow({
-    windowSeq: newWindowSeq,
-    ...(input.workspace !== undefined
-      ? { workspace: input.workspace, fresh: true }
-      : {}),
-  });
+  const windowSeq = await allocateWindowSeq(explorerFile);
+  createMainWindow(workspace === undefined ? { windowSeq } : { windowSeq, workspace, fresh: true });
 }
 
 const NotifyRootInput = z
