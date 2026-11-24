@@ -47,11 +47,11 @@ import type {
   EditorOpenResult,
 } from './types';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
+import { version as pkgVersion } from '../../package.json';
 
-// Keep in sync with package.json "version" field. Bumped to 0.2.15 (2026-11-21)
-// for the zod 4 / vitest 3 migration and the open-source polish pass.
-// Plugins declaring minLMVersion >= 0.2.4 need this.
-const APP_VERSION = '0.2.15';
+// 应用版本 = package.json 的 version(插件 minLMVersion 兼容判定用)。此前手写常量、发版须与 package.json 两处同步,
+// 漏改即让声明新 minLMVersion 的插件被静默跳过。JSON 按名导入,构建只内联该字段。
+const APP_VERSION = pkgVersion;
 
 // Workspace API — minimal v0.1 surface exposing the current renderer
 // window's workspace root (null when no folder open). Plugins use this for
