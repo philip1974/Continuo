@@ -484,6 +484,10 @@
 - [`single-window-noop.spec.ts`](./dock-reconciler-windowid-filter/single-window-noop.spec.ts)
 - [`warn-rate-limit.spec.ts`](./dock-reconciler-windowid-filter/warn-rate-limit.spec.ts)
 
+## [dock 图层收进自身层叠上下文](./dock-stacking-context/README.md)
+
+- [`dock-isolation.spec.tsx`](./dock-stacking-context/dock-isolation.spec.tsx)
+
 ## [dock-terminal-layout-strip — 持久化布局剥离终端 panel](./dock-terminal-layout-strip/README.md)
 
 - [`strip-terminal-layout-restore.spec.ts`](./dock-terminal-layout-strip/strip-terminal-layout-restore.spec.ts)

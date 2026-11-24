@@ -71,3 +71,9 @@
     display: none;
   }
 }
+
+/* popout 子窗:dockview 把组放进子窗 body 下的 .dv-popout-window,toast 也 portal 进同一 body。与主窗 DockShell 根的
+ * isolate 同理,把 dockview 内部 z-index 收进容器自身的层叠上下文,不压过 toast(BDD:src/__tests__/dock-stacking-context)。 */
+.dv-popout-window {
+  isolation: isolate;
+}

@@ -11,6 +11,8 @@ import {
 import { createDock, openFakePopout } from './dock-fixtures';
 
 const noop = () => {};
+/** 聚焦延到 microtask(等 dockview 本轮同步收尾),断言前让它跑完。 */
+const flushMicrotasks = () => new Promise<void>((r) => queueMicrotask(r));
 function registerFocusSpy(panelId: string) {
   const focus = vi.fn();
   registerTerminalPanelHandles(panelId, { focus, openSearch: noop, clear: noop, readText: () => '' });
@@ -32,7 +34,7 @@ afterEach(() => {
 });
 
 describe('组 MRU:移除活动组后激活最近使用的组', () => {
-  it('a → c → b 依次激活,关掉 b 所在组 → 激活 c(最近使用),终端 c 获焦', () => {
+  it('a → c → b 依次激活,关掉 b 所在组 → 激活 c(最近使用),终端 c 获焦', async () => {
     const dock = createDock();
     const api = dock.api as DockviewApi;
     threeColumns(api);
@@ -43,6 +45,7 @@ describe('组 MRU:移除活动组后激活最近使用的组', () => {
     api.getPanel('b')!.api.setActive();
 
     api.removePanel(api.getPanel('b')!);
+    await flushMicrotasks();
 
     expect(api.activePanel?.id).toBe('c');
     expect(focusC).toHaveBeenCalled();
@@ -76,11 +79,80 @@ describe('组 MRU:移除活动组后激活最近使用的组', () => {
     focusC.mockClear();
 
     popout.close();
+    await flushMicrotasks();
 
     const c = api.getPanel('c')!;
     expect(c.api.location.type).toBe('grid');
     expect(api.activePanel?.id).toBe('c');
     expect(focusC).toHaveBeenCalled();
+    tracker.dispose();
+  });
+
+  it('拖动组里最后一个 tab 进另一组:dockview 自己激活目标组,键盘焦点不被送进第三个终端', async () => {
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    threeColumns(api);
+    const tracker = trackGroupMru(api);
+    const focusA = registerFocusSpy('a');
+    const focusC = registerFocusSpy('c');
+    api.getPanel('a')!.api.setActive();
+    api.getPanel('c')!.api.setActive();
+    api.getPanel('b')!.api.setActive();
+    focusA.mockClear();
+    focusC.mockClear();
+
+    // 拖 tab 落到另一组中央走的就是 moveGroupOrPanel(源组变空 → doRemoveGroup(skipActive),照常派发 onDidRemoveGroup)。
+    api.getPanel('b')!.api.moveTo({ group: api.getPanel('a')!.group, position: 'center' });
+    await flushMicrotasks();
+
+    expect(api.activePanel?.id).toBe('b');
+    expect(api.getPanel('b')!.group).toBe(api.getPanel('a')!.group);
+    expect(focusC).not.toHaveBeenCalled();
+    expect(focusA).not.toHaveBeenCalled();
+    tracker.dispose();
+  });
+
+  it('只在同一窗口内回落:主窗关组时跳过 MRU 里的 popout 组,激活主窗最近使用的组', async () => {
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    threeColumns(api);
+    const tracker = trackGroupMru(api);
+    const focusA = registerFocusSpy('a');
+    const focusC = registerFocusSpy('c');
+    await openFakePopout(dock, 'c');
+    api.getPanel('a')!.api.setActive();
+    api.getPanel('c')!.api.setActive();
+    api.getPanel('b')!.api.setActive();
+    expect(api.getPanel('c')!.api.location.type).toBe('popout');
+    focusC.mockClear();
+
+    api.removePanel(api.getPanel('b')!);
+    await flushMicrotasks();
+
+    expect(api.activePanel?.id).toBe('a');
+    expect(focusA).toHaveBeenCalled();
+    expect(focusC).not.toHaveBeenCalled();
+    tracker.dispose();
+  });
+
+  it('popout 子窗里的组被移除、同窗无其它组 → 不跳到另一个 popout 子窗', async () => {
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    threeColumns(api);
+    const tracker = trackGroupMru(api);
+    const focusB = registerFocusSpy('b');
+    await openFakePopout(dock, 'b');
+    await openFakePopout(dock, 'c');
+    api.getPanel('a')!.api.setActive();
+    api.getPanel('b')!.api.setActive();
+    api.getPanel('c')!.api.setActive();
+    focusB.mockClear();
+
+    api.removePanel(api.getPanel('c')!);
+    await flushMicrotasks();
+
+    expect(api.activePanel?.id).not.toBe('b');
+    expect(focusB).not.toHaveBeenCalled();
     tracker.dispose();
   });
 
