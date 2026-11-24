@@ -10,8 +10,7 @@ import {
   REVIEW_URL_MAX,
 } from '../../electron/shared/marketplace-review-limits';
 import { isHttpUrl } from './url-safety'; // 边界(E109):review url/avatarUrl scheme 白名单(共享)
-import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):plugin id 形态契约(共享单一来源)
-import { PLUGIN_ID_MAX_LEN } from '../../electron/shared/permission-record-limits';
+import { isSafePluginId } from '../../electron/shared/plugin-id'; // 边界(E111/E113/E123):plugin id 形态 + 长度(共享单一来源)
 
 export interface Review {
   /** 从 discussion title 第一对方括号 / body 表单字段抽出的 plugin id. */
@@ -55,7 +54,6 @@ export interface PluginAggregateRating {
 // E294:导出供 fresh-parse(reviews-parser.parseReview)复用同值 —— 此前 fresh 路径只 isHttpUrl 不限长,
 // 与 cache-read isValidReview(isStrMax REVIEW_URL_MAX)不对偶,超长合法 scheme URL 可绕 fresh 入 cache/DOM。
 export { REVIEW_URL_MAX }; // url / avatarUrl(单一来源 shared/marketplace-review-limits)
-const REVIEW_ID_MAX = PLUGIN_ID_MAX_LEN; // pluginId
 const MAX_REVIEWS_PER_PLUGIN = REVIEW_TOTAL_NODES_MAX; // 对齐 main MAX_TOTAL_NODES(单插件 reviews 上限)
 const MAX_AGGREGATE_KEYS = REVIEW_TOTAL_NODES_MAX; // aggregate record 总 plugin 数上限(distinct plugin ≤ 总 node)
 // 边界(E210):全局累计 reviews 数上限(对齐 main marketplace-reviews.service MAX_TOTAL_NODES)。
@@ -108,12 +106,12 @@ export function isGitHubLogin(s: string): boolean {
 const isNonNegSafeInt = (v: unknown): v is number =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 
-function isValidReview(v: unknown): v is Review {
+/** 单条评论形态校验(缓存读回与新拉解析 parseReview 收尾共用 —— 两侧此前各写一套,pluginId 长度曾分叉)。 */
+export function isValidReview(v: unknown): v is Review {
   if (typeof v !== 'object' || v === null) return false;
   const r = v as Record<string, unknown>;
   // 边界(E111 长度 + E113 形态):pluginId 是 aggregate byPid key + 与 entry.id 对账,须合法形态。
-  if (!isStrMax(r.pluginId, REVIEW_ID_MAX) || !isValidPluginId(r.pluginId))
-    return false;
+  if (typeof r.pluginId !== 'string' || !isSafePluginId(r.pluginId)) return false;
   // 边界(E94):rating 须 1..5 整数(parseRating 的值域)。只校验 finite 会让篡改/旧缓存的
   // 999.0 / -1 / 2.5 stars 当新鲜数据渲染(aria-label="999 stars" 等畸形展示)。
   if (
@@ -148,7 +146,7 @@ function isValidAggregate(v: unknown): v is PluginAggregateRating {
   if (typeof v !== 'object' || v === null) return false;
   const g = v as Record<string, unknown>;
   // 边界(E113):aggregate.pluginId 须合法形态(byPid key + 与 entry.id 对账)。
-  if (typeof g.pluginId !== 'string' || !isValidPluginId(g.pluginId)) return false;
+  if (typeof g.pluginId !== 'string' || !isSafePluginId(g.pluginId)) return false;
   // 边界(E94):count 须非负安全整数,avg 须 finite 且 1..5(评分均值值域)。只校验 finite
   // 会让负评价数 / 999.0 stars 渲染 + 污染排序。
   if (!isNonNegSafeInt(g.count)) return false;

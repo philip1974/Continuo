@@ -2,7 +2,7 @@ import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import type { PathScope } from '../types';
-import { isValidPluginId } from '../plugin-id';
+import { isSafePluginId } from '../../../electron/shared/plugin-id';
 import { FS_PATH_MAX, validateScopesShape } from '../../../electron/shared/fs-limits';
 import { usePermissionPromptStore, type FsScopePromptScope } from './promptStore';
 import { SCOPE_REQUEST_ID_MAX } from '../../../electron/shared/plugin-fs-channels';
@@ -34,7 +34,7 @@ function isScopeRequestPayload(v: unknown): v is ScopeRequestPayload {
   ) {
     return false;
   }
-  if (typeof o.pluginId !== 'string' || !isValidPluginId(o.pluginId)) {
+  if (typeof o.pluginId !== 'string' || !isSafePluginId(o.pluginId)) {
     return false;
   }
   // 数量 + 每项 path/mode 与 main / scoped-app 同一校验(shared 单一来源);这里只额外校验 displayPath。

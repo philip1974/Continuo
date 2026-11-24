@@ -633,3 +633,20 @@ describe('E210 · isValidAggregateRecord 全局累计 reviews 上限', () => {
     expect(isValidAggregateRecord(rec)).toBe(true);
   });
 });
+
+// 新拉解析与缓存读回(isValidReview)同一份判定:pluginId 超长(合法字符)此前 parseReview 放行、isValidReview 拒 →
+// 该条写进缓存后整份评论缓存读回非法,1 小时缓存永不命中、离线回退的旧缓存也拿不到。
+describe('parseReview ≡ isValidReview', () => {
+  it('pluginId 超过 PLUGIN_ID_MAX_LEN(合法字符)→ null', () => {
+    const longId = 'a'.repeat(300);
+    const r = parseReview({
+      title: 't',
+      body: TEMPLATE_BODY.replace('com.example.foo', longId),
+      url: 'https://x',
+      createdAt: '2026-05-05T00:00:00Z',
+      author: AUTHOR,
+    });
+    expect(r).toBeNull();
+  });
+});
+

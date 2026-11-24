@@ -5,8 +5,7 @@
 // 索引只指方向,fetcher 取 manifest 拿真实 version。
 
 import { isHttpUrl } from './url-safety'; // 边界(E108):authorUrl scheme 白名单(共享)
-import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E110/E113/E123):plugin id 形态契约(共享单一来源)
-import { PLUGIN_ID_MAX_LEN } from '../../electron/shared/permission-record-limits';
+import { isSafePluginId } from '../../electron/shared/plugin-id'; // 边界(E110/E113/E123):plugin id 形态 + 长度(共享单一来源)
 import {
   isSafeRepoPathChar,
   isSafeRepoPathSegment,
@@ -40,7 +39,6 @@ export interface MarketplaceEntry {
 // E25 强化:不仅校验类型,还限制字段长度、tags 数量,并用正则约束 repo 为两段安全的 GitHub
 // owner/name、branch 为 GitHub 安全字符 —— 否则远程可放超长字段/海量 tags 在过滤/排序/渲染/URL
 // 拼接放大 CPU/内存,畸形 repo 还生成异常 raw/github URL。超限/非法 entry 被过滤掉(不缓存)。
-const MP_ID_MAX = PLUGIN_ID_MAX_LEN; // 条目 id 作 expectedId 送进 main 安装校验,上限须一致
 const MP_NAME_MAX = 256;
 const MP_AUTHOR_MAX = 256;
 const MP_DESC_MAX = 4096;
@@ -90,13 +88,7 @@ export function isValidMarketplaceEntry(v: unknown): v is MarketplaceEntry {
   const e = v as Record<string, unknown>;
   // 边界(E110):id 须符合 plugin manifest id 契约(charset + 非 ./..),否则状态索引错配 +
   // "See all" query 注入。长度上限仍保留(charset 不限长)。
-  if (
-    typeof e.id !== 'string' ||
-    e.id.length === 0 ||
-    e.id.length > MP_ID_MAX ||
-    !isValidPluginId(e.id)
-  )
-    return false;
+  if (typeof e.id !== 'string' || !isSafePluginId(e.id)) return false;
   if (
     typeof e.name !== 'string' ||
     e.name.length === 0 ||

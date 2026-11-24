@@ -18,9 +18,9 @@ import {
   REVIEW_TITLE_MAX,
 } from '../../electron/shared/marketplace-review-limits';
 import type { Review } from './reviews-types';
-import { isGitHubLogin, REVIEW_URL_MAX } from './reviews-types';
+import { isGitHubLogin, isValidReview, REVIEW_URL_MAX } from './reviews-types';
 import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
-import { isValidPluginId } from '../plugins/plugin-id'; // 边界(E113/E123):共享单一来源
+import { isSafePluginId } from '../../electron/shared/plugin-id'; // 边界(E113/E123):形态 + 长度共享单一来源
 import { isSafeRepoPathChar } from './types';
 import { isHttpUrl } from './url-safety'; // 边界(E143,E109 fresh-fetch 对偶):url/avatarUrl scheme 白名单
 
@@ -75,7 +75,7 @@ export function parseReview(rawInput: unknown): Review | null {
   // 边界(E113):body section 路径此前只 trim() 不校验形态(title fallback 正则反而有
   // [a-z0-9._-]+ 约束,不对称)。pluginId 被用作 aggregate byPid key + 与 entry.id 对账,
   // 畸形值(空格 / / .. / 超长)会污染聚合/缓存。两条路径统一复用共享 isValidPluginId。
-  if (!pluginId || !isValidPluginId(pluginId)) return null;
+  if (!pluginId || !isSafePluginId(pluginId)) return null;
 
   const ratingRaw = sections.get('评分') ?? sections.get('rating');
   const rating = parseRating(ratingRaw);
@@ -108,7 +108,7 @@ export function parseReview(rawInput: unknown): Review | null {
   )
     return null;
 
-  return {
+  const review: Review = {
     pluginId,
     rating,
     body,
@@ -136,6 +136,8 @@ export function parseReview(rawInput: unknown): Review | null {
     url: raw.url,
     createdAt: raw.createdAt,
   };
+  // 收尾与缓存读回同一份判定:新拉放行而读回拒绝的条目会让整份评论缓存读回非法(1 小时缓存永不命中)。
+  return isValidReview(review) ? review : null;
 }
 
 /** "### Foo\nbar baz\n### Qux\n..." → Map { foo: "bar baz", qux: ... }(key 小写). */
