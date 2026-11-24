@@ -11,6 +11,13 @@ import { setLocale } from '@/i18n';
 afterEach(() => setLocale('en'));
 
 describe('localizeErrorByCode(code, message)', () => {
+  // 原文缺省 / 空串的回退在本函数内统一做(此前各调用点 `||` / `??` / 不回退三种写法,移动 / 删除失败提示会显示空原因)。
+  it('未收录 code + 空串 / 缺省原文 → 回退 code,不显示空原因', () => {
+    expect(localizeErrorByCode('NO_SUCH_CODE_Z', '')).toBe('NO_SUCH_CODE_Z');
+    expect(localizeErrorByCode('NO_SUCH_CODE_Z')).toBe('NO_SUCH_CODE_Z');
+    expect(localizeErrorByCode('NO_SUCH_CODE_Z', 'raw detail')).toBe('raw detail');
+  });
+
   it('catalog 收录的 FS code → 按 locale 本地化(en),不显 raw message', () => {
     setLocale('en');
     // en catalog: errors.FS_EEXIST = 'Already exists'

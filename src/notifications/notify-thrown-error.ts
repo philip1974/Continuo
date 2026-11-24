@@ -23,8 +23,7 @@ export function notifyFailure(
   failure: { readonly code: string; readonly message?: string },
   opts?: { readonly mirror: false },
 ): void {
-  // 空串 message 同缺省(否则未收录的 code 弹空 toast)。
-  const text = localizeErrorByCode(failure.code, failure.message || failure.code);
+  const text = localizeErrorByCode(failure.code, failure.message);
   notify.error(text, opts ? { code: failure.code, mirror: false } : { code: failure.code });
 }
 

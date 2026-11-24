@@ -93,7 +93,7 @@ export function useAutoSave(
       (err) => {
         const { code, message } = failureOf(err);
         notify.warn(
-          `${t('editor.autosave_failed')}: ${localizeErrorByCode(code, message ?? code)}`,
+          `${t('editor.autosave_failed')}: ${localizeErrorByCode(code, message)}`,
           { mirror: false },
         );
       },

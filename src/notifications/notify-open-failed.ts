@@ -10,8 +10,7 @@ export function notifyOpenFailed(
   failure: Failure,
   opts?: { readonly mirror: false },
 ): void {
-  // 空串 message 同缺省(否则弹「打开失败 x: 」)。
-  const reason = localizeErrorByCode(failure.code, failure.message || failure.code);
+  const reason = localizeErrorByCode(failure.code, failure.message);
   notify.error(
     `${t('quick_open.open_failed')} ${name}: ${reason}`,
     opts ? { code: failure.code, mirror: false } : { code: failure.code },

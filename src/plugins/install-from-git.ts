@@ -18,9 +18,9 @@ export async function installFromGitLocalized(
   try {
     const r = await coApi.plugins.installFromGit(...args);
     if (r.ok) return { ok: true, data: r.data };
-    return { ok: false, code: r.code, message: localizeErrorByCode(r.code, r.message || r.code) };
+    return { ok: false, code: r.code, message: localizeErrorByCode(r.code, r.message) };
   } catch (err) {
     const { code, message } = failureOf(err);
-    return { ok: false, code, message: localizeErrorByCode(code, message ?? code) };
+    return { ok: false, code, message: localizeErrorByCode(code, message) };
   }
 }
