@@ -37,7 +37,7 @@ const POPOUT_ICON = (
     />
   </svg>
 );
-const MORE_ACTIONS_ICON = (<MoreActionsIcon size={14} />);
+const MORE_ACTIONS_ICON = <MoreActionsIcon size={14} />;
 
 export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;

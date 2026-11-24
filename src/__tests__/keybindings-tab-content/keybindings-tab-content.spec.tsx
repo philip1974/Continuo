@@ -58,7 +58,7 @@ describe('KeybindingsTabContent — 列表', () => {
     );
 
     expect(src).toContain('const EDIT_HOTKEY_ICON = (');
-    expect(src).toContain('const RESET_HOTKEY_ICON = (');
+    expect(src).toMatch(/^const RESET_HOTKEY_ICON = \(?</m);
     expect(src).toContain('{EDIT_HOTKEY_ICON}');
     expect(src).toContain('{RESET_HOTKEY_ICON}');
   });

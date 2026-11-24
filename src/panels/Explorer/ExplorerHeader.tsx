@@ -66,7 +66,7 @@ const COLLAPSE_ALL_ICON = (
   </svg>
 );
 
-const MORE_ACTIONS_ICON = (<MoreActionsIcon size={12} />);
+const MORE_ACTIONS_ICON = <MoreActionsIcon size={12} />;
 
 export function ExplorerHeader({
   root,

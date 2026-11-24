@@ -59,7 +59,7 @@ describe('HeaderActions — popout', () => {
     );
 
     expect(src).toContain('const POPOUT_ICON = (');
-    expect(src).toContain('const MORE_ACTIONS_ICON = (');
+    expect(src).toMatch(/^const MORE_ACTIONS_ICON = \(?</m);
     expect(src).toContain('const popoutLabel = t(');
     expect(src).toContain('const moreActionsLabel = t(');
     expect(src).toContain('aria-label={popoutLabel}');

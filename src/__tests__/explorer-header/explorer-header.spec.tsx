@@ -61,7 +61,7 @@ describe('ExplorerHeader — Hover 工具条', () => {
     expect(src).toContain('const NEW_FOLDER_ICON = (');
     expect(src).toContain('const REFRESH_ICON = (');
     expect(src).toContain('const COLLAPSE_ALL_ICON = (');
-    expect(src).toContain('const MORE_ACTIONS_ICON = (');
+    expect(src).toMatch(/^const MORE_ACTIONS_ICON = \(?</m);
     expect(src).toContain('{NEW_FILE_ICON}');
     expect(src).toContain('{NEW_FOLDER_ICON}');
     expect(src).toContain('{REFRESH_ICON}');

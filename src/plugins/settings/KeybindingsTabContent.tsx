@@ -43,7 +43,7 @@ const EDIT_HOTKEY_ICON = (
     <path d="M11.5 1.5l3 3-9 9-3.5.5.5-3.5z" />
   </svg>
 );
-const RESET_HOTKEY_ICON = (<ResetIcon size={11} />);
+const RESET_HOTKEY_ICON = <ResetIcon size={11} />;
 
 export interface DisplayCommand {
   readonly cmd: CommandSpec;

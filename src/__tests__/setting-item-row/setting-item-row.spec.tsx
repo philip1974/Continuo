@@ -35,7 +35,7 @@ describe('SettingItemRow — 通用', () => {
   it('reset icon 预创建,不随每个设置项重复创建 svg element', () => {
     const src = readFileSync(join(process.cwd(), 'src/plugins/settings/SettingItemRow.tsx'), 'utf8');
 
-    expect(src).toContain('const RESET_DEFAULT_ICON = (');
+    expect(src).toMatch(/^const RESET_DEFAULT_ICON = \(?</m);
     expect(src).toContain('{RESET_DEFAULT_ICON}');
   });
 

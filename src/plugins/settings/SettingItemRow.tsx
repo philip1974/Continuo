@@ -105,7 +105,7 @@ function NumberSettingInput({
 }
 
 const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = [];
-const RESET_DEFAULT_ICON = (<ResetIcon size={12} />);
+const RESET_DEFAULT_ICON = <ResetIcon size={12} />;
 
 export function settingToggleSwitchClassName(checked: boolean): string {
   return checked
