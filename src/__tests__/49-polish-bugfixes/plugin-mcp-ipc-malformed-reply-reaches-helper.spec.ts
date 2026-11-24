@@ -45,7 +45,8 @@ function fakeHost() {
   } as never;
 }
 
-const trustedEvent = { senderFrame: { url: 'file:///app/index.html' } };
+// sender.id 与 invoke 的 owner wcId(1)一致:回包须来自请求发往的 webContents。
+const trustedEvent = { senderFrame: { url: 'file:///app/index.html' }, sender: { id: 1 } };
 
 beforeEach(() => {
   electronMock.sentFromWc.length = 0;

@@ -95,6 +95,11 @@ export interface InvokeRemoteCore {
   handleReply(reply: unknown): void;
   /** 边界(E265):按 requestId 用固定 INVALID_REPLY 拒绝 pending,不读 raw payload(校验失败 fallback). */
   rejectPendingInvalid(requestId: string): void;
+  /**
+   * 该 requestId 的在途 invoke 是否发给了 wcId(INVOKE_REPLY 入口据此丢弃别的窗口代答的回包;与 scope-request
+   * correlator / agent-auth 同规则:应答须来自请求的接收方)。无此 pending → false。
+   */
+  isPendingFor(requestId: string, wcId: number): boolean;
   abortByWebContents(wcId: number): void;
   /** 某 tool 被其 owner wc unregister 时,abort 该 (wcId,name) 的所有在途 invoke. */
   abortByTool(wcId: number, name: string): void;
@@ -265,9 +270,13 @@ export function createInvokeRemote(
     );
   };
 
+  const isPendingFor = (requestId: string, wcId: number): boolean =>
+    pending.get(requestId)?.owner.wcId === wcId;
+
   return {
     invoke,
     handleReply,
+    isPendingFor,
     rejectPendingInvalid,
     abortByWebContents,
     abortByTool,

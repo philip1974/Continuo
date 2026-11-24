@@ -121,13 +121,8 @@ export function startPluginMcpIpc(
   // 读,不枚举)按固定 INVALID_REPLY 拒绝对应 pending:既收口不挂 30s,又绝不传播 raw 超大/超长字段;无可用
   // requestId 的垃圾 payload 静默丢弃(无法关联)。承第七/topic-49 session「畸形 reply 立即 reject 不挂起」语义。
   const rejectInvalidReply = (rawReply: unknown): void => {
-    const rid =
-      rawReply !== null &&
-      typeof rawReply === 'object' &&
-      !Array.isArray(rawReply)
-        ? (rawReply as Record<string, unknown>)['requestId']
-        : undefined;
-    if (typeof rid === 'string' && rid.length > 0) {
+    const rid = replyRequestId(rawReply);
+    if (rid !== undefined) {
       localInvoke.rejectPendingInvalid(rid);
     } else {
       console.warn('[plugin-mcp-invoke] invalid reply, dropped (no requestId)');
@@ -136,6 +131,10 @@ export function startPluginMcpIpc(
 
   ipcMain.on(PLUGIN_MCP_CHANNELS.INVOKE_REPLY, (event, raw: unknown) => {
     if (!defaultIsTrustedFrame(event.senderFrame)) return;
+    // 应答须来自请求发往的 webContents:别的受信窗口拿到 requestId 也不能代答(伪造结果 / 用畸形回包提前拒掉调用)。
+    // 不匹配静默丢弃(不拒绝 pending,否则冒充方可借此打断合法调用);requestId 为 O(1) 属性读,在 bounded 预检前做。
+    const rid = replyRequestId(raw);
+    if (rid === undefined || !localInvoke.isPendingFor(rid, event.sender.id)) return;
     // 边界(E257,E255/E256 同族 / schema-阶段放大):此 raw ipcMain.on 绕过 safeHandle 的 bounded
     // 预检,直接 InvokeReplySchema.safeParse(raw)。该 schema 是 strict discriminated union,畸形 reply
     // 带海量未知短 key 仍会先触发 Zod 枚举 + 构造 unknown-keys issue(在主进程 schema 阶段放大 CPU/内存)。
@@ -164,3 +163,11 @@ export function startPluginMcpIpc(
 const attachWcDestroyHookOnce = makeWcGoneHook((wcId) => {
   bridge?.handleWebContentsGone(wcId);
 });
+
+/** 回包里的 requestId(非空字符串);取不到 → undefined。只做 O(1) 属性读,不枚举 raw。 */
+function replyRequestId(raw: unknown): string | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const rid = (raw as Record<string, unknown>)['requestId'];
+  return typeof rid === 'string' && rid.length > 0 ? rid : undefined;
+}
+

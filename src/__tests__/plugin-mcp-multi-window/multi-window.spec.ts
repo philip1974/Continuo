@@ -81,6 +81,7 @@ function makeFakeInvokeRemote(): FakeInvokeRemote {
     abortByTool(wcId, name) {
       abortToolCalls.push({ wcId, name });
     },
+    isPendingFor: () => false,
     pendingCount: () => 0,
   };
 }

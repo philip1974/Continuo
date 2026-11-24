@@ -43,7 +43,8 @@ function fakeHost() {
   } as never;
 }
 
-const trustedEvent = { senderFrame: { url: 'file:///app/index.html' } };
+// sender.id 与 invoke 的 owner wcId(1)一致:回包须来自请求发往的 webContents。
+const trustedEvent = { senderFrame: { url: 'file:///app/index.html' }, sender: { id: 1 } };
 
 beforeEach(() => {
   electronMock.sentFromWc.length = 0;
@@ -100,6 +101,25 @@ describe('E257 plugin-mcp invoke-reply bounded 预检', () => {
       result: { done: true },
     });
     await expect(p).resolves.toEqual({ done: true });
+  });
+
+  // 应答须来自请求发往的 webContents(与 scope-request correlator / agent-auth 同规则):别的受信窗口拿到 requestId
+  // 代答(合法或畸形)都静默丢弃,pending 保持,真正的接收方随后回包仍生效。
+  it('别的 webContents 代答 → 丢弃(不结算、不拒绝);接收方回包仍 resolve', async () => {
+    const { invokeRemote } = startPluginMcpIpc(fakeHost());
+    const replyHandler = electronMock.onHandlers.get(PLUGIN_MCP_CHANNELS.INVOKE_REPLY)!;
+    const p = invokeRemote.invoke({ pluginId: 'p', wcId: 1 }, 'tool', { x: 3 });
+    const reqId = (
+      electronMock.sentFromWc.find((s) => s.channel === PLUGIN_MCP_CHANNELS.INVOKE)!.payload as {
+        requestId: string;
+      }
+    ).requestId;
+    const impostor = { ...trustedEvent, sender: { id: 2 } };
+    replyHandler(impostor, { requestId: reqId, ok: true, result: 'forged' });
+    replyHandler(impostor, { requestId: reqId, ok: 'bogus' });
+    expect(invokeRemote.pendingCount()).toBe(1);
+    replyHandler(trustedEvent, { requestId: reqId, ok: true, result: 'real' });
+    await expect(p).resolves.toBe('real');
   });
 
   // 边界(E265,E263 main 侧对偶 / 读端独立校验):schema 失败的 reply 不再整体交 handleReply(信任 raw

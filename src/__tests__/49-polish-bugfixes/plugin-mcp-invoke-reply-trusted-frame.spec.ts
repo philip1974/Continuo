@@ -54,7 +54,7 @@ beforeEach(() => {
 describe('49 · INVOKE_REPLY 校验 senderFrame', () => {
   it('handler 用 event.senderFrame 调 defaultIsTrustedFrame', () => {
     const senderFrame = { url: 'file:///renderer/index.html' };
-    replyHandler({ senderFrame }, { requestId: 'r1', ok: true, result: 1 });
+    replyHandler({ senderFrame, sender: { id: 1 } }, { requestId: 'r1', ok: true, result: 1 });
     expect(trust.fn).toHaveBeenCalledWith(senderFrame);
   });
 
