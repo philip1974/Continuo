@@ -200,7 +200,7 @@ describe('installNavigationGuard', () => {
   it('main 给每个 webContents 装导航守卫', () => {
     const src = readFileSync(join(__dirname, '..', '..', '..', 'electron/main/index.ts'), 'utf-8');
     expect(src).toContain(
-      'installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed, isPageReloadAllowed);',
+      'installNavigationGuard(contents, isOwnRendererUrl, openExternalFromPage, isPageReloadAllowed);',
     );
     // wc-gone 回收与守卫共用同一放行判定(放行 ⇔ 回收)。
     expect(src).toContain('setPageReloadPredicate(isPageReloadAllowed);');

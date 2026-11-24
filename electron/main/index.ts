@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session } from 'electron';
 import { installNavigationGuard, isAllowedPageReload, isOwnRendererWindowUrl } from './window-open-policy';
 import { setPageReloadPredicate, setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { installPermissionHandlers } from './lib/permission-policy';
@@ -132,11 +132,7 @@ import {
   type DirtyState,
 } from './dirty-close-confirm';
 import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
-import {
-  cleanupAllShellExecs,
-  isAllowedExternalUrl,
-  sanitizeExternalUrl,
-} from './services/shell.service';
+import { cleanupAllShellExecs, openExternalIfAllowed } from './services/shell.service';
 import { cleanupAllShellStreams } from './services/plugin-shell-stream.service';
 import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
@@ -586,17 +582,14 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   // (含 marketplace 不受信的 authorUrl / 评论 url)。必须复用 shell.service 的
   // scheme 白名单,否则 `smb://`、自定义协议等非 http(s) URL 会绕过白名单经 OS
   // 协议处理器打开,成为投放面。非白名单 scheme 直接静默 deny。
-  openExternalIfAllowed(url);
+  openExternalFromPage(url);
   return { action: 'deny' };
 }
 
-// 页面内容触发的「离开应用」(window.open 被拒 / 主框架导航被拦)统一出口:过长度上限 + scheme
-// 白名单后交给系统打开,其余静默丢弃。
-function openExternalIfAllowed(url: string): void {
-  if (typeof url !== 'string' || url.length === 0 || url.length > MAX_EXTERNAL_URL_LEN) return;
-  if (isAllowedExternalUrl(url)) {
-    shell.openExternal(sanitizeExternalUrl(url));
-  }
+// 页面内容触发的「离开应用」(window.open 被拒 / 主框架导航被拦)统一出口:与外链 IPC 同一规则
+//(shell.service 的 openExternalIfAllowed:长度上限 + scheme 白名单 + sanitize),不放行的静默丢弃。
+function openExternalFromPage(url: string): void {
+  void openExternalIfAllowed(url).catch((err: unknown) => console.warn('[nav] openExternal failed', err));
 }
 
 interface CreateMainWindowOpts {
@@ -723,7 +716,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 // 这样从 popout 再 popout 也走我们的同一套安全策略;导航规则 dev 与打包版一致(见 window-open-policy)。
 app.on('web-contents-created', (_evt, contents) => {
   contents.setWindowOpenHandler(windowOpenHandler);
-  installNavigationGuard(contents, isOwnRendererUrl, openExternalIfAllowed, isPageReloadAllowed);
+  installNavigationGuard(contents, isOwnRendererUrl, openExternalFromPage, isPageReloadAllowed);
 });
 
 // ─────────────────────────────────────────────────────

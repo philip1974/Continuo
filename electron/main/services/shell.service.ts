@@ -2,7 +2,7 @@
 // 用 child_process.spawn 收 stdout/stderr 到 buffer,超时 SIGTERM,输出
 // 上限 cap 避免 OOM。返回完整 IpcShellExecResult,plugin 等 process exit 后拿。
 
-import { startsWithAllowedExternalScheme } from '../../shared/url-limits';
+import { MAX_EXTERNAL_URL_LEN, startsWithAllowedExternalScheme } from '../../shared/url-limits';
 import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { spawn } from 'node:child_process';
 import { shell } from 'electron';
@@ -380,14 +380,25 @@ export function sanitizeExternalUrl(url: string): string {
   return noHash.slice(0, q) + (out !== '' ? `?${out}` : '');
 }
 
+/**
+ * 外链出口的唯一规则:长度上限(MAX_EXTERNAL_URL_LEN)→ scheme 白名单(isAllowedExternalUrl)→ sanitize 后交系统打开。
+ * 不放行返回 false(不打开)。renderer 显式外链 IPC 与页面触发的「离开应用」(window.open 被拒 / 主框架导航被拦)共用
+ * —— 此前两处各自组合这三步,安全出口新增规则时易只改一处。
+ */
+export async function openExternalIfAllowed(url: unknown): Promise<boolean> {
+  if (typeof url !== 'string' || url.length === 0 || url.length > MAX_EXTERNAL_URL_LEN) return false;
+  if (!isAllowedExternalUrl(url)) return false;
+  await shell.openExternal(sanitizeExternalUrl(url));
+  return true;
+}
+
 export async function openExternalUrl(
   input: IpcShellOpenExternalInput,
 ): Promise<void> {
   const url = input.url;
-  if (!isAllowedExternalUrl(url)) {
+  if (!(await openExternalIfAllowed(url))) {
     throw new Error(
       `[shell.openExternal] scheme not allowed: ${url.slice(0, 32)}...`,
     );
   }
-  await shell.openExternal(sanitizeExternalUrl(url));
 }

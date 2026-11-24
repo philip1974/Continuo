@@ -12,8 +12,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+
+const electronShell = vi.hoisted(() => ({ openExternal: vi.fn(async () => {}) }));
+vi.mock('electron', () => ({ shell: electronShell }));
+
 import {
   isAllowedExternalUrl,
+  openExternalIfAllowed,
   sanitizeExternalUrl,
 } from '../../../electron/main/services/shell.service';
 import { MAX_EXTERNAL_URL_LEN } from '../../../electron/shared/url-limits';
@@ -54,16 +59,22 @@ describe('topic49 6thS · external URL scheme whitelist', () => {
     expect(isAllowedExternalUrl('  https://x')).toBe(false); // 前导空格不放行
   });
 
-  it('静态守卫:index.ts windowOpenHandler 的 shell.openExternal 已被 isAllowedExternalUrl 门控', () => {
+  // 外链出口唯一规则(shell.service openExternalIfAllowed):长度上限 → scheme 白名单 → sanitize 后打开;外链 IPC 与
+  // 页面触发的「离开应用」(index.ts windowOpenHandler deny / 导航守卫)共用。
+  it('openExternalIfAllowed:超长 / 非白名单不打开(返回 false);合法 → sanitize 后打开', async () => {
+    electronShell.openExternal.mockClear();
+    await expect(openExternalIfAllowed('https://' + 'x'.repeat(MAX_EXTERNAL_URL_LEN))).resolves.toBe(false);
+    await expect(openExternalIfAllowed('smb://attacker/share')).resolves.toBe(false);
+    await expect(openExternalIfAllowed('')).resolves.toBe(false);
+    expect(electronShell.openExternal).not.toHaveBeenCalled();
+    await expect(openExternalIfAllowed('mailto:a@b.com?attach=/etc/passwd')).resolves.toBe(true);
+    expect(electronShell.openExternal).toHaveBeenCalledWith(sanitizeExternalUrl('mailto:a@b.com?attach=/etc/passwd'));
+  });
+
+  it('静态守卫:index.ts 不直接调 shell.openExternal,页面出口经 openExternalIfAllowed', () => {
     const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8');
-    // import 了共享断言
-    expect(src).toMatch(/isAllowedExternalUrl/);
-    // 不再出现裸 `shell.openExternal(url);` 顶格调用(必须包在 if 守卫内)
-    // 且交出前过 sanitizeExternalUrl(mailto 去 attach,安全 L4)
-    expect(src).toMatch(
-      /if \(isAllowedExternalUrl\(url\)\)\s*\{\s*shell\.openExternal\(sanitizeExternalUrl\(url\)\)/,
-    );
-    expect(src).not.toMatch(/shell\.openExternal\(url\)/);
+    expect(src).toMatch(/openExternalIfAllowed\(url\)/);
+    expect(src).not.toMatch(/shell\.openExternal\(/);
   });
 
   // 边界(E190):windowOpenHandler 在 new URL / openExternal 之前先做 url 长度上限(共享
