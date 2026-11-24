@@ -4,9 +4,8 @@
 // `fs:dir-changed`。本 hook 订阅该事件,扫描已打开 tabs,命中父目录的
 // 重读磁盘并通过 store.reloadFromDisk 同步。dirty tab 跳过,保护用户编辑。
 //
-// 注意:本 hook 不主动 watchDir,完全复用 Explorer 已 watch 的目录列表。
-// 父目录未展开的文件收不到通知(用户需手动刷新);95% 场景下打开文件
-// 之前 Explorer 已展开/reveal 过该路径。
+// 本 hook 不主动 watchDir:watcher 来自 Explorer 已展开目录,以及有打开 tab 时 useExternalSyncRootWatch
+// 持有的 workspace root watcher(不依赖侧栏 / 文件树是否挂载,见该文件)。
 // watcher 因 error 被驱逐后由 Explorer 重装成功时,断线期间的变化不会有 dir-changed;
 // 订阅本地 watch-restored(src/lib/fs-watch-restored.ts),重读该目录子树内的 clean tab。
 
@@ -14,7 +13,14 @@ import { useEffect } from 'react';
 import { coApi } from '@/lib/co-api';
 import { onWatchRestored } from '@/lib/fs-watch-restored';
 import { useEditorStore, type EditorTab } from '@/stores/editor.store';
-import { basename, dirname, isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
+import {
+  basename,
+  dirname,
+  isPathSeparatorCode,
+  isSameOrInsidePath,
+  pathEquals,
+  stripRootPrefix,
+} from '@/lib/path-cross';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { findEditorFileTabById } from './editor-tab-lookup';
@@ -194,14 +200,27 @@ export function useExternalFileSync(): void {
     // symlink tab:目录取 dirname(filePath) 或 dirname(realPath),文件名取 basename(filePath) 或
     // basename(realPath),两侧不强制配对 —— 工作区经非 canonical 路径打开(如 /tmp → /private/tmp)时
     // realPath 的目录与广播目录字面不同,但同目录链接仍能由「链接目录 + 目标名」命中;交叉误命中只多读一次。
+    // 目录改名 / 移动 / 删除:macOS 递归 fs.watch 对 `mv src/foo src/bar` 只报 {dir:src, files:[foo, bar]},
+    // 不列目录内文件 → 集合中的名字可能是 tab 的祖先目录。tab 在 changedDir 子树深处(非直接子项)且其相对
+    // 路径首段命中集合 → 同样纳入重读;读到不存在即走下方 removePaths(与文件层同一出口)。
+    const subtreeHit = (changedDir: string, names: ReadonlySet<string>, p: string): boolean => {
+      if (!isSameOrInsidePath(changedDir, p)) return false;
+      const rel = stripRootPrefix(changedDir, p);
+      let i = 0;
+      while (i < rel.length && !isPathSeparatorCode(rel.charCodeAt(i))) i++;
+      return i < rel.length && names.has(foldFileName(rel.slice(0, i)));
+    };
     const unsub = coApi.fs.onDirChanged((changedDir, files) => {
       const names = files ? new Set(files.map(foldFileName)) : null;
       const nameHit = (p: string): boolean => names!.has(foldFileName(basename(p)));
       reloadMatching(
         (fp, rp) =>
-          (pathEquals(dirname(fp), changedDir) ||
+          ((pathEquals(dirname(fp), changedDir) ||
             (rp !== undefined && pathEquals(dirname(rp), changedDir))) &&
-          (names === null || nameHit(fp) || (rp !== undefined && nameHit(rp))),
+            (names === null || nameHit(fp) || (rp !== undefined && nameHit(rp)))) ||
+          (names !== null &&
+            (subtreeHit(changedDir, names, fp) ||
+              (rp !== undefined && subtreeHit(changedDir, names, rp)))),
       );
     });
     const unsubRestored = onWatchRestored(reloadSubtree);

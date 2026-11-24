@@ -6,3 +6,5 @@
   e2e `save-shortcut`「外部修改 a.ts」中稳定暴露。
 - hook 只依赖 editor store 与 `coApi.fs`,与 EditorPanel 是否挂载无关;popout 面板 portal 自同一 renderer,
   MainApp 仍是唯一宿主,不会重复订阅。
+- 同步所需的 workspace root watcher(`useExternalSyncRootWatch`)同样由 `MainApp` 持有,不依赖 ExplorerSidebar
+  挂载文件树:侧栏持久化为关闭时文件树从不挂载、不装 watcher,此前整个会话所有 tab 收不到外部修改。

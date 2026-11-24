@@ -31,7 +31,8 @@ const NONE = Symbol('none');
  *
  * 只保活「对用户显示过、且 root 未变」的那棵树(keptRoot):启动即关闭、hydrate 前首帧开而 hydrate
  * 后关(首帧 root 尚为 null)、隐藏期间换了 root —— 这些情况下隐藏态不挂载文件树,不做任何 IO,
- * 与原先关闭即不渲染一致。
+ * 与原先关闭即不渲染一致。编辑器 tab 的外部修改同步不受影响:其 root watcher 由 MainApp 的
+ * useExternalSyncRootWatch 独立持有。
  */
 export function ExplorerSidebar() {
   const open = useLayoutUiStore((s) => s.sidebarOpen);

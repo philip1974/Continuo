@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { renderHook, cleanup } from '@testing-library/react';
+import { renderHook, cleanup, act } from '@testing-library/react';
 import {
   _resetLmApiForTest,
   captureLmApi,
@@ -16,15 +16,20 @@ import {
   recordSavedDiskStat,
 } from '../../panels/Editor/saved-disk-stat';
 import { flushMicrotasks } from '../_helpers/async';
+import { useWorkspaceStore } from '../../stores/workspace.store';
+import { useExternalSyncRootWatch } from '../../panels/Editor/useExternalSyncRootWatch';
 
 interface FsApi {
   onDirChanged: (cb: (dir: string, files?: readonly string[]) => void) => () => void;
   readFile: ReturnType<typeof vi.fn>;
+  watchDir?: ReturnType<typeof vi.fn>;
+  unwatchDir?: ReturnType<typeof vi.fn>;
+  onWatchLost?: (cb: (path: string) => void) => () => void;
 }
 
 function installFsApi(fs: FsApi): void {
   Object.defineProperty(window, 'api', {
-    value: { fs },
+    value: { fs: { onWatchLost: () => () => {}, ...fs } },
     writable: true,
     configurable: true,
   });
@@ -34,6 +39,7 @@ function installFsApi(fs: FsApi): void {
 beforeEach(() => {
   _resetLmApiForTest();
   useEditorStore.setState({ tabs: [], activeTabId: null });
+  useWorkspaceStore.setState({ root: null });
 });
 
 afterEach(() => {
@@ -295,6 +301,22 @@ describe('useExternalFileSync', () => {
       dirCb!('/proj', ['readme.md', 'café.md']);
       await Promise.resolve();
       expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/README.md', nfc]);
+    });
+
+    // 外部改名 / 移动 / 删除**目录**:macOS 递归 fs.watch 对 `mv /proj/sub /proj/sub2` 只报
+    // {dir:/proj, files:[sub, sub2]},不列目录内文件 → 集合中的名字若是 tab 的祖先目录,其子树内 tab 也须检查。
+    it('集合中的名字是 tab 的祖先目录(目录改名 / 移动 / 删除)→ 子树内 clean tab 也重读', async () => {
+      const { emit, readFile } = setup();
+      emit('/proj', ['sub', 'sub2']);
+      await Promise.resolve();
+      expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/sub/a.md']);
+    });
+
+    it('名字只是前缀 / 不是祖先目录段 → 子树 tab 不命中', async () => {
+      const { emit, readFile } = setup();
+      emit('/proj', ['su', 'sub.md']);
+      await Promise.resolve();
+      expect(readFile).not.toHaveBeenCalled();
     });
 
     it('不同目录的同名文件不命中(目录仍按 pathEquals(dirname) 精确匹配)', async () => {
@@ -648,6 +670,21 @@ describe('外部删除 / 改名(读到 FS_NOT_FOUND)', () => {
     expect(useEditorStore.getState().tabs.map((t) => t.content)).toEqual(['replaced']);
   });
 
+  it('目录被外部改名 / 删除(只报目录名)→ 目录内干净 tab 确认不存在后关闭,目录外 tab 不动', async () => {
+    const readFile = vi.fn(async (_p: string) => NF);
+    let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+    installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+    const tab = (p: string) => ({ ...cleanTab, id: p, filePath: p });
+    useEditorStore.setState({ tabs: [tab('/proj/foo/deep/a.ts'), tab('/proj/b.ts')], activeTabId: '/proj/b.ts' });
+    renderHook(() => useExternalFileSync());
+    dirCb!('/proj', ['foo', 'bar']);
+    await flushMicrotasks(6);
+    await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
+    await flushMicrotasks(6);
+    expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/foo/deep/a.ts', '/proj/foo/deep/a.ts']);
+    expect(useEditorStore.getState().tabs.map((t) => t.id)).toEqual(['/proj/b.ts']);
+  });
+
   it('其它读失败(非 FS_NOT_FOUND)→ 仍只跳过,不关', async () => {
     const readFile = vi.fn(async () => ({ ok: false, code: 'FS_IO', message: 'x' }));
     const fire = setup(readFile);
@@ -655,5 +692,87 @@ describe('外部删除 / 改名(读到 FS_NOT_FOUND)', () => {
     await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
     await flushMicrotasks(6);
     expect(useEditorStore.getState().tabs).toHaveLength(1);
+  });
+});
+
+// 外部同步不依赖 Explorer 是否可见(VSCode:FileService 统一 watch 工作区)。此前同步完全复用 Explorer
+// 文件树的 watcher:侧栏持久化为关闭时文件树从不挂载、不装 watcher → 整个会话所有 tab 收不到外部修改。
+// 现在有打开的 tab 时由 useExternalSyncRootWatch(与 useExternalFileSync 同由常驻 MainApp 承载)持有
+// workspace root 的 watcher(main 按 path 引用计数,与 Explorer
+// 的 root watcher 共享同一个 fs.watch;同 tick 同路径广播合并,不重复事件)。
+describe('外部同步自持 workspace root watcher(不依赖侧栏 / 文件树挂载)', () => {
+  const cleanTab = (p: string) => ({ id: p, filePath: p, content: 'old', originalContent: 'old', dirty: false });
+
+  /** 模拟 main:只有被 watch 的目录(macOS/Win 递归)覆盖的变化才广播 dir-changed。 */
+  function installWatchingFs() {
+    const watched = new Map<string, number>();
+    const subs = new Set<(dir: string, files?: readonly string[]) => void>();
+    const readFile = vi.fn(async (p: string) => ({ ok: true, data: `new ${p}` }));
+    const watchDir = vi.fn(async (p: string) => {
+      watched.set(p, (watched.get(p) ?? 0) + 1);
+      return { ok: true };
+    });
+    const unwatchDir = vi.fn(async (p: string) => {
+      const n = (watched.get(p) ?? 0) - 1;
+      if (n > 0) watched.set(p, n);
+      else watched.delete(p);
+      return { ok: true };
+    });
+    installFsApi({
+      onDirChanged: (cb) => {
+        subs.add(cb);
+        return () => subs.delete(cb);
+      },
+      readFile,
+      watchDir,
+      unwatchDir,
+    });
+    const externalChange = (dir: string, files: readonly string[]) => {
+      const covered = [...watched.keys()].some((w) => dir === w || dir.startsWith(`${w}/`));
+      if (covered) for (const cb of subs) cb(dir, files);
+    };
+    return { readFile, watchDir, unwatchDir, watched, externalChange };
+  }
+
+  it('侧栏从未打开(无 Explorer watcher):有 tab 时 watch root,深层文件被外部修改 → 干净 tab 重读', async () => {
+    const fs = installWatchingFs();
+    useWorkspaceStore.setState({ root: '/proj' });
+    useEditorStore.setState({ tabs: [cleanTab('/proj/sub/a.md')], activeTabId: '/proj/sub/a.md' });
+    renderHook(() => {
+      useExternalFileSync();
+      useExternalSyncRootWatch();
+    });
+    await flushMicrotasks(4);
+    expect(fs.watchDir).toHaveBeenCalledWith('/proj');
+    fs.externalChange('/proj/sub', ['a.md']);
+    await flushMicrotasks(4);
+    expect(fs.readFile).toHaveBeenCalledWith('/proj/sub/a.md');
+    expect(useEditorStore.getState().tabs[0]?.content).toBe('new /proj/sub/a.md');
+  });
+
+  it('没有打开的 tab → 不 watch;tab 全关 / root 切换 / 卸载 → 释放(引用计数归零)', async () => {
+    const fs = installWatchingFs();
+    useWorkspaceStore.setState({ root: '/proj' });
+    const hook = renderHook(() => useExternalSyncRootWatch());
+    await flushMicrotasks(4);
+    expect(fs.watchDir).not.toHaveBeenCalled();
+
+    act(() => useEditorStore.setState({ tabs: [cleanTab('/proj/a.md')], activeTabId: '/proj/a.md' }));
+    await flushMicrotasks(4);
+    expect([...fs.watched.keys()]).toEqual(['/proj']);
+
+    act(() => useWorkspaceStore.setState({ root: '/other' }));
+    await flushMicrotasks(4);
+    expect([...fs.watched.keys()]).toEqual(['/other']);
+
+    act(() => useEditorStore.setState({ tabs: [], activeTabId: null }));
+    await flushMicrotasks(4);
+    expect(fs.watched.size).toBe(0);
+
+    act(() => useEditorStore.setState({ tabs: [cleanTab('/other/a.md')], activeTabId: '/other/a.md' }));
+    await flushMicrotasks(4);
+    hook.unmount();
+    await flushMicrotasks(4);
+    expect(fs.watched.size).toBe(0);
   });
 });

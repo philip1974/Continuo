@@ -10,10 +10,14 @@ const hoisted = vi.hoisted(() => ({
   layoutReady: null as null | (() => void),
   Null: () => null,
   externalSync: vi.fn(),
+  rootWatch: vi.fn(),
 }));
 
 vi.mock('@/panels/Editor/useExternalFileSync', () => ({
   useExternalFileSync: hoisted.externalSync,
+}));
+vi.mock('@/panels/Editor/useExternalSyncRootWatch', () => ({
+  useExternalSyncRootWatch: hoisted.rootWatch,
 }));
 
 vi.mock('../../shell/dock/DockShell', () => ({
@@ -57,5 +61,7 @@ describe('外部文件同步的宿主', () => {
     render(<App />);
     // DockShell 被 mock 成不渲染任何面板:EditorPanel 不存在时同步也已生效。
     expect(hoisted.externalSync).toHaveBeenCalled();
+    // 同步所需的 root watcher 同样由 MainApp 持有,不依赖 ExplorerSidebar(此处 mock 为不渲染)挂载文件树。
+    expect(hoisted.rootWatch).toHaveBeenCalled();
   });
 });

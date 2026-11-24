@@ -23,6 +23,7 @@ vi.mock('@/plugins/command-palette/useCommandPaletteHotkey', () => ({
 }));
 vi.mock('@/plugins/command-palette/useCommandHotkeys', () => ({ useCommandHotkeys: () => {} }));
 vi.mock('@/panels/Editor/useExternalFileSync', () => ({ useExternalFileSync: () => {} }));
+vi.mock('@/panels/Editor/useExternalSyncRootWatch', () => ({ useExternalSyncRootWatch: () => {} }));
 vi.mock('@/plugins/quick-open/QuickOpenModal', () => ({ QuickOpenModal: hoisted.Null }));
 vi.mock('@/plugins/quick-open/useQuickOpenHotkey', () => ({ useQuickOpenHotkey: () => {} }));
 vi.mock('@/plugins/permissions/PermissionPrompt', () => ({ PermissionPrompt: hoisted.Null }));

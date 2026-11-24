@@ -13,6 +13,7 @@ import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
 import { useExternalFileSync } from '@/panels/Editor/useExternalFileSync';
+import { useExternalSyncRootWatch } from '@/panels/Editor/useExternalSyncRootWatch';
 import { QuickOpenModal } from '@/plugins/quick-open/QuickOpenModal';
 import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
@@ -52,6 +53,8 @@ function MainApp() {
   // 外部文件同步挂在常驻 MainApp(每窗口一次),不放在懒加载的 EditorPanel:打开文件到 Editor chunk
   // 挂载之间的外部修改否则会因订阅尚不存在而永久漏掉。hook 只依赖 editor store + coApi.fs。
   useExternalFileSync();
+  // 同步所需的 workspace root watcher 不绑在可见文件树上(侧栏启动即关闭时文件树不挂载、不装 watcher)。
+  useExternalSyncRootWatch();
 
   // workspace.root 变化 → 通知 main 维护 windowId→root 映射,供 MCP agent
   // terminal_create_session 路径 cwd 回退使用。
