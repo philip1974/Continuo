@@ -1,4 +1,5 @@
 import { defineWorkspace } from 'vitest/config';
+import { milkdownLinkHrefPlugin } from './scripts/vite-milkdown-link-href';
 // @ts-expect-error mjs 共享配置,无 .d.ts
 import { CONTRACT_INCLUDE, INTEGRATION_INCLUDE } from './scripts/test-categories.mjs';
 
@@ -80,6 +81,11 @@ const CI_WINDOWS_UNIT_EXCLUDE =
 //
 // src/integration/ 是占位,future 纵向链路用例搬入。
 
+// 需要 renderer 构建期补丁的 Milkdown 规范(真实 Crepe 跑打过补丁的 @milkdown 产物)。补丁只在 vite transform
+// 里生效,@milkdown 须 inline,且要整组 inline —— 只 inline preset-commonmark 会与 Node 原生加载的
+// kit / crepe 各持一份实例。inline 后首次加载 Crepe 明显变慢,故单独成 project,不拖慢其它用到 Crepe 的规范。
+const MILKDOWN_PATCHED_INCLUDE = ['src/__tests__/editor-markdown-link-href/**/*.spec.ts'];
+
 export default defineWorkspace([
   {
     extends: './vitest.config.ts',
@@ -89,9 +95,19 @@ export default defineWorkspace([
       exclude: [
         ...INTEGRATION_INCLUDE,
         ...CONTRACT_INCLUDE,
+        ...MILKDOWN_PATCHED_INCLUDE,
         ...CI_ELECTRON_UNIT_EXCLUDE,
         ...CI_WINDOWS_UNIT_EXCLUDE,
       ],
+    },
+  },
+  {
+    extends: './vitest.config.ts',
+    plugins: [milkdownLinkHrefPlugin()],
+    test: {
+      name: 'milkdown-patched',
+      include: MILKDOWN_PATCHED_INCLUDE,
+      server: { deps: { inline: [/[\\/]@milkdown[\\/]/] } },
     },
   },
   {

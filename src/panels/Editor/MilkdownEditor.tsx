@@ -442,7 +442,9 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     if (!icon) return;
     e.preventDefault();
     e.stopPropagation();
-    const link = icon.closest('.link-preview')?.querySelector('a.link-display')?.getAttribute('href');
+    // 取气泡显示的文字(= 链接 mark 的原地址),不取 href:上游 sanitizeLinkHref 会把白名单外 scheme 的
+    // href 置空(盘符路径 / co: / vscode: 已由 scripts/vite-milkdown-link-href.ts 放行)。
+    const link = icon.closest('.link-preview')?.querySelector('a.link-display')?.textContent;
     if (link) void copyToClipboardOrNotify(link, t('panels.editor.link.copy_failed'));
   }, []);
 

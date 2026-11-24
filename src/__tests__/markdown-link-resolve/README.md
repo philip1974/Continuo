@@ -51,4 +51,5 @@ Milkdown 视图里的 `<a>`(Markdown 链接、mermaid 图的 `click` 链接)被�
 Edit 模式链接气泡(Crepe LinkTooltip)的复制图标:点击即把链接地址写入系统剪贴板,写入失败给可见提示(toast)。
 打包版(PROD)启动时 `sandboxSweep` 会把 `navigator.clipboard` 置为 undefined,而上游复制处理只在它存在时复制;
 因此 `MilkdownEditor` 在外层捕获阶段截下该图标的 `pointerdown`(上游处理器挂在 pointerdown 上),改走
-`getCachedClipboard()`,与应用其它复制入口一致。
+`getCachedClipboard()`,与应用其它复制入口一致。复制的是气泡显示的地址文字(= 链接 mark 的原地址),不是
+`<a href>`:上游 `sanitizeLinkHref` 会把白名单外 scheme 的 href 置空(见 `editor-markdown-link-href`)。

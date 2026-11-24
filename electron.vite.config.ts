@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { xtermWebglAtlasVersionPlugin } from './scripts/vite-xterm-webgl-atlas-version';
 import { mainModuleSideEffects } from './scripts/main-bundle-side-effects';
 import { milkdownKatexStubPlugin } from './scripts/vite-milkdown-katex-stub';
+import { milkdownLinkHrefEsbuildPlugin, milkdownLinkHrefPlugin } from './scripts/vite-milkdown-link-href';
 import { cspDevConnectPlugin } from './scripts/vite-csp-dev-connect';
 
 // BUILD_TARGET=pack 时输出到 out-pack/,让 `pnpm build:app` 与 `pnpm dev` 可以并行
@@ -57,10 +58,15 @@ export default defineConfig({
       tailwindcss(),
       xtermWebglAtlasVersionPlugin(),
       milkdownKatexStubPlugin(),
+      milkdownLinkHrefPlugin(),
       cspDevConnectPlugin(),
     ],
-    // dev 预打包会绕过 transform,addon-webgl 是无依赖的单文件 ESM,直接走源文件即可。
-    optimizeDeps: { exclude: ['@xterm/addon-webgl'] },
+    // dev 预打包会绕过 transform,addon-webgl 是无依赖的单文件 ESM,直接走源文件即可;
+    // @milkdown/preset-commonmark 与 Crepe 一起预打包,补丁改走 esbuild 插件(milkdownLinkHref)。
+    optimizeDeps: {
+      exclude: ['@xterm/addon-webgl'],
+      esbuildOptions: { plugins: [milkdownLinkHrefEsbuildPlugin()] },
+    },
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),
