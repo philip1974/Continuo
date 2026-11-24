@@ -92,9 +92,9 @@ describe('unified-toast-notification: notify public API', () => {
     expect(seenCount).toBe(1);
   });
 
-  // 边界(E311):本地 notify 路径与 IPC-push / SDK 对称限长 —— 超长 message/code 截断到
-  // NOTIFY_MESSAGE_MAX/NOTIFY_CODE_MAX,防 err.message 等超长串进 console mirror + Toast DOM 放大。
-  it('E311 超长 message/code → 截断到上限(console mirror + 入队 Toast 均截断)', () => {
+  // 边界(E311):本地 notify 路径与 IPC-push / SDK 对称限长 —— 超长 message 截断到 NOTIFY_MESSAGE_MAX(保留可见
+  // 反馈),超长 / 空 code 丢弃(code 是标识符,截断只会得到不存在的 code;与 SDK notifications.show 同一规则)。
+  it('E311 超长 message 截断、超长 code 丢弃(console mirror + 入队 Toast)', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(
       <NotificationsProvider>
@@ -108,13 +108,26 @@ describe('unified-toast-notification: notify public API', () => {
       });
     });
 
-    // console mirror:console.error(prefix, message) —— message 截断到 NOTIFY_MESSAGE_MAX,prefix=[code] 截断。
+    // console mirror:console.error(prefix, message) —— message 截断到 NOTIFY_MESSAGE_MAX,超长 code 丢弃 → 无 code 前缀。
     const [prefix, message] = errorSpy.mock.calls[0] as [string, string];
     // neutralize 敏感:去 notifyCore 截断则 message.length = MAX+1000。
     expect(message.length).toBe(NOTIFY_MESSAGE_MAX);
-    expect(prefix.length).toBe(NOTIFY_CODE_MAX + 2); // "[" + code(截断) + "]"
+    expect(prefix).toBe('[notify]');
     // 入队 Toast 的 message 同样截断。
     expect(seenMessages[0]?.length).toBe(NOTIFY_MESSAGE_MAX);
+  });
+
+  it('E311 空串 code 丢弃(与超长同规则)', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(
+      <NotificationsProvider>
+        <Probe />
+      </NotificationsProvider>,
+    );
+    act(() => {
+      notify.error('msg', { code: '' });
+    });
+    expect(errorSpy.mock.calls[0]?.[0]).toBe('[notify]');
   });
 
   it('E311 上限内 message → 原样(回归)', () => {

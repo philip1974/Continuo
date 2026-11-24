@@ -74,20 +74,16 @@ function notifyCore(
   level: NotificationLevel,
   opts?: NotifyOpts,
 ): void {
-  // 边界(E311):本地 notify 路径此前无长度上限,而 SDK coApp.notifications.show(co-app)限长。renderer 各处 notify.error(err.message) 的 err.message 可超长
-  //(畸形/插件抛超长串)→ 进 console mirror + Toast DOM 放大。本地路径在唯一入口 notifyCore 截断到同一
-  // NOTIFY_MESSAGE_MAX/NOTIFY_CODE_MAX(与 SDK 对称),截断(非拒)保留可见反馈。
+  // 边界(E311):所有通知(本地 notify 与 SDK coApp.notifications.show)的限长只在这唯一入口做。renderer 各处
+  // notify.error(err.message) 的 err.message 可超长(畸形 / 插件抛超长串)→ 进 console mirror + Toast DOM 放大:
+  // message 截断到 NOTIFY_MESSAGE_MAX(保留可见反馈);code 是标识符,超长 / 空串丢弃(截断只会得到不存在的 code)。
   const cappedMessage =
     message.length > NOTIFY_MESSAGE_MAX
       ? message.slice(0, NOTIFY_MESSAGE_MAX)
       : message;
   const rawCode = opts?.code;
-  const cappedCode =
-    typeof rawCode === 'string' && rawCode.length > NOTIFY_CODE_MAX
-      ? rawCode.slice(0, NOTIFY_CODE_MAX)
-      : rawCode;
-  const cappedOpts =
-    cappedCode === rawCode ? opts : { ...opts, code: cappedCode };
+  const codeOk = rawCode === undefined || (rawCode.length > 0 && rawCode.length <= NOTIFY_CODE_MAX);
+  const cappedOpts = codeOk ? opts : { ...opts, code: undefined };
   if (cappedOpts?.mirror !== false) {
     mirrorToConsole(level, cappedMessage, cappedOpts?.code);
   }

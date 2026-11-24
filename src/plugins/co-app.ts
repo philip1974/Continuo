@@ -3,7 +3,6 @@
 //
 // 后续(v2+)若加 events / fs / log 等,在此扩 CoApp 接口与实例。
 
-import { NOTIFY_CODE_MAX, NOTIFY_MESSAGE_MAX } from '../../electron/shared/notify-channels';
 import { CommandRegistry } from './registries/CommandRegistry';
 import { EventBus } from './EventBus';
 import { EditorActionRegistry } from './registries/EditorActionRegistry';
@@ -238,19 +237,8 @@ const notifications: CoNotificationsApi = {
     };
     const level = isNotificationLevel(kind) ? kind : 'info';
     if (typeof message !== 'string' || message.length === 0) return; // 非法 message 不渲染
-    const safeMessage =
-      message.length > NOTIFY_MESSAGE_MAX
-        ? message.slice(0, NOTIFY_MESSAGE_MAX)
-        : message;
-    const safeCode =
-      typeof code === 'string' && code.length > 0 && code.length <= NOTIFY_CODE_MAX
-        ? code
-        : undefined;
-    notify(
-      safeMessage,
-      level,
-      safeCode === undefined ? undefined : { code: safeCode },
-    );
+    // 这里只做类型校验;限长(message 截断、超长 / 空 code 丢弃)统一在 notify 的唯一入口 notifyCore。
+    notify(message, level, typeof code === 'string' ? { code } : undefined);
   },
 };
 

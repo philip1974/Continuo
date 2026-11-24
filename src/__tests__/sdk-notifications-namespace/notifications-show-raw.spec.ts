@@ -82,13 +82,13 @@ describe('app.notifications.show raw namespace', () => {
     expect(notifyMock).toHaveBeenCalledWith('plain', 'info', undefined);
   });
 
-  // 边界(E52,插件 API 输入校验):message/code 直传进 notify→console→Toast DOM,无上限。
-  // 超长 message 截断、非字符串/空 message 不渲染、超长 code 丢弃,防单条通知绕过队列上限放大。
+  // 边界(E52,插件 API 输入校验):非字符串 / 空 message 不渲染、非字符串 code 丢弃。限长(超长 message 截断、超长 /
+  // 空 code 丢弃)统一在 notify 唯一入口 notifyCore(见 unified-toast-notification 的 E311 规范),此处原样转交 ——
+  // 此前 co-app 另有一份限长且超长 code 规则与 notifyCore 相反(丢弃 vs 截断)。
   describe('E52 · 输入校验', () => {
-    it('超长 message → 截断到 4096', () => {
-      coApp.notifications.show({ kind: 'info', message: 'x'.repeat(5000) });
-      const msg = notifyMock.mock.calls[0]![0] as string;
-      expect(msg.length).toBe(4096);
+    it('超长 message / code → 原样交给 notify(限长由 notifyCore 统一处理)', () => {
+      coApp.notifications.show({ kind: 'info', message: 'x'.repeat(5000), code: 'c'.repeat(257) });
+      expect(notifyMock).toHaveBeenCalledWith('x'.repeat(5000), 'info', { code: 'c'.repeat(257) });
     });
 
     it('非字符串 message → 不调 notify', () => {
@@ -102,15 +102,6 @@ describe('app.notifications.show raw namespace', () => {
     it('空 message → 不调 notify', () => {
       coApp.notifications.show({ kind: 'info', message: '' });
       expect(notifyMock).not.toHaveBeenCalled();
-    });
-
-    it('超长 code → 丢弃(降级为无 code 通知)', () => {
-      coApp.notifications.show({
-        kind: 'error',
-        message: 'ok',
-        code: 'c'.repeat(257),
-      });
-      expect(notifyMock).toHaveBeenCalledWith('ok', 'error', undefined);
     });
 
     it('非字符串 code → 丢弃', () => {
