@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, promises as fsp, rmSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, truncate, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { existsSync, promises as fsp } from 'node:fs';
+import { mkdir, readFile, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import lockfile from 'proper-lockfile';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { registerPluginDataStoreHandlers } from '../services/plugin-data-store.service';
+import { setupTempDirs } from './_helpers/temp-dirs';
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 
@@ -23,14 +23,13 @@ class FakeIpcMain {
   }
 }
 
-const roots: string[] = [];
+const tempDirs = setupTempDirs();
 
 async function makeHarness(): Promise<{
   root: string;
   ipc: FakeIpcMain;
 }> {
-  const root = await mkdtemp(join(tmpdir(), 'continuo-plugin-data-'));
-  roots.push(root);
+  const root = await tempDirs.make('continuo-plugin-data-');
   const ipc = new FakeIpcMain();
   registerPluginDataStoreHandlers(ipc as never, { userDataPath: root });
   return { root, ipc };
@@ -46,11 +45,6 @@ async function installed(root: string, pluginId: string): Promise<void> {
   await mkdir(join(root, 'plugins', pluginId), { recursive: true });
 }
 
-afterEach(() => {
-  for (const root of roots.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
 
 describe('plugin-data-store.service', () => {
   it('T2.a load missing file returns empty object', async () => {

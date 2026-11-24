@@ -4,25 +4,16 @@
 // 下建同名目录放同名脚本 → 受害者下次启动 Claude Code 即以自身身份执行它。
 // 修复:非稳定位置时把脚本复制到 `<userData>/bin/`(0700 目录,0700 文件),命令只指向该稳定副本;复制失败
 // fail-closed(不提供命令),绝不回退到临时挂载路径。
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import {
-  ensureStableStdioCli,
-  isUnstableResourcesPath,
-  resolveStdioCliPathForConfig,
-} from '../services/mcp-stdio-cli-install';
+import { describe, expect, it } from 'vitest';
+import { ensureStableStdioCli, isUnstableResourcesPath, resolveStdioCliPathForConfig } from '../services/mcp-stdio-cli-install';
+import { setupTempDirs } from './_helpers/temp-dirs';
 
-const roots: string[] = [];
-async function tempDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-stdio-cli-'));
-  roots.push(d);
-  return d;
+const tempDirs = setupTempDirs();
+function tempDir(): Promise<string> {
+  return tempDirs.make('continuo-stdio-cli-');
 }
-afterEach(async () => {
-  for (const d of roots.splice(0)) await rm(d, { recursive: true, force: true });
-});
 
 async function modeOf(p: string): Promise<number> {
   return (await stat(p)).mode & 0o777;

@@ -3,24 +3,15 @@
 // 抢注同名目录放同名脚本,受害者下次启动 Claude Code 即以自身身份执行。新版只改了之后展示的命令,存量配置仍危险。
 // 契约:Linux 启动时**只读**检查 ~/.claude.json(不存在 / 解析失败 / 超大 → 跳过),命中「command/args 指向
 // continuo-mcp-stdio.mjs 且位于不稳定位置」的条目 → 提示用户移除并改用新命令;绝不修改 ~/.claude.json。
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  CLAUDE_JSON_MAX_BYTES,
-  findLegacyUnstableClaudeEntries,
-  findUnstableStdioCliEntries,
-  warnIfLegacyUnstableClaudeConfig,
-} from '../services/mcp-stdio-legacy-config';
+import { describe, expect, it, vi } from 'vitest';
+import { CLAUDE_JSON_MAX_BYTES, findLegacyUnstableClaudeEntries, findUnstableStdioCliEntries, warnIfLegacyUnstableClaudeConfig } from '../services/mcp-stdio-legacy-config';
+import { setupTempDirs } from './_helpers/temp-dirs';
 
-const roots: string[] = [];
-afterEach(async () => {
-  for (const d of roots.splice(0)) await rm(d, { recursive: true, force: true });
-});
+const tempDirs = setupTempDirs();
 async function home(content?: string): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-legacy-cfg-'));
-  roots.push(d);
+  const d = await tempDirs.make('continuo-legacy-cfg-');
   if (content !== undefined) await writeFile(join(d, '.claude.json'), content);
   return d;
 }

@@ -1,24 +1,22 @@
 // 安全(多用户 POSIX):userData 内的 .corrupt 快照 / 初始占位文件含工作区路径、插件授权与插件数据,
 // 须与 atomicWriteText 一致以 0600 创建;默认 0666&umask(通常 0644)会让同机其他用户读到。
 // 只约束新建文件的 mode。Windows 上 mode 仅影响只读位,跳过。
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadExplorer } from '../persistence';
 import { registerPluginDataStoreHandlers } from '../services/plugin-data-store.service';
 import { readPluginPathScopes } from '../services/plugins.service';
+import { setupTempDirs } from './_helpers/temp-dirs';
 
-const roots: string[] = [];
-async function tempDir(): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), 'continuo-filemode-'));
-  roots.push(d);
-  return d;
+// 先注册删目录、后注册 restoreAllMocks:after 钩子逆序执行,保持原「先 restore 再删」顺序。
+const tempDirs = setupTempDirs();
+function tempDir(): Promise<string> {
+  return tempDirs.make('continuo-filemode-');
 }
-afterEach(async () => {
+afterEach(() => {
   vi.restoreAllMocks();
-  for (const d of roots.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
 async function modeOf(p: string): Promise<number> {
