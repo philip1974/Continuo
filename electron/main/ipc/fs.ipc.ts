@@ -24,7 +24,7 @@ import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
 import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
-import { broadcastToWindows } from '../lib/broadcast';
+import { broadcastToWindows, sendToWindow } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { showOpenDialogRemembering } from '../lib/open-dialog';
 
@@ -301,13 +301,7 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
 // 单窗口 send 抛错不中断其余窗口(同 broadcastToWindows)。
 export function notifyWatchLost(path: string, ownerIds: readonly number[]): void {
   for (const id of ownerIds) {
-    const win = BrowserWindow.fromId(id);
-    if (!win || win.isDestroyed()) continue;
-    try {
-      win.webContents.send(FS_CHANNELS.WATCH_LOST, { path });
-    } catch (err) {
-      console.error('[fs] WATCH_LOST send failed', err);
-    }
+    sendToWindow(BrowserWindow.fromId(id), FS_CHANNELS.WATCH_LOST, { path }, '[fs] WATCH_LOST');
   }
 }
 

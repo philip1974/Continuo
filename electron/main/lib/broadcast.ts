@@ -31,3 +31,20 @@ export function broadcastToWindows(
     }
   }
 }
+
+/**
+ * 单窗口版本(按 ownerWindowId 定向推送):窗口不存在 / 已销毁则跳过;send 抛错(同上 race)只记录不冒泡。
+ */
+export function sendToWindow(
+  win: BrowserWindow | null | undefined,
+  channel: string,
+  payload: unknown,
+  tag: string,
+): void {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.webContents.send(channel, payload);
+  } catch (err) {
+    console.error(`${tag} send failed`, err);
+  }
+}

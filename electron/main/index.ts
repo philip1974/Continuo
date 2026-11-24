@@ -145,6 +145,7 @@ import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
 import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
+import { sendToWindow } from './lib/broadcast';
 
 // 窗口级资源清理器(scope 授权 / fs watcher / agent 授权)。挂在覆盖全窗口的
 // browser-window-created(见下),主窗与 dockview popout 子窗一视同仁 —— popout 不走
@@ -229,13 +230,7 @@ const debugService = new DebugService();
 
 debugService.setEventSink({
   emit(ownerWindowId, event) {
-    const win = BrowserWindow.fromId(ownerWindowId);
-    if (!win || win.isDestroyed()) return;
-    try {
-      win.webContents.send(DEBUG_VIEW_CHANNELS.EVENT, event);
-    } catch (err) {
-      console.error('[debug-view] event send failed', err);
-    }
+    sendToWindow(BrowserWindow.fromId(ownerWindowId), DEBUG_VIEW_CHANNELS.EVENT, event, '[debug-view] event');
   },
 });
 
