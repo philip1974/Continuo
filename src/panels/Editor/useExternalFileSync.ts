@@ -111,7 +111,8 @@ export function useExternalFileSync(): void {
         }
       }
       // 外部删除 / 改名(确认后仍不存在):与 Explorer 删除同一出口 removePaths —— 干净 tab 关闭,
-      // 脏 tab 保留(保存时按「不存在就重建」)。此前丢弃该结果 → 干净 tab 留着,继续输入后自动保存
+      // 脏 tab 保留(未保存内容不丢)。保存时:仅文件被删、父目录仍在 → 按路径重建;所在目录被移走 / 删除 →
+      // atomic-write 不建父目录,保存失败报 FS_NOT_FOUND(「找不到文件:{path}」),须用户另存。此前丢弃该结果 → 干净 tab 留着,继续输入后自动保存
       // 把文件写回(mv 时与新名并存两份)。同样要求 live tab 仍是发起读取时那个实例(未变脏 / 未重开)。
       if (!superseded && isNotFound(r)) {
         const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
