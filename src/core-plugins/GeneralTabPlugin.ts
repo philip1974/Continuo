@@ -1,7 +1,7 @@
 // 内置「通用」SettingTab + 通用类设置项(M-Settings v6)。
 // SettingItemRegistry 的首个使用者:注册一个 select 类型的「主题」item,
 // 渲染走 CategoryTabContent(category='general'),控件由 SettingItemRow
-// 自动渲染 SegmentedControl;主题由 src/theme/binding.ts 监听本值同步到 ThemeProvider。
+// 自动渲染 SegmentedControl;主题由 ThemeProvider 直接读取本值(唯一存储)。
 
 import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
@@ -21,7 +21,7 @@ export default class GeneralTabPlugin extends Plugin {
     });
 
     // 主题 setting item:select 类型,选项 light / dark / system
-    // src/theme/binding.ts 监听本值变化即时调 setMode
+    // ThemeProvider 直接订阅本值,变化即时切换
     this.addSettingItem({
       id: 'general.theme',
       category: 'general',

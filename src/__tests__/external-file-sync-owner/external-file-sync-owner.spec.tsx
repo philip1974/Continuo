@@ -36,13 +36,12 @@ vi.mock('@/plugins/command-palette/useCommandHotkeys', () => ({ useCommandHotkey
 vi.mock('@/plugins/quick-open/QuickOpenModal', () => ({ QuickOpenModal: hoisted.Null }));
 vi.mock('@/plugins/quick-open/useQuickOpenHotkey', () => ({ useQuickOpenHotkey: () => {} }));
 vi.mock('@/plugins/permissions/PermissionPrompt', () => ({ PermissionPrompt: hoisted.Null }));
-vi.mock('@/plugins/co-app', () => ({ coApp: { commands: {} } }));
+vi.mock('@/plugins/co-app', () => ({ coApp: { commands: {}, settingItems: { get: () => undefined } } }));
 vi.mock('@/lib/co-api', () => ({ coApi: { window: { notifyRoot: vi.fn() } } }));
 vi.mock('@/lib/popout-mode', () => ({ isPopoutWindow: () => false }));
 vi.mock('../../shell/notify-root-when-hydrated', () => ({
   notifyRootWhenHydrated: () => Promise.resolve(),
 }));
-vi.mock('@/theme/binding', () => ({ useThemeBinding: () => {} }));
 vi.mock('@/plugins/settings/LanguageFromSettings', () => ({ LanguageFromSettings: hoisted.Null }));
 vi.mock('@/notifications/ToastViewport', () => ({ ToastViewport: hoisted.Null }));
 vi.mock('@/notifications/NotificationsProvider', () => ({

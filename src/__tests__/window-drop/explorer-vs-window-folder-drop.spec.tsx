@@ -108,7 +108,6 @@ vi.mock('@/theme', () => ({
   ThemeProvider: ({ children }: { children: ReactNode }) => children,
   useTheme: () => ({ resolved: 'dark' }),
 }));
-vi.mock('@/theme/binding', () => ({ useThemeBinding: () => {} }));
 vi.mock('@/plugins/settings/LanguageFromSettings', () => ({ LanguageFromSettings: h.Null }));
 vi.mock('@/notifications/ToastViewport', () => ({ ToastViewport: h.Null }));
 vi.mock('@/notifications/NotificationsProvider', () => ({

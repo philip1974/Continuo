@@ -1507,10 +1507,6 @@
 
 - [`text-stats.spec.ts`](./text-stats/text-stats.spec.ts)
 
-## [theme-binding(SettingsValueStore ↔ ThemeProvider 桥)](./theme-binding/README.md)
-
-- [`theme-binding.spec.tsx`](./theme-binding/theme-binding.spec.tsx)
-
 ## [TitleBar(macOS 顶栏:workspace + active file 文件名)](./title-bar/README.md)
 
 - [`title-bar.spec.tsx`](./title-bar/title-bar.spec.tsx)

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { LazyMotion, MotionConfig } from 'motion/react';
 import { ThemeProvider } from '@/theme';
-import { useThemeBinding } from '@/theme/binding';
 import { DockShell } from './dock/DockShell';
 import { TerminalSessionsSync } from './dock/TerminalSessionsSync';
 import { Splash } from './decor/Splash';
@@ -166,12 +165,6 @@ function MainApp() {
   );
 }
 
-// 必须在 ThemeProvider 内才能 useTheme;独立组件持有 useThemeBinding
-function ThemeBinder() {
-  useThemeBinding();
-  return null;
-}
-
 // 首屏包体积:组件统一用轻量 m.*,完整特性集 domMax(动画 / 手势 / 拖拽 / layout,~115KB)异步加载,
 // 不进 main-app 静态图。layoutId(SharedTab 标题 / 指示条飞行)需要 layout 特性,故用 domMax 而非
 // domAnimation。strict:残留 motion.* 会在渲染时直接报错。特性加载完成前 m.* 按 initial 渲染,
@@ -182,7 +175,6 @@ const loadMotionFeatures = () => motionFeatures;
 export function App() {
   return (
     <ThemeProvider>
-      <ThemeBinder />
       <LanguageFromSettings />
       <NotificationsProvider>
         <ToastViewport />

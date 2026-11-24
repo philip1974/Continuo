@@ -1,9 +1,10 @@
-// ThemeProvider 持久化:setMode('light') → localStorage 'layoutmotion.theme.mode'.
+// 主题持久化:设置页切 light → 设置值 general.theme(localStorage continuo.settings.values)=light,
+// 不再写旧独立键 layoutmotion.theme.mode。
 import { test, expect } from './fixtures/electron-app';
 import { waitForAppReady } from './helpers/app-ready';
 import { LIGHT_THEME, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
-test('切 light → localStorage layoutmotion.theme.mode=light', async ({
+test('切 light → 设置值 general.theme=light(唯一存储)', async ({
   window,
 }) => {
   // 默认 dark
@@ -25,8 +26,11 @@ test('切 light → localStorage layoutmotion.theme.mode=light', async ({
   await expect(window.locator('html')).not.toHaveClass(/dark/);
 
   // localStorage
-  const stored = await window.evaluate(() =>
-    localStorage.getItem('layoutmotion.theme.mode'),
-  );
-  expect(stored).toBe('light');
+  const stored = await window.evaluate(() => ({
+    theme: (JSON.parse(localStorage.getItem('continuo.settings.values') ?? '{}') as Record<string, unknown>)[
+      'general.theme'
+    ],
+    legacy: localStorage.getItem('layoutmotion.theme.mode'),
+  }));
+  expect(stored).toEqual({ theme: 'light', legacy: null });
 });

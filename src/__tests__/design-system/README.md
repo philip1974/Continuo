@@ -2,7 +2,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/theme/ThemeProvider.tsx` | 主题模式 / 系统跟随 / `.dark` class 切换 / localStorage 持久化 |
+| `src/theme/ThemeProvider.tsx` | 主题模式 / 系统跟随 / `.dark` class 切换;mode 唯一存储为设置值 `general.theme` |
 | `src/styles/design-tokens.css` | 基础 MD3 token(亮+暗双套;源自已废弃的 Nous shell-ui,现由本仓库维护) |
 | `src/styles/theme.css` | Continuo 暗色覆盖 + `@theme inline` 把 `--color-*` 私有 token 映射到 `--md-*` |
 | `src/design/*` | design 基础组件(本仓库维护) |
@@ -11,8 +11,10 @@
 
 ### ThemeProvider
 
-- 默认 mode = `'dark'`(Continuo 暗色优先,无 localStorage 时)
-- `setMode('dark' | 'light' | 'system')` 把值写入 `localStorage` 键 `layoutmotion.theme.mode`
+- 默认 mode = `'dark'`(Continuo 暗色优先,无存储值时);设置值非法也兜底 `'dark'`
+- mode 的唯一存储是设置值 `general.theme`(values-store):设置页切换 / 别窗同步即时生效;`setMode` 写同一设置值
+- 旧版独立键 `layoutmotion.theme.mode`:启动时一次性迁移(设置值尚无且旧值合法才写入),之后删除
+- localStorage 受限(getItem / setItem 抛)不崩:读兜底 dark,写失败仍更新内存态与 class
 - `mode === 'system'` 时跟随 `prefers-color-scheme` 媒体查询
 - mount 后 `<html>` 加 `dark` class(若 resolved=dark)/移除(若 resolved=light)
 - `useTheme()` 暴露 `{ mode, resolved, setMode }`

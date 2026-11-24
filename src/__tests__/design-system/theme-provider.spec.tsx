@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, act, cleanup } from '@testing-library/react';
 import { ThemeProvider, useTheme } from '../../theme';
+import { useSettingsValuesStore } from '../../plugins/settings/values-store';
 
-const STORAGE_KEY = 'layoutmotion.theme.mode';
+// 主题 mode 的单一存储:设置值 general.theme(values-store,localStorage 键 continuo.settings.values)。
+// 旧版独立键 layoutmotion.theme.mode 只在启动时迁移一次后删除。
+const LEGACY_KEY = 'layoutmotion.theme.mode';
+const THEME_ID = 'general.theme';
 
 function Probe({ onMount }: { onMount: (ctx: ReturnType<typeof useTheme>) => void }) {
   const ctx = useTheme();
@@ -10,114 +14,99 @@ function Probe({ onMount }: { onMount: (ctx: ReturnType<typeof useTheme>) => voi
   return null;
 }
 
+function mount() {
+  let captured: ReturnType<typeof useTheme> | null = null;
+  render(
+    <ThemeProvider>
+      <Probe onMount={(c) => (captured = c)} />
+    </ThemeProvider>,
+  );
+  return () => captured!;
+}
+
 describe('ThemeProvider', () => {
   beforeEach(() => {
     localStorage.clear();
+    useSettingsValuesStore.setState({ values: {} });
     document.documentElement.classList.remove('dark');
   });
   afterEach(() => cleanup());
 
-  it('无 storage 默认 mode=dark, resolved=dark, html.dark 加上', () => {
-    let captured: ReturnType<typeof useTheme> | null = null;
-    render(
-      <ThemeProvider>
-        <Probe onMount={(c) => (captured = c)} />
-      </ThemeProvider>,
-    );
-    expect(captured!.mode).toBe('dark');
-    expect(captured!.resolved).toBe('dark');
+  it('无存储默认 mode=dark, resolved=dark, html.dark 加上', () => {
+    const ctx = mount();
+    expect(ctx().mode).toBe('dark');
+    expect(ctx().resolved).toBe('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
-  it('storage=light → mount 即 light, html.dark 不加', () => {
-    localStorage.setItem(STORAGE_KEY, 'light');
-    let captured: ReturnType<typeof useTheme> | null = null;
-    render(
-      <ThemeProvider>
-        <Probe onMount={(c) => (captured = c)} />
-      </ThemeProvider>,
-    );
-    expect(captured!.mode).toBe('light');
-    expect(captured!.resolved).toBe('light');
+  it('设置值 general.theme=light → mount 即 light, html.dark 不加', () => {
+    useSettingsValuesStore.setState({ values: { [THEME_ID]: 'light' } });
+    const ctx = mount();
+    expect(ctx().mode).toBe('light');
     expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 
-  it('setMode 写入 localStorage 并立刻切换 class', () => {
-    let captured: ReturnType<typeof useTheme> | null = null;
-    render(
-      <ThemeProvider>
-        <Probe onMount={(c) => (captured = c)} />
-      </ThemeProvider>,
-    );
-    act(() => captured!.setMode('light'));
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('light');
+  it('设置值变化(设置页切换 / 别窗同步)→ 立即切换 class', () => {
+    const ctx = mount();
+    act(() => useSettingsValuesStore.getState().setValue(THEME_ID, 'light'));
+    expect(ctx().mode).toBe('light');
     expect(document.documentElement.classList.contains('dark')).toBe(false);
+  });
 
-    act(() => captured!.setMode('dark'));
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('dark');
+  it('setMode 写入设置值 general.theme(单一存储,不再写旧键)并立刻切换 class', () => {
+    const ctx = mount();
+    act(() => ctx().setMode('light'));
+    expect(useSettingsValuesStore.getState().values[THEME_ID]).toBe('light');
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+    act(() => ctx().setMode('dark'));
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
-  it('setMode 写入当前 mode 时不重复写 localStorage', () => {
-    let captured: ReturnType<typeof useTheme> | null = null;
-    render(
-      <ThemeProvider>
-        <Probe onMount={(c) => (captured = c)} />
-      </ThemeProvider>,
-    );
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-    act(() => captured!.setMode('dark'));
-    expect(setItemSpy).not.toHaveBeenCalled();
-    setItemSpy.mockRestore();
+  it('设置值非法 → 兜底 dark', () => {
+    useSettingsValuesStore.setState({ values: { [THEME_ID]: 'invalid' } });
+    expect(mount()().mode).toBe('dark');
   });
 
-  it('storage 非法值 → 兜底 dark 并清掉脏 key', () => {
-    localStorage.setItem(STORAGE_KEY, 'invalid');
-    let captured: ReturnType<typeof useTheme> | null = null;
-    render(
-      <ThemeProvider>
-        <Probe onMount={(c) => (captured = c)} />
-      </ThemeProvider>,
-    );
-    expect(captured!.mode).toBe('dark');
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  it('迁移:旧键 light 且无设置值 → mode=light,写入设置值,删旧键', () => {
+    localStorage.setItem(LEGACY_KEY, 'light');
+    const ctx = mount();
+    expect(ctx().mode).toBe('light');
+    expect(useSettingsValuesStore.getState().values[THEME_ID]).toBe('light');
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
   });
 
-  // 边界(E88,local-storage-record 同款兜底):localStorage 被禁用/损坏/受限时 getItem/setItem
-  // 会抛(SecurityError/QuotaExceeded),ThemeProvider 须 try/catch 兜底,绝不让渲染/切换崩。
+  it('迁移:已有设置值 → 设置值优先,旧键仍删除;旧键非法 → 只删除', () => {
+    useSettingsValuesStore.setState({ values: { [THEME_ID]: 'system' } });
+    localStorage.setItem(LEGACY_KEY, 'light');
+    expect(mount()().mode).toBe('system');
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    cleanup();
+    useSettingsValuesStore.setState({ values: {} });
+    localStorage.setItem(LEGACY_KEY, 'bogus');
+    expect(mount()().mode).toBe('dark');
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+  });
+
+  // 边界(E88):localStorage 被禁用 / 受限时 getItem / setItem 会抛,渲染与切换都不得崩。
   it('E88 getItem 抛(storage 受限)→ mount 不崩,兜底 dark', () => {
-    const spy = vi
-      .spyOn(Storage.prototype, 'getItem')
-      .mockImplementation(() => {
-        throw new Error('SecurityError');
-      });
-    let captured: ReturnType<typeof useTheme> | null = null;
-    expect(() =>
-      render(
-        <ThemeProvider>
-          <Probe onMount={(c) => (captured = c)} />
-        </ThemeProvider>,
-      ),
-    ).not.toThrow();
-    expect(captured!.mode).toBe('dark');
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    let ctx: (() => ReturnType<typeof useTheme>) | null = null;
+    expect(() => (ctx = mount())).not.toThrow();
+    expect(ctx!().mode).toBe('dark');
     spy.mockRestore();
   });
 
   it('E88 setItem 抛(quota/security)→ setMode 不崩,内存态 + DOM class 仍更新', () => {
-    const spy = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        throw new Error('QuotaExceededError');
-      });
-    let captured: ReturnType<typeof useTheme> | null = null;
-    render(
-      <ThemeProvider>
-        <Probe onMount={(c) => (captured = c)} />
-      </ThemeProvider>,
-    );
-    expect(() => act(() => captured!.setMode('light'))).not.toThrow();
-    expect(captured!.resolved).toBe('light'); // 内存态更新
-    expect(document.documentElement.classList.contains('dark')).toBe(false); // DOM 更新
+    const ctx = mount();
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    expect(() => act(() => ctx().setMode('light'))).not.toThrow();
+    expect(ctx().resolved).toBe('light');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
     spy.mockRestore();
   });
 
