@@ -515,15 +515,15 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
 }
 
 /**
- * 主窗加载的 dev server URL(仅 dev 且 ELECTRON_RENDERER_URL 可解析;否则 null → loadFile)。主窗加载方式、
- * 自有入口判定(isOwnRendererUrl)与受信 dev origin 三处共用 —— 三者分叉即重现「popout 全拒」或误信 dev origin。
- */
-/**
  * 窗口首帧(renderer 尚未绘制)的底色 = 默认暗色主题的画布色(design-tokens.css `.dark` 的 --md-surface),
  * 与随后渲染的界面同色、无闪色。主窗与 popout 子窗共用。
  */
 const WINDOW_BACKGROUND_COLOR = '#11131b';
 
+/**
+ * 主窗加载的 dev server URL(仅 dev 且 ELECTRON_RENDERER_URL 可解析;否则 null → loadFile)。主窗加载方式、
+ * 自有入口判定(isOwnRendererUrl)与受信 dev origin 三处共用 —— 三者分叉即重现「popout 全拒」或误信 dev origin。
+ */
 function devRendererUrl(): URL | null {
   return isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null;
 }

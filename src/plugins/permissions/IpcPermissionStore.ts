@@ -94,7 +94,9 @@ export function parsePermissionState(raw: unknown): PermissionState {
     const record: unknown = (raw as Record<string, unknown>)[pluginId];
     let decisions: PermissionDecision[] | null = null;
     if (Array.isArray(record)) decisions = parseDecisionList(record);
-    else if (isRecord(record)) decisions = parseDecisionList(record.decisions);
+    else if (isRecord(record) && Array.isArray(record.decisions)) {
+      decisions = parseDecisionList(record.decisions);
+    }
     if (decisions === null) continue;
     out[pluginId] = { decisions };
     keyCount += 1;

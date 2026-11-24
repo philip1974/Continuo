@@ -187,6 +187,8 @@ describe('installNavigationGuard', () => {
     expect(isAllowedPageReload(cur, cur, false, isOwn)).toBe(false);
     expect(isAllowedPageReload('', '', true, () => true)).toBe(false);
     expect(isAllowedPageReload('https://x/', 'https://x/', true, isOwn)).toBe(false);
+    // popout 子窗禁止刷新(刷新清空 dockview portal 目标而 main 端状态仍在 → 黑屏;Cmd+R / 菜单已对它屏蔽)。
+    expect(isAllowedPageReload(`${APP}?popout=1`, `${APP}?popout=1`, true, isOwn)).toBe(false);
   });
 
   it('已有文档的窗口再导航到 popout URL 照拦', () => {

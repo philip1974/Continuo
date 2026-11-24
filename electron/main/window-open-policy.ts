@@ -8,7 +8,7 @@
 // 此前只按「是否打包」分支:未打包且没有 dev server 时要求同源 dev URL,而它不存在 → 所有 popout 被拒。
 
 import { MAX_WINDOW_URL_LEN } from '../shared/url-limits';
-import { isPopoutOnlyUrl } from './popout-url';
+import { isPopoutOnlyUrl, isPopoutUrl } from './popout-url';
 
 export function isOwnRendererWindowUrl(
   url: string,
@@ -40,7 +40,7 @@ interface NavigationGuardContents {
 /**
  * 唯一放行的「页面自行刷新」:dev(有 dev server,allowSameUrlReload)下主框架刷新到**当前同一 URL**(Vite HMR
  * 整页刷新 / location.reload())。打包版不放行(页面无权自行刷新:漏网的空链接会丢未保存内容);带别的参数 /
- * 别的入口照拦(防页面以任意启动参数重开窗口)。导航守卫与 wc-gone-hook 共用本判定:放行 ⇔ 视为 reload 回收资源。
+ * 别的入口 / popout 子窗照拦(防页面以任意启动参数重开窗口;popout 刷新会黑屏)。导航守卫与 wc-gone-hook 共用本判定:放行 ⇔ 视为 reload 回收资源。
  */
 export function isAllowedPageReload(
   url: string,
@@ -48,7 +48,14 @@ export function isAllowedPageReload(
   allowSameUrlReload: boolean,
   isOwnRendererUrl: (url: string) => boolean,
 ): boolean {
-  return allowSameUrlReload && currentUrl !== '' && url === currentUrl && isOwnRendererUrl(url);
+  // popout 子窗除外:刷新清空 dockview portal 目标而 main 端状态仍在 → 黑屏(其 Cmd+R / 菜单 Reload 也已屏蔽)。
+  return (
+    allowSameUrlReload &&
+    currentUrl !== '' &&
+    url === currentUrl &&
+    !isPopoutUrl(currentUrl) &&
+    isOwnRendererUrl(url)
+  );
 }
 
 // 页面发起的跨文档导航(任何 frame:<a href> 点击、location 赋值、location.reload()、iframe 加载)一律拦下,

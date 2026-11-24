@@ -72,7 +72,7 @@ export interface SearchApi {
 
 // GitHub Dark 调色板(原 Mind 暗色)。background = 画布色(design-tokens.css `.dark` 的 --md-surface),终端与
 // 周围面板同底色;字面值(xterm 只收 #RRGGBB,主题切换时子组件 effect 早于 <html> class 切换,运行时读 token 会
-// 读到旧主题)由 terminal-theme-canvas 规范守护与 token 一致。
+// 读到旧主题)由 design-system/tokens.spec(「终端与窗口底色跟随画布色」)守护与 token 一致。
 const DARK_THEME: ITheme = {
   background: '#11131b',
   foreground: '#e6edf3',
