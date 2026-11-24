@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushMacrotasks } from '../_helpers/async';
 
 const h = vi.hoisted(() => ({
   hostHandlers: new Map<string, (event: unknown, raw: unknown) => Promise<unknown>>(),
@@ -87,9 +88,6 @@ const invoke = (channel: string, ...args: unknown[]): Promise<unknown> =>
 const hostRead = (p: string): Promise<unknown> =>
   h.hostHandlers.get(FS_CHANNELS.READ_FILE)!({ sender: { id: 9 }, senderFrame: { url: 'file:///app/index.html' } }, { path: p });
 /** release 经 Promise 链异步发出:等它们落到主进程。 */
-const flush = async (): Promise<void> => {
-  for (let i = 0; i < 10; i++) await new Promise<void>((r) => setImmediate(r));
-};
 const editorDeps = () => ({ fs: coApi.fs });
 
 /** 审计序列:rename(w/a → w/a_) + rename(w/MH → w/a)。MH 是 scope 内指向 scope 外目录的链接(可经 cp 获得)。 */
@@ -101,7 +99,7 @@ async function swapIn(): Promise<void> {
 beforeEach(async () => {
   useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'edit' });
   useWorkspaceStore.setState({ root: null });
-  await flush(); // 上一个用例的标签释放先落地,再清空记录
+  await flushMacrotasks(10, 'immediate'); // 上一个用例的标签释放先落地,再清空记录
   _resetPluginOpenedPathsForTest();
   root = await realpath(await mkdtemp(join(tmpdir(), 'pfs-editor-life-')));
   home = join(root, 'home');
@@ -141,7 +139,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   correlator.dispose();
   useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'edit' });
-  await flush();
+  await flushMacrotasks(10, 'immediate');
   await rm(root, { recursive: true, force: true });
 });
 
@@ -268,7 +266,7 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
     const other = join(work, 'other.md');
     await writeFile(other, 'o');
     expect(await b.editor.openFile(other)).toMatchObject({ ok: true });
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(useEditorStore.getState().tabs.map((t) => t.pluginOpenedPath)).toEqual([other]);
     expect(refs('plugin.b')).toBe(1);
     expect(refs(PLUGIN)).toBe(PER_PLUGIN);
@@ -292,11 +290,11 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
     const b = createScopedApp(coApp, 'plugin.b', perms, tb);
     expect(await plugin.editor.openFile(T)).toMatchObject({ ok: true });
     expect(await b.editor.openFile(T)).toMatchObject({ ok: true });
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(useEditorStore.getState().tabs).toHaveLength(1);
     expect([refs(PLUGIN), refs('plugin.b')]).toEqual([1, 0]);
     useEditorStore.getState().closeTab(T);
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect([refs(PLUGIN), refs()]).toEqual([0, 0]);
   });
 
@@ -304,11 +302,11 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
     await plugin.editor.openFile(T);
     await plugin.editor.openFile(T);
     await plugin.editor.openFile(T);
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(useEditorStore.getState().tabs).toHaveLength(1);
     expect(refs()).toBe(1);
     useEditorStore.getState().closeTab(T);
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(refs()).toBe(0);
   });
 
@@ -317,7 +315,7 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
       expect(await plugin.editor.openFile(T)).toMatchObject({ ok: true });
       useEditorStore.getState().closeTab(T);
     }
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(refs()).toBe(0);
   }, 120_000);
 
@@ -333,7 +331,7 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
       return r;
     };
     expect(await ctl.app.editor.openFile(T)).toMatchObject({ ok: false, code: 'PERMISSION_DENIED' });
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(useEditorStore.getState().tabs).toEqual([]);
     expect(refs()).toBe(0);
   });
@@ -343,13 +341,13 @@ describe('F2:记录满额拒绝新打开(不淘汰旧记录),记录随标签关�
     await writeFile(other, 'o');
     await plugin.editor.openFile(T);
     await plugin.editor.openFile(other);
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(refs()).toBe(2);
     useEditorStore.getState().removePaths([T]);
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(refs()).toBe(1);
     useEditorStore.setState({ tabs: [], activeTabId: null });
-    await flush();
+    await flushMacrotasks(10, 'immediate');
     expect(refs()).toBe(0);
   });
 

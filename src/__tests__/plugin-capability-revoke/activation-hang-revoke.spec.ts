@@ -20,9 +20,9 @@ import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { flushMacrotasks } from '../_helpers/async';
 
 const ID = 'com.x.hang';
-const flush = () => new Promise((r) => setTimeout(r, 0));
 
 /** onload 里留一个延迟回调(模拟定时器),然后永远挂起。 */
 let later: (() => Promise<unknown>) | null = null;
@@ -87,7 +87,7 @@ describe('onload 挂起期间收到禁用 / 卸载 → 立即吊销,不等 onloa
   it('别窗禁用广播(init 未完成):立即吊销 —— 之后 shell.exec 被拒、不发 IPC;终止 IPC 立即被调用', async () => {
     const { mgr, kill } = makeManager(true);
     const { emitEnabled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(1);
     expect(later).not.toBeNull(); // onload 已开始并挂起
     expect(kill).not.toHaveBeenCalled();
 
@@ -98,20 +98,20 @@ describe('onload 挂起期间收到禁用 / 卸载 → 立即吊销,不等 onloa
     expect(h.shellExec).not.toHaveBeenCalled();
 
     // 挂起的激活被中止 → 锁释放、init 完成,缓冲的禁用随后落地
-    await flush();
-    await flush();
+    await flushMacrotasks(1);
+    await flushMacrotasks(1);
     expect(mgr.listAll()[0]!.status).toBe('disabled');
   });
 
   it('别窗卸载广播(init 未完成):立即吊销 + 终止进程,随后 entry 被移除', async () => {
     const { mgr, kill } = makeManager(true);
     const { emitUninstalled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(1);
     emitUninstalled(ID);
     expect(kill).toHaveBeenCalledWith(ID);
     await expect(later!()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
-    await flush();
-    await flush();
+    await flushMacrotasks(1);
+    await flushMacrotasks(1);
     expect(mgr.listAll()).toEqual([]);
   });
 
@@ -119,7 +119,7 @@ describe('onload 挂起期间收到禁用 / 卸载 → 立即吊销,不等 onloa
     const { mgr, kill, mutate } = makeManager(false);
     await mgr.init();
     const enabling = mgr.enable(ID);
-    await flush();
+    await flushMacrotasks(1);
     expect(later).not.toBeNull();
 
     const disabling = mgr.disable(ID);
@@ -135,7 +135,7 @@ describe('onload 挂起期间收到禁用 / 卸载 → 立即吊销,不等 onloa
   it('init 时激活挂起,本窗口点禁用:禁用落盘 enabled=false', async () => {
     const { mgr, mutate } = makeManager(true);
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(1);
     await mgr.disable(ID);
     await init;
     expect(mgr.listAll()[0]!.status).toBe('disabled');

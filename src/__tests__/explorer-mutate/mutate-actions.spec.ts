@@ -7,6 +7,7 @@ import {
 } from '../../panels/Explorer/mutate-actions';
 import type { FsApi } from '../../lib/fs/api';
 import type { IpcResult } from '../../lib/fs/types';
+import { flushMacrotasks } from '../_helpers/async';
 
 const ok = <T,>(data: T): IpcResult<T> => ({ ok: true, data });
 const fail = (code: string, message = code): IpcResult<never> => ({
@@ -191,9 +192,8 @@ describe('removeItems', () => {
     const tree = makeTree();
     const paths = Array.from({ length: 10 }, (_, i) => `/d${i}/f`);
     const done = removeItems(paths, { fs }, tree);
-    const tick = () => new Promise<void>((r) => setTimeout(r, 0));
     for (let n = 0; n < 200 && (pending.size > 0 || trash.mock.calls.length < 10); n++) {
-      await tick();
+      await flushMacrotasks(1);
       // 倒序放行在途项(后发先完成);d3、d6 失败
       const last = [...pending.keys()].pop();
       if (last) pending.get(last)!(/d[36]\//.test(last) ? fail('FS_DENIED') : ok(undefined as void));

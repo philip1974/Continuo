@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushMacrotasks } from '../_helpers/async';
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '') } }));
 
@@ -50,9 +51,6 @@ async function blocking<T>(run: () => Promise<T>): Promise<T> {
 const isBlocked = (p: unknown): boolean => typeof p === 'string' && p.includes('blocked-');
 
 /** 让排队 / 在途的 Promise 链走完若干轮(不依赖定时器)。 */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 50; i++) await new Promise<void>((r) => setImmediate(r));
-}
 
 /** 等到条件成立(真实文件系统调用在负载下可能较慢)。 */
 async function until(cond: () => boolean): Promise<void> {
@@ -66,7 +64,7 @@ async function drainOneByOne(calls: Promise<unknown>[]): Promise<void> {
   for (const c of calls) void c.then(() => (done += 1), () => (done += 1));
   while (done < calls.length) {
     release(1);
-    await settle();
+    await flushMacrotasks(50, 'immediate');
     expect(gate.active).toBeLessThanOrEqual(MAX_ACTIVE);
   }
 }
@@ -107,7 +105,7 @@ beforeEach(async () => {
 afterEach(async () => {
   gate.open = true;
   release();
-  await settle();
+  await flushMacrotasks(50, 'immediate');
   vi.restoreAllMocks();
   correlator.dispose();
   await rm(root, { recursive: true, force: true });
@@ -142,7 +140,7 @@ describe('plugin-fs 大块读取的全局并发闸', () => {
     const calls = Array.from({ length: PER_PLUGIN }, (_, i) =>
       invoke(C.READ_FILE, join(proj, `blocked-${i % 40}.txt`)),
     );
-    await settle();
+    await flushMacrotasks(50, 'immediate');
     await expect(invoke(C.READ_FILE, join(proj, 'free.txt'))).rejects.toMatchObject({ code: 'FS_BUSY' });
     await expect(invoke(C.LIST_DIR, proj)).rejects.toMatchObject({ code: 'FS_BUSY' });
     await expect(invoke(C.READ_GIT_BLOB, proj, 'a'.repeat(40))).rejects.toMatchObject({ code: 'FS_BUSY' });
@@ -169,7 +167,7 @@ describe('plugin-fs 大块读取的全局并发闸', () => {
         calls.push(ipc.invokeWithEvent(ev, C.READ_FILE, tok, join(proj, `blocked-${i % 40}.txt`)));
       }
     }
-    await settle();
+    await flushMacrotasks(50, 'immediate');
     // 名额未满的插件(本用例的 PLUGIN、最后一个 flood 插件)也被全局上限拒绝
     await expect(invoke(C.READ_FILE, join(proj, 'free.txt'))).rejects.toMatchObject({ code: 'FS_BUSY' });
     await expect(
@@ -190,11 +188,11 @@ describe('plugin-fs 大块读取的全局并发闸', () => {
     const write = invoke(C.WRITE_FILE, join(proj, 'free.txt'), 'written').then(() => {
       wrote = true;
     });
-    await settle();
+    await flushMacrotasks(50, 'immediate');
     expect(wrote).toBe(false); // 4 个在途读取持共享锁
     // 只放行在途的 4 个:写者随即拿到独占锁,不必等其余 16 个排队者
     release(MAX_ACTIVE);
-    await settle();
+    await flushMacrotasks(50, 'immediate');
     await write;
     expect(wrote).toBe(true);
     expect(await readFile(join(proj, 'free.txt'), 'utf8')).toBe('written');

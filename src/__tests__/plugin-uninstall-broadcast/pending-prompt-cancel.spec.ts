@@ -29,6 +29,7 @@ import { IpcPermissionStore } from '../../plugins/permissions/IpcPermissionStore
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { flushMicrotasks } from '../_helpers/async';
 
 const ID = 'com.x.p';
 const OTHER = 'com.x.other';
@@ -67,9 +68,6 @@ function makeWindow(enabled: string[]): {
 }
 
 /** 让在途的 Promise 链推进(授权读取 / 弹窗 / 激活各有若干 await)。 */
-async function flush(): Promise<void> {
-  for (let i = 0; i < 20; i++) await Promise.resolve();
-}
 
 beforeEach(() => {
   h.disk = {};
@@ -86,7 +84,7 @@ describe('授权弹窗挂起期间收到卸载广播', () => {
     const b = makeWindow([]);
     await b.mgr.init();
     const enabling = b.mgr.enable(ID);
-    await flush();
+    await flushMicrotasks(20);
     expect(usePermissionPromptStore.getState().pending).toMatchObject({ pluginId: ID });
 
     // 广播到达:生命周期锁被挂起的激活占着,但标记与取消立即生效
@@ -110,9 +108,9 @@ describe('授权弹窗挂起期间收到卸载广播', () => {
     const b = makeWindow([]);
     await b.mgr.init();
     const enabling = b.mgr.enable(ID);
-    await flush();
+    await flushMicrotasks(20);
     usePermissionPromptStore.getState().grant(['shell']);
-    await flush();
+    await flushMicrotasks(20);
     expect(h.mutate).toHaveBeenCalledTimes(1);
 
     const tearing = b.mgr.handleUninstalled(ID);
@@ -162,13 +160,13 @@ describe('init 激活挂在授权弹窗上时收到卸载广播(reload-gate 尚�
       uninstalled,
       markUninstalled: (id) => b.mgr.markUninstalled(id),
     });
-    await flush();
+    await flushMicrotasks(20);
     expect(usePermissionPromptStore.getState().pending).toMatchObject({ pluginId: ID });
 
     onUninstalled(ID);
     expect(usePermissionPromptStore.getState().pending).toBeNull();
-    await flush();
-    await flush();
+    await flushMicrotasks(20);
+    await flushMicrotasks(20);
 
     expect(b.importModule).not.toHaveBeenCalled();
     expect(constructed).not.toHaveBeenCalled();

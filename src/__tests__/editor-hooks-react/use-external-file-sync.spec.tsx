@@ -12,6 +12,7 @@ import {
   _resetSavedDiskStatsForTest,
   recordSavedDiskStat,
 } from '../../panels/Editor/saved-disk-stat';
+import { flushMicrotasks } from '../_helpers/async';
 
 interface FsApi {
   onDirChanged: (cb: (dir: string, files?: readonly string[]) => void) => () => void;
@@ -366,15 +367,14 @@ describe('useExternalFileSync', () => {
       const { emit, readFile } = setup([link('/proj/link.md', '/other/t.md')]);
       // 真实 main:经链接读盘每次都带回 realPath(tab.realPath 随之保持)
       readFile.mockImplementation(async (p: string) => ({ ok: true, data: `new ${p}`, realPath: '/other/t.md' }));
-      const flush = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
       emit('/other', ['t.md']);
-      await flush();
+      await flushMicrotasks(4);
       emit('/other', undefined);
-      await flush();
+      await flushMicrotasks(4);
       expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/link.md', '/proj/link.md']);
       expect(useEditorStore.getState().tabs[0]?.realPath).toBe('/other/t.md');
       emit('/other', ['unrelated.md']);
-      await flush();
+      await flushMicrotasks(4);
       expect(readFile).toHaveBeenCalledTimes(2);
     });
 
@@ -532,17 +532,13 @@ describe('useExternalFileSync · 保存回声识别', () => {
     return { fire: () => dirCb!('/proj', ['.a.md.continuo.tmp', 'a.md']), readFile };
   }
 
-  const flush = async (): Promise<void> => {
-    for (let i = 0; i < 6; i++) await Promise.resolve();
-  };
-
   beforeEach(() => _resetSavedDiskStatsForTest());
 
   it('stat 与保存记录一致 → 不 readFile', async () => {
     const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED } }));
     const { fire, readFile } = setupEcho(stat);
     fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(stat).toHaveBeenCalledWith('/proj/a.md');
     expect(readFile).not.toHaveBeenCalled();
     expect(useEditorStore.getState().tabs[0]?.content).toBe('saved');
@@ -552,7 +548,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
     const stat = vi.fn(async () => ({ ok: true, data: { mtimeMs: 2000, size: 8 } }));
     const { fire, readFile } = setupEcho(stat, 'external');
     fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(readFile).toHaveBeenCalledWith('/proj/a.md');
     expect(useEditorStore.getState().tabs[0]?.content).toBe('external');
   });
@@ -561,7 +557,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
     const stat = vi.fn(async () => ({ ok: true, data: { mtimeMs: 1000.6, size: 5 } }));
     const { fire, readFile } = setupEcho(stat, 'other');
     fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(readFile).toHaveBeenCalledTimes(1);
     expect(useEditorStore.getState().tabs[0]?.content).toBe('other');
   });
@@ -570,7 +566,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
     const stat = vi.fn(async () => ({ ok: true, data: { ...SAVED, ino: 78 } }));
     const { fire, readFile } = setupEcho(stat, 'replaced');
     fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(readFile).toHaveBeenCalledTimes(1);
     expect(useEditorStore.getState().tabs[0]?.content).toBe('replaced');
   });
@@ -579,7 +575,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
     const statFail = vi.fn(async () => ({ ok: false, code: 'FS_IO', message: 'x' }));
     const a = setupEcho(statFail, 'disk');
     a.fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(a.readFile).toHaveBeenCalledTimes(1);
     cleanup();
 
@@ -588,7 +584,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
     });
     const b = setupEcho(statReject, 'disk2');
     b.fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(b.readFile).toHaveBeenCalledTimes(1);
     expect(useEditorStore.getState().tabs[0]?.content).toBe('disk2');
   });
@@ -601,7 +597,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
       activeTabId: '/proj/a.md',
     });
     fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(stat).not.toHaveBeenCalled();
     expect(readFile).toHaveBeenCalledTimes(1);
   });
@@ -611,7 +607,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
     const { fire, readFile } = setupEcho(stat, 'newer');
     useEditorStore.getState().reloadFromDisk('/proj/a.md', 'reloaded');
     fire();
-    await flush();
+    await flushMicrotasks(6);
     expect(stat).not.toHaveBeenCalled();
     expect(readFile).toHaveBeenCalledTimes(1);
   });

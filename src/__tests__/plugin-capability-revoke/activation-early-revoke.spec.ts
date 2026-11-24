@@ -25,10 +25,10 @@ import { IpcPermissionStore } from '../../plugins/permissions/IpcPermissionStore
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { flushMacrotasks } from '../_helpers/async';
 
 const A = 'com.x.a';
 const B = 'com.x.b';
-const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const constructed = vi.fn();
 class P extends Plugin {
@@ -89,15 +89,15 @@ describe('init 期间尚无 entry 的插件收到禁用广播', () => {
   it('B 不被 import / 构造,init 后为 disabled', async () => {
     const { mgr, importModule } = makeWindow();
     const { emitEnabled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(1);
     expect(usePermissionPromptStore.getState().pending).toMatchObject({ pluginId: A });
     expect(mgr.listAll().map((p) => p.id)).toEqual([A, B]); // 两阶段 init:B 已登记、尚未激活
     expect(importModule).not.toHaveBeenCalledWith(`mod://${B}`);
 
     emitEnabled(B, false);
     usePermissionPromptStore.getState().grant(['shell']);
-    await flush();
-    await flush();
+    await flushMacrotasks(1);
+    await flushMacrotasks(1);
 
     expect(importModule).not.toHaveBeenCalledWith(`mod://${B}`);
     expect(constructed).not.toHaveBeenCalledWith(B);
@@ -108,12 +108,12 @@ describe('init 期间尚无 entry 的插件收到禁用广播', () => {
   it('禁用后又收到 enabled=true 广播 → 标记清除,B 照常激活', async () => {
     const { mgr, importModule } = makeWindow();
     const { emitEnabled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(1);
     emitEnabled(B, false);
     emitEnabled(B, true);
     usePermissionPromptStore.getState().grant(['shell']);
-    await flush();
-    await flush();
+    await flushMacrotasks(1);
+    await flushMacrotasks(1);
 
     expect(importModule).toHaveBeenCalledWith(`mod://${B}`);
     expect(mgr.listAll().find((p) => p.id === B)?.status).toBe('enabled');
@@ -142,7 +142,7 @@ describe('模块顶层 await 永不结束(import 挂起)时禁用 / 卸载', () 
   it('本地禁用:不再等 import,禁用完成并落盘 enabled=false;import 迟到完成也不构造实例', async () => {
     const { mgr, mutate, finishImport } = makeHanging(true);
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(1);
 
     await mgr.disable(A);
     await init;
@@ -150,7 +150,7 @@ describe('模块顶层 await 永不结束(import 挂起)时禁用 / 卸载', () 
     expect(mutate).toHaveBeenCalledWith(A, false);
 
     finishImport();
-    await flush();
+    await flushMacrotasks(1);
     expect(constructed).not.toHaveBeenCalled();
     expect(mgr.listAll()[0]!.status).toBe('disabled');
   });
@@ -158,10 +158,10 @@ describe('模块顶层 await 永不结束(import 挂起)时禁用 / 卸载', () 
   it('init 激活挂在 import 上时别窗禁用:init 完成、锁释放,之后可再启用', async () => {
     const { mgr } = makeHanging(true);
     const { emitEnabled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(1);
     emitEnabled(A, false);
-    await flush();
-    await flush();
+    await flushMacrotasks(1);
+    await flushMacrotasks(1);
     expect(mgr.listAll()[0]!.status).toBe('disabled');
     // 锁已释放:后续生命周期操作不被挂起的 import 卡住
     await expect(mgr.disable(A)).resolves.toBeUndefined();
@@ -170,7 +170,7 @@ describe('模块顶层 await 永不结束(import 挂起)时禁用 / 卸载', () 
   it('本地卸载:不再等 import,卸载完成', async () => {
     const { mgr } = makeHanging(true);
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(1);
     await mgr.uninstall(A);
     await init;
     expect(mgr.listAll()).toEqual([]);

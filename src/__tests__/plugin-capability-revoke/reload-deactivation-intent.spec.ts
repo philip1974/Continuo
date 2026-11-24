@@ -24,11 +24,9 @@ import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { wirePluginReloadGate } from '../../plugins/plugin-reload-gate';
 import { createTestCoApp } from '../../plugins/test-utils';
+import { flushMacrotasks } from '../_helpers/async';
 
 const ID = 'com.x.intent';
-const flush = async (): Promise<void> => {
-  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
-};
 
 /** 每个构造出的实例留一个「延迟回调」(模拟定时器调用 shell)。 */
 const execs: Array<() => Promise<unknown>> = [];
@@ -125,7 +123,7 @@ describe('A. 热重载拆旧实例(onunload 挂起)期间禁用 / 卸载 → 重
     hangUnload = true;
     hangOnload = true; // 若重载错误地激活新实例,其 onload 挂起 → 排在后面的禁用 / 卸载永远执行不到
     const reloading = m.mgr.reload(ID);
-    await flush();
+    await flushMacrotasks(5);
     expect(releaseUnload).not.toBeNull(); // 旧实例 onunload 已开始并挂起
     return { ...m, reloading };
   }
@@ -134,7 +132,7 @@ describe('A. 热重载拆旧实例(onunload 挂起)期间禁用 / 卸载 → 重
     const { mgr, mutate, reloading } = await startReloadWithHangingUnload();
     const disabling = mgr.disable(ID);
     releaseUnload!();
-    await flush();
+    await flushMacrotasks(5);
 
     expect(execs).toHaveLength(1); // 未构造新实例
     await expect(execs[0]!()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
@@ -151,7 +149,7 @@ describe('A. 热重载拆旧实例(onunload 挂起)期间禁用 / 卸载 → 重
     mgr.revokeImmediately(ID);
     const handling = mgr.handleEnabledChanged(ID, false);
     releaseUnload!();
-    await flush();
+    await flushMacrotasks(5);
 
     expect(execs).toHaveLength(1);
     await expect(execs[0]!()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
@@ -164,7 +162,7 @@ describe('A. 热重载拆旧实例(onunload 挂起)期间禁用 / 卸载 → 重
     const { mgr, removeDir, reloading } = await startReloadWithHangingUnload();
     const uninstalling = mgr.uninstall(ID);
     releaseUnload!();
-    await flush();
+    await flushMacrotasks(5);
 
     expect(execs).toHaveLength(1);
     await expect(execs[0]!()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
@@ -211,12 +209,12 @@ describe('B. init 期间(onload 挂起)文件变化排队 reload,随后禁用 / 
     hangOnload = true;
     const { mgr } = makeManager(true);
     const { emitChanged, emitEnabled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(5);
     expect(execs).toHaveLength(1); // init 的激活挂在 onload
 
     emitChanged(ID); // init 未完成 → 进 gate 待处理队列
     emitEnabled(ID, false);
-    await flush();
+    await flushMacrotasks(5);
 
     expect(execs).toHaveLength(1);
     await expect(execs[0]!()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
@@ -228,10 +226,10 @@ describe('B. init 期间(onload 挂起)文件变化排队 reload,随后禁用 / 
     hangOnload = true;
     const { mgr } = makeManager(true);
     const { emitChanged, emitUninstalled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(5);
     emitChanged(ID);
     emitUninstalled(ID);
-    await flush();
+    await flushMacrotasks(5);
 
     expect(execs).toHaveLength(1);
     expect(mgr.listAll()).toEqual([]);
@@ -241,15 +239,15 @@ describe('B. init 期间(onload 挂起)文件变化排队 reload,随后禁用 / 
     hangOnload = true;
     const { mgr } = makeManager(true);
     const { emitChanged, emitEnabled } = wire(mgr);
-    await flush();
+    await flushMacrotasks(5);
     emitChanged(ID);
     emitEnabled(ID, false);
-    await flush();
+    await flushMacrotasks(5);
     expect(mgr.listAll()[0]!.status).toBe('disabled');
 
     hangOnload = false;
     emitEnabled(ID, true);
-    await flush();
+    await flushMacrotasks(5);
     expect(execs).toHaveLength(2);
     expect(mgr.listAll()[0]!.status).toBe('enabled');
   });

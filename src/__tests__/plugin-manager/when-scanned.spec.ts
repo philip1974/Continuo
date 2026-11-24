@@ -16,10 +16,7 @@ vi.mock('@/lib/co-api', () => ({
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { createTestCoApp } from '../../plugins/test-utils';
-
-const flush = async (): Promise<void> => {
-  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
-};
+import { flushMacrotasks } from '../_helpers/async';
 
 const constructed: string[] = [];
 let releaseHang: (() => void) | null = null;
@@ -75,14 +72,14 @@ describe('PluginManager.whenScanned', () => {
     void mgr.whenScanned().then(() => {
       scanned = true;
     });
-    await flush();
+    await flushMacrotasks(5);
     expect(constructed).toEqual(['a']); // a 挂在 onload,b 尚未激活
     expect(initDone).toBe(false);
     expect(scanned).toBe(true);
     expect(mgr.listAll().map((x) => x.id)).toEqual(['a', 'b']);
 
     releaseHang!();
-    await flush();
+    await flushMacrotasks(5);
     expect(initDone).toBe(true);
     expect(constructed).toEqual(['a', 'b']); // 激活顺序不变
   });
@@ -109,7 +106,7 @@ describe('PluginManager.whenScanned', () => {
     const { mgr, mutate } = makeManager();
     const initP = mgr.init();
     await mgr.whenScanned();
-    await flush(); // a 挂在 onload
+    await flushMacrotasks(5); // a 挂在 onload
     const disabling = mgr.disable('b');
     releaseHang!();
     await initP;
@@ -123,7 +120,7 @@ describe('PluginManager.whenScanned', () => {
     const { mgr } = makeManager();
     const initP = mgr.init();
     await mgr.whenScanned();
-    await flush();
+    await flushMacrotasks(5);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mgr.revokeImmediately('b');
     releaseHang!();
@@ -141,7 +138,7 @@ describe('PluginManager.whenScanned', () => {
     const { mgr } = makeManager();
     const initP = mgr.init();
     await mgr.whenScanned();
-    await flush(); // a 挂在 onload,b 已登记未激活
+    await flushMacrotasks(5); // a 挂在 onload,b 已登记未激活
     await mgr.reload('b'); // 走锁、按启用意图激活 b
     expect(constructed).toEqual(['a', 'b']);
     releaseHang!();
@@ -154,7 +151,7 @@ describe('PluginManager.whenScanned', () => {
     const { mgr } = makeManager();
     const initP = mgr.init();
     await mgr.whenScanned();
-    await flush();
+    await flushMacrotasks(5);
     const uninstalling = mgr.uninstall('b');
     releaseHang!();
     await initP;

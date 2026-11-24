@@ -13,6 +13,7 @@ import {
   clearWindow,
   getActiveSeqs,
 } from '../../../electron/main/services/window-seq.service';
+import { flushMicrotasks } from '../_helpers/async';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -266,11 +267,6 @@ function ack(win: InstanceType<typeof electronMock.MockBrowserWindow>): void {
   );
 }
 
-async function tick(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-}
-
 async function waitForLastClosedAt(seq: number): Promise<void> {
   await vi.waitFor(async () => {
     const payload = await loadExplorer(path.join(dir, 'explorer.json'));
@@ -287,7 +283,7 @@ describe('renderer 未就绪时关窗', () => {
     const win = createMockMainWindow(7, { ready: false });
 
     win.close();
-    await tick();
+    await flushMicrotasks(2);
 
     expect(win.webContents.send).not.toHaveBeenCalledWith('layout:flush-request', expect.anything());
     expect(win.destroyed).toBe(true);
@@ -301,7 +297,7 @@ describe('renderer 未就绪时关窗', () => {
     handler({ sender: win.webContents, senderFrame: { url: 'https://evil.example/x' } });
 
     win.close();
-    await tick();
+    await flushMicrotasks(2);
     expect(win.webContents.send).not.toHaveBeenCalledWith('layout:flush-request', expect.anything());
     expect(win.destroyed).toBe(true);
   });
@@ -321,7 +317,7 @@ describe('window close layout flush', () => {
     expect(win.destroyed).toBe(false);
 
     ack(win);
-    await tick();
+    await flushMicrotasks(2);
 
     expect(win.destroyed).toBe(true);
     expect(win.close).toHaveBeenCalledTimes(2);
@@ -342,7 +338,7 @@ describe('window close layout flush', () => {
     expect(win.destroyed).toBe(false);
 
     ack(win); // 单个 ack 即可结算(未被第二次覆盖)
-    await tick();
+    await flushMicrotasks(2);
     expect(win.destroyed).toBe(true);
     await waitForLastClosedAt(7);
   });
@@ -354,7 +350,7 @@ describe('window close layout flush', () => {
     win.close();
     ack(win);
     ack(win);
-    await tick();
+    await flushMicrotasks(2);
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(win.destroyed).toBe(true);
@@ -369,12 +365,12 @@ describe('window close layout flush', () => {
     win.close();
     // 数据安全(复查 P1):放宽超时前不应关窗 —— 慢盘合法 flush 不被 1s 切断。
     await vi.advanceTimersByTimeAsync(1000);
-    await tick();
+    await flushMicrotasks(2);
     expect(win.hide).toHaveBeenCalledTimes(1);
     expect(win.destroyed).toBe(false); // 1s 时仍在等 ack(旧值会在此误关)
 
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
-    await tick();
+    await flushMicrotasks(2);
     expect(win.destroyed).toBe(true); // 兜底超时仍会关(防挂死)
     expect(win.close).toHaveBeenCalledTimes(2);
     await waitForLastClosedAt(5);
@@ -386,7 +382,7 @@ describe('window close layout flush', () => {
     win.destroyed = true; // renderer 已不可交互
 
     win.close();
-    await tick();
+    await flushMicrotasks(2);
 
     // 不需推进任何定时器即关闭(立即放行)
     expect(win.destroyed).toBe(true);
@@ -411,11 +407,11 @@ describe('window close layout flush', () => {
       win.id,
       ackBody(win), // requestId 正确:只因 sender 不是该窗口而被拒
     );
-    await tick();
+    await flushMicrotasks(2);
     expect(win.destroyed).toBe(false);
 
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
-    await tick();
+    await flushMicrotasks(2);
     expect(win.destroyed).toBe(true);
     await waitForLastClosedAt(5);
   });
@@ -436,11 +432,11 @@ describe('window close layout flush', () => {
       win.id,
       ackBody(win), // requestId 正确:只因 frame 不受信而被拒
     );
-    await tick();
+    await flushMicrotasks(2);
     expect(win.destroyed).toBe(false);
 
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
-    await tick();
+    await flushMicrotasks(2);
     expect(win.destroyed).toBe(true);
     await waitForLastClosedAt(5);
   });

@@ -23,8 +23,8 @@ vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
 
 import { usePermissionPromptStore } from '../../plugins/permissions/promptStore';
 import { startPluginFsScopeRequestBridge } from '../../plugins/permissions/usePluginFsScopeRequests';
+import { flushMacrotasks } from '../_helpers/async';
 
-const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 const unsubRequest = vi.fn();
 const unsubCancelled = vi.fn();
 
@@ -63,14 +63,14 @@ describe('main 撤销 scope 请求 → renderer 撤掉弹窗', () => {
     expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('r1');
 
     bridge.cancel({ requestId: 'r1' });
-    await flush();
+    await flushMacrotasks(1);
     expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('r2');
     expect(h.scopeDecision).not.toHaveBeenCalled();
     expect(h.notifyError).not.toHaveBeenCalled();
 
     // 没被撤销的请求照常回传用户的决定。
     usePermissionPromptStore.getState().grantFsScope('r2');
-    await flush();
+    await flushMacrotasks(1);
     expect(h.scopeDecision.mock.calls).toEqual([['r2', 'grant']]);
     bridge.stop();
   });
@@ -81,13 +81,13 @@ describe('main 撤销 scope 请求 → renderer 撤掉弹窗', () => {
     for (const payload of [null, {}, { requestId: 7 }, { requestId: 'nope' }, { requestId: 'x'.repeat(1000) }]) {
       bridge.cancel(payload);
     }
-    await flush();
+    await flushMacrotasks(1);
     expect(usePermissionPromptStore.getState().currentFsScope?.requestId).toBe('r1');
     // 未知 id 的撤销不留痕:之后同 id 的真实请求照常回传决定。
     bridge.request('nope');
     usePermissionPromptStore.getState().denyFsScope('nope');
     usePermissionPromptStore.getState().denyFsScope('r1');
-    await flush();
+    await flushMacrotasks(1);
     expect(h.scopeDecision.mock.calls).toEqual([
       ['nope', 'deny'],
       ['r1', 'deny'],

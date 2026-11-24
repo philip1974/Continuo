@@ -7,6 +7,7 @@ import {
 } from '../../lib/co-api';
 import { useFsWatcher } from '../../panels/Explorer/hooks/useFsWatcher';
 import { onWatchRestored } from '../../lib/fs-watch-restored';
+import { flushMicrotasks } from '../_helpers/async';
 
 interface FakeFs {
   watchDir: ReturnType<typeof vi.fn>;
@@ -349,11 +350,6 @@ describe('useFsWatcher · R14 失败不记账可重试', () => {
 // main 因 FSWatcher error 驱逐失效 watcher 后推 fs:watch-lost:renderer 移出账本、刷新该目录,
 // 退避延迟后若仍展开则重装;卷持续断开(反复失效)时延迟指数增长,不形成高频重试。
 describe('useFsWatcher · watch-lost 退避重装', () => {
-  async function flush(): Promise<void> {
-    await Promise.resolve();
-    await Promise.resolve();
-  }
-
   function setup(initial: Set<string>) {
     let lostCb: ((p: string) => void) | null = null;
     const watchDir = vi.fn().mockResolvedValue({ ok: true });
@@ -380,7 +376,7 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
 
   it('失效 → 立即刷新该目录;延迟后仍展开 → 重新 watchDir', async () => {
     const { lost, onChange, aCalls } = setup(new Set(['/a']));
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(1);
 
     lost('/a');
@@ -393,7 +389,7 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
 
   it('延迟期间已折叠 → 不重装;非已安装 path 的 lost 忽略', async () => {
     const { hook, lost, onChange, aCalls, watchDir } = setup(new Set(['/a']));
-    await flush();
+    await flushMicrotasks(2);
     lost('/zzz');
     expect(onChange).not.toHaveBeenCalled();
     lost('/a');
@@ -405,7 +401,7 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
 
   it('反复失效 → 重试延迟指数退避且有上限', async () => {
     const { lost, aCalls } = setup(new Set(['/a']));
-    await flush();
+    await flushMicrotasks(2);
     const delays: number[] = [];
     for (let i = 0; i < 8; i++) {
       lost('/a');
@@ -415,7 +411,7 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
         vi.advanceTimersByTime(500);
         waited += 500;
       }
-      await flush();
+      await flushMicrotasks(2);
       delays.push(waited);
     }
     for (let i = 1; i < delays.length; i++) expect(delays[i]!).toBeGreaterThanOrEqual(delays[i - 1]!);
@@ -425,40 +421,40 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
 
   it('重装时卷仍不可用(ok:false / reject)→ 继续按退避重试直到成功', async () => {
     const { lost, aCalls, watchDir } = setup(new Set(['/a']));
-    await flush();
+    await flushMicrotasks(2);
     watchDir
       .mockResolvedValueOnce({ ok: false })
       .mockRejectedValueOnce(new Error('ENOENT'))
       .mockResolvedValue({ ok: true });
     lost('/a');
     vi.advanceTimersByTime(2000); // 首次重装(失败 ok:false)
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(2);
     vi.advanceTimersByTime(3999);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(2); // 退避翻倍到 4s
     vi.advanceTimersByTime(1);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(3); // 第二次重装(reject)
     vi.advanceTimersByTime(8000);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(4); // 第三次重装成功
     vi.advanceTimersByTime(600_000);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(4); // 成功后不再重试
   });
 
   it('重试中折叠 → 停止重试', async () => {
     const { hook, lost, aCalls, watchDir } = setup(new Set(['/a']));
-    await flush();
+    await flushMicrotasks(2);
     watchDir.mockResolvedValue({ ok: false });
     lost('/a');
     vi.advanceTimersByTime(2000);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(2);
     hook.rerender({ paths: new Set<string>() });
     vi.advanceTimersByTime(600_000);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(2);
   });
 
@@ -467,12 +463,12 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     const off = onWatchRestored((p) => restored.push(p));
     try {
       const { lost, onChange } = setup(new Set(['/a']));
-      await flush();
+      await flushMicrotasks(2);
       lost('/a');
       expect(onChange).toHaveBeenCalledTimes(1);
       expect(restored).toEqual([]);
       vi.advanceTimersByTime(2000);
-      await flush();
+      await flushMicrotasks(2);
       expect(onChange).toHaveBeenCalledTimes(2);
       expect(restored).toEqual(['/a']);
     } finally {
@@ -485,17 +481,17 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     const off = onWatchRestored((p) => restored.push(p));
     try {
       const { hook, lost, onChange, aCalls } = setup(new Set(['/a']));
-      await flush();
+      await flushMicrotasks(2);
       lost('/a');
       expect(onChange).toHaveBeenCalledTimes(1);
       hook.rerender({ paths: new Set(['/a', '/b']) }); // diff 把 /a 列为 added → 普通 installWatch
-      await flush();
+      await flushMicrotasks(2);
       expect(aCalls()).toBe(2);
       expect(onChange).toHaveBeenCalledTimes(2);
       expect(onChange).toHaveBeenLastCalledWith('/a');
       expect(restored).toEqual(['/a']);
       vi.advanceTimersByTime(600_000); // 原定时器发现已重装 → 退出,不重复分发
-      await flush();
+      await flushMicrotasks(2);
       expect(aCalls()).toBe(2);
       expect(restored).toEqual(['/a']);
     } finally {
@@ -508,16 +504,16 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     const off = onWatchRestored((p) => restored.push(p));
     try {
       const { hook, lost, onChange } = setup(new Set(['/a']));
-      await flush();
+      await flushMicrotasks(2);
       lost('/a');
       hook.rerender({ paths: new Set<string>() });
       hook.rerender({ paths: new Set(['/a']) });
-      await flush();
+      await flushMicrotasks(2);
       expect(onChange).toHaveBeenCalledTimes(2);
       expect(restored).toEqual(['/a']);
       hook.rerender({ paths: new Set<string>() });
       hook.rerender({ paths: new Set(['/a']) });
-      await flush();
+      await flushMicrotasks(2);
       expect(restored).toEqual(['/a']); // 已恢复,再次正常安装不分发
     } finally {
       off();
@@ -529,7 +525,7 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     const off = onWatchRestored((p) => restored.push(p));
     try {
       const { onChange } = setup(new Set(['/a']));
-      await flush();
+      await flushMicrotasks(2);
       expect(restored).toEqual([]);
       expect(onChange).not.toHaveBeenCalled();
     } finally {
@@ -539,15 +535,15 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
 
   it('失效后折叠再展开 → 下一次失效的退避从 2s 重新开始', async () => {
     const { hook, lost, aCalls } = setup(new Set(['/a']));
-    await flush();
+    await flushMicrotasks(2);
     lost('/a'); // lostCount=1,/a 已移出账本
     hook.rerender({ paths: new Set<string>() });
     hook.rerender({ paths: new Set(['/a']) });
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(2); // 重新展开 → 正常安装
     lost('/a');
     vi.advanceTimersByTime(2000);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(3); // 未沿用旧退避(否则需 4s)
   });
 
@@ -556,7 +552,7 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     const off = onWatchRestored((p) => restored.push(p));
     try {
       const { hook, lost, aCalls, watchDir } = setup(new Set(['/a']));
-      await flush();
+      await flushMicrotasks(2);
       lost('/a');
       hook.rerender({ paths: new Set<string>() }); // 折叠:清定时器 + 退避清零
       watchDir
@@ -564,20 +560,20 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
         .mockRejectedValueOnce(new Error('ENOENT'))
         .mockResolvedValue({ ok: true });
       hook.rerender({ paths: new Set(['/a']) }); // 重新展开 → 普通 diff 安装,失败
-      await flush();
+      await flushMicrotasks(2);
       expect(aCalls()).toBe(2);
       vi.advanceTimersByTime(2000); // 折叠已清零退避 → 从 2s 起
-      await flush();
+      await flushMicrotasks(2);
       expect(aCalls()).toBe(3); // 续排重试(reject)
       vi.advanceTimersByTime(3999);
-      await flush();
+      await flushMicrotasks(2);
       expect(aCalls()).toBe(3);
       vi.advanceTimersByTime(1);
-      await flush();
+      await flushMicrotasks(2);
       expect(aCalls()).toBe(4); // 退避翻倍后成功
       expect(restored).toEqual(['/a']);
       vi.advanceTimersByTime(600_000);
-      await flush();
+      await flushMicrotasks(2);
       expect(aCalls()).toBe(4);
     } finally {
       off();
@@ -588,16 +584,16 @@ describe('useFsWatcher · watch-lost 退避重装', () => {
     const { hook, aCalls, watchDir } = setup(new Set<string>());
     watchDir.mockResolvedValue({ ok: false });
     hook.rerender({ paths: new Set(['/a']) });
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(1);
     vi.advanceTimersByTime(600_000);
-    await flush();
+    await flushMicrotasks(2);
     expect(aCalls()).toBe(1);
   });
 
   it('卸载 → 退订 watch-lost 且取消待重试', async () => {
     const { hook, lost, aCalls, lostUnsub } = setup(new Set(['/a']));
-    await flush();
+    await flushMicrotasks(2);
     lost('/a');
     hook.unmount();
     expect(lostUnsub).toHaveBeenCalledTimes(1);

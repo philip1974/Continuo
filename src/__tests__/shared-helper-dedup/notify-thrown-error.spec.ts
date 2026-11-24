@@ -10,6 +10,7 @@ vi.mock('../../notifications/notify', () => ({ notify: { error: errorSpy } }));
 import { errorCodeOf } from '../../../electron/shared/error-message';
 import { notifyIfFailed, notifyThrownError } from '../../notifications/notify-thrown-error';
 import { setLocale } from '../../i18n/translate';
+import { flushMicrotasks } from '../_helpers/async';
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -67,25 +68,21 @@ describe('notifyThrownError', () => {
 });
 
 describe('notifyIfFailed', () => {
-  const flush = async () => {
-    for (let i = 0; i < 3; i++) await Promise.resolve();
-  };
-
   it('ok:true → 不弹', async () => {
     notifyIfFailed(Promise.resolve({ ok: true as const }));
-    await flush();
+    await flushMicrotasks(3);
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it('ok:false → 按 code 本地化弹 toast(同 notifyFailure)', async () => {
     notifyIfFailed(Promise.resolve({ ok: false as const, code: 'NO_SUCH_CODE_X', message: 'nope' }));
-    await flush();
+    await flushMicrotasks(3);
     expect(errorSpy).toHaveBeenCalledWith('nope', { code: 'NO_SUCH_CODE_X' });
   });
 
   it('reject → 走 notifyThrownError,不产生 unhandled rejection', async () => {
     notifyIfFailed(Promise.reject(new Error('ipc died')));
-    await flush();
+    await flushMicrotasks(3);
     expect(errorSpy).toHaveBeenCalledWith('ipc died', { code: 'EXCEPTION' });
   });
 });

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { EditorView } from '@codemirror/view';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushMacrotasks } from '../_helpers/async';
 
 const mermaidMock = vi.hoisted(() => ({
   loaded: 0,
@@ -29,10 +30,6 @@ async function loadModule(): Promise<
   const mod = await import('../../panels/Editor/mermaid-preview');
   const { t } = await import('../../i18n');
   return { ...mod, t };
-}
-
-function flush(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 beforeEach(() => {
@@ -74,7 +71,7 @@ describe('renderMermaidPreview', () => {
 
     expect(renderMermaidPreview('js', 'const a = 1;', apply)).toBeNull();
     expect(renderMermaidPreview('', 'graph TD', apply)).toBeNull();
-    await flush();
+    await flushMacrotasks(1);
 
     expect(apply).not.toHaveBeenCalled();
     expect(mermaidMock.loaded).toBe(0);
@@ -258,7 +255,7 @@ describe('renderMermaidPreview', () => {
     renderMermaidPreview('mermaid', 'graph TD\n  A-->B', apply);
     renderMermaidPreview('mermaid', 'graph TD\n  A-->C', apply);
     await vi.waitFor(() => expect(releaseFirst).not.toBeNull());
-    await flush();
+    await flushMacrotasks(1);
     expect(apply).not.toHaveBeenCalled();
 
     releaseFirst!();
@@ -521,7 +518,7 @@ describe('renderMermaidPreview cache', () => {
     // 两处同时显示同一张图时 id(样式选择器 / marker 引用的前缀)不重复,其余内容不变
     expect(svgId(html)).not.toBe(svgId(first));
     expect(html.replace(svgId(html), '')).toBe(first.replace(svgId(first), ''));
-    await flush();
+    await flushMacrotasks(1);
     expect(apply).not.toHaveBeenCalled();
   });
 
@@ -628,7 +625,7 @@ describe('renderMermaidPreview after its editor unmounted', () => {
     unregister();
     held.release();
     await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
-    await flush();
+    await flushMacrotasks(1);
 
     expect(mermaidMock.render).toHaveBeenCalledTimes(1);
     expect(apply).toHaveBeenCalledTimes(1);

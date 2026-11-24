@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { initPluginsThenCheckUpdates } from '../../marketplace/startup-update-check';
-import { deferred } from '../_helpers/async';
+import { deferred, flushMicrotasks } from '../_helpers/async';
 
 function fakeManager() {
   const init = deferred();
@@ -19,20 +19,16 @@ function fakeManager() {
   };
 }
 
-const flush = async (): Promise<void> => {
-  for (let i = 0; i < 3; i++) await Promise.resolve();
-};
-
 describe('启动更新检查排在插件扫描完成之后', () => {
   it('扫描完成前不检查;扫描完成后检查一次(即使 init 仍挂在某插件激活上)', async () => {
     const { manager, scanned } = fakeManager();
     const refresh = vi.fn(() => Promise.resolve());
     void initPluginsThenCheckUpdates(manager, refresh);
-    await flush();
+    await flushMicrotasks(3);
     expect(manager.init).toHaveBeenCalledTimes(1);
     expect(refresh).not.toHaveBeenCalled();
     scanned.resolve(); // init 仍未完成
-    await flush();
+    await flushMicrotasks(3);
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 

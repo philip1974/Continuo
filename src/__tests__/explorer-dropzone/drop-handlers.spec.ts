@@ -8,6 +8,7 @@ import {
   type DropTargetEntry,
 } from '../../panels/Explorer/drop-handlers';
 import type { IpcResult } from '../../lib/fs/types';
+import { flushMacrotasks } from '../_helpers/async';
 
 const ok = (): IpcResult<void> => ({ ok: true, data: undefined });
 const fail = (code: string, message = code): IpcResult<never> => ({
@@ -421,8 +422,6 @@ describe('performDrop', () => {
 // arrayBuffer + IPC + fsync)。并发同时须:在途 arrayBuffer/写入有上界;同目标路径(大小写/NFC 折叠后)
 // 严格按输入顺序串行(后项覆盖前项);written/failed 按输入顺序汇总。
 describe('performDrop · 有界并发', () => {
-  const tick = () => new Promise<void>((r) => setTimeout(r, 0));
-
   // 可手动放行的 writeBinary:记录在途峰值与调用顺序。
   function gatedFs() {
     let inFlight = 0;
@@ -459,7 +458,7 @@ describe('performDrop · 有界并发', () => {
           arrayBuffer: async () => {
             reading += 1;
             peak = Math.max(peak, reading);
-            await tick();
+            await flushMacrotasks(1);
             reading -= 1;
             return new Uint8Array([i]).buffer;
           },
@@ -479,7 +478,7 @@ describe('performDrop · 有界并发', () => {
       settled = true;
     });
     for (let n = 0; n < 500 && !settled; n++) {
-      await tick();
+      await flushMacrotasks(1);
       g.pending.shift()?.resolve(ok());
     }
     const r = await done;
@@ -494,17 +493,17 @@ describe('performDrop · 有界并发', () => {
     const g = gatedFs();
     const { files } = countingFiles(['dup', 'other', 'DUP', 'dup']);
     const done = performDrop(files, '/work', g.fs);
-    for (let n = 0; n < 10; n++) await tick();
+    for (let n = 0; n < 10; n++) await flushMacrotasks(1);
     // 第一个 dup 未完成前,后续同名(DUP / dup)不得发起写入
     expect(g.calls.map((c) => c.path)).toEqual(['/work/dup', '/work/other']);
     // 放行第一个 dup
     g.pending.find((p) => p.path === '/work/dup')!.resolve(ok());
     g.pending.splice(g.pending.findIndex((p) => p.path === '/work/dup'), 1);
-    for (let n = 0; n < 10; n++) await tick();
+    for (let n = 0; n < 10; n++) await flushMacrotasks(1);
     expect(g.calls.map((c) => c.path)).toEqual(['/work/dup', '/work/other', '/work/DUP']);
     while (g.calls.length < 4 || g.pending.length > 0) {
       g.pending.shift()?.resolve(ok());
-      await tick();
+      await flushMacrotasks(1);
     }
     const r = await done;
     // 同名写入顺序 = 输入顺序(字节为输入下标):后项覆盖前项
@@ -516,12 +515,12 @@ describe('performDrop · 有界并发', () => {
     const g = gatedFs();
     const { files } = countingFiles(['dup', 'DUP', 'dup', 'Dup', 'dup', 'x', 'y', 'z']);
     const done = performDrop(files, '/work', g.fs);
-    for (let n = 0; n < 10; n++) await tick();
+    for (let n = 0; n < 10; n++) await flushMacrotasks(1);
     // 第一个 dup 在途未放行:同键其余项等待,但 x/y/z 应已发起写入(同键组只占 1 个 worker)
     expect(g.calls.map((c) => c.path)).toEqual(['/work/dup', '/work/x', '/work/y', '/work/z']);
     while (g.calls.length < 8 || g.pending.length > 0) {
       g.pending.shift()?.resolve(ok());
-      await tick();
+      await flushMacrotasks(1);
     }
     const r = await done;
     // 同键组内仍按输入顺序串行
@@ -544,7 +543,7 @@ describe('performDrop · 有界并发', () => {
     const g = gatedFs();
     const { files } = countingFiles(['a', 'b', 'c', 'd']);
     const done = performDrop(files, '/work', g.fs);
-    for (let n = 0; n < 10; n++) await tick();
+    for (let n = 0; n < 10; n++) await flushMacrotasks(1);
     // 倒序完成:d ok, c fail, b fail, a ok
     const by = (p: string) => g.pending.find((x) => x.path === p)!;
     by('/work/d').resolve(ok());

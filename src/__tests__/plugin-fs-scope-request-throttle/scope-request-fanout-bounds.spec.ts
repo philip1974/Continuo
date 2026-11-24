@@ -28,6 +28,7 @@ import {
   scopeThrottleKeys,
 } from '../../../electron/main/services/scope-request-throttle';
 import { StubIpcMain, makeFakeEvent } from '../sdk-contract/integration/make-stub-ipc';
+import { flushMacrotasks } from '../_helpers/async';
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '') } }));
 // 真实实现,外加调用计数(plugin-fs.service 里的调用也经这个 mock)。
@@ -139,14 +140,13 @@ describe('plugin-fs 入口', () => {
   type SentCall = [string, { requestId: string }];
   const promptCalls = (): SentCall[] =>
     (event.sender.send.mock.calls as SentCall[]).filter(([channel]) => channel === C.SCOPE_REQUEST);
-  const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
   const requestScope = (paths: readonly string[]): Promise<unknown> =>
     ipc.invokeWithEvent(event, C.REQUEST_SCOPE, token, paths.map((path) => ({ path, mode: 'rw' })));
   /** 发起请求并等弹窗发出;返回应答函数。 */
   async function prompted(paths: readonly string[]): Promise<(decision: 'grant' | 'deny') => Promise<unknown>> {
     const before = promptCalls().length;
     const pending = requestScope(paths);
-    while (promptCalls().length === before) await settle();
+    while (promptCalls().length === before) await flushMacrotasks(1, 'immediate');
     const [, payload] = promptCalls()[before]!;
     return async (decision) => {
       await ipc.invokeWithEvent(event, C.SCOPE_DECISION, payload.requestId, decision);

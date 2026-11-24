@@ -4,6 +4,7 @@
 // mock 集合沿用 i18n-en-zh-ko/bootstrap-locale-sync.spec.ts(init() 牵涉整个 shell 启动)。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSettingsStore } from '@/stores/settings.store';
+import { flushMacrotasks } from '../_helpers/async';
 
 const mocks = vi.hoisted(() => {
   const rootRender = vi.fn();
@@ -280,14 +281,11 @@ describe('renderer init() 启动 IPC 并发', () => {
 
   it('popout 子窗口 → 只做 i18n + 渲染,跳过持久化 / 插件 / 各类桥;主窗口照常', async () => {
     mocks.i18nGetLocale.mockResolvedValue({ ok: true, data: 'zh' });
-    const flush = async () => {
-      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
-    };
     const init = await loadInit();
 
     mocks.popout.value = true;
     await init();
-    await flush();
+    await flushMacrotasks(5);
     expect(mocks.captureLmApi).toHaveBeenCalledTimes(1);
     expect(mocks.i18nGetLocale).toHaveBeenCalledTimes(1);
     expect(useSettingsStore.getState().locale).toBe('zh');
@@ -307,7 +305,7 @@ describe('renderer init() 启动 IPC 并发', () => {
 
     mocks.popout.value = false;
     await init();
-    await flush();
+    await flushMacrotasks(5);
     expect(mocks.explorerRead).toHaveBeenCalledTimes(1);
     expect(mocks.initExplorerPersistence).toHaveBeenCalledTimes(1);
     expect(mocks.bootCorePlugins).toHaveBeenCalledTimes(1);

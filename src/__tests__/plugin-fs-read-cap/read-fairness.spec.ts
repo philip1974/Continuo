@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushMacrotasks } from '../_helpers/async';
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '') } }));
 
@@ -51,9 +52,6 @@ async function blocking<T>(p: string, run: () => Promise<T>): Promise<T> {
 }
 const isBlocked = (p: unknown): boolean => typeof p === 'string' && p.includes('blocked-');
 
-async function settle(): Promise<void> {
-  for (let i = 0; i < 50; i++) await new Promise<void>((r) => setImmediate(r));
-}
 async function until(cond: () => boolean): Promise<void> {
   for (let i = 0; i < 400 && !cond(); i++) await new Promise<void>((r) => setTimeout(r, 5));
   expect(cond()).toBe(true);
@@ -104,7 +102,7 @@ beforeEach(async () => {
 afterEach(async () => {
   gate.open = true;
   release();
-  await settle();
+  await flushMacrotasks(50, 'immediate');
   vi.restoreAllMocks();
   correlator.dispose();
   await rm(root, { recursive: true, force: true });
@@ -125,10 +123,10 @@ describe('plugin-fs 大块读取闸:按插件名额 + 插件间轮转', () => {
     const bOpen = ipc
       .invokeWithEvent(evB, C.READ_FOR_EDITOR, tokB, join(proj, 'free.txt'))
       .then((v) => (done.push('open'), v));
-    await settle();
+    await flushMacrotasks(50, 'immediate');
     // 放行 A 在途的 4 个:空出的 4 个位置轮转 → B 的 3 个各拿一个(A 只拿一个)
     release(MAX_ACTIVE);
-    await settle();
+    await flushMacrotasks(50, 'immediate');
     expect(await bRead).toBe('free');
     expect(await bList).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'free.txt' })]));
     expect(await bOpen).toMatchObject({ ok: true, content: 'free' });

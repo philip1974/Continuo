@@ -20,6 +20,7 @@ import {
   scopeThrottleKeys,
 } from '../../../electron/main/services/scope-request-throttle';
 import { StubIpcMain, makeFakeEvent } from '../sdk-contract/integration/make-stub-ipc';
+import { flushMacrotasks } from '../_helpers/async';
 
 vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '') } }));
 
@@ -45,14 +46,13 @@ const cancelledIds = (): string[] =>
     .map(([, payload]) => payload.requestId);
 
 /** 等所有已排队的 microtask / fs 回调跑完(真实 fs + 假定时器:只假 Date / setTimeout,不假 setImmediate)。 */
-const settle = (): Promise<void> => new Promise((r) => setImmediate(r));
 /**
  * 反复 settle 直到 cond 成立或真实时间超过 timeoutMs(performance.now 未被假定时器接管)。不用固定轮数:
  * 真实 fs 回调在 Windows runner 上要多得多的事件循环轮次才到齐,固定 50 轮会在结果到达前就去断言。
  */
 async function settleUntil(cond: () => boolean, timeoutMs = 3_000): Promise<void> {
   const deadline = performance.now() + timeoutMs;
-  while (!cond() && performance.now() < deadline) await settle();
+  while (!cond() && performance.now() < deadline) await flushMacrotasks(1, 'immediate');
 }
 
 async function register(pluginId: string): Promise<void> {
@@ -82,7 +82,7 @@ async function request(
     () => (settled = true),
     () => (settled = true),
   );
-  while (!settled && prompts() === before) await settle();
+  while (!settled && prompts() === before) await flushMacrotasks(1, 'immediate');
   if (prompts() === before) return { result: await pending, prompted: false };
   const [, payload] = promptCalls()[before]!;
   await ipc.invokeWithEvent(event, C.SCOPE_DECISION, payload.requestId, decision);
@@ -349,7 +349,7 @@ describe('每插件单飞(同一插件同时最多一个未决授权弹窗)', ()
       () => (settled = true),
       () => (settled = true),
     );
-    while (!settled && prompts() === before) await settle();
+    while (!settled && prompts() === before) await flushMacrotasks(1, 'immediate');
     return { pending, requestId: prompts() === before ? null : promptCalls()[before]![1].requestId };
   }
 

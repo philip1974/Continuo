@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { _reset as resetWindowSeq } from '../../../electron/main/services/window-seq.service';
+import { flushMicrotasks } from '../_helpers/async';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -279,9 +280,6 @@ function ds(ids: string[], untitledIds: string[] = []) {
 }
 
 /** 让 dialog / flush 的 promise 链跑完。 */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 10; i += 1) await Promise.resolve();
-}
 
 let dir: string;
 
@@ -315,7 +313,7 @@ describe('关窗:无脏文件时行为不变', () => {
     expect(win.hide).toHaveBeenCalledTimes(1);
     expect(flushRequests(win)).toEqual([{ windowId: win.id, requestId: expect.any(Number) }]);
     ack(win);
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 
@@ -328,7 +326,7 @@ describe('关窗:无脏文件时行为不变', () => {
     win.close();
     expect(electronMock.showMessageBox).not.toHaveBeenCalled();
     ack(win);
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 });
@@ -340,7 +338,7 @@ describe('关窗:有脏文件时先确认', () => {
     electronMock.showMessageBox.mockReturnValueOnce(new Promise(() => undefined));
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
 
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
     expect(electronMock.showMessageBox.mock.calls[0]?.[0]).toBe(win);
@@ -355,14 +353,14 @@ describe('关窗:有脏文件时先确认', () => {
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(win.hide).not.toHaveBeenCalled();
     expect(flushRequests(win)).toEqual([]);
     expect(win.destroyed).toBe(false);
 
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
     expect(win.destroyed).toBe(false);
   });
@@ -374,7 +372,7 @@ describe('关窗:有脏文件时先确认', () => {
 
     win.close();
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
   });
 
@@ -384,14 +382,14 @@ describe('关窗:有脏文件时先确认', () => {
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(win.hide).toHaveBeenCalledTimes(1);
     expect(flushRequests(win)).toEqual([
       { windowId: win.id, discard: true, requestId: expect.any(Number) },
     ]);
 
     ack(win);
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 
@@ -401,11 +399,11 @@ describe('关窗:有脏文件时先确认', () => {
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(flushRequests(win)).toEqual([{ windowId: win.id, save: true, requestId: expect.any(Number) }]);
 
     ack(win, { saveFailed: false });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 
@@ -415,18 +413,18 @@ describe('关窗:有脏文件时先确认', () => {
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     ack(win, { saveFailed: true });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
 
     // 用户改选「不保存」→ 正常关闭
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     ack(win);
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 
@@ -439,7 +437,7 @@ describe('关窗:有脏文件时先确认', () => {
     win.close();
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
   });
@@ -453,7 +451,7 @@ describe('关窗「保存」:flush 被跳过也视为保存未确认', () => {
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
   });
@@ -467,7 +465,7 @@ describe('关窗「保存」:flush 被跳过也视为保存未确认', () => {
     });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
   });
@@ -478,7 +476,7 @@ describe('关窗「保存」:flush 被跳过也视为保存未确认', () => {
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 });
@@ -490,19 +488,19 @@ describe('flush 回执按 requestId 匹配', () => {
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     const id = requestIdOf(win, 0);
     ack(win, { saveFailed: false, requestId: id + 1000 });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
 
     // 不带 requestId 的回执同样不结算(即便该窗口只有一个在途请求)
     ack(win, { saveFailed: false, requestId: undefined });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
 
     ack(win, { saveFailed: false, requestId: id });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 });
@@ -516,13 +514,13 @@ describe('关窗:flush 后最终脏检查仍有未保存改动 → 中止关闭'
     win.close();
     expect(electronMock.showMessageBox).not.toHaveBeenCalled();
     ack(win, { requestId: requestIdOf(win, 0), remaining: ds(['/w/a.ts']) });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
 
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 2 });
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
     expect(win.destroyed).toBe(false);
   });
@@ -533,9 +531,9 @@ describe('关窗:flush 后最终脏检查仍有未保存改动 → 中止关闭'
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     ack(win, { saveFailed: false, requestId: requestIdOf(win, 0), remaining: ds(['/w/a.ts']) });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
   });
@@ -554,14 +552,14 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     expect(electronMock.showMessageBox).not.toHaveBeenCalled();
     expect(win.hide).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
 
     win.close();
     expect(flushRequests(win)).toHaveLength(2);
     ack(win, { requestId: requestIdOf(win, 1), state: ds([]) });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 
@@ -574,10 +572,10 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalled();
   });
@@ -589,7 +587,7 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(flushRequests(win)).toEqual([
       {
         windowId: win.id,
@@ -603,7 +601,7 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
       state: ds(['/w/a.md#1', '/w/x.ts#1']),
       remaining: ds(['/w/a.md#1', '/w/x.ts#1']),
     });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
   });
@@ -614,9 +612,9 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     ack(win, { requestId: requestIdOf(win, 0), state: ds(['/w/x.ts#1']) });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 
@@ -630,7 +628,7 @@ describe('关窗:未弹框的 flush 超时,按 pendingAutoSave 决定是否放�
     never.close();
     cleared.close();
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
-    await settle();
+    await flushMicrotasks(10);
     expect(never.destroyed).toBe(true);
     expect(cleared.destroyed).toBe(true);
   });
@@ -684,7 +682,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockImplementationOnce(() => new Promise((r) => (answerB = r))); // B:挂起
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2); // B 的确认框已打开
     expect(a.hide).toHaveBeenCalled();
     expect(b.hide).not.toHaveBeenCalled();
@@ -704,7 +702,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true, requestId: expect.any(Number) }]);
     ack(a, { saveFailed: true });
     await done;
@@ -728,9 +726,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockResolvedValueOnce({ response: 0 }); // 退出:保存
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(flushRequests(win)).toEqual([
       { windowId: win.id, discard: true, requestId: expect.any(Number) },
       { windowId: win.id, save: true, requestId: expect.any(Number) },
@@ -740,7 +738,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     expect(quitReq).not.toBe(closeReq);
 
     ack(win, { requestId: closeReq });
-    await settle();
+    await flushMicrotasks(10);
     expect(app.quit).not.toHaveBeenCalled(); // 退出仍在等「保存」的回执
     // 复审(d):旧「不保存」关闭流程已被退出流程接管 → 其 ack 到达后不得 win.close() 销毁窗口
     // (否则「保存」尚未完成窗口就没了)。
@@ -755,10 +753,10 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     // 被接管的旧流程已复位:用户再次关闭会重新确认,不卡在「flush 在途」。
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 1 });
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(3);
     ack(win, { requestId: requestIdOf(win, 2) });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(true);
   });
 
@@ -779,7 +777,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { saveFailed: false, requestId: requestIdOf(a, 0), remaining: ds(['/w/a.ts']) });
     await done;
     expect(app.quit).not.toHaveBeenCalled();
@@ -803,10 +801,10 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     );
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(1); // A 干净不弹框,只问 B
     answerB({ response: 1 }); // B:不保存
-    await settle();
+    await flushMicrotasks(10);
     expect(flushRequests(a)).toEqual([{ windowId: a.id, requestId: expect.any(Number) }]);
     ack(a, { requestId: requestIdOf(a, 0), remaining: ds(['/w/a.ts']) });
     ack(b, { requestId: requestIdOf(b, 0) });
@@ -833,9 +831,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 }); // B:保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { requestId: requestIdOf(a, 0) }); // A 干净,flush 完成
-    await settle();
+    await flushMicrotasks(10);
     reportDirty(a, ds(['/w/a.ts'])); // A 在等待 B 期间被编辑
     ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
     await done;
@@ -864,9 +862,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockResolvedValueOnce({ response: 0 }); // B:保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { requestId: requestIdOf(a, 0) });
-    await settle();
+    await flushMicrotasks(10);
     reportDirty(a, ds(['/w/a.ts', '/w/b.ts']));
     ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
     await done;
@@ -888,9 +886,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockResolvedValueOnce({ response: 0 }); // B:保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { requestId: requestIdOf(a, 0) });
-    await settle();
+    await flushMicrotasks(10);
     reportDirty(a, ds(['/w/y.ts']));
     reportDirty(b, ds([]));
     ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
@@ -912,9 +910,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockResolvedValueOnce({ response: 0 }); // B:保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { saveFailed: false, requestId: requestIdOf(a, 0) });
-    await settle();
+    await flushMicrotasks(10);
     reportDirty(a, ds(['untitled-2'], ['untitled-2']));
     reportDirty(b, ds([]));
     ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
@@ -937,9 +935,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockResolvedValueOnce({ response: 0 }); // B:保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { requestId: requestIdOf(a, 0), state: ds(['/w/x.ts#1']) });
-    await settle();
+    await flushMicrotasks(10);
     reportDirty(a, ds([])); // 保存 /x.ts
     reportDirty(a, ds(['/w/x.ts#2'])); // 再编辑同一文件
     ack(b, { saveFailed: false, requestId: requestIdOf(b, 0), state: ds([]) });
@@ -961,9 +959,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 }); // B:保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { requestId: requestIdOf(a, 0), state: ds([]) });
-    await settle();
+    await flushMicrotasks(10);
     reportDirty(a, { ...ds([]), pendingAutoSave: ['/w/a.md#2'] });
     ack(b, { saveFailed: false, requestId: requestIdOf(b, 0), state: ds([]) });
     await done;
@@ -987,9 +985,9 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 }); // B:保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     ack(a, { requestId: requestIdOf(a, 0) }); // 旧回执:无 state
-    await settle();
+    await flushMicrotasks(10);
     reportDirty(b, ds(['/w/b.ts', '/w/new.ts'])); // B 等待期间新增脏 tab → 超出
     ack(b, { saveFailed: false, requestId: requestIdOf(b, 0) });
     await done;
@@ -1007,7 +1005,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     electronMock.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(flushRequests(a)).toEqual([
       {
         windowId: a.id,
@@ -1030,7 +1028,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockResolvedValueOnce({ response: 2 }); // 退出:取消
 
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(win.hide).toHaveBeenCalledTimes(1);
     const closeReq = requestIdOf(win, 0);
     await beforeQuit().done;
@@ -1040,12 +1038,12 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     // 守卫已释放:再次关闭重新确认(不卡在「flush 在途」)
     electronMock.showMessageBox.mockReturnValueOnce(new Promise(() => undefined));
     win.close();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(3);
 
     // 旧流程的迟到 ACK:被取代,不关窗、不再 show
     ack(win, { requestId: closeReq });
-    await settle();
+    await flushMicrotasks(10);
     expect(win.destroyed).toBe(false);
     expect(win.show).toHaveBeenCalledTimes(1);
     win.destroyed = true;
@@ -1060,7 +1058,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     reportDirty(a, { ...ds([]), pendingAutoSave: ['/w/a.md#1'] });
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(FLUSH_ACK_TIMEOUT_MS);
     await done;
@@ -1072,7 +1070,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     // 守卫复位:再次 Cmd+Q 重新发 flush(不卡在「清理在途」)
     vi.useRealTimers();
     const second = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(flushRequests(a)).toHaveLength(2);
     ack(a, { requestId: requestIdOf(a, 1), state: ds([]) });
     ack(b, { requestId: requestIdOf(b, 1), saveFailed: true });
@@ -1096,7 +1094,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
       .mockResolvedValueOnce({ response: 1 }); // b 不保存
 
     const { done } = beforeQuit();
-    await settle();
+    await flushMicrotasks(10);
     expect(electronMock.showMessageBox).toHaveBeenCalledTimes(2);
     expect(flushRequests(a)).toEqual([{ windowId: a.id, save: true, requestId: expect.any(Number) }]);
     expect(flushRequests(b)).toEqual([
@@ -1117,7 +1115,7 @@ describe('退出应用(before-quit):对每个有脏文件的主窗确认', () =>
     );
     ack(b);
     ack(clean);
-    await settle();
+    await flushMicrotasks(10);
     expect(shellService.cleanupAllShellExecs).toHaveBeenCalledTimes(1);
     expect(shellStream.cleanupAllShellStreams).toHaveBeenCalledTimes(1);
     expect(app.quit).not.toHaveBeenCalled();

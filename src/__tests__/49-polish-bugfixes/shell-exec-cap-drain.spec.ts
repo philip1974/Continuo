@@ -37,12 +37,11 @@ vi.mock('node:child_process', async (importActual) => {
 });
 
 import { execShell } from '../../../electron/main/services/shell.service';
+import { flushMacrotasks } from '../_helpers/async';
 
 // spawn 已被替换成假子进程;命令须是绝对路径:Windows 上裸命令名先经 resolveSpawnCommand 在 PATH 中查找,
 // 找不到即抛错、不调用 spawn。
 const CMD = process.execPath;
-
-const tick = () => new Promise<void>((r) => setImmediate(r));
 
 describe('49 · execShell 达上限后丢弃式 drain', () => {
   it('超上限:该流摘掉 data 处理、继续 flowing 丢弃;另一流不受影响;结果与截断标志不变', async () => {
@@ -50,14 +49,14 @@ describe('49 · execShell 达上限后丢弃式 drain', () => {
     const child = h.child!;
     child.stdout.write(Buffer.from('abcdef'));
     child.stderr.write(Buffer.from('xy'));
-    await tick();
+    await flushMacrotasks(1, 'immediate');
 
     expect(child.stdout.listenerCount('data')).toBe(0);
     expect(child.stdout.readableFlowing).toBe(true);
     expect(child.stderr.listenerCount('data')).toBe(1);
 
     for (let i = 0; i < 50; i++) child.stdout.write(Buffer.alloc(64 * 1024, 0x61));
-    await tick();
+    await flushMacrotasks(1, 'immediate');
     expect(child.stdout.readableLength).toBe(0); // 已丢弃,不积压 / 不反压
 
     child.emit('close', 0, null);
@@ -69,17 +68,17 @@ describe('49 · execShell 达上限后丢弃式 drain', () => {
     const p1 = execShell({ cmd: CMD, args: [], maxOutputBytes: 4 });
     const c1 = h.child!;
     c1.stdout.write(Buffer.from('abcd'));
-    await tick();
+    await flushMacrotasks(1, 'immediate');
     c1.emit('close', 0, null);
     expect(await p1).toMatchObject({ stdout: 'abcd', truncated: false });
 
     const p2 = execShell({ cmd: CMD, args: [], maxOutputBytes: 4 });
     const c2 = h.child!;
     c2.stdout.write(Buffer.from('abcd'));
-    await tick();
+    await flushMacrotasks(1, 'immediate');
     c2.stdout.write(Buffer.from('e'));
     c2.stdout.write(Buffer.from('f'));
-    await tick();
+    await flushMacrotasks(1, 'immediate');
     expect(c2.stdout.listenerCount('data')).toBe(0);
     c2.emit('close', 0, null);
     expect(await p2).toMatchObject({ stdout: 'abcd', truncated: true });

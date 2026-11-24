@@ -30,15 +30,12 @@ vi.mock('../../../electron/main/lib/read-fh-capped', () => ({
 
 import { opendir, stat } from 'node:fs/promises';
 import { createHookFileBroker } from '../../../electron/main/services/mcp-tools-hook-bridge';
+import { flushMicrotasks } from '../_helpers/async';
 
 afterEach(() => {
   h.reads.length = 0;
   vi.clearAllMocks();
 });
-
-async function flush(): Promise<void> {
-  for (let i = 0; i < 20; i += 1) await Promise.resolve();
-}
 
 describe('写入中途的 hook 文件', () => {
   it('处理期间到达的同名事件 → 本次结束后补跑一次,事件不丢', async () => {
@@ -55,14 +52,14 @@ describe('写入中途的 hook 文件', () => {
       const waiting = broker.awaitNext({ windowId: 4, sessionId: 'term-1', runner: 'codex', cwd: '/ws', timeoutMs: 60_000 });
 
       onFile(file); // 文件刚创建(内容还没写完)
-      await flush();
+      await flushMicrotasks(20);
       expect(h.reads).toHaveLength(1); // 第一次处理卡在读取
 
       onFile(file); // 写完的 change 事件,恰在第一次处理期间到达
-      await flush();
+      await flushMicrotasks(20);
 
       h.reads[0]!.resolve('{"sess'); // 第一次读到半截 → 解析失败
-      await flush();
+      await flushMicrotasks(20);
       expect(h.reads).toHaveLength(2); // 补跑
       h.reads[1]!.resolve('{"session_id":"s"}');
 
@@ -91,7 +88,7 @@ describe('调用方断开', () => {
       () => (settled = true),
       () => (settled = true),
     );
-    await flush();
+    await flushMicrotasks(20);
     expect(settled).toBe(false);
     broker.cancelByWindow(7);
     await second.catch(() => {});
@@ -165,7 +162,7 @@ describe('启动存量扫描', () => {
     let maxInFlight = 0;
     let served = 0;
     while (!started) {
-      await flush();
+      await flushMicrotasks(20);
       const open = h.reads.splice(0);
       maxInFlight = Math.max(maxInFlight, open.length);
       // 倒序完成读取:提交顺序仍须按文件名

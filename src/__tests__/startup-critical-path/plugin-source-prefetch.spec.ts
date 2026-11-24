@@ -9,11 +9,7 @@ import { createWindowApiHost } from '../../lib/plugins-host';
 import { Plugin } from '../../plugins/Plugin';
 import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { createTestCoApp } from '../../plugins/test-utils';
-import { deferred, type Deferred } from '../_helpers/async';
-
-const flush = async (): Promise<void> => {
-  for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
-};
+import { deferred, type Deferred, flushMacrotasks } from '../_helpers/async';
 
 const loaded: string[] = [];
 const hang = new Map<string, Deferred<void>>();
@@ -104,7 +100,7 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: async (dir) => ok(dir),
     });
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(10);
     expect(loaded).toEqual(['a']); // a 的 onload 挂起中
     expect(plugins.readMainByDir.mock.calls.map((c) => c[0]).sort()).toEqual(['a', 'b', 'c']);
     expect(plugins.readMainByDir).toHaveBeenCalledWith('b', 'hash-b');
@@ -128,12 +124,12 @@ describe('启动插件源码预取 (B-1)', () => {
       },
     });
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(10);
     expect(plugins.readMainByDir).toHaveBeenCalledTimes(4);
     // 逆序完成
     for (const id of [...ids].reverse()) {
       reads.get(id)?.resolve(ok(id));
-      await flush();
+      await flushMacrotasks(10);
     }
     for (const id of ids) reads.get(id)?.resolve(ok(id));
     await init;
@@ -174,7 +170,7 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: async (dir) => ok(dir),
     });
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(10);
     // 热重载重新列举:b 换成新 manifest(新令牌)
     plugins.listDirs.mockResolvedValue({
       ok: true,
@@ -212,7 +208,7 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: async (dir) => ok(dir),
     });
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(10);
     const bIdx = plugins.readMainByDir.mock.calls.findIndex((c) => c[0] === 'b');
     const prefetchedB = createObjectURL.mock.results[bIdx]!.value as string;
 
@@ -232,7 +228,7 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: (dir) => (++aCalls === 1 ? first.promise : Promise.resolve(ok(dir))),
     });
     const init = mgr.init();
-    await flush(); // 激活已在等预取的在途读取
+    await flushMacrotasks(10); // 激活已在等预取的在途读取
     expect(plugins.readMainByDir).toHaveBeenCalledTimes(1);
     first.resolve({ ok: false, code: 'EIO', message: 'disk' });
     await init;
@@ -249,7 +245,7 @@ describe('启动插件源码预取 (B-1)', () => {
       readMainByDir: (dir) => (dir === 'b' ? bRead.promise : Promise.resolve(ok(dir))),
     });
     const init = mgr.init();
-    await flush();
+    await flushMacrotasks(10);
     await mgr.disable('b');
     hang.get('a')!.resolve();
     await init;
@@ -257,7 +253,7 @@ describe('启动插件源码预取 (B-1)', () => {
 
     const created = createObjectURL.mock.results.length;
     bRead.resolve(ok('b'));
-    await flush();
+    await flushMacrotasks(10);
     expect(createObjectURL.mock.results.length).toBe(created + 1);
     const lateB = createObjectURL.mock.results[created]!.value as string;
     expect(revokeObjectURL).toHaveBeenCalledWith(lateB);

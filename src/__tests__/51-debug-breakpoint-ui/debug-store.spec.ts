@@ -47,11 +47,7 @@ import {
   startDebugStoreSync,
   useDebugStore,
 } from '../../stores/debug.store';
-
-async function flushAsync(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-}
+import { flushMicrotasks } from '../_helpers/async';
 
 afterEach(() => {
   resetDebugStoreForTest();
@@ -129,7 +125,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       stopSeq: 1,
       reason: 'breakpoint',
     });
-    await flushAsync();
+    await flushMicrotasks(2);
 
     const state = useDebugStore.getState();
     const session = state.sessions.get('s1');
@@ -147,7 +143,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     startDebugStoreSync();
     const emit = debugApi.events[0]!;
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'breakpoint' });
-    await flushAsync();
+    await flushMicrotasks(2);
     await useDebugStore.getState().loadVariables('s1', 44);
     expect(debugApi.getVariables).toHaveBeenCalledTimes(1);
 
@@ -180,13 +176,13 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'step' });
     emit({ type: 'continued', sessionId: 's1' });
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
-    await flushAsync();
-    await flushAsync();
+    await flushMicrotasks(2);
+    await flushMicrotasks(2);
     expect(useDebugStore.getState().sessions.get('s1')?.stopped?.line).toBe(99);
 
     releaseOld!();
-    await flushAsync();
-    await flushAsync();
+    await flushMicrotasks(2);
+    await flushMicrotasks(2);
     const session = useDebugStore.getState().sessions.get('s1');
     expect(session?.stopped?.line).toBe(99);
     expect(session?.frames[0]?.name).toBe('at-99');
@@ -196,7 +192,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     startDebugStoreSync();
     const emit = debugApi.events[0]!;
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'step' });
-    await flushAsync();
+    await flushMicrotasks(2);
 
     let releaseOld: (() => void) | null = null;
     debugApi.getVariables.mockImplementationOnce(
@@ -213,7 +209,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
 
     emit({ type: 'continued', sessionId: 's1' });
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
-    await flushAsync();
+    await flushMicrotasks(2);
     releaseOld!();
     await pending;
 
@@ -226,7 +222,7 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
 
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'breakpoint' });
     emit({ type: 'stopped', sessionId: 's2', stopSeq: 1, reason: 'breakpoint' });
-    await flushAsync();
+    await flushMicrotasks(2);
     expect(useDebugStore.getState().activeSessionId).toBe('s2');
 
     emit({ type: 'terminated', sessionId: 's2' });
@@ -240,14 +236,14 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     startDebugStoreSync();
     const emit = debugApi.events[0]!;
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'breakpoint' });
-    await flushAsync();
+    await flushMicrotasks(2);
 
     await useDebugStore.getState().loadVariables('s1', 44);
     await useDebugStore.getState().loadVariables('s1', 44);
     expect(debugApi.getVariables).toHaveBeenCalledTimes(1);
 
     emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
-    await flushAsync();
+    await flushMicrotasks(2);
     await useDebugStore.getState().loadVariables('s1', 44);
 
     expect(debugApi.getVariables).toHaveBeenCalledTimes(2);
@@ -320,8 +316,8 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
       emit({ type: 'continued', sessionId: 's1' });
       emit({ type: 'terminated', sessionId: 's2' });
       resolveSubscribe({ ok: true, data: snapshot });
-      await flushAsync();
-      await flushAsync();
+      await flushMicrotasks(2);
+      await flushMicrotasks(2);
 
       const state = useDebugStore.getState();
       expect(state.sessions.get('s1')?.breakpoints).toEqual([
@@ -359,8 +355,8 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
         },
       } as never);
       startDebugStoreSync();
-      await flushAsync();
-      await flushAsync();
+      await flushMicrotasks(2);
+      await flushMicrotasks(2);
 
       const state = useDebugStore.getState();
       expect([...state.sessions.keys()]).toEqual(['s3']);
