@@ -213,11 +213,11 @@ describe('发现文件', () => {
     expect(readWindowsPipeDiscovery(appData)).toEqual([devName]);
 
     // 两个都在:packaged 在前,dev 作为连接失败时的后备候选
-    await put('Continuo', formatStdioPipeDiscovery(packagedName, 1234));
+    await put('continuo', formatStdioPipeDiscovery(packagedName, 1234));
     expect(readWindowsPipeDiscovery(appData)).toEqual([packagedName, devName]);
 
     // packaged 发现文件被写成别的路径 → 不用,只剩 dev
-    await put('Continuo', formatStdioPipeDiscovery('\\\\attacker-host\\pipe\\continuo-mcp-abcd', 1234));
+    await put('continuo', formatStdioPipeDiscovery('\\\\attacker-host\\pipe\\continuo-mcp-abcd', 1234));
     expect(readWindowsPipeDiscovery(appData)).toEqual([devName]);
 
     await put('Continuo Dev', 'C:\\evil');
@@ -334,9 +334,9 @@ describe('发现文件残留', () => {
       const home = await shortTmp();
       const support =
         process.platform === 'darwin' ? path.join(home, 'Library', 'Application Support') : path.join(home, '.config');
-      await mkdir(path.join(support, 'Continuo'), { recursive: true });
+      await mkdir(path.join(support, 'continuo'), { recursive: true });
       await mkdir(path.join(support, 'Continuo Dev'), { recursive: true });
-      staleSocket(path.join(support, 'Continuo', 'mcp.sock'));
+      staleSocket(path.join(support, 'continuo', 'mcp.sock'));
 
       const got = new Promise<string>((resolve) => {
         const srv = createServer((s) => {
@@ -454,7 +454,7 @@ describe('发现文件带主进程 pid', () => {
       await mkdir(path.join(appData, app), { recursive: true });
       await writeFile(path.join(appData, app, STDIO_PIPE_DISCOVERY_FILE), content);
     };
-    await put('Continuo', formatStdioPipeDiscovery(packagedName, 1111)); // 已崩溃
+    await put('continuo', formatStdioPipeDiscovery(packagedName, 1111)); // 已崩溃
     await put('Continuo Dev', formatStdioPipeDiscovery(devName, 2222)); // 运行中
     const probed: number[] = [];
     const isAlive = (pid: number) => {
@@ -468,7 +468,7 @@ describe('发现文件带主进程 pid', () => {
 
     // 旧格式(升级前的 Continuo 崩溃残留):没有 pid 可验 → 不用
     probed.length = 0;
-    await put('Continuo', packagedName);
+    await put('continuo', packagedName);
     await put('Continuo Dev', `${devName}\n`);
     expect(readWindowsPipeDiscovery(appData, isAlive)).toEqual([]);
     expect(probed).toEqual([]);
@@ -497,9 +497,9 @@ describe('发现文件带主进程 pid', () => {
     // 默认参数接的就是它(不注入 isAlive 时)
     const dir = nodeFs.mkdtempSync(path.join(tmpdir(), 'pipe-pid-'));
     dirs.push(dir);
-    nodeFs.mkdirSync(path.join(dir, 'Continuo'));
+    nodeFs.mkdirSync(path.join(dir, 'continuo'));
     nodeFs.mkdirSync(path.join(dir, 'Continuo Dev'));
-    nodeFs.writeFileSync(path.join(dir, 'Continuo', STDIO_PIPE_DISCOVERY_FILE), formatStdioPipeDiscovery(name, exited.pid));
+    nodeFs.writeFileSync(path.join(dir, 'continuo', STDIO_PIPE_DISCOVERY_FILE), formatStdioPipeDiscovery(name, exited.pid));
     const live = createWindowsStdioPipeName(alice);
     nodeFs.writeFileSync(path.join(dir, 'Continuo Dev', STDIO_PIPE_DISCOVERY_FILE), formatStdioPipeDiscovery(live, process.pid));
     expect(readWindowsPipeDiscovery(dir)).toEqual([live]);

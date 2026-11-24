@@ -10,8 +10,9 @@
 //   1. CONTINUO_MCP_SOCKET 环境变量(显式 override,最优先;Continuo 终端里由 PTY env 注入本实例的端点,
 //      所有平台 —— dev 实例终端里的 proxy 因此连 dev 而非 packaged)
 //   2. packaged.app socket(日常驱动器):
-//      macOS = ~/Library/Application Support/Continuo/mcp.sock
-//      Linux = $XDG_CONFIG_HOME/Continuo/mcp.sock 或 ~/.config/Continuo/mcp.sock
+//      macOS = ~/Library/Application Support/continuo/mcp.sock
+//      Linux = $XDG_CONFIG_HOME/continuo/mcp.sock 或 ~/.config/continuo/mcp.sock
+//      (打包版 userData 目录名 = app.name = package.json name,小写)
 //   3. dev socket(packaged 没跑时 fallback):
 //      macOS = ~/Library/Application Support/Continuo Dev/mcp.sock
 //      Linux = ".../Continuo Dev/mcp.sock"
@@ -51,7 +52,8 @@ function appSupportDir() {
 }
 
 function packagedSocketPath() {
-  return path.join(appSupportDir(), 'Continuo', 'mcp.sock');
+  // 打包版 userData 目录名 = app.name = package.json name(小写;与 electron/main/user-data-path.ts 同值,规范钉住)。
+  return path.join(appSupportDir(), 'continuo', 'mcp.sock');
 }
 
 function devSocketPath() {
@@ -98,7 +100,7 @@ function readWindowsPipeDiscovery(appDataDir, isAlive = isProcessAlive) {
   // 进程去占住这个 pid(无权限探测的 EPERM 也按存活处理),所以此检查只是抬高门槛(对方须同时抢注管道名并
   // 占住 pid),不是消除;根治要靠管道 ACL 或 proxy 校验服务端身份。
   const names = [];
-  for (const appName of ['Continuo', 'Continuo Dev']) {
+  for (const appName of ['continuo', 'Continuo Dev']) {
     let raw;
     try {
       raw = readFileSync(path.join(appDataDir, appName, 'mcp-pipe'), 'utf8');

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { resolveProtectedRoots, resolveUserDataPath } from '../user-data-path';
+import { PACKAGED_USER_DATA_NAME, resolveProtectedRoots, resolveUserDataPath } from '../user-data-path';
 
 describe('resolveUserDataPath', () => {
   it('honors E2E --user-data-dir before the dev default', () => {
@@ -49,7 +50,7 @@ describe('resolveProtectedRoots(插件 path-scope 的受保护根)', () => {
 
   it('dev:本实例 userData + 两种发行形态的默认 userData;不含 resourcesPath(仓库目录)', () => {
     expect(resolveProtectedRoots(base).sort()).toEqual(
-      [path.join(appData, 'Continuo'), path.join(appData, 'Continuo Dev')].sort(),
+      [path.join(appData, 'continuo'), path.join(appData, 'Continuo Dev')].sort(),
     );
   });
 
@@ -57,7 +58,7 @@ describe('resolveProtectedRoots(插件 path-scope 的受保护根)', () => {
     const custom = path.join(path.sep, 'tmp', 'e2e-user-data');
     expect(resolveProtectedRoots({ ...base, userDataPath: custom })).toEqual([
       custom,
-      path.join(appData, 'Continuo'),
+      path.join(appData, 'continuo'),
       path.join(appData, 'Continuo Dev'),
     ]);
   });
@@ -91,3 +92,17 @@ describe('resolveProtectedRoots(插件 path-scope 的受保护根)', () => {
     ).toEqual([]);
   });
 });
+
+// 打包版 userData 目录名的单一来源:= app.name = package.json `name`(productName 只在 electron-builder.yml,不进 app.asar
+// 的 package.json,打包版也不 setName)。stdio bridge 脚本不能 import,按字面钉住逐字一致 —— 此前两处写成 `Continuo`,
+// Linux(大小写敏感)上 bridge 找不到 socket、受保护根匹配不上打包版 userData。
+describe('PACKAGED_USER_DATA_NAME', () => {
+  it('等于 package.json name,且 stdio bridge 用同一字面', () => {
+    const pkg = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as { name: string };
+    expect(PACKAGED_USER_DATA_NAME).toBe(pkg.name);
+    const bridge = readFileSync(path.join(process.cwd(), 'scripts/continuo-mcp-stdio.mjs'), 'utf8');
+    expect(bridge).toContain(`path.join(appSupportDir(), '${PACKAGED_USER_DATA_NAME}', 'mcp.sock')`);
+    expect(bridge).toContain(`for (const appName of ['${PACKAGED_USER_DATA_NAME}', 'Continuo Dev'])`);
+  });
+});
+

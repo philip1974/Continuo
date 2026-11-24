@@ -24,8 +24,11 @@ export function resolveUserDataPath({
   return null;
 }
 
-// 两种发行形态的 userData 目录名(同在 appData 下;与 scripts/continuo-mcp-stdio.mjs 的推导一致)。
-const PACKAGED_USER_DATA_NAME = 'Continuo';
+// 两种发行形态的 userData 目录名(同在 appData 下;与 scripts/continuo-mcp-stdio.mjs 的推导一致,规范钉住逐字相同)。
+// 打包版 = app.name = package.json `name`(小写 `continuo`):electron-builder 的 productName 只用于安装包 / 显示名,不写入
+// app.asar 的 package.json,打包版也不 setName。此前写成 `Continuo`,在大小写敏感的 Linux 上 bridge 找不到 socket、
+// 受保护根也匹配不上打包版的 userData(macOS / Windows 默认不区分大小写,未暴露)。
+export const PACKAGED_USER_DATA_NAME = 'continuo';
 const DEV_USER_DATA_NAME = 'Continuo Dev';
 
 export interface ProtectedRootsOptions {

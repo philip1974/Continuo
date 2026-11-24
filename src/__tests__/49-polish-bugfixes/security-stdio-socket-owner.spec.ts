@@ -236,10 +236,10 @@ describe.skipIf(process.platform === 'win32')('stdio proxy:只连属于当前用
     const home = await shortTmp();
     const support =
       process.platform === 'darwin' ? path.join(home, 'Library', 'Application Support') : path.join(home, '.config');
-    await mkdir(path.join(support, 'Continuo'), { recursive: true });
+    await mkdir(path.join(support, 'continuo'), { recursive: true });
     await mkdir(path.join(support, 'Continuo Dev'), { recursive: true });
-    await chmod(path.join(support, 'Continuo'), 0o777);
-    const untrusted = await listen(path.join(support, 'Continuo', 'mcp.sock'));
+    await chmod(path.join(support, 'continuo'), 0o777);
+    const untrusted = await listen(path.join(support, 'continuo', 'mcp.sock'));
     const dev = await listen(path.join(support, 'Continuo Dev', 'mcp.sock'));
 
     const env: Record<string, string> = { HOME: home, XDG_CONFIG_HOME: support, CONTINUO_MCP_SOCKET: '' };
