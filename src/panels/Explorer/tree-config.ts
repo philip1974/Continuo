@@ -31,6 +31,11 @@ export interface CreateTreeConfigDeps {
   fs: FsForTree;
   /** spec 注入断言;默认 console.warn. */
   onIpcWarn?: (message: string, code: string) => void;
+  /**
+   * 每次 getChildrenWithData 的结果:成功 null,失败 { code, message }。失败时 loader 仍返回 [],
+   * 调用方据此区分「读取失败」与「空目录」(FolderTree 用于根目录的失败态 + 重试)。
+   */
+  onChildrenLoad?: (itemId: string, failure: { code: string; message: string } | null) => void;
   /** 用户在 inline rename input 按 Enter 时触发(headless-tree renamingFeature). */
   onRename?: (item: ItemInstance<FileEntry>, newName: string) => void;
   /** 内部多选拖动 → drop 到目标(目录或文件→父目录). 业务侧执行 fs.move. */
@@ -115,7 +120,7 @@ export function findFileEntryByPath(
 }
 
 export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader {
-  const { root, fs, onIpcWarn = (m, c) => console.warn('[explorer-tree]', m, c) } = deps;
+  const { root, fs, onIpcWarn = (m, c) => console.warn('[explorer-tree]', m, c), onChildrenLoad } = deps;
 
   return {
     getItem: async (itemId) => {
@@ -149,14 +154,15 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
         const r = await fs.listDir(itemId);
         if (!r.ok) {
           onIpcWarn(`listDir failed for ${itemId}: ${r.message}`, r.code);
+          onChildrenLoad?.(itemId, { code: r.code, message: r.message });
           return EMPTY_TREE_CHILDREN;
         }
+        onChildrenLoad?.(itemId, null);
         return buildTreeChildrenWithData(r.data);
       } catch (err) {
-        onIpcWarn(
-          `listDir threw for ${itemId}: ${(err as Error).message}`,
-          'IPC_HANDLER_ERROR',
-        );
+        const message = (err as Error).message;
+        onIpcWarn(`listDir threw for ${itemId}: ${message}`, 'IPC_HANDLER_ERROR');
+        onChildrenLoad?.(itemId, { code: 'IPC_HANDLER_ERROR', message });
         return EMPTY_TREE_CHILDREN;
       }
     },

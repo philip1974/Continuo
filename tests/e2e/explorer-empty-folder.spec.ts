@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { EXPLORER_LOADING_OR_EMPTY } from './helpers/explorer';
+import { EXPLORER_EMPTY_FOLDER } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 
@@ -23,9 +23,9 @@ test('空 workspace → 渲染 workspace name + 没有 treeitem', async () => {
       win.locator('main aside').nth(1).getByText(wsName).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Tree 0 个 treeitem(空 root):该提示在读取中也显示,仅作 FolderTree 已挂载的信号;
-    // 靠其后 1 秒等待兜底确认没有迟到的条目
-    await expect(win.getByText(EXPLORER_LOADING_OR_EMPTY)).toBeVisible({ timeout: 10_000 });
+    // Tree 0 个 treeitem(空 root):「此文件夹为空」只在根目录读取成功后显示(读取中显示「加载中」);
+    // 其后 1 秒等待兜底确认没有迟到的条目
+    await expect(win.getByText(EXPLORER_EMPTY_FOLDER)).toBeVisible({ timeout: 10_000 });
     await win.waitForTimeout(1_000);
     await expect(win.locator('[role=treeitem]')).toHaveCount(0);
 

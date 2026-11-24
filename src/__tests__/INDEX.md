@@ -652,6 +652,7 @@
 - [`folder-tree-click-modifiers.spec.tsx`](./explorer-tree/folder-tree-click-modifiers.spec.tsx)
 - [`folder-tree-create.spec.tsx`](./explorer-tree/folder-tree-create.spec.tsx)
 - [`folder-tree-keyboard.spec.tsx`](./explorer-tree/folder-tree-keyboard.spec.tsx)
+- [`folder-tree-load-state.spec.tsx`](./explorer-tree/folder-tree-load-state.spec.tsx)
 - [`folder-tree-rename-input.spec.tsx`](./explorer-tree/folder-tree-rename-input.spec.tsx)
 - [`folder-tree-row-memo.spec.tsx`](./explorer-tree/folder-tree-row-memo.spec.tsx)
 - [`folder-tree-scroll-to-item.spec.tsx`](./explorer-tree/folder-tree-scroll-to-item.spec.tsx)

@@ -11,6 +11,7 @@ import type {
   TreeInstance,
 } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
+import { Button } from '@/design';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
@@ -65,6 +66,11 @@ interface PendingReveal {
   /** 文件夹:DOM 焦点移到新行;文件:只改树的焦点 / 选中并滚动,不抢刚打开的编辑器的焦点。 */
   focusRow: boolean;
 }
+
+// 根目录读取状态:加载中 / 已读到 / 读取失败(原因)。
+const ROOT_LOADING = 'loading';
+const ROOT_LOADED = 'loaded';
+type RootLoadState = typeof ROOT_LOADING | typeof ROOT_LOADED | { code: string; message: string };
 
 // 新项若始终不出现(如新建的是隐藏文件且未显示隐藏文件),到期放弃定位。
 const PENDING_REVEAL_TTL_MS = 3000;
@@ -240,6 +246,8 @@ export function FolderTree({ root }: { root: string }) {
   }, []);
   const [creating, setCreating] = useState<CreatingState | null>(null);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
+  // 根目录读取状态(loader 经 onChildrenLoad 回报):列表为空时据此区分加载中 / 读取失败 / 空文件夹。
+  const [rootLoad, setRootLoad] = useState<RootLoadState>(ROOT_LOADING);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
   // 防止 child enter/leave 误清(每次 enter +1,leave -1,归零才真离开)
   const [hoverTarget, setHoverTarget] = useState<DropTargetEntry | null>(null);
@@ -418,6 +426,8 @@ export function FolderTree({ root }: { root: string }) {
       }
       if (gens.get(parentPath) !== gen) return; // 已被更新的刷新取代,或已卸载
       gens.delete(parentPath);
+      // 不经 loader 的刷新路径:根目录读到了 → 清掉失败态(失败则下方 invalidate 经 loader 回报)
+      if (entries !== null && parentPath === root) setRootLoad(ROOT_LOADED);
       const data = t.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current;
       const cachedIds = data.childrenIds?.[parentPath];
       // 缓存缺失 = 该目录被别处 invalidate、正在重新加载 → 原路径会复用那次在途加载。
@@ -434,7 +444,7 @@ export function FolderTree({ root }: { root: string }) {
         t.rebuildTree();
       }
     })();
-  }, []);
+  }, [root]);
 
   // 为「单批移动/复制到同一 destDir」建一个唯一名 picker:listDir 一次拿现有
   // basename 集合,之后每次 pick 纯本地匹配(打磨 R20→R21:批量循环原先逐项
@@ -503,6 +513,9 @@ export function FolderTree({ root }: { root: string }) {
           if (now - lastIpcWarnAtRef.current < 3000) return;
           lastIpcWarnAtRef.current = now;
           notifyFailure({ code, message });
+        },
+        onChildrenLoad: (itemId, failure) => {
+          if (itemId === root) setRootLoad(failure ?? ROOT_LOADED);
         },
         onRename: (item: ItemInstance<FileEntry>, newName: string) => {
           // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions
@@ -782,6 +795,58 @@ export function FolderTree({ root }: { root: string }) {
     return true;
   };
 
+  // Header「刷新」与根目录读取失败时的「重试」共用。
+  const refreshAll = () => {
+    // 刷新 = invalidate 当前所有展开目录,触发重新 listDir。
+    // 单点 invalidate(root)对 cache 中已 list 过的子目录无效,
+    // 所以遍历 expandedItems 全部 invalidate 一遍。
+    const expanded = tree.getState().expandedItems ?? EMPTY_EXPANDED_ITEMS;
+    // root 也算「已展开」(根 children 已 list),始终 invalidate
+    const refreshPath = (path: string) => {
+      try {
+        const it = tree.getItemInstance(path);
+        void it?.invalidateChildrenIds();
+      } catch {
+        // 节点已不存在(外部进程删了),跳过
+      }
+    };
+    refreshPath(root);
+    for (const path of expanded) {
+      if (path !== root) refreshPath(path);
+    }
+  };
+
+  // 列表为空时区分三态(VSCode 同款):读取失败(原因 + 重试)/ 加载中 / 空文件夹。读取失败时 loader 也缓存 [],
+  // 靠 rootLoad 区分。
+  const renderEmptyState = () => {
+    if (typeof rootLoad === 'object') {
+      return (
+        <div className="flex flex-col items-start gap-2 p-4 text-xs">
+          <div role="alert" className="break-words text-error">
+            {tt('panels.explorer.load_failed', {
+              message: localizeErrorByCode(rootLoad.code, rootLoad.message),
+            })}
+          </div>
+          <Button
+            variant="outlined"
+            size="sm"
+            onClick={() => {
+              setRootLoad(ROOT_LOADING);
+              refreshAll();
+            }}
+          >
+            {tt('panels.explorer.retry')}
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div className="p-4 text-xs text-fg-dim" role="status">
+        {rootLoad === ROOT_LOADING ? tt('common.loading') : tt('panels.explorer.empty_folder')}
+      </div>
+    );
+  };
+
   // ── Drop 上传(Step 5d) ───────────────────────────────────────
   const dropTargetDir = resolveDropTarget(hoverTarget, root);
 
@@ -887,25 +952,7 @@ export function FolderTree({ root }: { root: string }) {
           expandAll(tree);
         }}
         onCollapseAll={() => tree.collapseAll()}
-        onRefresh={() => {
-          // 刷新 = invalidate 当前所有展开目录,触发重新 listDir。
-          // 单点 invalidate(root)对 cache 中已 list 过的子目录无效,
-          // 所以遍历 expandedItems 全部 invalidate 一遍。
-          const expanded = tree.getState().expandedItems ?? EMPTY_EXPANDED_ITEMS;
-          // root 也算「已展开」(根 children 已 list),始终 invalidate
-          const refreshPath = (path: string) => {
-            try {
-              const it = tree.getItemInstance(path);
-              void it?.invalidateChildrenIds();
-            } catch {
-              // 节点已不存在(外部进程删了),跳过
-            }
-          };
-          refreshPath(root);
-          for (const path of expanded) {
-            if (path !== root) refreshPath(path);
-          }
-        }}
+        onRefresh={refreshAll}
         onNewFile={() => setCreating({ type: 'file', parentDir: root })}
         onNewDir={() => setCreating({ type: 'dir', parentDir: root })}
       />
@@ -936,7 +983,7 @@ export function FolderTree({ root }: { root: string }) {
           }}
         >
           {items.length === 0 ? (
-            <div className="p-4 text-xs text-fg-dim">{tt('panels.explorer.loading_or_empty')}</div>
+            renderEmptyState()
           ) : (
             <div
               // a11y(A25):headless-tree role="tree" 默认 aria-label="" → 屏幕阅读器进主文件树

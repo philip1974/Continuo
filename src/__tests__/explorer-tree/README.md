@@ -23,6 +23,8 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - `dataLoader.getChildrenWithData(parentPath)` 调 `fs.listDir(parentPath)`:
   - 成功:把 `FileEntry[]` 映射为 `{ id: entry.path, data: entry }[]`
   - 失败:返回 `[]`,`onIpcWarn` 回调被调(默认 console.warn)
+  - 每次结果回报 `onChildrenLoad(itemId, failure | null)`(成功 null;失败 / 抛错带 code + message),
+    调用方据此区分读取失败与空目录
 - `dataLoader.getItem(child)`(非 root)调 `fs.listDir(parent)` 查找,找不到时降级返回最小信息
 - `getItemName(item)` 返回 `item.getItemData().name`
 - `isItemFolder(item)` 返回 `item.getItemData().isDirectory`
@@ -91,6 +93,14 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 失败(含同名冲突 FS_EEXIST):输入框与已输入的名字保留,下方 `role="alert"` 显示按错误码本地化的原因
   (`localizeErrorByCode`),不弹 toast;改名后提示消失,Enter 重试;Esc 放弃(输入框与提示一并消失)
 - 输入框组件契约(重试守卫 / aria-invalid / onEdit)见 `create-input` 主题
+
+## 空列表三态(`folder-tree-load-state.spec.tsx`,VSCode 同款)
+
+- 根目录尚未读到(loader 未经 `onChildrenLoad` 回报;点「重试」后也回到此态)→ 「加载中」(`common.loading`,role=status)
+- 读取成功但无可显示项 → 「此文件夹为空」
+- 根目录读取失败(`onChildrenLoad` 回报)→ `role="alert"` 显示「无法读取此文件夹:{按错误码本地化的原因}」+
+  「重试」按钮(与 Header「刷新」同一 `refreshAll`);重试成功后列出文件、失败态消失。不经 loader 的
+  `refreshParent` 读到根目录时同样置为已读到
 
 ## 不在本主题验证
 

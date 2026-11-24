@@ -250,6 +250,33 @@ describe('createDataLoader · getChildrenWithData', () => {
     );
   });
 
+  it('每次加载结果回报 onChildrenLoad:成功 null,失败带 code / message(区分读取失败与空目录)', async () => {
+    const onChildrenLoad = vi.fn();
+    let result: IpcResult<readonly FileEntry[]> = ok([]);
+    const fs = makeFs(() => result);
+    const loader = createDataLoader({ root: '/work', fs, onIpcWarn: () => {}, onChildrenLoad });
+    await loader.getChildrenWithData('/work');
+    expect(onChildrenLoad).toHaveBeenLastCalledWith('/work', null);
+    result = fail('FS_EACCES', 'permission denied');
+    await loader.getChildrenWithData('/work');
+    expect(onChildrenLoad).toHaveBeenLastCalledWith('/work', {
+      code: 'FS_EACCES',
+      message: 'permission denied',
+    });
+  });
+
+  it('listDir 抛异常 → onChildrenLoad 回报 IPC_HANDLER_ERROR', async () => {
+    const onChildrenLoad = vi.fn();
+    const fs = {
+      listDir: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    };
+    const loader = createDataLoader({ root: '/work', fs, onIpcWarn: () => {}, onChildrenLoad });
+    await loader.getChildrenWithData('/work');
+    expect(onChildrenLoad).toHaveBeenCalledWith('/work', { code: 'IPC_HANDLER_ERROR', message: 'boom' });
+  });
+
   it('listDir 抛异常 → 也被吞,返回 []', async () => {
     const onIpcWarn = vi.fn();
     const fs = {

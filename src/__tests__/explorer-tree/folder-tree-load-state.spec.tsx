@@ -1,0 +1,130 @@
+// @vitest-environment jsdom
+// 文件树列表为空时区分三态(VSCode Explorer:加载中显示进度、空文件夹显示空态、读取失败显示原因):
+//   - 根目录还在读取 → 「加载中」
+//   - 读取成功但没有可显示的项 → 「此文件夹为空」
+//   - 读取失败 → 本地化的失败原因 + 「重试」按钮(调与 Header 刷新同一实现);重试成功后列出文件
+import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import type { FileEntry } from '../../lib/fs/types';
+import { useExplorerStore } from '../../stores/explorer.store';
+
+const h = vi.hoisted(() => ({
+  // 根目录 listDir 的结果由用例控制(pending / 成功 / 失败);null = 用 fsTree
+  rootListDir: null as null | (() => Promise<unknown>),
+  openFileByPath: null as null | ((p: string) => Promise<{ ok: true }>),
+  editorFile: null as null | { openFileByPath: (p: string) => Promise<{ ok: true }> },
+}));
+
+const entries: FileEntry[] = [
+  { path: '/work/alpha', name: 'alpha', isDirectory: true },
+  { path: '/work/beta.ts', name: 'beta.ts', isDirectory: false },
+  { path: '/work/bravo.ts', name: 'bravo.ts', isDirectory: false },
+  { path: '/work/charlie.ts', name: 'charlie.ts', isDirectory: false },
+];
+const fsTree = new Map<string, FileEntry[]>([
+  ['/work', entries],
+  ['/work/alpha', [{ path: '/work/alpha/inner.ts', name: 'inner.ts', isDirectory: false }]],
+]);
+
+vi.mock('@/lib/co-api', () => ({
+  coApi: {
+    fs: {
+      listDir: vi.fn(async (p: string) =>
+        p === '/work' && h.rootListDir ? h.rootListDir() : { ok: true, data: fsTree.get(p) ?? [] },
+      ),
+      move: vi.fn(async (_s: string, d: string) => ({ ok: true, data: d })),
+      copy: vi.fn(async (_s: string, d: string) => ({ ok: true, data: d })),
+      trash: vi.fn(async () => ({ ok: true, data: undefined })),
+      reveal: vi.fn(),
+      watchDir: vi.fn(async () => ({ ok: true })),
+      unwatchDir: vi.fn(async () => ({ ok: true })),
+      onDirChanged: vi.fn(() => vi.fn()),
+      onWatchLost: vi.fn(() => vi.fn()),
+    },
+    terminal: { create: vi.fn() },
+  },
+}));
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: (opts: { count: number }) => ({
+    getTotalSize: () => opts.count * 28,
+    getVirtualItems: () =>
+      Array.from({ length: opts.count }, (_, i) => ({ index: i, start: i * 28, size: 28, key: i })),
+    scrollToIndex: () => {},
+  }),
+}));
+vi.mock('@/panels/Editor/useEditorFile', () => ({
+  useEditorFile: () => h.editorFile,
+}));
+vi.mock('@/plugins/settings/values-store', () => ({
+  useSettingValue: (_key: string, fallback: unknown) => fallback,
+}));
+vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
+vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));
+
+import { coApi } from '@/lib/co-api';
+import { FolderTree } from '../../panels/Explorer/FolderTree';
+import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
+
+const row = (container: HTMLElement, p: string) =>
+  container.querySelector(`[title="${p}"]`) as HTMLElement | null;
+
+let originalPlatform: PropertyDescriptor | undefined;
+function setPlatform(p: string): void {
+  Object.defineProperty(window.navigator, 'platform', { value: p, configurable: true });
+}
+
+beforeEach(() => {
+  originalPlatform = Object.getOwnPropertyDescriptor(window.navigator, 'platform');
+  setPlatform('Win32');
+  h.openFileByPath = vi.fn(async () => ({ ok: true as const }));
+  h.editorFile = { openFileByPath: h.openFileByPath };
+  vi.mocked(coApi.fs.listDir).mockClear();
+  h.rootListDir = null;
+  vi.mocked(coApi.fs.copy).mockClear();
+  useExplorerStore.setState({ expandedPaths: new Set(), sort: { by: 'name', reverse: false } });
+  useExplorerClipboardStore.setState({ kind: null, paths: [] });
+});
+afterEach(() => {
+  cleanup();
+  if (originalPlatform) Object.defineProperty(window.navigator, 'platform', originalPlatform);
+  else delete (window.navigator as { platform?: string }).platform;
+});
+
+const LOADING = /^(加载中|Loading)$/;
+const EMPTY = /^(此文件夹为空|This folder is empty)$/;
+const RETRY = /^(重试|Retry)$/;
+
+describe('FolderTree · 空列表三态', () => {
+  it('根目录读取中 → 显示「加载中」,不显示空目录', async () => {
+    h.rootListDir = () => new Promise(() => {});
+    const r = render(<FolderTree root="/work" />);
+    expect(await r.findByText(LOADING)).toBeTruthy();
+    expect(r.queryByText(EMPTY)).toBeNull();
+    expect(r.queryByRole('alert')).toBeNull();
+  });
+
+  it('读取成功且为空 → 显示「此文件夹为空」', async () => {
+    h.rootListDir = async () => ({ ok: true, data: [] });
+    const r = render(<FolderTree root="/work" />);
+    expect(await r.findByText(EMPTY)).toBeTruthy();
+    expect(r.queryByText(LOADING)).toBeNull();
+    expect(r.queryByRole('alert')).toBeNull();
+  });
+
+  it('读取失败 → 显示本地化原因与「重试」;重试成功后列出文件', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'EACCES: permission denied' });
+    const r = render(<FolderTree root="/work" />);
+    const alert = await r.findByRole('alert');
+    expect(alert.textContent).toMatch(/拒绝访问|Access denied/);
+    expect(r.queryByText(EMPTY)).toBeNull();
+    const calls = vi.mocked(coApi.fs.listDir).mock.calls.filter((c) => c[0] === '/work').length;
+    h.rootListDir = null;
+    act(() => {
+      fireEvent.click(r.getByRole('button', { name: RETRY }));
+    });
+    await waitFor(() => expect(row(r.container, '/work/beta.ts')).not.toBeNull());
+    expect(vi.mocked(coApi.fs.listDir).mock.calls.filter((c) => c[0] === '/work').length).toBeGreaterThan(calls);
+    expect(r.queryByRole('alert')).toBeNull();
+  });
+});
