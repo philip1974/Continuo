@@ -58,6 +58,20 @@ interface ToastViewportContentProps {
   readonly announces: (id: string) => boolean;
 }
 
+// portal key 须按文档稳定:用数组下标时收回前面的 popout,后一个子窗的 key 会变 → React 卸载重挂该窗全部 toast
+// (悬停 / 焦点丢失、live region 重插可能重读)。
+const portalKeys = new WeakMap<Document, string>();
+let nextPortalKey = 0;
+function portalKeyOf(doc: Document): string {
+  let key = portalKeys.get(doc);
+  if (key === undefined) {
+    nextPortalKey += 1;
+    key = `popout-${String(nextPortalKey)}`;
+    portalKeys.set(doc, key);
+  }
+  return key;
+}
+
 /** 有焦点的 popout 子窗优先(用户正在看那一屏),否则主窗。 */
 function pickAnnouncingDocument(popoutDocs: readonly Document[]): Document {
   for (const doc of popoutDocs) if (doc.hasFocus()) return doc;
@@ -83,11 +97,11 @@ function ToastViewportWindows({
   return (
     <>
       <ToastViewportContent {...props} announces={announcesIn(document)} />
-      {popoutDocs.map((doc, i) =>
+      {popoutDocs.map((doc) =>
         createPortal(
           <ToastViewportContent {...props} announces={announcesIn(doc)} />,
           doc.body,
-          `popout-${String(i)}`,
+          portalKeyOf(doc),
         ),
       )}
     </>

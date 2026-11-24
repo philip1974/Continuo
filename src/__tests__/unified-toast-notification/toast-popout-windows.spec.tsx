@@ -96,6 +96,27 @@ describe('popout 子窗显示 toast', () => {
     expect(mainToasts()).toHaveLength(1);
   });
 
+  it('T18c 多个 popout 时前一个收回,后一个子窗里的 toast 不被卸载重挂(同一 DOM 实例)', () => {
+    const second = makeChildDocument();
+    try {
+      const dock = fakeDock();
+      const first = dock.addGroup(popout());
+      dock.addGroup({ type: 'popout', getWindow: () => second.win });
+      tracker = trackPopoutDocuments(dock.api);
+      renderApp();
+      act(() => notify.info('hello'));
+      const before = second.doc.querySelector('.toast');
+      expect(before).not.toBeNull();
+
+      act(() => first.moveTo({ type: 'grid' }));
+      expect(childToast()).toBeNull();
+      expect(second.doc.querySelector('.toast')).toBe(before);
+    } finally {
+      cleanup(); // 先卸载 portal 再移除第二个子窗(afterEach 的 cleanup 晚于此处)
+      second.dispose();
+    }
+  });
+
   it('T18b 关闭按钮在子窗也有效;在子窗悬停同样暂停计时', () => {
     vi.useFakeTimers();
     const dock = fakeDock();
