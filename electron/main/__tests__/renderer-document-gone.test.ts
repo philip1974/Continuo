@@ -46,8 +46,9 @@ describe('接线:三套 renderer 就绪握手都按同一判定作废', () => {
     const index = read('index.ts');
     expect(index).toMatch(/onRendererDocumentGone\(win\.webContents, \(\) => protocolReadyContents\.delete/);
     // 关窗 flush:文档换掉时清就绪与脏态(否则崩溃后关窗空等超时、reload 后弹幽灵脏文件确认框)。
+    // 并结算该窗口在途的 flush(否则 flush 中途崩溃仍空等满超时)。
     expect(index).toMatch(
-      /onRendererDocumentGone\(win\.webContents, \(\) => \{ flushReadyWindowIds\.delete\(windowId\); if \(dirtyStates\.delete\(windowId\)/,
+      /onRendererDocumentGone\(win\.webContents, \(\) => \{ flushReadyWindowIds\.delete\(windowId\);.*?entry\.done\('skipped'\).*?if \(dirtyStates\.delete\(windowId\)/,
     );
   });
 });

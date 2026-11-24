@@ -376,6 +376,21 @@ describe('window close layout flush', () => {
     await waitForLastClosedAt(5);
   });
 
+  // 文档换掉(崩溃 / reload)时旧文档不会再回执、新文档也没收到该请求 → 在途 flush 须立即结算,不空等满超时。
+  it('flush 在途时渲染进程崩溃 → 立即结算并关窗(不空等满 FLUSH_ACK_TIMEOUT_MS)', async () => {
+    vi.useFakeTimers();
+    const win = createMockMainWindow(5);
+    win.close();
+    expect(win.destroyed).toBe(false);
+    const gone = win.webContents.on.mock.calls
+      .filter((c) => c[0] === 'render-process-gone')
+      .map((c) => c[1] as () => void);
+    expect(gone.length).toBeGreaterThan(0);
+    for (const cb of gone) cb();
+    await flushMicrotasks(2);
+    expect(win.destroyed).toBe(true);
+  });
+
   it('T14f: webContents 已销毁 → flush 立即放行(不空等满超时)', async () => {
     vi.useFakeTimers();
     const win = createMockMainWindow(5);

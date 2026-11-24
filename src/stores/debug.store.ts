@@ -258,10 +258,10 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         // main 推的是该 source 的完整集合(adapter 校正后的行号):整组替换该文件的记录、其它文件保留。
         // 按 file+行号增量合并时,同一逻辑断点被重新校正到别的行会留下旧红点。文件分组与 main 一致(===)。
         // 会话断点总数按 subscribe 快照同一上限截断(单个事件已按此上限截断,跨文件累计仍须再截)。
-        const breakpoints = [
-          ...current.breakpoints.filter((bp) => bp.file !== event.file),
-          ...event.breakpoints,
-        ].slice(0, DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
+        // 超限时截掉的是其它文件的旧记录,本次事件(用户 / agent 刚设的)完整保留(最新优先);显示顺序不变。
+        const others = current.breakpoints.filter((bp) => bp.file !== event.file);
+        const room = Math.max(0, DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX - event.breakpoints.length);
+        const breakpoints = [...others.slice(0, room), ...event.breakpoints];
         const nextSession: DebugSessionShadow = {
           ...current,
           breakpoints,

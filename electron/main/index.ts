@@ -438,9 +438,14 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
   const windowId = win.id; // closed 之后窗口已销毁,提前取 id
   // 文档换掉(Cmd+R reload / 渲染进程崩溃 / 主框架加载失败):flush 就绪与脏态都只属于旧文档 —— 不作废则
   // 崩溃后关窗空等满 FLUSH_ACK_TIMEOUT_MS(「保存」时还会中止关闭),reload 后关窗弹出列着已不存在文件的
-  // 确认框、macOS 关闭按钮的未保存圆点常驻。新文档挂载后重新上报就绪,有脏 tab 时重新上报脏态。
+  // 确认框、macOS 关闭按钮的未保存圆点常驻;flush 在途时崩溃同样空等。新文档挂载后重新上报就绪,有脏 tab 时重新上报脏态。
   onRendererDocumentGone(win.webContents, () => {
     flushReadyWindowIds.delete(windowId);
+    // 在途 flush:旧文档不会再回执、新文档没收到该请求 → 立即按 skipped 结算(「保存」模式据此中止关闭 ——
+    // 保存确实没执行;其余放行),不空等满超时。
+    for (const entry of [...pendingFlushAcks.values()]) {
+      if (entry.windowId === windowId) entry.done('skipped');
+    }
     if (dirtyStates.delete(windowId) && process.platform === 'darwin' && !win.isDestroyed()) {
       win.setDocumentEdited(false);
     }

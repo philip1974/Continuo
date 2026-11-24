@@ -435,3 +435,29 @@ describe('debug 事件入口校验 — 字段与会话级上限', () => {
     );
   });
 });
+
+describe('会话断点超限时最新优先', () => {
+  const emit = (event: unknown) => debugApi.events[0]!(event as DebugViewEvent);
+  it('已满上限后新文件的断点完整保留,截掉的是其它文件的旧记录', () => {
+    startDebugStoreSync();
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/old.ts',
+      breakpoints: Array.from({ length: DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX }, (_, i) => ({
+        file: '/old.ts',
+        line: i + 1,
+        verified: true,
+      })),
+    });
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/new.ts',
+      breakpoints: [{ file: '/new.ts', line: 7, verified: true }],
+    });
+    const bps = useDebugStore.getState().sessions.get('s1')?.breakpoints ?? [];
+    expect(bps).toHaveLength(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
+    expect(bps.some((bp) => bp.file === '/new.ts' && bp.line === 7)).toBe(true);
+  });
+});
