@@ -11,6 +11,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { SHELL_MAX_TIMEOUT_MS } from '../../shared/shell-limits';
 import { killProcessTreesNow, killWithGrace, processTreeKillable } from './kill-with-grace';
+import { createKeyedCounter } from './keyed-counter';
 
 /** 超时终止进程树后仍等不到 close(后代逃出进程组仍持管道)时,最多再等这么久即强制结算。 */
 export const FORCE_SETTLE_MS = 3000;
@@ -75,7 +76,7 @@ export function createPluginShellChildren(limits: {
   const owners = new Map<ChildProcess, Owner>();
   allRegistries.push(owners);
   let slots = 0;
-  const slotsBySender = new Map<number, number>();
+  const slotsBySender = createKeyedCounter<number>();
   let shuttingDown = false;
 
   const kill = (match: (owner: Owner) => boolean): Promise<void> =>
@@ -85,20 +86,17 @@ export function createPluginShellChildren(limits: {
     isShuttingDown: () => shuttingDown,
     atCapacity: (senderId) =>
       slots >= limits.maxGlobal ||
-      (senderId !== undefined && (slotsBySender.get(senderId) ?? 0) >= limits.maxPerSender),
+      (senderId !== undefined && slotsBySender.get(senderId) >= limits.maxPerSender),
     track(child, senderId, pluginId) {
       owners.set(child, { senderId, pluginId: pluginId || undefined });
       slots += 1;
-      if (senderId !== undefined) slotsBySender.set(senderId, (slotsBySender.get(senderId) ?? 0) + 1);
+      if (senderId !== undefined) slotsBySender.inc(senderId);
       let released = false;
       const release = (): void => {
         if (released) return;
         released = true;
         slots -= 1;
-        if (senderId === undefined) return;
-        const n = (slotsBySender.get(senderId) ?? 1) - 1;
-        if (n > 0) slotsBySender.set(senderId, n);
-        else slotsBySender.delete(senderId);
+        if (senderId !== undefined) slotsBySender.dec(senderId);
       };
       // close / error 可能先后都到:release 幂等,只归还一次。
       const drop = (): void => {

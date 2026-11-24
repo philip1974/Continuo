@@ -30,12 +30,12 @@ describe('window sequence service API', () => {
     expect(getWindowSeq(1)).toBeNull();
   });
 
-  it('T8d: getActiveSeqs returns all current seqs as Set', () => {
+  it('T8d: getActiveSeqs yields all current seqs', () => {
     setWindowSeq(1, 10);
     setWindowSeq(2, 11);
     setWindowSeq(3, 12);
 
-    expect(getActiveSeqs()).toEqual(new Set([10, 11, 12]));
+    expect(new Set(getActiveSeqs())).toEqual(new Set([10, 11, 12]));
   });
 
   it('T8e: getActiveSeqs after clearWindow excludes cleared', () => {
@@ -43,7 +43,7 @@ describe('window sequence service API', () => {
     setWindowSeq(2, 11);
     clearWindow(1);
 
-    expect(getActiveSeqs()).toEqual(new Set([11]));
+    expect(new Set(getActiveSeqs())).toEqual(new Set([11]));
   });
 
   it('T8f: setWindowSeq overwrites existing', () => {
@@ -59,20 +59,16 @@ describe('window sequence service API', () => {
     _reset();
 
     expect(getWindowSeq(1)).toBeNull();
-    expect(getActiveSeqs().size).toBe(0);
+    expect([...getActiveSeqs()]).toEqual([]);
   });
 
-  it('getActiveSeqs 复用内部 active seq 集合,不通过 map.values 重建', () => {
+  it('getActiveSeqs 直接迭代内部 seq 引用计数的 key,不通过 map.values 重建', () => {
     setWindowSeq(1, 5);
     setWindowSeq(2, 6);
     const valuesSpy = vi.spyOn(Map.prototype, 'values');
 
     try {
-      const first = getActiveSeqs();
-      const second = getActiveSeqs();
-
-      expect(first).toBe(second);
-      expect(first).toEqual(new Set([5, 6]));
+      expect(new Set(getActiveSeqs())).toEqual(new Set([5, 6]));
       expect(valuesSpy).not.toHaveBeenCalled();
     } finally {
       valuesSpy.mockRestore();
@@ -84,9 +80,9 @@ describe('window sequence service API', () => {
     setWindowSeq(2, 5);
 
     clearWindow(1);
-    expect(getActiveSeqs()).toEqual(new Set([5]));
+    expect(new Set(getActiveSeqs())).toEqual(new Set([5]));
 
     clearWindow(2);
-    expect(getActiveSeqs()).toEqual(new Set());
+    expect([...getActiveSeqs()]).toEqual([]);
   });
 });

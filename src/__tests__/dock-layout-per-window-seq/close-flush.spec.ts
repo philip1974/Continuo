@@ -481,7 +481,7 @@ describe('window close layout flush', () => {
         .toEqual(expect.any(Number));
     });
 
-    expect(getActiveSeqs().has(10)).toBe(false);
+    expect([...getActiveSeqs()]).not.toContain(10);
   });
 
   it('T20c: 关窗时窗口段超过上限 → 摘最旧 closed 段;活跃窗、主窗段(seq 0)与刚关的窗口保留', async () => {

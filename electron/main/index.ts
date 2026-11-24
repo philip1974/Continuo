@@ -49,6 +49,7 @@ import {
 } from './services/window-seq.service';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { atomicWriteJson } from './lib/atomic-write';
+import { createKeyedCounter } from './lib/keyed-counter';
 import { statDirGated } from './lib/dir-stat-gate';
 import { makeWindowResourceCleanup } from './window-resource-cleanup';
 import { makeQuitCleanupGuard } from './quit-cleanup-guard';
@@ -179,12 +180,7 @@ const LRU_MAX_CLOSED = MAX_PERSISTED_WINDOW_SEGMENTS;
  * 多窗近同时关闭时,先拿到 explorer mutex 的那个执行 LRU,不能把另一个仍在关闭中的窗口段当最旧摘掉
  * (其 lastClosedAt 还是旧值),否则后者落盘时只能 ensureWindowEntry 重建空段,原 workspace/layout 丢失。
  */
-const closingSeqRefs = new Map<number, number>();
-function releaseClosingSeq(seq: number): void {
-  const next = (closingSeqRefs.get(seq) ?? 0) - 1;
-  if (next > 0) closingSeqRefs.set(seq, next);
-  else closingSeqRefs.delete(seq);
-}
+const closingSeqRefs = createKeyedCounter<number>();
 /**
  * LRU 不可摘的段:活跃窗 + 关闭中窗 + 主窗段 seq 0。冷启动主窗固定复用 seq 0 的段恢复 workspace,
  * 即使它很早就被关掉,也不能当成过期历史摘掉。
@@ -666,7 +662,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 
   win.on('closed', () => {
     // 先同步登记为关闭中,再退出活跃集:两者之间不能留出让其他窗口 LRU 摘掉本段的窗口期。
-    closingSeqRefs.set(seq, (closingSeqRefs.get(seq) ?? 0) + 1);
+    closingSeqRefs.inc(seq);
     clearWindow(win.id);
     // 窗口级资源清理(scope / fs watcher / agent 授权)已移到覆盖全窗口的
     // browser-window-created → releaseWindowResources,主窗与 popout 统一处理。
@@ -684,7 +680,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
         await atomicWriteJson(explorerFile, payload);
       } finally {
         // 自身段已落盘(或写失败)→ 解除保护;放在 mutex 体内,不另起派生 promise 制造未处理拒绝。
-        releaseClosingSeq(seq);
+        closingSeqRefs.dec(seq);
       }
     });
   });

@@ -1,4 +1,5 @@
 import { assertOwnerWindowId } from '../lib/assert-owner-window-id';
+import { createKeyedCounter } from '../lib/keyed-counter';
 import { codedError } from '../../shared/error-message';
 import { ERROR_CODES } from '../../shared/error-codes';
 
@@ -44,11 +45,10 @@ const EMPTY_DEBUG_SESSIONS: readonly DebugSession[] = [];
  * 在途 launch 预占的名额(窗口 id → 份数)。launch 在 spawn adapter 之前同步预占,登记时由 add 消耗,失败 / 取消时
  * 释放:并发 launch 不会都在 spawn 前看到空余名额而同时拉起大量 adapter。
  */
-const reservations = new Map<number, number>();
-let reservedTotal = 0;
+const reservations = createKeyedCounter<number>();
 
 function sessionCountForWindow(ownerWindowId: number): number {
-  let count = reservations.get(ownerWindowId) ?? 0;
+  let count = reservations.get(ownerWindowId);
   for (const session of sessions.values()) {
     if (session.ownerWindowId === ownerWindowId) count += 1;
   }
@@ -56,7 +56,7 @@ function sessionCountForWindow(ownerWindowId: number): number {
 }
 
 function activeSessionCount(): number {
-  return reservedTotal + sessions.size;
+  return reservations.total() + sessions.size;
 }
 
 /** 会话数上限检查:已登记会话与在途 launch 的预占都计入。 */
@@ -103,20 +103,14 @@ export interface CapacityReservation {
  */
 export function reserve(ownerWindowId: number): CapacityReservation {
   assertCapacity(ownerWindowId);
-  reservations.set(ownerWindowId, (reservations.get(ownerWindowId) ?? 0) + 1);
-  reservedTotal += 1;
+  reservations.inc(ownerWindowId);
   let released = false;
   return {
     ownerWindowId,
     release() {
       if (released) return;
       released = true;
-      const held = reservations.get(ownerWindowId);
-      if (held === undefined) return; // 已被 _reset 清空
-      reservedTotal -= 1;
-      const left = held - 1;
-      if (left > 0) reservations.set(ownerWindowId, left);
-      else reservations.delete(ownerWindowId);
+      reservations.dec(ownerWindowId); // 已被 _reset 清空时为 no-op
     },
   };
 }
@@ -213,5 +207,4 @@ export function remove(id: string): void {
 export function _reset(): void {
   sessions.clear();
   reservations.clear();
-  reservedTotal = 0;
 }

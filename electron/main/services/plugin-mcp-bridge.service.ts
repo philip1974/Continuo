@@ -18,6 +18,7 @@ import {
   PLUGIN_MCP_ERROR_CODES,
 } from '../../shared/plugin-mcp-channels';
 import type { AnyMcpTool } from './mcp-host.service';
+import { createKeyedCounter } from '../lib/keyed-counter';
 import { codedError } from '../../shared/error-message';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { gateWithAuth, type EnsureAuthorized } from './mcp-tool-gates';
@@ -132,22 +133,14 @@ export function createInvokeRemote(
 
   const pending = new Map<string, PendingEntry>();
   // 边界(E228):per-wc 在途计数(O(1) 维护,避免每次 invoke 遍历 pending 数 wc → O(n))。
-  const inflightPerWc = new Map<number, number>();
-  const incWc = (wcId: number): void => {
-    inflightPerWc.set(wcId, (inflightPerWc.get(wcId) ?? 0) + 1);
-  };
-  const decWc = (wcId: number): void => {
-    const n = (inflightPerWc.get(wcId) ?? 0) - 1;
-    if (n > 0) inflightPerWc.set(wcId, n);
-    else inflightPerWc.delete(wcId); // Map 排空回收,防 wc 计数项泄漏
-  };
+  const inflightPerWc = createKeyedCounter<number>();
   // 边界(E228):单一删除收口 —— 删 pending + 同步减 per-wc 计数。所有终态路径(reply / timeout /
   // abort / send-fail)都走这里,防计数漂移导致上限误判(永久卡死后续 invoke)。返回被删 entry(或 undefined)。
   const removePending = (requestId: string): PendingEntry | undefined => {
     const entry = pending.get(requestId);
     if (!entry) return undefined;
     pending.delete(requestId);
-    decWc(entry.owner.wcId);
+    inflightPerWc.dec(entry.owner.wcId);
     return entry;
   };
 
@@ -160,7 +153,7 @@ export function createInvokeRemote(
         );
         return;
       }
-      if ((inflightPerWc.get(owner.wcId) ?? 0) >= MAX_INFLIGHT_INVOKES_PER_WC) {
+      if (inflightPerWc.get(owner.wcId) >= MAX_INFLIGHT_INVOKES_PER_WC) {
         reject(
           codedError(PLUGIN_MCP_ERROR_CODES.TOO_MANY_REQUESTS, `plugin mcp per-window in-flight invoke limit (${MAX_INFLIGHT_INVOKES_PER_WC}) reached`,),
         );
@@ -174,7 +167,7 @@ export function createInvokeRemote(
         );
       }, timeoutMs);
       pending.set(requestId, { owner, name, resolve, reject, timer });
-      incWc(owner.wcId); // 边界(E228):登记即计数,与 removePending 的 decWc 对偶
+      inflightPerWc.inc(owner.wcId); // 边界(E228):登记即计数,与 removePending 的 dec 对偶
       // race(R32):send 显式返 false(wc 已销毁/不可达)或抛错 → 立即清本次 pending + cancel
       // timer + reject PLUGIN_GONE,不静默等满 timeout。返 void/true 视作已投递(向后兼容)。
       let delivered: boolean | void;
@@ -364,13 +357,7 @@ export function createPluginMcpBridge(
   const { host, invokeRemote, notifyToolsChanged, ensureAuthorized, windowIdOfWc } = deps;
   const entries = new Map<string, BridgeEntry>();
   // 边界(E79):per-wc 注册计数(O(1) 维护,避免 register 时 O(n) 遍历 entries 数 wc 计数 → O(n²))。
-  const perWcCount = new Map<number, number>();
-  // 减计数并在归零时删 key(Map 排空回收,防 wc 计数项泄漏)。
-  const decrementWc = (wcId: number): void => {
-    const n = (perWcCount.get(wcId) ?? 0) - 1;
-    if (n > 0) perWcCount.set(wcId, n);
-    else perWcCount.delete(wcId);
-  };
+  const perWcCount = createKeyedCounter<number>();
 
   return {
     handleRegister(wcId, payload) {
@@ -383,7 +370,7 @@ export function createPluginMcpBridge(
       if (entries.size >= MAX_TOOLS_GLOBAL) {
         throw codedError(PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS, `plugin mcp global tool limit (${MAX_TOOLS_GLOBAL}) reached`);
       }
-      if ((perWcCount.get(wcId) ?? 0) >= MAX_TOOLS_PER_WC) {
+      if (perWcCount.get(wcId) >= MAX_TOOLS_PER_WC) {
         throw codedError(PLUGIN_MCP_ERROR_CODES.TOO_MANY_TOOLS, `plugin mcp per-window tool limit (${MAX_TOOLS_PER_WC}) reached`,);
       }
       const owner: PluginMcpToolOwner = {
@@ -430,7 +417,7 @@ export function createPluginMcpBridge(
         pluginId: payload.pluginId,
         wcId,
       });
-      perWcCount.set(wcId, (perWcCount.get(wcId) ?? 0) + 1); // 边界(E79)
+      perWcCount.inc(wcId); // 边界(E79)
       notifyToolsChanged?.();
     },
 
@@ -440,7 +427,7 @@ export function createPluginMcpBridge(
       if (e.wcId !== wcId) return; // 非 owner wc → noop(防假冒)
       host.removeTool(name);
       entries.delete(name);
-      decrementWc(wcId); // 边界(E79):同步 per-wc 计数
+      perWcCount.dec(wcId); // 边界(E79):同步 per-wc 计数
       // 该 tool 还在途的 invoke 必须立即 abort —— 否则 renderer 端 stub 已没,
       // reply 永不回来,agent 侧 tools/call 要干等满 30s timeout 才自愈。与
       // handleWebContentsGone 的 abortByWebContents 对称(那条整 wc 销毁也 abort)。
