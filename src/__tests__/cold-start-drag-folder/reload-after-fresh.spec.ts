@@ -127,3 +127,63 @@ describe('main-app 启动接线', () => {
     expect(src).not.toMatch(/parseInitialFresh\(/);
   });
 });
+
+// fresh 覆盖 / 段缺失按 query 建段的结果须主动落盘:写订阅在 hydrate 之后才注册、hydrate 不标脏,此前要等第一次
+// store 变更才写 → 冷启动 dock 模式主窗(盘上仍有上次会话本窗段)在首次写盘前 dev 同 URL / DevTools 刷新
+//(fresh 已被 replaceState 去掉)会按旧段恢复旧 root。打包版菜单 Reload 先 flush 不受影响。
+describe('新窗口 hydrate 的结果无需任何 store 变更即落盘', () => {
+  const oldSeg = {
+    windowSeq: 0,
+    workspace: { root: '/Old' },
+    explorer: { activePath: null, expandedPaths: ['/Old'], sort: { by: 'name' as const, reverse: false } },
+    layoutUi: { sidebarOpen: true, sidebarWidth: 320 },
+    editor: { openFilePaths: ['/Old/a.ts'], activePath: '/Old/a.ts' },
+  };
+  const snapWith = (windows: ExplorerSnapshot['windows']): ExplorerSnapshot => ({
+    version: 3,
+    workspace: { recentRoots: ['/Old'] },
+    pinned: { paths: [] },
+    nextWindowSeq: 1,
+    windows,
+  });
+
+  async function initAndSettle(data: ExplorerSnapshot, fresh: boolean) {
+    vi.useFakeTimers();
+    try {
+      const write = vi.fn(async (_snap: ExplorerSnapshot) => ({ ok: true as const, data: undefined }));
+      await initExplorerPersistence(
+        {
+          read: vi.fn(async () => ({ ok: true as const, data })),
+          write,
+          touchRecent: vi.fn(async () => ({ ok: true as const, data: undefined })),
+        },
+        {
+          fs: { readFile: vi.fn(async () => ({ ok: true as const, data: 'a' })) },
+          windowSeq: 0,
+          initialWorkspace: '/New',
+          ...(fresh ? { fresh: true } : {}),
+        },
+      );
+      await vi.advanceTimersByTimeAsync(2000);
+      return write;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  const mySeg = (write: ReturnType<typeof vi.fn>) =>
+    (write.mock.calls.at(-1)?.[0] as ExplorerSnapshot | undefined)?.windows.find((w) => w.windowSeq === 0);
+
+  it('fresh 覆盖盘上旧段:防抖到期后本窗段已是 fresh 结果(新 root、无旧 tab)', async () => {
+    const write = await initAndSettle(snapWith([oldSeg]), true);
+    expect(write).toHaveBeenCalled();
+    expect(mySeg(write)?.workspace.root).toBe('/New');
+    expect(mySeg(write)?.editor?.openFilePaths).toEqual([]);
+  });
+
+  it('段缺失按 query 建段:防抖到期后本窗段已落盘', async () => {
+    const write = await initAndSettle(snapWith([]), false);
+    expect(write).toHaveBeenCalled();
+    expect(mySeg(write)?.workspace.root).toBe('/New');
+  });
+});

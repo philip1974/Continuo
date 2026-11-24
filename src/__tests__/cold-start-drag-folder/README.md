@@ -14,3 +14,6 @@ Tracks issue #45 cold-start drag-folder behavior. Verifies the `fresh` query fla
 - 此前 fresh 留在 URL 里,fresh 开的窗口(新窗口打开文件夹 / 命令行 / 拖文件夹到 Dock)换 root 开文件后刷新,
   会走 hydrateStoresForNewWindow 覆盖本窗段:root 回退、tab 全丢,并写回磁盘。
 - 对照 VSCode `CodeWindow.reload`:重载时清掉 filesToOpenOrCreate 等一次性配置、保留 workspace。
+- 新窗口 hydrate(fresh 覆盖本窗段 / 段缺失或无文件按 query 建段)的结果**无需任何 store 变更即落盘**:写订阅注册后
+  安排一次防抖写。此前 hydrate 不标脏、第一次 store 变更前不写 → 冷启动 dock 模式主窗(盘上仍有上次会话本窗段)
+  在首次写盘前 dev 同 URL / DevTools 刷新(不经 flush,fresh 已去掉)会按旧段恢复旧 root。

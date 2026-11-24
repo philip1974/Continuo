@@ -440,6 +440,8 @@ export async function initExplorerPersistence(
   let loadTrusted = false;
   // R38:读盘期间用户选过的 root(store 默认空,故即启动期选择,最近在前),hydrate 后补发 touch。
   let startupPicks: string[] = [];
+  // 本窗段按新窗口建(fresh 覆盖 / 段缺失或无文件按 query 建):结果须主动落盘,见步骤 3 末尾。
+  let hydratedAsNewWindow = false;
   try {
     const r = await api.read();
     if (r.ok) {
@@ -464,12 +466,14 @@ export async function initExplorerPersistence(
         if (fresh && initialWorkspace !== undefined) {
           // Issue #45:dock 模式 / CLI argv / 用户拖文件夹打开新窗口 ⇒ 强制覆盖该段
           startupPicks = rootAsPick(hydrateStoresForNewWindow(r.data, initialWorkspace));
+          hydratedAsNewWindow = true;
         } else if (myEntry) {
           // 重启恢复(restore-loop / 老窗段已存在)⇒ 按段恢复(含 workspace.root、UI、editor)
           hydrateStores(r.data, windowSeq);
         } else if (initialWorkspace !== undefined) {
           // 段缺失但 query 有 workspace(首次启动 / corrupted snap)⇒ 用 query 作 root
           startupPicks = rootAsPick(hydrateStoresForNewWindow(r.data, initialWorkspace));
+          hydratedAsNewWindow = true;
         } else {
           // 新窗(本来不该走到 — main-app.ts 不会缺 windowSeq + 缺 query)→ 默认
           hydrateStores(r.data, windowSeq);
@@ -477,6 +481,7 @@ export async function initExplorerPersistence(
       } else if (initialWorkspace !== undefined) {
         // 读成功但无 explorer.json / 损坏 → 按新窗 default 处理(既有契约)
         startupPicks = rootAsPick(hydrateStoresForNewWindow(null, initialWorkspace));
+        hydratedAsNewWindow = true;
       }
     } else {
       // read 失败:不 hydrate、不可信(下方跳过写订阅,避免用默认态覆盖磁盘真实数据)
@@ -582,6 +587,10 @@ export async function initExplorerPersistence(
       markDirtyAndPersist();
     }
   });
+  // hydrate 不标脏、写订阅又在其后注册:新窗口建的段若等第一次 store 变更才写,首次写盘前刷新(fresh 已被
+  // consumeStartupQuery 去掉;dev 同 URL / DevTools 刷新不经 flush)会按盘上旧段恢复旧 root。初始
+  // savedStoreVersion=-1 即视为脏,这里只需安排一次防抖写。
+  if (hydratedAsNewWindow) persist();
 }
 
 /**
