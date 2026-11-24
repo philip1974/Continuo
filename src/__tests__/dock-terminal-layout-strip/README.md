@@ -30,9 +30,13 @@ dockview 反序列化(`gridview._deserializeNode`)按**深度自动分配 orient
 - 无终端 → 返回**原对象**(引用不变,回归友好)。
 - leaf 含「editor + 终端」→ 剥终端,`views` 仅剩 editor;若 `activeView` 原指终端 → 回退到首个存活 view。
 - leaf 仅含终端 → 整个 leaf 摘除;父 branch 子节点全空 → 父 branch 也摘除。
-- **只剪「剥掉终端之后才变空」的 leaf**:原本就空的 leaf(如整组弹出后 dockview 留在 grid 里的隐藏引用组)
-  原样保留;popout 的 `gridReferenceGroup` 指向的 leaf 即便剥终端后变空也保留为空组 —— 否则 `fromJSON`
-  时 popout 无锚点,弹窗关闭 / 被拦截时面板无处回归。无终端时这些空 leaf 本就原样持久化,有无终端结果一致。
+- **只剪「剥掉终端之后才变空」的 leaf**,空 leaf 的保留只认**存活**(剥离后保留)的 popout:
+  - 存活 popout 的 `gridReferenceGroup` 指向的 leaf(原本就空的隐藏引用组,或剥终端后变空的组)保留为空组 ——
+    否则 `fromJSON` 时 popout 无锚点,弹窗关闭 / 被拦截时面板无处回归。
+  - 原本就空的**可见** leaf(dockview 自身会产生并原样持久化)保留,与无终端时一致。
+  - 原本就空的**隐藏** leaf(`visible:false`,只由整组弹出产生)若对应 popout 全是终端被丢弃 → 摘除;
+    剥终端后变空的引用组若对应 popout 也被丢弃 → 摘除。(缺陷:旧实现无条件保留,`fromJSON` 恢复成无人显示 /
+    移除的隐藏空组或可见空组,每次「整组弹出终端后重启」多积一个。)
 - grid 被剪空但 floating / popout 仍有非终端 panel → grid root 保留为空 branch,布局照常持久化。
   (缺陷:默认布局下「+」开终端与 Editor 同组、再弹出 Editor → 旧实现整份返 `null`,重启回默认布局。)
 - `panels` map 同步剔除终端条目。

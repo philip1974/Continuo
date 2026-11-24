@@ -281,7 +281,7 @@ describe('stripTerminalPanelsFromLayout', () => {
     it('整组弹出后 grid 留下的原本就空的引用组 → 保留;仅含终端的 leaf 仍摘除', () => {
       const l = layout(
         [
-          leaf('1', [], undefined, { hidden: true }),
+          { ...leaf('1', []), visible: false },
           leaf('3', ['term-1'], 'term-1'),
         ],
         panels,
@@ -291,6 +291,45 @@ describe('stripTerminalPanelsFromLayout', () => {
       expect(r.grid.root.data).toHaveLength(1);
       expect(r.grid.root.data[0]!.data).toMatchObject({ id: '1', views: [] });
       expect(r.popoutGroups![0]!.data.views).toEqual(['editor']);
+    });
+
+    it('仅含终端的 popout 被丢弃 → 它在 grid 里原本就空的隐藏引用组随之摘除(不累积孤儿隐藏空组)', () => {
+      const l = layout(
+        [
+          leaf('1', ['editor'], 'editor'),
+          { ...leaf('2', []), visible: false },
+        ],
+        panels,
+        { popoutGroups: [popout('3', ['term-1'], '2')] },
+      );
+      const r = out(l)!;
+      expect(r.popoutGroups).toEqual([]);
+      expect(r.grid.root.data.map((n) => (n.data as { id?: string }).id)).toEqual(['1']);
+    });
+
+    it('引用组剥终端后变空且对应 popout 也被丢弃 → 引用组摘除(不留可见空组)', () => {
+      const l = layout(
+        [leaf('1', ['editor'], 'editor'), leaf('2', ['term-1'], 'term-1')],
+        { ...panels, 'term-2': { contentComponent: 'terminal' } },
+        { popoutGroups: [popout('3', ['term-2'], '2')] },
+      );
+      const r = out(l)!;
+      expect(r.popoutGroups).toEqual([]);
+      expect(r.grid.root.data.map((n) => (n.data as { id?: string }).id)).toEqual(['1']);
+    });
+
+    it('没有 popout 引用的隐藏空 leaf → 摘除;可见的原本即空 leaf(dockview 自身会产生)→ 保留', () => {
+      const l = layout(
+        [
+          leaf('1', ['term-1'], 'term-1'),
+          { ...leaf('2', []), visible: false },
+          leaf('4', []),
+        ],
+        panels,
+        { popoutGroups: [popout('3', ['editor'])] },
+      );
+      const r = out(l)!;
+      expect(r.grid.root.data.map((n) => (n.data as { id?: string }).id)).toEqual(['4']);
     });
 
     it('grid 只剩终端 + editor 在 floating → 不为 null,grid 剪成空 root,floating 保留', () => {

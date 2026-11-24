@@ -37,9 +37,11 @@ const EMPTY_GRID_CHILDREN: GridNode[] = [];
  * dockview 反序列化按深度自动分配 orientation(每层 orthogonal 翻转),与子节点数量无关,
  * 故单子节点 branch 仍能正确渲染(仅冗余一层嵌套),无需危险的 branch 塌缩 —— 只需保证
  * 只剪「剥掉终端之后才变空」的 leaf、每个非根 branch ≥1 child、悬空的 activeView/activeGroup 回退。
- * 原本就空的 leaf(如 dockview 整组弹出后留在 grid 里的隐藏引用组)与 popout 的
- * `gridReferenceGroup` 指向的 leaf 一律保留(空 views)—— 否则 fromJSON 时 popout 失去锚点,
- * 关闭弹窗后面板无处回归;无终端时这些空 leaf 本就原样持久化,有无终端结果须一致。
+ * 空 leaf 的保留规则:**存活**(剥离后仍保留)popout 的 `gridReferenceGroup` 指向的 leaf 一律保留
+ * (空 views)—— 否则 fromJSON 时 popout 失去锚点,关闭弹窗后面板无处回归;原本就空的可见 leaf
+ * (dockview 自身会产生并原样持久化)保留;原本就空的隐藏 leaf(`visible:false`,只由整组弹出产生)
+ * 若其 popout 已被丢弃(全是终端)则失去锚点,摘除 —— 否则 fromJSON 恢复成无人显示 / 移除的隐藏空组,
+ * 每次重启多积一个。
  *
  * @returns 剥离后的新 layout;无终端时返回原对象(引用不变,回归友好);grid、floating、popout
  *          三处都没有非终端 panel / 缺 grid 无法安全处理 → null(上层走默认布局,静默,不报错)。
@@ -69,27 +71,22 @@ export function stripTerminalPanelsFromLayout(
   const survivingGroupIds = new Set<string>();
   // 存活的非终端 view 数(grid + floating + popout);为 0 才整份弃用。
   let survivingViewCount = 0;
-  // popout 的 grid 锚点组:即便剥终端后变空也保留,fromJSON 时 popout 才有引用组可挂。
+  // 存活 popout 的 grid 锚点组:即便为空也保留,fromJSON 时 popout 才有引用组可挂。
+  // 须在剪 grid 之前由「剥离后保留的 popout」填充(见下方 popout 过滤)。
   const popoutReferenceIds = new Set<string>();
-  const rawPopouts = (layout as unknown as { popoutGroups?: unknown })
-    .popoutGroups;
-  if (Array.isArray(rawPopouts)) {
-    for (const g of rawPopouts as FloatingGroup[]) {
-      if (typeof g?.gridReferenceGroup === 'string')
-        popoutReferenceIds.add(g.gridReferenceGroup);
-    }
-  }
 
-  // keepEmpty:剥终端后变空时仍保留该组(空 views),用于 grid 的原本即空 / popout 引用组。
+  // keepEmpty(仅 grid leaf):为空时是否保留。原本即空的可见 leaf 保留;其余空组只在是存活 popout 引用组时保留。
   const filterGroupData = (
     raw: LeafData | undefined,
-    keepEmpty = false,
+    keepEmpty?: { hidden: boolean },
   ): LeafData | null => {
     const data = raw ?? EMPTY_LEAF_DATA;
     const rawViews = Array.isArray(data.views) ? data.views : EMPTY_PANEL_IDS;
+    const groupId = typeof data.id === 'string' ? data.id : null;
+    const isPopoutReference = groupId !== null && popoutReferenceIds.has(groupId);
     if (rawViews.length === 0) {
-      if (!keepEmpty) return null;
-      if (typeof data.id === 'string') survivingGroupIds.add(data.id);
+      if (!keepEmpty || (keepEmpty.hidden && !isPopoutReference)) return null;
+      if (groupId !== null) survivingGroupIds.add(groupId);
       return data;
     }
     const views = new Array<string>(rawViews.length);
@@ -103,9 +100,8 @@ export function stripTerminalPanelsFromLayout(
     views.length = viewCount;
     if (views.length === 0) {
       // 该 group 仅含终端 → 整组摘除;popout 引用组则保留为空组(剔除终端 tabGroups/activeView)。
-      if (!keepEmpty || typeof data.id !== 'string' || !popoutReferenceIds.has(data.id))
-        return null;
-      survivingGroupIds.add(data.id);
+      if (!keepEmpty || !isPopoutReference) return null;
+      survivingGroupIds.add(groupId);
       const emptied: LeafData = { ...data, views };
       delete emptied.activeView;
       delete emptied.tabGroups;
@@ -152,7 +148,7 @@ export function stripTerminalPanelsFromLayout(
   const pruneNode = (node: GridNode): GridNode | null => {
     if (!node || typeof node !== 'object') return null;
     if (node.type === 'leaf') {
-      const data = filterGroupData(node.data, true);
+      const data = filterGroupData(node.data, { hidden: node.visible === false });
       return data ? { ...node, data } : null;
     }
     // branch:递归剪枝,丢弃变空的子节点;子节点全空则本 branch 也摘除。
@@ -173,6 +169,35 @@ export function stripTerminalPanelsFromLayout(
     if (children.length === 0) return null;
     return { ...node, data: children };
   };
+
+  const filterFloating = (groups: FloatingGroup[]): FloatingGroup[] => {
+    if (groups.length === 0) return EMPTY_FLOATING_GROUPS;
+    let kept: FloatingGroup[] | null = null;
+    let keptCount = 0;
+    for (const g of groups) {
+      const data = filterGroupData(g?.data);
+      if (data) {
+        kept ??= new Array<FloatingGroup>(groups.length);
+        kept[keptCount] = { ...g, data };
+        keptCount += 1;
+      }
+    }
+    if (kept === null) return EMPTY_FLOATING_GROUPS;
+    kept.length = keptCount;
+    return kept;
+  };
+  // 先过滤 popout:只有剥离后仍保留的 popout 的引用组才算锚点(被丢弃的 popout 不再需要锚点)。
+  const rawPopouts = (layout as unknown as { popoutGroups?: unknown })
+    .popoutGroups;
+  const keptPopouts = Array.isArray(rawPopouts)
+    ? filterFloating(rawPopouts as FloatingGroup[])
+    : null;
+  if (keptPopouts) {
+    for (const g of keptPopouts) {
+      if (typeof g.gridReferenceGroup === 'string')
+        popoutReferenceIds.add(g.gridReferenceGroup);
+    }
+  }
 
   // grid 被剪空时 root 保留为空 branch(dockview 空 grid 的原生形态),floating/popout 可能仍有存活面板。
   const root =
@@ -202,26 +227,9 @@ export function stripTerminalPanelsFromLayout(
     panels: nextPanels,
   };
 
-  const filterFloating = (groups: FloatingGroup[]): FloatingGroup[] => {
-    if (groups.length === 0) return EMPTY_FLOATING_GROUPS;
-    let kept: FloatingGroup[] | null = null;
-    let keptCount = 0;
-    for (const g of groups) {
-      const data = filterGroupData(g?.data);
-      if (data) {
-        kept ??= new Array<FloatingGroup>(groups.length);
-        kept[keptCount] = { ...g, data };
-        keptCount += 1;
-      }
-    }
-    if (kept === null) return EMPTY_FLOATING_GROUPS;
-    kept.length = keptCount;
-    return kept;
-  };
   if (Array.isArray(result.floatingGroups))
     result.floatingGroups = filterFloating(result.floatingGroups);
-  if (Array.isArray(result.popoutGroups))
-    result.popoutGroups = filterFloating(result.popoutGroups);
+  if (keptPopouts) result.popoutGroups = keptPopouts;
 
   // grid、floating、popout 三处都没有非终端 panel → 走默认布局。
   if (survivingViewCount === 0) return null;
