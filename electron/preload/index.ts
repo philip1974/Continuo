@@ -51,7 +51,6 @@ import {
 } from '../shared/shell-channels';
 import {
   AGENT_AUTH_CHANNELS,
-  type AgentAuthRequestPayload,
   type AgentAuthDecision,
   type RevokeResult,
 } from '../shared/agent-auth-channels';
@@ -61,7 +60,6 @@ import {
 } from '../shared/mcp-channels';
 import {
   PLUGIN_MCP_CHANNELS,
-  type InvokePayload,
   type InvokeReply,
   type RegisterPayload,
 } from '../shared/plugin-mcp-channels';
@@ -270,14 +268,9 @@ const api = {
       id: string,
     ): Promise<IpcResult<TerminalHistorySnapshot>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.READ_HISTORY, { id }),
-    /** 订阅 main 推的 snapshot;返回 unsubscribe. */
-    onSessionsChanged: (
-      cb: (sessions: ReadonlyArray<PreloadTerminalSession>) => void,
-    ): (() => void) => {
-      const listener = (
-        _: unknown,
-        sessions: ReadonlyArray<PreloadTerminalSession>,
-      ) => cb(sessions);
+    /** 订阅 main 推的 snapshot;返回 unsubscribe。payload 未经校验(renderer filterByOwnerWindow 校验),如实标 unknown。 */
+    onSessionsChanged: (cb: (sessions: unknown) => void): (() => void) => {
+      const listener = (_: unknown, sessions: unknown) => cb(sessions);
       return subscribeIpc(TERMINAL_CHANNELS.SESSIONS_CHANGED, listener);
     },
     /**
@@ -428,12 +421,9 @@ const api = {
     getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   },
   agentAuth: {
-    /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe. */
-    onRequest: (
-      cb: (payload: AgentAuthRequestPayload) => void,
-    ): (() => void) => {
-      const listener = (_: unknown, payload: AgentAuthRequestPayload) =>
-        cb(payload);
+    /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe。payload 未经校验(renderer isAgentAuthRequestPayload 校验)。 */
+    onRequest: (cb: (payload: unknown) => void): (() => void) => {
+      const listener = (_: unknown, payload: unknown) => cb(payload);
       // 监听挂上 → 告诉 main「本窗口能显示授权弹窗了」(同 PROTOCOL_READY):reload 后新文档就绪之前到达的
       // 请求 main 直接拒绝,不发给收不到的文档。
       return subscribeAndAnnounce(AGENT_AUTH_CHANNELS.REQUEST, AGENT_AUTH_CHANNELS.READY, listener);
@@ -478,10 +468,9 @@ const api = {
     setLocale(locale: Locale): Promise<IpcResult<I18nChangedPayload>> {
       return ipcRenderer.invoke(I18N_CHANNELS.SET_LOCALE, locale);
     },
-    /** 订阅 main 广播；返 unsubscribe。renderer 用 gen 排序去过期。 */
-    onChange(listener: (payload: I18nChangedPayload) => void): () => void {
-      const wrapped = (_evt: unknown, payload: I18nChangedPayload) =>
-        listener(payload);
+    /** 订阅 main 广播;返 unsubscribe。payload 未经校验(renderer isValidI18nChangedPayload 校验,用 gen 排序去过期)。 */
+    onChange(listener: (payload: unknown) => void): () => void {
+      const wrapped = (_evt: unknown, payload: unknown) => listener(payload);
       return subscribeIpc(I18N_CHANNELS.CHANGED, wrapped);
     },
   },
@@ -498,8 +487,9 @@ const api = {
     unregisterTool: (name: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(PLUGIN_MCP_CHANNELS.UNREGISTER, { name }),
     /** main 反向调 tool.run 时推过来的 invoke 请求(订阅;返 unsubscribe). */
-    onInvoke: (cb: (payload: InvokePayload) => void): (() => void) => {
-      const listener = (_: unknown, payload: InvokePayload) => cb(payload);
+    // payload 未经校验(renderer InvokePayloadSchema.safeParse 校验),如实标 unknown。
+    onInvoke: (cb: (payload: unknown) => void): (() => void) => {
+      const listener = (_: unknown, payload: unknown) => cb(payload);
       return subscribeIpc(PLUGIN_MCP_CHANNELS.INVOKE, listener);
     },
     /** renderer 答 main(单向 send,无 IpcResult). */
