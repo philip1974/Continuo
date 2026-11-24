@@ -48,8 +48,8 @@ import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
-import { errorCodeOf } from '../../../electron/shared/error-message';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { notifyOpenFailed, openFailureOf } from '@/notifications/notify-open-failed';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -613,18 +613,12 @@ export function FolderTree({ root }: { root: string }) {
           // 不再静默 —— 否则用户"点了没反应"。trash/paste/move 已有 notify,补齐 open。
           // 见第二十一轮 P1-AX。
           console.warn('[explorer] open file failed:', r.code, r.message);
-          notify.error(
-            `${t('quick_open.open_failed')} ${basenamePreserveTrailing(path)}: ${localizeErrorByCode(r.code, r.message ?? r.code)}`,
-            { code: r.code, mirror: false },
-          );
+          notifyOpenFailed(basenamePreserveTrailing(path), r, { mirror: false });
         }
       } catch (err) {
-        const code = errorCodeOf(err);
-        console.warn('[explorer] open file rejected:', code, err);
-        notify.error(
-          `${t('quick_open.open_failed')} ${basenamePreserveTrailing(path)}: ${localizeErrorByCode(code, (err as Error)?.message)}`,
-          { code, mirror: false },
-        );
+        const failure = openFailureOf(err);
+        console.warn('[explorer] open file rejected:', failure.code, err);
+        notifyOpenFailed(basenamePreserveTrailing(path), failure, { mirror: false });
       }
     },
     [openFileByPath],

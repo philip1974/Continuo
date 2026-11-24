@@ -9,7 +9,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
 import { Button, Input, Modal, Spinner } from '@/design';
-import { notify } from '@/notifications/notify';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
 import { fuzzyFilter } from '../command-palette/fuzzy';
@@ -20,10 +19,9 @@ import {
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
-import { errorMessage } from '@shared/error-message';
+import { notifyOpenFailed, openFailureOf } from '@/notifications/notify-open-failed';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -178,17 +176,13 @@ function QuickOpenBody() {
           // 见第二十一轮 P1-AX。i18n(I8,I6/I7 同族):openFileByPath 返回 FS_NOT_FOUND/
           // FS_DENIED/FS_IO(有三语言 catalog),按 code 经 localizeErrorByCode 本地化,
           // zh/ko 不再看到 main raw 英文;无对应 catalog key 的 code 回退原 message。
-          notify.error(
-            `${t('quick_open.open_failed')} ${file.name}: ${localizeErrorByCode(r.code, r.message ?? r.code)}`,
-          );
+          notifyOpenFailed(file.name, r);
         }
       } catch (err) {
-        notify.error(
-          `${t('quick_open.open_failed')} ${file.name}: ${errorMessage(err)}`,
-        );
+        notifyOpenFailed(file.name, openFailureOf(err));
       }
     },
-    [close, t],
+    [close],
   );
 
   // 列表机制(virtualizer / 越界钳制 / 滚动跟随 / 键盘导航 / ARIA)走共享 usePickerList。

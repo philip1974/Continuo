@@ -863,6 +863,10 @@
 
 - [`notify-root-when-hydrated.spec.ts`](./notify-root-when-hydrated/notify-root-when-hydrated.spec.ts)
 
+## [open-failed-toast(打开文件失败的统一提示)](./open-failed-toast/README.md)
+
+- [`open-failed-toast.spec.ts`](./open-failed-toast/open-failed-toast.spec.ts)
+
 ## [path-cross](./path-cross/)
 
 - [`path-cross.spec.ts`](./path-cross/path-cross.spec.ts)
