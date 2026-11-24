@@ -278,6 +278,56 @@ describe('SegmentedControl', () => {
 });
 
 describe('TabNav + TabNavItem', () => {
+  // 中键单击 tab 关闭(VSCode / 浏览器惯例,与 dock tab SharedTab 一致);走同一个 onClose(未保存确认由调用方负责)。
+  it('中键单击 tab → onClose;按下时阻止中键自动滚动;不触发选中', () => {
+    const onClose = vi.fn();
+    const onSelect = vi.fn();
+    const { container } = render(
+      <TabNav>
+        <TabNavItem onSelect={onSelect} onClose={onClose}>
+          a.ts
+        </TabNavItem>
+      </TabNav>,
+    );
+    const label = container.querySelector('.wm-tab-nav-item__label')!;
+    const notPrevented = fireEvent.mouseDown(label, { button: 1 });
+    expect(notPrevented).toBe(false); // preventDefault → 不进入 auto-scroll
+    fireEvent(label, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('右键 auxclick / 左键按下不关闭;无 onClose 或 disabled 时中键不关闭也不拦默认行为', () => {
+    const onClose = vi.fn();
+    const first = render(
+      <TabNav>
+        <TabNavItem onSelect={() => {}} onClose={onClose}>
+          a.ts
+        </TabNavItem>
+      </TabNav>,
+    );
+    const item = first.container.querySelector('.wm-tab-nav-item')!;
+    fireEvent(item, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 2 }));
+    expect(fireEvent.mouseDown(item, { button: 0 })).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    cleanup();
+
+    const disabledClose = vi.fn();
+    const second = render(
+      <TabNav>
+        <TabNavItem onSelect={() => {}}>b.ts</TabNavItem>
+        <TabNavItem disabled onSelect={() => {}} onClose={disabledClose}>
+          c.ts
+        </TabNavItem>
+      </TabNav>,
+    );
+    for (const el of Array.from(second.container.querySelectorAll('.wm-tab-nav-item'))) {
+      expect(fireEvent.mouseDown(el, { button: 1 })).toBe(true);
+      fireEvent(el, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }));
+    }
+    expect(disabledClose).not.toHaveBeenCalled();
+  });
+
   it('dirty=true 渲染 __dirty-dot;onClose 提供时渲染 __close 按钮', () => {
     const { container } = render(
       <TabNav>
@@ -432,8 +482,9 @@ describe('TabNav + TabNavItem', () => {
   });
 
   // a11y(A29,A23 后续):tablist 内只有 active tab 在 Tab 顺序;close 按钮须移出 Tab 顺序
-  // (tabIndex=-1),改由聚焦 tab 后 Delete/Backspace 触发关闭。
-  it('a11y · close 按钮不在 Tab 顺序 + tab 聚焦 Delete/Backspace 关闭', () => {
+  // (tabIndex=-1),改由聚焦 tab 后 Delete 触发关闭。不认 Backspace:鼠标点 tab 后焦点可能停在 tab 上,
+  // 用户以为还在编辑器里打字,退格即误关 tab(与 dock tab SharedTab ca68571d 同规则;VSCode tab 上也无退格关闭)。
+  it('a11y · close 按钮不在 Tab 顺序 + tab 聚焦 Delete 关闭,Backspace 不关闭', () => {
     const onClose = vi.fn();
     const { container } = render(
       <TabNav>
@@ -450,10 +501,32 @@ describe('TabNav + TabNavItem', () => {
     fireEvent.keyDown(tab, { key: 'Delete' });
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(tab, { key: 'Backspace' });
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
     // 普通键不触发关闭
     fireEvent.keyDown(tab, { key: 'a' });
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // 鼠标点 tab(含已激活 tab)后调用方需把焦点交回内容(VSCode:点编辑器 tab 即聚焦编辑器)。设计层不夹带业务:
+  // 只在「鼠标点击选中」时额外回调 onMouseSelect,键盘(Enter / Space 合成的 click,detail=0)不回调,
+  // 保持 tablist 键盘模型(焦点留在 tab)。
+  it('鼠标点击 tab → onSelect + onMouseSelect;键盘合成 click(detail=0)只 onSelect', () => {
+    const onSelect = vi.fn();
+    const onMouseSelect = vi.fn();
+    const { container } = render(
+      <TabNav>
+        <TabNavItem active onSelect={onSelect} onMouseSelect={onMouseSelect}>
+          a
+        </TabNavItem>
+      </TabNav>,
+    );
+    const tab = container.querySelector<HTMLButtonElement>('[role=tab]')!;
+    fireEvent.click(tab, { detail: 1, button: 0 });
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onMouseSelect).toHaveBeenCalledTimes(1);
+    fireEvent.click(tab, { detail: 0, button: 0 });
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onMouseSelect).toHaveBeenCalledTimes(1);
   });
 
   it('无 onClose 时不渲染 close 按钮', () => {

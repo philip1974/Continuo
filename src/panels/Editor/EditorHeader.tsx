@@ -8,7 +8,7 @@
 //   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 内的模式切换行(SegmentedControl)
 //     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import {
   getEffectiveMode,
   useEditorStore,
@@ -48,6 +48,27 @@ interface EditorHeaderProps {
 }
 
 const EMPTY_TAB_CHROME: TabChrome[] = [];
+
+// 编辑区里接焦点的可编辑元素(CodeMirror / ProseMirror 的 contenteditable、输入框),同 dock tab SharedTab。
+const EDITABLE_SELECTOR =
+  '[contenteditable="true"], textarea:not([disabled]), input:not([disabled]):not([type="hidden"])';
+
+/**
+ * 鼠标点 tab 后把焦点交给编辑区(VSCode:点编辑器 tab 即聚焦该编辑器)。等一帧:切 tab 后新编辑器在本次
+ * 渲染才挂上。只在 tab 行之外(编辑面板内)找;找不到(预览模式 / 编辑器仍在加载)焦点留在 tab 上 ——
+ * 无害,tab 上只有 Delete 会关闭。
+ */
+function focusEditorContentNextFrame(header: HTMLElement | null): void {
+  requestAnimationFrame(() => {
+    const host = header?.parentElement;
+    if (!host) return;
+    for (const el of host.querySelectorAll<HTMLElement>(EDITABLE_SELECTOR)) {
+      if (header.contains(el)) continue;
+      el.focus();
+      return;
+    }
+  });
+}
 
 
 export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
@@ -176,10 +197,13 @@ export const EditorHeader = memo(function EditorHeader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, chromeVersion, requestedMode]);
 
+  const headerRef = useRef<HTMLDivElement>(null);
+  const focusEditorContent = useCallback(() => focusEditorContentNextFrame(headerRef.current), []);
+
   if (tabsChrome.length === 0) return null;
 
   return (
-    <div className="flex h-9 shrink-0 items-stretch bg-canvas">
+    <div ref={headerRef} className="flex h-9 shrink-0 items-stretch bg-canvas">
       {/* a11y(A107):给 tablist 注入本地化组名(design 层无 i18n)。 */}
       <TabNav
         className="min-w-0 flex-1 overflow-x-auto"
@@ -198,6 +222,7 @@ export const EditorHeader = memo(function EditorHeader({
               closeLabel={t('shell.tab.close', { title: tabTitle })}
               title={tab.filePath}
               onSelect={() => switchTab(tab.id)}
+              onMouseSelect={focusEditorContent}
               onClose={() => onCloseRequest(tab)}
             >
               {tabTitle}

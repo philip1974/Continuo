@@ -54,3 +54,13 @@
 - `MenuItem` 透传 `ref` 与其余 button 属性(可作 Radix `ContextMenu.Item asChild` 的子元素),`onClick` 可省略;
   `trailing` 渲染在截断 label 之外
 - `Badge` 默认 `size="sm"`(胶囊),`data-size` / `data-variant` 写入 DOM
+
+### TabNavItem 关闭与焦点(`components.spec.tsx`)
+
+- 有 `onClose` 且未 `disabled` 的 tab:中键单击(`auxclick` button=1)调用 `onClose`(与点 × 同一路径,未保存 tab 的确认由
+  调用方负责),不触发 `onSelect`;中键按下 `preventDefault`,不进入浏览器中键自动滚动 —— 与 dock tab(SharedTab)中键关闭一致
+- 右键 auxclick、左键按下不关闭;无 `onClose` 或 `disabled` 的 tab 中键既不关闭也不拦默认行为
+- 键盘关闭:聚焦 tab 时只认 `Delete`,**不认 Backspace**(焦点停在 tab 上时用户常以为还在编辑器里打字,退格即误关 tab;
+  与 dock tab SharedTab 同规则,VSCode tab 上也无退格关闭)
+- 鼠标点击选中 tab 时,在 `onSelect` 之后额外回调可选的 `onMouseSelect`(调用方据此把焦点交回内容);键盘 Enter / Space
+  合成的 click(`detail === 0`)只 `onSelect`,焦点留在 tab

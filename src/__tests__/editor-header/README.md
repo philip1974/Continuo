@@ -41,3 +41,11 @@
 - 订阅 coApp.editorActions;dispatch 时按 ctx 过滤
 - 有 icon → IconButton,无 icon → ghost Button
 - 点击调 spec.fn()
+
+### 点 tab 后焦点回到编辑区
+
+- 鼠标点击 tab(含已激活 tab)→ 切换后下一帧把焦点交给编辑面板里 tab 行之外的首个可编辑元素(CodeMirror /
+  ProseMirror 的 contenteditable、输入框)—— VSCode:点编辑器 tab 即聚焦该编辑器,可直接继续输入;否则焦点停在
+  tab 上,接着打字的按键落在 tab(与 dock tab SharedTab 同规则)
+- 键盘激活(Enter / Space 合成 click,detail=0)焦点留在 tab(tablist 键盘模型);经 design `TabNavItem.onMouseSelect` 接线
+- 找不到可编辑元素(预览模式 / 编辑器仍在加载)焦点留在 tab —— 无害,tab 上只有 Delete 会关闭

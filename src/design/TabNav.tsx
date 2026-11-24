@@ -52,9 +52,19 @@ export interface TabNavItemProps {
   readonly disabled?: boolean;
   /** Tooltip and close-button accessible suffix. Defaults to no tooltip. */
   readonly title?: string;
-  /** Called when the tab body is selected. No default. */
+  /** Called when the tab body is selected (mouse or keyboard). No default. */
   readonly onSelect: () => void;
-  /** Called by the optional close affordance. Defaults to no close button. */
+  /**
+   * Called after `onSelect` only when the tab was selected by a **mouse** click (not by Enter / Space, whose
+   * synthesized click has `detail === 0`). Callers use it to move focus back into the tab's content
+   * (VSCode: clicking an editor tab focuses that editor) so typing — e.g. Backspace — never lands on the
+   * tab. Keyboard selection keeps focus on the tab (tablist model). Defaults to none.
+   */
+  readonly onMouseSelect?: () => void;
+  /**
+   * Called by the optional close affordance, by a middle-click on the tab, and by Delete / Backspace on the
+   * focused tab. Defaults to no close button (and no middle-click close).
+   */
   readonly onClose?: () => void;
   /**
    * Called on double-click on the tab body. Opt-in rename affordance —
@@ -98,6 +108,7 @@ export function TabNavItem({
   disabled = false,
   title,
   onSelect,
+  onMouseSelect,
   onClose,
   onRename,
   dirtyLabel,
@@ -123,17 +134,32 @@ export function TabNavItem({
     onClose?.();
   };
 
-  // a11y(A29):close 按钮被移出 Tab 顺序(见下 tabIndex=-1),改由 tab 聚焦时 Delete/Backspace
-  // 触发关闭,保持「一次 Tab 进出 tablist、方向键在 tab 间移动」的键盘模型不被额外 tab stop 破坏。
+  // a11y(A29):close 按钮被移出 Tab 顺序(见下 tabIndex=-1),改由 tab 聚焦时 Delete 触发关闭,保持
+  // 「一次 Tab 进出 tablist、方向键在 tab 间移动」的键盘模型不被额外 tab stop 破坏。不认 Backspace:焦点
+  // 停在 tab 上时用户常以为还在编辑器里打字,退格即误关 tab(同 dock tab SharedTab;VSCode tab 上也无退格关闭)。
   const handleSelectKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (
-      onClose != null &&
-      !disabled &&
-      (event.key === 'Delete' || event.key === 'Backspace')
-    ) {
+    if (onClose != null && !disabled && event.key === 'Delete') {
       event.preventDefault();
       onClose();
     }
+  };
+
+  // 中键单击关闭(VSCode / 浏览器 tab 惯例;与 dock tab SharedTab 一致)。走同一个 onClose —— 未保存 tab 的
+  // 确认流程由调用方的 onClose 负责,中键与点 × 等价。按下时 preventDefault 阻止中键默认的自动滚动(auto-scroll)。
+  // 鼠标点击(detail>0、主键)才回调 onMouseSelect;Enter / Space 合成的 click detail=0,焦点留在 tab。
+  const handleSelectClick = (event: MouseEvent<HTMLButtonElement>) => {
+    onSelect();
+    if (event.detail !== 0 && event.button === 0) onMouseSelect?.();
+  };
+  const closable = onClose != null && !disabled;
+  const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button === 1 && closable) event.preventDefault();
+  };
+  const handleAuxClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 1 || !closable) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
   };
 
   return (
@@ -148,6 +174,8 @@ export function TabNavItem({
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onMouseDown={handleMouseDown}
+      onAuxClick={handleAuxClick}
       {...dataAttrs}
     >
       <button
@@ -161,7 +189,7 @@ export function TabNavItem({
         disabled={disabled}
         // a11y(A35):dirty 且调用方提供 dirtyLabel 时,经 aria-describedby 关联未保存状态文本。
         aria-describedby={showDirtyDesc ? dirtyDescId : undefined}
-        onClick={onSelect}
+        onClick={handleSelectClick}
         onDoubleClick={onRename}
         onKeyDown={handleSelectKeyDown}
       >

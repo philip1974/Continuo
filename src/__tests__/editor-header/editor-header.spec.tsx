@@ -217,3 +217,44 @@ describe('EditorHeader — 插件 editor action', () => {
     expect(container.textContent).toContain('动态');
   });
 });
+
+describe('EditorHeader — 鼠标点 tab 后焦点回到编辑区', () => {
+  // VSCode:点编辑器 tab 即聚焦该编辑器,可直接继续输入。否则焦点停在 tab 上,用户接着打字按键落在 tab。
+  function renderWithEditor() {
+    const a = tab({ id: '/a.ts', filePath: '/a.ts' });
+    const b = tab({ id: '/b.ts', filePath: '/b.ts' });
+    useEditorStore.setState({ tabs: [a, b], activeTabId: a.id });
+    return render(
+      <div>
+        <EditorHeader onCloseRequest={vi.fn()} />
+        <div className="cm-content" contentEditable="true" suppressContentEditableWarning data-testid="editor" />
+      </div>,
+    );
+  }
+
+  it('鼠标点击 tab(含已激活 tab)→ 下一帧焦点进入编辑区可编辑元素', async () => {
+    const { container, getByTestId } = renderWithEditor();
+    const tabs = container.querySelectorAll<HTMLButtonElement>('[role=tab]');
+    for (const t of [tabs[1]!, tabs[0]!]) {
+      t.focus();
+      fireEvent.click(t, { detail: 1, button: 0 });
+      await act(async () => {
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      });
+      expect(document.activeElement).toBe(getByTestId('editor'));
+    }
+    expect(useEditorStore.getState().activeTabId).toBe('/a.ts');
+  });
+
+  it('键盘激活(Enter / Space 合成 click,detail=0)→ 焦点留在 tab', async () => {
+    const { container } = renderWithEditor();
+    const t = container.querySelectorAll<HTMLButtonElement>('[role=tab]')[1]!;
+    t.focus();
+    fireEvent.click(t, { detail: 0, button: 0 });
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    });
+    expect(document.activeElement).toBe(t);
+    expect(useEditorStore.getState().activeTabId).toBe('/b.ts');
+  });
+});
