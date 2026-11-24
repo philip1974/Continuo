@@ -2,13 +2,19 @@
 
 行为契约(参考 VSCode 集成终端的对应设置 / 命令):
 
-1. **终端让出工作台命令键(commandsToSkipShell)**:终端聚焦时,`workbench.action.closeActiveEditor`(默认 mod+w)、
-   `workbench.action.files.save`(默认 mod+s)、`terminal.clear`(默认 mod+k)的**生效绑定**不交给 xterm / shell
-   (Win/Linux 上 Ctrl+S 不再发 XOFF 冻住终端,⌘W 不被吞)。按生效绑定判定:用户改绑 → 跟随新键,原键照常进 shell;
-   解绑 → 不再让出。命令已注册 → 终端直接执行该命令并截住冒泡;尚未注册 → 只让出(不发给 shell),交给全局分发。
-   默认键取已注册命令的 hotkey,未注册时用与注册方约定的常量兜底(不依赖注册时序)。
-2. **⌘K 清屏**:命令 `terminal.clear`(默认 mod+k,三语标题)清空当前活动终端的屏幕与滚动缓冲(VSCode
+1. **终端让出工作台命令键(commandsToSkipShell)**:对齐 VSCode terminalInstance 的让出判定
+   `event.metaKey || shouldCommandSkipShell(commandId)`:
+   - `terminal.clear` 在 VSCode 默认 commandsToSkipShell 里 → 其**生效绑定**不交给 xterm / shell;
+   - `workbench.action.closeActiveEditor`(默认 mod+w)、`workbench.action.files.save`(默认 mod+s)不在列表里 →
+     只有按键带 Meta 时让出:mac 上 ⌘W / ⌘S 让出(不被 xterm 吞);**Windows / Linux 上 Ctrl+W(删前一词)/
+     Ctrl+S(XOFF)照常进 shell**,不关终端、不触发保存(与 VSCode 一致,有意不偏离)。
+   按生效绑定判定:用户改绑 → 跟随新键,原键照常进 shell;解绑 → 不再让出。命令已注册 → 终端直接执行该命令并截住
+   冒泡;尚未注册 → 只让出(不发给 shell),交给全局分发。默认键取已注册命令的 hotkey,未注册时用与注册方约定的
+   默认键兜底(不依赖注册时序)。
+2. **⌘K 清屏**:命令 `terminal.clear`(三语标题)清空当前活动终端的屏幕与滚动缓冲(VSCode
    `workbench.action.terminal.clear`),经 terminal-panel-handles 的 `clear` 句柄执行;活动面板不是终端 → no-op。
+   默认键同 VSCode(`primary: 0, mac: Cmd+K`):**仅 mac ⌘K**;Windows / Linux 不设默认键,Ctrl+K 照常进 shell
+   (readline 删到行尾),全局分发也不再拦 Ctrl+K;用户自行绑定后按绑定让出。
 3. **进程退出**(VSCode `TerminalInstance._onProcessExit`):
    - 用户终端退出码 0 → 自动关闭面板(静默,VSCode 默认行为);
    - 非 0(或 agent 会话任意退出码)→ 终端内写一行「终端进程已终止,退出代码: N」与「按任意键关闭终端」
@@ -19,6 +25,11 @@
    (`wrapPanelClose` 的关闭守卫),× / 中键 / Delete / ⌘W / 任何 `api.close()` 都经过;main 以 node-pty 前台进程名
    与 shell 名比较判断。有子进程 → 破坏性确认框「终止正在运行的进程?」(默认焦点在取消);无子进程 / 已退出 /
    reconciler 收敛视图的关闭 → 直接关。
+   - 终端在 popout 子窗:确认框画在**该子窗**(portal 进面板所在文档);确认期间子窗被关 → 改画在主窗(不卡住)。
+     取消后焦点还给该终端。
+   - 确认框等待期间来了 reconciler 的关闭(agent 杀会话 / 切工作区隐藏 / shell 以 0 退出):不被「询问中」去重吞掉 ——
+     待定确认按「取消」结算并清掉确认框,面板照常收敛视图(不留僵尸面板、不残留 suppressed 标记);尚在查询子进程的,
+     查询回来后不再弹框。
 5. **终端链接需修饰键单击**(VSCode):mac ⌘+单击、其它 Ctrl+单击才打开;悬停链接时提示「⌘+单击打开链接」。
 6. **dock 激活 tab 的关闭按钮常显**(与编辑器 tab 一致),非激活 tab 仍悬停 / 聚焦时显示。
 7. **dock 拖拽落点高亮等 dockview 字面色变量桥接到 `--md-*` token**,两主题各自取值。

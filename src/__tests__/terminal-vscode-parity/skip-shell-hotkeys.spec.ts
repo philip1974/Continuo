@@ -6,9 +6,11 @@ import {
   WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND,
   WORKBENCH_SAVE_COMMAND,
   runTerminalCommandFromKey,
+  terminalClearDefaultHotkey,
   terminalYieldedCommandId,
 } from '../../panels/Terminal/terminal-hotkeys';
 import { coApp } from '../../plugins/co-app';
+import { buildCompiledBindings } from '../../plugins/command-palette/useCommandHotkeys';
 import {
   __resetTerminalPanelHandlesForTest,
   clearTerminalPanel,
@@ -20,10 +22,13 @@ const key = (init: KeyboardEventInit, type = 'keydown') =>
 const noRegistry = { get: () => undefined };
 
 describe('命令 id / 默认键与注册方约定一致', () => {
-  it('closeActiveEditor = mod+w,save = mod+s,clear = mod+k', () => {
+  it('closeActiveEditor = mod+w,save = mod+s,clear 仅 mac 默认 mod+k', () => {
     expect(WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND).toEqual({ id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' });
     expect(WORKBENCH_SAVE_COMMAND).toEqual({ id: 'workbench.action.files.save', hotkey: 'mod+s' });
-    expect(TERMINAL_CLEAR_COMMAND).toEqual({ id: 'terminal.clear', hotkey: 'mod+k' });
+    expect(TERMINAL_CLEAR_COMMAND.id).toBe('terminal.clear');
+    // VSCode workbench.action.terminal.clear:primary 0、mac ⌘K —— Win/Linux 无默认键(Ctrl+K 是 readline 删到行尾)
+    expect(terminalClearDefaultHotkey('mac')).toBe('mod+k');
+    expect(terminalClearDefaultHotkey('other')).toBeUndefined();
   });
 });
 
@@ -36,9 +41,32 @@ describe('终端让出的键按生效绑定判定', () => {
       expect(terminalYieldedCommandId(key({ key: k, ctrlKey: true }), 'mac', {}, noRegistry)).toBeNull();
     }
   });
-  it('Windows / Linux:Ctrl+S 让出(不发 XOFF 冻结终端),Ctrl+W 让出', () => {
-    expect(terminalYieldedCommandId(key({ key: 's', ctrlKey: true }), 'other', {}, noRegistry)).toBe('workbench.action.files.save');
-    expect(terminalYieldedCommandId(key({ key: 'w', ctrlKey: true }), 'other', {}, noRegistry)).toBe('workbench.action.closeActiveEditor');
+  it('Windows / Linux:Ctrl+W / Ctrl+S / Ctrl+K 照常进 shell(同 VSCode:关闭 / 保存不在 commandsToSkipShell,只靠 metaKey 让出)', () => {
+    for (const k of ['w', 's', 'k']) {
+      expect(terminalYieldedCommandId(key({ key: k, ctrlKey: true }), 'other', {}, noRegistry)).toBeNull();
+    }
+  });
+  it('Windows / Linux:已注册命令的默认键也不让 Ctrl+W / Ctrl+S 离开终端', () => {
+    const registry = { get: (id: string) => ({ id, hotkey: id === 'terminal.clear' ? undefined : id.endsWith('save') ? 'mod+s' : 'mod+w' }) };
+    expect(terminalYieldedCommandId(key({ key: 'w', ctrlKey: true }), 'other', {}, registry)).toBeNull();
+    expect(terminalYieldedCommandId(key({ key: 's', ctrlKey: true }), 'other', {}, registry)).toBeNull();
+    expect(terminalYieldedCommandId(key({ key: 'k', ctrlKey: true }), 'other', {}, registry)).toBeNull();
+  });
+  it('Windows / Linux:用户给 terminal.clear 绑定 Ctrl+K → 让出(它在 commandsToSkipShell 里);关闭命令改绑到带 Meta 的键 → 让出', () => {
+    expect(terminalYieldedCommandId(key({ key: 'k', ctrlKey: true }), 'other', { 'terminal.clear': 'mod+k' }, noRegistry)).toBe('terminal.clear');
+    expect(
+      terminalYieldedCommandId(key({ key: 'w', metaKey: true }), 'other', { 'workbench.action.closeActiveEditor': 'cmd+w' }, noRegistry),
+    ).toBe('workbench.action.closeActiveEditor');
+  });
+  it('Windows / Linux:全局热键分发不再为 terminal.clear 拦 Ctrl+K(无默认绑定)', () => {
+    const spec = { id: 'terminal.clear', title: 'Clear Terminal', fn: () => {}, hotkey: terminalClearDefaultHotkey('other') };
+    expect(buildCompiledBindings([spec], 'other')).toHaveLength(0);
+    expect(buildCompiledBindings([{ ...spec, hotkey: terminalClearDefaultHotkey('mac') }], 'mac')).toHaveLength(1);
+  });
+  it('mac:关闭 / 保存改绑到不带 ⌘ 的键 → 不让出(进 shell,同 VSCode)', () => {
+    expect(
+      terminalYieldedCommandId(key({ key: 'w', ctrlKey: true, altKey: true }), 'mac', { 'workbench.action.closeActiveEditor': 'ctrl+alt+w' }, noRegistry),
+    ).toBeNull();
   });
   it('改绑:跟随新键,原默认键照常进 shell;解绑:不再让出', () => {
     const o = { 'workbench.action.files.save': 'mod+shift+s' };
@@ -91,10 +119,11 @@ describe('terminal.clear 经面板句柄清屏', () => {
     expect(clear).toHaveBeenCalledTimes(1);
     expect(() => clearTerminalPanel('terminal-missing')).not.toThrow();
   });
-  it('TerminalPlugin 注册 terminal.clear(mod+k,带 titleKey),仅活动面板是终端时清屏', async () => {
+  it('TerminalPlugin 注册 terminal.clear(默认键按平台,带 titleKey),仅活动面板是终端时清屏', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync('src/core-plugins/TerminalPlugin.ts', 'utf-8');
     expect(src).toContain('TERMINAL_CLEAR_COMMAND.id');
+    expect(src).toContain('hotkey: terminalClearDefaultHotkey(detectPlatform())');
     expect(src).toContain("titleKey: 'commands.terminal.clear.title'");
     expect(src).toContain('clearTerminalPanel(active.id)');
   });

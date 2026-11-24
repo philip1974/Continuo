@@ -14,7 +14,9 @@ import {
   TERMINAL_CLEAR_COMMAND,
   TERMINAL_SEARCH_COMMAND,
   TERMINAL_ZOOM_COMMAND,
+  terminalClearDefaultHotkey,
 } from '@/panels/Terminal/terminal-hotkeys';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -61,14 +63,15 @@ export default class TerminalPlugin extends Plugin {
         openTerminalSearch(active.id);
       },
     });
-    // VSCode workbench.action.terminal.clear(⌘K):清空活动终端的屏幕与滚动缓冲;活动面板不是终端 → no-op。
+    // VSCode workbench.action.terminal.clear(mac ⌘K;Win/Linux 无默认键,Ctrl+K 留给 shell):清空活动终端的屏幕与
+    // 滚动缓冲;活动面板不是终端 → no-op。
     this.addCommand({
       id: TERMINAL_CLEAR_COMMAND.id,
       title: 'Clear Terminal',
       titleKey: 'commands.terminal.clear.title',
       category: 'Terminal',
       categoryKey: 'commands.terminal.category',
-      hotkey: TERMINAL_CLEAR_COMMAND.hotkey,
+      hotkey: terminalClearDefaultHotkey(detectPlatform()),
       fn: () => {
         const active = getDockApi()?.activePanel;
         if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
