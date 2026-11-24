@@ -8,7 +8,7 @@ import {
 
 // settings.editor.font_size.desc 的三语原文(只出现在描述里,不与任何设置标题重合)
 const EDITOR_FONT_SIZE_DESC =
-  /(CodeEditor\(代码 \/ Source mode\)的字号。|Font size for the code editor \(Source mode\)\.|코드 에디터\(소스 모드\)의 글꼴 크기\.)/;
+  /(代码编辑器与 Markdown 编辑器的字号。|Font size for the code editor and the Markdown editor\.|코드 에디터와 Markdown 에디터의 글꼴 크기\.)/;
 
 test('编辑器 tab 显示 fontSize description', async ({ window }) => {
   await openSettingsTab(window, EDITOR_TAB);
