@@ -105,11 +105,12 @@ describe('makeCreateSessionTool · 元数据', () => {
   });
 
   // 空串 cwd = 未给:归一为 undefined,按文档回退窗口工作区根(IPC 侧 schema 为 min(1),同一请求两端同口径)。
-  it('inputSchema:cwd 空串归一为未给', () => {
+  it('inputSchema:cwd / name / agentLabel 空串归一为未给', () => {
     const tool = makeCreateSessionTool(makeOkDeps());
-    const r = tool.inputSchema.safeParse({ cwd: '', agentLabel: 'codex' });
+    const r = tool.inputSchema.safeParse({ cwd: '', name: '', agentLabel: '' });
     expect(r.success).toBe(true);
-    expect(r.success && (r.data as { cwd?: string }).cwd).toBeUndefined();
+    const d = (r.success ? r.data : {}) as { cwd?: string; name?: string; agentLabel?: string };
+    expect([d.cwd, d.name, d.agentLabel]).toEqual([undefined, undefined, undefined]);
     expect(r.success && 'cwd' in (r.data as object) && (r.data as { cwd?: string }).cwd !== undefined).toBe(false);
   });
 

@@ -101,7 +101,15 @@ describe('ExecInput 长度/数量上限 (E12)', () => {
 //(clampExecTimeoutMs / clampExecMaxBytes),IPC 前门不先拒 —— 否则同样参数给 exec 报 BAD_INPUT、给 execStream 正常运行。
 describe('timeoutMs / maxOutputBytes 交给 service 归一化', () => {
   const base = { cmd: 'git', args: ['status'] };
-  it.each([{ timeoutMs: 1500.5 }, { timeoutMs: 0 }, { maxOutputBytes: 2.5 }, { maxOutputBytes: -1 }])(
+  it.each([
+    { timeoutMs: 1500.5 },
+    { timeoutMs: 0 },
+    { timeoutMs: Infinity },
+    { timeoutMs: NaN },
+    { maxOutputBytes: 2.5 },
+    { maxOutputBytes: -1 },
+    { maxOutputBytes: Infinity },
+  ])(
     '%o → 通过 schema',
     (extra) => {
       expect(ExecInput.safeParse({ ...base, ...extra }).success).toBe(true);

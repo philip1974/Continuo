@@ -66,6 +66,8 @@ const MCP_AUTORUN_MAX = 65536;
 // advertised jsonSchema 都没声明 → MCP client/LLM 看到的入约允许超长字符串,调用时才在 run() 失败(公开
 // schema↔zod↔运行时三层漂移)。.extend 给这些字段补 .max(与 run() 上限同值;autorun 的精确 byte 检查仍
 // 由 run() 兜底),advertised jsonSchema 同步补 maxLength(见下方 jsonSchema)。保留 .optional()。
+const emptyToUndefined = (v: string): string | undefined => (v === '' ? undefined : v);
+
 const createSessionBoundedSchema = createSessionInputSchema
   .omit({
     shell: true,
@@ -81,10 +83,11 @@ const createSessionBoundedSchema = createSessionInputSchema
     cwd: z
       .string()
       .max(PATH_MAX)
-      .transform((v) => (v === '' ? undefined : v))
+      .transform(emptyToUndefined)
       .optional(),
-    name: z.string().max(LABEL_MAX).optional(),
-    agentLabel: z.string().max(LABEL_MAX).optional(),
+    // name / agentLabel 同理:空串 = 未给 → 回退默认标题「Terminal N」/ 'agent'(否则标题只剩 " (agent)")。
+    name: z.string().max(LABEL_MAX).transform(emptyToUndefined).optional(),
+    agentLabel: z.string().max(LABEL_MAX).transform(emptyToUndefined).optional(),
     autorun: z.string().max(MCP_AUTORUN_MAX).optional(),
   });
 type CreateSessionBoundedInput = z.infer<typeof createSessionBoundedSchema>;
