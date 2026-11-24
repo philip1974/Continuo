@@ -1,6 +1,8 @@
 # wc-gone-hook · 何时回收 webContents 名下的 main 侧资源
 
 - `destroyed`:始终回收。
+- `render-process-gone`(renderer 崩溃 / 被杀):始终回收 —— 页面状态已丢失,不回收则插件子进程、MCP 工具 stub、fs watcher
+  一直挂到用户刷新或关窗。
 - 主框架、非同文档、**浏览器侧发起**(`did-start-navigation` 的 `initiator` 为空)的 `did-start-navigation`:**仅当目标 URL
   是本应用 renderer 入口**(`webContents.reload()` / 菜单 View → Reload / main 的 `loadURL` / `loadFile`)时回收。main 启动时经
   `setReloadUrlPredicate(isOwnRendererUrl)` 注入 URL 判定。

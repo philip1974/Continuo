@@ -1,6 +1,8 @@
 // 「该 webContents 名下的 main 侧资源该清了」的统一钩子(plugin-mcp 的工具 stub 与 plugin-shell-stream
-// 的在途子进程此前各手写一份,后者注释自称「镜像」前者)。两种时机都要清:
+// 的在途子进程此前各手写一份,后者注释自称「镜像」前者)。三种时机都要清:
 //   - destroyed:窗口 / webContents 销毁;
+//   - render-process-gone:renderer 崩溃 / 被杀 —— 页面状态已没了,main 侧资源(插件子进程、MCP 工具 stub、fs
+//     watcher、插件身份 token)不回收会一直挂到用户刷新或关窗(与 renderer-document-gone 同样认这一事件);
 //   - did-start-navigation(main frame 且非同文档):renderer reload(Ctrl+R / 菜单 View → Reload /
 //     webContents.reload())—— webContents 不销毁、id 不变,但 renderer 侧状态被整体撕掉重建,不会有任何
 //     「我要走了」的通知。须在新文档脚本执行前清掉残留;hash / pushState(同文档)不算。
@@ -41,6 +43,7 @@ export function makeWcGoneHook(onGone: (wcId: number) => void): (wc: WebContents
     attached.add(wc);
     const wcId = wc.id;
     wc.once('destroyed', () => onGone(wcId));
+    wc.on('render-process-gone', () => onGone(wcId));
     wc.on('did-start-navigation', (details) => {
       if (!details.isMainFrame || details.isSameDocument) return;
       // 页面发起:会被导航守卫拦下(popout 首次加载时尚无资源可回收)—— 守卫放行的同 URL 刷新除外。

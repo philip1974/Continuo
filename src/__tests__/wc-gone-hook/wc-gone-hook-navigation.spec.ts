@@ -113,3 +113,14 @@ describe('wc-gone-hook · 被拦下的外链导航不算 reload', () => {
     expect(src).toMatch(/setReloadUrlPredicate\(isOwnRendererUrl\)/);
   });
 });
+
+describe('wc-gone-hook · renderer 崩溃', () => {
+  it('render-process-gone → 回收(不必等刷新 / 关窗)', () => {
+    const onGone = vi.fn();
+    const wc = fakeWc(11);
+    makeWcGoneHook(onGone)(wc as never);
+    wc.emit('render-process-gone', {}, { reason: 'oom' });
+    expect(onGone).toHaveBeenCalledWith(11);
+  });
+});
+
