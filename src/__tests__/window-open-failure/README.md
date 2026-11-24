@@ -5,8 +5,11 @@ macOS open-file、second-instance 传入目录、冷启动多目录)失败时,�
 不产生 unhandled rejection。**
 
 开新窗口要先在 `explorer.json` 分配 windowSeq(读 + 写);磁盘满(ENOSPC)或 userData 无读写权限
-(EACCES)时会 reject。renderer 经 `coApi.window.create` 的路径失败会弹本地化 notify;主进程入口
-原先都是 `void openXxx()`,完全静默。
+(EACCES)时会 reject。主进程入口原先都是 `void openXxx()`,完全静默。
+
+两条路径共用 `openWorkspaceWindowWith`(`window.ipc.ts`):分配 windowSeq 的 node errno 在此归到 `FS_*` 业务码
+(`mapNodeErrnoCode`),故 renderer 经 `coApi.window.create`(命令面板「新建窗口」/「在新窗口打开文件夹」)失败
+的 notify 与主进程菜单路径按同一 code 本地化(此前 renderer 路径只显示英文 errno 原文)。
 
 ## 模块
 

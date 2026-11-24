@@ -21,7 +21,8 @@ import {
   clearWindow as clearWindowRoot,
   setWorkspaceRoot,
 } from '../services/window-workspace-roots.service';
-import { codedError } from '../../shared/error-message';
+import { codedError, errorMessage, thrownFields } from '../../shared/error-message';
+import { mapNodeErrnoCode } from './fs/path-utils';
 import { windowSeqCount } from '../services/window-seq.service';
 
 function summarizePath(p: string): string {
@@ -103,7 +104,16 @@ export async function openWorkspaceWindowWith(
   workspace?: string,
 ): Promise<void> {
   const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
-  const windowSeq = await allocateWindowSeq(explorerFile);
+  let windowSeq: number;
+  try {
+    windowSeq = await allocateWindowSeq(explorerFile);
+  } catch (err) {
+    // 读写 explorer.json 的 node errno(ENOSPC / EACCES …)归到 FS_* 业务码:renderer window.create 的 notify 与
+    // main 菜单路径(runWindowOpen)按同一 code 本地化,否则命令面板「新建窗口」失败只显示英文 errno 原文。
+    const { code } = thrownFields(err);
+    if (code !== undefined && Object.hasOwn(ERROR_CODES, code)) throw err;
+    throw codedError(mapNodeErrnoCode(err), errorMessage(err));
+  }
   createMainWindow(workspace === undefined ? { windowSeq } : { windowSeq, workspace, fresh: true });
 }
 
