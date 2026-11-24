@@ -24,8 +24,13 @@ export function getLocale(): Locale {
   return currentLocale;
 }
 
+/** 界面语言 → BCP 47 语言标签(写到 <html lang>)。 */
+const HTML_LANG: Record<Locale, string> = { en: 'en', zh: 'zh-CN', ko: 'ko' };
+
 export function setLocale(locale: Locale): void {
   currentLocale = locale;
+  // <html lang> 跟随界面语言:读屏按它选发音,CSS `:lang(ko)` 据此让韩文按词断行(theme.css)。
+  if (typeof document !== 'undefined') document.documentElement.lang = HTML_LANG[locale];
 }
 
 /**

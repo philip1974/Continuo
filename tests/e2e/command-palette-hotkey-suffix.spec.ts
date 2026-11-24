@@ -4,7 +4,7 @@ import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 import { dispatchModKey } from './helpers/hotkeys';
 
-const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
+const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
 
 test('settings.toggle 行右侧显示 hotkey 切片', async ({ window }) => {
   const settingsButton = window.getByRole('button', { name: SETTINGS });

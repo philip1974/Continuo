@@ -13,7 +13,7 @@ test('workspace + 关 sidebar → footer 含 basename / hidden hint', async ({
   // sidebar 默认开 → 没 hidden hint.
   await expect(footer).not.toContainText(SIDEBAR_HIDDEN_TEXT);
 
-  // 点 IconSidebar 「隐藏 Explorer」按钮 toggle off
+  // 点 IconSidebar 「隐藏资源管理器」按钮 toggle off
   await window
     .getByRole('button', { name: EXPLORER_HIDE })
     .first()

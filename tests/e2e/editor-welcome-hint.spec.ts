@@ -1,4 +1,4 @@
-// EditorWelcome 默认 hint 含「在 Explorer 单击文件打开」+ ⌘ + S + 「保存」文案.
+// EditorWelcome 默认 hint 含「在资源管理器中单击文件打开」+ ⌘ + S + 「保存」文案.
 import { test, expect } from './fixtures/electron-app';
 import {
   EDITOR_NO_FILE_OPEN,

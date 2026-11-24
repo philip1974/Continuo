@@ -6,13 +6,15 @@ import {
   settingsSearch,
 } from './helpers/settings';
 
-test('搜索 xterm → terminal.fontSize 匹配(description 含 xterm)', async ({
-  window,
-}) => {
+// 只出现在 description 里的词(标题「字号 / Font size」不含):按界面语言(<html lang>)取。
+const DESCRIPTION_ONLY_TERM: Record<string, string> = { en: 'xterm', 'zh-CN': '重排', ko: '다시 배치' };
+
+test('搜索 description 独有关键词 → terminal.fontSize 匹配', async ({ window }) => {
   await openSettings(window);
 
+  const lang = await window.evaluate(() => document.documentElement.lang);
   const search = settingsSearch(window);
-  await search.fill('xterm');
+  await search.fill(DESCRIPTION_ONLY_TERM[lang] ?? 'xterm');
 
   // 主区域显「匹配 N 项」+ 含 fontSize chip
   await expect(window.getByText(MATCHED_SETTINGS)).toBeVisible({

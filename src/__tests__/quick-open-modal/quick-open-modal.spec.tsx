@@ -134,12 +134,12 @@ describe('QuickOpenModal — 渲染态', () => {
     expect(document.querySelector('.wm-modal-content')).toBeNull();
   });
 
-  it('isOpen=true + root=null → 「请先在 Explorer 打开工作区」', () => {
+  it('isOpen=true + root=null → 「请先在资源管理器中打开工作区」', () => {
     installFs();
     useQuickOpenStore.setState({ isOpen: true });
     render(<QuickOpenModal />);
     expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      '请先在 Explorer 打开工作区',
+      '请先在资源管理器中打开工作区',
     );
   });
 
@@ -150,7 +150,7 @@ describe('QuickOpenModal — 渲染态', () => {
     render(<QuickOpenModal />);
     const status = document.querySelector('.wm-modal-content [role=status]');
     expect(status).not.toBeNull();
-    expect(status!.textContent).toContain('请先在 Explorer 打开工作区');
+    expect(status!.textContent).toContain('请先在资源管理器中打开工作区');
   });
 
   // a11y(A2,A1 同族):搜索框须有稳定可访问名(aria-label),placeholder 含快捷键不适合,

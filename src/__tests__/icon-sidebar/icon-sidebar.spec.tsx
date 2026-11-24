@@ -54,29 +54,29 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('IconSidebar — Explorer toggle', () => {
-  it('sidebarOpen=true → button title=「隐藏 Explorer」+ active', () => {
+  it('sidebarOpen=true → button title=「隐藏资源管理器」+ active', () => {
     const { container } = render(<IconSidebar />);
     const btn = container.querySelector(
-      'button[title="隐藏 Explorer"]',
+      'button[title="隐藏资源管理器"]',
     ) as HTMLButtonElement;
     expect(btn).not.toBeNull();
   });
 
-  it('sidebarOpen=false → button title=「显示 Explorer」', () => {
+  it('sidebarOpen=false → button title=「显示资源管理器」', () => {
     useLayoutUiStore.setState({ sidebarOpen: false });
     const { container } = render(<IconSidebar />);
     expect(
-      container.querySelector('button[title="显示 Explorer"]'),
+      container.querySelector('button[title="显示资源管理器"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('button[title="隐藏 Explorer"]'),
+      container.querySelector('button[title="隐藏资源管理器"]'),
     ).toBeNull();
   });
 
   it('点击 → toggleSidebar', () => {
     const { container } = render(<IconSidebar />);
     const btn = container.querySelector(
-      'button[title="隐藏 Explorer"]',
+      'button[title="隐藏资源管理器"]',
     ) as HTMLButtonElement;
     fireEvent.click(btn);
     expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
@@ -153,7 +153,7 @@ describe('IconSidebar — Settings', () => {
     ) as HTMLButtonElement;
     expect(settings.hasAttribute('aria-pressed')).toBe(false);
     const explorer = container.querySelector(
-      'button[title="隐藏 Explorer"]',
+      'button[title="隐藏资源管理器"]',
     ) as HTMLButtonElement;
     expect(explorer.getAttribute('aria-pressed')).toBe('true'); // sidebarOpen=true
   });

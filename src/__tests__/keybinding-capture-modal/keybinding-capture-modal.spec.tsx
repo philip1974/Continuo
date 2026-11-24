@@ -22,6 +22,7 @@ import {
   useKeybindingsStore,
 } from '../../plugins/keybindings/keybindings-store';
 import type { CommandSpec } from '../../plugins/registries/CommandRegistry';
+import { getLocale, notifyLocaleChange, setLocale } from '../../i18n';
 
 const getEffSpy = getEffectiveHotkey as unknown as ReturnType<typeof vi.fn>;
 
@@ -197,6 +198,36 @@ describe('KeybindingCaptureModal — 显示态', () => {
     const statuses2 = Array.from(document.querySelectorAll('.wm-modal-content [role=status]'));
     const box2 = statuses2.find((s) => s.textContent?.includes('未绑定'));
     expect(box2).toBeTruthy();
+  });
+});
+
+// 标签与命令名、提示文案与键帽之间要有空格(读屏同样连读):此前渲染成「Command:Command A」「then[Enter]」
+// 「to cancel;default」。zh 沿用目录里的标点,只补空格。
+describe('KeybindingCaptureModal — 文案间距', () => {
+  const original = getLocale();
+  afterEach(() => {
+    act(() => {
+      setLocale(original);
+      notifyLocaleChange();
+    });
+  });
+
+  const CASES = [
+    ['en', 'Command: Command A', 'Press a new combination, then Enter to save; Backspace to clear; Esc to cancel; default '],
+    ['ko', '명령: Command A', '새 조합을 누른 뒤 Enter 저장; Backspace 지우기; Esc 취소; 기본 '],
+    ['zh', '命令: Command A', '按下新组合后, Enter 保存; Backspace 清空; Esc 取消; 默认 '],
+  ] as const;
+
+  it.each(CASES)('%s:标签与命令名、提示与键帽之间有空格', (locale, commandLine, hint) => {
+    act(() => {
+      setLocale(locale);
+      notifyLocaleChange();
+    });
+    render(<KeybindingCaptureModal {...defaultProps({ defaultHotkey: 'mod+k' })} />);
+    const title = document.getElementById('keybinding-capture-title')!;
+    expect(title.nextElementSibling!.textContent).toBe(commandLine);
+    const hints = document.querySelector('[data-testid="keybinding-capture-hints"]')!;
+    expect(hints.textContent).toContain(hint);
   });
 });
 

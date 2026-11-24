@@ -238,8 +238,9 @@ function KeybindingCaptureModalBody({
       <h2 id="keybinding-capture-title" className="text-sm font-medium text-fg">
         {t('keybindings.modal.title')}
       </h2>
+      {/* 标签与命令名之间、提示文案与键帽之间用文本空格(不是 flex gap):视觉与读屏连读都不粘连。 */}
       <div className="mt-1 text-xs text-fg-muted">
-        {t('keybindings.modal.command_label')}
+        {t('keybindings.modal.command_label')}{' '}
         <span className="text-fg">{commandTitle}</span>
       </div>
 
@@ -276,14 +277,11 @@ function KeybindingCaptureModalBody({
       </div>
       </div>
 
-      <div className="mt-2 text-2xs text-fg-dim">
-        {t('keybindings.modal.hint_press_save')}
-        <KeyCap>Enter</KeyCap> {t('keybindings.modal.hint_save')}
-        <KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}
+      <div data-testid="keybinding-capture-hints" className="mt-2 text-2xs leading-5 text-fg-dim">
+        {t('keybindings.modal.hint_press_save')} <KeyCap>Enter</KeyCap> {t('keybindings.modal.hint_save')}{' '}
+        <KeyCap>Backspace</KeyCap> {t('keybindings.modal.hint_clear')}{' '}
         <KeyCap>Esc</KeyCap> {t('keybindings.modal.hint_cancel')}
-        {defaultHotkey && (
-          <>{t('keybindings.modal.hint_default', { hotkey: defaultHotkeyLabel })}</>
-        )}
+        {defaultHotkey && t('keybindings.modal.hint_default', { hotkey: defaultHotkeyLabel })}
       </div>
 
       {reserved !== null && (

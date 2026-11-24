@@ -7,9 +7,9 @@ import {
 } from './helpers/settings';
 
 const EXPLORER_DECORATOR_LABELS = [
-  'Explorer 装饰器',
+  '资源管理器装饰器',
   'Explorer decorators',
-  'Explorer 장식자',
+  '탐색기 장식자',
 ];
 
 test('Explorer 装饰器 count = 0', async ({ window }) => {

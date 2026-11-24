@@ -181,6 +181,12 @@
   z-index: var(--z-terminal-overlay);
 }
 
+/* 韩文按词(어절)断行:默认 word-break: normal 会在词中间换行(「설정을 변경하/면」)。<html lang> 由
+ * setLocale 随界面语言写入(src/i18n/translate.ts)。 */
+:lang(ko) {
+  word-break: keep-all;
+}
+
 /* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────
  * 走 design token,主题切换自动跟。Firefox 用 scrollbar-* 属性,
  * Webkit(Chrome/Edge/Electron)用 ::-webkit-scrollbar pseudo。

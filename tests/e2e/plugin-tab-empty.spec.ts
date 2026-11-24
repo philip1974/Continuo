@@ -5,7 +5,7 @@ import { PLUGINS_TAB, openSettingsTab } from './helpers/settings';
 
 const REGISTERED_CONTRIBUTIONS =
   /^(已注册贡献点|Registered contribution points|등록된 기여 항목)$/;
-const PANEL_TYPES = /^(Panel 类型|Panel types|Panel 유형)$/;
+const PANEL_TYPES = /^(面板类型|Panel types|패널 유형)$/;
 const COMMANDS = /^(命令|Commands|명령)$/;
 const NO_USER_PLUGINS =
   /^(暂无用户插件|No user plugins installed|설치된 사용자 플러그인이 없습니다)$/;

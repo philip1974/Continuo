@@ -21,7 +21,7 @@ test('点 Explorer 关闭 sidebar → 关 → 重启 → sidebar 仍关', async 
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
 
-    // 默认 sidebar 开 → 「隐藏 Explorer」按钮可见
+    // 默认 sidebar 开 → 「隐藏资源管理器」按钮可见
     await win1.getByRole('button', { name: EXPLORER_HIDE }).click();
     // 等 explorer-persist debounce 写盘
     await win1.waitForTimeout(500);

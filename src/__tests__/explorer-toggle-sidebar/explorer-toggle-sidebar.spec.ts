@@ -41,7 +41,7 @@ describe('explorer.toggleSidebar · 命令注册', () => {
       .getAll()
       .find((c) => c.id === 'explorer.toggleSidebar')!;
     expect(cmd.category).toBe('Explorer');
-    // topic-19: title 是 ASCII fallback；titleKey 指 i18n catalog 命中 zh = '切换 Explorer 侧栏'
+    // topic-19: title 是 ASCII fallback；titleKey 指 i18n catalog 命中 zh = '切换资源管理器侧栏'
     expect(cmd.title).toContain('Explorer');
     expect(cmd.titleKey).toBe('settings.explorer.toggle_sidebar');
   });

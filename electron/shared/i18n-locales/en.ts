@@ -284,7 +284,7 @@ export const en = {
   'keybindings.modal.hint_save': 'to save;',
   'keybindings.modal.hint_clear': 'to clear;',
   'keybindings.modal.hint_cancel': 'to cancel',
-  'keybindings.modal.hint_default': ';default {hotkey}',
+  'keybindings.modal.hint_default': '; default {hotkey}',
   'keybindings.modal.conflict_title': 'This combination is already bound to other commands',
   'keybindings.modal.conflict_advice': 'Only one of the two commands will respond after saving (the one registered first) — unbind the original first so this binding takes effect.',
   'keybindings.modal.reset_default': 'Reset to default',

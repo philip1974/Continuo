@@ -46,7 +46,7 @@ export const KEYBINDING_CAPTURE_MODAL =
 export const KEYBINDING_CONFLICT_WARNING =
   /(此组合已绑定到其它命令|This combination is already bound to other commands|이 조합은 다른 명령에 이미 바인딩되어 있습니다)/;
 export const PLUGINS_SETTING_TABS_LABELS = [
-  '设置 Tab',
+  '设置标签页',
   'Setting Tabs',
   '설정 탭',
 ] as const;

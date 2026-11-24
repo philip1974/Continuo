@@ -20,6 +20,6 @@ test('编辑器 tab 显示 fontSize description', async ({ window }) => {
 test('终端 tab 显示 fontSize description', async ({ window }) => {
   await openSettingsTab(window, TERMINAL_TAB);
 
-  // TerminalTabPlugin 注册了 fontSize description 'xterm 字号。变化时自动 fit 重排。'
-  await expect(window.locator('main')).toContainText('xterm');
+  // TerminalTabPlugin 注册了 fontSize description(en 'xterm font size. Refits on change.' / zh '终端字号。变化时自动重排。')
+  await expect(window.locator('main')).toContainText(/xterm font size|终端字号|터미널 글꼴 크기/);
 });

@@ -4,7 +4,7 @@ import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 import { dispatchModKey } from './helpers/hotkeys';
 
-const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
+const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
 
 function sparseSettingsQuery(settingsLabel: string): string {
   if (settingsLabel === '설정') return '설토';

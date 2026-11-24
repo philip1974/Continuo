@@ -169,7 +169,7 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
     await terminalCommand().fn();
 
     expect(mocks.notify.error).toHaveBeenCalledOnce();
-    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开 workspace');
+    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开工作区');
   });
 
   it('T20: TerminalPlugin Cmd+T shows generic terminal create error code', async () => {
@@ -203,6 +203,6 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
     await waitFor(() => {
       expect(mocks.notify.error).toHaveBeenCalledOnce();
     });
-    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开 workspace');
+    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开工作区');
   });
 });

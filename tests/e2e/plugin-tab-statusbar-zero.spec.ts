@@ -6,7 +6,7 @@ import {
   pluginContributionCount,
 } from './helpers/settings';
 
-const STATUSBAR_LABELS = ['StatusBar 项', 'StatusBar items', 'StatusBar 항목'];
+const STATUSBAR_LABELS = ['状态栏项', 'StatusBar items', '상태 표시줄 항목'];
 
 test('StatusBar 项 count = 0', async ({ window }) => {
   await openSettingsTab(window, PLUGINS_TAB);

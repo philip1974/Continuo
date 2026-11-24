@@ -14,3 +14,8 @@
 - `design-layer-no-keys.spec.ts`: `src/design` 共享层不直接依赖 i18n。
 - `locale-concurrent.spec.ts`: 连续 `setLocale` 用 generation token 丢弃过期广播。
 - `setting-locale-fields.spec.ts`: setting registry 的 title/description/label key 在渲染时翻译。
+- `catalog-language-purity.spec.ts`: 文案语言纯净 —— zh / ko 不夹带 VSCode 本地化版会翻译的英文 UI 词(Settings / Explorer /
+  Editor / Panel / Tab / tag / review / hotkey / terminal / workspace / token / Source·Edit 模式…;专有名词 Markdown / Git /
+  MCP / Quick Open / Agent / shell 等与代码标识可保留),en 不含中文 / 韩文。
+- `html-lang.spec.ts`: `<html lang>` 随界面语言(en / zh-CN / ko)写入 —— 读屏按它选发音;`theme.css` 的 `:lang(ko)`
+  让韩文按词断行(`word-break: keep-all`)。

@@ -10,7 +10,7 @@ import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, QUICK_OPEN_SEARCH } from './helpers/palette';
 
 const QUICK_OPEN_NO_WORKSPACE =
-  /^(请先在 Explorer 打开工作区|Please open a workspace in Explorer first|먼저 Explorer에서 워크스페이스를 여세요)$/;
+  /^(请先在资源管理器中打开工作区|Please open a workspace in Explorer first|먼저 탐색기에서 워크스페이스를 여세요)$/;
 const COMMAND_NO_MATCH = /^(无匹配命令|No matching command|일치하는 명령어 없음)$/;
 
 async function pressShortcut(

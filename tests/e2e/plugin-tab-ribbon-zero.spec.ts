@@ -6,8 +6,8 @@ import {
   pluginContributionCount,
 } from './helpers/settings';
 
-const RIBBON_LABELS = ['Ribbon 图标', 'Ribbon icons', 'Ribbon 아이콘'];
-const EDITOR_ACTION_LABELS = ['Editor Action', 'Editor Actions'];
+const RIBBON_LABELS = ['功能区图标', 'Ribbon icons', '리본 아이콘'];
+const EDITOR_ACTION_LABELS = ['编辑器操作', 'Editor Actions', '편집기 작업'];
 
 test('Plugin tab fresh:Ribbon/Editor Action count=0', async ({ window }) => {
   await openSettingsTab(window, PLUGINS_TAB);

@@ -12,7 +12,7 @@ const PLUGINS = /^(插件|Plugins|플러그인)$/;
 const NO_MATCH = /未找到匹配|No settings matched|일치하는 설정을 찾을 수 없음/;
 const REGISTERED_CONTRIBUTIONS =
   /^(已注册贡献点|Registered contribution points|등록된 기여 항목)$/;
-const PANEL_TYPES = /^(Panel 类型|Panel types|Panel 유형)$/;
+const PANEL_TYPES = /^(面板类型|Panel types|패널 유형)$/;
 const COMMANDS = /^(命令|Commands|명령)$/;
 
 test.beforeEach(async ({ window }) => {

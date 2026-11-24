@@ -109,7 +109,7 @@ describe('AgentAuthPrompt — 渲染条件', () => {
 
     const modal = document.querySelector('.wm-modal-content');
     expect(modal).not.toBeNull();
-    expect(modal!.textContent).toContain('新建一个 terminal');
+    expect(modal!.textContent).toContain('新建一个终端');
   });
 
   // main 对 debug 工具发 method='debug.launch' / 'debug.*';此前标签表只有 terminal.*,弹窗显示原始串。

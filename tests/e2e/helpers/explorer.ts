@@ -22,10 +22,10 @@ export const EXPLORER_COPY_PATH = /^(复制路径|Copy Path|경로 복사)(?:\s+
 export const EXPLORER_COPY_RELATIVE_PATH =
   /^(复制相对路径|Copy Relative Path|상대 경로 복사)(?:\s+.+)?$/;
 export const EXPLORER_MORE_ACTIONS = /^(更多操作|More actions|추가 작업)$/;
-export const EXPLORER_HIDE = /^(隐藏 Explorer|Hide Explorer|Explorer 숨기기)$/;
-export const EXPLORER_SHOW = /^(显示 Explorer|Show Explorer|Explorer 표시)$/;
+export const EXPLORER_HIDE = /^(隐藏资源管理器|Hide Explorer|탐색기 숨기기)$/;
+export const EXPLORER_SHOW = /^(显示资源管理器|Show Explorer|탐색기 표시)$/;
 export const EXPLORER_TOGGLE =
-  /^(显示 Explorer|隐藏 Explorer|Show Explorer|Hide Explorer|Explorer 표시|Explorer 숨기기)$/;
+  /^(显示资源管理器|隐藏资源管理器|Show Explorer|Hide Explorer|탐색기 표시|탐색기 숨기기)$/;
 export const SIDEBAR_HIDDEN_TEXT = /(侧栏已隐藏|Sidebar hidden|사이드바 숨김)/;
 const SIDEBAR_RESIZE = /^(拖拽改变宽度|Drag to resize|드래그하여 너비 조절)$/;
 export const EXPLORER_OPEN_IN_TERMINAL =

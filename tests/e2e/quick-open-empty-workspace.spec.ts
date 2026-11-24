@@ -8,7 +8,7 @@ import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
 
 const QO_EMPTY = /(工作区无文件|No files in workspace|워크스페이스에 파일이 없습니다)/;
-const QO_NO_WORKSPACE = /(请先在 Explorer 打开工作区|Please open a workspace in Explorer first|먼저 Explorer에서 워크스페이스를 여세요)/;
+const QO_NO_WORKSPACE = /(请先在资源管理器中打开工作区|Please open a workspace in Explorer first|먼저 탐색기에서 워크스페이스를 여세요)/;
 
 test('空 ws + Cmd+P → modal 显占位 + 0 li', async () => {
   test.setTimeout(30_000);

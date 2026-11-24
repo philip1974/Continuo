@@ -4,7 +4,7 @@ import { SETTINGS } from './helpers/settings';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
 
 const SETTINGS_CATEGORY = /(设置|Settings|설정)/;
-const SETTINGS_TITLE = /(切换 Settings|Toggle Settings|설정 토글)/;
+const SETTINGS_TITLE = /(切换设置|Toggle Settings|설정 토글)/;
 
 test('settings.toggle 命令显本地化 category 前缀 + title', async ({ window }) => {
   // 等就绪

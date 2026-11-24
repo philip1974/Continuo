@@ -186,13 +186,13 @@ describe('PluginsTabContent — 贡献点统计', () => {
     expect(container.textContent).toContain('已注册贡献点');
     // 7 个 label
     for (const label of [
-      'Panel 类型',
+      '面板类型',
       '命令',
-      'StatusBar 项',
-      'Ribbon 图标',
-      '设置 Tab',
-      'Explorer 装饰器',
-      'Editor Action',
+      '状态栏项',
+      '功能区图标',
+      '设置标签页',
+      '资源管理器装饰器',
+      '编辑器操作',
     ]) {
       expect(container.textContent).toContain(label);
     }
@@ -251,7 +251,7 @@ describe('PluginsTabContent — 贡献点统计', () => {
 
   it('动态注册 Explorer decorator → 贡献统计同步更新', () => {
     const { getByText } = render(<PluginsTabContent />);
-    const row = () => getByText('Explorer 装饰器').parentElement!;
+    const row = () => getByText('资源管理器装饰器').parentElement!;
 
     expect(row().textContent).toContain('0');
     act(() => {
