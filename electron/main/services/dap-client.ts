@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mergeSpawnEnv, stripInternalSecretEnv } from '../lib/child-spawn-hardening';
 import { errorMessage, toError } from '../../shared/error-message';
+import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 
 type DapPrimitive = string | number | boolean | null;
 export type DapJson =
@@ -228,7 +229,7 @@ export class DapStreamDecoder {
   }
 }
 
-const SERVER_STDERR_MAX_CHARS = 64 * 1024;
+const SERVER_STDERR_MAX_BYTES = 64 * 1024;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -360,7 +361,7 @@ export class DapClient {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly eventHandlers = new Map<string, Set<DapEventHandler>>();
   private decoder = new DapStreamDecoder();
-  private serverStderr = '';
+  private serverStderr = createByteCappedBuffer(SERVER_STDERR_MAX_BYTES);
   private spawnError: Error | null = null;
   private childSessions: DapClient[] = [];
   /** 子会话 traceId 序号(列表会随 child 单独 dispose 缩短,不能用长度编号)。 */
@@ -444,7 +445,7 @@ export class DapClient {
       this.spawnError = err;
       this.rejectAllPending(err);
     });
-    this.serverStderr = '';
+    this.serverStderr = createByteCappedBuffer(SERVER_STDERR_MAX_BYTES);
     let markClosed: () => void = () => {};
     const run: AdapterRunState = {
       exited: null,
@@ -455,13 +456,9 @@ export class DapClient {
     this.adapterRun = run;
     server.once('close', markClosed);
     server.stderr?.on('data', (chunk: Buffer) => {
-      // 只用于 ready 超时的报错信息:封顶,不随 adapter 生命周期无界累积。
-      if (this.serverStderr.length < SERVER_STDERR_MAX_CHARS) {
-        this.serverStderr = (this.serverStderr + chunk.toString('utf8')).slice(
-          0,
-          SERVER_STDERR_MAX_CHARS,
-        );
-      }
+      // 只用于 ready 超时的报错信息:按字节封顶,不随 adapter 生命周期无界累积;用时整体解码,
+      // 跨 chunk 的多字节字符不被切成 U+FFFD。
+      this.serverStderr.push(chunk);
     });
     // stdout 不用但必须排空:否则管道写满后 adapter 会阻塞在 write 上。
     server.stdout?.resume();
@@ -528,7 +525,7 @@ export class DapClient {
     const detail = lastError ? ` last error: ${lastError.message}` : '';
     throw new Error(
       `DAP server readiness timed out after ${this.readyTimeoutMs}ms.${detail}\n` +
-        `server stderr:\n${this.serverStderr}`,
+        `server stderr:\n${this.serverStderr.text()}`,
     );
   }
 
@@ -536,7 +533,7 @@ export class DapClient {
     // 'exit' 可能早于 stderr 读完:等 stdio 关闭(有界)再取 stderr 进报错。
     await Promise.race([run.closed, sleep(1_000)]);
     return new Error(
-      `DAP server exited before ready (${run.exited}).\nserver stderr:\n${this.serverStderr}`,
+      `DAP server exited before ready (${run.exited}).\nserver stderr:\n${this.serverStderr.text()}`,
     );
   }
 

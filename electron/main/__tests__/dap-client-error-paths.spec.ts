@@ -531,6 +531,35 @@ describe('adapter 就绪前退出', () => {
     return { dir, adapterPath, spawns };
   }
 
+  it.skipIf(process.platform === 'win32')(
+    'stderr 里跨 chunk 的多字节字符在报错信息中完整还原',
+    async () => {
+      const dir = await mkdtemp(path.join(tmpdir(), 'dap-stderr-utf8-'));
+      const adapterPath = path.join(dir, 'adapter.cjs');
+      // 「端口被占用」的 UTF-8 字节拆成两次写:第一次只写到「端」的前两个字节。
+      await writeFile(
+        adapterPath,
+        [
+          "const b = Buffer.from('端口被占用', 'utf8');",
+          'process.stderr.write(b.subarray(0, 2));',
+          'setTimeout(() => { process.stderr.write(b.subarray(2)); setTimeout(() => process.exit(1), 50); }, 100);',
+        ].join('\n'),
+      );
+      const client = new DapClient({ adapterPath, readyTimeoutMs: 10_000, connectIntervalMs: 20 });
+      try {
+        const err = await client.spawnServer().then(
+          () => null,
+          (e: unknown) => e as Error,
+        );
+        expect(err?.message).toContain('端口被占用');
+        expect(err?.message).not.toContain('\uFFFD');
+      } finally {
+        await client.dispose();
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   it.skipIf(process.platform === 'win32')('立即失败(不等满 readyTimeout),只 spawn 一次', async () => {
     const fixture = await failingAdapter();
     const client = new DapClient({
