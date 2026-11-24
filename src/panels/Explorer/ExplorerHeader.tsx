@@ -4,20 +4,17 @@ import {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { IconButton, MenuItem } from '@/design';
 import { openRecentRootOrNotify } from './open-recent-root';
 import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
-import { useMenuKeyboard } from '@/lib/use-menu-keyboard';
-import { useMenuAnchor } from '@/lib/use-menu-anchor';
 import { MoreActionsIcon } from '@/lib/ui-icons';
+import { DropdownMenu } from '@/lib/dropdown-menu';
 import { basename } from './path-utils';
 import { basenameForChrome } from '@/lib/path-label';
 import { useT } from '@/i18n';
 import { ExplorerVisibleContext } from './visibility';
-import { useDismissOnOutsidePointer } from '@/lib/use-dismiss-on-outside-pointer';
 
 // FolderTree 顶部固定 Header:左侧 workspace 名 + 右侧 ⋯ 溢出菜单
 //(展开 / 折叠 / 切换 / 关闭)。
@@ -86,31 +83,12 @@ export function ExplorerHeader({
   if (!visible && menuOpen) setMenuOpen(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const t = useT();
-  // a11y(A18):菜单打开移焦入首项 + Escape 关闭还原焦点 + 方向键漫游(共享 hook)。
-  // menuRef 为 callback ref(挂到 role=menu),menuNode.current 供 pointerdown contains 判定。
-  const {
-    menuRef,
-    menuNode,
-    onKeyDown: onMenuKeyDown,
-    closeAndRestore,
-  } = useMenuKeyboard({
-    triggerRef,
-    onClose: () => setMenuOpen(false),
-  });
   const newFileLabel = t('panels.explorer.btn.new_file');
   const newFolderLabel = t('panels.explorer.btn.new_folder');
   const refreshLabel = t('panels.explorer.btn.refresh');
   const collapseAllLabel = t('panels.explorer.btn.collapse_all');
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
 
-  // 菜单坐标(trigger 按钮的 viewport rect;resize / scroll 时重算)。
-  const anchor = useMenuAnchor(triggerRef, menuOpen);
-
-  // 点 trigger / menu 外:关菜单
-  useDismissOnOutsidePointer(menuOpen, [triggerRef, menuNode], () => setMenuOpen(false));
-
-  // a11y(A30):拿到单飞锁后先关菜单并还原焦点到触发按钮,再开原生目录对话框。
-  const switchFolder = (): void => void selectFolder(closeAndRestore);
 
   return (
     <div className="group flex h-9 shrink-0 items-center gap-0.5 border-b border-line bg-panel-soft/50 px-3 text-xs">
@@ -177,15 +155,10 @@ export function ExplorerHeader({
       >
         {MORE_ACTIONS_ICON}
       </IconButton>
-      {menuOpen && anchor &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="menu"
-            onKeyDown={onMenuKeyDown}
-            style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-            className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover"
-          >
+      {/* 点触发按钮 / 菜单之外即关闭(缺省内部范围) */}
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen} triggerRef={triggerRef}>
+        {({ closeAndRestore }) => (
+          <>
             <MenuItem
               disabled={!onExpandAll}
               onClick={() => {
@@ -240,7 +213,8 @@ export function ExplorerHeader({
                 </>
               );
             })()}
-            <MenuItem disabled={busy} onClick={switchFolder}>
+            {/* a11y(A30):拿到单飞锁后先关菜单并还原焦点到触发按钮,再开原生目录对话框。 */}
+            <MenuItem disabled={busy} onClick={() => void selectFolder(closeAndRestore)}>
               {t('panels.explorer.menu.switch_folder')}
             </MenuItem>
             <MenuItem
@@ -256,9 +230,9 @@ export function ExplorerHeader({
             >
               {t('panels.explorer.menu.close_folder')}
             </MenuItem>
-          </div>,
-          document.body,
+          </>
         )}
+      </DropdownMenu>
     </div>
   );
 }

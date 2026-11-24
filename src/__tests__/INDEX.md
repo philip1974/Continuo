@@ -476,6 +476,10 @@
 
 - [`strip-terminal-layout.spec.ts`](./dock-terminal-layout-strip/strip-terminal-layout.spec.ts)
 
+## [DropdownMenu(触发按钮弹出的菜单)](./dropdown-menu/README.md)
+
+- [`dropdown-menu.spec.tsx`](./dropdown-menu/dropdown-menu.spec.tsx)
+
 ## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)

@@ -59,9 +59,15 @@ describe('useDismissOnOutsidePointer', () => {
 });
 
 describe('接线守卫', () => {
+  // 两个「⋯」菜单经共享 DropdownMenu 使用本 hook(见 dropdown-menu 主题),调用方不再自行监听 pointerdown。
+  it('DropdownMenu 调用 useDismissOnOutsidePointer', () => {
+    expect(readFileSync(path.join(SRC_ROOT, 'lib/dropdown-menu.tsx'), 'utf-8')).toContain(
+      'useDismissOnOutsidePointer(',
+    );
+  });
   it.each(['panels/Explorer/ExplorerHeader.tsx', 'shell/dock/HeaderActions.tsx'])('%s', (rel) => {
     const src = readFileSync(path.join(SRC_ROOT, rel), 'utf-8');
-    expect(src).toContain('useDismissOnOutsidePointer(');
+    expect(src).toContain('<DropdownMenu');
     expect(src).not.toContain("addEventListener('pointerdown'");
   });
 });
