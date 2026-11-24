@@ -66,3 +66,19 @@ test('外部删除编辑过的 .md:tab 显示已删除,2 秒后文件不被写�
   await window.waitForTimeout(3_000); // > 自动保存延迟
   expect(await exists(file)).toBe(false);
 });
+
+test('外部删除紧贴自动保存到点前:自动保存不把文件写回,tab 显示已删除', async ({ window, workspaceRoot }) => {
+  const file = path.join(workspaceRoot, 'README.md');
+  await waitForTestHooks(window);
+  // 最短自动保存延迟(500ms):删除后自动保存先于外部同步的删除确认(防抖 + stat + 500ms 复查)到点 ——
+  // 修复前自动保存读盘不存在当作可重建,把文件悄悄写回。
+  await window.evaluate(() => globalThis.__continuoTest!.setSettingValue('autoSave.delayMs', 500));
+  await openReadmeAndEdit(window);
+  await window.waitForTimeout(250);
+  await unlink(file);
+  const tab = editorTab(window, /README\.md/);
+  await expect(tab).toContainText(DELETED, { timeout: 10_000 });
+  await window.waitForTimeout(2_000); // > 自动保存延迟 + 删除确认
+  expect(await exists(file)).toBe(false);
+  await expect(tab).toContainText(DELETED);
+});

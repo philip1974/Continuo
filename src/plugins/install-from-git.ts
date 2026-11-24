@@ -3,6 +3,7 @@
 import { coApi } from '@/lib/co-api';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf } from '@/lib/failure-of';
+import { t } from '@/i18n';
 
 type InstallResult = Awaited<ReturnType<typeof coApi.plugins.installFromGit>>;
 type Installed = Extract<InstallResult, { ok: true }>['data'];
@@ -28,7 +29,7 @@ export async function installFromGitLocalized(
       code,
       // GIT_FAILED 的本地化标题(「Git 命令失败」)会整段替换 main 原文,原因(断网 / 404 / 需鉴权 / 分支不存在)随之丢失 →
       // 附上 git 自己的报错行(git 输出,不属于硬编码文案泄漏)。
-      message: detail ? `${localized}: ${detail}` : localized,
+      message: detail ? t('common.label_detail', { label: localized, detail }) : localized,
       alreadyInstalled: !overwrite && code === 'EEXIST',
     };
   };

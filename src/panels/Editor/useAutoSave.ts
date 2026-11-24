@@ -18,6 +18,8 @@ import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf } from '@/lib/failure-of';
+import type { SaveFileOptions } from './editor-file-actions';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 export interface UseAutoSaveOptions {
   enabled: boolean;
@@ -26,7 +28,7 @@ export interface UseAutoSaveOptions {
 }
 
 export function useAutoSave(
-  saveTab: (tabId: string) => Promise<unknown>,
+  saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<unknown>,
   opts: UseAutoSaveOptions,
 ): void {
   const { enabled, delayMs } = opts;
@@ -79,9 +81,14 @@ export function useAutoSave(
           setAutoSaveFailed(created, true);
           return Promise.resolve({ ok: true });
         }
-        return saveTab(tabId).then(
+        // 不重建已删除的文件:外部删除后 orphaned 还在确认途中(防抖 + stat + 延迟复查)时自动保存可能先到点,
+        // 读盘不存在 → saveFile 不写回并就地标记 orphaned。与上面 orphaned 分支同口径:未落盘(关窗计数不豁免),
+        // 不弹「自动保存失败」(tab 已显示「已删除」)。
+        return saveTab(tabId, { recreateMissing: false }).then(
           (r) => {
-            setAutoSaveFailed(created, (r as { ok?: unknown } | null | undefined)?.ok === false);
+            const failed = (r as { ok?: unknown } | null | undefined)?.ok === false;
+            setAutoSaveFailed(created, failed);
+            if (failed && (r as { code?: unknown }).code === ERROR_CODES.FS_NOT_FOUND) return { ok: true };
             return r;
           },
           (err: unknown) => {
@@ -99,7 +106,10 @@ export function useAutoSave(
       (err) => {
         const { code, message } = failureOf(err);
         notify.warn(
-          `${t('editor.autosave_failed')}: ${localizeErrorByCode(code, message)}`,
+          t('common.label_detail', {
+            label: t('editor.autosave_failed'),
+            detail: localizeErrorByCode(code, message),
+          }),
           { mirror: false },
         );
       },

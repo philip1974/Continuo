@@ -58,7 +58,7 @@ describe('topic49 P1-S · 切 markdown tab 不丢自动保存', () => {
     });
 
     // 离开 A 时 flush → 用 A 的 id 立即保存,不丢编辑
-    expect(saveTab).toHaveBeenCalledWith('/a.md');
+    expect(saveTab).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
     expect(saveTab).toHaveBeenCalledTimes(1);
   });
 
@@ -79,8 +79,8 @@ describe('topic49 P1-S · 切 markdown tab 不丢自动保存', () => {
       useEditorStore.setState({ activeTabId: '/b.md' });
     });
     // 关键:flush 用捕获的 A id,不能因为 active 已变 B 就保存了 B
-    expect(saveTab).toHaveBeenCalledWith('/a.md');
-    expect(saveTab).not.toHaveBeenCalledWith('/b.md');
+    expect(saveTab).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
+    expect(saveTab).not.toHaveBeenCalledWith('/b.md', expect.anything());
   });
 
   it('正常 2s 到点仍按当前 tab id 保存一次(回归)', async () => {
@@ -95,7 +95,7 @@ describe('topic49 P1-S · 切 markdown tab 不丢自动保存', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(120);
     });
-    expect(saveTab).toHaveBeenCalledWith('/a.md');
+    expect(saveTab).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
     expect(saveTab).toHaveBeenCalledTimes(1);
   });
 });

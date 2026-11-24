@@ -53,6 +53,6 @@ describe('打磨 R47 — useAutoSave 窄订阅不被非调度字段重排', () =
     await act(async () => {
       await vi.advanceTimersByTimeAsync(40);
     });
-    expect(saveFile).toHaveBeenCalledWith('/a.md');
+    expect(saveFile).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
   });
 });

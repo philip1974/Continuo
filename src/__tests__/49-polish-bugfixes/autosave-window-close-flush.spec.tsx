@@ -88,7 +88,7 @@ describe('topic49 P1-AE · 关窗/退出 flush pending markdown autosave', () =>
       await act(async () => {
         await flushPendingAutoSave();
       });
-      expect(saveTab).toHaveBeenCalledWith('/a.md');
+      expect(saveTab).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
       expect(saveTab).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();

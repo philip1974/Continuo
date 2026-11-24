@@ -4,7 +4,7 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf, type Failure } from '@/lib/failure-of';
 import { notify } from './notify';
 
-/** `「打开失败」 <name>: <按 code 本地化的原因>`,toast 附 code。调用方已自行 console 记录时传 mirror:false。 */
+/** `「打开失败」 <name>：<按 code 本地化的原因>`(冒号随语言),toast 附 code。调用方已自行 console 记录时传 mirror:false。 */
 export function notifyOpenFailed(
   name: string,
   failure: Failure,
@@ -12,7 +12,7 @@ export function notifyOpenFailed(
 ): void {
   const reason = localizeErrorByCode(failure.code, failure.message);
   notify.error(
-    `${t('quick_open.open_failed')} ${name}: ${reason}`,
+    t('common.label_detail', { label: `${t('quick_open.open_failed')} ${name}`, detail: reason }),
     opts ? { code: failure.code, mirror: false } : { code: failure.code },
   );
 }

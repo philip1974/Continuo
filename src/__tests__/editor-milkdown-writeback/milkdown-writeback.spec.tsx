@@ -446,7 +446,7 @@ describe('关窗 autosave flush 覆盖回写产生的未排队编辑', () => {
     applyEditorWriteBack('/a.md', 'hello world', 'hello');
     await flushPendingAutoSave();
 
-    expect(saveTab).toHaveBeenCalledWith('/a.md');
+    expect(saveTab).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
   });
 
   it('autosave 失败后未再编辑(内容已被 effect 看过)→ 关窗 flush 不重试', async () => {

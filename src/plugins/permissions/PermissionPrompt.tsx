@@ -246,10 +246,10 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
               <UntrustedText text={s.displayPath} max={UNTRUSTED_PATH_MAX_CHARS} />
             </div>
             <div className="text-fg-dim">
-              {t('permissions.fs_scope.mode_label')}:{' '}
-              {s.mode === 'rw'
-                ? t('permissions.fs_scope.mode_rw')
-                : t('permissions.fs_scope.mode_ro')}
+              {t('common.label_detail', {
+                label: t('permissions.fs_scope.mode_label'),
+                detail: t(s.mode === 'rw' ? 'permissions.fs_scope.mode_rw' : 'permissions.fs_scope.mode_ro'),
+              })}
             </div>
           </li>
         ))}

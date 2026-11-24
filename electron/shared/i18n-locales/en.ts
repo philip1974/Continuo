@@ -13,6 +13,8 @@ export const en = {
   'common.loading': 'Loading',
   'common.save': 'Save',
   'common.ok': 'OK',
+  // 运行期拼接「标签：原因」(如「自动保存失败：…」),冒号随语言(zh 全角)。
+  'common.label_detail': '{label}: {detail}',
 
   // menu.file (4)
   'menu.file.label': 'File',

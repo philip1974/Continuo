@@ -792,6 +792,7 @@
 - [`main-menu-rebuild.spec.ts`](./i18n-en-zh-ko/main-menu-rebuild.spec.ts)
 - [`popout-locale-broadcast.spec.ts`](./i18n-en-zh-ko/popout-locale-broadcast.spec.ts)
 - [`pty-lang-env.spec.ts`](./i18n-en-zh-ko/pty-lang-env.spec.ts)
+- [`runtime-label-colon.spec.ts`](./i18n-en-zh-ko/runtime-label-colon.spec.ts)
 - [`setting-locale-fields.spec.ts`](./i18n-en-zh-ko/setting-locale-fields.spec.ts)
 - [`settings-service.spec.ts`](./i18n-en-zh-ko/settings-service.spec.ts)
 - [`t-fallback.spec.ts`](./i18n-en-zh-ko/t-fallback.spec.ts)

@@ -9,6 +9,7 @@
 
 import { notify } from '@/notifications/notify';
 import { localizeThrown } from '@/lib/localize-error';
+import { t } from '@/i18n';
 
 /**
  * 运行贡献回调,失败时弹 error toast(标签 + 错误信息)。返回值忽略;返回 Promise
@@ -24,7 +25,7 @@ export function runContributedAction(label: string, fn: () => unknown): void {
     // 语言。有 code 时按 catalog 本地化(localizeErrorByCode,含占位符守卫),无 code 回退
     // 原 message。注:PERMISSION_DENIED code 被多处复用(PluginManager 权限列表),故不在
     // catalog 收录该 key —— PermissionError 已在源头改英文 message,这里回退即英文。
-    notify.error(`${label}: ${localizeThrown(err)}`);
+    notify.error(t('common.label_detail', { label, detail: localizeThrown(err) }));
   };
   try {
     void Promise.resolve(fn()).catch(fail);

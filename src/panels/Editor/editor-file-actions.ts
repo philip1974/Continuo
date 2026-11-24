@@ -182,6 +182,12 @@ async function openTabWith(
 export interface SaveFileOptions {
   /** 用户已确认覆盖外部修改(EDITOR_DISK_CHANGED 后的「仍然覆盖」)→ 跳过磁盘比较。 */
   readonly force?: boolean;
+  /**
+   * 读盘确认文件已不存在(FS_NOT_FOUND)时是否按路径重建。默认 true(手动保存,VSCode 同款)。
+   * 自动保存传 false:外部删除后 orphaned 要经外部同步确认(防抖 + stat + 延迟复查)才置位,自动保存可能先到点 ——
+   * 此时不写回、就地标记 orphaned,返回 FS_NOT_FOUND(见 src/__tests__/editor-orphaned-tab/)。
+   */
+  readonly recreateMissing?: boolean;
 }
 
 export async function saveFile(
@@ -198,7 +204,7 @@ export async function saveFile(
  * 打磨 P2-BL:保存前检查磁盘自上次加载/保存后是否被外部改过(参考 VSCode「文件已在磁盘上更改」)。
  * dirty tab 不随外部修改 reload(useExternalFileSync 跳过),不比较就写会静默抹掉外部版本。
  * 返回 null = 可以写;否则返回应中止保存的结果。只有明确「不存在」(FS_NOT_FOUND,main readFile 对
- * ENOENT 的映射)才允许直接写(重建);其它读错误(无权限 / IO / bridge reject)无法确认磁盘状态,
+ * ENOENT 的映射)且 recreateMissing 才允许直接写(重建;否则返回该 FS_NOT_FOUND);其它读错误(无权限 / IO / bridge reject)无法确认磁盘状态,
  * 照写可能抹掉外部版本 → 中止并原样返回该错误(复审)。
  */
 async function checkDiskBeforeSave(
@@ -206,6 +212,7 @@ async function checkDiskBeforeSave(
   filePath: string,
   originalContent: string,
   savedGen: number | undefined,
+  recreateMissing: boolean,
 ): Promise<FileOpResult | null> {
   // 快路径:磁盘 stat 仍与本 tab 上次保存时记下的一致 → 磁盘就是那次写入的内容(= originalContent),
   // 不必整文件回读(与外部同步的保存回声识别同一判断,见 saved-disk-stat)。不一致 / 无记录 → 整读比对。
@@ -219,10 +226,10 @@ async function checkDiskBeforeSave(
   let r: IpcResult<string>;
   try {
     r = await fs.readFile(filePath);
-    if (!r.ok && r.code === ERROR_CODES.FS_NOT_FOUND) return null;
+    if (!r.ok && r.code === ERROR_CODES.FS_NOT_FOUND) return recreateMissing ? null : r;
   } catch (err) {
     // reject 或畸形结果(读 .ok 抛错):带 FS_NOT_FOUND 的 reject 同样视为不存在,其它中止。
-    return errorCodeOf(err) === ERROR_CODES.FS_NOT_FOUND ? null : exception(err);
+    return errorCodeOf(err) === ERROR_CODES.FS_NOT_FOUND && recreateMissing ? null : exception(err);
   }
   if (!r.ok) return r;
   if (r.data === originalContent) return null;
@@ -242,8 +249,21 @@ async function saveFileNow(
   const store = useEditorStore;
   let tab = findEditorFileTabById(store.getState().tabs, tabId);
   if (opts?.force !== true && tab) {
-    const blocked = await checkDiskBeforeSave(fs, tab.filePath, tab.originalContent, tab.savedGen);
-    if (blocked) return blocked;
+    const recreateMissing = opts?.recreateMissing !== false;
+    const blocked = await checkDiskBeforeSave(
+      fs,
+      tab.filePath,
+      tab.originalContent,
+      tab.savedGen,
+      recreateMissing,
+    );
+    if (blocked) {
+      // 不重建:文件已删除 → 与外部同步确认删除同一结果(tab 显示「已删除」,自动保存不再尝试)。
+      if (!recreateMissing && !blocked.ok && blocked.code === ERROR_CODES.FS_NOT_FOUND) {
+        store.getState().setOrphaned(tabId, true);
+      }
+      return blocked;
+    }
   }
   // 读盘 await 期间 tab 可能被关闭/继续编辑 → 重取,写盘快照用最新内容。
   tab = findEditorFileTabById(store.getState().tabs, tabId);

@@ -6,6 +6,7 @@ export const ko: Record<TranslationKey, string> = {
   'common.loading': '로딩 중',
   'common.save': '저장',
   'common.ok': '확인',
+  'common.label_detail': '{label}: {detail}',
 
   // menu.file
   'menu.file.label': '파일',

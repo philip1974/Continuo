@@ -77,6 +77,34 @@ describe('已删除的未保存 tab', () => {
     expect(useEditorStore.getState().tabs[0]).toMatchObject({ dirty: true, orphaned: true });
   });
 
+  // 外部删除后 orphaned 要经 FSEvents 防抖 + stat + 延迟复查才置位(约 0.8–1.5s);自动保存若先到点,读盘不存在
+  // 不得当作「可重建」写回(此前文件被悄悄写回,之后外部同步见文件存在即清标记,用户无感知)。
+  it('外部删除尚未被标记前自动保存到点:不写回,tab 标记已删除,不弹自动保存失败提示', async () => {
+    const { notify } = await import('../../notifications/notify');
+    render(<EditorPanel />);
+    await screen.findByTestId('code-editor');
+    act(() => useEditorStore.getState().updateContent(PATH, 'mine'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().tabs[0]).toMatchObject({ dirty: true, orphaned: true });
+    expect(screen.getByRole('tab').textContent).toContain(t('panels.editor.tab_deleted'));
+    expect(notify.warn).not.toHaveBeenCalled();
+  });
+
+  it('外部删除尚未被标记前切走 / 卸载 flush 自动保存:同样不写回', async () => {
+    render(<EditorPanel />);
+    await screen.findByTestId('code-editor');
+    act(() => useEditorStore.getState().updateContent(PATH, 'mine'));
+    await act(async () => {
+      cleanup();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().tabs[0]).toMatchObject({ dirty: true, orphaned: true });
+  });
+
   it('手动保存(⌘S)按路径重建文件并清除已删除标记', async () => {
     await renderAndEditThenDelete();
     await act(async () => {

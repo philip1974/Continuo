@@ -20,5 +20,8 @@
 - `catalog-zh-ko-style.spec.ts`: zh / ko 术语与标点一致(对齐 VSCode 中文 / 韩文版)—— Quick Open 译为「快速打开」/「빠른 열기」,
   扩展统一叫「插件」/「플러그인」;zh 句内逗号 / 分号 / 问号 / 叹号 / 冒号用全角,含中文或紧跟汉字的括号用全角「（）」,引号统一「」;
   反引号代码段与占位符之间(`{src}: {message}`)保留半角。
+- `runtime-label-colon.spec.ts`: 组件运行期拼接的「标签：原因」(自动保存失败 / 打开失败 / 贡献 action 失败 / 从 Git 安装失败附 git
+  报错行 / 授权弹窗「模式：…」)走 catalog 插值 `common.label_detail`,zh 全角「：」、en / ko 半角「: 」;守卫 renderer 源码不再把
+  翻译文案与半角冒号直接拼接。
 - `html-lang.spec.ts`: `<html lang>` 随界面语言(en / zh-CN / ko)写入 —— 读屏按它选发音;`theme.css` 的 `:lang(ko)`
   让韩文按词断行(`word-break: keep-all`)。

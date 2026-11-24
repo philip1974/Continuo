@@ -92,3 +92,38 @@ describe('setOrphaned', () => {
     expect(find('/w/other.md')?.orphaned).toBe(true);
   });
 });
+
+// 外部删除后、orphaned 尚未经外部同步确认(FSEvents 防抖 + stat + 延迟复查)前,自动保存先到点:
+// 只供自动保存的 recreateMissing:false —— 读盘确认文件不存在 → 不写回、就地标记 orphaned;手动保存默认照常重建。
+describe('保存时发现文件已不存在(recreateMissing:false,自动保存用)', () => {
+  const notFound = { ok: false as const, code: 'FS_NOT_FOUND', message: 'ENOENT' };
+
+  it('读盘 FS_NOT_FOUND → 不写盘,返回 FS_NOT_FOUND,tab 标记 orphaned、保持脏', async () => {
+    const writeFile = vi.fn(async () => ({ ok: true as const, data: undefined }));
+    const readFile = vi.fn(async () => notFound);
+    const r = await saveFile('/w/other.md', { fs: { readFile, writeFile } }, { recreateMissing: false });
+    expect(r).toMatchObject({ ok: false, code: 'FS_NOT_FOUND' });
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(find('/w/other.md')).toMatchObject({ orphaned: true, dirty: true, content: 'mine' });
+  });
+
+  it('读盘 reject 且带 FS_NOT_FOUND → 同样不写、标记 orphaned', async () => {
+    const writeFile = vi.fn(async () => ({ ok: true as const, data: undefined }));
+    const readFile = vi.fn(async () => {
+      throw Object.assign(new Error('gone'), { code: 'FS_NOT_FOUND' });
+    });
+    const r = await saveFile('/w/other.md', { fs: { readFile, writeFile } }, { recreateMissing: false });
+    expect(r).toMatchObject({ ok: false, code: 'FS_NOT_FOUND' });
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(find('/w/other.md')?.orphaned).toBe(true);
+  });
+
+  it('默认(手动保存)→ 照常按路径重建,不标记', async () => {
+    const writeFile = vi.fn(async () => ({ ok: true as const, data: undefined }));
+    const readFile = vi.fn(async () => notFound);
+    const r = await saveFile('/w/other.md', { fs: { readFile, writeFile } });
+    expect(r.ok).toBe(true);
+    expect(writeFile).toHaveBeenCalledWith('/w/other.md', 'mine');
+    expect(find('/w/other.md')?.orphaned).toBeFalsy();
+  });
+});

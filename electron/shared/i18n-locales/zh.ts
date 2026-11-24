@@ -6,6 +6,7 @@ export const zh: Record<TranslationKey, string> = {
   'common.loading': '加载中',
   'common.save': '保存',
   'common.ok': '确定',
+  'common.label_detail': '{label}：{detail}',
 
   // menu.file
   'menu.file.label': '文件',

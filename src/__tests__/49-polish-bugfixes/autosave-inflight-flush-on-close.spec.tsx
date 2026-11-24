@@ -104,7 +104,7 @@ describe('topic49 F2 · 切 tab 在途 flush 纳入关窗 ack', () => {
     await act(async () => {
       useEditorStore.setState({ activeTabId: '/b.md' });
     });
-    expect(saveTab).toHaveBeenCalledWith('/a.md');
+    expect(saveTab).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
 
     // 立即关窗 flush 握手:必须 await A 的在途落盘,否则 A 最后一段丢失。
     let ackReady = false;

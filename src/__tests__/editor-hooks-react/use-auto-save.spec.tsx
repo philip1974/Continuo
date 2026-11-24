@@ -187,7 +187,7 @@ describe('useAutoSave', () => {
     });
     // 卸载即 flush → 立即保存,且保存的是捕获的 tabId
     expect(saveFile).toHaveBeenCalledTimes(1);
-    expect(saveFile).toHaveBeenCalledWith('/a.md');
+    expect(saveFile).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
   });
 });
 
@@ -259,7 +259,7 @@ describe('useAutoSave · 已干净的 tab 不重复写盘', () => {
       await vi.advanceTimersByTimeAsync(2100);
     });
     expect(saveFile).toHaveBeenCalledTimes(1);
-    expect(saveFile).toHaveBeenCalledWith('/a.md');
+    expect(saveFile).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
   });
 });
 
@@ -303,7 +303,7 @@ describe('useAutoSave · 切 tab 时卸载回写的编辑也落盘', () => {
     await act(async () => {
       useEditorStore.getState().switchTab('/b.md');
     });
-    expect(saveFile).toHaveBeenCalledWith('/a.md');
+    expect(saveFile).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
   });
 
   it('切到不自动保存的代码文件时同样落盘(按旧 tab 的 autosave 开关判断)', async () => {
@@ -313,7 +313,7 @@ describe('useAutoSave · 切 tab 时卸载回写的编辑也落盘', () => {
     await act(async () => {
       useEditorStore.getState().switchTab('/b.ts');
     });
-    expect(saveFile).toHaveBeenCalledWith('/a.md');
+    expect(saveFile).toHaveBeenCalledWith('/a.md', { recreateMissing: false });
   });
 
   it('旧 tab 不自动保存(代码文件)→ 卸载回写后切走不落盘', async () => {
