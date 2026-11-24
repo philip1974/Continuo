@@ -1,0 +1,83 @@
+// 终端交互对齐 VSCode(BDD:src/__tests__/terminal-vscode-parity):进程退出、关闭确认、⌘K 清屏。
+// 走真实 PTY:terminal.new 命令建会话,键盘输入 shell 命令;终端文字经测试钩子读缓冲区(WebGL 渲染时 DOM 里没有文字)。
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
+import { TERMINAL_INPUT, TERMINAL_PANEL_TAB } from './helpers/editor';
+
+async function newTerminal(window: Page) {
+  await waitForTestHooks(window);
+  expect(await window.evaluate(() => globalThis.__continuoTest!.executeCommand('terminal.new'))).toBe(true);
+  const tab = window.getByRole('tab', { name: TERMINAL_PANEL_TAB });
+  await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 15_000 });
+  const input = window.getByRole('textbox', { name: TERMINAL_INPUT });
+  await expect(input).toBeVisible({ timeout: 15_000 });
+  await input.focus();
+  // 等提示符出现(shell 就绪)再键入
+  await expect
+    .poll(() => window.evaluate(() => globalThis.__continuoTest!.readActiveTerminalText() ?? ''), { timeout: 15_000 })
+    .not.toBe('');
+  return tab;
+}
+
+const terminalText = (window: Page) =>
+  window.evaluate(() => globalThis.__continuoTest!.readActiveTerminalText() ?? '');
+
+async function run(window: Page, command: string) {
+  await window.keyboard.type(command);
+  await window.keyboard.press('Enter');
+}
+
+test('exit 1:终端内显示退出说明,之后按键不再报错,任意键关闭', async ({ window }) => {
+  const tab = await newTerminal(window);
+  await run(window, 'exit 1');
+  await expect.poll(() => terminalText(window), { timeout: 15_000 }).toMatch(/exit code: 1|退出代码: 1|종료 코드: 1/);
+  await expect(tab).toHaveText(/\((exited|已退出|종료됨)\)/);
+  // 非「任意键」的方向键:此前会发 IPC → NOT_FOUND 错误 toast;现在不再发
+  await window.keyboard.press('ArrowUp');
+  await window.waitForTimeout(500);
+  await expect(window.getByRole('alert')).toHaveCount(0);
+  await window.keyboard.press('a');
+  await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 5_000 });
+});
+
+test('exit 0:终端面板自动关闭', async ({ window }) => {
+  await newTerminal(window);
+  await run(window, 'exit 0');
+  await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 15_000 });
+  await expect(window.getByRole('alert')).toHaveCount(0);
+});
+
+test('运行 sleep 30 时关闭 tab → 弹终止确认;取消保留,终止后关闭', async ({ window }) => {
+  const tab = await newTerminal(window);
+  await run(window, 'sleep 30');
+  await window.waitForTimeout(500); // 等 sleep 成为前台进程
+  const close = tab.getByRole('button');
+  await close.last().click();
+  const dialog = window.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 5_000 });
+  await expect(dialog).toContainText('sleep');
+  await dialog.getByRole('button', { name: /^(Cancel|取消|취소)$/ }).click();
+  await expect(dialog).toBeHidden();
+  await expect(tab).toBeVisible();
+
+  await close.last().click();
+  await window.getByRole('dialog').getByRole('button', { name: /^(Terminate|终止|종료)$/ }).click();
+  await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 5_000 });
+});
+
+test('只有 shell 时关闭 tab 不确认', async ({ window }) => {
+  const tab = await newTerminal(window);
+  await tab.getByRole('button').last().click();
+  await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(0, { timeout: 5_000 });
+  await expect(window.getByRole('dialog')).toHaveCount(0);
+});
+
+test('⌘K / Ctrl+K 清空屏幕与滚动缓冲', async ({ window }) => {
+  await newTerminal(window);
+  await run(window, 'for i in $(seq 1 200); do echo line-$i; done');
+  await expect.poll(() => terminalText(window), { timeout: 15_000 }).toContain('line-200');
+  await window.keyboard.press('ControlOrMeta+KeyK');
+  await expect.poll(() => terminalText(window), { timeout: 5_000 }).not.toContain('line-200');
+  expect(await terminalText(window)).not.toContain('line-1');
+});

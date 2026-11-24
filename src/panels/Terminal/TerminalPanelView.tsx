@@ -10,6 +10,7 @@ import { useTerminal } from './useTerminal';
 import { useTerminalDragDrop } from './useTerminalDragDrop';
 import { registerTerminalPanelHandles } from './terminal-panel-handles';
 import { TerminalSearchBar } from './TerminalSearchBar';
+import { TerminalContextMenu } from './TerminalContextMenu';
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
 import { terminalPanelTitle } from '@/shell/dock/terminal-panel-id';
@@ -91,7 +92,7 @@ function TerminalPanelContent({
   const t = useT();
   // 进程非 0 退出后「按任意键关闭」:走面板关闭的公共路径(关闭动画 + 删会话)。
   const onExitDismiss = useCallback(() => api.close(), [api]);
-  const { containerRef, isReady, fit, requestFit, focus, clear, searchApi } =
+  const { containerRef, isReady, fit, requestFit, focus, clear, readText, contextMenuActions, searchApi } =
     useTerminal(sessionId, { onExitDismiss });
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
 
@@ -99,8 +100,8 @@ function TerminalPanelContent({
   // 同一 panel 已 active 时 onDidActiveChange 不会再触发);openSearch 供
   // terminal.search.toggle command 打开搜索条;clear 供 terminal.clear command 清屏。
   useEffect(() => {
-    return registerTerminalPanelHandles(api.id, { focus, openSearch: searchApi.open, clear });
-  }, [api.id, focus, searchApi.open, clear]);
+    return registerTerminalPanelHandles(api.id, { focus, openSearch: searchApi.open, clear, readText });
+  }, [api.id, focus, searchApi.open, clear, readText]);
 
   // issue #38 R2: ref-capture latest searchApi.isOpen so the
   // onDidActiveChange handler reads fresh value without re-creating
@@ -159,14 +160,16 @@ function TerminalPanelContent({
       data-terminal-drop-zone={sessionId}
       className="relative h-full w-full bg-canvas"
     >
-      <div className="h-full w-full bg-canvas px-2 py-1">
-        <div
-          ref={containerRef}
-          data-testid="terminal-panel-view-xterm-host"
-          className="h-full w-full overflow-x-hidden"
-          style={{ minHeight: 0 }}
-        />
-      </div>
+      <TerminalContextMenu actions={contextMenuActions}>
+        <div className="h-full w-full bg-canvas px-2 py-1">
+          <div
+            ref={containerRef}
+            data-testid="terminal-panel-view-xterm-host"
+            className="h-full w-full overflow-x-hidden"
+            style={{ minHeight: 0 }}
+          />
+        </div>
+      </TerminalContextMenu>
       {searchApi.isOpen && (
         <TerminalSearchBar searchApi={searchApi} onClose={searchApi.close} />
       )}

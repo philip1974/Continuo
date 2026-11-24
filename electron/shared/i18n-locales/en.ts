@@ -236,6 +236,13 @@ export const en = {
   'panels.terminal.kill_confirm.title': 'Terminate running process?',
   'panels.terminal.kill_confirm.detail': '"{process}" is still running in "{title}". Closing the terminal will terminate it.',
   'panels.terminal.kill_confirm.confirm': 'Terminate',
+  'panels.terminal.link_hover': '{key}+click to follow link',
+  // 终端右键菜单(清除项复用 commands.terminal.clear.title)。
+  'panels.terminal.ctx.copy': 'Copy',
+  'panels.terminal.ctx.paste': 'Paste',
+  'panels.terminal.ctx.select_all': 'Select All',
+  'panels.terminal.ctx.copy_failed': 'Could not copy to the clipboard',
+  'panels.terminal.ctx.paste_failed': 'Could not read the clipboard',
   'panels.terminal.drag_drop.no_os_path':
     'Dropped items have no OS path (web drag) — nothing inserted.',
   'panels.terminal.drag_drop.partial_skip':

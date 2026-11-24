@@ -28,4 +28,6 @@ export interface ContinuoTestHooks {
   ) => () => void;
   /** 改 keybindings override(测试 hotkey 显示更新). */
   setHotkey: (commandId: string, hotkey: string) => void;
+  /** 活动 dock 面板是终端 → 其缓冲区文本;否则 null(WebGL 渲染时 DOM 里读不到终端文字)。 */
+  readActiveTerminalText: () => string | null;
 }

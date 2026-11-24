@@ -1607,7 +1607,9 @@
 ## [终端与 dock tab 交互对齐 VSCode 集成终端](./terminal-vscode-parity/README.md)
 
 - [`confirm-on-kill.spec.tsx`](./terminal-vscode-parity/confirm-on-kill.spec.tsx)
+- [`context-menu.spec.tsx`](./terminal-vscode-parity/context-menu.spec.tsx)
 - [`exit-behavior.spec.tsx`](./terminal-vscode-parity/exit-behavior.spec.tsx)
+- [`link-modifier-click.spec.ts`](./terminal-vscode-parity/link-modifier-click.spec.ts)
 - [`running-process-main.spec.ts`](./terminal-vscode-parity/running-process-main.spec.ts)
 - [`skip-shell-hotkeys.spec.ts`](./terminal-vscode-parity/skip-shell-hotkeys.spec.ts)
 

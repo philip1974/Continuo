@@ -1,6 +1,7 @@
 # terminal-url-click
 
-行为契约:terminal 中识别为 URL 的文本被点击时,通过从 `@/lib/co-api` import
+行为契约:terminal 中识别为 URL 的文本被修饰键单击(mac ⌘ / 其它 Ctrl,对齐 VSCode;无修饰键单击不打开,
+见 terminal-vscode-parity)时,通过从 `@/lib/co-api` import
 的 `coApi.shell.openExternal` 路由到系统默认浏览器。不直接 `window.open`(Electron
 renderer 在 contextIsolation 下会吞掉)。
 

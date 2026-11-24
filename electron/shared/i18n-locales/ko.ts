@@ -222,6 +222,12 @@ export const ko: Record<TranslationKey, string> = {
   'panels.terminal.kill_confirm.title': '실행 중인 프로세스를 종료할까요?',
   'panels.terminal.kill_confirm.detail': '"{title}"에서 "{process}"이(가) 아직 실행 중입니다. 터미널을 닫으면 프로세스가 종료됩니다.',
   'panels.terminal.kill_confirm.confirm': '종료',
+  'panels.terminal.link_hover': '{key}+클릭하여 링크 열기',
+  'panels.terminal.ctx.copy': '복사',
+  'panels.terminal.ctx.paste': '붙여넣기',
+  'panels.terminal.ctx.select_all': '모두 선택',
+  'panels.terminal.ctx.copy_failed': '클립보드에 복사할 수 없습니다',
+  'panels.terminal.ctx.paste_failed': '클립보드를 읽을 수 없습니다',
   'panels.terminal.drag_drop.no_os_path':
     '드롭한 항목에 OS 경로가 없습니다(웹 드래그). 아무것도 삽입하지 않았습니다.',
   'panels.terminal.drag_drop.partial_skip':

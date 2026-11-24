@@ -21,6 +21,14 @@ vi.mock('../../panels/Terminal/useTerminal', () => ({
     requestFit: hoisted.requestFit,
     focus: vi.fn(),
     searchApi: { open: vi.fn(), close: vi.fn(), isOpen: false },
+    contextMenuActions: {
+      hasSelection: () => false,
+      copy: vi.fn(),
+      paste: vi.fn(),
+      selectAll: vi.fn(),
+      clear: vi.fn(),
+      focus: vi.fn(),
+    },
   }),
 }));
 vi.mock('../../panels/Terminal/useTerminalDragDrop', () => ({

@@ -369,7 +369,7 @@ describe('SharedTab — 鼠标点击后焦点回到面板内容(VSCode:点 tab =
   it('终端面板:鼠标点 tab → 调该面板注册的 focus 句柄', () => {
     const api = makeApi({ isActive: true });
     const focus = vi.fn();
-    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn(), clear: vi.fn() });
+    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn(), clear: vi.fn(), readText: vi.fn(() => "") });
     const { container } = renderTab(api);
     const root = container.querySelector('[role=tab]') as HTMLElement;
     fireEvent.click(root, { detail: 1 });
@@ -403,7 +403,7 @@ describe('SharedTab — 鼠标点击后焦点回到面板内容(VSCode:点 tab =
   it('键盘触发的 click(detail=0)不移走焦点(tablist 键盘模型保持)', () => {
     const api = makeApi({ isActive: true });
     const focus = vi.fn();
-    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn(), clear: vi.fn() });
+    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn(), clear: vi.fn(), readText: vi.fn(() => "") });
     const { container } = renderTab(api);
     const root = container.querySelector('[role=tab]') as HTMLElement;
     fireEvent.click(root, { detail: 0 });
@@ -413,7 +413,7 @@ describe('SharedTab — 鼠标点击后焦点回到面板内容(VSCode:点 tab =
   it('点关闭按钮不触发聚焦面板', () => {
     const api = makeApi({ isActive: true });
     const focus = vi.fn();
-    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn(), clear: vi.fn() });
+    registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn(), clear: vi.fn(), readText: vi.fn(() => "") });
     const { container } = renderTab(api);
     const closeBtn = container.querySelector('button[aria-label^="关闭"]') as HTMLButtonElement;
     fireEvent.click(closeBtn, { detail: 1 });

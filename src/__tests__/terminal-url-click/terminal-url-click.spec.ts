@@ -70,10 +70,12 @@ beforeEach(() => {
   Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: class { observe() {} disconnect() {} } });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+// 修饰键单击(mac ⌘ / 其它 Ctrl,两者都按下以与平台无关);无修饰键单击不打开见 terminal-vscode-parity。
+const modClick = () => new MouseEvent('click', { metaKey: true, ctrlKey: true });
 describe('terminal-url-click', () => {
-  it('点击 URL 通过 coApi.shell.openExternal 打开', () => {
+  it('⌘/Ctrl+单击 URL 通过 coApi.shell.openExternal 打开', () => {
     const url = 'https://example.com/path?q=1';
-    mountAndGetHandler()(new MouseEvent('click'), url);
+    mountAndGetHandler()(modClick(), url);
     expect(mock.openExternal).toHaveBeenCalledTimes(1);
     expect(mock.openExternal).toHaveBeenCalledWith(url);
   });
@@ -81,7 +83,7 @@ describe('terminal-url-click', () => {
   // a11y(A118,A117 同族):openExternal {ok:false} → notify.error(不静默)。
   it('openExternal {ok:false} → notify.error', async () => {
     mock.openExternal.mockResolvedValueOnce({ ok: false, code: 'CO_COMMAND_BLOCKED' });
-    mountAndGetHandler()(new MouseEvent('click'), 'https://x.com');
+    mountAndGetHandler()(modClick(), 'https://x.com');
     await vi.waitFor(() => {
       expect(mock.notifyError).toHaveBeenCalledTimes(1);
     });
@@ -90,7 +92,7 @@ describe('terminal-url-click', () => {
   // a11y(A118):openExternal reject(IPC 异常)→ notify.error。
   it('openExternal reject → notify.error', async () => {
     mock.openExternal.mockRejectedValueOnce(new Error('ipc down'));
-    mountAndGetHandler()(new MouseEvent('click'), 'https://x.com');
+    mountAndGetHandler()(modClick(), 'https://x.com');
     await vi.waitFor(() => {
       expect(mock.notifyError).toHaveBeenCalledTimes(1);
     });

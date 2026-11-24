@@ -7,6 +7,7 @@
 // - openSearch:TerminalPlugin 的 terminal.search.toggle command 经 openTerminalSearch(panelId)
 //   打开当前 active panel 的搜索条(Cmd+F)。
 // - clear:terminal.clear command(⌘K)与终端右键菜单「清除」清空屏幕与滚动缓冲。
+// - readText:当前缓冲区文本(e2e 测试钩子读终端内容;WebGL 渲染时 DOM 里没有文字)。
 //
 // stale 安全:createCallbackRegistry 的 disposer 带 Symbol token,同 id 被新注册覆盖后旧
 // disposer 不会误删新句柄;句柄内部用 termRef.current?.focus() 等 optional chain,
@@ -18,6 +19,7 @@ export interface TerminalPanelHandles {
   readonly focus: () => void;
   readonly openSearch: () => void;
   readonly clear: () => void;
+  readonly readText: () => string;
 }
 
 const handlesRegistry = createCallbackRegistry<TerminalPanelHandles>();
@@ -46,6 +48,11 @@ export function openTerminalSearch(panelId: string): void {
 /** 清空该 panel 的屏幕与滚动缓冲;未注册时 no-op。 */
 export function clearTerminalPanel(panelId: string): void {
   handlesRegistry.get(panelId)?.clear();
+}
+
+/** 该 panel 当前缓冲区文本(每行去尾空白,\n 连接);未注册 → null。 */
+export function readTerminalPanelText(panelId: string): string | null {
+  return handlesRegistry.get(panelId)?.readText() ?? null;
 }
 
 // 测试用 — 重置全表(单测之间避免污染)。

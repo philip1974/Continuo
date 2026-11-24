@@ -38,6 +38,7 @@ import {
   createMappedKeyState,
 } from '@continuo-terminal/react-terminal';
 import {
+  isTerminalContextMenuKey,
   isTerminalSearchHotkey,
   isTerminalZoomHotkey,
   runTerminalCommandFromKey,
@@ -45,7 +46,9 @@ import {
   terminalYieldedCommandId,
 } from './terminal-hotkeys';
 import { createOutputCoalescer } from './output-coalescer';
-import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
+import { installTerminalPasteSanitizer, sanitizeTerminalPaste } from './terminal-paste-sanitize';
+import { getCachedClipboard } from '@/plugins/sandbox-sweep';
+import { notify } from '@/notifications/notify';
 import {
   applyTerminalSearchEffect,
   invalidateTerminalSearchDecorations,
@@ -62,6 +65,7 @@ import { errorCodeOf } from '../../../electron/shared/error-message';
 import { debounce } from '@/lib/debounce';
 import { t } from '@/i18n';
 import { shouldAutoCloseExitedSession } from '@/shell/dock/terminal-panel-id';
+import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 
 
 export interface SearchApi {
@@ -344,6 +348,16 @@ export function terminalWindowsPtyOptions(
   };
 }
 
+/** 终端链接需修饰键单击才打开(VSCode):mac ⌘+单击,其它 Ctrl+单击。避免选文本 / 点击定位时误开浏览器。 */
+export function isTerminalLinkActivation(event: MouseEvent, platform: Platform = detectPlatform()): boolean {
+  return platform === 'mac' ? event.metaKey : event.ctrlKey;
+}
+
+/** 悬停链接时的提示(VSCode「Follow link (cmd + click)」)。 */
+export function terminalLinkHoverHint(platform: Platform = detectPlatform()): string {
+  return t('panels.terminal.link_hover', { key: platform === 'mac' ? '⌘' : 'Ctrl' });
+}
+
 /** 终端内提示行(VSCode formatMessageForTerminal 同款:反显的「 * 」前缀,复位属性)。 */
 export function formatTerminalNotice(message: string, leadingNewLine = true): string {
   return `${leadingNewLine ? '\r\n' : ''}\x1b[0m\x1b[7m * \x1b[0m ${message} \x1b[0m\n\r`;
@@ -465,11 +479,23 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(
-      new WebLinksAddon((_event, url) => {
-        // a11y(A118,A117 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被拒绝
-        // 或系统打开失败时无 toast/live 反馈,用户只感知链接「无响应」。与 EditorPanel 同步。
-        notifyIfFailed(coApi.shell.openExternal(url));
-      }),
+      new WebLinksAddon(
+        (event, url) => {
+          if (!isTerminalLinkActivation(event)) return;
+          // a11y(A118,A117 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被拒绝
+          // 或系统打开失败时无 toast/live 反馈,用户只感知链接「无响应」。与 EditorPanel 同步。
+          notifyIfFailed(coApi.shell.openExternal(url));
+        },
+        {
+          // 悬停提示用容器 title(原生 tooltip,不另建浮层)。
+          hover: () => {
+            container.title = terminalLinkHoverHint();
+          },
+          leave: () => {
+            container.removeAttribute('title');
+          },
+        },
+      ),
     );
     term.open(container);
     // 安全(pastejacking):粘贴先剥离控制字符(防伪造 \x1b[201~ 跳出 bracketed paste),见 terminal-paste-sanitize。
@@ -544,6 +570,16 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       const yielded = terminalYieldedCommandId(event);
       if (yielded) {
         runTerminalCommandFromKey(event, yielded);
+        return false;
+      }
+      // Shift+F10 / 菜单键:在终端光标处打开右键菜单。派发在容器上(不经 xterm 元素:其 contextmenu 处理会按坐标选词);
+      // preventDefault 免得 Windows 再按默认行为派发一次 contextmenu。
+      if (isTerminalContextMenuKey(event)) {
+        event.preventDefault();
+        const r = (term.textarea ?? container).getBoundingClientRect();
+        container.dispatchEvent(
+          new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom }),
+        );
         return false;
       }
       // 进程已退出:按键不再交给 xterm;已显示「按任意键关闭」时任意键关闭面板。
@@ -907,6 +943,46 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     termRef.current?.clear();
   }, []);
 
+  const readText = useCallback((): string => {
+    const buffer = termRef.current?.buffer.active;
+    if (!buffer) return '';
+    const lines: string[] = [];
+    for (let i = 0; i < buffer.length; i += 1) lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
+    return lines.join('\n');
+  }, []);
+
+  // 右键菜单动作(TerminalContextMenu)。剪贴板走缓存的原生引用(sandbox-sweep 会在 PROD 清掉 navigator.clipboard)。
+  const contextMenuActions = useMemo(
+    () => ({
+      hasSelection: () => termRef.current?.hasSelection() ?? false,
+      copy: () => {
+        const text = termRef.current?.getSelection();
+        if (!text) return;
+        Promise.resolve()
+          .then(() => getCachedClipboard().writeText(text))
+          .catch(() => notify.error(t('panels.terminal.ctx.copy_failed')));
+      },
+      // 与 Cmd+V 同样先净化控制字符(pastejacking,见 terminal-paste-sanitize)再经 term.paste。
+      paste: () => {
+        const term = termRef.current;
+        if (!term) return;
+        Promise.resolve()
+          .then(() => getCachedClipboard().readText())
+          .then(
+            (text) => {
+              const clean = sanitizeTerminalPaste(text);
+              if (clean && termRef.current === term) term.paste(clean);
+            },
+            () => notify.error(t('panels.terminal.ctx.paste_failed')),
+          );
+      },
+      selectAll: () => termRef.current?.selectAll(),
+      clear,
+      focus,
+    }),
+    [clear, focus],
+  );
+
   // issue #42 #1: single dispatch routes through applyTerminalSearchEffect
   // (previously the production path had inline side-effect logic in each
   // callback; the helper was only exercised by state-machine.spec.ts,
@@ -1043,5 +1119,5 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     ],
   );
 
-  return { containerRef, isReady, fit, requestFit, focus, clear, searchApi };
+  return { containerRef, isReady, fit, requestFit, focus, clear, readText, contextMenuActions, searchApi };
 }

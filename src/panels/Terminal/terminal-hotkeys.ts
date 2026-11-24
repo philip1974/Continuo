@@ -96,6 +96,13 @@ export function runTerminalCommandFromKey(event: KeyboardEvent, id: string): voi
   runRegisteredCommand(coApp.commands, id, tWithFallback(live.titleKey, live.title));
 }
 
+/** 键盘打开终端右键菜单:Shift+F10 / 菜单键(Windows / Linux 约定,mac 上同样可用)。 */
+export function isTerminalContextMenuKey(event: KeyboardEvent): boolean {
+  if (event.type !== 'keydown' || event.isComposing) return false;
+  if (event.key === 'ContextMenu') return true;
+  return event.key === 'F10' && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+}
+
 /**
  * 终端判中缩放键时**直接执行**缩放命令并截住事件,不依赖冒泡到 document 的全局热键分发:后者对「事件来自可编辑控件
  *(xterm 的 helper textarea)且绑定无 ctrl/meta/alt」的组合一律放行(A64)—— 用户把缩放改绑为 F2 / Shift+Enter 时,

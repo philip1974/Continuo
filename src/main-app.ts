@@ -32,7 +32,8 @@ import {
   getStoredSettingValue,
   useSettingsValuesStore,
 } from './plugins/settings/values-store';
-import { openOrFocusPanel, focusPanel } from './shell/dock/dock-api-ref';
+import { openOrFocusPanel, focusPanel, getDockApi } from './shell/dock/dock-api-ref';
+import { readTerminalPanelText } from './panels/Terminal/terminal-panel-handles';
 import { useEditorStore } from './stores/editor.store';
 import { useTerminalStore } from './stores/terminal.store';
 import { startDebugStoreSync } from './stores/debug.store';
@@ -312,6 +313,10 @@ export async function init(): Promise<void> {
       },
       setHotkey: (commandId, hotkey) =>
         useKeybindingsStore.getState().setHotkey(commandId, hotkey),
+      readActiveTerminalText: () => {
+        const id = getDockApi()?.activePanel?.id;
+        return id ? readTerminalPanelText(id) : null;
+      },
     };
   }
 }

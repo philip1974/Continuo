@@ -86,7 +86,7 @@ describe('terminal.clear 经面板句柄清屏', () => {
   it('clearTerminalPanel 调对应面板的 clear 句柄;未注册 no-op', () => {
     __resetTerminalPanelHandlesForTest();
     const clear = vi.fn();
-    registerTerminalPanelHandles('terminal-a', { focus: vi.fn(), openSearch: vi.fn(), clear });
+    registerTerminalPanelHandles('terminal-a', { focus: vi.fn(), openSearch: vi.fn(), clear, readText: vi.fn(() => '') });
     clearTerminalPanel('terminal-a');
     expect(clear).toHaveBeenCalledTimes(1);
     expect(() => clearTerminalPanel('terminal-missing')).not.toThrow();

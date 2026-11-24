@@ -220,6 +220,12 @@ export const zh: Record<TranslationKey, string> = {
   'panels.terminal.kill_confirm.title': '终止正在运行的进程?',
   'panels.terminal.kill_confirm.detail': '「{title}」中的「{process}」仍在运行,关闭终端将终止该进程。',
   'panels.terminal.kill_confirm.confirm': '终止',
+  'panels.terminal.link_hover': '{key}+单击打开链接',
+  'panels.terminal.ctx.copy': '复制',
+  'panels.terminal.ctx.paste': '粘贴',
+  'panels.terminal.ctx.select_all': '全选',
+  'panels.terminal.ctx.copy_failed': '无法复制到剪贴板',
+  'panels.terminal.ctx.paste_failed': '无法读取剪贴板',
   'panels.terminal.drag_drop.no_os_path':
     '拖入项目没有系统路径（网页拖拽），未插入任何内容。',
   'panels.terminal.drag_drop.partial_skip':
