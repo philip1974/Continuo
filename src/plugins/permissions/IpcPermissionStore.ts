@@ -19,6 +19,7 @@ import {
 import { codedError } from '../../../electron/shared/error-message';
 import { ownValue } from '../../../electron/shared/own-value';
 import { isSafePluginId } from '../../../electron/shared/plugin-id';
+import { isPlainRecord } from '../../../electron/shared/as-record';
 
 /** renderer 只关心授权决定;记录里的 pathScopes(落盘格式的一部分)由 main 读写,这里不解析。 */
 export interface PermissionRecord {
@@ -45,9 +46,6 @@ const EMPTY_PERMISSION_DECISIONS: PermissionDecision[] = [];
 // 读取期间被失效时按当前代际重读的总次数上限(终审 P1,见 ensureLoaded)。
 const MAX_READ_ATTEMPTS = 3;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
 
 // 单条形态判定取 shared 单一来源(与 main 读盘 / 写盘、IPC schema 同一规则:permission 必须是枚举成员、
 // decidedAt 有限非负)。此处只负责把合法项重建成干净对象(丢弃额外字段)。
@@ -79,7 +77,7 @@ function parseDecisionList(value: unknown): PermissionDecision[] {
 }
 
 export function parsePermissionState(raw: unknown): PermissionState {
-  if (!isRecord(raw)) return {};
+  if (!isPlainRecord(raw)) return {};
   const out: PermissionState = {};
   // 边界(E245):plugin 条目数上限 + for...in 早停(不 Object.entries 全量物化巨表)。
   let keyCount = 0;
@@ -94,7 +92,7 @@ export function parsePermissionState(raw: unknown): PermissionState {
     const record: unknown = (raw as Record<string, unknown>)[pluginId];
     let decisions: PermissionDecision[] | null = null;
     if (Array.isArray(record)) decisions = parseDecisionList(record);
-    else if (isRecord(record) && Array.isArray(record.decisions)) {
+    else if (isPlainRecord(record) && Array.isArray(record.decisions)) {
       decisions = parseDecisionList(record.decisions);
     }
     if (decisions === null) continue;

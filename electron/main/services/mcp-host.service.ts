@@ -30,6 +30,7 @@ import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { capErrorText, codedError } from '../../shared/error-message';
 import { waitAtMost } from '../../shared/wait-at-most';
 import { MCP_MAX_MESSAGE_BYTES } from '../lib/mcp-limits';
+import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
 
 // 冷启动:ESM 值导入 node:http 时 Node 会读取其全部导出(含 WebSocket 等懒 getter),连带加载并编译整个
 // undici(实测 main 求值 +17–18ms);CJS require 不触发。这里只用 createServer。
@@ -148,17 +149,8 @@ export function generateToken(): string {
 // ── Bearer 校验 ─────────────────────────────────────────────────
 
 function bearerTokenFromHeader(authHeader: string): string | null {
-  if (authHeader.length < 8 || authHeader.charCodeAt(6) !== 32) return null;
-  if (
-    (authHeader.charCodeAt(0) | 32) !== 98 ||
-    (authHeader.charCodeAt(1) | 32) !== 101 ||
-    (authHeader.charCodeAt(2) | 32) !== 97 ||
-    (authHeader.charCodeAt(3) | 32) !== 114 ||
-    (authHeader.charCodeAt(4) | 32) !== 101 ||
-    (authHeader.charCodeAt(5) | 32) !== 114
-  ) {
-    return null;
-  }
+  // 「Bearer 」(大小写无关)+ 至少一个 token 字符。
+  if (authHeader.length < 8 || !startsWithAsciiIgnoreCase(authHeader, 'bearer ')) return null;
   for (let i = 7; i < authHeader.length; i += 1) {
     const code = authHeader.charCodeAt(i);
     if (code === 10 || code === 13 || code === 0x2028 || code === 0x2029) {

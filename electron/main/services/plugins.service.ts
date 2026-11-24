@@ -46,6 +46,8 @@ import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { arraysEqual } from '../../shared/array-equal';
 import { mapInOrderBounded } from '../lib/map-in-order-bounded';
 import { preserveCorruptSnapshot } from '../lib/corrupt-snapshot';
+import { isPlainRecord } from '../../shared/as-record';
+import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
 
 function isAbsolutePathLike(value: string): boolean {
   return (
@@ -338,10 +340,6 @@ async function readPluginMetadataJson<T>(
   return { kind: 'ok', value };
 }
 
-/** plain object(非 null、非数组):_permissions.json / _plugin-path-scopes.json 顶层形态。 */
-function isPlainRecord(json: unknown): json is Record<string, unknown> {
-  return !!json && typeof json === 'object' && !Array.isArray(json);
-}
 
 // 三张元数据表的 plugin key 数上限:读端截断与写端拒写用同一共享常量(此前三表各一个值 4096 / 10_000 /
 // 4096,且 _enabled / path-scopes 写端不限 → 写成功、读回被截)。
@@ -1166,17 +1164,7 @@ export interface InstallFromGitResult {
 
 // 仅允许 https(去掉 git://明文无认证、ssh://可被指向内网做 SSRF/探测)。
 function startsWithHttpsScheme(url: string): boolean {
-  return (
-    url.length >= 8 &&
-    (url.charCodeAt(0) | 32) === 104 &&
-    (url.charCodeAt(1) | 32) === 116 &&
-    (url.charCodeAt(2) | 32) === 116 &&
-    (url.charCodeAt(3) | 32) === 112 &&
-    (url.charCodeAt(4) | 32) === 115 &&
-    url.charCodeAt(5) === 58 &&
-    url.charCodeAt(6) === 47 &&
-    url.charCodeAt(7) === 47
-  );
+  return startsWithAsciiIgnoreCase(url, 'https://');
 }
 const GIT_CLONE_TIMEOUT_MS = 60_000;
 // 安全:插件仓库 clone 的体积 / 文件数上限。此前只有 60s 超时:恶意仓库放高压缩比巨型 blob,60s 内即可写满磁盘

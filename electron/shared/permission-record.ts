@@ -12,15 +12,13 @@
 import { PERMISSION_KEYS } from './permission-keys';
 import { PERMISSION_RECORD_LIMITS } from './permission-record-limits';
 import type { IpcPathScope, IpcPermissionDecision } from './plugins-channels';
+import { isPlainRecord } from './as-record';
 
 const PERMISSION_KEY_SET: ReadonlySet<string> = new Set(PERMISSION_KEYS);
 
-function isPlainObject(x: unknown): x is Record<string, unknown> {
-  return !!x && typeof x === 'object' && !Array.isArray(x);
-}
 
 export function isIpcPermissionDecision(x: unknown): x is IpcPermissionDecision {
-  if (!isPlainObject(x)) return false;
+  if (!isPlainRecord(x)) return false;
   return (
     typeof x['permission'] === 'string' &&
     PERMISSION_KEY_SET.has(x['permission']) &&
@@ -32,7 +30,7 @@ export function isIpcPermissionDecision(x: unknown): x is IpcPermissionDecision 
 }
 
 export function isIpcPathScope(x: unknown): x is IpcPathScope {
-  if (!isPlainObject(x)) return false;
+  if (!isPlainRecord(x)) return false;
   const path = x['path'];
   return (
     typeof path === 'string' &&
