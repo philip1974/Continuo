@@ -824,3 +824,10 @@ describe('terminal-drag-drop BDD', () => {
     expect(source).not.toContain('cappedQuoted.push(');
   });
 });
+
+describe('拖放写入上限按 UTF-8 字节不超过 main terminal:write 上限', () => {
+  it('MAX_TERMINAL_DROP_CHARS × 3(UTF-16 码元最坏 UTF-8 字节数)≤ TERMINAL_WRITE_MAX_BYTES', async () => {
+    const { TERMINAL_WRITE_MAX_BYTES } = await import('../../../electron/shared/terminal-session-limits');
+    expect(MAX_TERMINAL_DROP_CHARS * 3).toBeLessThanOrEqual(TERMINAL_WRITE_MAX_BYTES);
+  });
+});

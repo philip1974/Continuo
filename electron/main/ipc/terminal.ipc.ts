@@ -36,9 +36,10 @@ import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 import { codedError } from '../../shared/error-message';
 import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 import { arraysEqual } from '../../shared/array-equal';
+import { TERMINAL_WRITE_MAX_BYTES } from '../../shared/terminal-session-limits';
 
 // ── 常量 ─────────────────────────────────────────────────────
-const MAX_WRITE_BYTES = 2_000_000; // ~2MB 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
+const MAX_WRITE_BYTES = TERMINAL_WRITE_MAX_BYTES; // 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
 
 // ── MCP env provider(由 main/index.ts 在 mcp host 启动后注入)──
 // 默认空 → 不注入 MCP 信息;启动 host 后调 setMcpEnvProvider 注册真函数。

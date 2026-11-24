@@ -17,14 +17,16 @@ export interface UseTerminalDragDropInput {
 // quotePaths()+join 一次性构造写入字符串,renderer 侧无文件数/输出长度上限。拖入海量文件/超长路径时
 // 即使主 terminal.write 用 2MB schema 拒绝,renderer 已先做大量 getPathForFile IPC + 构造超大命令行
 // 字符串 → UI 卡顿/内存峰值。读路径时累计:文件数超 MAX_TERMINAL_DROP_FILES 的项不再 IPC 取路径;
-// 累计写入长度超 MAX_TERMINAL_DROP_CHARS(低于主 2MB 写入上限留 quote 余量)的项不再加入。超限项
+// 累计写入长度超 MAX_TERMINAL_DROP_CHARS 的项不再加入(按 UTF-16 码元计;每码元最坏 3 个 UTF-8 字节,
+// 取主写入字节上限的 1/3,全 CJK 路径也不会被 main 按字节整次拒绝)。超限项
 // 计入 skipped 提示,绝不构造/写入超大字符串。
 export const MAX_TERMINAL_DROP_FILES = MAX_DROP_FILES;
-export const MAX_TERMINAL_DROP_CHARS = 1_000_000;
+export const MAX_TERMINAL_DROP_CHARS = Math.floor(TERMINAL_WRITE_MAX_BYTES / 3);
 
 // 边界(E189/E224,E176 同族有界遍历):hasFiles 收口到共享 @/lib/window-drop(与 captureBoundedFiles /
 // hasDirectoryInFirstItems 同处),Terminal 与 App.tsx 全局 drop 共用单一来源。
 import { MAX_DROP_FILES, captureBoundedFiles, hasFiles } from '@/lib/window-drop';
+import { TERMINAL_WRITE_MAX_BYTES } from '../../../electron/shared/terminal-session-limits';
 
 // 边界(E189):DEV 调试日志的 types 也按上限有界读取(不全量 Array.from),防开发环境复现同类卡顿。
 const DEBUG_TYPES_MAX = 32;

@@ -46,6 +46,7 @@ import { trackAgentTerminalCreate } from './agent-terminal-inflight';
 import { z } from 'zod';
 import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { codedError } from '../../shared/error-message';
+import { TERMINAL_WRITE_MAX_BYTES } from '../../shared/terminal-session-limits';
 
 // 边界(E202,无消费的解析放大面):Continuo 的 create_session 工具只消费
 // cwd/name/agentLabel/autorun/install_stop_hook(见下方 ptyInput 构造;target 只校验后忽略,
@@ -88,7 +89,7 @@ const sessionIdBounded = z.string().min(1).max(SESSION_ID_MAX);
 // 边界(E220,E219 兄弟,字节 vs code-unit 族):send_input/send_text 的 data/text 协议用
 // z.string().max(SEND_INPUT_MAX_CHARS) 是 UTF-16 code unit;下游写 PTY 按真实字节。CJK/emoji 多字节
 // 输入 length≤上限时真实字节数倍超 → 与 terminal:write(E219)字节语义统一。Continuo 侧 extend 改字节 refine。
-const SEND_DATA_MAX_BYTES = 2_000_000;
+const SEND_DATA_MAX_BYTES = TERMINAL_WRITE_MAX_BYTES;
 const sendDataBounded = z
   .string()
   .refine((s) => !utf8BytesExceed(s, SEND_DATA_MAX_BYTES), {

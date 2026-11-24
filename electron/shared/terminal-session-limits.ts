@@ -6,3 +6,9 @@
 
 export const MAX_TERMINAL_SESSIONS_GLOBAL = 256; // 全局会话上限
 export const MAX_TERMINAL_SESSIONS_PER_WINDOW = 64; // 单窗口会话上限
+
+/**
+ * 单次写入 PTY 的真实 UTF-8 字节上限:terminal:write IPC(terminal.ipc)与 MCP send_input / send_text
+ *(mcp-tools-terminal)共用同一下游写入;renderer 终端拖放据此推导字符上限。
+ */
+export const TERMINAL_WRITE_MAX_BYTES = 2_000_000;
