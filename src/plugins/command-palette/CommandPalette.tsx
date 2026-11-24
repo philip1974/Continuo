@@ -26,6 +26,7 @@ import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { isSortedBy } from '@/lib/is-sorted-by';
 import { byDisplayTitle } from './by-display-title';
+import { normalizeSearchQuery } from '@/lib/search-query';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -261,7 +262,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // 不会让下面的 memo 重算 → 标题/分类/搜索源会停留旧语言。用 locale 值驱动重算。
   const locale = useLocale();
   const placeholderLabel = t('command_palette.placeholder');
-  const effectiveQuery = query.trim();
+  const effectiveQuery = normalizeSearchQuery(query);
 
   // 先 localize 成 DisplayCommand,再 filter/sort(P1-2: 按显示文本搜索/排序)。
   // hotkeyParts 用 effective(含 user override)预计算,行渲染只读它(R28)。

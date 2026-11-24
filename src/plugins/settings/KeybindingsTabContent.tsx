@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import { IconButton, Input, KeyCap } from '@/design';
-import { clampSearchQuery } from '@/lib/search-query';
+import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
@@ -118,8 +118,9 @@ export function selectVisibleKeybindingCommands(
   commands: readonly DisplayCommand[],
   query: string,
 ): DisplayCommand[] {
-  const hasQuery = query.length > 0;
-  const qLower = hasQuery ? lowerIfNeeded(query) : '';
+  const q = normalizeSearchQuery(query);
+  const hasQuery = q.length > 0;
+  const qLower = hasQuery ? lowerIfNeeded(q) : '';
   let selected: DisplayCommand[] | null = null;
   let count = 0;
 

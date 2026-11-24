@@ -4,7 +4,7 @@
 // 双重过滤;空 query / 空 tag 选择视为 pass。
 
 import type { MarketplaceEntry } from './types';
-import { clampSearchQuery } from '@/lib/search-query';
+import { normalizeSearchQuery } from '@/lib/search-query';
 import { lowerIfNeeded } from '../../electron/shared/lower-if-needed';
 
 export interface FilterOptions {
@@ -105,7 +105,7 @@ export function applyFilter(
   if (entries.length === 0) return entries;
   // 边界(E281):filter 层防御性截断 query(applyFilter 是导出纯函数,可被非 UI 调用方传超长 query
   // → 对 ≤4096 entry 逐项 includes 放大)。与 onChange clamp 同一上限,双层防护。
-  const q = lowerIfNeeded(clampSearchQuery(opts.query).trim());
+  const q = lowerIfNeeded(normalizeSearchQuery(opts.query));
   const hasQuery = q.length > 0;
   const hasTags = opts.selectedTags.size > 0;
   if (!hasQuery && !hasTags) return entries;

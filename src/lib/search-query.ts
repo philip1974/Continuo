@@ -10,3 +10,12 @@ export const MAX_SEARCH_QUERY_LEN = 1024;
 export function clampSearchQuery(q: string): string {
   return q.length > MAX_SEARCH_QUERY_LEN ? q.slice(0, MAX_SEARCH_QUERY_LEN) : q;
 }
+
+/**
+ * 过滤用的规范化 query:截断上限 + 去首尾空白。各过滤入口(命令面板 / Quick Open / 设置搜索 / 快捷键设置 / 市场)
+ * 共用 —— 此前只有一部分 trim,输入 " foo" 时命令面板照常命中、Quick Open(子序列匹配要求路径真有空格)几乎搜不到。
+ * 终端搜索要字面匹配,不用它。
+ */
+export function normalizeSearchQuery(q: string): string {
+  return clampSearchQuery(q).trim();
+}

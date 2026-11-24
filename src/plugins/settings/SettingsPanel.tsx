@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from 'react';
 import { Input } from '@/design';
-import { clampSearchQuery } from '@/lib/search-query';
+import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type { SettingItemRegistry, SettingItemSpec } from '../registries/SettingItemRegistry';
@@ -144,7 +144,7 @@ export function SettingsPanel({
     (activeTabId ? registry.get(activeTabId) : undefined) ?? registry.getAll()[0] ?? null;
 
   const [query, setQuery] = useState('');
-  const trimmed = query.trim();
+  const trimmed = normalizeSearchQuery(query);
   const searchPlaceholderLabel = t('settings.panel.search_placeholder');
   // 搜索模式仅由 query 判定(打磨 R49):普通浏览设置 tab 时不订阅 itemRegistry、
   // 不构建搜索 haystack —— 这些都搬进仅搜索模式才挂载的 SettingsSearchResults。

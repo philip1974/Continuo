@@ -21,6 +21,7 @@ import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import { notifyOpenFailed } from '@/notifications/notify-open-failed';
 import { failureOf } from '@/lib/failure-of';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
+import { normalizeSearchQuery } from '@/lib/search-query';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -156,7 +157,7 @@ function QuickOpenBody() {
   );
   const filtered = useMemo(
     () =>
-      fuzzyFilter(liveResults, query, (f) => f.relPathLower),
+      fuzzyFilter(liveResults, normalizeSearchQuery(query), (f) => f.relPathLower),
     [liveResults, query],
   );
 
