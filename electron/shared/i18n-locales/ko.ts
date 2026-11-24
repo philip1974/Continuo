@@ -17,6 +17,12 @@ export const ko: Record<TranslationKey, string> = {
   'menu.view.reload': '다시 로드',
   'menu.view.force_reload': '강제 다시 로드',
 
+  // menu.edit:可编辑元素右键菜单(main edit-context-menu)
+  'menu.edit.cut': '잘라내기',
+  'menu.edit.copy': '복사',
+  'menu.edit.paste': '붙여넣기',
+  'menu.edit.select_all': '모두 선택',
+
   // settings.general
   'settings.general.tab_title': '일반',
   'settings.general.theme.title': '테마',

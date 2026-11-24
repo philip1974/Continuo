@@ -492,6 +492,10 @@
 
 - [`dropdown-menu.spec.tsx`](./dropdown-menu/dropdown-menu.spec.tsx)
 
+## [可编辑元素原生右键菜单](./edit-context-menu/README.md)
+
+- [`edit-context-menu.spec.ts`](./edit-context-menu/edit-context-menu.spec.ts)
+
 ## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)

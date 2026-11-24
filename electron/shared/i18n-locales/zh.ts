@@ -17,6 +17,12 @@ export const zh: Record<TranslationKey, string> = {
   'menu.view.reload': '重新加载',
   'menu.view.force_reload': '强制重新加载',
 
+  // menu.edit:可编辑元素右键菜单(main edit-context-menu)
+  'menu.edit.cut': '剪切',
+  'menu.edit.copy': '复制',
+  'menu.edit.paste': '粘贴',
+  'menu.edit.select_all': '全选',
+
   // settings.general
   'settings.general.tab_title': '通用',
   'settings.general.theme.title': '主题',

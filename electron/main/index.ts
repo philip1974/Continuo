@@ -19,6 +19,7 @@ import { registerIpc } from './ipc';
 import { loadSettings } from './services/settings.service';
 import { loadWindowTheme } from './services/window-theme.service';
 import { getMainT, type MainT } from './i18n';
+import { installEditContextMenu } from './edit-context-menu';
 import { setMenuRebuilder } from './ipc/i18n.ipc';
 import {
   defaultExplorerV3,
@@ -916,6 +917,8 @@ app.on('browser-window-created', (_evt, win) => {
   const wcId = win.webContents.id;
   // agent 授权:从此刻(首次加载之前)起跟踪该窗口的 renderer 是否已能显示授权弹窗。
   watchAgentAuthRenderer(win);
+  // 可编辑元素原生右键菜单(剪切 / 复制 / 粘贴 / 全选);渲染层 preventDefault 的区域不触发(见模块注释)。
+  installEditContextMenu(win, getMainT);
   win.once('closed', () => {
     void debugService.killByOwner(win.id, 'window-closed').catch((err) => {
       console.warn('[debug] killByOwner failed during window close', err);

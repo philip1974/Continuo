@@ -24,6 +24,12 @@ export const en = {
   'menu.view.reload': 'Reload',
   'menu.view.force_reload': 'Force Reload',
 
+  // menu.edit:可编辑元素右键菜单(main edit-context-menu)
+  'menu.edit.cut': 'Cut',
+  'menu.edit.copy': 'Copy',
+  'menu.edit.paste': 'Paste',
+  'menu.edit.select_all': 'Select All',
+
   // settings.general (10)
   'settings.general.tab_title': 'General',
   'settings.general.theme.title': 'Theme',
