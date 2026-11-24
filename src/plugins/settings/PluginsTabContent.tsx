@@ -1,7 +1,7 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/design';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '../co-app';
@@ -19,6 +19,7 @@ import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
 import { installFromGitLocalized } from '@/plugins/install-from-git';
 import type { InstallFromGitResult } from '../../../electron/shared/plugins-channels';
+import { pruneLandedPendingMap } from '@/marketplace/prune-landed-pending';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -231,7 +232,11 @@ function UserPluginsSection() {
   const [pendingInstalls, setPendingInstalls] = useState<
     ReadonlyMap<string, InstallFromGitResult>
   >(NO_PENDING_INSTALLS);
-  // 已进列表的(重启后加载 / 覆盖重装已有 id)不再显示待重启行,避免同一插件两行。
+  // 已进列表(落地)即从待重启记录摘除(与市场同一规则,见 prune-landed-pending):只过滤不摘除时,卸载后过滤重新
+  // 成立,「已安装,重启后加载」幽灵行回来。渲染时仍过滤,覆盖落地到摘除之间的一帧。
+  useEffect(() => {
+    setPendingInstalls((prev) => pruneLandedPendingMap(prev, (id) => hasPluginId(plugins, id)));
+  }, [plugins]);
   const pendingRows = [...pendingInstalls.values()].filter((p) => !hasPluginId(plugins, p.id));
   const [uninstallTarget, setUninstallTarget] = useState<PluginListItem | null>(null);
   const [permEditTarget, setPermEditTarget] = useState<PluginListItem | null>(null);

@@ -23,3 +23,22 @@ export function pruneLandedPending(
   if (next?.size === 0) return EMPTY_PENDING;
   return next ?? pending;
 }
+
+/**
+ * 同一规则的 Map 版(插件设置页「从 Git 安装」的待重启行,按 id 记安装结果):已落地(isInstalled)的 id 摘除。
+ * 此前设置页只增不减 → 落地后行被过滤隐藏,卸载后过滤重新成立,「已安装,重启后加载」幽灵行回来。无可摘除返回同一引用。
+ */
+export function pruneLandedPendingMap<V>(
+  pending: ReadonlyMap<string, V>,
+  isInstalled: (id: string) => boolean,
+): ReadonlyMap<string, V> {
+  let next: Map<string, V> | null = null;
+  for (const id of pending.keys()) {
+    if (isInstalled(id)) {
+      next ??= new Map(pending);
+      next.delete(id);
+    }
+  }
+  return next ?? pending;
+}
+

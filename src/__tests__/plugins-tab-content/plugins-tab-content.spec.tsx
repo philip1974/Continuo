@@ -722,6 +722,33 @@ describe('PluginsTabContent — Git URL 安装', () => {
     expect(statuses.some((s) => (s.textContent ?? '').includes('已安装 Plugin X'))).toBe(true);
   });
 
+  // 落地(进入插件列表)即从待重启记录摘除(与市场 pruneLandedPending 同规则):只过滤不摘除时,卸载后过滤重新成立,
+  // 「已安装,重启后加载」幽灵行回来。
+  it('待重启插件落地后再卸载 → 不再出现幽灵待重启行', async () => {
+    let list: PluginListItem[] = [];
+    const setList = (next: PluginListItem[]) => {
+      list = next;
+      notifyUserPluginListChanged();
+    };
+    getMgr.mockReturnValue({ listAll: () => list });
+    const installFromGit = vi.fn().mockResolvedValue({
+      ok: true,
+      data: { id: 'p.ghost', name: 'Ghost', version: '1.0.0' },
+    });
+    installPluginsApi(installFromGit);
+    const { container } = render(<PluginsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/me/ghost.git' } });
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
+    );
+    await waitFor(() => expect(container.textContent).toContain('p.ghost'));
+
+    act(() => setList([plugin({ id: 'p.ghost' })])); // watcher 扫到 → 落地
+    act(() => setList([])); // 卸载
+    expect(container.textContent).not.toContain('p.ghost');
+  });
+
   it('连续安装两个插件 → 两条待重启行都保留(后装的不顶掉先装的)', async () => {
     const installFromGit = vi
       .fn()
