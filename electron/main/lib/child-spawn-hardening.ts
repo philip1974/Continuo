@@ -100,7 +100,7 @@ export function stripInternalSecretEnv(
 
 /**
  * 会让 git 改读别的仓库 / 对象库 / 工作树 / 索引的 env。宿主代插件跑「只许读某个已校验仓库」的 git 命令
- * (readGitBlob)时必须剥离:否则 Continuo 从设了 GIT_DIR / GIT_ALTERNATE_OBJECT_DIRECTORIES 等的终端启动时,
+ * (readGitBlob)以及宿主自己 clone 插件仓库(plugins.service runGit)时必须剥离:否则 Continuo 从设了 GIT_DIR / GIT_ALTERNATE_OBJECT_DIRECTORIES 等的终端启动时,
  * git 读的不是 cwd 所在的仓库,scope 校验形同虚设。GIT_CEILING_DIRECTORIES 会改变向上发现的结果,一并剥离
  * (发现到的位置另有 scope 校验)。不用于 shell.exec:那里的 git 由插件凭 shell 权限自行调用,env 归用户。
  */

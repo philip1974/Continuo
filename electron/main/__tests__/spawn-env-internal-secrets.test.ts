@@ -81,4 +81,18 @@ describe('插件 / git 子进程 env 剥离 CONTINUO_MCP_TOKEN', () => {
     expect(env.CONTINUO_MCP_TOKEN).toBeUndefined();
     expect(env).toMatchObject({ GIT_ALLOW_PROTOCOL: 'https:ssh', GIT_TERMINAL_PROMPT: '0' });
   });
+
+  // 从设了 GIT_WORK_TREE / GIT_INDEX_FILE 等的 shell 启动时,clone 不得把文件检出到别处、覆盖别的仓库 index
+  //(与 readGitBlob 同规则剥离会重定向仓库的 GIT_*)。
+  it('插件 git 安装(runGit):剥离会重定向仓库的 GIT_*', async () => {
+    const keys = ['GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_DIR'] as const;
+    for (const k of keys) process.env[k] = '/elsewhere';
+    try {
+      await installFromGit('https://example.com/p.git', '/plugins').catch(() => undefined);
+      const env = lastEnv();
+      for (const k of keys) expect(env[k]).toBeUndefined();
+    } finally {
+      for (const k of keys) delete process.env[k];
+    }
+  });
 });

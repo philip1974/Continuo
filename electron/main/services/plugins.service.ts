@@ -34,6 +34,7 @@ import { killWithGrace } from '../lib/kill-with-grace';
 import {
   mergeSpawnEnv,
   resolveSpawnCommand,
+  stripGitRepoRedirectEnv,
   stripInternalSecretEnv,
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
@@ -1496,9 +1497,11 @@ function runGit(args: readonly string[], budgetDir: string): Promise<void> {
     // 改写 URL 再查白名单,用户全局 ~/.gitconfig 常见 `url."ssh://git@github.com/".insteadOf=https://github.com/`
     //(GIT_CONFIG_NOSYSTEM 不屏蔽全局配置),只放 https 会 `transport 'ssh' not allowed` 致插件装不上。ssh 改写
     // 只可能来自用户自己的全局配置;clone 目标是新建临时目录,不存在仓库级 config 攻击面;http 重定向不能换成 ssh。
-    // 剥离宿主内部机密(CONTINUO_MCP_TOKEN)。
+    // 剥离宿主内部机密(CONTINUO_MCP_TOKEN)与会重定向仓库的 GIT_*(GIT_WORK_TREE / GIT_INDEX_FILE /
+    // GIT_OBJECT_DIRECTORY 等;Continuo 从设了它们的 shell 启动时,clone 会把文件检出到别处、覆盖别的仓库 index,
+    // 且绕过临时目录的体积轮询 —— 与 readGitBlob 同规则)。
     const env = withGitHardeningEnv(
-      mergeSpawnEnv(stripInternalSecretEnv(process.env), {
+      mergeSpawnEnv(stripGitRepoRedirectEnv(stripInternalSecretEnv(process.env)), {
         GIT_TERMINAL_PROMPT: '0',
         GIT_ASKPASS: '',
         GIT_CONFIG_NOSYSTEM: '1',
