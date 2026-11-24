@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useExplorerStore } from '../../stores/explorer.store';
+import { forgetInExpanded, renameInExpanded, useExplorerStore } from '../../stores/explorer.store';
 import {
   PATH_ARRAY_MAX,
   PATH_STR_MAX,
@@ -169,3 +169,20 @@ describe('explorer.store · setSort', () => {
     }
   });
 });
+
+// 「全部展开」批量期暂存的展开数组批末整体写回 store:批量期间的改名 / 删除须对它同样改写(与 store 方法同一函数)。
+describe('renameInExpanded / forgetInExpanded(纯函数)', () => {
+  it('改写前缀;无命中 → null', () => {
+    expect(renameInExpanded(['/r/foo', '/r/foo/a', '/r/foobar'], '/r/foo', '/r/bar')).toEqual([
+      '/r/bar',
+      '/r/bar/a',
+      '/r/foobar',
+    ]);
+    expect(renameInExpanded(['/r/x'], '/r/foo', '/r/bar')).toBeNull();
+  });
+  it('移除路径及后代;无命中 → null', () => {
+    expect(forgetInExpanded(['/r/foo', '/r/foo/a', '/r/foobar'], ['/r/foo'])).toEqual(['/r/foobar']);
+    expect(forgetInExpanded(['/r/x'], ['/r/foo'])).toBeNull();
+  });
+});
+

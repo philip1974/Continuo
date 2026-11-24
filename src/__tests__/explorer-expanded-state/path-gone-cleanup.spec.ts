@@ -54,9 +54,12 @@ describe('FolderTree 接线', () => {
   );
 
   it('改名与批量移动走 cleanupAfterPathMoved,回收站走 cleanupAfterPathsRemoved', () => {
-    expect(SRC).toMatch(/cleanupAfterPathMoved\(oldPath, r\.newPath\)/);
-    expect(SRC).toMatch(/onMoved: cleanupAfterPathMoved/);
-    expect(SRC).toMatch(/trashItemsAndCleanup\(paths, mutateDeps, treeApi, cleanupAfterPathsRemoved\)/);
+    // 经 onPathMoved / onPathsRemoved 包一层:清理之外还改写「全部展开」批量期暂存的展开数组。
+    expect(SRC).toMatch(/onPathMoved\(oldPath, r\.newPath\)/);
+    expect(SRC).toMatch(/onMoved: onPathMoved/);
+    expect(SRC).toMatch(/trashItemsAndCleanup\(paths, mutateDeps, treeApi, onPathsRemoved\)/);
+    expect(SRC).toMatch(/cleanupAfterPathMoved\(oldPath, newPath\)/);
+    expect(SRC).toMatch(/cleanupAfterPathsRemoved\(paths\)/);
   });
 
   it('FolderTree 不再直接调 editor renamePath/removePaths 或剪贴板 prune', () => {

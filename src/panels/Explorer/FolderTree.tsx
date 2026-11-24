@@ -30,7 +30,7 @@ import { useFsWatcher } from './hooks/useFsWatcher';
 import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
-import { useExplorerStore } from '@/stores/explorer.store';
+import { forgetInExpanded, renameInExpanded, useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { copyToClipboardOrNotify } from './copy-to-clipboard';
@@ -331,6 +331,18 @@ export function FolderTree({ root }: { root: string }) {
   );
   // 批量期 render 用库内部同一引用(ref 读取:库每步 rebuildTree 都会触发重渲),批外用 store 派生值。
   const treeExpandedItems = expandBatchRef.current.latest ?? expandedItems;
+  // 路径移走 / 删除后的清理:除 store 外,「全部展开」批量期暂存的 latest 也须同样改写 —— 批末整体写回会覆盖
+  // store 里刚改好的展开集合,旧路径又回到展开集合。
+  const onPathMoved = useCallback((oldPath: string, newPath: string) => {
+    cleanupAfterPathMoved(oldPath, newPath);
+    const batch = expandBatchRef.current;
+    if (batch.latest) batch.latest = renameInExpanded(batch.latest, oldPath, newPath) ?? batch.latest;
+  }, []);
+  const onPathsRemoved = useCallback((paths: string[]) => {
+    cleanupAfterPathsRemoved(paths);
+    const batch = expandBatchRef.current;
+    if (batch.latest) batch.latest = forgetInExpanded(batch.latest, paths) ?? batch.latest;
+  }, []);
 
   // 每目录刷新代际:同目录并发刷新只应用最后发起的那次 listDir(迟到的旧结果不覆盖新结果);
   // 卸载时清空 → 在途结果全部作废。编号取组件级单调序号(不按目录从 1 重新计数):完成后会删掉该目录
@@ -426,7 +438,7 @@ export function FolderTree({ root }: { root: string }) {
           fs: coApi.fs,
           makeUniqueDestPicker,
           refreshDir: refreshParent,
-          onMoved: cleanupAfterPathMoved,
+          onMoved: onPathMoved,
           onItemFailed: (src, code, message) => {
             console.warn(`[explorer] ${logLabel} failed`, src, code, message);
             notify.error(t(failedKey, { src, message: localizeErrorByCode(code, message) }), {
@@ -440,7 +452,7 @@ export function FolderTree({ root }: { root: string }) {
         },
         opts,
       ),
-    [makeUniqueDestPicker, refreshParent],
+    [makeUniqueDestPicker, onPathMoved, refreshParent],
   );
 
   const config = useMemo(
@@ -477,7 +489,7 @@ export function FolderTree({ root }: { root: string }) {
                 return;
               }
               // editor tab / 展开集合前缀改写 + 剪贴板剪除旧路径(目录 rename 时其下全部路径同步)
-              cleanupAfterPathMoved(oldPath, r.newPath);
+              onPathMoved(oldPath, r.newPath);
             } catch (err) {
               notifyThrownError(err);
             }
@@ -507,6 +519,7 @@ export function FolderTree({ root }: { root: string }) {
       }),
     [
       treeExpandedItems,
+      onPathMoved,
       refreshParent,
       root,
       runBatchTransfer,
@@ -643,7 +656,7 @@ export function FolderTree({ root }: { root: string }) {
           // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用)。见第七 session
           // R6 完整性批判。「路径已删除」清理(editor tab / 展开集合 / 剪贴板)只对 result.removed 做,在
           // trashItemsAndCleanup 一处完成(已测)。
-          const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, cleanupAfterPathsRemoved);
+          const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved);
           if (!result.ok) {
             for (const f of result.failures) {
               console.warn('[explorer] trash failed', f.path, f.code, f.message);
@@ -677,7 +690,7 @@ export function FolderTree({ root }: { root: string }) {
         );
       },
     }),
-    [mutateDeps, root, runBatchTransfer, treeApi, tt],
+    [mutateDeps, onPathsRemoved, root, runBatchTransfer, treeApi, tt],
   );
 
   const submitCreate = async (name: string) => {

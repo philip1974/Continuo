@@ -70,26 +70,13 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   // 包含判断与前缀切片同 editor.store getStateAfterRenamingPath(isSameOrInsidePath:分隔符无关 +
   // 平台感知大小写;大小写折叠不改长度,故按 oldPath.length 切片)。无命中 → 不写 store。
   renameExpanded: (oldPath, newPath) => {
-    const current = get().expandedPaths;
-    let changed = false;
-    const next: string[] = [];
-    for (const p of current) {
-      if (isSameOrInsidePath(oldPath, p)) {
-        changed = true;
-        next.push(newPath + p.slice(oldPath.length));
-      } else {
-        next.push(p);
-      }
-    }
-    if (changed) get().setExpandedPaths(next);
+    const next = renameInExpanded(get().expandedPaths, oldPath, newPath);
+    if (next !== null) get().setExpandedPaths(next);
   },
 
-  // 「路径及其后代」剪除与剪贴板 prune 同一实现(祖先索引,见 pruneClipboardPaths)。
   forgetExpanded: (removedPaths) => {
-    if (removedPaths.length === 0) return;
-    const current = [...get().expandedPaths];
-    const remaining = pruneClipboardPaths(current, removedPaths);
-    if (remaining !== current) get().setExpandedPaths(remaining);
+    const next = forgetInExpanded([...get().expandedPaths], removedPaths);
+    if (next !== null) get().setExpandedPaths(next);
   },
 
   setSort: (sort) =>
@@ -99,3 +86,36 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
         : { sort },
     ),
 }));
+
+/**
+ * 展开集合里 oldPath 及其后代改写为 newPath 前缀;无命中 → null。store 的 renameExpanded 与 Explorer「全部展开」
+ * 批量期暂存的数组(批末整体写回,须同样改写,否则覆盖掉批量期间的改名)共用。
+ */
+export function renameInExpanded(
+  paths: Iterable<string>,
+  oldPath: string,
+  newPath: string,
+): string[] | null {
+  let changed = false;
+  const next: string[] = [];
+  for (const p of paths) {
+    if (isSameOrInsidePath(oldPath, p)) {
+      changed = true;
+      next.push(newPath + p.slice(oldPath.length));
+    } else {
+      next.push(p);
+    }
+  }
+  return changed ? next : null;
+}
+
+/** 移除 removedPaths 及其后代(与剪贴板 prune 同一实现,祖先索引);无命中 → null。用途同 renameInExpanded。 */
+export function forgetInExpanded(
+  paths: readonly string[],
+  removedPaths: readonly string[],
+): string[] | null {
+  if (removedPaths.length === 0) return null;
+  const remaining = pruneClipboardPaths(paths, removedPaths);
+  return remaining === paths ? null : [...remaining];
+}
+
