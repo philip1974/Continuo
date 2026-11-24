@@ -75,7 +75,13 @@ const createSessionBoundedSchema = createSessionInputSchema
     env: true,
   })
   .extend({
-    cwd: z.string().max(PATH_MAX).optional(),
+    // 空串 = 未给(LLM 客户端常把可选字符串填成 ""):归一为 undefined → 按文档回退窗口工作区根。此前 '' 原样透传,
+    // `cwd ?? workspaceRoot ?? …` 不回退(非 nullish)→ TERMINAL_CWD_UNRESOLVED;install_stop_hook 同样 no-cwd。
+    cwd: z
+      .string()
+      .max(PATH_MAX)
+      .optional()
+      .transform((v) => (v === '' ? undefined : v)),
     name: z.string().max(LABEL_MAX).optional(),
     agentLabel: z.string().max(LABEL_MAX).optional(),
     autorun: z.string().max(MCP_AUTORUN_MAX).optional(),

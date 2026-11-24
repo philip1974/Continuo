@@ -104,6 +104,15 @@ describe('makeCreateSessionTool · 元数据', () => {
     expect(tool.name).toBe(MCP_TOOL_CREATE_SESSION);
   });
 
+  // 空串 cwd = 未给:归一为 undefined,按文档回退窗口工作区根(IPC 侧 schema 为 min(1),同一请求两端同口径)。
+  it('inputSchema:cwd 空串归一为未给', () => {
+    const tool = makeCreateSessionTool(makeOkDeps());
+    const r = tool.inputSchema.safeParse({ cwd: '', agentLabel: 'codex' });
+    expect(r.success).toBe(true);
+    expect(r.success && (r.data as { cwd?: string }).cwd).toBeUndefined();
+    expect(r.success && 'cwd' in (r.data as object) && (r.data as { cwd?: string }).cwd !== undefined).toBe(false);
+  });
+
   // 边界(E202):inputSchema 不再是协议原 schema,而是 omit 未消费字段(shell/args/cols/rows/env)
   // 的 Continuo-local bounded schema —— 那些字段本工具不消费,协议 schema 的 args/env 无上限会成放大面。
   it('E202 inputSchema 拒绝未消费字段 args/env/shell/cols/rows(strict omit,浅拒不深校验)', () => {
