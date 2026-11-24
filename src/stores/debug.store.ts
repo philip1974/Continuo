@@ -214,6 +214,23 @@ function groupBreakpointsByFile(list: readonly DebugBreakpoint[]): DebugBreakpoi
 }
 
 /**
+ * Debug 面板显示的会话:已停下的活动会话(activeSessionId),否则最近创建的会话(运行中)。activeSessionId 只指向已停下
+ * 的会话 —— 面板若只认它,会话 continue 后显示「无调试会话」、断点页也进不去,「运行中」分支永远走不到。
+ */
+export function selectDisplayedSession(state: {
+  readonly activeSessionId: string | null;
+  readonly sessions: ReadonlyMap<string, DebugSessionShadow>;
+}): DebugSessionShadow | undefined {
+  if (state.activeSessionId !== null) {
+    const active = state.sessions.get(state.activeSessionId);
+    if (active) return active;
+  }
+  let latest: DebugSessionShadow | undefined;
+  for (const session of state.sessions.values()) latest = session;
+  return latest;
+}
+
+/**
  * activeSessionId 的唯一来源:最近停下的会话(lastStoppedOrder 最大)。stopped / continued / terminated / 快照 hydrate
  * 四处都用它重算(此前各写一套「是否沿用旧值」的条件,hydrate 后与排序依据不一致)。
  */

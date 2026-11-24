@@ -97,4 +97,31 @@ describe('topic51 Op5 · DebugPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Breakpoints' }));
     expect(screen.getByText('verified')).toBeTruthy();
   });
+
+  // activeSessionId 只指向已停下的会话;会话 continue 后面板仍显示该(运行中)会话与其断点,而非「无调试会话」。
+  it('会话运行中(未停)→ 显示该会话、徽章「running」、断点页可进,不显示「No debug session」', () => {
+    useDebugStore.setState({
+      activeSessionId: null,
+      sessions: new Map([
+        [
+          's2',
+          {
+            id: 's2',
+            breakpoints: [{ file: '/repo/b.ts', line: 3, verified: true }],
+            frames: [],
+            scopes: [],
+            variableRefs: new Map(),
+            lastStoppedOrder: 0,
+          },
+        ],
+      ]),
+    });
+    render(<DebugPanel />);
+    expect(screen.queryByText('No debug session')).toBeNull();
+    expect(screen.getByText('s2')).toBeTruthy();
+    expect(screen.getByText('running')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Breakpoints' }));
+    expect(screen.getByText('verified')).toBeTruthy();
+  });
 });
+

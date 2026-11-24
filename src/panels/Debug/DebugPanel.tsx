@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Badge, Button, Card, ScrollArea, Tabs, type TabItem } from '@/design';
 import {
+  selectDisplayedSession,
   useDebugStore,
   type DebugScope,
   type DebugSessionShadow,
@@ -13,12 +14,8 @@ export function DebugPanel() {
   const t = useT();
   const locale = useLocale();
   const [activeTab, setActiveTab] = useState('stack');
-  const activeSessionId = useDebugStore((state) => state.activeSessionId);
-  const session = useDebugStore((state) =>
-    state.activeSessionId !== null
-      ? state.sessions.get(state.activeSessionId)
-      : undefined,
-  );
+  // 已停下的会话优先,否则最近的运行中会话(见 selectDisplayedSession)。
+  const session = useDebugStore(selectDisplayedSession);
   const debugTabs = useMemo<readonly TabItem[]>(
     () => {
       void locale;
@@ -31,7 +28,7 @@ export function DebugPanel() {
     [locale, t],
   );
 
-  if (!activeSessionId || !session) {
+  if (!session) {
     return (
       <div className="flex h-full w-full bg-canvas p-3 text-fg">
         <Card className="flex flex-1 items-center justify-center text-xs text-fg-muted">
@@ -65,15 +62,17 @@ export function DebugPanel() {
 
 function DebugSessionHeader({ session }: { readonly session: DebugSessionShadow }) {
   const t = useT();
-  const location =
-    session.stopped?.file !== undefined && session.stopped.line !== undefined
+  // 运行中不显示位置行(徽章已标「运行中」);已停下但栈帧未到 → 「已暂停」。
+  const location = !session.stopped
+    ? null
+    : session.stopped.file !== undefined && session.stopped.line !== undefined
       ? `${session.stopped.file}:${session.stopped.line}`
       : t('panels.debug.paused');
   return (
     <Card className="flex items-center justify-between gap-3">
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-fg">{session.id}</div>
-        <div className="truncate text-xs text-fg-muted">{location}</div>
+        {location !== null && <div className="truncate text-xs text-fg-muted">{location}</div>}
       </div>
       <Badge variant={session.stopped ? 'warning-soft' : 'neutral'}>
         {session.stopped?.reason ?? t('panels.debug.running')}
