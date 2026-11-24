@@ -48,8 +48,7 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
-import { notifyOpenFailed } from '@/notifications/notify-open-failed';
-import { failureOf } from '@/lib/failure-of';
+import { openFileOrNotify } from '@/notifications/notify-open-failed';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -605,23 +604,8 @@ export function FolderTree({ root }: { root: string }) {
   const { openFileByPath } = useEditorFile();
   const handleFileOpen = useCallback(
     async (path: string) => {
-      // a11y(A141 同族):openFileByPath 的 reject(抛错而非返回 {ok:false})此前未捕获 →
-      // 行 onClick 的 fire-and-forget 调用变 unhandled rejection,点击文件打开异常时无反馈。
-      // catch 复用 !r.ok 同款 open_failed 提示(code 取 err.code ?? 'EXCEPTION')。
-      try {
-        const r = await openFileByPath(path);
-        if (!r.ok) {
-          // 点击文件是 Explorer 的主操作,打开失败(外部删除/权限/损坏)必须给反馈,
-          // 不再静默 —— 否则用户"点了没反应"。trash/paste/move 已有 notify,补齐 open。
-          // 见第二十一轮 P1-AX。
-          console.warn('[explorer] open file failed:', r.code, r.message);
-          notifyOpenFailed(basenamePreserveTrailing(path), r, { mirror: false });
-        }
-      } catch (err) {
-        const failure = failureOf(err);
-        console.warn('[explorer] open file rejected:', failure.code, err);
-        notifyOpenFailed(basenamePreserveTrailing(path), failure, { mirror: false });
-      }
+      // 点击文件是 Explorer 的主操作:ok:false 与 reject 都必须给反馈(P1-AX / A141),由 openFileOrNotify 统一。
+      await openFileOrNotify(() => openFileByPath(path), basenamePreserveTrailing(path), 'explorer');
     },
     [openFileByPath],
   );

@@ -39,8 +39,7 @@ import {
 import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
-import { notifyOpenFailed } from '@/notifications/notify-open-failed';
-import { failureOf } from '@/lib/failure-of';
+import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { basenameForChrome } from '@/lib/path-label';
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
 
@@ -133,11 +132,7 @@ export function EditorPanel() {
         // 目标文件不存在/读取失败时无 toast/live 反馈,用户只感知链接「没反应」(同外链分支)。
         // 失败提示与 Explorer / Quick Open 一致:「打开失败 <文件名>: <按 code 本地化的原因>」。
         const name = basenameForChrome(target.absPath);
-        openFileByPath(target.absPath)
-          .then((r) => {
-            if (!r.ok) notifyOpenFailed(name, r);
-          })
-          .catch((err: unknown) => notifyOpenFailed(name, failureOf(err)));
+        void openFileOrNotify(() => openFileByPath(target.absPath), name);
       } else {
         // a11y(A117,A50/A116 同族):外链打开须检查 IpcResult.ok + catch reject,否则 URL 被
         // 白名单拒绝或系统打开失败时无 toast/live 反馈,用户只感知链接「没反应」。

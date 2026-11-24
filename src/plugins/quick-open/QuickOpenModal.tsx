@@ -18,8 +18,7 @@ import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
-import { notifyOpenFailed } from '@/notifications/notify-open-failed';
-import { failureOf } from '@/lib/failure-of';
+import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 import { normalizeSearchQuery } from '@/lib/search-query';
 
@@ -167,18 +166,8 @@ function QuickOpenBody() {
   const openFile = useCallback(
     async (file: QuickOpenFile) => {
       close();
-      try {
-        const r = await openFileByPath(file.absPath, editorFileDeps);
-        if (!r.ok) {
-          // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应)。
-          // 见第二十一轮 P1-AX。i18n(I8,I6/I7 同族):openFileByPath 返回 FS_NOT_FOUND/
-          // FS_DENIED/FS_IO(有三语言 catalog),按 code 经 localizeErrorByCode 本地化,
-          // zh/ko 不再看到 main raw 英文;无对应 catalog key 的 code 回退原 message。
-          notifyOpenFailed(file.name, r);
-        }
-      } catch (err) {
-        notifyOpenFailed(file.name, failureOf(err));
-      }
+      // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应;P1-AX),按 code 本地化(I8)。
+      await openFileOrNotify(() => openFileByPath(file.absPath, editorFileDeps), file.name);
     },
     [close],
   );

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { errorSpy } = vi.hoisted(() => ({ errorSpy: vi.fn() }));
 vi.mock('../../notifications/notify', () => ({ notify: { error: errorSpy } }));
 
-import { notifyOpenFailed } from '../../notifications/notify-open-failed';
+import { notifyOpenFailed, openFileOrNotify } from '../../notifications/notify-open-failed';
 import { failureOf } from '../../lib/failure-of';
 import { notifyFailure, notifyThrownError } from '../../notifications/notify-thrown-error';
 import { setLocale } from '../../i18n/translate';
@@ -65,15 +65,36 @@ describe('failureOf(抛出值 → 失败描述)', () => {
   });
 });
 
-describe('接线守卫:三个打开入口共用 notifyOpenFailed', () => {
+describe('接线守卫:三个打开入口共用 openFileOrNotify(ok:false 与 reject 两个分支都提示)', () => {
   it.each([
     'panels/Explorer/FolderTree.tsx',
     'plugins/quick-open/QuickOpenModal.tsx',
     'panels/Editor/EditorPanel.tsx',
   ])('%s', (rel) => {
     const src = readFileSync(path.join(SRC_ROOT, rel), 'utf-8');
-    expect(src).toContain('notifyOpenFailed(');
+    expect(src).toContain('openFileOrNotify(');
     expect(src).not.toContain("t('quick_open.open_failed')");
+  });
+});
+
+describe('openFileOrNotify', () => {
+  it('ok:true → 不提示;ok:false → 按 code 提示;reject → 提示 EXCEPTION', async () => {
+    await openFileOrNotify(async () => ({ ok: true as const }), 'a.md');
+    expect(errorSpy).not.toHaveBeenCalled();
+    await openFileOrNotify(async () => ({ ok: false as const, code: 'FS_EEXIST', message: 'raw' }), 'a.md');
+    expect(errorSpy).toHaveBeenLastCalledWith('Failed to open a.md: Already exists', { code: 'FS_EEXIST' });
+    await openFileOrNotify(async () => {
+      throw new Error('boom');
+    }, 'b.md');
+    expect(errorSpy.mock.calls.at(-1)?.[1]).toEqual({ code: 'EXCEPTION' });
+  });
+
+  it('给 logTag → 自行记 console,toast 关闭 mirror', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await openFileOrNotify(async () => ({ ok: false as const, code: 'FS_EEXIST' }), 'a.md', 'explorer');
+    expect(warn).toHaveBeenCalledWith('[explorer] open file failed:', 'FS_EEXIST', undefined);
+    expect(errorSpy.mock.calls.at(-1)?.[1]).toEqual({ code: 'FS_EEXIST', mirror: false });
+    warn.mockRestore();
   });
 });
 
