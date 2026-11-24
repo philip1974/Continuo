@@ -18,7 +18,6 @@ import { SettingTabRegistry } from './registries/SettingTabRegistry';
 import { StatusBarRegistry } from './registries/StatusBarRegistry';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { createIpcPluginMcpUpstream } from './plugin-mcp-upstream';
-import { coApi } from '@/lib/co-api';
 import {
   openFileByPath,
   openFileWithContent,
@@ -50,6 +49,7 @@ import type {
   EditorOpenOptions,
   EditorOpenResult,
 } from './types';
+import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 
 // Keep in sync with package.json "version" field. Bumped to 0.2.15 (2026-11-21)
 // for the zod 4 / vitest 3 migration and the open-source polish pass.
@@ -99,7 +99,7 @@ const editor: CoHostEditorApi = {
   async openFile(path, opts) {
     if (!isAbsolutePath(path)) return invalidPathResult;
     return openInEditor(path, opts, () =>
-      openFileByPath(path, { fs: coApi.fs }),
+      openFileByPath(path, editorFileDeps),
     );
   },
   // 安全:插件发起的 openFile 由 scoped app 先经主进程「持锁校验 + 读取」,再用这份内容开标签(见 CoHostEditorApi)。

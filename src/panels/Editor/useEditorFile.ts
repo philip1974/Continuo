@@ -3,16 +3,10 @@
 // 暴露给 EditorPanel / FolderTree / DockShell。
 
 import { useMemo } from 'react';
-import { coApi } from '@/lib/co-api';
 import { useEditorStore } from '@/stores/editor.store';
-import {
-  openFileByPath as openFileByPathImpl,
-  saveFile as saveFileImpl,
-  type EditorFileDeps,
-  type FileOpResult,
-  type SaveFileOptions,
-} from './editor-file-actions';
+import { openFileByPath as openFileByPathImpl, saveFile as saveFileImpl, type FileOpResult, type SaveFileOptions } from './editor-file-actions';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
+import { editorFileDeps } from './editor-file-deps';
 
 export interface EditorFileApi {
   /** Explorer 单击文件触发. 返 IpcResult,UI 决定如何提示. */
@@ -25,13 +19,7 @@ export interface EditorFileApi {
 
 export function useEditorFile(): EditorFileApi {
   return useMemo<EditorFileApi>(() => {
-    const deps: EditorFileDeps = {
-      fs: {
-        readFile: (p) => coApi.fs.readFile(p),
-        writeFile: (p, c) => coApi.fs.writeFile(p, c),
-        stat: (p) => coApi.fs.stat(p),
-      },
-    };
+    const deps = editorFileDeps;
     return {
       openFileByPath: (path) => openFileByPathImpl(path, deps),
       saveActive: async () => {

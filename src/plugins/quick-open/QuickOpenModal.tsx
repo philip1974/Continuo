@@ -12,16 +12,14 @@ import { Button, Input, Modal, Spinner } from '@/design';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
 import { fuzzyFilter } from '../command-palette/fuzzy';
-import {
-  formatHotkey,
-  detectPlatform,
-} from '../command-palette/format-hotkey';
+import { formatHotkey, detectPlatform } from '../command-palette/format-hotkey';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import { notifyOpenFailed, openFailureOf } from '@/notifications/notify-open-failed';
+import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -168,9 +166,7 @@ function QuickOpenBody() {
     async (file: QuickOpenFile) => {
       close();
       try {
-        const r = await openFileByPath(file.absPath, {
-          fs: { readFile: coApi.fs.readFile, writeFile: coApi.fs.writeFile },
-        });
+        const r = await openFileByPath(file.absPath, editorFileDeps);
         if (!r.ok) {
           // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应)。
           // 见第二十一轮 P1-AX。i18n(I8,I6/I7 同族):openFileByPath 返回 FS_NOT_FOUND/
