@@ -107,3 +107,35 @@ describe('topic49 R14 · 语言 fallback 不覆盖 main', () => {
     expect(useSettingsValuesStore.getState().values['general.language']).toBe('ko');
   });
 });
+
+// 设置页「恢复默认」(values-store.reset 删掉该 key)→ 控件回到默认 en,真实界面语言也必须回到默认。此前
+// 第一个 effect 被 rawStored === undefined 闸门挡住、seed effect 只在挂载时跑 → 控件显示 English、重置按钮消失,
+// 界面仍是 zh。
+describe('语言项恢复默认', () => {
+  it('显式 zh → reset 删 key → setLocale(en)', async () => {
+    const setLocale = vi.fn(() => Promise.resolve());
+    useSettingsStore.setState({ locale: 'zh', setLocale });
+    useSettingsValuesStore.setState({ values: { 'general.language': 'zh' } });
+
+    render(<LanguageFromSettings />);
+    expect(setLocale).not.toHaveBeenCalled(); // value 与 main 一致,不推
+
+    act(() => {
+      useSettingsValuesStore.getState().reset('general.language');
+    });
+    await waitFor(() => {
+      expect(setLocale).toHaveBeenCalledWith('en');
+    });
+  });
+
+  it('启动时 key 本就缺失(未经 reset)→ 仍不把 fallback en 推给 main', async () => {
+    const setLocale = vi.fn(() => Promise.resolve());
+    useSettingsStore.setState({ locale: 'ko', setLocale });
+    useSettingsValuesStore.setState({ values: {} });
+    render(<LanguageFromSettings />);
+    await waitFor(() => {
+      expect(useSettingsValuesStore.getState().values['general.language']).toBe('ko');
+    });
+    expect(setLocale).not.toHaveBeenCalledWith('en');
+  });
+});
