@@ -29,7 +29,7 @@
 - `include_raw=true` 时 output 含 `raw`。
 - 命中文件被 `unlink`。
 - buffer 条数超过上限(默认 500,可注入)时 FIFO drop:最旧的一条被淘汰且其文件被删除,其余按序投递。
-- age 超过 10 分钟时触发 cleanup。
+- age 超过 10 分钟时触发 cleanup;两次 cleanup 之间的命中也按同一判定剔除超期事件(不把很早那一轮的 Stop 当本轮返回)。
 - Codex variant:
   - fixture JSONL 文件名为 `codex_4_<terminalSessionId>_<ns>.jsonl`。
   - Codex filename 不含 `cliSessionId`。

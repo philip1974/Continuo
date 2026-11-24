@@ -41,3 +41,6 @@ activePanel=null 时 popout 按钮 disabled;popout 窗口内(组 `group.api.loca
 ### subscribe panels
 
 - coApp.panels.subscribe → 注册新 panel 类型立即出现在 menu 里
+
+- 恢复布局时关闭单例类型中 id ≠ type 的旧实例(`closeDuplicateSingletonPanels`,DockShell onReady 中与清理旧 explorer
+  面板同处):旧版「⋯」菜单多开出的 `editor-1` / `settings-1` 不再恢复;多实例类型与未注册类型(插件尚未加载)不动。
