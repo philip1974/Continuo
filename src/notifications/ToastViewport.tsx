@@ -1,18 +1,17 @@
 // topic-15 unified-toast-notification: 容器层。fixed 右下,vertical stack;同时只显示最早的 MAX_VISIBLE_NOTIFICATIONS 条,
 // 其余排队(计时也只给可见的,见 NotificationsProvider)。
 // 主窗之外,还经 createPortal 渲染进每个 dockview popout 子窗(弹出面板的 notify.* 全进主窗 provider,
-// 子窗只能这样看到)。toast 本身不是 live region;读屏播报写进常驻、视觉隐藏的 polite / assertive live region
-// (ToastAnnouncers,每个文档一份),每次播报只写进一个文档,避免重复播报。
+// 子窗只能这样看到)。toast 本身不是 live region;读屏播报由 NotificationsProvider 写进全局播报区(src/lib/announce),
+// 此处只为主窗与每个 popout 子窗预先建好那一对常驻 live region。
 
-import { useRef, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { MAX_VISIBLE_NOTIFICATIONS, useNotify } from './NotificationsProvider';
-import type { ToastAnnouncement } from './NotificationsProvider';
 import { Toast } from './Toast';
 import type { Notification } from './types';
 import { useT } from '@/i18n';
-import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { prepareAnnouncer } from '@/lib/announce';
 import {
   getPopoutDocuments,
   subscribePopoutDocuments,
@@ -30,14 +29,18 @@ export function selectVisibleNotifications<T>(
 }
 
 export function ToastViewport(): ReactNode {
-  const { notifications, announcement, dismiss, pause, resume } = useNotify();
+  const { notifications, dismiss, pause, resume } = useNotify();
   const popoutDocs = useSyncExternalStore(
     subscribePopoutDocuments,
     getPopoutDocuments,
   );
+  // live region 须先于内容存在,读屏才会播报插入的文本 → 主窗与每个 popout 子窗无通知时也预先建好。
+  useEffect(() => {
+    prepareAnnouncer(document);
+    for (const doc of popoutDocs) prepareAnnouncer(doc);
+  }, [popoutDocs]);
   return (
     <>
-      <ToastAnnouncers announcement={announcement} popoutDocs={popoutDocs} />
       {notifications.length === 0 ? null : (
         <ToastViewportWindows
           notifications={notifications}
@@ -70,56 +73,6 @@ function portalKeyOf(doc: Document): string {
     portalKeys.set(doc, key);
   }
   return key;
-}
-
-/** 有焦点的 popout 子窗优先(用户正在看那一屏),否则主窗。 */
-function pickAnnouncingDocument(popoutDocs: readonly Document[]): Document {
-  for (const doc of popoutDocs) if (doc.hasFocus()) return doc;
-  return document;
-}
-
-/**
- * 常驻的播报 live region:每个文档(主窗 + 每个 popout 子窗)各一对 polite / assertive,无通知时也在(live region
- * 须先于内容存在,读屏才会播报插入的文本)。每次播报只写进一个文档 —— 播报首次渲染时有焦点的 popout 子窗,否则主窗 ——
- * 之后不变(与 toast 副本「只一份 live region」同一规则,读屏不重复)。
- */
-function ToastAnnouncers({
-  announcement,
-  popoutDocs,
-}: {
-  readonly announcement: ToastAnnouncement | null;
-  readonly popoutDocs: readonly Document[];
-}): ReactNode {
-  const targetRef = useRef<{ seq: number; doc: Document } | null>(null);
-  if (announcement !== null && targetRef.current?.seq !== announcement.seq) {
-    targetRef.current = { seq: announcement.seq, doc: pickAnnouncingDocument(popoutDocs) };
-  }
-  const target = targetRef.current?.doc;
-  const regionsFor = (doc: Document) => (
-    <LiveRegions announcement={target === doc ? announcement : null} />
-  );
-  return (
-    <>
-      {regionsFor(document)}
-      {popoutDocs.map((doc) => createPortal(regionsFor(doc), doc.body, portalKeyOf(doc)))}
-    </>
-  );
-}
-
-function LiveRegions({ announcement }: { readonly announcement: ToastAnnouncement | null }): ReactNode {
-  // 每次播报用 seq 作 key 换新节点:同样的文本再次出现也是一次插入,读屏会再读。
-  const spoken = (politeness: ToastAnnouncement['politeness']) =>
-    announcement?.politeness === politeness ? <span key={announcement.seq}>{announcement.text}</span> : null;
-  return (
-    <>
-      <div data-toast-announcer="" aria-live="polite" aria-atomic="true" style={SR_ONLY_STYLE}>
-        {spoken('polite')}
-      </div>
-      <div data-toast-announcer="" aria-live="assertive" aria-atomic="true" style={SR_ONLY_STYLE}>
-        {spoken('assertive')}
-      </div>
-    </>
-  );
 }
 
 function ToastViewportWindows({

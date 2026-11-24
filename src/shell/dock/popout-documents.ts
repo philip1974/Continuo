@@ -24,6 +24,15 @@ export function getPopoutDocuments(): readonly Document[] {
   return current;
 }
 
+/**
+ * 读屏播报写进哪个窗口(`announce()` 的 doc):有焦点的 popout 子窗优先(用户正在看那一屏),否则主窗。
+ * 每次播报只写一个文档,读屏不重复。
+ */
+export function getAnnouncingDocument(): Document {
+  for (const doc of current) if (doc.hasFocus()) return doc;
+  return document;
+}
+
 export function subscribePopoutDocuments(cb: () => void): () => void {
   subscribers.add(cb);
   return () => {

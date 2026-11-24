@@ -893,6 +893,10 @@
 
 - [`leaf-name.spec.ts`](./leaf-name-guard/leaf-name.spec.ts)
 
+## [live-announcer — 全局读屏播报](./live-announcer/README.md)
+
+- [`announce.spec.tsx`](./live-announcer/announce.spec.tsx)
+
 ## [local-storage-record-guard](./local-storage-record-guard/)
 
 - [`local-storage-record-guard.spec.ts`](./local-storage-record-guard/local-storage-record-guard.spec.ts)

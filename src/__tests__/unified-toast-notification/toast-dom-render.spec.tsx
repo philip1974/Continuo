@@ -4,7 +4,7 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import {
   ToastViewport,
@@ -150,8 +150,10 @@ describe('unified-toast-notification: DOM rendering', () => {
       );
       // 同时最多显示 3 条(VSCode 同款),其余排队:先显示最早的三条
       expect(document.querySelectorAll('.toast')).toHaveLength(3);
-      expect(screen.getByText('boom-0')).toBeTruthy();
-      expect(screen.queryByText('boom-3')).toBeNull();
+      // 只看 toast 视口(读屏播报区里也有这些正文)
+      const viewport = within(document.querySelector<HTMLElement>('.toast-viewport')!);
+      expect(viewport.getByText('boom-0')).toBeTruthy();
+      expect(viewport.queryByText('boom-3')).toBeNull();
     } finally {
       sliceSpy.mockRestore();
     }

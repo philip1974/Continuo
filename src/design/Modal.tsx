@@ -67,6 +67,19 @@ export function hasOpenModalIn(doc: Document, besides = 0): boolean {
   return (modalKeyStacks.get(doc)?.length ?? 0) > besides;
 }
 
+// 每个打开中的 Modal 的内容节点(按其键盘栈条目):供 getTopModalContent 查询顶层模态。
+const modalContents = new Map<symbol, HTMLElement>();
+
+/**
+ * 该文档最后打开、仍可见的 Modal 内容节点(`.wm-modal-content`);没有时为 null。`aria-modal` 让读屏忽略对话框外的
+ * 节点,需要在模态打开时仍被读到的内容(如全局播报 live region)可放进这里。
+ */
+export function getTopModalContent(doc: Document): HTMLElement | null {
+  const stack = modalKeyStacks.get(doc);
+  const top = stack?.[stack.length - 1];
+  return top === undefined ? null : (modalContents.get(top) ?? null);
+}
+
 /** 订阅「是否有打开的 Modal」的变化(仅在有 / 无切换时调用 listener);返回退订函数。 */
 export function subscribeOpenModals(listener: () => void): () => void {
   openModalListeners.add(listener);
@@ -100,6 +113,7 @@ export function Modal({
     const keyId = keyIdRef.current!;
     const modalKeyStack = modalKeyStackOf(doc);
     modalKeyStack.push(keyId);
+    if (contentRef.current != null) modalContents.set(keyId, contentRef.current);
     changeOpenModalCount(1);
 
     const raf = requestAnimationFrame(() => {
@@ -165,6 +179,7 @@ export function Modal({
       doc.removeEventListener('keydown', handleKey);
       const idx = modalKeyStack.lastIndexOf(keyId);
       if (idx >= 0) modalKeyStack.splice(idx, 1);
+      modalContents.delete(keyId);
       changeOpenModalCount(-1);
       const prev = prevFocusRef.current;
       if (prev != null && typeof prev.focus === 'function') {

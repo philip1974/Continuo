@@ -24,7 +24,8 @@ vi.mock('../../lib/co-api', () => ({
 vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: h.openFile } } }));
 vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));
 
-import { DebugPanel } from '../../panels/Debug/DebugPanel';
+import { DebugPanel, RUNNING_ANNOUNCE_DELAY_MS } from '../../panels/Debug/DebugPanel';
+import { prepareAnnouncer } from '../../lib/announce';
 import { resetDebugStoreForTest, useDebugStore } from '../../stores/debug.store';
 import { setLocale } from '../../i18n';
 
@@ -303,51 +304,85 @@ describe('变量树 · 加载中 / 加载更多', () => {
   });
 });
 
-// VSCode:停下时 aria.status 播报「已在断点处暂停」及位置,继续运行同样播报。面板里常驻视觉隐藏的 role=status。
+// VSCode:停下时 aria.status 播报「已在断点处暂停」及位置;继续运行不急着播(连按单步不堆积)。
+// 播报走全局 announce()(src/lib/announce,见 live-announcer),面板被 dockview 隐藏(DOM 不在文档)时照样播。
 describe('停点 / 恢复运行播报', () => {
-  const status = () => screen.getByRole('status');
-  const setStopped = (stopped: Record<string, unknown> | undefined) =>
+  beforeEach(() => prepareAnnouncer(document));
+  afterEach(() => {
+    vi.useRealTimers();
+    for (const el of document.querySelectorAll('[data-live-announcer]')) el.remove();
+  });
+  /** 主窗全局 polite 播报区里现存的播报(按顺序)。 */
+  const spoken = () =>
+    [...document.querySelectorAll('[data-live-announcer] [aria-live="polite"] > *')].map((el) => el.textContent ?? '');
+  const setStopped = (stopped: Record<string, unknown> | undefined, id = 's1') =>
     useDebugStore.setState((s) => {
-      const cur = s.sessions.get('s1')!;
-      return { sessions: new Map([['s1', { ...cur, stopped } as typeof cur]]) };
+      const cur = s.sessions.get(id) ?? s.sessions.get('s1')!;
+      const sessions = new Map(s.sessions);
+      sessions.set(id, { ...cur, id, stopped } as typeof cur);
+      return { sessions, activeSessionId: stopped ? id : s.activeSessionId };
     });
 
-  it('挂载时不播报;新的一停 → 「Paused on 原因 at 文件:行」;继续运行 → 「running」', async () => {
+  it('挂载时不播报;新的一停 → 「Paused on 原因 at 文件:行」;继续运行稍后播「running」', () => {
+    vi.useFakeTimers();
     render(<DebugPanel />);
-    expect(status().textContent).toBe('');
+    expect(spoken()).toEqual([]);
     act(() => setStopped(undefined));
-    expect(status().textContent).toBe('running');
+    expect(spoken()).toEqual([]);
+    act(() => vi.advanceTimersByTime(RUNNING_ANNOUNCE_DELAY_MS));
+    expect(spoken()).toEqual(['running']);
     act(() => setStopped({ reason: 'step', stopSeq: 2, file: '/repo/a.ts', line: 20 }));
-    expect(status().textContent).toBe('Paused on step at a.ts:20');
+    expect(spoken()).toEqual(['running', 'Paused on step at a.ts:20']);
   });
 
-  it('停点位置稍后才到 → 等位置到了再播一次(不先播一遍无位置的)', async () => {
+  it('快速连续单步:继续运行后很快又停下 → 不播「running」,只播新停点;同一位置同文本也每次都播', () => {
+    vi.useFakeTimers();
+    render(<DebugPanel />);
+    for (let seq = 2; seq <= 4; seq++) {
+      act(() => setStopped(undefined));
+      act(() => vi.advanceTimersByTime(50));
+      act(() => setStopped({ reason: 'step', stopSeq: seq, file: '/repo/a.ts', line: 20 }));
+    }
+    act(() => vi.advanceTimersByTime(RUNNING_ANNOUNCE_DELAY_MS * 2));
+    expect(spoken()).toEqual(['Paused on step at a.ts:20', 'Paused on step at a.ts:20', 'Paused on step at a.ts:20']);
+  });
+
+  it('面板 DOM 不在文档(dockview 隐藏的面板)时停点照样播报', () => {
+    const detached = document.createElement('div');
+    render(<DebugPanel />, { container: detached });
+    act(() => setStopped({ reason: 'breakpoint', stopSeq: 2, file: '/repo/c.ts', line: 40 }));
+    expect(spoken()).toEqual(['Paused on breakpoint at c.ts:40']);
+  });
+
+  it('多个调试会话 → 播报带会话名', () => {
+    render(<DebugPanel />);
+    act(() => setStopped({ reason: 'breakpoint', stopSeq: 2, file: '/repo/c.ts', line: 40 }, 's2'));
+    expect(spoken()).toEqual(['s2: Paused on breakpoint at c.ts:40']);
+  });
+
+  it('停点位置稍后才到 → 等位置到了再播一次(不先播一遍无位置的)', () => {
     render(<DebugPanel />);
     act(() => setStopped({ reason: 'breakpoint', stopSeq: 2 }));
-    expect(status().textContent).toBe('');
+    expect(spoken()).toEqual([]);
     act(() => setStopped({ reason: 'breakpoint', stopSeq: 2, file: '/repo/c.ts', line: 40 }));
-    expect(status().textContent).toBe('Paused on breakpoint at c.ts:40');
+    expect(spoken()).toEqual(['Paused on breakpoint at c.ts:40']);
   });
 
-  it('位置一直没到(取栈失败)→ 稍后只播「Paused: 原因」', async () => {
+  it('位置一直没到(取栈失败)→ 稍后只播「Paused: 原因」', () => {
     vi.useFakeTimers();
-    try {
-      render(<DebugPanel />);
-      act(() => setStopped({ reason: 'exception', stopSeq: 2 }));
-      expect(status().textContent).toBe('');
-      act(() => {
-        vi.advanceTimersByTime(2000);
-      });
-      expect(status().textContent).toBe('Paused: exception');
-    } finally {
-      vi.useRealTimers();
-    }
+    render(<DebugPanel />);
+    act(() => setStopped({ reason: 'exception', stopSeq: 2 }));
+    expect(spoken()).toEqual([]);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(spoken()).toEqual(['Paused: exception']);
   });
 
-  it('zh:全角冒号与逗号', async () => {
+  it('zh:全角冒号与逗号', () => {
     setLocale('zh');
     render(<DebugPanel />);
     act(() => setStopped({ reason: 'breakpoint', stopSeq: 2, file: '/repo/a.ts', line: 3 }));
-    expect(status().textContent).toBe('已暂停：breakpoint，a.ts:3');
+    expect(spoken()).toEqual(['已暂停：breakpoint，a.ts:3']);
   });
 });

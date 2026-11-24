@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fireEvent, render, cleanup, act } from '@testing-library/react';
-import { Modal, hasOpenModal, subscribeOpenModals } from '../../design/Modal';
+import { Modal, getTopModalContent, hasOpenModal, subscribeOpenModals } from '../../design/Modal';
 
 afterEach(() => cleanup());
 
@@ -423,5 +423,37 @@ describe('Modal — 打开状态订阅(hasOpenModal / subscribeOpenModals)', () 
     expect(hasOpenModal()).toBe(true);
     unmount();
     expect(hasOpenModal()).toBe(false);
+  });
+});
+
+describe('Modal — 顶层模态内容查询(getTopModalContent)', () => {
+  it('返回该文档最后打开、仍可见的 Modal 内容节点;无模态时为 null;按文档区分', () => {
+    expect(getTopModalContent(document)).toBeNull();
+    const { rerender } = render(
+      <>
+        <Modal visible data-testid="a">a</Modal>
+        <Modal visible={false} data-testid="b">b</Modal>
+      </>,
+    );
+    expect(getTopModalContent(document)?.getAttribute('data-testid')).toBe('a');
+    rerender(
+      <>
+        <Modal visible data-testid="a">a</Modal>
+        <Modal visible data-testid="b">b</Modal>
+      </>,
+    );
+    expect(getTopModalContent(document)?.getAttribute('data-testid')).toBe('b');
+    expect(getTopModalContent(document)?.classList.contains('wm-modal-content')).toBe(true);
+    const child = document.implementation.createHTMLDocument('popout');
+    expect(getTopModalContent(child)).toBeNull();
+    rerender(
+      <>
+        <Modal visible data-testid="a">a</Modal>
+        <Modal visible={false} data-testid="b">b</Modal>
+      </>,
+    );
+    expect(getTopModalContent(document)?.getAttribute('data-testid')).toBe('a');
+    rerender(<Modal visible={false}>a</Modal>);
+    expect(getTopModalContent(document)).toBeNull();
   });
 });

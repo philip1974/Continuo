@@ -31,7 +31,8 @@ import { useLocale, useT } from '@/i18n';
 import { coApp } from '@/plugins/co-app';
 import { basename, dirname, isAbsolutePath } from '@/lib/path-cross';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
-import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { announce } from '@/lib/announce';
+import { getAnnouncingDocument } from '@/shell/dock/popout-documents';
 
 const EMPTY_VARIABLES: readonly [] = [];
 
@@ -85,6 +86,7 @@ export function DebugPanel() {
 
 function DebugSessionHeader({ session }: { readonly session: DebugSessionShadow }) {
   const t = useT();
+  useDebugStatusAnnouncements(session);
   const stopped = session.stopped;
   // 运行中不显示位置行(徽章已标「运行中」);已停下但栈帧未到 → 「已暂停」。
   const location = !stopped ? null : stopped.file !== undefined && stopped.line !== undefined ? (
@@ -105,21 +107,26 @@ function DebugSessionHeader({ session }: { readonly session: DebugSessionShadow 
       <Badge variant={session.stopped ? 'warning-soft' : 'neutral'}>
         {session.stopped?.reason ?? t('panels.debug.running')}
       </Badge>
-      <DebugStatusAnnouncer session={session} />
     </Card>
   );
 }
 
 /** 停点位置未到时,最多等这么久再只播原因(取栈失败 / 无源码帧时位置永远不来)。 */
 const PAUSE_LOCATION_WAIT_MS = 1000;
+/**
+ * 继续运行后等这么久仍在运行才播「运行中」:连按单步时每步都是「运行中 → 已暂停」,不延迟则 polite 队列越积越多
+ *(VSCode 继续运行时不播状态);期间新的一停到达即取消。
+ */
+export const RUNNING_ANNOUNCE_DELAY_MS = 300;
 
 /**
- * 停下 / 继续运行的读屏播报(VSCode aria.status「已暂停」+ 位置):常驻视觉隐藏 role=status,每一停播一次。
- * 位置(首帧)随栈帧稍后才到 → 等位置到了再播(不先播一遍无位置的);一直没来则超时后只播原因。挂载时不播。
+ * 停下 / 继续运行的读屏播报(VSCode aria.status「已暂停」+ 位置),写进全局播报区(src/lib/announce):面板被 dockview
+ * 隐藏时 DOM 不在文档,面板内的 live region 会丢播报。每一停播一次(每次新节点,同位置同文本也会再读);位置(首帧)
+ * 随栈帧稍后才到 → 等位置到了再播,一直没来则超时后只播原因。多个会话时带会话名。挂载时不播。
  */
-function DebugStatusAnnouncer({ session }: { readonly session: DebugSessionShadow }) {
+function useDebugStatusAnnouncements(session: DebugSessionShadow): void {
   const t = useT();
-  const [text, setText] = useState('');
+  const multiSession = useDebugStore((s) => s.sessions.size > 1);
   const stopped = session.stopped;
   const stopSeq = stopped?.stopSeq;
   const reason = stopped?.reason;
@@ -127,34 +134,36 @@ function DebugStatusAnnouncer({ session }: { readonly session: DebugSessionShado
     stopped?.file !== undefined && stopped.line !== undefined
       ? `${basename(stopped.file) || stopped.file}:${stopped.line}`
       : undefined;
+  const title = session.label ?? session.id;
   // 已播报(或挂载时已存在、不播)的状态:会话 + 停点序号(运行中为 undefined)
   const announcedRef = useRef({ id: session.id, stopSeq });
   useEffect(() => {
     const announced = announcedRef.current;
     if (announced.id === session.id && announced.stopSeq === stopSeq) return;
-    const announce = (next: string) => {
+    const say = (next: string) => {
       announcedRef.current = { id: session.id, stopSeq };
-      setText(next);
+      announce(multiSession ? t('common.label_detail', { label: title, detail: next }) : next, {
+        doc: getAnnouncingDocument(),
+      });
     };
+    let text: string | undefined;
+    let delay = 0;
     if (stopSeq === undefined || reason === undefined) {
-      announce(t('panels.debug.running'));
+      text = t('panels.debug.running');
+      delay = RUNNING_ANNOUNCE_DELAY_MS;
+    } else if (location !== undefined) {
+      text = t('panels.debug.paused_at', { reason, location });
+    } else {
+      text = t('common.label_detail', { label: t('panels.debug.paused'), detail: reason });
+      delay = PAUSE_LOCATION_WAIT_MS;
+    }
+    if (delay === 0) {
+      say(text);
       return;
     }
-    if (location !== undefined) {
-      announce(t('panels.debug.paused_at', { reason, location }));
-      return;
-    }
-    const timer = setTimeout(
-      () => announce(t('common.label_detail', { label: t('panels.debug.paused'), detail: reason })),
-      PAUSE_LOCATION_WAIT_MS,
-    );
+    const timer = setTimeout(() => say(text), delay);
     return () => clearTimeout(timer);
-  }, [session.id, stopSeq, reason, location, t]);
-  return (
-    <div role="status" style={SR_ONLY_STYLE}>
-      {text}
-    </div>
-  );
+  }, [session.id, stopSeq, reason, location, multiSession, title, t]);
 }
 
 /** 点栈帧 / 断点:打开源码并定位到行(同插件 SDK editor.openFile);失败按 code 本地化提示,不静默。 */

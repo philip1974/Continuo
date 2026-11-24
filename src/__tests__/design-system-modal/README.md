@@ -48,3 +48,5 @@ Shift+Tab 在第一个上循环到最后一个;overlay click 调 onClose;关闭�
 - `hasOpenModal()`:当前是否有 visible 的 Modal(主窗与 popout 子窗文档合计)
 - `subscribeOpenModals(listener)`:仅在「有 / 无打开的 Modal」切换时调用 listener(叠加第二个不通知);返回退订函数
 - 通用 API,不含业务;toast 用它在模态遮罩期间暂停自动消失(`unified-toast-notification` T24)
+- `getTopModalContent(doc)`:该文档最后打开、仍可见的 Modal 内容节点(`.wm-modal-content`),无模态时为 `null`。
+  `aria-modal` 让读屏忽略对话框外的节点,全局播报据此把 live region 放进顶层模态(`live-announcer` A3)

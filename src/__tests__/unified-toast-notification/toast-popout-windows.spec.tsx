@@ -63,6 +63,7 @@ afterEach(() => {
   tracker = null;
   child.dispose();
   vi.useRealTimers();
+  for (const el of document.querySelectorAll('[data-live-announcer]')) el.remove();
 });
 
 function renderApp() {
@@ -138,20 +139,20 @@ describe('popout 子窗显示 toast', () => {
     tracker = trackPopoutDocuments(dock.api);
     renderApp();
     const spokenIn = (doc: Document) =>
-      [...doc.querySelectorAll('[data-toast-announcer]')].map((el) => el.textContent ?? '').join('');
-    expect(child.doc.querySelectorAll('[data-toast-announcer][aria-live]')).toHaveLength(2);
-    expect(document.querySelectorAll('[data-toast-announcer][aria-live]')).toHaveLength(2);
+      [...doc.querySelectorAll('[data-live-announcer] [aria-live] > *')].map((el) => el.textContent ?? '');
+    expect(child.doc.querySelectorAll('[data-live-announcer] [aria-live]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-live-announcer] [aria-live]')).toHaveLength(2);
     // toast 副本本身都不是 live region
     act(() => notify.error('first'));
     expect(document.querySelectorAll('.toast[aria-live], .toast[role]')).toHaveLength(0);
     expect(child.doc.querySelectorAll('.toast[aria-live], .toast[role]')).toHaveLength(0);
-    expect(spokenIn(document)).toBe('first');
-    expect(spokenIn(child.doc)).toBe('');
+    expect(spokenIn(document)).toEqual(['first']);
+    expect(spokenIn(child.doc)).toEqual([]);
 
     vi.spyOn(child.doc, 'hasFocus').mockReturnValue(true);
     vi.spyOn(document, 'hasFocus').mockReturnValue(false);
     act(() => notify.error('second'));
-    expect(spokenIn(child.doc)).toBe('second');
-    expect(spokenIn(document)).toBe('');
+    expect(spokenIn(child.doc)).toEqual(['second']);
+    expect(spokenIn(document)).toEqual(['first']); // 主窗没有再插入
   });
 });
