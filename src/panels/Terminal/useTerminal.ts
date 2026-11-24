@@ -37,7 +37,13 @@ import {
   consumeMappedKeyOnData,
   createMappedKeyState,
 } from '@continuo-terminal/react-terminal';
-import { isTerminalSearchHotkey, isTerminalZoomHotkey, runTerminalZoomFromKey } from './terminal-hotkeys';
+import {
+  isTerminalSearchHotkey,
+  isTerminalZoomHotkey,
+  runTerminalCommandFromKey,
+  runTerminalZoomFromKey,
+  terminalYieldedCommandId,
+} from './terminal-hotkeys';
 import { createOutputCoalescer } from './output-coalescer';
 import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
 import {
@@ -506,6 +512,12 @@ export function useTerminal(termId: string) {
         runTerminalZoomFromKey(event);
         return false;
       }
+      // 让出给工作台命令(清屏 / 关闭 / 保存,VSCode commandsToSkipShell):不交给 xterm / shell。
+      const yielded = terminalYieldedCommandId(event);
+      if (yielded) {
+        runTerminalCommandFromKey(event, yielded);
+        return false;
+      }
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
       return true;
     });
@@ -841,6 +853,11 @@ export function useTerminal(termId: string) {
     termRef.current?.focus();
   }, []);
 
+  // terminal.clear / 右键菜单「清除」:清空屏幕与滚动缓冲(xterm clear 保留当前提示行,同 VSCode)。
+  const clear = useCallback(() => {
+    termRef.current?.clear();
+  }, []);
+
   // issue #42 #1: single dispatch routes through applyTerminalSearchEffect
   // (previously the production path had inline side-effect logic in each
   // callback; the helper was only exercised by state-machine.spec.ts,
@@ -977,5 +994,5 @@ export function useTerminal(termId: string) {
     ],
   );
 
-  return { containerRef, isReady, fit, requestFit, focus, searchApi };
+  return { containerRef, isReady, fit, requestFit, focus, clear, searchApi };
 }

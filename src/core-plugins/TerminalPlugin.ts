@@ -8,9 +8,13 @@ import type { TerminalPanelViewParams } from '@/panels/Terminal/TerminalPanelVie
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
-import { openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
+import { clearTerminalPanel, openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
-import { TERMINAL_SEARCH_COMMAND, TERMINAL_ZOOM_COMMAND } from '@/panels/Terminal/terminal-hotkeys';
+import {
+  TERMINAL_CLEAR_COMMAND,
+  TERMINAL_SEARCH_COMMAND,
+  TERMINAL_ZOOM_COMMAND,
+} from '@/panels/Terminal/terminal-hotkeys';
 
 const TerminalPanelView = lazy(() =>
   import('@/panels/Terminal/TerminalPanelView').then((m) => ({
@@ -55,6 +59,20 @@ export default class TerminalPlugin extends Plugin {
         const active = api?.activePanel;
         if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
         openTerminalSearch(active.id);
+      },
+    });
+    // VSCode workbench.action.terminal.clear(⌘K):清空活动终端的屏幕与滚动缓冲;活动面板不是终端 → no-op。
+    this.addCommand({
+      id: TERMINAL_CLEAR_COMMAND.id,
+      title: 'Clear Terminal',
+      titleKey: 'commands.terminal.clear.title',
+      category: 'Terminal',
+      categoryKey: 'commands.terminal.category',
+      hotkey: TERMINAL_CLEAR_COMMAND.hotkey,
+      fn: () => {
+        const active = getDockApi()?.activePanel;
+        if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
+        clearTerminalPanel(active.id);
       },
     });
     this.addCommand({

@@ -13,11 +13,31 @@ import { tWithFallback } from '@/i18n';
 
 export const TERMINAL_ZOOM_COMMAND = { id: 'terminal.zoom.toggle', hotkey: 'shift+mod+enter' } as const;
 export const TERMINAL_SEARCH_COMMAND = { id: 'terminal.search.toggle', hotkey: 'mod+f' } as const;
+export const TERMINAL_CLEAR_COMMAND = { id: 'terminal.clear', hotkey: 'mod+k' } as const;
+// 工作台命令(由其它模块注册):终端须让出其按键(VSCode commandsToSkipShell),否则 ⌘W 被 xterm 吞、Win/Linux 的
+// Ctrl+S 发 XOFF 冻住终端。hotkey 是与注册方约定的默认键,仅在命令尚未注册时兜底;已注册则以注册的 hotkey 为准
+// (见 terminalYieldedCommandId),不依赖注册时序。
+export const WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND = {
+  id: 'workbench.action.closeActiveEditor',
+  hotkey: 'mod+w',
+} as const;
+export const WORKBENCH_SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s' } as const;
+
+/** 终端让出、交给命令的键(缩放 / 搜索另有专门处理,不在此列)。 */
+const SKIP_SHELL_COMMANDS: readonly { readonly id: string; readonly hotkey: string }[] = [
+  TERMINAL_CLEAR_COMMAND,
+  WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND,
+  WORKBENCH_SAVE_COMMAND,
+];
+
+interface CommandLookup {
+  get(id: string): { readonly id: string; readonly hotkey?: string } | undefined;
+}
 
 type Overrides = Readonly<Record<string, string>>;
 
 function matchesEffective(
-  command: { readonly id: string; readonly hotkey: string },
+  command: { readonly id: string; readonly hotkey?: string },
   event: KeyboardEvent,
   platform: Platform,
   overrides: Overrides,
@@ -43,6 +63,37 @@ export function isTerminalSearchHotkey(
   overrides: Overrides = useKeybindingsStore.getState().overrides,
 ): boolean {
   return matchesEffective(TERMINAL_SEARCH_COMMAND, event, platform, overrides);
+}
+
+/**
+ * 终端应让出给工作台命令(clear / closeActiveEditor / save)的按键 → 命令 id;否则 null。
+ * 默认键:命令已注册取注册的 hotkey(注册方改默认键也跟随),未注册取约定常量;再叠加用户改绑 / 解绑。
+ */
+export function terminalYieldedCommandId(
+  event: KeyboardEvent,
+  platform: Platform = detectPlatform(),
+  overrides: Overrides = useKeybindingsStore.getState().overrides,
+  registry: CommandLookup = coApp.commands,
+): string | null {
+  for (const fallback of SKIP_SHELL_COMMANDS) {
+    const live = registry.get(fallback.id);
+    const spec = live ? { id: fallback.id, hotkey: live.hotkey } : fallback;
+    if (matchesEffective(spec, event, platform, overrides)) return fallback.id;
+  }
+  return null;
+}
+
+/**
+ * 终端让出的键:命令已注册 → 直接执行并截住冒泡(理由同 runTerminalZoomFromKey:无修饰键绑定经全局分发会被
+ * A64 放行而吞掉,截住也免得执行两次);尚未注册 → 什么都不做,事件照常冒泡给全局分发(xterm 已因 return false
+ * 不再把它发给 shell)。
+ */
+export function runTerminalCommandFromKey(event: KeyboardEvent, id: string): void {
+  const live = coApp.commands.get(id);
+  if (!live) return;
+  event.preventDefault();
+  event.stopPropagation();
+  runRegisteredCommand(coApp.commands, id, tWithFallback(live.titleKey, live.title));
 }
 
 /**

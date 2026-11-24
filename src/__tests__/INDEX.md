@@ -1599,6 +1599,10 @@
 
 - [`terminal-url-click.spec.ts`](./terminal-url-click/terminal-url-click.spec.ts)
 
+## [终端与 dock tab 交互对齐 VSCode 集成终端](./terminal-vscode-parity/README.md)
+
+- [`skip-shell-hotkeys.spec.ts`](./terminal-vscode-parity/skip-shell-hotkeys.spec.ts)
+
 ## [terminal-webgl-atlas-page-version](./terminal-webgl-atlas-page-version/README.md)
 
 - [`atlas-page-version.spec.ts`](./terminal-webgl-atlas-page-version/atlas-page-version.spec.ts)

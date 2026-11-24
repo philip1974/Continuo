@@ -111,6 +111,7 @@ export const ko: Record<TranslationKey, string> = {
   'commands.terminal.new.title': '새 터미널',
   'commands.terminal.zoom.title': '터미널 확대/축소 전환',
   'commands.terminal.search.title': '터미널에서 찾기',
+  'commands.terminal.clear.title': '터미널 지우기',
   'commands.terminal.category': '터미널',
   'commands.window.new.title': '새 창',
   'commands.window.open_folder.title': '새 창에서 폴더 열기…',

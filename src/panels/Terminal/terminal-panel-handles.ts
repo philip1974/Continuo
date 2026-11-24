@@ -6,6 +6,7 @@
 //   isMaximized=false 时显式调 focusTerminalPanel(group.activePanel.id) 拉回焦点。
 // - openSearch:TerminalPlugin 的 terminal.search.toggle command 经 openTerminalSearch(panelId)
 //   打开当前 active panel 的搜索条(Cmd+F)。
+// - clear:terminal.clear command(⌘K)与终端右键菜单「清除」清空屏幕与滚动缓冲。
 //
 // stale 安全:createCallbackRegistry 的 disposer 带 Symbol token,同 id 被新注册覆盖后旧
 // disposer 不会误删新句柄;句柄内部用 termRef.current?.focus() 等 optional chain,
@@ -16,6 +17,7 @@ import { createCallbackRegistry } from '@continuo-terminal/react-terminal';
 export interface TerminalPanelHandles {
   readonly focus: () => void;
   readonly openSearch: () => void;
+  readonly clear: () => void;
 }
 
 const handlesRegistry = createCallbackRegistry<TerminalPanelHandles>();
@@ -39,6 +41,11 @@ export function focusTerminalPanel(panelId: string): boolean {
 /** 打开该 panel 的搜索条;未注册时 no-op。 */
 export function openTerminalSearch(panelId: string): void {
   handlesRegistry.get(panelId)?.openSearch();
+}
+
+/** 清空该 panel 的屏幕与滚动缓冲;未注册时 no-op。 */
+export function clearTerminalPanel(panelId: string): void {
+  handlesRegistry.get(panelId)?.clear();
 }
 
 // 测试用 — 重置全表(单测之间避免污染)。

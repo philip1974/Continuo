@@ -122,6 +122,7 @@ export const en = {
   'commands.terminal.new.title': 'New Terminal',
   'commands.terminal.zoom.title': 'Toggle Terminal Zoom',
   'commands.terminal.search.title': 'Find in Terminal',
+  'commands.terminal.clear.title': 'Clear Terminal',
   'commands.terminal.category': 'Terminal',
   'commands.window.new.title': 'New Window',
   'commands.window.open_folder.title': 'Open Folder in New Window…',
