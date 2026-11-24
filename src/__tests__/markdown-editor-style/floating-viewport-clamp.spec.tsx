@@ -86,6 +86,16 @@ describe('斜杠菜单夹回视口', () => {
     expect(r).toEqual({ x: 100 - (420 + 400 - (640 - FLOATING_VIEWPORT_PADDING)) });
   });
 
+  // 编辑器弹出到 popout 子窗:菜单挂在子窗文档里,应按子窗视口(而非主窗)夹回。
+  it('浮层在 popout 子窗文档里 → 按该文档视口宽度夹回', () => {
+    setViewport(1280);
+    const childView = { innerWidth: 640 };
+    const mw = clampFloatingToViewport();
+    const st = state({ x: 100, refX: 100, refViewportX: 420, width: 400 });
+    const r = mw.fn({ ...st, elements: { ...st.elements, floating: { ownerDocument: { defaultView: childView } } } } as never);
+    expect(r).toEqual({ x: 100 - (420 + 400 - (640 - FLOATING_VIEWPORT_PADDING)) });
+  });
+
   it('菜单比视口还宽 → 贴左边 padding,不越出左边', () => {
     setViewport(300);
     const mw = clampFloatingToViewport();

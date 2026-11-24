@@ -3648,6 +3648,23 @@ describe('DebugService fake adapter · 资源上限(结束的 child 回收 / var
     expect(unexpanded.truncated).toBe(true);
   });
 
+  // 多层展开时子列表只取了第一页(后面还有):该子变量须标 truncated,否则 agent 以为 children 已完整。
+  it('debug.variables max_depth ≥ 2 时,子列表超过 count 只返回第一页并标 truncated', async () => {
+    const { service, parent } = makeFakeService();
+    const { session_id: sessionId } = await service.launchSession(
+      { program: '/fixture.js', cwd: '/work' },
+      ctx,
+    );
+    parent.emit('stopped', { reason: 'breakpoint', threadId: 1 });
+    wideVariablesAdapter(parent);
+
+    const result = await service.variables(sessionId, { variablesReference: 44, count: 5, maxDepth: 2 });
+
+    const first = result.variables[0]!;
+    expect(first.children).toHaveLength(5);
+    expect(first.truncated).toBe(true);
+  });
+
   // 终审 P1:节点 / 请求预算管不住字节 —— 2000 节点 × 64KiB 字符串 ≈ 124MB 驻留主进程,MCP 结果上限在
   // 展开完成后才检查。展开中累计返回内容字节,达到预算即停止并标 truncated。
   it('debug.variables 展开有总字节预算:大字符串成员时返回内容不超过预算,标 truncated,next_start 指向未返回的第一项', async () => {

@@ -2130,7 +2130,8 @@ export class DebugService {
             budget,
           );
           children = expanded.variables;
-          unexpanded = expanded.cut;
+          // 子列表只取了第一页(还有更多)也算未完整展开,否则 agent 会以为 children 已完整
+          unexpanded = expanded.cut || expanded.more;
         } else {
           budget.exhausted = true;
           unexpanded = true;

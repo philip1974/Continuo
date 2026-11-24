@@ -9,7 +9,10 @@ export const FLOATING_VIEWPORT_PADDING = 8;
 interface ClampState {
   readonly x: number;
   readonly rects: { readonly reference: { readonly x: number }; readonly floating: { readonly width: number } };
-  readonly elements: { readonly reference: { getBoundingClientRect(): { readonly x: number } } };
+  readonly elements: {
+    readonly reference: { getBoundingClientRect(): { readonly x: number } };
+    readonly floating: { readonly ownerDocument?: Document | null };
+  };
 }
 
 /**
@@ -23,7 +26,9 @@ export function clampFloatingToViewport(padding = FLOATING_VIEWPORT_PADDING) {
     fn(state: ClampState): { x: number } {
       const { x, rects, elements } = state;
       const left = elements.reference.getBoundingClientRect().x + (x - rects.reference.x);
-      const maxLeft = window.innerWidth - padding - rects.floating.width;
+      // 浮层所在文档的视口(编辑器弹出到 popout 子窗时菜单挂在子窗文档里;reference 是虚拟元素无 ownerDocument)
+      const viewportWidth = elements.floating.ownerDocument?.defaultView?.innerWidth ?? window.innerWidth;
+      const maxLeft = viewportWidth - padding - rects.floating.width;
       const target = Math.max(padding, Math.min(left, maxLeft));
       return { x: x + (target - left) };
     },

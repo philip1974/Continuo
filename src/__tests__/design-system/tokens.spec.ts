@@ -292,3 +292,20 @@ describe('--md-focus-ring 焦点环', () => {
     });
   }
 });
+
+// 焦点指示统一用 --md-focus-ring(两主题 VSCode focusBorder 蓝):组件里 focus:* / focus-visible:* 不得再写主色
+// accent(light 下会出现紫色焦点,与其余蓝色焦点环不一致)。用 ring-focus-ring / border-focus-ring / bg-focus-ring。
+describe('焦点指示不写主色', () => {
+  it('组件 className 无 focus(-visible|-within):*-accent', () => {
+    const files = execFileSync('git', ['ls-files', 'src/*.tsx', 'src/*.ts'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f !== '' && !f.includes('__tests__'));
+    const hits = files.flatMap((f) =>
+      (readFileSync(resolve(process.cwd(), f), 'utf-8').match(/\bfocus(?:-visible|-within)?:[a-z/0-9-]*accent\b/g) ?? []).map(
+        (m) => `${f}: ${m}`,
+      ),
+    );
+    expect(hits).toEqual([]);
+  });
+});
+

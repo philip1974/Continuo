@@ -6,6 +6,7 @@ import {
   ANNOUNCE_CLEAR_MS,
   ANNOUNCE_MAX_NODES,
   ANNOUNCE_PRIME_MS,
+  ANNOUNCE_REHOME_CHECK_MS,
   announce,
   prepareAnnouncer,
 } from '@/lib/announce';
@@ -111,4 +112,27 @@ describe('全局读屏播报 announce()', () => {
     vi.advanceTimersByTime(ANNOUNCE_PRIME_MS);
     expect(spokenIn(document, 'polite')).toEqual(['again']);
   });
+
+  // 同一事件里先关模态、再同步播报(如命令面板执行命令:execute 先 close,命令随即同步 notify 失败):关闭要等事件处理
+  // 结束才提交,播报时顶层模态仍在 → 写进即将卸载的模态里。须改投回落后的宿主,不能整条丢失。
+  it('A6 播报写进随后卸载的模态 → 改投到当前宿主(未预热 / 已预热两种)', () => {
+    vi.useFakeTimers();
+    prepareAnnouncer(document);
+    const bodyRegion = () => [...document.body.children].find((c) => c.matches('[data-live-announcer]'))!;
+    // 未预热:模态里新建区域、播报排队,等待期间模态卸载
+    const { rerender } = render(<Modal visible>a</Modal>);
+    announce('lost-1', { politeness: 'assertive' });
+    rerender(<Modal visible={false}>a</Modal>);
+    vi.advanceTimersByTime(ANNOUNCE_PRIME_MS);
+    expect(spokenIn(bodyRegion(), 'assertive')).toContain('lost-1');
+    // 已预热:模态区域已存在、节点立即插入,随后模态卸载
+    rerender(<Modal visible>b</Modal>);
+    announce('warm', { politeness: 'polite' });
+    vi.advanceTimersByTime(ANNOUNCE_PRIME_MS);
+    announce('lost-2', { politeness: 'assertive' });
+    rerender(<Modal visible={false}>b</Modal>);
+    vi.advanceTimersByTime(ANNOUNCE_REHOME_CHECK_MS);
+    expect(spokenIn(bodyRegion(), 'assertive')).toContain('lost-2');
+  });
 });
+

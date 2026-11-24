@@ -21,12 +21,16 @@ export const ANNOUNCE_PRIME_MS = 100;
 export const ANNOUNCE_CLEAR_MS = 7000;
 /** 每个区域最多保留的最近播报节点数。 */
 export const ANNOUNCE_MAX_NODES = 5;
+/** 插入后多久检查节点是否随宿主模态一起离开了文档(需改投)。 */
+export const ANNOUNCE_REHOME_CHECK_MS = 50;
 
 interface AnnouncerPair {
   readonly root: HTMLElement;
   readonly regions: Record<AnnouncePoliteness, HTMLElement>;
   /** 区域刚建好、尚在等待期间的播报(等待结束后按序插入)。 */
   pending: Array<{ text: string; politeness: AnnouncePoliteness }> | null;
+  /** 正在改投(避免改投后的节点再次触发改投检查)。 */
+  rehomed?: boolean;
 }
 
 // 按宿主节点(文档 body 或顶层模态内容)各一对。
@@ -59,7 +63,11 @@ function createPair(host: HTMLElement, primed: boolean): AnnouncerPair {
     setTimeout(() => {
       const queued = pair.pending ?? [];
       pair.pending = null;
-      for (const item of queued) insert(pair, item.text, item.politeness);
+      for (const item of queued) {
+        // 宿主(顶层模态)在等待期间已卸载(如命令面板执行命令时先关面板、命令随即同步 notify):改投当前宿主。
+        if (pair.root.isConnected) insert(pair, item.text, item.politeness);
+        else rehome(doc, item.text, item.politeness);
+      }
     }, ANNOUNCE_PRIME_MS);
   }
   return pair;
@@ -77,7 +85,25 @@ function insert(pair: AnnouncerPair, text: string, politeness: AnnouncePolitenes
   node.textContent = text;
   region.appendChild(node);
   while (region.childElementCount > ANNOUNCE_MAX_NODES) region.firstElementChild?.remove();
+  // 宿主模态紧接着卸载(同一事件里先关模态再播报:关闭要等事件处理结束才提交)时节点随之离开文档、读屏来不及念 →
+  // 短暂延后检查,已脱离文档则改投当前宿主(只改投一次)。
+  if (!pair.rehomed) {
+    const doc = region.ownerDocument;
+    setTimeout(() => {
+      if (!node.isConnected && !pair.root.isConnected) rehome(doc, text, politeness);
+    }, ANNOUNCE_REHOME_CHECK_MS);
+  }
   setTimeout(() => node.remove(), ANNOUNCE_CLEAR_MS);
+}
+
+function rehome(doc: Document, text: string, politeness: AnnouncePoliteness): void {
+  const host = getTopModalContent(doc) ?? doc.body;
+  if (host === null) return;
+  const pair = pairFor(host, false);
+  pair.rehomed = true;
+  if (pair.pending !== null) pair.pending.push({ text, politeness });
+  else insert(pair, text, politeness);
+  pair.rehomed = false;
 }
 
 /** 预先建好该文档根部的一对播报区域(幂等),使之后的播报立即插入。 */

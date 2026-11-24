@@ -305,7 +305,7 @@ function KeybindingCaptureModalBody({
         aria-label={t('keybindings.modal.press_combo')}
         tabIndex={0}
         data-autofocus
-        className="mt-4 rounded border border-line bg-panel-soft/50 outline-none focus-visible:border-accent"
+        className="mt-4 rounded border border-line bg-panel-soft/50 outline-none focus-visible:border-focus-ring"
       >
       <div
         ref={statusRef}

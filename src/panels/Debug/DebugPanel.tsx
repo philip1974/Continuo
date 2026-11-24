@@ -494,7 +494,7 @@ function VariableList({
           aria-level={level}
           aria-disabled={loadingMore || undefined}
           {...more.props}
-          className="cursor-default rounded text-xs text-accent outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+          className="cursor-default rounded text-xs text-accent outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-focus-ring"
           style={{ paddingLeft: `calc(${indentOf(level)} + 0.75rem + 0.375rem)` }}
           onKeyDown={(e) =>
             handleTreeItemKey(e, (key) => {
@@ -588,7 +588,7 @@ function VariableNode({
       aria-busy={expanded && !childrenLoaded ? true : undefined}
       aria-label={`${variable.name}: ${variable.value}`}
       {...focusProps}
-      className="rounded outline-none focus-visible:ring-1 focus-visible:ring-accent"
+      className="rounded outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
       onKeyDown={onKeyDown}
       onClick={(e) => {
         e.stopPropagation();

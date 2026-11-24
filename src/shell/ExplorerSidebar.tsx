@@ -114,7 +114,7 @@ function ExplorerSidebarResizer() {
         }
       }}
       title={resizeLabel}
-      className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent/40 focus-visible:bg-accent/60 focus-visible:outline-none"
+      className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize bg-transparent transition-colors hover:bg-accent/40 focus-visible:bg-focus-ring/60 focus-visible:outline-none"
     />
   );
 }
