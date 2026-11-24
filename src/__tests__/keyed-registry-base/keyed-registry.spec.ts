@@ -192,6 +192,23 @@ describe('家族接线守卫:8 个 Map 型 registry 继承 KeyedRegistry', () =>
   });
 });
 
+describe('家族接线守卫:ExplorerDecoratorRegistry 与 KeyedRegistry 共用 SnapshotRegistry', () => {
+  const dir = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../../plugins/registries',
+  );
+  it.each(['keyed-registry', 'ExplorerDecoratorRegistry'])(
+    '%s 继承 SnapshotRegistry,不自持 listeners / notify / 快照缓存',
+    (file) => {
+      const src = readFileSync(path.join(dir, `${file}.ts`), 'utf-8');
+      expect(src).toMatch(/extends SnapshotRegistry</);
+      expect(src).not.toContain('listeners');
+      expect(src).not.toContain('notify(');
+      expect(src).not.toContain('cachedAll');
+    },
+  );
+});
+
 describe('filterKeepingIdentity', () => {
   const EMPTY: number[] = [];
 

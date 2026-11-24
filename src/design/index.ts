@@ -47,8 +47,3 @@ export { ScrollArea, type ScrollAreaProps } from './ScrollArea';
 export { Separator, type SeparatorProps } from './Separator';
 export { Spinner, type SpinnerProps, type SpinnerSize } from './Spinner';
 export { Tabs, type TabsProps, type TabItem } from './Tabs';
-export {
-  Textarea,
-  type TextareaProps,
-  type TextareaVariant,
-} from './Textarea';

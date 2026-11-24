@@ -7,6 +7,7 @@
 
 import type { ReactNode } from 'react';
 import type { Disposable } from '../types';
+import { SnapshotRegistry } from './snapshot-registry';
 
 export interface DecoratorEntry {
   readonly path: string;
@@ -33,19 +34,20 @@ export interface Decoration {
 
 export type DecoratorFn = (entry: DecoratorEntry) => Decoration | null;
 
-type Listener = () => void;
-
 // 边界(E54,E47 输入侧对偶):register(fn) 此前信任插件输入,不校验 fn 是函数,也无注册数量上限
 //(E47 只限制 decorator 输出字段)。非函数 fn 会在每个可见 FileRow 的 mergeDecorations 中反复抛
 // TypeError + 刷 console.warn(虽被 try/catch 兜住);注册成千上万个 decorator 让文件树每行渲染变成
 // 无界 O(N) 调用,滚动/展开卡顿。register 入口校验 fn 为函数 + 全局数量上限,非法/超限抛、不入表。
 const MAX_DECORATORS = 256;
-const EMPTY_DECORATOR_SNAPSHOT: readonly DecoratorFn[] = [];
 
-export class ExplorerDecoratorRegistry {
+// 数组型(无 key、同一 fn 可重复注册、上限 MAX_DECORATORS),故不走 KeyedRegistry.registerKeyed;
+// 订阅 / 监听器隔离 / 快照缓存与 KeyedRegistry 共用 SnapshotRegistry。
+export class ExplorerDecoratorRegistry extends SnapshotRegistry<DecoratorFn> {
   private fns: DecoratorFn[] = [];
-  private listeners = new Set<Listener>();
-  private cachedAll: readonly DecoratorFn[] | null = null;
+
+  constructor() {
+    super('explorer-decorator');
+  }
 
   register(fn: DecoratorFn): Disposable {
     if (typeof fn !== 'function') {
@@ -57,8 +59,7 @@ export class ExplorerDecoratorRegistry {
       );
     }
     this.fns.push(fn);
-    this.invalidateSnapshotCache();
-    this.notify();
+    this.changed();
     let disposed = false;
     return {
       dispose: () => {
@@ -67,44 +68,20 @@ export class ExplorerDecoratorRegistry {
         const i = this.fns.indexOf(fn);
         if (i >= 0) {
           this.fns.splice(i, 1);
-          this.invalidateSnapshotCache();
-          this.notify();
+          this.changed();
         }
       },
     };
   }
 
-  getAll(): readonly DecoratorFn[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    if (this.fns.length === 0) {
-      this.cachedAll = EMPTY_DECORATOR_SNAPSHOT;
-      return EMPTY_DECORATOR_SNAPSHOT;
-    }
+  protected isEmpty(): boolean {
+    return this.fns.length === 0;
+  }
 
+  protected buildSnapshot(): readonly DecoratorFn[] {
     const fns = new Array<DecoratorFn>(this.fns.length);
     for (let i = 0; i < this.fns.length; i++) fns[i] = this.fns[i]!;
-    this.cachedAll = fns;
     return fns;
-  }
-
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  // 安全:监听器逐个隔离(同 keyed-registry 的 notify):插件监听器抛错不打断 register / dispose 与其它监听器。
-  private notify(): void {
-    for (const l of this.listeners) {
-      try {
-        l();
-      } catch (err) {
-        console.warn('[explorer-decorator] subscribe listener threw', err);
-      }
-    }
-  }
-
-  private invalidateSnapshotCache(): void {
-    this.cachedAll = null;
   }
 }
 

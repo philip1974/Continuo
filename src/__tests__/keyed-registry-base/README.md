@@ -21,3 +21,8 @@ SettingItem / SettingTab / StatusBar)此前各自逐字复制同一段「注册 
    部分滤掉返回保持原序的新数组;全被滤掉返回共享空数组引用;每项只调一次谓词。
 7. `getAll()` 由基类实现并缓存:两次变更之间返回同一引用、只调一次子类 `buildSnapshot()`;空表返回共享空数组
    且不调 `buildSnapshot()`;子类的派生缓存(按 side / category)在 `onSnapshotInvalidated()` 里清。
+8. 订阅 / 监听器逐个隔离(抛错只 `console.warn`,不打断注册与其它监听器)/ 全量快照缓存收口在更底层的
+   `SnapshotRegistry<T>`(`src/plugins/registries/snapshot-registry.ts`):`KeyedRegistry` 与数组型的
+   `ExplorerDecoratorRegistry`(无 key、同一 fn 可重复注册、自带 `MAX_DECORATORS`,故不走
+   `registerKeyed`)都继承它,不再各自持 listeners / notify / cachedAll;任一变更先失效快照(含子类
+   派生缓存)再同步通知。

@@ -59,7 +59,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ### 组件
 
-* **禁止**新写 `<button>`、`<input>`、`<textarea>` 等基础控件的 className 实现。优先用 `@/design`：`Button / IconButton / NavRailButton / MenuItem / TabNav / SegmentedControl / Modal / Card / Spinner / Badge / Tabs / Input / Textarea / Separator / ScrollArea`。
+* **禁止**新写 `<button>`、`<input>`、`<textarea>` 等基础控件的 className 实现。优先用 `@/design`：`Button / IconButton / NavRailButton / MenuItem / TabNav / SegmentedControl / Modal / Card / Spinner / Badge / Tabs / Input / Separator / ScrollArea`。
 
 * 真要 native（如超紧凑 28px 行高的工具栏文本按钮），写明注释解释为何 design 不适用，并复用语义 token。
 

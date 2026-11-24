@@ -2,51 +2,34 @@
 // Ribbon / SettingItem / SettingTab / StatusBar 此前各自逐字复制同一段注册/dispose/订阅样板)。
 //
 // 收口动机:该样板上的每个守卫(E236 容量、R51-R59 live get 复查、dispose 只删自己)历史上都要
-// 逐个兄弟 registry 传播,漏一个即回归。基类持有 items / listeners 与注册流程,子类只保留:
+// 逐个兄弟 registry 传播,漏一个即回归。基类持有 items 与注册流程(订阅 / 通知隔离 / 全量快照缓存
+// 在更底层的 SnapshotRegistry,与 ExplorerDecoratorRegistry 共用),子类只保留:
 // 单条 spec 校验、全量快照的构造(buildSnapshot)与派生快照缓存(getBySide / getByCategory)。
 //
 // BDD: src/__tests__/keyed-registry-base/
 
 import type { Disposable } from '../types';
 import { assertRegistryCapacity } from './registry-capacity';
+import { SnapshotRegistry } from './snapshot-registry';
 
-type Listener = () => void;
-const EMPTY_SNAPSHOT: readonly never[] = [];
-
-export abstract class KeyedRegistry<T> {
+export abstract class KeyedRegistry<T> extends SnapshotRegistry<T> {
   protected readonly items = new Map<string, T>();
-  private readonly listeners = new Set<Listener>();
-  private cachedAll: readonly T[] | null = null;
 
   /**
    * @param registryName 错误 / 告警前缀(如 `ribbon-registry`)
    * @param keyLabel 覆盖告警里 key 的称呼(Panel 以 `type` 为 key,其余为 `id`)
    */
   protected constructor(
-    private readonly registryName: string,
+    registryName: string,
     private readonly keyLabel: 'id' | 'type' = 'id',
-  ) {}
-
-  /** 非空表的全量快照(子类决定顺序:插入序 / 按 priority)。结果由基类缓存到下一次变更。 */
-  protected abstract buildSnapshot(): readonly T[];
-
-  /** 子类若还有派生快照缓存(按 side / category),在此一并清掉。 */
-  protected onSnapshotInvalidated?(): void;
-
-  /**
-   * 全量快照。引用稳定:两次变更之间返回同一个数组(useRegistry / memo 友好);空表返回共享空数组。
-   * 此前 8 个子类各自持 cachedAll + 同一段「命中缓存 / 空表」前导。
-   */
-  getAll(): readonly T[] {
-    if (this.cachedAll !== null) return this.cachedAll;
-    this.cachedAll =
-      this.items.size === 0 ? (EMPTY_SNAPSHOT as readonly T[]) : this.buildSnapshot();
-    return this.cachedAll;
+  ) {
+    super(registryName);
   }
 
-  private invalidateSnapshotCache(): void {
-    this.cachedAll = null;
-    this.onSnapshotInvalidated?.();
+  // 快照缓存 / 订阅 / 监听器隔离由 SnapshotRegistry 提供;getAll() 引用稳定、空表返回共享空数组
+  //(此前 8 个子类各自持快照缓存 + 同一段「命中缓存 / 空表」前导)。
+  protected isEmpty(): boolean {
+    return this.items.size === 0;
   }
 
   /** 容量守卫与覆盖告警之后、入表之前(previous = 被覆盖的旧 spec)。 */
@@ -71,8 +54,7 @@ export abstract class KeyedRegistry<T> {
     }
     this.onBeforeSet?.(spec, previous);
     this.items.set(key, spec);
-    this.invalidateSnapshotCache();
-    this.notify();
+    this.changed();
 
     let disposed = false;
     return {
@@ -82,8 +64,7 @@ export abstract class KeyedRegistry<T> {
         if (this.items.get(key) === spec) {
           this.items.delete(key);
           this.onRemoved?.(spec);
-          this.invalidateSnapshotCache();
-          this.notify();
+          this.changed();
         }
       },
     };
@@ -96,23 +77,6 @@ export abstract class KeyedRegistry<T> {
    */
   get(key: string): T | undefined {
     return this.items.get(key);
-  }
-
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  // 安全:监听器逐个隔离。subscribe 对插件开放,监听器抛错若冒出 notify,register 会在条目已入表后抛错 ——
-  // 调用方拿不到 Disposable(该 key 注销不掉),排在后面的监听器(宿主 UI)也收不到这次变更。
-  private notify(): void {
-    for (const l of this.listeners) {
-      try {
-        l();
-      } catch (err) {
-        console.warn(`[${this.registryName}] subscribe listener threw`, err);
-      }
-    }
   }
 }
 

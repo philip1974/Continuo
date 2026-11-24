@@ -7,7 +7,7 @@ FileRow 渲染时遍历所有装饰器,合并 badge / textColor / tooltip 应用
 
 | 文件 | 职责 |
 |---|---|
-| `src/plugins/registries/ExplorerDecoratorRegistry.ts` | 装饰函数列表 + 合并算法 + subscribe |
+| `src/plugins/registries/ExplorerDecoratorRegistry.ts` | 装饰函数列表 + 合并算法;subscribe / 快照缓存继承 `SnapshotRegistry`(与 `KeyedRegistry` 共用) |
 | `src/plugins/Plugin.ts`(扩展) | `registerExplorerDecorator` 代理 |
 | `src/panels/Explorer/FolderTree.tsx`(扩展) | 一次 `useRegistry(explorerDecorators)`,把 decorators 快照下传给每个 FileRow |
 | `src/panels/Explorer/FileRow.tsx`(扩展) | 用下传的 decorators 快照调 mergeDecorations 渲染 |
