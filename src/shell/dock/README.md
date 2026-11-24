@@ -13,7 +13,7 @@ The dock layer wraps [`dockview-react`](https://dockview.dev) and keeps it in sy
 | `layout.default.ts` | The initial dockview layout used on first launch (when no `explorer.json` per-window layout exists). |
 | `dock-api-ref.ts` | Mutable ref holding the live `DockviewApi`, so non-React code (event handlers, IPC plumbing) can reach it. |
 | `EmptyState.tsx` | Centerpiece shown when no panels are open. |
-| `HeaderActions.tsx` | Tab-strip right-side actions: popout (hidden inside popout windows) and the "more" menu for adding panels. |
+| `HeaderActions.tsx` | Tab-strip right-side actions: popout (hidden for groups whose `group.api.location.type` is `'popout'` — the header is portalled from the main window, so `window.location` cannot tell) and the "more" menu for adding panels. |
 | `TerminalSessionsSync.tsx` | Syncs main's sessions into `terminal.store` (initial `listSessions` + live `onSessionsChanged`, filtered by owner window and workspace root). |
 
 ## Reconciler — 3 phases

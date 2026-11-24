@@ -1,6 +1,6 @@
 # DropdownMenu(触发按钮弹出的菜单)
 
-行为契约:**菜单 portal 到 body、按触发按钮定位(fixed);打开时焦点进入首项、方向键漫游、Escape / Tab 关闭并把焦点
+行为契约:**菜单 portal 到触发按钮所在文档的 body(popout 子窗见 `popout-header-menu`)、按触发按钮定位(fixed);打开时焦点进入首项、方向键漫游、Escape / Tab 关闭并把焦点
 还给触发按钮;在触发按钮(及调用方给的额外「内部」元素)与菜单之外按下指针即关闭。菜单项经 render 函数拿到
 `close`(仅关闭)与 `closeAndRestore`(关闭并还原焦点到触发按钮)。**
 

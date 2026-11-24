@@ -2,7 +2,7 @@
 
 行为契约:**Dockview header 右侧两个 IconButton:popout(弹出活动 panel 到独立窗口) +
 更多操作菜单(列出 PanelRegistry 全部 panel 类型,点击 addPanel 到当前 group)。
-activePanel=null 时 popout 按钮 disabled;popout 窗口内不显示 popout 按钮。点更多 → 切 menu;点 menu 外 pointerdown → 关菜单。**
+activePanel=null 时 popout 按钮 disabled;popout 窗口内(组 `group.api.location.type === 'popout'`)不显示 popout 按钮。点更多 → 切 menu;点 menu 外 pointerdown → 关菜单。**
 
 ## 模块
 

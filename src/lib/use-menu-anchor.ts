@@ -20,16 +20,18 @@ export function useMenuAnchor(
   const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
   useLayoutEffect(() => {
     if (!open) return;
+    // 按钮所在窗口(popout 子窗的 header 在子窗 DOM;全局 window 是主窗,rect 却是子窗 viewport 坐标)。
+    const win = triggerRef.current?.ownerDocument.defaultView ?? window;
     const update = (): void => {
       const r = triggerRef.current?.getBoundingClientRect();
-      if (r) setAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
+      if (r) setAnchor({ top: r.bottom + 4, right: win.innerWidth - r.right });
     };
     update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
+    win.addEventListener('resize', update);
+    win.addEventListener('scroll', update, true);
     return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
+      win.removeEventListener('resize', update);
+      win.removeEventListener('scroll', update, true);
     };
   }, [open, triggerRef]);
   return anchor;

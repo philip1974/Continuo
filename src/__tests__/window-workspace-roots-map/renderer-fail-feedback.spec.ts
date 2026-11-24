@@ -141,7 +141,7 @@ function renderHeaderActions() {
         addPanel: vi.fn(),
         addPopoutGroup: vi.fn(),
       },
-      group: {},
+      group: { api: { location: { type: 'grid' } } },
       activePanel: null,
     } as never),
   );

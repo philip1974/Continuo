@@ -25,14 +25,14 @@ interface FakeApi {
 
 interface TestProps {
   containerApi: FakeApi;
-  group: { id: string };
+  group: { id: string; api: { location: { type: string } } };
   activePanel: { id: string } | null;
 }
 
 function makeProps(over: {
   containerApi?: Partial<FakeApi>;
   activePanel?: { id: string } | null;
-  group?: { id: string };
+  group?: TestProps['group'];
 } = {}): TestProps {
   const containerApi: FakeApi = {
     addPanel: vi.fn(),
@@ -43,7 +43,7 @@ function makeProps(over: {
   };
   return {
     containerApi,
-    group: over.group ?? { id: 'g1' },
+    group: over.group ?? { id: 'g1', api: { location: { type: 'grid' } } },
     activePanel: over.activePanel ?? null,
   };
 }

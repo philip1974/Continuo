@@ -1151,6 +1151,10 @@
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
 - [`window-open-policy.spec.ts`](./popout-contracts/window-open-policy.spec.ts)
 
+## [popout 子窗里的 dock 组 header(弹出按钮 + 「⋯」菜单)](./popout-header-menu/README.md)
+
+- [`popout-header-menu.spec.tsx`](./popout-header-menu/popout-header-menu.spec.tsx)
+
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 
 - [`channels-zod-free.spec.ts`](./preload-no-zod/channels-zod-free.spec.ts)

@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
-import { isPopoutWindow, popoutUrlFor } from '@/lib/popout-mode';
+import { popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { MoreActionsIcon } from '@/lib/ui-icons';
 import { DropdownMenu, type DropdownMenuControls } from '@/lib/dropdown-menu';
@@ -103,7 +103,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         if (opened === false) onFailed('addPopoutGroup resolved false');
       }, onFailed);
   }, [activePanel, containerApi]);
-  const isPopout = isPopoutWindow();
+  // header 由主窗 React 经 portal 渲染进子窗,window.location 恒为主窗 → 只能按组的实际位置判定。
+  // 位置变化时 dockview 会以新 location 重渲 header actions。
+  const isPopout = group.api.location.type === 'popout';
 
   return (
     <div

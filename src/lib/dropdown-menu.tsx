@@ -1,6 +1,6 @@
 // 触发按钮弹出的菜单(Explorer 头部「⋯」与 dock 面板头部「⋯」共用;此前两处各装配一遍,焦点还原已分叉)。
 //
-// 必须 portal 到 document.body:Dockview 祖先有 transform: translate3d(0,0,0) 创建 stacking context,会把 z-modal
+// 必须 portal 到触发按钮所在文档的 body(dock 组弹出到 popout 子窗时 header 在子窗 DOM,全局 document 是主窗):Dockview 祖先有 transform: translate3d(0,0,0) 创建 stacking context,会把 z-modal
 // 困在 panel header 子树内、被相邻 panel content 盖住。portal 出去后 position:fixed 才真按 viewport 定位。
 // 触发按钮仍由调用方渲染(尺寸 / 样式各异),须带 aria-haspopup="menu" + aria-expanded。
 import { createPortal } from 'react-dom';
@@ -55,6 +55,6 @@ export function DropdownMenu({
     >
       {children({ close, closeAndRestore })}
     </div>,
-    document.body,
+    (triggerRef.current?.ownerDocument ?? document).body,
   );
 }

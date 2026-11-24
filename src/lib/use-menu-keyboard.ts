@@ -71,7 +71,9 @@ export function useMenuKeyboard(opts: {
               : null;
     if (move !== null) {
       e.preventDefault();
-      items[nextRovingIndex(move, indexOfElement(items, document.activeElement), items.length)]?.focus();
+      // 焦点按菜单所在文档读(popout 子窗的菜单在子窗 DOM,全局 document 是主窗)。
+      const active = e.currentTarget.ownerDocument.activeElement;
+      items[nextRovingIndex(move, indexOfElement(items, active), items.length)]?.focus();
     }
   };
 
