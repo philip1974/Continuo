@@ -8,6 +8,7 @@ import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
 import { errorCodeOf } from '../../../electron/shared/error-message';
 import {
+  addPanelKeepingActive,
   cancelReconcilerPanelClose,
   consumePanelCloseSuppressed,
   markPanelCloseSuppressed,
@@ -195,13 +196,7 @@ export function reconcileTerminalPanels(
           session.originHint === 'user' &&
           isFirstAppearance &&
           isLatestUserSession);
-      // dockview addPanel 的 `inactive: true` 让新 group 容器在 xterm 渲染
-      // 不可见的状态(数据进 xterm 内部但屏幕全黑)。改用"默认 active 加 →
-      // 立即 setActive 回原 panel"实现 agent 不抢 focus 的等价 UX。
-      const previousActivePanelId = !shouldFocus
-        ? api.activePanel?.api.id ?? null
-        : null;
-      api.addPanel({
+      const options = {
         id: panelId,
         component: TERMINAL_PANEL_TYPE,
         title: deriveTitle(session),
@@ -210,14 +205,11 @@ export function reconcileTerminalPanels(
           originHint: session.originHint,
         },
         ...(position ? { position } : {}),
-      });
+      };
+      // agent 终端不抢 focus:addPanelKeepingActive(不用 `inactive: true`,见其注释)。
+      if (shouldFocus) api.addPanel(options).api.setActive();
+      else addPanelKeepingActive(api, options);
       lastRefId = panelId;
-
-      if (shouldFocus) {
-        api.getPanel(panelId)?.api.setActive();
-      } else if (previousActivePanelId && previousActivePanelId !== panelId) {
-        api.getPanel(previousActivePanelId)?.api.setActive();
-      }
     }
   }
 

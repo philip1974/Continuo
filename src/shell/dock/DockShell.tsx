@@ -17,7 +17,7 @@ import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
 import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
-import { wrapPanelClose, cancelPendingPanelClose } from './wrap-panel-close';
+import { wrapPanelClose, activateDockPanel, addPanelKeepingActive } from './wrap-panel-close';
 import { handleTerminalPanelRemoved, removeTerminalSessionWithFeedback } from './DockReconciler';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
@@ -521,26 +521,24 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     const userIntent = editorFocusPulse !== handledFocusPulseRef.current;
     let editorPanel = api.getPanel('editor');
     if (!editorPanel) {
-      const previousActivePanelId = api.activePanel?.api.id ?? null;
-      editorPanel = api.addPanel({
+      const options = {
         id: 'editor',
         component: 'editor',
         title: 'Editor',
         params: { titleKey: 'panels.editor.title' },
-      });
-      // addPanel 默认激活新面板;非用户意图 → 激活还给原活动面板(同 Reconciler 不抢焦点的做法)。
+      };
+      // 非用户意图 → 不抢激活(同 Reconciler 不抢焦点的做法)。
       if (!userIntent) {
-        if (previousActivePanelId) api.getPanel(previousActivePanelId)?.api.setActive();
+        addPanelKeepingActive(api, options);
         return;
       }
-    } else {
-      if (!userIntent) return;
-      // panel 仍存在但可能正处于关闭 EXIT 动画窗口内(用户刚关 editor 面板随即
-      // 又点开文件)。撤销它排定中的真 close + 清 closing 标记,否则刚激活的
-      // 面板会在 EXIT_DURATION_MS 后随排定的 close 一起消失(刚打开的文件没了)。
-      cancelPendingPanelClose('editor');
+      editorPanel = api.addPanel(options);
+    } else if (!userIntent) {
+      return;
     }
-    editorPanel.api.setActive();
+    // 已有面板可能正处于关闭 EXIT 动画窗口内(用户刚关 editor 面板随即又点开文件):activateDockPanel 撤销排定的
+    // 真 close,否则刚打开的文件随面板一起消失。
+    activateDockPanel(editorPanel);
     handledFocusPulseRef.current = editorFocusPulse;
   }, [editorActiveTabId, editorFocusPulse, layoutRestored]);
 

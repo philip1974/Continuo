@@ -18,7 +18,8 @@ import {
   focusPanel,
   openOrFocusPanel,
 } from '../../shell/dock/dock-api-ref';
-import { wrapPanelClose } from '../../shell/dock/wrap-panel-close';
+import { addPanelKeepingActive, wrapPanelClose } from '../../shell/dock/wrap-panel-close';
+import { applyDefaultLayout } from '../../shell/dock/layout.default';
 import { useClosingStore } from '../../stores/closing.store';
 import { EXIT_DURATION_MS } from '../../shell/motion/tokens';
 import { toggleSettingsPanel } from '../../lib/toggle-settings-panel';
@@ -66,6 +67,32 @@ describe('49 第八 session · dock-api-ref 聚焦取消 pending close', () => {
 
     vi.advanceTimersByTime(EXIT_DURATION_MS + 50);
     expect(realClose).not.toHaveBeenCalled(); // 真 close 被撤销
+  });
+
+  it('applyDefaultLayout 命中 EXIT 窗口内的 editor → 撤销真 close(同一激活入口)', () => {
+    const realClose = vi.fn();
+    const panel = makeWrappedPanel('editor', realClose);
+    panel.api.close();
+    applyDefaultLayout(makeApi(new Map([['editor', panel]])));
+    expect(panel.api.setActive).toHaveBeenCalled();
+    vi.advanceTimersByTime(EXIT_DURATION_MS + 50);
+    expect(realClose).not.toHaveBeenCalled();
+  });
+
+  it('addPanelKeepingActive:加入新面板后把激活还给原活动面板;无原活动面板则不动', () => {
+    const prev = { api: { id: 'editor', setActive: vi.fn() } };
+    const added = { id: 'terminal-1', api: { id: 'terminal-1', setActive: vi.fn() } };
+    const api = {
+      activePanel: prev,
+      addPanel: vi.fn(() => added),
+      getPanel: (id: string) => (id === 'editor' ? prev : undefined),
+    } as unknown as DockviewApi;
+    expect(addPanelKeepingActive(api, { id: 'terminal-1', component: 'terminal' })).toBe(added);
+    expect(prev.api.setActive).toHaveBeenCalledTimes(1);
+
+    const none = { activePanel: undefined, addPanel: vi.fn(() => added), getPanel: vi.fn() } as unknown as DockviewApi;
+    addPanelKeepingActive(none, { id: 'terminal-1', component: 'terminal' });
+    expect(none.getPanel).not.toHaveBeenCalled();
   });
 
   it('openOrFocusPanel 命中 existing → 撤销真 close,面板不消失', () => {

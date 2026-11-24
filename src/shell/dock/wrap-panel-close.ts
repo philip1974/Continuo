@@ -1,4 +1,4 @@
-import type { IDockviewPanel } from 'dockview-react';
+import type { AddPanelOptions, DockviewApi, IDockviewPanel } from 'dockview-react';
 import { useClosingStore } from '@/stores/closing.store';
 import { EXIT_DURATION_MS } from '@/shell/motion/tokens';
 
@@ -25,6 +25,17 @@ export function cancelPendingPanelClose(panelId: string): void {
   }
   pendingReconcilerCloses.delete(panelId);
   useClosingStore.getState().unmark(panelId);
+}
+
+/**
+ * 激活一个**已存在**的面板:先撤销它排定中的关闭(面板可能正处于关闭 EXIT 动画窗口内 —— 刚关随即又激活),
+ * 否则刚激活的面板会在 EXIT_DURATION_MS 后随排定 close 一起消失。dock 的「激活已有面板」入口共用
+ *(此前 focusPanel / openOrFocusPanel / DockShell editor 各写一遍,dock-api-ref 一度漏写)。
+ */
+export function activateDockPanel(panel: { readonly api: Pick<IDockviewPanel['api'], 'id' | 'setActive'> }): void {
+  // 按 api.id 取消:与 wrapPanelClose 登记排定 close 的键一致。
+  cancelPendingPanelClose(panel.api.id);
+  panel.api.setActive();
 }
 
 /**
@@ -91,4 +102,18 @@ export function wrapPanelClose(panel: IDockviewPanel): void {
     writable: true,
     configurable: true,
   });
+}
+
+/**
+ * 加面板但不抢激活:dockview addPanel 默认激活新面板,而 `inactive: true` 会让新 group 容器处于不可见渲染态
+ *(xterm 数据进了内部但屏幕全黑)。改为默认加入后立即把激活还给原活动面板(DockShell 非用户意图的 editor
+ * 面板与 Reconciler 的 agent 终端共用)。
+ */
+export function addPanelKeepingActive(api: DockviewApi, options: AddPanelOptions): IDockviewPanel {
+  const previousActivePanelId = api.activePanel?.api.id ?? null;
+  const panel = api.addPanel(options);
+  if (previousActivePanelId && previousActivePanelId !== panel.api.id) {
+    api.getPanel(previousActivePanelId)?.api.setActive();
+  }
+  return panel;
 }
