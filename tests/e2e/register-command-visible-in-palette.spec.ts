@@ -1,15 +1,10 @@
 // registerCommand 注册一条命令 → CommandPalette 输入命令名能匹配到.
 import { test, expect } from './fixtures/electron-app';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('动态注册 e2e.test → 命令面板搜「e2e.test」可见', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 注册新命令
   await window.evaluate(() => {

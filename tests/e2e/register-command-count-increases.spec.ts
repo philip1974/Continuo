@@ -1,16 +1,11 @@
 // 动态 registerCommand → commandCount 增加 + dispose 后回落.
 import { test, expect } from './fixtures/electron-app';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('registerCommand → count + 1; dispose → count -1', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // initial count
   const initial = await window.evaluate(

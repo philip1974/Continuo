@@ -1,18 +1,13 @@
 // keybinding tab 计数随动态注册带 hotkey 命令变化.
 import { test, expect } from './fixtures/electron-app';
 import { KEYBINDINGS_TAB, openSettingsTab } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 const KEYBINDINGS_TOTAL =
   /(共\s*\d+\s*个有快捷键的命令|\d+\s*commands with hotkey|단축키가 있는 명령어\s*\d+개)/;
 
 test('register e2e.X(hotkey)→ keybindings tab 计数 +1', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 打开 Settings → 快捷键 tab
   await openSettingsTab(window, KEYBINDINGS_TAB);

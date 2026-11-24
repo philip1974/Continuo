@@ -1,12 +1,10 @@
 // 动态命令 hotkey override → palette 显新组合(KeyCap 反映 override).
 import { test, expect } from './fixtures/electron-app';
 import { commandPaletteInput, openCommandPalette } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('register + setHotkey override → palette 显示新 hotkey', async ({ window }) => {
-  await window.waitForFunction(
-    () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 注册带初始 hotkey 命令
   await window.evaluate(() => {

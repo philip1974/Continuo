@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { launchContinuo } from './helpers/launch';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('autoSave.delayMs=1500 → 关 → 重启 → getSettingValue 仍 1500', async () => {
   test.setTimeout(60_000);
@@ -13,10 +14,7 @@ test('autoSave.delayMs=1500 → 关 → 重启 → getSettingValue 仍 1500', as
     const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
-    await win1.waitForFunction(
-      () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win1)
     await win1.evaluate(() => {
       const t = (
         window as unknown as {
@@ -37,10 +35,7 @@ test('autoSave.delayMs=1500 → 关 → 重启 → getSettingValue 仍 1500', as
     const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
-    await win2.waitForFunction(
-      () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win2)
 
     const restored = await win2.evaluate(() => {
       const t = (

@@ -1,17 +1,12 @@
 // autoSave.delayMs input 显示 store 值 + 改后 store 同步.
 import { test, expect } from './fixtures/electron-app';
 import { SETTINGS_NAV, EDITOR_TAB } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=4000', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   // dock 未就绪(DockShell onReady 前)时 openOrFocusPanel 按契约静默忽略;测试钩子可能更早可用。
   // 出现 dock 页签 = 布局已恢复(fromJSON / 默认布局);Splash 不在 = 就绪屏障已放行。
   await expect(window.getByRole('tab').first()).toBeVisible({ timeout: 10_000 });

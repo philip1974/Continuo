@@ -1,15 +1,10 @@
 // PermissionPrompt 拒绝按钮 → resolve 空数组(没授权).
 import { test, expect } from './fixtures/electron-app';
 import { PERMISSION_DENY_ALL } from './helpers/permission-prompt';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('点「拒绝」 → Promise resolve []', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   const grantedPromise = window.evaluate(async () => {
     const t = (

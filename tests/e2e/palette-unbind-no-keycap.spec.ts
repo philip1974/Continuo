@@ -5,15 +5,10 @@ import {
   openCommandPalette,
   settingsCommandOption,
 } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('unbind settings.toggle → palette 该项无 KeyCap', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 先打开 palette,验证默认有 KeyCap
   await openCommandPalette(window);

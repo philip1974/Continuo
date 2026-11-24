@@ -1,6 +1,7 @@
 // editor.fontSize 改 → Markdown Preview mode 不渲染 CodeMirror;改字号后 Preview(只读 Milkdown)仍正常渲染.
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_MODE_PREVIEW, editorModeButton, openWorkspaceFile } from './helpers/editor';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('Preview mode 改 fontSize → main 内 CodeMirror 不存在', async ({ window }) => {
   await openWorkspaceFile(window, ['README.md']);
@@ -15,10 +16,7 @@ test('Preview mode 改 fontSize → main 内 CodeMirror 不存在', async ({ win
   });
 
   // 改 fontSize 不抛
-  await window.waitForFunction(
-    () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

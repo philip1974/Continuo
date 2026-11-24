@@ -1,6 +1,7 @@
 // __continuoTest.setEditorContent → store update → CM 显示新内容.
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('open a.ts → setEditorContent → CM 内容更新 + dirty 出', async ({
   window,
@@ -11,13 +12,7 @@ test('open a.ts → setEditorContent → CM 内容更新 + dirty 出', async ({
   await expect(cm).toBeVisible({ timeout: 10_000 });
   await expect(cm).toContainText('export const a = 1;');
 
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

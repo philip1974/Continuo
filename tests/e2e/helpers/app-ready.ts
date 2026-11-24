@@ -9,3 +9,11 @@ export async function waitForAppReady(page: Page): Promise<void> {
   await expect(page.locator('footer')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('splash')).toHaveCount(0, { timeout: 15_000 });
 }
+
+/** 等 renderer 暴露 e2e 测试钩子 `window.__continuoTest`(CONTINUO_E2E=1 时注入)。 */
+export async function waitForTestHooks(page: Page, timeout = 5_000): Promise<void> {
+  await page.waitForFunction(
+    () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
+    { timeout },
+  );
+}

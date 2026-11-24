@@ -2,19 +2,14 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
 const UNSAVED_CHANGES = /^(未保存的更改|Unsaved changes|저장되지 않은 변경 사항)$/;
 
 test('autoSave.markdown.enabled=false → updateContent → 磁盘不变', async ({
   window,
   workspaceRoot,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 关 autoSave + delay 短
   await window.evaluate(() => {

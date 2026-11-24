@@ -6,6 +6,7 @@ import path from 'node:path';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('theme=light + 切 ws → 仍 light', async () => {
   test.setTimeout(30_000);
@@ -21,13 +22,7 @@ test('theme=light + 切 ws → 仍 light', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win)
 
     await win.evaluate(() => {
       const t = (

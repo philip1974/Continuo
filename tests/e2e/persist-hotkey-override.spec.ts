@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { dispatchModKey } from './helpers/hotkeys';
 import { launchContinuo } from './helpers/launch';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍触发', async () => {
   test.setTimeout(60_000);
@@ -15,13 +16,7 @@ test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍�
     const app1 = await launchContinuo(ud);
     const win1 = await app1.firstWindow();
     await win1.waitForLoadState('domcontentloaded');
-    await win1.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win1)
     await win1.evaluate(() => {
       const t = (
         window as unknown as {
@@ -39,13 +34,7 @@ test('override settings.toggle=mod+shift+y → 关 → 重启 → 新组合仍�
     const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
-    await win2.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win2)
 
     // 验证 override 已从 localStorage 恢复
     const restored = await win2.evaluate(() => {

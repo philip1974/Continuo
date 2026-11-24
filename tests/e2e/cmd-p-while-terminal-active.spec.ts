@@ -1,18 +1,13 @@
 // Terminal panel active 时,Cmd+P 仍可全局打开 Quick Open(useQuickOpenHotkey / usePickerToggleHotkey 监 document).
 import { test, expect } from './fixtures/with-workspace';
 import { QUICK_OPEN_SEARCH } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 const TERMINAL_TAB = /^(终端|Terminal|터미널)(\s|$)/;
 
 test('Terminal active + Cmd+P → Quick Open modal 显', async ({ window }) => {
   // 走真实 terminal.new command 创建 session-bound Terminal panel.
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   const created = await window.evaluate(() =>
     (
       window as unknown as {

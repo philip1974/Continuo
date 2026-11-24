@@ -1,6 +1,7 @@
 // fontSize input(type=number)对字母输入容错:浏览器 native 挡掉字母,setValue 不被 NaN 污染;合法数字照常写入 store.
 import { test, expect } from './fixtures/electron-app';
 import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('fontSize input 键入字母被拒、store 仍为合法数字;键入数字照常写入', async ({ window }) => {
   await window.getByRole('button', { name: SETTINGS }).click();
@@ -15,13 +16,7 @@ test('fontSize input 键入字母被拒、store 仍为合法数字;键入数字�
   const input = window.locator('input[type=number]').first();
   await expect(input).toHaveValue('13');
 
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   const readStored = () =>
     window.evaluate(
       () =>

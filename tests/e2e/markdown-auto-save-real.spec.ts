@@ -5,19 +5,14 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('打开 .md → updateContent(via hook)→ 等 delay → 磁盘写入新内容', async ({
   window,
   workspaceRoot,
 }) => {
   // 等 testing hook 挂载
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 把 autoSave delay 设到下限(设 50ms 会被钳到 500ms)避免 e2e 等久
   await window.evaluate(() => {

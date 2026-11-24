@@ -2,18 +2,13 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('autoSave.delayMs=0(钳到 500ms)+ 修改 .md → 防抖后写盘', async ({
   window,
   workspaceRoot,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

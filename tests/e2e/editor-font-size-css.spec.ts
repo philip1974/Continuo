@@ -1,5 +1,6 @@
 // editor.fontSize 改 → CodeEditor 容器 div style.fontSize 同步.
 import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('setting fontSize=20 → CodeEditor 容器 fontSize=20px', async ({
   window,
@@ -19,13 +20,7 @@ test('setting fontSize=20 → CodeEditor 容器 fontSize=20px', async ({
   expect(beforeFontSize).toBe('13px');
 
   // 改 setting → 20
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

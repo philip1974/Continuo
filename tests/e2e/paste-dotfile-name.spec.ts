@@ -2,6 +2,7 @@
 import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
 
 const COPY = /^(复制|Copy|복사)$/;
 const PASTE = /^(粘贴|Paste|붙여넣기)$/;
@@ -15,13 +16,7 @@ test('copy .gitignore → paste 到 src → 出现 .gitignore copy', async ({
   await window.waitForTimeout(300);
 
   // 切 showHiddenFiles=true 让 tree 显
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

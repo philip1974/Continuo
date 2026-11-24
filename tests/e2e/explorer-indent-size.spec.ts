@@ -2,6 +2,7 @@
 // level=1(src 下的 a.ts)默认 indent=16 → paddingLeft = 4 + 1*16 = 20px.
 // 改成 indent=32 → paddingLeft = 4 + 32 = 36px.
 import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('改 indentSize=32 → src/a.ts 行 paddingLeft 同步加大', async ({ window }) => {
   await window.locator('text=src').first().click();
@@ -20,13 +21,7 @@ test('改 indentSize=32 → src/a.ts 行 paddingLeft 同步加大', async ({ win
   });
 
   // 改 indent → 32
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

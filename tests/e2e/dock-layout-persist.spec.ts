@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { OUTPUT_READY } from './helpers/output';
 import { launchContinuo } from './helpers/launch';
+import { waitForTestHooks } from './helpers/app-ready';
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -34,13 +35,7 @@ async function launch(userData: string): Promise<ElectronApplication> {
 }
 
 async function waitForTestHook(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 10_000 },
-  );
+  await waitForTestHooks(page, 10_000)
 }
 
 async function openOutputPanel(page: Page): Promise<void> {

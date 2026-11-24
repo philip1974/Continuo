@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/electron-app';
 import { dispatchModKey } from './helpers/hotkeys';
 import { CLOSE_SETTINGS, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 // 全局热键监听在 App 挂载后的 effect 里注册,改键后的绑定表也要等下一次提交 —— 同 hotkey-unbind:
 // 先等 App 挂载,改键后让出两帧,再按键。
@@ -33,10 +34,7 @@ async function setHotkey(window: Page, hotkey: string): Promise<void> {
 
 test('override → 原 ⌘, 失效、新键生效;设回 mod+, → ⌘, 恢复打开 Settings', async ({ window }) => {
   await appMounted(window);
-  await window.waitForFunction(
-    () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
 
   // 改键为 mod+shift+y:⌘, 不再打开 Settings

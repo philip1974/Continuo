@@ -7,6 +7,7 @@ import { explorerMoreActionsButton } from './helpers/explorer';
 import { OUTPUT_READY } from './helpers/output';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('打开 Output → 切 root → Output panel 仍在', async () => {
   test.setTimeout(60_000);
@@ -26,13 +27,7 @@ test('打开 Output → 切 root → Output panel 仍在', async () => {
     });
 
     // 打开 Output panel
-    await win.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win)
     // testing hook 可能先于 dock 就绪暴露(openOrFocusPanel 此时 no-op):重试到面板出现
     await expect(async () => {
       await win.evaluate(() => {

@@ -5,17 +5,12 @@ import {
   PERMISSION_GRANT_SELECTED,
   permissionGrantSelectedText,
 } from './helpers/permission-prompt';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('请求 fs+network+clipboard → 默认全选 → 授权 → resolve 三项', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   const grantedPromise = window.evaluate(async () => {
     const t = (

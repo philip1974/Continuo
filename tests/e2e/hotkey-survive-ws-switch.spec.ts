@@ -8,6 +8,7 @@ import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS_NAV } from './helpers/settings';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('override settings.toggle=mod+shift+y + 切 ws → 新 hotkey 仍触发', async () => {
   test.setTimeout(60_000);
@@ -26,13 +27,7 @@ test('override settings.toggle=mod+shift+y + 切 ws → 新 hotkey 仍触发', a
       timeout: 10_000,
     });
 
-    await win.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win)
 
     await win.evaluate(() => {
       const t = (

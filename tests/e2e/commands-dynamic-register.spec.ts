@@ -1,15 +1,10 @@
 // 通过 testing hook 动态 register 一条命令 → CommandPalette 列表立刻含它.
 import { test, expect } from './fixtures/electron-app';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('动态注册命令 → CommandPalette 立刻显示', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   // testing hook 先于 App 首次提交挂上:等 App 挂载(热键监听在 effect 中注册)再注册命令与派发热键
   await expect(window.getByRole('button', { name: /^(设置|Settings|설정)$/ })).toBeVisible({ timeout: 10_000 });
 

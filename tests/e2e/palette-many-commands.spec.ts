@@ -1,15 +1,10 @@
 // register 5 命令 → palette 输 'Bulk' → 5 个 li 都显.
 import { test, expect } from './fixtures/electron-app';
 import { commandPaletteInput, openCommandPalette } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('register 5 Bulk* + palette 输 Bulk → 列表 5 项', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

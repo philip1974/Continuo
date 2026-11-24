@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/electron-app';
 import { dispatchModKey } from './helpers/hotkeys';
 import { CLOSE_SETTINGS, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 // 全局热键监听在 App 挂载后的 effect 里注册,改键后的绑定表也要等下一次提交 —— 与 hotkey-override-trigger 同法:
 // 先等 App 挂载(Settings 按钮可见),改键后再让出两帧。否则按键可能先于监听注册到达,负断言恒真。
@@ -23,13 +24,7 @@ test('unbind settings.toggle(空字符串)→ ⌘, 不再触发', async ({
   window,
 }) => {
   await appMounted(window);
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 正向对照:解绑前 ⌘, 能打开 Settings(证明热键通路已就绪),再关掉
   const nav = window.getByRole('navigation', { name: SETTINGS_NAV });

@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { SETTINGS } from './settings';
+import { waitForTestHooks } from './app-ready';
 
 export const OUTPUT_PANEL = /^(输出|Output|출력)$/;
 export const OUTPUT_CLOSE =
@@ -13,13 +14,7 @@ export async function openOutputPanel(window: Page): Promise<void> {
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
     timeout: 10_000,
   });
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   // testing hook 可能先于 dock 就绪暴露(openOrFocusPanel 此时 no-op):重试到面板出现
   await expect(async () => {
     await window.evaluate(() => {

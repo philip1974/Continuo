@@ -5,19 +5,14 @@ import {
   openSettingsTab,
   pluginContributionCount,
 } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 const COMMAND_LABELS = ['命令', 'Commands', '명령'];
 const REGISTERED_CONTRIBUTIONS =
   /^(已注册贡献点|Registered contribution points|등록된 기여 항목)$/;
 
 test('register 命令 → 插件 tab 命令计数 +1', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 打开 Settings → 插件 tab
   await openSettingsTab(window, PLUGINS_TAB);

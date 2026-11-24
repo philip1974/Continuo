@@ -1,5 +1,6 @@
 // editor.lineNumbers setting 切 false → CM .cm-editor 加 .cm-no-gutters.
 import { test, expect } from './fixtures/with-workspace';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('打开 a.ts → setting 改 lineNumbers=false → CM 加 cm-no-gutters', async ({
   window,
@@ -13,13 +14,7 @@ test('打开 a.ts → setting 改 lineNumbers=false → CM 加 cm-no-gutters', a
   await expect(cm).not.toHaveClass(/cm-no-gutters/);
 
   // 用 testing hook 改 setting
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

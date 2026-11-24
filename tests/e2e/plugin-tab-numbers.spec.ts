@@ -5,19 +5,14 @@ import {
   openSettingsTab,
   pluginContributionCount,
 } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 const COMMAND_LABELS = ['命令', 'Commands', '명령'];
 
 test('Plugin tab 显示的命令数 = testing hook commandCount()', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   const cmdCount = (await window.evaluate(() =>
     (

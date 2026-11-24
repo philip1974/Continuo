@@ -4,16 +4,14 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_MODE_SOURCE, editorModeButton, openWorkspaceFile } from './helpers/editor';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('README.md autoSave delay=10s + 输入 + Cmd+S → 立即写盘', async ({
   window,
   workspaceRoot,
 }) => {
   // 拉长 autoSave delay 让 autoSave 不抢
-  await window.waitForFunction(
-    () => Boolean((window as unknown as { __continuoTest?: unknown }).__continuoTest),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

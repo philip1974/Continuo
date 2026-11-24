@@ -4,17 +4,12 @@ import { test, expect } from './fixtures/electron-app';
 import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
 import { COMMAND_LIST, commandPaletteInput, openCommandPalette } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('注册同 hotkey 第二条命令 → 第一条仍优先(getAll insertion 顺序)', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await expect(window.getByRole('button', { name: SETTINGS })).toBeVisible({
     timeout: 10_000,
   });

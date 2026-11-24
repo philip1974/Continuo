@@ -1,15 +1,10 @@
 // registerCommand + hotkey → CommandPalette 列表项右侧 KeyCap kbd 显示.
 import { test, expect } from './fixtures/electron-app';
 import { COMMAND_SEARCH, COMMAND_LIST } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('动态注册命令 + hotkey → palette 显 KeyCap', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

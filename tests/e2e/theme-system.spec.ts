@@ -1,16 +1,11 @@
 // theme=system → 跟随 prefers-color-scheme:emulate light → html.dark 摘掉.
 import { test, expect } from './fixtures/electron-app';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('theme=system + emulate light → html 移除 dark; 切 dark media → html 加 dark', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 设 setting=system
   await window.evaluate(() => {

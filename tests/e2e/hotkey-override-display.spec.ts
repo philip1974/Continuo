@@ -5,17 +5,12 @@ import {
   openCommandPalette,
   settingsCommandOption,
 } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('改 settings.toggle hotkey override → CommandPalette 显示新 hotkey', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // override settings.toggle 的 hotkey 为 mod+shift+y
   await window.evaluate(() => {

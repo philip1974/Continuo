@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { explorerTreeItem } from './helpers/explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('默认隐藏 .hidden → 切 setting=true → tree 显', async ({
   window,
@@ -19,13 +20,7 @@ test('默认隐藏 .hidden → 切 setting=true → tree 显', async ({
   ).toHaveCount(0);
 
   // 切 true
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

@@ -8,17 +8,12 @@ import {
   SETTINGS,
   SETTINGS_NAV,
 } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('register e2e.X (mod+shift+t) → 编辑 settings.toggle → 按 t → 警告', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 注册一个用 mod+shift+t 的命令
   await window.evaluate(() => {

@@ -1,16 +1,11 @@
 // setValue 任意 id → localStorage 写入(不阻 UI).
 import { test, expect } from './fixtures/electron-app';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('setSettingValue("xxx.unknown", 42) → localStorage 仍记', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

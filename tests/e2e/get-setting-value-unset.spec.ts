@@ -1,14 +1,9 @@
 // 未设过的 setting id → getSettingValue 返 undefined.
 import { test, expect } from './fixtures/electron-app';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('getSettingValue("xxx.never-set") === undefined', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   const v = await window.evaluate(
     () =>

@@ -3,15 +3,10 @@
 // design Modal 的 overlay 点击触发 onClose;PermissionPrompt 的 onClose 走
 // promptStore.denyAll 路径 → resolve [].
 import { test, expect } from './fixtures/electron-app';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('点 overlay → modal 关 + Promise resolve []', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   const grantedPromise = window.evaluate(async () => {
     const t = (

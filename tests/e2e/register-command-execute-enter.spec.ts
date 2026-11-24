@@ -1,15 +1,10 @@
 // 动态注册的命令 + Enter 在 palette 中选中 → modal 关闭。testing hook 注册的 fn 是空函数,本用例不验证命令是否真的执行。
 import { test, expect } from './fixtures/electron-app';
 import { commandPaletteInput, openCommandPalette } from './helpers/palette';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('动态命令 → palette → Enter → modal 关', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

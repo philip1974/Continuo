@@ -5,17 +5,12 @@ import {
   PERMISSION_LABEL_FS,
   PERMISSION_LABEL_NETWORK,
 } from './helpers/permission-prompt';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('请求 fs/network/clipboard → 显本地化 permission label', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/electron-app';
 import { dispatchModKey } from './helpers/hotkeys';
 import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { waitForTestHooks } from './helpers/app-ready';
 
 // 全局热键的监听在 App 挂载后的 effect 里注册,改键后的绑定表也要等 React 下一次提交(render + effect)。
 // `__continuoTest` 在 createRoot().render() 之后同步挂上,早于 App 首次提交 —— 只等它就派发按键会赛跑
@@ -24,13 +25,7 @@ test('override settings.toggle 为 mod+shift+y → 按下新组合 → 打开 Se
   window,
 }) => {
   await appMounted(window);
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (
@@ -53,13 +48,7 @@ test('override settings.toggle 为 mod+shift+y → 按下新组合 → 打开 Se
 
 test('override 后 → 旧 hotkey ⌘, 不再触发', async ({ window }) => {
   await appMounted(window);
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 正向对照:改键前 ⌘, 能打开 Settings(热键通路已就绪),再 ⌘, 关闭
   const nav = window.getByRole('navigation', { name: SETTINGS_NAV });

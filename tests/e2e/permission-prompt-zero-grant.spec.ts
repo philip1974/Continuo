@@ -5,15 +5,10 @@ import {
   PERMISSION_GRANT_SELECTED,
   permissionGrantSelectedText,
 } from './helpers/permission-prompt';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('全部 uncheck → 「授权选中(0)」 → resolve []', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   const grantedPromise = window.evaluate(async () => {
     const t = (

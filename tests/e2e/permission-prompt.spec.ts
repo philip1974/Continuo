@@ -7,17 +7,12 @@ import {
   PERMISSION_GRANT_SELECTED,
   permissionGrantSelectedText,
 } from './helpers/permission-prompt';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('请求 fs/network 权限 → modal 列出两条,默认全选 + 授权按钮显数', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 触发 prompt(fire-and-forget — 当前 spec 不验证 promise 结果)
   await window.evaluate(() => {
@@ -58,13 +53,7 @@ test('请求 fs/network 权限 → modal 列出两条,默认全选 + 授权按�
 });
 
 test('点「授权选中」→ Promise resolve 含勾选项', async ({ window }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   // 让 evaluate 返 promise 结果
   const grantedPromise = window.evaluate(async () => {

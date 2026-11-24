@@ -4,17 +4,12 @@
 // 简化:验证「同一时刻只看到 1 个 modal」,无论 fire 多少次 requestPermissions.
 
 import { test, expect } from './fixtures/electron-app';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('连续 2 次 requestPermissions → 仍只 1 个 modal 渲染', async ({
   window,
 }) => {
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
 
   await window.evaluate(() => {
     const t = (

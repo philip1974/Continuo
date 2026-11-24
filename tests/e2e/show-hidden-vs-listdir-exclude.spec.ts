@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { explorerTreeItem } from './helpers/explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('切 showHiddenFiles=true → .env 显;node_modules 仍不显', async ({
   window,
@@ -19,13 +20,7 @@ test('切 showHiddenFiles=true → .env 显;node_modules 仍不显', async ({
     window.locator('[role=treeitem]').filter({ hasText: /^\.env$/ }),
   ).toHaveCount(0);
 
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {

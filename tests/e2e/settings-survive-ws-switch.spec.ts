@@ -6,6 +6,7 @@ import path from 'node:path';
 import { explorerMoreActionsButton } from './helpers/explorer';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('改 fontSize=18 + 切 ws → fontSize 仍 18', async () => {
   test.setTimeout(30_000);
@@ -21,13 +22,7 @@ test('改 fontSize=18 + 切 ws → fontSize 仍 18', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    await win.waitForFunction(
-      () =>
-        Boolean(
-          (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-        ),
-      { timeout: 5_000 },
-    );
+    await waitForTestHooks(win)
 
     // 改 fontSize=18
     await win.evaluate(() => {

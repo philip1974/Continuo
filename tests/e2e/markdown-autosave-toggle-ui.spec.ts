@@ -4,6 +4,7 @@ import {
   EDITOR_MODE_EDIT,
   EDITOR_SAVE_LABEL,
 } from './helpers/editor';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('打开 .md → 关闭 autoSave 后 SegmentedControl 仍在 + Save 不显', async ({
   window,
@@ -28,13 +29,7 @@ test('打开 .md → 关闭 autoSave 后 SegmentedControl 仍在 + Save 不显',
   expect(await saveBtn.count()).toBe(0);
 
   // 切 setting
-  await window.waitForFunction(
-    () =>
-      Boolean(
-        (window as unknown as { __continuoTest?: unknown }).__continuoTest,
-      ),
-    { timeout: 5_000 },
-  );
+  await waitForTestHooks(window)
   await window.evaluate(() => {
     const t = (
       window as unknown as {
