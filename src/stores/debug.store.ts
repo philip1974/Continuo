@@ -395,16 +395,18 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     const cached = session?.variableRefs.get(variablesReference);
     if (cached) return cached;
 
-    // 用户点「加载作用域」触发:失败(ok:false / reject)提示并返回空,不向面板抛出。
+    // 用户点「加载作用域」触发:失败(ok:false / reject)提示并返回空,不向面板抛出。与 pullStackAndScopes 同规则:
+    // 发起后已继续运行 / 进入下一停的迟到失败不提示(variablesReference 只在本停有效,继续后必然失败)。
+    const stillCurrent = (): boolean => stopSeq !== undefined && isCurrentStop(sessionId, stopSeq);
     let result: Awaited<ReturnType<typeof coApi.debug.getVariables>>;
     try {
       result = await coApi.debug.getVariables({ sessionId, variablesReference });
     } catch (err) {
-      notifyThrownError(err);
+      if (stillCurrent()) notifyThrownError(err);
       return [];
     }
     if (!result.ok) {
-      notifyFailure(result);
+      if (stillCurrent()) notifyFailure(result);
       return [];
     }
     const variables = Array.isArray(asRecord(result.data).variables)

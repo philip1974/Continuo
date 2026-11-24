@@ -164,3 +164,24 @@ describe('点「加载作用域」失败 → 提示', () => {
     );
   });
 });
+
+// 与取栈同规则:variablesReference 只在本停有效,发起后继续运行 / 进入下一停的迟到失败不提示。
+describe('加载作用域的迟到失败', () => {
+  it('发起后 continue,旧一停的 getVariables 失败(ok:false / reject)→ 不提示', async () => {
+    const a = deferred<typeof failure>();
+    const b = deferred<never>();
+    debugApi.getVariables.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+    startDebugStoreSync();
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 1, reason: 'breakpoint' });
+    await flushMicrotasks(4);
+    const p1 = useDebugStore.getState().loadVariables('s1', 44);
+    const p2 = useDebugStore.getState().loadVariables('s1', 45);
+    emit({ type: 'continued', sessionId: 's1' });
+    a.resolve(failure);
+    b.reject(new Error('late'));
+    await expect(p1).resolves.toEqual([]);
+    await expect(p2).resolves.toEqual([]);
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+});
+
