@@ -1,4 +1,13 @@
-import { isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
+import { t as translate } from '@/i18n';
+import { basename, isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
+
+/**
+ * 编辑 tab 的显示名:有路径取 basename,草稿(无路径)用「未命名」。tab 条与关闭 / 覆盖确认框共用 —— 此前两处各写
+ * 一份,tab 上叫「未命名」、确认框里叫「草稿」,同一个 tab 两个名字。
+ */
+export function editorTabTitle(filePath: string | null): string {
+  return filePath ? basename(filePath) : translate('panels.editor.untitled');
+}
 
 function isAsciiCharCaseInsensitive(
   path: string,

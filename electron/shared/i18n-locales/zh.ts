@@ -265,7 +265,6 @@ export const zh: Record<TranslationKey, string> = {
 
   // panels.editor.*
   'panels.editor.untitled': '未命名',
-  'panels.editor.draft': '草稿',
   'panels.editor.unsaved_draft': '未保存草稿',
   'panels.editor.unsaved_indicator': '未保存的更改',
   'panels.editor.placeholder.start_writing': '开始书写…',

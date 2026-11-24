@@ -282,7 +282,6 @@ export const en = {
 
   // panels.editor.*
   'panels.editor.untitled': 'Untitled',
-  'panels.editor.draft': 'Draft',
   'panels.editor.unsaved_draft': 'Unsaved draft',
   'panels.editor.unsaved_indicator': 'Unsaved changes',
   'panels.editor.placeholder.start_writing': 'Start writing…',

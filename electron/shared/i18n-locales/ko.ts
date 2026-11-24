@@ -268,7 +268,6 @@ export const ko: Record<TranslationKey, string> = {
 
   // panels.editor.*
   'panels.editor.untitled': '제목 없음',
-  'panels.editor.draft': '초안',
   'panels.editor.unsaved_draft': '저장되지 않은 초안',
   'panels.editor.unsaved_indicator': '저장되지 않은 변경 사항',
   'panels.editor.placeholder.start_writing': '작성을 시작하세요…',

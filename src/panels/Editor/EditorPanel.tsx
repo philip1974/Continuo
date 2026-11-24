@@ -15,8 +15,7 @@ import {
   type EditorMode,
 } from '@/stores/editor.store';
 import { t as translate, useLocale } from '@/i18n';
-import { isMarkdownTab } from './editor-path-utils';
-import { basename as pathBasename } from '@/lib/path-cross';
+import { editorTabTitle, isMarkdownTab } from './editor-path-utils';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { EditorHeader, type TabChrome } from './EditorHeader';
@@ -63,11 +62,6 @@ let lazyEngines: LazyEngines = {
   milkdown: createLazyMilkdownEditor(),
 };
 
-function basename(p: string | null): string {
-  // 非空 basename 规则共用 path-cross.basename;null fallback 文案各自处理。
-  if (!p) return translate('panels.editor.draft');
-  return pathBasename(p);
-}
 
 function isSKey(key: string): boolean {
   return key === 's' || key === 'S';
@@ -360,7 +354,7 @@ export function EditorPanel() {
           closeCandidate ? (
             <>
               <code className="text-fg">
-                {basename(closeCandidate.filePath)}
+                {editorTabTitle(closeCandidate.filePath)}
               </code>{' '}
               {translate('panels.editor.discard_body')}
             </>
@@ -378,7 +372,7 @@ export function EditorPanel() {
           overwriteCandidate ? (
             <>
               <code className="text-fg">
-                {basename(overwriteCandidate.filePath)}
+                {editorTabTitle(overwriteCandidate.filePath)}
               </code>{' '}
               {translate('panels.editor.disk_changed_body')}
             </>

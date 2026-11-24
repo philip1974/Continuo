@@ -15,9 +15,8 @@ import {
   type EditorMode,
   type EditorTab,
 } from '@/stores/editor.store';
-import { useT, t as translate } from '@/i18n';
+import { useT } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
-import { basename as pathBasename } from '@/lib/path-cross';
 import {
   Button,
   IconButton,
@@ -32,6 +31,7 @@ import {
   isEditorActionVisible,
   type EditorActionSpec,
 } from '@/plugins/registries/EditorActionRegistry';
+import { editorTabTitle } from './editor-path-utils';
 
 /**
  * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
@@ -49,11 +49,6 @@ interface EditorHeaderProps {
 
 const EMPTY_TAB_CHROME: TabChrome[] = [];
 
-function basename(p: string | null): string {
-  // 非空 basename 规则共用 path-cross.basename;null fallback 文案各自处理。
-  if (!p) return translate('panels.editor.untitled');
-  return pathBasename(p);
-}
 
 export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
   if (tabs.length === 0) return EMPTY_TAB_CHROME;
@@ -191,7 +186,7 @@ export const EditorHeader = memo(function EditorHeader({
         ariaLabel={t('shell.tab.editor_tablist')}
       >
         {tabsChrome.map((tab) => {
-          const tabTitle = basename(tab.filePath);
+          const tabTitle = editorTabTitle(tab.filePath);
           return (
             <TabNavItem
               key={tab.id}
