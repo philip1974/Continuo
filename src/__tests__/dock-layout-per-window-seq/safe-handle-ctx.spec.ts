@@ -141,3 +141,21 @@ describe('safeHandleWithCtx coded error contract', () => {
     expect(called).toBe(false);
   });
 });
+
+// IPC 通用兜底必须接住任意抛出值:handler `throw null` / 不带值 reject 时,整理错误这一步此前对 null 读 .code 再抛
+// TypeError → renderer 收到 Electron 原样 "Error invoking remote method" 而非 IpcResult 失败结构(MCP 侧早已防 null)。
+describe('processIpcCall · 抛出 null / undefined', () => {
+  it.each([null, undefined])('handler 抛 %s → { ok:false, code: HANDLER_ERROR }', async (thrown) => {
+    const r = await processIpcCall(
+      z.string(),
+      () => {
+        throw thrown;
+      },
+      'x',
+      event.senderFrame,
+      trustAll,
+    );
+    expect(r).toMatchObject({ ok: false, code: IPC_ERR.HANDLER_ERROR });
+  });
+});
+

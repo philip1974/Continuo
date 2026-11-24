@@ -7,7 +7,7 @@ import { IPC_ERR } from '../shared/ipc-result';
 import { formatZodErrorCapped } from './lib/format-zod-error';
 import { MAX_WINDOW_URL_LEN } from '../shared/url-limits';
 import { boundedObjectAdmissible } from '../shared/bounded-input';
-import { capErrorText, codedError } from '../shared/error-message';
+import { capErrorText, codedError, thrownFields } from '../shared/error-message';
 
 // 边界(E157,E73 同族):BAD_INPUT 错误经 formatZodErrorCapped 限幅,但 handler 抛出的 Error 的
 // code/message 此前原样回传。任一 handler 把外部错误/超长路径/子进程 stderr 拼进 Error.message,
@@ -18,9 +18,9 @@ export const ERR_MESSAGE_MAX = 8192;
 
 /** 把 catch 到的 err 规整为限幅后的 IpcResult 错误(code≤ERR_CODE_MAX,message≤ERR_MESSAGE_MAX)。 */
 function toCappedErrorResult(err: unknown): IpcResult<never> {
-  const e = err as { code?: unknown; message?: unknown };
-  const code = typeof e.code === 'string' ? e.code : IPC_ERR.HANDLER_ERROR;
-  const message = typeof e.message === 'string' ? e.message : String(err);
+  const fields = thrownFields(err);
+  const code = fields.code ?? IPC_ERR.HANDLER_ERROR;
+  const message = fields.message ?? String(err);
   if (code === IPC_ERR.HANDLER_ERROR) {
     console.error('[ipc] unhandled error in handler:', err);
   }

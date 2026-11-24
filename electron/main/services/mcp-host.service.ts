@@ -27,7 +27,7 @@ import { jsonByteLowerBoundExceeds, jsonStringLengthLowerBoundExceeds } from '..
 import { RESULT_BYTES_MAX } from '../../shared/plugin-mcp-schemas';
 import { PLUGIN_MCP_ERROR_CODES } from '../../shared/plugin-mcp-channels';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
-import { capErrorText, codedError } from '../../shared/error-message';
+import { capErrorText, codedError, thrownFields } from '../../shared/error-message';
 import { waitAtMost } from '../../shared/wait-at-most';
 import { MCP_MAX_MESSAGE_BYTES } from '../lib/mcp-limits';
 import { startsWithAsciiIgnoreCase } from '../../shared/lower-if-needed';
@@ -581,18 +581,16 @@ export function formatToolCallError(err: unknown): {
   message: string;
   data?: { code: string };
 } {
-  // 边界:err 可为 null/原始值(tool throw 任意值)—— null/undefined 上读 .message 会抛,先归一化为对象。
-  const e = (
-    err !== null && typeof err === 'object' ? err : {}
-  ) as { code?: unknown; message?: unknown };
+  // 边界:err 可为 null/原始值(tool throw 任意值)—— 经 thrownFields 取字符串字段(与 IPC 兜底同一规则)。
+  const e = thrownFields(err);
   const out: { code: number; message: string; data?: { code: string } } = {
     code: -32603,
     message: capErrorText(
-      typeof e.message === 'string' ? e.message : 'internal error',
+      e.message ?? 'internal error',
       MCP_ERR_MESSAGE_MAX,
     ),
   };
-  if (typeof e.code === 'string') {
+  if (e.code !== undefined) {
     out.data = { code: capErrorText(e.code, MCP_ERR_CODE_MAX) };
   }
   return out;
