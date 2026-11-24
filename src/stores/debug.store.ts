@@ -133,6 +133,35 @@ function asBreakpoint(value: unknown): DebugBreakpoint | null {
   };
 }
 
+// debug 推送事件来自 IPC:与 subscribe 快照同形,同样逐字段校验(asBreakpoint)、断点数按同一上限截断
+//(E168-E175 push ingress 守卫族)。不合法 → null,调用方 drop。
+function asDebugViewEvent(value: unknown): DebugViewEvent | null {
+  const raw = asRecord(value);
+  if (typeof raw.sessionId !== 'string') return null;
+  const sessionId = raw.sessionId;
+  switch (raw.type) {
+    case 'breakpoints-changed':
+      if (typeof raw.file !== 'string' || !Array.isArray(raw.breakpoints)) return null;
+      return {
+        type: 'breakpoints-changed',
+        sessionId,
+        file: raw.file,
+        breakpoints: (raw.breakpoints as readonly unknown[])
+          .map(asBreakpoint)
+          .filter((bp): bp is DebugBreakpoint => bp !== null)
+          .slice(0, DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX),
+      };
+    case 'stopped':
+      if (typeof raw.stopSeq !== 'number' || typeof raw.reason !== 'string') return null;
+      return { type: 'stopped', sessionId, stopSeq: raw.stopSeq, reason: raw.reason };
+    case 'continued':
+    case 'terminated':
+      return { type: raw.type, sessionId };
+    default:
+      return null;
+  }
+}
+
 interface SessionSnapshot {
   readonly id: string;
   readonly stop?: { readonly stopSeq: number; readonly reason: string };
@@ -402,7 +431,12 @@ export function startDebugStoreSync(): void {
   const isLatest = debugSyncGuard.begin();
   const touched = new Set<string>();
   let snapshotApplied = false;
-  unsubscribeDebugEvents = coApi.debug.onEvent((event) => {
+  unsubscribeDebugEvents = coApi.debug.onEvent((payload) => {
+    const event = asDebugViewEvent(payload);
+    if (!event) {
+      console.warn('[debug] invalid debug view event, dropped', payload);
+      return;
+    }
     if (!snapshotApplied) touched.add(event.sessionId);
     void useDebugStore.getState().ingestEvent(event);
   });

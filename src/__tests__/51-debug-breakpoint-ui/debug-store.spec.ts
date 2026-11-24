@@ -365,3 +365,40 @@ describe('topic51 Op4 · debug.store renderer shadow', () => {
     });
   });
 });
+
+// 边界(E168-E175 push ingress 守卫族):debug 事件与 subscribe 快照同形,快照逐字段校验并截断,事件此前直接
+// 进 store。畸形事件 drop + warn,不抛、不污染 store;断点数按同一上限截断。
+describe('debug 事件入口校验', () => {
+  const emit = (event: unknown) => debugApi.events[0]!(event as DebugViewEvent);
+
+  it('畸形事件(null / 缺字段 / 类型不对)→ drop,不抛,store 不变', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    startDebugStoreSync();
+    expect(() => emit(null)).not.toThrow();
+    emit({ type: 'breakpoints-changed', sessionId: 's1', file: '/a.ts', breakpoints: 'x' });
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 'one', reason: 'step' });
+    emit({ type: 'continued' });
+    emit({ type: 'unknown', sessionId: 's1' });
+    expect(useDebugStore.getState().sessions.size).toBe(0);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('breakpoints-changed:逐个校验断点(丢弃畸形项)并按上限截断', () => {
+    startDebugStoreSync();
+    const many = Array.from({ length: DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX + 5 }, (_, i) => ({
+      file: '/a.ts',
+      line: i + 1,
+      verified: true,
+    }));
+    emit({
+      type: 'breakpoints-changed',
+      sessionId: 's1',
+      file: '/a.ts',
+      breakpoints: [{ file: '/a.ts', line: 'bad', verified: true }, ...many],
+    });
+    const bps = useDebugStore.getState().sessions.get('s1')?.breakpoints ?? [];
+    expect(bps).toHaveLength(DEBUG_VIEW_SNAPSHOT_BREAKPOINTS_MAX);
+    expect(bps.every((bp) => typeof bp.line === 'number')).toBe(true);
+  });
+});
