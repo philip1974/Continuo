@@ -27,8 +27,25 @@
   --dv-separator-border: var(--md-outline-variant);
   --dv-paneview-header-border-color: var(--md-outline-variant);
   --dv-paneview-active-outline-color: var(--md-primary);
+
+  /* 其余 abyss 字面色:拖拽落点高亮(原写死半透明深灰,light 下残留)、图标悬停、tab 条滚动条、浮动组 */
+  --dv-drag-over-background-color: color-mix(in srgb, var(--md-primary) 18%, transparent);
+  --dv-icon-hover-background-color: var(--md-state-hover);
+  --dv-tabs-container-scrollbar-color: var(--md-outline-variant);
+  --dv-floating-box-shadow: var(--wm-shadow-popover);
+  --dv-floating-border: 1px solid var(--md-outline-variant);
 }
 
 .dockview-theme-abyss .dv-tab {
   padding: 0 12px;
+}
+
+/* tab 溢出下拉按钮(dockview 插在右侧 actions 最前):不透明底 + 分隔线 + 向左淡出,和被截断的 tab 文字隔开
+ * (大字号窄宽时曾读作「T⌄1」)。position:relative 让淡出阴影画在 tab 条之上。 */
+.dockview-theme-abyss .dv-tabs-overflow-dropdown-root {
+  position: relative;
+  display: flex;
+  background-color: var(--dv-tabs-and-actions-container-background-color);
+  border-left: 1px solid var(--dv-tab-divider-color);
+  box-shadow: -12px 0 8px -4px var(--dv-tabs-and-actions-container-background-color);
 }

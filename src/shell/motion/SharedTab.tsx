@@ -330,7 +330,8 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
         tabIndex={-1}
         onPointerDown={(e) => e.preventDefault()}
         onClick={onClose}
-        className="opacity-0 focus-visible:opacity-100 group-hover/tab:opacity-100"
+        // 激活 tab 常显(同编辑器 tab,TabNav);其余悬停 / 键盘聚焦时显示。
+        className={active ? undefined : 'opacity-0 focus-visible:opacity-100 group-hover/tab:opacity-100'}
       >
         {CLOSE_TAB_ICON}
       </IconButton>

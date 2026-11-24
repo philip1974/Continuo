@@ -1608,6 +1608,7 @@
 
 - [`confirm-on-kill.spec.tsx`](./terminal-vscode-parity/confirm-on-kill.spec.tsx)
 - [`context-menu.spec.tsx`](./terminal-vscode-parity/context-menu.spec.tsx)
+- [`dock-tab-chrome.spec.tsx`](./terminal-vscode-parity/dock-tab-chrome.spec.tsx)
 - [`exit-behavior.spec.tsx`](./terminal-vscode-parity/exit-behavior.spec.tsx)
 - [`link-modifier-click.spec.ts`](./terminal-vscode-parity/link-modifier-click.spec.ts)
 - [`running-process-main.spec.ts`](./terminal-vscode-parity/running-process-main.spec.ts)
