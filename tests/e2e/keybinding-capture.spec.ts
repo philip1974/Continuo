@@ -8,7 +8,7 @@ const SET_HOTKEY = /^(设置快捷键|Set hotkey|단축키 설정)$/;
 const UNBOUND = /未绑定|Unbound|바인딩 없음/;
 const CANCEL = /^(取消|Cancel|취소)$/;
 const SAVE = /^(保存|Save|저장)$/;
-const RESET_DEFAULT = /^(重置默认|Reset to default|기본값으로 재설정)$/;
+const KEYBINDING_MODAL_RESET = /^(重置默认|Reset to default|기본값으로 재설정)$/;
 
 async function openCaptureForFirstCommand(
   window: import('@playwright/test').Page,
@@ -47,5 +47,5 @@ test('编辑 modal:输入新组合 + 三个底部按钮可见', async ({ window 
   // 三个底部按钮文本可见
   await expect(dialog.getByRole('button', { name: CANCEL })).toBeVisible();
   await expect(dialog.getByRole('button', { name: SAVE })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: RESET_DEFAULT })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: KEYBINDING_MODAL_RESET })).toBeVisible();
 });

@@ -11,7 +11,6 @@ export const TERMINAL_TAB = /^(终端|Terminal|터미널)$/;
 export const KEYBINDINGS_TAB = /^(快捷键|Keybindings|단축키)$/;
 export const PLUGINS_TAB = /^(插件|Plugins|플러그인)$/;
 export const MARKETPLACE_TAB = /^(插件商店|Plugin Market|플러그인 마켓)$/;
-export const RESET_DEFAULT = /^(恢复默认|Reset to default|기본값으로 초기화)$/;
 export const RESET_DEFAULT_TEXT = /(恢复默认|Reset to default|기본값으로 초기화)/;
 const RESET_DEFAULT_SELECTOR = [
   '[aria-label="恢复默认"]',
