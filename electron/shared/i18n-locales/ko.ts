@@ -416,6 +416,7 @@ export const ko: Record<TranslationKey, string> = {
   // statusbar.*
   // notifications (toast)
   'notifications.dismiss': '닫기',
+  'notifications.repeat_announce': '{message}({count}회째)',
   'notifications.viewport_label': '알림',
 
   'statusbar.mcp.copy': 'MCP 설정 복사',
