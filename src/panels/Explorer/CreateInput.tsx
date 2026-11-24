@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Document, Folder } from '@react-symbols/icons';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
+import { normalizeLeafNameInput } from './path-utils';
 import { isImeComposing } from '@/lib/ime';
 import { FS_NAME_MAX } from '../../../electron/shared/leaf-name';
 
@@ -59,8 +60,8 @@ export function CreateInput({
         e.preventDefault();
         e.stopPropagation();
         if (submittedRef.current) return; // race(R82):已提交,忽略重复 Enter
-        const t = el.value.trim();
-        if (t) {
+        const t = normalizeLeafNameInput(el.value);
+        if (t !== null) {
           submittedRef.current = true;
           onSubmitRef.current(t);
         } else {

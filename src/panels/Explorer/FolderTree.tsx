@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
-import { basenamePreserveTrailing, dirname } from './path-utils';
+import { basenamePreserveTrailing, dirname, renameTarget } from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
@@ -461,14 +461,17 @@ export function FolderTree({ root }: { root: string }) {
         },
         onRename: (item: ItemInstance<FileEntry>, newName: string) => {
           // headless-tree onRename 是 sync 签名,我们 fire-and-forget 走 mutate-actions
+          const oldPath = item.getId();
+          // 未改名 / 空值 → 不发 IPC(见 renameTarget);与新建同一规范化(去首尾空白)。
+          const target = renameTarget(oldPath, newName);
+          if (target === null) return;
           void (async () => {
-            const oldPath = item.getId();
             // a11y(A133,A50 同族):renameItem 已把 IPC reject 归为 ok:false;try/catch 兜的是其后的 editor /
             // 剪贴板同步抛错 —— fire-and-forget 下不兜即 unhandled rejection、用户无反馈。
             try {
               const r = await renameItem(
                 oldPath,
-                newName,
+                target,
                 { fs: coApi.fs },
                 { invalidateChildrenIds: refreshParent },
               );

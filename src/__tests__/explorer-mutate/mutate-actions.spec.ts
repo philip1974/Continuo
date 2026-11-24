@@ -1,3 +1,4 @@
+import { normalizeLeafNameInput, renameTarget } from '../../panels/Explorer/path-utils';
 import { describe, it, expect, vi } from 'vitest';
 import {
   createNewDir,
@@ -298,3 +299,22 @@ describe('createNewDir', () => {
     expect(tree.invalidateChildrenIds).not.toHaveBeenCalled();
   });
 });
+
+// 新建与重命名共用同一输入规范化(此前新建 trim + 空值取消,重命名原样提交):F2 不改名直接回车 → headless-tree
+// 仍以原名调 onRename → 改名到自身「成功」→ 剪贴板 prune 掉该路径(剪切标记消失);空值弹 FS_BAD_NAME;
+// 带首尾空格被拒。重命名规范化后为空或与原名相同 → 不发 IPC。
+describe('normalizeLeafNameInput / renameTarget', () => {
+  it('去首尾空白;空值 → null', () => {
+    expect(normalizeLeafNameInput('  foo.md ')).toBe('foo.md');
+    expect(normalizeLeafNameInput('   ')).toBeNull();
+  });
+
+  it('重命名:未改名 / 空值 → null;改名(含仅大小写)→ 规范化后的新名', () => {
+    expect(renameTarget('/w/a.md', 'a.md')).toBeNull();
+    expect(renameTarget('/w/a.md', ' a.md ')).toBeNull();
+    expect(renameTarget('/w/a.md', '')).toBeNull();
+    expect(renameTarget('/w/a.md', ' b.md ')).toBe('b.md');
+    expect(renameTarget('/w/a.md', 'A.md')).toBe('A.md');
+  });
+});
+

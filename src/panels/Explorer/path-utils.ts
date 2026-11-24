@@ -2,6 +2,7 @@
 // 这里转出 dirname / basename 供 Explorer 既有调用方,并放 Explorer 专用的批量路径处理。
 
 import {
+  basename,
   containmentFold,
   containmentKey,
   someContainmentCandidate,
@@ -81,3 +82,19 @@ export function recentRootLabelParts(p: string): { name: string; parent: string 
   const name = basenameForChrome(p);
   return { name, parent: name === p ? '' : p.slice(0, p.length - name.length - 1) };
 }
+
+/** 用户输入的文件 / 目录名:去首尾空白;空值 → null(视为取消)。新建与重命名共用。 */
+export function normalizeLeafNameInput(raw: string): string | null {
+  const name = raw.trim();
+  return name === '' ? null : name;
+}
+
+/**
+ * 重命名的目标名:规范化后为空、或与原名相同 → null(不发 IPC)。headless-tree 在提交时无条件以输入框值调 onRename
+ *(初值即原名),不拦则「改名到自身」成功后剪贴板 prune 掉该路径、剪切标记凭空消失。仅大小写不同仍是改名。
+ */
+export function renameTarget(oldPath: string, raw: string): string | null {
+  const name = normalizeLeafNameInput(raw);
+  return name === null || name === basename(oldPath) ? null : name;
+}
+
