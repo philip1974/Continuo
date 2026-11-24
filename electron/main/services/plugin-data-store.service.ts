@@ -1,5 +1,4 @@
 import { promises as fs } from 'node:fs';
-import { PLUGIN_ID_MAX_LEN } from '../../shared/permission-record-limits';
 import { join } from 'node:path';
 import type { IpcMain } from 'electron';
 import lockfile from 'proper-lockfile';
@@ -12,7 +11,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { assertJsonValue } from '../../shared/assert-json-value';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
-import { isValidPluginId } from '../../shared/plugin-id';
+import { isSafePluginId } from '../../shared/plugin-id';
 import { PLUGIN_DATA_CHANNELS } from '../../shared/plugin-data-channels';
 import { codedError } from '../../shared/error-message';
 import { withInstalledPluginLock } from './plugins.service';
@@ -31,17 +30,10 @@ export interface PluginDataStoreDeps {
 // plugin id 必须是单段安全标识符 —— 与 plugins.service / loader 的 id 正则一致。
 // 拒绝路径分隔符 / .. / 空,防 dataFile() 的 join 越出 plugins 目录(路径穿越:
 // save('../../foo',...) 可在 userData 外任意写/删/读文件)。
-// 边界(E177):pluginId 长度上限(对齐 plugins.service / plugin-mcp-schemas / plugins.ipc 的
-// PLUGIN_ID_MAX=256)。绕过 wrapper 直调 pluginDataRaw.load / saveSerialized 时,超长合法 id 会进正则扫描/
-// path join/lockfile/错误链路放大主进程 CPU/内存/日志或触发 ENAMETOOLONG。
-const PLUGIN_ID_MAX = PLUGIN_ID_MAX_LEN;
-
+// 边界(E177):含长度上限(isSafePluginId)。绕过 wrapper 直调 pluginDataRaw.load / saveSerialized 时,超长合法 id
+// 会进正则扫描 / path join / lockfile / 错误链路放大主进程 CPU / 内存 / 日志或触发 ENAMETOOLONG。
 function assertPluginId(pluginId: unknown): asserts pluginId is string {
-  if (
-    typeof pluginId !== 'string' ||
-    pluginId.length > PLUGIN_ID_MAX ||
-    !isValidPluginId(pluginId)
-  ) {
+  if (typeof pluginId !== 'string' || !isSafePluginId(pluginId)) {
     // 边界(E177,E148 echo 族):不回显原始(可能超长)id,防错误消息经 IPC/日志放大;附稳定 code。
     throw codedError(ERROR_CODES.BAD_INPUT, 'invalid plugin id');
   }

@@ -40,7 +40,7 @@ import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { fsError, isCaseOrNormalizationOnlyRename, mapNodeErrnoCode } from '../ipc/fs/path-utils';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { errorMessage } from '../../shared/error-message';
-import { isSafePluginId } from './plugins.service';
+import { isSafePluginId } from '../../shared/plugin-id';
 import {
   GIT_OFFLINE_ENV,
   mergeSpawnEnv,

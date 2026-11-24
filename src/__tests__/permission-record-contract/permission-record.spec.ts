@@ -10,7 +10,7 @@ import {
   isIpcPermissionDecision,
 } from '../../../electron/shared/permission-record';
 import { PERMISSION_RECORD_LIMITS, PLUGIN_ID_MAX_LEN } from '../../../electron/shared/permission-record-limits';
-import { isSafePluginId } from '../../../electron/main/services/plugins.service';
+import { isSafePluginId } from '../../../electron/shared/plugin-id';
 
 describe('isIpcPermissionDecision', () => {
   const ok = { permission: 'fs', granted: true, decidedAt: 1 };

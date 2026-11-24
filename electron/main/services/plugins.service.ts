@@ -2,10 +2,7 @@
 // 纯函数风格,便于单测;真正的 IPC 注册在 plugins.ipc.ts。
 
 import { spawn } from 'node:child_process';
-import {
-  PERMISSION_RECORD_LIMITS,
-  PLUGIN_ID_MAX_LEN,
-} from '../../shared/permission-record-limits';
+import { PERMISSION_RECORD_LIMITS } from '../../shared/permission-record-limits';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs, type Dirent, type Stats } from 'node:fs';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
@@ -22,7 +19,7 @@ import type {
 import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError, errorMessage } from '../../shared/error-message';
-import { isValidPluginId } from '../../shared/plugin-id';
+import { isSafePluginId } from '../../shared/plugin-id';
 import { ownValue } from '../../shared/own-value';
 import { isValidGitBranch } from '../../shared/git-branch';
 import { createSerialQueue } from '../../shared/run-serial-per-key';
@@ -102,17 +99,9 @@ export function resolvePluginMainPath(
   return resolved;
 }
 
-/**
- * 插件 id 安全性:形态规则见 electron/shared/plugin-id(isValidPluginId,跨进程单一来源)+ 长度上限。
- * 历史:旧正则 `^[a-z0-9._-]+$` 允许纯点段,`id='..'` 会让 `path.join(baseDir, id)` 解析到
- * baseDir 的父目录;overwrite 安装(marketplace「更新」)随即 rename 覆盖父目录 →
- * 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
- */
-export function isSafePluginId(id: string): boolean {
-  // 长度上限与读端一致:各持久化读端都丢弃超长 id,写端 / 安装 / 卸载若只查字符集,超长合法字符 id 会
-  //「写成功、读回被丢」(且超长 id 拼路径可能 ENAMETOOLONG)。
-  return id.length <= PLUGIN_ID_MAX_LEN && isValidPluginId(id);
-}
+// 插件 id 安全性见 electron/shared/plugin-id 的 isSafePluginId(形态 + 长度上限)。历史:旧正则 `^[a-z0-9._-]+$`
+// 允许纯点段,`id='..'` 会让 `path.join(baseDir, id)` 解析到 baseDir 的父目录;overwrite 安装(marketplace
+//「更新」)随即 rename 覆盖父目录 → 路径穿越(审计 P1)。与 fs `renameEntry` 拒 `.`/`..` 同款防御。
 
 // 边界(E102):manifest.main 入口名长度上限,对齐 renderer ManifestSchema 的 main.max(512,E74)。
 // getPluginMainName 是 list/install/watch 三入口共用的 main 选择器,此前无长度上限 → 畸形 manifest

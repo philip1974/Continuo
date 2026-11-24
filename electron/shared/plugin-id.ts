@@ -17,6 +17,18 @@
 // 不得是 Windows 保留设备名(con / prn / aux / nul / com0-9 / lpt0-9),含带扩展名的形式(`nul.x`:第一个点
 // 之前的部分是设备名即算):作目录名时指向设备而不是目录。id 本就只有小写,无需再折叠大小写。
 // 这两条各平台统一执行 —— 同一份 manifest 不因平台而一处能装一处不能装。
+import { PLUGIN_ID_MAX_LEN } from './permission-record-limits';
+
+/**
+ * 拼路径 / 落盘前的安全前门:形态合法(isValidPluginId)且不超长度上限。长度上限与读端一致:各持久化读端都丢弃
+ * 超长 id,写端 / 安装 / 卸载若只查字符集,超长合法字符 id 会「写成功、读回被丢」(且超长 id 拼路径可能
+ * ENAMETOOLONG)。main 的 plugins / plugin-fs / plugin-data-store 共用(此前 data-store 逐字重写一份,plugin-fs
+ * 为此反向依赖 plugins.service)。
+ */
+export function isSafePluginId(id: string): boolean {
+  return id.length <= PLUGIN_ID_MAX_LEN && isValidPluginId(id);
+}
+
 /** plugin id 形态合法:仅小写字母数字与 `. _ -`,首字符不为 `.` / `_`,末字符不为 `.`,且不是 Windows 保留设备名。 */
 export function isValidPluginId(id: string): boolean {
   if (id.length === 0) return false;

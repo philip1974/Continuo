@@ -2,11 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  isSafePluginId,
-  listPluginDirs,
-  uninstallPlugin,
-} from '../../../electron/main/services/plugins.service';
+import { listPluginDirs, uninstallPlugin } from '../../../electron/main/services/plugins.service';
+import { isSafePluginId } from '../../../electron/shared/plugin-id';
 import { parseManifest } from '../../../electron/shared/plugin-manifest';
 import { isValidPluginId } from '../../plugins/plugin-id';
 import { setupTempDirs } from '../_helpers/tmp-dir';
