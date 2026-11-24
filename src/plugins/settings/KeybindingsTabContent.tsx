@@ -9,6 +9,8 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import {
+  canonicalHotkey,
+  formatHotkey,
   formatHotkeyParts,
   detectPlatform,
   type Platform,
@@ -152,6 +154,18 @@ export function buildCommandSearchHaystack(
   return lowerIfNeeded(`${displayTitle} ${displayCategory} ${commandId} ${effectiveHotkey ?? ''}`);
 }
 
+/**
+ * 快捷键的搜索文本:原始串(mod+t)+ 平台显示形式(mac `⌘T`、其它 `Ctrl+T`)+ mac 上的修饰键英文名
+ * (cmd+t —— 键帽只有符号,用户常输 cmd)。否则占位写「可搜索快捷键」,Windows 输 ctrl+t、mac 输 ⌘ / cmd
+ * 都搜不到。
+ */
+export function hotkeySearchText(hotkey: string, platform: Platform): string {
+  const display = formatHotkey(hotkey, platform);
+  if (platform !== 'mac') return `${hotkey} ${display}`;
+  const named = canonicalHotkey(hotkey, platform).replace('meta+', 'cmd+').replace('alt+', 'option+');
+  return `${hotkey} ${display} ${named}`;
+}
+
 export function countDefaultHotkeys(commands: readonly CommandSpec[]): number {
   let count = 0;
   for (const command of commands) {
@@ -191,7 +205,12 @@ export function buildKeybindingDisplayCommands(
       // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
       // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
       // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
-      searchHaystack: buildCommandSearchHaystack(displayTitle, displayCategory, cmd.id, effective),
+      searchHaystack: buildCommandSearchHaystack(
+        displayTitle,
+        displayCategory,
+        cmd.id,
+        effective ? hotkeySearchText(effective, platform) : undefined,
+      ),
     };
   }
   if (out === null) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
@@ -342,7 +361,10 @@ export function KeybindingsTabContent() {
                       <IconButton
                         size="xs"
                         title={t('keybindings.reset_default', {
-                          hotkey: cmd.hotkey ?? unboundLabel,
+                          // 与键帽同一格式化(⇧ ⌘ ↵),不显示原始串(shift+mod+enter)。
+                          hotkey: cmd.hotkey
+                            ? formatHotkeyParts(cmd.hotkey, PLATFORM).join(' ')
+                            : unboundLabel,
                         })}
                         aria-label={t('keybindings.reset_default_for_aria', {
                           command: d.displayTitle,

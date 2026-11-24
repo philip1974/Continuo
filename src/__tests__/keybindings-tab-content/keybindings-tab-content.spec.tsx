@@ -6,6 +6,7 @@ import { fireEvent, render, cleanup, act } from '@testing-library/react';
 import {
   KeybindingsTabContent,
   buildCommandSearchHaystack,
+  buildKeybindingDisplayCommands,
   groupByCategory,
   selectVisibleKeybindingCommands,
   type DisplayCommand,
@@ -45,7 +46,7 @@ describe('KeybindingsTabContent — 列表', () => {
     expect(src).toContain("const editHotkeyLabel = t('keybindings.edit_hotkey');");
     expect(src).toContain('{unboundLabel}');
     expect(src).toContain('title={editHotkeyLabel}');
-    expect(src).toContain('hotkey: cmd.hotkey ?? unboundLabel');
+    expect(src).toContain(': unboundLabel,');
     expect(src).not.toContain("{t('keybindings.unbound')}");
     expect(src).not.toContain("title={t('keybindings.edit_hotkey')}");
     expect(src).not.toContain("cmd.hotkey ?? t('keybindings.unbound')");
@@ -346,6 +347,32 @@ describe('KeybindingsTabContent — 搜索', () => {
     expect(status!.textContent).toContain('无匹配命令');
   });
 
+  it('搜索文本含平台格式化后的快捷键:非 mac 可搜 ctrl+t / Ctrl;mac 可搜 ⌘ / cmd', () => {
+    const cmds = [{ id: 'term.new', title: 'New Terminal', hotkey: 'mod+t', fn: vi.fn() }];
+    const tk = (_k: string | undefined, fallback: string): string => fallback;
+    const [other] = buildKeybindingDisplayCommands(cmds, tk, {}, 'other');
+    const [mac] = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    expect(selectVisibleKeybindingCommands([other!], 'ctrl+t')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([other!], 'Ctrl')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([mac!], '⌘')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([mac!], 'cmd+t')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([mac!], '⌘t')).toHaveLength(1);
+    // 原始串仍可搜
+    expect(selectVisibleKeybindingCommands([mac!], 'mod+t')).toHaveLength(1);
+    // 不误命中别的平台修饰键名
+    expect(selectVisibleKeybindingCommands([other!], 'cmd')).toHaveLength(0);
+  });
+
+  it('界面搜索框输入 ctrl+t(jsdom 非 mac)能搜到 mod+t 命令', () => {
+    coApp.commands.register({ id: 'a', title: 'New Terminal', hotkey: 'mod+t', fn: vi.fn() });
+    coApp.commands.register({ id: 'b', title: 'Open File', hotkey: 'mod+o', fn: vi.fn() });
+    const { container } = render(<KeybindingsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'ctrl+t' } });
+    expect(container.textContent).toContain('New Terminal');
+    expect(container.textContent).not.toContain('Open File');
+  });
+
   it('query 匹配 hotkey', () => {
     coApp.commands.register({
       id: 'a',
@@ -390,6 +417,18 @@ describe('KeybindingsTabContent — override', () => {
     expect(resetBtn.className).not.toContain('invisible');
     fireEvent.click(resetBtn);
     expect(useKeybindingsStore.getState().overrides.a).toBeUndefined();
+  });
+
+  it('reset 按钮提示显示格式化后的默认快捷键(与键帽一致),不是原始串', () => {
+    coApp.commands.register({ id: 'a', title: 'A', hotkey: 'shift+mod+enter', fn: vi.fn() });
+    useKeybindingsStore.setState({ overrides: { a: 'mod+x' } });
+    const { container } = render(<KeybindingsTabContent />);
+    const resetBtn = container.querySelector(
+      'button[aria-label*="恢复默认"]',
+    ) as HTMLButtonElement;
+    // jsdom = 非 mac 平台
+    expect(resetBtn.title).toContain('Shift Ctrl Enter');
+    expect(resetBtn.title).not.toContain('shift+mod+enter');
   });
 
   it('显式 unbind 空字符串 → hotkey 显「未绑定」', () => {

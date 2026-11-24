@@ -30,6 +30,8 @@
 ### 搜索过滤
 
 - 大小写不敏感,匹配 title / category / id / hotkey
+- hotkey 的搜索文本含原始串(mod+t)+ 平台显示形式(mac `⌘T`、其它 `Ctrl+T`)+ mac 修饰键英文名(cmd+t):
+  Windows 输 ctrl+t、mac 输 ⌘ / cmd 都能搜到
 
 ### 空态
 
@@ -40,6 +42,7 @@
 
 - 行末 reset 按钮 invisible(未 override)/ visible(override 中)
 - 点 reset → store.reset(cmd.id)
+- reset 提示「恢复默认(…)」里的默认快捷键用与键帽同一格式化(⇧ ⌘ ↵ / Shift Ctrl Enter),不显示原始串
 
 ### 编辑
 
