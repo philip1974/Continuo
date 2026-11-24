@@ -25,6 +25,16 @@ afterEach(async () => {
 });
 
 describe('plugins.service path-scope persistence', () => {
+  // 写端字节上限与读端(1MiB)同一常量:插件可申请超长但不存在的路径,数次授权即可撑过上限;写出超限文件后每次读都抛
+  // → 所有插件 scope 水合降级为空、卸载中止且不自愈。超限拒写,原文件保持可读。
+  it('P-cap 序列化超读端上限 → PAYLOAD_TOO_LARGE 拒写,已有 scope 仍可读回', async () => {
+    const base = await makeBaseDir();
+    await writePluginPathScopes(base, 'com.a', [{ path: '/ok', mode: 'r' }]);
+    const huge = Array.from({ length: 200 }, (_, i) => ({ path: `/${'p'.repeat(6000)}${i}`, mode: 'r' as const }));
+    await expect(writePluginPathScopes(base, 'com.b', huge)).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    await expect(readPluginPathScopes(base, 'com.a')).resolves.toEqual([{ path: '/ok', mode: 'r' }]);
+  });
+
   it('P1 缺文件时读回空数组', async () => {
     const base = await makeBaseDir();
     await expect(readPluginPathScopes(base, 'com.a')).resolves.toEqual([]);

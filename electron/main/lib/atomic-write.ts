@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { ERROR_CODES } from '../../shared/error-codes';
+import { codedError } from '../../shared/error-message';
 
 /**
  * 原子写 JSON: temp + fsync + rename。
@@ -16,6 +18,27 @@ export async function atomicWriteJson(
   payload: unknown,
 ): Promise<void> {
   await atomicWriteText(filePath, JSON.stringify(payload, null, 2));
+}
+
+/**
+ * 带总量上限的原子写 JSON:按落盘序列化(同 atomicWriteJson)量 UTF-8 字节,超过 maxBytes 抛 PAYLOAD_TOO_LARGE、不写
+ * (原文件保持可读)。供「读端有字节上限、超限即抛且不降级」的文件(explorer.json、插件元数据表)用读端同一常量
+ * 拒写 —— 否则写出读不回来的文件后不自愈。
+ */
+export async function atomicWriteJsonCapped(
+  filePath: string,
+  payload: unknown,
+  maxBytes: number,
+): Promise<void> {
+  const text = JSON.stringify(payload, null, 2);
+  // UTF-16 长度 ×3 ≥ UTF-8 字节:未超时免一次全量编码。
+  if (text.length * 3 > maxBytes && Buffer.byteLength(text, 'utf8') > maxBytes) {
+    throw codedError(
+      ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `${path.basename(filePath)} would exceed ${maxBytes} bytes; write rejected`,
+    );
+  }
+  await atomicWriteText(filePath, text);
 }
 
 export interface AtomicWriteOptions {

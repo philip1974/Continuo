@@ -38,7 +38,7 @@ import {
   stripInternalSecretEnv,
   withGitHardeningEnv,
 } from '../lib/child-spawn-hardening';
-import { atomicWriteJson } from '../lib/atomic-write';
+import { atomicWriteJsonCapped } from '../lib/atomic-write';
 import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { openForReadNonBlocking, readFileCappedFd, readTextCappedOrThrow } from '../lib/read-fh-capped';
 import { isSameOrInsidePath } from '../lib/path-inside';
@@ -607,7 +607,7 @@ export async function writeEnabledIds(
   // 数据安全:与 writePermissions / writePluginPathScopes 同族 —— 裸 writeFile 截断窗口
   // 会留半截 JSON,readEnabledIds 损坏即降级 [] → 重启后所有插件被禁用。atomicWriteJson
   // 已导入,原子写成本为零,三个持久化写入口统一(原「列表小不投资 atomic」理由已不成立)。
-  await atomicWriteJson(file, ids);
+  await atomicWriteJsonCapped(file, ids, METADATA_MAX_BYTES);
 }
 
 // _enabled.json 的 read-modify-write 主进程全局串行链。
@@ -811,7 +811,7 @@ export async function writePermissions(
   // 整张授权表留成空/半截 JSON → 重启 readPermissions 按既有契约把损坏 JSON 降级为 {},
   // 所有 plugin 授权决策丢失。改 temp+fsync+rename 原子写:rename 前原文件始终完好,
   // 写失败也不动原文件(与 writeEnabledIds / writePluginPathScopes 同族修复)。
-  await atomicWriteJson(file, data);
+  await atomicWriteJsonCapped(file, data, METADATA_MAX_BYTES);
 }
 
 // 同文件 read-modify-write 串行化,防多窗口/并发授权互相覆盖(镜像
@@ -1014,7 +1014,9 @@ export function writePluginPathScopes(
     await fs.mkdir(baseDir, { recursive: true });
     // 数据安全:同 writePermissions —— 裸 writeFile 截断窗口会留半截 JSON,
     // readAllPathScopes 损坏即抛 → 水合降级 [],已授 path scope 丢失。原子写。
-    await atomicWriteJson(file, all);
+    // 字节上限与读端同一常量(METADATA_MAX_BYTES):插件可申请超长但不存在的路径,数次授权即可撑过 1MiB;写出超限
+    // 文件后每次读取都抛 → 所有插件 scope 水合降级为空、任何插件卸载都中止,且不自愈。
+    await atomicWriteJsonCapped(file, all, METADATA_MAX_BYTES);
   });
 }
 

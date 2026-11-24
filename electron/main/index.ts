@@ -666,6 +666,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
         // 自身段已落盘(或写失败)→ 解除保护;放在 mutex 体内,不另起派生 promise 制造未处理拒绝。
         closingSeqRefs.dec(seq);
       }
+    }).catch((err: unknown) => {
+      // 读失败(当前态未知)/ 超总量拒写(PAYLOAD_TOO_LARGE)时不覆盖文件;只记日志,不留未处理 rejection。
+      console.warn('[explorer] persist closed window segment failed:', err);
     });
   });
 

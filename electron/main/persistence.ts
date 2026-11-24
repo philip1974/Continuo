@@ -1,9 +1,7 @@
 import fs from 'node:fs/promises';
-import { atomicWriteText } from './lib/atomic-write';
+import { atomicWriteJsonCapped } from './lib/atomic-write';
 import { withExplorerFileMutex } from './lib/file-mutex';
 import { readTextCappedOrThrow } from './lib/read-fh-capped';
-import { ERROR_CODES } from '../shared/error-codes';
-import { codedError } from '../shared/error-message';
 
 // 可维护性 M15:Explorer 持久化 zod schema 抽到 electron/shared/explorer-persistence-schema.ts
 // 单一来源(renderer 也复用),此处 re-export 保持对外 API 不变 + import 供内部读写/迁移使用。
@@ -328,15 +326,7 @@ const MAX_EXPLORER_FILE_BYTES = 16 * 1024 * 1024;
  * 写入、分配窗口编号、启动恢复全部失败且不自愈。
  */
 export async function writeExplorerFile(filePath: string, payload: ExplorerPayloadV3): Promise<void> {
-  const text = JSON.stringify(payload, null, 2);
-  // UTF-16 长度 ×3 ≥ UTF-8 字节:未超时免一次全量编码。
-  if (text.length * 3 > MAX_EXPLORER_FILE_BYTES && Buffer.byteLength(text, 'utf8') > MAX_EXPLORER_FILE_BYTES) {
-    throw codedError(
-      ERROR_CODES.PAYLOAD_TOO_LARGE,
-      `explorer file would exceed ${MAX_EXPLORER_FILE_BYTES} bytes; write rejected`,
-    );
-  }
-  await atomicWriteText(filePath, text);
+  await atomicWriteJsonCapped(filePath, payload, MAX_EXPLORER_FILE_BYTES);
 }
 
 async function readExplorerCapped(filePath: string): Promise<string | null> {
