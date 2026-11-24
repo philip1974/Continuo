@@ -35,6 +35,8 @@ const MAIN_ERROR_CODES = {
   PLUGIN_MANIFEST_CHANGED: 'PLUGIN_MANIFEST_CHANGED',
   // 插件安装:clone 到的 manifest.id 与 marketplace entry.id(expectedId)不一致。
   PLUGIN_ID_MISMATCH: 'PLUGIN_ID_MISMATCH',
+  // 插件安装 / 更新:manifest.minLMVersion 高于当前应用版本(装上也载不了),覆盖前拒绝、旧版保留。
+  PLUGIN_INCOMPATIBLE: 'PLUGIN_INCOMPATIBLE',
   // 插件仓库(克隆树)含符号链接:宿主会读安装目录里的文件,链接可把读取引到目录外,一律拒装。
   PLUGIN_SYMLINK_REJECTED: 'PLUGIN_SYMLINK_REJECTED',
   // 插件安装 / 更新:clone 的体积或文件数超过上限,已终止 git 并清理临时目录。

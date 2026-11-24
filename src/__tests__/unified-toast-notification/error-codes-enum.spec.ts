@@ -67,7 +67,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 插件安装:+PLUGIN_REPO_TOO_LARGE(56→57),clone 体积 / 文件数超上限即终止并拒装。
     // −MCP_HOST_BIND_FORBIDDEN(57→56):MCP host 监听地址改为常量,不再有可被拒绝的绑定入参。
     // 边界(数量上限):+TOO_MANY_DEBUG_SESSIONS(55→56),debug 会话超全局 / 每窗口上限(此前抛无 code 的 Error)。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(56);
+    // 插件安装:+PLUGIN_INCOMPATIBLE(56→57),manifest.minLMVersion 高于应用版本时覆盖前拒装。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(57);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

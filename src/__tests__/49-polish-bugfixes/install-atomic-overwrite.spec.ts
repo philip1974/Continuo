@@ -466,4 +466,23 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     const r = await installFromGit(URL, baseDir, { expectedId: 'p' });
     expect(r.id).toBe('p');
   });
+
+  // 远端新版把 minLMVersion 提到高于当前应用版本:main 在覆盖前就拒(PLUGIN_INCOMPATIBLE),
+  // 否则覆盖安装成功、reload 准入失败,旧版已没了且重启后扫描跳过它 → 插件页看不到也卸载不了。
+  it('minLMVersion 高于应用版本 → 更新被拒(PLUGIN_INCOMPATIBLE),旧版保留、无残留、临时 clone 已清', async () => {
+    await installFromGit(URL, baseDir);
+    ctl.manifest = { id: 'p', name: 'P', version: '2.0.0', minLMVersion: '9.0.0' };
+    await expect(
+      installFromGit(URL, baseDir, { overwrite: true, appVersion: '1.0.0' }),
+    ).rejects.toMatchObject({ code: 'PLUGIN_INCOMPATIBLE' });
+    expect(await readVersion('p')).toBe('1.0.0');
+    expect((await fs.readdir(baseDir)).filter((e) => e.startsWith('.'))).toEqual([]);
+    const cloneDir = ctl.lastArgs[ctl.lastArgs.length - 1]!;
+    await expect(fs.access(path.dirname(cloneDir))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('minLMVersion 不高于应用版本 → 正常安装', async () => {
+    ctl.manifest = { id: 'p', name: 'P', version: '1.0.0', minLMVersion: '1.0.0' };
+    await expect(installFromGit(URL, baseDir, { appVersion: '1.0.0' })).resolves.toMatchObject({ id: 'p' });
+  });
 });

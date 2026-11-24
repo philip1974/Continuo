@@ -180,3 +180,35 @@ export function isVersionCompatible(
   }
   return true;
 }
+
+// ── 准入 ───────────────────────────────────────────────
+
+export type ManifestAdmission =
+  | { readonly ok: true; readonly manifest: PluginManifest }
+  | {
+      readonly ok: false;
+      readonly code: 'INVALID_JSON' | 'SCHEMA_ERROR' | 'INCOMPATIBLE_VERSION';
+      readonly message: string;
+    };
+
+/** 已解析 manifest 的版本兼容准入:minLMVersion(若声明)不高于应用版本 appVersion(由调用方传入)。 */
+export function admitManifestVersion(manifest: PluginManifest, appVersion: string): ManifestAdmission {
+  const { minLMVersion } = manifest;
+  if (minLMVersion !== undefined && !isVersionCompatible(appVersion, minLMVersion)) {
+    return {
+      ok: false,
+      code: 'INCOMPATIBLE_VERSION',
+      message: `minLMVersion ${minLMVersion} > app ${appVersion}`,
+    };
+  }
+  return { ok: true, manifest };
+}
+
+/**
+ * 插件准入:manifest schema 合法 + admitManifestVersion。renderer 列举/热重载与 main 安装(installFromGit 先
+ * parseManifest 再 admitManifestVersion)同一口径,保证「能装上的」就是「能载入的」。
+ */
+export function admitManifest(manifestText: string, appVersion: string): ManifestAdmission {
+  const parsed = parseManifest(manifestText);
+  return parsed.ok ? admitManifestVersion(parsed.data, appVersion) : parsed;
+}

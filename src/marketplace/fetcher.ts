@@ -156,6 +156,8 @@ export interface RemoteManifestSnapshot {
   readonly id: string;
   readonly name: string;
   readonly version: string;
+  /** 远端版本要求的最低应用版本(若声明);更新检查据此排除装上也载不了的版本。 */
+  readonly minLMVersion?: string;
 }
 
 // 边界(E80):远端 manifest snapshot 复用本地 ManifestSchema 的 id/name/version 校验
@@ -164,10 +166,11 @@ const RemoteSnapshotSchema = ManifestSchema.pick({
   id: true,
   name: true,
   version: true,
+  minLMVersion: true,
 });
 
 /**
- * 拉指定 entry 对应 plugin repo 的 manifest.json,只取 id/name/version。
+ * 拉指定 entry 对应 plugin repo 的 manifest.json,只取 id/name/version/minLMVersion。
  * 不缓存(每次 update check 都拉新);失败抛 caller 决定怎么处理。
  */
 export async function fetchPluginManifest(
@@ -188,9 +191,6 @@ export async function fetchPluginManifest(
   if (!parsed.success) {
     throw new Error('remote manifest invalid id / name / version');
   }
-  return {
-    id: parsed.data.id,
-    name: parsed.data.name,
-    version: parsed.data.version,
-  };
+  const { id, name, version, minLMVersion } = parsed.data;
+  return minLMVersion === undefined ? { id, name, version } : { id, name, version, minLMVersion };
 }

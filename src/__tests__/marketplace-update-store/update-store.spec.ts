@@ -92,6 +92,26 @@ describe('useUpdateStore.refresh', () => {
     expect(available()).toHaveLength(0); // 畸形远端版本不误判有更新
   });
 
+  // 远端新版要求更高应用版本(minLMVersion > 当前应用版本):装上也会被准入拒载(main 安装也拒),
+  // 不能算「可用更新」,否则角标/按钮引导用户去点一个必然失败的更新。
+  it('远端 minLMVersion 高于应用版本 → 不收录更新;不高于 → 照常收录', async () => {
+    fetchIndex.mockResolvedValue([entry('a'), entry('b')]);
+    fetchManifest.mockImplementation(async (e: MarketplaceEntry) =>
+      e.id === 'a'
+        ? { ...manifest('a', '9.0.0'), minLMVersion: '99999.0.0' }
+        : { ...manifest('b', '9.0.0'), minLMVersion: '0.0.1' },
+    );
+    getMgr.mockReturnValue(
+      fakeMgr([
+        { id: 'a', version: '0.1.0' },
+        { id: 'b', version: '0.1.0' },
+      ]),
+    );
+
+    await useUpdateStore.getState().refresh();
+    expect(available()).toEqual([{ id: 'b', to: '9.0.0' }]);
+  });
+
   // 远端 manifest.id ≠ index entry.id:entry 指向另一身份的仓库,其版本不能算作 entry.id(或
   // manifest.id)的更新 —— 否则更新检查错配(甚至触发对别的插件的覆盖安装)。跳过该项。
   it('远端 manifest.id 与 entry.id 不一致 → 跳过,不收录任何一方的更新', async () => {

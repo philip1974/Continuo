@@ -36,6 +36,9 @@
 - main 入口须是普通文件(目录 → `BAD_MAIN`,不落地);`branch` 选项 → `--branch=<b>`
   (非法/前导 `-` → `BAD_INPUT`,不启动子进程);`expectedId` ≠ manifest.id → `PLUGIN_ID_MISMATCH`。
   marketplace 卡片安装/更新经 `entryInstallOptions(entry)` 传 `{ expectedId, branch }`。
+- 版本兼容与 renderer 列举同一准入(`admitManifestVersion`,IPC 传 `appVersion: app.getVersion()`):
+  `minLMVersion` 高于应用版本 → `PLUGIN_INCOMPATIBLE`,在任何 cp/rename 之前拒 —— 旧版原样保留、无 staging/backup
+  残留、临时 clone 已清。否则覆盖成功后 reload 准入失败、旧版已没了,重启扫描又跳过它 → 插件页看不到也卸载不了。
 - 更新(overwrite,已有旧目录)保留插件数据:swap 前在锁内把旧目录的 `data.json` 带进 staging,**覆盖**仓库自带的
   同名文件(更新不让仓库内容取代用户数据);旧目录没有 `data.json` → 仓库自带的照旧保留(同全新安装)。
   只认普通文件(noFollow:符号链接 / 硬链接 / 非普通文件拒)、≤ plugin-data 上限、合法 UTF-8;不满足或读写失败 →

@@ -77,6 +77,7 @@ export const en = {
   'errors.PLUGIN_FS_TOKEN_REVOKE_FAILED':
     'Could not revoke the plugin file-access token; the operation was aborted. Try again.',
   'errors.PLUGIN_ID_MISMATCH': 'Plugin id in the repository does not match the marketplace entry',
+  'errors.PLUGIN_INCOMPATIBLE': 'This plugin requires a newer version of the app; installation refused',
   'errors.PLUGIN_SYMLINK_REJECTED': 'Plugin repository contains symbolic links; installation refused',
   'errors.PLUGIN_REPO_TOO_LARGE': 'Plugin repository exceeds the size or file-count limit; installation aborted',
   'errors.PLUGIN_DATA_PRESERVE_FAILED': 'Could not preserve plugin data; update aborted (the installed version and its data are unchanged)',

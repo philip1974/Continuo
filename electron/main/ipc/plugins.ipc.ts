@@ -215,7 +215,7 @@ export function registerPluginsIpc(): void {
     PLUGINS_CHANNELS.INSTALL_FROM_GIT,
     InstallFromGitInput,
     ({ url, overwrite, branch, expectedId }) =>
-      installFromGit(url, pluginsDir, { overwrite, branch, expectedId }),
+      installFromGit(url, pluginsDir, { overwrite, branch, expectedId, appVersion: app.getVersion() }),
   );
 
   // v4.6 卸载

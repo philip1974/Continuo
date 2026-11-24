@@ -3,7 +3,7 @@
 
 import { Plugin } from './Plugin';
 import { loadPluginModule } from './loader';
-import { isVersionCompatible, parseManifest } from './manifest';
+import { admitManifest } from './manifest';
 import {
   ensureAuthorized,
   type PermissionKey,
@@ -146,25 +146,6 @@ function preferPluginDir(candidate: PluginDirInfo, current: PluginDirInfo, id: s
   const candidateExact = candidate.id === id;
   if (candidateExact !== (current.id === id)) return candidateExact;
   return candidate.id < current.id;
-}
-
-type ManifestAdmission =
-  | { readonly ok: true; readonly manifest: PluginManifest }
-  | { readonly ok: false; readonly code: string; readonly message: string };
-
-/** 插件准入:manifest schema 合法,且 minLMVersion(若声明)不高于当前 app 版本。 */
-function admitManifest(manifestText: string, appVersion: string): ManifestAdmission {
-  const parsed = parseManifest(manifestText);
-  if (!parsed.ok) return parsed;
-  const { minLMVersion } = parsed.data;
-  if (minLMVersion && !isVersionCompatible(appVersion, minLMVersion)) {
-    return {
-      ok: false,
-      code: 'INCOMPATIBLE_VERSION',
-      message: `minLMVersion ${minLMVersion} > app ${appVersion}`,
-    };
-  }
-  return { ok: true, manifest: parsed.data };
 }
 
 export interface SelectedPluginDir {

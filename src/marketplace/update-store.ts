@@ -18,6 +18,8 @@ import { fetchMarketplaceIndex, fetchPluginManifest } from './fetcher';
 import { isNewerVersion, isValidSemver } from './semver';
 import type { MarketplaceEntry } from './types';
 import { createLatestGuard } from '@/lib/latest-wins';
+import { APP_VERSION } from '@/lib/app-version';
+import { admitManifestVersion } from '@/plugins/manifest';
 
 // 边界(E234):manifest 拉取最大并发数。8-16 区间足以掩盖网络延迟又不打爆本地/远端。
 export const MAX_MANIFEST_FETCH_CONCURRENCY = 12;
@@ -165,6 +167,8 @@ export const useUpdateStore = create<UpdateState>((set) => ({
           // 边界(E7):远端 manifest.version 不是合法 semver(畸形/超长数字段)→ 不记,不进入
           // isNewerVersion 的字符串 fallback(否则 '999…' 字符串序仍可能 > 安装版误显更新)。
           if (!isValidSemver(r.value.version)) continue;
+          // 远端版本要求更高应用版本(minLMVersion):装上也被准入拒载(main 安装同样拒),不算可用更新。
+          if (!admitManifestVersion(r.value, APP_VERSION).ok) continue;
           remoteVersions.set(r.value.id, r.value.version);
         }
       }

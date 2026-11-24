@@ -709,6 +709,17 @@ describe('fetchPluginManifest', () => {
     expect(r).toEqual({ id: 'a', name: 'A', version: '1.0.0' });
   });
 
+  it('远端声明 minLMVersion → 快照带上(更新检查据此排除要求更高应用版本的版本)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: 'a', name: 'A', version: '1.0.0', minLMVersion: '2.0.0' }),
+        { status: 200 },
+      ),
+    );
+    const r = await fetchPluginManifest(SAMPLE_ENTRY);
+    expect(r).toEqual({ id: 'a', name: 'A', version: '1.0.0', minLMVersion: '2.0.0' });
+  });
+
   it('HTTP 非 2xx → 抛 HTTP {status}', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('', { status: 404 }),

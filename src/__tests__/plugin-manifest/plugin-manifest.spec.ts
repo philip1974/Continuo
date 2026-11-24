@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  admitManifest,
   parseManifest,
   isVersionCompatible,
 } from '../../plugins/manifest';
@@ -286,5 +287,34 @@ describe('isVersionCompatible(app, min)', () => {
 
   it('E9 边界:MAX_SAFE_INTEGER 段仍合法比较', () => {
     expect(isVersionCompatible('9007199254740991.0.0', '1.0.0')).toBe(true);
+  });
+});
+
+// ── admitManifest(准入:schema 合法 + minLMVersion 兼容;main 安装与 renderer 列举共用)──
+
+describe('admitManifest', () => {
+  const withMin = (minLMVersion: string) =>
+    JSON.stringify({ id: 'com.example.foo', name: 'Foo', version: '0.1.0', minLMVersion });
+
+  it('未声明 minLMVersion → ok,带回 manifest', () => {
+    const r = admitManifest(validJson, '1.0.0');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.manifest.id).toBe('com.example.foo');
+  });
+
+  it('minLMVersion ≤ 应用版本 → ok', () => {
+    expect(admitManifest(withMin('1.0.0'), '1.0.0').ok).toBe(true);
+  });
+
+  it('minLMVersion > 应用版本 → INCOMPATIBLE_VERSION', () => {
+    const r = admitManifest(withMin('2.0.0'), '1.9.9');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('INCOMPATIBLE_VERSION');
+  });
+
+  it('schema 不合法 → 沿用 parseManifest 的失败码', () => {
+    const r = admitManifest('not json {', '1.0.0');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.code).toBe('INVALID_JSON');
   });
 });

@@ -38,6 +38,11 @@
 
 - 不计入可用更新
 
+### 远端版本要求更高应用版本
+
+- 远端 manifest 声明的 `minLMVersion` 高于当前应用版本(`admitManifestVersion` 不通过)→ 不记远端版本、不计入可用更新
+  (装上也会被准入拒载,main 安装同样以 `PLUGIN_INCOMPATIBLE` 拒)
+
 ### 本地无 PluginManager(getUserPluginManager 返 null)
 
 - `installed = []`,可用更新为空

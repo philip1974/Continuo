@@ -32,6 +32,13 @@
 - `minLMVersion`(SemVer,与 Continuo 版本比对)
 - `isDesktopOnly`(默认 undefined,Continuo 当前只有桌面,先不强制)
 
+### admitManifest(text, appVersion) / admitManifestVersion(manifest, appVersion)
+
+- 准入 = schema 合法(失败沿用 `parseManifest` 的码)+ `minLMVersion`(若声明)不高于 appVersion(否则
+  `INCOMPATIBLE_VERSION`);应用版本由调用方传入
+- renderer 列举/热重载(PluginManager)、main 安装(installFromGit)、市场更新检查(update-store)共用,
+  保证「能装上 / 显示可更新的」就是「能载入的」
+
 ### isVersionCompatible(appVersion, pluginMin)
 
 - 解析两个 SemVer,只看 major.minor.patch 三段

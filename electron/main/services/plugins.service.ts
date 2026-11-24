@@ -47,6 +47,7 @@ import {
   DEFAULT_PLUGIN_MAIN,
   MANIFEST_MAIN_MAX,
   MANIFEST_MAX_BYTES,
+  admitManifestVersion,
   parseManifest,
 } from '../../shared/plugin-manifest';
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
@@ -1197,6 +1198,11 @@ export interface InstallFromGitOptions {
    * 指向另一身份的仓库(装成别的 id / 覆盖别的插件 / 更新检查错配)。校验放 main 侧防 renderer 绕过。
    */
   readonly expectedId?: string;
+  /**
+   * 当前应用版本(生产由 IPC 传 app.getVersion())。给出时按 renderer 列举同一准入(admitManifestVersion)
+   * 校验 minLMVersion,不兼容 → PLUGIN_INCOMPATIBLE,在覆盖目标之前中止(旧版原样保留)。
+   */
+  readonly appVersion?: string;
 }
 
 /**
@@ -1250,6 +1256,14 @@ export async function installFromGit(
       throw codedError(ERROR_CODES.BAD_MANIFEST, `manifest 校验失败: ${result.message}`);
     }
     const manifest = result.data;
+    // 版本兼容与 renderer 列举同一准入(admitManifestVersion):minLMVersion 高于应用版本时若照装,覆盖后
+    // reload 准入失败、旧版已没了,重启扫描又跳过它 → 插件页看不到也卸载不了。故在任何 cp/rename 之前拒。
+    if (opts.appVersion !== undefined) {
+      const admission = admitManifestVersion(manifest, opts.appVersion);
+      if (!admission.ok) {
+        throw codedError(ERROR_CODES.PLUGIN_INCOMPATIBLE, `插件要求更高的应用版本: ${admission.message}`);
+      }
+    }
     // 边界:id 拼进安装路径(install→rename 覆盖父目录是穿越向量,与 uninstall 对称),此处显式叠加
     // isSafePluginId(形态规则见 electron/shared/plugin-id + 长度上限),不依赖 manifest schema 的校验。
     if (!isSafePluginId(manifest.id)) {
