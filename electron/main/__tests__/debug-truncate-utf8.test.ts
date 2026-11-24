@@ -1,7 +1,7 @@
 // perf:debug variables / evaluate 的值截断此前逐码点调用 Buffer.byteLength(64KiB 截断 ≈ 64K 次 JS↔C++ 跨界,
 // 单值 ~1.3ms,一次 variables 请求可阻塞 main 50–90ms)。改为逐码元累加字节;输出须与旧实现逐字相同。
 import { describe, expect, it } from 'vitest';
-import { truncateUtf8 } from '../services/debug.service';
+import { truncateUtf8 } from '../../shared/utf8-byte-length';
 
 function reference(value: string, maxBytes: number): { value: string; truncated: boolean } {
   if (Buffer.byteLength(value, 'utf8') <= maxBytes) return { value, truncated: false };

@@ -197,6 +197,7 @@ export interface WaitForStopOutput {
 export type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
 import type { DebugScope, DebugStackFrame, DebugVariable } from '../../shared/debug-view-channels';
 import { sleep, waitAtMost } from '../lib/wait-at-most';
+import { truncateUtf8, utf8ByteLength } from '../../shared/utf8-byte-length';
 
 interface StopWaiter {
   readonly afterStopSeq: number;
@@ -602,39 +603,6 @@ function makeSessionId(): string {
   return `debug-${crypto.randomUUID()}`;
 }
 
-function utf8Bytes(value: string): number {
-  return Buffer.byteLength(value, 'utf8');
-}
-
-/**
- * 按 UTF-8 字节上限截断(不切开代理对)。逐码元累加字节而非逐码点调 Buffer.byteLength:后者每字符一次 JS↔C++
- * 跨界,64KiB 截断约 64K 次(单值 ~1.3ms),variables 展开一批大字符串时阻塞 main 50–90ms。口径与
- * Buffer.byteLength 一致:<0x80→1、<0x800→2、合法代理对→4、其余(含孤立代理,编码为 U+FFFD)→3。
- */
-export function truncateUtf8(value: string, maxBytes: number): { value: string; truncated: boolean } {
-  if (utf8Bytes(value) <= maxBytes) return { value, truncated: false };
-  let bytes = 0;
-  let end = 0;
-  const n = value.length;
-  while (end < n) {
-    const c = value.charCodeAt(end);
-    let units = 1;
-    let size: number;
-    if (c < 0x80) size = 1;
-    else if (c < 0x800) size = 2;
-    else if (c >= 0xd800 && c <= 0xdbff && end + 1 < n) {
-      const d = value.charCodeAt(end + 1);
-      if (d >= 0xdc00 && d <= 0xdfff) {
-        size = 4;
-        units = 2;
-      } else size = 3;
-    } else size = 3;
-    if (bytes + size > maxBytes) break;
-    bytes += size;
-    end += units;
-  }
-  return { value: value.slice(0, end), truncated: true };
-}
 
 /**
  * 一次 debug.variables 深度展开的总节点预算。每层逐个成员递归请求,count=100、max_depth=5 时最坏 100^5 级
@@ -2082,7 +2050,7 @@ export class DebugService {
       const rawValue = stringField(variable, 'value') ?? '';
       const truncated = truncateUtf8(rawValue, maxStringBytes);
       // 字节预算不够放下这一项:本页到此为止(cut)。顶层首项例外,保证分页总能前进。
-      const itemBytes = utf8Bytes(name) + utf8Bytes(truncated.value) + utf8Bytes(type ?? '');
+      const itemBytes = utf8ByteLength(name) + utf8ByteLength(truncated.value) + utf8ByteLength(type ?? '');
       if (itemBytes > budget.bytes && !(topLevel && variables.length === 0)) {
         budget.exhausted = true;
         return { variables, cut: true };
