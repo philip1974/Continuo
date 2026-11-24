@@ -1516,6 +1516,10 @@
 - [`toast-component-tokens.spec.ts`](./unified-toast-notification/toast-component-tokens.spec.ts)
 - [`toast-dom-render.spec.tsx`](./unified-toast-notification/toast-dom-render.spec.tsx)
 
+## [useCloseWhenGone(弹窗目标从实时列表消失即关闭)](./use-close-when-gone/README.md)
+
+- [`use-close-when-gone.spec.tsx`](./use-close-when-gone/use-close-when-gone.spec.tsx)
+
 ## [useColumnResize(侧栏拖拽 hook)](./use-column-resize/README.md)
 
 - [`use-column-resize.spec.tsx`](./use-column-resize/use-column-resize.spec.tsx)

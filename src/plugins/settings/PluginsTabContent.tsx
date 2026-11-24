@@ -1,7 +1,7 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
 // 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/design';
 import { ConfirmDialog } from '@/panels/Explorer/ConfirmDialog';
 import { coApi } from '@/lib/co-api';
@@ -18,6 +18,7 @@ import { useT } from '@/i18n';
 import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
 import { errorMessage } from '../../../electron/shared/error-message';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
+import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -244,11 +245,9 @@ function UserPluginsSection() {
   // 把已卸载插件的 ghost 权限写回 _permissions.json,同 id 日后重装意外继承非当前意图的授权。
   // 插件从 live 列表消失即自动关闭弹窗(覆盖列表变化);保存瞬间也 pluginStillExists 复检(覆盖
   // 本 effect 关闭前的同帧点击),同 KeybindingsTabContent R50。
-  useEffect(() => {
-    if (permEditTarget && !hasPluginId(plugins, permEditTarget.id)) {
-      setPermEditTarget(null);
-    }
-  }, [permEditTarget, plugins]);
+  useCloseWhenGone(permEditTarget, plugins, (live, p) => hasPluginId(live, p.id), () =>
+    setPermEditTarget(null),
+  );
 
   // race(R103,R102 同族):卸载确认弹窗持有打开瞬间的 uninstallTarget 旧快照。弹窗打开期间该插件被
   // 另一窗口/操作卸载(列表变化后从 plugins 消失),或卸载+重装同 id(version 变化=不同实例),
@@ -257,14 +256,12 @@ function UserPluginsSection() {
   // 实例 token,重装通常改 version;同 version 重装不可区分,极罕见,按 id 语义仍合理)。
   // 注:不在 onConfirmUninstall 里再复检 —— React passive effect 在 commit 后、paint 前 flush,plugins
   // 一变本 effect 即先关弹窗,用户无从在「plugins 已变而弹窗仍开」的画面上点确认,故 effect 已充分。
-  useEffect(() => {
-    if (
-      uninstallTarget &&
-      !hasPluginVersion(plugins, uninstallTarget.id, uninstallTarget.manifest.version)
-    ) {
-      setUninstallTarget(null);
-    }
-  }, [uninstallTarget, plugins]);
+  useCloseWhenGone(
+    uninstallTarget,
+    plugins,
+    (live, p) => hasPluginVersion(live, p.id, p.manifest.version),
+    () => setUninstallTarget(null),
+  );
 
   const onConfirmUninstall = async () => {
     if (!uninstallTarget || !mgr) return;

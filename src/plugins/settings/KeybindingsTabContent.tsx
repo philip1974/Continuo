@@ -2,7 +2,7 @@
 // 订阅 commands registry,只列有 hotkey 的命令,按 category 分组。
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { IconButton, Input, KeyCap } from '@/design';
 import { clampSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
@@ -24,6 +24,7 @@ import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { ResetIcon } from '@/lib/ui-icons';
 import { isSortedBy } from '@/lib/is-sorted-by';
+import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 
 const PLATFORM = detectPlatform();
 const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
@@ -241,11 +242,9 @@ export function KeybindingsTabContent() {
   // race(R50):快捷键编辑弹窗持有打开时捕获的 editing command。若弹窗打开期间插件 reload/disable
   // 把该命令移出 registry,onSave/onReset 仍会用旧 command id 写 override → 写到已不存在的命令,
   // 同 id 命令日后重注册时意外继承旧绑定(stale write)。命令从 allCommands 消失即自动关闭弹窗。
-  useEffect(() => {
-    if (editing && !hasCommandId(allCommands, editing.id)) {
-      setEditing(null);
-    }
-  }, [editing, allCommands]);
+  useCloseWhenGone(editing, allCommands, (live, cmd) => hasCommandId(live, cmd.id), () =>
+    setEditing(null),
+  );
 
   return (
     <div className="space-y-6">
