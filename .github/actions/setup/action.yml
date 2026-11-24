@@ -1,0 +1,30 @@
+name: Setup workspace
+description: >-
+  检出 workspace 同级仓 ContinuoTerminal(固定 SHA)、装 pnpm / Node 并 frozen-lockfile 安装依赖。
+  ci.yml 与 e2e.yml 各 job 共用(此前 7 份逐字复制,pnpm 版本也要 7 处同步改)。须在 actions/checkout 之后使用。
+runs:
+  using: composite
+  steps:
+    # pnpm workspace 依赖同级仓 philip1974/ContinuoTerminal(public)的 @continuo-terminal/* 包。
+    # CI runner 默认只 checkout 本仓,需把 ContinuoTerminal clone 到 $GITHUB_WORKSPACE 的同级路径,
+    # 否则 `pnpm install` 会 ENOENT(.../ContinuoTerminal/packages/host)。
+    - name: Checkout ContinuoTerminal (workspace sibling)
+      # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
+      shell: bash
+      run: bash scripts/ci-checkout-continuo-terminal.sh
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      with:
+        version: 9
+        run_install: false
+
+    - name: Setup Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

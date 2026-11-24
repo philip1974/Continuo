@@ -23,26 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # 见 ci.yml 同款步骤:把 ContinuoTerminal clone 到 workspace 同级路径,供 pnpm workspace 解析。
-      - name: Checkout ContinuoTerminal (workspace sibling)
-        # 固定到 .continuo-terminal-ref 记录的 commit(不跟随 ContinuoTerminal 默认分支最新提交)。
-        shell: bash
-        run: bash scripts/ci-checkout-continuo-terminal.sh
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-        with:
-          version: 9
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup workspace (ContinuoTerminal sibling + pnpm + Node + install)
+        uses: ./.github/actions/setup
 
       - name: Rebuild native modules for Electron
         run: pnpm rebuild:native

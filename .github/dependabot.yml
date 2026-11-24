@@ -2,7 +2,10 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    # / 只覆盖 .github/workflows;共用 composite action 里固定的 action 须单独列目录。
+    directories:
+      - /
+      - /.github/actions/setup
     schedule:
       interval: weekly
   - package-ecosystem: npm

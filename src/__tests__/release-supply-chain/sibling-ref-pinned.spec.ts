@@ -216,11 +216,15 @@ describe('接线:记录文件、打包前检查与 CI 检出', () => {
   });
 
   it('workflow 不再裸 clone ContinuoTerminal,一律经固定 SHA 的检出脚本', () => {
+    // 各 job 经共用 composite action 检出(此前每个 job 各复制一份检出步骤)。
     for (const wf of ['ci.yml', 'e2e.yml']) {
       const text = readFileSync(join(ROOT, '.github', 'workflows', wf), 'utf8');
       expect(text).not.toMatch(/git clone[^\n]*ContinuoTerminal/);
-      expect(text).toContain('run: bash scripts/ci-checkout-continuo-terminal.sh');
+      expect(text).toContain('uses: ./.github/actions/setup');
     }
+    const action = readFileSync(join(ROOT, '.github', 'actions', 'setup', 'action.yml'), 'utf8');
+    expect(action).not.toMatch(/git clone[^\n]*ContinuoTerminal/);
+    expect(action).toContain('run: bash scripts/ci-checkout-continuo-terminal.sh');
     const sh = readFileSync(join(ROOT, 'scripts', 'ci-checkout-continuo-terminal.sh'), 'utf8');
     expect(sh).toContain('.continuo-terminal-ref');
     expect(sh).toMatch(/fetch --depth 1 origin "\$ref"/);
