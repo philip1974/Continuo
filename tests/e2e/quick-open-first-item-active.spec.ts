@@ -1,8 +1,8 @@
-// Quick Open 默认 selectedIndex=0 → 第一项有 active 底色(bg-hover.text-fg).
+// Quick Open 默认 selectedIndex=0 → 第一项有选中样式(accent 底 + 左侧 accent 竖条,pickerRowClassName).
 import { test, expect } from './fixtures/with-workspace';
 import { ROW_SELECTED, openQuickOpen, quickOpenInput } from './helpers/palette';
 
-test('打开 Quick Open → 第一项 active(.bg-hover)', async ({ window }) => {
+test('打开 Quick Open → 第一项 active(选中样式)', async ({ window }) => {
   await openQuickOpen(window);
   const input = quickOpenInput(window);
   await expect(input).toBeVisible();
