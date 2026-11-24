@@ -63,8 +63,8 @@ type WorkspaceState = {
 };
 
 /**
- * 归一化 workspace root: 过滤空字符串 / 全空白 / 非字符串 / 超 PATH_STR_MAX → null.
- * **不规范化路径语义, 不 trim 返回值** — 文件系统允许前后空格的合法路径 (e.g. '/tmp/proj ').
+ * 归一化 workspace root: 过滤空字符串 / 全空白 / 非字符串 / 超 PATH_STR_MAX → null;去尾分隔符(保留根,见
+ * trimTrailingSeparatorsKeepRoot)。**不 trim 空白** — 文件系统允许前后空格的合法路径 (e.g. '/tmp/proj ')。
  * 应用于:
  * - setRoot (用户/UI 触发)
  * - hydrateStores (磁盘 hydrate)

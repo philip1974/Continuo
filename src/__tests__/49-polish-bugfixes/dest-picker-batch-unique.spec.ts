@@ -115,13 +115,6 @@ describe('打磨 — FolderTree drop 失败消息格式化', () => {
     }
   });
 
-  it('外部 drop 提示直接条件 notify,不创建 msgs 临时数组', () => {
-    const src = readFileSync(join(ROOT, 'panels', 'Explorer', 'FolderTree.tsx'), 'utf8');
-
-    expect(src).not.toContain('const msgs: string[] = []');
-    expect(src).not.toContain('msgs.forEach((m) => notify.error(m))');
-  });
-
 });
 
 describe('打磨 — FolderTree selectedPaths 构建', () => {

@@ -127,6 +127,13 @@ describe('promoteRecentRoot', () => {
     expect(promoteRecentRoot(['/a/B'], '/a/b', 'darwin')).toEqual(['/a/b', '/a/B']);
   });
 
+  it('升级前盘上带尾分隔符的旧条目与规范形视为同一项;根本身不被削掉', () => {
+    expect(promoteRecentRoot(['/u/proj/', '/x'], '/u/proj', 'darwin')).toEqual(['/u/proj', '/x']);
+    expect(promoteRecentRoot(['C:\\Proj\\'], 'c:\\proj', 'win32')).toEqual(['c:\\proj']);
+    expect(promoteRecentRoot(['/'], '/a', 'darwin')).toEqual(['/a', '/']);
+    expect(promoteRecentRoot(['C:\\'], 'C:\\x', 'win32')).toEqual(['C:\\x', 'C:\\']);
+  });
+
   it('置顶、去重、保持其余顺序', () => {
     expect(promoteRecentRoot(['/a', '/b', '/c'], '/c')).toEqual(['/c', '/a', '/b']);
     expect(promoteRecentRoot(['/a', '/b'], '/x')).toEqual(['/x', '/a', '/b']);

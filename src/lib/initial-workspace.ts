@@ -56,7 +56,7 @@ export function parseInitialWorkspace(search: string): string | null {
   const raw = params.get(WORKSPACE_PARAM);
   if (raw === null) return null;
   // 仅判断是否全空白;**返回原始值不 trim** —— 文件系统允许前后带空格的
-  // 合法路径(e.g. '/tmp/proj '),与 workspace.store「不规范化、不 trim 返回值」契约
+  // 合法路径(e.g. '/tmp/proj '),与 workspace.store「不 trim 空白」契约(尾分隔符由 normalizeWorkspaceRoot 去除)
   // 一致。此前 return trimmed 会破坏这类路径(跨平台审计 P2)。
   if (isBlankString(raw)) return null;
   return raw;

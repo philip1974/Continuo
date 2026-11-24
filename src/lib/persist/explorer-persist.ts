@@ -137,10 +137,11 @@ export function collectNormalizedWorkspaceRoots(
   let count = 0;
   for (const raw of roots) {
     const normalized = normalizeWorkspaceRoot(raw);
-    if (normalized !== null) {
-      out ??= new Array<string>(roots.length);
-      out[count++] = normalized;
-    }
+    if (normalized === null) continue;
+    // 规范化后可能撞车(升级前盘上 `/u/proj/` 与 `/u/proj` 两项;Windows 大小写):平台感知去重,保留先出现者。
+    if (out !== null && out.slice(0, count).some((p) => pathEquals(p, normalized))) continue;
+    out ??= new Array<string>(roots.length);
+    out[count++] = normalized;
   }
   if (out === null) return EMPTY_PERSIST_PATHS;
   out.length = count;

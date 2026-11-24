@@ -652,3 +652,12 @@ describe('initExplorerPersistence', () => {
     });
   });
 });
+
+// 规范化后撞车的项去重(升级前盘上 `/u/proj/` 与 `/u/proj` 两项):否则启动恢复 / 跨窗广播后最近菜单出现同一目录两项
+//(且 ExplorerHeader 的 key 重复)。
+describe('collectNormalizedWorkspaceRoots · 规范化后去重', () => {
+  it('带尾分隔符的旧条目与规范形合并,保留先出现者', () => {
+    expect(collectNormalizedWorkspaceRoots(['/u/proj', '/u/proj/', '/x', '/x//'])).toEqual(['/u/proj', '/x']);
+  });
+});
+

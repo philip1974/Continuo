@@ -325,7 +325,13 @@ export function promoteRecentRoot(
 ): string[] {
   // 平台感知去重(Windows 大小写不敏感,与 renderer pathEquals 同口径):先用对话框打开 `C:\Code\Proj`、再命令行
   // `continuo c:\code\proj` 不应出现两项。
-  const key = (s: string): string => (platform === 'win32' ? s.toLowerCase() : s);
+  // 比较键另去尾分隔符(保留根):升级前盘上可能存有带尾分隔符的旧条目(`/u/proj/`),须与规范形 `/u/proj` 视为同一项。
+  const key = (s: string): string => {
+    let end = s.length;
+    while (end > 1 && (s[end - 1] === '/' || s[end - 1] === '\\') && !/^[A-Za-z]:[\\/]$/.test(s.slice(0, end))) end -= 1;
+    const t = s.slice(0, end);
+    return platform === 'win32' ? t.toLowerCase() : t;
+  };
   const next = [path];
   const seen = new Set([key(path)]);
   for (const p of list) {

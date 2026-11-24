@@ -23,8 +23,8 @@
 
 ### 部分 manifest 失败
 
-- 用 `allSettledWithConcurrency`(有界并发版 allSettled),失败的 entry 不记远端版本
-- 该 entry 也不计入可用更新(因为没 remoteV)
+- 用 `allSettledWithConcurrency`(有界并发版 allSettled),失败的 entry 沿用上次已知的远端版本(离线时打开市场页
+  不抹掉已显示的更新);从未拉到过的不记、不计入可用更新
 
 ### 远端 manifest.id ≠ entry.id
 

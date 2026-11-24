@@ -12,7 +12,8 @@ A、B 两窗,A 打开 /x 落盘后盘上为 `[/x, …]`;B 任意一次落盘(展
 
 ### main
 
-- `promoteRecentRoot(list, path)`:`path` 置顶,其余按原顺序去重接在后面,截断到 `WORKSPACE_RECENT_LIMIT`(5,
+- `promoteRecentRoot(list, path)`:`path` 置顶,其余按原顺序去重接在后面(比较键去尾分隔符、win32 大小写不敏感 ——
+  升级前盘上的 `/u/proj/` 与 `C:\Proj` / `c:\proj` 视为同一项),截断到 `WORKSPACE_RECENT_LIMIT`(5,
   与 renderer `workspace.store` 同一常量)。
 - IPC `explorer:touch-recent { path }`:在 explorer 文件锁内重读盘,`recentRoots = promoteRecentRoot(盘上, path)`,
   写盘后向所有窗口(含发起者)广播 `explorer:recent-changed { recentRoots }`。盘上尚无 explorer.json(首启)→

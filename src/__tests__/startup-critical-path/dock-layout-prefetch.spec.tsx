@@ -23,9 +23,6 @@ function makeApi() {
     onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
     onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
     onDidMaximizedGroupChange: vi.fn(() => ({ dispose: vi.fn() })),
-    onDidAddGroup: vi.fn(() => ({ dispose: vi.fn() })),
-    onDidRemoveGroup: vi.fn(() => ({ dispose: vi.fn() })),
-    groups: [],
     onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
     panels: [],
   };

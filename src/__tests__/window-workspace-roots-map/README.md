@@ -26,4 +26,4 @@ T29 `normalizeWorkspaceRoot('/abs') === '/abs'`;
 T30-T33 `hydrateStores`, `hydrateStoresForNewWindow`, and `snapshotFromStores` apply root normalization and filter empty `recentRoots`;
 T34 `input.cwd === ''` fails schema parsing as BAD_INPUT.
 
-`normalizeWorkspaceRoot` does not normalize filesystem path semantics and does not trim the returned value. It only maps empty strings, all-whitespace strings, and non-strings to `null`. Filesystems allow valid paths with leading or trailing spaces, for example `/tmp/proj `.
+`normalizeWorkspaceRoot` maps empty strings, all-whitespace strings, and non-strings to `null`, and strips trailing path separators while keeping a root (`/home/u/proj/` → `/home/u/proj`, `/` and `C:\` unchanged) so the root matches child paths built by main's `path.join`. It does not trim whitespace: filesystems allow valid paths with leading or trailing spaces, for example `/tmp/proj `.
