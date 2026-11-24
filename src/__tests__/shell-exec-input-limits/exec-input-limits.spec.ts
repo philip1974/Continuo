@@ -96,3 +96,19 @@ describe('ExecInput 长度/数量上限 (E12)', () => {
     expect(ExecInput.safeParse({ ...base, env: {} }).success).toBe(true);
   });
 });
+
+// 与 execStream 同一规则:timeoutMs / maxOutputBytes 的归一化(非有限 / ≤0 → 默认、小数 trunc、上限裁剪)在 service
+//(clampExecTimeoutMs / clampExecMaxBytes),IPC 前门不先拒 —— 否则同样参数给 exec 报 BAD_INPUT、给 execStream 正常运行。
+describe('timeoutMs / maxOutputBytes 交给 service 归一化', () => {
+  const base = { cmd: 'git', args: ['status'] };
+  it.each([{ timeoutMs: 1500.5 }, { timeoutMs: 0 }, { maxOutputBytes: 2.5 }, { maxOutputBytes: -1 }])(
+    '%o → 通过 schema',
+    (extra) => {
+      expect(ExecInput.safeParse({ ...base, ...extra }).success).toBe(true);
+    },
+  );
+  it('非数字仍拒', () => {
+    expect(ExecInput.safeParse({ ...base, timeoutMs: '100' }).success).toBe(false);
+  });
+});
+

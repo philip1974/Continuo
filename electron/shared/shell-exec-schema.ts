@@ -40,7 +40,10 @@ export const ShellExecInputSchema = z
         }),
       )
       .optional(),
-    timeoutMs: z.number().int().positive().optional(),
+    // timeoutMs / maxOutputBytes 只要求是数,归一化(非有限 / ≤0 → 默认,小数 trunc,上限裁剪)交给 service 的
+    // clampExecTimeoutMs / clampExecMaxBytes —— 与兄弟入口 execStream(clampShellTimeoutMs)同一规则。此前这里
+    // int().positive() 先拒,同样的 {timeoutMs: 1500.5} / {timeoutMs: 0} 给 exec 报 BAD_INPUT、给 execStream 却正常。
+    timeoutMs: z.number().optional(),
     // 边界(E129,E125 同族):stdin 按真实 UTF-8 字节(非 .max()=UTF-16 code unit),否则 CJK/emoji
     // stdin 真实字节可数倍超 SHELL_STDIN_MAX 仍写给 child stdin。
     input: z
@@ -49,7 +52,7 @@ export const ShellExecInputSchema = z
         message: `input 超过上限 ${STDIN_MAX} 字节`,
       })
       .optional(),
-    maxOutputBytes: z.number().int().positive().optional(),
+    maxOutputBytes: z.number().optional(),
     // 终审 P1:发起插件 id(scoped app 填入),只用于本窗口内按插件终止进程,不作授权依据。
     pluginId: z.string().min(1).max(PLUGIN_ID_MAX_LEN).optional(),
   })
