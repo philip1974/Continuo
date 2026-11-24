@@ -27,6 +27,7 @@ type FakeWindow = {
   isDestroyed: () => boolean;
   webContents: {
     send: ReturnType<typeof vi.fn>;
+    isDestroyed: () => boolean;
     getURL: () => string;
     on: ReturnType<typeof vi.fn>;
     once: ReturnType<typeof vi.fn>;
@@ -58,6 +59,7 @@ function makeWin(id: number): FakeWindow {
     isDestroyed: () => false,
     webContents: {
       send: vi.fn(),
+      isDestroyed: () => false,
       getURL: () => 'file:///renderer/index.html',
       on: vi.fn(),
       once: vi.fn(),

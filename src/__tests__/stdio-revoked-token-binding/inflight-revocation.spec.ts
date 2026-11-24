@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
       [...win.alive].map((id) => ({
         id,
         isDestroyed: () => false,
-        webContents: { getURL: () => 'file:///renderer/index.html' },
+        webContents: { isDestroyed: () => false, getURL: () => 'file:///renderer/index.html' },
       })),
     ),
   },

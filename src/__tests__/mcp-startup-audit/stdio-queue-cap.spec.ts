@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 vi.mock('electron', () => ({
   BrowserWindow: {
     getAllWindows: () => [
-      { id: 1, isDestroyed: () => false, webContents: { getURL: () => 'app://main' } },
+      { id: 1, isDestroyed: () => false, webContents: { isDestroyed: () => false, getURL: () => 'app://main' } },
     ],
     fromId: () => null,
   },

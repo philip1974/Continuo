@@ -16,6 +16,7 @@ export const WINDOW_ID = 1;
 
 export type RendererWebContents = EventEmitter & {
   send: (channel: string, payload: unknown) => void;
+  isDestroyed: () => boolean;
   getURL: () => string;
   /** 真实 WebContents 恒有;默认「主框架已加载完」,个别用例用 Object.assign 覆盖。 */
   isLoadingMainFrame: () => boolean;
@@ -23,6 +24,7 @@ export type RendererWebContents = EventEmitter & {
 
 export function makeRendererWebContents(): RendererWebContents {
   return Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
     getURL: () => 'file:///renderer/index.html',
     isLoadingMainFrame: () => false,
     send: (channel: string, raw: unknown) => {

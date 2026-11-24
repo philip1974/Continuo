@@ -20,7 +20,7 @@ const electronMock = vi.hoisted(() => ({
   windows: [] as Array<{
     id: number;
     isDestroyed: () => boolean;
-    webContents: { send: ReturnType<typeof vi.fn>; getURL: () => string };
+    webContents: { send: ReturnType<typeof vi.fn>; isDestroyed: () => boolean; getURL: () => string };
   }>,
 }));
 
@@ -48,6 +48,7 @@ function makeWin(id: number) {
     isDestroyed: () => false,
     webContents: {
       send: vi.fn(),
+      isDestroyed: () => false,
       getURL: () => 'file:///renderer/index.html',
       on: vi.fn(),
       once: vi.fn(),

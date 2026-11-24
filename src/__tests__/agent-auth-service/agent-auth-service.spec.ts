@@ -29,6 +29,7 @@ type FakeWindow = {
   isDestroyed: () => boolean;
   webContents: {
     send: ReturnType<typeof vi.fn>;
+    isDestroyed: () => boolean;
     getURL: () => string;
     on: ReturnType<typeof vi.fn>;
     once: ReturnType<typeof vi.fn>;
@@ -119,17 +120,21 @@ function makeMcpHost(overrides: Partial<McpHost> = {}): McpHost {
 
 function makeWin(
   id: number,
-  opts: { popout?: boolean; destroyed?: boolean } = {},
+  opts: { popout?: boolean; destroyed?: boolean; contentsDestroyed?: boolean } = {},
 ): FakeWindow {
   return {
     id,
     isDestroyed: () => opts.destroyed === true,
     webContents: {
       send: vi.fn(),
-      getURL: () =>
-        opts.popout
+      isDestroyed: () => opts.contentsDestroyed === true,
+      // 真实 Electron:webContents 已销毁时 getURL() 抛 "Object has been destroyed"。
+      getURL: () => {
+        if (opts.contentsDestroyed) throw new Error('Object has been destroyed');
+        return opts.popout
           ? 'file:///renderer/index.html?popout=1'
-          : 'file:///renderer/index.html',
+          : 'file:///renderer/index.html';
+      },
       on: vi.fn(),
       once: vi.fn(),
       isLoadingMainFrame: () => false,
@@ -188,6 +193,20 @@ describe('agent-auth-service: requestAgentAuth', () => {
     } finally {
       findSpy.mockRestore();
     }
+  });
+
+  // 关窗中间态:窗口未销毁但 webContents 已销毁,getURL() 会抛。选窗须跳过它而不是抛出
+  //(stdio 回落选窗 / 授权弹窗选窗)。
+  it('webContents 已销毁(关窗中间态)的窗口:回落选窗跳过、授权请求按拒绝,不抛', async () => {
+    const closing = makeWin(1, { contentsDestroyed: true });
+    const normal = makeWin(2);
+    expect(pickMainWindowPreferNonPopout([closing, normal])).toBe(normal);
+    expect(pickMainWindowPreferNonPopout([closing])).toBeNull();
+
+    electronMock.windows = [closing];
+    await expect(
+      requestAgentAuth({ method: 'terminal.create_session', ownerWindowId: closing.id }),
+    ).resolves.toBe('denied');
   });
 
   it('T1: sends auth request to the main window and resolves with renderer decision', async () => {

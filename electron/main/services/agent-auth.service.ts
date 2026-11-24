@@ -27,6 +27,7 @@ import { PromptThrottle, type PromptAdmission } from '../lib/prompt-throttle';
 import { onRendererDocumentGone } from '../lib/renderer-document-gone';
 import { discardTerminalSession } from './terminal-discard';
 import { trySend } from '../lib/try-send';
+import { isWindowUsable } from './main-window-picker.service';
 
 // 弹窗显示 2 分钟(AGENT_AUTH_PROMPT_TIMEOUT_MS)无应答 → 默认拒绝(防 renderer 卡死时 tool Promise 永远悬挂)。
 // 从请求成为窗口的显示中弹窗起算(见 markDisplayed),到点后经 CANCELLED 通知 renderer 撤掉弹窗;此前从到达起算,排在别的
@@ -211,7 +212,7 @@ export interface AgentAuthInfo {
 function pickAuthTargetWindow(ownerWindowId: number | undefined): BrowserWindow | null {
   if (ownerWindowId === undefined) return null;
   const target = BrowserWindow.fromId(ownerWindowId);
-  if (!target || target.isDestroyed() || isPopoutUrl(target.webContents.getURL())) return null;
+  if (!target || !isWindowUsable(target) || isPopoutUrl(target.webContents.getURL())) return null;
   return target;
 }
 
