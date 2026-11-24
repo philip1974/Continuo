@@ -56,6 +56,15 @@ const EditorSessionSchema = z
   .strict();
 
 // ── v1(legacy)— 仅 loadExplorer 接受,内部立即迁移到 v2 ────
+/** 每个窗口的 Explorer 状态(v1 顶层与 v2 / v3 窗口段同形;上限只写一处)。 */
+const ExplorerStateSchema = z
+  .object({
+    activePath: pathStr().nullable(), // 边界(E15)
+    expandedPaths: pathArray(), // 边界(E14)
+    sort: ExplorerSortSchema,
+  })
+  .strict();
+
 export const ExplorerV1Schema = z
   .object({
     version: z.literal(1),
@@ -65,13 +74,7 @@ export const ExplorerV1Schema = z
         recentRoots: z.array(pathStr()).max(RECENT_ROOTS_MAX), // 边界(E14)
       })
       .strict(),
-    explorer: z
-      .object({
-        activePath: pathStr().nullable(), // 边界(E15)
-        expandedPaths: pathArray(), // 边界(E14)
-        sort: ExplorerSortSchema,
-      })
-      .strict(),
+    explorer: ExplorerStateSchema,
     pinned: z
       .object({
         paths: z.array(pathStr()).max(PINNED_MAX), // 边界(E14)
@@ -98,13 +101,7 @@ const WritableWindowEntrySchema = z
         root: pathStr().nullable(), // 边界(E15)
       })
       .strict(),
-    explorer: z
-      .object({
-        activePath: pathStr().nullable(), // 边界(E15)
-        expandedPaths: pathArray(), // 边界(E14)
-        sort: ExplorerSortSchema,
-      })
-      .strict(),
+    explorer: ExplorerStateSchema,
     layoutUi: LayoutUiSchema.optional(),
     editor: EditorSessionSchema.optional(),
   })
