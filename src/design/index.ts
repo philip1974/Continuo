@@ -1,7 +1,5 @@
-// Nous shell-ui design 共享组件层(LM 本地副本)。
-// 同步源:Nous/packages/shells/shell-ui/src/design/
-// Token 来源:src/styles/nous-tokens.css(--md-* / --wm-*)
-// 注意:.js 后缀是 Nous 的 ESM 风格,LM 走 Vite,直接去掉。
+// design 基础组件层(源自已废弃的 Nous shell-ui,现由本仓库维护,不再同步)。
+// Token 来源:src/styles/design-tokens.css(--md-* / --wm-*)
 
 export { Badge, type BadgeProps, type BadgeVariant } from './Badge';
 export {

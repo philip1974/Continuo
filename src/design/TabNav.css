@@ -1,6 +1,6 @@
 /* Continuo-local 微调:active tab 用 primary-container 背景 + 顶部圆角,
  * 视觉从纯下划线 indicator 升级为类按钮形态(参考 stitch_desktop_design_reviewer
- * 原型)。Nous 上游保持纯下划线 indicator。
+ * 原型)。
  */
 
 .wm-tab-nav {

@@ -75,7 +75,7 @@ Plugins talk to the app only through **CoApp**, a scoped facade over the rendere
 
 - Never use raw Tailwind colors (`bg-neutral-*`, `bg-sky-*`, literal hex). Use semantic tokens (`bg-canvas`, `bg-panel`, `text-fg`, `border-line`, `accent`) defined in `src/styles/theme.css`.
 - Reuse `@/design` components (`Button`, `IconButton`, `Modal`, `Input`, …) instead of writing raw `<button>` / `<input>` className.
-- `src/styles/nous-tokens.css` and `src/design/` are copied from the maintainer's Nous design system (not public) — never modify the tokens file; Continuo-only tweaks to `src/design/` must be marked as such (see `CLAUDE.md`). `pnpm sync:design` syncs them from that private repo and is maintainer-only.
+- `src/design/` and `src/styles/design-tokens.css` are maintained in this repo (they originated from a now-retired design system and are no longer synced). Keep the tokens file's light/dark sets symmetric and put IDE palette overrides in `theme.css` (see `CLAUDE.md`).
 
 ## Deep design references
 

@@ -21,7 +21,7 @@ export interface MenuItemProps {
   /**
    * Continuo-local 微调:可访问名注入。当可见 children 是截断/不唯一文本(如同名目录的
    * basename)时,调用点传完整/可区分的本地化文本作 aria-label(设计层不引 i18n,文本由
-   * 调用点注入)。Nous 上游 MenuItem 暂无此 prop。Defaults to no aria-label。
+   * 调用点注入)。Defaults to no aria-label。
    */
   readonly ariaLabel?: string;
   /** Row label or composed menu content. No default. */

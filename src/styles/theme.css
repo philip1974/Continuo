@@ -1,19 +1,19 @@
-/* M-DesignSystem Step 1:接入 Nous 共享设计系统(MD3 token 层)。
+/* 设计系统(MD3 token 层)。
  *
  * 结构:
- *   1. 引入 nous-tokens.css(从 @nous/shell-ui 复制,含完整 47 个 --md-* + --wm-*
- *      亮/暗双套,LM 暂不修改)。
- *   2. 在 .dark 下覆盖 MD3 关键值,保留 LM 原有 slate + sky 视觉身份
- *      (Nous 默认是暖灰 + lavender,LM 偏冷 slate + sky 蓝)。
+ *   1. 引入 design-tokens.css(基础 token:完整 47 个 --md-* + --wm-* 亮/暗双套;源自已废弃的
+ *      Nous shell-ui,现由本仓库维护)。
+ *   2. 在 .dark 下覆盖 MD3 关键值,保留 Continuo 的 slate + sky 视觉身份
+ *      (基础层默认是暖灰 + lavender)。
  *   3. @theme inline 把 Continuo 自有的 --color-* 私有 token 映射到 --md-*,
  *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility,
  *      LM 现有 className 零修改。
  *
- * LM 强制 dark 模式(index.html <html class="dark">),light 暂留 Nous 默认值
+ * 默认 dark 模式(index.html <html class="dark">),light 暂用基础层默认值
  * 作为亮色切换的占位,后续若做亮色再细调。
  */
 
-@import './nous-tokens.css';
+@import './design-tokens.css';
 
 /* ── Continuo radius scale(对齐 demo DESIGN.md / Tailwind v4 默认值)────
  * sm=2 / md=6 / lg=8 / xl=12 完全匹配 Tailwind rounded-sm/md/lg/xl,提供

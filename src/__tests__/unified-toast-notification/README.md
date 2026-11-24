@@ -23,7 +23,7 @@ T12 rendering `<NotificationsProvider><ToastViewport /></NotificationsProvider>`
 
 Key invariants:
 
-- `src/styles/nous-tokens.css` and `electron/shared/ipc-result.ts` are not modified by this topic.
+- `src/styles/design-tokens.css` and `electron/shared/ipc-result.ts` are not modified by this topic.
 - Toast lives under `src/notifications/`, not `src/design/`, until it is generalized and pushed upstream.
 - There is no main → renderer push channel: the `notify:push` infrastructure (T6–T8: `pushNotification`, `NotifyIpcBridge`, `coApi.notify.onPush`) never had a production sender and was removed. Main-side failures reach the user through each IPC's own result, which the renderer turns into a toast.
 - Existing adjacent `console.warn` lines are preserved during alert收编; those toast calls use `mirror:false` to avoid double logging.

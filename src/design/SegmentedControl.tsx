@@ -33,8 +33,7 @@ export interface SegmentedControlProps<T extends string> {
   /** Prevents interaction and dims every segment. Defaults to `false`. */
   readonly disabled?: boolean;
   // Continuo-local 微调(a11y):radiogroup 须有可访问名(否则 AT 只读「radiogroup」不知
-  // 在选什么)。允许调用方传 aria-labelledby 指向可见标签 或 aria-label 直接命名。通用增强,
-  // 应推回 Nous。
+  // 在选什么)。允许调用方传 aria-labelledby 指向可见标签 或 aria-label 直接命名。
   /** Id of an element labelling this radiogroup (a11y). Optional. */
   readonly ariaLabelledby?: string;
   /** Accessible name when no visible label element exists (a11y). Optional. */
@@ -52,7 +51,7 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   // Continuo-local 微调(a11y A24,A23 同族):role="radiogroup" 须配 WAI-ARIA radio 键盘模型。
   // radio group 是「自动激活」—— 方向键同时移焦并切换选中(配合 roving tabindex:仅选中项在
-  // Tab 顺序内)。Home/End 跳首尾,左右/上下循环。Nous 上游纯展示无此模型,通用增强应推回。
+  // Tab 顺序内)。Home/End 跳首尾,左右/上下循环。
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (disabled) return;
     const { key } = e;

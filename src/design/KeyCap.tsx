@@ -1,4 +1,4 @@
-// Continuo-local 新增组件(Nous 上游无对应):统一快捷键展示。
+// 统一快捷键展示组件。
 // 参考 stitch_desktop_design_reviewer 原型,border + 2px outset 营造 3D 键帽感。
 
 import type { ReactNode } from 'react';

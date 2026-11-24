@@ -1,6 +1,5 @@
 // LM-local 微调:加 forwardRef,让 HeaderActions 的弹层锚点等需要
 // .getBoundingClientRect() / .focus() 的场景能直接拿到 inner <button>。
-// Nous 上游目前是普通函数组件,后续可推回(待协调)。
 
 import './IconButton.css';
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';

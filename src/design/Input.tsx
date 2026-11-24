@@ -1,6 +1,5 @@
 // LM-local 微调:加 forwardRef,让 CreateInput / FileRow rename 等需要
-// .focus() 的场景能直接拿到 inner <input> 节点。Nous 上游目前是普通函数
-// 组件,后续可推回(待协调)。
+// .focus() 的场景能直接拿到 inner <input> 节点。
 
 import './Input.css';
 import { forwardRef, type InputHTMLAttributes } from 'react';

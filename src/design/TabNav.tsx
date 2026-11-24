@@ -1,6 +1,5 @@
 // Continuo-local 微调:加 draggable + onDragStart / onDragEnd props 支撑 terminal
-// tab 拖拽分屏(topic-05)。Nous 上游保持纯展示 tab(无 DnD),Continuo 在 terminal
-// panel 内嵌 tab 上启用。drag handler 挂在 wrap div(根)而非 select button,避免
+// tab 拖拽分屏(topic-05),在 terminal panel 内嵌 tab 上启用。drag handler 挂在 wrap div(根)而非 select button,避免
 // button click/drag 互相干扰。
 import './TabNav.css';
 import { useId } from 'react';
@@ -78,7 +77,7 @@ export function TabNav({ children, className, ariaLabel }: TabNavProps) {
   // Continuo-local 微调(a11y A23/A28):role="tablist" 须配 WAI-ARIA 键盘模型 —— 方向键在 tab
   // 间移动焦点(配合 TabNavItem 的 roving tabindex:仅 active tab 在 Tab 顺序内)。手动激活:
   // 方向键只移焦点,Enter/Space 由原生 button 触发 onSelect。逻辑抽到共享 roving-tablist.ts
-  // (与 design Tabs 单一来源)。Nous 上游纯展示 tab 无此模型,通用增强应推回。
+  // (与 design Tabs 单一来源)。
   return (
     <nav
       className={`wm-tab-nav${className != null ? ` ${className}` : ''}`}
@@ -188,7 +187,7 @@ export function TabNavItem({
           tabIndex={-1}
           onClick={handleClose}
         >
-          {/* Continuo-local 微调:'x' → '✕'(U+2715 multiplication X)视觉更对称。Nous 上游保持 'x'. */}
+          {/* Continuo-local 微调:'x' → '✕'(U+2715 multiplication X)视觉更对称。 */}
           <span aria-hidden="true">✕</span>
         </button>
       ) : null}

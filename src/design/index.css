@@ -1,4 +1,4 @@
-/* Nous design 组件 CSS 集中入口(LM 本地副本)。
+/* design 组件 CSS 集中入口。
  * 由 src/styles/tailwind.css 顶层导入,确保 utility 优先级靠前。 */
 @import './Badge.css';
 @import './Button.css';

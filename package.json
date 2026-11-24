@@ -51,8 +51,6 @@
     "e2e:headed": "playwright test --headed",
     "test:smoke": "playwright test tests/e2e/smoke.spec.ts",
     "bdd:index": "node scripts/bdd-index.mjs",
-    "sync:design": "node scripts/sync-design.mjs",
-    "sync:design:check": "node scripts/sync-design.mjs --check",
     "rebuild:native": "electron-rebuild --only node-pty"
   },
   "dependencies": {

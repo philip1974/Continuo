@@ -273,7 +273,3 @@ jobs:
           RUN_PERF: '1'
         run: pnpm exec vitest run --project electron electron/main/__tests__/plugin-data-store.perf.bench.ts --reporter=verbose
 
-# sync-design check 不在 CI 跑:依赖跨仓 checkout philip1974/Nous(private),
-# 默认 GITHUB_TOKEN 没权限。设计层漂移由本地 `pnpm sync:design:check` 守护
-# (commit 前由维护者在本地主动跑)。
-# 未来若想纳入 CI,在 repo Secrets 加 NOUS_PAT,再恢复 sync-design job。

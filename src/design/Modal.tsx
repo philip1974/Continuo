@@ -25,10 +25,9 @@ const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 // Continuo-local 微调:多 Modal 叠加时,键盘(Esc/Tab)只由最顶层(最后打开)的 Modal 处理。
-// Nous 上游每个 Modal 都在 document 挂独立 keydown 监听、叠加时单次 Esc 连带触发所有打开
-// Modal 的 onClose —— 在 Continuo 里 CommandPalette 开着时 agent 推来的 AgentAuthPrompt
-// (onClose=deny)/ PermissionPrompt(onClose=denyAll)会被这次 Esc 静默拒绝(安全决策被误触)。
-// 此 top-most 栈是通用增强,应推回 Nous(任务卡记 doc/)。见第十八轮 P1-AU。
+// 若每个 Modal 都在 document 挂独立 keydown 监听,叠加时单次 Esc 会连带触发所有打开 Modal 的 onClose ——
+// CommandPalette 开着时 agent 推来的 AgentAuthPrompt(onClose=deny)/ PermissionPrompt(onClose=denyAll)
+// 会被这次 Esc 静默拒绝(安全决策被误触)。见第十八轮 P1-AU。
 const modalKeyStack: symbol[] = [];
 
 export function Modal({
@@ -56,8 +55,8 @@ export function Modal({
       const root = contentRef.current;
       if (root == null) return;
       // Continuo-local 微调(a11y A20):初始焦点优先落到调用方用 [data-autofocus] 显式标记的
-      // 可聚焦元素(如 ConfirmDialog 的确认按钮),找不到再回退第一个可聚焦元素。Nous 上游
-      // 总是聚焦 first、忽略调用方意图 —— 通用修复应推回。用 data-autofocus 而非 React
+      // 可聚焦元素(如 ConfirmDialog 的确认按钮),找不到再回退第一个可聚焦元素(不忽略调用方意图、
+      // 一律聚焦 first)。用 data-autofocus 而非 React
       // autoFocus:后者在 commit 期 imperatively 聚焦、不渲染 DOM 属性(无法在此查到),且会
       // 污染 prevFocus 还原。
       const explicit = root.querySelector<HTMLElement>(
@@ -128,8 +127,7 @@ export function Modal({
     >
       {/* Continuo-local 微调(a11y):content 标记为 role=dialog + aria-modal,配合已有 focus
           trap 成完整无障碍弹窗。**移除 overlay 原 aria-hidden="true"** —— 它包裹了 content,
-          会让屏幕阅读器忽略整个弹窗内容、且焦点被 trap 进 aria-hidden 子树(Nous 上游缺陷,
-          通用修复应推回)。role/aria-modal 置于 {...rest} 前,允许调用方覆盖(如传 aria-labelledby)。 */}
+          会让屏幕阅读器忽略整个弹窗内容、且焦点被 trap 进 aria-hidden 子树。role/aria-modal 置于 {...rest} 前,允许调用方覆盖(如传 aria-labelledby)。 */}
       <div
         role="dialog"
         aria-modal="true"

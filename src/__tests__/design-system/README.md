@@ -3,9 +3,9 @@
 | 文件 | 职责 |
 |---|---|
 | `src/theme/ThemeProvider.tsx` | 主题模式 / 系统跟随 / `.dark` class 切换 / localStorage 持久化 |
-| `src/styles/nous-tokens.css` | Nous shell-ui 共享 MD3 token(亮+暗双套,Continuo 不修改) |
+| `src/styles/design-tokens.css` | 基础 MD3 token(亮+暗双套;源自已废弃的 Nous shell-ui,现由本仓库维护) |
 | `src/styles/theme.css` | Continuo 暗色覆盖 + `@theme inline` 把 `--color-*` 私有 token 映射到 `--md-*` |
-| `src/design/*` | Continuo 本地 design 组件副本(从 Nous shell-ui sync,部分 Continuo-local 微调) |
+| `src/design/*` | design 基础组件(本仓库维护) |
 
 ## 关键行为
 
@@ -19,8 +19,8 @@
 
 ### Token 完整性
 
-- `nous-tokens.css` 在 `:root`(light)与 `.dark` 下的 `--md-*` 变量数量必须**严格相等**(亮/暗对称)
-- `theme.css` 必须导入 `nous-tokens.css`;Continuo 覆盖只动 `.dark` 块的 surface / primary 等 IDE 关键值
+- `design-tokens.css` 在 `:root`(light)与 `.dark` 下的 `--md-*` 变量数量必须**严格相等**(亮/暗对称)
+- `theme.css` 必须导入 `design-tokens.css`;Continuo 覆盖只动 `.dark` 块的 surface / primary 等 IDE 关键值
 - Continuo 的 `--color-*` 私有 token 必须全部通过 `var(--md-*)` 解析(不许字面 hex)
 
 ### Design 组件契约

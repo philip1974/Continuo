@@ -71,9 +71,7 @@ export default tseslint.config(
     },
   },
   {
-    // src/design/ 是 Nous shell-ui 的同步副本(详见 scripts/sync-design.mjs),
-    // 不允许 LM 单方面改写规则。Nous 上游有空 interface 占位的设计意图(如
-    // ScrollArea/Separator 仅做语义包装),这里放过。
+    // src/design/ 里有刻意的空 interface 占位(如 ScrollArea / Separator 仅做语义包装),这里放过。
     files: ['src/design/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-empty-object-type': 'off',

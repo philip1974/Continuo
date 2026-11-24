@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const NOUS_TOKENS = readFileSync(
-  resolve(__dirname, '../../styles/nous-tokens.css'),
+const DESIGN_TOKENS = readFileSync(
+  resolve(__dirname, '../../styles/design-tokens.css'),
   'utf-8',
 );
 const LM_THEME = readFileSync(
@@ -25,17 +25,17 @@ function getDarkBlock(css: string): string {
   return m?.[1] ?? '';
 }
 
-describe('nous-tokens.css MD3 完整性', () => {
+describe('design-tokens.css MD3 完整性', () => {
   it(':root 与 .dark 下的 --md-* 数量严格相等', () => {
-    const lightVars = extractMdVars(getRootBlock(NOUS_TOKENS));
-    const darkVars = extractMdVars(getDarkBlock(NOUS_TOKENS));
+    const lightVars = extractMdVars(getRootBlock(DESIGN_TOKENS));
+    const darkVars = extractMdVars(getDarkBlock(DESIGN_TOKENS));
     expect(lightVars.length).toBeGreaterThanOrEqual(40);
     expect(lightVars.length).toBe(darkVars.length);
   });
 
   it(':root 与 .dark 定义的 --md-* 名称集合完全一致', () => {
-    const lightSet = new Set(extractMdVars(getRootBlock(NOUS_TOKENS)));
-    const darkSet = new Set(extractMdVars(getDarkBlock(NOUS_TOKENS)));
+    const lightSet = new Set(extractMdVars(getRootBlock(DESIGN_TOKENS)));
+    const darkSet = new Set(extractMdVars(getDarkBlock(DESIGN_TOKENS)));
     expect([...lightSet].sort()).toEqual([...darkSet].sort());
   });
 
@@ -49,14 +49,14 @@ describe('nous-tokens.css MD3 完整性', () => {
       '--md-state-hover:',
     ];
     for (const slot of required) {
-      expect(NOUS_TOKENS.includes(slot)).toBe(true);
+      expect(DESIGN_TOKENS.includes(slot)).toBe(true);
     }
   });
 });
 
 describe('theme.css Continuo 暗色覆盖与 @theme inline 链路', () => {
-  it('引入 nous-tokens.css', () => {
-    expect(LM_THEME).toMatch(/@import\s+['"]\.\/nous-tokens\.css['"]/);
+  it('引入 design-tokens.css', () => {
+    expect(LM_THEME).toMatch(/@import\s+['"]\.\/design-tokens\.css['"]/);
   });
 
   it('.dark 块覆盖核心 surface / primary 槽位(Continuo slate + sky 身份)', () => {

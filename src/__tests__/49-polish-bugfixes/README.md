@@ -519,7 +519,7 @@
   回归测试新增「孤儿 .tmp 被下次写复用不累积」。
 
 ### P1-AU design/Modal 叠加时 Esc 只关栈顶 — `modal-stacked-esc-top-only.spec.tsx`
-- `src/design/Modal.tsx`(Nous 共享层,加 Continuo-local 注释 + 待推回上游)加模块级
+- `src/design/Modal.tsx`(design 基础组件)加模块级
   `modalKeyStack`,键盘(Esc/Tab)只由栈顶(最后打开)Modal 处理。
 - 根因: 每个 Modal 实例都在 document 挂独立 keydown 监听,叠加时单次 Esc 触发**所有**打开
   Modal 的 onClose。Continuo 里 CommandPalette/QuickOpen 开着时 agent 推来的 AgentAuthPrompt

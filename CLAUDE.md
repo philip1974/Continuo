@@ -47,7 +47,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## 设计系统约束
 
-> Continuo 与 Nous 共用 `@nous/shell-ui/design`（本地副本在 `src/design/`），下列规则保护这一共享层不退化。
+> 设计层 `src/design/`（基础组件）+ `src/styles/design-tokens.css`（MD3 token）由 Continuo 自行维护（源自已废弃的 Nous shell-ui，已不再同步），下列规则保护它不退化。
 
 ### 颜色
 
@@ -65,13 +65,11 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 * 对话框 / 弹层 → 用 design `Modal`，不直接用 `@radix-ui/react-dialog`。
 
-### 共享层修改
+### 设计层修改
 
-* `src/design/` 是 Nous shell-ui 的 Continuo 副本。**默认不改**。如需 Continuo 微调（IDE 视觉收圆角、降字重等），在文件顶部加注释 `// Continuo-local 微调:...,Nous 上游保持 ...`，commit 信息也说明。
+* `src/design/` 可直接修改与扩展（新 variant、a11y 增强等），改动要保持组件 API 通用、不夹带业务逻辑，并补对应测试。
 
-* Continuo-local 扩展 variant（如 `Button outlined`、`IconButton`）允许,但要协调把通用部分推回 Nous（写任务卡 + 记录于 `doc/`）。
-
-* `src/styles/nous-tokens.css` 是 Nous 的纯复制,**绝不**修改 — Continuo 调色板覆盖写在 `theme.css` 的 `.dark` 块。
+* `src/styles/design-tokens.css` 是基础 token 层：`:root`（light）与 `.dark` 两套 `--md-*` 必须一一对应（`design-system/tokens.spec.ts` 守护）；Continuo 的 IDE 调色板覆盖仍写在 `theme.css` 的 `.dark` 块，不在基础层里混改。
 
 ### 主题切换
 

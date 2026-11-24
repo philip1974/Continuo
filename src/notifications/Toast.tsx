@@ -1,5 +1,5 @@
 // topic-15 unified-toast-notification: 单条 Toast 视觉。
-// **暂留 src/notifications/**;通用化后(>2 个调用源)推回 Nous shell-ui 与 src/design/。
+// **暂留 src/notifications/**;通用化后(>2 个调用源)再移入 src/design/。
 // 不引第三方;color/token 全走 var(--md-error/warning/info/success) + currentColor,
 // 不出现裸 hex / Tailwind 默认色(token-only Safeguard)。
 
