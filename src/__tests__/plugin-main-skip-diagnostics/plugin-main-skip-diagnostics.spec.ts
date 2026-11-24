@@ -5,7 +5,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { listPluginDirs } from '../../../electron/main/services/plugins.service';
+import { promises as nodeFs } from 'node:fs';
+import { listPluginDirs, recoverInterruptedInstalls } from '../../../electron/main/services/plugins.service';
 
 let base: string;
 beforeEach(async () => {
@@ -32,3 +33,17 @@ describe('main 入口不可用 → 跳过并告警一次', () => {
     expect(String(hits[0]![0])).toContain('unreachable');
   });
 });
+
+describe('启动还原中断的更新失败 → 留告警', () => {
+  it('backup 还原 rename 被拒(EBUSY)→ 记一条含错误码与路径的告警,不抛', async () => {
+    const backup = path.join(base, '.com.example.p.old-12345678-1234-1234-1234-123456789abc');
+    await mkdir(backup);
+    const err = Object.assign(new Error('busy'), { code: 'EBUSY' });
+    vi.spyOn(nodeFs, 'rename').mockRejectedValue(err);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(recoverInterruptedInstalls(base)).resolves.toBeUndefined();
+    const hit = warn.mock.calls.find((c) => String(c[0]).includes(backup));
+    expect(String(hit?.[0])).toContain('EBUSY');
+  });
+});
+

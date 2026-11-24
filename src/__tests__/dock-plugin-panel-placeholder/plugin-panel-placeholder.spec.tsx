@@ -132,3 +132,16 @@ describe('占位 ↔ 真实内容切换 · hooks 组件作 factory', () => {
   });
 });
 
+// dockview 对同一 component 名多次取组件:须拿到同一个组件(否则每次渲染换组件类型 → 面板反复卸载重挂、丢状态)。
+describe('components 映射 · 同名取到同一组件', () => {
+  it('未注册类型与已注册类型,同名两次取值引用相等', async () => {
+    const { createPanelComponents } = await import('../../shell/dock/panel-components');
+    const { PanelRegistry } = await import('../../plugins/registries/PanelRegistry');
+    const reg = new PanelRegistry();
+    reg.register({ type: 'known', title: 'K', factory: () => null });
+    const comps = createPanelComponents(reg, reg.getAll());
+    expect(comps['unknown.x']).toBe(comps['unknown.x']);
+    expect(comps['known']).toBe(comps['known']);
+  });
+});
+

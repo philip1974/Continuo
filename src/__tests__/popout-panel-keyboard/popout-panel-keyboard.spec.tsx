@@ -8,6 +8,8 @@ import { KeybindingCaptureModal } from '../../plugins/keybindings/KeybindingCapt
 import { useKeybindingsStore } from '../../plugins/keybindings/keybindings-store';
 import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotkeys';
 import { useQuickOpenHotkey } from '../../plugins/quick-open/useQuickOpenHotkey';
+import { useCommandPaletteHotkey } from '../../plugins/command-palette/useCommandPaletteHotkey';
+import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { useQuickOpenStore } from '../../plugins/quick-open/store';
 import { CommandRegistry } from '../../plugins/registries/CommandRegistry';
 import { makeChildDocument, keydown, type ChildDocument } from '../_helpers/child-document';
@@ -147,5 +149,20 @@ describe('全局热键只认主窗(子窗不响应)', () => {
     keydown(document.body, { key: 'p', metaKey: true });
     expect(useQuickOpenStore.getState().isOpen).toBe(true);
     useQuickOpenStore.setState({ isOpen: false });
+  });
+
+  it('⌘⇧P(命令面板)在子窗不打开(只认主窗)', () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
+    cleanups.push(() => {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+    });
+    useCommandPaletteStore.setState({ isOpen: false });
+    renderHook(() => useCommandPaletteHotkey());
+    keydown(child.doc.body, { key: 'p', metaKey: true, shiftKey: true });
+    expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+    keydown(document.body, { key: 'p', metaKey: true, shiftKey: true });
+    expect(useCommandPaletteStore.getState().isOpen).toBe(true);
+    useCommandPaletteStore.setState({ isOpen: false });
   });
 });
