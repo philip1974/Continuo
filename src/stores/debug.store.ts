@@ -33,6 +33,8 @@ export interface DebugSessionShadow {
   readonly frames: readonly DebugStackFrame[];
   readonly scopes: readonly DebugScope[];
   readonly variableRefs: ReadonlyMap<number, readonly DebugVariable[]>;
+  /** 已加载的 reference 还有下一页时的起点(main 回的 next_start);无条目 = 已取完。随 variableRefs 一起清空。 */
+  readonly variableNextStart?: ReadonlyMap<number, number>;
   readonly stopped?: DebugStoppedLocation;
   readonly lastStoppedOrder: number;
 }
@@ -46,6 +48,8 @@ type DebugState = {
     sessionId: string,
     variablesReference: number,
   ) => Promise<readonly DebugVariable[]>;
+  /** 从该 reference 记录的 next_start 取下一页并追加;没有下一页则什么也不做。 */
+  loadMoreVariables: (sessionId: string, variablesReference: number) => Promise<void>;
 };
 
 const EMPTY_DEBUG_SESSIONS = new Map<string, DebugSessionShadow>();
@@ -340,6 +344,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           frames: [],
           scopes: [],
           variableRefs: new Map(),
+          variableNextStart: new Map(),
           stopped: {
             reason: event.reason,
             stopSeq: event.stopSeq,
@@ -363,6 +368,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
           frames: [],
           scopes: [],
           variableRefs: new Map(),
+          variableNextStart: new Map(),
           stopped: undefined,
         };
         const sessions = new Map(state.sessions);
@@ -390,47 +396,77 @@ export const useDebugStore = create<DebugState>((set, get) => ({
 
   loadVariables: async (sessionId, variablesReference) => {
     const session = get().sessions.get(sessionId);
-    const stopSeq = session?.stopped?.stopSeq;
-    // 同一停内同一 reference 只拉一次(variableRefs 在 stopped / continued 时清空)。
+    // 同一停内同一 reference 只拉一次(variableRefs 在 stopped / continued 时清空);后续页走 loadMoreVariables。
     const cached = session?.variableRefs.get(variablesReference);
     if (cached) return cached;
+    return (await fetchVariablesPage(sessionId, variablesReference, session?.stopped?.stopSeq, 0)) ?? [];
+  },
 
-    // 用户点「加载作用域」触发:失败(ok:false / reject)提示并返回空,不向面板抛出。与 pullStackAndScopes 同规则:
-    // 发起后已继续运行 / 进入下一停的迟到失败不提示(variablesReference 只在本停有效,继续后必然失败)。
-    const stillCurrent = (): boolean => stopSeq !== undefined && isCurrentStop(sessionId, stopSeq);
-    let result: Awaited<ReturnType<typeof coApi.debug.getVariables>>;
-    try {
-      result = await coApi.debug.getVariables({ sessionId, variablesReference });
-    } catch (err) {
-      if (stillCurrent()) notifyThrownError(err);
-      return [];
-    }
-    if (!result.ok) {
-      if (stillCurrent()) notifyFailure(result);
-      return [];
-    }
-    const variables = Array.isArray(asRecord(result.data).variables)
-      ? (asRecord(result.data).variables as readonly unknown[])
-          .map(asVariable)
-          .filter((variable): variable is DebugVariable => variable !== null)
-      : [];
-
-    set((state) => {
-      const current = state.sessions.get(sessionId);
-      // 发起后已进入下一停(或已继续运行)→ 不回写:reference 号跨停复用,旧值会挂到新一停同号下。
-      if (!current || current.stopped?.stopSeq !== stopSeq) return state;
-      const variableRefs = new Map(current.variableRefs);
-      variableRefs.set(variablesReference, variables);
-      const sessions = new Map(state.sessions);
-      sessions.set(sessionId, {
-        ...current,
-        variableRefs,
-      });
-      return { sessions };
-    });
-    return variables;
+  loadMoreVariables: async (sessionId, variablesReference) => {
+    const session = get().sessions.get(sessionId);
+    const start = session?.variableNextStart?.get(variablesReference);
+    if (start === undefined) return;
+    await fetchVariablesPage(sessionId, variablesReference, session?.stopped?.stopSeq, start);
   },
 }));
+
+
+/**
+ * 取 reference 从 start 起的一页变量(start 0 = 首页,> 0 = 追加到已缓存的前几页之后),同时记下 next_start。
+ * 用户点「加载作用域」/「加载更多」触发:失败(ok:false / reject)提示并返回 null,不向面板抛出。与 pullStackAndScopes
+ * 同规则:发起后已继续运行 / 进入下一停的迟到失败不提示、迟到结果不回写(variablesReference 只在本停有效、号跨停复用)。
+ */
+async function fetchVariablesPage(
+  sessionId: string,
+  variablesReference: number,
+  stopSeq: number | undefined,
+  start: number,
+): Promise<readonly DebugVariable[] | null> {
+  const stillCurrent = (): boolean => stopSeq !== undefined && isCurrentStop(sessionId, stopSeq);
+  let result: Awaited<ReturnType<typeof coApi.debug.getVariables>>;
+  try {
+    result = await coApi.debug.getVariables({
+      sessionId,
+      variablesReference,
+      ...(start > 0 ? { start } : {}),
+    });
+  } catch (err) {
+    if (stillCurrent()) notifyThrownError(err);
+    return null;
+  }
+  if (!result.ok) {
+    if (stillCurrent()) notifyFailure(result);
+    return null;
+  }
+  const data = asRecord(result.data);
+  const page = Array.isArray(data.variables)
+    ? (data.variables as readonly unknown[])
+        .map(asVariable)
+        .filter((variable): variable is DebugVariable => variable !== null)
+    : [];
+  const nextStart =
+    typeof data.next_start === 'number' && Number.isInteger(data.next_start) && data.next_start > start
+      ? data.next_start
+      : undefined;
+
+  let variables = page;
+  useDebugStore.setState((state) => {
+    const current = state.sessions.get(sessionId);
+    if (!current || current.stopped?.stopSeq !== stopSeq) return state;
+    // 追加页只接在仍等着这一页的缓存后面(重复点击 / 已被首页重取时丢弃,防重复条目)。
+    if (start > 0 && current.variableNextStart?.get(variablesReference) !== start) return state;
+    variables = start > 0 ? [...(current.variableRefs.get(variablesReference) ?? []), ...page] : page;
+    const variableRefs = new Map(current.variableRefs);
+    variableRefs.set(variablesReference, variables);
+    const variableNextStart = new Map(current.variableNextStart);
+    if (nextStart === undefined) variableNextStart.delete(variablesReference);
+    else variableNextStart.set(variablesReference, nextStart);
+    const sessions = new Map(state.sessions);
+    sessions.set(sessionId, { ...current, variableRefs, variableNextStart });
+    return { sessions };
+  });
+  return variables;
+}
 
 /**
  * 用 subscribe 快照初始化 store(renderer 重载后 store 为空、main 只推增量事件)。先订阅事件、后取快照:

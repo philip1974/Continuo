@@ -135,6 +135,7 @@ export const ko: Record<TranslationKey, string> = {
   'panels.debug.unknown': '알 수 없음',
   'panels.debug.scope_ref': '참조 {ref}',
   'panels.debug.load_scope': '{scope} 로드',
+  'panels.debug.load_more': '더 로드',
   'panels.debug.breakpoint.verified': '확인됨',
   'panels.debug.breakpoint.pending': '대기 중',
 

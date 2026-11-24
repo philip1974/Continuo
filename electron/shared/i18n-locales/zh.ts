@@ -134,6 +134,7 @@ export const zh: Record<TranslationKey, string> = {
   'panels.debug.unknown': '未知',
   'panels.debug.scope_ref': '引用 {ref}',
   'panels.debug.load_scope': '加载 {scope}',
+  'panels.debug.load_more': '加载更多',
   'panels.debug.breakpoint.verified': '已验证',
   'panels.debug.breakpoint.pending': '待验证',
 

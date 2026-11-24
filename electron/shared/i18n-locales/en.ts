@@ -146,6 +146,7 @@ export const en = {
   'panels.debug.unknown': 'unknown',
   'panels.debug.scope_ref': 'ref {ref}',
   'panels.debug.load_scope': 'Load {scope}',
+  'panels.debug.load_more': 'Load more',
   'panels.debug.breakpoint.verified': 'verified',
   'panels.debug.breakpoint.pending': 'pending',
 

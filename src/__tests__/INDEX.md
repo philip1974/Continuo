@@ -1003,10 +1003,6 @@
 
 - [`token-revoke-retry.spec.ts`](./plugin-fs-token-revoke-retry/token-revoke-retry.spec.ts)
 
-## [plugin-fs-win-reparse-dirent(Windows 上 dirent 报 symlink 时按 lstat 判真实类型)](./plugin-fs-win-reparse-dirent/README.md)
-
-- [`win-reparse-dirent.spec.ts`](./plugin-fs-win-reparse-dirent/win-reparse-dirent.spec.ts)
-
 ## [plugin-fs-write-nofollow(plugin-fs 写操作不跟随叶子符号链接,校验与操作同一策略)](./plugin-fs-write-nofollow/README.md)
 
 - [`write-file-symlink-race.spec.ts`](./plugin-fs-write-nofollow/write-file-symlink-race.spec.ts)

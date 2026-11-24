@@ -128,12 +128,19 @@ function ScopeCard({
 }) {
   const t = useT();
   const loadVariables = useDebugStore((state) => state.loadVariables);
+  const loadMoreVariables = useDebugStore((state) => state.loadMoreVariables);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const variables = useDebugStore(
     (state) =>
       state.sessions
         .get(session.id)
         ?.variableRefs.get(scope.variables_reference) ?? EMPTY_VARIABLES,
+  );
+  // main 每页有上限,满页回 next_start → 显示「加载更多」把后续页追加到本作用域下。
+  const hasMore = useDebugStore(
+    (state) =>
+      state.sessions.get(session.id)?.variableNextStart?.has(scope.variables_reference) ?? false,
   );
 
   const load = async () => {
@@ -142,6 +149,15 @@ function ScopeCard({
       await loadVariables(session.id, scope.variables_reference);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      await loadMoreVariables(session.id, scope.variables_reference);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -171,6 +187,17 @@ function ScopeCard({
               <span className="truncate text-fg-muted">{variable.value}</span>
             </div>
           ))}
+          {hasMore && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? t('common.loading') : t('panels.debug.load_more')}
+            </Button>
+          )}
         </div>
       )}
     </Card>

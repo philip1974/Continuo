@@ -65,6 +65,9 @@ export function registerDebugViewIpc(service: DebugService): void {
 
   windowScopedHandle(DEBUG_VIEW_CHANNELS.GET_VARIABLES, debugGetVariablesInputSchema, (input: DebugGetVariablesInput, win) => {
     requireStoppedSession(input.sessionId, win);
-    return service.variables(input.sessionId, { variablesReference: input.variablesReference });
+    return service.variables(input.sessionId, {
+      variablesReference: input.variablesReference,
+      ...(input.start !== undefined ? { start: input.start } : {}),
+    });
   });
 }

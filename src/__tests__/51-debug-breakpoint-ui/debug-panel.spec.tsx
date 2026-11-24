@@ -26,6 +26,7 @@ import {
   useDebugStore,
 } from '../../stores/debug.store';
 import { setLocale } from '../../i18n';
+import { coApi } from '../../lib/co-api';
 
 beforeEach(() => {
   setLocale('en');
@@ -93,6 +94,8 @@ describe('topic51 Op5 · DebugPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load Local' }));
     await waitFor(() => expect(screen.getByText('sum')).toBeTruthy());
     expect(screen.getByText('21')).toBeTruthy();
+    // 不满页(无 next_start)→ 不显示「加载更多」。
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Breakpoints' }));
     expect(screen.getByText('verified')).toBeTruthy();
@@ -123,5 +126,45 @@ describe('topic51 Op5 · DebugPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Breakpoints' }));
     expect(screen.getByText('verified')).toBeTruthy();
   });
-});
 
+  // 满页(next_start)→ 显示「加载更多」,点击把下一页追加到同一作用域下;末页后按钮消失。
+  it('变量满页 → 显示 Load more,点击追加第二页', async () => {
+    const getVariables = vi.mocked(coApi.debug.getVariables);
+    getVariables
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { variables: [{ name: 'first', value: '1', variables_reference: 0 }], truncated: true, next_start: 1 },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { variables: [{ name: 'second', value: '2', variables_reference: 0 }], truncated: false },
+      });
+    useDebugStore.setState({
+      activeSessionId: 's1',
+      sessions: new Map([
+        [
+          's1',
+          {
+            id: 's1',
+            breakpoints: [],
+            frames: [],
+            scopes: [{ name: 'Local', variables_reference: 44, expensive: false }],
+            variableRefs: new Map(),
+            stopped: { reason: 'breakpoint', stopSeq: 1 },
+            lastStoppedOrder: 1,
+          },
+        ],
+      ]),
+    });
+    render(<DebugPanel />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Variables' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load Local' }));
+    await waitFor(() => expect(screen.getByText('first')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() => expect(screen.getByText('second')).toBeTruthy());
+    expect(screen.getByText('first')).toBeTruthy();
+    expect(getVariables).toHaveBeenLastCalledWith({ sessionId: 's1', variablesReference: 44, start: 1 });
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+});

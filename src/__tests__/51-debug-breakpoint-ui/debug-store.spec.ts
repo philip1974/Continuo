@@ -554,3 +554,78 @@ describe('activeSessionId:快照会话排在事件会话之前', () => {
   });
 });
 
+
+// 面板变量分页:main 每页最多 DEBUG_VARIABLE_COUNT_DEFAULT 条,满页回 truncated + next_start(同 MCP debug.variables)。
+// store 记下每个 reference 的 next_start,loadMoreVariables 从那里取下一页并追加进同一 reference 的缓存。
+describe('变量分页(加载更多)', () => {
+  const page = (names: readonly string[], nextStart?: number) => ({
+    ok: true as const,
+    data: {
+      variables: names.map((name) => ({ name, value: name, variables_reference: 0 })),
+      truncated: nextStart !== undefined,
+      ...(nextStart !== undefined ? { next_start: nextStart } : {}),
+    },
+  });
+
+  async function stopped(stopSeq = 1): Promise<(event: DebugViewEvent) => void> {
+    startDebugStoreSync();
+    const emit = debugApi.events[0]!;
+    emit({ type: 'stopped', sessionId: 's1', stopSeq, reason: 'breakpoint' });
+    await flushMicrotasks(2);
+    return emit;
+  }
+
+  it('满页 → 记下 next_start;loadMoreVariables 带 start 取下一页并追加,末页后不再有下一页', async () => {
+    await stopped();
+    debugApi.getVariables.mockResolvedValueOnce(page(['a', 'b'], 2) as never);
+    debugApi.getVariables.mockResolvedValueOnce(page(['c']) as never);
+
+    await useDebugStore.getState().loadVariables('s1', 44);
+    expect(useDebugStore.getState().sessions.get('s1')?.variableNextStart?.get(44)).toBe(2);
+
+    await useDebugStore.getState().loadMoreVariables('s1', 44);
+    expect(debugApi.getVariables).toHaveBeenLastCalledWith({ sessionId: 's1', variablesReference: 44, start: 2 });
+    const session = useDebugStore.getState().sessions.get('s1');
+    expect(session?.variableRefs.get(44)?.map((v) => v.name)).toEqual(['a', 'b', 'c']);
+    expect(session?.variableNextStart?.get(44)).toBeUndefined();
+  });
+
+  it('不满页 → 无 next_start,loadMoreVariables 不发请求', async () => {
+    await stopped();
+    await useDebugStore.getState().loadVariables('s1', 44);
+    expect(useDebugStore.getState().sessions.get('s1')?.variableNextStart?.get(44)).toBeUndefined();
+    await useDebugStore.getState().loadMoreVariables('s1', 44);
+    expect(debugApi.getVariables).toHaveBeenCalledTimes(1);
+  });
+
+  it('发起后进入下一停 → 迟到的追加页不回写', async () => {
+    const emit = await stopped();
+    debugApi.getVariables.mockResolvedValueOnce(page(['a'], 1) as never);
+    await useDebugStore.getState().loadVariables('s1', 44);
+
+    let release: (() => void) | null = null;
+    debugApi.getVariables.mockImplementationOnce(
+      () => new Promise((r) => { release = () => r(page(['late'])); }) as never,
+    );
+    const pending = useDebugStore.getState().loadMoreVariables('s1', 44);
+    emit({ type: 'continued', sessionId: 's1' });
+    emit({ type: 'stopped', sessionId: 's1', stopSeq: 2, reason: 'step' });
+    await flushMicrotasks(2);
+    debugApi.getVariables.mockResolvedValueOnce(page(['fresh'], 1) as never);
+    await useDebugStore.getState().loadVariables('s1', 44);
+    release!();
+    await pending;
+
+    const session = useDebugStore.getState().sessions.get('s1');
+    expect(session?.variableRefs.get(44)?.map((v) => v.name)).toEqual(['fresh']);
+    expect(session?.variableNextStart?.get(44)).toBe(1);
+  });
+
+  it('continued / 新一停清空 next_start', async () => {
+    const emit = await stopped();
+    debugApi.getVariables.mockResolvedValueOnce(page(['a'], 1) as never);
+    await useDebugStore.getState().loadVariables('s1', 44);
+    emit({ type: 'continued', sessionId: 's1' });
+    expect(useDebugStore.getState().sessions.get('s1')?.variableNextStart?.get(44)).toBeUndefined();
+  });
+});
