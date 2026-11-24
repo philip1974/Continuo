@@ -160,15 +160,54 @@ export function useExternalFileSync(): void {
     // symlink tab:filePath 是打开路径(链接),realPath 是读盘时 main 解析的真实目标(见 EditorTab.realPath)。
     // FSEvents/inotify 上报的是被实际修改的目录项(链接目标),故匹配谓词同时收到两者,任一侧命中即重读
     //(重读仍经 filePath 读,读到的就是目标内容)。
-    const matchingCleanTabs = (
+    const matchingTabs = (
       match: (filePath: string, realPath: string | undefined) => boolean,
+      dirty: boolean,
     ): EditorTab[] => {
       const out: EditorTab[] = [];
       for (const tab of useEditorStore.getState().tabs) {
-        if (tab.dirty) continue; // 保留用户改动,不覆盖
+        if (tab.dirty !== dirty) continue;
         if (match(tab.filePath, tab.realPath)) out.push(tab);
       }
       return out;
+    };
+    // 干净 tab 才重读内容;脏 tab 保留用户改动,不覆盖
+    const matchingCleanTabs = (
+      match: (filePath: string, realPath: string | undefined) => boolean,
+    ): EditorTab[] => matchingTabs(match, false);
+
+    // 脏 tab 不重读内容,只查磁盘上是否还在(廉价 stat):确认已删除(同上 EXTERNAL_DELETE_CONFIRM_MS 复查)→ 标记
+    // orphaned(tab 显示「(已删除)」、自动保存不再写回);文件重新出现 → 清除。同 path 在途时合并为尾随一次。
+    const orphanInFlight = new Set<string>();
+    const orphanPending = new Set<string>();
+    const statNotFound = async (path: string): Promise<boolean | null> => {
+      try {
+        const r = await coApi.fs.stat(path);
+        return r.ok ? false : r.code === ERROR_CODES.FS_NOT_FOUND ? true : null;
+      } catch {
+        return null; // 无法确认 → 不改标记
+      }
+    };
+    const checkOrphan = (path: string, tabId: string): void => {
+      if (orphanInFlight.has(path)) {
+        orphanPending.add(path);
+        return;
+      }
+      orphanInFlight.add(path);
+      void (async () => {
+        let gone = await statNotFound(path);
+        if (gone === true && !cancelled) {
+          await new Promise((res) => setTimeout(res, EXTERNAL_DELETE_CONFIRM_MS));
+          gone = cancelled ? null : await statNotFound(path);
+        }
+        if (cancelled) return;
+        orphanInFlight.delete(path);
+        if (orphanPending.delete(path)) {
+          checkOrphan(path, tabId); // 期间又有事件:以最新状态为准
+          return;
+        }
+        if (gone !== null) useEditorStore.getState().setOrphaned(tabId, gone);
+      })();
     };
 
     // dir-changed:精确匹配直接父目录(+ 可选文件名集合),命中数通常很小,直接逐个发起。
@@ -214,15 +253,15 @@ export function useExternalFileSync(): void {
     const unsub = coApi.fs.onDirChanged((changedDir, files) => {
       const names = files ? new Set(files.map(foldFileName)) : null;
       const nameHit = (p: string): boolean => names!.has(foldFileName(basename(p)));
-      reloadMatching(
-        (fp, rp) =>
-          ((pathEquals(dirname(fp), changedDir) ||
-            (rp !== undefined && pathEquals(dirname(rp), changedDir))) &&
-            (names === null || nameHit(fp) || (rp !== undefined && nameHit(rp)))) ||
-          (names !== null &&
-            (subtreeHit(changedDir, names, fp) ||
-              (rp !== undefined && subtreeHit(changedDir, names, rp)))),
-      );
+      const match = (fp: string, rp: string | undefined): boolean =>
+        ((pathEquals(dirname(fp), changedDir) ||
+          (rp !== undefined && pathEquals(dirname(rp), changedDir))) &&
+          (names === null || nameHit(fp) || (rp !== undefined && nameHit(rp)))) ||
+        (names !== null &&
+          (subtreeHit(changedDir, names, fp) ||
+            (rp !== undefined && subtreeHit(changedDir, names, rp))));
+      reloadMatching(match);
+      for (const tab of matchingTabs(match, true)) checkOrphan(tab.filePath, tab.id);
     });
     const unsubRestored = onWatchRestored(reloadSubtree);
     return () => {

@@ -16,7 +16,9 @@
 4. **`workbench.action.nextEditor` / `workbench.action.previousEditor`**:在编辑器文件 tab 间循环切换(首尾相接);
    默认键按平台对齐 VSCode:mac `⌥⌘→` / `⌥⌘←`(`mod+alt+right` / `mod+alt+left`),其它 `Ctrl+PageDown` /
    `Ctrl+PageUp`。tab 数 < 2 → no-op。
-5. **popout 子窗里同样生效**:焦点在 dockview popout 子窗时,关闭编辑器与下一个 / 上一个编辑器按**生效绑定**在该子窗
+5. **`workbench.action.files.revert`(无默认键,三语标题「还原文件」)**:把活动文件 tab 换回磁盘内容、丢弃未保存修改,见
+   `src/__tests__/editor-revert-file/`。
+6. **popout 子窗里同样生效**:焦点在 dockview popout 子窗时,关闭编辑器与下一个 / 上一个编辑器按**生效绑定**在该子窗
    分发,执行同一命令(作用于 dock 活动面板,即焦点所在的子窗面板);mac 上 ⌘W 不再因去掉菜单 `role: 'close'` 而在
    子窗里无反应。其它命令(新终端、设置等效果画在主窗)不在子窗分发;保存由编辑器面板自己的按键处理覆盖。子窗关闭 /
    hook 卸载时移除该文档上的监听。

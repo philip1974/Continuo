@@ -70,7 +70,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.NOT_SUPPORTED': '지원되지 않는 작업입니다',
   'errors.NO_ACTIVE_TAB': '활성 탭이 없습니다',
   'errors.TAB_NOT_FOUND': '탭을 찾을 수 없습니다',
-  'errors.EDITOR_DISK_CHANGED': '디스크의 파일이 변경되어 덮어쓰지 않았습니다(Cmd/Ctrl+S로 선택)',
+  'errors.EDITOR_DISK_CHANGED': '디스크의 파일이 변경되어 덮어쓰지 않았습니다(Cmd/Ctrl+S로 덮어쓰거나 변경 내용을 취소하고 다시 로드)',
   'errors.NO_DEFAULT_EXPORT': '플러그인에 default export가 없습니다',
   'errors.NOT_PLUGIN_CLASS': '플러그인 default export가 Plugin 하위 클래스가 아닙니다',
   'errors.PATH_SCOPE_CLEANUP_FAILED': '플러그인 폴더 접근 권한을 정리하지 못해 제거를 중단했습니다. 다시 시도하세요.',
@@ -132,6 +132,7 @@ export const ko: Record<TranslationKey, string> = {
   'commands.editor.previous.title': '이전 편집기 열기',
   'commands.view.category': '보기',
   'commands.file.save.title': '저장',
+  'commands.file.revert.title': '파일 되돌리기',
   'commands.file.category': '파일',
 
   // panels.*
@@ -220,6 +221,7 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.multiple': '다음 {count}개 파일/폴더를 삭제하시겠습니까?',
   'panels.explorer.trash_confirm.more': '…외 {count}개 항목은 표시되지 않음',
   'panels.explorer.trash_confirm.detail': '휴지통에서 복원할 수 있습니다.',
+  'panels.explorer.trash_confirm.unsaved': '삭제할 파일 중 {count}개에 저장되지 않은 변경 내용이 있습니다. 해당 편집기는 \'삭제됨\'으로 표시된 채 유지되며, 직접 저장하지 않으면 변경 내용이 디스크에 기록되지 않습니다.',
   'panels.explorer.tree_aria': '파일 트리',
   'panels.explorer.copy_path_failed': '클립보드에 경로 복사 실패',
   'panels.terminal.starting_shell': '셸 시작 중…',
@@ -325,6 +327,7 @@ export const ko: Record<TranslationKey, string> = {
 
   // panels.editor.*
   'panels.editor.unsaved_indicator': '저장되지 않은 변경 사항',
+  'panels.editor.tab_deleted': '(삭제됨)',
   'panels.editor.placeholder.start_writing': '작성을 시작하세요…',
   'panels.editor.mode.edit': '편집',
   'panels.editor.mode.source': '소스',
@@ -332,8 +335,9 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.mode_group': '편집기 모드',
   'panels.editor.save_changes_title': '{name}의 변경 내용을 저장하시겠습니까?',
   'panels.editor.disk_changed_title': '디스크의 파일이 변경됨',
-  'panels.editor.disk_changed_body': '파일이 열리거나 마지막으로 저장된 후 외부에서 수정되었습니다. 저장하면 해당 변경 사항을 덮어씁니다.',
+  'panels.editor.disk_changed_body': '파일이 열리거나 마지막으로 저장된 후 외부에서 수정되었습니다. 내 변경 내용으로 덮어쓰거나, 변경 내용을 취소하고 디스크의 버전을 다시 로드할 수 있습니다.',
   'panels.editor.disk_changed_confirm': '덮어쓰기',
+  'panels.editor.disk_changed_revert': '변경 내용 취소 후 다시 로드',
   'panels.editor.milkdownUnsafe.banner': 'frontmatter와 wiki-link를 보존하기 위해 소스 모드로 열었습니다.',
   'panels.editor.engine_load_failed': '편집기를 불러오지 못했습니다.',
   'panels.editor.engine_load_retry': '다시 시도',

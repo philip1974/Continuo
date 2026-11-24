@@ -42,6 +42,8 @@ export interface TabChrome {
   readonly id: string;
   readonly filePath: string;
   readonly dirty: boolean;
+  /** 文件已删除、tab 因未保存修改保留(EditorTab.orphaned):标题删除线 +「(已删除)」。 */
+  readonly orphaned?: boolean;
 }
 
 interface EditorHeaderProps {
@@ -147,6 +149,7 @@ export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
       id: tab.id,
       filePath: tab.filePath,
       dirty: tab.dirty,
+      ...(tab.orphaned ? { orphaned: true } : {}),
     };
   }
   return out;
@@ -300,7 +303,14 @@ export const EditorHeader = memo(function EditorHeader({
               onMouseSelect={focusEditorContent}
               onClose={() => onCloseRequest(tab)}
             >
-              {tabTitle}
+              {tab.orphaned ? (
+                <>
+                  <span className="line-through">{tabTitle}</span>
+                  <span className="ml-1.5">{t('panels.editor.tab_deleted')}</span>
+                </>
+              ) : (
+                tabTitle
+              )}
               {description != null && (
                 <span data-testid="tab-description" className="ml-1.5 text-fg-dim">
                   {description}

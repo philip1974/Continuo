@@ -273,6 +273,24 @@ async function saveFileNow(
 }
 
 /**
+ * 还原文件(VSCode workbench.action.files.revert):重读磁盘,把 tab 换成磁盘内容并丢弃未保存的修改
+ *(与外部同步同一出口 reloadFromDisk,Milkdown 视图按 reloadEpoch 重挂)。读盘失败原样返回,tab 不变。
+ */
+export async function revertFile(tabId: string, deps: EditorFileDeps): Promise<FileOpResult> {
+  const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+  if (!tab) return { ok: false, code: 'TAB_NOT_FOUND', message: `tab not found: ${tabId}` };
+  let r: FsReadFileResult;
+  try {
+    r = await deps.fs.readFile(tab.filePath);
+  } catch (err) {
+    return exception(err);
+  }
+  if (!r.ok) return r;
+  useEditorStore.getState().reloadFromDisk(tabId, r.data, r.realPath, { discardChanges: true });
+  return { ok: true, data: undefined };
+}
+
+/**
  * 把编辑器回写的全文写入 tab。`base` 是编辑器最近一次上抛(或挂载时)的内容:store 里该 tab
  * 内容已不等于 base → 期间被别处改过(外部改盘 reloadFromDisk 触发 epoch 重挂载等),不用旧
  * 编辑器的内容覆盖。tab 已关闭 → no-op。

@@ -69,7 +69,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.NOT_SUPPORTED': '不支持该操作',
   'errors.NO_ACTIVE_TAB': '没有活动标签页',
   'errors.TAB_NOT_FOUND': '找不到标签页',
-  'errors.EDITOR_DISK_CHANGED': '文件已在磁盘上被修改，未覆盖（按 Cmd/Ctrl+S 选择是否覆盖）',
+  'errors.EDITOR_DISK_CHANGED': '文件已在磁盘上被修改，未覆盖（按 Cmd/Ctrl+S 选择覆盖，或放弃更改并重新加载）',
   'errors.NO_DEFAULT_EXPORT': '插件没有 export default',
   'errors.NOT_PLUGIN_CLASS': '插件的 default export 不是 Plugin 子类',
   'errors.PATH_SCOPE_CLEANUP_FAILED': '插件目录访问授权清理失败，已中止卸载，请重试',
@@ -131,6 +131,7 @@ export const zh: Record<TranslationKey, string> = {
   'commands.editor.previous.title': '打开上一个编辑器',
   'commands.view.category': '查看',
   'commands.file.save.title': '保存',
+  'commands.file.revert.title': '还原文件',
   'commands.file.category': '文件',
 
   // panels.*
@@ -218,6 +219,7 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.multiple': '确定要删除以下 {count} 个文件 / 文件夹吗？',
   'panels.explorer.trash_confirm.more': '…另有 {count} 项未列出',
   'panels.explorer.trash_confirm.detail': '可以从废纸篓恢复。',
+  'panels.explorer.trash_confirm.unsaved': '其中 {count} 个文件有未保存的更改。删除后它们的编辑器保留并标记为「已删除」，除非手动保存，这些更改不会写回磁盘。',
   'panels.explorer.tree_aria': '文件树',
   'panels.explorer.copy_path_failed': '复制路径到剪贴板失败',
   'panels.terminal.starting_shell': '启动 shell…',
@@ -323,6 +325,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // panels.editor.*
   'panels.editor.unsaved_indicator': '未保存的更改',
+  'panels.editor.tab_deleted': '（已删除）',
   'panels.editor.placeholder.start_writing': '开始书写…',
   'panels.editor.mode.edit': '编辑',
   'panels.editor.mode.source': '源码',
@@ -330,8 +333,9 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.mode_group': '编辑器模式',
   'panels.editor.save_changes_title': '是否要保存对「{name}」的更改？',
   'panels.editor.disk_changed_title': '文件已在磁盘上更改',
-  'panels.editor.disk_changed_body': '自打开或上次保存后已被外部修改。继续保存将覆盖这些修改。',
+  'panels.editor.disk_changed_body': '自打开或上次保存后已被外部修改。可以用你的更改覆盖它，或放弃更改并重新加载磁盘上的版本。',
   'panels.editor.disk_changed_confirm': '覆盖',
+  'panels.editor.disk_changed_revert': '放弃更改并重新加载',
   'panels.editor.milkdownUnsafe.banner': '已用源码模式打开，以保留 frontmatter 和 wiki-link。',
   'panels.editor.engine_load_failed': '编辑器加载失败。',
   'panels.editor.engine_load_retry': '重试',

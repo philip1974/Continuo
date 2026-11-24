@@ -2,7 +2,7 @@
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
-import { EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
+import { EDITOR_UNSAVED_CHANGES_SELECTOR, editorTab } from './helpers/editor';
 import { EXPLORER_TRASH, confirmExplorerTrash } from './helpers/explorer';
 
 test('dirty a.ts → trash → dirty tab 保留 + 文件被删', async ({
@@ -30,6 +30,8 @@ test('dirty a.ts → trash → dirty tab 保留 + 文件被删', async ({
   await expect(window.locator('header').first()).toContainText('a.ts ●', {
     timeout: 5_000,
   });
+  // 编辑器 tab 标记已删除(VSCode「(Deleted)」)
+  await expect(editorTab(window, /a\.ts/)).toContainText(/[(（](Deleted|已删除|삭제됨)[)）]/);
   await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();
   // 文件被删
   await expect(async () => {

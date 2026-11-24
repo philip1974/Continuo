@@ -43,6 +43,7 @@ export function useAutoSave(
         id: found?.id ?? null,
         filePath: found?.filePath ?? null,
         dirty: found?.dirty ?? false,
+        orphaned: found?.orphaned ?? false,
         content: found?.content,
       };
     }),
@@ -71,6 +72,11 @@ export function useAutoSave(
         const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
         if (!tab || !tab.dirty) {
           setAutoSaveFailed(created, false);
+          return Promise.resolve({ ok: true });
+        }
+        // 文件已删除(orphaned):不自动写回(VSCode 同款,只有手动保存重建);仍脏未落盘 → 关窗计数不豁免。
+        if (tab.orphaned) {
+          setAutoSaveFailed(created, true);
           return Promise.resolve({ ok: true });
         }
         return saveTab(tabId).then(
@@ -110,7 +116,8 @@ export function useAutoSave(
     if (!scheduler) return;
     // 运行中关掉 autosave 设置 → 取消已排队的保存(禁用应阻止已排队写入)。
     // 这是针对当前 tab 的 scheduler;切 tab 的落盘仍由 flush effect 处理。
-    if (!enabled) {
+    // 文件已删除(orphaned)同禁用:取消已排队的保存,删除后不被自动写回。
+    if (!enabled || active.orphaned) {
       scheduler.cancel();
       // 暂停 / 禁用期间没有 pending,关窗 flush 不会落盘 → 关窗脏文件计数不得豁免本 tab
       // (典型:关闭脏 .md 的「放弃修改?」确认框开着时暂停 autosave)。恢复后 schedule 即清除。

@@ -84,6 +84,12 @@ export interface EditorTab {
    *(见 plugin-opened-tabs)。之后用户自己再打开同一路径只是切换到这个标签,标记一直保留到标签关闭。runtime only。
    */
   readonly pluginOpenedPath?: string;
+  /**
+   * 文件已被删除(Explorer 删除 / 外部删除确认后仍不存在)而 tab 因有未保存修改保留(VSCode orphaned:tab 显示
+   * 「(已删除)」+ 删除线)。置位后自动保存跳过(否则删除后几秒文件被写回);手动保存照常按路径重建并清除,
+   * 重命名 / 移动、文件重新出现、还原也清除。runtime only,不持久化。
+   */
+  readonly orphaned?: boolean;
 }
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
@@ -253,8 +259,10 @@ export function getStateAfterRenamingPath(
         for (let j = 0; j < i; j++) newTabs[j] = tabs[j]!;
       }
       // perf P4:filePath 变(可能改变 markdown 判定)→ 重算派生缓存(content 不变)。
+      // 改名 / 移动到新路径 = 文件在新位置存在 → 清除已删除标记
+      const { orphaned: _gone, ...rest } = t;
       nextTab = {
-        ...t,
+        ...rest,
         id: np,
         filePath: np,
         milkdownUnsafe: computeMilkdownUnsafe(np, t.content),
@@ -406,12 +414,30 @@ export function getStateAfterRemovingPaths(
   );
 }
 
+/** 删除这些路径(目录含其下全部)会涉及的有未保存修改的 tab 数(Explorer 删除确认据此追加警告)。 */
+export function countDirtyTabsUnder(tabs: readonly EditorTab[], paths: readonly string[]): number {
+  let n = 0;
+  for (const tab of tabs) {
+    if (tab.dirty && paths.some((p) => isSameOrInsidePath(p, tab.filePath))) n++;
+  }
+  return n;
+}
+
 function removeMatchingCleanTabs(
   tabs: EditorTab[],
   activeTabId: string | null,
   isRemoved: (filePath: string) => boolean,
 ): CloseTabResult {
-  return closeCleanFileTabsUnless(tabs, activeTabId, (filePath) => !isRemoved(filePath));
+  const r = closeCleanFileTabsUnless(tabs, activeTabId, (filePath) => !isRemoved(filePath));
+  // 留下来的被删路径 tab 都是脏的(未保存修改不丢):标记 orphaned(见 EditorTab.orphaned)。
+  let out: EditorTab[] | null = null;
+  for (let i = 0; i < r.tabs.length; i++) {
+    const t = r.tabs[i]!;
+    if (t.orphaned || !isRemoved(t.filePath)) continue;
+    out ??= r.tabs.slice();
+    out[i] = { ...t, orphaned: true };
+  }
+  return out === null ? r : { tabs: out, activeTabId: r.activeTabId };
 }
 
 /**
@@ -511,8 +537,20 @@ type EditorState = {
   /**
    * 外部修改时调用:非 dirty tab 同步 content+originalContent;dirty 跳过。realPath = 本次读盘
    * 结果的符号链接真实目标(缺省 = 非链接,移除旧值)。
+   * `discardChanges`:还原文件(workbench.action.files.revert / 冲突时「放弃更改并重新加载」)——
+   * dirty tab 也换成磁盘内容,未保存的修改丢弃。
    */
-  reloadFromDisk: (tabId: string, content: string, realPath?: string) => void;
+  reloadFromDisk: (
+    tabId: string,
+    content: string,
+    realPath?: string,
+    opts?: { readonly discardChanges?: boolean },
+  ) => void;
+  /**
+   * 外部同步对脏 tab 的存在性检查结果:确认已删除 → true(只标记脏 tab,干净 tab 由 removePaths 关闭);
+   * 文件重新出现 → false。值不变为 no-op。
+   */
+  setOrphaned: (tabId: string, orphaned: boolean) => void;
   /** 工作区切换时调用:关闭 root 外的 clean file tabs(dirty 保留). */
   closeTabsOutsideRoot: (root: string | null) => void;
   switchTab: (id: string, opts?: EditorFocusOpts) => void;
@@ -569,7 +607,8 @@ function tabChromeChanged(prev: EditorTab, next: EditorTab): boolean {
     prev.dirty !== next.dirty ||
     prev.dirtyGen !== next.dirtyGen ||
     !!prev.milkdownUnsafe !== !!next.milkdownUnsafe ||
-    !!prev.unsafeEditAccepted !== !!next.unsafeEditAccepted
+    !!prev.unsafeEditAccepted !== !!next.unsafeEditAccepted ||
+    !!prev.orphaned !== !!next.orphaned
   );
 }
 
@@ -663,22 +702,25 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       getStateAfterClosingTabsOutsideRoot(tabs, active, root),
     ),
 
-  reloadFromDisk: (tabId, content, realPath) => {
+  reloadFromDisk: (tabId, content, realPath, opts) => {
+    const discard = opts?.discardChanges === true;
     // 只回写被重载的 tab:未上抛输入先进 store → tab 变脏 → 下面按 dirty 跳过,不被磁盘覆盖。
-    // 别的 tab 被外部改动不打断正在输入的 tab(回写会整篇序列化)。
+    // 别的 tab 被外部改动不打断正在输入的 tab(回写会整篇序列化)。还原时同样先回写:编辑器卸载回写
+    // 发现 store 内容已不是它的基线 → 不再把被丢弃的输入写回。
     flushEditorWriteBacks([tabId]);
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, tabId);
       if (idx < 0) return s;
       const cur = s.tabs[idx]!;
-      // dirty:保留用户改动,不覆盖
-      if (cur.dirty) return s;
+      // dirty:保留用户改动,不覆盖(还原除外)
+      if (cur.dirty && !discard) return s;
       const base = withRealPath(cur, realPath);
       // 内容没变(stat 触发但实际未改):无需重渲;仅链接目标变了时同步 realPath(chrome 不变)
-      if (cur.originalContent === content) {
+      if (!cur.dirty && cur.originalContent === content && !cur.orphaned) {
         return base === cur ? s : replaceTabBumpingChrome(s, idx, base);
       }
-      const { savedGen: _staleSave, ...rest } = base; // 基线已不是自己写盘的内容 → 保存记录失效
+      // 基线已不是自己写盘的内容 → 保存记录失效;读到了磁盘内容 → 文件存在,清除已删除标记
+      const { savedGen: _staleSave, orphaned: _exists, ...rest } = base;
       const next: EditorTab = {
         ...rest,
         content,
@@ -692,6 +734,16 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       return replaceTabBumpingChrome(s, idx, next);
     });
   },
+
+  setOrphaned: (tabId, orphaned) =>
+    set((s) => {
+      const idx = findEditorTabIndexById(s.tabs, tabId);
+      if (idx < 0) return s;
+      const cur = s.tabs[idx]!;
+      if (!!cur.orphaned === orphaned || (orphaned && !cur.dirty)) return s;
+      const { orphaned: _prev, ...rest } = cur;
+      return replaceTabBumpingChrome(s, idx, orphaned ? { ...rest, orphaned: true } : rest);
+    }),
 
   switchTab: (id, opts) => {
     if (opts?.requestFocus !== false) beginUserActivation();
@@ -727,10 +779,16 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       // 此时必须保留 dirty,否则那段增量既没落盘又不再触发 autosave → 静默丢失。
       const onDisk = savedContent ?? cur.content;
       const dirty = cur.content !== onDisk;
-      if (cur.originalContent === onDisk && cur.dirty === dirty && cur.savedGen === savedGen) {
+      if (
+        cur.originalContent === onDisk &&
+        cur.dirty === dirty &&
+        cur.savedGen === savedGen &&
+        !cur.orphaned
+      ) {
         return s;
       }
-      const { savedGen: _prevSave, ...rest } = cur;
+      // 写盘成功 = 文件已(重新)存在 → 清除已删除标记
+      const { savedGen: _prevSave, orphaned: _recreated, ...rest } = cur;
       const next = withDirtyGen(cur, {
         ...rest,
         originalContent: onDisk,

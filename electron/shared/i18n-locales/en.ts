@@ -79,7 +79,7 @@ export const en = {
   'errors.NOT_SUPPORTED': 'Operation not supported',
   'errors.NO_ACTIVE_TAB': 'No active tab',
   'errors.TAB_NOT_FOUND': 'Tab not found',
-  'errors.EDITOR_DISK_CHANGED': 'The file was changed on disk; not overwritten (press Cmd/Ctrl+S to choose)',
+  'errors.EDITOR_DISK_CHANGED': 'The file was changed on disk; not overwritten (press Cmd/Ctrl+S to overwrite it or discard your changes and reload)',
   'errors.NO_DEFAULT_EXPORT': 'Plugin has no default export',
   'errors.NOT_PLUGIN_CLASS': 'Plugin default export is not a Plugin subclass',
   'errors.PATH_SCOPE_CLEANUP_FAILED':
@@ -143,6 +143,7 @@ export const en = {
   'commands.editor.previous.title': 'Open Previous Editor',
   'commands.view.category': 'View',
   'commands.file.save.title': 'Save',
+  'commands.file.revert.title': 'Revert File',
   'commands.file.category': 'File',
 
   // panels.* (5)
@@ -232,6 +233,7 @@ export const en = {
   'panels.explorer.trash_confirm.multiple': 'Are you sure you want to delete the following {count} files/folders?',
   'panels.explorer.trash_confirm.more': '…and {count} more not shown',
   'panels.explorer.trash_confirm.detail': 'You can restore from the Trash.',
+  'panels.explorer.trash_confirm.unsaved': '{count} of the files being deleted have unsaved changes. Their editors stay open, marked as deleted; the changes are not written back to disk unless you save them.',
   'panels.explorer.tree_aria': 'File tree',
   'panels.explorer.copy_path_failed': 'Failed to copy path to clipboard',
   'panels.terminal.starting_shell': 'Starting shell…',
@@ -343,6 +345,7 @@ export const en = {
 
   // panels.editor.*
   'panels.editor.unsaved_indicator': 'Unsaved changes',
+  'panels.editor.tab_deleted': '(Deleted)',
   'panels.editor.placeholder.start_writing': 'Start writing…',
   'panels.editor.mode.edit': 'Edit',
   'panels.editor.mode.source': 'Source',
@@ -350,8 +353,9 @@ export const en = {
   'panels.editor.mode_group': 'Editor mode',
   'panels.editor.save_changes_title': 'Do you want to save the changes you made to {name}?',
   'panels.editor.disk_changed_title': 'File changed on disk',
-  'panels.editor.disk_changed_body': 'was modified outside the editor since it was opened or last saved. Saving will overwrite those changes.',
+  'panels.editor.disk_changed_body': 'was modified outside the editor since it was opened or last saved. Overwrite it with your changes, or discard your changes and reload the version on disk.',
   'panels.editor.disk_changed_confirm': 'Overwrite',
+  'panels.editor.disk_changed_revert': 'Discard Changes and Reload',
   'panels.editor.milkdownUnsafe.banner': 'Opened in Source mode to preserve frontmatter and wiki-links.',
   'panels.editor.engine_load_failed': 'The editor failed to load.',
   'panels.editor.engine_load_retry': 'Retry',

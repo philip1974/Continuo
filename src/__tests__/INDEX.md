@@ -573,6 +573,13 @@
 - [`milkdown-ctx-contract.spec.tsx`](./editor-milkdown-writeback/milkdown-ctx-contract.spec.tsx)
 - [`milkdown-writeback.spec.tsx`](./editor-milkdown-writeback/milkdown-writeback.spec.tsx)
 
+## [editor-orphaned-tab](./editor-orphaned-tab/README.md)
+
+- [`orphaned-external-sync.spec.tsx`](./editor-orphaned-tab/orphaned-external-sync.spec.tsx)
+- [`orphaned-panel.spec.tsx`](./editor-orphaned-tab/orphaned-panel.spec.tsx)
+- [`orphaned-store.spec.ts`](./editor-orphaned-tab/orphaned-store.spec.ts)
+- [`orphaned-trash-confirm.spec.tsx`](./editor-orphaned-tab/orphaned-trash-confirm.spec.tsx)
+
 ## [editor-pending-input-flush](./editor-pending-input-flush/README.md)
 
 - [`pending-input-flush.spec.tsx`](./editor-pending-input-flush/pending-input-flush.spec.tsx)
@@ -580,6 +587,10 @@
 ## [editor-popout-root(Editor 弹出 popout 后编辑器跟随所在文档取选区)](./editor-popout-root/README.md)
 
 - [`editor-popout-root.spec.tsx`](./editor-popout-root/editor-popout-root.spec.tsx)
+
+## [editor-revert-file](./editor-revert-file/README.md)
+
+- [`revert-file.spec.tsx`](./editor-revert-file/revert-file.spec.tsx)
 
 ## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)
 

@@ -29,7 +29,8 @@ import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
 import { rebindEditorRoots } from './editor-root-registry';
-import { applyEditorWriteBack, EDITOR_DISK_CHANGED } from './editor-file-actions';
+import { applyEditorWriteBack, EDITOR_DISK_CHANGED, revertFile } from './editor-file-actions';
+import { editorFileDeps } from './editor-file-deps';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
 import { useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
@@ -232,6 +233,19 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       notifyThrownError(err);
     }
   }, [overwriteCandidate, saveTab, closeTab]);
+  // 冲突时「放弃更改并重新加载」(VSCode Revert):tab 换成磁盘版本、丢弃未保存修改;来自关闭时的「保存」→ 随后关闭。
+  const revertOverwriteCandidate = useCallback(async () => {
+    const candidate = overwriteCandidate;
+    setOverwriteCandidate(null);
+    if (!candidate) return;
+    try {
+      const r = await revertFile(candidate.id, editorFileDeps);
+      if (!r.ok) notifyFailure(r);
+      else if (candidate.closeAfter) closeTab(candidate.id);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  }, [overwriteCandidate, closeTab]);
 
   // 关闭脏 tab 二次确认(closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave)。
   const onTabCloseRequest = useCallback(
@@ -453,6 +467,8 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         confirmLabel={translate('panels.editor.disk_changed_confirm')}
         destructive
         onConfirm={() => void confirmOverwrite()}
+        alternativeLabel={translate('panels.editor.disk_changed_revert')}
+        onAlternative={() => void revertOverwriteCandidate()}
         onCancel={() => setOverwriteCandidate(null)}
       />
       <ConfirmDialog

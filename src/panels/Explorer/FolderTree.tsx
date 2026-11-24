@@ -53,6 +53,7 @@ import { useFsWatcher } from './hooks/useFsWatcher';
 import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
+import { countDirtyTabsUnder, useEditorStore } from '@/stores/editor.store';
 import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { forgetInExpanded, renameInExpanded, useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
@@ -100,6 +101,8 @@ type RootLoadState = typeof ROOT_LOADING | typeof ROOT_LOADED | DirLoadFailure;
 interface TrashConfirmState {
   paths: string[];
   afterConfirm?: () => void;
+  /** 涉及的有未保存修改的编辑器 tab 数(>0 时确认框追加警告)。 */
+  unsaved: number;
 }
 
 // 删除确认框最多列出的名字数(VSCode 同为 10,其余以「另有 N 项」概括)。
@@ -895,8 +898,10 @@ export function FolderTree({ root }: { root: string }) {
         if (paths.length === 0) return;
         // 右键菜单删除(无 afterConfirm)同键盘:确认后焦点与选中移到相邻项(VSCode:下一项,没有则上一项)。
         const moveFocus = afterConfirm ?? (() => focusNeighborOf(paths));
-        if (confirmDeleteRef.current) {
-          setTrashConfirm({ paths, afterConfirm: moveFocus });
+        // 涉及未保存修改的 tab:关掉「删除前确认」也照样确认(VSCode 的未保存警告不受 explorer.confirmDelete 控制)。
+        const unsaved = countDirtyTabsUnder(useEditorStore.getState().tabs, paths);
+        if (confirmDeleteRef.current || unsaved > 0) {
+          setTrashConfirm({ paths, afterConfirm: moveFocus, unsaved });
           return;
         }
         moveFocus();
@@ -1071,6 +1076,11 @@ export function FolderTree({ root }: { root: string }) {
                   <li>{tt('panels.explorer.trash_confirm.more', { count: more })}</li>
                 )}
               </ul>
+            )}
+            {trashConfirm !== null && trashConfirm.unsaved > 0 && (
+              <p className="mb-2 text-fg">
+                {tt('panels.explorer.trash_confirm.unsaved', { count: trashConfirm.unsaved })}
+              </p>
             )}
             <p>{tt('panels.explorer.trash_confirm.detail')}</p>
           </>

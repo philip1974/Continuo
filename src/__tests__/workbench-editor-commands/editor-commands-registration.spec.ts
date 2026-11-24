@@ -19,6 +19,7 @@ import { ko } from '@shared/i18n-locales/ko';
 const IDS = [
   'workbench.action.closeActiveEditor',
   'workbench.action.files.save',
+  'workbench.action.files.revert',
   'workbench.action.nextEditor',
   'workbench.action.previousEditor',
 ] as const;
@@ -28,7 +29,7 @@ function hotkeysOf(platform: 'mac' | 'other'): Record<string, string | undefined
 }
 
 describe('工作台编辑器命令注册', () => {
-  it('核心插件注册四个命令,默认键按当前平台', () => {
+  it('核心插件注册五个命令,默认键按当前平台(还原文件无默认键)', () => {
     bootCorePlugins();
     const byId = new Map(coApp.commands.getAll().map((c) => [c.id, c]));
     const expected = hotkeysOf(detectPlatform());
