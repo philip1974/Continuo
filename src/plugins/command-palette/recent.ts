@@ -6,7 +6,7 @@
 // BDD: src/__tests__/command-palette-recent/
 
 import { create } from 'zustand';
-import { subscribeStorageKey } from '../storage/local-storage-record';
+import { clearStoredKey, readStoredJson, subscribeStorageKey } from '../storage/local-storage-record';
 import { CMD_ID_MAX } from '../registries/CommandRegistry';
 import { arraysEqual } from '@shared/array-equal';
 
@@ -48,47 +48,28 @@ function isRecentEntry(value: unknown): value is RecentEntry {
   );
 }
 
-function clearRecentStorage(): void {
-  try {
-    localStorage.removeItem(RECENT_STORAGE_KEY);
-  } catch {
-    /* localStorage disabled/unavailable */
-  }
-}
-
 // 导出供测试直接验读回守卫(E39)。
 export function readFromStorage(): readonly RecentEntry[] {
-  try {
-    const raw = localStorage.getItem(RECENT_STORAGE_KEY);
-    if (!raw) return EMPTY_RECENT_LIST;
-    // 边界(E72):解析前按原始串长度拦,防超大 raw 的 JSON.parse 卡顿(MAX_RECENT 只限解析后)。
-    // 超限 = 篡改/旧残留 → 返 [] 并清毒(removeItem),避免每次 record/storage 同步反复解析。
-    if (raw.length > MAX_RECENT_RAW_LENGTH) {
-      clearRecentStorage();
-      return EMPTY_RECENT_LIST;
-    }
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      clearRecentStorage();
-      return EMPTY_RECENT_LIST;
-    }
-    // 边界(E39 / E209,E208 同族有界迭代):惰性循环按顺序收集合法项,凑满 MAX_RECENT 即 break ——
-    // 不先 parsed.filter(isRecentEntry) 全量扫描+物化再 slice。篡改的 localStorage 可在 256KiB raw cap
-    // 内塞大量短 entry,启动 / storage 同步 / 每次 record 读 live 列表都会完整遍历(MAX_RECENT=20 不早开)。
-    // 列表最近优先(record 前插),头部即保留最近 MAX_RECENT 条。
-    const out = new Array<RecentEntry>(MAX_RECENT);
-    let count = 0;
-    for (const item of parsed) {
-      if (count >= MAX_RECENT) break;
-      if (isRecentEntry(item)) out[count++] = item;
-    }
-    out.length = count;
-    if (count === 0) return EMPTY_RECENT_LIST;
-    return out;
-  } catch {
-    clearRecentStorage();
+  // 边界(E72):解析前按原始串长度拦(超限 = 篡改 / 旧残留 → 清毒),由共享 readStoredJson 负责。
+  const parsed = readStoredJson(RECENT_STORAGE_KEY, MAX_RECENT_RAW_LENGTH);
+  if (parsed === undefined) return EMPTY_RECENT_LIST;
+  if (!Array.isArray(parsed)) {
+    clearStoredKey(RECENT_STORAGE_KEY);
     return EMPTY_RECENT_LIST;
   }
+  // 边界(E39 / E209,E208 同族有界迭代):惰性循环按顺序收集合法项,凑满 MAX_RECENT 即 break ——
+  // 不先 parsed.filter(isRecentEntry) 全量扫描+物化再 slice。篡改的 localStorage 可在 256KiB raw cap
+  // 内塞大量短 entry,启动 / storage 同步 / 每次 record 读 live 列表都会完整遍历(MAX_RECENT=20 不早开)。
+  // 列表最近优先(record 前插),头部即保留最近 MAX_RECENT 条。
+  const out = new Array<RecentEntry>(MAX_RECENT);
+  let count = 0;
+  for (const item of parsed) {
+    if (count >= MAX_RECENT) break;
+    if (isRecentEntry(item)) out[count++] = item;
+  }
+  out.length = count;
+  if (count === 0) return EMPTY_RECENT_LIST;
+  return out;
 }
 
 function writeToStorage(list: readonly RecentEntry[]): void {

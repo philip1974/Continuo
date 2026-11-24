@@ -40,6 +40,33 @@ function clearRecord(storage: Storage | undefined, key: string): void {
   }
 }
 
+/** 清除该 key(localStorage 不可用 / 抛错时静默)。读回发现损坏的调用方用它「清毒」。 */
+export function clearStoredKey(key: string): void {
+  clearRecord(getLocalStorage(), key);
+}
+
+/**
+ * localStorage JSON 读取的公共底层(readRecord 与命令面板 recent 列表共用):无 storage / 无值 → undefined;
+ * 解析前按原始串长度拦(E70,防超大 JSON 的 parse 卡顿),超限或解析失败 → 清除该 key 并返回 undefined。
+ * 形态校验由调用方做(不合法时可调 clearStoredKey)。
+ */
+export function readStoredJson(key: string, maxRawLength = DEFAULT_MAX_RAW_LENGTH): unknown {
+  const storage = getLocalStorage();
+  if (storage === undefined) return undefined;
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return undefined;
+    if (raw.length > maxRawLength) {
+      clearRecord(storage, key);
+      return undefined;
+    }
+    return JSON.parse(raw) as unknown;
+  } catch {
+    clearRecord(storage, key);
+    return undefined;
+  }
+}
+
 export function readRecord<V>(
   key: string,
   opts?: {
@@ -49,19 +76,11 @@ export function readRecord<V>(
     readonly maxRawLength?: number;
   },
 ): Record<string, V> {
-  const storage = getLocalStorage();
-  if (storage === undefined) return {};
+  const parsed = readStoredJson(key, opts?.maxRawLength);
+  if (parsed === undefined) return {};
   try {
-    const raw = storage.getItem(key);
-    if (!raw) return {};
-    // 边界(E70):解析前按原始串长度拦,防超大 JSON 的 parse/Object.entries 枚举卡顿。
-    if (raw.length > (opts?.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH)) {
-      clearRecord(storage, key);
-      return {};
-    }
-    const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      clearRecord(storage, key);
+      clearStoredKey(key);
       return {};
     }
     const constrained =
@@ -88,7 +107,7 @@ export function readRecord<V>(
     }
     return out;
   } catch {
-    clearRecord(storage, key);
+    clearStoredKey(key);
     return {};
   }
 }
