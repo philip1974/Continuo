@@ -448,9 +448,33 @@ export function createHookFileBroker(
   const inFlight = new Set<string>();
   // 处理期间又收到事件的文件名:本次处理结束后补跑一次(见 ingestFile)。
   const rerunAfterInFlight = new Set<string>();
+  // buffered 列表与它派生的文件名集合 / 总字节数(E150 总字节预算淘汰用)只经 bufferPush / bufferRemove /
+  // bufferClear 增删,三者恒同步(此前 5 处各自手工同步)。
   const buffered: BufferedEntry[] = [];
   const bufferedNames = new Set<string>();
-  let bufferedBytes = 0; // 边界(E150):buffered 当前总字节数(总字节预算淘汰用)
+  let bufferedBytes = 0;
+  function bufferPush(entry: BufferedEntry): void {
+    buffered.push(entry);
+    bufferedNames.add(entry.fileName);
+    bufferedBytes += entry.byteSize;
+  }
+  function bufferRemove(start: number, count = 1): BufferedEntry[] {
+    const removed = buffered.splice(start, count);
+    for (const entry of removed) {
+      bufferedNames.delete(entry.fileName);
+      bufferedBytes -= entry.byteSize;
+    }
+    return removed;
+  }
+  function bufferClear(): void {
+    buffered.length = 0;
+    bufferedNames.clear();
+    bufferedBytes = 0;
+  }
+  /** 淘汰 / 过期 / 命中取走的 entry:其事件文件已无用,删掉(best-effort)。 */
+  function unlinkEntry(entry: BufferedEntry): void {
+    void unlink(path.join(hookEventsDir, entry.fileName)).catch(() => {});
+  }
   const pendingByKey = new Map<string, PendingWaiter>();
 
   function matchesFilter(entry: BufferedEntry, filter: AwaitFilter): boolean {
@@ -590,9 +614,7 @@ export function createHookFileBroker(
         }
       }
 
-      buffered.push(entry);
-      bufferedNames.add(entry.fileName);
-      bufferedBytes += entry.byteSize;
+      bufferPush(entry);
       // 边界(E150):双闸淘汰 —— 条数超 maxEntries 或总字节超 MAX_BUFFERED_BYTES,FIFO 淘汰最旧,
       // 把 buffered 常驻内存钳到预算(防 500×1MiB ≈ 500MiB)。至少保留 1 条(刚 push 的)。
       let dropCount = 0;
@@ -602,18 +624,11 @@ export function createHookFileBroker(
         (buffered.length - dropCount > maxEntries ||
           bufferedBytes - dropBytes > maxBufferedBytes)
       ) {
-        const dropped = buffered[dropCount];
-        if (dropped !== undefined) {
-          bufferedNames.delete(dropped.fileName);
-          dropBytes += dropped.byteSize;
-          void unlink(path.join(hookEventsDir, dropped.fileName)).catch(() => {});
-        }
+        dropBytes += buffered[dropCount]?.byteSize ?? 0;
         dropCount += 1;
       }
-      if (dropCount > 0) {
-        buffered.splice(0, dropCount);
-        bufferedBytes -= dropBytes;
-      }
+      // 一次 splice 批量淘汰(不逐条 shift)。
+      if (dropCount > 0) for (const dropped of bufferRemove(0, dropCount)) unlinkEntry(dropped);
     } finally {
       inFlight.delete(fileName);
       // 补跑是一次全新的 ingest(自取当前代际),只要 broker 没停就跑。
@@ -628,12 +643,7 @@ export function createHookFileBroker(
     for (let i = buffered.length - 1; i >= 0; i -= 1) {
       const entry = buffered[i];
       if (entry !== undefined && now - entry.ingestedAt > maxAgeMs) {
-        const stale = buffered.splice(i, 1)[0];
-        if (stale !== undefined) {
-          bufferedNames.delete(stale.fileName);
-          bufferedBytes -= stale.byteSize; // 边界(E150):同步 buffered 字节计数
-          void unlink(path.join(hookEventsDir, stale.fileName)).catch(() => {});
-        }
+        for (const stale of bufferRemove(i)) unlinkEntry(stale);
       }
     }
     // 淘汰 processed 去重记录:留 2x maxAgeMs 余量,确保对应文件早已被 unlink
@@ -754,10 +764,8 @@ export function createHookFileBroker(
         for (let i = 0; i < buffered.length; i += 1) {
           const hit = buffered[i];
           if (hit !== undefined && matchesFilter(hit, filter)) {
-            buffered.splice(i, 1);
-            bufferedNames.delete(hit.fileName);
-            bufferedBytes -= hit.byteSize; // 边界(E150):同步 buffered 字节计数
-            void unlink(path.join(hookEventsDir, hit.fileName)).catch(() => {});
+            bufferRemove(i);
+            unlinkEntry(hit);
             resolve(hit);
             return;
           }
@@ -830,9 +838,7 @@ export function createHookFileBroker(
         pending.reject(new Error('broker stopped'));
       }
       pendingByKey.clear();
-      buffered.length = 0;
-      bufferedNames.clear();
-      bufferedBytes = 0; // 边界(E150):同步 buffered 字节计数
+      bufferClear();
       processed.clear();
       rerunAfterInFlight.clear();
     },
