@@ -38,7 +38,12 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 // permissions 进入 PluginManager / PluginsTab / 权限弹窗 / 错误状态 → renderer 渲染/状态放大卡顿。
 // 给每字段加合理 .max();permissions 按 PERMISSION_KEYS 数量封顶(去重后不可能更多)。超限拒载。
 const NAME_MAX = 256;
-const MAIN_MAX = 512; // 入口路径名
+/** 入口路径名长度上限(main 侧 getPluginMainName 选入口时同口径)。 */
+export const MANIFEST_MAIN_MAX = 512;
+/** manifest 未声明 main 时的默认入口。 */
+export const DEFAULT_PLUGIN_MAIN = 'main.js';
+/** manifest.json 文件 / 响应体字节上限(main 读本地插件、renderer 拉市场 manifest 同口径)。 */
+export const MANIFEST_MAX_BYTES = 1024 * 1024;
 const DESC_MAX = 8192;
 const AUTHOR_MAX = 256;
 const URL_MAX = 2048;
@@ -58,7 +63,7 @@ export const ManifestSchema = z.object({
     }),
   name: z.string().min(1).max(NAME_MAX),
   version: z.string().max(VERSION_MAX).regex(SEMVER_RE),
-  main: z.string().min(1).max(MAIN_MAX).default('main.js'),
+  main: z.string().min(1).max(MANIFEST_MAIN_MAX).default(DEFAULT_PLUGIN_MAIN),
   description: z.string().max(DESC_MAX).optional(),
   author: z.string().max(AUTHOR_MAX).optional(),
   authorUrl: z.string().url().max(URL_MAX).optional(),

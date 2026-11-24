@@ -16,6 +16,7 @@ import {
 } from './types';
 import { createSessionCache } from './session-cache';
 import { readResponseTextCapped } from '../../electron/shared/read-capped';
+import { MANIFEST_MAX_BYTES } from '../../electron/shared/plugin-manifest';
 
 const INDEX_URL =
   'https://raw.githubusercontent.com/philip1974/continuo-plugins/main/index.json';
@@ -25,7 +26,7 @@ const INDEX_URL =
 // → 内存/CPU 峰值、UI 卡死。读 text 时先按 Content-Length + 字节上限拦,再 JSON.parse(挡把超大
 // 字符串解析成更大对象树);index 顶层数组再加条目数硬上限。
 const MAX_INDEX_BYTES = 4 * 1024 * 1024; // index.json 响应体上限
-const MAX_MANIFEST_BYTES = 1024 * 1024; // manifest.json 响应体上限(同 main MANIFEST_MAX_BYTES)
+const MAX_MANIFEST_BYTES = MANIFEST_MAX_BYTES; // manifest.json 响应体上限(与 main 读本地插件同口径)
 export const MAX_INDEX_ENTRIES = 4096; // index 顶层数组条目硬上限
 const EMPTY_MARKETPLACE_ENTRIES: MarketplaceEntry[] = [];
 

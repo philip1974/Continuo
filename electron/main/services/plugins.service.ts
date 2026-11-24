@@ -39,7 +39,12 @@ import { createByteCappedBuffer } from '../lib/byte-capped-buffer';
 import { openForReadNonBlocking, readFileCappedFd } from '../lib/read-fh-capped';
 import { isSameOrInsidePath } from '../lib/path-inside';
 import { runSerialPerKey } from './serialize-per-key';
-import { parseManifest } from '../../shared/plugin-manifest';
+import {
+  DEFAULT_PLUGIN_MAIN,
+  MANIFEST_MAIN_MAX,
+  MANIFEST_MAX_BYTES,
+  parseManifest,
+} from '../../shared/plugin-manifest';
 import { MAX_PLUGIN_DATA_BYTES } from '../../shared/plugin-data-limits';
 import { arraysEqual } from '../../shared/array-equal';
 import { mapInOrderBounded } from '../lib/map-in-order-bounded';
@@ -112,7 +117,7 @@ export function isSafePluginId(id: string): boolean {
 // getPluginMainName 是 list/install/watch 三入口共用的 main 选择器,此前无长度上限 → 畸形 manifest
 // 可用近 1MiB 的 main 字段经 resolvePluginMainPath 的 split/resolve 放大主进程字符串处理 + 拼进
 // install 错误消息。超长视为非法 → 退默认 main.js(同时把下游 BAD_MAIN 错误消息钳到 ≤512)。
-const MAIN_NAME_MAX = 512;
+const MAIN_NAME_MAX = MANIFEST_MAIN_MAX;
 
 /**
  * 可维护性 M20:从(已 JSON.parse 的)manifest 取入口名 —— 非空且 ≤512 的 string 则用,否则默认
@@ -126,7 +131,7 @@ function getPluginMainName(manifest: unknown): string {
       return main;
     }
   }
-  return 'main.js';
+  return DEFAULT_PLUGIN_MAIN;
 }
 
 const UUID_LEN = 36;
@@ -221,7 +226,6 @@ export async function recoverInterruptedInstalls(baseDir: string): Promise<void>
 // 超大 manifest/main,应用启动或插件列表刷新时主进程整文件读入并经 IPC 传给 renderer →
 // 内存峰值/卡死/崩溃。读前 stat.size,超限跳过(manifest/main 缺失即跳过整插件),
 // 不把超大源码跨 IPC 传输。上限远超任何现实插件(bundled main 数 MB 已罕见)。
-const MANIFEST_MAX_BYTES = 1024 * 1024; // 1 MiB
 const MAIN_MAX_BYTES = 8 * 1024 * 1024; // 8 MiB(bundled 源码)
 
 export async function readFileCapped(
@@ -389,7 +393,7 @@ async function staysInsidePluginDir(dir: string, filePath: string): Promise<bool
 /** 按 manifest.main(解析失败 → 默认 main.js)读 main 文本;越界 / 缺失 / 超限 → null。 */
 async function readPluginMainText(dir: string, manifestText: string): Promise<string | null> {
   // 解析 manifest.main(若失败用默认 main.js,M20:共用 getPluginMainName)
-  let mainName = 'main.js';
+  let mainName = DEFAULT_PLUGIN_MAIN;
   try {
     mainName = getPluginMainName(JSON.parse(manifestText));
   } catch {
@@ -406,7 +410,7 @@ async function readPluginMainText(dir: string, manifestText: string): Promise<st
  * 可打开),但只 open + fstat,不读全文。
  */
 async function isPluginMainAvailable(dir: string, manifestText: string): Promise<boolean> {
-  let mainName = 'main.js';
+  let mainName = DEFAULT_PLUGIN_MAIN;
   try {
     mainName = getPluginMainName(JSON.parse(manifestText));
   } catch {
