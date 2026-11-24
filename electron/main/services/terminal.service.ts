@@ -22,6 +22,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 import { CONTINUO_HOOK_EVENTS_DIR_ENV } from '../lib/continuo-env-keys';
+import { isShellProcessName } from '../../shared/shell-process-name';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow(截断 + 100ms 合批)
@@ -351,6 +352,8 @@ interface Instance {
   windowStart: number;
   readonly mcpToken: string;
   readonly shellCleanup: () => Promise<void>;
+  /** spawn 的 shell 路径(runningChildProcess 与前台进程名比较)。 */
+  readonly shell: string;
 }
 
 const instances = new Map<string, Instance>();
@@ -525,6 +528,7 @@ export async function createTerminal(
     windowStart: monotonicNow(),
     mcpToken: meta?.mcpToken ?? '',
     shellCleanup,
+    shell,
   };
 
   // PHASE 1: register all Continuo-side state BEFORE PTY spawn.
@@ -567,6 +571,29 @@ export async function createTerminal(
 
 export function has(id: string): boolean {
   return instances.has(id);
+}
+
+/**
+ * 终端里正在运行的子程序名(前台进程不是 shell 本身);只有 shell / 无实例 / 取不到 → null。关闭终端前确认用
+ *(VSCode terminal.integrated.confirmOnKill)。
+ * server-node 的 SessionManager 不暴露 pty,这里按其私有字段形态(sessions Map → { pty })读 node-pty 的
+ * `process`(前台进程名);形态变化时取不到 → null(不确认,直接关),守护见 terminal-vscode-parity 规范。
+ * Windows 上 node-pty 的 process 恒为 shell 文件名 → 恒 null(VSCode 在 Windows 用进程树,这里不实现)。
+ */
+export function runningChildProcess(id: string): string | null {
+  const inst = instances.get(id);
+  if (!inst) return null;
+  const internals = getSessionManager() as unknown as {
+    readonly sessions?: ReadonlyMap<string, { readonly pty?: { readonly process?: unknown } }>;
+  };
+  let name: unknown;
+  try {
+    name = internals.sessions?.get(id)?.pty?.process;
+  } catch {
+    return null; // pty fd 已关闭等
+  }
+  if (typeof name !== 'string' || name === '') return null;
+  return isShellProcessName(name, inst.shell) ? null : name;
 }
 
 // race(R4):必须 await sendInput 并把真实结果上抛。此前 fire-and-forget 恒返 true → IPC 恒

@@ -9,6 +9,14 @@ const suppressedPanelCloses = new Set<string>();
 const pendingCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // 排定中的 close 里由 reconciler 发起的那些(见 cancelReconcilerPanelClose)。
 const pendingReconcilerCloses = new Set<string>();
+// 关闭守卫(异步确认)尚未答复的 panel id:期间重复 close 不重复询问。
+const guardingCloses = new Set<string>();
+
+/**
+ * 面板关闭守卫:true 放行;false 取消;Promise 时等它(如终端有子进程时弹确认)。同步返回 true 的面板
+ * 行为与无守卫完全相同(立即进入关闭动画)。
+ */
+export type PanelCloseGuard = (panel: IDockviewPanel) => boolean | Promise<boolean>;
 
 /**
  * 撤销某 panel 排定中的延迟 close 并清掉它的 closing 标记。用于「关了又马上点开」
@@ -63,41 +71,63 @@ export function consumePanelCloseSuppressed(panelId: string): boolean {
 // 给每个 panel 的 api.close 包一层:先把 id 放进 closing-store(让 PanelMount
 // 走 EXIT 动画),EXIT_DURATION_MS 后再真正调 close。统一拦在 api 层而不是
 // SharedTab,这样所有 close 路径(× 按钮 / 中键 / 群组级关闭 / 第三方调用)
-// 都自动走动画。
+// 都自动走动画。guard(可选)同样拦在这一层:所有关闭入口(含 ⌘W)共用同一确认(终端 confirmOnKill);
+// reconciler 收敛视图的关闭(已标 suppressed)不询问。
 //
 // 幂等:同一 panel 多次 patch 只生效第一次(WeakSet 守);同一 panel 多次 close
 // 调用,只有第一次进入 store + 设 timeout(closing-store.mark 自身去重)。
-export function wrapPanelClose(panel: IDockviewPanel): void {
+export function wrapPanelClose(panel: IDockviewPanel, guard?: PanelCloseGuard): void {
   if (patched.has(panel)) return;
   patched.add(panel);
 
   const original = panel.api.close.bind(panel.api);
+  const startClose = () => {
+    const id = panel.api.id;
+    const store = useClosingStore.getState();
+    if (store.ids.has(id)) return;
+    store.mark(id);
+    // reconciler 关闭(会话已从可见快照消失:main 已删,或被 workspace 过滤隐藏但仍存活)会先
+    // markPanelCloseSuppressed 再 close。以发起关闭时为准判定,这类关闭只收敛视图、不删会话 ——
+    // 否则会误报 NOT_FOUND「关闭失败」,或杀掉另一 workspace 仍在运行的终端。
+    const closedByReconciler = suppressedPanelCloses.has(id);
+    if (closedByReconciler) pendingReconcilerCloses.add(id);
+    const timer = setTimeout(() => {
+      pendingCloseTimers.delete(id);
+      pendingReconcilerCloses.delete(id);
+      // 会话删除只有一个入口:original() 触发 dockview 的 onDidRemovePanel → handleTerminalPanelRemoved。
+      // 它凭 suppressed 标记区分「reconciler 关闭(只收敛视图)」与「用户关闭(删会话)」。用户关闭的 EXIT
+      // 动画期间 reconciler 可能补标(会话恰好从可见快照消失)—— 以发起关闭时为准,这里清掉补上的标记。
+      // 动画窗口内被复活(cancelPendingPanelClose 清 timer)则走不到这里,面板与会话都保留(R44)。
+      if (!closedByReconciler) suppressedPanelCloses.delete(id);
+      try {
+        original();
+      } catch {
+        // panel 已被其他路径(group teardown 等)移除,忽略。
+      }
+    }, EXIT_DURATION_MS);
+    pendingCloseTimers.set(id, timer);
+  };
   Object.defineProperty(panel.api, 'close', {
     value: () => {
       const id = panel.api.id;
-      const store = useClosingStore.getState();
-      if (store.ids.has(id)) return;
-      store.mark(id);
-      // reconciler 关闭(会话已从可见快照消失:main 已删,或被 workspace 过滤隐藏但仍存活)会先
-      // markPanelCloseSuppressed 再 close。以发起关闭时为准判定,这类关闭只收敛视图、不删会话 ——
-      // 否则会误报 NOT_FOUND「关闭失败」,或杀掉另一 workspace 仍在运行的终端。
-      const closedByReconciler = suppressedPanelCloses.has(id);
-      if (closedByReconciler) pendingReconcilerCloses.add(id);
-      const timer = setTimeout(() => {
-        pendingCloseTimers.delete(id);
-        pendingReconcilerCloses.delete(id);
-        // 会话删除只有一个入口:original() 触发 dockview 的 onDidRemovePanel → handleTerminalPanelRemoved。
-        // 它凭 suppressed 标记区分「reconciler 关闭(只收敛视图)」与「用户关闭(删会话)」。用户关闭的 EXIT
-        // 动画期间 reconciler 可能补标(会话恰好从可见快照消失)—— 以发起关闭时为准,这里清掉补上的标记。
-        // 动画窗口内被复活(cancelPendingPanelClose 清 timer)则走不到这里,面板与会话都保留(R44)。
-        if (!closedByReconciler) suppressedPanelCloses.delete(id);
-        try {
-          original();
-        } catch {
-          // panel 已被其他路径(group teardown 等)移除,忽略。
-        }
-      }, EXIT_DURATION_MS);
-      pendingCloseTimers.set(id, timer);
+      if (useClosingStore.getState().ids.has(id) || guardingCloses.has(id)) return;
+      const verdict = !guard || suppressedPanelCloses.has(id) ? true : guard(panel);
+      if (verdict === true) {
+        startClose();
+        return;
+      }
+      if (verdict === false) return;
+      guardingCloses.add(id);
+      void verdict.then(
+        (ok) => {
+          guardingCloses.delete(id);
+          if (ok) startClose();
+        },
+        () => {
+          guardingCloses.delete(id);
+          startClose(); // 守卫自身出错不应让面板关不掉
+        },
+      );
     },
     writable: true,
     configurable: true,

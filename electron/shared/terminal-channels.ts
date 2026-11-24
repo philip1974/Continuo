@@ -12,6 +12,8 @@ export const TERMINAL_CHANNELS = {
   // topic-07: dockview lazy-mount inactive panel 错过初始 PTY 输出。
   // renderer mount 时调此接口从 main 端 buffer replay 历史 chunks。
   READ_HISTORY: 'terminal:read_history',
+  // 关闭终端前确认(VSCode confirmOnKill):查询前台是否有 shell 以外的子程序在运行。
+  RUNNING_PROCESS: 'terminal:running_process',
   // event(main → renderer,webContents.send)
   DATA: 'terminal:data',
   SESSIONS_CHANGED: 'terminal:sessions_changed',

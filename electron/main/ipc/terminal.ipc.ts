@@ -362,6 +362,17 @@ export function makeRemoveHandler(deps?: {
   };
 }
 
+/** 关闭终端前确认:前台正在运行的子程序名(无 → null),只查本窗口的会话。 */
+export function makeRunningProcessHandler(deps?: {
+  service?: Pick<typeof termService, 'runningChildProcess'>;
+}) {
+  const service = deps?.service ?? termService;
+  return (input: IdOnlyInput, win: BrowserWindow): { process: string | null } => {
+    assertOwnedSession(terminalSessions, input.id, win);
+    return { process: service.runningChildProcess(input.id) };
+  };
+}
+
 export function makeWriteHandler(deps?: { service?: typeof termService }) {
   const service = deps?.service ?? termService;
   return async (input: WriteInput, win: BrowserWindow): Promise<void> => {
@@ -442,6 +453,7 @@ export function registerTerminalIpc(): void {
   const writeHandler = makeWriteHandler();
   const resizeHandler = makeResizeHandler();
   const removeHandler = makeRemoveHandler();
+  const runningProcessHandler = makeRunningProcessHandler();
   const windowClosedCleanup = makeWindowClosedCleanup();
 
   // 所有 terminal IPC 走同一外壳(safeHandleWithWindow:trust → bounded → zod → try/catch + 从 sender
@@ -462,6 +474,7 @@ export function registerTerminalIpc(): void {
   ownerScopedHandle(TERMINAL_CHANNELS.WRITE, writeInputSchema, writeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.RUNNING_PROCESS, idOnlyInputSchema, runningProcessHandler);
   ownerScopedHandle(
     TERMINAL_CHANNELS.READ_HISTORY,
     idOnlyInputSchema,

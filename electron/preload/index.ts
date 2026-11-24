@@ -269,6 +269,9 @@ const api = {
     > => ipcRenderer.invoke(TERMINAL_CHANNELS.LIST_SESSIONS, {}),
     remove: (id: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.REMOVE, { id }),
+    /** 关闭前确认:前台正在运行的子程序名(只有 shell 时为 null)。 */
+    runningProcess: (id: string): Promise<IpcResult<{ process: string | null }>> =>
+      ipcRenderer.invoke(TERMINAL_CHANNELS.RUNNING_PROCESS, { id }),
     updateCwd: (id: string, cwd: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(SESSION_UPDATE_CWD_CHANNEL, { id, cwd }),
     /**

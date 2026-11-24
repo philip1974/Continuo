@@ -213,6 +213,9 @@ export const ko: Record<TranslationKey, string> = {
   'panels.terminal.exit_notice': '터미널 프로세스가 종료되었습니다. 종료 코드: {code}.',
   'panels.terminal.exit_press_any_key': '아무 키나 눌러 터미널을 닫으세요.',
   'panels.terminal.exited_suffix': '(종료됨)',
+  'panels.terminal.kill_confirm.title': '실행 중인 프로세스를 종료할까요?',
+  'panels.terminal.kill_confirm.detail': '"{title}"에서 "{process}"이(가) 아직 실행 중입니다. 터미널을 닫으면 프로세스가 종료됩니다.',
+  'panels.terminal.kill_confirm.confirm': '종료',
   'panels.terminal.drag_drop.no_os_path':
     '드롭한 항목에 OS 경로가 없습니다(웹 드래그). 아무것도 삽입하지 않았습니다.',
   'panels.terminal.drag_drop.partial_skip':

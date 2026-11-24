@@ -226,6 +226,10 @@ export const en = {
   'panels.terminal.exit_notice': 'The terminal process terminated with exit code: {code}.',
   'panels.terminal.exit_press_any_key': 'Press any key to close the terminal.',
   'panels.terminal.exited_suffix': '(exited)',
+  // VSCode terminal.integrated.confirmOnKill:关闭仍有子程序在跑的终端前确认。
+  'panels.terminal.kill_confirm.title': 'Terminate running process?',
+  'panels.terminal.kill_confirm.detail': '"{process}" is still running in "{title}". Closing the terminal will terminate it.',
+  'panels.terminal.kill_confirm.confirm': 'Terminate',
   'panels.terminal.drag_drop.no_os_path':
     'Dropped items have no OS path (web drag) — nothing inserted.',
   'panels.terminal.drag_drop.partial_skip':

@@ -3,6 +3,7 @@ import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
+  type IDockviewPanel,
   type SerializedDockview,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
@@ -20,6 +21,7 @@ import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose, activateDockPanel, addPanelKeepingActive } from './wrap-panel-close';
 import { handleTerminalPanelRemoved, removeTerminalSessionWithFeedback } from './DockReconciler';
+import { TerminalKillConfirmHost, terminalCloseGuard } from './terminal-close-confirm';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { useClosingStore } from '@/stores/closing.store';
 import { useEditorStore } from '@/stores/editor.store';
@@ -110,6 +112,11 @@ let lastSuccessfulLayoutPayload: string | null = null;
 // 每个 dock api 的布局版本(每次变更 +1)与「已落盘」的版本;二者相等 = 干净,可跳过快照重建。
 // 用版本号而非布尔标记:写盘 await 期间若又发生变更,版本已前进,写成功后只把**写盘前**的版本记为
 // 已落盘 —— 期间的变更仍是脏的,后续 debounce / 关窗 flush 会再写(布尔标记会把它一并标干净而丢失)。
+// 关闭守卫:终端有子进程时先确认(VSCode confirmOnKill),× / 中键 / Delete / ⌘W 等所有 api.close 入口共用。
+function wrapPanelCloseGuarded(panel: IDockviewPanel): void {
+  wrapPanelClose(panel, terminalCloseGuard);
+}
+
 const layoutVersions = new WeakMap<DockviewApi, number>();
 const savedLayoutVersions = new WeakMap<DockviewApi, number>();
 function notifyLayoutSaveFailedRateLimited(): void {
@@ -327,7 +334,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         }),
         // 拦截所有 panel 的 api.close,统一走"标记 closing → 220ms 延迟 → 真 close"。
         // 包括 group 整体关闭、第三方调用方等间接路径,只要走 api.close 都能拿到动画。
-        event.api.onDidAddPanel(wrapPanelClose),
+        event.api.onDidAddPanel(wrapPanelCloseGuarded),
         // topic-22: exit-maximize 后把 focus 拉回 xterm。
         // setActive() 不会触发 onDidActiveChange(panel 在 exit 前已是 active),
         // 所以必须显式调 focusTerminalPanel。用 event.group.activePanel
@@ -342,7 +349,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         // popout 子窗文档集合 → ToastViewport 把 toast 也渲染进子窗(弹出面板的 notify.* 进主窗 provider)。
         trackPopoutDocuments(event.api),
       );
-      event.api.panels.forEach(wrapPanelClose);
+      event.api.panels.forEach(wrapPanelCloseGuarded);
     },
     [disposeDockListeners],
   );
@@ -562,6 +569,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         className="dockview-theme-abyss h-full w-full"
       />
       {empty && <EmptyState onRestore={restore} />}
+      <TerminalKillConfirmHost />
     </div>
   );
 }

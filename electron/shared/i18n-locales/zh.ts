@@ -211,6 +211,9 @@ export const zh: Record<TranslationKey, string> = {
   'panels.terminal.exit_notice': '终端进程已终止,退出代码: {code}。',
   'panels.terminal.exit_press_any_key': '按任意键关闭终端。',
   'panels.terminal.exited_suffix': '(已退出)',
+  'panels.terminal.kill_confirm.title': '终止正在运行的进程?',
+  'panels.terminal.kill_confirm.detail': '「{title}」中的「{process}」仍在运行,关闭终端将终止该进程。',
+  'panels.terminal.kill_confirm.confirm': '终止',
   'panels.terminal.drag_drop.no_os_path':
     '拖入项目没有系统路径（网页拖拽），未插入任何内容。',
   'panels.terminal.drag_drop.partial_skip':
