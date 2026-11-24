@@ -34,6 +34,7 @@ import { isStartupRestoreInFlight, restoreStartupWindows } from './services/wind
 import { pickStartupMode } from './services/startup-mode.service';
 import {
   pickArgvFolders,
+  pickArgvPathCandidates,
   isWithinStartupPathLimit,
   MAX_STARTUP_DIRS,
 } from './services/cli-args.service';
@@ -908,13 +909,10 @@ if (!gotLock) {
     const url = extractProtocolUrl(argv, PROTOCOL);
     if (url) dispatchProtocolUrl(url);
     // Windows/Linux:运行中通过 OS/CLI 传入的目录 argv(如 "用 Continuo 打开文件夹")
-    // 此前被忽略 → 在已有实例里按目录打开新窗口(跨平台审计 P2)。
-    const folders = pickArgvFolders(
-      argv,
-      isDirectorySync,
-      { skipFirstArg: !!process.defaultApp, skipAll: false },
-    );
-    for (const folder of folders) void openPathInNewWindow(folder);
+    // 此前被忽略 → 在已有实例里按目录打开新窗口(跨平台审计 P2)。只按形态取候选、不同步 stat
+    //(运行期同步 stat 遇失联网络盘会冻结 main);是否目录由 openPathInNewWindow 的异步闸判定。
+    const candidates = pickArgvPathCandidates(argv, { skipFirstArg: !!process.defaultApp });
+    for (const candidate of candidates) void openPathInNewWindow(candidate);
     const wins = BrowserWindow.getAllWindows();
     if (wins[0]) {
       if (wins[0].isMinimized()) wins[0].restore();

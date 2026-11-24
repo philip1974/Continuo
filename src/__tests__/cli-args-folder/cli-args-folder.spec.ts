@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   pickArgvFolders,
+  pickArgvPathCandidates,
   isWithinStartupPathLimit,
   MAX_STARTUP_DIRS,
   MAX_STARTUP_DIR_PATH_LEN,
@@ -194,6 +195,15 @@ describe('运行期 open-file 目录判定不阻塞 main', () => {
     expect(body).not.toMatch(/isDirectorySync\(|statSync\(/);
   });
 
+  it('second-instance 只按形态取 argv 候选,不同步 stat(目录判定交给 openPathInNewWindow)', () => {
+    const siStart = src.indexOf("app.on('second-instance'");
+    const siBody = src.slice(siStart, src.indexOf('wins[0].focus()', siStart));
+    expect(siStart).toBeGreaterThan(0);
+    expect(siBody).toMatch(/pickArgvPathCandidates\(argv/);
+    expect(siBody).not.toMatch(/isDirectorySync|statSync\(/);
+    expect(siBody).toMatch(/openPathInNewWindow\(/);
+  });
+
   it('并发开窗计数在异步判定之前占位(在途 stat 也计入上限)', () => {
     expect(body.indexOf('openInFlight += 1')).toBeGreaterThan(0);
     expect(body.indexOf('openInFlight += 1')).toBeLessThan(body.indexOf('await isDirectory('));
@@ -209,3 +219,17 @@ describe('运行期 open-file 目录判定不阻塞 main', () => {
     expect(fnBody).not.toMatch(/promises\.stat\(/);
   });
 });
+
+// 运行期(second-instance)不在 main 同步 stat(失联网络盘会冻结整个 main):只按形态取候选,目录判定交给
+// openPathInNewWindow 的异步闸。
+describe('pickArgvPathCandidates', () => {
+  it('只按形态过滤:绝对路径、去重、跳过超长与首参数,不判断是否存在', () => {
+    expect(
+      pickArgvPathCandidates(['Continuo', '/a', 'rel', '/a', '/b', '/' + 'x'.repeat(9000)], {
+        skipFirstArg: false,
+      }),
+    ).toEqual(['/a', '/b']);
+    expect(pickArgvPathCandidates(['electron', '/cwd', '/a'], { skipFirstArg: true })).toEqual(['/a']);
+  });
+});
+
