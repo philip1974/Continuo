@@ -129,7 +129,9 @@ export function registerPluginsIpc(): void {
 
   // 启动期一次性恢复被进程崩溃中断的插件更新(还原孤儿 backup / 清残留 staging),
   // 在首次列举前完成,避免崩溃中断的更新让插件静默消失(数据安全)。幂等。
-  const installRecovery = recoverInterruptedInstalls(pluginsDir).catch(() => {});
+  const installRecovery = recoverInterruptedInstalls(pluginsDir).catch((err: unknown) => {
+    console.warn('[plugins] 恢复中断的插件更新失败', err);
+  });
 
   // v4.3.1 mtime 自动 watch:任一 plugin main.js 改 → 推所有窗口。
   // 冷启动性能:不在注册时(早于建首窗)立即首扫 —— 与启动 IO 争 libuv 线程池;首扫推迟到首窗创建后由

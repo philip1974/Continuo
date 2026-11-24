@@ -1033,6 +1033,10 @@
 
 - [`plugin-loader.spec.ts`](./plugin-loader/plugin-loader.spec.ts)
 
+## [plugin-main-skip-diagnostics](./plugin-main-skip-diagnostics/README.md)
+
+- [`plugin-main-skip-diagnostics.spec.ts`](./plugin-main-skip-diagnostics/plugin-main-skip-diagnostics.spec.ts)
+
 ## [plugin-manager(插件目录扫描 + 启用禁用 + 生命周期编排)](./plugin-manager/README.md)
 
 - [`plugin-manager.spec.ts`](./plugin-manager/plugin-manager.spec.ts)

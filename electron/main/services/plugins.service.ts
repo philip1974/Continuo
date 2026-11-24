@@ -19,7 +19,7 @@ import type {
 } from '../../shared/plugins-channels';
 import { PLUGIN_DIR_NAME_MAX_LEN } from '../../shared/plugins-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
-import { codedError, errorMessage } from '../../shared/error-message';
+import { codedError, errorCodeOf, errorMessage } from '../../shared/error-message';
 import { isSafePluginId } from '../../shared/plugin-id';
 import { ownValue } from '../../shared/own-value';
 import { isValidGitBranch } from '../../shared/git-branch';
@@ -217,8 +217,11 @@ export async function recoverInterruptedInstalls(baseDir: string): Promise<void>
       // 更新已完成,backup 是没删干净的残留 → 清理
       await rm(backupPath, { recursive: true, force: true }).catch(() => {});
     } else {
-      // 崩溃中断 → 还原旧版本
-      await fs.rename(backupPath, targetPath).catch(() => {});
+      // 崩溃中断 → 还原旧版本。失败(Windows 目录占用 EBUSY / EPERM、EACCES)时插件从列表消失、旧版本留在隐藏的
+      // backup 目录 —— 须留痕,否则无从排障。
+      await fs.rename(backupPath, targetPath).catch((err: unknown) => {
+        console.warn(`[plugins] 还原中断更新失败(${errorCodeOf(err)}): ${backupPath} → ${targetPath}`);
+      });
     }
   }
 }
@@ -479,11 +482,27 @@ async function readPluginMainText(dir: string, manifestText: string): Promise<st
   return readFileCapped(main.mainPath, MAIN_MAX_BYTES);
 }
 
-/** main 入口是否可用:resolveContainedPluginMain 判定 + 可打开(读权限),不读全文。 */
+// 插件因 main 入口不可用被跳过的告警:按 dir+reason 只记一次(列举 / watcher 周期会反复判定,不刷屏)。上限防
+// 插件目录反复增删时无界增长。
+const skippedMainWarned = new Set<string>();
+const SKIPPED_MAIN_WARN_MAX = 1024;
+
+function warnSkippedMain(dir: string, reason: string): void {
+  const key = `${reason}\0${dir}`;
+  if (skippedMainWarned.has(key) || skippedMainWarned.size >= SKIPPED_MAIN_WARN_MAX) return;
+  skippedMainWarned.add(key);
+  console.warn(`[plugins] 跳过插件(main 入口不可用:${reason}): ${dir}`);
+}
+
+/**
+ * main 入口是否可用:resolveContainedPluginMain 判定 + 可打开(读权限),不读全文。不可用时插件从列表里整个消失
+ *(到不了 renderer,manifest 报错路径也走不到),故每种原因都记一次告警(此前只记超大),便于排障:例如
+ * manifest 写了 `dist/main.js` 却尚未构建、main 是指向插件目录外的链接。
+ */
 async function isPluginMainAvailable(dir: string, manifestText: string): Promise<boolean> {
   const main = await resolveContainedPluginMain(dir, mainNameFromManifestText(manifestText));
   if (!main.ok) {
-    if (main.reason === 'too-large') console.warn(`[plugins] 跳过超大 main(> ${MAIN_MAX_BYTES}): ${dir}`);
+    warnSkippedMain(dir, main.reason === 'too-large' ? `too-large(> ${MAIN_MAX_BYTES})` : main.reason);
     return false;
   }
   try {
@@ -491,7 +510,8 @@ async function isPluginMainAvailable(dir: string, manifestText: string): Promise
     const fh = await openForReadNonBlocking(main.mainPath);
     await fh.close().catch(() => {});
     return true;
-  } catch {
+  } catch (err) {
+    warnSkippedMain(dir, `open-failed(${errorCodeOf(err)})`);
     return false;
   }
 }
