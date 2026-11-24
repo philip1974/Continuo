@@ -112,3 +112,16 @@
   white-space: pre-wrap;
   color: var(--md-error);
 }
+
+/* 浮层(斜杠菜单 / 选区工具条 / 链接气泡与输入框)宽度不超过视口(两侧各留 8px,与斜杠菜单的视口夹回中间件
+ * milkdown-floating-clamp.ts 同一留白);位置由 floating-ui 夹回,此处兜底窄窗口时宽度本身放不下的情况。
+ * 斜杠菜单分组页签 nowrap,缩窄时横向滚动而不是溢出菜单。 */
+.milkdown .milkdown-slash-menu,
+.milkdown .milkdown-toolbar,
+.milkdown .milkdown-link-preview,
+.milkdown .milkdown-link-edit {
+  max-width: calc(100vw - 16px);
+}
+.milkdown .milkdown-slash-menu .tab-group ul {
+  overflow-x: auto;
+}

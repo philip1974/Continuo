@@ -794,6 +794,7 @@
 ## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
 
 - [`bootstrap-locale-sync.spec.ts`](./i18n-en-zh-ko/bootstrap-locale-sync.spec.ts)
+- [`catalog-en-style.spec.ts`](./i18n-en-zh-ko/catalog-en-style.spec.ts)
 - [`catalog-language-purity.spec.ts`](./i18n-en-zh-ko/catalog-language-purity.spec.ts)
 - [`catalog-zh-ko-style.spec.ts`](./i18n-en-zh-ko/catalog-zh-ko-style.spec.ts)
 - [`design-layer-no-keys.spec.ts`](./i18n-en-zh-ko/design-layer-no-keys.spec.ts)
@@ -916,6 +917,7 @@
 
 ## [markdown-editor-style](./markdown-editor-style/README.md)
 
+- [`floating-viewport-clamp.spec.tsx`](./markdown-editor-style/floating-viewport-clamp.spec.tsx)
 - [`milkdown-style-override.spec.ts`](./markdown-editor-style/milkdown-style-override.spec.ts)
 - [`wrapper-font-size-var.spec.tsx`](./markdown-editor-style/wrapper-font-size-var.spec.tsx)
 

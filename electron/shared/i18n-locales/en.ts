@@ -229,10 +229,10 @@ export const en = {
   'dialog.unsaved_close.dont_save': "Don't Save",
   'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
   'dialog.unsaved_close.disk_changed_note':
-    '{count} file(s) were changed on disk by another program and were not overwritten. Press {hotkey} in the editor to resolve the conflict, or choose "Don\'t Save".',
+    '{count} file(s) were changed on disk by another program and were not overwritten. Press {hotkey} in the editor to resolve the conflict, or choose “Don\'t Save”.',
   'dialog.mcp_legacy_config.message': 'Your Continuo MCP config in Claude Code points to a temporary path',
   'dialog.mcp_legacy_config.detail':
-    'MCP server(s) {names} in ~/.claude.json point to an old AppImage temporary mount path. After Continuo exits, another user on this machine can place a script with the same name there, which Claude Code would then run as you. Run `claude mcp remove {first}` in the corresponding project directory (add `-s user` for user-scoped config), then run the new command from "Copy MCP config" in the status bar.',
+    'MCP server(s) {names} in ~/.claude.json point to an old AppImage temporary mount path. After Continuo exits, another user on this machine can place a script with the same name there, which Claude Code would then run as you. Run `claude mcp remove {first}` in the corresponding project directory (add `-s user` for user-scoped config), then run the new command from “Copy MCP config” in the status bar.',
   'dialog.mcp_legacy_config.copy': 'Copy New Command',
   'dock.empty.message': 'All panels are closed.',
   'dock.empty.restore': 'Restore default layout',
@@ -241,8 +241,8 @@ export const en = {
   'panels.explorer.load_failed': 'Unable to read this folder: {message}',
   'panels.explorer.load_failed_named': 'Unable to read “{name}”: {message}',
   'panels.explorer.retry': 'Retry',
-  'panels.explorer.trash_confirm.file': "Are you sure you want to delete '{name}'?",
-  'panels.explorer.trash_confirm.folder': "Are you sure you want to delete '{name}' and its contents?",
+  'panels.explorer.trash_confirm.file': 'Are you sure you want to delete “{name}”?',
+  'panels.explorer.trash_confirm.folder': 'Are you sure you want to delete “{name}” and its contents?',
   'panels.explorer.trash_confirm.multiple': 'Are you sure you want to delete the following {count} files/folders?',
   'panels.explorer.trash_confirm.more': '…and {count} more not shown',
   'panels.explorer.trash_confirm.detail': 'You can restore from the Trash.',
@@ -259,7 +259,7 @@ export const en = {
   'panels.terminal.default_title': 'Terminal {n}',
   // VSCode terminal.integrated.confirmOnKill:关闭仍有子程序在跑的终端前确认。
   'panels.terminal.kill_confirm.title': 'Terminate running process?',
-  'panels.terminal.kill_confirm.detail': '"{process}" is still running in "{title}". Closing the terminal will terminate it.',
+  'panels.terminal.kill_confirm.detail': '“{process}” is still running in “{title}”. Closing the terminal will terminate it.',
   'panels.terminal.kill_confirm.confirm': 'Terminate',
   'panels.terminal.link_hover': '{key}+click to follow link',
   // 终端右键菜单(清除项复用 commands.terminal.clear.title)。
@@ -455,7 +455,7 @@ export const en = {
   'statusbar.mcp.copy_failed': 'Copy failed',
   'statusbar.mcp.unavailable': 'MCP unavailable',
   'statusbar.mcp.tooltip':
-    "Copy 'claude mcp add' command to clipboard. Run it in any shell to configure Claude Code (stdio transport, one-time setup).",
+    'Copy “claude mcp add” command to clipboard. Run it in any shell to configure Claude Code (stdio transport, one-time setup).',
   'statusbar.mcp.revoke_tooltip': 'Revoke authorization and terminate agent terminals in all windows ({count} in this window)',
   'statusbar.agent_sessions': '{count} agent',
   'statusbar.agent_authorized': 'Agent authorized',
@@ -488,8 +488,8 @@ export const en = {
   'settings.panel.search_placeholder': 'Search settings (title / description / id)…',
   'settings.panel.nav_aria': 'Setting categories',
   'settings.panel.no_items': 'No settings available',
-  'settings.panel.no_match': 'No settings matched "{q}"',
-  'settings.panel.matched': 'Matched {count} for "{q}"',
+  'settings.panel.no_match': 'No settings matched “{q}”',
+  'settings.panel.matched': 'Matched {count} for “{q}”',
   'settings.item.reset_default': 'Reset to default ({default})',
   'settings.item.reset_default_aria': 'Reset to default',
   'settings.item.number_range': 'Value must be between {min} and {max}.',

@@ -1,6 +1,6 @@
 // 单个设置项的通用渲染器(M-Settings v6 / UI polish)。
 // 视觉对齐 demo(Industrial IDE Dark):
-//   - title 后 inline id chip(浅底 uppercase),取代独占一行
+//   - title 后 inline id chip(浅底 + 等宽,保留原大小写:id 区分大小写,大写化会误导照抄),取代独占一行
 //   - boolean → design Switch(滑块,占空间小)
 //   - select  → SegmentedControl(spec.enum)
 //   - number  → Input + 单位 chip(右侧)
@@ -192,8 +192,8 @@ export function SettingItemRow({
             <span id={titleId} className="min-w-0 break-words text-sm text-fg">
               {title}
             </span>
-            {/* id chip:design Badge xs(uppercase)紧贴 title 显示,取代独占一行 */}
-            <Badge size="xs" className="min-w-0 max-w-full uppercase tracking-wider">
+            {/* id chip:design Badge xs(浅底)+ <code> 等宽紧贴 title 显示,取代独占一行;不 uppercase —— id 区分大小写 */}
+            <Badge size="xs" className="min-w-0 max-w-full">
               <code className="truncate">{spec.id}</code>
             </Badge>
           </div>

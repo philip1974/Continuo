@@ -73,7 +73,7 @@
   --md-on-info: #ffffff;
   --md-info-container: #d8e2ff;
   --md-on-info-container: #001a41;
-  --md-focus-ring: #6750a4;
+  --md-focus-ring: #0078d4; /* VSCode focusBorder 蓝(Light/Dark Modern 同值),独立于 primary;对 surface 阶梯 ≥ 3.49:1 */
   --md-scrim: rgba(0, 0, 0, 0.45);
   --md-state-hover: rgba(29, 27, 32, 0.08);
   --md-state-focus: rgba(29, 27, 32, 0.12);
@@ -137,7 +137,7 @@
   --md-on-info: #002e69;
   --md-info-container: #17448f;
   --md-on-info-container: #d8e2ff;
-  --md-focus-ring: #2563eb;
+  --md-focus-ring: #0090f1; /* VSCode focusBorder 蓝系(与 light 同语义,提亮以保对 surface-container-highest ≥ 3.69:1) */
   --md-scrim: rgba(0, 0, 0, 0.62);
   --md-state-hover: rgba(230, 224, 233, 0.08);
   --md-state-focus: rgba(230, 224, 233, 0.12);

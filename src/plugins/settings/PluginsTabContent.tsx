@@ -188,7 +188,7 @@ export function PluginsTabContent() {
                 <div className="text-sm font-medium text-fg">{t(p.nameKey)}</div>
                 <div className="mt-1 text-fg-muted">{t(p.descKey)}</div>
               </div>
-              <Badge size="xs" className="min-w-0 max-w-[40%] uppercase tracking-wider">
+              <Badge size="xs" className="min-w-0 max-w-[40%]">
                 <code className="truncate">{p.id}</code>
               </Badge>
             </div>
@@ -380,7 +380,7 @@ function UserPluginsSection() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-sm font-medium text-fg">{pending.name}</span>
-                  <Badge size="xs" className="min-w-0 max-w-full uppercase tracking-wider">
+                  <Badge size="xs" className="min-w-0 max-w-full">
                     <code className="truncate">{pending.id}</code>
                   </Badge>
                   <span className="text-2xs text-fg-dim">v{pending.version}</span>
@@ -411,7 +411,7 @@ function UserPluginsSection() {
               <div className="min-w-48 flex-1">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <span className="text-sm font-medium text-fg">{p.manifest.name}</span>
-                  <Badge size="xs" className="min-w-0 max-w-full uppercase tracking-wider">
+                  <Badge size="xs" className="min-w-0 max-w-full">
                     <code className="truncate">{p.id}</code>
                   </Badge>
                   <span className="text-2xs text-fg-dim">v{p.manifest.version}</span>

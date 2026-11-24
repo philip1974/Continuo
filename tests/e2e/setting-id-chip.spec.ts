@@ -1,4 +1,4 @@
-// SettingItemRow 的 id chip(<code>):title 后紧贴显示 spec.id(uppercase 样式).
+// SettingItemRow 的 id chip(<code>):title 后紧贴显示 spec.id(保留原大小写,不 uppercase).
 import { test, expect } from './fixtures/electron-app';
 import {
   EDITOR_TAB,
@@ -16,6 +16,8 @@ test('编辑器 tab 内显示 setting id chip:editor.fontSize', async ({
     .locator('main code')
     .filter({ hasText: 'editor.fontSize' });
   await expect(chip).toBeVisible();
+  // id 区分大小写:渲染出的文本不得被 CSS 大写化(innerText 反映 text-transform)
+  expect(await chip.evaluate((el) => (el as HTMLElement).innerText)).toBe('editor.fontSize');
 });
 
 test('终端 tab 内显示 setting id chip:terminal.cursorStyle', async ({

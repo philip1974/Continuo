@@ -264,8 +264,9 @@ describe('QuickOpenModal — 渲染态', () => {
     );
   });
 
-  // 长文件名不被路径挤掉:文件名不收缩(上限 60%),相对路径占剩余宽度并从前截断(保留靠近文件的目录),完整路径 title。
-  it('结果行:文件名优先,相对路径从前截断', async () => {
+  // 长文件名不被路径挤掉:文件名不收缩(上限 60%),右栏只放所在目录(VSCode Quick Open 同款,不重复文件名),
+  // 占剩余宽度并从前截断(保留靠近文件的目录),完整相对路径在 title。
+  it('结果行:文件名优先,右栏只显示目录并从前截断,title 为完整路径', async () => {
     installFs();
     walkMock.mockResolvedValue({
       ok: true,
@@ -283,9 +284,26 @@ describe('QuickOpenModal — 渲染态', () => {
     expect(name.className).toMatch(/\bshrink-0\b/);
     expect(name.className).toMatch(/max-w-\[60%\]/);
     const path = row.querySelector<HTMLElement>('.wm-truncate-start')!;
-    expect(path.textContent).toBe('deep/level-one/level-two/a.ts');
+    expect(path.textContent).toBe('deep/level-one/level-two');
     expect(path.className).toMatch(/\bflex-1\b/);
     expect(path.title).toBe('deep/level-one/level-two/a.ts');
+  });
+
+  // 根下文件没有目录部分:右栏不渲染(不重复文件名),完整路径仍可从行 title 获知。
+  it('结果行:工作区根下的文件右栏不显示目录', async () => {
+    installFs();
+    walkMock.mockResolvedValue({ ok: true, data: [file('README.md', 'README.md')] });
+    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
+    useQuickOpenStore.setState({ isOpen: true });
+    render(<QuickOpenModal />);
+    const row = await waitFor(() => {
+      const li = document.querySelector<HTMLElement>('ul li');
+      expect(li).not.toBeNull();
+      return li!;
+    });
+    expect(row.querySelector('.wm-truncate-start')).toBeNull();
+    expect(row.textContent).toBe('README.md');
+    expect(row.title).toBe('README.md');
   });
 
   // a11y(A65,A56 同族):结果达 5000 截断提示是动态出现的信息,焦点锁搜索框时 SR 须能播报。

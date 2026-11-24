@@ -26,6 +26,12 @@ openFileByPath + close。无 root 显「请先在 Explorer 打开工作区」;�
 - 有结果 → ul + li 列出
 - results.length≥5000 + filtered>0 → 底部尾巴提示
 
+### 结果行
+
+- 文件名优先(不收缩,上限 60%);右栏只显示所在目录(relPath 的 dirname,VSCode 同款,不重复文件名),从前截断
+- 工作区根下的文件无目录 → 右栏不渲染
+- 行与右栏的 title 均为完整相对路径
+
 ### 选中态
 
 - selectedIndex 行底色为 active(.bg-hover.text-fg)

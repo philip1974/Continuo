@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { Crepe, CrepeFeature } from '@milkdown/crepe';
+import { clampFloatingToViewport } from './milkdown-floating-clamp';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame-dark.css';
@@ -217,7 +218,11 @@ function CrepeEditor({
         },
         // Crepe 浮层文案默认英文,逐项接 catalog(语言切换靠 Provider 的 locale key 重挂)。
         // 只配启用特性里会显示的项:图片 / 数学公式特性已关,其菜单项不出现。
-        [CrepeFeature.BlockEdit]: crepeSlashMenuLabels(),
+        // 斜杠菜单只有 flip + offset,窄窗口时越出右边被裁 → 追加水平夹回视口的中间件(见 milkdown-floating-clamp)。
+        [CrepeFeature.BlockEdit]: {
+          ...crepeSlashMenuLabels(),
+          slashMenu: { middleware: [clampFloatingToViewport()] },
+        },
         [CrepeFeature.Toolbar]: {
           boldLabel: t('panels.editor.md.toolbar.bold'),
           italicLabel: t('panels.editor.md.toolbar.italic'),

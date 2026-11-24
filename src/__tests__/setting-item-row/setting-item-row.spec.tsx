@@ -51,6 +51,32 @@ describe('SettingItemRow — 通用', () => {
     expect(container.textContent).toContain('应用整体配色');
   });
 
+  // id 区分大小写:徽标不得 CSS 大写化(否则 general.theme 显示成 GENERAL.THEME 误导用户照抄);
+  // 等宽(<code>)+ Badge 浅底与标题区分。
+  it('id chip 按原大小写显示:Badge 不带 uppercase,内容是 <code>', () => {
+    const { container } = render(
+      <SettingItemRow spec={spec({ id: 'editor.fontSize', title: 'Font' })} />,
+    );
+    const code = Array.from(container.querySelectorAll('code')).find(
+      (el) => el.textContent === 'editor.fontSize',
+    )!;
+    const badge = code.closest('.wm-badge')!;
+    expect(badge).not.toBeNull();
+    expect(badge.className).not.toMatch(/\buppercase\b/);
+  });
+
+  it('设置 / 快捷键 / 插件页的 id 徽标(Badge 包 <code>)都不 uppercase', async () => {
+    const dir = join(process.cwd(), 'src/plugins/settings');
+    for (const f of ['SettingItemRow.tsx', 'KeybindingsTabContent.tsx', 'PluginsTabContent.tsx']) {
+      const src = readFileSync(join(dir, f), 'utf8');
+      expect(src, f).not.toMatch(/<Badge[^>]*\buppercase\b[^>]*>\s*<code/);
+    }
+    const { KEYBINDING_ID_BADGE_CLASS_NAME } = await import(
+      '../../plugins/settings/KeybindingsTabContent'
+    );
+    expect(KEYBINDING_ID_BADGE_CLASS_NAME).not.toMatch(/\buppercase\b/);
+  });
+
   it('description 缺 → 不渲染描述行', () => {
     const { container } = render(
       <SettingItemRow spec={spec({ id: 'a', title: 'A' })} />,

@@ -15,7 +15,7 @@ test('搜 src/a → 列出 src/a.ts', async ({ window }) => {
   // 仅 src/a.ts 匹配,b.ts 与 README.md 应过滤掉
   const items = window.locator('.wm-modal-content li');
   await expect(items.first()).toContainText('a.ts');
-  await expect(items.first()).toContainText('src/a.ts');
+  await expect(items.first()).toHaveAttribute('title', 'src/a.ts');
   // README.md 不匹配
   const text = (await items.allTextContents()).join('\n');
   expect(text).not.toContain('README.md');

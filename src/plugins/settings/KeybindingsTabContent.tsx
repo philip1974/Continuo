@@ -40,8 +40,8 @@ const KEYBINDING_ROW_BORDER_CLASS_NAME = `${KEYBINDING_ROW_CLASS_NAME} border-t 
 // 故给最小宽度 6rem,让 id 徽标(min-w-0,最多占 40%)先收缩;列表窄于 28rem 时徽标隐藏;键帽 / 编辑 /
 // 重置按钮均 shrink-0 始终完整可见。未覆盖时的重置按钮宽时 invisible 占位(各行键帽列对齐),窄时 hidden 让出宽度给标题。
 export const KEYBINDING_TITLE_CLASS_NAME = 'min-w-[6rem] flex-1 truncate text-sm text-fg';
-export const KEYBINDING_ID_BADGE_CLASS_NAME =
-  'min-w-0 max-w-[40%] uppercase tracking-wider @max-md:hidden';
+// id 徽标保留原大小写(命令 id 区分大小写,大写化会误导照抄),靠 Badge 浅底 + <code> 等宽与标题区分。
+export const KEYBINDING_ID_BADGE_CLASS_NAME = 'min-w-0 max-w-[40%] @max-md:hidden';
 const EDIT_HOTKEY_ICON = (
   <svg
     viewBox="0 0 16 16"

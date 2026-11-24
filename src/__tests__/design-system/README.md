@@ -28,6 +28,8 @@
 - `--md-fg-dim`(次要弱化正文)两主题各自取值,对 `surface` / `surface-container` / `surface-container-high` 均 ≥ 4.5:1;
   `text-fg-dim` / `text-fg-muted` 不叠透明度修饰(`/60` 等会把正文压到 AA 以下)
 - `--md-rating`(评分星,`text-rating`)两主题各自取值,对 `surface` / `surface-container-low` / `surface-container` ≥ 4.5:1
+- `--md-focus-ring`(键盘焦点环)两主题同一语义:对齐 VSCode `focusBorder`,独立于强调色 primary 的蓝(色相 195–225°,
+  light `#0078d4` / dark `#0090f1`),对 surface 阶梯(`surface` → `surface-container-highest`)均 ≥ 3:1
 - 组件不用 Tailwind 默认色板(`text-amber-400` 等),统一走语义 token
 
 ### Design 组件契约

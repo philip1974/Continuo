@@ -17,6 +17,7 @@ import { formatHotkey, detectPlatform } from '../command-palette/format-hotkey';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
+import { dirname } from '@/lib/path-cross';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
@@ -242,21 +243,27 @@ function QuickOpenBody() {
               {virtualItems.map((vRow) => {
                 const idx = vRow.index;
                 const f = filtered[idx]!;
+                const dir = dirname(f.relPath);
                 return (
                   <li
                     key={f.absPath}
                     {...getOptionProps(vRow)}
                     // 键盘 selectedIndex 走选中样式(accent 底 + 左竖条),独立于鼠标 hover
                     className={pickerRowClassName(idx === selectedIndex)}
+                    title={f.relPath}
                     onClick={() => void openFile(f)}
                   >
-                    {/* 文件名优先(VSCode Quick Open 同款):名称不收缩(上限 60%),相对路径占剩余宽度并从前截断,
-                        保留靠近文件的目录;完整路径在 title。 */}
+                    {/* 文件名优先(VSCode Quick Open 同款):名称不收缩(上限 60%);右栏只放所在目录(不重复文件名,
+                        否则前截断后只剩文件名尾巴、目录信息全丢),占剩余宽度并从前截断保留靠近文件的目录;
+                        根下文件无目录则不渲染。完整相对路径在 title。 */}
                     <span className="max-w-[60%] shrink-0 truncate font-medium">{f.name}</span>
-                    <TruncateStart
-                      text={f.relPath}
-                      className={`min-w-0 flex-1 text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}
-                    />
+                    {dir !== '' && (
+                      <TruncateStart
+                        text={dir}
+                        title={f.relPath}
+                        className={`min-w-0 flex-1 text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}
+                      />
+                    )}
                   </li>
                 );
               })}

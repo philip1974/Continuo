@@ -239,3 +239,56 @@ describe('--md-rating 评分色', () => {
     expect(hits).toEqual([]);
   });
 });
+
+// 键盘焦点环(对齐 VSCode focusBorder):两主题同一语义 —— 独立于强调色(primary)的蓝,而不是一主题用主色紫、
+// 另一主题用 royal blue。须对两主题的承载面阶梯(canvas → surface-container-highest)≥ 3:1(WCAG 1.4.11 非文本)。
+describe('--md-focus-ring 焦点环', () => {
+  const hex = (block: string, name: string): string =>
+    block.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6});`, 'i'))?.[1] ?? '';
+  const lum = (h: string): number => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((c) =>
+      c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+  const hue = (h: string): number => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as [number, number, number];
+    const max = Math.max(r, g, b);
+    const d = max - Math.min(r, g, b);
+    if (d === 0) return 0;
+    const raw = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (raw * 60 + 360) % 360;
+  };
+
+  for (const [theme, pick] of [
+    ['light', getRootBlock],
+    ['dark', getDarkBlock],
+  ] as const) {
+    const block = pick(DESIGN_TOKENS);
+    const ring = hex(block, '--md-focus-ring');
+
+    it(`${theme}:焦点环是独立于 primary 的 focusBorder 蓝`, () => {
+      expect(ring).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(hue(ring)).toBeGreaterThanOrEqual(195);
+      expect(hue(ring)).toBeLessThanOrEqual(225);
+      expect(ring.toLowerCase()).not.toBe(hex(block, '--md-primary').toLowerCase());
+    });
+
+    it(`${theme}:焦点环对 surface 阶梯 ≥ 3:1`, () => {
+      for (const bg of [
+        '--md-surface',
+        '--md-surface-container-lowest',
+        '--md-surface-container-low',
+        '--md-surface-container',
+        '--md-surface-container-high',
+        '--md-surface-container-highest',
+      ]) {
+        expect(contrast(ring, hex(block, bg)), `${theme} ${bg}`).toBeGreaterThanOrEqual(3);
+      }
+    });
+  }
+});
