@@ -48,4 +48,5 @@
 - dir-changed 携带变更文件名集合 → 只重读文件名在集合内的 clean tab(rename 旧名/新名命中任一即可;文件名比较大小写 + NFC 宽松,宁多读不漏读);无集合(平台不给 filename / 缓冲溢出 / 超上限)→ 退化为按目录匹配
 - symlink tab(tab.realPath = 读盘时 main 解析的链接真实目标,runtime only 不持久化):目录按 dirname(filePath) 或 dirname(realPath)、文件名按 basename(filePath) 或 basename(realPath) 匹配 → 同目录 `CLAUDE.md -> AGENTS.md` 外部改 AGENTS.md、跨目录链接目标所在目录变更都重读链接 tab;watch-restored 子树同理;重读结果的 realPath 回写 tab
 - readFile ok=false → 跳过(不抛)
+- 外部删除 / 改名(读到 `FS_NOT_FOUND`):等 `EXTERNAL_DELETE_CONFIRM_MS` 再读一次确认,仍不存在 → 走与 Explorer 删除同一出口 editor store `removePaths`:干净 tab 关闭(防继续输入后保存把文件写回 / mv 后与新名并存两份);脏 tab 保留(保存按「不存在就重建」);确认期间变脏 / 被重开 → 保留;确认时又存在(先删后建的原子替换间隙)→ 不关、按新内容 reload;等待期间的新事件并入尾随重读。其它读失败仍只跳过。窗口重开恢复时读失败的 tab 不打开,与「干净 tab 关闭」同口径(持久化只有路径,无未保存内容)
 - 保存回声识别(性能):保存成功记录写入内容的 `{mtimeMs,size,ino}`(main 关闭写句柄后对 tmp stat、rename 后复核一致才返回);记录带进程内单调保存代际 `gen`(同写到运行时 `tab.savedGen`,记录不持有写入内容),命中的 clean tab `savedGen` 与记录 gen 一致时,先发廉价 `fs:stat` 比对 —— 一致 → 不 readFile;mtime/size/ino 变化(ino 区分粗粒度 mtime 文件系统上同大小的外部替换)、stat 失败(ok=false 或 reject)、记录已不对应 tab 基线(外部 reload 清 savedGen / 关闭重开的新 tab 无 savedGen)→ 照旧整文件读(不凭「刚保存过」跳过,外部同时写入照常同步)

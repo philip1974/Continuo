@@ -5,7 +5,10 @@ import {
   _resetLmApiForTest,
   captureLmApi,
 } from '../../lib/co-api';
-import { useExternalFileSync } from '../../panels/Editor/useExternalFileSync';
+import {
+  EXTERNAL_DELETE_CONFIRM_MS,
+  useExternalFileSync,
+} from '../../panels/Editor/useExternalFileSync';
 import { useEditorStore } from '../../stores/editor.store';
 import { emitWatchRestored } from '../../lib/fs-watch-restored';
 import {
@@ -610,5 +613,77 @@ describe('useExternalFileSync · 保存回声识别', () => {
     await flushMicrotasks(6);
     expect(stat).not.toHaveBeenCalled();
     expect(readFile).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 外部删除 / 改名走与 Explorer 删除同一出口(editor store removePaths):干净 tab 关闭,脏 tab 保留。
+// 此前 settle 只应用 ok 结果,FS_NOT_FOUND 被丢弃 → 干净 tab 留着,用户继续输入后保存把文件写回
+//(mv 时与新名并存两份)。读到不存在先等 EXTERNAL_DELETE_CONFIRM_MS 再确认一次,避免「先删后建」
+// 原子替换间隙误关。
+describe('外部删除 / 改名(读到 FS_NOT_FOUND)', () => {
+  const NF = { ok: false, code: 'FS_NOT_FOUND', message: 'gone' };
+  const cleanTab = { id: '/proj/a.md', filePath: '/proj/a.md', content: 'old', originalContent: 'old', dirty: false };
+  function setup(readFile: ReturnType<typeof vi.fn>, tab: typeof cleanTab = cleanTab) {
+    let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
+    installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
+    useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+    renderHook(() => useExternalFileSync());
+    return () => dirCb!('/proj', ['a.md']);
+  }
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('干净 tab:确认仍不存在 → 关闭(确认前不关)', async () => {
+    const readFile = vi.fn(async () => NF);
+    const fire = setup(readFile);
+    fire();
+    await flushMicrotasks(6);
+    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
+    await flushMicrotasks(6);
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(useEditorStore.getState().tabs).toHaveLength(0);
+    expect(useEditorStore.getState().activeTabId).toBeNull();
+  });
+
+  it('确认等待期间 tab 被编辑(变脏)→ 保留', async () => {
+    const readFile = vi.fn(async () => NF);
+    const fire = setup(readFile);
+    fire();
+    await flushMicrotasks(6);
+    useEditorStore.getState().updateContent('/proj/a.md', 'user typing');
+    await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
+    await flushMicrotasks(6);
+    expect(useEditorStore.getState().tabs.map((t) => [t.id, t.content, t.dirty])).toEqual([
+      ['/proj/a.md', 'user typing', true],
+    ]);
+  });
+
+  it('脏 tab → 保留(不读盘)', async () => {
+    const readFile = vi.fn(async () => NF);
+    const fire = setup(readFile, { ...cleanTab, content: 'edit', dirty: true });
+    fire();
+    await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
+    await flushMicrotasks(6);
+    expect(useEditorStore.getState().tabs).toHaveLength(1);
+  });
+
+  it('原子替换间隙(先 NOT_FOUND 后又存在)→ 不关,应用新内容', async () => {
+    const readFile = vi.fn().mockResolvedValueOnce(NF).mockResolvedValue({ ok: true, data: 'replaced' });
+    const fire = setup(readFile);
+    fire();
+    await flushMicrotasks(6);
+    await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
+    await flushMicrotasks(6);
+    expect(useEditorStore.getState().tabs.map((t) => t.content)).toEqual(['replaced']);
+  });
+
+  it('其它读失败(非 FS_NOT_FOUND)→ 仍只跳过,不关', async () => {
+    const readFile = vi.fn(async () => ({ ok: false, code: 'FS_IO', message: 'x' }));
+    const fire = setup(readFile);
+    fire();
+    await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
+    await flushMicrotasks(6);
+    expect(useEditorStore.getState().tabs).toHaveLength(1);
   });
 });

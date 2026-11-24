@@ -19,9 +19,20 @@ import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { ownSaveStatCheck } from './saved-disk-stat';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 /** watch-restored 子树重读的最大同时在途 readFile 数(与 hydrateEditorTabs RESTORE_READ_CONCURRENCY 同口径). */
 const RESTORED_RELOAD_CONCURRENCY = 32;
+
+/**
+ * 外部删除确认延迟:读到 FS_NOT_FOUND 后等这么久再读一次,仍不存在才按删除处理。
+ * 「先删后建」式替换(部分编辑器 / git checkout)的间隙会短暂读不到,不能据此关 tab。
+ */
+export const EXTERNAL_DELETE_CONFIRM_MS = 500;
+
+type ReadResult = { ok: true; data: string; realPath?: string } | { ok: false; code?: string } | null;
+
+const isNotFound = (r: ReadResult): boolean => r !== null && !r.ok && r.code === ERROR_CODES.FS_NOT_FOUND;
 
 /**
  * 性能:编辑器自己保存的回声识别。原子写(tmp + rename)让 watcher 上报被保存文件本身,此前保存后
@@ -74,7 +85,7 @@ export function useExternalFileSync(): void {
       path: string,
       tabId: string,
       tabRef: EditorTab | null,
-      r: { ok: true; data: string; realPath?: string } | { ok: false } | null,
+      r: ReadResult,
     ): void => {
       // race(R79):effect 已 cleanup(卸载/重挂/StrictMode 双跑)→ 本次是过期 effect 的迟到
       // 结果,直接丢弃,绝不 reloadFromDisk(否则用旧快照回滚 clean tab)。inFlight/pending
@@ -93,6 +104,13 @@ export function useExternalFileSync(): void {
           useEditorStore.getState().reloadFromDisk(tabId, r.data, r.realPath);
         }
       }
+      // 外部删除 / 改名(确认后仍不存在):与 Explorer 删除同一出口 removePaths —— 干净 tab 关闭,
+      // 脏 tab 保留(保存时按「不存在就重建」)。此前丢弃该结果 → 干净 tab 留着,继续输入后自动保存
+      // 把文件写回(mv 时与新名并存两份)。同样要求 live tab 仍是发起读取时那个实例(未变脏 / 未重开)。
+      if (!superseded && isNotFound(r)) {
+        const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+        if (live !== null && live === tabRef) useEditorStore.getState().removePaths([path]);
+      }
       // 被合并的尾随事件 → 读最终内容并应用(本次中间结果已被取代,不落地)
       if (superseded) readAndApply(path, tabId);
     };
@@ -104,12 +122,19 @@ export function useExternalFileSync(): void {
       inFlight.add(path);
       // 保存回声:跳过整文件读,按「不落地」settle(仍清 inFlight / 尾随重读 pending)。
       const echoCheck = ownSaveEchoCheck(path, tabRef);
-      const read: Promise<Parameters<typeof settle>[3]> = echoCheck
+      const first: Promise<ReadResult> = echoCheck
         ? echoCheck.then(
-            (echo): Parameters<typeof settle>[3] | Promise<Parameters<typeof settle>[3]> =>
-              echo ? { ok: false } : coApi.fs.readFile(path),
+            (echo): ReadResult | Promise<ReadResult> => (echo ? { ok: false } : coApi.fs.readFile(path)),
           )
         : coApi.fs.readFile(path);
+      // 读到不存在 → 延迟后再读一次确认(仍在 inFlight 内:等待期间的新事件并入尾随重读)。
+      const read = first.then((r) =>
+        isNotFound(r)
+          ? new Promise<void>((res) => setTimeout(res, EXTERNAL_DELETE_CONFIRM_MS)).then(
+              (): ReadResult | Promise<ReadResult> => (cancelled ? null : coApi.fs.readFile(path)),
+            )
+          : r,
+      );
       return read.then(
         (r) => settle(path, tabId, tabRef, r),
         () => settle(path, tabId, tabRef, null), // reject → 不落地,但仍清 inFlight/尾随重读
