@@ -5,10 +5,11 @@
 // 看不同 folder。无 query 时返 null,走原 explorer.json 持久化路径(主窗口默认)。
 
 import { isBlankString } from './blank-string';
+import { WINDOW_QUERY, WINDOW_QUERY_FLAG_ON } from '../../electron/shared/window-query';
 
-const WORKSPACE_PARAM = 'workspace';
-const WINDOW_SEQ_PARAM = 'windowSeq';
-const FRESH_PARAM = 'fresh';
+const WORKSPACE_PARAM = WINDOW_QUERY.WORKSPACE;
+const WINDOW_SEQ_PARAM = WINDOW_QUERY.WINDOW_SEQ;
+const FRESH_PARAM = WINDOW_QUERY.FRESH;
 
 // 边界(E193,外部输入长度上限族 E152/E179/E190/E191):启动 query 总长度上限。safeStartupParams 被
 // parseInitialWorkspace/WindowSeq/Fresh 三处在 renderer 启动早期各调一次 —— 同一畸形超长
@@ -91,5 +92,5 @@ export function parseInitialWindowSeq(search: string): number {
 export function parseInitialFresh(search: string): boolean {
   const params = safeStartupParams(search);
   if (!params) return false;
-  return params.get(FRESH_PARAM) === '1';
+  return params.get(FRESH_PARAM) === WINDOW_QUERY_FLAG_ON;
 }

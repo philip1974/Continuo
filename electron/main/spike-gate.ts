@@ -1,3 +1,4 @@
+import { WINDOW_QUERY, WINDOW_QUERY_FLAG_ON } from '../shared/window-query';
 export type SpikeReason = 'dev' | 'env-opt-in' | 'packaged-blocked' | 'env-missing';
 
 export interface SpikeAllowedInput {
@@ -47,28 +48,20 @@ export function spikeAllowed(input: SpikeAllowedInput): SpikeAllowedResult {
 function hasSpikeQueryParam(url: unknown): boolean {
   // 边界(E191):非字符串/超长 url 不跑正则(O(N) 扫描),视为无 spike query(packaged 下两分支都拦)。
   if (typeof url !== 'string' || url.length > MAX_NAV_URL_LEN) return false;
-  for (let i = 0; i <= url.length - 7; i += 1) {
+  // 找 `?spike=` / `&spike=`(不构造 URL / 正则,同 E191 的线性扫描)。
+  const key = `${WINDOW_QUERY.SPIKE}=`;
+  for (let i = 0; i < url.length - key.length; i += 1) {
     const sep = url.charCodeAt(i);
-    if (sep !== 63 && sep !== 38) continue;
-    if (
-      url.charCodeAt(i + 1) === 115 &&
-      url.charCodeAt(i + 2) === 112 &&
-      url.charCodeAt(i + 3) === 105 &&
-      url.charCodeAt(i + 4) === 107 &&
-      url.charCodeAt(i + 5) === 101 &&
-      url.charCodeAt(i + 6) === 61
-    ) {
-      return true;
-    }
+    if ((sep === 63 || sep === 38) && url.startsWith(key, i + 1)) return true;
   }
   return false;
 }
 
 export function buildRendererQuery(input: RendererQueryInput): Record<string, string> {
   const query: Record<string, string> = {};
-  if (input.workspace) query.workspace = input.workspace;
-  if (input.windowSeq) query.windowSeq = input.windowSeq;
-  if (input.fresh) query.fresh = '1';
+  if (input.workspace) query[WINDOW_QUERY.WORKSPACE] = input.workspace;
+  if (input.windowSeq) query[WINDOW_QUERY.WINDOW_SEQ] = input.windowSeq;
+  if (input.fresh) query[WINDOW_QUERY.FRESH] = WINDOW_QUERY_FLAG_ON;
   return query;
 }
 

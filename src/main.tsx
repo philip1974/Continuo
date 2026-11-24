@@ -5,10 +5,11 @@
 // location.search 加长度闸(否则畸形超长 query 在 thin-entry 被完整解析一次,绕过 parseInitial* 的保护)。
 // initial-workspace 是零依赖纯模块,静态 import 不会拉入 main-app/spike chunk(thin-entry 契约不破)。
 import { safeStartupParams } from './lib/initial-workspace';
+import { WINDOW_QUERY } from '../electron/shared/window-query';
 
 const isSpike =
   typeof location !== 'undefined' &&
-  safeStartupParams(location.search)?.get('spike') === 'plugin-isolation';
+  safeStartupParams(location.search)?.get(WINDOW_QUERY.SPIKE) === 'plugin-isolation';
 
 if (isSpike) {
   void import('./spikes/plugin-isolation').then((m) => m.run());

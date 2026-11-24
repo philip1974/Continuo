@@ -3,8 +3,9 @@
 // 子串 `includes('popout=1')` —— 后者会把 workspace 路径 / 其它 query 值里恰好
 // 含 `popout=1` 的普通主窗误判成 popout(进而 setMenu(null) + 禁 Cmd+R)。
 import { MAX_WINDOW_URL_LEN } from '../shared/url-limits';
+import { WINDOW_QUERY, WINDOW_QUERY_FLAG_ON } from '../shared/window-query';
 
-const POPOUT_FLAG = 'popout';
+const POPOUT_FLAG = WINDOW_QUERY.POPOUT;
 
 export function isPopoutUrl(rawUrl: string): boolean {
   // 边界(E196,renderer isPopoutWindow E195 主进程对偶):isPopoutUrl 在窗口创建 / agent-auth 选主窗 /
@@ -16,7 +17,7 @@ export function isPopoutUrl(rawUrl: string): boolean {
   }
   try {
     const url = new URL(rawUrl);
-    return url.searchParams.get(POPOUT_FLAG) === '1';
+    return url.searchParams.get(POPOUT_FLAG) === WINDOW_QUERY_FLAG_ON;
   } catch {
     return false;
   }
@@ -35,7 +36,7 @@ export function isPopoutOnlyUrl(rawUrl: string): boolean {
   }
   try {
     const params = new URL(rawUrl).searchParams;
-    return params.get(POPOUT_FLAG) === '1' && [...params.keys()].length === 1;
+    return params.get(POPOUT_FLAG) === WINDOW_QUERY_FLAG_ON && [...params.keys()].length === 1;
   } catch {
     return false;
   }

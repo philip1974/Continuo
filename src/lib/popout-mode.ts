@@ -1,8 +1,9 @@
 // dockview popout 子窗口的标记。主窗口给 addPopoutGroup 传 popoutUrl 时附 ?popout=1,
 // 子窗口的 App.tsx 据此短路 DockShell,留位置给 dockview 的 portal 渲染。
 import { safeStartupParams } from './initial-workspace';
+import { WINDOW_QUERY, WINDOW_QUERY_FLAG_ON } from '../../electron/shared/window-query';
 
-const POPOUT_FLAG = 'popout';
+const POPOUT_FLAG = WINDOW_QUERY.POPOUT;
 
 export function isPopoutWindow(): boolean {
   if (typeof window === 'undefined') return false;
@@ -10,7 +11,7 @@ export function isPopoutWindow(): boolean {
   // 复用 safeStartupParams 的启动 query 长度闸 —— 畸形超长 location.search 否则每次渲染被完整解析一次,
   // 绕过同一外部输入族(E193 parseInitial* / E194 main.tsx spike)的保护。超长 → null → 非 popout(默认主窗)。
   const params = safeStartupParams(window.location.search);
-  return params?.get(POPOUT_FLAG) === '1';
+  return params?.get(POPOUT_FLAG) === WINDOW_QUERY_FLAG_ON;
 }
 
 export function popoutUrlFor(baseHref: string): string {
@@ -29,6 +30,6 @@ export function popoutUrlFor(baseHref: string): string {
   // 目录为根的完整应用窗口。popout 子窗只看这个标记(main-app 早退、App 只渲染 PopoutHost),用不到主窗
   // 的启动参数。顺带也不会把超长 query 带进子窗(E195)。
   url.search = '';
-  url.searchParams.set(POPOUT_FLAG, '1');
+  url.searchParams.set(POPOUT_FLAG, WINDOW_QUERY_FLAG_ON);
   return url.toString();
 }
