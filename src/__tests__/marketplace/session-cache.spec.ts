@@ -71,3 +71,21 @@ describe('createSessionCache 原始串长度上限 (E71)', () => {
     expect(validateCalls).toBe(1);
   });
 });
+
+describe('createSessionCache · sessionStorage 不可用', () => {
+  it('访问 sessionStorage 抛错 → cache-miss,不回落读 / 清 localStorage 的同名 key', () => {
+    localStorage.setItem(KEY, JSON.stringify({ fetchedAt: Date.now(), data: ['from-local'] }));
+    const spy = vi.spyOn(globalThis, 'sessionStorage', 'get').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+    try {
+      const c = createSessionCache<string[]>({ key: KEY, ttlMs: 60_000, validate: isStrArr });
+      expect(c.getFresh()).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(localStorage.getItem(KEY)).not.toBeNull();
+    localStorage.removeItem(KEY);
+  });
+});
+

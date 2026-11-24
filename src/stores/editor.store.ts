@@ -570,9 +570,6 @@ function applyTabStateChange(
 }
 
 /**
- * 关闭 / 换 id 类的 tab 变更:先只回写受影响的 tab(按 pre-flush 状态算),再按同一纯函数应用到最新状态。
- */
-/**
  * chromeVersion 覆盖的单 tab 字段(EditorHeader chrome / action 区的 effectiveMode、TitleBar、关窗脏确认上报的
  * 变脏代际)。新增影响这些 UI 的 tab 字段只需加在这里(此前每个 action 各写一套「是否 bump」判定,markSaved
  * 曾漏判 dirtyGen)。`!!` 归一化 undefined / false。
@@ -598,6 +595,9 @@ function replaceTabBumpingChrome(
   return tabChromeChanged(s.tabs[idx]!, next) ? { tabs, chromeVersion: s.chromeVersion + 1 } : { tabs };
 }
 
+/**
+ * 关闭 / 换 id 类的 tab 变更:先只回写受影响的 tab(按 pre-flush 状态算),再按同一纯函数应用到最新状态。
+ */
 function changeTabsWithWriteBack(
   get: () => EditorState,
   set: (fn: (s: EditorState) => EditorState | Partial<EditorState>) => void,

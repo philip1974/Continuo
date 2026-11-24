@@ -494,7 +494,6 @@ export const en = {
   'marketplace.updating': 'Updating…',
   'marketplace.update_success': 'Updated to {name} v{version} — restart Continuo to activate',
   'marketplace.update_failed_code': 'Update failed [{code}] {message}',
-  'marketplace.update_failed_msg': 'Update failed: {message}',
   'marketplace.update_tooltip': 'Remote version v{version}, click to update',
   'marketplace.reviews.refresh_title': 'Refresh reviews (skip cache)',
   'marketplace.reviews.refresh': 'Refresh reviews',

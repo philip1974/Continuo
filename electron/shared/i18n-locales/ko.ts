@@ -468,7 +468,6 @@ export const ko: Record<TranslationKey, string> = {
   'marketplace.updating': '업데이트 중…',
   'marketplace.update_success': '{name} v{version}로 업데이트됨 — Continuo 재시작 후 활성화',
   'marketplace.update_failed_code': '업데이트 실패 [{code}] {message}',
-  'marketplace.update_failed_msg': '업데이트 실패: {message}',
   'marketplace.update_tooltip': '원격 버전 v{version}, 클릭하여 업데이트',
   'marketplace.reviews.refresh_title': '리뷰 다시 가져오기 (캐시 건너뜀)',
   'marketplace.reviews.refresh': '리뷰 새로 고침',

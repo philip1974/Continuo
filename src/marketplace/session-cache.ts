@@ -7,7 +7,7 @@
 //
 // 序列化形态 `{ fetchedAt, data }` 由本 helper 对称读写;sessionStorage 不跨应用重启,
 // 故内部 wrapper 形态非外部契约,旧条目读不出时按 cache-miss 处理(无害,触发一次重拉)。
-import { readStoredJson } from '@/plugins/storage/local-storage-record';
+import { readStoredJsonFrom } from '@/plugins/storage/local-storage-record';
 
 interface Wrapped<T> {
   readonly fetchedAt: number;
@@ -65,10 +65,10 @@ export function createSessionCache<T>(opts: {
   function readStorage(): Wrapped<T> | null {
     // 边界(E71):解析前按原始串长度拦,防超大缓存的 JSON.parse 卡顿;超限 / 解析失败 = 篡改 / 旧残留 →
     // cache-miss + 清毒(readStoredJson 负责,同 localStorage 记录)。
-    const parsed = readStoredJson(
+    const parsed = readStoredJsonFrom(
+      getSessionStorage(),
       opts.key,
       opts.maxRawLength ?? DEFAULT_MAX_RAW_LENGTH,
-      getSessionStorage(),
     ) as { fetchedAt?: unknown; data?: unknown } | null | undefined;
     if (parsed === undefined) return null;
     try {

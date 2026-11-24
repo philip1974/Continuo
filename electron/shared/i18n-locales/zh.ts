@@ -465,7 +465,6 @@ export const zh: Record<TranslationKey, string> = {
   'marketplace.updating': '更新中…',
   'marketplace.update_success': '更新到 {name} v{version} — 重启 Continuo 后激活',
   'marketplace.update_failed_code': '更新失败 [{code}] {message}',
-  'marketplace.update_failed_msg': '更新失败：{message}',
   'marketplace.update_tooltip': '远程版本 v{version}，点击更新',
   'marketplace.reviews.refresh_title': '重新拉评分（跳缓存）',
   'marketplace.reviews.refresh': '刷新评分',

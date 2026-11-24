@@ -48,12 +48,20 @@ export function clearStoredKey(key: string): void {
 /**
  * Web Storage JSON 读取的公共底层(readRecord、命令面板 recent 列表、marketplace sessionStorage 缓存共用):无 storage /
  * 无值 → undefined;解析前按原始串长度拦(E70/E71,防超大 JSON 的 parse 卡顿),超限或解析失败 → 清除该 key 并
- * 返回 undefined。形态校验由调用方做(不合法时可调 clearStoredKey)。`storage` 缺省 localStorage。
+ * 返回 undefined。形态校验由调用方做(不合法时可调 clearStoredKey)。读 localStorage;别的 storage 用 readStoredJsonFrom。
  */
-export function readStoredJson(
+export function readStoredJson(key: string, maxRawLength = DEFAULT_MAX_RAW_LENGTH): unknown {
+  return readStoredJsonFrom(getLocalStorage(), key, maxRawLength);
+}
+
+/**
+ * 同 readStoredJson,但读指定的 storage(如 sessionStorage)。storage 不可用(undefined)→ undefined,**不**回落
+ * localStorage(否则会读 / 清别的存储里的同名 key)。
+ */
+export function readStoredJsonFrom(
+  storage: Storage | undefined,
   key: string,
   maxRawLength = DEFAULT_MAX_RAW_LENGTH,
-  storage: Storage | undefined = getLocalStorage(),
 ): unknown {
   if (storage === undefined) return undefined;
   try {

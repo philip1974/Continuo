@@ -173,9 +173,8 @@ export function MarketplaceTab() {
     };
   }, []);
 
-  // 卡片的「安装」与「更新」是同一流程(同步单飞 → installFromGit → 结果消息 → pending),只差:
-  // overwrite 标志、成功/失败文案 key、以及 catch 分支的文案外壳(install 用裸 message,update 套
-  // update_failed_msg —— 既有差异,保持不变)。返回是否成功,供调用方做后续。
+  // 卡片的「安装」与「更新」是同一流程(同步单飞 → installFromGitLocalized → 结果消息 → pending),只差
+  // overwrite 标志与成功 / 失败文案 key(reject 与 ok:false 同走 *_failed_code)。返回是否成功,供调用方做后续。
   // setInstall 函数式更新,不依赖外部 state → 引用稳定,MarketplaceCard memo 不被撑破。
   const runCardInstall = useCallback(
     async (entry: MarketplaceEntry, mode: 'install' | 'update'): Promise<boolean> => {
