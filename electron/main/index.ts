@@ -115,10 +115,10 @@ import { getWorkspaceRoot as getWindowWorkspaceRoot } from './services/window-wo
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
-  defaultIsTrustedFrame,
   isTrustedRendererFileUrl,
   setTrustedDevOrigin,
   setTrustedRendererFile,
+  trustedSenderWindow,
 } from './safe-handle';
 import { buildRendererQuery, parseDevRendererUrl } from './renderer-url';
 import { buildCommonWebPreferences } from './continuo-meta-args';
@@ -230,20 +230,14 @@ ipcMain.on(WINDOW_ID_CHANNEL, (event: IpcMainEvent) => {
   // 与 layout:flush-ack / plugin-mcp INVOKE_REPLY 对齐:不受信 frame
   // (被注入的子 frame)拿不到窗口 id。合法 renderer 与 popout 子窗都走
   // file:// / 同源 dev URL → 受信。
-  if (!defaultIsTrustedFrame(event.senderFrame)) {
-    event.returnValue = 0;
-    return;
-  }
-  const win = BrowserWindow.fromWebContents(event.sender);
-  event.returnValue = win?.id ?? 0;
+  event.returnValue = trustedSenderWindow(event)?.id ?? 0;
 });
 
 ipcMain.on(
   LAYOUT_CHANNELS.FLUSH_ACK,
   (event: IpcMainEvent, windowId: unknown, result?: unknown) => {
-    if (!defaultIsTrustedFrame(event.senderFrame)) return;
     if (typeof windowId !== 'number') return;
-    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    const senderWin = trustedSenderWindow(event);
     if (!senderWin || senderWin.id !== windowId) return;
     const ack = parseFlushAck(result);
     // 只接受与在途请求匹配的回执(renderer 原样带回 requestId;关窗与 Cmd+Q 交叉时不串号)。
@@ -263,8 +257,7 @@ ipcMain.on(
 const dirtyStates = new Map<number, DirtyState>();
 
 ipcMain.on(LAYOUT_CHANNELS.DIRTY_STATE, (event: IpcMainEvent, raw: unknown) => {
-  if (!defaultIsTrustedFrame(event.senderFrame)) return;
-  const win = BrowserWindow.fromWebContents(event.sender);
+  const win = trustedSenderWindow(event);
   const state = parseDirtyState(raw);
   if (!win || !state) return;
   recordDirtyState(win, state);
@@ -357,10 +350,8 @@ function bumpCloseFlowGen(windowId: number): number {
 const flushReadyWindowIds = new Set<number>();
 
 ipcMain.on(LAYOUT_CHANNELS.FLUSH_READY, (event: IpcMainEvent) => {
-  if (!defaultIsTrustedFrame(event.senderFrame)) return;
-  const win = BrowserWindow.fromWebContents(event.sender);
-  // 同 PROTOCOL_READY / AGENT_AUTH READY:只认窗口自己的主 webContents 上报。
-  if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
+  const win = trustedSenderWindow(event);
+  if (!win) return;
   flushReadyWindowIds.add(win.id);
 });
 
@@ -622,9 +613,8 @@ const pendingProtocolUrls: string[] = [];
 const protocolReadyContents = new WeakSet<object>();
 
 ipcMain.on(PLUGINS_CHANNELS.PROTOCOL_READY, (event: IpcMainEvent) => {
-  if (!defaultIsTrustedFrame(event.senderFrame)) return;
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
+  const win = trustedSenderWindow(event);
+  if (!win) return;
   protocolReadyContents.add(win.webContents);
   drainOnProtocolReady(win, PLUGINS_CHANNELS.PROTOCOL_URL, pendingProtocolUrls);
 });
@@ -632,9 +622,8 @@ ipcMain.on(PLUGINS_CHANNELS.PROTOCOL_READY, (event: IpcMainEvent) => {
 // agent 授权:renderer 已订阅授权请求(reload 后新文档重新上报)→ 该窗口恢复接收授权弹窗(同 PROTOCOL_READY 的
 // 握手)。窗口由 sender 推断,不信 renderer 自报。
 ipcMain.on(AGENT_AUTH_CHANNELS.READY, (event: IpcMainEvent) => {
-  if (!defaultIsTrustedFrame(event.senderFrame)) return;
-  const win = BrowserWindow.fromWebContents(event.sender);
-  if (!win || win.isDestroyed() || win.webContents !== event.sender) return;
+  const win = trustedSenderWindow(event);
+  if (!win) return;
   markAgentAuthRendererReady(win.id);
 });
 

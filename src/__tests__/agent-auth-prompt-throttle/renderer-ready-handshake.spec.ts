@@ -54,8 +54,8 @@ describe('agent 授权就绪握手 · main 接线', () => {
     const start = src.indexOf('ipcMain.on(AGENT_AUTH_CHANNELS.READY');
     expect(start).toBeGreaterThanOrEqual(0);
     const body = src.slice(start, start + 400);
-    expect(body).toContain('defaultIsTrustedFrame(event.senderFrame)');
-    expect(body).toContain('BrowserWindow.fromWebContents(event.sender)');
+    // trustedSenderWindow:受信 frame + 发送方正是该窗口的主 webContents(行为见 safe-handle 单测)。
+    expect(body).toContain('trustedSenderWindow(event)');
     expect(body).toContain('markAgentAuthRendererReady(win.id)');
   });
 

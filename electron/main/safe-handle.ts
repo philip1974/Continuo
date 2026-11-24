@@ -294,6 +294,20 @@ export function safeHandleWithWindow<I>(
 }
 
 /**
+ * 单向 IPC(ipcMain.on:就绪握手 / 回执 / 脏态上报)的发送方窗口:sender frame 可信,且 sender 正是该窗口自己的主
+ * webContents(子 webContents 的上报不得记到宿主窗口);否则 null。index.ts 的 5 个 on 入口共用(此前 3 处判了
+ * 主 webContents、2 处只 fromWebContents)。
+ */
+export function trustedSenderWindow(
+  event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
+): BrowserWindow | null {
+  if (!defaultIsTrustedFrame(event.senderFrame)) return null;
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed() || win.webContents !== event.sender) return null;
+  return win;
+}
+
+/**
  * frame-trust 断言(不经 safeHandle 管线的裸 ipcMain.handle 用):sender frame 不可信(含已销毁的 null)→
  * 抛带 IPC_ERR.DENIED 的错误。所有写 / 敏感 IPC 只信真实 renderer 入口 frame —— 权限检查多在 renderer 的
  * scoped-app 包装层,能触达 raw IPC 的不可信 frame(隔离 iframe / 未来子 frame)否则可直接绕过。

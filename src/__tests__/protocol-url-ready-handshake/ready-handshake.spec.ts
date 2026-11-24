@@ -102,8 +102,8 @@ describe('co:// 协议监听就绪握手 · main 接线', () => {
     const start = indexSrc.indexOf('ipcMain.on(PLUGINS_CHANNELS.PROTOCOL_READY');
     expect(start).toBeGreaterThanOrEqual(0);
     const body = indexSrc.slice(start, start + 800);
-    expect(body).toContain('defaultIsTrustedFrame(event.senderFrame)');
-    expect(body).toContain('BrowserWindow.fromWebContents(event.sender)');
+    // trustedSenderWindow:受信 frame + 发送方正是该窗口的主 webContents(行为见 safe-handle 单测)。
+    expect(body).toContain('trustedSenderWindow(event)');
     expect(body).toContain('drainOnProtocolReady(');
   });
 
