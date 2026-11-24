@@ -14,8 +14,8 @@ import {
 import { createRecordStoreOps, type RecordStoreOps } from '../storage/local-storage-record';
 import { coApp } from '../co-app';
 import { ownValue } from '../../../electron/shared/own-value';
+import { SETTINGS_VALUES_STORAGE_KEY } from './storage-key';
 
-const STORAGE_KEY = 'continuo.settings.values';
 
 // 边界(E142/E241):单个 text/string 设置值长度上限。setValue 写入前截断 —— 否则用户在 text setting
 // 粘贴超大文本会进 zustand+localStorage,整份 settings 记录超 readRecord 1MiB raw cap 后下次启动
@@ -51,7 +51,7 @@ export function onLocalSettingReset(cb: (id: string) => void): () => void {
 // 的 clampSettingNumber(E6)钳制。key 限长 256、条目数封顶,非法项丢弃(回退 spec.default)。
 // 显式标注:ops 与 store 互相引用(惰性访问器),不标注会让 TS 循环推断成 any。
 const ops: RecordStoreOps<SettingItemValue> = createRecordStoreOps<SettingItemValue>({
-  key: STORAGE_KEY,
+  key: SETTINGS_VALUES_STORAGE_KEY,
   readOpts: {
     // 边界(E122,E22 延伸):number 须有限(Number.isFinite),拒 Infinity/NaN —— 经 setValue 写入
     // 的非有限值虽在 JSON 落盘时被 stringify 成 null,但其它入口/未来格式不应放行非有限 number。

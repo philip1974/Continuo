@@ -17,6 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
 import { loadSettings } from './services/settings.service';
+import { loadWindowTheme } from './services/window-theme.service';
 import { getMainT, type MainT } from './i18n';
 import { setMenuRebuilder } from './ipc/i18n.ipc';
 import {
@@ -1320,9 +1321,11 @@ app.whenReady().then(async () => {
   // 收敛失败只告警,不阻断启动。
   // topic 16 i18n: 必须先 hydrate settings.json，buildAppMenu 才能拿到正确 locale 的 label。
   // 性能:两者读写不同文件、互无依赖 → 并行(loadSettings 永不抛)。
+  // 窗口底色主题(上次持久化)须在首个窗口创建前读入,亮色用户冷启动不闪深色。
   await Promise.all([
     prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, lruProtectedSeqs()),
     loadSettings(),
+    loadWindowTheme(),
   ]);
 
   // E2E 跑 Playwright 时,Electron 默认菜单的 CmdOrCtrl+P 绑定 Print 会先吞

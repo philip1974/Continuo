@@ -1,22 +1,25 @@
 // @vitest-environment jsdom
 // 窗口底色跟随主题。见同目录 README。
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { act, cleanup, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WINDOW_CHANNELS } from '../../../electron/shared/window-channels';
 import { WINDOW_BACKGROUND_COLORS } from '../../../electron/shared/window-background';
 
 type InvokeHandler = (event: { sender: object; senderFrame: unknown }, raw: unknown) => Promise<unknown>;
 
 const h = vi.hoisted(() => ({
+  // notify-theme 会把主题写进 userData:指向临时目录(下方 mkdtempSync),不写真实 /tmp
+  userData: '',
   handlers: new Map<string, InvokeHandler>(),
   windows: [] as Array<{ setBackgroundColor: ReturnType<typeof vi.fn>; isDestroyed: () => boolean }>,
   notifyTheme: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock('electron', () => ({
-  app: { getPath: vi.fn(() => '/tmp'), on: vi.fn() },
+  app: { getPath: vi.fn(() => h.userData), on: vi.fn() },
   ipcMain: {
     handle: vi.fn((channel: string, handler: InvokeHandler) => {
       h.handlers.set(channel, handler);
@@ -36,6 +39,9 @@ import {
 } from '../../../electron/main/ipc/window.ipc';
 import { ThemeProvider, useTheme } from '@/theme';
 import { WindowBackgroundSync } from '@/theme/WindowBackgroundSync';
+
+h.userData = mkdtempSync(join(tmpdir(), 'continuo-wbt-'));
+afterAll(() => rmSync(h.userData, { recursive: true, force: true }));
 
 const read = (rel: string): string => readFileSync(resolve(__dirname, '../../..', rel), 'utf-8');
 const surface = (css: string, sel: ':root' | '.dark'): string => {
@@ -114,7 +120,7 @@ describe('renderer:WindowBackgroundSync 上报 resolved 主题', () => {
     return null;
   }
 
-  it('挂载上报当前主题,切换主题再上报', async () => {
+  it('挂载上报当前主题与模式,切换主题再上报', async () => {
     let setMode: ((m: 'light' | 'dark') => void) | null = null;
     await act(async () => {
       render(
@@ -124,11 +130,12 @@ describe('renderer:WindowBackgroundSync 上报 resolved 主题', () => {
         </ThemeProvider>,
       );
     });
-    expect(h.notifyTheme).toHaveBeenLastCalledWith('dark');
+    // 第二参 = 主题模式(system 时 main 冷启动按 OS 外观决定首窗底色)
+    expect(h.notifyTheme).toHaveBeenLastCalledWith('dark', 'dark');
     await act(async () => {
       setMode!('light');
     });
-    expect(h.notifyTheme).toHaveBeenLastCalledWith('light');
+    expect(h.notifyTheme).toHaveBeenLastCalledWith('light', 'light');
   });
 
   it('上报失败(reject)只 warn,不抛', async () => {

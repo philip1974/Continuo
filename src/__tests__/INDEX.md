@@ -1676,7 +1676,9 @@
 
 ## [窗口底色跟随主题(主进程 BrowserWindow backgroundColor)](./window-background-theme/README.md)
 
+- [`initial-theme.spec.ts`](./window-background-theme/initial-theme.spec.ts)
 - [`window-background-theme.spec.tsx`](./window-background-theme/window-background-theme.spec.tsx)
+- [`window-theme-persist.spec.ts`](./window-background-theme/window-theme-persist.spec.ts)
 
 ## [拖文件夹到窗口(`pickDroppedDirectory`)](./window-drop/README.md)
 

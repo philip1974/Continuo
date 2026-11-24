@@ -24,7 +24,8 @@ import {
 import { codedError, errorMessage, thrownFields } from '../../shared/error-message';
 import { mapNodeErrnoCode } from './fs/path-utils';
 import { windowSeqCount } from '../services/window-seq.service';
-import { WINDOW_BACKGROUND_COLORS, type ResolvedTheme } from '../../shared/window-background';
+import { WINDOW_BACKGROUND_COLORS } from '../../shared/window-background';
+import { getWindowTheme, setWindowTheme } from '../services/window-theme.service';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
@@ -127,15 +128,17 @@ const NotifyRootInput = z
 const NotifyThemeInput = z
   .object({
     theme: z.enum(['light', 'dark']),
+    // 主题模式(可缺省):system 时 main 冷启动按 OS 当前外观决定首窗底色
+    mode: z.enum(['light', 'dark', 'system']).optional(),
   })
   .strict();
 
-// 最近一次 renderer 上报的主题(主题设置所有窗口共享)。进程冷启动、尚无上报时 = 默认主题(dark)。
-let windowTheme: ResolvedTheme = 'dark';
-
-/** 新建主窗 / popout 用的底色:最近上报主题的画布色(VSCode ThemeMainService.getBackgroundColor 同思路)。 */
+/**
+ * 新建主窗 / popout 用的底色:最近上报(冷启动时 = 上次持久化)主题的画布色
+ * (VSCode ThemeMainService.getBackgroundColor 同思路,见 window-theme.service)。
+ */
 export function currentWindowBackgroundColor(): string {
-  return WINDOW_BACKGROUND_COLORS[windowTheme];
+  return WINDOW_BACKGROUND_COLORS[getWindowTheme()];
 }
 
 export function registerWindowIpc(deps: WindowIpcDeps): void {
@@ -159,10 +162,10 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     setWorkspaceRoot(win.id, root);
   });
-  // 主题变化:记住并把所有已开窗口(主窗 + popout)的底色改为对应画布色。
+  // 主题变化:记住(并持久化到 userData,供下次冷启动首窗)并把所有已开窗口(主窗 + popout)的底色改为对应画布色。
   safeHandle(WINDOW_CHANNELS.NOTIFY_THEME, NotifyThemeInput, (input) => {
-    windowTheme = input.theme;
-    const color = WINDOW_BACKGROUND_COLORS[windowTheme];
+    setWindowTheme(input);
+    const color = WINDOW_BACKGROUND_COLORS[input.theme];
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.setBackgroundColor(color);
     }

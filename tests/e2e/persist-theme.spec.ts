@@ -1,11 +1,11 @@
 import { LIGHT_THEME, SETTINGS, SETTINGS_NAV } from './helpers/settings';
-// 主题切换持久化:set light → 关 app → 同 userDataDir 重启 → 仍 light.
+// 主题切换持久化:set light → 关 app → 同 userDataDir 重启 → 仍 light(首帧 class 与持久化的窗口底色主题也是 light).
 //
 // 默认 fixture 每个 spec 启全新 app + 用 afterEach 删 userDataDir。
 // 这里手动管 userDataDir + 启两次 Electron,验证 theme 持久化.
 
 import { expect, test } from '@playwright/test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { waitForAppReady } from './helpers/app-ready';
@@ -39,10 +39,19 @@ test('theme=light 持久化:重启同 userData 仍 light', async () => {
 
     await app1.close();
 
+    // 主进程把主题持久化到 userData,下次冷启动首个窗口的 backgroundColor 用它(不先闪深色)
+    expect(JSON.parse(readFileSync(path.join(ud, 'window-theme.json'), 'utf-8'))).toMatchObject({
+      theme: 'light',
+      mode: 'light',
+    });
+
     // ── 第二次启动同 userData ──
     const app2 = await launchContinuo(ud);
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
+
+    // 冷启动首帧不闪深色:入口模块(main.tsx)在 DOMContentLoaded 前就按设置值去掉 dark class(不等 React)。
+    expect(await win2.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(false);
 
     // 重启后仍 light
     await expect(win2.locator('html')).not.toHaveClass(/dark/);
