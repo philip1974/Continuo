@@ -199,3 +199,33 @@ describe('待重启记录跨入口 / 跨页共享', () => {
     expect(container.textContent).not.toContain('p.shared');
   });
 });
+
+// 别的窗口卸载了本窗口记为「待重启」的插件:本窗口列表里没有它,列表订阅不会触发摘除 —— 卸载广播须直接清记录,
+// 否则市场卡片 / 设置页留下幽灵待重启行。
+describe('跨窗口卸载广播清除待重启记录', () => {
+  it('wirePluginEvents 收到 onUninstalled(id) → 清掉该 id 的记录', async () => {
+    const { wirePluginEvents } = await import('../../plugins/plugin-events');
+    const { recordPendingInstall, usePendingInstalls } = await import('../../plugins/pending-installs-store');
+    recordPendingInstall({ id: 'com.x.ghost', name: 'G', version: '1.0.0' });
+    expect(usePendingInstalls.getState().byId.has('com.x.ghost')).toBe(true);
+    let uninstalled!: (id: string) => void;
+    wirePluginEvents(
+      {
+        reload: vi.fn(async () => {}),
+        handleUninstalled: vi.fn(async () => {}),
+        handleEnabledChanged: vi.fn(async () => {}),
+      } as never,
+      {
+        onChanged: () => {},
+        onUninstalled: (cb) => {
+          uninstalled = cb;
+        },
+        onEnabledChanged: () => {},
+      },
+      () => {},
+    );
+    uninstalled('com.x.ghost');
+    expect(usePendingInstalls.getState().byId.has('com.x.ghost')).toBe(false);
+  });
+});
+
