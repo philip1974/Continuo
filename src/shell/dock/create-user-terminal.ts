@@ -69,9 +69,13 @@ export async function createUserTerminal(
     if (!r.ok) {
       // 退出闸(终审 P1):退出清理开始后 main 以 CANCELLED 拒绝新建;窗口已隐藏,静默即可(同下方 catch)。
       if (r.code === ERROR_CODES.TERMINAL_CREATE_CANCELLED) return null;
+      // main 对「未传 cwd」与「cwd 不存在 / 不是目录」同返 CWD_UNRESOLVED:传了 cwd(workspace root 被外部删除 / 改名 /
+      // 外置盘断开,或 Explorer「在终端中打开」已删目录)时不能提示「请先打开 workspace」。
       const msg =
         r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
-          ? t('errors.terminal.cwd_unresolved')
+          ? cwd === undefined
+            ? t('errors.terminal.cwd_unresolved')
+            : t('errors.terminal.cwd_missing', { path: cwd })
           : t('errors.terminal.create_failed', { code: r.code ?? '?' });
       notify.error(msg, { code: r.code });
       return null;

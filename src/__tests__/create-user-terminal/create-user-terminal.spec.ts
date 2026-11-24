@@ -109,6 +109,16 @@ describe('createUserTerminal — 共用创建流程', () => {
     expect(mocks.setPendingFocus).not.toHaveBeenCalled();
   });
 
+  // 传了 cwd(root 被外部删除 / Explorer「在终端中打开」已删目录)时 main 同返 CWD_UNRESOLVED:不能提示「请先打开 workspace」。
+  it('传入 cwd 时 CWD_UNRESOLVED → 提示目录不存在(带路径),不提示先打开 workspace', async () => {
+    mocks.create.mockResolvedValue({ ok: false, code: 'TERMINAL_CWD_UNRESOLVED' });
+
+    expect(await createUserTerminal({ cwd: '/gone/dir' })).toBeNull();
+    const msg = String(mocks.notifyError.mock.calls[0]?.[0]);
+    expect(msg).toContain('/gone/dir');
+    expect(msg).not.toContain('workspace');
+  });
+
   it('通用失败 → notify.error 带 code + 返 null', async () => {
     mocks.create.mockResolvedValue({ ok: false, code: 'OTHER' });
 

@@ -379,6 +379,7 @@ export const en = {
 
   // errors.* topic-19 (4)
   'errors.terminal.cwd_unresolved': 'Please open a workspace first',
+  'errors.terminal.cwd_missing': 'Directory does not exist or is not accessible: {path}',
   'errors.terminal.create_failed': 'Failed to create terminal: {code}',
   // a11y(A128):feedback when closing a terminal panel fails to terminate its session.
   'errors.terminal.remove_failed': 'Failed to close terminal: {code}',

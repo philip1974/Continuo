@@ -363,6 +363,7 @@ export const ko: Record<TranslationKey, string> = {
 
   // errors.* topic-19
   'errors.terminal.cwd_unresolved': '먼저 워크스페이스를 여세요',
+  'errors.terminal.cwd_missing': '디렉터리가 없거나 접근할 수 없습니다: {path}',
   'errors.terminal.create_failed': '터미널 생성 실패: {code}',
   'errors.terminal.remove_failed': '터미널 닫기 실패: {code}',
   'errors.terminal.sessions_restore_failed': '터미널 세션 복원 실패',

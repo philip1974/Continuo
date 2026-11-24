@@ -13,7 +13,7 @@ HeaderActions 注释也明写「同 TerminalPlugin.terminal.new」=平行实现�
 - 先 `await waitForWorkspaceRootRestored()`(冷启动竞态:root=null → TERMINAL_CWD_UNRESOLVED,R10;只需 root 已恢复,不等编辑器 tab 恢复读盘,见 `startup-critical-path`)
 - 读 `useWorkspaceStore.getState().root` 作 workspaceRoot;`cwd = opts.cwd ?? workspaceRoot` →
   `create({ originHint:'user', cwd?, workspaceRoot?, env? })`(各字段有值才带;root 与 opts.cwd 都为空 → 不带 cwd/workspaceRoot)
-- 失败 → `notify.error`(CWD_UNRESOLVED 给 workspace 引导,否则带 code)+ 返回 `null`,不 focus
+- 失败 → `notify.error`(CWD_UNRESOLVED:未传 cwd 时给 workspace 引导,传了 cwd(root 已被外部删除 / 外置盘断开 / 「在终端中打开」已删目录)时提示「目录不存在或不可访问:{path}」;否则带 code)+ 返回 `null`,不 focus
 - `TERMINAL_CREATE_CANCELLED`(用户关 tab 取消 / 退出闸拒绝)→ 无论 `{ok:false}` 还是 reject 都静默返回 `null`,不 notify
 - 成功有 id → `setPendingFocus(id)` + 返回 id;成功无 id → 返回 `null`,不 focus
 

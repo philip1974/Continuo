@@ -361,6 +361,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // errors.* topic-19
   'errors.terminal.cwd_unresolved': '请先打开 workspace',
+  'errors.terminal.cwd_missing': '目录不存在或不可访问:{path}',
   'errors.terminal.create_failed': '无法新建终端：{code}',
   'errors.terminal.remove_failed': '关闭终端失败：{code}',
   'errors.terminal.sessions_restore_failed': '恢复终端会话失败',
