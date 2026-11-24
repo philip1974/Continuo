@@ -117,3 +117,26 @@ describe('theme.css 单层色板与 @theme inline 链路', () => {
     }
   });
 });
+
+// 终端背景 / 窗口首帧底色 = 画布色(--md-surface)。三处须用字面 hex(xterm 只收 #RRGGBB;BrowserWindow 在 renderer
+// 绘制前就要底色),故钉住与 token 一致,改画布色时此处提醒同步。
+describe('终端与窗口底色跟随画布色(--md-surface)', () => {
+  const surface = (block: string): string => block.match(/--md-surface:\s*(#[0-9a-f]{6});/i)?.[1] ?? '';
+  const read = (rel: string): string => readFileSync(resolve(__dirname, '../..', rel), 'utf-8');
+
+  it('终端 DARK_THEME / LIGHT_THEME 的 background = .dark / :root 的 --md-surface', () => {
+    const src = read('panels/Terminal/useTerminal.ts');
+    const bg = (name: string): string =>
+      src.match(new RegExp(`const ${name}: ITheme = \\{[\\s\\S]*?background: '(#[0-9a-f]{6})'`, 'i'))?.[1] ?? '';
+    expect(bg('DARK_THEME')).toBe(surface(getDarkBlock(DESIGN_TOKENS)));
+    expect(bg('LIGHT_THEME')).toBe(surface(getRootBlock(DESIGN_TOKENS)));
+  });
+
+  it('窗口首帧底色(WINDOW_BACKGROUND_COLOR,默认暗色)= .dark 的 --md-surface', () => {
+    const src = read('../electron/main/index.ts');
+    const color = src.match(/const WINDOW_BACKGROUND_COLOR = '(#[0-9a-f]{6})'/i)?.[1];
+    expect(color).toBe(surface(getDarkBlock(DESIGN_TOKENS)));
+    expect(src).not.toMatch(/backgroundColor:\s*'#/); // 两处窗口都经常量
+  });
+});
+

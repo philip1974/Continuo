@@ -522,6 +522,12 @@ function wireWindowCloseFlush(win: BrowserWindow): void {
  * 主窗加载的 dev server URL(仅 dev 且 ELECTRON_RENDERER_URL 可解析;否则 null → loadFile)。主窗加载方式、
  * 自有入口判定(isOwnRendererUrl)与受信 dev origin 三处共用 —— 三者分叉即重现「popout 全拒」或误信 dev origin。
  */
+/**
+ * 窗口首帧(renderer 尚未绘制)的底色 = 默认暗色主题的画布色(design-tokens.css `.dark` 的 --md-surface),
+ * 与随后渲染的界面同色、无闪色。主窗与 popout 子窗共用。
+ */
+const WINDOW_BACKGROUND_COLOR = '#11131b';
+
 function devRendererUrl(): URL | null {
   return isDev ? parseDevRendererUrl(process.env['ELECTRON_RENDERER_URL']) : null;
 }
@@ -570,7 +576,7 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
       overrideBrowserWindowOptions: {
         width: 800,
         height: 600,
-        backgroundColor: '#020617',
+        backgroundColor: WINDOW_BACKGROUND_COLOR,
         // 子窗口用系统默认标题栏:
         //   - 给用户一个明确的可拖区域(主窗口 hiddenInset 把 Continuo 文字
         //     做成可拖,popout 子窗里没有这条,需要原生 titlebar)
@@ -650,7 +656,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     // 上它是未定义行为,可能导致 chrome 显示异常 → 非 darwin 用 'default' 原生标题栏。
     // (Windows/Linux 的自定义 chrome + 窗口控件 overlay 精修留作 follow-up。跨平台审计 P2)
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    backgroundColor: '#020617',
+    backgroundColor: WINDOW_BACKGROUND_COLOR,
     webPreferences: buildCommonWebPreferences({ preload: PRELOAD }),
   });
 

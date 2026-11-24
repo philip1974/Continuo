@@ -70,9 +70,11 @@ export interface SearchApi {
   readonly clearActiveDecoration: () => void;
 }
 
-// GitHub Dark 调色板(原 Mind 暗色)
+// GitHub Dark 调色板(原 Mind 暗色)。background = 画布色(design-tokens.css `.dark` 的 --md-surface),终端与
+// 周围面板同底色;字面值(xterm 只收 #RRGGBB,主题切换时子组件 effect 早于 <html> class 切换,运行时读 token 会
+// 读到旧主题)由 terminal-theme-canvas 规范守护与 token 一致。
 const DARK_THEME: ITheme = {
-  background: '#020617',
+  background: '#11131b',
   foreground: '#e6edf3',
   cursor: '#f8fafc',
   selectionBackground: 'rgba(82, 139, 255, 0.32)',
@@ -118,7 +120,8 @@ const DARK_THEME: ITheme = {
 //   非 AA 但可读;commit body 显式声明此点,不谎称达 AA。
 //   构造时 + theme effect 同步 set,避免主题切换残留旧值。
 const LIGHT_THEME: ITheme = {
-  background: '#ffffff',
+  // = 画布色(design-tokens.css `:root` 的 --md-surface),同 DARK_THEME。
+  background: '#fffbff',
   foreground: '#1f2328',
   cursor: '#0969da',
   selectionBackground: 'rgba(82, 139, 255, 0.24)',
