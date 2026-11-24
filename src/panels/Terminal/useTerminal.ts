@@ -37,7 +37,7 @@ import {
   consumeMappedKeyOnData,
   createMappedKeyState,
 } from '@continuo-terminal/react-terminal';
-import { isTerminalSearchHotkey, isTerminalZoomHotkey } from './terminal-hotkeys';
+import { isTerminalSearchHotkey, isTerminalZoomHotkey, runTerminalZoomFromKey } from './terminal-hotkeys';
 import { createOutputCoalescer } from './output-coalescer';
 import { installTerminalPasteSanitizer } from './terminal-paste-sanitize';
 import {
@@ -497,7 +497,10 @@ export function useTerminal(termId: string) {
       }
       // topic-22: 缩放热键(生效绑定,默认 shift+mod+enter,按平台)让 xterm 不发 \r,document keydown
       // 派发 terminal.zoom.toggle 命令。pending 不污染(命中即 return false 跳过)。
-      if (isTerminalZoomHotkey(event)) return false;
+      if (isTerminalZoomHotkey(event)) {
+        runTerminalZoomFromKey(event);
+        return false;
+      }
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
       return true;
     });

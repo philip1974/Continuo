@@ -5,11 +5,16 @@
 // 命中后 customKeyEventHandler return false → xterm 不发 \r 到 PTY,
 // document keydown bubble 到 useCommandHotkeys 派发 terminal.zoom.toggle。
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { shouldSkipXtermKey } from '@continuo-terminal/react-terminal';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { isTerminalSearchHotkey, isTerminalZoomHotkey } from '../../panels/Terminal/terminal-hotkeys';
+import {
+  isTerminalSearchHotkey,
+  isTerminalZoomHotkey,
+  runTerminalZoomFromKey,
+} from '../../panels/Terminal/terminal-hotkeys';
+import { coApp } from '../../plugins/co-app';
 
 function makeKey(init: Partial<KeyboardEventInit> & { type?: string; isComposing?: boolean }) {
   const type = init.type ?? 'keydown';
@@ -121,6 +126,23 @@ describe('终端让出热键按生效绑定(含用户改绑 / 解绑)', () => {
     expect(isTerminalSearchHotkey(f({ key: 'f', ctrlKey: true }), 'other', { 'terminal.search.toggle': '' })).toBe(false);
     expect(isTerminalSearchHotkey(f({ key: 'f', metaKey: true }), 'mac', {})).toBe(true);
     expect(isTerminalSearchHotkey(f({ key: 'f', metaKey: true, shiftKey: true }), 'mac', {})).toBe(false);
+  });
+});
+
+// 终端判中缩放键时直接执行命令并截住冒泡:绑定改成无 ctrl/meta/alt 的键(F2 等)时,全局分发对来自 xterm textarea
+// 的事件放行(A64),只靠冒泡会被吞;截住冒泡也避免带修饰键的绑定被执行两次。
+describe('runTerminalZoomFromKey', () => {
+  it('执行已注册的缩放命令,并 preventDefault + stopPropagation', async () => {
+    const fn = vi.fn();
+    const dispose = coApp.commands.register({ id: 'terminal.zoom.toggle', title: 'Zoom', fn });
+    const ev = new KeyboardEvent('keydown', { key: 'F2', cancelable: true, bubbles: true });
+    const stop = vi.spyOn(ev, 'stopPropagation');
+    runTerminalZoomFromKey(ev);
+    await Promise.resolve();
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(stop).toHaveBeenCalled();
+    dispose.dispose();
   });
 });
 
