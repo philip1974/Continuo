@@ -72,13 +72,33 @@ function isLexicallyWithin(root: string, probe: string): boolean {
 // 找符号链接叶子的磁盘条目名时最多扫描的目录条目数;只对「父目录是受保护根祖先」的目录生效,超限 fail-closed。
 const ON_DISK_NAME_SCAN_LIMIT = 10_000;
 
-/** realpath;路径尚不存在时解析最近的已存在上级,其余各级原样接上(同 canonicalizeScopePath 的回退)。 */
+/**
+ * realpath;路径尚不存在时解析最近的已存在上级,其余各级原样接上。与 path-resolve.helper 的 realpathExistingAncestor
+ * 不同:这里先解析完整路径本身(受保护根判定要跟随叶子链接)。同步版只用于构造期;check() 失败路径用异步版,不在
+ * main 线程上逐级同步 realpath(网络盘 / 失联挂载会卡住整个 main)。
+ */
 function realpathOrExistingAncestorSync(absolute: string): string {
   const missing: string[] = [];
   let current = absolute;
   for (;;) {
     try {
       return join(realpathSync.native(current), ...missing);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return absolute;
+      missing.unshift(current.slice(parent.length).replace(/^[\\/]+/, ''));
+      current = parent;
+    }
+  }
+}
+
+/** realpathOrExistingAncestorSync 的异步版(同一规则)。 */
+async function realpathOrExistingAncestor(absolute: string): Promise<string> {
+  const missing: string[] = [];
+  let current = absolute;
+  for (;;) {
+    try {
+      return join(await fs.realpath(current), ...missing);
     } catch {
       const parent = dirname(current);
       if (parent === current) return absolute;
@@ -570,7 +590,7 @@ export class PathScopeRegistry {
       // 解析失败时,错误会区分「目标 / 父目录不存在」—— 其下存在的路径却是统一拒绝,合起来就能探测受保护根里
       // 有哪些文件。失败路径上按「最近的已存在上级 realpath + 其余各级」再判一次,落在受保护根内 → 同一条拒绝。
       if (err instanceof ScopeError && this.protectedKeys.length > 0) {
-        const nearest = realpathOrExistingAncestorSync(lexical);
+        const nearest = await realpathOrExistingAncestor(lexical);
         if (this.isProtectedPath(nearest) || (await this.inodeDenial(nearest, false, opType)) !== null) {
           throw this.denyProtected(pluginId, opType, 'unresolvable path inside a protected app directory', nearest, target, mode, scopes.length);
         }
