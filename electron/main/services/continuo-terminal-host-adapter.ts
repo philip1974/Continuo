@@ -15,18 +15,14 @@ export interface ContinuoMcpEnvInput {
 export interface ContinuoMcpEnvResult {
   readonly env: Record<string, string>;
   readonly mcpToken: string;
-  readonly subject: string;
 }
 
 /**
  * M4 downscoped adapter (design review decision: proceed with downscope):
  * bridge generic host terms to Continuo's legacy env contract without
  * replacing createMcpHost or its window-scoped token/auth behavior.
+ * (调用方身份由 MCP token / stdio 连接自身决定,这里不另产出 subject。)
  */
-export function subjectForWindow(windowId: number): string {
-  return `window-${windowId}`;
-}
-
 export function toLegacyContinuoEnv(
   generic: Pick<AgentEnv, 'MCP_URL' | 'MCP_TOKEN'>,
   windowId: number,
@@ -56,6 +52,5 @@ export function createContinuoMcpEnv({
   return {
     env: stdioSocketPath === undefined ? env : { ...env, CONTINUO_MCP_SOCKET: stdioSocketPath },
     mcpToken,
-    subject: subjectForWindow(windowId),
   };
 }

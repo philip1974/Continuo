@@ -2,16 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createContinuoMcpEnv,
-  subjectForWindow,
   toLegacyContinuoEnv,
 } from '../../../electron/main/services/continuo-terminal-host-adapter';
 import type { AgentEnv } from '@continuo-terminal/host';
 
 describe('M4 Continuo host adapter', () => {
-  it('maps a window id to a generic subject', () => {
-    expect(subjectForWindow(42)).toBe('window-42');
-  });
-
   it('preserves the legacy CONTINUO_* env contract byte-for-byte', () => {
     const issued: number[] = [];
     const result = createContinuoMcpEnv({
@@ -32,7 +27,6 @@ describe('M4 Continuo host adapter', () => {
         CONTINUO_HOST: 'desktop',
       },
       mcpToken: 'token-42',
-      subject: 'window-42',
     });
   });
 
