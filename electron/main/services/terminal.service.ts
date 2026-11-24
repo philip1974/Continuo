@@ -21,6 +21,7 @@ import { TERMINAL_CHANNELS, type TerminalHistorySnapshot } from '../../shared/te
 import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
+import { CONTINUO_HOOK_EVENTS_DIR_ENV } from '../lib/continuo-env-keys';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow(截断 + 100ms 合批)
@@ -497,7 +498,7 @@ export async function createTerminal(
     throw createRejectedQuittingError();
   }
   const envWithHookEvents = mergeSpawnEnv(shellEnv, {
-    CONTINUO_HOOK_EVENTS_DIR: hookEventsDirFor(app.getPath('userData')),
+    [CONTINUO_HOOK_EVENTS_DIR_ENV]: hookEventsDirFor(app.getPath('userData')),
     // 正确性(会话绑定):managed Stop hook 把它写进事件文件名,broker 据此只把 Stop 事件交给本会话的
     // await_stop_hook 等待者(不按 cwd 串给同窗口他会话)。放在 shellEnv 之后,用户 env 不能覆盖。
     // 非安全边界:会话内进程可改写该变量或直接读写 hook-events 目录,这里只防事件串会话。

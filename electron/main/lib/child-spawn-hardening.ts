@@ -25,6 +25,7 @@
 
 import { lstatSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { CONTINUO_MCP_TOKEN_ENV } from './continuo-env-keys';
 
 /** 强制覆盖的 git 配置(命令行作用域)。只有 fsmonitor:其余执行命令的 git 配置见文件头「覆盖范围」。 */
 const GIT_HARDENING_CONFIG: readonly (readonly [string, string])[] = [['core.fsmonitor', 'false']];
@@ -78,7 +79,7 @@ export const GIT_OFFLINE_ENV: Readonly<
  * 只列机密:CONTINUO_MCP_SOCKET(路径,本就可由 userData 推得;连上仍需 hello token)、CONTINUO_WINDOW_ID /
  * CONTINUO_TERMINAL_SESSION_ID(标识符,无 token 不能据以调用)不是凭据,保留以免破坏依赖它们定位实例的工具。
  */
-export const INTERNAL_SECRET_ENV_KEYS: readonly string[] = Object.freeze(['CONTINUO_MCP_TOKEN']);
+export const INTERNAL_SECRET_ENV_KEYS: readonly string[] = Object.freeze([CONTINUO_MCP_TOKEN_ENV]);
 
 function stripEnvKeys(env: NodeJS.ProcessEnv, keys: readonly string[], platform: NodeJS.Platform): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = { ...env };

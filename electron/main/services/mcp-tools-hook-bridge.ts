@@ -43,6 +43,7 @@ import { SESSION_ID_MAX } from '../../shared/session-id-limits';
 import { isEcmaWhitespaceCode } from '../../shared/ecma-whitespace';
 import { equalsAsciiIgnoreCase } from '../../shared/lower-if-needed';
 import { codedError } from '../../shared/error-message';
+import { CONTINUO_HOOK_EVENTS_DIR_ENV } from '../lib/continuo-env-keys';
 
 // 边界(E203,mcp-tools-terminal 同族):协议 awaitStopHookInputSchema 的 session_id 仅 min(1) 无上限。
 // 1MB session_id 校验通过后进 broker / Map / 错误回显路径(回显已截断 E151,但运行期仍处理超长 key)。
@@ -982,7 +983,7 @@ function refuseUnsafeConfigPath(configPath: string): InstallStopHookResult {
 // 两种 runner 的 hook 均由 POSIX shell 执行(命令本身已依赖 `$(date +%s%N)`),无 Windows cmd 分支。
 const HOOK_UMASK_PREFIX = 'umask 077; ';
 
-const HOOK_EVENTS_DIR_ENV = 'CONTINUO_HOOK_EVENTS_DIR';
+const HOOK_EVENTS_DIR_ENV = CONTINUO_HOOK_EVENTS_DIR_ENV;
 
 /**
  * 两种 runner 的 hook 命令共用前缀,到事件文件名之前为止(以 `cat > "$d/` 结尾,调用方接文件名与闭合的 `"`)。

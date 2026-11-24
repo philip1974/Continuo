@@ -1,4 +1,5 @@
 import type { AgentEnv } from '@continuo-terminal/host';
+import { CONTINUO_MCP_TOKEN_ENV } from '../lib/continuo-env-keys';
 
 export interface ContinuoMcpEnvInput {
   readonly windowId: number;
@@ -32,7 +33,7 @@ export function toLegacyContinuoEnv(
 ): Record<string, string> {
   return {
     CONTINUO_MCP_URL: generic.MCP_URL,
-    CONTINUO_MCP_TOKEN: generic.MCP_TOKEN,
+    [CONTINUO_MCP_TOKEN_ENV]: generic.MCP_TOKEN,
     CONTINUO_WINDOW_ID: String(windowId),
     CONTINUO_HOST: 'desktop',
   };
