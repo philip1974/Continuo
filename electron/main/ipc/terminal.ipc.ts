@@ -4,7 +4,6 @@
 
 import { app, BrowserWindow } from 'electron';
 import * as crypto from 'node:crypto';
-import * as fs from 'node:fs';
 import { z } from 'zod';
 import {
   safeHandleWithWindow,
@@ -38,6 +37,7 @@ import type { TerminalSessionSnapshot } from '../../shared/terminal-session';
 import { arraysEqual } from '../../shared/array-equal';
 import { TERMINAL_WRITE_MAX_BYTES } from '../../shared/terminal-session-limits';
 import { discardTerminalSession } from '../services/terminal-discard';
+import { statDirGated } from '../lib/dir-stat-gate';
 
 // ── 常量 ─────────────────────────────────────────────────────
 const MAX_WRITE_BYTES = TERMINAL_WRITE_MAX_BYTES; // 真实 UTF-8 字节上限(下游 PTY/IPC 写入按字节,边界语义统一)
@@ -282,13 +282,15 @@ export function makeAgentCreateSession(deps?: {
 }
 
 // 性能:单次异步 stat(不存在即 reject)取代同步 existsSync + statSync —— 网络盘 / 休眠外置盘 / 失联挂载点
-// 上同步 fs 调用会卡住 Electron main(所有窗口与 IPC)。语义不变:缺省 / 不存在 / 非目录均 TERMINAL_CWD_UNRESOLVED。
+// 上同步 fs 调用会卡住 Electron main(所有窗口与 IPC)。并经目录判定全局闸 statDirGated(lib/dir-stat-gate):连按
+// Cmd+T / agent 连续 create_session 指向失联卷时,不可取消的 stat 不会占满 libuv 线程池拖住保存 / listDir / 持久化。
+// 语义不变:缺省 / 不存在 / 非目录均 TERMINAL_CWD_UNRESOLVED。
 export async function resolveTerminalCwd(cwdHint?: string): Promise<string> {
   if (!cwdHint) {
     throw codedError(ERROR_CODES.TERMINAL_CWD_UNRESOLVED, 'terminal cwd unresolved (no hint)');
   }
   try {
-    if ((await fs.promises.stat(cwdHint)).isDirectory()) {
+    if ((await statDirGated(cwdHint)).isDirectory()) {
       return cwdHint;
     }
   } catch {

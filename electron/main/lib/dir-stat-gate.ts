@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 
 // 性能(第 6 轮审计):fs.promises 全部跑在 libuv 线程池(默认 4 线程)。目录存在性判定指向失联 /
 // 休眠挂载点时单次 stat 可卡数秒,在途 ≥4 即占满线程池,所有 fs.promises(保存、listDir、持久化)
-// 跟着排队。三处「目录判定 stat」(open-file / 新窗口打开文件夹 / 启动恢复)共用这一个全局闸,
+// 跟着排队。各处「目录判定 stat」(open-file / 新窗口打开文件夹 / 启动恢复 / 新建终端 cwd)共用这一个全局闸,
 // 最多占一半线程,其余留给正常文件 I/O。
 
 export interface Semaphore {

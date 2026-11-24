@@ -51,6 +51,16 @@ describe('window-workspace-roots-map: terminal cwd fallback errors', () => {
     });
   });
 
+  // 目录判定 stat 经全局闸(lib/dir-stat-gate,与 open-file / 新窗口打开文件夹共用;闸行为由 dir-stat-gate.test 覆盖)。
+  it('T14a: resolveTerminalCwd 经 statDirGated,不直接 fs.promises.stat', () => {
+    const src = fs.readFileSync(path.join(process.cwd(), 'electron/main/ipc/terminal.ipc.ts'), 'utf8');
+    const start = src.indexOf('export async function resolveTerminalCwd(');
+    const body = src.slice(start, src.indexOf('\n}\n', start));
+    expect(start).toBeGreaterThan(0);
+    expect(body).toMatch(/await statDirGated\(cwdHint\)/);
+    expect(body).not.toMatch(/promises\.stat\(/);
+  });
+
   it('T14: resolveTerminalCwd(valid absolute dir) resolves it(异步,不同步阻塞)', async () => {
     const p = resolveTerminalCwd(os.tmpdir());
     expect(p).toBeInstanceOf(Promise);
