@@ -8,6 +8,7 @@
 import { EditorView } from '@codemirror/view';
 import DOMPurify from 'dompurify';
 import { t } from '@/i18n';
+import { errorMessage } from '@shared/error-message';
 
 type ApplyPreview = (value: null | string | HTMLElement) => void;
 
@@ -247,7 +248,7 @@ function escapeHtml(value: string): string {
 }
 
 function errorHtml(err: unknown): string {
-  const detail = err instanceof Error ? err.message : String(err);
+  const detail = errorMessage(err);
   return `<pre class="continuo-mermaid-error">${escapeHtml(
     `${t('panels.editor.mermaid.renderError')}\n${detail}`,
   )}</pre>`;

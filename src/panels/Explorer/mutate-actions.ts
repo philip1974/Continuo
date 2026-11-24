@@ -91,13 +91,8 @@ export async function removeItems(
     // await → unhandled rejection + 该项不计入 failures → 批量删除错误反馈漏报。归类到
     // failures(镜像 !r.ok 分支),removeItems 自此恒返回 RemoveResult 不 reject。
     if (outcome.status === 'rejected') {
-      const err = outcome.reason;
-      const code = errorCodeOf(err);
-      failures[failureCount++] = {
-        path: p,
-        code,
-        message: (err as Error)?.message ?? String(err),
-      };
+      const { code, message } = toActionFail(outcome.reason);
+      failures[failureCount++] = { path: p, code, message };
       continue;
     }
     const r = outcome.value;

@@ -14,8 +14,6 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
-import { notify } from '@/notifications/notify';
-import { localizeErrorByCode } from '@/lib/localize-error';
 import { isWindowsRuntime } from '@/lib/path-cross';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
@@ -664,7 +662,7 @@ export function useTerminal(termId: string) {
       const now = Date.now();
       if (now - lastWriteFailAt < 3000) return;
       lastWriteFailAt = now;
-      notify.error(localizeErrorByCode(code, message ?? code), { code });
+      notifyFailure({ code, message });
     };
     const onDataDisposable = term.onData((data: string) => {
       const outgoing = consumeMappedKeyOnData(__mappedKeyState__, data);

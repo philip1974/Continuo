@@ -23,6 +23,7 @@ import { useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
+import { errorMessage } from '@shared/error-message';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -183,7 +184,7 @@ function QuickOpenBody() {
         }
       } catch (err) {
         notify.error(
-          `${t('quick_open.open_failed')} ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+          `${t('quick_open.open_failed')} ${file.name}: ${errorMessage(err)}`,
         );
       }
     },
