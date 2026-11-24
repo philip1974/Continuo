@@ -277,6 +277,49 @@ describe('createWatcherPool', () => {
     expect(pool.has('/p0')).toBe(true);
     expect(pool.has('/p1')).toBe(false);
   });
+
+  // LRU 驱逐不调 onLost(持有者不会重装),若踢掉 workspace root(外部修改同步的 watcher,最早装、
+  // 之后不再刷新 LRU 位置),所有祖先目录未被 watch 的 tab 会静默收不到外部修改 → 钉住的路径不参与驱逐。
+  describe('isPinned:钉住的路径(任一窗口的 workspace root)不被 LRU 驱逐', () => {
+    const fill = (isPinned: (p: string) => boolean) => {
+      const closes = new Map<string, ReturnType<typeof vi.fn>>();
+      const creator: WatcherCreator = vi.fn((path: string) => {
+        const close = vi.fn();
+        closes.set(path, close);
+        return { close };
+      });
+      const pool = createWatcherPool(creator, undefined, isPinned);
+      return { pool, closes };
+    };
+
+    it('钉住的 root 最早装,超过上限时不被踢,踢的是最旧的非钉住项', () => {
+      const { pool, closes } = fill((p) => p === '/root');
+      pool.watch('/root', vi.fn());
+      for (let i = 1; i < MAX_WATCHERS; i++) pool.watch(`/p${i}`, vi.fn());
+
+      pool.watch('/new', vi.fn());
+      expect(pool.size()).toBe(MAX_WATCHERS);
+      expect(pool.has('/root')).toBe(true);
+      expect(closes.get('/root')).not.toHaveBeenCalled();
+      expect(pool.has('/p1')).toBe(false);
+      expect(closes.get('/p1')).toHaveBeenCalledTimes(1);
+
+      pool.watch('/new2', vi.fn()); // 再次驱逐仍跳过 root
+      expect(pool.has('/root')).toBe(true);
+      expect(pool.has('/p2')).toBe(false);
+    });
+
+    it('全部钉住(极端)时退回踢最旧者,池不超上限', () => {
+      const { pool, closes } = fill(() => true);
+      for (let i = 0; i < MAX_WATCHERS; i++) pool.watch(`/p${i}`, vi.fn());
+
+      pool.watch('/new', vi.fn());
+      expect(pool.size()).toBe(MAX_WATCHERS);
+      expect(pool.has('/p0')).toBe(false);
+      expect(closes.get('/p0')).toHaveBeenCalledTimes(1);
+      expect(pool.has('/new')).toBe(true);
+    });
+  });
 });
 
 // 性能(审计 #1):macOS/Win 上每个展开目录各有一个 recursive watcher,同一次变更被根及每个展开

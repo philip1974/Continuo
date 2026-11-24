@@ -2,13 +2,14 @@
 
 This BDD topic pins the main-process `windowId -> workspaceRoot` lookup table. It is the ingress-side sibling guard for topic-10 `terminal-session-ownership-leak`: topic-10 pins the terminal egress filter, while this topic pins the workspace-root source and lifecycle clear behavior.
 
-Behavior contract checklist T1-T34:
+Behavior contract checklist T1-T35:
 T1 `setWorkspaceRoot` writes and `getWorkspaceRoot` reads the root;
 T2 `setWorkspaceRoot(null)` deletes the mapping;
 T3 multiple windows keep independent workspace roots;
 T4a/T4b setting the same `windowId` replaces the root, and a cleared `windowId` can be rebuilt;
 T5 `clearWindow` deletes the mapping;
 T6 `_reset` clears all mappings;
+T35 `isAnyWorkspaceRoot(path)` is true when `path` equals any window's current root (platform-aware via `isSameOrInsidePath`, trailing separator tolerated, Windows case-insensitive); the fs watcher pool uses it to pin roots against LRU eviction;
 T7-T11 `NotifyRoot` IPC validates IPC_BAD_INPUT (shared IPC shell) / BAD_ROOT layering, accepts `null`, and accepts absolute roots;
 T7b rejected `BAD_ROOT` calls emit `console.warn` (malformed input is rejected by the shared IPC shell as `IPC_BAD_INPUT` without logging);
 T7c/T7d `{ ok: false }` includes a non-empty `message`, and the warning includes `winId`;

@@ -42,6 +42,8 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 import { registerFsIpc, releaseFsWatchersForWindow } from '../../../electron/main/ipc/fs.ipc';
+import { MAX_WATCHERS } from '../../../electron/main/ipc/fs/watch';
+import { setWorkspaceRoot } from '../../../electron/main/services/window-workspace-roots.service';
 
 let nextWcId = 100;
 function makeSender(windowId: number) {
@@ -129,3 +131,20 @@ describe('fs:watch · 无所属窗口', () => {
   });
 });
 
+// 外部修改同步(useExternalSyncRootWatch)依赖 workspace root 的 watcher:root 最早装、LRU 驱逐又不通知
+// 持有者重装 → 生产池须把任一窗口的当前 workspace root 钉住,满上限时踢其它最旧项。
+describe('fs:watch · workspace root 不被 LRU 驱逐', () => {
+  afterEach(() => {
+    setWorkspaceRoot(1, null);
+  });
+
+  it('窗口 root 最早 watch,之后再 watch 超过 MAX_WATCHERS 个目录,root 的 fs.watch 不被关闭', async () => {
+    const win = makeSender(1);
+    setWorkspaceRoot(1, '/proj');
+    await call(FS_CHANNELS.WATCH, win.event, '/proj');
+    for (let i = 0; i < MAX_WATCHERS; i++) await call(FS_CHANNELS.WATCH, win.event, `/proj/d${i}`);
+
+    expect(closeOf('/proj')).not.toHaveBeenCalled();
+    expect(closeOf('/proj/d0')).toHaveBeenCalledTimes(1);
+  });
+});

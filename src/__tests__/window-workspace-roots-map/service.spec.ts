@@ -4,6 +4,7 @@ import {
   _reset,
   clearWindow,
   getWorkspaceRoot,
+  isAnyWorkspaceRoot,
   setWorkspaceRoot,
 } from '../../../electron/main/services/window-workspace-roots.service';
 
@@ -53,6 +54,21 @@ describe('window workspace roots service API', () => {
     clearWindow(1);
 
     expect(getWorkspaceRoot(1)).toBeNull();
+  });
+
+  it('T35: isAnyWorkspaceRoot matches any window root (platform-aware, trailing sep tolerated)', () => {
+    setWorkspaceRoot(1, '/a');
+    setWorkspaceRoot(2, 'C:\\Code\\Proj');
+
+    expect(isAnyWorkspaceRoot('/a')).toBe(true);
+    expect(isAnyWorkspaceRoot('/a/')).toBe(true);
+    expect(isAnyWorkspaceRoot('/a/sub')).toBe(false);
+    expect(isAnyWorkspaceRoot('/b')).toBe(false);
+    expect(isAnyWorkspaceRoot('c:\\code\\proj', 'win32')).toBe(true);
+    expect(isAnyWorkspaceRoot('/A', 'linux')).toBe(false);
+
+    clearWindow(1);
+    expect(isAnyWorkspaceRoot('/a')).toBe(false);
   });
 
   it('T6: _reset clears all mappings', () => {

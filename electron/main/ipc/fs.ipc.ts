@@ -17,6 +17,7 @@ import { FS_IPC_NAME_MAX, ListDirOptionsSchema } from '../../shared/fs-list-dir-
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
+import { isAnyWorkspaceRoot } from '../services/window-workspace-roots.service';
 import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
@@ -303,7 +304,8 @@ export function notifyWatchLost(path: string, ownerIds: readonly number[]): void
   }
 }
 
-const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost);
+// 任一窗口的 workspace root 钉住不被 LRU 驱逐(外部修改同步依赖 root watcher,见 createWatcherPool isPinned)。
+const watcherPool = createWatcherPool(createFsWatcher, notifyWatchLost, isAnyWorkspaceRoot);
 
 // watch 引用按 BrowserWindow id 记账,但 renderer reload(webContents 与窗口都不变)时旧文档不会
 // unwatch,新文档又重新 watch 已展开目录 → 旧引用永不释放(折叠后 fs.watch 关不掉、持续广播、占 LRU

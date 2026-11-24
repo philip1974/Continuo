@@ -51,6 +51,8 @@ Explorer 自动反映,不需手动刷新。
 - has(path) 反映状态
 - size() 计数正确
 - 满 MAX_WATCHERS=64 时 watch 新 path → LRU 踢最早(close + 释放槽位)
+- `isPinned` 为真的路径(生产 = 任一窗口当前 workspace root)不参与驱逐,踢最旧的非钉住项;全部钉住时退回踢最旧者
+  (LRU 驱逐不调 onLost、持有者不会重装,root 被踢会让外部修改同步静默失效;也不改成驱逐走 onLost,否则重装循环抖动)
 - unwatch 不存在的 path → 无操作不抛
 
 ### `fs-watch-helpers.spec.ts`(渲染端纯函数)
@@ -108,6 +110,7 @@ macOS/Win 根目录 recursive watcher 对任意深度变更都上报其所在目
 - watch 引用按 BrowserWindow id 记账;sender 主框架非同文档导航(reload)即释放该窗口全部引用(与关窗
   `releaseFsWatchersForWindow` 同一 `unwatchByOwner` 路径),新文档重新 watch 后折叠一次即关闭 fs.watch
 - 同文档导航(hash / pushState)不释放;其它窗口对同一路径的引用不受影响
+- 生产池钉住 workspace root:root 最早 watch、之后再 watch 超过 64 个目录,root 的 fs.watch 不被关闭
 
 ## 目录列表不变的刷新不 rebuild(perf,`folder-tree-refresh-skip-unchanged.spec.tsx`)
 

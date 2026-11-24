@@ -2,7 +2,20 @@
 // terminal_create_session 无 cwd 入参时回退用。renderer 在 workspace.root 变化时
 // 通过 window:notify-root IPC 推送。窗口关闭后自动清理。
 
+import { isSameOrInsidePath } from '../lib/path-inside';
+
 const map = new Map<number, string>();
+
+/** path 是否等于任一窗口当前 workspace root(平台感知,双向包含 = 相等)。fs watcher LRU 据此钉住 root。 */
+export function isAnyWorkspaceRoot(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  for (const root of map.values()) {
+    if (isSameOrInsidePath(root, path, platform) && isSameOrInsidePath(path, root, platform)) return true;
+  }
+  return false;
+}
 
 export function setWorkspaceRoot(windowId: number, root: string | null): void {
   if (root === null) {

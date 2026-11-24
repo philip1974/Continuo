@@ -61,10 +61,15 @@ export interface WatcherPool {
 /**
  * onLost(path, ownerIds):watcher 异步失效被驱逐(evictDead)时调用,ownerIds = 驱逐前持有该 path 的窗口。
  * 持有者 renderer 仍以为已安装,须被告知才会重装(LRU 驱逐 / 正常 unwatch 不调用)。
+ *
+ * isPinned(path):为真的路径不参与 LRU 驱逐(生产 = 任一窗口当前 workspace root)。LRU 驱逐不调 onLost,
+ * 而 root watcher 最早装、之后不再刷新 LRU 位置,不钉住会第一个被踢 → 外部修改同步(useExternalSyncRootWatch)
+ * 静默失效直到切 root。不改成「驱逐也走 onLost」:被踢者重装又踢下一个,会循环抖动。
  */
 export function createWatcherPool(
   creator: WatcherCreator,
   onLost?: (path: string, ownerIds: number[]) => void,
+  isPinned?: (path: string) => boolean,
 ): WatcherPool {
   const watchers = new Map<string, { watcher: Watcher; refCount: number }>();
   const order: string[] = []; // LRU,head 是最早
@@ -150,9 +155,11 @@ export function createWatcherPool(
       // 失效回调只认**本次**创建的 watcher:迟到的 error 不能误杀同 path 之后重建的新 watcher。
       const w: Watcher = creator(path, onChange, () => evictDead(path, w));
 
-      // 满了 → LRU 踢
+      // 满了 → LRU 踢最旧的**非钉住**项;全部钉住(极端)才踢最旧者,保证不超上限。
       if (watchers.size >= MAX_WATCHERS) {
-        const oldest = order.shift();
+        let idx = isPinned ? order.findIndex((p) => !isPinned(p)) : 0;
+        if (idx < 0) idx = 0;
+        const oldest = order.splice(idx, 1)[0];
         if (oldest !== undefined) {
           watchers.get(oldest)?.watcher.close();
           watchers.delete(oldest);
