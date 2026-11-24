@@ -135,6 +135,30 @@ export function someContainmentCandidate(fp: string, visit: (key: string) => boo
   return false;
 }
 
+/** Windows 盘符绝对路径 `C:\\` / `C:/`(冒号后须紧跟分隔符;`C:relative` 是盘符相对路径,不算绝对)。 */
+export function isWindowsDriveAbsolute(p: string): boolean {
+  return (
+    p.length >= 3 &&
+    isAsciiAlphaCode(p.charCodeAt(0)) &&
+    p.charCodeAt(1) === 58 &&
+    isPathSeparatorCode(p.charCodeAt(2))
+  );
+}
+
+/** Windows UNC 路径 `\\\\server\\share`。 */
+export function isUncPath(p: string): boolean {
+  return p.charCodeAt(0) === 92 && p.charCodeAt(1) === 92;
+}
+
+/**
+ * 跨平台绝对路径判定(renderer 无 node:path):POSIX `/…`、Windows 盘符 `C:\\` / `C:/`、UNC `\\\\server\\share`。
+ * 编辑器链接解析、插件 SDK editor.openFile 守卫共用(此前定义在 Editor 内部,链接解析又把盘符 / UNC 子判断重写一遍)。
+ */
+export function isAbsolutePath(path: string): boolean {
+  if (path.length === 0) return false;
+  return path.charCodeAt(0) === 47 || isUncPath(path) || isWindowsDriveAbsolute(path);
+}
+
 /**
  * 跨平台 dirname:吃 `/` 与 `\`。先去尾部分隔符,取最后一个分隔符位置;
  * 无分隔符 → `''`(裸文件名);分隔符在 0 位(POSIX 根下直接项)→ `'/'`;

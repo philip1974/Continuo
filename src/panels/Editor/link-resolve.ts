@@ -17,8 +17,13 @@ import {
   startsWithAllowedExternalScheme,
 } from '../../../electron/shared/url-limits';
 import { FS_PATH_MAX } from '../../../electron/shared/fs-limits';
-import { isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
-import { isAbsolutePath } from './editor-path-utils';
+import {
+  isAbsolutePath,
+  isAsciiAlphaCode,
+  isPathSeparatorCode,
+  isUncPath,
+  isWindowsDriveAbsolute,
+} from '@/lib/path-cross';
 
 export type LinkTarget =
   | { kind: 'file'; absPath: string }
@@ -54,18 +59,6 @@ function hasAnyScheme(href: string): boolean {
   return false;
 }
 
-function isWindowsDriveAbsolute(p: string): boolean {
-  return (
-    p.length >= 3 &&
-    isAsciiAlphaCode(p.charCodeAt(0)) &&
-    p.charCodeAt(1) === 58 &&
-    isPathSeparatorCode(p.charCodeAt(2))
-  );
-}
-
-function isUncPath(p: string): boolean {
-  return p.charCodeAt(0) === 92 && p.charCodeAt(1) === 92;
-}
 
 function readUncRoot(
   p: string,

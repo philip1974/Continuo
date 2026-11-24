@@ -1,5 +1,5 @@
 import { t as translate } from '@/i18n';
-import { basename, isAsciiAlphaCode, isPathSeparatorCode } from '@/lib/path-cross';
+import { basename } from '@/lib/path-cross';
 
 /**
  * 编辑 tab 的显示名:有路径取 basename,草稿(无路径)用「未命名」。tab 条与关闭 / 覆盖确认框共用 —— 此前两处各写
@@ -48,20 +48,5 @@ export function isMarkdownPath(path: string): boolean {
   );
 }
 
-// 跨平台绝对路径判定(renderer 无 node:path,手写)。
-//   - POSIX:以 `/` 开头
-//   - Windows 盘符:`C:\` 或 `C:/`(冒号后必须紧跟分隔符;`C:relative` 是盘符相对路径,不算绝对)
-//   - Windows UNC:`\\server\share`
-// 旧实现只判 `/`,导致 Windows 真实绝对路径(co-app editor.openFile 守卫)全被当相对 → 插件打不开本地文件。
-export function isAbsolutePath(path: string): boolean {
-  if (path.length === 0) return false;
-  const first = path.charCodeAt(0);
-  if (first === 47) return true; // POSIX
-  if (first === 92) return path.charCodeAt(1) === 92; // UNC
-  return (
-    path.length >= 3 &&
-    isAsciiAlphaCode(first) &&
-    path.charCodeAt(1) === 58 &&
-    isPathSeparatorCode(path.charCodeAt(2))
-  );
-}
+// 跨平台绝对路径判定的单一来源在 src/lib/path-cross(旧实现只判 `/`,Windows 真实绝对路径全被当相对)。
+export { isAbsolutePath } from '@/lib/path-cross';

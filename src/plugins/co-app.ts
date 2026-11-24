@@ -30,7 +30,7 @@ import {
 } from '@/panels/Editor/editor-tab-lookup';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import type { EditorView } from '@codemirror/view';
-import { isAbsolutePath } from '@/panels/Editor/editor-path-utils';
+import { isAbsolutePath } from '@/lib/path-cross';
 import { useEditorStore, usesMilkdownEngine } from '@/stores/editor.store';
 import { errorMessage } from '../../electron/shared/error-message';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
