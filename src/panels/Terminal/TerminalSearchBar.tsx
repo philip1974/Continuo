@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
 import { clampSearchQuery } from '@/lib/search-query';
-import { isImeComposing } from '@/lib/ime';
+import { isImeComposing } from '@/design/ime';
 import type { SearchApi } from './useTerminal';
 import type { TerminalSearchOptions } from './terminal-search-state';
 

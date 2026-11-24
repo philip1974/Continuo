@@ -10,7 +10,7 @@
 import { useEffect, useRef } from 'react';
 import type React from 'react';
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
-import { isImeComposing } from '@/lib/ime';
+import { isImeComposing } from '@/design/ime';
 
 /** 单趟判断 index 是否在 virtualizer 当前渲染窗口内。 */
 export function isVirtualIndexRendered(

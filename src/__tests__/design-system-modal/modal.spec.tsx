@@ -184,6 +184,21 @@ describe('Modal — onClose 路径', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('输入法组合中的 Esc(取消候选)→ 不关闭', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal visible onClose={onClose}>
+        <button type="button">btn</button>
+      </Modal>,
+    );
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, isComposing: true }),
+      );
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('onClose 缺 + Esc → 不抛', () => {
     render(
       <Modal visible>

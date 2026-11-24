@@ -3,7 +3,7 @@ import { Document, Folder } from '@react-symbols/icons';
 import { IconButton, Input } from '@/design';
 import { useT } from '@/i18n';
 import { normalizeLeafNameInput } from './path-utils';
-import { isImeComposing } from '@/lib/ime';
+import { isImeComposing } from '@/design/ime';
 import { FS_NAME_MAX } from '../../../electron/shared/leaf-name';
 
 interface CreateInputProps {

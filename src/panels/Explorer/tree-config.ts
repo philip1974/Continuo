@@ -5,7 +5,7 @@
 import { basename, dirname } from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
 import { isSameOrInsidePath } from '@/lib/path-cross';
-import { isImeComposing } from '@/lib/ime';
+import { isImeComposing } from '@/design/ime';
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,

@@ -1,5 +1,6 @@
 import './Modal.css';
 import { useEffect, useRef, type HTMLAttributes, type ReactNode } from 'react';
+import { isImeComposing } from './ime';
 
 type ModalSize = 'sm' | 'md' | 'lg';
 
@@ -77,6 +78,9 @@ export function Modal({
       // 只有栈顶(最后打开)的 Modal 处理键盘,叠加时背后的 Modal 不被连带 Esc 关闭。
       if (modalKeyStack[modalKeyStack.length - 1] !== keyId) return;
       if (e.key === 'Escape' && onClose != null) {
+        // 输入法组合中的 Esc 是取消组合(拼音 / 日文候选),不是关闭弹窗 —— 否则 Quick Open / 命令面板里取消候选会
+        // 连带关掉面板、丢掉已输入的查询(各输入框处理自身 Esc 前都已判,Modal 的 document 级监听此前漏了)。
+        if (isImeComposing(e)) return;
         e.preventDefault();
         onClose();
         return;
