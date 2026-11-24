@@ -32,3 +32,23 @@ export function subscribeAndAnnounce<A extends unknown[]>(
   ipcRenderer.send(readyChannel);
   return unsubscribe;
 }
+
+/**
+ * main → renderer 推送的 runtime 守卫(边界 E242 / E173,IPC ingress 纵深防御):payload 不合形态 → console.warn 后丢弃,
+ * 不抛、不调回调;合法才交给 deliver。preload 各推送入口共用(此前 7 处逐字手写「guard → warn → drop → deliver」)。
+ * 返回的 listener 交给 subscribeIpc / subscribeAndAnnounce。
+ */
+export function guardedListener<T>(
+  isValid: (payload: unknown) => payload is T,
+  droppedWarning: string,
+  deliver: (payload: T) => void,
+): (event: IpcRendererEvent, payload: unknown) => void {
+  return (_event, payload) => {
+    if (!isValid(payload)) {
+      console.warn(droppedWarning, payload);
+      return;
+    }
+    deliver(payload);
+  };
+}
+

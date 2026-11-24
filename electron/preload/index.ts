@@ -6,7 +6,7 @@ import {
   type DirtyState,
   type FlushRequestPayload,
 } from '../shared/persistence-channels';
-import { subscribeAndAnnounce, subscribeIpc } from './subscribe-ipc';
+import { guardedListener, subscribeAndAnnounce, subscribeIpc } from './subscribe-ipc';
 import { createTerminalDataDemux } from './terminal-data-demux';
 import type { IpcResult } from '../shared/ipc-result';
 import type { FileEntry } from '../shared/fs-entry';
@@ -78,7 +78,6 @@ import {
   DEBUG_VIEW_CHANNELS,
   type DebugGetStackInput,
   type DebugGetVariablesInput,
-  type DebugViewEvent,
 } from '../shared/debug-view-channels';
 import type { Locale } from '../shared/i18n-types';
 import { pluginDataRaw } from './plugin-data.preload';
@@ -228,29 +227,23 @@ const api = {
       // 畸形 IPC payload(null/非对象/path 非字符串/超长)→ preload listener 抛错(null.path),或把非法
       // key 送进 Explorer watcher / external-file-sync(目录刷新异常、debounce Map 污染、外部同步失效)。
       // runtime guard:非对象/path 非字符串/超长 → console.warn drop;不抛、不下传脏 path。
-      const listener = (_: unknown, payload: unknown): void => {
-        if (!isFsDirChangedPayload(payload)) {
-          console.warn('[fs] invalid dir-changed payload, dropped', payload);
-          return;
-        }
+      const listener = guardedListener(isFsDirChangedPayload, '[fs] invalid dir-changed payload, dropped', (payload) =>
         cb(
           payload.path,
           readFsDirChangedFiles(payload, DIR_CHANGED_FILES_MAX),
           readFsDirChangedChangeOnly(payload),
-        );
-      };
+        ),
+      );
       return subscribeIpc(FS_CHANNELS.DIR_CHANGED, listener);
     },
     /** 订阅本窗口持有的 watcher 失效被驱逐事件(payload 守卫同 onDirChanged);返回 unsubscribe. */
     onWatchLost: (cb: (path: string) => void): (() => void) => {
-      const listener = (_: unknown, payload: unknown): void => {
-        if (!isFsDirChangedPayload(payload)) {
-          console.warn('[fs] invalid watch-lost payload, dropped', payload);
-          return;
-        }
-        cb(payload.path);
-      };
-      return subscribeIpc(FS_CHANNELS.WATCH_LOST, listener);
+      return subscribeIpc(
+        FS_CHANNELS.WATCH_LOST,
+        guardedListener(isFsDirChangedPayload, '[fs] invalid watch-lost payload, dropped', (payload) =>
+          cb(payload.path),
+        ),
+      );
     },
   },
   terminal: {
@@ -334,60 +327,42 @@ const api = {
     /** 订阅「插件授权已变更」广播(任一窗口变更成功后 main 推给所有窗口),返 unsubscribe. */
     onPermissionsChanged: (cb: (id: string) => void): (() => void) => {
       // 同 onChanged:payload 形态 `{ id }`,复用同一守卫(畸形 warn+drop)。
-      const listener = (_: unknown, payload: unknown) => {
-        if (!isPluginsChangedPayload(payload)) {
-          console.warn('[plugins] dropped malformed plugins:permissions-changed payload', payload);
-          return;
-        }
-        cb(payload.id);
-      };
-      return subscribeIpc(PLUGINS_CHANNELS.PERMISSIONS_CHANGED, listener);
+      return subscribeIpc(
+        PLUGINS_CHANNELS.PERMISSIONS_CHANGED,
+        guardedListener(isPluginsChangedPayload, '[plugins] dropped malformed plugins:permissions-changed payload', (payload) => cb(payload.id)),
+      );
     },
     /** v4.3.1 订阅 plugin 文件 mtime 变化,返 unsubscribe. */
     onChanged: (cb: (id: string) => void): (() => void) => {
       // 边界(E242):runtime 守卫 push payload,畸形(null/非字符串/超长 id)warn+drop 不调 cb。
-      const listener = (_: unknown, payload: unknown) => {
-        if (!isPluginsChangedPayload(payload)) {
-          console.warn('[plugins] dropped malformed plugins:changed payload', payload);
-          return;
-        }
-        cb(payload.id);
-      };
-      return subscribeIpc(PLUGINS_CHANNELS.CHANGED, listener);
+      return subscribeIpc(
+        PLUGINS_CHANNELS.CHANGED,
+        guardedListener(isPluginsChangedPayload, '[plugins] dropped malformed plugins:changed payload', (payload) => cb(payload.id)),
+      );
     },
     /** 订阅「插件已卸载」广播(任一窗口卸载成功后 main 推给所有窗口),返 unsubscribe. */
     onUninstalled: (cb: (id: string) => void): (() => void) => {
       // 同 onChanged:payload 形态 `{ id }`,复用同一守卫(畸形 warn+drop)。
-      const listener = (_: unknown, payload: unknown) => {
-        if (!isPluginsChangedPayload(payload)) {
-          console.warn('[plugins] dropped malformed plugins:uninstalled payload', payload);
-          return;
-        }
-        cb(payload.id);
-      };
-      return subscribeIpc(PLUGINS_CHANNELS.UNINSTALLED, listener);
+      return subscribeIpc(
+        PLUGINS_CHANNELS.UNINSTALLED,
+        guardedListener(isPluginsChangedPayload, '[plugins] dropped malformed plugins:uninstalled payload', (payload) => cb(payload.id)),
+      );
     },
     /** 订阅「插件启用状态已变更」广播(任一窗口启用 / 禁用成功后 main 推给所有窗口),返 unsubscribe. */
     onEnabledChanged: (cb: (id: string, enabled: boolean) => void): (() => void) => {
-      const listener = (_: unknown, payload: unknown) => {
-        if (!isPluginEnabledChangedPayload(payload)) {
-          console.warn('[plugins] dropped malformed plugins:enabled-changed payload', payload);
-          return;
-        }
-        cb(payload.id, payload.enabled);
-      };
-      return subscribeIpc(PLUGINS_CHANNELS.ENABLED_CHANGED, listener);
+      return subscribeIpc(
+        PLUGINS_CHANNELS.ENABLED_CHANGED,
+        guardedListener(isPluginEnabledChangedPayload, '[plugins] dropped malformed plugins:enabled-changed payload', (payload) => cb(payload.id, payload.enabled)),
+      );
     },
     /** v4.4 订阅 co:// 外部唤起,返 unsubscribe. */
     onProtocolUrl: (cb: (url: string) => void): (() => void) => {
       // 边界(E242):同 onChanged,孪生 push 入口同款守卫(畸形 url warn+drop)。
-      const listener = (_: unknown, payload: unknown) => {
-        if (!isProtocolUrlPayload(payload)) {
-          console.warn('[plugins] dropped malformed protocol-url payload', payload);
-          return;
-        }
-        cb(payload.url);
-      };
+      const listener = guardedListener(
+        isProtocolUrlPayload,
+        '[plugins] dropped malformed protocol-url payload',
+        (payload) => cb(payload.url),
+      );
       // 监听挂上 → 告诉 main「本窗口能接收 co:// 了」,main 才排空冷启动期间缓冲的深链(同 FLUSH_READY)。
       return subscribeAndAnnounce(PLUGINS_CHANNELS.PROTOCOL_URL, PLUGINS_CHANNELS.PROTOCOL_READY, listener);
     },
@@ -490,8 +465,9 @@ const api = {
   debug: {
     subscribe: (): Promise<IpcResult<unknown>> =>
       ipcRenderer.invoke(DEBUG_VIEW_CHANNELS.SUBSCRIBE, {}),
-    onEvent: (listener: (payload: DebugViewEvent) => void): (() => void) => {
-      const wrapped = (_evt: unknown, payload: DebugViewEvent) => listener(payload);
+    // payload 未经校验(renderer debug.store 的 asDebugEvent 负责校验 + 截断),如实标 unknown。
+    onEvent: (listener: (payload: unknown) => void): (() => void) => {
+      const wrapped = (_evt: unknown, payload: unknown) => listener(payload);
       return subscribeIpc(DEBUG_VIEW_CHANNELS.EVENT, wrapped);
     },
     getStack: (input: DebugGetStackInput): Promise<IpcResult<unknown>> =>

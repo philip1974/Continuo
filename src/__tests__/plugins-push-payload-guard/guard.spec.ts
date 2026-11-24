@@ -3,13 +3,16 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('electron', () => ({ ipcRenderer: { on: vi.fn(), removeListener: vi.fn(), send: vi.fn() } }));
 import {
   isPluginsChangedPayload,
   isProtocolUrlPayload,
   PROTOCOL_URL_MAX_LEN,
 } from '../../../electron/shared/plugins-channels';
 import { PLUGIN_ID_MAX_LEN } from '../../../electron/shared/permission-record-limits';
+import { guardedListener } from '../../../electron/preload/subscribe-ipc';
 
 describe('isPluginsChangedPayload (E242)', () => {
   it('合规 { id: 非空 string ≤256 } → true', () => {
@@ -60,7 +63,21 @@ describe('E242 preload 接线守卫', () => {
       ),
       'utf-8',
     );
-    expect(preload).toContain('isPluginsChangedPayload(payload)');
-    expect(preload).toContain('isProtocolUrlPayload(payload)');
+    // 各推送入口经共用的 guardedListener 校验(畸形 warn + drop)。
+    expect(preload).toContain('guardedListener(isPluginsChangedPayload');
+    expect(preload).toMatch(/guardedListener\(\s*isProtocolUrlPayload/);
+  });
+
+  it('guardedListener:畸形 payload warn 后丢弃(不调 deliver),合法则交付', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const deliver = vi.fn();
+    const listener = guardedListener(isPluginsChangedPayload, 'dropped', deliver);
+    listener({} as never, null);
+    listener({} as never, { id: 42 });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(2);
+    listener({} as never, { id: 'com.foo' });
+    expect(deliver).toHaveBeenCalledWith({ id: 'com.foo' });
+    warn.mockRestore();
   });
 });
