@@ -187,7 +187,7 @@ export interface ResolveStdioCallCtxDeps {
  * 解析 tools/call 的 owner 窗口:仅当绑定窗口仍存活才返回它,否则返回 null。调用方只对从未发过 hello 的
  * 连接回落到第一个非 popout 主窗(external);发过 hello 而绑定窗口已关的连接返回 NO_WINDOW_CTX,不回落。
  *
- * 必须在每次 dispatch 时校验存活 —— socketCtx 在 hello 时一次性绑定、窗口关闭
+ * 必须在每次 dispatch 时校验存活 —— 连接绑定(connState.binding)在 hello 时一次性绑定、窗口关闭
  * 清理不会移除它,陈旧绑定若直接使用会让该 proxy 连接对所有工具永久损坏。
  */
 export function resolveStdioCallOwnerWindow(
@@ -211,7 +211,26 @@ interface StdioBinding {
   /** 绑定失效(所用 token 被吊销 / 轮换)时 abort:并入该绑定下每次调用的 ctx.signal,取消在途调用。 */
   readonly aborter: AbortController;
 }
-const socketCtx: Map<Socket, StdioBinding | null> = new Map();
+/**
+ * 每个 stdio 连接的状态(此前拆成 socketCtx / socketSubject 两张模块级 Map、关闭时逐张手工清理):
+ * - binding:`undefined` = 从未发 hello(外部客户端,可回落主窗);`null` = 发过 hello 但失败 / 绑定已失效
+ *   (fail-closed,不回落);否则为有效绑定。
+ * - subject:该连接当前的 callerSubject(惰性生成;身份作废时清掉,之后的调用拿新身份)。
+ * WeakMap:连接关闭时 delete 一次;即便漏删也随 Socket 回收,不泄漏。
+ */
+interface StdioConnState {
+  binding?: StdioBinding | null;
+  subject?: string;
+}
+const connState = new WeakMap<Socket, StdioConnState>();
+function connOf(sock: Socket): StdioConnState {
+  let st = connState.get(sock);
+  if (st === undefined) {
+    st = {};
+    connState.set(sock, st);
+  }
+  return st;
+}
 
 /**
  * 发过 hello 却没有有效绑定的连接(hello 所用 token 无效,或绑定后被吊销 / 轮换)收到的 -32002 消息。终端 env 里的
@@ -243,7 +262,7 @@ const MAX_STDIO_PENDING_BYTES = 16_000_000;
 export const MAX_STDIO_UNREAD_OUTPUT_BYTES = 16_000_000;
 
 // 边界(E233,E227-E232 数量上限族):stdio MCP socket server 并发连接数量上限。每条连接保留 Socket +
-// AbortController + 行解码器闭包 + clients/socketCtx/socketSubject 多个 Map/Set 条目,
+// AbortController + 行解码器闭包 + clients 表项 + connState 条目,
 // 只在 close 才清。socket 受 chmod 0600 / NT pipe ACL 限本用户,但**本用户任意进程**可反复连接
 // <userData>/mcp.sock 保持空闲 → main 累积 fd / 内存 + broadcast() 对全部连接线性写入 → 资源耗尽 + 通知
 // 广播拖慢。connection 回调入口加全局上限(连接建立时 subject/window 尚未解析,只能全局闸),超限立即写
@@ -259,14 +278,10 @@ const STDIO_FIRST_MESSAGE_TIMEOUT_MS = 10_000;
 // 一次 spawn 长连接复用 → 同一连接的 create_session 与 read/send 共享 subject;
 // 不同连接(含恶意进程直连 mcp.sock,unix socket 0600 仅本用户但 postinstall 也是本
 // 用户)subject 不同 → 无法读控别连接创建的会话。HTTP 侧 subject=bearer token + Mcp-Session-Id。
-const socketSubject: Map<Socket, string> = new Map();
 function subjectForSocket(sock: Socket): string {
-  let s = socketSubject.get(sock);
-  if (s === undefined) {
-    s = `stdio:${crypto.randomUUID()}`;
-    socketSubject.set(sock, s);
-  }
-  return s;
+  const st = connOf(sock);
+  st.subject ??= `stdio:${crypto.randomUUID()}`;
+  return st.subject;
 }
 
 type StdioRevocationDeps = Pick<CreateStdioSocketOptions, 'resolveWindowId' | 'onCallerRevoked'>;
@@ -276,9 +291,10 @@ type StdioRevocationDeps = Pick<CreateStdioSocketOptions, 'resolveWindowId' | 'o
  * 资源交 onCallerRevoked 回收。绑定失效(token 吊销 / 轮换)与 hello 换绑共用。
  */
 function retireStdioIdentity(sock: Socket, deps: StdioRevocationDeps): void {
-  socketCtx.get(sock)?.aborter.abort();
-  const subject = socketSubject.get(sock);
-  socketSubject.delete(sock);
+  const st = connState.get(sock);
+  st?.binding?.aborter.abort();
+  const subject = st?.subject;
+  if (st) st.subject = undefined;
   if (subject !== undefined) {
     try {
       deps.onCallerRevoked?.(subject);
@@ -294,10 +310,10 @@ function retireStdioIdentity(sock: Socket, deps: StdioRevocationDeps): void {
  * 旧身份名下的资源交 onCallerRevoked 回收)—— 与 HTTP 侧「token 吊销 = 该身份作废」对齐。返回仍有效的绑定。
  */
 function validStdioBinding(sock: Socket, deps: StdioRevocationDeps): StdioBinding | null | undefined {
-  const binding = socketCtx.get(sock);
+  const binding = connState.get(sock)?.binding;
   if (!binding || deps.resolveWindowId(binding.token) === binding.windowId) return binding;
   retireStdioIdentity(sock, deps);
-  socketCtx.set(sock, null);
+  connOf(sock).binding = null;
   return null;
 }
 
@@ -431,16 +447,14 @@ async function handleLine(
     // windowId 非 null 即 params.token 已通过校验(非空字符串)。
     const token = windowId === null ? null : (params as { token: string }).token;
     // 同一 (token, windowId) 重复 hello 幂等:绑定与身份不变。
-    const current = socketCtx.get(sock);
+    const current = connState.get(sock)?.binding;
     if (current && current.windowId === windowId && current.token === token) return;
     // 安全:hello 改变绑定(换 token / 换窗口 / hello 失败 / 从未 hello 的 external 改为绑定窗口)= 换调用方,
     // 旧身份按绑定失效同样作废。否则吊销前先 hello 一个别的 token 把旧绑定挪出表,吊销复查够不着它,
     // 吊销后重新 hello 仍是旧身份、继续读控旧身份名下的会话。
     retireStdioIdentity(sock, opts);
-    socketCtx.set(
-      sock,
-      windowId === null || token === null ? null : { windowId, token, aborter: new AbortController() },
-    );
+    connOf(sock).binding =
+      windowId === null || token === null ? null : { windowId, token, aborter: new AbortController() };
     return;
   }
 
@@ -478,14 +492,14 @@ async function handleLine(
         }
       : null;
   // Fallback:外部 MCP client(eg. Claude Code stdio 配置)spawn 的 proxy
-  // 无 CONTINUO_WINDOW_ID env,不发 hello,socketCtx 空 → fallback 到第一个
+  // 无 CONTINUO_WINDOW_ID env,不发 hello,connState.binding 为 undefined → fallback 到第一个
   // 非 popout 主窗(pickMainWindowPreferNonPopout:按 BrowserWindow.getAllWindows() 顺序取第一个未销毁的
   // 非 popout 窗口,全是 popout 时取第一个未销毁窗口,一个都没有则不回落)。tools/list 无需 ctx
   // (dispatchRpc 自行短路),只有 tools/call 路径需要。
   // 安全(fail-closed):**发过 hello** 的连接(hello 失败,或绑定窗口已关闭)不回落 —— 否则窗口 A 里
   // agent 的调用以窗口 B 的身份执行 / 弹授权(B 已「本次启动期间允许」→ 静默放行)。ctx 保持 null →
   // tools/call 回 NO_WINDOW_CTX(该 proxy 随 A 的终端退出;tools/list 不受影响)。
-  if (ctx === null && !socketCtx.has(sock)) {
+  if (ctx === null && connState.get(sock)?.binding === undefined) {
     const fallback = pickMainWindowPreferNonPopout();
     // 安全(F2):标记 external —— 授权走独立的 external 状态,不借主窗已有的「本次启动期间允许」
     // (否则窗口 B 终端里的 agent 绕过 proxy 直连 mcp.sock 不发 hello,即可借主窗 A 的授权静默执行)。
@@ -507,7 +521,7 @@ async function handleLine(
   if (
     'error' in response &&
     response.error.code === RPC_ERROR_CODES.NO_WINDOW_CTX &&
-    socketCtx.get(sock) === null
+    connState.get(sock)?.binding === null
   ) {
     writeLine(
       sock,
@@ -664,9 +678,8 @@ export async function createStdioSocketServer(
     sock.on('close', () => {
       clearFirstMessageTimer();
       clients.delete(sock);
-      socketCtx.delete(sock);
-      const subject = socketSubject.get(sock);
-      socketSubject.delete(sock);
+      const subject = connState.get(sock)?.subject;
+      connState.delete(sock);
       aborter.abort(); // race(R111):取消本连接所有在途 tool call 的副作用
       if (subject !== undefined) {
         try {
