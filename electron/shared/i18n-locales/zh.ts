@@ -200,6 +200,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files': '显示隐藏文件',
   'settings.explorer.indent_width': '缩进宽度',
   'settings.explorer.confirm_delete': '删除前确认',
+  'settings.explorer.auto_reveal': '跟随活动文件',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '本类暂无设置项',
@@ -216,6 +217,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files.desc': '是否显示以 . 开头的文件（如 .git / .env）。',
   'settings.explorer.indent_width.desc': '文件树每级缩进（影响视觉层级）。',
   'settings.explorer.confirm_delete.desc': '移到废纸篓前是否弹出确认。',
+  'settings.explorer.auto_reveal.desc': '切换编辑器时在资源管理器中选中并展开到当前文件。',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/

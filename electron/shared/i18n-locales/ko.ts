@@ -201,6 +201,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files': '숨김 파일 표시',
   'settings.explorer.indent_width': '들여쓰기 너비',
   'settings.explorer.confirm_delete': '삭제 전 확인',
+  'settings.explorer.auto_reveal': '활성 파일 표시',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '이 카테고리에 설정이 없습니다',
@@ -217,6 +218,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files.desc': '.git / .env 같이 .으로 시작하는 파일 표시.',
   'settings.explorer.indent_width.desc': '파일 트리 단계별 들여쓰기(시각적 깊이에 영향).',
   'settings.explorer.confirm_delete.desc': '휴지통으로 이동하기 전에 확인을 요청합니다.',
+  'settings.explorer.auto_reveal.desc': '편집기를 전환하면 탐색기에서 현재 파일을 선택하고 펼쳐 표시합니다.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/

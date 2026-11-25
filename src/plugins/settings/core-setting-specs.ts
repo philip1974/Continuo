@@ -142,6 +142,18 @@ export const EXPLORER_CONFIRM_DELETE: CoreSettingSpec<boolean> = {
   priority: 3,
 };
 
+// VSCode explorer.autoReveal(默认开):活动编辑器切换时资源管理器选中并展开到该文件、滚动入视野(不抢焦点)。
+export const EXPLORER_AUTO_REVEAL: CoreSettingSpec<boolean> = {
+  id: 'explorer.autoReveal',
+  category: 'explorer',
+  title: 'Reveal active file',
+  titleKey: 'settings.explorer.auto_reveal',
+  descriptionKey: 'settings.explorer.auto_reveal.desc',
+  type: 'boolean',
+  default: true,
+  priority: 4,
+};
+
 // ── 通用(general)────────────────────────────────────────────────────────────
 
 // Record<ThemeMode, …>:新增主题模式漏配选项即编译报错。

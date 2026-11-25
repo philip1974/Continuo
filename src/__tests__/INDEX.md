@@ -679,6 +679,10 @@
 
 - [`event-bus.spec.ts`](./event-bus/event-bus.spec.ts)
 
+## [explorer-auto-reveal(资源管理器跟随活动编辑器)](./explorer-auto-reveal/README.md)
+
+- [`explorer-auto-reveal.spec.tsx`](./explorer-auto-reveal/explorer-auto-reveal.spec.tsx)
+
 ## [explorer-batch-transfer(重构:Explorer 批量移动/复制的单一实现)](./explorer-batch-transfer/README.md)
 
 - [`batch-transfer.spec.ts`](./explorer-batch-transfer/batch-transfer.spec.ts)
@@ -687,6 +691,7 @@
 
 - [`explorer-commands-tree.spec.tsx`](./explorer-commands/explorer-commands-tree.spec.tsx)
 - [`explorer-commands.spec.ts`](./explorer-commands/explorer-commands.spec.ts)
+- [`header-new-target.spec.tsx`](./explorer-commands/header-new-target.spec.tsx)
 - [`menu-open-folder.spec.ts`](./explorer-commands/menu-open-folder.spec.ts)
 
 ## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)

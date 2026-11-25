@@ -63,6 +63,7 @@ import { copyToClipboardOrNotify } from './copy-to-clipboard';
 import { revealPathOrNotify } from './reveal-or-notify';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
+  EXPLORER_AUTO_REVEAL,
   EXPLORER_CONFIRM_DELETE,
   EXPLORER_INDENT_SIZE,
   EXPLORER_SHOW_HIDDEN_FILES,
@@ -114,6 +115,9 @@ const TRASH_CONFIRM_MAX_NAMES = 10;
 
 // 新项若始终不出现(如新建的是隐藏文件且未显示隐藏文件),到期放弃定位。
 const PENDING_REVEAL_TTL_MS = 3000;
+
+// VSCode explorer.autoRevealExclude 默认排除的目录:其下的文件成为活动编辑器时不展开跟随(依赖目录很大)。
+const AUTO_REVEAL_EXCLUDED_DIRS: ReadonlySet<string> = new Set(['node_modules', 'bower_components']);
 
 const EMPTY_SELECTED_PATHS: ReadonlySet<string> = new Set();
 const EMPTY_EXPANDED_ITEMS: readonly string[] = [];
@@ -839,6 +843,35 @@ export function FolderTree({ root }: { root: string }) {
     return () => clearTimeout(timer);
   }, [pendingReveal]);
 
+  // 跟随活动编辑器(VSCode explorer.autoReveal,默认开):活动文件换了(⌘P / 终端链接 / 编辑器 tab 切换等)→ 逐级展开父目录,
+  // 文件出现在渲染列表里后经「新建后定位」同一机制(pendingReveal,不聚焦行)选中、设为树焦点项并滚动入视野;不移 DOM 焦点。
+  // 工作区外、隐藏文件(未显示隐藏文件时)、node_modules / bower_components 下(VSCode explorer.autoRevealExclude 默认)不跟随;
+  // 已是选中项不动(保留多选)。已在等待定位的同一路径(改名后 focusRow 定位)不覆盖。
+  // BDD: src/__tests__/explorer-auto-reveal/
+  const autoReveal = useSettingValue(EXPLORER_AUTO_REVEAL.id, EXPLORER_AUTO_REVEAL.default);
+  const activeEditorPath = useEditorStore((s) => s.activeTabId);
+  // setExpandedItems 随展开集合换引用:effect 只在活动文件 / 开关 / 根变化时跟随,经 ref 取最新。
+  const setExpandedItemsRef = useRef(setExpandedItems);
+  setExpandedItemsRef.current = setExpandedItems;
+  useEffect(() => {
+    if (!autoReveal || activeEditorPath === null) return;
+    const path = activeEditorPath;
+    if (isSameOrInsidePath(path, root) || !isWithinRoot(path, root)) return;
+    if (!showHiddenRef.current && isHiddenWithinRoot(root, path)) return;
+    if (stripRootPrefix(root, path).split(/[\\/]/).some((seg) => AUTO_REVEAL_EXCLUDED_DIRS.has(seg))) return;
+    const t = treeRef.current;
+    if (t?.getState().selectedItems?.includes(path)) return;
+    const ancestors: string[] = [];
+    for (let d = dirname(path); !isSameOrInsidePath(d, root); d = dirname(d)) ancestors.push(d);
+    if (ancestors.length > 0) {
+      setExpandedItemsRef.current((old) => {
+        const missing = ancestors.filter((d) => !old.includes(d));
+        return missing.length === 0 ? old : [...old, ...missing.reverse()];
+      });
+    }
+    setPendingReveal((prev) => (prev?.path === path ? prev : { path, focusRow: false }));
+  }, [activeEditorPath, autoReveal, root]);
+
   const treeApi = useMemo(() => ({ invalidateChildrenIds: refreshParent }), [refreshParent]);
   const mutateDeps = useMemo(() => ({ fs: coApi.fs }), []);
 
@@ -1091,6 +1124,18 @@ export function FolderTree({ root }: { root: string }) {
     }
   }, [focusPending, rootLoad, items, root, tree]);
 
+  // 命令与标题栏「新建文件 / 新建文件夹」按钮共用的落点:树焦点项所在目录(目录 → 自身,文件 → 所在目录;同键盘粘贴)。
+  // 用户还没在树里移动过焦点(库的 getFocusedItem 此时回落首项)→ 根目录(VSCode:无焦点项时在根新建)。
+  const startCreateAtFocus = useCallback(
+    (type: CreatingState['type']) => {
+      const t = treeRef.current;
+      const parentDir =
+        t && t.getState().focusedItem != null ? focusedTargetDir(t, renderedItemsRef.current, root) : root;
+      setCreating({ type, parentDir });
+    },
+    [root],
+  );
+
   // 命令请求(explorer-requests):新建文件 / 文件夹 → 在树焦点项所在目录(目录 → 自身,文件 → 所在目录,无 → 根;
   // 同键盘粘贴的落点)打开新建输入框;focusTree(显示资源管理器 / 打开文件夹之后)→ 加载完成后焦点进树,同「重试」的落点。
   useEffect(
@@ -1098,17 +1143,13 @@ export function FolderTree({ root }: { root: string }) {
       onExplorerRequest((request) => {
         if (!isRequestForRoot(request, root)) return false;
         if (request.kind === 'create') {
-          // 用户还没在树里移动过焦点(库的 getFocusedItem 此时回落首项)→ 根目录(VSCode:无焦点项时在根新建)。
-          const t = treeRef.current;
-          const parentDir =
-            t && t.getState().focusedItem != null ? focusedTargetDir(t, renderedItemsRef.current, root) : root;
-          setCreating({ type: request.type, parentDir });
+          startCreateAtFocus(request.type);
         } else {
           setFocusPending(true);
         }
         return true;
       }),
-    [root],
+    [root, startCreateAtFocus],
   );
 
   // 删除确认框文案(VSCode explorer.confirmDelete):单项按文件 / 文件夹区分,多项列出名字(最多 10 个)。
@@ -1291,8 +1332,8 @@ export function FolderTree({ root }: { root: string }) {
         }}
         onCollapseAll={() => tree.collapseAll()}
         onRefresh={refreshAll}
-        onNewFile={() => setCreating({ type: 'file', parentDir: root })}
-        onNewDir={() => setCreating({ type: 'dir', parentDir: root })}
+        onNewFile={() => startCreateAtFocus('file')}
+        onNewDir={() => startCreateAtFocus('dir')}
       />
       {dragActive && <DropOverlay targetDir={dropTargetDir} />}
       {creating && (

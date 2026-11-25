@@ -214,6 +214,7 @@ export const en = {
   'settings.explorer.show_hidden_files': 'Show hidden files',
   'settings.explorer.indent_width': 'Indent width',
   'settings.explorer.confirm_delete': 'Confirm delete',
+  'settings.explorer.auto_reveal': 'Reveal active file',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': 'No settings in this category',
@@ -230,6 +231,7 @@ export const en = {
   'settings.explorer.show_hidden_files.desc': 'Show dotfiles such as .git / .env.',
   'settings.explorer.indent_width.desc': 'Per-level indentation of the file tree (visual depth).',
   'settings.explorer.confirm_delete.desc': 'Ask for confirmation before moving files to the Trash.',
+  'settings.explorer.auto_reveal.desc': "Select and reveal the active editor's file in the Explorer.",
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
