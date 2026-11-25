@@ -1,4 +1,4 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useT } from '@/i18n/react';
 import { coApp } from '@/plugins/co-app';
@@ -7,6 +7,8 @@ import { useRegistry } from '@/plugins/registries/useRegistry';
 import { isThirdPartyContribution } from '@/plugins/scoped-app';
 import type { PluginPanelProps } from '@/plugins/types';
 import { PanelMount } from '@/shell/motion/PanelMount';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
+import { keepScrollWhileHidden } from './keep-scroll-while-hidden';
 
 // 安全:第三方插件面板的 factory 只拿 SDK 声明的最小 props(PluginPanelProps)。dockview 原始 props 带
 // containerApi(整个 dock 的 DockviewApi)与完整 panel api(group / close / moveTo …):零权限插件注册一个面板
@@ -53,8 +55,16 @@ function createPanelHost(panels: PanelRegistry, type: string): React.FC<IDockvie
   // 捕获快照里的 spec.factory —— 插件 disable/reload 后不会再实例化已移除插件的代码。
   return function PanelHost(p) {
     const live = useSyncExternalStore(subscribe, getLive);
+    // 同组切换面板回来时保持内容滚动位置(dockview 卸下内容 DOM 会让其归零)。终端不用:xterm 自管视口,隐藏期间
+    // 仍有输出,写回旧滚动值会与之打架。BDD: src/__tests__/dock-panel-switch-keep-view/
+    const rootRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+      const root = rootRef.current;
+      if (type === TERMINAL_PANEL_TYPE || root === null) return;
+      return keepScrollWhileHidden(root, p.api);
+    }, [p.api]);
     return (
-      <PanelMount panelId={p.api.id}>
+      <PanelMount panelId={p.api.id} ref={rootRef}>
         {live ? <FactoryContent key={specKey(live)} spec={live} panelProps={p} /> : <PluginPanelPlaceholder />}
       </PanelMount>
     );

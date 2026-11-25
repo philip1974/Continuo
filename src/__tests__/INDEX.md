@@ -477,6 +477,11 @@
 
 - [`layout-restore-feedback.spec.tsx`](./dock-layout-restore-feedback/layout-restore-feedback.spec.tsx)
 
+## [同组切换 dock 面板:视口保持、点 tab 焦点进内容(VSCode 对齐)](./dock-panel-switch-keep-view/README.md)
+
+- [`keep-scroll.spec.tsx`](./dock-panel-switch-keep-view/keep-scroll.spec.tsx)
+- [`tab-click-focus.spec.tsx`](./dock-panel-switch-keep-view/tab-click-focus.spec.tsx)
+
 ## [dock-plugin-panel-placeholder — 未注册面板类型显示占位,布局不丢](./dock-plugin-panel-placeholder/README.md)
 
 - [`plugin-panel-placeholder.spec.tsx`](./dock-plugin-panel-placeholder/plugin-panel-placeholder.spec.tsx)

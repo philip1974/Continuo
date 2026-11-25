@@ -98,13 +98,16 @@ describe('第三方插件面板:factory 只收到 PluginPanelProps', () => {
 
     expect(api.id).toBe('panel-1');
     expect(api.isVisible).toBe(true);
+    // 宿主自己也订阅可见性(同组切换保持滚动,见 dock-panel-switch-keep-view):以插件订阅前的数量为基线
+    const hostListeners = listeners.size;
     const seen: unknown[] = [];
     const sub = api.onDidVisibilityChange((e) => seen.push(e));
+    expect(listeners.size).toBe(hostListeners + 1);
     setVisible(false);
     expect(api.isVisible).toBe(false);
     expect(seen).toEqual([{ isVisible: false }]);
     sub.dispose();
-    expect(listeners.size).toBe(0);
+    expect(listeners.size).toBe(hostListeners);
     setVisible(true);
     expect(seen).toHaveLength(1);
   });

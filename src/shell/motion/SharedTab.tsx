@@ -332,18 +332,17 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
     >
       {/* 落点 ③:active tab 标题挂 layoutId,跨 group 拖动后让标题"飞"过去。
           只对 active 加,避免 inactive tab 的 portal 测量噪声(R2)。 */}
-      {active ? (
-        <m.span
-          id={titleId}
-          layoutId={panelTitleLayoutId(api.id)}
-          className="min-w-0 truncate select-none"
-          transition={TAB_TITLE_SPRING}
-        >
-          {title}
-        </m.span>
-      ) : (
-        <span id={titleId} className="min-w-0 truncate select-none">{title}</span>
-      )}
+      {/* 标题元素在 active ↔ inactive 间保持同一个 DOM 节点(只切换 layoutId):点非活动 tab 的标题时,dockview 在
+          pointerdown 里就激活面板,若此时把标题换成另一个元素,按下的节点已脱离文档,Chromium 不再派发 click →
+          handleClick 不执行,焦点停在 tab 上、进不了编辑区。BDD: src/__tests__/dock-panel-switch-keep-view/ */}
+      <m.span
+        id={titleId}
+        layoutId={active ? panelTitleLayoutId(api.id) : undefined}
+        className="min-w-0 truncate select-none"
+        transition={TAB_TITLE_SPRING}
+      >
+        {title}
+      </m.span>
       {/* tab 的子元素按 ARIA 是 presentational,不能有可聚焦控件(axe nested-interactive):退出缩放 / 关闭用不可聚焦的
           span[role=button] 套 design IconButton 的样式(wm-icon-button),只作鼠标点击目标;键盘走 tab 上的 Delete /
           Escape(最大化态)/ ⇧⌘Enter。按下 preventDefault:不抢焦点、不起拖拽。 */}

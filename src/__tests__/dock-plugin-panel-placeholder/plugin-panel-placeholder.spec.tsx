@@ -119,7 +119,11 @@ describe('占位 ↔ 真实内容切换 · hooks 组件作 factory', () => {
       const r = React.useRef(n);
       return React.createElement('div', null, `hooky ${r.current}`);
     }
-    const props = { api: { id: 'hooky.panel' }, containerApi: {}, params: {} } as never;
+    const props = {
+      api: { id: 'hooky.panel', isVisible: true, onDidVisibilityChange: () => ({ dispose: () => {} }) },
+      containerApi: {},
+      params: {},
+    } as never;
     const view = render(React.createElement(Host, props));
     let d: { dispose(): void } | undefined;
     act(() => {
