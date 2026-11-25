@@ -1907,6 +1907,15 @@
 - [`startup-restore-cancel-wiring.spec.ts`](./window-restore/startup-restore-cancel-wiring.spec.ts)
 - [`window-restore.spec.ts`](./window-restore/window-restore.spec.ts)
 
+## [窗口位置 / 尺寸 / 焦点的重启恢复](./window-state-restore/README.md)
+
+- [`popout-restore-focus.spec.ts`](./window-state-restore/popout-restore-focus.spec.ts)
+- [`popout-restore-position.spec.ts`](./window-state-restore/popout-restore-position.spec.ts)
+- [`restore-focus.spec.tsx`](./window-state-restore/restore-focus.spec.tsx)
+- [`window-state-persist.spec.ts`](./window-state-restore/window-state-persist.spec.ts)
+- [`window-state.spec.ts`](./window-state-restore/window-state.spec.ts)
+- [`wiring.spec.ts`](./window-state-restore/wiring.spec.ts)
+
 ## [window-workspace-roots-map](./window-workspace-roots-map/README.md)
 
 - [`cwd-fallback-error.spec.ts`](./window-workspace-roots-map/cwd-fallback-error.spec.ts)

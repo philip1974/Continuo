@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { pluginZod } from './plugins/plugin-zod';
 import { App } from './shell/App';
 import { initExplorerPersistence } from './lib/persist/explorer-persist';
+import { focusActiveEditorAfterRestore } from './shell/dock/restore-focus';
 import { consumeStartupQuery } from './lib/initial-workspace';
 import { bootCorePlugins } from './core-plugins';
 import { coApp } from './plugins/co-app';
@@ -251,6 +252,7 @@ export async function init(): Promise<void> {
     workspace: initialWorkspace,
     fresh: initialFresh,
   } = consumeStartupQuery(window.location, window.history);
+  // 启动恢复(含编辑器 tab 读盘)结束后把焦点交给活动编辑器(VSCode 同;焦点仍在 body / 用户未操作时才做)。
   void initExplorerPersistence(
     {
       // 取用上方提前发起的 explorer.read(仅一次);之后若再调用则照常发新 IPC。
@@ -271,7 +273,7 @@ export async function init(): Promise<void> {
       ...(initialWorkspace !== null ? { initialWorkspace } : {}),
       ...(initialFresh ? { fresh: true } : {}),
     },
-  );
+  ).then(() => focusActiveEditorAfterRestore());
 
   // 注:reviews(卡片 ★)不再启动预拉(打磨 R53)。该数据只在 MarketplaceTab 可见
   // 时用,不像 update 清单驱动 IconSidebar 角标。改为 MarketplaceTab 首次挂载时拉,

@@ -58,8 +58,17 @@ const electronMock = vi.hoisted(() => {
     readonly isMinimized = vi.fn(() => false);
     readonly restore = vi.fn();
     readonly focus = vi.fn();
+    readonly isVisible = vi.fn(() => !this.destroyed);
+    readonly isMaximized = vi.fn(() => false);
+    readonly isFullScreen = vi.fn(() => false);
+    readonly getBounds = vi.fn(() => ({ x: 0, y: 0, width: 1280, height: 800 }));
+    readonly getNormalBounds = vi.fn(() => ({ x: 0, y: 0, width: 1280, height: 800 }));
+    readonly maximize = vi.fn();
+    readonly setFullScreen = vi.fn();
+    readonly options: unknown;
 
-    constructor() {
+    constructor(options?: unknown) {
+      this.options = options;
       windows.push(this);
       webContentsToWindow.set(this.webContents, this);
     }
@@ -127,11 +136,19 @@ vi.mock('electron', () => ({
       electronMock.fromWebContents(sender),
     ),
     getAllWindows: vi.fn(() => electronMock.windows),
+    getFocusedWindow: vi.fn(() => null),
     fromId: vi.fn((id: number) =>
       electronMock.windows.find((w) => w.id === id) ?? null,
     ),
   }),
   dialog: { showOpenDialog: vi.fn() },
+  screen: {
+    getAllDisplays: vi.fn(() => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }]),
+    getPrimaryDisplay: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } })),
+    getDisplayMatching: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } })),
+    getDisplayNearestPoint: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } })),
+    getCursorScreenPoint: vi.fn(() => ({ x: 0, y: 0 })),
+  },
   ipcMain: {
     on: vi.fn((channel: string, listener: Listener) => {
       const listeners = electronMock.ipcHandlers.get(channel) ?? [];
@@ -482,6 +499,38 @@ describe('window close layout flush', () => {
     });
 
     expect([...getActiveSeqs()]).not.toContain(10);
+  });
+
+  it('windowState:关窗记下几何(close 时、关窗流程隐藏窗口之前取)并写进本窗段;同 seq 再建窗按它建并恢复最大化', async () => {
+    const win = createMockMainWindow(11);
+    win.getNormalBounds.mockReturnValue({ x: 100, y: 50, width: 900, height: 700 });
+    win.isMaximized.mockReturnValue(true);
+    // 关窗流程会先隐藏窗口:隐藏后取到的值不可信,不得覆盖
+    win.hide.mockImplementation(() => {
+      win.isVisible.mockReturnValue(false);
+      win.getNormalBounds.mockReturnValue({ x: 0, y: 0, width: 1, height: 1 });
+    });
+
+    win.close();
+    ack(win);
+    const expected = { bounds: { x: 100, y: 50, width: 900, height: 700 }, isMaximized: true, isFullScreen: false };
+    await vi.waitFor(async () => {
+      const payload = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(payload?.windows.find((w) => w.windowSeq === 11)?.windowState).toEqual(expected);
+    });
+
+    const again = createMockMainWindow(11);
+    expect(again.options).toMatchObject({ x: 100, y: 50, width: 900, height: 700 });
+    expect(again.maximize).toHaveBeenCalledTimes(1);
+  });
+
+  it('windowState:新窗口(无保存值)默认 1280×800 在显示器工作区居中,与已开窗口错开', () => {
+    const first = createMockMainWindow(12);
+    expect(first.options).toMatchObject({ x: 320, y: 140, width: 1280, height: 800 });
+    first.getBounds.mockReturnValue({ x: 320, y: 140, width: 1280, height: 800 });
+    const second = createMockMainWindow(13);
+    expect(second.options).toMatchObject({ x: 330, y: 150, width: 1280, height: 800 });
+    expect(second.maximize).not.toHaveBeenCalled();
   });
 
   it('T20c: 关窗时窗口段超过上限 → 摘最旧 closed 段;活跃窗、主窗段(seq 0)与刚关的窗口保留', async () => {

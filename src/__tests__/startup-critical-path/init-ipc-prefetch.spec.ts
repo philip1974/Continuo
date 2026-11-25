@@ -67,7 +67,7 @@ const mocks = vi.hoisted(() => {
       onScopeRequestCancelled: vi.fn(() => () => {}),
       onScopeRequest: vi.fn(() => () => {}),
     },
-    initExplorerPersistence: vi.fn(),
+    initExplorerPersistence: vi.fn(async (..._args: unknown[]) => undefined),
     startPluginFsScopeRequestBridge: vi.fn(),
     startDebugStoreSync: vi.fn(),
     pluginsOnPermissionsChanged: vi.fn(),

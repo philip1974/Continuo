@@ -26,6 +26,7 @@ import {
   registerIpc,
   stripMainOwnedWindowFields,
 } from '../../../electron/main/ipc';
+import { takePopoutRestoreSlot } from '../../../electron/main/services/popout-restore-focus.service';
 import {
   _reset as resetWindowSeq,
   setWindowSeq,
@@ -201,6 +202,28 @@ describe('window-scoped layout IPC', () => {
     const result = await invokeIpc('layout:read', undefined);
 
     expect(result).toEqual({ ok: true, data: { version: 1, panel: 'A' } });
+  });
+
+  it('layout:read 返回带 popout 的布局 → 登记该 webContents 的恢复名额(恢复出的子窗不抢主窗焦点)', async () => {
+    const sender = { id: 4242 };
+    electronMock.senderToWindow.set(sender, { id: 303 });
+    setWindowSeq(303, 7);
+    const payload = defaultExplorerV3();
+    payload.windows = [
+      {
+        windowSeq: 7,
+        workspace: { root: '/a' },
+        explorer: { activePath: null, expandedPaths: [], sort },
+        layout: { version: 1, popoutGroups: [{ data: {} }, { data: {} }] },
+      },
+    ];
+    await writeExplorer(payload);
+
+    await invokeIpc('layout:read', undefined, sender);
+
+    expect(takePopoutRestoreSlot(4242)).toBe(true);
+    expect(takePopoutRestoreSlot(4242)).toBe(true);
+    expect(takePopoutRestoreSlot(4242)).toBe(false);
   });
 
   // 边界(E215,E89 写端对偶):layout:read 读端复用写端 JSON-safe + 字节上限。旧版/手工污染的

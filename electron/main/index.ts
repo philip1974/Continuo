@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, session } from 'electron';
 import { installNavigationGuard, isAllowedPageReload, isOwnRendererWindowUrl } from './window-open-policy';
 import { setPageReloadPredicate, setReloadUrlPredicate } from './lib/wc-gone-hook';
 import { installPermissionHandlers } from './lib/permission-policy';
@@ -34,7 +34,9 @@ import {
   closedAtNow,
   writeExplorerFile,
 } from './persistence';
-import { EXPLORER_FILE_NAME } from '../shared/explorer-persistence-schema';
+import { EXPLORER_FILE_NAME, type PersistedWindowState } from '../shared/explorer-persistence-schema';
+import { fitRectToDisplays, newWindowBounds, popoutWindowBounds, type Rect } from './lib/window-state';
+import { takePopoutRestoreSlot } from './services/popout-restore-focus.service';
 import { isStartupRestoreInFlight, restoreStartupWindows } from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import { pickMainWindowPreferNonPopout } from './services/main-window-picker.service';
@@ -52,6 +54,7 @@ import {
 import {
   clearWindow,
   getActiveSeqs,
+  getWindowSeq,
   setWindowSeq,
 } from './services/window-seq.service';
 import { withExplorerFileMutex } from './lib/file-mutex';
@@ -571,7 +574,15 @@ function isPageReloadAllowed(url: string, currentUrl: string): boolean {
 }
 setPageReloadPredicate(isPageReloadAllowed);
 
-function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
+/** 各显示器工作区(去掉菜单栏 / Dock / 任务栏),窗口几何校验用。 */
+function displayWorkAreas(): Rect[] {
+  return screen.getAllDisplays().map((d) => d.workArea);
+}
+
+/**
+ * @param openerId 发起 window.open 的 webContents id:重启恢复中的 popout(layout:read 登记的名额)以不抢焦点方式显示。
+ */
+function windowOpenHandler({ url, features }: HandlerDetails, openerId?: number): WindowOpenHandlerResponse {
   // 边界(E190,E179/E152 同族外链长度):window.open url 的类型/长度前置闸,先于 new URL 解析与
   // shell.openExternal。否则超长 url 让主进程先做大字符串 URL 解析,并可能把巨大 URL 交给系统协议
   // 处理器(绕过 shell.openExternal IPC 的 2048 上限与 Markdown 外链上限)。对齐共享 MAX_EXTERNAL_URL_LEN。
@@ -589,11 +600,22 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
   const allow = isOwnRendererUrl(url) && isPopoutOnlyUrl(url);
 
   if (allow) {
+    // 位置 / 尺寸取 dockview 经 features 传来的屏幕坐标与内容尺寸(此前固定 800×600 覆盖掉,重启后子窗尺寸不恢复),
+    // 按显示器校验(同主窗);位置通不过 → 显式清掉 features 里的 x/y 并居中。同 VSCode auxiliaryWindowsMainService。
+    const bounds = popoutWindowBounds(features, displayWorkAreas());
+    // 重启恢复出来的子窗先不显示,did-create-window 里 showInactive(主窗保持焦点);用户主动弹出的照常获焦。
+    const restoring = openerId !== undefined && takePopoutRestoreSlot(openerId);
     return {
       action: 'allow',
       overrideBrowserWindowOptions: {
-        width: 800,
-        height: 600,
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        center: bounds.x === undefined,
+        // dockview 存 / 传的是 innerWidth / innerHeight(内容尺寸);按外框尺寸建窗每次重启会缩掉一个标题栏高。
+        useContentSize: true,
+        show: !restoring,
         // 与主窗同一最小尺寸(同 VSCode 窗口最小尺寸):拖小子窗时 tab 条 / 内容不被压到不可用。
         minWidth: 400,
         minHeight: 270,
@@ -665,10 +687,70 @@ ipcMain.on(AGENT_AUTH_CHANNELS.READY, (event: IpcMainEvent) => {
   markAgentAuthRendererReady(win.id);
 });
 
+// windowSeq → 最近一次已知窗口几何:启动时从 explorer.json 读入,关窗 / 退出时更新并落盘(windowState 段)。
+const knownWindowStates = new Map<number, PersistedWindowState>();
+
+/** 记下窗口当前几何(普通矩形 + 最大化 / 全屏)。关窗流程里已隐藏的窗口状态不可信 → 跳过(最小化的照记)。 */
+function captureWindowState(seq: number, win: BrowserWindow): void {
+  if (win.isDestroyed() || (!win.isVisible() && !win.isMinimized())) return;
+  const b = win.getNormalBounds();
+  knownWindowStates.set(seq, {
+    bounds: { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) },
+    isMaximized: win.isMaximized(),
+    isFullScreen: win.isFullScreen(),
+  });
+}
+
+/**
+ * 建窗位置(VSCode windowsStateHandler):有保存值且通过显示器校验(validateWindowState)→ 采用并恢复最大化 / 全屏;
+ * 否则按新窗口(getNewWindowState):macOS 取鼠标所在显示器(每窗口共用一套菜单栏),其它平台取当前聚焦窗口所在显示器,
+ * 再退到主显示器;默认尺寸居中,与已开窗口错开(ensureNoOverlap)。
+ */
+function initialWindowPlacement(seq: number): { bounds: Rect; isMaximized: boolean; isFullScreen: boolean } {
+  const saved = knownWindowStates.get(seq);
+  const fitted = saved ? fitRectToDisplays(saved.bounds, displayWorkAreas()) : null;
+  if (saved && fitted) {
+    return { bounds: fitted, isMaximized: saved.isMaximized === true, isFullScreen: saved.isFullScreen === true };
+  }
+  const focused = BrowserWindow.getFocusedWindow();
+  const display =
+    process.platform === 'darwin'
+      ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+      : focused
+        ? screen.getDisplayMatching(focused.getBounds())
+        : screen.getPrimaryDisplay();
+  const existing = BrowserWindow.getAllWindows()
+    .filter((w) => !w.isDestroyed())
+    .map((w) => w.getBounds());
+  return { bounds: newWindowBounds(display.workArea, existing), isMaximized: false, isFullScreen: false };
+}
+
+/** 退出时把各主窗几何等待落盘(关窗 closed 里的写是 void 异步,退出不等它)。失败只告警,不阻断退出。 */
+async function persistWindowStates(seqs: readonly number[]): Promise<void> {
+  const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
+  try {
+    await withExplorerFileMutex(async () => {
+      const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
+      let changed = false;
+      for (const seq of seqs) {
+        const state = knownWindowStates.get(seq);
+        if (!state) continue;
+        const entry = ensureWindowEntry(payload, seq);
+        if (JSON.stringify(entry.windowState) === JSON.stringify(state)) continue;
+        entry.windowState = state;
+        changed = true;
+      }
+      if (changed) await writeExplorerFile(explorerFile, payload);
+    });
+  } catch (err: unknown) {
+    console.warn('[explorer] persist window state on quit failed:', err);
+  }
+}
+
 export function createMainWindow(opts: CreateMainWindowOpts) {
+  const placement = initialWindowPlacement(opts.windowSeq);
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    ...placement.bounds,
     // 同 VSCode 主窗最小尺寸(400×270):再小时工作台(侧栏 + dock + 状态栏)与对话框已无可用空间。
     minWidth: 400,
     minHeight: 270,
@@ -679,9 +761,14 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     backgroundColor: currentWindowBackgroundColor(),
     webPreferences: buildCommonWebPreferences({ preload: PRELOAD }),
   });
+  // 同 VSCode CodeWindow:建窗后立即恢复最大化 / 全屏(普通矩形已按保存值设好,还原后回到它)。
+  if (placement.isMaximized) win.maximize();
+  if (placement.isFullScreen) win.setFullScreen(true);
 
   const seq = opts.windowSeq;
   setWindowSeq(win.id, seq);
+  // 须先于 wireWindowCloseFlush 挂:关窗流程的 close 监听会同步隐藏窗口,之后取到的状态不可信。
+  win.on('close', () => captureWindowState(seq, win));
   wireWindowCloseFlush(win);
 
   win.on('closed', () => {
@@ -697,6 +784,8 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
         const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
         const entry = ensureWindowEntry(payload, seq);
         entry.lastClosedAt = closedAtNow();
+        const windowState = knownWindowStates.get(seq);
+        if (windowState) entry.windowState = windowState;
         const protectedSeqs = lruProtectedSeqs();
         // 启动恢复未结束时不补写:即将被恢复的段还不在保护集(恢复后开着,补写的启动时刻会让它下次偏旧)。
         if (!isStartupRestoreInFlight()) stampMissingClosedAt(payload, protectedSeqs);
@@ -712,7 +801,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     });
   });
 
-  win.webContents.setWindowOpenHandler(windowOpenHandler);
+  win.webContents.setWindowOpenHandler((details) => windowOpenHandler(details, win.webContents.id));
 
   // 多窗口:opts.workspace + opts.windowSeq 走 query string,renderer
   // parseInitialWorkspace / parseInitialWindowSeq 接收。dev loadURL 与 prod
@@ -748,7 +837,11 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 // 给所有新创建的 webContents(包括 dockview popout 的子窗口)装上 windowOpenHandler 与导航守卫。
 // 这样从 popout 再 popout 也走我们的同一套安全策略;导航规则 dev 与打包版一致(见 window-open-policy)。
 app.on('web-contents-created', (_evt, contents) => {
-  contents.setWindowOpenHandler(windowOpenHandler);
+  contents.setWindowOpenHandler((details) => windowOpenHandler(details, contents.id));
+  // 重启恢复的 popout 以 show:false 建出(见 windowOpenHandler)→ 不抢焦点地显示,主窗保持键盘焦点。
+  contents.on('did-create-window', (child) => {
+    if (!child.isDestroyed() && !child.isVisible()) child.showInactive();
+  });
   installNavigationGuard(contents, isOwnRendererUrl, openExternalFromPage, isPageReloadAllowed);
 });
 
@@ -1366,6 +1459,11 @@ app.whenReady().then(async () => {
     loadSettings(),
     loadWindowTheme(),
   ]);
+  // 启动时的 explorer.json(迁移 / 收敛之后):首窗几何在建窗前取用,启动多窗恢复复用同一份读取。读与下方菜单 / MCP host
+  // 启动并行。
+  const explorerAtStartup = loadExplorer(explorerFile);
+  // 取用前就失败时不算未处理拒绝(两个取用方各自处理:首窗几何按新窗口、启动恢复告警)。
+  explorerAtStartup.catch(() => undefined);
 
   // E2E 跑 Playwright 时,Electron 默认菜单的 CmdOrCtrl+P 绑定 Print 会先吞
   // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。
@@ -1393,6 +1491,10 @@ app.whenReady().then(async () => {
   // 第一个目录作主窗 workspace,其余各开新窗,**不**恢复历史;
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
   const startup = pickStartupMode(pendingOpenPaths.splice(0), isDirectorySync);
+  // 各窗口上次的几何(windowState 段;读失败 → 全按新窗口)。
+  for (const w of (await explorerAtStartup.catch(() => null))?.windows ?? []) {
+    if (w.windowState) knownWindowStates.set(w.windowSeq, w.windowState);
+  }
 
   // 主窗由 createMainWindow 创建(有副作用:开窗 + 挂就绪作废监听);冷启动协议 URL 经
   // dispatchProtocolUrl 走统一队列消费(R69),不再需要持有主窗引用直发。
@@ -1416,7 +1518,7 @@ app.whenReady().then(async () => {
     // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复
     // 恢复期间可被退出 / 全部关窗取消(见 startupRestoreCancelled),取消后不再建恢复窗。
     restoreStartupWindows(
-      () => loadExplorer(explorerFile),
+      () => explorerAtStartup,
       isDirectory,
       (entry) => createMainWindow({ windowSeq: entry.windowSeq, workspace: entry.workspace }),
       () => startupRestoreCancelled,
@@ -1505,6 +1607,9 @@ app.on('before-quit', async (event) => {
     // 永远停在「清理在途」、应用无法退出。已销毁的交给 requestWindowFlush 的立即放行分支。
     if (!w.webContents.isDestroyed() && isPopoutUrl(w.webContents.getURL())) continue;
     targets.push(w);
+    // 窗口几何:在确认框 / 退出隐藏窗口之前取(隐藏后的状态不可信),退出确定后统一落盘。
+    const seq = getWindowSeq(w.id);
+    if (seq !== null) captureWindowState(seq, w);
     // 复审(d):退出接管该窗口 —— 其在途的单窗关闭流程完成时不再 close(由退出统一处理)。
     bumpCloseFlowGen(w.id);
     const release = closeFlowReleases.get(w.id);
@@ -1569,6 +1674,12 @@ app.on('before-quit', async (event) => {
     return;
   }
   for (const w of targets) flushedOnQuit.add(w.id);
+  // 退出确定:各主窗几何随下方清理并行落盘,app.quit 前等齐(VSCode 退出时保存窗口状态)。
+  const targetSeqs: number[] = [];
+  for (const w of targets) {
+    const seq = getWindowSeq(w.id);
+    if (seq !== null) targetSeqs.push(seq);
+  }
   // 退出屏障(复审):已入 flushedOnQuit,之后的编辑不会再被 flush / 确认;不可逆清理(debug teardown 可能数秒)
   // 期间窗口仍可编辑 → 改动丢失,用户关窗也绕过确认。进入清理前隐藏全部窗口(popout 一并)。
   for (const w of BrowserWindow.getAllWindows()) {
@@ -1587,6 +1698,7 @@ app.on('before-quit', async (event) => {
   quitTrace('cleanup begin');
   // 插件 shell 子进程(一次性 exec / 流式)是 detached 进程组,不随 IDE 退出终止;立即强杀整树并等待。
   await Promise.allSettled([
+    traced('window-state', persistWindowStates(targetSeqs)),
     traced('terminal', termService.cleanupAll()),
     traced('debug', debugService.cleanupAll('before-quit')),
     traced('shell-exec', cleanupAllShellExecs()),

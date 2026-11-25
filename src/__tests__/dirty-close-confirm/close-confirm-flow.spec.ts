@@ -59,6 +59,11 @@ const electronMock = vi.hoisted(() => {
     readonly isMinimized = vi.fn(() => false);
     readonly restore = vi.fn();
     readonly focus = vi.fn();
+    readonly isVisible = vi.fn(() => !this.destroyed);
+    readonly isMaximized = vi.fn(() => false);
+    readonly isFullScreen = vi.fn(() => false);
+    readonly getBounds = vi.fn(() => ({ x: 0, y: 0, width: 1280, height: 800 }));
+    readonly getNormalBounds = vi.fn(() => ({ x: 0, y: 0, width: 1280, height: 800 }));
 
     constructor() {
       windows.push(this);
@@ -129,6 +134,7 @@ vi.mock('electron', () => ({
       electronMock.fromWebContents(sender),
     ),
     getAllWindows: vi.fn(() => electronMock.windows),
+    getFocusedWindow: vi.fn(() => null),
     fromId: vi.fn((id: number) =>
       electronMock.windows.find((w) => w.id === id) ?? null,
     ),
@@ -136,6 +142,13 @@ vi.mock('electron', () => ({
   dialog: {
     showOpenDialog: vi.fn(),
     showMessageBox: electronMock.showMessageBox,
+  },
+  screen: {
+    getAllDisplays: vi.fn(() => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }]),
+    getPrimaryDisplay: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } })),
+    getDisplayMatching: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } })),
+    getDisplayNearestPoint: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } })),
+    getCursorScreenPoint: vi.fn(() => ({ x: 0, y: 0 })),
   },
   ipcMain: {
     on: vi.fn((channel: string, listener: Listener) => {

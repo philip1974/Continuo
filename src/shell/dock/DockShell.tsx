@@ -16,6 +16,7 @@ import { markDockLayoutRestored, setDockApi } from './dock-api-ref';
 import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
+import { popoutPositionsRelativeToWindow } from './popout-restore-position';
 import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
@@ -277,7 +278,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       const sanitized = sanitizePersistedDockLayout(persisted);
       if (sanitized) {
         try {
-          event.api.fromJSON(sanitized);
+          // popout 位置:dockview 存的是屏幕坐标、恢复时又加主窗原点 → 先换算成相对主窗原点(否则每次重启往右下漂)。
+          event.api.fromJSON(popoutPositionsRelativeToWindow(sanitized, window.screenX, window.screenY));
           restored = true;
         } catch (err) {
           restoreFailed = true;

@@ -148,6 +148,25 @@ export type WindowEntry = z.infer<typeof WritableWindowEntrySchema>;
 
 // ─── v3 schema ──────────────────────────────────────────
 
+// 窗口几何(VSCode windowsStateHandler 每窗口记住位置 / 尺寸 / 最大化 / 全屏)。bounds = getNormalBounds()(最大化 /
+// 全屏前的普通矩形,屏幕坐标,多显示器下可为负)。上限只挡畸形值。BDD: src/__tests__/window-state-restore/
+const WINDOW_COORD_MAX = 1_000_000;
+const WindowStateSchema = z
+  .object({
+    bounds: z
+      .object({
+        x: z.number().int().min(-WINDOW_COORD_MAX).max(WINDOW_COORD_MAX),
+        y: z.number().int().min(-WINDOW_COORD_MAX).max(WINDOW_COORD_MAX),
+        width: z.number().int().positive().max(WINDOW_COORD_MAX),
+        height: z.number().int().positive().max(WINDOW_COORD_MAX),
+      })
+      .strict(),
+    isMaximized: z.boolean().optional(),
+    isFullScreen: z.boolean().optional(),
+  })
+  .strict();
+export type PersistedWindowState = z.infer<typeof WindowStateSchema>;
+
 /**
  * main-owned 窗口字段(renderer 不能写;写入合并时保留盘上值,explorer:read 返回前剥离)。字段清单与 schema 由同一个
  * shape 派生 —— 此前常量、schema extend、写入合并三处各写一遍,新增字段时合并漏保留即每次 renderer 写盘把它抹掉。
@@ -155,6 +174,8 @@ export type WindowEntry = z.infer<typeof WritableWindowEntrySchema>;
 const MAIN_OWNED_WINDOW_SHAPE = {
   layout: LayoutSchema.optional(),
   lastClosedAt: z.number().int().nonnegative().nullable().optional(),
+  /** 窗口几何(关窗 / 退出时 main 记录,建窗时按显示器校验后恢复);缺省 = 新窗口默认尺寸。 */
+  windowState: WindowStateSchema.optional(),
 };
 export const MAIN_OWNED_WINDOW_FIELDS = Object.keys(MAIN_OWNED_WINDOW_SHAPE) as readonly (keyof typeof MAIN_OWNED_WINDOW_SHAPE)[];
 

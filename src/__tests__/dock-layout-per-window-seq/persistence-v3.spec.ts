@@ -534,7 +534,7 @@ describe('explorer.json v3 persistence schema and merge semantics', () => {
 
     const merged = mergeWritableIntoFull(current, writable);
 
-    expect(MAIN_OWNED_WINDOW_FIELDS).toEqual(['layout', 'lastClosedAt']);
+    expect(MAIN_OWNED_WINDOW_FIELDS).toEqual(['layout', 'lastClosedAt', 'windowState']);
     expect(merged.windows[0]).toMatchObject({
       windowSeq: 0,
       workspace: { root: '/renderer' },

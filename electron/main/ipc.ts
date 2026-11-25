@@ -108,6 +108,7 @@ import {
   MAX_LAYOUT_BYTES,
   sanitizeReadLayout,
 } from './lib/layout-read-guard';
+import { countPopoutGroups, notePopoutRestore } from './services/popout-restore-focus.service';
 
 // Agent Terminal MCP 授权应答 schema 见 ./agent-auth-schema(单列以便测试 import,E146)。
 
@@ -142,7 +143,11 @@ export function registerIpc(deps: WindowIpcDeps): void {
         payload === null ? null : findWindowEntryBySeq(payload.windows, seq);
       // 边界(E215,E89 写端对偶):读端复用写端 JSON-safe + 字节上限,旧版/污染的超大 layout → null
       //(走默认布局),不让 renderer fromJSON 处理超大 layout 卡顿/放大。
-      return sanitizeReadLayout(entry?.layout ?? null);
+      const layout = sanitizeReadLayout(entry?.layout ?? null);
+      // 恢复的 popout 子窗不抢主窗焦点:登记该窗口接下来将恢复的 popout 数(见 popout-restore-focus.service)。
+      const senderId = (event.sender as { id?: unknown }).id;
+      if (typeof senderId === 'number') notePopoutRestore(senderId, countPopoutGroups(layout));
+      return layout;
     },
   );
 
