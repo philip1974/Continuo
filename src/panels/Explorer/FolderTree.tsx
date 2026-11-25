@@ -331,11 +331,10 @@ export function FolderTree({ root }: { root: string }) {
   const trashConfirmPaths = trashConfirm?.paths;
   useEffect(() => (trashConfirmPaths === undefined ? undefined : holdAutoSave(trashConfirmPaths)), [trashConfirmPaths]);
   // 根目录「重试」后焦点去向(重试按钮随加载态卸载,不处理焦点会掉到 body):成功 → 树;成功但为空 → 空态提示;
-  // 仍失败 → 新的重试按钮。
-  const retryFocusPendingRef = useRef(false);
-  // 「显示资源管理器」/ 打开文件夹的 focusTree 请求:同上一套落点,置标记后经它重跑下方焦点 effect(树已加载完时
-  // rootLoad / items 不再变化)。
-  const [focusRequestSeq, setFocusRequestSeq] = useState(0);
+  // 仍失败 → 新的重试按钮。「显示资源管理器」/ 打开文件夹的 focusTree 请求同一套落点。
+  // 用 state 不用 ref:与 setRootLoad(ROOT_LOADING) 同批提交,下方 effect 看到「有请求」时 rootLoad 必是请求之后的值;
+  // ref 会被请求前那次渲染尚未执行的 effect(闭包里还是旧的失败结果)读到并消费掉。
+  const [focusPending, setFocusPending] = useState(false);
   const loadFailedRef = useRef<HTMLDivElement>(null);
   const emptyStateRef = useRef<HTMLDivElement>(null);
   // 子目录读取失败(VSCode:展开失败的目录下显示错误行):目录 → 原因;读到即删除。
@@ -1056,7 +1055,7 @@ export function FolderTree({ root }: { root: string }) {
             variant="outlined"
             size="sm"
             onClick={() => {
-              retryFocusPendingRef.current = true;
+              setFocusPending(true);
               setRootLoad(ROOT_LOADING);
               refreshAll();
             }}
@@ -1077,19 +1076,20 @@ export function FolderTree({ root }: { root: string }) {
   // 「重试」有结果后放焦点:成功且有项 → 树的焦点行;成功但为空 → 空态提示;仍失败 → 新的重试按钮
   // (VSCode 列表重载后焦点回列表)。标记在每种结果下都清掉 —— 残留的标记会在之后根目录出现文件时
   // 把用户在编辑器 / 终端的焦点拉回树。「为空」须等根目录子项真正写入缓存(rootLoad 可能先于树重建到达)。
+  // 有项时 updateDomFocus 在定时器里聚焦,并轮询等焦点行挂载(取不到回落首项)。
   useEffect(() => {
-    if (!retryFocusPendingRef.current || rootLoad === ROOT_LOADING) return;
+    if (!focusPending || rootLoad === ROOT_LOADING) return;
     if (typeof rootLoad === 'object') {
-      retryFocusPendingRef.current = false;
+      setFocusPending(false);
       loadFailedRef.current?.querySelector('button')?.focus();
     } else if (items.length > 0) {
-      retryFocusPendingRef.current = false;
+      setFocusPending(false);
       tree.updateDomFocus();
     } else if (tree.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds?.[root] !== undefined) {
-      retryFocusPendingRef.current = false;
+      setFocusPending(false);
       emptyStateRef.current?.focus();
     }
-  }, [rootLoad, items, root, tree, focusRequestSeq]);
+  }, [focusPending, rootLoad, items, root, tree]);
 
   // 命令请求(explorer-requests):新建文件 / 文件夹 → 在树焦点项所在目录(目录 → 自身,文件 → 所在目录,无 → 根;
   // 同键盘粘贴的落点)打开新建输入框;focusTree(显示资源管理器 / 打开文件夹之后)→ 加载完成后焦点进树,同「重试」的落点。
@@ -1104,8 +1104,7 @@ export function FolderTree({ root }: { root: string }) {
             t && t.getState().focusedItem != null ? focusedTargetDir(t, renderedItemsRef.current, root) : root;
           setCreating({ type: request.type, parentDir });
         } else {
-          retryFocusPendingRef.current = true;
-          setFocusRequestSeq((n) => n + 1);
+          setFocusPending(true);
         }
         return true;
       }),

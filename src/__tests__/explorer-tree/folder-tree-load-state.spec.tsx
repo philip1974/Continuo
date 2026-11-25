@@ -74,6 +74,7 @@ vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => n
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { FolderTree } from '../../panels/Explorer/FolderTree';
+import { __resetExplorerRequestsForTest, requestExplorer } from '../../panels/Explorer/explorer-requests';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
 
 const row = (container: HTMLElement, p: string) =>
@@ -97,6 +98,7 @@ beforeEach(() => {
   vi.spyOn(notify, 'error').mockImplementation(() => '');
   useExplorerStore.setState({ expandedPaths: new Set(), sort: { by: 'name', reverse: false } });
   useExplorerClipboardStore.setState({ kind: null, paths: [] });
+  __resetExplorerRequestsForTest();
 });
 afterEach(() => {
   cleanup();
@@ -363,6 +365,85 @@ describe('FolderTree · 重试后的焦点', () => {
     await new Promise((res) => setTimeout(res, 30));
     expect(document.activeElement).toBe(outside);
     outside.remove();
+  });
+
+  // 「重试」按钮刚提交到 DOM、显示它的那次渲染的 effect 还没执行时就点下(手快 / 主线程繁忙):不在 act 里等渲染,
+  // 用 MutationObserver 在提交后的微任务里点。旧 effect 闭包里的 rootLoad 还是上次的失败结果,不能据此把焦点落到
+  // 即将卸载的旧按钮并清掉落点请求。
+  async function clickRetryRightAfterCommit(
+    r: ReturnType<typeof render>,
+    nextRootListDir: typeof h.rootListDir,
+  ): Promise<void> {
+    const retry = await new Promise<HTMLElement>((resolve) => {
+      const find = () => r.queryByRole('button', { name: RETRY });
+      const mo = new MutationObserver(() => {
+        const el = find();
+        if (el) {
+          mo.disconnect();
+          resolve(el);
+        }
+      });
+      mo.observe(r.container, { childList: true, subtree: true });
+    });
+    h.rootListDir = nextRootListDir;
+    retry.focus();
+    fireEvent.click(retry);
+  }
+
+  it('点得比上次渲染的 effect 早 → 重试成功仍把焦点移到树内焦点行', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    const r = render(<FolderTree root="/work" />);
+    await clickRetryRightAfterCommit(r, null);
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    await waitFor(() => {
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.closest('[role="tree"]')).not.toBeNull();
+    });
+  });
+
+  it('点得比上次渲染的 effect 早 → 重试成功但为空仍把焦点落到空态提示', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    const r = render(<FolderTree root="/work" />);
+    await clickRetryRightAfterCommit(r, async () => ({ ok: true, data: [] }));
+    const empty = await r.findByText(EMPTY);
+    await waitFor(() => expect(document.activeElement).toBe(empty));
+  });
+
+  it('点得比上次渲染的 effect 早 → 重试仍失败仍把焦点落在新的「重试」按钮', async () => {
+    h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    const r = render(<FolderTree root="/work" />);
+    await clickRetryRightAfterCommit(r, h.rootListDir);
+    await waitFor(() => {
+      const again = r.getByRole('button', { name: RETRY });
+      expect(document.activeElement).toBe(again);
+    });
+  });
+
+  // 空根目录已加载(rootLoad 已是 loaded)后整目录重新读取:读取期间来了 focusTree 请求,读取完成时 rootLoad 不变、
+  // 列表仍为空 —— 焦点仍须在根目录子项写入缓存后落到空态提示(不永远挂起,也不留着标记日后把焦点拉回树)。
+  it('空根目录重新读取期间请求焦点进树 → 读取完成后焦点落到空态提示', async () => {
+    h.rootListDir = async () => ({ ok: true, data: [] });
+    const r = render(<FolderTree root="/work" />);
+    await r.findByText(EMPTY);
+    let finishReload: (v: unknown) => void = () => {};
+    const reload = new Promise((res) => {
+      finishReload = res;
+    });
+    // 切换「显示隐藏文件」刷新根目录:刷新路径自己的 listDir 失败 → 走 invalidate 经 loader 重读(挂起)
+    let call = 0;
+    h.rootListDir = async () =>
+      ++call === 1 ? { ok: false, code: 'FS_DENIED', message: 'denied' } : reload;
+    h.settings = { 'explorer.showHiddenFiles': true };
+    r.rerender(<FolderTree root="/work" />);
+    await waitFor(() => expect(call).toBe(2));
+    act(() => {
+      requestExplorer({ kind: 'focusTree', root: '/work' });
+    });
+    await new Promise((res) => setTimeout(res, 20));
+    await act(async () => {
+      finishReload({ ok: true, data: [] });
+    });
+    await waitFor(() => expect(document.activeElement).toBe(r.getByText(EMPTY)));
   });
 
   it('重试仍失败 → 焦点落在新的「重试」按钮', async () => {
