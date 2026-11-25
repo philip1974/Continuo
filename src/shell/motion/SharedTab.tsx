@@ -9,6 +9,9 @@ import type {
 import { IconButton } from '@/design';
 import { useT } from '@/i18n';
 import { focusPanelContent } from '@/shell/dock/panel-focus';
+import { closePanelsInOrder } from '@/shell/dock/wrap-panel-close';
+import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
+import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
 import {
   panelTitleLayoutId,
   tabIndicatorLayoutId,
@@ -264,7 +267,26 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
     [api, isMaximized, containerApi],
   );
 
+  // 右键菜单(VSCode 标签右键:关闭 / 关闭其他 / 关闭右侧 / 全部关闭)。dock 面板无「已保存」概念,不列「关闭已保存」。
+  // 依次经 api.close()(含关闭动画与终端运行中程序确认);任一确认取消 → 其余不关。BDD: src/__tests__/tab-context-menu/
+  const menuEntries = useCallback((): TabMenuEntry[] => {
+    const panels = api.group.panels;
+    const close = (kind: TabCloseKind) => () => {
+      const ids = new Set(tabCloseTargets(panels, api.id, kind));
+      void closePanelsInOrder(panels.filter((p) => ids.has(p.id)));
+    };
+    const index = panels.findIndex((p) => p.id === api.id);
+    return [
+      { label: t('shell.tab.ctx.close'), onSelect: close('close') },
+      { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: panels.length <= 1 },
+      { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= panels.length - 1 },
+      'separator',
+      { label: t('shell.tab.ctx.close_all'), onSelect: close('all') },
+    ];
+  }, [api, t]);
+
   return (
+    <TabContextMenu entries={menuEntries}>
     <div
       ref={rootRef}
       // a11y(A119):Dock tab 须有 tab 语义 + 键盘模型。role=tab + aria-selected 暴露选中态;
@@ -340,5 +362,6 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
         />
       )}
     </div>
+    </TabContextMenu>
   );
 }

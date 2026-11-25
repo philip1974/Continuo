@@ -11,8 +11,9 @@ const suppressedPanelCloses = new Set<string>();
 const pendingCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // 排定中的 close 里由 reconciler 发起的那些(见 cancelReconcilerPanelClose)。
 const pendingReconcilerCloses = new Set<string>();
-// 关闭守卫(异步确认)尚未答复的 panel id:期间重复 close 不重复询问。
-const guardingCloses = new Set<string>();
+// 关闭守卫(异步确认)尚未答复的 panel id → 守卫结果(true 放行):期间重复 close 不重复询问;
+// closePanelsInOrder 据此等上一个面板的确认答复再关下一个。
+const guardingCloses = new Map<string, Promise<boolean>>();
 
 /**
  * 面板关闭守卫:true 放行;false 取消;Promise 时等它(如终端有子进程时弹确认)。同步返回 true 的面板
@@ -145,21 +146,35 @@ export function wrapPanelClose(
         return;
       }
       if (verdict === false) return;
-      guardingCloses.add(id);
-      void verdict.then(
+      const settled = verdict.then(
         (ok) => {
           guardingCloses.delete(id);
           if (ok) startClose();
+          return ok;
         },
         () => {
           guardingCloses.delete(id);
           startClose(); // 守卫自身出错不应让面板关不掉
+          return true;
         },
       );
+      guardingCloses.set(id, settled);
     },
     writable: true,
     configurable: true,
   });
+}
+
+/**
+ * 依次关闭一组面板(tab 右键「关闭其他 / 关闭右侧 / 全部关闭」)。有关闭确认的面板(运行中程序的终端)等用户答复再关下一个
+ *(确认框同一时刻只有一个);任一处选「取消」→ 其余面板都不关(VSCode:批量关闭中任一确认被否决即整体取消)。
+ */
+export async function closePanelsInOrder(panels: readonly IDockviewPanel[]): Promise<void> {
+  for (const panel of panels) {
+    panel.api.close();
+    const pending = guardingCloses.get(panel.api.id);
+    if (pending !== undefined && !(await pending)) return;
+  }
 }
 
 /**

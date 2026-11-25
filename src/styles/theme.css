@@ -192,6 +192,13 @@
     outline: 1px solid var(--md-focus-ring);
     outline-offset: 1px;
   }
+  /* 可点击控件手形光标(VSCode:按钮 / 状态栏项 / 动作栏一律 pointer)。Tailwind v4 preflight 不再给 <button> 手形,
+   * design 组件各自写了 pointer,原生按钮(状态栏 Copy MCP config、设置分类、市场热门标签等)却是默认箭头。基础层
+   * 低于 design 组件层与 utilities,显式光标照常覆盖;禁用态不命中。BDD:src/__tests__/pointer-cursor-parity */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }
 
 /* 韩文按词(어절)断行:默认 word-break: normal 会在词中间换行(「설정을 변경하/면」)。<html lang> 由

@@ -17,6 +17,7 @@ import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 import { coApp } from '@/plugins/co-app';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
+import { isContextMenuKey } from '@/lib/context-menu-key';
 import { tWithFallback } from '@/i18n';
 import { FOCUS_NEXT_PART_COMMAND, FOCUS_PREVIOUS_PART_COMMAND } from '@/shell/focus-parts';
 
@@ -144,9 +145,7 @@ export function runTerminalCommandFromKey(event: KeyboardEvent, id: string): voi
 
 /** 键盘打开终端右键菜单:Shift+F10 / 菜单键(Windows / Linux 约定,mac 上同样可用)。 */
 export function isTerminalContextMenuKey(event: KeyboardEvent): boolean {
-  if (event.type !== 'keydown' || event.isComposing) return false;
-  if (event.key === 'ContextMenu') return true;
-  return event.key === 'F10' && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+  return isContextMenuKey(event);
 }
 
 /**

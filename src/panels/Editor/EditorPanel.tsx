@@ -30,6 +30,7 @@ import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
+import { nextBatchCloseStep, type BatchClose } from './tab-batch-close';
 import { rebindEditorRoots } from './editor-root-registry';
 import { applyEditorWriteBack, EDITOR_DISK_CHANGED, revertFile } from './editor-file-actions';
 import { editorFileDeps } from './editor-file-deps';
@@ -204,7 +205,8 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   // 关闭脏 tab 二次确认。closeCandidate 用轻量 TabChrome(打磨 R23:不持完整
   // EditorTab/content,确认框只需 filePath,关闭只需 id)。
-  const [closeCandidate, setCloseCandidate] = useState<TabChrome | null>(null);
+  // batch:所属的批量关闭进度(右键「全部关闭」等;单个关闭也是一批只含它自己),确认后接着推进。
+  const [closeCandidate, setCloseCandidate] = useState<(TabChrome & { readonly batch: BatchClose }) | null>(null);
 
   // 自动保存:Markdown 启用,代码不启用(决策 #3)。按 tabId 保存,切走/卸载时
   // flush pending,避免连续输入后立即切 tab 丢失整段编辑。
@@ -319,24 +321,36 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     }
   }, [overwriteCandidate, closeTab]);
 
-  // 关闭脏 tab 二次确认(closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave)。
-  const onTabCloseRequest = useCallback(
-    (tab: TabChrome) => {
-      // tab.dirty 是 TabChrome 快照,store 可能落后编辑器(Milkdown 自适应延迟上抛,单次最长约 2s、持续输入最长 5s):
-      // 先同步回写未上抛的输入,再按 store 最新 dirty 判定。否则「干净」tab 直接关闭,
-      // 随后卸载回写找不到 tab → 这段输入丢失。
-      flushEditorWriteBacks([tab.id]);
-      const live = findEditorFileTabById(useEditorStore.getState().tabs, tab.id);
-      if (!live) return;
-      if (live.dirty) setCloseCandidate({ id: live.id, filePath: live.filePath, dirty: true });
-      else closeTab(live.id);
+  // 关闭 tab(单个 × / ⌘W / 中键,与右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」同一路径):按 tab 顺序逐个确认仍脏的
+  // tab(保存 / 不保存 / 取消;批量时先切到该 tab,VSCode 同),全部确认完才一起关闭;任一处取消 → 整批不关。
+  // closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave。BDD: src/__tests__/tab-context-menu/
+  const advanceBatchClose = useCallback(
+    (progress: BatchClose) => {
+      const step = nextBatchCloseStep(useEditorStore.getState().tabs, progress);
+      if (step.kind === 'close') {
+        for (const id of step.ids) closeTab(id);
+        return;
+      }
+      if (progress.closeIds.length > 1) useEditorStore.getState().switchTab(step.tab.id);
+      setCloseCandidate({ ...step.tab, batch: step.batch });
     },
     [closeTab],
   );
+  const onTabsCloseRequest = useCallback(
+    (ids: readonly string[]) => {
+      // TabChrome 的 dirty 是快照,store 可能落后编辑器(Milkdown 自适应延迟上抛,单次最长约 2s、持续输入最长 5s):
+      // 先同步回写未上抛的输入,再按 store 最新 dirty 判定。否则「干净」tab 直接关闭,
+      // 随后卸载回写找不到 tab → 这段输入丢失。
+      flushEditorWriteBacks(ids);
+      advanceBatchClose({ rest: ids, closeIds: ids });
+    },
+    [advanceBatchClose],
+  );
+  const onTabCloseRequest = useCallback((tab: TabChrome) => onTabsCloseRequest([tab.id]), [onTabsCloseRequest]);
   const confirmDiscard = useCallback(() => {
-    if (closeCandidate) closeTab(closeCandidate.id);
     setCloseCandidate(null);
-  }, [closeCandidate, closeTab]);
+    if (closeCandidate) advanceBatchClose(closeCandidate.batch);
+  }, [closeCandidate, advanceBatchClose]);
   // 「保存」(VSCode 关闭脏编辑器的默认按钮):保存成功才关闭;磁盘已被外部修改 → 走覆盖确认(确认并写盘成功后
   // 关闭);其它失败不关闭、按 code 提示,改动留在 tab 里。
   const confirmSaveAndClose = useCallback(async () => {
@@ -346,7 +360,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     try {
       const r = await saveTab(candidate.id);
       if (r.ok) {
-        closeTab(candidate.id);
+        advanceBatchClose(candidate.batch);
         return;
       }
       if (r.code === EDITOR_DISK_CHANGED) {
@@ -357,7 +371,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     } catch (err) {
       notifyThrownError(err);
     }
-  }, [closeCandidate, closeTab, saveTab, onSaveFailed]);
+  }, [closeCandidate, advanceBatchClose, saveTab, onSaveFailed]);
 
   // 全局命令 workbench.action.files.save / closeActiveEditor(⌘S / ⌘W,焦点在面板外也生效)经此调用面板内同一实现
   //(覆盖确认 / 保存·不保存·取消 确认框状态在本组件)。BDD: src/__tests__/workbench-editor-commands/
@@ -468,7 +482,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         else openAdjacentEditor(winner === NEXT_EDITOR_COMMAND_ID ? 1 : -1);
       }}
     >
-      <EditorHeader onCloseRequest={onTabCloseRequest} />
+      <EditorHeader onCloseRequest={onTabCloseRequest} onCloseTabsRequest={onTabsCloseRequest} />
       {activeIsMarkdown && (
         // markdown 模式切换:tab 行下方独立一行,居中。
         // 不加 border — 与上方 tab 行 / 下方编辑器无缝衔接,只靠 SegmentedControl

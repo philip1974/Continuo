@@ -96,3 +96,15 @@
 .dv-popout-window {
   isolation: isolate;
 }
+
+/* 组标签栏固定、只滚面板内容(VSCode)。dockview 分栏视图 .dv-view 自带 position:absolute + overflow:auto,组就在它里面:
+ * 面板内容里的绝对定位元素(如 SR_ONLY_STYLE 的 role=status 文本)沿途无定位祖先时包含块落到 .dv-view,逃出面板滚动容器
+ * 与组的 overflow:hidden 裁剪、撑高 .dv-view,滚轮在内容滚到底后接力滚它 → 标签栏连同面板顶部被滚出视野。
+ * ① 内容区作定位容器,一次兜住所有面板(含 popout / 浮动组);② 分栏视图本就由布局精确定尺寸,改 clip 不再是滚动容器
+ *(滚轮 / scrollIntoView / 聚焦都滚不动)。BDD:src/__tests__/dock-group-scroll-containment */
+.dv-content-container {
+  position: relative;
+}
+.dv-split-view-container > .dv-view-container > .dv-view {
+  overflow: clip;
+}

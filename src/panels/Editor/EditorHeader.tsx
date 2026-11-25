@@ -8,7 +8,7 @@
 //   - markdown 模式切换(Edit/Source/Preview)已搬到 EditorPanel 内的模式切换行(SegmentedControl)
 //     —— tab 行下方独立一行,与编辑器同宽,视觉上更干净。
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject, type WheelEvent } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject, type WheelEvent } from 'react';
 import {
   getEffectiveMode,
   useEditorStore,
@@ -31,7 +31,12 @@ import {
   isEditorActionVisible,
   type EditorActionSpec,
 } from '@/plugins/registries/EditorActionRegistry';
-import { basename } from '@/lib/path-cross';
+import { basename, stripRootPrefix } from '@/lib/path-cross';
+import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
+import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
+import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
+import { revealPathOrNotify } from '@/panels/Explorer/reveal-or-notify';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { tabLabelDescriptions } from './tab-label-description';
 
 /**
@@ -48,6 +53,11 @@ export interface TabChrome {
 
 interface EditorHeaderProps {
   onCloseRequest: (tab: TabChrome) => void;
+  /**
+   * 批量关闭(tab 右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」),ids 按 tab 顺序;脏 tab 的确认由调用方负责。
+   * 不提供则 tab 无右键菜单。
+   */
+  onCloseTabsRequest?: (ids: readonly string[]) => void;
 }
 
 const EMPTY_TAB_CHROME: TabChrome[] = [];
@@ -231,6 +241,7 @@ const EditorActionsArea = memo(function EditorActionsArea({
 // 父级重渲时跳过,不再每键重建全部 TabNavItem 与闭包。
 export const EditorHeader = memo(function EditorHeader({
   onCloseRequest,
+  onCloseTabsRequest,
 }: EditorHeaderProps) {
   const t = useT(); // 订阅 locale 让 basename 改语言时 re-render
   // 只订阅派生的 tab chrome(打磨 R23 + 性能 P12)。旧实现每次 store 更新都在 selector 里
@@ -275,6 +286,44 @@ export const EditorHeader = memo(function EditorHeader({
   const fades = useTabOverflowFades(tabsWrapperRef, tabsChrome);
   useRevealActiveTab(tabsWrapperRef, activeTabId, tabsChrome);
 
+  // tab 右键菜单(VSCode 编辑器标签右键):关闭类 + 复制路径 / 复制相对路径 + 在系统文件管理器中显示。打开时才构建。
+  // BDD: src/__tests__/tab-context-menu/
+  const menuEntriesFor = useCallback(
+    (tab: TabChrome) => (): TabMenuEntry[] => {
+      if (!onCloseTabsRequest) return [];
+      const index = tabsChrome.findIndex((c) => c.id === tab.id);
+      const close = (kind: TabCloseKind) => () => onCloseTabsRequest(tabCloseTargets(tabsChrome, tab.id, kind));
+      const copyFailed = t('panels.explorer.copy_path_failed');
+      return [
+        { label: t('shell.tab.ctx.close'), onSelect: close('close') },
+        { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: tabsChrome.length <= 1 },
+        { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= tabsChrome.length - 1 },
+        { label: t('shell.tab.ctx.close_saved'), onSelect: close('saved') },
+        { label: t('shell.tab.ctx.close_all'), onSelect: close('all') },
+        'separator',
+        {
+          label: t('panels.explorer.ctx.copy_path'),
+          onSelect: () => void copyToClipboardOrNotify(tab.filePath, copyFailed),
+        },
+        {
+          label: t('panels.explorer.ctx.copy_relative_path'),
+          onSelect: () => {
+            const root = useWorkspaceStore.getState().root;
+            void copyToClipboardOrNotify(root === null ? tab.filePath : stripRootPrefix(root, tab.filePath), copyFailed);
+          },
+        },
+        'separator',
+        // 文件已删除(orphaned)无处可显示。
+        {
+          label: t('panels.explorer.ctx.reveal_in_finder'),
+          onSelect: () => void revealPathOrNotify(tab.filePath),
+          disabled: tab.orphaned === true,
+        },
+      ];
+    },
+    [onCloseTabsRequest, tabsChrome, t],
+  );
+
   if (tabsChrome.length === 0) return null;
 
   return (
@@ -289,9 +338,8 @@ export const EditorHeader = memo(function EditorHeader({
         {tabsChrome.map((tab, i) => {
           const tabTitle = basename(tab.filePath);
           const description = descriptions[i];
-          return (
+          const item = (
             <TabNavItem
-              key={tab.id}
               active={tab.id === activeTabId}
               dirty={tab.dirty}
               // a11y(A35):未保存状态文本传给 design TabNavItem(design 层无 i18n),AT 聚焦读出。
@@ -317,6 +365,13 @@ export const EditorHeader = memo(function EditorHeader({
                 </span>
               )}
             </TabNavItem>
+          );
+          if (!onCloseTabsRequest) return <Fragment key={tab.id}>{item}</Fragment>;
+          return (
+            // display:contents 包装:design TabNavItem 不转发 ref / 事件,右键与 Shift+F10 从 tab 冒泡到这里。
+            <TabContextMenu key={tab.id} entries={menuEntriesFor(tab)}>
+              <div className="contents">{item}</div>
+            </TabContextMenu>
           );
         })}
       </TabNav>

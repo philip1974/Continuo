@@ -444,6 +444,10 @@
 
 - [`dock-api-ref.spec.ts`](./dock-api-ref/dock-api-ref.spec.ts)
 
+## [Dock 组不随面板内容滚动(标签栏固定,只滚内容)](./dock-group-scroll-containment/README.md)
+
+- [`group-scroll-containment.spec.ts`](./dock-group-scroll-containment/group-scroll-containment.spec.ts)
+
 ## [dock-layout-json-safe-write — 布局写盘前清洗成 JSON-safe](./dock-layout-json-safe-write/README.md)
 
 - [`make-json-safe.spec.ts`](./dock-layout-json-safe-write/make-json-safe.spec.ts)
@@ -1353,6 +1357,10 @@
 - [`list-dirs-baseline.spec.ts`](./plugins-watcher/list-dirs-baseline.spec.ts)
 - [`plugins-watcher.spec.ts`](./plugins-watcher/plugins-watcher.spec.ts)
 
+## [可点击控件统一手形光标](./pointer-cursor-parity/README.md)
+
+- [`pointer-cursor.spec.ts`](./pointer-cursor-parity/pointer-cursor.spec.ts)
+
 ## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
@@ -1613,6 +1621,10 @@
 
 - [`broker-reliability.spec.ts`](./stop-hook-broker-reliability/broker-reliability.spec.ts)
 - [`install-malformed-config.spec.ts`](./stop-hook-broker-reliability/install-malformed-config.spec.ts)
+
+## [tab 右键菜单(对齐 VSCode 编辑器标签右键菜单)](./tab-context-menu/README.md)
+
+- [`tab-context-menu.spec.tsx`](./tab-context-menu/tab-context-menu.spec.tsx)
 
 ## [tab-icons(SettingTab icon 工厂集合)](./tab-icons/README.md)
 
