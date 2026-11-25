@@ -2,7 +2,7 @@
 // 代码编辑器按文件名选语言:TS 泛型箭头函数不打断高亮;常见语言按 language-data 懒加载高亮(BDD: README.md)。
 import React from 'react';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { ensureSyntaxTree, language, type LanguageSupport, type LanguageDescription } from '@codemirror/language';
@@ -12,6 +12,13 @@ import { ThemeContext } from '../../theme/ThemeProvider';
 vi.mock('../../plugins/settings/values-store', () => ({
   useSettingValue: <T,>(_id: string, fallback: T) => fallback,
 }));
+
+// jsdom 没有 Range 的布局接口:CodeMirror 的异步测量(rAF)在高负载下赶上断言前触发会 console.error
+// 「textRange(...).getClientRects is not a function」,让「加载中卸载不报错」偶发失败。与其它编辑器规范同样补上。
+beforeEach(() => {
+  Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
+  Range.prototype.getBoundingClientRect ??= () => new DOMRect();
+});
 
 function nodeNames(doc: string, lang: Extension): string[] {
   const state = EditorState.create({ doc, extensions: [lang] });
