@@ -166,7 +166,7 @@ function QuickOpenBody() {
 
   // fuzzy 用 relPath 做匹配源(让用户能输 'src/foo' 这种路径片段);
   // 命名优先级保留在 fuzzyScore 词边界加分里(/ 算 boundary)。
-  // 性能 P16:传预计算的 relPathLower(scan 时一次),避免每按键对 ≤5000 候选重 lowercasing。
+  // 性能 P16:传预计算的 relPathLower(scan 时一次),避免每按键对全部候选(≤ QUICK_OPEN_MAX_FILES)重 lowercasing。
   // race(R2):只信任归属当前 root 的 results;effect 异步清理前的一帧也不展示旧 root 结果。
   const liveResults = useMemo(
     () => (resultsRoot === root ? results : EMPTY_RESULTS),
@@ -182,9 +182,17 @@ function QuickOpenBody() {
   );
   const recentCount = effectiveQuery ? 0 : ordered.recentCount;
   const recentLabel = t('quick_open.recently_opened');
+  // 候选扫描到上限被截断:有结果与无匹配时都提示(第二十四轮:旧实现只在有结果时提示,截断导致的「无匹配」看不出原因)。
+  // a11y(A65,A56 同族):动态出现的信息,焦点锁在搜索框时 SR 也须获知搜索范围不完整 → role=status(polite 中性提示)。
+  const limitHint =
+    liveResults.length >= QUICK_OPEN_MAX_FILES ? (
+      <div role="status" className="px-3 py-1 text-center text-2xs text-fg-dim">
+        {t('quick_open.limit_hint', { max: QUICK_OPEN_MAX_FILES })}
+      </div>
+    ) : null;
 
-  // 虚拟化列表(打磨 R25):filtered 仍是逻辑全集(最多 5000),但只渲染可视行,
-  // DOM 节点从最多 5000 降到几十。复用项目已有 @tanstack/react-virtual(同
+  // 虚拟化列表(打磨 R25):filtered 仍是逻辑全集(最多 QUICK_OPEN_MAX_FILES),但只渲染可视行,
+  // DOM 节点只有几十。复用项目已有 @tanstack/react-virtual(同
   // FolderTree)。selectedIndex / Enter 语义不变,键盘移动时 scrollToIndex 跟随。
   const openFile = useCallback(
     async (file: QuickOpenFile) => {
@@ -199,7 +207,7 @@ function QuickOpenBody() {
   );
 
   // 列表机制(virtualizer / 越界钳制 / 滚动跟随 / 键盘导航 / ARIA)走共享 usePickerList。
-  // filtered 仍是逻辑全集(最多 5000),只渲染可视行。
+  // filtered 仍是逻辑全集(最多 QUICK_OPEN_MAX_FILES),只渲染可视行。
   const { scrollRef, virtualItems, comboboxProps, listboxProps, getOptionProps } = usePickerList({
     idPrefix: 'quick-open',
     count: filtered.length,
@@ -263,9 +271,12 @@ function QuickOpenBody() {
           </div>
         ) : filtered.length === 0 ? (
           // a11y(A56,CommandPalette 兄弟):焦点锁搜索框,输入致结果空时须 live region 播报无匹配。
-          <div role="status" className="px-3 py-4 text-center text-xs text-fg-dim">
-            {liveResults.length === 0 ? t('quick_open.empty') : t('quick_open.no_match')}
-          </div>
+          <>
+            <div role="status" className="px-3 py-4 text-center text-xs text-fg-dim">
+              {liveResults.length === 0 ? t('quick_open.empty') : t('quick_open.no_match')}
+            </div>
+            {limitHint}
+          </>
         ) : (
           <>
             <ul
@@ -314,13 +325,7 @@ function QuickOpenBody() {
                 );
               })}
             </ul>
-            {liveResults.length >= QUICK_OPEN_MAX_FILES && (
-              // a11y(A65,A56 同族):扫描到 5000 文件截断的提示是动态出现的信息,焦点锁在搜索框
-              // 时 SR 用户不会获知结果被截断、搜索范围不完整 → role=status(polite 中性提示)。
-              <div role="status" className="px-3 py-1 text-center text-2xs text-fg-dim">
-                {t('quick_open.limit_hint')}
-              </div>
-            )}
+            {limitHint}
           </>
         )}
       </div>

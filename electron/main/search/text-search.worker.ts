@@ -12,7 +12,7 @@ if (!isMainThread && parentPort) {
   const port = parentPort;
   const { root, query } = workerData as { root: string; query: SearchQuery };
   runTextSearch({ root, query, onFiles: (files) => port.postMessage({ kind: 'files', files }) }).then(
-    ({ limitHit, filesLimitHit }) => port.postMessage({ kind: 'done', limitHit, filesLimitHit }),
+    (summary) => port.postMessage({ kind: 'done', ...summary }),
     (err: unknown) => {
       const { code, message } = thrownFields(err);
       port.postMessage({ kind: 'error', code: code ?? ERROR_CODES.SEARCH_FAILED, message: message ?? String(err) });

@@ -23,6 +23,8 @@
      (`WORKSPACE_SCAN_EXCLUDE`:`.git` / `node_modules` / `dist` / `out` / `build` / `.next` …);符号链接、非普通文件
      (FIFO / 设备)、> 1 MiB(`SEARCH_MAX_FILE_BYTES`)、非 UTF-8 或含 NUL 字节(二进制)的文件跳过;不读 `.gitignore`
      (与 VSCode 默认 `search.useIgnoreFiles` 的偏离,见末节)。文件数上限 `SEARCH_MAX_FILES`,超出标记 `filesLimitHit`。
+     因过大跳过的文件计数(`done.skippedLargeCount`)并报告路径(`done.skippedLargePaths`,至多
+     `SEARCH_SKIPPED_LARGE_REPORT_MAX` 个;其它原因的跳过不计),供视图提示「已跳过 N 个大文件」。
    - 逐行匹配(`\r\n` / `\n`),每个命中一条结果:行号 / 列号 1 起(列按 UTF-16,与编辑器定位一致)、命中长度、预览行
      (去行首空白;命中前超过 `SEARCH_PREVIEW_LEAD` 个字符时从命中前 `SEARCH_PREVIEW_LEAD` 处截起并加「…」,预览最长
      `SEARCH_PREVIEW_MAX`)。零长度命中跳过。每文件最多 `SEARCH_MAX_RESULTS_PER_FILE`(1000)条(文件标记 `truncated`),
@@ -44,10 +46,18 @@
      (公共 API,打开失败统一提示):选中匹配范围(列 / 长度为 UTF-16,与 worker 同一单位);Markdown 编辑 / 预览模式同样定位并选中
      (见 `search-open-markdown`)。单击匹配行打开;单击文件行切换折叠。
    - 状态行(`role=status`,`aria-live=polite`):搜索中「正在搜索…」/「{files} 个文件中有 {results} 个结果」(三语单复数)/
-     「未找到结果」/ 截断提示「结果过多,只显示了一部分。请缩小搜索范围」/ 文件数上限提示 / 失败原因(本地化)。
+     「未找到结果」/ 截断提示「结果过多,只显示了一部分。请缩小搜索范围」/ 文件数上限提示 / 「已跳过 N 个超过 1 MiB 的文件
+     (在编辑器中打开后可搜索)」(三语单复数)/ 失败原因(本地化)。文件数上限与跳过大文件的提示在「未找到结果」时同样显示。
      未打开工作区 → 提示先打开文件夹,不发起搜索。
    - 设计系统:design `Input` / `IconButton`,语义 token;亮暗主题、窄宽(输入与开关在窄面板内换行不溢出)。
-6. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.gitignore`;多行正则;搜索编辑器。
+6. **已打开编辑器的内存内容**(`search-open-editors.spec.tsx`,`search-engine.spec.ts` 同口径一节;VSCode
+   `searchService.getLocalResults`):工作区根下已打开的文本编辑器(图片标签除外)按编辑器 store 里的当前内容匹配 —— 含未保存
+   修改、不受 `SEARCH_MAX_FILE_BYTES` 限制;与 worker 同一匹配实现 `matchSearchText`(逐行、UTF-16 列号、正则 / 大小写 /
+   全词、每文件上限),同样受工作区排除表与包含 / 排除 glob 约束。发起搜索时即显示(排在磁盘结果前),main 推来的同一文件
+   (相对路径按平台大小写策略比较)结果丢弃 —— 未保存修改删掉的命中不显示。内存 + 磁盘合并后总数仍最多 `SEARCH_MAX_RESULTS`
+   (超出截断并标记 `limitHit`)。main 报告的跳过大文件中已打开的不计入提示。只读编辑器 store,不改它;搜索发起后编辑器
+   继续修改不实时刷新结果(重新搜索即更新)。
+7. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.gitignore`;多行正则;搜索编辑器。
 
 ## 规范文件
 
@@ -56,3 +66,4 @@
 - `search-ipc.spec.ts` — 4 的 IPC / 服务(窗口根、取消、事件转发、schema、preload 守卫)
 - `search-view.spec.tsx` — 5
 - `search-command.spec.ts` — 1
+- `search-open-editors.spec.tsx` — 6(及 5 的跳过大文件 / 无结果时的范围提示)

@@ -335,7 +335,7 @@ export const zh: Record<TranslationKey, string> = {
     '已跳过 {count} 项（含控制字符或当前 shell 无法表示）。',
   'panels.terminal.drag_drop.write_failed':
     '无法插入路径，终端会话可能已经关闭。',
-  'quick_open.limit_hint': '仅显示前 5000 个文件；输入更具体的查询缩小范围',
+  'quick_open.limit_hint': '工作区文件过多，只搜索了前 {max} 个文件',
 
   // explorer context menu (14)
   'panels.explorer.ctx.new_file': '新建文件',
@@ -809,6 +809,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.search.file_count_other': '{count} 个文件',
   'panels.search.limit_hit': '结果过多，只显示了部分匹配项。请缩小搜索范围',
   'panels.search.files_limit_hit': '文件过多，只搜索了前 {max} 个文件',
+  'panels.search.skipped_large_one': '已跳过 {count} 个超过 1 MiB 的文件（在编辑器中打开后可搜索）',
+  'panels.search.skipped_large_other': '已跳过 {count} 个超过 1 MiB 的文件（在编辑器中打开后可搜索）',
   'panels.search.failed': '搜索失败：{reason}',
   'panels.search.message_separator': '。',
   'panels.search.file_aria': '{path}：{results}',

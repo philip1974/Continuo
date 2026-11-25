@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { walkWorkspaceFiles } from '../../plugins/quick-open/walk-files';
+import { QUICK_OPEN_MAX_FILES } from '../../plugins/quick-open/store';
 import { fuzzyFilter } from '../../plugins/command-palette/fuzzy';
 import { listDir as mainListDir } from '../../../electron/main/ipc/fs/list-dir';
 import { LIST_DIR_MAX_DEPTH } from '../../../electron/shared/fs-limits';
@@ -115,7 +116,7 @@ describe('walkWorkspaceFiles', () => {
     };
     // 默认上限
     await walkWorkspaceFiles({ rootPath: '/r', listDir });
-    expect(captured?.maxFiles).toBe(5000);
+    expect(captured?.maxFiles).toBe(QUICK_OPEN_MAX_FILES);
     // 显式上限透传
     await walkWorkspaceFiles({ rootPath: '/r', listDir, maxFiles: 12 });
     expect(captured?.maxFiles).toBe(12);
@@ -187,9 +188,10 @@ describe('walkWorkspaceFiles', () => {
     expect(walkWorkspaceFiles.toString()).not.toContain('[...FULL_EXCLUDE');
   });
 
-  it('maxFiles 默认 5000,文件超过截断', async () => {
+  it('maxFiles 默认 QUICK_OPEN_MAX_FILES(50000),文件超过截断', async () => {
+    expect(QUICK_OPEN_MAX_FILES).toBe(50_000);
     const many: FileEntry[] = [];
-    for (let i = 0; i < 6000; i++) {
+    for (let i = 0; i < QUICK_OPEN_MAX_FILES + 1000; i++) {
       many.push(entry(`/r/f${i}.ts`, `f${i}.ts`, false));
     }
     const r = await walkWorkspaceFiles({
@@ -197,9 +199,9 @@ describe('walkWorkspaceFiles', () => {
       listDir: makeListDir(many),
     });
     if (r.ok) {
-      expect(r.data.length).toBe(5000);
+      expect(r.data.length).toBe(QUICK_OPEN_MAX_FILES);
       expect(r.data[0]?.name).toBe('f0.ts');
-      expect(r.data[4999]?.name).toBe('f4999.ts');
+      expect(r.data[QUICK_OPEN_MAX_FILES - 1]?.name).toBe(`f${QUICK_OPEN_MAX_FILES - 1}.ts`);
     }
   });
 
@@ -334,4 +336,54 @@ describe('walkWorkspaceFiles · 深层目录(真实 listDir)', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+// 第二十四轮:2 万文件工作区(huge/ 下 2 万)⌘P 输 `file-0`,根下 file-0.ts / src/a.ts 都搜不到 —— 候选上限 5000 且
+// list-dir 深度优先边读边下钻,opendir 顺序里排在前面的 huge/ 吃光名额。VSCode Quick Open 候选不截断(只截断结果数)。
+describe('walkWorkspaceFiles · 大工作区(真实 listDir)', () => {
+  async function makeHugeWorkspace(hugeCount: number): Promise<string> {
+    const root = await mkdtemp(path.join(tmpdir(), 'qo-huge-'));
+    await mkdir(path.join(root, 'src'), { recursive: true });
+    await writeFile(path.join(root, 'file-0.ts'), '');
+    await writeFile(path.join(root, 'src/a.ts'), '');
+    const perDir = 100;
+    for (let d = 0; d * perDir < hugeCount; d++) {
+      const dir = path.join(root, 'huge', `d${d}`);
+      await mkdir(dir, { recursive: true });
+      const names: string[] = [];
+      for (let i = d * perDir; i < Math.min(hugeCount, (d + 1) * perDir); i++) names.push(`file-${i}.ts`);
+      await Promise.all(names.map((n) => writeFile(path.join(dir, n), '')));
+    }
+    return root;
+  }
+  const realListDir = async (p: string, opts: Parameters<typeof mainListDir>[1]) =>
+    ({ ok: true as const, data: await mainListDir(p, opts) });
+
+  it('超过 5000 个文件时根下与 src/ 下的文件仍在候选里,搜 `file-0` 能找到根下 file-0.ts', async () => {
+    const root = await makeHugeWorkspace(6000);
+    try {
+      const r = await walkWorkspaceFiles({ rootPath: root, listDir: realListDir });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.data.length).toBe(6002);
+      const rel = fuzzyFilter(r.data, 'file-0', (f) => f.relPathLower).map((f) => f.relPath);
+      expect(rel).toContain('file-0.ts');
+      expect(r.data.map((f) => f.relPath)).toContain('src/a.ts');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('仍超上限而截断时,目录自身的文件先于其子目录入选(根下文件不被大子目录挤掉)', async () => {
+    const root = await makeHugeWorkspace(300);
+    try {
+      const r = await walkWorkspaceFiles({ rootPath: root, listDir: realListDir, maxFiles: 10 });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.data.length).toBe(10);
+      expect(r.data.map((f) => f.relPath)).toContain('file-0.ts');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

@@ -215,6 +215,10 @@ async function walk(
   const chunk = new Array<DirEntryLike>(LSTAT_CHUNK);
   let chunkCount = 0;
   let stop = false;
+  // 本层文件优先于子目录(Quick Open 第二十四轮):maxFiles 截断时,旧实现边读边深度优先下钻,opendir 顺序里排在前面的
+  // 大子目录(如 2 万文件的 huge/)会吃光名额,连根下的文件都进不了候选。改为本层全部条目读完、再按序下钻子目录 ——
+  // 未截断时文件集合不变(仅同名项的相对次序随遍历次序变化);截断时浅层文件先入选。下钻时本层 Dir 句柄已关闭。
+  const subdirs: string[] = [];
 
   // 处理一块:并发 lstat(保留块内顺序),逐项组装/计数/递归。stop=true 表示 maxFiles 已达,应停。
   const flushChunk = async (): Promise<void> => {
@@ -259,23 +263,9 @@ async function walk(
         );
       }
 
-      // 递归:目录、未达深度、且不是 symlink(不跟随链接:递归扫描的链接目录不展开,防循环)
-      const shouldRecurse = isDirectory && depth < maxDepth && !isSymlink;
-      if (shouldRecurse) {
-        const children = await walk(
-          full,
-          depth + 1,
-          maxDepth,
-          exclude,
-          withStats,
-          maxFiles,
-          maxTotalEntries,
-          state,
-        );
-        for (let i = 0; i < children.length; i++) {
-          out[out.length] = children[i]!;
-        }
-      }
+      // 递归:目录、未达深度、且不是 symlink(不跟随链接:递归扫描的链接目录不展开,防循环)。
+      // 先记下,本层读完再下钻(见下方 subdirs)。
+      if (isDirectory && depth < maxDepth && !isSymlink) subdirs[subdirs.length] = full;
     }
   };
 
@@ -292,6 +282,14 @@ async function walk(
   }
   // 处理流末尾的残块(for await 正常结束时 Dir 已自动关闭;flushChunk 不依赖 Dir 句柄)。
   if (!stop) await flushChunk();
+
+  for (const sub of subdirs) {
+    if (state.fileCount >= maxFiles) break;
+    const children = await walk(sub, depth + 1, maxDepth, exclude, withStats, maxFiles, maxTotalEntries, state);
+    for (let i = 0; i < children.length; i++) {
+      out[out.length] = children[i]!;
+    }
+  }
 
   return sortDirsFirst(out);
 }

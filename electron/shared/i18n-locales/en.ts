@@ -355,7 +355,7 @@ export const en = {
     '{count} item(s) skipped (control chars or unrepresentable in shell).',
   'panels.terminal.drag_drop.write_failed':
     'Failed to insert path — terminal session may have closed.',
-  'quick_open.limit_hint': 'Showing first 5000 files; refine your query',
+  'quick_open.limit_hint': 'Too many files: only the first {max} files of the workspace were searched',
 
   // explorer context menu (14)
   'panels.explorer.ctx.new_file': 'New File',
@@ -850,6 +850,8 @@ export const en = {
   'panels.search.file_count_other': '{count} files',
   'panels.search.limit_hit': 'Too many results: only a subset of all matches is shown. Be more specific in your search to narrow down the results.',
   'panels.search.files_limit_hit': 'Too many files: only the first {max} files were searched.',
+  'panels.search.skipped_large_one': 'Skipped {count} file larger than 1 MiB (open it in the editor to search it)',
+  'panels.search.skipped_large_other': 'Skipped {count} files larger than 1 MiB (open them in the editor to search them)',
   'panels.search.failed': 'Search failed: {reason}',
   'panels.search.message_separator': '. ',
   'panels.search.file_aria': '{path}: {results}',

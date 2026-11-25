@@ -33,7 +33,7 @@
 {
   rootPath: string;          // workspace 根
   listDir: (path, opts) => Promise<{ ok: true, data: FileEntry[] } | IpcFail>;
-  maxFiles?: number;         // 默认 5000
+  maxFiles?: number;         // 默认 QUICK_OPEN_MAX_FILES(50000)
   extraExclude?: string[];   // 额外 ignore basename
 }
 ```
@@ -42,11 +42,17 @@
 - 调 `listDir(rootPath, { maxDepth: LIST_DIR_MAX_DEPTH(32,list-dir 递归硬上限), exclude: [默认 + extraExclude] })`
   —— 对齐 VSCode「搜全工作区」(无业务深度限制,只受排除规则与结果数上限约束)。此前写死 8 层:8 层目录下的
   文件(截图审计里 `packages/core/src/internal/utils/very/deep/nested/<长文件名>.ts`)根本不进候选,搜「ts」只出浅层
-  a.ts / b.ts。模糊匹配与结果数上限(5000)都不是原因(见 walk-files.spec.ts「深层目录(真实 listDir)」)
+  a.ts / b.ts。模糊匹配与结果数上限都不是原因(见 walk-files.spec.ts「深层目录(真实 listDir)」)
+- 候选上限 `QUICK_OPEN_MAX_FILES` = 50000(与「在文件中查找」的 `SEARCH_MAX_FILES` 同值;VSCode Quick Open 候选不截断、
+  只截断结果数)。此前 5000 + list-dir 深度优先边读边下钻:2 万文件工作区(huge/ 下 2 万)⌘P 输 `file-0`,根下 file-0.ts、
+  src/a.ts 都进不了候选(第二十四轮)。list-dir 现在**本层条目读完再下钻子目录**:仍超上限而截断时,目录自身的文件先于
+  其子目录入选(根下文件不被大子目录挤掉)。实测 2.1 万文件:main 侧 list-dir 约 75ms、结果约 4MB(见 walk-files.spec.ts
+  「大工作区(真实 listDir)」)
+- 新建文件:每次打开 ⌘P 重新扫描(扫描期间先显示上次列表),新文件在下一次打开时出现
 - 默认 extraExclude:`dist / out / build / .next / .nuxt / .cache / .vite`
   (listDir 内置已排:`.git / .svn / .hg / node_modules / .DS_Store / Thumbs.db`)
 - 过滤 isDirectory=false(只要文件,不要目录)
-- slice(0, maxFiles)防卡死
+- slice(0, maxFiles)防卡死;截断时 Modal 显示「只搜索了前 N 个文件」(有结果与无匹配都显示,见 quick-open-modal)
 - listDir 失败 → 返 `{ ok: false, code, message }`
 - root 不存在 → fail
 - 空 workspace → 返空数组(ok)

@@ -9,10 +9,12 @@ import { createPickerSlice, type PickerSlice } from '../picker/picker-slice';
 import { arraysEqual } from '@shared/array-equal';
 
 /**
- * Quick Open 单次扫描的文件数上限:walk-files 到顶即截断,QuickOpenModal 据此显示「仅显示前 N 个」提示。
- * 两处必须同值(此前 Modal 里是字面量 5000)。
+ * Quick Open 单次扫描的**候选**文件数上限:walk-files 到顶即截断,QuickOpenModal 据此显示「只搜索了前 N 个文件」提示
+ *(有结果与无匹配时都显示)。VSCode 的 Quick Open 候选不截断(只截断结果数);这里保留一个足够大的兜底上限,与「在文件中
+ * 查找」的枚举上限(SEARCH_MAX_FILES)同值 —— 此前 5000:2 万文件的工作区里根下文件、src/ 下文件全进不了候选(第二十四轮)。
+ * 实测 2.1 万文件:main 侧 list-dir 约 75ms、IPC 约 4MB。
  */
-export const QUICK_OPEN_MAX_FILES = 5000;
+export const QUICK_OPEN_MAX_FILES = 50_000;
 
 export interface QuickOpenFile {
   /** 绝对路径(用于 openFileByPath). */

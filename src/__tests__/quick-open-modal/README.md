@@ -3,7 +3,8 @@
 行为契约:**isOpen=true 时弹 Modal,展示搜索框 + 文件列表;打开/root 切换时异步 walk 工作区。
 query 输入用 fuzzyFilter(relPath)过滤;ArrowUp/Down 移 selectedIndex,Enter 调
 openFileByPath + close。无 root 显「请先在 Explorer 打开工作区」;扫描中显 spinner;
-列表为空显「工作区无文件」/「无匹配文件」。≥5000 文件 + 已过滤 → 底部尾巴提示。**
+列表为空显「工作区无文件」/「无匹配文件」。候选扫描达上限(`QUICK_OPEN_MAX_FILES` = 50000)被截断 → 底部截断提示
+「只搜索了前 N 个文件」(有结果与无匹配时都显示)。**
 
 ## 模块
 
@@ -24,7 +25,8 @@ openFileByPath + close。无 root 显「请先在 Explorer 打开工作区」;�
 - walk 完成 + results=[] → 「工作区无文件」
 - query 过滤后空 + results 非空 → 「无匹配文件」
 - 有结果 → ul + li 列出
-- results.length≥5000 + filtered>0 → 底部尾巴提示
+- results.length ≥ `QUICK_OPEN_MAX_FILES` → 截断提示(`role=status`,三语带上限数):有结果时在列表下方,**无匹配时也显示**
+  (第二十四轮:旧实现只在有结果时提示,截断造成的「无匹配文件」看不出原因);未截断的无匹配只显示「无匹配文件」
 
 ### 结果行
 

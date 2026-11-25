@@ -338,7 +338,7 @@ export const ko: Record<TranslationKey, string> = {
     '{count}개 항목을 건너뛰었습니다(제어 문자 또는 현재 셸에서 표현 불가).',
   'panels.terminal.drag_drop.write_failed':
     '경로를 삽입하지 못했습니다. 터미널 세션이 닫혔을 수 있습니다.',
-  'quick_open.limit_hint': '처음 5000개 파일만 표시; 더 구체적인 쿼리로 좁히세요',
+  'quick_open.limit_hint': '파일이 너무 많아 워크스페이스의 처음 {max}개 파일만 검색했습니다',
 
   // explorer context menu (14)
   'panels.explorer.ctx.new_file': '새 파일',
@@ -815,6 +815,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.search.file_count_other': '파일 {count}개',
   'panels.search.limit_hit': '결과가 너무 많아 일부 일치 항목만 표시합니다. 검색 범위를 좁히세요.',
   'panels.search.files_limit_hit': '파일이 너무 많아 처음 {max}개 파일만 검색했습니다.',
+  'panels.search.skipped_large_one': '1 MiB를 넘는 파일 {count}개를 건너뛰었습니다(편집기에서 열면 검색됩니다)',
+  'panels.search.skipped_large_other': '1 MiB를 넘는 파일 {count}개를 건너뛰었습니다(편집기에서 열면 검색됩니다)',
   'panels.search.failed': '검색 실패: {reason}',
   'panels.search.message_separator': '. ',
   'panels.search.file_aria': '{path}: {results}',

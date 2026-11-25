@@ -1,6 +1,7 @@
 // BDD: workspace-search / 2 查询 → 正则;3 包含 / 排除的文件 glob 语义
 import { describe, expect, it } from 'vitest';
 import {
+  SEARCH_SKIPPED_LARGE_REPORT_MAX,
   buildSearchRegExp,
   compileGlobList,
   compileSearchPathFilter,
@@ -84,6 +85,15 @@ describe('推送事件形态守卫', () => {
     expect(isSearchEvent({ searchId: 's', kind: 'files', files: [{ path: '/w/a', relPath: 'a', matches: [match] }] })).toBe(true);
     expect(isSearchEvent({ searchId: 's', kind: 'done', limitHit: false, filesLimitHit: false })).toBe(true);
     expect(isSearchEvent({ searchId: 's', kind: 'error', code: 'X', message: 'm' })).toBe(true);
+    const done = { searchId: 's', kind: 'done', limitHit: false, filesLimitHit: false };
+    expect(isSearchEvent({ ...done, skippedLargeCount: 3, skippedLargePaths: ['/w/big.log'] })).toBe(true);
+  });
+  it('done 的跳过大文件字段畸形 → 丢弃(计数须非负整数;路径须字符串且不超过上报上限)', () => {
+    const done = { searchId: 's', kind: 'done', limitHit: false, filesLimitHit: false };
+    expect(isSearchEvent({ ...done, skippedLargeCount: -1 })).toBe(false);
+    expect(isSearchEvent({ ...done, skippedLargeCount: 1.5 })).toBe(false);
+    expect(isSearchEvent({ ...done, skippedLargePaths: [1] })).toBe(false);
+    expect(isSearchEvent({ ...done, skippedLargePaths: Array.from({ length: SEARCH_SKIPPED_LARGE_REPORT_MAX + 1 }, () => '/w/x') })).toBe(false);
   });
   it('畸形事件丢弃', () => {
     expect(isSearchEvent(null)).toBe(false);

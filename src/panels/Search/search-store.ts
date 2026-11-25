@@ -1,6 +1,7 @@
 // 在文件中查找(workspace-search)的视图状态与搜索调度:查询 / 开关 / 包含排除 → 去抖 300ms(VSCode
 // search.searchOnTypeDebouncePeriod)发起 main 搜索;新查询先取消在途查询,迟到的旧 searchId 事件丢弃;结果按文件分组累加。
 // 状态放在模块级 store:面板关掉再开(⇧⌘F)仍保留上次查询与结果(VSCode 搜索视图同)。
+// 已打开的编辑器在内存内容上搜(含未保存修改、不受大小上限),结果先显示并覆盖磁盘同一文件的结果(open-editor-search)。
 // BDD: src/__tests__/workspace-search/
 
 import { create } from 'zustand';
@@ -9,7 +10,10 @@ import { clampSearchQuery, regexSyntaxError } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useEditorStore } from '@/stores/editor.store';
+import { mergeDiskBatch, searchOpenEditors, searchOverrideKey, searchRelPath } from './open-editor-search';
 import {
+  buildSearchRegExp,
   searchRegExpFlags,
   searchRegExpSource,
   SEARCH_GLOB_MAX,
@@ -39,6 +43,8 @@ interface SearchState {
   readonly resultCount: number;
   readonly limitHit: boolean;
   readonly filesLimitHit: boolean;
+  /** 因超过 1 MiB 跳过且未在编辑器中打开的文件数(打开的已在内存里搜过)。 */
+  readonly skippedLarge: number;
   readonly error: { readonly code: string; readonly message: string } | null;
   readonly collapsed: ReadonlySet<string>;
   /** 结果树当前行(键盘 / F4 共用)。 */
@@ -73,6 +79,7 @@ const INITIAL = {
   resultCount: 0,
   limitHit: false,
   filesLimitHit: false,
+  skippedLarge: 0,
   error: null,
   collapsed: new Set<string>() as ReadonlySet<string>,
   activeKey: null,
@@ -84,6 +91,10 @@ let currentId: string | null = null;
 let seq = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let unsubscribe: (() => void) | null = null;
+/** 当前搜索的工作区根与已在内存里搜过的文件(覆盖键);合并截断标记。 */
+let currentRoot = '';
+let searchedInMemory: ReadonlySet<string> = new Set();
+let mergedLimitHit = false;
 
 export const useSearchStore = create<SearchState>((set, get) => ({
   ...INITIAL,
@@ -152,6 +163,7 @@ const EMPTY_RESULTS = {
   resultCount: 0,
   limitHit: false,
   filesLimitHit: false,
+  skippedLarge: 0,
   error: null,
   activeKey: null,
   collapsed: new Set<string>() as ReadonlySet<string>,
@@ -168,7 +180,8 @@ function run(): void {
     useSearchStore.setState({ ...EMPTY_RESULTS, status: 'invalid' });
     return;
   }
-  if (useWorkspaceStore.getState().root === null) {
+  const root = useWorkspaceStore.getState().root;
+  if (root === null) {
     useSearchStore.setState({ ...EMPTY_RESULTS, status: 'no-workspace' });
     return;
   }
@@ -184,7 +197,12 @@ function run(): void {
     include: s.include,
     exclude: s.exclude,
   };
-  useSearchStore.setState({ ...EMPTY_RESULTS, status: 'searching' });
+  // 已打开编辑器:内存内容上先搜(只读 editor.store),结果先显示;main 推来的同一文件结果在 applyEvent 里丢弃。
+  const local = searchOpenEditors(useEditorStore.getState().tabs, root, query, buildSearchRegExp(query));
+  currentRoot = root;
+  searchedInMemory = local.searched;
+  mergedLimitHit = local.limitHit;
+  useSearchStore.setState({ ...EMPTY_RESULTS, status: 'searching', files: local.files, resultCount: local.resultCount });
   const failed = (err: unknown) => fail(id, 'EXCEPTION', err instanceof Error ? err.message : String(err));
   try {
     coApi.search.start(id, query).then((r) => {
@@ -209,10 +227,12 @@ function ensureSubscribed(): void {
 function applyEvent(e: SearchEvent): void {
   if (e.searchId !== currentId) return; // 已取消 / 被新查询取代
   if (e.kind === 'files') {
+    if (mergedLimitHit) return; // 总数已达上限(内存 + 磁盘合并口径)
     useSearchStore.setState((s) => {
-      let added = 0;
-      for (const f of e.files) added += f.matches.length;
-      return { files: s.files.concat(e.files), resultCount: s.resultCount + added };
+      const merged = mergeDiskBatch(e.files, searchedInMemory, s.resultCount);
+      if (merged.limitHit) mergedLimitHit = true;
+      if (merged.files.length === 0) return s;
+      return { files: s.files.concat(merged.files), resultCount: s.resultCount + merged.added };
     });
     return;
   }
@@ -221,7 +241,18 @@ function applyEvent(e: SearchEvent): void {
     useSearchStore.setState({ status: 'error', error: { code: e.code, message: e.message } });
     return;
   }
-  useSearchStore.setState({ status: 'done', limitHit: e.limitHit, filesLimitHit: e.filesLimitHit });
+  // 跳过的大文件里已在编辑器中打开的,已在内存里搜过,不计入提示(路径列表有上限,超出部分按总数计)。
+  let skippedLarge = e.skippedLargeCount ?? 0;
+  for (const p of e.skippedLargePaths ?? []) {
+    const rel = searchRelPath(currentRoot, p);
+    if (rel !== null && searchedInMemory.has(searchOverrideKey(rel))) skippedLarge -= 1;
+  }
+  useSearchStore.setState({
+    status: 'done',
+    limitHit: e.limitHit || mergedLimitHit,
+    filesLimitHit: e.filesLimitHit,
+    skippedLarge: Math.max(0, skippedLarge),
+  });
 }
 
 /** 工作区切换:旧结果作废,按当前查询重搜(查询为空则只清空)。 */
@@ -261,6 +292,9 @@ export function __resetSearchForTest(): void {
   timer = undefined;
   currentId = null;
   seq = 0;
+  currentRoot = '';
+  searchedInMemory = new Set();
+  mergedLimitHit = false;
   unsubscribe?.();
   unsubscribe = null;
   useSearchStore.setState({ ...INITIAL, collapsed: new Set() });

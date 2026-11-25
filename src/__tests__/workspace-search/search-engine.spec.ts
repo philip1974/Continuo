@@ -5,7 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runTextSearch, type TextSearchOptions } from '../../../electron/main/search/text-search';
+import { searchOpenEditors } from '../../panels/Search/open-editor-search';
 import {
+  buildSearchRegExp,
   SEARCH_MAX_FILE_BYTES,
   SEARCH_MAX_RESULTS,
   SEARCH_MAX_RESULTS_PER_FILE,
@@ -61,6 +63,17 @@ describe('排除规则与跳过的文件', () => {
     write('latin1.txt', Buffer.from([0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65, 0xe9, 0xff]));
     write('big.txt', `needle\n${'x'.repeat(SEARCH_MAX_FILE_BYTES)}`);
     expect((await search(query('needle'))).rel).toEqual(['ok.txt']);
+  });
+
+  it('因超过 1 MiB 跳过的文件计数并报告路径(其它原因的跳过不计;renderer 据此提示「已跳过 N 个大文件」)', async () => {
+    write('ok.txt', 'needle');
+    write('bin.dat', Buffer.from([0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65, 0x00, 0x01]));
+    write('big.txt', `needle\n${'x'.repeat(SEARCH_MAX_FILE_BYTES)}`);
+    write('sub/big.log', 'y'.repeat(SEARCH_MAX_FILE_BYTES + 1));
+    write('sub/excluded.big', 'y'.repeat(SEARCH_MAX_FILE_BYTES + 1));
+    const { summary } = await search(query('needle', { exclude: '*.big' }));
+    expect(summary.skippedLargeCount).toBe(2);
+    expect([...summary.skippedLargePaths].sort()).toEqual([path.join(root, 'big.txt'), path.join(root, 'sub/big.log')].sort());
   });
 
   it.skipIf(process.platform === 'win32')('符号链接与 FIFO 不搜(不跟随链接、不读非普通文件)', async () => {
@@ -141,14 +154,14 @@ describe('限额与分批', () => {
     expect(files.every((f) => f.matches.length <= SEARCH_MAX_RESULTS_PER_FILE)).toBe(true);
     expect(files[0]!.truncated).toBe(true);
     expect(files.flatMap((f) => f.matches)).toHaveLength(SEARCH_MAX_RESULTS);
-    expect(summary).toEqual({ limitHit: true, filesLimitHit: false });
+    expect(summary).toEqual({ limitHit: true, filesLimitHit: false, skippedLargeCount: 0, skippedLargePaths: [] });
   });
 
   it('文件数上限:只搜前 N 个文件并标记 filesLimitHit', async () => {
     for (let i = 0; i < 5; i += 1) write(`f${i}.txt`, 'hit');
     const { summary, files } = await search(query('hit'), { maxFiles: 3 });
     expect(files).toHaveLength(3);
-    expect(summary).toEqual({ limitHit: false, filesLimitHit: true });
+    expect(summary).toEqual({ limitHit: false, filesLimitHit: true, skippedLargeCount: 0, skippedLargePaths: [] });
   });
 
   it('分批推送:时间窗内攒批,结果按枚举顺序稳定', async () => {
@@ -167,6 +180,26 @@ describe('限额与分批', () => {
     write('a.txt', 'nothing');
     const { batches, summary } = await search(query('needle'));
     expect(batches).toEqual([]);
-    expect(summary).toEqual({ limitHit: false, filesLimitHit: false });
+    expect(summary).toEqual({ limitHit: false, filesLimitHit: false, skippedLargeCount: 0, skippedLargePaths: [] });
+  });
+});
+
+// BDD 7:renderer 在已打开编辑器的内存内容上搜,须与 worker 同一口径(同一 matchSearchText)。
+describe('已打开编辑器的内存搜索与磁盘搜索同口径', () => {
+  it('同一内容、各种查询选项下,内存结果与 main 引擎结果逐条一致', async () => {
+    const content = '  😀 Foo foo foobar\r\n\tlet x = foo(1) // FOO\n' + `${'a'.repeat(80)}foo${'b'.repeat(300)}\nfoo\n`;
+    write('a.ts', content);
+    const queries = [
+      query('foo'),
+      query('foo', { matchCase: true }),
+      query('foo', { wholeWord: true }),
+      query('fo+\\b', { isRegex: true }),
+      query('^\\s*', { isRegex: true }),
+    ];
+    for (const q of queries) {
+      const disk = (await search(q)).files;
+      const mem = searchOpenEditors([{ filePath: path.join(root, 'a.ts'), content }], root, q, buildSearchRegExp(q)).files;
+      expect(mem.map((f) => f.matches)).toEqual(disk.map((f) => f.matches));
+    }
   });
 });

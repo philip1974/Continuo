@@ -34,6 +34,7 @@ import {
   QuickOpenModal,
 } from '../../plugins/quick-open/QuickOpenModal';
 import {
+  QUICK_OPEN_MAX_FILES,
   useQuickOpenStore,
   type QuickOpenFile,
 } from '../../plugins/quick-open/store';
@@ -306,15 +307,16 @@ describe('QuickOpenModal — 渲染态', () => {
     expect(row.title).toBe('README.md');
   });
 
-  // a11y(A65,A56 同族):结果达 5000 截断提示是动态出现的信息,焦点锁搜索框时 SR 须能播报。
-  it('a11y · 结果达 5000 截断时 limit_hint 在 role=status', async () => {
+  // a11y(A65,A56 同族):候选达上限截断的提示是动态出现的信息,焦点锁搜索框时 SR 须能播报。
+  it('a11y · 候选达上限截断时 limit_hint 在 role=status', async () => {
     installFs();
-    const many = Array.from({ length: 5000 }, (_, i) =>
+    const many = Array.from({ length: QUICK_OPEN_MAX_FILES }, (_, i) =>
       file(`f${i}.ts`, `src/f${i}.ts`),
     );
     walkMock.mockResolvedValue({ ok: true, data: many });
     useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
-    useQuickOpenStore.setState({ isOpen: true });
+    // 查询收窄到少量结果(jsdom 下虚拟列表 mock 成全量渲染)
+    useQuickOpenStore.setState({ isOpen: true, query: 'f12345' });
     render(<QuickOpenModal />);
     await waitFor(() => {
       expect(document.querySelectorAll('ul li').length).toBeGreaterThan(0);
@@ -322,7 +324,37 @@ describe('QuickOpenModal — 渲染态', () => {
     // filtered.length>0 时唯一的 role=status 即截断提示
     const status = document.querySelector('.wm-modal-content [role=status]');
     expect(status).not.toBeNull();
-    expect(status!.textContent).toContain('仅显示前 5000 个文件');
+    expect(status!.textContent).toContain(`只搜索了前 ${QUICK_OPEN_MAX_FILES} 个文件`);
+  });
+
+  // 第二十四轮:截断导致的「无匹配」须同样提示截断,否则用户以为文件不存在。
+  it('候选达上限截断且查询无匹配 → 「无匹配文件」与截断提示都显示', async () => {
+    installFs();
+    const many = Array.from({ length: QUICK_OPEN_MAX_FILES }, (_, i) =>
+      file(`f${i}.ts`, `src/f${i}.ts`),
+    );
+    walkMock.mockResolvedValue({ ok: true, data: many });
+    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
+    useQuickOpenStore.setState({ isOpen: true, query: 'zzz-nothing' });
+    render(<QuickOpenModal />);
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')!.textContent).toContain('无匹配文件');
+    });
+    const statuses = [...document.querySelectorAll('.wm-modal-content [role=status]')].map((el) => el.textContent);
+    expect(statuses).toContain('无匹配文件');
+    expect(statuses.some((t) => t?.includes(`只搜索了前 ${QUICK_OPEN_MAX_FILES} 个文件`))).toBe(true);
+  });
+
+  it('未截断时无匹配 → 只显示「无匹配文件」,不显示截断提示', async () => {
+    installFs();
+    walkMock.mockResolvedValue({ ok: true, data: [file('a.ts')] });
+    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
+    useQuickOpenStore.setState({ isOpen: true, query: 'zzz-nothing' });
+    render(<QuickOpenModal />);
+    await waitFor(() => {
+      expect(document.querySelector('.wm-modal-content')!.textContent).toContain('无匹配文件');
+    });
+    expect(document.querySelectorAll('.wm-modal-content [role=status]').length).toBe(1);
   });
 });
 
@@ -516,25 +548,6 @@ describe('QuickOpenModal — 键盘 + 点击', () => {
     await waitFor(() => {
       expect(useQuickOpenStore.getState().isOpen).toBe(false);
     });
-  });
-});
-
-describe('QuickOpenModal — 5000 文件尾巴提示', () => {
-  it('results.length≥5000 + filtered>0 → 显示尾巴提示', async () => {
-    installFs();
-    const many = Array.from({ length: 5000 }, (_, i) =>
-      file(`f${i}.ts`, `f${i}.ts`),
-    );
-    walkMock.mockResolvedValue({ ok: true, data: many });
-    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
-    useQuickOpenStore.setState({ isOpen: true });
-    render(<QuickOpenModal />);
-    await waitFor(() => {
-      expect(document.querySelectorAll('ul li').length).toBeGreaterThan(0);
-    });
-    expect(document.querySelector('.wm-modal-content')!.textContent).toContain(
-      '仅显示前 5000 个文件',
-    );
   });
 });
 

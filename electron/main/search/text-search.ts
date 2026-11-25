@@ -1,6 +1,7 @@
 // 工作区文本搜索引擎(在文件中查找,对齐 VSCode Search):在 worker 线程里运行(text-search.worker.ts),也可直接调用(单测)。
 // 枚举复用 fs:list-dir 的 walker 与 Quick Open 同一排除表;逐文件有界读(≤ 1 MiB、只读普通文件、要求合法 UTF-8、含 NUL 视作二进制),
-// 逐行匹配,命中文件按时间窗攒批经 onFiles 推出。BDD: src/__tests__/workspace-search/
+// 逐行匹配(matchSearchText,renderer 搜已打开编辑器的内存内容用同一实现),命中文件按时间窗攒批经 onFiles 推出;
+// 因过大跳过的文件计数并报告路径(renderer 显示「已跳过 N 个大文件」)。BDD: src/__tests__/workspace-search/
 
 import path from 'node:path';
 import { listDir } from '../ipc/fs/list-dir';
@@ -9,15 +10,14 @@ import { LIST_DIR_MAX_DEPTH, WORKSPACE_SCAN_EXCLUDE } from '../../shared/fs-limi
 import {
   buildSearchRegExp,
   compileSearchPathFilter,
+  matchSearchText,
   SEARCH_BATCH_MS,
   SEARCH_MAX_FILE_BYTES,
   SEARCH_MAX_FILES,
   SEARCH_MAX_RESULTS,
   SEARCH_MAX_RESULTS_PER_FILE,
-  SEARCH_PREVIEW_LEAD,
-  SEARCH_PREVIEW_MAX,
+  SEARCH_SKIPPED_LARGE_REPORT_MAX,
   type SearchFileResult,
-  type SearchMatch,
   type SearchQuery,
 } from '../../shared/workspace-search';
 
@@ -35,6 +35,10 @@ export interface TextSearchOptions {
 export interface TextSearchSummary {
   readonly limitHit: boolean;
   readonly filesLimitHit: boolean;
+  /** 因超过 SEARCH_MAX_FILE_BYTES 跳过的文件数(含未列入 skippedLargePaths 的)。 */
+  readonly skippedLargeCount: number;
+  /** 被跳过的大文件绝对路径(至多 SEARCH_SKIPPED_LARGE_REPORT_MAX 个;renderer 扣除已在内存搜索的打开文件)。 */
+  readonly skippedLargePaths: readonly string[];
 }
 
 /** 同时读取的文件数(块内并发、块间按序,结果顺序稳定)。 */
@@ -65,6 +69,8 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
 
   let total = 0;
   let limitHit = false;
+  let skippedLargeCount = 0;
+  const skippedLargePaths: string[] = [];
   let pending: SearchFileResult[] = [];
   let lastFlush = now();
   const flush = (): void => {
@@ -78,11 +84,16 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
     const texts = await Promise.all(chunk.map((f) => readSearchableText(f.abs)));
     for (let j = 0; j < chunk.length; j += 1) {
       const text = texts[j];
+      const f = chunk[j]!;
+      if (text === TOO_LARGE) {
+        skippedLargeCount += 1;
+        if (skippedLargePaths.length < SEARCH_SKIPPED_LARGE_REPORT_MAX) skippedLargePaths.push(f.abs);
+        continue;
+      }
       if (text === null || text === undefined) continue;
       const budget = Math.min(SEARCH_MAX_RESULTS_PER_FILE, SEARCH_MAX_RESULTS - total);
-      const found = matchText(text, regex, budget);
+      const found = matchSearchText(text, regex, budget);
       if (found.matches.length > 0) {
-        const f = chunk[j]!;
         pending.push({
           path: f.abs,
           relPath: f.rel,
@@ -103,64 +114,20 @@ export async function runTextSearch(opts: TextSearchOptions): Promise<TextSearch
     }
   }
   flush();
-  return { limitHit, filesLimitHit };
+  return { limitHit, filesLimitHit, skippedLargeCount, skippedLargePaths };
 }
 
-/** 可搜索的文本;跳过(符号链接被换入 / 非普通文件 / 过大 / 非 UTF-8 / 含 NUL / 读失败)→ null。 */
-async function readSearchableText(abs: string): Promise<string | null> {
+/** readSearchableText 的「过大而跳过」标记(与其它跳过原因区分,用于「已跳过 N 个大文件」提示)。 */
+const TOO_LARGE: unique symbol = Symbol('too-large');
+
+/** 可搜索的文本;过大 → TOO_LARGE;其它跳过(符号链接被换入 / 非普通文件 / 非 UTF-8 / 含 NUL / 读失败)→ null。 */
+async function readSearchableText(abs: string): Promise<string | typeof TOO_LARGE | null> {
   try {
     const r = await readFileCappedFd(abs, SEARCH_MAX_FILE_BYTES, { requireUtf8: true });
+    if (r.tooLarge) return TOO_LARGE;
     if (r.text === null || r.text.includes('\0')) return null;
     return r.text;
   } catch {
     return null;
   }
-}
-
-/** 逐行匹配,至多 budget 条;more = 还有更多命中(被截断)。 */
-function matchText(text: string, regex: RegExp, budget: number): { matches: SearchMatch[]; more: boolean } {
-  const matches: SearchMatch[] = [];
-  // 整篇预检:无命中的文件(绝大多数)不逐行拆分。
-  regex.lastIndex = 0;
-  if (!regex.test(text)) return { matches, more: false };
-  let lineNo = 0;
-  let start = 0;
-  while (start <= text.length) {
-    let end = text.indexOf('\n', start);
-    if (end < 0) end = text.length;
-    lineNo += 1;
-    const line = text.charCodeAt(end - 1) === 13 ? text.slice(start, end - 1) : text.slice(start, end);
-    regex.lastIndex = 0;
-    for (let m = regex.exec(line); m !== null; m = regex.exec(line)) {
-      if (m[0].length === 0) {
-        regex.lastIndex += 1; // 零长度命中跳过
-        continue;
-      }
-      if (matches.length >= budget) return { matches, more: true };
-      matches.push(makeMatch(line, lineNo, m.index, m[0].length));
-    }
-    start = end + 1;
-  }
-  return { matches, more: false };
-}
-
-function makeMatch(line: string, lineNo: number, index: number, length: number): SearchMatch {
-  // 预览:去行首空白;命中前超过 SEARCH_PREVIEW_LEAD 个字符 → 从命中前 LEAD 处截起并加「…」;最长 SEARCH_PREVIEW_MAX。
-  let from = 0;
-  while (from < index && (line.charCodeAt(from) === 32 || line.charCodeAt(from) === 9)) from += 1;
-  let prefix = '';
-  if (index - from > SEARCH_PREVIEW_LEAD) {
-    from = index - SEARCH_PREVIEW_LEAD;
-    prefix = '…';
-  }
-  const preview = prefix + line.slice(from, from + SEARCH_PREVIEW_MAX);
-  const previewStart = prefix.length + index - from;
-  return {
-    line: lineNo,
-    column: index + 1,
-    length,
-    preview,
-    previewStart,
-    previewLength: Math.max(0, Math.min(length, preview.length - previewStart)),
-  };
 }

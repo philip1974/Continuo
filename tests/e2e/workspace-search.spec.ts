@@ -1,6 +1,6 @@
 // 在文件中查找(⇧⌘F,src/__tests__/workspace-search):搜索出结果、点击跳转行列、正则 / 大小写、非法正则提示、
 // 包含 / 排除、新查询取代旧查询、编辑器选区带入。走真实 main 搜索 worker。
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/with-workspace';
@@ -141,4 +141,20 @@ test('编辑器单行选区带入查询框', async ({ window }) => {
   await expect(input).toBeFocused({ timeout: 10_000 });
   await expect(input).toHaveValue('export');
   await expect(window.locator(STATUS)).toHaveText(summary(2, 2), { timeout: 10_000 });
+});
+
+test('已打开编辑器的未保存修改也能搜到(VSCode:内存内容覆盖磁盘结果)', async ({ window, workspaceRoot }) => {
+  await openWorkspaceFile(window, ['src', 'a.ts']);
+  const line = window.locator('.cm-content .cm-line').first();
+  await expect(line).toHaveText('export const a = 1;', { timeout: 10_000 });
+  await line.click();
+  await window.keyboard.press('End');
+  await window.keyboard.type(' // unsavedZebra');
+  await expect(line).toHaveText('export const a = 1; // unsavedZebra');
+  const input = await openSearch(window);
+  await input.fill('unsavedZebra');
+  await expect(window.locator(STATUS)).toHaveText(summary(1, 1), { timeout: 10_000 });
+  await expect(resultsTree(window).getByRole('treeitem').first()).toContainText('a.ts');
+  // 磁盘上仍是旧内容(.ts 不自动保存)—— 结果来自内存
+  expect(readFileSync(path.join(workspaceRoot, 'src', 'a.ts'), 'utf8')).not.toContain('unsavedZebra');
 });

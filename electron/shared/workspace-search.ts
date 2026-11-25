@@ -25,6 +25,8 @@ export const SEARCH_PREVIEW_MAX = 250;
 export const SEARCH_PREVIEW_LEAD = 30;
 /** 结果分批推送的时间窗(ms)。 */
 export const SEARCH_BATCH_MS = 50;
+/** done 事件里报告的「因过大跳过」文件路径数上限(总数另报 skippedLargeCount)。 */
+export const SEARCH_SKIPPED_LARGE_REPORT_MAX = 1_000;
 /** 查询串长度上限(= renderer 查询框截断上限 MAX_SEARCH_QUERY_LEN,IPC schema 用)。 */
 export const SEARCH_PATTERN_MAX = 1024;
 /** searchId / glob 输入的长度上限(IPC schema 与 renderer 共用)。 */
@@ -74,6 +76,10 @@ export type SearchEvent =
       readonly limitHit: boolean;
       /** 文件数达上限,只搜了一部分文件。 */
       readonly filesLimitHit: boolean;
+      /** 因超过 SEARCH_MAX_FILE_BYTES 跳过的文件数(缺省 0)。 */
+      readonly skippedLargeCount?: number;
+      /** 被跳过的大文件绝对路径(至多 SEARCH_SKIPPED_LARGE_REPORT_MAX 个)。 */
+      readonly skippedLargePaths?: readonly string[];
     }
   | { readonly searchId: string; readonly kind: 'error'; readonly code: string; readonly message: string };
 
@@ -112,12 +118,71 @@ export function isSearchEvent(v: unknown): v is SearchEvent {
     case 'files':
       return Array.isArray(v.files) && v.files.every(isSearchFileResult);
     case 'done':
-      return typeof v.limitHit === 'boolean' && typeof v.filesLimitHit === 'boolean';
+      return (
+        typeof v.limitHit === 'boolean' &&
+        typeof v.filesLimitHit === 'boolean' &&
+        (v.skippedLargeCount === undefined || isNonNegInt(v.skippedLargeCount)) &&
+        (v.skippedLargePaths === undefined ||
+          (Array.isArray(v.skippedLargePaths) &&
+            v.skippedLargePaths.length <= SEARCH_SKIPPED_LARGE_REPORT_MAX &&
+            v.skippedLargePaths.every((p) => typeof p === 'string')))
+      );
     case 'error':
       return typeof v.code === 'string' && typeof v.message === 'string';
     default:
       return false;
   }
+}
+
+/**
+ * 逐行匹配(`\r\n` / `\n`),至多 budget 条;more = 还有更多命中(被截断)。列 / 长度为 UTF-16;零长度命中跳过。
+ * main worker(磁盘文件)与 renderer(已打开编辑器的内存内容,含未保存修改)共用,两边结果口径一致。
+ */
+export function matchSearchText(text: string, regex: RegExp, budget: number): { matches: SearchMatch[]; more: boolean } {
+  const matches: SearchMatch[] = [];
+  // 整篇预检:无命中的文件(绝大多数)不逐行拆分。
+  regex.lastIndex = 0;
+  if (!regex.test(text)) return { matches, more: false };
+  let lineNo = 0;
+  let start = 0;
+  while (start <= text.length) {
+    let end = text.indexOf('\n', start);
+    if (end < 0) end = text.length;
+    lineNo += 1;
+    const line = text.charCodeAt(end - 1) === 13 ? text.slice(start, end - 1) : text.slice(start, end);
+    regex.lastIndex = 0;
+    for (let m = regex.exec(line); m !== null; m = regex.exec(line)) {
+      if (m[0].length === 0) {
+        regex.lastIndex += 1; // 零长度命中跳过
+        continue;
+      }
+      if (matches.length >= budget) return { matches, more: true };
+      matches.push(makeMatch(line, lineNo, m.index, m[0].length));
+    }
+    start = end + 1;
+  }
+  return { matches, more: false };
+}
+
+function makeMatch(line: string, lineNo: number, index: number, length: number): SearchMatch {
+  // 预览:去行首空白;命中前超过 SEARCH_PREVIEW_LEAD 个字符 → 从命中前 LEAD 处截起并加「…」;最长 SEARCH_PREVIEW_MAX。
+  let from = 0;
+  while (from < index && (line.charCodeAt(from) === 32 || line.charCodeAt(from) === 9)) from += 1;
+  let prefix = '';
+  if (index - from > SEARCH_PREVIEW_LEAD) {
+    from = index - SEARCH_PREVIEW_LEAD;
+    prefix = '…';
+  }
+  const preview = prefix + line.slice(from, from + SEARCH_PREVIEW_MAX);
+  const previewStart = prefix.length + index - from;
+  return {
+    line: lineNo,
+    column: index + 1,
+    length,
+    preview,
+    previewStart,
+    previewLength: Math.max(0, Math.min(length, preview.length - previewStart)),
+  };
 }
 
 const REGEX_SPECIALS = /[\\^$.*+?()[\]{}|/-]/g;
