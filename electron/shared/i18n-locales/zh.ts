@@ -227,7 +227,6 @@ export const zh: Record<TranslationKey, string> = {
   'editor.image.too_large': '图片过大，无法预览（超过 {max}）。',
   'editor.image.load_failed': '加载图片时出错：{reason}',
   'editor.image.decode_failed': '加载图片时出错。',
-  'editor.image.zoom_fit': '整个图像',
   'editor.md.image_unavailable': '图片无法显示：{name}',
   'editor.welcome.title': '未打开文件',
   'editor.welcome.actions_aria': '开始使用',

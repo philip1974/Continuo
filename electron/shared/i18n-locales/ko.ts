@@ -228,7 +228,6 @@ export const ko: Record<TranslationKey, string> = {
   'editor.image.too_large': '이미지가 너무 커서 미리 볼 수 없습니다({max} 초과).',
   'editor.image.load_failed': '이미지를 로드하는 동안 오류가 발생했습니다: {reason}',
   'editor.image.decode_failed': '이미지를 로드하는 동안 오류가 발생했습니다.',
-  'editor.image.zoom_fit': '전체 이미지',
   'editor.md.image_unavailable': '이미지를 표시할 수 없음: {name}',
   'editor.welcome.title': '열린 파일 없음',
   'editor.welcome.actions_aria': '시작하기',
