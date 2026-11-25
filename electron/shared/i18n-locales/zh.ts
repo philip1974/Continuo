@@ -612,7 +612,7 @@ export const zh: Record<TranslationKey, string> = {
   'plugins_tab.action.uninstall_tooltip': '卸载该插件（删除磁盘目录）',
   'plugins_tab.action.row_button_aria': '{action} — {name}',
   'plugins_tab.uninstall.title': '卸载插件？',
-  'plugins_tab.uninstall.body': '将永久删除 {id} 的安装目录及其所有数据。该操作不可撤销，需重新从 git URL 安装才能恢复。',
+  'plugins_tab.uninstall.body': '将永久删除「{name}」及其所有数据。该操作不可撤销，如需恢复须重新安装。',
   'plugins_tab.uninstall.confirm': '卸载',
   'plugins_tab.uninstall.success': '已卸载 {name}',
 
@@ -740,11 +740,10 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.perm.mcp_tools.desc': '注册工具：名称与描述会展示给 AI Agent（Claude Code 等 MCP 客户端），并可被其调用',
 
   // permissions prompt UI
-  'permissions.prompt.title': '权限请求',
-  'permissions.prompt.body': '插件 {pluginId} 请求以下权限：',
-  'permissions.prompt.note_prefix': '未勾视为拒绝。支持',
+  'permissions.prompt.title': '「{name}」请求以下权限',
+  'permissions.prompt.note_prefix': '未勾选的权限视为拒绝。支持',
   'permissions.prompt.note_partial': '部分授权',
-  'permissions.prompt.note_suffix': '：插件调用未授权的 API 时会被拒（抛 PermissionError），整体仍能激活。全部拒绝则插件不激活。',
+  'permissions.prompt.note_suffix': '：插件仍会启用，只是需要未授权权限的功能无法使用。全部拒绝则插件不会启用。',
   'permissions.grant_guard.rejected': '尚未生效：请稍作停顿后再单击，或聚焦片刻后再按 Enter / 空格。',
   'permissions.prompt.select_all': '全选',
   'permissions.prompt.select_all_except_shell': '全选（不含 shell）',
@@ -752,8 +751,7 @@ export const zh: Record<TranslationKey, string> = {
   'permissions.prompt.grant_selected': '授权选中（{count}）',
 
   // fs-scope (path) access prompt
-  'permissions.fs_scope.title': '文件系统访问请求',
-  'permissions.fs_scope.body': '插件 {pluginId} 请求访问以下路径：',
+  'permissions.fs_scope.title': '「{name}」请求访问以下路径',
   'permissions.fs_scope.mode_label': '模式',
   'permissions.fs_scope.mode_rw': '读 + 写',
   'permissions.fs_scope.mode_ro': '只读',

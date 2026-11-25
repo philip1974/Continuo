@@ -642,7 +642,7 @@ export const en = {
   // a11y(A75):per-row action button accessible name = action + plugin name (distinguish rows for SR).
   'plugins_tab.action.row_button_aria': '{action} — {name}',
   'plugins_tab.uninstall.title': 'Uninstall plugin?',
-  'plugins_tab.uninstall.body': 'Will permanently delete {id} installation directory and all its data. The operation is irreversible; reinstall from git URL to recover.',
+  'plugins_tab.uninstall.body': 'This permanently deletes “{name}” and all its data. This can’t be undone; to get it back, reinstall it.',
   'plugins_tab.uninstall.confirm': 'Uninstall',
   'plugins_tab.uninstall.success': 'Uninstalled {name}',
 
@@ -780,11 +780,10 @@ export const en = {
     'Register tools whose names and descriptions are shown to AI agents (Claude Code and other MCP clients), which can call them',
 
   // permissions prompt UI
-  'permissions.prompt.title': 'Permission request',
-  'permissions.prompt.body': 'Plugin {pluginId} requests the following permissions:',
-  'permissions.prompt.note_prefix': 'Unchecked = denied. Supports',
-  'permissions.prompt.note_partial': 'partial grant',
-  'permissions.prompt.note_suffix': ': plugin will be rejected (throws PermissionError) when calling un-granted API, but can still activate overall. Reject all → plugin cannot activate.',
+  'permissions.prompt.title': '“{name}” requests the following permissions',
+  'permissions.prompt.note_prefix': 'Unchecked permissions are denied. ',
+  'permissions.prompt.note_partial': 'Partial grants',
+  'permissions.prompt.note_suffix': ' are supported: the plugin still runs, but features that need a denied permission won’t work. Deny all and the plugin won’t be enabled.',
   'permissions.grant_guard.rejected':
     'Not applied yet — pause, then click once (or focus it, wait, then press Enter / Space).',
   'permissions.prompt.select_all': 'Select all',
@@ -793,9 +792,7 @@ export const en = {
   'permissions.prompt.grant_selected': 'Grant selected ({count})',
 
   // fs-scope (path) access prompt
-  'permissions.fs_scope.title': 'Filesystem access request',
-  'permissions.fs_scope.body':
-    'Plugin {pluginId} requests access to the following path(s):',
+  'permissions.fs_scope.title': '“{name}” requests access to the following path(s)',
   'permissions.fs_scope.mode_label': 'mode',
   'permissions.fs_scope.mode_rw': 'read + write',
   'permissions.fs_scope.mode_ro': 'read only',

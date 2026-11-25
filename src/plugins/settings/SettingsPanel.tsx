@@ -6,7 +6,7 @@
 //
 // BDD: src/__tests__/settings-panel/
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Input } from '@/design';
 import { isImeComposing } from '@/design/ime';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
@@ -159,6 +159,7 @@ export function SettingsPanel({
   const active =
     (activeTabId ? registry.get(activeTabId) : undefined) ?? registry.getAll()[0] ?? null;
 
+  const navRef = useRef<HTMLElement>(null);
   const [query, setQuery] = useState('');
   const trimmed = normalizeSearchQuery(query);
   const searchPlaceholderLabel = t('settings.panel.search_placeholder');
@@ -188,7 +189,7 @@ export function SettingsPanel({
         />
       </div>
       <div className="flex min-h-0 flex-1">
-        <nav className={settingsNavClassName(inSearch)} aria-label={t('settings.panel.nav_aria')}>
+        <nav ref={navRef} className={settingsNavClassName(inSearch)} aria-label={t('settings.panel.nav_aria')}>
           {tabs.length === 0 ? (
             <div className="px-4 py-4 text-fg-dim">{t('settings.panel.no_items')}</div>
           ) : (
@@ -238,7 +239,8 @@ export function SettingsPanel({
             <SettingsSearchResults itemRegistry={itemRegistry} trimmed={trimmed} />
           ) : active ? (
             // 插件设置页渲染抛错只在内容区显示错误块,导航照常可切走(BDD: plugin-render-isolation)。
-            <PluginRenderBoundary owner={active} variant="block">
+            // 错误块「禁用插件」/「重载」后焦点交给当前选中的导航项(该页移除后已回退到首个页签)。
+            <PluginRenderBoundary owner={active} variant="block" refocus={() => focusCurrentNavItem(navRef.current)}>
               <SettingTabContent spec={active} />
             </PluginRenderBoundary>
           ) : null}
@@ -246,6 +248,10 @@ export function SettingsPanel({
       </div>
     </div>
   );
+}
+
+function focusCurrentNavItem(nav: HTMLElement | null): void {
+  nav?.querySelector<HTMLElement>('[aria-current="page"]')?.focus();
 }
 
 /** render() 放进子组件调用:同步抛错与它返回的组件抛错一样落在外层 PluginRenderBoundary 里。 */

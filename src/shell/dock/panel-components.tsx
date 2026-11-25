@@ -14,6 +14,7 @@ import type { PluginPanelProps } from '@/plugins/types';
 import { PanelMount } from '@/shell/motion/PanelMount';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { keepScrollWhileHidden } from './keep-scroll-while-hidden';
+import { focusPanelContent } from './panel-focus';
 
 // 安全:第三方插件面板的 factory 只拿 SDK 声明的最小 props(PluginPanelProps)。dockview 原始 props 带
 // containerApi(整个 dock 的 DockviewApi)与完整 panel api(group / close / moveTo …):零权限插件注册一个面板
@@ -111,7 +112,8 @@ function createPanelHost(panels: PanelRegistry, type: string): React.FC<IDockvie
       <PanelMount panelId={p.api.id} ref={rootRef}>
         {live ? (
           // 插件面板渲染抛错只在本面板显示错误块(BDD: plugin-render-isolation)。
-          <PluginRenderBoundary key={specKey(live)} owner={live} variant="block">
+          // 错误块「禁用插件」/「重载」后焦点交给替换出的内容(占位的「启用」/ 恢复的面板内容)。
+          <PluginRenderBoundary key={specKey(live)} owner={live} variant="block" refocus={() => focusPanelContent(p.api)}>
             <FactoryContent spec={live} panelProps={p} />
           </PluginRenderBoundary>
         ) : (

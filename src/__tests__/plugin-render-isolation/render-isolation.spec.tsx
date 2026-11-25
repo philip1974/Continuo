@@ -3,14 +3,15 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { DockviewReact, type DockviewApi } from 'dockview-react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mgr } = vi.hoisted(() => ({
+const { mgr, pluginState } = vi.hoisted(() => ({
+  pluginState: { status: 'enabled' as 'enabled' | 'disabled' },
   mgr: {
     listAll: () => [
-      { id: 'acme.bad', manifest: { id: 'acme.bad', name: 'Acme Bad', version: '1.0.0' }, status: 'enabled' },
+      { id: 'acme.bad', manifest: { id: 'acme.bad', name: 'Acme Bad', version: '1.0.0' }, status: pluginState.status },
     ],
     markRenderFailed: vi.fn(),
     disable: vi.fn(() => Promise.resolve()),
@@ -38,6 +39,7 @@ vi.stubGlobal(
 );
 
 import { setLocale } from '@/i18n/translate';
+import { notifyUserPluginListChanged } from '../plugins-tab-content/fake-user-plugin-manager';
 import { coApp } from '../../plugins/co-app';
 import { contributionPluginId, createScopedApp } from '../../plugins/scoped-app';
 import { createTestCoApp } from '../../plugins/test-utils';
@@ -61,6 +63,8 @@ beforeEach(() => {
   mgr.markRenderFailed.mockClear();
   mgr.disable.mockClear();
   mgr.reload.mockClear();
+  pluginState.status = 'enabled';
+  notifyUserPluginListChanged();
   // React 对被边界接住的错误仍打 console.error;测试输出保持干净。
   vi.spyOn(console, 'error').mockImplementation(() => {});
   (coApp as { statusBar: StatusBarRegistry }).statusBar = new StatusBarRegistry();
@@ -115,7 +119,8 @@ describe('面板 factory 渲染抛错', () => {
   function mountDock() {
     const app = createTestCoApp('1.0.0');
     app.panels.register({ type: 'core-panel', title: 'Core', factory: () => <div>core content</div> });
-    createScopedApp(app, 'acme.bad', null, 'tok').panels.register({
+    const scoped = createScopedApp(app, 'acme.bad', null, 'tok');
+    const registration = scoped.panels.register({
       type: 'acme.bad.panel',
       title: 'Bad',
       factory: () => <Boom />,
@@ -134,6 +139,14 @@ describe('面板 factory 渲染抛错', () => {
       api!.addPanel({ id: 'core-1', component: 'core-panel', title: 'Core' });
       api!.addPanel({ id: 'bad-1', component: 'acme.bad.panel', title: 'Bad', position: { direction: 'right' } });
     });
+    return { scoped, registration };
+  }
+
+  /** 像键盘操作一样:焦点在按钮上再点击(fireEvent.click 本身不移焦点)。 */
+  function press(name: string): void {
+    const btn = screen.getByRole('button', { name });
+    btn.focus();
+    fireEvent.click(btn);
   }
 
   it('只有该面板显示错误块(带禁用 / 重载),其它面板照常', () => {
@@ -146,6 +159,31 @@ describe('面板 factory 渲染抛错', () => {
     expect(mgr.disable).toHaveBeenCalledWith('acme.bad');
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
     expect(mgr.reload).toHaveBeenCalledWith('acme.bad');
+  });
+
+  it('点「禁用插件」:错误块被「插件已禁用」占位替换,焦点落到占位的「启用」按钮(不掉到 body)', async () => {
+    const { registration } = mountDock();
+    mgr.disable.mockImplementationOnce(async () => {
+      act(() => {
+        registration.dispose();
+        pluginState.status = 'disabled';
+        notifyUserPluginListChanged();
+      });
+    });
+    press('Disable Plugin');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Enable' })));
+  });
+
+  it('点「重载」成功:错误块被面板内容替换,焦点进面板内容', async () => {
+    const { registration, scoped } = mountDock();
+    mgr.reload.mockImplementationOnce(async () => {
+      act(() => {
+        registration.dispose();
+        scoped.panels.register({ type: 'acme.bad.panel', title: 'Bad', factory: () => <button type="button">fixed content</button> });
+      });
+    });
+    press('Reload');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'fixed content' })));
   });
 });
 
@@ -164,6 +202,27 @@ describe('设置页渲染抛错', () => {
     expect(screen.getByRole('alert').textContent).toContain(INLINE_TITLE);
     fireEvent.click(screen.getByRole('button', { name: 'General' }));
     expect(screen.getByText('general content')).toBeTruthy();
+  });
+
+  it('错误块点「禁用插件」后该页移除:焦点落到当前选中的导航项(不掉到 body)', async () => {
+    const app = createTestCoApp('1.0.0');
+    app.settingTabs.register({ id: 'general', title: 'General', render: () => 'general content', priority: 1 });
+    const registration = createScopedApp(app, 'acme.bad', null, 'tok').settingTabs.register({
+      id: 'acme.bad.tab',
+      title: 'Bad Tab',
+      render: () => <Boom />,
+      priority: 2,
+    });
+    mgr.disable.mockImplementationOnce(async () => {
+      act(() => registration.dispose());
+    });
+    useSettingsStore.setState({ activeTabId: 'acme.bad.tab' });
+    render(<SettingsPanel registry={app.settingTabs} itemRegistry={app.settingItems} />);
+    const btn = screen.getByRole('button', { name: 'Disable Plugin' });
+    btn.focus();
+    fireEvent.click(btn);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'General' })));
+    expect(document.activeElement?.getAttribute('aria-current')).toBe('page');
   });
 
   it('导航图标抛错:只替换图标', () => {

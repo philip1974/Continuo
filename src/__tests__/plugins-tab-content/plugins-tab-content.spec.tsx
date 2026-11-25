@@ -1032,6 +1032,25 @@ describe('PluginsTabContent — 卸载流程', () => {
     expect(document.querySelector('.wm-modal-content')!.textContent).toContain('p.del');
   });
 
+  it('确认框以插件名称称呼(id 作副文本),恢复方式泛化为「重新安装」', () => {
+    installPluginsApi(vi.fn());
+    getMgr.mockReturnValue({
+      listAll: () => [plugin({ id: 'p.del', status: 'disabled', manifest: { name: 'Delete Me' } as never })],
+      uninstall: vi.fn(),
+    } satisfies FakeManager);
+    const { container } = render(<PluginsTabContent />);
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '卸载')!,
+    );
+    const dialog = document.querySelector('.wm-modal-content')!;
+    const body = dialog.querySelector('[data-uninstall-body]')!;
+    expect(body.textContent).toContain('Delete Me');
+    expect(body.textContent).not.toContain('p.del');
+    expect(dialog.querySelector('code')?.textContent).toBe('p.del');
+    expect(dialog.textContent).toContain('重新安装');
+    expect(dialog.textContent).not.toMatch(/git URL/i);
+  });
+
   it('Confirm 确认 → mgr.uninstall(id)', async () => {
     installPluginsApi(vi.fn());
     const uninstall = vi.fn().mockResolvedValue(undefined);

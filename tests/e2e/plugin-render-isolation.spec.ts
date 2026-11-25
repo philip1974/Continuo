@@ -1,7 +1,7 @@
 // 插件贡献渲染抛错只影响它自己,主窗不白屏(BDD: src/__tests__/plugin-render-isolation/、plugin-failure-notify/、
 // dock-plugin-panel-placeholder/)。真实第三方插件(userData/plugins/<id>)经 PluginManager 激活。
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { closeDiscardingUnsaved } from './helpers/close-app';
@@ -17,6 +17,8 @@ const FAILURE_TOAST = /(Acme Bad)/;
 const DISABLE_PLUGIN = /^(禁用插件|Disable Plugin|플러그인 비활성화)$/;
 const DISABLED_PLACEHOLDER = /(插件「Acme Bad」已禁用|Plugin “Acme Bad” is disabled|'Acme Bad'이\(가\) 비활성화)/;
 const ENABLE = /^(启用|Enable|활성)$/;
+const RELOAD = /^(重载|Reload|다시 로드|새로 고침)$/;
+const ENABLE_ROW = /^(启用|Enable|활성) — Acme Bad$/;
 const BAD_TAB = /^Bad Tab$/;
 
 // 第三方插件:状态栏项 / 面板 / 设置页都渲染一个会抛错的组件;命令打开面板。
@@ -33,6 +35,10 @@ export default class AcmeBad extends Plugin {
   }
 }
 `;
+
+function readEnabledIds(ud: string): string[] {
+  return JSON.parse(readFileSync(path.join(ud, 'plugins', '_enabled.json'), 'utf8')) as string[];
+}
 
 function seedPlugin(ud: string): void {
   const dir = path.join(ud, 'plugins', PLUGIN_ID);
@@ -90,9 +96,13 @@ test('面板渲染抛错只在该面板显示错误块;「禁用插件」后变�
     await expect(alert).toBeVisible();
     await alert.getByRole('button', { name: DISABLE_PLUGIN }).click();
     await expect(win.getByText(DISABLED_PLACEHOLDER)).toBeVisible();
-    await expect(
-      win.locator('.dv-content-container').filter({ hasText: DISABLED_PLACEHOLDER }).getByRole('button', { name: ENABLE }),
-    ).toBeVisible();
+    const enable = win
+      .locator('.dv-content-container')
+      .filter({ hasText: DISABLED_PLACEHOLDER })
+      .getByRole('button', { name: ENABLE });
+    await expect(enable).toBeVisible();
+    // 焦点落到替换出的占位「启用」按钮,不掉到 body(对齐 VSCode)。
+    await expect(enable).toBeFocused();
     // 禁用后状态栏错误图标随贡献注销消失
     await expect(win.locator('footer').getByTitle(RENDER_ERROR)).toHaveCount(0);
   } finally {
@@ -109,6 +119,37 @@ test('设置页渲染抛错只在内容区显示错误块,导航照常可切走'
     await expect(win.getByRole('alert').filter({ hasText: RENDER_ERROR_BLOCK })).toBeVisible();
     await win.getByRole('button', { name: GENERAL_TAB }).click();
     await expect(win.getByRole('alert').filter({ hasText: RENDER_ERROR_BLOCK })).toHaveCount(0);
+  } finally {
+    await closeDiscardingUnsaved(app);
+  }
+});
+
+test('启用后立即渲染出错:启用状态已持久化;错误块「重载」后仍启用(不变成已禁用),重启后仍启用', async () => {
+  test.setTimeout(90_000);
+  writeFileSync(path.join(ud, 'plugins', '_enabled.json'), JSON.stringify([]));
+  let { app, win } = await launch(ud);
+  try {
+    await openSettingsTab(win, PLUGINS_TAB);
+    await win.getByRole('button', { name: ENABLE_ROW }).click();
+    // 启用即渲染状态栏项并出错
+    await expect(win.locator('footer').getByTitle(RENDER_ERROR)).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => readEnabledIds(ud)).toContain(PLUGIN_ID);
+
+    await win.evaluate(() => globalThis.__continuoTest!.executeCommand('acme.bad.open'));
+    const alert = win.getByRole('alert').filter({ hasText: RENDER_ERROR_BLOCK });
+    await expect(alert).toBeVisible();
+    await alert.getByRole('button', { name: RELOAD }).click();
+    // 重载 = 重启插件:仍启用(仍渲染出错),不是「已禁用」占位
+    await expect(win.getByRole('alert').filter({ hasText: RENDER_ERROR_BLOCK })).toBeVisible();
+    await expect(win.getByText(DISABLED_PLACEHOLDER)).toHaveCount(0);
+    await expect(win.locator('footer').getByTitle(RENDER_ERROR)).toBeVisible();
+    expect(readEnabledIds(ud)).toContain(PLUGIN_ID);
+    // 焦点不掉到 body
+    expect(await win.evaluate(() => document.activeElement !== document.body && document.activeElement !== null)).toBe(true);
+    await closeDiscardingUnsaved(app);
+
+    ({ app, win } = await launch(ud));
+    await expect(win.locator('footer').getByTitle(RENDER_ERROR)).toBeVisible({ timeout: 15_000 });
   } finally {
     await closeDiscardingUnsaved(app);
   }

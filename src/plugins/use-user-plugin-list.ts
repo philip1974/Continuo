@@ -18,3 +18,12 @@ export function useUserPluginList(): readonly PluginListItem[] {
   const m = getUserPluginManager();
   return useSyncExternalStore(m ? m.subscribe : NOOP_SUBSCRIBE, readUserPluginList);
 }
+
+/**
+ * 面向用户称呼插件用的名称(用户认得的是名称;对齐 VSCode 扩展视图以 displayName 为标题、id 作副文本):manifest.name,
+ * 列表里查不到(尚未登记)退回 id。插件提供的原文 —— 授权类弹窗里须经 UntrustedText 显示。
+ */
+export function usePluginDisplayName(pluginId: string): string {
+  const plugins = useUserPluginList();
+  return plugins.find((p) => p.id === pluginId)?.manifest.name ?? pluginId;
+}

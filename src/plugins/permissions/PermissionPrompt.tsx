@@ -1,12 +1,12 @@
 // 权限授权 Modal(M-Plugin v3.4)。
 // 订阅 promptStore,无 pending 时不渲染。
 
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { Button, Modal } from '@/design';
 import { usePermissionPromptStore } from './promptStore';
 import type { FsScopePrompt, Pending } from './promptStore';
 import type { PermissionKey } from '../permissions';
-import { useT } from '@/i18n';
+import { useT, type TranslationKey } from '@/i18n';
 import { PermissionOptionRow } from './PermissionOptionRow';
 import {
   PROMPT_GRANT_BUTTON_PROPS,
@@ -16,22 +16,43 @@ import {
 } from '@/lib/use-prompt-grant-guard';
 import { PromptGrantHint } from '@/lib/prompt-grant-hint';
 import { UNTRUSTED_PATH_MAX_CHARS, UntrustedText } from '@/lib/untrusted-text';
+import { usePluginDisplayName } from '../use-user-plugin-list';
 
-const PLUGIN_ID_MARKER = ' __PID__ ';
 const EMPTY_SELECTED_PERMISSIONS: PermissionKey[] = [];
 
-function splitPluginIdTemplate(tpl: string): {
-  readonly prefix: string;
-  readonly suffix: string;
-} {
-  const markerStart = tpl.indexOf(PLUGIN_ID_MARKER);
-  if (markerStart < 0) return { prefix: tpl, suffix: '' };
-  const suffixStart = markerStart + PLUGIN_ID_MARKER.length;
-  const nextMarker = tpl.indexOf(PLUGIN_ID_MARKER, suffixStart);
-  return {
-    prefix: tpl.slice(0, markerStart),
-    suffix: tpl.slice(suffixStart, nextMarker < 0 ? tpl.length : nextMarker),
-  };
+const NAME_MARKER = ' __NAME__ ';
+
+/**
+ * 以插件名称称呼的标题(id 作副文本见 PluginIdLine;对齐 VSCode 扩展视图以 displayName 为标题、id 作副文本)。名称与 id 都由插件
+ * 提供:可见化后放进 <code>(UntrustedText),不与系统文案混在一起;标题模板按占位拆成前后缀。
+ */
+function PluginPromptHeading({ id, titleKey, pluginId }: { id: string; titleKey: TranslationKey; pluginId: string }) {
+  const t = useT();
+  const name = usePluginDisplayName(pluginId);
+  const template = t(titleKey, { name: NAME_MARKER });
+  const at = template.indexOf(NAME_MARKER);
+  return (
+    <h2 id={id} className="mb-1 text-sm font-medium text-fg">
+      {at < 0 ? (
+        template
+      ) : (
+        <>
+          {template.slice(0, at)}
+          <UntrustedText text={name} />
+          {template.slice(at + NAME_MARKER.length)}
+        </>
+      )}
+    </h2>
+  );
+}
+
+/** 标题下的插件 id 副文本;放在 aria-describedby 说明里(读屏进弹窗即听到是哪个插件)。 */
+function PluginIdLine({ pluginId }: { pluginId: string }) {
+  return (
+    <p className="mb-2 text-2xs text-fg-dim">
+      <UntrustedText text={pluginId} />
+    </p>
+  );
 }
 
 export function copySelectedPermissions(
@@ -98,13 +119,6 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
   const descriptionId = useId();
   const grant = usePermissionPromptStore((s) => s.grant);
   const denyAll = usePermissionPromptStore((s) => s.denyAll);
-  const promptBodyTemplate = t('permissions.prompt.body', {
-    pluginId: PLUGIN_ID_MARKER,
-  });
-  const promptBodyParts = useMemo(
-    () => splitPluginIdTemplate(promptBodyTemplate),
-    [promptBodyTemplate],
-  );
   // 以请求身份为 key 挂载(shell 端):换请求即 remount,勾选回到新请求的默认值(shell 不预选)。
   const [selected, setSelected] = useState<Set<PermissionKey>>(() =>
     defaultSelected(pending.perms),
@@ -135,18 +149,11 @@ function ManifestPromptBody({ pending, guard }: { pending: Pending; guard: Promp
       aria-describedby={descriptionId}
     >
       {/* a11y(A13):dialog(A10)须经 aria-labelledby 关联标题,否则 AT 只听到无名 dialog。 */}
-      <h2 id="permission-prompt-title" className="mb-1 text-sm font-medium text-fg">
-        {t('permissions.prompt.title')}
-      </h2>
-      {/* a11y:说明句(插件 id)与「部分授予」提示经 aria-describedby 关联(初始焦点在「全部拒绝」,不关联时读屏听不到
-          是哪个插件在申请);权限勾选项本身可聚焦、各有标签,不放进说明。 */}
+      <PluginPromptHeading id="permission-prompt-title" titleKey="permissions.prompt.title" pluginId={pending.pluginId} />
+      {/* a11y:插件 id 与「部分授予」提示经 aria-describedby 关联(初始焦点在「全部拒绝」);权限勾选项本身可聚焦、各有
+          标签,不放进说明。 */}
       <div id={descriptionId}>
-        <p className="mb-2 text-xs text-fg-muted">
-          {/* tpl 含 {pluginId}；inline <code> 渲染 — 拆 prefix/suffix */}
-          {promptBodyParts.prefix}
-          <UntrustedText text={pending.pluginId} />
-          {promptBodyParts.suffix}
-        </p>
+        <PluginIdLine pluginId={pending.pluginId} />
         <p className="mb-3 text-2xs text-fg-dim">
           {t('permissions.prompt.note_prefix')}
           <span className="text-fg">{t('permissions.prompt.note_partial')}</span>
@@ -213,13 +220,6 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
   const descriptionId = useId();
   const grantFsScope = usePermissionPromptStore((s) => s.grantFsScope);
   const denyFsScope = usePermissionPromptStore((s) => s.denyFsScope);
-  const fsScopeBodyTemplate = t('permissions.fs_scope.body', {
-    pluginId: PLUGIN_ID_MARKER,
-  });
-  const fsScopeBodyParts = useMemo(
-    () => splitPluginIdTemplate(fsScopeBodyTemplate),
-    [fsScopeBodyTemplate],
-  );
   const { requestId } = scope;
   // Esc(键重复)/ 点遮罩也是拒绝入口,与拒绝按钮同一守卫(只在切换后短时间内无效);引用稳定(同 manifest 分支)。
   const handleClose = useCallback(() => {
@@ -233,17 +233,10 @@ function FsScopePromptBody({ scope, guard }: { scope: FsScopePrompt; guard: Prom
       aria-describedby={descriptionId}
     >
       {/* a11y(A13):同上,fs-scope 弹窗关联标题。 */}
-      <h2 id="permission-fs-scope-title" className="mb-1 text-sm font-medium text-fg">
-        {t('permissions.fs_scope.title')}
-      </h2>
-      {/* a11y:说明句与申请的路径 / 模式列表经 aria-describedby 关联(同 manifest 分支)。 */}
+      <PluginPromptHeading id="permission-fs-scope-title" titleKey="permissions.fs_scope.title" pluginId={scope.pluginId} />
+      {/* a11y:插件 id 与申请的路径 / 模式列表经 aria-describedby 关联(同 manifest 分支)。 */}
       <div id={descriptionId}>
-        <p className="mb-3 text-xs text-fg-muted">
-          {/* tpl 含 {pluginId};inline <code> 渲染 — 拆 prefix/suffix(同 manifest 分支) */}
-          {fsScopeBodyParts.prefix}
-          <UntrustedText text={scope.pluginId} />
-          {fsScopeBodyParts.suffix}
-        </p>
+        <PluginIdLine pluginId={scope.pluginId} />
         <ul className="mb-1 space-y-1 text-xs">
           {scope.scopes.map((s, i) => (
             <li

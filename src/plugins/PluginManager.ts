@@ -500,11 +500,10 @@ export class PluginManager {
     if (entry.status === 'failed') await this.host.permissionStore?.clearDenied(id);
 
     await this.activateEntry(entry);
-    // activateEntry 是 mutating 方法,TS 不知道 status 已变。
-    // 重新从 map 取拿到 widening 后的类型。
-    const after = this.entries.get(id);
-    if (after?.status === 'enabled') {
-      after.enabledIntent = true; // race(R77):与 _enabled.json 持久化同步置意图
+    // 以「激活成功」(有实例)为准记启用意图,不看瞬时 status:激活一完成贡献就渲染,渲染出错会在本 await 期间把
+    // status 改成 failed(markRenderFailed,实例仍在运行)—— 对齐 VSCode,视图出错不改变启用状态。
+    if (this.activated(entry)) {
+      entry.enabledIntent = true; // race(R77):与 _enabled.json 持久化同步置意图
       await this.host.mutateEnabledId(id, true);
     }
   }
@@ -562,9 +561,7 @@ export class PluginManager {
         return;
       }
       await this.activateEntry(entry);
-      // activateEntry 是 mutating 方法,TS 不知道 status 已变;重新从 map 取(同 enableLocked)。
-      const after = this.entries.get(id);
-      if (after?.status === 'enabled') after.enabledIntent = true;
+      if (this.activated(entry)) entry.enabledIntent = true; // 同 enableLocked:以激活成功为准
     });
   }
 
@@ -601,8 +598,15 @@ export class PluginManager {
     }
     if (await this.needsPermissionPrompt(id, entry.manifest)) return;
     await this.activateEntry(entry);
-    const after = this.entries.get(id);
-    if (after?.status === 'enabled') after.enabledIntent = true;
+    if (this.activated(entry)) entry.enabledIntent = true; // 同 enableLocked:以激活成功为准
+  }
+
+  /**
+   * 激活是否成功(条目仍在且有运行中的实例)。启用意图据此记,而非 status === 'enabled':激活成功后渲染出错会把
+   * status 改成 failed(实例保留,见 markRenderFailed),那仍是一次成功启用。
+   */
+  private activated(entry: PluginEntry): boolean {
+    return this.entries.get(entry.id) === entry && entry.instance !== undefined;
   }
 
   /**

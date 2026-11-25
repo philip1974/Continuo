@@ -37,14 +37,14 @@ describe('打磨 R34 — fs-scope 权限弹窗本地化', () => {
     seedFsScope();
     const { container } = render(<PermissionPrompt />);
     const txt = container.textContent ?? '';
-    expect(txt).toContain('文件系统访问请求');
+    expect(txt).toContain('请求访问以下路径');
     expect(txt).toContain('拒绝');
     expect(txt).toContain('授权');
     expect(txt).toContain('读 + 写');
     expect(txt).toContain('只读');
-    expect(txt).toContain('com.example.plugin'); // pluginId 仍内联
+    expect(txt).toContain('com.example.plugin'); // 插件名称(列表里查不到时退回 id)仍在标题里
     // 不再混入英文硬编码
-    expect(txt).not.toContain('Filesystem access request');
+    expect(txt).not.toContain('requests access');
     expect(txt).not.toContain('Deny');
     expect(txt).not.toContain('Grant');
   });
@@ -54,7 +54,7 @@ describe('打磨 R34 — fs-scope 权限弹窗本地化', () => {
     seedFsScope();
     const { container } = render(<PermissionPrompt />);
     const txt = container.textContent ?? '';
-    expect(txt).toContain('Filesystem access request');
+    expect(txt).toContain('requests access to the following path');
     expect(txt).toContain('read + write');
   });
 });

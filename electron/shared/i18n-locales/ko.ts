@@ -615,7 +615,7 @@ export const ko: Record<TranslationKey, string> = {
   'plugins_tab.action.uninstall_tooltip': '이 플러그인 제거 (디스크 디렉터리 삭제)',
   'plugins_tab.action.row_button_aria': '{action} — {name}',
   'plugins_tab.uninstall.title': '플러그인을 제거하시겠습니까?',
-  'plugins_tab.uninstall.body': '{id} 설치 디렉터리와 모든 데이터가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없으며 git URL에서 다시 설치해야 복구 가능합니다.',
+  'plugins_tab.uninstall.body': '"{name}" 및 모든 데이터가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없으며, 복구하려면 다시 설치해야 합니다.',
   'plugins_tab.uninstall.confirm': '제거',
   'plugins_tab.uninstall.success': '{name} 제거됨',
 
@@ -745,11 +745,10 @@ export const ko: Record<TranslationKey, string> = {
     '도구 등록: 이름과 설명이 AI Agent(Claude Code 등 MCP 클라이언트)에 표시되며, Agent가 호출할 수 있습니다',
 
   // permissions prompt UI
-  'permissions.prompt.title': '권한 요청',
-  'permissions.prompt.body': '플러그인 {pluginId}이 다음 권한을 요청합니다:',
-  'permissions.prompt.note_prefix': '체크하지 않은 것은 거부로 간주됩니다. 지원:',
-  'permissions.prompt.note_partial': '부분 권한 부여',
-  'permissions.prompt.note_suffix': ': 플러그인이 권한 없는 API 호출 시 거부(PermissionError 발생)되지만 전체적으로 활성화 가능. 모두 거부하면 플러그인은 활성화되지 않음.',
+  'permissions.prompt.title': '"{name}" 플러그인이 다음 권한을 요청합니다',
+  'permissions.prompt.note_prefix': '체크하지 않은 권한은 거부됩니다. ',
+  'permissions.prompt.note_partial': '부분 허용',
+  'permissions.prompt.note_suffix': '도 가능합니다. 플러그인은 활성화되지만 거부된 권한이 필요한 기능은 동작하지 않습니다. 모두 거부하면 플러그인이 활성화되지 않습니다.',
   'permissions.grant_guard.rejected':
     '아직 적용되지 않았습니다. 잠시 멈춘 뒤 한 번 클릭하거나, 포커스를 잠시 둔 뒤 Enter / Space를 누르세요.',
   'permissions.prompt.select_all': '모두 선택',
@@ -758,8 +757,7 @@ export const ko: Record<TranslationKey, string> = {
   'permissions.prompt.grant_selected': '선택 허용 ({count})',
 
   // fs-scope (path) access prompt
-  'permissions.fs_scope.title': '파일 시스템 접근 요청',
-  'permissions.fs_scope.body': '플러그인 {pluginId}이(가) 다음 경로에 대한 접근을 요청합니다:',
+  'permissions.fs_scope.title': '"{name}" 플러그인이 다음 경로에 대한 접근을 요청합니다',
   'permissions.fs_scope.mode_label': '모드',
   'permissions.fs_scope.mode_rw': '읽기 + 쓰기',
   'permissions.fs_scope.mode_ro': '읽기 전용',

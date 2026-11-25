@@ -81,3 +81,13 @@ PromptFn 桥接到 store,Promise 形态返回。PluginManager 在 _activate 前�
 - `fs`:只能读写用户批准的文件夹(按文件夹另行弹窗询问)。
 - `mcp-tools`:注册的工具名称与描述会展示给 AI agent,并可被其调用。
 - `clipboard`:读写系统剪贴板。
+
+### 插件身份与文案(`plugin-name-and-copy.spec.tsx`)
+
+对齐 VSCode(扩展视图以 displayName 为标题、id 作副文本):
+
+- 启用时的权限请求、运行时的文件夹访问请求:标题以插件**名称**称呼(`manifest.name`,可见化 + 截断;插件列表里查不到
+  时退回 id),标题下以等宽副文本显示插件 id。权限编辑弹窗的「插件」一行同样显示名称 + id 副文本。
+- 设置页卸载确认以名称称呼(id 作副文本),恢复方式只说「重新安装」(不限定 git URL —— 也可能来自市场)。
+- 面向用户的说明不含开发者术语(三语):「部分授权」说明讲后果(插件仍启用、需要未授权权限的功能无法使用),不提
+  `PermissionError` / API。

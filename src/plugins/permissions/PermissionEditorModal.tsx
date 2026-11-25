@@ -15,6 +15,8 @@ import type {
 import { useT } from '@/i18n';
 import { PermissionOptionRow } from './PermissionOptionRow';
 import { useStableCallback } from '@/lib/use-stable-callback';
+import { usePluginDisplayName } from '../use-user-plugin-list';
+import { UntrustedText } from '@/lib/untrusted-text';
 
 interface PermissionEditorModalProps {
   open: boolean;
@@ -112,6 +114,7 @@ function PermissionEditorModalBody({
   pluginStillExists,
 }: PermissionEditorModalBodyProps) {
   const t = useT();
+  const name = usePluginDisplayName(pluginId);
   // null = 未决, true = granted, false = denied
   const [decisions, setDecisions] = useState<Map<PermissionKey, boolean | null>>(
     () => new Map(),
@@ -217,9 +220,18 @@ function PermissionEditorModalBody({
       <h2 id="permission-editor-title" className="mb-1 text-sm font-medium text-fg">
         {t('permissions.editor.title')}
       </h2>
+      {/* 以名称称呼,id 作等宽副文本(同首次授权弹窗)。 */}
       <p className="mb-3 text-xs text-fg-muted">
         {t('permissions.editor.plugin_id_label')}{' '}
-        <code className="text-fg">{pluginId}</code>
+        {/* 名称由插件提供:可见化后放进 <code>(同授权弹窗)。 */}
+        <span data-plugin-name>
+          <UntrustedText text={name} />
+        </span>
+        {name !== pluginId && (
+          <span className="block text-2xs text-fg-dim">
+            <UntrustedText text={pluginId} />
+          </span>
+        )}
       </p>
       <ul className="mb-3 space-y-1">
         {declared.map((perm) => (

@@ -197,7 +197,9 @@ describe('PermissionPrompt:对方可控字段', () => {
     });
     expect(HIDDEN.test(modalText())).toBe(false);
     expect(modalText()).not.toContain('\n');
-    const [pluginId, first, second, third] = codes();
+    // 标题里的插件名称(列表里查不到 → 退回 id)与 id 副文本同样在 <code> 里。
+    const [titleName, pluginId, first, second, third] = codes();
+    expect(titleName!.textContent).toBe('com.example.plugin');
     expect(pluginId!.textContent).toBe('com.example.plugin');
     expect(first!.textContent).toBe('/Users/me/Documents 【系统提示】这是安全目录\uFFFDgpj.exe');
     expect(Array.from(second!.textContent ?? '')).toHaveLength(UNTRUSTED_PATH_MAX_CHARS);

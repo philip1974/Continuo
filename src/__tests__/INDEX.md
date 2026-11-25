@@ -1151,6 +1151,7 @@
 - [`first-appearance-grant-guard.spec.tsx`](./permission-prompt/first-appearance-grant-guard.spec.tsx)
 - [`keyboard-grant-guard.spec.tsx`](./permission-prompt/keyboard-grant-guard.spec.tsx)
 - [`permission-copy-matches-capability.spec.ts`](./permission-prompt/permission-copy-matches-capability.spec.ts)
+- [`plugin-name-and-copy.spec.tsx`](./permission-prompt/plugin-name-and-copy.spec.tsx)
 - [`promptStore.spec.ts`](./permission-prompt/promptStore.spec.ts)
 - [`select-all-and-checkbox-guard.spec.tsx`](./permission-prompt/select-all-and-checkbox-guard.spec.tsx)
 - [`shell-not-preselected.spec.tsx`](./permission-prompt/shell-not-preselected.spec.tsx)

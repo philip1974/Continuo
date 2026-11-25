@@ -5,8 +5,9 @@
 // 就地显示错误。模式同 EditorEngineErrorBoundary;接住后按贡献的所有者上报 PluginManager(标 failed,通知由
 // plugin-failure-notify 统一出口去重发一次)。内置插件(`core:`)贡献不包。
 
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useRef, type ErrorInfo, type ReactNode } from 'react';
 import { Button } from '@/design';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { useT } from '@/i18n';
 import { notifyThrownError } from '@/notifications/notify-thrown-error';
 import { getUserPluginManager } from './PluginManager';
@@ -20,6 +21,11 @@ interface Props {
   readonly owner: object;
   /** inline:状态栏项 / 图标位,紧凑错误图标;block:面板 / 设置页,带「禁用插件」「重载」的错误块。 */
   readonly variant: Variant;
+  /**
+   * block 错误块的「禁用插件」/「重载」完成后错误块被替换(占位 / 恢复的内容),焦点随之掉到 body —— 此时调用,把焦点
+   * 交给替换出的内容(对齐 VSCode:操作后焦点落在替换出的视图)。焦点已被移到别处则不调用。
+   */
+  readonly refocus?: () => void;
   readonly children?: ReactNode;
 }
 
@@ -51,14 +57,16 @@ class Boundary extends Component<BoundaryProps, State> {
 
   override render(): ReactNode {
     if (!this.state.failed) return this.props.children;
-    return <RenderErrorFallback pluginId={this.props.pluginId} variant={this.props.variant} />;
+    return (
+      <RenderErrorFallback pluginId={this.props.pluginId} variant={this.props.variant} refocus={this.props.refocus} />
+    );
   }
 }
 
-export function PluginRenderBoundary({ owner, variant, children }: Props): ReactNode {
+export function PluginRenderBoundary({ owner, variant, refocus, children }: Props): ReactNode {
   if (!isThirdPartyContribution(owner)) return children;
   return (
-    <Boundary owner={owner} variant={variant} pluginId={contributionPluginId(owner)}>
+    <Boundary owner={owner} variant={variant} refocus={refocus} pluginId={contributionPluginId(owner)}>
       {children}
     </Boundary>
   );
@@ -83,8 +91,17 @@ const ERROR_ICON = (
   </svg>
 );
 
-function RenderErrorFallback({ pluginId, variant }: { pluginId: string | null; variant: Variant }) {
+function RenderErrorFallback({
+  pluginId,
+  variant,
+  refocus,
+}: {
+  pluginId: string | null;
+  variant: Variant;
+  refocus: (() => void) | undefined;
+}) {
   const t = useT();
+  const rootRef = useRef<HTMLDivElement>(null);
   const plugins = useUserPluginList();
   const name = pluginId === null ? null : (plugins.find((p) => p.id === pluginId)?.manifest.name ?? pluginId);
   const message =
@@ -98,10 +115,20 @@ function RenderErrorFallback({ pluginId, variant }: { pluginId: string | null; v
   }
   const run = (op: (id: string) => Promise<unknown> | undefined) => () => {
     if (pluginId === null) return;
-    void Promise.resolve(op(pluginId)).catch((err: unknown) => notifyThrownError(err));
+    const root = rootRef.current;
+    void Promise.resolve(op(pluginId))
+      .catch((err: unknown) => notifyThrownError(err))
+      .finally(() => {
+        if (!refocus || !root) return;
+        // 等替换出的内容提交到 DOM 后再交焦点;焦点仍在错误块内或已丢失(错误块被卸载)才交,不抢用户移走的焦点。
+        // 用错误块所在文档的窗口排帧(面板可能在 popout 窗口)。
+        (root.ownerDocument.defaultView ?? window).requestAnimationFrame(() => {
+          if (focusWithinOrLost(root.ownerDocument, root)) refocus();
+        });
+      });
   };
   return (
-    <div role="alert" className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-fg-muted">
+    <div ref={rootRef} role="alert" className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-fg-muted">
       <p className="flex items-center gap-2 text-error">
         {ERROR_ICON}
         <span>{message}</span>

@@ -555,7 +555,11 @@ function UserPluginsSection() {
         title={t('plugins_tab.uninstall.title')}
         description={
           uninstallTarget ? (
-            <>{t('plugins_tab.uninstall.body', { id: uninstallTarget.id })}</>
+            <>
+              {/* 以名称称呼(用户认得的),id 作副文本。 */}
+              <span data-uninstall-body>{t('plugins_tab.uninstall.body', { name: uninstallTarget.manifest.name })}</span>
+              <code className="mt-1 block break-all font-mono text-2xs text-fg-dim">{uninstallTarget.id}</code>
+            </>
           ) : null
         }
         confirmLabel={t('plugins_tab.uninstall.confirm')}
