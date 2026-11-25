@@ -519,6 +519,10 @@
 
 - [`edit-context-menu.spec.ts`](./edit-context-menu/edit-context-menu.spec.ts)
 
+## [编辑区可访问名称(对齐 VSCode 编辑器名称,WCAG 4.1.2)](./editor-accessible-name/README.md)
+
+- [`editor-accessible-name.spec.tsx`](./editor-accessible-name/editor-accessible-name.spec.tsx)
+
 ## [editor-action(EditorHeader 工具按钮贡献)](./editor-action/README.md)
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)

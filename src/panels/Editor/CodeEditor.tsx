@@ -28,7 +28,7 @@ import {
 import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
 import { useLocale } from '@/i18n';
-import { codeMirrorPhrases } from './codemirror-phrases';
+import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel } from './codemirror-phrases';
 import { debugDecorationsExtension } from './decorations/debug-decorations';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { registerEditorRootRebind } from './editor-root-registry';
@@ -160,6 +160,10 @@ export function CodeEditor({
   const phrasesCompartment = useRef(new Compartment());
   const locale = useLocale();
   const appliedLocaleRef = useRef<string | null>(null);
+  // 文本区可访问名称「<文件名>，编辑器」(对齐 VSCode;BDD: src/__tests__/editor-accessible-name/):文件名(改名)/
+  // 界面语言变化时 reconfigure,不重建编辑器。
+  const labelCompartment = useRef(new Compartment());
+  const appliedLabelRef = useRef<string | null>(null);
   const suppressNextChange = useRef(false);
   // 性能 P6:记录「editor doc 当前反映的字符串」。本地打字时 onChange emit 的值会作为
   // value 回传(受控回声),此 ref 让 value-sync effect 直接 `value === lastSynced` 跳过,
@@ -182,6 +186,7 @@ export function CodeEditor({
     appliedLangKeyRef.current = `${fileName}\u0000${forceLanguage ?? ''}`;
     appliedThemeRef.current = resolved;
     appliedLocaleRef.current = locale;
+    appliedLabelRef.current = editorContentLabel(fileName);
     eolRef.current = detectLineEnding(value);
 
     const extensions: Extension[] = [
@@ -192,6 +197,7 @@ export function CodeEditor({
       keymap.of([indentWithTab]),
       themeCompartment.current.of(themeExt),
       phrasesCompartment.current.of(codeMirrorPhrases()),
+      labelCompartment.current.of(codeMirrorContentLabel(appliedLabelRef.current)),
       langCompartment.current.of(lang),
       debugDecorationsExtension(),
       EditorView.updateListener.of((update: ViewUpdate) => {
@@ -303,7 +309,15 @@ export function CodeEditor({
     lastSyncedValueRef.current = value; // doc 现反映 value(P6)
   }, [value]);
 
-  // fileName 或 forceLanguage 变化 → 重配置 language
+  // 可访问名称随文件名 / 界面语言变化:与 language / phrases 的 reconfigure 合并在同一次 dispatch 里(不额外派发)。
+  const labelEffects = (): StateEffect<unknown>[] => {
+    const label = editorContentLabel(fileName);
+    if (appliedLabelRef.current === label) return [];
+    appliedLabelRef.current = label;
+    return [labelCompartment.current.reconfigure(codeMirrorContentLabel(label))];
+  };
+
+  // fileName 或 forceLanguage 变化 → 重配置 language(与可访问名称)
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -311,10 +325,9 @@ export function CodeEditor({
     if (appliedLangKeyRef.current === key) return;
     appliedLangKeyRef.current = key;
     view.dispatch({
-      effects: langCompartment.current.reconfigure(
-        pickLanguage(fileName, forceLanguage),
-      ),
+      effects: [langCompartment.current.reconfigure(pickLanguage(fileName, forceLanguage)), ...labelEffects()],
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileName, forceLanguage]);
 
   // 主题切换 → 热替换亮 / 暗主题,避免重建 editor
@@ -335,7 +348,8 @@ export function CodeEditor({
     if (!view) return;
     if (appliedLocaleRef.current === locale) return;
     appliedLocaleRef.current = locale;
-    view.dispatch({ effects: phrasesCompartment.current.reconfigure(codeMirrorPhrases()) });
+    view.dispatch({ effects: [phrasesCompartment.current.reconfigure(codeMirrorPhrases()), ...labelEffects()] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale]);
 
   // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters

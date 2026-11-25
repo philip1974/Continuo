@@ -112,4 +112,26 @@ describe('runRegisteredCommand(按 id 从 live registry 重查再执行,race R51
     expect(fn).toHaveBeenCalledOnce();
     expect(String(errorSpy.mock.calls[0]?.[0])).toContain('Do X: boom');
   });
+
+  // 需要接着做事的调用方(无工作区新建终端等「打开文件夹」完成,BDD: create-user-terminal)可 await:命令完成后才
+  // resolve;失败已弹 toast,Promise 不 reject。
+  it('返回命令完成的 Promise:异步命令结束后才 resolve;失败也 resolve(不 reject)', async () => {
+    let finish: () => void = () => {};
+    const fn = vi.fn(() => new Promise<void>((r) => (finish = r)));
+    let done = false;
+    const p = runRegisteredCommand({ get: () => ({ fn }) }, 'slow.cmd', 'Slow').then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(done).toBe(false);
+    finish();
+    await p;
+    expect(done).toBe(true);
+
+    await expect(
+      runRegisteredCommand({ get: () => ({ fn: () => Promise.reject(new Error('nope')) }) }, 'bad.cmd', 'Bad'),
+    ).resolves.toBeUndefined();
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('Bad: nope');
+  });
 });

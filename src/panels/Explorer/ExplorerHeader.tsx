@@ -12,7 +12,7 @@ import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
 import { MoreActionsIcon } from '@/lib/ui-icons';
 import { DropdownMenu } from '@/lib/dropdown-menu';
-import { basename } from './path-utils';
+import { basename, recentRootAccessibleName } from './path-utils';
 import { basenameForChrome } from '@/lib/path-label';
 import { useT } from '@/i18n';
 import { ExplorerVisibleContext } from './visibility';
@@ -182,10 +182,8 @@ export function ExplorerHeader({
                   <MenuItem
                     key={p}
                     title={p}
-                    // a11y(A78):菜单项只显视觉 basename,同名目录无法区分 → aria-label 注入完整路径。
-                    ariaLabel={t('panels.explorer.menu.open_recent_item_aria', {
-                      path: p,
-                    })}
+                    // a11y(A78):菜单项只显视觉 basename,同名目录无法区分 → aria-label「名称，父路径」(以可见文字开头,WCAG 2.5.3)。
+                    ariaLabel={recentRootAccessibleName(p)}
                     onClick={() => {
                       closeAndRestore(); // a11y(A30):激活后还原焦点到触发按钮
                       void openRecentRootOrNotify(p, setRoot, missingPrompt.onMissing);

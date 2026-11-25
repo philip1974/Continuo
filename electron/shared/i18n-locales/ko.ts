@@ -219,6 +219,9 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.confirm_delete.desc': '휴지통으로 이동하기 전에 확인을 요청합니다.',
 
   // editor welcome / empty states (post-topic-21 round 2)
+  // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
+  'editor.aria.content': '{name}, 편집기',
+  'editor.aria.code_block': '코드 블록',
   'editor.welcome.title': '열린 파일 없음',
   'editor.welcome.actions_aria': '시작하기',
   'editor.welcome.open_folder': '폴더 열기',
@@ -367,7 +370,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.drop.upload_to': '여기에 드롭하여 {target}에 업로드',
   'panels.explorer.menu.expand_all': '모두 펼치기',
   'panels.explorer.menu.open_recent': '최근 항목 열기',
-  'panels.explorer.menu.open_recent_item_aria': '최근 항목 열기: {path}',
+  // 最近目录项名称:以可见名称开头再接父路径(WCAG 2.5.3;VSCode 最近列表「名称, 路径」)
+  'panels.explorer.menu.open_recent_item_aria': '{name}, {parent}',
   'panels.explorer.menu.switch_folder': '폴더 전환…',
   'panels.explorer.menu.close_folder': '폴더 닫기',
   'panels.explorer.create.in_label': '경로: {dir}',
@@ -495,6 +499,8 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.agent_sessions_other': 'agent {count}개',
   'statusbar.agent_authorized': '에이전트 인증됨',
   'statusbar.agent_revoke_grant_tooltip': '에이전트에 부여된 터미널, 디버거 및 플러그인 도구 인증을 취소합니다(모든 창의 에이전트 터미널도 함께 종료됩니다)',
+  // agent 撤销按钮可访问名称:以可见文字开头(WCAG 2.5.3 Label in Name),再接撤销动作说明。
+  'statusbar.agent_revoke_aria': '{label}, {action}',
   'statusbar.no_workspace': '작업 공간 없음',
   'statusbar.sidebar_hidden': '사이드바 숨김',
   'statusbar.unsaved_changes': '저장되지 않은 변경 사항',

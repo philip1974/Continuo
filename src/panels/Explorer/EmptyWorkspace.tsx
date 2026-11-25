@@ -7,7 +7,7 @@ import { openRecentRootOrNotify } from './open-recent-root';
 import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { useT } from '@/i18n';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
-import { recentRootLabelParts } from './path-utils';
+import { recentRootAccessibleName, recentRootLabelParts } from './path-utils';
 
 // 未选 workspace 时占位:中央"打开文件夹"按钮(VSCode 风)。
 // 调 fs.selectDirectory(原生对话框)→ setRoot,store 一变 Explorer 容器自动切到 FolderTree。
@@ -91,11 +91,9 @@ export function EmptyWorkspace() {
                     }}
                     title={p}
                     data-recent-open
-                    // a11y(A80,A78 同族):可见 basename/parent 可截断且同名不可区分 → aria-label
-                    // 注入完整路径(复用 A78 recent 项 key)。
-                    aria-label={t('panels.explorer.menu.open_recent_item_aria', {
-                      path: p,
-                    })}
+                    // a11y(A80,A78 同族):可见 basename/parent 可截断且同名不可区分 → aria-label「名称，父路径」
+                    //(含完整路径;以可见文字开头,WCAG 2.5.3)。
+                    aria-label={recentRootAccessibleName(p)}
                   >
                     {/* 名称优先(VSCode 最近列表同款):名称不收缩(上限 60%),父路径占剩余宽度并从前截断,
                         保留靠近名称的末尾目录;完整路径在 title。 */}

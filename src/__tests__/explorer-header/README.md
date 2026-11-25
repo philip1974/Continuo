@@ -38,6 +38,7 @@
 
 - recentOthers = recentRoots 排除当前 root
 - 空 → 不渲染「打开最近」分组
+- 菜单项只显示 basename,名称「名称，父路径」(以可见文字开头,WCAG 2.5.3;父路径区分同名目录)
 - 非空 → 列出每条,点击即关菜单(焦点还原),再经 `openRecentRootOrNotify` 用 listDir 校验:可读 → setRoot(path);不可读 → 报错且不切换;
   目录已不存在(`FS_NOT_FOUND` / `WORKSPACE_NOT_FOUND`)→ 不弹 toast,询问「路径“x”不存在。要从最近打开列表中删除它吗?」
   [删除] [取消](VSCode 同款),删除走 `forgetRecentRoot`

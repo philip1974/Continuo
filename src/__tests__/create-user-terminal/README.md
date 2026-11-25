@@ -13,9 +13,12 @@ HeaderActions 注释也明写「同 TerminalPlugin.terminal.new」=平行实现�
 - 先 `await waitForWorkspaceRootRestored()`(冷启动竞态:root=null → TERMINAL_CWD_UNRESOLVED,R10;只需 root 已恢复,不等编辑器 tab 恢复读盘,见 `startup-critical-path`)
 - 读 `useWorkspaceStore.getState().root` 作 workspaceRoot;`cwd = opts.cwd ?? workspaceRoot` →
   `create({ originHint:'user', cwd?, workspaceRoot?, env? })`(各字段有值才带;root 与 opts.cwd 都为空 → 不带 cwd/workspaceRoot)
-- 无工作区(未传 cwd 的 CWD_UNRESOLVED)→ 不是错误:`notify.info`「请先打开一个文件夹」(与资源管理器用语一致,三语)并直接调起
-  已注册的「打开文件夹」命令(`workbench.action.files.openFolder`;notify 不支持操作按钮,直接弹对话框最贴 VSCode「缺前置条件给下一步」心智)。
-  Continuo 刻意不回退主目录。返回 `null`,不 focus
+- 无工作区(未传 cwd 的 CWD_UNRESOLVED)→ 不是错误:直接调起已注册的「打开文件夹」命令(`workbench.action.files.openFolder`)
+  并**等它完成**(`runRegisteredCommand` 返回命令完成的 Promise),保留用户「新建终端」的意图(VSCode 心智:缺前置条件给下一步,
+  完成后接着做原来的事):
+  - 选定文件夹(root 已有值)→ 在新 root 重新走本流程新建终端并聚焦,返回新 id;不弹任何提示
+  - 取消对话框(root 仍空)→ 不建终端,`notify.info`「请先打开一个文件夹」(三语),返回 `null`
+  - notify 不支持撤掉(dismiss),故不在弹对话框前先提示(否则选定后提示一直挂着)。Continuo 刻意不回退主目录
 - 其余失败 → `notify.error`(CWD_UNRESOLVED 且传了 cwd(root 已被外部删除 / 外置盘断开 / 「在终端中打开」已删目录)时提示「目录不存在或不可访问:{path}」;否则带 code)+ 返回 `null`,不 focus
 - `TERMINAL_CREATE_CANCELLED`(用户关 tab 取消 / 退出闸拒绝)→ 无论 `{ok:false}` 还是 reject 都静默返回 `null`,不 notify
 - 成功有 id → `setPendingFocus(id)` + 返回 id;成功无 id → 返回 `null`,不 focus

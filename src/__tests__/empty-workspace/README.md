@@ -20,6 +20,8 @@
 - `ul` 列表(非 menu)列出每条,行项是普通 button
 - 点击 → listDir 校验后 setRoot(p);不可读 → toast,不切换
 - basename 与 parent 分两段显示
+- 按钮名称「名称，父路径」(无父路径时就是名称):以可见文字开头(WCAG 2.5.3 Label in Name,VSCode 最近列表同款),
+  父路径区分同名目录(与资源管理器「打开最近」菜单共用 `recentRootAccessibleName`)
 
 ### 从最近列表删除(VSCode「从最近打开中删除」)
 

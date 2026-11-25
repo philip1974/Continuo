@@ -278,6 +278,11 @@ export function StatusBar() {
     agentSessionCount > 0
       ? t('statusbar.mcp.revoke_tooltip', { count: agentSessionCount })
       : t('statusbar.agent_revoke_grant_tooltip');
+  // i18n(I19):agent 计数走 catalog,zh/ko 不再显英文 'N agent'
+  const agentRevokeText =
+    agentSessionCount > 0
+      ? translateCount('statusbar.agent_sessions', agentSessionCount)
+      : t('statusbar.agent_authorized');
 
   return (
     // data-statusbar:ToastViewport.css 据此(:has)在有状态栏的窗口把 toast 抬到状态栏上方;高度 token 两处共用。
@@ -316,9 +321,9 @@ export function StatusBar() {
           onClick={() => void mcpCopy.copy()}
           title={mcpTooltip}
           // a11y(A82,A74 同族):按钮可见文本 mcpCopy.label 随复制状态变化(idle/copied/failed),
-          // 动作语义只在 title → 稳定 aria-label 表「复制 MCP 配置」,结果由下方 live region(A51)
-          // 播报,按钮名不随状态漂移成结果文本。
-          aria-label={mcpTooltip}
+          // 稳定 aria-label 表「复制 MCP 配置」,结果由下方 live region(A51)播报,按钮名不随状态漂移成结果文本。
+          // WCAG 2.5.3(Label in Name):名称 = 默认可见文字(窄宽只剩图标时亦然),长说明留在 title(作可访问描述)。
+          aria-label={t('statusbar.mcp.copy')}
           className="flex shrink-0 items-center whitespace-nowrap text-fg-dim hover:text-fg transition-colors"
         >
           {/* 状态栏容器 < xl 时只显示图标(文字隐藏;动作语义仍在 title / aria-label,复制结果由下方 live region 播报)。 */}
@@ -338,15 +343,13 @@ export function StatusBar() {
             onClick={() => void openRevokeConfirm()}
             title={agentRevokeTooltip}
             // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
-            //(SR 有可见文本时不一定读 title)→ aria-label 用含撤销语义的 revoke_tooltip 作可访问名。
-            aria-label={agentRevokeTooltip}
+            //(SR 有可见文本时不一定读 title)→ 名称补上撤销说明;WCAG 2.5.3(Label in Name):以可见文字开头
+            //(「N 个 agent，撤销授权并终止…」),语音控制按可见文字能点到。
+            aria-label={t('statusbar.agent_revoke_aria', { label: agentRevokeText, action: agentRevokeTooltip })}
             className="flex shrink-0 items-center gap-1 whitespace-nowrap text-accent hover:text-fg transition-colors"
           >
             <span aria-hidden>●</span>
-            {/* i18n(I19):agent 计数走 catalog,zh/ko 不再显英文 'N agent' */}
-            {agentSessionCount > 0
-              ? translateCount('statusbar.agent_sessions', agentSessionCount)
-              : t('statusbar.agent_authorized')}
+            {agentRevokeText}
           </button>
         )}
         {activeFilePath !== null ? (

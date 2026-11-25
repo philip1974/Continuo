@@ -42,6 +42,8 @@ active 时 title 与底部下划线指示条都挂 motion layoutId(panelTitleLay
 - 键盘合成的 click(detail=0)不移走焦点(保持 tablist 键盘模型)
 - 关闭 / 退出缩放按钮的 click 不触发(已 stopPropagation)
 - 两个图标按钮有与 aria-label 相同的 title 悬停提示
+- tab(role=tab)名称只是标题:`aria-labelledby` 指向标题 span(active 的 motion span / inactive span 同一 id),
+  不按内容把关闭 / 退出最大化按钮的名称拼进来(修复前读屏念「编辑器 关闭 编辑器」;对齐 VSCode tab)
 
 ### 动画 layoutId
 

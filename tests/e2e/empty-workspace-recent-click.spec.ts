@@ -53,9 +53,9 @@ test('explorer.json: root=null + recentRoots=[ws] → 点击 ws 项 → 切 Fold
 
     // 点击 ws basename 进入
     const wsName = path.basename(ws);
-    // 只匹配「打开最近」按钮(同一条目右侧的「从最近打开中删除」× 的名字也含路径)
+    // 只匹配「打开最近」按钮:名称「名称，父路径」(同一条目右侧的「从最近打开中删除」× 的名字也含路径)
     await explorerArea
-      .getByRole('button', { name: new RegExp(`^(打开最近|Open recent|최근 항목 열기)[::].*${wsName}$`) })
+      .getByRole('button', { name: new RegExp(`^${wsName}[，,]`) })
       .click();
 
     // FolderTree 出现 → 渲染 README.md 文件
@@ -94,7 +94,7 @@ test('最近打开:点已不存在的目录 → 询问后从列表删除;× 删�
     const list = explorerArea.getByRole('list');
     await expect(list.getByRole('listitem')).toHaveCount(2, { timeout: 10_000 });
 
-    await list.getByRole('button', { name: new RegExp(`^(打开最近|Open recent|최근 항목 열기)[::].*${path.basename(gone)}$`) }).click();
+    await list.getByRole('button', { name: new RegExp(`^${path.basename(gone)}[，,]`) }).click();
     const dialog = window.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
     await expect(dialog).toContainText(gone);

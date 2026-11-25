@@ -75,7 +75,7 @@ afterEach(() => {
 });
 
 describe('StatusBar — 左侧 workspace', () => {
-  it('复用 tooltip 翻译结果,title 与 aria-label 不重复查 catalog', () => {
+  it('复用 tooltip 翻译结果,title 不重复查 catalog', () => {
     const src = readFileSync(
       join(process.cwd(), 'src/shell/StatusBar.tsx'),
       'utf8',
@@ -84,9 +84,7 @@ describe('StatusBar — 左侧 workspace', () => {
     expect(src).toContain('const mcpTooltip = t(');
     expect(src).toContain('const agentRevokeTooltip =');
     expect(src).toContain('title={mcpTooltip}');
-    expect(src).toContain('aria-label={mcpTooltip}');
     expect(src).toContain('title={agentRevokeTooltip}');
-    expect(src).toContain('aria-label={agentRevokeTooltip}');
   });
 
   it('root=null → 「无工作区」', () => {
@@ -205,6 +203,29 @@ describe('StatusBar — agent 计数', () => {
     });
     const { container } = render(<StatusBar />);
     expect(container.textContent).not.toMatch(/\d+ agent/);
+  });
+
+  // WCAG 2.5.3(Label in Name):可见文字「N 个 agent」/「Agent 已授权」须在可访问名称开头,撤销动作说明接在后面(VSCode
+  // 状态栏项同理:名称含可见文字)。修复前名称是「撤销授权并终止…」,语音控制说「点击 1 个 agent」找不到按钮。
+  it.each([
+    ['有 agent 会话', true],
+    ['仅有授权', false],
+  ])('a11y · agent 按钮名称以可见文字开头(%s)', (_name, withSession) => {
+    installApi({ agentAuth: { revoke: vi.fn().mockResolvedValue({ ok: true }) } });
+    useTerminalStore.setState({
+      sessions: withSession
+        ? [{ id: 't1', title: 'codex', cwd: '/', originHint: 'agent', createdAt: 0, exitCode: null, ownerWindowId: 1 }]
+        : [],
+    });
+    if (!withSession) useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+    const { container } = render(<StatusBar />);
+    const btn = container.querySelector<HTMLButtonElement>('[data-agent-revoke]')!;
+    const visible = (btn.textContent ?? '').replace('●', '').trim();
+    expect(visible).toBe(withSession ? '1 个 agent' : 'Agent 已授权');
+    const name = btn.getAttribute('aria-label') ?? '';
+    expect(name.startsWith(visible)).toBe(true);
+    expect(name).toContain('撤销');
+    expect(btn.getAttribute('title')).toContain('撤销');
   });
 
   it('agent session > 0 → 显示「N agent」按钮', () => {
@@ -417,9 +438,12 @@ describe('StatusBar — MCP 复制', () => {
     const { container } = render(<StatusBar />);
     const btn = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button'),
-    ).find((b) => (b.getAttribute('aria-label') ?? '').includes('claude mcp add'))!;
+    ).find((b) => (b.getAttribute('title') ?? '').includes('claude mcp add'))!;
     expect(btn).toBeDefined();
     const before = btn.getAttribute('aria-label');
+    // WCAG 2.5.3(Label in Name):名称 = 可见文字「复制 MCP 配置」,长说明留 title(作可访问描述)
+    expect(before).toBe('复制 MCP 配置');
+    expect(btn.textContent).toBe(before);
     fireEvent.click(btn);
     await waitFor(() => {
       expect(container.textContent).toContain('已复制'); // 可见文本变了
@@ -1016,7 +1040,8 @@ describe('StatusBar — 窄宽不折行', () => {
     const icon = btn.querySelector('svg')!;
     expect(icon.getAttribute('aria-hidden')).toBe('true');
     expect(cls(icon)).toEqual(expect.arrayContaining(['hidden', '@max-xl:block']));
-    expect(btn.getAttribute('aria-label')).toBe(btn.getAttribute('title'));
-    expect(btn.getAttribute('aria-label')).toBeTruthy();
+    // 只显示图标时名称仍以「复制 MCP 配置」开头;长说明在 title
+    expect(btn.getAttribute('aria-label')).toBe('复制 MCP 配置');
+    expect(btn.getAttribute('title')).toContain('claude mcp add');
   });
 });

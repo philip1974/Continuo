@@ -5,6 +5,8 @@
 // BDD: src/__tests__/editor-find-i18n/
 
 import { EditorState, type Extension } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
+import { basename } from '@/lib/path-cross';
 import { t, type TranslationKey } from '@/i18n';
 
 /** CodeMirror 原文 → catalog key。键集覆盖 @codemirror/search 的全部 phrase(BDD 从已安装包源码核对)+ 折叠提示。 */
@@ -43,4 +45,18 @@ export function codeMirrorPhrases(): Extension {
   const phrases: Record<string, string> = {};
   for (const [phrase, key] of Object.entries(CODEMIRROR_PHRASE_KEYS)) phrases[phrase] = t(key);
   return EditorState.phrases.of(phrases);
+}
+
+/**
+ * 编辑区文本框的可访问名称(WCAG 4.1.2;对齐 VSCode 编辑器「<文件名>, Editor Group N」):「<文件名>，编辑器」,
+ * 无文件名退回「编辑器」。CodeEditor 与 Milkdown(ProseMirror)共用。BDD: src/__tests__/editor-accessible-name/
+ */
+export function editorContentLabel(fileName: string | undefined): string {
+  const name = fileName ? basename(fileName) : '';
+  return name ? t('editor.aria.content', { name }) : t('panels.editor.title');
+}
+
+/** CodeMirror 文本区(`.cm-content`,role=textbox)的 aria-label。 */
+export function codeMirrorContentLabel(label: string): Extension {
+  return EditorView.contentAttributes.of({ 'aria-label': label });
 }

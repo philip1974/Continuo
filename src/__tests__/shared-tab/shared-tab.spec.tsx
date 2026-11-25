@@ -97,6 +97,33 @@ describe('SharedTab — 渲染', () => {
     ).not.toBeNull();
   });
 
+  // a11y:role=tab 的可访问名称只是标题(对齐 VSCode tab / WAI-ARIA tabs),不把内嵌关闭 / 退出最大化按钮的名称拼进来
+  //(修复前 Chromium 按内容计算名称,读屏念「编辑器 关闭 编辑器」)。tab 以 aria-labelledby 只引用标题元素;
+  // active(motion span)/ inactive / 标题变化都成立。(jsdom 的 dom-accessibility-api 不把内嵌按钮计入,
+  // 故按引用关系断言;真实 Chromium 名称见 e2e tab-accessible-name。)
+  it('a11y · tab 可访问名称 = 标题(aria-labelledby 只指向标题),不含关闭按钮名称', () => {
+    const labelOf = (container: HTMLElement): string => {
+      const tab = container.querySelector('[role="tab"]')!;
+      const ids = (tab.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean);
+      expect(ids.length).toBe(1);
+      const el = container.ownerDocument.getElementById(ids[0]!);
+      expect(el).not.toBeNull();
+      expect(tab.contains(el)).toBe(true);
+      expect(el!.querySelector('button')).toBeNull();
+      return el!.textContent ?? '';
+    };
+    const inactive = renderTab(makeApi({ title: 'Hello' }));
+    expect(labelOf(inactive.container)).toBe('Hello');
+    cleanup();
+    const api = makeApi({ id: 'p2', title: '编辑器', isActive: true });
+    const active = renderTab(api);
+    expect(labelOf(active.container)).toBe('编辑器');
+    act(() => api.__triggerTitleChange('终端'));
+    expect(labelOf(active.container)).toBe('终端');
+    act(() => api.__triggerActiveChange(false));
+    expect(labelOf(active.container)).toBe('终端');
+  });
+
   // a11y(A105):icon-only 关闭按钮可访问名随 locale 本地化(原硬编码英文 `Close ${title}`)。
   it('a11y · 关闭按钮 aria-label 随 locale 本地化', () => {
     setLocale('en');

@@ -31,7 +31,7 @@ import { registerEditorFocus } from './editor-focus-registry';
 import { markdownScrollTopOf, saveMarkdownScrollTop } from './editor-view-state-cache';
 import { rebindCodeMirrorRoots } from './codemirror-root';
 import { markdownCodeBlockTheme } from './code-editor-theme';
-import { codeMirrorPhrases } from './codemirror-phrases';
+import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel } from './codemirror-phrases';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 
 interface MilkdownEditorProps {
@@ -40,6 +40,8 @@ interface MilkdownEditorProps {
    * 含 tab id,id 变化(改名)即重挂载。
    */
   tabId: string;
+  /** 文件路径:编辑区可访问名称「<文件名>，编辑器」用(挂载时取定;改名 = tab id 变 → 重挂)。 */
+  fileName?: string;
   defaultValue: string;
   readonly?: boolean;
   onChange?: (markdown: string) => void;
@@ -181,6 +183,7 @@ type OnEditorReady = (focus: () => void) => void;
 
 function CrepeEditor({
   tabId,
+  fileName,
   defaultValue,
   readonly = false,
   onChange,
@@ -238,7 +241,8 @@ function CrepeEditor({
           // 不传则 Crepe 默认 oneDark(亮色主题下仍深色);token 主题亮 / 暗通用,切主题不重挂。
           theme: markdownCodeBlockTheme,
           // 代码块的 CodeMirror 同样带 basicSetup 的 ⌘F 查找面板:内建文案随界面语言(Provider 按 locale 重挂,创建时取当前语言)。
-          extensions: [codeMirrorPhrases()],
+          // 代码块文本区同为 role=textbox,须有可访问名称(axe aria-input-field-name)。
+          extensions: [codeMirrorPhrases(), codeMirrorContentLabel(t('editor.aria.code_block'))],
           renderPreview: renderMermaidPreview,
           copyText: t('panels.editor.codeBlock.copy'),
           searchPlaceholder: t('panels.editor.codeBlock.searchLanguage'),
@@ -351,6 +355,17 @@ function CrepeEditor({
 
     crepe.on((listener) => {
       listener.mounted(() => recordSelectionDoc(crepe));
+      // 编辑 / 预览区(ProseMirror 根,role=textbox)的可访问名称(对齐 VSCode;BDD: src/__tests__/editor-accessible-name/)。
+      // 语言切换随 Provider 的 locale key 重挂、改名随 tab id 重挂,挂载时取当前值即可。setProps 与已有 props 合并。
+      listener.mounted(() => {
+        try {
+          crepe.editor.ctx
+            .get<{ setProps(props: { attributes: Record<string, string> }): void }, 'editorView'>('editorView')
+            .setProps({ attributes: { 'aria-label': editorContentLabel(fileName) } });
+        } catch {
+          /* 已拆除 */
+        }
+      });
       listener.mounted(() =>
         onReady?.(() => {
           try {

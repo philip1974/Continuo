@@ -232,6 +232,9 @@ export const en = {
   'settings.explorer.confirm_delete.desc': 'Ask for confirmation before moving files to the Trash.',
 
   // editor welcome / empty states (post-topic-21 round 2)
+  // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
+  'editor.aria.content': '{name}, Editor',
+  'editor.aria.code_block': 'Code block',
   'editor.welcome.title': 'No file open',
   'editor.welcome.actions_aria': 'Get started',
   'editor.welcome.open_folder': 'Open Folder',
@@ -385,7 +388,8 @@ export const en = {
   'panels.explorer.menu.expand_all': 'Expand all',
   'panels.explorer.menu.open_recent': 'Open recent',
   // a11y(A78):recent dir menu item shows basename only; aria-label carries full path to distinguish same-named dirs.
-  'panels.explorer.menu.open_recent_item_aria': 'Open recent: {path}',
+  // 最近目录项名称:以可见名称开头再接父路径(WCAG 2.5.3;VSCode 最近列表「名称, 路径」)
+  'panels.explorer.menu.open_recent_item_aria': '{name}, {parent}',
   'panels.explorer.menu.switch_folder': 'Switch folder…',
   'panels.explorer.menu.close_folder': 'Close folder',
   'panels.explorer.create.in_label': 'in: {dir}',
@@ -517,6 +521,8 @@ export const en = {
   'statusbar.agent_sessions_other': '{count} agents',
   'statusbar.agent_authorized': 'Agent authorized',
   'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal, debugger and plugin tool authorization granted to agents (agent terminals in any window are also terminated)',
+  // agent 撤销按钮可访问名称:以可见文字开头(WCAG 2.5.3 Label in Name),再接撤销动作说明。
+  'statusbar.agent_revoke_aria': '{label}, {action}',
   'statusbar.no_workspace': 'No workspace',
   'statusbar.sidebar_hidden': 'Sidebar hidden',
   'statusbar.unsaved_changes': 'Unsaved changes',

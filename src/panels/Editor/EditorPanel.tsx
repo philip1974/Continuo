@@ -427,6 +427,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         // 用户输入/保存不动 epoch,故不会每次按键 remount。
         key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
         tabId={activeTab.id}
+        fileName={activeTab.filePath}
         // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
         defaultValue={
           effective === 'preview'

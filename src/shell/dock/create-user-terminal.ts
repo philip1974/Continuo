@@ -40,8 +40,9 @@ export function terminalColorFgBg(): string {
  *     (复审 loop R10)只需 root:等 rootRestored 而非 hydrated,不被编辑器 tab 恢复读盘拖住。
  *  2. 读 workspace root 当 workspaceRoot;cwd 缺省也取它(Explorer 入口传所选目录)。
  *  3. coApi.terminal.create(originHint 'user')。
- *  4. 失败 → 返 null。无工作区(未传 cwd 的 CWD_UNRESOLVED)不是错误:notify.info「请先打开一个文件夹」并直接调起
- *     「打开文件夹」命令(notify 无操作按钮;Continuo 刻意不回退主目录);其余失败 notify.error。
+ *  4. 失败 → 返 null。无工作区(未传 cwd 的 CWD_UNRESOLVED)不是错误:直接调起「打开文件夹」命令并等它完成(保留用户
+ *     意图):选定文件夹 → 在新 root 重新走本流程新建终端;取消 → notify.info「请先打开一个文件夹」(notify 不能撤掉,
+ *     故不先弹,免得选定后提示还挂着;Continuo 刻意不回退主目录)。其余失败 notify.error。
  *  5. 成功 → setPendingFocus(让 SessionsSync/DockReconciler 聚焦新建 panel),返 id。
  *
  * UI 收尾(关闭菜单等)由调用方自理。
@@ -76,10 +77,13 @@ export async function createUserTerminal(
       // main 对「未传 cwd」与「cwd 不存在 / 不是目录」同返 CWD_UNRESOLVED:传了 cwd(workspace root 被外部删除 / 改名 /
       // 外置盘断开,或 Explorer「在终端中打开」已删目录)时不能提示「先打开文件夹」。
       if (r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED && cwd === undefined) {
-        // 无工作区:引导而非报错(VSCode 心智:缺前置条件时直接给出下一步)—— info 提示 + 弹出「打开文件夹」对话框
-        //(与 ⌘O / 资源管理器「打开文件夹」同一命令)。BDD: src/__tests__/create-user-terminal/
+        // 无工作区:引导而非报错(VSCode 心智:缺前置条件时直接给出下一步,完成后接着做原来的事)—— 弹出「打开文件夹」
+        // 对话框(与 ⌘O / 资源管理器「打开文件夹」同一命令)并等它完成。BDD: src/__tests__/create-user-terminal/
+        await runRegisteredCommand(coApp.commands, OPEN_FOLDER_COMMAND.id, t('commands.file.open_folder.title'));
+        // 选定了文件夹 → 在新 root 新建(此时 root 已有值,不会再走到这里)
+        if (useWorkspaceStore.getState().root) return await createUserTerminal(opts);
+        // 取消(或对话框已被别处占用):不建终端,说明原因
         notify.info(t('errors.terminal.cwd_unresolved'), { code: r.code });
-        runRegisteredCommand(coApp.commands, OPEN_FOLDER_COMMAND.id, t('commands.file.open_folder.title'));
         return null;
       }
       const msg =

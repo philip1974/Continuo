@@ -1,12 +1,16 @@
-// 无工作区时新建终端:不报红色错误,info 提示「请先打开一个文件夹」并直接弹出「打开文件夹」对话框(Continuo 刻意不回退
-// 主目录)。BDD: src/__tests__/create-user-terminal/
+// 无工作区时新建终端:不报红色错误,直接弹出「打开文件夹」对话框并等它完成(Continuo 刻意不回退主目录):选定文件夹 →
+// 立即在新文件夹新建终端、不留提示;取消 → info 提示「请先打开一个文件夹」。BDD: src/__tests__/create-user-terminal/
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test, expect } from './fixtures/electron-app';
+import { TERMINAL_INPUT } from './helpers/editor';
 import { dockHeaderMoreActionsButton } from './helpers/explorer';
 import { TERMINAL_TAB } from './helpers/settings';
 
 const OPEN_FOLDER_FIRST = /(请先打开一个文件夹|Open a folder first|먼저 폴더를 여세요)/;
 
-test('无工作区 → 新建终端:info 提示先打开文件夹 + 弹出打开文件夹对话框', async ({ electronApp, window }) => {
+test('无工作区 → 新建终端:弹出打开文件夹对话框;取消 → info 提示先打开文件夹', async ({ electronApp, window }) => {
   // 原生对话框换成桩(取消),记录调用次数
   await electronApp.evaluate(({ dialog }) => {
     const g = globalThis as unknown as { __openDialogCalls: number };
@@ -28,4 +32,25 @@ test('无工作区 → 新建终端:info 提示先打开文件夹 + 弹出打开
   await expect
     .poll(() => electronApp.evaluate(() => (globalThis as unknown as { __openDialogCalls: number }).__openDialogCalls))
     .toBe(1);
+});
+
+test('无工作区 → 新建终端 → 对话框选定文件夹:立即在该文件夹新建终端,不留「请先打开文件夹」提示', async ({
+  electronApp,
+  window,
+}) => {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'continuo-e2e-ws-')));
+  try {
+    await electronApp.evaluate(({ dialog }, picked) => {
+      dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [picked] })) as typeof dialog.showOpenDialog;
+    }, dir);
+
+    await dockHeaderMoreActionsButton(window).click();
+    const menu = window.getByRole('menu').last();
+    await menu.getByRole('menuitem', { name: TERMINAL_TAB }).click();
+
+    await expect(window.getByRole('textbox', { name: TERMINAL_INPUT })).toBeVisible({ timeout: 15_000 });
+    await expect(window.locator('[data-level]').filter({ hasText: OPEN_FOLDER_FIRST })).toHaveCount(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

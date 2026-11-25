@@ -104,20 +104,47 @@ describe('createUserTerminal — 共用创建流程', () => {
     expect(mocks.create).toHaveBeenCalledWith({ originHint: 'user', env: { COLORFGBG: '0;15' } });
   });
 
-  // 无工作区(未传 cwd)不是错误:info 级提示「请先打开一个文件夹」(与资源管理器用语一致)并直接调起「打开文件夹」命令
-  //(notify 无操作按钮;选定文件夹后再 ⌘T 即可)。Continuo 刻意不回退主目录。
-  it('无工作区 CWD_UNRESOLVED → info 提示先打开文件夹 + 调起打开文件夹命令,不报错,返 null 不 focus', async () => {
+  // 无工作区(未传 cwd)不是错误:直接调起「打开文件夹」命令并**等它完成**(保留用户意图,VSCode 心智:缺前置条件时给出
+  // 下一步,完成后接着做原来的事)。选定文件夹 → 立即在新 root 新建终端,不留「请先打开文件夹」提示;取消 → 不建终端,
+  // info 提示「请先打开一个文件夹」。notify 无撤销(dismiss)能力 → 不先弹提示,只在取消时提示。Continuo 刻意不回退主目录。
+  it('无工作区 → 调起打开文件夹;取消对话框 → 不建终端,info 提示先打开文件夹,返 null 不 focus', async () => {
     mocks.create.mockResolvedValue({ ok: false, code: 'TERMINAL_CWD_UNRESOLVED' });
+    let resolveDialog: () => void = () => {};
+    mocks.runCommand.mockReturnValue(new Promise<void>((r) => (resolveDialog = r)));
 
-    const id = await createUserTerminal();
+    const pending = createUserTerminal();
+    await vi.waitFor(() => expect(mocks.runCommand).toHaveBeenCalledOnce());
+    expect(mocks.runCommand.mock.calls[0]?.[1]).toBe('workbench.action.files.openFolder');
+    // 对话框打开期间不先弹提示(选定后无法撤掉,会一直挂着)
+    expect(mocks.notifyInfo).not.toHaveBeenCalled();
+    resolveDialog(); // 用户取消:root 仍为 null
+    const id = await pending;
 
     expect(id).toBeNull();
+    expect(mocks.create).toHaveBeenCalledOnce();
     expect(mocks.notifyError).not.toHaveBeenCalled();
     expect(mocks.notifyInfo).toHaveBeenCalledOnce();
     expect(mocks.notifyInfo.mock.calls[0]?.[0]).toBe(t('errors.terminal.cwd_unresolved'));
-    expect(mocks.runCommand).toHaveBeenCalledOnce();
-    expect(mocks.runCommand.mock.calls[0]?.[1]).toBe('workbench.action.files.openFolder');
     expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+
+  it('无工作区 → 对话框选定文件夹后立即在新 root 新建终端并聚焦,不弹「请先打开文件夹」', async () => {
+    mocks.create
+      .mockResolvedValueOnce({ ok: false, code: 'TERMINAL_CWD_UNRESOLVED' })
+      .mockResolvedValueOnce({ ok: true, data: { id: 'term-9' } });
+    mocks.runCommand.mockImplementation(async () => {
+      mocks.getState.mockReturnValue({ root: '/picked' });
+    });
+
+    const id = await createUserTerminal();
+
+    expect(id).toBe('term-9');
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(mocks.create.mock.calls[1]?.[0]).toMatchObject({ cwd: '/picked', workspaceRoot: '/picked' });
+    expect(mocks.setPendingFocus).toHaveBeenCalledWith('term-9');
+    expect(mocks.notifyInfo).not.toHaveBeenCalled();
+    expect(mocks.notifyError).not.toHaveBeenCalled();
+    expect(mocks.runCommand).toHaveBeenCalledOnce();
   });
 
   it('三语文案统一为「先打开一个文件夹」(与资源管理器「打开文件夹」用语一致)', async () => {

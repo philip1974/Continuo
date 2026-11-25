@@ -54,6 +54,15 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
 - ok → 文案变「已复制」1.5s 后回归
 - ok=false 或 unavailable → 文案变「MCP 不可用」/「复制失败」
 
+### 按钮名称含可见文字(WCAG 2.5.3 Label in Name)
+
+- MCP 复制按钮名称 =「复制 MCP 配置」(默认可见文字;复制结果期间与窄宽只剩图标时不变),长说明(`claude mcp add` …)
+  只在 `title`(作可访问描述)。
+- agent 撤销按钮名称以可见文字开头,再接撤销说明:「1 个 agent，撤销授权并终止…」/「Agent 已授权，撤销授予…」
+  (`statusbar.agent_revoke_aria`),`title` 仍是撤销说明。
+- 全仓同类排查:其余带可见文字且设 aria-label 的按钮 / 链接(市场卡片、插件行操作、打开最近)名称均以可见文字开头
+  或包含可见文字;终端查找条 `.*` / `Aa` / `W` 是符号,不适用。
+
 ## 无 agent 会话时的授权撤销入口(终审 P1)
 
 - 只授予了调试域(外部 MCP 客户端 `debug.launch` → 本次启动期间允许)或终端域,但当前没有 agent terminal 时,

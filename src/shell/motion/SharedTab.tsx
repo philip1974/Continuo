@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react';
 import { m } from 'motion/react';
 import type {
@@ -93,6 +93,8 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   const t = useT();
   const active = useIsActive(api);
   const title = useTitle(api);
+  // a11y:tab 名称只取标题(aria-labelledby),不按内容把关闭 / 退出最大化按钮的名称拼进来(对齐 VSCode tab)。
+  const titleId = useId();
   const isMaximized = useIsThisGroupMaximized(api, containerApi);
   const groupId = api.group.id;
   const isMiddleDown = useRef(false);
@@ -295,6 +297,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       // pointer 激活,这里补等价键盘入口。
       role="tab"
       aria-selected={active}
+      aria-labelledby={titleId}
       tabIndex={active ? 0 : -1}
       // a11y(A120):data-panel-id 供方向键导航后焦点跟随定位新 active tab。
       data-panel-id={api.id}
@@ -309,6 +312,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
           只对 active 加,避免 inactive tab 的 portal 测量噪声(R2)。 */}
       {active ? (
         <m.span
+          id={titleId}
           layoutId={panelTitleLayoutId(api.id)}
           className="min-w-0 truncate select-none"
           transition={TAB_TITLE_SPRING}
@@ -316,7 +320,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
           {title}
         </m.span>
       ) : (
-        <span className="min-w-0 truncate select-none">{title}</span>
+        <span id={titleId} className="min-w-0 truncate select-none">{title}</span>
       )}
       {isMaximized && (
         // iTerm2-style maximize indicator. 只在 group maximized 时显示,放在 close 前。

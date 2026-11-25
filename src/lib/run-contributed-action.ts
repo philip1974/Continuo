@@ -12,13 +12,15 @@ import { localizeThrown } from '@/lib/localize-error';
 import { t } from '@/i18n';
 
 /**
- * 运行贡献回调,失败时弹 error toast(标签 + 错误信息)。返回值忽略;返回 Promise
+ * 运行贡献回调,失败时弹 error toast(标签 + 错误信息)。回调的返回值忽略;返回 Promise
  * 时等待其 reject。同步 throw 与 async reject 均覆盖。
+ * 返回的 Promise 在回调完成(含失败已提示)后 resolve,从不 reject —— 需要接着做事的调用方(如无工作区新建终端
+ * 等「打开文件夹」完成)可 await,其余调用方照旧忽略。
  *
  * @param label 出错时展示给用户的动作名(应为已 localize 的 title/label)。
  * @param fn    贡献的回调。
  */
-export function runContributedAction(label: string, fn: () => unknown): void {
+export function runContributedAction(label: string, fn: () => unknown): Promise<void> {
   const fail = (err: unknown): void => {
     // i18n(I11,I10 同族 catch 丢 code 变体):贡献回调可能抛带 code 的 Error(如
     // PermissionError code='PERMISSION_DENIED')。只取 err.message 会丢 code 且泄漏 raw
@@ -28,9 +30,10 @@ export function runContributedAction(label: string, fn: () => unknown): void {
     notify.error(t('common.label_detail', { label, detail: localizeThrown(err) }));
   };
   try {
-    void Promise.resolve(fn()).catch(fail);
+    return Promise.resolve(fn()).then(() => undefined, fail);
   } catch (err) {
     fail(err);
+    return Promise.resolve();
   }
 }
 
@@ -43,8 +46,8 @@ export function runRegisteredCommand(
   registry: { get(id: string): { fn: () => unknown } | undefined },
   id: string,
   label: string,
-): void {
-  runContributedAction(label, () => {
+): Promise<void> {
+  return runContributedAction(label, () => {
     const live = registry.get(id);
     if (!live) return;
     return live.fn();

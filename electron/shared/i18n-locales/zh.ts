@@ -218,6 +218,9 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.confirm_delete.desc': '移到废纸篓前是否弹出确认。',
 
   // editor welcome / empty states (post-topic-21 round 2)
+  // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
+  'editor.aria.content': '{name}，编辑器',
+  'editor.aria.code_block': '代码块',
   'editor.welcome.title': '未打开文件',
   'editor.welcome.actions_aria': '开始使用',
   'editor.welcome.open_folder': '打开文件夹',
@@ -364,7 +367,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.drop.upload_to': '放下以上传到 {target}',
   'panels.explorer.menu.expand_all': '展开全部',
   'panels.explorer.menu.open_recent': '打开最近',
-  'panels.explorer.menu.open_recent_item_aria': '打开最近：{path}',
+  // 最近目录项名称:以可见名称开头再接父路径(WCAG 2.5.3;VSCode 最近列表「名称, 路径」)
+  'panels.explorer.menu.open_recent_item_aria': '{name}，{parent}',
   'panels.explorer.menu.switch_folder': '切换文件夹…',
   'panels.explorer.menu.close_folder': '关闭文件夹',
   'panels.explorer.create.in_label': '在：{dir}',
@@ -492,6 +496,8 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.agent_sessions_other': '{count} 个 agent',
   'statusbar.agent_authorized': 'Agent 已授权',
   'statusbar.agent_revoke_grant_tooltip': '撤销授予 agent 的终端、调试与插件工具授权（任一窗口中的 agent 终端也会被一并终止）',
+  // agent 撤销按钮可访问名称:以可见文字开头(WCAG 2.5.3 Label in Name),再接撤销动作说明。
+  'statusbar.agent_revoke_aria': '{label}，{action}',
   'statusbar.no_workspace': '无工作区',
   'statusbar.sidebar_hidden': '侧栏已隐藏',
   'statusbar.unsaved_changes': '未保存的更改',

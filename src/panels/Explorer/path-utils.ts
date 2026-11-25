@@ -10,6 +10,7 @@ import {
   stripRootPrefix,
 } from '@/lib/path-cross';
 import { basenameForChrome } from '@/lib/path-label';
+import { t } from '@/i18n';
 import { leafNameRejectReason } from '../../../electron/shared/leaf-name';
 
 // dirname 与 basename 同在 renderer 跨平台路径单一来源 src/lib/path-cross(Editor 等其它模块直接从那里引)。
@@ -92,6 +93,15 @@ export function basenamePreserveTrailing(p: string): string {
 export function recentRootLabelParts(p: string): { name: string; parent: string } {
   const name = basenameForChrome(p);
   return { name, parent: name === p ? '' : p.slice(0, p.length - name.length - 1) };
+}
+
+/**
+ * 最近目录项的可访问名称:以可见名称开头再接父路径(WCAG 2.5.3 Label in Name;对齐 VSCode 最近列表「名称, 路径」),
+ * 同名目录仍可凭父路径区分;无父路径时就是名称。资源管理器「打开最近」菜单与空态最近列表共用。
+ */
+export function recentRootAccessibleName(p: string): string {
+  const { name, parent } = recentRootLabelParts(p);
+  return parent ? t('panels.explorer.menu.open_recent_item_aria', { name, parent }) : name;
 }
 
 /**

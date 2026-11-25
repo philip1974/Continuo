@@ -104,7 +104,7 @@ describe('EmptyWorkspace', () => {
     expect(useWorkspaceStore.getState().recentRoots).toEqual(['/a/one', '/c/three']);
     expect(listDir).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(document.activeElement?.getAttribute('aria-label') ?? '').toContain('/c/three'),
+      expect(document.activeElement?.getAttribute('aria-label') ?? '').toBe('three，/c'),
     );
   });
 
@@ -186,6 +186,18 @@ describe('EmptyWorkspace', () => {
       .filter(Boolean);
     expect(labels.some((l) => l.includes('/a/work'))).toBe(true);
     expect(labels.some((l) => l.includes('/b/work'))).toBe(true);
+  });
+
+  // WCAG 2.5.3(Label in Name):可见文字「名称 父路径」须按序出现在名称开头(对齐 VSCode 最近列表「名称, 路径」);
+  // 修复前名称是「打开最近:/a/b/work」,不以可见文字开头,语音控制按可见名称点不到。
+  it('a11y · recent 按钮名称以可见文字开头:「名称，父路径」', () => {
+    installFs(vi.fn());
+    useWorkspaceStore.setState({ root: null, recentRoots: ['/a/b/work', '/solo'] });
+    const { container } = render(<EmptyWorkspace />);
+    const [first, second] = Array.from(container.querySelectorAll<HTMLButtonElement>('li button[data-recent-open]'));
+    expect(first!.getAttribute('aria-label')).toBe('work，/a/b');
+    // 无父路径(根下目录)→ 名称就是可见名称
+    expect(second!.getAttribute('aria-label')).toBe('solo');
   });
 
   // a11y(A96,A93 同族):打开目录选择器 loading 须 aria-busy + 视觉隐藏 role=status 播报「打开中」。

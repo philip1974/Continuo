@@ -159,10 +159,10 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
     const labels = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     )
-      .map((b) => b.getAttribute('aria-label') ?? '')
-      .filter((l) => l.includes('打开最近'));
-    expect(labels.some((l) => l.includes('/a/work'))).toBe(true);
-    expect(labels.some((l) => l.includes('/b/work'))).toBe(true);
+      .map((b) => b.getAttribute('aria-label') ?? '');
+    // 名称「名称，父路径」:以可见 basename 开头(WCAG 2.5.3),父路径区分同名目录
+    expect(labels).toContain('work，/a');
+    expect(labels).toContain('work，/b');
   });
 
   it('recent 菜单排除当前 root', () => {
@@ -178,10 +178,9 @@ describe('ExplorerHeader — ⋯ 菜单', () => {
     const labels = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role=menuitem]'),
     )
-      .map((b) => b.getAttribute('aria-label') ?? '')
-      .filter((l) => l.includes('打开最近'));
-    expect(labels.some((l) => l.includes('/old'))).toBe(true);
-    expect(labels.some((l) => l.includes('/proj'))).toBe(false);
+      .map((b) => b.getAttribute('aria-label') ?? '');
+    expect(labels).toContain('old');
+    expect(labels).not.toContain('proj');
   });
 
   it('recentRoots 只有当前 root 时不渲染 recent group', () => {
