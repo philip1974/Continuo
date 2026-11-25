@@ -6,7 +6,7 @@ import type { Locator, Page } from '@playwright/test';
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_MODE_EDIT, EDITOR_MODE_PREVIEW, editorModeButton, openWorkspaceFile } from './helpers/editor';
 
-const FIND_INPUT = /^(搜索|Find|검색)$/;
+const FIND_INPUT = /^(搜索|Find|찾기)$/;
 
 /** 60 段正文,第 3 / 30 / 58 段含 needle:后两处在首屏之外,跳转须滚动。 */
 function longDoc(): string {
