@@ -255,6 +255,17 @@ describe('SegmentedControl', () => {
     expect(onChange).toHaveBeenLastCalledWith('a');
   });
 
+  // 窄容器省略号截断由文字外层 .wm-segmented-label 承载(选项本身是 inline-flex,text-overflow 不生效);
+  // 可访问名仍是完整文案。
+  it('选项文字包在 .wm-segmented-label 内,可访问名不变', () => {
+    const { container, getByRole } = render(
+      <SegmentedControl options={[{ id: 'system', label: '跟随系统' }]} value="system" onChange={vi.fn()} />,
+    );
+    const label = container.querySelector('[role=radio] > .wm-segmented-label');
+    expect(label?.textContent).toBe('跟随系统');
+    expect(getByRole('radio', { name: '跟随系统' })).toBeTruthy();
+  });
+
   it('方向键定位当前 segment 时不调用 options.findIndex', () => {
     const options = [
       { id: 'a', label: 'A' },

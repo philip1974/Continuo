@@ -28,7 +28,7 @@ export default class PluginsTabPlugin extends Plugin {
     // 插件市场在前(priority 数字小排前)
     this.addSettingTab({
       id: 'core.marketplace',
-      title: 'Plugin Market',
+      title: 'Marketplace',
       titleKey: 'settings.plugins.market_title',
       priority: 40,
       icon: createElement(MarketplaceIcon),

@@ -56,7 +56,8 @@
   (VSCode inputValidation.errorBorder);规则在 `:focus` / variant 之后,同特异性时后者胜
 - 有不透明底色的控件 hover 用 MD3 state layer 叠加(`background-image` 叠 `--md-state-hover`),不把底色换成半透明
 - `SegmentedControl`:轨道 1px `outline-variant` 描边;选中项 `secondary-container` 底 + `on-secondary-container` 字 +
-  1px `primary` 描边(指示对轨道 ≥ 3:1);未选中项同宽透明描边,切换不抖动
+  1px `primary` 描边(指示对轨道 ≥ 3:1);未选中项同宽透明描边,切换不抖动;窄容器时轨道不超出容器(`max-width: 100%`),
+  放不下时选项整项换行(`flex-wrap`),文字包在 `.wm-segmented-label` 内不折行、单项仍放不下时省略号截断(不再被压成每字一行)
 - `MenuItem`:Radix 菜单原语注入的 `[data-highlighted]` 与 hover / focus-visible 同为 state-hover 底;`trailing`(快捷键 / 计数)靠右、`--md-fg-dim`
 - 浮层阴影统一:Explorer 右键菜单 / DropdownMenu / 终端搜索条用 `shadow-popover`,Toast 用 `var(--wm-shadow-popover)`;
   Toast 关闭按钮 hover 为 state-hover 背景

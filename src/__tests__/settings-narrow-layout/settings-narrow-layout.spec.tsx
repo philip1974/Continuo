@@ -54,15 +54,43 @@ describe('SettingItemRow — 窄宽上下排列', () => {
     expect(classesOf(title.parentElement)).toContain('flex-wrap');
     const code = container.querySelector('code')!;
     expect(code.textContent).toBe('general.language');
-    expect(classesOf(code)).toContain('truncate');
+    // code 是 inline-flex 徽标的 flex 子项:须 min-w-0 才能收缩到徽标宽度内截断(否则按全文宽度撑出行外)
+    expect(classesOf(code)).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
     const badge = code.closest('.wm-badge')!;
     expect(classesOf(badge)).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']));
+    // 上下排列(items-start)时标题列按内容取宽:须以行宽为上限,徽标的 max-w-full 才有参照、才会截断
+    expect(classesOf(title.parentElement!.parentElement)).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']));
   });
 
   it('控件区可换行', () => {
     const { container } = render(<SettingItemRow spec={spec} />);
     const group = container.querySelector('[role=radiogroup]')!;
     expect(classesOf(group.parentElement)).toContain('flex-wrap');
+  });
+
+  // 上下排列时控件区宽度以行宽为上限(否则按内容宽度撑出行外),分段控件才会在其内整项换行 / 截断,
+  // 而不是被挤成每字一行或溢出被裁。
+  it('数值 / 文本输入框宽度不超过控件区(max-w-full,数值框可收缩)', () => {
+    const numberSpec: SettingItemSpec = {
+      id: 'editor.fontSize', category: 'editor', title: 'Font size', type: 'number', default: 13, unit: 'px',
+    };
+    const textSpec: SettingItemSpec = { id: 'x.text', category: 'x', title: 'Text', type: 'text', default: '' };
+    const { container } = render(
+      <>
+        <SettingItemRow spec={numberSpec} />
+        <SettingItemRow spec={textSpec} />
+      </>,
+    );
+    const [num, text] = Array.from(container.querySelectorAll('input'));
+    expect(classesOf(num)).toEqual(expect.arrayContaining(['w-24', 'min-w-0', 'max-w-full']));
+    expect(classesOf(num!.parentElement)).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']));
+    expect(classesOf(text)).toEqual(expect.arrayContaining(['w-48', 'max-w-full']));
+  });
+
+  it('控件区宽度不超过行宽(min-w-0 max-w-full)', () => {
+    const { container } = render(<SettingItemRow spec={spec} />);
+    const group = container.querySelector('[role=radiogroup]')!;
+    expect(classesOf(group.parentElement)).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']));
   });
 });
 

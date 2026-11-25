@@ -1,5 +1,8 @@
 .wm-segmented {
   display: inline-flex;
+  /* 窄容器(如 400 宽窗口的设置页):不超出容器,放不下时选项整项换到下一行 */
+  max-width: 100%;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--wm-space-0_5);
   border-radius: 4px;
@@ -13,6 +16,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* 可收缩到容器内;文字由 .wm-segmented-label 截断,不逐字折行 */
+  min-width: 0;
   /* 透明同宽描边:选中项只换 border-color,切换时不抖动布局 */
   border: 1px solid transparent;
   border-radius: 4px;
@@ -28,6 +33,12 @@
     background-color var(--wm-duration-fast) var(--wm-ease-default),
     color var(--wm-duration-fast) var(--wm-ease-default),
     opacity var(--wm-duration-fast) var(--wm-ease-default);
+}
+
+.wm-segmented-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .wm-segmented[data-size="sm"] .wm-segmented-option {

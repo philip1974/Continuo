@@ -12,7 +12,8 @@
 | 文件 | 职责 |
 |---|---|
 | `src/plugins/settings/SettingsPanel.tsx` | 面板根 `@container/settings`;窄于 42rem 导航收成图标栏、内容区缩小内边距 |
-| `src/plugins/settings/SettingItemRow.tsx` | 行 `@container`;窄于 32rem 上下排列;标题行可换行;id 徽标可截断 |
+| `src/plugins/settings/SettingItemRow.tsx` | 行 `@container`;窄于 32rem 上下排列;标题行可换行;id 徽标可截断;控件不超出行宽 |
+| `src/design/SegmentedControl.tsx` / `.css` | 轨道 `max-width: 100%` + 选项整项换行;选项文字不折行、放不下时省略号截断 |
 | `src/plugins/settings/KeybindingsTabContent.tsx` | 命令标题 `min-w-0 flex-[1_1_6rem] truncate`;id 徽标先收缩、窄列表隐藏;键帽组可换行;按钮不收缩 |
 | `src/plugins/settings/PluginsTabContent.tsx` | 贡献点表格行可换行(示例列不被挤成 0 宽);插件 id 徽标可截断 |
 
@@ -28,8 +29,12 @@
 ### 设置项(SettingItemRow)
 
 - 行根节点是尺寸容器(`@container`);主体默认上下排列(`flex-col`),行宽 ≥ 32rem 才左右并排(`@lg:flex-row`)
-- 标题行 `flex-wrap`:标题与 id 徽标放不下时徽标换行;id 徽标 `min-w-0 max-w-full`,`<code>` 省略号截断
-- 控件区可换行(`flex-wrap`),分段控件 + 重置按钮放不下时换行而不溢出
+- 标题行 `flex-wrap`:标题与 id 徽标放不下时徽标换行;id 徽标 `min-w-0 max-w-full`,`<code>` `min-w-0 truncate` 省略号截断;
+  标题列 `max-w-full`(上下排列时按内容取宽,须以行宽为上限,徽标截断才有参照)
+- 控件区可换行(`flex-wrap`)且 `min-w-0 max-w-full`,分段控件 + 重置按钮放不下时换行而不溢出
+- 分段控件(如主题「跟随系统 / 亮色 / 暗色」)窄于自身宽度时选项整项换到下一行,文字不被压成每字一行(400 宽窗口
+  + 展开侧栏时设置内容区只剩约 80px);数值输入框 `w-24 min-w-0 max-w-full`(连同单位徽标的容器 `min-w-0 max-w-full`)、
+  文本输入框 `w-48 max-w-full`,不超出行宽
 
 ### 快捷键页(KeybindingsTabContent)
 

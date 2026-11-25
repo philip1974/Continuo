@@ -187,14 +187,14 @@ export function SettingItemRow({
   return (
     <div className="@container border-b border-line/50 py-5 last:border-b-0">
       <div className={SETTING_ROW_LAYOUT_CLASS_NAME}>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-full flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span id={titleId} className="min-w-0 break-words text-sm text-fg">
               {title}
             </span>
             {/* id chip:design Badge xs(浅底)+ <code> 等宽紧贴 title 显示,取代独占一行;不 uppercase —— id 区分大小写 */}
             <Badge size="xs" className="min-w-0 max-w-full">
-              <code className="truncate">{spec.id}</code>
+              <code className="min-w-0 truncate">{spec.id}</code>
             </Badge>
           </div>
           {description && (
@@ -206,7 +206,7 @@ export function SettingItemRow({
             </div>
           )}
         </div>
-        <div ref={controlsRef} className="flex shrink-0 flex-wrap items-center gap-2">
+        <div ref={controlsRef} className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-2">
         {spec.type === 'boolean' && (
           // a11y(A4):role=switch 须有可访问名(= 设置标题),否则 AT 只读「switch checked」不知切换哪个设置。
           <Switch
@@ -225,7 +225,7 @@ export function SettingItemRow({
           />
         )}
         {spec.type === 'number' && (
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 max-w-full items-center gap-1">
             <Input
               type="number"
               size="sm"
@@ -236,7 +236,7 @@ export function SettingItemRow({
               max={spec.max}
               step={spec.step}
               {...numberDraft.inputProps}
-              className="w-24 text-right"
+              className="w-24 min-w-0 max-w-full text-right"
             />
             {spec.unit && (
               <Badge size="xs" className="select-none uppercase tracking-wider">
@@ -262,7 +262,7 @@ export function SettingItemRow({
                 (e.target as HTMLInputElement).value.slice(0, SI_TEXT_VALUE_MAX),
               )
             }
-            className="w-48"
+            className="w-48 max-w-full"
           />
         )}
         {/* 常驻占位避免 reset 时 Input 等控件位置跳动;非 override 状态下

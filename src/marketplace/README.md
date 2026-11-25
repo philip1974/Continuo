@@ -1,6 +1,6 @@
 # `src/marketplace/` — Plugin marketplace (Phase 1)
 
-A read-only browser over a curated plugin index hosted on GitHub. Continuo does not run a marketplace backend — the index is a single `index.json` in a public repo, and reviews live in that repo's GitHub Discussions. It renders inside Settings → **Plugin Market**.
+A read-only browser over a curated plugin index hosted on GitHub. Continuo does not run a marketplace backend — the index is a single `index.json` in a public repo, and reviews live in that repo's GitHub Discussions. It renders inside Settings → **Marketplace**.
 
 > The MVP is intentionally tiny: no server, no accounts, no payments. The index needs no auth. Reviews use GitHub's GraphQL API, which requires a token: start Continuo with a `GITHUB_TOKEN` environment variable (a fine-grained token with read-only access to public repositories, or a classic token with no scopes, is enough — don't grant write scopes), e.g. `GITHUB_TOKEN=… pnpm dev`. The token is never sent to the renderer, but like any environment variable it is inherited by the terminals Continuo starts (and the agents in them) and by plugin shell commands — use a token with no write access. Without it, reviews are simply unavailable (only previously cached data is shown).
 

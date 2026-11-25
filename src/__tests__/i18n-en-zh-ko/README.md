@@ -24,6 +24,7 @@
   `{enter}` 等占位由组件换成命令名 / 键帽),同样受此规则约束;仅终端「(已退出)」后缀仍由代码拼接、暂豁免。
 - `catalog-en-style.spec.ts`: en 引号一致(对齐 VSCode 英文版)—— 引用文件名 / 命令名 / 搜索词一律弯引号 “…”,不出现直引号包裹的占位符
   (`'{x}'` / `"{x}"`)、直双引号或当引号用的直单引号;词内撇号(Don't)与反引号代码段内保留原样;弯引号成对。
+  术语:插件市场统一叫 Marketplace(对齐 VSCode;设置页签及其回退 title 同),不单独称 Market(如 Plugin Market)。
 - `runtime-label-colon.spec.ts`: 组件运行期拼接的「标签：原因」(自动保存失败 / 打开失败 / 贡献 action 失败 / 从 Git 安装失败附 git
   报错行 / 授权弹窗「模式：…」)走 catalog 插值 `common.label_detail`,zh 全角「：」、en / ko 半角「: 」;守卫 renderer 源码不再把
   翻译文案与半角冒号直接拼接。

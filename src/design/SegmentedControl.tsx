@@ -115,7 +115,7 @@ export function SegmentedControl<T extends string>({
               onChange(option.id);
             }}
           >
-            {option.label}
+            <span className="wm-segmented-label">{option.label}</span>
           </button>
         );
       })}

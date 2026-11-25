@@ -68,6 +68,23 @@ describe('SegmentedControl 样式契约', () => {
   it('未选中项保留同宽透明描边,选中切换不抖动布局', () => {
     expect(ruleBody(SEG, '.wm-segmented-option')).toMatch(/border:\s*1px solid transparent/);
   });
+
+  // 窄容器(400 宽窗口的设置页):轨道不超出容器,放不下时选项整项换行;选项文字不逐字折行(此前 flex 收缩把
+  // 「跟随系统」压成每字一行),单项仍放不下时省略号截断。
+  it('窄容器:轨道 max-width 100% 且选项可整项换行', () => {
+    const track = ruleBody(SEG, '.wm-segmented');
+    expect(track).toMatch(/max-width:\s*100%/);
+    expect(track).toMatch(/flex-wrap:\s*wrap/);
+  });
+
+  // 选项是 inline-flex(垂直居中),flex 容器上 text-overflow 不生效 → 文字包一层 .wm-segmented-label 承载截断。
+  it('选项可收缩(min-width 0)但文字不折行,放不下时省略号截断', () => {
+    expect(ruleBody(SEG, '.wm-segmented-option')).toMatch(/min-width:\s*0/);
+    const label = ruleBody(SEG, '.wm-segmented-label');
+    expect(label).toMatch(/white-space:\s*nowrap/);
+    expect(label).toMatch(/overflow:\s*hidden/);
+    expect(label).toMatch(/text-overflow:\s*ellipsis/);
+  });
 });
 
 describe('MenuItem 样式契约', () => {

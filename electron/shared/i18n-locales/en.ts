@@ -207,7 +207,7 @@ export const en = {
   'settings.editor.auto_save_markdown': 'Auto-save Markdown',
   'settings.editor.auto_save_delay': 'Auto-save delay',
   'settings.plugins.tab_title': 'Plugins',
-  'settings.plugins.market_title': 'Plugin Market',
+  'settings.plugins.market_title': 'Marketplace',
   'settings.explorer.tab_title': 'Explorer',
   'settings.explorer.toggle_sidebar': 'Toggle Explorer sidebar',
   'settings.explorer.show_hidden_files': 'Show hidden files',
