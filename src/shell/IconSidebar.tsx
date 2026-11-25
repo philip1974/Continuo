@@ -9,6 +9,7 @@ import { Folder } from '@react-symbols/icons';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { NavRailButton } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useAvailableUpdates } from '@/marketplace/update-store';
 import { runContributedAction } from '@/lib/run-contributed-action';
@@ -122,7 +123,10 @@ export function IconSidebar() {
               })
             }
           >
-            {r.icon}
+            {/* 插件图标渲染抛错只替换成错误图标(BDD: plugin-render-isolation)。 */}
+            <PluginRenderBoundary owner={r} variant="inline">
+              {r.icon}
+            </PluginRenderBoundary>
           </NavRailButton>
         ))}
       </div>

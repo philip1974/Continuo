@@ -132,6 +132,17 @@ describe('SettingsPanel — 窄面板收起导航文字', () => {
     expect(classesOf(initial)).toContain('@max-2xl/settings:inline-flex');
   });
 
+  it('宽面板下首字占位 invisible 保留图标位宽度(文字与有图标的页签对齐),窄面板才显示', () => {
+    const { container } = render(<SettingsPanel registry={makeReg()} />);
+    const initial = container.querySelectorAll('nav button')[1]!.querySelector('[data-initial]')!;
+    const classes = classesOf(initial);
+    expect(classes).toContain('invisible');
+    expect(classes).toContain('inline-flex');
+    expect(classes).toContain('w-4');
+    expect(classes).not.toContain('hidden');
+    expect(classes).toContain('@max-2xl/settings:visible');
+  });
+
   it('内容区窄面板时缩小内边距', () => {
     const { container } = render(<SettingsPanel registry={makeReg()} />);
     const content = Array.from(container.querySelectorAll('div')).find((d) => d.textContent === '通用内容')!;

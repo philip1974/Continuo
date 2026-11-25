@@ -23,3 +23,11 @@
 
 - factory 可直接是用了 hooks 的组件:渲染进按 spec 稳定 key 的子组件,占位 ↔ 真实内容(及插件 reload 换新 spec)切换时
   整体重挂,不抛 "Rendered more / fewer hooks"。
+
+## 禁用 / 卸载后的插件面板(对齐 VSCode:卸载扩展后其贡献视图移除)
+
+`plugin-panel-disabled-uninstalled.spec.tsx`。面板宿主记住该 type 最近一次由哪个第三方插件注册(scoped app 所有者
+`plugin:<id>`),注册消失后据 PluginManager 实时列表区分:
+- 插件**已卸载**(不在列表)→ 关闭该 type 的面板(含 popout 子窗里的:popout 面板同由主窗 React 渲染);
+- 插件**已禁用** → 占位改为明确的「插件「X」已禁用,启用后此面板恢复显示」+「启用」按钮(调 manager.enable,三语);
+- 其余(插件晚到注册 / 尚在启动 / 失败 / 从未见过所有者)→ 原通用占位。

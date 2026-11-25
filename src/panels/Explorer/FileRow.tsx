@@ -11,6 +11,7 @@ import {
   type DecoratorFn,
 } from '@/plugins/registries/ExplorerDecoratorRegistry';
 import { coApp } from '@/plugins/co-app';
+import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import type { ExplorerContextMenuItemSpec } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { clipboardPathSet, useExplorerClipboardStore } from './clipboard-store';
@@ -357,7 +358,12 @@ export const FileRow = memo(function FileRow({
       <span className="inline-flex shrink-0 items-center" aria-hidden="true">
         {/* V2:plugin 通过 ExplorerDecoratorRegistry 贡献的 icon 替换默认.
          *  decoration.icon 为 undefined 时 fallback 到 ext 映射的 FileIcon. */}
-        {decoration?.icon ?? (
+        {decoration?.icon != null && decoration.iconSource ? (
+          // 插件图标渲染抛错只替换成错误图标(BDD: plugin-render-isolation)。
+          <PluginRenderBoundary owner={decoration.iconSource} variant="inline">
+            {decoration.icon}
+          </PluginRenderBoundary>
+        ) : (
           <FileIcon name={data.name} isDirectory={isDir} size={ICON_SIZE} />
         )}
       </span>

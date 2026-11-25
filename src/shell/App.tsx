@@ -18,6 +18,7 @@ import { useExternalSyncRootWatch } from '@/panels/Editor/useExternalSyncRootWat
 import { QuickOpenModal } from '@/plugins/quick-open/QuickOpenModal';
 import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
+import { PluginFailureNotifier } from '@/plugins/PluginFailureNotifier';
 import { AgentAuthPrompt } from './AgentAuthPrompt';
 import { coApp } from '@/plugins/co-app';
 import { coApi } from '@/lib/co-api';
@@ -167,6 +168,8 @@ function MainApp() {
       <QuickOpenModal />
       <PermissionPrompt />
       <AgentAuthPrompt />
+      {/* 插件激活 / 渲染失败主动 error 通知(BDD: plugin-failure-notify) */}
+      <PluginFailureNotifier />
       {showSplash && <Splash />}
     </>
   );

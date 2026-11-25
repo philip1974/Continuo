@@ -197,7 +197,9 @@ describe('mergeDecorations', () => {
 
   it('单个非 null icon → 透传', () => {
     const icon = createElement('span', { 'data-id': 'lock' });
-    expect(mergeDecorations(file, [() => ({ icon })])).toEqual({ icon });
+    const fn = () => ({ icon });
+    // iconSource:icon 来自哪个 decorator(渲染出错时归属插件,见 plugin-render-isolation)
+    expect(mergeDecorations(file, [fn])).toEqual({ icon, iconSource: fn });
   });
 
   it('icon + badge + textColor + tooltip 同时贡献 → 全部 merge', () => {
@@ -212,6 +214,7 @@ describe('mergeDecorations', () => {
     ]);
     expect(result).toEqual({
       icon,
+      iconSource: expect.any(Function),
       badge: 'M',
       badgeColor: undefined,
       textColor: 'red',

@@ -53,12 +53,12 @@ describe('安装后热激活 + 立即重启', () => {
     await waitFor(() => expect(adoptInstalled).toHaveBeenCalledWith('p.new'));
   });
 
-  it('Git 安装成功:文案「已安装 … 已启用」,待重启行有「立即重启」,点击走 relaunchApp', async () => {
+  it('Git 安装成功:文案「已安装 …」(启用与否看插件行实时状态),待重启行有「立即重启」,点击走 relaunchApp', async () => {
     const { container } = render(<PluginsTabContent />);
     const input = container.querySelector('input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'https://github.com/me/new.git' } });
     fireEvent.click(Array.from(container.querySelectorAll('button')).find((b) => b.textContent === '安装')!);
-    await waitFor(() => expect(container.textContent).toContain('已安装 New v1.0.0，已启用'));
+    await waitFor(() => expect(container.textContent).toContain('已安装 New v1.0.0'));
 
     const restart = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
       (b) => b.textContent === '立即重启',

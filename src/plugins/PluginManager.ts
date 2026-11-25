@@ -824,6 +824,17 @@ export class PluginManager {
   }
 
   /**
+   * 插件贡献的界面渲染抛错(PluginRenderBoundary 接住后上报,BDD: plugin-render-isolation):运行中的插件标 failed
+   *(RENDER_FAILED),实例保留 —— 对齐 VSCode,扩展视图出错不停用扩展,只就地显示错误。已非 enabled(已 failed /
+   * 停用中)→ 无操作(同一插件多处同时出错只记首个)。之后启用重试由 activateEntry 先停用这个仍在运行的实例。
+   */
+  markRenderFailed(id: string, err: unknown): void {
+    const entry = this.entries.get(id);
+    if (entry?.status !== 'enabled' || !entry.instance) return;
+    this.setStatus(entry, 'failed', { code: 'RENDER_FAILED', message: errorMessage(err) });
+  }
+
+  /**
    * 订阅 listAll() 结果的变化(列表缓存每次失效时同步通知;此时条目状态已改完,listAll 返回新快照)。
    * 箭头属性:可直接交给 useSyncExternalStore。返回取消订阅。
    */
@@ -862,6 +873,8 @@ export class PluginManager {
    * 'enabled' 再激活,冒出去会留下「enabled 但没有实例」的半激活态(既关不掉也开不了)。
    */
   private async activateEntry(entry: PluginEntry): Promise<void> {
+    // 渲染出错标 failed 的插件实例仍在运行(见 markRenderFailed):重试激活前先停用,不留双实例 / 重复贡献。
+    if (entry.instance) await this.deactivateEntry(entry, `reactivate ${entry.id}`);
     entry.activating = true;
     entry.awaitingGrantElsewhere = undefined; // 已在本窗口尝试激活(授权已决定或本窗口弹窗),不再等待别的窗口
     try {

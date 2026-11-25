@@ -13,6 +13,7 @@ import {
 } from '@/plugins/registries/ExplorerContextMenuRegistry';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { coApp } from '@/plugins/co-app';
+import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { isSortedBy } from '@/lib/is-sorted-by';
 
@@ -358,7 +359,14 @@ function ContextMenuContent({
                   })
                 }
               >
-                {item.icon && <span className="mr-2 inline-flex shrink-0 align-middle">{item.icon}</span>}
+                {item.icon && (
+                  // 插件图标渲染抛错只替换成错误图标(BDD: plugin-render-isolation)。
+                  <span className="mr-2 inline-flex shrink-0 align-middle">
+                    <PluginRenderBoundary owner={item} variant="inline">
+                      {item.icon}
+                    </PluginRenderBoundary>
+                  </span>
+                )}
                 {item.label}
               </CtxItem>
             ))}

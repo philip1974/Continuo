@@ -14,7 +14,8 @@ import { PermissionEditorModal } from '../permissions/PermissionEditorModal';
 import type { PluginListItem } from '../PluginManager';
 import type { PermissionKey } from '../permissions';
 import { useT } from '@/i18n';
-import { localizeErrorByCode, localizeThrown } from '@/lib/localize-error';
+import { localizeThrown } from '@/lib/localize-error';
+import { localizePluginError } from '../plugin-error-text';
 import { GitUrlInstallForm } from '@/plugins/GitUrlInstallForm';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { ResultMessage, type ResultMsg } from '@/lib/result-message';
@@ -441,11 +442,10 @@ function UserPluginsSection() {
                 {p.error && (
                   // a11y(A68,A41 同族):插件运行时错误异步出现(激活失败等),焦点常在别处 →
                   // role=alert(失败=assertive)主动播报,否则 SR 用户不知插件状态变坏。
-                  <div role="alert" className="mt-1 text-2xs text-error">
-                    {/* i18n(I4):error 结构化 {code,message},按 code 经 catalog 渲染;
-                        未收录 code(PERMISSION_DENIED/IMPORT_FAILED/EXCEPTION 等动态
-                        message)保留旧 `code: message` 格式作 fallback。 */}
-                    {localizeErrorByCode(p.error.code, `${p.error.code}: ${p.error.message}`)}
+                  <div role="alert" data-code={p.error.code} className="mt-1 text-2xs text-error">
+                    {/* i18n(I4):error 结构化 {code,message},渲染时按 locale 出可读文案(不再给用户看
+                        `CODE: message`;原始 code 留在 data-code 供排查,BDD: plugin-failure-notify)。 */}
+                    {localizePluginError(p.error)}
                   </div>
                 )}
                 {p.warning && (
@@ -477,19 +477,7 @@ function UserPluginsSection() {
                 >
                   {t('plugins_tab.btn.reload')}
                 </Button>
-                {p.status === 'enabled' ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={runLifecycle('disable', p.id, () => mgr?.disable(p.id))}
-                    aria-label={t('plugins_tab.action.row_button_aria', {
-                      action: t('plugins_tab.btn.disable'),
-                      name: p.manifest.name,
-                    })}
-                  >
-                    {t('plugins_tab.btn.disable')}
-                  </Button>
-                ) : p.status === 'disabled' ? (
+                {p.status === 'disabled' ? (
                   <Button
                     variant="primary"
                     size="sm"
@@ -501,7 +489,7 @@ function UserPluginsSection() {
                   >
                     {t('plugins_tab.btn.enable')}
                   </Button>
-                ) : (
+                ) : p.status === 'failed' ? (
                   // FAILED:启用按钮仍可点(权限拒绝时会清 deny + 复弹 Modal)
                   <Button
                     variant="primary"
@@ -514,6 +502,20 @@ function UserPluginsSection() {
                     })}
                   >
                     {t('plugins_tab.btn.enable')}
+                  </Button>
+                ) : null}
+                {/* FAILED 也可禁用:激活失败的插件不再每次启动重试;渲染出错时仍在运行的实例也能停掉(BDD: plugin-failure-notify)。 */}
+                {p.status !== 'disabled' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={runLifecycle('disable', p.id, () => mgr?.disable(p.id))}
+                    aria-label={t('plugins_tab.action.row_button_aria', {
+                      action: t('plugins_tab.btn.disable'),
+                      name: p.manifest.name,
+                    })}
+                  >
+                    {t('plugins_tab.btn.disable')}
                   </Button>
                 )}
                 {(p.manifest.permissions?.length ?? 0) > 0 && permStore && (

@@ -34,6 +34,11 @@ export interface Decoration {
 
 export type DecoratorFn = (entry: DecoratorEntry) => Decoration | null;
 
+/** 合并结果:icon 另记它来自哪个 decorator(渲染出错时按其所有者归属插件,BDD: plugin-render-isolation)。 */
+export interface MergedDecoration extends Decoration {
+  readonly iconSource?: DecoratorFn;
+}
+
 // 边界(E54,E47 输入侧对偶):register(fn) 此前信任插件输入,不校验 fn 是函数,也无注册数量上限
 //(E47 只限制 decorator 输出字段)。非函数 fn 会在每个可见 FileRow 的 mergeDecorations 中反复抛
 // TypeError + 刷 console.warn(虽被 try/catch 兜住);注册成千上万个 decorator 让文件树每行渲染变成
@@ -112,11 +117,12 @@ function decString(v: unknown, max: number): string | undefined {
 export function mergeDecorations(
   entry: DecoratorEntry,
   fns: readonly DecoratorFn[],
-): Decoration | null {
+): MergedDecoration | null {
   let badge: string | undefined;
   let badgeColor: string | undefined;
   let textColor: string | undefined;
   let icon: ReactNode | undefined;
+  let iconSource: DecoratorFn | undefined;
   let tooltips: string[] | null = null;
   let tooltipCount = 0;
 
@@ -140,6 +146,7 @@ export function mergeDecorations(
     }
     if (icon === undefined && dec.icon !== undefined) {
       icon = dec.icon;
+      iconSource = fn;
     }
     const tc = decString(dec.textColor, DEC_COLOR_MAX);
     if (tc !== undefined) textColor = tc;
@@ -168,5 +175,5 @@ export function mergeDecorations(
         ? joined.slice(0, DEC_TOOLTIP_TOTAL_MAX)
         : joined;
   }
-  return { badge, badgeColor, textColor, icon, tooltip };
+  return { badge, badgeColor, textColor, icon, tooltip, ...(iconSource ? { iconSource } : {}) };
 }

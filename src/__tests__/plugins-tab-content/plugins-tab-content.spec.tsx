@@ -356,8 +356,15 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
       (b) => b.textContent === '启用',
     );
     expect(enableBtns.length).toBe(2);
-    // failed 行有 error
-    expect(textContent).toContain('EBOOM');
+    // failed 行有 error(本地化文案,原始 code 只在 data-code;BDD: plugin-failure-notify)
+    expect(textContent).toContain('激活失败：kaput');
+    expect(textContent).not.toContain('EBOOM');
+    expect(container.querySelector('[data-code="EBOOM"]')).not.toBeNull();
+    // failed 行也可禁用(enabled + failed 两行各一个「禁用」)
+    const disableBtns = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(
+      (b) => b.textContent === '禁用',
+    );
+    expect(disableBtns.length).toBe(2);
   });
 
   // a11y(A95,A94 同族):Plugins Git URL 安装 loading 须 aria-busy + 视觉隐藏 role=status 播报。
@@ -415,7 +422,7 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     const { container } = render(<PluginsTabContent />);
     const alert = container.querySelector('[role=alert]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain('EBOOM');
+    expect(alert!.textContent).toContain('kaput');
   });
 
   // a11y(A68):插件运行时 warning(部分授权等)异步出现 → role=status(可覆盖警告=polite)。
@@ -476,8 +483,8 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     }
   });
 
-  // i18n(I4):catalog 未收录的 code(PERMISSION_DENIED 等动态 message)保留 `code: message`。
-  it('failed error code 不在 catalog → 回退 `code: message` 格式', () => {
+  // i18n(I4 → plugin-failure-notify):权限被拒显示本地化「所需权限已被拒绝:…」,不再给用户看 `PERMISSION_DENIED: …`。
+  it('PERMISSION_DENIED → 本地化文案带被拒权限,不显示原始 code', () => {
     installPluginsApi(vi.fn());
     const fakeMgr: FakeManager = {
       listAll: () => [
@@ -490,8 +497,8 @@ describe('PluginsTabContent — 第三方插件:列表渲染', () => {
     };
     getMgr.mockReturnValue(fakeMgr);
     const { container } = render(<PluginsTabContent />);
-    expect(container.textContent).toContain('PERMISSION_DENIED');
-    expect(container.textContent).toContain('fs, network');
+    expect(container.textContent).not.toContain('PERMISSION_DENIED');
+    expect(container.textContent).toContain('所需权限已被拒绝：fs, network');
   });
 
   it('manifest.permissions 非空 + permStore 存在 → 显「权限」按钮', () => {

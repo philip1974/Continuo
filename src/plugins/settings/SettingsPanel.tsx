@@ -13,7 +13,8 @@ import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import type { SettingItemRegistry, SettingItemSpec } from '../registries/SettingItemRegistry';
-import type { SettingTabRegistry } from '../registries/SettingTabRegistry';
+import type { SettingTabRegistry, SettingTabSpec } from '../registries/SettingTabRegistry';
+import { PluginRenderBoundary } from '../PluginRenderBoundary';
 import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
@@ -40,9 +41,12 @@ const SETTINGS_TAB_BUTTON_BASE_CLASS_NAME =
   'flex w-full items-center gap-2 border-l-2 px-4 py-2 text-left transition @max-2xl/settings:justify-center @max-2xl/settings:px-3';
 /** 导航项文字:窄面板时视觉隐藏(仍是按钮可访问名),由图标 / 首字占位。 */
 export const SETTINGS_TAB_LABEL_COLLAPSIBLE_CLASS_NAME = 'truncate @max-2xl/settings:sr-only';
-/** 无图标的(插件)导航项窄面板时显示首字代替图标。 */
+/**
+ * 无图标的(插件)导航项窄面板时显示首字代替图标;宽面板下 invisible 仍占图标位宽度,文字与有图标的内置页签左对齐
+ *(hidden 不占位会让文字左移一个图标位)。
+ */
 const SETTINGS_TAB_INITIAL_CLASS_NAME =
-  'hidden h-4 w-4 shrink-0 items-center justify-center font-medium uppercase before:content-[attr(data-initial)] @max-2xl/settings:inline-flex';
+  'invisible inline-flex h-4 w-4 shrink-0 items-center justify-center font-medium uppercase before:content-[attr(data-initial)] @max-2xl/settings:visible @max-2xl/settings:inline-flex';
 /** 右侧内容区:窄面板时缩小内边距。 */
 export const SETTINGS_CONTENT_CLASS_NAME =
   'min-w-0 flex-1 overflow-y-auto px-4 py-4 text-xs text-fg-muted @2xl/settings:px-8 @2xl/settings:py-6';
@@ -209,7 +213,10 @@ export function SettingsPanel({
               >
                 {tab.icon ? (
                   <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
-                    {tab.icon}
+                    {/* 插件图标渲染抛错只替换成错误图标(BDD: plugin-render-isolation)。 */}
+                    <PluginRenderBoundary owner={tab} variant="inline">
+                      {tab.icon}
+                    </PluginRenderBoundary>
                   </span>
                 ) : (
                   // 首字经伪元素 content 渲染,不进 textContent / 可访问名(可访问名仍是完整标题)。
@@ -230,12 +237,20 @@ export function SettingsPanel({
           {inSearch ? (
             <SettingsSearchResults itemRegistry={itemRegistry} trimmed={trimmed} />
           ) : active ? (
-            active.render()
+            // 插件设置页渲染抛错只在内容区显示错误块,导航照常可切走(BDD: plugin-render-isolation)。
+            <PluginRenderBoundary owner={active} variant="block">
+              <SettingTabContent spec={active} />
+            </PluginRenderBoundary>
           ) : null}
         </div>
       </div>
     </div>
   );
+}
+
+/** render() 放进子组件调用:同步抛错与它返回的组件抛错一样落在外层 PluginRenderBoundary 里。 */
+function SettingTabContent({ spec }: { readonly spec: SettingTabSpec }) {
+  return spec.render();
 }
 
 /**

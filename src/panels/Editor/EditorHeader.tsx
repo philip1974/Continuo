@@ -24,6 +24,7 @@ import {
   TabNavItem,
 } from '@/design';
 import { coApp } from '@/plugins/co-app';
+import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import {
@@ -218,7 +219,10 @@ const EditorActionsArea = memo(function EditorActionsArea({
             title={a.label}
             aria-label={a.label}
           >
-            {a.icon}
+            {/* 插件图标渲染抛错只替换成错误图标(BDD: plugin-render-isolation)。 */}
+            <PluginRenderBoundary owner={a} variant="inline">
+              {a.icon}
+            </PluginRenderBoundary>
           </IconButton>
         ) : (
           <Button

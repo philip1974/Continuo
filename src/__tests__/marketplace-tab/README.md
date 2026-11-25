@@ -47,8 +47,12 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 - updateAvailable=有 → 「更新」按钮
 - installing=true → 「安装中…」
 - 点「安装」 → coApi.plugins.installFromGit
-  - ok → recordPendingInstall(已在列表的更新 / 覆盖重装不记),msg=「✔ 已安装 …」
+  - ok → recordPendingInstall(已在列表的更新 / 覆盖重装不记),msg=「已安装 X vY」—— 只陈述安装结果,**不写「已启用」**:
+    安装后插件可能因权限被全部拒绝 / 激活失败而未启用
   - 抛 / ok=false → msg=「✘ …」
+- 启用结果从 PluginManager 实时状态派生(`install-live-state.spec.tsx`):已在插件列表的卡片显示一行状态 ——
+  enabled「已启用」/ disabled「已禁用」/ failed 显示本地化原因(如「所需权限已被拒绝:fs」,`role=alert`,同插件页);
+  Git URL 段安装成功后同样跟随所装插件的实时状态。插件页 Git 安装成功文案同改为「已安装 X vY」(行内已显示状态)。
 
 ### 卡片窄宽布局(容器查询)
 

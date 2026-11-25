@@ -7,7 +7,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Badge, Button, Input, Spinner } from '@/design';
 import { errorMessage } from '../../electron/shared/error-message';
-import { getUserPluginManager } from '@/plugins/PluginManager';
+import { getUserPluginManager, type PluginListItem } from '@/plugins/PluginManager';
+import { localizePluginError } from '@/plugins/plugin-error-text';
 import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './types';
 import { fetchMarketplaceIndex, MARKETPLACE_NETWORK } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
@@ -51,7 +52,7 @@ const MARKETPLACE_REVIEW_SORT_BUTTON_INACTIVE_CLASS_NAME =
 /** 卡片头部(头像 / 标题区 / 操作按钮):卡片窄于 28rem 时允许换行,操作按钮独占下一行。 */
 export const MARKETPLACE_CARD_HEADER_CLASS_NAME = 'flex items-start gap-4 @max-md:flex-wrap @max-md:gap-y-3';
 export const MARKETPLACE_CARD_ACTION_CLASS_NAME = 'shrink-0 @max-md:basis-full';
-const EMPTY_INSTALLED_IDS: ReadonlySet<string> = new Set();
+const EMPTY_INSTALLED: ReadonlyMap<string, PluginListItem> = new Map();
 const EMPTY_MARKETPLACE_ENTRIES: readonly MarketplaceEntry[] = [];
 const EMPTY_UPDATE_VERSION_MAP: ReadonlyMap<string, string> = new Map();
 const EMPTY_REVIEWS: readonly Review[] = [];
@@ -80,15 +81,36 @@ interface InstallState {
   msgs: ReadonlyMap<string, ResultMsg>;
 }
 
-/** 当前已装 plugin id 集合(订阅 user plugin manager 的列表变化)。 */
-function useInstalledIds(): ReadonlySet<string> {
+/** 当前已装插件 id → 实时状态(订阅 user plugin manager 的列表变化)。 */
+function useInstalledPlugins(): ReadonlyMap<string, PluginListItem> {
   const plugins = useUserPluginList();
   return useMemo(() => {
-    if (plugins.length === 0) return EMPTY_INSTALLED_IDS;
-    const ids = new Set<string>();
-    for (const plugin of plugins) ids.add(plugin.id);
-    return ids;
+    if (plugins.length === 0) return EMPTY_INSTALLED;
+    const byId = new Map<string, PluginListItem>();
+    for (const plugin of plugins) byId.set(plugin.id, plugin);
+    return byId;
   }, [plugins]);
+}
+
+/**
+ * 已装插件的启用结果(BDD: marketplace-tab「启用结果从 PluginManager 实时状态派生」):安装成功只说明已安装,权限被全部
+ * 拒绝 / 激活失败时插件并未启用 —— 这里跟随 manager 的实时状态显示,失败按插件页同口径给出本地化原因。
+ */
+function PluginStateNote({ plugin }: { readonly plugin: PluginListItem | undefined }) {
+  const t = useT();
+  if (!plugin) return null;
+  if (plugin.status === 'failed' && plugin.error) {
+    return (
+      <div role="alert" data-code={plugin.error.code} className="mt-1 text-2xs text-error">
+        {localizePluginError(plugin.error)}
+      </div>
+    );
+  }
+  return (
+    <div role="status" className="mt-1 text-2xs text-fg-dim">
+      {t(plugin.status === 'enabled' ? 'plugins_tab.state.enabled' : 'plugins_tab.state.disabled')}
+    </div>
+  );
 }
 
 export function buildUpdateVersionMap(
@@ -103,7 +125,7 @@ export function buildUpdateVersionMap(
 export function MarketplaceTab() {
   const t = useT();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
-  const installed = useInstalledIds();
+  const installed = useInstalledPlugins();
   const updates = useAvailableUpdates();
   const dismissUpdate = useUpdateStore((s) => s.dismiss);
   const [install, setInstall] = useState<InstallState>({
@@ -513,6 +535,7 @@ export function MarketplaceTab() {
               installing={install.busy === entry.id}
               installDisabled={install.busy !== null && install.busy !== entry.id}
               message={install.msgs.get(entry.id) ?? null}
+              plugin={installed.get(entry.id)}
               rating={reviewsByPid.get(entry.id) ?? null}
               onInstall={onInstall}
               onUpdate={onUpdate}
@@ -542,9 +565,13 @@ function GitUrlInstallSection() {
   const t = useT();
   // a11y(A43,A42 同族):结果消息带严重度 → 渲染时按语义选 live region(成功 status/失败 alert)。
   const [msg, setMsg] = useState<ResultMsg | null>(null);
+  // 最近一次成功安装的插件 id:其后显示它的实时启用结果(PluginStateNote)。
+  const [installedId, setInstalledId] = useState<string | null>(null);
+  const plugins = useUserPluginList();
 
   const install = async (url: string): Promise<boolean> => {
     setMsg(null);
+    setInstalledId(null);
     // 同卡片安装:失败(含 reject)按 code 本地化;不把 ✘ 拼进 alert 文本(severity 由 isError+role=alert 表达)。
     const r = await installFromGitLocalized(url);
     if (!r.ok) {
@@ -562,6 +589,7 @@ function GitUrlInstallSection() {
       }),
       isError: false,
     });
+    setInstalledId(r.data.id);
     recordPendingInstall(r.data);
     return true;
   };
@@ -584,6 +612,7 @@ function GitUrlInstallSection() {
       />
       {/* a11y(A43,A42 同族):异步安装结果须 live region 主动播报。 */}
       <ResultMessage msg={msg} className="mt-2 text-xs text-fg-muted" />
+      <PluginStateNote plugin={installedId === null ? undefined : plugins.find((p) => p.id === installedId)} />
       <div className="mt-3 flex items-start gap-2 rounded-md border border-accent/20 bg-accent/5 p-3 text-xs text-fg-muted">
         <span aria-hidden className="mt-0.5 leading-none text-accent">
           ⓘ
@@ -629,6 +658,8 @@ interface CardProps {
   installing: boolean;
   installDisabled: boolean;
   message: ResultMsg | null;
+  /** 已在插件列表时的实时状态(启用 / 禁用 / 失败原因)。 */
+  plugin: PluginListItem | undefined;
   /** 评分聚合(reviews Phase 1),null 或 count=0 不显. */
   rating: PluginAggregateRating | null;
   /** 父组件 useCallback 稳定;card 内 onClick 闭包 entry 给它. */
@@ -653,6 +684,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
   installing,
   installDisabled,
   message,
+  plugin,
   rating,
   onInstall,
   onUpdate,
@@ -768,6 +800,7 @@ const MarketplaceCard = memo(function MarketplaceCard({
       </span>
       {/* a11y(A44,A42/A43 同族):卡片级安装/更新结果须 live region 主动播报。 */}
       <ResultMessage msg={message} className="mt-1 text-2xs text-fg-muted" />
+      <PluginStateNote plugin={plugin} />
       <RatingRow entry={entry} rating={rating} />
 
       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-2xs text-fg-dim">

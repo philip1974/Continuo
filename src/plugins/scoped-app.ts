@@ -852,6 +852,12 @@ export function isThirdPartyContribution(spec: object): boolean {
   return contributionOwners.get(spec)?.startsWith('core:') !== true;
 }
 
+/** 第三方插件贡献(所有者登记为 `plugin:<id>`)的插件 id;内置 / 所有者不明 → null。插件渲染出错时据此归属。 */
+export function contributionPluginId(spec: object): string | null {
+  const owner = contributionOwners.get(spec);
+  return owner?.startsWith('plugin:') === true ? owner.slice('plugin:'.length) : null;
+}
+
 /**
  * 贡献 spec 的冻结快照(见 trackContributions 的 TOCTOU 说明)。顶层浅拷贝;嵌套的**数据**字段要深拷贝冻结,否则
  * 入表的仍是插件手里的引用:注册期校验通过后再改(把 label 换成对象 / 超长串、往数组里追加选项)即绕过校验。
@@ -900,6 +906,8 @@ function trackContributions<T extends object, K extends keyof T & string>(
   keyed?: { readonly field: 'id' | 'type'; readonly owner: string },
   /** 仅 commands 且调用方是第三方插件:执行宿主命令前的限次闸(见 HOST_COMMAND_RATE_LIMIT)。 */
   hostCommandGate?: (commandId: unknown) => void,
+  /** 无 key 的函数型贡献(explorerDecorators)的所有者:登记到注册的函数上,渲染出错时据此归属(不做抢注检查)。 */
+  fnOwner?: string,
 ): Pick<T, K> {
   const liveSpec = (key: unknown): object | undefined => {
     if (typeof key !== 'string') return undefined; // 非法 key 交给注册表自身的 spec 校验报错
@@ -1070,6 +1078,9 @@ function trackContributions<T extends object, K extends keyof T & string>(
       }
       const registered = liveSpec(key);
       if (keyed !== undefined && registered !== undefined) contributionOwners.set(registered, keyed.owner);
+      if (fnOwner !== undefined && prop === 'register' && typeof args[0] === 'function') {
+        contributionOwners.set(args[0] as object, fnOwner);
+      }
       let released = false;
       const release = (): void => {
         if (released) return;
@@ -1225,7 +1236,17 @@ export function createScopedAppController(
     ]),
     settingTabs: track('settingTabs', coApp.settingTabs, KEYED_MEMBERS, 'id'),
     settingItems: track('settingItems', coApp.settingItems, [...KEYED_MEMBERS, 'getByCategory'], 'id'),
-    explorerDecorators: track('explorerDecorators', coApp.explorerDecorators, ['register', 'getAll', 'subscribe']),
+    explorerDecorators: trackContributions(
+      pluginId,
+      'explorerDecorators',
+      coApp.explorerDecorators,
+      ['register', 'getAll', 'subscribe'],
+      life,
+      owned,
+      undefined,
+      undefined,
+      owner,
+    ),
     editorActions: track('editorActions', coApp.editorActions, KEYED_MEMBERS, 'id'),
     explorerContextMenu: track('explorerContextMenu', coApp.explorerContextMenu, KEYED_MEMBERS, 'id'),
     // 宿主的 workspace 是全窗口共用的单例对象:原样透传的话,一个插件改写 getRoot 会影响所有插件。

@@ -484,6 +484,7 @@
 
 ## [dock-plugin-panel-placeholder — 未注册面板类型显示占位,布局不丢](./dock-plugin-panel-placeholder/README.md)
 
+- [`plugin-panel-disabled-uninstalled.spec.tsx`](./dock-plugin-panel-placeholder/plugin-panel-disabled-uninstalled.spec.tsx)
 - [`plugin-panel-placeholder.spec.tsx`](./dock-plugin-panel-placeholder/plugin-panel-placeholder.spec.tsx)
 
 ## [dock-reconciler-api-rebuild — dock api 变化 / 布局恢复后终端 panel 全量重建](./dock-reconciler-api-rebuild/README.md)
@@ -1055,6 +1056,7 @@
 
 ## [MarketplaceTab(插件市场 SettingTab)](./marketplace-tab/README.md)
 
+- [`install-live-state.spec.tsx`](./marketplace-tab/install-live-state.spec.tsx)
 - [`marketplace-tab.spec.tsx`](./marketplace-tab/marketplace-tab.spec.tsx)
 
 ## [marketplace update-store(Phase 3 — 更新检查)](./marketplace-update-store/README.md)
@@ -1203,6 +1205,10 @@
 - [`main-read-for-editor.spec.ts`](./plugin-editor-open-verified/main-read-for-editor.spec.ts)
 - [`plugin-opened-lifecycle.spec.ts`](./plugin-editor-open-verified/plugin-opened-lifecycle.spec.ts)
 - [`scoped-open-end-to-end.spec.ts`](./plugin-editor-open-verified/scoped-open-end-to-end.spec.ts)
+
+## [plugin-failure-notify — 插件激活 / 渲染失败主动提示,错误文案本地化](./plugin-failure-notify/README.md)
+
+- [`plugin-failure-notify.spec.tsx`](./plugin-failure-notify/plugin-failure-notify.spec.tsx)
 
 ## [plugin-fs-atomic-replace-trash(atomicReplace 的 trash 落点与清扫不出 scope、只动宿主自己的 trash)](./plugin-fs-atomic-replace-trash/README.md)
 
@@ -1359,6 +1365,11 @@
 ## [plugin-reload-gate(插件启动期事件门控)](./plugin-reload-gate/README.md)
 
 - [`plugin-reload-gate.spec.ts`](./plugin-reload-gate/plugin-reload-gate.spec.ts)
+
+## [plugin-render-isolation — 插件贡献渲染出错只影响它自己,不拖垮主窗](./plugin-render-isolation/README.md)
+
+- [`manager-render-failed.spec.ts`](./plugin-render-isolation/manager-render-failed.spec.ts)
+- [`render-isolation.spec.tsx`](./plugin-render-isolation/render-isolation.spec.tsx)
 
 ## [plugin-shell-kill-on-deactivate(停用/卸载插件终止其 shell 进程)](./plugin-shell-kill-on-deactivate/README.md)
 

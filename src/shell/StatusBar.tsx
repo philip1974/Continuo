@@ -21,6 +21,7 @@ import { computeTextStats } from '@/lib/text-stats';
 import { coApp } from '@/plugins/co-app';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
+import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { useT, t as translate, translateCount } from '@/i18n';
 import { basenameForChrome } from '@/lib/path-label';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
@@ -100,27 +101,28 @@ export function splitStatusItemsBySide(items: readonly StatusBarItemSpec[]): {
   return { left, right };
 }
 
-// race(R56,R55 同族):渲染时按 id 从 live coApp.statusBar 复查再调 render(),而非调订阅快照里
-// 缓存的 item.render。快照(useRegistry useState 订阅)滞后 registry 一帧,item 刚 unregister 时
-// 快照仍含它 → 会执行已卸载插件的 render。复查使死 item 跳过(返 null);同时 try/catch 隔离单个
-// 插件 item 的 render 同步抛错,不连累整条状态栏。
-function liveRenderStatusItem(item: StatusBarItemSpec): React.ReactNode {
-  const live = coApp.statusBar.get(item.id);
-  if (!live) return null;
-  try {
-    return live.render();
-  } catch (err) {
-    console.warn(`[statusbar] item "${item.id}" render threw`, err);
-    return null;
-  }
-}
-
 // VSCode:状态栏条目有最大宽度、超长省略号截断,插件项不能把内置项挤没。插件项 min-w-0 + max-w-[40vw] + truncate,
 // 收缩权重 shrink-[1000] 远高于内置项(当前文件名默认 1,MCP / Agent 授权指示 shrink-0):空间不够时先缩插件项。
 // 渲染结果是字符串时 title 给出全文(截断后仍可悬停查看)。
 const PLUGIN_STATUS_ITEM_CLASS_NAME = 'min-w-0 max-w-[40vw] shrink-[1000] truncate';
+
+// race(R56,R55 同族):渲染时按 id 从 live coApp.statusBar 复查再调 render(),而非调订阅快照里
+// 缓存的 item.render。快照(useRegistry useState 订阅)滞后 registry 一帧,item 刚 unregister 时
+// 快照仍含它 → 会执行已卸载插件的 render。复查使死 item 跳过。
+// render() 的同步抛错与它返回的组件在 React 渲染期抛的错都由 PluginRenderBoundary 就地接住(紧凑错误图标),
+// 不冒泡到根让整个主窗白屏(BDD: plugin-render-isolation)。
 function PluginStatusItem({ item }: { item: StatusBarItemSpec }) {
-  const node = liveRenderStatusItem(item);
+  const live = coApp.statusBar.get(item.id);
+  if (!live) return null;
+  return (
+    <PluginRenderBoundary owner={live} variant="inline">
+      <PluginStatusItemContent spec={live} />
+    </PluginRenderBoundary>
+  );
+}
+
+function PluginStatusItemContent({ spec }: { spec: StatusBarItemSpec }) {
+  const node = spec.render();
   return (
     <span className={PLUGIN_STATUS_ITEM_CLASS_NAME} title={typeof node === 'string' ? node : undefined}>
       {node}
