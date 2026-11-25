@@ -6,7 +6,7 @@ function makeView() {
     state: {
       doc: {
         lines: 3,
-        line: vi.fn((line: number) => ({ from: line * 10 })),
+        line: vi.fn((line: number) => ({ from: line * 10, length: 6 })),
       },
     },
     dispatch: vi.fn(),
@@ -41,5 +41,18 @@ describe('scrollToLine', () => {
       expect(view.focus).not.toHaveBeenCalled();
     },
   );
-});
 
+  it('T5 column(1 起)落到行内对应列;超出行长落在行尾;非法 / ≤1 落在行首', () => {
+    const at = (column: number | undefined) => {
+      const view = makeView();
+      scrollToLine(view as never, 2, column);
+      return view.dispatch.mock.calls[0]![0].selection.anchor;
+    };
+    expect(at(3)).toBe(22);
+    expect(at(99)).toBe(26);
+    expect(at(undefined)).toBe(20);
+    expect(at(1)).toBe(20);
+    expect(at(0)).toBe(20);
+    expect(at(2.5)).toBe(20);
+  });
+});

@@ -232,6 +232,21 @@ export function updateCwd(id: string, cwd: string): void {
   notify();
 }
 
+/** 动态标题字段(见 TerminalSessionSnapshot.userTitle / processName / sequenceTitle)。 */
+export type TerminalTitleField = 'userTitle' | 'processName' | 'sequenceTitle';
+
+/** 设置 / 清除(undefined 或空串)会话的某个动态标题字段;值未变不广播。 */
+export function setTitleField(id: string, field: TerminalTitleField, value: string | undefined): void {
+  const cur = sessions.get(id);
+  if (!cur) return;
+  const next = value === '' ? undefined : value;
+  if (cur[field] === next) return;
+  const { [field]: _old, ...rest } = cur;
+  sessions.set(id, next === undefined ? rest : { ...rest, [field]: next });
+  invalidateSnapshotCache();
+  notify();
+}
+
 export function removeByOwner(ownerWindowId: number): readonly string[] {
   // 窗口关闭:它的 default-title 计数器永不再用(BrowserWindow.id 单调不复用),
   // 一并清掉。否则 titleCounter 随窗口开关单调泄漏(removeByOwner 旧实现只清

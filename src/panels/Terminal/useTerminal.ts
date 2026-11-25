@@ -14,7 +14,11 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { coApi } from '@/lib/co-api';
-import { isWindowsRuntime } from '@/lib/path-cross';
+import { basename, isWindowsRuntime } from '@/lib/path-cross';
+import { coApp } from '@/plugins/co-app';
+import { openFileOrNotify } from '@/notifications/notify-open-failed';
+import { LABEL_MAX } from '../../../electron/shared/terminal-create';
+import { createTerminalFileLinkProvider } from './terminal-file-links';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   TERMINAL_CURSOR_STYLE,
@@ -43,6 +47,7 @@ import {
   isTerminalZoomHotkey,
   runTerminalCommandFromKey,
   runTerminalZoomFromKey,
+  terminalSendSequenceForKey,
   terminalYieldedCommandId,
 } from './terminal-hotkeys';
 import { createOutputCoalescer } from './output-coalescer';
@@ -62,7 +67,7 @@ import {
 } from './terminal-search-state';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { errorCodeOf } from '../../../electron/shared/error-message';
-import { debounce } from '@/lib/debounce';
+import { debounce, type DebouncedFn } from '@/lib/debounce';
 import { t } from '@/i18n';
 import { shouldAutoCloseExitedSession } from '@/shell/dock/terminal-panel-id';
 import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
@@ -359,6 +364,37 @@ export function terminalLinkHoverHint(platform: Platform = detectPlatform()): st
   return t('panels.terminal.link_hover', { key: platform === 'mac' ? '⌘' : 'Ctrl' });
 }
 
+/** 悬停本地文件链接时的提示(「⌘+单击打开文件」)。 */
+export function terminalFileLinkHoverHint(platform: Platform = detectPlatform()): string {
+  return t('panels.terminal.file_link_hover', { key: platform === 'mac' ? '⌘' : 'Ctrl' });
+}
+
+/**
+ * 终端状态上报 main 的尾随合并 + 去重(OSC 7 cwd / OSC 0·2 标题共用,见 CWD_REPORT_DEBOUNCE_MS):窗口内只发最新值,
+ * 与上次已发送值相同不发;发送失败(ok:false / reject)复位去重基线(仅当基线仍是本值),同值之后可重发。
+ */
+function createLatestValueReporter(
+  send: (value: string) => Promise<{ readonly ok: boolean }> | { readonly ok: boolean },
+): DebouncedFn<[string]> {
+  let lastSent: string | undefined;
+  return debounce(
+    (value: string) => {
+      if (value === lastSent) return;
+      lastSent = value;
+      const forget = () => {
+        if (lastSent === value) lastSent = undefined;
+      };
+      Promise.resolve(send(value))
+        .then((r) => {
+          if (!r.ok) forget();
+        })
+        .catch(forget);
+    },
+    CWD_REPORT_DEBOUNCE_MS,
+    { maxWait: CWD_REPORT_MAX_WAIT_MS },
+  );
+}
+
 /** 终端内提示行(VSCode formatMessageForTerminal 同款:反显的「 * 」前缀,复位属性)。 */
 export function formatTerminalNotice(message: string, leadingNewLine = true): string {
   return `${leadingNewLine ? '\r\n' : ''}\x1b[0m\x1b[7m * \x1b[0m ${message} \x1b[0m\n\r`;
@@ -595,6 +631,16 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         if (awaitingDismiss && isDismissKey(event)) onExitDismissRef.current?.();
         return false;
       }
+      // mac ⌘← / ⌘→ / ⌘⌫ / ⌥← / ⌥→ → 行首 / 行尾 / 删到行首 / 按词移动(VSCode sendSequence 默认绑定,见
+      // terminalSendSequenceForKey)。排在「让出给工作台命令」之后:这些键被用户绑给终端负责的命令时仍让出。
+      // 经 term.input 走 onData 同一条写入路径(退出后不发、映射状态照常清)。
+      const sequence = terminalSendSequenceForKey(event);
+      if (sequence !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        term.input(sequence, true);
+        return false;
+      }
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
       return true;
     });
@@ -604,32 +650,45 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     // 之后的 Enter 就进了 shell。
     if (focusOnInitRef.current?.() && !hasOpenModalIn(container.ownerDocument)) term.focus();
 
-    // per-term 去重 + 尾随合并(见 CWD_REPORT_DEBOUNCE_MS / CWD_REPORT_MAX_WAIT_MS):只发窗口内最新值,
-    // 且与上次已发送值不同才发。
-    let lastSentCwd: string | undefined;
-    const reportCwd = debounce(
-      (cwd: string) => {
-        if (cwd === lastSentCwd) return;
-      lastSentCwd = cwd;
-      // 发送失败(ok:false / reject)→ 复位去重基线,否则同一 cwd 之后永不重发、main 停在旧 cwd。
-      // 仅当基线仍是本值时复位:期间已发出更新的 cwd 则保持其去重。
-      const forget = () => {
-        if (lastSentCwd === cwd) lastSentCwd = undefined;
-      };
-      Promise.resolve(coApi.terminal.updateCwd(termId, cwd))
-        .then((r) => {
-          if (!r.ok) forget();
-        })
-        .catch(forget);
-      },
-      CWD_REPORT_DEBOUNCE_MS,
-      { maxWait: CWD_REPORT_MAX_WAIT_MS },
-    );
+    // per-term 去重 + 尾随合并(见 createLatestValueReporter):只发窗口内最新值,且与上次已发送值不同才发。
+    const reportCwd = createLatestValueReporter((cwd) => coApi.terminal.updateCwd(termId, cwd));
     const osc7Disposable = registerOsc7Cwd(
       term,
       reportCwd,
       // 测试桩常不带 system → 可选链。
       { acceptedHosts: osc7AcceptedHosts(coApi.system?.hostname) },
+    );
+    // 程序经 OSC 0 / 2 设的标题(printf '\e]0;T\a'、vim、oh-my-zsh 提示符)→ main(sequenceTitle,tab 标题见
+    // terminalPanelTitle)。同 cwd 合并去重:历史回放会把每个标题重放一遍。
+    const reportTitle = createLatestValueReporter((title) =>
+      coApi.terminal.updateTitle(termId, title.slice(0, LABEL_MAX)),
+    );
+    const titleDisposable = term.onTitleChange(reportTitle);
+    // 本地文件链接(VSCode TerminalLocalLinkDetector):存在的文件路径 + 行列号,修饰键单击在编辑器打开并定位。
+    const fileLinksDisposable = term.registerLinkProvider(
+      createTerminalFileLinkProvider(term, {
+        getCwd: () => getIndexedTerminalSessionById(useTerminalStore.getState().sessions, termId)?.cwd,
+        resolve: (paths) =>
+          Promise.resolve()
+            .then(() => coApi.terminal.resolveLinks(termId, paths))
+            .then(
+              (r) => (r.ok && Array.isArray(r.data) && r.data.length === paths.length ? r.data : null),
+              () => null,
+            ),
+        open: (absPath, line, column, event) => {
+          if (!isTerminalLinkActivation(event)) return;
+          void openFileOrNotify(
+            () => coApp.editor.openFile(absPath, line === undefined ? undefined : { line, column }),
+            basename(absPath) || absPath,
+          );
+        },
+        hover: () => {
+          container.title = terminalFileLinkHoverHint();
+        },
+        leave: () => {
+          container.removeAttribute('title');
+        },
+      }),
     );
 
     // 首屏 fit + 通知主进程初始尺寸。
@@ -820,6 +879,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         disposePasteSanitizer();
         osc7Disposable.dispose();
         reportCwd.cancel(); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
+        titleDisposable.dispose();
+        reportTitle.cancel();
+        fileLinksDisposable.dispose();
         searchResultsDisposable.dispose();
         ro.disconnect();
         resizeDebouncer.dispose();

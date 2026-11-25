@@ -75,8 +75,16 @@ function isTerminalSessionShape(v: unknown): v is TerminalSession {
       obj.shellFamily === 'powershell') &&
     (obj.workspaceRoot === undefined ||
       (typeof obj.workspaceRoot === 'string' &&
-        obj.workspaceRoot.length <= PATH_MAX))
+        obj.workspaceRoot.length <= PATH_MAX)) &&
+    isOptionalLabel(obj.userTitle) &&
+    isOptionalLabel(obj.processName) &&
+    isOptionalLabel(obj.sequenceTitle)
   );
+}
+
+/** 可选显示串(重命名 / 前台程序名 / OSC 标题):缺省,或长度 ≤ LABEL_MAX 的字符串。 */
+function isOptionalLabel(v: unknown): boolean {
+  return v === undefined || (typeof v === 'string' && v.length <= LABEL_MAX);
 }
 
 export function filterByOwnerWindow(

@@ -14,9 +14,15 @@ import { shellFamilyForPath } from '../services/shell-args';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
   TerminalCreateInputSchema,
+  LABEL_MAX,
   PATH_MAX,
   type TerminalCreateInput,
 } from '../../shared/terminal-create';
+import * as os from 'node:os';
+import {
+  MAX_TERMINAL_LINK_CANDIDATES,
+  resolveTerminalLinkPaths,
+} from '../services/terminal-link-resolver';
 import * as termService from '../services/terminal.service';
 import * as terminalSessions from '../services/terminal-sessions.service';
 import { mcpRevokers, type McpCallCtx } from '../services/mcp-host.service';
@@ -102,6 +108,22 @@ export const updateCwdInputSchema = z
   .object({
     id: z.string().min(1).max(SESSION_ID_MAX),
     cwd: z.string().min(1).max(PATH_MAX),
+  })
+  .strict();
+
+// 重命名(用户)/ OSC 标题(程序)。空串 = 清除。长度同会话名 LABEL_MAX(sessions_changed 广播携带)。
+export const titleInputSchema = z
+  .object({
+    id: z.string().min(1).max(SESSION_ID_MAX),
+    title: z.string().max(LABEL_MAX),
+  })
+  .strict();
+
+// 终端本地文件链接候选(renderer 从输出识别):个数 / 长度封顶,防一次 IPC 触发大量 stat。
+export const resolveLinksInputSchema = z
+  .object({
+    id: z.string().min(1).max(SESSION_ID_MAX),
+    paths: z.array(z.string().min(1).max(PATH_MAX)).max(MAX_TERMINAL_LINK_CANDIDATES),
   })
   .strict();
 
@@ -380,6 +402,45 @@ export function makeRunningProcessHandler(deps?: {
   };
 }
 
+/** 用户重命名:非空 → 固定标题;空(或全空白)→ 清除,回到自动标题(VSCode 重命名为空同)。 */
+export function makeRenameHandler(deps?: { sessionStore?: typeof terminalSessions }) {
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (input: z.infer<typeof titleInputSchema>, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.id, win);
+    sessionStore.setTitleField(input.id, 'userTitle', input.title.trim() || undefined);
+  };
+}
+
+/** 程序经 OSC 0 / 2 设的标题(renderer xterm onTitleChange 上报);空 → 清除。 */
+export function makeUpdateTitleHandler(deps?: { sessionStore?: typeof terminalSessions }) {
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  return (input: z.infer<typeof titleInputSchema>, win: BrowserWindow): void => {
+    assertOwnedSession(sessionStore, input.id, win);
+    sessionStore.setTitleField(input.id, 'sequenceTitle', input.title || undefined);
+  };
+}
+
+/**
+ * 终端本地文件链接:候选路径按该终端当前 cwd(OSC 7 跟踪,缺省为 spawn cwd)、再按本窗口工作区根解析,只回存在的普通文件
+ *(见 terminal-link-resolver)。
+ */
+export function makeResolveLinksHandler(deps?: {
+  sessionStore?: Pick<typeof terminalSessions, 'get'>;
+  workspaceRootOf?: (windowId: number) => string | null;
+  home?: () => string;
+}) {
+  const sessionStore = deps?.sessionStore ?? terminalSessions;
+  const workspaceRootOf = deps?.workspaceRootOf ?? getWindowWorkspaceRoot;
+  const home = deps?.home ?? os.homedir;
+  return (input: z.infer<typeof resolveLinksInputSchema>, win: BrowserWindow): Promise<(string | null)[]> => {
+    assertOwnedSession(sessionStore, input.id, win);
+    const session = sessionStore.get(input.id)!;
+    const root = workspaceRootOf(win.id);
+    const bases = root !== null && root !== session.cwd ? [session.cwd, root] : [session.cwd];
+    return resolveTerminalLinkPaths(input.paths, bases, home());
+  };
+}
+
 export function makeWriteHandler(deps?: { service?: typeof termService }) {
   const service = deps?.service ?? termService;
   return async (input: WriteInput, win: BrowserWindow): Promise<void> => {
@@ -482,6 +543,9 @@ export function registerTerminalIpc(): void {
   ownerScopedHandle(TERMINAL_CHANNELS.RESIZE, resizeInputSchema, resizeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RUNNING_PROCESS, idOnlyInputSchema, runningProcessHandler);
+  ownerScopedHandle(TERMINAL_CHANNELS.RENAME, titleInputSchema, makeRenameHandler());
+  ownerScopedHandle(TERMINAL_CHANNELS.UPDATE_TITLE, titleInputSchema, makeUpdateTitleHandler());
+  ownerScopedHandle(TERMINAL_CHANNELS.RESOLVE_LINKS, resolveLinksInputSchema, makeResolveLinksHandler());
   ownerScopedHandle(
     TERMINAL_CHANNELS.READ_HISTORY,
     idOnlyInputSchema,

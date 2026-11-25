@@ -328,6 +328,12 @@ export const en = {
   'panels.terminal.kill_confirm.detail': '“{process}” is still running in “{title}”. Closing the terminal will terminate it.',
   'panels.terminal.kill_confirm.confirm': 'Terminate',
   'panels.terminal.link_hover': '{key}+click to follow link',
+  'panels.terminal.file_link_hover': '{key}+click to open file',
+  'panels.terminal.rename': 'Rename…',
+  'panels.terminal.rename_dialog.title': 'Rename Terminal',
+  'panels.terminal.rename_dialog.hint': 'Leave empty to use the automatic title (running program or title set by the program).',
+  'panels.terminal.rename_dialog.confirm': 'Rename',
+  'panels.terminal.rename_dialog.cancel': 'Cancel',
   // 终端右键菜单(清除项复用 commands.terminal.clear.title)。
   'panels.terminal.ctx.copy': 'Copy',
   'panels.terminal.ctx.paste': 'Paste',

@@ -48,7 +48,7 @@ describe('app.editor.openFile line boundary handling', () => {
     async (line) => {
       const result = await coApp.editor.openFile('/work/a.ts', { line });
 
-      expect(mockedScrollToLine).toHaveBeenCalledWith(view, line);
+      expect(mockedScrollToLine).toHaveBeenCalledWith(view, line, undefined);
       expect(result).toEqual({
         ok: true,
         lineApplied: false,

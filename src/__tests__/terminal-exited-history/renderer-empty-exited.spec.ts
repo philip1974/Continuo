@@ -22,6 +22,8 @@ vi.mock('@xterm/xterm', () => ({
       open: vi.fn(),
       attachCustomKeyEventHandler: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onTitleChange: vi.fn(() => ({ dispose: vi.fn() })),
+      registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
       parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       write: vi.fn((d: string) => hoisted.writes.push(d)),
       dispose: vi.fn(),

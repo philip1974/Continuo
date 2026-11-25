@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useShallow } from 'zustand/react/shallow';
 import { Spinner } from '@/design';
@@ -11,6 +12,8 @@ import { useTerminalDragDrop } from './useTerminalDragDrop';
 import { registerTerminalPanelHandles } from './terminal-panel-handles';
 import { TerminalSearchBar } from './TerminalSearchBar';
 import { TerminalContextMenu } from './TerminalContextMenu';
+import { TerminalRenameDialog } from './TerminalRenameDialog';
+import { clearTerminalRename, useTerminalRenameRequest } from './terminal-rename-request';
 import { useT } from '@/i18n';
 import type { OriginHint } from '../../../electron/shared/origin-hint';
 import { terminalPanelTitle } from '@/shell/dock/terminal-panel-id';
@@ -39,7 +42,16 @@ export function TerminalPanelView(
   // 只订阅派生 primitive(打磨 R40 + R43 + P16):dock title 只需 title / originHint /
   // 是否存在。复用 terminal.store 的 sessionId 索引缓存,多终端面板收到同一 snapshot 时只
   // 为 sessions 引用建一次 Map;再用 useShallow 比较扁平 primitive,避免 JSON 签名串分配/解析。
-  const { sessionExists, sessionTitle, sessionDefaultTitleIndex, sessionOriginHint, sessionExited } = useTerminalStore(
+  const {
+    sessionExists,
+    sessionTitle,
+    sessionDefaultTitleIndex,
+    sessionOriginHint,
+    sessionExited,
+    userTitle,
+    processName,
+    sequenceTitle,
+  } = useTerminalStore(
     useShallow((s) => {
       const found = getIndexedTerminalSessionById(s.sessions, sessionId);
       return {
@@ -48,6 +60,9 @@ export function TerminalPanelView(
         sessionDefaultTitleIndex: found?.defaultTitleIndex,
         sessionOriginHint: found?.originHint,
         sessionExited: found !== undefined && found.exitCode !== null,
+        userTitle: found?.userTitle,
+        processName: found?.processName,
+        sequenceTitle: found?.sequenceTitle,
       };
     }),
   );
@@ -58,6 +73,9 @@ export function TerminalPanelView(
     defaultTitleIndex: sessionDefaultTitleIndex,
     originHint: sessionOriginHint ?? props.params.originHint,
     exited: sessionExited,
+    userTitle,
+    processName,
+    sequenceTitle,
   });
 
   useEffect(() => {
@@ -102,6 +120,16 @@ function TerminalPanelContent({
   const { containerRef, isReady, fit, requestFit, focus, clear, readText, contextMenuActions, searchApi } =
     useTerminal(sessionId, { onExitDismiss, focusOnInit });
   const { ref: dropZoneRef } = useTerminalDragDrop({ sessionId, focus, api });
+  // tab 右键「重命名…」→ 本面板显示重命名框;portal 进面板所在文档的 body(popout 子窗画在子窗),关闭后焦点回终端。
+  const renaming = useTerminalRenameRequest((s) => s.sessionId === sessionId);
+  const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (renaming) setPortalHost(dropZoneRef.current?.ownerDocument.body ?? null);
+  }, [renaming, dropZoneRef]);
+  const closeRename = useCallback(() => {
+    clearTerminalRename();
+    focus();
+  }, [focus]);
 
   // 对外句柄:focus 供 DockShell 在 exit-maximize 后拉回 xterm 焦点(topic-22:
   // 同一 panel 已 active 时 onDidActiveChange 不会再触发);openSearch 供
@@ -180,6 +208,9 @@ function TerminalPanelContent({
       {searchApi.isOpen && (
         <TerminalSearchBar searchApi={searchApi} onClose={searchApi.close} enterFindsPrevious />
       )}
+      {renaming &&
+        portalHost &&
+        createPortal(<TerminalRenameDialog sessionId={sessionId} onClose={closeRename} />, portalHost)}
       {!isReady && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]">
           {/* a11y(A103,A102 同族):启动 overlay 具体文本须 role=status 播报,Spinner aria-hidden

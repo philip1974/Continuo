@@ -47,7 +47,23 @@ function flushPending(id: string, inst: Instance): void {
   if (inst.pendingData) {
     safeSend(id, inst, TERMINAL_CHANNELS.DATA, id, inst.pendingData, inst.pendingStart);
     inst.pendingData = '';
+    scheduleProcessTitleRefresh(id, inst);
   }
+}
+
+/**
+ * 前台进程名刷新间隔(VSCode TerminalProcess 在非 Windows 上每 200ms 轮询 `ptyProcess.process`)。这里只在有输出后
+ * 节流刷新:启动 / 退出前台程序都伴随输出(回车回显、程序首屏、shell 提示符),空闲终端不唤醒主进程。
+ */
+export const PROCESS_TITLE_REFRESH_MS = 200;
+
+function scheduleProcessTitleRefresh(id: string, inst: Instance): void {
+  if (inst.processTitleTimer) return;
+  inst.processTitleTimer = setTimeout(() => {
+    inst.processTitleTimer = null;
+    if (instances.get(id) !== inst) return;
+    terminalSessions.setTitleField(id, 'processName', runningChildProcess(id) ?? undefined);
+  }, PROCESS_TITLE_REFRESH_MS);
 }
 
 /**
@@ -310,6 +326,12 @@ function cleanupSessionLocal(id: string, exitCode: number): void {
     clearTimeout(instance.killTimer);
     instance.killTimer = null;
   }
+  if (instance.processTitleTimer) {
+    clearTimeout(instance.processTitleTimer);
+    instance.processTitleTimer = null;
+  }
+  // 已退出:不再有前台程序(标题回到自动名 +「已退出」)。
+  terminalSessions.setTitleField(id, 'processName', undefined);
 
   // 3. Continuo-specific cleanup (shellCleanup is async — P1-1 fix)
   try {
@@ -346,6 +368,8 @@ interface Instance {
   receivedChars: number;
   flushTimer: NodeJS.Timeout | null;
   killTimer: NodeJS.Timeout | null;
+  /** 前台进程名节流刷新(见 scheduleProcessTitleRefresh)。 */
+  processTitleTimer: NodeJS.Timeout | null;
   /** 当前 1s 吞吐窗口内累计 UTF-8 字节数(窗口起点 windowStart,惰性滚动)。 */
   bytesPerSecond: number;
   /** 当前吞吐窗口起点(ms,以创建时刻对齐,每格 THROTTLE_RESET_INTERVAL_MS)。 */
@@ -524,6 +548,7 @@ export async function createTerminal(
     receivedChars: 0,
     flushTimer: null,
     killTimer: null,
+    processTitleTimer: null,
     bytesPerSecond: 0,
     windowStart: monotonicNow(),
     mcpToken: meta?.mcpToken ?? '',

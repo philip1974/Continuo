@@ -143,6 +143,31 @@ export function runTerminalCommandFromKey(event: KeyboardEvent, id: string): voi
   runRegisteredCommand(coApp.commands, id, tWithFallback(live.titleKey, live.title));
 }
 
+/**
+ * mac 行内编辑键 → 发给 shell 的控制序列(VSCode terminal.contribution 的 registerSendSequenceKeybinding mac 默认绑定):
+ * ⌘← = ^A(行首)、⌘→ = ^E(行尾)、⌘⌫ = ^U(删到行首)。xterm 对带 ⌘ 的方向键什么都不发、⌘⌫ 只发 DEL。
+ * ⌥← / ⌥→ = ESC b / ESC f(按单词移动):xterm 6 已去掉 mac 上把 ⌥← 改写成 ESC b 的特例,改发 `ESC[1;3D`,
+ * zsh / bash 默认 emacs 键表不认(打出 `;3D`)。仅 mac、仅 keydown、恰好该修饰键;其它平台 / 组合 → null(交给 xterm)。
+ */
+export function terminalSendSequenceForKey(
+  event: KeyboardEvent,
+  platform: Platform = detectPlatform(),
+): string | null {
+  if (platform !== 'mac' || event.type !== 'keydown' || event.isComposing) return null;
+  if (event.shiftKey || event.ctrlKey) return null;
+  if (event.metaKey && !event.altKey) {
+    if (event.key === 'ArrowLeft') return '\x01';
+    if (event.key === 'ArrowRight') return '\x05';
+    if (event.key === 'Backspace') return '\x15';
+    return null;
+  }
+  if (event.altKey && !event.metaKey) {
+    if (event.key === 'ArrowLeft') return '\x1bb';
+    if (event.key === 'ArrowRight') return '\x1bf';
+  }
+  return null;
+}
+
 /** 键盘打开终端右键菜单:Shift+F10 / 菜单键(Windows / Linux 约定,mac 上同样可用)。 */
 export function isTerminalContextMenuKey(event: KeyboardEvent): boolean {
   return isContextMenuKey(event);

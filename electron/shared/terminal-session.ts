@@ -44,6 +44,15 @@ export interface TerminalSessionSnapshot {
    * undefined = 旧会话 / 未知,renderer 回退平台默认。
    */
   readonly shellFamily?: ShellFamily;
+  /**
+   * 用户在 tab 右键「重命名…」设的标题(VSCode TitleEventSource.Api):设了之后固定显示,不再被 OSC / 进程名覆盖;
+   * 重命名为空 → 清除,回到自动标题。
+   */
+  readonly userTitle?: string;
+  /** 前台正在运行的 shell 以外的程序名(node-pty `process`,VSCode `${process}`);只有 shell 时缺省。main 输出后节流刷新。 */
+  readonly processName?: string;
+  /** 程序经 OSC 0 / 2 设的窗口标题(VSCode `${sequence}`;renderer xterm onTitleChange 上报)。空标题 → 缺省。 */
+  readonly sequenceTitle?: string;
 }
 
 /** 未命名终端的默认 title(英文稳定名,main 存储 / MCP 对外;renderer 显示用本地化名,见 defaultTitleIndex)。 */

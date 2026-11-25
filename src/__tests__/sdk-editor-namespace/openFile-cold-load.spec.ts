@@ -86,7 +86,7 @@ describe('app.editor.openFile 冷加载与并发', () => {
     const result = await pending;
 
     expect(loaders.preloadCodeEditorEngine).toHaveBeenCalledTimes(1);
-    expect(scrollToLine).toHaveBeenCalledWith(view, 2);
+    expect(scrollToLine).toHaveBeenCalledWith(view, 2, undefined);
     expect(result).toEqual({ ok: true, lineApplied: true });
   });
 
@@ -134,7 +134,7 @@ describe('app.editor.openFile 冷加载与并发', () => {
 
     expect(await pending).toEqual({ ok: true, lineApplied: true });
     expect(scrollToLine).toHaveBeenCalledTimes(1);
-    expect(scrollToLine).toHaveBeenCalledWith(newView, 2);
+    expect(scrollToLine).toHaveBeenCalledWith(newView, 2, undefined);
   });
 
   it('C4 加载 scrollToLine 期间 view 被卸载且不再挂载 → 未应用,不谎报成功', async () => {

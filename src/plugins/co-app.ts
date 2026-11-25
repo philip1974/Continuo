@@ -193,7 +193,7 @@ async function openInEditor(
     if (now.activeTabId !== viewKey || now.viewRefs.get(viewKey) !== view) {
       return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
     }
-    outcome = scrollToLine(view, opts.line);
+    outcome = scrollToLine(view, opts.line, opts.column);
   } catch (err) {
     return {
       ok: false,

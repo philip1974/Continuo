@@ -50,7 +50,13 @@ describe('app.editor.openFile line jump', () => {
       '/work/a.ts',
       500,
     );
-    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 2);
+    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 2, undefined);
+    expect(result).toEqual({ ok: true, lineApplied: true });
+  });
+
+  it('T1c column 随 line 一并交给 scrollToLine(终端文件链接 file:line:col)', async () => {
+    const result = await coApp.editor.openFile('/work/a.ts', { line: 2, column: 5 });
+    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 2, 5);
     expect(result).toEqual({ ok: true, lineApplied: true });
   });
 
@@ -108,7 +114,7 @@ describe('app.editor.openFile line jump', () => {
       const result = await coApp.editor.openFile('c:\\work\\a.ts', { line: 2 });
 
       expect(waitForViewRef).toHaveBeenCalledWith('C:\\Work\\a.ts', 500);
-      expect(mockedScrollToLine).toHaveBeenCalledWith(view, 2);
+      expect(mockedScrollToLine).toHaveBeenCalledWith(view, 2, undefined);
       expect(result).toEqual({ ok: true, lineApplied: true });
     } finally {
       if (orig) Object.defineProperty(navigator, 'platform', orig);

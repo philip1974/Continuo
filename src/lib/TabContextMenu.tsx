@@ -4,12 +4,21 @@
 // 键盘:tab 聚焦时 Shift+F10 / 菜单键在 tab 左下角打开。BDD: src/__tests__/tab-context-menu/
 
 import * as Menu from '@radix-ui/react-context-menu';
-import { useState, type KeyboardEvent, type ReactElement } from 'react';
+import { useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
 import { MenuItem } from '@/design';
 import { dispatchContextMenuAt, isContextMenuKey } from './context-menu-key';
 
 export type TabMenuEntry =
-  | { readonly label: string; readonly onSelect: () => void; readonly disabled?: boolean }
+  | {
+      readonly label: string;
+      readonly onSelect: () => void;
+      readonly disabled?: boolean;
+      /**
+       * 该项随后打开自聚焦的输入框(如终端「重命名…」):关闭菜单时不把焦点还给 tab(同 Explorer menu-close-focus 的
+       * skipOnce),否则 Radix 的还原会抢走输入框焦点。其它关闭路径照常还原。
+       */
+      readonly opensFocusedInput?: boolean;
+    }
   | 'separator';
 
 // 与 Explorer ContextMenu / DropdownMenu 同一浮层外观。
@@ -36,6 +45,7 @@ export function TabContextMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [portalHost, setPortalHost] = useState<HTMLElement | undefined>(undefined);
+  const skipFocusRestoreRef = useRef(false);
   return (
     <Menu.Root onOpenChange={setOpen}>
       <Menu.Trigger
@@ -47,12 +57,28 @@ export function TabContextMenu({
       </Menu.Trigger>
       {open && (
         <Menu.Portal container={portalHost}>
-          <Menu.Content className={contentCls} collisionPadding={8}>
+          <Menu.Content
+            className={contentCls}
+            collisionPadding={8}
+            onCloseAutoFocus={(e) => {
+              if (!skipFocusRestoreRef.current) return;
+              skipFocusRestoreRef.current = false;
+              e.preventDefault();
+            }}
+          >
             {entries().map((entry, i) =>
               entry === 'separator' ? (
                 <Menu.Separator key={`sep-${i}`} className="my-1 h-px bg-line" />
               ) : (
-                <Menu.Item key={entry.label} asChild onSelect={entry.onSelect} disabled={entry.disabled}>
+                <Menu.Item
+                  key={entry.label}
+                  asChild
+                  onSelect={() => {
+                    if (entry.opensFocusedInput) skipFocusRestoreRef.current = true;
+                    entry.onSelect();
+                  }}
+                  disabled={entry.disabled}
+                >
                   <MenuItem disabled={entry.disabled}>{entry.label}</MenuItem>
                 </Menu.Item>
               ),

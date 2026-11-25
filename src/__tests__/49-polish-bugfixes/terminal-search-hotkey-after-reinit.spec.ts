@@ -33,6 +33,8 @@ vi.mock('@xterm/xterm', () => ({
         hoisted.keyHandler = h;
       }),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onTitleChange: vi.fn(() => ({ dispose: vi.fn() })),
+      registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
       parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       dispose: vi.fn(),
     });

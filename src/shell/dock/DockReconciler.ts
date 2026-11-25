@@ -18,6 +18,7 @@ import {
   sessionIdFromPanel,
   shouldAutoCloseExitedSession,
   terminalPanelTitle,
+  terminalTitleInputOf,
 } from './terminal-panel-id';
 
 export interface ReconcileInput {
@@ -468,11 +469,5 @@ export function syncTerminalPanelTitles(
 }
 
 function deriveTitle(session: TerminalSession): string {
-  return terminalPanelTitle({
-    sessionId: session.id,
-    sessionTitle: session.title,
-    defaultTitleIndex: session.defaultTitleIndex,
-    originHint: session.originHint,
-    exited: session.exitCode !== null,
-  });
+  return terminalPanelTitle(terminalTitleInputOf(session));
 }

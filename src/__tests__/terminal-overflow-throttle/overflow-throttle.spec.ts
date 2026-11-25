@@ -104,6 +104,8 @@ describe('terminal overflow 节流 · 吞吐窗口与截断', () => {
     emit('hello');
     vi.advanceTimersByTime(5);
     expect(dataBatches(win)).toEqual(['hello']);
+    // 输出后一次性的前台进程名刷新(terminal-title:PROCESS_TITLE_REFRESH_MS 后自清,非周期)
+    vi.advanceTimersByTime(terminalService.PROCESS_TITLE_REFRESH_MS);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -132,6 +134,7 @@ describe('terminal overflow 节流 · 吞吐窗口与截断', () => {
     emit('x'.repeat(3 * MiB)); // t=0 进入 overflow
     vi.advanceTimersByTime(100);
     expect(isTruncated(lastBatch(win))).toBe(true);
+    vi.advanceTimersByTime(terminalService.PROCESS_TITLE_REFRESH_MS); // 一次性进程名刷新
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -141,6 +144,7 @@ describe('terminal overflow 节流 · 吞吐窗口与截断', () => {
     emit('ok');
     vi.advanceTimersByTime(5);
     expect(lastBatch(win)).toBe('ok');
+    vi.advanceTimersByTime(terminalService.PROCESS_TITLE_REFRESH_MS); // 一次性进程名刷新
     expect(vi.getTimerCount()).toBe(0);
   });
 

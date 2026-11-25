@@ -69,6 +69,8 @@ export interface CoWorkspaceApi {
 
 export interface EditorOpenOptions {
   readonly line?: number;
+  /** 1 起的列(与 line 同用;超出行长落在行尾)。终端文件链接 `file:line:col` 定位用。 */
+  readonly column?: number;
 }
 
 export type EditorOpenSuccessReason =

@@ -8,8 +8,10 @@ import { TERMINAL_INPUT, TERMINAL_PANEL_TAB } from './helpers/editor';
 async function newTerminal(window: Page) {
   await waitForTestHooks(window);
   expect(await window.evaluate(() => globalThis.__continuoTest!.executeCommand('terminal.new'))).toBe(true);
-  const tab = window.getByRole('tab', { name: TERMINAL_PANEL_TAB });
-  await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 15_000 });
+  const byName = window.getByRole('tab', { name: TERMINAL_PANEL_TAB });
+  await expect(byName).toHaveAttribute('aria-selected', 'true', { timeout: 15_000 });
+  // 之后按面板 id 找:运行前台程序时 tab 标题会变成程序名(terminal-title)。
+  const tab = window.locator(`[role=tab][data-panel-id="${await byName.getAttribute('data-panel-id')}"]`);
   const input = window.getByRole('textbox', { name: TERMINAL_INPUT });
   await expect(input).toBeVisible({ timeout: 15_000 });
   await input.focus();

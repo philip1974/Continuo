@@ -11,6 +11,9 @@ import { focusPanelContent } from '@/shell/dock/panel-focus';
 import { closePanelsInOrder } from '@/shell/dock/wrap-panel-close';
 import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
+import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
+import { requestTerminalRename } from '@/panels/Terminal/terminal-rename-request';
+import { sessionIdFromPanel } from '@/shell/dock/terminal-panel-id';
 import {
   panelTitleLayoutId,
   tabIndicatorLayoutId,
@@ -279,7 +282,26 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       void closePanelsInOrder(panels.filter((p) => ids.has(p.id)));
     };
     const index = panels.findIndex((p) => p.id === api.id);
+    // 终端 tab 另有「重命名…」(VSCode 终端 tab 右键):激活该面板(内容未挂载的 lazy 面板随之挂载),由面板显示重命名框。
+    const self = panels[index];
+    const terminalSessionId =
+      self?.view?.contentComponent === TERMINAL_PANEL_TYPE ? sessionIdFromPanel(self) : null;
+    const rename: TabMenuEntry[] =
+      terminalSessionId === null
+        ? []
+        : [
+            {
+              label: t('panels.terminal.rename'),
+              opensFocusedInput: true,
+              onSelect: () => {
+                api.setActive();
+                requestTerminalRename(terminalSessionId);
+              },
+            },
+            'separator',
+          ];
     return [
+      ...rename,
       { label: t('shell.tab.ctx.close'), onSelect: close('close') },
       { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: panels.length <= 1 },
       { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= panels.length - 1 },

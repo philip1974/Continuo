@@ -1717,6 +1717,13 @@
 - [`exited-history.spec.ts`](./terminal-exited-history/exited-history.spec.ts)
 - [`renderer-empty-exited.spec.ts`](./terminal-exited-history/renderer-empty-exited.spec.ts)
 
+## [terminal-file-links — 终端输出里的文件路径可 ⌘ + 单击打开并定位](./terminal-file-links/README.md)
+
+- [`parse.spec.ts`](./terminal-file-links/parse.spec.ts)
+- [`provider.spec.ts`](./terminal-file-links/provider.spec.ts)
+- [`resolve-main.spec.ts`](./terminal-file-links/resolve-main.spec.ts)
+- [`wiring.spec.ts`](./terminal-file-links/wiring.spec.ts)
+
 ## [terminal-history-replay-dedup](./terminal-history-replay-dedup/README.md)
 
 - [`main-offsets.spec.ts`](./terminal-history-replay-dedup/main-offsets.spec.ts)
@@ -1808,6 +1815,12 @@
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
 
+## [terminal-title — 终端 tab 标题:进程名 / OSC 标题 / 重命名](./terminal-title/README.md)
+
+- [`title-main.spec.ts`](./terminal-title/title-main.spec.ts)
+- [`title-priority.spec.ts`](./terminal-title/title-priority.spec.ts)
+- [`title-renderer.spec.tsx`](./terminal-title/title-renderer.spec.tsx)
+
 ## [terminal-url-click](./terminal-url-click/README.md)
 
 - [`terminal-url-click.spec.ts`](./terminal-url-click/terminal-url-click.spec.ts)
@@ -1819,6 +1832,7 @@
 - [`dock-tab-chrome.spec.tsx`](./terminal-vscode-parity/dock-tab-chrome.spec.tsx)
 - [`exit-behavior.spec.tsx`](./terminal-vscode-parity/exit-behavior.spec.tsx)
 - [`link-modifier-click.spec.ts`](./terminal-vscode-parity/link-modifier-click.spec.ts)
+- [`mac-line-editing-keys.spec.tsx`](./terminal-vscode-parity/mac-line-editing-keys.spec.tsx)
 - [`running-process-main.spec.ts`](./terminal-vscode-parity/running-process-main.spec.ts)
 - [`skip-shell-hotkeys.spec.ts`](./terminal-vscode-parity/skip-shell-hotkeys.spec.ts)
 

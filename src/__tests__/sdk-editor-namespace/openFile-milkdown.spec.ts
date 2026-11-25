@@ -69,7 +69,7 @@ describe('app.editor.openFile markdown degradation', () => {
       '/work/readme.md',
       500,
     );
-    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 3);
+    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 3, undefined);
     expect(result).toEqual({ ok: true, lineApplied: true });
   });
 
@@ -82,7 +82,7 @@ describe('app.editor.openFile markdown degradation', () => {
       '/work/readme.md',
       500,
     );
-    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 10);
+    expect(mockedScrollToLine).toHaveBeenCalledWith(view, 10, undefined);
     expect(result).toEqual({ ok: true, lineApplied: true });
   });
 });

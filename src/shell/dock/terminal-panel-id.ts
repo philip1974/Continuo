@@ -26,22 +26,50 @@ export function sessionIdFromPanel(panel: PanelLike): string | null {
 
 /**
  * 终端 panel 标题的单一规则(DockReconciler 建 / 改 panel 与 TerminalPanelView 自校正共用;此前各写
- * 一份):未命名会话(有 defaultTitleIndex)按当前语言显示「终端 N」> session 标题 > `Terminal <id 前 6 位>`;
- * agent 发起的会话加 ` (agent)` 后缀;进程已退出再加本地化「(已退出)」后缀。
+ * 一份)。基础名优先级(对齐 VSCode:重命名 TitleEventSource.Api 固定、默认模板 `${process}`、程序 OSC 标题 `${sequence}`):
+ * 用户重命名 > 前台程序名(shell 以外,如 vim)> 程序 OSC 0 / 2 标题 > 未命名会话按当前语言「终端 N」> session 标题 >
+ * `Terminal <id 前 6 位>`;agent 发起的会话加 ` (agent)` 后缀;进程已退出再加本地化「(已退出)」后缀。
  */
-export function terminalPanelTitle(input: {
+export function terminalPanelTitle(input: TerminalTitleInput): string {
+  const base = terminalBaseTitle(input);
+  const titled = input.originHint === 'agent' ? `${base} (agent)` : base;
+  return input.exited ? `${titled} ${t('panels.terminal.exited_suffix')}` : titled;
+}
+
+export interface TerminalTitleInput {
   readonly sessionId: string | undefined;
   readonly sessionTitle?: string;
   readonly defaultTitleIndex?: number;
   readonly originHint?: string;
   readonly exited?: boolean;
-}): string {
-  const base =
-    input.defaultTitleIndex !== undefined
-      ? t('panels.terminal.default_title', { n: input.defaultTitleIndex })
-      : (input.sessionTitle ?? `Terminal ${(input.sessionId ?? '').slice(0, 6) || '?'}`);
-  const titled = input.originHint === 'agent' ? `${base} (agent)` : base;
-  return input.exited ? `${titled} ${t('panels.terminal.exited_suffix')}` : titled;
+  readonly userTitle?: string;
+  readonly processName?: string;
+  readonly sequenceTitle?: string;
+}
+
+/** 不含 agent /「已退出」后缀的基础名(见 terminalPanelTitle;重命名框以它预填)。 */
+export function terminalBaseTitle(input: TerminalTitleInput): string {
+  if (input.userTitle) return input.userTitle;
+  // 已退出:前台程序随之结束(main 也会清 processName,这里防快照先后)。
+  if (input.processName && !input.exited) return input.processName;
+  if (input.sequenceTitle) return input.sequenceTitle;
+  return input.defaultTitleIndex !== undefined
+    ? t('panels.terminal.default_title', { n: input.defaultTitleIndex })
+    : (input.sessionTitle ?? `Terminal ${(input.sessionId ?? '').slice(0, 6) || '?'}`);
+}
+
+/** 会话快照 → 标题输入(DockReconciler / TerminalPanelView / 重命名框共用)。 */
+export function terminalTitleInputOf(session: TerminalSessionSnapshot): TerminalTitleInput {
+  return {
+    sessionId: session.id,
+    sessionTitle: session.title,
+    defaultTitleIndex: session.defaultTitleIndex,
+    originHint: session.originHint,
+    exited: session.exitCode !== null,
+    userTitle: session.userTitle,
+    processName: session.processName,
+    sequenceTitle: session.sequenceTitle,
+  };
 }
 
 /**
