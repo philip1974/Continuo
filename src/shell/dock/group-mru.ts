@@ -36,6 +36,14 @@ export function mostRecentMainWindowPanel(api: DockviewApi): IDockviewPanel | un
   return undefined;
 }
 
+/**
+ * 主窗(grid / floating)里没有面板:面板全在 popout 子窗(或全关光)。DockShell 据此显示主窗空态(VSCode:主窗保留
+ * 带水印的空编辑器组),不能用 totalPanels(把子窗面板也算进去,主窗 dock 空白且 F6 不可达)。
+ */
+export function isMainWindowDockEmpty(api: Pick<DockviewApi, 'panels'>): boolean {
+  return !api.panels.some((panel) => panel.api.location.type !== 'popout');
+}
+
 export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   // 组 id,最近使用在前。
   const mru: string[] = [];

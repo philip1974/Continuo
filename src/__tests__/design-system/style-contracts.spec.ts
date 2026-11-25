@@ -233,16 +233,22 @@ describe('design CSS 层级', () => {
   });
 });
 
-// 非 design 的原生 <button>(状态栏 / 插件市场等行内文本按钮,注释说明为何不用 design)键盘焦点环与 design 控件同为
+// 非 design 的原生 <button> / <a href> / 可 Tab 到的自定义控件(tabindex≥0)/ <summary>(状态栏 / 插件市场等行内文本按钮、
+// 链接,注释说明为何不用 design)键盘焦点环与 design 控件同为
 // focus-ring 蓝(VSCode focusBorder),不落回系统强调色(Chromium outline: auto)。规则放 base 层:design(components)
 // 与调用方 utility(focus-visible:outline-*)仍可覆盖。
 describe('原生按钮键盘焦点环', () => {
   const THEME = css('src/styles/theme.css');
 
-  it('theme.css 的 @layer base 给 button:focus-visible 1px focus-ring 实线轮廓', () => {
+  // 选择器包一层 :where() 零特异性:design 组件(components 层)、调用方 utility(FileRow 的 focus-visible:outline-*)、
+  // dockview.css(未分层)都能覆盖;不含 contenteditable(CodeMirror / ProseMirror 内容区不画轮廓,编辑器聚焦无边框)。
+  const BASE_FOCUS_SELECTOR = ':where(button, a[href], [tabindex]:not([tabindex="-1"]), summary):focus-visible';
+
+  it('theme.css 的 @layer base 给原生按钮 / 链接 / 可 Tab 到的自定义控件 / summary 的 focus-visible 1px focus-ring 实线轮廓', () => {
     const base = THEME.match(/@layer base\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
-    const body = ruleBody(base, 'button:focus-visible');
+    const body = ruleBody(base, BASE_FOCUS_SELECTOR);
     expect(body).toMatch(/outline:\s*1px solid var\(--md-focus-ring\)/);
+    expect(base).not.toMatch(/contenteditable/);
   });
 
   it('原生按钮不用 outline-none 去掉焦点环而不补 focus-visible 轮廓', () => {

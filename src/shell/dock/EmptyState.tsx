@@ -55,7 +55,10 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
   return (
     <div
       data-testid="empty-state"
-      className="absolute inset-0 z-10 flex h-full w-full overflow-hidden bg-canvas"
+      // 主窗无面板时 F6 / ⇧F6 的 dock 区域落点(src/shell/focus-parts.ts):只经脚本聚焦,不进 Tab 顺序。
+      data-dock-empty=""
+      tabIndex={-1}
+      className="absolute inset-0 z-10 flex h-full w-full overflow-hidden bg-canvas outline-none"
     >
       {visible && focused && <BackgroundBeams />}
       <div className="relative z-10 m-auto flex flex-col items-center gap-4">

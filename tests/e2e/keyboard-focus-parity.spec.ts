@@ -1,4 +1,5 @@
-// 代码编辑器 Tab 缩进 / Esc+Tab 移出;F6 / ⇧F6 在 dock 组 / 状态栏 / 侧栏间循环(VSCode 同);弹出子窗关闭后编辑器获焦。
+// 代码编辑器 Tab 缩进 / Esc+Tab 移出;F6 / ⇧F6 在 dock 组 / 状态栏 / 侧栏间循环(VSCode 同),空编辑区也可达;
+// 弹出子窗关闭后编辑器获焦。
 // BDD: src/__tests__/keyboard-focus-parity/
 import { test, expect } from './fixtures/with-workspace';
 import { DOCK_POPOUT } from './helpers/editor';
@@ -47,6 +48,18 @@ test('编辑器里 F6 → 状态栏 → 侧栏(Explorer 树)→ 回编辑器;⇧
   await expect.poll(() => inPart('statusbar')).toBe(true);
   await window.keyboard.press('Shift+F6');
   await expect(cm).toBeFocused();
+});
+
+test('编辑区为空(没有打开的文件)时 F6 从侧栏进编辑区:焦点落到空编辑器组(VSCode 同)', async ({ window }) => {
+  // Editor 面板是 lazy chunk:等空编辑器(Welcome)渲染出来
+  await expect(window.locator('[data-editor-panel-root]')).toBeVisible({ timeout: 10_000 });
+  await window.locator('text=src').first().click();
+  await expect(window.locator(':focus')).toHaveAttribute('role', 'treeitem');
+
+  await window.keyboard.press('F6');
+  await expect
+    .poll(() => window.evaluate(() => document.activeElement?.hasAttribute('data-editor-panel-root') ?? false))
+    .toBe(true);
 });
 
 test('编辑器获焦时弹出到独立窗口,关掉子窗(BrowserWindow.close)→ 编辑器回主窗并获焦,可直接打字', async ({

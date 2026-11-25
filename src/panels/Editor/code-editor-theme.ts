@@ -19,6 +19,9 @@ function chromeTheme(dark: boolean): Extension {
   return EditorView.theme(
     {
       '&': { backgroundColor: 'var(--md-surface)', color: 'var(--md-on-surface)' },
+      // CodeMirror 基础主题给聚焦编辑器画 1px dotted #212121 轮廓;VSCode 编辑器聚焦无边框(光标 / 当前行即焦点指示)。
+      // Markdown 代码块(markdownCodeBlockTheme)同用本外观。
+      '&.cm-focused': { outline: 'none' },
       '.cm-scroller': { fontFamily: 'var(--wm-font-mono)' },
       '.cm-content': { caretColor: 'var(--md-on-surface)' },
       '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--md-on-surface)' },

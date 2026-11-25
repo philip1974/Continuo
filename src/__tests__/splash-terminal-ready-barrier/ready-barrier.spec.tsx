@@ -20,6 +20,7 @@ interface FakePanel {
     setActive: () => void;
     close: () => void;
     setTitle: (t: string) => void;
+    location: { type: 'grid' };
   };
 }
 
@@ -56,6 +57,8 @@ vi.mock('dockview-react', () => ({
             api: {
               id: opts.id,
               title: opts.title ?? opts.id,
+              // 主窗(grid)面板:DockShell 按主窗内面板数判空(isMainWindowDockEmpty)。
+              location: { type: 'grid' },
               setActive: () => {
                 self.activePanel = p;
               },

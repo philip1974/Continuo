@@ -127,6 +127,8 @@ export const ko: Record<TranslationKey, string> = {
   'commands.settings.toggle.title': '설정 토글',
   'commands.settings.category': '설정',
   'commands.explorer.category': '탐색기',
+  'commands.explorer.new_file.title': '새 파일…',
+  'commands.explorer.new_folder.title': '새 폴더…',
   // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
   'commands.editor.close.title': '편집기 닫기',
   'commands.editor.next.title': '다음 편집기 열기',
@@ -134,8 +136,10 @@ export const ko: Record<TranslationKey, string> = {
   'commands.view.category': '보기',
   'commands.view.focus_next_part.title': '다음 부분에 포커스',
   'commands.view.focus_previous_part.title': '이전 부분에 포커스',
+  'commands.view.show_explorer.title': '탐색기 표시',
   'commands.file.save.title': '저장',
   'commands.file.revert.title': '파일 되돌리기',
+  'commands.file.open_folder.title': '폴더 열기…',
   'commands.file.category': '파일',
 
   // panels.*

@@ -156,6 +156,33 @@ export function neighborAfterRemoval(
 }
 
 /**
+ * 树的焦点项,须是实际渲染的行:不在其中(如被过滤的隐藏文件、刷新途中已不显示的项)时视为无焦点项,不对它执行
+ * 任何命令 —— 否则 Delete 会删掉用户看不见的项。
+ */
+function renderedFocusedItem(
+  tree: TreeInstance<FileEntry>,
+  items: readonly ItemInstance<FileEntry>[],
+): ItemInstance<FileEntry> | undefined {
+  const rawFocused = items.length > 0 ? tree.getFocusedItem() : undefined;
+  const focusedId = rawFocused?.getId();
+  return rawFocused && items.some((it) => it.getId() === focusedId) ? rawFocused : undefined;
+}
+
+/**
+ * 以树焦点项为准的目标目录(VSCode Explorer 粘贴 / 新建文件 / 新建文件夹):目录 → 自身;文件 → 所在目录;
+ * 无(渲染中的)焦点项 → 工作区根。
+ */
+export function focusedTargetDir(
+  tree: TreeInstance<FileEntry>,
+  items: readonly ItemInstance<FileEntry>[],
+  rootPath: string,
+): string {
+  const focused = renderedFocusedItem(tree, items);
+  if (!focused) return rootPath;
+  return focused.isFolder() ? focused.getId() : dirname(focused.getId());
+}
+
+/**
  * 处理树容器上的 keydown。返回是否消费了该键(已 preventDefault + stopPropagation)。
  * 输入框(重命名)内的按键、重命名进行中一律不处理。
  */
@@ -168,12 +195,8 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
     tree.getDataRef<HotkeysCoreDataRef>().current.pressedKeys?.delete(e.code || e.key);
   }
 
-  // 焦点项须是实际渲染的行:不在其中(如被过滤的隐藏文件、刷新途中已不显示的项)时不对它执行任何命令 ——
-  // 否则 Delete 会删掉用户看不见的项。
   const rawFocused = items.length > 0 ? tree.getFocusedItem() : undefined;
-  const focusedId = rawFocused?.getId();
-  const focused =
-    rawFocused && items.some((it) => it.getId() === focusedId) ? rawFocused : undefined;
+  const focused = renderedFocusedItem(tree, items);
   const command = matchTreeKeyCommand(e, ctx.platform);
   if (command !== null) {
     if (rawFocused && !focused) return false;
@@ -183,12 +206,7 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
       return true;
     };
     if (command === 'paste') {
-      const dest = focused
-        ? focused.isFolder()
-          ? focused.getId()
-          : dirname(focused.getId())
-        : ctx.rootPath;
-      ctx.actions.onPaste(dest);
+      ctx.actions.onPaste(focusedTargetDir(tree, items, ctx.rootPath));
       return consume();
     }
     if (!focused) return false;

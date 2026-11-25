@@ -86,6 +86,12 @@ describe('dock tab 焦点指示', () => {
     expect(rule?.[1]).toMatch(/outline-color:\s*transparent\s*!important/);
   });
 
+  it('外层 .dv-tab 与内层 role=tab 自身不画元素轮廓(Chromium 默认 outline: auto 是系统强调色),只由 ::after 显示 focus-ring', () => {
+    const outer = css.match(/\.dockview-theme-abyss \.dv-tab:focus-visible\s*,[^{]*\{([^}]*)\}/);
+    expect(outer?.[0]).toContain('.dockview-theme-abyss .dv-tab [role="tab"]:focus-visible');
+    expect(outer?.[1]).toMatch(/outline:\s*none/);
+  });
+
   it('键盘焦点(focus-visible)时显示 --md-focus-ring 色轮廓', () => {
     const rule = css.match(/\.dv-tab:has\(:focus-visible\)::after[^{]*\{([^}]*)\}/);
     expect(rule?.[1]).toMatch(/outline-color:\s*var\(--md-focus-ring\)\s*!important/);

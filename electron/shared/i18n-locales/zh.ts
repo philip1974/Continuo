@@ -126,6 +126,8 @@ export const zh: Record<TranslationKey, string> = {
   'commands.settings.toggle.title': '切换设置',
   'commands.settings.category': '设置',
   'commands.explorer.category': '资源管理器',
+  'commands.explorer.new_file.title': '新建文件…',
+  'commands.explorer.new_folder.title': '新建文件夹…',
   // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
   'commands.editor.close.title': '关闭编辑器',
   'commands.editor.next.title': '打开下一个编辑器',
@@ -133,8 +135,10 @@ export const zh: Record<TranslationKey, string> = {
   'commands.view.category': '查看',
   'commands.view.focus_next_part.title': '聚焦到下一部分',
   'commands.view.focus_previous_part.title': '聚焦到上一部分',
+  'commands.view.show_explorer.title': '显示资源管理器',
   'commands.file.save.title': '保存',
   'commands.file.revert.title': '还原文件',
+  'commands.file.open_folder.title': '打开文件夹…',
   'commands.file.category': '文件',
 
   // panels.*

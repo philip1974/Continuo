@@ -593,6 +593,9 @@ function windowOpenHandler({ url }: HandlerDetails): WindowOpenHandlerResponse {
       overrideBrowserWindowOptions: {
         width: 800,
         height: 600,
+        // 与主窗同一最小尺寸(同 VSCode 窗口最小尺寸):拖小子窗时 tab 条 / 内容不被压到不可用。
+        minWidth: 400,
+        minHeight: 270,
         // 窗口首帧(renderer 尚未绘制)底色 = 当前主题的画布色(renderer 经 window:notify-theme 上报),无闪色。
         backgroundColor: currentWindowBackgroundColor(),
         // 子窗口用系统默认标题栏:

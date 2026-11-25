@@ -46,8 +46,11 @@
   Tailwind v4 层顺序 theme < base < components < utilities,而 unlayered 样式压过任何 layer —— 不在层里时调用方传给
   design 组件的 className(`@max-md:hidden`、`w-24`、`overflow-x-auto` 等)会被组件基类静默覆盖
 - 可聚焦控件键盘焦点一致:`Button` 与 IconButton / NavRailButton / SegmentedControl / TabNav 同为 `:focus-visible` 2px `--md-focus-ring` 轮廓
-- 原生 `<button>`(design 不适用、注释说明原因的行内文本按钮,如状态栏):`theme.css` 的 `@layer base` 给
-  `button:focus-visible` 1px `--md-focus-ring` 实线轮廓(VSCode focusBorder),不落回系统强调色;原生按钮不得
+- 原生 `<button>`(design 不适用、注释说明原因的行内文本按钮,如状态栏)、`<a href>` 链接、可 Tab 到的自定义控件
+  (tabindex≥0)、`<summary>`:`theme.css` 的 `@layer base` 给
+  `:where(button, a[href], [tabindex]:not([tabindex="-1"]), summary):focus-visible` 1px `--md-focus-ring` 实线轮廓
+  (VSCode focusBorder),不落回系统强调色;`:where` 零特异性,design 组件 / utility(FileRow)/ dockview.css 可覆盖;
+  不含 contenteditable(CodeMirror / ProseMirror 内容区聚焦不画轮廓);原生按钮不得
   `outline-none` 而不补 `focus-visible:outline-*`
 - 有不透明底色的控件 hover 用 MD3 state layer 叠加(`background-image` 叠 `--md-state-hover`),不把底色换成半透明
 - `SegmentedControl`:轨道 1px `outline-variant` 描边;选中项 `secondary-container` 底 + `on-secondary-container` 字 +

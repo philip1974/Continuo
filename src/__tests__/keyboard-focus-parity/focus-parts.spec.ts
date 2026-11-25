@@ -10,7 +10,7 @@ import {
   focusAdjacentPart,
 } from '@/shell/focus-parts';
 import { setDockApi } from '@/shell/dock/dock-api-ref';
-import { trackGroupMru } from '@/shell/dock/group-mru';
+import { isMainWindowDockEmpty, trackGroupMru } from '@/shell/dock/group-mru';
 import { openFakePopout } from '../dock-terminal-vscode-focus/dock-fixtures';
 import { terminalYieldedCommandId } from '@/panels/Terminal/terminal-hotkeys';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
@@ -164,6 +164,58 @@ describe('活动面板在 popout 子窗时的主窗 F6', () => {
 
     expect(api.activePanel?.id).toBe('b');
     expect(document.activeElement).toBe(el('editor-b'));
+    tracker.dispose();
+  });
+});
+
+describe('空编辑器组 / 主窗无面板(VSCode:F6 落到空编辑器组,不跳过编辑区)', () => {
+  it('活动面板内容里只有 tabIndex=-1 的编辑器面板根(关光 tab 的空编辑器)→ F6 聚焦面板根', () => {
+    workbench();
+    el('panel-content').innerHTML =
+      '<div data-editor-panel-root="" tabindex="-1" data-x="editor-root"><p>welcome</p></div>';
+    el('row-b').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('editor-root'));
+  });
+
+  it('面板内容根本身是 tabIndex=-1 的根元素(非编辑器)→ 同样回退聚焦它', () => {
+    workbench();
+    el('panel-content').innerHTML = '<div tabindex="-1" data-x="plain-root"><span tabindex="-1">x</span></div>';
+    el('row-b').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('plain-root'));
+  });
+
+  it('没有可聚焦面板但 dock 区域显示空态(data-dock-empty,tabIndex=-1)→ F6 聚焦空态容器', () => {
+    workbench();
+    setDockApi({ activePanel: undefined } as unknown as DockviewApi);
+    document
+      .querySelector('[data-workbench-part="dock"]')!
+      .insertAdjacentHTML('beforeend', '<div data-dock-empty="" tabindex="-1" data-x="dock-empty"></div>');
+    el('row-b').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('dock-empty'));
+  });
+
+  it('所有组都弹出到子窗:主窗 dock 判空(isMainWindowDockEmpty),主窗 F6 聚焦空态容器', async () => {
+    const { dock, api, tracker } = realDockWorkbench();
+    for (const id of ['a', 'b', 'c']) await openFakePopout(dock, id);
+    expect(api.totalPanels).toBe(3);
+    expect(isMainWindowDockEmpty(api)).toBe(true);
+    document
+      .querySelector('[data-workbench-part="dock"]')!
+      .insertAdjacentHTML('beforeend', '<div data-dock-empty="" tabindex="-1" data-x="dock-empty"></div>');
+    el('row-b').focus();
+
+    focusAdjacentPart(1);
+
+    expect(document.activeElement).toBe(el('dock-empty'));
+    tracker.dispose();
+  });
+
+  it('主窗还有面板 → 不判空', () => {
+    const { api, tracker } = realDockWorkbench();
+    expect(isMainWindowDockEmpty(api)).toBe(false);
     tracker.dispose();
   });
 });

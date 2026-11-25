@@ -6,11 +6,16 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { DockShell } from '@/shell/dock/DockShell';
 import { reconcileTerminalPanels } from '@/shell/dock/DockReconciler';
 
+// 主窗面板(popout 子窗里的面板不算主窗;用例按需改)。
+const h = vi.hoisted(() => ({ panels: [] as unknown[] }));
+
 vi.mock('dockview-react', () => ({
   DockviewReact: ({ onReady }: { onReady: (event: { api: unknown }) => void }) => {
     const api = React.useMemo(
       () => ({
-        totalPanels: 0,
+        get totalPanels() {
+          return h.panels.length;
+        },
         fromJSON: vi.fn(),
         toJSON: vi.fn(() => ({ panels: {} })),
         getPanel: vi.fn(() => null),
@@ -26,7 +31,9 @@ vi.mock('dockview-react', () => ({
         onDidAddGroup: vi.fn(() => ({ dispose: vi.fn() })),
         onDidRemoveGroup: vi.fn(() => ({ dispose: vi.fn() })),
         groups: [],
-        panels: [],
+        get panels() {
+          return h.panels;
+        },
       }),
       [],
     );
@@ -50,7 +57,10 @@ vi.mock('@/lib/co-api', () => ({
   },
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  h.panels = [];
+});
 
 describe('terminal panel empty dock', () => {
   it('DockShell 状态 totalPanels=0 → 渲染 EmptyState', async () => {
@@ -59,6 +69,13 @@ describe('terminal panel empty dock', () => {
     expect(
       (await screen.findAllByText(/所有面板都关掉了|恢复默认布局/)).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('面板全在 popout 子窗(totalPanels>0 但主窗无面板)→ 主窗同样渲染 EmptyState(VSCode:主窗保留空编辑器组)', async () => {
+    h.panels = [{ id: 'editor', api: { id: 'editor', location: { type: 'popout' }, close: vi.fn() } }];
+    render(React.createElement(DockShell));
+
+    expect(await screen.findByTestId('empty-state')).toBeTruthy();
   });
 
   it('关闭最后一个 terminal panel 不触发 reconciler add 新 panel', () => {

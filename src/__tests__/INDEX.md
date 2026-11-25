@@ -639,6 +639,11 @@
 
 - [`batch-transfer.spec.ts`](./explorer-batch-transfer/batch-transfer.spec.ts)
 
+## [资源管理器入口命令(VSCode 对齐)](./explorer-commands/README.md)
+
+- [`explorer-commands-tree.spec.tsx`](./explorer-commands/explorer-commands-tree.spec.tsx)
+- [`explorer-commands.spec.ts`](./explorer-commands/explorer-commands.spec.ts)
+
 ## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)
 
 - [`context-menu-items.spec.tsx`](./explorer-context-menu/context-menu-items.spec.tsx)
@@ -1327,6 +1332,7 @@
 ## [popout 契约 (M5)](./popout-contracts/README.md) `[contract]`
 
 - [`popout-mode.spec.ts`](./popout-contracts/popout-mode.spec.ts)
+- [`popout-window-size.spec.ts`](./popout-contracts/popout-window-size.spec.ts)
 - [`window-open-policy.spec.ts`](./popout-contracts/window-open-policy.spec.ts)
 
 ## [popout 子窗里的 dock 组 header(弹出按钮 + 「⋯」菜单)](./popout-header-menu/README.md)

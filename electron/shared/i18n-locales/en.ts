@@ -139,6 +139,8 @@ export const en = {
   'commands.settings.toggle.title': 'Toggle Settings',
   'commands.settings.category': 'Settings',
   'commands.explorer.category': 'Explorer',
+  'commands.explorer.new_file.title': 'New File…',
+  'commands.explorer.new_folder.title': 'New Folder…',
   // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
   'commands.editor.close.title': 'Close Editor',
   'commands.editor.next.title': 'Open Next Editor',
@@ -146,8 +148,10 @@ export const en = {
   'commands.view.category': 'View',
   'commands.view.focus_next_part.title': 'Focus Next Part',
   'commands.view.focus_previous_part.title': 'Focus Previous Part',
+  'commands.view.show_explorer.title': 'Show Explorer',
   'commands.file.save.title': 'Save',
   'commands.file.revert.title': 'Revert File',
+  'commands.file.open_folder.title': 'Open Folder…',
   'commands.file.category': 'File',
 
   // panels.* (5)

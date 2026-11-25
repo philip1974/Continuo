@@ -48,7 +48,7 @@ import {
 import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
 import { trackPopoutDocuments } from './popout-documents';
-import { trackGroupMru } from './group-mru';
+import { isMainWindowDockEmpty, trackGroupMru } from './group-mru';
 import { trackActiveTabReveal } from './reveal-active-tab';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
@@ -304,7 +304,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 关闭非固定 id 的实例(内容来自共享 store,不丢数据;editor 缺失时下方按固定 id 补建)。
       closeDuplicateSingletonPanels(event.api, coApp.panels);
 
-      setEmpty(event.api.totalPanels === 0);
+      setEmpty(isMainWindowDockEmpty(event.api));
 
       // race(R22):onReady 重入(dockview 重建)先清旧 listener/debounce,再注册新的。
       disposeDockListeners();
@@ -321,7 +321,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         event.api.onDidLayoutChange(() => {
           layoutVersions.set(event.api, (layoutVersions.get(event.api) ?? 0) + 1);
           persist();
-          setEmpty(event.api.totalPanels === 0);
+          setEmpty(isMainWindowDockEmpty(event.api));
         }),
         // 防 closing-store 残留:panel 真被 removed 后从 set 摘掉,
         // 避免后续同 id panel 一上来就走 EXIT 动画。

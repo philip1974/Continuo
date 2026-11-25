@@ -10,10 +10,13 @@ const EDITABLE_SELECTOR =
   '[contenteditable="true"], textarea:not([disabled]), input:not([disabled]):not([type="hidden"])';
 const TABBABLE_SELECTOR =
   'button:not([disabled]), a[href], select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+// 都没有(空编辑器组:关光 tab 后只剩 Welcome)→ 面板根本身(只经脚本聚焦的 tabIndex=-1 落点)。VSCode:F6 / 点 tab
+// 落到空编辑器组,不跳过编辑区。
+const ROOT_FALLBACK_SELECTOR = '[data-editor-panel-root], :scope > [tabindex="-1"]';
 
 /**
  * 把焦点交给该面板内容:终端走注册的 focus 句柄(xterm 隐藏 textarea);其它面板在内容 DOM 里找可编辑元素 /
- * 首个可 Tab 控件。找不到时不动焦点。
+ * 首个可 Tab 控件,再退到面板根(tabIndex=-1)。都找不到时不动焦点。
  */
 export function focusPanelContent(api: DockviewPanelApi): void {
   if (focusTerminalPanel(api.id)) return;
@@ -27,7 +30,8 @@ export function focusPanelContent(api: DockviewPanelApi): void {
   if (!content) return;
   const target =
     content.querySelector<HTMLElement>(EDITABLE_SELECTOR) ??
-    content.querySelector<HTMLElement>(TABBABLE_SELECTOR);
+    content.querySelector<HTMLElement>(TABBABLE_SELECTOR) ??
+    content.querySelector<HTMLElement>(ROOT_FALLBACK_SELECTOR);
   target?.focus();
 }
 

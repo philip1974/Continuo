@@ -77,6 +77,11 @@ describe('CodeEditor 主题接设计 token', () => {
     expect(css).not.toMatch(/#282c34/i);
   });
 
+  it.each(['dark', 'light'] as const)('%s:聚焦时不画 CodeMirror 内置 1px dotted 轮廓(VSCode 编辑器聚焦无边框)', async (theme) => {
+    await mount(theme);
+    expect(injectedCss()).toMatch(/\.cm-focused\s*\{\s*outline:\s*none/);
+  });
+
   it('暗色声明为 dark 主题,亮色不是(CodeMirror 内建样式按此选亮 / 暗变体)', async () => {
     expect((await mount('dark')).state.facet(EditorView.darkTheme)).toBe(true);
     cleanup();
@@ -170,6 +175,22 @@ describe('Markdown 编辑模式代码块主题', () => {
     const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
     return (hi! + 0.05) / (lo! + 0.05);
   };
+
+  it('Markdown 代码块的 CodeMirror 聚焦时同样不画内置 dotted 轮廓', () => {
+    const view = new EditorView({
+      state: EditorState.create({ doc: 'x', extensions: [markdownCodeBlockTheme] }),
+    });
+    try {
+      // 主题类挂在 view.dom 上,注入的规则以它为前缀
+      const themeClasses = [...view.dom.classList].filter((c) => !c.startsWith('cm-'));
+      const css = injectedCss();
+      expect(
+        themeClasses.some((c) => new RegExp(`\\.${c}\\.cm-focused\\s*\\{\\s*outline:\\s*none`).test(css)),
+      ).toBe(true);
+    } finally {
+      view.destroy();
+    }
+  });
 
   it('与代码编辑器同一套 HighlightStyle(同 tag 同 class),不声明 dark(亮 / 暗共用一个扩展)', async () => {
     const editor = await mount('light');

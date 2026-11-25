@@ -69,6 +69,12 @@
 .dockview-theme-abyss .dv-tab:focus-visible::after {
   outline-color: var(--md-focus-ring) !important;
 }
+/* 指示只由 ::after 画:外层 .dv-tab 与内层 role=tab(SharedTab,roving tabIndex=0)自身不再叠 Chromium 默认的系统强调色
+ * outline,也不吃 theme.css base 层的通用焦点环(会与 ::after 双框)。 */
+.dockview-theme-abyss .dv-tab:focus-visible,
+.dockview-theme-abyss .dv-tab [role="tab"]:focus-visible {
+  outline: none;
+}
 
 /* 极窄组(如十个终端并排):tab 内边距、关闭按钮(⌘W / 中键 / Delete 仍可关)与弹出按钮让出宽度,
  * 活动 tab 至少露出截断的标题,而不是只剩「⌄1 ⤢ ⋯」。 */

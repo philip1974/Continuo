@@ -1,0 +1,48 @@
+# 资源管理器入口命令(VSCode 对齐)
+
+键盘用户不靠鼠标也能新建文件 / 文件夹、打开文件夹、回到资源管理器。命令 id 照抄 VSCode,三语标题,命令面板可搜。
+
+## 模块
+
+| 文件 | 职责 |
+|---|---|
+| `src/panels/Explorer/explorer-commands.ts` | 四条命令的 spec(ExplorerTabPlugin 注册)、`showExplorer` |
+| `src/panels/Explorer/explorer-requests.ts` | 命令 → FolderTree 的请求通道(带挂起:文件树未挂载时等它挂载后兑现) |
+| `src/panels/Explorer/FolderTree.tsx` | 订阅请求:新建 → 复用 creating 流程;focusTree → 复用「重试」的焦点落点 |
+| `src/panels/Explorer/hooks/useSelectWorkspaceFolder.ts` | `selectWorkspaceFolder`:空态按钮 / 头部「切换文件夹」/ 命令共用;选定后发 focusTree |
+| `src/panels/Explorer/tree-keyboard.ts` | `focusedTargetDir`:树焦点项的目标目录(键盘粘贴与新建共用) |
+
+## 行为
+
+### 1. 命令与默认键(`explorer-commands.spec.ts`)
+
+| 命令 id | 标题(en) | 分类 | 默认键 | 取舍 |
+|---|---|---|---|---|
+| `explorer.newFile` | New File… | 资源管理器 | 无 | 同 VSCode(无默认键);⌘N 在 VSCode 是 `newUntitledFile`,Continuo 无 untitled 编辑器,不占用 |
+| `explorer.newFolder` | New Folder… | 资源管理器 | 无 | 同 VSCode |
+| `workbench.action.files.openFolder` | Open Folder… | 文件 | mod+O | VSCode mac ⌘O = 打开文件 / 文件夹;Continuo 没有「打开文件」,⌘O 只开文件夹 |
+| `workbench.view.explorer` | Show Explorer | 查看 | mod+⇧E | 同 VSCode |
+
+- 默认键(mac / 其它平台)不与任何其它命令的默认键、Quick Open / 命令面板保留键(⌘P / ⌘⇧P)、应用菜单 accelerator 重合
+
+### 2. 新建文件 / 新建文件夹(`explorer-commands-tree.spec.tsx`)
+
+- 在树焦点项所在目录打开 FolderTree 现有的新建输入框(同右键「新建」):目录 → 自身;文件 → 所在目录;用户还没在树里
+  移动过焦点 → 工作区根。提交 / 失败 / 放弃的后续行为与右键新建完全相同(`explorer-tree/folder-tree-create.spec.tsx`)
+- 侧栏隐藏 → 先显示;启动即关闭(文件树尚未挂载)时请求挂起,文件树挂载后打开输入框并获焦
+- 没有工作区 → 不出输入框,等同「显示资源管理器」(焦点到「打开文件夹」)
+
+### 3. 显示资源管理器(⌘⇧E)
+
+- 侧栏隐藏时打开;有工作区 → 焦点进树的焦点行(树还在加载则加载完再给;空文件夹 → 空态提示;读取失败 → 重试按钮);
+  无工作区 → 焦点到空态的「打开文件夹」
+
+### 4. 打开文件夹(命令 / 空态按钮 / 头部「切换文件夹」)
+
+- 复用同一流程(单飞锁 + 过期守卫 + 失败 toast);命令另先确保侧栏可见
+- 选定后焦点交给新 root 的文件树(VSCode:打开文件夹后焦点在资源管理器),不随卸载的空态按钮掉到 body
+- 取消选择 → 工作区与焦点不变
+
+## 端到端
+
+- `tests/e2e/explorer-commands.spec.ts`:⌘⇧E 聚焦资源管理器树;命令面板「新建文件」在根目录创建并打开

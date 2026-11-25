@@ -33,6 +33,13 @@ describe('EmptyState', () => {
     ).toBe(true);
   });
 
+  it('容器是 F6 的空 dock 落点:data-dock-empty + tabIndex=-1(只经脚本聚焦,不进 Tab 顺序)', () => {
+    const { container } = render(<EmptyState onRestore={vi.fn()} />);
+    const root = container.querySelector<HTMLElement>('[data-testid=empty-state]')!;
+    expect(root.hasAttribute('data-dock-empty')).toBe(true);
+    expect(root.tabIndex).toBe(-1);
+  });
+
   it('点「恢复默认布局」 → onRestore', () => {
     const onRestore = vi.fn();
     const { container } = render(<EmptyState onRestore={onRestore} />);

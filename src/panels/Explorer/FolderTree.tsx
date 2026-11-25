@@ -26,6 +26,7 @@ import {
 import {
   focusAndSelect,
   handleTreeKeyDown,
+  focusedTargetDir,
   neighborAfterRemoval,
   selectOnly,
   type TypeAheadState,
@@ -79,6 +80,7 @@ import { ERROR_CODES } from '@shared/error-codes';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { announce } from '@/lib/announce';
 import { holdAutoSave } from '@/panels/Editor/autosave-hold';
+import { isRequestForRoot, onExplorerRequest } from './explorer-requests';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -331,6 +333,9 @@ export function FolderTree({ root }: { root: string }) {
   // 根目录「重试」后焦点去向(重试按钮随加载态卸载,不处理焦点会掉到 body):成功 → 树;成功但为空 → 空态提示;
   // 仍失败 → 新的重试按钮。
   const retryFocusPendingRef = useRef(false);
+  // 「显示资源管理器」/ 打开文件夹的 focusTree 请求:同上一套落点,置标记后经它重跑下方焦点 effect(树已加载完时
+  // rootLoad / items 不再变化)。
+  const [focusRequestSeq, setFocusRequestSeq] = useState(0);
   const loadFailedRef = useRef<HTMLDivElement>(null);
   const emptyStateRef = useRef<HTMLDivElement>(null);
   // 子目录读取失败(VSCode:展开失败的目录下显示错误行):目录 → 原因;读到即删除。
@@ -1084,7 +1089,28 @@ export function FolderTree({ root }: { root: string }) {
       retryFocusPendingRef.current = false;
       emptyStateRef.current?.focus();
     }
-  }, [rootLoad, items, root, tree]);
+  }, [rootLoad, items, root, tree, focusRequestSeq]);
+
+  // 命令请求(explorer-requests):新建文件 / 文件夹 → 在树焦点项所在目录(目录 → 自身,文件 → 所在目录,无 → 根;
+  // 同键盘粘贴的落点)打开新建输入框;focusTree(显示资源管理器 / 打开文件夹之后)→ 加载完成后焦点进树,同「重试」的落点。
+  useEffect(
+    () =>
+      onExplorerRequest((request) => {
+        if (!isRequestForRoot(request, root)) return false;
+        if (request.kind === 'create') {
+          // 用户还没在树里移动过焦点(库的 getFocusedItem 此时回落首项)→ 根目录(VSCode:无焦点项时在根新建)。
+          const t = treeRef.current;
+          const parentDir =
+            t && t.getState().focusedItem != null ? focusedTargetDir(t, renderedItemsRef.current, root) : root;
+          setCreating({ type: request.type, parentDir });
+        } else {
+          retryFocusPendingRef.current = true;
+          setFocusRequestSeq((n) => n + 1);
+        }
+        return true;
+      }),
+    [root],
+  );
 
   // 删除确认框文案(VSCode explorer.confirmDelete):单项按文件 / 文件夹区分,多项列出名字(最多 10 个)。
   const renderTrashConfirm = () => {

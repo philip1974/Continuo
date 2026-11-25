@@ -2,7 +2,7 @@
 // 吃掉 Tab 时,键盘用户靠它离开当前区域。顺序同 VSCode(编辑器 → … → 状态栏 → … → 侧栏 → 编辑器)取 Continuo 有的
 // 三个区域:活动 dock 组 → 状态栏 → 侧栏。区域由 data-workbench-part 标记;不可聚焦 / 隐藏的区域跳过;焦点不在任何
 // 区域时先到活动 dock 组(VSCode 同)。只作用于主窗(popout 子窗不分发本命令);活动面板在子窗时 dock 区域取主窗最近
-// 使用的组。
+// 使用的组;主窗没有面板(全关光 / 全弹出)时落到主窗空态。
 // BDD: src/__tests__/keyboard-focus-parity/
 
 import { getDockApi } from '@/shell/dock/dock-api-ref';
@@ -39,8 +39,9 @@ function focusPart(doc: Document, part: Part): boolean {
       panel = mostRecentMainWindowPanel(api);
       if (panel) activateDockPanel(panel);
     }
-    if (!panel) return false;
-    focusPanelContent(panel.api);
+    // 主窗没有可聚焦的面板(全关光 / 全弹出到子窗)→ 聚焦主窗空态(VSCode:F6 落到空编辑器组)。
+    if (panel) focusPanelContent(panel.api);
+    else root.querySelector<HTMLElement>('[data-dock-empty]')?.focus();
   } else {
     // 侧栏:Explorer 树的当前项(roving tabindex=0),树未渲染 / 无当前项时退到第一个控件。
     const target =
@@ -49,6 +50,11 @@ function focusPart(doc: Document, part: Part): boolean {
     target?.focus();
   }
   return root.contains(doc.activeElement);
+}
+
+/** 把焦点交给某个区域(同 F6 的落点规则);「显示资源管理器」命令在无工作区时用它聚焦侧栏。 */
+export function focusWorkbenchPart(part: Part, doc: Document = document): boolean {
+  return focusPart(doc, part);
 }
 
 /** 焦点移到下一个(1)/ 上一个(-1)区域。 */

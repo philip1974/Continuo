@@ -11,6 +11,8 @@
   暗色 = oneDark 原值,亮色 = One Light 同色相加深;两主题每个语法色对编辑器底色 `--md-surface` ≥ 4.5(原亮色 One Light
   注释 2.51 / 字符串 3.13 / 类型 3.12 / 属性 3.58)。组件里不写字面 hex;标题只加粗、不加下划线。切主题靠 `<html class="dark">`
   即时换色(亮 / 暗挂的是同一个 HighlightStyle)。
+- 聚焦时不画 CodeMirror 基础主题的 `1px dotted` 轮廓(`&.cm-focused { outline: none }`;VSCode 编辑器聚焦无边框,光标 / 当前行即焦点指示),
+  Markdown 代码块的 CodeMirror 同样。
 - 暗色向 CodeMirror 声明 dark 主题(内建样式选暗色变体),亮色不声明。切换主题热替换,不重建编辑器。
 - Markdown 编辑模式(Crepe)的代码块用同一套 token 外观 + `--md-syntax-*` 高亮(`markdownCodeBlockTheme`),不再是 Crepe
   默认的 oneDark(亮色主题下仍是深色配色);亮 / 暗共用一个扩展(不声明 dark),切主题不重挂编辑器。代码块底色由 Crepe CSS
