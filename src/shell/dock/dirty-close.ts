@@ -99,14 +99,11 @@ export function saveForCloseFailureMessage(r: SaveForCloseResult, hotkey: string
   const shown = r.failedPaths.slice(0, FAILED_NAMES_SHOWN).map(basenameForChrome);
   const joined = shown.join(t('common.list_separator'));
   const names = r.failedPaths.length > shown.length ? t('dialog.unsaved_close.names_more', { names: joined }) : joined;
-  let message = t('dialog.unsaved_close.save_failed', { count: r.failed, names });
-  if (r.diskChanged > 0) {
-    message += ` ${t('dialog.unsaved_close.disk_changed_note', { count: r.diskChanged, hotkey })}`;
-  }
-  if (r.readonly > 0) {
-    message += ` ${t('dialog.unsaved_close.readonly_note', { count: r.readonly, hotkey })}`;
-  }
-  return message;
+  const parts = [t('dialog.unsaved_close.save_failed', { count: r.failed, names })];
+  if (r.diskChanged > 0) parts.push(t('dialog.unsaved_close.disk_changed_note', { count: r.diskChanged, hotkey }));
+  if (r.readonly > 0) parts.push(t('dialog.unsaved_close.readonly_note', { count: r.readonly, hotkey }));
+  // 句间分隔随语言(中文全角句号后不加空格)。
+  return parts.join(t('common.sentence_separator'));
 }
 
 /**

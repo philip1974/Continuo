@@ -186,6 +186,8 @@ describe('saveForCloseFailureMessage:关窗保存失败提示带文件名与出�
     expect(msg).not.toContain('、d');
     expect(msg).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1, hotkey: 'Ctrl+S' }));
     expect(msg).toContain(t('dialog.unsaved_close.readonly_note', { count: 1, hotkey: 'Ctrl+S' }));
+    // 中文句间不加空格(全角句号后直接接下一句)
+    expect(msg).not.toMatch(/。 /);
   });
 
   it.each(['en', 'zh', 'ko'] as const)('%s:readonly_note 写明只读与「不保存」出路', (locale) => {

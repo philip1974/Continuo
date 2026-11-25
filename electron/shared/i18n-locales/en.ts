@@ -16,6 +16,7 @@ export const en = {
   // 运行期拼接「标签：原因」(如「自动保存失败：…」),冒号随语言(zh 全角)。
   'common.label_detail': '{label}: {detail}',
   'common.list_separator': ', ',
+  'common.sentence_separator': ' ',
 
   // menu.file (5)
   'menu.file.label': 'File',

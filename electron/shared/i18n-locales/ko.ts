@@ -8,6 +8,7 @@ export const ko: Record<TranslationKey, string> = {
   'common.ok': '확인',
   'common.label_detail': '{label}: {detail}',
   'common.list_separator': ', ',
+  'common.sentence_separator': ' ',
 
   // menu.file
   'menu.file.label': '파일',

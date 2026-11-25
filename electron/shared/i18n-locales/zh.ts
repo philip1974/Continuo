@@ -8,6 +8,7 @@ export const zh: Record<TranslationKey, string> = {
   'common.ok': '确定',
   'common.label_detail': '{label}：{detail}',
   'common.list_separator': '、',
+  'common.sentence_separator': '',
 
   // menu.file
   'menu.file.label': '文件',
