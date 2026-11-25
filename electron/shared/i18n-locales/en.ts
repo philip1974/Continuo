@@ -241,6 +241,7 @@ export const en = {
   'editor.image.too_large': 'The image is too large to preview (over {max}).',
   'editor.image.load_failed': 'An error occurred while loading the image: {reason}',
   'editor.image.decode_failed': 'An error occurred while loading the image.',
+  'editor.image.zoom_fit': 'Whole Image',
   'editor.md.image_unavailable': 'Image unavailable: {name}',
   'editor.welcome.title': 'No file open',
   'editor.welcome.actions_aria': 'Get started',

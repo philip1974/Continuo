@@ -1,6 +1,7 @@
 // Markdown 图片(Milkdown 行内 image 节点)的渲染:相对路径按文档目录解析、经受控通道加载,失败给 alt 占位。
 // BDD: src/__tests__/editor-image-preview/
-// 对齐 VSCode markdown 预览:相对图片按文档目录解析,只能加载工作区(localResourceRoots)内的文件;严格安全级别 CSP
+// 对齐 VSCode markdown 预览:相对图片按文档目录解析,只能加载 localResourceRoots 内的文件 —— 工作区,文档在工作区外时
+// 加文档所在目录(主进程只认本窗口打开过的文档,见 fs:read-image documentPath);严格安全级别 CSP
 // `img-src 'self' https: data:` —— https 远程图片允许,http 不允许。Continuo 的 CSP 现状同(index.html,不扩大到 http)。
 // 不启用 Crepe ImageBlock(上传 / 尺寸 / 标题 UI 且改变序列化):只替换 image 节点的 DOM 视图,文档里的 src 原样保留,
 // 序列化与保存不受影响(保存后文件里仍是 ./q.png)。
@@ -36,7 +37,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
  * Milkdown nodeView 工厂(注册到 'nodeView' slice 的 'image' 项)。docPath = 当前 md 文件路径(挂载时取定)。
- * 本地图片经 fs:read-image(workspaceOnly:主进程按发送窗口工作区 realpath 判定)读为 data URL;
+ * 本地图片经 fs:read-image(workspaceOnly + documentPath:主进程按发送窗口工作区 / 已打开文档目录 realpath 判定)读为 data URL;
  * 不加载 / 读取失败 / 解码失败 → alt 文字占位(虚线框,role=img + 名称),不出现破图图标。
  */
 export function markdownImageNodeView(docPath: string | null) {
@@ -73,7 +74,8 @@ export function markdownImageNodeView(docPath: string | null) {
     if (source === null) showPlaceholder();
     else if (source.kind === 'url') showImage(source.url);
     else {
-      coApi.fs.readImage(source.absPath, { workspaceOnly: true }).then(
+      const opts = docPath === null ? { workspaceOnly: true } : { workspaceOnly: true, documentPath: docPath };
+      coApi.fs.readImage(source.absPath, opts).then(
         (r) => (r.ok ? showImage(r.data.dataUrl) : showPlaceholder()),
         showPlaceholder,
       );

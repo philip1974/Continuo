@@ -81,6 +81,24 @@ async function waitMounted(): Promise<CrepeType> {
   throw new Error('Crepe 未挂载');
 }
 
+interface TypingView {
+  readonly state: {
+    readonly selection: { readonly from: number; readonly to: number };
+    readonly tr: { insertText(text: string, from: number, to: number): unknown };
+  };
+  dispatch(tr: unknown): void;
+  someProp(name: 'handleTextInput', f: (fn: (...args: unknown[]) => boolean) => boolean): boolean | undefined;
+}
+
+/** 逐字键入:先交给 handleTextInput(输入规则在此生效),无人处理则按默认插入(同浏览器输入路径)。 */
+function typeText(view: TypingView, text: string): void {
+  for (const ch of text) {
+    const { from, to } = view.state.selection;
+    const insert = () => view.state.tr.insertText(ch, from, to);
+    if (!view.someProp('handleTextInput', (f) => f(view, from, to, ch, insert))) view.dispatch(insert());
+  }
+}
+
 async function flush() {
   await act(async () => {
     await new Promise((r) => setTimeout(r, 0));
@@ -94,7 +112,7 @@ describe('Milkdown 渲染 Markdown 图片(真实 Crepe)', () => {
     );
     const crepe = await waitMounted();
     await flush();
-    expect(mocks.readImage).toHaveBeenCalledWith('/w/docs/q.png', { workspaceOnly: true });
+    expect(mocks.readImage).toHaveBeenCalledWith('/w/docs/q.png', { workspaceOnly: true, documentPath: MD });
     const img = container.querySelector('.co-md-image img')!;
     expect(img.getAttribute('src')).toBe(DATA_URL);
     expect(img.getAttribute('alt')).toBe('logo');
@@ -110,6 +128,21 @@ describe('Milkdown 渲染 Markdown 图片(真实 Crepe)', () => {
     const ph = container.querySelector('.ProseMirror [role="img"]')!;
     expect(ph.textContent).toContain('logo');
     expect(ph.getAttribute('aria-label')).toBe(t('editor.md.image_unavailable', { name: 'logo' }));
+  });
+
+  // 对齐 Milkdown 默认(commonmark insertImageInputRule)与 VSCode Markdown 编辑:键入完整图片语法即成图片,
+  // 不再被转义成文本 `!\[pic]\(./img/a.jpg)` 保存。
+  it('编辑模式键入 `![pic](./img/a.jpg)` → 图片节点(经受控通道加载),序列化回原样', async () => {
+    const { container } = render(<MilkdownEditor tabId={MD} fileName={MD} defaultValue={''} />);
+    const crepe = await waitMounted();
+    const view = crepe.editor.ctx.get<TypingView, 'editorView'>('editorView');
+    act(() => typeText(view, '![pic](./img/a.jpg)'));
+    await flush();
+    expect(mocks.readImage).toHaveBeenCalledWith('/w/docs/img/a.jpg', expect.objectContaining({ workspaceOnly: true }));
+    expect(container.querySelector('.co-md-image img')?.getAttribute('alt')).toBe('pic');
+    const md = crepe.getMarkdown();
+    expect(md).toContain('![pic](./img/a.jpg)');
+    expect(md).not.toContain('\\[');
   });
 
   it('http 图片不请求、直接 alt 占位;https 原样作为 src', async () => {

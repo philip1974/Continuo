@@ -108,3 +108,84 @@ test('Markdown 相对图片在编辑 / 预览模式加载,工作区外图片不�
     rmSync(outside, { recursive: true, force: true });
   }
 });
+
+test('编辑模式键入 `![pic](./img/q.png)` → 转成图片并加载;保存后源文本原样(无转义)', async ({ window, workspaceRoot }) => {
+  mkdirSync(path.join(workspaceRoot, 'img'));
+  writeFileSync(path.join(workspaceRoot, 'img', 'q.png'), makePng(64, 48));
+  const doc = path.join(workspaceRoot, 'typed.md');
+  writeFileSync(doc, '# Typed\n\nx\n');
+  await openWorkspaceFile(window, ['typed.md']);
+  await editorModeButton(window, EDITOR_MODE_EDIT).click();
+  const pm = window.locator('main .milkdown .ProseMirror');
+  await pm.locator('p', { hasText: 'x' }).click();
+  await window.keyboard.press('End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.type('![pic](./img/q.png)');
+  const img = pm.locator('.co-md-image img[alt="pic"]');
+  await expect(img).toHaveAttribute('src', /^data:image\/png;base64,/, { timeout: 10_000 });
+  await window.screenshot({ path: test.info().outputPath('md-insert-img.png') });
+  await window.keyboard.press('ControlOrMeta+KeyS');
+  await expect(async () => {
+    const content = await readFile(doc, 'utf8');
+    expect(content).toContain('![pic](./img/q.png)');
+    expect(content).not.toContain('\\[');
+  }).toPass({ timeout: 5_000 });
+});
+
+test('工作区外的 md(经链接打开):同目录图片显示;目录外图片仍不加载', async ({ window, workspaceRoot }) => {
+  const outside = mkdtempSync(path.join(tmpdir(), 'continuo-e2e-outdoc-'));
+  const other = mkdtempSync(path.join(tmpdir(), 'continuo-e2e-other-'));
+  try {
+    writeFileSync(path.join(outside, 'o.png'), makePng(32, 24));
+    writeFileSync(path.join(other, 'x.png'), makePng(8, 8));
+    const outDoc = path.join(outside, 'outside.md');
+    writeFileSync(outDoc, `# Outside\n\n![o](./o.png)\n\n![x](${path.join(other, 'x.png')})\n`);
+    writeFileSync(path.join(workspaceRoot, 'linkout.md'), `# L\n\n[outside](${outDoc})\n`);
+    await openWorkspaceFile(window, ['linkout.md']);
+    await editorModeButton(window, EDITOR_MODE_PREVIEW).click();
+    await window.locator('main .milkdown .ProseMirror a', { hasText: 'outside' }).click();
+    await expect(window.locator('header').first()).toContainText('outside.md', { timeout: 10_000 });
+    await editorModeButton(window, EDITOR_MODE_PREVIEW).click();
+    const pm = window.locator('main .milkdown .ProseMirror');
+    const o = pm.locator('.co-md-image img[alt="o"]');
+    await expect(o).toHaveAttribute('src', /^data:image\/png;base64,/, { timeout: 10_000 });
+    await expect.poll(() => o.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(32);
+    await expect(pm.locator('.co-md-image img[alt="x"]')).toHaveCount(0);
+    await expect(pm.locator('.co-md-image [role="img"]', { hasText: 'x' })).toBeVisible();
+    await window.screenshot({ path: test.info().outputPath('md-outside.png') });
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+    rmSync(other, { recursive: true, force: true });
+  }
+});
+
+test('图片预览缩放:单击放大(像素化)/ ⌥单击缩小 / ⌘滚轮 / 0 回适应,角落显示比例', async ({ window, workspaceRoot }) => {
+  writeFileSync(path.join(workspaceRoot, 'z.png'), makePng(64, 48));
+  await openWorkspaceFile(window, ['z.png']);
+  const viewer = window.locator('[data-image-viewer]');
+  const img = viewer.locator('img');
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth), { timeout: 10_000 }).toBe(64);
+  const info = window.getByText(/64x48 · /);
+  await expect(info).toContainText(/整个图像|Whole Image|전체 이미지/);
+  await expect(viewer).toHaveCSS('cursor', 'zoom-in');
+
+  await img.click(); // 小图适应 = 100% → 下一档 150%
+  await expect(info).toContainText('150%');
+  await expect(img).toHaveCSS('width', '96px');
+  await expect(img).toHaveCSS('image-rendering', 'pixelated');
+  await img.click({ modifiers: ['Alt'] });
+  await expect(info).toContainText('100%');
+
+  const box = (await viewer.boundingBox())!;
+  await window.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await window.keyboard.down('Control');
+  await window.mouse.wheel(0, -100);
+  await window.keyboard.up('Control');
+  await expect(info).toContainText(/10[78]%/);
+
+  for (let i = 0; i < 6; i++) await viewer.press('+'); // 150 200 300 500 700 1000
+  await expect(info).toContainText('1000%');
+  await window.screenshot({ path: test.info().outputPath('img-zoom.png') });
+  await viewer.press('0');
+  await expect(info).toContainText(/整个图像|Whole Image|전체 이미지/);
+});

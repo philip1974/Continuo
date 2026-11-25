@@ -21,6 +21,7 @@ import {
   clearWindow as clearWindowRoot,
   setWorkspaceRoot,
 } from '../services/window-workspace-roots.service';
+import { clearWindow as clearEditorDocuments } from '../services/window-editor-documents.service';
 import { codedError, errorMessage, thrownFields } from '../../shared/error-message';
 import { mapNodeErrnoCode } from './fs/path-utils';
 import { windowSeqCount } from '../services/window-seq.service';
@@ -185,8 +186,11 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
   safeHandle(WINDOW_CHANNELS.RELAUNCH_APP, RelaunchInput, () => {
     deps.relaunchApp();
   });
-  // 窗口关闭清 map(防泄漏)。
+  // 窗口关闭清 map(防泄漏):工作区根、打开过的 Markdown 文档登记。
   app.on('browser-window-created', (_event, win) => {
-    win.on('closed', () => clearWindowRoot(win.id));
+    win.on('closed', () => {
+      clearWindowRoot(win.id);
+      clearEditorDocuments(win.id);
+    });
   });
 }

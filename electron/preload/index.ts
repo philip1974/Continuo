@@ -194,12 +194,20 @@ const api = {
         FS_PATH_MAX,
       ),
     /**
-     * 只读图片预览 / Markdown 图片:data = { dataUrl, size }。opts.workspaceOnly:仅允许本窗口工作区内(主进程 realpath 判定)。
+     * 只读图片预览 / Markdown 图片:data = { dataUrl, size }。opts.workspaceOnly:仅允许本窗口工作区内(主进程 realpath 判定);
+     * opts.documentPath:引用图片的 Markdown 文档 —— 本窗口打开过它时,主进程另放行其所在目录(工作区外的文档)。
      */
-    readImage: (path: string, opts?: { readonly workspaceOnly?: boolean }): Promise<IpcResult<FsReadImageData>> =>
+    readImage: (
+      path: string,
+      opts?: { readonly workspaceOnly?: boolean; readonly documentPath?: string },
+    ): Promise<IpcResult<FsReadImageData>> =>
       ipcRenderer.invoke(
         FS_CHANNELS.READ_IMAGE,
-        opts?.workspaceOnly === true ? { path, workspaceOnly: true } : { path },
+        opts?.workspaceOnly === true
+          ? opts.documentPath !== undefined
+            ? { path, workspaceOnly: true, documentPath: opts.documentPath }
+            : { path, workspaceOnly: true }
+          : { path },
       ),
     /** 成功时 data = 写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),供编辑器识别自己保存的回声. */
     /** opts.overwriteReadonly:用户已确认覆盖写保护文件(FS_READONLY 后的「覆盖」)。 */

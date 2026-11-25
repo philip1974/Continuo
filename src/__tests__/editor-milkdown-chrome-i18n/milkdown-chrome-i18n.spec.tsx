@@ -29,7 +29,7 @@ vi.mock('@milkdown/crepe', () => ({
   },
   Crepe: vi.fn().mockImplementation((options: unknown) => {
     harness.options.push(options);
-    return { setReadonly: vi.fn(), editor: { config: () => {} }, on: vi.fn(), create: async () => ({}), destroy: async () => {} };
+    return { setReadonly: vi.fn(), editor: { config: () => {}, use: () => {} }, on: vi.fn(), create: async () => ({}), destroy: async () => {} };
   }),
 }));
 

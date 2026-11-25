@@ -56,24 +56,24 @@ describe('readImage', () => {
     expect(await codeOf(readImage(join(d, 'none.png')))).toBe('FS_NOT_FOUND');
   });
 
-  describe('workspaceOnly(传工作区根)', () => {
+  describe('workspaceOnly(传允许根:工作区根)', () => {
     it('工作区内 → 读出', async () => {
       const root = await tmp.make('continuo-ws-');
       await mkdir(join(root, 'docs'));
       const f = join(root, 'docs', 'q.png');
       await writeFile(f, PNG);
-      expect((await readImage(f, root)).size).toBe(PNG.length);
+      expect((await readImage(f, [root])).size).toBe(PNG.length);
     });
 
-    it('工作区外(含 .. 逃逸)/ 无工作区 → FS_DENIED', async () => {
+    it('工作区外(含 .. 逃逸)/ 无工作区(空根集)→ FS_DENIED', async () => {
       const root = await tmp.make('continuo-ws-');
       const outside = await tmp.make('continuo-out-');
       const f = join(outside, 'q.png');
       await writeFile(f, PNG);
-      expect(await codeOf(readImage(f, root))).toBe('FS_DENIED');
+      expect(await codeOf(readImage(f, [root]))).toBe('FS_DENIED');
       // 字面 `..` 逃逸(不 normalize 的拼接)
-      expect(await codeOf(readImage(`${root}/../${basename(outside)}/q.png`, root))).toBe('FS_DENIED');
-      expect(await codeOf(readImage(f, null))).toBe('FS_DENIED');
+      expect(await codeOf(readImage(`${root}/../${basename(outside)}/q.png`, [root]))).toBe('FS_DENIED');
+      expect(await codeOf(readImage(f, []))).toBe('FS_DENIED');
     });
 
     // Windows 建符号链接需管理员权限
@@ -84,7 +84,7 @@ describe('readImage', () => {
       await writeFile(target, PNG);
       const link = join(root, 'q.png');
       await symlink(target, link);
-      expect(await codeOf(readImage(link, root))).toBe('FS_DENIED');
+      expect(await codeOf(readImage(link, [root]))).toBe('FS_DENIED');
     });
   });
 });

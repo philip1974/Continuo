@@ -20,6 +20,7 @@ import { readFile } from './fs/read-file';
 import { readImage } from './fs/read-image';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
 import { getWorkspaceRoot, isAnyWorkspaceRoot } from '../services/window-workspace-roots.service';
+import { isEditorDocument, recordEditorDocument } from '../services/window-editor-documents.service';
 import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
@@ -55,8 +56,9 @@ export const readFileInputSchema = z.object({ path: fsPath() }).strict();
 export const statInputSchema = z.object({ path: fsPath() }).strict();
 
 // workspaceOnly:Markdown 文档里引用的图片(来源不受信)只允许发送窗口的工作区内;图片 tab 自身(用户主动打开)不限。
+// documentPath:引用图片的 Markdown 文档;它确是本窗口经 fs:read-file 打开过的文档时,其所在目录也是允许根(见 imageRootsFor)。
 export const readImageInputSchema = z
-  .object({ path: fsPath(), workspaceOnly: z.boolean().optional() })
+  .object({ path: fsPath(), workspaceOnly: z.boolean().optional(), documentPath: fsPath().optional() })
   .strict();
 
 // 边界(E13):fs:writeFile / fs:writeBinary 的 content 此前无大小上限。IPC payload 会先完整进入
@@ -153,15 +155,30 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
     ? { content, realPath: target }
     : { content };
 };
-// fs:read-image:workspaceOnly 时工作区根取自 IPC 发送方窗口(main 推断,renderer 不自报);插件经 editor.openFile
-// 打开过的路径同 read-file 先在 plugin-fs 锁内确认未被换入链接。BDD: src/__tests__/editor-image-preview/
+/**
+ * Markdown 图片的允许根(对齐 VSCode markdown 预览的 localResourceRoots):发送窗口的工作区根;documentPath 是**本窗口
+ * 经 fs:read-file 打开过的 Markdown 文档**(main 记账,见 window-editor-documents.service)时再加其所在目录 —— 工作区外的
+ * 文档也能显示同目录 / 子目录图片。renderer 自报、但本窗口没打开过的 documentPath 不加任何根。
+ */
+function imageRootsFor(senderWindowId: number, documentPath: string | undefined): string[] {
+  const roots: string[] = [];
+  const workspaceRoot = getWorkspaceRoot(senderWindowId);
+  if (workspaceRoot !== null) roots.push(workspaceRoot);
+  if (documentPath !== undefined && isEditorDocument(senderWindowId, documentPath)) {
+    roots.push(path.dirname(documentPath));
+  }
+  return roots;
+}
+
+// fs:read-image:workspaceOnly 时允许根取自 IPC 发送方窗口(main 推断,renderer 不自报;见 imageRootsFor);插件经
+// editor.openFile 打开过的路径同 read-file 先在 plugin-fs 锁内确认未被换入链接。BDD: src/__tests__/editor-image-preview/
 export const guardedReadImageHandler = (
   input: ReadImageInput,
   senderWindowId: number,
 ): Promise<FsReadImageData> =>
   guardPluginOpenedPath(input.path, () =>
     input.workspaceOnly === true
-      ? readImage(input.path, getWorkspaceRoot(senderWindowId))
+      ? readImage(input.path, imageRootsFor(senderWindowId, input.documentPath))
       : readImage(input.path),
   );
 // 性能:返回写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
@@ -172,6 +189,16 @@ export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | un
 // 读 / 写前在 plugin-fs 锁内确认路径没有被换入链接(见 guardPluginOpenedPath);其它路径原样直通。
 export const guardedReadFileHandler = (input: ReadFileInput): Promise<FsReadFileData> =>
   guardPluginOpenedPath(input.path, () => readFileHandler(input));
+// fs:read-file 注册的入口:读取成功后把 Markdown 文档登记为发送窗口打开过的文档(供 fs:read-image 放行其目录内图片)。
+// 发送方无窗口(null)不登记。
+export const recordingReadFileHandler = async (
+  input: ReadFileInput,
+  senderWindowId: number | null,
+): Promise<FsReadFileData> => {
+  const data = await guardedReadFileHandler(input);
+  if (senderWindowId !== null) recordEditorDocument(senderWindowId, input.path);
+  return data;
+};
 export const guardedWriteFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
   guardPluginOpenedPath(input.path, () => writeFileHandler(input));
 // writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
@@ -371,7 +398,9 @@ export const queueDirChangedBroadcast = createSameTickPathCoalescer(broadcastDir
 export function registerFsIpc(): void {
 
   safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler);
-  safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, guardedReadFileHandler);
+  safeHandleWithCtx(FS_CHANNELS.READ_FILE, readFileInputSchema, (input, { event }) =>
+    recordingReadFileHandler(input, BrowserWindow.fromWebContents(event.sender)?.id ?? null),
+  );
   safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler);
   safeHandleWithCtx(FS_CHANNELS.READ_IMAGE, readImageInputSchema, (input, { event }) =>
     guardedReadImageHandler(input, senderWindowOrThrow(event, ERROR_CODES.FS_DENIED).id),

@@ -576,8 +576,10 @@
 
 ## [编辑器图片预览与 Markdown 相对路径图片(对齐 VSCode media-preview / markdown 预览)](./editor-image-preview/README.md)
 
+- [`image-zoom.spec.tsx`](./editor-image-preview/image-zoom.spec.tsx)
 - [`markdown-image.spec.tsx`](./editor-image-preview/markdown-image.spec.tsx)
 - [`open-image.spec.tsx`](./editor-image-preview/open-image.spec.tsx)
+- [`outside-doc-image.spec.ts`](./editor-image-preview/outside-doc-image.spec.ts)
 - [`read-image.spec.ts`](./editor-image-preview/read-image.spec.ts)
 - [`statusbar-image.spec.tsx`](./editor-image-preview/statusbar-image.spec.tsx)
 
@@ -998,6 +1000,10 @@
 - [`floating-viewport-clamp.spec.tsx`](./markdown-editor-style/floating-viewport-clamp.spec.tsx)
 - [`milkdown-style-override.spec.ts`](./markdown-editor-style/milkdown-style-override.spec.ts)
 - [`wrapper-font-size-var.spec.tsx`](./markdown-editor-style/wrapper-font-size-var.spec.tsx)
+
+## [Markdown 编辑 / 预览模式 ⌘F 查找(对齐 VSCode 编辑器 / Markdown 预览的查找)](./markdown-find/README.md)
+
+- [`markdown-find.spec.tsx`](./markdown-find/markdown-find.spec.tsx)
 
 ## [markdown-link-keyboard](./markdown-link-keyboard/)
 

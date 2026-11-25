@@ -38,7 +38,7 @@ vi.mock('@milkdown/crepe', () => ({
     return {
       setReadonly: vi.fn(),
       // MilkdownEditor 经 editor.config 注册 Markdown 图片 nodeView(markdown-image-view)
-      editor: { config: () => {} },
+      editor: { config: () => {}, use: () => {} },
       on: vi.fn(),
       create: async () => ({}),
       destroy: async () => {},

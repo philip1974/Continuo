@@ -20,7 +20,7 @@ vi.mock('@milkdown/crepe', () => ({
     };
     return {
       setReadonly: vi.fn(),
-      editor: { ctx: { get: () => view }, config: () => {} },
+      editor: { ctx: { get: () => view }, config: () => {}, use: () => {} },
       on: (fn: (l: unknown) => void) =>
         fn({ mounted: (cb: () => void) => h.mounted.push(cb), updated: () => {} }),
     };

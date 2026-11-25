@@ -1,13 +1,16 @@
 // M-Editor Step E3:Milkdown/Crepe 包装。
 // 从维护者早期原型的 MilkdownEditor 移植,Crepe features 配置一致:
 //   开:CodeMirror / ListItem / LinkTooltip / Cursor / BlockEdit / Toolbar / Placeholder / Table
-//   关:ImageBlock / Latex(MVP 不做图片插入与数学公式)
+//   关:ImageBlock / Latex(不接图片上传 UI 与数学公式;键入图片语法转图片由 insertImageInputRule 负责)
 // ```mermaid 代码块经 CodeMirror 特性的 renderPreview 渲染成图(见 mermaid-preview.ts)。
 //
 // 注意:Crepe 主题 CSS 自成体系,不与 Tailwind 冲突;直接 import frame-dark。
 
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Crepe, CrepeFeature } from '@milkdown/crepe';
+import { insertImageInputRule } from '@milkdown/kit/preset/commonmark';
+import { $prose } from '@milkdown/kit/utils';
+import type { EditorView } from '@milkdown/kit/prose/view';
 import { clampFloatingToViewport } from './milkdown-floating-clamp';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import '@milkdown/crepe/theme/common/style.css';
@@ -51,6 +54,22 @@ import { markdownCodeBlockTheme } from './code-editor-theme';
 import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel, previewContentLabel } from './codemirror-phrases';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { markdownImageNodeView } from './markdown-image-view';
+import {
+  markdownFindPlugin,
+  onMarkdownFindChange,
+  revealMarkdownFindMatch,
+  setMarkdownFindQuery,
+  stepMarkdownFind,
+  type MarkdownFindResult,
+} from './markdown-find';
+import { TerminalSearchBar } from '@/panels/Terminal/TerminalSearchBar';
+import { FIND_MATCH_LIMIT, formatFindCount } from './find-widget-model';
+import type { SearchApi } from '@/panels/Terminal/useTerminal';
+import {
+  DEFAULT_TERMINAL_SEARCH_OPTIONS,
+  type TerminalSearchOptions,
+} from '@/panels/Terminal/terminal-search-state';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 interface MilkdownEditorProps {
   /**
@@ -209,8 +228,14 @@ interface MarkdownPositionHandle {
   setCursorLine(line: number): void;
 }
 
-/** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦与定位句柄。 */
-type OnEditorReady = (focus: () => void, position: MarkdownPositionHandle) => void;
+/** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦与定位句柄,以及取 ProseMirror 视图(查找用;已拆除 → null)。 */
+type OnEditorReady = (focus: () => void, position: MarkdownPositionHandle, getView: () => EditorView | null) => void;
+
+/** 聚焦编辑区:只读预览的 ProseMirror 不可编辑,view.focus() 不聚焦它 → 直接聚焦其 DOM(预览区 tabIndex=0)。 */
+function focusEditorView(view: EditorView): void {
+  if (view.editable === false) view.dom.focus({ preventScroll: true });
+  else view.focus();
+}
 
 /** 定位用到的 ProseMirror 视图部分(按 slice 名取,同 readEditor)。 */
 interface PmPositionView extends PmViewLike {
@@ -308,6 +333,12 @@ function CrepeEditor({
         ['image', markdownImageNodeView(fileName ?? null)],
       ]),
     );
+    // 键入 `![alt](path "title")` 即转成图片节点(Milkdown commonmark 自带此输入规则,但 preset 默认未启用;Crepe 只在
+    // ImageBlock 特性里给块级图片接规则,本项目关着它)。不接则整串被当文本保存成转义的 `!\[alt]\(path)`。
+    // 生成的仍是行内 image 节点 → 走上面的 nodeView 显示,序列化回原样 `![alt](path)`。BDD: src/__tests__/editor-image-preview/
+    crepe.editor.use(insertImageInputRule);
+    // ⌘F 查找的高亮 / 当前匹配(装饰,不改文档)。BDD: src/__tests__/markdown-find/
+    crepe.editor.use($prose(() => markdownFindPlugin));
     if (readonly) crepe.setReadonly(true);
     crepeRef.current = crepe;
 
@@ -460,22 +491,31 @@ function CrepeEditor({
           crepe.editor.ctx
             .get<{ setProps(props: { attributes: Record<string, string> }): void }, 'editorView'>('editorView')
             .setProps({
+              // 只读预览可聚焦(tabIndex=0):⌘F 查找、键盘滚动与 F6 落点都要焦点在预览区里(VSCode 预览 webview 同可聚焦)。
               attributes: readonly
-                ? { 'aria-label': previewContentLabel(fileName), 'aria-readonly': 'true' }
+                ? { 'aria-label': previewContentLabel(fileName), 'aria-readonly': 'true', tabindex: '0' }
                 : { 'aria-label': editorContentLabel(fileName) },
             });
         } catch {
           /* 已拆除 */
         }
       });
+      const getView = (): EditorView | null => {
+        try {
+          return crepe.editor.ctx.get<EditorView, 'editorView'>('editorView');
+        } catch {
+          return null; // 已拆除
+        }
+      };
       listener.mounted(() =>
-        onReady?.(() => {
-          try {
-            crepe.editor.ctx.get<{ focus(): void }, 'editorView'>('editorView').focus();
-          } catch {
-            /* 已拆除 */
-          }
-        }, position),
+        onReady?.(
+          () => {
+            const view = getView();
+            if (view) focusEditorView(view);
+          },
+          position,
+          getView,
+        ),
       );
       // 只读预览不回写也不上抛,不记基线、不挂其余 listener(省掉挂载时与防抖里的序列化)。
       if (readonly) return;
@@ -536,6 +576,14 @@ function CrepeEditor({
   return <Milkdown />;
 }
 
+const IS_MAC = detectPlatform() === 'mac';
+
+/** ⌘F(mac)/ Ctrl+F(其它平台),不带 ⇧ / ⌥ / 另一个修饰键。按物理键或字符判(非拉丁布局也认 KeyF)。 */
+function isFindHotkey(e: React.KeyboardEvent): boolean {
+  if (e.shiftKey || e.altKey || (IS_MAC ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return false;
+  return e.code === 'KeyF' || e.key.toLowerCase() === 'f';
+}
+
 export function MilkdownEditor(props: MilkdownEditorProps) {
   // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
@@ -572,7 +620,89 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   const viewMode = props.readonly ? 'preview' : 'edit';
   const unregisterFocusRef = useRef<(() => void) | null>(null);
   const positionRef = useRef<MarkdownPositionHandle | null>(null);
-  useEffect(() => () => unregisterFocusRef.current?.(), []);
+  const unsubscribeFindRef = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      unregisterFocusRef.current?.();
+      unsubscribeFindRef.current?.();
+    },
+    [],
+  );
+
+  // ⌘F 查找(对齐 VSCode 编辑器 / Markdown 预览查找;BDD: src/__tests__/markdown-find/)。查找条复用终端查找条(SearchApi 形状),
+  // 匹配 / 高亮 / 当前匹配在 ProseMirror 插件里(markdown-find),计数经插件变化回调(含编辑文档后的重算)回到这里。
+  const [findOpen, setFindOpen] = useState(false);
+  const [findTerm, setFindTerm] = useState('');
+  const [findOptions, setFindOptions] = useState<TerminalSearchOptions>(DEFAULT_TERMINAL_SEARCH_OPTIONS);
+  const [findResult, setFindResult] = useState<MarkdownFindResult>({ count: 0, index: -1 });
+  const [findFocusRequest, setFindFocusRequest] = useState(0);
+  const runFind = useCallback((term: string, options: TerminalSearchOptions) => {
+    const view = getViewRef.current();
+    if (!view) return;
+    setMarkdownFindQuery(view, term ? { term, ...options } : null);
+    if (wrapperRef.current) revealMarkdownFindMatch(view, wrapperRef.current);
+  }, []);
+  const stepFind = useCallback((step: 1 | -1) => {
+    const view = getViewRef.current();
+    if (!view) return;
+    stepMarkdownFind(view, step);
+    if (wrapperRef.current) revealMarkdownFindMatch(view, wrapperRef.current);
+  }, []);
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setFindFocusRequest((n) => n + 1);
+  }, []);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    const view = getViewRef.current();
+    if (!view) return;
+    setMarkdownFindQuery(view, null);
+    focusEditorView(view); // 选区停在当前匹配上
+  }, []);
+  const findTermRef = useRef(findTerm);
+  findTermRef.current = findTerm;
+  const findOptionsRef = useRef(findOptions);
+  findOptionsRef.current = findOptions;
+  const searchApi = useMemo<SearchApi>(
+    () => ({
+      isOpen: findOpen,
+      term: findTerm,
+      options: findOptions,
+      result: findResult,
+      focusRequest: findFocusRequest,
+      open: openFind,
+      close: closeFind,
+      next: () => stepFind(1),
+      prev: () => stepFind(-1),
+      setTerm: (term) => {
+        setFindTerm(term);
+        runFind(term, findOptionsRef.current);
+      },
+      setOptions: (options) => {
+        setFindOptions(options);
+        runFind(findTermRef.current, options);
+      },
+      clearActiveDecoration: () => {},
+    }),
+    [findOpen, findTerm, findOptions, findResult, findFocusRequest, openFind, closeFind, stepFind, runFind],
+  );
+  // 计数文案与代码编辑器查找面板一致(「3 / 154」/「无结果」/「1000+」;空查找词不显示)
+  const formatFindResult = useCallback(
+    (r: MarkdownFindResult) =>
+      formatFindCount({ empty: !findTermRef.current, total: r.count, current: r.index + 1, capped: r.count >= FIND_MATCH_LIMIT }),
+    [],
+  );
+  // ⌘F:打开查找条(已打开则重新聚焦并全选查找词);关闭后重开沿用上次的查找词与选项重新查(VSCode 同)
+  const handleFindKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.defaultPrevented || !isFindHotkey(e)) return; // 代码块的 CodeMirror 已处理(自己的查找面板)
+      e.preventDefault();
+      e.stopPropagation(); // 不再交给全局快捷键(⌘F 在编辑器里只开查找)
+      if (!findOpen && findTermRef.current) runFind(findTermRef.current, findOptionsRef.current);
+      openFind();
+    },
+    [findOpen, openFind, runFind],
+  );
   // layout 清理:此时 DOM 仍在文档里(量得到位置),Crepe 尚未销毁。tab 已关闭 / 已改名(旧 id 不在了)不记。
   useLayoutEffect(
     () => () => {
@@ -586,9 +716,14 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+  const getViewRef = useRef<() => EditorView | null>(() => null);
   const handleReady = useCallback<OnEditorReady>(
-    (focus, position) => {
+    (focus, position, getView) => {
       positionRef.current = position;
+      getViewRef.current = getView;
+      unsubscribeFindRef.current?.();
+      const view = getView();
+      unsubscribeFindRef.current = view ? onMarkdownFindChange(view, setFindResult) : null;
       const el = wrapperRef.current;
       const anchor = takeMarkdownModeAnchor(tabId, viewMode);
       if (el && anchor) {
@@ -692,6 +827,8 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
 
   return (
     <MilkdownProvider key={locale}>
+      {/* 外层不滚动:查找条浮在右上角不随正文滚动。@container/terminal:复用的终端查找条按此名的容器查询收缩窄宽布局。 */}
+      <div className="@container/terminal relative h-full w-full" onKeyDown={handleFindKeyDown}>
       <div
         ref={wrapperRef}
         className="h-full w-full overflow-auto"
@@ -704,6 +841,8 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         onScroll={handleScroll}
       >
         <CrepeEditor {...props} onReady={handleReady} />
+      </div>
+      {findOpen && <TerminalSearchBar searchApi={searchApi} onClose={closeFind} formatResult={formatFindResult} />}
       </div>
     </MilkdownProvider>
   );

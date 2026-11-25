@@ -14,6 +14,8 @@ import {
 interface TerminalSearchBarProps {
   readonly searchApi: SearchApi;
   readonly onClose: () => void;
+  /** 计数文案(缺省为终端文案);Markdown 查找复用本查找条时传编辑器查找控件的文案(find-widget-model)。 */
+  readonly formatResult?: (result: TerminalSearchResult) => string;
 }
 
 // 上一个 / 下一个 / 关闭用 SVG 图标(此前是 ASCII「^ v x」,字形大小 / 基线与 .* / Aa / W 不齐)。模块级预创建。
@@ -48,6 +50,7 @@ function formatCount(
 export function TerminalSearchBar({
   searchApi,
   onClose,
+  formatResult,
 }: TerminalSearchBarProps) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,7 +83,7 @@ export function TerminalSearchBar({
     });
     return () => cancelAnimationFrame(id);
   }, [focusRequest]);
-  const countText = formatCount(result, t);
+  const countText = formatResult ? formatResult(result) : formatCount(result, t);
 
   return (
     <div
