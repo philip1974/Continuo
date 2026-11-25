@@ -6,7 +6,7 @@ test('开 2 tabs → 改 a.ts → a.ts tab data-dirty=true; README.md tab=false'
   await openWorkspaceFile(window, ['README.md']);
   await openWorkspaceFile(window, ['src', 'a.ts']);
 
-  // wm-tab-nav-item 是 div 容器(button role=tab 是其子)
+  // wm-tab-nav-item 即 role=tab 元素(标题 / 圆点 / 关闭按钮都在其内)
   const aItem = editorTabItem(window, 'a.ts');
   const readmeItem = editorTabItem(window, 'README.md');
 

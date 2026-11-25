@@ -31,7 +31,9 @@ active 时 title 与底部下划线指示条都挂 motion layoutId(panelTitleLay
 
 ### 键盘关闭
 
-- tab 聚焦时 Delete → api.close()(关闭按钮已移出 Tab 顺序,这是键盘等价入口)
+- tab 聚焦时 Delete → api.close()(关闭按钮不可聚焦,这是键盘等价入口)
+- tab 内无可聚焦子元素(axe nested-interactive:tab 的子元素是 presentational):关闭 / 退出缩放是不可聚焦的
+  `span[role=button]`(套 `wm-icon-button` 样式),只作鼠标点击目标
 - Backspace **不**关闭:焦点停在 tab 上时用户常以为还在终端 / 编辑器里打字,退格即关 tab(终端 = 杀 PTY)。
   VSCode 的 tab 上同样没有退格关闭
 

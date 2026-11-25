@@ -14,6 +14,8 @@
 
 .wm-tab-nav-item {
   position: relative;
+  cursor: pointer;
+  outline: none;
   display: flex;
   flex-shrink: 0;
   min-width: 0;
@@ -50,30 +52,24 @@
   opacity: 0.56;
 }
 
+.wm-tab-nav-item[data-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.wm-tab-nav-item:focus-visible {
+  outline: 2px solid var(--md-focus-ring);
+  outline-offset: -2px;
+}
+
 .wm-tab-nav-item__select {
   display: inline-flex;
   min-width: 0;
   height: 100%;
   flex: 1 1 auto;
   align-items: center;
-  border: 0;
   padding: 0 var(--wm-space-2);
-  background-color: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
   font-size: var(--wm-text-xs);
   line-height: var(--wm-leading-tight);
-  outline: none;
-}
-
-.wm-tab-nav-item__select:focus-visible {
-  outline: 2px solid var(--md-focus-ring);
-  outline-offset: -2px;
-}
-
-.wm-tab-nav-item__select:disabled {
-  cursor: not-allowed;
 }
 
 .wm-tab-nav-item__label {
@@ -99,17 +95,11 @@
   align-items: center;
   justify-content: center;
   margin-right: var(--wm-space-0_5);
-  border: 0;
   border-radius: 4px;
-  padding: 0;
-  background-color: transparent;
   color: var(--md-on-surface-variant);
-  cursor: pointer;
-  font: inherit;
   font-size: var(--wm-text-xs);
   line-height: 1;
   opacity: 0;
-  outline: none;
   transition:
     background-color var(--wm-duration-fast) var(--wm-ease-default),
     color var(--wm-duration-fast) var(--wm-ease-default),
@@ -117,30 +107,23 @@
 }
 
 .wm-tab-nav-item:hover .wm-tab-nav-item__close,
-.wm-tab-nav-item__close:focus-visible,
+.wm-tab-nav-item:focus-visible .wm-tab-nav-item__close,
 .wm-tab-nav-item[data-active="true"] .wm-tab-nav-item__close {
   opacity: 1;
 }
 
-.wm-tab-nav-item__close:hover:not(:disabled),
-.wm-tab-nav-item__close:focus-visible:not(:disabled) {
+.wm-tab-nav-item__close:hover:not([aria-disabled="true"]) {
   background-color: var(--md-state-hover);
   color: var(--md-on-surface);
 }
 
-.wm-tab-nav-item__close:disabled {
-  cursor: not-allowed;
-}
-
-/* 强制颜色:透明占位下划线会被画成 CanvasText(每个 tab 都像选中),改 Canvas;活动 tab 下划线 Highlight;
- * 未保存圆点只靠底色,改 CanvasText。BDD:src/__tests__/forced-colors-states/ */
+/* 强制颜色:透明占位下划线会被画成 CanvasText(每个 tab 都像选中),所有 tab(含活动 tab)改 Canvas —— 活动 tab
+ * 只由 forced-colors.css 的语义规则(role=tab 自身的 aria-selected)画一圈 Highlight 轮廓,不再叠下划线(VSCode 高对比度:
+ * 活动 tab 只一个 contrastActiveBorder)。未保存圆点只靠底色,改 CanvasText。BDD:src/__tests__/forced-colors-states/ */
 @media (forced-colors: active) {
-  .wm-tab-nav-item {
-    border-bottom-color: Canvas;
-  }
-
+  .wm-tab-nav-item,
   .wm-tab-nav-item[data-active="true"] {
-    border-bottom-color: Highlight;
+    border-bottom-color: Canvas;
   }
 
   .wm-tab-nav-item__dirty-dot {

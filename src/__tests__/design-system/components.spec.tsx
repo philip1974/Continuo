@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRef } from 'react';
-import { render, fireEvent, cleanup } from '@testing-library/react';
+import { render, fireEvent, cleanup, screen } from '@testing-library/react';
 import {
   Badge,
   Button,
@@ -368,7 +368,7 @@ describe('TabNav + TabNavItem', () => {
       </TabNav>,
     );
     expect(
-      injected.container.querySelector('button[aria-label="关闭 x.md"]'),
+      injected.container.querySelector('[role=button][aria-label="关闭 x.md"]'),
     ).not.toBeNull();
     cleanup();
     // 未提供 closeLabel → design 层英文回退(无 i18n 依赖)
@@ -380,7 +380,7 @@ describe('TabNav + TabNavItem', () => {
       </TabNav>,
     );
     expect(
-      fallback.container.querySelector('button[aria-label="Close y.md"]'),
+      fallback.container.querySelector('[role=button][aria-label="Close y.md"]'),
     ).not.toBeNull();
   });
 
@@ -494,8 +494,82 @@ describe('TabNav + TabNavItem', () => {
     expect(dot.getAttribute('aria-hidden')).toBe('true'); // 回退:仍装饰性隐藏
   });
 
-  // a11y(A29,A23 后续):tablist 内只有 active tab 在 Tab 顺序;close 按钮须移出 Tab 顺序
-  // (tabIndex=-1),改由聚焦 tab 后 Delete 触发关闭。不认 Backspace:鼠标点 tab 后焦点可能停在 tab 上,
+  // a11y(axe aria-required-children / nested-interactive):tablist 的子元素只能是 tab;关闭按钮在 tab 元素内部
+  // (VSCode multiEditorTabsControl:div[role=tab] 内含关闭动作),且不可聚焦(tab 的子元素是 presentational,
+  // 可聚焦子控件 = nested-interactive)—— 鼠标点 ×,键盘 / 读屏用 Delete 或 ⌘W 关闭(同 VSCode)。
+  it('a11y · tablist 子元素全为 role=tab;关闭按钮在 tab 内且不可聚焦;tab 名称只取标题', () => {
+    const { container } = render(
+      <TabNav>
+        <TabNavItem active dirty dirtyLabel="未保存" onSelect={() => {}} onClose={() => {}} closeLabel="关闭 a.ts">
+          a.ts
+        </TabNavItem>
+        <TabNavItem onSelect={() => {}} onClose={() => {}} closeLabel="关闭 b.ts">
+          b.ts
+        </TabNavItem>
+      </TabNav>,
+    );
+    const tablist = container.querySelector('[role=tablist]')!;
+    expect(Array.from(tablist.children).map((c) => c.getAttribute('role'))).toEqual(['tab', 'tab']);
+    for (const tab of Array.from(tablist.children)) {
+      const close = tab.querySelector('.wm-tab-nav-item__close')!;
+      expect(close).not.toBeNull();
+      expect(close.tagName).not.toBe('BUTTON');
+      expect(close.hasAttribute('tabindex')).toBe(false);
+      // tab 内除自身外没有任何可聚焦元素
+      expect(tab.querySelectorAll('button, input, a[href], [tabindex]')).toHaveLength(0);
+    }
+    expect(screen.getByRole('tab', { name: 'a.ts' })).toBe(tablist.children[0]);
+    expect(screen.getByRole('button', { name: '关闭 b.ts' })).toBe(tablist.children[1]!.querySelector('.wm-tab-nav-item__close'));
+  });
+
+  it('a11y · tab 自身承担按钮语义:Enter / Space 选中(不回调 onMouseSelect);内部子元素(如重命名输入框)的按键不被截走', () => {
+    const onSelect = vi.fn();
+    const onMouseSelect = vi.fn();
+    const onClose = vi.fn();
+    const { container } = render(
+      <TabNav>
+        <TabNavItem onSelect={onSelect} onMouseSelect={onMouseSelect} onClose={onClose}>
+          <input aria-label="rename" />
+        </TabNavItem>
+      </TabNav>,
+    );
+    const tab = container.querySelector<HTMLElement>('[role=tab]')!;
+    expect(fireEvent.keyDown(tab, { key: 'Enter' })).toBe(false);
+    expect(fireEvent.keyDown(tab, { key: ' ' })).toBe(false); // 阻止空格滚动
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onMouseSelect).not.toHaveBeenCalled();
+    const input = container.querySelector('input')!;
+    expect(fireEvent.keyDown(input, { key: ' ' })).toBe(true);
+    fireEvent.keyDown(input, { key: 'Delete' });
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('a11y · disabled tab:aria-disabled,点击 / Enter / × / Delete 都不生效,方向键跳过', () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    const { container } = render(
+      <TabNav>
+        <TabNavItem active onSelect={() => {}}>a</TabNavItem>
+        <TabNavItem disabled onSelect={onSelect} onClose={onClose}>b</TabNavItem>
+        <TabNavItem onSelect={() => {}}>c</TabNavItem>
+      </TabNav>,
+    );
+    const tabs = container.querySelectorAll<HTMLElement>('[role=tab]');
+    expect(tabs[1]!.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(tabs[1]!, { detail: 1 });
+    fireEvent.keyDown(tabs[1]!, { key: 'Enter' });
+    fireEvent.keyDown(tabs[1]!, { key: 'Delete' });
+    fireEvent.click(tabs[1]!.querySelector('.wm-tab-nav-item__close')!);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    tabs[0]!.focus();
+    fireEvent.keyDown(container.querySelector('[role=tablist]')!, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(tabs[2]);
+  });
+
+  // a11y(A29,A23 后续):tablist 内只有 active tab 在 Tab 顺序;close 按钮不在 Tab 顺序,
+  // 改由聚焦 tab 后 Delete 触发关闭。不认 Backspace:鼠标点 tab 后焦点可能停在 tab 上,
   // 用户以为还在编辑器里打字,退格即误关 tab(与 dock tab SharedTab ca68571d 同规则;VSCode tab 上也无退格关闭)。
   it('a11y · close 按钮不在 Tab 顺序 + tab 聚焦 Delete 关闭,Backspace 不关闭', () => {
     const onClose = vi.fn();

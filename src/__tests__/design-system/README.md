@@ -79,6 +79,12 @@
 
 ### TabNavItem 关闭与焦点(`components.spec.tsx`)
 
+- 结构(axe aria-required-children / nested-interactive;VSCode multiEditorTabsControl 同为 div[role=tab] 内含关闭动作):
+  tablist 的子元素只有 role=tab(根 div 本身);标题、未保存圆点、关闭按钮都在 tab 内;关闭按钮是不可聚焦的
+  `span[role=button]`(tab 的子元素是 presentational,不能有可聚焦控件),键盘 / 读屏用 Delete 或 ⌘W 关闭;tab 名称经
+  aria-labelledby 只取标题。tab 自身处理 Enter / Space 选中(只处理 tab 自身的按键,children 里的控件不受影响);
+  disabled → aria-disabled,点击 / 键盘 / × 都无效,方向键跳过
+
 - 有 `onClose` 且未 `disabled` 的 tab:中键单击(`auxclick` button=1)调用 `onClose`(与点 × 同一路径,未保存 tab 的确认由
   调用方负责),不触发 `onSelect`;中键按下 `preventDefault`,不进入浏览器中键自动滚动 —— 与 dock tab(SharedTab)中键关闭一致
 - 右键 auxclick、左键按下不关闭;无 `onClose` 或 `disabled` 的 tab 中键既不关闭也不拦默认行为

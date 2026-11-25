@@ -27,7 +27,7 @@ test('a.ts dirty + b.ts dirty → 两个 tab 都显 dirty dot', async ({ window 
   await expect(bItem.locator('.wm-tab-nav-item__dirty-dot')).toHaveCount(1);
 
   // 切回 a.ts → Cmd+S → 仅 a.ts 清 dirty
-  await aItem.locator('button[role=tab]').click();
+  await aItem.click(); // wm-tab-nav-item 本身就是 role=tab
   cm = window.locator('.cm-content').first();
   await cm.press('ControlOrMeta+KeyS');
 

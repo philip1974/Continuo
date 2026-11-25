@@ -128,9 +128,17 @@ describe('强制颜色:design 组件专有部件', () => {
     expect(bodyOf(FC, '.wm-switch:focus-visible')).toMatch(/outline-color:\s*CanvasText/);
   });
 
+  // 编辑器 tab(TabNav):VSCode 高对比度活动 tab 只一个 contrastActiveBorder —— 只由语义规则在 role=tab 上画轮廓,
+  // 下划线(未选中透明占位 / 选中 primary)一律 Canvas,不再叠一条 Highlight 下划线。
+  it('src/design/TabNav.css:所有 tab(含活动)下划线 → Canvas,不另画 Highlight', () => {
+    const FC = forcedBlock(css('src/design/TabNav.css'));
+    expect(bodyOf(FC, '.wm-tab-nav-item')).toMatch(/border-bottom-color:\s*Canvas\b/);
+    expect(bodyOf(FC, '.wm-tab-nav-item[data-active="true"]')).toMatch(/border-bottom-color:\s*Canvas\b/);
+    expect(FC).not.toMatch(/Highlight/);
+  });
+
   it.each([
     ['src/design/Tabs.css', '.wm-tab-button', 'border-left-color'],
-    ['src/design/TabNav.css', '.wm-tab-nav-item', 'border-bottom-color'],
     ['src/design/SegmentedControl.css', '.wm-segmented-option', 'border-color'],
   ])('%s:未选中透明边框 → Canvas,选中 → Highlight', (file, base, prop) => {
     const FC = forcedBlock(css(file));

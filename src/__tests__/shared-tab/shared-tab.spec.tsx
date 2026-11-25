@@ -93,7 +93,7 @@ describe('SharedTab — 渲染', () => {
     expect(container.textContent).toContain('Hello');
     // a11y(A105):关闭按钮 aria-label 本地化(默认测试 locale=zh → 「关闭 Hello」),含 title。
     expect(
-      container.querySelector('button[aria-label="关闭 Hello"]'),
+      container.querySelector('[role=button][aria-label="关闭 Hello"]'),
     ).not.toBeNull();
   });
 
@@ -130,7 +130,7 @@ describe('SharedTab — 渲染', () => {
     try {
       const api = makeApi({ title: 'Hello' });
       const { container } = renderTab(api);
-      const btn = container.querySelector('button[aria-label*="Hello"]');
+      const btn = container.querySelector('[role=button][aria-label*="Hello"]');
       expect(btn).not.toBeNull();
       expect(btn!.getAttribute('aria-label')).toBe('Close Hello');
     } finally {
@@ -139,7 +139,7 @@ describe('SharedTab — 渲染', () => {
     cleanup();
     const api2 = makeApi({ title: 'Hello' });
     const { container: c2 } = renderTab(api2);
-    const btn2 = c2.querySelector('button[aria-label*="Hello"]');
+    const btn2 = c2.querySelector('[role=button][aria-label*="Hello"]');
     expect(btn2!.getAttribute('aria-label')).toContain('关闭');
     expect(btn2!.getAttribute('aria-label')).not.toContain('Close');
   });
@@ -177,7 +177,7 @@ describe('SharedTab — close 按钮', () => {
     const api = makeApi();
     const { container } = renderTab(api);
     const closeBtn = container.querySelector(
-      'button[aria-label^="关闭"]',
+      '[role=button][aria-label^="关闭"]',
     ) as HTMLButtonElement;
     fireEvent.click(closeBtn);
     expect(api.close).toHaveBeenCalledTimes(1);
@@ -292,14 +292,19 @@ describe('SharedTab — a11y(A119)tab 语义 + 键盘激活', () => {
     expect(exitMaximizedGroup).not.toHaveBeenCalled();
   });
 
-  // a11y(A123,A29 同族):tab 内关闭按钮移出 Tab 顺序(tabIndex=-1)保 roving;键盘关闭只认 Delete。
-  it('关闭按钮 tabIndex=-1 + Delete 关闭当前 tab', () => {
+  // a11y(A123,A29 同族;axe nested-interactive):tab 的子元素是 presentational,不能有可聚焦控件 —— 关闭 / 退出缩放
+  // 是不可聚焦的 role=button(鼠标点击);键盘关闭只认 tab 上的 Delete,退出缩放走 Escape / ⇧⌘Enter。
+  it('tab 内无可聚焦子元素;关闭按钮不可聚焦 + Delete 关闭当前 tab', () => {
     const api = makeApi();
+    api.group.api.isMaximized = () => true;
     const { container } = renderTab(api);
+    const root0 = container.querySelector('[role=tab]') as HTMLElement;
+    expect(root0.querySelectorAll('button, input, a[href], [tabindex]')).toHaveLength(0);
     const closeBtn = container.querySelector(
-      'button[aria-label^="关闭"]',
-    ) as HTMLButtonElement;
-    expect(closeBtn.getAttribute('tabindex')).toBe('-1');
+      '[role=button][aria-label^="关闭"]',
+    ) as HTMLElement;
+    expect(closeBtn.hasAttribute('tabindex')).toBe(false);
+    expect(container.querySelector('[data-testid="tab-maximize-indicator"]')!.getAttribute('role')).toBe('button');
     const root = container.querySelector('[role=tab]') as HTMLElement;
     fireEvent.keyDown(root, { key: 'Delete' });
     expect(api.close).toHaveBeenCalledTimes(1);
@@ -444,7 +449,7 @@ describe('SharedTab — 鼠标点击后焦点回到面板内容(VSCode:点 tab =
     const focus = vi.fn();
     registerTerminalPanelHandles(api.id, { focus, openSearch: vi.fn(), clear: vi.fn(), readText: vi.fn(() => "") });
     const { container } = renderTab(api);
-    const closeBtn = container.querySelector('button[aria-label^="关闭"]') as HTMLButtonElement;
+    const closeBtn = container.querySelector('[role=button][aria-label^="关闭"]') as HTMLElement;
     fireEvent.click(closeBtn, { detail: 1 });
     expect(focus).not.toHaveBeenCalled();
   });
@@ -453,7 +458,7 @@ describe('SharedTab — 鼠标点击后焦点回到面板内容(VSCode:点 tab =
     const api = makeApi({ title: 'Hello' });
     api.group.api.isMaximized = () => true;
     const { container } = renderTab(api);
-    const closeBtn = container.querySelector('button[aria-label="关闭 Hello"]') as HTMLButtonElement;
+    const closeBtn = container.querySelector('[role=button][aria-label="关闭 Hello"]') as HTMLElement;
     expect(closeBtn.getAttribute('title')).toBe('关闭 Hello');
     const zoomBtn = container.querySelector('[data-testid="tab-maximize-indicator"]') as HTMLButtonElement;
     expect(zoomBtn.getAttribute('title')).toBe(zoomBtn.getAttribute('aria-label'));

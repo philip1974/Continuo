@@ -6,7 +6,6 @@ import type {
   DockviewPanelApi,
   IDockviewPanelHeaderProps,
 } from 'dockview-react';
-import { IconButton } from '@/design';
 import { useT } from '@/i18n';
 import { focusPanelContent } from '@/shell/dock/panel-focus';
 import { closePanelsInOrder } from '@/shell/dock/wrap-panel-close';
@@ -116,12 +115,13 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   });
 
   // dockview 的 Tab 构造时把外层 .dv-tab 写死 tabIndex=0:每个 tab 多一个无键盘行为的 Tab 停靠点,抵消下方内层
-  // role=tab 的 roving。移出 Tab 顺序(鼠标仍可点),tab 条只剩活动 tab 一个停靠点(VSCode 同)。面板挪到别的组时
+  // role=tab 的 roving。去掉 tabindex(鼠标仍可点):tab 条只剩活动 tab 一个停靠点(VSCode 同);外层也不再可聚焦,
+  // tablist 下可聚焦的只有 role=tab(axe aria-required-children:tablist 里不能有可聚焦的非 tab 元素)。面板挪到别的组时
   // dockview 新建外层 tab、复用本组件的 DOM(不重挂载)→ 组变化后再设一次。BDD: src/__tests__/keyboard-focus-parity/
   useEffect(() => {
     const leaveTabOrder = (): void => {
       const outer = rootRef.current?.closest<HTMLElement>('.dv-tab');
-      if (outer && outer.tabIndex !== -1) outer.tabIndex = -1;
+      if (outer?.hasAttribute('tabindex')) outer.removeAttribute('tabindex');
     };
     leaveTabOrder();
     let disposed = false;
@@ -139,7 +139,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   // topic-22 follow-up: 点击 icon = exitMaximizedGroup(整 group 退,与 zoom toggle
   // 命令对称)。stopPropagation 防止 tab pointerDown 把 drag 起来。
   const onExitMaximize = useCallback(
-    (event: PointerEvent<HTMLButtonElement>) => {
+    (event: MouseEvent<HTMLSpanElement>) => {
       event.preventDefault();
       event.stopPropagation();
       try {
@@ -154,7 +154,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   // close 路径的"标记 + 延迟"逻辑统一在 wrap-panel-close.ts 拦在 api.close 上,
   // 这里直接调 api.close() 即可。
   const onClose = useCallback(
-    (event: PointerEvent<HTMLButtonElement>) => {
+    (event: MouseEvent<HTMLSpanElement>) => {
       event.preventDefault();
       event.stopPropagation();
       api.close();
@@ -322,41 +322,41 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       ) : (
         <span id={titleId} className="min-w-0 truncate select-none">{title}</span>
       )}
+      {/* tab 的子元素按 ARIA 是 presentational,不能有可聚焦控件(axe nested-interactive):退出缩放 / 关闭用不可聚焦的
+          span[role=button] 套 design IconButton 的样式(wm-icon-button),只作鼠标点击目标;键盘走 tab 上的 Delete /
+          Escape(最大化态)/ ⇧⌘Enter。按下 preventDefault:不抢焦点、不起拖拽。 */}
       {isMaximized && (
         // iTerm2-style maximize indicator. 只在 group maximized 时显示,放在 close 前。
         // 不靠 hover 隐藏 — 这是状态指示,需要始终可见。点击 = exit zoom。
-        <IconButton
-          size="xs"
+        <span
+          role="button"
+          className="wm-icon-button text-fg-muted hover:text-fg"
+          data-size="xs"
           aria-label={t('shell.tab.exit_zoom')}
           title={t('shell.tab.exit_zoom')}
           data-testid="tab-maximize-indicator"
-          // a11y(A123):移出 Tab 顺序保 tablist roving 复合控件模型(同关闭按钮)。
-          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={onExitMaximize}
-          className="text-fg-muted hover:text-fg"
         >
           {EXIT_ZOOM_ICON}
-        </IconButton>
+        </span>
       )}
-      <IconButton
-        size="xs"
+      <span
+        role="button"
+        data-size="xs"
         // a11y(A105):icon-only 关闭按钮可访问名须本地化(原硬编码英文 `Close ${title}`,
         // zh/ko 界面 SR 读英文);含 title 区分多 tab。
         aria-label={t('shell.tab.close', { title })}
         title={t('shell.tab.close', { title })}
-        // a11y(A123,A29 同族):关闭按钮移出 Tab 顺序,保「一次 Tab 进 tablist、方向键移动」
-        // 复合控件模型;键盘关闭由 tab 根 Delete 触发(见 handleKeyDown)。
-        tabIndex={-1}
         // 极窄组(dockview.css 容器查询)隐藏,让出宽度给标题;仍可 ⌘W / 中键 / Delete 关闭。
         data-tab-close=""
         onPointerDown={(e) => e.preventDefault()}
         onClick={onClose}
-        // 激活 tab 常显(同编辑器 tab,TabNav);其余悬停 / 键盘聚焦时显示。
-        className={active ? undefined : 'opacity-0 focus-visible:opacity-100 group-hover/tab:opacity-100'}
+        // 激活 tab 常显(同编辑器 tab,TabNav);其余悬停时显示。
+        className={`wm-icon-button${active ? '' : ' opacity-0 group-hover/tab:opacity-100'}`}
       >
         {CLOSE_TAB_ICON}
-      </IconButton>
+      </span>
       {active && (
         // 顶部 accent line(VSCode workbench tab 风格)。放底部会与下一行
         // EditorHeader 的 TabNav active underline 视觉撞,形成"双下划线"。

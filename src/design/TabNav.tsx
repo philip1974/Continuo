@@ -1,11 +1,10 @@
 // Continuo-local 微调:加 draggable + onDragStart / onDragEnd props 支撑 terminal
-// tab 拖拽分屏(topic-05),在 terminal panel 内嵌 tab 上启用。drag handler 挂在 wrap div(根)而非 select button,避免
-// button click/drag 互相干扰。
+// tab 拖拽分屏(topic-05),在 terminal panel 内嵌 tab 上启用。drag handler 挂在根 div(即 role=tab 元素)上。
 import { useId } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { handleTablistArrowKeys } from './roving-tablist';
 
-/** pointerdown / mousedown 的默认动作是把焦点移到被按下的控件上;关闭按钮不需要焦点(键盘走 tab 上的 Delete)。 */
+/** pointerdown / mousedown 的默认动作是把焦点移到被按下的元素(或其可聚焦祖先 tab)上;关闭按钮不需要焦点(键盘走 tab 上的 Delete)。 */
 function preventFocusSteal(event: { preventDefault: () => void }): void {
   event.preventDefault();
 }
@@ -91,7 +90,7 @@ export interface TabNavItemProps {
 export function TabNav({ children, className, ariaLabel }: TabNavProps) {
   // Continuo-local 微调(a11y A23/A28):role="tablist" 须配 WAI-ARIA 键盘模型 —— 方向键在 tab
   // 间移动焦点(配合 TabNavItem 的 roving tabindex:仅 active tab 在 Tab 顺序内)。手动激活:
-  // 方向键只移焦点,Enter/Space 由原生 button 触发 onSelect。逻辑抽到共享 roving-tablist.ts
+  // 方向键只移焦点,Enter/Space 由 TabNavItem 触发 onSelect。逻辑抽到共享 roving-tablist.ts
   // (与 design Tabs 单一来源)。
   return (
     <nav
@@ -132,31 +131,38 @@ export function TabNavItem({
         ? `Close ${title}`
         : 'Close tab';
   const dirtyDescId = useId();
+  const labelId = useId();
   const showDirtyDesc = dirty && dirtyLabel != null && dirtyLabel.length > 0;
+  const closable = onClose != null && !disabled;
 
-  const handleClose = (event: MouseEvent<HTMLButtonElement>) => {
+  const handleClose = (event: MouseEvent<HTMLSpanElement>) => {
     event.stopPropagation();
-    onClose?.();
+    if (closable) onClose();
   };
 
-  // a11y(A29):close 按钮被移出 Tab 顺序(见下 tabIndex=-1),改由 tab 聚焦时 Delete 触发关闭,保持
-  // 「一次 Tab 进出 tablist、方向键在 tab 间移动」的键盘模型不被额外 tab stop 破坏。不认 Backspace:焦点
-  // 停在 tab 上时用户常以为还在编辑器里打字,退格即误关 tab(同 dock tab SharedTab;VSCode tab 上也无退格关闭)。
-  const handleSelectKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (onClose != null && !disabled && event.key === 'Delete') {
+  // tab 元素自身承担按钮语义(不再是原生 button):Enter / Space 选中(焦点留在 tab,不回调 onMouseSelect);
+  // a11y(A29):Delete 关闭(关闭控件不在 Tab 顺序)。不认 Backspace:焦点停在 tab 上时用户常以为还在编辑器里打字,
+  // 退格即误关 tab(同 dock tab SharedTab;VSCode tab 上也无退格关闭)。只处理 tab 自身的按键:children 里的
+  // 控件(如调用方组合的重命名输入框)冒泡上来的空格 / Delete 不截走。
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || disabled) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelect();
+    } else if (event.key === 'Delete' && closable) {
       event.preventDefault();
       onClose();
     }
   };
 
-  // 中键单击关闭(VSCode / 浏览器 tab 惯例;与 dock tab SharedTab 一致)。走同一个 onClose —— 未保存 tab 的
-  // 确认流程由调用方的 onClose 负责,中键与点 × 等价。按下时 preventDefault 阻止中键默认的自动滚动(auto-scroll)。
-  // 鼠标点击(detail>0、主键)才回调 onMouseSelect;Enter / Space 合成的 click detail=0,焦点留在 tab。
-  const handleSelectClick = (event: MouseEvent<HTMLButtonElement>) => {
+  // 鼠标点击(主键)选中并回调 onMouseSelect(调用方把焦点交回内容,VSCode:点编辑器 tab 即聚焦编辑器)。
+  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (disabled) return;
     onSelect();
     if (event.detail !== 0 && event.button === 0) onMouseSelect?.();
   };
-  const closable = onClose != null && !disabled;
+  // 中键单击关闭(VSCode / 浏览器 tab 惯例;与 dock tab SharedTab 一致)。走同一个 onClose —— 未保存 tab 的
+  // 确认流程由调用方的 onClose 负责,中键与点 × 等价。按下时 preventDefault 阻止中键默认的自动滚动(auto-scroll)。
   const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button === 1 && closable) event.preventDefault();
   };
@@ -167,39 +173,42 @@ export function TabNavItem({
     onClose();
   };
 
+  // a11y(axe aria-required-children / nested-interactive):tablist 的子元素只能是 tab,故 tab 元素就是这个根 div
+  // (VSCode multiEditorTabsControl 同:div[role=tab] 内含标题与关闭动作)。tab 的子元素按 ARIA 是 presentational,
+  // 不能再有可聚焦控件 → 关闭用不可聚焦的 span[role=button](鼠标点击;键盘 / 读屏走 tab 上的 Delete 或 ⌘W)。
+  // 名称经 aria-labelledby 只取标题,不混入关闭按钮的名称。
   return (
     <div
       className="wm-tab-nav-item"
+      role="tab"
+      aria-selected={active}
+      aria-disabled={disabled || undefined}
+      aria-labelledby={labelId}
+      // a11y(A35):dirty 且调用方提供 dirtyLabel 时,经 aria-describedby 关联未保存状态文本。
+      aria-describedby={showDirtyDesc ? dirtyDescId : undefined}
+      // a11y(A23):roving tabindex —— 仅 active tab 在 Tab 顺序内(0),其余 -1,由 tablist
+      // 方向键导航;键盘用户一次 Tab 进/出整个 tablist,不再逐个穿过所有 tab。
+      tabIndex={active ? 0 : -1}
       data-active={active}
       data-dirty={dirty}
       data-muted={muted}
       data-disabled={disabled}
-      role="presentation"
       title={title}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onClick={handleClick}
+      onDoubleClick={disabled ? undefined : onRename}
+      onKeyDown={handleKeyDown}
       onMouseDown={handleMouseDown}
       onAuxClick={handleAuxClick}
       {...dataAttrs}
     >
-      <button
-        type="button"
-        role="tab"
-        className="wm-tab-nav-item__select"
-        aria-selected={active}
-        // a11y(A23):roving tabindex —— 仅 active tab 在 Tab 顺序内(0),其余 -1,由 tablist
-        // 方向键导航;键盘用户一次 Tab 进/出整个 tablist,不再逐个穿过所有 tab。
-        tabIndex={active ? 0 : -1}
-        disabled={disabled}
-        // a11y(A35):dirty 且调用方提供 dirtyLabel 时,经 aria-describedby 关联未保存状态文本。
-        aria-describedby={showDirtyDesc ? dirtyDescId : undefined}
-        onClick={handleSelectClick}
-        onDoubleClick={onRename}
-        onKeyDown={handleSelectKeyDown}
-      >
-        <span className="wm-tab-nav-item__label">{children}</span>
-      </button>
+      <span className="wm-tab-nav-item__select">
+        <span className="wm-tab-nav-item__label" id={labelId}>
+          {children}
+        </span>
+      </span>
       {dirty ? (
         <span
           className="wm-tab-nav-item__dirty-dot"
@@ -210,22 +219,20 @@ export function TabNavItem({
         />
       ) : null}
       {onClose != null ? (
-        <button
-          type="button"
+        // 不用 design Button / 原生 button:tab 内不能有可聚焦控件(见上);只作鼠标点击目标。
+        <span
+          role="button"
           className="wm-tab-nav-item__close"
           aria-label={closeLabel}
-          disabled={disabled}
-          // a11y(A29):移出 Tab 顺序,避免 tablist 内混入非 tab 的额外 tab stop(鼠标仍可点;
-          // 键盘经聚焦 tab 后 Delete 关闭;不认 Backspace)。
-          tabIndex={-1}
-          // 按下不抢焦点:点背景 tab 的 × 时焦点留在原处(如活动编辑器),不落到随后卸载的按钮 / body(VSCode 同)。
+          aria-disabled={disabled || undefined}
+          // 按下不抢焦点:点背景 tab 的 × 时焦点留在原处(如活动编辑器),不落到所在的 tab 上(VSCode 同)。
           onPointerDown={preventFocusSteal}
           onMouseDown={preventFocusSteal}
           onClick={handleClose}
         >
           {/* Continuo-local 微调:'x' → '✕'(U+2715 multiplication X)视觉更对称。 */}
           <span aria-hidden="true">✕</span>
-        </button>
+        </span>
       ) : null}
     </div>
   );

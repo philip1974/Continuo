@@ -13,7 +13,7 @@ test('切 tab → 当前 item data-active=true,其他 false', async ({ window })
   await expect(readmeItem).toHaveAttribute('data-active', 'false');
 
   // 点 README.md tab
-  await readmeItem.locator('button[role=tab]').click();
+  await readmeItem.click();
   await expect(window.locator('header').first()).toContainText('README.md');
 
   await expect(readmeItem).toHaveAttribute('data-active', 'true');

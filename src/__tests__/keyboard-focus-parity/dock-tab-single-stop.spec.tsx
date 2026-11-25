@@ -58,6 +58,9 @@ describe('dock tab 条一个 Tab 停靠点', () => {
 
     expect(outerActive.tabIndex).toBe(-1);
     expect(outerInactive.tabIndex).toBe(-1);
+    // 外层不可聚焦(不留 tabindex 属性):tablist 下可聚焦的只有 role=tab(axe aria-required-children)
+    expect(outerActive.hasAttribute('tabindex')).toBe(false);
+    expect(outerInactive.hasAttribute('tabindex')).toBe(false);
     expect(outerActive.querySelector<HTMLElement>('[role="tab"]')!.tabIndex).toBe(0);
     expect(outerInactive.querySelector<HTMLElement>('[role="tab"]')!.tabIndex).toBe(-1);
   });

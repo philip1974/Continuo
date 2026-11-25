@@ -13,7 +13,7 @@ F6 / ⇧F6(`workbench.action.focusNextPart` / `focusPreviousPart`)在工作台�
 | `src/shell/dock/HeaderActions.tsx` | 弹出到独立窗口成功 → `focusDockPanelSoon` 把焦点交给子窗里的面板内容 |
 | `src/shell/dock/group-mru.ts` | 被移除组的活动面板仍在(随组挪进 popout / 别的组)→ 只激活该面板,不回落到同窗别的面板 |
 | `src/design/TabNav.tsx` | 关闭按钮 pointerdown / mousedown 不抢焦点 |
-| `src/shell/motion/SharedTab.tsx` / `src/styles/dockview.css` | 外层 `.dv-tab` 移出 Tab 顺序(tabIndex=-1);焦点指示只在 focus-visible 时由 `::after` 显示、用 `--md-focus-ring`,`.dv-tab` / 内层 role=tab 自身不画系统 outline |
+| `src/shell/motion/SharedTab.tsx` / `src/styles/dockview.css` | 外层 `.dv-tab` 移出 Tab 顺序(去掉 tabindex,不可聚焦 —— tablist 下可聚焦的只有 role=tab,axe aria-required-children);焦点指示只在 focus-visible 时由 `::after` 显示、用 `--md-focus-ring`,`.dv-tab` / 内层 role=tab 自身不画系统 outline |
 | `src/shell/dock/panel-focus.ts` | 面板内容无可编辑 / 可 Tab 元素时回退到面板根(`[data-editor-panel-root]` / 内容根下 tabIndex=-1 的根元素) |
 | `src/shell/dock/EmptyState.tsx` / `src/shell/dock/group-mru.ts` | 主窗空态(`data-dock-empty`,tabIndex=-1);`isMainWindowDockEmpty` 按主窗内面板数判空 |
 | `src/panels/Editor/EditorPanel.tsx` | 关掉最后一个 tab 后焦点给面板根(tabIndex=-1) |

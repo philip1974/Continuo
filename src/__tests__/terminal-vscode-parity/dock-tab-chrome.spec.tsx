@@ -28,12 +28,12 @@ function renderTab(isActive: boolean) {
 afterEach(() => cleanup());
 
 describe('6 · 激活 tab 的关闭按钮常显', () => {
-  const closeButton = (c: HTMLElement) => c.querySelector<HTMLElement>('button[aria-label*="Terminal 1"]')!;
+  const closeButton = (c: HTMLElement) => c.querySelector<HTMLElement>('[role=button][aria-label*="Terminal 1"]')!;
   it('激活 tab:不靠悬停,常显', () => {
     const { container } = renderTab(true);
     expect(closeButton(container).className).not.toContain('opacity-0');
   });
-  it('非激活 tab:仍只在悬停 / 键盘聚焦时显示', () => {
+  it('非激活 tab:仍只在悬停时显示(关闭按钮不可聚焦)', () => {
     const { container } = renderTab(false);
     expect(closeButton(container).className).toContain('opacity-0');
     expect(closeButton(container).className).toContain('group-hover/tab:opacity-100');

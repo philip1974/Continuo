@@ -1,4 +1,4 @@
-// 编辑器 TabNav:点击切 tab → aria-selected 同步(TabNavItem 是 button role=tab).
+// 编辑器 TabNav:点击切 tab → aria-selected 同步(TabNavItem 根元素即 role=tab).
 import { test, expect } from './fixtures/with-workspace';
 import { EDITOR_TABS, editorTab, openWorkspaceFile } from './helpers/editor';
 

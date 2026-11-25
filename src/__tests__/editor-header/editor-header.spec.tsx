@@ -79,7 +79,8 @@ describe('EditorHeader — 同名文件 tab 区分', () => {
     useEditorStore.setState({ tabs: [a, b, c], activeTabId: a.id });
     const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
     const tabs = Array.from(container.querySelectorAll('[role=tab]'));
-    expect(tabs.map((t) => t.textContent)).toEqual(['index.tsa', 'index.tsb', 'c.ts']);
+    // tab 元素内含关闭按钮(✕):比较标题区文本
+    expect(tabs.map((t) => t.querySelector('.wm-tab-nav-item__label')!.textContent)).toEqual(['index.tsa', 'index.tsb', 'c.ts']);
     const desc = tabs[0]!.querySelector('[data-testid="tab-description"]')!;
     expect(desc.textContent).toBe('a');
     expect(desc.className).toContain('text-fg-dim');
@@ -246,7 +247,7 @@ describe('EditorHeader — 单 tab close', () => {
     // a11y(A106):close 按钮 aria-label 经 closeLabel 本地化(默认 locale=zh → 「关闭 x.md」,
     // title=basename);用子串匹配定位,locale-健壮。
     const closeBtn = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button[aria-label]'),
+      container.querySelectorAll<HTMLElement>('[role=button][aria-label]'),
     ).find((b) => (b.getAttribute('aria-label') ?? '').includes('x.md'))!;
     expect(closeBtn).not.toBeNull();
     fireEvent.click(closeBtn);

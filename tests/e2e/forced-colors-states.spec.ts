@@ -4,6 +4,19 @@ import type { Locator } from '@playwright/test';
 import { test, expect } from './fixtures/with-workspace';
 import { commandPaletteInput, COMMAND_LIST, openCommandPalette } from './helpers/palette';
 import { EDITOR_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { editorTab, openWorkspaceFile } from './helpers/editor';
+
+/** 与 src/styles/forced-colors.css 第一条规则同一组选择器。 */
+const FORCED_STATE_SELECTOR = [
+  '[aria-selected="true"]',
+  '[aria-current]:not([aria-current="false"])',
+  '[aria-pressed="true"]',
+  '[data-highlighted]',
+  '[data-state="active"]',
+  '[data-state="checked"]',
+  '[data-state="on"]',
+  '[data-active="true"]',
+].join(',');
 
 const outlineOf = (el: Locator) =>
   el.evaluate((n) => {
@@ -72,4 +85,35 @@ test('正常模式:命令面板选中项不画强制颜色轮廓(规则只在 fo
   const selected = window.getByRole('listbox', { name: COMMAND_LIST }).locator('[role=option][aria-selected=true]');
   await expect(selected).toHaveCount(1);
   expect((await outlineOf(selected)).style).toBe('none');
+});
+
+// 每个选中 / 当前项只画一种标记:语义状态元素互不嵌套(旧编辑器 tab 外层 data-active + 内层 aria-selected + 下划线 = 三重框)。
+// 扫描整个工作台:编辑器 tab、dock tab、Explorer 行、活动栏、设置导航。
+test('强制颜色:编辑器活动 tab 只一圈 Highlight 轮廓;全工作台语义状态元素无嵌套', async ({ window }) => {
+  await window.emulateMedia({ forcedColors: 'active' });
+  await openWorkspaceFile(window, ['README.md']);
+  const tab = editorTab(window, 'README.md');
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  const marks = await tab.evaluate((el) =>
+    [el, ...Array.from(el.querySelectorAll('*'))]
+      .map((n) => getComputedStyle(n))
+      .filter((s) => s.outlineStyle !== 'none')
+      .map((s) => s.outlineStyle),
+  );
+  expect(marks).toEqual(['solid']);
+  // 下划线与背景同色(Canvas),不再另画一条
+  const tabOutline = await tab.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { outline: s.outlineColor, underline: s.borderBottomColor, width: s.borderBottomWidth };
+  });
+  expect(tabOutline.underline === tabOutline.outline && tabOutline.width !== '0px').toBe(false);
+
+  await window.getByRole('button', { name: SETTINGS }).click();
+  await window.getByRole('navigation', { name: SETTINGS_NAV }).getByRole('button', { name: EDITOR_TAB }).click();
+  const nested = await window.evaluate((sel) => {
+    return Array.from(document.querySelectorAll<HTMLElement>(sel))
+      .filter((el) => el.parentElement?.closest(sel) != null)
+      .map((el) => el.outerHTML.slice(0, 160));
+  }, FORCED_STATE_SELECTOR);
+  expect(nested).toEqual([]);
 });
