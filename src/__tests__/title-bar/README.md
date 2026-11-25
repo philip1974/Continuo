@@ -17,3 +17,11 @@
 - 仅有 active.filePath → basename(filePath)
 - active 与 root 都有 → `${file}  ·  ${ws}`
 - active.dirty=true → 文件名后追加 ' ●'
+
+## 界面缩放(macOS)
+
+- macOS(`titleBarStyle: 'hiddenInset'`)的红绿灯是原生控件,不随网页缩放;标题栏(CSS `h-9`)若随 ⌘- 变矮,红绿灯会伸出
+  标题栏。照 VSCode `titlebarPart` 的 counter-zoom(标题栏没有可缩放的自定义项时 `zoom: calc(1 / var(--zoom-factor))`):
+  标题栏按 `1 / 缩放系数` 反向缩放,高度与文字在任何缩放(缩小与放大)下都与 100% 时相同;100% 时不加 `zoom`。
+- 缩放系数经 preload `coApi.window.getZoomFactor()`(`webFrame.getZoomFactor()`,同步)读取;页面缩放改变视口的 CSS 尺寸并派发
+  `resize`,标题栏据此更新。取不到(无 preload)按 1。非 macOS 是原生标题栏,不干预。

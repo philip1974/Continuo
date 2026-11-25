@@ -3,7 +3,9 @@
 // 无 workspace / 无文件 → 兜底"Continuo"。
 // 主窗活动的是终端等非编辑器面板 → 显示该面板名(不显示被挡住的文件);窗口标题(document.title)同步。
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { coApi } from '@/lib/co-api';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useT } from '@/i18n';
@@ -11,6 +13,33 @@ import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import { basenameForChrome } from '@/lib/path-label';
 import { useActiveNonEditorPanel } from '@/shell/dock/main-window-active-panel';
+
+// 界面缩放(⌘- / ⌘+)由 Chromium 页面缩放实现,变化时视口的 CSS 尺寸随之变化并派发 resize;缩放系数经 preload 的 webFrame 取。
+function subscribeResize(onChange: () => void): () => void {
+  window.addEventListener('resize', onChange);
+  return () => window.removeEventListener('resize', onChange);
+}
+function readZoomFactor(): number {
+  try {
+    const factor = coApi.window.getZoomFactor();
+    return Number.isFinite(factor) && factor > 0 ? factor : 1;
+  } catch {
+    return 1; // 无 preload(测试 / 非 Electron)
+  }
+}
+const noSubscribe = (): (() => void) => () => {};
+const unitZoom = (): number => 1;
+
+/**
+ * macOS hiddenInset 的红绿灯是原生控件、不随网页缩放:标题栏随缩小变矮时红绿灯伸出标题栏。标题栏里没有可缩放的自定义项,
+ * 照 VSCode titlebarPart 的 counter-zoom(`zoom: calc(1 / var(--zoom-factor))`)按 1 / 缩放系数反向缩放 —— 高度与文字
+ * 在任何缩放下都与 100% 时相同。其它平台是原生标题栏,不干预。返回 CSS zoom(无需时 undefined)。
+ */
+function useTitleBarCounterZoom(): number | undefined {
+  const mac = detectPlatform() === 'mac';
+  const factor = useSyncExternalStore(mac ? subscribeResize : noSubscribe, mac ? readZoomFactor : unitZoom);
+  return factor === 1 ? undefined : 1 / factor;
+}
 
 export function TitleBar() {
   const t = useT();
@@ -47,9 +76,12 @@ export function TitleBar() {
   useEffect(() => {
     document.title = windowTitle;
   }, [windowTitle]);
+  const counterZoom = useTitleBarCounterZoom();
 
   return (
-    <header className="flex h-9 shrink-0 items-center justify-center border-b border-line bg-panel/40 text-xs text-fg-muted select-none [-webkit-app-region:drag]">
+    <header
+      style={counterZoom === undefined ? undefined : { zoom: counterZoom }}
+      className="flex h-9 shrink-0 items-center justify-center border-b border-line bg-panel/40 text-xs text-fg-muted select-none [-webkit-app-region:drag]">
       <span className="truncate px-12" title={filePath ?? root ?? undefined}>
         {fileName}
         {dirty && (

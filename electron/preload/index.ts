@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron';
 import {
   EXPLORER_CHANNELS,
   LAYOUT_CHANNELS,
@@ -491,6 +491,11 @@ const api = {
       mode?: 'light' | 'dark' | 'system',
     ): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_THEME, mode === undefined ? { theme } : { theme, mode }),
+    /**
+     * 本窗口当前的界面缩放系数(⌘- / ⌘+ / ⌘0 的页面缩放,1 = 100%)。同步读取(webFrame,沙箱 preload 可用);变化时 renderer
+     * 收到 resize。macOS 标题栏据此反向缩放,保持与原生红绿灯等高(VSCode titlebarPart counter-zoom)。
+     */
+    getZoomFactor: (): number => webFrame.getZoomFactor(),
     /** 关闭本窗口(经 main win.close(),走关窗脏确认)。⌘W 已无可关的编辑器 / 面板时调用(对齐 VSCode)。 */
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
     /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */

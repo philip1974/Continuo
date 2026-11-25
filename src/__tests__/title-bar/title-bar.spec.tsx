@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, cleanup, act } from '@testing-library/react';
 import { TitleBar } from '../../shell/TitleBar';
 import { useEditorStore } from '../../stores/editor.store';
 import { useWorkspaceStore } from '../../stores/workspace.store';
+
+const h = vi.hoisted(() => ({ zoom: vi.fn(() => 1) }));
+vi.mock('@/lib/co-api', () => ({ coApi: { window: { getZoomFactor: h.zoom } } }));
 
 beforeEach(() => {
   useEditorStore.setState({ tabs: [], activeTabId: null });
@@ -99,5 +102,47 @@ describe('TitleBar', () => {
     });
     rerender(<TitleBar />);
     expect(container.textContent).not.toContain('未保存的更改');
+  });
+});
+
+// macOS hiddenInset:红绿灯是原生控件、不随网页缩放。标题栏随 ⌘- 变矮时红绿灯伸出标题栏 → 按 1 / 缩放系数反向缩放
+//(VSCode titlebarPart:标题栏没有可缩放的自定义项时 counter-zoom,`zoom: calc(1 / var(--zoom-factor))`),实际高度不变。
+describe('TitleBar · macOS 界面缩放下高度不变', () => {
+  const setPlatform = (value: string) => Object.defineProperty(navigator, 'platform', { value, configurable: true });
+  const header = (c: HTMLElement) => c.querySelector('header')!;
+  afterEach(() => {
+    setPlatform('');
+    h.zoom.mockReturnValue(1);
+  });
+
+  it('macOS:缩小 / 放大时标题栏按 1 / 缩放系数反向缩放,随缩放变化(resize)更新;100% 不加', () => {
+    setPlatform('MacIntel');
+    h.zoom.mockReturnValue(0.8);
+    const { container } = render(<TitleBar />);
+    expect(Number(header(container).style.zoom)).toBeCloseTo(1.25);
+    h.zoom.mockReturnValue(1.5);
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(Number(header(container).style.zoom)).toBeCloseTo(1 / 1.5);
+    h.zoom.mockReturnValue(1);
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(header(container).style.zoom).toBe('');
+  });
+
+  it('非 macOS(原生标题栏,无红绿灯)/ 取不到缩放系数:不反向缩放', () => {
+    setPlatform('Win32');
+    h.zoom.mockReturnValue(0.8);
+    const { container, unmount } = render(<TitleBar />);
+    expect(header(container).style.zoom).toBe('');
+    unmount();
+    setPlatform('MacIntel');
+    h.zoom.mockImplementation(() => {
+      throw new Error('no api');
+    });
+    const again = render(<TitleBar />);
+    expect(header(again.container).style.zoom).toBe('');
   });
 });
