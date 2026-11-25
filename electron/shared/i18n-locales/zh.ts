@@ -585,12 +585,6 @@ export const zh: Record<TranslationKey, string> = {
   'shell.tab.close': '关闭 {title}',
   'shell.tab.editor_tablist': '编辑器标签',
   'shell.tab.dock_tablist': '面板标签',
-  // tab 右键菜单(VSCode 编辑器标签右键菜单)。
-  'shell.tab.ctx.close': '关闭',
-  'shell.tab.ctx.close_others': '关闭其他',
-  'shell.tab.ctx.close_right': '关闭右侧',
-  'shell.tab.ctx.close_saved': '关闭已保存',
-  'shell.tab.ctx.close_all': '全部关闭',
   'shell.iconbar.updates_tooltip': '{count} 个插件可更新',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 

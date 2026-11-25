@@ -588,12 +588,6 @@ export const ko: Record<TranslationKey, string> = {
   'shell.tab.close': '{title} 닫기',
   'shell.tab.editor_tablist': '편집기 탭',
   'shell.tab.dock_tablist': '패널 탭',
-  // 탭 컨텍스트 메뉴(VSCode 편집기 탭 컨텍스트 메뉴).
-  'shell.tab.ctx.close': '닫기',
-  'shell.tab.ctx.close_others': '기타 항목 닫기',
-  'shell.tab.ctx.close_right': '오른쪽에 있는 항목 닫기',
-  'shell.tab.ctx.close_saved': '저장된 항목 닫기',
-  'shell.tab.ctx.close_all': '모두 닫기',
   'shell.iconbar.updates_tooltip': '업데이트 가능한 플러그인 {count}개',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 

@@ -619,12 +619,6 @@ export const en = {
   'shell.tab.editor_tablist': 'Editor tabs',
   // a11y(A121):accessible name applied to dockview's tab-strip container (role=tablist).
   'shell.tab.dock_tablist': 'Panel tabs',
-  // Tab context menu (VSCode editor tab context menu).
-  'shell.tab.ctx.close': 'Close',
-  'shell.tab.ctx.close_others': 'Close Others',
-  'shell.tab.ctx.close_right': 'Close to the Right',
-  'shell.tab.ctx.close_saved': 'Close Saved',
-  'shell.tab.ctx.close_all': 'Close All',
   'shell.iconbar.updates_tooltip': '{count} plugin(s) updatable',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
