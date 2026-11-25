@@ -1,5 +1,6 @@
 import { useEffect, useRef, type HTMLAttributes, type ReactNode } from 'react';
 import { isImeComposing } from './ime';
+import { focusWithinOrLost } from './focus-within-or-lost';
 
 type ModalSize = 'sm' | 'md' | 'lg';
 
@@ -113,7 +114,9 @@ export function Modal({
     const keyId = keyIdRef.current!;
     const modalKeyStack = modalKeyStackOf(doc);
     modalKeyStack.push(keyId);
-    if (contentRef.current != null) modalContents.set(keyId, contentRef.current);
+    // 卸载清理时 ref 已被 React 清空,先留住内容节点供关闭时判断焦点是否还在弹窗里。
+    const content = contentRef.current;
+    if (content != null) modalContents.set(keyId, content);
     changeOpenModalCount(1);
 
     const raf = requestAnimationFrame(() => {
@@ -181,8 +184,10 @@ export function Modal({
       if (idx >= 0) modalKeyStack.splice(idx, 1);
       modalContents.delete(keyId);
       changeOpenModalCount(-1);
+      // 只在焦点仍在弹窗里(内容已随关闭移除 → 落到 body)时还原;关闭期间焦点已被移到弹窗外(如命令面板执行的
+      // 命令聚焦了别处)→ 不覆盖(VSCode Quick Input 同:隐藏后命令自己的焦点为准)。
       const prev = prevFocusRef.current;
-      if (prev != null && typeof prev.focus === 'function') {
+      if (focusWithinOrLost(doc, content) && prev != null && typeof prev.focus === 'function') {
         prev.focus();
       }
     };

@@ -185,6 +185,45 @@ describe('FolderTree · 新建成功后展开父目录、选中并打开', () =>
     unregister();
   });
 
+  it('双击打开已有文件 → 打开后焦点进编辑器(VSCode 双击 = 打开并聚焦编辑器)', async () => {
+    h.openFileByPath = vi.fn(async (p: string) => {
+      useEditorStore.setState({ activeTabId: p });
+      return { ok: true as const };
+    });
+    h.editorFile = { openFileByPath: h.openFileByPath };
+    const focusEditor = vi.fn();
+    const unregister = registerEditorFocus('/work/beta.ts', focusEditor);
+    const r = await mount();
+    const target = row(r.container, '/work/beta.ts')!;
+    // 浏览器双击的事件序列:click(detail 1)→ click(detail 2)→ dblclick
+    act(() => {
+      fireEvent.click(target, { detail: 1 });
+      fireEvent.click(target, { detail: 2 });
+      fireEvent.doubleClick(target, { detail: 2 });
+    });
+    await waitFor(() => expect(focusEditor).toHaveBeenCalledTimes(1));
+    unregister();
+  });
+
+  it('双击打开失败 → 不请求聚焦编辑器', async () => {
+    h.openFileByPath = vi.fn(async () => ({ ok: false, code: 'FS_ENOENT', message: 'gone' }) as unknown as { ok: true });
+    h.editorFile = { openFileByPath: h.openFileByPath };
+    useEditorStore.setState({ activeTabId: '/work/beta.ts' });
+    const focusEditor = vi.fn();
+    const unregister = registerEditorFocus('/work/beta.ts', focusEditor);
+    const r = await mount();
+    const target = row(r.container, '/work/beta.ts')!;
+    act(() => {
+      fireEvent.click(target, { detail: 1 });
+      fireEvent.click(target, { detail: 2 });
+      fireEvent.doubleClick(target, { detail: 2 });
+    });
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalled());
+    await new Promise((res) => setTimeout(res, 50));
+    expect(focusEditor).not.toHaveBeenCalled();
+    unregister();
+  });
+
   it('新建文件夹 → 新文件夹被选中且 DOM 焦点落在该行,不打开任何文件', async () => {
     const r = await mount();
     const input = await startCreateIn(r, '/work/alpha', NEW_FOLDER);

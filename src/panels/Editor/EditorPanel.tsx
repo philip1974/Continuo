@@ -7,7 +7,7 @@
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DockviewPanelApi } from 'dockview-react';
 import {
   getEffectiveMode,
@@ -21,6 +21,8 @@ import { isMarkdownPath } from './editor-path-utils';
 import { basename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
+import { focusActiveEditor } from './editor-focus-registry';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { createLazyCodeEditor, createLazyMilkdownEditor } from './editor-engine-loaders';
@@ -112,7 +114,23 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   const mode = useEditorStore((s) => s.mode);
   const setMode = useEditorStore((s) => s.setMode);
   const updateContent = useEditorStore((s) => s.updateContent);
-  const closeTab = useEditorStore((s) => s.closeTab);
+  const closeStoreTab = useEditorStore((s) => s.closeTab);
+  // 面板内关闭 tab(⌘W / × / 关闭确认框)的唯一入口:关闭的是活动 tab、且关闭前焦点在本面板里(编辑区 / tab 行 /
+  // 本面板的确认框)或已丢到 body → 关闭后新的活动 tab 的编辑器获焦(VSCode:关闭活动编辑器后同组新的活动编辑器
+  // 获焦);关闭非活动 tab、焦点在面板外(如 Explorer)都不动焦点。BDD: src/__tests__/focus-after-close/
+  const rootRef = useRef<HTMLDivElement>(null);
+  const closeTab = useCallback(
+    (id: string) => {
+      const root = rootRef.current;
+      const refocus =
+        root !== null &&
+        useEditorStore.getState().activeTabId === id &&
+        focusWithinOrLost(root.ownerDocument, root);
+      closeStoreTab(id);
+      if (refocus) focusActiveEditor();
+    },
+    [closeStoreTab],
+  );
   const acceptUnsafeEdit = useEditorStore((s) => s.acceptUnsafeEdit);
   // 引擎 lazy 实例 + 重试代数:重试新建失败引擎的 lazy 实例,并换 key 重挂错误边界。
   const [engines, setEngines] = useState(() => lazyEngines);
@@ -363,6 +381,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   return (
     <div
+      ref={rootRef}
       className="flex h-full w-full flex-col bg-canvas"
       onKeyDown={(e) => {
         // 保存 / 下一个 / 上一个编辑器在面板内就地处理并截住冒泡:不再到 document 的全局分发(否则一次按键执行两次);

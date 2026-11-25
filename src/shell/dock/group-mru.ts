@@ -5,15 +5,16 @@
 // dockview 在 onDidRemoveGroup 派发之后才检查「被移除的是否仍是活动组」再兜底 groups[0] —— 本模块在该事件里同步
 // 激活目标,dockview 的兜底随之跳过。
 //
+// - popout 收回的面板总获焦(焦点原在已关闭的子窗里);关活动组时仅当焦点原在该组里才把焦点交给回落的面板。
 // - 只在同一窗口内回落(VSCode 同):主窗关组不把活动组挪进 popout 子窗,反之亦然;同窗无候选 → 不干预。
-// - 终端聚焦延到 microtask 且仅当目标仍是活动面板:拖动组里最后一个 tab 时 dockview(moveGroupOrPanel /
+// - 回落的面板(终端 / 编辑器等)获焦,聚焦延到 microtask 且仅当目标仍是活动面板:拖动组里最后一个 tab 时 dockview(moveGroupOrPanel /
 //   moveGroup)在 movingLock 之外 doRemoveGroup(skipActive),onDidRemoveGroup 照常派发,随后它自己把目标组设为
 //   活动组(不移 DOM 焦点)—— 同步聚焦会把键盘焦点送进不相干的终端。setActive 仍同步,以压住 groups[0] 兜底。
 
 import type { DockviewApi, IDockviewGroupPanel, IDockviewPanel } from 'dockview-react';
-import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
-import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { activateDockPanel } from './wrap-panel-close';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
+import { focusDockPanelSoon } from './panel-focus';
 
 type Group = DockviewApi['groups'][number];
 
@@ -35,18 +36,18 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   };
 
   let disposed = false;
-  const activate = (panel: IDockviewPanel): void => {
+  const activate = (panel: IDockviewPanel, focus: boolean): void => {
     activateDockPanel(panel);
-    if (panel.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
-    queueMicrotask(() => {
-      if (!disposed && api.activePanel === panel) focusTerminalPanel(panel.id);
-    });
+    if (focus) focusDockPanelSoon(panel, () => !disposed && api.activePanel === panel);
   };
 
   const onRemove = (group: Group): void => {
     const wasActive = api.activeGroup === group;
     const wasPopout = group.api.location.type === 'popout';
     const windowKey = windowKeyOf(group);
+    // 焦点原本在被移除的组里(组已卸载 → 落到 body)才把焦点交给回落的面板;焦点在组外(如 agent 关掉终端时
+    // 用户在 Explorer 里)只换活动组、不抢焦点。
+    const focusWasInGroup = focusWithinOrLost(group.element.ownerDocument, group.element);
     const i = mru.indexOf(group.id);
     if (i >= 0) mru.splice(i, 1);
     const lastPanelId = lastActivePanel.get(group.id);
@@ -56,7 +57,7 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
     if (wasPopout && lastPanelId) {
       const returned = api.getPanel(lastPanelId);
       if (returned && returned.group !== group) {
-        activate(returned);
+        activate(returned, true);
         return;
       }
     }
@@ -66,7 +67,7 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
       if (!candidateGroup || windowKeyOf(candidateGroup) !== windowKey) continue;
       const candidate = candidateGroup.activePanel;
       if (candidate) {
-        activate(candidate);
+        activate(candidate, focusWasInGroup);
         return;
       }
     }

@@ -8,7 +8,10 @@ vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn() }));
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn() }));
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: vi.fn() }));
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: vi.fn() }));
-vi.mock('@continuo-terminal/react-terminal', () => ({}));
+// co-app → dock-api-ref → wrap-panel-close → panel-focus 在模块加载时建终端句柄表(createCallbackRegistry)
+vi.mock('@continuo-terminal/react-terminal', () => ({
+  createCallbackRegistry: () => ({ register: () => () => {}, get: () => undefined }),
+}));
 
 import { createResizeDebouncer } from '../../panels/Terminal/useTerminal';
 

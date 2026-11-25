@@ -307,7 +307,9 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
       <div className="border-b border-line p-2">
         <Input
           size="sm"
-          autoFocus
+          // 初始焦点用 data-autofocus(Modal 下一帧聚焦),不用 React autoFocus:后者在 commit 期就聚焦,
+          // Modal 随后记下的「打开前焦点」变成本输入框,Esc 关闭后焦点掉到 body。
+          data-autofocus
           // a11y(A1):placeholder 不是稳定可访问名(部分 AT 不读 / 输入后消失)。补
           // aria-label 复用同一 placeholder key,给屏幕阅读器稳定的「命令搜索框」名称。
           aria-label={placeholderLabel}

@@ -14,8 +14,9 @@
    面板 → 不抢焦点(VSCode 扩展创建终端默认 preserveFocus)。xterm 创建那一刻所在文档有打开的 Modal(删除确认 /
    授权框等)→ 不抢焦点(见 `hotkey-modal-suppression`)。
 3. **关掉活动组 / popout 子窗后激活最近使用的组**(`group-mru.spec.ts`):dockview 默认激活最早的组
-   (groups[0])。改为按组的最近使用顺序(MRU)激活下一个存活组,是终端则聚焦 xterm(VSCode 关闭编辑器组后激活
-   最近使用的组)。popout 子窗关闭、面板收回主窗时,收回的面板成为活动面板并获焦(VSCode 辅助窗口关闭后收回的
+   (groups[0])。改为按组的最近使用顺序(MRU)激活下一个存活组;焦点原在被移除的组里时,回落面板的内容获焦(终端
+   聚焦 xterm,编辑器等聚焦可编辑元素;焦点在组外只换活动组不抢焦点,见 `focus-after-close`)(VSCode 关闭编辑器组后
+   激活最近使用的组)。popout 子窗关闭、面板收回主窗时,收回的面板成为活动面板并获焦(VSCode 辅助窗口关闭后收回的
    编辑器获焦)。移除的不是活动组 → 不干预。只在**同一窗口**内回落(grid / floating 同属主窗,每个 popout 组各占
    一个子窗):主窗关组不把活动组挪进 popout 子窗,同窗无候选 → 不干预(交给 dockview 默认)。终端聚焦延到 microtask
    且仅当它仍是活动面板:拖动组里最后一个 tab 进另一组时 dockview 照常派发移除事件、随后自己激活目标组,键盘焦点

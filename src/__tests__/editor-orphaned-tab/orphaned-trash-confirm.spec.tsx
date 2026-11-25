@@ -15,6 +15,7 @@ const entries: FileEntry[] = [
   { path: '/work/alpha', name: 'alpha', isDirectory: true },
   { path: '/work/beta.md', name: 'beta.md', isDirectory: false },
   { path: '/work/clean.md', name: 'clean.md', isDirectory: false },
+  { path: '/work/gamma.md', name: 'gamma.md', isDirectory: false },
 ];
 
 vi.mock('@/lib/co-api', () => ({
@@ -79,7 +80,29 @@ async function deleteRow(p: string) {
   return r;
 }
 
-const WARNING = () => t('panels.explorer.trash_confirm.unsaved', { count: 1 });
+// 只删一个脏文件 → 单数句式(不出现「其中 1 个文件 / 它们的编辑器」)
+/** 单击第一行、Ctrl+单击其余行(Win32 平台下多选修饰键)后按 Delete。 */
+async function deleteRows(paths: readonly string[]) {
+  const r = render(<FolderTree root="/work" />);
+  await waitFor(() => expect(row(r.container, paths[0]!)).not.toBeNull());
+  act(() => {
+    fireEvent.click(row(r.container, paths[0]!)!);
+  });
+  for (const p of paths.slice(1)) {
+    act(() => {
+      fireEvent.mouseDown(row(r.container, p)!, { ctrlKey: true });
+      fireEvent.click(row(r.container, p)!, { ctrlKey: true });
+    });
+  }
+  const last = paths[paths.length - 1]!;
+  await waitFor(() => expect(row(r.container, last)!.getAttribute('aria-selected')).toBe('true'));
+  act(() => {
+    fireEvent.keyDown(row(r.container, last)!, { key: 'Delete', code: 'Delete' });
+  });
+  return r;
+}
+
+const WARNING = () => t('panels.explorer.trash_confirm.unsaved_single');
 
 beforeEach(() => {
   Object.defineProperty(window.navigator, 'platform', { value: 'Win32', configurable: true });
@@ -177,6 +200,29 @@ describe('Explorer 删除有未保存修改的文件', () => {
       await vi.advanceTimersByTimeAsync(1500);
     });
     expect(saveToDisk).toHaveBeenCalledWith('/work/beta.md', { recreateMissing: false });
+  });
+
+  it('单个脏文件 → 用单数文案,不出现多文件句式', async () => {
+    await deleteRow('/work/beta.md');
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain(t('panels.explorer.trash_confirm.unsaved_single'));
+    expect(dialog.textContent).not.toContain(t('panels.explorer.trash_confirm.unsaved', { count: 1 }));
+  });
+
+  it('多选删除且其中只有 1 个脏 → 「其中 1 个文件……其编辑器」单数句式', async () => {
+    await deleteRows(['/work/beta.md', '/work/clean.md']);
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain(t('panels.explorer.trash_confirm.unsaved_one'));
+    expect(dialog.textContent).not.toContain(t('panels.explorer.trash_confirm.unsaved_single'));
+  });
+
+  it('多选删除且 2 个脏 → 复数句式带数量', async () => {
+    useEditorStore.setState((s) => ({
+      tabs: [...s.tabs, { id: '/work/gamma.md', filePath: '/work/gamma.md', content: 'g2', originalContent: 'g', dirty: true }],
+    }));
+    await deleteRows(['/work/beta.md', '/work/gamma.md']);
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain(t('panels.explorer.trash_confirm.unsaved', { count: 2 }));
   });
 
   it('没有未保存 tab → 无警告', async () => {

@@ -834,6 +834,15 @@ export function FolderTree({ root }: { root: string }) {
       openFileOrNotify(() => openFileByPath(path), basenamePreserveTrailing(path), 'explorer'),
     [openFileByPath],
   );
+  // 文件行单击 / 双击:双击打开成功后焦点进编辑器(VSCode;单击预览焦点留在树里)。
+  const handleRowFileOpen = useCallback(
+    (path: string, focusEditor: boolean) => {
+      void handleFileOpen(path).then((ok) => {
+        if (ok && focusEditor) focusActiveEditor();
+      });
+    },
+    [handleFileOpen],
+  );
 
   const hasClipboard = useExplorerClipboardStore((s) => s.kind !== null && s.paths.length > 0);
   // 键盘操作(Enter / Delete / 剪切复制粘贴 / 键入跳转 / 选中跟随焦点),见 tree-keyboard.ts
@@ -1063,9 +1072,11 @@ export function FolderTree({ root }: { root: string }) {
     const paths = trashConfirm?.paths ?? EMPTY_PATH_LIST;
     let title = '';
     let names: string[] = EMPTY_PATH_LIST;
+    let singleFile = false;
     if (paths.length === 1) {
       const p = paths[0]!;
       const data = tree.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current.itemData?.[p];
+      singleFile = data?.isDirectory !== true;
       title = tt(
         data?.isDirectory ? 'panels.explorer.trash_confirm.folder' : 'panels.explorer.trash_confirm.file',
         { name: basenamePreserveTrailing(p) },
@@ -1075,6 +1086,12 @@ export function FolderTree({ root }: { root: string }) {
       names = paths.slice(0, TRASH_CONFIRM_MAX_NAMES).map(basenamePreserveTrailing);
     }
     const more = paths.length > 1 ? paths.length - names.length : 0;
+    // 未保存警告按数量用单 / 复数句式:只删这一个脏文件 →「该文件……其编辑器」;多项 / 文件夹里只有 1 个脏 →
+    //「其中 1 个文件……其编辑器」;否则「其中 N 个文件……它们的编辑器」。
+    const unsavedWarning = (count: number): string =>
+      count > 1
+        ? tt('panels.explorer.trash_confirm.unsaved', { count })
+        : tt(singleFile ? 'panels.explorer.trash_confirm.unsaved_single' : 'panels.explorer.trash_confirm.unsaved_one');
     return (
       <ConfirmDialog
         open={trashConfirm !== null}
@@ -1095,7 +1112,7 @@ export function FolderTree({ root }: { root: string }) {
             )}
             {trashConfirm !== null && trashConfirm.unsaved > 0 && (
               <p className="mb-2 text-fg">
-                {tt('panels.explorer.trash_confirm.unsaved', { count: trashConfirm.unsaved })}
+                {unsavedWarning(trashConfirm.unsaved)}
               </p>
             )}
             <p>{tt('panels.explorer.trash_confirm.detail')}</p>
@@ -1306,7 +1323,7 @@ export function FolderTree({ root }: { root: string }) {
                     contextActions={contextActions}
                     onHoverDropTarget={reportHoverTarget}
                     isDropHover={dragActive && hoverTarget?.path === item.getId()}
-                    onFileOpen={handleFileOpen}
+                    onFileOpen={handleRowFileOpen}
                     onFileIntent={warmEditorEngineFor}
                     decorators={decorators}
                     hasClipboard={hasClipboard}

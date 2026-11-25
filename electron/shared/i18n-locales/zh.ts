@@ -231,6 +231,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.more': '…另有 {count} 项未列出',
   'panels.explorer.trash_confirm.detail': '可以从废纸篓恢复。',
   'panels.explorer.trash_confirm.unsaved': '其中 {count} 个文件有未保存的更改。删除后它们的编辑器保留并标记为「已删除」，除非手动保存，这些更改不会写回磁盘。',
+  'panels.explorer.trash_confirm.unsaved_single': '该文件有未保存的更改。删除后其编辑器保留并标记为「已删除」，除非手动保存，这些更改不会写回磁盘。',
+  'panels.explorer.trash_confirm.unsaved_one': '其中 1 个文件有未保存的更改。删除后其编辑器保留并标记为「已删除」，除非手动保存，这些更改不会写回磁盘。',
   'panels.explorer.tree_aria': '文件树',
   'panels.explorer.copy_path_failed': '复制路径到剪贴板失败',
   'panels.terminal.starting_shell': '启动 shell…',

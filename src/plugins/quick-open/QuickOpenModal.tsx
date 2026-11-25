@@ -189,7 +189,9 @@ function QuickOpenBody() {
       <div className="border-b border-line p-2">
         <Input
           size="sm"
-          autoFocus
+          // 初始焦点用 data-autofocus(Modal 下一帧聚焦),不用 React autoFocus:后者在 commit 期就聚焦,
+          // Modal 随后记下的「打开前焦点」变成本输入框,Esc 关闭后焦点掉到 body。
+          data-autofocus
           // a11y(A2,A1 同族):placeholder 含快捷键参数不适合作可访问名;用专用简洁
           // aria-label,给屏幕阅读器稳定的「搜索文件」名称。
           aria-label={inputAriaLabel}

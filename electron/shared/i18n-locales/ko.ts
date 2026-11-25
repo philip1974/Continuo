@@ -233,6 +233,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.more': '…외 {count}개 항목은 표시되지 않음',
   'panels.explorer.trash_confirm.detail': '휴지통에서 복원할 수 있습니다.',
   'panels.explorer.trash_confirm.unsaved': '삭제할 파일 중 {count}개에 저장되지 않은 변경 내용이 있습니다. 해당 편집기는 \'삭제됨\'으로 표시된 채 유지되며, 직접 저장하지 않으면 변경 내용이 디스크에 기록되지 않습니다.',
+  'panels.explorer.trash_confirm.unsaved_single': '이 파일에 저장되지 않은 변경 내용이 있습니다. 해당 편집기는 \'삭제됨\'으로 표시된 채 유지되며, 직접 저장하지 않으면 변경 내용이 디스크에 기록되지 않습니다.',
+  'panels.explorer.trash_confirm.unsaved_one': '삭제할 파일 중 1개에 저장되지 않은 변경 내용이 있습니다. 해당 편집기는 \'삭제됨\'으로 표시된 채 유지되며, 직접 저장하지 않으면 변경 내용이 디스크에 기록되지 않습니다.',
   'panels.explorer.tree_aria': '파일 트리',
   'panels.explorer.copy_path_failed': '클립보드에 경로 복사 실패',
   'panels.terminal.starting_shell': '셸 시작 중…',

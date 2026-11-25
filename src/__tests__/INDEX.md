@@ -741,6 +741,12 @@
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
 
+## [关闭弹窗 / tab / 面板后的焦点归属(VSCode 对齐)](./focus-after-close/README.md)
+
+- [`dock-panel-close-focus.spec.ts`](./focus-after-close/dock-panel-close-focus.spec.ts)
+- [`editor-tab-close-focus.spec.tsx`](./focus-after-close/editor-tab-close-focus.spec.tsx)
+- [`modal-esc-focus.spec.tsx`](./focus-after-close/modal-esc-focus.spec.tsx)
+
 ## [folder-tree-rename-feedback](./folder-tree-rename-feedback/)
 
 - [`rename-reject-feedback.spec.tsx`](./folder-tree-rename-feedback/rename-reject-feedback.spec.tsx)

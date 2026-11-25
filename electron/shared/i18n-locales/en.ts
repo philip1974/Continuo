@@ -247,6 +247,8 @@ export const en = {
   'panels.explorer.trash_confirm.more': '…and {count} more not shown',
   'panels.explorer.trash_confirm.detail': 'You can restore from the Trash.',
   'panels.explorer.trash_confirm.unsaved': '{count} of the files being deleted have unsaved changes. Their editors stay open, marked as deleted; the changes are not written back to disk unless you save them.',
+  'panels.explorer.trash_confirm.unsaved_single': 'This file has unsaved changes. Its editor stays open, marked as deleted; the changes are not written back to disk unless you save them.',
+  'panels.explorer.trash_confirm.unsaved_one': '1 of the files being deleted has unsaved changes. Its editor stays open, marked as deleted; the changes are not written back to disk unless you save them.',
   'panels.explorer.tree_aria': 'File tree',
   'panels.explorer.copy_path_failed': 'Failed to copy path to clipboard',
   'panels.terminal.starting_shell': 'Starting shell…',
