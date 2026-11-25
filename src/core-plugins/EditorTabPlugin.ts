@@ -15,7 +15,7 @@ import { EditorIcon } from '@/plugins/settings/tab-icons';
 
 export default class EditorTabPlugin extends Plugin {
   onload(): void {
-    // priority 10:排在「通用(1)」后,「插件商店(40)」前
+    // priority 10:排在「通用(1)」后,「插件市场(40)」前
     this.addSettingTab({
       id: 'core.editor',
       title: 'Editor',

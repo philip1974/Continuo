@@ -17,7 +17,7 @@ import { explorerCommandSpecs } from '@/panels/Explorer/explorer-commands';
 
 export default class ExplorerTabPlugin extends Plugin {
   onload(): void {
-    // priority 20:排在通用(1)/ 编辑器(10)之后,插件商店(40)之前
+    // priority 20:排在通用(1)/ 编辑器(10)之后,插件市场(40)之前
     this.addSettingTab({
       id: 'core.explorer',
       title: 'Explorer',

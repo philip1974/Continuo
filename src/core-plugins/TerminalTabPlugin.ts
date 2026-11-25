@@ -12,7 +12,7 @@ import { TerminalIcon } from '@/plugins/settings/tab-icons';
 
 export default class TerminalTabPlugin extends Plugin {
   onload(): void {
-    // priority 30:排在通用 / 编辑器 / 资源管理器之后,插件商店之前
+    // priority 30:排在通用 / 编辑器 / 资源管理器之后,插件市场之前
     this.addSettingTab({
       id: 'core.terminal',
       title: 'Terminal',

@@ -1,4 +1,4 @@
-# MarketplaceTab(插件商店 SettingTab)
+# MarketplaceTab(插件市场 SettingTab)
 
 行为契约:**启动调 fetchMarketplaceIndex,loading=spinner;ok=渲染卡片列表 + 搜索框 + tag 过滤 + Git URL 安装段;
 error=显示错误 + 提示。每张卡:已安装(installed map)显「已安装」,未装显「安装」按钮 →

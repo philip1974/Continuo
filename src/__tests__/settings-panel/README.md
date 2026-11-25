@@ -30,6 +30,8 @@
 - activeTabId 不存在(null / 已被 unregister)→ 兜底取 tabs[0]
 - nav button 点击 → setActiveTabId(t.id),右侧内容切换
 - 插件运行时 register 新 tab → registry notify → 列表自动更新
+- 搜索框(同 VSCode 设置编辑器):有内容时 Esc 清空并 stopPropagation(不冒泡到外层 Esc 处理);
+  空时不拦截;输入法组字中的 Esc 不清空
 
 ### Panel 生命周期(单例)
 

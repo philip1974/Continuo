@@ -52,6 +52,8 @@
   (VSCode focusBorder),不落回系统强调色;`:where` 零特异性,design 组件 / utility(FileRow)/ dockview.css 可覆盖;
   不含 contenteditable(CodeMirror / ProseMirror 内容区聚焦不画轮廓);原生按钮不得
   `outline-none` 而不补 `focus-visible:outline-*`
+- `Input`:`aria-invalid="true"`(设置页数值越界、新建文件名非法等)→ `--md-error` 描边,聚焦时保持错误色
+  (VSCode inputValidation.errorBorder);规则在 `:focus` / variant 之后,同特异性时后者胜
 - 有不透明底色的控件 hover 用 MD3 state layer 叠加(`background-image` 叠 `--md-state-hover`),不把底色换成半透明
 - `SegmentedControl`:轨道 1px `outline-variant` 描边;选中项 `secondary-container` 底 + `on-secondary-container` 字 +
   1px `primary` 描边(指示对轨道 ≥ 3:1);未选中项同宽透明描边,切换不抖动

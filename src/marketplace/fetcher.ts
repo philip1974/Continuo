@@ -1,4 +1,4 @@
-// 插件商店索引 fetcher(Phase 1)。
+// 插件市场索引 fetcher(Phase 1)。
 //
 // 拉 raw.githubusercontent.com 上的 index.json,1h in-memory + sessionStorage
 // cache。GitHub raw 60/hr 不 auth,缓存 1h 单用户撞不墙。

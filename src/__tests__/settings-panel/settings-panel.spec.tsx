@@ -588,6 +588,35 @@ describe('SettingsPanel · 搜索模式', () => {
     expect(container.querySelector('nav')!.className).not.toContain('opacity-40');
   });
 
+  // 对齐 VSCode 设置编辑器搜索框:有内容时 Esc 清空并就地消费(不冒泡到外层 Esc 处理);空时不拦截。
+  it('搜索框有内容时 Esc 清空并阻止冒泡;空时不拦截', () => {
+    const outer = vi.fn();
+    const { container } = render(
+      <div onKeyDown={(e) => outer(e.key)}>
+        <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />
+      </div>,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '主题' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('');
+    expect(container.querySelector('nav')!.className).not.toContain('opacity-40');
+    expect(outer).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(outer).toHaveBeenCalledWith('Escape');
+  });
+
+  it('输入法组字中的 Esc 不清空搜索', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '主题' } });
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    expect(input.value).toBe('主题');
+  });
+
   it('全空白 query 视为非搜索模式', () => {
     const { container } = render(
       <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,

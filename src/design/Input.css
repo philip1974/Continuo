@@ -29,3 +29,10 @@
 
 .wm-input[data-size="xs"] { padding: 0 var(--wm-space-1_5); font-size: var(--wm-text-xs); border-radius: var(--wm-radius-sm); }
 .wm-input[data-size="sm"] { padding: var(--wm-space-0_5) var(--wm-space-2); font-size: var(--wm-text-sm); border-radius: 4px; }
+
+/* 校验失败(aria-invalid="true"):错误色描边(同 VSCode inputValidation.errorBorder),聚焦时保持错误色。
+ * 放在 :focus / variant 规则之后,同特异性时后者胜;--md-error 两主题均有取值。 */
+.wm-input[aria-invalid="true"],
+.wm-input[aria-invalid="true"]:focus {
+  border-color: var(--md-error);
+}

@@ -15,7 +15,8 @@
   font-size: 13px;
   line-height: 1.4;
   min-width: 280px;
-  max-width: 420px;
+  /* 窄窗口左右各留 12px(右边距见 ToastViewport.css),不贴窗口左边。 */
+  max-width: min(420px, calc(100vw - 24px));
   /* 浮层阴影统一 --wm-shadow-popover(design-tokens.css 两主题各有取值) */
   box-shadow: var(--wm-shadow-popover);
 }

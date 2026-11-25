@@ -25,7 +25,7 @@ const MarketplaceTab = lazy(() =>
 
 export default class PluginsTabPlugin extends Plugin {
   onload(): void {
-    // 插件商店在前(priority 数字小排前)
+    // 插件市场在前(priority 数字小排前)
     this.addSettingTab({
       id: 'core.marketplace',
       title: 'Plugin Market',

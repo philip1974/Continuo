@@ -19,7 +19,7 @@ test('商店 tab 可打开 + UI 是三态之一', async ({ window }) => {
     timeout: 10_000,
   });
 
-  // 内置 tab id='marketplace' 标题「插件商店」(详见 PluginsTabPlugin)
+  // 内置 tab id='marketplace' 标题「插件市场」(详见 PluginsTabPlugin)
   const marketplaceTab = window
     .getByRole('navigation', { name: SETTINGS_NAV })
     .getByRole('button', { name: MARKETPLACE_TAB });

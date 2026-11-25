@@ -20,6 +20,7 @@ T10 business source contains no direct `alert(...)` calls;
 T10b a TypeScript compiler-API scan finds no `CallExpression` named `alert` in business source;
 T11 `Toast.tsx` uses design tokens rather than default Tailwind colors or hex literals;
 T11b `Toast.css` contains no naked hex/rgb color literals;
+T11c `.toast` max-width is `min(420px, calc(100vw - 24px))`: in a narrow window (400px main-window minimum) the toast keeps a 12px gap on the left, matching the viewport's 12px right offset, instead of touching the window edge;
 T12 rendering `<NotificationsProvider><ToastViewport /></NotificationsProvider>` and calling `notify.error()` shows an alert toast whose body is the message only; the error code is not body text — it stays in the message `title` (`message (CODE)`) and `data-code` for support;
 T15 hovering a toast pauses its auto-dismiss; leaving resumes with the remaining time (not a fresh full duration); a de-duplicated re-notify while paused refreshes the remaining time without restarting the timer (`toast-pause-focus.spec.tsx`);
 T16 focus inside a toast also pauses it — pause sources (hover, focus, each window's copy) are counted, so leaving with the mouse while the × is still focused keeps it paused;

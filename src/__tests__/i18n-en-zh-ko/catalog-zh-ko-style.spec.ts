@@ -3,6 +3,8 @@
 // - 术语:Quick Open →「快速打开」/「빠른 열기」(与已译的「命令面板」/「명령 팔레트」同级);本产品的扩展统一叫「插件」/「플러그인」。
 // - zh 中文排版:句内逗号 / 分号 / 问号 / 叹号 / 冒号用全角;含中文或紧跟汉字的括号用全角「（）」;引号统一「」。
 //   代码(反引号内)、占位符之间(`{src}: {message}`)、快捷键与英文片段内部保留半角。
+// - 插件市场名统一:zh「插件市场」(catalog 内原 6:1 多于「插件商店」)、ko「마켓플레이스」(原 6:2 多于「마켓」)。
+// - ko 引号用 “ ”(名称 / 占位符)与 ‘ ’(界面按钮 / 选项名),不用中日式「」。
 import { describe, expect, it } from 'vitest';
 import { ko } from '../../../electron/shared/i18n-locales/ko';
 import { zh } from '../../../electron/shared/i18n-locales/zh';
@@ -19,11 +21,14 @@ const ZH_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ['弯引号(统一用「」)', /[“”]/],
   ['未译的 Quick Open(用「快速打开」)', /Quick Open/],
   ['「扩展」(本产品统一叫「插件」)', /扩展/],
+  ['「插件商店」(统一叫「插件市场」)', /商店/],
 ];
 
 const KO_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ['未译的 Quick Open(用「빠른 열기」)', /Quick Open/],
   ['「확장」(本产品统一叫「플러그인」)', /확장/],
+  ['「플러그인 마켓」(统一叫「마켓플레이스」)', /마켓(?!플레이스)/],
+  ['「」引号(ko 用 “ ” / ‘ ’)', /[「」]/],
 ];
 
 /**
@@ -54,7 +59,7 @@ describe('zh / ko 文案术语与标点', () => {
     expect(violations(zh, ZH_RULES, ZH_FRAGMENT_KEYS)).toEqual([]);
   });
 
-  it('ko:术语统一(빠른 열기 / 플러그인)', () => {
+  it('ko:术语统一(빠른 열기 / 플러그인 / 마켓플레이스)、不用「」引号', () => {
     expect(violations(ko, KO_RULES)).toEqual([]);
   });
 

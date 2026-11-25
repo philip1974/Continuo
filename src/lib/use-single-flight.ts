@@ -3,7 +3,7 @@
 // `disabled={busy}` 是 render 之后才生效的状态:同一事件循环内的双击 / Enter 会在 setBusy(true) 生效前
 // 两次进入处理器,发起两次异步操作(如两次 installFromGit → 主进程双 clone,第二个 EEXIST 把成功覆盖成
 // 失败)。ref 同步占位:进入即标记,重入直接丢弃;busy state 只负责驱动 UI(disabled / aria-busy)。
-// 此前「从 Git URL 安装」的两个表单(设置 → 插件、插件商店)各手写一份 ref + state + finally。
+// 此前「从 Git URL 安装」的两个表单(设置 → 插件、插件市场)各手写一份 ref + state + finally。
 
 import { useCallback, useRef, useState } from 'react';
 

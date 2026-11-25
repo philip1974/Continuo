@@ -1,4 +1,4 @@
-# marketplace(插件商店浏览 Phase 1)
+# marketplace(插件市场浏览 Phase 1)
 
 行为契约:**fetchMarketplaceIndex 拉 raw.githubusercontent.com 上的 index.json,
 1h memory + sessionStorage 缓存;网络失败有 cache 时回落,无 cache 才抛。

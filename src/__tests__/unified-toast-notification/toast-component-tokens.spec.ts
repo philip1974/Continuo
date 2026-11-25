@@ -38,4 +38,12 @@ describe('unified-toast-notification: Toast token usage', () => {
     expect(body).not.toMatch(/bg-neutral-|text-sky-|border-neutral-/);
     expect(body).toMatch(/var\(--md-/);
   });
+
+  // 窄窗口(主窗最小 400px):toast 宽度不超过视口减左右各 12px,左边与右边距一致,不贴窗口左边。
+  it('T11c .toast max-width 受视口约束:min(420px, calc(100vw - 24px))', () => {
+    const body = read('src/notifications/Toast.css');
+    const rule = /\.toast\s*\{([^}]*)\}/.exec(body)?.[1] ?? '';
+    expect(rule).toMatch(/max-width:\s*min\(420px,\s*calc\(100vw - 24px\)\)/);
+    expect(read('src/notifications/ToastViewport.css')).toMatch(/right:\s*12px/);
+  });
 });

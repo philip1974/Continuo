@@ -31,6 +31,23 @@ describe('Button 样式契约', () => {
   });
 });
 
+describe('Input 样式契约', () => {
+  const INPUT = css('src/design/Input.css');
+
+  // 校验失败(aria-invalid=true,设置页数值越界 / 新建文件名非法等)须有错误色描边(同 VSCode inputValidation.errorBorder),
+  // 聚焦时也保持错误色,不被 :focus 的 focus-ring 盖掉;--md-error 在 light / dark 都有取值(tokens.spec 守护)。
+  it('aria-invalid=true → --md-error 描边,focus 态仍为错误色', () => {
+    expect(ruleBody(INPUT, '.wm-input[aria-invalid="true"]')).toMatch(/border-color:\s*var\(--md-error\)/);
+    expect(ruleBody(INPUT, '.wm-input[aria-invalid="true"]:focus')).toMatch(/border-color:\s*var\(--md-error\)/);
+  });
+
+  it('错误描边规则写在 variant 规则之后(同特异性时后者胜,dark variant 不盖掉错误色)', () => {
+    const invalidAt = INPUT.indexOf('.wm-input[aria-invalid="true"]');
+    expect(invalidAt).toBeGreaterThan(INPUT.indexOf('.wm-input[data-variant="dark"]'));
+    expect(invalidAt).toBeGreaterThan(INPUT.indexOf('.wm-input:focus'));
+  });
+});
+
 describe('SegmentedControl 样式契约', () => {
   const SEG = css('src/design/SegmentedControl.css');
 

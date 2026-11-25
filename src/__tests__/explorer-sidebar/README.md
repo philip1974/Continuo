@@ -30,6 +30,15 @@
 - 内含 <Explorer />(无 workspace 时为 EmptyWorkspace)
 - 拖拽条 div(cursor-col-resize)
 
+### 窄窗口让位(同 VSCode)
+
+- 显示宽度 = clamp(`SIDEBAR_MIN_WIDTH`, `sidebarWidth`, 侧栏可用宽 − `EDITOR_MIN_WIDTH`);可用宽 = 窗口宽 − 侧栏左边缘,
+  监听窗口 resize 重算。`EDITOR_MIN_WIDTH` = 220,取 VSCode 编辑区最小宽度(`DEFAULT_EDITOR_MIN_DIMENSIONS.width`)
+- 窗口窄到放不下侧栏最小宽 + 编辑区最小宽时,侧栏停在最小宽(不再继续缩)
+- 保存的 `sidebarWidth` 不因窗口变窄改写,窗口放大后恢复
+- separator `aria-valuemax` / `aria-valuenow` 为有效上限 / 显示宽度;键盘与拖拽以显示宽度为起点、有效上限为上限
+- 规范:`explorer-sidebar-window-clamp.spec.tsx`
+
 ### 宽度变化的渲染隔离(perf)
 
 - 拖拽/键盘改 sidebarWidth 只重渲侧栏外壳(aside 宽度、separator aria-valuenow)

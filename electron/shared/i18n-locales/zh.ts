@@ -193,7 +193,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.editor.auto_save_markdown': '自动保存 Markdown',
   'settings.editor.auto_save_delay': '自动保存延迟',
   'settings.plugins.tab_title': '插件',
-  'settings.plugins.market_title': '插件商店',
+  'settings.plugins.market_title': '插件市场',
   'settings.explorer.tab_title': '资源管理器',
   'settings.explorer.toggle_sidebar': '切换资源管理器侧栏',
   'settings.explorer.show_hidden_files': '显示隐藏文件',

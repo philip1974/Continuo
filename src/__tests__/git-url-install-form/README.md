@@ -9,7 +9,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/plugins/GitUrlInstallForm.tsx` | UI(设置 → 插件、插件商店共用) |
+| `src/plugins/GitUrlInstallForm.tsx` | UI(设置 → 插件、插件市场共用) |
 | `src/design/ime.ts` | `isImeComposing`(组合中按键判定,仓库共用) |
 
 ## 规范文件

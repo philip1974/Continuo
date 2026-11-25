@@ -1,13 +1,14 @@
 // Explorer 固定侧边栏(VSCode 风),挂在 IconSidebar 右侧、Dockview 左侧。
 // 不参与 Dockview 拖拽。右边 4px 拖拽条改宽度,clamp 200-500;
 // sidebarOpen / sidebarWidth 由 explorer.json 持久化(layoutUi 字段)。
+// 窄窗口让位(同 VSCode):显示宽度另受窗口宽约束,给编辑区留 EDITOR_MIN_WIDTH,保存值不变。
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Explorer } from '@/panels/Explorer';
 import { ExplorerVisibleContext } from '@/panels/Explorer/visibility';
 import {
-  SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  sidebarMaxWidthFor,
   useLayoutUiStore,
 } from '@/stores/layout-ui.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -68,6 +69,8 @@ export function ExplorerSidebar() {
 /**
  * 仅打开时挂载:订阅 sidebarWidth,命令式写 aside 宽度(layout effect,首帧绘制前生效),并渲染右边
  * 拖拽条。宽度变化只重渲本组件,不碰 aside 内的文件树。
+ * 显示宽度 = clamp(MIN, sidebarWidth, 窗口宽 − 侧栏左边缘 − EDITOR_MIN_WIDTH):监听窗口 resize 重算,
+ * 保存的 sidebarWidth 不动(窗口放大后恢复);键盘 / 拖拽以显示宽度为起点、以有效上限为上限。
  * aside 经拖拽条的 parentElement 取得:挂载时父级 aside 的 ref 晚于子组件 layout effect 才挂上,
  * 而本组件自己 DOM 节点的 ref 在其 layout effect 前已就绪。
  */
@@ -78,16 +81,30 @@ function ExplorerSidebarResizer() {
   const resizeLabel = t('shell.aria.drag_resize');
 
   const handleRef = useRef<HTMLDivElement>(null);
+  // 侧栏可用宽度(侧栏左边缘到窗口右边缘);首帧按窗口宽估,layout effect 里按实际位置校正。
+  const [available, setAvailable] = useState(() => window.innerWidth);
   useLayoutEffect(() => {
     const aside = handleRef.current?.parentElement;
-    if (aside) aside.style.width = `${width}px`;
-  }, [width]);
+    const win = aside?.ownerDocument.defaultView;
+    if (!aside || !win) return;
+    const measure = () => setAvailable(win.innerWidth - aside.getBoundingClientRect().left);
+    measure();
+    win.addEventListener('resize', measure);
+    return () => win.removeEventListener('resize', measure);
+  }, []);
+  const max = sidebarMaxWidthFor(available);
+  const displayWidth = clampWidth(width, SIDEBAR_MIN_WIDTH, max);
+
+  useLayoutEffect(() => {
+    const aside = handleRef.current?.parentElement;
+    if (aside) aside.style.width = `${displayWidth}px`;
+  }, [displayWidth]);
 
   const startResize = useColumnResize({
-    getCurrent: () => useLayoutUiStore.getState().sidebarWidth,
+    getCurrent: () => displayWidth,
     setCurrent: setWidth,
     min: SIDEBAR_MIN_WIDTH,
-    max: SIDEBAR_MAX_WIDTH,
+    max,
   });
 
   return (
@@ -101,18 +118,18 @@ function ExplorerSidebarResizer() {
       // 加 tabIndex + aria-valuemin/max/now(window-splitter 模式)+ Arrow/Home/End 键盘调宽。
       tabIndex={0}
       aria-valuemin={SIDEBAR_MIN_WIDTH}
-      aria-valuemax={SIDEBAR_MAX_WIDTH}
-      aria-valuenow={width}
+      aria-valuemax={max}
+      aria-valuenow={displayWidth}
       onMouseDown={startResize}
       onKeyDown={(e) => {
         let next: number | null = null;
-        if (e.key === 'ArrowLeft') next = width - RESIZE_STEP;
-        else if (e.key === 'ArrowRight') next = width + RESIZE_STEP;
+        if (e.key === 'ArrowLeft') next = displayWidth - RESIZE_STEP;
+        else if (e.key === 'ArrowRight') next = displayWidth + RESIZE_STEP;
         else if (e.key === 'Home') next = SIDEBAR_MIN_WIDTH;
-        else if (e.key === 'End') next = SIDEBAR_MAX_WIDTH;
+        else if (e.key === 'End') next = max;
         if (next !== null) {
           e.preventDefault();
-          setWidth(clampWidth(next, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+          setWidth(clampWidth(next, SIDEBAR_MIN_WIDTH, max));
         }
       }}
       title={resizeLabel}

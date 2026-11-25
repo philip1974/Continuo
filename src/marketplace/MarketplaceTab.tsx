@@ -1,4 +1,4 @@
-// 插件商店 SettingTab(Phase 1+2:浏览 + 安装)。
+// 插件市场 SettingTab(Phase 1+2:浏览 + 安装)。
 //
 // 启动时拉 index.json,卡片列表展示。verified 徽章、tags、作者链接外站。
 // 已装的卡片显 "已安装" disabled;未装显 [安装] primary,点击调

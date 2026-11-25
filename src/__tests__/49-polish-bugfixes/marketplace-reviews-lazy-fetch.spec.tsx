@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 打磨 R53(性能):Marketplace reviews(卡片 ★)不再启动预拉,改为 MarketplaceTab
-// 首次挂载时拉(store lastFetchedAt 防重复)。未打开插件商店的 session 不再在冷启动
+// 首次挂载时拉(store lastFetchedAt 防重复)。未打开插件市场的 session 不再在冷启动
 // 路径打 GitHub API。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/react';

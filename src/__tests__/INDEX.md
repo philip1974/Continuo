@@ -698,6 +698,7 @@
 - [`explorer-sidebar-hidden-menus.spec.tsx`](./explorer-sidebar/explorer-sidebar-hidden-menus.spec.tsx)
 - [`explorer-sidebar-keepalive.spec.tsx`](./explorer-sidebar/explorer-sidebar-keepalive.spec.tsx)
 - [`explorer-sidebar-render-isolation.spec.tsx`](./explorer-sidebar/explorer-sidebar-render-isolation.spec.tsx)
+- [`explorer-sidebar-window-clamp.spec.tsx`](./explorer-sidebar/explorer-sidebar-window-clamp.spec.tsx)
 - [`explorer-sidebar.spec.tsx`](./explorer-sidebar/explorer-sidebar.spec.tsx)
 
 ## [explorer-stores (M-Explorer Step 3)](./explorer-stores/README.md)
@@ -970,7 +971,7 @@
 - [`link-click-no-navigation.spec.tsx`](./markdown-link-resolve/link-click-no-navigation.spec.tsx)
 - [`markdown-link-resolve.spec.ts`](./markdown-link-resolve/markdown-link-resolve.spec.ts)
 
-## [marketplace(插件商店浏览 Phase 1)](./marketplace/README.md)
+## [marketplace(插件市场浏览 Phase 1)](./marketplace/README.md)
 
 - [`filter.spec.ts`](./marketplace/filter.spec.ts)
 - [`marketplace.spec.ts`](./marketplace/marketplace.spec.ts)
@@ -986,7 +987,7 @@
 
 - [`reviews-store.spec.ts`](./marketplace-reviews-store/reviews-store.spec.ts)
 
-## [MarketplaceTab(插件商店 SettingTab)](./marketplace-tab/README.md)
+## [MarketplaceTab(插件市场 SettingTab)](./marketplace-tab/README.md)
 
 - [`marketplace-tab.spec.tsx`](./marketplace-tab/marketplace-tab.spec.tsx)
 

@@ -8,6 +8,19 @@ import { create } from 'zustand';
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 500;
 export const SIDEBAR_DEFAULT_WIDTH = 280;
+/**
+ * 编辑区(Dockview)最小宽度:窗口变窄时侧栏先让位,给编辑区至少留这么宽。取 VSCode 编辑区最小宽度
+ * (workbench editor.ts DEFAULT_EDITOR_MIN_DIMENSIONS.width = 220)。
+ */
+export const EDITOR_MIN_WIDTH = 220;
+
+/**
+ * 侧栏在给定可用宽度(侧栏左边缘到窗口右边缘)下的有效上限:扣掉 EDITOR_MIN_WIDTH,夹在 [MIN, MAX]。
+ * 窗口窄到连侧栏最小宽都放不下时取 MIN(侧栏不再继续缩)。只约束显示与拖拽,不改保存的 sidebarWidth。
+ */
+export function sidebarMaxWidthFor(available: number): number {
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, available - EDITOR_MIN_WIDTH));
+}
 
 type LayoutUiState = {
   /** 左侧 Explorer Sidebar 是否显示. */

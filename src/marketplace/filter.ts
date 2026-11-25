@@ -1,4 +1,4 @@
-// 插件商店筛选 + 搜索(Phase 4)。
+// 插件市场筛选 + 搜索(Phase 4)。
 //
 // 纯函数,易测。entries → 经过 query (name/desc/tag 包含) + 选中 tags (any)
 // 双重过滤;空 query / 空 tag 选择视为 pass。

@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from 'react';
 import { Input } from '@/design';
+import { isImeComposing } from '@/design/ime';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
@@ -171,6 +172,13 @@ export function SettingsPanel({
           placeholder={searchPlaceholderLabel}
           value={query}
           onChange={(e) => setQuery(clampSearchQuery((e.target as HTMLInputElement).value))}
+          // 同 VSCode 设置编辑器搜索框:有内容时 Esc 清空并就地消费;空时不拦截(交给外层 Esc 处理)。
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || query === '' || isImeComposing(e.nativeEvent)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setQuery('');
+          }}
           // 改 search 时回到搜索结果区,避免左侧 nav 视觉错位
           autoFocus
         />

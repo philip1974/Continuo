@@ -1,4 +1,4 @@
-// 插件商店类型(Phase 1)。
+// 插件市场类型(Phase 1)。
 // 与索引仓库 philip1974/continuo-plugins 的 index.json schema 对齐。
 //
 // version 不在此处:由各 plugin repo 的 manifest.json 当版本源。

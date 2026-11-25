@@ -81,7 +81,7 @@ describe('plugins IPC input limits (E16)', () => {
     });
 
     // 家族接线守卫:Git URL 输入只有 GitUrlInstallForm 一份实现,其 onChange 经 clampGitUrl;两个入口
-    // (插件商店 / 设置 → 插件)都用它、不再自带 Input(防某入口另写一份漏接截断)。
+    // (插件市场 / 设置 → 插件)都用它、不再自带 Input(防某入口另写一份漏接截断)。
     const readRel = (rel: string) =>
       readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), rel), 'utf-8');
     it('GitUrlInstallForm 调用 clampGitUrl', () => {
