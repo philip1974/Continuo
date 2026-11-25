@@ -546,7 +546,7 @@ function GitUrlInstallSection() {
       <GitUrlInstallForm
         // a11y(A5 同族):placeholder 是 URL 示例非标签 → 用 section 标题作 aria-label。
         ariaLabel={t('marketplace.git_url_section_title')}
-        placeholder="https://github.com/user/extension-repo.git"
+        placeholder="https://github.com/user/plugin-repo.git"
         installLabel={t('marketplace.install_extension')}
         installingLabel={t('marketplace.installing')}
         install={install}

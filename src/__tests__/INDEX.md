@@ -693,6 +693,10 @@
 - [`containment-equivalence.spec.ts`](./explorer-path-utils/containment-equivalence.spec.ts)
 - [`path-utils.spec.ts`](./explorer-path-utils/path-utils.spec.ts)
 
+## [Explorer 行内重命名:输入时校验,错误行内提示、输入保留](./explorer-rename-validation/README.md)
+
+- [`rename-validation.spec.tsx`](./explorer-rename-validation/rename-validation.spec.tsx)
+
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
 
 - [`explorer-sidebar-hidden-menus.spec.tsx`](./explorer-sidebar/explorer-sidebar-hidden-menus.spec.tsx)
@@ -815,7 +819,7 @@
 
 - [`hotkey-modal-suppression.spec.tsx`](./hotkey-modal-suppression/hotkey-modal-suppression.spec.tsx)
 
-## [快捷键主键:⌥ / ⇧ 组合按物理键取主键(录制与匹配同源)](./hotkey-physical-key/README.md)
+## [快捷键主键:⌥ / ⇧ 组合按物理键取主键,Space / 小键盘用 VSCode 键名(录制与匹配同源)](./hotkey-physical-key/README.md)
 
 - [`hotkey-physical-key.spec.ts`](./hotkey-physical-key/hotkey-physical-key.spec.ts)
 

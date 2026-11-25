@@ -11,7 +11,7 @@ import { tWithFallback } from '@/i18n';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
-import { baseKeyForShifted, physicalHotkeyKey } from './event-hotkey-key';
+import { baseKeyForShifted, legacyHotkeyKey, physicalHotkeyKey } from './event-hotkey-key';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 import { hasOpenModalIn } from '@/design/Modal';
@@ -120,8 +120,9 @@ function compileCombo(combo: string, platform: Platform): ComboSignature | null 
 
 /** 签名是否匹配键盘事件(精确比较四个修饰键 + 主键;主键先按物理键,再按旧 e.key 兜底,见 firstMatchingBinding). */
 function signatureMatches(sig: ComboSignature, e: KeyboardEvent): boolean {
-  const legacyKey = lowerIfNeeded(e.key);
-  return signatureMatchesKey(sig, e, physicalHotkeyKey(e) ?? legacyKey) || signatureMatchesKey(sig, e, legacyKey);
+  const physical = physicalHotkeyKey(e);
+  const legacyKey = legacyHotkeyKey(e, physical);
+  return signatureMatchesKey(sig, e, physical ?? legacyKey) || signatureMatchesKey(sig, e, legacyKey);
 }
 
 function signatureMatchesKey(sig: ComboSignature, e: KeyboardEvent, keyLower: string): boolean {
@@ -233,8 +234,8 @@ function firstMatchingBinding(
 ): CompiledBinding | undefined {
   // 主键与录制同一规则(event-hotkey-key:⌥ / ⇧ 变形字符按物理键,e.key 小写只算一次)。整表找不到时再按原始 e.key 兜底:旧版按 e.key
   // 录下的 alt+˚ / alt+dead 等仍生效;两轮分开,新写法(alt+u)永远优先于旧兜底(alt+dead)。
-  const legacyKey = lowerIfNeeded(e.key);
   const physical = physicalHotkeyKey(e);
+  const legacyKey = legacyHotkeyKey(e, physical);
   const key = physical ?? legacyKey;
   for (const b of bindings) if (signatureMatchesKey(b.sig, e, key)) return b;
   if (key === legacyKey) return undefined;

@@ -2,7 +2,14 @@
 // 纯逻辑层,不依赖 React;UI 组件 import 后传给 useTree。
 // fs 通过 deps 注入便于单测,默认调 coApi.fs(由调用方在 deps 注入).
 
-import { basename, dirname, isDestInsideSource } from './path-utils';
+import {
+  basename,
+  dirname,
+  isCaseSensitiveFsRuntime,
+  isDestInsideSource,
+  renameInputError,
+  type RenameInputError,
+} from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
 import { stripRootPrefix } from '@/lib/path-cross';
 import { isImeComposing } from '@/design/ime';
@@ -218,6 +225,32 @@ export function commitRenaming<T>(tree: TreeInstance<T>): void {
 }
 
 /**
+ * 正在重命名的项按输入值的实时校验(空名 / 同目录重名 / 非法名;见 path-utils.renameInputError)。同目录其它项取树里
+ * 已加载的兄弟(重命名的项可见,其父目录必已列出)。行内提示、Enter 拦截、失焦放弃共用。
+ */
+export function renameErrorFor(item: ItemInstance<FileEntry>, raw: string): RenameInputError | null {
+  const siblings: string[] = [];
+  for (const child of item.getParent()?.getChildren() ?? []) {
+    const name = child.getItemData()?.name;
+    if (name !== undefined) siblings.push(name);
+  }
+  return renameInputError(raw, item.getItemData().name, siblings, !isCaseSensitiveFsRuntime());
+}
+
+/**
+ * 输入框失焦:输入有效 → 提交(VSCode 失焦即完成重命名);无效 → 放弃,不弹错(VSCode:失焦按 isInputValid 决定)。
+ * 都不调库的 abortRenaming / completeRenaming:它们随后的 updateDomFocus 会把焦点从用户刚点的地方拉回树行。
+ */
+export function finishRenamingOnBlur(tree: TreeInstance<FileEntry>): void {
+  const item = tree.getRenamingItem();
+  if (item && renameErrorFor(item, tree.getRenamingValue()) !== null) {
+    tree.applySubStateUpdate('renamingItem', null);
+    return;
+  }
+  commitRenaming(tree);
+}
+
+/**
  * 「全部展开」不跟随符号链接目录(VSCode 同款:链接目录可手动逐层展开,批量展开不进链接)。链接目录是可展开
  * 文件夹(listDir 浅层按目标类型标 isDirectory),指向上级 / 自身的循环链接若随 expandAll 递归会无穷展开。
  * 覆盖库 item.expandAll:链接项直接跳过(含 Ctrl+Shift+= 展开选中)。
@@ -299,6 +332,9 @@ export function createTreeConfig(
         isEnabled: (tree) => tree.isRenamingItem(),
         handler: (e, tree) => {
           if (isImeComposing(e)) return;
+          // VSCode:输入有错误(行内已提示)时 Enter 不提交,输入框与输入保留。
+          const renaming = tree.getRenamingItem();
+          if (renaming && renameErrorFor(renaming, tree.getRenamingValue()) !== null) return;
           commitRenaming(tree);
           // 焦点还给树焦点项(此刻仍是原项:失败时就留在它上面)。不轮询、不回落首项:改名成功后原项已被
           // 刷掉时这里什么都不做,由 FolderTree 在新项出现时定位过去。

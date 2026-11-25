@@ -68,7 +68,7 @@ describe('录制:mac ⌥ / ⇧ 组合得到物理键', () => {
   });
 
   it('e.code 不在映射表 → 退回 e.key', () => {
-    expect(eventHotkeyKey(ev({ key: '*', code: 'NumpadMultiply', shiftKey: true }))).toBe('*');
+    expect(eventHotkeyKey(ev({ key: '§', code: 'IntlBackslash', shiftKey: true }))).toBe('§');
   });
 });
 
@@ -112,5 +112,67 @@ describe('兼容:旧写法照常生效', () => {
   it('冲突检测:shift+/ 与旧值 shift+? 视为同一个键', () => {
     const commands = [spec('old', 'mod+shift+?'), spec('other', 'mod+shift+.')];
     expect(selectKeybindingConflicts(commands, 'me', 'mod+shift+/').map((c) => c.id)).toEqual(['old']);
+  });
+});
+
+// Space(VSCode 键名 space):e.key 是空白(' ',mac ⌥Space 为不换行空格 U+00A0),此前录制被形态校验拒绝、
+// 手写 ctrl+space 永不触发。归一为 space,录制与匹配同源。
+describe('Space:录制与匹配统一为 space', () => {
+  it.each([
+    [{ key: ' ', code: 'Space', ctrlKey: true }, 'ctrl+space'],
+    [{ key: ' ', code: 'Space', metaKey: true }, 'mod+space'],
+    [{ key: ' ', code: 'Space', altKey: true }, 'alt+space'],
+    [{ key: ' ', code: 'Space', shiftKey: true, metaKey: true }, 'mod+shift+space'],
+  ])('mac %o → %s', (init, combo) => {
+    expect(eventToCombo(ev(init), 'mac')).toBe(combo);
+    expect(matchesHotkey(combo, ev(init), 'mac')).toBe(true);
+  });
+
+  it('缺 e.code 的合成事件按 e.key 空白同样归一', () => {
+    expect(eventHotkeyKey(ev({ key: ' ', ctrlKey: true }))).toBe('space');
+  });
+
+  it('手写 ctrl+space 被 ⌃Space 触发', () => {
+    expect(matchesHotkey('ctrl+space', ev({ key: ' ', code: 'Space', ctrlKey: true }), 'mac')).toBe(true);
+    expect(matchesHotkey('mod+space', ev({ key: ' ', code: 'Space', ctrlKey: true }), 'other')).toBe(true);
+  });
+
+  it('单独 Space(无修饰)可录(VSCode 录键框同样可录任意键);运行时在输入框内不拦截(见 A64)', () => {
+    expect(eventToCombo(ev({ key: ' ', code: 'Space' }), 'mac')).toBe('space');
+  });
+});
+
+// 小键盘(VSCode 键名 numpad0…numpad9 / numpad_multiply / numpad_add / numpad_subtract / numpad_decimal /
+// numpad_divide):与主键盘区是不同的键。此前 ⇧⌘ 小键盘 * 录成 mod+shift+*,编译时上档归一成 8、运行时主键仍是 *
+// → 永不触发且被误判与 ⇧⌘8 冲突;⌘Numpad1 录成 mod+1。
+describe('小键盘:按 VSCode numpad 键名录制与匹配,与主键盘区分', () => {
+  it.each([
+    [{ key: '*', code: 'NumpadMultiply', shiftKey: true, metaKey: true }, 'mod+shift+numpad_multiply'],
+    [{ key: '+', code: 'NumpadAdd', metaKey: true }, 'mod+numpad_add'],
+    [{ key: '-', code: 'NumpadSubtract', metaKey: true }, 'mod+numpad_subtract'],
+    [{ key: '.', code: 'NumpadDecimal', metaKey: true }, 'mod+numpad_decimal'],
+    [{ key: '/', code: 'NumpadDivide', metaKey: true }, 'mod+numpad_divide'],
+    [{ key: '1', code: 'Numpad1', metaKey: true }, 'mod+numpad1'],
+    [{ key: '0', code: 'Numpad0', altKey: true }, 'alt+numpad0'],
+  ])('%o → %s,且被同一按键触发', (init, combo) => {
+    expect(eventToCombo(ev(init), 'mac')).toBe(combo);
+    expect(matchesHotkey(combo, ev(init), 'mac')).toBe(true);
+  });
+
+  it('⇧⌘ 小键盘 * 不与 ⇧⌘8 冲突,也不被 ⇧⌘8 触发', () => {
+    const commands = [spec('eight', 'mod+shift+8')];
+    expect(selectKeybindingConflicts(commands, 'me', 'mod+shift+numpad_multiply')).toEqual([]);
+    expect(
+      matchesHotkey('mod+shift+numpad_multiply', ev({ key: '*', code: 'Digit8', shiftKey: true, metaKey: true }), 'mac'),
+    ).toBe(false);
+  });
+
+  it('⌘Numpad1 与 ⌘1 是不同的键(VSCode 同):互不触发', () => {
+    expect(matchesHotkey('mod+1', ev({ key: '1', code: 'Numpad1', metaKey: true }), 'mac')).toBe(false);
+    expect(matchesHotkey('mod+numpad1', ev({ key: '1', code: 'Digit1', metaKey: true }), 'mac')).toBe(false);
+  });
+
+  it('NumLock 关闭时小键盘产出的导航键(End / ArrowDown …)仍按命名键', () => {
+    expect(eventHotkeyKey(ev({ key: 'End', code: 'Numpad1' }))).toBe('end');
   });
 });

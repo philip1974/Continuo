@@ -10,6 +10,7 @@ import {
   stripRootPrefix,
 } from '@/lib/path-cross';
 import { basenameForChrome } from '@/lib/path-label';
+import { leafNameRejectReason } from '../../../electron/shared/leaf-name';
 
 // dirname 与 basename 同在 renderer 跨平台路径单一来源 src/lib/path-cross(Editor 等其它模块直接从那里引)。
 export { dirname } from '@/lib/path-cross';
@@ -129,3 +130,41 @@ export function renameTarget(oldPath: string, raw: string): string | null {
   return name === null || name === current ? null : name;
 }
 
+
+/** 重命名输入的校验错误(VSCode validateFileName 同序:空名 → 重名 → 非法名)。 */
+export type RenameInputError =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'exists'; readonly name: string }
+  | { readonly kind: 'invalid'; readonly name: string };
+
+/**
+ * 重命名输入时的实时校验(VSCode Explorer validateFileName):未改名 → null;规范化后为空 → empty;与同目录其它项同名
+ * → exists(排除自身:大小写不敏感盘上 a.ts → A.ts 是改名不是重名);不合法(与 main 端 assertValidBasename 同一规则)
+ * → invalid。ignoreCase:重名比较是否忽略大小写(VSCode:macOS / Windows 忽略,Linux 区分)。
+ */
+export function renameInputError(
+  raw: string,
+  currentName: string,
+  siblingNames: readonly string[],
+  ignoreCase: boolean,
+): RenameInputError | null {
+  if (raw === currentName) return null;
+  const name = normalizeLeafNameInput(raw);
+  if (name === null) return { kind: 'empty' };
+  if (name === currentName) return null;
+  const fold = (s: string): string => {
+    const nfc = s.normalize('NFC');
+    return ignoreCase ? nfc.toLowerCase() : nfc;
+  };
+  const wanted = fold(name);
+  for (const sibling of siblingNames) {
+    if (sibling !== currentName && fold(sibling) === wanted) return { kind: 'exists', name };
+  }
+  if (leafNameRejectReason(name) !== null) return { kind: 'invalid', name };
+  return null;
+}
+
+/** 当前 renderer 所在系统的文件系统是否按惯例大小写敏感(VSCode 同:仅 Linux)。 */
+export function isCaseSensitiveFsRuntime(): boolean {
+  return typeof navigator !== 'undefined' && /^linux/i.test(navigator.platform ?? '');
+}

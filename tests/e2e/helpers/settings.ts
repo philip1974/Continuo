@@ -62,7 +62,7 @@ export const MARKETPLACE_GIT_URL_INSTALL =
 export const MARKETPLACE_GIT_URL_WARNING =
   /(第三方仓库可能存在安全风险|third-party repositories may have security risks|제3자 저장소는 보안 위험이 있을 수 있으니)/i;
 export const MARKETPLACE_INSTALL_EXTENSION =
-  /^(安装插件|Install extension|플러그인 설치)$/;
+  /^(安装插件|Install plugin|플러그인 설치)$/;
 export const MATCHED_SETTINGS =
   /匹配\s+\d+\s+项|Matched\s+\d+\s+for|에 대해\s+\d+개 일치/;
 export const NO_MATCH_SETTINGS =

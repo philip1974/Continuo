@@ -280,6 +280,7 @@ describe('a11y(A26) — inline rename input 可访问名', () => {
       getItemMeta: () => ({ level: 0 }),
       getProps: () => ({}),
       getRenameInputProps: () => ({}), // 库不提供 aria-label
+      getParent: () => undefined, // 重命名输入时校验取同目录兄弟
     } as unknown as ItemInstance<FileEntry>;
     const { container } = render(
       <FileRow

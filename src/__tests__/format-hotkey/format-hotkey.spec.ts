@@ -302,3 +302,27 @@ describe('detectPlatform', () => {
     }
   });
 });
+
+// 小键盘键显示 VSCode 的 UI 标签(NumPad1 / NumPad_Multiply …),与主键盘 1 / * 区分;Space 别名 spacebar 归一。
+describe('formatHotkey · 小键盘与 Space 别名', () => {
+  it.each<[string, 'mac' | 'other', string]>([
+    ['mod+shift+numpad_multiply', 'mac', '⇧⌘NumPad_Multiply'],
+    ['mod+numpad1', 'mac', '⌘NumPad1'],
+    ['mod+numpad_add', 'other', 'Ctrl+NumPad_Add'],
+    ['alt+numpad_subtract', 'other', 'Alt+NumPad_Subtract'],
+    ['numpad_decimal', 'other', 'NumPad_Decimal'],
+    ['numpad_divide', 'mac', 'NumPad_Divide'],
+    ['ctrl+spacebar', 'mac', '⌃␣'],
+  ])('"%s"(%s)→ "%s"', (raw, platform, expected) => {
+    expect(formatHotkey(raw, platform)).toBe(expected);
+  });
+
+  it('含 shift 的小键盘键不做上档归一(numpad_multiply ≠ 8)', () => {
+    expect(canonicalHotkey('mod+shift+numpad_multiply', 'mac')).toBe('meta+shift+numpad_multiply');
+    expect(canonicalHotkey('mod+shift+*', 'mac')).toBe('meta+shift+8');
+  });
+
+  it('spacebar 与 space 视为同一个键', () => {
+    expect(canonicalHotkey('ctrl+spacebar', 'mac')).toBe(canonicalHotkey('ctrl+space', 'mac'));
+  });
+});

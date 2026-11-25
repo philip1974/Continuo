@@ -291,6 +291,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.symlink': '심볼릭 링크',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': '이 위치에 파일 또는 폴더 “{name}”이(가) 이미 있습니다. 다른 이름을 선택하세요.',
+  'panels.explorer.rename_empty': '파일 또는 폴더 이름을 입력해야 합니다.',
+  'panels.explorer.rename_invalid': '“{name}” 이름은 파일 또는 폴더 이름으로 사용할 수 없습니다. 다른 이름을 선택하세요.',
   'panels.explorer.ctx.copy_path': '경로 복사',
   'panels.explorer.ctx.copy_relative_path': '상대 경로 복사',
   'panels.explorer.ctx.reveal_in_finder': 'Finder에서 보기',
@@ -586,6 +588,12 @@ export const ko: Record<TranslationKey, string> = {
   'shell.tab.close': '{title} 닫기',
   'shell.tab.editor_tablist': '편집기 탭',
   'shell.tab.dock_tablist': '패널 탭',
+  // 탭 컨텍스트 메뉴(VSCode 편집기 탭 컨텍스트 메뉴).
+  'shell.tab.ctx.close': '닫기',
+  'shell.tab.ctx.close_others': '기타 항목 닫기',
+  'shell.tab.ctx.close_right': '오른쪽에 있는 항목 닫기',
+  'shell.tab.ctx.close_saved': '저장된 항목 닫기',
+  'shell.tab.ctx.close_all': '모두 닫기',
   'shell.iconbar.updates_tooltip': '업데이트 가능한 플러그인 {count}개',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 

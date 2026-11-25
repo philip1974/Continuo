@@ -288,6 +288,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.symlink': '符号链接',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': '此位置已存在文件或文件夹「{name}」。请选择其他名称。',
+  'panels.explorer.rename_empty': '必须提供文件或文件夹名称。',
+  'panels.explorer.rename_invalid': '名称「{name}」不能用作文件或文件夹名称。请选择其他名称。',
   'panels.explorer.ctx.copy_path': '复制路径',
   'panels.explorer.ctx.copy_relative_path': '复制相对路径',
   'panels.explorer.ctx.reveal_in_finder': '在 Finder 中显示',
@@ -583,6 +585,12 @@ export const zh: Record<TranslationKey, string> = {
   'shell.tab.close': '关闭 {title}',
   'shell.tab.editor_tablist': '编辑器标签',
   'shell.tab.dock_tablist': '面板标签',
+  // tab 右键菜单(VSCode 编辑器标签右键菜单)。
+  'shell.tab.ctx.close': '关闭',
+  'shell.tab.ctx.close_others': '关闭其他',
+  'shell.tab.ctx.close_right': '关闭右侧',
+  'shell.tab.ctx.close_saved': '关闭已保存',
+  'shell.tab.ctx.close_all': '全部关闭',
   'shell.iconbar.updates_tooltip': '{count} 个插件可更新',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 

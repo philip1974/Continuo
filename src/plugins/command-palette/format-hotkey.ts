@@ -78,6 +78,8 @@ const KEY_ALIASES: Readonly<Record<string, string>> = {
   esc: 'escape',
   return: 'enter',
   del: 'delete',
+  // 旧浏览器的 e.key 'Spacebar';录制 / 匹配统一记 space(见 event-hotkey-key)。
+  spacebar: 'space',
 };
 
 /** 把(已小写的)主键别名归一成 e.key 名;非别名原样返回。 */
@@ -186,6 +188,14 @@ export function hotkeyFilterQuery(hotkey: string, platform: Platform): string {
 
 const EMPTY_HOTKEY_PARTS: string[] = [];
 
+/** numpad1 → NumPad1;numpad_multiply → NumPad_Multiply(VSCode keyCodes 的 uiLabel)。 */
+function numpadLabel(lower: string): string {
+  const rest = lower.slice('numpad'.length);
+  return rest.startsWith('_') && rest.length > 1
+    ? `NumPad_${rest.charAt(1).toUpperCase()}${rest.slice(2)}`
+    : `NumPad${rest}`;
+}
+
 function formatPart(part: string, platform: Platform): string {
   const lower = lowerIfNeeded(part);
   // 主键名来自插件 hotkey:只认自有属性(constructor 等不得命中原型链返回函数)。
@@ -193,6 +203,8 @@ function formatPart(part: string, platform: Platform): string {
   if (mod) return mod;
   const special = ownValue(SPECIAL_KEYS[platform], canonicalHotkeyKey(lower));
   if (special) return special;
+  // 小键盘键:VSCode 的 UI 标签(NumPad1 / NumPad_Multiply),与主键盘 1 / * 区分。
+  if (lower.startsWith('numpad')) return numpadLabel(lower);
   // 普通字母 / 数字 / 符号 → uppercase(F1 / A / , / .)
   return part.toUpperCase();
 }

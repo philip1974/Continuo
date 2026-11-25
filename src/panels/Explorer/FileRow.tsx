@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useId, useMemo, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
@@ -16,8 +16,8 @@ import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { clipboardPathSet, useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
 import { FileIcon } from './file-icon';
-import { renameStemEnd } from './path-utils';
-import { commitRenaming } from './tree-config';
+import { renameStemEnd, type RenameInputError } from './path-utils';
+import { finishRenamingOnBlur, renameErrorFor } from './tree-config';
 
 /**
  * 行状态快照(perf):由 FolderTree 在渲染期从 item 读出后作为 primitive 下传。FileRow 是 memo 组件,
@@ -123,6 +123,13 @@ function rowTitle(data: FileEntry, tooltip: string | undefined): string {
   return title;
 }
 
+/** 重命名校验错误的提示文案(VSCode validateFileName 同义)。 */
+function renameErrorMessage(error: RenameInputError): string {
+  if (error.kind === 'empty') return t('panels.explorer.rename_empty');
+  if (error.kind === 'exists') return t('panels.explorer.rename_exists', { name: error.name });
+  return t('panels.explorer.rename_invalid', { name: error.name });
+}
+
 /** 多选修饰键(⌘ / Ctrl / Shift):与 headless-tree selectionFeature 判定多选的键一致。 */
 function hasSelectionModifier(e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }): boolean {
   return e.metaKey || e.ctrlKey || e.shiftKey;
@@ -194,6 +201,7 @@ export const FileRow = memo(function FileRow({
   isExpanded,
   isLoading,
   isRenaming,
+  renamingValue,
   level,
   isDraggingOver: isInternalDropOver,
   getSelectedPaths,
@@ -208,9 +216,8 @@ export const FileRow = memo(function FileRow({
   pluginMenuItems,
   indent,
 }: FileRowProps) {
-  // renamingValue / posInSet / setSize 不在此解构:它们只作 memo 失效键 —— 行内 item.getProps() /
-  // getRenameInputProps() 现取 aria-posinset/setsize 与 input value,这些 props 变化时本行必重渲,
-  // 现取值与 props 一致(见 FileRowState)。
+  // posInSet / setSize 不在此解构:它们只作 memo 失效键 —— 行内 item.getProps() 现取 aria-posinset/setsize,
+  // 这些 props 变化时本行必重渲,现取值与 props 一致(见 FileRowState)。renamingValue 用于输入时校验。
   const decoration = useDecoration(data.path, isDir, decorators);
   // VSCode 同款:已剪切的项目灰显,提示「等待粘贴」;copy 不灰
   const isCutMarked = useExplorerClipboardStore(
@@ -234,6 +241,11 @@ export const FileRow = memo(function FileRow({
     },
     [name, isDir],
   );
+
+  // 重命名输入时校验(VSCode:空名 / 同目录重名 / 非法名即时在输入框下方提示,Enter 不提交;见 tree-config)。
+  const renameError =
+    isRenaming && renamingValue !== undefined ? renameErrorFor(item, renamingValue) : null;
+  const renameErrorId = useId();
 
   const row = (
     <div
@@ -286,6 +298,8 @@ export const FileRow = memo(function FileRow({
         backgroundPosition: level > 0 ? `${4 + indent / 2}px 0` : undefined,
         backgroundSize: level > 0 ? `${level * indent}px 100%` : undefined,
         backgroundRepeat: level > 0 ? 'no-repeat' : undefined,
+        // 重命名的错误提示浮在下一行之上:行有 transform(各自层叠上下文),须抬高本行。
+        zIndex: renameError ? 1 : undefined,
       }}
       className={fileRowClassName({
         isFocused,
@@ -311,6 +325,7 @@ export const FileRow = memo(function FileRow({
         )}
       </span>
       {isRenaming ? (
+        <div className="relative w-full min-w-0">
         <Input
           {...item.getRenameInputProps()}
           // a11y(A26,A5 同族):headless-tree getRenameInputProps() 不含 aria-label → 重命名
@@ -324,15 +339,29 @@ export const FileRow = memo(function FileRow({
           // 失焦 = 提交(VSCode 同款);库默认 onBlur 是放弃,改名到一半点别处会丢输入。Enter / Esc 已结束重命名时
           // renamingItem 已清空,其后的失焦不再提交。不调库的 completeRenaming:它随后 updateDomFocus 会把焦点
           // 从用户刚点的地方(编辑器等)拉回树行;这里只做它的提交与退出两步。
+          // 输入无效时失焦 = 放弃(VSCode),见 finishRenamingOnBlur。
           onBlur={() => {
             const tree = item.getTree();
             if (tree.getState().renamingItem !== item.getId()) return;
-            commitRenaming(tree);
+            finishRenamingOnBlur(tree);
           }}
           className="w-full"
           spellCheck={false}
           autoComplete="off"
+          aria-invalid={renameError ? true : undefined}
+          aria-describedby={renameError ? renameErrorId : undefined}
         />
+        {/* 校验错误(VSCode 同款:紧贴输入框下方、覆盖下一行,不挤动虚拟列表)。role=alert 让读屏即时播报。 */}
+        {renameError && (
+          <div
+            id={renameErrorId}
+            role="alert"
+            className="absolute left-0 right-0 top-full z-10 whitespace-normal break-words border border-error bg-panel px-1.5 py-1 text-2xs text-error"
+          >
+            {renameErrorMessage(renameError)}
+          </div>
+        )}
+        </div>
       ) : (
         <span
           className="truncate"

@@ -1,4 +1,4 @@
-# 快捷键主键:⌥ / ⇧ 组合按物理键取主键(录制与匹配同源)
+# 快捷键主键:⌥ / ⇧ 组合按物理键取主键,Space / 小键盘用 VSCode 键名(录制与匹配同源)
 
 行为契约:**mac 上按 ⌥K、⌥E、⇧1 等组合,录到的是「alt+k」「alt+e」「shift+1」,而不是键盘布局变形后的字符
 (˚ / Dead / !);录制与命令触发用同一个「事件 → 主键」函数,录到什么就按什么触发。**
@@ -24,7 +24,20 @@
 | 按着 ⇧ 且 `e.key` 是 ASCII 数字 / 符号 | `e.code` 推出 |
 | 其余(无 ⌥ 的非 ASCII 字符,如德语 ü、法语 é) | `e.key` 小写(保留布局字符) |
 
-`e.code` 不在 US 映射表(Numpad、IntlBackslash、Space …)时退回 `e.key` 小写。
+`e.code` 不在 US 映射表(IntlBackslash …)时退回 `e.key` 小写。
+
+### Space 与小键盘(VSCode 键名)
+
+| 情形 | 主键 | 显示 |
+|---|---|---|
+| 空格(`e.key` 为 `' '`,mac ⌥Space 为 U+00A0) | `space`(别名 `spacebar`) | mac `␣` / 其它 `Space` |
+| 小键盘字符键(`e.code` 为 `Numpad0…9` / `NumpadMultiply` / `NumpadAdd` / `NumpadSubtract` / `NumpadDecimal` / `NumpadDivide`) | `numpad0…numpad9` / `numpad_multiply` / `numpad_add` / `numpad_subtract` / `numpad_decimal` / `numpad_divide` | `NumPad1` / `NumPad_Multiply` … |
+| NumLock 关闭时小键盘产出的导航键(End / ArrowDown …)、NumpadEnter | 按命名键(`end` / `enter`) | 同命名键 |
+
+- ⌃Space / ⌘Space / ⌥Space 可录、可触发;手写 `ctrl+space` 由 ⌃Space 触发。单独 Space(无修饰)与单独字母一样可录
+  (VSCode 录键框可录任意键);运行时焦点在输入框 / 编辑器内时无修饰绑定不拦截(A64),不影响打字。
+- 小键盘键与主键盘是**不同的键**(VSCode 同):⌘Numpad1 录成 `mod+numpad1`,不触发 `mod+1`;⇧⌘ 小键盘 `*` 录成
+  `mod+shift+numpad_multiply`,不做上档归一,不与 ⇧⌘8 冲突。小键盘键不走旧 `e.key` 兜底。
 
 ### 兼容:已存的旧写法照常生效
 
@@ -38,6 +51,9 @@
 - 终端 / 编辑器内部按键:只改「命令热键」的主键判定,终端与编辑器本身的键处理不变。
 
 ## 取舍
+
+- 小键盘区分后,旧版把 ⌘Numpad1 录成的 `mod+1` 只由主键盘 ⌘1 触发(内置默认键里没有数字 / 小键盘键,不受影响);
+  想用小键盘的需重新录制。旧版录下的 `mod+shift+*` 仍按 ⇧⌘8 处理(上档归一不变)。
 
 - 物理键映射只内置 US 布局(与 VSCode 回退表一致);非 US 布局下 ⌥ + 字母键取物理键(VSCode 用系统布局表给出布局字符,
   本实现不读系统布局)。无 ⌥ 的字母 / 非 ASCII 字符仍用 `e.key`,故非 US 布局的普通组合不回归。

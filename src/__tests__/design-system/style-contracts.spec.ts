@@ -41,6 +41,14 @@ describe('Input 样式契约', () => {
     expect(ruleBody(INPUT, '.wm-input[aria-invalid="true"]:focus')).toMatch(/border-color:\s*var\(--md-error\)/);
   });
 
+  // VSCode 同款:错误描边与焦点提示并存。Input 自身 outline:none,若聚焦只保持同一 1px 错误描边,
+  // 聚焦 / 失焦看起来一模一样(键盘用户不知焦点在哪)→ 聚焦时再加 1px 错误色内环,描边加粗成 2px。
+  it('aria-invalid=true 聚焦时有额外焦点提示(1px 错误色 box-shadow 加粗),与失焦可区分', () => {
+    const focused = ruleBody(INPUT, '.wm-input[aria-invalid="true"]:focus');
+    expect(focused).toMatch(/box-shadow:\s*0 0 0 1px var\(--md-error\)/);
+    expect(ruleBody(INPUT, '.wm-input[aria-invalid="true"]')).not.toMatch(/box-shadow/);
+  });
+
   it('错误描边规则写在 variant 规则之后(同特异性时后者胜,dark variant 不盖掉错误色)', () => {
     const invalidAt = INPUT.indexOf('.wm-input[aria-invalid="true"]');
     expect(invalidAt).toBeGreaterThan(INPUT.indexOf('.wm-input[data-variant="dark"]'));

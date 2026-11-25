@@ -46,6 +46,21 @@ describe('en 术语:插件市场统一 Marketplace', () => {
     expect(hits).toEqual([]);
   });
 
+  // Continuo 的可安装单元叫 plugin(侧栏 / 设置 / 市场全称 Plugins),en 不能混称 extension(Git 安装按钮曾写
+  // 「Install extension」、占位 extension-repo.git)。豁免:「file extension(s)」指文件扩展名,不是插件。
+  it('en catalog 不用 extension 指代插件(file extension 除外)', () => {
+    const hits = Object.entries(en)
+      .filter(([, v]) => /\bextensions?\b/i.test(stripCode(v).replace(/\bfile extensions?\b/gi, '')))
+      .map(([k, v]) => `${k}: ${v}`);
+    expect(hits).toEqual([]);
+  });
+
+  it('Git URL 安装输入框占位用 plugin-repo.git', () => {
+    const src = readFileSync(join(process.cwd(), 'src/marketplace/MarketplaceTab.tsx'), 'utf8');
+    expect(src).not.toMatch(/extension-repo/);
+    expect(src).toMatch(/placeholder="https:\/\/github\.com\/user\/plugin-repo\.git"/);
+  });
+
   it('市场设置页签标题(catalog 与 titleKey 缺失时的回退 title)为 Marketplace', () => {
     expect(en['settings.plugins.market_title']).toBe('Marketplace');
     const src = readFileSync(join(process.cwd(), 'src/core-plugins/PluginsTabPlugin.ts'), 'utf8');

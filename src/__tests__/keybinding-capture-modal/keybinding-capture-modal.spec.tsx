@@ -626,8 +626,8 @@ describe('KeybindingCaptureModal — 取消', () => {
   });
 });
 
-// 边界(E145):eventToCombo 只产出注册侧 HOTKEY_SHAPE_RE 接受的合法形态;无法表示的组合(Space
-// 含空白、主键 '+' → 空段)返 null,不捕获(否则持久化的绑定永不触发 + 显示异常)。jsdom 平台
+// 边界(E145):eventToCombo 只产出注册侧 HOTKEY_SHAPE_RE 接受的合法形态;无法表示的组合(主键 '+' → 空段)
+// 返 null,不捕获(否则持久化的绑定永不触发 + 显示异常)。Space 已归一为 space(可表示)。jsdom 平台
 // 'other':ctrlKey → 'mod' 主修饰键。
 describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
   const ev = (o: {
@@ -645,8 +645,8 @@ describe('eventToCombo — E145 拒非法 hotkey 形态', () => {
       key: o.key,
     }) as KeyboardEvent;
 
-  it('Space(key=" ")→ null(含空白不可表示)', () => {
-    expect(eventToCombo(ev({ key: ' ', ctrlKey: true }))).toBeNull();
+  it('Space(key=" ")→ 主键归一为 space(VSCode 键名),不再含空白', () => {
+    expect(eventToCombo(ev({ key: ' ', ctrlKey: true }))).toBe('mod+space');
   });
 
   it('主键为 "+"(→ shift++ 空段)→ null', () => {

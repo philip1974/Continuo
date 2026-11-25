@@ -36,3 +36,8 @@
 .wm-input[aria-invalid="true"]:focus {
   border-color: var(--md-error);
 }
+/* 聚焦时错误描边外再加 1px 错误色环(共 2px):本组件 outline:none,只靠描边则聚焦 / 失焦一模一样;
+ * VSCode 校验失败的输入框同样是错误描边 + 焦点轮廓并存。box-shadow 不占布局,不抖动。 */
+.wm-input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 1px var(--md-error);
+}

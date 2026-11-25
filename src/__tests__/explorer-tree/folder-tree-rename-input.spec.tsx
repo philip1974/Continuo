@@ -236,7 +236,8 @@ describe('FolderTree · 重命名后的焦点(VSCode:焦点与选中留在改名
     expect(document.activeElement).toBe(row(container, '/work/gamma.ts'));
   });
 
-  it('Enter 提交失败(同名冲突)→ 焦点回到原项', async () => {
+  // 同目录可见项重名在输入时已拦下(explorer-rename-validation);这里是 main 端才发现的冲突(隐藏文件 / 外部刚建)。
+  it('Enter 提交失败(main 端同名冲突)→ 焦点回到原项', async () => {
     const { container } = await mount();
     vi.mocked(coApi.fs.rename).mockResolvedValueOnce({
       ok: false,
@@ -245,10 +246,10 @@ describe('FolderTree · 重命名后的焦点(VSCode:焦点与选中留在改名
     } as never);
     const input = await startRename(container, '/work/beta.ts');
     act(() => {
-      fireEvent.change(input, { target: { value: 'bravo.ts' } });
+      fireEvent.change(input, { target: { value: 'delta.ts' } });
     });
     key(input, { key: 'Enter', code: 'Enter' });
-    await waitFor(() => expect(coApi.fs.rename).toHaveBeenCalledWith('/work/beta.ts', 'bravo.ts'));
+    await waitFor(() => expect(coApi.fs.rename).toHaveBeenCalledWith('/work/beta.ts', 'delta.ts'));
     await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/beta.ts')));
     await new Promise((r) => setTimeout(r, 100));
     expect(document.activeElement).toBe(row(container, '/work/beta.ts'));

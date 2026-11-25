@@ -308,6 +308,8 @@ export const en = {
   'panels.explorer.symlink': 'Symbolic link',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': 'A file or folder “{name}” already exists at this location. Please choose a different name.',
+  'panels.explorer.rename_empty': 'A file or folder name must be provided.',
+  'panels.explorer.rename_invalid': 'The name “{name}” is not valid as a file or folder name. Please choose a different name.',
   'panels.explorer.ctx.copy_path': 'Copy Path',
   'panels.explorer.ctx.copy_relative_path': 'Copy Relative Path',
   'panels.explorer.ctx.reveal_in_finder': 'Reveal in Finder',
@@ -617,6 +619,12 @@ export const en = {
   'shell.tab.editor_tablist': 'Editor tabs',
   // a11y(A121):accessible name applied to dockview's tab-strip container (role=tablist).
   'shell.tab.dock_tablist': 'Panel tabs',
+  // Tab context menu (VSCode editor tab context menu).
+  'shell.tab.ctx.close': 'Close',
+  'shell.tab.ctx.close_others': 'Close Others',
+  'shell.tab.ctx.close_right': 'Close to the Right',
+  'shell.tab.ctx.close_saved': 'Close Saved',
+  'shell.tab.ctx.close_all': 'Close All',
   'shell.iconbar.updates_tooltip': '{count} plugin(s) updatable',
   'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
@@ -627,7 +635,7 @@ export const en = {
   'marketplace.install': 'Install',
   // a11y(A77):per-card action button accessible name = action + plugin name (distinguish cards for SR).
   'marketplace.card_action_aria': '{action} — {name}',
-  'marketplace.install_extension': 'Install extension',
+  'marketplace.install_extension': 'Install plugin',
   'marketplace.installing': 'Installing…',
   'marketplace.installed': 'Installed',
   'marketplace.installed_pending_restart': 'Installed (restart pending)',
@@ -675,7 +683,7 @@ export const en = {
   'marketplace.count_summary': 'Showing {shown} / {total} plugins · index cached 1 hour',
   'marketplace.no_match': 'No matching plugins. Try a different keyword or clear tag filter.',
   'marketplace.git_url_section_title': 'Install from Git URL',
-  'marketplace.git_url_section_hint': 'If you have a custom extension repository URL, install directly via the Git link.',
+  'marketplace.git_url_section_hint': 'If you have a custom plugin repository URL, install directly via the Git link.',
   'marketplace.git_url_warning': 'Third-party repositories may have security risks; only trust source you have audited.',
   'marketplace.reviews.empty': 'No reviews yet',
   'marketplace.reviews.write_first': 'Write the first one on GitHub',
