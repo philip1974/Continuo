@@ -335,6 +335,10 @@
 
 - [`co-api.spec.ts`](./co-api/co-api.spec.ts)
 
+## [code-editor-language](./code-editor-language/README.md)
+
+- [`code-editor-language.spec.tsx`](./code-editor-language/code-editor-language.spec.tsx)
+
 ## [code-editor-theme](./code-editor-theme/README.md)
 
 - [`code-editor-theme.spec.tsx`](./code-editor-theme/code-editor-theme.spec.tsx)

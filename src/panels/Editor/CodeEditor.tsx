@@ -1,5 +1,6 @@
 // M-Editor Step E3:CodeMirror 6 包装。
-// 从维护者早期原型的 CodeEditor 移植,语言映射一致(js/ts/json/css/html/md)。
+// 从维护者早期原型的 CodeEditor 移植。语言:js/ts/json/css/html/md 同步给出,其余按 @codemirror/language-data
+// 懒加载(对齐 VSCode 内置常见语言高亮;BDD: src/__tests__/code-editor-language/)。
 //
 // 用途:
 //   1. 非 markdown 文件(.js/.json/...)的代码编辑
@@ -20,6 +21,8 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { yamlFrontmatter } from '@codemirror/lang-yaml';
+import { LanguageDescription } from '@codemirror/language';
+import { languages } from '@codemirror/language-data';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   EDITOR_FONT_SIZE,
@@ -85,34 +88,74 @@ function markdownWithFrontmatter(): Extension {
   return yamlFrontmatter({ content: markdown() });
 }
 
+const jsx = () => javascript({ jsx: true });
+const plainJs = () => javascript();
+const ts = () => javascript({ typescript: true });
+const jsonLang = () => json();
+const htmlLang = () => html();
+
+/** 同步给出的内置语言(扩展名 → 工厂;markdown 源码模式的 frontmatter 配置在此)。不在表内的交给语言表。 */
+const BUILTIN_LANGUAGES = new Map<string, () => Extension>([
+  // VSCode 的 JavaScript 语法在 .js 里也认 JSX(React 项目常见),.mjs / .cjs 按纯 JS。
+  ['js', jsx],
+  ['jsx', jsx],
+  ['mjs', plainJs],
+  ['cjs', plainJs],
+  // .ts 不开 JSX:否则 `<T>(x: T) => x` 被当成 JSX 标签,后面整段失去高亮。
+  ['ts', ts],
+  ['mts', ts],
+  ['cts', ts],
+  ['tsx', () => javascript({ jsx: true, typescript: true })],
+  // lang-json 语法不含注释:jsonc 的注释不着色,其余照常高亮(比整篇纯文本好)。
+  ['json', jsonLang],
+  ['jsonc', jsonLang],
+  ['json5', jsonLang],
+  ['css', () => css()],
+  ['html', htmlLang],
+  ['htm', htmlLang],
+  ['md', markdownWithFrontmatter],
+  ['markdown', markdownWithFrontmatter],
+  ['mdx', markdownWithFrontmatter],
+]);
+
+/**
+ * language-data 语言表认不出、VSCode 能高亮的常见文件 → 表内条目名。
+ * Makefile:表内无 Makefile 语法,recipe 行本就是 shell,取 Shell 最接近。
+ */
+const FILENAME_ALIASES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^(?:dockerfile|containerfile)(?:\..+)?$|\.(?:dockerfile|containerfile)$/i, 'Dockerfile'],
+  [/^\.env(?:\..+)?$/i, 'Properties files'],
+  [/^\.(?:bashrc|bash_profile|bash_login|bash_logout|profile|zshrc|zshenv|zprofile|zlogin|zlogout)$|\.zsh$/i, 'Shell'],
+  [/^(?:gnu)?makefile$|\.mk$/i, 'Shell'],
+];
+
+/**
+ * 需按语言表(@codemirror/language-data,与 Markdown 代码块同源)懒加载的语言;同步内置语言 / 认不出 → null。
+ * 先按原文件名匹配(R 的 .r / .R 等大小写敏感项),再按小写重试(.PY 同 .py)。
+ */
+export function languageDescriptionFor(fileName: string): LanguageDescription | null {
+  const ext = fileExtensionLower(fileName);
+  if (ext !== undefined && BUILTIN_LANGUAGES.has(ext)) return null;
+  const base = fileName.slice(Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\')) + 1);
+  for (const [pattern, name] of FILENAME_ALIASES) {
+    if (pattern.test(base)) return LanguageDescription.matchLanguageName(languages, name, false);
+  }
+  return (
+    LanguageDescription.matchFilename(languages, base) ??
+    LanguageDescription.matchFilename(languages, lowerIfNeeded(base))
+  );
+}
+
+/** 同步可得的语言:内置语言,或语言表里已加载过的;否则(含待懒加载)纯文本。 */
 export function pickLanguage(
   fileName: string,
   forceLanguage?: CodeEditorProps['forceLanguage'],
 ): Extension {
   if (forceLanguage === 'markdown') return markdownWithFrontmatter();
   const ext = fileExtensionLower(fileName);
-  switch (ext) {
-    case 'js':
-    case 'jsx':
-    case 'mjs':
-    case 'cjs':
-      return javascript({ jsx: true });
-    case 'ts':
-    case 'tsx':
-      return javascript({ jsx: true, typescript: true });
-    case 'json':
-      return json();
-    case 'css':
-      return css();
-    case 'html':
-    case 'htm':
-      return html();
-    case 'md':
-    case 'markdown':
-      return markdownWithFrontmatter();
-    default:
-      return EMPTY_LANGUAGE_EXTENSIONS;
-  }
+  const builtin = ext === undefined ? undefined : BUILTIN_LANGUAGES.get(ext);
+  if (builtin) return builtin();
+  return languageDescriptionFor(fileName)?.support ?? EMPTY_LANGUAGE_EXTENSIONS;
 }
 
 /**
@@ -177,6 +220,21 @@ export function CodeEditor({
   // markdown() 每次调用新建 Language,重配置会让整篇从 0 重新解析(每次切到 .md tab 首屏解析两遍)。
   const appliedLangKeyRef = useRef<string | null>(null);
   const appliedThemeRef = useRef<string | null>(null);
+
+  // 语言表里的语言包尚未加载 → 先纯文本,加载完再换上。加载期间改名 / 换文件 / 卸载:语言 key 或 view 已变 →
+  // 旧结果丢弃(不套到新文件上)。加载失败保持纯文本。
+  const loadPendingLanguage = (view: EditorView, key: string) => {
+    if (forceLanguage) return;
+    const desc = languageDescriptionFor(fileName);
+    if (!desc || desc.support) return;
+    desc.load().then(
+      (support) => {
+        if (viewRef.current !== view || appliedLangKeyRef.current !== key) return;
+        view.dispatch({ effects: langCompartment.current.reconfigure(support) });
+      },
+      () => {},
+    );
+  };
 
   // 创建 editor 一次,父用 key={tabId} 强制 remount 切 tab(视图状态经 editor-view-state-cache 按 tab 保留)
   useEffect(() => {
@@ -250,6 +308,7 @@ export function CodeEditor({
     const rebindRoot = () => rebindCodeMirrorRoots(view.dom);
     rebindRoot();
     const unregisterRoot = registerEditorRootRebind(rebindRoot);
+    loadPendingLanguage(view, appliedLangKeyRef.current);
 
     return () => {
       unregisterRoot();
@@ -327,6 +386,7 @@ export function CodeEditor({
     view.dispatch({
       effects: [langCompartment.current.reconfigure(pickLanguage(fileName, forceLanguage)), ...labelEffects()],
     });
+    loadPendingLanguage(view, key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileName, forceLanguage]);
 
