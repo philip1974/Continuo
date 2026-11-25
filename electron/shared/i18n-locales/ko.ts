@@ -436,6 +436,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.readonly_body': '{name} 파일은 쓰기 보호되어 있습니다. 그래도 덮어쓰시겠습니까? 쓰기 보호가 해제됩니다.',
   'panels.editor.readonly_confirm': '덮어쓰기',
   'panels.editor.milkdownUnsafe.banner': 'frontmatter와 wiki-link를 보존하기 위해 소스 모드로 열었습니다.',
+  'panels.editor.milkdownLarge.banner': '파일이 커서 원활한 사용을 위해 소스 모드로 열었습니다. 위에서 편집 또는 미리보기로 전환하면 렌더링합니다(몇 초 걸릴 수 있음).',
+  'panels.editor.milkdownLarge.rendering': '큰 파일을 렌더링하는 중입니다. 몇 초 걸릴 수 있습니다…',
   'panels.editor.engine_load_failed': '편집기를 불러오지 못했습니다.',
   'panels.editor.engine_load_retry': '다시 시도',
   'panels.editor.milkdownUnsafe.modalTitle': '안전하지 않은 Markdown을 편집 모드로 여시겠습니까?',

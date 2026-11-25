@@ -108,6 +108,8 @@ interface MilkdownEditorProps {
    * `base` = 最近一次上抛(或挂载时)的内容,供上层判断 store 是否已被别处改过。缺省走 onChange。
    */
   onWriteBack?: (markdown: string, base: string) => void;
+  /** 编辑器视图就绪(Crepe 异步创建完成)时回调(EditorPanel 据此收起较大文件的「正在渲染」提示)。 */
+  onViewReady?: () => void;
 }
 
 /** 斜杠菜单(BlockEdit)分组与条目名;icon 不传,沿用 Crepe 默认。 */
@@ -895,6 +897,8 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   const getViewRef = useRef<() => EditorView | null>(() => null);
   const restoringScrollRef = useRef(false);
   const groupId = useEditorGroupId();
+  const onViewReadyRef = useRef(props.onViewReady);
+  onViewReadyRef.current = props.onViewReady;
   const handleReady = useCallback<OnEditorReady>(
     (focus, position, getView) => {
       positionRef.current = position;
@@ -939,6 +943,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         (target) => (wrapperRef.current ? position.reveal(wrapperRef.current, target) : null),
         groupId,
       );
+      onViewReadyRef.current?.();
     },
     [tabId, viewMode, groupId],
   );

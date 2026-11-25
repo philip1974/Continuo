@@ -4,6 +4,7 @@
 // mode 路由(决策 #1/#3/#4):
 //   activeTab 是 .md → mode=edit:Milkdown;source:CodeEditor markdown;preview:Milkdown readonly
 //     (含 frontmatter / wiki-link 的 .md:edit 须先确认,否则落到 source;preview 照常)
+//     (较大的 .md:edit / preview 都落到 source,手动切换后按所选模式;BDD: src/__tests__/markdown-large-file/)
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
@@ -14,6 +15,7 @@ import {
   getEffectiveMode,
   groupActiveTabIdOf,
   groupTabsOf,
+  isTabMilkdownTooLarge,
   isTabMilkdownUnsafe,
   isTabOpenInOtherGroup,
   useEditorStore,
@@ -185,6 +187,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     [closeStoreTab, groupId],
   );
   const acceptUnsafeEdit = useEditorStore((s) => s.acceptUnsafeEdit);
+  const acceptLargeMilkdown = useEditorStore((s) => s.acceptLargeMilkdown);
   // 引擎 lazy 实例 + 重试代数:重试新建失败引擎的 lazy 实例,并换 key 重挂错误边界。
   const [engines, setEngines] = useState(() => lazyEngines);
   const [engineRetry, setEngineRetry] = useState(0);
@@ -202,8 +205,14 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   // perf P5:复用派生缓存(isTabMilkdownUnsafe 内部 cache-or-compute),不再在 render
   // 里对全文重跑 isMilkdownUnsafe —— 否则每按键 = updateContent 1 次 + 此处 1 次。
   const unsafeMarkdown = isTabMilkdownUnsafe(activeTab);
-  const forcedSource = unsafeMarkdown && effective !== mode;
   const activeIsMarkdown = activeTab !== null && isMarkdownPath(activeTab.filePath);
+  // 较大的 Markdown 且未手动选过编辑 / 预览:编辑 / 预览落到源码(窗口级 mode 不改),顶部一行提示
+  const largeMarkdown = activeIsMarkdown && isTabMilkdownTooLarge(activeTab) && !activeTab.milkdownLargeAccepted;
+  const forcedLarge = largeMarkdown && mode !== 'source';
+  const forcedSource = unsafeMarkdown && effective !== mode && !forcedLarge;
+  // 手动切到编辑 / 预览后正在渲染的较大文件(tab id):提示换成「正在渲染」,Milkdown 就绪后收起
+  const [renderingLarge, setRenderingLarge] = useState<string | null>(null);
+  const handleViewReady = useCallback(() => setRenderingLarge(null), []);
 
   const { saveActive, saveTab, openFileByPath } = useEditorFile();
 
@@ -426,6 +435,27 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     [handleSave, onTabCloseRequest, groupId],
   );
 
+  // 切模式;较大的 Markdown 切到编辑 / 预览:该 tab 记为已接受。渲染是同步长任务 → 先让「正在渲染」提示画出来(下一帧之后)
+  // 再切,渲染期间画面停在提示上。
+  const activeTabIdForMode = activeTab?.id;
+  const applyMode = useCallback(
+    (next: EditorMode) => {
+      const id = activeTabIdForMode;
+      if (next === 'source' || id === undefined || !largeMarkdown) {
+        setMode(next);
+        return;
+      }
+      setRenderingLarge(id);
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          acceptLargeMilkdown(id);
+          setMode(next);
+        }, 0),
+      );
+    },
+    [setMode, acceptLargeMilkdown, activeTabIdForMode, largeMarkdown],
+  );
+
   // Unsafe markdown cannot be opened in Milkdown without an explicit warning.
   const [unsafeEditConfirmOpen, setUnsafeEditConfirmOpen] = useState(false);
   const requestModeChange = useCallback(
@@ -434,18 +464,21 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         setUnsafeEditConfirmOpen(true);
         return;
       }
-      setMode(next);
+      applyMode(next);
     },
-    [setMode, unsafeMarkdown, activeTab?.unsafeEditAccepted],
+    [applyMode, unsafeMarkdown, activeTab?.unsafeEditAccepted],
   );
   const activeTabId = activeTab?.id ?? null;
   // 确认框针对打开它时的 tab;active tab 换了(如 SDK openFile)就作废,免得确认到别的文件上
-  useEffect(() => setUnsafeEditConfirmOpen(false), [activeTabId]);
+  useEffect(() => {
+    setUnsafeEditConfirmOpen(false);
+    setRenderingLarge(null);
+  }, [activeTabId]);
   const confirmUnsafeEdit = useCallback(() => {
     if (activeTabId !== null) acceptUnsafeEdit(activeTabId);
-    setMode('edit');
+    applyMode('edit');
     setUnsafeEditConfirmOpen(false);
-  }, [acceptUnsafeEdit, activeTabId, setMode]);
+  }, [acceptUnsafeEdit, activeTabId, applyMode]);
 
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
@@ -484,6 +517,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         onChange={(md) => updateContent(tabId, md)}
         onWriteBack={(md, base) => applyEditorWriteBack(tabId, md, base)}
         onLinkClick={handleLinkClick}
+        onViewReady={handleViewReady}
       />
     );
   } else {
@@ -550,10 +584,20 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
           />
         </div>
       )}
-      {forcedSource && (
-        <div className="bg-panel-soft px-4 py-2 text-xs text-fg-muted">
-          {translate('panels.editor.milkdownUnsafe.banner')}
+      {renderingLarge !== null && renderingLarge === activeTabId ? (
+        <div role="status" className="bg-panel-soft px-4 py-2 text-xs text-fg-muted">
+          {translate('panels.editor.milkdownLarge.rendering')}
         </div>
+      ) : forcedLarge ? (
+        <div role="status" className="bg-panel-soft px-4 py-2 text-xs text-fg-muted">
+          {translate('panels.editor.milkdownLarge.banner')}
+        </div>
+      ) : (
+        forcedSource && (
+          <div className="bg-panel-soft px-4 py-2 text-xs text-fg-muted">
+            {translate('panels.editor.milkdownUnsafe.banner')}
+          </div>
+        )
       )}
       <div className="min-h-0 flex-1">
         {/* perf E2:引擎 chunk 首次加载期间 fallback 为空(同 lazyPanel 外层),加载完即挂载。

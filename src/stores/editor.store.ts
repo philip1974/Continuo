@@ -67,6 +67,13 @@ export interface EditorTab {
    */
   readonly unsafeEditAccepted?: boolean;
   /**
+   * 派生缓存:Markdown 内容超过 MILKDOWN_LARGE_DOC_CHARS(打开 / 外部重新读盘 / 改名时算;编辑中不重算,免得输入跨过阈值时
+   * 编辑器突然换引擎)。为 true 且未 milkdownLargeAccepted → 编辑 / 预览实际落到源码。BDD: src/__tests__/markdown-large-file/
+   */
+  readonly milkdownTooLarge?: boolean;
+  /** 用户对本 tab 手动选了编辑 / 预览:较大的 Markdown 也按所选模式渲染。只由 acceptLargeMilkdown 置 true;runtime only。 */
+  readonly milkdownLargeAccepted?: boolean;
+  /**
    * filePath 为符号链接时其真实目标(main readFile 解析,见 shared FsReadFileData)。外部同步据此按目标
    * 目录 / 文件名匹配 dir-changed(FSEvents/inotify 报的是被实际修改的目录项名)。打开 / 会话恢复 /
    * reloadFromDisk 时随读盘结果更新;runtime only,不持久化(collectEditorSnapshot 只取 filePath)。
@@ -146,6 +153,7 @@ export function createTab(
     originalContent: content,
     dirty: false,
     milkdownUnsafe: computeMilkdownUnsafe(filePath, content), // perf P4
+    milkdownTooLarge: computeMilkdownTooLarge(filePath, content),
   };
   return realPath === undefined ? tab : { ...tab, realPath };
 }
@@ -307,6 +315,7 @@ export function getStateAfterRenamingPath(
         id: np,
         filePath: np,
         milkdownUnsafe: computeMilkdownUnsafe(np, t.content),
+        milkdownTooLarge: computeMilkdownTooLarge(np, t.content),
       };
       if (t.id === activeTabId) nextActive = nextTab.id;
     }
@@ -641,6 +650,8 @@ type EditorState = {
   setMode: (mode: EditorMode) => void;
   /** unsafe markdown 的「仍然切换」确认:允许该 tab 在 Edit 模式下用 Milkdown. */
   acceptUnsafeEdit: (id: string) => void;
+  /** 较大的 Markdown 用户手动选了编辑 / 预览:该 tab 按所选模式渲染(见 EditorTab.milkdownLargeAccepted)。 */
+  acceptLargeMilkdown: (id: string) => void;
   registerView: (tabId: string, view: EditorView) => void;
   unregisterView: (tabId: string, expectedView: EditorView) => void;
   waitForViewRef: (
@@ -683,6 +694,8 @@ function tabChromeChanged(prev: EditorTab, next: EditorTab): boolean {
     prev.dirtyGen !== next.dirtyGen ||
     !!prev.milkdownUnsafe !== !!next.milkdownUnsafe ||
     !!prev.unsafeEditAccepted !== !!next.unsafeEditAccepted ||
+    !!prev.milkdownTooLarge !== !!next.milkdownTooLarge ||
+    !!prev.milkdownLargeAccepted !== !!next.milkdownLargeAccepted ||
     !!prev.orphaned !== !!next.orphaned
   );
 }
@@ -1218,6 +1231,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
         // 外部内容已变 → 递增 epoch,让 Milkdown 视图按 key remount 拿新内容
         reloadEpoch: (cur.reloadEpoch ?? 0) + 1,
         milkdownUnsafe: computeMilkdownUnsafe(cur.filePath, content), // perf P4
+        milkdownTooLarge: computeMilkdownTooLarge(cur.filePath, content),
       };
       // perf P14:外部 reload 改 content,chrome(id/filePath/dirty)不变,但 milkdownUnsafe 翻转会改 effectiveMode。
       return replaceTabBumpingChrome(s, idx, next);
@@ -1320,6 +1334,13 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       return replaceTabBumpingChrome(s, idx, { ...cur, unsafeEditAccepted: true });
     }),
 
+  acceptLargeMilkdown: (id) =>
+    set((s) => {
+      const idx = findEditorTabIndexById(s.tabs, id);
+      if (idx < 0 || s.tabs[idx]!.milkdownLargeAccepted) return s;
+      return replaceTabBumpingChrome(s, idx, { ...s.tabs[idx]!, milkdownLargeAccepted: true });
+    }),
+
   registerView: (tabId, view) => {
     const stack = liveViews.get(tabId) ?? [];
     if (!stack.includes(view)) liveViews.set(tabId, [...stack, view]);
@@ -1391,6 +1412,23 @@ function computeMilkdownUnsafe(filePath: string, content: string): boolean {
   return isMarkdownPath(filePath) && isMilkdownUnsafe(content);
 }
 
+/**
+ * 较大 Markdown 的阈值(UTF-16 code unit):超过即默认以源码模式显示。依据:Milkdown 解析 + 建视图是同步长任务,耗时约与长度
+ * 成正比(实测 240 KB ≈ 3.5 s 冻结、编辑模式逐键 80–140 ms),10 万字符约 1.5 s 内;常见文档远小于此。
+ * BDD: src/__tests__/markdown-large-file/
+ */
+export const MILKDOWN_LARGE_DOC_CHARS = 100_000;
+
+function computeMilkdownTooLarge(filePath: string, content: string): boolean {
+  return content.length > MILKDOWN_LARGE_DOC_CHARS && isMarkdownPath(filePath);
+}
+
+/** tab 是否「较大的 Markdown」(读派生缓存;缺省 = 旧构造 / 测试直接构造,现场按长度算,O(1))。 */
+export function isTabMilkdownTooLarge(tab: EditorTab | null): boolean {
+  if (!tab) return false;
+  return tab.milkdownTooLarge ?? computeMilkdownTooLarge(tab.filePath, tab.content);
+}
+
 // 性能 P4/P5:tab 是否 milkdown-unsafe 的**单一读取口径**。优先读派生缓存,缺省
 // (旧构造 / 未迁移路径)回退现场计算 —— 与历史逐字节等价。getEffectiveMode 与
 // EditorPanel 都经此读,避免任一处直接对 content 重跑未锚定 wiki-link 正则。
@@ -1399,10 +1437,12 @@ export function isTabMilkdownUnsafe(tab: EditorTab | null): boolean {
   return tab.milkdownUnsafe ?? computeMilkdownUnsafe(tab.filePath, tab.content);
 }
 
+// 较大的 Markdown:编辑 / 预览都落到 Source,除非用户对该 tab 手动选过(acceptLargeMilkdown)。窗口级 mode 不改。
 // unsafe markdown 只挡**会写回**的 Milkdown Edit:Preview 只读、不产生 serializer
 // 回写,照常放行;Edit 须用户对该 tab 确认过(acceptUnsafeEdit)才放行,否则落到 Source。
 export function getEffectiveMode(tab: EditorTab | null): EditorMode {
   const requestedMode = useEditorStore.getState().mode;
+  if (requestedMode !== 'source' && isTabMilkdownTooLarge(tab) && !tab?.milkdownLargeAccepted) return 'source';
   if (requestedMode !== 'edit' || !isTabMilkdownUnsafe(tab)) return requestedMode;
   return tab?.unsafeEditAccepted ? 'edit' : 'source';
 }

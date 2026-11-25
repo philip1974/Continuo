@@ -433,6 +433,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.readonly_body': '{name} 处于写保护状态。仍要覆盖吗？覆盖会去掉它的写保护。',
   'panels.editor.readonly_confirm': '覆盖',
   'panels.editor.milkdownUnsafe.banner': '已用源码模式打开，以保留 frontmatter 和 wiki-link。',
+  'panels.editor.milkdownLarge.banner': '文件较大，已以源码模式打开以保持流畅。可在上方切换到编辑或预览进行渲染（可能需要几秒）。',
+  'panels.editor.milkdownLarge.rendering': '正在渲染较大的文件，可能需要几秒…',
   'panels.editor.engine_load_failed': '编辑器加载失败。',
   'panels.editor.engine_load_retry': '重试',
   'panels.editor.milkdownUnsafe.modalTitle': '用编辑模式打开不安全 Markdown?',

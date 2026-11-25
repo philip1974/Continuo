@@ -1041,6 +1041,10 @@
 
 - [`markdown-find.spec.tsx`](./markdown-find/markdown-find.spec.tsx)
 
+## [较大 Markdown 以源码模式打开](./markdown-large-file/README.md)
+
+- [`markdown-large-file.spec.tsx`](./markdown-large-file/markdown-large-file.spec.tsx)
+
 ## [markdown-link-keyboard](./markdown-link-keyboard/)
 
 - [`link-keyboard-activate.spec.tsx`](./markdown-link-keyboard/link-keyboard-activate.spec.tsx)

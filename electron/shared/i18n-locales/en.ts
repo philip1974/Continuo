@@ -456,6 +456,8 @@ export const en = {
   'panels.editor.readonly_body': '{name} is write-protected. Overwrite it anyway? Its write protection will be removed.',
   'panels.editor.readonly_confirm': 'Overwrite',
   'panels.editor.milkdownUnsafe.banner': 'Opened in Source mode to preserve frontmatter and wiki-links.',
+  'panels.editor.milkdownLarge.banner': 'This file is large, so it was opened in Source mode to stay responsive. Switch to Edit or Preview above to render it (may take a few seconds).',
+  'panels.editor.milkdownLarge.rendering': 'Rendering a large file, this may take a few seconds…',
   'panels.editor.engine_load_failed': 'The editor failed to load.',
   'panels.editor.engine_load_retry': 'Retry',
   'panels.editor.milkdownUnsafe.modalTitle': 'Open unsafe Markdown in Edit mode?',

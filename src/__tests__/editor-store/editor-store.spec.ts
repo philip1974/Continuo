@@ -63,6 +63,7 @@ describe('createTab', () => {
       originalContent: 'hello',
       dirty: false,
       milkdownUnsafe: false, // perf P4:派生缓存,'hello' 无 frontmatter/wiki
+      milkdownTooLarge: false, // 较大 Markdown 判定(BDD: src/__tests__/markdown-large-file/)
     });
   });
 
