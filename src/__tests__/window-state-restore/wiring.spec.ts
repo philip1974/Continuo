@@ -29,6 +29,6 @@ describe('窗口状态恢复接线', () => {
   it('main-app:initExplorerPersistence 完成后调用 focusActiveEditorAfterRestore', () => {
     const src = read('src/main-app.ts');
     const call = src.slice(src.indexOf('void initExplorerPersistence('));
-    expect(call.slice(0, call.indexOf('renderApp(container)'))).toContain(').then(() => focusActiveEditorAfterRestore());');
+    expect(call.slice(0, call.indexOf('renderApp(container)'))).toMatch(/\)\.then\(\(\) => \{[^}]*focusActiveEditorAfterRestore\(\);\s*\}\);/);
   });
 });

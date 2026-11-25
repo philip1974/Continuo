@@ -31,6 +31,7 @@ import {
 import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
+import { useEditorGroupId } from './editor-group-context';
 import { setContentFocusHandler } from '@/lib/content-focus-target';
 import {
   markdownScrollTopOf,
@@ -794,6 +795,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   );
   const getViewRef = useRef<() => EditorView | null>(() => null);
   const restoringScrollRef = useRef(false);
+  const groupId = useEditorGroupId();
   const handleReady = useCallback<OnEditorReady>(
     (focus, position, getView) => {
       positionRef.current = position;
@@ -830,9 +832,9 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         }
       }
       unregisterFocusRef.current?.();
-      unregisterFocusRef.current = registerEditorFocus(tabId, focus);
+      unregisterFocusRef.current = registerEditorFocus(tabId, focus, groupId);
     },
-    [tabId, viewMode],
+    [tabId, viewMode, groupId],
   );
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {

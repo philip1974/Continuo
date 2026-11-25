@@ -10,19 +10,25 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { DockviewPanelApi } from 'dockview-react';
 import {
+  editorGroupIdsOf,
   getEffectiveMode,
+  groupActiveTabIdOf,
+  groupTabsOf,
   isTabMilkdownUnsafe,
+  isTabOpenInOtherGroup,
   useEditorStore,
   usesMilkdownEngine,
   type EditorMode,
 } from '@/stores/editor.store';
+import { PRIMARY_EDITOR_GROUP_ID } from '../../../electron/shared/editor-group-id';
+import { EditorGroupIdContext } from './editor-group-context';
 import { t as translate, useLocale, type TranslationKey } from '@/i18n';
 import { isMarkdownPath } from './editor-path-utils';
 import { basename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
-import { focusActiveEditor } from './editor-focus-registry';
+import { focusActiveEditor, requestEditorFocus } from './editor-focus-registry';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
 import { ImageViewer } from './ImageViewer';
@@ -100,11 +106,25 @@ function withCodeName(key: TranslationKey, name: string): ReactNode {
 }
 
 export interface EditorPanelProps {
-  /** dockview 面板 api(经 PanelHost 传入;测试直接渲染时缺省)。 */
-  readonly api?: Pick<DockviewPanelApi, 'onDidLocationChange'>;
+  /** dockview 面板 api(经 PanelHost 传入;测试直接渲染时缺省)。id = 本面板的编辑器组 id。 */
+  readonly api?: Pick<DockviewPanelApi, 'onDidLocationChange'> & { readonly id?: string };
+}
+
+/**
+ * 组内关闭的脏确认按「文档」判定:仍在别的组打开的文档关掉这一个编辑器不丢修改(VSCode 同),不弹确认。
+ */
+function groupTabsForClose(groupId: string): readonly { id: string; filePath: string; dirty: boolean }[] {
+  const s = useEditorStore.getState();
+  return groupTabsOf(s, groupId).map((t) => ({
+    id: t.id,
+    filePath: t.filePath,
+    dirty: t.dirty && !isTabOpenInOtherGroup(s, t.id, groupId),
+  }));
 }
 
 export function EditorPanel({ api }: EditorPanelProps = {}) {
+  // 本面板 = 一个编辑器组(多实例编辑器面板;BDD: src/__tests__/editor-groups/)。
+  const groupId = api?.id ?? PRIMARY_EDITOR_GROUP_ID;
   // 只订阅 active tab 对象(打磨 R27,延续 R22-R24 正文热路径收敛)。editor store
   // 的 updateContent/reloadFromDisk/markSaved 只替换被改的 tab 对象 → 非 active tab
   // 变化时 active tab 引用不变 → selector 返同一对象 → EditorPanel 主体不重渲;
@@ -112,8 +132,10 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   // EditorHeader 自己窄订阅,不依赖这里。
   const activeTab = useEditorStore(
     (s): EditorTab | null =>
-      findEditorFileTabById(s.tabs, s.activeTabId),
+      findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, groupId)),
   );
+  // 恢复出的组面板(dock 布局里的 editor:N)挂载时确保组存在;拆分新建的组已先建好。
+  useEffect(() => useEditorStore.getState().ensureGroup(groupId), [groupId]);
   const locale = useLocale(); // i18n(I14):订阅 locale,模式切换 label 随语言更新
   const modeOptions = useMemo(
     () => {
@@ -145,15 +167,22 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       const root = rootRef.current;
       const refocus =
         root !== null &&
-        useEditorStore.getState().activeTabId === id &&
+        groupActiveTabIdOf(useEditorStore.getState(), groupId) === id &&
         focusWithinOrLost(root.ownerDocument, root);
-      closeStoreTab(id);
+      closeStoreTab(id, groupId);
       if (!refocus) return;
+      const s = useEditorStore.getState();
+      // 组随最后一个 tab 关闭(closeEmptyGroups)→ 焦点交给新的活动组的编辑器。
+      if (!editorGroupIdsOf(s).includes(groupId)) {
+        focusActiveEditor();
+        return;
+      }
+      const next = groupActiveTabIdOf(s, groupId);
       // 关掉的是最后一个 tab → 焦点留在空编辑器组(面板根,tabIndex=-1),不随卸载的编辑区掉到 body(VSCode 同)。
-      if (useEditorStore.getState().activeTabId === null) root.focus();
-      else focusActiveEditor();
+      if (next === null) root.focus();
+      else requestEditorFocus(next, groupId);
     },
-    [closeStoreTab],
+    [closeStoreTab, groupId],
   );
   const acceptUnsafeEdit = useEditorStore((s) => s.acceptUnsafeEdit);
   // 引擎 lazy 实例 + 重试代数:重试新建失败引擎的 lazy 实例,并换 key 重挂错误边界。
@@ -217,6 +246,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   useAutoSave(saveTab, {
     enabled: autoSaveEnabled && closeCandidate === null,
     delayMs: autoSaveDelayMs,
+    groupId,
   });
 
   // 外部进程修改文件时自动同步 non-dirty tab:useExternalFileSync 由常驻 MainApp 承载(见 App.tsx)。
@@ -265,9 +295,9 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {
-    const { activeTabId, tabs } = useEditorStore.getState();
-    const target = findEditorFileTabById(tabs, activeTabId);
-    const r = await saveActive();
+    const s = useEditorStore.getState();
+    const target = findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, groupId));
+    const r = await saveActive(target?.id);
     if (!r.ok) {
       if (r.code === EDITOR_DISK_CHANGED && target) {
         setOverwriteCandidate({ id: target.id, filePath: target.filePath });
@@ -280,21 +310,21 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       if (target) onSaveFailed(target, r);
       else notifyFailure(r);
     }
-  }, [saveActive, onSaveFailed]);
+  }, [saveActive, onSaveFailed, groupId]);
   // 关闭 tab(单个 × / ⌘W / 中键,与右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」同一路径):按 tab 顺序逐个确认仍脏的
   // tab(保存 / 不保存 / 取消;批量时先切到该 tab,VSCode 同),全部确认完才一起关闭;任一处取消 → 整批不关。
   // closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave。BDD: src/__tests__/tab-context-menu/
   const advanceBatchClose = useCallback(
     (progress: BatchClose) => {
-      const step = nextBatchCloseStep(useEditorStore.getState().tabs, progress);
+      const step = nextBatchCloseStep(groupTabsForClose(groupId), progress);
       if (step.kind === 'close') {
         for (const id of step.ids) closeTab(id);
         return;
       }
-      if (progress.closeIds.length > 1) useEditorStore.getState().switchTab(step.tab.id);
+      if (progress.closeIds.length > 1) useEditorStore.getState().switchTab(step.tab.id, { groupId });
       setCloseCandidate({ ...step.tab, batch: step.batch });
     },
-    [closeTab],
+    [closeTab, groupId],
   );
   const confirmOverwrite = useCallback(async () => {
     const candidate = overwriteCandidate;
@@ -380,17 +410,20 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   //(覆盖确认 / 保存·不保存·取消 确认框状态在本组件)。BDD: src/__tests__/workbench-editor-commands/
   useEffect(
     () =>
-      registerEditorPanelActions({
-        save: handleSave,
-        closeActiveTab: () => {
-          const { tabs, activeTabId } = useEditorStore.getState();
-          const tab = findEditorFileTabById(tabs, activeTabId);
-          if (!tab) return false;
-          onTabCloseRequest(tab);
-          return true;
+      registerEditorPanelActions(
+        {
+          save: handleSave,
+          closeActiveTab: () => {
+            const s = useEditorStore.getState();
+            const tab = findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, groupId));
+            if (!tab) return false;
+            onTabCloseRequest(tab);
+            return true;
+          },
         },
-      }),
-    [handleSave, onTabCloseRequest],
+        groupId,
+      ),
+    [handleSave, onTabCloseRequest, groupId],
   );
 
   // Unsafe markdown cannot be opened in Milkdown without an explicit warning.
@@ -414,6 +447,16 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     setUnsafeEditConfirmOpen(false);
   }, [acceptUnsafeEdit, activeTabId, setMode]);
 
+  // Milkdown 视图不能增量套用外部 Markdown:store 内容被**别处**改了(另一编辑器组 / 程序化改内容,不是本视图上抛的)
+  // → 按新内容重挂(同外部重载的 reloadEpoch)。本视图上抛的内容记在 ownEmitRef,不触发重挂。
+  // BDD: src/__tests__/editor-groups/
+  const ownEmitRef = useRef<{ readonly tabId: string; readonly content: string } | null>(null);
+  const mdSyncRef = useRef<{ tabId: string | null; content: string | null; epoch: number }>({
+    tabId: null,
+    content: null,
+    epoch: 0,
+  });
+
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
   let engine: 'welcome' | 'image' | 'code' | 'milkdown';
@@ -432,12 +475,22 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     );
   } else if (usesMilkdownEngine(activeTab.filePath, activeTab)) {
     engine = 'milkdown';
+    const sync = mdSyncRef.current;
+    if (sync.tabId !== activeTab.id) {
+      sync.tabId = activeTab.id;
+      sync.content = activeTab.content;
+    } else if (sync.content !== activeTab.content) {
+      const own = ownEmitRef.current;
+      if (own === null || own.tabId !== activeTab.id || own.content !== activeTab.content) sync.epoch += 1;
+      sync.content = activeTab.content;
+    }
+    const tabId = activeTab.id;
     body = (
       <MilkdownEditor
         // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
         // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
         // 用户输入/保存不动 epoch,故不会每次按键 remount。
-        key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
+        key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}-${sync.epoch}`}
         tabId={activeTab.id}
         fileName={activeTab.filePath}
         // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
@@ -447,10 +500,16 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
             : activeTab.content
         }
         readonly={effective === 'preview'}
-        onChange={(md) => updateContent(activeTab.id, md)}
-        onWriteBack={(md, base) =>
-          applyEditorWriteBack(activeTab.id, md, base)
-        }
+        onChange={(md) => {
+          ownEmitRef.current = { tabId, content: md };
+          updateContent(tabId, md);
+        }}
+        onWriteBack={(md, base) => {
+          if (findEditorFileTabById(useEditorStore.getState().tabs, tabId)?.content === base) {
+            ownEmitRef.current = { tabId, content: md };
+          }
+          applyEditorWriteBack(tabId, md, base);
+        }}
         onLinkClick={handleLinkClick}
       />
     );
@@ -471,6 +530,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   }
 
   return (
+    <EditorGroupIdContext.Provider value={groupId}>
     <div
       ref={rootRef}
       // 空编辑器组的焦点落点(关掉最后一个 tab 后);只经脚本聚焦,不进 Tab 顺序。
@@ -493,8 +553,10 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         e.preventDefault();
         e.stopPropagation();
         if (winner === SAVE_COMMAND.id) void handleSave();
-        else openAdjacentEditor(winner === NEXT_EDITOR_COMMAND_ID ? 1 : -1);
+        else openAdjacentEditor(winner === NEXT_EDITOR_COMMAND_ID ? 1 : -1, groupId);
       }}
+      // 焦点进入本组(编辑区 / tab 行)→ 成为活动组:之后打开的文件落在这里(VSCode 最近活动的组)。
+      onFocus={() => useEditorStore.getState().setActiveGroup(groupId)}
     >
       <EditorHeader onCloseRequest={onTabCloseRequest} onCloseTabsRequest={onTabsCloseRequest} />
       {activeIsMarkdown && (
@@ -586,5 +648,6 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         onCancel={() => setUnsafeEditConfirmOpen(false)}
       />
     </div>
+    </EditorGroupIdContext.Provider>
   );
 }

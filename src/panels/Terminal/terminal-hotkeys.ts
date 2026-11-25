@@ -32,6 +32,14 @@ export const WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND = {
   hotkey: 'mod+w',
 } as const;
 export const WORKBENCH_SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s' } as const;
+// 编辑器组(BDD: src/__tests__/editor-groups/):拆分 ⌘\、聚焦第 N 个编辑器组 ⌘1 / ⌘2 / ⌘3(VSCode 的 focus*EditorGroup 在
+// commandsToSkipShell 默认列表里 → 终端里胜出即让出;拆分只在按键带 Meta 时让出,Ctrl+\ 是 shell 的 SIGQUIT)。
+export const WORKBENCH_SPLIT_EDITOR_COMMAND = { id: 'workbench.action.splitEditor', hotkey: 'mod+\\' } as const;
+export const WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS = [
+  { id: 'workbench.action.focusFirstEditorGroup', hotkey: 'mod+1' },
+  { id: 'workbench.action.focusSecondEditorGroup', hotkey: 'mod+2' },
+  { id: 'workbench.action.focusThirdEditorGroup', hotkey: 'mod+3' },
+] as const;
 
 /**
  * terminal.clear 的默认键:同 VSCode workbench.action.terminal.clear(primary: 0, mac: Cmd+K)只 mac 有 ⌘K;
@@ -55,6 +63,8 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   [FOCUS_PREVIOUS_PART_COMMAND.id, { metaOnly: false }],
   [WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_SAVE_COMMAND.id, { metaOnly: true }],
+  [WORKBENCH_SPLIT_EDITOR_COMMAND.id, { metaOnly: true }],
+  ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
 ]);
 
 /** 终端判定涉及的命令的约定默认键(命令尚未注册时兜底;已注册以注册的 hotkey 为准)。按平台(clear 仅 mac 有默认键)。 */
@@ -70,6 +80,8 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
     { id: TERMINAL_CLEAR_COMMAND.id, hotkey: terminalClearDefaultHotkey(platform) },
     WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND,
     WORKBENCH_SAVE_COMMAND,
+    WORKBENCH_SPLIT_EDITOR_COMMAND,
+    ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS,
     FOCUS_NEXT_PART_COMMAND,
     FOCUS_PREVIOUS_PART_COMMAND,
   ];

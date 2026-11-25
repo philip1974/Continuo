@@ -567,10 +567,10 @@ type EditorState = {
   /** 确保组存在(恢复出的组面板挂载时;新组为空,不改活动组)。 */
   ensureGroup: (groupId: string) => void;
   /**
-   * 拆分:在 sourceGroupId 之后新建组 newGroupId,打开源组的活动文件(或指定的 tabId),新组成为活动组。
-   * 源组无可拆分的文件 / newGroupId 已存在 / 组数已达上限 → false。
+   * 拆分:在 sourceGroupId 之后新建组 newGroupId,打开源组的活动文件(或指定的 tabId;null = 新建空组),新组成为活动组。
+   * 源组不存在 / 无可拆分的文件 / newGroupId 已存在 / 组数已达上限 → false。
    */
-  splitGroup: (sourceGroupId: string, newGroupId: string, tabId?: string) => boolean;
+  splitGroup: (sourceGroupId: string, newGroupId: string, tabId?: string | null) => boolean;
   /**
    * 移除组(其 dock 面板被关掉):只在该组的文档 —— keep 'all' 全部移到相邻组;'dirty' 只移脏的、干净的关闭。
    * 唯一的组不移除。
@@ -717,6 +717,11 @@ function materializedGroups(s: Pick<EditorState, 'tabs' | 'activeTabId' | 'group
   return [{ id: only?.id ?? PRIMARY_EDITOR_GROUP_ID, tabIds: idsOf(s.tabs), activeTabId: active }];
 }
 
+/** 各组的实际内容(按组顺序;单组模式按 tabs / activeTabId 物化)。 */
+export function editorGroupsOf(s: Pick<EditorState, 'tabs' | 'activeTabId' | 'groups'>): readonly EditorGroup[] {
+  return materializedGroups(s);
+}
+
 /** 组的 id 列表(按组顺序)。 */
 export function editorGroupIdsOf(s: Pick<EditorState, 'groups'>): string[] {
   return idsOf(s.groups.length > 0 ? s.groups : singleGroup(PRIMARY_EDITOR_GROUP_ID));
@@ -727,9 +732,11 @@ function findGroup(s: Pick<EditorState, 'groups'>, groupId: string): EditorGroup
   return undefined;
 }
 
-/** 组 groupId 的 tab(按该组顺序);单组模式 = tabs(组 id 不匹配时同样按唯一组处理)。 */
+/**
+ * 组 groupId 的 tab(按该组顺序);单组模式 = tabs。不存在的组 → 空(如刚被关闭、还在退出动画里的组面板,不显示别组内容)。
+ */
 export function groupTabsOf(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: string): EditorTab[] {
-  if (!isMultiGroup(s)) return s.tabs;
+  if (!isMultiGroup(s)) return s.groups[0]?.id === groupId ? s.tabs : EMPTY_EDITOR_TABS;
   const g = findGroup(s, groupId);
   if (!g || g.tabIds.length === 0) return EMPTY_EDITOR_TABS;
   const byId = new Map<string, EditorTab>();
@@ -742,12 +749,12 @@ export function groupTabsOf(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: st
   return out;
 }
 
-/** 组 groupId 的活动 tab id;单组模式 = activeTabId。 */
+/** 组 groupId 的活动 tab id;单组模式 = activeTabId;不存在的组 → null。 */
 export function groupActiveTabIdOf(
   s: Pick<EditorState, 'activeTabId' | 'groups'>,
   groupId: string,
 ): string | null {
-  if (!isMultiGroup(s)) return s.activeTabId;
+  if (!isMultiGroup(s)) return s.groups[0]?.id === groupId ? s.activeTabId : null;
   return findGroup(s, groupId)?.activeTabId ?? null;
 }
 
@@ -955,18 +962,17 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
     const groups = materializedGroups(s);
     const idx = groups.findIndex((g) => g.id === sourceGroupId);
     const source = groups[idx];
-    const docId = tabId ?? source?.activeTabId ?? null;
+    const docId = tabId === undefined ? (source?.activeTabId ?? null) : tabId;
     if (
       !source ||
-      docId === null ||
-      findEditorTabIndexById(s.tabs, docId) < 0 ||
+      (docId === null ? tabId !== null : findEditorTabIndexById(s.tabs, docId) < 0) ||
       groups.some((g) => g.id === newGroupId) ||
       groups.length >= EDITOR_GROUPS_MAX
     ) {
       return false;
     }
     const next = [...groups];
-    next.splice(idx + 1, 0, { id: newGroupId, tabIds: [docId], activeTabId: docId });
+    next.splice(idx + 1, 0, { id: newGroupId, tabIds: docId === null ? EMPTY_IDS : [docId], activeTabId: docId });
     set((cur) => ({
       ...commitGroups(cur, cur.tabs, next, newGroupId),
       editorFocusPulse: cur.editorFocusPulse + 1,

@@ -276,3 +276,27 @@ describe('ensureGroup / restoreGroups', () => {
     expect(s.activeTabId).toBe(B);
   });
 });
+
+describe('空组', () => {
+  it('splitGroup(…, null):新建空组并成为活动组(⌘2 聚焦尚不存在的第二组)', () => {
+    open(A);
+    expect(useEditorStore.getState().splitGroup('editor', 'editor:2', null)).toBe(true);
+    const s = useEditorStore.getState();
+    expect(editorGroupIdsOf(s)).toEqual(['editor', 'editor:2']);
+    expect(ids('editor:2')).toEqual([]);
+    expect(s.activeGroupId).toBe('editor:2');
+    expect(s.activeTabId).toBeNull();
+    // 在空组里打开文件 → 落在这里
+    open(B);
+    expect(ids('editor:2')).toEqual([B]);
+  });
+
+  it('已关闭的组(面板还在退出动画里)读不到别组的内容', () => {
+    open(A);
+    useEditorStore.getState().splitGroup('editor', 'editor:2');
+    useEditorStore.getState().closeTab(A, 'editor:2');
+    const s = useEditorStore.getState();
+    expect(groupTabsOf(s, 'editor:2')).toEqual([]);
+    expect(groupActiveTabIdOf(s, 'editor:2')).toBeNull();
+  });
+});

@@ -50,6 +50,7 @@ import {
   type PersistedCodeViewState,
 } from './editor-view-state-cache';
 import { registerEditorFocus } from './editor-focus-registry';
+import { useEditorGroupId } from './editor-group-context';
 import { applySourceModeAnchor, sourceModeAnchor } from './codemirror-mode-anchor';
 
 interface CodeEditorProps {
@@ -86,6 +87,35 @@ export function detectLineEnding(text: string): '\r\n' | '\n' {
   }
   // 还有孤立 \r(老 Mac 换行)也算混合
   return crlf > 0 && !/\r(?!\n)/.test(text) ? '\r\n' : '\n';
+}
+
+/**
+ * prev → next 的单段最小替换(去掉公共前缀与后缀;文档坐标,即 LF 拼接后的文本)。无公共前后缀(整篇不同)/ 无变化
+ * → null(调用方整篇替换)。
+ */
+export function minimalChange(
+  prev: string,
+  next: string,
+): { from: number; to: number; insert: string } | null {
+  if (prev === next) return null;
+  const max = Math.min(prev.length, next.length);
+  let p = 0;
+  while (p < max && prev.charCodeAt(p) === next.charCodeAt(p)) p++;
+  let s = 0;
+  while (s < max - p && prev.charCodeAt(prev.length - 1 - s) === next.charCodeAt(next.length - 1 - s)) s++;
+  // 不把代理对拆在两半(前缀停在高位代理之后 / 后缀起点是低位代理)
+  if (p > 0 && isHighSurrogate(prev.charCodeAt(p - 1))) p--;
+  if (s > 0 && isLowSurrogate(prev.charCodeAt(prev.length - s))) s--;
+  if (p === 0 && s === 0) return null;
+  return { from: p, to: prev.length - s, insert: next.slice(p, next.length - s) };
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
 }
 
 const EMPTY_LANGUAGE_EXTENSIONS: Extension[] = [];
@@ -234,6 +264,8 @@ export function CodeEditor({
   // 当前文件换行风格(创建时 / 外部重读时按内容判定);emit 全文用它拼接行。
   const eolRef = useRef<'\r\n' | '\n'>('\n');
   const { resolved } = useTheme();
+  // 所在编辑器组:聚焦句柄按组登记(同一文件可在两个组各有一个视图)。挂载时取定(组面板不变)。
+  const groupId = useEditorGroupId();
   // 创建时已用的语言 / 主题输入:挂载时语言 / 主题 effect 也会跑一次,输入未变就不 reconfigure ——
   // markdown() 每次调用新建 Language,重配置会让整篇从 0 重新解析(每次切到 .md tab 首屏解析两遍)。
   const appliedLangKeyRef = useRef<string | null>(null);
@@ -336,7 +368,7 @@ export function CodeEditor({
     });
     viewRef.current = view;
     useEditorStore.getState().registerView(tabId, view);
-    const unregisterFocus = registerEditorFocus(tabId, () => view.focus());
+    const unregisterFocus = registerEditorFocus(tabId, () => view.focus(), groupId);
     // popout 弹出 / 收回只移 DOM:按所在文档重绑 root(创建时面板 DOM 可能已不在主窗,先对齐一次)。
     const rebindRoot = () => rebindCodeMirrorRoots(view.dom);
     rebindRoot();
@@ -387,12 +419,20 @@ export function CodeEditor({
       return;
     }
     suppressNextChange.current = true;
+    // 新长度按文档坐标算(CRLF 在 doc 里只占 1 位;用 value.length 会越界 → RangeError)。
+    const nextDoc = view.state.toText(value);
+    // 另一编辑器组在编辑同一文件(store 内容是共享文本源,BDD: src/__tests__/editor-groups/):只派发公共前后缀之间
+    // 那一段,本视图的光标 / 选区随变化映射,不跳动。
+    const change = minimalChange(doc.toString(), nextDoc.toString());
+    if (change) {
+      view.dispatch({ changes: change });
+      lastSyncedValueRef.current = value;
+      return;
+    }
     // 保留光标/选区:全文替换不带 selection 时 CodeMirror 会把光标甩到文档边界,用户
     // 正在文件中部阅读/定位时被外部修改打断会跳回顶部。把旧 selection clamp 到新长度后
     // 一并 dispatch;scrollIntoView 默认 false,不主动拽动滚动。见第十五轮 P2-AQ。
     const oldSel = view.state.selection.main;
-    // 新长度按文档坐标算(CRLF 在 doc 里只占 1 位;用 value.length 会越界 → RangeError)。
-    const nextDoc = view.state.toText(value);
     const newLen = nextDoc.length;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: nextDoc },

@@ -7,46 +7,60 @@
 // 该 tab 的视图登记时(同样下一帧)聚焦一次;超时作废,免得很久之后的重挂载抢焦点。
 
 import { useEditorStore } from '@/stores/editor.store';
+import { PRIMARY_EDITOR_GROUP_ID } from '../../../electron/shared/editor-group-id';
 
 const PENDING_TTL_MS = 5000;
 
+// 按「编辑器组 + tab」登记:同一文件在两个组各有一个视图(BDD: src/__tests__/editor-groups/)。
 const focusers = new Map<string, () => void>();
-let pending: { readonly tabId: string; readonly until: number } | null = null;
+let pending: { readonly key: string; readonly until: number } | null = null;
 
-function focusNextFrame(tabId: string, focus: () => void): void {
+function keyOf(tabId: string, groupId: string): string {
+  return `${groupId}\u0000${tabId}`;
+}
+
+function focusNextFrame(key: string, focus: () => void): void {
   requestAnimationFrame(() => {
     // 期间已卸载 / 被同 tab 的新视图取代 → 不聚焦旧的
-    if (focusers.get(tabId) === focus) focus();
+    if (focusers.get(key) === focus) focus();
   });
 }
 
-/** 视图就绪时登记(同 tab 后登记者取代先登记者);返回注销函数。 */
-export function registerEditorFocus(tabId: string, focus: () => void): () => void {
-  focusers.set(tabId, focus);
-  if (pending !== null && pending.tabId === tabId) {
+/** 视图就绪时登记(同组同 tab 后登记者取代先登记者);返回注销函数。 */
+export function registerEditorFocus(
+  tabId: string,
+  focus: () => void,
+  groupId: string = PRIMARY_EDITOR_GROUP_ID,
+): () => void {
+  const key = keyOf(tabId, groupId);
+  focusers.set(key, focus);
+  if (pending !== null && pending.key === key) {
     const live = performance.now() <= pending.until;
     pending = null;
-    if (live) focusNextFrame(tabId, focus);
+    if (live) focusNextFrame(key, focus);
   }
   return () => {
-    if (focusers.get(tabId) === focus) focusers.delete(tabId);
+    if (focusers.get(key) === focus) focusers.delete(key);
   };
 }
 
-/** 请求聚焦该 tab 的编辑器:已就绪 → 下一帧聚焦;否则就绪时聚焦。新请求取代旧请求。 */
-export function requestEditorFocus(tabId: string): void {
-  pending = { tabId, until: performance.now() + PENDING_TTL_MS };
+/**
+ * 请求聚焦该 tab 在组 groupId(缺省活动组)里的编辑器:已就绪 → 下一帧聚焦;否则就绪时聚焦。新请求取代旧请求。
+ */
+export function requestEditorFocus(tabId: string, groupId: string = useEditorStore.getState().activeGroupId): void {
+  const key = keyOf(tabId, groupId);
+  pending = { key, until: performance.now() + PENDING_TTL_MS };
   requestAnimationFrame(() => {
-    if (pending?.tabId !== tabId) return;
-    const focus = focusers.get(tabId);
+    if (pending?.key !== key) return;
+    const focus = focusers.get(key);
     if (focus === undefined) return;
     pending = null;
     focus();
   });
 }
 
-/** 打开文件成功后调用:聚焦当前活动 tab 的编辑器。 */
+/** 打开文件成功后调用:聚焦活动组的活动 tab 的编辑器。 */
 export function focusActiveEditor(): void {
-  const { activeTabId } = useEditorStore.getState();
-  if (activeTabId !== null) requestEditorFocus(activeTabId);
+  const { activeTabId, activeGroupId } = useEditorStore.getState();
+  if (activeTabId !== null) requestEditorFocus(activeTabId, activeGroupId);
 }

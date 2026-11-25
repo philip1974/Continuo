@@ -11,8 +11,8 @@ import { editorFileDeps } from './editor-file-deps';
 export interface EditorFileApi {
   /** Explorer 单击文件触发. 返 IpcResult,UI 决定如何提示. */
   openFileByPath: (path: string) => Promise<FileOpResult>;
-  /** Cmd+S 触发. 磁盘被外部改过 → EDITOR_DISK_CHANGED. */
-  saveActive: () => Promise<FileOpResult>;
+  /** Cmd+S 触发(tabId 缺省 = 活动 tab;编辑器组面板传本组的活动 tab). 磁盘被外部改过 → EDITOR_DISK_CHANGED. */
+  saveActive: (tabId?: string) => Promise<FileOpResult>;
   /** 按 tabId 保存(自动保存 / 确认覆盖用,不依赖当前 active tab). */
   saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<FileOpResult>;
 }
@@ -22,8 +22,8 @@ export function useEditorFile(): EditorFileApi {
     const deps = editorFileDeps;
     return {
       openFileByPath: (path) => openFileByPathImpl(path, deps),
-      saveActive: async () => {
-        const id = useEditorStore.getState().activeTabId;
+      saveActive: async (tabId) => {
+        const id = tabId ?? useEditorStore.getState().activeTabId;
         if (!id) {
           return { ok: false, code: 'NO_ACTIVE_TAB', message: 'no active tab' };
         }

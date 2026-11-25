@@ -12,6 +12,7 @@ import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { getDockApi, subscribeDockApi } from './dock-api-ref';
 import { mainWindowActivePanel } from './group-mru';
 import { onPopoutRestoreSettled } from './popout-restore-settle';
+import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 
 export interface ActiveDockPanel {
   readonly id: string;
@@ -21,9 +22,6 @@ export interface ActiveDockPanel {
 interface Disposable {
   dispose(): void;
 }
-
-/** 编辑器面板(所有文件 tab 都在它里面)。 */
-const EDITOR_PANEL_ID = 'editor';
 
 let snapshot: ActiveDockPanel | null = null;
 const listeners = new Set<() => void>();
@@ -97,5 +95,6 @@ const getSnapshot = (): ActiveDockPanel | null => snapshot;
 /** 主窗活动的是非编辑器面板时返回该面板;编辑器活动 / 无法判定(dock 未就绪、主窗无面板)→ null(按编辑器显示)。 */
 export function useActiveNonEditorPanel(): ActiveDockPanel | null {
   const panel = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  return panel !== null && panel.id !== EDITOR_PANEL_ID ? panel : null;
+  // 编辑器面板 = 任一编辑器组(editor / editor:N;BDD: src/__tests__/editor-groups/)
+  return panel !== null && !isEditorGroupId(panel.id) ? panel : null;
 }

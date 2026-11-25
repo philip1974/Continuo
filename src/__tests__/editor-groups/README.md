@@ -10,7 +10,7 @@
 | `workbench.action.splitEditor`(⌘\ / Ctrl+\) | 在活动组右侧新建组,把当前编辑器复制过去(含视图状态),新组成为活动组并获焦 |
 | `workbench.action.splitEditorDown`(⌘K ⌘\,本实现无默认键) | 同上,向下 |
 | 编辑器 tab 右键「向右拆分」 | 以该 tab 的文件拆分 |
-| `workbench.action.focusFirst/Second/ThirdEditorGroup`(⌘1 / ⌘2 / ⌘3) | 聚焦第 N 个组;N 恰为「组数 + 1」时向右拆分出新组 |
+| `workbench.action.focusFirst/Second/ThirdEditorGroup`(⌘1 / ⌘2 / ⌘3) | 聚焦第 N 个组(激活其面板、聚焦其活动编辑器);N 恰为「组数 + 1」时在最后一组右侧新建**空**组 |
 | `workbench.editor.closeEmptyGroups`(默认 true) | 关掉组内最后一个编辑器 → 关闭该组;最后一个组保留为空编辑区 |
 | 打开文件(Explorer / Quick Open / 链接) | 落到**活动组**(最近活动的组);文件已在别的组打开也在活动组再开一个编辑器 |
 | 同一文件多组打开 | 共享 text model:编辑实时同步、脏状态共享;关闭其中一个编辑器不提示保存(文档仍在别的组打开) |
@@ -41,7 +41,9 @@
   → 按新内容重挂载(同外部重载的 reloadEpoch 机制);B 卸载时的回写带基线,基线已不是 store 内容 → 丢弃,
   不会用旧内容覆盖 A 的编辑。已知限制:两组几乎同时在同一 Markdown 里输入(防抖窗口内切组继续打)时,后上抛者覆盖。
 - 视图状态缓存(撤销历史 / 光标 / 滚动)按文档 id 共享;拆分时先把源视图的当前状态存入缓存,新组的视图挂载时取用(VSCode
-  拆分复制视图状态)。
+  拆分复制视图状态)。之后两个视图各自的撤销历史独立(VSCode 的撤销栈属于 text model、跨组共享;这里 B 收到的同步变更进 B 的
+  历史,在 B 撤销会撤掉 A 的输入并同步回 A,效果接近)。
+- 聚焦句柄(打开文件后聚焦编辑器)按「组 + 文档」登记,`requestEditorFocus` 缺省聚焦活动组里的视图。
 
 ## 持久化(`editor` 会话段,向后兼容)
 
@@ -59,19 +61,23 @@
 | 标题栏 / 状态栏 / autoReveal | 读镜像的 `activeTabId`;非编辑器面板判定按「组 id 形态」而非固定 `'editor'` |
 | dock 面板激活 / 编辑区获焦 | 设为活动组(`setActiveGroup`) |
 | DockShell 打开文件激活编辑器 | 激活 / 补建**活动组**的面板 |
-| ⌘W / ⌘S / 下一个·上一个编辑器 | 作用于活动 dock 面板所在组 / 活动组 |
+| ⌘W / ⌘S / 下一个·上一个编辑器 | 作用于活动 dock 面板所在组 / 活动组(EditorPanel 动作按组登记) |
+| Markdown 自动保存 | 每个组面板各自调度其活动文件;同一文档的保存按文档串行(saveChains),两组同时到点也只写一次盘 |
+| 终端里的 ⌘\ / ⌘1–3 | 让出给命令(focus*EditorGroup 同 VSCode commandsToSkipShell;拆分只在带 ⌘ 时让出,Ctrl+\ 仍是 shell 的 SIGQUIT) |
 | 组内批量关闭(右键关闭其他等) | 只关本组;仍在别组打开的脏文档不弹确认 |
 | 关窗脏确认 / 外部文件同步 | 按文档(全部组)—— 未改 |
 | F6 / 面板聚焦 | 每个组面板都有 `data-editor-panel-root`;e2e 定位多组时取活动组 |
 | 启动后聚焦活动编辑器 | 活动面板是任一编辑器组即可 |
-| popout | 编辑器组面板可弹出(面板 id 不变,组随之) |
+| popout | 编辑器组面板可弹出(面板 id 不变,组随之);在 popout 组里拆分 → 新组作为同一 dock 组里的另一个面板(popout 组不能再分栏) |
 | 单例面板去重 | `editor:N` 不当成旧版多开的重复编辑器面板关闭 |
 
 ## 未做
 
 - 拖文件 tab 到另一组 / 组边缘拆分(编辑器内层 TabNav 无跨组拖拽;dock 层仍可拖动整个组面板)。
 - 组间移动编辑器命令、合并组、组的 MRU 激活顺序(活动组关闭后落到相邻组而非最近使用)。
-- 空组拆分(无活动文件时拆分为 no-op)。
+- ⌘\ 拆分空组(无活动文件时为 no-op;⌘N 聚焦尚不存在的下一组仍会新建空组)。
+- 组顺序按创建 / 插入顺序(拆分插在源组之后),不是 VSCode 的 GRID_APPEARANCE(网格视觉顺序);复杂网格下 ⌘N 的 N 可能与视觉位置不一致。
+- ⌘K ⌘\ 和弦(向下拆分在 VSCode 的默认键):命令分发不支持和弦,向下拆分无默认键(命令面板 / tab 右键 / 可自行绑定)。
 
 ## 规范
 
@@ -81,4 +87,4 @@
 | `editor-groups-persist.spec.ts` | 会话快照按组写出、旧格式读为单组、按组恢复 |
 | `editor-groups-panel.spec.tsx` | 两个组面板各自渲染自己的 tab;一处编辑另一处同步;组内关闭;tab 右键向右拆分 |
 | `editor-groups-commands.spec.ts` | ⌘\ 拆分 / 向下拆分 / ⌘1⌘2⌘3 聚焦、命令注册与默认键、dock ↔ 组同步 |
-| `tests/e2e/editor-split.spec.ts` | 真实应用:拆分后两组同一文件、一处编辑另一处同步、⌘1/⌘2 切组、关空组、重启恢复两组、Explorer 打开落到活动组 |
+| `tests/e2e/editor-split.spec.ts` | 真实应用:⌘\ 拆分后两组同一文件、一处编辑另一处同步、⌘1/⌘2 切组、Explorer 打开落到活动组、⌘W 关掉组内最后一个文件关闭该组、重启恢复两组 |

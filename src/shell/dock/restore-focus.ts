@@ -11,6 +11,7 @@ import { getDockApi, runWhenDockLayoutReady } from './dock-api-ref';
 import { focusPanelContent } from './panel-focus';
 import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 import { useEditorStore } from '@/stores/editor.store';
+import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 
 /** 等布局 / 编辑区挂上的上限。 */
 export const RESTORE_FOCUS_TIMEOUT_MS = 3000;
@@ -34,7 +35,8 @@ export function focusActiveEditorAfterRestore(doc: Document = document): void {
     if (
       !focusIdle() ||
       useEditorStore.getState().activeTabId === null ||
-      panel?.id !== 'editor' ||
+      panel === undefined ||
+      !isEditorGroupId(panel.id) ||
       panel.api.location.type !== 'grid'
     ) {
       stop();

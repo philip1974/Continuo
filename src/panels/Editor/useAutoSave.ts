@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useEditorStore } from '@/stores/editor.store';
+import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
 import { makeAutoSaveScheduler, type AutoSaveScheduler } from './auto-save';
 import { isMarkdownPath } from './editor-path-utils';
 import { findEditorFileTabById } from './editor-tab-lookup';
@@ -28,13 +28,15 @@ export interface UseAutoSaveOptions {
   enabled: boolean;
   /** 防抖毫秒(默认值在 autoSave.delayMs 设置项上). */
   delayMs: number;
+  /** 只看该编辑器组的活动 tab(编辑器组面板各自一个;缺省 = 活动组的活动 tab)。 */
+  groupId?: string;
 }
 
 export function useAutoSave(
   saveTab: (tabId: string, opts?: SaveFileOptions) => Promise<unknown>,
   opts: UseAutoSaveOptions,
 ): void {
-  const { delayMs } = opts;
+  const { delayMs, groupId } = opts;
   // 只订阅活跃 tab 的调度相关字段(打磨 R47):id/filePath/dirty/content 变化才重排
   // schedule。用 useShallow 返回扁平 primitive 对象,逐字段 Object.is 比较 ——
   // markSaved 推进 originalContent、reloadFromDisk 改 reloadEpoch 等不在此集合的字段
@@ -42,8 +44,10 @@ export function useAutoSave(
   // 避免序列化大文档正文)。
   const active = useEditorStore(
     useShallow((s) => {
-      const found =
-        findEditorFileTabById(s.tabs, s.activeTabId);
+      const found = findEditorFileTabById(
+        s.tabs,
+        groupId === undefined ? s.activeTabId : groupActiveTabIdOf(s, groupId),
+      );
       return {
         id: found?.id ?? null,
         filePath: found?.filePath ?? null,

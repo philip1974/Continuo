@@ -22,6 +22,8 @@ import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose, activateDockPanel, addPanelKeepingActive } from './wrap-panel-close';
+import { trackEditorGroups } from './editor-groups-dock-sync';
+import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { handleTerminalPanelRemoved, removeTerminalSessionWithFeedback } from './DockReconciler';
 import { TerminalKillConfirmHost, cancelTerminalCloseGuard, terminalCloseGuard } from './terminal-close-confirm';
 import { SharedTab } from '@/shell/motion/SharedTab';
@@ -372,6 +374,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         trackGroupMru(event.api),
         // 每个组的活动 tab 总在 tab 条可见区内(VSCode),不被挤进「⌄N」溢出菜单看不到。
         trackActiveTabReveal(event.api),
+        // 编辑器组 ↔ editor 面板:组关闭 → 关面板;面板被关 → 移除组;激活面板 → 活动编辑器组(BDD: editor-groups)。
+        trackEditorGroups(event.api),
       );
       event.api.panels.forEach(wrapPanelCloseGuarded);
     },
@@ -532,6 +536,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 否则用户切到 terminal 后再点资源管理器同一文档,terminal 不会让位。见 #22。
   const editorActiveTabId = useEditorStore((s) => s.activeTabId);
   const editorFocusPulse = useEditorStore((s) => s.editorFocusPulse);
+  // 激活 / 补建的是**活动编辑器组**的面板(组 id = 面板 id;BDD: src/__tests__/editor-groups/)。
+  const editorGroupId = useEditorStore((s) => s.activeGroupId);
   // 已处理到的 editorFocusPulse 基线:布局恢复完成时取当时的 pulse,此后每消费一次用户意图(setActive editor)
   // 就推进到当前 pulse。恢复后首次运行的 activeTabId 来自持久化 hydrate,不是用户意图:只确保 editor 面板存在,
   // 不 setActive(否则覆盖 fromJSON 恢复的活动面板 / 恢复期间排队打开的面板);pulse 自上次处理以来有变化
@@ -549,12 +555,12 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     const api = apiRef.current;
     if (!api) return;
     const userIntent = editorFocusPulse !== handledFocusPulseRef.current;
-    let editorPanel = api.getPanel('editor');
+    let editorPanel = api.getPanel(editorGroupId);
     if (!editorPanel) {
       // 活动组在 popout 子窗时补建在主窗(VSCode:从主窗打开文件落在主窗),不落进用户看不到的子窗。
       const position = mainWindowAddPosition(api);
       const options = {
-        id: 'editor',
+        id: editorGroupId,
         component: 'editor',
         title: 'Editor',
         params: { titleKey: 'panels.editor.title' },
@@ -573,7 +579,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     // 真 close,否则刚打开的文件随面板一起消失。
     activateDockPanel(editorPanel);
     handledFocusPulseRef.current = editorFocusPulse;
-  }, [editorActiveTabId, editorFocusPulse, layoutRestored]);
+  }, [editorActiveTabId, editorFocusPulse, layoutRestored, editorGroupId]);
 
   return (
     // isolate:把 dockview 内部的大 z-index(sash 99、浮动组 997+、拖放落点 9999)收进 dock 自身的层叠上下文,
@@ -609,6 +615,8 @@ export function closeDuplicateSingletonPanels(
   for (const panel of [...api.panels]) {
     const type = panel.view?.contentComponent;
     if (typeof type !== 'string' || panel.id === type) continue;
+    // 编辑器组面板(editor:2 …)是多编辑器组的合法实例,不是旧版多开的重复编辑器(BDD: editor-groups)
+    if (type === 'editor' && isEditorGroupId(panel.id)) continue;
     const spec = panels.get(type);
     if (!spec || spec.multiInstance === true) continue;
     try {

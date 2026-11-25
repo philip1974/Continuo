@@ -11,10 +11,14 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject, type WheelEvent } from 'react';
 import {
   getEffectiveMode,
+  groupActiveTabIdOf,
+  groupTabsOf,
   useEditorStore,
   type EditorMode,
   type EditorTab,
 } from '@/stores/editor.store';
+import { useEditorGroupId } from './editor-group-context';
+import { splitEditor } from './editor-groups-actions';
 import { useT } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import {
@@ -253,16 +257,19 @@ export const EditorHeader = memo(function EditorHeader({
   // 现订阅 store 维护的 chromeVersion(number):仅 chrome 真变化(增删/改名/dirty 翻转)
   // 才递增,用户编辑正文(dirty 不变)时不变 → selector 返同一 number → O(1) 跳过;再用
   // useMemo 仅在 version 变化时从 getState() 重建 chrome 对象数组。
+  // 本面板所在的编辑器组:只显示本组的 tab(BDD: src/__tests__/editor-groups/)。组变更同样 bump chromeVersion。
+  const groupId = useEditorGroupId();
   const chromeVersion = useEditorStore((s) => s.chromeVersion);
   const tabsChrome = useMemo<readonly TabChrome[]>(
-    () => buildEditorTabChrome(useEditorStore.getState().tabs),
+    () => buildEditorTabChrome(groupTabsOf(useEditorStore.getState(), groupId)),
     // chromeVersion 作"失效键":body 用 getState() 读最新 tabs,version 变(chrome 真
     // 变)才重建对象数组。lint 看不到 body 引用 chromeVersion 故误判 unnecessary。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chromeVersion],
+    [chromeVersion, groupId],
   );
-  const activeTabId = useEditorStore((s) => s.activeTabId);
-  const switchTab = useEditorStore((s) => s.switchTab);
+  const activeTabId = useEditorStore((s) => groupActiveTabIdOf(s, groupId));
+  const storeSwitchTab = useEditorStore((s) => s.switchTab);
+  const switchTab = useCallback((id: string) => storeSwitchTab(id, { groupId }), [storeSwitchTab, groupId]);
   // active tab 的派生 primitive,供右侧 action 区(打磨 R23/R45 + 性能 P14)。旧实现每次
   // store 更新都 `tabs.find(...) + JSON.stringify([filePath, dirty, effectiveMode])`
   // (O(tab 数) find + 小分配/序列化)。现复用 chromeVersion(P12 已扩展为也在
@@ -323,9 +330,13 @@ export const EditorHeader = memo(function EditorHeader({
           onSelect: () => void revealPathOrNotify(tab.filePath),
           disabled: tab.orphaned === true,
         },
+        'separator',
+        // VSCode 编辑器 tab 右键「向右拆分 / 向下拆分」:以该 tab 的文件拆出新组(BDD: src/__tests__/editor-groups/)
+        { label: t('shell.tab.ctx.split_right'), onSelect: () => void splitEditor('right', { groupId, tabId: tab.id }) },
+        { label: t('shell.tab.ctx.split_down'), onSelect: () => void splitEditor('down', { groupId, tabId: tab.id }) },
       ];
     },
-    [onCloseTabsRequest, tabsChrome, t],
+    [onCloseTabsRequest, tabsChrome, t, groupId],
   );
 
   if (tabsChrome.length === 0) return null;

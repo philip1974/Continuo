@@ -15,6 +15,7 @@ import { localizeErrorByCode } from '@/lib/localize-error';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE, MAX_IMAGE_PREVIEW_BYTES } from '../../../electron/shared/image-preview';
 import { registerEditorFocus } from './editor-focus-registry';
+import { useEditorGroupId } from './editor-group-context';
 import { imageViewStateOf, saveImageViewState } from './editor-view-state-cache';
 import { formatBinarySize } from './editor-image';
 
@@ -91,7 +92,8 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
   }, [filePath]);
 
   // 打开 / 关闭其它 tab 后的焦点落点(同 CodeEditor / Milkdown 登记聚焦句柄)
-  useEffect(() => registerEditorFocus(tabId, () => rootRef.current?.focus()), [tabId]);
+  const groupId = useEditorGroupId();
+  useEffect(() => registerEditorFocus(tabId, () => rootRef.current?.focus(), groupId), [tabId, groupId]);
 
   const imgRef = useRef<HTMLImageElement>(null);
   // 挂载时取回该 tab 上次的比例与滚动位置(滚动在图片尺寸就绪后恢复一次)
