@@ -225,6 +225,7 @@ export const zh: Record<TranslationKey, string> = {
     '~/.claude.json 中的 MCP 服务器 {names} 指向旧版 AppImage 的临时挂载路径。Continuo 退出后，同机其他用户可在该位置放置同名脚本，由 Claude Code 以你的身份执行。请先在对应项目目录执行 `claude mcp remove {first}`（user 级配置加 `-s user`），再执行状态栏「复制 MCP 配置」中的新命令。',
   'dialog.mcp_legacy_config.copy': '复制新命令',
   'dock.empty.message': '所有面板都关掉了。',
+  'dock.empty.in_other_windows': '所有面板都在其他窗口中。',
   'dock.empty.restore': '恢复默认布局',
   'dock.panel.plugin_unavailable': '插件面板未加载。插件可能仍在启动，或已被禁用 / 卸载 —— 可关闭此面板。',
   'panels.explorer.empty_folder': '此文件夹为空',

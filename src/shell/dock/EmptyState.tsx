@@ -21,7 +21,11 @@ const EMPTY_DOCK_ICON = (
   </svg>
 );
 
-export function EmptyState({ onRestore }: { onRestore: () => void }) {
+/**
+ * `elsewhere`:主窗没有面板,但面板都还开在 popout 子窗里 —— 不能说「都关掉了」,也不提供「恢复默认布局」
+ * (会在主窗再建一套单例面板,与子窗里的同一面板冲突);关掉子窗即收回主窗。
+ */
+export function EmptyState({ onRestore, elsewhere = false }: { onRestore: () => void; elsewhere?: boolean }) {
   const t = useT();
   // 不可见或窗口失焦时不挂载 SVG,节电(R3 缓解)。
   // 主进程 backgroundThrottling:false(issue #34)使 Electron 在最小化 / 遮挡 / 隐藏时
@@ -67,10 +71,12 @@ export function EmptyState({ onRestore }: { onRestore: () => void }) {
         <div className="flex h-20 w-20 items-center justify-center rounded-full border border-line/50 bg-panel">
           {EMPTY_DOCK_ICON}
         </div>
-        <p className="text-fg-muted">{t('dock.empty.message')}</p>
-        <Button variant="ghost" size="md" onClick={onRestore}>
-          {t('dock.empty.restore')}
-        </Button>
+        <p className="text-fg-muted">{t(elsewhere ? 'dock.empty.in_other_windows' : 'dock.empty.message')}</p>
+        {!elsewhere && (
+          <Button variant="ghost" size="md" onClick={onRestore}>
+            {t('dock.empty.restore')}
+          </Button>
+        )}
       </div>
     </div>
   );

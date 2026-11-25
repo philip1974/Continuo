@@ -241,6 +241,7 @@ export const en = {
     'MCP server(s) {names} in ~/.claude.json point to an old AppImage temporary mount path. After Continuo exits, another user on this machine can place a script with the same name there, which Claude Code would then run as you. Run `claude mcp remove {first}` in the corresponding project directory (add `-s user` for user-scoped config), then run the new command from “Copy MCP config” in the status bar.',
   'dialog.mcp_legacy_config.copy': 'Copy New Command',
   'dock.empty.message': 'All panels are closed.',
+  'dock.empty.in_other_windows': 'All panels are open in other windows.',
   'dock.empty.restore': 'Restore default layout',
   'dock.panel.plugin_unavailable': 'Plugin panel not loaded. The plugin may still be starting, or it has been disabled or uninstalled — you can close this panel.',
   'panels.explorer.empty_folder': 'This folder is empty',

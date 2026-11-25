@@ -227,6 +227,7 @@ export const ko: Record<TranslationKey, string> = {
     "~/.claude.json의 MCP 서버 {names}이(가) 이전 AppImage의 임시 마운트 경로를 가리킵니다. Continuo가 종료된 후 이 컴퓨터의 다른 사용자가 그 위치에 같은 이름의 스크립트를 두면 Claude Code가 사용자 권한으로 실행합니다. 해당 프로젝트 디렉터리에서 `claude mcp remove {first}`를 실행한 뒤(user 범위 설정은 `-s user` 추가) 상태 표시줄의 'MCP 설정 복사'에 있는 새 명령을 실행하세요.",
   'dialog.mcp_legacy_config.copy': '새 명령 복사',
   'dock.empty.message': '모든 패널이 닫혀 있습니다.',
+  'dock.empty.in_other_windows': '모든 패널이 다른 창에 열려 있습니다.',
   'dock.empty.restore': '기본 레이아웃 복원',
   'dock.panel.plugin_unavailable': '플러그인 패널이 로드되지 않았습니다. 플러그인이 아직 시작 중이거나 비활성화 / 제거되었을 수 있습니다 — 이 패널을 닫을 수 있습니다.',
   'panels.explorer.empty_folder': '이 폴더는 비어 있습니다',

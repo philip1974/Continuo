@@ -221,7 +221,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   // 面板在用户已可操作后跳入。
   const [terminalsReady, setTerminalsReady] = useState(false);
   const onTerminalsHydrated = useCallback(() => setTerminalsReady(true), []);
-  const [empty, setEmpty] = useState(false);
+  // 主窗 dock 空态:null = 不空;'closed' = 面板全关;'elsewhere' = 面板都在 popout 子窗里。
+  const [empty, setEmptyKind] = useState<null | 'closed' | 'elsewhere'>(null);
+  const setEmpty = useCallback((api: DockviewApi) => {
+    setEmptyKind(isMainWindowDockEmpty(api) ? (api.panels.length > 0 ? 'elsewhere' : 'closed') : null);
+  }, []);
   const panelComponents = usePanelComponents();
   const { saveTab } = useEditorFile();
 
@@ -304,7 +308,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // 关闭非固定 id 的实例(内容来自共享 store,不丢数据;editor 缺失时下方按固定 id 补建)。
       closeDuplicateSingletonPanels(event.api, coApp.panels);
 
-      setEmpty(isMainWindowDockEmpty(event.api));
+      setEmpty(event.api);
 
       // race(R22):onReady 重入(dockview 重建)先清旧 listener/debounce,再注册新的。
       disposeDockListeners();
@@ -321,7 +325,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         event.api.onDidLayoutChange(() => {
           layoutVersions.set(event.api, (layoutVersions.get(event.api) ?? 0) + 1);
           persist();
-          setEmpty(isMainWindowDockEmpty(event.api));
+          setEmpty(event.api);
         }),
         // 防 closing-store 残留:panel 真被 removed 后从 set 摘掉,
         // 避免后续同 id panel 一上来就走 EXIT 动画。
@@ -358,7 +362,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       );
       event.api.panels.forEach(wrapPanelCloseGuarded);
     },
-    [disposeDockListeners],
+    [disposeDockListeners, setEmpty],
   );
 
   useEffect(() => {
@@ -578,7 +582,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         onReady={onReady}
         className="dockview-theme-abyss h-full w-full"
       />
-      {empty && <EmptyState onRestore={restore} />}
+      {empty !== null && <EmptyState onRestore={restore} elsewhere={empty === 'elsewhere'} />}
       <TerminalKillConfirmHost />
     </div>
   );

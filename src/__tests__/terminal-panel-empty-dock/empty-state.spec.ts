@@ -76,6 +76,9 @@ describe('terminal panel empty dock', () => {
     render(React.createElement(DockShell));
 
     expect(await screen.findByTestId('empty-state')).toBeTruthy();
+    // 面板未关,只是在子窗:文案如实,不提供「恢复默认布局」
+    expect(screen.getByText('所有面板都在其他窗口中。')).toBeTruthy();
+    expect(screen.queryByText('恢复默认布局')).toBeNull();
   });
 
   it('关闭最后一个 terminal panel 不触发 reconciler add 新 panel', () => {

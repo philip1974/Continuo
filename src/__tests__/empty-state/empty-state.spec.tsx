@@ -40,6 +40,14 @@ describe('EmptyState', () => {
     expect(root.tabIndex).toBe(-1);
   });
 
+  // 面板都弹出到 popout 子窗(主窗无面板但面板未关):不说「都关掉了」,也不给「恢复默认布局」(会与子窗里的单例面板冲突)。
+  it('elsewhere:文案为「都在其他窗口中」,不显示恢复按钮', () => {
+    const { container } = render(<EmptyState onRestore={vi.fn()} elsewhere />);
+    expect(container.textContent).toContain('所有面板都在其他窗口中');
+    expect(container.textContent).not.toContain('所有面板都关掉了');
+    expect(container.querySelectorAll('button')).toHaveLength(0);
+  });
+
   it('点「恢复默认布局」 → onRestore', () => {
     const onRestore = vi.fn();
     const { container } = render(<EmptyState onRestore={onRestore} />);
