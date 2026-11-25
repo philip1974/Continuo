@@ -14,6 +14,7 @@ import {
   OPEN_FOLDER_COMMAND,
   SHOW_EXPLORER_COMMAND,
 } from '@/panels/Explorer/explorer-commands';
+import { MENU_COMMANDS } from '../../../electron/shared/window-channels';
 import { en } from '../../../electron/shared/i18n-locales/en';
 import { zh } from '../../../electron/shared/i18n-locales/zh';
 import { ko } from '../../../electron/shared/i18n-locales/ko';
@@ -59,6 +60,33 @@ describe('默认键不冲突', () => {
     expect(others.length).toBeGreaterThan(5);
     for (const hotkey of [OPEN_FOLDER_COMMAND.hotkey, SHOW_EXPLORER_COMMAND.hotkey]) {
       expect(others).not.toContain(canonicalHotkey(hotkey, platform));
+    }
+  });
+});
+
+// 应用菜单里「即某条命令」的菜单项(MENU_COMMANDS:文件 → 打开文件夹… ⌘O)与该命令同一动作:accelerator 必须就是命令的
+// 默认键(不算冲突),且不得与任何别的命令默认键 / picker 保留键 / 其它菜单快捷键重合。一次按键只执行一次:renderer 全局
+// 热键先收到 keydown 并 preventDefault,Electron 不再触发菜单 accelerator;renderer 没处理(如改了键)才由菜单执行。
+describe('菜单项即命令:accelerator = 命令默认键,且与其它按键不冲突', () => {
+  const literalMenuAccelerators = (): string[] => {
+    const src = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    return Array.from(src.matchAll(/accelerator:\s*'([^']+)'/g), (m) => m[1]!.toLowerCase().replace('cmdorctrl', 'mod'));
+  };
+
+  it.each(['mac', 'other'] as Platform[])('%s', (platform) => {
+    const entries = Object.entries(MENU_COMMANDS);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [id, accelerator] of entries) {
+      const spec = coApp.commands.get(id);
+      expect(spec?.hotkey, id).toBeDefined();
+      const mine = canonicalHotkey(accelerator.toLowerCase().replace('cmdorctrl', 'mod'), platform);
+      expect(mine).toBe(canonicalHotkey(spec!.hotkey!, platform));
+      const others = [
+        ...coApp.commands.getAll().filter((c) => c.id !== id && c.hotkey).map((c) => c.hotkey!),
+        ...Object.values(PICKER_TOGGLE_HOTKEYS),
+        ...literalMenuAccelerators(),
+      ].map((h) => canonicalHotkey(h, platform));
+      expect(others).not.toContain(mine);
     }
   });
 });

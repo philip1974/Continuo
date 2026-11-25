@@ -613,3 +613,24 @@ describe('KeybindingsTabContent — 计数', () => {
     expect(caps.querySelectorAll('.wm-keycap').length).toBeGreaterThanOrEqual(2);
   });
 });
+
+// 与命令面板一致(VSCode 快捷键编辑器同样可按英文命令名搜):本地化界面下搜索文本另含英文原名。
+describe('KeybindingsTabContent — 本地化界面可搜英文命令名', () => {
+  it('zh:输入「open folder」命中「打开文件夹…」', () => {
+    coApp.commands.register({
+      id: 'workbench.action.files.openFolder',
+      title: 'Open Folder…',
+      titleKey: 'commands.file.open_folder.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      hotkey: 'mod+o',
+      fn: vi.fn(),
+    });
+    coApp.commands.register({ id: 'x', title: 'X', titleKey: 'commands.view.show_explorer.title', fn: vi.fn() });
+    const { container } = render(<KeybindingsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'open folder' } });
+    expect(container.textContent).toContain('打开文件夹…');
+    expect(container.querySelectorAll('li')).toHaveLength(1);
+  });
+});

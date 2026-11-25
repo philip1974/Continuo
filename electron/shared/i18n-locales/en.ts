@@ -16,9 +16,10 @@ export const en = {
   // 运行期拼接「标签：原因」(如「自动保存失败：…」),冒号随语言(zh 全角)。
   'common.label_detail': '{label}: {detail}',
 
-  // menu.file (4)
+  // menu.file (5)
   'menu.file.label': 'File',
   'menu.file.new_window': 'New Window',
+  'menu.file.open_folder': 'Open Folder…',
   'menu.file.open_folder_in_new_window': 'Open Folder in New Window…',
   'menu.file.window_open_failed': 'Could not open a new window',
   'menu.file.close_window': 'Close Window',

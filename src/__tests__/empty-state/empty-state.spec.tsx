@@ -48,6 +48,21 @@ describe('EmptyState', () => {
     expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 
+  // 最小窗口(400×270)下 dock 只有约 145px 宽:文案须居中且有内边距,不贴边逐词左对齐;内容块不超出容器;
+  // 窄 / 矮时(容器查询)隐藏装饰图标,不被裁成半圆。jsdom 不算容器查询,锁类名契约,排版由 e2e 截图确认。
+  it('窄 / 矮容器:文案居中带内边距,内容块 max-w-full,装饰图标按容器查询隐藏', () => {
+    const { container } = render(<EmptyState onRestore={vi.fn()} elsewhere />);
+    const root = container.querySelector<HTMLElement>('[data-testid=empty-state]')!;
+    const cls = (el: Element | null) => (el?.getAttribute('class') ?? '').split(/\s+/);
+    expect(cls(root)).toContain('[container:empty/size]'); // 宽高都可查询(height 查询需 size 容器)
+    const p = root.querySelector('p')!;
+    expect(cls(p)).toEqual(expect.arrayContaining(['text-center', 'px-4']));
+    const block = p.parentElement!;
+    expect(cls(block)).toContain('max-w-full');
+    const icon = root.querySelector('svg[aria-hidden=true]')!.parentElement!;
+    expect(cls(icon)).toEqual(expect.arrayContaining(['@max-3xs/empty:hidden', '[@container_empty_(height<220px)]:hidden']));
+  });
+
   it('点「恢复默认布局」 → onRestore', () => {
     const onRestore = vi.fn();
     const { container } = render(<EmptyState onRestore={onRestore} />);

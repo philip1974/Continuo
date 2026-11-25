@@ -458,6 +458,9 @@ const api = {
      * 此 helper 在 preload realm 调 webUtils,sandbox renderer 拿不到原生对象。
      */
     getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+    /** 订阅 main 的「执行菜单命令」请求(应用菜单项即 renderer 命令,如 文件 → 打开文件夹… ⌘O);返回 unsubscribe。payload 未经校验。 */
+    onMenuCommand: (cb: (id: unknown) => void): (() => void) =>
+      subscribeIpc(WINDOW_CHANNELS.RUN_MENU_COMMAND, (_event, id: unknown) => cb(id)),
   },
   agentAuth: {
     /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe。payload 未经校验(renderer isAgentAuthRequestPayload 校验)。 */

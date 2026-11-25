@@ -27,7 +27,27 @@ export const WINDOW_CHANNELS = {
    * app.relaunch() 再退出;用户取消 → 不退出也不重启。
    */
   RELAUNCH_APP: 'window:relaunch-app',
+  /**
+   * main → renderer:应用菜单里「即某条命令」的菜单项被点(或按其 accelerator)→ 请求目标主窗执行该命令(payload 命令 id,
+   * 仅限 MENU_COMMANDS 登记的 id)。popout 子窗聚焦时发给打开它的主窗。
+   */
+  RUN_MENU_COMMAND: 'window:run-menu-command',
 } as const;
+
+/**
+ * 应用菜单项即 renderer 命令:命令 id → 菜单 accelerator(必须等于该命令默认键,BDD explorer-commands 守护)。
+ * 同一按键只执行一次:renderer 全局热键先收到 keydown 并 preventDefault,Electron 不再触发菜单 accelerator;renderer
+ * 没处理时(改了键、焦点不在页面)才由菜单经 RUN_MENU_COMMAND 执行。对齐 VSCode 文件菜单「打开文件夹… ⌘O」。
+ */
+export const MENU_COMMANDS = {
+  'workbench.action.files.openFolder': 'CmdOrCtrl+O',
+} as const satisfies Record<string, string>;
+
+export type MenuCommandId = keyof typeof MENU_COMMANDS;
+
+export function isMenuCommandId(id: unknown): id is MenuCommandId {
+  return typeof id === 'string' && Object.hasOwn(MENU_COMMANDS, id);
+}
 
 /** window:create 入参:由 main 的 zod schema 推出(单一来源,见 window-create-schema.ts)。 */
 export type IpcWindowCreateInput = z.infer<typeof WindowCreateInputSchema>;

@@ -37,6 +37,14 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
 - coApp.statusBar 中 side='left' → 在 root 之后
 - side='right' → 在 MCP 按钮之前
 
+### 窄宽不折行(VSCode:状态栏项从不折行,空间不够整项隐藏 / 截断)
+
+- 所有条目单行(`whitespace-nowrap` / `truncate`,含插件贡献项);左右两组 `min-w-0 overflow-hidden` 可收缩、溢出裁掉
+  (组 `self-stretch -mx-1 px-1`,不裁按钮焦点环)
+- footer 是 `@container`:容器 < 2xl(42rem)先隐藏行 / 词 / 字符统计;< xl(36rem)MCP 复制按钮只显示图标(文字隐藏,
+  title / aria-label 不变,复制结果仍由 live region 播报)
+- 400 宽 + 隐藏侧栏 + 打开文件时 en / zh / ko 都不折行(e2e 截图复拍确认)
+
 ### MCP 复制
 
 - 点按钮 → coApi.mcp.getStdioConfig + writeText

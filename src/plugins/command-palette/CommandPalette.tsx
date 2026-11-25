@@ -7,6 +7,7 @@
 // - fuzzy 同时匹配 category + title
 // - 空 query 时 recent(localStorage 持久化)5 条置顶,其余按 title 字母序
 // - execute 后 record 进 recent
+// - 本地化界面同时按英文原名匹配(VSCode commandAlias),只命中英文时行尾显示英文名
 
 import { useCallback, useMemo } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
@@ -19,7 +20,7 @@ import { fuzzyFilter } from './fuzzy';
 import { useRecentCommandsStore, type RecentEntry } from './recent';
 import { formatHotkeyParts, detectPlatform, type Platform } from './format-hotkey';
 import { useKeybindingsStore } from '../keybindings/keybindings-store';
-import { useTWithFallback, useT, useLocale } from '@/i18n';
+import { useTWithFallback, useT, useLocale, englishWithFallback } from '@/i18n';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { isSortedBy } from '@/lib/is-sorted-by';
@@ -41,6 +42,12 @@ export interface DisplayCommand {
   readonly hotkeyParts: readonly string[];
   /** fuzzyFilter 用的预小写 target,随 title/category/locale 变化重算. */
   readonly matchSourceLower: string;
+  /**
+   * 英文原名(`Category: Title`;VSCode commandAlias):仅非英文界面且与本地化文本不同时有值。只命中它时行尾显示。
+   */
+  readonly aliasLabel?: string;
+  /** 英文原名的预小写匹配源(同 matchSourceLower 的拼法)。 */
+  readonly aliasSourceLower?: string;
 }
 
 function matchSourceLower(d: DisplayCommand): string {
@@ -53,11 +60,15 @@ const EMPTY_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const EMPTY_RECENT_COMMAND_IDS: string[] = [];
 const EMPTY_HOTKEY_PARTS: readonly string[] = [];
 
+/**
+ * @param english 非英文界面传英文取词(englishWithFallback):另算英文原名作别名匹配;英文界面不传。
+ */
 export function buildDisplayCommands(
   allCommands: readonly CommandSpec[],
   tk: TranslateWithFallback,
   platform: Platform,
   overrides: Readonly<Record<string, string>> = {},
+  english?: TranslateWithFallback,
 ): DisplayCommand[] {
   if (allCommands.length === 0) return EMPTY_DISPLAY_COMMANDS;
   const out = new Array<DisplayCommand>(allCommands.length);
@@ -67,6 +78,17 @@ export function buildDisplayCommands(
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     const source = displayCategory ? `${displayCategory} ${displayTitle}` : displayTitle;
+    let aliasLabel: string | undefined;
+    let aliasSourceLower: string | undefined;
+    if (english) {
+      const enTitle = english(cmd.titleKey, cmd.title);
+      const enCategory = english(cmd.categoryKey, cmd.category ?? '');
+      const enSource = enCategory ? `${enCategory} ${enTitle}` : enTitle;
+      if (enSource !== source) {
+        aliasLabel = enCategory ? `${enCategory}: ${enTitle}` : enTitle;
+        aliasSourceLower = lowerIfNeeded(enSource);
+      }
+    }
     out[i] = {
       cmd,
       displayTitle,
@@ -75,9 +97,38 @@ export function buildDisplayCommands(
       // 打磨 R54:配合 fuzzyFilter(getStrLower),搜索输入变化时不再逐命令
       // 对 displayCategory/title 组成的 target 重复 toLowerCase。
       matchSourceLower: lowerIfNeeded(source),
+      ...(aliasLabel === undefined ? {} : { aliasLabel, aliasSourceLower }),
     };
   }
   return out;
+}
+
+const NO_ALIAS_HITS: ReadonlySet<DisplayCommand> = new Set();
+
+export interface CommandSearchResult {
+  readonly matches: readonly DisplayCommand[];
+  /** 只靠英文原名命中的项(行尾显示英文名)。 */
+  readonly aliasHits: ReadonlySet<DisplayCommand>;
+}
+
+function aliasSourceLower(d: DisplayCommand): string {
+  return d.aliasSourceLower!;
+}
+
+/** 先按本地化文本 fuzzy,再对其余带英文原名的项按英文 fuzzy,英文命中排在本地化命中之后。 */
+export function searchDisplayCommands(items: readonly DisplayCommand[], query: string): CommandSearchResult {
+  const local = fuzzyFilter(items, query, matchSourceLower);
+  let rest: DisplayCommand[] | null = null;
+  let localSet: Set<DisplayCommand> | null = null;
+  for (const d of items) {
+    if (d.aliasSourceLower === undefined) continue;
+    localSet ??= new Set(local);
+    if (!localSet.has(d)) (rest ??= []).push(d);
+  }
+  if (rest === null) return { matches: local, aliasHits: NO_ALIAS_HITS };
+  const viaAlias = fuzzyFilter(rest, query, aliasSourceLower);
+  if (viaAlias.length === 0) return { matches: local, aliasHits: NO_ALIAS_HITS };
+  return { matches: [...local, ...viaAlias], aliasHits: new Set(viaAlias) };
 }
 
 export function buildRecentCommandIds(recentList: readonly RecentEntry[]): string[] {
@@ -259,17 +310,17 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
   // 先 localize 成 DisplayCommand,再 filter/sort(P1-2: 按显示文本搜索/排序)。
   // hotkeyParts 用 effective(含 user override)预计算,行渲染只读它(R28)。
   const displayCommands = useMemo<readonly DisplayCommand[]>(() => {
-    void locale; // 仅作 deps:tk 内部按 locale 翻译,切语言须重算
-    return buildDisplayCommands(allCommands, tk, PLATFORM, overrides);
+    // locale 也作 deps:tk 内部按 locale 翻译,切语言须重算;非英文界面另算英文原名供匹配。
+    return buildDisplayCommands(allCommands, tk, PLATFORM, overrides, locale === 'en' ? undefined : englishWithFallback);
   }, [allCommands, tk, overrides, locale]);
 
-  const filtered = useMemo(() => {
+  const { matches: filtered, aliasHits } = useMemo<CommandSearchResult>(() => {
     if (effectiveQuery) {
-      // 有 query → fuzzy 匹配 displayCategory + displayTitle
-      return fuzzyFilter(displayCommands, effectiveQuery, matchSourceLower);
+      // 有 query → fuzzy 匹配 displayCategory + displayTitle(非英文界面再按英文原名)
+      return searchDisplayCommands(displayCommands, effectiveQuery);
     }
     // 空 query → recent 置顶 + 其余按 displayTitle 字母序
-    return sortByRecent(displayCommands, recentIds);
+    return { matches: sortByRecent(displayCommands, recentIds), aliasHits: NO_ALIAS_HITS };
   }, [displayCommands, effectiveQuery, recentIds]);
 
   // 虚拟化列表(打磨 R48,复用 QuickOpen R25 模式):filtered 仍是逻辑全集,但只
@@ -334,6 +385,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
             {virtualItems.map((vRow) => {
               const idx = vRow.index;
               const d = filtered[idx]!;
+              const alias = aliasHits.has(d) ? d.aliasLabel : undefined;
               return (
                 <li
                   key={d.cmd.id}
@@ -348,8 +400,17 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
                     </span>
                   )}
                   <span className="truncate">{d.displayTitle}</span>
+                  {alias !== undefined && (
+                    // 只靠英文原名命中:行尾次要色显示英文名(VSCode commandAlias),让用户知道为何命中。
+                    <span
+                      data-command-alias=""
+                      className={`ml-auto min-w-0 truncate ${pickerRowSecondaryClassName(idx === selectedIndex)}`}
+                    >
+                      {alias}
+                    </span>
+                  )}
                   {d.hotkeyParts.length > 0 && (
-                    <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                    <span className={`${alias === undefined ? 'ml-auto ' : ''}flex shrink-0 items-center gap-0.5`}>
                       {d.hotkeyParts.map((p) => (
                         <KeyCap key={p}>{p}</KeyCap>
                       ))}

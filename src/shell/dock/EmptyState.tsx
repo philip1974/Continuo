@@ -62,16 +62,17 @@ export function EmptyState({ onRestore, elsewhere = false }: { onRestore: () => 
       // 主窗无面板时 F6 / ⇧F6 的 dock 区域落点(src/shell/focus-parts.ts):只经脚本聚焦,不进 Tab 顺序。
       data-dock-empty=""
       tabIndex={-1}
-      className="absolute inset-0 z-10 flex h-full w-full overflow-hidden bg-canvas outline-none"
+      // [container:empty/size]:宽高都可做容器查询(dock 在最小窗口下只有约 145px 宽、200px 高)。
+      className="absolute inset-0 z-10 flex h-full w-full overflow-hidden bg-canvas outline-none [container:empty/size]"
     >
       {visible && focused && <BackgroundBeams />}
-      <div className="relative z-10 m-auto flex flex-col items-center gap-4">
+      <div className="relative z-10 m-auto flex max-w-full flex-col items-center gap-4">
         {/* Icon 容器(参考 stitch_desktop_design_reviewer):圆形面板 + 边框,
-         *  让"无面板"状态自成一个视觉单元而非孤立文案。 */}
-        <div className="flex h-20 w-20 items-center justify-center rounded-full border border-line/50 bg-panel">
+         *  让"无面板"状态自成一个视觉单元而非孤立文案。窄(< 16rem)/ 矮(< 220px)时隐藏,不被裁成半圆。 */}
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-line/50 bg-panel @max-3xs/empty:hidden [@container_empty_(height<220px)]:hidden">
           {EMPTY_DOCK_ICON}
         </div>
-        <p className="text-fg-muted">{t(elsewhere ? 'dock.empty.in_other_windows' : 'dock.empty.message')}</p>
+        <p className="px-4 text-center text-fg-muted">{t(elsewhere ? 'dock.empty.in_other_windows' : 'dock.empty.message')}</p>
         {!elsewhere && (
           <Button variant="ghost" size="md" onClick={onRestore}>
             {t('dock.empty.restore')}

@@ -11,6 +11,7 @@ export const ko: Record<TranslationKey, string> = {
   // menu.file
   'menu.file.label': '파일',
   'menu.file.new_window': '새 창',
+  'menu.file.open_folder': '폴더 열기…',
   'menu.file.open_folder_in_new_window': '새 창에서 폴더 열기…',
   'menu.file.window_open_failed': '새 창을 열 수 없습니다',
   'menu.file.close_window': '창 닫기',

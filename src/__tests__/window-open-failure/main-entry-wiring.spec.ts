@@ -15,7 +15,8 @@ describe('主进程开新窗口入口失败时提示用户', () => {
 
   it('应用菜单与 Dock 菜单的两个入口都经 runWindowOpen', () => {
     expect(src.match(/runWindowOpen\(\(\) => openWorkspaceWindow\(\)/g) ?? []).toHaveLength(2);
-    expect(src.match(/runWindowOpen\(openFolderInNewWindow/g) ?? []).toHaveLength(2);
+    // 3 处:菜单「在新窗口中打开文件夹…」、Dock 菜单,及菜单「打开文件夹…」无可用主窗时的兜底。
+    expect(src.match(/runWindowOpen\(openFolderInNewWindow/g) ?? []).toHaveLength(3);
   });
 
   it('open-file 经 runWindowOpen', () => {

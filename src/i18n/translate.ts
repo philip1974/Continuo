@@ -86,3 +86,12 @@ export function tWithFallback(
   const r = translate(key, params);
   return r === key ? fallback : r;
 }
+
+/**
+ * 同 tWithFallback,但固定取英文(en catalog;缺 key 用 fallback —— 约定 CommandSpec 的 title / category 是英文 fallback)。
+ * 本地化界面下命令面板 / 快捷键设置按英文原名搜索用(VSCode commandAlias)。
+ */
+export function englishWithFallback(key: string | undefined, fallback: string): string {
+  if (key === undefined || key === '') return fallback;
+  return ownValue(LOCALE_DICTS.en, key) ?? fallback;
+}

@@ -4,6 +4,8 @@ import { setPageReloadPredicate, setReloadUrlPredicate } from './lib/wc-gone-hoo
 import { installPermissionHandlers } from './lib/permission-policy';
 import { installFileRequestGuard } from './lib/file-request-policy';
 import { showOpenDialogRemembering } from './lib/open-dialog';
+import { sendMenuCommand } from './lib/menu-command';
+import { MENU_COMMANDS, type MenuCommandId } from '../shared/window-channels';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL, type FlushRequestPayload } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -807,6 +809,8 @@ async function openFolderInNewWindow(): Promise<void> {
   await openWorkspaceWindow(r.filePaths[0]!);
 }
 
+const OPEN_FOLDER_MENU_COMMAND: MenuCommandId = 'workbench.action.files.openFolder';
+
 export function buildAppMenu(t: MainT): Menu {
   const isMac = process.platform === 'darwin';
   const fileSubmenu: MenuItemConstructorOptions[] = [
@@ -815,6 +819,16 @@ export function buildAppMenu(t: MainT): Menu {
       accelerator: 'CmdOrCtrl+Shift+N',
       click: () => {
         void runWindowOpen(() => openWorkspaceWindow(), windowOpenFailureUi);
+      },
+    },
+    { type: 'separator' },
+    // 打开文件夹(VSCode 文件菜单同款 ⌘O):即 renderer 命令 workbench.action.files.openFolder(在当前窗口切换工作区,
+    // 单飞 / 失败提示 / 焦点交文件树都在命令里)。没有可用主窗(mac 关光窗口)→ 选定后在新窗口打开。
+    {
+      label: t('menu.file.open_folder'),
+      accelerator: MENU_COMMANDS[OPEN_FOLDER_MENU_COMMAND],
+      click: (_item, win) => {
+        if (!sendMenuCommand(win, OPEN_FOLDER_MENU_COMMAND)) void runWindowOpen(openFolderInNewWindow, windowOpenFailureUi);
       },
     },
     {

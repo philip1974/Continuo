@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { pickerRowClassName } from '../../plugins/picker/picker-row';
+import { pickerRowClassName, pickerRowSecondaryClassName } from '../../plugins/picker/picker-row';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -299,5 +299,68 @@ describe('CommandPalette · 键盘 + 空 query 排序', () => {
     expect(notifyError).toHaveBeenCalled();
     expect(String(notifyError.mock.calls[0]?.[0])).toContain('Bad');
     expect(String(notifyError.mock.calls[0]?.[0])).toContain('boom');
+  });
+});
+
+// VSCode:本地化界面下命令面板同时匹配英文原名(commandAlias);命中的是英文而非本地化文本时,行尾用次要色显示英文名。
+// 英文原文 = en catalog 里 titleKey / categoryKey 的值(无 key 或 en 无此 key 时用 CommandSpec 的 title / category ——
+// 约定它们是英文 fallback)。
+describe('CommandPalette · 本地化界面可搜英文命令名', () => {
+  function makeLocalizedReg(): CommandRegistry {
+    const r = new CommandRegistry();
+    r.register({
+      id: 'workbench.action.files.openFolder',
+      title: 'Open Folder…',
+      titleKey: 'commands.file.open_folder.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      fn: vi.fn(),
+    });
+    r.register({ id: 'quit.app', title: '退出应用', fn: vi.fn() });
+    return r;
+  }
+  function search(q: string): HTMLLIElement[] {
+    render(<CommandPalette commands={makeLocalizedReg()} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const input = document.querySelector('.wm-modal-content input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: q } });
+    return Array.from(document.querySelectorAll<HTMLLIElement>('.wm-modal-content li'));
+  }
+  afterEach(async () => {
+    const { setLocale } = await import('../../i18n/translate');
+    setLocale('zh');
+  });
+
+  it('zh:输入英文「open folder」命中「文件: 打开文件夹…」,行尾以 picker 次要色显示英文名 File: Open Folder…', () => {
+    const rows = search('open folder');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toContain('打开文件夹…');
+    const alias = rows[0]!.querySelector('[data-command-alias]');
+    expect(alias?.textContent).toBe('File: Open Folder…');
+    // 次要色走 picker-row 的对比度契约:常态 text-fg-dim,选中 / 悬停换 text-fg-muted(accent 底上保持 ≥ 4.5)。
+    expect(alias?.className).toContain(pickerRowSecondaryClassName(true));
+    expect(pickerRowSecondaryClassName(false)).toContain('text-fg-dim');
+  });
+
+  it('zh:英文分类前缀也可搜(「file open」)', () => {
+    expect(search('file open')).toHaveLength(1);
+  });
+
+  it('zh:命中本地化文本时不显示英文名', () => {
+    const rows = search('打开文件');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.querySelector('[data-command-alias]')).toBeNull();
+  });
+
+  it('en:不重复显示英文名(本地化即英文)', async () => {
+    const { setLocale } = await import('../../i18n/translate');
+    setLocale('en');
+    const rows = search('open folder');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.querySelector('[data-command-alias]')).toBeNull();
+  });
+
+  it('英文原名与本地化相同(无 titleKey、title 非英文)→ 不另拼别名,搜英文无结果', () => {
+    expect(search('quit')).toHaveLength(0);
   });
 });

@@ -643,6 +643,7 @@
 
 - [`explorer-commands-tree.spec.tsx`](./explorer-commands/explorer-commands-tree.spec.tsx)
 - [`explorer-commands.spec.ts`](./explorer-commands/explorer-commands.spec.ts)
+- [`menu-open-folder.spec.ts`](./explorer-commands/menu-open-folder.spec.ts)
 
 ## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)
 

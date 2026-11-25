@@ -28,7 +28,7 @@ vi.mock('@/plugins/quick-open/QuickOpenModal', () => ({ QuickOpenModal: hoisted.
 vi.mock('@/plugins/quick-open/useQuickOpenHotkey', () => ({ useQuickOpenHotkey: () => {} }));
 vi.mock('@/plugins/permissions/PermissionPrompt', () => ({ PermissionPrompt: hoisted.Null }));
 vi.mock('@/plugins/co-app', () => ({ coApp: { commands: {}, settingItems: { get: () => undefined } } }));
-vi.mock('@/lib/co-api', () => ({ coApi: { window: { notifyRoot: hoisted.notifyRoot } } }));
+vi.mock('@/lib/co-api', () => ({ coApi: { window: { notifyRoot: hoisted.notifyRoot, onMenuCommand: () => () => {} } } }));
 vi.mock('@/lib/popout-mode', () => ({ isPopoutWindow: () => false }));
 vi.mock('@/plugins/settings/LanguageFromSettings', () => ({ LanguageFromSettings: hoisted.Null }));
 vi.mock('@/notifications/ToastViewport', () => ({ ToastViewport: hoisted.Null }));

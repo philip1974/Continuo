@@ -41,7 +41,7 @@ vi.mock('@/plugins/quick-open/QuickOpenModal', () => ({ QuickOpenModal: hoisted.
 vi.mock('@/plugins/quick-open/useQuickOpenHotkey', () => ({ useQuickOpenHotkey: () => {} }));
 vi.mock('@/plugins/permissions/PermissionPrompt', () => ({ PermissionPrompt: hoisted.Null }));
 vi.mock('@/plugins/co-app', () => ({ coApp: { commands: {}, settingItems: { get: () => undefined } } }));
-vi.mock('@/lib/co-api', () => ({ coApi: { window: { notifyRoot: vi.fn() } } }));
+vi.mock('@/lib/co-api', () => ({ coApi: { window: { notifyRoot: vi.fn(), onMenuCommand: () => () => {} } } }));
 vi.mock('@/lib/popout-mode', () => ({ isPopoutWindow: () => false }));
 vi.mock('../../shell/notify-root-when-hydrated', () => ({
   notifyRootWhenHydrated: () => Promise.resolve(),

@@ -34,6 +34,7 @@ import {
   waitForWorkspaceRootRestored,
 } from '@/stores/workspace.store';
 import { notifyRootWhenHydrated } from './notify-root-when-hydrated';
+import { useMenuCommands } from './menu-commands';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
@@ -51,6 +52,8 @@ function MainApp() {
   useCommandPaletteHotkey();
   // 全局 commands 注册的 hotkey 监听 + 派发(M-Plugin v1.6 补漏)
   useCommandHotkeys(coApp.commands);
+  // 应用菜单项即命令(文件 → 打开文件夹… ⌘O):main 请求本窗执行
+  useMenuCommands(coApp.commands);
   // 外部文件同步挂在常驻 MainApp(每窗口一次),不放在懒加载的 EditorPanel:打开文件到 Editor chunk
   // 挂载之间的外部修改否则会因订阅尚不存在而永久漏掉。hook 只依赖 editor store + coApi.fs。
   useExternalFileSync();

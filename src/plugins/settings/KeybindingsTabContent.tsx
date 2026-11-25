@@ -21,7 +21,7 @@ import {
   useKeybindingsStore,
 } from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
-import { useT, useTWithFallback, useLocale } from '@/i18n';
+import { useT, useTWithFallback, useLocale, englishWithFallback } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { ResetIcon } from '@/lib/ui-icons';
@@ -155,13 +155,16 @@ export function selectVisibleKeybindingCommands(
   return count === 0 ? EMPTY_VISIBLE_KEYBINDING_COMMANDS : selected;
 }
 
+/** @param englishText 非英文界面下的英文原名(标题 + 分类,与命令面板同源;VSCode 同样可按英文命令名搜)。 */
 export function buildCommandSearchHaystack(
   displayTitle: string,
   displayCategory: string,
   commandId: string,
   effectiveHotkey: string | undefined,
+  englishText?: string,
 ): string {
-  return lowerIfNeeded(`${displayTitle} ${displayCategory} ${commandId} ${effectiveHotkey ?? ''}`);
+  const base = `${displayTitle} ${displayCategory} ${commandId} ${effectiveHotkey ?? ''}`;
+  return lowerIfNeeded(englishText ? `${base} ${englishText}` : base);
 }
 
 /**
@@ -190,6 +193,7 @@ export function buildKeybindingDisplayCommands(
   tk: TranslateWithFallback,
   overrides: Readonly<Record<string, string>>,
   platform: Platform,
+  english?: TranslateWithFallback,
 ): DisplayCommand[] {
   if (allCommands.length === 0) return EMPTY_KEYBINDING_DISPLAY_COMMANDS;
   const out = new Array<DisplayCommand>(allCommands.length);
@@ -199,6 +203,12 @@ export function buildKeybindingDisplayCommands(
     const effective = resolveEffectiveHotkey(cmd, overrides);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
+    let englishText: string | undefined;
+    if (english) {
+      const enTitle = english(cmd.titleKey, cmd.title);
+      const enCategory = english(cmd.categoryKey, cmd.category ?? '');
+      if (enTitle !== displayTitle || enCategory !== displayCategory) englishText = `${enTitle} ${enCategory}`;
+    }
     out[i] = {
       cmd,
       displayTitle,
@@ -215,6 +225,7 @@ export function buildKeybindingDisplayCommands(
         displayCategory,
         cmd.id,
         effective ? hotkeySearchText(effective, platform) : undefined,
+        englishText,
       ),
     };
   }
@@ -245,8 +256,10 @@ export function KeybindingsTabContent() {
   const locale = useLocale();
 
   const displayCommands = useMemo<readonly DisplayCommand[]>(() => {
-    void locale; // deps:tk 内部按 locale 翻译
-    return buildKeybindingDisplayCommands(allCommands, tk, overrides, PLATFORM);
+    // locale 也作 deps:tk 内部按 locale 翻译;非英文界面另把英文原名拼进搜索文本(与命令面板一致)。
+    return buildKeybindingDisplayCommands(
+      allCommands, tk, overrides, PLATFORM, locale === 'en' ? undefined : englishWithFallback,
+    );
   }, [allCommands, tk, overrides, locale]);
 
   const buckets = useMemo(() => {

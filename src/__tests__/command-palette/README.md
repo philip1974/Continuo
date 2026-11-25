@@ -40,6 +40,15 @@
 - 点击 / Enter 执行当前命令 + close
 - Esc 由 Modal 内置 close 处理
 
+### 本地化界面可搜英文命令名(VSCode commandAlias)
+
+- 界面语言非 en 时,每条命令另算英文原名(en catalog 里 titleKey / categoryKey 的值;无 key 或 en 无此 key 用
+  CommandSpec 的 title / category —— 约定它们是英文 fallback),与本地化文本不同才作别名
+- 搜索先按本地化「分类 标题」fuzzy,再对其余命令按英文「Category Title」fuzzy;英文命中排在本地化命中之后
+- 只靠英文命中的行,行尾以 picker 次要色(`pickerRowSecondaryClassName`:常态 text-fg-dim,选中 / 悬停 text-fg-muted,
+  对比度见 picker-shared)显示 `Category: Title`;命中本地化文本或 en 界面不显示
+- 快捷键设置页搜索同理(`keybindings-tab-content`)
+
 ### ⌘P hotkey
 
 - `useCommandPaletteHotkey()` 在 document 上监听 `keydown`

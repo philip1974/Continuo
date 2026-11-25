@@ -842,6 +842,38 @@ describe('File 菜单「关闭窗口」:Shift+CmdOrCtrl+W,经关窗脏确认', (
   });
 });
 
+// BDD: explorer-commands 第 5 条 —— 文件菜单「打开文件夹… ⌘O」即 renderer 命令 workbench.action.files.openFolder。
+describe('File 菜单「打开文件夹…」:CmdOrCtrl+O,交给聚焦主窗的 renderer 命令执行', () => {
+  function openFolderItem() {
+    type Item = ReloadMenuItem & { readonly label?: string; readonly type?: string };
+    const template = buildAppMenu(((key: string) => key) as never) as unknown as Item[];
+    const file = template.find((m) => m.label === 'menu.file.label');
+    const items = (file?.submenu ?? []) as readonly Item[];
+    // 顺序同 VSCode 文件菜单:新建窗口 → 分隔线 → 打开文件夹…(本应用另有「在新窗口中打开文件夹…」紧随其后)。
+    const labels = items.map((m) => m.label ?? m.type);
+    const at = labels.indexOf('menu.file.open_folder');
+    expect(labels.slice(0, at + 2)).toEqual(['menu.file.new_window', 'separator', 'menu.file.open_folder', 'menu.file.open_folder_in_new_window']);
+    return items.find((m) => m.label === 'menu.file.open_folder')!;
+  }
+
+  it('accelerator CmdOrCtrl+O;点击 → 向该主窗发送执行 workbench.action.files.openFolder 的请求', () => {
+    const item = openFolderItem();
+    expect(item.accelerator).toBe('CmdOrCtrl+O');
+    const win = createReadyWindow(71);
+    item.click?.(item, win, {});
+    expect(win.webContents.send).toHaveBeenCalledWith('window:run-menu-command', 'workbench.action.files.openFolder');
+  });
+
+  it('没有聚焦窗口(mac 关掉所有窗口后)→ 弹选择文件夹,选定后在新窗口打开(同「在新窗口中打开文件夹」)', async () => {
+    const { dialog } = await import('electron');
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] } as never);
+    const item = openFolderItem();
+    item.click?.(item, undefined, {});
+    await flushMicrotasks(10);
+    expect(dialog.showOpenDialog).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('退出应用(before-quit):对每个有脏文件的主窗确认', () => {
   function beforeQuit(): { event: { preventDefault: ReturnType<typeof vi.fn> }; done: unknown } {
     const handler = electronMock.appHandlers.get('before-quit')?.[0];

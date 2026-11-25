@@ -11,6 +11,7 @@ export const zh: Record<TranslationKey, string> = {
   // menu.file
   'menu.file.label': '文件',
   'menu.file.new_window': '新建窗口',
+  'menu.file.open_folder': '打开文件夹…',
   'menu.file.open_folder_in_new_window': '在新窗口中打开文件夹…',
   'menu.file.window_open_failed': '无法打开新窗口',
   'menu.file.close_window': '关闭窗口',

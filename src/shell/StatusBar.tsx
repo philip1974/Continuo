@@ -28,6 +28,25 @@ import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 import { createLatestGuard } from '@/lib/latest-wins';
 
+/** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
+const MCP_COPY_ICON = (
+  <svg
+    width="12"
+    height="12"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="hidden @max-xl:block"
+  >
+    <rect x="9" y="9" width="13" height="13" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
 const EMPTY_STATUS_ITEMS: readonly StatusBarItemSpec[] = [];
 const EMPTY_STATUS_SPLIT = {
   left: EMPTY_STATUS_ITEMS,
@@ -192,8 +211,9 @@ const EditorStats = memo(function EditorStats({
     () => (statsContent === undefined ? null : computeTextStats(statsContent)),
     [statsContent],
   );
+  // 窄宽(状态栏容器 < 2xl)最先隐藏:次要信息,VSCode 空间不够时整项隐藏而不是折行。
   return (
-    <span>
+    <span className="whitespace-nowrap @max-2xl:hidden">
       {t('statusbar.editor_stats', {
         lines: stats?.lines ?? 0,
         words: stats?.words ?? 0,
@@ -301,28 +321,30 @@ export function StatusBar() {
     <footer
       data-statusbar=""
       data-workbench-part="statusbar"
-      className="flex h-statusbar shrink-0 items-center justify-between border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none"
+      // 对齐 VSCode:状态栏项从不折行(条目 whitespace-nowrap / truncate),两组 min-w-0 可收缩、溢出裁掉;@container 供
+      // 窄宽按优先级隐藏(先隐藏统计,再把 MCP 按钮缩成图标)。组 self-stretch + -mx-1 px-1:overflow-hidden 不裁掉按钮焦点环。
+      className="@container flex h-statusbar shrink-0 items-center justify-between gap-3 border-t border-line bg-panel px-3 text-2xs text-fg-dim select-none"
     >
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="-mx-1 flex min-w-0 items-center gap-3 self-stretch overflow-hidden px-1">
         {root ? (
           <span className="truncate" title={root}>
             {basenameForChrome(root)}
           </span>
         ) : (
-          <span>{t('statusbar.no_workspace')}</span>
+          <span className="whitespace-nowrap">{t('statusbar.no_workspace')}</span>
         )}
         {!sidebarOpen && (
-          <span>{t('statusbar.sidebar_hidden')}</span>
+          <span className="truncate">{t('statusbar.sidebar_hidden')}</span>
         )}
         {/* 插件贡献的左侧 statusBar items(race R56:render 时 live 复查) */}
         {leftItems.map((item) => (
-          <span key={item.id}>{liveRenderStatusItem(item)}</span>
+          <span key={item.id} className="whitespace-nowrap">{liveRenderStatusItem(item)}</span>
         ))}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="-mx-1 flex min-w-0 items-center gap-3 self-stretch overflow-hidden px-1">
         {/* 插件贡献的右侧 statusBar items(在内置项左边;race R56:render 时 live 复查) */}
         {rightItems.map((item) => (
-          <span key={item.id}>{liveRenderStatusItem(item)}</span>
+          <span key={item.id} className="whitespace-nowrap">{liveRenderStatusItem(item)}</span>
         ))}
         {/* native button:24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏;颜色走语义 token。 */}
         <button
@@ -333,9 +355,11 @@ export function StatusBar() {
           // 动作语义只在 title → 稳定 aria-label 表「复制 MCP 配置」,结果由下方 live region(A51)
           // 播报,按钮名不随状态漂移成结果文本。
           aria-label={mcpTooltip}
-          className="text-fg-dim hover:text-fg transition-colors"
+          className="flex shrink-0 items-center whitespace-nowrap text-fg-dim hover:text-fg transition-colors"
         >
-          {mcpLabel}
+          {/* 状态栏容器 < xl 时只显示图标(文字隐藏;动作语义仍在 title / aria-label,复制结果由下方 live region 播报)。 */}
+          {MCP_COPY_ICON}
+          <span className="@max-xl:hidden">{mcpLabel}</span>
         </button>
         {/* a11y(A51,A41 同族):复制结果只靠按钮文本短暂变化,焦点在按钮时不一定被播报 →
             视觉隐藏 role=status(polite)live region 镜像结果(仅非 idle),状态变化时播报。 */}
@@ -352,7 +376,7 @@ export function StatusBar() {
             // a11y(A74,A2 同族):按钮可见文本只表「N 个 agent 会话」,撤销动作语义仅在 title
             //(SR 有可见文本时不一定读 title)→ aria-label 用含撤销语义的 revoke_tooltip 作可访问名。
             aria-label={agentRevokeTooltip}
-            className="flex items-center gap-1 text-accent hover:text-fg transition-colors"
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap text-accent hover:text-fg transition-colors"
           >
             <span aria-hidden>●</span>
             {/* i18n(I19):agent 计数走 catalog,zh/ko 不再显英文 'N agent' */}

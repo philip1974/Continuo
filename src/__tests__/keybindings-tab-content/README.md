@@ -33,6 +33,8 @@
 - 大小写不敏感,匹配 title / category / id / hotkey
 - hotkey 的搜索文本含原始串(mod+t)+ 平台显示形式(mac `⌘T`、其它 `Ctrl+T`)+ mac 修饰键英文名(cmd+t):
   Windows 输 ctrl+t、mac 输 ⌘ / cmd 都能搜到
+- 界面语言非 en 时搜索文本另含英文原名(标题 + 分类,与命令面板同源 `englishWithFallback`):zh / ko 下输「open folder」
+  能搜到「打开文件夹…」(VSCode 同样可按英文命令名搜)
 
 ### 空态
 

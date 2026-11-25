@@ -928,3 +928,65 @@ describe('StatusBar — 撤销确认框显示全局 agent 终端数', () => {
     expect(dict['statusbar.mcp.revoke_tooltip']).toMatch(thisWin);
   });
 });
+
+// VSCode:状态栏项从不折行;空间不够时整项隐藏 / 截断。400 宽 + 隐藏侧栏 + 打开文件时 en「Sidebar hidden」
+// 「Copy MCP config」「7 lines · 12 words · 53 chars」曾折两行被 24px 高度裁掉。jsdom 不算容器查询,这里锁类名契约,
+// 实际排版由 e2e 截图(400 宽 en / zh / ko)确认。
+describe('StatusBar — 窄宽不折行', () => {
+  function renderFull(): HTMLElement {
+    installApi({});
+    useWorkspaceStore.setState({ root: '/Users/foo/projects/myapp', recentRoots: [] });
+    useLayoutUiStore.setState({ sidebarOpen: false });
+    useEditorStore.setState({
+      tabs: [{ id: '/x.md', filePath: '/x.md', content: 'a b\nc', originalContent: 'a b\nc', dirty: false }],
+      activeTabId: '/x.md',
+    });
+    const { container } = render(<StatusBar />);
+    return container.querySelector('footer')!;
+  }
+  const cls = (el: Element | null | undefined) => (el?.getAttribute('class') ?? '').split(/\s+/);
+
+  it('footer 是容器查询容器;左右两组都可收缩(min-w-0)且溢出裁掉而不是换行', () => {
+    const footer = renderFull();
+    expect(cls(footer)).toContain('@container');
+    const [left, right] = Array.from(footer.children).filter((c) => c.tagName === 'DIV');
+    for (const group of [left, right]) {
+      expect(cls(group)).toEqual(expect.arrayContaining(['min-w-0', 'overflow-hidden']));
+    }
+  });
+
+  it('每个条目单行:whitespace-nowrap 或 truncate(含插件贡献项)', () => {
+    coApp.statusBar.register({ id: 'p.l', side: 'left', render: () => 'left item' });
+    coApp.statusBar.register({ id: 'p.r', side: 'right', render: () => 'right item' });
+    const footer = renderFull();
+    const groups = Array.from(footer.children).filter((c) => c.tagName === 'DIV');
+    const items = groups.flatMap((g) => Array.from(g.children)).filter((el) => !(el as HTMLElement).style.position);
+    expect(items.length).toBeGreaterThanOrEqual(6);
+    for (const el of items) {
+      const c = cls(el);
+      expect(c.includes('whitespace-nowrap') || c.includes('truncate'), el.outerHTML).toBe(true);
+    }
+  });
+
+  it('窄宽优先隐藏行 / 词 / 字符统计(容器 < 2xl)', () => {
+    const footer = renderFull();
+    const stats = Array.from(footer.querySelectorAll('span')).find((s) => /行/.test(s.textContent ?? '') && s.children.length === 0)!;
+    expect(stats).toBeDefined();
+    expect(cls(stats)).toContain('@max-2xl:hidden');
+  });
+
+  it('更窄时 MCP 按钮只显示图标:文字 @max-xl:hidden、图标只在窄宽出现;title / aria-label 不变', () => {
+    const footer = renderFull();
+    const btn = Array.from(footer.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      (b.textContent ?? '').includes('复制 MCP'),
+    )!;
+    expect(btn).toBeDefined();
+    const label = Array.from(btn.querySelectorAll('span')).find((s) => (s.textContent ?? '').includes('复制 MCP'))!;
+    expect(cls(label)).toContain('@max-xl:hidden');
+    const icon = btn.querySelector('svg')!;
+    expect(icon.getAttribute('aria-hidden')).toBe('true');
+    expect(cls(icon)).toEqual(expect.arrayContaining(['hidden', '@max-xl:block']));
+    expect(btn.getAttribute('aria-label')).toBe(btn.getAttribute('title'));
+    expect(btn.getAttribute('aria-label')).toBeTruthy();
+  });
+});

@@ -34,6 +34,7 @@ vi.mock('@/lib/co-api', () => ({
     window: {
       notifyRoot: vi.fn(async () => ({ ok: true })),
       getPathForFile: () => '/src-folder',
+      onMenuCommand: () => () => {},
     },
     fs: {
       listDir: h.listDir,
