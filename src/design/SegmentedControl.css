@@ -77,3 +77,15 @@
 .wm-segmented[data-disabled="true"] {
   opacity: 0.3;
 }
+
+/* 强制颜色:未选中项透明描边会被画成 CanvasText(每项都像选中),改 Canvas;选中项描边 Highlight。
+ * BDD:src/__tests__/forced-colors-states/ */
+@media (forced-colors: active) {
+  .wm-segmented-option {
+    border-color: Canvas;
+  }
+
+  .wm-segmented-option[data-active="true"] {
+    border-color: Highlight;
+  }
+}

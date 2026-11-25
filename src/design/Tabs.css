@@ -39,3 +39,15 @@
   background-color: var(--md-surface-container-high);
   color: var(--md-on-surface);
 }
+
+/* 强制颜色:透明占位竖条会被画成 CanvasText(每项都像选中),改 Canvas;选中项竖条 Highlight。
+ * BDD:src/__tests__/forced-colors-states/ */
+@media (forced-colors: active) {
+  .wm-tab-button {
+    border-left-color: Canvas;
+  }
+
+  .wm-tab-button[data-active="true"] {
+    border-left-color: Highlight;
+  }
+}

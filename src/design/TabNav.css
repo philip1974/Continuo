@@ -131,3 +131,20 @@
 .wm-tab-nav-item__close:disabled {
   cursor: not-allowed;
 }
+
+/* 强制颜色:透明占位下划线会被画成 CanvasText(每个 tab 都像选中),改 Canvas;活动 tab 下划线 Highlight;
+ * 未保存圆点只靠底色,改 CanvasText。BDD:src/__tests__/forced-colors-states/ */
+@media (forced-colors: active) {
+  .wm-tab-nav-item {
+    border-bottom-color: Canvas;
+  }
+
+  .wm-tab-nav-item[data-active="true"] {
+    border-bottom-color: Highlight;
+  }
+
+  .wm-tab-nav-item__dirty-dot {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}

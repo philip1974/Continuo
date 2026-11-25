@@ -781,6 +781,10 @@
 
 - [`rename-reject-feedback.spec.tsx`](./folder-tree-rename-feedback/rename-reject-feedback.spec.tsx)
 
+## [强制颜色模式下的选中 / 高亮 / 按下状态](./forced-colors-states/README.md)
+
+- [`forced-colors.spec.ts`](./forced-colors-states/forced-colors.spec.ts)
+
 ## [format-hotkey(命令 hotkey 显示格式化)](./format-hotkey/README.md)
 
 - [`format-hotkey.spec.ts`](./format-hotkey/format-hotkey.spec.ts)

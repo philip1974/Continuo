@@ -49,3 +49,11 @@
   justify-content: center;
   line-height: 1;
 }
+
+/* 强制颜色:激活指示条只靠底色(会被抹成 Canvas),改 Highlight。BDD:src/__tests__/forced-colors-states/ */
+@media (forced-colors: active) {
+  .wm-nav-rail-button__active-bar {
+    forced-color-adjust: none;
+    background-color: Highlight;
+  }
+}

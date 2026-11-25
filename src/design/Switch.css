@@ -58,3 +58,33 @@
   cursor: not-allowed;
   opacity: 0.38;
 }
+
+/* 强制颜色(Windows 高对比度):底色全被抹成 Canvas,开 / 关只剩滑块位置可辨且滑块也消失。对齐 VSCode
+ * 高对比度 toggle:关 = CanvasText 描边 + CanvasText 滑块;开 = Highlight 轨道 + HighlightText 滑块。
+ * forced-color-adjust: none 让这里写的系统色生效(不再被 UA 强制);hover 叠层与焦点环随之改系统色。
+ * BDD:src/__tests__/forced-colors-states/ */
+@media (forced-colors: active) {
+  .wm-switch {
+    border-color: CanvasText;
+  }
+
+  .wm-switch__thumb {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .wm-switch[data-checked="true"] {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background-color: Highlight;
+    background-image: none;
+  }
+
+  .wm-switch[data-checked="true"] .wm-switch__thumb {
+    background-color: HighlightText;
+  }
+
+  .wm-switch:focus-visible {
+    outline-color: CanvasText;
+  }
+}

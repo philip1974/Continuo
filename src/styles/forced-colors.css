@@ -1,0 +1,52 @@
+/* 强制颜色模式(Windows 高对比度 / forced-colors: active)下的选中 / 高亮 / 按下 / 当前态。
+ *
+ * 强制颜色下浏览器把 background-color 改成 Canvas、border / outline / 文字改成 CanvasText,box-shadow 清空:
+ * 只靠底色(bg-hover / bg-accent/15 / state-hover)表达的选中态全部消失,透明边框(未选中项占位用)反而每行都
+ * 画成 CanvasText 竖条。对齐 VSCode 高对比度主题:选中 / 当前项画 Highlight 轮廓(contrastActiveBorder),
+ * 未选中项无边框(WCAG 1.4.11 / 2.4.7)。作者写的系统色(Highlight / Canvas / CanvasText)强制颜色下保留原值。
+ *
+ * 一处定义、按语义选择器命中,不挂具体组件:新组件只要暴露标准状态属性(aria-selected / aria-current /
+ * aria-pressed / Radix data-highlighted / data-state / design 的 data-active)就自动获得。整段只在 media 内,
+ * 正常模式零影响。非 layer(unlayered):压过 design(components)与 Tailwind utilities 的 outline-none。
+ * design 组件专有部件(Switch 滑块、NavRail 指示条、TabNav / Tabs / SegmentedControl 透明边框)在各自 CSS 里。
+ * BDD:src/__tests__/forced-colors-states/ */
+@media (forced-colors: active) {
+  /* 选中 / 当前 / 按下 / 菜单高亮:内嵌 2px Highlight 轮廓(内嵌免被滚动容器裁掉)。 */
+  [aria-selected="true"],
+  [aria-current]:not([aria-current="false"]),
+  [aria-pressed="true"],
+  [data-highlighted],
+  [data-state="active"],
+  [data-state="checked"],
+  [data-state="on"],
+  [data-active="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* 选中项同时有键盘焦点:虚线 Highlight,与「仅选中」(实线)、「仅焦点」(CanvasText)都可区分。
+   * 不含 [data-highlighted]:菜单高亮项本身就是焦点项,高亮即焦点指示。 */
+  :is(
+      [aria-selected="true"],
+      [aria-current]:not([aria-current="false"]),
+      [aria-pressed="true"],
+      [data-state="active"],
+      [data-state="checked"],
+      [data-state="on"],
+      [data-active="true"]
+    ):focus-visible {
+    outline-style: dashed;
+  }
+
+  /* 未选中项的透明占位边框(命令面板行、设置导航项、Explorer 非焦点行):强制颜色下会被画成 CanvasText,
+   * 每行都像选中;改 Canvas 与背景同色。 */
+  .border-transparent {
+    border-color: Canvas;
+  }
+
+  /* dock 活动 tab 顶部强调条(SharedTab 的 bg-accent span):背景会被抹成 Canvas,改用 Highlight。 */
+  [role="tab"] > .bg-accent {
+    forced-color-adjust: none;
+    background-color: Highlight;
+  }
+}

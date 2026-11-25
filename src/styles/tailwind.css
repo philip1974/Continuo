@@ -3,3 +3,4 @@
 @import "./fonts.css";
 @import "./decor.css";
 @import "../design/index.css" layer(components);
+@import "./forced-colors.css";

@@ -54,3 +54,18 @@
   color: var(--md-fg-dim);
   font-size: var(--wm-text-2xs);
 }
+
+/* 强制颜色:高亮 / 悬停只靠 state-hover 底色(会被抹成 Canvas),且本组件 outline: none。键盘高亮
+ * ([data-highlighted])由 src/styles/forced-colors.css 统一画 Highlight 轮廓;这里补原生聚焦与指针悬停
+ *(对齐 VSCode 高对比度菜单:当前项 Highlight 实线,悬停虚线)。BDD:src/__tests__/forced-colors-states/ */
+@media (forced-colors: active) {
+  .wm-menu-item:focus-visible:not(:disabled) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .wm-menu-item:hover:not(:disabled) {
+    outline: 1px dashed Highlight;
+    outline-offset: -1px;
+  }
+}
