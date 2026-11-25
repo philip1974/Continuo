@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   POPOUT_RESTORE_POLL_MS,
   POPOUT_RESTORE_SETTLE_MAX_MS,
+  onPopoutRestoreSettled,
   trackPopoutRestore,
   whenPopoutRestoreSettled,
 } from '@/shell/dock/popout-restore-settle';
@@ -96,5 +97,21 @@ describe('popout 恢复落定后才写布局快照', () => {
     expect(await isSettled(settled)).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
     expect(api.failListenerCount).toBe(0);
+  });
+
+  it('落定时通知订阅者一次(挂上时 dockview 不发事件,依赖 popout 位置的派生状态据此重算);退订后不再通知', async () => {
+    const api = fakeApi();
+    const seen: object[] = [];
+    const off = onPopoutRestoreSettled((settledApi) => seen.push(settledApi));
+    const tracking = trackPopoutRestore(api, 1);
+    await vi.advanceTimersByTimeAsync(POPOUT_RESTORE_POLL_MS);
+    expect(seen).toEqual([]);
+    api.popoutAttached();
+    await vi.advanceTimersByTimeAsync(POPOUT_RESTORE_POLL_MS);
+    tracking.dispose();
+    expect(seen).toEqual([api]);
+    off();
+    trackPopoutRestore(api, 1).dispose();
+    expect(seen).toEqual([api]);
   });
 });

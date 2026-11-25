@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { DockviewComponent, type DockviewApi } from 'dockview-react';
 import { setDockApi } from '@/shell/dock/dock-api-ref';
+import { POPOUT_RESTORE_POLL_MS, trackPopoutRestore } from '@/shell/dock/popout-restore-settle';
 import { TitleBar } from '@/shell/TitleBar';
 import { StatusBar } from '@/shell/StatusBar';
 import { useEditorStore } from '@/stores/editor.store';
@@ -103,6 +104,53 @@ describe('标题栏 / 状态栏 / 窗口标题跟随活动 dock 面板', () => {
     act(() => api.getPanel('editor')!.api.setActive());
     expect(titleText(container)).toContain('README.md');
     expect(document.title).toContain('README.md');
+  });
+
+  it('重启恢复 popout:活动组是 popout 组且挂上时 dockview 不发事件 → 落定后标题改取主窗的活动编辑器', async () => {
+    vi.useFakeTimers();
+    try {
+      const api = createDock();
+      api.addPanel({ id: 'editor', component: 'editor', title: 'Editor' });
+      // fromJSON 后:popout 组已建、已是活动组,但还没挂进子窗(location 仍是 grid)
+      api.addPanel({ id: 'ui44', component: 'plugin', title: 'UI44 Panel', position: { direction: 'right' } });
+      act(() => setDockApi(api));
+      const tracking = trackPopoutRestore(api, 1);
+      const { container } = render(<TitleBar />);
+      expect(titleText(container)).toContain('UI44 Panel');
+
+      // dockview addPopoutGroup 挂上:只改 location,组已是活动组 → 不派发任何事件
+      const popoutGroup = api.getPanel('ui44')!.group as unknown as { model: { location: unknown } };
+      popoutGroup.model.location = { type: 'popout', getWindow: () => window };
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POPOUT_RESTORE_POLL_MS * 2);
+      });
+      expect(titleText(container)).toContain('README.md');
+      expect(titleText(container)).not.toContain('UI44 Panel');
+      expect(document.title).toContain('README.md');
+      tracking.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('popout 子窗关闭、面板收回主窗:组结构事件先于 location 变化派发、活动组不变 → 标题跟随收回的面板', async () => {
+    const api = createDock();
+    api.addPanel({ id: 'editor', component: 'editor', title: 'Editor' });
+    api.addPanel({ id: 'ui44', component: 'plugin', title: 'UI44 Panel', position: { direction: 'right' } });
+    const group = api.getPanel('ui44')!.group as unknown as { model: { location: unknown } };
+    group.model.location = { type: 'popout', getWindow: () => window };
+    act(() => setDockApi(api));
+    const { container } = render(<TitleBar />);
+    expect(titleText(container)).toContain('README.md');
+
+    // dockview 收回 popout:doRemoveGroup 派发 onDidRemoveGroup(location 仍是 popout)→ 改回 grid → 静默加回,活动组不变
+    const component = (api as unknown as { component: { _onDidRemoveGroup: { fire(g: unknown): void } } }).component;
+    await act(async () => {
+      component._onDidRemoveGroup.fire(group);
+      group.model.location = { type: 'grid' };
+      await Promise.resolve();
+    });
+    expect(titleText(container)).toContain('UI44 Panel');
   });
 
   it('dock 尚未就绪 → 按编辑器活动 tab 显示(启动期不闪)', () => {

@@ -2,12 +2,16 @@
 // 标题显示该面板名,编辑器专属的状态栏项(文件名、行 / 词 / 字符)隐藏 —— 不再显示被挡住的文件(VSCode:编辑区里活动的
 // 是终端等非文本编辑器时,窗口标题取其名称,编辑器状态栏项随之隐藏)。
 // 活动面板在 popout 子窗时取主窗最近使用的组的活动面板(子窗没有自己的标题栏 / 状态栏)。
+// 面板所在窗口变化时 dockview 不保证发活动面板 / 活动组事件:重启恢复的 popout 组在 fromJSON 时已是活动组、子窗 load 后
+// 才把 location 改成 popout(无事件)→ 在恢复落定时重算;弹出 / 收回 / 移动面板时组结构事件派发在 location 改完之前 →
+// 延到 microtask 再算。
 // BDD: src/__tests__/chrome-active-panel/
 
 import { useSyncExternalStore } from 'react';
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { getDockApi, subscribeDockApi } from './dock-api-ref';
 import { mostRecentMainWindowPanel } from './group-mru';
+import { onPopoutRestoreSettled } from './popout-restore-settle';
 
 export interface ActiveDockPanel {
   readonly id: string;
@@ -27,6 +31,7 @@ let apiSubs: Disposable[] = [];
 let titleSub: Disposable | null = null;
 let titlePanel: IDockviewPanel | undefined;
 let stopApiWatch: (() => void) | null = null;
+let attachedApi: DockviewApi | null = null;
 
 function mainWindowActivePanel(api: DockviewApi): IDockviewPanel | undefined {
   const panel = api.activePanel;
@@ -48,12 +53,24 @@ function recompute(api: DockviewApi | null): void {
 
 function attach(api: DockviewApi | null): void {
   for (const sub of apiSubs) sub.dispose();
+  const recomputeSoon = (): void => queueMicrotask(() => {
+    if (attachedApi === api) recompute(api);
+  });
+  attachedApi = api;
   apiSubs = api
     ? [
         api.onDidActivePanelChange(() => recompute(api)),
         api.onDidActiveGroupChange(() => recompute(api)),
         api.onDidRemovePanel(() => recompute(api)),
         api.onDidLayoutFromJSON(() => recompute(api)),
+        api.onDidAddGroup(recomputeSoon),
+        api.onDidRemoveGroup(recomputeSoon),
+        api.onDidMovePanel(recomputeSoon),
+        {
+          dispose: onPopoutRestoreSettled((settled) => {
+            if (settled === api) recompute(api);
+          }),
+        },
       ]
     : [];
   recompute(api);
@@ -72,6 +89,7 @@ function subscribe(listener: () => void): () => void {
     stopApiWatch = null;
     for (const sub of apiSubs) sub.dispose();
     apiSubs = [];
+    attachedApi = null;
     titleSub?.dispose();
     titleSub = null;
     titlePanel = undefined;

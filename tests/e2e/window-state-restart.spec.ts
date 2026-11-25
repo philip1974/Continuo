@@ -153,6 +153,40 @@ test('popout 子窗位置 / 尺寸重启两次不漂移;恢复出来的子窗不
   }
 });
 
+test('设置面板弹出到 popout 后重启:主窗标题栏 / 窗口标题 / 状态栏取主窗的活动编辑器(不是 popout 里的面板)', async () => {
+  test.setTimeout(120_000);
+  let { app: a, main } = await launch();
+  await openWorkspaceFile(main, ['a.ts']);
+  await expect(main.locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
+  await main.getByRole('button', { name: SETTINGS }).click();
+  const titleBar = () => main.locator('header').first();
+  const settingsTitle = /设置|Settings|설정/;
+  await expect(titleBar()).toContainText(settingsTitle);
+  await main.getByRole('button', { name: DOCK_POPOUT }).click();
+  await expect.poll(() => a.windows().length, { timeout: 10_000 }).toBe(2);
+  // 等含 popout 的布局落盘(弹出后 dockview 等子窗 load 才挂上组)
+  await expect
+    .poll(
+      () => {
+        const persisted = JSON.parse(readFileSync(path.join(userData, 'explorer.json'), 'utf8')) as {
+          windows?: Array<{ windowSeq: number; layout?: { popoutGroups?: unknown[] } }>;
+        };
+        return persisted.windows?.find((w) => w.windowSeq === 0)?.layout?.popoutGroups?.length ?? 0;
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(1);
+  await quit(a);
+
+  ({ app: a, main } = await launch());
+  await expect.poll(() => a.windows().length, { timeout: 15_000 }).toBe(2);
+  await expect(main.locator('.cm-content')).toContainText('export const a', { timeout: 15_000 });
+  await expect(titleBar()).toContainText('a.ts', { timeout: 10_000 });
+  await expect(titleBar()).not.toContainText(settingsTitle);
+  await expect(main.locator('footer[data-statusbar]')).toContainText('a.ts');
+  await expect.poll(() => main.title()).toContain('a.ts');
+});
+
 test('重启后焦点在活动编辑器,可直接键入', async () => {
   test.setTimeout(90_000);
   let { app: a, main } = await launch();

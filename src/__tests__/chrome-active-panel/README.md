@@ -22,8 +22,12 @@ Continuo 的编辑器(所有文件 tab)是一个 dock 面板,终端 / 设置 / D
 - 窗口标题 `document.title` 与标题栏一致(「a · b」,无 workspace 且无活动项时为 `Continuo`);Electron 窗口标题随之
 - dock 尚未就绪 / 主窗没有面板 → 按编辑器活动 tab 显示(启动期不闪)
 - 活动面板在 popout 子窗 → 取主窗最近使用的组的活动面板。popout 子窗没有自己的标题栏 / 状态栏,窗口标题保持 `Continuo`
+- 面板进出 popout 时重算(dockview 此时不保证发活动面板 / 活动组事件):重启恢复的 popout 组在 fromJSON 时已是活动组、
+  子窗 load 后才挂上 → 恢复落定(`onPopoutRestoreSettled`)时重算,主窗标题取主窗的活动编辑器;弹出 / 收回 / 移动面板
+  的组结构事件先于 location 变化派发 → 延到 microtask 重算
 
 ## 端到端
 
 - `tests/e2e/title-bar-active-panel.spec.ts`:打开 README.md → 切到终端 tab → 标题栏 / 窗口标题显示终端名、状态栏无文件名;
   切回编辑器 → 恢复
+- `tests/e2e/window-state-restart.spec.ts`:设置面板弹出到 popout 后重启 → 主窗标题栏 / 窗口标题 / 状态栏为主窗活动编辑器

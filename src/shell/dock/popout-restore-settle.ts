@@ -17,6 +17,13 @@ interface TrackedApi {
 }
 
 const settling = new WeakMap<object, Promise<void>>();
+const settledListeners = new Set<(api: object) => void>();
+
+/** 订阅 popout 恢复落定(挂上时 dockview 不保证发事件,依赖 popout 位置的派生状态须在此重算)。返回退订。 */
+export function onPopoutRestoreSettled(listener: (api: object) => void): () => void {
+  settledListeners.add(listener);
+  return () => settledListeners.delete(listener);
+}
 
 /** fromJSON 之后调用:该 api 正在恢复 expected 个 popout。返回的 disposable 立即结束等待(卸载 / 重建)。 */
 export function trackPopoutRestore(
@@ -28,6 +35,7 @@ export function trackPopoutRestore(
     return { dispose: () => undefined };
   }
   let failed = 0;
+  let done = false;
   let finish = (): void => undefined;
   const promise = new Promise<void>((resolve) => {
     const fail = api.onDidOpenPopoutWindowFail(() => {
@@ -44,11 +52,14 @@ export function trackPopoutRestore(
     }, POPOUT_RESTORE_POLL_MS);
     const timeout = setTimeout(() => finish(), POPOUT_RESTORE_SETTLE_MAX_MS);
     finish = () => {
+      if (done) return;
+      done = true;
       clearInterval(poll);
       clearTimeout(timeout);
       fail.dispose();
       if (settling.get(api) === promise) settling.delete(api);
       resolve();
+      for (const listener of settledListeners) listener(api);
     };
   });
   settling.set(api, promise);
