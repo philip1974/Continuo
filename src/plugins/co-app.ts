@@ -30,6 +30,7 @@ import {
   findEditorFileTabByPath,
 } from '@/panels/Editor/editor-tab-lookup';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
+import { revealInMarkdown, type MarkdownRevealOutcome } from '@/panels/Editor/markdown-reveal-registry';
 import type { EditorView } from '@codemirror/view';
 import { isAbsolutePath } from '@/lib/path-cross';
 import { useEditorStore, usesMilkdownEngine } from '@/stores/editor.store';
@@ -158,7 +159,15 @@ async function openInEditor(
   // 按标签实际的打开路径判引擎(与 EditorPanel 同口径):经链接打开时其扩展名可能与 canonical 不同。
   const inMilkdown = usesMilkdownEngine(activeTab?.filePath ?? path, activeTab ?? null);
   if (activeTab && inMilkdown) {
-    return { ok: true, lineApplied: false, reason: 'milkdown-engine' };
+    // Markdown 编辑 / 预览(Milkdown):视图就绪后按源码行 / 列定位并选中(在文件中查找打开结果;BDD: src/__tests__/search-open-markdown/)
+    let outcome: MarkdownRevealOutcome;
+    try {
+      outcome = await revealInMarkdown(viewKey, { line: opts.line, column: opts.column, length: opts.length });
+    } catch (err) {
+      return { ok: false, code: 'EXCEPTION', message: errorMessage(err) };
+    }
+    if (outcome === 'applied') return { ok: true, lineApplied: true };
+    return { ok: true, lineApplied: false, reason: outcome === 'out-of-range' ? 'line-out-of-range' : 'tab-not-mounted' };
   }
 
   // perf E1:scrollToLine 运行时依赖 @codemirror/view。co-app 在 main-app 启动路径上,静态
@@ -193,7 +202,7 @@ async function openInEditor(
     if (now.activeTabId !== viewKey || now.viewRefs.get(viewKey) !== view) {
       return { ok: true, lineApplied: false, reason: 'tab-not-mounted' };
     }
-    outcome = scrollToLine(view, opts.line, opts.column);
+    outcome = scrollToLine(view, opts.line, opts.column, opts.length);
   } catch (err) {
     return {
       ok: false,

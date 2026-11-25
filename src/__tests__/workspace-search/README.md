@@ -35,12 +35,14 @@
 5. **视图**(`search-view.spec.tsx`):
    - 输入后去抖 `SEARCH_DEBOUNCE_MS`(300ms,同 VSCode `search.searchOnTypeDebouncePeriod`)自动搜索,Enter 立即搜索;
      新查询发起前取消在途查询,迟到的旧 searchId 事件丢弃;查询清空 → 取消并清空结果。
-   - 结果树 `role=tree`:文件行 `treeitem`(`aria-level=1`、`aria-expanded`;文件名 + 相对目录 + 匹配数徽标),可折叠;
+   - 结果树 `role=tree`:文件行 `treeitem`(`aria-level=1`、`aria-expanded`;文件名 + 相对目录 + 匹配数徽标,超长时目录先收缩、
+     再截断文件名,徽标始终可见),可折叠;
      匹配行 `treeitem`(`aria-level=2`;预览文本,命中用 `<mark>` 高亮 —— 复用 Quick Open 的 `PICKER_MATCH_CLASS_NAME`,
      `--md-list-highlight`,强制颜色下改下划线)。虚拟化渲染,`aria-activedescendant` 只指向已挂载行。
    - 键盘:查询框 ↓ 进入结果树;树内 ↑ / ↓ 移动、Home / End、→ 展开 / 进入首个匹配、← 折叠 / 回到文件行、Enter / Space
-     打开当前匹配(文件行:切换折叠);F4 / ⇧F4(面板内)下一个 / 上一个结果并打开。打开 = `editor.openFile(path, { line, column })`
-     (公共 API,打开失败统一提示)。单击匹配行打开;单击文件行切换折叠。
+     打开当前匹配(文件行:切换折叠);F4 / ⇧F4(面板内)下一个 / 上一个结果并打开。打开 = `editor.openFile(path, { line, column, length })`
+     (公共 API,打开失败统一提示):选中匹配范围(列 / 长度为 UTF-16,与 worker 同一单位);Markdown 编辑 / 预览模式同样定位并选中
+     (见 `search-open-markdown`)。单击匹配行打开;单击文件行切换折叠。
    - 状态行(`role=status`,`aria-live=polite`):搜索中「正在搜索…」/「{files} 个文件中有 {results} 个结果」(三语单复数)/
      「未找到结果」/ 截断提示「结果过多,只显示了一部分。请缩小搜索范围」/ 文件数上限提示 / 失败原因(本地化)。
      未打开工作区 → 提示先打开文件夹,不发起搜索。

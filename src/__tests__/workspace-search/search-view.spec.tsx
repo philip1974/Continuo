@@ -209,6 +209,22 @@ describe('结果树与计数', () => {
     expect(screen.getByRole('status').textContent).toBe('파일 2개에서 결과 3개');
   });
 
+  it('文件行超长文件名:文件名与目录都可收缩截断(目录先收缩),匹配数徽标不收缩、始终可见', () => {
+    withResults();
+    const row = within(screen.getByRole('tree')).getAllByRole('treeitem')[0]!;
+    const [, name, dir, badge] = Array.from(row.children) as HTMLElement[];
+    expect(name!.textContent).toBe('a.ts');
+    expect(name!.className).toMatch(/\bmin-w-0\b/);
+    expect(name!.className).toMatch(/\btruncate\b/);
+    expect(name!.className).not.toMatch(/\bshrink-0\b/);
+    expect(dir!.textContent).toBe('src');
+    expect(dir!.className).toMatch(/\bmin-w-0\b/);
+    expect(dir!.className).toMatch(/\btruncate\b/);
+    // 目录的收缩权重远大于文件名:空间不够时目录先缩到 0,文件名再截断
+    expect(dir!.className).toMatch(/\bshrink-\[\d{3,}\]/);
+    expect(badge!.className).toMatch(/\bshrink-0\b/);
+  });
+
   it('无结果 / 截断 / 文件数上限 / 失败提示', () => {
     render(<SearchPanel />);
     type('zzz');
@@ -231,7 +247,7 @@ describe('结果树与计数', () => {
     expect(screen.getByRole('status').textContent).toBe('搜索失败：目录条目过多');
   });
 
-  it('键盘:↓ 从查询框进入结果树;↑↓ 移动;← 折叠 / → 展开;Enter 打开并定位行列', async () => {
+  it('键盘:↓ 从查询框进入结果树;↑↓ 移动;← 折叠 / → 展开;Enter 打开并定位行列、选中匹配(length)', async () => {
     withResults();
     const tree = screen.getByRole('tree');
     fireEvent.keyDown(queryBox(), { key: 'ArrowDown' });
@@ -243,7 +259,7 @@ describe('结果树与计数', () => {
     await act(async () => {
       fireEvent.keyDown(tree, { key: 'Enter' });
     });
-    expect(h.openFile).toHaveBeenCalledWith('/w/src/a.ts', { line: 1, column: 7 });
+    expect(h.openFile).toHaveBeenCalledWith('/w/src/a.ts', { line: 1, column: 7, length: 3 });
     fireEvent.keyDown(tree, { key: 'ArrowLeft' }); // 匹配行 ← 回到文件行
     expect(active().getAttribute('aria-level')).toBe('1');
     fireEvent.keyDown(tree, { key: 'ArrowLeft' }); // 文件行 ← 折叠
@@ -261,7 +277,7 @@ describe('结果树与计数', () => {
     await act(async () => {
       fireEvent.click(items[4]!);
     });
-    expect(h.openFile).toHaveBeenCalledWith('/w/b.md', { line: 2, column: 3 });
+    expect(h.openFile).toHaveBeenCalledWith('/w/b.md', { line: 2, column: 3, length: 3 });
     fireEvent.click(items[0]!);
     expect(screen.getAllByRole('treeitem')).toHaveLength(3);
   });
@@ -269,16 +285,16 @@ describe('结果树与计数', () => {
   it('F4(下一个结果):依次打开各匹配,到末尾回到第一个', async () => {
     withResults();
     for (const expected of [
-      ['/w/src/a.ts', { line: 1, column: 7 }],
-      ['/w/src/a.ts', { line: 4, column: 1 }],
-      ['/w/b.md', { line: 2, column: 3 }],
-      ['/w/src/a.ts', { line: 1, column: 7 }],
+      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }],
+      ['/w/src/a.ts', { line: 4, column: 1, length: 3 }],
+      ['/w/b.md', { line: 2, column: 3, length: 3 }],
+      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }],
     ]) {
       await act(async () => focusNextSearchResult(1));
       expect(h.openFile).toHaveBeenLastCalledWith(...expected);
     }
     await act(async () => focusNextSearchResult(-1));
-    expect(h.openFile).toHaveBeenLastCalledWith('/w/b.md', { line: 2, column: 3 });
+    expect(h.openFile).toHaveBeenLastCalledWith('/w/b.md', { line: 2, column: 3, length: 3 });
   });
 
   it('请求聚焦(⇧⌘F):焦点进查询框并全选;带入的选区文本替换查询', () => {

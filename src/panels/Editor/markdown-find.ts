@@ -208,20 +208,30 @@ export function stepMarkdownFind(view: EditorView, step: 1 | -1): MarkdownFindRe
   return markdownFindResult(view.state);
 }
 
-/** 当前匹配在滚动容器视口外 → 滚到视口中央(VSCode revealRangeInCenterIfOutsideViewport)。 */
-export function revealMarkdownFindMatch(view: EditorView, scroller: HTMLElement): void {
-  const s = findKey.getState(view.state);
-  const m = s?.matches[s.current];
-  if (!m) return;
+/** 位置在滚动容器视口外 → 滚到视口中央(VSCode revealRangeInCenterIfOutsideViewport)。 */
+function revealPosInCenterIfOutside(view: EditorView, pos: number, scroller: HTMLElement): void {
   let rect: { top: number; bottom: number };
   try {
-    rect = view.coordsAtPos(m.from);
+    rect = view.coordsAtPos(pos);
   } catch {
     return; // 无布局(未挂载 / 测试环境)
   }
   const box = scroller.getBoundingClientRect();
   if (rect.top >= box.top && rect.bottom <= box.bottom) return;
   scroller.scrollTop += rect.top - (box.top + box.height / 2);
+}
+
+/** 当前匹配在滚动容器视口外 → 滚到视口中央。 */
+export function revealMarkdownFindMatch(view: EditorView, scroller: HTMLElement): void {
+  const s = findKey.getState(view.state);
+  const m = s?.matches[s.current];
+  if (m) revealPosInCenterIfOutside(view, m.from, scroller);
+}
+
+/** 选中 [from, to)(不进撤销历史),在视口外则滚到视口中央(打开在文件中查找的结果;VSCode 打开带选区的编辑器同)。 */
+export function selectAndRevealMarkdownRange(view: EditorView, scroller: HTMLElement, from: number, to: number): void {
+  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)).setMeta('addToHistory', false));
+  revealPosInCenterIfOutside(view, from, scroller);
 }
 
 /** 一个 tab 的查找条状态(切 tab / 切 编辑·预览 重挂后恢复:查找条、查找词、选项与高亮)。 */

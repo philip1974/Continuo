@@ -71,6 +71,10 @@ export interface EditorOpenOptions {
   readonly line?: number;
   /** 1 起的列(与 line 同用;超出行长落在行尾)。终端文件链接 `file:line:col` 定位用。 */
   readonly column?: number;
+  /**
+   * 选中的长度(与 column 同用,UTF-16 code unit;截到行尾)。在文件中查找打开结果时选中匹配(VSCode 同);缺省只放光标。
+   */
+  readonly length?: number;
 }
 
 export type EditorOpenSuccessReason =

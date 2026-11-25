@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/with-workspace';
 import { waitForTestHooks } from './helpers/app-ready';
-import { openWorkspaceFile } from './helpers/editor';
+import { EDITOR_MODE_EDIT, editorModeButton, openWorkspaceFile } from './helpers/editor';
 
 const QUERY = /^(搜索|Search|검색)$/;
 const STATUS = '[data-testid=search-panel] [role=status]';
@@ -53,6 +53,33 @@ test('⇧⌘F 搜索出结果(按文件分组 + 计数),点击匹配行打开并
     .poll(() => window.evaluate(() => globalThis.__continuoTest!.getEditorActiveTabId()), { timeout: 10_000 })
     .toMatch(/c\.ts$/);
   await expect.poll(() => caret(window), { timeout: 10_000 }).toBe('    const needle = 3;|10');
+  // 选中匹配范围(VSCode 同),不只放光标
+  await expect.poll(() => window.evaluate(() => document.getSelection()?.toString())).toBe('needle');
+});
+
+test('Markdown 编辑模式:点击结果定位并选中匹配、焦点进编辑区、匹配滚入视图', async ({ window, workspaceRoot }) => {
+  const parts = ['# Long doc', ''];
+  for (let i = 0; i < 80; i++) parts.push(`Paragraph ${i} ${i === 70 ? 'has the **zebra** word' : 'is filler text'}.`, '');
+  writeFileSync(path.join(workspaceRoot, 'long.md'), parts.join('\n'));
+  await openWorkspaceFile(window, ['long.md']);
+  await editorModeButton(window, EDITOR_MODE_EDIT).click();
+  const pm = window.locator('main .milkdown .ProseMirror');
+  await expect(pm.locator('h1')).toHaveText('Long doc', { timeout: 10_000 });
+
+  const input = await openSearch(window);
+  await input.fill('zebra');
+  await expect(window.locator(STATUS)).toHaveText(summary(1, 1), { timeout: 10_000 });
+  await resultsTree(window).getByRole('treeitem').nth(1).click();
+  await expect.poll(() => window.evaluate(() => document.getSelection()?.toString()), { timeout: 10_000 }).toBe('zebra');
+  await expect.poll(() => pm.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+  const scroller = window.locator('main .milkdown').locator('xpath=ancestor::div[contains(@class,"overflow-auto")][1]');
+  await expect(async () => {
+    const m = (await pm.locator('strong', { hasText: 'zebra' }).boundingBox())!;
+    const s = (await scroller.boundingBox())!;
+    expect(m.y).toBeGreaterThanOrEqual(s.y);
+    expect(m.y + m.height).toBeLessThanOrEqual(s.y + s.height);
+  }).toPass({ timeout: 3_000 });
+  await window.screenshot({ path: test.info().outputPath('search-open-markdown.png') });
 });
 
 test('区分大小写 / 正则开关;非法正则提示', async ({ window, workspaceRoot }) => {

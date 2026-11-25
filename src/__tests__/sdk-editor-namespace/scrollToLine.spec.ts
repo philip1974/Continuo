@@ -55,4 +55,19 @@ describe('scrollToLine', () => {
     expect(at(0)).toBe(20);
     expect(at(2.5)).toBe(20);
   });
+
+  it('T6 length(UTF-16)选中匹配:anchor = 起点,head = 起点 + length(截到行尾);非法 / ≤0 只放光标', () => {
+    const sel = (column: number | undefined, length: number | undefined) => {
+      const view = makeView();
+      scrollToLine(view as never, 2, column, length);
+      return view.dispatch.mock.calls[0]![0].selection;
+    };
+    expect(sel(3, 2)).toEqual({ anchor: 22, head: 24 });
+    expect(sel(3, 99)).toEqual({ anchor: 22, head: 26 });
+    expect(sel(undefined, 3)).toEqual({ anchor: 20, head: 23 });
+    expect(sel(3, 0)).toEqual({ anchor: 22, head: 22 });
+    expect(sel(3, -1)).toEqual({ anchor: 22, head: 22 });
+    expect(sel(3, 1.5)).toEqual({ anchor: 22, head: 22 });
+    expect(sel(3, undefined)).toEqual({ anchor: 22, head: 22 });
+  });
 });

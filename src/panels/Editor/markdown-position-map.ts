@@ -24,6 +24,9 @@ export interface PmNode {
   readonly isTextblock: boolean;
   readonly type: { readonly name: string };
   readonly textContent: string;
+  /** 文本节点的文字(行内子节点按此取块正文;其它行内节点占位)。 */
+  readonly isText?: boolean;
+  readonly text?: string;
 }
 
 /** Milkdown 不为其建 ProseMirror 节点的 mdast 块(链接引用定义),同层对齐时跳过。 */
@@ -60,8 +63,11 @@ export interface LocatedBlock {
   readonly md: MdNode;
 }
 
-/** 源码行 → 包含它的最深块(文本块或叶子块)。行落在块间空行时取下一个块。 */
-export function locateSourceLine(doc: PmNode, tree: MdNode, line: number): LocatedBlock | null {
+/**
+ * 源码行 → 包含它的最深块(文本块或叶子块)。行落在块间空行时取下一个块。同一行有多个同层块(表格行的单元格)时取最后一个;
+ * firstOnLine = 取第一个(在文件中查找定位从行首数起)。
+ */
+export function locateSourceLine(doc: PmNode, tree: MdNode, line: number, firstOnLine = false): LocatedBlock | null {
   let pm = doc;
   let md = tree;
   let contentStart = 0;
@@ -70,7 +76,10 @@ export function locateSourceLine(doc: PmNode, tree: MdNode, line: number): Locat
     const kids = mdChildren(md);
     if (kids.length === 0) break;
     let i = 0;
-    for (let k = 0; k < kids.length && startLine(kids[k]!) <= line; k++) i = k;
+    for (let k = 0; k < kids.length && startLine(kids[k]!) <= line; k++) {
+      if (firstOnLine && k > 0 && startLine(kids[k]!) === startLine(kids[i]!)) continue;
+      i = k;
+    }
     const cur = kids[i]!;
     if (cur.position && line > cur.position.end.line && i + 1 < kids.length) i += 1;
     const index = Math.min(i, pm.childCount - 1);
@@ -130,6 +139,89 @@ export function posForSourceLine(doc: PmNode, tree: MdNode, line: number): numbe
     return contentStart + offset;
   }
   return contentStart;
+}
+
+/** 文本块正文:下标与文档位置一一对应(文本节点取文字;图片 / 换行等行内节点按其大小记占位符,同 markdown-find)。 */
+function textblockText(block: PmNode): string {
+  let text = '';
+  for (let i = 0; i < block.childCount; i++) {
+    const child = block.child(i);
+    text += child.isText && child.text !== undefined ? child.text : '\uFFFC'.repeat(child.nodeSize);
+  }
+  return text;
+}
+
+/** 按 mdast 同步下钻的文档顺序遍历文本块(带各自的 mdast 节点);visit 返回 false 即停。 */
+function eachTextblock(pm: PmNode, md: MdNode, contentStart: number, visit: (before: number, pm: PmNode, md: MdNode) => boolean): boolean {
+  const kids = mdChildren(md);
+  let before = contentStart;
+  for (let k = 0; k < pm.childCount; k++) {
+    const child = pm.child(k);
+    const childMd = kids[Math.min(k, kids.length - 1)] ?? md;
+    if (child.isTextblock) {
+      if (!visit(before, child, childMd)) return false;
+    } else if (child.childCount > 0 && !eachTextblock(child, childMd, before + 1, visit)) {
+      return false;
+    }
+    before += child.nodeSize;
+  }
+  return true;
+}
+
+/** needle 在 text 里不重叠出现的起点。 */
+function occurrences(text: string, needle: string): number[] {
+  const out: number[] = [];
+  for (let i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + needle.length)) out.push(i);
+  return out;
+}
+
+/**
+ * 源码里的一处匹配(行 / 列 1 起、长度,均为 UTF-16;在文件中查找的结果)→ 文档里的对应范围(打开结果时选中它)。
+ * 源码与渲染后的正文不一一对应(标记符号、链接地址、转义),故按「同一段文字的第几次出现」对齐:定位匹配所在的块(表格行
+ * 取行首的单元格),数源码里从该块起(代码块从正文首行起)到匹配前这段文字出现过几次,在文档里从该块起(只看起始行不晚于
+ * 匹配行的文本块)找同一序号的出现。出现次数不够(前面的出现在标记 / 链接地址里)→ 取最后一次;正文里没有这段文字(匹配落在
+ * 标记 / 地址里)或未给长度 → 光标放到块起点。行号超出源码 → null。
+ */
+export function rangeForSourceMatch(
+  doc: PmNode,
+  tree: MdNode,
+  markdown: string,
+  line: number,
+  column?: number,
+  length?: number,
+): { from: number; to: number } | null {
+  const lines = markdown.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
+  if (!Number.isInteger(line) || line < 1 || line > lines.length) return null;
+  const block = locateSourceLine(doc, tree, line, true);
+  if (!block) return null;
+  const fallback = posForSourceLine(doc, tree, line) ?? block.before + 1;
+  const lineText = lines[line - 1]!;
+  const col = column !== undefined && Number.isInteger(column) && column > 1 ? Math.min(column - 1, lineText.length) : 0;
+  const needle = length !== undefined && Number.isInteger(length) && length > 0 ? lineText.slice(col, col + length) : '';
+  if (!needle) return { from: fallback, to: fallback };
+  const blockStart = startLine(block.md);
+  const countFrom = isCode(block.pm, block.md) ? codeBodyStartLine(block.md) : blockStart;
+  const preceding = [...lines.slice(countFrom - 1, line - 1), lineText.slice(0, col)].join('\n');
+  const candidates: Array<{ readonly before: number; readonly pm: PmNode }> = [];
+  eachTextblock(doc, tree, 0, (before, pm, md) => {
+    if (before < block.before) return true;
+    if (startLine(md) > line) return false;
+    candidates.push({ before, pm });
+    return true;
+  });
+  let remaining = occurrences(preceding, needle).length;
+  let from: number | null = null;
+  for (const { before, pm } of candidates) {
+    const found = occurrences(textblockText(pm), needle);
+    if (found.length === 0) continue;
+    if (remaining < found.length) {
+      from = before + 1 + found[remaining]!;
+      break;
+    }
+    remaining -= found.length;
+    from = before + 1 + found[found.length - 1]!;
+  }
+  return from === null ? { from: fallback, to: fallback } : { from, to: from + needle.length };
 }
 
 /** 块内比例(0..1,块可见顶部之上已滚过的比例)→ 源码行。 */

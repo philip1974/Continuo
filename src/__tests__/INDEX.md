@@ -1595,6 +1595,10 @@
 - [`notifications-scoped-wrapper.spec.ts`](./sdk-notifications-namespace/notifications-scoped-wrapper.spec.ts)
 - [`notifications-show-raw.spec.ts`](./sdk-notifications-namespace/notifications-show-raw.spec.ts)
 
+## [在文件中查找:打开 Markdown 结果在编辑 / 预览模式下定位并选中匹配](./search-open-markdown/README.md)
+
+- [`markdown-reveal.spec.tsx`](./search-open-markdown/markdown-reveal.spec.tsx)
+
 ## [search-query-limit(E279)](./search-query-limit/README.md)
 
 - [`search-query-limit.spec.ts`](./search-query-limit/search-query-limit.spec.ts)

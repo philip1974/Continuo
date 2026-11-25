@@ -31,6 +31,7 @@ import {
 import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
+import { registerMarkdownReveal, type MarkdownRevealTarget } from './markdown-reveal-registry';
 import { useEditorGroupId } from './editor-group-context';
 import { setContentFocusHandler } from '@/lib/content-focus-target';
 import {
@@ -42,6 +43,7 @@ import {
 import {
   parseMarkdownTree,
   posForSourceLine,
+  rangeForSourceMatch,
   sourceLineAtPos,
   topVisibleSourceLine,
   viewportYOfSourceLine,
@@ -64,6 +66,7 @@ import {
   onMarkdownFindChange,
   saveMarkdownFindSession,
   revealMarkdownFindMatch,
+  selectAndRevealMarkdownRange,
   setMarkdownFindQuery,
   stepMarkdownFind,
   type MarkdownFindResult,
@@ -274,6 +277,11 @@ interface MarkdownPositionHandle {
   scrollToLine(scroller: HTMLElement, line: number): void;
   /** 光标移到源码行对应的块(只读预览忽略)。 */
   setCursorLine(line: number): void;
+  /**
+   * 定位到源码行 / 列并选中匹配(在文件中查找打开结果,见 markdown-reveal-registry):选中、聚焦、在视口外则滚到中央。
+   * 行号超出 → out-of-range;视图已拆除 → null。
+   */
+  reveal(scroller: HTMLElement, target: MarkdownRevealTarget): 'applied' | 'out-of-range' | null;
 }
 
 /** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦与定位句柄,以及取 ProseMirror 视图(查找用;已拆除 → null)。 */
@@ -466,13 +474,13 @@ function CrepeEditor({
 
     // 定位:用 Milkdown 自己的 remark 处理器把当前内容解析成带行号的 mdast,与文档同步下钻(见 markdown-position-map)。
     // 当前内容 = 最近一次上抛 / 挂载时的内容(文档未变时),否则序列化当前文档 —— 与随后回写进 store 的一致。
-    const positionContext = (): { view: PmPositionView; tree: MdNode } => {
+    const positionContext = (): { view: PmPositionView; tree: MdNode; markdown: string } => {
       const ctx = crepe.editor.ctx;
       const view = ctx.get<PmPositionView, 'editorView'>('editorView');
       const doc = view.state.doc;
       const markdown =
         baseDoc === null || doc === baseDoc ? lastEmitted : ctx.get<(d: PmDoc) => string, 'serializer'>('serializer')(doc);
-      return { view, tree: parseMarkdownTree(ctx.get<RemarkLike, 'remark'>('remark'), markdown) };
+      return { view, tree: parseMarkdownTree(ctx.get<RemarkLike, 'remark'>('remark'), markdown), markdown };
     };
     const position: MarkdownPositionHandle = {
       anchor: (scroller) => {
@@ -507,6 +515,22 @@ function CrepeEditor({
         } catch {
           /* 未就绪 / 已拆除 */
         }
+      },
+      reveal: (scroller, { line, column, length }) => {
+        if (disposed) return null;
+        let view: EditorView;
+        let range: { from: number; to: number } | null;
+        try {
+          const context = positionContext();
+          view = crepe.editor.ctx.get<EditorView, 'editorView'>('editorView');
+          range = rangeForSourceMatch(context.view.state.doc, context.tree, context.markdown, line, column, length);
+        } catch {
+          return null; // 未就绪 / 已拆除
+        }
+        if (!range) return 'out-of-range';
+        selectAndRevealMarkdownRange(view, scroller, range.from, range.to);
+        focusEditorView(view);
+        return 'applied';
       },
     };
 
@@ -712,11 +736,13 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   const tabId = props.tabId;
   const viewMode = props.readonly ? 'preview' : 'edit';
   const unregisterFocusRef = useRef<(() => void) | null>(null);
+  const unregisterRevealRef = useRef<(() => void) | null>(null);
   const positionRef = useRef<MarkdownPositionHandle | null>(null);
   const unsubscribeFindRef = useRef<(() => void) | null>(null);
   useEffect(
     () => () => {
       unregisterFocusRef.current?.();
+      unregisterRevealRef.current?.();
       unsubscribeFindRef.current?.();
       // tab 已关闭(先从 store 移除、随后卸载):查找状态不再保留,重新打开不恢复
       if (!useEditorStore.getState().tabs?.some((t) => t.id === tabId)) forgetMarkdownFindSession(tabId);
@@ -906,6 +932,13 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       }
       unregisterFocusRef.current?.();
       unregisterFocusRef.current = registerEditorFocus(tabId, focus, groupId);
+      // 在文件中查找等「打开并定位」:登记在滚动位置恢复之后,待兑现的定位排在恢复的那一帧之后(见 markdown-reveal-registry)
+      unregisterRevealRef.current?.();
+      unregisterRevealRef.current = registerMarkdownReveal(
+        tabId,
+        (target) => (wrapperRef.current ? position.reveal(wrapperRef.current, target) : null),
+        groupId,
+      );
     },
     [tabId, viewMode, groupId],
   );

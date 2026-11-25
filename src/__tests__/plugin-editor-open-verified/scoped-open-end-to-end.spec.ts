@@ -10,7 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   hostHandlers: new Map<string, (event: unknown, raw: unknown) => Promise<unknown>>(),
+  revealInMarkdown: vi.fn(async (_tabId: string, _target: unknown) => 'applied' as const),
 }));
+
+// Milkdown 视图的定位(本文件不挂载编辑器):只钉 openFile 按标签实际打开路径判定引擎、把定位交给 Milkdown
+vi.mock('@/panels/Editor/markdown-reveal-registry', () => ({ revealInMarkdown: h.revealInMarkdown }));
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '') },
@@ -279,17 +283,18 @@ describe.skipIf(process.platform === 'win32')('用户已打开的文件,插件�
 
   // 引擎按标签实际打开路径判(与 EditorPanel 同口径):alias.md → secret.json,界面是 Milkdown,不得按 canonical 扩展名
   // 当成 CodeMirror 去等 view(超时谎报 tab-not-mounted)。
-  it('带 line 打开经 .md 链接已开的文件(Milkdown 模式)→ milkdown-engine', async () => {
+  it('带 line 打开经 .md 链接已开的文件(Milkdown 模式)→ 交给该标签的 Milkdown 视图定位,不等 CodeMirror view', async () => {
     const alias = join(work, 'alias-note.md');
     await symlink(P, alias);
     await userOpens(alias);
     useEditorStore.getState().setMode('edit');
     await moveActiveAway();
-    expect(await plugin.editor.openFile(P, { line: 2 })).toMatchObject({
-      ok: true,
-      lineApplied: false,
-      reason: 'milkdown-engine',
-    });
+    const waitSpy = vi.spyOn(useEditorStore.getState(), 'waitForViewRef');
+    h.revealInMarkdown.mockClear();
+    expect(await plugin.editor.openFile(P, { line: 2 })).toEqual({ ok: true, lineApplied: true });
+    expect(h.revealInMarkdown).toHaveBeenCalledWith(useEditorStore.getState().tabs[0]!.id, { line: 2 });
+    expect(waitSpy).not.toHaveBeenCalled();
+    waitSpy.mockRestore();
   });
 
   it('用户经文件链接打开(标签带 realPath),插件用真实路径打开 → 切到该标签', async () => {

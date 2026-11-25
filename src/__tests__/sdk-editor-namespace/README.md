@@ -7,9 +7,15 @@ These BDD specs pin the narrow contract:
 
 - `openFile(path)` opens/switches editor tabs through the existing editor file
   action and reports no line jump.
-- `openFile(path, { line })` waits for a CodeMirror view ref, scrolls to a
-  valid line, and reports structured degradation for Milkdown, out-of-range
-  lines, and unmounted tabs.
+- `openFile(path, { line, column?, length? })` waits for a CodeMirror view ref,
+  scrolls to a valid line and selects `length` UTF-16 code units from `column`
+  (cursor only without `length`; clamped to the line end), and reports structured
+  degradation for out-of-range lines and unmounted tabs.
+- Markdown in edit / preview mode (Milkdown) hands the same target to that tab's
+  Milkdown view (`markdown-reveal-registry`, see `search-open-markdown`) instead of
+  reporting `milkdown-engine`: `applied` → `lineApplied: true`, `out-of-range` →
+  `line-out-of-range`, view not ready in time → `tab-not-mounted`
+  (`openFile-milkdown.spec.ts`).
 - failures preserve the editor SDK taxonomy:
   `INVALID_PATH`, `PERMISSION_DENIED`, `FS_NOT_FOUND`, `FS_NOT_FILE`,
   `FS_DENIED`, `FS_IO`, and `EXCEPTION`.

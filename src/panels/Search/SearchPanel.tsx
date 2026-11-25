@@ -273,8 +273,9 @@ export function SearchPanel() {
                   <span className={`shrink-0 text-fg-muted transition-transform ${row.collapsed ? '-rotate-90' : ''}`} aria-hidden="true">
                     {CHEVRON_ICON}
                   </span>
-                  <span className="shrink-0 truncate font-medium text-fg">{name}</span>
-                  {dir && <span className={`min-w-0 truncate ${pickerRowSecondaryClassName(selected)}`}>{dir}</span>}
+                  {/* 超长时目录先收缩(收缩权重远大于文件名)、再截断文件名;徽标 shrink-0 始终可见(VSCode 搜索结果文件行同) */}
+                  <span className="min-w-0 truncate font-medium text-fg">{name}</span>
+                  {dir && <span className={`min-w-0 shrink-[1000] truncate ${pickerRowSecondaryClassName(selected)}`}>{dir}</span>}
                   <Badge size="xs" className="ml-auto shrink-0" aria-hidden="true">
                     {row.file.truncated ? `${count}+` : count}
                   </Badge>
