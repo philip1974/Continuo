@@ -687,6 +687,20 @@ describe('TruncateStart', () => {
     const { container } = render(<TruncateStart text="/a/b" title="/a/b/c" />);
     expect(container.querySelector<HTMLElement>('.wm-truncate-start')!.title).toBe('/a/b/c');
   });
+
+  it('children 可替换内层的富文本渲染(如命中字符 <mark>),title 仍取 text', () => {
+    const { container } = render(
+      <TruncateStart text="src/lib">
+        <mark>src</mark>/lib
+      </TruncateStart>,
+    );
+    const outer = container.querySelector<HTMLElement>('.wm-truncate-start')!;
+    expect(outer.title).toBe('src/lib');
+    const inner = outer.firstElementChild as HTMLElement;
+    expect(inner.getAttribute('dir')).toBe('ltr');
+    expect(inner.textContent).toBe('src/lib');
+    expect(inner.querySelector('mark')?.textContent).toBe('src');
+  });
 });
 
 // 面板内容为空时的统一占位(Debug / Output 等共用):居中、弱化正文色,无边框卡片。

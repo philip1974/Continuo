@@ -23,3 +23,10 @@ export function pickerRowClassName(selected: boolean): string {
 export function pickerRowSecondaryClassName(selected: boolean): string {
   return selected ? 'text-fg-muted' : 'text-fg-dim group-hover:text-fg-muted';
 }
+
+/**
+ * 行内命中字符(<mark>)样式,VSCode Quick Input 的 list.highlightForeground + 加粗:匹配色 text-list-highlight
+ *(Continuo 自有 --md-list-highlight,对弹窗底 / 选中 / 悬停行两主题 ≥ 4.5)、背景透明(覆盖 UA 的 mark 黄底)。
+ * 强制颜色下改下划线(src/styles/forced-colors.css)。
+ */
+export const PICKER_MATCH_CLASS_NAME = 'bg-transparent font-semibold text-list-highlight';

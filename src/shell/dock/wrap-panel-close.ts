@@ -48,10 +48,17 @@ export function cancelPendingPanelClose(panelId: string): void {
  * 激活一个**已存在**的面板:先撤销它排定中的关闭(面板可能正处于关闭 EXIT 动画窗口内 —— 刚关随即又激活),
  * 否则刚激活的面板会在 EXIT_DURATION_MS 后随排定 close 一起消失。dock 的「激活已有面板」入口共用
  *(此前 focusPanel / openOrFocusPanel / DockShell editor 各写一遍,dock-api-ref 一度漏写)。
+ *
+ * 已是活动组里的活动面板(api.isActive = 组活动 && 组内活动)时不再 setActive:dockview 6 对它仍走
+ * openPanel → renderPanel,把内容 DOM 摘下再挂回,面板内容里的焦点(如编辑器 tab 行上键盘激活的 tab)掉到 body。
+ * BDD: src/__tests__/keyboard-focus-parity/reactivate-active-panel.spec.ts
  */
-export function activateDockPanel(panel: { readonly api: Pick<IDockviewPanel['api'], 'id' | 'setActive'> }): void {
+export function activateDockPanel(panel: {
+  readonly api: Pick<IDockviewPanel['api'], 'id' | 'setActive' | 'isActive'>;
+}): void {
   // 按 api.id 取消:与 wrapPanelClose 登记排定 close 的键一致。
   cancelPendingPanelClose(panel.api.id);
+  if (panel.api.isActive) return;
   panel.api.setActive();
 }
 

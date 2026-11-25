@@ -465,6 +465,9 @@ describe('HeaderActions — 单例面板类型', () => {
       position: { referenceGroup: props.group },
     });
 
+    // 用户随后切到别的组(面板不再活动)再从 ⋯ 打开:聚焦已有。已是活动组里的活动面板时 activateDockPanel 不重复
+    // setActive(见 keyboard-focus-parity/reactivate-active-panel)。
+    dock.panels.get(type)!.api.isActive = false;
     openMenuAndPick(container, title);
     expect(dock.addPanel).toHaveBeenCalledTimes(1);
     expect([...dock.panels.keys()]).toEqual([type]);

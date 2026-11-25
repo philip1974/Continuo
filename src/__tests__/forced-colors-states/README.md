@@ -27,3 +27,5 @@ Windows 高对比度(CSS `forced-colors: active`)下浏览器把 `background-col
 7. **每个选中项只一种标记**:语义状态属性只挂在一个元素上 —— 带状态属性的元素互不嵌套(旧 TabNav 外层 `data-active`
    + 内层 `aria-selected` 各画一圈,加上下划线成三重框)。`single-marker.spec.tsx` 渲染 TabNav / Tabs / SegmentedControl /
    NavRailButton 钉住;e2e 在强制颜色下扫描整个工作台(编辑器 tab、dock tab、设置导航、Explorer 行、活动栏)无嵌套命中。
+8. **列表命中字符**(命令面板 / Quick Open 的 `mark.text-list-highlight`):匹配色被抹成 `CanvasText`、透明底保持透明,
+   只剩加粗 → 加下划线可辨。

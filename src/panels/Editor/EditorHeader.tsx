@@ -38,6 +38,8 @@ import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { revealPathOrNotify } from '@/panels/Explorer/reveal-or-notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { tabLabelDescriptions } from './tab-label-description';
+import { CONTENT_FOCUS_TARGET_SELECTOR } from '@/lib/content-focus-target';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 
 /**
  * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
@@ -62,27 +64,25 @@ interface EditorHeaderProps {
 
 const EMPTY_TAB_CHROME: TabChrome[] = [];
 
-// 编辑区里接焦点的可编辑元素(CodeMirror / ProseMirror 的 contenteditable、输入框),同 dock tab SharedTab。
-const EDITABLE_SELECTOR =
-  '[contenteditable="true"], textarea:not([disabled]), input:not([disabled]):not([type="hidden"])';
-
 /**
  * 鼠标点 tab 后把焦点交给编辑区(VSCode:点编辑器 tab 即聚焦该编辑器)。等一帧:切 tab 后新编辑器在本次
- * 渲染才挂上。只在 tab 行之外(编辑面板内)找;找不到(预览模式 / 编辑器仍在加载)焦点留在 tab 上 ——
- * 无害,tab 上只有 Delete 会关闭。
+ * 渲染才挂上。只在 tab 行之外(编辑面板内)找落点(与 dock 面板聚焦共用 CONTENT_FOCUS_TARGET_SELECTOR,含只读图片
+ * 预览)。找不到(Markdown 预览 / 编辑器仍在加载)且焦点已丢(面板内容被重挂 → body)时回到活动 tab;焦点已被移到
+ * 面板外则不抢。
  */
 function focusEditorContentNextFrame(header: HTMLElement | null): void {
   requestAnimationFrame(() => {
     const host = header?.parentElement;
-    if (!host) return;
-    for (const el of host.querySelectorAll<HTMLElement>(EDITABLE_SELECTOR)) {
+    if (!header || !host) return;
+    for (const el of host.querySelectorAll<HTMLElement>(CONTENT_FOCUS_TARGET_SELECTOR)) {
       if (header.contains(el)) continue;
       el.focus();
       return;
     }
+    if (!focusWithinOrLost(header.ownerDocument, host)) return;
+    header.querySelector<HTMLElement>('[role=tab][aria-selected="true"]')?.focus();
   });
 }
-
 
 /** tab 栏两侧渐隐遮罩:只在该方向确有被遮住的 tab 时显示(溢出提示)。 */
 const TAB_FADE_BASE_CLASS_NAME =

@@ -12,7 +12,8 @@ import { pickerRowClassName, pickerRowSecondaryClassName } from '../picker/picke
 import { Button, Input, Modal, Spinner, TruncateStart } from '@/design';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
-import { fuzzyFilter } from '../command-palette/fuzzy';
+import { fuzzyFilter, fuzzyMatchIndices } from '../command-palette/fuzzy';
+import { highlightMatches } from '../picker/highlight-matches';
 import { formatHotkey, detectPlatform } from '../command-palette/format-hotkey';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
@@ -31,6 +32,27 @@ const QUICK_OPEN_SHORTCUT_LABEL = formatHotkey(
   'mod+shift+p',
   detectPlatform(),
 );
+
+const NO_HIGHLIGHTS = { name: null, dir: null } as const;
+
+/**
+ * 行内命中字符(VSCode Quick Open:文件名与路径分别高亮)。查询能在文件名里命中 → 只高亮文件名;否则按相对路径
+ *(打分所用的匹配源)取下标,目录段 [0, dir.length) 与文件名段 [relPath.length - name.length, …) 各自高亮。
+ * 只为渲染的可见行计算,不参与过滤排序。
+ */
+function matchHighlights(
+  query: string,
+  f: QuickOpenFile,
+): { readonly name: readonly number[] | null; readonly dir: readonly number[] | null } {
+  if (!query) return NO_HIGHLIGHTS;
+  // 文件名是相对路径的尾段:小写形式直接从预小写的 relPathLower 截取(不逐行 lowercasing)。
+  const nameStart = f.relPath.length - f.name.length;
+  const inName = fuzzyMatchIndices(query, f.name, f.relPathLower.slice(nameStart));
+  if (inName) return { name: inName, dir: null };
+  const inPath = fuzzyMatchIndices(query, f.relPath, f.relPathLower);
+  if (!inPath) return NO_HIGHLIGHTS;
+  return { name: inPath.map((i) => i - nameStart), dir: inPath };
+}
 
 /**
  * 轻量 shell(打磨 R33,仿 R32 CommandPalette):QuickOpenModal 常驻挂在 App 顶层。
@@ -147,10 +169,10 @@ function QuickOpenBody() {
     () => (resultsRoot === root ? results : EMPTY_RESULTS),
     [resultsRoot, root, results],
   );
+  const effectiveQuery = normalizeSearchQuery(query);
   const filtered = useMemo(
-    () =>
-      fuzzyFilter(liveResults, normalizeSearchQuery(query), (f) => f.relPathLower),
-    [liveResults, query],
+    () => fuzzyFilter(liveResults, effectiveQuery, (f) => f.relPathLower),
+    [liveResults, effectiveQuery],
   );
 
   // 虚拟化列表(打磨 R25):filtered 仍是逻辑全集(最多 5000),但只渲染可视行,
@@ -246,6 +268,7 @@ function QuickOpenBody() {
                 const idx = vRow.index;
                 const f = filtered[idx]!;
                 const dir = dirname(f.relPath);
+                const hl = matchHighlights(effectiveQuery, f);
                 return (
                   <li
                     key={f.absPath}
@@ -258,13 +281,17 @@ function QuickOpenBody() {
                     {/* 文件名优先(VSCode Quick Open 同款):名称不收缩(上限 60%);右栏只放所在目录(不重复文件名,
                         否则前截断后只剩文件名尾巴、目录信息全丢),占剩余宽度并从前截断保留靠近文件的目录;
                         根下文件无目录则不渲染。完整相对路径在 title。 */}
-                    <span className="max-w-[60%] shrink-0 truncate font-medium">{f.name}</span>
+                    <span className="max-w-[60%] shrink-0 truncate font-medium">
+                      {highlightMatches(f.name, hl.name)}
+                    </span>
                     {dir !== '' && (
                       <TruncateStart
                         text={dir}
                         title={f.relPath}
                         className={`min-w-0 flex-1 text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}
-                      />
+                      >
+                        {highlightMatches(dir, hl.dir)}
+                      </TruncateStart>
                     )}
                   </li>
                 );

@@ -41,6 +41,9 @@ DOM 输出与收口前逐属性一致。
     合成到 `--md-surface-container-high` 上,次要文字两主题 ≥ 4.5(选中 亮 6.25 / 暗 5.97,悬停 6.68 / 6.69;
     原 fg-dim 选中 4.05 / 3.20、暗色悬停 3.58 不达 AA)。对照 VSCode:选中行描述文字随
     `list.activeSelectionForeground` 提亮。
+13. 行内命中字符(`<mark>`,`PICKER_MATCH_CLASS_NAME` = `bg-transparent font-semibold text-list-highlight`;VSCode
+    `list.highlightForeground` + 加粗):Continuo 自有 `--md-list-highlight` 对弹窗底 / 选中行 / 悬停行(合成)两主题
+    均 ≥ 4.5(亮色 `--md-primary` 在选中行上仅 4.31,故另设槽位)。
 
 ### 接线守卫
 

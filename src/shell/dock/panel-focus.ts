@@ -3,12 +3,10 @@
 // 获焦,可直接继续输入。BDD: src/__tests__/focus-after-close/
 import type { DockviewPanelApi, IDockviewPanel } from 'dockview-react';
 import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
+import { CONTENT_FOCUS_TARGET_SELECTOR } from '@/lib/content-focus-target';
 
-// 面板内容里优先接焦点的可编辑元素(CodeMirror / ProseMirror 的 contenteditable、输入框),
+// 面板内容里优先接焦点的落点(CONTENT_FOCUS_TARGET_SELECTOR,与编辑器 tab 行共用),
 // 没有则退到第一个可 Tab 到的控件(Editor 的 tab 行按钮在编辑区之前,故两轮查找)。
-// data-editor-focus-target:不可编辑但自身是编辑区落点的视图(只读图片预览)。
-const EDITABLE_SELECTOR =
-  '[contenteditable="true"], textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), [data-editor-focus-target]';
 const TABBABLE_SELECTOR =
   'button:not([disabled]), a[href], select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 // 都没有(空编辑器组:关光 tab 后只剩 Welcome)→ 面板根本身(只经脚本聚焦的 tabIndex=-1 落点)。VSCode:F6 / 点 tab
@@ -32,7 +30,7 @@ export function focusPanelContent(api: DockviewPanelApi): void {
   // 编辑器面板没有可编辑区(空编辑器组 / 无法编辑的文件视图)→ 落到面板根,不落到 Welcome 的「打开文件夹」等按钮
   // (VSCode:焦点进空编辑器组,水印入口不抢焦点,Tab 再进入)。
   const target =
-    content.querySelector<HTMLElement>(EDITABLE_SELECTOR) ??
+    content.querySelector<HTMLElement>(CONTENT_FOCUS_TARGET_SELECTOR) ??
     content.querySelector<HTMLElement>('[data-editor-panel-root]') ??
     content.querySelector<HTMLElement>(TABBABLE_SELECTOR) ??
     content.querySelector<HTMLElement>(ROOT_FALLBACK_SELECTOR);

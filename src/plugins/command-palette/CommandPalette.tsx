@@ -16,7 +16,8 @@ import { Input, KeyCap, Modal } from '@/design';
 import { useRegistry } from '../registries/useRegistry';
 import type { CommandRegistry, CommandSpec } from '../registries/CommandRegistry';
 import { useCommandPaletteStore } from './store';
-import { fuzzyFilter } from './fuzzy';
+import { fuzzyFilter, fuzzyMatchIndices } from './fuzzy';
+import { highlightMatches } from '../picker/highlight-matches';
 import { useRecentCommandsStore, type RecentEntry } from './recent';
 import { formatHotkeyParts, detectPlatform, type Platform } from './format-hotkey';
 import { useKeybindingsStore } from '../keybindings/keybindings-store';
@@ -50,6 +51,11 @@ export interface DisplayCommand {
   readonly aliasSourceLower?: string;
 }
 
+/** 匹配源原文(未小写):`分类 标题`,无分类时只有标题。打分(matchSourceLower)与行内高亮共用这一拼法。 */
+function joinMatchSource(category: string, title: string): string {
+  return category ? `${category} ${title}` : title;
+}
+
 function matchSourceLower(d: DisplayCommand): string {
   return d.matchSourceLower;
 }
@@ -77,13 +83,13 @@ export function buildDisplayCommands(
     const effective = resolveActiveHotkey(cmd, overrides, platform); // 保留键上的绑定不显示(按下是 picker)
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
-    const source = displayCategory ? `${displayCategory} ${displayTitle}` : displayTitle;
+    const source = joinMatchSource(displayCategory, displayTitle);
     let aliasLabel: string | undefined;
     let aliasSourceLower: string | undefined;
     if (english) {
       const enTitle = english(cmd.titleKey, cmd.title);
       const enCategory = english(cmd.categoryKey, cmd.category ?? '');
-      const enSource = enCategory ? `${enCategory} ${enTitle}` : enTitle;
+      const enSource = joinMatchSource(enCategory, enTitle);
       if (enSource !== source) {
         aliasLabel = enCategory ? `${enCategory}: ${enTitle}` : enTitle;
         aliasSourceLower = lowerIfNeeded(enSource);
@@ -386,6 +392,17 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
               const idx = vRow.index;
               const d = filtered[idx]!;
               const alias = aliasHits.has(d) ? d.aliasLabel : undefined;
+              // 命中字符高亮(VSCode):匹配源是「分类 标题」,分类段 [0, n)、标题段从 n + 1 起。只靠英文原名命中的行
+              // 显示的本地化文本里没有命中字符 → 不高亮(行尾英文名只说明为何命中)。只为可见行计算。
+              const hl =
+                effectiveQuery && alias === undefined
+                  ? fuzzyMatchIndices(
+                      effectiveQuery,
+                      joinMatchSource(d.displayCategory, d.displayTitle),
+                      d.matchSourceLower,
+                    )
+                  : null;
+              const titleOffset = d.displayCategory ? d.displayCategory.length + 1 : 0;
               return (
                 <li
                   key={d.cmd.id}
@@ -396,10 +413,10 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
                 >
                   {d.displayCategory && (
                     <span className={`shrink-0 ${pickerRowSecondaryClassName(idx === selectedIndex)}`}>
-                      {d.displayCategory}:
+                      {highlightMatches(d.displayCategory, hl)}:
                     </span>
                   )}
-                  <span className="truncate">{d.displayTitle}</span>
+                  <span className="truncate">{highlightMatches(d.displayTitle, hl, titleOffset)}</span>
                   {alias !== undefined && (
                     // 只靠英文原名命中:行尾次要色显示英文名(VSCode commandAlias),让用户知道为何命中。
                     <span

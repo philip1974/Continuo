@@ -381,4 +381,66 @@ describe('EditorHeader — 鼠标点 tab 后焦点回到编辑区', () => {
     expect(document.activeElement).toBe(t);
     expect(useEditorStore.getState().activeTabId).toBe('/b.ts');
   });
+
+  const nextFrame = () =>
+    act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+    });
+
+  it('只读图片预览(data-editor-focus-target)→ 鼠标点 tab 后焦点进入预览视图', async () => {
+    const a = tab({ id: '/a.png', filePath: '/a.png' });
+    const b = tab({ id: '/b.png', filePath: '/b.png' });
+    useEditorStore.setState({ tabs: [a, b], activeTabId: a.id });
+    const { container, getByTestId } = render(
+      <div>
+        <EditorHeader onCloseRequest={vi.fn()} />
+        <div tabIndex={0} data-editor-focus-target="" data-testid="viewer" />
+      </div>,
+    );
+    const t = container.querySelectorAll<HTMLElement>('[role=tab]')[1]!;
+    t.focus();
+    fireEvent.click(t, { detail: 1, button: 0 });
+    await nextFrame();
+    expect(document.activeElement).toBe(getByTestId('viewer'));
+  });
+
+  it('编辑区没有落点(Markdown 预览等)且焦点已丢到 body(面板内容被重挂)→ 焦点回到被点的 tab', async () => {
+    const a = tab({ id: '/a.md', filePath: '/a.md' });
+    const b = tab({ id: '/b.md', filePath: '/b.md' });
+    useEditorStore.setState({ tabs: [a, b], activeTabId: a.id });
+    const { container } = render(
+      <div>
+        <EditorHeader onCloseRequest={vi.fn()} />
+        <div className="ProseMirror" contentEditable="false" suppressContentEditableWarning />
+      </div>,
+    );
+    const t = container.querySelectorAll<HTMLElement>('[role=tab]')[1]!;
+    t.focus();
+    fireEvent.click(t, { detail: 1, button: 0 });
+    t.blur();
+    expect(document.activeElement).toBe(document.body);
+    await nextFrame();
+    expect(document.activeElement).toBe(container.querySelector('[role=tab][aria-selected="true"]'));
+    expect(document.activeElement?.textContent).toContain('b.md');
+  });
+
+  it('编辑区没有落点、焦点已被移到面板外 → 不抢焦点', async () => {
+    const a = tab({ id: '/a.md', filePath: '/a.md' });
+    const b = tab({ id: '/b.md', filePath: '/b.md' });
+    useEditorStore.setState({ tabs: [a, b], activeTabId: a.id });
+    const { container, getByTestId } = render(
+      <div>
+        <div>
+          <EditorHeader onCloseRequest={vi.fn()} />
+        </div>
+        <button data-testid="outside" />
+      </div>,
+    );
+    const t = container.querySelectorAll<HTMLElement>('[role=tab]')[1]!;
+    t.focus();
+    fireEvent.click(t, { detail: 1, button: 0 });
+    getByTestId('outside').focus();
+    await nextFrame();
+    expect(document.activeElement).toBe(getByTestId('outside'));
+  });
 });

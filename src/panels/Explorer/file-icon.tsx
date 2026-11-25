@@ -7,6 +7,7 @@
 // BDD: src/__tests__/file-icon/
 
 import type { ComponentType } from 'react';
+import { IMAGE_PREVIEW_EXTENSIONS } from '../../../electron/shared/image-preview';
 import {
   // 通用 fallback
   Document,
@@ -219,14 +220,8 @@ const EXT_MAP: Readonly<Record<string, IconComp>> = {
   sass: Sass,
   styl: Stylus,
   svg: SVG,
-  // 图像
-  png: Image,
-  jpg: Image,
-  jpeg: Image,
-  gif: Image,
-  webp: Image,
-  ico: Image,
-  bmp: Image,
+  // 图像:与编辑器图片预览同表(打开即按图片预览的扩展名都显示图片图标)
+  ...Object.fromEntries(IMAGE_PREVIEW_EXTENSIONS.map((ext) => [ext, Image])),
   // 音视频
   mp3: Audio,
   wav: Audio,

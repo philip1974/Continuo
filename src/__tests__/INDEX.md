@@ -952,6 +952,7 @@
 - [`editor-empty-focus.spec.tsx`](./keyboard-focus-parity/editor-empty-focus.spec.tsx)
 - [`focus-parts.spec.ts`](./keyboard-focus-parity/focus-parts.spec.ts)
 - [`popout-focus.spec.tsx`](./keyboard-focus-parity/popout-focus.spec.tsx)
+- [`reactivate-active-panel.spec.ts`](./keyboard-focus-parity/reactivate-active-panel.spec.ts)
 - [`tabnav-close-focus.spec.tsx`](./keyboard-focus-parity/tabnav-close-focus.spec.tsx)
 
 ## [keyed-registry-base(重构:Map 型贡献 registry 的共享基类)](./keyed-registry-base/README.md)

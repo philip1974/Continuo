@@ -5,6 +5,7 @@
 //   src/panels/Explorer/file-icon.tsx 按下面 import 的形态 export。
 
 import { describe, it, expect, vi } from 'vitest';
+import { IMAGE_PREVIEW_EXTENSIONS, isImagePreviewPath } from '../../../electron/shared/image-preview';
 import {
   Document,
   Folder,
@@ -322,6 +323,18 @@ describe('getFileIconComponent · ext 媒体', () => {
       expect(getFileIconComponent(name, false)).toBe(Image);
     },
   );
+
+  it.each(['photo.avif', 'photo.jpe', 'PHOTO.AVIF'])('图片预览也认的格式 "%s" → Image', (name) => {
+    expect(getFileIconComponent(name, false)).toBe(Image);
+  });
+
+  it('按图片预览打开的扩展名(electron/shared/image-preview.ts 的表)全部显示 Image 图标', () => {
+    expect(IMAGE_PREVIEW_EXTENSIONS.length).toBeGreaterThan(0);
+    for (const ext of IMAGE_PREVIEW_EXTENSIONS) {
+      expect(isImagePreviewPath(`x.${ext}`)).toBe(true);
+      expect(getFileIconComponent(`x.${ext}`, false)).toBe(Image);
+    }
+  });
 
   it.each(['music.mp3', 'voice.wav', 'sound.ogg'])('音频 "%s" → Audio', (name) => {
     expect(getFileIconComponent(name, false)).toBe(Audio);

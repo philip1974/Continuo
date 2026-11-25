@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 
 /**
  * Props for single-line text that is truncated from the **start** (ellipsis on the left).
@@ -10,6 +10,11 @@ import type { HTMLAttributes } from 'react';
 export interface TruncateStartProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'children'> {
   /** The text to show. No default. */
   readonly text: string;
+  /**
+   * Optional rich rendering of the same characters as `text` (e.g. `<mark>` around search matches). Must not add or
+   * reorder characters: `text` stays the default `title`. Defaults to `text`.
+   */
+  readonly children?: ReactNode;
 }
 
 /*
@@ -17,14 +22,14 @@ export interface TruncateStartProps extends Omit<HTMLAttributes<HTMLSpanElement>
  * 内层(unicode-bidi:isolate),整段按 ltr 排 —— 否则 `/a/b`、`(x)` 这类开头 / 结尾的中性标点会被 rtl 重排到另一端。
  * 纯 CSS,不测量宽度,随容器伸缩即时生效。
  */
-export function TruncateStart({ text, className, title, ...rest }: TruncateStartProps) {
+export function TruncateStart({ text, className, title, children, ...rest }: TruncateStartProps) {
   return (
     <span
       {...rest}
       className={`wm-truncate-start${className != null ? ` ${className}` : ''}`}
       title={title ?? text}
     >
-      <span dir="ltr">{text}</span>
+      <span dir="ltr">{children ?? text}</span>
     </span>
   );
 }

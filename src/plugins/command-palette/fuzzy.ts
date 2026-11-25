@@ -39,6 +39,28 @@ export function fuzzyScore(query: string, target: string): number | null {
   return fuzzyScoreBothLower(query.toLowerCase(), target.toLowerCase());
 }
 
+/**
+ * 命中字符在 target 里的下标(大小写不敏感),供列表行高亮(VSCode Quick Input 的 highlights);与 fuzzyScore 同一
+ * 贪心子序列(有分 ⇔ 有下标)。不参与排序:只为渲染的可见行调用。不命中 → null;空 query → []。
+ * targetLower:调用方已有的预小写 target(命令面板 / Quick Open 的匹配源),省掉每行每按键的 lowercasing(P16)。
+ * 小写化改变长度的罕见字符(如 'İ')下标对不上原文 → null(不高亮,不影响命中)。
+ */
+export function fuzzyMatchIndices(
+  query: string,
+  target: string,
+  targetLower: string = target.toLowerCase(),
+): number[] | null {
+  if (!query) return [];
+  const q = query.toLowerCase();
+  const t = targetLower;
+  if (q.length > t.length || t.length !== target.length) return null;
+  const indices: number[] = [];
+  for (let ti = 0; ti < t.length && indices.length < q.length; ti++) {
+    if (t[ti] === q[indices.length]) indices.push(ti);
+  }
+  return indices.length === q.length ? indices : null;
+}
+
 export function fuzzyFilter<T>(
   items: readonly T[],
   query: string,

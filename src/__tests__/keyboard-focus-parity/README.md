@@ -14,6 +14,8 @@ F6 / ⇧F6(`workbench.action.focusNextPart` / `focusPreviousPart`)在工作台�
 | `src/shell/dock/group-mru.ts` | 被移除组的活动面板仍在(随组挪进 popout / 别的组)→ 只激活该面板,不回落到同窗别的面板 |
 | `src/design/TabNav.tsx` | 关闭按钮 pointerdown / mousedown 不抢焦点 |
 | `src/shell/motion/SharedTab.tsx` / `src/styles/dockview.css` | 外层 `.dv-tab` 移出 Tab 顺序(去掉 tabindex,不可聚焦 —— tablist 下可聚焦的只有 role=tab,axe aria-required-children);焦点指示只在 focus-visible 时由 `::after` 显示、用 `--md-focus-ring`,`.dv-tab` / 内层 role=tab 自身不画系统 outline |
+| `src/shell/dock/wrap-panel-close.ts` | `activateDockPanel`:面板已是活动组里的活动面板(`api.isActive`)时只撤销排定关闭、不再 setActive(避免 dockview 重挂内容 DOM 丢焦点) |
+| `src/lib/content-focus-target.ts` | 面板内容焦点落点选择器(contenteditable / 输入框 / `data-editor-focus-target`),dock 面板聚焦与编辑器 tab 行共用 |
 | `src/shell/dock/panel-focus.ts` | 面板内容无可编辑 / 可 Tab 元素时回退到面板根(`[data-editor-panel-root]` / 内容根下 tabIndex=-1 的根元素) |
 | `src/shell/dock/EmptyState.tsx` / `src/shell/dock/group-mru.ts` | 主窗空态(`data-dock-empty`,tabIndex=-1);`isMainWindowDockEmpty` 按主窗内面板数判空 |
 | `src/panels/Editor/EditorPanel.tsx` | 关掉最后一个 tab 后焦点给面板根(tabIndex=-1) |
@@ -61,7 +63,17 @@ F6 / ⇧F6(`workbench.action.focusNextPart` / `focusPreviousPart`)在工作台�
 - 主窗没有面板(全关光,或所有组都弹出到子窗 —— DockShell 按主窗内面板数判空,显示空态):F6 聚焦主窗空态容器
 - 终端里 F6 / ⇧F6 让出给命令(不发给 shell);编辑器(CodeMirror / ProseMirror)里 F6 照常触发命令
 
+### 7. 再次激活已活动的面板不丢焦点(`reactivate-active-panel.spec.ts`)
+
+- dockview 6 对已活动面板 `setActive` 仍 openPanel → renderPanel,把面板内容 DOM 摘下再挂回,内容里的焦点掉到 body。
+  编辑器 tab 行在 editor 面板内容里:键盘 ←/→ 移到另一 tab 后 Enter / Space 激活(editorFocusPulse → DockShell 激活
+  editor 面板)焦点随之丢失。VSCode:键盘激活编辑器 tab 焦点留在 tab,Tab 再进编辑区
+- `activateDockPanel`:面板是活动组里的活动面板 → 不 setActive(焦点留在原处),仍撤销排定中的关闭;组不是活动组 /
+  面板不是组内活动面板 → 照常激活
+- 其它重挂触发点:dockview tab pointerdown 只对非活动面板 openPanel;MRU 回落 / F6 / popout 收回在激活后再聚焦内容;
+  SharedTab 的 Enter / Space 焦点在 tab 条(内容之外),不受重挂影响
+
 ## 端到端
 
 - `tests/e2e/keyboard-focus-parity.spec.ts`:代码编辑器 Tab 缩进、Esc+Tab 移出;编辑器里 F6 → 状态栏 → 侧栏 → 回编辑器;
-  空编辑区 F6 进编辑区
+  空编辑区 F6 进编辑区;编辑器 tab 上 ←/→ + Enter / Space 激活后焦点留在 tab,Tab 进入编辑区

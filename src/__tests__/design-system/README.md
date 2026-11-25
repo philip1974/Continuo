@@ -66,7 +66,7 @@
 
 - `TruncateStart`(路径等尾部更重要的单行文本):外层 `direction: rtl` + `text-overflow: ellipsis` + `text-align: left`,
   溢出从行首截断、省略号在左;文本在 `dir="ltr"` 内层(`unicode-bidi: isolate`),开头的 `/` 等中性标点不被重排;
-  完整文本默认进 `title`
+  完整文本默认进 `title`;可选 `children` 替换内层的富文本渲染(须是同样的字符,如搜索命中 `<mark>`),`title` 仍取 `text`
 - `EmptyState`(面板 / 区块空态):占满可用空间(`flex: 1 1 auto`)并居中,`on-surface-variant` 正文色,无边框
 - `Tabs`(面板内竖向视图切换):选中项与设置页导航同一样式 —— 左侧 2px `primary` 竖条 + `surface-container-high` 底,
   不用填充描边药丸

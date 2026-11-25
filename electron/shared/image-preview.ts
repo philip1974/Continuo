@@ -14,6 +14,9 @@ const IMAGE_MIME_BY_EXT: Readonly<Record<string, string>> = {
   avif: 'image/avif',
 };
 
+/** 按只读图片视图打开的扩展名(小写,不含点);Explorer 文件图标据此显示图片图标(两处同表)。 */
+export const IMAGE_PREVIEW_EXTENSIONS: readonly string[] = Object.keys(IMAGE_MIME_BY_EXT);
+
 /** 图片预览读取上限(50 MiB):data URL 经 IPC 整块发送,超限给提示而不读入。 */
 export const MAX_IMAGE_PREVIEW_BYTES = 50 * 1024 * 1024;
 

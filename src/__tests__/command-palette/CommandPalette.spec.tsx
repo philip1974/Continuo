@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { pickerRowClassName, pickerRowSecondaryClassName } from '../../plugins/picker/picker-row';
+import { PICKER_MATCH_CLASS_NAME, pickerRowClassName, pickerRowSecondaryClassName } from '../../plugins/picker/picker-row';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -261,6 +261,22 @@ describe('CommandPalette · 键盘 + 空 query 排序', () => {
     expect(document.querySelectorAll('.wm-modal-content li').length).toBe(1);
   });
 
+  // VSCode Quick Input:命中字符加粗高亮(list.highlightForeground)。分类前缀与标题各自高亮,文本连贯(读屏名称不变)。
+  it('有 query → 分类与标题里的命中字符包 <mark>(匹配色 + 加粗),行文本不变;空 query 无 mark', () => {
+    const reg = new CommandRegistry();
+    reg.register({ id: 's.open', title: 'Open', category: 'Settings', fn: vi.fn() });
+    render(<CommandPalette commands={reg} />);
+    act(() => useCommandPaletteStore.getState().open());
+    const li = () => document.querySelector('.wm-modal-content li')!;
+    expect(li().querySelectorAll('mark')).toHaveLength(0);
+
+    act(() => useCommandPaletteStore.getState().setQuery('sop'));
+    const marks = Array.from(li().querySelectorAll('mark'));
+    expect(marks.map((m) => m.textContent)).toEqual(['S', 'Op']);
+    for (const m of marks) expect(m.className).toBe(PICKER_MATCH_CLASS_NAME);
+    expect(li().textContent).toBe('Settings:Open');
+  });
+
   it('subscribe registry → 后注册的命令立即出现在列表', () => {
     const reg = new CommandRegistry();
     render(<CommandPalette commands={reg} />);
@@ -340,6 +356,12 @@ describe('CommandPalette · 本地化界面可搜英文命令名', () => {
     // 次要色走 picker-row 的对比度契约:常态 text-fg-dim,选中 / 悬停换 text-fg-muted(accent 底上保持 ≥ 4.5)。
     expect(alias?.className).toContain(pickerRowSecondaryClassName(true));
     expect(pickerRowSecondaryClassName(false)).toContain('text-fg-dim');
+  });
+
+  // 只靠英文原名命中:显示的本地化标题里没有命中字符 → 不高亮(行尾英文名只作说明,不另高亮)。
+  it('zh:只靠英文原名命中 → 标题与行尾英文名都不加 mark', () => {
+    const rows = search('open folder');
+    expect(rows[0]!.querySelectorAll('mark')).toHaveLength(0);
   });
 
   it('zh:英文分类前缀也可搜(「file open」)', () => {

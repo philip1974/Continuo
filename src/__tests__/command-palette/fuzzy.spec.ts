@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fuzzyScore, fuzzyFilter } from '../../plugins/command-palette/fuzzy';
+import { fuzzyScore, fuzzyFilter, fuzzyMatchIndices } from '../../plugins/command-palette/fuzzy';
 
 describe('fuzzyScore', () => {
   it('空 query → 0(全匹配)', () => {
@@ -183,6 +183,30 @@ describe('fuzzyFilter', () => {
       expect(lowerCallsDuringFilter).toBe(1);
     } finally {
       lowerSpy.mockRestore();
+    }
+  });
+});
+
+// 命中字符下标(VSCode Quick Input 的 highlights):与打分同一贪心子序列,只为渲染的可见行计算,不参与排序。
+describe('fuzzyMatchIndices', () => {
+  it('子序列命中 → 每个查询字符在 target 里的下标(贪心最左,同打分)', () => {
+    expect(fuzzyMatchIndices('sf', 'save file')).toEqual([0, 5]);
+    expect(fuzzyMatchIndices('ats', 'a.ts')).toEqual([0, 2, 3]);
+  });
+
+  it('大小写不敏感', () => {
+    expect(fuzzyMatchIndices('SAVE', 'Save File')).toEqual([0, 1, 2, 3]);
+  });
+
+  it('不命中 → null;空 query → []', () => {
+    expect(fuzzyMatchIndices('xyz', 'save file')).toBeNull();
+    expect(fuzzyMatchIndices('es', 'save')).toBeNull();
+    expect(fuzzyMatchIndices('', 'save')).toEqual([]);
+  });
+
+  it('与 fuzzyScore 判定一致:有分 ⇔ 有下标', () => {
+    for (const [q, t] of [['sf', 'save file'], ['zz', 'fizz'], ['abc', 'acb'], ['src/a', 'src/a.ts']] as const) {
+      expect(fuzzyMatchIndices(q, t) !== null).toBe(fuzzyScore(q, t) !== null);
     }
   });
 });

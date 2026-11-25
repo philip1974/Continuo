@@ -105,7 +105,8 @@ export function FileIcon(props: {
    - 文档:`md → Markdown` / `mdx → MDX` / `txt/log → Text`
    - 网页:`html/htm → CodeOrange` / `css → BracketsBlue` / `scss/sass → Sass` /
      `styl → Stylus` / `svg → SVG`
-   - 图像:`png/jpg/jpeg/gif/webp/ico/bmp → Image`
+   - 图像:`png/jpg/jpe/jpeg/gif/webp/ico/bmp/avif → Image` —— 由 `electron/shared/image-preview.ts` 的
+     `IMAGE_PREVIEW_EXTENSIONS` 生成(打开即按图片预览的扩展名都显示图片图标,两处同表;`.svg` 仍是 SVG 图标)
    - 音频:`mp3/wav/ogg/flac/m4a → Audio`
    - 视频:`mp4/mov/webm/avi/mkv → Video`
    - 文档/包:`pdf → PDF` / `zip/tar/gz/7z/rar → Zip` / `exe/app/dmg → Exe`

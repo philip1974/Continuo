@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { pickerRowClassName } from '../../plugins/picker/picker-row';
+import { PICKER_MATCH_CLASS_NAME, pickerRowClassName } from '../../plugins/picker/picker-row';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, cleanup, act, waitFor } from '@testing-library/react';
@@ -352,6 +352,40 @@ describe('QuickOpenModal — 搜索过滤', () => {
         document.querySelector('.wm-modal-content')!.textContent,
       ).not.toContain('beta.ts');
     });
+  });
+
+  // VSCode Quick Open:文件名与路径分别高亮命中字符。查询能在文件名里命中 → 只高亮文件名;否则按相对路径命中,
+  // 目录部分与文件名部分各自高亮。<mark> 只换样式,行文本连贯(读屏名称不变)。
+  async function rowFor(query: string, f: QuickOpenFile): Promise<HTMLElement> {
+    installFs();
+    walkMock.mockResolvedValue({ ok: true, data: [f] });
+    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
+    useQuickOpenStore.setState({ isOpen: true });
+    render(<QuickOpenModal />);
+    await waitFor(() => expect(document.querySelectorAll('ul li').length).toBe(1));
+    const input = document.querySelector('.wm-modal-content input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: query } });
+    return document.querySelector<HTMLElement>('ul li')!;
+  }
+  const marksIn = (el: Element | null) => Array.from(el?.querySelectorAll('mark') ?? []).map((m) => m.textContent);
+
+  it('高亮:查询在文件名里命中 → 只高亮文件名的命中字符(匹配色 + 加粗)', async () => {
+    const row = await rowFor('ats', file('a.ts', 'src/a.ts'));
+    const name = Array.from(row.querySelectorAll('span')).find((el) => el.textContent === 'a.ts')!;
+    expect(marksIn(name)).toEqual(['a', 'ts']);
+    for (const m of name.querySelectorAll('mark')) expect(m.className).toBe(PICKER_MATCH_CLASS_NAME);
+    expect(marksIn(row.querySelector('.wm-truncate-start'))).toEqual([]);
+    expect(row.textContent).toBe('a.tssrc');
+  });
+
+  it('高亮:带目录的查询 → 目录与文件名分别高亮;目录 title 仍是完整路径', async () => {
+    const row = await rowFor('src/a', file('a.ts', 'src/a.ts'));
+    const path = row.querySelector<HTMLElement>('.wm-truncate-start')!;
+    expect(marksIn(path)).toEqual(['src']);
+    expect(path.textContent).toBe('src');
+    expect(path.title).toBe('src/a.ts');
+    const name = Array.from(row.querySelectorAll('span')).find((el) => el.textContent === 'a.ts')!;
+    expect(marksIn(name)).toEqual(['a']);
   });
 
   it('全过滤掉 → 「无匹配文件」', async () => {

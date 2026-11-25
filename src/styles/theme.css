@@ -4,7 +4,7 @@
  *   1. 引入 design-tokens.css(唯一色板来源:完整 47 个 --md-* + --wm-* 亮/暗双套,
  *      含 Continuo IDE 暗色值;源自已废弃的 Nous shell-ui,现由本仓库维护)。
  *      本文件不再覆盖其中任何 --md-* —— 改色直接改 design-tokens.css。
- *   2. Continuo 自有槽位(MD3 无对应:--md-debug-* / --md-fg-dim / --md-rating / --md-syntax-*,及 --wm-radius-* 等),
+ *   2. Continuo 自有槽位(MD3 无对应:--md-debug-* / --md-fg-dim / --md-rating / --md-list-highlight / --md-syntax-*,及 --wm-radius-* 等),
  *      light(:root)与 dark(.dark)各给值。
  *   3. @theme inline 把 Continuo 自有的 --color-* 私有 token 映射到 --md-*,
  *      Tailwind v4 自动生成 bg-canvas / text-fg / border-line 等 utility。
@@ -46,6 +46,11 @@
    * 5.41 / 5.03 / 4.77(Tailwind amber-400 在亮色底仅 1.63)。 */
   --md-rating: #8a6100;
 
+  /* 列表命中字符(命令面板 / Quick Open 的匹配高亮,VSCode list.highlightForeground;MD3 无对应槽):MD3 primary
+   * tone 30。亮色 --md-primary 在选中行(primary 15% 叠 container-high)上只有 4.31;本值对弹窗底 / 选中 / 悬停
+   * 7.60 / 6.24 / 6.67。 */
+  --md-list-highlight: #4f378b;
+
   /* 代码语法高亮(CodeEditor 的 HighlightStyle 只引用 var(--md-syntax-*),一套高亮两主题通用)。
    * 亮色:Atom One Light 同色相加深到对 --md-surface ≥ 4.5(原 One Light 注释 #a0a1a7 2.51 / 字符串 #50a14f 3.13 /
    * 类型 #c18401 3.12 / 属性 #e45649 3.58),对 surface 依次:keyword 5.97 / name 5.36 / function 5.52 /
@@ -77,6 +82,9 @@
 
   /* 评分星:琥珀(原 amber-400),对 surface / container-low / container 11.10 / 10.29 / 9.85 */
   --md-rating: #fbbf24;
+
+  /* 列表命中字符:同 --md-primary,对弹窗底 / 选中 / 悬停 8.43 / 5.97 / 6.68 */
+  --md-list-highlight: #b4c5ff;
 
   /* 代码语法高亮:oneDark 原值(@codemirror/theme-one-dark),对 --md-surface #11131b 均 ≥ 5.1。 */
   --md-syntax-keyword: #c678dd;
@@ -122,6 +130,8 @@
   --color-debug-exec-line: var(--md-debug-exec-line);
   /* 评分星 text-rating(Continuo 自有 --md-rating,两主题各有取值) */
   --color-rating: var(--md-rating);
+  /* 列表命中字符 text-list-highlight(命令面板 / Quick Open 匹配高亮) */
+  --color-list-highlight: var(--md-list-highlight);
   /* 键盘焦点轮廓 outline-focus-ring(design 控件焦点环同色 --md-focus-ring),供非 design 控件的可聚焦行使用。 */
   --color-focus-ring: var(--md-focus-ring);
 

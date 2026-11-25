@@ -45,11 +45,13 @@
 
 ### 点 tab 后焦点回到编辑区
 
-- 鼠标点击 tab(含已激活 tab)→ 切换后下一帧把焦点交给编辑面板里 tab 行之外的首个可编辑元素(CodeMirror /
-  ProseMirror 的 contenteditable、输入框)—— VSCode:点编辑器 tab 即聚焦该编辑器,可直接继续输入;否则焦点停在
+- 鼠标点击 tab(含已激活 tab)→ 切换后下一帧把焦点交给编辑面板里 tab 行之外的首个落点(CodeMirror /
+  ProseMirror 的 contenteditable、输入框、只读图片预览 `data-editor-focus-target`;选择器与 dock 面板聚焦共用
+  `src/lib/content-focus-target.ts`)—— VSCode:点编辑器 tab 即聚焦该编辑器,可直接继续输入;否则焦点停在
   tab 上,接着打字的按键落在 tab(与 dock tab SharedTab 同规则)
 - 键盘激活(Enter / Space 合成 click,detail=0)焦点留在 tab(tablist 键盘模型);经 design `TabNavItem.onMouseSelect` 接线
-- 找不到可编辑元素(预览模式 / 编辑器仍在加载)焦点留在 tab —— 无害,tab 上只有 Delete 会关闭
+- 找不到落点(Markdown 预览 / 编辑器仍在加载)→ 焦点留在 tab;焦点已丢到 body(面板内容被 dock 激活重挂)时回到活动
+  tab;焦点已被移到面板外 → 不抢 —— 无害,tab 上只有 Delete 会关闭
 
 ### 同名文件 tab 区分(VSCode labelFormat=default)
 

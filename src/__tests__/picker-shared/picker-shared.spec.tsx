@@ -428,6 +428,30 @@ describe('picker 选中行可辨识', () => {
       }
     });
 
+    // 命中字符(<mark>,VSCode list.highlightForeground):匹配色对弹窗底、选中行、悬停行(合成)两主题均 ≥ 4.5;背景透明。
+    it('命中字符:text-list-highlight 对弹窗底 / 选中 / 悬停行两主题 ≥ 4.5,背景透明、加粗', async () => {
+      const { PICKER_MATCH_CLASS_NAME, pickerRowClassName } = await import('../../plugins/picker/picker-row');
+      const cls = PICKER_MATCH_CLASS_NAME.split(' ');
+      expect(cls).toContain('bg-transparent');
+      expect(cls).toContain('font-semibold');
+      expect(cls).toContain('text-list-highlight');
+      expect(read('styles/theme.css')).toMatch(/--color-list-highlight:\s*var\(--md-list-highlight\)/);
+      const selAlpha = alphaOf(pickerRowClassName(true), '');
+      const hoverAlpha = alphaOf(pickerRowClassName(false), 'hover:');
+      for (const sel of [':root', '.dark'] as const) {
+        const panel = tokenHex(sel, '--md-surface-container-high');
+        const fg = tokenHex(sel, '--md-list-highlight');
+        expect(fg, sel).not.toBe('');
+        for (const [state, bg] of [
+          ['idle', panel],
+          ['selected', mix(tokenHex(sel, '--md-primary'), panel, selAlpha)],
+          ['hover', mix(tokenHex(sel, '--md-primary'), panel, hoverAlpha)],
+        ] as const) {
+          expect(contrast(fg, bg), `${sel} ${state}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    });
+
     it.each(['plugins/command-palette/CommandPalette.tsx', 'plugins/quick-open/QuickOpenModal.tsx'])(
       '%s 的行内次要文字走 pickerRowSecondaryClassName,不在行内写死 text-fg-dim',
       (rel) => {

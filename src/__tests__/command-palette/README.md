@@ -22,6 +22,8 @@
   - 越高越优:首字母 / 词边界(. _ - space 后)+10,普通匹配 +1,连续匹配 +5
   - 大小写不敏感
 - `fuzzyFilter(items, query, getStrLower)`:按 score 降序返候选(getStrLower 返回预小写的 target)
+- `fuzzyMatchIndices(query, target)`:命中字符下标(与打分同一贪心子序列,有分 ⇔ 有下标),只供行内高亮,
+  不参与过滤排序;不命中 null,空 query `[]`
 
 ### store
 
@@ -38,6 +40,10 @@
 - 按 fuzzy 排序后渲染列表
 - 当前选中行 `bg-hover text-fg`,其它 `text-fg-muted`
 - 点击 / Enter 执行当前命令 + close
+- 命中字符高亮(VSCode Quick Input highlights):有 query 时按匹配源「分类 标题」的命中下标,分类前缀与标题里的命中
+  字符各包 `<mark>`(`PICKER_MATCH_CLASS_NAME`:`text-list-highlight` 加粗、背景透明,对比度见 picker-shared,
+  强制颜色下划线见 forced-colors-states);只为可见行计算;行文本不变(读屏名称连贯)。只靠英文原名命中的行
+  不高亮(显示的本地化标题里没有命中字符;行尾英文名只说明为何命中)
 - Esc 由 Modal 内置 close 处理
 
 ### 本地化界面可搜英文命令名(VSCode commandAlias)

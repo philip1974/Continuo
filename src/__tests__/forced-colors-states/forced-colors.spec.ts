@@ -95,6 +95,12 @@ describe('强制颜色:统一语义状态规则(src/styles/forced-colors.css)', 
     expect(bodyOf(FC, '.border-transparent')).toMatch(/border-color:\s*Canvas\b/);
   });
 
+  it('列表命中字符(picker 的 <mark>,PICKER_MATCH_CLASS_NAME)→ 下划线(匹配色被抹掉后仍可辨)', async () => {
+    const { PICKER_MATCH_CLASS_NAME } = await import('../../plugins/picker/picker-row');
+    expect(PICKER_MATCH_CLASS_NAME.split(' ')).toContain('text-list-highlight');
+    expect(bodyOf(FC, 'mark.text-list-highlight')).toMatch(/text-decoration:\s*underline/);
+  });
+
   it('dock 活动 tab 顶部强调条:forced-color-adjust: none + Highlight 背景', () => {
     const body = bodyOf(FC, '[role="tab"] > .bg-accent');
     expect(body).toMatch(/forced-color-adjust:\s*none/);
