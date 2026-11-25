@@ -243,7 +243,7 @@ export function SearchPanel() {
         onFocus={() => {
           if (activeIndex < 0 && rows.length > 0) actions.setActiveKey(rows[0]!.key);
         }}
-        className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring"
       >
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualItems.map((item) => {
