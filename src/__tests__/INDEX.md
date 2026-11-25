@@ -327,6 +327,10 @@
 
 - [`category-tab-content.spec.tsx`](./category-tab-content/category-tab-content.spec.tsx)
 
+## [标题栏 / 状态栏 / 窗口标题跟随活动面板(VSCode 对齐)](./chrome-active-panel/README.md)
+
+- [`chrome-active-panel.spec.tsx`](./chrome-active-panel/chrome-active-panel.spec.tsx)
+
 ## [cli-args-folder (Issue #45)](./cli-args-folder/README.md)
 
 - [`cli-args-folder.spec.ts`](./cli-args-folder/cli-args-folder.spec.ts)
@@ -802,6 +806,10 @@
 - [`dock-panel-close-focus.spec.ts`](./focus-after-close/dock-panel-close-focus.spec.ts)
 - [`editor-tab-close-focus.spec.tsx`](./focus-after-close/editor-tab-close-focus.spec.tsx)
 - [`modal-esc-focus.spec.tsx`](./focus-after-close/modal-esc-focus.spec.tsx)
+
+## [聚焦不把视口拉到光标处(VSCode 对齐)](./focus-keeps-scroll/README.md)
+
+- [`focus-keeps-scroll.spec.tsx`](./focus-keeps-scroll/focus-keeps-scroll.spec.tsx)
 
 ## [folder-tree-rename-feedback](./folder-tree-rename-feedback/)
 

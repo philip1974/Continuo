@@ -38,7 +38,7 @@ import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { revealPathOrNotify } from '@/panels/Explorer/reveal-or-notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { tabLabelDescriptions } from './tab-label-description';
-import { CONTENT_FOCUS_TARGET_SELECTOR } from '@/lib/content-focus-target';
+import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 
 /**
@@ -76,7 +76,7 @@ function focusEditorContentNextFrame(header: HTMLElement | null): void {
     if (!header || !host) return;
     for (const el of host.querySelectorAll<HTMLElement>(CONTENT_FOCUS_TARGET_SELECTOR)) {
       if (header.contains(el)) continue;
-      el.focus();
+      focusContentTarget(el); // 切回的编辑器保持恢复的视口(BDD: focus-keeps-scroll)
       return;
     }
     if (!focusWithinOrLost(header.ownerDocument, host)) return;

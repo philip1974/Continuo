@@ -3,7 +3,7 @@
 // 获焦,可直接继续输入。BDD: src/__tests__/focus-after-close/
 import type { DockviewPanelApi, IDockviewPanel } from 'dockview-react';
 import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
-import { CONTENT_FOCUS_TARGET_SELECTOR } from '@/lib/content-focus-target';
+import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 
 // 面板内容里优先接焦点的落点(CONTENT_FOCUS_TARGET_SELECTOR,与编辑器 tab 行共用),
 // 没有则退到第一个可 Tab 到的控件(Editor 的 tab 行按钮在编辑区之前,故两轮查找)。
@@ -34,7 +34,7 @@ export function focusPanelContent(api: DockviewPanelApi): void {
     content.querySelector<HTMLElement>('[data-editor-panel-root]') ??
     content.querySelector<HTMLElement>(TABBABLE_SELECTOR) ??
     content.querySelector<HTMLElement>(ROOT_FALLBACK_SELECTOR);
-  target?.focus();
+  if (target) focusContentTarget(target);
 }
 
 /**

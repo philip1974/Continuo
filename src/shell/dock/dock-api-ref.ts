@@ -13,6 +13,15 @@ let apiRef: DockviewApi | null = null;
 // markDockLayoutRestored 后按序执行。队列项是执行时求值的回调(拿恢复后的 api 再按实际面板状态决策)。
 let layoutRestored = true;
 let queuedOpens: Array<(api: DockviewApi) => void> = [];
+const apiListeners = new Set<(api: DockviewApi | null) => void>();
+
+/** 订阅 dock api 的出现 / 更换 / 卸载(dock 外的组件据此订阅 dockview 事件);返回退订函数。 */
+export function subscribeDockApi(listener: (api: DockviewApi | null) => void): () => void {
+  apiListeners.add(listener);
+  return () => {
+    apiListeners.delete(listener);
+  };
+}
 
 /**
  * @param opts.layoutPending true = 该 api 的布局尚未恢复(DockShell onReady),addPanel 类入口排队,
@@ -27,6 +36,7 @@ export function setDockApi(
   // race:onReady 重入(dockview 重建 / StrictMode / HMR)时新 api 仍待恢复 → 已排队的用户操作按序迁移给它
   //(回调执行时才取 api,迁移即生效),不丢弃;卸载(null)或新 api 无需等待恢复 → 丢弃。
   if (layoutRestored) queuedOpens = [];
+  for (const listener of apiListeners) listener(api);
 }
 
 /** 布局(fromJSON / 默认布局)恢复完成:放行并执行恢复前排队的 addPanel 入口。 */

@@ -25,6 +25,7 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
 ### 右侧文件信息
 
 - activeTab=null → 不显示文件信息
+- 主窗活动的是终端等非编辑器 dock 面板 → 不显示文件信息(见 `chrome-active-panel`)
 - activeTab + filePath → basename + dirty ●(active.dirty=true 时)
 - 行/词/字符 来自 text-stats
 

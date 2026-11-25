@@ -9,7 +9,7 @@
 import type { DockviewApi } from 'dockview-react';
 import { getDockApi, runWhenDockLayoutReady } from './dock-api-ref';
 import { focusPanelContent } from './panel-focus';
-import { CONTENT_FOCUS_TARGET_SELECTOR } from '@/lib/content-focus-target';
+import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 import { useEditorStore } from '@/stores/editor.store';
 
 /** 等布局 / 编辑区挂上的上限。 */
@@ -42,7 +42,7 @@ export function focusActiveEditorAfterRestore(doc: Document = document): void {
     }
     const target = panel.view.content.element.querySelector<HTMLElement>(CONTENT_FOCUS_TARGET_SELECTOR);
     if (target) {
-      target.focus();
+      focusContentTarget(target); // 恢复的视口保持,不被拉回光标处(BDD: focus-keeps-scroll)
       stop();
     } else if (Date.now() >= deadline) {
       focusPanelContent(panel.api);

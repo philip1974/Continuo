@@ -28,6 +28,7 @@ import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 import { createLatestGuard } from '@/lib/latest-wins';
 import { useCopyMcpConfig } from './use-copy-mcp-config';
 import { isImagePreviewPath } from '../../electron/shared/image-preview';
+import { useActiveNonEditorPanel } from '@/shell/dock/main-window-active-panel';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
 const MCP_COPY_ICON = (
@@ -254,6 +255,8 @@ export function StatusBar() {
         };
       }),
     );
+  // 主窗活动的是终端等非编辑器面板 → 编辑器专属项(文件名、统计)隐藏(VSCode 同)
+  const editorHidden = useActiveNonEditorPanel() !== null;
   const statusItems = useRegistry(coApp.statusBar);
   const { left: leftItems, right: rightItems } = useMemo(
     () => splitStatusItemsBySide(statusItems),
@@ -353,7 +356,7 @@ export function StatusBar() {
             {agentRevokeText}
           </button>
         )}
-        {activeFilePath !== null ? (
+        {activeFilePath !== null && !editorHidden ? (
           <>
             <span className="truncate max-w-[280px]" title={activeFilePath}>
               {basenameForChrome(activeFilePath)}

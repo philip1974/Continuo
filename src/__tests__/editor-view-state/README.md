@@ -27,7 +27,9 @@ Continuo 的编辑器按 tab 卸载 / 重挂(EditorPanel 的 key),视图状态�
 ### Milkdown(Markdown Edit / Preview)(`milkdown-scroll-restore.spec.tsx`)
 
 - 滚动位置按 tab 记下,重挂(切 tab、Edit ↔ Preview、外部修改重载的 reloadEpoch 重挂)且编辑器就绪后恢复;
-  节点视图下一帧才撑开高度时再补一次
+  节点视图下一帧才撑开高度时再补一次;恢复期间(到补齐为止)的滚动是中间值,不记进缓存
+- 就绪时把 `view.focus()` 登记为可编辑区的聚焦方式:点 tab / dock tab、重启恢复聚焦不把恢复的视口拉回光标处
+  (见 `focus-keeps-scroll`)
 - 各 tab 互不影响;重命名后跟随新 id
 - 撤销历史在 ProseMirror 插件 state 里,跨 Crepe 实例重建不复用(不保证;Edit ↔ Source 互切后各自从新历史开始,
   但 Source 侧内容未变时仍恢复其 CodeMirror 历史)

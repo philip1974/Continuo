@@ -9,7 +9,7 @@
 
 ## 子窗口外观
 
-- 子窗口标题与主窗口一致(`document.title`),背景同为画布色(`WINDOW_BACKGROUND_COLOR`,= 暗色 `--md-surface`)。
+- 子窗口标题为应用名 `Continuo`(主窗口标题随活动面板变化,见 `chrome-active-panel`),背景同主窗口为画布色(`WINDOW_BACKGROUND_COLOR`,= 暗色 `--md-surface`)。
 - 子窗口最小尺寸与主窗一致:`minWidth` 400 / `minHeight` 270(同 VSCode 窗口最小尺寸;`popout-window-size.spec.ts`)。
 - 子窗口启用与主窗口同款 preload(preload API 可用,renderer 经 `coApi.*` 调用)。
 - 子窗口不再渲染 DockShell / Splash / EmptyState,只显示被弹出的 panel。

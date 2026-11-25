@@ -7,13 +7,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   mounted: [] as Array<() => void>,
   focus: null as null | ((...args: unknown[]) => void),
+  root: null as HTMLElement | null,
 }));
 
 vi.mock('@milkdown/crepe', () => ({
   CrepeFeature: {},
-  Crepe: vi.fn().mockImplementation(() => {
+  Crepe: vi.fn().mockImplementation((opts: { root: HTMLElement }) => {
     const view = {
-      dom: document.createElement('div'),
+      // 编辑区 DOM 在滚动容器里(同真实 Crepe:视图挂在 root 下)
+      dom: opts.root,
       root: document,
       updateRoot: () => {},
       focus: () => h.focus?.(),
@@ -27,12 +29,12 @@ vi.mock('@milkdown/crepe', () => ({
   }),
 }));
 vi.mock('@milkdown/react', () => ({
-  Milkdown: () => <div data-testid="milkdown" />,
+  Milkdown: () => <div data-testid="milkdown" ref={(el) => { h.root = el; }} />,
   MilkdownProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useEditor: (init: (root: HTMLElement) => unknown) => {
     const React_ = React;
     React_.useEffect(() => {
-      init(document.createElement('div'));
+      init(h.root ?? document.createElement('div'));
     }, []);
   },
 }));
@@ -42,8 +44,9 @@ vi.mock('../../plugins/settings/values-store', () => ({
 
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 import { createTab, useEditorStore } from '../../stores/editor.store';
-import { clearEditorViewStates } from '../../panels/Editor/editor-view-state-cache';
+import { clearEditorViewStates, markdownScrollTopOf } from '../../panels/Editor/editor-view-state-cache';
 import { requestEditorFocus } from '../../panels/Editor/editor-focus-registry';
+import { focusContentTarget } from '../../lib/content-focus-target';
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(undefined)));
 
@@ -102,6 +105,38 @@ describe('Milkdown 视图重挂载恢复滚动位置', () => {
     c.ready();
     await nextFrame();
     expect(c.scroller.scrollTop).toBe(250);
+  });
+
+  it('就绪时把 view.focus() 登记为可编辑区的聚焦方式(点 tab / dock tab / 重启恢复聚焦都走它,不被拉回光标处)', () => {
+    const focus = vi.fn();
+    h.focus = focus;
+    const a = mount('/w/a.md');
+    a.ready();
+    const dom = h.root!;
+    const domFocus = vi.spyOn(dom, 'focus');
+    focusContentTarget(dom);
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(domFocus).not.toHaveBeenCalled();
+  });
+
+  it('恢复完成前的中间滚动值(内容尚未撑开被夹小等)不写进缓存', async () => {
+    const first = mount('/w/a.md');
+    first.ready();
+    first.scroller.scrollTop = 1056;
+    fireEvent.scroll(first.scroller);
+    first.unmount();
+
+    const second = mount('/w/a.md');
+    second.ready();
+    second.scroller.scrollTop = 300; // 恢复期间的中间值
+    fireEvent.scroll(second.scroller);
+    expect(markdownScrollTopOf('/w/a.md')).toBe(1056);
+    await nextFrame();
+    expect(second.scroller.scrollTop).toBe(1056);
+    // 恢复完成后的滚动照常记录
+    second.scroller.scrollTop = 700;
+    fireEvent.scroll(second.scroller);
+    expect(markdownScrollTopOf('/w/a.md')).toBe(700);
   });
 
   it('编辑器就绪后可接收「聚焦该 tab」请求(就绪前发出的请求在就绪时兑现)', async () => {

@@ -1,14 +1,16 @@
 // macOS 顶部窗口标题栏:动态显示 workspace 名 · active file 名,
 // 同时承担 -webkit-app-region:drag 让用户拖窗。
 // 无 workspace / 无文件 → 兜底"Continuo"。
+// 主窗活动的是终端等非编辑器面板 → 显示该面板名(不显示被挡住的文件);窗口标题(document.title)同步。
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useT } from '@/i18n';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import { basenameForChrome } from '@/lib/path-label';
+import { useActiveNonEditorPanel } from '@/shell/dock/main-window-active-panel';
 
 export function TitleBar() {
   const t = useT();
@@ -31,18 +33,26 @@ export function TitleBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, chromeVersion]);
 
-  const fileName = activeFilePath !== null ? basenameForChrome(activeFilePath) : null;
+  const otherPanel = useActiveNonEditorPanel();
+  const filePath = otherPanel ? null : activeFilePath;
+  const dirty = otherPanel ? false : activeDirty;
+  const fileName = otherPanel ? otherPanel.title || null : filePath !== null ? basenameForChrome(filePath) : null;
   const wsLabel = root ? basenameForChrome(root) : null;
   // 拼接:[file ●] · [workspace] || Continuo。dirty ● 仅视觉(aria-hidden),
   // 未保存语义改由视觉隐藏的本地化文本承载(a11y A40,同 A35/A37 dirty 族)。
   const sep = fileName && wsLabel ? '  ·  ' : '';
   const fallback = !fileName && !wsLabel ? 'Continuo' : '';
+  // 窗口标题(Dock / 窗口菜单 / 任务切换器里显示)与标题栏一致
+  const windowTitle = [fileName && `${fileName}${dirty ? ' ●' : ''}`, wsLabel].filter(Boolean).join(' · ') || 'Continuo';
+  useEffect(() => {
+    document.title = windowTitle;
+  }, [windowTitle]);
 
   return (
     <header className="flex h-9 shrink-0 items-center justify-center border-b border-line bg-panel/40 text-xs text-fg-muted select-none [-webkit-app-region:drag]">
-      <span className="truncate px-12" title={activeFilePath ?? root ?? undefined}>
+      <span className="truncate px-12" title={filePath ?? root ?? undefined}>
         {fileName}
-        {activeDirty && (
+        {dirty && (
           <>
             <span aria-hidden="true"> ●</span>
             <span style={SR_ONLY_STYLE}> {t('statusbar.unsaved_changes')}</span>

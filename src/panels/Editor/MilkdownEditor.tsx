@@ -31,6 +31,7 @@ import {
 import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
+import { setContentFocusHandler } from '@/lib/content-focus-target';
 import {
   markdownScrollTopOf,
   saveMarkdownModeAnchor,
@@ -512,16 +513,17 @@ function CrepeEditor({
           return null; // 已拆除
         }
       };
-      listener.mounted(() =>
-        onReady?.(
-          () => {
-            const view = getView();
-            if (view) focusEditorView(view);
-          },
-          position,
-          getView,
-        ),
-      );
+      listener.mounted(() => {
+        const focus = (): void => {
+          const view = getView();
+          if (view) focusEditorView(view);
+        };
+        // 点 tab / dock tab、重启恢复等入口聚焦可编辑区时走 view.focus()(不直接 DOM focus,免得被拉回光标处;
+        // 见 content-focus-target)
+        const view = getView();
+        if (view?.dom) setContentFocusHandler(view.dom, focus);
+        onReady?.(focus, position, getView);
+      });
       // 只读预览不回写也不上抛,不记基线、不挂其余 listener(省掉挂载时与防抖里的序列化)。
       if (readonly) return;
       listener.mounted(() => {
@@ -791,6 +793,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     [],
   );
   const getViewRef = useRef<() => EditorView | null>(() => null);
+  const restoringScrollRef = useRef(false);
   const handleReady = useCallback<OnEditorReady>(
     (focus, position, getView) => {
       positionRef.current = position;
@@ -804,20 +807,25 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       }
       const el = wrapperRef.current;
       const anchor = takeMarkdownModeAnchor(tabId, viewMode);
+      // 恢复期间(到下一帧补齐为止)的滚动是中间值(内容尚未撑开被夹小等),不记进缓存,免得覆盖要恢复的值
       if (el && anchor) {
+        restoringScrollRef.current = true;
         position.scrollToLine(el, anchor.topLine);
         // 下一帧:代码块 / mermaid 等节点视图可能才撑开高度,再对齐一次;光标也放到这一帧 —— Milkdown 列表项节点视图
         // 挂载时记下选区、在挂载后的下一帧恢复(list-item-block view),早于此设置的光标会被它改回文档开头。
         requestAnimationFrame(() => {
           if (anchor.cursorLine !== undefined) position.setCursorLine(anchor.cursorLine);
           position.scrollToLine(el, anchor.topLine);
+          restoringScrollRef.current = false;
         });
       } else {
         const top = markdownScrollTopOf(tabId);
         if (el && top !== undefined) {
+          restoringScrollRef.current = true;
           el.scrollTop = top;
           requestAnimationFrame(() => {
             if (el.scrollTop !== top) el.scrollTop = top;
+            restoringScrollRef.current = false;
           });
         }
       }
@@ -827,7 +835,9 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     [tabId, viewMode],
   );
   const handleScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => saveMarkdownScrollTop(tabId, e.currentTarget.scrollTop),
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (!restoringScrollRef.current) saveMarkdownScrollTop(tabId, e.currentTarget.scrollTop);
+    },
     [tabId],
   );
 

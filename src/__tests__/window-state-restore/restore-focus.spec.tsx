@@ -5,6 +5,7 @@ import { DockviewComponent, type DockviewApi } from 'dockview-react';
 import { focusActiveEditorAfterRestore, RESTORE_FOCUS_TIMEOUT_MS } from '@/shell/dock/restore-focus';
 import { markDockLayoutRestored, setDockApi } from '@/shell/dock/dock-api-ref';
 import { useEditorStore } from '@/stores/editor.store';
+import { setContentFocusHandler } from '@/lib/content-focus-target';
 
 class NoopResizeObserver {
   observe() {}
@@ -69,6 +70,20 @@ describe('启动恢复后聚焦活动编辑器', () => {
     const ta = mountEditable();
     vi.advanceTimersByTime(32);
     expect(document.activeElement).toBe(ta);
+  });
+
+  it('落点是编辑器可编辑区 → 走编辑器自己的聚焦(不直接 DOM focus,免得被拉回光标处;见 focus-keeps-scroll)', () => {
+    restoredDock();
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    document.querySelector('[data-content="editor"]')!.appendChild(editable);
+    const domFocus = vi.spyOn(editable, 'focus');
+    const viewFocus = vi.fn(() => HTMLElement.prototype.focus.call(editable));
+    setContentFocusHandler(editable, viewFocus);
+    focusActiveEditorAfterRestore(document);
+    vi.advanceTimersByTime(32);
+    expect(viewFocus).toHaveBeenCalledTimes(1);
+    expect(domFocus).not.toHaveBeenCalled();
   });
 
   it('布局晚于会话恢复完成 → 等布局就绪后再聚焦', () => {
