@@ -11,6 +11,7 @@
 // layoutUi / editor 移到 windows[] 按 windowSeq 拆段;v1 自动迁移。
 
 import { z } from 'zod';
+import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE } from './image-preview';
 
 // 边界(E14):explorer.json 的路径数组/字符串此前无上限。损坏/畸形快照只要 shape 对就通过,
 // loadExplorer/hydrate 会接受超大数组,随后批量恢复 tab、展开树、写回快照 → 启动卡顿、IPC/JSON
@@ -50,12 +51,47 @@ const LayoutUiSchema = z
   })
   .strict();
 
+// 编辑器视图状态跨重启(VSCode 持久化每个编辑器的选区 / 滚动与图片预览的缩放)。只写打开中的 tab,条数上限与
+// 运行时写入(explorer-persist collectEditorViewStates)共用同一常量:读≡写同一 schema、写读 cap 对称。
+/** editor.viewStates 条数上限(= 会话恢复的 tab 数上限 MAX_RESTORED_TABS)。 */
+export const EDITOR_VIEW_STATES_MAX = 256;
+/** 偏移 / 行号 / 滚动像素的上限(只挡畸形值;运行时写入前同样收进此范围)。 */
+export const EDITOR_VIEW_NUMBER_MAX = 2_147_483_647;
+const viewInt = (min: number): z.ZodNumber => z.number().int().min(min).max(EDITOR_VIEW_NUMBER_MAX);
+const viewScroll = (): z.ZodNumber => z.number().min(0).max(EDITOR_VIEW_NUMBER_MAX);
+
+const EditorViewStateEntrySchema = z
+  .object({
+    path: pathStr(),
+    /** CodeMirror 主选区(文档偏移;恢复时收进文档范围)。 */
+    selection: z.object({ anchor: viewInt(0), head: viewInt(0) }).strict().optional(),
+    /** CodeMirror 顶部可见行(1 起)。 */
+    topLine: viewInt(1).optional(),
+    /** Markdown(Milkdown 编辑 / 预览)滚动位置。 */
+    scrollTop: viewScroll().optional(),
+    /** 图片预览:'fit' 或相对原始尺寸的比例,及滚动位置。 */
+    image: z
+      .object({
+        scale: z.union([z.literal('fit'), z.number().min(IMAGE_MIN_SCALE).max(IMAGE_MAX_SCALE)]),
+        scrollLeft: viewScroll(),
+        scrollTop: viewScroll(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 const EditorSessionSchema = z
   .object({
     openFilePaths: pathArray(), // 边界(E14)
     activePath: pathStr().nullable(),
+    /** Markdown 视图模式(全局);只在非默认(source)时写。 */
+    mode: z.enum(['edit', 'source', 'preview']).optional(),
+    viewStates: z.array(EditorViewStateEntrySchema).max(EDITOR_VIEW_STATES_MAX).optional(),
   })
   .strict();
+
+export type EditorViewStateEntry = z.infer<typeof EditorViewStateEntrySchema>;
 
 // ── v1(legacy)— 仅 loadExplorer 接受,内部立即迁移到 v2 ────
 /** 每个窗口的 Explorer 状态(v1 顶层与 v2 / v3 窗口段同形;上限只写一处)。 */

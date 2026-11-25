@@ -18,6 +18,8 @@
 editor?: {
   openFilePaths: string[];   // 顺序 = useEditorStore.tabs(过滤插件打开的 tab)
   activePath: string | null; // active tab 的 filePath;无 active → null
+  mode?: ...;                 // 非默认的 Markdown 模式
+  viewStates?: [...];         // 打开中 tab 的视图状态 —— 见 editor-state-restart
 }
 ```
 

@@ -20,6 +20,10 @@ export const IMAGE_PREVIEW_EXTENSIONS: readonly string[] = Object.keys(IMAGE_MIM
 /** 图片预览读取上限(50 MiB):data URL 经 IPC 整块发送,超限给提示而不读入。 */
 export const MAX_IMAGE_PREVIEW_BYTES = 50 * 1024 * 1024;
 
+/** 图片预览缩放比例上下限(VSCode media/imagePreview.js MIN_SCALE / MAX_SCALE;视图与会话持久化 schema 共用)。 */
+export const IMAGE_MIN_SCALE = 0.1;
+export const IMAGE_MAX_SCALE = 20;
+
 /** 按扩展名(大小写不敏感)取可预览图片的 MIME;不是可预览图片 → null。`/` `\` 都按分隔符。 */
 export function imageMimeOf(path: string): string | null {
   const sep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));

@@ -39,12 +39,15 @@ import { rebindCodeMirrorRoots } from './codemirror-root';
 import { codeEditorTheme } from './code-editor-theme';
 import { codeMirrorFind } from './codemirror-find';
 import {
+  markEditorViewStateChanged,
   saveCodeEditorViewState,
   saveMarkdownModeAnchor,
   snapshotCodeEditorView,
+  takeCodeEditorSeed,
   takeCodeEditorViewState,
   takeMarkdownModeAnchor,
   type CodeEditorViewState,
+  type PersistedCodeViewState,
 } from './editor-view-state-cache';
 import { registerEditorFocus } from './editor-focus-registry';
 import { applySourceModeAnchor, sourceModeAnchor } from './codemirror-mode-anchor';
@@ -190,6 +193,17 @@ function restoreState(
   });
 }
 
+/** 上次会话快照的选区 → 初始状态(选区收进当前文档范围;文档以换行规范化后的长度为准)。 */
+function seededState(seed: PersistedCodeViewState, value: string, extensions: Extension[]): EditorState {
+  const doc = EditorState.create({ doc: value }).doc;
+  const len = doc.length;
+  return EditorState.create({
+    doc,
+    selection: { anchor: Math.min(seed.anchor, len), head: Math.min(seed.head, len) },
+    extensions,
+  });
+}
+
 export function CodeEditor({
   tabId,
   value,
@@ -278,7 +292,10 @@ export function CodeEditor({
           onChangeRef.current(next);
         }
         suppressNextChange.current = false;
+        // 选区变化 → 会话快照的视图状态可能变了(关窗 / 退出时重取;BDD: src/__tests__/editor-state-restart/)
+        if (update.selectionSet) markEditorViewStateChanged();
       }),
+      EditorView.domEventObservers({ scroll: markEditorViewStateChanged }),
       EditorView.theme({
         // fontSize 走 inherit 从外层 div 继承,改 settings 字号无需重建 EditorView。
         // CodeMirror theme 注入的 stylesheet 中 var() 不会响应外部容器 inline
@@ -305,8 +322,12 @@ export function CodeEditor({
     const saved = takeCodeEditorViewState(tabId);
     // Markdown 源码视图:刚从编辑 / 预览切过来 → 滚到切换前顶部可见的源码行,光标带到原光标行(BDD: src/__tests__/markdown-mode-position/)。
     const anchor = forceLanguage === 'markdown' ? takeMarkdownModeAnchor(tabId, 'source') : undefined;
-    const restored = restoreState(saved, value, eolRef.current, extensions);
-    const anchored = anchor ? applySourceModeAnchor(restored, anchor) : null;
+    // 本会话首次挂载(无缓存):用上次会话快照留下的选区 / 顶部可见行(跨重启;越界收进文档范围)。
+    // BDD: src/__tests__/editor-state-restart/
+    const seed = saved ? undefined : takeCodeEditorSeed(tabId);
+    const restored = seed ? seededState(seed, value, extensions) : restoreState(saved, value, eolRef.current, extensions);
+    const seeded = seed && !anchor ? applySourceModeAnchor(restored, { mode: 'edit', topLine: seed.topLine }) : null;
+    const anchored = anchor ? applySourceModeAnchor(restored, anchor) : seeded;
     const scrollTo = anchored?.scrollTo ?? saved?.scroll;
     const view = new EditorView({
       state: anchored?.state ?? restored,

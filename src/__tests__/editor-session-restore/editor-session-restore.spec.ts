@@ -37,7 +37,7 @@ function resetAll(): void {
     sidebarOpen: true,
     sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   });
-  useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'edit' });
+  useEditorStore.setState({ tabs: [], activeTabId: null, mode: 'source' }); // store 默认(非默认模式会写进快照)
 }
 
 beforeEach(resetAll);

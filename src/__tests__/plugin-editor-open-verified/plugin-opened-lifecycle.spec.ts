@@ -152,7 +152,8 @@ describe('F1:插件打开的标签不进会话快照', () => {
     expect(useEditorStore.getState().tabs.map((t) => t.id)).toEqual([userFile, T]);
     expect(useEditorStore.getState().activeTabId).toBe(T);
     const snap = snapshotFromStores();
-    expect(snap.windows[0]!.editor).toEqual({ openFilePaths: [userFile], activePath: null });
+    expect(snap.windows[0]!.editor).toMatchObject({ openFilePaths: [userFile], activePath: null });
+    expect(snap.windows[0]!.editor!.viewStates).toBeUndefined(); // 视图状态同口径(本例无挂载视图)
   });
 
   it('标签之后被用户「接管」(用户从文件树再打开同一路径)→ 只是切换,标记保留到关闭,仍不进快照', async () => {

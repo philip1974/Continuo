@@ -5,6 +5,8 @@
 //   setLoading(true) → 拿到 files → setResults(files, root) + setLoading(false)
 //   query 变 → fuzzyFilter(results) → 渲染列表
 //   Enter → openFileByPath(absPath) + close()
+//   最近打开(VSCode 编辑器历史):空查询时本工作区最近打开的文件排最前、首行标「最近打开」;有查询时同分优先。
+//   BDD: src/__tests__/quick-open-recent/
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
@@ -12,6 +14,7 @@ import { pickerRowClassName, pickerRowSecondaryClassName } from '../picker/picke
 import { Button, Input, Modal, Spinner, TruncateStart } from '@/design';
 import { QUICK_OPEN_MAX_FILES, useQuickOpenStore, type QuickOpenFile } from './store';
 import { walkWorkspaceFiles } from './walk-files';
+import { orderByRecent, recentFilesFor } from './recent-files';
 import { fuzzyFilter, fuzzyMatchIndices } from '../command-palette/fuzzy';
 import { highlightMatches } from '../picker/highlight-matches';
 import { formatHotkey, detectPlatform } from '../command-palette/format-hotkey';
@@ -170,10 +173,15 @@ function QuickOpenBody() {
     [resultsRoot, root, results],
   );
   const effectiveQuery = normalizeSearchQuery(query);
+  // 最近打开:打开面板时读一次(面板打开期间不会再打开文件)。已删除的文件不在扫描结果里,orderByRecent 自然略去。
+  const recentPaths = useMemo(() => (root ? recentFilesFor(root) : []), [root]);
+  const ordered = useMemo(() => orderByRecent(liveResults, recentPaths), [liveResults, recentPaths]);
   const filtered = useMemo(
-    () => fuzzyFilter(liveResults, effectiveQuery, (f) => f.relPathLower),
-    [liveResults, effectiveQuery],
+    () => fuzzyFilter(ordered.items, effectiveQuery, (f) => f.relPathLower),
+    [ordered, effectiveQuery],
   );
+  const recentCount = effectiveQuery ? 0 : ordered.recentCount;
+  const recentLabel = t('quick_open.recently_opened');
 
   // 虚拟化列表(打磨 R25):filtered 仍是逻辑全集(最多 5000),但只渲染可视行,
   // DOM 节点从最多 5000 降到几十。复用项目已有 @tanstack/react-virtual(同
@@ -273,8 +281,12 @@ function QuickOpenBody() {
                   <li
                     key={f.absPath}
                     {...getOptionProps(vRow)}
-                    // 键盘 selectedIndex 走选中样式(accent 底 + 左竖条),独立于鼠标 hover
-                    className={pickerRowClassName(idx === selectedIndex)}
+                    // 键盘 selectedIndex 走选中样式(accent 底 + 左竖条),独立于鼠标 hover;最近打开之后的首行加分隔线
+                    className={
+                      recentCount > 0 && idx === recentCount
+                        ? `${pickerRowClassName(idx === selectedIndex)} border-t border-t-line`
+                        : pickerRowClassName(idx === selectedIndex)
+                    }
                     title={f.relPath}
                     onClick={() => void openFile(f)}
                   >
@@ -292,6 +304,11 @@ function QuickOpenBody() {
                       >
                         {highlightMatches(dir, hl.dir)}
                       </TruncateStart>
+                    )}
+                    {recentCount > 0 && idx === 0 && (
+                      <span className={`ml-auto shrink-0 pl-2 text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}>
+                        {recentLabel}
+                      </span>
                     )}
                   </li>
                 );

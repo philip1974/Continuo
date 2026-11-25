@@ -7,6 +7,8 @@
 //   ✅ explorer.expandedPaths / sort
 //   ✅ pinned.paths
 //   ✅ editor.openFilePaths / activePath(M-Editor Step E5,session 恢复)
+//   ✅ editor.viewStates(打开中 tab 的选区 / 首行 / Markdown 滚动 / 图片缩放)/ mode(非默认的 Markdown 模式)
+//     —— 跨重启恢复编辑器视图状态(VSCode 同)。BDD: editor-state-restart
 //   ⚠ explorer.activePath:磁盘 schema 保留位(恒 null),runtime store 已无此
 //     字段(打磨 R18);snapshot 写 null、hydrate 忽略,仅为兼容旧数据不丢档。
 //   ❌ explorer.selectedPaths / lastAnchorPath(多选已由 headless-tree 持有)
@@ -44,14 +46,25 @@ import { subscribeAll } from '@/plugins/registries/useRegistry';
 import { clampWidth } from '@/lib/use-column-resize';
 import { pathEquals } from '@/lib/path-cross';
 import { findWindowEntryBySeq } from '../../../electron/shared/window-entry-lookup';
+import type { EditorView } from '@codemirror/view';
 import type { FsReadFileResult } from '../../../electron/shared/fs-channels';
 import type { IpcResult } from '../fs/types';
 import {
+  EDITOR_VIEW_NUMBER_MAX,
+  EDITOR_VIEW_STATES_MAX,
   ExplorerSchema,
   ExplorerSchemaV3,
+  type EditorViewStateEntry,
   type ExplorerPayloadV3,
   type WindowEntryV3,
 } from '../../../electron/shared/explorer-persistence-schema';
+import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE } from '../../../electron/shared/image-preview';
+import {
+  editorViewStateGeneration,
+  persistedEditorViewStateOf,
+  seedPersistedEditorViewState,
+  type PersistedEditorViewState,
+} from '@/panels/Editor/editor-view-state-cache';
 import { notifyIfFailed } from '@/notifications/notify-thrown-error';
 
 const DEBOUNCE_MS = 300;
@@ -177,6 +190,52 @@ export function collectEditorSnapshot(
   return { openFilePaths, activePath };
 }
 
+const viewInt = (n: number, min: number): number =>
+  Math.min(EDITOR_VIEW_NUMBER_MAX, Math.max(min, Math.round(n)));
+const viewScroll = (n: number): number => Math.min(EDITOR_VIEW_NUMBER_MAX, Math.max(0, n));
+
+/**
+ * 把视图状态收进磁盘契约的范围(运行时写入守 schema 上限,否则 explorer:write 拒整份快照,E276 同族)。
+ * 非有限值的部分整体丢弃。
+ */
+function toViewStateEntry(path: string, v: PersistedEditorViewState): EditorViewStateEntry | null {
+  const out: { -readonly [K in keyof EditorViewStateEntry]: EditorViewStateEntry[K] } = { path };
+  const sel = v.selection;
+  if (sel && Number.isFinite(sel.anchor) && Number.isFinite(sel.head)) {
+    out.selection = { anchor: viewInt(sel.anchor, 0), head: viewInt(sel.head, 0) };
+    if (v.topLine !== undefined && Number.isFinite(v.topLine)) out.topLine = viewInt(v.topLine, 1);
+  }
+  if (v.scrollTop !== undefined && Number.isFinite(v.scrollTop)) out.scrollTop = viewScroll(v.scrollTop);
+  const img = v.image;
+  if (
+    img &&
+    Number.isFinite(img.scrollLeft) &&
+    Number.isFinite(img.scrollTop) &&
+    (img.scale === 'fit' || (Number.isFinite(img.scale) && img.scale >= IMAGE_MIN_SCALE && img.scale <= IMAGE_MAX_SCALE))
+  ) {
+    out.image = { scale: img.scale, scrollLeft: viewScroll(img.scrollLeft), scrollTop: viewScroll(img.scrollTop) };
+  }
+  return Object.keys(out).length > 1 ? out : null;
+}
+
+/**
+ * 打开中的 file tab 的视图状态(与 openFilePaths 同口径:跳过插件打开的 tab),按 tab 顺序,至多 EDITOR_VIEW_STATES_MAX 条。
+ */
+export function collectEditorViewStates(
+  tabs: readonly EditorTab[],
+  liveViews: ReadonlyMap<string, EditorView>,
+): EditorViewStateEntry[] {
+  const out: EditorViewStateEntry[] = [];
+  for (const tab of tabs) {
+    if (out.length >= EDITOR_VIEW_STATES_MAX) break;
+    if (tab.pluginOpenedPath !== undefined) continue;
+    const state = persistedEditorViewStateOf(tab.id, liveViews.get(tab.id));
+    const entry = state ? toViewStateEntry(tab.filePath, state) : null;
+    if (entry) out.push(entry);
+  }
+  return out;
+}
+
 export function copyPersistPaths(paths: readonly string[]): string[] {
   if (paths.length === 0) return EMPTY_PERSIST_PATHS;
   const out = new Array<string>(paths.length);
@@ -218,6 +277,7 @@ export function snapshotFromStores(
     ed.tabs,
     ed.activeTabId,
   );
+  const viewStates = collectEditorViewStates(ed.tabs, ed.viewRefs);
   const root = normalizeWorkspaceRoot(w.root);
   const recentRoots = collectNormalizedWorkspaceRoots(w.recentRoots);
 
@@ -232,7 +292,13 @@ export function snapshotFromStores(
       sort: { ...e.sort },
     },
     layoutUi: { sidebarOpen: ui.sidebarOpen, sidebarWidth: ui.sidebarWidth },
-    editor: { openFilePaths, activePath },
+    editor: {
+      openFilePaths,
+      activePath,
+      // 只在非默认时写(旧形态不变)
+      ...(ed.mode === 'source' ? null : { mode: ed.mode }),
+      ...(viewStates.length === 0 ? null : { viewStates }),
+    },
   };
 
   // 只写自己这一段。**不**把 prevSnap 里其它窗口的段一并写回 —— prevSnap
@@ -271,6 +337,8 @@ export function hydrateStores(
   // 窗口段(无 entry 时复位默认)
   if (entry) {
     // entry.explorer.activePath 故意不再回写 store(打磨 R18:store 已无该字段)。
+    // Markdown 模式在 tab 恢复(挂载编辑器)前回填,恢复出的 tab 直接按该模式挂载。
+    if (entry.editor?.mode !== undefined) useEditorStore.setState({ mode: entry.editor.mode });
     useExplorerStore.setState({
       expandedPaths: new Set(entry.explorer.expandedPaths),
       sort: entry.explorer.sort,
@@ -365,11 +433,18 @@ export async function hydrateEditorTabs(
   const restoreOpts = keepUserActive
     ? ({ requestFocus: false, activate: false } as const)
     : ({ requestFocus: false } as const);
+  // 视图状态按路径索引(tab id = 打开时的路径);读盘成功、紧接 openTab 之前回填 —— 先回填未打开的 tab 会被
+  // 「tab 增删后只保留打开中 tab 的视图状态」清掉,读盘失败的 tab 也就不留状态。
+  const viewStates = new Map<string, EditorViewStateEntry>();
+  for (const v of entry.editor.viewStates ?? []) viewStates.set(v.path, v);
   for (let i = 0; i < paths.length; i++) {
     const s = settled[i];
     if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
     const r = s.value;
     if (!r || !r.ok) continue;
+    const view = viewStates.get(paths[i]!);
+    // 读盘期间用户已自己打开同一文件 → 保留其本会话状态
+    if (view && !hasEditorTabWithId(useEditorStore.getState().tabs, paths[i]!)) seedPersistedEditorViewState(paths[i]!, view);
     store.openTab(createTab(paths[i]!, r.data, r.realPath), restoreOpts);
   }
   // 重读最新 store(openTab 改了状态)
@@ -538,18 +613,25 @@ export async function initExplorerPersistence(
   // 写成功只把**取快照时**的版本记为已落盘,期间的变更仍是脏的(布尔标记会被一并清掉 → 最后一次变更不落盘)。
   let storeVersion = 0;
   let savedStoreVersion = -1;
+  // 编辑器视图状态(光标 / 滚动 / 图片缩放)不调度写(太频繁),但随每次写入一并取;已落盘的代际与当前不同 = 脏,
+  // 关窗 / 退出的立即落盘会写。
+  let savedViewStateGen = -1;
   const writeNow = (): Promise<void> => {
-    if (savedStoreVersion === storeVersion && !pendingWrite) return writeChain;
+    if (savedStoreVersion === storeVersion && savedViewStateGen === editorViewStateGeneration() && !pendingWrite) {
+      return writeChain;
+    }
     pendingWrite = true;
     writeChain = writeChain.then(async () => {
       if (!pendingWrite) return; // 已被链上前一个写覆盖(合并),跳过冗余写
       pendingWrite = false;
       try {
         const version = storeVersion;
+        const viewGen = editorViewStateGeneration();
         const snap = snapshotFromStores(lastSnap ?? undefined, windowSeq);
         const serializedSnap = JSON.stringify(snap);
         if (serializedSnap === lastWrittenSnapshotPayload) {
           savedStoreVersion = version;
+          savedViewStateGen = viewGen;
           return;
         }
         const w = await api.write(snap);
@@ -557,6 +639,7 @@ export async function initExplorerPersistence(
           lastSnap = snap;
           lastWrittenSnapshotPayload = serializedSnap;
           savedStoreVersion = version;
+          savedViewStateGen = viewGen;
         } else {
           console.warn('[explorer-persist] write failed', w.code, w.message);
         }
@@ -586,7 +669,7 @@ export async function initExplorerPersistence(
   // openFilePaths/activePath 只随 tab 增删/改路径(open/close/removePaths/renamePath/closeTabsOutsideRoot,
   // 均 bump chromeVersion)与 activeTabId 变化而变 → 只在这两者变化时标脏。
   useEditorStore.subscribe((s, prev) => {
-    if (s.activeTabId !== prev.activeTabId || s.chromeVersion !== prev.chromeVersion) {
+    if (s.activeTabId !== prev.activeTabId || s.chromeVersion !== prev.chromeVersion || s.mode !== prev.mode) {
       markDirtyAndPersist();
     }
   });

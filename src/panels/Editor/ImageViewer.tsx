@@ -4,6 +4,8 @@
 // 缩放(同 VSCode imagePreview):单击放大 / ⌥单击缩小一档(ZOOM_LEVELS),⌘ / ⌃ 滚轮与触控板捏合连续缩放(以指针为中心),
 // 键盘 + / - 按档、0 / ⌘0 回适应;放大超过 100% 像素化显示,容器滚动。
 // 外部修改由 EditorPanel 按 reloadEpoch 换 key 重挂,重新读取。
+// 比例与滚动位置按 tab 存进 editor-view-state-cache(VSCode webview state 保存 scale 与偏移):切 tab 重挂后恢复,
+// 并随会话快照跨重启恢复。BDD: src/__tests__/editor-state-restart/
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
@@ -11,8 +13,9 @@ import { basename } from '@/lib/path-cross';
 import { failureOf, type Failure } from '@/lib/failure-of';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
-import { MAX_IMAGE_PREVIEW_BYTES } from '../../../electron/shared/image-preview';
+import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE, MAX_IMAGE_PREVIEW_BYTES } from '../../../electron/shared/image-preview';
 import { registerEditorFocus } from './editor-focus-registry';
+import { imageViewStateOf, saveImageViewState } from './editor-view-state-cache';
 import { formatBinarySize } from './editor-image';
 
 type LoadState =
@@ -32,8 +35,8 @@ const MAX_LABEL = `${MAX_IMAGE_PREVIEW_BYTES / (1024 * 1024)}MB`;
 
 // VSCode imagePreview 的缩放档位与上下限(media/imagePreview.js:zoomLevels / MIN_SCALE / MAX_SCALE / SCALE_PINCH_FACTOR)。
 const ZOOM_LEVELS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.5, 2, 3, 5, 7, 10, 15, 20] as const;
-const MIN_SCALE = 0.1;
-const MAX_SCALE = 20;
+const MIN_SCALE = IMAGE_MIN_SCALE;
+const MAX_SCALE = IMAGE_MAX_SCALE;
 const SCALE_PINCH_FACTOR = 0.075;
 
 /** 'fit' = 适应编辑区;数字 = 相对原始尺寸的比例。 */
@@ -91,9 +94,12 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
   useEffect(() => registerEditorFocus(tabId, () => rootRef.current?.focus()), [tabId]);
 
   const imgRef = useRef<HTMLImageElement>(null);
-  const [scale, setScale] = useState<Scale>('fit');
-  const scaleRef = useRef<Scale>('fit');
+  // 挂载时取回该 tab 上次的比例与滚动位置(滚动在图片尺寸就绪后恢复一次)
+  const [initialView] = useState(() => imageViewStateOf(tabId));
+  const [scale, setScale] = useState<Scale>(initialView?.scale ?? 'fit');
+  const scaleRef = useRef<Scale>(scale);
   scaleRef.current = scale;
+  const pendingScrollRef = useRef(initialView);
   const anchorRef = useRef<ZoomAnchor | null>(null);
   // 按住 ⌥ 时光标换缩小镜(VSCode 同:按键状态挂在 window 上,焦点不在视图里也跟随)
   const [altHeld, setAltHeld] = useState(false);
@@ -138,6 +144,30 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
     root.scrollLeft += rect.left + anchor.fx * rect.width - anchor.clientX;
     root.scrollTop += rect.top + anchor.fy * rect.height - anchor.clientY;
   }, [scale]);
+
+  // 图片尺寸就绪(放大后的布局已定)→ 恢复上次的滚动位置一次
+  useLayoutEffect(() => {
+    const pending = pendingScrollRef.current;
+    const root = rootRef.current;
+    if (!pending || !dims || !root) return;
+    pendingScrollRef.current = undefined;
+    root.scrollLeft = pending.scrollLeft;
+    root.scrollTop = pending.scrollTop;
+  }, [dims]);
+
+  // 比例 / 滚动变化时记下(滚动恢复前不记,免得初始 0 覆盖待恢复的位置)
+  const saveView = () => {
+    const root = rootRef.current;
+    if (!root || pendingScrollRef.current) return;
+    saveImageViewState(tabId, { scale: scaleRef.current, scrollLeft: root.scrollLeft, scrollTop: root.scrollTop });
+  };
+  // 挂载时的比例不必再记(未缩放过的图片不留状态)
+  const scaleSavedRef = useRef(scale);
+  useEffect(() => {
+    if (scaleSavedRef.current === scale) return;
+    scaleSavedRef.current = scale;
+    saveView();
+  }, [scale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⌘ / ⌃ 滚轮与触控板捏合(Chromium 以 ctrlKey wheel 上报)缩放;React 的 wheel 监听是 passive,拦不住页面缩放 / 滚动,
   // 故原生挂(passive: false)。不带修饰键的滚轮照常滚动。
@@ -230,6 +260,7 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
         onKeyDown={onKeyDown}
         onMouseDown={onMouseDown}
         onClick={onClick}
+        onScroll={saveView}
       >
         {state.kind === 'ok' ? (
           <img

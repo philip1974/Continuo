@@ -640,6 +640,10 @@
 
 - [`editor-session-restore.spec.ts`](./editor-session-restore/editor-session-restore.spec.ts)
 
+## [编辑器状态跨重启 / 切 tab 保持(VSCode 对齐)](./editor-state-restart/README.md)
+
+- [`editor-state-restart.spec.tsx`](./editor-state-restart/editor-state-restart.spec.tsx)
+
 ## [editor-store (M-Editor Step E1)](./editor-store/README.md)
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
@@ -1458,6 +1462,10 @@
 ## [QuickOpenModal(VSCode ⌘P 文件搜索)](./quick-open-modal/README.md)
 
 - [`quick-open-modal.spec.tsx`](./quick-open-modal/quick-open-modal.spec.tsx)
+
+## [Quick Open「最近打开」(VSCode 对齐)](./quick-open-recent/README.md)
+
+- [`quick-open-recent.spec.tsx`](./quick-open-recent/quick-open-recent.spec.tsx)
 
 ## [recent-roots-cross-window(「最近打开」多窗口不互相覆盖)](./recent-roots-cross-window/README.md)
 
