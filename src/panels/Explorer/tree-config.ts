@@ -17,6 +17,7 @@ import {
   type ItemInstance,
   type SetStateFn,
   type TreeConfig,
+  type TreeInstance,
 } from '@headless-tree/core';
 import type { FileEntry, IpcResult } from '@/lib/fs/types';
 
@@ -204,6 +205,17 @@ export function createDataLoader(deps: CreateTreeConfigDeps): FileTreeDataLoader
   };
 }
 
+/**
+ * 提交重命名并退出:库 `completeRenaming` 去掉末尾的 `updateDomFocus`。后者在定时器里抓住当时的焦点项
+ * (原项)轮询 500ms 等它挂载,改名成功、父目录刷新后旧 id 永不再出现 → 把焦点重置到首项,盖掉
+ * FolderTree 对改名后新项的定位(VSCode:焦点留在改名后的项)。焦点去向由调用方决定。
+ */
+export function commitRenaming<T>(tree: TreeInstance<T>): void {
+  const item = tree.getRenamingItem();
+  if (item) tree.getConfig().onRename?.(item, tree.getRenamingValue());
+  tree.applySubStateUpdate('renamingItem', null);
+}
+
 export function createTreeConfig(
   deps: CreateTreeConfigDeps,
 ): TreeConfig<FileEntry> {
@@ -270,7 +282,10 @@ export function createTreeConfig(
         isEnabled: (tree) => tree.isRenamingItem(),
         handler: (e, tree) => {
           if (isImeComposing(e)) return;
-          tree.completeRenaming();
+          commitRenaming(tree);
+          // 焦点还给树焦点项(此刻仍是原项:失败时就留在它上面)。不轮询、不回落首项:改名成功后原项已被
+          // 刷掉时这里什么都不做,由 FolderTree 在新项出现时定位过去。
+          setTimeout(() => tree.getFocusedItem()?.getElement()?.focus());
         },
       },
       abortRenaming: {

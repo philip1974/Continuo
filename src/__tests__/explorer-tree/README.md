@@ -63,7 +63,8 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 焦点在树内(非输入框)时,`tree-keyboard.ts` 的 `handleTreeKeyDown` 挂在树容器 keydown 冒泡阶段
 (晚于 headless-tree hotkeys 的原生监听):
 
-- Enter:文件 → 打开(与单击同一 `openFileByPath`);目录 → 切换展开。不接库的 `onPrimaryAction`:
+- Enter:文件 → 打开(与单击同一 `openFileByPath`),打开成功后 DOM 焦点交给编辑器(VSCode Windows/Linux 键位
+  `explorer.openAndPassFocus`,同双击;打开失败焦点留在树里);目录 → 切换展开。不接库的 `onPrimaryAction`:
   库在每次行单击(含 ⌘ / Shift 多选单击)都调它
 - 方向键 / Home / End:库移动焦点后选中改为焦点项(Shift 扩选仍由库处理)
 - Delete(mac 另有 ⌘⌫):移到废纸篓,与右键「移到废纸篓」同一 `onTrash`;多选且焦点在选中集内时作用于整组;
@@ -100,6 +101,10 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   (`path-utils.renameStemEnd`);预选只在输入框挂载时做一次,键入不会把光标打回
 - 失焦 = 提交(库默认失焦是放弃);提交不把焦点拉回树(用户点到编辑器等处,焦点留在那里)
 - Esc 放弃,其后的失焦不提交;Enter 提交只发一次重命名
+- Enter 提交成功 → 焦点与选中留在改名后的新项(VSCode);旧 id 随父目录刷新消失,不用库 `completeRenaming` 的
+  `updateDomFocus`(它轮询 500ms 等旧项挂载,超时把焦点打回首项),改为 `tree-config.commitRenaming` + 聚焦原项,
+  新项出现时再经「新建后定位」同一机制(`pendingReveal`)移过去;失败(如同名冲突)→ 焦点留在原项
+- 失焦提交成功 → 新项成为树的焦点 / 选中项,但 DOM 焦点已在树外时不拉回
 
 ## 新建文件 / 文件夹(`folder-tree-create.spec.tsx`,VSCode 同款)
 
@@ -108,6 +113,8 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
     树只把新行设为树焦点 / 选中并滚动到新行
   - 文件夹:DOM 焦点落在新文件夹行,不打开任何文件
   - 新项始终不出现(如隐藏文件)时 3s 后放弃定位
+- 放弃(Esc / ✕ / 空名 Enter)→ 输入框卸载,DOM 焦点回到树的焦点行(`updateDomFocus`;无焦点行则首项;树为空不动),
+  不掉到 body(VSCode:取消后焦点回资源管理器树)
 - 失败(含同名冲突 FS_EEXIST):输入框与已输入的名字保留,下方 `role="alert"` 显示按错误码本地化的原因
   (`localizeErrorByCode`),不弹 toast;改名后提示消失,Enter 重试;Esc 放弃(输入框与提示一并消失)
 - 输入框组件契约(重试守卫 / aria-invalid / onEdit)见 `create-input` 主题

@@ -4,6 +4,7 @@
 //     文件后直接打开并可接着输入),新建文件夹则焦点留在树里、落在新文件夹上
 //   - 失败(含同名冲突):输入框不关、已输入的名字保留,输入框下方显示本地化的错误原因(VSCode 的内联校验
 //     提示);修改名字后错误消失,可直接重试;Esc 放弃
+//   - 放弃(Esc / ✕ / 空名 Enter)→ 焦点回到树的焦点行(VSCode:取消后焦点回资源管理器树),不掉到 body
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
@@ -276,5 +277,25 @@ describe('FolderTree · 新建失败保留输入并内联提示', () => {
     });
     await waitFor(() => expect(document.querySelector('input[placeholder]')).toBeNull());
     expect(r.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('FolderTree · 放弃新建后焦点回树', () => {
+  const CANCEL = /^(取消|Cancel)$/;
+  const keydown = (input: HTMLInputElement, key: string) =>
+    input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+
+  it.each(['Esc', '空名 Enter', '点 ✕'])('%s 放弃 → DOM 焦点落在树的焦点行(右键所在行)', async (how) => {
+    const r = await mount();
+    const input = await startCreateIn(r, '/work/alpha', NEW_FILE);
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    act(() => {
+      if (how === 'Esc') keydown(input, 'Escape');
+      else if (how === '空名 Enter') keydown(input, 'Enter');
+      else fireEvent.click(r.getByRole('button', { name: CANCEL }));
+    });
+    await waitFor(() => expect(document.querySelector('input[placeholder]')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(row(r.container, '/work/alpha')));
+    expect(coApi.fs.createFile).not.toHaveBeenCalled();
   });
 });

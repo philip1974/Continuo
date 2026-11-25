@@ -1,6 +1,6 @@
 # 打开文件后焦点进编辑器(VSCode 对齐)
 
-VSCode:Quick Open(⌘P)回车打开文件、Explorer 新建文件 / 双击文件后,焦点在该文件的编辑器里,可以直接打字。
+VSCode:Quick Open(⌘P)回车打开文件、Explorer 新建文件 / 双击文件 / 键盘 Enter 打开文件后,焦点在该文件的编辑器里,可以直接打字。
 Explorer 普通单击打开已有文件时焦点留在树里(单击预览),不在此列。
 
 ## 模块
@@ -10,7 +10,7 @@ Explorer 普通单击打开已有文件时焦点留在树里(单击预览),不�
 | `src/panels/Editor/editor-focus-registry.ts` | 引擎按 tab 登记聚焦句柄;`requestEditorFocus` / `focusActiveEditor` 发请求 |
 | `src/panels/Editor/CodeEditor.tsx` / `MilkdownEditor.tsx` | 视图就绪时登记(Milkdown 在 Crepe 异步创建完成时) |
 | `src/plugins/quick-open/QuickOpenModal.tsx` | 打开成功后 `focusActiveEditor()` |
-| `src/panels/Explorer/FolderTree.tsx` / `FileRow.tsx` | 新建文件、双击文件(click.detail ≥ 2)打开成功后 `focusActiveEditor()` |
+| `src/panels/Explorer/FolderTree.tsx` / `FileRow.tsx` | 新建文件、双击文件(click.detail ≥ 2)、键盘 Enter 打开成功后 `focusActiveEditor()` |
 | `src/notifications/notify-open-failed.ts` | `openFileOrNotify` 返回是否打开成功 |
 
 ## 行为
@@ -35,7 +35,13 @@ Explorer 普通单击打开已有文件时焦点留在树里(单击预览),不�
 - 普通单击打开已有文件 → 不请求聚焦编辑器
 - 双击文件 → 打开成功后焦点进编辑器;打开失败不请求聚焦
 
+### Explorer 键盘 Enter(`explorer-tree/folder-tree-keyboard.spec.tsx`)
+
+- 焦点在文件行按 Enter → 打开成功后焦点进编辑器(VSCode Windows/Linux 键位 `explorer.openAndPassFocus`);
+  打开失败不请求聚焦
+
 ## 端到端
 
 - `tests/e2e/quick-open-focus-editor.spec.ts`:Quick Open 打开文件后直接键入,文字进入编辑器
 - `tests/e2e/focus-after-close.spec.ts`:Explorer 双击文件后直接键入,文字进入编辑器
+- `tests/e2e/explorer-keyboard-create-rename.spec.ts`:Explorer 键盘 Enter 打开后直接键入进编辑器;重命名 Enter 后焦点在新项;新建 Esc 后焦点回树

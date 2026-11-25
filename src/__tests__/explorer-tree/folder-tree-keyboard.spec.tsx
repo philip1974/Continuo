@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // 文件树键盘操作(对齐 VSCode Explorer):焦点在树内时
-//   - Enter:文件 → 打开(与单击同一 openFileByPath);目录 → 切换展开
+//   - Enter:文件 → 打开(与单击同一 openFileByPath),打开成功后焦点进编辑器(VSCode explorer.openAndPassFocus);
+//     目录 → 切换展开
 //   - 方向键 / Home / End:选中跟随焦点(VSCode 列表 selectionNavigation)
 //   - Delete(mac 另有 ⌘⌫):移到废纸篓,与右键「移到废纸篓」同一 onTrash;多选时作用于整组;
 //     删除前弹确认(VSCode explorer.confirmDelete 默认开,初始焦点在「取消」),按住不放的自动重复不连删
@@ -65,6 +66,8 @@ vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));
 
 import { coApi } from '@/lib/co-api';
+import { useEditorStore } from '../../stores/editor.store';
+import { registerEditorFocus } from '../../panels/Editor/editor-focus-registry';
 import { FolderTree } from '../../panels/Explorer/FolderTree';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
 
@@ -138,6 +141,48 @@ describe('FolderTree · Enter 打开 / 切换展开', () => {
     vi.mocked(h.openFileByPath!).mockClear();
     key(row(container, '/work/beta.ts')!, { key: 'Enter', code: 'Enter' });
     await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts'));
+  });
+
+  it('Enter 打开文件成功 → 焦点交给编辑器(VSCode explorer.openAndPassFocus)', async () => {
+    h.openFileByPath = vi.fn(async (p: string) => {
+      useEditorStore.setState({ activeTabId: p });
+      return { ok: true as const };
+    });
+    h.editorFile = { openFileByPath: h.openFileByPath };
+    const focusEditor = vi.fn();
+    const unregister = registerEditorFocus('/work/beta.ts', focusEditor);
+    try {
+      const { container } = await mount();
+      await focusRow(container, '/work/beta.ts');
+      // 单击打开(预览)不请求聚焦编辑器
+      await new Promise((r) => setTimeout(r, 50));
+      expect(focusEditor).not.toHaveBeenCalled();
+      key(row(container, '/work/beta.ts')!, { key: 'Enter', code: 'Enter' });
+      await waitFor(() => expect(focusEditor).toHaveBeenCalledTimes(1));
+    } finally {
+      unregister();
+    }
+  });
+
+  it('Enter 打开文件失败 → 焦点留在树里,不请求聚焦编辑器', async () => {
+    const { container } = await mount();
+    await focusRow(container, '/work/beta.ts');
+    // 组件已挂载:改同一个 mock 的实现(换新函数不会被已渲染的回调看到)
+    vi.mocked(h.openFileByPath!).mockClear();
+    vi.mocked(h.openFileByPath!).mockImplementation(
+      async () => ({ ok: false, code: 'FS_ENOENT', message: 'gone' }) as unknown as { ok: true },
+    );
+    useEditorStore.setState({ activeTabId: '/work/beta.ts' });
+    const focusEditor = vi.fn();
+    const unregister = registerEditorFocus('/work/beta.ts', focusEditor);
+    try {
+      key(row(container, '/work/beta.ts')!, { key: 'Enter', code: 'Enter' });
+      await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts'));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(focusEditor).not.toHaveBeenCalled();
+    } finally {
+      unregister();
+    }
   });
 
   it('焦点在目录上按 Enter → 展开,再按 → 折叠,不打开文件', async () => {

@@ -140,6 +140,14 @@ function rowIndexOf(rows: readonly TreeRow[], id: string): number {
   return rows.findIndex((r) => !isDirLoadErrorRow(r) && r.getId() === id);
 }
 
+/** DOM 焦点是否在树(滚动容器)之外的某个元素上;焦点掉在 body / 无焦点不算(那是被卸载的输入框 / 行留下的)。 */
+function isDomFocusOutside(container: HTMLElement | null): boolean {
+  if (container === null) return false;
+  const doc = container.ownerDocument;
+  const active = doc.activeElement;
+  return active !== null && active !== doc.body && !container.contains(active);
+}
+
 // 跨平台(复查 P2):复用单一来源 path-cross.isSameOrInsidePath —— 此前手写
 // startsWith 对 Windows 大小写敏感,持久化的 expandedPaths(`C:\Repo\src`)与 root
 // (`c:\repo`)仅大小写不同时被判 out-of-root → 树恢复展开错乱/旧展开项滞留。
@@ -662,6 +670,9 @@ export function FolderTree({ root }: { root: string }) {
               }
               // editor tab / 展开集合前缀改写 + 剪贴板剪除旧路径(目录 rename 时其下全部路径同步)
               onPathMoved(oldPath, r.newPath);
+              // 焦点与选中留在改名后的项(VSCode):旧 id 随父目录刷新消失,不定位则库的 updateDomFocus 回落首项。
+              // 失败分支不动:Enter 提交时焦点已还给原项(tree-config completeRenaming)。
+              setPendingReveal({ path: r.newPath, focusRow: true });
             } catch (err) {
               notifyThrownError(err);
             }
@@ -809,7 +820,8 @@ export function FolderTree({ root }: { root: string }) {
     if (index < 0) return;
     const item = rows[index] as ItemInstance<FileEntry>;
     setPendingReveal(null);
-    if (pendingReveal.focusRow) {
+    // DOM 焦点已在树外(失焦提交重命名时用户点到了编辑器等处)→ 不拉回,只移树焦点 / 选中
+    if (pendingReveal.focusRow && !isDomFocusOutside(scrollRef.current)) {
       focusAndSelect(tree, item);
     } else {
       item.setFocused();
@@ -834,7 +846,7 @@ export function FolderTree({ root }: { root: string }) {
       openFileOrNotify(() => openFileByPath(path), basenamePreserveTrailing(path), 'explorer'),
     [openFileByPath],
   );
-  // 文件行单击 / 双击:双击打开成功后焦点进编辑器(VSCode;单击预览焦点留在树里)。
+  // 文件行单击 / 双击 / 键盘 Enter:双击与 Enter 打开成功后焦点进编辑器(VSCode;单击预览焦点留在树里)。
   const handleRowFileOpen = useCallback(
     (path: string, focusEditor: boolean) => {
       void handleFileOpen(path).then((ok) => {
@@ -983,6 +995,13 @@ export function FolderTree({ root }: { root: string }) {
       });
     }
     return true;
+  };
+
+  // 放弃新建(Esc / ✕ / 空名 Enter):输入框卸载,焦点还给树的焦点行(VSCode:取消后焦点回资源管理器树;
+  // 没有焦点行时库回落首项),不掉到 body。树为空时没有行可聚焦,不动。
+  const cancelCreate = () => {
+    setCreating(null);
+    if (renderedItemsRef.current.length > 0) tree.updateDomFocus();
   };
 
   // 子目录错误行「重试」:焦点先回到该目录行(错误行随后卸载,不掉到 body),再重新读取。
@@ -1254,7 +1273,7 @@ export function FolderTree({ root }: { root: string }) {
           parentDir={creating.parentDir}
           rootPath={root}
           onSubmit={submitCreate}
-          onCancel={() => setCreating(null)}
+          onCancel={cancelCreate}
           error={creating.error}
           onEdit={() => setCreating((c) => (c?.error ? { ...c, error: undefined } : c))}
         />
@@ -1286,7 +1305,8 @@ export function FolderTree({ root }: { root: string }) {
                   tree,
                   items,
                   actions: contextActions,
-                  openFile: (path) => void handleFileOpen(path),
+                  // Enter = VSCode explorer.openAndPassFocus:打开成功后焦点交编辑器(同双击)
+                  openFile: (path) => handleRowFileOpen(path, true),
                   rootPath: root,
                   platform,
                   typeAhead: typeAheadRef.current,

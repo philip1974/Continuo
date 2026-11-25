@@ -67,3 +67,62 @@ test('F2 预选主名,键入替换主名后点别处(失焦)→ 提交重命名'
   }).toPass({ timeout: 5_000 });
   await expect(input).toBeHidden();
 });
+
+// 焦点去向(VSCode):Enter 打开 = explorer.openAndPassFocus;重命名 Enter 后焦点留在新项;放弃新建后焦点回树。
+// BDD: src/__tests__/explorer-tree/、src/__tests__/editor-focus-on-open/
+test('键盘 Enter 打开文件 → 焦点进编辑器,可直接键入', async ({ window, workspaceRoot }) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  await src.click();
+  await src.press('ArrowDown');
+  const a = rowOf(window, path.join(workspaceRoot, 'src/a.ts'));
+  await expect(a).toBeFocused();
+  await a.press('Enter');
+  const cm = window.locator('.cm-content');
+  await expect(cm).toContainText('export const a', { timeout: 10_000 });
+  await expect(cm).toBeFocused({ timeout: 5_000 });
+  await window.keyboard.type('enter-open');
+  await expect(cm).toContainText('enter-open');
+});
+
+test('F2 改名后按 Enter → 焦点与选中留在改名后的项', async ({ window, workspaceRoot }) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  await src.click();
+  const a = rowOf(window, path.join(workspaceRoot, 'src/a.ts'));
+  const b = rowOf(window, path.join(workspaceRoot, 'src/b.ts'));
+  await expect(a).toBeVisible();
+  await window.keyboard.press('ArrowDown');
+  await expect(a).toBeFocused();
+  await window.keyboard.press('ArrowDown');
+  await expect(b).toBeFocused();
+  await b.press('F2');
+  const input = window.locator('[role=treeitem] input');
+  await expect(input).toBeFocused({ timeout: 5_000 });
+  await window.keyboard.type('b2');
+  await expect(input).toHaveValue('b2.ts');
+  await input.press('Enter');
+  await expect(async () => {
+    await stat(path.join(workspaceRoot, 'src/b2.ts'));
+  }).toPass({ timeout: 5_000 });
+  const b2 = rowOf(window, path.join(workspaceRoot, 'src/b2.ts'));
+  await expect(b2).toBeFocused({ timeout: 5_000 });
+  await expect(b2).toHaveAttribute('aria-selected', 'true');
+  // 库的焦点轮询(500ms)过后也不被打回首项
+  await window.waitForTimeout(800);
+  await expect(b2).toBeFocused();
+});
+
+test('右键新建文件 → Esc 放弃 → 焦点回到树的焦点行', async ({ window, workspaceRoot }) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  await src.click({ button: 'right' });
+  const newFile = window.getByRole('menuitem', { name: EXPLORER_NEW_FILE });
+  await expect(newFile).toBeVisible({ timeout: 5_000 });
+  await newFile.click();
+  const input = window.getByRole('textbox', { name: EXPLORER_NEW_FILE_PLACEHOLDER });
+  await expect(input).toBeFocused({ timeout: 5_000 });
+  await input.press('Escape');
+  await expect(input).toBeHidden();
+  await expect(src).toBeFocused({ timeout: 5_000 });
+});

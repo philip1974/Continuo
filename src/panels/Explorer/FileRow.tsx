@@ -17,6 +17,7 @@ import { clipboardPathSet, useExplorerClipboardStore } from './clipboard-store';
 import type { DropTargetEntry } from './drop-handlers';
 import { FileIcon } from './file-icon';
 import { renameStemEnd } from './path-utils';
+import { commitRenaming } from './tree-config';
 
 /**
  * 行状态快照(perf):由 FolderTree 在渲染期从 item 读出后作为 primitive 下传。FileRow 是 memo 组件,
@@ -322,8 +323,7 @@ export const FileRow = memo(function FileRow({
           onBlur={() => {
             const tree = item.getTree();
             if (tree.getState().renamingItem !== item.getId()) return;
-            tree.getConfig().onRename?.(item, tree.getRenamingValue());
-            tree.applySubStateUpdate('renamingItem', null);
+            commitRenaming(tree);
           }}
           className="w-full"
           spellCheck={false}

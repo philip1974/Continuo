@@ -3,6 +3,7 @@
 //   - F2 进入重命名:文件预选主名(不含最后一个扩展名),目录 / 无扩展名 / 以点开头的文件全选
 //   - 输入框失焦 = 提交(VSCode 失焦时按当前值完成重命名),不是放弃
 //   - Esc 放弃(之后的失焦不再提交);Enter 提交只发一次重命名
+//   - Enter 提交成功 → 焦点与选中留在改名后的项(VSCode);失败 → 焦点回原项;失焦提交不把焦点拉回树
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
@@ -22,10 +23,11 @@ const entries: FileEntry[] = [
   { path: '/work/archive.tar.gz', name: 'archive.tar.gz', isDirectory: false },
   { path: '/work/Makefile', name: 'Makefile', isDirectory: false },
 ];
-const fsTree = new Map<string, FileEntry[]>([
+const initialTree = (): Map<string, FileEntry[]> => new Map<string, FileEntry[]>([
   ['/work', entries],
   ['/work/alpha', [{ path: '/work/alpha/inner.ts', name: 'inner.ts', isDirectory: false }]],
 ]);
+const fsTree = initialTree();
 
 vi.mock('@/lib/co-api', () => ({
   coApi: {
@@ -34,7 +36,13 @@ vi.mock('@/lib/co-api', () => ({
       move: vi.fn(async (_s: string, d: string) => ({ ok: true, data: d })),
       copy: vi.fn(async (_s: string, d: string) => ({ ok: true, data: d })),
       trash: vi.fn(async () => ({ ok: true, data: undefined })),
-      rename: vi.fn(async (p: string, n: string) => ({ ok: true, data: `/work/${n}` })),
+      // 成功:fsTree 里改名(随后父目录刷新能看到新项、旧项消失);失败由用例 mockResolvedValueOnce 覆盖
+      rename: vi.fn(async (p: string, n: string) => {
+        const newPath = `/work/${n}`;
+        const list = fsTree.get('/work') ?? [];
+        fsTree.set('/work', list.map((e) => (e.path === p ? { ...e, path: newPath, name: n } : e)));
+        return { ok: true, data: newPath };
+      }),
       reveal: vi.fn(),
       watchDir: vi.fn(async () => ({ ok: true })),
       unwatchDir: vi.fn(async () => ({ ok: true })),
@@ -106,6 +114,8 @@ beforeEach(() => {
   vi.mocked(coApi.fs.trash).mockClear();
   vi.mocked(coApi.fs.rename).mockClear();
   vi.mocked(coApi.fs.copy).mockClear();
+  fsTree.clear();
+  for (const [k, v] of initialTree()) fsTree.set(k, v);
   useExplorerStore.setState({ expandedPaths: new Set(), sort: { by: 'name', reverse: false } });
   useExplorerClipboardStore.setState({ kind: null, paths: [] });
 });
@@ -205,5 +215,63 @@ describe('FolderTree · 重命名失焦提交', () => {
     await waitFor(() => expect(coApi.fs.rename).toHaveBeenCalledWith('/work/beta.ts', 'gamma.ts'));
     await new Promise((r) => setTimeout(r, 20));
     expect(coApi.fs.rename).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FolderTree · 重命名后的焦点(VSCode:焦点与选中留在改名后的项)', () => {
+  it('Enter 提交成功 → DOM 焦点与选中落在改名后的新项,不跳到首项', async () => {
+    const { container } = await mount();
+    const input = await startRename(container, '/work/beta.ts');
+    act(() => {
+      fireEvent.change(input, { target: { value: 'gamma.ts' } });
+    });
+    key(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(coApi.fs.rename).toHaveBeenCalledWith('/work/beta.ts', 'gamma.ts'));
+    await waitFor(() => expect(row(container, '/work/gamma.ts')).not.toBeNull());
+    expect(row(container, '/work/beta.ts')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/gamma.ts')));
+    expect(row(container, '/work/gamma.ts')!.getAttribute('aria-selected')).toBe('true');
+    // 库的 updateDomFocus 轮询(最多 500ms)结束后也不被打回首项
+    await new Promise((r) => setTimeout(r, 600));
+    expect(document.activeElement).toBe(row(container, '/work/gamma.ts'));
+  });
+
+  it('Enter 提交失败(同名冲突)→ 焦点回到原项', async () => {
+    const { container } = await mount();
+    vi.mocked(coApi.fs.rename).mockResolvedValueOnce({
+      ok: false,
+      code: 'FS_EEXIST',
+      message: 'exists',
+    } as never);
+    const input = await startRename(container, '/work/beta.ts');
+    act(() => {
+      fireEvent.change(input, { target: { value: 'bravo.ts' } });
+    });
+    key(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(coApi.fs.rename).toHaveBeenCalledWith('/work/beta.ts', 'bravo.ts'));
+    await waitFor(() => expect(document.activeElement).toBe(row(container, '/work/beta.ts')));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(document.activeElement).toBe(row(container, '/work/beta.ts'));
+  });
+
+  it('失焦提交(点到树外)成功 → 新项成为树的选中项,但 DOM 焦点留在树外', async () => {
+    const { container } = await mount();
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    try {
+      const input = await startRename(container, '/work/beta.ts');
+      act(() => {
+        fireEvent.change(input, { target: { value: 'gamma.ts' } });
+      });
+      act(() => {
+        outside.focus();
+      });
+      await waitFor(() => expect(row(container, '/work/gamma.ts')).not.toBeNull());
+      await waitFor(() => expect(row(container, '/work/gamma.ts')!.getAttribute('aria-selected')).toBe('true'));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
   });
 });
