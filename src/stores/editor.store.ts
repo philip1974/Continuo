@@ -23,6 +23,7 @@ import {
   renameEditorViewStates,
   retainEditorViewStates,
 } from '@/panels/Editor/editor-view-state-cache';
+import { EDITOR_GROUPS_MAX, PRIMARY_EDITOR_GROUP_ID } from '../../electron/shared/editor-group-id';
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -90,6 +91,26 @@ export interface EditorTab {
    * 重命名 / 移动、文件重新出现、还原也清除。runtime only,不持久化。
    */
   readonly orphaned?: boolean;
+}
+
+/**
+ * 编辑器组(多实例编辑器 dock 面板;VSCode editor group):自己的 tab 顺序与活动 tab。文档本身(内容 / 脏态)在
+ * `tabs` 里只有一份,所有组共享。**只有一个组时**,组的列表 / 活动 tab 就是 `tabs` / `activeTabId`(这里的
+ * tabIds / activeTabId 不使用);多个组时由这里决定,`activeTabId` 镜像活动组的活动 tab。
+ * BDD: src/__tests__/editor-groups/
+ */
+export interface EditorGroup {
+  /** = dock 面板 id(`editor`、`editor:2`…)。 */
+  readonly id: string;
+  readonly tabIds: readonly string[];
+  readonly activeTabId: string | null;
+}
+
+/** restoreGroups 的输入(会话恢复)。 */
+export interface EditorGroupLayout {
+  readonly id: string;
+  readonly tabIds: readonly string[];
+  readonly activeTabId: string | null;
 }
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
@@ -476,6 +497,11 @@ function closeCleanFileTabsUnless(
 export interface EditorFocusOpts {
   readonly requestFocus?: boolean;
   /**
+   * 目标编辑器组(缺省 = 活动组)。显式指定且 requestFocus 非 false → 该组成为活动组(在某组的 tab 栏点击)。
+   * 只有一个组时忽略。BDD: src/__tests__/editor-groups/
+   */
+  readonly groupId?: string;
+  /**
    * 仅 openTab:`false` = 只插入不激活(当前已有活动 tab 时保持 activeTabId 不变;无活动 tab 时仍激活新 tab)。
    * 供迟到的会话恢复在用户已打开/切换 tab 后补入恢复 tab 而不抢回活动 tab。缺省 true。
    */
@@ -505,7 +531,12 @@ export function beginUserActivation(): number {
 
 type EditorState = {
   tabs: EditorTab[];
+  /** 活动组的活动 tab(只有一个组时即该组的活动 tab)。 */
   activeTabId: string | null;
+  /** 编辑器组(至少一个);见 EditorGroup。 */
+  groups: EditorGroup[];
+  /** 最近活动的编辑器组:打开文件落在这里。 */
+  activeGroupId: string;
   mode: EditorMode;
   /**
    * 递增 token:每次"请求 editor 在 dock 内激活"时 +1。即便 activeTabId 不变
@@ -529,7 +560,24 @@ type EditorState = {
 
   /** 已存在则切换 active,新加则推入. `requestFocus: false`(持久化会话恢复)不递增 editorFocusPulse. */
   openTab: (tab: EditorTab, opts?: EditorFocusOpts) => void;
-  closeTab: (id: string) => void;
+  /** 关闭组 `groupId`(缺省活动组)里的 tab;文档不在其它组时一并移除。组因此变空且不是唯一的组 → 关闭该组。 */
+  closeTab: (id: string, groupId?: string) => void;
+  /** 该组成为活动组(dock 面板激活 / 编辑区获焦)。不存在 → no-op。 */
+  setActiveGroup: (groupId: string) => void;
+  /** 确保组存在(恢复出的组面板挂载时;新组为空,不改活动组)。 */
+  ensureGroup: (groupId: string) => void;
+  /**
+   * 拆分:在 sourceGroupId 之后新建组 newGroupId,打开源组的活动文件(或指定的 tabId),新组成为活动组。
+   * 源组无可拆分的文件 / newGroupId 已存在 / 组数已达上限 → false。
+   */
+  splitGroup: (sourceGroupId: string, newGroupId: string, tabId?: string) => boolean;
+  /**
+   * 移除组(其 dock 面板被关掉):只在该组的文档 —— keep 'all' 全部移到相邻组;'dirty' 只移脏的、干净的关闭。
+   * 唯一的组不移除。
+   */
+  removeGroup: (groupId: string, keep: 'dirty' | 'all') => void;
+  /** 会话恢复:按布局分配已打开的文档(未分配的进活动组;不存在的文档与空组丢弃)。 */
+  restoreGroups: (layout: readonly EditorGroupLayout[], activeGroupId: string) => void;
   /** 文件/目录被删除后调用:精确匹配或前缀匹配的 clean tab 统一关闭,只 set 一次(chromeVersion 至多 bump 一次). */
   removePaths: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
@@ -631,12 +679,200 @@ function changeTabsWithWriteBack(
   change: (tabs: EditorTab[], activeTabId: string | null) => CloseTabResult,
 ): void {
   flushWriteBacksForAffectedTabs(get().tabs, change);
-  set((s) => applyTabStateChange(s, change(s.tabs, s.activeTabId)));
+  set((s) =>
+    isMultiGroup(s)
+      ? applyDocChangeToGroups(s, change)
+      : applyTabStateChange(s, change(s.tabs, s.activeTabId)),
+  );
+}
+
+// ── 编辑器组(BDD: src/__tests__/editor-groups/) ──────────────
+
+type GroupedState = Pick<
+  EditorState,
+  'tabs' | 'activeTabId' | 'groups' | 'activeGroupId' | 'chromeVersion'
+>;
+
+const EMPTY_IDS: readonly string[] = [];
+
+function singleGroup(id: string): EditorGroup[] {
+  return [{ id, tabIds: EMPTY_IDS, activeTabId: null }];
+}
+
+function isMultiGroup(s: Pick<EditorState, 'groups'>): boolean {
+  return s.groups.length > 1;
+}
+
+function idsOf(tabs: readonly { readonly id: string }[]): string[] {
+  const out = new Array<string>(tabs.length);
+  for (let i = 0; i < tabs.length; i++) out[i] = tabs[i]!.id;
+  return out;
+}
+
+/** 组的实际内容:单组模式按 tabs / activeTabId 物化(该组记录的 tabIds 不使用)。 */
+function materializedGroups(s: Pick<EditorState, 'tabs' | 'activeTabId' | 'groups'>): readonly EditorGroup[] {
+  if (isMultiGroup(s)) return s.groups;
+  const only = s.groups[0];
+  const active = s.activeTabId !== null && findEditorTabIndexById(s.tabs, s.activeTabId) >= 0 ? s.activeTabId : null;
+  return [{ id: only?.id ?? PRIMARY_EDITOR_GROUP_ID, tabIds: idsOf(s.tabs), activeTabId: active }];
+}
+
+/** 组的 id 列表(按组顺序)。 */
+export function editorGroupIdsOf(s: Pick<EditorState, 'groups'>): string[] {
+  return idsOf(s.groups.length > 0 ? s.groups : singleGroup(PRIMARY_EDITOR_GROUP_ID));
+}
+
+function findGroup(s: Pick<EditorState, 'groups'>, groupId: string): EditorGroup | undefined {
+  for (const g of s.groups) if (g.id === groupId) return g;
+  return undefined;
+}
+
+/** 组 groupId 的 tab(按该组顺序);单组模式 = tabs(组 id 不匹配时同样按唯一组处理)。 */
+export function groupTabsOf(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: string): EditorTab[] {
+  if (!isMultiGroup(s)) return s.tabs;
+  const g = findGroup(s, groupId);
+  if (!g || g.tabIds.length === 0) return EMPTY_EDITOR_TABS;
+  const byId = new Map<string, EditorTab>();
+  for (const t of s.tabs) byId.set(t.id, t);
+  const out: EditorTab[] = [];
+  for (const id of g.tabIds) {
+    const t = byId.get(id);
+    if (t) out.push(t);
+  }
+  return out;
+}
+
+/** 组 groupId 的活动 tab id;单组模式 = activeTabId。 */
+export function groupActiveTabIdOf(
+  s: Pick<EditorState, 'activeTabId' | 'groups'>,
+  groupId: string,
+): string | null {
+  if (!isMultiGroup(s)) return s.activeTabId;
+  return findGroup(s, groupId)?.activeTabId ?? null;
+}
+
+/** 文档 tabId 是否还在 groupId 之外的组里打开(关闭 / 组内批量关闭的脏确认据此跳过:文档仍在别处)。 */
+export function isTabOpenInOtherGroup(
+  s: Pick<EditorState, 'groups'>,
+  tabId: string,
+  groupId: string,
+): boolean {
+  if (!isMultiGroup(s)) return false;
+  return s.groups.some((g) => g.id !== groupId && g.tabIds.includes(tabId));
+}
+
+function replaceGroup(groups: readonly EditorGroup[], next: EditorGroup): EditorGroup[] {
+  return groups.map((g) => (g.id === next.id ? next : g));
+}
+
+/**
+ * 组变更的统一提交:关闭「本次变空」的组(closeEmptyGroups;本就为空的恢复占位组不动)、至少保留一个组、活动组被关
+ * 落到相邻组;只剩一个组 → 单组模式(tabs 按该组顺序)。activeTabId 镜像活动组;有变化才 bump chromeVersion。
+ */
+function commitGroups(
+  s: GroupedState,
+  tabs: EditorTab[],
+  groups: readonly EditorGroup[],
+  activeGroupId: string,
+  prevGroups: readonly EditorGroup[] = materializedGroups(s),
+): Partial<EditorState> {
+  const wasNonEmpty = new Set<string>();
+  for (const g of prevGroups) if (g.tabIds.length > 0) wasNonEmpty.add(g.id);
+  let kept = groups.filter((g) => g.tabIds.length > 0 || !wasNonEmpty.has(g.id));
+  if (kept.length === 0) {
+    const keep = groups.find((g) => g.id === activeGroupId) ?? groups[0];
+    kept = keep ? [{ id: keep.id, tabIds: EMPTY_IDS, activeTabId: null }] : singleGroup(PRIMARY_EDITOR_GROUP_ID);
+  }
+  let active = kept.find((g) => g.id === activeGroupId);
+  if (!active) {
+    // 活动组被关:落到原顺序里它前面最近的保留组,否则第一个
+    const order = idsOf(groups.length > 0 ? groups : prevGroups);
+    const idx = order.indexOf(activeGroupId);
+    for (let i = idx - 1; i >= 0 && !active; i--) active = kept.find((g) => g.id === order[i]);
+    active ??= kept[0]!;
+  }
+  if (kept.length === 1) {
+    const only = kept[0]!;
+    const byId = new Map<string, EditorTab>();
+    for (const t of tabs) byId.set(t.id, t);
+    const ordered: EditorTab[] = [];
+    for (const id of only.tabIds) {
+      const t = byId.get(id);
+      if (t && byId.delete(id)) ordered.push(t);
+    }
+    for (const t of byId.values()) ordered.push(t); // 防御:不该有游离文档
+    const sameOrder = ordered.length === s.tabs.length && ordered.every((t, i) => t === s.tabs[i]);
+    return {
+      tabs: sameOrder ? s.tabs : ordered.length === 0 ? EMPTY_EDITOR_TABS : ordered,
+      activeTabId: only.activeTabId,
+      groups: singleGroup(only.id),
+      activeGroupId: only.id,
+      chromeVersion: s.chromeVersion + 1,
+    };
+  }
+  return {
+    tabs,
+    activeTabId: active.activeTabId,
+    groups: kept,
+    activeGroupId: active.id,
+    chromeVersion: s.chromeVersion + 1,
+  };
+}
+
+/** 文档级变更(删除路径 / 改名 / 切 root):全局按 change 重算文档列表,每组按同一规则重算其列表与活动 tab。 */
+function applyDocChangeToGroups(
+  s: GroupedState,
+  change: (tabs: EditorTab[], activeTabId: string | null) => CloseTabResult,
+): GroupedState | Partial<EditorState> {
+  const nextTabs = change(s.tabs, null).tabs;
+  if (nextTabs === s.tabs) return s;
+  const byId = new Map<string, EditorTab>();
+  for (const t of s.tabs) byId.set(t.id, t);
+  const groups = s.groups.map((g): EditorGroup => {
+    const own: EditorTab[] = [];
+    for (const id of g.tabIds) {
+      const t = byId.get(id);
+      if (t) own.push(t);
+    }
+    const r = change(own, g.activeTabId);
+    return { id: g.id, tabIds: idsOf(r.tabs), activeTabId: r.activeTabId };
+  });
+  return commitGroups(s, nextTabs, groups, s.activeGroupId, s.groups);
+}
+
+/** 从 id 列表移除 closing,活动项被关时落到后一个、否则前一个(同 getStateAfterClosingTab)。 */
+function closeIdInGroup(g: EditorGroup, closing: string): EditorGroup {
+  const idx = g.tabIds.indexOf(closing);
+  if (idx < 0) return g;
+  const tabIds = g.tabIds.filter((id) => id !== closing);
+  const activeTabId =
+    g.activeTabId !== closing ? g.activeTabId : (g.tabIds[idx + 1] ?? g.tabIds[idx - 1] ?? null);
+  return { id: g.id, tabIds, activeTabId };
+}
+
+/** 组 g 里激活 tabId(不在组里则追加);keepActive:组已有活动 tab 时只追加不激活。 */
+function activateInGroup(g: EditorGroup, tabId: string, keepActive: boolean): EditorGroup {
+  const has = g.tabIds.includes(tabId);
+  const activeTabId = keepActive && g.activeTabId !== null ? g.activeTabId : tabId;
+  if (has && activeTabId === g.activeTabId) return g;
+  return { id: g.id, tabIds: has ? g.tabIds : [...g.tabIds, tabId], activeTabId };
+}
+
+function targetGroupId(s: Pick<EditorState, 'groups' | 'activeGroupId'>, opts?: EditorFocusOpts): string {
+  const id = opts?.groupId;
+  return id !== undefined && findGroup(s, id) ? id : s.activeGroupId;
+}
+
+/** 显式指定组且是用户意图 → 该组成为活动组。 */
+function nextActiveGroupId(s: Pick<EditorState, 'activeGroupId'>, gid: string, opts?: EditorFocusOpts): string {
+  return opts?.groupId !== undefined && opts.requestFocus !== false ? gid : s.activeGroupId;
 }
 
 export const useEditorStore = create<EditorState>((set, get, api) => ({
   tabs: [],
   activeTabId: null,
+  groups: singleGroup(PRIMARY_EDITOR_GROUP_ID),
+  activeGroupId: PRIMARY_EDITOR_GROUP_ID,
   mode: 'source',
   editorFocusPulse: 0,
   chromeVersion: 0,
@@ -645,6 +881,27 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   openTab: (tab, opts) =>
     set((s) => {
       const pulse = nextFocusPulse(s.editorFocusPulse, opts);
+      if (isMultiGroup(s)) {
+        const gid = targetGroupId(s, opts);
+        const g = findGroup(s, gid)!;
+        const exists = findEditorTabIndexById(s.tabs, tab.id) >= 0;
+        if (!exists && (s.tabs.length >= PATH_ARRAY_MAX || tab.filePath.length > PATH_STR_MAX)) return s;
+        const nextG = activateInGroup(g, tab.id, opts?.activate === false);
+        const activeGroupId = nextActiveGroupId(s, gid, opts);
+        if (exists && nextG === g && activeGroupId === s.activeGroupId) {
+          return opts?.activate === false && g.activeTabId !== null ? s : { editorFocusPulse: pulse };
+        }
+        const groups = replaceGroup(s.groups, nextG);
+        const active = groups.find((x) => x.id === activeGroupId)!;
+        return {
+          tabs: exists ? s.tabs : appendEditorTab(s.tabs, tab),
+          groups,
+          activeGroupId,
+          activeTabId: active.activeTabId,
+          editorFocusPulse: pulse,
+          chromeVersion: s.chromeVersion + 1,
+        };
+      }
       const keepActive = opts?.activate === false && s.activeTabId !== null;
       const existingIndex = findEditorTabIndexById(s.tabs, tab.id);
       if (existingIndex >= 0) {
@@ -667,10 +924,110 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   // perf P12:getStateAfter* 在无变化时返回原 tabs 引用,变化时返回新数组;据此
   // 决定是否 bump chromeVersion(增删/改名都改 chrome)。
-  closeTab: (id) =>
-    set((s) =>
-      applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id)),
-    ),
+  closeTab: (id, groupId) =>
+    set((s) => {
+      if (!isMultiGroup(s)) {
+        return applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id));
+      }
+      const g = findGroup(s, groupId ?? s.activeGroupId);
+      if (!g || !g.tabIds.includes(id)) return s;
+      const openElsewhere = isTabOpenInOtherGroup(s, id, g.id);
+      const tabs = openElsewhere ? s.tabs : getStateAfterClosingTab(s.tabs, null, id).tabs;
+      return commitGroups(s, tabs, replaceGroup(s.groups, closeIdInGroup(g, id)), s.activeGroupId);
+    }),
+
+  setActiveGroup: (groupId) =>
+    set((s) => {
+      if (!isMultiGroup(s) || s.activeGroupId === groupId) return s;
+      const g = findGroup(s, groupId);
+      return g ? { activeGroupId: g.id, activeTabId: g.activeTabId } : s;
+    }),
+
+  ensureGroup: (groupId) =>
+    set((s) => {
+      const groups = materializedGroups(s);
+      if (groups.some((g) => g.id === groupId) || groups.length >= EDITOR_GROUPS_MAX) return s;
+      return commitGroups(s, s.tabs, [...groups, { id: groupId, tabIds: EMPTY_IDS, activeTabId: null }], s.activeGroupId);
+    }),
+
+  splitGroup: (sourceGroupId, newGroupId, tabId) => {
+    const s = get();
+    const groups = materializedGroups(s);
+    const idx = groups.findIndex((g) => g.id === sourceGroupId);
+    const source = groups[idx];
+    const docId = tabId ?? source?.activeTabId ?? null;
+    if (
+      !source ||
+      docId === null ||
+      findEditorTabIndexById(s.tabs, docId) < 0 ||
+      groups.some((g) => g.id === newGroupId) ||
+      groups.length >= EDITOR_GROUPS_MAX
+    ) {
+      return false;
+    }
+    const next = [...groups];
+    next.splice(idx + 1, 0, { id: newGroupId, tabIds: [docId], activeTabId: docId });
+    set((cur) => ({
+      ...commitGroups(cur, cur.tabs, next, newGroupId),
+      editorFocusPulse: cur.editorFocusPulse + 1,
+    }));
+    return true;
+  },
+
+  removeGroup: (groupId, keep) => {
+    const pre = get();
+    if (!isMultiGroup(pre) || !findGroup(pre, groupId)) return;
+    flushEditorWriteBacks(findGroup(pre, groupId)!.tabIds);
+    set((s) => {
+      const idx = s.groups.findIndex((g) => g.id === groupId);
+      if (!isMultiGroup(s) || idx < 0) return s;
+      const g = s.groups[idx]!;
+      const others = s.groups.filter((x) => x.id !== groupId);
+      const target = others[Math.max(0, idx - 1)]!;
+      const byId = new Map<string, EditorTab>();
+      for (const t of s.tabs) byId.set(t.id, t);
+      const exclusive = g.tabIds.filter((id) => !others.some((o) => o.tabIds.includes(id)));
+      const move = keep === 'all' ? exclusive : exclusive.filter((id) => byId.get(id)?.dirty === true);
+      const closed = new Set(exclusive.filter((id) => !move.includes(id)));
+      const nextTarget: EditorGroup = {
+        id: target.id,
+        tabIds: [...target.tabIds, ...move],
+        activeTabId: target.activeTabId ?? move[0] ?? null,
+      };
+      const tabs = closed.size === 0 ? s.tabs : s.tabs.filter((t) => !closed.has(t.id));
+      const activeGroupId = s.activeGroupId === groupId ? target.id : s.activeGroupId;
+      return commitGroups(s, tabs, replaceGroup(others, nextTarget), activeGroupId, others);
+    });
+  },
+
+  restoreGroups: (layout, activeGroupId) =>
+    set((s) => {
+      if (s.tabs.length === 0) return s;
+      const open = new Set(idsOf(s.tabs));
+      const assigned = new Set<string>();
+      const seenGroups = new Set<string>();
+      const draft: { id: string; tabIds: string[]; wanted: string | null }[] = [];
+      for (const l of layout) {
+        if (seenGroups.has(l.id) || draft.length >= EDITOR_GROUPS_MAX) continue;
+        seenGroups.add(l.id);
+        // 同一文档可在多个组;组内去重
+        const tabIds = [...new Set(l.tabIds)].filter((id) => open.has(id));
+        for (const id of tabIds) assigned.add(id);
+        draft.push({ id: l.id, tabIds, wanted: l.activeTabId });
+      }
+      let ai = draft.findIndex((g) => g.id === activeGroupId);
+      if (ai < 0) ai = draft.findIndex((g) => g.tabIds.length > 0);
+      if (ai < 0) return s;
+      for (const t of s.tabs) if (!assigned.has(t.id)) draft[ai]!.tabIds.push(t.id);
+      const groups: EditorGroup[] = draft.map((d) => ({
+        id: d.id,
+        tabIds: d.tabIds,
+        activeTabId: d.wanted !== null && d.tabIds.includes(d.wanted) ? d.wanted : (d.tabIds[0] ?? null),
+      }));
+      // 恢复布局里没有文档的组(读盘失败)丢弃;此前为恢复出的面板占位的空组同样不保留
+      const kept = groups.filter((g) => g.tabIds.length > 0);
+      return commitGroups(s, s.tabs, kept, groups[ai]!.id, kept);
+    }),
 
   // 先按 pre-flush 状态算出受影响(将被关闭 / 换 id)的 tab,只回写它们 —— 回写会把正在编辑的大文档
   // 整篇序列化并提前上抛,不相关的删除 / 改名 / 切 root 不应打断输入。回写只改 content / dirty,
@@ -747,10 +1104,24 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
 
   switchTab: (id, opts) => {
     if (opts?.requestFocus !== false) beginUserActivation();
-    set((s) => ({
-      activeTabId: id,
-      editorFocusPulse: nextFocusPulse(s.editorFocusPulse, opts),
-    }));
+    set((s) => {
+      const pulse = nextFocusPulse(s.editorFocusPulse, opts);
+      if (!isMultiGroup(s)) return { activeTabId: id, editorFocusPulse: pulse };
+      // 多组:在目标组(缺省活动组)激活;文档在别的组打开而不在本组 → 本组也打开它(VSCode 在活动组打开)
+      if (findEditorTabIndexById(s.tabs, id) < 0) return { editorFocusPulse: pulse };
+      const gid = targetGroupId(s, opts);
+      const g = findGroup(s, gid)!;
+      const nextG = activateInGroup(g, id, false);
+      const activeGroupId = nextActiveGroupId(s, gid, opts);
+      const groups = nextG === g ? s.groups : replaceGroup(s.groups, nextG);
+      return {
+        groups,
+        activeGroupId,
+        activeTabId: groups.find((x) => x.id === activeGroupId)!.activeTabId,
+        editorFocusPulse: pulse,
+        ...(nextG.tabIds !== g.tabIds ? { chromeVersion: s.chromeVersion + 1 } : null),
+      };
+    });
   },
 
   updateContent: (id, content) =>

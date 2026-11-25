@@ -12,6 +12,7 @@
 
 import { z } from 'zod';
 import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE } from './image-preview';
+import { EDITOR_GROUP_ID_RE, EDITOR_GROUPS_MAX } from './editor-group-id';
 
 // 边界(E14):explorer.json 的路径数组/字符串此前无上限。损坏/畸形快照只要 shape 对就通过,
 // loadExplorer/hydrate 会接受超大数组,随后批量恢复 tab、展开树、写回快照 → 启动卡顿、IPC/JSON
@@ -81,6 +82,16 @@ const EditorViewStateEntrySchema = z
   })
   .strict();
 
+const editorGroupId = (): z.ZodString => z.string().max(32).regex(EDITOR_GROUP_ID_RE);
+
+const EditorGroupSessionSchema = z
+  .object({
+    id: editorGroupId(),
+    openFilePaths: pathArray(),
+    activePath: pathStr().nullable(),
+  })
+  .strict();
+
 const EditorSessionSchema = z
   .object({
     openFilePaths: pathArray(), // 边界(E14)
@@ -88,6 +99,13 @@ const EditorSessionSchema = z
     /** Markdown 视图模式(全局);只在非默认(source)时写。 */
     mode: z.enum(['edit', 'source', 'preview']).optional(),
     viewStates: z.array(EditorViewStateEntrySchema).max(EDITOR_VIEW_STATES_MAX).optional(),
+    /**
+     * 编辑器组(只在多于一个组时写;旧字段 openFilePaths / activePath 仍是全部文档 / 活动组的活动文件,旧版本照常读成单组)。
+     * BDD: src/__tests__/editor-groups/
+     */
+    groups: z.array(EditorGroupSessionSchema).max(EDITOR_GROUPS_MAX).optional(),
+    /** 活动编辑器组 id(随 groups 写)。 */
+    activeGroup: editorGroupId().optional(),
   })
   .strict();
 

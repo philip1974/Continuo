@@ -567,6 +567,11 @@
 - [`editor-focus-registry.spec.ts`](./editor-focus-on-open/editor-focus-registry.spec.ts)
 - [`quick-open-focus.spec.tsx`](./editor-focus-on-open/quick-open-focus.spec.tsx)
 
+## [编辑器拆分(多编辑器组)](./editor-groups/README.md)
+
+- [`editor-groups-persist.spec.ts`](./editor-groups/editor-groups-persist.spec.ts)
+- [`editor-groups-store.spec.ts`](./editor-groups/editor-groups-store.spec.ts)
+
 ## [EditorHeader(单行 Header,tabs + mode 切换)](./editor-header/README.md)
 
 - [`editor-header.spec.tsx`](./editor-header/editor-header.spec.tsx)
@@ -1841,7 +1846,7 @@
 
 - [`terminal-store.spec.ts`](./terminal-store/terminal-store.spec.ts)
 
-## [terminal-title — 终端 tab 标题:进程名 / OSC 标题 / 重命名](./terminal-title/README.md)
+## [terminal-title — 终端 tab 标题:进程名 / 重命名](./terminal-title/README.md)
 
 - [`title-main.spec.ts`](./terminal-title/title-main.spec.ts)
 - [`title-priority.spec.ts`](./terminal-title/title-priority.spec.ts)

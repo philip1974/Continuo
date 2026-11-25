@@ -23,6 +23,8 @@
 
 import {
   createTab,
+  type EditorGroup,
+  type EditorGroupLayout,
   type EditorTab,
   useEditorStore,
 } from '@/stores/editor.store';
@@ -190,6 +192,30 @@ export function collectEditorSnapshot(
   return { openFilePaths, activePath };
 }
 
+/**
+ * 多个编辑器组时的按组快照(单组 → null,写出形态与旧版一致)。与 openFilePaths 同口径跳过插件打开的 tab;
+ * 组的 activePath 只取会被持久化的 tab。BDD: src/__tests__/editor-groups/
+ */
+export function collectEditorGroupsSnapshot(
+  tabs: readonly EditorTab[],
+  groups: readonly EditorGroup[],
+  activeGroupId: string,
+): { groups: { id: string; openFilePaths: string[]; activePath: string | null }[]; activeGroup: string } | null {
+  if (groups.length <= 1) return null;
+  const persisted = new Map<string, string>();
+  for (const tab of tabs) if (tab.pluginOpenedPath === undefined) persisted.set(tab.id, tab.filePath);
+  const out = groups.map((g) => {
+    const openFilePaths: string[] = [];
+    for (const id of g.tabIds) {
+      const p = persisted.get(id);
+      if (p !== undefined) openFilePaths.push(p);
+    }
+    const activePath = g.activeTabId === null ? null : (persisted.get(g.activeTabId) ?? null);
+    return { id: g.id, openFilePaths, activePath };
+  });
+  return { groups: out, activeGroup: activeGroupId };
+}
+
 const viewInt = (n: number, min: number): number =>
   Math.min(EDITOR_VIEW_NUMBER_MAX, Math.max(min, Math.round(n)));
 const viewScroll = (n: number): number => Math.min(EDITOR_VIEW_NUMBER_MAX, Math.max(0, n));
@@ -278,6 +304,7 @@ export function snapshotFromStores(
     ed.activeTabId,
   );
   const viewStates = collectEditorViewStates(ed.tabs, ed.viewRefs);
+  const groupsSnap = collectEditorGroupsSnapshot(ed.tabs, ed.groups, ed.activeGroupId);
   const root = normalizeWorkspaceRoot(w.root);
   const recentRoots = collectNormalizedWorkspaceRoots(w.recentRoots);
 
@@ -298,6 +325,7 @@ export function snapshotFromStores(
       // 只在非默认时写(旧形态不变)
       ...(ed.mode === 'source' ? null : { mode: ed.mode }),
       ...(viewStates.length === 0 ? null : { viewStates }),
+      ...(groupsSnap ?? null),
     },
   };
 
@@ -446,6 +474,20 @@ export async function hydrateEditorTabs(
     // 读盘期间用户已自己打开同一文件 → 保留其本会话状态
     if (view && !hasEditorTabWithId(useEditorStore.getState().tabs, paths[i]!)) seedPersistedEditorViewState(paths[i]!, view);
     store.openTab(createTab(paths[i]!, r.data, r.realPath), restoreOpts);
+  }
+  // 多个编辑器组:按组分配刚恢复的文档(tab id = 打开时的路径;读盘失败的跳过,变空的组丢弃)。
+  // 用户在读盘期间已打开 / 切换 → 那些文档留在活动组,不抢回活动组(同上方 keepUserActive)。
+  const groups = entry.editor.groups;
+  if (groups !== undefined && groups.length > 1) {
+    const cur = useEditorStore.getState();
+    const activeGroup = keepUserActive ? cur.activeGroupId : (entry.editor.activeGroup ?? groups[0]!.id);
+    const layout: EditorGroupLayout[] = groups.map((g) => ({
+      id: g.id,
+      tabIds: g.openFilePaths,
+      activeTabId: keepUserActive && g.id === activeGroup ? cur.activeTabId : g.activePath,
+    }));
+    cur.restoreGroups(layout, activeGroup);
+    return;
   }
   // 重读最新 store(openTab 改了状态)
   const next = useEditorStore.getState();
@@ -669,7 +711,13 @@ export async function initExplorerPersistence(
   // openFilePaths/activePath 只随 tab 增删/改路径(open/close/removePaths/renamePath/closeTabsOutsideRoot,
   // 均 bump chromeVersion)与 activeTabId 变化而变 → 只在这两者变化时标脏。
   useEditorStore.subscribe((s, prev) => {
-    if (s.activeTabId !== prev.activeTabId || s.chromeVersion !== prev.chromeVersion || s.mode !== prev.mode) {
+    if (
+      s.activeTabId !== prev.activeTabId ||
+      s.chromeVersion !== prev.chromeVersion ||
+      s.mode !== prev.mode ||
+      s.activeGroupId !== prev.activeGroupId ||
+      s.groups !== prev.groups
+    ) {
       markDirtyAndPersist();
     }
   });
