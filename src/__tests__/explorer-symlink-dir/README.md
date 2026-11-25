@@ -13,6 +13,8 @@
   (`up-loop → ..`)可逐层手动展开,每层一次 `listDir`,不会卡死
 - 「全部展开」(及 Ctrl+Shift+= 展开选中)**跳过**符号链接目录 —— 循环链接不被批量无限展开
 - 递归扫描(`maxDepth > 1`:Quick Open 等)**不跟随**链接:不递归进链接目录,链接项类型保持 `lstat` 口径
+- 删除确认:指向目录的链接按文件措辞「确定要删除“x”吗?」,不说「及其内容」(删链接不动目标;VSCode
+  getMoveToTrashMessage 同:`isDirectory && !isSymbolicLink` 才用「及其内容」)
 - 安全:渲染进程 `fs.listDir` 无工作区 scope 校验(VSCode 同:指向工作区外的链接照常显示、可展开);
   读取失败(权限等)走既有的目录读取失败行
 

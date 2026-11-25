@@ -22,6 +22,9 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 - 初始 → spinner
 - fetch 失败 → 「拉取索引失败:${msg}」;网络类失败(`MARKETPLACE_NETWORK`)msg 为三语「无法连接插件市场,请检查网络后重试」,
   不显示「Failed to fetch」;HTTP 非 2xx 时附「HTTP <状态码>」
+- 错误行下的提示:网络类失败已在错误行写「检查网络后重试」→ 提示换成不重复的补充「索引托管在 GitHub 上;若 GitHub
+  暂不可达,请稍后再试」(`marketplace.index_fetch_hint_network`);其它失败仍显示通用 `marketplace.index_fetch_hint`
+- 评分 / 评价计数按单复数(en:(1 review) / (2 reviews)、1 like / 3 likes;见 i18n-count-plural)
 - 拉到空数组 → 「暂无插件」+ 索引仓库链接
 
 ### 列表渲染 + 计数

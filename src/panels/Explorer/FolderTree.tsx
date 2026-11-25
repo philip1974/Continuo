@@ -1122,8 +1122,11 @@ export function FolderTree({ root }: { root: string }) {
       const p = paths[0]!;
       const data = tree.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current.itemData?.[p];
       singleFile = data?.isDirectory !== true;
+      // VSCode getMoveToTrashMessage:目录且非符号链接才说「及其内容」(删链接只删链接本身,目标内容不动)。
       title = tt(
-        data?.isDirectory ? 'panels.explorer.trash_confirm.folder' : 'panels.explorer.trash_confirm.file',
+        data?.isDirectory && !data.isSymlink
+          ? 'panels.explorer.trash_confirm.folder'
+          : 'panels.explorer.trash_confirm.file',
         { name: basenamePreserveTrailing(p) },
       );
     } else if (paths.length > 1) {

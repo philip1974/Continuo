@@ -113,15 +113,20 @@ export function useAutoSave(
         const { code, message } = failureOf(err);
         // 带文件名(同显式保存失败「保存失败 <name>:<原因>」):后台失败时用户需知道是哪个文件。
         const filePath = findEditorFileTabById(useEditorStore.getState().tabs, tabId)?.filePath ?? tabId;
+        // 磁盘冲突的说明里写着保存键:填当前生效绑定(改绑后跟随)。
+        const reason = localizeErrorByCode(
+          code,
+          message,
+          code === EDITOR_DISK_CHANGED ? { hotkey: saveHotkeyLabel() } : undefined,
+        );
         notify.warn(
           t('common.label_detail', {
             label: `${t('editor.autosave_failed')} ${basenameForChrome(filePath)}`,
-            // 磁盘冲突的说明里写着保存键:填当前生效绑定(改绑后跟随)。
-            detail: localizeErrorByCode(
-              code,
-              message,
-              code === EDITOR_DISK_CHANGED ? { hotkey: saveHotkeyLabel() } : undefined,
-            ),
+            // 写保护:自动保存不替用户去写保护,出路是按保存键走覆盖确认框(同磁盘冲突提示的写法)。
+            detail:
+              code === ERROR_CODES.FS_READONLY
+                ? t('editor.autosave_readonly_detail', { reason, hotkey: saveHotkeyLabel() })
+                : reason,
           }),
           { mirror: false },
         );

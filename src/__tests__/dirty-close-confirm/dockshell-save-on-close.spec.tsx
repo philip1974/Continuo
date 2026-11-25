@@ -405,6 +405,27 @@ describe('flush 握手的「保存」分支', () => {
   });
 });
 
+describe('flush 握手「保存」遇只读文件', () => {
+  it('FS_READONLY → 提示含文件名与只读出路(保存键 / 不保存),回执 saveFailed:true', async () => {
+    await mountShell();
+    openDirty('/w/ro.ts');
+    h.writeFile.mockResolvedValue({ ok: false, code: 'FS_READONLY', message: 'file is write-protected' });
+
+    await act(async () => {
+      await h.flushCb.current!({ windowId: 1, save: true });
+    });
+
+    const text = String(h.notifyError.mock.calls[0]?.[0]);
+    expect(text).toContain('ro.ts');
+    expect(text).toContain(t('dialog.unsaved_close.readonly_note', { count: 1, hotkey: 'Ctrl+S' }));
+    expect(h.sendFlushAck).toHaveBeenCalledWith(1, {
+      saveFailed: true,
+      state: ds([g('/w/ro.ts')]),
+      remaining: ds([g('/w/ro.ts')]),
+    });
+  });
+});
+
 // 统一规则:所有 flush 完成后、ACK 前做最终脏检查;本轮未选「不保存」且仍有未保存改动 → 回执 remaining,
 // main 中止关闭 / 退出(用户再次关闭时会因脏计数看到确认框)。
 describe('flush 握手的最终脏检查', () => {

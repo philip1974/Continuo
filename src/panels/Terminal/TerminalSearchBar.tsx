@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import { IconButton, Input } from '@/design';
-import { useT } from '@/i18n';
+import { translateCount, useT } from '@/i18n';
 import { clampSearchQuery } from '@/lib/search-query';
 import { isImeComposing } from '@/design/ime';
 import { ChevronDownIcon, ChevronUpIcon, CloseIcon } from '@/lib/ui-icons';
@@ -34,11 +34,14 @@ function formatCount(
   t: ReturnType<typeof useT>,
 ): string {
   if (result.count <= 0) return t('panels.terminal.search.no_match');
-  const total =
-    result.count >= TERMINAL_SEARCH_HIGHLIGHT_LIMIT
-      ? `${TERMINAL_SEARCH_HIGHLIGHT_LIMIT}+`
-      : String(result.count);
-  if (result.index < 0) return t('panels.terminal.search.match_total', { total });
+  const capped = result.count >= TERMINAL_SEARCH_HIGHLIGHT_LIMIT;
+  const total = capped ? `${TERMINAL_SEARCH_HIGHLIGHT_LIMIT}+` : String(result.count);
+  if (result.index < 0) {
+    // 只显示总数:按单复数(1 match / 20 matches);「1000+」恒为复数。
+    return capped
+      ? t('panels.terminal.search.match_total_other', { count: total })
+      : translateCount('panels.terminal.search.match_total', result.count);
+  }
   return t('panels.terminal.search.match_count', { n: result.index + 1, total });
 }
 

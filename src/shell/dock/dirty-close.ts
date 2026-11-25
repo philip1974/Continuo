@@ -11,6 +11,9 @@ import { isAutoSaveEnabled } from '@/panels/Editor/useAutoSave';
 import { willAutoSaveOnClose } from '@/panels/Editor/autosave-failures';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { EDITOR_DISK_CHANGED } from '@/panels/Editor/editor-file-actions';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import { basenameForChrome } from '@/lib/path-label';
+import { t } from '@/i18n';
 
 type TabLike = Pick<EditorTab, 'id' | 'filePath' | 'dirty' | 'dirtyGen'>;
 
@@ -79,6 +82,31 @@ export interface SaveForCloseResult {
   readonly failed: number;
   /** 其中因磁盘已被外部修改(EDITOR_DISK_CHANGED)而未写的数,提示里单独说明。 */
   readonly diskChanged: number;
+  /** 其中因文件写保护(FS_READONLY)而未写的数,提示里单独说明(关窗流程不弹覆盖框)。 */
+  readonly readonly: number;
+  /** 未保存成功的文件路径(按输入顺序),提示里列出前几个。 */
+  readonly failedPaths: readonly string[];
+}
+
+/** 关窗保存失败提示里最多列出的文件名数(其余以「等」概括)。 */
+const FAILED_NAMES_SHOWN = 3;
+
+/**
+ * 关窗「保存」失败的 toast 文案:失败数 + 前几个文件名;磁盘冲突 / 写保护各追加一句出路(在编辑器按保存键处理,
+ * 或选「不保存」)。hotkey 为当前生效的保存键。
+ */
+export function saveForCloseFailureMessage(r: SaveForCloseResult, hotkey: string): string {
+  const shown = r.failedPaths.slice(0, FAILED_NAMES_SHOWN).map(basenameForChrome);
+  const joined = shown.join(t('common.list_separator'));
+  const names = r.failedPaths.length > shown.length ? t('dialog.unsaved_close.names_more', { names: joined }) : joined;
+  let message = t('dialog.unsaved_close.save_failed', { count: r.failed, names });
+  if (r.diskChanged > 0) {
+    message += ` ${t('dialog.unsaved_close.disk_changed_note', { count: r.diskChanged, hotkey })}`;
+  }
+  if (r.readonly > 0) {
+    message += ` ${t('dialog.unsaved_close.readonly_note', { count: r.readonly, hotkey })}`;
+  }
+  return message;
 }
 
 /**
@@ -103,17 +131,19 @@ export async function saveDirtyTabsForClose(
     saveTab(tab.id),
   );
   const current = getTabs();
-  let failed = 0;
+  const failedPaths: string[] = [];
   let diskChanged = 0;
+  let readonly = 0;
   for (let i = 0; i < targets.length; i += 1) {
     const s = settled[i]!;
     const r = s.status === 'fulfilled' ? s.value : ({ ok: false } as const);
     if (!r.ok) {
-      failed += 1;
+      failedPaths.push(targets[i]!.filePath);
       if ('code' in r && r.code === EDITOR_DISK_CHANGED) diskChanged += 1;
+      else if ('code' in r && r.code === ERROR_CODES.FS_READONLY) readonly += 1;
     } else if (current.some((tab) => tab.id === targets[i]!.id && tab.dirty)) {
-      failed += 1;
+      failedPaths.push(targets[i]!.filePath);
     }
   }
-  return { failed, diskChanged };
+  return { failed: failedPaths.length, diskChanged, readonly, failedPaths };
 }

@@ -44,6 +44,7 @@ import {
   remainingAfterDiscard,
   remainingAfterFlush,
   saveDirtyTabsForClose,
+  saveForCloseFailureMessage,
 } from './dirty-close';
 import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
@@ -406,19 +407,16 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       // ADR-015),任一失败 → toast + 回执 saveFailed,main 中止关窗 / 退出并重新显示窗口。
       let saveFailed = false;
       if (payload?.save) {
-        const { failed, diskChanged } = await saveDirtyTabsForClose(
+        const result = await saveDirtyTabsForClose(
           useEditorStore.getState().tabs,
           saveTab,
           () => useEditorStore.getState().tabs,
         );
-        if (failed > 0) {
+        if (result.failed > 0) {
           saveFailed = true;
-          let message = translate('dialog.unsaved_close.save_failed', { count: failed });
-          // 磁盘冲突单独说明(关窗流程不弹覆盖框,引导用户按保存键解决或选「不保存」;保存键填当前生效绑定)。
-          if (diskChanged > 0) {
-            message += ` ${translate('dialog.unsaved_close.disk_changed_note', { count: diskChanged, hotkey: saveHotkeyLabel() })}`;
-          }
-          notify.error(message);
+          // 列出失败文件;磁盘冲突 / 写保护单独说明(关窗流程不弹覆盖框,引导用户按保存键解决或选「不保存」;
+          // 保存键填当前生效绑定)。
+          notify.error(saveForCloseFailureMessage(result, saveHotkeyLabel()));
         }
       }
       // race(R42):在 flush **执行时**读取 apiRef.current,而非 effect 注册时闭包捕获。effect 仅

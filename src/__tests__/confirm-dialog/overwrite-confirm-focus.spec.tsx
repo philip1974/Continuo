@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
-import { t } from '../../i18n';
+import { setLocale, t } from '../../i18n';
 import { detectPlatform } from '../../plugins/command-palette/format-hotkey';
 
 // mod 键按当前平台(保存快捷键按平台精确匹配:mac=Cmd,其它=Ctrl)。
@@ -100,5 +100,19 @@ describe('外部修改后 Cmd+S 弹出的「仍然覆盖」确认框', () => {
       fireEvent.click(screen.getByRole('button', { name: t('panels.editor.disk_changed_confirm') }));
     });
     expect(mocks.writeFile).toHaveBeenCalledWith(PATH, 'mine');
+  });
+});
+
+// 文件名作为 {name} 占位放进三语文案(由各语言决定位置 / 助词),<code> 插在占位处。
+describe('外部修改确认框说明文案', () => {
+  it.each(['en', 'zh', 'ko'] as const)('%s:说明 = 带文件名的整句文案,文件名以 <code> 呈现', async (locale) => {
+    setLocale(locale);
+    try {
+      await saveAndWaitForOverwriteDialog();
+      const description = screen.getByText('a.ts', { selector: 'code' }).parentElement!;
+      expect(description.textContent).toBe(t('panels.editor.disk_changed_body', { name: 'a.ts' }));
+    } finally {
+      setLocale('en');
+    }
   });
 });

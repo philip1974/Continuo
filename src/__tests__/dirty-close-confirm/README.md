@@ -125,7 +125,9 @@ reload 换掉 renderer 文档,未落盘编辑与关窗一样会丢。View 菜单
   (继续编辑 / 显式保存后再编辑)即清除失败态。编辑器未挂载(无持有者)→ 计入。变化时重新上报。
 - 「保存」分支保存所有脏 tab(含 `.md`,无害);全部完成后复查,仍脏(保存期间继续输入)同样视为失败。
 - 保存失败提示里,因磁盘已被外部修改(EDITOR_DISK_CHANGED)而未写的文件单独说明(引导 Cmd+S 解决冲突
-  或选「不保存」;关窗流程不弹覆盖框),文案 `dialog.unsaved_close.disk_changed_note`。
+  或选「不保存」;关窗流程不弹覆盖框),文案 `dialog.unsaved_close.disk_changed_note`;写保护(FS_READONLY)同理单独
+  说明(`dialog.unsaved_close.readonly_note`:按保存键确认覆盖或选「不保存」)。提示列出失败文件名(最多 3 个,
+  超出加「等」,`saveForCloseFailureMessage`);保存键取当前生效绑定。
 
 ## 规范文件
 

@@ -15,6 +15,7 @@ export const en = {
   'common.ok': 'OK',
   // 运行期拼接「标签：原因」(如「自动保存失败：…」),冒号随语言(zh 全角)。
   'common.label_detail': '{label}: {detail}',
+  'common.list_separator': ', ',
 
   // menu.file (5)
   'menu.file.label': 'File',
@@ -233,13 +234,17 @@ export const en = {
   'editor.welcome.hint_prefix': 'Click a file in Explorer ·',
   'editor.welcome.save': 'Save',
   'editor.autosave_failed': 'Auto-save failed',
+  'editor.autosave_readonly_detail': '{reason}. Press {hotkey} to choose whether to overwrite it.',
   'editor.save_failed': 'Failed to save',
 
   // 关窗 / 退出时的未保存确认(main dialog.showMessageBox)+ 保存失败提示(renderer toast)
   'dialog.unsaved_close.message': 'Do you want to save the changes you made to {count} file(s)?',
   'dialog.unsaved_close.detail': "Your changes will be lost if you don't save them.",
   'dialog.unsaved_close.dont_save': "Don't Save",
-  'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s). The window was not closed.',
+  'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s) ({names}). The window was not closed.',
+  'dialog.unsaved_close.names_more': '{names}, etc.',
+  'dialog.unsaved_close.readonly_note':
+    '{count} file(s) are read-only. Press {hotkey} in the editor to confirm overwriting, or choose “Don\'t Save”.',
   'dialog.unsaved_close.disk_changed_note':
     '{count} file(s) were changed on disk by another program and were not overwritten. Press {hotkey} in the editor to resolve the conflict, or choose “Don\'t Save”.',
   'dialog.mcp_legacy_config.message': 'Your Continuo MCP config in Claude Code points to a temporary path',
@@ -359,7 +364,8 @@ export const en = {
   'panels.terminal.search.match_count': '{n} / {total}',
   'panels.terminal.search.no_match': 'No match',
   // Shown when the active match is outside the collected results (addon highlightLimit); total may be "1000+".
-  'panels.terminal.search.match_total': '{total} matches',
+  'panels.terminal.search.match_total_one': '{count} match',
+  'panels.terminal.search.match_total_other': '{count} matches',
   // a11y(A99):accessible name for the search-options toggle group (regex/case/whole-word).
   'panels.terminal.search.options_group': 'Search options',
   'panels.terminal.search.regex': 'Use regular expression',
@@ -379,11 +385,11 @@ export const en = {
   'panels.editor.mode_group': 'Editor mode',
   'panels.editor.save_changes_title': 'Do you want to save the changes you made to {name}?',
   'panels.editor.disk_changed_title': 'File changed on disk',
-  'panels.editor.disk_changed_body': 'was modified outside the editor since it was opened or last saved. Overwrite it with your changes, or discard your changes and reload the version on disk.',
+  'panels.editor.disk_changed_body': '{name} was modified outside the editor since it was opened or last saved. Overwrite it with your changes, or discard your changes and reload the version on disk.',
   'panels.editor.disk_changed_confirm': 'Overwrite',
   'panels.editor.disk_changed_revert': 'Discard Changes and Reload',
   'panels.editor.readonly_title': 'File Is Read-Only',
-  'panels.editor.readonly_body': 'is write-protected. Overwrite it anyway? Its write protection will be removed.',
+  'panels.editor.readonly_body': '{name} is write-protected. Overwrite it anyway? Its write protection will be removed.',
   'panels.editor.readonly_confirm': 'Overwrite',
   'panels.editor.milkdownUnsafe.banner': 'Opened in Source mode to preserve frontmatter and wiki-links.',
   'panels.editor.engine_load_failed': 'The editor failed to load.',
@@ -476,7 +482,8 @@ export const en = {
   'statusbar.mcp.tooltip':
     'Copy “claude mcp add” command to clipboard. Run it in any shell to configure Claude Code (stdio transport, one-time setup).',
   'statusbar.mcp.revoke_tooltip': 'Revoke authorization and terminate agent terminals in all windows ({count} in this window)',
-  'statusbar.agent_sessions': '{count} agent',
+  'statusbar.agent_sessions_one': '{count} agent',
+  'statusbar.agent_sessions_other': '{count} agents',
   'statusbar.agent_authorized': 'Agent authorized',
   'statusbar.agent_revoke_grant_tooltip': 'Revoke terminal, debugger and plugin tool authorization granted to agents (agent terminals in any window are also terminated)',
   'statusbar.no_workspace': 'No workspace',
@@ -646,7 +653,8 @@ export const en = {
   'marketplace.reviews.sort_helpful': 'Most helpful',
   'marketplace.reviews.maintainer': 'Project maintainer',
   'marketplace.reviews.new_account_warn': 'GitHub account younger than {days} days — be careful',
-  'marketplace.reviews.thumbs_up': '{count} thumbs up',
+  'marketplace.reviews.thumbs_up_one': '{count} like',
+  'marketplace.reviews.thumbs_up_other': '{count} likes',
   'marketplace.reviews.open_in_github': 'Open in GitHub',
   // a11y(A83):per-review link accessible name includes author to distinguish reviews.
   'marketplace.reviews.open_in_github_by': 'Open review by {author} in GitHub',
@@ -658,6 +666,7 @@ export const en = {
   'marketplace.time.days_ago': '{n}d ago',
   'marketplace.index_fetch_failed': "Couldn't load the marketplace index: {message}",
   'marketplace.index_fetch_hint': 'Check network; if GitHub is unreachable, try again later.',
+  'marketplace.index_fetch_hint_network': 'The marketplace index is hosted on GitHub; if GitHub is temporarily unreachable, try again later.',
   'marketplace.retry': 'Retry',
   'marketplace.empty_index_prefix': 'No plugins. Index repo:',
   'marketplace.popular_tags': 'Popular tags',
@@ -670,7 +679,8 @@ export const en = {
   'marketplace.reviews.empty': 'No reviews yet',
   'marketplace.reviews.write_first': 'Write the first one on GitHub',
   'marketplace.reviews.write_review': 'Write review',
-  'marketplace.reviews.count': '({count} reviews)',
+  'marketplace.reviews.count_one': '({count} review)',
+  'marketplace.reviews.count_other': '({count} reviews)',
   'marketplace.reviews.sort_label': 'Sort:',
   'marketplace.reviews.show_first_10': 'Showing first 10;',
   'marketplace.reviews.see_all_in_github': 'See all in GitHub',

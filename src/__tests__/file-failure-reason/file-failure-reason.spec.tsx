@@ -112,9 +112,14 @@ describe('自动保存失败提示带文件名;写保护不弹框、不重试', 
     });
     expect(saveTab).toHaveBeenCalledTimes(1);
     expect(saveTab.mock.calls[0]).not.toContainEqual(expect.objectContaining({ overwriteReadonly: true }));
+    // 出路:按保存键可选择覆盖(显式保存走覆盖确认框);保存键填当前生效绑定(jsdom = 'other' → Ctrl+S)。
     expect(mocks.warn.mock.calls[0]?.[0]).toBe(
-      t('common.label_detail', { label: `${t('editor.autosave_failed')} note.md`, detail: t('errors.FS_READONLY') }),
+      t('common.label_detail', {
+        label: `${t('editor.autosave_failed')} note.md`,
+        detail: t('editor.autosave_readonly_detail', { reason: t('errors.FS_READONLY'), hotkey: 'Ctrl+S' }),
+      }),
     );
+    expect(String(mocks.warn.mock.calls[0]?.[0])).toContain('Ctrl+S');
   });
 });
 

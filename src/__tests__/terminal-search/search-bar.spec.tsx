@@ -23,11 +23,13 @@ vi.mock('@/i18n', () => ({
     if (key === 'panels.terminal.search.match_count') {
       return `${params?.['n']} / ${params?.['total']}`;
     }
-    if (key === 'panels.terminal.search.match_total') {
-      return `total ${params?.['total']}`;
+    if (key === 'panels.terminal.search.match_total_other') {
+      return `total ${params?.['count']}`;
     }
     return key;
   },
+  translateCount: (key: string, count: number) =>
+    key === 'panels.terminal.search.match_total' ? `total ${count}` : key,
 }));
 
 afterEach(() => {

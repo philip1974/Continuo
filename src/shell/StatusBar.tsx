@@ -394,7 +394,7 @@ export function StatusBar() {
             <span aria-hidden>●</span>
             {/* i18n(I19):agent 计数走 catalog,zh/ko 不再显英文 'N agent' */}
             {agentSessionCount > 0
-              ? t('statusbar.agent_sessions', { count: agentSessionCount })
+              ? translateCount('statusbar.agent_sessions', agentSessionCount)
               : t('statusbar.agent_authorized')}
           </button>
         )}

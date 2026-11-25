@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
-import { t } from '../../i18n';
+import { setLocale, t } from '../../i18n';
 import { detectPlatform } from '../../plugins/command-palette/format-hotkey';
 
 const MOD = detectPlatform() === 'mac' ? { metaKey: true } : { ctrlKey: true };
@@ -80,6 +80,22 @@ describe('显式保存写保护文件', () => {
     expect(screen.getByText('a.ts', { selector: 'code' })).toBeTruthy();
     expect(mocks.error).not.toHaveBeenCalled();
     expect(mocks.writeFile).toHaveBeenCalledTimes(1);
+  });
+
+  // 文件名作为 {name} 占位放进三语文案,由各语言决定位置与助词(韩语此前在 <code> 后固定加空格再接「은(는)」)。
+  it.each(['en', 'zh', 'ko'] as const)('%s:确认框说明 = 带文件名的整句文案,文件名以 <code> 呈现', async (locale) => {
+    setLocale(locale);
+    try {
+      await saveAndWaitForReadonlyDialog();
+      const dialog = screen.getByRole('alertdialog');
+      const code = screen.getByText('a.ts', { selector: 'code' });
+      const description = code.parentElement!;
+      expect(dialog.contains(description)).toBe(true);
+      expect(description.textContent).toBe(t('panels.editor.readonly_body', { name: 'a.ts' }));
+      expect(description.textContent).not.toMatch(/a\.ts\s+은\(는\)/);
+    } finally {
+      setLocale('en');
+    }
   });
 
   it('取消 → 不重试写盘,tab 仍脏', async () => {

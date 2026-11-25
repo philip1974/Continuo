@@ -9,7 +9,7 @@ import { Badge, Button, Input, Spinner } from '@/design';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager } from '@/plugins/PluginManager';
 import { entryInstallOptions, entryToGitUrl, type MarketplaceEntry } from './types';
-import { fetchMarketplaceIndex } from './fetcher';
+import { fetchMarketplaceIndex, MARKETPLACE_NETWORK } from './fetcher';
 import { applyFilter, collectAllTags } from './filter';
 import { clampSearchQuery } from '@/lib/search-query';
 import { useAvailableUpdates, useUpdateStore, type AvailableUpdate } from './update-store';
@@ -17,7 +17,7 @@ import { recordPendingInstall, usePendingInstalls } from '@/plugins/pending-inst
 import { useReviewsStore } from './reviews-store';
 import type { PluginAggregateRating, Review } from './reviews-types';
 import { isHttpUrl } from './url-safety';
-import { useT, t as translate } from '@/i18n';
+import { useT, t as translate, translateCount } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useUserPluginList } from '@/plugins/use-user-plugin-list';
@@ -71,7 +71,7 @@ export function marketplaceReviewSortButtonClassName(active: boolean): string {
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'ok'; entries: readonly MarketplaceEntry[] }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; readonly network: boolean };
 
 interface InstallState {
   /** 正在装的 entry id. */
@@ -180,6 +180,7 @@ export function MarketplaceTab() {
               typeof status === 'number'
                 ? translate('common.label_detail', { label: localized, detail: `HTTP ${status}` })
                 : localized,
+            network: raw === MARKETPLACE_NETWORK,
           });
         }
       }
@@ -320,8 +321,9 @@ export function MarketplaceTab() {
       <div ref={errorBlockRef} className="rounded border border-line bg-panel-soft/40 p-4 text-xs">
         <div role="alert" className="text-error">
           {t('marketplace.index_fetch_failed', { message: state.message })}
+          {/* 网络失败的错误行已写「检查网络后重试」→ 提示换成不重复的补充(索引托管在 GitHub)。 */}
           <div className="mt-1 text-fg-dim">
-            {t('marketplace.index_fetch_hint')}
+            {t(state.network ? 'marketplace.index_fetch_hint_network' : 'marketplace.index_fetch_hint')}
           </div>
         </div>
         <Button
@@ -860,7 +862,7 @@ function RatingRow({
           </span>
           <span>{rating.avg.toFixed(1)}</span>
           <span className="text-fg-dim">
-            {t('marketplace.reviews.count', { count: rating.count })}
+            {translateCount('marketplace.reviews.count', rating.count)}
           </span>
           {/* a11y(A69 同族装饰符号):展开状态已由按钮 aria-expanded 暴露,视觉三角是纯装饰 →
               aria-hidden,否则 ▴/▾ 混进按钮可访问名造成与 expanded 重复的噪声。 */}
@@ -1022,12 +1024,12 @@ function ReviewItem({ review: r, nowMs }: { review: Review; nowMs: number }) {
           {r.thumbsUp > 0 && (
             <span
               className="text-fg-dim"
-              title={t('marketplace.reviews.thumbs_up', { count: r.thumbsUp })}
+              title={translateCount('marketplace.reviews.thumbs_up', r.thumbsUp)}
             >
               {/* a11y(A39):👍+数字仅视觉;语义用视觉隐藏的本地化文本给 AT(文本流可读)。 */}
               <span aria-hidden="true">👍 {r.thumbsUp}</span>
               <span style={SR_ONLY_STYLE}>
-                {t('marketplace.reviews.thumbs_up', { count: r.thumbsUp })}
+                {translateCount('marketplace.reviews.thumbs_up', r.thumbsUp)}
               </span>
             </span>
           )}

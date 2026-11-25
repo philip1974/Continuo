@@ -7,7 +7,7 @@
 //   activeTab 非 .md → 直接 CodeEditor(mode 不显示)
 //   activeTab 为 null → Welcome
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { DockviewPanelApi } from 'dockview-react';
 import {
   getEffectiveMode,
@@ -16,7 +16,7 @@ import {
   usesMilkdownEngine,
   type EditorMode,
 } from '@/stores/editor.store';
-import { t as translate, useLocale } from '@/i18n';
+import { t as translate, useLocale, type TranslationKey } from '@/i18n';
 import { isMarkdownPath } from './editor-path-utils';
 import { basename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
@@ -78,6 +78,23 @@ let lazyEngines: LazyEngines = {
   milkdown: createLazyMilkdownEditor(),
 };
 
+/** 文案模板 {name} 占位的拆分标记(不会出现在 catalog 文案里)。 */
+const NAME_SLOT = '\u0000name\u0000';
+
+/**
+ * 确认框说明:把文件名以 <code> 插到文案的 {name} 占位处 —— 位置与助词由各语言文案决定(韩语「{name} 파일은…」),
+ * 不在组件里固定「文件名 + 空格 + 文案」。拆分做法同 AgentAuthPrompt 的 UNTRUSTED_SLOT。
+ */
+function withCodeName(key: TranslationKey, name: string): ReactNode {
+  const [before = '', after = ''] = translate(key, { name: NAME_SLOT }).split(NAME_SLOT);
+  return (
+    <>
+      {before}
+      <code className="text-fg">{name}</code>
+      {after}
+    </>
+  );
+}
 
 export interface EditorPanelProps {
   /** dockview 面板 api(经 PanelHost 传入;测试直接渲染时缺省)。 */
@@ -508,14 +525,9 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         open={overwriteCandidate !== null}
         title={translate('panels.editor.disk_changed_title')}
         description={
-          overwriteCandidate ? (
-            <>
-              <code className="text-fg">
-                {basename(overwriteCandidate.filePath)}
-              </code>{' '}
-              {translate('panels.editor.disk_changed_body')}
-            </>
-          ) : null
+          overwriteCandidate
+            ? withCodeName('panels.editor.disk_changed_body', basename(overwriteCandidate.filePath))
+            : null
         }
         confirmLabel={translate('panels.editor.disk_changed_confirm')}
         destructive
@@ -528,12 +540,9 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         open={readonlyCandidate !== null}
         title={translate('panels.editor.readonly_title')}
         description={
-          readonlyCandidate ? (
-            <>
-              <code className="text-fg">{basename(readonlyCandidate.filePath)}</code>{' '}
-              {translate('panels.editor.readonly_body')}
-            </>
-          ) : null
+          readonlyCandidate
+            ? withCodeName('panels.editor.readonly_body', basename(readonlyCandidate.filePath))
+            : null
         }
         confirmLabel={translate('panels.editor.readonly_confirm')}
         destructive

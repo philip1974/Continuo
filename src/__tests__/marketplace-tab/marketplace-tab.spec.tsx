@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fireEvent, render, cleanup, waitFor, act } from '@testing-library/react';
 
 vi.mock('../../marketplace/fetcher', () => ({
+  MARKETPLACE_NETWORK: 'MARKETPLACE_NETWORK',
   fetchMarketplaceIndex: vi.fn(),
   fetchPluginManifest: vi.fn().mockResolvedValue({
     id: '_',
@@ -36,7 +37,7 @@ import {
   marketplaceReviewSortButtonClassName,
   marketplaceTagButtonClassName,
 } from '../../marketplace/MarketplaceTab';
-import { setLocale as setI18nLocale } from '@/i18n';
+import { setLocale as setI18nLocale, t } from '@/i18n';
 import { fetchMarketplaceIndex, fetchPluginManifest } from '../../marketplace/fetcher';
 import { useUpdateStore, type AvailableUpdate } from '../../marketplace/update-store';
 import { useReviewsStore } from '../../marketplace/reviews-store';
@@ -1828,5 +1829,81 @@ describe('MarketplaceTab — 卡片窄宽布局', () => {
     const repo = container.querySelector('a[href="https://github.com/me/com.example.long-plugin-id"]')!;
     expect(cls(repo)).toEqual(expect.arrayContaining(['min-w-0', 'truncate']));
     expect(cls(repo.parentElement)).toContain('flex-wrap');
+  });
+});
+
+// en 计数按单复数:1 条评价「(1 review)」、1 个赞「1 like」(此前「(1 reviews)」「1 thumbs up」)。
+describe('MarketplaceTab — 评价计数单复数', () => {
+  function seedReviews(count: number, thumbsUp: number) {
+    useReviewsStore.setState({
+      loading: false,
+      error: null,
+      byPid: new Map([
+        [
+          'a',
+          {
+            pluginId: 'a',
+            count,
+            avg: 5,
+            reviews: [
+              {
+                pluginId: 'a',
+                rating: 5,
+                body: 'hi',
+                author: { handle: 'someone', avatarUrl: '', createdAt: '2000-01-01' },
+                url: 'https://x/1',
+                createdAt: '2020-01-01',
+                thumbsUp,
+              },
+            ],
+          },
+        ],
+      ]),
+    });
+  }
+
+  it.each([
+    [1, 1, '(1 review)', '1 like'],
+    [2, 3, '(2 reviews)', '3 likes'],
+  ] as const)('en:%i 条评价 / %i 个赞', async (count, thumbs, countText, thumbsText) => {
+    setI18nLocale('en');
+    try {
+      installApi(vi.fn());
+      fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A' })]);
+      getMgr.mockReturnValue({ listAll: () => [] });
+      act(() => seedReviews(count, thumbs));
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => expect(container.textContent).toContain(countText));
+      fireEvent.click(container.querySelector('button[aria-expanded]') as HTMLButtonElement);
+      await waitFor(() => expect(container.textContent).toContain(thumbsText));
+      expect(container.textContent).not.toContain('(1 reviews)');
+      expect(container.textContent).not.toContain('thumbs up');
+    } finally {
+      setI18nLocale('zh');
+    }
+  });
+});
+
+// 断网:错误行(errors.MARKETPLACE_NETWORK)已写「检查网络后重试」,下方提示不再重复,改为补充说明(GitHub 暂不可达)。
+describe('MarketplaceTab — 断网提示不重复', () => {
+  it.each(['en', 'zh', 'ko'] as const)('%s:MARKETPLACE_NETWORK → 显示补充提示,不显示通用「检查网络」提示', async (locale) => {
+    setI18nLocale(locale);
+    try {
+      fetchIndexMock.mockRejectedValue(new Error('MARKETPLACE_NETWORK'));
+      installApi(vi.fn());
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => expect(container.textContent).toContain(t('errors.MARKETPLACE_NETWORK')));
+      expect(container.textContent).toContain(t('marketplace.index_fetch_hint_network'));
+      expect(container.textContent).not.toContain(t('marketplace.index_fetch_hint'));
+    } finally {
+      setI18nLocale('zh');
+    }
+  });
+
+  it('其它失败(索引无效)仍显示通用提示', async () => {
+    fetchIndexMock.mockRejectedValue(new Error('MARKETPLACE_INDEX_INVALID'));
+    installApi(vi.fn());
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain(t('marketplace.index_fetch_hint')));
   });
 });

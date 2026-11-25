@@ -3,9 +3,10 @@
 // 点击展开而非当作文件打开;指向文件 / 悬空的链接按文件显示,同样带链接角标。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { FileEntry } from '../../lib/fs/types';
 import { useExplorerStore } from '../../stores/explorer.store';
+import { t } from '../../i18n';
 
 const h = vi.hoisted(() => ({
   openFileByPath: null as null | ((p: string) => Promise<{ ok: true }>),
@@ -98,5 +99,22 @@ describe('FolderTree · 符号链接行', () => {
     fireEvent.click(link);
     await waitFor(() => expect(row(r.container, '/work/link-dir/inner.ts')).not.toBeNull());
     expect(h.openFileByPath).not.toHaveBeenCalled();
+  });
+
+  // 对齐 VSCode getMoveToTrashMessage:只有「是目录且不是符号链接」才说「及其内容」—— 删链接只删链接本身,目标内容不动。
+  it('删除指向目录的链接 → 确认框按文件措辞,不说「及其内容」', async () => {
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/link-dir')).not.toBeNull());
+    const link = row(r.container, '/work/link-dir')!;
+    act(() => {
+      fireEvent.click(link);
+    });
+    await waitFor(() => expect(row(r.container, '/work/link-dir')!.getAttribute('tabindex')).toBe('0'));
+    act(() => {
+      fireEvent.keyDown(row(r.container, '/work/link-dir')!, { key: 'Delete', code: 'Delete' });
+    });
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain(t('panels.explorer.trash_confirm.file', { name: 'link-dir' }));
+    expect(dialog.textContent).not.toContain(t('panels.explorer.trash_confirm.folder', { name: 'link-dir' }));
   });
 });

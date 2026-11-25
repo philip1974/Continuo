@@ -814,6 +814,10 @@
 
 - [`hotkey-modal-suppression.spec.tsx`](./hotkey-modal-suppression/hotkey-modal-suppression.spec.tsx)
 
+## [i18n-count-plural(英文计数文案按单复数)](./i18n-count-plural/README.md)
+
+- [`count-plural.spec.tsx`](./i18n-count-plural/count-plural.spec.tsx)
+
 ## [topic 16 i18n en zh ko](./i18n-en-zh-ko/README.md)
 
 - [`bootstrap-locale-sync.spec.ts`](./i18n-en-zh-ko/bootstrap-locale-sync.spec.ts)

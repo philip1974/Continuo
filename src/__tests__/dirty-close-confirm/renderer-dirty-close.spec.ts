@@ -7,7 +7,9 @@ import {
   remainingAfterFlush,
   SAVE_FOR_CLOSE_CONCURRENCY,
   saveDirtyTabsForClose,
+  saveForCloseFailureMessage,
 } from '../../shell/dock/dirty-close';
+import { setLocale, t } from '../../i18n';
 import { createTab, useEditorStore } from '../../stores/editor.store';
 import {
   claimAutoSave,
@@ -114,23 +116,29 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有脏 tab', () => {
       saveTab,
       () => [],
     );
-    expect(r).toEqual({ failed: 0, diskChanged: 0 });
+    expect(r).toEqual({ failed: 0, diskChanged: 0, readonly: 0, failedPaths: [] });
     expect(saveTab.mock.calls.map((c) => c[0]).sort()).toEqual(['/a.ts', '/b.md']);
   });
 
-  it('保存返回 ok:false 或抛异常 → 计为失败;EDITOR_DISK_CHANGED 单独计数', async () => {
+  it('保存返回 ok:false 或抛异常 → 计为失败;EDITOR_DISK_CHANGED / FS_READONLY 单独计数;按输入顺序列出失败文件', async () => {
     const saveTab = vi.fn(async (id: string) => {
       if (id === '/b.ts') throw new Error('disk full');
       if (id === '/c.ts') return { ok: false as const, code: 'FS_DENIED' };
       if (id === '/d.ts') return { ok: false as const, code: 'EDITOR_DISK_CHANGED' };
+      if (id === '/e.ts') return { ok: false as const, code: 'FS_READONLY' };
       return { ok: true as const };
     });
     const r = await saveDirtyTabsForClose(
-      [tab('/a.ts', true), tab('/b.ts', true), tab('/c.ts', true), tab('/d.ts', true)],
+      [tab('/a.ts', true), tab('/b.ts', true), tab('/c.ts', true), tab('/d.ts', true), tab('/e.ts', true)],
       saveTab,
       () => [],
     );
-    expect(r).toEqual({ failed: 3, diskChanged: 1 });
+    expect(r).toEqual({
+      failed: 4,
+      diskChanged: 1,
+      readonly: 1,
+      failedPaths: ['/b.ts', '/c.ts', '/d.ts', '/e.ts'],
+    });
   });
 
   // 复审:保存期间用户继续输入 → saveFile 返回 ok 但 tab 仍脏(markSaved 保留 dirty)。只看返回值
@@ -142,7 +150,50 @@ describe('saveDirtyTabsForClose:「保存」分支保存所有脏 tab', () => {
       saveTab,
       () => [tab('/a.ts', true), tab('/b.ts', false)],
     );
-    expect(r).toEqual({ failed: 1, diskChanged: 0 });
+    expect(r).toEqual({ failed: 1, diskChanged: 0, readonly: 0, failedPaths: ['/a.ts'] });
+  });
+});
+
+// 关窗「保存」失败提示:写明哪些文件(最多 3 个 +「等」)及各类失败的出路(磁盘冲突 / 只读 → 在编辑器按保存键处理,
+// 或选「不保存」)。只读的保存键复用当前生效绑定。
+describe('saveForCloseFailureMessage:关窗保存失败提示带文件名与出路', () => {
+  afterEach(() => setLocale('en'));
+
+  it('≤3 个失败:全部列出文件名;只读追加 readonly_note(含保存键)', () => {
+    setLocale('en');
+    const msg = saveForCloseFailureMessage(
+      { failed: 2, diskChanged: 0, readonly: 2, failedPaths: ['/w/ro.ts', 'C:\\w\\ro2.md'] },
+      'Cmd+S',
+    );
+    expect(msg).toContain(t('dialog.unsaved_close.save_failed', { count: 2, names: 'ro.ts, ro2.md' }));
+    expect(msg).toContain(t('dialog.unsaved_close.readonly_note', { count: 2, hotkey: 'Cmd+S' }));
+    expect(msg).toContain('Cmd+S');
+    expect(msg).not.toContain(t('dialog.unsaved_close.disk_changed_note', { count: 0, hotkey: 'Cmd+S' }));
+  });
+
+  it('>3 个失败:只列前 3 个 +「等」;磁盘冲突与只读两段说明都在', () => {
+    setLocale('zh');
+    const msg = saveForCloseFailureMessage(
+      { failed: 5, diskChanged: 1, readonly: 1, failedPaths: ['/a', '/b', '/c', '/d', '/e'] },
+      'Ctrl+S',
+    );
+    expect(msg).toContain(
+      t('dialog.unsaved_close.save_failed', {
+        count: 5,
+        names: t('dialog.unsaved_close.names_more', { names: 'a、b、c' }),
+      }),
+    );
+    expect(msg).not.toContain('、d');
+    expect(msg).toContain(t('dialog.unsaved_close.disk_changed_note', { count: 1, hotkey: 'Ctrl+S' }));
+    expect(msg).toContain(t('dialog.unsaved_close.readonly_note', { count: 1, hotkey: 'Ctrl+S' }));
+  });
+
+  it.each(['en', 'zh', 'ko'] as const)('%s:readonly_note 写明只读与「不保存」出路', (locale) => {
+    setLocale(locale);
+    const note = t('dialog.unsaved_close.readonly_note', { count: 1, hotkey: 'Ctrl+S' });
+    expect(note).not.toBe('dialog.unsaved_close.readonly_note');
+    expect(note).toContain('Ctrl+S');
+    expect(note).toContain(t('dialog.unsaved_close.dont_save'));
   });
 });
 
@@ -166,7 +217,7 @@ describe('saveDirtyTabsForClose:有界并发保存', () => {
     });
     const tabs = Array.from({ length: 256 }, (_, i) => tab(`/f${i}.ts`, true));
     const r = await saveDirtyTabsForClose(tabs, saveTab, () => []);
-    expect(r).toEqual({ failed: 0, diskChanged: 0 });
+    expect(r).toMatchObject({ failed: 0, diskChanged: 0, readonly: 0 });
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(SAVE_FOR_CLOSE_CONCURRENCY);
     expect(saveTab.mock.calls.map((c) => c[0]).sort()).toEqual(tabs.map((t) => t.id).sort());
@@ -185,7 +236,8 @@ describe('saveDirtyTabsForClose:有界并发保存', () => {
     // 保存完成后仍脏:i % 10 === 4(ok 但期间继续输入)与 i % 10 === 2(本就失败,不重复计)
     const after = tabs.map((t, i) => tab(t.filePath, i % 10 === 4 || i % 10 === 2));
     const r = await saveDirtyTabsForClose(tabs, saveTab, () => after);
-    expect(r).toEqual({ failed: 40, diskChanged: 10 });
+    expect(r).toMatchObject({ failed: 40, diskChanged: 10, readonly: 0 });
+    expect(r.failedPaths).toHaveLength(40);
   });
 });
 
