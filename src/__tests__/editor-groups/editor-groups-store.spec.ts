@@ -300,3 +300,18 @@ describe('空组', () => {
     expect(groupActiveTabIdOf(s, 'editor:2')).toBeNull();
   });
 });
+
+describe('同一文档的多个视图登记', () => {
+  it('后挂载的视图卸载后,viewRefs 回指仍挂着的另一组视图', () => {
+    open(A);
+    const v1 = {} as never;
+    const v2 = {} as never;
+    useEditorStore.getState().registerView(A, v1);
+    useEditorStore.getState().registerView(A, v2);
+    expect(useEditorStore.getState().viewRefs.get(A)).toBe(v2);
+    useEditorStore.getState().unregisterView(A, v2);
+    expect(useEditorStore.getState().viewRefs.get(A)).toBe(v1);
+    useEditorStore.getState().unregisterView(A, v1);
+    expect(useEditorStore.getState().viewRefs.has(A)).toBe(false);
+  });
+});

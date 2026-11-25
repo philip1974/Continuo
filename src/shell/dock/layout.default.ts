@@ -1,6 +1,7 @@
 import type { DockviewApi } from 'dockview-react';
 import { tWithFallback } from '@/i18n/translate';
 import { activateDockPanel } from './wrap-panel-close';
+import { useEditorStore } from '@/stores/editor.store';
 
 // Explorer 固定在左侧 sidebar(App.tsx 内的 ExplorerSidebar),不参与 Dockview。
 // 默认布局极简(VSCode 风):只 Editor 占主区。
@@ -11,13 +12,15 @@ import { activateDockPanel } from './wrap-panel-close';
 // 第二次 api.addPanel({id:'editor'}) 会 throw "panel with id editor already
 // exists"。check existence + 复活已有 editor focus 而非 throw。
 export function applyDefaultLayout(api: DockviewApi) {
-  const existing = api.getPanel('editor');
+  // 编辑器面板 id = 活动编辑器组 id(拆分后只剩 editor:2 时恢复的是它,不另起一个空的 editor 组;BDD: editor-groups)
+  const id = useEditorStore.getState().activeGroupId;
+  const existing = api.getPanel(id);
   if (existing) {
     activateDockPanel(existing);
     return;
   }
   const editor = api.addPanel({
-    id: 'editor',
+    id,
     component: 'editor',
     title: tWithFallback('panels.editor.title', 'Editor'),
     params: { titleKey: 'panels.editor.title' },

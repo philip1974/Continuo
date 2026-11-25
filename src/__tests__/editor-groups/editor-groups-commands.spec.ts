@@ -9,6 +9,7 @@ import { focusEditorGroup, splitEditor } from '../../panels/Editor/editor-groups
 import { reconcileEditorGroupsWithDock, trackEditorGroups } from '../../shell/dock/editor-groups-dock-sync';
 import { closeDuplicateSingletonPanels } from '../../shell/dock/DockShell';
 import { terminalYieldedCommandId } from '../../panels/Terminal/terminal-hotkeys';
+import { applyDefaultLayout } from '../../shell/dock/layout.default';
 
 const A = '/w/a.ts';
 const B = '/w/b.ts';
@@ -243,5 +244,17 @@ describe('dock ↔ 编辑器组同步', () => {
     expect(editorGroupIdsOf(s)).toEqual(['editor', 'editor:9']);
     expect(groupTabsOf(s, 'editor:9').map((t) => t.id)).toEqual([B]);
     expect(dock.getPanel('editor:8')).toBeUndefined();
+  });
+
+  it('恢复默认布局补建的是活动编辑器组的面板(拆分后只剩 editor:2 时不另起空的 editor 组)', () => {
+    useEditorStore.getState().openTab(createTab(A, 'a'));
+    const dock = fakeDock(['editor']);
+    setDockApi(asApi(dock));
+    splitEditor('right');
+    useEditorStore.getState().closeTab(A, 'editor');
+    expect(editorGroupIdsOf(useEditorStore.getState())).toEqual(['editor:2']);
+    const empty = fakeDock([]);
+    applyDefaultLayout(asApi(empty));
+    expect(empty.addPanel.mock.calls[0]![0]).toMatchObject({ id: 'editor:2', component: 'editor' });
   });
 });

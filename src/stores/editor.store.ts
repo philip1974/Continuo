@@ -625,6 +625,9 @@ type EditorState = {
   ) => Promise<EditorView | null>;
 };
 
+// 每个文档仍挂着的 CodeMirror 视图(按登记顺序;同一文档在多个编辑器组各有一个)。viewRefs 指向最近登记的那个。
+const liveViews = new Map<string, EditorView[]>();
+
 // perf P12:getStateAfter* 返回的新状态——tabs 引用变化(增删/改名)即 chrome 变,
 // bump chromeVersion;tabs 与 active 都未变时返回原 state,避免 no-op action 通知订阅者。
 function applyTabStateChange(
@@ -1194,21 +1197,31 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       return replaceTabBumpingChrome(s, idx, { ...cur, unsafeEditAccepted: true });
     }),
 
-  registerView: (tabId, view) =>
+  registerView: (tabId, view) => {
+    const stack = liveViews.get(tabId) ?? [];
+    if (!stack.includes(view)) liveViews.set(tabId, [...stack, view]);
     set((s) => {
       if (s.viewRefs.get(tabId) === view) return s;
       const viewRefs = new Map(s.viewRefs);
       viewRefs.set(tabId, view);
       return { viewRefs };
-    }),
+    });
+  },
 
-  unregisterView: (tabId, expectedView) =>
+  unregisterView: (tabId, expectedView) => {
+    const rest = (liveViews.get(tabId) ?? []).filter((v) => v !== expectedView);
+    if (rest.length > 0) liveViews.set(tabId, rest);
+    else liveViews.delete(tabId);
     set((s) => {
       if (s.viewRefs.get(tabId) !== expectedView) return s;
       const viewRefs = new Map(s.viewRefs);
-      viewRefs.delete(tabId);
+      // 同一文档在另一编辑器组还有视图 → 改指向它(最近登记的),不让仍挂着的视图从登记里消失
+      const fallback = rest[rest.length - 1];
+      if (fallback) viewRefs.set(tabId, fallback);
+      else viewRefs.delete(tabId);
       return { viewRefs };
-    }),
+    });
+  },
 
   waitForViewRef: (tabId, timeoutMs) => {
     const existing = get().viewRefs.get(tabId);
