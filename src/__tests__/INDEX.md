@@ -799,6 +799,7 @@
 ## [强制颜色模式下的选中 / 高亮 / 按下状态](./forced-colors-states/README.md)
 
 - [`forced-colors.spec.ts`](./forced-colors-states/forced-colors.spec.ts)
+- [`single-marker.spec.tsx`](./forced-colors-states/single-marker.spec.tsx)
 
 ## [format-hotkey(命令 hotkey 显示格式化)](./format-hotkey/README.md)
 
