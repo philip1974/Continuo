@@ -258,6 +258,35 @@ describe('FolderTree · 错误行「重试」上的按键', () => {
     expect(reached).toEqual(['F5', 'q', 'Escape']);
   });
 
+  // 高负载下错误行提交后、其 passive effect 执行前就可能按到键(真机主线程繁忙同理):用 MutationObserver 在提交后的
+  // 微任务里聚焦「重试」并按键。截键监听须在提交时就已挂上,否则这些键漏到树容器,把失败目录收起。
+  it('错误行刚提交(effect 尚未执行)就在「重试」上按 Enter / ← → 失败目录仍不收起', async () => {
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(r.container, '/work/alpha')).not.toBeNull());
+    h.failDirs.add('/work/alpha');
+    const retry = new Promise<HTMLElement>((resolve) => {
+      const mo = new MutationObserver(() => {
+        const el = r.queryByRole('button', { name: RETRY });
+        if (el) {
+          mo.disconnect();
+          resolve(el);
+        }
+      });
+      mo.observe(r.container, { childList: true, subtree: true });
+    });
+    act(() => {
+      fireEvent.click(row(r.container, '/work/alpha')!);
+    });
+    const el = await retry;
+    el.focus();
+    for (const key of ['Enter', 'ArrowLeft']) {
+      fireEvent.keyDown(el, { key, code: key });
+      fireEvent.keyUp(el, { key, code: key });
+    }
+    await new Promise((res) => setTimeout(res, 20));
+    expect(row(r.container, '/work/alpha')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('「重试」按钮激活(Enter 的默认动作 = click)→ 重新读取该目录', async () => {
     const { r, retry } = await renderFailedAlpha();
     h.failDirs.delete('/work/alpha');

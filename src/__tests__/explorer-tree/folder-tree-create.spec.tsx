@@ -105,6 +105,8 @@ beforeEach(() => {
   vi.mocked(coApi.fs.copy).mockClear();
   useExplorerStore.setState({ expandedPaths: new Set(), sort: { by: 'name', reverse: false } });
   useExplorerClipboardStore.setState({ kind: null, paths: [] });
+  // 活动编辑器是全局 store:上一用例打开的文件若留着,本用例挂载时 autoReveal 会去定位它,与用例自己的点击 / 按键竞争
+  useEditorStore.setState({ activeTabId: null });
 });
 afterEach(() => {
   cleanup();

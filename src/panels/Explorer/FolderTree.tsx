@@ -95,6 +95,11 @@ interface PendingReveal {
   path: string;
   /** 文件夹:DOM 焦点移到新行;文件:只改树的焦点 / 选中并滚动,不抢刚打开的编辑器的焦点。 */
   focusRow: boolean;
+  /**
+   * 发起定位时的树内操作序号(treeInputSeqRef)。等待期间(父目录逐级加载 / 刷新)用户在树里点击 / 右键 / 按键过
+   * → 序号变了 → 定位作废,不在加载完成后把选中 / 焦点抢回去。
+   */
+  inputSeq: number;
 }
 
 // 根目录读取状态:加载中 / 已读到 / 读取失败(原因)。
@@ -344,6 +349,12 @@ export function FolderTree({ root }: { root: string }) {
   // 子目录读取失败(VSCode:展开失败的目录下显示错误行):目录 → 原因;读到即删除。
   const [dirErrors, setDirErrors] = useState<ReadonlyMap<string, DirLoadFailure>>(EMPTY_DIR_ERRORS);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
+  // 用户在树里的点击 / 右键 / 按键计数(见 PendingReveal.inputSeq)。用 ref 而非 state:定位 effect 可能在用户这次操作
+  // 引发的渲染之前才执行(主线程繁忙时 passive effect 晚于下一次输入),须在事件当下就能读到。
+  const treeInputSeqRef = useRef(0);
+  const bumpTreeInputSeq = useCallback(() => {
+    treeInputSeqRef.current += 1;
+  }, []);
   // 根目录读取状态(loader 经 onChildrenLoad 回报):列表为空时据此区分加载中 / 读取失败 / 空文件夹。
   const [rootLoad, setRootLoad] = useState<RootLoadState>(ROOT_LOADING);
   // dnd 状态:hoverTarget 由 FileRow onDragEnter 回报;dragDepth 用计数器
@@ -680,7 +691,7 @@ export function FolderTree({ root }: { root: string }) {
               onPathMoved(oldPath, r.newPath);
               // 焦点与选中留在改名后的项(VSCode):旧 id 随父目录刷新消失,不定位则库的 updateDomFocus 回落首项。
               // 失败分支不动:Enter 提交时焦点已还给原项(tree-config completeRenaming)。
-              setPendingReveal({ path: r.newPath, focusRow: true });
+              setPendingReveal({ path: r.newPath, focusRow: true, inputSeq: treeInputSeqRef.current });
             } catch (err) {
               notifyThrownError(err);
             }
@@ -824,6 +835,10 @@ export function FolderTree({ root }: { root: string }) {
   // 新建成功后,新项一出现在渲染列表里就把树焦点 / 选中移过去(见 submitCreate)。
   useEffect(() => {
     if (pendingReveal === null) return;
+    if (treeInputSeqRef.current !== pendingReveal.inputSeq) {
+      setPendingReveal(null);
+      return;
+    }
     const index = rowIndexOf(rows, pendingReveal.path);
     if (index < 0) return;
     const item = rows[index] as ItemInstance<FileEntry>;
@@ -869,7 +884,9 @@ export function FolderTree({ root }: { root: string }) {
         return missing.length === 0 ? old : [...old, ...missing.reverse()];
       });
     }
-    setPendingReveal((prev) => (prev?.path === path ? prev : { path, focusRow: false }));
+    setPendingReveal((prev) =>
+      prev?.path === path ? prev : { path, focusRow: false, inputSeq: treeInputSeqRef.current },
+    );
   }, [activeEditorPath, autoReveal, root]);
 
   const treeApi = useMemo(() => ({ invalidateChildrenIds: refreshParent }), [refreshParent]);
@@ -1024,7 +1041,7 @@ export function FolderTree({ root }: { root: string }) {
       const parent = treeRef.current?.getItemInstance(parentDir);
       if (parent && !parent.isExpanded()) parent.expand();
     }
-    setPendingReveal({ path: r.newPath, focusRow: type === 'dir' });
+    setPendingReveal({ path: r.newPath, focusRow: type === 'dir', inputSeq: treeInputSeqRef.current });
     // 新建文件打开后焦点进编辑器,可接着输入(VSCode 同款;单击打开已有文件仍留在树里)
     if (type === 'file') {
       void handleFileOpen(r.newPath).then((ok) => {
@@ -1358,6 +1375,9 @@ export function FolderTree({ root }: { root: string }) {
         <div
           ref={scrollRef}
           className="min-h-0 flex-1 overflow-auto bg-canvas"
+          onClickCapture={bumpTreeInputSeq}
+          onContextMenuCapture={bumpTreeInputSeq}
+          onKeyDownCapture={bumpTreeInputSeq}
           onScroll={(e) => {
             if (visible) lastScrollTopRef.current = e.currentTarget.scrollTop;
           }}

@@ -1,7 +1,7 @@
 // 子目录读取失败的内联错误行(VSCode Explorer:展开失败的目录下显示错误行)。与根目录读取失败同一文案
 // (panels.explorer.load_failed + 按错误码本地化的原因)与同一「重试」;作为虚拟列表里的一行插在失败目录之后。
 import type { ItemInstance } from '@headless-tree/core';
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { Button } from '@/design';
 import type { FileEntry } from '@/lib/fs/types';
 import { useT } from '@/i18n';
@@ -73,7 +73,9 @@ export function DirLoadErrorRow({ row, start, indent, onRetry }: DirLoadErrorRow
   // ↑↓ Home End 移焦点 …),不看按键来自哪里 →「重试」上的这些树键(TREE_ITEM_PLAIN_KEYS)在本行截住,不冒泡到
   // 树容器;其它无修饰键(F5 等用户自绑的单键全局命令)照常冒泡。按钮自身的 Enter / 空格激活是默认动作,不受影响;
   // 带 ⌘ / Ctrl / Alt 的组合键照常冒泡到全局命令热键(树自己的 ⌘C 等由 handleTreeKeyDown 按来源过滤)。
-  useEffect(() => {
+  // layout effect:提交时就挂上。passive effect 要等之后的调度任务,主线程繁忙时行已显示、「重试」已可聚焦,
+  // 这期间按的树键会漏到树容器(Enter / ← 把失败目录收起)。
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const onKeyDown = (e: KeyboardEvent) => {

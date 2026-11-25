@@ -187,7 +187,9 @@ describe('FolderTree · FileRow memo', () => {
     act(() => {
       useExplorerClipboardStore.getState().set('cut', [fname(3)]);
     });
-    expect(row(container, fname(3))!.className).toContain('opacity-50');
+    // 行的 store 订阅在 passive effect 里建立:行刚挂载、effect 尚未执行时写 store,React 在订阅建立时比对快照
+    // 再补一次渲染 —— 灰显最终出现,但不一定在 act 结束前。
+    await waitFor(() => expect(row(container, fname(3))!.className).toContain('opacity-50'));
     expect(row(container, fname(4))!.className).not.toContain('opacity-50');
     expect(count(fname(5))).toBe(before.get(fname(5)));
   });

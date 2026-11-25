@@ -2,12 +2,17 @@
 // BDD:资源管理器选中项跟随活动编辑器(VSCode explorer.autoReveal)。见同目录 README.md。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import type { FileEntry } from '../../lib/fs/types';
 import { useExplorerStore } from '../../stores/explorer.store';
 import { useEditorStore } from '../../stores/editor.store';
 
-const h = vi.hoisted(() => ({ settings: {} as Record<string, unknown>, scrolledTo: [] as number[] }));
+const h = vi.hoisted(() => ({
+  settings: {} as Record<string, unknown>,
+  scrolledTo: [] as number[],
+  // 目录 → 挂起其 listDir 直到调用返回的 release(模拟慢盘 / 网络盘上逐级展开父目录)
+  gates: new Map<string, Promise<void>>(),
+}));
 
 const fsTree = new Map<string, FileEntry[]>();
 const dir = (path: string): FileEntry => ({ path, name: path.split('/').pop()!, isDirectory: true });
@@ -16,7 +21,10 @@ const file = (path: string): FileEntry => ({ path, name: path.split('/').pop()!,
 vi.mock('@/lib/co-api', () => ({
   coApi: {
     fs: {
-      listDir: vi.fn(async (p: string) => ({ ok: true, data: fsTree.get(p) ?? [] })),
+      listDir: vi.fn(async (p: string) => {
+        await h.gates.get(p);
+        return { ok: true, data: fsTree.get(p) ?? [] };
+      }),
       reveal: vi.fn(),
       watchDir: vi.fn(async () => ({ ok: true })),
       unwatchDir: vi.fn(async () => ({ ok: true })),
@@ -72,6 +80,7 @@ async function mount() {
 beforeEach(() => {
   h.settings = {};
   h.scrolledTo = [];
+  h.gates.clear();
   fsTree.clear();
   fsTree.set('/work', [dir('/work/src'), dir('/work/node_modules'), file('/work/top.ts')]);
   fsTree.set('/work/src', [dir('/work/src/deep'), file('/work/src/a.ts')]);
@@ -131,6 +140,25 @@ describe('资源管理器跟随活动编辑器(explorer.autoReveal,默认开)', 
     await new Promise((r) => setTimeout(r, 50));
     expect(row('/work/node_modules')!.getAttribute('aria-expanded')).toBe('false');
     expect(row('/work/node_modules/pkg/index.js')).toBeNull();
+  });
+
+  it('等待定位期间(父目录还在加载)用户在树里点了别的行 → 定位作废,加载完不抢回选中 / 焦点项', async () => {
+    await mount();
+    let release!: () => void;
+    h.gates.set('/work/src/deep', new Promise<void>((r) => (release = r)));
+    openInEditor('/work/src/deep/b.ts');
+    await waitFor(() => expect(row('/work/src/deep')).not.toBeNull());
+    // 用户点了一个目录(不换活动编辑器)
+    act(() => {
+      fireEvent.click(row('/work/node_modules')!);
+    });
+    await waitFor(() => expect(selected('/work/node_modules')).toBe(true));
+    await act(async () => release());
+    await waitFor(() => expect(row('/work/src/deep/b.ts')).not.toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(selected('/work/src/deep/b.ts')).toBe(false);
+    expect(selected('/work/node_modules')).toBe(true);
+    expect(row('/work/node_modules')!.getAttribute('tabindex')).toBe('0');
   });
 
   it('关掉 explorer.autoReveal → 不展开、不改选中', async () => {
