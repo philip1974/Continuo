@@ -13,6 +13,8 @@ import {
   hotkeyFilterQuery,
   formatHotkeyParts,
   detectPlatform,
+  hotkeySignature,
+  type HotkeySignature,
   type Platform,
 } from '@/plugins/command-palette/format-hotkey';
 import {
@@ -36,10 +38,11 @@ const COMMAND_PALETTE_HOTKEY_PARTS = formatHotkeyParts('mod+shift+p', PLATFORM);
 const EMPTY_KEYBINDING_DISPLAY_COMMANDS: DisplayCommand[] = [];
 const KEYBINDING_ROW_CLASS_NAME = 'flex items-center gap-3 px-4 py-3 text-xs';
 const KEYBINDING_ROW_BORDER_CLASS_NAME = `${KEYBINDING_ROW_CLASS_NAME} border-t border-line/50`;
-// 命令标题占据剩余宽度并可省略号截断(flex-1);flex-1 的 basis 为 0,空间不足时标题会先于徽标被挤成 0 宽,
-// 故给最小宽度 6rem,让 id 徽标(min-w-0,最多占 40%)先收缩;列表窄于 28rem 时徽标隐藏;键帽 / 编辑 /
-// 重置按钮均 shrink-0 始终完整可见。未覆盖时的重置按钮宽时 invisible 占位(各行键帽列对齐),窄时 hidden 让出宽度给标题。
-export const KEYBINDING_TITLE_CLASS_NAME = 'min-w-[6rem] flex-1 truncate text-sm text-fg';
+// 命令标题占据剩余宽度并可省略号截断(title 给全称);flex 基准 6rem、可收缩到 0(min-w-0):空间不足时与键帽组按基准
+// 比例一起收缩(4 键组合时键帽组换行),而不是固定最小宽度把编辑 / 重置按钮挤出列表。id 徽标(min-w-0,最多占 40%)
+// 基准是自身内容宽,先收缩;列表窄于 28rem 时徽标隐藏。编辑 / 重置按钮 shrink-0 始终完整可见。未覆盖时的重置按钮宽时
+// invisible 占位(各行键帽列对齐),窄时 hidden 让出宽度给标题。
+export const KEYBINDING_TITLE_CLASS_NAME = 'min-w-0 flex-[1_1_6rem] truncate text-sm text-fg';
 // id 徽标保留原大小写(命令 id 区分大小写,大写化会误导照抄),靠 Badge 浅底 + <code> 等宽与标题区分。
 export const KEYBINDING_ID_BADGE_CLASS_NAME = 'min-w-0 max-w-[40%] @max-md:hidden';
 const EDIT_HOTKEY_ICON = (
@@ -71,6 +74,8 @@ export interface DisplayCommand {
   readonly reserved?: boolean;
   /** 搜索用小写 haystack,随命令/语言/override 变化预计算. */
   readonly searchHaystack: string;
+  /** effective hotkey 的运行时语义(修饰键位 + 主键),按快捷键搜索(cmd+s)时比对;无快捷键则缺省. */
+  readonly hotkeySig?: HotkeySignature | null;
 }
 
 export interface Bucket {
@@ -122,23 +127,72 @@ function copyCommands(commands: readonly DisplayCommand[]): DisplayCommand[] {
   return copy;
 }
 
-function matches(d: DisplayCommand, qLower: string): boolean {
-  return d.searchHaystack.includes(qLower);
+/** 搜索框里可写的修饰键名 → 快捷键串词汇(mac 键帽符号与常见别名都认)。 */
+const QUERY_MODIFIERS: Readonly<Record<string, string>> = {
+  cmd: 'cmd', meta: 'cmd', command: 'cmd', '⌘': 'cmd',
+  mod: 'mod',
+  ctrl: 'ctrl', control: 'ctrl', '⌃': 'ctrl',
+  shift: 'shift', '⇧': 'shift',
+  alt: 'alt', opt: 'alt', option: 'alt', '⌥': 'alt',
+};
+
+/** 按快捷键搜索的查询:修饰键 + 主键;exact = 引号包住(修饰键集合须相同)。 */
+interface HotkeyQuery {
+  readonly sig: HotkeySignature;
+  readonly exact: boolean;
+}
+
+/**
+ * 查询是否「修饰键名 + … + 主键」形态(对齐 VSCode 键盘快捷方式编辑器按 `+` 拆词):前几段全是修饰键名、末段是非空的非修饰键。
+ * 是 → 返回运行时语义;否则 null(按文本搜索)。`"cmd+s"`(引号)= 精确搜索。
+ */
+export function parseHotkeyQuery(qLower: string, platform: Platform): HotkeyQuery | null {
+  let text = qLower;
+  const exact = text.length > 2 && text.startsWith('"') && text.endsWith('"');
+  if (exact) text = text.slice(1, -1);
+  const segments = text.split('+');
+  if (segments.length < 2) return null;
+  const key = segments[segments.length - 1]!.trim();
+  if (key === '' || Object.hasOwn(QUERY_MODIFIERS, key)) return null;
+  let combo = '';
+  for (let i = 0; i < segments.length - 1; i++) {
+    const seg = segments[i]!.trim();
+    if (!Object.hasOwn(QUERY_MODIFIERS, seg)) return null;
+    combo += `${QUERY_MODIFIERS[seg]}+`;
+  }
+  const sig = hotkeySignature(combo + key, platform);
+  return sig === null ? null : { sig, exact };
+}
+
+/**
+ * VSCode 同款(KeybindingItemMatches):主键精确相等;修饰键 —— 普通查询要求查询的修饰键都在绑定里(cmd+s 命中 ⌘S 与 ⇧⌘S,
+ * 不命中 ⇧⌘E),引号精确查询要求修饰键集合相同。
+ */
+function matchesHotkeyQuery(d: DisplayCommand, hq: HotkeyQuery): boolean {
+  const sig = d.hotkeySig;
+  if (!sig || sig.key !== hq.sig.key) return false;
+  return hq.exact ? sig.mask === hq.sig.mask : (sig.mask & hq.sig.mask) === hq.sig.mask;
+}
+
+function matches(d: DisplayCommand, qLower: string, hq: HotkeyQuery | null): boolean {
+  return hq ? matchesHotkeyQuery(d, hq) : d.searchHaystack.includes(qLower);
 }
 
 export function selectVisibleKeybindingCommands(
   commands: readonly DisplayCommand[],
   query: string,
+  platform: Platform = PLATFORM,
 ): DisplayCommand[] {
   const q = normalizeSearchQuery(query);
   const hasQuery = q.length > 0;
   const qLower = hasQuery ? lowerIfNeeded(q) : '';
+  const hq = hasQuery && qLower.includes('+') ? parseHotkeyQuery(qLower, platform) : null;
   let selected: DisplayCommand[] | null = null;
   let count = 0;
 
   for (let i = 0; i < commands.length; i++) {
     const d = commands[i]!;
-    const visible = !hasQuery || matches(d, qLower);
+    const visible = !hasQuery || matches(d, qLower, hq);
     if (!visible) {
       if (selected === null) {
         selected = new Array<DisplayCommand>(commands.length);
@@ -227,6 +281,7 @@ export function buildKeybindingDisplayCommands(
         effective ? hotkeySearchText(effective, platform) : undefined,
         englishText,
       ),
+      hotkeySig: effective ? hotkeySignature(effective, platform) : null,
     };
   }
   return out;
@@ -313,6 +368,13 @@ export function KeybindingsTabContent() {
           placeholder={searchPlaceholderLabel}
           value={query}
           onChange={(e) => setQuery(clampSearchQuery(e.target.value))}
+          // VSCode 键盘快捷方式编辑器同款:有内容时 Esc 清空并不再冒泡;空时不拦截,交给外层照常处理。
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || e.nativeEvent.isComposing || query === '') return;
+            e.preventDefault();
+            e.stopPropagation();
+            setQuery('');
+          }}
         />
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
           <span>
@@ -376,8 +438,9 @@ export function KeybindingsTabContent() {
               <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
                 {bucket.category}
               </h3>
-              {/* @container:行内按列表自身宽度决定是否显示命令 id 徽标(窄时隐藏,标题 / 键帽 / 编辑按钮优先)。 */}
-              <ul className="@container overflow-hidden rounded-md border border-line bg-panel-soft/40">
+              {/* @container:行内按列表自身宽度决定是否显示命令 id 徽标(窄时隐藏,标题 / 键帽 / 编辑按钮优先)。
+                  不 overflow-hidden:行内无底色不需裁圆角,裁了会切掉贴边按钮的焦点环。 */}
+              <ul className="@container rounded-md border border-line bg-panel-soft/40">
                 {bucket.items.map((d, idx) => {
                   const cmd = d.cmd;
                   const { hotkeyParts, isOverridden } = d; // 预计算(打磨 R29)
@@ -405,7 +468,11 @@ export function KeybindingsTabContent() {
                         </span>
                       )}
                       {hotkeyParts.length > 0 ? (
-                        <span className="flex shrink-0 items-center gap-0.5">
+                        // 键帽组可收缩并换行(窄列表 + 4 键组合时折成两行),不把编辑 / 重置按钮挤出行外。
+                        <span
+                          data-testid="keybinding-keys"
+                          className="flex min-w-0 flex-wrap items-center justify-end gap-0.5"
+                        >
                           {hotkeyParts.map((p) => (
                             <KeyCap key={p}>{p}</KeyCap>
                           ))}
@@ -422,6 +489,7 @@ export function KeybindingsTabContent() {
                         })}
                         onClick={() => setEditing(cmd)}
                         data-keybinding-edit={cmd.id}
+                        className="shrink-0"
                       >
                         {EDIT_HOTKEY_ICON}
                       </IconButton>
@@ -445,7 +513,7 @@ export function KeybindingsTabContent() {
                         disabled={!isOverridden}
                         // 未覆盖:宽时 invisible 占位(键帽列对齐);列表窄(@max-md)时 hidden 让出宽度给标题。
                         // 有 override 时始终可见可达。
-                        className={isOverridden ? '' : 'pointer-events-none invisible @max-md:hidden'}
+                        className={isOverridden ? 'shrink-0' : 'shrink-0 pointer-events-none invisible @max-md:hidden'}
                       >
                         {RESET_HOTKEY_ICON}
                       </IconButton>

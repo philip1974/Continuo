@@ -136,9 +136,9 @@ describe('KeybindingsTabContent — 窄宽命令行', () => {
     expect(classesOf(ul)).toContain('@container');
     const li = ul.querySelector('li')!;
     const title = Array.from(li.querySelectorAll('span')).find((s) => s.textContent === 'Find in Terminal')!;
-    // 标题有最小宽度:flex-1(basis 0)在空间不足时会先被挤成 0 宽,徽标(min-w-0)应先收缩
-    expect(classesOf(title)).toEqual(expect.arrayContaining(['min-w-[6rem]', 'flex-1', 'truncate']));
-    expect(classesOf(title)).not.toContain('min-w-0');
+    // 标题可收缩(min-w-0)但以 6rem 为 flex 基准:空间不足时与键帽组按基准比例一起收缩,不独占也不被挤成 0 宽
+    expect(classesOf(title)).toEqual(expect.arrayContaining(['min-w-0', 'flex-[1_1_6rem]', 'truncate']));
+    expect(classesOf(title)).not.toContain('min-w-[6rem]');
     expect(title.getAttribute('title')).toBe('Find in Terminal');
     const code = li.querySelector('code')!;
     expect(classesOf(code)).toContain('truncate');
@@ -148,6 +148,23 @@ describe('KeybindingsTabContent — 窄宽命令行', () => {
     expect(badgeCls).not.toContain('shrink-0');
     expect(badgeCls).not.toContain('ml-auto');
     expect(li.querySelector('button[aria-label*="Find in Terminal"]')).not.toBeNull();
+  });
+
+  it('改成 4 键组合后窄列表:键帽组可收缩换行,编辑 / 重置按钮不收缩、焦点环不被列表裁掉', () => {
+    useKeybindingsStore.setState({ overrides: { 'terminal.search.toggle': 'mod+alt+shift+j' } });
+    const { container } = render(<KeybindingsTabContent />);
+    const ul = container.querySelector('ul')!;
+    expect(classesOf(ul)).not.toContain('overflow-hidden');
+    const li = ul.querySelector('li')!;
+    const keys = li.querySelector('[data-testid="keybinding-keys"]')!;
+    expect(keys.querySelectorAll('kbd, .wm-keycap').length).toBeGreaterThanOrEqual(4);
+    expect(classesOf(keys)).toEqual(expect.arrayContaining(['min-w-0', 'flex-wrap']));
+    expect(classesOf(keys)).not.toContain('shrink-0');
+    const edit = li.querySelector('button[data-keybinding-edit]')!;
+    const reset = li.querySelector('button[aria-label*="Find in Terminal"]:not([data-keybinding-edit])')!;
+    expect(classesOf(edit)).toContain('shrink-0');
+    expect(classesOf(reset)).toContain('shrink-0');
+    expect(classesOf(reset)).not.toContain('invisible');
   });
 
   it('顶部提示行可换行(键帽组自身不拆行,见 keybindings-tab-content)', () => {

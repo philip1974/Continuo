@@ -814,6 +814,10 @@
 
 - [`hotkey-modal-suppression.spec.tsx`](./hotkey-modal-suppression/hotkey-modal-suppression.spec.tsx)
 
+## [快捷键主键:⌥ / ⇧ 组合按物理键取主键(录制与匹配同源)](./hotkey-physical-key/README.md)
+
+- [`hotkey-physical-key.spec.ts`](./hotkey-physical-key/hotkey-physical-key.spec.ts)
+
 ## [i18n-count-plural(英文计数文案按单复数)](./i18n-count-plural/README.md)
 
 - [`count-plural.spec.tsx`](./i18n-count-plural/count-plural.spec.tsx)

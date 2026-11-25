@@ -13,7 +13,7 @@
 |---|---|
 | `src/plugins/settings/SettingsPanel.tsx` | 面板根 `@container/settings`;窄于 42rem 导航收成图标栏、内容区缩小内边距 |
 | `src/plugins/settings/SettingItemRow.tsx` | 行 `@container`;窄于 32rem 上下排列;标题行可换行;id 徽标可截断 |
-| `src/plugins/settings/KeybindingsTabContent.tsx` | 命令标题 `min-w-[6rem] flex-1 truncate`;id 徽标先收缩、窄列表隐藏;键帽 / 按钮不收缩 |
+| `src/plugins/settings/KeybindingsTabContent.tsx` | 命令标题 `min-w-0 flex-[1_1_6rem] truncate`;id 徽标先收缩、窄列表隐藏;键帽组可换行;按钮不收缩 |
 | `src/plugins/settings/PluginsTabContent.tsx` | 贡献点表格行可换行(示例列不被挤成 0 宽);插件 id 徽标可截断 |
 
 ## 关键行为
@@ -33,10 +33,11 @@
 
 ### 快捷键页(KeybindingsTabContent)
 
-- 命令标题 `min-w-[6rem] flex-1 truncate`(占剩余宽度,过长省略号,`title` 给全称);`flex-1` 的 basis 为 0,
-  不给最小宽度时空间不足标题会先于徽标被挤成 0 宽,故保底 6rem,让 id 徽标先收缩
+- 命令标题 `min-w-0 flex-[1_1_6rem] truncate`(占剩余宽度,过长省略号,`title` 给全称):flex 基准 6rem、可收缩到 0,
+  空间不足时与键帽组按基准比例一起收缩;不再用固定最小宽度(640 宽侧栏里改成 4 键组合 ⌥⇧⌘J 时,6rem 保底把重置按钮挤出列表)
 - 命令 id 徽标 `min-w-0 max-w-[40%]`,`<code>` 截断;列表(`ul` 为 `@container`)窄于 28rem 时隐藏(`@max-md:hidden`)
-- 键帽、编辑 / 重置按钮不收缩,始终完整可见
+- 键帽组 `min-w-0 flex-wrap`:放不下时折成两行
+- 编辑 / 重置按钮 `shrink-0`,始终完整可见;列表 `ul` 不 `overflow-hidden`(行无底色无需裁圆角),贴边按钮的焦点环不被裁
 - 顶部「N 条命令 · 未绑定用 ⌘⇧P …」提示行可换行
 
 ### 插件页(PluginsTabContent)

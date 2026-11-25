@@ -10,6 +10,7 @@
 
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { ownValue } from '../../../electron/shared/own-value';
+import { baseKeyForShifted } from './event-hotkey-key';
 
 export type Platform = 'mac' | 'other';
 
@@ -133,20 +134,13 @@ const MOD_DISPLAY_LABEL: Record<Platform, Readonly<Record<number, string>>> = {
  * - 主键别名归一(`mod+up` ≡ 录制出的 `mod+arrowup`)
  * - 修饰键去重、大小写不敏感、按固定顺序输出(`shift+mod+enter` ≡ `mod+shift+enter`)
  * - 修饰键别名按 compileCombo 同一映射:option≡alt;mod 在 mac≡cmd(metaKey)、其它平台≡ctrl
+ * - 含 shift 时 US 上档符号归一到基础键(`mod+shift+?` ≡ `mod+shift+/`,与 compileCombo 同一归一)
  * 含未知修饰符的串运行时不可匹配,原样返回(只与完全相同的串相等)。
  */
 export function canonicalHotkey(combo: string, platform: Platform): string {
-  let mask = 0;
-  let start = 0;
-  for (;;) {
-    const plus = combo.indexOf('+', start);
-    if (plus < 0) break;
-    const bit = modifierBit(lowerIfNeeded(combo.slice(start, plus).trim()), platform);
-    if (bit === 0) return combo;
-    mask |= bit;
-    start = plus + 1;
-  }
-  const key = canonicalHotkeyKey(lowerIfNeeded(combo.slice(start).trim()));
+  const sig = hotkeySignature(combo, platform);
+  if (sig === null) return combo;
+  const { mask, key } = sig;
   return (
     (mask & MOD_META ? 'meta+' : '') +
     (mask & MOD_CTRL ? 'ctrl+' : '') +
@@ -154,6 +148,31 @@ export function canonicalHotkey(combo: string, platform: Platform): string {
     (mask & MOD_SHIFT ? 'shift+' : '') +
     key
   );
+}
+
+/** 快捷键的运行时语义:修饰键位掩码 + 归一后的主键。 */
+export interface HotkeySignature {
+  readonly mask: number;
+  readonly key: string;
+}
+
+/** 整串快捷键 → 运行时语义(归一规则见 canonicalHotkey);含未知修饰符 → null。 */
+export function hotkeySignature(combo: string, platform: Platform): HotkeySignature | null {
+  let mask = 0;
+  let start = 0;
+  for (;;) {
+    const plus = combo.indexOf('+', start);
+    if (plus < 0) break;
+    const bit = modifierBit(lowerIfNeeded(combo.slice(start, plus).trim()), platform);
+    if (bit === 0) return null;
+    mask |= bit;
+    start = plus + 1;
+  }
+  const key = baseKeyForShifted(
+    canonicalHotkeyKey(lowerIfNeeded(combo.slice(start).trim())),
+    (mask & MOD_SHIFT) !== 0,
+  );
+  return { mask, key };
 }
 
 /**

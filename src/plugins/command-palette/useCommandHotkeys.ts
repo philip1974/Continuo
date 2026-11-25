@@ -11,6 +11,7 @@ import { tWithFallback } from '@/i18n';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { baseKeyForShifted, physicalHotkeyKey } from './event-hotkey-key';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 import { hasOpenModalIn } from '@/design/Modal';
@@ -111,14 +112,16 @@ function compileCombo(combo: string, platform: Platform): ComboSignature | null 
     wantCtrl,
     wantShift,
     wantAlt,
-    // 主键别名(up / esc / return …)归一到 e.key 名,与录制、显示同一套词汇。
-    key: canonicalHotkeyKey(lowerTrimmedSegment(combo, start, combo.length)),
+    // 主键别名(up / esc / return …)归一到 e.key 名,与录制、显示同一套词汇;含 shift 时上档符号归一到基础键
+    //(旧值 mod+shift+? ≡ 现在录到的 mod+shift+/)。
+    key: baseKeyForShifted(canonicalHotkeyKey(lowerTrimmedSegment(combo, start, combo.length)), wantShift),
   };
 }
 
-/** 签名是否匹配键盘事件(精确比较四个修饰键 + 主键). */
+/** 签名是否匹配键盘事件(精确比较四个修饰键 + 主键;主键先按物理键,再按旧 e.key 兜底,见 firstMatchingBinding). */
 function signatureMatches(sig: ComboSignature, e: KeyboardEvent): boolean {
-  return signatureMatchesKey(sig, e, lowerIfNeeded(e.key));
+  const legacyKey = lowerIfNeeded(e.key);
+  return signatureMatchesKey(sig, e, physicalHotkeyKey(e) ?? legacyKey) || signatureMatchesKey(sig, e, legacyKey);
 }
 
 function signatureMatchesKey(sig: ComboSignature, e: KeyboardEvent, keyLower: string): boolean {
@@ -228,8 +231,14 @@ function firstMatchingBinding(
   bindings: readonly CompiledBinding[],
   e: KeyboardEvent,
 ): CompiledBinding | undefined {
-  const keyLower = lowerIfNeeded(e.key);
-  for (const b of bindings) if (signatureMatchesKey(b.sig, e, keyLower)) return b;
+  // 主键与录制同一规则(event-hotkey-key:⌥ / ⇧ 变形字符按物理键,e.key 小写只算一次)。整表找不到时再按原始 e.key 兜底:旧版按 e.key
+  // 录下的 alt+˚ / alt+dead 等仍生效;两轮分开,新写法(alt+u)永远优先于旧兜底(alt+dead)。
+  const legacyKey = lowerIfNeeded(e.key);
+  const physical = physicalHotkeyKey(e);
+  const key = physical ?? legacyKey;
+  for (const b of bindings) if (signatureMatchesKey(b.sig, e, key)) return b;
+  if (key === legacyKey) return undefined;
+  for (const b of bindings) if (signatureMatchesKey(b.sig, e, legacyKey)) return b;
   return undefined;
 }
 

@@ -370,10 +370,10 @@ describe('KeybindingsTabContent — 搜索', () => {
     expect(selectVisibleKeybindingCommands([other!], 'ctrl+t')).toHaveLength(1);
     expect(selectVisibleKeybindingCommands([other!], 'Ctrl')).toHaveLength(1);
     expect(selectVisibleKeybindingCommands([mac!], '⌘')).toHaveLength(1);
-    expect(selectVisibleKeybindingCommands([mac!], 'cmd+t')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([mac!], 'cmd+t', 'mac')).toHaveLength(1);
     expect(selectVisibleKeybindingCommands([mac!], '⌘t')).toHaveLength(1);
     // 原始串仍可搜
-    expect(selectVisibleKeybindingCommands([mac!], 'mod+t')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([mac!], 'mod+t', 'mac')).toHaveLength(1);
     // 不误命中别的平台修饰键名
     expect(selectVisibleKeybindingCommands([other!], 'cmd')).toHaveLength(0);
   });
@@ -384,7 +384,7 @@ describe('KeybindingsTabContent — 搜索', () => {
     const [other] = buildKeybindingDisplayCommands(cmds, tk, {}, 'other');
     const [mac] = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
     expect(selectVisibleKeybindingCommands([other!], 'ctrl+shift+enter')).toHaveLength(1);
-    expect(selectVisibleKeybindingCommands([mac!], 'cmd+shift+enter')).toHaveLength(1);
+    expect(selectVisibleKeybindingCommands([mac!], 'cmd+shift+enter', 'mac')).toHaveLength(1);
   });
 
   it('界面搜索框输入 ctrl+t(jsdom 非 mac)能搜到 mod+t 命令', () => {
@@ -632,5 +632,79 @@ describe('KeybindingsTabContent — 本地化界面可搜英文命令名', () =>
     fireEvent.change(input, { target: { value: 'open folder' } });
     expect(container.textContent).toContain('打开文件夹…');
     expect(container.querySelectorAll('li')).toHaveLength(1);
+  });
+});
+
+describe('KeybindingsTabContent — 按快捷键搜索(对齐 VSCode)', () => {
+  const tk = (_k: string | undefined, fallback: string): string => fallback;
+  const cmds = [
+    { id: 'save', title: 'Save', hotkey: 'mod+s', fn: vi.fn() },
+    { id: 'saveAs', title: 'Save As', hotkey: 'mod+shift+s', fn: vi.fn() },
+    { id: 'explorer', title: 'Show Explorer', hotkey: 'mod+shift+e', fn: vi.fn() },
+    { id: 'clear', title: 'Clear', hotkey: 'mod+k', fn: vi.fn() },
+  ];
+  const ids = (list: readonly DisplayCommand[]): string[] => list.map((d) => d.cmd.id);
+
+  it('cmd+s 只命中主键为 S 的绑定,不再因子串误中 ⇧⌘E', () => {
+    const mac = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    expect(ids(selectVisibleKeybindingCommands(mac, 'cmd+s', 'mac'))).toEqual(['save', 'saveAs']);
+  });
+
+  it('查询的修饰键须都在绑定里(子集),主键精确比对', () => {
+    const mac = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    expect(ids(selectVisibleKeybindingCommands(mac, 'cmd+shift+s', 'mac'))).toEqual(['saveAs']);
+    expect(ids(selectVisibleKeybindingCommands(mac, '⌘+⇧+e', 'mac'))).toEqual(['explorer']);
+    expect(ids(selectVisibleKeybindingCommands(mac, 'shift+e', 'mac'))).toEqual(['explorer']);
+    expect(ids(selectVisibleKeybindingCommands(mac, 'alt+s', 'mac'))).toEqual([]);
+  });
+
+  it('引号包住的查询要求修饰键集合完全相同(VSCode 精确搜索)', () => {
+    const mac = buildKeybindingDisplayCommands(cmds, tk, {}, 'mac');
+    expect(ids(selectVisibleKeybindingCommands(mac, '"cmd+s"', 'mac'))).toEqual(['save']);
+  });
+
+  it('非 mac:ctrl+s 只命中 Ctrl+S 与 Ctrl+Shift+S', () => {
+    const other = buildKeybindingDisplayCommands(cmds, tk, {}, 'other');
+    expect(ids(selectVisibleKeybindingCommands(other, 'ctrl+s', 'other'))).toEqual(['save', 'saveAs']);
+  });
+
+  it('前几段不全是修饰键名 → 仍按文本搜索', () => {
+    const mac = buildKeybindingDisplayCommands(
+      [...cmds, { id: 'a+b', title: 'Plus thing', fn: vi.fn() }],
+      tk,
+      {},
+      'mac',
+    );
+    expect(ids(selectVisibleKeybindingCommands(mac, 'a+b', 'mac'))).toEqual(['a+b']);
+    // 输入未完成(主键段为空)→ 文本搜索:命中所有含 cmd+ 的快捷键
+    expect(ids(selectVisibleKeybindingCommands(mac, 'cmd+', 'mac'))).toEqual(['save', 'saveAs', 'explorer', 'clear']);
+  });
+});
+
+describe('KeybindingsTabContent — 搜索框 Esc(对齐 VSCode)', () => {
+  it('有内容时 Esc 清空且不冒泡;空时不拦截', () => {
+    coApp.commands.register({ id: 'a', title: 'New Terminal', hotkey: 'mod+t', fn: vi.fn() });
+    const outer = vi.fn();
+    const { container } = render(
+      <div onKeyDown={outer}>
+        <KeybindingsTabContent />
+      </div>,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'zzz' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input.value).toBe('');
+    expect(container.textContent).toContain('New Terminal');
+    expect(outer).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(outer).toHaveBeenCalledTimes(1);
+  });
+
+  it('输入法组字中的 Esc 不清空', () => {
+    const { container } = render(<KeybindingsTabContent />);
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'ㅎ' } });
+    fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+    expect(input.value).toBe('ㅎ');
   });
 });

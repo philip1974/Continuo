@@ -15,7 +15,7 @@ import {
 import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useT, useTWithFallback } from '@/i18n';
 import { resolveEffectiveHotkey } from './keybindings-store';
-import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
+import { eventHotkeyKey } from '@/plugins/command-palette/event-hotkey-key';
 import { useStableCallback } from '@/lib/use-stable-callback';
 import { reservedPickerHotkeyOf, type ReservedPickerHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { selectShadowedBindings } from '@/plugins/command-palette/useCommandHotkeys';
@@ -85,7 +85,8 @@ export function eventToCombo(e: KeyboardEvent, platform: Platform = PLATFORM): s
   }
   if (e.shiftKey) combo = appendComboPart(combo, 'shift');
   if (e.altKey) combo = appendComboPart(combo, 'alt');
-  combo = appendComboPart(combo, lowerIfNeeded(key));
+  // 主键与运行时匹配同一函数:⌥ / ⇧ 变形的字符(mac ⌥K → ˚、死键 Dead、⇧1 → !)按物理键记(alt+k / shift+1)。
+  combo = appendComboPart(combo, eventHotkeyKey(e));
   // 边界(E145):只产出注册侧 isValidHotkeyShape 接受的合法形态。Space(e.key === ' ')→ 含空白、
   // 主键为 '+'(→ 'shift++' 空段)等会被 compileCombo trim/split 成空主键 → 永远不触发 + 显示异常。
   // 这类无法表示的组合直接拒绝(返 null,不捕获),与注册/写端校验一致。
