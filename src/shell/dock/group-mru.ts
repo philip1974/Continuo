@@ -69,6 +69,19 @@ export function isMainWindowDockEmpty(api: Pick<DockviewApi, 'panels'>): boolean
   return !api.panels.some((panel) => panel.api.location.type !== 'popout');
 }
 
+/**
+ * 组内面板 MRU 的不变式:活动面板在组 MRU 的首位(VSCode EditorGroupModel:活动编辑器总是 MRU 第一个)。关掉活动面板时
+ * dockview 激活组 MRU 的首个面板;而它每加入一个面板(含 fromJSON 按 tab 顺序恢复、后台加入不激活的面板)都把该面板放到 MRU
+ * 首位 —— 恢复布局后不点 tab 就新建再关掉,会落到组里最后一个 tab;后台加入的终端也会插到活动面板前面。
+ * dockview 无公开 API 调整组 MRU,只能调其 model 的 updateMru(私有,不改 tab 顺序、不派发事件、不动焦点 / 布局);
+ * 升级后不存在则不干预。
+ */
+function keepActivePanelMruFirst(group: Group | undefined): void {
+  const active = group?.activePanel;
+  const model = (group as { model?: { updateMru?: (panel: IDockviewPanel) => void } } | undefined)?.model;
+  if (active && typeof model?.updateMru === 'function') model.updateMru(active);
+}
+
 export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   // 组 id,最近使用在前。
   const mru: string[] = [];
@@ -138,8 +151,13 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
       if (panel) touch(panel.group);
     }),
     api.onDidRemoveGroup(onRemove),
+    // 加入面板(后台加入不改活动面板)/ 加入组(popout 恢复时子窗挂上的组)后,活动面板重新置于组 MRU 首位
+    api.onDidAddPanel((panel) => keepActivePanelMruFirst(panel.group)),
+    api.onDidAddGroup(keepActivePanelMruFirst),
   ];
   touch(api.activeGroup);
+  // 跟踪始于布局恢复(fromJSON / 默认布局)之后:恢复时按 tab 顺序加入的面板已把活动面板挤到 MRU 后面
+  for (const group of api.groups) keepActivePanelMruFirst(group);
 
   return {
     dispose: () => {

@@ -2,7 +2,7 @@
 // BDD:关掉活动组 / popout 子窗后,激活最近使用的组(而非 dockview 默认的最早的组);popout 收回的面板获焦。
 // 见同目录 README 第 3 条。
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import type { DockviewApi } from 'dockview-react';
+import { Orientation, type DockviewApi } from 'dockview-react';
 import { trackGroupMru } from '@/shell/dock/group-mru';
 import {
   registerTerminalPanelHandles,
@@ -191,5 +191,60 @@ describe('组 MRU:移除活动组后激活最近使用的组', () => {
     api.removePanel(api.getPanel('b')!);
 
     expect(api.activePanel?.id).toBe('a');
+  });
+});
+
+describe('组内面板 MRU:活动面板总是组里最近使用的(关掉新面板回到它)', () => {
+  /** 一组三个 tab:editor(活动)、search、other —— 活动面板不在最后。 */
+  function restoredLayout(api: DockviewApi) {
+    api.fromJSON({
+      grid: {
+        root: {
+          type: 'branch',
+          data: [{ type: 'leaf', data: { id: 'g1', views: ['editor', 'search', 'other'], activeView: 'editor' }, size: 800 }],
+          size: 600,
+        },
+        width: 800,
+        height: 600,
+        orientation: Orientation.HORIZONTAL,
+      },
+      panels: {
+        editor: { id: 'editor', contentComponent: 'x', title: 'editor' },
+        search: { id: 'search', contentComponent: 'x', title: 'search' },
+        other: { id: 'other', contentComponent: 'x', title: 'other' },
+      },
+      activeGroup: 'g1',
+    });
+  }
+
+  it('fromJSON 恢复后(未点过 tab)新建面板再关掉 → 回到恢复时的活动面板,不是组里最后一个 tab', () => {
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    restoredLayout(api);
+    expect(api.activePanel?.id).toBe('editor');
+    const tracker = trackGroupMru(api);
+    api.addPanel({ id: 'term', component: 'x', title: 'term', position: { referencePanel: 'editor', direction: 'within' } });
+    expect(api.activePanel?.id).toBe('term');
+
+    api.removePanel(api.getPanel('term')!);
+
+    expect(api.activePanel?.id).toBe('editor');
+    tracker.dispose();
+  });
+
+  it('跟踪期间在后台加入的面板(不激活,如 agent 建的终端)不排到活动面板前面', () => {
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    api.addPanel({ id: 'a', component: 'x', title: 'a' });
+    api.addPanel({ id: 'b', component: 'x', title: 'b', position: { referencePanel: 'a', direction: 'within' } });
+    const tracker = trackGroupMru(api);
+    api.getPanel('a')!.api.setActive();
+    api.addPanel({ id: 'bg', component: 'x', title: 'bg', inactive: true, position: { referencePanel: 'a', direction: 'within' } });
+    api.addPanel({ id: 'c', component: 'x', title: 'c', position: { referencePanel: 'a', direction: 'within' } });
+
+    api.removePanel(api.getPanel('c')!);
+
+    expect(api.activePanel?.id).toBe('a');
+    tracker.dispose();
   });
 });
