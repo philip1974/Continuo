@@ -40,23 +40,21 @@ describe('localizeErrorByCode(code, message)', () => {
     );
   });
 
-  // 占位符守卫(I8 自身回归防护):errors.FS_NOT_FOUND='File not found: {path}' 含参数,
-  // 本 helper 无 params → 不能渲染字面 {path},须退回 raw message(已含真实路径)。
-  it('参数化 catalog code(FS_NOT_FOUND 含 {path})→ 退回 raw message,不露字面占位符', () => {
+  // 占位符守卫(I8 自身回归防护):参数化 catalog code(EDITOR_DISK_CHANGED 含 {hotkey})无 params 调用时
+  // 不能渲染字面占位符,须退回 raw message。
+  it('参数化 catalog code(EDITOR_DISK_CHANGED 含 {hotkey})无 params → 退回 raw message,不露字面占位符', () => {
     setLocale('en');
-    const raw = 'File not found: /proj/a.ts';
-    const r = localizeErrorByCode('FS_NOT_FOUND', raw);
+    const raw = 'file changed on disk since last load/save: /proj/a.ts';
+    const r = localizeErrorByCode('EDITOR_DISK_CHANGED', raw);
     expect(r).toBe(raw);
-    expect(r).not.toContain('{path}'); // 不泄漏字面占位符
+    expect(r).not.toContain('{hotkey}');
   });
 
   it('占位符检测走字符扫描,不调用 RegExp.test', () => {
     setLocale('en');
     const testSpy = vi.spyOn(RegExp.prototype, 'test');
     try {
-      expect(localizeErrorByCode('FS_NOT_FOUND', 'File not found: /x')).toBe(
-        'File not found: /x',
-      );
+      expect(localizeErrorByCode('EDITOR_DISK_CHANGED', 'changed: /x')).toBe('changed: /x');
       expect(localizeErrorByCode('FS_EEXIST', 'already exists')).toBe(
         'Already exists',
       );
@@ -66,13 +64,14 @@ describe('localizeErrorByCode(code, message)', () => {
     }
   });
 
-  // I9:Window 命令 WORKSPACE_* code 也带占位符({path}/{workspace}),守卫同样回退 raw。
-  it('WORKSPACE_NOT_ABSOLUTE(含 {path})→ 退回 raw,不露字面占位符', () => {
+  // 第十一轮审计:FS_NOT_FOUND / WORKSPACE_* 改为无参文案(名字 / 路径由调用点标签给出),
+  // 不再因缺参回退英文 raw + 绝对路径(见 src/__tests__/file-failure-reason/)。
+  it('FS_NOT_FOUND / WORKSPACE_NOT_ABSOLUTE → zh 本地化,不显英文 raw 与路径', () => {
     setLocale('zh');
-    const raw = 'Workspace must be an absolute path: foo/bar';
-    const r = localizeErrorByCode('WORKSPACE_NOT_ABSOLUTE', raw);
-    expect(r).toBe(raw);
-    expect(r).not.toContain('{path}');
+    expect(localizeErrorByCode('FS_NOT_FOUND', 'readFile failed: /proj/a.ts')).toBe('找不到文件');
+    expect(localizeErrorByCode('WORKSPACE_NOT_ABSOLUTE', 'Workspace must be an absolute path: foo/bar')).toBe(
+      '工作区路径必须是绝对路径',
+    );
   });
 
   // I9:Window 命令的无占位符 code(NO_WINDOW_SEQ)正常本地化。

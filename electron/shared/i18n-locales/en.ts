@@ -109,9 +109,9 @@ export const en = {
   'errors.TOO_MANY_WINDOWS': 'Too many windows are open',
   'errors.TOO_MANY_TERMINALS': 'Too many terminal sessions',
   'errors.TOO_MANY_DEBUG_SESSIONS': 'Too many debug sessions',
-  'errors.WORKSPACE_NOT_ABSOLUTE': 'Workspace must be an absolute path: {path}',
-  'errors.WORKSPACE_NOT_DIRECTORY': 'Workspace is not a directory: {workspace}',
-  'errors.WORKSPACE_NOT_FOUND': 'Workspace not found: {workspace}',
+  'errors.WORKSPACE_NOT_ABSOLUTE': 'Workspace must be an absolute path',
+  'errors.WORKSPACE_NOT_DIRECTORY': 'Workspace is not a directory',
+  'errors.WORKSPACE_NOT_FOUND': 'Workspace not found',
 
   // errors.FS_* (7)
   'errors.FS_BAD_NAME': 'Invalid file name',
@@ -125,7 +125,10 @@ export const en = {
   'errors.FS_DIR_TOO_LARGE': 'Directory has too many entries',
   'errors.FS_BUSY': 'Too many file operations in progress; try again later',
   'errors.FS_MOVE_INTO_SELF': 'Cannot move or paste a folder into one of its own subfolders',
-  'errors.FS_NOT_FOUND': 'File not found: {path}',
+  'errors.FS_NOT_FOUND': 'File not found',
+  'errors.FS_READONLY': 'File is write-protected',
+  'errors.FS_NO_SPACE': 'Not enough disk space',
+  'errors.FS_READONLY_FS': 'The file system is read-only',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
 
@@ -230,6 +233,7 @@ export const en = {
   'editor.welcome.hint_prefix': 'Click a file in Explorer ·',
   'editor.welcome.save': 'Save',
   'editor.autosave_failed': 'Auto-save failed',
+  'editor.save_failed': 'Failed to save',
 
   // 关窗 / 退出时的未保存确认(main dialog.showMessageBox)+ 保存失败提示(renderer toast)
   'dialog.unsaved_close.message': 'Do you want to save the changes you made to {count} file(s)?',
@@ -295,11 +299,11 @@ export const en = {
   'panels.explorer.ctx.copy': 'Copy',
   'panels.explorer.ctx.rename': 'Rename',
   'panels.explorer.rename_input_aria': 'Rename {name}',
+  'panels.explorer.symlink': 'Symbolic link',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': 'A file or folder “{name}” already exists at this location. Please choose a different name.',
   'panels.explorer.ctx.copy_path': 'Copy Path',
   'panels.explorer.ctx.copy_relative_path': 'Copy Relative Path',
-  'panels.explorer.symlink': 'Symbolic link',
   'panels.explorer.ctx.reveal_in_finder': 'Reveal in Finder',
   'panels.explorer.ctx.open_in_terminal': 'Open in Integrated Terminal',
   'panels.explorer.ctx.trash': 'Move to Trash',
@@ -378,6 +382,9 @@ export const en = {
   'panels.editor.disk_changed_body': 'was modified outside the editor since it was opened or last saved. Overwrite it with your changes, or discard your changes and reload the version on disk.',
   'panels.editor.disk_changed_confirm': 'Overwrite',
   'panels.editor.disk_changed_revert': 'Discard Changes and Reload',
+  'panels.editor.readonly_title': 'File Is Read-Only',
+  'panels.editor.readonly_body': 'is write-protected. Overwrite it anyway? Its write protection will be removed.',
+  'panels.editor.readonly_confirm': 'Overwrite',
   'panels.editor.milkdownUnsafe.banner': 'Opened in Source mode to preserve frontmatter and wiki-links.',
   'panels.editor.engine_load_failed': 'The editor failed to load.',
   'panels.editor.engine_load_retry': 'Retry',
@@ -475,7 +482,13 @@ export const en = {
   'statusbar.no_workspace': 'No workspace',
   'statusbar.sidebar_hidden': 'Sidebar hidden',
   'statusbar.unsaved_changes': 'Unsaved changes',
-  'statusbar.editor_stats': '{lines} lines · {words} words · {chars} chars',
+  'statusbar.editor_stats': '{lines} · {words} · {chars}',
+  'statusbar.editor_stats.lines_one': '{count} line',
+  'statusbar.editor_stats.lines_other': '{count} lines',
+  'statusbar.editor_stats.words_one': '{count} word',
+  'statusbar.editor_stats.words_other': '{count} words',
+  'statusbar.editor_stats.chars_one': '{count} char',
+  'statusbar.editor_stats.chars_other': '{count} chars',
 
   // errors.* topic-19 (4)
   'errors.terminal.cwd_unresolved': 'Please open a workspace first',

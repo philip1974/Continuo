@@ -27,6 +27,10 @@ export function mapNodeErrnoCode(err: unknown): FsErrorCode {
     case 'EACCES':
     case 'EPERM':
       return ERROR_CODES.FS_DENIED;
+    case 'ENOSPC':
+      return ERROR_CODES.FS_NO_SPACE;
+    case 'EROFS':
+      return ERROR_CODES.FS_READONLY_FS;
     default:
       return ERROR_CODES.FS_IO;
   }

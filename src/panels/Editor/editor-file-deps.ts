@@ -7,7 +7,7 @@ import type { EditorFileDeps } from './editor-file-actions';
 export const editorFileDeps: EditorFileDeps = {
   fs: {
     readFile: (p) => coApi.fs.readFile(p),
-    writeFile: (p, c) => coApi.fs.writeFile(p, c),
+    writeFile: (p, c, o) => (o ? coApi.fs.writeFile(p, c, o) : coApi.fs.writeFile(p, c)),
     stat: (p) => coApi.fs.stat(p),
   },
 };

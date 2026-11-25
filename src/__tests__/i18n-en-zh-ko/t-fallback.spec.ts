@@ -42,8 +42,8 @@ describe('translate() fallback chain + dedup warn', () => {
   it('{paramName} 插值生效', () => {
     setI18nLocale('en');
 
-    expect(translate('errors.FS_NOT_FOUND', { path: '/tmp/a.md' })).toBe(
-      'File not found: /tmp/a.md',
+    expect(translate('errors.terminal.cwd_missing', { path: '/tmp/a.md' })).toBe(
+      'Directory does not exist or is not accessible: /tmp/a.md',
     );
   });
 
@@ -52,8 +52,8 @@ describe('translate() fallback chain + dedup warn', () => {
     const replaceSpy = vi.spyOn(String.prototype, 'replace');
 
     try {
-      expect(translate('errors.FS_NOT_FOUND', { path: '/tmp/a.md' })).toBe(
-        'File not found: /tmp/a.md',
+      expect(translate('errors.terminal.cwd_missing', { path: '/tmp/a.md' })).toBe(
+        'Directory does not exist or is not accessible: /tmp/a.md',
       );
       expect(replaceSpy).not.toHaveBeenCalled();
     } finally {
@@ -67,8 +67,8 @@ describe('translate() fallback chain + dedup warn', () => {
     const keysSpy = vi.spyOn(Object, 'keys');
 
     try {
-      expect(translate('errors.FS_NOT_FOUND', params)).toBe(
-        'File not found: /tmp/a.md',
+      expect(translate('errors.terminal.cwd_missing', params)).toBe(
+        'Directory does not exist or is not accessible: /tmp/a.md',
       );
       expect(keysSpy.mock.calls.some(([arg]) => arg === params)).toBe(false);
     } finally {

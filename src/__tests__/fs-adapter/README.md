@@ -77,7 +77,10 @@
 | `FS_EEXIST` | 创建时已存在 |
 | `FS_BAD_NAME` | 不合法的名字(含 `/`、`.`、`..`) |
 | `FS_DENIED` | OS 权限拒绝(EACCES) |
-| `FS_IO` | 其他 IO 错(ENOSPC / EBUSY 等) |
+| `FS_NO_SPACE` | 磁盘空间不足(ENOSPC) |
+| `FS_READONLY_FS` | 只读文件系统(EROFS) |
+| `FS_READONLY` | 保存目标文件写保护(无写位 / 当前用户不可写),见 save-readonly-file |
+| `FS_IO` | 其他 IO 错(EBUSY / ELOOP 等) |
 
 异常对象形如 `Object.assign(new Error(msg), { code: 'FS_NOT_FOUND' })`,safeHandle 会透传 `code` 字段。
 

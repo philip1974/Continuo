@@ -22,7 +22,7 @@ import { coApp } from '@/plugins/co-app';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
 import { getCachedClipboard } from '@/plugins/sandbox-sweep';
-import { useT, t as translate } from '@/i18n';
+import { useT, t as translate, translateCount } from '@/i18n';
 import { basenameForChrome } from '@/lib/path-label';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
@@ -228,9 +228,9 @@ const EditorStats = memo(function EditorStats({
   return (
     <span className="whitespace-nowrap @max-2xl:hidden">
       {t('statusbar.editor_stats', {
-        lines: stats?.lines ?? 0,
-        words: stats?.words ?? 0,
-        chars: stats?.chars ?? 0,
+        lines: translateCount('statusbar.editor_stats.lines', stats?.lines ?? 0),
+        words: translateCount('statusbar.editor_stats.words', stats?.words ?? 0),
+        chars: translateCount('statusbar.editor_stats.chars', stats?.chars ?? 0),
       })}
     </span>
   );

@@ -1,7 +1,8 @@
-import { lstat, open, realpath, rename, rm, stat } from 'node:fs/promises';
-import type { Stats } from 'node:fs';
+import { access, chmod, lstat, open, realpath, rename, rm, stat } from 'node:fs/promises';
+import { constants as fsConstants, type Stats } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
+import { ERROR_CODES } from '../../../shared/error-codes';
 import { runSerialPerKey } from '../../../shared/run-serial-per-key';
 import type { FsFileStat } from '../../../shared/fs-channels';
 
@@ -73,14 +74,25 @@ export async function resolveSymlinkTarget(filePath: string): Promise<string> {
   }
 }
 
+export interface AtomicWriteFileOptions {
+  /**
+   * 目标是写保护文件(FS_READONLY)时仍覆盖:先去掉写保护(加属主写位,Windows 即清只读属性)再写,写完**不恢复**
+   *(同 VSCode 保存遇写保护后用户选「覆盖」的 unlock 语义)。只有编辑器保存在用户确认后才传;插件 / 拖入 / CLI 配置写不提供。
+   */
+  readonly overwriteReadonly?: boolean;
+}
+
 export async function atomicWriteFile(
   filePath: string,
   content: string | Uint8Array,
+  options: AtomicWriteFileOptions = {},
 ): Promise<FsFileStat | undefined> {
   // symlink → 写穿到 canonical target,并以 target 作锁 key(经不同 symlink 指向同一
   // target 的并发写也能正确串行)。
   const realPath = await resolveSymlinkTarget(filePath);
-  return withPathLock(realPath, () => atomicWriteFileInner(realPath, content));
+  return withPathLock(realPath, () =>
+    atomicWriteFileInner(realPath, content, options.overwriteReadonly === true),
+  );
 }
 
 /**
@@ -93,7 +105,8 @@ export async function atomicReplaceFileNoFollow(
   filePath: string,
   content: string | Uint8Array,
 ): Promise<FsFileStat | undefined> {
-  return withPathLock(filePath, () => atomicWriteFileInner(filePath, content));
+  // 写保护文件一律拒绝(FS_READONLY),不提供覆盖:插件 / 拖入 / CLI 配置写不应替用户去掉写保护。
+  return withPathLock(filePath, () => atomicWriteFileInner(filePath, content, false));
 }
 
 /**
@@ -102,30 +115,64 @@ export async function atomicReplaceFileNoFollow(
  * `mode & 0o777` 供 tmp 继承 —— 同 VSCode / 多数编辑器只保留 rwx 位,不传播 setuid/setgid/sticky
  *(编辑后的内容不应继承特权位)。新建(ENOENT)/ 非普通文件(含符号链接本身)/ Windows(mode 仅映射只读位,语义有限)
  * → undefined,行为不变。其它 stat 错误抛出:无法确认原权限时不静默放宽(如 0600 → 0644)。
+ *
+ * 写保护(数据安全,第十一轮审计):tmp + rename 替换的是目录项,目录可写即可绕过文件自身的写保护 ——
+ * 外部 `chmod 444` 的文件被静默改写。覆盖前检查:原文件无任何写位(Windows 只读属性即映射为此)或对当前用户
+ * 不可写(access W_OK 拒绝)→ 抛 FS_READONLY,不写。overwriteReadonly(仅编辑器保存经用户确认)→ 同 VSCode
+ * 先加属主写位(chmod,Windows 清只读属性;非属主则 EPERM → FS_DENIED)再写,新文件继承解锁后的权限。
  */
-async function existingFileMode(filePath: string): Promise<number | undefined> {
-  if (process.platform === 'win32') return undefined;
+async function existingFileMode(
+  filePath: string,
+  overwriteReadonly: boolean,
+): Promise<number | undefined> {
+  let st: Stats;
   try {
     // lstat 不跟随链接:atomicReplaceFileNoFollow 替换的是链接本身,新文件不得继承(探测)链接目标的权限位,
     // 链接按非普通文件处理(默认 mode)。atomicWriteFile 传入的已是 realpath,两者等价。
-    const st = await lstat(filePath);
-    return st.isFile() ? st.mode & 0o777 : undefined;
+    st = await lstat(filePath);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw fsError(mapNodeErrnoCode(err), `atomic write stat failed: ${filePath}`);
+  }
+  if (!st.isFile()) return undefined;
+  let mode = st.mode & 0o777;
+  if (await isWriteProtected(filePath, mode)) {
+    if (!overwriteReadonly) {
+      throw fsError(ERROR_CODES.FS_READONLY, `file is write-protected: ${filePath}`);
+    }
+    mode |= 0o200;
+    try {
+      await chmod(filePath, mode);
+    } catch (err) {
+      throw fsError(mapNodeErrnoCode(err), `atomic write unlock failed: ${filePath}`);
+    }
+  }
+  return process.platform === 'win32' ? undefined : mode;
+}
+
+/** 无任何写位(含 Windows 只读属性),或当前用户无写权限(access W_OK 被拒;root 恒通过,由前一条兜住 0444)。 */
+async function isWriteProtected(filePath: string, mode: number): Promise<boolean> {
+  if ((mode & 0o222) === 0) return true;
+  try {
+    await access(filePath, fsConstants.W_OK);
+    return false;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === 'EACCES' || code === 'EPERM';
   }
 }
 
 async function atomicWriteFileInner(
   filePath: string,
   content: string | Uint8Array,
+  overwriteReadonly: boolean,
 ): Promise<FsFileStat | undefined> {
   // tmp 用**隐藏标记名** `.<base>.continuo.tmp`(而非旧的可预测 `${filePath}.tmp`):
   // 旧名会与用户真实文件(如 `foo.md.tmp` —— 常见后缀)撞名,`open('w')` 直接截断它、
   // 随后 rename 连内容带文件一起销毁 → 数据丢失(P1)。隐藏 + 应用标记的 sibling
   // 实务上不可能是用户文件。仍是固定名(per-path 串行 + crash 残留自愈,见上方注释)。
   const tmpPath = join(dirname(filePath), `.${basename(filePath)}.continuo.tmp`);
-  const keepMode = await existingFileMode(filePath);
+  const keepMode = await existingFileMode(filePath, overwriteReadonly);
 
   // ① 写 tmp + fsync。open 'wx' 排他:绝不盲目截断已存在文件。EEXIST 只可能是本应用上次
   // crash(open→rename 窗口被杀)残留的同名标记 tmp(用户不会创建此名)→ 安全删除后重试

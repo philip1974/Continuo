@@ -65,6 +65,21 @@ export function translate(
   return template;
 }
 
+const pluralRules = new Map<Locale, Intl.PluralRules>();
+
+/**
+ * 计数文案:按当前语言的复数规则(Intl.PluralRules)选 `<baseKey>_one` / `<baseKey>_other`,以 `{count}` 插值。
+ * 只区分 one / other 两类(en:1 line / 2 lines;zh / ko 规则恒为 other,两 key 同文)。仓库 i18n 无复数机制,此为最小实现。
+ */
+export function translateCount(baseKey: string, count: number): string {
+  let rules = pluralRules.get(currentLocale);
+  if (rules === undefined) {
+    rules = new Intl.PluralRules(HTML_LANG[currentLocale]);
+    pluralRules.set(currentLocale, rules);
+  }
+  return translate(`${baseKey}_${rules.select(count) === 'one' ? 'one' : 'other'}`, { count });
+}
+
 /** Spec helper — 重置 DEV warn 去重集合，便于测试断言"只 warn 一次"。 */
 export function resetMissingKeyWarningsForTest(): void {
   missingWarned.clear();

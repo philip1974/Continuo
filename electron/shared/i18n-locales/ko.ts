@@ -97,9 +97,9 @@ export const ko: Record<TranslationKey, string> = {
   'errors.TOO_MANY_WINDOWS': '열린 창이 너무 많습니다',
   'errors.TOO_MANY_TERMINALS': '터미널 세션이 너무 많습니다',
   'errors.TOO_MANY_DEBUG_SESSIONS': '디버그 세션이 너무 많습니다',
-  'errors.WORKSPACE_NOT_ABSOLUTE': '작업 공간은 절대 경로여야 합니다: {path}',
-  'errors.WORKSPACE_NOT_DIRECTORY': '작업 공간이 디렉터리가 아닙니다: {workspace}',
-  'errors.WORKSPACE_NOT_FOUND': '작업 공간을 찾을 수 없습니다: {workspace}',
+  'errors.WORKSPACE_NOT_ABSOLUTE': '작업 공간은 절대 경로여야 합니다',
+  'errors.WORKSPACE_NOT_DIRECTORY': '작업 공간이 디렉터리가 아닙니다',
+  'errors.WORKSPACE_NOT_FOUND': '작업 공간을 찾을 수 없습니다',
 
   // errors.FS_*
   'errors.FS_BAD_NAME': '잘못된 파일 이름',
@@ -113,7 +113,10 @@ export const ko: Record<TranslationKey, string> = {
   'errors.FS_DIR_TOO_LARGE': '디렉터리 항목이 너무 많습니다',
   'errors.FS_BUSY': '진행 중인 파일 작업이 너무 많습니다. 잠시 후 다시 시도하세요',
   'errors.FS_MOVE_INTO_SELF': '폴더를 자신의 하위 폴더로 이동하거나 붙여넣을 수 없습니다',
-  'errors.FS_NOT_FOUND': '파일을 찾을 수 없습니다: {path}',
+  'errors.FS_NOT_FOUND': '파일을 찾을 수 없습니다',
+  'errors.FS_READONLY': '파일이 쓰기 보호되어 있습니다',
+  'errors.FS_NO_SPACE': '디스크 공간이 부족합니다',
+  'errors.FS_READONLY_FS': '파일 시스템이 읽기 전용입니다',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
 
@@ -217,6 +220,7 @@ export const ko: Record<TranslationKey, string> = {
   'editor.welcome.hint_prefix': '탐색기에서 파일을 클릭하여 열기 ·',
   'editor.welcome.save': '저장',
   'editor.autosave_failed': '자동 저장 실패',
+  'editor.save_failed': '저장 실패',
 
   'dialog.unsaved_close.message': '{count}개 파일의 변경 내용을 저장하시겠습니까?',
   'dialog.unsaved_close.detail': '저장하지 않으면 변경 내용이 손실됩니다.',
@@ -278,11 +282,11 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.ctx.copy': '복사',
   'panels.explorer.ctx.rename': '이름 바꾸기',
   'panels.explorer.rename_input_aria': '{name} 이름 바꾸기',
+  'panels.explorer.symlink': '심볼릭 링크',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': '이 위치에 파일 또는 폴더 “{name}”이(가) 이미 있습니다. 다른 이름을 선택하세요.',
   'panels.explorer.ctx.copy_path': '경로 복사',
   'panels.explorer.ctx.copy_relative_path': '상대 경로 복사',
-  'panels.explorer.symlink': '심볼릭 링크',
   'panels.explorer.ctx.reveal_in_finder': 'Finder에서 보기',
   'panels.explorer.ctx.open_in_terminal': '통합 터미널에서 열기',
   'panels.explorer.ctx.trash': '휴지통으로 이동',
@@ -358,6 +362,9 @@ export const ko: Record<TranslationKey, string> = {
   'panels.editor.disk_changed_body': '파일이 열리거나 마지막으로 저장된 후 외부에서 수정되었습니다. 내 변경 내용으로 덮어쓰거나, 변경 내용을 취소하고 디스크의 버전을 다시 로드할 수 있습니다.',
   'panels.editor.disk_changed_confirm': '덮어쓰기',
   'panels.editor.disk_changed_revert': '변경 내용 취소 후 다시 로드',
+  'panels.editor.readonly_title': '읽기 전용 파일',
+  'panels.editor.readonly_body': '은(는) 쓰기 보호되어 있습니다. 그래도 덮어쓰시겠습니까? 쓰기 보호가 해제됩니다.',
+  'panels.editor.readonly_confirm': '덮어쓰기',
   'panels.editor.milkdownUnsafe.banner': 'frontmatter와 wiki-link를 보존하기 위해 소스 모드로 열었습니다.',
   'panels.editor.engine_load_failed': '편집기를 불러오지 못했습니다.',
   'panels.editor.engine_load_retry': '다시 시도',
@@ -453,7 +460,13 @@ export const ko: Record<TranslationKey, string> = {
   'statusbar.no_workspace': '작업 공간 없음',
   'statusbar.sidebar_hidden': '사이드바 숨김',
   'statusbar.unsaved_changes': '저장되지 않은 변경 사항',
-  'statusbar.editor_stats': '{lines}줄 · {words}단어 · {chars}자',
+  'statusbar.editor_stats': '{lines} · {words} · {chars}',
+  'statusbar.editor_stats.lines_one': '{count}줄',
+  'statusbar.editor_stats.lines_other': '{count}줄',
+  'statusbar.editor_stats.words_one': '{count}단어',
+  'statusbar.editor_stats.words_other': '{count}단어',
+  'statusbar.editor_stats.chars_one': '{count}자',
+  'statusbar.editor_stats.chars_other': '{count}자',
 
   // errors.* topic-19
   'errors.terminal.cwd_unresolved': '먼저 워크스페이스를 여세요',

@@ -750,6 +750,10 @@
 
 - [`external-file-sync-owner.spec.tsx`](./external-file-sync-owner/external-file-sync-owner.spec.tsx)
 
+## [file-failure-reason(打开 / 保存失败提示:动作 + 文件名 + 本地化原因)](./file-failure-reason/README.md)
+
+- [`file-failure-reason.spec.tsx`](./file-failure-reason/file-failure-reason.spec.tsx)
+
 ## [file-icon(资源管理器文件图标化)](./file-icon/README.md)
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
@@ -1420,6 +1424,11 @@
 
 - [`ribbon-registry.spec.ts`](./ribbon-registry/ribbon-registry.spec.ts)
 
+## [save-readonly-file(保存写保护文件:拒绝静默覆盖,显式保存经确认后才覆盖)](./save-readonly-file/README.md)
+
+- [`readonly-atomic-write.spec.ts`](./save-readonly-file/readonly-atomic-write.spec.ts)
+- [`save-readonly-confirm.spec.tsx`](./save-readonly-file/save-readonly-confirm.spec.tsx)
+
 ## [工程骨架就绪 (M1)](./scaffold/README.md)
 
 - [`preload-api.spec.ts`](./scaffold/preload-api.spec.ts)
@@ -1577,6 +1586,10 @@
 ## [statusbar-copy-feedback-timer](./statusbar-copy-feedback-timer/)
 
 - [`copy-feedback-timer.spec.tsx`](./statusbar-copy-feedback-timer/copy-feedback-timer.spec.tsx)
+
+## [statusbar-stats-plural(状态栏行 / 词 / 字符统计的单复数)](./statusbar-stats-plural/README.md)
+
+- [`statusbar-stats-plural.spec.tsx`](./statusbar-stats-plural/statusbar-stats-plural.spec.tsx)
 
 ## [stdio-revoked-token-binding(token 吊销后,已 hello 的 stdio 连接立即失效)](./stdio-revoked-token-binding/README.md)
 

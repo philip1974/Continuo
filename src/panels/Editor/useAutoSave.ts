@@ -19,6 +19,7 @@ import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf } from '@/lib/failure-of';
+import { basenameForChrome } from '@/lib/path-label';
 import { EDITOR_DISK_CHANGED, type SaveFileOptions } from './editor-file-actions';
 import { saveHotkeyLabel } from './editor-commands';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
@@ -110,9 +111,11 @@ export function useAutoSave(
       // 同走 localizeErrorByCode(按 code 本地化,未收录回退原 message)。
       (err) => {
         const { code, message } = failureOf(err);
+        // 带文件名(同显式保存失败「保存失败 <name>:<原因>」):后台失败时用户需知道是哪个文件。
+        const filePath = findEditorFileTabById(useEditorStore.getState().tabs, tabId)?.filePath ?? tabId;
         notify.warn(
           t('common.label_detail', {
-            label: t('editor.autosave_failed'),
+            label: `${t('editor.autosave_failed')} ${basenameForChrome(filePath)}`,
             // 磁盘冲突的说明里写着保存键:填当前生效绑定(改绑后跟随)。
             detail: localizeErrorByCode(
               code,

@@ -83,6 +83,12 @@ export const FS_ERROR_CODES = {
   FS_BUSY: 'FS_BUSY',
   // Explorer 批量移动(粘贴 / 拖动)把文件夹移进它自身或子文件夹:renderer 漏斗先拦,不发 IPC。
   FS_MOVE_INTO_SELF: 'FS_MOVE_INTO_SELF',
+  // 保存:目标文件写保护(无写位 / 对当前用户不可写 / Windows 只读属性)。编辑器保存可经用户确认后 overwriteReadonly 覆盖。
+  FS_READONLY: 'FS_READONLY',
+  // ENOSPC:磁盘空间不足。
+  FS_NO_SPACE: 'FS_NO_SPACE',
+  // EROFS:只读文件系统(只读挂载的卷 / 镜像)。
+  FS_READONLY_FS: 'FS_READONLY_FS',
 } as const;
 
 export const ERROR_CODES = {

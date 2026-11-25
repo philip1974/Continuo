@@ -69,6 +69,8 @@ export const writeFileInputSchema = z
     content: z.string().refine((c) => !utf8BytesExceed(c, MAX_WRITE_BYTES), {
       message: `content 超过上限 ${MAX_WRITE_BYTES} 字节`,
     }),
+    // 用户已确认覆盖写保护文件(FS_READONLY 后的「覆盖」):去掉写保护再写,见 atomicWriteFile。
+    overwriteReadonly: z.boolean().optional(),
   })
   .strict();
 
@@ -146,7 +148,7 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
 // 性能:返回写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
 // 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
 export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
-  atomicWriteFile(input.path, input.content);
+  atomicWriteFile(input.path, input.content, { overwriteReadonly: input.overwriteReadonly === true });
 // 安全:注册到 fs:read-file / fs:write-file 的是这两个包装 —— 路径是插件经 editor.openFile 打开过的标签时,
 // 读 / 写前在 plugin-fs 锁内确认路径没有被换入链接(见 guardPluginOpenedPath);其它路径原样直通。
 export const guardedReadFileHandler = (input: ReadFileInput): Promise<FsReadFileData> =>

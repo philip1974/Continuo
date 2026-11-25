@@ -142,11 +142,11 @@ describe('window-ipc-create: createWindowHandler', () => {
   });
 
   // 分配 windowSeq 读写 explorer.json 的 node errno 归到 FS_* 业务码:renderer notify 与 main 菜单路径按同一 code 本地化。
-  it("T5b: 分配 windowSeq 失败(ENOSPC / EACCES)→ FS_IO / FS_DENIED,不创建窗口", async () => {
+  it("T5b: 分配 windowSeq 失败(ENOSPC / EACCES)→ FS_NO_SPACE / FS_DENIED,不创建窗口", async () => {
     vi.mocked(allocateWindowSeq).mockRejectedValueOnce(
       Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }),
     );
-    expect(await createWin({})).toMatchObject({ ok: false, code: 'FS_IO' });
+    expect(await createWin({})).toMatchObject({ ok: false, code: 'FS_NO_SPACE' });
     vi.mocked(allocateWindowSeq).mockRejectedValueOnce(Object.assign(new Error('EACCES: denied'), { code: 'EACCES' }));
     expect(await createWin({})).toMatchObject({ ok: false, code: 'FS_DENIED' });
     expect(createMainWindow).not.toHaveBeenCalled();

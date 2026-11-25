@@ -8,6 +8,7 @@ const CATALOG: Record<string, string> = {
   'menu.file.window_open_failed': '无法打开新窗口',
   'errors.FS_DENIED': '拒绝访问',
   'errors.FS_IO': '文件 I/O 错误',
+  'errors.FS_NO_SPACE': '磁盘空间不足',
   'errors.NO_WINDOW_SEQ': '找不到窗口序号',
 };
 
@@ -43,13 +44,13 @@ describe('runWindowOpen', () => {
     warn.mockRestore();
   });
 
-  it('ENOSPC:归为文件 I/O 错误,并附原始错误文本(区分磁盘满)', async () => {
+  it('ENOSPC:归为磁盘空间不足(FS_NO_SPACE),并附原始错误文本', async () => {
     const { ui, showError } = setup();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const err = errnoError('ENOSPC', 'ENOSPC: no space left on device, write');
     await runWindowOpen(() => Promise.reject(err), ui);
     const [, detail] = showError.mock.calls[0]!;
-    expect(detail).toContain('文件 I/O 错误');
+    expect(detail).toContain('磁盘空间不足');
     expect(detail).toContain('ENOSPC: no space left on device');
     warn.mockRestore();
   });

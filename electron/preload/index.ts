@@ -193,9 +193,17 @@ const api = {
         FS_PATH_MAX,
       ),
     /** 成功时 data = 写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),供编辑器识别自己保存的回声. */
-    writeFile: async (path: string, content: string): Promise<IpcResult<FsFileStat | undefined>> =>
+    /** opts.overwriteReadonly:用户已确认覆盖写保护文件(FS_READONLY 后的「覆盖」)。 */
+    writeFile: async (
+      path: string,
+      content: string,
+      opts?: { readonly overwriteReadonly?: boolean },
+    ): Promise<IpcResult<FsFileStat | undefined>> =>
       toFsWriteFileResult(
-        (await ipcRenderer.invoke(FS_CHANNELS.WRITE_FILE, { path, content })) as IpcResult<unknown>,
+        (await ipcRenderer.invoke(
+          FS_CHANNELS.WRITE_FILE,
+          opts?.overwriteReadonly === true ? { path, content, overwriteReadonly: true } : { path, content },
+        )) as IpcResult<unknown>,
       ),
     /** 跟随 symlink 的廉价 stat({ mtimeMs, size, ino });畸形结果映射为失败. */
     stat: async (path: string): Promise<IpcResult<FsFileStat>> =>

@@ -188,6 +188,11 @@ export interface SaveFileOptions {
    * 此时不写回、就地标记 orphaned,返回 FS_NOT_FOUND(见 src/__tests__/editor-orphaned-tab/)。
    */
   readonly recreateMissing?: boolean;
+  /**
+   * 用户已确认覆盖写保护文件(上次保存返回 FS_READONLY 后的「覆盖」):主进程去掉写保护再写(VSCode 同款)。
+   * 只有显式保存的确认框传;自动保存遇 FS_READONLY 不重试(见 src/__tests__/save-readonly-file/)。
+   */
+  readonly overwriteReadonly?: boolean;
 }
 
 export async function saveFile(
@@ -279,7 +284,9 @@ async function saveFileNow(
   const savedContent = tab.content;
   let r;
   try {
-    r = await fs.writeFile(tab.filePath, savedContent);
+    r = await (opts?.overwriteReadonly === true
+      ? fs.writeFile(tab.filePath, savedContent, { overwriteReadonly: true })
+      : fs.writeFile(tab.filePath, savedContent));
   } catch (err) {
     return exception(err);
   }

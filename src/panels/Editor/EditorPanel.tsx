@@ -45,7 +45,8 @@ import {
 import { coApi } from '@/lib/co-api';
 import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
-import { openFileOrNotify } from '@/notifications/notify-open-failed';
+import { ERROR_CODES } from '../../../electron/shared/error-codes';
+import { notifySaveFailed, openFileOrNotify } from '@/notifications/notify-open-failed';
 import { basenameForChrome } from '@/lib/path-label';
 import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
 import { coApp } from '@/plugins/co-app';
@@ -216,6 +217,29 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   const [overwriteCandidate, setOverwriteCandidate] = useState<
     (Pick<TabChrome, 'id' | 'filePath'> & { readonly closeAfter?: boolean }) | null
   >(null);
+  // 保存遇写保护文件(FS_READONLY)→ 确认「覆盖 / 取消」(VSCode「File is write-protected … Overwrite」):覆盖 =
+  // 带 overwriteReadonly 重试(主进程去掉写保护再写)。force:来自外部修改的「仍然覆盖」—— 重试时同样跳过磁盘比较。
+  // BDD: src/__tests__/save-readonly-file/
+  const [readonlyCandidate, setReadonlyCandidate] = useState<
+    | (Pick<TabChrome, 'id' | 'filePath'> & { readonly closeAfter?: boolean; readonly force?: boolean })
+    | null
+  >(null);
+
+  // 保存失败的统一出口:写保护 → 覆盖确认;其它 → 「保存失败 <文件名>:<原因>」。
+  const onSaveFailed = useCallback(
+    (
+      target: Pick<TabChrome, 'id' | 'filePath'>,
+      r: { readonly code: string; readonly message?: string },
+      flags: { readonly closeAfter?: boolean; readonly force?: boolean } = {},
+    ) => {
+      if (r.code === ERROR_CODES.FS_READONLY) {
+        setReadonlyCandidate({ id: target.id, filePath: target.filePath, ...flags });
+        return;
+      }
+      notifySaveFailed(basenameForChrome(target.filePath), r);
+    },
+    [],
+  );
 
   // 显式保存(Cmd+S 或 toolbar)
   const handleSave = useCallback(async () => {
@@ -230,21 +254,40 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       // i18n(I7,复查 P1):TAB_NOT_FOUND / NO_ACTIVE_TAB / FS_* 都到
       // 这里,r.message 是 main/动作层的 raw(FS_* 英文)→ 双向泄漏。
       // 按 code 经 catalog 本地化(单一来源 localizeErrorByCode),未收录 code 回退原 message。
-      notifyFailure(r);
+      // 有目标 tab → 带文件名(保存失败 <name>:<原因>);无(NO_ACTIVE_TAB)→ 只有原因。
+      if (target) onSaveFailed(target, r);
+      else notifyFailure(r);
     }
-  }, [saveActive]);
+  }, [saveActive, onSaveFailed]);
   const confirmOverwrite = useCallback(async () => {
     const candidate = overwriteCandidate;
     setOverwriteCandidate(null);
     if (!candidate) return;
     try {
       const r = await saveTab(candidate.id, { force: true });
-      if (!r.ok) notifyFailure(r);
+      if (!r.ok) onSaveFailed(candidate, r, { closeAfter: candidate.closeAfter, force: true });
       else if (candidate.closeAfter) closeTab(candidate.id);
     } catch (err) {
       notifyThrownError(err);
     }
-  }, [overwriteCandidate, saveTab, closeTab]);
+  }, [overwriteCandidate, saveTab, closeTab, onSaveFailed]);
+  const confirmOverwriteReadonly = useCallback(async () => {
+    const candidate = readonlyCandidate;
+    setReadonlyCandidate(null);
+    if (!candidate) return;
+    try {
+      const r = await saveTab(candidate.id, { force: candidate.force, overwriteReadonly: true });
+      if (!r.ok) {
+        if (r.code === EDITOR_DISK_CHANGED) {
+          setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, closeAfter: candidate.closeAfter });
+        } else {
+          notifySaveFailed(basenameForChrome(candidate.filePath), r);
+        }
+      } else if (candidate.closeAfter) closeTab(candidate.id);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  }, [readonlyCandidate, saveTab, closeTab]);
   // 冲突时「放弃更改并重新加载」(VSCode Revert):tab 换成磁盘版本、丢弃未保存修改;来自关闭时的「保存」→ 随后关闭。
   const revertOverwriteCandidate = useCallback(async () => {
     const candidate = overwriteCandidate;
@@ -293,11 +336,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, closeAfter: true });
         return;
       }
-      notifyFailure(r);
+      onSaveFailed(candidate, r, { closeAfter: true });
     } catch (err) {
       notifyThrownError(err);
     }
-  }, [closeCandidate, closeTab, saveTab]);
+  }, [closeCandidate, closeTab, saveTab, onSaveFailed]);
 
   // 全局命令 workbench.action.files.save / closeActiveEditor(⌘S / ⌘W,焦点在面板外也生效)经此调用面板内同一实现
   //(覆盖确认 / 保存·不保存·取消 确认框状态在本组件)。BDD: src/__tests__/workbench-editor-commands/
@@ -480,6 +523,22 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         alternativeLabel={translate('panels.editor.disk_changed_revert')}
         onAlternative={() => void revertOverwriteCandidate()}
         onCancel={() => setOverwriteCandidate(null)}
+      />
+      <ConfirmDialog
+        open={readonlyCandidate !== null}
+        title={translate('panels.editor.readonly_title')}
+        description={
+          readonlyCandidate ? (
+            <>
+              <code className="text-fg">{basename(readonlyCandidate.filePath)}</code>{' '}
+              {translate('panels.editor.readonly_body')}
+            </>
+          ) : null
+        }
+        confirmLabel={translate('panels.editor.readonly_confirm')}
+        destructive
+        onConfirm={() => void confirmOverwriteReadonly()}
+        onCancel={() => setReadonlyCandidate(null)}
       />
       <ConfirmDialog
         open={unsafeEditConfirmOpen}

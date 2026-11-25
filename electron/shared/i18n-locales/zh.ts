@@ -96,9 +96,9 @@ export const zh: Record<TranslationKey, string> = {
   'errors.TOO_MANY_WINDOWS': '打开的窗口过多',
   'errors.TOO_MANY_TERMINALS': '终端会话过多',
   'errors.TOO_MANY_DEBUG_SESSIONS': '调试会话过多',
-  'errors.WORKSPACE_NOT_ABSOLUTE': '工作区路径必须是绝对路径：{path}',
-  'errors.WORKSPACE_NOT_DIRECTORY': '工作区不是一个目录：{workspace}',
-  'errors.WORKSPACE_NOT_FOUND': '找不到工作区：{workspace}',
+  'errors.WORKSPACE_NOT_ABSOLUTE': '工作区路径必须是绝对路径',
+  'errors.WORKSPACE_NOT_DIRECTORY': '工作区不是一个目录',
+  'errors.WORKSPACE_NOT_FOUND': '找不到工作区',
 
   // errors.FS_*
   'errors.FS_BAD_NAME': '文件名不合法',
@@ -112,7 +112,10 @@ export const zh: Record<TranslationKey, string> = {
   'errors.FS_DIR_TOO_LARGE': '目录条目过多',
   'errors.FS_BUSY': '进行中的文件操作过多，请稍后重试',
   'errors.FS_MOVE_INTO_SELF': '不能把文件夹移动或粘贴到它自己的子文件夹中',
-  'errors.FS_NOT_FOUND': '找不到文件：{path}',
+  'errors.FS_NOT_FOUND': '找不到文件',
+  'errors.FS_READONLY': '文件是只读的（写保护）',
+  'errors.FS_NO_SPACE': '磁盘空间不足',
+  'errors.FS_READONLY_FS': '文件系统是只读的',
 
   // ── topic-19 i18n-strings-r2 ──────────────────────────────────────
 
@@ -216,6 +219,7 @@ export const zh: Record<TranslationKey, string> = {
   'editor.welcome.hint_prefix': '在资源管理器中单击文件打开 ·',
   'editor.welcome.save': '保存',
   'editor.autosave_failed': '自动保存失败',
+  'editor.save_failed': '保存失败',
 
   'dialog.unsaved_close.message': '是否要保存对 {count} 个文件的更改？',
   'dialog.unsaved_close.detail': '如果不保存，你的更改将丢失。',
@@ -276,11 +280,11 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.ctx.copy': '复制',
   'panels.explorer.ctx.rename': '重命名',
   'panels.explorer.rename_input_aria': '重命名 {name}',
+  'panels.explorer.symlink': '符号链接',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': '此位置已存在文件或文件夹「{name}」。请选择其他名称。',
   'panels.explorer.ctx.copy_path': '复制路径',
   'panels.explorer.ctx.copy_relative_path': '复制相对路径',
-  'panels.explorer.symlink': '符号链接',
   'panels.explorer.ctx.reveal_in_finder': '在 Finder 中显示',
   'panels.explorer.ctx.open_in_terminal': '在集成终端中打开',
   'panels.explorer.ctx.trash': '移到废纸篓',
@@ -356,6 +360,9 @@ export const zh: Record<TranslationKey, string> = {
   'panels.editor.disk_changed_body': '自打开或上次保存后已被外部修改。可以用你的更改覆盖它，或放弃更改并重新加载磁盘上的版本。',
   'panels.editor.disk_changed_confirm': '覆盖',
   'panels.editor.disk_changed_revert': '放弃更改并重新加载',
+  'panels.editor.readonly_title': '文件是只读的',
+  'panels.editor.readonly_body': '处于写保护状态。仍要覆盖吗？覆盖会去掉它的写保护。',
+  'panels.editor.readonly_confirm': '覆盖',
   'panels.editor.milkdownUnsafe.banner': '已用源码模式打开，以保留 frontmatter 和 wiki-link。',
   'panels.editor.engine_load_failed': '编辑器加载失败。',
   'panels.editor.engine_load_retry': '重试',
@@ -451,7 +458,13 @@ export const zh: Record<TranslationKey, string> = {
   'statusbar.no_workspace': '无工作区',
   'statusbar.sidebar_hidden': '侧栏已隐藏',
   'statusbar.unsaved_changes': '未保存的更改',
-  'statusbar.editor_stats': '{lines} 行 · {words} 词 · {chars} 字符',
+  'statusbar.editor_stats': '{lines} · {words} · {chars}',
+  'statusbar.editor_stats.lines_one': '{count} 行',
+  'statusbar.editor_stats.lines_other': '{count} 行',
+  'statusbar.editor_stats.words_one': '{count} 词',
+  'statusbar.editor_stats.words_other': '{count} 词',
+  'statusbar.editor_stats.chars_one': '{count} 字符',
+  'statusbar.editor_stats.chars_other': '{count} 字符',
 
   // errors.* topic-19
   'errors.terminal.cwd_unresolved': '请先打开工作区',
