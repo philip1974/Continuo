@@ -89,6 +89,8 @@ const EditorGroupSessionSchema = z
     id: editorGroupId(),
     openFilePaths: pathArray(),
     activePath: pathStr().nullable(),
+    /** 组内 tab 最近使用顺序(首项 = 活动文件);只在与默认顺序不同时写。BDD: src/__tests__/editor-close-mru/ */
+    mruPaths: pathArray().optional(),
   })
   .strict();
 
@@ -96,6 +98,8 @@ const EditorSessionSchema = z
   .object({
     openFilePaths: pathArray(), // 边界(E14)
     activePath: pathStr().nullable(),
+    /** 单组时组内 tab 最近使用顺序(同 EditorGroupSessionSchema.mruPaths)。 */
+    mruPaths: pathArray().optional(),
     /** Markdown 视图模式(全局);只在非默认(source)时写。 */
     mode: z.enum(['edit', 'source', 'preview']).optional(),
     viewStates: z.array(EditorViewStateEntrySchema).max(EDITOR_VIEW_STATES_MAX).optional(),

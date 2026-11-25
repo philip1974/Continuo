@@ -541,6 +541,10 @@
 
 - [`editor-action.spec.ts`](./editor-action/editor-action.spec.ts)
 
+## [关闭编辑器 tab 回到组内最近使用的 tab](./editor-close-mru/README.md)
+
+- [`editor-close-mru.spec.ts`](./editor-close-mru/editor-close-mru.spec.ts)
+
 ## [editor-crlf-line-endings](./editor-crlf-line-endings/README.md)
 
 - [`code-editor-crlf.spec.tsx`](./editor-crlf-line-endings/code-editor-crlf.spec.tsx)

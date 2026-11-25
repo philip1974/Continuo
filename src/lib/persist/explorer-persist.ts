@@ -23,11 +23,15 @@
 
 import {
   createTab,
+  defaultTabMru,
+  editorGroupIdsOf,
   type EditorGroup,
   type EditorGroupLayout,
   type EditorTab,
+  type EditorTabMru,
   useEditorStore,
 } from '@/stores/editor.store';
+import { arraysEqual } from '../../../electron/shared/array-equal';
 import { useExplorerStore } from '@/stores/explorer.store';
 import {
   SIDEBAR_DEFAULT_WIDTH,
@@ -192,6 +196,48 @@ export function collectEditorSnapshot(
   return { openFilePaths, activePath };
 }
 
+/** 会被持久化的 tab(跳过插件打开的,同 openFilePaths 口径):tab id → 路径。 */
+function persistedTabPaths(tabs: readonly EditorTab[]): Map<string, string> {
+  const persisted = new Map<string, string>();
+  for (const tab of tabs) if (tab.pluginOpenedPath === undefined) persisted.set(tab.id, tab.filePath);
+  return persisted;
+}
+
+/**
+ * 组内 tab MRU 的持久化形态(只含会被持久化的 tab);与默认顺序(defaultTabMru,恢复旧数据时同样按它)相同 → null 不写,
+ * 旧形态不变。BDD: src/__tests__/editor-close-mru/
+ */
+function collectMruPaths(
+  persisted: ReadonlyMap<string, string>,
+  tabIds: readonly string[],
+  activeTabId: string | null,
+  mru: readonly string[] | undefined,
+): string[] | null {
+  if (mru === undefined) return null;
+  const ids = tabIds.filter((id) => persisted.has(id));
+  const order = mru.filter((id) => persisted.has(id));
+  const active = activeTabId !== null && persisted.has(activeTabId) ? activeTabId : null;
+  if (ids.length < 2 || arraysEqual(order, defaultTabMru(ids, active))) return null;
+  return order.map((id) => persisted.get(id)!);
+}
+
+/** 单组时的 mruPaths 字段(多组时各组自带,见 collectEditorGroupsSnapshot)。 */
+export function collectEditorMruSnapshot(
+  tabs: readonly EditorTab[],
+  activeTabId: string | null,
+  groups: readonly EditorGroup[],
+  tabMru: EditorTabMru,
+): { mruPaths: string[] } | null {
+  if (groups.length > 1) return null;
+  const mru = tabMru.get(groups[0]?.id ?? '');
+  const ids = new Array<string>(tabs.length);
+  for (let i = 0; i < tabs.length; i++) ids[i] = tabs[i]!.id;
+  const mruPaths = collectMruPaths(persistedTabPaths(tabs), ids, activeTabId, mru);
+  return mruPaths === null ? null : { mruPaths };
+}
+
+type EditorGroupSnapshot = { id: string; openFilePaths: string[]; activePath: string | null; mruPaths?: string[] };
+
 /**
  * 多个编辑器组时的按组快照(单组 → null,写出形态与旧版一致)。与 openFilePaths 同口径跳过插件打开的 tab;
  * 组的 activePath 只取会被持久化的 tab。BDD: src/__tests__/editor-groups/
@@ -200,18 +246,19 @@ export function collectEditorGroupsSnapshot(
   tabs: readonly EditorTab[],
   groups: readonly EditorGroup[],
   activeGroupId: string,
-): { groups: { id: string; openFilePaths: string[]; activePath: string | null }[]; activeGroup: string } | null {
+  tabMru: EditorTabMru = new Map(),
+): { groups: EditorGroupSnapshot[]; activeGroup: string } | null {
   if (groups.length <= 1) return null;
-  const persisted = new Map<string, string>();
-  for (const tab of tabs) if (tab.pluginOpenedPath === undefined) persisted.set(tab.id, tab.filePath);
-  const out = groups.map((g) => {
+  const persisted = persistedTabPaths(tabs);
+  const out = groups.map((g): EditorGroupSnapshot => {
     const openFilePaths: string[] = [];
     for (const id of g.tabIds) {
       const p = persisted.get(id);
       if (p !== undefined) openFilePaths.push(p);
     }
     const activePath = g.activeTabId === null ? null : (persisted.get(g.activeTabId) ?? null);
-    return { id: g.id, openFilePaths, activePath };
+    const mruPaths = collectMruPaths(persisted, g.tabIds, g.activeTabId, tabMru.get(g.id));
+    return mruPaths === null ? { id: g.id, openFilePaths, activePath } : { id: g.id, openFilePaths, activePath, mruPaths };
   });
   return { groups: out, activeGroup: activeGroupId };
 }
@@ -304,7 +351,8 @@ export function snapshotFromStores(
     ed.activeTabId,
   );
   const viewStates = collectEditorViewStates(ed.tabs, ed.viewRefs);
-  const groupsSnap = collectEditorGroupsSnapshot(ed.tabs, ed.groups, ed.activeGroupId);
+  const groupsSnap = collectEditorGroupsSnapshot(ed.tabs, ed.groups, ed.activeGroupId, ed.tabMru);
+  const mruSnap = collectEditorMruSnapshot(ed.tabs, ed.activeTabId, ed.groups, ed.tabMru);
   const root = normalizeWorkspaceRoot(w.root);
   const recentRoots = collectNormalizedWorkspaceRoots(w.recentRoots);
 
@@ -325,6 +373,7 @@ export function snapshotFromStores(
       // 只在非默认时写(旧形态不变)
       ...(ed.mode === 'source' ? null : { mode: ed.mode }),
       ...(viewStates.length === 0 ? null : { viewStates }),
+      ...(mruSnap ?? null),
       ...(groupsSnap ?? null),
     },
   };
@@ -485,6 +534,7 @@ export async function hydrateEditorTabs(
       id: g.id,
       tabIds: g.openFilePaths,
       activeTabId: keepUserActive && g.id === activeGroup ? cur.activeTabId : g.activePath,
+      ...(g.mruPaths === undefined ? null : { mru: g.mruPaths }),
     }));
     cur.restoreGroups(layout, activeGroup);
     return;
@@ -495,6 +545,9 @@ export async function hydrateEditorTabs(
   if (!keepUserActive && desired && hasEditorTabWithId(next.tabs, desired)) {
     next.switchTab(desired, restoreOpts);
   }
+  // 组内 tab MRU:按会话记录(旧数据无该字段 → 默认顺序);活动 tab 仍居首。BDD: src/__tests__/editor-close-mru/
+  const after = useEditorStore.getState();
+  after.restoreTabMru(editorGroupIdsOf(after)[0]!, entry.editor.mruPaths);
 }
 
 export function hasEditorTabWithId(
@@ -716,7 +769,8 @@ export async function initExplorerPersistence(
       s.chromeVersion !== prev.chromeVersion ||
       s.mode !== prev.mode ||
       s.activeGroupId !== prev.activeGroupId ||
-      s.groups !== prev.groups
+      s.groups !== prev.groups ||
+      s.tabMru !== prev.tabMru
     ) {
       markDirtyAndPersist();
     }

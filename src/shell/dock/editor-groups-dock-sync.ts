@@ -6,7 +6,7 @@
 // 启动恢复结束后 reconcileEditorGroupsWithDock 对齐两边(没有面板的组并入有面板的组,没有文档的多余组面板关闭)。
 
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
-import { editorGroupIdsOf, editorGroupsOf, useEditorStore } from '@/stores/editor.store';
+import { editorGroupIdsOf, editorGroupsOf, groupTabMruOf, useEditorStore } from '@/stores/editor.store';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { getDockApi, runWhenDockLayoutReady, subscribeDockApi } from './dock-api-ref';
 
@@ -77,13 +77,13 @@ export function reconcileEditorGroupsWithDock(api: DockviewApi): void {
     }
     const layout = groups
       .filter((g) => rename.has(g.id) || panelIds.includes(g.id))
-      .map((g) => ({ id: rename.get(g.id) ?? g.id, tabIds: g.tabIds, activeTabId: g.activeTabId }));
+      .map((g) => ({ id: rename.get(g.id) ?? g.id, tabIds: g.tabIds, activeTabId: g.activeTabId, mru: groupTabMruOf(s, g.id) }));
     const active = rename.get(s.activeGroupId) ?? (panelIds.includes(s.activeGroupId) ? s.activeGroupId : layout[0]?.id);
     if (active !== undefined) s.restoreGroups(layout, active);
     else if (groups.length > 1) {
       // 一个编辑器面板都没有(用户关掉了):全部并入活动组,打开文件时按它补建面板(与单组时一致)
       const g = groups.find((x) => x.id === s.activeGroupId) ?? groups[0]!;
-      s.restoreGroups([{ id: g.id, tabIds: g.tabIds, activeTabId: g.activeTabId }], g.id);
+      s.restoreGroups([{ id: g.id, tabIds: g.tabIds, activeTabId: g.activeTabId, mru: groupTabMruOf(s, g.id) }], g.id);
     }
   }
   const live = new Set(editorGroupIdsOf(useEditorStore.getState()));

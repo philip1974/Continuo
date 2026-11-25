@@ -4,6 +4,7 @@ import {
   EDITOR_CLOSE_B_TS,
   EDITOR_CLOSE_README_MD,
   EDITOR_TABS,
+  editorTab,
 } from './helpers/editor';
 
 test('打开 README.md + a.ts + b.ts(active)→ 关 b.ts → active 自动切回', async ({
@@ -48,4 +49,23 @@ test('关 README.md(非 active)→ active 不变(仍 b.ts)', async ({ window }) 
 
   // active 仍 b.ts(关闭非 active 不切)
   await expect(window.locator('header').first()).toContainText('b.ts');
+});
+
+// VSCode focusRecentEditorAfterClose(默认 true):回到组内最近使用的 tab,而不是位置相邻的。
+// BDD: src/__tests__/editor-close-mru/
+test('README → a.ts → b.ts,切回 README 再切到 b.ts → 关 b.ts 回到 README(最近使用),不是相邻的 a.ts', async ({
+  window,
+}) => {
+  await window.locator('text=README.md').first().click();
+  await window.locator('text=src').first().click();
+  await window.locator('text=a.ts').first().click();
+  await window.locator('text=b.ts').first().click();
+  await editorTab(window, /^README\.md/).click();
+  await expect(window.locator('header').first()).toContainText('README.md');
+  await editorTab(window, /^b\.ts/).click();
+  await expect(window.locator('header').first()).toContainText('b.ts');
+
+  await window.getByRole('button', { name: EDITOR_CLOSE_B_TS }).click();
+  await expect(window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab')).toHaveCount(2);
+  await expect(window.locator('header').first()).toContainText('README.md', { timeout: 5_000 });
 });

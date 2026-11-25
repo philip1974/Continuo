@@ -4,7 +4,7 @@
 // 打开的文件 tab 随 explorer.json 的窗口段持久化与恢复(见 lib/persist/explorer-persist 的
 // collectEditorSnapshot / hydrateEditorTabs);内容本身不持久化,恢复时重新读盘。
 
-import { create } from 'zustand';
+import { create, type StateCreator } from 'zustand';
 import type { EditorView } from '@codemirror/view';
 import { isMilkdownUnsafe } from '@/panels/Editor/milkdown-roundtrip-safety';
 import { isMarkdownPath } from '@/panels/Editor/editor-path-utils';
@@ -111,7 +111,12 @@ export interface EditorGroupLayout {
   readonly id: string;
   readonly tabIds: readonly string[];
   readonly activeTabId: string | null;
+  /** 组内 tab 最近使用顺序;缺省 = 默认顺序(见 defaultTabMru)。 */
+  readonly mru?: readonly string[] | undefined;
 }
+
+/** 组 id → 该组 tab 的最近使用顺序(首项 = 活动 tab)。BDD: src/__tests__/editor-close-mru/ */
+export type EditorTabMru = ReadonlyMap<string, readonly string[]>;
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
 let dirtyGenCounter = 0;
@@ -192,17 +197,34 @@ export interface CloseTabResult {
 }
 
 /**
+ * 关闭活动 tab 后接替它的 tab(VSCode focusRecentEditorAfterClose):MRU 里第一个仍在组里的(除被关的);
+ * MRU 无可用项 → 后一个,否则前一个。ids = 关闭前组内 tab 顺序。BDD: src/__tests__/editor-close-mru/
+ */
+function successorAfterClose(
+  ids: readonly string[],
+  closingIndex: number,
+  mru: readonly string[] | undefined,
+): string | null {
+  const closing = ids[closingIndex];
+  if (mru && mru.length > 1) {
+    const inGroup = new Set(ids);
+    for (const id of mru) if (id !== closing && inGroup.has(id)) return id;
+  }
+  return ids[closingIndex + 1] ?? ids[closingIndex - 1] ?? null;
+}
+
+/**
  * 关闭 tab 后的新状态:
  * - 关不存在的 id → 状态不变
  * - 关非活跃 → tabs 减,active 不变
- * - 关活跃且后面有 → 切到下一个
- * - 关活跃且后面没 → 切到前一个
+ * - 关活跃 → 切到 MRU 里最近使用的(见 successorAfterClose;无 MRU 时后一个,否则前一个)
  * - 关最后一个 → active null
  */
 export function getStateAfterClosingTab(
   tabs: EditorTab[],
   activeTabId: string | null,
   closingTabId: string,
+  mru?: readonly string[],
 ): CloseTabResult {
   const closingIndex = findEditorTabIndexById(tabs, closingTabId);
   if (closingIndex < 0) return { tabs, activeTabId };
@@ -219,11 +241,9 @@ export function getStateAfterClosingTab(
   if (closingTabId !== activeTabId) {
     return { tabs: remaining, activeTabId };
   }
-  // 关的是活跃 tab:优先取原序后向第一个,否则前一个。
-  const next = tabs[closingIndex + 1] ?? tabs[closingIndex - 1] ?? null;
   return {
     tabs: remaining,
-    activeTabId: next?.id ?? null,
+    activeTabId: successorAfterClose(idsOf(tabs), closingIndex, mru),
   };
 }
 
@@ -535,6 +555,8 @@ type EditorState = {
   activeTabId: string | null;
   /** 编辑器组(至少一个);见 EditorGroup。 */
   groups: EditorGroup[];
+  /** 各组 tab 的最近使用顺序(由 withTabMru 随每次状态变更维护;关闭活动 tab 时据此选接替者)。 */
+  tabMru: EditorTabMru;
   /** 最近活动的编辑器组:打开文件落在这里。 */
   activeGroupId: string;
   mode: EditorMode;
@@ -578,6 +600,8 @@ type EditorState = {
   removeGroup: (groupId: string, keep: 'dirty' | 'all') => void;
   /** 会话恢复:按布局分配已打开的文档(未分配的进活动组;不存在的文档与空组丢弃)。 */
   restoreGroups: (layout: readonly EditorGroupLayout[], activeGroupId: string) => void;
+  /** 会话恢复:设置组 groupId 的 tab MRU(缺省 = 默认顺序);活动 tab 始终居首,不在组里的 id 丢弃。 */
+  restoreTabMru: (groupId: string, mru?: readonly string[]) => void;
   /** 文件/目录被删除后调用:精确匹配或前缀匹配的 clean tab 统一关闭,只 set 一次(chromeVersion 至多 bump 一次). */
   removePaths: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
@@ -850,14 +874,93 @@ function applyDocChangeToGroups(
   return commitGroups(s, nextTabs, groups, s.activeGroupId, s.groups);
 }
 
-/** 从 id 列表移除 closing,活动项被关时落到后一个、否则前一个(同 getStateAfterClosingTab)。 */
-function closeIdInGroup(g: EditorGroup, closing: string): EditorGroup {
+/** 从 id 列表移除 closing,活动项被关时落到组内最近使用的(同 getStateAfterClosingTab)。 */
+function closeIdInGroup(g: EditorGroup, closing: string, mru: readonly string[] | undefined): EditorGroup {
   const idx = g.tabIds.indexOf(closing);
   if (idx < 0) return g;
   const tabIds = g.tabIds.filter((id) => id !== closing);
-  const activeTabId =
-    g.activeTabId !== closing ? g.activeTabId : (g.tabIds[idx + 1] ?? g.tabIds[idx - 1] ?? null);
+  const activeTabId = g.activeTabId !== closing ? g.activeTabId : successorAfterClose(g.tabIds, idx, mru);
   return { id: g.id, tabIds, activeTabId };
+}
+
+// ── 组内 tab MRU(BDD: src/__tests__/editor-close-mru/)──────────
+
+const EMPTY_TAB_MRU: EditorTabMru = new Map();
+
+/** 默认 MRU(无记录时 / 会话恢复旧数据):活动 tab 在前,其余按组内顺序倒序 —— 即按顺序打开这些文件自然得到的 MRU。 */
+export function defaultTabMru(tabIds: readonly string[], activeTabId: string | null): string[] {
+  const out: string[] = activeTabId !== null && tabIds.includes(activeTabId) ? [activeTabId] : [];
+  for (let i = tabIds.length - 1; i >= 0; i--) if (tabIds[i] !== activeTabId) out.push(tabIds[i]!);
+  return out;
+}
+
+/**
+ * 组 g 的 MRU 规范化:活动 tab 居首,其余保持 prev 里的相对顺序,不在组里的剔除。从未激活过的 tab 不在 MRU 里
+ *(关闭活动 tab 时 MRU 没有可用项 → 按位置取相邻,与此前一致)。
+ */
+function normalizeGroupMru(prev: readonly string[] | undefined, g: EditorGroup): readonly string[] {
+  const inGroup = new Set(g.tabIds);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (id: string): void => {
+    if (inGroup.has(id) && !seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  };
+  if (g.activeTabId !== null) push(g.activeTabId);
+  if (prev) for (const id of prev) push(id);
+  return prev !== undefined && prev.length === out.length && out.every((id, i) => id === prev[i]) ? prev : out;
+}
+
+function syncTabMru(s: Pick<EditorState, 'tabs' | 'activeTabId' | 'groups' | 'tabMru'>): EditorTabMru {
+  const prev = s.tabMru ?? EMPTY_TAB_MRU;
+  const groups = materializedGroups(s);
+  let changed = prev.size !== groups.length;
+  const next = new Map<string, readonly string[]>();
+  for (const g of groups) {
+    const old = prev.get(g.id);
+    const m = normalizeGroupMru(old, g);
+    if (m !== old) changed = true;
+    next.set(g.id, m);
+  }
+  return changed ? next : prev;
+}
+
+/** 组 groupId 的 tab MRU(单组模式 = 唯一的组)。 */
+export function groupTabMruOf(s: Pick<EditorState, 'tabMru'>, groupId: string): readonly string[] | undefined {
+  return s.tabMru?.get(groupId);
+}
+
+/**
+ * 每次状态变更(含外部 setState)同一次提交里维护 tabMru(不多发通知):活动 tab / 组 / tab 增删改名(chromeVersion)/
+ * tabMru 本身变了才重算(正文输入不触发)。
+ */
+function withTabMru(creator: StateCreator<EditorState>): StateCreator<EditorState> {
+  type Patch = EditorState | Partial<EditorState>;
+  return (set, get, api) => {
+    const tracked = ((partial: Patch | ((s: EditorState) => Patch), replace?: boolean) => {
+      const apply = (s: EditorState): Patch => {
+        const patch = typeof partial === 'function' ? partial(s) : partial;
+        if (patch === s || patch == null) return patch;
+        const cur = (replace ? patch : { ...s, ...patch }) as EditorState;
+        if (
+          cur.groups === s.groups &&
+          cur.activeTabId === s.activeTabId &&
+          cur.chromeVersion === s.chromeVersion &&
+          cur.tabs?.length === s.tabs.length &&
+          cur.tabMru === s.tabMru
+        ) {
+          return patch;
+        }
+        const tabMru = syncTabMru(cur);
+        return tabMru === cur.tabMru ? patch : { ...patch, tabMru };
+      };
+      (set as (p: (s: EditorState) => Patch, r?: boolean) => void)(apply, replace);
+    }) as typeof set;
+    api.setState = tracked;
+    return creator(tracked, get, api);
+  };
 }
 
 /** 组 g 里激活 tabId(不在组里则追加);keepActive:组已有活动 tab 时只追加不激活。 */
@@ -878,10 +981,11 @@ function nextActiveGroupId(s: Pick<EditorState, 'activeGroupId'>, gid: string, o
   return opts?.groupId !== undefined && opts.requestFocus !== false ? gid : s.activeGroupId;
 }
 
-export const useEditorStore = create<EditorState>((set, get, api) => ({
+export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) => ({
   tabs: [],
   activeTabId: null,
   groups: singleGroup(PRIMARY_EDITOR_GROUP_ID),
+  tabMru: EMPTY_TAB_MRU,
   activeGroupId: PRIMARY_EDITOR_GROUP_ID,
   mode: 'source',
   editorFocusPulse: 0,
@@ -937,13 +1041,15 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
   closeTab: (id, groupId) =>
     set((s) => {
       if (!isMultiGroup(s)) {
-        return applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id));
+        const mru = groupTabMruOf(s, s.groups[0]?.id ?? PRIMARY_EDITOR_GROUP_ID);
+        return applyTabStateChange(s, getStateAfterClosingTab(s.tabs, s.activeTabId, id, mru));
       }
       const g = findGroup(s, groupId ?? s.activeGroupId);
       if (!g || !g.tabIds.includes(id)) return s;
       const openElsewhere = isTabOpenInOtherGroup(s, id, g.id);
       const tabs = openElsewhere ? s.tabs : getStateAfterClosingTab(s.tabs, null, id).tabs;
-      return commitGroups(s, tabs, replaceGroup(s.groups, closeIdInGroup(g, id)), s.activeGroupId);
+      const nextG = closeIdInGroup(g, id, groupTabMruOf(s, g.id));
+      return commitGroups(s, tabs, replaceGroup(s.groups, nextG), s.activeGroupId);
     }),
 
   setActiveGroup: (groupId) =>
@@ -1035,7 +1141,24 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       }));
       // 恢复布局里没有文档的组(读盘失败)丢弃;此前为恢复出的面板占位的空组同样不保留
       const kept = groups.filter((g) => g.tabIds.length > 0);
-      return commitGroups(s, s.tabs, kept, groups[ai]!.id, kept);
+      // 组内 MRU 按布局(缺省 = 默认顺序);规范化(活动居首、剔除不在组里的)由 withTabMru 做
+      const tabMru = new Map<string, readonly string[]>();
+      for (let i = 0; i < groups.length; i++) {
+        const g = groups[i]!;
+        if (g.tabIds.length === 0) continue;
+        const given = layout.find((x) => x.id === g.id)?.mru;
+        tabMru.set(g.id, given ?? defaultTabMru(g.tabIds, g.activeTabId));
+      }
+      return { ...commitGroups(s, s.tabs, kept, groups[ai]!.id, kept), tabMru };
+    }),
+
+  restoreTabMru: (groupId, mru) =>
+    set((s) => {
+      const g = materializedGroups(s).find((x) => x.id === groupId);
+      if (!g) return s;
+      const tabMru = new Map(s.tabMru);
+      tabMru.set(groupId, mru ?? defaultTabMru(g.tabIds, g.activeTabId));
+      return { tabMru };
     }),
 
   // 先按 pre-flush 状态算出受影响(将被关闭 / 换 id)的 tab,只回写它们 —— 回写会把正在编辑的大文档
@@ -1250,7 +1373,7 @@ export const useEditorStore = create<EditorState>((set, get, api) => ({
       if (finalView) finish(finalView);
     });
   },
-}));
+})));
 
 // tab 关闭 / 移除(close / 删除路径 / 切 root)后丢弃其编辑器视图状态。tab 增删改名必 bump chromeVersion,
 // 只在它变化时比对(正文输入不触发)。BDD: src/__tests__/editor-view-state/
