@@ -4,10 +4,7 @@ import { expandTreeItem, openTreeItem } from './explorer';
 export const EDITOR_NO_FILE_OPEN = /^(未打开文件|No file open|열린 파일 없음)$/;
 export const EDITOR_NO_FILE_OPEN_TEXT = /(未打开文件|No file open|열린 파일 없음)/;
 export const EDITOR_TABS = /^(编辑器标签|Editor tabs|편집기 탭)$/;
-export const EDITOR_WELCOME_HINT =
-  /(在\s*Explorer\s*单击文件打开|Click a file in Explorer|탐색기에서 파일을 클릭하여 열기)/;
 export const EDITOR_SAVE_LABEL = /^(保存|Save|저장)$/;
-export const EDITOR_SAVE_TEXT = /(保存|Save|저장)/;
 export const EDITOR_MODE_EDIT = /^(编辑|Edit|편집)$/;
 export const EDITOR_MODE_SOURCE = /^(源码|Source|소스)$/;
 export const EDITOR_MODE_PREVIEW = /^(预览|Preview|미리보기)$/;

@@ -29,7 +29,8 @@
 ### 第三方插件清单
 
 - getUserPluginManager()=null → 视为空
-- listAll()=[] + 无 pendingInstall → 「暂无第三方插件」
+- listAll()=[] + 无 pendingInstall → 「暂无第三方插件」+「浏览插件市场」按钮(切到 `core.marketplace` 设置页签,焦点交给导航里的市场页签)
+- 区块顺序:用户插件 → 贡献点统计 → 内置插件清单(用户要管理的是自己装的插件,同 VSCode 扩展视图「已安装」在最上;自检信息次之)
 - pendingInstall 存在 → 显示 ⏳ 行 + 待重启提示 +「立即重启」(见 `plugin-install-enable/`);连续安装多个 → 每个一行;
   id 已出现在插件列表(已加载 / 覆盖重装)→ 不再显示待重启行
 - plugin status='enabled' → 显「禁用」按钮

@@ -470,7 +470,46 @@ describe('MarketplaceTab — 列表 + 计数', () => {
       'input[placeholder^="搜索插件"]',
     ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'zzz' } });
-    expect(container.textContent).toContain('没有匹配的插件');
+    expect(container.textContent).toContain('没有与「zzz」匹配的插件');
+  });
+
+  // 无结果给下一步:只有搜索词时说明「没有与「x」匹配」并给「清除搜索」,不提并不存在的标签筛选;
+  // 有选中标签时才提标签,并给「清除筛选」(有搜索词时同时给「清除搜索」)。
+  it('仅搜索词无结果 → 文案带搜索词、不提标签筛选;「清除搜索」恢复列表并聚焦搜索框', async () => {
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a', name: 'A', tags: ['ui'] })]);
+    installApi(vi.fn());
+    const { container, getByRole, queryByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('A'));
+    const input = container.querySelector('input[placeholder^="搜索插件"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'zzz' } });
+    expect(container.textContent).toContain(t('marketplace.no_match_query', { query: 'zzz' }));
+    expect(container.textContent).not.toContain(t('marketplace.no_match'));
+    expect(queryByRole('button', { name: t('marketplace.clear_filter') })).toBeNull();
+    fireEvent.click(getByRole('button', { name: t('marketplace.clear_search') }));
+    expect(input.value).toBe('');
+    expect(document.activeElement).toBe(input);
+    expect(container.textContent).not.toContain(t('marketplace.no_match_query', { query: 'zzz' }));
+  });
+
+  it('有选中标签且无结果 → 提示换搜索词或清除标签;「清除筛选」与「清除搜索」都在', async () => {
+    fetchIndexMock.mockResolvedValue([
+      entry({ id: 'a', name: 'A', tags: ['ui'] }),
+      entry({ id: 'b', name: 'B', tags: ['lang'] }),
+    ]);
+    installApi(vi.fn());
+    const { container, getByRole, getAllByRole } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('A'));
+    fireEvent.click(getByRole('button', { name: 'ui' }));
+    const input = container.querySelector('input[placeholder^="搜索插件"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'B' } });
+    expect(container.textContent).toContain(t('marketplace.no_match'));
+    expect(getByRole('button', { name: t('marketplace.clear_search') })).toBeTruthy();
+    // 空态里的「清除筛选」(标签行另有一个同名按钮)
+    const clears = getAllByRole('button', { name: t('marketplace.clear_filter') });
+    expect(clears.length).toBe(2);
+    fireEvent.click(clears[clears.length - 1]!);
+    expect(container.textContent).toContain('B');
+    expect(getByRole('button', { name: 'ui' }).getAttribute('aria-pressed')).toBe('false');
   });
 
   it('tag 过滤 + 清除按钮', async () => {

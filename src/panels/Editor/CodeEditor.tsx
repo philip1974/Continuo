@@ -27,6 +27,8 @@ import {
 } from '@/plugins/settings/core-setting-specs';
 import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
+import { useLocale } from '@/i18n';
+import { codeMirrorPhrases } from './codemirror-phrases';
 import { debugDecorationsExtension } from './decorations/debug-decorations';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { registerEditorRootRebind } from './editor-root-registry';
@@ -154,6 +156,10 @@ export function CodeEditor({
   onChangeRef.current = onChange;
   const langCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
+  // 内建文案(⌘F 查找面板等)随界面语言:语言切换时 reconfigure,不重建编辑器(BDD: src/__tests__/editor-find-i18n/)。
+  const phrasesCompartment = useRef(new Compartment());
+  const locale = useLocale();
+  const appliedLocaleRef = useRef<string | null>(null);
   const suppressNextChange = useRef(false);
   // 性能 P6:记录「editor doc 当前反映的字符串」。本地打字时 onChange emit 的值会作为
   // value 回传(受控回声),此 ref 让 value-sync effect 直接 `value === lastSynced` 跳过,
@@ -175,6 +181,7 @@ export function CodeEditor({
     const themeExt = codeEditorTheme(resolved);
     appliedLangKeyRef.current = `${fileName}\u0000${forceLanguage ?? ''}`;
     appliedThemeRef.current = resolved;
+    appliedLocaleRef.current = locale;
     eolRef.current = detectLineEnding(value);
 
     const extensions: Extension[] = [
@@ -184,6 +191,7 @@ export function CodeEditor({
       // BDD: src/__tests__/keyboard-focus-parity/
       keymap.of([indentWithTab]),
       themeCompartment.current.of(themeExt),
+      phrasesCompartment.current.of(codeMirrorPhrases()),
       langCompartment.current.of(lang),
       debugDecorationsExtension(),
       EditorView.updateListener.of((update: ViewUpdate) => {
@@ -320,6 +328,15 @@ export function CodeEditor({
       effects: themeCompartment.current.reconfigure(themeExt),
     });
   }, [resolved]);
+
+  // 界面语言切换 → 热替换内建文案(已打开的查找面板保持原文,关闭重开即新语言 —— 面板 DOM 在打开时生成)
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (appliedLocaleRef.current === locale) return;
+    appliedLocaleRef.current = locale;
+    view.dispatch({ effects: phrasesCompartment.current.reconfigure(codeMirrorPhrases()) });
+  }, [locale]);
 
   // 外层 div 设 fontSize,内部 .cm-editor / .cm-content / .cm-gutters
   // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。

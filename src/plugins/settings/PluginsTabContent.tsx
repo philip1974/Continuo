@@ -1,7 +1,8 @@
 // '插件' SettingTab 内容(M-Plugin v3.5)。
-// 自检视图:贡献点统计 + 内置插件清单 + 用户插件管理(UserPluginsSection)。
+// 用户插件管理(UserPluginsSection)+ 自检视图(贡献点统计 + 内置插件清单)。用户插件排最前:用户来这一页主要是管理
+// 自己装的插件(VSCode 扩展视图「已安装」在最上),自检信息是次要的诊断内容。
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Badge, Button } from '@/design';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { coApp } from '../co-app';
@@ -20,6 +21,10 @@ import { ResultMessage, type ResultMsg } from '@/lib/result-message';
 import { installFromGitLocalized, repoNameFromGitUrl } from '@/plugins/install-from-git';
 import { clearPendingInstall, recordPendingInstall, usePendingInstalls } from '../pending-installs-store';
 import { coApi } from '@/lib/co-api';
+import { useSettingsStore } from './store';
+
+/** 插件市场设置页签 id(core-plugins/PluginsTabPlugin 注册)。 */
+export const MARKETPLACE_SETTING_TAB_ID = 'core.marketplace';
 
 interface ContributionRow {
   readonly labelKey: string;
@@ -155,8 +160,11 @@ export function PluginsTabContent() {
 
   return (
     <div className="space-y-8">
+      {/* ── 第三方插件 ──────────────────────────────── */}
+      <UserPluginsSection />
+
       {/* ── 贡献点统计 ──────────────────────────────── */}
-      <section>
+      <section data-plugins-section="contributions">
         <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
           {t('plugins_tab.section.contributions')}
         </h3>
@@ -177,7 +185,7 @@ export function PluginsTabContent() {
       </section>
 
       {/* ── 内置插件清单 ─────────────────────────────── */}
-      <section>
+      <section data-plugins-section="builtin">
         <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
           {t('plugins_tab.section.builtin')}
         </h3>
@@ -195,11 +203,17 @@ export function PluginsTabContent() {
           ))}
         </div>
       </section>
-
-      {/* ── 第三方插件 ──────────────────────────────── */}
-      <UserPluginsSection />
     </div>
   );
+}
+
+/** 切到「插件市场」设置页签;本页随之卸载,焦点交给导航里的市场页签(不掉到 body)。 */
+function openMarketplaceTab(e: MouseEvent<HTMLButtonElement>): void {
+  const doc = e.currentTarget.ownerDocument;
+  useSettingsStore.getState().setActiveTabId(MARKETPLACE_SETTING_TAB_ID);
+  requestAnimationFrame(() => {
+    doc.querySelector<HTMLElement>(`[data-setting-tab="${MARKETPLACE_SETTING_TAB_ID}"]`)?.focus();
+  });
 }
 
 export function hasPluginId(plugins: readonly PluginListItem[], id: string): boolean {
@@ -342,7 +356,7 @@ function UserPluginsSection() {
   };
 
   return (
-    <section>
+    <section data-plugins-section="user">
       {/* tabIndex=-1:卸载掉最后一个插件后焦点的落点(程序化聚焦,不进 Tab 序)。 */}
       <h3
         ref={sectionHeadingRef}
@@ -371,8 +385,12 @@ function UserPluginsSection() {
         <ResultMessage msg={installMsg} className="mt-2 text-xs text-fg-muted" />
       </div>
       {plugins.length === 0 && pendingRows.length === 0 ? (
-        <div className="rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
-          {t('plugins_tab.user.no_plugins')}
+        // 空态给下一步(VSCode 扩展视图空态引导去市场):切到「插件市场」设置页签。
+        <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-line bg-panel-soft/40 px-4 py-8 text-center text-xs text-fg-dim">
+          <span>{t('plugins_tab.user.no_plugins')}</span>
+          <Button variant="secondary" size="sm" onClick={openMarketplaceTab}>
+            {t('plugins_tab.user.browse_marketplace')}
+          </Button>
         </div>
       ) : (
         <div ref={listRef} className="rounded-md border border-line bg-panel-soft/40">

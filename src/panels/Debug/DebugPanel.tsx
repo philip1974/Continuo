@@ -28,6 +28,8 @@ import {
   type DebugVariable,
 } from '@/stores/debug.store';
 import { useLocale, useT } from '@/i18n';
+import { SR_ONLY_STYLE } from '@/lib/sr-only';
+import { useCopyMcpConfig } from '@/shell/use-copy-mcp-config';
 import { coApp } from '@/plugins/co-app';
 import { basename, dirname, isAbsolutePath } from '@/lib/path-cross';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
@@ -55,6 +57,35 @@ function stopReasonLabel(t: (key: string) => string, reason: string): string | u
   return key === undefined ? undefined : t(key);
 }
 
+/**
+ * 无会话空态:说明调试会话由 Agent 经 MCP 调试工具启动(Continuo 没有自己的启动配置),给出下一步「复制 MCP 配置」——
+ * 与状态栏同一动作与成功 / 失败反馈(useCopyMcpConfig)。对齐 VSCode 运行和调试视图空态:说明 + 主操作按钮。
+ */
+function DebugEmptyState() {
+  const t = useT();
+  const mcpCopy = useCopyMcpConfig();
+  return (
+    <div className="flex h-full w-full bg-canvas text-fg">
+      <EmptyState>
+        <div className="text-sm text-fg">{t('panels.debug.empty_session')}</div>
+        <p className="max-w-xs">{t('panels.debug.empty_hint')}</p>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void mcpCopy.copy()}
+          // 可见文本随结果短暂变化(已复制 / 复制失败);可访问名固定为动作,结果由下方 live region 播报(同状态栏 A82)。
+          aria-label={t('statusbar.mcp.copy')}
+        >
+          {mcpCopy.label}
+        </Button>
+        <span style={SR_ONLY_STYLE} role="status">
+          {mcpCopy.announcement}
+        </span>
+      </EmptyState>
+    </div>
+  );
+}
+
 export function DebugPanel() {
   const t = useT();
   const locale = useLocale();
@@ -73,13 +104,7 @@ export function DebugPanel() {
     [locale, t],
   );
 
-  if (!session) {
-    return (
-      <div className="flex h-full w-full bg-canvas text-fg">
-        <EmptyState>{t('panels.debug.empty_session')}</EmptyState>
-      </div>
-    );
-  }
+  if (!session) return <DebugEmptyState />;
 
   return (
     <div className="flex h-full w-full gap-3 bg-canvas p-3 text-fg">

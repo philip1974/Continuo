@@ -467,8 +467,39 @@ export function MarketplaceTab() {
         </div>
       )}
       {filtered.length === 0 ? (
-        <div className="rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
-          {t('marketplace.no_match')}
+        // 无结果给下一步:有选中标签才提标签并给「清除筛选」;有搜索词给「清除搜索」(清后焦点回搜索框)。
+        <div className="flex flex-col items-center gap-3 rounded border border-dashed border-line bg-panel-soft/40 px-3 py-6 text-center text-xs text-fg-dim">
+          <span>
+            {selectedTags.size > 0
+              ? t('marketplace.no_match')
+              : t('marketplace.no_match_query', { query: query.trim() })}
+          </span>
+          <div className="flex flex-wrap justify-center gap-2">
+            {query !== '' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setQuery('');
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {t('marketplace.clear_search')}
+              </Button>
+            )}
+            {selectedTags.size > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  clearTags();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {t('marketplace.clear_filter')}
+              </Button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="space-y-2">

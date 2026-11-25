@@ -3,7 +3,7 @@
 行为契约:**左:workspace basename + 「侧栏已隐藏」hint(sidebarOpen=false 时);
 右:active editor 文件名(+dirty ● 圆点) + 行/词/字符;无 active → 不显示文件信息。只显示真实信息,不放写死的占位(分支名 / 编码 / 换行)。
 agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 确认框,确认后 revoke + IPC revoke;不用原生 window.confirm)。IPC revoke 成功 → 清掉 renderer 仍显示的 agent 授权弹窗(以 `'cancelled'` 结算,应答方不再向 main respond;main 撤销时已结算并删除全部 pending 请求)。
-「复制 MCP 配置」按钮调 coApi.mcp.getStdioConfig + clipboard。
+「复制 MCP 配置」按钮调 coApi.mcp.getStdioConfig + clipboard(动作与反馈在 `src/shell/use-copy-mcp-config.ts`,Debug 面板空态共用)。
 插件 statusBar items 按 side('left'/'right')分别渲染。**
 
 ## 模块

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   getState: vi.fn(() => ({ root: null as string | null })),
   waitHydrated: vi.fn(() => Promise.resolve()),
   notifyError: vi.fn(),
+  notifyInfo: vi.fn(),
+  runCommand: vi.fn(),
   setPendingFocus: vi.fn(),
   preloadChunk: vi.fn(),
 }));
@@ -20,7 +22,10 @@ vi.mock('@/lib/terminal-chunk-warmup', () => ({
   preloadTerminalPanelChunk: mocks.preloadChunk,
 }));
 vi.mock('@/notifications/notify', () => ({
-  notify: { error: mocks.notifyError },
+  notify: { error: mocks.notifyError, info: mocks.notifyInfo },
+}));
+vi.mock('@/lib/run-contributed-action', () => ({
+  runRegisteredCommand: mocks.runCommand,
 }));
 vi.mock('@/stores/workspace.store', () => ({
   useWorkspaceStore: { getState: mocks.getState },
@@ -99,15 +104,30 @@ describe('createUserTerminal — 共用创建流程', () => {
     expect(mocks.create).toHaveBeenCalledWith({ originHint: 'user', env: { COLORFGBG: '0;15' } });
   });
 
-  it('CWD_UNRESOLVED 失败 → notify.error workspace 引导 + 返 null,不 focus', async () => {
+  // 无工作区(未传 cwd)不是错误:info 级提示「请先打开一个文件夹」(与资源管理器用语一致)并直接调起「打开文件夹」命令
+  //(notify 无操作按钮;选定文件夹后再 ⌘T 即可)。Continuo 刻意不回退主目录。
+  it('无工作区 CWD_UNRESOLVED → info 提示先打开文件夹 + 调起打开文件夹命令,不报错,返 null 不 focus', async () => {
     mocks.create.mockResolvedValue({ ok: false, code: 'TERMINAL_CWD_UNRESOLVED' });
 
     const id = await createUserTerminal();
 
     expect(id).toBeNull();
-    expect(mocks.notifyError).toHaveBeenCalledOnce();
-    expect(mocks.notifyError.mock.calls[0]?.[0]).toBe(t('errors.terminal.cwd_unresolved'));
+    expect(mocks.notifyError).not.toHaveBeenCalled();
+    expect(mocks.notifyInfo).toHaveBeenCalledOnce();
+    expect(mocks.notifyInfo.mock.calls[0]?.[0]).toBe(t('errors.terminal.cwd_unresolved'));
+    expect(mocks.runCommand).toHaveBeenCalledOnce();
+    expect(mocks.runCommand.mock.calls[0]?.[1]).toBe('workbench.action.files.openFolder');
     expect(mocks.setPendingFocus).not.toHaveBeenCalled();
+  });
+
+  it('三语文案统一为「先打开一个文件夹」(与资源管理器「打开文件夹」用语一致)', async () => {
+    const { en } = await import('../../../electron/shared/i18n-locales/en');
+    const { zh } = await import('../../../electron/shared/i18n-locales/zh');
+    const { ko } = await import('../../../electron/shared/i18n-locales/ko');
+    expect(zh['errors.terminal.cwd_unresolved']).toContain('文件夹');
+    expect(en['errors.terminal.cwd_unresolved']).toMatch(/folder/i);
+    expect(ko['errors.terminal.cwd_unresolved']).toContain('폴더');
+    for (const d of [en, zh, ko]) expect(d['errors.terminal.cwd_unresolved']).not.toMatch(/workspace|工作区|워크스페이스/i);
   });
 
   // 传了 cwd(root 被外部删除 / Explorer「在终端中打开」已删目录)时 main 同返 CWD_UNRESOLVED:不能提示「请先打开工作区」。
@@ -118,6 +138,7 @@ describe('createUserTerminal — 共用创建流程', () => {
     const msg = String(mocks.notifyError.mock.calls[0]?.[0]);
     expect(msg).toContain('/gone/dir');
     expect(msg).not.toContain('workspace');
+    expect(mocks.runCommand).not.toHaveBeenCalled();
   });
 
   it('通用失败 → notify.error 带 code + 返 null', async () => {

@@ -5,6 +5,7 @@
 import React from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EditorState, type Extension } from '@codemirror/state';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 import { getLocale, notifyLocaleChange, setLocale, t } from '../../i18n';
 import type { Locale } from '../../i18n';
@@ -108,6 +109,19 @@ describe('Markdown Edit 模式浮层文案本地化', () => {
       }
     });
   }
+
+  it('代码块 CodeMirror 的内建文案(⌘F 查找面板等)随界面语言(BDD: editor-find-i18n)', async () => {
+    act(() => {
+      setLocale('zh');
+      notifyLocaleChange();
+    });
+    render(<MilkdownEditor tabId="/t.md" defaultValue="# T" />);
+    await settle();
+    const extensions = lastConfigs()['CodeMirror']?.['extensions'] as Extension[] | undefined;
+    const state = EditorState.create({ extensions: extensions ?? [] });
+    expect(state.phrase('Find')).toBe(t('editor.cm.find'));
+    expect(state.phrase('replace all')).toBe(t('editor.cm.replace_all'));
+  });
 
   it('切换语言后编辑器重挂,浮层文案换成新语言', async () => {
     act(() => {

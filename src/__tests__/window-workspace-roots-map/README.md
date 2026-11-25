@@ -19,7 +19,7 @@ T18 IPC envelope via `processIpcCall` preserves `e.code`;
 T25 `makeCreateSessionTool` rejects with `.code` preserved;
 T26 `dispatchRpc tools/call` returns `error.code === -32603` and `error.data.code` for coded tool failures, asserting existing dispatcher behavior without modifying `mcp-host.service.ts`;
 T17 `INDEX.md` contains `window-workspace-roots-map` after `pnpm bdd:index`;
-T19-T21 renderer failure feedback: `TerminalPlugin` Cmd+T and `HeaderActions` both go through `createUserTerminal`, which reports failures via `notify.error`;
+T19-T21 renderer failure feedback: `TerminalPlugin` Cmd+T and `HeaderActions` both go through `createUserTerminal`, which reports failures via `notify.error` (no workspace / unresolved cwd without an explicit cwd is guidance, not an error: `notify.info` "open a folder first" + the Open Folder command);
 T27 `normalizeWorkspaceRoot('') === null`;
 T28 `normalizeWorkspaceRoot('   ') === null`;
 T28b `normalizeWorkspaceRoot('  /abs  ') === '  /abs  '`;

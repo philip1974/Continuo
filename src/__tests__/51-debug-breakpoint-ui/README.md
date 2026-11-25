@@ -9,7 +9,8 @@
 - `continued`、`terminated`、session 消失、tab 关闭或关窗时必须清理旧 exec-line 与断点,防止陈旧装饰。
 - debuggee 自然结束(DAP `terminated` / `exited`,含所有 child 都结束)时 main 立即向 renderer 发 `terminated`(只发一次;停住时被 kill、adapter 未先发 `continued` 也同样清掉停点),renderer 移除该会话(面板消失、执行行与红点清掉),不必等 disconnect / 关窗 / 名额满回收。MCP 侧会话仍保留到 teardown(`debug_list_sessions` 显示 `terminated`);`subscribe` 快照不含已结束会话(重载前后一致),之后不再推它的 `breakpoints-changed`(不把已移除的会话重新建出来);teardown 时再发的 `terminated` 对 renderer 是幂等空操作。
 - Debug panel 使用 `@/design` 组件与 renderer i18n catalog,不写硬编码可见文案。空态(无会话 / 无栈帧 / 无变量 / 无断点)用
-  design `EmptyState`(与 Output 面板同一空态);视图切换用 design `Tabs`(选中样式同设置页导航)。
+  design `EmptyState`(与 Output 面板同一空态);视图切换用 design `Tabs`(选中样式同设置页导航)。无会话空态给下一步:说明
+  「调试会话由 Agent 通过 MCP 调试工具启动」+「复制 MCP 配置」按钮(与状态栏同一 `useCopyMcpConfig`:同一动作、同样的已复制 / 复制失败反馈与 live region)。
 - 会话标题显示会话名(VSCode 调用栈 / 调试工具栏同):main 在 `breakpoints-changed` / `stopped` 事件与 `subscribe` 快照里带
   `label`(launch 的 `name`,未给则被调试程序的文件名),`debug.store` 记为 `label`(之后不带 label 的事件不清掉;非字符串忽略);
   缺省时回退内部 sessionId。

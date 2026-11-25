@@ -51,6 +51,44 @@ function chromeTheme(dark: boolean): Extension {
       '.cm-panels': { backgroundColor: 'var(--md-surface-container)', color: 'var(--md-on-surface)' },
       '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--md-outline-variant)' },
       '.cm-panels.cm-panels-bottom': { borderTop: '1px solid var(--md-outline-variant)' },
+      // ⌘F 查找 / 替换面板与跳转行面板:输入框、按钮、复选框与设计层(Input / Button)同一套 token,替代 CodeMirror
+      // 默认的白底输入框 + 灰渐变按钮(亮色)/ 黑渐变按钮(暗色)。字号取界面字号而非 CodeMirror 默认的 70%。
+      // color-scheme:原生复选框未勾选态按亮 / 暗绘制(否则暗色下是白方块);勾选态走 accent-color。
+      '.cm-panel': { fontFamily: 'var(--wm-font-sans)', colorScheme: dark ? 'dark' : 'light' },
+      '.cm-panel label': { color: 'var(--md-on-surface-variant)', fontSize: 'var(--wm-text-xs)' },
+      '.cm-textfield': {
+        backgroundColor: 'var(--md-surface-container-low)',
+        color: 'var(--md-on-surface)',
+        border: '1px solid var(--md-outline-variant)',
+        borderRadius: '4px',
+        padding: '2px 6px',
+        fontFamily: 'var(--wm-font-sans)',
+        fontSize: 'var(--wm-text-sm)',
+        outline: 'none',
+      },
+      '.cm-textfield:focus': { borderColor: 'var(--md-focus-ring)', backgroundColor: 'var(--md-surface-container)' },
+      '.cm-textfield::placeholder': { color: 'var(--md-outline)' },
+      '.cm-button': {
+        backgroundImage: 'none',
+        backgroundColor: 'var(--md-surface-container-high)',
+        color: 'var(--md-on-surface)',
+        border: '1px solid var(--md-outline-variant)',
+        borderRadius: '4px',
+        padding: '2px 8px',
+        fontFamily: 'var(--wm-font-sans)',
+        fontSize: 'var(--wm-text-xs)',
+        cursor: 'pointer',
+      },
+      '.cm-button:hover, .cm-button:active': {
+        backgroundImage: 'linear-gradient(var(--md-state-hover), var(--md-state-hover))',
+      },
+      '.cm-panel input[type=checkbox]': { accentColor: 'var(--md-primary)', cursor: 'pointer' },
+      '.cm-panel button[name=close]': { color: 'var(--md-on-surface-variant)', cursor: 'pointer' },
+      '.cm-panel button[name=close]:hover': { color: 'var(--md-on-surface)' },
+      '.cm-button:focus-visible, .cm-panel input[type=checkbox]:focus-visible, .cm-panel button[name=close]:focus-visible': {
+        outline: '2px solid var(--md-focus-ring)',
+        outlineOffset: '1px',
+      },
       '.cm-tooltip': {
         border: '1px solid var(--md-outline-variant)',
         backgroundColor: 'var(--md-surface-container)',

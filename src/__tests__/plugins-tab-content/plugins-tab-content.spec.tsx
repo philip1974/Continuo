@@ -43,6 +43,7 @@ import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDeco
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
 import type { PluginListItem } from '../../plugins/PluginManager';
 import { _resetPendingInstallsForTest } from '../../plugins/pending-installs-store';
+import { useSettingsStore } from '../../plugins/settings/store';
 
 const getPerm = getUserPermissionStore as unknown as ReturnType<typeof vi.fn>;
 
@@ -274,7 +275,7 @@ describe('PluginsTabContent — 内置插件', () => {
   // i18n:内置插件名走 catalog(zh 不再显示 Editor / Terminal / Output);第三方插件仍显示 manifest 名。
   it('内置插件名按当前语言显示(zh:编辑器 / 终端 / 输出 / 插件管理)', () => {
     const { container } = render(<PluginsTabContent />);
-    const builtin = Array.from(container.querySelectorAll('section'))[1]!;
+    const builtin = container.querySelector('[data-plugins-section="builtin"]')!;
     const names = Array.from(builtin.querySelectorAll('.text-sm.font-medium')).map((n) => n.textContent);
     expect(names).toEqual(['编辑器', '终端', '输出', '插件管理']);
   });
@@ -283,7 +284,7 @@ describe('PluginsTabContent — 内置插件', () => {
     act(() => setI18nLocale('en'));
     try {
       const { container } = render(<PluginsTabContent />);
-      const builtin = Array.from(container.querySelectorAll('section'))[1]!;
+      const builtin = container.querySelector('[data-plugins-section="builtin"]')!;
       const names = Array.from(builtin.querySelectorAll('.text-sm.font-medium')).map((n) => n.textContent);
       expect(names).toEqual(['Editor', 'Terminal', 'Output', 'Plugin management']);
     } finally {
@@ -307,6 +308,30 @@ describe('PluginsTabContent — 第三方插件:空态', () => {
     const { container } = render(<PluginsTabContent />);
     // topic-20: 文案改 '暂无用户插件'
     expect(container.textContent).toContain('暂无用户插件');
+  });
+  // 空态给下一步(VSCode 扩展视图空态引导去市场):「浏览插件市场」切到 core.marketplace 设置页签。
+  it('空态有「浏览插件市场」按钮 → 切到插件市场页签', () => {
+    installPluginsApi(vi.fn());
+    getMgr.mockReturnValue({ listAll: () => [] } satisfies FakeManager);
+    useSettingsStore.setState({ activeTabId: 'core.plugins' });
+    const { getByRole } = render(<PluginsTabContent />);
+    fireEvent.click(getByRole('button', { name: zh['plugins_tab.user.browse_marketplace'] }));
+    expect(useSettingsStore.getState().activeTabId).toBe('core.marketplace');
+  });
+
+  it('有用户插件时不显示「浏览插件市场」空态按钮', () => {
+    installPluginsApi(vi.fn());
+    getMgr.mockReturnValue({ listAll: () => [plugin({ id: 'p1' })] } satisfies FakeManager);
+    const { queryByRole } = render(<PluginsTabContent />);
+    expect(queryByRole('button', { name: zh['plugins_tab.user.browse_marketplace'] })).toBeNull();
+  });
+
+  // 用户真正要管理的是自己装的插件(VSCode 扩展视图「已安装」在最上):用户插件区排在贡献点统计 / 内置清单(自检信息)之前。
+  it('用户插件区排在贡献点统计与内置插件清单之前', () => {
+    installPluginsApi(vi.fn());
+    const { container } = render(<PluginsTabContent />);
+    const order = [...container.querySelectorAll('[data-plugins-section]')].map((el) => el.getAttribute('data-plugins-section'));
+    expect(order).toEqual(['user', 'contributions', 'builtin']);
   });
 });
 

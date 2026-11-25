@@ -31,6 +31,7 @@ import { registerEditorFocus } from './editor-focus-registry';
 import { markdownScrollTopOf, saveMarkdownScrollTop } from './editor-view-state-cache';
 import { rebindCodeMirrorRoots } from './codemirror-root';
 import { markdownCodeBlockTheme } from './code-editor-theme';
+import { codeMirrorPhrases } from './codemirror-phrases';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 
 interface MilkdownEditorProps {
@@ -236,6 +237,8 @@ function CrepeEditor({
         [CrepeFeature.CodeMirror]: {
           // 不传则 Crepe 默认 oneDark(亮色主题下仍深色);token 主题亮 / 暗通用,切主题不重挂。
           theme: markdownCodeBlockTheme,
+          // 代码块的 CodeMirror 同样带 basicSetup 的 ⌘F 查找面板:内建文案随界面语言(Provider 按 locale 重挂,创建时取当前语言)。
+          extensions: [codeMirrorPhrases()],
           renderPreview: renderMermaidPreview,
           copyText: t('panels.editor.codeBlock.copy'),
           searchPlaceholder: t('panels.editor.codeBlock.searchLanguage'),

@@ -37,6 +37,8 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 - query 输入 → applyFilter
 - tag 多选 → applyFilter
 - 选中后显「清除筛选」按钮 → clearTags
+- 过滤后无结果给下一步:无选中标签 →「没有与「{query}」匹配的插件」(不提并不存在的标签筛选)+「清除搜索」;有选中标签 →
+  「没有匹配的插件。换个搜索词或清除标签筛选」+「清除筛选」(有搜索词时另有「清除搜索」);清除后焦点回搜索框
 
 ### 卡片(MarketplaceCard 受 props 驱动)
 

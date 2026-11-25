@@ -205,7 +205,7 @@ describe('KeybindingsTabContent — 窄宽命令行', () => {
 describe('PluginsTabContent — 窄宽贡献点表格', () => {
   it('贡献点行可换行,示例列有最小宽度(放不下就换行,不被挤成 0 宽)', () => {
     const { container } = render(<PluginsTabContent />);
-    const section = container.querySelector('section')!;
+    const section = container.querySelector('[data-plugins-section="contributions"]')!;
     const row = section.querySelector('.rounded-md > div')!;
     expect(classesOf(row)).toContain('flex-wrap');
     const samples = row.lastElementChild!;
@@ -214,7 +214,7 @@ describe('PluginsTabContent — 窄宽贡献点表格', () => {
 
   it('内置插件 id 徽标可截断,不 shrink-0 撑开', () => {
     const { container } = render(<PluginsTabContent />);
-    const code = container.querySelector('code')!;
+    const code = container.querySelector('[data-plugins-section="builtin"] code')!;
     expect(classesOf(code)).toContain('truncate');
     expect(classesOf(code.closest('.wm-badge'))).not.toContain('shrink-0');
   });

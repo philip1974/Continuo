@@ -535,6 +535,10 @@
 
 - [`external-link-feedback.spec.tsx`](./editor-external-link-feedback/external-link-feedback.spec.tsx)
 
+## [编辑器查找面板随界面语言(对齐 VSCode 查找控件)](./editor-find-i18n/README.md)
+
+- [`editor-find-i18n.spec.tsx`](./editor-find-i18n/editor-find-i18n.spec.tsx)
+
 ## [打开文件后焦点进编辑器(VSCode 对齐)](./editor-focus-on-open/README.md)
 
 - [`editor-focus-registry.spec.ts`](./editor-focus-on-open/editor-focus-registry.spec.ts)

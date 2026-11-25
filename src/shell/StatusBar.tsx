@@ -2,7 +2,7 @@
 // 左:workspace 名 + sidebar 收起提示。
 // 右:active editor tab 文件名 + dirty + 行 / 词 / 字符。
 
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useRegistry } from '@/plugins/registries/useRegistry';
@@ -21,12 +21,12 @@ import { computeTextStats } from '@/lib/text-stats';
 import { coApp } from '@/plugins/co-app';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import type { StatusBarItemSpec } from '@/plugins/registries/StatusBarRegistry';
-import { getCachedClipboard } from '@/plugins/sandbox-sweep';
 import { useT, t as translate, translateCount } from '@/i18n';
 import { basenameForChrome } from '@/lib/path-label';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 import { createLatestGuard } from '@/lib/latest-wins';
+import { useCopyMcpConfig } from './use-copy-mcp-config';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
 const MCP_COPY_ICON = (
@@ -186,22 +186,6 @@ async function fetchGlobalAgentTerminalCount(): Promise<number | null> {
   }
 }
 
-async function handleCopyMcpConfig(): Promise<'ok' | 'unavailable' | 'fail'> {
-  // a11y(A115,A50 同族):整体 try/catch —— getStdioConfig() IPC reject 时若不捕获,
-  // onCopyMcp() 会 reject,而点击处 void onCopyMcp() 丢弃异常 → 无失败文本/无 live 播报。
-  // 任何 reject 都归 'fail',复用既有失败按钮文案 + role=status live region(A51)。
-  try {
-    const r = await coApi.mcp.getStdioConfig();
-    if (!r.ok) return 'fail';
-    if (!r.data.claudeAddCommand) return 'unavailable';
-    // PROD 下 sandboxSweep 已涂掉 navigator.clipboard,必须走 cached raw ref
-    await getCachedClipboard().writeText(r.data.claudeAddCommand);
-    return 'ok';
-  } catch {
-    return 'fail';
-  }
-}
-
 /**
  * 行/词/字符统计(打磨 R1 memo 化;性能 P7 单遍 computeTextStats)。
  * perf:内容每键都变,统计 O(N) 全文扫描对 useDeferredValue 后的内容计算 —— 高优先级渲染沿用旧值先提交,
@@ -287,41 +271,8 @@ export function StatusBar() {
     setRevokeConfirm((cur) => (cur ? { count } : cur));
   };
   const revokeConfirmCount = revokeConfirm?.count ?? null;
-  const [mcpCopyState, setMcpCopyState] = useState<
-    'idle' | 'ok' | 'unavailable' | 'fail'
-  >('idle');
-  // race(R9):复制反馈的清空 timer 须保存 + 递增 token 校验。裸 setTimeout 不清旧 timer:连续
-  // 复制时第一轮的 1500ms timeout 会在第二轮反馈刚显示后把状态清回 idle(SR/用户错过真实结果);
-  // 慢 handleCopyMcpConfig 先后返回也可能旧结果覆盖新结果。
-  const mcpCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [mcpCopyGuard] = useState(createLatestGuard);
-  useEffect(
-    () => () => {
-      if (mcpCopyTimerRef.current !== null) clearTimeout(mcpCopyTimerRef.current);
-    },
-    [],
-  );
-  const onCopyMcp = async () => {
-    const isLatest = mcpCopyGuard.begin();
-    const r = await handleCopyMcpConfig();
-    // 过期请求(其后已有更新的复制发起)→ 不更新状态,由最新请求负责。
-    if (!isLatest()) return;
-    if (mcpCopyTimerRef.current !== null) clearTimeout(mcpCopyTimerRef.current);
-    setMcpCopyState(r);
-    mcpCopyTimerRef.current = setTimeout(() => {
-      mcpCopyTimerRef.current = null;
-      // 仅当仍是本次反馈(无更新复制)才清回 idle —— 旧 timer 不得清掉新反馈。
-      if (isLatest()) setMcpCopyState('idle');
-    }, 1500);
-  };
-  const mcpLabel =
-    mcpCopyState === 'ok'
-      ? t('statusbar.mcp.copied')
-      : mcpCopyState === 'unavailable'
-        ? t('statusbar.mcp.unavailable')
-        : mcpCopyState === 'fail'
-          ? t('statusbar.mcp.copy_failed')
-          : t('statusbar.mcp.copy');
+  // 复制 MCP 配置:动作 + 结果反馈(R9 timer / 过期守卫、A115 失败兜底)与 Debug 面板空态共用。
+  const mcpCopy = useCopyMcpConfig();
   const mcpTooltip = t('statusbar.mcp.tooltip');
   const agentRevokeTooltip =
     agentSessionCount > 0
@@ -362,9 +313,9 @@ export function StatusBar() {
         {/* native button:24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏;颜色走语义 token。 */}
         <button
           type="button"
-          onClick={() => void onCopyMcp()}
+          onClick={() => void mcpCopy.copy()}
           title={mcpTooltip}
-          // a11y(A82,A74 同族):按钮可见文本 mcpLabel 随复制状态变化(idle/copied/failed),
+          // a11y(A82,A74 同族):按钮可见文本 mcpCopy.label 随复制状态变化(idle/copied/failed),
           // 动作语义只在 title → 稳定 aria-label 表「复制 MCP 配置」,结果由下方 live region(A51)
           // 播报,按钮名不随状态漂移成结果文本。
           aria-label={mcpTooltip}
@@ -372,12 +323,12 @@ export function StatusBar() {
         >
           {/* 状态栏容器 < xl 时只显示图标(文字隐藏;动作语义仍在 title / aria-label,复制结果由下方 live region 播报)。 */}
           {MCP_COPY_ICON}
-          <span className="@max-xl:hidden">{mcpLabel}</span>
+          <span className="@max-xl:hidden">{mcpCopy.label}</span>
         </button>
         {/* a11y(A51,A41 同族):复制结果只靠按钮文本短暂变化,焦点在按钮时不一定被播报 →
             视觉隐藏 role=status(polite)live region 镜像结果(仅非 idle),状态变化时播报。 */}
         <span style={SR_ONLY_STYLE} role="status">
-          {mcpCopyState !== 'idle' ? mcpLabel : ''}
+          {mcpCopy.announcement}
         </span>
         {showAgentRevoke && (
           // native button:同上(24px 状态栏行内文本按钮)。

@@ -16,6 +16,9 @@ import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { t } from '@/i18n';
 import { setPendingFocus } from './DockReconciler';
 import { errorCodeOf } from '../../../electron/shared/error-message';
+import { coApp } from '@/plugins/co-app';
+import { runRegisteredCommand } from '@/lib/run-contributed-action';
+import { OPEN_FOLDER_COMMAND } from '@/panels/Explorer/explorer-commands';
 
 /**
  * 新终端的 COLORFGBG(「前景;背景」ANSI 色号):让 P10k 等 prompt 框架启动时检测到当前主题亮度。读 <html> 的 .dark
@@ -37,7 +40,8 @@ export function terminalColorFgBg(): string {
  *     (复审 loop R10)只需 root:等 rootRestored 而非 hydrated,不被编辑器 tab 恢复读盘拖住。
  *  2. 读 workspace root 当 workspaceRoot;cwd 缺省也取它(Explorer 入口传所选目录)。
  *  3. coApi.terminal.create(originHint 'user')。
- *  4. 失败 → notify.error(区分 CWD_UNRESOLVED 与通用),返 null。
+ *  4. 失败 → 返 null。无工作区(未传 cwd 的 CWD_UNRESOLVED)不是错误:notify.info「请先打开一个文件夹」并直接调起
+ *     「打开文件夹」命令(notify 无操作按钮;Continuo 刻意不回退主目录);其余失败 notify.error。
  *  5. 成功 → setPendingFocus(让 SessionsSync/DockReconciler 聚焦新建 panel),返 id。
  *
  * UI 收尾(关闭菜单等)由调用方自理。
@@ -70,12 +74,17 @@ export async function createUserTerminal(
       // 退出闸(终审 P1):退出清理开始后 main 以 CANCELLED 拒绝新建;窗口已隐藏,静默即可(同下方 catch)。
       if (r.code === ERROR_CODES.TERMINAL_CREATE_CANCELLED) return null;
       // main 对「未传 cwd」与「cwd 不存在 / 不是目录」同返 CWD_UNRESOLVED:传了 cwd(workspace root 被外部删除 / 改名 /
-      // 外置盘断开,或 Explorer「在终端中打开」已删目录)时不能提示「请先打开 workspace」。
+      // 外置盘断开,或 Explorer「在终端中打开」已删目录)时不能提示「先打开文件夹」。
+      if (r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED && cwd === undefined) {
+        // 无工作区:引导而非报错(VSCode 心智:缺前置条件时直接给出下一步)—— info 提示 + 弹出「打开文件夹」对话框
+        //(与 ⌘O / 资源管理器「打开文件夹」同一命令)。BDD: src/__tests__/create-user-terminal/
+        notify.info(t('errors.terminal.cwd_unresolved'), { code: r.code });
+        runRegisteredCommand(coApp.commands, OPEN_FOLDER_COMMAND.id, t('commands.file.open_folder.title'));
+        return null;
+      }
       const msg =
         r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED
-          ? cwd === undefined
-            ? t('errors.terminal.cwd_unresolved')
-            : t('errors.terminal.cwd_missing', { path: cwd })
+          ? t('errors.terminal.cwd_missing', { path: cwd ?? '' })
           : t('errors.terminal.create_failed', { code: r.code ?? '?' });
       notify.error(msg, { code: r.code });
       return null;

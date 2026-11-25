@@ -66,6 +66,8 @@ vi.mock('@/plugins/co-app', () => ({
       get: vi.fn((type: string) => mocks.panels.find((p) => p.type === type)),
       subscribe: vi.fn(() => () => undefined),
     },
+    // 无工作区新建终端时经 live 命令注册表调起「打开文件夹」(本规范不关心其执行)。
+    commands: { get: vi.fn(() => undefined) },
   },
 }));
 
@@ -168,8 +170,10 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
 
     await terminalCommand().fn();
 
-    expect(mocks.notify.error).toHaveBeenCalledOnce();
-    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开工作区');
+    // 无工作区是引导而非错误:info 提示「请先打开一个文件夹」(见 create-user-terminal BDD)
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    expect(mocks.notify.info).toHaveBeenCalledOnce();
+    expect(mocks.notify.info.mock.calls[0]?.[0]).toContain('请先打开一个文件夹');
   });
 
   it('T20: TerminalPlugin Cmd+T shows generic terminal create error code', async () => {
@@ -201,8 +205,9 @@ describe('window-workspace-roots-map: renderer terminal create failure feedback'
     fireEvent.click(terminalItem);
 
     await waitFor(() => {
-      expect(mocks.notify.error).toHaveBeenCalledOnce();
+      expect(mocks.notify.info).toHaveBeenCalledOnce();
     });
-    expect(mocks.notify.error.mock.calls[0]?.[0]).toContain('请先打开工作区');
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    expect(mocks.notify.info.mock.calls[0]?.[0]).toContain('请先打开一个文件夹');
   });
 });

@@ -3,6 +3,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+const clipboard = vi.hoisted(() => ({ writeText: (async () => undefined) as (text: string) => Promise<void> }));
+vi.mock('../../plugins/sandbox-sweep', () => ({
+  getCachedFetch: () => globalThis.fetch,
+  getCachedClipboard: () => ({
+    readText: () => Promise.resolve(''),
+    writeText: (text: string) => clipboard.writeText(text),
+  }),
+  sandboxSweep: () => {},
+}));
+
 vi.mock('../../lib/co-api', () => ({
   coApi: {
     debug: {
@@ -25,7 +35,7 @@ import {
   resetDebugStoreForTest,
   useDebugStore,
 } from '../../stores/debug.store';
-import { setLocale } from '../../i18n';
+import { setLocale, t } from '../../i18n';
 import { coApi } from '../../lib/co-api';
 
 beforeEach(() => {
@@ -44,8 +54,39 @@ describe('topic51 Op5 · DebugPanel', () => {
 
     expect(screen.getByText('No debug session')).toBeTruthy();
     // 与 Output 等面板同一空态(design EmptyState):居中、无边框卡片。
-    expect(container.querySelector('.wm-empty-state')?.textContent).toBe('No debug session');
+    expect(container.querySelector('.wm-empty-state')?.textContent).toContain('No debug session');
     expect(container.querySelector('.wm-card')).toBeNull();
+  });
+
+  // 空态给出下一步:调试会话由 Agent 经 MCP 调试工具启动(Continuo 没有自己的启动配置)→ 说明 + 「复制 MCP 配置」
+  //(与状态栏同一动作与成功 / 失败反馈)。
+  it('empty state explains that agents start sessions via MCP and offers Copy MCP config', async () => {
+    const getStdioConfig = vi.fn(async () => ({ ok: true, data: { claudeAddCommand: 'claude mcp add continuo' } }));
+    const writeText = vi.fn(async () => undefined);
+    (coApi as unknown as { mcp: unknown }).mcp = { getStdioConfig };
+    clipboard.writeText = writeText;
+    render(<DebugPanel />);
+
+    expect(screen.getByText(t('panels.debug.empty_hint'))).toBeTruthy();
+    const btn = screen.getByRole('button', { name: t('statusbar.mcp.copy') });
+    fireEvent.click(btn);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('claude mcp add continuo'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(t('statusbar.mcp.copied')));
+    expect(btn.textContent).toBe(t('statusbar.mcp.copied'));
+  });
+
+  it('Copy MCP config failure reports the same failure text as the status bar', async () => {
+    (coApi as unknown as { mcp: unknown }).mcp = { getStdioConfig: vi.fn(async () => ({ ok: false, code: 'X' })) };
+    render(<DebugPanel />);
+    fireEvent.click(screen.getByRole('button', { name: t('statusbar.mcp.copy') }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe(t('statusbar.mcp.copy_failed')));
+  });
+
+  it.each(['zh', 'ko'] as const)('empty state hint is localized (%s)', (locale) => {
+    setLocale(locale);
+    render(<DebugPanel />);
+    expect(screen.getByText(t('panels.debug.empty_hint'))).toBeTruthy();
+    expect(t('panels.debug.empty_hint')).not.toMatch(/Debug sessions are started/);
   });
 
   it('renders stack, variables, and breakpoint sections with design components', async () => {

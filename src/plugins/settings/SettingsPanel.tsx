@@ -194,6 +194,8 @@ export function SettingsPanel({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTabId(tab.id)}
+                // 程序化切页签后据此把焦点交给目标页签(如插件页空态「浏览插件市场」)。
+                data-setting-tab={tab.id}
                 // a11y(A17,A12 同族):搜索模式下 nav 仅 pointer-events-none(鼠标禁用)但键盘
                 // 仍可 Tab/Enter 触发 → disabled 从 tab 顺序移除 + 阻断键盘激活,与视觉禁用一致。
                 disabled={inSearch}
