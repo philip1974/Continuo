@@ -120,6 +120,20 @@ test('popout 子窗位置 / 尺寸重启两次不漂移;恢复出来的子窗不
     w.setContentBounds(content);
     return w.getContentBounds();
   });
+  // 等应用记下子窗新位置再退出(同下方用例「等编辑器会话落盘」):弹出后 dockview 等子窗 load 才挂上组,主进程挪窗后子窗
+  // renderer 的 screenX/Y 也是异步更新 —— 立即退出存下的是弹出前 / 挪动前的状态(人不会在几十 ms 内弹出、挪窗再退出)。
+  await expect
+    .poll(
+      () => {
+        const persisted = JSON.parse(readFileSync(path.join(userData, 'explorer.json'), 'utf8')) as {
+          windows?: Array<{ windowSeq: number; layout?: { popoutGroups?: Array<{ position?: { left?: number; width?: number; height?: number } }> } }>;
+        };
+        const pos = persisted.windows?.find((w) => w.windowSeq === 0)?.layout?.popoutGroups?.[0]?.position;
+        return pos ? { left: pos.left, width: pos.width, height: pos.height } : null;
+      },
+      { timeout: 10_000 },
+    )
+    .toEqual({ left: popoutContent.x, width: popoutContent.width, height: popoutContent.height });
 
   const popoutState = () =>
     a.evaluate(({ BrowserWindow }) => {

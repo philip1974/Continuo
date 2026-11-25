@@ -18,7 +18,7 @@
 - 新窗口(⇧⌘N / 无保存值,VSCode `getNewWindowState`):默认 1280×800(不超过工作区),在鼠标所在显示器居中;再按
   VSCode `ensureNoOverlap` 错开 —— 只要有已开窗口与它同 x 或同 y,就各 +10px,直到不重合。
 
-## 2. popout 子窗口(`window-state.spec.ts`、`popout-restore-position.spec.ts`、`popout-restore-focus.spec.ts`)
+## 2. popout 子窗口(`window-state.spec.ts`、`popout-restore-position.spec.ts`、`popout-restore-focus.spec.ts`、`popout-restore-settle.spec.ts`)
 
 - dockview 6 的 `PopoutWindow.dimensions()` 把子窗序列化成**屏幕绝对坐标**(`screenX/screenY` + `innerWidth/innerHeight`),
   但恢复时 `addPopoutGroup` 又加了一次主窗原点(`window.screenX + box.left`)→ 每次重启往右下漂主窗原点的距离。
@@ -28,6 +28,10 @@
 - 恢复出来的 popout 以不抢焦点的方式显示(`showInactive`),主窗保持键盘焦点(VSCode 恢复辅助窗口后焦点仍在主窗)。
   主进程在 `layout:read` 返回布局时登记该窗口将恢复的 popout 数(限时),随后由该窗口打开的那么多个子窗走不抢焦点显示;
   用户主动弹出的子窗照常获焦。
+- popout 恢复在途时不写残缺布局(`popout-restore-settle.spec.ts`):dockview `fromJSON` 把 popout 组逐个延时开窗、等子窗
+  load 后才挂上,此前 `toJSON` 既不在 grid 也不在 `popoutGroups` 里。布局快照写盘(⌘Q / 关窗 flush、自动保存)先等恢复落定
+  —— 登记的 popout 全部挂上、开窗失败(dockview 已收回主窗)或限时 5s(远小于关窗 flush 回执上限)—— 再 `toJSON`;
+  否则启动后很快退出 / 关窗会把「没有 popout」的布局落盘,下次启动 popout 与其面板永久丢失。
 
 ## 3. 重启后焦点(`restore-focus.spec.ts`)
 

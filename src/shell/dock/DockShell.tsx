@@ -17,6 +17,7 @@ import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
 import { popoutPositionsRelativeToWindow } from './popout-restore-position';
+import { trackPopoutRestore, whenPopoutRestoreSettled } from './popout-restore-settle';
 import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
@@ -138,6 +139,8 @@ async function writeDockLayoutSnapshot(
   // 重启会丢);关窗 flush 路径传 false(默认)→ 沿用「可见日志 + 抛出由调用方 try/catch」语义。
   notifyOnFail = false,
 ): Promise<void> {
+  // popout 恢复在途时 toJSON 漏掉在途的 popout 组与其面板 → 先等落定(见 popout-restore-settle)。
+  await whenPopoutRestoreSettled(api);
   const version = layoutVersions.get(api) ?? 0;
   if (savedLayoutVersions.get(api) === version) return;
   try {
@@ -272,6 +275,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       if (apiRef.current !== event.api) return;
 
       let restored = false;
+      let popoutRestoreTracking: { dispose: () => void } | null = null;
       // sanitize 会剥离终端 panel(既有契约,非失败)并修补 grid 树。返回 null = 无可恢复的
       // 非终端布局(无持久化/畸形/超限)→ 静默走默认布局,不算失败、不报错。只有真正的 fromJSON 抛错
       // (布局结构损坏)才置 restoreFailed → 弹 toast。
@@ -280,6 +284,11 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         try {
           // popout 位置:dockview 存的是屏幕坐标、恢复时又加主窗原点 → 先换算成相对主窗原点(否则每次重启往右下漂)。
           event.api.fromJSON(popoutPositionsRelativeToWindow(sanitized, window.screenX, window.screenY));
+          // popout 组之后才异步开窗挂上;落定前的布局快照不完整,写盘须等(见 popout-restore-settle)。
+          popoutRestoreTracking = trackPopoutRestore(
+            event.api,
+            Array.isArray(sanitized.popoutGroups) ? sanitized.popoutGroups.length : 0,
+          );
           restored = true;
         } catch (err) {
           restoreFailed = true;
@@ -325,6 +334,7 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
 
       // race(R22):保存各 onDid* 返回的 disposable,卸载/重建时统一 dispose。
       dockDisposablesRef.current.push(
+        ...(popoutRestoreTracking ? [popoutRestoreTracking] : []),
         event.api.onDidLayoutChange(() => {
           layoutVersions.set(event.api, (layoutVersions.get(event.api) ?? 0) + 1);
           persist();

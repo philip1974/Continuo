@@ -14,6 +14,18 @@ describe('窗口状态恢复接线', () => {
     );
   });
 
+  it('DockShell:fromJSON 后登记 popout 恢复;布局快照写盘先等恢复落定再 toJSON', () => {
+    const src = read('src/shell/dock/DockShell.tsx');
+    const restore = src.slice(src.indexOf('event.api.fromJSON('));
+    expect(restore.slice(0, restore.indexOf('restored = true'))).toMatch(/trackPopoutRestore\(\s*event\.api,/);
+    expect(src).toMatch(/dockDisposablesRef\.current\.push\([^]*?popoutRestoreTracking/);
+    const writer = src.slice(src.indexOf('async function writeDockLayoutSnapshot('));
+    const settle = writer.indexOf('await whenPopoutRestoreSettled(api)');
+    expect(settle).toBeGreaterThan(-1);
+    expect(settle).toBeLessThan(writer.indexOf('layoutVersions.get(api)'));
+    expect(settle).toBeLessThan(writer.indexOf('api.toJSON()'));
+  });
+
   it('main-app:initExplorerPersistence 完成后调用 focusActiveEditorAfterRestore', () => {
     const src = read('src/main-app.ts');
     const call = src.slice(src.indexOf('void initExplorerPersistence('));
