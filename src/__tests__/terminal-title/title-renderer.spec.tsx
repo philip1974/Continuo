@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
-// BDD: terminal-title / 2 renderer 上报 OSC 标题;4 终端 tab 右键「重命名…」与重命名框
+// BDD: terminal-title / 2 renderer 不订阅 OSC 标题;4 终端 tab 右键「重命名…」与重命名框
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement } from 'react';
 
 const h = vi.hoisted(() => ({
-  titleHandler: undefined as ((title: string) => void) | undefined,
-  updateTitle: vi.fn().mockResolvedValue({ ok: true }),
+  onTitleChange: vi.fn(() => ({ dispose: vi.fn() })),
   rename: vi.fn().mockResolvedValue({ ok: true }),
 }));
 vi.mock('@xterm/xterm', () => ({
@@ -19,10 +18,7 @@ vi.mock('@xterm/xterm', () => ({
       open: vi.fn(),
       attachCustomKeyEventHandler: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
-      onTitleChange: vi.fn((cb: (title: string) => void) => {
-        h.titleHandler = cb;
-        return { dispose: vi.fn() };
-      }),
+      onTitleChange: h.onTitleChange,
       registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
       parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       focus: vi.fn(),
@@ -38,7 +34,6 @@ vi.mock('@/lib/co-api', () => ({
     terminal: {
       resize: vi.fn().mockResolvedValue({ ok: true }),
       updateCwd: vi.fn().mockResolvedValue({ ok: true }),
-      updateTitle: h.updateTitle,
       rename: h.rename,
       onData: vi.fn(() => vi.fn()),
       readHistory: vi.fn().mockResolvedValue({ ok: true, data: { data: '' } }),
@@ -49,7 +44,7 @@ vi.mock('@/lib/co-api', () => ({
 vi.mock('@/plugins/settings/values-store', () => ({ useSettingValue: <T,>(_k: string, fb: T) => fb }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 
-import { CWD_REPORT_DEBOUNCE_MS, useTerminal } from '@/panels/Terminal/useTerminal';
+import { useTerminal } from '@/panels/Terminal/useTerminal';
 import { SharedTab } from '@/shell/motion/SharedTab';
 import { TerminalRenameDialog } from '@/panels/Terminal/TerminalRenameDialog';
 import { useTerminalRenameRequest } from '@/panels/Terminal/terminal-rename-request';
@@ -77,20 +72,10 @@ function Host() {
   return createElement('div', { ref: containerRef });
 }
 
-describe('OSC 0 / 2 标题上报', () => {
-  it('xterm onTitleChange → 合并窗口内只发最新值、同值不重发、超长截到 LABEL_MAX', () => {
-    vi.useFakeTimers();
+describe('OSC 0 / 2 标题', () => {
+  it('不订阅 xterm onTitleChange(tab 标题不随程序 / 提示符设的标题变,VSCode 默认 ${process})', () => {
     render(createElement(Host));
-    h.titleHandler!('a');
-    h.titleHandler!('MYTITLE');
-    act(() => vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS));
-    expect(h.updateTitle.mock.calls).toEqual([['term-t', 'MYTITLE']]);
-    h.titleHandler!('MYTITLE');
-    act(() => vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS));
-    expect(h.updateTitle).toHaveBeenCalledTimes(1);
-    h.titleHandler!('x'.repeat(LABEL_MAX + 10));
-    act(() => vi.advanceTimersByTime(CWD_REPORT_DEBOUNCE_MS));
-    expect(h.updateTitle.mock.calls[1]![1]).toHaveLength(LABEL_MAX);
+    expect(h.onTitleChange).not.toHaveBeenCalled();
   });
 });
 

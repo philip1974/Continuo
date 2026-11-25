@@ -17,13 +17,13 @@ export const DOCK_RESTORE_DEFAULT_LAYOUT =
   /^(恢复默认布局|Restore default layout|기본 레이아웃 복원)$/;
 export const DOCK_CLOSE_EDITOR =
   /^(关闭 (编辑器|Editor)|Close (编辑器|Editor)|(편집기|Editor) 닫기)$/;
-export const DOCK_CLOSE_TERMINAL =
-  /^(关闭 (终端|Terminal)( \d+)?|Close (终端|Terminal)( \d+)?|(터미널|Terminal)( \d+)? 닫기)$/;
+// 终端 tab 标题 = 前台进程名(shell 空闲时即 shell 名,VSCode `${process}`);进程名未知时为默认名「终端 N」(terminal-title)。
+const TERMINAL_TITLE = String.raw`(?:(?:Terminal|终端|터미널) \d+|zsh|bash|fish|sh|dash|pwsh|powershell|cmd)`;
+export const DOCK_CLOSE_TERMINAL = new RegExp(`^(关闭 ${TERMINAL_TITLE}|Close ${TERMINAL_TITLE}|${TERMINAL_TITLE} 닫기)$`);
 export const DOCK_CLOSE_BUTTON = /^(关闭 .+|Close .+|.+ 닫기)$/;
 export const DOCK_POPOUT = /^(弹出到独立窗口|Pop out to standalone window|독립 창으로 팝아웃)$/;
 export const TERMINAL_INPUT = /^Terminal input$/;
-// 终端默认名按界面语言显示(「终端 N」/「터미널 N」)。
-export const TERMINAL_PANEL_TAB = /(Terminal|终端|터미널) \d+/;
+export const TERMINAL_PANEL_TAB = new RegExp(`^${TERMINAL_TITLE}(?= |$)`);
 // 关闭脏 tab 的 VSCode 式确认框「是否要保存对 X 的更改?」+ 保存 / 不保存 / 取消。
 export const EDITOR_SAVE_CHANGES_TITLE =
   /(是否要保存对「.+」的更改？|Do you want to save the changes you made to .+\?|.+의 변경 내용을 저장하시겠습니까\?)/;

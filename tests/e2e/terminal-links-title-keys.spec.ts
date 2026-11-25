@@ -1,5 +1,5 @@
 // 终端:文件链接 ⌘ + 单击打开并定位(src/__tests__/terminal-file-links)、mac 行内编辑键(terminal-vscode-parity 10)、
-// OSC 标题 / 前台程序名 / 重命名(src/__tests__/terminal-title)。走真实 PTY 与 shell。
+// 进程名标题 / 重命名(src/__tests__/terminal-title)。走真实 PTY 与 shell。
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
@@ -21,7 +21,7 @@ async function newTerminal(window: Page): Promise<Locator> {
   await expect(input).toBeVisible({ timeout: 15_000 });
   await input.focus();
   await expect.poll(() => terminalText(window), { timeout: 15_000 }).not.toBe('');
-  // 标题会随程序 / OSC 变,之后按面板 id 找 tab。
+  // 标题会随前台程序变,之后按面板 id 找 tab。
   return window.locator(`[role=tab][data-panel-id="${await byName.getAttribute('data-panel-id')}"]`);
 }
 
@@ -147,36 +147,43 @@ test('mac:⌘← / ⌘→ / ⌘⌫ / ⌥← 行内编辑', async ({ window }) =>
   expect(await terminalText(window)).not.toMatch(/^should-not-run$/m);
 });
 
-test('OSC 标题 / 前台程序名 / 重命名', async ({ window }) => {
+test('标题显示前台进程名(空闲时为 shell 名)而非 OSC 标题;重命名固定', async ({ window }) => {
   const tab = await newTerminal(window);
-  await run(window, "printf '\\033]0;MYTITLE\\007'");
-  await expect(tab).toHaveAccessibleName(/^MYTITLE/, { timeout: 5_000 });
+  // 空闲:shell 名(VSCode `${process}`),不是默认名「终端 N」
+  await expect(tab).toHaveAccessibleName(TERMINAL_PANEL_TAB);
+  await expect(tab).not.toHaveAccessibleName(/^(Terminal|终端|터미널) \d/);
+  const shellName = (await tab.getAttribute('aria-labelledby').then((id) => window.locator(`[id="${id}"]`).textContent()))!;
 
-  // 前台程序名优先于 OSC 标题,程序结束后回到 OSC 标题
+  // 程序经 OSC 0 设的标题不显示
+  await run(window, "printf '\\033]0;MYTITLE\\007'");
+  await window.waitForTimeout(800);
+  await expect(tab).toHaveAccessibleName(shellName);
+
+  // 运行程序时显示程序名,结束后回到 shell 名
   await run(window, 'sleep 2');
   await expect(tab).toHaveAccessibleName(/^sleep/, { timeout: 5_000 });
-  await expect(tab).toHaveAccessibleName(/^MYTITLE/, { timeout: 10_000 });
+  await expect(tab).toHaveAccessibleName(shellName, { timeout: 10_000 });
 
-  // 右键「重命名…」→ 输入 → 回车:固定标题,之后 OSC 不再覆盖
+  // 右键「重命名…」→ 输入 → 回车:固定标题,之后进程名变化不再覆盖
   await tab.click({ button: 'right' });
   await window.getByRole('menuitem', { name: /^(Rename…|重命名…|이름 바꾸기…)$/ }).click();
   const dialog = window.getByRole('dialog');
   const input = dialog.getByRole('textbox');
   await expect(input).toBeFocused();
-  await expect(input).toHaveValue('MYTITLE');
+  await expect(input).toHaveValue(shellName);
   await input.fill('my-build');
   await input.press('Enter');
   await expect(dialog).toHaveCount(0);
   await expect(tab).toHaveAccessibleName(/^my-build/);
   // 关闭后焦点回终端:直接键入命令
-  await run(window, "printf '\\033]0;OTHER\\007'");
+  await run(window, 'sleep 1');
   await window.waitForTimeout(500);
   await expect(tab).toHaveAccessibleName(/^my-build/);
 
-  // 重命名为空 → 回到自动标题(最新的 OSC 标题)
+  // 重命名为空 → 回到自动标题(进程名)
   await tab.click({ button: 'right' });
   await window.getByRole('menuitem', { name: /^(Rename…|重命名…|이름 바꾸기…)$/ }).click();
   await window.getByRole('dialog').getByRole('textbox').fill('');
   await window.getByRole('dialog').getByRole('textbox').press('Enter');
-  await expect(tab).toHaveAccessibleName(/^OTHER/, { timeout: 5_000 });
+  await expect(tab).toHaveAccessibleName(shellName, { timeout: 5_000 });
 });

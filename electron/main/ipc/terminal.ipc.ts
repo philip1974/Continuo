@@ -11,6 +11,7 @@ import {
 import { SESSION_UPDATE_CWD_CHANNEL, TERMINAL_CHANNELS } from '../../shared/terminal-channels';
 import { getDefaultShell, isAllowedShell } from '@continuo-terminal/server-node';
 import { shellFamilyForPath } from '../services/shell-args';
+import { processDisplayName } from '../../shared/shell-process-name';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
   TerminalCreateInputSchema,
@@ -111,7 +112,7 @@ export const updateCwdInputSchema = z
   })
   .strict();
 
-// 重命名(用户)/ OSC 标题(程序)。空串 = 清除。长度同会话名 LABEL_MAX(sessions_changed 广播携带)。
+// 重命名(用户)。空串 = 清除。长度同会话名 LABEL_MAX(sessions_changed 广播携带)。
 export const titleInputSchema = z
   .object({
     id: z.string().min(1).max(SESSION_ID_MAX),
@@ -228,6 +229,8 @@ export function makeCreateHandler(deps?: {
         ownerWindowId: win.id,
         // 跨平台:按真实 shell 路径标注引号族(renderer 拖拽文件据此引用,不再盲猜平台)。
         shellFamily: shellFamilyForPath(shell),
+        // tab 标题 `${process}`:登记即 shell 名(VSCode 初始标题 = shell 可执行文件名),首个快照不先闪「终端 N」。
+        processName: processDisplayName(shell),
         ...(input.agentLabel !== undefined ? { agentLabel: input.agentLabel } : {}),
         ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
         ...(opts?.controllerToken !== undefined
@@ -411,15 +414,6 @@ export function makeRenameHandler(deps?: { sessionStore?: typeof terminalSession
   };
 }
 
-/** 程序经 OSC 0 / 2 设的标题(renderer xterm onTitleChange 上报);空 → 清除。 */
-export function makeUpdateTitleHandler(deps?: { sessionStore?: typeof terminalSessions }) {
-  const sessionStore = deps?.sessionStore ?? terminalSessions;
-  return (input: z.infer<typeof titleInputSchema>, win: BrowserWindow): void => {
-    assertOwnedSession(sessionStore, input.id, win);
-    sessionStore.setTitleField(input.id, 'sequenceTitle', input.title || undefined);
-  };
-}
-
 /**
  * 终端本地文件链接:候选路径按该终端当前 cwd(OSC 7 跟踪,缺省为 spawn cwd)、再按本窗口工作区根解析,只回存在的普通文件
  *(见 terminal-link-resolver)。
@@ -544,7 +538,6 @@ export function registerTerminalIpc(): void {
   ownerScopedHandle(TERMINAL_CHANNELS.REMOVE, idOnlyInputSchema, removeHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RUNNING_PROCESS, idOnlyInputSchema, runningProcessHandler);
   ownerScopedHandle(TERMINAL_CHANNELS.RENAME, titleInputSchema, makeRenameHandler());
-  ownerScopedHandle(TERMINAL_CHANNELS.UPDATE_TITLE, titleInputSchema, makeUpdateTitleHandler());
   ownerScopedHandle(TERMINAL_CHANNELS.RESOLVE_LINKS, resolveLinksInputSchema, makeResolveLinksHandler());
   ownerScopedHandle(
     TERMINAL_CHANNELS.READ_HISTORY,

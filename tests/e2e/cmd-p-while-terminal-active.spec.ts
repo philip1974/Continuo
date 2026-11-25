@@ -2,8 +2,7 @@
 import { test, expect } from './fixtures/with-workspace';
 import { QUICK_OPEN_SEARCH } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
-
-const TERMINAL_TAB = /^(终端|Terminal|터미널)(\s|$)/;
+import { TERMINAL_PANEL_TAB as TERMINAL_TAB } from './helpers/editor';
 
 test('Terminal active + Cmd+P → Quick Open modal 显', async ({ window }) => {
   // 走真实 terminal.new command 创建 session-bound Terminal panel.

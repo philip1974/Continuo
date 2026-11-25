@@ -26,9 +26,9 @@ export function sessionIdFromPanel(panel: PanelLike): string | null {
 
 /**
  * 终端 panel 标题的单一规则(DockReconciler 建 / 改 panel 与 TerminalPanelView 自校正共用;此前各写
- * 一份)。基础名优先级(对齐 VSCode:重命名 TitleEventSource.Api 固定、默认模板 `${process}`、程序 OSC 标题 `${sequence}`):
- * 用户重命名 > 前台程序名(shell 以外,如 vim)> 程序 OSC 0 / 2 标题 > 未命名会话按当前语言「终端 N」> session 标题 >
- * `Terminal <id 前 6 位>`;agent 发起的会话加 ` (agent)` 后缀;进程已退出再加本地化「(已退出)」后缀。
+ * 一份)。基础名优先级(对齐 VSCode:重命名 TitleEventSource.Api 固定、默认模板 `${process}`;程序经 OSC 0 / 2 设的标题
+ * `${sequence}` 不在默认模板里,不显示):用户重命名 > 前台进程名(shell 空闲时即 shell 名,如 zsh;运行程序时如 vim)>
+ * 进程名未知时:未命名会话按当前语言「终端 N」> session 标题 > `Terminal <id 前 6 位>`;agent 发起的会话加 ` (agent)` 后缀;进程已退出再加本地化「(已退出)」后缀。
  */
 export function terminalPanelTitle(input: TerminalTitleInput): string {
   const base = terminalBaseTitle(input);
@@ -44,7 +44,6 @@ export interface TerminalTitleInput {
   readonly exited?: boolean;
   readonly userTitle?: string;
   readonly processName?: string;
-  readonly sequenceTitle?: string;
 }
 
 /** 不含 agent /「已退出」后缀的基础名(见 terminalPanelTitle;重命名框以它预填)。 */
@@ -52,7 +51,6 @@ export function terminalBaseTitle(input: TerminalTitleInput): string {
   if (input.userTitle) return input.userTitle;
   // 已退出:前台程序随之结束(main 也会清 processName,这里防快照先后)。
   if (input.processName && !input.exited) return input.processName;
-  if (input.sequenceTitle) return input.sequenceTitle;
   return input.defaultTitleIndex !== undefined
     ? t('panels.terminal.default_title', { n: input.defaultTitleIndex })
     : (input.sessionTitle ?? `Terminal ${(input.sessionId ?? '').slice(0, 6) || '?'}`);
@@ -68,7 +66,6 @@ export function terminalTitleInputOf(session: TerminalSessionSnapshot): Terminal
     exited: session.exitCode !== null,
     userTitle: session.userTitle,
     processName: session.processName,
-    sequenceTitle: session.sequenceTitle,
   };
 }
 

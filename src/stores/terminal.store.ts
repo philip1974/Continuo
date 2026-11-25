@@ -77,12 +77,11 @@ function isTerminalSessionShape(v: unknown): v is TerminalSession {
       (typeof obj.workspaceRoot === 'string' &&
         obj.workspaceRoot.length <= PATH_MAX)) &&
     isOptionalLabel(obj.userTitle) &&
-    isOptionalLabel(obj.processName) &&
-    isOptionalLabel(obj.sequenceTitle)
+    isOptionalLabel(obj.processName)
   );
 }
 
-/** 可选显示串(重命名 / 前台程序名 / OSC 标题):缺省,或长度 ≤ LABEL_MAX 的字符串。 */
+/** 可选显示串(重命名 / 前台进程名):缺省,或长度 ≤ LABEL_MAX 的字符串。 */
 function isOptionalLabel(v: unknown): boolean {
   return v === undefined || (typeof v === 'string' && v.length <= LABEL_MAX);
 }

@@ -1,4 +1,4 @@
-// BDD: terminal-title / 2-5 main 侧:会话动态标题字段、重命名 / OSC 标题 IPC、输出后节流刷新前台进程名、renderer ingress
+// BDD: terminal-title / 2-5 main 侧:会话动态标题字段、重命名 IPC(无 OSC 标题通道)、登记即 shell 名 + 输出后节流刷新前台进程名、renderer ingress
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeWindow } from '../migration-step1-pty-handover/fixtures';
 
@@ -26,12 +26,10 @@ vi.mock('../../../electron/main/services/pty-lang', () => ({ withPtyLangEnv: vi.
 
 import * as terminalService from '../../../electron/main/services/terminal.service';
 import * as terminalSessions from '../../../electron/main/services/terminal-sessions.service';
-import {
-  makeRenameHandler,
-  makeUpdateTitleHandler,
-  titleInputSchema,
-} from '../../../electron/main/ipc/terminal.ipc';
+import { getDefaultShell } from '@continuo-terminal/server-node';
+import { makeCreateHandler, makeRenameHandler, titleInputSchema } from '../../../electron/main/ipc/terminal.ipc';
 import { TERMINAL_CHANNELS } from '../../../electron/shared/terminal-channels';
+import { processDisplayName } from '../../../electron/shared/shell-process-name';
 import { LABEL_MAX } from '../../../electron/shared/terminal-create';
 import { filterByOwnerWindow } from '@/stores/terminal.store';
 
@@ -53,12 +51,12 @@ describe('会话动态标题字段', () => {
     terminalSessions.add({ id: 't', title: 'Terminal 1', defaultTitleIndex: 1, cwd: '/w', originHint: 'user', ownerWindowId: 1 });
     const seen = vi.fn();
     terminalSessions.subscribe(seen);
-    terminalSessions.setTitleField('t', 'sequenceTitle', 'A');
-    terminalSessions.setTitleField('t', 'sequenceTitle', 'A');
+    terminalSessions.setTitleField('t', 'processName', 'A');
+    terminalSessions.setTitleField('t', 'processName', 'A');
     expect(seen).toHaveBeenCalledTimes(1);
-    expect(get('t').sequenceTitle).toBe('A');
-    terminalSessions.setTitleField('t', 'sequenceTitle', '');
-    expect('sequenceTitle' in get('t')).toBe(false);
+    expect(get('t').processName).toBe('A');
+    terminalSessions.setTitleField('t', 'processName', '');
+    expect('processName' in get('t')).toBe(false);
     terminalSessions.setTitleField('t', 'userTitle', 'U');
     terminalSessions.setTitleField('t', 'userTitle', undefined);
     expect('userTitle' in get('t')).toBe(false);
@@ -68,13 +66,13 @@ describe('会话动态标题字段', () => {
   });
 });
 
-describe('重命名 / OSC 标题 IPC', () => {
+describe('重命名 IPC;没有 OSC 标题通道', () => {
   beforeEach(() => {
     terminalSessions.add({ id: 't', title: 'Terminal 1', cwd: '/w', originHint: 'user', ownerWindowId: 1 });
   });
-  it('通道名在 terminal: 前缀族内', () => {
+  it('通道名在 terminal: 前缀族内;不再有 terminal:update_title', () => {
     expect(TERMINAL_CHANNELS.RENAME).toBe('terminal:rename');
-    expect(TERMINAL_CHANNELS.UPDATE_TITLE).toBe('terminal:update_title');
+    expect(Object.values(TERMINAL_CHANNELS)).not.toContain('terminal:update_title');
   });
   it('重命名:去首尾空白后固定;留空(含全空白)清除', () => {
     const rename = makeRenameHandler();
@@ -83,19 +81,38 @@ describe('重命名 / OSC 标题 IPC', () => {
     rename({ id: 't', title: '   ' }, makeWindow(1));
     expect(get('t').userTitle).toBeUndefined();
   });
-  it('OSC 标题原样存(空 → 清除)', () => {
-    const update = makeUpdateTitleHandler();
-    update({ id: 't', title: ' MYTITLE ' }, makeWindow(1));
-    expect(get('t').sequenceTitle).toBe(' MYTITLE ');
-    update({ id: 't', title: '' }, makeWindow(1));
-    expect(get('t').sequenceTitle).toBeUndefined();
-  });
   it('只允许本窗口的会话;标题长度封顶 LABEL_MAX', () => {
     expect(() => makeRenameHandler()({ id: 't', title: 'x' }, makeWindow(2))).toThrow(/not found/);
-    expect(() => makeUpdateTitleHandler()({ id: 't', title: 'x' }, makeWindow(2))).toThrow(/not found/);
     expect(get('t').userTitle).toBeUndefined();
     expect(titleInputSchema.safeParse({ id: 't', title: 'x'.repeat(LABEL_MAX) }).success).toBe(true);
     expect(titleInputSchema.safeParse({ id: 't', title: 'x'.repeat(LABEL_MAX + 1) }).success).toBe(false);
+  });
+});
+
+describe('进程显示名规整', () => {
+  it('basename,去登录 shell 的「-」前缀与 .exe 后缀,保留大小写;截到 LABEL_MAX', () => {
+    expect(processDisplayName('/bin/zsh')).toBe('zsh');
+    expect(processDisplayName('-zsh')).toBe('zsh');
+    expect(processDisplayName('C:\\Program Files\\PowerShell\\7\\pwsh.exe')).toBe('pwsh');
+    expect(processDisplayName('PowerShell.EXE')).toBe('PowerShell');
+    expect(processDisplayName('vim')).toBe('vim');
+    expect(processDisplayName('/x/' + 'n'.repeat(LABEL_MAX + 5))).toHaveLength(LABEL_MAX);
+  });
+});
+
+describe('登记即 shell 名', () => {
+  it('创建会话:首个快照就带 shell 显示名(不先闪「终端 N」)', async () => {
+    const seen: Array<string | undefined> = [];
+    terminalSessions.subscribe((snap) => seen.push(snap[0]?.processName));
+    const handler = makeCreateHandler({
+      service: { createTerminal: vi.fn() } as never,
+      sessionStore: terminalSessions,
+      resolveCwd: () => '/tmp',
+      generateId: () => 'c1',
+    });
+    await handler({}, { id: 3, isDestroyed: () => false } as never);
+    expect(get('c1').processName).toBe(processDisplayName(getDefaultShell()));
+    expect(seen[0]).toBe(processDisplayName(getDefaultShell()));
   });
 });
 
@@ -108,23 +125,37 @@ describe('输出后节流刷新前台进程名', () => {
   }
   const emit = (chunk: string) => sm.options?.onData?.('a', chunk);
 
-  it('输出后 PROCESS_TITLE_REFRESH_MS 读前台进程名;shell 本身 → 无;程序结束 → 清除', async () => {
-    await open('zsh');
+  it('输出后 PROCESS_TITLE_REFRESH_MS 读前台进程名;shell 本身 → shell 名;程序结束 → 回到 shell 名', async () => {
+    await open('-zsh');
     emit('$ ');
     vi.advanceTimersByTime(5 + terminalService.PROCESS_TITLE_REFRESH_MS);
-    expect(get('a').processName).toBeUndefined();
+    expect(get('a').processName).toBe('zsh');
 
     sm.sessions.get('a')!.pty.process = 'vim';
     emit('\r\n');
     vi.advanceTimersByTime(5);
-    expect(get('a').processName).toBeUndefined(); // 尚未到刷新时刻
+    expect(get('a').processName).toBe('zsh'); // 尚未到刷新时刻
     vi.advanceTimersByTime(terminalService.PROCESS_TITLE_REFRESH_MS);
     expect(get('a').processName).toBe('vim');
 
     sm.sessions.get('a')!.pty.process = 'zsh';
     emit('$ ');
     vi.advanceTimersByTime(5 + terminalService.PROCESS_TITLE_REFRESH_MS);
-    expect(get('a').processName).toBeUndefined();
+    expect(get('a').processName).toBe('zsh');
+  });
+
+  it('读不到前台进程名(pty 已关闭等)→ 保留 shell 名', async () => {
+    await open('vim');
+    sm.sessions.set('a', {
+      pty: {
+        get process(): string {
+          throw new Error('EBADF');
+        },
+      },
+    });
+    emit('x');
+    vi.advanceTimersByTime(5 + terminalService.PROCESS_TITLE_REFRESH_MS);
+    expect(get('a').processName).toBe('zsh');
   });
 
   it('持续输出时节流(每个刷新窗口至多读一次),空闲不留定时器', async () => {
@@ -172,8 +203,8 @@ describe('renderer ingress 校验动态标题字段', () => {
     ...extra,
   });
   it('≤ LABEL_MAX 的字符串放行,超长 / 非字符串丢弃', () => {
-    expect(filterByOwnerWindow([snap({ userTitle: 'u', processName: 'vim', sequenceTitle: 's' })], 1)).toHaveLength(1);
-    expect(filterByOwnerWindow([snap({ sequenceTitle: 'x'.repeat(LABEL_MAX + 1) })], 1)).toHaveLength(0);
+    expect(filterByOwnerWindow([snap({ userTitle: 'u', processName: 'vim' })], 1)).toHaveLength(1);
+    expect(filterByOwnerWindow([snap({ processName: 'x'.repeat(LABEL_MAX + 1) })], 1)).toHaveLength(0);
     expect(filterByOwnerWindow([snap({ processName: 42 })], 1)).toHaveLength(0);
     expect(filterByOwnerWindow([snap({ userTitle: null })], 1)).toHaveLength(0);
   });

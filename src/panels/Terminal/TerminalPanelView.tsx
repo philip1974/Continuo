@@ -50,7 +50,6 @@ export function TerminalPanelView(
     sessionExited,
     userTitle,
     processName,
-    sequenceTitle,
   } = useTerminalStore(
     useShallow((s) => {
       const found = getIndexedTerminalSessionById(s.sessions, sessionId);
@@ -62,7 +61,6 @@ export function TerminalPanelView(
         sessionExited: found !== undefined && found.exitCode !== null,
         userTitle: found?.userTitle,
         processName: found?.processName,
-        sequenceTitle: found?.sequenceTitle,
       };
     }),
   );
@@ -75,7 +73,6 @@ export function TerminalPanelView(
     exited: sessionExited,
     userTitle,
     processName,
-    sequenceTitle,
   });
 
   useEffect(() => {

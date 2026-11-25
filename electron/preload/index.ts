@@ -305,9 +305,6 @@ const api = {
     /** tab 右键「重命名…」:非空固定标题;空串清除,回到自动标题。 */
     rename: (id: string, title: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.RENAME, { id, title }),
-    /** 程序经 OSC 0 / 2 设的标题(xterm onTitleChange);空串清除。 */
-    updateTitle: (id: string, title: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(TERMINAL_CHANNELS.UPDATE_TITLE, { id, title }),
     /** 终端本地文件链接:每个候选 → 存在的普通文件的绝对路径,否则 null(按终端 cwd / 工作区根解析)。 */
     resolveLinks: (id: string, paths: readonly string[]): Promise<IpcResult<(string | null)[]>> =>
       ipcRenderer.invoke(TERMINAL_CHANNELS.RESOLVE_LINKS, { id, paths }),

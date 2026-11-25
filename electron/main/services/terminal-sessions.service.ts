@@ -63,6 +63,8 @@ export interface AddSessionInput {
   readonly shellFamily?: ShellFamily;
   /** 默认名序号(见 TerminalSessionSnapshot.defaultTitleIndex). */
   readonly defaultTitleIndex?: number;
+  /** 初始前台进程显示名(= spawn 的 shell 名,见 TerminalSessionSnapshot.processName). */
+  readonly processName?: string;
   /** 安全 S3:创建该会话的 MCP 调用方身份(见 MainTerminalSession.controllerToken). */
   readonly controllerToken?: string;
 }
@@ -167,6 +169,7 @@ export function add(input: AddSessionInput): void {
     ownerWindowId: input.ownerWindowId,
     ...(input.workspaceRoot !== undefined ? { workspaceRoot: input.workspaceRoot } : {}),
     ...(input.shellFamily !== undefined ? { shellFamily: input.shellFamily } : {}),
+    ...(input.processName ? { processName: input.processName } : {}),
     ...(input.controllerToken !== undefined
       ? { controllerToken: input.controllerToken }
       : {}),
@@ -232,8 +235,8 @@ export function updateCwd(id: string, cwd: string): void {
   notify();
 }
 
-/** 动态标题字段(见 TerminalSessionSnapshot.userTitle / processName / sequenceTitle)。 */
-export type TerminalTitleField = 'userTitle' | 'processName' | 'sequenceTitle';
+/** 动态标题字段(见 TerminalSessionSnapshot.userTitle / processName)。 */
+export type TerminalTitleField = 'userTitle' | 'processName';
 
 /** 设置 / 清除(undefined 或空串)会话的某个动态标题字段;值未变不广播。 */
 export function setTitleField(id: string, field: TerminalTitleField, value: string | undefined): void {

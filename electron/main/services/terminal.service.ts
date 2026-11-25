@@ -22,7 +22,7 @@ import { ERROR_CODES } from '../../shared/error-codes';
 import { codedError } from '../../shared/error-message';
 import { mergeSpawnEnv } from '../lib/child-spawn-hardening';
 import { CONTINUO_HOOK_EVENTS_DIR_ENV } from '../lib/continuo-env-keys';
-import { isShellProcessName } from '../../shared/shell-process-name';
+import { isShellProcessName, processDisplayName } from '../../shared/shell-process-name';
 
 // ── 常量(节流参数,沿用 Mind 决策 #5)──────────────────────────
 const OVERFLOW_THRESHOLD_BYTES = 2 * 1024 * 1024; // 2 MB/s 触发 overflow(截断 + 100ms 合批)
@@ -62,7 +62,8 @@ function scheduleProcessTitleRefresh(id: string, inst: Instance): void {
   inst.processTitleTimer = setTimeout(() => {
     inst.processTitleTimer = null;
     if (instances.get(id) !== inst) return;
-    terminalSessions.setTitleField(id, 'processName', runningChildProcess(id) ?? undefined);
+    // tab 标题 `${process}`:前台进程名,shell 空闲时即 shell 名;读不到(pty 已关闭等)保留 shell 名。
+    terminalSessions.setTitleField(id, 'processName', processDisplayName(foregroundProcess(id) ?? inst.shell));
   }, PROCESS_TITLE_REFRESH_MS);
 }
 
@@ -608,6 +609,13 @@ export function has(id: string): boolean {
 export function runningChildProcess(id: string): string | null {
   const inst = instances.get(id);
   if (!inst) return null;
+  const name = foregroundProcess(id);
+  if (name === null) return null;
+  return isShellProcessName(name, inst.shell) ? null : name;
+}
+
+/** node-pty 的前台进程名(含 shell 本身);取不到 → null。 */
+function foregroundProcess(id: string): string | null {
   const internals = getSessionManager() as unknown as {
     readonly sessions?: ReadonlyMap<string, { readonly pty?: { readonly process?: unknown } }>;
   };
@@ -617,8 +625,7 @@ export function runningChildProcess(id: string): string | null {
   } catch {
     return null; // pty fd 已关闭等
   }
-  if (typeof name !== 'string' || name === '') return null;
-  return isShellProcessName(name, inst.shell) ? null : name;
+  return typeof name === 'string' && name !== '' ? name : null;
 }
 
 // race(R4):必须 await sendInput 并把真实结果上抛。此前 fire-and-forget 恒返 true → IPC 恒

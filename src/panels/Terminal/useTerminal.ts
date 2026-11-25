@@ -17,7 +17,6 @@ import { coApi } from '@/lib/co-api';
 import { basename, isWindowsRuntime } from '@/lib/path-cross';
 import { coApp } from '@/plugins/co-app';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
-import { LABEL_MAX } from '../../../electron/shared/terminal-create';
 import { createTerminalFileLinkProvider } from './terminal-file-links';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
@@ -370,7 +369,7 @@ export function terminalFileLinkHoverHint(platform: Platform = detectPlatform())
 }
 
 /**
- * 终端状态上报 main 的尾随合并 + 去重(OSC 7 cwd / OSC 0·2 标题共用,见 CWD_REPORT_DEBOUNCE_MS):窗口内只发最新值,
+ * 终端状态上报 main 的尾随合并 + 去重(OSC 7 cwd,见 CWD_REPORT_DEBOUNCE_MS):窗口内只发最新值,
  * 与上次已发送值相同不发;发送失败(ok:false / reject)复位去重基线(仅当基线仍是本值),同值之后可重发。
  */
 function createLatestValueReporter(
@@ -658,12 +657,6 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       // 测试桩常不带 system → 可选链。
       { acceptedHosts: osc7AcceptedHosts(coApi.system?.hostname) },
     );
-    // 程序经 OSC 0 / 2 设的标题(printf '\e]0;T\a'、vim、oh-my-zsh 提示符)→ main(sequenceTitle,tab 标题见
-    // terminalPanelTitle)。同 cwd 合并去重:历史回放会把每个标题重放一遍。
-    const reportTitle = createLatestValueReporter((title) =>
-      coApi.terminal.updateTitle(termId, title.slice(0, LABEL_MAX)),
-    );
-    const titleDisposable = term.onTitleChange(reportTitle);
     // 本地文件链接(VSCode TerminalLocalLinkDetector):存在的文件路径 + 行列号,修饰键单击在编辑器打开并定位。
     const fileLinksDisposable = term.registerLinkProvider(
       createTerminalFileLinkProvider(term, {
@@ -879,8 +872,6 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         disposePasteSanitizer();
         osc7Disposable.dispose();
         reportCwd.cancel(); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
-        titleDisposable.dispose();
-        reportTitle.cancel();
         fileLinksDisposable.dispose();
         searchResultsDisposable.dispose();
         ro.disconnect();

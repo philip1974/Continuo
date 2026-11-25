@@ -1,5 +1,5 @@
 // 终端重命名框(VSCode 终端 tab 右键「重命名…」/ workbench.action.terminal.rename):预填当前标题,回车确定、Esc 取消;
-// 非空 → 固定为用户标题(之后不再被 OSC 标题 / 进程名覆盖),留空 → 清除,回到自动标题。BDD: src/__tests__/terminal-title/
+// 非空 → 固定为用户标题(之后不再被进程名覆盖),留空 → 清除,回到自动标题。BDD: src/__tests__/terminal-title/
 import { useId, useState, type FormEvent } from 'react';
 import { Button, Input, Modal } from '@/design';
 import { useT } from '@/i18n';
