@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TerminalSearchBar } from '@/panels/Terminal/TerminalSearchBar';
 import type { SearchApi } from '@/panels/Terminal/useTerminal';
 import { MAX_SEARCH_QUERY_LEN } from '@/lib/search-query';
+import { FindHistory } from '@/panels/Editor/find-widget-model';
 
 vi.mock('@/panels/Terminal/useTerminal', async () => {
   const actual =
@@ -62,7 +63,7 @@ describe('TerminalSearchBar UI', () => {
       'utf8',
     );
 
-    expect(src).toContain('const placeholderLabel = t(');
+    expect(src).toContain('const placeholderLabel = label ?? t(');
     expect(src).toContain('const regexLabel = t(');
     expect(src).toContain('const closeLabel = t(');
     expect(src).toContain('placeholder={placeholderLabel}');
@@ -391,5 +392,65 @@ describe('S15 窄终端面板:搜索条自身收窄,输入框始终可见', () =
   it('容器查询以终端面板宽度为准:TerminalPanelView 根节点是 @container/terminal', () => {
     const src = readFileSync(join(process.cwd(), 'src/panels/Terminal/TerminalPanelView.tsx'), 'utf8');
     expect(src).toContain('className="@container/terminal relative h-full w-full bg-canvas"');
+  });
+});
+
+// 与编辑器查找对齐(Markdown 编辑 / 预览复用本查找条;对齐 VSCode findWidget):非法正则提示、可选标签文案与查找历史、
+// 恢复显示时不抢焦点。终端不传 label / history 时行为不变。
+describe('S16 非法正则 / 标签 / 历史 / 恢复显示', () => {
+  it('正则模式下查找词不是合法正则:计数区显示「正则表达式无效」,输入框 aria-invalid,title 带 RegExp 错误信息', () => {
+    const { getByRole, getByLabelText, rerender } = render(
+      <TerminalSearchBar
+        searchApi={makeApi({ term: 'foo(', options: { regex: true, caseSensitive: false, wholeWord: false } })}
+        onClose={vi.fn()}
+      />,
+    );
+    const input = getByLabelText('panels.terminal.search.placeholder');
+    expect(getByRole('status').textContent).toBe('editor.find.invalid_regex');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.title).toMatch(/Invalid regular expression.*foo\(/);
+    expect(getByRole('status').title).toBe(input.title);
+    // 非正则模式下同一字面量合法
+    rerender(<TerminalSearchBar searchApi={makeApi({ term: 'foo(' })} onClose={vi.fn()} />);
+    expect(getByRole('status').textContent).toBe('panels.terminal.search.no_match');
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+    expect(input.hasAttribute('title')).toBe(false);
+  });
+
+  it('label:替换输入框的可访问名与占位文案(编辑器场景传「查找」)', () => {
+    const { getByLabelText } = render(<TerminalSearchBar searchApi={makeApi()} onClose={vi.fn()} label="Find X" />);
+    expect(getByLabelText('Find X').getAttribute('placeholder')).toBe('Find X');
+  });
+
+  it('history:回车记入;↑ 翻到更早、↓ 回到更新(VSCode 查找框历史);不传 history 时方向键不改词', () => {
+    const history = new FindHistory();
+    history.add('alpha');
+    const api = makeApi({ term: 'beta' });
+    const { getByLabelText, unmount } = render(<TerminalSearchBar searchApi={api} onClose={vi.fn()} history={history} />);
+    const input = getByLabelText('panels.terminal.search.placeholder');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(history.entries()).toEqual(['alpha', 'beta']);
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(api.setTerm).toHaveBeenLastCalledWith('alpha');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(api.setTerm).toHaveBeenLastCalledWith('beta');
+    unmount();
+
+    const plain = makeApi({ term: 'x' });
+    const { getByLabelText: get2 } = render(<TerminalSearchBar searchApi={plain} onClose={vi.fn()} />);
+    fireEvent.keyDown(get2('panels.terminal.search.placeholder'), { key: 'ArrowUp' });
+    expect(plain.setTerm).not.toHaveBeenCalled();
+  });
+
+  it('history:查找条卸载(关闭)时当前词也记入', () => {
+    const history = new FindHistory();
+    const { unmount } = render(<TerminalSearchBar searchApi={makeApi({ term: 'gamma' })} onClose={vi.fn()} history={history} />);
+    unmount();
+    expect(history.entries()).toEqual(['gamma']);
+  });
+
+  it('focusRequest=0(恢复显示,非用户打开):挂载时不抢焦点', () => {
+    const { getByLabelText } = render(<TerminalSearchBar searchApi={makeApi({ focusRequest: 0 })} onClose={vi.fn()} />);
+    expect(document.activeElement).not.toBe(getByLabelText('panels.terminal.search.placeholder'));
   });
 });

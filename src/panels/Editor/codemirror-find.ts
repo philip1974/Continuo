@@ -11,6 +11,7 @@ import { Prec, type EditorState, type Extension } from '@codemirror/state';
 import { ViewPlugin, keymap, type Command, type EditorView, type ViewUpdate } from '@codemirror/view';
 import { SearchQuery, getSearchQuery, openSearchPanel, search, searchPanelOpen, setSearchQuery } from '@codemirror/search';
 import { isImeComposing } from '@/design/ime';
+import { regexSyntaxError } from '@/lib/search-query';
 import { editorFindHistory, FIND_MATCH_LIMIT, formatFindCount, type FindCountState } from './find-widget-model';
 
 type ToggleField = 'caseSensitive' | 'wholeWord' | 'regexp';
@@ -109,11 +110,15 @@ class FindWidget {
       ({ ranges: this.ranges, capped: this.capped } = collectMatches(state, q));
     }
     const sel = state.selection.main;
+    // 非法正则:错误信息(同 @codemirror/search 编译用的 flags `gmu`)放进查找框与计数区的 title —— 悬停可见,
+    // 也是查找框的可访问描述(VSCode 查找框弹出正则错误信息)
+    const error = q.regexp && q.search && !q.valid ? regexSyntaxError(q.search, 'gmu') : null;
     const count: FindCountState = {
       empty: q.search === '',
       total: this.ranges.length / 2,
       current: currentIndex(this.ranges, sel.from, sel.to),
       capped: this.capped,
+      invalid: error !== null,
     };
     const text = formatFindCount(count);
     // 文案不变不写 DOM:role=status 只在变化时播报
@@ -122,6 +127,10 @@ class FindWidget {
     this.count?.toggleAttribute('data-no-results', noResults);
     if (noResults) this.input?.setAttribute('aria-invalid', 'true');
     else this.input?.removeAttribute('aria-invalid');
+    for (const el of [this.input, this.count]) {
+      if (error) el?.setAttribute('title', error);
+      else el?.removeAttribute('title');
+    }
   }
 
   private attach(panel: HTMLElement): void {

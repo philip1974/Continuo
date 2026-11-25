@@ -29,6 +29,7 @@
 - 图片居中,`max-width/max-height: 100%` + `object-fit: contain` 缩放适应;图片背后棋盘格(语义 token 色,亮暗主题都可辨);
   右下角显示「宽 × 高 · 文件大小」(VSCode 在状态栏;Continuo 状态栏对图片 tab 不显示行 / 词 / 字符统计)。
 - **缩放**(`image-zoom.spec.tsx`):初始适应;单击视图放大一档、⌥单击缩小一档(从「适应」起按适应时的实际显示比例算);
+  焦点不在视图里时第一下点击只激活(聚焦视图)不缩放(VSCode imagePreview:mousedown 时 `consumeClick = !isActive`);
   ⌘ / ⌃ 滚轮与捏合(Chromium 以 ctrlKey wheel 上报)连续缩放,不带修饰键的滚轮照常滚动;缩放以指针(键盘为视图中心)下的
   图片点为中心;焦点在视图上时 `+` / `=` 放大、`-` 缩小、`0` 或 ⌘0(Ctrl+0)回适应。比例超过 100% `image-rendering: pixelated`;
   放大后图片按 `宽 × 比例` 排版,容器滚动(居中用 `margin:auto`,左 / 上侧也能滚到)。光标 zoom-in,按住 ⌥ 时 zoom-out。

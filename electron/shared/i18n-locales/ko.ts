@@ -265,6 +265,7 @@ export const ko: Record<TranslationKey, string> = {
   'editor.find.match_total_one': '{count}개 일치',
   'editor.find.match_total_other': '{count}개 일치',
   'editor.find.no_results': '결과 없음',
+  'editor.find.invalid_regex': '잘못된 정규식',
   'editor.autosave_failed': '자동 저장 실패',
   'editor.autosave_readonly_detail': '{reason}. {hotkey}로 덮어쓸지 선택할 수 있습니다.',
   'editor.save_failed': '저장 실패',
@@ -770,4 +771,5 @@ export const ko: Record<TranslationKey, string> = {
   'quick_open.scan_failed': '워크스페이스 파일 스캔 실패',
   'quick_open.retry': '다시 시도',
   'quick_open.open_failed': '열기 실패',
+  'quick_open.recently_opened': '최근에 연 항목',
 };

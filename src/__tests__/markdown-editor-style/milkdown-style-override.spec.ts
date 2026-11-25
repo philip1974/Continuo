@@ -63,4 +63,43 @@ describe('Milkdown 样式覆写', () => {
     expect(label).toMatch(/height:\s*calc\(1\.5em \+ 8px\)/);
     expect(label).toMatch(/line-height:\s*1\.5(;|\s|$)/);
   });
+
+  // WCAG 2.4.7:Crepe 代码块工具条(语言按钮 / 复制)只在 :hover 时 opacity 1,Tab 到时看不见也没有焦点轮廓。
+  describe('代码块工具条键盘可见(WCAG 2.4.7)', () => {
+    /** 选择器列表含 `selector` 的所有规则块内容。 */
+    function blocksWith(selector: string): string {
+      const out: string[] = [];
+      const re = /([^{}]+)\{([^{}]*)\}/g;
+      for (let m = re.exec(css); m; m = re.exec(css)) {
+        if (m[1]!.split(',').map((x) => x.trim()).includes(selector)) out.push(m[2]!);
+      }
+      return out.join('\n');
+    }
+
+    it('只读预览不显示语言按钮(只读下不能改语言,Tab 不再停在看不见的按钮上)', () => {
+      expect(
+        blocksWith(".milkdown .ProseMirror[contenteditable='false'] .milkdown-code-block .tools .language-button"),
+      ).toMatch(/display:\s*none/);
+    });
+
+    it('代码块内有焦点或按钮键盘聚焦时工具条按钮显示(opacity 1)', () => {
+      for (const sel of [
+        '.milkdown .milkdown-code-block:focus-within .tools .language-button',
+        '.milkdown .milkdown-code-block:focus-within .tools .tools-button-group > button',
+        '.milkdown .milkdown-code-block .tools .language-button:focus-visible',
+        '.milkdown .milkdown-code-block .tools .tools-button-group > button:focus-visible',
+      ]) {
+        expect(blocksWith(sel), sel).toMatch(/opacity:\s*1/);
+      }
+    });
+
+    it('按钮键盘聚焦有焦点环(focus-ring token)', () => {
+      for (const sel of [
+        '.milkdown .milkdown-code-block .tools .language-button:focus-visible',
+        '.milkdown .milkdown-code-block .tools .tools-button-group > button:focus-visible',
+      ]) {
+        expect(blocksWith(sel), sel).toMatch(/outline:\s*1px solid var\(--md-focus-ring\)/);
+      }
+    });
+  });
 });

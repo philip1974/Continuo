@@ -2,7 +2,7 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
-import { EDITOR_MODE_EDIT, EDITOR_MODE_SOURCE, editorModeButton, openWorkspaceFile } from './helpers/editor';
+import { EDITOR_MODE_EDIT, EDITOR_MODE_PREVIEW, EDITOR_MODE_SOURCE, editorModeButton, openWorkspaceFile } from './helpers/editor';
 import { waitForTestHooks } from './helpers/app-ready';
 
 const DOC = [
@@ -148,4 +148,33 @@ test('Edit:有序列表序号与首行文字对齐(10 / 13 / 28px)', async ({ wi
     });
     expect(Math.abs(delta), `fontSize ${size}px`).toBeLessThan(1);
   }
+});
+
+test('代码块工具条键盘可见(WCAG 2.4.7):预览 Tab 到复制按钮可见且有焦点环,语言按钮不显示;编辑模式光标进代码块时工具条可见', async ({
+  window,
+  workspaceRoot,
+}) => {
+  writeFileSync(path.join(workspaceRoot, 'style.md'), DOC);
+  await openWorkspaceFile(window, ['style.md']);
+  await editorModeButton(window, EDITOR_MODE_PREVIEW).click();
+  const pm = window.locator('main .milkdown .ProseMirror');
+  await expect(pm.locator('h1')).toHaveText('Title', { timeout: 10_000 });
+  const block = pm.locator('.milkdown-code-block');
+  await expect(block.locator('.language-button')).toBeHidden();
+  await pm.focus();
+  await window.keyboard.press('Tab');
+  const focused = window.locator(':focus');
+  await expect(focused).toHaveCount(1);
+  expect(await focused.evaluate((el) => !!el.closest('.milkdown-code-block .tools-button-group'))).toBe(true);
+  await expect(focused).toHaveCSS('opacity', '1');
+  await expect(focused).toHaveCSS('outline-style', 'solid');
+  await expect(focused).toHaveCSS('outline-width', '1px');
+  await window.screenshot({ path: test.info().outputPath('md-codeblock-focus-preview.png') });
+
+  await editorModeButton(window, EDITOR_MODE_EDIT).click();
+  const editBlock = window.locator('main .milkdown .ProseMirror .milkdown-code-block');
+  await editBlock.locator('.cm-content').click();
+  await window.mouse.move(0, 0); // 不靠 :hover
+  await expect(editBlock.locator('.language-button')).toHaveCSS('opacity', '1');
+  await expect(editBlock.locator('.tools-button-group > button').first()).toHaveCSS('opacity', '1');
 });

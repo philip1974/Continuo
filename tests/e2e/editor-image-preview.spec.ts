@@ -169,6 +169,8 @@ test('图片预览缩放:单击放大(像素化)/ ⌥单击缩小 / ⌘滚轮 / 
   await expect(info).toContainText(/整个图像|Whole Image|전체 이미지/);
   await expect(viewer).toHaveCSS('cursor', 'zoom-in');
 
+  // 焦点不在视图里时首击只激活不缩放(见下一个用例);这里先聚焦视图
+  await viewer.focus();
   await img.click(); // 小图适应 = 100% → 下一档 150%
   await expect(info).toContainText('150%');
   await expect(img).toHaveCSS('width', '96px');
@@ -188,4 +190,21 @@ test('图片预览缩放:单击放大(像素化)/ ⌥单击缩小 / ⌘滚轮 / 
   await window.screenshot({ path: test.info().outputPath('img-zoom.png') });
   await viewer.press('0');
   await expect(info).toContainText(/整个图像|Whole Image|전체 이미지/);
+});
+
+test('焦点不在图片视图时,第一下点击只激活(聚焦)不缩放,再点才放大(VSCode imagePreview)', async ({ window, workspaceRoot }) => {
+  writeFileSync(path.join(workspaceRoot, 'z.png'), makePng(64, 48));
+  await openWorkspaceFile(window, ['z.png']);
+  const viewer = window.locator('[data-image-viewer]');
+  const img = viewer.locator('img');
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth), { timeout: 10_000 }).toBe(64);
+  const info = window.getByText(/64x48 · /);
+  // 焦点移到资源管理器
+  await window.getByRole('treeitem', { name: /z\.png/ }).click();
+  await expect(viewer).not.toBeFocused();
+  await img.click();
+  await expect(viewer).toBeFocused();
+  await expect(info).toContainText(/整个图像|Whole Image|전체 이미지/);
+  await img.click();
+  await expect(info).toContainText('150%');
 });

@@ -278,6 +278,7 @@ export const en = {
   'editor.find.match_total_one': '{count} match',
   'editor.find.match_total_other': '{count} matches',
   'editor.find.no_results': 'No results',
+  'editor.find.invalid_regex': 'Invalid regular expression',
   'editor.autosave_failed': 'Auto-save failed',
   'editor.autosave_readonly_detail': '{reason}. Press {hotkey} to choose whether to overwrite it.',
   'editor.save_failed': 'Failed to save',
@@ -806,6 +807,7 @@ export const en = {
   'quick_open.scan_failed': 'Failed to scan workspace files',
   'quick_open.retry': 'Retry',
   'quick_open.open_failed': 'Failed to open',
+  'quick_open.recently_opened': 'recently opened',
 } as const;
 
 export type TranslationKey = keyof typeof en;

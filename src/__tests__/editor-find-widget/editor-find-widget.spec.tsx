@@ -132,13 +132,23 @@ describe('匹配计数与无结果提示(VSCode「1 of 154」/「No results」)'
     expect(new Set(['zh', 'en', 'ko'].map((l) => { setLocale(l as Locale); return t('editor.find.no_results'); })).size).toBe(3);
   });
 
-  it('非法正则按无结果处理(标红),清空查找框不提示', async () => {
+  it('非法正则提示「正则表达式无效」(标红),title 带 RegExp 错误信息(VSCode 查找框弹出正则错误);改回合法 / 清空即恢复', async () => {
     const view = await mount(FOO_154);
     openFind(view);
     act(() => field(view, 're').click());
     typeQuery(view, 'foo(');
-    expect(countEl(view).textContent).toBe(t('editor.find.no_results'));
+    expect(countEl(view).textContent).toBe(t('editor.find.invalid_regex'));
+    expect(countEl(view).hasAttribute('data-no-results')).toBe(true);
     expect(field(view, 'search').getAttribute('aria-invalid')).toBe('true');
+    // 错误信息作 title:悬停可见,也是查找框的可访问描述
+    expect(field(view, 'search').title).toMatch(/Invalid regular expression.*foo\(/);
+    expect(countEl(view).title).toBe(field(view, 'search').title);
+    typeQuery(view, 'foo\\d');
+    expect(countEl(view).textContent).not.toBe(t('editor.find.invalid_regex'));
+    expect(field(view, 'search').hasAttribute('title')).toBe(false);
+    expect(countEl(view).hasAttribute('title')).toBe(false);
+    typeQuery(view, 'zzz');
+    expect(countEl(view).textContent).toBe(t('editor.find.no_results'));
     typeQuery(view, '');
     expect(countEl(view).textContent).toBe('');
     expect(field(view, 'search').getAttribute('aria-invalid')).not.toBe('true');

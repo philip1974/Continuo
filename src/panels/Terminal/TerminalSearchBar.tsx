@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { IconButton, Input } from '@/design';
 import { translateCount, useT } from '@/i18n';
-import { clampSearchQuery } from '@/lib/search-query';
+import { clampSearchQuery, regexSyntaxError } from '@/lib/search-query';
 import { isImeComposing } from '@/design/ime';
 import { ChevronDownIcon, ChevronUpIcon, CloseIcon } from '@/lib/ui-icons';
+import type { FindHistory } from '@/panels/Editor/find-widget-model';
 import type { SearchApi } from './useTerminal';
 import {
   TERMINAL_SEARCH_HIGHLIGHT_LIMIT,
@@ -16,6 +17,13 @@ interface TerminalSearchBarProps {
   readonly onClose: () => void;
   /** 计数文案(缺省为终端文案);Markdown 查找复用本查找条时传编辑器查找控件的文案(find-widget-model)。 */
   readonly formatResult?: (result: TerminalSearchResult) => string;
+  /** 输入框标签与占位文案(缺省为终端的「搜索」);编辑器场景传「查找」,与代码编辑器查找面板一致。 */
+  readonly label?: string;
+  /**
+   * 查找框 ↑ / ↓ 历史(VSCode 查找框历史;Markdown 查找传与代码编辑器共享的 editorFindHistory)。缺省不启用 ——
+   * 终端保持现状。回车与查找条卸载(关闭)时把当前词记入。
+   */
+  readonly history?: FindHistory;
 }
 
 // 上一个 / 下一个 / 关闭用 SVG 图标(此前是 ASCII「^ v x」,字形大小 / 基线与 .* / Aa / W 不齐)。模块级预创建。
@@ -51,11 +59,13 @@ export function TerminalSearchBar({
   searchApi,
   onClose,
   formatResult,
+  label,
+  history,
 }: TerminalSearchBarProps) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const result = searchApi.result;
-  const placeholderLabel = t('panels.terminal.search.placeholder');
+  const placeholderLabel = label ?? t('panels.terminal.search.placeholder');
   const optionsGroupLabel = t('panels.terminal.search.options_group');
   const regexLabel = t('panels.terminal.search.regex');
   const caseSensitiveLabel = t('panels.terminal.search.case_sensitive');
@@ -69,10 +79,11 @@ export function TerminalSearchBar({
   // 的 refocus 通常发生在 keydown 的 microtask/animation frame 链路上)。
   // 依赖 focusRequest:已打开时再按 ⌘F 搜索条不重挂,靠它重新聚焦并全选已有词(VSCode 行为),
   // 否则焦点留在终端,输入与回车进 shell。
+  // focusRequest = 0:不是用户打开(切回 tab 时恢复显示),不抢焦点(VSCode 恢复编辑器时焦点在正文)。
   const focusRequest = searchApi.focusRequest;
   useLayoutEffect(() => {
     const el = inputRef.current;
-    if (!el) return;
+    if (!el || focusRequest === 0) return;
     el.focus();
     el.select();
     const id = requestAnimationFrame(() => {
@@ -83,7 +94,23 @@ export function TerminalSearchBar({
     });
     return () => cancelAnimationFrame(id);
   }, [focusRequest]);
-  const countText = formatResult ? formatResult(result) : formatCount(result, t);
+  // 历史:挂载时从最新开始翻;卸载(关闭 / 切走)时记入当前词(同代码编辑器查找面板)。
+  const termRef = useRef(searchApi.term);
+  termRef.current = searchApi.term;
+  useEffect(() => {
+    if (!history) return;
+    history.resetCursor();
+    return () => history.add(termRef.current);
+  }, [history]);
+
+  // 非法正则(VSCode 查找框弹出正则错误):计数区提示「正则表达式无效」,错误信息作 title(悬停可见,也是输入框的
+  // 可访问描述)。按不带 flag 的语法校验 —— 终端(xterm SearchAddon)与 Markdown 查找(buildFindRegExp)最终都按它编译。
+  const regexError = searchApi.options.regex && searchApi.term ? regexSyntaxError(searchApi.term) : null;
+  const countText = regexError
+    ? t('editor.find.invalid_regex')
+    : formatResult
+      ? formatResult(result)
+      : formatCount(result, t);
 
   return (
     <div
@@ -116,14 +143,26 @@ export function TerminalSearchBar({
         onBlur={searchApi.clearActiveDecoration}
         // 边界(E280,E279 同族):截断超长 query —— 超长 pattern × 终端 scrollback 在 xterm SearchAddon
         // 同步搜索会放大 CPU/内存(regex 模式更甚)。复用统一搜索上限 clampSearchQuery。
-        onChange={(event) =>
-          searchApi.setTerm(clampSearchQuery(event.target.value))
-        }
+        onChange={(event) => {
+          history?.resetCursor();
+          searchApi.setTerm(clampSearchQuery(event.target.value));
+        }}
         onKeyDown={(event) => {
-          // IME 组合中的 Enter 属于输入法(确认候选),不跳转。Esc 由根节点统一处理。
+          // IME 组合中的 Enter / 方向键属于输入法(确认候选 / 选候选),不跳转、不翻历史。Esc 由根节点统一处理。
           if (isImeComposing(event.nativeEvent)) return;
+          if (
+            history &&
+            (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
+            !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+          ) {
+            event.preventDefault();
+            const term = event.key === 'ArrowUp' ? history.previous(searchApi.term) : history.next();
+            if (term !== undefined) searchApi.setTerm(term);
+            return;
+          }
           if (event.key !== 'Enter') return;
           event.preventDefault();
+          history?.add(searchApi.term);
           if (event.shiftKey) {
             searchApi.prev();
           } else {
@@ -132,13 +171,16 @@ export function TerminalSearchBar({
         }}
         placeholder={placeholderLabel}
         aria-label={placeholderLabel}
+        aria-invalid={regexError ? true : undefined}
+        title={regexError ?? undefined}
         className="w-48 min-w-16"
       />
       {/* a11y(A53,A41 同族):匹配计数/无匹配随输入与上下跳转动态变化,焦点在搜索框时须经
           live region(role=status/polite)播报当前匹配数/第几项。 */}
       <span
         role="status"
-        className="min-w-12 shrink-0 text-center text-xs tabular-nums text-fg-dim @max-sm/terminal:sr-only @max-sm/terminal:min-w-0"
+        title={regexError ?? undefined}
+        className={`min-w-12 shrink-0 text-center text-xs tabular-nums ${regexError ? 'text-error' : 'text-fg-dim'} @max-sm/terminal:sr-only @max-sm/terminal:min-w-0`}
       >
         {countText}
       </span>

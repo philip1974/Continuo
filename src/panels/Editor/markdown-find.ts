@@ -4,6 +4,7 @@
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import type { Node as PmNode } from '@milkdown/kit/prose/model';
+import { regexSyntaxError } from '@/lib/search-query';
 import { FIND_MATCH_LIMIT } from './find-widget-model';
 
 export interface MarkdownFindQuery {
@@ -16,14 +17,17 @@ export interface MarkdownFindQuery {
 /** 收集匹配的上限(同代码编辑器 / 终端查找):到此即停,计数显示「1000+」。 */
 export const MARKDOWN_FIND_LIMIT = FIND_MATCH_LIMIT;
 
-const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** 转义正则元字符(字面量查找;正则模式下带入选区文字)。 */
+export const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * 查询 → 全局正则;空查询 / 非法正则 → null。字面量转义;全字匹配 = 前后不是 Unicode 字母 / 数字 / 下划线。
  * 带 `u` 编译(\p 需要);用户正则在 `u` 下非法(如 `\-`)时退回不带 `u`,全字边界退化为 ASCII \w。
+ * 用户正则本身(不带 flag)非法即 null —— 与查找条的「正则表达式无效」提示同一判据(全字包裹不能把 `a)|(b` 这类凑成合法)。
  */
 export function buildFindRegExp(query: MarkdownFindQuery): RegExp | null {
   if (!query.term) return null;
+  if (query.regex && regexSyntaxError(query.term) !== null) return null;
   const body = query.regex ? query.term : escapeRegExp(query.term);
   const flags = query.caseSensitive ? 'g' : 'gi';
   try {
@@ -183,10 +187,17 @@ function selectCurrent(view: EditorView): void {
   view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, m.from, m.to)).setMeta('addToHistory', false));
 }
 
-/** 设置 / 清除(null)查询:重算匹配,当前匹配 = 选区之后第一个,并选中。 */
-export function setMarkdownFindQuery(view: EditorView, query: MarkdownFindQuery | null): MarkdownFindResult {
+/**
+ * 设置 / 清除(null)查询:重算匹配,当前匹配 = 选区之后第一个,并选中。select=false 只高亮不动选区(切回 tab 恢复查找状态、
+ * 查找条关闭后 F3 / ⌘G 先恢复查询再从选区起跳)。
+ */
+export function setMarkdownFindQuery(
+  view: EditorView,
+  query: MarkdownFindQuery | null,
+  { select = true }: { readonly select?: boolean } = {},
+): MarkdownFindResult {
   view.dispatch(view.state.tr.setMeta(findKey, { query } satisfies FindMeta).setMeta('addToHistory', false));
-  if (query) selectCurrent(view);
+  if (query && select) selectCurrent(view);
   return markdownFindResult(view.state);
 }
 
@@ -211,4 +222,38 @@ export function revealMarkdownFindMatch(view: EditorView, scroller: HTMLElement)
   const box = scroller.getBoundingClientRect();
   if (rect.top >= box.top && rect.bottom <= box.bottom) return;
   scroller.scrollTop += rect.top - (box.top + box.height / 2);
+}
+
+/** 一个 tab 的查找条状态(切 tab / 切 编辑·预览 重挂后恢复:查找条、查找词、选项与高亮)。 */
+export interface MarkdownFindSession {
+  readonly open: boolean;
+  readonly term: string;
+  readonly options: Omit<MarkdownFindQuery, 'term'>;
+}
+
+/** 最多保留的 tab 数(同编辑器视图状态缓存 50;最久未用先淘汰)。 */
+const FIND_SESSION_LIMIT = 50;
+const findSessions = new Map<string, MarkdownFindSession>();
+
+export function saveMarkdownFindSession(tabId: string, session: MarkdownFindSession): void {
+  findSessions.delete(tabId);
+  findSessions.set(tabId, session);
+  if (findSessions.size > FIND_SESSION_LIMIT) {
+    const oldest = findSessions.keys().next().value;
+    if (oldest !== undefined) findSessions.delete(oldest);
+  }
+}
+
+export function markdownFindSessionOf(tabId: string): MarkdownFindSession | undefined {
+  return findSessions.get(tabId);
+}
+
+/** tab 关闭后丢弃(重新打开不恢复)。 */
+export function forgetMarkdownFindSession(tabId: string): void {
+  findSessions.delete(tabId);
+}
+
+/** 测试用:清空。 */
+export function clearMarkdownFindSessions(): void {
+  findSessions.clear();
 }

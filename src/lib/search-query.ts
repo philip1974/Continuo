@@ -19,3 +19,16 @@ export function clampSearchQuery(q: string): string {
 export function normalizeSearchQuery(q: string): string {
   return clampSearchQuery(q).trim();
 }
+
+/**
+ * 正则语法错误信息(合法为 null):查找框正则模式下提示「正则表达式无效」并把这条信息放进 title / 可访问描述
+ * (VSCode 查找框弹出 `new RegExp` 的错误信息)。flags 照各查找引擎实际编译用的(如 CodeMirror 带 `u`)。
+ */
+export function regexSyntaxError(source: string, flags = ''): string | null {
+  try {
+    new RegExp(source, flags);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}

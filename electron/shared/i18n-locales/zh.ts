@@ -264,6 +264,7 @@ export const zh: Record<TranslationKey, string> = {
   'editor.find.match_total_one': '{count} 个匹配',
   'editor.find.match_total_other': '{count} 个匹配',
   'editor.find.no_results': '无结果',
+  'editor.find.invalid_regex': '正则表达式无效',
   'editor.autosave_failed': '自动保存失败',
   'editor.autosave_readonly_detail': '{reason}，按 {hotkey} 可选择覆盖',
   'editor.save_failed': '保存失败',
@@ -764,4 +765,5 @@ export const zh: Record<TranslationKey, string> = {
   'quick_open.scan_failed': '扫描工作区文件失败',
   'quick_open.retry': '重试',
   'quick_open.open_failed': '打开失败',
+  'quick_open.recently_opened': '最近打开',
 };

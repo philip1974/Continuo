@@ -55,15 +55,20 @@ import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel, previewC
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { markdownImageNodeView } from './markdown-image-view';
 import {
+  escapeRegExp,
+  forgetMarkdownFindSession,
   markdownFindPlugin,
+  markdownFindSessionOf,
   onMarkdownFindChange,
+  saveMarkdownFindSession,
   revealMarkdownFindMatch,
   setMarkdownFindQuery,
   stepMarkdownFind,
   type MarkdownFindResult,
 } from './markdown-find';
 import { TerminalSearchBar } from '@/panels/Terminal/TerminalSearchBar';
-import { FIND_MATCH_LIMIT, formatFindCount } from './find-widget-model';
+import { editorFindHistory, FIND_MATCH_LIMIT, formatFindCount } from './find-widget-model';
+import { clampSearchQuery } from '@/lib/search-query';
 import type { SearchApi } from '@/panels/Terminal/useTerminal';
 import {
   DEFAULT_TERMINAL_SEARCH_OPTIONS,
@@ -584,6 +589,18 @@ function isFindHotkey(e: React.KeyboardEvent): boolean {
   return e.code === 'KeyF' || e.key.toLowerCase() === 'f';
 }
 
+/**
+ * 查找下一个 / 上一个的快捷键(VSCode editor.action.nextMatchFindAction / previousMatchFindAction):F3 / ⇧F3,mac 另有
+ * ⌘G / ⇧⌘G。Windows / Linux 的 Ctrl+G 是「转到行」,不拦。返回步向;不是则 null。
+ */
+function findStepHotkey(e: React.KeyboardEvent): 1 | -1 | null {
+  if (e.altKey) return null;
+  const step = e.shiftKey ? -1 : 1;
+  if (e.key === 'F3') return e.metaKey || e.ctrlKey ? null : step;
+  if (IS_MAC && e.metaKey && !e.ctrlKey && (e.code === 'KeyG' || e.key.toLowerCase() === 'g')) return step;
+  return null;
+}
+
 export function MilkdownEditor(props: MilkdownEditorProps) {
   // Crepe theme 内部很多元素是相对单位(em/rem),容器 font-size 变,
   // ProseMirror 文本会跟着变。如果某些元素用 px 绝对值,可在
@@ -625,17 +642,29 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     () => () => {
       unregisterFocusRef.current?.();
       unsubscribeFindRef.current?.();
+      // tab 已关闭(先从 store 移除、随后卸载):查找状态不再保留,重新打开不恢复
+      if (!useEditorStore.getState().tabs?.some((t) => t.id === tabId)) forgetMarkdownFindSession(tabId);
     },
+    // tabId 挂载时取定(父按 tab id 换 key 重挂)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
   // ⌘F 查找(对齐 VSCode 编辑器 / Markdown 预览查找;BDD: src/__tests__/markdown-find/)。查找条复用终端查找条(SearchApi 形状),
   // 匹配 / 高亮 / 当前匹配在 ProseMirror 插件里(markdown-find),计数经插件变化回调(含编辑文档后的重算)回到这里。
-  const [findOpen, setFindOpen] = useState(false);
-  const [findTerm, setFindTerm] = useState('');
-  const [findOptions, setFindOptions] = useState<TerminalSearchOptions>(DEFAULT_TERMINAL_SEARCH_OPTIONS);
+  // 查找条状态按 tab 保留(markdown-find 的 find session):切走再切回(含切 编辑·预览)恢复查找条、查找词、选项与高亮,
+  // 不抢焦点(focusRequest 0 = 不是用户打开)。
+  const [findOpen, setFindOpen] = useState(() => markdownFindSessionOf(tabId)?.open ?? false);
+  const [findTerm, setFindTerm] = useState(() => markdownFindSessionOf(tabId)?.term ?? '');
+  const [findOptions, setFindOptions] = useState<TerminalSearchOptions>(
+    () => markdownFindSessionOf(tabId)?.options ?? DEFAULT_TERMINAL_SEARCH_OPTIONS,
+  );
   const [findResult, setFindResult] = useState<MarkdownFindResult>({ count: 0, index: -1 });
   const [findFocusRequest, setFindFocusRequest] = useState(0);
+  useEffect(
+    () => saveMarkdownFindSession(tabId, { open: findOpen, term: findTerm, options: findOptions }),
+    [tabId, findOpen, findTerm, findOptions],
+  );
   const runFind = useCallback((term: string, options: TerminalSearchOptions) => {
     const view = getViewRef.current();
     if (!view) return;
@@ -654,6 +683,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   }, []);
   const closeFind = useCallback(() => {
     setFindOpen(false);
+    setFindFocusRequest(0); // 之后由 F3 / ⌘G 重新显示时不抢焦点;⌘F 再递增
     const view = getViewRef.current();
     if (!view) return;
     setMarkdownFindQuery(view, null);
@@ -663,6 +693,18 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   findTermRef.current = findTerm;
   const findOptionsRef = useRef(findOptions);
   findOptionsRef.current = findOptions;
+  const findOpenRef = useRef(findOpen);
+  findOpenRef.current = findOpen;
+  /** 单行非空选区的文字(VSCode seedSearchStringFromSelection);正则模式下转义元字符。没有则 null。 */
+  const selectionSeed = useCallback((): string | null => {
+    const view = getViewRef.current();
+    if (!view) return null;
+    const { from, to } = view.state.selection;
+    if (from === to) return null;
+    const text = view.state.doc.textBetween(from, to, '\n', '');
+    if (!text || text.includes('\n')) return null;
+    return clampSearchQuery(findOptionsRef.current.regex ? escapeRegExp(text) : text);
+  }, []);
   const searchApi = useMemo<SearchApi>(
     () => ({
       isOpen: findOpen,
@@ -692,16 +734,48 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       formatFindCount({ empty: !findTermRef.current, total: r.count, current: r.index + 1, capped: r.count >= FIND_MATCH_LIMIT }),
     [],
   );
-  // ⌘F:打开查找条(已打开则重新聚焦并全选查找词);关闭后重开沿用上次的查找词与选项重新查(VSCode 同)
+  // ⌘F:打开查找条(已打开则重新聚焦并全选查找词)。焦点在正文且有单行选区 → 选区文字带入查找框并查找;否则关闭后重开
+  // 沿用上次的查找词与选项重新查(VSCode 同)。
+  // F3 / ⇧F3(mac 另有 ⌘G / ⇧⌘G):正文与查找框里都跳下一个 / 上一个;查找条已关则用上次的查找词(没有则取选区)重新显示
+  // 查找条(焦点不动)再跳 —— VSCode 同;没有可查的词时同 ⌘F 打开查找条。
   const handleFindKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.defaultPrevented || !isFindHotkey(e)) return; // 代码块的 CodeMirror 已处理(自己的查找面板)
+      if (e.defaultPrevented) return; // 代码块的 CodeMirror 已处理(自己的查找面板 / F3 / ⌘G)
+      const step = findStepHotkey(e);
+      if (!step && !isFindHotkey(e)) return;
       e.preventDefault();
-      e.stopPropagation(); // 不再交给全局快捷键(⌘F 在编辑器里只开查找)
-      if (!findOpen && findTermRef.current) runFind(findTermRef.current, findOptionsRef.current);
-      openFind();
+      e.stopPropagation(); // 不再交给全局快捷键(这些键在编辑器里只做查找)
+      const inBody = wrapperRef.current?.contains(e.target as Node) ?? false;
+      if (!step) {
+        const seed = inBody ? selectionSeed() : null;
+        if (seed) {
+          setFindTerm(seed);
+          runFind(seed, findOptionsRef.current);
+        } else if (!findOpen && findTermRef.current) {
+          runFind(findTermRef.current, findOptionsRef.current);
+        }
+        openFind();
+        return;
+      }
+      let term = findTermRef.current;
+      if (!term) {
+        term = (inBody ? selectionSeed() : null) ?? '';
+        if (!term) {
+          openFind();
+          return;
+        }
+        setFindTerm(term);
+      }
+      const view = getViewRef.current();
+      if (!view) return;
+      // 查询已在(查找条开着且词没换)直接跳;否则先只高亮不动选区,再从选区起跳
+      if (!findOpen || term !== findTermRef.current) {
+        setMarkdownFindQuery(view, { term, ...findOptionsRef.current }, { select: false });
+      }
+      setFindOpen(true);
+      stepFind(step);
     },
-    [findOpen, openFind, runFind],
+    [findOpen, openFind, runFind, selectionSeed, stepFind],
   );
   // layout 清理:此时 DOM 仍在文档里(量得到位置),Crepe 尚未销毁。tab 已关闭 / 已改名(旧 id 不在了)不记。
   useLayoutEffect(
@@ -724,6 +798,10 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       unsubscribeFindRef.current?.();
       const view = getView();
       unsubscribeFindRef.current = view ? onMarkdownFindChange(view, setFindResult) : null;
+      // 恢复的查找状态(切回 tab / 切模式 / 改语言重挂):重新高亮,不动选区、不滚动(滚动随后按视图状态恢复)
+      if (view && findOpenRef.current && findTermRef.current) {
+        setMarkdownFindQuery(view, { term: findTermRef.current, ...findOptionsRef.current }, { select: false });
+      }
       const el = wrapperRef.current;
       const anchor = takeMarkdownModeAnchor(tabId, viewMode);
       if (el && anchor) {
@@ -842,7 +920,16 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       >
         <CrepeEditor {...props} onReady={handleReady} />
       </div>
-      {findOpen && <TerminalSearchBar searchApi={searchApi} onClose={closeFind} formatResult={formatFindResult} />}
+      {findOpen && (
+        <TerminalSearchBar
+          searchApi={searchApi}
+          onClose={closeFind}
+          formatResult={formatFindResult}
+          // 与代码编辑器查找面板一致:标签「查找」、↑ / ↓ 翻共享的查找历史
+          label={t('editor.cm.find')}
+          history={editorFindHistory}
+        />
+      )}
       </div>
     </MilkdownProvider>
   );

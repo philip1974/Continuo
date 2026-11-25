@@ -126,6 +126,25 @@
   overflow-x: auto;
 }
 
+/* 代码块工具条(语言按钮 / 复制)键盘可见(WCAG 2.4.7;BDD: src/__tests__/markdown-editor-style/)。Crepe 只在 :hover 时
+ * opacity 1,Tab 到时按钮看不见、也没有焦点轮廓。代码块内有焦点(光标在代码里 / 按钮获焦)或按钮键盘聚焦时显示,
+ * 焦点环同全局 focus-ring(theme.css base 层被 Crepe 未分层样式盖过,这里显式给)。
+ * 只读预览不能改语言(Crepe 只读下语言按钮不弹选择器):不显示语言按钮,Tab 不再停在无作用的按钮上;复制保留。 */
+.milkdown .ProseMirror[contenteditable='false'] .milkdown-code-block .tools .language-button {
+  display: none;
+}
+.milkdown .milkdown-code-block:focus-within .tools .language-button,
+.milkdown .milkdown-code-block:focus-within .tools .tools-button-group > button,
+.milkdown .milkdown-code-block .tools .language-button:focus-visible,
+.milkdown .milkdown-code-block .tools .tools-button-group > button:focus-visible {
+  opacity: 1;
+}
+.milkdown .milkdown-code-block .tools .language-button:focus-visible,
+.milkdown .milkdown-code-block .tools .tools-button-group > button:focus-visible {
+  outline: 1px solid var(--md-focus-ring);
+  outline-offset: 1px;
+}
+
 /* ⌘F 查找高亮(markdown-find.ts 的行内装饰;BDD: src/__tests__/markdown-find/)。配色同 CodeMirror 查找
  * (code-editor-theme.ts):其它匹配警告色 30% + 描边,当前匹配主色 28% + 主色描边。强制颜色下背景被系统色板覆盖,
  * 改用轮廓区分:当前匹配实线 Highlight,其它虚线 CanvasText(同编辑器查找控件)。 */

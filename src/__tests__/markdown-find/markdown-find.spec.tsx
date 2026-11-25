@@ -8,6 +8,10 @@ import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 import { buildFindRegExp, findTextMatches } from '../../panels/Editor/markdown-find';
 import { detectPlatform } from '../../plugins/command-palette/format-hotkey';
 import { t } from '../../i18n';
+import { editorFindHistory } from '../../panels/Editor/find-widget-model';
+import { clearMarkdownFindSessions } from '../../panels/Editor/markdown-find';
+import { createTab, useEditorStore } from '../../stores/editor.store';
+import { TextSelection } from '@milkdown/kit/prose/state';
 
 const MOD = detectPlatform() === 'mac' ? { metaKey: true } : { ctrlKey: true };
 
@@ -29,25 +33,29 @@ vi.mock('../../lib/co-api', () => ({ coApi: { fs: { readImage: vi.fn() } } }));
 
 // jsdom 没有 Range 的布局接口(ProseMirror 量坐标 / 选区要用),与其它编辑器规范同样补上。
 beforeEach(() => {
+  // 打开着的 tab(查找状态按 tab 保留;tab 已关闭时卸载即丢弃)
+  useEditorStore.setState({ tabs: [createTab('/w/a.md', ''), createTab('/w/b.md', '')] });
   Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect ??= () => new DOMRect();
 });
 afterEach(() => {
   cleanup();
   mocks.instances.length = 0;
+  clearMarkdownFindSessions();
+  editorFindHistory.clear();
 });
 
 interface PmView {
   readonly state: {
     readonly doc: { textBetween(from: number, to: number): string; readonly content: { readonly size: number } };
     readonly selection: { readonly from: number; readonly to: number };
-    readonly tr: { insertText(text: string, from: number, to?: number): unknown };
+    readonly tr: { insertText(text: string, from: number, to?: number): unknown; setSelection(sel: unknown): unknown };
   };
   dispatch(tr: unknown): void;
 }
 
-async function mount(markdown: string, readonly = false) {
-  const utils = render(<MilkdownEditor tabId="/w/a.md" fileName="/w/a.md" defaultValue={markdown} readonly={readonly} />);
+async function mount(markdown: string, readonly = false, tabId = '/w/a.md') {
+  const utils = render(<MilkdownEditor tabId={tabId} fileName={tabId} defaultValue={markdown} readonly={readonly} />);
   for (let i = 0; i < 100; i++) {
     const crepe = mocks.instances.at(-1);
     try {
@@ -69,7 +77,9 @@ async function mount(markdown: string, readonly = false) {
   throw new Error('Crepe 未挂载');
 }
 
-const findInput = () => screen.getByRole('textbox', { name: t('panels.terminal.search.placeholder') }) as HTMLInputElement;
+// 标签同代码编辑器查找面板「查找」(不是终端的「搜索」)
+const findInput = () => screen.getByRole('textbox', { name: t('editor.cm.find') }) as HTMLInputElement;
+const queryFindInput = () => screen.queryByRole('textbox', { name: t('editor.cm.find') });
 const countText = () => screen.getByRole('status').textContent;
 
 function openFind(target: HTMLElement): KeyboardEvent {
@@ -103,6 +113,8 @@ describe('查找匹配(纯函数)', () => {
   it('空查询 / 非法正则 → null', () => {
     expect(buildFindRegExp({ term: '', caseSensitive: false, wholeWord: false, regex: false })).toBeNull();
     expect(buildFindRegExp({ term: '(', caseSensitive: false, wholeWord: false, regex: true })).toBeNull();
+    // 全字包裹不能把本身非法的用户正则凑成合法(与查找条「正则表达式无效」同一判据)
+    expect(buildFindRegExp({ term: 'a)|(?:b', caseSensitive: false, wholeWord: true, regex: true })).toBeNull();
   });
 
   it('文本内匹配跳过空匹配、到上限即停', () => {
@@ -180,7 +192,7 @@ describe('Markdown 编辑模式 ⌘F', () => {
     // 查找条内再按 ⌘F 同样被拦下
     expect(openFind(findInput()).defaultPrevented).toBe(true);
     fireEvent.keyDown(findInput(), { key: 'Escape' });
-    expect(screen.queryByRole('textbox', { name: t('panels.terminal.search.placeholder') })).toBeNull();
+    expect(queryFindInput()).toBeNull();
     expect(container.querySelectorAll('.co-find-match')).toHaveLength(0);
     expect(document.activeElement).toBe(pm);
     expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('alpha');
@@ -198,5 +210,164 @@ describe('Markdown 预览(只读)模式 ⌘F', () => {
     expect(countText()).toBe(t('editor.find.match_count', { n: 1, total: '1' }));
     expect(container.querySelector('.co-find-match-current')?.textContent).toBe('beta');
     expect(mocks.instances.at(-1)!.getMarkdown()).toContain('alpha one and **alpha** two');
+  });
+});
+
+/** 按键派发到 target(冒泡、可取消),返回事件。 */
+function press(target: HTMLElement, init: KeyboardEventInit): KeyboardEvent {
+  const ev = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+  act(() => {
+    target.dispatchEvent(ev);
+  });
+  return ev;
+}
+
+function select(view: PmView, from: number, to: number) {
+  act(() => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc as never, from, to))));
+}
+
+const selectedText = (view: PmView) => view.state.doc.textBetween(view.state.selection.from, view.state.selection.to);
+
+/** 文档里第 n 个(0 起)`word` 的文档位置。 */
+function posOf(view: PmView, word: string, n = 0): number {
+  const size = view.state.doc.content.size;
+  let seen = 0;
+  for (let p = 0; p < size; p++) {
+    try {
+      if (view.state.doc.textBetween(p, p + word.length) === word && seen++ === n) return p;
+    } catch {
+      /* 越界 */
+    }
+  }
+  throw new Error(`no ${word}`);
+}
+
+describe('与代码编辑器查找一致(VSCode findWidget)', () => {
+  it('⌘F 把单行选区带入查找框(全选)并查找;多行选区不带入', async () => {
+    const { pm, view } = await mount(DOC);
+    const at = posOf(view, 'beta');
+    select(view, at, at + 4);
+    openFind(pm);
+    expect(findInput().value).toBe('beta');
+    expect(findInput().selectionEnd).toBe(4);
+    expect(countText()).toBe(t('editor.find.match_count', { n: 1, total: '1' }));
+    fireEvent.keyDown(findInput(), { key: 'Escape' });
+    // 跨段落(多行)选区:沿用上次查找词
+    select(view, posOf(view, 'one'), at + 2);
+    openFind(pm);
+    expect(findInput().value).toBe('beta');
+  });
+
+  it('正则模式下带入选区时转义正则元字符(VSCode 同)', async () => {
+    const { pm, view } = await mount('a.b axb\n');
+    openFind(pm);
+    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.regex') }));
+    fireEvent.keyDown(findInput(), { key: 'Escape' });
+    select(view, 1, 4);
+    openFind(pm);
+    expect(findInput().value).toBe('a\\.b');
+    expect(countText()).toBe(t('editor.find.match_count', { n: 1, total: '1' }));
+  });
+
+  it('F3 / ⇧F3(mac 另有 ⌘G / ⇧⌘G)在正文与查找框里都跳下一个 / 上一个;Windows / Linux 的 Ctrl+G 不拦(VSCode 为转到行)', async () => {
+    const { pm, view } = await mount(DOC);
+    openFind(pm);
+    typeQuery('alpha');
+    act(() => pm.focus());
+    expect(press(pm, { key: 'F3', code: 'F3' }).defaultPrevented).toBe(true);
+    expect(countText()).toBe(t('editor.find.match_count', { n: 2, total: '4' }));
+    press(findInput(), { key: 'F3', code: 'F3' });
+    expect(countText()).toBe(t('editor.find.match_count', { n: 3, total: '4' }));
+    press(pm, { key: 'F3', code: 'F3', shiftKey: true });
+    expect(countText()).toBe(t('editor.find.match_count', { n: 2, total: '4' }));
+    expect(selectedText(view)).toBe('alpha');
+    if (detectPlatform() === 'mac') {
+      press(pm, { key: 'g', code: 'KeyG', metaKey: true });
+      expect(countText()).toBe(t('editor.find.match_count', { n: 3, total: '4' }));
+      press(findInput(), { key: 'g', code: 'KeyG', metaKey: true, shiftKey: true });
+      expect(countText()).toBe(t('editor.find.match_count', { n: 2, total: '4' }));
+    } else {
+      expect(press(pm, { key: 'g', code: 'KeyG', ctrlKey: true }).defaultPrevented).toBe(false);
+      expect(countText()).toBe(t('editor.find.match_count', { n: 2, total: '4' }));
+    }
+  });
+
+  it('查找条关闭后 F3:用上次的查找词重新显示查找条(焦点留在正文)并跳到选区之后的下一个', async () => {
+    const { pm, view, container } = await mount(DOC);
+    openFind(pm);
+    typeQuery('alpha');
+    fireEvent.keyDown(findInput(), { key: 'Escape' });
+    expect(selectedText(view)).toBe('Alpha');
+    press(pm, { key: 'F3', code: 'F3' });
+    expect(findInput().value).toBe('alpha');
+    expect(document.activeElement).toBe(pm);
+    expect(countText()).toBe(t('editor.find.match_count', { n: 2, total: '4' }));
+    expect(container.querySelectorAll('.co-find-match')).toHaveLength(4);
+  });
+
+  it('查找框 ↑ / ↓ 翻历史(与代码编辑器共享 editorFindHistory);回车记入', async () => {
+    editorFindHistory.add('beta');
+    const { pm } = await mount(DOC);
+    openFind(pm);
+    typeQuery('alpha');
+    fireEvent.keyDown(findInput(), { key: 'Enter' });
+    expect(editorFindHistory.entries()).toEqual(['beta', 'alpha']);
+    fireEvent.keyDown(findInput(), { key: 'ArrowUp' });
+    expect(findInput().value).toBe('beta');
+    expect(countText()).toBe(t('editor.find.match_count', { n: 1, total: '1' }));
+    fireEvent.keyDown(findInput(), { key: 'ArrowDown' });
+    expect(findInput().value).toBe('alpha');
+  });
+
+  it('正则非法:计数区显示「正则表达式无效」,title 带错误信息', async () => {
+    const { pm, container } = await mount(DOC);
+    openFind(pm);
+    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.regex') }));
+    typeQuery('alpha(');
+    expect(countText()).toBe(t('editor.find.invalid_regex'));
+    expect(findInput().getAttribute('aria-invalid')).toBe('true');
+    expect(findInput().title).toMatch(/Invalid regular expression/);
+    expect(container.querySelectorAll('.co-find-match')).toHaveLength(0);
+  });
+
+  it('按 tab 保留查找状态:切走再切回(重挂)查找条、查找词、选项与高亮恢复,焦点不被查找条抢走', async () => {
+    const first = await mount(DOC);
+    openFind(first.pm);
+    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.case_sensitive') }));
+    typeQuery('alpha');
+    first.unmount();
+    mocks.instances.length = 0;
+    const again = await mount(DOC);
+    expect(findInput().value).toBe('alpha');
+    expect(screen.getByRole('button', { name: t('panels.terminal.search.case_sensitive') }).getAttribute('aria-pressed')).toBe('true');
+    expect(again.container.querySelectorAll('.co-find-match')).toHaveLength(2);
+    expect(document.activeElement).not.toBe(findInput());
+    // 关闭后切回:查找条不再出现
+    fireEvent.keyDown(findInput(), { key: 'Escape' });
+    again.unmount();
+    mocks.instances.length = 0;
+    await mount(DOC);
+    expect(queryFindInput()).toBeNull();
+  });
+
+  it('按 tab 区分;tab 关闭后卸载即丢弃,重新打开不恢复', async () => {
+    const a = await mount(DOC);
+    openFind(a.pm);
+    typeQuery('alpha');
+    a.unmount();
+    mocks.instances.length = 0;
+    const b = await mount(DOC, false, '/w/b.md');
+    expect(queryFindInput()).toBeNull();
+    b.unmount();
+    mocks.instances.length = 0;
+    const reopened = await mount(DOC);
+    expect(findInput().value).toBe('alpha');
+    // 关闭 tab(先从 store 移除,随后视图卸载)
+    useEditorStore.setState({ tabs: [createTab('/w/b.md', '')] });
+    reopened.unmount();
+    mocks.instances.length = 0;
+    useEditorStore.setState({ tabs: [createTab('/w/a.md', ''), createTab('/w/b.md', '')] });
+    await mount(DOC);
+    expect(queryFindInput()).toBeNull();
   });
 });

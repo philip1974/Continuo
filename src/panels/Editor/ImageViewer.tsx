@@ -155,9 +155,19 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
     return () => root.removeEventListener('wheel', onWheel);
   }, [loaded]);
 
-  // 单击视图(VSCode 挂在整个容器上,点图片外的空白处同样缩放)
+  // 单击视图(VSCode 挂在整个容器上,点图片外的空白处同样缩放)。焦点不在视图里时第一下点击只激活(聚焦)不缩放 ——
+  // VSCode imagePreview:mousedown 时 consumeClick = !isActive,随后的 click 被吞掉。mousedown 时焦点尚未移入视图。
+  const consumeClickRef = useRef(false);
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!loaded || e.button !== 0) return;
+    consumeClickRef.current = !rootRef.current?.contains(rootRef.current.ownerDocument.activeElement);
+  };
   const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!loaded || e.button !== 0) return;
+    if (consumeClickRef.current) {
+      consumeClickRef.current = false;
+      return;
+    }
     zoomTo(e.altKey ? zoomOutFrom : zoomInFrom, e);
   };
 
@@ -218,6 +228,7 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
         className="flex h-full w-full overflow-auto p-4 outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring"
         style={loaded ? { cursor: altHeld ? 'zoom-out' : 'zoom-in' } : undefined}
         onKeyDown={onKeyDown}
+        onMouseDown={onMouseDown}
         onClick={onClick}
       >
         {state.kind === 'ok' ? (

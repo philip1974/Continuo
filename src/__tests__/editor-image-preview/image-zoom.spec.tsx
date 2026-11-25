@@ -6,6 +6,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageViewer } from '../../panels/Editor/ImageViewer';
+import { clearEditorViewStates } from '../../panels/Editor/editor-view-state-cache';
 import { t } from '../../i18n';
 import { en } from '../../../electron/shared/i18n-locales/en';
 import { zh } from '../../../electron/shared/i18n-locales/zh';
@@ -17,6 +18,7 @@ vi.mock('../../lib/co-api', () => ({ coApi: { fs: { readImage: mocks.readImage }
 const DATA_URL = 'data:image/png;base64,iVBORw0KGgo=';
 
 beforeEach(() => {
+  clearEditorViewStates(); // 比例按 tab 记在模块级缓存里(切 tab 保留),各用例从「适应」开始
   mocks.readImage.mockResolvedValue({ ok: true, data: { dataUrl: DATA_URL, size: 2048 } });
 });
 afterEach(cleanup);
@@ -60,6 +62,23 @@ describe('图片预览缩放', () => {
     expect(viewer.style.cursor).toBe('zoom-out');
     fireEvent.keyUp(window, { key: 'Alt' });
     expect(viewer.style.cursor).toBe('zoom-in');
+  });
+
+  it('焦点不在图片视图时,第一下点击只激活(聚焦)不缩放;之后的点击才缩放(VSCode imagePreview consumeClick)', async () => {
+    const { viewer, img } = await loaded();
+    const other = document.createElement('button');
+    document.body.appendChild(other);
+    other.focus();
+    // 真实点击序列:mousedown(此刻焦点尚在别处)→ 默认动作聚焦视图 → click
+    fireEvent.mouseDown(img, { button: 0 });
+    viewer.focus();
+    fireEvent.click(img, { button: 0 });
+    expect(zoomLabel()).toContain(t('editor.image.zoom_fit'));
+    expect(document.activeElement).toBe(viewer);
+    fireEvent.mouseDown(img, { button: 0 });
+    fireEvent.click(img, { button: 0 });
+    expect(zoomLabel()).toContain('60%');
+    other.remove();
   });
 
   it('⌘ / ⌃ 滚轮(触控板捏合 = ctrlKey wheel)连续缩放;不带修饰键的滚轮不缩放(照常滚动)', async () => {

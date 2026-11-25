@@ -76,11 +76,14 @@ export interface FindCountState {
   readonly current: number;
   /** 达到上限停止计数。 */
   readonly capped: boolean;
+  /** 正则模式下查找词不是合法正则(VSCode 查找框弹出正则错误信息)。 */
+  readonly invalid?: boolean;
 }
 
-/** 计数文案:「3 / 154」;无当前匹配只显示总数「154 个匹配」;封顶「1000+」;无匹配「无结果」;空查询空串。 */
-export function formatFindCount({ empty, total, current, capped }: FindCountState): string {
+/** 计数文案:「3 / 154」;无当前匹配只显示总数「154 个匹配」;封顶「1000+」;无匹配「无结果」;非法正则「正则表达式无效」;空查询空串。 */
+export function formatFindCount({ empty, total, current, capped, invalid }: FindCountState): string {
   if (empty) return '';
+  if (invalid) return t('editor.find.invalid_regex');
   if (total <= 0) return t('editor.find.no_results');
   const totalText = capped ? `${FIND_MATCH_LIMIT}+` : String(total);
   if (current > 0) return t('editor.find.match_count', { n: current, total: totalText });
