@@ -12,7 +12,8 @@ test('终端弹出到子窗后再新建终端 → 不报错;关闭子窗 → 收
   expect(await newTerminal()).toBe(true);
   const firstTab = window.getByRole('tab', { name: TERMINAL_PANEL_TAB });
   await expect(firstTab).toHaveAttribute('aria-selected', 'true', { timeout: 15_000 });
-  const firstName = (await firstTab.textContent())?.trim() ?? '';
+  // 标题 = 进程名(两个终端都是 shell 名),按面板 id 认回第一个终端(terminal-title)。
+  const firstId = await firstTab.getAttribute('data-panel-id');
 
   // 弹出终端所在组的活动面板(终端)
   const group = window.locator('.dv-groupview', { has: firstTab });
@@ -32,7 +33,7 @@ test('终端弹出到子窗后再新建终端 → 不报错;关闭子窗 → 收
   // 关闭子窗:终端收回主窗,成为活动面板并获焦
   await child.close({ runBeforeUnload: true });
   await expect.poll(() => electronApp.windows().length).toBe(1);
-  const returned = window.getByRole('tab', { name: firstName });
+  const returned = window.locator(`[role=tab][data-panel-id="${firstId}"]`);
   await expect(returned).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
   await expect(window.getByRole('textbox', { name: TERMINAL_INPUT }).first()).toBeAttached();
 });
