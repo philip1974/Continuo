@@ -37,6 +37,31 @@ export function mostRecentMainWindowPanel(api: DockviewApi): IDockviewPanel | un
 }
 
 /**
+ * 主窗正显示的活动面板:活动面板在主窗 → 它;活动面板在 popout 子窗 → 主窗最近使用的组的活动面板(主窗的标题栏 / 状态栏、
+ * 主窗入口的 toggle 都按它判断)。
+ */
+export function mainWindowActivePanel(api: DockviewApi): IDockviewPanel | undefined {
+  const panel = api.activePanel;
+  return panel?.api.location.type === 'popout' ? mostRecentMainWindowPanel(api) : panel;
+}
+
+/**
+ * 从主窗入口(齿轮 / 菜单 / 命令 / 快捷键)新建面板的落点。dockview 缺省落进活动组,活动组在 popout 子窗时新面板会出现在
+ * 子窗里(用户在主窗里看不到)。VSCode:在触发的窗口打开 → 活动组在主窗(grid / floating)时不干预(undefined);在
+ * popout 时改投主窗最近使用的组;主窗没有带面板的组 → 取可见的 grid 组;都没有 → 在主窗 grid 新建一组。
+ */
+export function mainWindowAddPosition(
+  api: DockviewApi,
+): { referenceGroup: Group; direction: 'within' } | { direction: 'right' } | undefined {
+  const active = api.activeGroup;
+  if (!active || windowKeyOf(active) === 'main') return undefined;
+  const group =
+    mostRecentMainWindowPanel(api)?.group ??
+    api.groups.find((g) => g.api.location.type === 'grid' && g.api.isVisible);
+  return group ? { referenceGroup: group, direction: 'within' } : { direction: 'right' };
+}
+
+/**
  * 主窗(grid / floating)里没有面板:面板全在 popout 子窗(或全关光)。DockShell 据此显示主窗空态(VSCode:主窗保留
  * 带水印的空编辑器组),不能用 totalPanels(把子窗面板也算进去,主窗 dock 空白且 F6 不可达)。
  */

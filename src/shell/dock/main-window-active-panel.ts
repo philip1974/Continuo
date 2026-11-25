@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from 'react';
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { getDockApi, subscribeDockApi } from './dock-api-ref';
-import { mostRecentMainWindowPanel } from './group-mru';
+import { mainWindowActivePanel } from './group-mru';
 import { onPopoutRestoreSettled } from './popout-restore-settle';
 
 export interface ActiveDockPanel {
@@ -32,11 +32,6 @@ let titleSub: Disposable | null = null;
 let titlePanel: IDockviewPanel | undefined;
 let stopApiWatch: (() => void) | null = null;
 let attachedApi: DockviewApi | null = null;
-
-function mainWindowActivePanel(api: DockviewApi): IDockviewPanel | undefined {
-  const panel = api.activePanel;
-  return panel?.api.location.type === 'popout' ? mostRecentMainWindowPanel(api) : panel;
-}
 
 function recompute(api: DockviewApi | null): void {
   const panel = api ? mainWindowActivePanel(api) : undefined;

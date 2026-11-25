@@ -1441,6 +1441,10 @@
 
 - [`popout-header-menu.spec.tsx`](./popout-header-menu/popout-header-menu.spec.tsx)
 
+## [popout-open-target(活动组在 popout 子窗时,主窗入口打开面板的落点)](./popout-open-target/README.md)
+
+- [`popout-open-target.spec.ts`](./popout-open-target/popout-open-target.spec.ts)
+
 ## [popout 子窗里的面板弹窗与全局热键](./popout-panel-keyboard/README.md)
 
 - [`popout-panel-keyboard.spec.tsx`](./popout-panel-keyboard/popout-panel-keyboard.spec.tsx)

@@ -25,8 +25,8 @@
 ### openOrFocusPanel(id, component, title)
 
 - api 未就绪 → 静默
-- 找到现存 panel → setActive,不再 addPanel
-- 没找到 → addPanel({ id, component, title })
+- 找到现存 panel → setActive,不再 addPanel;在 popout 子窗 → 另聚焦子窗与面板内容(`popout-open-target`)
+- 没找到 → addPanel({ id, component, title });活动组在 popout 子窗 → 落在主窗(`popout-open-target`)
 - `setDockApi(api, { layoutPending: true })`(DockShell onReady,布局尚未恢复)→ 调用排队,不立即 addPanel;
   `markDockLayoutRestored(api)` 后按序执行。过期 api 的 mark 无效;onReady 重入(新 api 仍 layoutPending)
   → 已排队操作按序迁移给新 api,set null(卸载)丢弃队列

@@ -51,7 +51,7 @@ import {
 import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
 import { trackPopoutDocuments } from './popout-documents';
-import { isMainWindowDockEmpty, trackGroupMru } from './group-mru';
+import { isMainWindowDockEmpty, mainWindowAddPosition, trackGroupMru } from './group-mru';
 import { trackActiveTabReveal } from './reveal-active-tab';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
@@ -551,11 +551,14 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     const userIntent = editorFocusPulse !== handledFocusPulseRef.current;
     let editorPanel = api.getPanel('editor');
     if (!editorPanel) {
+      // 活动组在 popout 子窗时补建在主窗(VSCode:从主窗打开文件落在主窗),不落进用户看不到的子窗。
+      const position = mainWindowAddPosition(api);
       const options = {
         id: 'editor',
         component: 'editor',
         title: 'Editor',
         params: { titleKey: 'panels.editor.title' },
+        ...(position ? { position } : {}),
       };
       // 非用户意图 → 不抢激活(同 Reconciler 不抢焦点的做法)。
       if (!userIntent) {

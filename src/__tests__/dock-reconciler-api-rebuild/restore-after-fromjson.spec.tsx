@@ -347,6 +347,31 @@ describe('布局恢复后 editor 自动激活不抢活动面板', () => {
     expect(h.api!.activePanel?.id).toBe('plugin-x');
   });
 
+  // VSCode:从主窗打开文件落在主窗。editor 面板已被关掉、活动组在 popout 子窗(用户最后点过子窗)时,补建的 editor
+  // 不能落进活动组(子窗);主窗没有可用组 → 在主窗新建一组。BDD: src/__tests__/popout-open-target/
+  it('editor 面板缺失且活动组在 popout 子窗 → 用户打开文件时 editor 补建在主窗,不进子窗', async () => {
+    h.read.mockResolvedValue({
+      ok: true,
+      data: { ...persistedLayout, panels: { settings: { id: 'settings', contentComponent: 'settings' } } },
+    });
+    render(React.createElement(DockShell));
+    await vi.waitFor(() => expect(h.api?.panels.map((p) => p.id)).toContain('terminal-s1'));
+    const api = h.api as unknown as {
+      activeGroup: unknown;
+      groups: unknown[];
+      addPanel: ReturnType<typeof vi.fn>;
+    };
+    const popoutGroup = { id: 'pg', api: { location: { type: 'popout' } }, activePanel: undefined };
+    api.activeGroup = popoutGroup;
+    api.groups = [popoutGroup];
+    act(() => {
+      useEditorStore.getState().openTab(createTab('/proj/c.md', 'content'));
+    });
+    expect(api.addPanel).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'editor', position: { direction: 'right' } }),
+    );
+  });
+
   it('恢复后 editorFocusPulse 变化(用户切换文件)→ 激活 editor', async () => {
     useEditorStore.setState({ activeTabId: 'tab-1' });
     h.read.mockResolvedValue({ ok: true, data: layoutWithSettingsActive });

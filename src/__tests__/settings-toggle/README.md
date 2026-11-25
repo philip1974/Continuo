@@ -4,8 +4,9 @@
 统一走 `toggleSettingsPanel()` helper。helper 实现 toggle 语义:**
 
 * **panel 不存在** → 打开 + `setSidebarOpen(false)` 收起 Explorer 侧栏(让 Settings 拿到更宽空间)
-* **panel 存在且 `api.isActive=true`**(用户正看着 Settings)→ `panel.api.close()` **关闭**(再次按 ⌘, 收回)
-* **panel 存在但 `api.isActive=false`**(被其他 tab 遮住)→ `setActive()` 聚焦 + 收起侧栏
+* **panel 在主窗正显示**(`api.isActive=true`,或活动组在 popout 子窗时它是主窗最近使用组的活动面板)→ `panel.api.close()` **关闭**(再次按 ⌘, 收回)
+* **panel 存在但主窗没在显示它**(被其他 tab 遮住)→ `setActive()` 聚焦 + 收起侧栏
+* **panel 在 popout 子窗**(即便是活动面板)→ 不关闭,在子窗激活并聚焦子窗,侧栏不动;活动组在子窗时新建落在主窗(见 `popout-open-target`)
 * **dock 未就绪**(开机时序)→ 静默忽略,无副作用
 
 > 与 VSCode 不同的是收侧栏(VSCode `⌘,` 不联动 sidebar)。Continuo 的 Settings panel 内部已是「左导航 + 右内容」两栏,再叠 Explorer 侧栏会被挤窄。

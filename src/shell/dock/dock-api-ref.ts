@@ -3,8 +3,10 @@
 //
 // 用法:focusPanel('editor') 切到对应 panel(若不存在不报错)。
 
-import type { AddPanelOptions, DockviewApi } from 'dockview-react';
+import type { AddPanelOptions, DockviewApi, IDockviewPanel } from 'dockview-react';
 import { activateDockPanel } from './wrap-panel-close';
+import { mainWindowAddPosition } from './group-mru';
+import { focusDockPanelSoon } from './panel-focus';
 import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 let apiRef: DockviewApi | null = null;
@@ -84,8 +86,8 @@ export function focusPanel(panelId: string): void {
 
 /**
  * 单例 panel 打开/聚焦(VSCode Settings 风格):
- * - 已存在同 id panel → setActive,不重建
- * - 不存在 → addPanel({ id, component, title, params: { titleKey } })
+ * - 已存在同 id panel → 在其所在窗口激活(在 popout 子窗 → 另聚焦该子窗与面板内容),不重建
+ * - 不存在 → addPanel({ id, component, title, params: { titleKey } }),落点见 openOrFocusPanelNow
  *
  * dock 未就绪 → 静默忽略(开机时序保护);api 已有但布局尚未恢复 → 排队到恢复完成后执行。
  */
@@ -101,11 +103,25 @@ export function openOrFocusPanel(
 }
 
 /**
+ * 激活一个已存在的面板,并让它出现在用户眼前:在 popout 子窗里 → 聚焦子窗(dockview 只在活动组变化时 focus 子窗,
+ * 子窗组本就是活动组时不会)并把焦点交给面板内容。VSCode:打开已在辅助窗口里的编辑器 → 在其所在窗口激活并聚焦该窗口。
+ */
+export function revealDockPanel(api: Pick<DockviewApi, 'activePanel'>, panel: IDockviewPanel): void {
+  activateDockPanel(panel);
+  const location = panel.api.location;
+  if (location?.type !== 'popout') return;
+  location.getWindow().focus();
+  focusDockPanelSoon(panel, () => api.activePanel === panel);
+}
+
+/**
  * openOrFocusPanel 的同步版本:直接作用于给定 api,不排队。供已持有 api、布局已恢复的入口
  *(Dock「⋯」菜单打开单例面板)复用;`position` 指定新建时落在哪(如菜单所在 group)。
+ * 未指定 position = 主窗入口(齿轮 / 菜单 / 命令 / 快捷键 / 插件 app.dock.openPanel):活动组在 popout 子窗时改投主窗
+ *(mainWindowAddPosition),不落进用户看不到的子窗。BDD: src/__tests__/popout-open-target/
  */
 export function openOrFocusPanelNow(
-  api: Pick<DockviewApi, 'getPanel' | 'addPanel'>,
+  api: DockviewApi,
   id: string,
   component: string,
   title: string,
@@ -114,14 +130,15 @@ export function openOrFocusPanelNow(
 ): void {
   const existing = api.getPanel(id);
   if (existing) {
-    activateDockPanel(existing);
+    revealDockPanel(api, existing);
     return;
   }
+  const target = position ?? mainWindowAddPosition(api);
   api.addPanel({
     id,
     component,
     title,
-    ...(position ? { position } : {}),
+    ...(target ? { position: target } : {}),
     ...(titleKey ? { params: { titleKey } } : {}),
   });
 }

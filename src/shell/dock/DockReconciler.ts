@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { DockviewApi, IDockviewPanel } from 'dockview-react';
+import type { AddPanelOptions, DockviewApi, IDockviewPanel } from 'dockview-react';
 import type { TerminalSession } from '@/stores/terminal.store';
 import { useTerminalStore } from '@/stores/terminal.store';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
@@ -13,6 +13,7 @@ import {
   consumePanelCloseSuppressed,
   markPanelCloseSuppressed,
 } from './wrap-panel-close';
+import { mainWindowAddPosition } from './group-mru';
 import {
   panelIdFor,
   sessionIdFromPanel,
@@ -403,15 +404,14 @@ function isGridPanel(panel: { readonly api: { readonly location?: { readonly typ
 
 /**
  * 没有 grid 终端可作参照时:活动组在主窗 grid → 不传 position(落在活动组);活动组是 popout / floating(刚弹出过)
- * → 落在主窗一个可见的 grid 组(VSCode 新终端默认进主窗面板区)。都没有 → 不传。
+ * → 落在主窗一个可见的 grid 组(VSCode 新终端默认进主窗面板区)。没有可见的 grid 组 → 同主窗入口打开面板的落点
+ *(mainWindowAddPosition:活动组在 popout → 主窗最近使用的组,主窗没有组则新建;活动组是浮动组 → 落在它,仍在主窗)。
  */
-function gridFallbackPosition(
-  api: DockviewApi,
-): { referenceGroup: DockviewApi['groups'][number]; direction: 'within' } | undefined {
+function gridFallbackPosition(api: DockviewApi): AddPanelOptions['position'] | undefined {
   const active = api.activeGroup;
   if (!active || active.api.location.type === 'grid') return undefined;
   const grid = api.groups.find((g) => g.api.location.type === 'grid' && g.api.isVisible);
-  return grid ? { referenceGroup: grid, direction: 'within' } : undefined;
+  return grid ? { referenceGroup: grid, direction: 'within' } : mainWindowAddPosition(api);
 }
 
 /** 新终端向右分屏后每组的最小宽度(px);放不下时作为 tab 加进参照终端的组。 */
