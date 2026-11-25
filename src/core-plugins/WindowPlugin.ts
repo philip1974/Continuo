@@ -8,6 +8,7 @@ import {
   releaseSelectDirectoryLock,
 } from '@/lib/select-directory-single-flight';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
+import { focusPartCommandSpecs } from '@/shell/focus-parts';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -66,5 +67,8 @@ export default class WindowPlugin extends Plugin {
         }
       },
     });
+
+    // F6 / ⇧F6:在 dock 组 / 状态栏 / 侧栏间移动焦点(VSCode focusNextPart / focusPreviousPart)
+    for (const spec of focusPartCommandSpecs()) this.addCommand(spec);
   }
 }

@@ -18,6 +18,7 @@ import { coApp } from '@/plugins/co-app';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { tWithFallback } from '@/i18n';
+import { FOCUS_NEXT_PART_COMMAND, FOCUS_PREVIOUS_PART_COMMAND } from '@/shell/focus-parts';
 
 export const TERMINAL_ZOOM_COMMAND = { id: 'terminal.zoom.toggle', hotkey: 'shift+mod+enter' } as const;
 export const TERMINAL_SEARCH_COMMAND = { id: 'terminal.search.toggle', hotkey: 'mod+f' } as const;
@@ -45,9 +46,12 @@ export function terminalClearDefaultHotkey(platform: Platform): string | undefin
  * - terminal.clear 在 commandsToSkipShell 默认列表里 → 胜出即让出;
  * - 关闭编辑器 / 保存不在列表里 → 只有按键带 Meta(mac ⌘)才让出。Win/Linux 上 Ctrl+W(删前一词)/ Ctrl+S
  *  (XOFF)照常进 shell,与 VSCode 一致。
+ * - F6 / ⇧F6 区域切换(focusNextPart / focusPreviousPart)在默认列表里 → 胜出即让出(终端吃掉 Tab,键盘用户靠它离开)。
  */
 const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> = new Map([
   [TERMINAL_CLEAR_COMMAND.id, { metaOnly: false }],
+  [FOCUS_NEXT_PART_COMMAND.id, { metaOnly: false }],
+  [FOCUS_PREVIOUS_PART_COMMAND.id, { metaOnly: false }],
   [WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_SAVE_COMMAND.id, { metaOnly: true }],
 ]);
@@ -65,6 +69,8 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
     { id: TERMINAL_CLEAR_COMMAND.id, hotkey: terminalClearDefaultHotkey(platform) },
     WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND,
     WORKBENCH_SAVE_COMMAND,
+    FOCUS_NEXT_PART_COMMAND,
+    FOCUS_PREVIOUS_PART_COMMAND,
   ];
 }
 
@@ -107,7 +113,7 @@ export function isTerminalSearchHotkey(
 }
 
 /**
- * 终端应让出给工作台命令(clear / closeActiveEditor / save)的按键 → 命令 id;否则 null。
+ * 终端应让出给工作台命令(clear / closeActiveEditor / save / focusNextPart / focusPreviousPart)的按键 → 命令 id;否则 null。
  * 胜出命令按分发表裁决(用户改绑 / 解绑 / 别的命令占了该键都跟随);关闭 / 保存另须按键带 Meta(见 SKIP_SHELL_COMMANDS)。
  */
 export function terminalYieldedCommandId(

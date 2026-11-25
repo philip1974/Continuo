@@ -58,6 +58,18 @@
   min-width: 0;
 }
 
+/* tab 焦点指示(VSCode:键盘焦点才显示 focusBorder 蓝):dockview 对 .dv-tab:focus-within 一律画 divider 色 1px
+ * 轮廓(几乎不可见,鼠标按下时也出现)。默认改透明,仅 tab 内有键盘焦点(focus-visible)时用 --md-focus-ring。
+ * BDD:src/__tests__/keyboard-focus-parity */
+.dockview-theme-abyss .dv-tab:focus-within::after,
+.dockview-theme-abyss .dv-tab:focus::after {
+  outline-color: transparent !important;
+}
+.dockview-theme-abyss .dv-tab:has(:focus-visible)::after,
+.dockview-theme-abyss .dv-tab:focus-visible::after {
+  outline-color: var(--md-focus-ring) !important;
+}
+
 /* 极窄组(如十个终端并排):tab 内边距、关闭按钮(⌘W / 中键 / Delete 仍可关)与弹出按钮让出宽度,
  * 活动 tab 至少露出截断的标题,而不是只剩「⌄1 ⤢ ⋯」。 */
 .dockview-theme-abyss .dv-tabs-and-actions-container {

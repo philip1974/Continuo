@@ -5,6 +5,11 @@ import { useId } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { handleTablistArrowKeys } from './roving-tablist';
 
+/** pointerdown / mousedown 的默认动作是把焦点移到被按下的控件上;关闭按钮不需要焦点(键盘走 tab 上的 Delete)。 */
+function preventFocusSteal(event: { preventDefault: () => void }): void {
+  event.preventDefault();
+}
+
 /**
  * Props for a horizontal IDE-style tab strip.
  *
@@ -213,6 +218,9 @@ export function TabNavItem({
           // a11y(A29):移出 Tab 顺序,避免 tablist 内混入非 tab 的额外 tab stop(鼠标仍可点;
           // 键盘经聚焦 tab 后 Delete 关闭;不认 Backspace)。
           tabIndex={-1}
+          // 按下不抢焦点:点背景 tab 的 × 时焦点留在原处(如活动编辑器),不落到随后卸载的按钮 / body(VSCode 同)。
+          onPointerDown={preventFocusSteal}
+          onMouseDown={preventFocusSteal}
           onClick={handleClose}
         >
           {/* Continuo-local 微调:'x' → '✕'(U+2715 multiplication X)视觉更对称。 */}

@@ -30,12 +30,12 @@ interface FakeApi {
 interface TestProps {
   containerApi: FakeApi;
   group: { id: string; api: { location: { type: string } } };
-  activePanel: { id: string } | null;
+  activePanel: { id: string; api?: { isActive: boolean } } | null;
 }
 
 function makeProps(over: {
   containerApi?: Partial<FakeApi>;
-  activePanel?: { id: string } | null;
+  activePanel?: { id: string; api?: { isActive: boolean } } | null;
   group?: TestProps['group'];
 } = {}): TestProps {
   const containerApi: FakeApi = {
@@ -89,7 +89,7 @@ describe('HeaderActions — popout', () => {
   });
 
   it('activePanel 有 → 点击调 addPopoutGroup', () => {
-    const props = makeProps({ activePanel: { id: 'p1' } });
+    const props = makeProps({ activePanel: { id: 'p1', api: { isActive: false } } });
     const { container } = render(
       <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
     );
@@ -153,7 +153,7 @@ describe('HeaderActions — popout 被拦截', () => {
 
   it('addPopoutGroup resolve true → 不报错', async () => {
     notifyError.mockReset();
-    const props = makeProps({ activePanel: { id: 'p1' } });
+    const props = makeProps({ activePanel: { id: 'p1', api: { isActive: false } } });
     const { container } = render(
       <HeaderActions {...(props as unknown as Parameters<typeof HeaderActions>[0])} />,
     );

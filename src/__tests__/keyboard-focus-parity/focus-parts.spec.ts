@@ -1,0 +1,152 @@
+// @vitest-environment jsdom
+// BDD:F6 / ⇧F6 在工作台区域间循环(VSCode workbench.action.focusNextPart / focusPreviousPart);终端让出 F6;
+// 编辑器里 F6 照常触发命令。见同目录 README 第 6 条。
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import type { DockviewApi } from 'dockview-react';
+import {
+  FOCUS_NEXT_PART_COMMAND,
+  FOCUS_PREVIOUS_PART_COMMAND,
+  focusAdjacentPart,
+} from '@/shell/focus-parts';
+import { setDockApi } from '@/shell/dock/dock-api-ref';
+import { terminalYieldedCommandId } from '@/panels/Terminal/terminal-hotkeys';
+import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
+import { CommandRegistry } from '@/plugins/registries/CommandRegistry';
+import { coApp } from '@/plugins/co-app';
+import { bootCorePlugins, shutdownCorePlugins } from '@/core-plugins';
+import { en } from '../../../electron/shared/i18n-locales/en';
+import { zh } from '../../../electron/shared/i18n-locales/zh';
+import { ko } from '../../../electron/shared/i18n-locales/ko';
+
+const key = (init: KeyboardEventInit) => new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+
+afterEach(() => {
+  setDockApi(null);
+  document.body.innerHTML = '';
+});
+
+describe('命令注册', () => {
+  beforeEach(() => bootCorePlugins());
+  afterEach(() => shutdownCorePlugins());
+
+  it('focusNextPart = F6、focusPreviousPart = ⇧F6,分类「查看」,三语标题', () => {
+    expect(FOCUS_NEXT_PART_COMMAND).toEqual({ id: 'workbench.action.focusNextPart', hotkey: 'f6' });
+    expect(FOCUS_PREVIOUS_PART_COMMAND).toEqual({ id: 'workbench.action.focusPreviousPart', hotkey: 'shift+f6' });
+    for (const { id, hotkey } of [FOCUS_NEXT_PART_COMMAND, FOCUS_PREVIOUS_PART_COMMAND]) {
+      const spec = coApp.commands.get(id);
+      expect(spec?.hotkey).toBe(hotkey);
+      expect(spec?.categoryKey).toBe('commands.view.category');
+      for (const catalog of [en, zh, ko] as ReadonlyArray<Record<string, string>>) {
+        expect(catalog[spec!.titleKey!]).toBeTruthy();
+      }
+    }
+  });
+});
+
+/**
+ * 工作台骨架:dock(活动面板内容里一个可编辑区)、状态栏(按钮)、侧栏(Explorer 树,当前项 tabindex=0)。
+ * 活动面板经 dock api 取(同 focusPanelContent)。
+ */
+function workbench(opts: { sidebarHidden?: boolean } = {}) {
+  document.body.innerHTML = `
+    <aside data-workbench-part="sidebar" ${opts.sidebarHidden ? 'hidden' : ''}>
+      <button data-x="sidebar-header">new file</button>
+      <div role="tree">
+        <div role="treeitem" tabindex="-1" data-x="row-a">a</div>
+        <div role="treeitem" tabindex="0" data-x="row-b">b</div>
+      </div>
+    </aside>
+    <div data-workbench-part="dock"><div data-x="panel-content"><textarea data-x="editor"></textarea></div></div>
+    <footer data-workbench-part="statusbar"><span>ws</span><button data-x="status-mcp">MCP</button></footer>
+    <button data-x="outside">outside</button>`;
+  const element = document.querySelector<HTMLElement>('[data-x="panel-content"]')!;
+  const panel: Record<string, unknown> = { id: 'editor', view: { content: { element } } };
+  panel.api = { id: 'editor', group: { panels: [panel] } };
+  setDockApi({ activePanel: panel } as unknown as DockviewApi);
+}
+const el = (x: string) => document.querySelector<HTMLElement>(`[data-x="${x}"]`)!;
+
+describe('F6 / ⇧F6 区域循环', () => {
+  it('dock → 状态栏 → 侧栏(树当前项)→ dock', () => {
+    workbench();
+    el('editor').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('status-mcp'));
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('row-b'));
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('editor'));
+  });
+
+  it('⇧F6 反向:dock → 侧栏 → 状态栏 → dock', () => {
+    workbench();
+    el('editor').focus();
+    focusAdjacentPart(-1);
+    expect(document.activeElement).toBe(el('row-b'));
+    focusAdjacentPart(-1);
+    expect(document.activeElement).toBe(el('status-mcp'));
+    focusAdjacentPart(-1);
+    expect(document.activeElement).toBe(el('editor'));
+  });
+
+  it('侧栏隐藏 → 跳过', () => {
+    workbench({ sidebarHidden: true });
+    el('status-mcp').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('editor'));
+  });
+
+  it('焦点不在任何区域(body / 区域外)→ F6 / ⇧F6 都先到活动 dock 组', () => {
+    workbench();
+    el('outside').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('editor'));
+    el('outside').focus();
+    focusAdjacentPart(-1);
+    expect(document.activeElement).toBe(el('editor'));
+  });
+
+  it('没有活动面板 → dock 跳过', () => {
+    workbench();
+    setDockApi({ activePanel: undefined } as unknown as DockviewApi);
+    el('row-b').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('status-mcp'));
+  });
+});
+
+describe('终端与编辑器里的 F6', () => {
+  const noRegistry = { getAll: () => [] };
+
+  it('终端让出 F6 / ⇧F6 给命令(VSCode commandsToSkipShell 默认包含)', () => {
+    expect(terminalYieldedCommandId(key({ key: 'F6' }), 'mac', {}, noRegistry)).toBe(FOCUS_NEXT_PART_COMMAND.id);
+    expect(terminalYieldedCommandId(key({ key: 'F6', shiftKey: true }), 'other', {}, noRegistry)).toBe(
+      FOCUS_PREVIOUS_PART_COMMAND.id,
+    );
+  });
+
+  it('解绑 / 改绑到别的键 → 终端不再让出 F6', () => {
+    expect(terminalYieldedCommandId(key({ key: 'F6' }), 'mac', { [FOCUS_NEXT_PART_COMMAND.id]: '' }, noRegistry)).toBeNull();
+  });
+
+  it('可编辑控件(编辑器 / 输入框)里 F6 照常触发命令;单字母绑定仍放行给打字', () => {
+    const f6 = vi.fn();
+    const x = vi.fn();
+    const reg = new CommandRegistry();
+    reg.register({ id: FOCUS_NEXT_PART_COMMAND.id, title: 'next', hotkey: 'f6', fn: f6 });
+    reg.register({ id: 'x', title: 'x', hotkey: 'x', fn: x });
+    renderHook(() => useCommandHotkeys(reg));
+    // jsdom 不实现 isContentEditable,用 textarea 代表可编辑目标(同一 A64 判定分支)
+    const content = document.createElement('textarea');
+    document.body.appendChild(content);
+
+    const event = key({ key: 'F6' });
+    content.dispatchEvent(event);
+    content.dispatchEvent(key({ key: 'x' }));
+
+    expect(f6).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    expect(x).not.toHaveBeenCalled();
+  });
+});

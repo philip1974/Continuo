@@ -9,6 +9,7 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
+import { focusDockPanelSoon } from '@/shell/dock/panel-focus';
 import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
 
@@ -109,7 +110,13 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         popoutUrl: popoutUrlFor(window.location.href),
       })
       .then((opened) => {
-        if (opened === false) onFailed('addPopoutGroup resolved false');
+        if (opened === false) {
+          onFailed('addPopoutGroup resolved false');
+          return;
+        }
+        // VSCode:移到新窗口的编辑器直接获焦。子窗打开后焦点在其 body;面板内容随组挪进子窗,交给它(仍是活动面板才交)。
+        // BDD: src/__tests__/keyboard-focus-parity/
+        focusDockPanelSoon(activePanel, () => activePanel.api.isActive);
       }, onFailed);
   }, [activePanel, containerApi]);
   // header 由主窗 React 经 portal 渲染进子窗,window.location 恒为主窗 → 只能按组的实际位置判定。

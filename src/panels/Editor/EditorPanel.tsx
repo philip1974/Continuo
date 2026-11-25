@@ -127,7 +127,10 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         useEditorStore.getState().activeTabId === id &&
         focusWithinOrLost(root.ownerDocument, root);
       closeStoreTab(id);
-      if (refocus) focusActiveEditor();
+      if (!refocus) return;
+      // 关掉的是最后一个 tab → 焦点留在空编辑器组(面板根,tabIndex=-1),不随卸载的编辑区掉到 body(VSCode 同)。
+      if (useEditorStore.getState().activeTabId === null) root.focus();
+      else focusActiveEditor();
     },
     [closeStoreTab],
   );
@@ -382,7 +385,10 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   return (
     <div
       ref={rootRef}
-      className="flex h-full w-full flex-col bg-canvas"
+      // 空编辑器组的焦点落点(关掉最后一个 tab 后);只经脚本聚焦,不进 Tab 顺序。
+      tabIndex={-1}
+      data-editor-panel-root=""
+      className="flex h-full w-full flex-col bg-canvas outline-none"
       onKeyDown={(e) => {
         // 保存 / 下一个 / 上一个编辑器在面板内就地处理并截住冒泡:不再到 document 的全局分发(否则一次按键执行两次);
         // 面板在 popout 子窗时全局分发不监听子窗 document,靠这里处理;切换只作用于本编辑器的文件 tab。

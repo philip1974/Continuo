@@ -131,6 +131,8 @@ export const zh: Record<TranslationKey, string> = {
   'commands.editor.next.title': '打开下一个编辑器',
   'commands.editor.previous.title': '打开上一个编辑器',
   'commands.view.category': '查看',
+  'commands.view.focus_next_part.title': '聚焦到下一部分',
+  'commands.view.focus_previous_part.title': '聚焦到上一部分',
   'commands.file.save.title': '保存',
   'commands.file.revert.title': '还原文件',
   'commands.file.category': '文件',

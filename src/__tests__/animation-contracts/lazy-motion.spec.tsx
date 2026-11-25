@@ -66,6 +66,7 @@ describe('LazyMotion — 首屏不静态引入完整 motion 特性集', () => {
         setActive: vi.fn(),
         onDidActiveChange: () => ({ dispose: vi.fn() }),
         onDidTitleChange: () => ({ dispose: vi.fn() }),
+        onDidGroupChange: () => ({ dispose: vi.fn() }),
       };
       const tabProps = {
         api,

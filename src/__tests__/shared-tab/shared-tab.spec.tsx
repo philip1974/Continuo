@@ -27,6 +27,7 @@ interface FakeApi {
   onDidTitleChange: (cb: (e: { title: string }) => void) => {
     dispose: () => void;
   };
+  onDidGroupChange: (cb: () => void) => { dispose: () => void };
   __triggerActiveChange: (isActive: boolean) => void;
   __triggerTitleChange: (title: string) => void;
 }
@@ -50,6 +51,7 @@ function makeApi(over: Partial<FakeApi> = {}): FakeApi {
       titleCb = cb;
       return { dispose: vi.fn() };
     },
+    onDidGroupChange: () => ({ dispose: vi.fn() }),
     __triggerActiveChange: (isActive) => activeCb?.({ isActive }),
     __triggerTitleChange: (title) => titleCb?.({ title }),
     ...over,

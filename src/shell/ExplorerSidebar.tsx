@@ -50,7 +50,9 @@ export function ExplorerSidebar() {
   if (!open && !keepAlive) return null;
 
   return (
+    // data-workbench-part:F6 / ⇧F6 区域切换的「侧栏」区域(src/shell/focus-parts.ts);hidden 时跳过。
     <aside
+      data-workbench-part="sidebar"
       hidden={!open}
       className="relative shrink-0 border-r border-line bg-canvas"
     >

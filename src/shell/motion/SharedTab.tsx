@@ -110,6 +110,27 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
     container.setAttribute('aria-label', t('shell.tab.dock_tablist'));
   });
 
+  // dockview 的 Tab 构造时把外层 .dv-tab 写死 tabIndex=0:每个 tab 多一个无键盘行为的 Tab 停靠点,抵消下方内层
+  // role=tab 的 roving。移出 Tab 顺序(鼠标仍可点),tab 条只剩活动 tab 一个停靠点(VSCode 同)。面板挪到别的组时
+  // dockview 新建外层 tab、复用本组件的 DOM(不重挂载)→ 组变化后再设一次。BDD: src/__tests__/keyboard-focus-parity/
+  useEffect(() => {
+    const leaveTabOrder = (): void => {
+      const outer = rootRef.current?.closest<HTMLElement>('.dv-tab');
+      if (outer && outer.tabIndex !== -1) outer.tabIndex = -1;
+    };
+    leaveTabOrder();
+    let disposed = false;
+    const sub = api.onDidGroupChange(() => {
+      queueMicrotask(() => {
+        if (!disposed) leaveTabOrder();
+      });
+    });
+    return () => {
+      disposed = true;
+      sub.dispose();
+    };
+  }, [api]);
+
   // topic-22 follow-up: 点击 icon = exitMaximizedGroup(整 group 退,与 zoom toggle
   // 命令对称)。stopPropagation 防止 tab pointerDown 把 drag 起来。
   const onExitMaximize = useCallback(

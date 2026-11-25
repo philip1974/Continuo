@@ -12,7 +12,8 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState, StateEffect, type Extension } from '@codemirror/state';
-import type { ViewUpdate } from '@codemirror/view';
+import { keymap, type ViewUpdate } from '@codemirror/view';
+import { indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
 import { css } from '@codemirror/lang-css';
@@ -178,6 +179,10 @@ export function CodeEditor({
 
     const extensions: Extension[] = [
       basicSetup,
+      // Tab 缩进 / ⇧Tab 反缩进(VSCode 同)。键盘用户逃逸:Esc 后紧接着 Tab(2 秒内)交给浏览器移出焦点,
+      // ⌃M(mac ⇧⌥M,basicSetup 的 toggleTabFocusMode)切换常驻模式 —— CodeMirror 内建,对应 VSCode ⌃M。
+      // BDD: src/__tests__/keyboard-focus-parity/
+      keymap.of([indentWithTab]),
       themeCompartment.current.of(themeExt),
       langCompartment.current.of(lang),
       debugDecorationsExtension(),

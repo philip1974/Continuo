@@ -15,6 +15,7 @@ function renderTab(isActive: boolean) {
     setActive: vi.fn(),
     onDidActiveChange: () => ({ dispose: vi.fn() }),
     onDidTitleChange: () => ({ dispose: vi.fn() }),
+    onDidGroupChange: () => ({ dispose: vi.fn() }),
   };
   const props = {
     api,

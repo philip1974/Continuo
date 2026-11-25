@@ -132,6 +132,8 @@ export const ko: Record<TranslationKey, string> = {
   'commands.editor.next.title': '다음 편집기 열기',
   'commands.editor.previous.title': '이전 편집기 열기',
   'commands.view.category': '보기',
+  'commands.view.focus_next_part.title': '다음 부분에 포커스',
+  'commands.view.focus_previous_part.title': '이전 부분에 포커스',
   'commands.file.save.title': '저장',
   'commands.file.revert.title': '파일 되돌리기',
   'commands.file.category': '파일',

@@ -63,6 +63,7 @@ function buildEnv(initialMaxed = false): TestEnv {
       activeEmitter.on(cb),
     onDidTitleChange: (cb: (e: { title: string | undefined }) => void) =>
       titleEmitter.on(cb),
+    onDidGroupChange: () => ({ dispose: () => {} }),
     close: vi.fn(),
   } as unknown as SharedTabProps['api'];
   const containerApi = {

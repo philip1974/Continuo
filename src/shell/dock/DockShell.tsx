@@ -561,7 +561,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
   return (
     // isolate:把 dockview 内部的大 z-index(sash 99、浮动组 997+、拖放落点 9999)收进 dock 自身的层叠上下文,
     // 不与 body 下的 toast / 模态 / 菜单同层比较(BDD:src/__tests__/dock-stacking-context)。
-    <div className="relative isolate h-full w-full">
+    // data-workbench-part:F6 / ⇧F6 区域切换的「dock」区域(src/shell/focus-parts.ts)。
+    <div className="relative isolate h-full w-full" data-workbench-part="dock">
       {reconcilerTarget && (
         <DockReconcilerMount
           api={reconcilerTarget.api}

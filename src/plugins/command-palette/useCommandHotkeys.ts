@@ -153,6 +153,11 @@ function isInsideCodeEditor(target: EventTarget | null): boolean {
   return typeof el?.closest === 'function' && el.closest('.ProseMirror, .cm-editor') !== null;
 }
 
+/** 主键是否功能键 f1–f24(已小写)。 */
+function isFunctionKey(key: string): boolean {
+  return /^f([1-9]|1\d|2[0-4])$/.test(key);
+}
+
 /** 事件目标是否可编辑文本控件(input/textarea/select/contenteditable). */
 function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -322,7 +327,8 @@ function createHotkeyHandler(
     const b = firstMatchingBinding(bindings, e);
     if (b && (!allowedIds || allowedIds.has(b.cmd.id))) {
       // 同一事件命中的绑定签名相同(修饰键 + 主键精确比较),A64 放行对它们一致 → 只看第一条。
-      if (!isEditableTarget(e.target) || b.sig.wantMeta || b.sig.wantCtrl || b.sig.wantAlt) {
+      // 功能键(F1–F24)不是文字输入键 → 不在放行之列:编辑器 / 输入框里 F6 照常切区域(VSCode 同)。
+      if (!isEditableTarget(e.target) || b.sig.wantMeta || b.sig.wantCtrl || b.sig.wantAlt || isFunctionKey(b.sig.key)) {
         e.preventDefault();
         e.stopPropagation();
         // 经 runContributedAction 走:命令(任意插件代码,可 network/fs)同步 throw 或

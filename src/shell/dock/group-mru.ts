@@ -62,6 +62,13 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
       }
     }
     if (!wasActive) return;
+    // 组里的活动面板仍在、只是随组挪走了(浮动组弹出到子窗:面板先挪进新组再移除本组)→ 焦点随面板走:激活它本身
+    //(压住 groups[0] 兜底),不回落到同窗别的面板 —— 终端一被设为活动就自己抢焦点。聚焦由挪动方负责。
+    const moved = lastPanelId ? api.getPanel(lastPanelId) : undefined;
+    if (moved && moved.group !== group) {
+      activateDockPanel(moved);
+      return;
+    }
     for (const id of mru) {
       const candidateGroup = api.getGroup(id);
       if (!candidateGroup || windowKeyOf(candidateGroup) !== windowKey) continue;

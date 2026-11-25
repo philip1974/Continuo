@@ -144,6 +144,8 @@ export const en = {
   'commands.editor.next.title': 'Open Next Editor',
   'commands.editor.previous.title': 'Open Previous Editor',
   'commands.view.category': 'View',
+  'commands.view.focus_next_part.title': 'Focus Next Part',
+  'commands.view.focus_previous_part.title': 'Focus Previous Part',
   'commands.file.save.title': 'Save',
   'commands.file.revert.title': 'Revert File',
   'commands.file.category': 'File',
