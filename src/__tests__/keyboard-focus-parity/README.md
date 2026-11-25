@@ -51,6 +51,8 @@ F6 / ⇧F6(`workbench.action.focusNextPart` / `focusPreviousPart`)在工作台�
 - `workbench.action.focusNextPart`(F6)/ `focusPreviousPart`(⇧F6),三语标题,分类「查看」
 - 顺序:活动 dock 组(活动面板内容,同 `focusPanelContent`)→ 状态栏(第一个控件)→ 侧栏(Explorer 树当前项)→ 循环;
   ⇧F6 反向;不可聚焦 / 隐藏的区域跳过;焦点不在任何区域 → F6 / ⇧F6 都先到活动 dock 组(VSCode 同)
+- 活动面板在 popout 子窗时,主窗 F6 不跳过 dock:激活并聚焦主窗(grid / floating)最近使用的组(组 MRU)的活动面板
+  (VSCode:主窗 F6 只在主窗自己的区域循环)
 - 终端里 F6 / ⇧F6 让出给命令(不发给 shell);编辑器(CodeMirror / ProseMirror)里 F6 照常触发命令
 
 ## 端到端

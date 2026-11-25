@@ -201,7 +201,7 @@ function QuickOpenBody() {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div ref={scrollRef} className="max-h-[420px] overflow-y-auto py-1">
+      <div ref={scrollRef} className="max-h-[min(420px,calc(100vh-8rem))] overflow-y-auto py-1">
         {!root ? (
           // a11y(A69,A56 同族):弹窗打开焦点自动落搜索框,无 workspace 空态须 role=status,
           // 否则 SR 用户不被告知"当前无法搜索文件"及原因。

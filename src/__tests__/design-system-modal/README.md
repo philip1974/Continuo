@@ -43,6 +43,13 @@ Shift+Tab 在第一个上循环到最后一个;overlay click 调 onClose;关闭�
 - Shift+Tab 在 first 上 → preventDefault + last.focus()
 - 中间位置 Tab → 浏览器默认(我们不动)
 
+### 视口(`modal-viewport.spec.ts`,按源码钉;600×400 实测见 e2e)
+
+- `.wm-modal-content` 最高 `calc(100vh - 2rem)`,超出时内容区自身滚动(矮窗口下确认框 / 录键框 / 权限编辑的按钮仍可达)
+- Quick Open / 命令面板的结果列表最高 `min(420px / 360px, 100vh - 8rem)`:随窗口高度收缩,输入框不被顶出窗口
+  (VSCode Quick Input 列表随窗口高度收缩)
+- 主窗 `minWidth: 400` / `minHeight: 270`(同 VSCode 主窗最小尺寸)
+
 ### 打开状态订阅
 
 - `hasOpenModal()`:当前是否有 visible 的 Modal(主窗与 popout 子窗文档合计)

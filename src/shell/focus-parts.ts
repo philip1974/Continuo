@@ -1,11 +1,14 @@
 // F6 / ⇧F6 在工作台区域间移动焦点(VSCode workbench.action.focusNextPart / focusPreviousPart):终端 / 代码编辑器
 // 吃掉 Tab 时,键盘用户靠它离开当前区域。顺序同 VSCode(编辑器 → … → 状态栏 → … → 侧栏 → 编辑器)取 Continuo 有的
 // 三个区域:活动 dock 组 → 状态栏 → 侧栏。区域由 data-workbench-part 标记;不可聚焦 / 隐藏的区域跳过;焦点不在任何
-// 区域时先到活动 dock 组(VSCode 同)。只作用于主窗(popout 子窗不分发本命令)。
+// 区域时先到活动 dock 组(VSCode 同)。只作用于主窗(popout 子窗不分发本命令);活动面板在子窗时 dock 区域取主窗最近
+// 使用的组。
 // BDD: src/__tests__/keyboard-focus-parity/
 
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { focusPanelContent } from '@/shell/dock/panel-focus';
+import { mostRecentMainWindowPanel } from '@/shell/dock/group-mru';
+import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 
 export const FOCUS_NEXT_PART_COMMAND = { id: 'workbench.action.focusNextPart', hotkey: 'f6' } as const;
@@ -29,7 +32,13 @@ function focusPart(doc: Document, part: Part): boolean {
   const root = partElement(doc, part);
   if (!root) return false;
   if (part === 'dock') {
-    const panel = getDockApi()?.activePanel;
+    const api = getDockApi();
+    let panel = api?.activePanel;
+    // 活动面板在 popout 子窗:主窗 F6 只在主窗自己的区域循环(VSCode 同)→ 改用主窗最近使用的组的活动面板,先激活再聚焦。
+    if (api && panel?.api.location.type === 'popout') {
+      panel = mostRecentMainWindowPanel(api);
+      if (panel) activateDockPanel(panel);
+    }
     if (!panel) return false;
     focusPanelContent(panel.api);
   } else {

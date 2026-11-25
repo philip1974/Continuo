@@ -88,6 +88,28 @@ describe('组 MRU:移除活动组后激活最近使用的组', () => {
     tracker.dispose();
   });
 
+  // dockview 弹出时把 popout 组设为活动组,活动面板仍是同一对象 → 不派发 onDidActivePanelChange;收回仍须获焦。
+  it('弹出的就是当前活动面板(弹出后不再切换):关子窗后收回的面板成为活动面板并获焦', async () => {
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    threeColumns(api);
+    const tracker = trackGroupMru(api);
+    const focusC = registerFocusSpy('c');
+    api.getPanel('c')!.api.setActive();
+    const popout = await openFakePopout(dock, 'c');
+    expect(api.getPanel('c')!.api.location.type).toBe('popout');
+    expect(api.activePanel?.id).toBe('c');
+    focusC.mockClear();
+
+    popout.close();
+    await flushMicrotasks();
+
+    expect(api.getPanel('c')!.api.location.type).toBe('grid');
+    expect(api.activePanel?.id).toBe('c');
+    expect(focusC).toHaveBeenCalled();
+    tracker.dispose();
+  });
+
   it('拖动组里最后一个 tab 进另一组:dockview 自己激活目标组,键盘焦点不被送进第三个终端', async () => {
     const dock = createDock();
     const api = dock.api as DockviewApi;

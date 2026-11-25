@@ -183,6 +183,15 @@
   z-index: var(--z-terminal-overlay);
 }
 
+/* 原生 <button>(design 不适用的行内文本按钮,如状态栏)的键盘焦点环:与 design 控件同为 focus-ring 蓝(VSCode
+ * focusBorder),不落回系统强调色(Chromium 默认 outline: auto)。base 层:design(components)与调用方 utility 可覆盖。 */
+@layer base {
+  button:focus-visible {
+    outline: 1px solid var(--md-focus-ring);
+    outline-offset: 1px;
+  }
+}
+
 /* 韩文按词(어절)断行:默认 word-break: normal 会在词中间换行(「설정을 변경하/면」)。<html lang> 由
  * setLocale 随界面语言写入(src/i18n/translate.ts)。 */
 :lang(ko) {

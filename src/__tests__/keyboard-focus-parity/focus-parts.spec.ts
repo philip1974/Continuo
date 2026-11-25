@@ -3,13 +3,15 @@
 // 编辑器里 F6 照常触发命令。见同目录 README 第 6 条。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import type { DockviewApi } from 'dockview-react';
+import { DockviewComponent, type DockviewApi } from 'dockview-react';
 import {
   FOCUS_NEXT_PART_COMMAND,
   FOCUS_PREVIOUS_PART_COMMAND,
   focusAdjacentPart,
 } from '@/shell/focus-parts';
 import { setDockApi } from '@/shell/dock/dock-api-ref';
+import { trackGroupMru } from '@/shell/dock/group-mru';
+import { openFakePopout } from '../dock-terminal-vscode-focus/dock-fixtures';
 import { terminalYieldedCommandId } from '@/panels/Terminal/terminal-hotkeys';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
 import { CommandRegistry } from '@/plugins/registries/CommandRegistry';
@@ -23,6 +25,7 @@ const key = (init: KeyboardEventInit) => new KeyboardEvent('keydown', { bubbles:
 
 afterEach(() => {
   setDockApi(null);
+  vi.unstubAllGlobals();
   document.body.innerHTML = '';
 });
 
@@ -62,7 +65,7 @@ function workbench(opts: { sidebarHidden?: boolean } = {}) {
     <button data-x="outside">outside</button>`;
   const element = document.querySelector<HTMLElement>('[data-x="panel-content"]')!;
   const panel: Record<string, unknown> = { id: 'editor', view: { content: { element } } };
-  panel.api = { id: 'editor', group: { panels: [panel] } };
+  panel.api = { id: 'editor', location: { type: 'grid' }, group: { panels: [panel] } };
   setDockApi({ activePanel: panel } as unknown as DockviewApi);
 }
 const el = (x: string) => document.querySelector<HTMLElement>(`[data-x="${x}"]`)!;
@@ -113,6 +116,55 @@ describe('F6 / ⇧F6 区域循环', () => {
     el('row-b').focus();
     focusAdjacentPart(1);
     expect(document.activeElement).toBe(el('status-mcp'));
+  });
+});
+
+/** 真实 dockview 挂在 dock 区域里:a | b | c 三组,每个面板内容里一个 textarea(data-x=editor-<id>)。 */
+function realDockWorkbench() {
+  workbench();
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const dockPart = document.querySelector<HTMLElement>('[data-workbench-part="dock"]')!;
+  dockPart.innerHTML = '';
+  const container = document.createElement('div');
+  dockPart.appendChild(container);
+  const dock = new DockviewComponent(container, {
+    createComponent: ({ id }) => {
+      const element = document.createElement('div');
+      element.innerHTML = `<textarea data-x="editor-${id}"></textarea>`;
+      return { element, init: () => {} };
+    },
+  });
+  const api = dock.api as DockviewApi;
+  api.addPanel({ id: 'a', component: 'x', title: 'a' });
+  api.addPanel({ id: 'b', component: 'x', title: 'b', position: { referencePanel: 'a', direction: 'right' } });
+  api.addPanel({ id: 'c', component: 'x', title: 'c', position: { referencePanel: 'b', direction: 'right' } });
+  setDockApi(api);
+  return { dock, api, tracker: trackGroupMru(api) };
+}
+
+describe('活动面板在 popout 子窗时的主窗 F6', () => {
+  it('主窗 F6 不跳过 dock:激活并聚焦主窗最近使用的组的活动面板(VSCode:主窗 F6 只在主窗自己的区域循环)', async () => {
+    const { dock, api, tracker } = realDockWorkbench();
+    // 主窗 MRU:b 比 a 近(groups 顺序里 a 在前,用 b 区分「按 MRU」与「取第一个组」)。
+    api.getPanel('a')!.api.setActive();
+    api.getPanel('b')!.api.setActive();
+    await openFakePopout(dock, 'c');
+    api.getPanel('c')!.api.setActive();
+    expect(api.activePanel?.api.location.type).toBe('popout');
+    el('row-b').focus();
+
+    focusAdjacentPart(1);
+
+    expect(api.activePanel?.id).toBe('b');
+    expect(document.activeElement).toBe(el('editor-b'));
+    tracker.dispose();
   });
 });
 

@@ -16,6 +16,10 @@
   padding: var(--wm-space-6, 1.25rem);
   max-width: 480px; /* size="sm" 默认值 */
   width: 90%;
+  /* 矮窗口(主窗最小 400×270)下不越出窗口:上下各留 1rem,超出时整个内容区滚动(按钮仍可滚到)。
+   * 列表型对话框(Quick Open / 命令面板)让自己的列表随视口收缩,输入框始终可见。 */
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
   box-shadow: var(--wm-shadow-popover);
   border: 1px solid var(--md-outline-variant);
 }

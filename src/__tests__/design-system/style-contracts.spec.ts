@@ -232,3 +232,28 @@ describe('design CSS 层级', () => {
     expect(hits).toEqual([]);
   });
 });
+
+// 非 design 的原生 <button>(状态栏 / 插件市场等行内文本按钮,注释说明为何不用 design)键盘焦点环与 design 控件同为
+// focus-ring 蓝(VSCode focusBorder),不落回系统强调色(Chromium outline: auto)。规则放 base 层:design(components)
+// 与调用方 utility(focus-visible:outline-*)仍可覆盖。
+describe('原生按钮键盘焦点环', () => {
+  const THEME = css('src/styles/theme.css');
+
+  it('theme.css 的 @layer base 给 button:focus-visible 1px focus-ring 实线轮廓', () => {
+    const base = THEME.match(/@layer base\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    const body = ruleBody(base, 'button:focus-visible');
+    expect(body).toMatch(/outline:\s*1px solid var\(--md-focus-ring\)/);
+  });
+
+  it('原生按钮不用 outline-none 去掉焦点环而不补 focus-visible 轮廓', () => {
+    const files = execFileSync('git', ['ls-files', 'src/*.tsx'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f !== '' && !f.startsWith('src/design/') && !f.includes('__tests__'));
+    const hits = files.flatMap((f) =>
+      Array.from(css(f).matchAll(/<button\b[^>]*?className="([^"]*)"/gs), (m) => m[1] ?? '')
+        .filter((cls) => /\boutline-none\b/.test(cls) && !/focus-visible:outline/.test(cls))
+        .map((cls) => `${f}: ${cls}`),
+    );
+    expect(hits).toEqual([]);
+  });
+});

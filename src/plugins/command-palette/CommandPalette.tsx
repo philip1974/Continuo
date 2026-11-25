@@ -319,7 +319,7 @@ function CommandPaletteBody({ commands }: CommandPaletteProps) {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div ref={scrollRef} className="max-h-[360px] overflow-y-auto py-1">
+      <div ref={scrollRef} className="max-h-[min(360px,calc(100vh-8rem))] overflow-y-auto py-1">
         {filtered.length === 0 ? (
           // a11y(A56,A53-A55 同族):焦点锁在搜索框,输入致结果空时须 live region(role=status)
           // 播报「无匹配」,否则 AT 用户不知已无结果。

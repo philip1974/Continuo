@@ -46,6 +46,9 @@
   Tailwind v4 层顺序 theme < base < components < utilities,而 unlayered 样式压过任何 layer —— 不在层里时调用方传给
   design 组件的 className(`@max-md:hidden`、`w-24`、`overflow-x-auto` 等)会被组件基类静默覆盖
 - 可聚焦控件键盘焦点一致:`Button` 与 IconButton / NavRailButton / SegmentedControl / TabNav 同为 `:focus-visible` 2px `--md-focus-ring` 轮廓
+- 原生 `<button>`(design 不适用、注释说明原因的行内文本按钮,如状态栏):`theme.css` 的 `@layer base` 给
+  `button:focus-visible` 1px `--md-focus-ring` 实线轮廓(VSCode focusBorder),不落回系统强调色;原生按钮不得
+  `outline-none` 而不补 `focus-visible:outline-*`
 - 有不透明底色的控件 hover 用 MD3 state layer 叠加(`background-image` 叠 `--md-state-hover`),不把底色换成半透明
 - `SegmentedControl`:轨道 1px `outline-variant` 描边;选中项 `secondary-container` 底 + `on-secondary-container` 字 +
   1px `primary` 描边(指示对轨道 ≥ 3:1);未选中项同宽透明描边,切换不抖动

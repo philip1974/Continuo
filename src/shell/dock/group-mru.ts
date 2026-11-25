@@ -21,14 +21,33 @@ type Group = DockviewApi['groups'][number];
 /** 组所在窗口:popout 组各占一个子窗;grid / floating 同在主窗。 */
 const windowKeyOf = (group: Pick<IDockviewGroupPanel, 'id' | 'api'>): string => (group.api.location.type === 'popout' ? `popout:${group.id}` : 'main');
 
+// 每个 dock api 的组 MRU(trackGroupMru 期间有效),供 mostRecentMainWindowPanel 查询。
+const mruByApi = new WeakMap<DockviewApi, readonly string[]>();
+
+/**
+ * 主窗(grid / floating)里最近使用的组的活动面板:活动面板在 popout 子窗时,主窗的命令(F6)用它代替活动面板。
+ * 未跟踪 MRU 的组排在后面(按 dockview 组顺序)。主窗没有带面板的组 → undefined。
+ */
+export function mostRecentMainWindowPanel(api: DockviewApi): IDockviewPanel | undefined {
+  const recent = (mruByApi.get(api) ?? []).map((id) => api.getGroup(id));
+  for (const group of [...recent, ...api.groups]) {
+    if (group && windowKeyOf(group) === 'main' && group.activePanel) return group.activePanel;
+  }
+  return undefined;
+}
+
 export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   // 组 id,最近使用在前。
   const mru: string[] = [];
+  mruByApi.set(api, mru);
   // 每个组最后的活动面板(popout 组关闭时面板已挪回引用组,组里查不到,靠它找回)。
   const lastActivePanel = new Map<string, string>();
 
   const touch = (group: Group | undefined): void => {
     if (!group) return;
+    // 弹出到子窗时 dockview 把 popout 组设为活动组,活动面板仍是同一对象 → 不派发 onDidActivePanelChange;
+    // 在活动组变化时也记下组的活动面板,否则子窗关闭时找不到要收回获焦的面板。
+    if (group.activePanel) lastActivePanel.set(group.id, group.activePanel.id);
     const i = mru.indexOf(group.id);
     if (i === 0) return;
     if (i > 0) mru.splice(i, 1);
@@ -83,9 +102,7 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   const subs = [
     api.onDidActiveGroupChange(touch),
     api.onDidActivePanelChange((panel) => {
-      if (!panel) return;
-      lastActivePanel.set(panel.group.id, panel.id);
-      touch(panel.group);
+      if (panel) touch(panel.group);
     }),
     api.onDidRemoveGroup(onRemove),
   ];
@@ -94,6 +111,7 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   return {
     dispose: () => {
       disposed = true;
+      if (mruByApi.get(api) === mru) mruByApi.delete(api);
       for (const s of subs) s.dispose();
       mru.length = 0;
       lastActivePanel.clear();

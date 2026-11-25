@@ -665,6 +665,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    // 同 VSCode 主窗最小尺寸(400×270):再小时工作台(侧栏 + dock + 状态栏)与对话框已无可用空间。
+    minWidth: 400,
+    minHeight: 270,
     // `hiddenInset` 是 macOS 专属语义(隐藏标题栏但保留内嵌红绿灯按钮);Windows/Linux
     // 上它是未定义行为,可能导致 chrome 显示异常 → 非 darwin 用 'default' 原生标题栏。
     // (Windows/Linux 的自定义 chrome + 窗口控件 overlay 精修留作 follow-up。跨平台审计 P2)
