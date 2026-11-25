@@ -131,10 +131,14 @@ type DirEntryLike = {
 
 // 解析单个 dirent。withStats:false 且 dirent 类型已知 → 直接用 dirent 类型,不 lstat;
 // 否则 lstat,失败(边读边删竞态)→ null(跳过)。
+// linkTargetType(仅浅层 maxDepth=1,即资源管理器逐层展开):符号链接再 stat 目标,目标是目录则标
+// isDirectory:true(VSCode:链接目录显示为可展开文件夹,带链接标记);悬空 / 自环(ENOENT / ELOOP)按文件。
+// 递归扫描(Quick Open 等)不做:类型保持 lstat 口径,且 walk 恒不递归进链接(防循环)。
 async function resolveEntry(
   dir: string,
   d: DirEntryLike,
   withStats: boolean,
+  linkTargetType: boolean,
 ): Promise<ResolvedEntry | null> {
   const full = path.join(dir, d.name);
   let st: import('node:fs').Stats | null = null;
@@ -159,6 +163,13 @@ async function resolveEntry(
     isFile = lst.isFile();
     if (withStats) st = lst;
   }
+  if (isSymlink && linkTargetType) {
+    try {
+      isDirectory = (await stat(full)).isDirectory();
+    } catch {
+      isDirectory = false; // 悬空 / 循环链接:按文件显示(仍带 isSymlink)
+    }
+  }
   return { d, full, st, isSymlink, isDirectory, isFile };
 }
 
@@ -167,10 +178,11 @@ function resolveEntryBatch(
   batch: readonly DirEntryLike[],
   batchCount: number,
   withStats: boolean,
+  linkTargetType: boolean,
 ): Array<Promise<ResolvedEntry | null>> {
   const promises = new Array<Promise<ResolvedEntry | null>>(batchCount);
   for (let i = 0; i < batchCount; i++) {
-    promises[i] = resolveEntry(dir, batch[i]!, withStats);
+    promises[i] = resolveEntry(dir, batch[i]!, withStats, linkTargetType);
   }
   return promises;
 }
@@ -210,7 +222,7 @@ async function walk(
     const batchCount = chunkCount;
     chunkCount = 0;
     const resolved = await Promise.all(
-      resolveEntryBatch(dir, chunk, batchCount, withStats),
+      resolveEntryBatch(dir, chunk, batchCount, withStats, maxDepth === 1),
     );
     for (const item of resolved) {
       if (state.fileCount >= maxFiles) {
@@ -247,7 +259,7 @@ async function walk(
         );
       }
 
-      // 递归:目录、未达深度、且不是 symlink(不跟随链接:类型按 lstat,链接目录不展开)
+      // 递归:目录、未达深度、且不是 symlink(不跟随链接:递归扫描的链接目录不展开,防循环)
       const shouldRecurse = isDirectory && depth < maxDepth && !isSymlink;
       if (shouldRecurse) {
         const children = await walk(

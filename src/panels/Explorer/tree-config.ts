@@ -14,6 +14,7 @@ import {
   renamingFeature,
   selectionFeature,
   type DragTarget,
+  type FeatureImplementation,
   type ItemInstance,
   type SetStateFn,
   type TreeConfig,
@@ -216,6 +217,22 @@ export function commitRenaming<T>(tree: TreeInstance<T>): void {
   tree.applySubStateUpdate('renamingItem', null);
 }
 
+/**
+ * 「全部展开」不跟随符号链接目录(VSCode 同款:链接目录可手动逐层展开,批量展开不进链接)。链接目录是可展开
+ * 文件夹(listDir 浅层按目标类型标 isDirectory),指向上级 / 自身的循环链接若随 expandAll 递归会无穷展开。
+ * 覆盖库 item.expandAll:链接项直接跳过(含 Ctrl+Shift+= 展开选中)。
+ */
+export const skipSymlinkExpandAllFeature: FeatureImplementation<FileEntry> = {
+  key: 'skip-symlink-expand-all',
+  deps: ['expand-all'],
+  itemInstance: {
+    expandAll: async ({ item, prev }, cancelToken) => {
+      if (item.getItemData()?.isSymlink) return;
+      await prev?.(cancelToken);
+    },
+  },
+};
+
 export function createTreeConfig(
   deps: CreateTreeConfigDeps,
 ): TreeConfig<FileEntry> {
@@ -304,6 +321,7 @@ export function createTreeConfig(
       hotkeysCoreFeature,
       renamingFeature, // F2 / Enter / Esc 由它接管,自动 stop hotkeys 干扰
       expandAllFeature, // tree.expandAll() / collapseAll() — UI-3 Header 按钮用
+      skipSymlinkExpandAllFeature, // 须在 expandAllFeature 之后:覆盖 item.expandAll
       dragAndDropFeature, // 内部多选 move + 外部文件 drop on row
     ],
   };

@@ -115,6 +115,14 @@ const FILE_ROW_DROP_CLASS_NAME =
 const FILE_ROW_SELECTED_CLASS_NAME = 'bg-hover text-fg';
 const FILE_ROW_IDLE_CLASS_NAME = 'text-fg-muted hover:bg-panel-soft';
 
+/** 行悬浮提示:路径 [· 符号链接] [· 插件装饰提示]。 */
+function rowTitle(data: FileEntry, tooltip: string | undefined): string {
+  let title = data.path;
+  if (data.isSymlink) title += ` · ${t('panels.explorer.symlink')}`;
+  if (tooltip) title += ` · ${tooltip}`;
+  return title;
+}
+
 /** 多选修饰键(⌘ / Ctrl / Shift):与 headless-tree selectionFeature 判定多选的键一致。 */
 function hasSelectionModifier(e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }): boolean {
   return e.metaKey || e.ctrlKey || e.shiftKey;
@@ -285,11 +293,7 @@ export const FileRow = memo(function FileRow({
         isDropTarget: isDropHover || isInternalDropOver,
         isCutMarked,
       })}
-      title={
-        decoration?.tooltip
-          ? `${data.path} · ${decoration.tooltip}`
-          : data.path
-      }
+      title={rowTitle(data, decoration?.tooltip)}
     >
       {/* a11y(A71,A70 同族装饰符号):treeitem 展开态由 headless-tree row props 的 aria-expanded
           表达,视觉箭头 ▾/▸ 纯装饰 → aria-hidden,否则混进行可访问名,SR 读文件名时夹杂三角噪声。 */}
@@ -335,6 +339,15 @@ export const FileRow = memo(function FileRow({
           style={decoration?.textColor ? { color: decoration.textColor } : undefined}
         >
           {data.name}
+        </span>
+      )}
+      {data.isSymlink && (
+        // VSCode 同款:符号链接行名称后带链接角标(↪,目录链接可展开、文件 / 悬空链接按文件)。视觉符号
+        // aria-hidden,读屏读视觉隐藏的「符号链接」。
+        <span className="shrink-0 text-2xs text-fg-dim">
+          {/* U+FE0E:强制文本字形,否则 macOS 把 ↪ 渲染成彩色 emoji 方块 */}
+          <span aria-hidden="true">{'\u21AA\uFE0E'}</span>
+          <span style={SR_ONLY_STYLE}>{t('panels.explorer.symlink')}</span>
         </span>
       )}
       {/* 插件装饰 badge(右侧),loading 优先级更高,加载完才显 */}

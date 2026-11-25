@@ -304,7 +304,8 @@ function UserPluginsSection() {
       setInstallMsg(
         r.alreadyInstalled
           ? { text: t('marketplace.install_already_installed', { name: repoNameFromGitUrl(url) }), isError: false }
-          : { text: t('plugins_tab.error.generic', { message: `[${r.code}] ${r.message}` }), isError: true },
+          : // 内部错误码不进用户文案(code 已随 data-code / 日志带走),只显示本地化原因。
+            { text: t('plugins_tab.error.generic', { message: r.message }), isError: true },
       );
       return false;
     }

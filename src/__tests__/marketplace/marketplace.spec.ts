@@ -469,9 +469,17 @@ describe('fetchMarketplaceIndex', () => {
     expect(f).toHaveBeenCalledTimes(2);
   });
 
-  it('网络失败 + 无 cache → 抛', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
-    await expect(fetchMarketplaceIndex()).rejects.toThrow(/offline/);
+  // 断网:fetch reject TypeError('Failed to fetch')。此前原文透到界面(en「Failed to fetch index: Failed to fetch」,
+  // zh「拉取索引失败:Failed to fetch」)→ 网络类失败统一抛稳定码 MARKETPLACE_NETWORK(原错误留在 cause)。
+  it.each([
+    ['TypeError(断网)', new TypeError('Failed to fetch')],
+    ['AbortError / 超时', new DOMException('The operation timed out.', 'TimeoutError')],
+  ])('网络失败(%s)+ 无 cache → 抛 MARKETPLACE_NETWORK', async (_l, err) => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(err);
+    const thrown = await fetchMarketplaceIndex().catch((e: unknown) => e as Error);
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe('MARKETPLACE_NETWORK');
+    expect((thrown as Error).cause).toBe(err);
   });
 
   it('网络失败 + 有 cache → 回落 cache(过期也返)', async () => {
@@ -490,9 +498,11 @@ describe('fetchMarketplaceIndex', () => {
     );
   });
 
-  it('HTTP 非 2xx → 当作失败,无 cache 时抛', async () => {
+  it('HTTP 非 2xx → 当作网络失败,无 cache 时抛 MARKETPLACE_NETWORK,状态码附在 status', async () => {
     mockFetch({ ok: false, status: 503 });
-    await expect(fetchMarketplaceIndex()).rejects.toThrow(/HTTP 503/);
+    const thrown = (await fetchMarketplaceIndex().catch((e: unknown) => e)) as Error & { status?: number };
+    expect(thrown.message).toBe('MARKETPLACE_NETWORK');
+    expect(thrown.status).toBe(503);
   });
 
   it('返回非数组 → 抛', async () => {

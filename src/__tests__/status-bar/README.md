@@ -36,6 +36,9 @@ agent terminal 数量 > 0 → 显示「N agent」按钮(点击 → design Modal 
 
 - coApp.statusBar 中 side='left' → 在 root 之后
 - side='right' → 在 MCP 按钮之前
+- 对齐 VSCode(条目有最大宽度、省略号截断,插件项不能挤没内置项):插件项 `min-w-0 max-w-[40vw] truncate`,收缩权重
+  `shrink-[1000]`(空间不够先缩插件项,当前文件名默认权重 1);渲染结果为字符串时 `title` 为全文
+- 内置 MCP 复制按钮、Agent 授权 / 撤销指示 `shrink-0`,不被插件长文本挤出 footer(e2e 截图 640 / 800 宽复拍确认)
 
 ### 窄宽不折行(VSCode:状态栏项从不折行,空间不够整项隐藏 / 截断)
 

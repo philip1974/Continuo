@@ -4,7 +4,7 @@
 // 已装的卡片显 "已安装" disabled;未装显 [安装] primary,点击调
 // installFromGit(走 v4.5 已有 IPC)。安装成功 toast 在卡片下方提示。
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Badge, Button, Input, Spinner } from '@/design';
 import { errorMessage } from '../../electron/shared/error-message';
 import { getUserPluginManager } from '@/plugins/PluginManager';
@@ -170,10 +170,16 @@ export function MarketplaceTab() {
         if (!cancelled) {
           // i18n(I5):fetcher 对可本地化的失败抛稳定 code(MARKETPLACE_INDEX_INVALID),
           // 这里按 errors.<CODE> catalog 翻译;网络/HTTP 等动态错误无 catalog → 回退原文。
+          // 网络类失败(MARKETPLACE_NETWORK,断网 / 超时 / HTTP 非 2xx)本地化为「无法连接插件市场」,HTTP 状态码附在详情。
           const raw = errorMessage(err);
+          const status = (err as { status?: unknown } | null)?.status;
+          const localized = localizeErrorByCode(raw, raw);
           setState({
             kind: 'error',
-            message: localizeErrorByCode(raw, raw),
+            message:
+              typeof status === 'number'
+                ? translate('common.label_detail', { label: localized, detail: `HTTP ${status}` })
+                : localized,
           });
         }
       }
@@ -222,8 +228,8 @@ export function MarketplaceTab() {
           })
         : alreadyInstalled
           ? translate('marketplace.install_already_installed', { name: entry.name })
-          : translate(isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code', {
-              code: r.code,
+          : // 内部错误码不进用户文案(code 已随 data-code / 日志带走),只显示本地化原因。
+            translate(isUpdate ? 'marketplace.update_failed_code' : 'marketplace.install_failed_code', {
               message: r.message,
             });
       installBusyRef.current = false; // race(R8):清同步闸门(与 busy:null 同步)。
@@ -288,8 +294,9 @@ export function MarketplaceTab() {
     [entries, query, selectedTags],
   );
 
+  // 「从 Git URL 安装」不依赖市场索引:加载中 / 失败(断网)/ 空索引时同样渲染(VSCode:离线仍可从 VSIX 安装)。
   if (state.kind === 'loading') {
-    return (
+    return withGitUrlSection(
       // a11y(A104,A102 同族):初始索引加载须 role=status 播报具体「正在加载插件市场」语义,
       // Spinner aria-hidden 抑制泛化 Loading(否则 SR 只听通用加载,不知等的是市场索引)。
       // tabIndex=-1:点「重试」后焦点暂放这里(只可程序聚焦,不进 Tab 顺序)。
@@ -301,12 +308,12 @@ export function MarketplaceTab() {
       >
         <Spinner aria-hidden />
         <span className="text-xs">{t('marketplace.loading')}</span>
-      </div>
+      </div>,
     );
   }
 
   if (state.kind === 'error') {
-    return (
+    return withGitUrlSection(
       // a11y(A66,A41 同族):索引异步加载失败的错误块须 live region(失败 → role=alert/assertive),
       // 否则焦点在面板/搜索入口附近时 SR 用户只感知"无内容",不知是加载失败。
       // 「重试」按钮放在 alert 区外,播报内容只含失败原因与提示。
@@ -328,12 +335,12 @@ export function MarketplaceTab() {
         >
           {t('marketplace.retry')}
         </Button>
-      </div>
+      </div>,
     );
   }
 
   if (state.entries.length === 0) {
-    return (
+    return withGitUrlSection(
       // a11y(A67,A56/A66 同族):索引加载成功但为空是一个异步加载结果,焦点停在原控件时 SR 用户
       // 不会获知"市场为空" → role=status(polite 中性空态结果)。失败态用 alert(A66),空态用 status。
       <div
@@ -349,7 +356,7 @@ export function MarketplaceTab() {
         >
           {MARKETPLACE_REPO_SLUG}
         </a>
-      </div>
+      </div>,
     );
   }
 
@@ -485,6 +492,15 @@ export function MarketplaceTab() {
   );
 }
 
+function withGitUrlSection(block: ReactNode) {
+  return (
+    <div className="flex flex-col gap-3">
+      {block}
+      <GitUrlInstallSection />
+    </div>
+  );
+}
+
 // 从 Git URL 安装段(对齐 demo (3) 扩展商店底部「从 GIT URL 安装」)。
 // 走 v4.5 已有的 installFromGit IPC,与 PluginsTabContent 共用同一接口;
 // 装好后插件磁盘已就位,需重启 Continuo 后 PluginManager 才扫到。成功同样记待重启(此前不记:装了市场里也有的插件后
@@ -502,7 +518,7 @@ function GitUrlInstallSection() {
       setMsg(
         r.alreadyInstalled
           ? { text: translate('marketplace.install_already_installed', { name: repoNameFromGitUrl(url) }), isError: false }
-          : { text: translate('marketplace.install_failed_code', { code: r.code, message: r.message }), isError: true },
+          : { text: translate('marketplace.install_failed_code', { message: r.message }), isError: true },
       );
       return false;
     }

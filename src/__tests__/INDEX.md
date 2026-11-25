@@ -707,6 +707,12 @@
 - [`persistence-schema.spec.ts`](./explorer-stores/persistence-schema.spec.ts)
 - [`workspace.spec.ts`](./explorer-stores/workspace.spec.ts)
 
+## [explorer-symlink-dir](./explorer-symlink-dir/README.md)
+
+- [`folder-tree-symlink-row.spec.tsx`](./explorer-symlink-dir/folder-tree-symlink-row.spec.tsx)
+- [`list-dir-symlink.spec.ts`](./explorer-symlink-dir/list-dir-symlink.spec.ts)
+- [`tree-symlink-dir.spec.ts`](./explorer-symlink-dir/tree-symlink-dir.spec.ts)
+
 ## [explorer-toggle-sidebar(VSCode ⌘B 同款)](./explorer-toggle-sidebar/README.md)
 
 - [`explorer-toggle-sidebar.spec.ts`](./explorer-toggle-sidebar/explorer-toggle-sidebar.spec.ts)

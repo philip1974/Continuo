@@ -43,7 +43,7 @@
 - 输入空 + 按钮 disabled
 - 安装中 → 文案变「安装中…」+ disabled + Input disabled
 - ok=true → installMsg=「✔ 已安装 …」+ 记入会话级待重启 store(跨页共享,见 `pending-installs-store/`)+ gitUrl 清空
-- ok=false → installMsg=「✘ [code] message」
+- ok=false → installMsg=本地化原因(不带内部错误码 `[CODE]`;`BAD_URL` 附「仅支持 https:// 仓库地址」指引)
 - 抛 → installMsg=「✘ ${err}」
 
 ### 操作按钮

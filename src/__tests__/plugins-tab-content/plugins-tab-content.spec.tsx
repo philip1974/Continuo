@@ -23,6 +23,7 @@ vi.mock('../../plugins/permissions/co-permission-store', () => ({
 
 import { _resetLmApiForTest, captureLmApi } from '../../lib/co-api';
 import { setLocale as setI18nLocale } from '@/i18n';
+import { zh } from '../../../electron/shared/i18n-locales/zh';
 import {
   PluginsTabContent,
   collectContributionSamples,
@@ -857,7 +858,8 @@ describe('PluginsTabContent — Git URL 安装', () => {
     expect(container.querySelector('[role=alert]')?.textContent ?? '').not.toContain('my-plugin');
   });
 
-  it('安装失败 ok=false → 「✘ [code] message」', async () => {
+  // 内部错误码不进用户文案(code 已随 toast data-code / 日志带走):只显示本地化原因。
+  it('安装失败 ok=false → 只显示原因,不带「[code]」', async () => {
     const installFromGit = vi.fn().mockResolvedValue({
       ok: false,
       code: 'CLONE_FAILED',
@@ -875,13 +877,14 @@ describe('PluginsTabContent — Git URL 安装', () => {
       )!,
     );
     await waitFor(() => {
-      expect(container.textContent).toContain('CLONE_FAILED');
       expect(container.textContent).toContain('auth required');
     });
+    expect(container.textContent).not.toContain('CLONE_FAILED');
+    expect(container.textContent).not.toContain('[');
     // a11y(A42):安装失败结果须在 live region(失败=role=alert/assertive)主动播报。
     const alert = container.querySelector('[role=alert]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain('CLONE_FAILED');
+    expect(alert!.textContent).toContain('auth required');
   });
 
   // i18n(复查 P1):installFromGit 各错误站点的 message 是硬编码中文,经 safeHandle
@@ -905,13 +908,14 @@ describe('PluginsTabContent — Git URL 安装', () => {
         )!,
       );
       await waitFor(() => {
-        // en catalog 的 errors.BAD_URL = 'Bad URL'
-        expect(container.textContent).toContain('Bad URL');
+        // en catalog 的 errors.BAD_URL = 'Invalid URL — …'
+        expect(container.textContent).toContain('Invalid URL');
       });
       // 中文原文不得泄漏到 en 界面
       expect(container.textContent).not.toContain('不支持的 git URL');
-      // code 仍展示(稳定标识,非语言相关)
-      expect(container.textContent).toContain('BAD_URL');
+      // 不带内部错误码;无效 URL 给出格式指引(main 只接受 https:// 仓库地址)
+      expect(container.textContent).not.toContain('BAD_URL');
+      expect(container.textContent).toContain('https://');
     } finally {
       setI18nLocale('zh');
     }
@@ -934,9 +938,9 @@ describe('PluginsTabContent — Git URL 安装', () => {
       )!,
     );
     await waitFor(() => {
-      expect(container.textContent).toContain('CLONE_FAILED');
       expect(container.textContent).toContain('auth required');
     });
+    expect(container.textContent).not.toContain('CLONE_FAILED');
   });
 
   it('安装抛错 → 「✘ ${err.message}」', async () => {
@@ -972,7 +976,8 @@ describe('PluginsTabContent — 安装 reject 带 code', () => {
         (b) => b.textContent === '安装',
       )!,
     );
-    await waitFor(() => expect(container.textContent).toContain('[FS_EEXIST]'));
+    await waitFor(() => expect(container.textContent).toContain(zh['errors.FS_EEXIST']));
+    expect(container.textContent).not.toContain('FS_EEXIST');
     expect(container.textContent).not.toContain('main 原文 raw');
   });
 });

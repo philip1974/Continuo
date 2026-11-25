@@ -113,6 +113,19 @@ function liveRenderStatusItem(item: StatusBarItemSpec): React.ReactNode {
   }
 }
 
+// VSCode:状态栏条目有最大宽度、超长省略号截断,插件项不能把内置项挤没。插件项 min-w-0 + max-w-[40vw] + truncate,
+// 收缩权重 shrink-[1000] 远高于内置项(当前文件名默认 1,MCP / Agent 授权指示 shrink-0):空间不够时先缩插件项。
+// 渲染结果是字符串时 title 给出全文(截断后仍可悬停查看)。
+const PLUGIN_STATUS_ITEM_CLASS_NAME = 'min-w-0 max-w-[40vw] shrink-[1000] truncate';
+function PluginStatusItem({ item }: { item: StatusBarItemSpec }) {
+  const node = liveRenderStatusItem(item);
+  return (
+    <span className={PLUGIN_STATUS_ITEM_CLASS_NAME} title={typeof node === 'string' ? node : undefined}>
+      {node}
+    </span>
+  );
+}
+
 export function countAgentSessions(sessions: readonly TerminalSession[]): number {
   let count = 0;
   for (const session of sessions) {
@@ -338,13 +351,13 @@ export function StatusBar() {
         )}
         {/* 插件贡献的左侧 statusBar items(race R56:render 时 live 复查) */}
         {leftItems.map((item) => (
-          <span key={item.id} className="whitespace-nowrap">{liveRenderStatusItem(item)}</span>
+          <PluginStatusItem key={item.id} item={item} />
         ))}
       </div>
       <div className="-mx-1 flex min-w-0 items-center gap-3 self-stretch overflow-hidden px-1">
         {/* 插件贡献的右侧 statusBar items(在内置项左边;race R56:render 时 live 复查) */}
         {rightItems.map((item) => (
-          <span key={item.id} className="whitespace-nowrap">{liveRenderStatusItem(item)}</span>
+          <PluginStatusItem key={item.id} item={item} />
         ))}
         {/* native button:24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏;颜色走语义 token。 */}
         <button

@@ -39,6 +39,9 @@ entryToGitUrl / entryToManifestUrl 把 entry.repo + branch 拼成可用 URL。**
 - cache 全部 miss → fetch 网络,成功更新两层 cache
 - fetch 失败 + 有 cache → 返 cache(过期也返,better than nothing)
 - fetch 失败 + 无 cache → 抛
+- 网络类失败(fetch 本身 reject:断网 TypeError('Failed to fetch') / 超时 / 中止;HTTP 非 2xx)统一抛稳定码
+  `MARKETPLACE_NETWORK`(原错误在 `cause`,HTTP 失败另带 `status`),界面按 `errors.MARKETPLACE_NETWORK` 三语本地化,
+  不把英文原文透给用户
 - forceRefresh=true → 跳缓存直接 fetch
 
 ### 点赞数 / 计数判定(`isReviewCount`)

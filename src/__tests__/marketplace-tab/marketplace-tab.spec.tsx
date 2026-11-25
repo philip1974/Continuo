@@ -279,14 +279,48 @@ describe('MarketplaceTab — load 状态', () => {
     }
   });
 
-  // 网络/HTTP 等动态错误无 catalog → 回退原 message(既有行为保持)。
-  it('index 加载失败 code 不在 catalog(网络错)→ 回退原 message', async () => {
-    fetchIndexMock.mockRejectedValue(new Error('Failed to fetch'));
+  // 断网 / HTTP 非 2xx / 超时:fetcher 抛 MARKETPLACE_NETWORK → 三语「无法连接插件市场,请检查网络后重试」,
+  // 不泄漏英文原文「Failed to fetch」;HTTP 状态码附在详情。
+  it.each([
+    ['zh', /无法连接插件市场/],
+    ['en', /Can't reach the plugin marketplace/],
+    ['ko', /플러그인 마켓플레이스에 연결할 수 없습니다/],
+  ] as const)('%s:网络失败 → 本地化「无法连接插件市场」,不显示 Failed to fetch / 原始 code', async (locale, text) => {
+    setI18nLocale(locale);
+    try {
+      fetchIndexMock.mockRejectedValue(
+        Object.assign(new Error('MARKETPLACE_NETWORK'), { cause: new TypeError('Failed to fetch') }),
+      );
+      installApi(vi.fn());
+      const { container } = render(<MarketplaceTab />);
+      await waitFor(() => expect(container.textContent).toMatch(text));
+      expect(container.textContent).not.toContain('Failed to fetch');
+      expect(container.textContent).not.toContain('MARKETPLACE_NETWORK');
+    } finally {
+      setI18nLocale('zh');
+    }
+  });
+
+  it('HTTP 非 2xx → 文案附 HTTP 状态码', async () => {
+    fetchIndexMock.mockRejectedValue(Object.assign(new Error('MARKETPLACE_NETWORK'), { status: 503 }));
     installApi(vi.fn());
     const { container } = render(<MarketplaceTab />);
-    await waitFor(() => {
-      expect(container.textContent).toContain('Failed to fetch');
-    });
+    await waitFor(() => expect(container.textContent).toContain('无法连接插件市场'));
+    expect(container.textContent).toContain('HTTP 503');
+  });
+
+  // 「从 Git URL 安装」不依赖市场索引:索引加载中 / 失败 / 为空时也须可用(此前只在成功分支渲染,断网时整段消失)。
+  it.each([
+    ['加载中', () => fetchIndexMock.mockReturnValue(new Promise(() => {}))],
+    ['失败', () => fetchIndexMock.mockRejectedValue(new Error('MARKETPLACE_NETWORK'))],
+    ['空索引', () => fetchIndexMock.mockResolvedValue([])],
+    ['有条目', () => fetchIndexMock.mockResolvedValue([entry({ id: 'a' })])],
+  ])('索引%s → 仍渲染「从 Git URL 安装」段', async (_l, arrange) => {
+    arrange();
+    installApi(vi.fn());
+    const { container, findAllByText } = render(<MarketplaceTab />);
+    expect(await findAllByText('从 Git URL 安装')).toHaveLength(1);
+    expect(container.querySelector('input[placeholder^="https://github.com/"]')).not.toBeNull();
   });
 
   it('ok 但 entries 空 → 「暂无插件」+ 仓库链接', async () => {
@@ -895,7 +929,7 @@ describe('MarketplaceTab — 安装按钮', () => {
     expect(okStatus!.textContent).not.toContain('✔');
   });
 
-  it('install ok=false → 「[code] message」(catalog 已去 ✘)', async () => {
+  it('install ok=false → 「安装失败:原因」,不带「[code]」', async () => {
     const installFromGit = vi.fn().mockResolvedValue({
       ok: false,
       code: 'CLONE_FAILED',
@@ -913,12 +947,13 @@ describe('MarketplaceTab — 安装按钮', () => {
       ).find((b) => b.textContent === '安装')!,
     );
     await waitFor(() => {
-      expect(container.textContent).toContain('CLONE_FAILED');
+      expect(container.textContent).toContain('安装失败：auth required');
     });
+    expect(container.textContent).not.toContain('CLONE_FAILED');
     // a11y(A44):卡片安装失败结果须 live region(失败=role=alert)主动播报。
     const alerts = Array.from(container.querySelectorAll('[role=alert]'));
     expect(
-      alerts.some((a) => (a.textContent ?? '').includes('CLONE_FAILED')),
+      alerts.some((a) => (a.textContent ?? '').includes('auth required')),
     ).toBe(true);
   });
 
@@ -945,12 +980,12 @@ describe('MarketplaceTab — 安装按钮', () => {
         ).find((b) => b.textContent === 'Install')!,
       );
       await waitFor(() => {
-        // en catalog: install_failed_code = '✘ Install failed [{code}] {message}',
-        // errors.BAD_URL = 'Bad URL'
-        expect(container.textContent).toContain('Bad URL');
+        // en catalog: install_failed_code = 'Install failed: {message}',errors.BAD_URL 带 https:// 格式指引
+        expect(container.textContent).toContain('Install failed: Invalid URL');
       });
       expect(container.textContent).not.toContain('不支持的 git URL');
-      expect(container.textContent).toContain('BAD_URL');
+      expect(container.textContent).not.toContain('BAD_URL');
+      expect(container.textContent).toContain('https://');
     } finally {
       setI18nLocale('zh');
     }
@@ -1579,7 +1614,7 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     }
   });
 
-  it('Git URL 安装失败 ok=false → 「[code] message」(catalog 已去 ✘)', async () => {
+  it('Git URL 安装失败 ok=false → 「安装失败:原因」,不带「[code]」', async () => {
     const installFromGit = vi.fn().mockResolvedValue({
       ok: false,
       code: 'X',
@@ -1601,8 +1636,9 @@ describe('MarketplaceTab — Git URL 安装段', () => {
       ).find((b) => b.textContent === '安装插件')!,
     );
     await waitFor(() => {
-      expect(container.textContent).toContain('oops');
+      expect(container.textContent).toContain('安装失败：oops');
     });
+    expect(container.textContent).not.toContain('[X]');
     // a11y(A43):安装失败结果须 live region(失败=role=alert/assertive)主动播报。
     // 页面可能另有 alert(reviews 刷新失败),故定位含安装错误文本的那个。
     const alerts = Array.from(container.querySelectorAll('[role=alert]'));

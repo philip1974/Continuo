@@ -20,7 +20,8 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
 ### loading / error / empty
 
 - 初始 → spinner
-- fetch 失败 → 「✘ 拉取索引失败:${msg}」
+- fetch 失败 → 「拉取索引失败:${msg}」;网络类失败(`MARKETPLACE_NETWORK`)msg 为三语「无法连接插件市场,请检查网络后重试」,
+  不显示「Failed to fetch」;HTTP 非 2xx 时附「HTTP <状态码>」
 - 拉到空数组 → 「暂无插件」+ 索引仓库链接
 
 ### 列表渲染 + 计数
@@ -63,6 +64,10 @@ mgr.uninstall + installFromGit + refreshUpdates;ratings 显示评分。**
   仅当用户手动点过「刷新评分」才显示一行中性提示(`role=status`、`text-fg-dim`,三语 `marketplace.reviews.unavailable`)
 
 ### Git URL section
+
+- 不依赖市场索引:加载中 / 失败(断网)/ 空索引 / 有条目四种状态都渲染「从 Git URL 安装」段(VSCode:离线仍可从 VSIX 安装)
+- 安装 / 更新失败文案「安装失败:原因」,不带内部错误码 `[CODE]`(code 已随 data-code / 日志带走);无效 URL(`BAD_URL`)
+  文案说明仅支持以 https:// 开头的 Git 仓库地址(main 端 installFromGit 只接受 https://)
 
 - 见 GitUrlInstallSection(同 PluginsTabContent 内嵌但独立 component);成功同样记入待重启 store
   (跨页共享行为见 `pending-installs-store/`)

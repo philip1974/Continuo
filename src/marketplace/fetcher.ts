@@ -29,6 +29,8 @@ const MAX_INDEX_BYTES = 4 * 1024 * 1024; // index.json 响应体上限
 const MAX_MANIFEST_BYTES = MANIFEST_MAX_BYTES; // manifest.json 响应体上限(与 main 读本地插件同口径)
 export const MAX_INDEX_ENTRIES = 4096; // index 顶层数组条目硬上限
 const EMPTY_MARKETPLACE_ENTRIES: MarketplaceEntry[] = [];
+/** 网络类失败(断网 / 超时 / HTTP 非 2xx)的稳定码;HTTP 失败另带 `status`。按 errors.<CODE> 本地化。 */
+export const MARKETPLACE_NETWORK = 'MARKETPLACE_NETWORK';
 
 async function readJsonCapped(r: Response, maxBytes: number): Promise<unknown> {
   // 边界(E124):流式按真实字节硬截断(Content-Length 可缺失/伪造,text.length 是 char 数非字节)。
@@ -105,12 +107,20 @@ export async function fetchMarketplaceIndex(
   }
 
   try {
-    const r = await getCachedFetch()(INDEX_URL, { cache: 'no-cache' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    let r: Response;
+    try {
+      r = await getCachedFetch()(INDEX_URL, { cache: 'no-cache' });
+    } catch (err) {
+      // fetch 本身 reject 只因网络层失败(断网 / DNS / TLS / 超时 / 中止,浏览器给 TypeError('Failed to fetch')):
+      // 抛稳定码,界面本地化为「无法连接插件市场」,不把英文原文透给用户;原错误留在 cause 供日志。
+      throw new Error(MARKETPLACE_NETWORK, { cause: err });
+    }
+    // HTTP 非 2xx 同属「连不上市场」:状态码随 status 带给界面附在详情。
+    if (!r.ok) throw Object.assign(new Error(MARKETPLACE_NETWORK), { status: r.status });
     // 边界(E64):响应体上限 + 解析前拦,而非 await r.json() 无界解析。
     const raw = (await readJsonCapped(r, MAX_INDEX_BYTES)) as unknown;
     // i18n(I5):抛稳定 code(非中文 prose),caller catch 按 errors.<CODE> catalog 本地化
-    // 渲染(en/ko 不再泄漏中文)。网络/HTTP 等动态错误仍走原 message(无 catalog 回退)。
+    // 渲染(en/ko 不再泄漏中文)。网络 / HTTP 失败见上(MARKETPLACE_NETWORK)。
     if (!Array.isArray(raw)) throw new Error('MARKETPLACE_INDEX_INVALID');
     // 边界(E64):顶层数组条目数硬上限 —— 超大数组先截断,再逐 entry 校验/缓存(防超大 index
     // 数组在 filter/排序/渲染/sessionStorage 缓存放大)。

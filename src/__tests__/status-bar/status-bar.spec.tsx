@@ -968,6 +968,36 @@ describe('StatusBar — 窄宽不折行', () => {
     }
   });
 
+  // VSCode:状态栏条目有最大宽度、超长省略号截断,插件项不能把内置项挤没。截图 sb-long-plugin-640 / 800:插件长文本
+  // 把当前文件名挤成 0 宽、MCP 按钮挤出 footer。契约:插件项 min-w-0 + max-w-[40vw] + truncate,且收缩优先级远高于
+  // 内置项(shrink-[1000]:空间不够先缩插件项);title 给出全文。
+  it('插件项有最大宽度、省略号截断、最先收缩,title 为全文', () => {
+    const long = 'Very long plugin status text '.repeat(10);
+    coApp.statusBar.register({ id: 'p.l', side: 'left', render: () => long });
+    coApp.statusBar.register({ id: 'p.r', side: 'right', render: () => long });
+    const footer = renderFull();
+    const items = Array.from(footer.querySelectorAll('span')).filter((s) => s.textContent === long);
+    expect(items).toHaveLength(2);
+    for (const el of items) {
+      expect(cls(el)).toEqual(expect.arrayContaining(['min-w-0', 'max-w-[40vw]', 'truncate', 'shrink-[1000]']));
+      expect(el.getAttribute('title')).toBe(long);
+    }
+  });
+
+  it('内置项(MCP 复制、Agent 授权指示)不可收缩(shrink-0);当前文件名收缩优先级低于插件项', () => {
+    useAgentAuthStore.setState({ pending: null, sessionGranted: true });
+    coApp.statusBar.register({ id: 'p.r', side: 'right', render: () => 'x' });
+    const footer = renderFull();
+    const mcp = Array.from(footer.querySelectorAll('button')).find((b) => (b.textContent ?? '').includes('复制 MCP'))!;
+    expect(cls(mcp)).toContain('shrink-0');
+    const agent = footer.querySelector('[data-agent-revoke]');
+    expect(agent).not.toBeNull();
+    expect(cls(agent)).toContain('shrink-0');
+    const file = footer.querySelector('[title="/x.md"]')!;
+    expect(cls(file).some((c) => c.startsWith('shrink-['))).toBe(false); // 默认 shrink 1 ≪ 插件项 1000
+    useAgentAuthStore.setState({ sessionGranted: false });
+  });
+
   it('窄宽优先隐藏行 / 词 / 字符统计(容器 < 2xl)', () => {
     const footer = renderFull();
     const stats = Array.from(footer.querySelectorAll('span')).find((s) => /行/.test(s.textContent ?? '') && s.children.length === 0)!;
