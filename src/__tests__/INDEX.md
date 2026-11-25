@@ -1999,6 +1999,14 @@
 
 - [`shared-guard.spec.ts`](./workspace-root-selection-guard/shared-guard.spec.ts)
 
+## [workspace-search — 工作区文本搜索视图(在文件中查找 ⇧⌘F)](./workspace-search/README.md)
+
+- [`search-command.spec.ts`](./workspace-search/search-command.spec.ts)
+- [`search-engine.spec.ts`](./workspace-search/search-engine.spec.ts)
+- [`search-ipc.spec.ts`](./workspace-search/search-ipc.spec.ts)
+- [`search-query.spec.ts`](./workspace-search/search-query.spec.ts)
+- [`search-view.spec.tsx`](./workspace-search/search-view.spec.tsx)
+
 ## [wrap-panel-close(dock 关闭动画拦截)](./wrap-panel-close/README.md)
 
 - [`wrap-panel-close.spec.ts`](./wrap-panel-close/wrap-panel-close.spec.ts)

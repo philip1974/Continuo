@@ -70,7 +70,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 插件安装:+PLUGIN_INCOMPATIBLE(56→57),manifest.minLMVersion 高于应用版本时覆盖前拒装。
     // Explorer:+FS_MOVE_INTO_SELF(57→58),批量移动目标是源本身或其子文件夹时明确报错(此前落成 FS_IO)。
     // 保存:+FS_READONLY / FS_NO_SPACE / FS_READONLY_FS(58→61),写保护文件拒绝覆盖、ENOSPC / EROFS 不再笼统归 FS_IO。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(61);
+    // 在文件中查找:+SEARCH_FAILED(61→62),搜索 worker 崩溃 / 异常退出。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(62);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

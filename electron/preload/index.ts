@@ -28,6 +28,7 @@ import {
   type FsListDirOptions,
 } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
+import { isSearchEvent, SEARCH_CHANNELS, type SearchEvent, type SearchQuery } from '../shared/workspace-search';
 import {
   SESSION_UPDATE_CWD_CHANNEL,
   TERMINAL_CHANNELS,
@@ -179,6 +180,17 @@ const api = {
         guardedListener(isRecentRootsChangedPayload, '[explorer] dropped malformed recent-changed payload', (payload) =>
           cb(payload.recentRoots),
         ),
+      ),
+  },
+  /** 在文件中查找(workspace-search):根由 main 取自本窗口工作区;结果经 onEvent 分批推送。 */
+  search: {
+    start: (searchId: string, query: SearchQuery): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(SEARCH_CHANNELS.START, { searchId, query }),
+    cancel: (searchId: string): Promise<IpcResult<void>> => ipcRenderer.invoke(SEARCH_CHANNELS.CANCEL, { searchId }),
+    onEvent: (cb: (event: SearchEvent) => void): (() => void) =>
+      subscribeIpc(
+        SEARCH_CHANNELS.EVENT,
+        guardedListener(isSearchEvent, '[search] dropped malformed search event', cb),
       ),
   },
   fs: {

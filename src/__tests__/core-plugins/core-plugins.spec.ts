@@ -20,10 +20,10 @@ afterEach(async () => {
 });
 
 describe('bootCorePlugins', () => {
-  it('注册 editor / terminal / debug / output / settings 五个 panel 类型', () => {
+  it('注册 editor / terminal / debug / search / output / settings 六个 panel 类型', () => {
     bootCorePlugins();
     const types = coApp.panels.getAll().map((p) => p.type).sort();
-    expect(types).toEqual(['debug', 'editor', 'output', 'settings', 'terminal']);
+    expect(types).toEqual(['debug', 'editor', 'output', 'search', 'settings', 'terminal']);
   });
 
   it('每个 panel 含 title 与 factory', () => {
@@ -46,7 +46,7 @@ describe('bootCorePlugins', () => {
 describe('shutdownCorePlugins', () => {
   it('全部反序 _deactivate,registry 清空', async () => {
     bootCorePlugins();
-    expect(coApp.panels.getAll().length).toBe(5);
+    expect(coApp.panels.getAll().length).toBe(6);
     await shutdownCorePlugins();
     expect(coApp.panels.getAll().length).toBe(0);
   });

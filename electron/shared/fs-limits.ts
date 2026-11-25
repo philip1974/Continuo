@@ -113,3 +113,18 @@ export const LIST_DIR_DEFAULT_EXCLUDE: readonly string[] = [
   '.DS_Store',
   'Thumbs.db',
 ];
+
+/**
+ * 工作区整体扫描(Quick Open 文件列表 / 在文件中查找)的排除项:list-dir 默认排除 + 常见构建产物 / 缓存目录(VSCode 默认
+ * files.exclude / search.exclude 同思路)。两处同一来源 —— list-dir 的 exclude 是整体替换语义,须带上完整列表。
+ */
+export const WORKSPACE_SCAN_EXCLUDE: readonly string[] = [
+  ...LIST_DIR_DEFAULT_EXCLUDE,
+  'dist',
+  'out',
+  'build',
+  '.next',
+  '.nuxt',
+  '.cache',
+  '.vite',
+];

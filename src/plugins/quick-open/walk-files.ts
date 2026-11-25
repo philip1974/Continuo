@@ -9,7 +9,7 @@ import type { FileEntry } from '../../../electron/shared/fs-entry';
 import type { IpcResult } from '../../../electron/shared/ipc-result';
 import { QUICK_OPEN_MAX_FILES, type QuickOpenFile } from './store';
 import { stripRootPrefix } from '@/lib/path-cross';
-import { LIST_DIR_DEFAULT_EXCLUDE, LIST_DIR_MAX_DEPTH } from '../../../electron/shared/fs-limits';
+import { LIST_DIR_MAX_DEPTH, WORKSPACE_SCAN_EXCLUDE } from '../../../electron/shared/fs-limits';
 
 const DEFAULT_MAX_FILES = QUICK_OPEN_MAX_FILES;
 // 搜全工作区(VSCode 同款,无业务深度限制):取 list-dir 的递归硬上限。此前写死 8 层,第 9 层起的文件不进
@@ -17,21 +17,8 @@ const DEFAULT_MAX_FILES = QUICK_OPEN_MAX_FILES;
 const DEFAULT_MAX_DEPTH = LIST_DIR_MAX_DEPTH;
 const EMPTY_QUICK_OPEN_FILES: readonly QuickOpenFile[] = [];
 
-// listDir 内置已排:.git / .svn / .hg / node_modules / .DS_Store / Thumbs.db
-// 这里追加:常见构建产物 + 缓存目录(VSCode default file.exclude 同思路)。
-// 注意 listDir 的 exclude 是完整替换(传了就不用默认),所以这里要给完整列表。
-const FULL_EXCLUDE: readonly string[] = [
-  // 内置(与 main list-dir 的默认排除同一来源)
-  ...LIST_DIR_DEFAULT_EXCLUDE,
-  // 追加:构建产物 + 缓存
-  'dist',
-  'out',
-  'build',
-  '.next',
-  '.nuxt',
-  '.cache',
-  '.vite',
-];
+// listDir 默认排除 + 常见构建产物 / 缓存目录;与「在文件中查找」同一来源(WORKSPACE_SCAN_EXCLUDE)。
+const FULL_EXCLUDE = WORKSPACE_SCAN_EXCLUDE;
 
 function buildExcludeList(extraExclude: readonly string[] | undefined): readonly string[] {
   if (!extraExclude || extraExclude.length === 0) return FULL_EXCLUDE;

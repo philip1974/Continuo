@@ -16,6 +16,7 @@ import PluginsTabPlugin from './PluginsTabPlugin';
 import SettingsPanelPlugin from './SettingsPanelPlugin';
 import KeybindingsTabPlugin from './KeybindingsTabPlugin';
 import WindowPlugin from './WindowPlugin';
+import SearchPlugin from './SearchPlugin';
 import { coApp } from '@/plugins/co-app';
 import { createScopedApp } from '@/plugins/scoped-app';
 import type { Plugin } from '@/plugins/Plugin';
@@ -38,6 +39,10 @@ const CORES: readonly CoreEntry[] = [
   {
     Cls: DebugPanelPlugin,
     manifest: { id: 'core.debug-panel', name: 'DebugPanel', version: '1.0.0' },
+  },
+  {
+    Cls: SearchPlugin,
+    manifest: { id: 'core.search', name: 'Search', version: '1.0.0' },
   },
   {
     Cls: OutputPlugin,

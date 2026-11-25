@@ -17,7 +17,7 @@
 ### bootCorePlugins
 
 - 同步执行(register 在 onload 内同步);_activate Promise 微任务后 resolve
-- 完成后 `coApp.panels.getAll()` 含 5 个 panel type:`debug / editor / output / settings / terminal`
+- 完成后 `coApp.panels.getAll()` 含 6 个 panel type:`debug / editor / output / search / settings / terminal`
 - 重复 boot → 重复注册,registry 后注册赢 + warn(应避免)
 
 ### shutdownCorePlugins
