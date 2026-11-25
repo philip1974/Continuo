@@ -221,6 +221,12 @@ export const zh: Record<TranslationKey, string> = {
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}，编辑器',
   'editor.aria.code_block': '代码块',
+  // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
+  'editor.image.aria': '{name}，图片预览',
+  'editor.image.too_large': '图片过大，无法预览（超过 {max}）。',
+  'editor.image.load_failed': '加载图片时出错：{reason}',
+  'editor.image.decode_failed': '加载图片时出错。',
+  'editor.md.image_unavailable': '图片无法显示：{name}',
   'editor.welcome.title': '未打开文件',
   'editor.welcome.actions_aria': '开始使用',
   'editor.welcome.open_folder': '打开文件夹',

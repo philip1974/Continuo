@@ -6,8 +6,9 @@ import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 
 // 面板内容里优先接焦点的可编辑元素(CodeMirror / ProseMirror 的 contenteditable、输入框),
 // 没有则退到第一个可 Tab 到的控件(Editor 的 tab 行按钮在编辑区之前,故两轮查找)。
+// data-editor-focus-target:不可编辑但自身是编辑区落点的视图(只读图片预览)。
 const EDITABLE_SELECTOR =
-  '[contenteditable="true"], textarea:not([disabled]), input:not([disabled]):not([type="hidden"])';
+  '[contenteditable="true"], textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), [data-editor-focus-target]';
 const TABBABLE_SELECTOR =
   'button:not([disabled]), a[href], select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 // 都没有(空编辑器组:关光 tab 后只剩 Welcome)→ 面板根本身(只经脚本聚焦的 tabIndex=-1 落点)。VSCode:F6 / 点 tab

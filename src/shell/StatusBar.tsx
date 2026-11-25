@@ -27,6 +27,7 @@ import { ConfirmDialog } from '@/lib/ConfirmDialog';
 import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 import { createLatestGuard } from '@/lib/latest-wins';
 import { useCopyMcpConfig } from './use-copy-mcp-config';
+import { isImagePreviewPath } from '../../electron/shared/image-preview';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
 const MCP_COPY_ICON = (
@@ -368,7 +369,8 @@ export function StatusBar() {
                 </>
               )}
             </span>
-            <EditorStats tabId={activeTabId} content={activeContent} />
+            {/* 图片 tab 的内容是 stat 指纹,不是文本:不显示统计(尺寸 / 大小在图片视图里)。 */}
+            {!isImagePreviewPath(activeFilePath) && <EditorStats tabId={activeTabId} content={activeContent} />}
           </>
         ) : null}
       </div>

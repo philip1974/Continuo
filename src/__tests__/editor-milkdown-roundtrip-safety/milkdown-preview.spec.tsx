@@ -58,6 +58,7 @@ vi.mock('@milkdown/crepe', () => ({
       });
     },
     editor: {
+      config: () => {},
       ctx: {
         get: (name: string) => {
           if (name === 'editorView') return { state: { doc: milkdownHarness.doc } };

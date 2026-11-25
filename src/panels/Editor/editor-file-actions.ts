@@ -32,6 +32,7 @@ import {
   loadEditorPanelModule,
   loadMilkdownEditorModule,
 } from './editor-engine-loaders';
+import { isImagePreviewPath } from './editor-image';
 
 /** renderer 内部错误码:保存时发现磁盘已被外部修改(未覆盖)。EditorPanel 据此弹覆盖确认,dirty-close 单独计数。 */
 export const EDITOR_DISK_CHANGED = 'EDITOR_DISK_CHANGED';
@@ -47,6 +48,7 @@ const ignoreWarmupError = (): void => {};
  */
 export function warmEditorEngineFor(path: string): void {
   loadEditorPanelModule().catch(ignoreWarmupError);
+  if (isImagePreviewPath(path)) return; // 图片视图随 EditorPanel 一起加载,不用编辑引擎
   const engine =
     usesMilkdownEngine(path, null)
       ? loadMilkdownEditorModule()
@@ -200,6 +202,9 @@ export async function saveFile(
   deps: EditorFileDeps,
   opts?: SaveFileOptions,
 ): Promise<FileOpResult> {
+  // 图片 tab 只读(内容是 stat 指纹,见 editor-image):保存 = 无操作(VSCode 图片预览 ⌘S 同样什么也不做)。
+  const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+  if (tab && isImagePreviewPath(tab.filePath)) return { ok: true, data: undefined };
   // race(R21):同 tab 的保存按发起顺序串行写盘 —— 防 autosave 旧内容晚于手动保存新内容落盘而
   // 覆盖。每次进链时重读 tab.content(在 task 内取快照),保证串行后写的是当时最新内容。
   return runSerialPerKey(saveChains, tabId, () => saveFileNow(tabId, deps, opts));

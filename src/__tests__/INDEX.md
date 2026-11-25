@@ -569,6 +569,13 @@
 - [`use-editor-file.spec.tsx`](./editor-hooks-react/use-editor-file.spec.tsx)
 - [`use-external-file-sync.spec.tsx`](./editor-hooks-react/use-external-file-sync.spec.tsx)
 
+## [编辑器图片预览与 Markdown 相对路径图片(对齐 VSCode media-preview / markdown 预览)](./editor-image-preview/README.md)
+
+- [`markdown-image.spec.tsx`](./editor-image-preview/markdown-image.spec.tsx)
+- [`open-image.spec.tsx`](./editor-image-preview/open-image.spec.tsx)
+- [`read-image.spec.ts`](./editor-image-preview/read-image.spec.ts)
+- [`statusbar-image.spec.tsx`](./editor-image-preview/statusbar-image.spec.tsx)
+
 ## [editor-markdown-ime-composition](./editor-markdown-ime-composition/README.md)
 
 - [`ime-composition.spec.ts`](./editor-markdown-ime-composition/ime-composition.spec.ts)

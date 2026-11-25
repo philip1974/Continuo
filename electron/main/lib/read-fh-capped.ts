@@ -41,6 +41,8 @@ export interface CappedFdReadOptions {
    * (lstat 显示普通文件、O_NOFOLLOW 也挡不住,但可能就是仓库外的全局配置)。只管末级分量,目录分量由调用方负责。
    */
   readonly noFollow?: boolean;
+  /** 'base64':text 为原始字节的 base64(二进制读取,如图片预览);与 requireUtf8 互斥(缺省 utf-8 文本)。 */
+  readonly encoding?: 'base64';
 }
 
 function unsafeFileError(code: 'ELOOP' | 'EFTYPE' | 'EMLINK', filePath: string): NodeJS.ErrnoException {
@@ -132,7 +134,8 @@ export async function readCappedFromHandle(
       return { text: null, tooLarge: false, size: total, notUtf8: true };
     }
   }
-  return { text: bytes.toString('utf-8'), tooLarge: false, size: total, ...(identity && { identity }) };
+  const encoding = opts.encoding ?? 'utf-8';
+  return { text: bytes.toString(encoding), tooLarge: false, size: total, ...(identity && { identity }) };
 }
 
 /**

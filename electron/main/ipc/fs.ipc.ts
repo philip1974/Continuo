@@ -8,6 +8,7 @@ import {
   type FsDirChangedPayload,
   type FsFileStat,
   type FsReadFileData,
+  type FsReadImageData,
 } from '../../shared/fs-channels';
 import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
@@ -16,8 +17,9 @@ import { listDir } from './fs/list-dir';
 import { FS_IPC_NAME_MAX, ListDirOptionsSchema } from '../../shared/fs-list-dir-schema';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
+import { readImage } from './fs/read-image';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
-import { isAnyWorkspaceRoot } from '../services/window-workspace-roots.service';
+import { getWorkspaceRoot, isAnyWorkspaceRoot } from '../services/window-workspace-roots.service';
 import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
 import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
@@ -51,6 +53,11 @@ export const listDirInputSchema = z
 export const readFileInputSchema = z.object({ path: fsPath() }).strict();
 
 export const statInputSchema = z.object({ path: fsPath() }).strict();
+
+// workspaceOnly:Markdown 文档里引用的图片(来源不受信)只允许发送窗口的工作区内;图片 tab 自身(用户主动打开)不限。
+export const readImageInputSchema = z
+  .object({ path: fsPath(), workspaceOnly: z.boolean().optional() })
+  .strict();
 
 // 边界(E13):fs:writeFile / fs:writeBinary 的 content 此前无大小上限。IPC payload 会先完整进入
 // 主进程,再由 atomicWriteFile 写临时文件 + fsync。畸形/误操作的超大字符串/Uint8Array 会造成主
@@ -120,6 +127,7 @@ const unwatchInputSchema = z.object({ path: fsPath() }).strict();
 export type ListDirInput = z.infer<typeof listDirInputSchema>;
 export type ReadFileInput = z.infer<typeof readFileInputSchema>;
 export type StatInput = z.infer<typeof statInputSchema>;
+export type ReadImageInput = z.infer<typeof readImageInputSchema>;
 export type WriteFileInput = z.infer<typeof writeFileInputSchema>;
 export type WriteBinaryInput = z.infer<typeof writeBinaryInputSchema>;
 export type RenameInput = z.infer<typeof renameInputSchema>;
@@ -145,6 +153,17 @@ export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileD
     ? { content, realPath: target }
     : { content };
 };
+// fs:read-image:workspaceOnly 时工作区根取自 IPC 发送方窗口(main 推断,renderer 不自报);插件经 editor.openFile
+// 打开过的路径同 read-file 先在 plugin-fs 锁内确认未被换入链接。BDD: src/__tests__/editor-image-preview/
+export const guardedReadImageHandler = (
+  input: ReadImageInput,
+  senderWindowId: number,
+): Promise<FsReadImageData> =>
+  guardPluginOpenedPath(input.path, () =>
+    input.workspaceOnly === true
+      ? readImage(input.path, getWorkspaceRoot(senderWindowId))
+      : readImage(input.path),
+  );
 // 性能:返回写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
 // 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
 export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
@@ -354,6 +373,9 @@ export function registerFsIpc(): void {
   safeHandle(FS_CHANNELS.LIST_DIR, listDirInputSchema, listDirHandler);
   safeHandle(FS_CHANNELS.READ_FILE, readFileInputSchema, guardedReadFileHandler);
   safeHandle(FS_CHANNELS.STAT, statInputSchema, statHandler);
+  safeHandleWithCtx(FS_CHANNELS.READ_IMAGE, readImageInputSchema, (input, { event }) =>
+    guardedReadImageHandler(input, senderWindowOrThrow(event, ERROR_CODES.FS_DENIED).id),
+  );
   safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler);
   safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler);

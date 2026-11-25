@@ -1,4 +1,4 @@
-// 外部进程修改文件时,自动同步打开的 editor tab 内容。
+// 外部进程修改文件时,自动同步打开的 editor tab 内容(图片 tab 只比 stat 指纹,见 editor-image)。
 //
 // 触发源:Explorer 已展开目录被 fs.watch 监听,main 进程 broadcast
 // `fs:dir-changed`。本 hook 订阅该事件,扫描已打开 tabs,命中父目录的
@@ -25,6 +25,7 @@ import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { ownSaveStatCheck } from './saved-disk-stat';
+import { readEditorFile } from './editor-image';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 /** watch-restored 子树重读的最大同时在途 readFile 数(与 hydrateEditorTabs RESTORE_READ_CONCURRENCY 同口径). */
@@ -131,14 +132,14 @@ export function useExternalFileSync(): void {
       const echoCheck = ownSaveEchoCheck(path, tabRef);
       const first: Promise<ReadResult> = echoCheck
         ? echoCheck.then(
-            (echo): ReadResult | Promise<ReadResult> => (echo ? { ok: false } : coApi.fs.readFile(path)),
+            (echo): ReadResult | Promise<ReadResult> => (echo ? { ok: false } : readEditorFile(coApi.fs, path)),
           )
-        : coApi.fs.readFile(path);
+        : readEditorFile(coApi.fs, path);
       // 读到不存在 → 延迟后再读一次确认(仍在 inFlight 内:等待期间的新事件并入尾随重读)。
       const read = first.then((r) =>
         isNotFound(r)
           ? new Promise<void>((res) => setTimeout(res, EXTERNAL_DELETE_CONFIRM_MS)).then(
-              (): ReadResult | Promise<ReadResult> => (cancelled ? null : coApi.fs.readFile(path)),
+              (): ReadResult | Promise<ReadResult> => (cancelled ? null : readEditorFile(coApi.fs, path)),
             )
           : r,
       );

@@ -10,6 +10,8 @@ import { IPC_ERR, type IpcFail, type IpcOk, type IpcResult } from './ipc-result'
 export const FS_CHANNELS = {
   LIST_DIR: 'fs:list-dir',
   READ_FILE: 'fs:read-file',
+  /** 只读图片预览 / Markdown 图片:读为 data URL(格式白名单 + 50 MiB 上限;workspaceOnly 时限发送窗口工作区内). */
+  READ_IMAGE: 'fs:read-image',
   /** 廉价 stat(跟随 symlink):{ mtimeMs, size, ino }。编辑器外部同步用它识别自己保存的回声. */
   STAT: 'fs:stat',
   WRITE_FILE: 'fs:write-file',
@@ -93,6 +95,12 @@ export function readFsDirChangedChangeOnly(v: FsDirChangedPayload): boolean {
 export interface FsReadFileData {
   readonly content: string;
   readonly realPath?: string;
+}
+
+/** fs:read-image 的 data:dataUrl = `data:<mime>;base64,…`;size = 文件字节数. */
+export interface FsReadImageData {
+  readonly dataUrl: string;
+  readonly size: number;
 }
 
 /** 渲染端 readFile 结果:data 仍为文件内容 string(既有调用方不变),成功时可选附 realPath. */

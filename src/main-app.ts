@@ -46,6 +46,7 @@ import {
   subscribeToI18nBroadcast,
   useSettingsStore,
 } from '@/stores/settings.store';
+import { readEditorFile } from '@/panels/Editor/editor-image';
 import './styles/tailwind.css';
 
 // E2E hook:Playwright 通过 page.evaluate 调 dock 操作 / store 重置。
@@ -264,7 +265,8 @@ export async function init(): Promise<void> {
       onRecentChanged: (cb) => coApi.explorer.onRecentChanged(cb),
     },
     {
-      fs: { readFile: (p) => coApi.fs.readFile(p) },
+      // 图片 tab 恢复同打开:stat 指纹,不读成文本(见 editor-image)
+      fs: { readFile: (p) => readEditorFile(coApi.fs, p) },
       windowSeq: initialWindowSeq,
       ...(initialWorkspace !== null ? { initialWorkspace } : {}),
       ...(initialFresh ? { fresh: true } : {}),

@@ -222,6 +222,12 @@ export const ko: Record<TranslationKey, string> = {
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}, 편집기',
   'editor.aria.code_block': '코드 블록',
+  // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
+  'editor.image.aria': '{name}, 이미지 미리 보기',
+  'editor.image.too_large': '이미지가 너무 커서 미리 볼 수 없습니다({max} 초과).',
+  'editor.image.load_failed': '이미지를 로드하는 동안 오류가 발생했습니다: {reason}',
+  'editor.image.decode_failed': '이미지를 로드하는 동안 오류가 발생했습니다.',
+  'editor.md.image_unavailable': '이미지를 표시할 수 없음: {name}',
   'editor.welcome.title': '열린 파일 없음',
   'editor.welcome.actions_aria': '시작하기',
   'editor.welcome.open_folder': '폴더 열기',

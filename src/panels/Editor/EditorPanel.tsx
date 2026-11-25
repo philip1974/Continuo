@@ -25,6 +25,8 @@ import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusActiveEditor } from './editor-focus-registry';
 import { EditorHeader, type TabChrome } from './EditorHeader';
 import { EditorWelcome } from './EditorWelcome';
+import { ImageViewer } from './ImageViewer';
+import { isImagePreviewPath } from './editor-image';
 import { createLazyCodeEditor, createLazyMilkdownEditor } from './editor-engine-loaders';
 import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
@@ -158,7 +160,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   const [engines, setEngines] = useState(() => lazyEngines);
   const [engineRetry, setEngineRetry] = useState(0);
   const { code: CodeEditor, milkdown: MilkdownEditor } = engines;
-  const retryEngine = useCallback((which: 'welcome' | 'code' | 'milkdown') => {
+  const retryEngine = useCallback((which: 'welcome' | 'image' | 'code' | 'milkdown') => {
     if (which === 'code') {
       lazyEngines = { ...lazyEngines, code: createLazyCodeEditor() };
     } else if (which === 'milkdown') {
@@ -414,10 +416,20 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
-  let engine: 'welcome' | 'code' | 'milkdown';
+  let engine: 'welcome' | 'image' | 'code' | 'milkdown';
   if (!activeTab) {
     engine = 'welcome';
     body = <EditorWelcome />;
+  } else if (isImagePreviewPath(activeTab.filePath)) {
+    // 图片:只读预览(不读成文本,见 editor-image)。reloadEpoch 并入 key:外部修改后重挂重新读图。
+    engine = 'image';
+    body = (
+      <ImageViewer
+        key={`${activeTab.id}-${activeTab.reloadEpoch ?? 0}`}
+        tabId={activeTab.id}
+        filePath={activeTab.filePath}
+      />
+    );
   } else if (usesMilkdownEngine(activeTab.filePath, activeTab)) {
     engine = 'milkdown';
     body = (

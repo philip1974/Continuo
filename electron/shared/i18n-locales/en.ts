@@ -235,6 +235,12 @@ export const en = {
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}, Editor',
   'editor.aria.code_block': 'Code block',
+  // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
+  'editor.image.aria': '{name}, Image Preview',
+  'editor.image.too_large': 'The image is too large to preview (over {max}).',
+  'editor.image.load_failed': 'An error occurred while loading the image: {reason}',
+  'editor.image.decode_failed': 'An error occurred while loading the image.',
+  'editor.md.image_unavailable': 'Image unavailable: {name}',
   'editor.welcome.title': 'No file open',
   'editor.welcome.actions_aria': 'Get started',
   'editor.welcome.open_folder': 'Open Folder',

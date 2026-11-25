@@ -3,10 +3,12 @@
 // 此前三处各拼一份且形状不一(Quick Open 只给 readFile / writeFile,漏了 stat;将来若在该路径保存会失去 stat 快路径)。
 import { coApi } from '@/lib/co-api';
 import type { EditorFileDeps } from './editor-file-actions';
+import { readEditorFile } from './editor-image';
 
 export const editorFileDeps: EditorFileDeps = {
   fs: {
-    readFile: (p) => coApi.fs.readFile(p),
+    // 图片按 stat 指纹建 / 刷新只读 tab(见 editor-image)
+    readFile: (p) => readEditorFile(coApi.fs, p),
     writeFile: (p, c, o) => (o ? coApi.fs.writeFile(p, c, o) : coApi.fs.writeFile(p, c)),
     stat: (p) => coApi.fs.stat(p),
   },

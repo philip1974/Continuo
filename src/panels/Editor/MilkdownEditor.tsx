@@ -33,6 +33,7 @@ import { rebindCodeMirrorRoots } from './codemirror-root';
 import { markdownCodeBlockTheme } from './code-editor-theme';
 import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel } from './codemirror-phrases';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
+import { markdownImageNodeView } from './markdown-image-view';
 
 interface MilkdownEditorProps {
   /**
@@ -209,7 +210,8 @@ function CrepeEditor({
         [CrepeFeature.ListItem]: true,
         [CrepeFeature.LinkTooltip]: true,
         [CrepeFeature.Cursor]: true,
-        [CrepeFeature.ImageBlock]: false, // MVP 不接图片
+        // 不接图片插入 / 上传 UI;图片显示走下方 image nodeView(markdown-image-view)
+        [CrepeFeature.ImageBlock]: false,
         [CrepeFeature.BlockEdit]: true,
         [CrepeFeature.Toolbar]: true,
         [CrepeFeature.Placeholder]: true,
@@ -257,6 +259,15 @@ function CrepeEditor({
       },
     });
 
+    // Markdown 图片:image 节点换成自定义视图 —— 相对路径按文档目录解析、经受控通道(仅工作区内)加载,失败给 alt 占位;
+    // 只换 DOM 视图,src 原样留在文档里(序列化不变)。按 slice 名 'nodeView' 注册(@milkdown/kit 非直接依赖,
+    // 真实 Crepe 下的效果由 editor-image-preview/markdown-image.spec 钉住)。BDD: src/__tests__/editor-image-preview/
+    crepe.editor.config((ctx) =>
+      ctx.update<ReadonlyArray<readonly [string, unknown]>, 'nodeView'>('nodeView', (views) => [
+        ...views,
+        ['image', markdownImageNodeView(fileName ?? null)],
+      ]),
+    );
     if (readonly) crepe.setReadonly(true);
     crepeRef.current = crepe;
 
