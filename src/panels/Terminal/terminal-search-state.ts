@@ -142,6 +142,17 @@ export function applyTerminalSearchEffect(
     term?.clearSelection();
     return false;
   }
+  // 输入搜索词 / 切换选项(VSCode TerminalFindWidget._onInputChanged:findPrevious + incremental):从底部(最近输出)
+  // 向上增量搜索,先落最近的匹配;当前匹配仍符合新词时原地保留(incremental),不跳走。包内实现是 findNext
+  //(从缓冲顶部往下 → 先落回滚区最旧的匹配,视口被拉到顶部),兄弟仓库不改,在本层覆盖这两种动作。
+  const incrementalTerm =
+    action.type === 'setTerm' ? action.term : action.type === 'setOptions' ? state.term : '';
+  if (addon && incrementalTerm.length > 0) {
+    const options = action.type === 'setOptions' ? action.options : state.options;
+    const incremental: ISearchOptions = { ...toSearchAddonOptions(options), incremental: true };
+    addon.findPrevious(incrementalTerm, incremental);
+    return true;
+  }
   packageApply(addon, state, action, getTerminalSearchDecorations());
   return true;
 }

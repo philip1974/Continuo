@@ -16,7 +16,7 @@ function addon(): SearchAddonLike {
 }
 
 describe('terminal search state machine', () => {
-  it('S2 setTerm with query searches next with decorations', () => {
+  it('S2 setTerm with query searches upward incrementally (S2c) with decorations', () => {
     const a = addon();
     const state = terminalSearchReducer(INITIAL_TERMINAL_SEARCH_STATE, {
       type: 'setTerm',
@@ -29,10 +29,11 @@ describe('terminal search state machine', () => {
     });
 
     expect(state.term).toBe('error');
-    expect(a.findNext).toHaveBeenCalledWith(
+    expect(a.findPrevious).toHaveBeenCalledWith(
       'error',
-      expect.objectContaining({ decorations: expect.any(Object) }),
+      expect.objectContaining({ decorations: expect.any(Object), incremental: true }),
     );
+    expect(a.findNext).not.toHaveBeenCalled();
   });
 
   it('S3 empty query clears decorations and result state', () => {
@@ -82,13 +83,14 @@ describe('terminal search state machine', () => {
       options: state.options,
     });
 
-    expect(a.findNext).toHaveBeenCalledWith(
+    expect(a.findPrevious).toHaveBeenCalledWith(
       'error',
       expect.objectContaining({
         regex: true,
         caseSensitive: true,
         wholeWord: false,
         decorations: expect.any(Object),
+        incremental: true,
       }),
     );
   });
@@ -146,14 +148,15 @@ describe('terminal search state machine', () => {
     // addon that mutates ref synchronously inside findNext.
     let stateRef: typeof INITIAL_TERMINAL_SEARCH_STATE =
       INITIAL_TERMINAL_SEARCH_STATE;
+    // simulate SearchAddon's synchronous onDidChangeResults firing inside the
+    // search call (setTerm 走 findPrevious 增量,S2c), which updates the ref
+    const syncFind = vi.fn(() => {
+      stateRef = { ...stateRef, result: { index: 0, count: 19 } };
+      return true;
+    });
     const syncResultsAddon: SearchAddonLike = {
-      findNext: vi.fn(() => {
-        // simulate SearchAddon's synchronous onDidChangeResults firing
-        // inside findNext, which updates the ref
-        stateRef = { ...stateRef, result: { index: 0, count: 19 } };
-        return true;
-      }),
-      findPrevious: vi.fn(() => true),
+      findNext: syncFind,
+      findPrevious: syncFind,
       clearDecorations: vi.fn(),
       clearActiveDecoration: vi.fn(),
     };

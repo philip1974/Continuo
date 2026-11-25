@@ -10,8 +10,10 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - S1b 搜索条已打开时再次 open(`Cmd/Ctrl+F` / 命令面板):`focusRequest` 递增,输入框重新获得焦点并全选已有搜索词(VSCode 行为),不让后续输入与回车落进 shell(`search-bar.spec.tsx` / `search-debounce.spec.ts` S14)。
 - S2 Typing a query calls `findNext` with decorations and updates match count from `onDidChangeResults`.
 - S2b `SearchAddon` 以显式 `highlightLimit = TERMINAL_SEARCH_HIGHLIGHT_LIMIT`(1000)构造,结果收集到上限即停:计数达上限时总数显示「1000+」;当前匹配不在已收集结果内(`resultIndex = -1`)时只显示总数(`match_total`),不显示「0 / 1000」。
+- S2c 输入搜索词 / 切换选项时从底部(最近输出)向上增量搜索(VSCode `TerminalFindWidget._onInputChanged`:`findPrevious` + `incremental: true`),先落最近的匹配,视口不被拉到回滚区顶部;当前匹配仍符合新词时原地保留。兄弟包 `applyTerminalSearchEffect` 用 `findNext`(从顶部往下),在 Continuo 包装层(`terminal-search-state.ts`)覆盖这两种动作,不改兄弟仓库(`incremental-from-bottom.spec.tsx`)。
 - S3 Empty query clears decorations and resets result state.
 - S4 Enter navigates to next match; Shift+Enter navigates to previous match.
+- S4c 终端搜索条 Enter 向上(更早的输出,`prev`)、Shift+Enter 向下(`next`),对齐 VSCode 终端查找(`findPrevious` 绑 Enter、`findNext` 绑 Shift+Enter;输入后已落在最近的匹配,Enter 继续往更早处找,不绕回缓冲顶部)。由 `enterFindsPrevious` 开启,终端面板传入;Markdown 查找复用本搜索条时缺省仍 Enter 向下(`incremental-from-bottom.spec.tsx`)。
 - S4b IME 组合中(`isComposing` / `keyCode 229`)的 Enter / Escape 不跳转、不关闭(属于输入法)。
 - S5 Regex / case-sensitive / whole-word toggles re-run search with updated options.
 - S6 Escape or close hides the search bar, clears decorations, clears query, resets result state, and refocuses the terminal.
@@ -33,8 +35,9 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 
 - [ ] Active terminal: press Cmd/Ctrl+F -> search bar opens and no `f` / `^F` appears in the shell.
 - [ ] Type a term that exists in scrollback -> matches highlight and counter shows current / total.
-- [ ] Press Enter repeatedly -> selection advances through matches and wraps.
-- [ ] Press Shift+Enter -> selection moves to the previous match.
+- [ ] `seq 1 200000`, type `1999` -> the most recent match (near the bottom) is selected; the viewport is not dragged to the top of scrollback.
+- [ ] Press Enter repeatedly -> selection moves up through older matches and wraps.
+- [ ] Press Shift+Enter -> selection moves down to the newer match.
 - [ ] Toggle regex / match case / whole word -> search reruns and counter updates.
 - [ ] Clear the query -> highlights disappear and counter resets.
 - [ ] Press Escape -> search bar closes, decorations clear, terminal focus returns.

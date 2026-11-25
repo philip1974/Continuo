@@ -1784,6 +1784,7 @@
 ## [terminal-search](./terminal-search/README.md)
 
 - [`byte-identical.spec.ts`](./terminal-search/byte-identical.spec.ts)
+- [`incremental-from-bottom.spec.tsx`](./terminal-search/incremental-from-bottom.spec.tsx)
 - [`invalid-regex.spec.ts`](./terminal-search/invalid-regex.spec.ts)
 - [`keymap.spec.ts`](./terminal-search/keymap.spec.ts)
 - [`search-bar.spec.tsx`](./terminal-search/search-bar.spec.tsx)

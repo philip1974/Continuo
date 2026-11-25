@@ -178,7 +178,7 @@ function TerminalPanelContent({
         </div>
       </TerminalContextMenu>
       {searchApi.isOpen && (
-        <TerminalSearchBar searchApi={searchApi} onClose={searchApi.close} />
+        <TerminalSearchBar searchApi={searchApi} onClose={searchApi.close} enterFindsPrevious />
       )}
       {!isReady && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-canvas/70 backdrop-blur-[2px]">

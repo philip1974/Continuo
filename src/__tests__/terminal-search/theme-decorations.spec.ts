@@ -38,6 +38,8 @@ vi.mock('@xterm/xterm', () => ({
       open: vi.fn(),
       attachCustomKeyEventHandler: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onTitleChange: vi.fn(() => ({ dispose: vi.fn() })),
+      registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
       parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       clearSelection: hoisted.clearSelection,
       focus: vi.fn(),
@@ -50,13 +52,14 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn(() => ({ fit: vi.fn() })) }
 // 合法时同步 fire onDidChangeResults。
 vi.mock('@xterm/addon-search', () => ({
   SearchAddon: vi.fn(() => {
-    const find = vi.fn((term: string, opts?: { regex?: boolean }) => {
+    // findNext / findPrevious 各自独立计数(输入搜索词走 findPrevious 增量,见 S2c)。
+    const find = (term: string, opts?: { regex?: boolean }) => {
       if (opts?.regex) RegExp(term, 'g');
       hoisted.resultsHandler?.({ resultIndex: 0, resultCount: 3 });
       return true;
-    });
+    };
     const addon = {
-      findNext: find,
+      findNext: vi.fn(find),
       findPrevious: vi.fn(find),
       clearDecorations: vi.fn(),
       clearActiveDecoration: vi.fn(),
@@ -268,7 +271,7 @@ describe('S13 主题切换时无终端挂载 / 搜索条开着', () => {
     const addon = hoisted.addon!;
     act(() => api!.setTerm('x'));
     act(() => vi.runOnlyPendingTimers());
-    const before = addon.findNext.mock.calls.length;
+    const before = addon.findPrevious.mock.calls.length;
 
     setTokens(LIGHT);
     hoisted.resolved = 'light';
@@ -277,8 +280,8 @@ describe('S13 主题切换时无终端挂载 / 搜索条开着', () => {
     act(() => rafCb?.());
     act(() => vi.runOnlyPendingTimers());
     vi.useRealTimers();
-    expect(addon.findNext.mock.calls.length).toBeGreaterThan(before);
-    expect(addon.findNext).toHaveBeenLastCalledWith(
+    expect(addon.findPrevious.mock.calls.length).toBeGreaterThan(before);
+    expect(addon.findPrevious).toHaveBeenLastCalledWith(
       'x',
       expect.objectContaining({
         decorations: expect.objectContaining({ matchBackground: '#eaddff' }),

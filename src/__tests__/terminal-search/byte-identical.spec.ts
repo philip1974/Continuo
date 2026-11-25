@@ -134,13 +134,13 @@ describe('terminal-search wrapper byte-identical', () => {
       };
     }
 
-    it('setTerm action: addon.findNext 被调用时 options.decorations === DECORATIONS', () => {
+    it('setTerm action: addon.findPrevious(增量,S2c)被调用时 options.decorations === DECORATIONS', () => {
       const addon = mockAddon();
       applyTerminalSearchEffect(addon, INITIAL_TERMINAL_SEARCH_STATE, {
         type: 'setTerm',
         term: 'apple',
       });
-      expect(addon.findNext).toHaveBeenCalledWith(
+      expect(addon.findPrevious).toHaveBeenCalledWith(
         'apple',
         expect.objectContaining({ decorations: getTerminalSearchDecorations() }),
       );

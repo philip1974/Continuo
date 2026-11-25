@@ -39,6 +39,8 @@ vi.mock('@xterm/xterm', () => ({
       open: vi.fn(),
       attachCustomKeyEventHandler: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onTitleChange: vi.fn(() => ({ dispose: vi.fn() })),
+      registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
       parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       clearSelection: hoisted.clearSelection,
       dispose: vi.fn(),
@@ -50,13 +52,14 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn(() => ({ fit: vi.fn() })) }
 // 合法时同步 fire onDidChangeResults。
 vi.mock('@xterm/addon-search', () => ({
   SearchAddon: vi.fn(() => {
-    const find = vi.fn((term: string, opts?: { regex?: boolean }) => {
+    // findNext / findPrevious 各自独立计数(输入搜索词走 findPrevious 增量,见 S2c)。
+    const find = (term: string, opts?: { regex?: boolean }) => {
       if (opts?.regex) RegExp(term, 'g');
       hoisted.resultsHandler?.({ resultIndex: 0, resultCount: 3 });
       return true;
-    });
+    };
     const addon = {
-      findNext: find,
+      findNext: vi.fn(find),
       findPrevious: vi.fn(find),
       clearDecorations: vi.fn(),
       clearActiveDecoration: vi.fn(),
@@ -171,7 +174,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
 
     // 改回合法正则 → 照常搜索
     typeTerm('fo+');
-    expect(addon.findNext).toHaveBeenCalledWith('fo+', expect.objectContaining({ regex: true }));
+    expect(addon.findPrevious).toHaveBeenCalledWith('fo+', expect.objectContaining({ regex: true }));
     expect(api!.result).toEqual({ index: 0, count: 3 });
   });
 
@@ -179,7 +182,7 @@ describe('S11 正则模式非法正则 → 无匹配,搜索框继续可用', () 
     render(createElement(Host, { termId: 'term-a' }));
     act(() => api!.open());
     typeTerm('[');
-    expect(hoisted.addon!.findNext).toHaveBeenCalledWith('[', expect.objectContaining({ regex: false }));
+    expect(hoisted.addon!.findPrevious).toHaveBeenCalledWith('[', expect.objectContaining({ regex: false }));
     expect(api!.result).toEqual({ index: 0, count: 3 });
   });
 

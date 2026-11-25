@@ -39,6 +39,8 @@ vi.mock('@xterm/xterm', () => ({
       open: vi.fn(),
       attachCustomKeyEventHandler: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onTitleChange: vi.fn(() => ({ dispose: vi.fn() })),
+      registerLinkProvider: vi.fn(() => ({ dispose: vi.fn() })),
       parser: { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) },
       clearSelection: hoisted.clearSelection,
       focus: vi.fn(),
@@ -51,13 +53,14 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn(() => ({ fit: vi.fn() })) }
 // 合法时同步 fire onDidChangeResults。
 vi.mock('@xterm/addon-search', () => ({
   SearchAddon: vi.fn(() => {
-    const find = vi.fn((term: string, opts?: { regex?: boolean }) => {
+    // findNext / findPrevious 各自独立计数(输入搜索词走 findPrevious 增量,见 S2c)。
+    const find = (term: string, opts?: { regex?: boolean }) => {
       if (opts?.regex) RegExp(term, 'g');
       hoisted.resultsHandler?.({ resultIndex: 0, resultCount: 3 });
       return true;
-    });
+    };
     const addon = {
-      findNext: find,
+      findNext: vi.fn(find),
       findPrevious: vi.fn(find),
       clearDecorations: vi.fn(),
       clearActiveDecoration: vi.fn(),
@@ -132,7 +135,7 @@ afterEach(() => {
 
 
 describe('S12 搜索词输入防抖', () => {
-  it('连续输入只在停顿后按最终词 findNext 一次,输入框状态立即更新', () => {
+  it('连续输入只在停顿后按最终词搜索一次(findPrevious 增量,见 S2c),输入框状态立即更新', () => {
     render(createElement(Host, { termId: 'term-a' }));
     act(() => api!.open());
     const addon = hoisted.addon!;
@@ -140,12 +143,13 @@ describe('S12 搜索词输入防抖', () => {
       act(() => api!.setTerm(t));
       expect(api!.term).toBe(t);
     }
-    expect(addon.findNext).not.toHaveBeenCalled();
+    expect(addon.findPrevious).not.toHaveBeenCalled();
     act(() => {
       vi.advanceTimersByTime(TERMINAL_SEARCH_DEBOUNCE_MS);
     });
-    expect(addon.findNext).toHaveBeenCalledTimes(1);
-    expect(addon.findNext).toHaveBeenCalledWith('error', expect.anything());
+    expect(addon.findPrevious).toHaveBeenCalledTimes(1);
+    expect(addon.findPrevious).toHaveBeenCalledWith('error', expect.objectContaining({ incremental: true }));
+    expect(addon.findNext).not.toHaveBeenCalled();
     expect(api!.result).toEqual({ index: 0, count: 3 });
   });
 
@@ -155,13 +159,16 @@ describe('S12 搜索词输入防抖', () => {
     const addon = hoisted.addon!;
     act(() => api!.setTerm('warn'));
     act(() => api!.next());
-    expect(addon.findNext.mock.calls.map((c) => c[0])).toEqual(['warn', 'warn']);
+    expect(addon.findPrevious.mock.calls.map((c) => c[0])).toEqual(['warn']);
+    expect(addon.findNext.mock.calls.map((c) => c[0])).toEqual(['warn']);
+    expect(addon.findPrevious.mock.invocationCallOrder[0]).toBeLessThan(addon.findNext.mock.invocationCallOrder[0]!);
     expect(api!.result).toEqual({ index: 0, count: 3 });
     // flush 后定时器已清,不会再补一次搜索
     act(() => {
       vi.advanceTimersByTime(TERMINAL_SEARCH_DEBOUNCE_MS * 2);
     });
-    expect(addon.findNext).toHaveBeenCalledTimes(2);
+    expect(addon.findPrevious).toHaveBeenCalledTimes(1);
+    expect(addon.findNext).toHaveBeenCalledTimes(1);
   });
 
   it('prev / 选项切换 / 失焦 都先 flush 挂起的搜索', () => {
@@ -171,21 +178,23 @@ describe('S12 搜索词输入防抖', () => {
 
     act(() => api!.setTerm('a'));
     act(() => api!.prev());
-    expect(addon.findNext).toHaveBeenCalledWith('a', expect.anything());
-    expect(addon.findPrevious).toHaveBeenCalledWith('a', expect.anything());
+    expect(addon.findPrevious.mock.calls.map((c) => [c[0], c[1].incremental])).toEqual([
+      ['a', true],
+      ['a', undefined],
+    ]);
 
-    addon.findNext.mockClear();
+    addon.findPrevious.mockClear();
     act(() => api!.setTerm('ab'));
     act(() => api!.setOptions({ regex: false, caseSensitive: true, wholeWord: false }));
-    expect(addon.findNext.mock.calls.map((c) => [c[0], c[1].caseSensitive])).toEqual([
+    expect(addon.findPrevious.mock.calls.map((c) => [c[0], c[1].caseSensitive])).toEqual([
       ['ab', false],
       ['ab', true],
     ]);
 
-    addon.findNext.mockClear();
+    addon.findPrevious.mockClear();
     act(() => api!.setTerm('abc'));
     act(() => api!.clearActiveDecoration());
-    expect(addon.findNext).toHaveBeenCalledWith('abc', expect.anything());
+    expect(addon.findPrevious).toHaveBeenCalledWith('abc', expect.anything());
     expect(addon.clearActiveDecoration).toHaveBeenCalled();
   });
 
@@ -199,7 +208,7 @@ describe('S12 搜索词输入防抖', () => {
     act(() => {
       vi.advanceTimersByTime(TERMINAL_SEARCH_DEBOUNCE_MS);
     });
-    expect(addon.findNext).not.toHaveBeenCalled();
+    expect(addon.findPrevious).not.toHaveBeenCalled();
 
     act(() => api!.open());
     act(() => api!.setTerm('x'));
@@ -208,14 +217,14 @@ describe('S12 搜索词输入防抖', () => {
     act(() => {
       vi.advanceTimersByTime(TERMINAL_SEARCH_DEBOUNCE_MS);
     });
-    expect(addon.findNext).not.toHaveBeenCalled();
+    expect(addon.findPrevious).not.toHaveBeenCalled();
     expect(api!.result).toEqual({ index: -1, count: 0 });
 
     act(() => api!.setTerm('y'));
     expect(vi.getTimerCount()).toBe(1);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
-    expect(addon.findNext).not.toHaveBeenCalled();
+    expect(addon.findPrevious).not.toHaveBeenCalled();
   });
 });
 

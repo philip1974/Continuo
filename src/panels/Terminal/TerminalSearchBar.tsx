@@ -24,6 +24,11 @@ interface TerminalSearchBarProps {
    * 终端保持现状。回车与查找条卸载(关闭)时把当前词记入。
    */
   readonly history?: FindHistory;
+  /**
+   * Enter 向上(更早的输出)找、⇧Enter 向下(VSCode 终端查找:findPrevious 绑 Enter、findNext 绑 ⇧Enter —— 输入时已从底部
+   * 向上落在最近的匹配,Enter 继续往更早处找,不绕回缓冲顶部)。缺省 false:Enter 向下(编辑器查找)。
+   */
+  readonly enterFindsPrevious?: boolean;
 }
 
 // 上一个 / 下一个 / 关闭用 SVG 图标(此前是 ASCII「^ v x」,字形大小 / 基线与 .* / Aa / W 不齐)。模块级预创建。
@@ -61,6 +66,7 @@ export function TerminalSearchBar({
   formatResult,
   label,
   history,
+  enterFindsPrevious = false,
 }: TerminalSearchBarProps) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -163,7 +169,7 @@ export function TerminalSearchBar({
           if (event.key !== 'Enter') return;
           event.preventDefault();
           history?.add(searchApi.term);
-          if (event.shiftKey) {
+          if (event.shiftKey !== enterFindsPrevious) {
             searchApi.prev();
           } else {
             searchApi.next();
