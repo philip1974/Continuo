@@ -10,6 +10,10 @@ Markdown 处于编辑 / 预览(Milkdown 富文本)模式则 `editor.openFile` �
   Milkdown 视图:选中匹配、焦点进编辑区(只读预览聚焦预览区)、匹配在视口外则滚到视口中央(VSCode
   `revealRangeInCenterIfOutsideViewport`)。结果:已定位 → `lineApplied: true`;行号超出源码 → `line-out-of-range`;
   期限(`MARKDOWN_REVEAL_TIMEOUT_MS`,5s)内视图未就绪 → `tab-not-mounted`。
+- **只读预览的可见高亮**:预览区 `contenteditable=false`,ProseMirror 不把选区画成 DOM 选区(看不到选中)。只读时另用 ⌘F 的
+  「当前匹配」装饰(`co-find-match co-find-match-current`)标出该范围;点击正文(mousedown)、文档变化、⌘F 设置查找词 / 跳转时清除。
+  编辑模式照常只靠选区(不叠加高亮)。选装饰而非「聚焦后 domAtPos + setBaseAndExtent 手动画 DOM 选区」:后者在只读内容里
+  会被下一次聚焦 / 点击 / 选区同步覆盖,且与 ProseMirror 自己的 DOM 选区管理互相打架。
 - **视图尚未就绪**(刚打开:读盘、引擎 chunk 加载、Crepe 异步创建):请求记为待兑现,视图就绪时兑现;兑现排在就绪那一帧的
   滚动位置恢复(视图状态缓存 / 切模式锚点)之后,不被它覆盖。新请求取代未兑现的旧请求(F4 连续跳结果)。
 - **源码 → 文档的对应**:ProseMirror 文档不保留源码位置。先按源码行定位匹配所在的块(`markdown-position-map`,与切模式保留位置
@@ -34,6 +38,6 @@ Markdown 处于编辑 / 预览(Milkdown 富文本)模式则 `editor.openFile` �
 |---|---|
 | `src/panels/Editor/markdown-reveal-registry.ts` | 按「编辑器组 + tab」登记定位句柄;待兑现请求、超时、取代 |
 | `src/panels/Editor/markdown-position-map.ts` | `rangeForSourceMatch`:源码匹配 → 文档范围 |
-| `src/panels/Editor/markdown-find.ts` | `selectAndRevealMarkdownRange`:选中并在视口外时滚到中央 |
+| `src/panels/Editor/markdown-find.ts` | `selectAndRevealMarkdownRange`:选中并在视口外时滚到中央;只读时加「当前匹配」高亮 |
 | `src/panels/Editor/MilkdownEditor.tsx` | 视图就绪时登记定位句柄,卸载注销 |
 | `src/plugins/co-app.ts` | `editor.openFile` 在 Milkdown 模式下请求定位并映射结果 |

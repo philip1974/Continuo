@@ -85,14 +85,21 @@ interface FindState {
   readonly matches: readonly FindRange[];
   /** 当前匹配下标;-1 = 无。 */
   readonly current: number;
+  /** 只读视图里定位到的范围(打开在文件中查找的结果;见 selectAndRevealMarkdownRange);null = 无。 */
+  readonly revealed: FindRange | null;
   readonly decorations: DecorationSet;
 }
 
-type FindMeta = { readonly query: MarkdownFindQuery | null } | { readonly step: 1 | -1 };
+type FindMeta =
+  | { readonly query: MarkdownFindQuery | null }
+  | { readonly step: 1 | -1 }
+  | { readonly reveal: FindRange | null };
 
 const findKey = new PluginKey<FindState>('continuo-markdown-find');
 
-const EMPTY: FindState = { query: null, matches: [], current: -1, decorations: DecorationSet.empty };
+const EMPTY: FindState = { query: null, matches: [], current: -1, revealed: null, decorations: DecorationSet.empty };
+
+const CURRENT_MATCH_CLASS = 'co-find-match co-find-match-current';
 
 /** 选区起(dir=1:选区之后第一个;dir=-1:选区之前最后一个),找不到则循环到另一端。 */
 function nearIndex(matches: readonly FindRange[], from: number, to: number, dir: 1 | -1): number {
@@ -105,16 +112,27 @@ function nearIndex(matches: readonly FindRange[], from: number, to: number, dir:
   return matches.length - 1;
 }
 
-function withDecorations(doc: PmNode, query: MarkdownFindQuery | null, matches: readonly FindRange[], current: number): FindState {
+function withDecorations(
+  doc: PmNode,
+  query: MarkdownFindQuery | null,
+  matches: readonly FindRange[],
+  current: number,
+  revealed: FindRange | null = null,
+): FindState {
   const decos = matches.map((m, i) =>
-    Decoration.inline(m.from, m.to, { class: i === current ? 'co-find-match co-find-match-current' : 'co-find-match' }),
+    Decoration.inline(m.from, m.to, { class: i === current ? CURRENT_MATCH_CLASS : 'co-find-match' }),
   );
-  return { query, matches, current, decorations: DecorationSet.create(doc, decos) };
+  if (revealed) decos.push(Decoration.inline(revealed.from, revealed.to, { class: CURRENT_MATCH_CLASS }));
+  return { query, matches, current, revealed, decorations: DecorationSet.create(doc, decos) };
 }
 
 function applyFind(tr: Transaction, prev: FindState, state: EditorState): FindState {
   const meta = tr.getMeta(findKey) as FindMeta | undefined;
   const { from, to } = state.selection;
+  if (meta && 'reveal' in meta) {
+    if (meta.reveal === null && prev.revealed === null) return prev;
+    return withDecorations(state.doc, prev.query, prev.matches, prev.current, meta.reveal);
+  }
   if (meta && 'query' in meta) {
     const re = meta.query ? buildFindRegExp(meta.query) : null;
     if (!meta.query) return EMPTY;
@@ -141,7 +159,15 @@ function applyFind(tr: Transaction, prev: FindState, state: EditorState): FindSt
     const anchor = cur ? tr.mapping.map(cur.from) : from;
     return withDecorations(state.doc, prev.query, matches, nearIndex(matches, anchor, anchor, 1));
   }
+  if (tr.docChanged && prev.revealed) return EMPTY; // 定位高亮随文档变化清除
   return prev;
+}
+
+/** 清除只读视图里的定位高亮(点击正文时)。 */
+function clearRevealed(view: EditorView): void {
+  if (findKey.getState(view.state)?.revealed) {
+    view.dispatch(view.state.tr.setMeta(findKey, { reveal: null } satisfies FindMeta).setMeta('addToHistory', false));
+  }
 }
 
 // 各视图的查找结果变化回调(查找条计数;含查找条打开时编辑文档后的重算)。
@@ -159,7 +185,15 @@ export function onMarkdownFindChange(view: EditorView, cb: (result: MarkdownFind
 export const markdownFindPlugin = new Plugin<FindState>({
   key: findKey,
   state: { init: () => EMPTY, apply: applyFind },
-  props: { decorations: (state) => findKey.getState(state)?.decorations },
+  props: {
+    decorations: (state) => findKey.getState(state)?.decorations,
+    handleDOMEvents: {
+      mousedown: (view) => {
+        clearRevealed(view);
+        return false;
+      },
+    },
+  },
   view: () => ({
     update: (view, prevState) => {
       if (findKey.getState(view.state) !== findKey.getState(prevState)) changeListeners.get(view)?.(markdownFindResult(view.state));
@@ -228,9 +262,16 @@ export function revealMarkdownFindMatch(view: EditorView, scroller: HTMLElement)
   if (m) revealPosInCenterIfOutside(view, m.from, scroller);
 }
 
-/** 选中 [from, to)(不进撤销历史),在视口外则滚到视口中央(打开在文件中查找的结果;VSCode 打开带选区的编辑器同)。 */
+/**
+ * 选中 [from, to)(不进撤销历史),在视口外则滚到视口中央(打开在文件中查找的结果;VSCode 打开带选区的编辑器同)。
+ * 只读视图(预览)里 ProseMirror 不把选区画成 DOM 选区 → 另用「当前匹配」装饰标出该范围,点击正文 / 文档变化 / 查找时清除。
+ * BDD: src/__tests__/search-open-markdown/
+ */
 export function selectAndRevealMarkdownRange(view: EditorView, scroller: HTMLElement, from: number, to: number): void {
-  view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)).setMeta('addToHistory', false));
+  const tr = view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)).setMeta('addToHistory', false);
+  const reveal = !view.editable && from < to ? { from, to } : null;
+  if (reveal || findKey.getState(view.state)?.revealed) tr.setMeta(findKey, { reveal } satisfies FindMeta);
+  view.dispatch(tr);
   revealPosInCenterIfOutside(view, from, scroller);
 }
 

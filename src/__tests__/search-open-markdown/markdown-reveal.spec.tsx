@@ -2,7 +2,7 @@
 // BDD:在文件中查找打开 Markdown 结果,编辑 / 预览(Milkdown)模式下定位并选中匹配(见同目录 README)。
 // 真实 Crepe:映射用它的 remark 处理器与它建出的 ProseMirror 文档;定位经 markdown-reveal-registry 交给已挂载 / 稍后挂载的视图。
 import React from 'react';
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Crepe as CrepeType } from '@milkdown/crepe';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
@@ -30,6 +30,8 @@ vi.mock('../../plugins/settings/values-store', () => ({
 beforeEach(() => {
   Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect ??= () => new DOMRect();
+  // jsdom 无 elementFromPoint(ProseMirror mousedown 按坐标取位置要用)
+  document.elementFromPoint ??= () => null;
 });
 afterEach(() => {
   cleanup();
@@ -178,5 +180,30 @@ describe('打开并定位(markdown-reveal-registry → MilkdownEditor)', () => {
     const { from, to } = view.state.selection;
     expect(view.state.doc.textBetween(from, to)).toBe('foo');
     expect(view.dom.contains(document.activeElement)).toBe(true);
+  });
+
+  it('只读预览不画 DOM 选区:匹配用「当前匹配」高亮标出,点击正文后清除;编辑模式只靠选区,不加高亮', async () => {
+    const { container, unmount } = render(<MilkdownEditor tabId={TAB} defaultValue={DOC} readonly />);
+    const { view } = await mounted();
+    await act(async () => {
+      expect(await revealInMarkdown(TAB, { line: 18, column: 6, length: 3 }, PRIMARY_EDITOR_GROUP_ID)).toBe('applied');
+    });
+    const marks = container.querySelectorAll('.co-find-match-current');
+    expect(marks).toHaveLength(1);
+    expect(marks[0]!.textContent).toBe('foo');
+    expect(marks[0]!.closest('p')?.textContent).toBe('Last foo');
+    act(() => {
+      fireEvent.mouseDown(view.dom);
+    });
+    expect(container.querySelectorAll('.co-find-match-current')).toHaveLength(0);
+    unmount();
+    instances.length = 0;
+
+    const edit = render(<MilkdownEditor tabId={TAB} defaultValue={DOC} />);
+    await mounted();
+    await act(async () => {
+      expect(await revealInMarkdown(TAB, { line: 18, column: 6, length: 3 }, PRIMARY_EDITOR_GROUP_ID)).toBe('applied');
+    });
+    expect(edit.container.querySelectorAll('.co-find-match-current')).toHaveLength(0);
   });
 });
