@@ -66,14 +66,15 @@ export function EmptyState({ onRestore, elsewhere = false }: { onRestore: () => 
       className="absolute inset-0 z-10 flex h-full w-full overflow-hidden bg-canvas outline-none [container:empty/size]"
     >
       {visible && focused && <BackgroundBeams />}
-      <div className="relative z-10 m-auto flex max-w-full flex-col items-center gap-4">
+      <div className="relative z-10 m-auto flex min-w-0 max-w-full flex-col items-center gap-4">
         {/* Icon 容器(参考 stitch_desktop_design_reviewer):圆形面板 + 边框,
          *  让"无面板"状态自成一个视觉单元而非孤立文案。窄(< 16rem)/ 矮(< 220px)时隐藏,不被裁成半圆。 */}
         <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-line/50 bg-panel @max-3xs/empty:hidden [@container_empty_(height<220px)]:hidden">
           {EMPTY_DOCK_ICON}
         </div>
-        {/* 最小窗口下 dock 仅约 72px 宽:居中、收窄内边距,超宽单词(韩文 keep-all)必要时词内断行,不越出右边。 */}
-        <p className="px-4 text-center text-fg-muted wrap-break-word @max-3xs/empty:px-2">{t(elsewhere ? 'dock.empty.in_other_windows' : 'dock.empty.message')}</p>
+        {/* 最小窗口下 dock 仅约 72px 宽:居中、收窄内边距与字号;块 min-w-0 + p max-w-full 不被最长单词的 min-content 撑宽,
+         *  超宽单词(韩文 keep-all)必要时词内断行,不越出右边。 */}
+        <p className="max-w-full px-4 text-center text-fg-muted wrap-break-word @max-3xs/empty:px-2 @max-3xs/empty:text-xs">{t(elsewhere ? 'dock.empty.in_other_windows' : 'dock.empty.message')}</p>
         {!elsewhere && (
           <Button variant="ghost" size="md" onClick={onRestore}>
             {t('dock.empty.restore')}

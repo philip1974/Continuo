@@ -58,9 +58,11 @@ describe('EmptyState', () => {
     const p = root.querySelector('p')!;
     expect(cls(p)).toEqual(expect.arrayContaining(['text-center', 'px-4']));
     // 极窄(dock 约 72px)时收窄内边距,单个超宽词(韩文 keep-all 不在词中断行)必要时词内断行,不越出右边。
-    expect(cls(p)).toEqual(expect.arrayContaining(['@max-3xs/empty:px-2', 'wrap-break-word']));
+    // p 与内容块都不得被最长单词的 min-content 撑宽(flex 项 min-width:auto):块 min-w-0 max-w-full、p max-w-full;
+    // 极窄时字号降为 text-xs,尽量整词换行。
+    expect(cls(p)).toEqual(expect.arrayContaining(['max-w-full', '@max-3xs/empty:px-2', '@max-3xs/empty:text-xs', 'wrap-break-word']));
     const block = p.parentElement!;
-    expect(cls(block)).toContain('max-w-full');
+    expect(cls(block)).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']));
     const icon = root.querySelector('svg[aria-hidden=true]')!.parentElement!;
     expect(cls(icon)).toEqual(expect.arrayContaining(['@max-3xs/empty:hidden', '[@container_empty_(height<220px)]:hidden']));
   });
