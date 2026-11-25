@@ -57,6 +57,8 @@ describe('EmptyState', () => {
     expect(cls(root)).toContain('[container:empty/size]'); // 宽高都可查询(height 查询需 size 容器)
     const p = root.querySelector('p')!;
     expect(cls(p)).toEqual(expect.arrayContaining(['text-center', 'px-4']));
+    // 极窄(dock 约 72px)时收窄内边距,单个超宽词(韩文 keep-all 不在词中断行)必要时词内断行,不越出右边。
+    expect(cls(p)).toEqual(expect.arrayContaining(['@max-3xs/empty:px-2', 'wrap-break-word']));
     const block = p.parentElement!;
     expect(cls(block)).toContain('max-w-full');
     const icon = root.querySelector('svg[aria-hidden=true]')!.parentElement!;

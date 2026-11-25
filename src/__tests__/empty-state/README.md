@@ -14,7 +14,8 @@ visibilityState='hidden' 或窗口失焦时不挂载装饰用 BackgroundBeams �
 - 渲染 data-testid='empty-state' 容器;容器带 `data-dock-empty`、tabIndex=-1:主窗无面板时 F6 / ⇧F6 的 dock 区域落点(VSCode:主窗保留带水印的空编辑器组,F6 可达)
 - DockShell 按**主窗内**(grid / floating)面板数判空(`isMainWindowDockEmpty`):面板全弹出到 popout 子窗时主窗同样显示空态
 - 文案「所有面板都关掉了」;面板全在 popout 子窗里(主窗无面板但面板未关,DockShell 传 `elsewhere`)时改为「所有面板都在其他窗口中」且不显示「恢复默认布局」(会在主窗再建一套单例面板,与子窗里的同一面板冲突;关子窗即收回)
-- 最小窗口(400×270,dock 约 145px 宽)下不破版:文案 `text-center px-4`、内容块 `max-w-full`;容器
+- 最小窗口(400×270,dock 仅约 72px 宽)下不破版:文案 `text-center px-4`(容器 < 16rem 收为 `px-2`)、`wrap-break-word`
+  (韩文 keep-all 的超宽单词必要时词内断行,不越出右边)、内容块 `max-w-full`;容器
   (`[container:empty/size]`)窄于 16rem 或矮于 220px 时隐藏装饰圆形图标(不被裁成半圆)
 - 点「恢复默认布局」 → onRestore
 - visibilityState !== 'hidden' → 渲染 BackgroundBeams(SVG)

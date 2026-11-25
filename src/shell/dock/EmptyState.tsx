@@ -72,7 +72,8 @@ export function EmptyState({ onRestore, elsewhere = false }: { onRestore: () => 
         <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-line/50 bg-panel @max-3xs/empty:hidden [@container_empty_(height<220px)]:hidden">
           {EMPTY_DOCK_ICON}
         </div>
-        <p className="px-4 text-center text-fg-muted">{t(elsewhere ? 'dock.empty.in_other_windows' : 'dock.empty.message')}</p>
+        {/* 最小窗口下 dock 仅约 72px 宽:居中、收窄内边距,超宽单词(韩文 keep-all)必要时词内断行,不越出右边。 */}
+        <p className="px-4 text-center text-fg-muted wrap-break-word @max-3xs/empty:px-2">{t(elsewhere ? 'dock.empty.in_other_windows' : 'dock.empty.message')}</p>
         {!elsewhere && (
           <Button variant="ghost" size="md" onClick={onRestore}>
             {t('dock.empty.restore')}
