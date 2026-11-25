@@ -74,8 +74,10 @@ test('键盘 Enter 打开文件 → 焦点进编辑器,可直接键入', async (
   const src = rowOf(window, path.join(workspaceRoot, 'src'));
   await expect(src).toBeVisible({ timeout: 10_000 });
   await src.click();
-  await src.press('ArrowDown');
   const a = rowOf(window, path.join(workspaceRoot, 'src/a.ts'));
+  // 点击展开是异步列目录:子项出现前按 ↓ 会落到下一个兄弟行(高负载下偶发),先等子项渲染
+  await expect(a).toBeVisible();
+  await src.press('ArrowDown');
   await expect(a).toBeFocused();
   await a.press('Enter');
   const cm = window.locator('.cm-content');
