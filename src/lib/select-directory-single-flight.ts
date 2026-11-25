@@ -20,6 +20,11 @@ export function trySelectDirectoryLock(): boolean {
   return true;
 }
 
+/** 目录选择器是否正在打开(不取锁;新建终端据此判断「打开文件夹」对话框已在为用户服务)。 */
+export function isSelectDirectoryOpen(): boolean {
+  return inFlight;
+}
+
 /** 释放锁(由当前持有者在 finally 调用)。 */
 export function releaseSelectDirectoryLock(): void {
   inFlight = false;

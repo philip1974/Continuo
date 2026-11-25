@@ -6,7 +6,7 @@
 //
 // 注意:Crepe 主题 CSS 自成体系,不与 Tailwind 冲突;直接 import frame-dark。
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { Crepe, CrepeFeature } from '@milkdown/crepe';
 import { clampFloatingToViewport } from './milkdown-floating-clamp';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
@@ -28,10 +28,27 @@ import {
 import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
-import { markdownScrollTopOf, saveMarkdownScrollTop } from './editor-view-state-cache';
+import {
+  markdownScrollTopOf,
+  saveMarkdownModeAnchor,
+  saveMarkdownScrollTop,
+  takeMarkdownModeAnchor,
+} from './editor-view-state-cache';
+import {
+  parseMarkdownTree,
+  posForSourceLine,
+  sourceLineAtPos,
+  topVisibleSourceLine,
+  viewportYOfSourceLine,
+  type MdNode,
+  type PmNode,
+  type PmViewLike,
+  type RemarkLike,
+} from './markdown-position-map';
+import { useEditorStore } from '@/stores/editor.store';
 import { rebindCodeMirrorRoots } from './codemirror-root';
 import { markdownCodeBlockTheme } from './code-editor-theme';
-import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel } from './codemirror-phrases';
+import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel, previewContentLabel } from './codemirror-phrases';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { markdownImageNodeView } from './markdown-image-view';
 
@@ -179,8 +196,31 @@ interface WriteBackHandle {
   dispose: () => void;
 }
 
-/** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦句柄。 */
-type OnEditorReady = (focus: () => void) => void;
+/**
+ * 切换 源码 / 编辑 / 预览 时的定位句柄(按源码行;BDD: src/__tests__/markdown-mode-position/)。
+ * `scroller` = 滚动容器(外层 wrapper)。
+ */
+interface MarkdownPositionHandle {
+  /** 顶部可见的源码行与光标所在行(只读预览无光标)。 */
+  anchor(scroller: HTMLElement): { topLine: number; cursorLine?: number } | null;
+  /** 把源码行滚到滚动容器顶边。 */
+  scrollToLine(scroller: HTMLElement, line: number): void;
+  /** 光标移到源码行对应的块(只读预览忽略)。 */
+  setCursorLine(line: number): void;
+}
+
+/** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦与定位句柄。 */
+type OnEditorReady = (focus: () => void, position: MarkdownPositionHandle) => void;
+
+/** 定位用到的 ProseMirror 视图部分(按 slice 名取,同 readEditor)。 */
+interface PmPositionView extends PmViewLike {
+  readonly state: {
+    readonly doc: PmNode & { resolve(pos: number): unknown };
+    readonly selection: { readonly head: number; readonly constructor: { near(pos: unknown): unknown } };
+    readonly tr: { setSelection(selection: unknown): unknown };
+  };
+  dispatch(tr: unknown): void;
+}
 
 function CrepeEditor({
   tabId,
@@ -342,6 +382,52 @@ function CrepeEditor({
       onChangeRef.current?.(markdown);
     };
 
+    // 定位:用 Milkdown 自己的 remark 处理器把当前内容解析成带行号的 mdast,与文档同步下钻(见 markdown-position-map)。
+    // 当前内容 = 最近一次上抛 / 挂载时的内容(文档未变时),否则序列化当前文档 —— 与随后回写进 store 的一致。
+    const positionContext = (): { view: PmPositionView; tree: MdNode } => {
+      const ctx = crepe.editor.ctx;
+      const view = ctx.get<PmPositionView, 'editorView'>('editorView');
+      const doc = view.state.doc;
+      const markdown =
+        baseDoc === null || doc === baseDoc ? lastEmitted : ctx.get<(d: PmDoc) => string, 'serializer'>('serializer')(doc);
+      return { view, tree: parseMarkdownTree(ctx.get<RemarkLike, 'remark'>('remark'), markdown) };
+    };
+    const position: MarkdownPositionHandle = {
+      anchor: (scroller) => {
+        try {
+          const { view, tree } = positionContext();
+          const doc = view.state.doc;
+          const topLine = topVisibleSourceLine(doc, tree, view, scroller.getBoundingClientRect().top);
+          if (topLine === null) return null;
+          return readonly ? { topLine } : { topLine, cursorLine: sourceLineAtPos(doc, tree, view.state.selection.head) };
+        } catch {
+          return null; // 未就绪 / 已拆除
+        }
+      },
+      scrollToLine: (scroller, line) => {
+        try {
+          const { view, tree } = positionContext();
+          const y = viewportYOfSourceLine(view.state.doc, tree, view, line);
+          if (y !== null) scroller.scrollTop += y - scroller.getBoundingClientRect().top;
+        } catch {
+          /* 未就绪 / 已拆除 */
+        }
+      },
+      setCursorLine: (line) => {
+        if (readonly) return;
+        try {
+          const { view, tree } = positionContext();
+          const pos = posForSourceLine(view.state.doc, tree, line);
+          if (pos === null) return;
+          // @milkdown/kit 非直接依赖:经当前选区的类取 Selection.near(静态方法随子类继承)。只改选区,不改文档。
+          const near = view.state.selection.constructor.near(view.state.doc.resolve(pos));
+          view.dispatch(view.state.tr.setSelection(near));
+        } catch {
+          /* 未就绪 / 已拆除 */
+        }
+      },
+    };
+
     writeBackRef.current = {
       writeBack: () => {
         if (readonly || disposed || baseDoc === null) return;
@@ -367,12 +453,17 @@ function CrepeEditor({
     crepe.on((listener) => {
       listener.mounted(() => recordSelectionDoc(crepe));
       // 编辑 / 预览区(ProseMirror 根,role=textbox)的可访问名称(对齐 VSCode;BDD: src/__tests__/editor-accessible-name/)。
+      // 只读预览:「<文件名>，预览」+ aria-readonly(VSCode Markdown 预览「Preview <文件名>」),不念成可编辑的编辑器。
       // 语言切换随 Provider 的 locale key 重挂、改名随 tab id 重挂,挂载时取当前值即可。setProps 与已有 props 合并。
       listener.mounted(() => {
         try {
           crepe.editor.ctx
             .get<{ setProps(props: { attributes: Record<string, string> }): void }, 'editorView'>('editorView')
-            .setProps({ attributes: { 'aria-label': editorContentLabel(fileName) } });
+            .setProps({
+              attributes: readonly
+                ? { 'aria-label': previewContentLabel(fileName), 'aria-readonly': 'true' }
+                : { 'aria-label': editorContentLabel(fileName) },
+            });
         } catch {
           /* 已拆除 */
         }
@@ -384,7 +475,7 @@ function CrepeEditor({
           } catch {
             /* 已拆除 */
           }
-        }),
+        }, position),
       );
       // 只读预览不回写也不上抛,不记基线、不挂其余 listener(省掉挂载时与防抖里的序列化)。
       if (readonly) return;
@@ -474,24 +565,53 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   // 视图状态按 tab 保留(BDD: src/__tests__/editor-view-state/):滚动位置随滚动记下,编辑器就绪后恢复 ——
   // 切 tab / 切 Edit·Preview / 外部修改重载(reloadEpoch 重挂)都不跳回顶部。撤销历史在 ProseMirror 插件
   // state 里,跨 Crepe 实例不复用。就绪时同时登记聚焦句柄(打开文件后焦点进编辑器,见 editor-focus-registry)。
+  //
+  // 切换 源码 / 编辑 / 预览(按模式重挂)时按源码行保留位置(VSCode:Markdown 预览与源码按行同步滚动):卸载时记下顶部
+  // 可见的源码行与光标行,另一模式的视图挂载时取用 —— 优先于同模式的像素滚动缓存。BDD: src/__tests__/markdown-mode-position/
   const tabId = props.tabId;
+  const viewMode = props.readonly ? 'preview' : 'edit';
   const unregisterFocusRef = useRef<(() => void) | null>(null);
+  const positionRef = useRef<MarkdownPositionHandle | null>(null);
   useEffect(() => () => unregisterFocusRef.current?.(), []);
-  const handleReady = useCallback<OnEditorReady>(
-    (focus) => {
+  // layout 清理:此时 DOM 仍在文档里(量得到位置),Crepe 尚未销毁。tab 已关闭 / 已改名(旧 id 不在了)不记。
+  useLayoutEffect(
+    () => () => {
       const el = wrapperRef.current;
-      const top = markdownScrollTopOf(tabId);
-      if (el && top !== undefined) {
-        el.scrollTop = top;
-        // 代码块 / mermaid 等节点视图可能下一帧才撑开高度
+      const position = positionRef.current;
+      if (!el || !position || !useEditorStore.getState().tabs?.some((t) => t.id === tabId)) return;
+      const anchor = position.anchor(el);
+      if (anchor) saveMarkdownModeAnchor(tabId, { mode: viewMode, ...anchor });
+    },
+    // tabId / 模式挂载时取定(父按 tab id + 模式换 key 重挂)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const handleReady = useCallback<OnEditorReady>(
+    (focus, position) => {
+      positionRef.current = position;
+      const el = wrapperRef.current;
+      const anchor = takeMarkdownModeAnchor(tabId, viewMode);
+      if (el && anchor) {
+        position.scrollToLine(el, anchor.topLine);
+        // 下一帧:代码块 / mermaid 等节点视图可能才撑开高度,再对齐一次;光标也放到这一帧 —— Milkdown 列表项节点视图
+        // 挂载时记下选区、在挂载后的下一帧恢复(list-item-block view),早于此设置的光标会被它改回文档开头。
         requestAnimationFrame(() => {
-          if (el.scrollTop !== top) el.scrollTop = top;
+          if (anchor.cursorLine !== undefined) position.setCursorLine(anchor.cursorLine);
+          position.scrollToLine(el, anchor.topLine);
         });
+      } else {
+        const top = markdownScrollTopOf(tabId);
+        if (el && top !== undefined) {
+          el.scrollTop = top;
+          requestAnimationFrame(() => {
+            if (el.scrollTop !== top) el.scrollTop = top;
+          });
+        }
       }
       unregisterFocusRef.current?.();
       unregisterFocusRef.current = registerEditorFocus(tabId, focus);
     },
-    [tabId],
+    [tabId, viewMode],
   );
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => saveMarkdownScrollTop(tabId, e.currentTarget.scrollTop),

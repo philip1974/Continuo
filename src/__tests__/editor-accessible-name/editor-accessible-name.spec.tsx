@@ -124,13 +124,34 @@ describe('Markdown 编辑器(Milkdown)可访问名称', () => {
     expect(block.getAttribute('aria-label')).toBe('代码块');
   });
 
-  it('只读预览同样有名称;切换界面语言(随 locale 重挂)后名称换成新语言', async () => {
+  // 只读预览不是可编辑的编辑器(VSCode Markdown 预览名称「Preview <文件名>」,只读):名称「<文件名>，预览」+ aria-readonly,
+  // 读屏不再念成可编辑的「编辑器」文本框。编辑模式不带 aria-readonly。
+  it('只读预览:名称「<文件名>，预览」且 aria-readonly=true;切换界面语言(随 locale 重挂)后名称换成新语言', async () => {
     switchLocale('zh');
     const { container } = render(<MilkdownEditor tabId="/r/doc.md" fileName="/r/doc.md" readonly defaultValue="# T" />);
-    await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md，编辑器"]'));
+    const zhPm = await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md，预览"]'));
+    expect(zhPm.getAttribute('aria-readonly')).toBe('true');
     switchLocale('en');
-    const pm = await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md, Editor"]'));
-    expect(pm).not.toBeNull();
+    const pm = await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md, Preview"]'));
+    expect(pm.getAttribute('aria-readonly')).toBe('true');
+    switchLocale('ko');
+    await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md, 미리보기"]'));
+  });
+
+  it('编辑模式不带 aria-readonly', async () => {
+    switchLocale('zh');
+    const { container } = render(<MilkdownEditor tabId="/r/doc.md" fileName="/r/doc.md" defaultValue="# T" />);
+    const pm = await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md，编辑器"]'));
+    expect(pm.hasAttribute('aria-readonly')).toBe(false);
+  });
+
+  // 代码编辑器:Continuo 不把写保护文件开成只读(同 VSCode 默认 files.readonlyFromPermissions=false,保存时再确认覆盖),
+  // CodeMirror 只要进入只读状态(EditorState.readOnly)就自带 aria-readonly —— 钉住这条上游行为。
+  it('CodeMirror 只读状态自带 aria-readonly', async () => {
+    const { EditorState } = await import('@codemirror/state');
+    const view = new EditorView({ state: EditorState.create({ doc: 'x', extensions: [EditorState.readOnly.of(true)] }) });
+    expect(view.contentDOM.getAttribute('aria-readonly')).toBe('true');
+    view.destroy();
   });
 
   it('三语文案', async () => {
@@ -141,5 +162,6 @@ describe('Markdown 编辑器(Milkdown)可访问名称', () => {
     expect(zh['editor.aria.content']).toBe('{name}，编辑器');
     expect(ko['editor.aria.content']).toBe('{name}, 편집기');
     expect([en, zh, ko].map((d) => d['editor.aria.code_block'])).toEqual(['Code block', '代码块', '코드 블록']);
+    expect([en, zh, ko].map((d) => d['editor.aria.preview'])).toEqual(['{name}, Preview', '{name}，预览', '{name}, 미리보기']);
   });
 });

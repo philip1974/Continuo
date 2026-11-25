@@ -39,11 +39,14 @@ import { rebindCodeMirrorRoots } from './codemirror-root';
 import { codeEditorTheme } from './code-editor-theme';
 import {
   saveCodeEditorViewState,
+  saveMarkdownModeAnchor,
   snapshotCodeEditorView,
   takeCodeEditorViewState,
+  takeMarkdownModeAnchor,
   type CodeEditorViewState,
 } from './editor-view-state-cache';
 import { registerEditorFocus } from './editor-focus-registry';
+import { applySourceModeAnchor, sourceModeAnchor } from './codemirror-mode-anchor';
 
 interface CodeEditorProps {
   tabId: string;
@@ -296,10 +299,15 @@ export function CodeEditor({
 
     // 切 tab / 重命名 / 切模式后重挂:取回该 tab 上次卸载时的视图状态(BDD: src/__tests__/editor-view-state/)。
     const saved = takeCodeEditorViewState(tabId);
+    // Markdown 源码视图:刚从编辑 / 预览切过来 → 滚到切换前顶部可见的源码行,光标带到原光标行(BDD: src/__tests__/markdown-mode-position/)。
+    const anchor = forceLanguage === 'markdown' ? takeMarkdownModeAnchor(tabId, 'source') : undefined;
+    const restored = restoreState(saved, value, eolRef.current, extensions);
+    const anchored = anchor ? applySourceModeAnchor(restored, anchor) : null;
+    const scrollTo = anchored?.scrollTo ?? saved?.scroll;
     const view = new EditorView({
-      state: restoreState(saved, value, eolRef.current, extensions),
+      state: anchored?.state ?? restored,
       parent: containerRef.current,
-      ...(saved ? { scrollTo: saved.scroll } : {}),
+      ...(scrollTo ? { scrollTo } : {}),
     });
     viewRef.current = view;
     useEditorStore.getState().registerView(tabId, view);
@@ -327,7 +335,10 @@ export function CodeEditor({
       const view = viewRef.current;
       if (!view) return;
       const tabs = useEditorStore.getState().tabs;
-      if (tabs?.some((t) => t.id === tabId)) saveCodeEditorViewState(tabId, snapshotCodeEditorView(view));
+      if (!tabs?.some((t) => t.id === tabId)) return;
+      saveCodeEditorViewState(tabId, snapshotCodeEditorView(view));
+      // 切到编辑 / 预览时据此定位(切 tab 时也记,回到源码模式本身不取用)
+      if (forceLanguage === 'markdown') saveMarkdownModeAnchor(tabId, sourceModeAnchor(view));
     },
     // tabId 挂载时取定(父按 tab id 换 key 重挂)
     // eslint-disable-next-line react-hooks/exhaustive-deps

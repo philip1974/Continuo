@@ -147,6 +147,44 @@ describe('createUserTerminal — 共用创建流程', () => {
     expect(mocks.runCommand).toHaveBeenCalledOnce();
   });
 
+  // 对话框打开期间再按 ⌘T(或 ⌘O 已弹出目录选择器时按 ⌘T):VSCode 的原生对话框是模态,这次按键根本到不了工作台。
+  // 对齐:目录选择器已在途 → 本次静默放弃(不弹「请先打开一个文件夹」、不再调起对话框);选定后只由第一次新建 1 个终端。
+  it('目录选择器已打开时再次新建 → 静默返回 null,不提示、不重复调起;第一次选定后只建 1 个终端', async () => {
+    const lock = await import('@/lib/select-directory-single-flight');
+    lock.__resetSelectDirectoryLockForTest();
+    mocks.create
+      .mockResolvedValueOnce({ ok: false, code: 'TERMINAL_CWD_UNRESOLVED' })
+      .mockResolvedValueOnce({ ok: false, code: 'TERMINAL_CWD_UNRESOLVED' })
+      .mockResolvedValueOnce({ ok: true, data: { id: 'term-1' } });
+    let finishDialog: () => void = () => {};
+    // 打开文件夹命令:持目录选择器单飞锁直到用户选定
+    mocks.runCommand.mockImplementation(() => {
+      if (!lock.trySelectDirectoryLock()) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        finishDialog = () => {
+          mocks.getState.mockReturnValue({ root: '/picked' });
+          lock.releaseSelectDirectoryLock();
+          resolve();
+        };
+      });
+    });
+
+    const first = createUserTerminal();
+    await vi.waitFor(() => expect(mocks.runCommand).toHaveBeenCalledOnce());
+    const second = await createUserTerminal(); // 对话框仍开着
+
+    expect(second).toBeNull();
+    expect(mocks.notifyInfo).not.toHaveBeenCalled();
+    expect(mocks.notifyError).not.toHaveBeenCalled();
+    expect(mocks.runCommand).toHaveBeenCalledOnce();
+
+    finishDialog();
+    expect(await first).toBe('term-1');
+    expect(mocks.create).toHaveBeenCalledTimes(3);
+    expect(mocks.setPendingFocus).toHaveBeenCalledOnce();
+    expect(mocks.notifyInfo).not.toHaveBeenCalled();
+  });
+
   it('三语文案统一为「先打开一个文件夹」(与资源管理器「打开文件夹」用语一致)', async () => {
     const { en } = await import('../../../electron/shared/i18n-locales/en');
     const { zh } = await import('../../../electron/shared/i18n-locales/zh');

@@ -19,6 +19,7 @@ import { errorCodeOf } from '../../../electron/shared/error-message';
 import { coApp } from '@/plugins/co-app';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { OPEN_FOLDER_COMMAND } from '@/panels/Explorer/explorer-commands';
+import { isSelectDirectoryOpen } from '@/lib/select-directory-single-flight';
 
 /**
  * 新终端的 COLORFGBG(「前景;背景」ANSI 色号):让 P10k 等 prompt 框架启动时检测到当前主题亮度。读 <html> 的 .dark
@@ -77,6 +78,9 @@ export async function createUserTerminal(
       // main 对「未传 cwd」与「cwd 不存在 / 不是目录」同返 CWD_UNRESOLVED:传了 cwd(workspace root 被外部删除 / 改名 /
       // 外置盘断开,或 Explorer「在终端中打开」已删目录)时不能提示「先打开文件夹」。
       if (r.code === ERROR_CODES.TERMINAL_CWD_UNRESOLVED && cwd === undefined) {
+        // 目录选择器已经开着(对话框期间再按 ⌘T,或 ⌘O 已弹出):VSCode 的原生对话框是模态,这次按键到不了工作台 →
+        // 静默放弃。不再调起(单飞锁会挡掉,随即误报「请先打开」);选定后由弹出对话框的那次新建接着建 1 个终端。
+        if (isSelectDirectoryOpen()) return null;
         // 无工作区:引导而非报错(VSCode 心智:缺前置条件时直接给出下一步,完成后接着做原来的事)—— 弹出「打开文件夹」
         // 对话框(与 ⌘O / 资源管理器「打开文件夹」同一命令)并等它完成。BDD: src/__tests__/create-user-terminal/
         await runRegisteredCommand(coApp.commands, OPEN_FOLDER_COMMAND.id, t('commands.file.open_folder.title'));

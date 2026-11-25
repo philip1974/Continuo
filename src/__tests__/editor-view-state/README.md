@@ -7,7 +7,7 @@ Continuo 的编辑器按 tab 卸载 / 重挂(EditorPanel 的 key),视图状态�
 
 | 文件 | 职责 |
 |---|---|
-| `src/panels/Editor/editor-view-state-cache.ts` | 按 tab id 存 CodeMirror 视图状态 / Markdown 滚动位置;LRU 上限 50;重命名迁移、关闭删除 |
+| `src/panels/Editor/editor-view-state-cache.ts` | 按 tab id 存 CodeMirror 视图状态 / Markdown 滚动位置 / 切模式锚点;LRU 上限 50;重命名迁移、关闭删除 |
 | `src/panels/Editor/CodeEditor.tsx` | 卸载(layout 清理,DOM 尚在)存 `EditorState` + `scrollSnapshot()`;挂载时取回 |
 | `src/panels/Editor/MilkdownEditor.tsx` | 滚动时记 scrollTop;编辑器就绪后恢复 |
 | `src/stores/editor.store.ts` | `renamePath` 迁移到新 id;tab 增删改名(chromeVersion 变)后丢弃已不存在 tab 的状态 |
@@ -32,6 +32,11 @@ Continuo 的编辑器按 tab 卸载 / 重挂(EditorPanel 的 key),视图状态�
 - 撤销历史在 ProseMirror 插件 state 里,跨 Crepe 实例重建不复用(不保证;Edit ↔ Source 互切后各自从新历史开始,
   但 Source 侧内容未变时仍恢复其 CodeMirror 历史)
 - 编辑器就绪时登记聚焦句柄(见 `editor-focus-on-open`)
+
+### Markdown 切换模式(源码 / 编辑 / 预览)
+
+- 从另一模式切来时按源码行交接位置与光标(锚点优先于本模式自己缓存的滚动);同模式重挂(切 tab 回来 / 外部修改重载)
+  仍按上面各自的状态恢复。见 `markdown-mode-position`
 
 ## 端到端
 

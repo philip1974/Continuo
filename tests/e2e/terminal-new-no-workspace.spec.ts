@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test, expect } from './fixtures/electron-app';
-import { TERMINAL_INPUT } from './helpers/editor';
+import { TERMINAL_INPUT, TERMINAL_PANEL_TAB } from './helpers/editor';
 import { dockHeaderMoreActionsButton } from './helpers/explorer';
 import { TERMINAL_TAB } from './helpers/settings';
 
@@ -49,6 +49,45 @@ test('无工作区 → 新建终端 → 对话框选定文件夹:立即在该文
     await menu.getByRole('menuitem', { name: TERMINAL_TAB }).click();
 
     await expect(window.getByRole('textbox', { name: TERMINAL_INPUT })).toBeVisible({ timeout: 15_000 });
+    await expect(window.locator('[data-level]').filter({ hasText: OPEN_FOLDER_FIRST })).toHaveCount(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// 对话框打开期间再按 ⌘T:VSCode 的原生对话框是模态,第二次按键到不了工作台 → 不立即弹「请先打开一个文件夹」、不再调起对话框;
+// 选定文件夹后只建 1 个终端。
+test('无工作区 → ⌘T 弹出对话框期间再按 ⌘T:不提示、不重复弹框;选定后只建 1 个终端', async ({ electronApp, window }) => {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'continuo-e2e-ws-')));
+  try {
+    // 对话框桩:一直开着,直到测试调用 __finishDialog(选定 dir)
+    await electronApp.evaluate(({ dialog }, picked) => {
+      const g = globalThis as unknown as { __openDialogCalls: number; __finishDialog?: () => void };
+      g.__openDialogCalls = 0;
+      dialog.showOpenDialog = (() => {
+        g.__openDialogCalls += 1;
+        return new Promise((resolve) => {
+          g.__finishDialog = () => resolve({ canceled: false, filePaths: [picked] });
+        });
+      }) as typeof dialog.showOpenDialog;
+    }, dir);
+    const dialogCalls = () =>
+      electronApp.evaluate(() => (globalThis as unknown as { __openDialogCalls: number }).__openDialogCalls);
+
+    // 工作台就绪(命令已注册)后再按键
+    await expect(dockHeaderMoreActionsButton(window)).toBeVisible({ timeout: 15_000 });
+    await window.keyboard.press('ControlOrMeta+t');
+    await expect.poll(dialogCalls).toBe(1);
+    await window.keyboard.press('ControlOrMeta+t');
+    // 给第二次新建走完 IPC 往返的时间:不出提示、不再弹框
+    await window.waitForTimeout(1_000);
+    await expect(window.locator('[data-level]').filter({ hasText: OPEN_FOLDER_FIRST })).toHaveCount(0);
+    expect(await dialogCalls()).toBe(1);
+
+    await electronApp.evaluate(() => (globalThis as unknown as { __finishDialog: () => void }).__finishDialog());
+    await expect(window.getByRole('textbox', { name: TERMINAL_INPUT })).toBeVisible({ timeout: 15_000 });
+    await window.waitForTimeout(1_000);
+    await expect(window.getByRole('tab', { name: TERMINAL_PANEL_TAB })).toHaveCount(1);
     await expect(window.locator('[data-level]').filter({ hasText: OPEN_FOLDER_FIRST })).toHaveCount(0);
   } finally {
     rmSync(dir, { recursive: true, force: true });

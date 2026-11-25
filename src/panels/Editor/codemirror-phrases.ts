@@ -56,6 +56,15 @@ export function editorContentLabel(fileName: string | undefined): string {
   return name ? t('editor.aria.content', { name }) : t('panels.editor.title');
 }
 
+/**
+ * Markdown 只读预览的可访问名称(VSCode Markdown 预览名称「Preview <文件名>」):「<文件名>，预览」,无文件名退回「预览」。
+ * 预览不是可编辑的编辑器,不能念成「编辑器」。BDD: src/__tests__/editor-accessible-name/
+ */
+export function previewContentLabel(fileName: string | undefined): string {
+  const name = fileName ? basename(fileName) : '';
+  return name ? t('editor.aria.preview', { name }) : t('panels.editor.mode.preview');
+}
+
 /** CodeMirror 文本区(`.cm-content`,role=textbox)的 aria-label。 */
 export function codeMirrorContentLabel(label: string): Extension {
   return EditorView.contentAttributes.of({ 'aria-label': label });

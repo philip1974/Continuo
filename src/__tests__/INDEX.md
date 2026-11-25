@@ -1003,6 +1003,11 @@
 - [`link-click-no-navigation.spec.tsx`](./markdown-link-resolve/link-click-no-navigation.spec.tsx)
 - [`markdown-link-resolve.spec.ts`](./markdown-link-resolve/markdown-link-resolve.spec.ts)
 
+## [Markdown 切换模式保留阅读位置与光标(对齐 VSCode 预览与源码按行同步)](./markdown-mode-position/README.md)
+
+- [`mode-handoff.spec.tsx`](./markdown-mode-position/mode-handoff.spec.tsx)
+- [`position-map.spec.tsx`](./markdown-mode-position/position-map.spec.tsx)
+
 ## [marketplace(插件市场浏览 Phase 1)](./marketplace/README.md)
 
 - [`filter.spec.ts`](./marketplace/filter.spec.ts)

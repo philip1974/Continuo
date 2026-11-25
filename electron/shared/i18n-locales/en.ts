@@ -234,6 +234,7 @@ export const en = {
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}, Editor',
+  'editor.aria.preview': '{name}, Preview',
   'editor.aria.code_block': 'Code block',
   // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
   'editor.image.aria': '{name}, Image Preview',

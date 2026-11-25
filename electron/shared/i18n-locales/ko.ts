@@ -221,6 +221,7 @@ export const ko: Record<TranslationKey, string> = {
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
   'editor.aria.content': '{name}, 편집기',
+  'editor.aria.preview': '{name}, 미리보기',
   'editor.aria.code_block': '코드 블록',
   // 只读图片预览 / Markdown 图片占位(对齐 VSCode media-preview)。BDD: src/__tests__/editor-image-preview/
   'editor.image.aria': '{name}, 이미지 미리 보기',

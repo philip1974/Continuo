@@ -18,6 +18,8 @@ HeaderActions 注释也明写「同 TerminalPlugin.terminal.new」=平行实现�
   完成后接着做原来的事):
   - 选定文件夹(root 已有值)→ 在新 root 重新走本流程新建终端并聚焦,返回新 id;不弹任何提示
   - 取消对话框(root 仍空)→ 不建终端,`notify.info`「请先打开一个文件夹」(三语),返回 `null`
+  - 目录选择器已经开着(对话框期间再按 ⌘T,或 ⌘O 已弹出)→ 静默返回 `null`:不提示、不再调起;选定后只由弹出对话框的那次
+    新建 1 个终端(VSCode 的原生对话框是模态,第二次按键到不了工作台)
   - notify 不支持撤掉(dismiss),故不在弹对话框前先提示(否则选定后提示一直挂着)。Continuo 刻意不回退主目录
 - 其余失败 → `notify.error`(CWD_UNRESOLVED 且传了 cwd(root 已被外部删除 / 外置盘断开 / 「在终端中打开」已删目录)时提示「目录不存在或不可访问:{path}」;否则带 code)+ 返回 `null`,不 focus
 - `TERMINAL_CREATE_CANCELLED`(用户关 tab 取消 / 退出闸拒绝)→ 无论 `{ok:false}` 还是 reject 都静默返回 `null`,不 notify
