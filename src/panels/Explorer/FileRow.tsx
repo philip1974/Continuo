@@ -1,4 +1,4 @@
-import { memo, useCallback, useId, useMemo, useState } from 'react';
+import { memo, useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
 import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
@@ -128,6 +128,43 @@ function renameErrorMessage(error: RenameInputError): string {
   if (error.kind === 'empty') return t('panels.explorer.rename_empty');
   if (error.kind === 'exists') return t('panels.explorer.rename_exists', { name: error.name });
   return t('panels.explorer.rename_invalid', { name: error.name });
+}
+
+/** 最近的会裁剪内容的祖先(overflow-y 非 visible,即 Explorer 的滚动区)。 */
+function clippingAncestor(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (getComputedStyle(p).overflowY !== 'visible') return p;
+  }
+  return null;
+}
+
+/**
+ * 重命名校验提示(VSCode 同款:紧贴输入框下方、覆盖下一行,不挤动虚拟列表)。对齐 VSCode InputBox:渲染后测量,下方到
+ * 滚动区底边放不下、且上方更宽裕 → 翻到输入框上方(滚动到最后一行重命名时提示不被裁掉)。role=alert 让读屏即时播报。
+ */
+function RenameErrorHint({ id, message }: { readonly id: string; readonly message: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [above, setAbove] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const anchor = el?.parentElement;
+    const scroller = el ? clippingAncestor(el) : null;
+    if (!el || !anchor || !scroller) return;
+    const box = scroller.getBoundingClientRect();
+    const at = anchor.getBoundingClientRect();
+    const below = box.bottom - at.bottom;
+    setAbove(below < el.getBoundingClientRect().height && at.top - box.top > below);
+  }, [message]);
+  return (
+    <div
+      ref={ref}
+      id={id}
+      role="alert"
+      className={`absolute left-0 right-0 ${above ? 'bottom-full' : 'top-full'} z-10 whitespace-normal break-words border border-error bg-panel px-1.5 py-1 text-2xs text-error`}
+    >
+      {message}
+    </div>
+  );
 }
 
 /** 多选修饰键(⌘ / Ctrl / Shift):与 headless-tree selectionFeature 判定多选的键一致。 */
@@ -351,16 +388,7 @@ export const FileRow = memo(function FileRow({
           aria-invalid={renameError ? true : undefined}
           aria-describedby={renameError ? renameErrorId : undefined}
         />
-        {/* 校验错误(VSCode 同款:紧贴输入框下方、覆盖下一行,不挤动虚拟列表)。role=alert 让读屏即时播报。 */}
-        {renameError && (
-          <div
-            id={renameErrorId}
-            role="alert"
-            className="absolute left-0 right-0 top-full z-10 whitespace-normal break-words border border-error bg-panel px-1.5 py-1 text-2xs text-error"
-          >
-            {renameErrorMessage(renameError)}
-          </div>
-        )}
+        {renameError && <RenameErrorHint id={renameErrorId} message={renameErrorMessage(renameError)} />}
         </div>
       ) : (
         <span

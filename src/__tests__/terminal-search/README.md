@@ -26,6 +26,7 @@ BDD coverage for issue #38: integrated terminal search with xterm search addon w
 - S11 正则模式下非法正则(`[` / `(` / `\`)不抛错:调用侧预校验,不交给 SearchAddon,清高亮并把结果置为「无匹配」,搜索条照常可用;改回合法正则后照常搜索;之前合法搜索留下的 xterm 选中(selection)一并清除(`invalid-regex.spec.ts`)。
 - S12 输入搜索词的 `findNext`(同步扫描整段 scrollback)防抖 `TERMINAL_SEARCH_DEBOUNCE_MS`(100ms):输入框状态立即更新,停顿后只按最终词搜一次;Enter/上下跳转/选项切换/失焦先 flush 再执行;关闭/清空/卸载/切 session 取消挂起搜索(`search-debounce.spec.ts`)。
 - S13 搜索高亮装饰色运行时取自主题 token(`--md-primary-container` / `--md-primary` / `--md-on-primary-container`,light / dark 各有值,经共享 `readThemeTokens` 读取);token 读不到或非 `#RRGGBB` 时用暗色兜底色。主题(resolved)切换后清掉旧高亮,下一次搜索按新主题取色(`theme-decorations.spec.ts`)。
+- S15 窄分栏(对齐 VSCode 查找框 reduced / collapsed-find-widget):搜索条宽度封顶在终端面板内(`max-w-[calc(100%-1rem)]`),输入框随之收窄(保底 `min-w-16`)始终可见,不再整体右对齐溢出后被 dockview `.dv-view{overflow:clip}` 把输入框裁掉;面板 < 24rem 时匹配计数转 `sr-only`(live region 仍播报),< 20rem 时隐藏选项组与上 / 下一个,只剩输入框 + 关闭。容器查询以终端面板根节点 `@container/terminal` 为准(`search-bar.spec.tsx` S15;真机 e2e `tests/e2e/terminal-search-narrow.spec.ts`)。
 
 ## Manual smoke test checklist
 

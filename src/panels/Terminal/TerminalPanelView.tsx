@@ -164,7 +164,8 @@ function TerminalPanelContent({
     <div
       ref={dropZoneRef}
       data-terminal-drop-zone={sessionId}
-      className="relative h-full w-full bg-canvas"
+      // @container/terminal:搜索条按面板宽度收窄(TerminalSearchBar 容器查询)。
+      className="@container/terminal relative h-full w-full bg-canvas"
     >
       <TerminalContextMenu actions={contextMenuActions}>
         <div className="h-full w-full bg-canvas px-2 py-1">

@@ -1,8 +1,11 @@
 // BDD:src/__tests__/tab-context-menu —— tab 右键菜单(对齐 VSCode)。
+import { chmod, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import {
   EDITOR_DONT_SAVE,
   EDITOR_NO_FILE_OPEN,
+  EDITOR_SAVE,
   EDITOR_SAVE_CHANGES_TITLE,
   EDITOR_TABS,
   EDITOR_UNSAVED_CHANGES_SELECTOR,
@@ -11,6 +14,8 @@ import { SETTINGS } from './helpers/settings';
 
 const CLOSE_ALL = /^(全部关闭|Close All|모두 닫기)$/;
 const CLOSE_OTHERS = /^(关闭其他|Close Others|기타 항목 닫기)$/;
+const READONLY_TITLE = /^(File Is Read-Only|文件是只读的|읽기 전용 파일)$/;
+const OVERWRITE = /^(Overwrite|覆盖|덮어쓰기)$/;
 
 test('编辑器 tab 右键「全部关闭」遇脏文件:先确认,取消则一个都不关;不保存则全部关闭', async ({ window }) => {
   await window.locator('text=README.md').first().click();
@@ -40,6 +45,47 @@ test('编辑器 tab 右键「全部关闭」遇脏文件:先确认,取消则一�
   await expect(dialog).toBeVisible();
   await dialog.locator('button').filter({ hasText: EDITOR_DONT_SAVE }).click();
   await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({ timeout: 5_000 });
+});
+
+test('编辑器 tab「全部关闭」中途遇写保护 →「覆盖」后接着确认下一个脏 tab,全部确认完一起关闭', async ({
+  window,
+  workspaceRoot,
+}) => {
+  test.skip(process.platform === 'win32', 'chmod 444 在 Windows 只映射只读属性,由单测覆盖');
+  const aPath = path.join(workspaceRoot, 'src/a.ts');
+  const bPath = path.join(workspaceRoot, 'src/b.ts');
+  const bOriginal = await readFile(bPath, 'utf8');
+  await window.locator('text=README.md').first().click();
+  await window.locator('text=src').first().click();
+  const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
+  const cm = window.locator('.cm-content');
+  for (const name of ['a.ts', 'b.ts']) {
+    await window.locator(`text=${name}`).first().click();
+    await expect(tabs.filter({ hasText: name })).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
+    await expect(cm).toContainText(`export const ${name[0]}`, { timeout: 10_000 });
+    await cm.click();
+    await window.keyboard.press('ControlOrMeta+End');
+    await window.keyboard.type(`\n// dirty-${name}`);
+  }
+  await expect(tabs).toHaveCount(3);
+  await chmod(aPath, 0o444);
+
+  await tabs.filter({ hasText: 'README.md' }).click({ button: 'right' });
+  await window.getByRole('menuitem', { name: CLOSE_ALL }).click();
+  const dialog = window.locator('.wm-modal-content');
+  await expect(dialog).toContainText('a.ts');
+  await dialog.getByRole('button', { name: EDITOR_SAVE }).click();
+  await expect(dialog.getByText(READONLY_TITLE)).toBeVisible({ timeout: 5_000 });
+  await dialog.getByRole('button', { name: OVERWRITE }).click();
+  await expect.poll(() => readFile(aPath, 'utf8'), { timeout: 5_000 }).toContain('// dirty-a.ts');
+
+  // 接着问 b.ts;此前一个都没关
+  await expect(dialog).toContainText(EDITOR_SAVE_CHANGES_TITLE);
+  await expect(dialog).toContainText('b.ts');
+  await expect(tabs).toHaveCount(3);
+  await dialog.getByRole('button', { name: EDITOR_DONT_SAVE }).click();
+  await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({ timeout: 5_000 });
+  expect(await readFile(bPath, 'utf8')).toBe(bOriginal);
 });
 
 test('dock tab 右键:Shift+F10 打开菜单,「关闭其他」只留当前面板', async ({ window }) => {

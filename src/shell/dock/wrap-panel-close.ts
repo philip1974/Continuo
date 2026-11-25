@@ -11,9 +11,12 @@ const suppressedPanelCloses = new Set<string>();
 const pendingCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // 排定中的 close 里由 reconciler 发起的那些(见 cancelReconcilerPanelClose)。
 const pendingReconcilerCloses = new Set<string>();
-// 关闭守卫(异步确认)尚未答复的 panel id → 守卫结果(true 放行):期间重复 close 不重复询问;
-// closePanelsInOrder 据此等上一个面板的确认答复再关下一个。
+// 关闭守卫(异步确认)尚未答复的 panel id → 守卫结果(true 放行):期间重复 close 不重复询问(含批量关闭的预先确认)。
 const guardingCloses = new Map<string, Promise<boolean>>();
+// 每个面板的关闭守卫:closePanelsInOrder 先逐个确认、全部放行后再关。
+const panelGuards = new WeakMap<IDockviewPanel, PanelCloseGuard>();
+// 批量关闭已确认放行、正在调 api.close() 的 panel id:关闭时跳过守卫,不再问一遍。
+const preApprovedCloses = new Set<string>();
 
 /**
  * 面板关闭守卫:true 放行;false 取消;Promise 时等它(如终端有子进程时弹确认)。同步返回 true 的面板
@@ -90,6 +93,7 @@ export function wrapPanelClose(
 ): void {
   if (patched.has(panel)) return;
   patched.add(panel);
+  if (guard) panelGuards.set(panel, guard);
 
   const original = panel.api.close.bind(panel.api);
   const startClose = () => {
@@ -140,7 +144,7 @@ export function wrapPanelClose(
         startClose();
         return;
       }
-      const verdict = !guard || byReconciler ? true : guard(panel);
+      const verdict = !guard || byReconciler || preApprovedCloses.has(id) ? true : guard(panel);
       if (verdict === true) {
         startClose();
         return;
@@ -165,15 +169,46 @@ export function wrapPanelClose(
   });
 }
 
+/** 只跑面板的关闭守卫、不关闭:放行 → true。已在关闭中 / reconciler 关闭 / 无守卫 → 直接放行。 */
+function confirmPanelClose(panel: IDockviewPanel): Promise<boolean> {
+  const id = panel.api.id;
+  const guard = panelGuards.get(panel);
+  if (!guard || useClosingStore.getState().ids.has(id) || suppressedPanelCloses.has(id)) return Promise.resolve(true);
+  const inflight = guardingCloses.get(id);
+  if (inflight !== undefined) return inflight;
+  const verdict = guard(panel);
+  if (typeof verdict === 'boolean') return Promise.resolve(verdict);
+  const settled = verdict.then(
+    (ok) => {
+      guardingCloses.delete(id);
+      return ok;
+    },
+    () => {
+      guardingCloses.delete(id);
+      return true; // 守卫自身出错不应让面板关不掉(同 api.close)
+    },
+  );
+  guardingCloses.set(id, settled);
+  return settled;
+}
+
 /**
- * 依次关闭一组面板(tab 右键「关闭其他 / 关闭右侧 / 全部关闭」)。有关闭确认的面板(运行中程序的终端)等用户答复再关下一个
- *(确认框同一时刻只有一个);任一处选「取消」→ 其余面板都不关(VSCode:批量关闭中任一确认被否决即整体取消)。
+ * 关闭一组面板(tab 右键「关闭其他 / 关闭右侧 / 全部关闭」),对齐 VSCode closeEditors:先按顺序逐个跑关闭确认(运行中
+ * 程序的终端;确认框同一时刻只有一个),全部放行后再按序统一 api.close()(此时跳过守卫,不再问);任一处选「取消」→
+ * 整批都不关(含前面已放行的)。
  */
 export async function closePanelsInOrder(panels: readonly IDockviewPanel[]): Promise<void> {
   for (const panel of panels) {
-    panel.api.close();
-    const pending = guardingCloses.get(panel.api.id);
-    if (pending !== undefined && !(await pending)) return;
+    if (!(await confirmPanelClose(panel))) return;
+  }
+  for (const panel of panels) {
+    const id = panel.api.id;
+    preApprovedCloses.add(id);
+    try {
+      panel.api.close();
+    } finally {
+      preApprovedCloses.delete(id);
+    }
   }
 }
 

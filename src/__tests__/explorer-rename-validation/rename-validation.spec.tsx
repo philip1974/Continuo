@@ -263,3 +263,44 @@ describe('renameInputError(纯函数)', () => {
     expect(renameInputError('a~b', 'a~b', ['a~b'], true)).toBeNull();
   });
 });
+
+// 对齐 VSCode InputBox 校验提示:下方(到滚动区底边)放不下而上方更宽裕 → 翻到输入框上方,不被侧栏滚动区裁掉。
+describe('校验提示位置:下方空间不足翻到上方', () => {
+  const SCROLLER = { top: 0, bottom: 200 };
+  const HINT_HEIGHT = 40;
+  let rowTop = 0;
+  beforeEach(() => {
+    // jsdom 无布局:滚动区(overflow-auto)、重命名输入所在行、提示框各给一个矩形。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const rect = (top: number, height: number) =>
+        ({ top, bottom: top + height, left: 0, right: 200, width: 200, height, x: 0, y: top }) as DOMRect;
+      if (this.classList.contains('overflow-auto')) return rect(SCROLLER.top, SCROLLER.bottom - SCROLLER.top);
+      if (this.getAttribute('role') === 'alert') return rect(0, HINT_HEIGHT);
+      if (this.querySelector(':scope > input')) return rect(rowTop, 28);
+      return rect(0, 0);
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+  // jsdom 不按样式表层叠 overflow:滚动区的 overflow 以内联补上(真机由 Tailwind overflow-auto 给出)。
+  async function startRenameInScroller(p: string) {
+    const r = await startRename(p);
+    r.container.querySelector<HTMLElement>('.overflow-auto')!.style.overflowY = 'auto';
+    return r;
+  }
+
+  it('下方放得下 → 提示在输入框下方(top-full)', async () => {
+    rowTop = 28;
+    const { type, alert } = await startRenameInScroller('/work/beta.ts');
+    type('bravo.ts');
+    expect(alert()!.className).toMatch(/\btop-full\b/);
+    expect(alert()!.className).not.toMatch(/\bbottom-full\b/);
+  });
+
+  it('滚动区最后一行(下方只剩 4px)→ 提示翻到输入框上方(bottom-full)', async () => {
+    rowTop = SCROLLER.bottom - 28 - 4;
+    const { type, alert } = await startRenameInScroller('/work/beta.ts');
+    type('bravo.ts');
+    expect(alert()!.className).toMatch(/\bbottom-full\b/);
+    expect(alert()!.className).not.toMatch(/\btop-full\b/);
+  });
+});

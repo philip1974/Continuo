@@ -232,15 +232,16 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
 
   // 打磨 P2-BL:显式保存遇磁盘被外部改过(EDITOR_DISK_CHANGED)→ 确认覆盖,不静默写。
   // 轻量 TabChrome 子集(确认框只需 filePath,覆盖只需 id),同 closeCandidate。
-  // closeAfter:来自关闭脏 tab 时选「保存」—— 覆盖写盘成功后接着关闭该 tab。
+  // batch:来自关闭脏 tab 时选「保存」—— 覆盖写盘 / 放弃并重新加载成功后接着推进这批关闭(VSCode 组内批量关闭同);
+  // 失败 / 取消 → 整批结束,一个都不关。
   const [overwriteCandidate, setOverwriteCandidate] = useState<
-    (Pick<TabChrome, 'id' | 'filePath'> & { readonly closeAfter?: boolean }) | null
+    (Pick<TabChrome, 'id' | 'filePath'> & { readonly batch?: BatchClose }) | null
   >(null);
   // 保存遇写保护文件(FS_READONLY)→ 确认「覆盖 / 取消」(VSCode「File is write-protected … Overwrite」):覆盖 =
   // 带 overwriteReadonly 重试(主进程去掉写保护再写)。force:来自外部修改的「仍然覆盖」—— 重试时同样跳过磁盘比较。
   // BDD: src/__tests__/save-readonly-file/
   const [readonlyCandidate, setReadonlyCandidate] = useState<
-    | (Pick<TabChrome, 'id' | 'filePath'> & { readonly closeAfter?: boolean; readonly force?: boolean })
+    | (Pick<TabChrome, 'id' | 'filePath'> & { readonly batch?: BatchClose; readonly force?: boolean })
     | null
   >(null);
 
@@ -249,7 +250,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     (
       target: Pick<TabChrome, 'id' | 'filePath'>,
       r: { readonly code: string; readonly message?: string },
-      flags: { readonly closeAfter?: boolean; readonly force?: boolean } = {},
+      flags: { readonly batch?: BatchClose; readonly force?: boolean } = {},
     ) => {
       if (r.code === ERROR_CODES.FS_READONLY) {
         setReadonlyCandidate({ id: target.id, filePath: target.filePath, ...flags });
@@ -278,49 +279,6 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       else notifyFailure(r);
     }
   }, [saveActive, onSaveFailed]);
-  const confirmOverwrite = useCallback(async () => {
-    const candidate = overwriteCandidate;
-    setOverwriteCandidate(null);
-    if (!candidate) return;
-    try {
-      const r = await saveTab(candidate.id, { force: true });
-      if (!r.ok) onSaveFailed(candidate, r, { closeAfter: candidate.closeAfter, force: true });
-      else if (candidate.closeAfter) closeTab(candidate.id);
-    } catch (err) {
-      notifyThrownError(err);
-    }
-  }, [overwriteCandidate, saveTab, closeTab, onSaveFailed]);
-  const confirmOverwriteReadonly = useCallback(async () => {
-    const candidate = readonlyCandidate;
-    setReadonlyCandidate(null);
-    if (!candidate) return;
-    try {
-      const r = await saveTab(candidate.id, { force: candidate.force, overwriteReadonly: true });
-      if (!r.ok) {
-        if (r.code === EDITOR_DISK_CHANGED) {
-          setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, closeAfter: candidate.closeAfter });
-        } else {
-          notifySaveFailed(basenameForChrome(candidate.filePath), r);
-        }
-      } else if (candidate.closeAfter) closeTab(candidate.id);
-    } catch (err) {
-      notifyThrownError(err);
-    }
-  }, [readonlyCandidate, saveTab, closeTab]);
-  // 冲突时「放弃更改并重新加载」(VSCode Revert):tab 换成磁盘版本、丢弃未保存修改;来自关闭时的「保存」→ 随后关闭。
-  const revertOverwriteCandidate = useCallback(async () => {
-    const candidate = overwriteCandidate;
-    setOverwriteCandidate(null);
-    if (!candidate) return;
-    try {
-      const r = await revertFile(candidate.id, editorFileDeps);
-      if (!r.ok) notifyFailure(r);
-      else if (candidate.closeAfter) closeTab(candidate.id);
-    } catch (err) {
-      notifyThrownError(err);
-    }
-  }, [overwriteCandidate, closeTab]);
-
   // 关闭 tab(单个 × / ⌘W / 中键,与右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」同一路径):按 tab 顺序逐个确认仍脏的
   // tab(保存 / 不保存 / 取消;批量时先切到该 tab,VSCode 同),全部确认完才一起关闭;任一处取消 → 整批不关。
   // closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave。BDD: src/__tests__/tab-context-menu/
@@ -336,6 +294,49 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     },
     [closeTab],
   );
+  const confirmOverwrite = useCallback(async () => {
+    const candidate = overwriteCandidate;
+    setOverwriteCandidate(null);
+    if (!candidate) return;
+    try {
+      const r = await saveTab(candidate.id, { force: true });
+      if (!r.ok) onSaveFailed(candidate, r, { batch: candidate.batch, force: true });
+      else if (candidate.batch) advanceBatchClose(candidate.batch);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  }, [overwriteCandidate, saveTab, advanceBatchClose, onSaveFailed]);
+  const confirmOverwriteReadonly = useCallback(async () => {
+    const candidate = readonlyCandidate;
+    setReadonlyCandidate(null);
+    if (!candidate) return;
+    try {
+      const r = await saveTab(candidate.id, { force: candidate.force, overwriteReadonly: true });
+      if (!r.ok) {
+        if (r.code === EDITOR_DISK_CHANGED) {
+          setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, batch: candidate.batch });
+        } else {
+          notifySaveFailed(basenameForChrome(candidate.filePath), r);
+        }
+      } else if (candidate.batch) advanceBatchClose(candidate.batch);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  }, [readonlyCandidate, saveTab, advanceBatchClose]);
+  // 冲突时「放弃更改并重新加载」(VSCode Revert):tab 换成磁盘版本、丢弃未保存修改;来自关闭时的「保存」→ 接着推进这批关闭。
+  const revertOverwriteCandidate = useCallback(async () => {
+    const candidate = overwriteCandidate;
+    setOverwriteCandidate(null);
+    if (!candidate) return;
+    try {
+      const r = await revertFile(candidate.id, editorFileDeps);
+      if (!r.ok) notifyFailure(r);
+      else if (candidate.batch) advanceBatchClose(candidate.batch);
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  }, [overwriteCandidate, advanceBatchClose]);
+
   const onTabsCloseRequest = useCallback(
     (ids: readonly string[]) => {
       // TabChrome 的 dirty 是快照,store 可能落后编辑器(Milkdown 自适应延迟上抛,单次最长约 2s、持续输入最长 5s):
@@ -351,8 +352,8 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     setCloseCandidate(null);
     if (closeCandidate) advanceBatchClose(closeCandidate.batch);
   }, [closeCandidate, advanceBatchClose]);
-  // 「保存」(VSCode 关闭脏编辑器的默认按钮):保存成功才关闭;磁盘已被外部修改 → 走覆盖确认(确认并写盘成功后
-  // 关闭);其它失败不关闭、按 code 提示,改动留在 tab 里。
+  // 「保存」(VSCode 关闭脏编辑器的默认按钮):保存成功才推进这批关闭;磁盘已被外部修改 / 写保护 → 走覆盖确认(覆盖或
+  // 放弃并重新加载成功后接着推进,取消 / 失败则整批结束);其它失败不关闭、按 code 提示,改动留在 tab 里。
   const confirmSaveAndClose = useCallback(async () => {
     const candidate = closeCandidate;
     setCloseCandidate(null);
@@ -364,10 +365,10 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         return;
       }
       if (r.code === EDITOR_DISK_CHANGED) {
-        setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, closeAfter: true });
+        setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, batch: candidate.batch });
         return;
       }
-      onSaveFailed(candidate, r, { closeAfter: true });
+      onSaveFailed(candidate, r, { batch: candidate.batch });
     } catch (err) {
       notifyThrownError(err);
     }

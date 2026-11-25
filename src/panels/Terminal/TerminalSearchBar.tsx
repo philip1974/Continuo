@@ -88,7 +88,11 @@ export function TerminalSearchBar({
       // memory L3): xterm-host 内的浮层必须用此 token,否则 z-modal 被 dockview
       // panel stacking context 困住,xterm canvas hit-test 上去。`isolation:
       // isolate` 强建独立 stacking context 配合 token 一起用。
-      className="absolute right-2 top-2 z-terminal-overlay flex items-center gap-1 rounded-md border border-line bg-panel px-2 py-1 shadow-popover"
+      // 窄分栏(对齐 VSCode 查找框 reduced / collapsed):宽度封顶在终端面板内(两侧各留 0.5rem),输入框收窄(保底
+      // min-w-16)始终可见;面板 < 24rem 计数只留给读屏(sr-only 仍播报),< 20rem 隐藏选项与上 / 下一个,只剩输入框 +
+      // 关闭。容器 = TerminalPanelView 根节点(@container/terminal)。否则超出面板的部分被 dockview `.dv-view{overflow:clip}`
+      // 裁掉,右对齐时最先被裁的就是输入框。BDD: src/__tests__/terminal-search/(S15)
+      className="absolute right-2 top-2 z-terminal-overlay flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-md border border-line bg-panel px-2 py-1 shadow-popover"
       style={{ isolation: 'isolate' }}
       // R2c: stop mousedown propagation so dockview / xterm host's
       // mousedown handlers don't refocus xterm textarea when user clicks
@@ -125,13 +129,13 @@ export function TerminalSearchBar({
         }}
         placeholder={placeholderLabel}
         aria-label={placeholderLabel}
-        className="w-48"
+        className="w-48 min-w-16"
       />
       {/* a11y(A53,A41 同族):匹配计数/无匹配随输入与上下跳转动态变化,焦点在搜索框时须经
           live region(role=status/polite)播报当前匹配数/第几项。 */}
       <span
         role="status"
-        className="min-w-12 text-center text-xs tabular-nums text-fg-dim"
+        className="min-w-12 shrink-0 text-center text-xs tabular-nums text-fg-dim @max-sm/terminal:sr-only @max-sm/terminal:min-w-0"
       >
         {countText}
       </span>
@@ -141,7 +145,7 @@ export function TerminalSearchBar({
       <div
         role="group"
         aria-label={optionsGroupLabel}
-        className="inline-flex items-center gap-1"
+        className="inline-flex items-center gap-1 @max-xs/terminal:hidden"
       >
         <IconButton
           size="xs"
@@ -183,6 +187,7 @@ export function TerminalSearchBar({
         size="xs"
         aria-label={previousLabel}
         title={previousLabel}
+        className="@max-xs/terminal:hidden"
         onClick={searchApi.prev}
       >
         {PREV_MATCH_ICON}
@@ -191,6 +196,7 @@ export function TerminalSearchBar({
         size="xs"
         aria-label={nextLabel}
         title={nextLabel}
+        className="@max-xs/terminal:hidden"
         onClick={searchApi.next}
       >
         {NEXT_MATCH_ICON}

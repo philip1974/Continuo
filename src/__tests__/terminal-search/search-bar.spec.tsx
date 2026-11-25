@@ -364,3 +364,32 @@ describe('TerminalSearchBar 导航 / 关闭按钮图标', () => {
     expect(svg?.querySelector('path')?.getAttribute('d')).toBe(d);
   });
 });
+
+// S15 窄分栏(对齐 VSCode 查找框 reduced / collapsed):搜索条宽度不超出终端面板(右对齐留 0.5rem 边距),输入框随之
+// 收窄(保底宽度)始终可见;面板窄于 24rem 时计数只留给读屏(sr-only,live region 仍播报),窄于 20rem 时选项与上 / 下一个
+// 隐藏,只剩输入框 + 关闭。容器查询按终端面板宽度(TerminalPanelView 根节点 @container/terminal)。真机见 e2e。
+describe('S15 窄终端面板:搜索条自身收窄,输入框始终可见', () => {
+  it('根节点宽度封顶在面板内;输入框可收窄但有保底宽度', () => {
+    const { getByLabelText } = render(<TerminalSearchBar searchApi={makeApi()} onClose={vi.fn()} />);
+    const input = getByLabelText('panels.terminal.search.placeholder');
+    const root = input.parentElement!;
+    expect(root.className).toContain('max-w-[calc(100%-1rem)]');
+    expect(input.className).toMatch(/\bmin-w-16\b/);
+  });
+
+  it('窄时:计数转 sr-only(仍是 live region),选项组与上 / 下一个隐藏,关闭按钮保留', () => {
+    const { getByRole, getByLabelText } = render(
+      <TerminalSearchBar searchApi={makeApi()} onClose={vi.fn()} />,
+    );
+    expect(getByRole('status').className).toContain('@max-sm/terminal:sr-only');
+    expect(getByRole('group').className).toContain('@max-xs/terminal:hidden');
+    expect(getByLabelText('panels.terminal.search.previous').className).toContain('@max-xs/terminal:hidden');
+    expect(getByLabelText('panels.terminal.search.next').className).toContain('@max-xs/terminal:hidden');
+    expect(getByLabelText('panels.terminal.search.close').className).not.toContain('hidden');
+  });
+
+  it('容器查询以终端面板宽度为准:TerminalPanelView 根节点是 @container/terminal', () => {
+    const src = readFileSync(join(process.cwd(), 'src/panels/Terminal/TerminalPanelView.tsx'), 'utf8');
+    expect(src).toContain('className="@container/terminal relative h-full w-full bg-canvas"');
+  });
+});

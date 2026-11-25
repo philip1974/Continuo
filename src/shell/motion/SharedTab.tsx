@@ -268,7 +268,8 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   );
 
   // 右键菜单(VSCode 标签右键:关闭 / 关闭其他 / 关闭右侧 / 全部关闭)。dock 面板无「已保存」概念,不列「关闭已保存」。
-  // 依次经 api.close()(含关闭动画与终端运行中程序确认);任一确认取消 → 其余不关。BDD: src/__tests__/tab-context-menu/
+  // 先逐个跑关闭确认(终端运行中程序),全部放行后再统一经 api.close() 关闭(含关闭动画);任一确认取消 → 整批不关。
+  // BDD: src/__tests__/tab-context-menu/
   const menuEntries = useCallback((): TabMenuEntry[] => {
     const panels = api.group.panels;
     const close = (kind: TabCloseKind) => () => {

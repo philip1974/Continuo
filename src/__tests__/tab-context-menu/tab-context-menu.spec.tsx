@@ -201,25 +201,68 @@ describe('dock 面板 tab 右键菜单', () => {
     expect(item('Close to the Right').hasAttribute('disabled')).toBe(true);
   });
 
-  it('批量关闭遇关闭确认:等答复;取消 → 其余面板不关', async () => {
+  // VSCode closeEditors:先问完所有确认,全部放行后统一关闭;任一否决 → 整批不动(含已放行的)。
+  // closing-store 跨用例保留已关闭的 id(真机由 PanelMount 清):每个用例用独立前缀的 id。
+  let run = 0;
+  function guardedPanels(names: readonly string[], asking: string) {
+    run += 1;
+    const ids = names.map((n) => `${n}${run}`);
+    const askingId = `${asking}${run}`;
     let answer: (ok: boolean) => void = () => {};
     const closed: string[] = [];
-    const make = (id: string) => {
-      const panel = { api: { id, close: () => closed.push(id) }, group: undefined } as never;
-      wrapPanelClose(panel, (p: { api: { id: string } }) =>
-        p.api.id === 'b' ? new Promise<boolean>((resolve) => (answer = resolve)) : true,
-      );
+    const guard = vi.fn((p: { api: { id: string } }) =>
+      p.api.id === askingId ? new Promise<boolean>((resolve) => (answer = resolve)) : true,
+    );
+    const panels = ids.map((id) => {
+      const panel = { api: { id, close: () => closed.push(id.slice(0, 1)) }, group: undefined } as never;
+      wrapPanelClose(panel, guard);
       return panel;
-    };
+    });
+    return { panels, closed, guard, answer: (ok: boolean) => answer(ok) };
+  }
+
+  it('批量关闭遇关闭确认:答复前一个都不关、后面的不先问;取消 → 整批不关(含前面已放行的)', async () => {
+    const { panels, closed, guard, answer } = guardedPanels(['a', 'b', 'c'], 'b');
     vi.useFakeTimers();
     try {
-      const done = closePanelsInOrder([make('a'), make('b'), make('c')]);
+      const done = closePanelsInOrder(panels);
       await vi.advanceTimersByTimeAsync(1000);
-      expect(closed).toEqual(['a']); // b 在等确认,c 尚未发起
+      expect(closed).toEqual([]); // a 已放行但不先关;b 在等确认
+      expect(guard.mock.calls.map((c) => c[0].api.id.slice(0, 1))).toEqual(['a', 'b']); // c 尚未问
       answer(false);
       await done;
       await vi.advanceTimersByTimeAsync(1000);
-      expect(closed).toEqual(['a']);
+      expect(closed).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('批量关闭全部放行 → 按序统一关闭,关闭时不再重复确认', async () => {
+    const { panels, closed, guard, answer } = guardedPanels(['a', 'b', 'c'], 'b');
+    vi.useFakeTimers();
+    try {
+      const done = closePanelsInOrder(panels);
+      await vi.advanceTimersByTimeAsync(0);
+      answer(true);
+      await done;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(closed).toEqual(['a', 'b', 'c']);
+      expect(guard).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('单个关闭不受影响:有确认的面板 api.close() 照常先问、放行后关闭', async () => {
+    const { panels, closed, guard, answer } = guardedPanels(['b'], 'b');
+    vi.useFakeTimers();
+    try {
+      (panels[0] as unknown as { api: { close: () => void } }).api.close();
+      expect(guard).toHaveBeenCalledTimes(1);
+      answer(true);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(closed).toEqual(['b']);
     } finally {
       vi.useRealTimers();
     }

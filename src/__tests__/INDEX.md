@@ -1624,6 +1624,7 @@
 
 ## [tab 右键菜单(对齐 VSCode 编辑器标签右键菜单)](./tab-context-menu/README.md)
 
+- [`editor-batch-close-confirm.spec.tsx`](./tab-context-menu/editor-batch-close-confirm.spec.tsx)
 - [`tab-context-menu.spec.tsx`](./tab-context-menu/tab-context-menu.spec.tsx)
 
 ## [tab-icons(SettingTab icon 工厂集合)](./tab-icons/README.md)
