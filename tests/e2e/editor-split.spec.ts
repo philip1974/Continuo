@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { EDITOR_TABS } from './helpers/editor';
+import { EDITOR_MODE_EDIT, EDITOR_TABS, editorModeButton } from './helpers/editor';
 import { openTreeItem } from './helpers/explorer';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
@@ -49,6 +49,7 @@ function workspace(): string {
   dirs.push(ud, ws);
   writeFileSync(path.join(ws, 'a.ts'), 'export const a = 1;\n');
   writeFileSync(path.join(ws, 'b.ts'), 'export const b = 2;\n');
+  writeFileSync(path.join(ws, 'README.md'), '# Title\n\nbody\n');
   seedExplorerJson(ud, { root: ws });
   return ud;
 }
@@ -130,4 +131,48 @@ test('tab 右键「向下拆分」:新组在下方,显示该文件', async () =>
   expect(await tabTitles(group(win, 1))).toEqual(['a.ts']);
   const [top, bottom] = await Promise.all([group(win, 0).boundingBox(), group(win, 1).boundingBox()]);
   expect(bottom!.y).toBeGreaterThan(top!.y + top!.height / 2);
+});
+
+// 同一 Markdown 两组都用富文本「编辑」:另一组的编辑增量套进本组(不重挂载),本组光标保持、撤销只撤本组输入;
+// 非活动组的活动 tab 为 unfocused 样式。
+test('Markdown 两组都编辑:另一组输入后回到本组,光标仍在原处;非活动组 tab 栏 unfocused', async () => {
+  test.setTimeout(90_000);
+  const win = await launch(workspace());
+  await openTreeItem(win, /^README\.md$/);
+  await editorModeButton(win, EDITOR_MODE_EDIT).click();
+  const pm = (i: number): Locator => group(win, i).locator('.milkdown .ProseMirror');
+  await expect(pm(0).locator('h1')).toContainText('Title', { timeout: 10_000 });
+  await pm(0).locator('p').first().click();
+  await win.keyboard.press('ControlOrMeta+Backslash');
+  await expect(groups(win)).toHaveCount(2, { timeout: 10_000 });
+  await expect(pm(1).locator('h1')).toContainText('Title', { timeout: 10_000 });
+  const strip = (i: number): Locator => group(win, i).getByRole('tablist', { name: EDITOR_TABS });
+  await expect(strip(0)).toHaveAttribute('data-unfocused', 'true');
+  await expect(strip(1)).not.toHaveAttribute('data-unfocused', 'true');
+
+  // 组 1:段落末尾输入 A
+  await win.keyboard.press('ControlOrMeta+1');
+  await expect.poll(() => focusedGroupIndex(win)).toBe(0);
+  await expect(strip(1)).toHaveAttribute('data-unfocused', 'true');
+  await pm(0).locator('p').first().click();
+  await win.keyboard.press('End');
+  await win.keyboard.type('A');
+  await expect(pm(1).locator('p').first()).toHaveText('bodyA', { timeout: 10_000 });
+  // 组 2:标题末尾输入 R
+  await win.keyboard.press('ControlOrMeta+2');
+  await expect.poll(() => focusedGroupIndex(win)).toBe(1);
+  await pm(1).locator('h1').click();
+  await win.keyboard.press('End');
+  await win.keyboard.type('R');
+  await expect(pm(0).locator('h1')).toHaveText('TitleR', { timeout: 10_000 });
+  // 回组 1 输入 B:落在 A 之后(不是文档开头)
+  await win.keyboard.press('ControlOrMeta+1');
+  await expect.poll(() => focusedGroupIndex(win)).toBe(0);
+  await win.keyboard.type('B');
+  await expect(pm(0).locator('p').first()).toHaveText('bodyAB');
+  await expect(pm(0).locator('h1')).toHaveText('TitleR');
+  // 组 1 的撤销栈保留:撤销只撤本组输入,另一组的 R 不受影响
+  await win.keyboard.press('ControlOrMeta+z');
+  await expect(pm(0).locator('p').first()).not.toHaveText('bodyAB');
+  await expect(pm(0).locator('h1')).toHaveText('TitleR');
 });

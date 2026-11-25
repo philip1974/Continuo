@@ -46,6 +46,13 @@
   border-top-right-radius: 4px;
 }
 
+/* 所在窗格不是活动的(非活动编辑器组):活动 tab 保留选中底色(仍与非活动 tab 区分),去掉强调下划线、文字变暗
+ * (VSCode tab.unfocusedActiveForeground / unfocusedActiveBorder)。 */
+.wm-tab-nav[data-unfocused="true"] .wm-tab-nav-item[data-active="true"] {
+  border-bottom-color: transparent;
+  color: var(--md-on-surface-variant);
+}
+
 .wm-tab-nav-item[data-muted="true"],
 .wm-tab-nav-item[data-disabled="true"] {
   color: var(--md-on-surface-variant);

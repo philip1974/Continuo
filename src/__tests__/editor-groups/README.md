@@ -10,7 +10,7 @@
 | `workbench.action.splitEditor`(⌘\ / Ctrl+\) | 在活动组右侧新建组,把当前编辑器复制过去(含视图状态),新组成为活动组并获焦 |
 | `workbench.action.splitEditorDown`(⌘K ⌘\,本实现无默认键) | 同上,向下 |
 | 编辑器 tab 右键「向右拆分」 | 以该 tab 的文件拆分 |
-| `workbench.action.focusFirst/Second/ThirdEditorGroup`(⌘1 / ⌘2 / ⌘3) | 聚焦第 N 个组(激活其面板、聚焦其活动编辑器);N 恰为「组数 + 1」时在最后一组右侧新建**空**组 |
+| `workbench.action.focusFirst/Second/ThirdEditorGroup`(⌘1 / ⌘2 / ⌘3) | 聚焦第 N 个组(激活其面板、聚焦其活动编辑器);N 恰为「组数 + 1」时在最后一组右侧新建**空**组。只按**触发窗口自己的**编辑器组编号(多窗口时各窗口各自编号) |
 | `workbench.editor.closeEmptyGroups`(默认 true) | 关掉组内最后一个编辑器 → 关闭该组;最后一个组保留为空编辑区 |
 | 打开文件(Explorer / Quick Open / 链接) | 落到**活动组**(最近活动的组);文件已在别的组打开也在活动组再开一个编辑器 |
 | 同一文件多组打开 | 共享 text model:编辑实时同步、脏状态共享;关闭其中一个编辑器不提示保存(文档仍在别的组打开) |
@@ -37,9 +37,12 @@
 - **CodeMirror**:各组各自一个 `EditorView`,文本源是 store 里同一份 `content`。A 组输入 → `updateContent` → B 组
   `CodeEditor` 的 value 同步 effect 以**最小差异**(公共前后缀之外的一段)派发到 B 的视图:B 的光标 / 选区随变化映射,
   不跳动;B 自己的 `onChange` 被抑制,不回写。
-- **Milkdown**:序列化有损、视图不能增量套用外部 Markdown。B 组 Milkdown 发现 store 内容被**别处**改了(不是自己上抛的)
-  → 按新内容重挂载(同外部重载的 reloadEpoch 机制);B 卸载时的回写带基线,基线已不是 store 内容 → 丢弃,
-  不会用旧内容覆盖 A 的编辑。已知限制:两组几乎同时在同一 Markdown 里输入(防抖窗口内切组继续打)时,后上抛者覆盖。
+- **Milkdown**:各组各自一个 Crepe 视图。B 组发现 store 内容被**别处**改了(不是自己最近上抛 / 回写的)→ 把新内容解析成
+  ProseMirror 文档,只替换与当前文档不同的那一段(`findDiffStart` / `findDiffEnd`,不重挂载):B 的光标 / 选区随事务映射
+  (VSCode 各编辑器保留自己的光标);该事务不进撤销栈,B 已有的撤销历史被映射过去 —— 在 B 撤销只撤 B 自己的输入
+  (VSCode 撤销栈属于 text model、跨组共享,这里按视图独立);套用的内容即 B 的新基线,不再上抛。只读预览同样增量套用。
+  外部进程改盘(reloadEpoch)仍重挂。已知限制:两组几乎同时在同一 Markdown 里输入(防抖窗口内切组继续打)时,后上抛者覆盖
+  (B 尚未上抛的输入被套用覆盖)。`editor-groups-milkdown-sync.spec.tsx` 用真实 Crepe 钉住。
 - 视图状态缓存(撤销历史 / 光标 / 滚动)按文档 id 共享;拆分时先把源视图的当前状态存入缓存,新组的视图挂载时取用(VSCode
   拆分复制视图状态)。之后两个视图各自的撤销历史独立(VSCode 的撤销栈属于 text model、跨组共享;这里 B 收到的同步变更进 B 的
   历史,在 B 撤销会撤掉 A 的输入并同步回 A,效果接近)。
@@ -69,7 +72,8 @@
 | 关窗脏确认 / 外部文件同步 | 按文档(全部组)—— 未改 |
 | F6 / 面板聚焦 | 每个组面板都有 `data-editor-panel-root`;e2e 定位多组时取活动组 |
 | 启动后聚焦活动编辑器 | 活动面板是任一编辑器组即可 |
-| popout | 编辑器组面板可弹出(面板 id 不变,组随之);在 popout 组里拆分 → 新组作为同一 dock 组里的另一个面板(popout 组不能再分栏) |
+| popout | 编辑器组面板可弹出(面板 id 不变,组随之);在 popout 组里拆分 → 新组作为同一 dock 组里的另一个面板(popout 组不能再分栏);⌘1/⌘2/⌘3 只在主窗分发,只数主窗(grid / floating)里的组,不够时以主窗最后一组为参照新建 —— 子窗里的组既不计入也不作参照 |
+| tab 栏样式 | 非活动组的活动 tab 用 design `TabNav` 的 `unfocused`:保留选中底色、去掉强调下划线、文字 fg-muted(VSCode `tab.unfocusedActive*`);活动组判定 = `activeGroupId` |
 | 单例面板去重 | `editor:N` 不当成旧版多开的重复编辑器面板关闭 |
 
 ## 未做
@@ -79,6 +83,7 @@
 - ⌘\ 拆分空组(无活动文件时为 no-op;⌘N 聚焦尚不存在的下一组仍会新建空组)。
 - 组顺序按创建 / 插入顺序(拆分插在源组之后),不是 VSCode 的 GRID_APPEARANCE(网格视觉顺序);复杂网格下 ⌘N 的 N 可能与视觉位置不一致。
 - 调试断点 / 执行行装饰按 `viewRefs`(每个文档指向最近登记的视图)同步:同一文件在两组打开时只有其中一个视图显示装饰。
+- 编辑器组全部在 popout 子窗时主窗 ⌘1 为 no-op(VSCode 主窗总有编辑器组;这里不为此在主窗补建空组)。
 - ⌘K ⌘\ 和弦(向下拆分在 VSCode 的默认键):命令分发不支持和弦,向下拆分无默认键(命令面板 / tab 右键 / 可自行绑定)。
 
 ## 规范
@@ -88,5 +93,6 @@
 | `editor-groups-store.spec.ts` | 组模型:拆分、组内打开 / 切换 / 关闭、关空组、共享文档、删除 / 改名、移除组、恢复布局 |
 | `editor-groups-persist.spec.ts` | 会话快照按组写出、旧格式读为单组、按组恢复 |
 | `editor-groups-panel.spec.tsx` | 两个组面板各自渲染自己的 tab;一处编辑另一处同步;组内关闭;tab 右键向右拆分 |
+| `editor-groups-milkdown-sync.spec.tsx` | 真实 Crepe:另一组的编辑增量套进本组 Milkdown —— 不重挂载、光标映射、撤销只撤本组输入、不回抛;预览同样增量套用 |
 | `editor-groups-commands.spec.ts` | ⌘\ 拆分 / 向下拆分 / ⌘1⌘2⌘3 聚焦、命令注册与默认键、dock ↔ 组同步 |
 | `tests/e2e/editor-split.spec.ts` | 真实应用:⌘\ 拆分后两组同一文件、一处编辑另一处同步、⌘1/⌘2 切组、Explorer 打开落到活动组、⌘W 关掉组内最后一个文件关闭该组、重启恢复两组 |

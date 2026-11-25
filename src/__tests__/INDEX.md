@@ -570,6 +570,7 @@
 ## [编辑器拆分(多编辑器组)](./editor-groups/README.md)
 
 - [`editor-groups-commands.spec.ts`](./editor-groups/editor-groups-commands.spec.ts)
+- [`editor-groups-milkdown-sync.spec.tsx`](./editor-groups/editor-groups-milkdown-sync.spec.tsx)
 - [`editor-groups-panel.spec.tsx`](./editor-groups/editor-groups-panel.spec.tsx)
 - [`editor-groups-persist.spec.ts`](./editor-groups/editor-groups-persist.spec.ts)
 - [`editor-groups-store.spec.ts`](./editor-groups/editor-groups-store.spec.ts)

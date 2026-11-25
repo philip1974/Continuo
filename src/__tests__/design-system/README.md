@@ -77,6 +77,12 @@
   `trailing` 渲染在截断 label 之外
 - `Badge` 默认 `size="sm"`(胶囊),`data-size` / `data-variant` 写入 DOM
 
+### TabNav unfocused(`components.spec.tsx`)
+
+- `TabNav unfocused`(所在窗格不是活动的,如非活动编辑器组)→ tablist 标 `data-unfocused="true"`;其活动 tab 保留选中底色、
+  去掉强调下划线、文字用 `--md-on-surface-variant`(VSCode `tab.unfocusedActiveForeground` / `unfocusedActiveBorder`);
+  只用语义 token,亮 / 暗同一规则
+
 ### TabNavItem 关闭与焦点(`components.spec.tsx`)
 
 - 结构(axe aria-required-children / nested-interactive;VSCode multiEditorTabsControl 同为 div[role=tab] 内含关闭动作):

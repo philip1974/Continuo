@@ -64,15 +64,23 @@ export function splitEditor(direction: SplitDirection, opts: SplitEditorOptions 
 /**
  * 聚焦第 index 个(1 起,按组顺序)编辑器组:激活其面板并聚焦其活动编辑器(空组 → 面板根)。index 恰为「组数 + 1」→
  * 在最后一个组右侧新建空组并聚焦(VSCode 同);更大 → no-op。
+ * 只数主窗(grid / floating)里的组:⌘1/⌘2/⌘3 只在主窗分发(popout 子窗不分发),VSCode 按触发窗口自己的编辑器组编号 ——
+ * 子窗里的组不计入、也不作新建组的参照(否则新组建进子窗、顶替子窗原显示的内容)。
  */
 export function focusEditorGroup(index: number): void {
   const api = getDockApi();
   if (!api) return;
   const store = useEditorStore.getState();
-  const ids = editorGroupIdsOf(store);
+  const ids = editorGroupIdsOf(store).filter((gid) => {
+    const panel = api.getPanel(gid);
+    return panel !== undefined && panel.api.location.type !== 'popout';
+  });
   const id = ids[index - 1];
   if (id === undefined) {
-    if (index === ids.length + 1) splitEditor('right', { groupId: ids[ids.length - 1]!, tabId: null });
+    if (index === ids.length + 1) {
+      const last = ids[ids.length - 1];
+      if (last !== undefined) splitEditor('right', { groupId: last, tabId: null });
+    }
     return;
   }
   const panel = api.getPanel(id);

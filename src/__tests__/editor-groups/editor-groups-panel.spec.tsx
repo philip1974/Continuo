@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// BDD:两个编辑器组面板各自渲染自己的 tab;同一文档一处编辑另一处同步(CodeMirror 增量映射 / Milkdown 重挂);组内关闭。
+// BDD:两个编辑器组面板各自渲染自己的 tab;同一文档一处编辑另一处同步(CodeMirror / Milkdown 都增量映射,不重挂);组内关闭。
 // 见同目录 README。
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,20 +25,22 @@ vi.mock('../../panels/Editor/MilkdownEditor', () => ({
   MilkdownEditor: ({
     tabId,
     defaultValue,
+    value,
     onChange,
   }: {
     tabId: string;
     defaultValue: string;
+    value?: string;
     onChange?: (md: string) => void;
   }) => {
-    // 同真实 Milkdown:defaultValue 只在挂载时生效
+    // 同真实 Milkdown:defaultValue 只在挂载时生效;value = 需同步进视图的当前内容(真实编辑器增量套用)
     const [initial] = useState(defaultValue);
     useEffect(() => {
       mocks.milkdownMounts.push({ tabId, value: initial });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return (
-      <div data-testid="milkdown" data-value={initial}>
+      <div data-testid="milkdown" data-initial={initial} data-value={value}>
         <button type="button" onClick={() => onChange?.(`${initial}+typed`)}>
           type
         </button>
@@ -125,6 +127,19 @@ describe('两个组面板各自的 tab', () => {
     fireEvent.click(within(left).getAllByRole('tab')[0]!);
     expect(useEditorStore.getState().activeGroupId).toBe('editor');
     expect(useEditorStore.getState().activeTabId).toBe(A);
+  });
+
+  // VSCode tab.unfocusedActive*:非活动组的活动 tab 文字变暗、无强调下划线(样式见 design TabNav 的 unfocused)
+  it('只有非活动组的 tab 栏标成 unfocused;切换活动组随之变化', () => {
+    open(createTab(A, 'aaa'));
+    useEditorStore.getState().splitGroup('editor', 'editor:2', A); // editor:2 成为活动组
+    const { left, right } = renderGroups();
+    const strip = (root: HTMLElement) => within(root).getByRole('tablist');
+    expect(strip(left).getAttribute('data-unfocused')).toBe('true');
+    expect(strip(right).getAttribute('data-unfocused')).not.toBe('true');
+    act(() => useEditorStore.getState().setActiveGroup('editor'));
+    expect(strip(left).getAttribute('data-unfocused')).not.toBe('true');
+    expect(strip(right).getAttribute('data-unfocused')).toBe('true');
   });
 
   it('关闭仍在别的组打开的脏文档:不弹保存确认,只从本组移除', () => {
@@ -224,8 +239,8 @@ describe('CodeMirror:同一文档两个视图实时同步', () => {
   });
 });
 
-describe('Milkdown:另一组改了内容 → 本组按新内容重挂;自己上抛的不重挂', () => {
-  it('A 组输入后,B 组以新内容重新挂载,A 不重挂', async () => {
+describe('Milkdown:另一组改了内容 → 两组都不重挂,内容经 value 同步给编辑器(编辑器内增量套用)', () => {
+  it('A 组输入后,B 组不重挂载、收到新内容;A 也不重挂', async () => {
     useEditorStore.setState({ mode: 'edit' });
     open(createTab(MD, '# t'));
     useEditorStore.getState().splitGroup('editor', 'editor:2', MD);
@@ -236,8 +251,9 @@ describe('Milkdown:另一组改了内容 → 本组按新内容重挂;自己上�
     fireEvent.click(within(left).getByText('type'));
     expect(useEditorStore.getState().tabs[0]!.content).toBe('# t+typed');
     expect(within(right).getByTestId('milkdown').getAttribute('data-value')).toBe('# t+typed');
-    expect(within(left).getByTestId('milkdown').getAttribute('data-value')).toBe('# t');
-    expect(mocks.milkdownMounts).toEqual([{ tabId: MD, value: '# t+typed' }]);
+    expect(within(right).getByTestId('milkdown').getAttribute('data-initial')).toBe('# t');
+    expect(within(left).getByTestId('milkdown').getAttribute('data-value')).toBe('# t+typed');
+    expect(mocks.milkdownMounts).toEqual([]);
   });
 });
 

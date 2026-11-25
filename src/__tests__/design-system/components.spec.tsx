@@ -291,6 +291,31 @@ describe('SegmentedControl', () => {
 });
 
 describe('TabNav + TabNavItem', () => {
+  // VSCode tab.unfocusedActiveForeground / unfocusedActiveBorder:tab 栏所在组不是活动组时,活动 tab 文字变暗(fg-muted)、
+  // 不显示强调下划线,但保留选中底色(仍与非活动 tab 有区分)。走语义 token,亮 / 暗同一规则。
+  it('unfocused:tab 栏标 data-unfocused;样式只改活动 tab 的文字色与下划线,保留底色', () => {
+    const { container, rerender } = render(
+      <TabNav unfocused>
+        <TabNavItem active onSelect={() => {}}>a.ts</TabNavItem>
+      </TabNav>,
+    );
+    expect(container.querySelector('[role=tablist]')!.getAttribute('data-unfocused')).toBe('true');
+    rerender(
+      <TabNav>
+        <TabNavItem active onSelect={() => {}}>a.ts</TabNavItem>
+      </TabNav>,
+    );
+    expect(container.querySelector('[role=tablist]')!.hasAttribute('data-unfocused')).toBe(false);
+
+    const css = readFileSync(join(process.cwd(), 'src/design/TabNav.css'), 'utf8');
+    const rule = /\.wm-tab-nav\[data-unfocused="true"\] \.wm-tab-nav-item\[data-active="true"\]\s*\{([^}]*)\}/.exec(css);
+    expect(rule).not.toBeNull();
+    const body = rule![1]!;
+    expect(body).toMatch(/border-bottom-color:\s*transparent/);
+    expect(body).toMatch(/color:\s*var\(--md-on-surface-variant\)/);
+    expect(body).not.toMatch(/background/);
+  });
+
   // 中键单击 tab 关闭(VSCode / 浏览器惯例,与 dock tab SharedTab 一致);走同一个 onClose(未保存确认由调用方负责)。
   it('中键单击 tab → onClose;按下时阻止中键自动滚动;不触发选中', () => {
     const onClose = vi.fn();

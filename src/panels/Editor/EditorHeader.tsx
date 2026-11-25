@@ -268,6 +268,8 @@ export const EditorHeader = memo(function EditorHeader({
     [chromeVersion, groupId],
   );
   const activeTabId = useEditorStore((s) => groupActiveTabIdOf(s, groupId));
+  // 本组不是活动编辑器组 → 活动 tab 用 unfocused 样式(VSCode tab.unfocusedActive*;单组时恒为活动组)
+  const unfocused = useEditorStore((s) => s.activeGroupId !== groupId);
   const storeSwitchTab = useEditorStore((s) => s.switchTab);
   const switchTab = useCallback((id: string) => storeSwitchTab(id, { groupId }), [storeSwitchTab, groupId]);
   // active tab 的派生 primitive,供右侧 action 区(打磨 R23/R45 + 性能 P14)。旧实现每次
@@ -349,6 +351,7 @@ export const EditorHeader = memo(function EditorHeader({
       <TabNav
         className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]"
         ariaLabel={t('shell.tab.editor_tablist')}
+        unfocused={unfocused}
       >
         {tabsChrome.map((tab, i) => {
           const tabTitle = basename(tab.filePath);

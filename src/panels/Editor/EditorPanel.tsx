@@ -447,16 +447,6 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     setUnsafeEditConfirmOpen(false);
   }, [acceptUnsafeEdit, activeTabId, setMode]);
 
-  // Milkdown 视图不能增量套用外部 Markdown:store 内容被**别处**改了(另一编辑器组 / 程序化改内容,不是本视图上抛的)
-  // → 按新内容重挂(同外部重载的 reloadEpoch)。本视图上抛的内容记在 ownEmitRef,不触发重挂。
-  // BDD: src/__tests__/editor-groups/
-  const ownEmitRef = useRef<{ readonly tabId: string; readonly content: string } | null>(null);
-  const mdSyncRef = useRef<{ tabId: string | null; content: string | null; epoch: number }>({
-    tabId: null,
-    content: null,
-    epoch: 0,
-  });
-
   // 判定主体渲染(根据 activeTab 类型 + mode)
   let body: React.ReactNode;
   let engine: 'welcome' | 'image' | 'code' | 'milkdown';
@@ -475,41 +465,24 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     );
   } else if (usesMilkdownEngine(activeTab.filePath, activeTab)) {
     engine = 'milkdown';
-    const sync = mdSyncRef.current;
-    if (sync.tabId !== activeTab.id) {
-      sync.tabId = activeTab.id;
-      sync.content = activeTab.content;
-    } else if (sync.content !== activeTab.content) {
-      const own = ownEmitRef.current;
-      if (own === null || own.tabId !== activeTab.id || own.content !== activeTab.content) sync.epoch += 1;
-      sync.content = activeTab.content;
-    }
     const tabId = activeTab.id;
+    // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
+    const content = effective === 'preview' ? toPreviewMarkdown(activeTab.content) : activeTab.content;
     body = (
       <MilkdownEditor
         // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
         // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
         // 用户输入/保存不动 epoch,故不会每次按键 remount。
-        key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}-${sync.epoch}`}
+        key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
         tabId={activeTab.id}
         fileName={activeTab.filePath}
-        // preview 只读不回写,frontmatter 换成 yaml 代码块展示(否则被解析成横线+标题)
-        defaultValue={
-          effective === 'preview'
-            ? toPreviewMarkdown(activeTab.content)
-            : activeTab.content
-        }
+        defaultValue={content}
+        // store 内容被别处改了(另一编辑器组 / 程序化改内容)→ 编辑器以最小差异套进视图,不重挂载:本组光标 / 选区随变化
+        // 映射、撤销栈保留(VSCode 各编辑器保留自己的光标)。本视图自己上抛的内容不套用。BDD: src/__tests__/editor-groups/
+        value={content}
         readonly={effective === 'preview'}
-        onChange={(md) => {
-          ownEmitRef.current = { tabId, content: md };
-          updateContent(tabId, md);
-        }}
-        onWriteBack={(md, base) => {
-          if (findEditorFileTabById(useEditorStore.getState().tabs, tabId)?.content === base) {
-            ownEmitRef.current = { tabId, content: md };
-          }
-          applyEditorWriteBack(tabId, md, base);
-        }}
+        onChange={(md) => updateContent(tabId, md)}
+        onWriteBack={(md, base) => applyEditorWriteBack(tabId, md, base)}
         onLinkClick={handleLinkClick}
       />
     );

@@ -25,6 +25,8 @@ interface FakePanel {
     setActive: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
     group: { panels: FakePanel[] };
+    /** dockview 组位置:popout = 在子窗里。 */
+    location: { type: 'grid' | 'floating' | 'popout' };
   };
 }
 
@@ -46,6 +48,7 @@ function fakeDock(ids: string[]) {
           for (const l of removed) l(panel);
         }),
         group,
+        location: { type: 'grid' },
       },
     };
     group.panels.push(panel);
@@ -53,12 +56,22 @@ function fakeDock(ids: string[]) {
     return panel;
   };
   for (const id of ids) add(id);
-  const addPanel = vi.fn((o: { id: string }) => add(o.id));
+  const addPanel = vi.fn((o: { id: string; position?: { referencePanel?: FakePanel; direction?: string } }) => {
+    const panel = add(o.id);
+    // 以 popout 面板为参照并入同组(within)→ 新面板同在子窗
+    const ref = o.position?.referencePanel;
+    if (ref && o.position?.direction === 'within') panel.api.location = { ...ref.api.location };
+    return panel;
+  });
   const api = {
     get panels() {
       return panels;
     },
     getPanel: (id: string) => panels.find((p) => p.id === id),
+    /** 把面板标成在 popout 子窗里。 */
+    popout: (id: string) => {
+      panels.find((p) => p.id === id)!.api.location = { type: 'popout' };
+    },
     addPanel,
     onDidRemovePanel: (l: Listener) => {
       removed.push(l);
@@ -178,6 +191,44 @@ describe('focusEditorGroup(⌘1 / ⌘2 / ⌘3)', () => {
     expect(editorGroupIdsOf(s)).toEqual(['editor', 'editor:2']);
     expect(groupTabsOf(s, 'editor:2')).toEqual([]);
     expect(s.activeGroupId).toBe('editor:2');
+  });
+
+  // VSCode:⌘1/⌘2/⌘3 只按触发窗口(主窗)自己的编辑器组编号;popout 子窗里的组不计入,也不作新建组的参照。
+  it('有组在 popout 子窗:主窗 ⌘N 只数主窗的组;不够时在主窗最后一组右侧新建,不建进子窗', () => {
+    useEditorStore.getState().openTab(createTab(A, 'a'));
+    const dock = fakeDock(['editor']);
+    setDockApi(asApi(dock));
+    splitEditor('right'); // editor:2
+    splitEditor('right', { groupId: 'editor:2' }); // editor:3
+    dock.popout('editor:2');
+    dock.addPanel.mockClear();
+    // 主窗的第 2 组 = editor:3(editor:2 在子窗)
+    focusEditorGroup(2);
+    expect(useEditorStore.getState().activeGroupId).toBe('editor:3');
+    expect(dock.getPanel('editor:3')!.api.setActive).toHaveBeenCalled();
+    expect(dock.addPanel).not.toHaveBeenCalled();
+    // 主窗只有 2 组 → ⌘3 在主窗最后一组(editor:3)右侧新建空组
+    focusEditorGroup(3);
+    expect(dock.addPanel).toHaveBeenCalledTimes(1);
+    const call = dock.addPanel.mock.calls[0]![0];
+    expect(call.position).toMatchObject({ direction: 'right' });
+    expect(call.position!.referencePanel!.id).toBe('editor:3');
+    expect(dock.getPanel(call.id)!.api.location.type).not.toBe('popout');
+    expect(useEditorStore.getState().activeGroupId).toBe(call.id);
+  });
+
+  it('最后一个组在 popout 子窗:主窗 ⌘2 仍以主窗的组为参照新建,不进子窗', () => {
+    useEditorStore.getState().openTab(createTab(A, 'a'));
+    const dock = fakeDock(['editor']);
+    setDockApi(asApi(dock));
+    splitEditor('right'); // editor:2(最后一组)
+    dock.popout('editor:2');
+    dock.addPanel.mockClear();
+    focusEditorGroup(2);
+    const call = dock.addPanel.mock.calls[0]![0];
+    expect(call.position!.referencePanel!.id).toBe('editor');
+    expect(call.position).toMatchObject({ direction: 'right' });
+    expect(dock.getPanel(call.id)!.api.location.type).not.toBe('popout');
   });
 });
 

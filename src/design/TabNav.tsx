@@ -25,6 +25,11 @@ export interface TabNavProps {
    * 进入 tablist 只听到泛化"tab list"。design 层无 i18n,文本由调用点注入。Defaults to none.
    */
   readonly ariaLabel?: string;
+  /**
+   * The strip belongs to a pane that is not the active one (e.g. an inactive editor group): the active tab keeps its
+   * selected background but drops the accent underline and uses muted text (VSCode `tab.unfocusedActive*`). Defaults to `false`.
+   */
+  readonly unfocused?: boolean;
 }
 
 /**
@@ -87,7 +92,7 @@ export interface TabNavItemProps {
   readonly children: ReactNode;
 }
 
-export function TabNav({ children, className, ariaLabel }: TabNavProps) {
+export function TabNav({ children, className, ariaLabel, unfocused = false }: TabNavProps) {
   // Continuo-local 微调(a11y A23/A28):role="tablist" 须配 WAI-ARIA 键盘模型 —— 方向键在 tab
   // 间移动焦点(配合 TabNavItem 的 roving tabindex:仅 active tab 在 Tab 顺序内)。手动激活:
   // 方向键只移焦点,Enter/Space 由 TabNavItem 触发 onSelect。逻辑抽到共享 roving-tablist.ts
@@ -98,6 +103,7 @@ export function TabNav({ children, className, ariaLabel }: TabNavProps) {
       role="tablist"
       // a11y(A107):caller 注入的本地化组名(design 层无 i18n)。
       aria-label={ariaLabel}
+      data-unfocused={unfocused ? 'true' : undefined}
       onKeyDown={handleTablistArrowKeys}
     >
       {children}

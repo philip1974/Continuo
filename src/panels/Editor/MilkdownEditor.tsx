@@ -31,6 +31,7 @@ import {
 import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
+import { registerMarkdownReveal, type MarkdownRevealTarget } from './markdown-reveal-registry';
 import { useEditorGroupId } from './editor-group-context';
 import { setContentFocusHandler } from '@/lib/content-focus-target';
 import {
@@ -42,6 +43,7 @@ import {
 import {
   parseMarkdownTree,
   posForSourceLine,
+  rangeForSourceMatch,
   sourceLineAtPos,
   topVisibleSourceLine,
   viewportYOfSourceLine,
@@ -64,6 +66,7 @@ import {
   onMarkdownFindChange,
   saveMarkdownFindSession,
   revealMarkdownFindMatch,
+  selectAndRevealMarkdownRange,
   setMarkdownFindQuery,
   stepMarkdownFind,
   type MarkdownFindResult,
@@ -87,6 +90,11 @@ interface MilkdownEditorProps {
   /** 文件路径:编辑区可访问名称「<文件名>，编辑器」用(挂载时取定;改名 = tab id 变 → 重挂)。 */
   fileName?: string;
   defaultValue: string;
+  /**
+   * 当前内容(store 里的文档内容;预览为其预览形态)。变化且不是本视图最近上抛 / 回写的内容(= 被别处改了,如另一编辑器组)
+   * → 以最小差异的事务套进视图:不重挂载,光标 / 选区随变化映射,本视图撤销栈保留(该事务不进撤销栈)。缺省不同步。
+   */
+  value?: string;
   readonly?: boolean;
   onChange?: (markdown: string) => void;
   /**
@@ -220,6 +228,42 @@ function rebindMilkdownRoot(crepe: Crepe): void {
 interface WriteBackHandle {
   writeBack: () => void;
   dispose: () => void;
+  /** 套用别处改过的内容(见 props.value);视图未就绪时 no-op(挂载时再按最新 value 补)。 */
+  applyExternal: (markdown: string) => void;
+}
+
+/** 增量套用外部内容用到的 ProseMirror 部分(按 slice 名取,同 readEditor)。 */
+interface PmFragmentLike {
+  findDiffStart(other: PmFragmentLike): number | null;
+  findDiffEnd(other: PmFragmentLike): { a: number; b: number } | null;
+}
+interface PmSyncDoc {
+  readonly content: PmFragmentLike;
+  slice(from: number, to: number): unknown;
+}
+interface PmSyncView {
+  readonly state: {
+    readonly doc: PmSyncDoc;
+    readonly tr: { replace(from: number, to: number, slice: unknown): { setMeta(key: string, value: unknown): unknown } };
+  };
+  dispatch(tr: unknown): void;
+}
+
+/**
+ * 把视图文档换成 `next`,只替换两者不同的那一段(公共前后缀之外;ProseMirror 官方示例的 findDiffStart / findDiffEnd 做法):
+ * 选区随事务映射,不进撤销栈(prosemirror-history 把本视图已有的撤销历史映射过这一步)。
+ */
+function replaceDocMinimal(view: PmSyncView, next: PmSyncDoc): void {
+  const cur = view.state.doc;
+  const start = cur.content.findDiffStart(next.content);
+  if (start === null) return;
+  let { a: endA, b: endB } = cur.content.findDiffEnd(next.content)!;
+  const overlap = start - Math.min(endA, endB);
+  if (overlap > 0) {
+    endA += overlap;
+    endB += overlap;
+  }
+  view.dispatch(view.state.tr.replace(start, endA, next.slice(start, endB)).setMeta('addToHistory', false));
 }
 
 /**
@@ -233,6 +277,11 @@ interface MarkdownPositionHandle {
   scrollToLine(scroller: HTMLElement, line: number): void;
   /** 光标移到源码行对应的块(只读预览忽略)。 */
   setCursorLine(line: number): void;
+  /**
+   * 定位到源码行 / 列并选中匹配(在文件中查找打开结果,见 markdown-reveal-registry):选中、聚焦、在视口外则滚到中央。
+   * 行号超出 → out-of-range;视图已拆除 → null。
+   */
+  reveal(scroller: HTMLElement, target: MarkdownRevealTarget): 'applied' | 'out-of-range' | null;
 }
 
 /** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦与定位句柄,以及取 ProseMirror 视图(查找用;已拆除 → null)。 */
@@ -258,11 +307,14 @@ function CrepeEditor({
   tabId,
   fileName,
   defaultValue,
+  value,
   readonly = false,
   onChange,
   onWriteBack,
   onReady,
 }: MilkdownEditorProps & { readonly onReady?: OnEditorReady }) {
+  const valueRef = useRef(value);
+  valueRef.current = value;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onWriteBackRef = useRef(onWriteBack);
@@ -422,13 +474,13 @@ function CrepeEditor({
 
     // 定位:用 Milkdown 自己的 remark 处理器把当前内容解析成带行号的 mdast,与文档同步下钻(见 markdown-position-map)。
     // 当前内容 = 最近一次上抛 / 挂载时的内容(文档未变时),否则序列化当前文档 —— 与随后回写进 store 的一致。
-    const positionContext = (): { view: PmPositionView; tree: MdNode } => {
+    const positionContext = (): { view: PmPositionView; tree: MdNode; markdown: string } => {
       const ctx = crepe.editor.ctx;
       const view = ctx.get<PmPositionView, 'editorView'>('editorView');
       const doc = view.state.doc;
       const markdown =
         baseDoc === null || doc === baseDoc ? lastEmitted : ctx.get<(d: PmDoc) => string, 'serializer'>('serializer')(doc);
-      return { view, tree: parseMarkdownTree(ctx.get<RemarkLike, 'remark'>('remark'), markdown) };
+      return { view, tree: parseMarkdownTree(ctx.get<RemarkLike, 'remark'>('remark'), markdown), markdown };
     };
     const position: MarkdownPositionHandle = {
       anchor: (scroller) => {
@@ -464,6 +516,22 @@ function CrepeEditor({
           /* 未就绪 / 已拆除 */
         }
       },
+      reveal: (scroller, { line, column, length }) => {
+        if (disposed) return null;
+        let view: EditorView;
+        let range: { from: number; to: number } | null;
+        try {
+          const context = positionContext();
+          view = crepe.editor.ctx.get<EditorView, 'editorView'>('editorView');
+          range = rangeForSourceMatch(context.view.state.doc, context.tree, context.markdown, line, column, length);
+        } catch {
+          return null; // 未就绪 / 已拆除
+        }
+        if (!range) return 'out-of-range';
+        selectAndRevealMarkdownRange(view, scroller, range.from, range.to);
+        focusEditorView(view);
+        return 'applied';
+      },
     };
 
     writeBackRef.current = {
@@ -486,10 +554,35 @@ function CrepeEditor({
         if (emitTimer !== null) clearTimeout(emitTimer);
         emitTimer = null;
       },
+      // 别处(另一编辑器组 / 程序化)改了内容:增量套进视图,基线换成该内容 —— 之后到点的上抛 / 回写按它判定,
+      // 不把套用结果再上抛。本视图尚未上抛的输入被覆盖(同此前重挂载;两组在防抖窗口内同时输入时后上抛者覆盖)。
+      applyExternal: (markdown) => {
+        if (disposed || markdown === lastEmitted) return;
+        try {
+          const ctx = crepe.editor.ctx;
+          const view = ctx.get<PmSyncView, 'editorView'>('editorView');
+          if (!view.state) return; // 未就绪(slice 初值是空对象):挂载时按最新 value 补
+          replaceDocMinimal(view, ctx.get<(md: string) => PmSyncDoc, 'parser'>('parser')(markdown));
+          if (emitTimer !== null) clearTimeout(emitTimer);
+          emitTimer = null;
+          pendingDoc = null;
+          lastEmitted = markdown;
+          if (!readonly) {
+            baseDoc = view.state.doc;
+            baseMarkdown = markdown;
+          }
+        } catch {
+          /* 已拆除 / 解析失败:保持原视图 */
+        }
+      },
     };
 
     crepe.on((listener) => {
       listener.mounted(() => recordSelectionDoc(crepe));
+      // 创建(异步)期间内容又被别处改了:按最新 value 补套
+      listener.mounted(() => {
+        if (valueRef.current !== undefined) writeBackRef.current?.applyExternal(valueRef.current);
+      });
       // 编辑 / 预览区(ProseMirror 根,role=textbox)的可访问名称(对齐 VSCode;BDD: src/__tests__/editor-accessible-name/)。
       // 只读预览:「<文件名>，预览」+ aria-readonly(VSCode Markdown 预览「Preview <文件名>」),不念成可编辑的编辑器。
       // 语言切换随 Provider 的 locale key 重挂、改名随 tab id 重挂,挂载时取当前值即可。setProps 与已有 props 合并。
@@ -581,6 +674,10 @@ function CrepeEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (value !== undefined) writeBackRef.current?.applyExternal(value);
+  }, [value]);
+
   return <Milkdown />;
 }
 
@@ -639,11 +736,13 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   const tabId = props.tabId;
   const viewMode = props.readonly ? 'preview' : 'edit';
   const unregisterFocusRef = useRef<(() => void) | null>(null);
+  const unregisterRevealRef = useRef<(() => void) | null>(null);
   const positionRef = useRef<MarkdownPositionHandle | null>(null);
   const unsubscribeFindRef = useRef<(() => void) | null>(null);
   useEffect(
     () => () => {
       unregisterFocusRef.current?.();
+      unregisterRevealRef.current?.();
       unsubscribeFindRef.current?.();
       // tab 已关闭(先从 store 移除、随后卸载):查找状态不再保留,重新打开不恢复
       if (!useEditorStore.getState().tabs?.some((t) => t.id === tabId)) forgetMarkdownFindSession(tabId);
@@ -833,6 +932,13 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       }
       unregisterFocusRef.current?.();
       unregisterFocusRef.current = registerEditorFocus(tabId, focus, groupId);
+      // 在文件中查找等「打开并定位」:登记在滚动位置恢复之后,待兑现的定位排在恢复的那一帧之后(见 markdown-reveal-registry)
+      unregisterRevealRef.current?.();
+      unregisterRevealRef.current = registerMarkdownReveal(
+        tabId,
+        (target) => (wrapperRef.current ? position.reveal(wrapperRef.current, target) : null),
+        groupId,
+      );
     },
     [tabId, viewMode, groupId],
   );
