@@ -170,9 +170,8 @@ const RENDERER_FILE = path.join(__dirname, '../renderer/index.html');
 // 必须在 requestSingleInstanceLock 与任何 getPath('userData') 之前调用。
 const resolvedUserDataPath = resolveUserDataPath({
   appDataPath: app.getPath('appData'),
-  e2eUserDataDir: app.commandLine.getSwitchValue('user-data-dir'),
+  userDataDirSwitch: app.commandLine.getSwitchValue('user-data-dir'),
   isDev,
-  isE2E: process.env['CONTINUO_E2E'] === '1',
 });
 if (resolvedUserDataPath !== null) {
   app.setPath('userData', resolvedUserDataPath);

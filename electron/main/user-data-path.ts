@@ -2,19 +2,20 @@ import path from 'node:path';
 
 export interface UserDataPathOptions {
   readonly appDataPath: string;
-  readonly e2eUserDataDir: string;
+  /** 命令行 --user-data-dir 的值(未传为空串);e2e 每个 spec 用它隔离。 */
+  readonly userDataDirSwitch: string;
   readonly isDev: boolean;
-  readonly isE2E: boolean;
 }
 
 export function resolveUserDataPath({
   appDataPath,
-  e2eUserDataDir,
+  userDataDirSwitch,
   isDev,
-  isE2E,
 }: UserDataPathOptions): string | null {
-  if (isE2E && e2eUserDataDir.trim() !== '') {
-    return e2eUserDataDir;
+  // 显式 --user-data-dir 在任何模式都优先(Electron / Chromium / VSCode 惯例;e2e 每个 spec 用它隔离)。此前只在 E2E 下
+  // 采用,dev 非 E2E 时被静默改写成 Continuo Dev → 想用隔离目录启动 dev 实例的人误开真实 dev 数据。
+  if (userDataDirSwitch.trim() !== '') {
+    return userDataDirSwitch;
   }
 
   if (isDev) {

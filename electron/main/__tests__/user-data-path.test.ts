@@ -4,35 +4,44 @@ import path from 'node:path';
 import { PACKAGED_USER_DATA_NAME, resolveProtectedRoots, resolveUserDataPath } from '../user-data-path';
 
 describe('resolveUserDataPath', () => {
-  it('honors E2E --user-data-dir before the dev default', () => {
+  it('honors --user-data-dir (e2e) before the dev default', () => {
     expect(
       resolveUserDataPath({
         appDataPath: '/tmp/app-data',
-        e2eUserDataDir: '/tmp/e2e-user-data',
+        userDataDirSwitch: '/tmp/e2e-user-data',
         isDev: true,
-        isE2E: true,
       }),
     ).toBe('/tmp/e2e-user-data');
   });
 
-  it('keeps the separate dev userData path outside E2E', () => {
+  // 显式 --user-data-dir 在任何模式都优先(Electron / Chromium / VSCode 惯例)。此前 dev 非 E2E 时被静默改写成
+  // 「Continuo Dev」—— 想用隔离数据目录启动 dev 实例(调试 / 审计脚本)的人会误开真实 dev 数据并可能写坏它。
+  it('honors an explicit --user-data-dir in dev outside E2E too', () => {
     expect(
       resolveUserDataPath({
         appDataPath: '/tmp/app-data',
-        e2eUserDataDir: '/tmp/e2e-user-data',
+        userDataDirSwitch: '/tmp/isolated-user-data',
         isDev: true,
-        isE2E: false,
+      }),
+    ).toBe('/tmp/isolated-user-data');
+  });
+
+  it('dev without --user-data-dir → separate Continuo Dev userData', () => {
+    expect(
+      resolveUserDataPath({
+        appDataPath: '/tmp/app-data',
+        userDataDirSwitch: '  ',
+        isDev: true,
       }),
     ).toBe(path.join('/tmp/app-data', 'Continuo Dev'));
   });
 
-  it('leaves packaged userData untouched without an E2E override', () => {
+  it('leaves packaged userData untouched without --user-data-dir', () => {
     expect(
       resolveUserDataPath({
         appDataPath: '/tmp/app-data',
-        e2eUserDataDir: '',
+        userDataDirSwitch: '',
         isDev: false,
-        isE2E: false,
       }),
     ).toBeNull();
   });
