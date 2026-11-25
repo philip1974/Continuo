@@ -28,8 +28,11 @@ export function focusPanelContent(api: DockviewPanelApi): void {
     }
   }
   if (!content) return;
+  // 编辑器面板没有可编辑区(空编辑器组 / 无法编辑的文件视图)→ 落到面板根,不落到 Welcome 的「打开文件夹」等按钮
+  // (VSCode:焦点进空编辑器组,水印入口不抢焦点,Tab 再进入)。
   const target =
     content.querySelector<HTMLElement>(EDITABLE_SELECTOR) ??
+    content.querySelector<HTMLElement>('[data-editor-panel-root]') ??
     content.querySelector<HTMLElement>(TABBABLE_SELECTOR) ??
     content.querySelector<HTMLElement>(ROOT_FALLBACK_SELECTOR);
   target?.focus();

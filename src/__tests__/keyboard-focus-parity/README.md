@@ -57,6 +57,7 @@ F6 / ⇧F6(`workbench.action.focusNextPart` / `focusPreviousPart`)在工作台�
 - 活动面板在 popout 子窗时,主窗 F6 不跳过 dock:激活并聚焦主窗(grid / floating)最近使用的组(组 MRU)的活动面板
   (VSCode:主窗 F6 只在主窗自己的区域循环)
 - 空编辑器组(关光 tab,内容只剩 tabIndex=-1 的面板根):F6 聚焦面板根(VSCode:F6 落到空编辑器组),不跳过 dock
+- 空编辑器的 Welcome 带「打开文件夹 / 显示所有命令」按钮时,F6 仍聚焦编辑器面板根而非第一个按钮(水印入口不抢焦点,Tab 再进);打开了文件时仍优先聚焦可编辑区
 - 主窗没有面板(全关光,或所有组都弹出到子窗 —— DockShell 按主窗内面板数判空,显示空态):F6 聚焦主窗空态容器
 - 终端里 F6 / ⇧F6 让出给命令(不发给 shell);编辑器(CodeMirror / ProseMirror)里 F6 照常触发命令
 

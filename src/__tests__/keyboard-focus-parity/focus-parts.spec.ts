@@ -178,6 +178,26 @@ describe('空编辑器组 / 主窗无面板(VSCode:F6 落到空编辑器组,不�
     expect(document.activeElement).toBe(el('editor-root'));
   });
 
+  // 空编辑区的 Welcome 带「打开文件夹 / 显示所有命令」按钮(1c07e4d3):F6 仍落到空编辑器组本身,而不是第一个按钮
+  // (VSCode:焦点进空编辑器组,水印入口不抢焦点;Tab 再进按钮)。
+  it('空编辑器的 Welcome 里有按钮 → F6 仍聚焦编辑器面板根,不落到按钮', () => {
+    workbench();
+    el('panel-content').innerHTML =
+      '<div data-editor-panel-root="" tabindex="-1" data-x="editor-root"><button data-x="welcome-btn">Open Folder</button></div>';
+    el('row-b').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('editor-root'));
+  });
+
+  it('打开了文件的编辑器 → 仍优先聚焦可编辑区(不被面板根抢走)', () => {
+    workbench();
+    el('panel-content').innerHTML =
+      '<div data-editor-panel-root="" tabindex="-1"><button>tab</button><div contenteditable="true" data-x="cm"></div></div>';
+    el('row-b').focus();
+    focusAdjacentPart(1);
+    expect(document.activeElement).toBe(el('cm'));
+  });
+
   it('面板内容根本身是 tabIndex=-1 的根元素(非编辑器)→ 同样回退聚焦它', () => {
     workbench();
     el('panel-content').innerHTML = '<div tabindex="-1" data-x="plain-root"><span tabindex="-1">x</span></div>';
