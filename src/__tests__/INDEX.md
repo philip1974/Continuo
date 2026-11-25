@@ -547,6 +547,11 @@
 
 - [`editor-find-i18n.spec.tsx`](./editor-find-i18n/editor-find-i18n.spec.tsx)
 
+## [编辑器查找控件:计数 / 无结果、快捷键、历史、强制颜色(对齐 VSCode findWidget)](./editor-find-widget/README.md)
+
+- [`editor-find-widget.spec.tsx`](./editor-find-widget/editor-find-widget.spec.tsx)
+- [`find-widget-model.spec.ts`](./editor-find-widget/find-widget-model.spec.ts)
+
 ## [打开文件后焦点进编辑器(VSCode 对齐)](./editor-focus-on-open/README.md)
 
 - [`editor-focus-registry.spec.ts`](./editor-focus-on-open/editor-focus-registry.spec.ts)

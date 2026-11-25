@@ -37,6 +37,7 @@ import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { rebindCodeMirrorRoots } from './codemirror-root';
 import { codeEditorTheme } from './code-editor-theme';
+import { codeMirrorFind } from './codemirror-find';
 import {
   saveCodeEditorViewState,
   saveMarkdownModeAnchor,
@@ -256,6 +257,9 @@ export function CodeEditor({
       // ⌃M(mac ⇧⌥M,basicSetup 的 toggleTabFocusMode)切换常驻模式 —— CodeMirror 内建,对应 VSCode ⌃M。
       // BDD: src/__tests__/keyboard-focus-parity/
       keymap.of([indentWithTab]),
+      // ⌘F 面板补强(对齐 VSCode 查找控件):匹配计数 / 无结果、⌥⌘F 替换、⌥⌘C/W/R 切换选项、↑↓ 历史。
+      // BDD: src/__tests__/editor-find-widget/
+      codeMirrorFind,
       themeCompartment.current.of(themeExt),
       phrasesCompartment.current.of(codeMirrorPhrases()),
       labelCompartment.current.of(codeMirrorContentLabel(appliedLabelRef.current)),

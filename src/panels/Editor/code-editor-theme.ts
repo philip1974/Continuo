@@ -11,6 +11,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import type { Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
+import { codeMirrorFind } from './codemirror-find';
 
 const SELECTION = 'color-mix(in srgb, var(--md-primary) 28%, transparent)';
 
@@ -44,6 +45,14 @@ function chromeTheme(dark: boolean): Extension {
         outline: '1px solid color-mix(in srgb, var(--md-warning) 60%, transparent)',
       },
       '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: SELECTION },
+      // 强制颜色(Windows 高对比度):底色被抹成 Canvas、轮廓改 CanvasText,当前匹配与其它匹配、选区都不可辨。
+      // 对齐 VSCode 高对比度主题:当前匹配 2px Highlight 实线(contrastActiveBorder),其它匹配 1px CanvasText 虚线,
+      // 选区画 Highlight 轮廓(不改底色:选区层在文字下方,Highlight 底 + CanvasText 字在部分高对比度主题下对比不足)。
+      '@media (forced-colors: active)': {
+        '.cm-searchMatch': { outline: '1px dashed CanvasText' },
+        '.cm-searchMatch.cm-searchMatch-selected': { outline: '2px solid Highlight' },
+        '.cm-selectionBackground': { outline: '1px solid Highlight', outlineOffset: '-1px' },
+      },
       '.cm-selectionMatch': { backgroundColor: 'color-mix(in srgb, var(--md-primary) 14%, transparent)' },
       '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
         backgroundColor: 'color-mix(in srgb, var(--md-primary) 22%, transparent)',
@@ -68,6 +77,21 @@ function chromeTheme(dark: boolean): Extension {
       },
       '.cm-textfield:focus': { borderColor: 'var(--md-focus-ring)', backgroundColor: 'var(--md-surface-container)' },
       '.cm-textfield::placeholder': { color: 'var(--md-outline)' },
+      // 查找无结果(codemirror-find.ts 置 aria-invalid):错误色描边,聚焦再加 1px 错误色环 —— 同 design Input 的校验失败态
+      // (VSCode inputValidation.errorBorder)。
+      '.cm-textfield[aria-invalid="true"], .cm-textfield[aria-invalid="true"]:focus': { borderColor: 'var(--md-error)' },
+      '.cm-textfield[aria-invalid="true"]:focus': { boxShadow: '0 0 0 1px var(--md-error)' },
+      // 匹配计数「3 / 154」(VSCode 查找框右侧的 matchesCount);「无结果」用错误色。
+      '.cm-search-count': {
+        display: 'inline-block',
+        minWidth: '5em',
+        margin: '.2em .6em .2em 0',
+        color: 'var(--md-fg-dim)',
+        fontSize: 'var(--wm-text-xs)',
+        fontVariantNumeric: 'tabular-nums',
+        whiteSpace: 'nowrap',
+      },
+      '.cm-search-count[data-no-results]': { color: 'var(--md-error)' },
       '.cm-button': {
         backgroundImage: 'none',
         backgroundColor: 'var(--md-surface-container-high)',
@@ -143,5 +167,6 @@ export function codeEditorTheme(resolved: 'light' | 'dark'): Extension {
  * 代码块底色 / gutter 由 Crepe CSS 按 --crepe-color-surface 绘制(选择器更具体,压过这里的外观),这里只需同一套
  * token 外观(光标 / 选区 / 当前行 / 面板)+ --md-syntax-* 语法色 —— 全部随 <html class="dark"> 变色,与 resolved
  * 无关,故亮 / 暗共用这一个扩展,切主题不必重挂编辑器。不声明 dark:内建样式的亮 / 暗变体都被上面的 token 规则覆盖。
+ * 代码块同样带 basicSetup 的 ⌘F 面板:一并挂上查找补强(计数 / 无结果 / 快捷键 / 历史,与 CodeEditor 同一个扩展常量)。
  */
-export const markdownCodeBlockTheme: Extension = LIGHT;
+export const markdownCodeBlockTheme: Extension = [LIGHT, codeMirrorFind];
