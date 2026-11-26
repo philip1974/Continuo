@@ -1696,6 +1696,10 @@
 
 - [`values-store.spec.ts`](./settings-values/values-store.spec.ts)
 
+## [shadowed-hotkey-display(冲突落败的快捷键不在界面提示里显示)](./shadowed-hotkey-display/README.md)
+
+- [`shadowed-hotkey-display.spec.tsx`](./shadowed-hotkey-display/shadowed-hotkey-display.spec.tsx)
+
 ## [shared-helper-dedup(重构:重复 helper 收口为单一来源)](./shared-helper-dedup/README.md)
 
 - [`lower-if-needed.spec.ts`](./shared-helper-dedup/lower-if-needed.spec.ts)

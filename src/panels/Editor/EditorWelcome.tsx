@@ -14,6 +14,7 @@ import { useCommandPaletteStore } from '@/plugins/command-palette/store';
 import { useQuickOpenStore } from '@/plugins/quick-open/store';
 import { coApp } from '@/plugins/co-app';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
+import { isHotkeyShadowed } from '@/plugins/command-palette/useCommandHotkeys';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { OPEN_FOLDER_COMMAND } from '../Explorer/explorer-commands';
 
@@ -70,8 +71,10 @@ export function EditorWelcome() {
         {
           id: 'open-folder',
           label: openFolderLabel,
-          // 与命令面板 / 全局分发同一来源:有 override 用 override,解绑 → 不显示。
-          hotkey: resolveActiveHotkey(OPEN_FOLDER_COMMAND, overrides, platform),
+          // 与命令面板 / 全局分发同一来源:有 override 用 override,解绑 / 冲突落败 → 不显示。
+          hotkey: isHotkeyShadowed(OPEN_FOLDER_COMMAND.id, coApp.commands.getAll(), platform, overrides)
+            ? undefined
+            : resolveActiveHotkey(OPEN_FOLDER_COMMAND, overrides, platform),
           // 经 live 命令注册表执行「打开文件夹」命令(与 ⌘O / 命令面板同一实现,抛错有 toast)。
           run: () => runRegisteredCommand(coApp.commands, OPEN_FOLDER_COMMAND.id, openFolderLabel),
         },

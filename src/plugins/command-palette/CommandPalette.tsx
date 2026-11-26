@@ -28,6 +28,7 @@ import { isSortedBy } from '@/lib/is-sorted-by';
 import { byDisplayTitle } from './by-display-title';
 import { normalizeSearchQuery } from '@/lib/search-query';
 import { resolveDisplayHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { selectShadowedBindings } from './useCommandHotkeys';
 
 // module 顶层一次,renderer 生命周期内不会切平台
 const PLATFORM = detectPlatform();
@@ -78,9 +79,12 @@ export function buildDisplayCommands(
 ): DisplayCommand[] {
   if (allCommands.length === 0) return EMPTY_DISPLAY_COMMANDS;
   const out = new Array<DisplayCommand>(allCommands.length);
+  // 冲突落败的键不显示(按下执行的是胜出命令;设置页标「冲突」,同一张分发表判定)
+  const shadowed = selectShadowedBindings(allCommands, platform, overrides);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
-    const effective = resolveDisplayHotkey(cmd, overrides, platform); // 保留键上的绑定不显示(按下是 picker);转到文件… 显示 ⌘P
+    // 保留键上的绑定不显示(按下是 picker);转到文件… 显示 ⌘P
+    const effective = shadowed.has(cmd.id) ? undefined : resolveDisplayHotkey(cmd, overrides, platform);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     const source = joinMatchSource(displayCategory, displayTitle);

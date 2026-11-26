@@ -34,6 +34,8 @@ import { findEditorFileTabById } from './editor-tab-lookup';
 import { detectPlatform, formatHotkey, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { isHotkeyShadowed } from '@/plugins/command-palette/useCommandHotkeys';
+import { coApp } from '@/plugins/co-app';
 import { t, tWithFallback } from '@/i18n';
 import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
 import { stripRootPrefix } from '@/lib/path-cross';
@@ -60,10 +62,13 @@ export const FOCUS_EDITOR_GROUP_COMMANDS = [
 
 /**
  * 保存命令当前生效绑定的显示文本(按平台:⌘S / Ctrl+S),供提示文案的 `{hotkey}` 占位(「按 {hotkey} 选择覆盖」等):
- * 改绑后跟随,不写死 Cmd/Ctrl+S。未绑定 → 命令标题。
+ * 改绑后跟随,不写死 Cmd/Ctrl+S。未绑定 / 与别的命令冲突落败(按下不保存)→ 命令标题。
  */
 export function saveHotkeyLabel(platform: Platform = detectPlatform()): string {
-  const combo = resolveActiveHotkey(SAVE_COMMAND, useKeybindingsStore.getState().overrides, platform);
+  const overrides = useKeybindingsStore.getState().overrides;
+  const combo = isHotkeyShadowed(SAVE_COMMAND.id, coApp.commands.getAll(), platform, overrides)
+    ? undefined
+    : resolveActiveHotkey(SAVE_COMMAND, overrides, platform);
   return combo ? formatHotkey(combo, platform) : tWithFallback('commands.file.save.title', 'Save');
 }
 

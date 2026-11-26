@@ -230,6 +230,34 @@ export function selectShadowedBindings(
   return shadowed ?? EMPTY_SHADOWED;
 }
 
+// isHotkeyShadowed 的缓存(tooltip / 菜单键位每次渲染都查):命令快照、平台、overrides 引用不变即复用。
+let cachedShadowed: {
+  readonly commands: readonly CommandSpec[];
+  readonly platform: Platform;
+  readonly overrides: Readonly<Record<string, string>>;
+  readonly shadowed: ReadonlyMap<string, CommandSpec>;
+} | null = null;
+
+/**
+ * 命令的生效键位是否冲突落败(按下执行的是别的命令,同 selectShadowedBindings / 设置页「冲突」)。界面上的键位提示
+ *(命令面板行尾、tooltip、菜单项)据此不显示该键 —— 与保留键上的绑定一样,显示了按下也不会执行这条命令。
+ */
+export function isHotkeyShadowed(
+  commandId: string,
+  commands: readonly CommandSpec[],
+  platform: Platform,
+  overrides: Readonly<Record<string, string>>,
+): boolean {
+  const c = cachedShadowed;
+  let shadowed: ReadonlyMap<string, CommandSpec>;
+  if (c && c.commands === commands && c.platform === platform && c.overrides === overrides) shadowed = c.shadowed;
+  else {
+    shadowed = selectShadowedBindings(commands, platform, overrides);
+    cachedShadowed = { commands, platform, overrides, shadowed };
+  }
+  return shadowed.has(commandId);
+}
+
 function firstMatchingBinding(
   bindings: readonly CompiledBinding[],
   e: KeyboardEvent,
