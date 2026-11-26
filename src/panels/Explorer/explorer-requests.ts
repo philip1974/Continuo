@@ -11,7 +11,9 @@ export type ExplorerRequest =
   /** 焦点交给 root 这棵树(加载完成后:焦点行 / 空文件夹提示 / 读取失败的重试按钮)。 */
   | { readonly kind: 'focusTree'; readonly root: string }
   /** 全部折叠 / 刷新(同标题栏按钮;命令 collapseExplorerFolders / refreshFilesExplorer)。 */
-  | { readonly kind: 'collapseAll' | 'refresh' };
+  | { readonly kind: 'collapseAll' | 'refresh' }
+  /** 撤销 / 重做文件操作(命令 explorer.undo / explorer.redo)。 */
+  | { readonly kind: 'undo' | 'redo' };
 
 /** 处理请求;返回 false = 不归自己(如 root 不符),请求继续挂起。 */
 type RequestHandler = (request: ExplorerRequest) => boolean;

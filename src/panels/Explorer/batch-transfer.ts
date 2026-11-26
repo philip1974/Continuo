@@ -69,6 +69,8 @@ export interface BatchTransferDeps {
   refreshDir: (dir: string) => void;
   /** move 成功一项:调用方做「路径已移走」清理(editor tab / 展开集合 / 剪贴板,见 path-gone-cleanup)。 */
   onMoved: (src: string, dest: string) => void;
+  /** copy 成功一项(撤销栈记录新建项,见 file-undo.ts)。 */
+  onCopied?: (src: string, dest: string) => void;
   /** 某项 fs 返回 ok:false(其后各项不再尝试)。 */
   onItemFailed: (src: string, code: string, message: string) => void;
   /** 目标名探测 / fs 调用抛出。 */
@@ -133,6 +135,7 @@ export async function transferEntriesInto(
         return;
       }
       if (kind === 'move') deps.onMoved(src, dest);
+      else deps.onCopied?.(src, dest);
     }
   } catch (err) {
     deps.onException(err);
@@ -158,6 +161,8 @@ export type ConfirmOverwrite = (names: readonly string[], canSkip: boolean) => P
  * 同名(误操作防护,对齐 VSCode ExternalFileImport):写入前 listDir 目标目录一次,与已有文件同名(sameNameKey 折叠)
  * → confirmOverwrite 列出名字问替换 / 跳过 / 取消;与已有文件夹同名 → 不提供替换(文件替换不了文件夹),该项归失败。
  * 目标目录读不到 → 无法判断是否会覆盖,整批不写(fail-closed)。
+ * onCreated:写入的全是新文件(无同名,或选了「跳过」)时回报写入路径(撤销栈记录);选「替换」不回报 ——
+ * 被替换的原文件无法恢复,撤销只会删掉新文件。
  */
 export async function dropForeignFilesInto(
   items: DataTransferItemList,
@@ -165,11 +170,13 @@ export async function dropForeignFilesInto(
   fs: Pick<FsApi, 'listDir' | 'writeBinary'>,
   refreshDir: (dir: string) => void,
   confirmOverwrite: ConfirmOverwrite,
+  onCreated?: (paths: string[]) => void,
 ): Promise<void> {
   try {
     const { files, skippedDirs } = partitionDropItems(items);
     if (files.length === 0 && skippedDirs.length === 0) return;
     let toWrite: readonly File[] = files;
+    let replacing = false;
     const folderFailures: DropFailureLine[] = [];
     if (files.length > 0) {
       const listing = await fs.listDir(destDir, { withStats: false });
@@ -192,10 +199,12 @@ export async function dropForeignFilesInto(
         const choice = await confirmOverwrite(replaceable, canSkip);
         if (choice === 'cancel') return;
         if (choice === 'skip') toWrite = toWrite.filter((f) => !replaceKeys.has(sameNameKey(f.name)));
+        else replacing = true;
       }
     }
     const r = await performDrop(toWrite, destDir, fs);
     refreshDir(destDir);
+    if (!replacing && r.written.length > 0) onCreated?.([...new Set(r.written)]);
     if (skippedDirs.length > 0) {
       notify.error(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
     }

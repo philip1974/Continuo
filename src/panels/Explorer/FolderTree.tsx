@@ -86,6 +86,14 @@ import { announce } from '@/lib/announce';
 import { holdAutoSave } from '@/panels/Editor/autosave-hold';
 import { isRequestForRoot, onExplorerRequest } from './explorer-requests';
 import { useStableCallback } from '@/lib/use-stable-callback';
+import {
+  recordFileOp,
+  redoFileOp,
+  undoFileOp,
+  type CreatedEntry,
+  type FileUndoDeps,
+  type MovePair,
+} from './file-undo';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -125,6 +133,11 @@ interface MoveConfirmState {
   names: string[];
   destDir: string;
   logLabel: string;
+}
+
+/** 撤销新建前的确认(新建项被改过,见 file-undo.ts);resolve 存 ref。 */
+interface UndoCreateConfirmState {
+  paths: string[];
 }
 
 /** 外部 drop 遇同名文件的待确认(resolve 存 ref,见 confirmOverwrite)。 */
@@ -391,6 +404,19 @@ export function FolderTree({ root }: { root: string }) {
     [],
   );
   useEffect(() => () => overwriteResolveRef.current?.('cancel'), []);
+  // 撤销新建的确认(同 confirmOverwrite 的 Promise 模式;再来一次 / 卸载 → 上一次按取消)。
+  const [undoCreateConfirm, setUndoCreateConfirm] = useState<UndoCreateConfirmState | null>(null);
+  const undoCreateResolveRef = useRef<((ok: boolean) => void) | null>(null);
+  const confirmUndoCreate = useCallback(
+    (paths: string[]) =>
+      new Promise<boolean>((resolve) => {
+        undoCreateResolveRef.current?.(false);
+        undoCreateResolveRef.current = resolve;
+        setUndoCreateConfirm({ paths });
+      }),
+    [],
+  );
+  useEffect(() => () => undoCreateResolveRef.current?.(false), []);
   // 删除确认框打开期间暂停被删文件的自动保存:框里说未保存修改保留在编辑器、不写回磁盘,停留超过自动保存延迟
   // 也须如此(确认后由 runTrash 接着暂停到删除完成)。
   const trashConfirmPaths = trashConfirm?.paths;
@@ -644,8 +670,11 @@ export function FolderTree({ root }: { root: string }) {
       destDir: string,
       logLabel: string,
       failedKey: 'errors.folder.move_failed' | 'errors.folder.paste_failed',
-    ): Promise<void> =>
-      transferEntriesInto(
+    ): Promise<void> => {
+      // 实际成功的项入撤销栈(部分成功只记成功项,见 file-undo.ts)。
+      const moved: MovePair[] = [];
+      const copied: CreatedEntry[] = [];
+      return transferEntriesInto(
         kind,
         srcs,
         destDir,
@@ -653,7 +682,11 @@ export function FolderTree({ root }: { root: string }) {
           fs: coApi.fs,
           makeUniqueDestPicker,
           refreshDir: refreshParent,
-          onMoved: onPathMoved,
+          onMoved: (src, dest) => {
+            onPathMoved(src, dest);
+            moved.push({ from: src, to: dest });
+          },
+          onCopied: (src, dest) => copied.push({ path: dest, redo: { type: 'copy', src } }),
           root,
           onItemFailed: (src, code, message) => {
             console.warn(`[explorer] ${logLabel} failed`, src, code, message);
@@ -666,8 +699,21 @@ export function FolderTree({ root }: { root: string }) {
             notifyThrownError(err);
           },
         },
-      ),
+      ).then(() => {
+        recordFileOp(
+          root,
+          kind === 'move' ? { kind: 'move', pairs: moved } : { kind: 'create', entries: copied },
+          coApi.fs,
+        );
+      });
+    },
     [makeUniqueDestPicker, onPathMoved, refreshParent, root],
+  );
+  // 外部拖入写成的新文件入撤销栈(无法重做:内容未保留;选「替换」时 dropForeignFilesInto 不回报)。
+  const recordDropped = useCallback(
+    (paths: string[]) =>
+      recordFileOp(root, { kind: 'create', entries: paths.map((path) => ({ path, redo: null })) }, coApi.fs),
+    [root],
   );
 
   // 树内拖动移动(拖到 row / 空白 root)的入口:VSCode explorer.confirmDragAndDrop 开着就先确认(⌥ 拖复制本树不支持)。
@@ -761,6 +807,7 @@ export function FolderTree({ root }: { root: string }) {
               }
               // editor tab / 展开集合前缀改写 + 剪贴板剪除旧路径(目录 rename 时其下全部路径同步)
               onPathMoved(oldPath, r.newPath);
+              recordFileOp(root, { kind: 'move', pairs: [{ from: oldPath, to: r.newPath }] }, coApi.fs);
               // 焦点与选中留在改名后的项(VSCode):旧 id 随父目录刷新消失,不定位则库的 updateDomFocus 回落首项。
               // 失败分支不动:Enter 提交时焦点已还给原项(tree-config completeRenaming)。
               setPendingReveal({ path: r.newPath, focusRow: true, inputSeq: treeInputSeqRef.current });
@@ -778,7 +825,7 @@ export function FolderTree({ root }: { root: string }) {
         // 外部 OS 文件 drop 到具体 row → 走与容器 onDrop 同一套 performDrop
         onDropForeign: (dataTransfer, destDir) => {
           suppressNextDropScroll();
-          void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent, confirmOverwrite);
+          void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent, confirmOverwrite, recordDropped);
         },
         showHidden: () => showHiddenRef.current,
         expandedItems: treeExpandedItems,
@@ -794,6 +841,7 @@ export function FolderTree({ root }: { root: string }) {
       root,
       requestDragMove,
       confirmOverwrite,
+      recordDropped,
       setExpandedItems,
       scrollToItem,
       suppressNextDropScroll,
@@ -935,6 +983,19 @@ export function FolderTree({ root }: { root: string }) {
   // setExpandedItems 随展开集合换引用:effect 只在活动文件 / 开关 / 根变化时跟随,经 ref 取最新。
   const setExpandedItemsRef = useRef(setExpandedItems);
   setExpandedItemsRef.current = setExpandedItems;
+  // 逐级展开 path 的祖先目录(不含根),使其能出现在渲染列表里(跟随活动编辑器 / 撤销后定位共用)。
+  const expandAncestors = useCallback(
+    (path: string) => {
+      const ancestors: string[] = [];
+      for (let d = dirname(path); !isSameOrInsidePath(d, root); d = dirname(d)) ancestors.push(d);
+      if (ancestors.length === 0) return;
+      setExpandedItemsRef.current((old) => {
+        const missing = ancestors.filter((d) => !old.includes(d));
+        return missing.length === 0 ? old : [...old, ...missing.reverse()];
+      });
+    },
+    [root],
+  );
   useEffect(() => {
     if (!autoReveal || activeEditorPath === null) return;
     const path = activeEditorPath;
@@ -943,18 +1004,11 @@ export function FolderTree({ root }: { root: string }) {
     if (stripRootPrefix(root, path).split(/[\\/]/).some((seg) => AUTO_REVEAL_EXCLUDED_DIRS.has(seg))) return;
     const t = treeRef.current;
     if (t?.getState().selectedItems?.includes(path)) return;
-    const ancestors: string[] = [];
-    for (let d = dirname(path); !isSameOrInsidePath(d, root); d = dirname(d)) ancestors.push(d);
-    if (ancestors.length > 0) {
-      setExpandedItemsRef.current((old) => {
-        const missing = ancestors.filter((d) => !old.includes(d));
-        return missing.length === 0 ? old : [...old, ...missing.reverse()];
-      });
-    }
+    expandAncestors(path);
     setPendingReveal((prev) =>
       prev?.path === path ? prev : { path, focusRow: false, inputSeq: treeInputSeqRef.current },
     );
-  }, [activeEditorPath, autoReveal, root]);
+  }, [activeEditorPath, autoReveal, root, expandAncestors]);
 
   const treeApi = useMemo(() => ({ invalidateChildrenIds: refreshParent }), [refreshParent]);
   const mutateDeps = useMemo(() => ({ fs: coApi.fs }), []);
@@ -1088,6 +1142,51 @@ export function FolderTree({ root }: { root: string }) {
     [focusNeighborOf, root, runBatchTransfer, runTrash, tt],
   );
 
+  // 撤销 / 重做文件操作(键盘 mod+Z / mod+shift+Z 与命令 explorer.undo / explorer.redo 共用,见 file-undo.ts)。
+  // 撤销新建 = 移到废纸篓,走与删除同一流程(暂停自动保存、关 tab / 剪贴板 / 展开集合清理);路径移走走 onPathMoved。
+  const fileUndoDeps = useMemo<FileUndoDeps>(
+    () => ({
+      fs: coApi.fs,
+      trash: async (paths) => {
+        const release = holdAutoSave(paths);
+        const r = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved).finally(release);
+        return r.ok ? { removed: r.removed } : { removed: r.removed, failure: r.failures[0]! };
+      },
+      onMoved: onPathMoved,
+      refreshDir: refreshParent,
+      confirmUndoCreate,
+      hasUnsavedUnder: (paths) => countDirtyTabsUnder(useEditorStore.getState().tabs, paths) > 0,
+    }),
+    [mutateDeps, treeApi, onPathsRemoved, onPathMoved, refreshParent, confirmUndoCreate],
+  );
+  const runFileUndo = useCallback(
+    (isUndo: boolean) => {
+      void (async () => {
+        try {
+          const o = await (isUndo ? undoFileOp : redoFileOp)(root, fileUndoDeps);
+          if (o.status === 'done' && o.reveal !== null) {
+            // 撤销后选中并显示恢复的项(同改名后的定位;DOM 焦点已不在树里则不抢)。
+            expandAncestors(o.reveal);
+            setPendingReveal({ path: o.reveal, focusRow: true, inputSeq: treeInputSeqRef.current });
+          } else if (o.status === 'failed') {
+            notify.error(
+              t(isUndo ? 'panels.explorer.undo_failed' : 'panels.explorer.redo_failed', {
+                name: basenamePreserveTrailing(o.path),
+                message: localizeErrorByCode(o.code, o.message),
+              }),
+              { code: o.code, mirror: false },
+            );
+          }
+        } catch (err) {
+          notifyThrownError(err);
+        }
+      })();
+    },
+    [root, fileUndoDeps, expandAncestors],
+  );
+  const onUndo = useCallback(() => runFileUndo(true), [runFileUndo]);
+  const onRedo = useCallback(() => runFileUndo(false), [runFileUndo]);
+
   // 新建(VSCode 同款):成功 → 关输入框、展开父目录、新项选中并获得树焦点,文件随即在编辑器打开;
   // 失败(含同名冲突)→ 输入框与已输入的名字保留,下方内联显示本地化原因,可改名重试或 Esc 放弃。
   const submitCreate = async (name: string): Promise<boolean> => {
@@ -1104,6 +1203,7 @@ export function FolderTree({ root }: { root: string }) {
       return false;
     }
     setCreating(null);
+    recordFileOp(root, { kind: 'create', entries: [{ path: r.newPath, redo: { type } }] }, coApi.fs);
     if (parentDir !== root) {
       const parent = treeRef.current?.getItemInstance(parentDir);
       if (parent && !parent.isExpanded()) parent.expand();
@@ -1158,6 +1258,7 @@ export function FolderTree({ root }: { root: string }) {
   };
   // 命令「刷新资源管理器」(explorer-requests)用:订阅只随 root 重建,调用时取最新的 refreshAll。
   const refreshAllStable = useStableCallback(refreshAll);
+  const runFileUndoStable = useStableCallback(runFileUndo);
 
   // 列表为空时区分三态(VSCode 同款):读取失败(原因 + 重试)/ 加载中 / 空文件夹。读取失败时 loader 也缓存 [],
   // 靠 rootLoad 区分。
@@ -1234,12 +1335,14 @@ export function FolderTree({ root }: { root: string }) {
           treeRef.current?.collapseAll();
         } else if (request.kind === 'refresh') {
           refreshAllStable();
+        } else if (request.kind === 'undo' || request.kind === 'redo') {
+          runFileUndoStable(request.kind === 'undo');
         } else {
           setFocusPending(true);
         }
         return true;
       }),
-    [root, startCreateAtFocus, refreshAllStable],
+    [root, startCreateAtFocus, refreshAllStable, runFileUndoStable],
   );
 
   // 删除确认框文案(VSCode explorer.confirmDelete):单项按文件 / 文件夹区分,多项列出名字(最多 10 个)。
@@ -1346,6 +1449,39 @@ export function FolderTree({ root }: { root: string }) {
           close();
           void runBatchTransfer('move', pending.srcs, pending.destDir, pending.logLabel, 'errors.folder.move_failed');
         }}
+      />
+    );
+  };
+
+  // 撤销新建确认框:新建项在新建后被改过(或有未保存的编辑器),撤销会把它移到废纸篓。
+  const settleUndoCreate = (ok: boolean) => {
+    const resolve = undoCreateResolveRef.current;
+    undoCreateResolveRef.current = null;
+    setUndoCreateConfirm(null);
+    tree.updateDomFocus();
+    resolve?.(ok);
+  };
+  const renderUndoCreateConfirm = () => {
+    if (undoCreateConfirm === null) return null;
+    const names = undoCreateConfirm.paths.map(basenamePreserveTrailing);
+    return (
+      <ConfirmDialog
+        open
+        title={
+          names.length === 1
+            ? tt('panels.explorer.undo_create_confirm.single', { name: names[0]! })
+            : tt('panels.explorer.undo_create_confirm.multiple', { count: names.length })
+        }
+        description={
+          <>
+            {names.length > 1 && <ConfirmNameList names={names} />}
+            <p>{tt('panels.explorer.trash_confirm.detail')}</p>
+          </>
+        }
+        confirmLabel={tt('panels.explorer.ctx.trash')}
+        destructive
+        onCancel={() => settleUndoCreate(false)}
+        onConfirm={() => settleUndoCreate(true)}
       />
     );
   };
@@ -1468,7 +1604,7 @@ export function FolderTree({ root }: { root: string }) {
     // 拖拽态已在 handleDropCapture 复位;落点取其复位前存下的值(读后清空)
     const target = foreignDropTargetRef.current ?? resolveDropTarget(hoverTarget, root);
     foreignDropTargetRef.current = null;
-    await dropForeignFilesInto(e.dataTransfer.items, target, coApi.fs, refreshParent, confirmOverwrite);
+    await dropForeignFilesInto(e.dataTransfer.items, target, coApi.fs, refreshParent, confirmOverwrite, recordDropped);
   };
 
   return (
@@ -1538,6 +1674,8 @@ export function FolderTree({ root }: { root: string }) {
                   rootPath: root,
                   platform,
                   typeAhead: typeAheadRef.current,
+                  onUndo,
+                  onRedo,
                 });
               }}
               style={{
@@ -1587,6 +1725,7 @@ export function FolderTree({ root }: { root: string }) {
       {renderTrashConfirm()}
       {renderMoveConfirm()}
       {renderOverwriteConfirm()}
+      {renderUndoCreateConfirm()}
     </div>
   );
 }

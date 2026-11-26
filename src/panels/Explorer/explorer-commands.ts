@@ -46,6 +46,13 @@ function requestTreeAction(kind: 'collapseAll' | 'refresh'): void {
   if (useWorkspaceStore.getState().root) requestExplorer({ kind });
 }
 
+/** 撤销 / 重做文件操作:先显示侧栏(结果在树里可见;文件树未挂载时请求挂起到挂载后执行)。 */
+function requestFileUndo(kind: 'undo' | 'redo'): void {
+  if (!useWorkspaceStore.getState().root) return;
+  useLayoutUiStore.getState().setSidebarOpen(true);
+  requestExplorer({ kind });
+}
+
 function createInExplorer(type: 'file' | 'dir'): void {
   if (!useWorkspaceStore.getState().root) {
     showExplorer();
@@ -107,6 +114,24 @@ export function explorerCommandSpecs(): CommandSpec[] {
       category: 'Explorer',
       categoryKey: 'commands.explorer.category',
       fn: () => requestTreeAction('refresh'),
+    },
+    // 树内键位 mod+Z / mod+shift+Z(tree-keyboard.ts,只在树聚焦时生效)不经命令热键,命令无默认键 ——
+    // 全局 ⌘Z 归编辑器。BDD: src/__tests__/explorer-file-undo/
+    {
+      id: 'explorer.undo',
+      title: 'Undo File Operation',
+      titleKey: 'commands.explorer.undo.title',
+      category: 'Explorer',
+      categoryKey: 'commands.explorer.category',
+      fn: () => requestFileUndo('undo'),
+    },
+    {
+      id: 'explorer.redo',
+      title: 'Redo File Operation',
+      titleKey: 'commands.explorer.redo.title',
+      category: 'Explorer',
+      categoryKey: 'commands.explorer.category',
+      fn: () => requestFileUndo('redo'),
     },
     {
       id: 'workbench.action.closeFolder',

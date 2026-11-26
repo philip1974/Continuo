@@ -20,10 +20,14 @@ import type { Platform } from '@/plugins/command-palette/format-hotkey';
 import { getContextActionTargets, type ContextMenuActions } from './ContextMenu';
 import { dirname } from './path-utils';
 
-export type TreeKeyCommand = 'open' | 'trash' | 'copy' | 'cut' | 'paste';
+export type TreeKeyCommand = 'open' | 'trash' | 'copy' | 'cut' | 'paste' | 'undo' | 'redo';
 
 /** 剪切 / 复制 / 粘贴 / 重命名的树内键位(右键菜单右侧显示同一来源;树内键不经快捷键设置,不可改绑)。 */
 export const TREE_KEY_HOTKEYS = { cut: 'mod+x', copy: 'mod+c', paste: 'mod+v', rename: 'f2' } as const;
+
+/** 撤销 / 重做文件操作(VSCode explorer 同款):mod+Z 撤销;重做 mod+shift+Z,非 mac 另认 Ctrl+Y。 */
+export const TREE_UNDO_HOTKEY = 'mod+z';
+export const TREE_REDO_HOTKEY = 'mod+shift+z';
 
 /** 移到废纸篓的主键位:mac ⌘⌫(另认 Delete),其它 Delete。 */
 export function trashHotkey(platform: Platform): string {
@@ -32,7 +36,7 @@ export function trashHotkey(platform: Platform): string {
 
 /**
  * VSCode Explorer 键位:Enter 打开(文件)/ 切换展开(目录);Delete 移到废纸篓(mac 另有 ⌘⌫);
- * mod+C / mod+X / mod+V 复制 / 剪切 / 粘贴(mod = mac ⌘、其它 Ctrl)。
+ * mod+C / mod+X / mod+V 复制 / 剪切 / 粘贴(mod = mac ⌘、其它 Ctrl);mod+Z / mod+shift+Z(非 mac 另 Ctrl+Y)撤销 / 重做文件操作。
  */
 export function matchTreeKeyCommand(e: KeyboardEvent, platform: Platform): TreeKeyCommand | null {
   if (matchesHotkey('enter', e, platform)) return 'open';
@@ -41,6 +45,9 @@ export function matchTreeKeyCommand(e: KeyboardEvent, platform: Platform): TreeK
   if (matchesHotkey(TREE_KEY_HOTKEYS.copy, e, platform)) return 'copy';
   if (matchesHotkey(TREE_KEY_HOTKEYS.cut, e, platform)) return 'cut';
   if (matchesHotkey(TREE_KEY_HOTKEYS.paste, e, platform)) return 'paste';
+  if (matchesHotkey(TREE_UNDO_HOTKEY, e, platform)) return 'undo';
+  if (matchesHotkey(TREE_REDO_HOTKEY, e, platform)) return 'redo';
+  if (platform !== 'mac' && matchesHotkey('ctrl+y', e, platform)) return 'redo';
   return null;
 }
 
@@ -91,6 +98,9 @@ export interface TreeKeyContext {
   readonly openFile: (path: string) => void;
   readonly rootPath: string;
   readonly platform: Platform;
+  /** 撤销 / 重做文件操作(见 file-undo.ts);未提供则不处理这两个键。 */
+  readonly onUndo?: () => void;
+  readonly onRedo?: () => void;
   /** 键入跳转缓冲(调用方持有的可变对象)。 */
   readonly typeAhead: TypeAheadState;
   readonly now?: () => number;
@@ -207,12 +217,19 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
   const focused = renderedFocusedItem(tree, items);
   const command = matchTreeKeyCommand(e, ctx.platform);
   if (command !== null) {
-    if (rawFocused && !focused) return false;
     const consume = (): true => {
       e.preventDefault();
       e.stopPropagation();
       return true;
     };
+    // 撤销 / 重做不依赖焦点项(作用于本工作区的文件操作栈)
+    if (command === 'undo' || command === 'redo') {
+      const run = command === 'undo' ? ctx.onUndo : ctx.onRedo;
+      if (!run) return false;
+      run();
+      return consume();
+    }
+    if (rawFocused && !focused) return false;
     if (command === 'paste') {
       ctx.actions.onPaste(focusedTargetDir(tree, items, ctx.rootPath));
       return consume();

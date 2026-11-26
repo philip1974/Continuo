@@ -750,6 +750,12 @@
 - [`folder-tree-expanded-state.spec.tsx`](./explorer-expanded-state/folder-tree-expanded-state.spec.tsx)
 - [`path-gone-cleanup.spec.ts`](./explorer-expanded-state/path-gone-cleanup.spec.ts)
 
+## [explorer-file-undo(资源管理器文件操作撤销 / 重做)](./explorer-file-undo/README.md)
+
+- [`file-undo.spec.ts`](./explorer-file-undo/file-undo.spec.ts)
+- [`record-sources.spec.ts`](./explorer-file-undo/record-sources.spec.ts)
+- [`tree-keys.spec.ts`](./explorer-file-undo/tree-keys.spec.ts)
+
 ## [ExplorerHeader(FolderTree 顶部 Header)](./explorer-header/README.md)
 
 - [`explorer-header.spec.tsx`](./explorer-header/explorer-header.spec.tsx)
