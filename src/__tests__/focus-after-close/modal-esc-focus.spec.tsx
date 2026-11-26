@@ -105,6 +105,9 @@ describe('Modal 关闭时的焦点还原', () => {
         <button type="button">in</button>
       </Modal>,
     );
+    // 关闭前移走焦点的总是用户操作触发的代码(如命令面板 Enter 执行的命令);用户操作前程序抢走焦点会被 Modal 拉回
+    //(见 design-system-modal「打开后焦点被程序抢走」)。
+    fireEvent.keyDown(document.body, { key: 'Enter' });
     other.focus();
     rerender(
       <Modal visible={false}>

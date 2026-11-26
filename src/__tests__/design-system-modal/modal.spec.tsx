@@ -348,6 +348,98 @@ describe('Modal — Tab 循环', () => {
   });
 });
 
+describe('Modal — 打开后焦点被程序抢走 → 拉回初始焦点', () => {
+  // 资源管理器拖动移动确认框:headless-tree 在 drop 回调之后的定时器里轮询聚焦源行(晚于 Modal 的 rAF),
+  // 焦点回到树行 → Enter 展开背后的目录。用户操作(按键 / 点按)前焦点移出弹窗须拉回初始焦点。
+  const syncRaf = () =>
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+  const outsideButton = () => {
+    const b = document.createElement('button');
+    b.textContent = 'outside';
+    document.body.appendChild(b);
+    return b;
+  };
+
+  it('用户操作前焦点被移到弹窗外 → 拉回 [data-autofocus]', () => {
+    const raf = syncRaf();
+    const outside = outsideButton();
+    try {
+      render(
+        <Modal visible>
+          <button type="button">cancel</button>
+          <button type="button" data-autofocus>
+            ok
+          </button>
+        </Modal>,
+      );
+      const ok = document.querySelector<HTMLButtonElement>('[data-autofocus]')!;
+      expect(document.activeElement).toBe(ok);
+      outside.focus();
+      expect(document.activeElement).toBe(ok);
+    } finally {
+      raf.mockRestore();
+      outside.remove();
+    }
+  });
+
+  it('用户按键或点按之后,焦点移到弹窗外不再拉回', () => {
+    const raf = syncRaf();
+    const outside = outsideButton();
+    try {
+      render(
+        <Modal visible>
+          <button type="button" data-autofocus>
+            ok
+          </button>
+        </Modal>,
+      );
+      fireEvent.pointerDown(document.body);
+      outside.focus();
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      raf.mockRestore();
+      outside.remove();
+    }
+  });
+
+  it('焦点落到叠加弹出的另一个 Modal 里 → 不拉回', () => {
+    const raf = syncRaf();
+    try {
+      const { rerender } = render(
+        <>
+          <Modal visible>
+            <button type="button" data-autofocus>
+              first
+            </button>
+          </Modal>
+          <Modal visible={false}>
+            <button type="button">second</button>
+          </Modal>
+        </>,
+      );
+      rerender(
+        <>
+          <Modal visible>
+            <button type="button" data-autofocus>
+              first
+            </button>
+          </Modal>
+          <Modal visible>
+            <button type="button">second</button>
+          </Modal>
+        </>,
+      );
+      const second = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'second')!;
+      expect(document.activeElement).toBe(second);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+});
+
 describe('Modal — 焦点恢复', () => {
   it('卸载时把焦点还给 prevFocus', async () => {
     // 先在 body 放一个 focusable,模拟触发前的活跃元素

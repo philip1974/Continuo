@@ -34,6 +34,9 @@ Shift+Tab 在第一个上循环到最后一个;overlay click 调 onClose;关闭�
 
 - 挂载时:把当前 activeElement 存 prevFocus,raf 后聚焦第一个 focusable;
 - 没有 focusable → root.focus
+- 打开后、用户按键 / 点按之前,焦点被程序移到弹窗外(如资源管理器拖放后 headless-tree 在定时器里聚焦源行,
+  晚于 rAF)→ 拉回初始焦点(对齐 VSCode Dialog 焦点离开即拉回);用户操作之后不管;落到另一个 Modal
+  (叠加弹出)或本 Modal 不在栈顶时不管
 - 卸载时:把焦点还给 prevFocus
 
 ### Tab 循环

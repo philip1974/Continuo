@@ -119,14 +119,14 @@ export function Modal({
     if (content != null) modalContents.set(keyId, content);
     changeOpenModalCount(1);
 
-    const raf = requestAnimationFrame(() => {
+    // Continuo-local 微调(a11y A20):初始焦点优先落到调用方用 [data-autofocus] 显式标记的
+    // 可聚焦元素(如 ConfirmDialog 的确认按钮),找不到再回退第一个可聚焦元素(不忽略调用方意图、
+    // 一律聚焦 first)。用 data-autofocus 而非 React
+    // autoFocus:后者在 commit 期 imperatively 聚焦、不渲染 DOM 属性(无法在此查到),且会
+    // 污染 prevFocus 还原。
+    const focusInitial = () => {
       const root = contentRef.current;
       if (root == null) return;
-      // Continuo-local 微调(a11y A20):初始焦点优先落到调用方用 [data-autofocus] 显式标记的
-      // 可聚焦元素(如 ConfirmDialog 的确认按钮),找不到再回退第一个可聚焦元素(不忽略调用方意图、
-      // 一律聚焦 first)。用 data-autofocus 而非 React
-      // autoFocus:后者在 commit 期 imperatively 聚焦、不渲染 DOM 属性(无法在此查到),且会
-      // 污染 prevFocus 还原。
       const explicit = root.querySelector<HTMLElement>(
         '[data-autofocus]:not([disabled])',
       );
@@ -138,7 +138,23 @@ export function Modal({
       const first = focusables[0];
       if (first != null) first.focus();
       else root.focus();
-    });
+    };
+    const raf = requestAnimationFrame(focusInitial);
+
+    // 打开后、用户还没按键 / 点按之前,焦点被程序移出弹窗(如 headless-tree 拖放后在定时器里轮询聚焦源行,
+    // 晚于上面的 rAF)→ 拉回初始焦点(对齐 VSCode Dialog:焦点离开对话框即拉回)。只管用户操作前:之后
+    // 焦点去向以用户为准;落到另一个 Modal(叠加弹出,含其 commit 期 autoFocus)或本 Modal 已不在栈顶时不管。
+    let userActed = false;
+    const markUserActed = () => {
+      userActed = true;
+    };
+    const handleFocusIn = (e: FocusEvent) => {
+      if (userActed || modalKeyStack[modalKeyStack.length - 1] !== keyId) return;
+      const target = e.target as Element | null;
+      if (target == null || typeof target.closest !== 'function') return;
+      if (target.closest('.wm-modal-content') != null) return;
+      focusInitial();
+    };
 
     const handleKey = (e: globalThis.KeyboardEvent) => {
       // 只有栈顶(最后打开)的 Modal 处理键盘,叠加时背后的 Modal 不被连带 Esc 关闭。
@@ -176,10 +192,16 @@ export function Modal({
     };
 
     doc.addEventListener('keydown', handleKey);
+    doc.addEventListener('focusin', handleFocusIn, true);
+    doc.addEventListener('keydown', markUserActed, true);
+    doc.addEventListener('pointerdown', markUserActed, true);
 
     return () => {
       cancelAnimationFrame(raf);
       doc.removeEventListener('keydown', handleKey);
+      doc.removeEventListener('focusin', handleFocusIn, true);
+      doc.removeEventListener('keydown', markUserActed, true);
+      doc.removeEventListener('pointerdown', markUserActed, true);
       const idx = modalKeyStack.lastIndexOf(keyId);
       if (idx >= 0) modalKeyStack.splice(idx, 1);
       modalContents.delete(keyId);

@@ -100,3 +100,53 @@ test('树内拖动移动先确认:取消不动;勾「不再询问」后移动,�
   }).toPass({ timeout: 5_000 });
   await expect(window.getByRole('dialog')).toHaveCount(0);
 });
+
+// headless-tree 在 drop 回调之后的定时器里轮询聚焦源行(≤500ms),此前把焦点从刚弹出的确认框抢回树行:
+// Enter 展开背后的目录,要 Tab 才进对话框。VSCode:对话框弹出即聚焦主按钮。
+const TREE_FOCUS_WRITEBACK_MS = 700;
+
+test('树内拖动的移动确认框:弹出即聚焦「移动」(树的焦点回写之后仍在),Enter 执行移动', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const readme = path.join(workspaceRoot, 'README.md');
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(rowOf(window, readme)).toBeVisible({ timeout: 10_000 });
+
+  await rowOf(window, readme).dragTo(src);
+  const dialog = window.getByRole('dialog');
+  const move = dialog.getByRole('button', { name: MOVE });
+  await expect(move).toBeFocused();
+  await window.waitForTimeout(TREE_FOCUS_WRITEBACK_MS);
+  await expect(move).toBeFocused();
+  await window.keyboard.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => exists(path.join(workspaceRoot, 'src', 'README.md'))).toBe(true);
+  expect(await exists(readme)).toBe(false);
+});
+
+test('Finder 拖到目录行上遇同名:询问框弹出即聚焦初始按钮(取消),树的焦点回写之后仍在对话框里', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const srcDir = path.join(workspaceRoot, 'src');
+  const a = path.join(srcDir, 'a.ts');
+  await expect(rowOf(window, srcDir)).toBeVisible({ timeout: 10_000 });
+  await window.evaluate((title) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['dropped'], 'a.ts'));
+    const row = document.querySelector(`[role=treeitem][title="${title}"]`)!;
+    for (const type of ['dragenter', 'dragover', 'drop']) {
+      row.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }
+  }, srcDir);
+  const dialog = window.getByRole('alertdialog');
+  await expect(dialog).toContainText(/[“「]a\.ts[”」]/);
+  const cancel = dialog.getByRole('button', { name: CANCEL });
+  await expect(cancel).toBeFocused();
+  await window.waitForTimeout(TREE_FOCUS_WRITEBACK_MS);
+  await expect(cancel).toBeFocused();
+  await window.keyboard.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  expect(await readFile(a, 'utf8')).toBe('export const a = 1;\n');
+});
