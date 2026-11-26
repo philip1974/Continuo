@@ -7,20 +7,21 @@
 //   - settings-panel(panel UI)
 //   - settings-toggle(命令 + helper toggle 行为)
 
-import { lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
-import { lazyPanel } from '@/lib/lazy-panel';
+import { lazyPanel, preloadableLazy } from '@/lib/lazy-panel';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { loadCategoryTabContent } from './lazy-category-tab';
 
 // perf:设置首开时外壳 chunk 与默认分类 tab 的 CategoryTabContent chunk 同时发起,不再「外壳加载渲染后才拉
 // 分类内容」两级瀑布。分类预取 fire-and-forget:不阻塞外壳,失败吞掉(分类 tab 自己的 lazy 照常重新 import)。
-const SettingsPanel = lazy(() => {
+const settingsPanel = preloadableLazy(() => {
   loadCategoryTabContent().catch(() => {});
   return import('@/plugins/settings/SettingsPanel').then((m) => ({
     default: m.SettingsPanel,
   }));
 });
+/** 启动空闲时预取(main-app):冷启动 ⌘, 后搜索框同步挂载,立刻键入不丢字。BDD: src/__tests__/open-panel-focus/ */
+export const preloadSettingsPanel = settingsPanel.preload;
 
 export default class SettingsPanelPlugin extends Plugin {
   onload(): void {
@@ -28,7 +29,7 @@ export default class SettingsPanelPlugin extends Plugin {
       type: 'settings',
       title: 'Settings',
       titleKey: 'panels.settings.title',
-      factory: lazyPanel(SettingsPanel),
+      factory: lazyPanel(settingsPanel.Component),
     });
 
     this.addCommand({

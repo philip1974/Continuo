@@ -2,14 +2,17 @@
 // ⇧⌘F(打开 / 激活面板并聚焦查询框,编辑器单行选区带入)、F4 / ⇧F4(下一个 / 上一个搜索结果)。
 // 面板走主窗落点(openOrFocusPanel 不给 position,见 popout-open-target)。BDD: src/__tests__/workspace-search/
 
-import { lazy } from 'react';
 import { Plugin } from '@/plugins/Plugin';
-import { lazyPanel } from '@/lib/lazy-panel';
+import { lazyPanel, preloadableLazy } from '@/lib/lazy-panel';
 import { openOrFocusPanel } from '@/shell/dock/dock-api-ref';
 import { focusNextSearchResult, useSearchStore } from '@/panels/Search/search-store';
 import { editorSelectionSeed } from '@/panels/Search/editor-selection-seed';
 
-const SearchPanel = lazy(() => import('@/panels/Search/SearchPanel').then((m) => ({ default: m.SearchPanel })));
+const searchPanel = preloadableLazy(() =>
+  import('@/panels/Search/SearchPanel').then((m) => ({ default: m.SearchPanel })),
+);
+/** 启动空闲时预取(main-app):冷启动 ⇧⌘F 后搜索框同步挂载,立刻键入不丢字。BDD: src/__tests__/open-panel-focus/ */
+export const preloadSearchPanel = searchPanel.preload;
 
 export const SEARCH_PANEL_TYPE = 'search';
 
@@ -19,7 +22,7 @@ export default class SearchPlugin extends Plugin {
       type: SEARCH_PANEL_TYPE,
       title: 'Search',
       titleKey: 'panels.search.title',
-      factory: lazyPanel(SearchPanel),
+      factory: lazyPanel(searchPanel.Component),
     });
     this.addCommand({
       id: 'workbench.action.findInFiles',

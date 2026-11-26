@@ -10,16 +10,16 @@ import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content
 // 没有则退到第一个可 Tab 到的控件(Editor 的 tab 行按钮在编辑区之前,故两轮查找)。
 const TABBABLE_SELECTOR =
   'button:not([disabled]), a[href], select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-// 都没有(空编辑器组:关光 tab 后只剩 Welcome)→ 面板根本身(只经脚本聚焦的 tabIndex=-1 落点)。VSCode:F6 / 点 tab
-// 落到空编辑器组,不跳过编辑区。
-const ROOT_FALLBACK_SELECTOR = '[data-editor-panel-root], :scope > [tabindex="-1"]';
+// 都没有(空编辑器组:关光 tab 后只剩 Welcome / 没有控件的面板如空输出面板)→ 面板根本身(只经脚本聚焦的
+// tabIndex=-1 落点,`data-panel-focus-root` 标记)。VSCode:F6 / 点 tab 落到空编辑器组,不跳过编辑区。
+const ROOT_FALLBACK_SELECTOR = '[data-editor-panel-root], [data-panel-focus-root], :scope > [tabindex="-1"]';
 
 /**
  * 把焦点交给该面板内容:终端走注册的 focus 句柄(xterm 隐藏 textarea);其它面板在内容 DOM 里找可编辑元素 /
- * 首个可 Tab 控件,再退到面板根(tabIndex=-1)。都找不到时不动焦点。
+ * 首个可 Tab 控件,再退到面板根(tabIndex=-1)。都找不到时不动焦点。返回是否找到了落点。
  */
-export function focusPanelContent(api: DockviewPanelApi): void {
-  if (focusTerminalPanel(api.id)) return;
+export function focusPanelContent(api: DockviewPanelApi): boolean {
+  if (focusTerminalPanel(api.id)) return true;
   let content: HTMLElement | undefined;
   for (const panel of api.group.panels) {
     if (panel.id === api.id) {
@@ -27,7 +27,7 @@ export function focusPanelContent(api: DockviewPanelApi): void {
       break;
     }
   }
-  if (!content) return;
+  if (!content) return false;
   // 编辑器面板没有可编辑区(空编辑器组 / 无法编辑的文件视图)→ 落到面板根,不落到 Welcome 的「打开文件夹」等按钮
   // (VSCode:焦点进空编辑器组,水印入口不抢焦点,Tab 再进入)。
   const target =
@@ -35,7 +35,44 @@ export function focusPanelContent(api: DockviewPanelApi): void {
     content.querySelector<HTMLElement>('[data-editor-panel-root]') ??
     content.querySelector<HTMLElement>(TABBABLE_SELECTOR) ??
     content.querySelector<HTMLElement>(ROOT_FALLBACK_SELECTOR);
-  if (target) focusContentTarget(target);
+  if (!target) return false;
+  focusContentTarget(target);
+  return true;
+}
+
+// 新建面板等内容挂载的上限:lazy chunk 加载 + React Suspense 揭示通常远小于此;超时即放弃,不在很久以后突然抢焦点。
+const MOUNT_FOCUS_TIMEOUT_MS = 3000;
+
+/**
+ * 用户发起的打开 / 显示面板后把焦点交给面板内容(VSCode openView(id, focus=true))。微任务里先试一次(激活已有面板:
+ * 内容已在);新建面板的内容由 React 稍后渲染进 dockview 内容元素(lazy 面板还要等 chunk 与 Suspense 揭示)→ 尚无落点时
+ * 观察内容 DOM,出现落点再聚焦。焦点已在内容里(面板自己 autoFocus / requestFocus 到特定控件)→ 不再移动。
+ * 放弃:stillWanted() 不再成立(用户激活了别的面板)、等待期间用户按下指针、超时。只给用户入口用 —— 后台 / agent
+ * 建面板(DockReconciler、会话恢复)不经这里,不抢焦点。
+ */
+export function focusPanelContentWhenReady(panel: IDockviewPanel, stillWanted: () => boolean): void {
+  // true = 结束(已聚焦 / 不再需要);false = 还没有落点,继续等。
+  const attempt = (): boolean => {
+    if (!stillWanted()) return true;
+    const content = panel.view.content.element;
+    if (content.contains(content.ownerDocument.activeElement)) return true;
+    return focusPanelContent(panel.api);
+  };
+  queueMicrotask(() => {
+    if (attempt()) return;
+    const doc = panel.view.content.element.ownerDocument;
+    const stop = (): void => {
+      observer.disconnect();
+      clearTimeout(timer);
+      doc.removeEventListener('pointerdown', stop, true);
+    };
+    const observer = new MutationObserver(() => {
+      if (attempt()) stop();
+    });
+    observer.observe(panel.view.content.element, { childList: true, subtree: true });
+    const timer = setTimeout(stop, MOUNT_FOCUS_TIMEOUT_MS);
+    doc.addEventListener('pointerdown', stop, true);
+  });
 }
 
 /**

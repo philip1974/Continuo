@@ -1181,6 +1181,11 @@
 
 - [`open-failed-toast.spec.ts`](./open-failed-toast/open-failed-toast.spec.ts)
 
+## [open-panel-focus(用户打开 / 显示面板后焦点进面板)](./open-panel-focus/README.md)
+
+- [`open-panel-focus.spec.tsx`](./open-panel-focus/open-panel-focus.spec.tsx)
+- [`panel-chunk-preload.spec.tsx`](./open-panel-focus/panel-chunk-preload.spec.tsx)
+
 ## [path-cross](./path-cross/)
 
 - [`path-cross.spec.ts`](./path-cross/path-cross.spec.ts)

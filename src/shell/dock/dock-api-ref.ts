@@ -6,7 +6,7 @@
 import type { AddPanelOptions, DockviewApi, IDockviewPanel } from 'dockview-react';
 import { activateDockPanel } from './wrap-panel-close';
 import { mainWindowAddPosition } from './group-mru';
-import { focusDockPanelSoon } from './panel-focus';
+import { focusPanelContentWhenReady } from './panel-focus';
 import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 let apiRef: DockviewApi | null = null;
@@ -103,15 +103,29 @@ export function openOrFocusPanel(
 }
 
 /**
- * 激活一个已存在的面板,并让它出现在用户眼前:在 popout 子窗里 → 聚焦子窗(dockview 只在活动组变化时 focus 子窗,
- * 子窗组本就是活动组时不会)并把焦点交给面板内容。VSCode:打开已在辅助窗口里的编辑器 → 在其所在窗口激活并聚焦该窗口。
+ * 用户入口激活一个已存在的面板,并让它出现在用户眼前、接过键盘焦点:在 popout 子窗里 → 先聚焦子窗(dockview 只在活动组
+ * 变化时 focus 子窗,子窗组本就是活动组时不会);随后把焦点交给面板内容(⌘, 重新激活后台 tab 里的设置 → 搜索框)。
+ * VSCode:openView(id, focus=true) / 打开已在辅助窗口里的编辑器 → 在其所在窗口激活并聚焦。BDD: src/__tests__/open-panel-focus/
  */
 export function revealDockPanel(api: Pick<DockviewApi, 'activePanel'>, panel: IDockviewPanel): void {
   activateDockPanel(panel);
   const location = panel.api.location;
-  if (location?.type !== 'popout') return;
-  location.getWindow().focus();
-  focusDockPanelSoon(panel, () => api.activePanel === panel);
+  if (location?.type === 'popout') location.getWindow().focus();
+  focusPanelContentWhenReady(panel, () => api.activePanel === panel);
+}
+
+/**
+ * 用户入口新建面板并让它接过键盘焦点(内容挂载后,见 focusPanelContentWhenReady);返回新面板。
+ * 只给用户发起的入口(⌘, / ⇧⌘F / dock「⋯」/ 查看:显示输出 / 插件 app.dock.openPanel)—— 后台 / agent 建面板
+ *(DockReconciler 建终端、会话恢复)直接 api.addPanel,不抢焦点。BDD: src/__tests__/open-panel-focus/
+ */
+export function addPanelAndFocus(
+  api: Pick<DockviewApi, 'addPanel' | 'activePanel'>,
+  options: AddPanelOptions,
+): IDockviewPanel {
+  const panel = api.addPanel(options);
+  focusPanelContentWhenReady(panel, () => api.activePanel === panel);
+  return panel;
 }
 
 /**
@@ -134,7 +148,7 @@ export function openOrFocusPanelNow(
     return;
   }
   const target = position ?? mainWindowAddPosition(api);
-  api.addPanel({
+  addPanelAndFocus(api, {
     id,
     component,
     title,

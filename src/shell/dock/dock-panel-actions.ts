@@ -8,7 +8,7 @@ import { coApp } from '@/plugins/co-app';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { notify } from '@/notifications/notify';
 import { t, tWithFallback } from '@/i18n';
-import { getDockApi, revealDockPanel, runWhenDockLayoutReady } from './dock-api-ref';
+import { addPanelAndFocus, getDockApi, revealDockPanel, runWhenDockLayoutReady } from './dock-api-ref';
 import { mainWindowAddPosition } from './group-mru';
 import { focusDockPanelSoon } from './panel-focus';
 import { resetDockLayout } from './layout.default';
@@ -50,7 +50,10 @@ export function popoutPanel(api: DockviewApi, panel: IDockviewPanel): void {
     }, onFailed);
 }
 
-/** 显示某类面板:已有 → 在其所在窗口激活;没有 → 新建(主窗落点,同 ⌘, / app.dock.openPanel)。类型未注册 → 无操作。 */
+/**
+ * 显示某类面板:已有 → 在其所在窗口激活;没有 → 新建(主窗落点,同 ⌘, / app.dock.openPanel)。两者都把焦点交给面板内容
+ *(VSCode openView(id, focus=true);BDD: open-panel-focus)。类型未注册 → 无操作。
+ */
 export function showPanelOfType(type: string): void {
   runWhenDockLayoutReady((api) => {
     const existing = api.panels.find((p) => p.view.contentComponent === type);
@@ -62,7 +65,7 @@ export function showPanelOfType(type: string): void {
     if (!spec) return;
     const position = mainWindowAddPosition(api);
     try {
-      api.addPanel({
+      addPanelAndFocus(api, {
         id: spec.multiInstance === true ? nextPanelId(type, (id) => api.getPanel(id) != null) : type,
         component: type,
         title: tWithFallback(spec.titleKey, spec.title),

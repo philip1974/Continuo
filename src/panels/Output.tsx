@@ -9,7 +9,8 @@ export function Output() {
   const t = useT();
   return (
     // 空态与 Debug 等相邻面板一致(design EmptyState);将来有写入方时日志区再用等宽字。
-    <div className="flex h-full w-full overflow-auto">
+    // 没有任何控件:根是打开 / 显示输出后的焦点落点(只经脚本聚焦,不进 Tab 顺序;BDD: open-panel-focus)。
+    <div tabIndex={-1} data-panel-focus-root="" className="flex h-full w-full overflow-auto outline-none">
       <EmptyState>{t('panels.output.empty')}</EmptyState>
     </div>
   );

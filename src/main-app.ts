@@ -9,6 +9,8 @@ import { focusActiveEditorAfterRestore } from './shell/dock/restore-focus';
 import { reconcileEditorGroupsAfterRestore } from './shell/dock/editor-groups-dock-sync';
 import { consumeStartupQuery } from './lib/initial-workspace';
 import { bootCorePlugins } from './core-plugins';
+import { preloadSearchPanel } from './core-plugins/SearchPlugin';
+import { preloadSettingsPanel } from './core-plugins/SettingsPanelPlugin';
 import { coApp } from './plugins/co-app';
 import { wirePluginDataInvalidation } from './plugins/PluginDataStore';
 import { startPluginMcpInvokeBridge } from './plugins/plugin-mcp-invoke-bridge';
@@ -293,6 +295,15 @@ export async function init(): Promise<void> {
   // (Phase-5:与 createUserTerminal 共用 preloadTerminalPanelChunk,specifier 与 React.lazy
   //  逐字符一致才能去重;此前这里用 '@/panels/Terminal' index 经共享模块去重,统一为精确入口。)
   watchTerminalIntent(useTerminalStore, preloadTerminalPanelChunk);
+
+  // 启动后空闲时预取 ⇧⌘F / ⌘, 的面板 chunk(各 5–7KB):冷启动第一次按下后面板同步挂载、搜索框即刻获焦,紧接着键入
+  // 不丢字(未预取时 React.lazy 挂起约 300ms 才揭示内容,其间焦点在 body)。与面板 lazy 共用加载器;失败吞掉
+  //(用户真触发时 lazy 再试)。只是提前量优化:没有 requestIdleCallback 的环境(jsdom 单测)跳过。
+  // BDD: src/__tests__/open-panel-focus/
+  globalThis.requestIdleCallback?.(() => {
+    preloadSearchPanel().catch(() => {});
+    preloadSettingsPanel().catch(() => {});
+  });
 
   if (window.__continuoE2E === true) {
     window.__continuoTest = {

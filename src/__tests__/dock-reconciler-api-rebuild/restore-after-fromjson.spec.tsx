@@ -16,7 +16,10 @@ import { makeSession } from '../dock-reconciler-windowid-filter/fixtures';
 interface FakePanel {
   id: string;
   params: unknown;
+  // 用户入口新建 / 激活面板后把焦点交给内容(addPanelAndFocus / revealDockPanel)要读的最小形态
+  view: { content: { element: HTMLElement } };
   api: {
+    group: { panels: FakePanel[] };
     id: string;
     title: string;
     setActive: () => void;
@@ -58,7 +61,9 @@ vi.mock('dockview-react', () => ({
           const p: FakePanel = {
             id: opts.id,
             params: opts.params,
+            view: { content: { element: document.createElement('div') } },
             api: {
+              group: { panels },
               id: opts.id,
               title: opts.title ?? opts.id,
               // 主窗(grid)面板:DockShell 按主窗内面板数判空(isMainWindowDockEmpty)。

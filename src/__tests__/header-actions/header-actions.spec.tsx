@@ -39,7 +39,8 @@ function makeProps(over: {
   group?: TestProps['group'];
 } = {}): TestProps {
   const containerApi: FakeApi = {
-    addPanel: vi.fn(),
+    // 真实 addPanel 返回新面板(addPanelAndFocus 据此判断它是否仍是活动面板)
+    addPanel: vi.fn(() => ({})),
     getPanel: vi.fn(() => undefined),
     // addPopoutGroup 真实返回 Promise<boolean>(A50:调用点 .catch 失败反馈),默认 resolve。
     addPopoutGroup: vi.fn(() => Promise.resolve(true)),

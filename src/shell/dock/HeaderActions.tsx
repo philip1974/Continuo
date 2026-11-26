@@ -7,7 +7,7 @@ import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
-import { openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
+import { addPanelAndFocus, openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
 import { nextPanelId, popoutPanel } from '@/shell/dock/dock-panel-actions';
 import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
@@ -50,7 +50,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   // 键位提示:改键 / 命令注册变化后跟随
   const overrides = useKeybindingsStore((s) => s.overrides);
   useRegistry(coApp.commands);
-  // 成功新建面板时只关菜单(新面板 / 终端接管焦点);失败分支 closeAndRestore,焦点回到触发按钮而非 body。
+  // 成功新建面板时只关菜单:新面板 / 终端接管焦点(addPanelAndFocus / openOrFocusPanelNow 在内容挂载后交焦点,
+  // createUserTerminal 经 setPendingFocus;BDD: open-panel-focus);失败分支 closeAndRestore,焦点回到触发按钮而非 body。
   const addPanel = useCallback(
     async (
       key: string,
@@ -73,7 +74,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
       try {
         const position = { referenceGroup: group };
         if (multiInstance) {
-          containerApi.addPanel({
+          addPanelAndFocus(containerApi, {
             id: nextPanelId(key, (id) => containerApi.getPanel(id) != null),
             component: key,
             title: label,
