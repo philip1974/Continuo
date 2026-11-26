@@ -63,6 +63,21 @@ describe('charCount', () => {
     expect(charCount('hello')).toBe(5);
     expect(charCount('a\nb')).toBe(3);
   });
+  // 与编辑器(CodeMirror doc.length)一致:CodeMirror 按 /\r\n?|\n/ 切行,每个换行(含 \r\n)在文档里只占 1 个字符
+  it('Windows CRLF 计 1 个字符(crlf 文件不再多算 \r)', () => {
+    expect(charCount('a\r\nb\r\nc\r\n')).toBe(6);
+    expect(charCount('\r\n')).toBe(1);
+  });
+  it('孤立 \r 仍计 1 个字符(它本身就是一个换行)', () => {
+    expect(charCount('a\rb')).toBe(3);
+    expect(charCount('a\r\rb')).toBe(4);
+  });
+  it('与 CodeMirror 打开同一文本后的 doc.length 逐一相等(编辑器里的字符数)', () => {
+    const samples = ['', 'a', 'a\n', '\n\n', 'a\r\nb\r\n', 'a\rb', 'a\r\n\rb\n', '\r', '\r\n', '\r\r\n\n', '🌍\r\n中文'];
+    for (const s of samples) {
+      expect(charCount(s), JSON.stringify(s)).toBe(EditorState.create({ doc: s }).doc.length);
+    }
+  });
 });
 
 describe('perf P7 · computeTextStats 单遍统计', () => {
@@ -93,7 +108,7 @@ describe('perf P7 · computeTextStats 单遍统计', () => {
       const r = computeTextStats(s);
       expect(r.lines).toBe(oldLines(s));
       expect(r.words).toBe(oldWords(s));
-      expect(r.chars).toBe(s.length);
+      expect(r.chars).toBe(s.replace(/\r\n/g, '\n').length);
     }
   });
 });

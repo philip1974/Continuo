@@ -21,18 +21,24 @@ const EMPTY_TEXT_STATS: TextStats = { lines: 1, words: 0, chars: 0 };
  * - lines:换行数 + 1,与编辑器(CodeMirror doc.lines,按 /\r\n?|\n/ 切行)显示的行数一致 —— 空串 1 行、
  *   尾部换行算下一空行;\r\n 计 1 个换行,孤立 \r 也计换行。
  * - words:trim 后按 \s+ 切的段数 = 极大非空白连续段数(首尾空白不计)。
- * - chars:s.length。
+ * - chars:与编辑器(CodeMirror doc.length)一致 —— 每个换行在文档里只占 1 个字符:\r\n 计 1(不把 \r 多算),
+ *   孤立 \r / \n 各计 1;其余按 UTF-16 code unit(s.length 口径)。
  */
 export function computeTextStats(s: string): TextStats {
   const len = s.length;
   if (len === 0) return EMPTY_TEXT_STATS;
   let lines = 1; // 至少 1 行;尾部换行算下一行起点(空行)
+  let crlf = 0; // \r\n 对数:每对在编辑器里只占 1 个字符
   let words = 0;
   let inWord = false;
   for (let i = 0; i < len; i++) {
     const c = s.charCodeAt(i);
     // \n;或不跟 \n 的 \r(\r\n 由其中的 \n 计)
-    if (c === 0x0a || (c === 0x0d && s.charCodeAt(i + 1) !== 0x0a)) lines++;
+    if (c === 0x0a) lines++;
+    else if (c === 0x0d) {
+      if (s.charCodeAt(i + 1) === 0x0a) crlf++;
+      else lines++;
+    }
     if (isEcmaWhitespaceCode(c)) {
       inWord = false;
     } else if (!inWord) {
@@ -40,5 +46,5 @@ export function computeTextStats(s: string): TextStats {
       inWord = true;
     }
   }
-  return { lines, words, chars: len };
+  return { lines, words, chars: len - crlf };
 }
