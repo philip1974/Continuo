@@ -738,6 +738,7 @@ export const zh: Record<TranslationKey, string> = {
   'shell.tab.exit_zoom': '退出缩放',
   'shell.tab.close': '关闭 {title}',
   'shell.tab.editor_tablist': '编辑器标签',
+  'shell.tab.editor_tablist_group': '编辑器标签，编辑器组 {n}',
   'shell.tab.dock_tablist': '面板标签',
   // tab 右键菜单(VSCode 编辑器标签右键菜单)。
   'shell.tab.ctx.close': '关闭',

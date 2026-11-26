@@ -18,6 +18,7 @@ import {
   type EditorTab,
 } from '@/stores/editor.store';
 import { useEditorGroupId } from './editor-group-context';
+import { useEditorGroupNumber } from './editor-group-number';
 import { splitEditor } from './editor-groups-actions';
 import { useT } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
@@ -272,6 +273,8 @@ export const EditorHeader = memo(function EditorHeader({
   const activeTabId = useEditorStore((s) => groupActiveTabIdOf(s, groupId));
   // 本组不是活动编辑器组 → 活动 tab 用 unfocused 样式(VSCode tab.unfocusedActive*;单组时恒为活动组)
   const unfocused = useEditorStore((s) => s.activeGroupId !== groupId);
+  // 多个编辑器组时 tab 列表名称带组号(与编辑区名称、dock 标题同一来源;VSCode「…, Editor Group N」)。
+  const groupNumber = useEditorGroupNumber(groupId);
   const storeSwitchTab = useEditorStore((s) => s.switchTab);
   const switchTab = useCallback((id: string) => storeSwitchTab(id, { groupId }), [storeSwitchTab, groupId]);
   // active tab 的派生 primitive,供右侧 action 区(打磨 R23/R45 + 性能 P14)。旧实现每次
@@ -363,7 +366,11 @@ export const EditorHeader = memo(function EditorHeader({
       {/* a11y(A107):给 tablist 注入本地化组名(design 层无 i18n)。 */}
       <TabNav
         className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]"
-        ariaLabel={t('shell.tab.editor_tablist')}
+        ariaLabel={
+          groupNumber === undefined
+            ? t('shell.tab.editor_tablist')
+            : t('shell.tab.editor_tablist_group', { n: groupNumber })
+        }
         unfocused={unfocused}
       >
         {tabsChrome.map((tab, i) => {

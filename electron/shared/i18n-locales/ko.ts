@@ -741,6 +741,7 @@ export const ko: Record<TranslationKey, string> = {
   'shell.tab.exit_zoom': '확대 종료',
   'shell.tab.close': '{title} 닫기',
   'shell.tab.editor_tablist': '편집기 탭',
+  'shell.tab.editor_tablist_group': '편집기 탭, 편집기 그룹 {n}',
   'shell.tab.dock_tablist': '패널 탭',
   // 탭 컨텍스트 메뉴(VSCode 편집기 탭 컨텍스트 메뉴).
   'shell.tab.ctx.close': '닫기',

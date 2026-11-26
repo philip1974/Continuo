@@ -773,6 +773,7 @@ export const en = {
   'shell.tab.close': 'Close {title}',
   // a11y(A107):accessible name for the editor tablist (role=tablist group name).
   'shell.tab.editor_tablist': 'Editor tabs',
+  'shell.tab.editor_tablist_group': 'Editor tabs, Editor Group {n}',
   // a11y(A121):accessible name applied to dockview's tab-strip container (role=tablist).
   'shell.tab.dock_tablist': 'Panel tabs',
   // Tab context menu (VSCode editor tab context menu).

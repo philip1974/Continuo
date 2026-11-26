@@ -8,6 +8,8 @@ import {
 } from '../../stores/editor.store';
 import { coApp } from '../../plugins/co-app';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
+import { publishEditorGroupNumbers } from '../../panels/Editor/editor-group-number';
+import { getLocale, notifyLocaleChange, setLocale } from '../../i18n';
 
 function tab(over: Partial<EditorTab>): EditorTab {
   return {
@@ -54,6 +56,41 @@ describe('EditorHeader — tab 数量', () => {
     expect(container.textContent).toContain('x.md');
     // a11y(A107):tablist 有本地化可访问名(默认 locale=zh → 「编辑器标签」)。
     expect((tablist!.getAttribute('aria-label') ?? '').length).toBeGreaterThan(0);
+  });
+
+  // 多个编辑器组(VSCode「…, Editor Group N」):tab 列表名称与编辑区名称、dock 标题同一来源的组号;单组不带。
+  it('多个编辑器组 → tablist 名称带组号;回到单组不带(三语)', () => {
+    const t = tab({ id: '/x.md', filePath: '/x.md' });
+    useEditorStore.setState({ tabs: [t], activeTabId: t.id });
+    const original = getLocale();
+    try {
+      act(() => {
+        setLocale('zh');
+        notifyLocaleChange();
+        publishEditorGroupNumbers(new Map([['editor', 2], ['editor:2', 1]]));
+      });
+      const { container } = render(<EditorHeader onCloseRequest={vi.fn()} />);
+      const label = () => container.querySelector('[role=tablist]')!.getAttribute('aria-label');
+      expect(label()).toBe('编辑器标签，编辑器组 2');
+      act(() => {
+        setLocale('en');
+        notifyLocaleChange();
+      });
+      expect(label()).toBe('Editor tabs, Editor Group 2');
+      act(() => {
+        setLocale('ko');
+        notifyLocaleChange();
+      });
+      expect(label()).toBe('편집기 탭, 편집기 그룹 2');
+      act(() => publishEditorGroupNumbers(new Map()));
+      expect(label()).toBe('편집기 탭');
+    } finally {
+      act(() => {
+        publishEditorGroupNumbers(new Map());
+        setLocale(original);
+        notifyLocaleChange();
+      });
+    }
   });
 
   it('tabs=2 → TabNav 列出每个 basename', () => {

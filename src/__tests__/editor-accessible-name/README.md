@@ -13,7 +13,7 @@ VSCode 编辑器文本区名称是「<文件名>, Editor Group N」(多组时);C
 - 多个编辑器组(所在窗口 ≥ 2 组;`useDockLocaleSync` 按 `editorGroupNumbers` 发布,`editor-group-number.ts`):名称
   「<basename>，编辑器组 N」(en `<name>, Editor Group N`,ko `<name>, 편집기 그룹 N`),无文件名「编辑器组 N」;N 从 1 起
   (第一组也带号,同 VSCode)。拖动换位 / 增删组使组号变化时就地更新(CodeMirror reconfigure、Milkdown setProps,不重建);
-  回到单组恢复「<文件名>，编辑器」。tab 列表名称暂不带组号。只读预览名称不带组号。
+  回到单组恢复「<文件名>，编辑器」。tab 列表名称同样带组号(「编辑器标签，编辑器组 N」,`shell.tab.editor_tablist_group`,见 editor-header/editor-header.spec.tsx)。只读预览名称不带组号。
 - Markdown 编辑(Milkdown 的 ProseMirror 根 `.ProseMirror`):同一名称,经 `editorView.setProps({ attributes })` 设置;
   语言切换随 Provider 的 locale key 重挂,改名随 tab id 变化重挂,创建时取当前值。
 - Markdown 只读预览(同一 `.ProseMirror`,contenteditable=false):名称「<文件名>，预览」(en `<name>, Preview`,ko
