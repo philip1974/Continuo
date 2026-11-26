@@ -66,6 +66,8 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.language.title': '语言',
   'settings.general.language.description': '选择 Continuo 的界面语言。立即生效。',
   'settings.general.language.save_failed': '切换语言失败',
+  'settings.general.restore_windows': '启动时恢复所有窗口',
+  'settings.general.restore_windows.desc': '重新打开退出时开着的全部窗口（各自的文件夹与布局）。关闭后只恢复最后活动的窗口。',
 
   // errors.MAIN_*
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '授权请求已失效',

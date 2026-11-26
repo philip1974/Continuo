@@ -39,6 +39,7 @@ import { useMenuCommands } from './menu-commands';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
+import { RestoreWindowsFromSettings } from '@/plugins/settings/RestoreWindowsFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { focusWindowIfWorkspaceOpen } from '@/lib/focus-workspace-window';
 
@@ -159,6 +160,7 @@ function MainApp() {
   return (
     <>
       <TerminalSessionsSync />
+      <RestoreWindowsFromSettings />
       <div className="flex h-dvh w-dvw flex-col bg-canvas text-fg">
         <TitleBar />
         <main className="flex min-h-0 flex-1">

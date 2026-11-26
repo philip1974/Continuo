@@ -167,7 +167,9 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../../electron/main/ipc', () => ({ registerIpc: vi.fn() }));
-vi.mock('../../../electron/main/services/window-restore.service', () => ({
+// 纯函数(首窗选择 / openWindowSeqs 维护)用真实实现,只替换启动恢复与在途标志。
+vi.mock('../../../electron/main/services/window-restore.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../electron/main/services/window-restore.service')>()),
   pickWindowsToRestore: vi.fn(() => []),
   isStartupRestoreInFlight: vi.fn(() => false),
 }));

@@ -1,18 +1,19 @@
-// 多窗口启动恢复(issue #23 Phase 2C + 2026-05-14 opt-in 化)。
+// 多窗口启动恢复(issue #23 Phase 2C;VSCode `window.restoreWindows` 同语义,默认恢复全部)。
 //
-// Continuo 启动时主窗口固定先开 windowSeq=0;之后从 explorer.json 的 windows[]
-// 段挑出需要恢复的非主窗段,逐个 createMainWindow({ windowSeq, workspace })。
+// 启动时先同步开一个「首窗」(pickPrimaryWindowSeq),再从 explorer.json 的 windows[] 段挑出其余需要恢复的段,
+// 逐个 createMainWindow({ windowSeq, workspace });全部建完后把焦点交给上次最后活动的窗口(lastActiveWindowSeq)。
 //
-// **opt-in 行为(2026-05-14 改默认)**:仅当 `restoreAllWindowsOnLaunch: true`
-// 才走 multi-window restore;默认 / undefined 时只开主窗(VSCode 默认风格)。
-// 之前默认 restore-all 让用户每次启动看到一堆持久化的 workspace 窗口弹出,
-// UX 困惑。session-restore 设计保留为高级功能,user 可在 explorer.json 显
-// 式开启或后续做 UI。
+// 恢复哪些窗口:
+//   - 设置项「启动时恢复所有窗口」(explorer.json restoreAllWindowsOnLaunch;缺省 = true,同 VSCode 默认 `all`):
+//     开 → 上次退出时开着的全部主窗口(openWindowSeqs,退出时写入;运行期用户关掉的窗口已移出,不再恢复);
+//     关 → 只恢复一个:上次最后活动的那个窗口。
+//   - openWindowSeqs 缺省(旧数据 / 从未正常退出过)→ 只开主窗 seq 0(不把历史上关掉的段一股脑弹出来)。
 //
-// 跳过规则(opt-in 后):
-//   1. windowSeq === 0 — 主窗已开,不重复
-//   2. workspace.root === null — 空段无恢复语义
-//   3. workspace 路径不存在 / 不是目录 — 用户删了项目;段保留以防 mount
+// 跳过规则(非首窗):
+//   1. 首窗 seq — 已开,不重复
+//   2. 不在 openWindowSeqs 里 — 上次退出前已关掉
+//   3. workspace.root === null — 空段无恢复语义
+//   4. workspace 路径不存在 / 不是目录 — 用户删了项目;段保留以防 mount
 //      改回来,但启动时不开窗(async 判定,有界并发,不阻塞 main)
 
 import type { ExplorerPayload } from '../persistence';
@@ -26,7 +27,7 @@ export interface RestoreEntry {
 const EMPTY_RESTORE_ENTRIES: RestoreEntry[] = [];
 
 // 边界(E60,E58/E59 启动外部输入族):ExplorerSchemaV3 允许 windows 最多 10,000 段(数据保留用)。
-// 但启动恢复(restoreAllWindowsOnLaunch:true)会对每个非主窗段同步 isExistingDir(stat)+ index.ts
+// 但启动恢复会对每个非主窗段同步 isExistingDir(stat)+ index.ts
 // 逐个 createMainWindow。畸形/手工编辑的 explorer.json 开 restore-all 即可在启动时做成千上万次同步
 // stat + 批量开窗,阻塞主进程甚至拖垮桌面会话。启动恢复单独加现实上限(≠ 持久化 schema 的 10000):
 // 最多恢复 MAX_RESTORE_WINDOWS 个非主窗,且超长 workspace 路径先跳过(不 stat)。
@@ -42,13 +43,82 @@ export const MAX_RESTORE_CHECKS = 64;
 // 反而让取消后仍有更多已入队 stat 要跑完。
 export const RESTORE_CHECK_CONCURRENCY = 2;
 
+/** 设置项「启动时恢复所有窗口」:缺省(旧数据 / 从未改过)= 开(VSCode window.restoreWindows 默认 `all`)。 */
+export function isRestoreAllWindowsEnabled(data: ExplorerPayload): boolean {
+  return data.restoreAllWindowsOnLaunch !== false;
+}
+
+/** 上次退出时开着的主窗口 seq(最后一个 = 最后活动的):只留安全整数并去重(保序,重复取最后一次出现)。 */
+export function openWindowSeqsAtLastExit(data: ExplorerPayload): number[] {
+  const raw = data.openWindowSeqs;
+  if (raw === undefined || raw.length === 0) return [];
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (let i = raw.length - 1; i >= 0; i -= 1) {
+    const seq = raw[i]!;
+    if (!Number.isSafeInteger(seq) || seen.has(seq)) continue;
+    seen.add(seq);
+    out.push(seq);
+  }
+  return out.reverse();
+}
+
+/** 上次最后活动的主窗口 seq(重启后焦点给它);无记录 → null。 */
+export function lastActiveWindowSeq(data: ExplorerPayload): number | null {
+  const open = openWindowSeqsAtLastExit(data);
+  return open.length === 0 ? null : open[open.length - 1]!;
+}
+
+/**
+ * 启动时同步先开的窗口 seq。无记录 → 0(主窗);只恢复一个 → 最后活动的窗口;恢复全部 → 列表含 0 则 0,否则列表第一个。
+ */
+export function pickPrimaryWindowSeq(data: ExplorerPayload): number {
+  const open = openWindowSeqsAtLastExit(data);
+  if (open.length === 0) return 0;
+  if (!isRestoreAllWindowsEnabled(data)) return open[open.length - 1]!;
+  return open.includes(0) ? 0 : open[0]!;
+}
+
+/**
+ * 退出时开着的主窗口按最近活动排序:`focusOrder`(末尾 = 最近聚焦)里出现过的按其顺序排在后面,没聚焦过的按原顺序排在前面。
+ */
+export function orderByRecentFocus(seqs: readonly number[], focusOrder: readonly number[]): number[] {
+  const rank = new Map<number, number>();
+  focusOrder.forEach((seq, i) => rank.set(seq, i));
+  const unfocused = seqs.filter((s) => !rank.has(s));
+  const focused = seqs.filter((s) => rank.has(s)).sort((a, b) => rank.get(a)! - rank.get(b)!);
+  return [...unfocused, ...focused];
+}
+
+/**
+ * 用户关掉单个主窗口(非退出)后更新 openWindowSeqs(VSCode:关掉的窗口不再恢复)。还有别的主窗口开着 → 把它移出;
+ * 它是最后一个主窗口 → 只留它(macOS 关光窗口后再退出 / Windows、Linux 关最后一个窗口即退出:下次恢复它)。
+ * `remainingSeqs`:关窗当刻仍开着的其它主窗口。
+ */
+export function updateOpenWindowSeqsOnUserClose(
+  payload: { openWindowSeqs?: number[] },
+  seq: number,
+  remainingSeqs: readonly number[],
+): void {
+  if (remainingSeqs.length === 0) {
+    payload.openWindowSeqs = [seq];
+    return;
+  }
+  if (payload.openWindowSeqs === undefined) return;
+  payload.openWindowSeqs = payload.openWindowSeqs.filter((s) => s !== seq);
+}
+
 export async function pickWindowsToRestore(
   data: ExplorerPayload,
   isExistingDir: (path: string) => Promise<boolean> | boolean,
   isCancelled: () => boolean = () => false,
 ): Promise<RestoreEntry[]> {
-  // 默认只开主窗;显式 true 才恢复其他 window (session-restore opt-in)
-  if (data.restoreAllWindowsOnLaunch !== true) return EMPTY_RESTORE_ENTRIES;
+  // 设置项关闭 → 只恢复一个(首窗);上次退出时没有记录 → 只开主窗。
+  if (!isRestoreAllWindowsEnabled(data)) return EMPTY_RESTORE_ENTRIES;
+  const open = openWindowSeqsAtLastExit(data);
+  if (open.length === 0) return EMPTY_RESTORE_ENTRIES;
+  const openSet = new Set(open);
+  const primarySeq = pickPrimaryWindowSeq(data);
   let out: RestoreEntry[] | null = null;
   let count = 0;
   let checks = 0;
@@ -69,7 +139,8 @@ export async function pickWindowsToRestore(
     let batchSeqs: Set<number> | null = null;
     for (; i < windows.length && batch.length < limit; i += 1) {
       const entry = windows[i]!;
-      if (entry.windowSeq === 0) continue;
+      if (entry.windowSeq === primarySeq) continue; // 首窗已开
+      if (!openSet.has(entry.windowSeq)) continue; // 上次退出前已关掉 → 不恢复
       // 边界(E91):windowSeq 须安全整数。ExplorerSchemaV3 只校验 int().nonnegative(),畸形
       // explorer.json 的 9007199254740993(>MAX_SAFE_INTEGER)能过 schema;main 用它建窗注入
       // query,但 renderer parseInitialWindowSeq 判非法回退 0 → main/renderer 段编号认知不一致

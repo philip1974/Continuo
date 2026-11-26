@@ -216,6 +216,20 @@ export const GENERAL_LANGUAGE: CoreSettingSpec<Locale> = {
   priority: 2,
 };
 
+// VSCode window.restoreWindows(默认 all):重启时恢复上次退出时开着的全部主窗口(各自的工作区 / 布局 / 几何);关掉只恢复一个
+//(上次最后活动的窗口)。权威值在 main(explorer.json restoreAllWindowsOnLaunch,启动恢复在任何 renderer 之前读),
+// RestoreWindowsFromSettings 把本值推给 main。
+export const GENERAL_RESTORE_WINDOWS: CoreSettingSpec<boolean> = {
+  id: 'window.restoreWindows',
+  category: 'general',
+  title: 'Restore all windows on launch',
+  titleKey: 'settings.general.restore_windows',
+  descriptionKey: 'settings.general.restore_windows.desc',
+  type: 'boolean',
+  default: true,
+  priority: 3,
+};
+
 /** 注册用的语言项:默认值 = main 的系统默认 locale(与首启默认一致),「已修改」/「恢复默认」都以它为准。 */
 export function languageSettingSpec(systemDefault: Locale): CoreSettingSpec<Locale> {
   return { ...GENERAL_LANGUAGE, default: systemDefault };

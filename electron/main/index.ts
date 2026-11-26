@@ -35,7 +35,14 @@ import {
 import { EXPLORER_FILE_NAME, type PersistedWindowState } from '../shared/explorer-persistence-schema';
 import { fitRectToDisplays, newWindowBounds, popoutWindowBounds, type Rect } from './lib/window-state';
 import { takePopoutRestoreSlot } from './services/popout-restore-focus.service';
-import { isStartupRestoreInFlight, restoreStartupWindows } from './services/window-restore.service';
+import {
+  isStartupRestoreInFlight,
+  lastActiveWindowSeq,
+  orderByRecentFocus,
+  pickPrimaryWindowSeq,
+  restoreStartupWindows,
+  updateOpenWindowSeqsOnUserClose,
+} from './services/window-restore.service';
 import { pickStartupMode } from './services/startup-mode.service';
 import { pickMainWindowPreferNonPopout } from './services/main-window-picker.service';
 import {
@@ -182,6 +189,21 @@ if (resolvedUserDataPath !== null) {
 }
 
 const LRU_MAX_CLOSED = MAX_PERSISTED_WINDOW_SEGMENTS;
+/**
+ * 主窗口最近活动顺序(windowSeq,末尾 = 最近聚焦;popout 子窗聚焦算它的主窗)。退出时据此给 openWindowSeqs 排序,
+ * 重启后焦点回到最后活动的窗口(VSCode windowsStateHandler 的 lastActiveWindow)。
+ */
+const mainWindowFocusOrder: number[] = [];
+function touchMainWindowFocus(seq: number): void {
+  const i = mainWindowFocusOrder.indexOf(seq);
+  if (i !== -1) mainWindowFocusOrder.splice(i, 1);
+  mainWindowFocusOrder.push(seq);
+}
+/**
+ * 退出已确定(脏确认 / flush 全部通过)。此后各窗口的 closed 是「退出关窗」而非用户关掉单个窗口:不把它移出
+ * openWindowSeqs(VSCode:退出时开着的窗口全部恢复,运行期关掉的不恢复)。
+ */
+let quitCommitted = false;
 /**
  * 正在关闭(已 clearWindow 退出活跃集、但自身 lastClosedAt 尚未落盘)的 seq → 引用计数。
  * 多窗近同时关闭时,先拿到 explorer mutex 的那个执行 LRU,不能把另一个仍在关闭中的窗口段当最旧摘掉
@@ -726,13 +748,20 @@ function initialWindowPlacement(seq: number): { bounds: Rect; isMaximized: boole
   return { bounds: newWindowBounds(display.workArea, existing), isMaximized: false, isFullScreen: false };
 }
 
-/** 退出时把各主窗几何等待落盘(关窗 closed 里的写是 void 异步,退出不等它)。失败只告警,不阻断退出。 */
-async function persistWindowStates(seqs: readonly number[]): Promise<void> {
+/**
+ * 退出时把各主窗几何与「退出时开着的主窗口」(openWindowSeqs,按最近活动排序)等待落盘(关窗 closed 里的写是 void 异步,
+ * 退出不等它)。没有开着的主窗口(macOS 关光窗口后退出)时保留运行期维护的列表。失败只告警,不阻断退出。
+ */
+async function persistWindowStates(seqs: readonly number[], openSeqs: readonly number[]): Promise<void> {
   const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
   try {
     await withExplorerFileMutex(async () => {
       const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
       let changed = false;
+      if (openSeqs.length > 0 && JSON.stringify(payload.openWindowSeqs) !== JSON.stringify(openSeqs)) {
+        payload.openWindowSeqs = [...openSeqs];
+        changed = true;
+      }
       for (const seq of seqs) {
         const state = knownWindowStates.get(seq);
         if (!state) continue;
@@ -771,6 +800,8 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
   // 带工作区建的窗口(打开文件夹 / 启动恢复)在 renderer 恢复并上报 root 之前就登记:紧接着再打开同一文件夹
   //(连点 / 连续 open-file)也能认出它已在这个窗口打开,聚焦而不是再开一个(见 focusWindowWithWorkspace)。
   if (opts.workspace !== undefined) setWorkspaceRoot(win.id, opts.workspace);
+  touchMainWindowFocus(seq); // 新窗口建出即获焦
+  win.on('focus', () => touchMainWindowFocus(seq));
   // 须先于 wireWindowCloseFlush 挂:关窗流程的 close 监听会同步隐藏窗口,之后取到的状态不可信。
   win.on('close', () => captureWindowState(seq, win));
   wireWindowCloseFlush(win);
@@ -779,6 +810,11 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
     // 先同步登记为关闭中,再退出活跃集:两者之间不能留出让其他窗口 LRU 摘掉本段的窗口期。
     closingSeqRefs.inc(seq);
     clearWindow(win.id);
+    // 关窗当刻(同步)取:是否退出关窗、还剩哪些主窗口 —— 写盘在 mutex 里异步执行,届时状态可能已变。
+    const userClosedDuringQuit = quitCommitted;
+    const remainingSeqs = [...getActiveSeqs()];
+    const focusIdx = mainWindowFocusOrder.indexOf(seq);
+    if (!quitCommitted && focusIdx !== -1 && !remainingSeqs.includes(seq)) mainWindowFocusOrder.splice(focusIdx, 1);
     // 窗口级资源清理(scope / fs watcher / agent 授权)已移到覆盖全窗口的
     // browser-window-created → releaseWindowResources,主窗与 popout 统一处理。
     // 此处只保留主窗专属的 explorer.json 段落持久化(popout 无 windowSeq 段)。
@@ -790,6 +826,7 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
         entry.lastClosedAt = closedAtNow();
         const windowState = knownWindowStates.get(seq);
         if (windowState) entry.windowState = windowState;
+        if (!userClosedDuringQuit) updateOpenWindowSeqsOnUserClose(payload, seq, remainingSeqs);
         const protectedSeqs = lruProtectedSeqs();
         // 启动恢复未结束时不补写:即将被恢复的段还不在保护集(恢复后开着,补写的启动时刻会让它下次偏旧)。
         if (!isStartupRestoreInFlight()) stampMissingClosedAt(payload, protectedSeqs);
@@ -845,6 +882,12 @@ app.on('web-contents-created', (_evt, contents) => {
   // 重启恢复的 popout 以 show:false 建出(见 windowOpenHandler)→ 不抢焦点地显示,主窗保持键盘焦点。
   contents.on('did-create-window', (child) => {
     if (!child.isDestroyed() && !child.isVisible()) child.showInactive();
+    // popout 子窗聚焦 = 它的主窗口在活动(重启后焦点回到这个主窗口)。
+    child.on('focus', () => {
+      const owner = contents.isDestroyed() ? null : BrowserWindow.fromWebContents(contents);
+      const seq = owner ? getWindowSeq(owner.id) : null;
+      if (seq !== null) touchMainWindowFocus(seq);
+    });
   });
   installNavigationGuard(contents, isOwnRendererUrl, openExternalFromPage, isPageReloadAllowed);
 });
@@ -854,6 +897,16 @@ app.on('web-contents-created', (_evt, contents) => {
 // macOS 标准 template + File 项加 New Window / Open Folder in New Window…
 // 跨平台:Linux/Windows menu 同款 File 项。
 // ─────────────────────────────────────────────────────
+
+/** 聚焦 windowSeq 对应的主窗口(启动恢复完把焦点交给上次最后活动的窗口);不存在 / 已在关闭 → 不动。 */
+function focusMainWindowBySeq(seq: number): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed() || getWindowSeq(w.id) !== seq) continue;
+    if (!w.isVisible() && !w.isMinimized()) return;
+    if (!w.isFocused()) w.focus();
+    return;
+  }
+}
 
 /** 路径是已存在的目录(不存在 / 无权限 / 非目录 → false)。argv / open-file / 冷启动目录判定共用。 */
 function isDirectorySync(p: string): boolean {
@@ -1415,7 +1468,8 @@ app.whenReady().then(async () => {
   // 否则 → restore 模式,主窗用持久化 workspace,异步恢复历史 windows[]。
   const startup = pickStartupMode(pendingOpenPaths.splice(0), isDirectorySync);
   // 各窗口上次的几何(windowState 段;读失败 → 全按新窗口)。
-  for (const w of (await explorerAtStartup.catch(() => null))?.windows ?? []) {
+  const startupData = await explorerAtStartup.catch(() => null);
+  for (const w of startupData?.windows ?? []) {
     if (w.windowState) knownWindowStates.set(w.windowSeq, w.windowState);
   }
 
@@ -1436,18 +1490,28 @@ app.whenReady().then(async () => {
       }, windowOpenFailureUi);
     }
   } else {
-    // 正常启动:主窗 windowSeq=0(workspace 由 renderer 从 explorer.json 段恢复)
-    createMainWindow({ windowSeq: 0 });
-    // Phase 2C(issue #23):上次会话的非主窗(windowSeq>0)逐个恢复
+    // 正常启动:先同步开首窗(无记录 = 主窗 seq 0;workspace 由 renderer 从 explorer.json 段恢复),
+    // 再异步恢复上次退出时开着的其余主窗口(设置项「启动时恢复所有窗口」,默认开),最后焦点给上次最后活动的窗口。
     // 恢复期间可被退出 / 全部关窗取消(见 startupRestoreCancelled),取消后不再建恢复窗。
+    createMainWindow({ windowSeq: startupData ? pickPrimaryWindowSeq(startupData) : 0 });
+    let restoredCount = 0;
     restoreStartupWindows(
       () => explorerAtStartup,
       isDirectory,
-      (entry) => createMainWindow({ windowSeq: entry.windowSeq, workspace: entry.workspace }),
+      (entry) => {
+        restoredCount += 1;
+        createMainWindow({ windowSeq: entry.windowSeq, workspace: entry.workspace });
+      },
       () => startupRestoreCancelled,
-    ).catch((err: unknown) => {
-      console.warn('[window-restore] 启动恢复失败,只开主窗', err);
-    });
+    )
+      .then(() => {
+        // 只开了首窗时它本就有焦点,不再额外抢焦点。
+        const lastActive = startupData ? lastActiveWindowSeq(startupData) : null;
+        if (restoredCount > 0 && lastActive !== null && !startupRestoreCancelled) focusMainWindowBySeq(lastActive);
+      })
+      .catch((err: unknown) => {
+        console.warn('[window-restore] 启动恢复失败,只开主窗', err);
+      });
   }
 
   // 冷启动性能:stdio socket server(mkdir/stat/lstat/unlink/listen/chmod 串行)不挡建首窗 ——
@@ -1597,6 +1661,7 @@ app.on('before-quit', async (event) => {
     return;
   }
   for (const w of targets) flushedOnQuit.add(w.id);
+  quitCommitted = true;
   // 退出确定:各主窗几何随下方清理并行落盘,app.quit 前等齐(VSCode 退出时保存窗口状态)。
   const targetSeqs: number[] = [];
   for (const w of targets) {
@@ -1621,7 +1686,7 @@ app.on('before-quit', async (event) => {
   quitTrace('cleanup begin');
   // 插件 shell 子进程(一次性 exec / 流式)是 detached 进程组,不随 IDE 退出终止;立即强杀整树并等待。
   await Promise.allSettled([
-    traced('window-state', persistWindowStates(targetSeqs)),
+    traced('window-state', persistWindowStates(targetSeqs, orderByRecentFocus(targetSeqs, mainWindowFocusOrder))),
     traced('terminal', termService.cleanupAll()),
     traced('debug', debugService.cleanupAll('before-quit')),
     traced('shell-exec', cleanupAllShellExecs()),

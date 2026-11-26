@@ -13,10 +13,14 @@ import type { ExplorerPayload } from '../../../electron/main/persistence';
 const allDirs = (_p: string) => true;
 const noDirs = (_p: string) => false;
 
+/**
+ * 默认:设置项开(restoreAllWindowsOnLaunch: true)、上次退出时所有段对应的窗口都开着(openWindowSeqs = [0, ...各段 seq]),
+ * 以便下方用例只验证「挑段 / 上限 / 并发」规则。openWindowSeqs 本身的语义见 restore-windows-on-launch/。
+ */
 function snap(
   windows: ExplorerPayload['windows'],
   nextWindowSeq = windows.length,
-  restoreAllWindowsOnLaunch = true,  // opt-in 改默认后:测试用 true 保留原行为断言
+  restoreAllWindowsOnLaunch = true,
 ): ExplorerPayload {
   return {
     version: 2,
@@ -25,6 +29,7 @@ function snap(
     nextWindowSeq,
     windows,
     restoreAllWindowsOnLaunch,
+    openWindowSeqs: [0, ...windows.map((w) => w.windowSeq).filter((s) => s !== 0)],
   };
 }
 
@@ -117,7 +122,7 @@ describe('pickWindowsToRestore', () => {
     expect(await pickWindowsToRestore(data, allDirs)).toEqual([]);
   });
 
-  it('restoreAllWindowsOnLaunch undefined (默认) → 空(只开主窗,opt-in 改默认)', async () => {
+  it('restoreAllWindowsOnLaunch undefined(旧数据 / 从未改过)→ 视为开:恢复上次退出时开着的窗口(VSCode 默认 all)', async () => {
     const data = snap(
       [
         win({ windowSeq: 0, workspace: { root: '/p0' } }),
@@ -127,10 +132,10 @@ describe('pickWindowsToRestore', () => {
       undefined as unknown as boolean,
     );
     delete (data as { restoreAllWindowsOnLaunch?: boolean }).restoreAllWindowsOnLaunch;
-    expect(await pickWindowsToRestore(data, allDirs)).toEqual([]);
+    expect(await pickWindowsToRestore(data, allDirs)).toEqual([{ windowSeq: 1, workspace: '/p1' }]);
   });
 
-  it('restoreAllWindowsOnLaunch=false → 空(显式 opt-out)', async () => {
+  it('restoreAllWindowsOnLaunch=false → 空(设置项关:只恢复一个窗口,即首窗)', async () => {
     const data = snap(
       [
         win({ windowSeq: 0, workspace: { root: '/p0' } }),

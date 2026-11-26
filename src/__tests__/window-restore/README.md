@@ -1,8 +1,9 @@
 # 多窗口启动恢复(`pickWindowsToRestore`)
 
-行为契约:**Continuo 启动时,主窗口固定先开 windowSeq=0;之后从
-`explorer.json` 的 `windows[]` 段挑出需要恢复的其它窗口段,逐个
-`createMainWindow({ windowSeq, workspace })`**。issue #23 Phase 2C。
+行为契约:**Continuo 启动时先同步开一个首窗(`pickPrimaryWindowSeq`,无退出记录时是 windowSeq=0);之后从
+`explorer.json` 的 `windows[]` 段挑出上次退出时开着的其它窗口段(`openWindowSeqs`),逐个
+`createMainWindow({ windowSeq, workspace })`**。issue #23 Phase 2C。恢复哪些窗口(默认全部 / 设置项关掉只恢复一个 /
+运行期关掉的不恢复)与焦点见 `restore-windows-on-launch/`;本主题只管挑段规则、上限、并发与取消。
 
 ## 模块
 
@@ -13,9 +14,10 @@
 
 ## 关键行为
 
-### 跳过 `windowSeq === 0`(主窗已开)
+### 跳过首窗 seq(已开)与不在 `openWindowSeqs` 里的段
 
-主窗永远在 `pickWindowsToRestore` 之前由 main 单独 create。
+首窗永远在 `pickWindowsToRestore` 之前由 main 单独 create;上次退出前已关掉的窗口段不恢复。设置项关(`restoreAllWindowsOnLaunch: false`)
+或没有退出记录 → 空。
 
 ### 跳过 `workspace.root === null`(空段)
 

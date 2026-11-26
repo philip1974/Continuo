@@ -182,10 +182,17 @@ const explorerTopLevelShape = {
   /** 下一个开新窗时分配的 windowSeq;主窗用 0,新窗自增. */
   nextWindowSeq: z.number().int().nonnegative(),
   /**
-   * 启动时是否自动恢复非主窗 (windowSeq > 0)。默认 false — 跟 VSCode "只开主窗" 一致。
-   * 显式设 true 才走 #29 multi-window session-restore 行为。
+   * 启动时恢复哪些主窗口(VSCode `window.restoreWindows`,默认 `all`):缺省 / true = 恢复上次退出时开着的全部主窗口;
+   * false = 只恢复一个(上次最后活动的窗口)。由设置项「启动时恢复所有窗口」经 window:set-restore-windows 写入(main-owned,
+   * renderer 整份写回时保留盘上值)。旧数据缺省 → 视为 true。
    */
   restoreAllWindowsOnLaunch: z.boolean().optional(),
+  /**
+   * 上次退出时仍开着的主窗口 windowSeq,按最近活动排序(最后一个 = 最后活动的窗口,重启后焦点给它)。main 在退出确定时
+   * 写入;运行期用户关掉某个窗口(非退出)即把它移出(VSCode:关掉的窗口不再恢复),关掉的是最后一个主窗口则只留它
+   *(macOS 关光窗口再退出 / Windows 关最后一个窗口即退出时恢复它)。缺省(旧数据)= 只开主窗 seq 0。main-owned。
+   */
+  openWindowSeqs: z.array(z.number().int().nonnegative()).max(WINDOWS_MAX).optional(),
 };
 
 // ── v2(legacy compat)— 多窗口拆段 ────────────────────────

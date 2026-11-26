@@ -98,6 +98,7 @@ export function migrateV2ToV3(v2: ExplorerPayloadV2): ExplorerPayloadV3 {
     ...(v2.restoreAllWindowsOnLaunch !== undefined
       ? { restoreAllWindowsOnLaunch: v2.restoreAllWindowsOnLaunch }
       : {}),
+    ...(v2.openWindowSeqs !== undefined ? { openWindowSeqs: v2.openWindowSeqs } : {}),
   };
 }
 
@@ -295,6 +296,8 @@ export function mergeWritableIntoFull(
   // 取盘上 current 值优先、writable 兜底地显式保留。
   const restoreAllWindowsOnLaunch =
     current?.restoreAllWindowsOnLaunch ?? writable.restoreAllWindowsOnLaunch;
+  // openWindowSeqs(上次退出时开着的主窗口)同属 main-owned:只认盘上值,renderer 写回的(本不该带)一律忽略。
+  const openWindowSeqs = current?.openWindowSeqs;
 
   // 全局「最近打开」(workspace.recentRoots)盘上已有时 main-owned:各窗口只在启动时 hydrate、之后列表可能陈旧,
   // 裸 `...writable` 会让任一窗口的落盘(展开目录 / 开关 tab / 关窗)把别窗刚新增的项整段抹掉。新增 / 置顶改走
@@ -303,7 +306,7 @@ export function mergeWritableIntoFull(
   // pinned 同形但目前无运行时修改入口(各窗写回的是盘上同一份),加 pin/unpin 时须同样改为增量。
   const workspace = current?.workspace ?? writable.workspace;
 
-  return {
+  const out: ExplorerPayloadV3 = {
     ...writable,
     workspace,
     nextWindowSeq,
@@ -312,6 +315,9 @@ export function mergeWritableIntoFull(
       ? { restoreAllWindowsOnLaunch }
       : {}),
   };
+  if (openWindowSeqs !== undefined) out.openWindowSeqs = openWindowSeqs;
+  else delete out.openWindowSeqs;
+  return out;
 }
 
 /**
@@ -520,6 +526,19 @@ export async function prepareExplorerFileForBoot(
     } catch (err) {
       console.warn('[boot] explorer window segment prune skipped', err);
     }
+  });
+}
+
+/**
+ * 设置项「启动时恢复所有窗口」写入 explorer.json 顶层 restoreAllWindowsOnLaunch(文件锁内读-改-写;值未变不写)。
+ * 缺省即默认 true:开启时盘上缺省就不写(保持「未设置」),关闭写 false。读失败(当前态未知)照常抛,绝不覆盖。
+ */
+export async function setRestoreAllWindowsOnLaunch(explorerFile: string, enabled: boolean): Promise<void> {
+  await withExplorerFileMutex(async () => {
+    const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
+    if ((payload.restoreAllWindowsOnLaunch ?? true) === enabled) return;
+    payload.restoreAllWindowsOnLaunch = enabled;
+    await writeExplorerFile(explorerFile, payload);
   });
 }
 

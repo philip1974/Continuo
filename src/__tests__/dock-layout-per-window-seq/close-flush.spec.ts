@@ -166,7 +166,9 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../../electron/main/ipc', () => ({ registerIpc: vi.fn() }));
-vi.mock('../../../electron/main/services/window-restore.service', () => ({
+// 纯函数(首窗选择 / openWindowSeqs 维护)用真实实现,只替换启动恢复与在途标志。
+vi.mock('../../../electron/main/services/window-restore.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../electron/main/services/window-restore.service')>()),
   pickWindowsToRestore: vi.fn(() => []),
   isStartupRestoreInFlight: vi.fn(() => false),
 }));
@@ -662,11 +664,42 @@ describe('window close layout flush', () => {
     expect(after.windows).toHaveLength(MAX_PERSISTED_WINDOW_SEGMENTS);
   });
 
+  // BDD: src/__tests__/restore-windows-on-launch/ —— 运行期用户关掉的窗口不再恢复(VSCode)
+  it('用户关掉一个主窗口(还有别的开着)→ 从 openWindowSeqs 移出,其余不变', async () => {
+    const seeded = defaultExplorerV3();
+    seeded.openWindowSeqs = [21, 22];
+    await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(seeded));
+    const a = createMockMainWindow(21);
+    createMockMainWindow(22);
+
+    a.close();
+    ack(a);
+    await vi.waitFor(async () => {
+      const payload = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(payload?.openWindowSeqs).toEqual([22]);
+    });
+  });
+
+  it('用户关掉最后一个主窗口 → openWindowSeqs 只留它(macOS 关光再退出 / Windows 关最后一个即退出:下次恢复它)', async () => {
+    const seeded = defaultExplorerV3();
+    seeded.openWindowSeqs = [3, 4];
+    await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(seeded));
+    const only = createMockMainWindow(23);
+
+    only.close();
+    ack(only);
+    await vi.waitFor(async () => {
+      const payload = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(payload?.openWindowSeqs).toEqual([23]);
+    });
+  });
+
   it('before-quit 扫描窗口不对 getAllWindows 结果 filter 出中间数组,且仍 flush 存活窗口', async () => {
     const a = createMockMainWindow(11);
     const b = createMockMainWindow(12);
     const dead = createMockMainWindow(13);
     dead.destroyed = true;
+    a.emit('focus'); // a 最后活动
     const filterSpy = vi.spyOn(electronMock.windows, 'filter');
     const handler = electronMock.appHandlers.get('before-quit')?.[0];
     if (!handler) throw new Error('before-quit handler missing');
@@ -693,6 +726,10 @@ describe('window close layout flush', () => {
       ack(a);
       ack(b);
       await done;
+      // 退出确定后落盘「退出时开着的主窗口」,按最近活动排序(最后一个 = 最后活动,重启后焦点给它)。
+      // a 在 b 建出之后又被聚焦过 → [12, 11];已销毁的 dead 不算开着。
+      const payload = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(payload?.openWindowSeqs).toEqual([12, 11]);
     } finally {
       filterSpy.mockRestore();
     }

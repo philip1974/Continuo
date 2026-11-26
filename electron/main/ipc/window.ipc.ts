@@ -17,6 +17,7 @@ import {
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
   allocateWindowSeq,
+  setRestoreAllWindowsOnLaunch,
 } from '../persistence';
 import { EXPLORER_FILE_NAME } from '../../shared/explorer-persistence-schema';
 import {
@@ -163,6 +164,8 @@ const FocusWorkspaceWindowInput = z
   })
   .strict();
 
+const SetRestoreWindowsInput = z.object({ enabled: z.boolean() }).strict();
+
 const NotifyRootInput = z
   .object({
     root: z.string().nullable(),
@@ -244,6 +247,10 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
       return false;
     }
     return focusWindowWithWorkspace(input.root, win.id);
+  });
+  // 设置项「启动时恢复所有窗口」→ explorer.json 顶层启动偏好(main 启动恢复在任何 renderer 之前读)。
+  safeHandle(WINDOW_CHANNELS.SET_RESTORE_WINDOWS, SetRestoreWindowsInput, async (input) => {
+    await setRestoreAllWindowsOnLaunch(path.join(app.getPath('userData'), EXPLORER_FILE_NAME), input.enabled);
   });
   // 主题变化:记住(并持久化到 userData,供下次冷启动首窗)并把所有已开窗口(主窗 + popout)的底色改为对应画布色。
   safeHandle(WINDOW_CHANNELS.NOTIFY_THEME, NotifyThemeInput, (input) => {

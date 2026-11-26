@@ -498,6 +498,9 @@ const api = {
      */
     focusWorkspaceWindow: (root: string): Promise<IpcResult<boolean>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS_WORKSPACE_WINDOW, { root }),
+    /** 设置项「启动时恢复所有窗口」:写入 main 的启动偏好(下次启动生效)。 */
+    setRestoreWindows: (enabled: boolean): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.SET_RESTORE_WINDOWS, { enabled }),
     /**
      * renderer 解析出的主题(light / dark)变化时通知 main:所有窗口底色改为对应画布色,新窗口 / popout 沿用;
      * main 同时持久化(含主题模式 mode,system 时冷启动按 OS 外观),下次冷启动首窗即用。

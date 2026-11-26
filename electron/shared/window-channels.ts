@@ -18,6 +18,11 @@ export const WINDOW_CHANNELS = {
    */
   FOCUS_WORKSPACE_WINDOW: 'window:focus-workspace-window',
   /**
+   * 设置项「启动时恢复所有窗口」(VSCode window.restoreWindows)变化时 renderer 推送 `{ enabled }` → main 写入 explorer.json
+   * 顶层 restoreAllWindowsOnLaunch(启动恢复在任何 renderer 之前读它)。
+   */
+  SET_RESTORE_WINDOWS: 'window:set-restore-windows',
+  /**
    * renderer 解析出的主题(light / dark)变化时调 → main 记住最近主题,把所有窗口的 backgroundColor 改为对应
    * 画布色,之后新建的窗口 / popout 也用它(否则亮色用户开窗 / 缩放时未绘制区闪深色)。
    */

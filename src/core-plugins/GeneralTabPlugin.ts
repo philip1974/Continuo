@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { renderCategoryTab } from './lazy-category-tab';
 import { GeneralIcon } from '@/plugins/settings/tab-icons';
-import { GENERAL_THEME } from '@/plugins/settings/core-setting-specs';
+import { GENERAL_RESTORE_WINDOWS, GENERAL_THEME } from '@/plugins/settings/core-setting-specs';
 
 export default class GeneralTabPlugin extends Plugin {
   onload(): void {
@@ -23,5 +23,7 @@ export default class GeneralTabPlugin extends Plugin {
 
     // 主题 setting item(spec 单一来源见 core-setting-specs;ThemeProvider 直接以它为唯一存储)
     this.addSettingItem(GENERAL_THEME);
+    // 启动时恢复所有窗口(VSCode window.restoreWindows;RestoreWindowsFromSettings 推给 main)
+    this.addSettingItem(GENERAL_RESTORE_WINDOWS);
   }
 }

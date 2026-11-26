@@ -1594,6 +1594,12 @@
 
 - [`reserved-command-hotkeys.spec.tsx`](./reserved-command-hotkeys/reserved-command-hotkeys.spec.tsx)
 
+## [restore-windows-on-launch(重启恢复全部主窗口 + 开关)](./restore-windows-on-launch/README.md)
+
+- [`restore-windows-setting.spec.tsx`](./restore-windows-on-launch/restore-windows-setting.spec.tsx)
+- [`restore-windows.spec.ts`](./restore-windows-on-launch/restore-windows.spec.ts)
+- [`startup-wiring.spec.ts`](./restore-windows-on-launch/startup-wiring.spec.ts)
+
 ## [ResultMessage(带严重度的操作结果 live region)](./result-message/README.md)
 
 - [`result-message.spec.tsx`](./result-message/result-message.spec.tsx)

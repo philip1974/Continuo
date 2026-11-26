@@ -66,6 +66,9 @@ export const ko: Record<TranslationKey, string> = {
   'settings.general.language.title': '언어',
   'settings.general.language.description': 'Continuo의 UI 언어를 선택합니다. 즉시 적용됩니다.',
   'settings.general.language.save_failed': '언어 변경 실패',
+  'settings.general.restore_windows': '시작 시 모든 창 복원',
+  'settings.general.restore_windows.desc':
+    'Continuo 종료 시 열려 있던 모든 창을 각자의 폴더와 레이아웃으로 다시 엽니다. 끄면 마지막으로 활성화된 창만 복원합니다.',
 
   // errors.MAIN_*
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '승인 요청이 더 이상 유효하지 않습니다',

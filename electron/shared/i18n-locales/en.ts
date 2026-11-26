@@ -75,6 +75,9 @@ export const en = {
   'settings.general.language.description': "Choose Continuo's UI language. Changes take effect immediately.",
   // a11y(A122):error feedback when persisting the language change fails.
   'settings.general.language.save_failed': 'Failed to change language',
+  'settings.general.restore_windows': 'Restore all windows on launch',
+  'settings.general.restore_windows.desc':
+    'Reopen every window that was open when Continuo quit, each with its folder and layout. When off, only the last active window is restored.',
 
   // errors.MAIN_* (27)
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': 'Authorization request is no longer pending',

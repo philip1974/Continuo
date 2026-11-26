@@ -34,7 +34,8 @@ describe('规则 4 · pickWindowsToRestore 候选检查预算', () => {
     }));
     const isDir = vi.fn(() => false);
     const out = await pickWindowsToRestore(
-      { restoreAllWindowsOnLaunch: true, windows } as never,
+      // 上次退出时这些窗口都开着(openWindowSeqs),否则根本不进候选
+      { restoreAllWindowsOnLaunch: true, openWindowSeqs: [0, ...windows.map((w) => w.windowSeq)], windows } as never,
       isDir,
     );
     expect(out).toEqual([]);
