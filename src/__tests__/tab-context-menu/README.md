@@ -34,6 +34,17 @@
   确认框同时只有一个),全部放行后再按序统一 `api.close()`(关闭动画照旧,此时不再重复确认);任一处选「取消」→ 整批都不关
   (含前面已放行的)。单个关闭(× / 中键 / ⌘W / 右键「关闭」)仍是 `api.close()` 先问再关。
 
+## 焦点(`tab-context-menu-focus.spec.tsx`)
+
+- 关闭类项(编辑器 tab 的关闭 / 关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭;dock tab 的关闭 / 关闭其他 / 关闭右侧 / 全部关闭)
+  标 `opensDialog`:菜单先关闭、焦点按 Radix 还原到打开菜单前的 tab,**之后**才执行。否则 Radix 在菜单卸载后(setTimeout)才还原,
+  抢走刚弹出的确认框的初始焦点(焦点留在背后 tab,Tab 进 CodeMirror)。期望同 VSCode:确认框模态,初始焦点在「全部保存」/
+  「保存」(dock:终端运行中程序的关闭确认同理)。
+- 不弹框(无脏文件)时同 ⌘W / 点 ×:动作看到的焦点在本面板的 tab 上 → 关掉活动 tab 后焦点进新的活动编辑器;关掉的不是活动 tab →
+  焦点不进编辑区。
+- 「重命名…」等随后打开自聚焦输入框的项仍是 `opensFocusedInput`(跳过还原);资源管理器右键「移到废纸篓」的确认框已由其
+  `skipOnce` + FolderTree 接管焦点,不属本外壳。
+
 ## 键盘
 
 tab 聚焦时 **Shift+F10 / 菜单键** 在 tab 左下角打开菜单(与终端右键菜单同一判定 `src/lib/context-menu-key.ts`);菜单内
@@ -41,6 +52,7 @@ tab 聚焦时 **Shift+F10 / 菜单键** 在 tab 左下角打开菜单(与终端�
 
 ## 规范
 
+`tab-context-menu-focus.spec.tsx`(右键关闭后确认框拿到焦点、不弹框时焦点进新的活动编辑器、外壳 opensDialog 语义);
 `tab-context-menu.spec.tsx`(目标集合、批量确认推进、两类 tab 的菜单项与动作、键盘打开、dock 批量关闭先问完再关 / 遇取消
 整批不动);`editor-batch-close-confirm.spec.tsx`(多个脏文件的合并确认框:列表 / 全部保存 / 不保存 / 取消;「全部保存」中途遇写保护 / 磁盘冲突确认后继续或整批结束、其它失败整批结束);
 真机 e2e `tests/e2e/tab-context-menu.spec.ts`(编辑器 tab 全部关闭遇脏文件确认、多个脏文件合并框「全部保存」遇写保护覆盖后继续、dock tab 关闭其他)。

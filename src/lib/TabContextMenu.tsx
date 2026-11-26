@@ -20,6 +20,12 @@ export type TabMenuEntry =
        * skipOnce),否则 Radix 的还原会抢走输入框焦点。其它关闭路径照常还原。
        */
       readonly opensFocusedInput?: boolean;
+      /**
+       * 该项可能打开模态确认框(如关闭类项遇未保存文件 / 运行中的终端):等菜单关闭、焦点回到触发 tab 后再执行。
+       * 否则 Radix 在菜单卸载后(setTimeout)才把焦点还给 tab,会抢走刚打开的确认框的初始焦点;先还原再执行,
+       * 不弹框时动作看到的焦点也在 tab 上(与 ⌘W / 点 × 同:关掉活动 tab 后焦点进新的活动编辑器 / 面板)。
+       */
+      readonly opensDialog?: boolean;
     }
   | 'separator';
 
@@ -48,6 +54,7 @@ export function TabContextMenu({
   const [open, setOpen] = useState(false);
   const [portalHost, setPortalHost] = useState<HTMLElement | undefined>(undefined);
   const skipFocusRestoreRef = useRef(false);
+  const pendingActionRef = useRef<(() => void) | null>(null);
   return (
     <Menu.Root onOpenChange={setOpen}>
       <Menu.Trigger
@@ -63,6 +70,13 @@ export function TabContextMenu({
             className={contentCls}
             collisionPadding={8}
             onCloseAutoFocus={(e) => {
+              // opensDialog 项:不拦 Radix 的还原(焦点回到打开菜单前的 tab),还原后(同一任务内的微任务)再执行。
+              const pending = pendingActionRef.current;
+              if (pending) {
+                pendingActionRef.current = null;
+                queueMicrotask(pending);
+                return;
+              }
               if (!skipFocusRestoreRef.current) return;
               skipFocusRestoreRef.current = false;
               e.preventDefault();
@@ -76,6 +90,10 @@ export function TabContextMenu({
                   key={entry.label}
                   asChild
                   onSelect={() => {
+                    if (entry.opensDialog) {
+                      pendingActionRef.current = entry.onSelect;
+                      return;
+                    }
                     if (entry.opensFocusedInput) skipFocusRestoreRef.current = true;
                     entry.onSelect();
                   }}

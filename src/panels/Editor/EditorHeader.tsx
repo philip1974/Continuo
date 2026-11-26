@@ -311,11 +311,17 @@ export const EditorHeader = memo(function EditorHeader({
       const copyFailed = t('panels.explorer.copy_path_failed');
       return [
         // 右侧键位取当前生效绑定(菜单打开时构建,改键后下次打开即跟随;VSCode 标签右键「关闭 ⌘W」「向右拆分 ⌘\」)
-        { label: t('shell.tab.ctx.close'), onSelect: close('close'), shortcut: commandHotkeyText(CLOSE_ACTIVE_EDITOR_COMMAND) },
-        { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: tabsChrome.length <= 1 },
-        { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= tabsChrome.length - 1 },
-        { label: t('shell.tab.ctx.close_saved'), onSelect: close('saved') },
-        { label: t('shell.tab.ctx.close_all'), onSelect: close('all') },
+        // 关闭类项可能弹未保存确认框(opensDialog:焦点先回 tab 再执行,确认框拿到初始焦点)
+        {
+          label: t('shell.tab.ctx.close'),
+          onSelect: close('close'),
+          shortcut: commandHotkeyText(CLOSE_ACTIVE_EDITOR_COMMAND),
+          opensDialog: true,
+        },
+        { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: tabsChrome.length <= 1, opensDialog: true },
+        { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= tabsChrome.length - 1, opensDialog: true },
+        { label: t('shell.tab.ctx.close_saved'), onSelect: close('saved'), opensDialog: true },
+        { label: t('shell.tab.ctx.close_all'), onSelect: close('all'), opensDialog: true },
         'separator',
         {
           label: t('panels.explorer.ctx.copy_path'),

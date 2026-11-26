@@ -12,11 +12,13 @@ import {
 import { SETTINGS } from './helpers/settings';
 
 const CLOSE_ALL = /^(全部关闭|Close All|모두 닫기)$/;
+const CLOSE = /^(关闭|Close|닫기)$/;
 const CLOSE_OTHERS = /^(关闭其他|Close Others|기타 항목 닫기)$/;
 const READONLY_TITLE = /^(File Is Read-Only|文件是只读的|읽기 전용 파일)$/;
 const OVERWRITE = /^(Overwrite|覆盖|덮어쓰기)$/;
 const MULTI_TITLE = /(following 2 files|以下 2 个文件|다음 2개 파일)/;
 const SAVE_ALL = /^(Save All|全部保存|모두 저장)$/;
+const SAVE = /^(Save|保存|저장)$/;
 
 test('编辑器 tab 右键「全部关闭」遇脏文件:先确认,取消则一个都不关;不保存则全部关闭', async ({ window }) => {
   await window.locator('text=README.md').first().click();
@@ -36,6 +38,10 @@ test('编辑器 tab 右键「全部关闭」遇脏文件:先确认,取消则一�
   await window.getByRole('menuitem', { name: CLOSE_ALL }).click();
   const dialog = window.locator('.wm-modal-content');
   await expect(dialog).toContainText(EDITOR_SAVE_CHANGES_TITLE);
+  // 确认框是模态:初始焦点在「保存」,不被菜单关闭的焦点还原抢回背后的 tab
+  await expect(dialog.getByRole('button', { name: SAVE })).toBeFocused({ timeout: 5_000 });
+  await window.keyboard.press('Tab'); // Tab 留在确认框里,不进背后的 CodeMirror
+  await expect(dialog.locator(':focus')).toHaveCount(1);
   await window.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(tabs).toHaveCount(2);
@@ -75,6 +81,7 @@ test('编辑器 tab「全部关闭」遇 2 个脏文件 → 一个合并框列�
   const dialog = window.locator('.wm-modal-content');
   await expect(dialog).toContainText(MULTI_TITLE);
   await expect(dialog.locator('li')).toHaveText(['a.ts', 'b.ts']);
+  await expect(dialog.getByRole('button', { name: SAVE_ALL })).toBeFocused({ timeout: 5_000 });
   await dialog.getByRole('button', { name: SAVE_ALL }).click();
   await expect(dialog.getByText(READONLY_TITLE)).toBeVisible({ timeout: 5_000 });
   await expect(tabs).toHaveCount(3); // 尚未处理完 → 一个都不关
@@ -83,6 +90,23 @@ test('编辑器 tab「全部关闭」遇 2 个脏文件 → 一个合并框列�
   // 接着保存 b.ts(不再逐个询问),然后全部关闭
   await expect.poll(() => readFile(bPath, 'utf8'), { timeout: 5_000 }).toContain('// dirty-b.ts');
   await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible({ timeout: 5_000 });
+});
+
+test('编辑器 tab 右键「关闭」活动的干净 tab(不弹框)→ 同 ⌘W,焦点进新的活动编辑器,可直接键入', async ({ window }) => {
+  await window.locator('text=README.md').first().click();
+  await window.locator('text=src').first().click();
+  await window.locator('text=a.ts').first().click();
+  const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
+  await expect(tabs).toHaveCount(2, { timeout: 10_000 });
+  await expect(window.locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
+
+  await tabs.filter({ hasText: 'a.ts' }).click({ button: 'right' });
+  await window.getByRole('menuitem', { name: CLOSE }).click();
+  await expect(tabs).toHaveCount(1, { timeout: 5_000 });
+  const editable = window.locator('.cm-content, .ProseMirror').first();
+  await expect(editable).toBeFocused({ timeout: 5_000 });
+  await window.keyboard.type('ctx-close');
+  await expect(editable).toContainText('ctx-close');
 });
 
 test('dock tab 右键:Shift+F10 打开菜单,「关闭其他」只留当前面板', async ({ window }) => {

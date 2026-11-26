@@ -302,11 +302,12 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
           ];
     return [
       ...rename,
-      { label: t('shell.tab.ctx.close'), onSelect: close('close') },
-      { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: panels.length <= 1 },
-      { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= panels.length - 1 },
+      // 关闭类项可能弹关闭确认(终端运行中程序;opensDialog:焦点先回 tab 再执行,确认框拿到初始焦点)
+      { label: t('shell.tab.ctx.close'), onSelect: close('close'), opensDialog: true },
+      { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: panels.length <= 1, opensDialog: true },
+      { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= panels.length - 1, opensDialog: true },
       'separator',
-      { label: t('shell.tab.ctx.close_all'), onSelect: close('all') },
+      { label: t('shell.tab.ctx.close_all'), onSelect: close('all'), opensDialog: true },
     ];
   }, [api, t]);
 

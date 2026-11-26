@@ -98,6 +98,8 @@ async function closeAll() {
   )!;
   fireEvent.contextMenu(first);
   await click(screen.getByRole('menuitem', { name: 'Close All' }));
+  // 关闭类项在菜单关闭、焦点还原后才执行(Radix 在 setTimeout 里还原,见 TabContextMenu opensDialog)
+  await act(() => new Promise((r) => setTimeout(r, 0)));
 }
 /** 「全部关闭」→ 合并框(file-01、file-03)→「全部保存」。 */
 async function closeAllAndSaveAll() {
@@ -151,6 +153,7 @@ describe('多个脏文件 → 一个合并确认框', () => {
     const first = document.querySelector<HTMLElement>('[role=tab]')!;
     fireEvent.contextMenu(first);
     await click(screen.getByRole('menuitem', { name: 'Close All' }));
+    await act(() => new Promise((r) => setTimeout(r, 0)));
     expect(screen.getByText(multiTitle(12))).toBeTruthy();
     expect(listedNames()).toEqual([
       ...many.slice(0, 10).map((p) => p.slice('/w/'.length)),

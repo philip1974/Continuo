@@ -21,6 +21,8 @@ const items = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElem
 const labelOf = (el: HTMLElement): string => el.querySelector('.wm-menu-item__content')?.textContent ?? '';
 const labels = (): string[] => items().map(labelOf);
 const item = (label: string): HTMLElement => items().find((el) => labelOf(el) === label)!;
+/** 关闭类项在菜单关闭、焦点还原后才执行(Radix 在 setTimeout 里还原,见 TabContextMenu opensDialog)。 */
+const afterMenuClose = () => act(() => new Promise((r) => setTimeout(r, 0)));
 
 beforeEach(() => setLocale('en'));
 afterEach(() => {
@@ -115,11 +117,12 @@ describe('编辑器文件 tab 右键菜单', () => {
     ['Close to the Right', ['/w/c.ts']],
     ['Close Saved', ['/w/a.ts', '/w/c.ts']],
     ['Close All', ['/w/a.ts', '/w/src/b.ts', '/w/c.ts']],
-  ])('%s → 按 tab 顺序请求关闭对应 tab', (label, ids) => {
+  ])('%s → 按 tab 顺序请求关闭对应 tab', async (label, ids) => {
     const onCloseTabsRequest = vi.fn();
     renderEditorHeader(onCloseTabsRequest);
     fireEvent.contextMenu(editorTabEl('b.ts'));
     fireEvent.click(item(label));
+    await afterMenuClose();
     expect(onCloseTabsRequest).toHaveBeenCalledWith(ids);
   });
 
@@ -194,8 +197,25 @@ describe('dock 面板 tab 右键菜单', () => {
     const { tab, panels } = renderDockTab('t2', ['t1', 't2', 't3']);
     fireEvent.contextMenu(tab);
     fireEvent.click(item('Close Others'));
-    await act(async () => {});
+    await afterMenuClose();
     expect(panels.map((p) => p.api.close.mock.calls.length)).toEqual([1, 0, 1]);
+  });
+
+  it('关闭类项在菜单关闭、焦点回到 tab 后才执行(关闭确认框拿到焦点,见 tab-context-menu-focus)', async () => {
+    const { tab, panels } = renderDockTab('t2', ['t1', 't2', 't3']);
+    let focusAtClose: Element | null = null;
+    panels[0]!.api.close.mockImplementation(() => {
+      focusAtClose = document.activeElement;
+    });
+    tab.focus();
+    fireEvent.contextMenu(tab);
+    item('Close Others').focus();
+    fireEvent.click(item('Close Others'));
+    expect(panels[0]!.api.close).not.toHaveBeenCalled(); // 菜单还没关完
+    await afterMenuClose();
+    await act(async () => {});
+    expect(panels[0]!.api.close).toHaveBeenCalledTimes(1);
+    expect(focusAtClose).toBe(tab);
   });
 
   it('单个面板:「关闭其他」「关闭右侧」禁用;Shift+F10 打开菜单', () => {
