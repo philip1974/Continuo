@@ -493,6 +493,12 @@ const api = {
       root: string | null,
     ): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.NOTIFY_ROOT, { root }),
     /**
+     * 在本窗口打开文件夹前调用:该文件夹已在别的主窗口打开 → main 聚焦那个窗口,data=true(调用方不再切本窗口 root);
+     * 否则 data=false。
+     */
+    focusWorkspaceWindow: (root: string): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS_WORKSPACE_WINDOW, { root }),
+    /**
      * renderer 解析出的主题(light / dark)变化时通知 main:所有窗口底色改为对应画布色,新窗口 / popout 沿用;
      * main 同时持久化(含主题模式 mode,system 时冷启动按 OS 外观),下次冷启动首窗即用。
      */

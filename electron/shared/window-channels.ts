@@ -13,6 +13,11 @@ export const WINDOW_CHANNELS = {
    */
   NOTIFY_ROOT: 'window:notify-root',
   /**
+   * renderer 要在本窗口打开文件夹(最近打开 / 打开文件夹… / 拖入文件夹)前先问 main:该文件夹已在**别的**主窗口打开
+   * → main 聚焦那个窗口并返回 true,调用方不再改本窗口的 root(VSCode 同);否则 false,照常切换。payload `{ root }`。
+   */
+  FOCUS_WORKSPACE_WINDOW: 'window:focus-workspace-window',
+  /**
    * renderer 解析出的主题(light / dark)变化时调 → main 记住最近主题,把所有窗口的 backgroundColor 改为对应
    * 画布色,之后新建的窗口 / popout 也用它(否则亮色用户开窗 / 缩放时未绘制区闪深色)。
    */

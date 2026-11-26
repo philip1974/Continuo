@@ -118,7 +118,10 @@ import {
   hookEventsDirFor,
   installStopHookInWorkspace,
 } from './services/mcp-tools-hook-bridge';
-import { getWorkspaceRoot as getWindowWorkspaceRoot } from './services/window-workspace-roots.service';
+import {
+  getWorkspaceRoot as getWindowWorkspaceRoot,
+  setWorkspaceRoot,
+} from './services/window-workspace-roots.service';
 import { startPluginMcpIpc } from './ipc/plugin-mcp.ipc';
 import { primePluginsWatcherBaseline } from './ipc/plugins.ipc';
 import {
@@ -765,6 +768,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
 
   const seq = opts.windowSeq;
   setWindowSeq(win.id, seq);
+  // 带工作区建的窗口(打开文件夹 / 启动恢复)在 renderer 恢复并上报 root 之前就登记:紧接着再打开同一文件夹
+  //(连点 / 连续 open-file)也能认出它已在这个窗口打开,聚焦而不是再开一个(见 focusWindowWithWorkspace)。
+  if (opts.workspace !== undefined) setWorkspaceRoot(win.id, opts.workspace);
   // 须先于 wireWindowCloseFlush 挂:关窗流程的 close 监听会同步隐藏窗口,之后取到的状态不可信。
   win.on('close', () => captureWindowState(seq, win));
   wireWindowCloseFlush(win);

@@ -14,6 +14,7 @@ import { useCallback, useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
+import { focusWindowIfWorkspaceOpen } from '@/lib/focus-workspace-window';
 import {
   trySelectDirectoryLock,
   releaseSelectDirectoryLock,
@@ -54,6 +55,9 @@ export async function selectWorkspaceFolder(opts: SelectWorkspaceFolderOptions =
     const r = await coApi.fs.selectDirectory();
     if (!isLatest()) return;
     if (r.ok && r.data) {
+      // 选的文件夹已在别的窗口打开 → 那个窗口已被聚焦,本窗口不变(VSCode 同)。
+      if (await focusWindowIfWorkspaceOpen(r.data)) return;
+      if (!isLatest()) return;
       const { setRoot } = useWorkspaceStore.getState();
       setRoot(r.data);
       opts.onSelected?.();

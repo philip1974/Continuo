@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   Null: () => null,
   dropInto: vi.fn(async (..._args: unknown[]) => {}),
   listDir: vi.fn(),
+  focusWorkspaceWindow: vi.fn(async (_root: string) => ({ ok: true, data: false })),
 }));
 
 const treeFiles: FileEntry[] = [
@@ -34,6 +35,7 @@ vi.mock('@/lib/co-api', () => ({
     window: {
       notifyRoot: vi.fn(async () => ({ ok: true })),
       getPathForFile: () => '/src-folder',
+      focusWorkspaceWindow: h.focusWorkspaceWindow,
       onMenuCommand: () => () => {},
     },
     fs: {
@@ -189,5 +191,18 @@ describe('拖文件夹:Explorer 以外区域 → 仍打开为 workspace', () => 
     });
     await waitFor(() => expect(useWorkspaceStore.getState().root).toBe('/src-folder'));
     expect(h.dropInto).not.toHaveBeenCalled();
+  });
+});
+
+describe('拖文件夹:该文件夹已在别的窗口打开', () => {
+  it('落在 Explorer 以外 → main 聚焦那个窗口,本窗口 workspace 不变(VSCode 同)', async () => {
+    h.focusWorkspaceWindow.mockResolvedValueOnce({ ok: true, data: true });
+    const { container } = await mount();
+    await act(async () => {
+      fireEvent.drop(container.querySelector('main')!, { dataTransfer: folderDT() });
+    });
+    await waitFor(() => expect(h.focusWorkspaceWindow).toHaveBeenCalledWith('/src-folder'));
+    await flush();
+    expect(useWorkspaceStore.getState().root).toBe('/work');
   });
 });

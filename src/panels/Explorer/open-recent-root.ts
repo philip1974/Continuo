@@ -1,5 +1,6 @@
 import { coApi } from '@/lib/co-api';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
+import { focusWindowIfWorkspaceOpen } from '@/lib/focus-workspace-window';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 // race(R27,R18/R19 同族收口):改用全窗口共享的 workspaceRootSelectionGuard,使「打开最近」与
@@ -35,6 +36,9 @@ export async function openRecentRootOrNotify(
       else notifyFailure(r);
       return;
     }
+    // 已在别的窗口打开 → 那个窗口已被聚焦,本窗口不变(VSCode 同)。
+    if (await focusWindowIfWorkspaceOpen(path)) return;
+    if (!isLatest()) return;
     setRoot(path);
   } catch (err) {
     if (!isLatest()) return;

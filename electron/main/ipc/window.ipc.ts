@@ -21,8 +21,14 @@ import {
 import { EXPLORER_FILE_NAME } from '../../shared/explorer-persistence-schema';
 import {
   clearWindow as clearWindowRoot,
+  getWorkspaceRoot,
   setWorkspaceRoot,
+  workspaceRootEntries,
 } from '../services/window-workspace-roots.service';
+import {
+  findWindowWithWorkspace,
+  type WorkspaceWindowCandidate,
+} from '../services/workspace-window-lookup.service';
 import { clearWindow as clearEditorDocuments } from '../services/window-editor-documents.service';
 import { codedError, errorMessage, thrownFields } from '../../shared/error-message';
 import { mapNodeErrnoCode } from './fs/path-utils';
@@ -112,6 +118,8 @@ export async function openWorkspaceWindowWith(
   createMainWindow: WindowIpcDeps['createMainWindow'],
   workspace?: string,
 ): Promise<void> {
+  // 该文件夹已在某个主窗口打开 → 聚焦那个窗口,不再开第二个(VSCode 同)。
+  if (workspace !== undefined && (await focusWindowWithWorkspace(workspace))) return;
   const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
   let windowSeq: number;
   try {
@@ -125,6 +133,35 @@ export async function openWorkspaceWindowWith(
   }
   createMainWindow(workspace === undefined ? { windowSeq } : { windowSeq, workspace, fresh: true });
 }
+
+/**
+ * 「文件夹已打开就聚焦那个窗口」(VSCode findWindowOnWorkspaceOrFolder → focus):在各主窗口当前 root 里找与 `root`
+ * 同一目录(realpath + 平台语义比较)的窗口,找到则还原最小化并聚焦,返回 true。`excludeWindowId`:不把发起方自己算进去。
+ * 关窗 / 退出流程中已隐藏的窗口不算(它马上消失,聚焦它等于没反应)。主窗打开文件夹的所有入口都经这里:
+ * renderer 本窗口切换(window:focus-workspace-window)与新开窗口(openWorkspaceWindowWith)。
+ */
+export async function focusWindowWithWorkspace(root: string, excludeWindowId?: number): Promise<boolean> {
+  const candidates: WorkspaceWindowCandidate[] = [];
+  for (const [windowId, windowRoot] of workspaceRootEntries()) {
+    if (windowId === excludeWindowId) continue;
+    const win = BrowserWindow.fromId(windowId);
+    if (!win || win.isDestroyed() || (!win.isVisible() && !win.isMinimized())) continue;
+    candidates.push({ windowId, root: windowRoot });
+  }
+  const id = await findWindowWithWorkspace(root, candidates);
+  if (id === null) return false;
+  const win = BrowserWindow.fromId(id);
+  if (!win || win.isDestroyed()) return false;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+  return true;
+}
+
+const FocusWorkspaceWindowInput = z
+  .object({
+    root: z.string().min(1).max(ROOT_MAX),
+  })
+  .strict();
 
 const NotifyRootInput = z
   .object({
@@ -195,6 +232,18 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     }
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     setWorkspaceRoot(win.id, root);
+  });
+  // 本窗口要打开文件夹前问一句:已在别的主窗口打开 → 聚焦它、返回 true(发起方不再改自己的 root)。发起方当前打开的
+  // 就是这个文件夹时返回 false(保持原行为),即使别的窗口也开着同一目录。
+  safeHandleWithCtx(WINDOW_CHANNELS.FOCUS_WORKSPACE_WINDOW, FocusWorkspaceWindowInput, async (input, { event }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    if (!path.isAbsolute(input.root)) return false;
+    const own = getWorkspaceRoot(win.id);
+    if (own !== null && (await findWindowWithWorkspace(input.root, [{ windowId: win.id, root: own }])) !== null) {
+      return false;
+    }
+    return focusWindowWithWorkspace(input.root, win.id);
   });
   // 主题变化:记住(并持久化到 userData,供下次冷启动首窗)并把所有已开窗口(主窗 + popout)的底色改为对应画布色。
   safeHandle(WINDOW_CHANNELS.NOTIFY_THEME, NotifyThemeInput, (input) => {

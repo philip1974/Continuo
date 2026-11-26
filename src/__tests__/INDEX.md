@@ -2089,6 +2089,13 @@
 - [`search-query.spec.ts`](./workspace-search/search-query.spec.ts)
 - [`search-view.spec.tsx`](./workspace-search/search-view.spec.tsx)
 
+## [workspace-window-dedupe(同一文件夹只在一个窗口打开)](./workspace-window-dedupe/README.md)
+
+- [`find-window-with-workspace.spec.ts`](./workspace-window-dedupe/find-window-with-workspace.spec.ts)
+- [`focus-workspace-window-ipc.spec.ts`](./workspace-window-dedupe/focus-workspace-window-ipc.spec.ts)
+- [`renderer-entries.spec.ts`](./workspace-window-dedupe/renderer-entries.spec.ts)
+- [`wiring.spec.ts`](./workspace-window-dedupe/wiring.spec.ts)
+
 ## [wrap-panel-close(dock 关闭动画拦截)](./wrap-panel-close/README.md)
 
 - [`wrap-panel-close.spec.ts`](./wrap-panel-close/wrap-panel-close.spec.ts)

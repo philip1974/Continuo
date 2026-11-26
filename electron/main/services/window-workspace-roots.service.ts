@@ -29,6 +29,11 @@ export function getWorkspaceRoot(windowId: number): string | null {
   return map.get(windowId) ?? null;
 }
 
+/** 全部 windowId → root(只读迭代;「文件夹已在哪个窗口打开」判定用,见 workspace-window-lookup.service)。 */
+export function workspaceRootEntries(): Iterable<readonly [number, string]> {
+  return map.entries();
+}
+
 export function clearWindow(windowId: number): void {
   map.delete(windowId);
 }
