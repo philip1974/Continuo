@@ -141,7 +141,7 @@ describe('选项与非法正则', () => {
     expect(regex.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(regex);
     fireEvent.click(within(group).getByRole('button', { name: '区分大小写' }));
-    fireEvent.click(within(group).getByRole('button', { name: '全词匹配' }));
+    fireEvent.click(within(group).getByRole('button', { name: '全字匹配' }));
     flush();
     expect(regex.getAttribute('aria-pressed')).toBe('true');
     expect(lastStart().query).toMatchObject({ isRegex: true, matchCase: true, wholeWord: true });

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { IconButton, Input } from '@/design';
 import { translateCount, useT } from '@/i18n';
 import { clampSearchQuery, regexSyntaxError } from '@/lib/search-query';
+import { FIND_OPTION_LABEL_KEYS, FIND_OPTIONS_GROUP_KEY, findOptionTooltip, matchFindOptionHotkey } from '@/lib/find-options';
 import { isImeComposing } from '@/design/ime';
 import { ChevronDownIcon, ChevronUpIcon, CloseIcon } from '@/lib/ui-icons';
 import type { FindHistory } from '@/panels/Editor/find-widget-model';
@@ -72,10 +73,11 @@ export function TerminalSearchBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const result = searchApi.result;
   const placeholderLabel = label ?? t('panels.terminal.search.placeholder');
-  const optionsGroupLabel = t('panels.terminal.search.options_group');
-  const regexLabel = t('panels.terminal.search.regex');
-  const caseSensitiveLabel = t('panels.terminal.search.case_sensitive');
-  const wholeWordLabel = t('panels.terminal.search.whole_word');
+  // 选项名称 / 切换键与编辑器查找、在文件中查找共用(src/lib/find-options)。
+  const optionsGroupLabel = t(FIND_OPTIONS_GROUP_KEY);
+  const regexLabel = t(FIND_OPTION_LABEL_KEYS.regex);
+  const caseSensitiveLabel = t(FIND_OPTION_LABEL_KEYS.caseSensitive);
+  const wholeWordLabel = t(FIND_OPTION_LABEL_KEYS.wholeWord);
   const previousLabel = t('panels.terminal.search.previous');
   const nextLabel = t('panels.terminal.search.next');
   const closeLabel = t('panels.terminal.search.close');
@@ -135,9 +137,17 @@ export function TerminalSearchBar({
       // back into the search input.
       onMouseDown={(e) => e.stopPropagation()}
       // Esc 挂在根节点:点过选项 / 跳转按钮后焦点在按钮上,Esc 也须关闭并把焦点还给终端(onClose)。
-      // IME 组合中的 Esc 属于输入法(取消组合),不关闭。
+      // 选项切换键 ⌥⌘C / ⌥⌘W / ⌥⌘R(Windows / Linux Alt+C / W / R)同样挂在根节点(VSCode 查找框内生效)。
+      // IME 组合中的按键属于输入法(Esc 取消组合),不处理。
       onKeyDown={(event) => {
-        if (event.key !== 'Escape' || isImeComposing(event.nativeEvent)) return;
+        if (isImeComposing(event.nativeEvent)) return;
+        const option = event.key === 'Escape' ? null : matchFindOptionHotkey(event.nativeEvent);
+        if (option) {
+          event.preventDefault();
+          searchApi.setOptions(toggleOption(searchApi.options, option));
+          return;
+        }
+        if (event.key !== 'Escape') return;
         event.preventDefault();
         onClose();
       }}
@@ -201,7 +211,7 @@ export function TerminalSearchBar({
         <IconButton
           size="xs"
           aria-label={regexLabel}
-          title={regexLabel}
+          title={findOptionTooltip(regexLabel, 'regex')}
           aria-pressed={searchApi.options.regex}
           onClick={() =>
             searchApi.setOptions(toggleOption(searchApi.options, 'regex'))
@@ -212,7 +222,7 @@ export function TerminalSearchBar({
         <IconButton
           size="xs"
           aria-label={caseSensitiveLabel}
-          title={caseSensitiveLabel}
+          title={findOptionTooltip(caseSensitiveLabel, 'caseSensitive')}
           aria-pressed={searchApi.options.caseSensitive}
           onClick={() =>
             searchApi.setOptions(
@@ -225,7 +235,7 @@ export function TerminalSearchBar({
         <IconButton
           size="xs"
           aria-label={wholeWordLabel}
-          title={wholeWordLabel}
+          title={findOptionTooltip(wholeWordLabel, 'wholeWord')}
           aria-pressed={searchApi.options.wholeWord}
           onClick={() =>
             searchApi.setOptions(toggleOption(searchApi.options, 'wholeWord'))

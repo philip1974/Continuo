@@ -17,9 +17,10 @@ export const CODEMIRROR_PHRASE_KEYS: Readonly<Record<string, TranslationKey>> = 
   next: 'editor.cm.next',
   previous: 'editor.cm.previous',
   all: 'editor.cm.all',
-  'match case': 'editor.cm.match_case',
-  regexp: 'editor.cm.regexp',
-  'by word': 'editor.cm.by_word',
+  // 选项名称与在文件中查找 / 终端查找共用(src/lib/find-options)
+  'match case': 'find.option.match_case',
+  regexp: 'find.option.regex',
+  'by word': 'find.option.whole_word',
   replace: 'editor.cm.replace_one',
   'replace all': 'editor.cm.replace_all',
   close: 'editor.cm.close',

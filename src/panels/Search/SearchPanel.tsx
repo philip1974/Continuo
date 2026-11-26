@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Badge, IconButton, Input } from '@/design';
 import { isImeComposing } from '@/design/ime';
 import { translateCount, useT } from '@/i18n';
+import { FIND_OPTION_LABEL_KEYS, FIND_OPTIONS_GROUP_KEY, findOptionTooltip, matchFindOptionHotkey, type FindOption } from '@/lib/find-options';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { regexSyntaxError } from '@/lib/search-query';
 import { ChevronDownIcon, MoreActionsIcon } from '@/lib/ui-icons';
@@ -25,6 +26,11 @@ import {
 import { SEARCH_MAX_FILES, type SearchFileResult } from '../../../electron/shared/workspace-search';
 
 const ROW_HEIGHT = 22;
+const STORE_OPTION: Readonly<Record<FindOption, 'matchCase' | 'wholeWord' | 'isRegex'>> = {
+  caseSensitive: 'matchCase',
+  wholeWord: 'wholeWord',
+  regex: 'isRegex',
+};
 const CHEVRON_ICON = <ChevronDownIcon size={14} />;
 const DETAILS_ICON = <MoreActionsIcon size={14} />;
 
@@ -167,14 +173,25 @@ export function SearchPanel() {
     }
   };
 
-  const toggle = (label: string, pressed: boolean, option: 'isRegex' | 'matchCase' | 'wholeWord', glyph: ReactNode) => (
-    <IconButton size="xs" aria-label={label} title={label} aria-pressed={pressed} onClick={() => actions.toggleOption(option)}>
-      {glyph}
-    </IconButton>
-  );
+  // 三处查找共用的选项名称 / 切换键(src/lib/find-options):⌥⌘C / ⌥⌘W / ⌥⌘R(Windows / Linux Alt+C / W / R),焦点在本视图内即生效。
+  const toggle = (option: FindOption, pressed: boolean, glyph: ReactNode) => {
+    const label = t(FIND_OPTION_LABEL_KEYS[option]);
+    return (
+      <IconButton size="xs" aria-label={label} title={findOptionTooltip(label, option)} aria-pressed={pressed} onClick={() => actions.toggleOption(STORE_OPTION[option])}>
+        {glyph}
+      </IconButton>
+    );
+  };
+  const onViewKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (isImeComposing(e.nativeEvent)) return;
+    const option = matchFindOptionHotkey(e.nativeEvent);
+    if (!option) return;
+    e.preventDefault();
+    actions.toggleOption(STORE_OPTION[option]);
+  };
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col bg-canvas text-fg" data-testid="search-panel">
+    <div className="flex h-full w-full min-w-0 flex-col bg-canvas text-fg" data-testid="search-panel" onKeyDown={onViewKeyDown}>
       <div className="flex flex-col gap-1.5 border-b border-line p-2">
         <div className="flex min-w-0 items-center gap-1">
           <Input
@@ -189,10 +206,10 @@ export function SearchPanel() {
             title={regexError ?? undefined}
             className="min-w-0 flex-1"
           />
-          <div role="group" aria-label={t('panels.terminal.search.options_group')} className="inline-flex shrink-0 items-center gap-0.5">
-            {toggle(t('panels.terminal.search.case_sensitive'), s.matchCase, 'matchCase', 'Aa')}
-            {toggle(t('panels.terminal.search.whole_word'), s.wholeWord, 'wholeWord', 'ab')}
-            {toggle(t('panels.terminal.search.regex'), s.isRegex, 'isRegex', '.*')}
+          <div role="group" aria-label={t(FIND_OPTIONS_GROUP_KEY)} className="inline-flex shrink-0 items-center gap-0.5">
+            {toggle('caseSensitive', s.matchCase, 'Aa')}
+            {toggle('wholeWord', s.wholeWord, 'ab')}
+            {toggle('regex', s.isRegex, '.*')}
           </div>
           <IconButton
             size="xs"

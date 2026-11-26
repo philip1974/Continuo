@@ -84,7 +84,7 @@ describe('编辑器查找面板随界面语言', () => {
     const { placeholders, text } = panelText(view);
     expect(placeholders).toContain(t('editor.cm.find'));
     expect(placeholders).toContain(t('editor.cm.replace'));
-    for (const key of ['editor.cm.next', 'editor.cm.previous', 'editor.cm.all', 'editor.cm.match_case', 'editor.cm.regexp', 'editor.cm.by_word', 'editor.cm.replace_all'] as const) {
+    for (const key of ['editor.cm.next', 'editor.cm.previous', 'editor.cm.all', 'find.option.match_case', 'find.option.regex', 'find.option.whole_word', 'editor.cm.replace_all'] as const) {
       expect(text).toContain(t(key));
     }
     expect(text).not.toMatch(/match case|regexp|by word|replace all/);

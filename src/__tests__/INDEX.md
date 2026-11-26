@@ -824,6 +824,10 @@
 
 - [`file-icon.spec.ts`](./file-icon/file-icon.spec.ts)
 
+## [三处查找的选项一致(名称 / tooltip 快捷键 / 切换键)](./find-options-parity/README.md)
+
+- [`find-options-parity.spec.tsx`](./find-options-parity/find-options-parity.spec.tsx)
+
 ## [关闭弹窗 / tab / 面板后的焦点归属(VSCode 对齐)](./focus-after-close/README.md)
 
 - [`dock-panel-close-focus.spec.ts`](./focus-after-close/dock-panel-close-focus.spec.ts)

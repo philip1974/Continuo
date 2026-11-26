@@ -157,13 +157,13 @@ describe('Markdown 编辑模式 ⌘F', () => {
     const { pm } = await mount(DOC);
     openFind(pm);
     typeQuery('alpha');
-    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.case_sensitive') }));
+    fireEvent.click(screen.getByRole('button', { name: t('find.option.match_case') }));
     expect(countText()).toBe(t('editor.find.match_count', { n: 1, total: '2' }));
     typeQuery('alph');
-    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.whole_word') }));
+    fireEvent.click(screen.getByRole('button', { name: t('find.option.whole_word') }));
     expect(countText()).toBe(t('editor.find.no_results'));
-    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.whole_word') }));
-    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.regex') }));
+    fireEvent.click(screen.getByRole('button', { name: t('find.option.whole_word') }));
+    fireEvent.click(screen.getByRole('button', { name: t('find.option.regex') }));
     typeQuery('(alpha|beta)');
     expect(countText()).toBe(t('editor.find.match_count', { n: 1, total: '3' }));
     typeQuery('');
@@ -261,7 +261,7 @@ describe('与代码编辑器查找一致(VSCode findWidget)', () => {
   it('正则模式下带入选区时转义正则元字符(VSCode 同)', async () => {
     const { pm, view } = await mount('a.b axb\n');
     openFind(pm);
-    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.regex') }));
+    fireEvent.click(screen.getByRole('button', { name: t('find.option.regex') }));
     fireEvent.keyDown(findInput(), { key: 'Escape' });
     select(view, 1, 4);
     openFind(pm);
@@ -322,7 +322,7 @@ describe('与代码编辑器查找一致(VSCode findWidget)', () => {
   it('正则非法:计数区显示「正则表达式无效」,title 带错误信息', async () => {
     const { pm, container } = await mount(DOC);
     openFind(pm);
-    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.regex') }));
+    fireEvent.click(screen.getByRole('button', { name: t('find.option.regex') }));
     typeQuery('alpha(');
     expect(countText()).toBe(t('editor.find.invalid_regex'));
     expect(findInput().getAttribute('aria-invalid')).toBe('true');
@@ -333,13 +333,13 @@ describe('与代码编辑器查找一致(VSCode findWidget)', () => {
   it('按 tab 保留查找状态:切走再切回(重挂)查找条、查找词、选项与高亮恢复,焦点不被查找条抢走', async () => {
     const first = await mount(DOC);
     openFind(first.pm);
-    fireEvent.click(screen.getByRole('button', { name: t('panels.terminal.search.case_sensitive') }));
+    fireEvent.click(screen.getByRole('button', { name: t('find.option.match_case') }));
     typeQuery('alpha');
     first.unmount();
     mocks.instances.length = 0;
     const again = await mount(DOC);
     expect(findInput().value).toBe('alpha');
-    expect(screen.getByRole('button', { name: t('panels.terminal.search.case_sensitive') }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: t('find.option.match_case') }).getAttribute('aria-pressed')).toBe('true');
     expect(again.container.querySelectorAll('.co-find-match')).toHaveLength(2);
     expect(document.activeElement).not.toBe(findInput());
     // 关闭后切回:查找条不再出现

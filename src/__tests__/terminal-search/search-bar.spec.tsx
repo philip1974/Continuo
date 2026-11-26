@@ -69,7 +69,7 @@ describe('TerminalSearchBar UI', () => {
     expect(src).toContain('placeholder={placeholderLabel}');
     expect(src).toContain('aria-label={placeholderLabel}');
     expect(src).toContain('aria-label={regexLabel}');
-    expect(src).toContain('title={regexLabel}');
+    expect(src).toContain("title={findOptionTooltip(regexLabel, 'regex')}");
     expect(src).toContain('aria-label={closeLabel}');
     expect(src).toContain('title={closeLabel}');
   });
@@ -155,9 +155,9 @@ describe('TerminalSearchBar UI', () => {
       <TerminalSearchBar searchApi={api} onClose={vi.fn()} />,
     );
 
-    fireEvent.click(getByLabelText('panels.terminal.search.regex'));
-    fireEvent.click(getByLabelText('panels.terminal.search.case_sensitive'));
-    fireEvent.click(getByLabelText('panels.terminal.search.whole_word'));
+    fireEvent.click(getByLabelText('find.option.regex'));
+    fireEvent.click(getByLabelText('find.option.match_case'));
+    fireEvent.click(getByLabelText('find.option.whole_word'));
 
     expect(api.setOptions).toHaveBeenNthCalledWith(1, {
       regex: true,
@@ -186,11 +186,11 @@ describe('TerminalSearchBar UI', () => {
     expect(group).not.toBeNull();
     expect((group!.getAttribute('aria-label') ?? '').length).toBeGreaterThan(0);
     // 三个选项 toggle 都在该组内
-    expect(group!.contains(getByLabelText('panels.terminal.search.regex'))).toBe(true);
+    expect(group!.contains(getByLabelText('find.option.regex'))).toBe(true);
     expect(
-      group!.contains(getByLabelText('panels.terminal.search.case_sensitive')),
+      group!.contains(getByLabelText('find.option.match_case')),
     ).toBe(true);
-    expect(group!.contains(getByLabelText('panels.terminal.search.whole_word'))).toBe(
+    expect(group!.contains(getByLabelText('find.option.whole_word'))).toBe(
       true,
     );
     expect(group!.querySelectorAll('button[aria-pressed]').length).toBe(3);
@@ -324,7 +324,7 @@ describe('TerminalSearchBar UI', () => {
       <TerminalSearchBar searchApi={makeApi()} onClose={onClose} />,
     );
     for (const label of [
-      'panels.terminal.search.regex',
+      'find.option.regex',
       'panels.terminal.search.next',
     ]) {
       const btn = getByLabelText(label);

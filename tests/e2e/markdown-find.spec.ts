@@ -116,7 +116,7 @@ test('与代码编辑器查找一致:选区带入、⌘G / F3 跳转、↑ 翻�
   await expect(input).not.toBeFocused();
 
   // 非法正则:提示「正则表达式无效」,title 带 RegExp 错误信息
-  await window.getByRole('button', { name: /^(使用正则表达式|Use regular expression|정규식 사용)$/ }).click();
+  await window.getByRole('button', { name: /^(使用正则表达式|Use Regular Expression|정규식 사용)$/ }).click();
   await input.fill('needle(');
   const invalid = window.locator('main [role="status"]', { hasText: /^(正则表达式无效|Invalid regular expression|잘못된 정규식)$/ });
   await expect(invalid).toBeVisible();

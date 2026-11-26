@@ -1,5 +1,6 @@
 // CodeMirror ⌘F 查找面板的补强(对齐 VSCode 查找控件 findWidget):匹配计数「当前 / 总数」与「无结果」(标红 + 读屏播报)、
-// 替换快捷键(⌥⌘F / Ctrl+H)、选项切换(⌥⌘C / ⌥⌘W / ⌥⌘R,Windows / Linux 为 Alt+C / W / R)、查找框 ↑ / ↓ 历史。
+// 替换快捷键(⌥⌘F / Ctrl+H)、选项切换(⌥⌘C / ⌥⌘W / ⌥⌘R,Windows / Linux 为 Alt+C / W / R;与在文件中查找 / 终端查找同一组,
+// 见 src/lib/find-options)、查找框 ↑ / ↓ 历史、选项 / 按钮 tooltip(名称 + 快捷键)。
 //
 // 不自建面板(search({ createPanel })):@codemirror/search 不导出默认 SearchPanel,自建等于整段重写替换 / 只读 / 键盘
 // scope / phrases 逻辑。这里保留默认面板,ViewPlugin 在面板上追加一个计数元素并挂查找框按键 —— 面板结构只依赖
@@ -12,6 +13,8 @@ import { ViewPlugin, keymap, type Command, type EditorView, type ViewUpdate } fr
 import { SearchQuery, getSearchQuery, openSearchPanel, search, searchPanelOpen, setSearchQuery } from '@codemirror/search';
 import { isImeComposing } from '@/design/ime';
 import { regexSyntaxError } from '@/lib/search-query';
+import { findOptionTooltip, type FindOption } from '@/lib/find-options';
+import { hotkeyText, withHotkey } from '@/lib/hotkey-label';
 import { editorFindHistory, FIND_MATCH_LIMIT, formatFindCount, type FindCountState } from './find-widget-model';
 
 type ToggleField = 'caseSensitive' | 'wholeWord' | 'regexp';
@@ -76,6 +79,34 @@ function currentIndex(ranges: readonly number[], from: number, to: number): numb
   return 0;
 }
 
+/** 选项复选框(默认面板 input name)→ 共享选项与面板 phrase。 */
+const OPTION_FIELDS: ReadonlyArray<readonly [name: string, option: FindOption, phrase: string]> = [
+  ['case', 'caseSensitive', 'match case'],
+  ['word', 'wholeWord', 'by word'],
+  ['re', 'regex', 'regexp'],
+];
+/** 按钮(默认面板 button name)→ 面板 phrase 与面板内按键(VSCode 查找控件 tooltip「下一个匹配项 (Enter)」)。 */
+const BUTTON_TITLES: ReadonlyArray<readonly [name: string, phrase: string, combo?: string]> = [
+  ['next', 'next', 'enter'],
+  ['prev', 'previous', 'shift+enter'],
+  ['select', 'all'],
+  ['replace', 'replace'],
+  ['replaceAll', 'replace all'],
+  ['close', 'close', 'escape'],
+];
+
+/** 默认面板控件补 tooltip(VSCode:选项 / 按钮悬停显示名称与快捷键)。默认面板的复选框 / 按钮本身无 title。 */
+function addPanelTitles(view: EditorView, panel: HTMLElement): void {
+  for (const [name, option, phrase] of OPTION_FIELDS) {
+    const label = panel.querySelector(`input[name="${name}"]`)?.closest('label');
+    label?.setAttribute('title', findOptionTooltip(view.state.phrase(phrase), option));
+  }
+  for (const [name, phrase, combo] of BUTTON_TITLES) {
+    const label = view.state.phrase(phrase);
+    panel.querySelector(`button[name="${name}"]`)?.setAttribute('title', withHotkey(label, combo && hotkeyText(combo)));
+  }
+}
+
 class FindWidget {
   private panel: HTMLElement | null = null;
   private input: HTMLInputElement | null = null;
@@ -136,6 +167,7 @@ class FindWidget {
   private attach(panel: HTMLElement): void {
     this.panel = panel;
     this.query = null;
+    addPanelTitles(this.view, panel);
     this.input = panel.querySelector<HTMLInputElement>('[main-field]');
     const count = panel.ownerDocument.createElement('span');
     count.className = 'cm-search-count';

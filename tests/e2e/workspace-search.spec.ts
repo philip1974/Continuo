@@ -87,11 +87,20 @@ test('区分大小写 / 正则开关;非法正则提示', async ({ window, works
   const input = await openSearch(window);
   await input.fill('ALPHA');
   await expect(window.locator(STATUS)).toHaveText(summary(1, 2), { timeout: 10_000 });
-  await toggle(window, /^(区分大小写|Match case|대소문자 구분)$/).click();
+  await toggle(window, /^(区分大小写|Match Case|대\/소문자 구분)$/).click();
   await expect(window.locator(STATUS)).toHaveText(NO_RESULTS, { timeout: 10_000 });
-  await toggle(window, /^(区分大小写|Match case|대소문자 구분)$/).click();
+  await toggle(window, /^(区分大小写|Match Case|대\/소문자 구분)$/).click();
+  await expect(window.locator(STATUS)).toHaveText(summary(1, 2), { timeout: 10_000 });
+  // ⌥⌘C(Windows / Linux Alt+C)在查询框里切换区分大小写,与编辑器查找同一组键;tooltip 带快捷键
+  const caseToggle = toggle(window, /^(区分大小写|Match Case|대\/소문자 구분)$/);
+  await expect(caseToggle).toHaveAttribute('title', process.platform === 'darwin' ? / \(⌥⌘C\)$/ : / \(Alt\+C\)$/);
+  await input.press(process.platform === 'darwin' ? 'Meta+Alt+KeyC' : 'Alt+KeyC');
+  await expect(caseToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(window.locator(STATUS)).toHaveText(NO_RESULTS, { timeout: 10_000 });
+  await input.press(process.platform === 'darwin' ? 'Meta+Alt+KeyC' : 'Alt+KeyC');
+  await expect(caseToggle).toHaveAttribute('aria-pressed', 'false');
 
-  await toggle(window, /^(使用正则表达式|Use regular expression|정규식 사용)$/).click();
+  await toggle(window, /^(使用正则表达式|Use Regular Expression|정규식 사용)$/).click();
   await input.fill('al(pha|x) be');
   await expect(window.locator(STATUS)).toHaveText(summary(1, 1), { timeout: 10_000 });
   await input.fill('a(');
