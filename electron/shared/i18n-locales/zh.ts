@@ -166,6 +166,7 @@ export const zh: Record<TranslationKey, string> = {
   'commands.explorer.new_folder.title': '新建文件夹…',
   // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
   'commands.editor.close.title': '关闭编辑器',
+  'commands.editor.reopen_closed.title': '重新打开已关闭的编辑器',
   'commands.editor.next.title': '打开下一个编辑器',
   'commands.editor.previous.title': '打开上一个编辑器',
   'commands.editor.split.title': '拆分编辑器',

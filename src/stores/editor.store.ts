@@ -20,9 +20,11 @@ import {
 } from '../../electron/shared/explorer-persistence-schema';
 import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
 import {
+  persistedEditorViewStateOf,
   renameEditorViewStates,
   retainEditorViewStates,
 } from '@/panels/Editor/editor-view-state-cache';
+import { dropRecentlyClosedEditors, pushRecentlyClosedEditor } from '@/panels/Editor/recently-closed-editors';
 import { EDITOR_GROUPS_MAX, PRIMARY_EDITOR_GROUP_ID } from '../../electron/shared/editor-group-id';
 
 // ── 类型 ─────────────────────────────────────────────────────
@@ -535,6 +537,11 @@ export interface EditorFocusOpts {
    * 供迟到的会话恢复在用户已打开/切换 tab 后补入恢复 tab 而不抢回活动 tab。缺省 true。
    */
   readonly activate?: boolean;
+  /**
+   * 仅 openTab:tab 新加入目标组时插入的位置(越界收进范围;缺省 = 末尾)。已在组里的不移动。
+   * 供重新打开已关闭的编辑器插回原位置(BDD: src/__tests__/editor-reopen-closed/)。
+   */
+  readonly index?: number;
 }
 
 function nextFocusPulse(pulse: number, opts: EditorFocusOpts | undefined): number {
@@ -896,6 +903,36 @@ function closeIdInGroup(g: EditorGroup, closing: string, mru: readonly string[] 
   return { id: g.id, tabIds, activeTabId };
 }
 
+/** removeGroup 时移到相邻组(而不是关闭)的 tab:只在本组打开的文档里,keep='all' 全部、'dirty' 仅脏的。 */
+function groupRemovalMoves(s: Pick<EditorState, 'tabs' | 'groups'>, g: EditorGroup, keep: 'dirty' | 'all'): string[] {
+  const exclusive = g.tabIds.filter((id) => !s.groups.some((o) => o.id !== g.id && o.tabIds.includes(id)));
+  if (keep === 'all') return exclusive;
+  const dirty = new Set<string>();
+  for (const t of s.tabs) if (t.dirty) dirty.add(t.id);
+  return exclusive.filter((id) => dirty.has(id));
+}
+
+/**
+ * 用户关闭组 groupId 里的 tab(按关闭顺序)→ 各入最近关闭栈:路径、组、关闭时在组内的位置(按逐个关闭推算)、视图状态摘要。
+ * 插件经 SDK 打开的 tab 不记(同会话快照:路径受主进程内存记录保护,不按路径重新读)。BDD: src/__tests__/editor-reopen-closed/
+ */
+function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups' | 'viewRefs'>, groupId: string, closing: readonly string[]): void {
+  const order = groupTabsOf(s, groupId).map((t) => t.id);
+  for (const id of closing) {
+    const index = order.indexOf(id);
+    if (index < 0) continue;
+    order.splice(index, 1);
+    const tab = s.tabs.find((t) => t.id === id);
+    if (!tab || tab.pluginOpenedPath !== undefined) continue;
+    pushRecentlyClosedEditor({
+      path: tab.filePath,
+      groupId,
+      index,
+      viewState: persistedEditorViewStateOf(id, s.viewRefs.get(id)),
+    });
+  }
+}
+
 // ── 组内 tab MRU(BDD: src/__tests__/editor-close-mru/)──────────
 
 const EMPTY_TAB_MRU: EditorTabMru = new Map();
@@ -976,12 +1013,18 @@ function withTabMru(creator: StateCreator<EditorState>): StateCreator<EditorStat
   };
 }
 
-/** 组 g 里激活 tabId(不在组里则追加);keepActive:组已有活动 tab 时只追加不激活。 */
-function activateInGroup(g: EditorGroup, tabId: string, keepActive: boolean): EditorGroup {
+/** 在 index(越界收进范围;缺省末尾)处插入 item 的新数组。 */
+function insertAt<T>(items: readonly T[], item: T, index: number | undefined): T[] {
+  const at = index === undefined ? items.length : Math.min(Math.max(0, Math.trunc(index) || 0), items.length);
+  return [...items.slice(0, at), item, ...items.slice(at)];
+}
+
+/** 组 g 里激活 tabId(不在组里则插到 index,缺省追加);keepActive:组已有活动 tab 时只加入不激活。 */
+function activateInGroup(g: EditorGroup, tabId: string, keepActive: boolean, index?: number): EditorGroup {
   const has = g.tabIds.includes(tabId);
   const activeTabId = keepActive && g.activeTabId !== null ? g.activeTabId : tabId;
   if (has && activeTabId === g.activeTabId) return g;
-  return { id: g.id, tabIds: has ? g.tabIds : [...g.tabIds, tabId], activeTabId };
+  return { id: g.id, tabIds: has ? g.tabIds : insertAt(g.tabIds, tabId, index), activeTabId };
 }
 
 function targetGroupId(s: Pick<EditorState, 'groups' | 'activeGroupId'>, opts?: EditorFocusOpts): string {
@@ -1013,7 +1056,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
         const g = findGroup(s, gid)!;
         const exists = findEditorTabIndexById(s.tabs, tab.id) >= 0;
         if (!exists && (s.tabs.length >= PATH_ARRAY_MAX || tab.filePath.length > PATH_STR_MAX)) return s;
-        const nextG = activateInGroup(g, tab.id, opts?.activate === false);
+        const nextG = activateInGroup(g, tab.id, opts?.activate === false, opts?.index);
         const activeGroupId = nextActiveGroupId(s, gid, opts);
         if (exists && nextG === g && activeGroupId === s.activeGroupId) {
           return opts?.activate === false && g.activeTabId !== null ? s : { editorFocusPulse: pulse };
@@ -1042,7 +1085,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
         return s;
       }
       return {
-        tabs: appendEditorTab(s.tabs, tab),
+        tabs: opts?.index === undefined ? appendEditorTab(s.tabs, tab) : insertAt(s.tabs, tab, opts.index),
         activeTabId: keepActive ? s.activeTabId : tab.id,
         editorFocusPulse: pulse,
         chromeVersion: s.chromeVersion + 1, // perf P12:新增 tab → chrome 变
@@ -1051,7 +1094,10 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
 
   // perf P12:getStateAfter* 在无变化时返回原 tabs 引用,变化时返回新数组;据此
   // 决定是否 bump chromeVersion(增删/改名都改 chrome)。
-  closeTab: (id, groupId) =>
+  closeTab: (id, groupId) => {
+    const pre = get();
+    const gid = isMultiGroup(pre) ? (groupId ?? pre.activeGroupId) : (pre.groups[0]?.id ?? PRIMARY_EDITOR_GROUP_ID);
+    recordClosedEditors(pre, gid, [id]);
     set((s) => {
       if (!isMultiGroup(s)) {
         const mru = groupTabMruOf(s, s.groups[0]?.id ?? PRIMARY_EDITOR_GROUP_ID);
@@ -1063,7 +1109,8 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       const tabs = openElsewhere ? s.tabs : getStateAfterClosingTab(s.tabs, null, id).tabs;
       const nextG = closeIdInGroup(g, id, groupTabMruOf(s, g.id));
       return commitGroups(s, tabs, replaceGroup(s.groups, nextG), s.activeGroupId);
-    }),
+    });
+  },
 
   setActiveGroup: (groupId) =>
     set((s) => {
@@ -1106,16 +1153,20 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
     const pre = get();
     if (!isMultiGroup(pre) || !findGroup(pre, groupId)) return;
     flushEditorWriteBacks(findGroup(pre, groupId)!.tabIds);
+    {
+      // 组里随之关掉的 tab(不含移到相邻组的)入最近关闭栈
+      const s = get();
+      const move = groupRemovalMoves(s, findGroup(s, groupId)!, keep);
+      recordClosedEditors(s, groupId, findGroup(s, groupId)!.tabIds.filter((id) => !move.includes(id)));
+    }
     set((s) => {
       const idx = s.groups.findIndex((g) => g.id === groupId);
       if (!isMultiGroup(s) || idx < 0) return s;
       const g = s.groups[idx]!;
       const others = s.groups.filter((x) => x.id !== groupId);
       const target = others[Math.max(0, idx - 1)]!;
-      const byId = new Map<string, EditorTab>();
-      for (const t of s.tabs) byId.set(t.id, t);
       const exclusive = g.tabIds.filter((id) => !others.some((o) => o.tabIds.includes(id)));
-      const move = keep === 'all' ? exclusive : exclusive.filter((id) => byId.get(id)?.dirty === true);
+      const move = groupRemovalMoves(s, g, keep);
       const closed = new Set(exclusive.filter((id) => !move.includes(id)));
       const nextTarget: EditorGroup = {
         id: target.id,
@@ -1177,10 +1228,13 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
   // 先按 pre-flush 状态算出受影响(将被关闭 / 换 id)的 tab,只回写它们 —— 回写会把正在编辑的大文档
   // 整篇序列化并提前上抛,不相关的删除 / 改名 / 切 root 不应打断输入。回写只改 content / dirty,
   // 不改 id 与路径匹配;回写后变脏的 tab 按既有规则保留。
-  removePaths: (paths) =>
+  removePaths: (paths) => {
+    // 已删除的文件 / 目录:其下的最近关闭条目失效(VSCode 文件删除时同样移除)
+    dropRecentlyClosedEditors((p) => paths.some((removed) => isSameOrInsidePath(removed, p)));
     changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterRemovingPaths(tabs, active, paths),
-    ),
+    );
+  },
 
   // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃。
   // 编辑器视图状态(撤销历史 / 光标 / 滚动)随 tab 迁到新 id(BDD: src/__tests__/editor-view-state/)。
@@ -1199,10 +1253,13 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
     );
   },
 
-  closeTabsOutsideRoot: (root) =>
+  closeTabsOutsideRoot: (root) => {
+    // 切换工作区根:不在新根下的最近关闭条目失效(否则 ⇧⌘T 会打开旧工作区的文件)
+    dropRecentlyClosedEditors((p) => root === null || !isSameOrInsidePath(root, p));
     changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterClosingTabsOutsideRoot(tabs, active, root),
-    ),
+    );
+  },
 
   reloadFromDisk: (tabId, content, realPath, opts) => {
     const discard = opts?.discardChanges === true;

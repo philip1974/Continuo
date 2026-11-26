@@ -666,6 +666,10 @@
 
 - [`editor-popout-root.spec.tsx`](./editor-popout-root/editor-popout-root.spec.tsx)
 
+## [重新打开已关闭的编辑器(⇧⌘T)](./editor-reopen-closed/README.md)
+
+- [`reopen-closed-editor.spec.ts`](./editor-reopen-closed/reopen-closed-editor.spec.ts)
+
 ## [editor-revert-file](./editor-revert-file/README.md)
 
 - [`revert-file.spec.tsx`](./editor-revert-file/revert-file.spec.tsx)

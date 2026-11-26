@@ -167,6 +167,7 @@ export const ko: Record<TranslationKey, string> = {
   'commands.explorer.new_folder.title': '새 폴더…',
   // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
   'commands.editor.close.title': '편집기 닫기',
+  'commands.editor.reopen_closed.title': '닫힌 편집기 다시 열기',
   'commands.editor.next.title': '다음 편집기 열기',
   'commands.editor.previous.title': '이전 편집기 열기',
   'commands.editor.split.title': '편집기 분할',

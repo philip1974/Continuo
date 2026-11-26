@@ -2,6 +2,7 @@
 // - workbench.action.closeActiveEditor(⌘W):关当前文件 tab / 其它活动面板,无可关的才关窗口;
 // - workbench.action.files.save(⌘S):保存当前活动文件 tab,焦点在哪都生效;
 // - workbench.action.files.revert:还原当前活动文件 tab 为磁盘内容(丢弃未保存修改;同 VSCode 无默认键);
+// - workbench.action.reopenClosedEditor(⇧⌘T):重新打开最近关闭的编辑器(BDD: src/__tests__/editor-reopen-closed/);
 // - workbench.action.nextEditor / previousEditor:编辑器文件 tab 间循环切换(活动编辑器组内);
 // - workbench.action.splitEditor(⌘\)/ splitEditorDown(无默认键)/ focusFirst·Second·ThirdEditorGroup(⌘1 / ⌘2 / ⌘3):
 //   编辑器组(BDD: src/__tests__/editor-groups/)。
@@ -27,6 +28,7 @@ import { coApi } from '@/lib/co-api';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { revertFile } from './editor-file-actions';
+import { reopenClosedEditor } from './reopen-closed-editor';
 import { editorFileDeps } from './editor-file-deps';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { detectPlatform, formatHotkey, type Platform } from '@/plugins/command-palette/format-hotkey';
@@ -46,6 +48,8 @@ export const NEXT_EDITOR_COMMAND_ID = 'workbench.action.nextEditor';
 export const PREVIOUS_EDITOR_COMMAND_ID = 'workbench.action.previousEditor';
 export const REVERT_COMMAND_ID = 'workbench.action.files.revert';
 export const SPLIT_EDITOR_COMMAND = { id: 'workbench.action.splitEditor', hotkey: 'mod+\\' } as const;
+/** 重新打开已关闭的编辑器(VSCode 同:⇧⌘T / Ctrl+Shift+T;BDD: src/__tests__/editor-reopen-closed/)。 */
+export const REOPEN_CLOSED_EDITOR_COMMAND = { id: 'workbench.action.reopenClosedEditor', hotkey: 'mod+shift+t' } as const;
 export const SPLIT_EDITOR_DOWN_COMMAND_ID = 'workbench.action.splitEditorDown';
 /** 聚焦第 N 个编辑器组(N = 1..3)的命令 id 与默认键(VSCode 同:⌘1 / ⌘2 / ⌘3,其它平台 Ctrl+1 …)。 */
 export const FOCUS_EDITOR_GROUP_COMMANDS = [
@@ -246,6 +250,14 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'File',
       categoryKey: 'commands.file.category',
       fn: saveActiveEditor,
+    },
+    {
+      ...REOPEN_CLOSED_EDITOR_COMMAND,
+      title: 'Reopen Closed Editor',
+      titleKey: 'commands.editor.reopen_closed.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => void reopenClosedEditor(),
     },
     {
       id: REVERT_COMMAND_ID,

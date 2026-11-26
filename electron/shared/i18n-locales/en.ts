@@ -179,6 +179,7 @@ export const en = {
   'commands.explorer.new_folder.title': 'New Folder…',
   // 工作台编辑器命令(VSCode workbench.action.closeActiveEditor / files.save / nextEditor / previousEditor)
   'commands.editor.close.title': 'Close Editor',
+  'commands.editor.reopen_closed.title': 'Reopen Closed Editor',
   'commands.editor.next.title': 'Open Next Editor',
   'commands.editor.previous.title': 'Open Previous Editor',
   'commands.editor.split.title': 'Split Editor',

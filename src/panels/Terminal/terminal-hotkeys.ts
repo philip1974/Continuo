@@ -32,6 +32,12 @@ export const WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND = {
   hotkey: 'mod+w',
 } as const;
 export const WORKBENCH_SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s' } as const;
+// 重新打开已关闭的编辑器(BDD: src/__tests__/editor-reopen-closed/):同关闭 / 保存,只在按键带 Meta(mac ⇧⌘T)时让出;
+// Win/Linux Ctrl+Shift+T 照常进 shell(VSCode commandsToSkipShell 默认列表不含本命令)。
+export const WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND = {
+  id: 'workbench.action.reopenClosedEditor',
+  hotkey: 'mod+shift+t',
+} as const;
 // 编辑器组(BDD: src/__tests__/editor-groups/):拆分 ⌘\、聚焦第 N 个编辑器组 ⌘1 / ⌘2 / ⌘3(VSCode 的 focus*EditorGroup 在
 // commandsToSkipShell 默认列表里 → 终端里胜出即让出;拆分只在按键带 Meta 时让出,Ctrl+\ 是 shell 的 SIGQUIT)。
 export const WORKBENCH_SPLIT_EDITOR_COMMAND = { id: 'workbench.action.splitEditor', hotkey: 'mod+\\' } as const;
@@ -63,6 +69,7 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   [FOCUS_PREVIOUS_PART_COMMAND.id, { metaOnly: false }],
   [WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_SAVE_COMMAND.id, { metaOnly: true }],
+  [WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_SPLIT_EDITOR_COMMAND.id, { metaOnly: true }],
   ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
 ]);
@@ -80,6 +87,7 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
     { id: TERMINAL_CLEAR_COMMAND.id, hotkey: terminalClearDefaultHotkey(platform) },
     WORKBENCH_CLOSE_ACTIVE_EDITOR_COMMAND,
     WORKBENCH_SAVE_COMMAND,
+    WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND,
     WORKBENCH_SPLIT_EDITOR_COMMAND,
     ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS,
     FOCUS_NEXT_PART_COMMAND,
@@ -126,7 +134,7 @@ export function isTerminalSearchHotkey(
 }
 
 /**
- * 终端应让出给工作台命令(clear / closeActiveEditor / save / focusNextPart / focusPreviousPart)的按键 → 命令 id;否则 null。
+ * 终端应让出给工作台命令(clear / closeActiveEditor / save / reopenClosedEditor / focusNextPart / focusPreviousPart)的按键 → 命令 id;否则 null。
  * 胜出命令按分发表裁决(用户改绑 / 解绑 / 别的命令占了该键都跟随);关闭 / 保存另须按键带 Meta(见 SKIP_SHELL_COMMANDS)。
  */
 export function terminalYieldedCommandId(
