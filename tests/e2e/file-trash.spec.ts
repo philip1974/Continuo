@@ -1,7 +1,8 @@
 // 删除路径:右键「移到废纸篓」→ 确认框(explorer.confirmDelete 默认开)点「移到废纸篓」→ 文件被删.
 //
-// 注:Continuo 走 shell.trashItem(系统废纸篓 API)。e2e 启的 Electron 真调
-// 这个 API,文件确实被移走;cleanup 在 fixture afterEach rm -rf 临时 ws 目录。
+// 注:Continuo 生产走 shell.trashItem(系统废纸篓 API);E2E 模式(CONTINUO_E2E=1)改挪进
+// <userData>/e2e-trash,不碰用户真实废纸篓(见 electron/main/ipc/fs/e2e-trash.ts)。文件确实被移走;
+// cleanup 在 fixture afterEach rm -rf 临时 ws 目录。
 import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';

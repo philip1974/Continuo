@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -25,6 +25,7 @@ import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from
 import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
+import { selectTrashItem } from './fs/e2e-trash';
 import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
 import { broadcastToWindows, sendToWindow } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
@@ -415,8 +416,8 @@ export function registerFsIpc(): void {
     FS_CHANNELS.TRASH,
     trashInputSchema,
     makeTrashHandler({
-      // shell.trashItem 在 Electron 38 是 Promise<void>
-      trashItem: (p) => shell.trashItem(p),
+      // shell.trashItem 在 Electron 38 是 Promise<void>;E2E 模式改挪进 <userData>/e2e-trash,不碰真实废纸篓。
+      trashItem: selectTrashItem(process.env, () => app.getPath('userData'), (p) => shell.trashItem(p)),
     }),
   );
 
