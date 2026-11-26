@@ -21,6 +21,8 @@ contains non-JSON-safe values」)。
 - 非有限 number(`NaN`/`±Infinity`):对象属性 → **删键**;数组元素 → **置 null**(保索引,
   与 `JSON.stringify` 行为一致)。
 - `undefined` / function / symbol / bigint:同上(对象删键 / 数组置 null)。
+  对象属性为 `undefined` 时删键但**不**计入 `dropped`:键缺省与 `undefined` 读回等价(无损)。dockview 面板 `toJSON` 每次都带
+  `renderer` / `minimumHeight` 等 undefined 可选字段,计入会让每次写布局都打诊断 warning(实测 warning 全部来自这些字段)。
 - 数组、普通对象**递归**处理;深层嵌套布局结构(grid 树)内的坏值也被清除。
 - 返回 `{ value, dropped }`,`dropped` 为被丢弃字段的 path 列表(供诊断日志,如
   `$.grid.root.data[0].size`)。

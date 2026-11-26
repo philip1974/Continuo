@@ -40,6 +40,22 @@ describe('makeJsonSafe', () => {
     expect(value).toEqual({ keep: 'ok' });
   });
 
+  // dockview 面板 toJSON 每次都带 renderer / minimumHeight 等 undefined 可选字段:删键与原值读回等价(键缺省即 undefined,
+  // JSON.stringify 同样省略),不是丢失 —— 不计入 dropped,否则每次写布局都打一条诊断 warning。
+  it('对象属性为 undefined → 删键但不计入 dropped(无损);非有限数 / function 等仍计入', () => {
+    const { value, dropped } = makeJsonSafe({
+      panels: { editor: { contentComponent: 'editor', renderer: undefined, minimumHeight: undefined } },
+      size: NaN,
+      f: () => 1,
+    });
+    expect(value).toEqual({ panels: { editor: { contentComponent: 'editor' } } });
+    expect(dropped.sort()).toEqual(['$.f', '$.size']);
+  });
+
+  it('数组元素为 undefined → 置 null 仍计入 dropped(值变了)', () => {
+    expect(makeJsonSafe([1, undefined]).dropped).toEqual(['$[1]']);
+  });
+
   it('数组元素非有限 / undefined → 置 null(保索引,同 JSON.stringify)', () => {
     const { value } = makeJsonSafe([1, NaN, 'a', undefined, Infinity]);
     expect(value).toEqual([1, null, 'a', null, null]);

@@ -12,6 +12,7 @@
 //       · 对象属性 → 删除该键(JSON.stringify 对 undefined 键同此)
 //       · 数组元素 → 置 null(保持索引不变,JSON.stringify 对 NaN/undefined 数组元素同此)
 //   - 数组 / 普通对象递归处理
+//   - 对象属性为 undefined:删键但**不**计入 dropped(键缺省即 undefined,无损)
 //
 // ⚠️ 仅用于「个别字段可接受静默丢失」的 UI 状态持久化。**不可**用于插件数据等不容静默丢失的
 // 场景 —— 那些仍由 assertJsonValue 硬拒(数据安全优先)。返回被丢弃字段的 path 列表供诊断日志。
@@ -68,7 +69,11 @@ export function makeJsonSafe(input: unknown): {
       const out: Record<string, unknown> = {};
       for (const k in value) {
         if (!hasOwn.call(value, k)) continue;
-        const r = walk(value[k], `${path}.${k}`, depth + 1);
+        const v = value[k];
+        // undefined 属性:删键与原值读回等价(JSON.stringify 同样省略),无损 → 不计入 dropped
+        //(dockview 面板 toJSON 每次都带 renderer / minimumHeight 等 undefined 可选字段,否则每次写布局都告警)。
+        if (v === undefined) continue;
+        const r = walk(v, `${path}.${k}`, depth + 1);
         // 不安全 → 删键(path 已记录于递归内)。setOwnValue:`__proto__` 键按 JSON 语义保留为自有属性。
         if (r.keep) setOwnValue(out, k, r.value);
       }
