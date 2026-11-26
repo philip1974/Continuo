@@ -3,7 +3,8 @@ import { expandTreeItem, openTreeItem } from './explorer';
 
 export const EDITOR_NO_FILE_OPEN = /^(未打开文件|No file open|열린 파일 없음)$/;
 export const EDITOR_NO_FILE_OPEN_TEXT = /(未打开文件|No file open|열린 파일 없음)/;
-export const EDITOR_TABS = /^(编辑器标签|Editor tabs|편집기 탭)$/;
+// 多个编辑器组时名称带组号「编辑器标签，编辑器组 N」(122b7004);单组时不带。
+export const EDITOR_TABS = /^(编辑器标签|Editor tabs|편집기 탭)(，编辑器组 \d+|, Editor Group \d+|, 편집기 그룹 \d+)?$/;
 export const EDITOR_SAVE_LABEL = /^(保存|Save|저장)$/;
 export const EDITOR_MODE_EDIT = /^(编辑|Edit|편집)$/;
 export const EDITOR_MODE_SOURCE = /^(源码|Source|소스)$/;
