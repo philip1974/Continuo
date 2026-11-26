@@ -63,7 +63,8 @@ vi.mock('@/panels/Editor/useEditorFile', () => ({
   useEditorFile: () => ({ openFileByPath: vi.fn(async () => ({ ok: true })) }),
 }));
 vi.mock('@/plugins/settings/values-store', () => ({
-  useSettingValue: (_key: string, fallback: unknown) => fallback,
+  // 本文件验证「未显示隐藏文件」时的刷新比较(显示隐藏文件默认开,这里固定为关)
+  useSettingValue: (key: string, fallback: unknown) => (key === 'explorer.showHiddenFiles' ? false : fallback),
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));

@@ -5,6 +5,7 @@ import { mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { confirmExplorerTrash, explorerTreeItem } from './helpers/explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 const rowOf = (window: import('@playwright/test').Page, p: string) =>
   window.locator(`[role=treeitem][title="${p}"]`);
@@ -24,6 +25,9 @@ test('隐藏文件存在时:首个可见项上按 ↑ / Home 再 Delete → 只�
   window,
   workspaceRoot,
 }) => {
+  // 显示隐藏文件默认开(VSCode 同款);本用例验证关掉之后的键盘行为
+  await waitForTestHooks(window);
+  await window.evaluate(() => globalThis.__continuoTest!.setSettingValue('explorer.showHiddenFiles', false));
   await mkdir(path.join(workspaceRoot, '.github'));
   await writeFile(path.join(workspaceRoot, '.github/ci.yml'), 'on: push\n');
   await writeFile(path.join(workspaceRoot, '.env'), 'SECRET=1\n');

@@ -364,6 +364,8 @@ export const en = {
   'settings.explorer.confirm_delete': 'Confirm delete',
   'settings.explorer.confirm_drag_and_drop': 'Confirm drag and drop',
   'settings.explorer.auto_reveal': 'Reveal active file',
+  'settings.explorer.decorations_colors': 'Decoration colors',
+  'settings.explorer.decorations_badges': 'Decoration badges',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': 'No settings in this category',
@@ -378,11 +380,13 @@ export const en = {
   'settings.terminal.cursor_style.block': 'Block',
   'settings.terminal.cursor_style.underline': 'Underline',
   'settings.terminal.cursor_style.bar': 'Bar',
-  'settings.explorer.show_hidden_files.desc': 'Show dotfiles such as .git / .env.',
+  'settings.explorer.show_hidden_files.desc': 'Show files and folders starting with a dot, such as .gitignore / .env (.git, .DS_Store and similar are always hidden).',
   'settings.explorer.indent_width.desc': 'Per-level indentation of the file tree (visual depth).',
   'settings.explorer.confirm_delete.desc': 'Ask for confirmation before moving files to the Trash.',
   'settings.explorer.confirm_drag_and_drop.desc': 'Ask for confirmation before moving files and folders by drag and drop in the Explorer.',
   'settings.explorer.auto_reveal.desc': "Select and reveal the active editor's file in the Explorer.",
+  'settings.explorer.decorations_colors.desc': 'Color file and folder names by their Git status (modified, untracked, ignored…).',
+  'settings.explorer.decorations_badges.desc': 'Show a Git status letter (M / U / A …) to the right of file names.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
@@ -532,6 +536,13 @@ export const en = {
   'panels.explorer.ctx.rename': 'Rename',
   'panels.explorer.rename_input_aria': 'Rename {name}',
   'panels.explorer.symlink': 'Symbolic link',
+  'panels.explorer.git.modified': 'Modified',
+  'panels.explorer.git.added': 'Added',
+  'panels.explorer.git.renamed': 'Renamed',
+  'panels.explorer.git.untracked': 'Untracked',
+  'panels.explorer.git.deleted': 'Deleted',
+  'panels.explorer.git.conflict': 'Conflict',
+  'panels.explorer.git.ignored': 'Ignored',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': 'A file or folder “{name}” already exists at this location. Please choose a different name.',
   'panels.explorer.undo_failed': 'Could not undo the file operation on “{name}”: {message}',

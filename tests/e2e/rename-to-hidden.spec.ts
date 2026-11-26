@@ -1,10 +1,13 @@
-// rename a.ts → .hidden.ts → showHiddenFiles=false 默认时 tree 不显新文件.
+// 关掉 showHiddenFiles 后 rename a.ts → .hidden.ts → tree 不显新文件.
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EXPLORER_RENAME } from './helpers/explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
 test('rename a.ts → .hidden.ts → tree 不显', async ({ window, workspaceRoot }) => {
+  await waitForTestHooks(window);
+  await window.evaluate(() => globalThis.__continuoTest!.setSettingValue('explorer.showHiddenFiles', false));
   await window.locator('text=src').first().click();
   await window
     .locator('[role=treeitem]')

@@ -415,6 +415,8 @@ describe('FolderTree · 未显示隐藏文件时键盘不触及隐藏项', () =>
   ];
   beforeEach(() => {
     fsTree.set('/work', withHidden);
+    // 默认显示隐藏文件(VSCode 同款);本组验证关掉之后的行为
+    h.settings = { 'explorer.showHiddenFiles': false };
   });
   afterEach(() => {
     fsTree.set('/work', entries);

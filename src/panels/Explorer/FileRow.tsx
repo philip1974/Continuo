@@ -19,6 +19,8 @@ import type { DropTargetEntry } from './drop-handlers';
 import { FileIcon } from './file-icon';
 import { renameStemEnd, type RenameInputError } from './path-utils';
 import { finishRenamingOnBlur, renameErrorFor } from './tree-config';
+import { GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from './git-decorations';
+import type { GitStatusKind } from '../../../electron/shared/git-status';
 
 /**
  * 行状态快照(perf):由 FolderTree 在渲染期从 item 读出后作为 primitive 下传。FileRow 是 memo 组件,
@@ -102,6 +104,14 @@ interface FileRowProps extends FileRowState {
   pluginMenuItems: readonly ExplorerContextMenuItemSpec[];
   /** 缩进宽度(explorer.indentSize 全树一致,FolderTree 一次订阅后下传). */
   indent: number;
+  /**
+   * git 状态装饰(FolderTree 按 git 快照 + explorer.decorations.* 设置算好后以 primitive 下传,不击穿 memo)。
+   * gitKind:无装饰 / 两项设置都关 → undefined;gitColor:名称是否着色(decorations.colors);
+   * gitLetter:右侧徽标字母(decorations.badges 关、文件夹、忽略项 → 空串)。BDD: src/__tests__/explorer-git-decorations/
+   */
+  gitKind?: GitStatusKind;
+  gitColor?: boolean;
+  gitLetter?: string;
 }
 
 const ICON_SIZE = 16;
@@ -116,10 +126,11 @@ const FILE_ROW_DROP_CLASS_NAME =
 const FILE_ROW_SELECTED_CLASS_NAME = 'bg-hover text-fg';
 const FILE_ROW_IDLE_CLASS_NAME = 'text-fg-muted hover:bg-panel-soft';
 
-/** 行悬浮提示:路径 [· 符号链接] [· 插件装饰提示]。 */
-function rowTitle(data: FileEntry, tooltip: string | undefined): string {
+/** 行悬浮提示:路径 [· 符号链接] [· git 状态] [· 插件装饰提示]。 */
+function rowTitle(data: FileEntry, tooltip: string | undefined, gitLabel: string | undefined): string {
   let title = data.path;
   if (data.isSymlink) title += ` · ${t('panels.explorer.symlink')}`;
+  if (gitLabel) title += ` · ${gitLabel}`;
   if (tooltip) title += ` · ${tooltip}`;
   return title;
 }
@@ -253,6 +264,9 @@ export const FileRow = memo(function FileRow({
   hasClipboard,
   pluginMenuItems,
   indent,
+  gitKind,
+  gitColor = false,
+  gitLetter = '',
 }: FileRowProps) {
   // posInSet / setSize 不在此解构:它们只作 memo 失效键 —— 行内 item.getProps() 现取 aria-posinset/setsize,
   // 这些 props 变化时本行必重渲,现取值与 props 一致(见 FileRowState)。renamingValue 用于输入时校验。
@@ -284,6 +298,9 @@ export const FileRow = memo(function FileRow({
   const renameError =
     isRenaming && renamingValue !== undefined ? renameErrorFor(item, renamingValue) : null;
   const renameErrorId = useId();
+  // git 状态文案:悬浮提示 + 读屏(VSCode 装饰 tooltip「Modified」等)。只给文件:文件夹继承的颜色只是「含变更」提示,
+  // 忽略项 VSCode 也不带提示。
+  const gitLabel = gitKind !== undefined && !isDir && gitKind !== 'ignored' ? t(GIT_KIND_LABEL_KEY[gitKind]) : undefined;
 
   const row = (
     <div
@@ -345,7 +362,7 @@ export const FileRow = memo(function FileRow({
         isDropTarget: isDropHover || isInternalDropOver,
         isCutMarked,
       })}
-      title={rowTitle(data, decoration?.tooltip)}
+      title={rowTitle(data, decoration?.tooltip, gitLabel)}
     >
       {/* a11y(A71,A70 同族装饰符号):treeitem 展开态由 headless-tree row props 的 aria-expanded
           表达,视觉箭头 ▾/▸ 纯装饰 → aria-hidden,否则混进行可访问名,SR 读文件名时夹杂三角噪声。 */}
@@ -398,12 +415,14 @@ export const FileRow = memo(function FileRow({
         </div>
       ) : (
         <span
-          className="truncate"
+          className={gitKind !== undefined && gitColor ? `truncate ${GIT_KIND_TEXT_CLASS[gitKind]}` : 'truncate'}
           style={decoration?.textColor ? { color: decoration.textColor } : undefined}
         >
           {data.name}
         </span>
       )}
+      {/* 读屏:git 状态进 treeitem 朗读(「a.ts, 已修改」);视觉上由颜色 / 徽标表达 */}
+      {gitLabel && <span style={SR_ONLY_STYLE}>{`, ${gitLabel}`}</span>}
       {data.isSymlink && (
         // VSCode 同款:符号链接行名称后带链接角标(↪,目录链接可展开、文件 / 悬空链接按文件)。视觉符号
         // aria-hidden,读屏读视觉隐藏的「符号链接」。
@@ -422,6 +441,15 @@ export const FileRow = memo(function FileRow({
           style={decoration.badgeColor ? { color: decoration.badgeColor } : undefined}
         >
           {decoration.badge}
+        </span>
+      )}
+      {/* git 状态徽标字母(VSCode 同款,与名称同色);视觉符号 aria-hidden,语义见上方读屏文案 */}
+      {!isLoading && gitKind !== undefined && gitLetter !== '' && (
+        <span
+          aria-hidden="true"
+          className={`${decoration?.badge ? '' : 'ml-auto '}shrink-0 pr-2 font-medium ${GIT_KIND_TEXT_CLASS[gitKind]}`}
+        >
+          {gitLetter}
         </span>
       )}
       {isLoading && (

@@ -30,6 +30,7 @@ import { withExplorerFileMutex } from './lib/file-mutex';
 import { getWindowSeq } from './services/window-seq.service';
 import { registerFsIpc } from './ipc/fs.ipc';
 import { registerSearchIpc } from './ipc/search.ipc';
+import { registerGitIpc } from './ipc/git.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
 import { registerShellIpc } from './ipc/shell.ipc';
@@ -285,6 +286,9 @@ export function registerIpc(deps: WindowIpcDeps): void {
 
   // 在文件中查找 search.*(workspace-search)
   registerSearchIpc();
+
+  // 资源管理器 git 状态装饰 git.*
+  registerGitIpc();
 
   // 终端 terminal.*(Step T2)
   registerTerminalIpc();

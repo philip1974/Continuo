@@ -812,6 +812,15 @@
 - [`record-sources.spec.ts`](./explorer-file-undo/record-sources.spec.ts)
 - [`tree-keys.spec.ts`](./explorer-file-undo/tree-keys.spec.ts)
 
+## [explorer-git-decorations(资源管理器 git 状态装饰 + 默认显示点文件)](./explorer-git-decorations/README.md)
+
+- [`file-row-git.spec.tsx`](./explorer-git-decorations/file-row-git.spec.tsx)
+- [`folder-tree-git.spec.tsx`](./explorer-git-decorations/folder-tree-git.spec.tsx)
+- [`git-decorations.spec.ts`](./explorer-git-decorations/git-decorations.spec.ts)
+- [`git-status-service.spec.ts`](./explorer-git-decorations/git-status-service.spec.ts)
+- [`hidden-files-default.spec.ts`](./explorer-git-decorations/hidden-files-default.spec.ts)
+- [`use-git-status.spec.tsx`](./explorer-git-decorations/use-git-status.spec.tsx)
+
 ## [ExplorerHeader(FolderTree 顶部 Header)](./explorer-header/README.md)
 
 - [`explorer-header.spec.tsx`](./explorer-header/explorer-header.spec.tsx)

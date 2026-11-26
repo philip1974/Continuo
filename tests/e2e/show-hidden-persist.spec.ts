@@ -1,5 +1,5 @@
 import { EXPLORER_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
-// showHiddenFiles UI toggle → 重启同 ud → setting 仍 true.
+// showHiddenFiles UI toggle(默认开 → 关)→ 重启同 ud → setting 仍 false(显式选择持久)。
 import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,7 +12,7 @@ function writeExplorerSeed(userDataDir: string, workspaceRoot: string): void {
   seedExplorerJson(userDataDir, { root: workspaceRoot });
 }
 
-test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () => {
+test('toggle showHiddenFiles → 重启 → 仍 false + .secret 不显', async () => {
   test.setTimeout(60_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-shp-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-shp-ws-'));
@@ -33,9 +33,9 @@ test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () =>
       .click();
 
     const toggle = win1.locator('button[role=switch]').first();
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
-    await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await win1.waitForTimeout(200);
     await app1.close();
     writeExplorerSeed(ud, ws);
@@ -45,10 +45,11 @@ test('toggle showHiddenFiles → 重启 → 仍 true + .secret 显', async () =>
     const win2 = await app2.firstWindow();
     await win2.waitForLoadState('domcontentloaded');
 
-    // .secret 显
-    await expect(explorerTreeItem(win2, /^\.secret$/)).toBeVisible({
+    // visible.md 显、.secret 不显
+    await expect(explorerTreeItem(win2, /^visible\.md$/)).toBeVisible({
       timeout: 10_000,
     });
+    await expect(win2.locator('[role=treeitem]').filter({ hasText: /^\.secret$/ })).toHaveCount(0);
 
     await app2.close();
   } finally {

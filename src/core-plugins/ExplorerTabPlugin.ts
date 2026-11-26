@@ -7,6 +7,8 @@ import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import {
   EXPLORER_AUTO_REVEAL,
+  EXPLORER_DECORATIONS_BADGES,
+  EXPLORER_DECORATIONS_COLORS,
   EXPLORER_CONFIRM_DELETE,
   EXPLORER_CONFIRM_DRAG_AND_DROP,
   EXPLORER_INDENT_SIZE,
@@ -50,5 +52,9 @@ export default class ExplorerTabPlugin extends Plugin {
     this.addSettingItem(EXPLORER_CONFIRM_DRAG_AND_DROP);
 
     this.addSettingItem(EXPLORER_AUTO_REVEAL);
+
+    this.addSettingItem(EXPLORER_DECORATIONS_COLORS);
+
+    this.addSettingItem(EXPLORER_DECORATIONS_BADGES);
   }
 }

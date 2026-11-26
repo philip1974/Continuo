@@ -349,6 +349,8 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.confirm_delete': '删除前确认',
   'settings.explorer.confirm_drag_and_drop': '拖放移动前确认',
   'settings.explorer.auto_reveal': '跟随活动文件',
+  'settings.explorer.decorations_colors': '装饰颜色',
+  'settings.explorer.decorations_badges': '装饰徽标',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '本类暂无设置项',
@@ -363,11 +365,13 @@ export const zh: Record<TranslationKey, string> = {
   'settings.terminal.cursor_style.block': '块',
   'settings.terminal.cursor_style.underline': '下划线',
   'settings.terminal.cursor_style.bar': '竖线',
-  'settings.explorer.show_hidden_files.desc': '是否显示以 . 开头的文件（如 .git / .env）。',
+  'settings.explorer.show_hidden_files.desc': '是否显示以 . 开头的文件和文件夹（如 .gitignore / .env）；.git、.DS_Store 等始终隐藏。',
   'settings.explorer.indent_width.desc': '文件树每级缩进（影响视觉层级）。',
   'settings.explorer.confirm_delete.desc': '移到废纸篓前是否弹出确认。',
   'settings.explorer.confirm_drag_and_drop.desc': '在资源管理器中通过拖放移动文件和文件夹前是否弹出确认。',
   'settings.explorer.auto_reveal.desc': '切换编辑器时在资源管理器中选中并展开到当前文件。',
+  'settings.explorer.decorations_colors.desc': '按 Git 状态为文件和文件夹名称着色（已修改、未跟踪、已忽略等）。',
+  'settings.explorer.decorations_badges.desc': '在文件名右侧显示 Git 状态字母（M / U / A 等）。',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
@@ -509,6 +513,13 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.ctx.rename': '重命名',
   'panels.explorer.rename_input_aria': '重命名 {name}',
   'panels.explorer.symlink': '符号链接',
+  'panels.explorer.git.modified': '已修改',
+  'panels.explorer.git.added': '已添加',
+  'panels.explorer.git.renamed': '已重命名',
+  'panels.explorer.git.untracked': '未跟踪',
+  'panels.explorer.git.deleted': '已删除',
+  'panels.explorer.git.conflict': '冲突',
+  'panels.explorer.git.ignored': '已忽略',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': '此位置已存在文件或文件夹「{name}」。请选择其他名称。',
   'panels.explorer.undo_failed': '无法撤销对「{name}」的文件操作：{message}',

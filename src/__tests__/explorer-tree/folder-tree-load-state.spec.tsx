@@ -344,7 +344,7 @@ describe('FolderTree · 子目录读取失败的播报', () => {
     await waitFor(() => expect(row(r.container, '/work/alpha/inner.ts')).toBeNull());
     h.failDirs.add('/work/alpha');
     // 切换「显示隐藏文件」刷新全部已加载目录(含已折叠的 alpha)
-    h.settings = { 'explorer.showHiddenFiles': true };
+    h.settings = { 'explorer.showHiddenFiles': false }; // 从默认开切到关
     r.rerender(<FolderTree root="/work" />);
     await waitFor(() => expect(notify.error).toHaveBeenCalled());
     const text = vi.mocked(notify.error).mock.calls[0]![0];
@@ -388,7 +388,7 @@ describe('FolderTree · 重试后的焦点', () => {
     outside.focus();
     // 根目录随后出现文件(刷新全部已加载目录)
     h.rootListDir = null;
-    h.settings = { 'explorer.showHiddenFiles': true };
+    h.settings = { 'explorer.showHiddenFiles': false }; // 从默认开切到关
     r.rerender(<FolderTree root="/work" />);
     await waitFor(() => expect(row(r.container, '/work/beta.ts')).not.toBeNull());
     await new Promise((res) => setTimeout(res, 30));
@@ -462,7 +462,7 @@ describe('FolderTree · 重试后的焦点', () => {
     let call = 0;
     h.rootListDir = async () =>
       ++call === 1 ? { ok: false, code: 'FS_DENIED', message: 'denied' } : reload;
-    h.settings = { 'explorer.showHiddenFiles': true };
+    h.settings = { 'explorer.showHiddenFiles': false }; // 从默认开切到关
     r.rerender(<FolderTree root="/work" />);
     await waitFor(() => expect(call).toBe(2));
     act(() => {
@@ -488,7 +488,7 @@ describe('FolderTree · 重试后的焦点', () => {
     let call = 0;
     h.rootListDir = async () =>
       ++call === 1 ? { ok: false, code: 'FS_DENIED', message: 'denied' } : reload;
-    h.settings = { 'explorer.showHiddenFiles': true };
+    h.settings = { 'explorer.showHiddenFiles': false }; // 从默认开切到关
     r.rerender(<FolderTree root="/work" />);
     await waitFor(() => expect(call).toBe(2));
     const origin = document.createElement('button');

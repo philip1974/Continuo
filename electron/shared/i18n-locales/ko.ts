@@ -351,6 +351,8 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.confirm_delete': '삭제 전 확인',
   'settings.explorer.confirm_drag_and_drop': '끌어서 놓기 확인',
   'settings.explorer.auto_reveal': '활성 파일 표시',
+  'settings.explorer.decorations_colors': '장식 색상',
+  'settings.explorer.decorations_badges': '장식 배지',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '이 카테고리에 설정이 없습니다',
@@ -365,11 +367,13 @@ export const ko: Record<TranslationKey, string> = {
   'settings.terminal.cursor_style.block': '블록',
   'settings.terminal.cursor_style.underline': '밑줄',
   'settings.terminal.cursor_style.bar': '바',
-  'settings.explorer.show_hidden_files.desc': '.git / .env 같이 .으로 시작하는 파일 표시.',
+  'settings.explorer.show_hidden_files.desc': '.gitignore / .env 같이 .으로 시작하는 파일과 폴더를 표시합니다(.git, .DS_Store 등은 항상 숨김).',
   'settings.explorer.indent_width.desc': '파일 트리 단계별 들여쓰기(시각적 깊이에 영향).',
   'settings.explorer.confirm_delete.desc': '휴지통으로 이동하기 전에 확인을 요청합니다.',
   'settings.explorer.confirm_drag_and_drop.desc': '탐색기에서 끌어서 놓기로 파일 및 폴더를 이동하기 전에 확인을 요청합니다.',
   'settings.explorer.auto_reveal.desc': '편집기를 전환하면 탐색기에서 현재 파일을 선택하고 펼쳐 표시합니다.',
+  'settings.explorer.decorations_colors.desc': 'Git 상태(수정됨, 추적되지 않음, 무시됨 등)에 따라 파일과 폴더 이름에 색을 입힙니다.',
+  'settings.explorer.decorations_badges.desc': '파일 이름 오른쪽에 Git 상태 문자(M / U / A 등)를 표시합니다.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/
@@ -513,6 +517,13 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.ctx.rename': '이름 바꾸기',
   'panels.explorer.rename_input_aria': '{name} 이름 바꾸기',
   'panels.explorer.symlink': '심볼릭 링크',
+  'panels.explorer.git.modified': '수정됨',
+  'panels.explorer.git.added': '추가됨',
+  'panels.explorer.git.renamed': '이름 바뀜',
+  'panels.explorer.git.untracked': '추적되지 않음',
+  'panels.explorer.git.deleted': '삭제됨',
+  'panels.explorer.git.conflict': '충돌',
+  'panels.explorer.git.ignored': '무시됨',
   // VSCode explorer:重命名目标名已存在(FS_EEXIST)
   'panels.explorer.rename_exists': '이 위치에 파일 또는 폴더 “{name}”이(가) 이미 있습니다. 다른 이름을 선택하세요.',
   'panels.explorer.undo_failed': '“{name}”에 대한 파일 작업을 실행 취소할 수 없습니다: {message}',

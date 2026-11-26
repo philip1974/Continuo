@@ -105,10 +105,13 @@ export function validateScopesShape(scopes: unknown): string | null {
  * Quick Open 的 walk-files 因 exclude 是**整体替换**语义(传了就不用默认),必须把这份完整带上再追加
  * 构建产物 —— 此前 walk-files 手抄了一份,main 侧加一项而那边不同步就会多扫。
  */
+// 除 node_modules 外即 VSCode files.exclude 默认(**/.git、**/.svn、**/.hg、**/CVS、**/.DS_Store、**/Thumbs.db);
+// node_modules 是 Continuo 既有行为(VSCode 只在 search.exclude 排除)。资源管理器「显示隐藏文件」默认开,其余点文件可见。
 export const LIST_DIR_DEFAULT_EXCLUDE: readonly string[] = [
   '.git',
   '.svn',
   '.hg',
+  'CVS',
   'node_modules',
   '.DS_Store',
   'Thumbs.db',

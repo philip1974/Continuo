@@ -121,6 +121,9 @@ export const TERMINAL_CURSOR_STYLE: CoreSettingSpec<TerminalCursorStyle> = {
   priority: 2,
 };
 
+// VSCode 默认显示点文件(.gitignore / .env / .github …),只按 files.exclude 排除版本库元数据等;这里固定排除集即
+// fs:list-dir 默认 exclude(LIST_DIR_DEFAULT_EXCLUDE:.git / .svn / .hg / CVS / .DS_Store / Thumbs.db,另含 node_modules)。
+// 关掉 = 额外隐藏全部 . 开头的项。只存 override:之前显式设为 false 的用户保留该选择。
 export const EXPLORER_SHOW_HIDDEN_FILES: CoreSettingSpec<boolean> = {
   id: 'explorer.showHiddenFiles',
   category: 'explorer',
@@ -128,7 +131,7 @@ export const EXPLORER_SHOW_HIDDEN_FILES: CoreSettingSpec<boolean> = {
   titleKey: 'settings.explorer.show_hidden_files',
   descriptionKey: 'settings.explorer.show_hidden_files.desc',
   type: 'boolean',
-  default: false,
+  default: true,
   priority: 1,
 };
 
@@ -181,6 +184,30 @@ export const EXPLORER_AUTO_REVEAL: CoreSettingSpec<boolean> = {
   type: 'boolean',
   default: true,
   priority: 4,
+};
+
+// VSCode explorer.decorations.colors / explorer.decorations.badges(默认开):文件名按 git 状态着色 / 右侧显示状态字母。
+// 两者都关时不再查询 git。BDD: src/__tests__/explorer-git-decorations/
+export const EXPLORER_DECORATIONS_COLORS: CoreSettingSpec<boolean> = {
+  id: 'explorer.decorations.colors',
+  category: 'explorer',
+  title: 'Decoration colors',
+  titleKey: 'settings.explorer.decorations_colors',
+  descriptionKey: 'settings.explorer.decorations_colors.desc',
+  type: 'boolean',
+  default: true,
+  priority: 5,
+};
+
+export const EXPLORER_DECORATIONS_BADGES: CoreSettingSpec<boolean> = {
+  id: 'explorer.decorations.badges',
+  category: 'explorer',
+  title: 'Decoration badges',
+  titleKey: 'settings.explorer.decorations_badges',
+  descriptionKey: 'settings.explorer.decorations_badges.desc',
+  type: 'boolean',
+  default: true,
+  priority: 6,
 };
 
 // ── 通用(general)────────────────────────────────────────────────────────────

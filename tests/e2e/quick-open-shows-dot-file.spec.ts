@@ -1,4 +1,4 @@
-// Quick Open walk 不过滤 dot 文件,虽然 tree 默认过滤.
+// Quick Open walk 不过滤 dot 文件,即使关掉 showHiddenFiles 让 tree 过滤.
 import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,8 +7,9 @@ import { explorerTreeItem } from './helpers/explorer';
 import { openQuickOpen, quickOpenInput } from './helpers/palette';
 import { launchContinuo } from './helpers/launch';
 import { seedExplorerJson } from './helpers/seed-explorer';
+import { waitForTestHooks } from './helpers/app-ready';
 
-test('Cmd+P 列表含 .secret.md(虽 tree 默认不显)', async () => {
+test('Cmd+P 列表含 .secret.md(虽 tree 不显)', async () => {
   test.setTimeout(30_000);
   const ud = mkdtempSync(path.join(tmpdir(), 'continuo-qodot-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'continuo-qodot-ws-'));
@@ -21,11 +22,13 @@ test('Cmd+P 列表含 .secret.md(虽 tree 默认不显)', async () => {
     const win = await app.firstWindow();
     await win.waitForLoadState('domcontentloaded');
 
-    // Tree 默认不显 .secret.md(showHiddenFiles=false):先等树渲染出 visible.txt 再断言
+    // 关掉 showHiddenFiles → Tree 不显 .secret.md:先等树渲染出 visible.txt 再断言
     await expect(explorerTreeItem(win, /^visible\.txt$/)).toBeVisible({ timeout: 10_000 });
+    await waitForTestHooks(win);
+    await win.evaluate(() => globalThis.__continuoTest!.setSettingValue('explorer.showHiddenFiles', false));
     await expect(
       win.locator('[role=treeitem]').filter({ hasText: /^\.secret\.md$/ }),
-    ).toHaveCount(0);
+    ).toHaveCount(0, { timeout: 5_000 });
 
     await openQuickOpen(win);
     const input = quickOpenInput(win);

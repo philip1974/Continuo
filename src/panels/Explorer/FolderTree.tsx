@@ -54,6 +54,9 @@ import {
 } from './batch-transfer';
 
 import { useFsWatcher } from './hooks/useFsWatcher';
+import { useGitStatus } from './hooks/useGitStatus';
+import { gitDecorationOf, gitRelPath, type GitDecorationIndex } from './git-decorations';
+import type { GitStatusKind } from '../../../electron/shared/git-status';
 import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
@@ -70,6 +73,8 @@ import {
   EXPLORER_AUTO_REVEAL,
   EXPLORER_CONFIRM_DELETE,
   EXPLORER_CONFIRM_DRAG_AND_DROP,
+  EXPLORER_DECORATIONS_BADGES,
+  EXPLORER_DECORATIONS_COLORS,
   EXPLORER_INDENT_SIZE,
   EXPLORER_SHOW_HIDDEN_FILES,
 } from '@/plugins/settings/core-setting-specs';
@@ -903,6 +908,11 @@ export function FolderTree({ root }: { root: string }) {
   // 直接忽略),再次显示时批量刷新。集合按路径去重,上限即已加载目录数。
   const visible = useContext(ExplorerVisibleContext);
   const dirtyWhileHiddenRef = useRef<Set<string>>(new Set());
+  // git 状态装饰(VSCode explorer.decorations.colors / badges,默认开;两项都关时不查询 git)。
+  // BDD: src/__tests__/explorer-git-decorations/
+  const gitColors = useSettingValue(EXPLORER_DECORATIONS_COLORS.id, EXPLORER_DECORATIONS_COLORS.default);
+  const gitBadges = useSettingValue(EXPLORER_DECORATIONS_BADGES.id, EXPLORER_DECORATIONS_BADGES.default);
+  const gitIndex = useGitStatus(root, gitColors || gitBadges, visible);
   useFsWatcher(
     expandedPaths,
     (changedPath) => {
@@ -1744,11 +1754,13 @@ export function FolderTree({ root }: { root: string }) {
                     />
                   );
                 }
+                const rowState = readFileRowState(item, tree);
                 return (
                   <FileRow
                     key={item.getId()}
                     item={item}
-                    {...readFileRowState(item, tree)}
+                    {...rowState}
+                    {...gitRowProps(gitIndex, root, item.getId(), rowState.isDir, gitColors, gitBadges)}
                     start={vRow.start}
                     getSelectedPaths={getSelectedPaths}
                     rootPath={root}
@@ -1774,4 +1786,17 @@ export function FolderTree({ root }: { root: string }) {
       {renderUndoCreateConfirm()}
     </div>
   );
+}
+/** 某行的 git 装饰 props(primitive,FileRow memo 可比较);无快照 / 无装饰 → 全空。 */
+function gitRowProps(
+  index: GitDecorationIndex | null,
+  root: string,
+  path: string,
+  isDir: boolean,
+  colors: boolean,
+  badges: boolean,
+): { gitKind?: GitStatusKind; gitColor: boolean; gitLetter: string } {
+  const dec = index === null ? null : gitDecorationOf(index, gitRelPath(root, path), isDir);
+  if (dec === null) return { gitColor: false, gitLetter: '' };
+  return { gitKind: dec.kind, gitColor: colors, gitLetter: badges ? dec.letter : '' };
 }
