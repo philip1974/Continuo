@@ -713,6 +713,12 @@
 
 - [`editor-store.spec.ts`](./editor-store/editor-store.spec.ts)
 
+## [常用编辑器(CodeMirror)命令进命令注册表](./editor-text-commands/README.md)
+
+- [`text-commands-dispatch.spec.ts`](./editor-text-commands/text-commands-dispatch.spec.ts)
+- [`text-commands-registry.spec.ts`](./editor-text-commands/text-commands-registry.spec.ts)
+- [`text-commands-run.spec.ts`](./editor-text-commands/text-commands-run.spec.ts)
+
 ## [编辑器视图状态按 tab 保留(VSCode 对齐)](./editor-view-state/README.md)
 
 - [`code-editor-view-state.spec.tsx`](./editor-view-state/code-editor-view-state.spec.tsx)

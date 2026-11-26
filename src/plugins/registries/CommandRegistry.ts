@@ -19,6 +19,7 @@ import {
   isKnownHotkeyModifier,
   type Platform,
 } from '../command-palette/format-hotkey';
+import { isCommandWhen, type CommandWhen } from '@/lib/editor-text-focus';
 
 export interface CommandSpec {
   readonly id: string;
@@ -45,6 +46,12 @@ export interface CommandSpec {
   readonly category?: string;
   /** i18n key for category（topic-19）。同 titleKey。 */
   readonly categoryKey?: string;
+  /**
+   * 按键的上下文条件(VSCode keybinding when 的极简版):'editorTextFocus' = 只在按键落在代码编辑器正文里时分发。
+   * 同一层内带条件的绑定排在无条件的之前(编辑器里 ⇧⌘Enter 是在上方插入行,其它地方仍是终端缩放);只在条件不成立时
+   * 让给后面的绑定,所以与条件不同的同键绑定不算冲突。命令面板执行不受影响。BDD: src/__tests__/editor-text-commands/
+   */
+  readonly when?: CommandWhen;
   readonly fn: () => void | Promise<void>;
 }
 
@@ -104,6 +111,9 @@ function validateCommandSpec(spec: CommandSpec): void {
   assertOptionalSpecString(TAG, 'category', spec.category, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'categoryKey', spec.categoryKey, SPEC_ID_MAX);
   assertOptionalSpecString(TAG, 'hotkey', spec.hotkey, CMD_HOTKEY_MAX);
+  if (spec.when !== undefined && !isCommandWhen(spec.when)) {
+    throw new Error(`[command-registry] unknown when: "${String(spec.when)}"`);
+  }
   // hotkey 此处已确认为 string(非 string 上面已抛),再校验形态。
   if (spec.hotkey !== undefined && !isValidHotkeyShape(spec.hotkey)) {
     throw new Error(
@@ -154,9 +164,9 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     previous: CommandSpec | undefined,
   ): void {
     // 先扣减被替换命令(同 id 重注册,如插件 reload)的占用:否则同 id 覆盖被误报为与自身冲突。
-    if (previous) for (const hotkey of defaultHotkeysOf(previous)) this.decrementHotkey(hotkey);
+    if (previous) for (const hotkey of defaultHotkeysOf(previous)) this.decrementHotkey(hotkey, previous.when);
     for (const hotkey of defaultHotkeysOf(spec)) {
-      if ((this.hotkeyCounts.get(canonicalHotkey(hotkey, this.platform)) ?? 0) > 0) {
+      if ((this.hotkeyCounts.get(this.hotkeyCountKey(hotkey, spec.when)) ?? 0) > 0) {
         // 只陈述冲突事实,不断言谁生效:useCommandHotkeys 按 Map 迭代序先命中者执行,而同 id 替换时
         // Map.set 保留原插入位置,迭代序未必等于注册时间先后。这里比较的是默认快捷键;用户在快捷键
         // 设置里覆盖其中一个后冲突即解除,故文案限定"未被用户覆盖时"。
@@ -164,12 +174,12 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
           `[command-registry] 默认快捷键(hotkey) "${hotkey}"(命令 "${spec.id}")与已注册的其他命令冲突,未被用户覆盖时只有其中一个会响应`,
         );
       }
-      this.incrementHotkey(hotkey);
+      this.incrementHotkey(hotkey, spec.when);
     }
   }
 
   protected override onRemoved(spec: CommandSpec): void {
-    for (const hotkey of defaultHotkeysOf(spec)) this.decrementHotkey(hotkey);
+    for (const hotkey of defaultHotkeysOf(spec)) this.decrementHotkey(hotkey, spec.when);
   }
 
   protected buildSnapshot(): readonly CommandSpec[] {
@@ -185,13 +195,19 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     await cmd.fn();
   }
 
-  private incrementHotkey(raw: string): void {
+  // 条件不同的同键绑定各在其上下文里生效,不算占用同一个键(不告警)。
+  private hotkeyCountKey(raw: string, when: CommandWhen | undefined): string {
     const hotkey = canonicalHotkey(raw, this.platform);
+    return when === undefined ? hotkey : `${when}\u0000${hotkey}`;
+  }
+
+  private incrementHotkey(raw: string, when: CommandWhen | undefined): void {
+    const hotkey = this.hotkeyCountKey(raw, when);
     this.hotkeyCounts.set(hotkey, (this.hotkeyCounts.get(hotkey) ?? 0) + 1);
   }
 
-  private decrementHotkey(raw: string): void {
-    const hotkey = canonicalHotkey(raw, this.platform);
+  private decrementHotkey(raw: string, when: CommandWhen | undefined): void {
+    const hotkey = this.hotkeyCountKey(raw, when);
     const count = this.hotkeyCounts.get(hotkey);
     if (count === undefined) return;
     if (count <= 1) this.hotkeyCounts.delete(hotkey);

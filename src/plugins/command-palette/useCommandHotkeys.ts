@@ -16,6 +16,7 @@ import { resolveActiveHotkeys, reservedHotkeyOfCommand } from '@/plugins/picker/
 import { getPopoutDocuments, runInCommandDocument, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
+import { whenHolds } from '@/lib/editor-text-focus';
 
 /**
  * dockview popout 子窗里也经热键分发的命令:只作用于按键所在子窗的活动面板(分发时经 runInCommandDocument 标明按键所在窗口,
@@ -36,6 +37,14 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.navigateBack',
   'workbench.action.navigateForward',
 ]);
+
+/**
+ * popout 子窗里是否分发该命令:上面的列表,加上限定在代码编辑器正文里的命令(when: editorTextFocus —— 作用于按键所在子窗的
+ * 编辑器,不在主窗画东西;这些键已从 CodeMirror 键表去掉,子窗不分发就失效)。
+ */
+export function isPopoutHotkeyCommand(cmd: Pick<CommandSpec, 'id' | 'when'>): boolean {
+  return POPOUT_HOTKEY_COMMAND_IDS.has(cmd.id) || cmd.when === 'editorTextFocus';
+}
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
 interface ComboSignature {
@@ -186,8 +195,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 /**
  * 预编译分发表。同一按键命中多条时 handler 取表中第一条,故顺序即优先级(对齐 VSCode:用户绑定压过默认):
- * 先放有用户 override 的命令,再放默认绑定的命令;同一层内保持注册顺序。一个命令的多个默认键(主键 + 附加默认键)
- * 各占一条、相邻。设置页的「冲突」标注(selectShadowedBindings)基于同一张表,两者不会分叉。
+ * 先放有用户 override 的命令,再放默认绑定的命令;同一层内带上下文条件(when)的排在无条件的之前(更具体的先判,条件不成立
+ * 才轮到后面的),其余保持注册顺序。一个命令的多个默认键(主键 + 附加默认键)各占一条、相邻。设置页的「冲突」标注
+ *(selectShadowedBindings)基于同一张表,两者不会分叉。
  */
 export function buildCompiledBindings(
   commands: readonly CommandSpec[],
@@ -195,10 +205,12 @@ export function buildCompiledBindings(
   overrides: Readonly<Record<string, string>> = {},
 ): readonly CompiledBinding[] {
   let out: CompiledBinding[] | undefined;
-  for (let pass = 0; pass < 2; pass++) {
-    const userTier = pass === 0;
+  for (let pass = 0; pass < 4; pass++) {
+    const userTier = pass < 2;
+    const scoped = pass % 2 === 0;
     for (const cmd of commands) {
       if (Object.hasOwn(overrides, cmd.id) !== userTier) continue; // 只认自有属性(toString 等命令 id)
+      if ((cmd.when !== undefined) !== scoped) continue;
       // 保留键(⌘P / ⌘⇧P 归 Quick Open / 命令面板)上的绑定(升级前已存的 override / 插件默认 hotkey)视为未绑定:
       // 不入表,否则一键两动作(同 document 监听 stopPropagation 拦不住)。设置页对该行标注未生效。
       const active = resolveActiveHotkeys(cmd, overrides, platform);
@@ -233,14 +245,19 @@ function computeShadowed(
   platform: Platform,
   overrides: Readonly<Record<string, string>>,
 ): ShadowedInfo {
-  const winners = new Map<string, CommandSpec>();
+  // 同签名的先到绑定(按上下文条件分列)。上下文条件(when):只有前面的同签名绑定在后者的全部上下文里都成立(前者无条件,
+  // 或两者条件相同)才算完全压过;带条件的绑定只在其上下文里优先,后面无条件的同键绑定在别处照常生效,不算冲突。
+  const winners = new Map<string, CommandSpec[]>();
   let any: Map<string, CommandSpec> | null = null;
   let primary: Set<string> | null = null;
   for (const b of buildCompiledBindings(commands, platform, overrides)) {
     const key = signatureKey(b.sig);
-    const winner = winners.get(key);
-    if (winner === undefined) winners.set(key, b.cmd);
-    else if (winner !== b.cmd) {
+    const earlier = winners.get(key);
+    const winner = earlier?.find((w) => w.when === undefined || w.when === b.cmd.when);
+    if (winner === undefined) {
+      if (earlier) earlier.push(b.cmd);
+      else winners.set(key, [b.cmd]);
+    } else if (winner !== b.cmd) {
       any ??= new Map();
       if (!any.has(b.cmd.id)) any.set(b.cmd.id, winner);
       if (b.primary) (primary ??= new Set()).add(b.cmd.id);
@@ -299,9 +316,10 @@ function firstMatchingBinding(
   const physical = physicalHotkeyKey(e);
   const legacyKey = legacyHotkeyKey(e, physical);
   const key = physical ?? legacyKey;
-  for (const b of bindings) if (signatureMatchesKey(b.sig, e, key)) return b;
+  // 上下文条件(when)不成立的绑定跳过,让给表中后面的同键绑定(编辑器外的 ⇧⌘Enter 归终端缩放)
+  for (const b of bindings) if (signatureMatchesKey(b.sig, e, key) && whenHolds(b.cmd.when, e)) return b;
   if (key === legacyKey) return undefined;
-  for (const b of bindings) if (signatureMatchesKey(b.sig, e, legacyKey)) return b;
+  for (const b of bindings) if (signatureMatchesKey(b.sig, e, legacyKey) && whenHolds(b.cmd.when, e)) return b;
   return undefined;
 }
 
@@ -390,7 +408,7 @@ export function isModalOpenFor(e: Event): boolean {
 function createHotkeyHandler(
   bindings: readonly CompiledBinding[],
   commands: CommandRegistry,
-  allowedIds?: ReadonlySet<string>,
+  popoutOnly = false,
 ): (e: KeyboardEvent) => void {
   return (e: KeyboardEvent) => {
     // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
@@ -410,7 +428,7 @@ function createHotkeyHandler(
     // 在完整表上裁决胜者(与主窗、设置页冲突标注同一张表);限定命令集(popout 子窗)只在胜者属于其中时执行 ——
     // 先滤再匹配会让落败的命令在子窗里复活(用户把别的命令绑到 ⌘W 后,子窗 ⌘W 仍关 tab)。
     const b = firstMatchingBinding(bindings, e);
-    if (b && (!allowedIds || allowedIds.has(b.cmd.id))) {
+    if (b && (!popoutOnly || isPopoutHotkeyCommand(b.cmd))) {
       // 同一事件命中的绑定签名相同(修饰键 + 主键精确比较),A64 放行对它们一致 → 只看第一条。
       // 功能键(F1–F24)不是文字输入键 → 不在放行之列:编辑器 / 输入框里 F6 照常切区域(VSCode 同)。
       if (!isEditableTarget(e.target) || b.sig.wantMeta || b.sig.wantCtrl || b.sig.wantAlt || isFunctionKey(b.sig.key)) {
@@ -447,7 +465,7 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
     return buildCompiledBindings(snap, platform, overrides);
   }, [snap, overrides, platform]);
   const hasPopoutBinding = useMemo(
-    () => bindings.some((b) => POPOUT_HOTKEY_COMMAND_IDS.has(b.cmd.id)),
+    () => bindings.some((b) => isPopoutHotkeyCommand(b.cmd)),
     [bindings],
   );
 
@@ -464,7 +482,7 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
 
   useEffect(() => {
     if (!hasPopoutBinding || popoutDocs.length === 0) return;
-    const handler = createHotkeyHandler(bindings, commands, POPOUT_HOTKEY_COMMAND_IDS);
+    const handler = createHotkeyHandler(bindings, commands, true);
     for (const doc of popoutDocs) doc.addEventListener('keydown', handler);
     // 子窗关闭 → popoutDocs 变化 → 移除旧监听(不泄漏已关子窗的 document)。
     return () => {

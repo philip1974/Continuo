@@ -6,14 +6,17 @@
 // - Alt-ArrowLeft / Alt-ArrowRight(Windows / Linux 上 = 按语法跳)→ 只在 mac 保留(mac 上本就是 ⌃← / ⌃→):Windows / Linux 的
 //   Alt+← / Alt+→ 归后退 / 前进(workbench.action.navigateBack / navigateForward;BDD: src/__tests__/editor-navigation-history/);
 //   ⇧Alt+← / ⇧Alt+→ 按语法选择保留。
+// - 改由命令注册表分发的文本编辑命令(切换注释 / 移动行 / 选中行 / 折叠 …,ROUTED_KEYMAP_COMMANDS)→ 去掉其键:快捷键页可改键 /
+//   解绑,按键经全局分发(when: editorTextFocus)执行;键表里留着就会抢先执行、改键无效。
 // 只改 basicSetup 里那一份键表,其余扩展原样;用公开 API(EditorState.facet(keymap))按元素找出它,不依赖数组位置。
-// BDD: src/__tests__/editor-goto-line/、src/__tests__/editor-navigation-history/
+// BDD: src/__tests__/editor-goto-line/、src/__tests__/editor-navigation-history/、src/__tests__/editor-text-commands/
 
 import { basicSetup } from 'codemirror';
 import { EditorState, type Extension } from '@codemirror/state';
 import { keymap, type KeyBinding } from '@codemirror/view';
 import { findNext, gotoLine } from '@codemirror/search';
 import { cursorSyntaxLeft, cursorSyntaxRight } from '@codemirror/commands';
+import { ROUTED_KEYMAP_COMMANDS } from './codemirror-text-commands';
 
 /** 按上述规则改写 CodeMirror 键表(纯函数;未命中的绑定原样返回)。 */
 export function withoutConflictingSearchKeys(bindings: readonly KeyBinding[]): KeyBinding[] {
@@ -46,6 +49,11 @@ export function withoutAltArrowSyntaxKeys(bindings: readonly KeyBinding[]): KeyB
   return out;
 }
 
+/** 去掉改由命令注册表分发的命令的键(纯函数)。 */
+export function withoutRoutedTextCommandKeys(bindings: readonly KeyBinding[]): KeyBinding[] {
+  return bindings.filter((b) => !(b.run && ROUTED_KEYMAP_COMMANDS.has(b.run)));
+}
+
 function bindingsOf(ext: Extension): readonly KeyBinding[] {
   return EditorState.create({ extensions: ext }).facet(keymap).flat();
 }
@@ -55,7 +63,7 @@ function buildBasicSetup(): Extension {
   return parts.map((ext) => {
     const bindings = bindingsOf(ext);
     return bindings.some((b) => b.run === gotoLine)
-      ? keymap.of(withoutAltArrowSyntaxKeys(withoutConflictingSearchKeys(bindings)))
+      ? keymap.of(withoutRoutedTextCommandKeys(withoutAltArrowSyntaxKeys(withoutConflictingSearchKeys(bindings))))
       : ext;
   });
 }
