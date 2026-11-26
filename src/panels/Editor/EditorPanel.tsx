@@ -28,6 +28,7 @@ import { t as translate, translateCount, useLocale, type TranslationKey } from '
 import { isMarkdownPath } from './editor-path-utils';
 import { basename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
+import { isInsideMenu } from '@/lib/menu-focus';
 import { SegmentedControl, type SegmentedControlOption } from '@/design';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusActiveEditor, requestEditorFocus } from './editor-focus-registry';
@@ -624,7 +625,8 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         // 这里不保存(交给全局分发执行那个命令);改绑 / 解绑都跟随。
         // 不处理:面板内确认框开着(按键冒泡自框内,对话框期间工作台快捷键不触发);编辑器内容已处理的键
         //(defaultPrevented,如保存改绑到 ⌘D / ⌘/ 时 CodeMirror 的选中下一处 / 切换注释)不再叠一个动作。
-        if (e.defaultPrevented || isModalOpenFor(e.nativeEvent)) return;
+        // 面板内 tab 右键菜单(portal 出去,但 React 事件沿组件树冒泡到这里)里的按键同理不处理。
+        if (e.defaultPrevented || isModalOpenFor(e.nativeEvent) || isInsideMenu(e.target)) return;
         const winner = winningCommandFor(
           e.nativeEvent,
           withDefaultCommands(coApp.commands.getAll(), PANEL_DEFAULT_COMMANDS),

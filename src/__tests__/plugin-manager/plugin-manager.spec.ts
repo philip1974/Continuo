@@ -232,6 +232,36 @@ describe('init 扫描与激活', () => {
     expect(enabledAgain[0]?.status).toBe('enabled');
   });
 
+  // 设置页覆盖更新文案据此判断热重载后是否重新激活:失败但仍有启用意图 → 有;禁用 → 无。
+  // 订阅回调在激活过程中读 listAll 后,启用意图随后置位也要让快照失效(否则读到陈旧的「无意图」)。
+  it('listAll 暴露启用意图:启用中 / 失败但有意图 → enabledIntent;禁用 → 无;变化即失效快照', async () => {
+    const state: MockHostState = {
+      dirs: [
+        { id: 'a', manifestText: manifestText('a'), moduleUrl: 'mod://a' },
+        { id: 'b', manifestText: manifestText('b'), moduleUrl: 'mod://b' },
+      ],
+      enabled: new Set(['a', 'b']),
+      modules: new Map<string, unknown>([
+        ['mod://a', { default: GoodPlugin }],
+        ['mod://b', { default: FailingOnloadPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    const mgr = new PluginManager(fakeApp, makeHost(state));
+    mgr.subscribe(() => void mgr.listAll());
+    await mgr.init();
+    const item = (id: string) => mgr.listAll().find((x) => x.id === id);
+    expect(item('a')).toMatchObject({ status: 'enabled', enabledIntent: true });
+    expect(item('b')).toMatchObject({ status: 'failed', enabledIntent: true });
+
+    await mgr.disable('a');
+    expect(item('a')?.status).toBe('disabled');
+    expect(item('a')?.enabledIntent).toBeUndefined();
+
+    await mgr.enable('a');
+    expect(item('a')).toMatchObject({ status: 'enabled', enabledIntent: true });
+  });
+
   // UI(设置页插件列表 / Marketplace 已装集合)订阅列表变化,不再每秒轮询 listAll。
   it('subscribe:列表每次变化都通知,通知时 listAll 已是新快照;取消订阅后不再通知', async () => {
     const state: MockHostState = {

@@ -345,8 +345,9 @@ function UserPluginsSection() {
     // i18n(复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文,经 installFromGitLocalized
     // 按稳定 code 经 catalog 翻译(reject 分支同样处理)。
     let r = await installFromGitLocalized(url);
-    // 覆盖更新前是否在运行:watcher 热重载只重新激活启用中的插件,禁用 / 失败的更新后仍不运行 → 文案不说「已重新加载」。
-    let wasRunning = false;
+    // 覆盖更新后是否会重新激活:watcher 热重载按启用意图(enabledIntent)重激活 —— 启用中、或失败但仍有启用意图的都会;
+    // 禁用的更新后仍不运行 → 文案不说「已重新加载」。
+    let reactivates = false;
     if (!r.ok && r.alreadyInstalled && r.existing) {
       // 已在盘上:main 带回仓库 manifest。该 id 已在本窗口列表(读 manager 最新列表)→ 对齐 VSCode「再次安装 = 覆盖 / 更新」:
       // 同版本提示已是最新;否则确认后覆盖安装(watcher 热重载,新增权限照常走授权确认)。不在列表(其它窗口装的)→ 下面的原提示。
@@ -360,7 +361,7 @@ function UserPluginsSection() {
         if (!(await askUpdate({ name: existing.name, installed: listed.manifest.version, version: existing.version }))) {
           return false;
         }
-        wasRunning = listed.status === 'enabled';
+        reactivates = listed.enabledIntent === true;
         r = await installFromGitLocalized(url, true);
       }
     }
@@ -381,7 +382,7 @@ function UserPluginsSection() {
     const alreadyListed = !recordPendingInstall(r.data);
     const key = !alreadyListed
       ? 'plugins_tab.install.success'
-      : wasRunning
+      : reactivates
         ? 'plugins_tab.install.updated'
         : 'plugins_tab.install.updated_not_running';
     setInstallMsg({

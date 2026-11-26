@@ -15,6 +15,7 @@ import { baseKeyForShifted, legacyHotkeyKey, physicalHotkeyKey } from './event-h
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 import { hasOpenModalIn } from '@/design/Modal';
+import { isInsideMenu } from '@/lib/menu-focus';
 
 /**
  * dockview popout 子窗里也经热键分发的命令:只作用于子窗内的活动面板(dock 的 activePanel 随焦点落在子窗面板上),
@@ -362,6 +363,9 @@ function createHotkeyHandler(
     // 事件所在文档有打开的 Modal(删除确认 / Agent 授权 / 保存三按钮框、Quick Open…)→ 不执行、不 preventDefault:
     // 否则 ⌘T 在背后新建终端并抢走焦点、⌘W 关掉背后的 tab。Esc / Tab / Enter 交给 Modal 与其中的控件。
     if (isModalOpenFor(e)) return;
+    // 按键落在打开的菜单里(资源管理器 / tab 右键菜单、「⋯」菜单;均把焦点移入菜单)→ 同样不执行、不 preventDefault:
+    // 否则菜单开着时 ⌘W 连关背后的编辑器、⌘1 把焦点移走而菜单留在屏上。方向键 / Esc / Enter 交给菜单(VSCode 同)。
+    if (isInsideMenu(e.target)) return;
     // 在完整表上裁决胜者(与主窗、设置页冲突标注同一张表);限定命令集(popout 子窗)只在胜者属于其中时执行 ——
     // 先滤再匹配会让落败的命令在子窗里复活(用户把别的命令绑到 ⌘W 后,子窗 ⌘W 仍关 tab)。
     const b = firstMatchingBinding(bindings, e);

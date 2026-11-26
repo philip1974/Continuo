@@ -926,6 +926,10 @@
 
 - [`key-vocabulary.spec.ts`](./hotkey-key-vocabulary/key-vocabulary.spec.ts)
 
+## [hotkey-menu-suppression(菜单开着时不执行工作台快捷键;菜单失焦即关)](./hotkey-menu-suppression/README.md)
+
+- [`hotkey-menu-suppression.spec.tsx`](./hotkey-menu-suppression/hotkey-menu-suppression.spec.tsx)
+
 ## [hotkey-modal-suppression(Modal 打开时不执行工作台快捷键)](./hotkey-modal-suppression/README.md)
 
 - [`hotkey-modal-suppression.spec.tsx`](./hotkey-modal-suppression/hotkey-modal-suppression.spec.tsx)

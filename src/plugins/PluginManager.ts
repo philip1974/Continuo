@@ -154,6 +154,11 @@ export interface PluginListItem {
   readonly warning?: PluginWarning;
   /** 别的窗口装的、等待该窗口授权(见 PluginEntry.awaitingGrantElsewhere)。 */
   readonly awaitingGrantElsewhere?: true;
+  /**
+   * 有持久启用意图(见 PluginEntry.enabledIntent):热重载 / 覆盖更新后会重新激活。status 可能是 failed
+   *(上次激活或渲染出错)而意图仍在 —— 判断「更新后是否会运行」看它,不看 status。
+   */
+  readonly enabledIntent?: true;
 }
 
 const EMPTY_PLUGIN_LIST: readonly PluginListItem[] = [];
@@ -511,7 +516,7 @@ export class PluginManager {
     // 以「激活成功」(有实例)为准记启用意图,不看瞬时 status:激活一完成贡献就渲染,渲染出错会在本 await 期间把
     // status 改成 failed(markRenderFailed,实例仍在运行)—— 对齐 VSCode,视图出错不改变启用状态。
     if (this.activated(entry)) {
-      entry.enabledIntent = true; // race(R77):与 _enabled.json 持久化同步置意图
+      this.setEnabledIntent(entry, true); // race(R77):与 _enabled.json 持久化同步置意图
       await this.host.mutateEnabledId(id, true);
     }
   }
@@ -537,7 +542,7 @@ export class PluginManager {
   /** 停用实例(若有)并落到 disabled + 清启用意图;不写盘(本地禁用与远端禁用广播共用). */
   private async markDisabled(entry: PluginEntry, label: string): Promise<void> {
     if (entry.instance) await this.deactivateEntry(entry, label);
-    entry.enabledIntent = false; // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
+    this.setEnabledIntent(entry, false); // race(R77):用户禁用 → 清持久启用意图(reload 不再重激活)
     entry.awaitingGrantElsewhere = undefined;
     this.setStatus(entry, 'disabled');
   }
@@ -567,11 +572,11 @@ export class PluginManager {
       // 已一致 = 实例在运行(不只看 status):启用后贡献渲染出错会把 status 改成 failed(RENDER_FAILED,实例保留),
       // 此时收到本窗口写盘引发的启用广播若再激活 → 插件被无故重启(第二次激活 / 第二条失败通知,已打开的面板被关掉)。
       if (entry.status === 'enabled' || this.activated(entry)) {
-        entry.enabledIntent = true;
+        this.setEnabledIntent(entry, true);
         return;
       }
       await this.activateEntry(entry);
-      if (this.activated(entry)) entry.enabledIntent = true; // 同 enableLocked:以激活成功为准
+      if (this.activated(entry)) this.setEnabledIntent(entry, true); // 同 enableLocked:以激活成功为准
     });
   }
 
@@ -608,7 +613,7 @@ export class PluginManager {
     }
     if (await this.needsPermissionPrompt(id, entry.manifest)) return;
     await this.activateEntry(entry);
-    if (this.activated(entry)) entry.enabledIntent = true; // 同 enableLocked:以激活成功为准
+    if (this.activated(entry)) this.setEnabledIntent(entry, true); // 同 enableLocked:以激活成功为准
   }
 
   /**
@@ -880,6 +885,7 @@ export class PluginManager {
         error: e.error,
         warning: e.warning,
         ...(e.awaitingGrantElsewhere ? { awaitingGrantElsewhere: true as const } : {}),
+        ...(e.enabledIntent ? { enabledIntent: true as const } : {}),
       };
     }
     this.cachedList = list;
@@ -1077,6 +1083,13 @@ export class PluginManager {
       entry.error = error;
       entry.warning = undefined;
     }
+    this.invalidateListCache();
+  }
+
+  /** 改启用意图并失效列表缓存(listAll 暴露它:设置页覆盖更新文案据此判断热重载后是否重新激活)。 */
+  private setEnabledIntent(entry: PluginEntry, intent: boolean): void {
+    if (entry.enabledIntent === intent) return;
+    entry.enabledIntent = intent;
     this.invalidateListCache();
   }
 

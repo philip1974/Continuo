@@ -996,7 +996,7 @@ describe('PluginsTabContent — Git URL 安装', () => {
 
     it('已在列表且版本不同 → 确认「覆盖并更新」;确认后 overwrite 安装并提示已更新,输入框清空', async () => {
       getMgr.mockReturnValue({
-        listAll: () => [plugin({ id: 'acme.tools', status: 'enabled', manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.0.0' } as never })],
+        listAll: () => [plugin({ id: 'acme.tools', status: 'enabled', enabledIntent: true, manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.0.0' } as never })],
       });
       const installFromGit = vi
         .fn()
@@ -1016,10 +1016,23 @@ describe('PluginsTabContent — Git URL 安装', () => {
       expect((container.querySelector('input') as HTMLInputElement).value).toBe('');
     });
 
-    // 未运行(禁用 / 失败)的插件覆盖更新后 watcher 不会重新激活它 → 提示不得声称「已重新加载」。
-    it.each(['disabled', 'failed'] as const)('已在列表且状态为 %s → 覆盖更新后只提示已更新,不说已重新加载', async (status) => {
+    // 文案按启用意图(watcher 热重载据它重新激活),不按瞬时 status:失败但仍有启用意图的也会被重新加载;
+    // 无启用意图(禁用 / 失败且已无意图)的更新后不运行 → 不得声称「已重新加载」。
+    it.each([
+      ['enabled', true, true],
+      ['failed', true, true],
+      ['failed', false, false],
+      ['disabled', false, false],
+    ] as const)('已在列表、状态 %s、启用意图 %s → 覆盖更新后「已重新加载」= %s', async (status, intent, reloaded) => {
       getMgr.mockReturnValue({
-        listAll: () => [plugin({ id: 'acme.tools', status, manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.0.0' } as never })],
+        listAll: () => [
+          plugin({
+            id: 'acme.tools',
+            status,
+            ...(intent ? { enabledIntent: true as const } : {}),
+            manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.0.0' } as never,
+          }),
+        ],
       });
       installPluginsApi(
         vi
@@ -1032,7 +1045,7 @@ describe('PluginsTabContent — Git URL 安装', () => {
       await waitFor(() => expect(dialogButton('覆盖并更新')).toBeDefined());
       fireEvent.click(dialogButton('覆盖并更新')!);
       await waitFor(() => expect(container.textContent).toContain('已更新 Acme Tools v1.1.0'));
-      expect(container.textContent).not.toContain('已重新加载');
+      expect(container.textContent?.includes('已更新 Acme Tools v1.1.0 — 已重新加载')).toBe(reloaded);
     });
 
     it('确认框点取消 → 不覆盖,无错误', async () => {

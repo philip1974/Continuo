@@ -4,7 +4,7 @@
 // 困在 panel header 子树内、被相邻 panel content 盖住。portal 出去后 position:fixed 才真按 viewport 定位。
 // 触发按钮仍由调用方渲染(尺寸 / 样式各异),须带 aria-haspopup="menu" + aria-expanded。
 import { createPortal } from 'react-dom';
-import type { ReactNode, RefObject } from 'react';
+import { useEffect, useRef, type FocusEvent, type ReactNode, type RefObject } from 'react';
 import { useMenuKeyboard } from './use-menu-keyboard';
 import { useMenuAnchor } from './use-menu-anchor';
 import { useDismissOnOutsidePointer } from './use-dismiss-on-outside-pointer';
@@ -42,16 +42,41 @@ export function DropdownMenu({
     onClose: close,
   });
   const anchor = useMenuAnchor(triggerRef, open);
-  useDismissOnOutsidePointer(open, [dismissInsideRef ?? triggerRef, menuNode], close);
+  const insideRef = dismissInsideRef ?? triggerRef;
+  useDismissOnOutsidePointer(open, [insideRef, menuNode], close);
+  // 焦点移出菜单(且不在触发按钮 / 「内部」元素里)→ 关闭(VSCode 上下文菜单失焦即关):否则别处把焦点移走后菜单留在屏上,
+  // 菜单自己的 Esc 也收不到。relatedTarget 为 null(焦点去了 body / 窗口失焦)同样关闭。
+  const onBlur = (e: FocusEvent<HTMLElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && (menuNode.current?.contains(next) || insideRef.current?.contains(next))) return;
+    close();
+  };
+  // 文档级 Esc:焦点不在菜单里时(菜单自己的 onKeyDown 收不到)也能关;焦点仍在菜单内则还给触发按钮。
+  const latest = useRef({ close, closeAndRestore });
+  latest.current = { close, closeAndRestore };
+  useEffect(() => {
+    if (!open) return;
+    const doc = triggerRef.current?.ownerDocument ?? document;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (menuNode.current?.contains(doc.activeElement)) latest.current.closeAndRestore();
+      else latest.current.close();
+    };
+    doc.addEventListener('keydown', onKey);
+    return () => doc.removeEventListener('keydown', onKey);
+  }, [open, triggerRef, menuNode]);
 
   if (!open || !anchor) return null;
   return createPortal(
     <div
       ref={menuRef}
       role="menu"
+      // 可聚焦(不进 Tab 顺序):点菜单内的空白 / 分隔线时焦点落在菜单上而非 body,不触发失焦关闭。
+      tabIndex={-1}
       onKeyDown={onKeyDown}
+      onBlur={onBlur}
       style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-      className="z-modal min-w-[140px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover"
+      className="z-modal min-w-[140px] outline-none overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover"
     >
       {children({ close, closeAndRestore })}
     </div>,

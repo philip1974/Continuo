@@ -9,6 +9,7 @@ import type { PickerSlice } from './picker-slice';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { resolveEffectiveHotkey } from '@/plugins/keybindings/keybindings-store';
 import { hasOpenModalIn } from '@/design/Modal';
+import { isInsideMenu } from '@/lib/menu-focus';
 
 /**
  * 这两个组合由下方 document 监听写死处理,不在 CommandRegistry 里:改绑命令时的冲突检测
@@ -108,6 +109,8 @@ export function usePickerToggleHotkey(
         let pickerOpen = false;
         for (const picker of mountedPickers) if (picker().isOpen) pickerOpen = true;
         if (hasOpenModalIn(document, pickerOpen ? 1 : 0)) return;
+        // 菜单开着(焦点在菜单内)→ 同样不动,按键留给菜单。
+        if (isInsideMenu(e.target)) return;
         e.preventDefault();
         const { isOpen, open, close } = getState();
         if (isOpen) {
