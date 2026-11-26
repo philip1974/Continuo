@@ -168,6 +168,7 @@ export const en = {
 
   // commands.* (7)
   'commands.terminal.new.title': 'New Terminal',
+  'commands.terminal.toggle.title': 'Toggle Terminal',
   'commands.terminal.zoom.title': 'Toggle Terminal Zoom',
   'commands.terminal.search.title': 'Find in Terminal',
   'commands.terminal.clear.title': 'Clear Terminal',
@@ -190,6 +191,9 @@ export const en = {
   'commands.editor.focus_group_1.title': 'Focus First Editor Group',
   'commands.editor.focus_group_2.title': 'Focus Second Editor Group',
   'commands.editor.focus_group_3.title': 'Focus Third Editor Group',
+  'commands.editor.goto_line.title': 'Go to Line/Column…',
+  'commands.editor.recent_in_group.title': 'Open Previous Recently Used Editor in Group',
+  'commands.editor.least_recent_in_group.title': 'Open Least Recently Used Editor in Group',
   'commands.view.category': 'View',
   'commands.view.focus_next_part.title': 'Focus Next Part',
   'commands.view.focus_previous_part.title': 'Focus Previous Part',
@@ -929,6 +933,11 @@ export const en = {
   'quick_open.retry': 'Retry',
   'quick_open.open_failed': 'Failed to open',
   'quick_open.recently_opened': 'recently opened',
+  'quick_open.goto.no_editor': 'Open a text editor first to go to a line.',
+  'quick_open.goto.current': 'Current Line: {line}, Character: {column}. Type a line number between 1 and {max} to navigate to.',
+  'quick_open.goto.current_single': 'Current Line: {line}, Character: {column}. Type a line number to navigate to.',
+  'quick_open.goto.line': 'Go to line {line}.',
+  'quick_open.goto.line_column': 'Go to line {line} and character {column}.',
   // 在文件中查找(workspace-search,VSCode Search 视图)
   'panels.search.title': 'Search',
   'panels.search.query_label': 'Search',

@@ -583,6 +583,13 @@
 - [`editor-focus-registry.spec.ts`](./editor-focus-on-open/editor-focus-registry.spec.ts)
 - [`quick-open-focus.spec.tsx`](./editor-focus-on-open/quick-open-focus.spec.tsx)
 
+## [转到行 / 列(⌃G,Quick Open `:`)](./editor-goto-line/README.md)
+
+- [`codemirror-keys.spec.ts`](./editor-goto-line/codemirror-keys.spec.ts)
+- [`goto-line-command.spec.ts`](./editor-goto-line/goto-line-command.spec.ts)
+- [`goto-line-parse.spec.ts`](./editor-goto-line/goto-line-parse.spec.ts)
+- [`goto-line-quick-open.spec.tsx`](./editor-goto-line/goto-line-quick-open.spec.tsx)
+
 ## [编辑器拆分(多编辑器组)](./editor-groups/README.md)
 
 - [`editor-groups-commands.spec.ts`](./editor-groups/editor-groups-commands.spec.ts)
@@ -669,6 +676,10 @@
 ## [editor-popout-root(Editor 弹出 popout 后编辑器跟随所在文档取选区)](./editor-popout-root/README.md)
 
 - [`editor-popout-root.spec.tsx`](./editor-popout-root/editor-popout-root.spec.tsx)
+
+## [⌃Tab / ⌃⇧Tab:按组内最近使用顺序切换编辑器](./editor-recent-cycle/README.md)
+
+- [`editor-recent-cycle.spec.ts`](./editor-recent-cycle/editor-recent-cycle.spec.ts)
 
 ## [重新打开已关闭的编辑器(⇧⌘T)](./editor-reopen-closed/README.md)
 
@@ -1939,6 +1950,10 @@
 - [`title-main.spec.ts`](./terminal-title/title-main.spec.ts)
 - [`title-priority.spec.ts`](./terminal-title/title-priority.spec.ts)
 - [`title-renderer.spec.tsx`](./terminal-title/title-renderer.spec.tsx)
+
+## [⌃` 切换终端](./terminal-toggle/README.md)
+
+- [`terminal-toggle.spec.ts`](./terminal-toggle/terminal-toggle.spec.ts)
 
 ## [terminal-url-click](./terminal-url-click/README.md)
 

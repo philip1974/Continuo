@@ -10,11 +10,13 @@ import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activePanelInDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
+import { toggleTerminal } from '@/shell/dock/toggle-terminal';
 import { clearTerminalPanel, openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import {
   TERMINAL_CLEAR_COMMAND,
   TERMINAL_SEARCH_COMMAND,
+  TERMINAL_TOGGLE_COMMAND,
   TERMINAL_ZOOM_COMMAND,
   terminalClearDefaultHotkey,
 } from '@/panels/Terminal/terminal-hotkeys';
@@ -91,6 +93,16 @@ export default class TerminalPlugin extends Plugin {
       hotkey: 'mod+t',
       // 可维护性 M1:终端创建流程抽到 createUserTerminal(与 Dock header 新建入口共用)。
       fn: () => createUserTerminal().then(() => undefined),
+    });
+    // VSCode workbench.action.terminal.toggleTerminal(各平台 ⌃`):焦点不在终端 → 最近使用的终端(没有则新建);在终端 → 回到编辑器。
+    // BDD: src/__tests__/terminal-toggle/
+    this.addCommand({
+      ...TERMINAL_TOGGLE_COMMAND,
+      title: 'Toggle Terminal',
+      titleKey: 'commands.terminal.toggle.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: toggleTerminal,
     });
   }
 }

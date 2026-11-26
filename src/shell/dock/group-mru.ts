@@ -25,6 +25,8 @@ const windowKeyOf = (group: Pick<IDockviewGroupPanel, 'id' | 'api'>): string => 
 
 // 每个 dock api 的组 MRU(trackGroupMru 期间有效),供 mostRecentMainWindowPanel 查询。
 const mruByApi = new WeakMap<DockviewApi, readonly string[]>();
+// 每个 dock api 的面板 MRU(面板 id,最近激活在前;trackGroupMru 期间有效),供 mostRecentPanelInDocument 查询。
+const panelMruByApi = new WeakMap<DockviewApi, readonly string[]>();
 
 /**
  * 主窗(grid / floating)里最近使用的组的活动面板:活动面板在 popout 子窗时,主窗的命令(F6)用它代替活动面板。
@@ -63,6 +65,23 @@ export function popoutGroupOfDocument(api: DockviewApi, doc: Document): Group | 
  */
 export function activePanelInDocument(api: DockviewApi, doc: Document): IDockviewPanel | undefined {
   return doc === document ? mainWindowActivePanel(api) : popoutGroupOfDocument(api, doc)?.activePanel;
+}
+
+/**
+ * doc 所在窗口里满足 match 的最近激活的面板(⌃` 切换终端找最近使用的终端;BDD: src/__tests__/terminal-toggle/):按面板 MRU,
+ * 从未激活过的按 dock 面板顺序排在后面。该窗口没有 → undefined。
+ */
+export function mostRecentPanelInDocument(
+  api: DockviewApi,
+  doc: Document,
+  match: (panel: IDockviewPanel) => boolean,
+): IDockviewPanel | undefined {
+  const popout = doc === document ? undefined : popoutGroupOfDocument(api, doc);
+  if (doc !== document && !popout) return undefined;
+  const inWindow = (panel: IDockviewPanel): boolean => (popout ? panel.group === popout : windowKeyOf(panel.group) === 'main');
+  const recent = (panelMruByApi.get(api) ?? []).map((id) => api.getPanel(id));
+  for (const panel of [...recent, ...api.panels]) if (panel && inWindow(panel) && match(panel)) return panel;
+  return undefined;
 }
 
 /** 编辑器组面板(面板 id = 编辑器组 id;BDD: src/__tests__/editor-groups/)。 */
@@ -134,6 +153,15 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   // 组 id,最近使用在前。
   const mru: string[] = [];
   mruByApi.set(api, mru);
+  // 面板 id,最近激活在前(只记活动面板变化;面板移除时删掉,不随开关累积)。
+  const panelMru: string[] = [];
+  panelMruByApi.set(api, panelMru);
+  const touchPanel = (panel: IDockviewPanel): void => {
+    const i = panelMru.indexOf(panel.id);
+    if (i === 0) return;
+    if (i > 0) panelMru.splice(i, 1);
+    panelMru.unshift(panel.id);
+  };
   // 每个组最后的活动面板(popout 组关闭时面板已挪回引用组,组里查不到,靠它找回)。
   const lastActivePanel = new Map<string, string>();
 
@@ -256,9 +284,15 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   const subs = [
     api.onDidActiveGroupChange(touch),
     api.onDidActivePanelChange((panel) => {
-      if (panel) touch(panel.group);
+      if (!panel) return;
+      touch(panel.group);
+      touchPanel(panel);
     }),
     api.onDidRemoveGroup(onRemove),
+    api.onDidRemovePanel((panel) => {
+      const i = panelMru.indexOf(panel.id);
+      if (i >= 0) panelMru.splice(i, 1);
+    }),
     // 加入面板(后台加入不改活动面板)/ 加入组(popout 恢复时子窗挂上的组)后,活动面板重新置于组 MRU 首位
     api.onDidAddPanel((panel) => keepActivePanelMruFirst(panel.group)),
     api.onDidAddGroup((group) => {
@@ -273,6 +307,7 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   ];
   for (const group of api.groups) watchLocation(group);
   touch(api.activeGroup);
+  if (api.activePanel) touchPanel(api.activePanel);
   // 跟踪始于布局恢复(fromJSON / 默认布局)之后:恢复时按 tab 顺序加入的面板已把活动面板挤到 MRU 后面
   for (const group of api.groups) keepActivePanelMruFirst(group);
 
@@ -282,12 +317,14 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
       window.removeEventListener('focus', activateMainWindowGroup);
       offRestoreSettled();
       if (mruByApi.get(api) === mru) mruByApi.delete(api);
+      if (panelMruByApi.get(api) === panelMru) panelMruByApi.delete(api);
       for (const s of subs) s.dispose();
       for (const s of locationSubs.values()) s.dispose();
       locationSubs.clear();
       for (const off of windowFocusSubs.values()) off();
       windowFocusSubs.clear();
       mru.length = 0;
+      panelMru.length = 0;
       lastActivePanel.clear();
     },
   };

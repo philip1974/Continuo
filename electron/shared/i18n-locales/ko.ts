@@ -156,6 +156,7 @@ export const ko: Record<TranslationKey, string> = {
 
   // commands.*
   'commands.terminal.new.title': '새 터미널',
+  'commands.terminal.toggle.title': '터미널 전환',
   'commands.terminal.zoom.title': '터미널 확대/축소 전환',
   'commands.terminal.search.title': '터미널에서 찾기',
   'commands.terminal.clear.title': '터미널 지우기',
@@ -178,6 +179,9 @@ export const ko: Record<TranslationKey, string> = {
   'commands.editor.focus_group_1.title': '첫 번째 편집기 그룹에 포커스',
   'commands.editor.focus_group_2.title': '두 번째 편집기 그룹에 포커스',
   'commands.editor.focus_group_3.title': '세 번째 편집기 그룹에 포커스',
+  'commands.editor.goto_line.title': '줄/열로 이동…',
+  'commands.editor.recent_in_group.title': '그룹에서 이전에 최근 사용한 편집기 열기',
+  'commands.editor.least_recent_in_group.title': '그룹에서 가장 오래전에 사용한 편집기 열기',
   'commands.view.category': '보기',
   'commands.view.focus_next_part.title': '다음 부분에 포커스',
   'commands.view.focus_previous_part.title': '이전 부분에 포커스',
@@ -892,6 +896,11 @@ export const ko: Record<TranslationKey, string> = {
   'quick_open.retry': '다시 시도',
   'quick_open.open_failed': '열기 실패',
   'quick_open.recently_opened': '최근에 연 항목',
+  'quick_open.goto.no_editor': '줄로 이동하려면 먼저 텍스트 편집기를 여세요.',
+  'quick_open.goto.current': '현재 줄: {line}, 문자: {column}. 이동할 줄 번호(1~{max})를 입력하세요.',
+  'quick_open.goto.current_single': '현재 줄: {line}, 문자: {column}. 이동할 줄 번호를 입력하세요.',
+  'quick_open.goto.line': '{line}줄로 이동합니다.',
+  'quick_open.goto.line_column': '{line}줄의 {column}번째 문자로 이동합니다.',
   // 在文件中查找(workspace-search,VSCode Search 视图)
   'panels.search.title': '검색',
   'panels.search.query_label': '검색',

@@ -4,6 +4,9 @@
 // - workbench.action.files.revert:还原当前活动文件 tab 为磁盘内容(丢弃未保存修改;同 VSCode 无默认键);
 // - workbench.action.reopenClosedEditor(⇧⌘T):重新打开最近关闭的编辑器(BDD: src/__tests__/editor-reopen-closed/);
 // - workbench.action.nextEditor / previousEditor:编辑器文件 tab 间循环切换(活动编辑器组内);
+// - workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup / quickOpenLeastRecentlyUsedEditorInGroup(⌃Tab / ⌃⇧Tab):
+//   按组内最近使用顺序切换(BDD: src/__tests__/editor-recent-cycle/);
+// - workbench.action.gotoLine(⌃G,各平台同):Quick Open 预填 `:` 转到行 / 列(BDD: src/__tests__/editor-goto-line/);
 // - workbench.action.splitEditor(⌘\)/ splitEditorDown(无默认键)/ focusFirst·Second·ThirdEditorGroup(⌘1 / ⌘2 / ⌘3):
 //   编辑器组(BDD: src/__tests__/editor-groups/)。
 // - 组内关闭类(closeOtherEditors / closeEditorsToTheRight / closeUnmodifiedEditors / closeEditorsInGroup)、copyFilePath /
@@ -47,6 +50,14 @@ import { stripRootPrefix } from '@/lib/path-cross';
 import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { revealPathOrNotify } from '@/panels/Explorer/reveal-or-notify';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useQuickOpenStore } from '@/plugins/quick-open/store';
+import { useCommandPaletteStore } from '@/plugins/command-palette/store';
+import { GOTO_LINE_PREFIX } from '@/plugins/quick-open/goto-line';
+import {
+  LEAST_RECENT_EDITOR_IN_GROUP_COMMAND,
+  RECENT_EDITOR_IN_GROUP_COMMAND,
+  openRecentlyUsedEditorInGroup,
+} from './editor-recent-cycle';
 
 /** 命令 id 与默认键(终端按生效绑定让出 ⌘W / ⌘S 时与此约定一致)。 */
 export const CLOSE_ACTIVE_EDITOR_COMMAND = { id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' } as const;
@@ -58,6 +69,17 @@ export const SPLIT_EDITOR_COMMAND = { id: 'workbench.action.splitEditor', hotkey
 /** 重新打开已关闭的编辑器(VSCode 同:⇧⌘T / Ctrl+Shift+T;BDD: src/__tests__/editor-reopen-closed/)。 */
 export const REOPEN_CLOSED_EDITOR_COMMAND = { id: 'workbench.action.reopenClosedEditor', hotkey: 'mod+shift+t' } as const;
 export const SPLIT_EDITOR_DOWN_COMMAND_ID = 'workbench.action.splitEditorDown';
+/**
+ * 转到行 / 列(VSCode 同:mac ⌃G、Windows / Linux Ctrl+G —— 两平台都是 Control 键,不是 mod)。CodeMirror 自带的 ⌘⌥G 小面板与
+ * Win/Linux 上 Ctrl+G = 查找下一个已去掉(见 codemirror-basic-setup;查找下一个为 F3 / 查找框内 Enter,mac 另有 ⌘G)。
+ */
+export const GOTO_LINE_COMMAND = { id: 'workbench.action.gotoLine', hotkey: 'ctrl+g' } as const;
+
+/** 打开 Quick Open 并预填 `:`(与命令面板互斥,同 ⌘P)。 */
+export function openGotoLine(): void {
+  useCommandPaletteStore.getState().close();
+  useQuickOpenStore.getState().openWith(GOTO_LINE_PREFIX);
+}
 /** 聚焦第 N 个编辑器组(N = 1..3)的命令 id 与默认键(VSCode 同:⌘1 / ⌘2 / ⌘3,其它平台 Ctrl+1 …)。 */
 export const FOCUS_EDITOR_GROUP_COMMANDS = [
   { id: 'workbench.action.focusFirstEditorGroup', hotkey: 'mod+1', index: 1 },
@@ -315,6 +337,30 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       categoryKey: 'commands.view.category',
       hotkey: isMac ? 'mod+alt+left' : 'ctrl+pageup',
       fn: () => openAdjacentEditor(-1),
+    },
+    {
+      ...RECENT_EDITOR_IN_GROUP_COMMAND,
+      title: 'Open Previous Recently Used Editor in Group',
+      titleKey: 'commands.editor.recent_in_group.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => openRecentlyUsedEditorInGroup(1),
+    },
+    {
+      ...LEAST_RECENT_EDITOR_IN_GROUP_COMMAND,
+      title: 'Open Least Recently Used Editor in Group',
+      titleKey: 'commands.editor.least_recent_in_group.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => openRecentlyUsedEditorInGroup(-1),
+    },
+    {
+      ...GOTO_LINE_COMMAND,
+      title: 'Go to Line/Column…',
+      titleKey: 'commands.editor.goto_line.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: openGotoLine,
     },
     {
       ...SPLIT_EDITOR_COMMAND,

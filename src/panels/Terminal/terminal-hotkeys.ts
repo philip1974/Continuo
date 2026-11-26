@@ -46,6 +46,17 @@ export const WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS = [
   { id: 'workbench.action.focusSecondEditorGroup', hotkey: 'mod+2' },
   { id: 'workbench.action.focusThirdEditorGroup', hotkey: 'mod+3' },
 ] as const;
+// ⌃Tab / ⌃⇧Tab 按组内最近使用顺序切换编辑器(BDD: src/__tests__/editor-recent-cycle/):VSCode 终端里 ⌃Tab 同样切编辑器 →
+// 胜出即让出(不只 Meta)。与 editor-recent-cycle 的命令常量一致(规范守护)。
+export const WORKBENCH_RECENT_EDITOR_COMMANDS = [
+  { id: 'workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup', hotkey: 'ctrl+tab' },
+  { id: 'workbench.action.quickOpenLeastRecentlyUsedEditorInGroup', hotkey: 'ctrl+shift+tab' },
+] as const;
+/**
+ * 切换终端(VSCode workbench.action.terminal.toggleTerminal,各平台 ⌃`;在 commandsToSkipShell 默认列表里 → 终端里胜出即让出:
+ * 焦点在终端时按它回到编辑器)。BDD: src/__tests__/terminal-toggle/
+ */
+export const TERMINAL_TOGGLE_COMMAND = { id: 'workbench.action.terminal.toggleTerminal', hotkey: 'ctrl+`' } as const;
 
 /**
  * terminal.clear 的默认键:同 VSCode workbench.action.terminal.clear(primary: 0, mac: Cmd+K)只 mac 有 ⌘K;
@@ -62,6 +73,7 @@ export function terminalClearDefaultHotkey(platform: Platform): string | undefin
  * - 关闭编辑器 / 保存不在列表里 → 只有按键带 Meta(mac ⌘)才让出。Win/Linux 上 Ctrl+W(删前一词)/ Ctrl+S
  *  (XOFF)照常进 shell,与 VSCode 一致。
  * - F6 / ⇧F6 区域切换(focusNextPart / focusPreviousPart)在默认列表里 → 胜出即让出(终端吃掉 Tab,键盘用户靠它离开)。
+ * - ⌃Tab / ⌃⇧Tab 切换最近使用的编辑器、⌃` 切换终端 → 胜出即让出(VSCode 终端里同样生效)。
  */
 const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> = new Map([
   [TERMINAL_CLEAR_COMMAND.id, { metaOnly: false }],
@@ -72,6 +84,8 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   [WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND.id, { metaOnly: true }],
   [WORKBENCH_SPLIT_EDITOR_COMMAND.id, { metaOnly: true }],
   ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
+  ...WORKBENCH_RECENT_EDITOR_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
+  [TERMINAL_TOGGLE_COMMAND.id, { metaOnly: false }],
 ]);
 
 /** 终端判定涉及的命令的约定默认键(命令尚未注册时兜底;已注册以注册的 hotkey 为准)。按平台(clear 仅 mac 有默认键)。 */
@@ -90,6 +104,8 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
     WORKBENCH_REOPEN_CLOSED_EDITOR_COMMAND,
     WORKBENCH_SPLIT_EDITOR_COMMAND,
     ...WORKBENCH_FOCUS_EDITOR_GROUP_COMMANDS,
+    ...WORKBENCH_RECENT_EDITOR_COMMANDS,
+    TERMINAL_TOGGLE_COMMAND,
     FOCUS_NEXT_PART_COMMAND,
     FOCUS_PREVIOUS_PART_COMMAND,
   ];

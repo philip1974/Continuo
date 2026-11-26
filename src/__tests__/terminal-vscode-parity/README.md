@@ -5,6 +5,8 @@
 1. **终端让出工作台命令键(commandsToSkipShell)**:对齐 VSCode terminalInstance 的让出判定
    `event.metaKey || shouldCommandSkipShell(commandId)`:
    - `terminal.clear` 在 VSCode 默认 commandsToSkipShell 里 → 其**生效绑定**不交给 xterm / shell;
+   - ⌃Tab / ⌃⇧Tab(按 MRU 切换编辑器,`src/__tests__/editor-recent-cycle/`)、⌃`(切换终端,`src/__tests__/terminal-toggle/`)
+     同样胜出即让出(两平台);⌃G(转到行)不让出,照常进 shell;
    - `workbench.action.closeActiveEditor`(默认 mod+w)、`workbench.action.files.save`(默认 mod+s)不在列表里 →
      只有按键带 Meta 时让出:mac 上 ⌘W / ⌘S 让出(不被 xterm 吞);**Windows / Linux 上 Ctrl+W(删前一词)/
      Ctrl+S(XOFF)照常进 shell**,不关终端、不触发保存(与 VSCode 一致,有意不偏离)。

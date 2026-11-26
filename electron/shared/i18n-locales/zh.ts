@@ -154,6 +154,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // commands.*
   'commands.terminal.new.title': '新建终端',
+  'commands.terminal.toggle.title': '切换终端',
   'commands.terminal.zoom.title': '切换终端缩放',
   'commands.terminal.search.title': '在终端中查找',
   'commands.terminal.clear.title': '清除终端',
@@ -176,6 +177,9 @@ export const zh: Record<TranslationKey, string> = {
   'commands.editor.focus_group_1.title': '聚焦于第一个编辑器组',
   'commands.editor.focus_group_2.title': '聚焦于第二个编辑器组',
   'commands.editor.focus_group_3.title': '聚焦于第三个编辑器组',
+  'commands.editor.goto_line.title': '转到行/列…',
+  'commands.editor.recent_in_group.title': '打开组中上一个最近使用的编辑器',
+  'commands.editor.least_recent_in_group.title': '打开组中最近最少使用的编辑器',
   'commands.view.category': '查看',
   'commands.view.focus_next_part.title': '聚焦到下一部分',
   'commands.view.focus_previous_part.title': '聚焦到上一部分',
@@ -885,6 +889,11 @@ export const zh: Record<TranslationKey, string> = {
   'quick_open.retry': '重试',
   'quick_open.open_failed': '打开失败',
   'quick_open.recently_opened': '最近打开',
+  'quick_open.goto.no_editor': '请先打开文本编辑器，然后再转到行。',
+  'quick_open.goto.current': '当前行：{line}，字符：{column}。键入要导航到的行号（介于 1 和 {max} 之间）。',
+  'quick_open.goto.current_single': '当前行：{line}，字符：{column}。键入要导航到的行号。',
+  'quick_open.goto.line': '转到第 {line} 行。',
+  'quick_open.goto.line_column': '转到第 {line} 行第 {column} 个字符。',
   // 在文件中查找(workspace-search,VSCode Search 视图)
   'panels.search.title': '搜索',
   'panels.search.query_label': '搜索',

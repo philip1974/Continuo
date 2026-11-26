@@ -11,7 +11,8 @@
 // 通过 Compartment.reconfigure 热切,无需重建 EditorView。
 
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { EditorView, basicSetup } from 'codemirror';
+import { EditorView } from 'codemirror';
+import { codeEditorBasicSetup } from './codemirror-basic-setup';
 import { Compartment, EditorState, StateEffect, type Extension } from '@codemirror/state';
 import { keymap, type ViewUpdate } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
@@ -318,7 +319,9 @@ export function CodeEditor({
     eolRef.current = detectLineEnding(value);
 
     const extensions: Extension[] = [
-      basicSetup,
+      // basicSetup 去掉与 VSCode 冲突的查找键(⌘⌥G 转到行小面板、Win/Linux 的 Ctrl+G 查找下一个),⌃G 归 workbench.action.gotoLine。
+      // BDD: src/__tests__/editor-goto-line/
+      codeEditorBasicSetup,
       // Tab 缩进 / ⇧Tab 反缩进(VSCode 同)。键盘用户逃逸:Esc 后紧接着 Tab(2 秒内)交给浏览器移出焦点,
       // ⌃M(mac ⇧⌥M,basicSetup 的 toggleTabFocusMode)切换常驻模式 —— CodeMirror 内建,对应 VSCode ⌃M。
       // BDD: src/__tests__/keyboard-focus-parity/

@@ -27,6 +27,11 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.closeActiveEditor',
   // ⇧⌘T:子窗里触发时重开落在该子窗(见 reopen-closed-editor targetOf),不画到主窗
   'workbench.action.reopenClosedEditor',
+  // ⌃Tab / ⌃⇧Tab:切换该子窗编辑器组里最近使用的编辑器(commandEditorGroupId 取子窗的组;子窗没有编辑器组 → no-op)
+  'workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup',
+  'workbench.action.quickOpenLeastRecentlyUsedEditorInGroup',
+  // ⌃`:子窗里的终端 ↔ 子窗的编辑器(子窗没有终端时不新建,见 toggle-terminal)
+  'workbench.action.terminal.toggleTerminal',
 ]);
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */

@@ -46,6 +46,8 @@ interface QuickOpenState extends PickerSlice {
   setResults: (files: readonly QuickOpenFile[], root: string | null) => void;
   setLoading: (b: boolean) => void;
   setScanFailed: (b: boolean) => void;
+  /** 打开并预填查询(⌃G 转到行预填 `:`;已打开则改为该查询)。 */
+  openWith: (query: string) => void;
 }
 
 function quickOpenResultsEqual(
@@ -80,4 +82,5 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   setLoading: (b) => set((s) => (s.loading === b ? s : { loading: b })),
   setScanFailed: (b) =>
     set((s) => (s.scanFailed === b ? s : { scanFailed: b })),
+  openWith: (query) => set({ isOpen: true, query, selectedIndex: 0 }),
 }));

@@ -7,6 +7,8 @@
 //   Enter → openFileByPath(absPath) + close()
 //   最近打开(VSCode 编辑器历史):空查询时本工作区最近打开的文件排最前、首行标「最近打开」;有查询时同分优先。
 //   BDD: src/__tests__/quick-open-recent/
+//   转到行 / 列:查询以 `:` 开头(⌃G 预填)→ 列表换成唯一一行「转到第 N 行」/ 提示,Enter 跳转(见 use-goto-line)。
+//   BDD: src/__tests__/editor-goto-line/
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
@@ -28,6 +30,7 @@ import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { normalizeSearchQuery } from '@/lib/search-query';
+import { useGotoLine } from './use-goto-line';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -208,15 +211,20 @@ function QuickOpenBody() {
 
   // 列表机制(virtualizer / 越界钳制 / 滚动跟随 / 键盘导航 / ARIA)走共享 usePickerList。
   // filtered 仍是逻辑全集(最多 QUICK_OPEN_MAX_FILES),只渲染可视行。
+  const gotoLine = useGotoLine(query, close);
   const { scrollRef, virtualItems, comboboxProps, listboxProps, getOptionProps } = usePickerList({
     idPrefix: 'quick-open',
-    count: filtered.length,
+    count: gotoLine.active ? (gotoLine.canAccept ? 1 : 0) : filtered.length,
     selectedIndex,
     rowHeight: 28, // li: py-1.5 text-xs ≈ 28px
     overscan: 12,
     moveSelection,
     clampSelection,
     onEnter: (index) => {
+      if (gotoLine.active) {
+        gotoLine.accept();
+        return;
+      }
       const file = filtered[index];
       if (file) void openFile(file);
     },
@@ -240,7 +248,27 @@ function QuickOpenBody() {
         />
       </div>
       <div ref={scrollRef} className="max-h-[min(420px,calc(100vh-8rem))] overflow-y-auto py-1">
-        {!root ? (
+        {gotoLine.active ? (
+          gotoLine.canAccept ? (
+            <ul {...listboxProps} aria-label={t('quick_open.list_aria')}>
+              {virtualItems.map((vRow) => (
+                <li
+                  key="goto-line"
+                  {...getOptionProps(vRow)}
+                  className={pickerRowClassName(vRow.index === selectedIndex)}
+                  onClick={gotoLine.accept}
+                >
+                  <span className="truncate">{gotoLine.message}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            // 无可跳转目标(只有 `:` / 没有文本编辑器):提示文字,焦点在输入框时读屏同样播报
+            <div role="status" className="px-3 py-4 text-center text-xs text-fg-dim">
+              {gotoLine.message}
+            </div>
+          )
+        ) : !root ? (
           // a11y(A69,A56 同族):弹窗打开焦点自动落搜索框,无 workspace 空态须 role=status,
           // 否则 SR 用户不被告知"当前无法搜索文件"及原因。
           <div role="status" className="px-3 py-4 text-center text-xs text-fg-dim">
