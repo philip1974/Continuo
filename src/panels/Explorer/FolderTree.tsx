@@ -136,7 +136,7 @@ interface MoveConfirmState {
   logLabel: string;
 }
 
-/** 撤销新建前的确认(新建项被改过,见 file-undo.ts);resolve 存 ref。 */
+/** 撤销新建前的确认(撤销新建 = 移到废纸篓,一律确认,见 file-undo.ts);resolve 存 ref。 */
 interface UndoCreateConfirmState {
   paths: string[];
   /** 其下未保存的编辑器数(> 0 时同删除确认给出未保存警告)。 */
@@ -715,7 +715,6 @@ export function FolderTree({ root }: { root: string }) {
         recordFileOp(
           root,
           kind === 'move' ? { kind: 'move', pairs: moved } : { kind: 'create', entries: copied },
-          coApi.fs,
         );
       });
     },
@@ -724,7 +723,7 @@ export function FolderTree({ root }: { root: string }) {
   // 外部拖入写成的新文件入撤销栈(无法重做:内容未保留;选「替换」时 dropForeignFilesInto 不回报)。
   const recordDropped = useCallback(
     (paths: string[]) =>
-      recordFileOp(root, { kind: 'create', entries: paths.map((path) => ({ path, redo: null })) }, coApi.fs),
+      recordFileOp(root, { kind: 'create', entries: paths.map((path) => ({ path, redo: null })) }),
     [root],
   );
 
@@ -819,7 +818,7 @@ export function FolderTree({ root }: { root: string }) {
               }
               // editor tab / 展开集合前缀改写 + 剪贴板剪除旧路径(目录 rename 时其下全部路径同步)
               onPathMoved(oldPath, r.newPath);
-              recordFileOp(root, { kind: 'move', pairs: [{ from: oldPath, to: r.newPath }] }, coApi.fs);
+              recordFileOp(root, { kind: 'move', pairs: [{ from: oldPath, to: r.newPath }] });
               // 焦点与选中留在改名后的项(VSCode):旧 id 随父目录刷新消失,不定位则库的 updateDomFocus 回落首项。
               // 失败分支不动:Enter 提交时焦点已还给原项(tree-config completeRenaming)。
               setPendingReveal({ path: r.newPath, focusRow: true, inputSeq: treeInputSeqRef.current });
@@ -1063,6 +1062,9 @@ export function FolderTree({ root }: { root: string }) {
         const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved).finally(
           releaseAutoSave,
         );
+        // 删除不可撤销(shell.trashItem 无恢复 API):压删除屏障,之后的 ⌘Z 停在这里提示「可从废纸篓恢复」,
+        // 不越过它去撤销更早的新建 / 复制(那会把另一个文件静默移进废纸篓)。见 file-undo.ts。
+        if (result.removed.length > 0) recordFileOp(root, { kind: 'delete' });
         if (!result.ok) {
           for (const f of result.failures) {
             console.warn('[explorer] trash failed', f.path, f.code, f.message);
@@ -1077,7 +1079,7 @@ export function FolderTree({ root }: { root: string }) {
         }
       })();
     },
-    [mutateDeps, onPathsRemoved, treeApi],
+    [mutateDeps, onPathsRemoved, root, treeApi],
   );
 
   // 删除后焦点落点:树焦点项(右键时已移到该行)的相邻项。DOM 焦点随之移过去(右键菜单跳过了 Radix 的焦点还原)。
@@ -1176,7 +1178,9 @@ export function FolderTree({ root }: { root: string }) {
       void (async () => {
         try {
           const o = await (isUndo ? undoFileOp : redoFileOp)(root, fileUndoDeps);
-          if (o.status === 'done' && o.reveal !== null) {
+          if (o.status === 'blocked') {
+            notify.info(t('panels.explorer.undo_blocked_by_delete'), { mirror: false });
+          } else if (o.status === 'done' && o.reveal !== null) {
             // 撤销后选中并显示恢复的项(同改名后的定位;DOM 焦点已不在树里则不抢)。
             expandAncestors(o.reveal);
             setPendingReveal({ path: o.reveal, focusRow: true, inputSeq: treeInputSeqRef.current });
@@ -1219,11 +1223,16 @@ export function FolderTree({ root }: { root: string }) {
       return false;
     }
     setCreating(null);
-    recordFileOp(root, { kind: 'create', entries: [{ path: r.newPath, redo: { type } }] }, coApi.fs);
-    if (parentDir !== root) {
-      const parent = treeRef.current?.getItemInstance(parentDir);
-      if (parent && !parent.isExpanded()) parent.expand();
-    }
+    // 一次输入嵌套路径(`a/b/c.ts`,VSCode 同款逐级创建):撤销记录的是本次新建的最上层项(created),删它即覆盖整条链、
+    // 已存在的中间目录不动;rest = 其下余下的段,供重做按原样逐级重建。
+    const rest =
+      r.created === r.newPath ? undefined : stripRootPrefix(r.created, r.newPath).replace(/\\/g, '/');
+    recordFileOp(root, {
+      kind: 'create',
+      entries: [{ path: r.created, redo: rest === undefined ? { type } : { type, rest } }],
+    });
+    // 逐级展开到新项(嵌套路径时含新建的中间目录),新项出现在渲染列表后选中。
+    expandAncestors(r.newPath);
     setPendingReveal({ path: r.newPath, focusRow: type === 'dir', inputSeq: treeInputSeqRef.current });
     // 新建文件打开后焦点进编辑器,可接着输入(VSCode 同款;单击打开已有文件仍留在树里)
     if (type === 'file') {
@@ -1417,6 +1426,8 @@ export function FolderTree({ root }: { root: string }) {
         }
         confirmLabel={tt('panels.explorer.ctx.trash')}
         destructive
+        // 移到废纸篓可从废纸篓恢复:回车即执行(VSCode 删除确认的主按钮默认);永久删除等不可恢复的确认不这样做。
+        defaultAction="confirm"
         // 焦点显式还给树(不依赖 Modal 记录的 prevFocus:右键打开时那是已卸载的菜单项 → body)。
         // updateDomFocus 在 setTimeout 里聚焦,晚于 Modal 卸载时的焦点还原。
         onCancel={() => {
@@ -1481,7 +1492,7 @@ export function FolderTree({ root }: { root: string }) {
     );
   };
 
-  // 撤销新建确认框:新建项在新建后被改过(或有未保存的编辑器),撤销会把它移到废纸篓。
+  // 撤销新建确认框:撤销新建会把它移到废纸篓,一律先确认(VSCode explorer.confirmUndo 默认)。
   const settleUndoCreate = (ok: boolean) => {
     const resolve = undoCreateResolveRef.current;
     undoCreateResolveRef.current = null;
@@ -1513,6 +1524,8 @@ export function FolderTree({ root }: { root: string }) {
         }
         confirmLabel={tt('panels.explorer.ctx.trash')}
         destructive
+        // 同删除确认:移到废纸篓可恢复,回车即执行。
+        defaultAction="confirm"
         onCancel={() => settleUndoCreate(false)}
         onConfirm={() => settleUndoCreate(true)}
       />

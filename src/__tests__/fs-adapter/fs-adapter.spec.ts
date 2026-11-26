@@ -434,8 +434,9 @@ describe('renameEntry', () => {
 
 describe('createFile', () => {
   it('创建空文件,返回路径', async () => {
-    const newPath = await createFile(dir, 'fresh.txt');
+    const { path: newPath, created } = await createFile(dir, 'fresh.txt');
     expect(newPath).toBe(path.join(dir, 'fresh.txt'));
+    expect(created).toBe(newPath);
     expect(existsSync(newPath)).toBe(true);
     expect(await fspReadFile(newPath, 'utf-8')).toBe('');
   });
@@ -445,15 +446,18 @@ describe('createFile', () => {
     await expectErrCode(() => createFile(dir, 'x.txt'), 'FS_EEXIST');
   });
 
-  it('name 含 / → FS_BAD_NAME', async () => {
-    await expectErrCode(() => createFile(dir, 'sub/x.txt'), 'FS_BAD_NAME');
+  it('name 含 .. / 空段 / 绝对路径 → FS_BAD_NAME(嵌套路径见 explorer-create-nested)', async () => {
+    await expectErrCode(() => createFile(dir, '../x.txt'), 'FS_BAD_NAME');
+    await expectErrCode(() => createFile(dir, 'a//x.txt'), 'FS_BAD_NAME');
+    await expectErrCode(() => createFile(dir, '/x.txt'), 'FS_BAD_NAME');
   });
 });
 
 describe('createDir', () => {
   it('创建目录,返回路径', async () => {
-    const newPath = await createDir(dir, 'newdir');
+    const { path: newPath, created } = await createDir(dir, 'newdir');
     expect(newPath).toBe(path.join(dir, 'newdir'));
+    expect(created).toBe(newPath);
     expect(statSync(newPath).isDirectory()).toBe(true);
   });
 

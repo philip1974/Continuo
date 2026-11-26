@@ -4,7 +4,7 @@
 //     目录 → 切换展开
 //   - 方向键 / Home / End:选中跟随焦点(VSCode 列表 selectionNavigation)
 //   - Delete(mac 另有 ⌘⌫):移到废纸篓,与右键「移到废纸篓」同一 onTrash;多选时作用于整组;
-//     删除前弹确认(VSCode explorer.confirmDelete 默认开,初始焦点在「取消」),按住不放的自动重复不连删
+//     删除前弹确认(VSCode explorer.confirmDelete 默认开,初始焦点在「移到废纸篓」:可恢复,回车即执行),按住不放的自动重复不连删
 //   - 未显示隐藏文件时,方向键 / Home / End 不会把焦点 / 选中落到看不见的 . 开头项(删不到它们)
 //   - mod+C / mod+X / mod+V(mac ⌘、其它 Ctrl):与右键剪切 / 复制 / 粘贴同一实现;粘贴落点 = 焦点目录或焦点文件的父目录
 //   - 键入字母:跳到名称以已键入前缀开头的下一项(VSCode type-to-navigate)
@@ -303,15 +303,16 @@ describe('FolderTree · 删除 / 剪切 / 复制 / 粘贴热键(与右键菜单�
 });
 
 describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
-  it('Delete 先弹确认:单文件标题含文件名、说明可从废纸篓恢复,初始焦点在「取消」;取消 → 不删、选中不动', async () => {
+  it('Delete 先弹确认:单文件标题含文件名、说明可从废纸篓恢复,初始焦点在「移到废纸篓」(可恢复,回车即执行);取消 → 不删、选中不动', async () => {
     const { container } = await mount();
     await focusRow(container, '/work/bravo.ts');
     key(row(container, '/work/bravo.ts')!, { key: 'Delete', code: 'Delete' });
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(/bravo\.ts/);
     expect(dialog.textContent).toMatch(/废纸篓|Trash/);
+    const trashButton = within(dialog).getByRole('button', { name: TRASH_LABEL });
+    await waitFor(() => expect(document.activeElement).toBe(trashButton));
     const cancel = within(dialog).getByRole('button', { name: CANCEL_LABEL });
-    await waitFor(() => expect(document.activeElement).toBe(cancel));
     act(() => {
       fireEvent.click(cancel);
     });
@@ -369,8 +370,8 @@ describe('FolderTree · 删除确认(VSCode explorer.confirmDelete)', () => {
       fireEvent.click(item.closest('[role="menuitem"]')!);
     });
     const dialog = await screen.findByRole('alertdialog');
-    const cancel = within(dialog).getByRole('button', { name: CANCEL_LABEL });
-    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    const trashButton = within(dialog).getByRole('button', { name: TRASH_LABEL });
+    await waitFor(() => expect(document.activeElement).toBe(trashButton));
     // Radix 菜单关闭后的焦点还原(setTimeout)不得把焦点抢回遮罩后的树行
     await new Promise((r) => setTimeout(r, 30));
     expect(dialog.contains(document.activeElement)).toBe(true);

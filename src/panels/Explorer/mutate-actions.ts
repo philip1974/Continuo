@@ -152,13 +152,14 @@ function toActionFail(err: unknown): ActionFail {
   return { ok: false, code, message: message ?? code };
 }
 
-// 新建文件 / 目录同构(只差调哪个 fs 方法):IPC reject → 结构化失败;成功 → 刷新父目录。
+// 新建文件 / 目录同构(只差调哪个 fs 方法):IPC reject → 结构化失败;成功 → 刷新新建最上层项所在目录(名字带中间目录
+// `a/b/c.ts` 时那是 parentDir 或其下已存在的中间目录)。created = 本次新建的最上层项(见 FsCreated)。
 async function createEntry(
   create: (parentDir: string, name: string) => ReturnType<MutateDeps['fs']['createFile']>,
   parentDir: string,
   name: string,
   tree: TreeMutationApi,
-): Promise<ActionResult<{ newPath: string }>> {
+): Promise<ActionResult<{ newPath: string; created: string }>> {
   let r;
   try {
     r = await create(parentDir, name);
@@ -166,8 +167,8 @@ async function createEntry(
     return toActionFail(err);
   }
   if (!r.ok) return { ok: false, code: r.code, message: r.message };
-  tree.invalidateChildrenIds(parentDir);
-  return { ok: true, newPath: r.data };
+  tree.invalidateChildrenIds(dirname(r.data.created));
+  return { ok: true, newPath: r.data.path, created: r.data.created };
 }
 
 export function createNewFile(
@@ -175,7 +176,7 @@ export function createNewFile(
   name: string,
   deps: MutateDeps,
   tree: TreeMutationApi,
-): Promise<ActionResult<{ newPath: string }>> {
+): Promise<ActionResult<{ newPath: string; created: string }>> {
   return createEntry((d, n) => deps.fs.createFile(d, n), parentDir, name, tree);
 }
 
@@ -184,6 +185,6 @@ export function createNewDir(
   name: string,
   deps: MutateDeps,
   tree: TreeMutationApi,
-): Promise<ActionResult<{ newPath: string }>> {
+): Promise<ActionResult<{ newPath: string; created: string }>> {
   return createEntry((d, n) => deps.fs.createDir(d, n), parentDir, name, tree);
 }

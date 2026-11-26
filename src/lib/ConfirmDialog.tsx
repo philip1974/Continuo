@@ -10,11 +10,17 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /**
+   * 初始焦点(回车 / 空格默认执行哪个)。缺省:非 destructive → 确认,destructive → 取消。
+   * 'confirm' 只给**可恢复**的破坏性操作(移到废纸篓,对齐 VSCode 删除确认的主按钮默认):回车即执行;
+   * 永久删除、覆盖写盘等不可恢复的确认不要传,保持聚焦取消。
+   */
+  defaultAction?: 'confirm' | 'cancel';
   onConfirm: () => void;
   onCancel: () => void;
   /**
    * 可选第三按钮(如关闭脏文件的「保存 / 不保存 / 取消」里的「不保存」),排在取消左侧、ghost 样式;
-   * alternativeLabel 与 onAlternative 都给才渲染。不参与初始焦点(仍按 destructive 规则落在确认或取消)。
+   * alternativeLabel 与 onAlternative 都给才渲染。不参与初始焦点(仍按 defaultAction 落在确认或取消)。
    */
   alternativeLabel?: string;
   onAlternative?: () => void;
@@ -37,6 +43,7 @@ function ConfirmDialogBody({
   confirmLabel,
   cancelLabel,
   destructive = false,
+  defaultAction = destructive ? 'cancel' : 'confirm',
   onConfirm,
   onCancel,
   alternativeLabel,
@@ -83,8 +90,8 @@ function ConfirmDialogBody({
           size="sm"
           onClick={onCancel}
           // 数据完整性:destructive 确认框常在用户操作后异步弹出(Cmd+S 遇外部修改 →「仍然覆盖」),
-          // 用户继续打的空格 / 回车会激活焦点按钮 —— 初始焦点放在取消,破坏性操作须显式选择。
-          data-autofocus={destructive ? true : undefined}
+          // 用户继续打的空格 / 回车会激活焦点按钮 —— 初始焦点放在取消,破坏性操作须显式选择(defaultAction 缺省)。
+          data-autofocus={defaultAction === 'cancel' ? true : undefined}
         >
           {cancelText}
         </Button>
@@ -94,7 +101,8 @@ function ConfirmDialogBody({
           onClick={onConfirm}
           // a11y(A20):非破坏性确认按钮排在取消之后,但应是初始焦点。用 data-autofocus(Modal
           // 优先聚焦它),取代 React autoFocus —— 后者会被 Modal rAF 覆盖到第一个(取消)按钮。
-          data-autofocus={destructive ? undefined : true}
+          // 可恢复的破坏性操作(移到废纸篓)经 defaultAction='confirm' 也落在这里。
+          data-autofocus={defaultAction === 'confirm' ? true : undefined}
         >
           {confirmText}
         </Button>

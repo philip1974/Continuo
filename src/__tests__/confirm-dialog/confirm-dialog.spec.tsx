@@ -149,6 +149,30 @@ describe('ConfirmDialog', () => {
     }
   });
 
+  // 可恢复的破坏性操作(移到废纸篓,VSCode 删除确认回车即执行主按钮):defaultAction='confirm' → 初始焦点落确认。
+  it("destructive + defaultAction='confirm' → 初始焦点落在确认(危险)按钮,回车即执行", () => {
+    const raf = vi
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+    try {
+      renderD({ destructive: true, defaultAction: 'confirm' });
+      const buttons = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button'),
+      );
+      const confirm = buttons.find((b) => b.textContent === '确认')!;
+      const cancel = buttons.find((b) => b.textContent === '取消')!;
+      expect(confirm.hasAttribute('data-autofocus')).toBe(true);
+      expect(cancel.hasAttribute('data-autofocus')).toBe(false);
+      expect(document.activeElement).toBe(confirm);
+      expect(confirm.getAttribute('data-variant')).toBe('danger');
+    } finally {
+      raf.mockRestore();
+    }
+  });
+
   it('点取消 → onCancel 被调', () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();

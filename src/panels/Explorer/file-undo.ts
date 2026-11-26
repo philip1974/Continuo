@@ -1,6 +1,8 @@
 // 资源管理器文件操作撤销 / 重做(对齐 VSCode explorer 经 IUndoRedoService 的文件操作撤销):
-// 改名 / 移动 → move,新建 / 粘贴复制 / 外部拖入的新文件 → create;删除不入栈。每个工作区根一份栈(renderer 即窗口)。
-// 执行前校验全部目标处于预期状态,不满足则不动磁盘;撤销 create = 移到废纸篓(被改过先确认)。
+// 改名 / 移动 → move,新建 / 粘贴复制 / 外部拖入的新文件 → create;删除(移到废纸篓)→ delete 屏障。每个工作区根一份栈
+//(renderer 即窗口)。执行前校验全部目标处于预期状态,不满足则不动磁盘;撤销 create = 移到废纸篓,一律先确认(VSCode
+// explorer.confirmUndo 默认 "default":新建 / 复制的撤销是破坏性的,confirmBeforeUndo)。撤销遇到 delete 屏障 → blocked
+//(调用方提示「删除无法撤销,可从废纸篓恢复」),不越过它撤销更早的操作 —— shell.trashItem 无从废纸篓恢复的 API。
 // BDD: src/__tests__/explorer-file-undo/
 
 import type { FsApi } from '@/lib/fs/api';
@@ -16,22 +18,31 @@ export interface MovePair {
   readonly to: string;
 }
 
-/** 重做 create 的方式;null = 无法重做(外部拖入,内容未保留)。 */
-export type RedoCreate = { readonly type: 'file' | 'dir' } | { readonly type: 'copy'; readonly src: string } | null;
+/**
+ * 重做 create 的方式;null = 无法重做(外部拖入,内容未保留)。
+ * file / dir 的 rest:一次输入嵌套路径(`a/b/c.ts`)新建时,path 是本次新建的最上层目录,rest 是其下余下的段(`b/c.ts`,
+ * `/` 分隔);重做时按「最上层名/rest」重新逐级创建。
+ */
+export type RedoCreate =
+  | { readonly type: 'file' | 'dir'; readonly rest?: string }
+  | { readonly type: 'copy'; readonly src: string }
+  | null;
 
 export interface CreatedEntry {
+  /** 本次新建的最上层项(撤销删它即覆盖整条链)。 */
   readonly path: string;
   readonly redo: RedoCreate;
-  /** 新建完成时的 stat(异步补上;缺失 = 未知 → 撤销前确认)。 */
-  baseline?: FsFileStat | null;
 }
 
 export type FileUndoOp =
   | { readonly kind: 'move'; readonly pairs: readonly MovePair[] }
-  | { readonly kind: 'create'; readonly entries: readonly CreatedEntry[] };
+  | { readonly kind: 'create'; readonly entries: readonly CreatedEntry[] }
+  /** 删除(移到废纸篓)屏障:不可撤销,撤销到这里停下(blocked),不越过它撤销更早的操作。 */
+  | { readonly kind: 'delete' };
 
 export type FileUndoOutcome =
-  | { status: 'empty' | 'busy' | 'cancelled' }
+  /** blocked:撤销栈顶是删除屏障(删除无法撤销,可从废纸篓恢复)。 */
+  | { status: 'empty' | 'busy' | 'cancelled' | 'blocked' }
   /** reveal:要在树里定位的项(null = 不定位)。 */
   | { status: 'done'; reveal: string | null }
   /** path:本次撤销 / 重做的项;existing:目标位置已被它占用(FS_EEXIST,提示写「此位置已存在「…」」)。 */
@@ -46,7 +57,7 @@ export interface FileUndoDeps {
   /** 路径已移走(editor tab / 展开集合 / 剪贴板跟随)。 */
   onMoved: (from: string, to: string) => void;
   refreshDir: (dir: string) => void;
-  /** 撤销新建前确认(新建项被改过);unsaved = 其下未保存的编辑器数(确认框同删除确认给出警告);true = 继续。 */
+  /** 撤销新建前确认(撤销新建 = 移到废纸篓,一律确认);unsaved = 其下未保存的编辑器数(确认框同删除确认给出警告);true = 继续。 */
   confirmUndoCreate: (paths: string[], unsaved: number) => Promise<boolean>;
   /** 这些路径下未保存的编辑器数。 */
   countUnsavedUnder: (paths: readonly string[]) => number;
@@ -73,28 +84,14 @@ function pushLimited(stack: FileUndoOp[], op: FileUndoOp): void {
   if (stack.length > FILE_UNDO_LIMIT) stack.splice(0, stack.length - FILE_UNDO_LIMIT);
 }
 
-/** create 的基线 stat(新建完成时);失败记 null。 */
-function fillBaselines(op: FileUndoOp, fs: Pick<FsApi, 'stat'>): Promise<void> {
-  if (op.kind !== 'create') return Promise.resolve();
-  return Promise.all(
-    op.entries.map(async (e) => {
-      try {
-        const r = await fs.stat(e.path);
-        e.baseline = r.ok ? r.data : null;
-      } catch {
-        e.baseline = null;
-      }
-    }),
-  ).then(() => undefined);
-}
-
-/** 记录一次已完成的文件操作:入撤销栈并清空重做栈。空操作忽略。 */
-export function recordFileOp(root: string, op: FileUndoOp, fs: Pick<FsApi, 'stat'>): void {
-  if ((op.kind === 'move' ? op.pairs.length : op.entries.length) === 0) return;
+/** 记录一次已完成的文件操作:入撤销栈并清空重做栈。空操作忽略;栈顶已是删除屏障时再删除不重复压。 */
+export function recordFileOp(root: string, op: FileUndoOp): void {
+  if (op.kind === 'move' && op.pairs.length === 0) return;
+  if (op.kind === 'create' && op.entries.length === 0) return;
   const s = stacksFor(root);
-  pushLimited(s.undo, op);
   s.redo.length = 0;
-  void fillBaselines(op, fs);
+  if (op.kind === 'delete' && s.undo.at(-1)?.kind === 'delete') return;
+  pushLimited(s.undo, op);
 }
 
 type Failure = Extract<FileUndoOutcome, { status: 'failed' }>;
@@ -159,14 +156,12 @@ async function runMoves(pairs: readonly MovePair[], forward: boolean, deps: File
 
 async function undoCreate(root: string, op: Extract<FileUndoOp, { kind: 'create' }>, deps: FileUndoDeps): Promise<FileUndoOutcome> {
   const paths = op.entries.map((e) => e.path);
-  const unsaved = deps.countUnsavedUnder(paths);
-  let modified = unsaved > 0;
   for (const e of op.entries) {
     const st = await expectExists(deps.fs, e.path);
     if (isFailure(st)) return st;
-    if (!e.baseline || e.baseline.mtimeMs !== st.mtimeMs || e.baseline.size !== st.size) modified = true;
   }
-  if (modified && !(await deps.confirmUndoCreate(paths, unsaved))) return { status: 'cancelled' };
+  // 撤销新建会把文件移进废纸篓:一律先确认(VSCode confirmBeforeUndo),不因「看起来没改过」就静默删除。
+  if (!(await deps.confirmUndoCreate(paths, deps.countUnsavedUnder(paths)))) return { status: 'cancelled' };
   const r = await deps.trash(paths);
   if (r.failure) return failure(r.failure.path, r.failure.code, r.failure.message);
   const parent = dirname(paths[0]!);
@@ -185,7 +180,8 @@ async function redoCreate(op: Extract<FileUndoOp, { kind: 'create' }>, deps: Fil
   try {
     for (const e of op.entries) {
       const dir = dirname(e.path);
-      const name = basenamePreserveTrailing(e.path);
+      const top = basenamePreserveTrailing(e.path);
+      const name = e.redo?.type !== 'copy' && e.redo?.rest ? `${top}/${e.redo.rest}` : top;
       const r =
         e.redo?.type === 'copy'
           ? await deps.fs.copy(e.redo.src, e.path)
@@ -198,7 +194,6 @@ async function redoCreate(op: Extract<FileUndoOp, { kind: 'create' }>, deps: Fil
   } catch (err) {
     return failure(op.entries[0]!.path, 'EXCEPTION', err instanceof Error ? err.message : String(err));
   }
-  await fillBaselines(op, deps.fs);
   return { status: 'done', reveal: op.entries[0]!.path };
 }
 
@@ -208,6 +203,8 @@ async function step(root: string, deps: FileUndoDeps, isUndo: boolean): Promise<
   const from = isUndo ? s.undo : s.redo;
   const op = from.at(-1);
   if (!op) return { status: 'empty' };
+  // 删除屏障只会在撤销栈(撤销它不出栈,故不会进重做栈);留在栈顶,之后的 ⌘Z 都停在这里。
+  if (op.kind === 'delete') return { status: 'blocked' };
   s.busy = true;
   try {
     const outcome =

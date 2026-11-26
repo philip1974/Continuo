@@ -25,8 +25,8 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   writeFile: vi.fn(async () => ok(undefined)),
   stat: vi.fn(async () => ok({ mtimeMs: 0, size: 0, ino: 0 })),
   rename: vi.fn(async (_o, n) => ok(`/parent/${n}`)),
-  createFile: vi.fn(async (d, n) => ok(`${d}/${n}`)),
-  createDir: vi.fn(async (d, n) => ok(`${d}/${n}`)),
+  createFile: vi.fn(async (d, n) => ok({ path: `${d}/${n}`, created: `${d}/${n}` })),
+  createDir: vi.fn(async (d, n) => ok({ path: `${d}/${n}`, created: `${d}/${n}` })),
   trash: vi.fn(async () => ok(undefined as void)),
   reveal: vi.fn(async () => ok(undefined as void)),
   move: vi.fn(async () => ok(undefined as void)),
@@ -251,9 +251,19 @@ describe('createNewFile', () => {
     const fs = makeFs();
     const tree = makeTree();
     const r = await createNewFile('/work', 'a.md', { fs }, tree);
-    expect(r).toEqual({ ok: true, newPath: '/work/a.md' });
+    expect(r).toEqual({ ok: true, newPath: '/work/a.md', created: '/work/a.md' });
     expect(fs.createFile).toHaveBeenCalledWith('/work', 'a.md');
     expect(tree.invalidateChildrenIds).toHaveBeenCalledWith('/work');
+  });
+
+  it('嵌套路径:返回 created(本次新建的最上层项),刷新它所在的目录', async () => {
+    const fs = makeFs({
+      createFile: vi.fn(async () => ok({ path: '/work/sub/na/nb/c.ts', created: '/work/sub/na' })),
+    });
+    const tree = makeTree();
+    const r = await createNewFile('/work', 'sub/na/nb/c.ts', { fs }, tree);
+    expect(r).toEqual({ ok: true, newPath: '/work/sub/na/nb/c.ts', created: '/work/sub/na' });
+    expect(tree.invalidateChildrenIds).toHaveBeenCalledWith('/work/sub');
   });
 
   it('FS_EEXIST → 透传, 不刷', async () => {
@@ -289,7 +299,7 @@ describe('createNewDir', () => {
     const fs = makeFs();
     const tree = makeTree();
     const r = await createNewDir('/work', 'docs', { fs }, tree);
-    expect(r).toEqual({ ok: true, newPath: '/work/docs' });
+    expect(r).toEqual({ ok: true, newPath: '/work/docs', created: '/work/docs' });
     expect(fs.createDir).toHaveBeenCalledWith('/work', 'docs');
     expect(tree.invalidateChildrenIds).toHaveBeenCalledWith('/work');
   });

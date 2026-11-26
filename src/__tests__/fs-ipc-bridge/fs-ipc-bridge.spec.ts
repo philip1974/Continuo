@@ -447,13 +447,13 @@ describe('handlers 接线', () => {
   });
 
   it('createFileHandler 建空文件,返回新路径', async () => {
-    const np = await createFileHandler({ dir, name: 'fresh.txt' });
+    const { path: np } = await createFileHandler({ dir, name: 'fresh.txt' });
     expect(np).toBe(path.join(dir, 'fresh.txt'));
     expect(statSync(np).size).toBe(0);
   });
 
   it('createDirHandler 建目录,返回新路径', async () => {
-    const np = await createDirHandler({ parent: dir, name: 'fresh' });
+    const { path: np } = await createDirHandler({ parent: dir, name: 'fresh' });
     expect(np).toBe(path.join(dir, 'fresh'));
     expect(statSync(np).isDirectory()).toBe(true);
   });

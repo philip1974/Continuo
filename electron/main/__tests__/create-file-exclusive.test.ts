@@ -17,7 +17,8 @@ describe('createFile — 原子排他、不覆盖既有文件', () => {
   });
 
   it('创建空文件并返回路径', async () => {
-    const p = await createFile(dir, 'a.txt');
+    const { path: p, created } = await createFile(dir, 'a.txt');
+    expect(created).toBe(p);
     expect(p).toBe(path.join(dir, 'a.txt'));
     expect(await readFile(p, 'utf-8')).toBe('');
   });

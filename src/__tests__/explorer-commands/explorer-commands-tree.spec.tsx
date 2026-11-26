@@ -21,8 +21,8 @@ vi.mock('@/lib/co-api', () => ({
   coApi: {
     fs: {
       listDir: vi.fn(async (p: string) => ({ ok: true, data: fsTree.get(p) ?? [] })),
-      createFile: vi.fn(async (dir: string, name: string) => ({ ok: true, data: `${dir}/${name}` })),
-      createDir: vi.fn(async (dir: string, name: string) => ({ ok: true, data: `${dir}/${name}` })),
+      createFile: vi.fn(async (dir: string, name: string) => ({ ok: true, data: { path: `${dir}/${name}`, created: `${dir}/${name}` } })),
+      createDir: vi.fn(async (dir: string, name: string) => ({ ok: true, data: { path: `${dir}/${name}`, created: `${dir}/${name}` } })),
       selectDirectory: vi.fn(async () => ({ ok: true, data: '/work' })),
       reveal: vi.fn(),
       watchDir: vi.fn(async () => ({ ok: true })),

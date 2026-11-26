@@ -92,3 +92,15 @@ export function leafNameRejectReason(name: unknown): string | null {
 export function isValidLeafName(name: unknown): boolean {
   return leafNameRejectReason(name) === null;
 }
+
+/**
+ * 新建文件 / 文件夹时输入的相对路径(VSCode 同款 `a/b/c.ts`:逐级创建中间目录)拆成段:`/` 与 `\` 都算分隔符
+ *(VSCode validateFileName 同样 split(/[\\/]/);POSIX 上 `\` 本就被 leaf 规则拒)。每段按 leaf 规则校验 ——
+ * 空段(开头 / 结尾 / 连续分隔符,即绝对路径、UNC、`a//b`)、`.` / `..`、Windows 盘符 `C:` 等一律拒,结果必在给定父目录内。
+ * 不合法 → null。单段名(无分隔符)等价于 isValidLeafName。
+ */
+export function splitRelativeName(name: unknown): string[] | null {
+  if (typeof name !== 'string') return null;
+  const segments = name.split(/[\\/]/);
+  return segments.every(isValidLeafName) ? segments : null;
+}

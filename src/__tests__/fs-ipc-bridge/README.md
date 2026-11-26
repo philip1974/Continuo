@@ -24,8 +24,8 @@
 | `fs:write-file`       | `{ path, content }`  | `atomicWriteFile(path, content)` | `{ mtimeMs, size, ino } \| undefined`(写入内容的 stat,rename 后复核一致才返回;preload `toFsWriteFileResult` 守卫) |
 | `fs:stat`             | `{ path }`           | `fs.promises.stat(path)`(跟随 symlink) | `{ mtimeMs, size, ino }`(preload `toFsStatResult`:畸形 / 缺 ino → 失败) |
 | `fs:rename`           | `{ path, newName }`  | `renameEntry(path, newName)` | `string`(新路径) |
-| `fs:create-file`      | `{ dir, name }`      | `createFile(dir, name)` | `string` |
-| `fs:create-dir`       | `{ parent, name }`   | `createDir(parent, name)` | `string` |
+| `fs:create-file`      | `{ dir, name }`      | `createFile(dir, name)` | `FsCreated`(`{ path, created }`) |
+| `fs:create-dir`       | `{ parent, name }`   | `createDir(parent, name)` | `FsCreated` |
 | `fs:trash`            | `{ path }`           | `shell.trashItem(path)`;失败且路径已不存在 → 抛 `FS_NOT_FOUND`(trashItem 只给平台文案无 errno) | `void` |
 | `fs:select-directory` | `undefined`          | `dialog.showOpenDialog(...)` | `string \| null` |
 

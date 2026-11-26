@@ -23,6 +23,7 @@
 - 默认按钮文案: '确认' / '取消',可由 confirmLabel / cancelLabel 覆盖
 - destructive=true → 确认按钮 .wm-btn-danger;false → primary
 - 初始焦点:非 destructive → 确认按钮(`data-autofocus`);destructive → 取消按钮(破坏性操作须显式选择,防止异步弹出时用户继续敲的空格 / 回车误触发)
+- `defaultAction='confirm'`:destructive 也把初始焦点放在确认按钮(回车即执行)。只给**可恢复**的破坏性操作用 —— 资源管理器「移到废纸篓」确认与撤销新建(移到废纸篓)确认(对齐 VSCode 删除确认的主按钮默认);永久删除 / 覆盖写盘 / 关闭未保存等不可恢复的确认不传,保持聚焦取消
 - 点确认 → onConfirm
 - 点取消 → onCancel
 - Esc → Modal 内部触发 onClose,该 hook 接到 onCancel

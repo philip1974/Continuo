@@ -140,6 +140,15 @@ export interface FsFileStat {
   readonly ino: number;
 }
 
+/**
+ * fs:create-file / fs:create-dir 的结果:path = 新建的文件 / 目录;created = 本次新建的最上层项(名字带中间目录
+ * `a/b/c.ts` 且其中有本次新建的目录时为最上层新建目录,否则 = path)。撤销新建删 created 即覆盖整条链,已存在的目录不动。
+ */
+export interface FsCreated {
+  readonly path: string;
+  readonly created: string;
+}
+
 /** 形态守卫:有限非负 mtimeMs + 非负安全整数 size + 有限非负 ino → 规范化副本(丢弃多余字段);否则 undefined. */
 export function toFsFileStat(v: unknown): FsFileStat | undefined {
   if (v === null || typeof v !== 'object') return undefined;

@@ -16,6 +16,12 @@ const exists = (p: string): Promise<boolean> =>
 const UNDO = 'ControlOrMeta+z';
 const REDO = process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+y';
 
+// 关掉 CDP 焦点模拟:焦点断言反映真实的焦点落点(不被模拟成「窗口总是聚焦」掩盖)。
+test.beforeEach(async ({ window }) => {
+  const cdp = await window.context().newCDPSession(window);
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+});
+
 test('改名后在树里 ⌘Z 撤销:文件回原名、编辑器 tab 跟随、原项被选中;编辑器里的 ⌘Z 不撤销文件操作;⇧⌘Z 重做', async ({
   window,
   workspaceRoot,
@@ -89,7 +95,9 @@ async function createFileInSrc(window: import('@playwright/test').Page, workspac
   return p;
 }
 
-test('新建文件后回到树 ⌘Z:未改动 → 直接移到废纸篓(不确认);⇧⌘Z 重新创建', async ({
+const TRASH_BUTTON = /^(移到废纸篓|Move to Trash|휴지통으로 이동)$/;
+
+test('新建文件后回到树 ⌘Z:即使未改动也先确认(VSCode confirmUndo),焦点在「移到废纸篓」回车即移;⇧⌘Z 重新创建', async ({
   window,
   workspaceRoot,
   userDataDir,
@@ -98,8 +106,13 @@ test('新建文件后回到树 ⌘Z:未改动 → 直接移到废纸篓(不确�
   const row = rowOf(window, p);
   await row.click();
   await row.press(UNDO);
+  const dialog = window.getByRole('alertdialog');
+  await expect(dialog).toContainText('hello.ts');
+  await expect(dialog.getByRole('button', { name: TRASH_BUTTON })).toBeFocused();
+  expect(await exists(p)).toBe(true);
+  await window.keyboard.press('Enter');
   await expect.poll(() => exists(p)).toBe(false);
-  await expect(window.getByRole('alertdialog')).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
   // E2E 模式下移到 <userData>/e2e-trash,不进真实废纸篓
   expect(await exists(path.join(userDataDir, 'e2e-trash'))).toBe(true);
 
@@ -107,7 +120,7 @@ test('新建文件后回到树 ⌘Z:未改动 → 直接移到废纸篓(不确�
   await expect.poll(() => exists(p)).toBe(true);
 });
 
-test('新建后文件被改过 → ⌘Z 先确认;取消则不删', async ({ window, workspaceRoot }) => {
+test('新建后文件被改过 → ⌘Z 同样先确认;取消则不删', async ({ window, workspaceRoot }) => {
   const p = await createFileInSrc(window, workspaceRoot, 'changed.ts');
   await writeFile(p, 'export const x = 1;\n');
   const row = rowOf(window, p);
@@ -165,4 +178,45 @@ test('撤销新建时文件有未保存的编辑器:确认框同删除确认给�
   await dialog.getByRole('button', { name: /^(取消|Cancel|취소)$/ }).click();
   await expect(dialog).toHaveCount(0);
   expect(await exists(p)).toBe(true);
+});
+
+test('复制粘贴后再删除另一个文件,⌘Z:提示删除无法撤销、可从废纸篓恢复;不把复制出的文件移进废纸篓', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  await src.click();
+  const aPath = path.join(workspaceRoot, 'src/a.ts');
+  const copyPath = path.join(workspaceRoot, 'src/a copy.ts');
+  const a = rowOf(window, aPath);
+  await a.click();
+  await a.press('ControlOrMeta+c');
+  await a.press('ControlOrMeta+v');
+  await expect.poll(() => exists(copyPath)).toBe(true);
+
+  const readmePath = path.join(workspaceRoot, 'README.md');
+  const readme = rowOf(window, readmePath);
+  await readme.click();
+  await readme.press('Delete');
+  const dialog = window.getByRole('alertdialog');
+  await expect(dialog).toContainText('README.md');
+  await window.keyboard.press('Enter'); // 焦点在「移到废纸篓」
+  await expect.poll(() => exists(readmePath)).toBe(false);
+
+  const copy = rowOf(window, copyPath);
+  await copy.click();
+  await copy.press(UNDO);
+  const toast = window.locator('.toast[data-level="info"]');
+  await expect(toast).toContainText(
+    /(删除无法撤销|Deleting can’t be undone|삭제는 실행 취소할 수 없습니다)/,
+    { timeout: 5_000 },
+  );
+  await window.waitForTimeout(300);
+  await expect(window.getByRole('alertdialog')).toHaveCount(0);
+  expect(await exists(copyPath)).toBe(true);
+  // 再按一次仍停在这里
+  await copy.press(UNDO);
+  await window.waitForTimeout(300);
+  expect(await exists(copyPath)).toBe(true);
 });

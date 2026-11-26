@@ -13,7 +13,7 @@
 | `electron/main/ipc/fs/read-file.ts` | `readFile` | utf-8 读 |
 | `electron/main/ipc/fs/atomic-write.ts` | `atomicWriteFile` | 固定 tmp + fsync + 一次 rename,同路径串行(ADR-009) |
 | `electron/main/ipc/fs/rename.ts` | `renameEntry` | 同目录改 basename,返回新绝对路径 |
-| `electron/main/ipc/fs/create.ts` | `createFile` / `createDir` | 拼路径 → 写空 / mkdir,返回新绝对路径 |
+| `electron/main/ipc/fs/create.ts` | `createFile` / `createDir` | 拼路径(可带中间目录)→ 写空 / mkdir,返回 `{ path, created }` |
 | `electron/shared/fs-entry.ts` | `FileEntry` 类型 | 主/渲染共享数据形状 |
 
 ## 关键行为
@@ -56,16 +56,15 @@
 - 同目录 rename
 - 返回新绝对路径
 
-### createFile(dirAbsPath, name) → string
-- 拼出 `${dir}/${name}`
-- `open(path, 'wx')` 原子排他创建空文件;已存在 → 抛 `FS_EEXIST`(防覆盖既有文件)
-- 返回新 path
+### createFile(dirAbsPath, name) → FsCreated `{ path, created }`
+- name 可带中间目录(`a/b/c.ts`,`/` 与 `\` 都是分隔符),逐段 leaf 校验(空段 / `.` / `..` / 绝对路径 → `FS_BAD_NAME`),
+  缺的中间目录逐级创建(见 `explorer-create-nested`)
+- `open(path, 'wx')` 原子排他创建空文件;已存在 → 抛 `FS_EEXIST`(防覆盖既有文件),本次建出的中间目录回滚
+- 返回 path = 新文件,created = 本次新建的最上层项(无新建中间目录时 = path)
 
-### createDir(parentAbsPath, name) → string
-- 拼出 `${parent}/${name}`
-- 已存在 → 抛 `FS_EEXIST`
-- `mkdir`(non-recursive,父目录必须存在)
-- 返回新 path
+### createDir(parentAbsPath, name) → FsCreated
+- 同上,最后一段 `mkdir`(non-recursive)排他;已存在 → 抛 `FS_EEXIST`
+- 起点目录(parent)不存在 → 抛错(不会替调用方建起点)
 
 ## 错误码约定(透传到 IpcResult.code)
 

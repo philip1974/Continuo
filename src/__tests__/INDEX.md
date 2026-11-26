@@ -778,6 +778,10 @@
 - [`explorer-context-menu.spec.ts`](./explorer-context-menu/explorer-context-menu.spec.ts)
 - [`menu-close-focus.spec.ts`](./explorer-context-menu/menu-close-focus.spec.ts)
 
+## [explorer-create-nested(新建时一次输入嵌套路径)](./explorer-create-nested/README.md)
+
+- [`create-nested.spec.ts`](./explorer-create-nested/create-nested.spec.ts)
+
 ## [explorer-decorator(文件树装饰贡献)](./explorer-decorator/README.md)
 
 - [`explorer-decorator.spec.ts`](./explorer-decorator/explorer-decorator.spec.ts)
@@ -797,6 +801,7 @@
 
 ## [explorer-file-undo(资源管理器文件操作撤销 / 重做)](./explorer-file-undo/README.md)
 
+- [`delete-barrier.spec.tsx`](./explorer-file-undo/delete-barrier.spec.tsx)
 - [`file-undo.spec.ts`](./explorer-file-undo/file-undo.spec.ts)
 - [`record-sources.spec.ts`](./explorer-file-undo/record-sources.spec.ts)
 - [`tree-keys.spec.ts`](./explorer-file-undo/tree-keys.spec.ts)
@@ -1564,11 +1569,6 @@
 
 - [`popout-panel-keyboard.spec.tsx`](./popout-panel-keyboard/popout-panel-keyboard.spec.tsx)
 - [`tablist-roving.spec.ts`](./popout-panel-keyboard/tablist-roving.spec.ts)
-
-## [popout-picker(popout 子窗里打开选择器 / 主窗面板时,焦点与界面在同一窗口)](./popout-picker/README.md)
-
-- [`popout-picker.spec.tsx`](./popout-picker/popout-picker.spec.tsx)
-- [`window-focus-ipc.spec.ts`](./popout-picker/window-focus-ipc.spec.ts)
 
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 

@@ -28,6 +28,29 @@ const initialTree = (): Map<string, FileEntry[]> => new Map<string, FileEntry[]>
 ]);
 const fsTree = initialTree();
 
+/**
+ * 假 fs 的新建(同 main createFile / createDir):name 可带中间目录(`a/b/c.ts`),缺的逐级建出;返回 path 与 created
+ *(本次新建的最上层项)。成功后写进 fsTree,随后的 listDir 能看到。失败由用例 mockResolvedValueOnce 覆盖。
+ */
+function createIn(dir: string, name: string, isDirectory: boolean) {
+  const segs = name.split('/');
+  let cur = dir;
+  let created: string | null = null;
+  segs.forEach((seg, i) => {
+    const path = `${cur}/${seg}`;
+    const last = i === segs.length - 1;
+    const siblings = fsTree.get(cur) ?? [];
+    if (!siblings.some((e) => e.path === path)) {
+      const isDir = last ? isDirectory : true;
+      fsTree.set(cur, [...siblings, { path, name: seg, isDirectory: isDir }]);
+      if (isDir) fsTree.set(path, []);
+      created ??= path;
+    }
+    cur = path;
+  });
+  return { ok: true, data: { path: cur, created: created ?? cur } };
+}
+
 vi.mock('@/lib/co-api', () => ({
   coApi: {
     fs: {
@@ -36,17 +59,8 @@ vi.mock('@/lib/co-api', () => ({
       copy: vi.fn(async (_s: string, d: string) => ({ ok: true, data: d })),
       trash: vi.fn(async () => ({ ok: true, data: undefined })),
       // 成功:把新项写进 fsTree(随后的 listDir 能看到);失败由用例 mockResolvedValueOnce 覆盖
-      createFile: vi.fn(async (dir: string, name: string) => {
-        const path = `${dir}/${name}`;
-        fsTree.set(dir, [...(fsTree.get(dir) ?? []), { path, name, isDirectory: false }]);
-        return { ok: true, data: path };
-      }),
-      createDir: vi.fn(async (dir: string, name: string) => {
-        const path = `${dir}/${name}`;
-        fsTree.set(dir, [...(fsTree.get(dir) ?? []), { path, name, isDirectory: true }]);
-        fsTree.set(path, []);
-        return { ok: true, data: path };
-      }),
+      createFile: vi.fn(async (dir: string, name: string) => createIn(dir, name, false)),
+      createDir: vi.fn(async (dir: string, name: string) => createIn(dir, name, true)),
       reveal: vi.fn(),
       watchDir: vi.fn(async () => ({ ok: true })),
       unwatchDir: vi.fn(async () => ({ ok: true })),
@@ -235,6 +249,40 @@ describe('FolderTree · 新建成功后展开父目录、选中并打开', () =>
     await waitFor(() => expect(row(r.container, '/work/alpha/sub')).not.toBeNull());
     await waitFor(() => expect(row(r.container, '/work/alpha/sub')!.getAttribute('aria-selected')).toBe('true'));
     await waitFor(() => expect(document.activeElement).toBe(row(r.container, '/work/alpha/sub')));
+    expect(h.openFileByPath).not.toHaveBeenCalled();
+  });
+});
+
+describe('FolderTree · 新建时输入嵌套路径(VSCode 同款逐级创建)', () => {
+  it('新建文件输入 na/nb/nc.ts → 整串交给 fs(逐级创建),逐级展开到新文件、选中并打开', async () => {
+    h.openFileByPath = vi.fn(async (p: string) => {
+      useEditorStore.setState({ activeTabId: p });
+      return { ok: true as const };
+    });
+    h.editorFile = { openFileByPath: h.openFileByPath };
+    const r = await mount();
+    const input = await startCreateIn(r, '/work/alpha', NEW_FILE);
+    submit(input, 'na/nb/nc.ts');
+    await waitFor(() => expect(coApi.fs.createFile).toHaveBeenCalledWith('/work/alpha', 'na/nb/nc.ts'));
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/alpha/na/nb/nc.ts'));
+    await waitFor(() => expect(row(r.container, '/work/alpha/na/nb/nc.ts')).not.toBeNull());
+    for (const dir of ['/work/alpha', '/work/alpha/na', '/work/alpha/na/nb']) {
+      expect(row(r.container, dir)!.getAttribute('aria-expanded')).toBe('true');
+    }
+    await waitFor(() =>
+      expect(row(r.container, '/work/alpha/na/nb/nc.ts')!.getAttribute('aria-selected')).toBe('true'),
+    );
+    expect(document.querySelector('input[placeholder]')).toBeNull();
+  });
+
+  it('新建文件夹输入 a/b → 逐级创建,展开到 b 并选中,不打开文件', async () => {
+    const r = await mount();
+    const input = await startCreateIn(r, '/work/alpha', NEW_FOLDER);
+    submit(input, 'a/b');
+    await waitFor(() => expect(coApi.fs.createDir).toHaveBeenCalledWith('/work/alpha', 'a/b'));
+    await waitFor(() => expect(row(r.container, '/work/alpha/a/b')).not.toBeNull());
+    expect(row(r.container, '/work/alpha/a')!.getAttribute('aria-expanded')).toBe('true');
+    await waitFor(() => expect(row(r.container, '/work/alpha/a/b')!.getAttribute('aria-selected')).toBe('true'));
     expect(h.openFileByPath).not.toHaveBeenCalled();
   });
 });

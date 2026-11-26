@@ -1,4 +1,4 @@
-// BDD:资源管理器文件操作撤销 / 重做的栈与语义(README 规则 1-9)。用内存假 fs 驱动 file-undo.ts。
+// BDD:资源管理器文件操作撤销 / 重做的栈与语义(README 规则 1-9,删除屏障 / 嵌套新建见规则 3、5、8)。用内存假 fs 驱动 file-undo.ts。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FILE_UNDO_LIMIT,
@@ -33,6 +33,22 @@ function makeWorld(initial: Record<string, 'file' | 'dir'>) {
     }
   };
   const has = (p: string): boolean => files.has(p);
+  // 同 main createFile / createDir:name 可带中间目录(`a/b/c.ts`),缺的逐级建;created = 本次新建的最上层项。
+  const createChain = async (dir: string, name: string, isDir: boolean): Promise<R<{ path: string; created: string }>> => {
+    const segs = name.split('/');
+    const target = `${dir}/${name}`;
+    if (has(target)) return fail('FS_EEXIST');
+    let cur = dir;
+    let created: string | null = null;
+    segs.forEach((seg, i) => {
+      cur = `${cur}/${seg}`;
+      if (!has(cur)) {
+        put(cur, i < segs.length - 1 || isDir);
+        created ??= cur;
+      }
+    });
+    return ok({ path: cur, created: created ?? cur });
+  };
   const fs = {
     stat: vi.fn(async (p: string): Promise<R<{ mtimeMs: number; size: number; ino: number }>> => {
       const e = files.get(p);
@@ -51,18 +67,8 @@ function makeWorld(initial: Record<string, 'file' | 'dir'>) {
       moveTree(p, dest);
       return ok(dest);
     }),
-    createFile: vi.fn(async (dir: string, name: string): Promise<R<string>> => {
-      const p = `${dir}/${name}`;
-      if (has(p)) return fail('FS_EEXIST');
-      put(p, false);
-      return ok(p);
-    }),
-    createDir: vi.fn(async (dir: string, name: string): Promise<R<string>> => {
-      const p = `${dir}/${name}`;
-      if (has(p)) return fail('FS_EEXIST');
-      put(p, true);
-      return ok(p);
-    }),
+    createFile: vi.fn(async (dir: string, name: string) => createChain(dir, name, false)),
+    createDir: vi.fn(async (dir: string, name: string) => createChain(dir, name, true)),
     copy: vi.fn(async (src: string, dest: string): Promise<R<void>> => {
       if (!has(src)) return fail('FS_NOT_FOUND');
       if (has(dest)) return fail('FS_EEXIST');
@@ -89,10 +95,9 @@ function makeWorld(initial: Record<string, 'file' | 'dir'>) {
 }
 
 /** 新建并入栈(同 FolderTree 的新建成功路径)。 */
-async function createAndRecord(w: ReturnType<typeof makeWorld>, path: string, type: 'file' | 'dir'): Promise<void> {
+function createAndRecord(w: ReturnType<typeof makeWorld>, path: string, type: 'file' | 'dir'): void {
   w.put(path, type === 'dir');
-  recordFileOp(ROOT, { kind: 'create', entries: [{ path, redo: { type } }] }, w.deps.fs);
-  await vi.waitFor(() => expect(w.fs.stat).toHaveBeenCalledWith(path));
+  recordFileOp(ROOT, { kind: 'create', entries: [{ path, redo: { type } }] });
 }
 
 beforeEach(() => __resetFileUndoForTest());
@@ -100,7 +105,7 @@ beforeEach(() => __resetFileUndoForTest());
 describe('move(改名 / 移动)撤销与重做', () => {
   it('撤销改名:同目录走 rename 回原名,通知路径移走、刷新目录、定位恢复项;重做再改回', async () => {
     const w = makeWorld({ '/ws/b.txt': 'file' });
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a.txt', to: '/ws/b.txt' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a.txt', to: '/ws/b.txt' }] });
 
     const r = await undoFileOp(ROOT, w.deps);
     expect(r).toEqual({ status: 'done', reveal: '/ws/a.txt' });
@@ -118,8 +123,7 @@ describe('move(改名 / 移动)撤销与重做', () => {
     const w = makeWorld({ '/ws/d': 'dir', '/ws/d/x': 'file', '/ws/d/y': 'dir' });
     recordFileOp(
       ROOT,
-      { kind: 'move', pairs: [{ from: '/ws/x', to: '/ws/d/x' }, { from: '/ws/y', to: '/ws/d/y' }] },
-      w.deps.fs,
+      { kind: 'move', pairs: [{ from: '/ws/x', to: '/ws/d/x' }, { from: '/ws/y', to: '/ws/d/y' }] }
     );
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: '/ws/x' });
     expect(w.fs.move.mock.calls).toEqual([
@@ -131,7 +135,7 @@ describe('move(改名 / 移动)撤销与重做', () => {
 
   it('原位置已被占用 → 不动磁盘,失败 FS_EEXIST(path = 被撤销的项,existing = 占位的路径),操作作废', async () => {
     const w = makeWorld({ '/ws/a.txt': 'file', '/ws/b.txt': 'file' });
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a.txt', to: '/ws/b.txt' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a.txt', to: '/ws/b.txt' }] });
     // 提示写「无法撤销对「b.txt」的文件操作:此位置已存在「a.txt」」,不是对占位文件 a.txt 的操作
     expect(await undoFileOp(ROOT, w.deps)).toMatchObject({
       status: 'failed',
@@ -148,8 +152,7 @@ describe('move(改名 / 移动)撤销与重做', () => {
     const w = makeWorld({ '/ws/d': 'dir', '/ws/d/x': 'file' });
     recordFileOp(
       ROOT,
-      { kind: 'move', pairs: [{ from: '/ws/x', to: '/ws/d/x' }, { from: '/ws/y', to: '/ws/d/y' }] },
-      w.deps.fs,
+      { kind: 'move', pairs: [{ from: '/ws/x', to: '/ws/d/x' }, { from: '/ws/y', to: '/ws/d/y' }] }
     );
     expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'failed', code: 'FS_NOT_FOUND', path: '/ws/d/y' });
     expect(w.fs.move).not.toHaveBeenCalled();
@@ -158,7 +161,7 @@ describe('move(改名 / 移动)撤销与重做', () => {
 
   it('原父目录已不存在 → 失败,不动磁盘', async () => {
     const w = makeWorld({ '/ws/x': 'file' });
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/gone/x', to: '/ws/x' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/gone/x', to: '/ws/x' }] });
     expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'failed', code: 'FS_NOT_FOUND', path: '/ws/gone' });
     expect(w.fs.move).not.toHaveBeenCalled();
   });
@@ -167,19 +170,20 @@ describe('move(改名 / 移动)撤销与重做', () => {
     const w = makeWorld({ '/ws/README.md': 'file' });
     const real = w.fs.stat.getMockImplementation()!;
     w.fs.stat.mockImplementation(async (p: string) => real(p.toLowerCase() === '/ws/readme.md' ? '/ws/README.md' : p));
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/readme.md', to: '/ws/README.md' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/readme.md', to: '/ws/README.md' }] });
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: '/ws/readme.md' });
     expect(w.fs.rename).toHaveBeenCalledWith('/ws/README.md', 'readme.md');
   });
 });
 
 describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
-  it('撤销未改动的新建文件:直接移到废纸篓(不确认),定位父目录;重做重新创建', async () => {
+  it('撤销新建文件(即使没改过)也先确认(VSCode confirmBeforeUndo),确认后移到废纸篓、定位父目录;重做重新创建', async () => {
     const w = makeWorld({ '/ws/src': 'dir' });
-    await createAndRecord(w, '/ws/src/new.ts', 'file');
+    createAndRecord(w, '/ws/src/new.ts', 'file');
 
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: '/ws/src' });
-    expect(w.confirm).not.toHaveBeenCalled();
+    expect(w.confirm).toHaveBeenCalledTimes(1);
+    expect(w.confirm).toHaveBeenCalledWith(['/ws/src/new.ts'], 0);
     expect(w.trash).toHaveBeenCalledWith(['/ws/src/new.ts']);
     expect(w.has('/ws/src/new.ts')).toBe(false);
 
@@ -190,14 +194,13 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
 
   it('新建在根目录:撤销后不定位(根不是树里的行)', async () => {
     const w = makeWorld({});
-    await createAndRecord(w, '/ws/dir', 'dir');
+    createAndRecord(w, '/ws/dir', 'dir');
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: null });
   });
 
-  it('新建后被改过(mtime / size 变化)→ 先确认;取消 → 不删,操作留在撤销栈', async () => {
+  it('确认框取消 → 不删,操作留在撤销栈', async () => {
     const w = makeWorld({});
-    await createAndRecord(w, '/ws/n.txt', 'file');
-    w.files.get('/ws/n.txt')!.size = 42;
+    createAndRecord(w, '/ws/n.txt', 'file');
     w.confirm.mockResolvedValueOnce(false);
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'cancelled' });
     expect(w.confirm).toHaveBeenCalledWith(['/ws/n.txt'], 0);
@@ -209,7 +212,7 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
 
   it('有未保存的编辑器 → 先确认,并把未保存编辑器数交给确认框(同删除确认的未保存警告)', async () => {
     const w = makeWorld({});
-    await createAndRecord(w, '/ws/n.txt', 'file');
+    createAndRecord(w, '/ws/n.txt', 'file');
     w.deps.countUnsavedUnder = (paths) => (paths.includes('/ws/n.txt') ? 1 : 0);
     await undoFileOp(ROOT, w.deps);
     expect(w.confirm).toHaveBeenCalledTimes(1);
@@ -218,7 +221,7 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
 
   it('新建项已不存在 → 失败 FS_NOT_FOUND,不调删除', async () => {
     const w = makeWorld({});
-    await createAndRecord(w, '/ws/n.txt', 'file');
+    createAndRecord(w, '/ws/n.txt', 'file');
     w.files.delete('/ws/n.txt');
     expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'failed', code: 'FS_NOT_FOUND' });
     expect(w.trash).not.toHaveBeenCalled();
@@ -227,9 +230,10 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
   it('粘贴复制:重做时源仍在则重新复制;重做目标位置被占 → 失败不写', async () => {
     const w = makeWorld({ '/ws/a.txt': 'file' });
     w.put('/ws/a copy.txt', false);
-    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/a copy.txt', redo: { type: 'copy', src: '/ws/a.txt' } }] }, w.deps.fs);
-    await vi.waitFor(() => expect(w.fs.stat).toHaveBeenCalled());
-    await undoFileOp(ROOT, w.deps);
+    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/a copy.txt', redo: { type: 'copy', src: '/ws/a.txt' } }] });
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done' });
+    // 撤销粘贴复制同样会把文件移进废纸篓 → 先确认
+    expect(w.confirm).toHaveBeenCalledWith(['/ws/a copy.txt'], 0);
     expect(await redoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done' });
     expect(w.fs.copy).toHaveBeenCalledWith('/ws/a.txt', '/ws/a copy.txt');
 
@@ -246,10 +250,9 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
 
   it('外部拖入(不可重做):撤销后重做栈清空', async () => {
     const w = makeWorld({ '/ws/a': 'file' });
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/b', to: '/ws/a' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/b', to: '/ws/a' }] });
     w.put('/ws/dropped.png', false);
-    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/dropped.png', redo: null }] }, w.deps.fs);
-    await vi.waitFor(() => expect(w.fs.stat).toHaveBeenCalled());
+    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/dropped.png', redo: null }] });
     expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done' });
     expect(await redoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
     // 更早的操作仍可撤销
@@ -257,12 +260,72 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
   });
 });
 
+describe('删除屏障(删除不可撤销,可从废纸篓恢复)', () => {
+  it('复制后删除另一个文件再撤销 → blocked:不越过删除去撤销复制,不调废纸篓、不确认;屏障留在栈顶', async () => {
+    const w = makeWorld({ '/ws/x.ts': 'file', '/ws/x copy.ts': 'file' });
+    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/x copy.ts', redo: { type: 'copy', src: '/ws/x.ts' } }] });
+    recordFileOp(ROOT, { kind: 'delete' });
+
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'blocked' });
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'blocked' });
+    expect(w.trash).not.toHaveBeenCalled();
+    expect(w.confirm).not.toHaveBeenCalled();
+    expect(w.has('/ws/x copy.ts')).toBe(true);
+  });
+
+  it('删除清空重做栈;屏障之后的新操作照常撤销,撤销到屏障处再停', async () => {
+    const w = makeWorld({ '/ws/b': 'file' });
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] });
+    await undoFileOp(ROOT, w.deps);
+    recordFileOp(ROOT, { kind: 'delete' });
+    expect(await redoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
+
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/c' }] });
+    w.files.delete('/ws/a');
+    w.put('/ws/c', false);
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done', reveal: '/ws/a' });
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'blocked' });
+  });
+});
+
+describe('一次输入嵌套路径的新建(a/b/c.ts)', () => {
+  it('撤销删最上层新建目录(覆盖整条链),已存在的中间目录不动;重做按原样逐级重建', async () => {
+    const w = makeWorld({ '/ws/src': 'dir' });
+    // 新建 src/na/nb/nc.ts:src 已存在,na、nb 是本次新建 → 记录 path = 最上层新建项,rest = 余下的段
+    const r = await w.fs.createFile('/ws/src', 'na/nb/nc.ts');
+    expect(r).toEqual({ ok: true, data: { path: '/ws/src/na/nb/nc.ts', created: '/ws/src/na' } });
+    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/src/na', redo: { type: 'file', rest: 'nb/nc.ts' } }] });
+
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: '/ws/src' });
+    expect(w.confirm).toHaveBeenCalledWith(['/ws/src/na'], 0);
+    expect(w.trash).toHaveBeenCalledWith(['/ws/src/na']);
+    expect(w.has('/ws/src/na')).toBe(false);
+    expect(w.has('/ws/src/na/nb/nc.ts')).toBe(false);
+    expect(w.has('/ws/src')).toBe(true);
+
+    expect(await redoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done' });
+    expect(w.fs.createFile).toHaveBeenLastCalledWith('/ws/src', 'na/nb/nc.ts');
+    expect(w.has('/ws/src/na/nb/nc.ts')).toBe(true);
+  });
+
+  it('新建文件夹 a/b:重做走 createDir 逐级重建', async () => {
+    const w = makeWorld({});
+    await w.fs.createDir('/ws', 'a/b');
+    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/a', redo: { type: 'dir', rest: 'b' } }] });
+    await undoFileOp(ROOT, w.deps);
+    expect(w.has('/ws/a')).toBe(false);
+    expect(await redoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done' });
+    expect(w.fs.createDir).toHaveBeenLastCalledWith('/ws', 'a/b');
+    expect(w.has('/ws/a/b')).toBe(true);
+  });
+});
+
 describe('栈', () => {
   it('新操作入栈清空重做栈', async () => {
     const w = makeWorld({ '/ws/b': 'file' });
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] });
     await undoFileOp(ROOT, w.deps);
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/x', to: '/ws/y' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/x', to: '/ws/y' }] });
     expect(await redoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
   });
 
@@ -270,7 +333,7 @@ describe('栈', () => {
     const w = makeWorld({});
     for (let i = 0; i <= FILE_UNDO_LIMIT; i++) {
       w.put(`/ws/f${i}`, false);
-      recordFileOp(ROOT, { kind: 'move', pairs: [{ from: `/ws/g${i}`, to: `/ws/f${i}` }] }, w.deps.fs);
+      recordFileOp(ROOT, { kind: 'move', pairs: [{ from: `/ws/g${i}`, to: `/ws/f${i}` }] });
     }
     for (let i = 0; i < FILE_UNDO_LIMIT; i++) expect((await undoFileOp(ROOT, w.deps)).status).toBe('done');
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
@@ -279,15 +342,15 @@ describe('栈', () => {
 
   it('按工作区根分栈', async () => {
     const w = makeWorld({ '/ws/b': 'file' });
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] });
     expect(await undoFileOp('/other', w.deps)).toEqual({ status: 'empty' });
     expect((await undoFileOp(ROOT, w.deps)).status).toBe('done');
   });
 
   it('执行中再次撤销 → busy,不并发', async () => {
     const w = makeWorld({ '/ws/b': 'file', '/ws/d': 'file' });
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/c', to: '/ws/d' }] }, w.deps.fs);
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] }, w.deps.fs);
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/c', to: '/ws/d' }] });
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] });
     const first = undoFileOp(ROOT, w.deps);
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'busy' });
     expect((await first).status).toBe('done');

@@ -21,6 +21,7 @@ import {
   toFsReadFileResult,
   toFsStatResult,
   toFsWriteFileResult,
+  type FsCreated,
   type FsFileStat,
   type FsReadFileData,
   type FsReadImageData,
@@ -245,9 +246,10 @@ const api = {
       ipcRenderer.invoke(FS_CHANNELS.WRITE_BINARY, { path, content }),
     rename: (path: string, newName: string): Promise<IpcResult<string>> =>
       ipcRenderer.invoke(FS_CHANNELS.RENAME, { path, newName }),
-    createFile: (dir: string, name: string): Promise<IpcResult<string>> =>
+    /** name 可带中间目录(`a/b/c.ts`,逐级创建);data.created = 本次新建的最上层项(见 FsCreated)。 */
+    createFile: (dir: string, name: string): Promise<IpcResult<FsCreated>> =>
       ipcRenderer.invoke(FS_CHANNELS.CREATE_FILE, { dir, name }),
-    createDir: (parent: string, name: string): Promise<IpcResult<string>> =>
+    createDir: (parent: string, name: string): Promise<IpcResult<FsCreated>> =>
       ipcRenderer.invoke(FS_CHANNELS.CREATE_DIR, { parent, name }),
     trash: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.TRASH, { path }),
@@ -520,8 +522,6 @@ const api = {
     getZoomFactor: (): number => webFrame.getZoomFactor(),
     /** 关闭本窗口(经 main win.close(),走关窗脏确认)。⌘W 已无可关的编辑器 / 面板时调用(对齐 VSCode)。 */
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
-    /** 激活本窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时调用)。 */
-    focus: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS, {}),
     /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */
     relaunchApp: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.RELAUNCH_APP, {}),
     /** 对本窗口执行应用菜单 View 同款动作(重新加载 / 放大 / 缩小 / 重置缩放 / 切换全屏);重新加载走脏确认。 */
