@@ -10,6 +10,7 @@ import { loadExplorer, promoteRecentRoot, writeExplorerFile } from '../persisten
 import { findWindowWithWorkspace, type FindWorkspaceWindowDeps } from './workspace-window-lookup.service';
 import { findWindowEntryBySeq } from '../../shared/window-entry-lookup';
 import { utf8ByteLength } from '../../shared/utf8-byte-length';
+import { isSameOrInsidePath } from '../lib/path-inside';
 import {
   WORKSPACE_SNAPSHOTS_LIMIT,
   type ExplorerPayloadV3,
@@ -25,12 +26,88 @@ import {
  */
 export const WORKSPACE_SNAPSHOT_MAX_BYTES = 256 * 1024;
 
-/** 窗口段 → 快照(工作区相关部分 + dock 布局);没有 root 的段(空窗口)→ null。 */
+type SnapshotEditor = NonNullable<WorkspaceSnapshot['editor']>;
+type SnapshotGroup = NonNullable<SnapshotEditor['groups']>[number];
+
+/**
+ * 剔除后的活动文件:原活动仍在 → 它;否则 MRU 里下一个仍在的;没有 MRU 记录 → 剩下的最后一个 tab(默认 MRU 顺序:
+ * 活动之后按位置从后往前);一个都不剩 → null。
+ */
+function scopedActive(active: string | null, open: readonly string[], mru: readonly string[] | undefined): string | null {
+  if (active !== null && open.includes(active)) return active;
+  return mru?.find((p) => open.includes(p)) ?? open.at(-1) ?? null;
+}
+
+/** 剔除后的 MRU:不到两项不写(写出端同样只在两项以上时写)。 */
+function scopedMru(mru: readonly string[] | undefined, open: readonly string[]): { mruPaths: string[] } | null {
+  const kept = mru?.filter((p) => open.includes(p));
+  return kept === undefined || kept.length < 2 ? null : { mruPaths: kept };
+}
+
+function scopeEditor(editor: SnapshotEditor, inside: (p: string) => boolean): SnapshotEditor {
+  const { openFilePaths, activePath, mruPaths, viewStates, groups, activeGroup, ...rest } = editor;
+  const open = openFilePaths.filter(inside);
+  const views = viewStates?.filter((v) => inside(v.path));
+  const viewsField = views === undefined || views.length === 0 ? null : { viewStates: views };
+  if (groups !== undefined) {
+    const kept = groups
+      .map((g): SnapshotGroup => {
+        const gOpen = g.openFilePaths.filter(inside);
+        const gMru = scopedMru(g.mruPaths, gOpen);
+        const gActive = scopedActive(g.activePath, gOpen, g.mruPaths);
+        return { id: g.id, openFilePaths: gOpen, activePath: gActive, ...gMru };
+      })
+      .filter((g) => g.openFilePaths.length > 0);
+    const active = kept.find((g) => g.id === activeGroup) ?? kept[0];
+    // 只剩一个组(或一个不剩)→ 单组形态(写出端只在多于一个组时写 groups)
+    if (kept.length > 1) {
+      return { ...rest, openFilePaths: open, activePath: active!.activePath, ...viewsField, groups: kept, activeGroup: active!.id };
+    }
+    return {
+      ...rest,
+      openFilePaths: open,
+      activePath: active?.activePath ?? null,
+      ...(active?.mruPaths === undefined ? null : { mruPaths: active.mruPaths }),
+      ...viewsField,
+    };
+  }
+  return {
+    ...rest,
+    openFilePaths: open,
+    activePath: scopedActive(activePath, open, mruPaths),
+    ...scopedMru(mruPaths, open),
+    ...viewsField,
+  };
+}
+
+/**
+ * 快照只含属于该文件夹的路径(VSCode workspace storage 只记该工作区的编辑器):同一窗口切走时按设计保留的未保存 tab
+ *(别的文件夹的文件)不记进当前文件夹的快照。剔除 root 外的 tab / 视图状态 / MRU / 展开;活动文件 / 活动组被剔除时降级
+ *(见 scopedActive;变空的组丢弃,只剩一个组写单组形态)。dock 布局不含文件路径:多出的编辑器组面板由恢复后的组 ↔ 面板
+ * 对齐收掉(editor-groups-dock-sync)。写入、取出都经过这里(旧版本写下的快照取出时同样剔除)。
+ * BDD: src/__tests__/workspace-snapshot/
+ */
+export function scopeWorkspaceSnapshot<T extends WorkspaceSnapshot | WorkspaceSnapshotState>(snapshot: T): T {
+  const root = snapshot.workspace.root;
+  const inside = (p: string): boolean => isSameOrInsidePath(root, p);
+  const { explorer, editor } = snapshot;
+  return {
+    ...snapshot,
+    explorer: {
+      ...explorer,
+      activePath: explorer.activePath !== null && inside(explorer.activePath) ? explorer.activePath : null,
+      expandedPaths: explorer.expandedPaths.filter(inside),
+    },
+    ...(editor === undefined ? null : { editor: scopeEditor(editor, inside) }),
+  };
+}
+
+/** 窗口段 → 快照(工作区相关部分 + dock 布局,只含 root 内路径);没有 root 的段(空窗口)→ null。 */
 export function snapshotOfWindowEntry(entry: WindowEntryV3): WorkspaceSnapshot | null {
   const root = entry.workspace.root;
   if (root === null) return null;
   const { windowSeq: _seq, lastClosedAt: _closed, windowState: _state, workspace: _ws, ...rest } = entry;
-  return { workspace: { root }, ...rest };
+  return scopeWorkspaceSnapshot({ workspace: { root }, ...rest });
 }
 
 async function indexOfSnapshot(
@@ -54,15 +131,19 @@ export async function findWorkspaceSnapshot(
 ): Promise<WorkspaceSnapshot | null> {
   const list = payload.workspaceSnapshots ?? [];
   const i = await indexOfSnapshot(list, root, deps);
-  return i === -1 ? null : list[i]!;
+  return i === -1 ? null : scopeWorkspaceSnapshot(list[i]!);
 }
 
-/** 存入 / 替换该 root 的快照并置顶(最近使用在前),超出上限淘汰最旧。返回快照表是否改变(调用方据此决定写盘)。 */
+/**
+ * 存入 / 替换该 root 的快照并置顶(最近使用在前),超出上限淘汰最旧;只存 root 内路径(同一窗口切换的 save 也经这里)。
+ * 返回快照表是否改变(调用方据此决定写盘)。
+ */
 export async function upsertWorkspaceSnapshot(
   payload: ExplorerPayloadV3,
-  snapshot: WorkspaceSnapshot,
+  input: WorkspaceSnapshot,
   deps?: FindWorkspaceWindowDeps,
 ): Promise<boolean> {
+  const snapshot = scopeWorkspaceSnapshot(input);
   const list = payload.workspaceSnapshots ?? [];
   const i = await indexOfSnapshot(list, snapshot.workspace.root, deps);
   const rest = i === -1 ? list : list.filter((_, j) => j !== i);

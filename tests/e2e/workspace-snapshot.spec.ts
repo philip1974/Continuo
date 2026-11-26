@@ -167,3 +167,53 @@ test('复现 b:同一窗口 ws2(w2.ts)→ 切到 ws3 → 切回 ws2,w2.ts 回来
   await expect(explorerSidebar(win)).not.toContainText('only-in-ws3.txt', { timeout: 10_000 });
   await expect(editorTab(win, 'w2.ts')).toBeVisible({ timeout: 10_000 });
 });
+
+// VSCode workspace storage 只记属于该文件夹的编辑器:同一窗口切走时保留的未保存 tab(别的文件夹的文件)不能记进当前文件夹的
+// 快照。此前 ws1 的 file-1.ts 随 ws3 的快照进了「在新窗口打开 ws3」的窗口(标题「file-1.ts · ws3」,同一文件两个窗口同时打开)。
+test('复现 c:ws1 的未保存 tab 带到 ws3 → 切回 ws1 保存 → 新窗口打开 ws3,只恢复 ws3 自己的 tab', async () => {
+  test.setTimeout(120_000);
+  const ud = tempDir('ui98b-ud-');
+  const ws1 = tempDir('ui98b-ws1-');
+  const ws3 = tempDir('ui98b-ws3-');
+  writeFileSync(path.join(ws1, 'file-1.ts'), 'export const one = 1;\n');
+  writeFileSync(path.join(ws3, 'b3.ts'), 'export const b3 = 3;\n');
+  seedExplorerJson(ud, { root: ws1, recentRoots: [ws1, ws3] });
+  const app = await launchContinuo(ud);
+  apps.push(app);
+  const win = await app.firstWindow();
+  await waitForAppReady(win);
+  await openWorkspaceFile(win, ['file-1.ts']);
+  await win.locator('.cm-content').first().click();
+  await win.keyboard.press('ControlOrMeta+End');
+  await win.keyboard.type('// dirty\n');
+
+  const switchTo = async (dir: string): Promise<void> => {
+    await explorerMoreActionsButton(win).click();
+    await win.getByRole('menuitem', { name: path.basename(dir), exact: false }).click();
+  };
+
+  await switchTo(ws3);
+  await expect(explorerSidebar(win)).toContainText('b3.ts', { timeout: 10_000 });
+  await expect(editorTab(win, 'file-1.ts')).toBeVisible(); // 未保存的 tab 按设计保留
+  await openWorkspaceFile(win, ['b3.ts']);
+
+  await switchTo(ws1);
+  await expect(explorerSidebar(win)).not.toContainText('b3.ts', { timeout: 10_000 });
+  await editorTab(win, 'file-1.ts').click();
+  await win.locator('.cm-content').first().click();
+  await win.keyboard.press('ControlOrMeta+S');
+  await expect.poll(() => readFileSync(path.join(ws1, 'file-1.ts'), 'utf8'), { timeout: 10_000 }).toContain('// dirty');
+
+  // 盘上 ws3 的快照只有 ws3 自己的文件
+  await expect
+    .poll(() => {
+      const s = readDisk(ud)?.workspaceSnapshots?.find((x) => x.workspace.root.endsWith(path.basename(ws3)));
+      return s?.editor?.openFilePaths.map((p) => path.basename(p));
+    }, { timeout: 10_000 })
+    .toEqual(['b3.ts']);
+
+  const other = await openFolderInNewWindow(app, ws3);
+  await expect(editorTab(other, 'b3.ts')).toBeVisible({ timeout: 15_000 });
+  await expect(editorTab(other, 'file-1.ts')).toHaveCount(0);
+  expect(await other.title()).not.toContain('file-1.ts');
+});

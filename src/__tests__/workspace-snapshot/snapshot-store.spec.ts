@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   findWorkspaceSnapshot,
+  scopeWorkspaceSnapshot,
   snapshotOfWindowEntry,
   upsertWorkspaceSnapshot,
   WORKSPACE_SNAPSHOT_MAX_BYTES,
@@ -82,6 +83,151 @@ describe('窗口段 → 快照', () => {
         explorer: { activePath: null, expandedPaths: [], sort: SORT },
       }),
     ).toBeNull();
+  });
+});
+
+// VSCode workspace storage 只记属于该文件夹的编辑器。同一窗口切走时按设计保留的未保存 tab(别的文件夹的文件)不能记进
+// 当前文件夹的快照,否则在新窗口打开该文件夹会把别的项目的文件带进来(同一文件在两个窗口同时打开)。
+describe('快照只含属于该文件夹的路径', () => {
+  const base = { explorer: { activePath: null, expandedPaths: [] as string[], sort: SORT } };
+
+  it('单组:tab / 活动 / MRU / 视图状态 / 展开里 root 外的路径剔除(同名前缀的兄弟目录不算在内);活动文件被剔除 → 降级为 MRU 中下一个', () => {
+    const s = scopeWorkspaceSnapshot({
+      workspace: { root: '/ws3' },
+      explorer: { activePath: '/ws1/x', expandedPaths: ['/ws3/src', '/ws1/src', '/ws30/src'], sort: SORT },
+      editor: {
+        openFilePaths: ['/ws3/b.ts', '/ws1/file-1.ts', '/ws3/c.ts', '/ws30/d.ts'],
+        activePath: '/ws1/file-1.ts',
+        mruPaths: ['/ws1/file-1.ts', '/ws3/c.ts', '/ws30/d.ts', '/ws3/b.ts'],
+        viewStates: [
+          { path: '/ws1/file-1.ts', topLine: 3, selection: { anchor: 0, head: 0 } },
+          { path: '/ws3/c.ts', topLine: 5, selection: { anchor: 1, head: 1 } },
+        ],
+      },
+    });
+    expect(s).toEqual({
+      workspace: { root: '/ws3' },
+      explorer: { activePath: null, expandedPaths: ['/ws3/src'], sort: SORT },
+      editor: {
+        openFilePaths: ['/ws3/b.ts', '/ws3/c.ts'],
+        activePath: '/ws3/c.ts',
+        mruPaths: ['/ws3/c.ts', '/ws3/b.ts'],
+        viewStates: [{ path: '/ws3/c.ts', topLine: 5, selection: { anchor: 1, head: 1 } }],
+      },
+    });
+  });
+
+  it('没有 MRU 记录时活动文件被剔除 → 降级为剩下的最后一个 tab(与默认 MRU 顺序一致)', () => {
+    const s = scopeWorkspaceSnapshot({
+      ...base,
+      workspace: { root: '/ws3' },
+      editor: { openFilePaths: ['/ws3/a.ts', '/ws3/b.ts', '/ws1/x.ts'], activePath: '/ws1/x.ts' },
+    });
+    expect(s.editor).toEqual({ openFilePaths: ['/ws3/a.ts', '/ws3/b.ts'], activePath: '/ws3/b.ts' });
+  });
+
+  it('全是别的文件夹的 tab → 编辑器为空、活动为 null,不留 MRU / 视图状态', () => {
+    const s = scopeWorkspaceSnapshot({
+      ...base,
+      workspace: { root: '/ws3' },
+      editor: {
+        openFilePaths: ['/ws1/a.ts', '/ws1/b.ts'],
+        activePath: '/ws1/a.ts',
+        mruPaths: ['/ws1/a.ts', '/ws1/b.ts'],
+        viewStates: [{ path: '/ws1/a.ts', topLine: 2 }],
+        mode: 'edit',
+      },
+    });
+    expect(s.editor).toEqual({ openFilePaths: [], activePath: null, mode: 'edit' });
+  });
+
+  it('多组:各组剔除 root 外的 tab;变空的组丢弃,活动组被丢弃 → 降级为剩下的第一个组', () => {
+    const s = scopeWorkspaceSnapshot({
+      ...base,
+      workspace: { root: '/ws3' },
+      editor: {
+        openFilePaths: ['/ws1/a.ts', '/ws3/b.ts', '/ws3/c.ts'],
+        activePath: '/ws1/a.ts',
+        groups: [
+          { id: 'editor', openFilePaths: ['/ws1/a.ts'], activePath: '/ws1/a.ts' },
+          { id: 'editor-2', openFilePaths: ['/ws3/b.ts', '/ws1/a.ts'], activePath: '/ws1/a.ts', mruPaths: ['/ws1/a.ts', '/ws3/b.ts'] },
+          { id: 'editor-3', openFilePaths: ['/ws3/c.ts'], activePath: '/ws3/c.ts' },
+        ],
+        activeGroup: 'editor',
+        viewStates: [
+          { path: '/ws3/b.ts', group: 'editor-2', topLine: 4 },
+          { path: '/ws1/a.ts', group: 'editor', topLine: 9 },
+        ],
+      },
+    });
+    expect(s.editor).toEqual({
+      openFilePaths: ['/ws3/b.ts', '/ws3/c.ts'],
+      activePath: '/ws3/b.ts',
+      groups: [
+        { id: 'editor-2', openFilePaths: ['/ws3/b.ts'], activePath: '/ws3/b.ts' },
+        { id: 'editor-3', openFilePaths: ['/ws3/c.ts'], activePath: '/ws3/c.ts' },
+      ],
+      activeGroup: 'editor-2',
+      viewStates: [{ path: '/ws3/b.ts', group: 'editor-2', topLine: 4 }],
+    });
+  });
+
+  it('多组剔除后只剩一个组 → 写回单组形态(不带 groups / activeGroup,MRU 归顶层)', () => {
+    const s = scopeWorkspaceSnapshot({
+      ...base,
+      workspace: { root: '/ws3' },
+      editor: {
+        openFilePaths: ['/ws1/a.ts', '/ws3/b.ts', '/ws3/c.ts'],
+        activePath: '/ws1/a.ts',
+        groups: [
+          { id: 'editor', openFilePaths: ['/ws1/a.ts'], activePath: '/ws1/a.ts' },
+          { id: 'editor-2', openFilePaths: ['/ws3/b.ts', '/ws3/c.ts'], activePath: '/ws3/c.ts', mruPaths: ['/ws3/c.ts', '/ws3/b.ts'] },
+        ],
+        activeGroup: 'editor',
+      },
+    });
+    expect(s.editor).toEqual({
+      openFilePaths: ['/ws3/b.ts', '/ws3/c.ts'],
+      activePath: '/ws3/c.ts',
+      mruPaths: ['/ws3/c.ts', '/ws3/b.ts'],
+    });
+  });
+
+  it('全在 root 内 → 内容不变', () => {
+    const input: WorkspaceSnapshot = snap('/ws3', {
+      explorer: { activePath: null, expandedPaths: ['/ws3/src'], sort: SORT },
+      editor: {
+        openFilePaths: ['/ws3/a.ts', '/ws3/b.ts'],
+        activePath: '/ws3/a.ts',
+        mruPaths: ['/ws3/a.ts', '/ws3/b.ts'],
+        viewStates: [{ path: '/ws3/a.ts', topLine: 2 }],
+      },
+    });
+    expect(scopeWorkspaceSnapshot(input)).toEqual(input);
+  });
+
+  it('窗口段转快照、写入快照表(含同一窗口切换的 save)、从快照表取出都只含 root 内路径', async () => {
+    const entry: WindowEntryV3 = {
+      windowSeq: 1,
+      workspace: { root: '/ws3' },
+      ...base,
+      editor: { openFilePaths: ['/ws3/b.ts', '/ws1/file-1.ts'], activePath: '/ws1/file-1.ts' },
+    };
+    expect(snapshotOfWindowEntry(entry)?.editor).toEqual({ openFilePaths: ['/ws3/b.ts'], activePath: '/ws3/b.ts' });
+
+    const p = payload();
+    await upsertWorkspaceSnapshot(
+      p,
+      { workspace: { root: '/ws3' }, ...base, editor: { openFilePaths: ['/ws1/file-1.ts'], activePath: '/ws1/file-1.ts' } },
+      deps,
+    );
+    expect(p.workspaceSnapshots?.[0]?.editor).toEqual({ openFilePaths: [], activePath: null });
+
+    // 旧版本写下的快照(带了别的文件夹的 tab)→ 取出时同样剔除
+    const old = payload({
+      workspaceSnapshots: [{ workspace: { root: '/ws3' }, ...base, editor: { openFilePaths: ['/ws1/x.ts'], activePath: '/ws1/x.ts' } }],
+    });
+    expect((await findWorkspaceSnapshot(old, '/ws3', deps))?.editor).toEqual({ openFilePaths: [], activePath: null });
   });
 });
 

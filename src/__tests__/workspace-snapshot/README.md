@@ -8,6 +8,12 @@
   快照 = 窗口段里与工作区相关的部分(复用窗口段 schema:`explorer` 展开 / 排序、`layoutUi` 侧栏、`editor` tab / 组 / 各组视图状态
   含折叠 / Markdown 模式 / MRU、`search` 搜索输入,外加 main-owned 的 dock `layout`),不含 windowSeq / 窗口几何 / lastClosedAt。
 - main-owned:renderer 整份写回(`explorer:write`)保留盘上值;`explorer:read` 返回前剥离(renderer 不需要,且含布局)。
+- **只含属于该文件夹的路径**(VSCode workspace storage 只记该工作区的编辑器):同一窗口切走时按设计保留的未保存 tab 是别的文件夹的
+  文件,不能记进当前文件夹的快照(此前 ws1 的脏 tab 随 ws3 的快照进了「在新窗口打开 ws3」的窗口,同一文件两个窗口同时打开)。
+  `scopeWorkspaceSnapshot` 剔除 root 外的 tab / 各组 tab / MRU / 视图状态 / 展开路径;活动文件被剔除 → MRU 中下一个仍在的,没有 MRU
+  → 剩下的最后一个 tab(默认 MRU 顺序),一个不剩 → null;变空的组丢弃,活动组被丢弃 → 剩下的第一个组;只剩一个组 → 单组形态。
+  写入(窗口段转快照、同一窗口切换的 save,统一经 `upsertWorkspaceSnapshot`)与取出(旧版本写下的快照)都经过它。dock 布局不含
+  文件路径,其中多出的编辑器组面板由恢复后的组 ↔ 面板对齐(`editor-groups-dock-sync`)收掉。
 - root 比较:两侧先 realpath,再按平台语义比较(与同文件夹去重 `findWindowWithWorkspace` 同一判定)。
 - 单个快照序列化超过 256 KiB 不存(并移除该 root 的旧快照),避免 20 份撑爆 explorer.json 的 16 MiB 读上限。
 
