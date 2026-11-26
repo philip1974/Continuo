@@ -8,25 +8,58 @@ import type { DockviewApi } from 'dockview-react';
 import { useDockLocaleSync } from '@/shell/dock/useDockLocaleSync';
 import { setLocale } from '@/i18n/translate';
 import { notifyLocaleChange } from '@/i18n/react';
+import { useEditorStore } from '@/stores/editor.store';
 
 interface FakePanel {
   readonly api: {
     readonly id: string;
     title: string;
     setTitle: ReturnType<typeof vi.fn>;
+    location?: { type: 'grid' | 'floating' | 'popout' };
+    group?: { id: string };
   };
   readonly params: { titleKey?: string } | undefined;
 }
 
+type Listener = () => void;
+const layoutListeners = new Set<Listener>();
+
 function makeApi(panels: FakePanel[]): DockviewApi {
+  const on = vi.fn((l: Listener) => {
+    layoutListeners.add(l);
+    return { dispose: () => layoutListeners.delete(l) };
+  });
   return {
     panels,
-    onDidAddPanel: vi.fn(() => ({ dispose: () => undefined })),
+    onDidAddPanel: on,
+    onDidLayoutChange: on,
   } as unknown as DockviewApi;
 }
 
+/** 编辑器组面板:setTitle 真改 title(同 dockview)。 */
+function editorPanel(id: string, where: 'grid' | 'floating' | 'popout' = 'grid', groupId = 'g-main'): FakePanel {
+  const api: FakePanel['api'] = {
+    id,
+    title: 'Editor',
+    setTitle: vi.fn((t: string) => {
+      api.title = t;
+    }),
+    location: { type: where },
+    group: { id: groupId },
+  };
+  return { api, params: { titleKey: 'panels.editor.title' } };
+}
+
+function setGroupOrder(ids: string[]) {
+  useEditorStore.setState({ groups: ids.map((id) => ({ id, tabIds: [], activeTabId: null })) });
+}
+
+const titles = (panels: FakePanel[]) => panels.map((p) => p.api.title);
+
 afterEach(() => {
   setLocale('zh');
+  setGroupOrder(['editor']);
+  layoutListeners.clear();
 });
 
 afterEach(cleanup);
@@ -79,29 +112,55 @@ describe('useDockLocaleSync', () => {
     expect(setTitle).toHaveBeenCalledWith('터미널');
   });
 
-  // 编辑器组面板(editor / editor:N)可能叠在同一 dock 组里(popout / 浮动组里拆分、拖进同组):第二个起标题带编号可区分
-  // (BDD: src/__tests__/editor-groups/ 适配点「dock 面板标题」)
-  it('编辑器组面板 editor:N → 「编辑器 N」;第一个组 editor 仍是「编辑器」;随 locale 切换', () => {
+  // 编辑器组面板标题「编辑器 N」的 N = 该组在编辑器组顺序里的位置(同 ⌘1/⌘2/⌘3 的计数口径),第一位不带号;不是组 id
+  // 里的号码(id 复用最小空号,关掉中间组再拆分后 id 与位置不一致)。对齐 VSCode EditorGroupView「Group N」按位置编号、
+  // 增删组后重新编号(notifyIndexChanged)。BDD: src/__tests__/editor-groups/ 适配点「dock 面板标题」
+  it('标题号码按组顺序的位置,不按组 id:[editor, editor:3, editor:2] → 编辑器 / 编辑器 2 / 编辑器 3;随 locale 切换', () => {
     setLocale('zh');
-    const first = vi.fn();
-    const second = vi.fn();
-    const api = makeApi([
-      { api: { id: 'editor', title: 'Editor', setTitle: first }, params: { titleKey: 'panels.editor.title' } },
-      { api: { id: 'editor:2', title: 'Editor', setTitle: second }, params: { titleKey: 'panels.editor.title' } },
-    ]);
-    renderHook(() => useDockLocaleSync(api));
-    expect(first).toHaveBeenLastCalledWith('编辑器');
-    expect(second).toHaveBeenLastCalledWith('编辑器 2');
+    setGroupOrder(['editor', 'editor:3', 'editor:2']);
+    const panels = [editorPanel('editor'), editorPanel('editor:2'), editorPanel('editor:3')];
+    renderHook(() => useDockLocaleSync(makeApi(panels)));
+    expect(titles(panels)).toEqual(['编辑器', '编辑器 3', '编辑器 2']);
     act(() => {
       setLocale('en');
       notifyLocaleChange();
     });
-    expect(second).toHaveBeenLastCalledWith('Editor 2');
+    expect(titles(panels)).toEqual(['Editor', 'Editor 3', 'Editor 2']);
     act(() => {
       setLocale('ko');
       notifyLocaleChange();
     });
-    expect(second).toHaveBeenLastCalledWith('편집기 2');
+    expect(titles(panels)).toEqual(['편집기', '편집기 3', '편집기 2']);
+  });
+
+  it('组增删 / 换序(store 组顺序变化)→ 重新编号;第一个组不一定是 editor', () => {
+    setLocale('zh');
+    setGroupOrder(['editor', 'editor:2', 'editor:3']);
+    const panels = [editorPanel('editor'), editorPanel('editor:2'), editorPanel('editor:3')];
+    renderHook(() => useDockLocaleSync(makeApi(panels)));
+    expect(titles(panels)).toEqual(['编辑器', '编辑器 2', '编辑器 3']);
+    act(() => setGroupOrder(['editor:2', 'editor:3', 'editor']));
+    expect(titles(panels)).toEqual(['编辑器 3', '编辑器', '编辑器 2']);
+  });
+
+  it('popout 子窗里的组按该子窗自己的组编号(⌘1/2/3 只数主窗);移入 / 移出 popout(布局变化)后重算', () => {
+    setLocale('zh');
+    setGroupOrder(['editor', 'editor:2', 'editor:3', 'editor:4']);
+    const panels = [
+      editorPanel('editor'),
+      editorPanel('editor:2', 'popout', 'g-pop'),
+      editorPanel('editor:3', 'floating', 'g-float'),
+      editorPanel('editor:4', 'popout', 'g-pop'),
+    ];
+    renderHook(() => useDockLocaleSync(makeApi(panels)));
+    expect(titles(panels)).toEqual(['编辑器', '编辑器', '编辑器 2', '编辑器 2']);
+    // editor:2 收回主窗
+    panels[1]!.api.location = { type: 'grid' };
+    panels[1]!.api.group = { id: 'g-main' };
+    act(() => {
+      for (const l of [...layoutListeners]) l();
+    });
+    expect(titles(panels)).toEqual(['编辑器', '编辑器 2', '编辑器 3', '编辑器']);
   });
 
   it('api=null → no-op', () => {

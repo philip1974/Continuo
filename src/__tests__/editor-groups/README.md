@@ -75,7 +75,7 @@
 | popout | 编辑器组面板可弹出(面板 id 不变,组随之);在 popout 组里拆分 → 新组作为同一 dock 组里的另一个面板(popout 组不能再分栏);⌘1/⌘2/⌘3 只在主窗分发,只数主窗(grid / floating)里的组,不够时以主窗最后一组为参照新建 —— 子窗里的组既不计入也不作参照 |
 | tab 栏样式 | 非活动组的活动 tab 用 design `TabNav` 的 `unfocused`:保留选中底色、去掉强调下划线、文字 fg-muted(VSCode `tab.unfocusedActive*`);活动组判定 = `activeGroupId` |
 | 单例面板去重 | `editor:N` 不当成旧版多开的重复编辑器面板关闭 |
-| dock 面板标题 | 第一个组 `editor` 为「编辑器」;`editor:N` 为「编辑器 N」(`panels.editor.title_numbered`,随 locale 同步,`useDockLocaleSync`)—— popout / 浮动组里拆分、拖进同一 dock 组时多个编辑器组面板叠成同组 tab 可区分(`i18n-strings-r2/dock-locale-sync.spec.tsx`) |
+| dock 面板标题 | 「编辑器 N」的 N = 该组在**组顺序**里的位置(与 ⌘1/⌘2/⌘3 同一来源 `editorGroupIdsOf`、同一口径),第一位为「编辑器」不带号;**不是组 id 的号码**(`nextEditorGroupId` 复用最小空号:关掉中间组再拆分,新组 id `editor:2` 却在第三位)—— 对齐 VSCode EditorGroupView「Group N」按位置、增删后重新编号。主窗(grid / floating)一起编号;popout 子窗里的组按各自子窗编号(⌘N 不在子窗分发,VSCode 辅助窗口也各自从 Group 1 起)。组增删 / 换序 / 移入移出 popout / 恢复布局 / 切 locale 时重算(`panels.editor.title_numbered`,`useDockLocaleSync`)。用途:popout / 浮动组里拆分、拖进同一 dock 组时多个编辑器组面板叠成同组 tab 可区分(`i18n-strings-r2/dock-locale-sync.spec.tsx`,e2e `editor-split.spec.ts`) |
 | 视图:重置布局 | 编辑器组不合并,保持左右分栏(见 `src/__tests__/dock-reset-layout/`) |
 
 ## 未做

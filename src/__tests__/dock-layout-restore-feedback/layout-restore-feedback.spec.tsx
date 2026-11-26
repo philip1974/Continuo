@@ -39,8 +39,16 @@ vi.mock('dockview-react', () => ({
         toJSON: h.toJSON,
         getPanel: vi.fn(() => null),
         addPanel: vi.fn(() => ({ api: { setActive: vi.fn() } })),
+        // 多个订阅者(自动保存 + useDockLocaleSync 标题编号)都要收到,同 dockview Emitter
         onDidLayoutChange: fakeDisposable((cb) => {
-          h.layoutChangeCb.current = cb as () => void;
+          const prev = h.layoutChangeCb.current;
+          const next = cb as () => void;
+          h.layoutChangeCb.current = prev
+            ? () => {
+                prev();
+                next();
+              }
+            : next;
         }),
         onDidRemovePanel: fakeDisposable(),
         onDidAddPanel: fakeDisposable(),

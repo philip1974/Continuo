@@ -103,6 +103,35 @@ test('⌘\\ 拆分:两组显示同一文件,一处编辑另一处同步;⌘1 / �
   await expect(group(win, 0).locator('.cm-content')).toContainText('// typed in group 2');
 });
 
+// dock 标题「编辑器 N」按组位置编号(同 ⌘1/2/3),不按组 id:关掉中间组再拆分时新组复用 id `editor:2`、位置却在第三
+test('关掉中间组再拆分 → dock 标题按位置重新编号「编辑器 | 编辑器 2 | 编辑器 3」,⌘2 聚焦「编辑器 2」', async () => {
+  test.setTimeout(90_000);
+  const win = await launch(workspace());
+  await openAndSplit(win);
+  await win.keyboard.press('ControlOrMeta+Backslash');
+  await expect(groups(win)).toHaveCount(3, { timeout: 10_000 });
+  await win.keyboard.press('ControlOrMeta+2');
+  await expect.poll(() => focusedGroupIndex(win)).toBe(1);
+  await win.keyboard.press('ControlOrMeta+w');
+  await expect(groups(win)).toHaveCount(2, { timeout: 10_000 });
+  await win.keyboard.press('ControlOrMeta+2');
+  await expect.poll(() => focusedGroupIndex(win)).toBe(1);
+  await win.keyboard.press('ControlOrMeta+Backslash');
+  await expect(groups(win)).toHaveCount(3, { timeout: 10_000 });
+  const dockTitles = () =>
+    win
+      .locator('.dv-tab [role=tab]')
+      .evaluateAll((els) =>
+        els.map((el) => el.textContent?.match(/(编辑器|Editor|편집기)( \d+)?/)?.[0] ?? '').filter(Boolean),
+      );
+  // 左→右(DOM 顺序):编辑器 | 编辑器 2 | 编辑器 3(数字后缀与 locale 无关)
+  await expect
+    .poll(async () => (await dockTitles()).map((t) => t.match(/ (\d+)$/)?.[1] ?? '1'))
+    .toEqual(['1', '2', '3']);
+  await win.keyboard.press('ControlOrMeta+2');
+  await expect.poll(() => focusedGroupIndex(win)).toBe(1);
+});
+
 test('重启恢复两个编辑器组(各自的文件与活动组)', async () => {
   test.setTimeout(90_000);
   const ud = workspace();
