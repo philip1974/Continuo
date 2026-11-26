@@ -584,6 +584,11 @@
 
 - [`editor-find-i18n.spec.tsx`](./editor-find-i18n/editor-find-i18n.spec.tsx)
 
+## [编辑器查找类命令经命令注册表分发(可改键);菜单「查找」在 Markdown 编辑 / 预览里同样生效](./editor-find-keybindings/README.md)
+
+- [`find-keybindings.spec.ts`](./editor-find-keybindings/find-keybindings.spec.ts)
+- [`markdown-menu-find.spec.tsx`](./editor-find-keybindings/markdown-menu-find.spec.tsx)
+
 ## [编辑器查找控件:计数 / 无结果、快捷键、历史、强制颜色(对齐 VSCode findWidget)](./editor-find-widget/README.md)
 
 - [`editor-find-widget.spec.tsx`](./editor-find-widget/editor-find-widget.spec.tsx)
@@ -724,6 +729,7 @@
 ## [常用编辑器(CodeMirror)命令进命令注册表](./editor-text-commands/README.md)
 
 - [`text-commands-dispatch.spec.ts`](./editor-text-commands/text-commands-dispatch.spec.ts)
+- [`text-commands-fold.spec.ts`](./editor-text-commands/text-commands-fold.spec.ts)
 - [`text-commands-registry.spec.ts`](./editor-text-commands/text-commands-registry.spec.ts)
 - [`text-commands-run.spec.ts`](./editor-text-commands/text-commands-run.spec.ts)
 

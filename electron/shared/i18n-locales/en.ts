@@ -274,6 +274,8 @@ export const en = {
   'commands.preferences.open_keybindings.title': 'Open Keyboard Shortcuts',
   'commands.editor.text.find.title': 'Find',
   'commands.editor.text.replace.title': 'Replace',
+  'commands.editor.text.find_next.title': 'Find Next',
+  'commands.editor.text.find_previous.title': 'Find Previous',
   // 菜单 / 右键 / 标题栏动作的命令(VSCode 同名命令;BDD: command-discoverability)
   'commands.quick_open.title': 'Go to File…',
   'commands.show_commands.title': 'Show All Commands',

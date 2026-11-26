@@ -46,33 +46,24 @@ describe('Windows / Linux(jsdom:Mod = Ctrl)', () => {
     expect(view.dom.querySelector('.cm-panel')).toBeNull();
   });
 
-  it('F3 / ⇧F3 仍是查找下一个 / 上一个', () => {
+  it('F3 / ⇧F3 不在 CodeMirror 键表里(查找下一个 / 上一个经命令注册表分发,可改键;BDD: editor-find-keybindings)', () => {
     const view = editor();
-    expect(press(view, { key: 'F3', code: 'F3', keyCode: 114 })).toBe(true);
+    expect(press(view, { key: 'F3', code: 'F3', keyCode: 114 })).toBe(false);
+    expect(press(view, { key: 'F3', code: 'F3', keyCode: 114, shiftKey: true })).toBe(false);
   });
 });
 
-describe('键表改写(纯函数,覆盖 mac)', () => {
-  it('去掉 gotoLine;Mod-g 查找下一个 / 上一个只在 mac 保留;其余原样', () => {
+describe('键表改写(纯函数)', () => {
+  it('去掉 gotoLine;其余原样', () => {
     const other = { key: 'Mod-d', run: () => true };
-    const out = withoutConflictingSearchKeys([
-      { key: 'Mod-Alt-g', run: gotoLine },
-      { key: 'Mod-g', run: findNext, shift: findPrevious, preventDefault: true, scope: 'editor search-panel' },
-      { key: 'F3', run: findNext, shift: findPrevious },
-      other,
-    ]);
-    expect(out.some((b) => b.run === gotoLine)).toBe(false);
-    const modG = out.find((b) => b.mac === 'Mod-g');
-    expect(modG).toMatchObject({ run: findNext, shift: findPrevious, preventDefault: true, scope: 'editor search-panel' });
-    expect(modG?.key).toBeUndefined();
-    expect(out.find((b) => b.key === 'F3')?.run).toBe(findNext);
-    expect(out).toContain(other);
+    const out = withoutConflictingSearchKeys([{ key: 'Mod-Alt-g', run: gotoLine }, other]);
+    expect(out).toEqual([other]);
   });
 
-  it('改写落在 basicSetup 那份键表上(升级 codemirror 后仍命中)', () => {
+  it('改写落在 basicSetup 那份键表上(升级 codemirror 后仍命中);查找下一个 / 上一个不在键表里(两平台)', () => {
     const bindings = EditorState.create({ extensions: codeEditorBasicSetup }).facet(keymap).flat();
     expect(bindings.some((b) => b.run === gotoLine)).toBe(false);
-    expect(bindings.some((b) => b.mac === 'Mod-g' && b.run === findNext)).toBe(true);
+    expect(bindings.some((b) => b.run === findNext || b.run === findPrevious || b.shift === findPrevious)).toBe(false);
     expect(bindings.some((b) => b.key === 'Mod-z')).toBe(true); // 默认键表其余部分仍在
   });
 });

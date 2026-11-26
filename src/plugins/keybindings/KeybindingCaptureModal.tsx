@@ -107,12 +107,13 @@ export function selectKeybindingConflicts(
   // 两侧都归一到运行时语义(主键别名 mod+up ≡ mod+arrowup;修饰键顺序/别名 shift+mod+enter ≡
   // mod+shift+enter):运行时会触发同一次按键,不归一就会两条命令抢同一个键而不提示。
   const capturedCanonical = canonicalHotkey(captured, PLATFORM);
-  // 上下文条件(when)不同的同键绑定各在其上下文里生效(编辑器里在上方插入行 / 其它地方终端缩放),不列为冲突。
-  const when = allCommands.find((c) => c.id === commandId)?.when;
+  // 有条件与无条件的同键绑定各在其上下文里生效(编辑器里在上方插入行 / 其它地方终端缩放),不列为冲突;两条都限定在编辑器里
+  //(editorTextFocus / editorFocus,上下文重叠)仍是冲突。
+  const scoped = allCommands.find((c) => c.id === commandId)?.when !== undefined;
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
-    if (command.id === commandId || command.when !== when) continue;
+    if (command.id === commandId || (command.when !== undefined) !== scoped) continue;
     // 保留键归属命令(转到文件… / 显示所有命令)的保留键与旧 override 不分发,不是冲突(保留键由上方保留键拒绝处理);
     // 其附加默认键(F1)照常分发,算冲突。多默认键命令任一键相同即冲突。
     const effective =

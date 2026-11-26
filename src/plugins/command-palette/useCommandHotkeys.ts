@@ -16,7 +16,7 @@ import { resolveActiveHotkeys, reservedHotkeyOfCommand } from '@/plugins/picker/
 import { getPopoutDocuments, runInCommandDocument, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
-import { whenHolds } from '@/lib/editor-text-focus';
+import { whenCoveredBy, whenHolds } from '@/lib/editor-text-focus';
 
 /**
  * dockview popout 子窗里也经热键分发的命令:只作用于按键所在子窗的活动面板(分发时经 runInCommandDocument 标明按键所在窗口,
@@ -47,11 +47,11 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * popout 子窗里是否分发该命令:上面的列表,加上限定在代码编辑器正文里的命令(when: editorTextFocus —— 作用于按键所在子窗的
- * 编辑器,不在主窗画东西;这些键已从 CodeMirror 键表去掉,子窗不分发就失效)。
+ * popout 子窗里是否分发该命令:上面的列表,加上限定在代码编辑器里的命令(when: editorTextFocus / editorFocus —— 作用于按键所在
+ * 子窗的编辑器,不在主窗画东西;这些键已从 CodeMirror 键表去掉,子窗不分发就失效)。
  */
 export function isPopoutHotkeyCommand(cmd: Pick<CommandSpec, 'id' | 'when'>): boolean {
-  return POPOUT_HOTKEY_COMMAND_IDS.has(cmd.id) || cmd.when === 'editorTextFocus';
+  return POPOUT_HOTKEY_COMMAND_IDS.has(cmd.id) || cmd.when !== undefined;
 }
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
@@ -253,15 +253,16 @@ function computeShadowed(
   platform: Platform,
   overrides: Readonly<Record<string, string>>,
 ): ShadowedInfo {
-  // 同签名的先到绑定(按上下文条件分列)。上下文条件(when):只有前面的同签名绑定在后者的全部上下文里都成立(前者无条件,
-  // 或两者条件相同)才算完全压过;带条件的绑定只在其上下文里优先,后面无条件的同键绑定在别处照常生效,不算冲突。
+  // 同签名的先到绑定(按上下文条件分列)。上下文条件(when):只有前面的同签名绑定在后者的全部上下文里都成立(前者无条件、
+  // 两者条件相同,或前者 editorFocus 覆盖后者 editorTextFocus)才算完全压过;带条件的绑定只在其上下文里优先,后面无条件的
+  // 同键绑定在别处照常生效,不算冲突。
   const winners = new Map<string, CommandSpec[]>();
   let any: Map<string, CommandSpec> | null = null;
   let primary: Set<string> | null = null;
   for (const b of buildCompiledBindings(commands, platform, overrides)) {
     const key = signatureKey(b.sig);
     const earlier = winners.get(key);
-    const winner = earlier?.find((w) => w.when === undefined || w.when === b.cmd.when);
+    const winner = earlier?.find((w) => whenCoveredBy(b.cmd.when, w.when));
     if (winner === undefined) {
       if (earlier) earlier.push(b.cmd);
       else winners.set(key, [b.cmd]);

@@ -11,6 +11,7 @@ import { getSearchQuery } from '@codemirror/search';
 import { CodeEditor } from '../../panels/Editor/CodeEditor';
 import { markdownCodeBlockTheme } from '../../panels/Editor/code-editor-theme';
 import { editorFindHistory } from '../../panels/Editor/find-widget-model';
+import { openFindPanel } from '../../panels/Editor/codemirror-find';
 import { ThemeContext } from '../../theme/ThemeProvider';
 import { getLocale, notifyLocaleChange, setLocale, t, type Locale } from '../../i18n';
 
@@ -46,7 +47,12 @@ function key(view: EditorView, init: KeyboardEventInit, scope: 'editor' | 'searc
   return handled;
 }
 
-const openFind = (view: EditorView) => key(view, { key: 'f', ctrlKey: true, keyCode: 70 });
+/** 打开查找面板:CodeEditor 的 ⌘F 经命令注册表分发(actions.find → openFindPanel,见 editor-find-keybindings);Markdown 代码块的
+ *  CodeMirror 仍由其 basicSetup 键表处理 Ctrl+F。 */
+const openFind = (view: EditorView) =>
+  view.dom.hasAttribute('data-co-text-editor')
+    ? act(() => void openFindPanel(view))
+    : key(view, { key: 'f', ctrlKey: true, keyCode: 70 });
 
 function field(view: EditorView, name: 'search' | 'replace' | 'case' | 're' | 'word'): HTMLInputElement {
   const el = view.dom.querySelector<HTMLInputElement>(`.cm-search input[name="${name}"]`);
@@ -191,15 +197,22 @@ describe('匹配计数与无结果提示(VSCode「1 of 154」/「No results」)'
 });
 
 describe('查找快捷键(VSCode:替换 ⌥⌘F / Ctrl+H;切换选项 ⌥⌘C/W/R / Alt+C/W/R)', () => {
-  it('Ctrl+H 打开查找面板并聚焦替换框', async () => {
-    const view = await mount(FOO_154);
-    expect(key(view, { key: 'h', ctrlKey: true, keyCode: 72 })).toBe(true);
-    expect(view.dom.querySelector('.cm-search')).not.toBeNull();
-    expect(document.activeElement).toBe(field(view, 'replace'));
-    // 面板已开、焦点在查找框:再按仍跳到替换框
-    act(() => field(view, 'search').focus());
-    key(view, { key: 'h', ctrlKey: true, keyCode: 72 }, 'search-panel');
-    expect(document.activeElement).toBe(field(view, 'replace'));
+  it('Markdown 代码块:Ctrl+H 打开查找面板并聚焦替换框(CodeEditor 的替换键经命令注册表,见 editor-find-keybindings)', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = new EditorView({ state: EditorState.create({ doc: FOO_154, extensions: [basicSetup, markdownCodeBlockTheme] }), parent });
+    try {
+      expect(key(view, { key: 'h', ctrlKey: true, keyCode: 72 })).toBe(true);
+      expect(view.dom.querySelector('.cm-search')).not.toBeNull();
+      expect(document.activeElement).toBe(field(view, 'replace'));
+      // 面板已开、焦点在查找框:再按仍跳到替换框
+      act(() => field(view, 'search').focus());
+      key(view, { key: 'h', ctrlKey: true, keyCode: 72 }, 'search-panel');
+      expect(document.activeElement).toBe(field(view, 'replace'));
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
   });
 
   it('Alt+C / Alt+W / Alt+R 翻转大小写 / 全字 / 正则,复选框同步;面板未开时不吞键', async () => {

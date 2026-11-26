@@ -74,6 +74,7 @@ import {
 } from './markdown-find';
 import { TerminalSearchBar } from '@/panels/Terminal/TerminalSearchBar';
 import { editorFindHistory, FIND_MATCH_LIMIT, formatFindCount } from './find-widget-model';
+import { registerMarkdownFind } from './markdown-find-registry';
 import { clampSearchQuery } from '@/lib/search-query';
 import type { SearchApi } from '@/panels/Terminal/useTerminal';
 import {
@@ -861,6 +862,22 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   // 沿用上次的查找词与选项重新查(VSCode 同)。
   // F3 / ⇧F3(mac 另有 ⌘G / ⇧⌘G):正文与查找框里都跳下一个 / 上一个;查找条已关则用上次的查找词(没有则取选区)重新显示
   // 查找条(焦点不动)再跳 —— VSCode 同;没有可查的词时同 ⌘F 打开查找条。
+  // inBody:焦点 / 按键在正文里(选区文字才带入查找框)
+  const startFind = useCallback(
+    (inBody: boolean) => {
+      const seed = inBody ? selectionSeed() : null;
+      if (seed) {
+        setFindTerm(seed);
+        runFind(seed, findOptionsRef.current);
+      } else if (!findOpen && findTermRef.current) {
+        runFind(findTermRef.current, findOptionsRef.current);
+      }
+      openFind();
+    },
+    [findOpen, openFind, runFind, selectionSeed],
+  );
+  const startFindRef = useRef(startFind);
+  startFindRef.current = startFind;
   const handleFindKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.defaultPrevented) return; // 代码块的 CodeMirror 已处理(自己的查找面板 / F3 / ⌘G)
@@ -870,14 +887,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       e.stopPropagation(); // 不再交给全局快捷键(这些键在编辑器里只做查找)
       const inBody = wrapperRef.current?.contains(e.target as Node) ?? false;
       if (!step) {
-        const seed = inBody ? selectionSeed() : null;
-        if (seed) {
-          setFindTerm(seed);
-          runFind(seed, findOptionsRef.current);
-        } else if (!findOpen && findTermRef.current) {
-          runFind(findTermRef.current, findOptionsRef.current);
-        }
-        openFind();
+        startFind(inBody);
         return;
       }
       let term = findTermRef.current;
@@ -898,7 +908,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       setFindOpen(true);
       stepFind(step);
     },
-    [findOpen, openFind, runFind, selectionSeed, stepFind],
+    [findOpen, openFind, selectionSeed, startFind, stepFind],
   );
   // layout 清理:此时 DOM 仍在文档里(量得到位置),Crepe 尚未销毁。tab 已关闭 / 已改名(旧 id 不在了)不记。
   useLayoutEffect(
@@ -916,6 +926,15 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   const getViewRef = useRef<() => EditorView | null>(() => null);
   const restoringScrollRef = useRef(false);
   const groupId = useEditorGroupId();
+  // 菜单「编辑 → 查找」/ 命令面板的「查找」(actions.find)转到这里,同按 ⌘F(BDD: src/__tests__/editor-find-keybindings/)
+  useEffect(
+    () =>
+      registerMarkdownFind(tabId, groupId, () => {
+        const el = wrapperRef.current;
+        startFindRef.current(el?.contains(el.ownerDocument.activeElement) ?? false);
+      }),
+    [tabId, groupId],
+  );
   const onViewReadyRef = useRef(props.onViewReady);
   onViewReadyRef.current = props.onViewReady;
   const handleReady = useCallback<OnEditorReady>(

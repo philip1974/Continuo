@@ -101,12 +101,12 @@ describe('执行', () => {
 });
 
 describe('查找 / 替换命令(编辑 → 查找 / 替换)', () => {
-  it('actions.find ⌘F、startFindReplaceAction(jsdom 平台为 Windows / Linux → Ctrl+H),限定编辑器正文;三语标题', () => {
-    expect(coApp.commands.get('actions.find')).toMatchObject({ title: 'Find', hotkey: 'mod+f', when: 'editorTextFocus' });
+  it('actions.find ⌘F、startFindReplaceAction(jsdom 平台为 Windows / Linux → Ctrl+H),限定编辑器内(含查找面板);三语标题', () => {
+    expect(coApp.commands.get('actions.find')).toMatchObject({ title: 'Find', hotkey: 'mod+f', when: 'editorFocus' });
     expect(coApp.commands.get('editor.action.startFindReplaceAction')).toMatchObject({
       title: 'Replace',
       hotkey: 'ctrl+h',
-      when: 'editorTextFocus',
+      when: 'editorFocus',
     });
     expect([en, zh, ko].map((l) => l['commands.editor.text.find.title'])).toEqual(['Find', '查找', '찾기']);
     expect([en, zh, ko].map((l) => l['commands.editor.text.replace.title'])).toEqual(['Replace', '替换', '바꾸기']);

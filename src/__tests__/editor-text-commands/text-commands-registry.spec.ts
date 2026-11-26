@@ -13,8 +13,8 @@ import { ko } from '@shared/i18n-locales/ko';
 beforeAll(() => bootCorePlugins());
 afterAll(() => shutdownCorePlugins());
 
-/** [id, VSCode 英文标题, mac 默认键, Windows / Linux 默认键] */
-const EXPECTED: readonly (readonly [string, string, string | undefined, string | undefined])[] = [
+/** [id, VSCode 英文标题, mac 默认键, Windows / Linux 默认键, 条件(缺省 editorTextFocus)] */
+const EXPECTED: readonly (readonly [string, string, string | undefined, string | undefined, string?])[] = [
   ['editor.action.commentLine', 'Toggle Line Comment', 'mod+/', 'mod+/'],
   ['editor.action.blockComment', 'Toggle Block Comment', 'shift+alt+a', 'shift+alt+a'],
   ['editor.action.moveLinesUpAction', 'Move Line Up', 'alt+up', 'alt+up'],
@@ -37,9 +37,11 @@ const EXPECTED: readonly (readonly [string, string, string | undefined, string |
   ['editor.unfoldAll', 'Unfold All', undefined, undefined],
   ['editor.action.jumpToBracket', 'Go to Bracket', 'mod+shift+\\', 'mod+shift+\\'],
   ['cursorUndo', 'Cursor Undo', 'mod+u', 'mod+u'],
-  // 查找 / 替换(菜单 编辑 → 查找 / 替换;默认键仍由 CodeMirror 查找键表处理,见 app-menu-bar 第 5 条)
-  ['actions.find', 'Find', 'mod+f', 'mod+f'],
-  ['editor.action.startFindReplaceAction', 'Replace', 'mod+alt+f', 'ctrl+h'],
+  // 查找类:条件 editorFocus(查找面板里同样生效);查找下一个 / 上一个 mac 另有 F3 / ⇧F3(见 editor-find-keybindings)
+  ['actions.find', 'Find', 'mod+f', 'mod+f', 'editorFocus'],
+  ['editor.action.startFindReplaceAction', 'Replace', 'mod+alt+f', 'ctrl+h', 'editorFocus'],
+  ['editor.action.nextMatchFindAction', 'Find Next', 'mod+g', 'f3', 'editorFocus'],
+  ['editor.action.previousMatchFindAction', 'Find Previous', 'mod+shift+g', 'shift+f3', 'editorFocus'],
 ];
 
 /** 在代码编辑器(CodeEditor)正文里按下的键(已派发,target = .cm-content)。 */
@@ -59,16 +61,16 @@ function keyInEditor(init: KeyboardEventInit): KeyboardEvent {
 }
 
 describe('命令表(对齐 VSCode)', () => {
-  it.each(EXPECTED)('%s:标题「%s」,mac %s,Windows / Linux %s,条件 editorTextFocus', (id, title, mac, other) => {
+  it.each(EXPECTED)('%s:标题「%s」,mac %s,Windows / Linux %s,条件 %s', (id, title, mac, other, when = 'editorTextFocus') => {
     const macSpec = editorTextCommandSpecs('mac').find((s) => s.id === id);
     const otherSpec = editorTextCommandSpecs('other').find((s) => s.id === id);
     expect(macSpec?.title).toBe(title);
     expect(macSpec?.hotkey).toBe(mac);
     expect(otherSpec?.hotkey).toBe(other);
-    expect(macSpec?.when).toBe('editorTextFocus');
+    expect(macSpec?.when).toBe(when);
   });
 
-  it('只有这些命令(每个命令一个默认键)', () => {
+  it('只有这些命令', () => {
     expect(editorTextCommandSpecs('mac').map((s) => s.id)).toEqual(EXPECTED.map((r) => r[0]));
   });
 

@@ -16,7 +16,8 @@
   `aria-invalid="true"` + 错误色描边(同 design Input 校验失败态);改回有匹配或清空即恢复。读屏经计数区 live region 听到
   「无结果」,不再停在上次「当前匹配…」。
 - **快捷键**(VSCode,平台差异照搬):
-  - 替换:mac ⌥⌘F,Windows / Linux Ctrl+H → 打开查找面板并聚焦替换框(只读文档无替换框,停在查找框)。
+  - 替换:mac ⌥⌘F,Windows / Linux Ctrl+H → 打开查找面板并聚焦替换框(只读文档无替换框,停在查找框)。代码编辑器里查找 /
+    替换 / 查找下一个·上一个的键经命令注册表分发(可改键,见 `editor-find-keybindings`);Markdown 代码块仍在 CodeMirror 键表里。
   - 切换区分大小写 / 全字匹配 / 正则:mac ⌥⌘C / ⌥⌘W / ⌥⌘R,Windows / Linux Alt+C / W / R;面板打开时在查找框与编辑区都生效,
     复选框同步,计数按新选项重算;面板未打开时不处理(按键照常传出)。
 - **历史**:查找框里 ↑ 翻到更早的查找词、↓ 回到更新的,越过最新回到空;回车查找与关闭面板时把当前词记入。去重、最多 50 条,
@@ -31,8 +32,8 @@
 | File | Role |
 |---|---|
 | `src/panels/Editor/find-widget-model.ts` | 引擎无关的纯逻辑:`FindHistory` / 窗口共享 `editorFindHistory`、`formatFindCount`、`FIND_MATCH_LIMIT` |
-| `src/panels/Editor/codemirror-find.ts` | `codeMirrorFind` 扩展:默认面板上追加计数、aria-invalid、↑↓ 历史;替换 / 选项切换键位 |
-| `src/panels/Editor/CodeEditor.tsx` | 挂 `codeMirrorFind` |
+| `src/panels/Editor/codemirror-find.ts` | `codeEditorFind` / `codeMirrorFind` 扩展:默认面板上追加计数、aria-invalid、↑↓ 历史;选项切换键位(`codeMirrorFind` 另带替换键) |
+| `src/panels/Editor/CodeEditor.tsx` | 挂 `codeEditorFind` |
 | `src/panels/Editor/code-editor-theme.ts` | 计数 / 无结果样式、强制颜色规则;`markdownCodeBlockTheme` 带上 `codeMirrorFind`(Crepe 代码块) |
 
 ## Specs

@@ -41,9 +41,10 @@
 - main:获焦的是 popout 子窗 → 发给打开它的主窗,payload 带 `fromPopout: true`(子窗界面由主窗 renderer 驱动)
 - renderer:`fromPopout` → 命令文档是获焦的子窗(`runInCommandDocument`,与热键分发同一机制);否则主窗。窗口级命令
   (切换终端、后退…)与编辑器命令都作用于该窗口
-- 编辑器命令(切换注释 / 移动行 / 查找…,`when: editorTextFocus`)从菜单**点击**:作用于该窗口编辑器组的活动文本编辑器
-  (与命令面板一致),没有文本编辑器 → 静默(VSCode 菜单项同样不置灰,选简单方案);`viaKey` 时焦点不在代码编辑器正文
-  → 不执行(终端里按 ⌘/ 不去注释编辑器)
+- 编辑器命令(切换注释 / 移动行 / 查找…,`when: editorTextFocus` / `editorFocus`)从菜单**点击**:作用于该窗口编辑器组的活动
+  文本编辑器(与命令面板一致),没有文本编辑器 → 静默(VSCode 菜单项同样不置灰,选简单方案;「查找」例外:Markdown 编辑 / 预览
+  打开其查找条,见 `editor-find-keybindings`);`viaKey` 时焦点不在代码编辑器正文(查找类:代码编辑器内)→ 不执行(终端里按 ⌘/
+  不去注释编辑器)
 - 任一窗口有 Modal 打开 / 焦点在菜单里 → 不执行(既有规则)
 
 ### 4. 「首选项:打开键盘快捷方式」(`open-keybindings.spec.ts`)
@@ -55,9 +56,9 @@
 
 ### 5. 查找 / 替换命令(`open-keybindings.spec.ts` 同文件末尾)
 
-- `actions.find`(Find,⌘F / Ctrl+F)、`editor.action.startFindReplaceAction`(Replace,mac ⌥⌘F,其它 Ctrl+H),`when: editorTextFocus`
-- 执行 = 在活动文本编辑器打开查找面板 / 替换框(焦点留在面板里);默认键仍由 CodeMirror 查找键表处理(查找面板内同样生效),
-  登记同一默认键只为显示与改键;终端里 ⌘F 仍是终端查找(上下文条件不同,不算冲突)
+- `actions.find`(Find,⌘F / Ctrl+F)、`editor.action.startFindReplaceAction`(Replace,mac ⌥⌘F,其它 Ctrl+H),`when: editorFocus`
+- 执行 = 在活动文本编辑器打开查找面板 / 替换框(焦点留在面板里);键经命令注册表分发(可改键,查找面板内同样生效,见
+  `editor-find-keybindings`);终端里 ⌘F 仍是终端查找(上下文条件不同,不算冲突)
 
 ## 与 VSCode 的差异
 

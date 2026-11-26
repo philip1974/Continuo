@@ -3,14 +3,16 @@
 //   `when: 'editorTextFocus'` 限定按键落在代码编辑器正文里才执行(终端 / 输入框 / Milkdown 代码块里照常)。
 // - 执行:命令 id → CodeMirror 命令的实现在引擎 chunk(codemirror-text-commands,CodeEditor 挂载时登记);本模块在启动路径上
 //   (EditorPlugin 注册命令),不静态引入编辑器引擎。有活动文本视图时它必已登记。
-// - 没有文本编辑器(无 tab / 图片 / Markdown 编辑·预览模式)→ 静默。
+// - 没有文本编辑器(无 tab / 图片 / Markdown 编辑·预览模式)→ 静默;「查找」在 Markdown 编辑·预览里打开其查找条。
 // BDD: src/__tests__/editor-text-commands/
 
 import type { EditorView } from '@codemirror/view';
 import { groupActiveTabIdOf, liveEditorViewOf, useEditorStore } from '@/stores/editor.store';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import type { Platform } from '@/plugins/command-palette/format-hotkey';
+import type { CommandWhen } from '@/lib/editor-text-focus';
 import { commandEditorGroupId } from './editor-groups-actions';
+import { openMarkdownFind } from './markdown-find-registry';
 
 interface TextCommandDef {
   readonly id: string;
@@ -21,9 +23,13 @@ interface TextCommandDef {
   readonly mac?: string;
   /** Windows / Linux 默认键(缺省同 mac)。 */
   readonly other?: string;
+  /** mac 的附加默认键(VSCode mac secondary)。 */
+  readonly macAlso?: string;
+  /** 上下文条件(缺省 editorTextFocus;查找类为 editorFocus —— 查找面板里同样生效,VSCode 同)。 */
+  readonly when?: CommandWhen;
 }
 
-/** 命令表(VSCode 默认键:mac / Windows;每个命令只给一个默认键)。 */
+/** 命令表(VSCode 默认键:mac / Windows;查找下一个 / 上一个在 mac 另有 F3 / ⇧F3,其余每个命令一个默认键)。 */
 export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
   { id: 'editor.action.commentLine', key: 'comment_line', title: 'Toggle Line Comment', mac: 'mod+/' },
   { id: 'editor.action.blockComment', key: 'block_comment', title: 'Toggle Block Comment', mac: 'shift+alt+a' },
@@ -65,10 +71,37 @@ export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
   { id: 'editor.unfoldAll', key: 'unfold_all', title: 'Unfold All' },
   { id: 'editor.action.jumpToBracket', key: 'jump_to_bracket', title: 'Go to Bracket', mac: 'mod+shift+\\' },
   { id: 'cursorUndo', key: 'cursor_undo', title: 'Cursor Undo', mac: 'mod+u' },
-  // 查找 / 替换(VSCode actions.find ⌘F、editor.action.startFindReplaceAction ⌥⌘F / Ctrl+H):打开该编辑器的查找面板(菜单 编辑 →
-  // 查找 / 替换、命令面板)。默认键仍由 CodeMirror 查找键表处理(查找面板内同样生效),这里登记同一默认键只为显示与改键。
-  { id: 'actions.find', key: 'find', title: 'Find', mac: 'mod+f' },
-  { id: 'editor.action.startFindReplaceAction', key: 'replace', title: 'Replace', mac: 'mod+alt+f', other: 'ctrl+h' },
+  // 查找 / 替换 / 查找下一个·上一个(VSCode actions.find ⌘F、startFindReplaceAction ⌥⌘F / Ctrl+H、nextMatchFindAction ⌘G + F3 /
+  // F3、previousMatchFindAction ⇧⌘G + ⇧F3 / ⇧F3):键已从 CodeMirror 键表去掉,经注册表分发(可改键);when: editorFocus ——
+  // 查找面板里同样生效(面板里再按 ⌘F 全选查找词)。Markdown 编辑 / 预览的查找条另有自己的键(见 MilkdownEditor),菜单 / 命令面板
+  // 的「查找」转给它。BDD: src/__tests__/editor-find-keybindings/
+  { id: 'actions.find', key: 'find', title: 'Find', mac: 'mod+f', when: 'editorFocus' },
+  {
+    id: 'editor.action.startFindReplaceAction',
+    key: 'replace',
+    title: 'Replace',
+    mac: 'mod+alt+f',
+    other: 'ctrl+h',
+    when: 'editorFocus',
+  },
+  {
+    id: 'editor.action.nextMatchFindAction',
+    key: 'find_next',
+    title: 'Find Next',
+    mac: 'mod+g',
+    macAlso: 'f3',
+    other: 'f3',
+    when: 'editorFocus',
+  },
+  {
+    id: 'editor.action.previousMatchFindAction',
+    key: 'find_previous',
+    title: 'Find Previous',
+    mac: 'mod+shift+g',
+    macAlso: 'shift+f3',
+    other: 'shift+f3',
+    when: 'editorFocus',
+  },
 ];
 
 /** 命令 id → 在视图上执行(CodeMirror 命令;引擎 chunk 登记)。 */
@@ -81,20 +114,38 @@ export function registerTextCommandRunner(fn: TextCommandRunner): void {
   runner = fn;
 }
 
-/** 触发窗口的编辑器组里活动 tab 的 CodeMirror 视图(没有 → undefined)。 */
-function activeTextView(): EditorView | undefined {
+/** 触发窗口的编辑器组及其活动 tab(没有 → undefined)。 */
+function activeTabTarget(): { readonly groupId: string; readonly tabId: string } | undefined {
   const groupId = commandEditorGroupId();
   if (groupId === undefined) return undefined;
   const tabId = groupActiveTabIdOf(useEditorStore.getState(), groupId);
-  if (tabId === null) return undefined;
-  const view = liveEditorViewOf(tabId, groupId);
+  return tabId === null ? undefined : { groupId, tabId };
+}
+
+/** 触发窗口的编辑器组里活动 tab 的 CodeMirror 视图(没有 → undefined)。 */
+function activeTextView(): EditorView | undefined {
+  const target = activeTabTarget();
+  const view = target && liveEditorViewOf(target.tabId, target.groupId);
   return view?.dom.isConnected ? view : undefined;
 }
 
-/** 在活动文本编辑器上执行命令;焦点交回该编辑器(从命令面板执行时)。没有文本编辑器 → 静默。 */
+/** 活动 tab 是 Markdown 编辑 / 预览(Milkdown)→ 打开其查找条(同在其中按 ⌘F)。 */
+function openActiveMarkdownFind(): void {
+  const target = activeTabTarget();
+  if (target) openMarkdownFind(target.tabId, target.groupId);
+}
+
+/**
+ * 在活动文本编辑器上执行命令;焦点交回该编辑器(从命令面板执行时)。没有文本编辑器 → 静默;其中「查找」在 Markdown 编辑 / 预览
+ * 里转给其查找条(替换不支持,静默)。
+ */
 export function runTextCommand(id: string): void {
   const view = activeTextView();
-  if (!view || !runner) return;
+  if (!view) {
+    if (id === 'actions.find') openActiveMarkdownFind();
+    return;
+  }
+  if (!runner) return;
   runner(id, view);
   // 焦点已在该编辑器里(正文,或刚打开的查找面板)→ 不动
   if (!view.dom.contains(view.dom.ownerDocument.activeElement)) view.focus();
@@ -108,7 +159,8 @@ export function editorTextCommandSpecs(platform: Platform): CommandSpec[] {
       title: c.title,
       titleKey: `commands.editor.text.${c.key}.title`,
       ...(hotkey ? { hotkey } : {}),
-      when: 'editorTextFocus',
+      ...(platform === 'mac' && c.macAlso ? { secondaryHotkeys: [c.macAlso] } : {}),
+      when: c.when ?? 'editorTextFocus',
       fn: () => runTextCommand(c.id),
     };
   });

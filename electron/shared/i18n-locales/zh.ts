@@ -260,6 +260,8 @@ export const zh: Record<TranslationKey, string> = {
   'commands.preferences.open_keybindings.title': '打开键盘快捷方式',
   'commands.editor.text.find.title': '查找',
   'commands.editor.text.replace.title': '替换',
+  'commands.editor.text.find_next.title': '查找下一个',
+  'commands.editor.text.find_previous.title': '查找上一个',
   // 菜单 / 右键 / 标题栏动作的命令(VSCode 同名命令;BDD: command-discoverability)
   'commands.quick_open.title': '转到文件…',
   'commands.show_commands.title': '显示所有命令',

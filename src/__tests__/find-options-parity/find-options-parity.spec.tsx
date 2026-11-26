@@ -23,6 +23,7 @@ import { __resetSearchForTest, useSearchStore } from '@/panels/Search/search-sto
 import { TerminalSearchBar } from '@/panels/Terminal/TerminalSearchBar';
 import type { SearchApi } from '@/panels/Terminal/useTerminal';
 import { CodeEditor } from '@/panels/Editor/CodeEditor';
+import { openFindPanel } from '@/panels/Editor/codemirror-find';
 import { ThemeContext } from '@/theme/ThemeProvider';
 import { en } from '../../../electron/shared/i18n-locales/en';
 import { zh } from '../../../electron/shared/i18n-locales/zh';
@@ -156,7 +157,7 @@ async function mountEditor(): Promise<EditorView> {
 describe('编辑器查找面板(⌘F)', () => {
   it('选项复选框用共享名称,tooltip 带快捷键;按钮有 title', async () => {
     const view = await mountEditor();
-    act(() => void runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, keyCode: 70 }), 'editor'));
+    act(() => void openFindPanel(view)); // CodeEditor 的 ⌘F 经命令注册表分发到它(见 editor-find-keybindings)
     const labelOf = (name: string) => view.dom.querySelector(`.cm-search input[name="${name}"]`)!.closest('label')!;
     expect(screen.getByRole('checkbox', { name: LABEL.caseSensitive() }).getAttribute('name')).toBe('case');
     expect(screen.getByRole('checkbox', { name: LABEL.wholeWord() }).getAttribute('name')).toBe('word');
@@ -205,7 +206,7 @@ describe('选项 toggle 顺序 / 字形 / 样式统一(VSCode Aa / ab / .*)', ()
 
   it('编辑器查找面板:选项为同顺序 Aa / ab / .* 的 toggle(可访问名 = 选项名,勾选态随查找状态),紧跟查找框', async () => {
     const view = await mountEditor();
-    act(() => void runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, keyCode: 70 }), 'editor'));
+    act(() => void openFindPanel(view)); // CodeEditor 的 ⌘F 经命令注册表分发到它(见 editor-find-keybindings)
     const group = within(view.dom).getByRole('group', { name: t('find.options_group') });
     const boxes = within(group).getAllByRole('checkbox');
     expect(boxes.map((b) => b.getAttribute('name'))).toEqual(['case', 'word', 're']);

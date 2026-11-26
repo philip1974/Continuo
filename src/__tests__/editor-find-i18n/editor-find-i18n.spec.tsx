@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView, runScopeHandlers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { CodeEditor } from '../../panels/Editor/CodeEditor';
+import { openFindPanel } from '../../panels/Editor/codemirror-find';
 import { CODEMIRROR_PHRASE_KEYS, codeMirrorPhrases } from '../../panels/Editor/codemirror-phrases';
 import { ThemeContext } from '../../theme/ThemeProvider';
 import { getLocale, notifyLocaleChange, setLocale, t, type Locale } from '../../i18n';
@@ -36,9 +37,9 @@ async function mount(): Promise<EditorView> {
   return EditorView.findFromDOM(el)!;
 }
 
-/** ⌘F / Ctrl+F(jsdom 平台非 mac → Mod = Ctrl):basicSetup 的 searchKeymap 打开面板。 */
+/** 打开查找面板(「查找」命令的实现;CodeEditor 的 ⌘F 经命令注册表分发到它,见 editor-find-keybindings)。 */
 function openSearchPanel(view: EditorView): void {
-  runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }), 'editor');
+  openFindPanel(view);
 }
 
 /** 面板里按 Esc 关闭。 */

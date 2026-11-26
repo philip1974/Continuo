@@ -262,6 +262,8 @@ export const ko: Record<TranslationKey, string> = {
   'commands.preferences.open_keybindings.title': '바로 가기 키 열기',
   'commands.editor.text.find.title': '찾기',
   'commands.editor.text.replace.title': '바꾸기',
+  'commands.editor.text.find_next.title': '다음 찾기',
+  'commands.editor.text.find_previous.title': '이전 찾기',
   // 菜单 / 右键 / 标题栏动作的命令(VSCode 同名命令;BDD: command-discoverability)
   'commands.quick_open.title': '파일로 이동…',
   'commands.show_commands.title': '모든 명령 표시',

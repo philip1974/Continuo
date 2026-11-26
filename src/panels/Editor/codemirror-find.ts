@@ -1,5 +1,5 @@
 // CodeMirror ⌘F 查找面板的补强(对齐 VSCode 查找控件 findWidget):匹配计数「当前 / 总数」与「无结果」(标红 + 读屏播报)、
-// 替换快捷键(⌥⌘F / Ctrl+H)、选项切换(⌥⌘C / ⌥⌘W / ⌥⌘R,Windows / Linux 为 Alt+C / W / R;与在文件中查找 / 终端查找同一组,
+// 替换快捷键(⌥⌘F / Ctrl+H;只在 Markdown 代码块的键表里,CodeEditor 经命令注册表)、选项切换(⌥⌘C / ⌥⌘W / ⌥⌘R,Windows / Linux 为 Alt+C / W / R;与在文件中查找 / 终端查找同一组,
 // 见 src/lib/find-options)、查找框 ↑ / ↓ 历史、选项 / 按钮 tooltip(名称 + 快捷键)。
 //
 // 不自建面板(search({ createPanel })):@codemirror/search 不导出默认 SearchPanel,自建等于整段重写替换 / 只读 / 键盘
@@ -44,10 +44,17 @@ export function toggleSearchOption(field: ToggleField): Command {
   };
 }
 
-/** 打开查找面板并聚焦查找框(VSCode「查找」;菜单 / 命令面板执行时焦点也落到查找框,不依赖 select() 顺带聚焦)。 */
+/**
+ * 打开查找面板,聚焦并全选查找框(VSCode「查找」;菜单 / 命令面板执行时焦点也落到查找框)。焦点已在查找框时再按也全选
+ *(VSCode 同;CodeMirror 的 openSearchPanel 此时不做任何事)。
+ */
 export const openFindPanel: Command = (view) => {
   openSearchPanel(view);
-  view.dom.querySelector<HTMLInputElement>('.cm-search [main-field]')?.focus();
+  const input = view.dom.querySelector<HTMLInputElement>('.cm-search [main-field]');
+  if (input) {
+    input.focus();
+    input.select();
+  }
   return true;
 };
 
@@ -252,17 +259,29 @@ class FindWidget {
 }
 
 /**
- * 查找面板补强扩展(一个常量:同一编辑器重复引入时 CodeMirror 去重)。
- * 计数插件 Prec.lowest:排在面板插件之后更新,打开面板的那次更新里面板 DOM 已在。
+ * 查找面板补强(面板计数等 + 选项切换键)。计数插件 Prec.lowest:排在面板插件之后更新,打开面板的那次更新里面板 DOM 已在。
  */
-export const codeMirrorFind: Extension = [
+const findWidgetCore: Extension = [
   search(),
   keymap.of([
-    // VSCode:mac ⌥⌘F,Windows / Linux Ctrl+H
-    { key: 'Ctrl-h', mac: 'Mod-Alt-f', run: openReplacePanel, scope: 'editor search-panel', preventDefault: true },
     { key: 'Alt-c', mac: 'Mod-Alt-c', run: toggleSearchOption('caseSensitive'), scope: 'editor search-panel' },
     { key: 'Alt-w', mac: 'Mod-Alt-w', run: toggleSearchOption('wholeWord'), scope: 'editor search-panel' },
     { key: 'Alt-r', mac: 'Mod-Alt-r', run: toggleSearchOption('regexp'), scope: 'editor search-panel' },
   ]),
   Prec.lowest(ViewPlugin.fromClass(FindWidget)),
+];
+
+/**
+ * CodeEditor 用:替换键不在键表里 —— 查找 / 替换 / 查找下一个·上一个经命令注册表分发(可改键,见 editor-text-commands;
+ * BDD: src/__tests__/editor-find-keybindings/)。一个常量:同一编辑器重复引入时 CodeMirror 去重。
+ */
+export const codeEditorFind: Extension = findWidgetCore;
+
+/**
+ * Markdown 代码块(Crepe 的 CodeMirror,不经命令注册表)用:另带替换键(VSCode:mac ⌥⌘F,Windows / Linux Ctrl+H);
+ * ⌘F / ⌘G / F3 由 Crepe 自带的 CodeMirror basicSetup 查找键表处理。
+ */
+export const codeMirrorFind: Extension = [
+  findWidgetCore,
+  keymap.of([{ key: 'Ctrl-h', mac: 'Mod-Alt-f', run: openReplacePanel, scope: 'editor search-panel', preventDefault: true }]),
 ];
