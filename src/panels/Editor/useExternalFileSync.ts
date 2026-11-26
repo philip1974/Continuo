@@ -134,7 +134,9 @@ export function useExternalFileSync(): void {
       const tabRef = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
       inFlight.add(path);
       // 保存回声:跳过整文件读,按「不落地」settle(仍清 inFlight / 尾随重读 pending)。
-      const echoCheck = ownSaveEchoCheck(path, tabRef);
+      // 已标记删除的 tab 不做回声判断:mv 走再 mv 回不改 mtime / size / ino,stat 仍与保存记录一致,跳过读盘
+      // 就永远清不掉「(已删除)」(VSCode:文件重新出现即清除)—— 照常读盘,reloadFromDisk 清除标记。
+      const echoCheck = tabRef?.orphaned ? null : ownSaveEchoCheck(path, tabRef);
       const first: Promise<ReadResult> = echoCheck
         ? echoCheck.then(
             (echo): ReadResult | Promise<ReadResult> => (echo ? { ok: false } : readEditorFile(coApi.fs, path)),

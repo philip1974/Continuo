@@ -6,10 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { onEditorPathChange, useEditorStore, type EditorPathChange } from '../../stores/editor.store';
 import { saveFile } from '../../panels/Editor/editor-file-actions';
+import { _resetSavedDiskStatsForTest, recordSavedDiskStat } from '../../panels/Editor/saved-disk-stat';
 
 const fsMock = vi.hoisted(() => ({
   onDirChanged: vi.fn(),
-  onRootPresenceChanged: vi.fn(() => () => {}),
+  onRootPresenceChanged: vi.fn((_fn: (dir: string) => void) => () => {}),
   readFile: vi.fn(),
   stat: vi.fn(),
 }));
@@ -103,6 +104,64 @@ describe('外部删除干净 tab:保留并标记已删除', () => {
     await flush(EXTERNAL_DELETE_CONFIRM_MS);
     expect(find('/w/foo/deep/c.ts')?.orphaned).toBe(true);
     expect(find(B)?.orphaned).toBeFalsy();
+  });
+});
+
+describe('应用内保存过的文件被移走再移回(mv 不改 mtime / size / ino,与保存记录一致)', () => {
+  const SAVED_STAT = { mtimeMs: 1, size: 4, ino: 7 };
+  // 模拟应用内 ⌘S:记录写盘 stat,tab.savedGen 指向该记录(之后磁盘 stat 一致即「自己保存的回声」)
+  const markSavedHere = (p: string) => {
+    const gen = recordSavedDiskStat(p, SAVED_STAT);
+    useEditorStore.getState().markSaved(p, 'disk', gen);
+  };
+  beforeEach(() => _resetSavedDiskStatsForTest());
+
+  it('dir-changed:移走 → 标记;移回 → 清除标记(不因回声判断跳过读盘)', async () => {
+    markSavedHere(A);
+    fsMock.stat.mockResolvedValue(NOT_FOUND);
+    fsMock.readFile.mockResolvedValue(NOT_FOUND);
+    renderHook(() => useExternalFileSync());
+    emit('/w', ['a.md']);
+    await flush(EXTERNAL_DELETE_CONFIRM_MS);
+    expect(find(A)?.orphaned).toBe(true);
+    fsMock.stat.mockResolvedValue({ ok: true, data: SAVED_STAT });
+    fsMock.readFile.mockResolvedValue({ ok: true, data: 'disk' });
+    emit('/w', ['a.md']);
+    await flush();
+    expect(find(A)?.orphaned).toBeFalsy();
+    expect(find(A)?.reloadEpoch).toBeUndefined(); // 内容相同,不重挂载视图
+  });
+
+  it('工作区根改名再改回(根恢复事件)→ 保存过的干净 tab 同样清除标记', async () => {
+    let rootPresence: (dir: string) => void = () => {};
+    fsMock.onRootPresenceChanged.mockImplementation((fn: (dir: string) => void) => {
+      rootPresence = fn;
+      return () => {};
+    });
+    markSavedHere(A);
+    fsMock.stat.mockResolvedValue(NOT_FOUND);
+    fsMock.readFile.mockResolvedValue(NOT_FOUND);
+    renderHook(() => useExternalFileSync());
+    rootPresence('/w');
+    await flush(EXTERNAL_DELETE_CONFIRM_MS);
+    expect(find(A)?.orphaned).toBe(true);
+    expect(find(B)?.orphaned).toBe(true);
+    fsMock.stat.mockResolvedValue({ ok: true, data: SAVED_STAT });
+    fsMock.readFile.mockResolvedValue({ ok: true, data: 'disk' });
+    rootPresence('/w');
+    await flush();
+    expect(find(A)?.orphaned).toBeFalsy();
+    expect(find(B)?.orphaned).toBeFalsy();
+  });
+
+  it('未标记删除时仍识别自己保存的回声:stat 与记录一致 → 不整文件读', async () => {
+    markSavedHere(A);
+    fsMock.stat.mockResolvedValue({ ok: true, data: SAVED_STAT });
+    renderHook(() => useExternalFileSync());
+    emit('/w', ['a.md']);
+    await flush();
+    expect(fsMock.stat).toHaveBeenCalledWith(A);
+    expect(fsMock.readFile).not.toHaveBeenCalled();
   });
 });
 

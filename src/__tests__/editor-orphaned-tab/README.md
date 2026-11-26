@@ -14,6 +14,8 @@
   - 工作区根自身被改名 / 删除(`orphaned-root-gone.spec.tsx` / `root-presence-main.spec.ts`):fs.watch 对根自身只回调一次、filename = 根的 basename,按子项解析匹配不到 tab。main 在该回调(以及 Windows 删除被 watch 目录时的 watcher error)里 stat 根:不存在 → 向所有窗口推 `fs:root-presence-changed`(`{ path }`,不带文件名;preload 按 dir-changed 同一守卫校验);此前推过消失、之后同一回调时根又存在(改回原名 / 重建)→ 再推一次;根仍在且未消失过(根下恰有同名子项)→ 不推。渲染端收到后复查根下全部 tab(同 watch-restored 子树复查:干净重读、脏 stat,有界并发),按上一条统一标记 / 清除。
     - 平台:macOS 递归 FSEvents 按路径监视,改名 / 删除 / 改回 / 重建都回调同一 basename,全覆盖。Linux inotify 对根自身的 IN_MOVE_SELF / IN_DELETE_SELF 同样以 basename 回调 → 消失可检测;inotify 跟随 inode,删除后 watch 失效、重建不再回调(不自动恢复,文件之后被访问 / 保存才清除),改名再改回仍回调。Windows ReadDirectoryChangesW 不报根自身:删除 → watcher error(EPERM)→ 检测消失;重建后 watch-lost 退避重装成功 → watch-restored 复查清除;改名不回调,检测不到。
   - 清除:重命名 / 移动到新路径、保存成功(手动保存重建文件)、文件重新出现、还原 / 重新读到磁盘内容。
+    - 应用内保存过的文件被 mv 走再 mv 回(或工作区根改名再改回):mv 不改 mtime / size / ino,磁盘 stat 仍与保存记录一致;
+      已标记的 tab 不做「自己保存的回声」判断(否则跳过读盘、标记永远不清),照常读盘清除;未标记时回声识别照旧省掉整文件读。
   - 标记变化 bump `chromeVersion`,tab 栏随之重渲。
 - **tab 栏**:orphaned tab 的文件名加删除线,后缀「(已删除)」/ `(Deleted)` / `(삭제됨)`(VSCode:strikethrough + "(Deleted)")。
 - **自动保存**:orphaned tab 不自动保存(已排队的取消;切走 / 关窗 flush 也跳过),删除后文件不会在自动保存延迟后「又出现」;该 tab 仍按未落盘的脏文件计入关窗确认。
@@ -40,4 +42,4 @@
 | `src/panels/Explorer/FolderTree.tsx` | 删除确认框的未保存警告;确认框打开 / 删除在途时 hold 被删路径的自动保存 |
 | `orphaned-store.spec.ts` / `orphaned-panel.spec.tsx` / `orphaned-external-sync.spec.tsx` / `orphaned-external-clean.spec.tsx` / `orphaned-root-gone.spec.tsx` / `root-presence-main.spec.ts` / `orphaned-trash-confirm.spec.tsx` | 上述契约 |
 | `tests/e2e/editor-orphaned-tab.spec.ts` | 真实 Electron:编辑 .md 后删除 → tab 显示已删除、过了自动保存延迟文件也不被写回;删除紧贴自动保存到点前也不写回;确认框停留超过自动保存延迟再确认,tab 仍保留并标记已删除 |
-| `tests/e2e/external-delete-keep-tab.spec.ts` | 真实 Electron:git checkout 式外部删除 → 干净 tab 保留并显示已删除,切回后标记清除;工作区根改名 → 打开的 tab 显示已删除,改回后清除 |
+| `tests/e2e/external-delete-keep-tab.spec.ts` | 真实 Electron:git checkout 式外部删除 → 干净 tab 保留并显示已删除,切回后标记清除;工作区根改名 → 打开的 tab 显示已删除,改回后清除;应用内保存后 mv 走再 mv 回 / 根改名改回,保存过的 tab 同样清除 |
