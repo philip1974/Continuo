@@ -118,7 +118,13 @@ export function TerminalKillConfirmHost() {
       open={pending !== null}
       title={t('panels.terminal.kill_confirm.title')}
       description={
-        pending ? t('panels.terminal.kill_confirm.detail', { process: pending.process, title: pending.title }) : ''
+        // tab 标题默认就是进程名(terminal-title README 第 1 条)→ 只写进程名,免得「「sleep」中的「sleep」」;
+        // 重命名过 / 未知时才带标题。
+        !pending
+          ? ''
+          : pending.title === '' || pending.title === pending.process
+            ? t('panels.terminal.kill_confirm.detail_process', { process: pending.process })
+            : t('panels.terminal.kill_confirm.detail', { process: pending.process, title: pending.title })
       }
       confirmLabel={t('panels.terminal.kill_confirm.confirm')}
       destructive

@@ -179,6 +179,23 @@ describe('terminalCloseGuard', () => {
     fireEvent.click(screen.getByRole('button', { name: '终止' }));
     await expect(second).resolves.toBe(true);
   });
+  it('tab 标题就是进程名(默认标题规则)→ 只说进程名,不写「「sleep」中的「sleep」」;标题不同(重命名)→ 两者都写', async () => {
+    useTerminalStore.setState({ sessions: [session('same')] });
+    render(createElement(TerminalKillConfirmHost));
+    hoisted.runningProcess.mockResolvedValue({ ok: true, data: { process: 'sleep' } });
+    const panel = terminalPanel('same');
+    const same = terminalCloseGuard({ ...panel, api: { ...panel.api, title: 'sleep' } } as never) as Promise<boolean>;
+    await flush();
+    expect(screen.getByText('「sleep」仍在运行，关闭终端将终止该进程。')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await expect(same).resolves.toBe(false);
+
+    const renamed = terminalCloseGuard({ ...panel, api: { ...panel.api, title: '构建' } } as never) as Promise<boolean>;
+    await flush();
+    expect(screen.getByText('「构建」中的「sleep」仍在运行，关闭终端将终止该进程。')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await expect(renamed).resolves.toBe(false);
+  });
   it('三语文案齐全', async () => {
     const { en } = await import('../../../electron/shared/i18n-locales/en');
     const { zh } = await import('../../../electron/shared/i18n-locales/zh');
@@ -186,6 +203,10 @@ describe('terminalCloseGuard', () => {
     for (const cat of [en, zh, ko] as Array<Record<string, string>>) {
       expect(cat['panels.terminal.kill_confirm.title']).toBeTruthy();
       expect(cat['panels.terminal.kill_confirm.detail']).toContain('{process}');
+      expect(cat['panels.terminal.kill_confirm.detail_process']).toContain('{process}');
+      expect(cat['panels.terminal.kill_confirm.detail_process']).not.toContain('{title}');
+      // 重命名提示与「默认标题 = 正在运行的程序名」一致(不再提程序设置的 OSC 标题,见 terminal-title README 第 2 条)
+      expect(cat['panels.terminal.rename_dialog.hint']).not.toMatch(/title set by|程序设置|프로그램이 설정/);
       expect(cat['panels.terminal.kill_confirm.confirm']).toBeTruthy();
     }
   });
