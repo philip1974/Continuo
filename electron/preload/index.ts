@@ -30,7 +30,7 @@ import {
 } from '../shared/fs-channels';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import { isSearchEvent, SEARCH_CHANNELS, type SearchEvent, type SearchQuery } from '../shared/workspace-search';
-import { GIT_CHANNELS, type GitStatusSnapshot } from '../shared/git-status';
+import { GIT_CHANNELS, type GitStatusResult } from '../shared/git-status';
 import {
   SESSION_UPDATE_CWD_CHANNEL,
   TERMINAL_CHANNELS,
@@ -188,9 +188,12 @@ const api = {
         ),
       ),
   },
-  /** 资源管理器 git 状态装饰:根由 main 取自本窗口工作区;非仓库 / 未装 git / 失败 → data=null。 */
+  /**
+   * 资源管理器 git 状态装饰:根由 main 取自本窗口工作区;非仓库 / 未装 git / 失败 → data=null;root(renderer 期望的根)
+   * 与登记根不符 → data=GIT_STATUS_STALE。
+   */
   git: {
-    status: (): Promise<IpcResult<GitStatusSnapshot | null>> => ipcRenderer.invoke(GIT_CHANNELS.STATUS),
+    status: (root: string): Promise<IpcResult<GitStatusResult>> => ipcRenderer.invoke(GIT_CHANNELS.STATUS, { root }),
   },
   /** 在文件中查找(workspace-search):根由 main 取自本窗口工作区;结果经 onEvent 分批推送。 */
   search: {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// BDD:哪些入口以预览方式打开 —— 资源管理器单击(双击 / Enter 常驻)、搜索结果匹配行单击(双击 / Enter 常驻)。见同目录 README。
+// BDD:哪些入口以预览方式打开 —— 资源管理器单击(双击 / Enter 常驻)、搜索结果匹配行单击与 F4 / ⇧F4(双击 / Enter 常驻)。见同目录 README。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
@@ -47,7 +47,7 @@ vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 vi.mock('../../panels/Explorer/ExplorerHeader', () => ({ ExplorerHeader: () => null }));
 
 import { FolderTree } from '../../panels/Explorer/FolderTree';
-import { openSearchMatch } from '../../panels/Search/search-store';
+import { focusNextSearchResult, openSearchMatch, useSearchStore } from '../../panels/Search/search-store';
 import type { SearchFileResult } from '../../../electron/shared/workspace-search';
 
 const row = (container: HTMLElement, p: string) => container.querySelector(`[title="${p}"]`) as HTMLElement | null;
@@ -101,10 +101,18 @@ describe('搜索结果', () => {
     matches: [{ line: 3, column: 2, length: 4, preview: 'abc', previewStart: 0, previewLength: 1 }],
   } as unknown as SearchFileResult;
 
-  it('单击匹配行 → 以预览方式;其它(双击 / Enter / F4)→ 常驻', async () => {
+  it('单击匹配行 → 以预览方式;双击 / Enter → 常驻', async () => {
     await openSearchMatch(file, 0, true);
     expect(h.openFileInEditor).toHaveBeenLastCalledWith('/work/beta.ts', { line: 3, column: 2, length: 4 }, { preview: true });
     await openSearchMatch(file, 0);
     expect(h.openFileInEditor).toHaveBeenLastCalledWith('/work/beta.ts', { line: 3, column: 2, length: 4 }, { preview: false });
+  });
+
+  it('F4 / ⇧F4 → 以预览方式(VSCode selectNextMatch / selectPreviousMatch 用 pinned=false)', async () => {
+    useSearchStore.setState({ files: [file], activeKey: null, collapsed: new Set() });
+    await focusNextSearchResult(1);
+    expect(h.openFileInEditor).toHaveBeenLastCalledWith('/work/beta.ts', { line: 3, column: 2, length: 4 }, { preview: true });
+    await focusNextSearchResult(-1);
+    expect(h.openFileInEditor).toHaveBeenLastCalledWith('/work/beta.ts', { line: 3, column: 2, length: 4 }, { preview: true });
   });
 });

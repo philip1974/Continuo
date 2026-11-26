@@ -195,6 +195,9 @@ async function openTabWith(
     return { ok: true, data: false };
   }
 
+  // 以预览方式打开却已被更晚的用户选择超越(读盘慢时连点 A、B)→ 放弃:VSCode 连点两个文件只剩后一个预览 tab,
+  // 前一个不该以常驻插进后台(后台加入不替换正在显示的预览 tab,会落成常驻)。常驻打开照旧后台加入。
+  if (!latest && preview?.preview === true) return { ok: true, data: false };
   const created = createTab(path, r.data, r.realPath);
   const tab = pluginOpenedPath === undefined ? created : { ...created, pluginOpenedPath };
   store

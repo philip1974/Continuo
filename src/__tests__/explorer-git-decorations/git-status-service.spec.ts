@@ -14,7 +14,7 @@ import {
   queryGitStatus,
   type GitExec,
 } from '../../../electron/main/services/git-status.service';
-import type { GitStatusSnapshot } from '../../../electron/shared/git-status';
+import { GIT_STATUS_STALE, type GitStatusSnapshot } from '../../../electron/shared/git-status';
 
 function hasGit(): boolean {
   try {
@@ -252,7 +252,7 @@ describe('并发与合并', () => {
 });
 
 describe('IPC 处理:根取自发送窗口', () => {
-  it('用窗口登记的工作区根作 cwd;未打开文件夹 → null 且不跑 git', async () => {
+  it('用窗口登记的工作区根作 cwd', async () => {
     const roots: string[] = [];
     const snap: GitStatusSnapshot = { root: '/ws', entries: [] };
     const handle = makeGitStatusHandler(
@@ -264,8 +264,23 @@ describe('IPC 处理:根取自发送窗口', () => {
       },
       (id) => (id === 1 ? '/ws' : null),
     );
-    expect(await handle({ id: 1 })).toBe(snap);
-    expect(await handle({ id: 2 })).toBeNull();
+    expect(await handle({ id: 1 }, '/ws')).toBe(snap);
     expect(roots).toEqual(['/ws']);
+  });
+
+  it('renderer 期望的根与本窗口登记的根不符(换根后 notify-root 尚未到达)→ stale,不跑 git;cwd 只用登记根', async () => {
+    const roots: string[] = [];
+    const handle = makeGitStatusHandler(
+      {
+        status: async (root) => {
+          roots.push(root);
+          return { root, entries: [] };
+        },
+      },
+      (id) => (id === 1 ? '/old' : null),
+    );
+    expect(await handle({ id: 1 }, '/new')).toEqual(GIT_STATUS_STALE);
+    expect(await handle({ id: 2 }, '/new')).toEqual(GIT_STATUS_STALE); // 从「未打开文件夹」首次打开:登记还没到
+    expect(roots).toEqual([]);
   });
 });

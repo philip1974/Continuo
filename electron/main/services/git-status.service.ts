@@ -10,7 +10,13 @@
 // BDD: src/__tests__/explorer-git-decorations/
 
 import { execFile } from 'node:child_process';
-import type { GitStatusEntry, GitStatusKind, GitStatusSnapshot } from '../../shared/git-status';
+import {
+  GIT_STATUS_STALE,
+  type GitStatusEntry,
+  type GitStatusKind,
+  type GitStatusResult,
+  type GitStatusSnapshot,
+} from '../../shared/git-status';
 import {
   GIT_OFFLINE_ENV,
   mergeSpawnEnv,
@@ -206,13 +212,16 @@ export function createGitStatusService(
   };
 }
 
-/** git:status 处理:根取自发送窗口的工作区登记(renderer 不能指定 cwd);未打开文件夹 → null。 */
+/**
+ * git:status 处理:根取自发送窗口的工作区登记(renderer 不能指定 cwd)。renderer 带上它期望的根:与登记根不符(换根时
+ * 子组件 effect 先于 App 的 notify-root 跑到这里,或从「未打开文件夹」首次打开、登记尚未到达)→ STALE,不跑 git。
+ */
 export function makeGitStatusHandler(
   service: GitStatusService,
   getRoot: (windowId: number) => string | null,
 ) {
-  return (win: { readonly id: number }): Promise<GitStatusSnapshot | null> => {
+  return (win: { readonly id: number }, expectedRoot: string): Promise<GitStatusResult> => {
     const root = getRoot(win.id);
-    return root === null ? Promise.resolve(null) : service.status(root);
+    return root === null || root !== expectedRoot ? Promise.resolve(GIT_STATUS_STALE) : service.status(root);
   };
 }

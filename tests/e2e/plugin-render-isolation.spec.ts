@@ -85,7 +85,7 @@ test('状态栏项渲染抛错:主窗其余照常、该项为错误图标、弹�
     await expect(win.locator('footer').getByTitle(RENDER_ERROR)).toBeVisible({ timeout: 15_000 });
     // 设置仍可打开(主窗可交互)
     await openSettingsTab(win, PLUGINS_TAB);
-    await expect(win.locator(`[data-code="RENDER_FAILED"]`)).toBeVisible();
+    await expect(win.locator('[data-plugins-section="user"] [data-code="RENDER_FAILED"]')).toBeVisible();
   } finally {
     await closeDiscardingUnsaved(app);
   }

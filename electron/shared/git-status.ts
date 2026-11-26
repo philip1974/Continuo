@@ -3,7 +3,11 @@
 // BDD: src/__tests__/explorer-git-decorations/
 
 export const GIT_CHANNELS = {
-  /** renderer → main(invoke,无入参):取本窗口工作区根的 git 状态;非仓库 / 未装 git / 失败 → null。 */
+  /**
+   * renderer → main(invoke,入参 `{ root }` = renderer 当前的工作区根):取本窗口工作区根的 git 状态;非仓库 / 未装 git / 失败 → null;
+   * root 与本窗口登记的根不符(换根后 window:notify-root 尚未到达)→ GIT_STATUS_STALE(renderer 稍后重试)。
+   * git 的 cwd 只用 main 登记的根,入参只用于比对,renderer 不能借此指定任意目录。
+   */
   STATUS: 'git:status',
 } as const;
 
@@ -32,3 +36,9 @@ export interface GitStatusSnapshot {
   readonly root: string;
   readonly entries: readonly GitStatusEntry[];
 }
+
+/** 期望的根与本窗口登记的根不符:不跑 git,renderer 稍后重试。 */
+export const GIT_STATUS_STALE = { stale: true } as const;
+export type GitStatusStale = typeof GIT_STATUS_STALE;
+
+export type GitStatusResult = GitStatusSnapshot | null | GitStatusStale;

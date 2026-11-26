@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-// BDD: explorer-git-decorations / 刷新:挂载取一次、根内 fs 变化 / 保存 / 获焦防抖刷新、根外忽略、单飞补跑、隐藏期间记脏、关闭不查询、换根丢旧
+// BDD: explorer-git-decorations / 刷新:挂载取一次、换根后 main 未登记新根(stale)重试、根内 fs 变化 / 保存 / 获焦防抖刷新、根外忽略、单飞补跑、隐藏期间记脏、关闭不查询、换根丢旧
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
-import type { GitStatusSnapshot } from '../../../electron/shared/git-status';
+import { GIT_STATUS_STALE, type GitStatusSnapshot } from '../../../electron/shared/git-status';
 
 const h = vi.hoisted(() => ({
   status: vi.fn(),
@@ -20,7 +20,13 @@ vi.mock('@/lib/co-api', () => ({
   },
 }));
 
-import { GIT_REFRESH_DEBOUNCE_MS, GIT_REFRESH_MAX_WAIT_MS, useGitStatus } from '../../panels/Explorer/hooks/useGitStatus';
+import {
+  GIT_REFRESH_DEBOUNCE_MS,
+  GIT_REFRESH_MAX_WAIT_MS,
+  GIT_STALE_RETRY_MAX,
+  GIT_STALE_RETRY_MS,
+  useGitStatus,
+} from '../../panels/Explorer/hooks/useGitStatus';
 import { gitDecorationOf } from '../../panels/Explorer/git-decorations';
 import { useEditorStore } from '../../stores/editor.store';
 
@@ -84,6 +90,51 @@ describe('取快照', () => {
     expect(result.current).toBeNull();
     await flush();
     expect(result.current).toBeNull();
+  });
+});
+
+describe('换根后 main 尚未登记新根(stale)', () => {
+  it('查询带上期望的根;stale → 稍后重试,登记到达后装饰出现(不靠获焦 / 文件变化)', async () => {
+    h.status.mockResolvedValueOnce(snap('/w', [['a.ts', 'modified', 'M']]));
+    const { result, rerender } = renderHook(({ root }) => useGitStatus(root, true, true), {
+      initialProps: { root: '/w' },
+    });
+    await flush();
+    expect(h.status).toHaveBeenLastCalledWith('/w');
+    h.status.mockResolvedValueOnce({ ok: true, data: GIT_STATUS_STALE });
+    h.status.mockResolvedValueOnce({ ok: true, data: GIT_STATUS_STALE });
+    h.status.mockResolvedValue(snap('/b', [['x.ts', 'untracked', 'U']]));
+    rerender({ root: '/b' });
+    await flush();
+    expect(h.status).toHaveBeenLastCalledWith('/b');
+    expect(result.current).toBeNull();
+    await act(async () => vi.advanceTimersByTime(GIT_STALE_RETRY_MS));
+    await flush();
+    expect(result.current).toBeNull();
+    await act(async () => vi.advanceTimersByTime(GIT_STALE_RETRY_MS));
+    await flush();
+    expect(h.status).toHaveBeenCalledTimes(4);
+    expect(gitDecorationOf(result.current!, 'x.ts', false)).toEqual({ kind: 'untracked', letter: 'U' });
+  });
+
+  it('一直 stale(根始终未登记)→ 重试有上限', async () => {
+    h.status.mockResolvedValue({ ok: true, data: GIT_STATUS_STALE });
+    const { result } = renderHook(() => useGitStatus('/w', true, true));
+    for (let i = 0; i < GIT_STALE_RETRY_MAX + 5; i++) {
+      await act(async () => vi.advanceTimersByTime(GIT_STALE_RETRY_MS));
+      await flush();
+    }
+    expect(h.status).toHaveBeenCalledTimes(GIT_STALE_RETRY_MAX + 1);
+    expect(result.current).toBeNull();
+  });
+
+  it('卸载后不再重试', async () => {
+    h.status.mockResolvedValue({ ok: true, data: GIT_STATUS_STALE });
+    const { unmount } = renderHook(() => useGitStatus('/w', true, true));
+    await flush();
+    unmount();
+    await act(async () => vi.advanceTimersByTime(GIT_STALE_RETRY_MS * 5));
+    expect(h.status).toHaveBeenCalledTimes(1);
   });
 });
 

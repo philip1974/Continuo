@@ -110,7 +110,7 @@ describe('openFileByPath 的打开方式', () => {
     expect(preview()).toBeUndefined();
   });
 
-  it('双击:第一下先完成 → 第二下把它转常驻', async () => {
+  it('双击:两下都在读盘,第一下先完成 → 它已被第二下超越而放弃,第二下完成后常驻且只有一个 tab', async () => {
     let releaseSecond!: () => void;
     let calls = 0;
     const d = deps(async (p) => {
@@ -121,11 +121,67 @@ describe('openFileByPath 的打开方式', () => {
     const first = openFileByPath(A, d, { preview: true });
     const second = openFileByPath(A, d, { preview: false });
     await first;
-    expect(preview()).toBe(A);
+    expect(ids()).toEqual([]);
     releaseSecond();
     await second;
     expect(ids()).toEqual([A]);
     expect(preview()).toBeUndefined();
+  });
+
+  it('双击:第一下读完已显示为预览 → 第二下把它转常驻', async () => {
+    const d = deps();
+    await openFileByPath(A, d, { preview: true });
+    expect(preview()).toBe(A);
+    await openFileByPath(A, d, { preview: false });
+    expect(ids()).toEqual([A]);
+    expect(preview()).toBeUndefined();
+  });
+
+  it('连点两个文件:前一个(预览)读盘晚于后一个完成 → 放弃前一个,只剩后一个预览 tab(VSCode 同)', async () => {
+    let releaseFirst!: () => void;
+    const d = deps(async (p) => {
+      if (p === A) await new Promise<void>((r) => (releaseFirst = r));
+      return { ok: true as const, data: `content of ${p}` };
+    });
+    const first = openFileByPath(A, d, { preview: true });
+    await openFileByPath(B, d, { preview: true });
+    releaseFirst();
+    expect(await first).toEqual({ ok: true, data: undefined });
+    expect(ids()).toEqual([B]);
+    expect(preview()).toBe(B);
+    expect(st().activeTabId).toBe(B);
+  });
+
+  it('预览打开读盘期间用户切到别的 tab → 放弃这次预览打开', async () => {
+    const d = deps();
+    await openFileByPath(B, d, { preview: false });
+    await openFileByPath(C, d, { preview: false });
+    let release!: () => void;
+    const slow = deps(async (p) => {
+      await new Promise<void>((r) => (release = r));
+      return { ok: true as const, data: `content of ${p}` };
+    });
+    const pending = openFileByPath(A, slow, { preview: true });
+    st().switchTab(B);
+    release();
+    await pending;
+    expect(ids()).toEqual([B, C]);
+    expect(st().activeTabId).toBe(B);
+  });
+
+  it('常驻打开读盘晚于后一个打开完成 → 仍在后台以常驻加入(不放弃)', async () => {
+    let releaseFirst!: () => void;
+    const d = deps(async (p) => {
+      if (p === A) await new Promise<void>((r) => (releaseFirst = r));
+      return { ok: true as const, data: `content of ${p}` };
+    });
+    const first = openFileByPath(A, d, { preview: false });
+    await openFileByPath(B, d, { preview: true });
+    releaseFirst();
+    await first;
+    expect(ids()).toEqual([B, A]);
+    expect(preview()).toBe(B);
+    expect(st().activeTabId).toBe(B);
   });
 
   it('设置关闭 → preview:true 也按常驻打开(与此前一致)', async () => {

@@ -8,6 +8,12 @@ import { buildGitDecorationIndex, type GitDecorationIndex } from '../git-decorat
 /** 文件变化 / 保存 / 窗口获焦后的刷新防抖;持续变化(如构建输出)下至多每 2s 一次。 */
 export const GIT_REFRESH_DEBOUNCE_MS = 300;
 export const GIT_REFRESH_MAX_WAIT_MS = 2000;
+/**
+ * main 回 STALE(换根时本 effect 早于 App 的 window:notify-root 跑,main 还按旧根 / 未登记)→ 隔这么久重试,至多这么多次
+ *(根始终登记不上,如 notify-root 被拒,就停;之后的 fs 变化 / 获焦照常触发查询)。
+ */
+export const GIT_STALE_RETRY_MS = 100;
+export const GIT_STALE_RETRY_MAX = 30;
 
 /** 有 tab 的已落盘内容变了(保存 / 外部重载):按位置比对同一 tab,O(tab 数)。 */
 function savedSomething(
@@ -27,7 +33,8 @@ function savedSomething(
  * 资源管理器 git 状态(VSCode git 扩展的 status 刷新同思路):挂载 / 换根时取一次;工作区根内的 fs 变化(复用资源管理器
  * 的 fs watch 广播,含仅内容变化)、编辑器保存、窗口获焦后防抖刷新。单飞:在途时再触发只记一次,完成后补跑。
  * 侧栏隐藏期间不刷新,只记脏,再次显示时补一次。enabled=false(装饰全关)→ 不查询、返回 null。
- * 非仓库 / 未装 git / 失败 → null(静默)。git 在 main 异步执行(超时 + 并发上限),这里只建索引。
+ * 非仓库 / 未装 git / 失败 → null(静默)。git 在 main 异步执行(超时 + 并发上限),这里只建索引。查询带上本 hook 的根,
+ * main 登记的根与之不符 → STALE,按 GIT_STALE_RETRY_MS 有限次重试(换根后装饰不必等获焦 / 文件变化)。
  * BDD: src/__tests__/explorer-git-decorations/
  */
 export function useGitStatus(root: string, enabled: boolean, visible: boolean): GitDecorationIndex | null {
@@ -43,6 +50,8 @@ export function useGitStatus(root: string, enabled: boolean, visible: boolean): 
     let disposed = false;
     let inFlight = false;
     let rerun = false;
+    let staleRetries = 0;
+    let staleTimer: ReturnType<typeof setTimeout> | undefined;
     const run = (): void => {
       if (disposed) return;
       if (inFlight) {
@@ -52,8 +61,19 @@ export function useGitStatus(root: string, enabled: boolean, visible: boolean): 
       inFlight = true;
       void (async () => {
         try {
-          const r = await coApi.git.status();
+          const r = await coApi.git.status(root);
           if (disposed || !r.ok) return;
+          if (r.data !== null && 'stale' in r.data) {
+            if (staleRetries < GIT_STALE_RETRY_MAX && staleTimer === undefined) {
+              staleRetries += 1;
+              staleTimer = setTimeout(() => {
+                staleTimer = undefined;
+                run();
+              }, GIT_STALE_RETRY_MS);
+            }
+            return;
+          }
+          staleRetries = 0;
           if (r.data === null) setState({ root, index: null });
           else if (pathEquals(r.data.root, root)) setState({ root, index: buildGitDecorationIndex(r.data.entries) });
         } catch {
@@ -88,6 +108,7 @@ export function useGitStatus(root: string, enabled: boolean, visible: boolean): 
     window.addEventListener('focus', debounced);
     return () => {
       disposed = true;
+      clearTimeout(staleTimer);
       debounced.cancel();
       unsubFs();
       unsubEditor();

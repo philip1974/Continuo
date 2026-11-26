@@ -284,19 +284,19 @@ describe('结果树与计数', () => {
     expect(screen.getAllByRole('treeitem')).toHaveLength(3);
   });
 
-  it('F4(下一个结果):依次打开各匹配,到末尾回到第一个', async () => {
+  it('F4(下一个结果):依次以预览方式打开各匹配(VSCode pinned=false),到末尾回到第一个', async () => {
     withResults();
     for (const expected of [
-      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }, { preview: false }],
-      ['/w/src/a.ts', { line: 4, column: 1, length: 3 }, { preview: false }],
-      ['/w/b.md', { line: 2, column: 3, length: 3 }, { preview: false }],
-      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }, { preview: false }],
+      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }, { preview: true }],
+      ['/w/src/a.ts', { line: 4, column: 1, length: 3 }, { preview: true }],
+      ['/w/b.md', { line: 2, column: 3, length: 3 }, { preview: true }],
+      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }, { preview: true }],
     ]) {
       await act(async () => focusNextSearchResult(1));
       expect(h.openFile).toHaveBeenLastCalledWith(...expected);
     }
     await act(async () => focusNextSearchResult(-1));
-    expect(h.openFile).toHaveBeenLastCalledWith('/w/b.md', { line: 2, column: 3, length: 3 }, { preview: false });
+    expect(h.openFile).toHaveBeenLastCalledWith('/w/b.md', { line: 2, column: 3, length: 3 }, { preview: true });
   });
 
   it('请求聚焦(⇧⌘F):焦点进查询框并全选;带入的选区文本替换查询', () => {

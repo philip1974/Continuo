@@ -1,5 +1,6 @@
 // 预览编辑器(VSCode workbench.editor.enablePreview,默认开):资源管理器单击以预览方式打开(斜体标题),再单击别的文件原位替换;
-// 编辑 / 双击 tab / 双击文件后常驻;设置关闭后单击也常驻;重启后预览 tab 仍是预览。BDD: src/__tests__/editor-preview-tab/
+// 编辑 / 双击 tab / 双击文件后常驻;设置关闭后单击也常驻;重启后预览 tab 仍是预览;读盘慢时连点两个文件只剩后一个;
+// 搜索结果 F4 / ⇧F4 以预览方式打开。BDD: src/__tests__/editor-preview-tab/
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -139,4 +140,53 @@ test('重启后预览 tab 仍是预览(常驻 tab 仍常驻),再单击别的文�
   await clickFile(main, 'c.md');
   await expect(tabs(main)).toHaveCount(2);
   await expect(tabs(main).filter({ hasText: 'b.ts' })).toHaveCount(0);
+});
+
+test('读盘慢时快速连点两个文件:只剩后一个预览 tab,前一个读完不以常驻插进后台(VSCode 同)', async () => {
+  writeFileSync(path.join(workspace, 'huge.txt'), 'huge\n'.repeat(1000));
+  const { app, main } = await launch();
+  // 给 huge.txt 的读盘注入 1.5s 延迟:包住主进程已注册的 fs:read-file invoke 处理(Electron ipcMain 内部表,
+  // 仅本测试进程内生效,不改产品代码)。
+  const wrapped = await app.evaluate(({ ipcMain }) => {
+    const table = (ipcMain as unknown as { _invokeHandlers?: Map<string, (...a: unknown[]) => unknown> })._invokeHandlers;
+    const orig = table?.get('fs:read-file');
+    if (table === undefined || orig === undefined) return false;
+    table.set('fs:read-file', async (...args: unknown[]) => {
+      if (JSON.stringify(args.slice(1)).includes('huge.txt')) await new Promise((r) => setTimeout(r, 1500));
+      return orig(...args);
+    });
+    return true;
+  });
+  expect(wrapped).toBe(true);
+  const huge = fileRow(main, 'huge.txt');
+  await expect(huge).toBeVisible({ timeout: 10_000 });
+  await huge.click();
+  await fileRow(main, 'a.ts').click();
+  await expect(tabs(main).filter({ hasText: 'a.ts' })).toHaveCount(1, { timeout: 10_000 });
+  await main.waitForTimeout(2500); // huge.txt 的读盘已完成
+  await expect(tabs(main)).toHaveCount(1);
+  await expect(tabs(main).first()).toContainText('a.ts');
+  expect(await isItalic(main, 'a.ts')).toBe(true);
+});
+
+test('搜索结果 F4 / ⇧F4 以预览方式打开:逐个跳过多个文件后只剩一个预览 tab', async () => {
+  const { main } = await launch();
+  await main.keyboard.press('ControlOrMeta+Shift+KeyF');
+  const input = main.getByRole('textbox', { name: /^(搜索|Search|검색)$/ });
+  await expect(input).toBeFocused({ timeout: 10_000 });
+  await input.fill('//');
+  await expect(main.getByRole('tree', { name: /^(搜索结果|Search results|검색 결과)$/ }).getByRole('treeitem')).toHaveCount(6, {
+    timeout: 10_000,
+  });
+  const active = () => main.evaluate(() => globalThis.__continuoTest!.getEditorActiveTabId());
+  for (const name of ['a.ts', 'b.ts', 'c.md']) {
+    await main.evaluate(() => globalThis.__continuoTest!.executeCommand('search.action.focusNextSearchResult'));
+    await expect.poll(active, { timeout: 10_000 }).toMatch(new RegExp(`${name.replace('.', '\\.')}$`));
+    await expect(tabs(main)).toHaveCount(1);
+    await expect.poll(() => isItalic(main, name)).toBe(true);
+  }
+  await main.evaluate(() => globalThis.__continuoTest!.executeCommand('search.action.focusPreviousSearchResult'));
+  await expect.poll(active, { timeout: 10_000 }).toMatch(/b\.ts$/);
+  await expect(tabs(main)).toHaveCount(1);
+  expect(await isItalic(main, 'b.ts')).toBe(true);
 });

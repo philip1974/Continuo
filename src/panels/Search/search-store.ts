@@ -291,8 +291,8 @@ export function rerunSearch(): void {
 }
 
 /**
- * 打开某个匹配并选中它(失败统一提示;列 / 长度均为 UTF-16,与编辑器同一单位)。preview:单击以预览方式打开(VSCode;
- * 双击 / Enter / F4 常驻,BDD: src/__tests__/editor-preview-tab/)。
+ * 打开某个匹配并选中它(失败统一提示;列 / 长度均为 UTF-16,与编辑器同一单位)。preview:单击 / F4 以预览方式打开(VSCode;
+ * 双击 / Enter 常驻,BDD: src/__tests__/editor-preview-tab/)。
  */
 export function openSearchMatch(file: SearchFileResult, index: number, preview = false): Promise<boolean> {
   const m = file.matches[index];
@@ -304,7 +304,10 @@ export function openSearchMatch(file: SearchFileResult, index: number, preview =
   );
 }
 
-/** F4 / ⇧F4(VSCode search.action.focusNext/PreviousSearchResult):活动行移到下 / 上一个匹配(循环、跨文件),并打开它。 */
+/**
+ * F4 / ⇧F4(VSCode search.action.focusNext/PreviousSearchResult):活动行移到下 / 上一个匹配(循环、跨文件),并以预览方式
+ * 打开它(VSCode searchView.selectNext/PreviousMatch 用 getSelectionKeyboardEvent(undefined, false, false) 选中 → pinned=false)。
+ */
 export async function focusNextSearchResult(delta: 1 | -1): Promise<void> {
   const s = useSearchStore.getState();
   const all: { file: SearchFileResult; index: number }[] = [];
@@ -319,7 +322,7 @@ export async function focusNextSearchResult(delta: 1 | -1): Promise<void> {
   const next = all[(at + delta + all.length) % all.length]!;
   if (s.collapsed.has(next.file.path)) s.toggleCollapsed(next.file.path, false);
   useSearchStore.setState({ activeKey: matchRowKey(next.file.path, next.index) });
-  await openSearchMatch(next.file, next.index);
+  await openSearchMatch(next.file, next.index, true);
 }
 
 /** 持久化的搜索输入(只含非默认项;全部默认 → null,窗口段不写该字段)。 */
