@@ -110,6 +110,32 @@ describe('组 MRU:移除活动组后激活最近使用的组', () => {
     tracker.dispose();
   });
 
+  // 从多面板组里弹出活动面板:dockview 在 movingLock 内把面板挪进新 popout 组(openPanel 顺带把它设为活动组,事件被
+  // movingLock 吞掉),随后 doSetGroupAndPanelActive 因已是活动组直接返回 → 不派发任何活动组 / 活动面板事件。
+  // 此前记不到 popout 组的活动面板,关子窗后收回的面板不获焦,主窗焦点留在 body(真机:点子窗红绿灯关闭同样)。
+  it('从多面板组里弹出活动面板:关子窗后收回的面板获焦', async () => {
+    const dock = createDock();
+    const api = dock.api as DockviewApi;
+    api.addPanel({ id: 'a', component: 'terminal', title: 'a' });
+    api.addPanel({ id: 'b', component: 'terminal', title: 'b', position: { referencePanel: 'a', direction: 'right' } });
+    api.addPanel({ id: 'c', component: 'terminal', title: 'c', position: { referencePanel: 'a', direction: 'within' } });
+    const tracker = trackGroupMru(api);
+    const focusC = registerFocusSpy('c');
+    api.getPanel('c')!.api.setActive();
+    expect(api.getPanel('c')!.group).toBe(api.getPanel('a')!.group);
+    const popout = await openFakePopout(dock, 'c');
+    expect(api.getPanel('c')!.api.location.type).toBe('popout');
+    focusC.mockClear();
+
+    popout.close();
+    await flushMicrotasks();
+
+    expect(api.getPanel('c')!.api.location.type).toBe('grid');
+    expect(api.activePanel?.id).toBe('c');
+    expect(focusC).toHaveBeenCalled();
+    tracker.dispose();
+  });
+
   it('拖动组里最后一个 tab 进另一组:dockview 自己激活目标组,键盘焦点不被送进第三个终端', async () => {
     const dock = createDock();
     const api = dock.api as DockviewApi;

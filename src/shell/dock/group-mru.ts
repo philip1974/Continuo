@@ -145,6 +145,22 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
     }
   };
 
+  // 从多面板组弹出活动面板时,dockview 在 movingLock 内 openPanel(顺带设为活动组,事件被 movingLock 吞掉),随后
+  // doSetGroupAndPanelActive 因已是活动组直接返回 → 没有任何活动组 / 活动面板事件,touch 记不到 popout 组的活动面板,
+  // 子窗关闭时收回的面板不获焦(主窗焦点留在 body)。组挂到子窗时 location 改为 popout(此时面板已挪入)→ 在此补记。
+  const locationSubs = new Map<Group, { dispose: () => void }>();
+  const watchLocation = (group: Group): void => {
+    if (locationSubs.has(group)) return;
+    locationSubs.set(
+      group,
+      group.api.onDidLocationChange(() => {
+        if (group.api.location.type !== 'popout') return;
+        if (api.activeGroup === group) touch(group);
+        else if (group.activePanel) lastActivePanel.set(group.id, group.activePanel.id);
+      }),
+    );
+  };
+
   const subs = [
     api.onDidActiveGroupChange(touch),
     api.onDidActivePanelChange((panel) => {
@@ -153,8 +169,16 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
     api.onDidRemoveGroup(onRemove),
     // 加入面板(后台加入不改活动面板)/ 加入组(popout 恢复时子窗挂上的组)后,活动面板重新置于组 MRU 首位
     api.onDidAddPanel((panel) => keepActivePanelMruFirst(panel.group)),
-    api.onDidAddGroup(keepActivePanelMruFirst),
+    api.onDidAddGroup((group) => {
+      keepActivePanelMruFirst(group);
+      watchLocation(group);
+    }),
+    api.onDidRemoveGroup((group) => {
+      locationSubs.get(group)?.dispose();
+      locationSubs.delete(group);
+    }),
   ];
+  for (const group of api.groups) watchLocation(group);
   touch(api.activeGroup);
   // 跟踪始于布局恢复(fromJSON / 默认布局)之后:恢复时按 tab 顺序加入的面板已把活动面板挤到 MRU 后面
   for (const group of api.groups) keepActivePanelMruFirst(group);
@@ -164,6 +188,8 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
       disposed = true;
       if (mruByApi.get(api) === mru) mruByApi.delete(api);
       for (const s of subs) s.dispose();
+      for (const s of locationSubs.values()) s.dispose();
+      locationSubs.clear();
       mru.length = 0;
       lastActivePanel.clear();
     },
