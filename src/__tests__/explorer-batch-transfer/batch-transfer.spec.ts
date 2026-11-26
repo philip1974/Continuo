@@ -217,7 +217,9 @@ describe('接线守卫:FolderTree 的批量入口都走共享实现', () => {
   );
 
   it('三个移动/复制入口(onDropItems / root-drop / onPaste)经 runBatchTransfer 调 transferEntriesInto', () => {
-    // runBatchTransfer 是组件内唯一的 transferEntriesInto 包装(注入 store / notify 依赖)。
+    // runBatchTransfer 是组件内唯一的 transferEntriesInto 包装(注入 store / notify 依赖)。两个拖动入口先经
+    // requestDragMove(拖放确认,explorer-confirm-drag-and-drop/),它直接调或确认后调 runBatchTransfer;onPaste 直接调。
+    expect((SRC.match(/requestDragMove\(selectDraggedItemPaths\(/g) ?? []).length).toBe(2);
     expect((SRC.match(/void runBatchTransfer\(|await runBatchTransfer\(/g) ?? []).length).toBe(3);
     expect((SRC.match(/transferEntriesInto\(/g) ?? []).length).toBe(1);
   });

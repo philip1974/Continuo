@@ -8,6 +8,7 @@ import { Plugin } from '@/plugins/Plugin';
 import {
   EXPLORER_AUTO_REVEAL,
   EXPLORER_CONFIRM_DELETE,
+  EXPLORER_CONFIRM_DRAG_AND_DROP,
   EXPLORER_INDENT_SIZE,
   EXPLORER_SHOW_HIDDEN_FILES,
 } from '@/plugins/settings/core-setting-specs';
@@ -45,6 +46,8 @@ export default class ExplorerTabPlugin extends Plugin {
     this.addSettingItem(EXPLORER_INDENT_SIZE);
 
     this.addSettingItem(EXPLORER_CONFIRM_DELETE);
+
+    this.addSettingItem(EXPLORER_CONFIRM_DRAG_AND_DROP);
 
     this.addSettingItem(EXPLORER_AUTO_REVEAL);
   }

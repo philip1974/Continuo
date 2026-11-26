@@ -33,6 +33,13 @@ FolderTree 有三个「把一批路径移动/复制进同一目录」的入口:�
 
 7. 无文件且无被跳过目录 → 不做任何事;否则写入后刷新目标目录,被跳过目录 / 批量失败各提示一次;
    任何抛出 → `notify.error`(不产生 unhandled rejection)。
+7a. 同名(误操作防护,对齐 VSCode ExternalFileImport;`drop-overwrite-confirm.spec.ts`):写入前 `listDir` 目标目录一次,
+   按 `sameNameKey`(大小写 + NFC 折叠,与唯一名 picker 同口径)判重:
+   - 与已有文件 / 符号链接同名 → `confirmOverwrite(names, canSkip)` 一次列出全部冲突名(同键只列一次);
+     `replace` 全写、`skip` 只写不冲突项、`cancel` 一个都不写。`canSkip` = 还有不冲突的项。
+   - 与已有文件夹同名 → 不提供替换(文件替换不了文件夹),该项直接归失败 `FS_EEXIST`,其余照写。
+   - 目标目录读不到 → 无法判断是否覆盖,整批不写并提示(fail-closed)。
+   - 对话框接线见 `explorer-confirm-drag-and-drop/`。
 
 ### 接线守卫
 

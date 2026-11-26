@@ -259,6 +259,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files': '显示隐藏文件',
   'settings.explorer.indent_width': '缩进宽度',
   'settings.explorer.confirm_delete': '删除前确认',
+  'settings.explorer.confirm_drag_and_drop': '拖放移动前确认',
   'settings.explorer.auto_reveal': '跟随活动文件',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
@@ -276,6 +277,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files.desc': '是否显示以 . 开头的文件（如 .git / .env）。',
   'settings.explorer.indent_width.desc': '文件树每级缩进（影响视觉层级）。',
   'settings.explorer.confirm_delete.desc': '移到废纸篓前是否弹出确认。',
+  'settings.explorer.confirm_drag_and_drop.desc': '在资源管理器中通过拖放移动文件和文件夹前是否弹出确认。',
   'settings.explorer.auto_reveal.desc': '切换编辑器时在资源管理器中选中并展开到当前文件。',
 
   // editor welcome / empty states (post-topic-21 round 2)
@@ -357,6 +359,15 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.multiple': '确定要删除以下 {count} 个文件 / 文件夹吗？',
   'panels.explorer.trash_confirm.more': '…另有 {count} 项未列出',
   'panels.explorer.trash_confirm.detail': '可以从废纸篓恢复。',
+  'panels.explorer.move_confirm.single': '确定要将「{name}」移到「{dest}」中吗？',
+  'panels.explorer.move_confirm.multiple': '确定要将以下 {count} 个文件/文件夹移到「{dest}」中吗？',
+  'panels.explorer.move_confirm.move': '移动',
+  'panels.explorer.move_confirm.dont_ask': '不再询问',
+  'panels.explorer.overwrite_confirm.single': '目标文件夹中已存在名为「{name}」的文件。是否替换？',
+  'panels.explorer.overwrite_confirm.multiple': '目标文件夹中已存在以下 {count} 个文件。是否替换？',
+  'panels.explorer.overwrite_confirm.detail': '此操作不可撤销！',
+  'panels.explorer.overwrite_confirm.replace': '替换',
+  'panels.explorer.overwrite_confirm.skip': '跳过同名文件',
   'panels.explorer.trash_confirm.unsaved': '其中 {count} 个文件有未保存的更改。删除后它们的编辑器保留并标记为「已删除」，除非手动保存，这些更改不会写回磁盘。',
   'panels.explorer.trash_confirm.unsaved_single': '该文件有未保存的更改。删除后其编辑器保留并标记为「已删除」，除非手动保存，这些更改不会写回磁盘。',
   'panels.explorer.trash_confirm.unsaved_one': '其中 1 个文件有未保存的更改。删除后其编辑器保留并标记为「已删除」，除非手动保存，这些更改不会写回磁盘。',

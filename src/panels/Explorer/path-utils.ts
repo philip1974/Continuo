@@ -12,9 +12,18 @@ import {
 import { basenameForChrome } from '@/lib/path-label';
 import { t } from '@/i18n';
 import { leafNameRejectReason } from '../../../electron/shared/leaf-name';
+import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 
 // dirname 与 basename 同在 renderer 跨平台路径单一来源 src/lib/path-cross(Editor 等其它模块直接从那里引)。
 export { dirname } from '@/lib/path-cross';
+
+/**
+ * 同一目录内名字判重键:大小写折叠 + NFC(macOS 默认 / Windows 盘大小写不敏感,Finder 给的名字常是 NFD)。
+ * 唯一名 picker(makeNamePicker)、外部 drop 同名检测与同目标串行共用,三处口径一致。
+ */
+export function sameNameKey(name: string): string {
+  return lowerIfNeeded(name.normalize('NFC'));
+}
 
 /**
  * 目标目录 destDir 是否就是 src 本身或在其子树内(把 src 移动 / 复制进去会自我嵌套)。拖动的 canDrop 与

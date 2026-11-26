@@ -6,12 +6,11 @@
 
 import type { IpcResult } from '@/lib/fs/types';
 import { errorMessage } from '../../../electron/shared/error-message';
-import { dirname } from './path-utils';
+import { dirname, sameNameKey } from './path-utils';
 import { joinPath } from '@/lib/path-cross';
 import { isValidLeafName, FS_NAME_MAX } from '../../../electron/shared/leaf-name';
 import { MAX_DROP_FILES } from '@/lib/window-drop';
 import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
-import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { MAX_WRITE_BYTES } from '../../../electron/shared/fs-limits';
 
 export interface DropTargetEntry {
@@ -57,6 +56,37 @@ const MAX_DROP_SCAN_ITEMS = 4000;
 // perf:performDrop 读写有界并发度。每个 worker 同一时刻至多持有一个 arrayBuffer,故在途读入内存
 // ≤ DROP_IO_CONCURRENCY × MAX_DROP_FILE_BYTES(且仍受 MAX_DROP_TOTAL_BYTES 总量约束)。
 const DROP_IO_CONCURRENCY = 4;
+
+export interface DropConflicts {
+  /** 与目标目录已有文件(或符号链接)同名的拖入文件名,按输入顺序、同键只列一次:须用户确认才覆盖。 */
+  replaceable: string[];
+  /** 与目标目录已有文件夹同名:不能用文件替换文件夹(写入必失败),不提供替换。 */
+  folders: string[];
+}
+
+/**
+ * 拖入文件与目标目录现有项的同名冲突(sameNameKey:大小写 + NFC 折叠,与唯一名 picker 同口径)。
+ * 非法名不计(performDrop 会把它归 FS_BAD_NAME)。
+ */
+export function findDropConflicts(
+  files: ReadonlyArray<File>,
+  existing: ReadonlyArray<{ name: string; isDirectory: boolean; isSymlink?: boolean }>,
+): DropConflicts {
+  const byKey = new Map<string, boolean>(); // key → 是否真文件夹
+  for (const e of existing) byKey.set(sameNameKey(e.name), e.isDirectory && e.isSymlink !== true);
+  const replaceable: string[] = [];
+  const folders: string[] = [];
+  const seen = new Set<string>();
+  for (const f of files) {
+    if (!isValidLeafName(f.name)) continue;
+    const key = sameNameKey(f.name);
+    const isFolder = byKey.get(key);
+    if (isFolder === undefined || seen.has(key)) continue;
+    seen.add(key);
+    (isFolder ? folders : replaceable).push(f.name);
+  }
+  return { replaceable, folders };
+}
 
 export interface PartitionResult {
   files: File[];
@@ -133,7 +163,8 @@ export function partitionDropItems(
 // MAX_DROP_FILE_COUNT 的项直接归 failed,绝不调 arrayBuffer()。常量统一声明于文件上方(E115)。
 
 /**
- * 写入文件到 targetDir。同名文件由 fs.writeBinary 内部 atomic 覆盖,不弹确认;同名项是符号链接时替换链接
+ * 写入文件到 targetDir。同名文件由 fs.writeBinary 内部 atomic 覆盖(是否覆盖由调用方先经 findDropConflicts 询问用户,
+ * 见 batch-transfer.dropForeignFilesInto);同名项是符号链接时替换链接
  * 本身、不写穿到链接目标(防恶意仓库 `README.md -> ~/.ssh/authorized_keys` 诱导拖放覆盖 workspace 外文件)。
  *
  * perf:读写有界并发(DROP_IO_CONCURRENCY)—— 此前逐个串行 arrayBuffer + IPC + fsync,
@@ -249,7 +280,7 @@ export async function performDrop(
   // 在途 arrayBuffer 仍 ≤ DROP_IO_CONCURRENCY;结果按下标记录,汇总顺序不变。readAndWrite 不抛。
   const groupsByKey = new Map<string, number[]>();
   for (const index of acceptedIdx) {
-    const key = lowerIfNeeded(files[index]!.name.normalize('NFC'));
+    const key = sameNameKey(files[index]!.name);
     const group = groupsByKey.get(key);
     if (group) group.push(index);
     else groupsByKey.set(key, [index]);

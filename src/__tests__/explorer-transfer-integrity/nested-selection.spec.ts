@@ -164,7 +164,7 @@ describe('接线:root-drop 不在漏斗外预先剔掉 root 下的祖先', () =>
     // 被移到 root,层级被拆散。
     expect(src).not.toMatch(/runBatchTransfer\('move', moveable,/);
     expect(src).toMatch(
-      /runBatchTransfer\(\s*'move',\s*selectDraggedItemPaths\(dnd\.draggedItems\),\s*root,/,
+      /requestDragMove\(\s*selectDraggedItemPaths\(dnd\.draggedItems\),\s*root,/,
     );
   });
 });

@@ -31,13 +31,14 @@ import {
   dirname,
   isDestInsideSource,
   outermostPaths,
+  sameNameKey,
 } from './path-utils';
 import {
+  findDropConflicts,
   partitionDropItems,
   performDrop,
-  type DropFsApi,
 } from './drop-handlers';
-import { notifyThrownError } from '@/notifications/notify-thrown-error';
+import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 
 // 批量 drop 失败明细:每行 `  name: [code] 本地化消息`(notify 多行正文)。
 interface DropFailureLine {
@@ -74,6 +75,14 @@ export interface BatchTransferDeps {
   onException: (err: unknown) => void;
   /** 当前工作区根:源就是根时不改投其父目录(那在工作区之外,副本会静默落到树外)。 */
   root?: string;
+}
+
+/**
+ * 拖动移动实际会动的源(最外层、且不已在 destDir 里):空 → 整批是 no-op(拖到原父目录),确认框不弹;
+ * 非空 → 确认框列出的名字。与 transferEntriesInto 的同父跳过同一判定(pathEquals(dirname(src), destDir))。
+ */
+export function sourcesToMove(srcs: readonly string[], destDir: string): string[] {
+  return outermostPaths(srcs).filter((src) => !pathEquals(dirname(src), destDir));
 }
 
 export async function transferEntriesInto(
@@ -132,30 +141,70 @@ export async function transferEntriesInto(
   }
 }
 
+/** 外部 drop 遇同名文件时用户的选择:全部替换 / 跳过同名项(只写其余)/ 整批取消。 */
+export type OverwriteChoice = 'replace' | 'skip' | 'cancel';
+
+/**
+ * 询问是否替换同名文件(VSCode getMultipleFilesOverwriteConfirm)。names:冲突的拖入文件名;
+ * canSkip:还有不冲突的项(否则「跳过」与「取消」等价,不提供)。
+ */
+export type ConfirmOverwrite = (names: readonly string[], canSkip: boolean) => Promise<OverwriteChoice>;
+
 /**
  * 外部 OS 文件 drop 进 destDir(row 级与空白/root 级共用)。调用点是 fire-and-forget async:
  * performDrop 恒返 DropResult(A137),但 partitionDropItems / refreshDir 仍可能抛 → 统一 catch
  * 后 notify(A150/A151),不产生 unhandled rejection。仅在有问题时提示;成功由 fs.watch 自动刷新树。
+ *
+ * 同名(误操作防护,对齐 VSCode ExternalFileImport):写入前 listDir 目标目录一次,与已有文件同名(sameNameKey 折叠)
+ * → confirmOverwrite 列出名字问替换 / 跳过 / 取消;与已有文件夹同名 → 不提供替换(文件替换不了文件夹),该项归失败。
+ * 目标目录读不到 → 无法判断是否会覆盖,整批不写(fail-closed)。
  */
 export async function dropForeignFilesInto(
   items: DataTransferItemList,
   destDir: string,
-  fs: DropFsApi,
+  fs: Pick<FsApi, 'listDir' | 'writeBinary'>,
   refreshDir: (dir: string) => void,
+  confirmOverwrite: ConfirmOverwrite,
 ): Promise<void> {
   try {
     const { files, skippedDirs } = partitionDropItems(items);
     if (files.length === 0 && skippedDirs.length === 0) return;
-    const r = await performDrop(files, destDir, fs);
+    let toWrite: readonly File[] = files;
+    const folderFailures: DropFailureLine[] = [];
+    if (files.length > 0) {
+      const listing = await fs.listDir(destDir, { withStats: false });
+      if (!listing.ok) {
+        notifyFailure(listing);
+        return;
+      }
+      const { replaceable, folders } = findDropConflicts(files, listing.data);
+      const folderKeys = new Set(folders.map(sameNameKey));
+      const replaceKeys = new Set(replaceable.map(sameNameKey));
+      if (folderKeys.size > 0) {
+        toWrite = files.filter((f) => {
+          if (!folderKeys.has(sameNameKey(f.name))) return true;
+          folderFailures.push({ name: f.name, code: ERROR_CODES.FS_EEXIST, message: t('errors.FS_EEXIST') });
+          return false;
+        });
+      }
+      if (replaceKeys.size > 0) {
+        const canSkip = toWrite.some((f) => !replaceKeys.has(sameNameKey(f.name)));
+        const choice = await confirmOverwrite(replaceable, canSkip);
+        if (choice === 'cancel') return;
+        if (choice === 'skip') toWrite = toWrite.filter((f) => !replaceKeys.has(sameNameKey(f.name)));
+      }
+    }
+    const r = await performDrop(toWrite, destDir, fs);
     refreshDir(destDir);
     if (skippedDirs.length > 0) {
       notify.error(t('errors.folder.skipped_dirs', { count: skippedDirs.length }));
     }
-    if (!r.ok) {
+    const failed = folderFailures.length > 0 ? [...folderFailures, ...r.failed] : r.failed;
+    if (failed.length > 0) {
       notify.error(
-        t('errors.folder.batch_failed', { count: r.failed.length }) +
+        t('errors.folder.batch_failed', { count: failed.length }) +
           '\n' +
-          formatDropFailureLines(r.failed),
+          formatDropFailureLines(failed),
       );
     }
   } catch (err) {

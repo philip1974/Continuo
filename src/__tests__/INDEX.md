@@ -706,6 +706,7 @@
 ## [explorer-batch-transfer(重构:Explorer 批量移动/复制的单一实现)](./explorer-batch-transfer/README.md)
 
 - [`batch-transfer.spec.ts`](./explorer-batch-transfer/batch-transfer.spec.ts)
+- [`drop-overwrite-confirm.spec.ts`](./explorer-batch-transfer/drop-overwrite-confirm.spec.ts)
 
 ## [资源管理器入口命令(VSCode 对齐)](./explorer-commands/README.md)
 
@@ -713,6 +714,10 @@
 - [`explorer-commands.spec.ts`](./explorer-commands/explorer-commands.spec.ts)
 - [`header-new-target.spec.tsx`](./explorer-commands/header-new-target.spec.tsx)
 - [`menu-open-folder.spec.ts`](./explorer-commands/menu-open-folder.spec.ts)
+
+## [explorer-confirm-drag-and-drop(误操作防护:资源管理器拖动前确认 / 外部拖入同名确认)](./explorer-confirm-drag-and-drop/README.md)
+
+- [`confirm-drag-and-drop.spec.tsx`](./explorer-confirm-drag-and-drop/confirm-drag-and-drop.spec.tsx)
 
 ## [explorer-context-menu(资源管理器右键菜单 plugin 贡献点 V1)](./explorer-context-menu/README.md)
 

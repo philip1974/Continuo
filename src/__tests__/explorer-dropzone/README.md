@@ -8,7 +8,8 @@
 ## 决策(草案确认)
 
 1. 二进制走 `Uint8Array` 直接传 IPC(structured clone),`z.instanceof(Uint8Array)` 校验
-2. 静默覆盖同名(VSCode 默认,atomic write 自带原子覆盖)
+2. 同名:performDrop 本身仍原子覆盖;是否覆盖由调用方 `dropForeignFilesInto` 写入前探测并询问(替换 / 跳过 / 取消,
+   对齐 VSCode `getMultipleFilesOverwriteConfirm`;见 `explorer-batch-transfer/drop-overwrite-confirm.spec.ts`)。此前静默覆盖 = 丢数据
 3. drop 落点判定:文件夹 → 进该文件夹;文件 → 进文件父目录;空白 → root
 4. UI 反馈:整面板蓝色 overlay + 文字"放下以上传到 X"
 5. 多文件支持;**文件夹拖入 skip 并提示**(递归复制 webkitGetAsEntry 留下里程碑)
@@ -42,7 +43,7 @@
 - `performDrop` 多文件全成功
 - `performDrop` 部分写失败 → ok:false + failed 列出
 - `performDrop` file.arrayBuffer() 抛 → failed READ_ERROR
-- `performDrop` 不主动跳过同名(由 atomic write 静默覆盖)
+- `performDrop` 不主动跳过同名(覆盖与否已由调用方确认,见决策 2)
 - 安全:`fs:write-binary` 落盘**不跟随 leaf 符号链接** —— 同名项是链接(可能指向 workspace 外,如
   `README.md -> ~/.ssh/authorized_keys`)时替换链接本身为普通文件,链接目标不受影响;同名普通文件照旧静默覆盖;
   编辑器保存 `fs:write-file` 仍写穿链接(`drop-write-no-follow.spec.ts`)

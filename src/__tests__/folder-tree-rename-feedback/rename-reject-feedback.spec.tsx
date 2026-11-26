@@ -46,8 +46,10 @@ vi.mock('@/lib/co-api', () => ({
 vi.mock('@/panels/Editor/useEditorFile', () => ({
   useEditorFile: () => ({ openFileByPath: h.openFileByPath }),
 }));
+// 拖动移动确认(explorer.confirmDragAndDrop)关掉:本文件验的是确认之后的 reject 反馈(确认框见 explorer-confirm-drag-and-drop/)。
 vi.mock('@/plugins/settings/values-store', () => ({
-  useSettingValue: (_key: string, fallback: unknown) => fallback,
+  useSettingValue: (key: string, fallback: unknown) =>
+    key === 'explorer.confirmDragAndDrop' ? false : fallback,
 }));
 vi.mock('@/theme', () => ({ useTheme: () => ({ resolved: 'dark' }) }));
 vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError } }));

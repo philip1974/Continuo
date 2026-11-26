@@ -273,6 +273,7 @@ export const en = {
   'settings.explorer.show_hidden_files': 'Show hidden files',
   'settings.explorer.indent_width': 'Indent width',
   'settings.explorer.confirm_delete': 'Confirm delete',
+  'settings.explorer.confirm_drag_and_drop': 'Confirm drag and drop',
   'settings.explorer.auto_reveal': 'Reveal active file',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
@@ -290,6 +291,7 @@ export const en = {
   'settings.explorer.show_hidden_files.desc': 'Show dotfiles such as .git / .env.',
   'settings.explorer.indent_width.desc': 'Per-level indentation of the file tree (visual depth).',
   'settings.explorer.confirm_delete.desc': 'Ask for confirmation before moving files to the Trash.',
+  'settings.explorer.confirm_drag_and_drop.desc': 'Ask for confirmation before moving files and folders by drag and drop in the Explorer.',
   'settings.explorer.auto_reveal.desc': "Select and reveal the active editor's file in the Explorer.",
 
   // editor welcome / empty states (post-topic-21 round 2)
@@ -374,6 +376,15 @@ export const en = {
   'panels.explorer.trash_confirm.multiple': 'Are you sure you want to delete the following {count} files/folders?',
   'panels.explorer.trash_confirm.more': '…and {count} more not shown',
   'panels.explorer.trash_confirm.detail': 'You can restore from the Trash.',
+  'panels.explorer.move_confirm.single': 'Are you sure you want to move “{name}” into “{dest}”?',
+  'panels.explorer.move_confirm.multiple': 'Are you sure you want to move the following {count} files/folders into “{dest}”?',
+  'panels.explorer.move_confirm.move': 'Move',
+  'panels.explorer.move_confirm.dont_ask': 'Do not ask me again',
+  'panels.explorer.overwrite_confirm.single': 'A file with the name “{name}” already exists in the destination folder. Do you want to replace it?',
+  'panels.explorer.overwrite_confirm.multiple': 'The following {count} files already exist in the destination folder. Do you want to replace them?',
+  'panels.explorer.overwrite_confirm.detail': 'This action is irreversible!',
+  'panels.explorer.overwrite_confirm.replace': 'Replace',
+  'panels.explorer.overwrite_confirm.skip': 'Skip Existing',
   'panels.explorer.trash_confirm.unsaved': '{count} of the files being deleted have unsaved changes. Their editors stay open, marked as deleted; the changes are not written back to disk unless you save them.',
   'panels.explorer.trash_confirm.unsaved_single': 'This file has unsaved changes. Its editor stays open, marked as deleted; the changes are not written back to disk unless you save them.',
   'panels.explorer.trash_confirm.unsaved_one': '1 of the files being deleted has unsaved changes. Its editor stays open, marked as deleted; the changes are not written back to disk unless you save them.',

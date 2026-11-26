@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
-import { basenamePreserveTrailing, dirname, renameTarget } from './path-utils';
+import { basenamePreserveTrailing, dirname, renameTarget, sameNameKey } from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
@@ -46,8 +46,11 @@ import { cleanupAfterPathMoved, cleanupAfterPathsRemoved } from './path-gone-cle
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
   dropForeignFilesInto,
+  sourcesToMove,
   transferEntriesInto,
   type BatchTransferKind,
+  type ConfirmOverwrite,
+  type OverwriteChoice,
 } from './batch-transfer';
 
 import { useFsWatcher } from './hooks/useFsWatcher';
@@ -61,10 +64,11 @@ import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
 import { copyToClipboardOrNotify } from './copy-to-clipboard';
 import { revealPathOrNotify } from './reveal-or-notify';
-import { useSettingValue } from '@/plugins/settings/values-store';
+import { useSettingValue, useSettingsValuesStore } from '@/plugins/settings/values-store';
 import {
   EXPLORER_AUTO_REVEAL,
   EXPLORER_CONFIRM_DELETE,
+  EXPLORER_CONFIRM_DRAG_AND_DROP,
   EXPLORER_INDENT_SIZE,
   EXPLORER_SHOW_HIDDEN_FILES,
 } from '@/plugins/settings/core-setting-specs';
@@ -76,7 +80,6 @@ import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
-import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { ERROR_CODES } from '@shared/error-codes';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { announce } from '@/lib/announce';
@@ -116,8 +119,39 @@ interface TrashConfirmState {
   unsaved: number;
 }
 
-// 删除确认框最多列出的名字数(VSCode 同为 10,其余以「另有 N 项」概括)。
+/** 待确认的拖动移动(VSCode explorer.confirmDragAndDrop)。srcs 原样交给漏斗;names 是实际会移动的项。 */
+interface MoveConfirmState {
+  srcs: string[];
+  names: string[];
+  destDir: string;
+  logLabel: string;
+}
+
+/** 外部 drop 遇同名文件的待确认(resolve 存 ref,见 confirmOverwrite)。 */
+interface OverwriteConfirmState {
+  names: readonly string[];
+  canSkip: boolean;
+}
+
+// 删除确认框最多列出的名字数(VSCode 同为 10,其余以「另有 N 项」概括)。移动 / 替换确认框同。
 const TRASH_CONFIRM_MAX_NAMES = 10;
+
+/** 确认框里的名字列表(最多 TRASH_CONFIRM_MAX_NAMES 个,其余以「另有 N 项」概括)。 */
+function ConfirmNameList({ names }: { names: readonly string[] }) {
+  const tt = useT();
+  const shown = names.slice(0, TRASH_CONFIRM_MAX_NAMES);
+  const more = names.length - shown.length;
+  return (
+    <ul className="mb-2 list-none">
+      {shown.map((n, i) => (
+        <li key={i} className="truncate text-fg">
+          {n}
+        </li>
+      ))}
+      {more > 0 && <li>{tt('panels.explorer.trash_confirm.more', { count: more })}</li>}
+    </ul>
+  );
+}
 
 // 新项若始终不出现(如新建的是隐藏文件且未显示隐藏文件),到期放弃定位。
 const PENDING_REVEAL_TTL_MS = 3000;
@@ -261,7 +295,7 @@ export function buildSelectedPathSet(
  * 返回的实际文件名保持原大小写。
  */
 export function makeNamePicker(destDir: string, existing: Set<string>): (name: string) => string {
-  const fold = (n: string): string => lowerIfNeeded(n.normalize('NFC'));
+  const fold = sameNameKey;
   const taken = new Set<string>();
   for (const n of existing) taken.add(fold(n));
   return (name: string): string => {
@@ -336,6 +370,27 @@ export function FolderTree({ root }: { root: string }) {
   const confirmDeleteRef = useRef(confirmDelete);
   confirmDeleteRef.current = confirmDelete;
   const [trashConfirm, setTrashConfirm] = useState<TrashConfirmState | null>(null);
+  const confirmDragAndDrop = useSettingValue(
+    EXPLORER_CONFIRM_DRAG_AND_DROP.id,
+    EXPLORER_CONFIRM_DRAG_AND_DROP.default,
+  );
+  const confirmDragAndDropRef = useRef(confirmDragAndDrop);
+  confirmDragAndDropRef.current = confirmDragAndDrop;
+  const [moveConfirm, setMoveConfirm] = useState<MoveConfirmState | null>(null);
+  const [moveDontAsk, setMoveDontAsk] = useState(false);
+  const [overwriteConfirm, setOverwriteConfirm] = useState<OverwriteConfirmState | null>(null);
+  const overwriteResolveRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
+  // 外部 drop 同名询问:dropForeignFilesInto await 这个 Promise。又来一次 drop(上一框未答)→ 上一批按取消;卸载同。
+  const confirmOverwrite = useCallback<ConfirmOverwrite>(
+    (names, canSkip) =>
+      new Promise<OverwriteChoice>((resolve) => {
+        overwriteResolveRef.current?.('cancel');
+        overwriteResolveRef.current = resolve;
+        setOverwriteConfirm({ names, canSkip });
+      }),
+    [],
+  );
+  useEffect(() => () => overwriteResolveRef.current?.('cancel'), []);
   // 删除确认框打开期间暂停被删文件的自动保存:框里说未保存修改保留在编辑器、不写回磁盘,停留超过自动保存延迟
   // 也须如此(确认后由 runTrash 接着暂停到删除完成)。
   const trashConfirmPaths = trashConfirm?.paths;
@@ -615,6 +670,22 @@ export function FolderTree({ root }: { root: string }) {
     [makeUniqueDestPicker, onPathMoved, refreshParent, root],
   );
 
+  // 树内拖动移动(拖到 row / 空白 root)的入口:VSCode explorer.confirmDragAndDrop 开着就先确认(⌥ 拖复制本树不支持)。
+  // 全是 no-op(都已在目标目录)不弹框;确认后原样交给 runBatchTransfer(同父跳过 / 嵌套等仍在漏斗内判定)。
+  const requestDragMove = useCallback(
+    (srcs: string[], destDir: string, logLabel: string): void => {
+      const names = sourcesToMove(srcs, destDir);
+      if (names.length === 0) return;
+      if (confirmDragAndDropRef.current) {
+        setMoveDontAsk(false);
+        setMoveConfirm({ srcs, names, destDir, logLabel });
+        return;
+      }
+      void runBatchTransfer('move', srcs, destDir, logLabel, 'errors.folder.move_failed');
+    },
+    [runBatchTransfer],
+  );
+
   // 树里读取失败的反馈限流(3s,对齐 A144):展开深树可能连续多次 listDir 失败,无差别弹会刷屏。
   const takeIpcWarnSlot = useCallback((): boolean => {
     const now = Date.now();
@@ -701,19 +772,13 @@ export function FolderTree({ root }: { root: string }) {
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
           suppressNextDropScroll();
-          // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身;同父跳过在 transferEntriesInto 内)
-          void runBatchTransfer(
-            'move',
-            selectDraggedItemPaths(items),
-            destDir,
-            'drop move',
-            'errors.folder.move_failed',
-          );
+          // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身;同父跳过在 sourcesToMove / transferEntriesInto 内)
+          requestDragMove(selectDraggedItemPaths(items), destDir, 'drop move');
         },
         // 外部 OS 文件 drop 到具体 row → 走与容器 onDrop 同一套 performDrop
         onDropForeign: (dataTransfer, destDir) => {
           suppressNextDropScroll();
-          void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent);
+          void dropForeignFilesInto(dataTransfer.items, destDir, coApi.fs, refreshParent, confirmOverwrite);
         },
         showHidden: () => showHiddenRef.current,
         expandedItems: treeExpandedItems,
@@ -727,7 +792,8 @@ export function FolderTree({ root }: { root: string }) {
       onPathMoved,
       refreshParent,
       root,
-      runBatchTransfer,
+      requestDragMove,
+      confirmOverwrite,
       setExpandedItems,
       scrollToItem,
       suppressNextDropScroll,
@@ -1195,9 +1261,8 @@ export function FolderTree({ root }: { root: string }) {
       );
     } else if (paths.length > 1) {
       title = tt('panels.explorer.trash_confirm.multiple', { count: paths.length });
-      names = paths.slice(0, TRASH_CONFIRM_MAX_NAMES).map(basenamePreserveTrailing);
+      names = paths.map(basenamePreserveTrailing);
     }
-    const more = paths.length > 1 ? paths.length - names.length : 0;
     // 未保存警告按数量用单 / 复数句式:只删这一个脏文件 →「该文件……其编辑器」;多项 / 文件夹里只有 1 个脏 →
     //「其中 1 个文件……其编辑器」;否则「其中 N 个文件……它们的编辑器」。
     const unsavedWarning = (count: number): string =>
@@ -1210,18 +1275,7 @@ export function FolderTree({ root }: { root: string }) {
         title={title}
         description={
           <>
-            {names.length > 0 && (
-              <ul className="mb-2 list-none">
-                {names.map((n, i) => (
-                  <li key={i} className="truncate text-fg">
-                    {n}
-                  </li>
-                ))}
-                {more > 0 && (
-                  <li>{tt('panels.explorer.trash_confirm.more', { count: more })}</li>
-                )}
-              </ul>
-            )}
+            {names.length > 0 && <ConfirmNameList names={names} />}
             {trashConfirm !== null && trashConfirm.unsaved > 0 && (
               <p className="mb-2 text-fg">
                 {unsavedWarning(trashConfirm.unsaved)}
@@ -1245,6 +1299,90 @@ export function FolderTree({ root }: { root: string }) {
           pending.afterConfirm?.();
           runTrash(pending.paths);
         }}
+      />
+    );
+  };
+
+  // 拖动移动确认框(VSCode explorer.confirmDragAndDrop):单项「确定要将 'x' 移到 'y' 中吗?」,多项列出名字;
+  // 「不再询问」勾选后确认 → 设置写回 false。关闭后焦点还给树(被拖项仍是焦点 / 选中项)。
+  const renderMoveConfirm = () => {
+    if (moveConfirm === null) return null;
+    const { names, destDir } = moveConfirm;
+    const dest = basenamePreserveTrailing(destDir);
+    const title =
+      names.length === 1
+        ? tt('panels.explorer.move_confirm.single', { name: basenamePreserveTrailing(names[0]!), dest })
+        : tt('panels.explorer.move_confirm.multiple', { count: names.length, dest });
+    const close = () => {
+      setMoveConfirm(null);
+      tree.updateDomFocus();
+    };
+    return (
+      <ConfirmDialog
+        open
+        title={title}
+        description={
+          <>
+            {names.length > 1 && <ConfirmNameList names={names.map(basenamePreserveTrailing)} />}
+            {/* design 层无 Checkbox 组件:原生勾选框 + 语义 token(同 PermissionOptionRow)。 */}
+            <label className="flex cursor-pointer items-center gap-2 text-fg">
+              <input
+                type="checkbox"
+                checked={moveDontAsk}
+                onChange={(e) => setMoveDontAsk(e.currentTarget.checked)}
+                className="accent-accent"
+              />
+              {tt('panels.explorer.move_confirm.dont_ask')}
+            </label>
+          </>
+        }
+        confirmLabel={tt('panels.explorer.move_confirm.move')}
+        onCancel={close}
+        onConfirm={() => {
+          const pending = moveConfirm;
+          if (moveDontAsk) {
+            useSettingsValuesStore.getState().setValue(EXPLORER_CONFIRM_DRAG_AND_DROP.id, false);
+          }
+          close();
+          void runBatchTransfer('move', pending.srcs, pending.destDir, pending.logLabel, 'errors.folder.move_failed');
+        }}
+      />
+    );
+  };
+
+  // 外部 drop 同名确认框(VSCode getMultipleFilesOverwriteConfirm):替换 / 跳过同名文件(还有其它项时)/ 取消。
+  const settleOverwrite = (choice: OverwriteChoice) => {
+    const resolve = overwriteResolveRef.current;
+    overwriteResolveRef.current = null;
+    setOverwriteConfirm(null);
+    tree.updateDomFocus();
+    resolve?.(choice);
+  };
+  const renderOverwriteConfirm = () => {
+    if (overwriteConfirm === null) return null;
+    const { names, canSkip } = overwriteConfirm;
+    return (
+      <ConfirmDialog
+        open
+        title={
+          names.length === 1
+            ? tt('panels.explorer.overwrite_confirm.single', { name: names[0]! })
+            : tt('panels.explorer.overwrite_confirm.multiple', { count: names.length })
+        }
+        description={
+          <>
+            {names.length > 1 && <ConfirmNameList names={names} />}
+            <p>{tt('panels.explorer.overwrite_confirm.detail')}</p>
+          </>
+        }
+        confirmLabel={tt('panels.explorer.overwrite_confirm.replace')}
+        destructive
+        onCancel={() => settleOverwrite('cancel')}
+        onConfirm={() => settleOverwrite('replace')}
+        {...(canSkip && {
+          alternativeLabel: tt('panels.explorer.overwrite_confirm.skip'),
+          onAlternative: () => settleOverwrite('skip'),
+        })}
       />
     );
   };
@@ -1323,20 +1461,14 @@ export function FolderTree({ root }: { root: string }) {
       // 实际交给漏斗的是全部拖动路径 —— 漏斗先剔后代再跳过同父项。若交预筛结果,
       // 多选 root 下的 A 与 A/B 时 A 被预先剔掉,只剩 A/B 被移到 root,层级被拆散。
       if (selectRootDropMoveablePaths(dnd.draggedItems, root).length === 0) return;
-      await runBatchTransfer(
-        'move',
-        selectDraggedItemPaths(dnd.draggedItems),
-        root,
-        'root drop move',
-        'errors.folder.move_failed',
-      );
+      requestDragMove(selectDraggedItemPaths(dnd.draggedItems), root, 'root drop move');
       return;
     }
     e.preventDefault();
     // 拖拽态已在 handleDropCapture 复位;落点取其复位前存下的值(读后清空)
     const target = foreignDropTargetRef.current ?? resolveDropTarget(hoverTarget, root);
     foreignDropTargetRef.current = null;
-    await dropForeignFilesInto(e.dataTransfer.items, target, coApi.fs, refreshParent);
+    await dropForeignFilesInto(e.dataTransfer.items, target, coApi.fs, refreshParent, confirmOverwrite);
   };
 
   return (
@@ -1453,6 +1585,8 @@ export function FolderTree({ root }: { root: string }) {
         </div>
       </ContextMenu>
       {renderTrashConfirm()}
+      {renderMoveConfirm()}
+      {renderOverwriteConfirm()}
     </div>
   );
 }

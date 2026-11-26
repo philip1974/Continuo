@@ -142,6 +142,18 @@ export const EXPLORER_CONFIRM_DELETE: CoreSettingSpec<boolean> = {
   priority: 3,
 };
 
+// VSCode explorer.confirmDragAndDrop(默认开):资源管理器内拖动移动文件 / 文件夹前确认;确认框「不再询问」把它写成 false。
+export const EXPLORER_CONFIRM_DRAG_AND_DROP: CoreSettingSpec<boolean> = {
+  id: 'explorer.confirmDragAndDrop',
+  category: 'explorer',
+  title: 'Confirm drag and drop',
+  titleKey: 'settings.explorer.confirm_drag_and_drop',
+  descriptionKey: 'settings.explorer.confirm_drag_and_drop.desc',
+  type: 'boolean',
+  default: true,
+  priority: 3,
+};
+
 // VSCode explorer.autoReveal(默认开):活动编辑器切换时资源管理器选中并展开到该文件、滚动入视野(不抢焦点)。
 export const EXPLORER_AUTO_REVEAL: CoreSettingSpec<boolean> = {
   id: 'explorer.autoReveal',

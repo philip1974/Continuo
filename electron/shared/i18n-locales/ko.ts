@@ -260,6 +260,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files': '숨김 파일 표시',
   'settings.explorer.indent_width': '들여쓰기 너비',
   'settings.explorer.confirm_delete': '삭제 전 확인',
+  'settings.explorer.confirm_drag_and_drop': '끌어서 놓기 확인',
   'settings.explorer.auto_reveal': '활성 파일 표시',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
@@ -277,6 +278,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.show_hidden_files.desc': '.git / .env 같이 .으로 시작하는 파일 표시.',
   'settings.explorer.indent_width.desc': '파일 트리 단계별 들여쓰기(시각적 깊이에 영향).',
   'settings.explorer.confirm_delete.desc': '휴지통으로 이동하기 전에 확인을 요청합니다.',
+  'settings.explorer.confirm_drag_and_drop.desc': '탐색기에서 끌어서 놓기로 파일 및 폴더를 이동하기 전에 확인을 요청합니다.',
   'settings.explorer.auto_reveal.desc': '편집기를 전환하면 탐색기에서 현재 파일을 선택하고 펼쳐 표시합니다.',
 
   // editor welcome / empty states (post-topic-21 round 2)
@@ -360,6 +362,15 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.trash_confirm.multiple': '다음 {count}개 파일/폴더를 삭제하시겠습니까?',
   'panels.explorer.trash_confirm.more': '…외 {count}개 항목은 표시되지 않음',
   'panels.explorer.trash_confirm.detail': '휴지통에서 복원할 수 있습니다.',
+  'panels.explorer.move_confirm.single': '“{name}”을(를) “{dest}”(으)로 이동하시겠습니까?',
+  'panels.explorer.move_confirm.multiple': '다음 {count}개 파일/폴더를 “{dest}”(으)로 이동하시겠습니까?',
+  'panels.explorer.move_confirm.move': '이동',
+  'panels.explorer.move_confirm.dont_ask': '다시 묻지 않음',
+  'panels.explorer.overwrite_confirm.single': '대상 폴더에 이름이 “{name}”인 파일이 이미 있습니다. 바꾸시겠습니까?',
+  'panels.explorer.overwrite_confirm.multiple': '대상 폴더에 다음 {count}개 파일이 이미 있습니다. 바꾸시겠습니까?',
+  'panels.explorer.overwrite_confirm.detail': '이 작업은 되돌릴 수 없습니다!',
+  'panels.explorer.overwrite_confirm.replace': '바꾸기',
+  'panels.explorer.overwrite_confirm.skip': '기존 파일 건너뛰기',
   'panels.explorer.trash_confirm.unsaved': '삭제할 파일 중 {count}개에 저장되지 않은 변경 내용이 있습니다. 해당 편집기는 \'삭제됨\'으로 표시된 채 유지되며, 직접 저장하지 않으면 변경 내용이 디스크에 기록되지 않습니다.',
   'panels.explorer.trash_confirm.unsaved_single': '이 파일에 저장되지 않은 변경 내용이 있습니다. 해당 편집기는 \'삭제됨\'으로 표시된 채 유지되며, 직접 저장하지 않으면 변경 내용이 디스크에 기록되지 않습니다.',
   'panels.explorer.trash_confirm.unsaved_one': '삭제할 파일 중 1개에 저장되지 않은 변경 내용이 있습니다. 해당 편집기는 \'삭제됨\'으로 표시된 채 유지되며, 직접 저장하지 않으면 변경 내용이 디스크에 기록되지 않습니다.',
