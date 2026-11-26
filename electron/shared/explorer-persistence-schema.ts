@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE } from './image-preview';
 import { EDITOR_GROUP_ID_RE, EDITOR_GROUPS_MAX } from './editor-group-id';
+import { SEARCH_GLOB_MAX, SEARCH_PATTERN_MAX } from './workspace-search';
 
 // 边界(E14):explorer.json 的路径数组/字符串此前无上限。损坏/畸形快照只要 shape 对就通过,
 // loadExplorer/hydrate 会接受超大数组,随后批量恢复 tab、展开树、写回快照 → 启动卡顿、IPC/JSON
@@ -115,6 +116,23 @@ const EditorSessionSchema = z
 
 export type EditorViewStateEntry = z.infer<typeof EditorViewStateEntrySchema>;
 
+// 搜索视图的输入跨重启(VSCode SearchView 视图状态:query.contentPattern / regex / caseSensitive / wholeWords /
+// folderIncludes / folderExclusions / queryDetailsExpanded;恢复输入,不自动重搜)。只写非默认项;长度上限与
+// search:start 入参同一常量(运行时输入同样截到此上限)。BDD: src/__tests__/workspace-search/
+const WindowSearchSchema = z
+  .object({
+    pattern: z.string().max(SEARCH_PATTERN_MAX),
+    isRegex: z.boolean().optional(),
+    matchCase: z.boolean().optional(),
+    wholeWord: z.boolean().optional(),
+    include: z.string().max(SEARCH_GLOB_MAX).optional(),
+    exclude: z.string().max(SEARCH_GLOB_MAX).optional(),
+    detailsOpen: z.boolean().optional(),
+  })
+  .strict();
+
+export type PersistedSearchInput = z.infer<typeof WindowSearchSchema>;
+
 // ── v1(legacy)— 仅 loadExplorer 接受,内部立即迁移到 v2 ────
 /** 每个窗口的 Explorer 状态(v1 顶层与 v2 / v3 窗口段同形;上限只写一处)。 */
 const ExplorerStateSchema = z
@@ -164,6 +182,8 @@ const WritableWindowEntrySchema = z
     explorer: ExplorerStateSchema,
     layoutUi: LayoutUiSchema.optional(),
     editor: EditorSessionSchema.optional(),
+    /** 搜索视图的输入(只在非默认时写;旧数据缺省 → 空)。 */
+    search: WindowSearchSchema.optional(),
   })
   .strict();
 

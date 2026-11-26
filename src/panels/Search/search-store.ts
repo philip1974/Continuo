@@ -4,6 +4,8 @@
 // 已打开的编辑器在内存内容上搜(含未保存修改、不受大小上限),结果先显示并覆盖磁盘同一文件的结果(open-editor-search)。
 // 文件删除 / 改名 / 移动(editor.store 路径变更通知)→ 其结果从列表移除(VSCode SearchView.onFilesChanged:删除的
 // 文件移除匹配;移动 = 旧路径删除,新位置不自动补搜)。
+// 查询 / 开关 / 包含排除 / 详情展开随 explorer.json 窗口段跨重启恢复(VSCode SearchView 视图状态),只恢复输入、不自动重搜
+//(searchInputSnapshot / restoreSearchInput,由 explorer-persist 读写)。
 // BDD: src/__tests__/workspace-search/
 
 import { create } from 'zustand';
@@ -24,6 +26,7 @@ import {
   type SearchFileResult,
   type SearchQuery,
 } from '../../../electron/shared/workspace-search';
+import type { PersistedSearchInput } from '../../../electron/shared/explorer-persistence-schema';
 
 export const SEARCH_DEBOUNCE_MS = 300;
 
@@ -278,9 +281,12 @@ onEditorPathChange((c) => {
   else dropResultFiles((p) => c.paths.some((r) => isSameOrInsidePath(r, p)));
 });
 
-/** 工作区切换:旧结果作废,按当前查询重搜(查询为空则只清空)。 */
+/**
+ * 工作区切换:旧结果作废,按当前查询重搜。还没搜过(查询为空 / 重启恢复出的输入,status 都是 idle)且无在途查询 → 不搜
+ *(恢复输入不自动重搜;去抖中的输入由其定时器照常搜)。
+ */
 export function rerunSearch(): void {
-  if (useSearchStore.getState().pattern === '' && currentId === null) return;
+  if (useSearchStore.getState().status === 'idle' && currentId === null) return;
   useSearchStore.getState().searchNow();
 }
 
@@ -308,6 +314,37 @@ export async function focusNextSearchResult(delta: 1 | -1): Promise<void> {
   if (s.collapsed.has(next.file.path)) s.toggleCollapsed(next.file.path, false);
   useSearchStore.setState({ activeKey: matchRowKey(next.file.path, next.index) });
   await openSearchMatch(next.file, next.index);
+}
+
+/** 持久化的搜索输入(只含非默认项;全部默认 → null,窗口段不写该字段)。 */
+export function searchInputSnapshot(): PersistedSearchInput | null {
+  const s = useSearchStore.getState();
+  if (s.pattern === '' && !s.isRegex && !s.matchCase && !s.wholeWord && s.include === '' && s.exclude === '' && !s.detailsOpen) {
+    return null;
+  }
+  return {
+    pattern: s.pattern,
+    ...(s.isRegex ? { isRegex: true } : null),
+    ...(s.matchCase ? { matchCase: true } : null),
+    ...(s.wholeWord ? { wholeWord: true } : null),
+    ...(s.include === '' ? null : { include: s.include }),
+    ...(s.exclude === '' ? null : { exclude: s.exclude }),
+    ...(s.detailsOpen ? { detailsOpen: true } : null),
+  };
+}
+
+/** 重启恢复搜索输入:只回填输入,不发起搜索(结果保持空,status idle);缺省(旧数据)→ 保持当前(空)输入。 */
+export function restoreSearchInput(input: PersistedSearchInput | undefined): void {
+  if (input === undefined) return;
+  useSearchStore.setState({
+    pattern: clampSearchQuery(input.pattern),
+    isRegex: input.isRegex === true,
+    matchCase: input.matchCase === true,
+    wholeWord: input.wholeWord === true,
+    include: (input.include ?? '').slice(0, SEARCH_GLOB_MAX),
+    exclude: (input.exclude ?? '').slice(0, SEARCH_GLOB_MAX),
+    detailsOpen: input.detailsOpen === true,
+  });
 }
 
 export function __resetSearchForTest(): void {

@@ -220,30 +220,35 @@
 /* ── 全局 scrollbar(参考 stitch_desktop_design_reviewer 原型)──────────
  * 走 design token,主题切换自动跟。Firefox 用 scrollbar-* 属性,
  * Webkit(Chrome/Edge/Electron)用 ::-webkit-scrollbar pseudo。
+ * 放 base 层:全局默认,design 组件(components 层,如 ScrollArea)与调用方 utility(如编辑器 tab 栏的
+ * [scrollbar-width:none])可覆盖。未分层时它压过一切分层规则(层叠:未分层 > 任何 @layer,与特异性无关),
+ * tab 栏想隐藏的滚动条变回 thin,悬停时压在 tab 文字上。未分层的第三方 CSS(dockview 的 .dv-tabs-container 等)不受影响。
  */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--md-outline-variant) transparent;
-}
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--md-outline-variant) transparent;
+  }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: var(--md-outline-variant);
-  border-radius: 5px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: var(--md-outline-variant);
+    border-radius: 5px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--md-outline);
-}
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--md-outline);
+  }
 
-::-webkit-scrollbar-corner {
-  background: transparent;
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }

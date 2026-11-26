@@ -305,3 +305,35 @@ describe('原生按钮键盘焦点环', () => {
     expect(hits).toEqual([]);
   });
 });
+
+// 全局滚动条默认(scrollbar-width / -color 与 ::-webkit-scrollbar)须在 base 层:未分层规则压过所有 @layer(与特异性
+// 无关),调用方 utility(编辑器 tab 栏 [scrollbar-width:none])与 design 组件(ScrollArea)就覆盖不了 —— tab 栏本该隐藏的
+// 滚动条变回 thin,悬停时压在 tab 文字上。jsdom 不算层叠,按源码钉;真实计算值由 e2e editor-tabs-scrollbar-hidden 断言。
+describe('全局滚动条规则', () => {
+  const THEME = css('src/styles/theme.css');
+  /** 去掉注释与 @layer 块后剩下的未分层部分。 */
+  function unlayered(src: string): string {
+    let out = src.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (;;) {
+      const at = out.search(/@layer\s+[\w-]+\s*\{/);
+      if (at < 0) return out;
+      let depth = 0;
+      let i = out.indexOf('{', at);
+      for (; i < out.length; i++) {
+        if (out[i] === '{') depth++;
+        else if (out[i] === '}' && --depth === 0) break;
+      }
+      out = out.slice(0, at) + out.slice(i + 1);
+    }
+  }
+
+  it('theme.css 的全局 scrollbar-width / scrollbar-color 与 ::-webkit-scrollbar 规则都不在未分层部分', () => {
+    const rest = unlayered(THEME);
+    expect(rest).not.toMatch(/scrollbar/);
+    expect(THEME).toMatch(/@layer base\s*\{\s*\*\s*\{\s*scrollbar-width:\s*thin;/);
+  });
+
+  it('编辑器 tab 栏用 utility 隐藏滚动条(依赖上面的分层才生效)', () => {
+    expect(css('src/panels/Editor/EditorHeader.tsx')).toContain('[scrollbar-width:none]');
+  });
+});

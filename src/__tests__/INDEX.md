@@ -2089,6 +2089,7 @@
 
 - [`search-command.spec.ts`](./workspace-search/search-command.spec.ts)
 - [`search-engine.spec.ts`](./workspace-search/search-engine.spec.ts)
+- [`search-input-restart.spec.ts`](./workspace-search/search-input-restart.spec.ts)
 - [`search-ipc.spec.ts`](./workspace-search/search-ipc.spec.ts)
 - [`search-open-editors.spec.tsx`](./workspace-search/search-open-editors.spec.tsx)
 - [`search-path-gone.spec.ts`](./workspace-search/search-path-gone.spec.ts)

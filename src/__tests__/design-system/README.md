@@ -41,6 +41,9 @@
 
 ### 样式契约(`style-contracts.spec.ts`,按 CSS 源码钉)
 
+- **全局滚动条默认在 `@layer base`**:`theme.css` 的 `* { scrollbar-width / scrollbar-color }` 与 `::-webkit-scrollbar*`
+  规则写在 base 层,不留未分层副本 —— 未分层规则压过所有 @layer(与特异性无关),调用方 utility(编辑器 tab 栏
+  `[scrollbar-width:none]`)与 design 组件(ScrollArea)才能覆盖。实际计算值由 e2e `editor-tabs-scrollbar-hidden` 断言。
 - **design CSS 在 Tailwind `components` 层**:`tailwind.css` 以 `@import "../design/index.css" layer(components)` 引入,
   `index.css` 汇总 `src/design/` 全部组件 CSS,组件 `.tsx` 不再各自 `import './X.css'`(否则会打出一份 unlayered 副本)。
   Tailwind v4 层顺序 theme < base < components < utilities,而 unlayered 样式压过任何 layer —— 不在层里时调用方传给

@@ -63,7 +63,14 @@
    同前缀兄弟目录不受影响)的结果从列表移除,计数、折叠集合、活动行一并修正,不再指向旧路径(点击报「找不到文件」)。
    取舍:外部程序删除**未打开**的结果文件不实时移除(只有已打开 tab 的外部删除经确认后发通知;未打开文件没有
    可复用的「已确认删除」通知,为此逐事件 stat 结果文件成本偏高),点击时照常提示打开失败,重新搜索即更新。
-8. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.gitignore`;多行正则;搜索编辑器。
+8. **搜索输入跨重启**(`search-input-restart.spec.ts`;VSCode SearchView 视图状态 `query.contentPattern` / `regex` /
+   `caseSensitive` / `wholeWords` / `folderIncludes` / `folderExclusions` / `queryDetailsExpanded`):查询词、三个开关、包含 /
+   排除、详情展开随 explorer.json 的**窗口段**(`windows[].search`,按窗口独立)持久化,写盘时机即窗口段既有的去抖写 / 关窗
+   立即落盘(只在这些输入变化时标脏,结果流式更新不触发写);只写非默认项,全默认不写该字段(旧形态不变)。重启只恢复输入,
+   **不自动重搜**,结果为空、状态行空白(VSCode 同:恢复后只在用户提交 / 改输入时搜索);恢复后工作区根变化也不触发搜索
+   (还没搜过)。查询词上限 `SEARCH_PATTERN_MAX`、glob 上限 `SEARCH_GLOB_MAX`(与 search:start 入参同一常量,运行时输入已截到
+   此上限);超限的快照按损坏处理(同其它字段)。旧数据无该字段 → 输入保持空。新开窗口(fresh)/ 别的窗口段不带入。
+9. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.gitignore`;多行正则;搜索编辑器。
 
 ## 规范文件
 
@@ -74,3 +81,4 @@
 - `search-command.spec.ts` — 1
 - `search-open-editors.spec.tsx` — 6(及 5 的跳过大文件 / 无结果时的范围提示)
 - `search-path-gone.spec.ts` — 7
+- `search-input-restart.spec.ts` — 8

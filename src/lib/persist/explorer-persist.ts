@@ -11,6 +11,7 @@
 //     —— 跨重启恢复编辑器视图状态(VSCode 同)。BDD: editor-state-restart
 //   ⚠ explorer.activePath:磁盘 schema 保留位(恒 null),runtime store 已无此
 //     字段(打磨 R18);snapshot 写 null、hydrate 忽略,仅为兼容旧数据不丢档。
+//   ✅ search(搜索视图的查询 / 开关 / 包含排除 / 详情展开;只恢复输入不自动重搜)。BDD: workspace-search
 //   ❌ explorer.selectedPaths / lastAnchorPath(多选已由 headless-tree 持有)
 //   ❌ explorer.search:已从 runtime store 移除(打磨 R19,无生产 UI 接入)
 //   ❌ editor.content / dirty(MVP 不做 hot exit,启动从磁盘读最新)
@@ -72,6 +73,7 @@ import {
   type PersistedEditorViewState,
 } from '@/panels/Editor/editor-view-state-cache';
 import { notifyIfFailed } from '@/notifications/notify-thrown-error';
+import { restoreSearchInput, searchInputSnapshot, useSearchStore } from '@/panels/Search/search-store';
 
 const DEBOUNCE_MS = 300;
 const VERSION = 3 as const;
@@ -355,6 +357,7 @@ export function snapshotFromStores(
   const mruSnap = collectEditorMruSnapshot(ed.tabs, ed.activeTabId, ed.groups, ed.tabMru);
   const root = normalizeWorkspaceRoot(w.root);
   const recentRoots = collectNormalizedWorkspaceRoots(w.recentRoots);
+  const search = searchInputSnapshot();
 
   const myEntry: ExplorerWindowEntry = {
     windowSeq: seq,
@@ -376,6 +379,7 @@ export function snapshotFromStores(
       ...(mruSnap ?? null),
       ...(groupsSnap ?? null),
     },
+    ...(search === null ? null : { search }),
   };
 
   // 只写自己这一段。**不**把 prevSnap 里其它窗口的段一并写回 —— prevSnap
@@ -416,6 +420,7 @@ export function hydrateStores(
     // entry.explorer.activePath 故意不再回写 store(打磨 R18:store 已无该字段)。
     // Markdown 模式在 tab 恢复(挂载编辑器)前回填,恢复出的 tab 直接按该模式挂载。
     if (entry.editor?.mode !== undefined) useEditorStore.setState({ mode: entry.editor.mode });
+    restoreSearchInput(entry.search);
     useExplorerStore.setState({
       expandedPaths: new Set(entry.explorer.expandedPaths),
       sort: entry.explorer.sort,
@@ -771,6 +776,20 @@ export async function initExplorerPersistence(
       s.activeGroupId !== prev.activeGroupId ||
       s.groups !== prev.groups ||
       s.tabMru !== prev.tabMru
+    ) {
+      markDirtyAndPersist();
+    }
+  });
+  // 搜索输入:只在查询 / 开关 / 包含排除 / 详情展开变化时标脏(结果流式更新不触发写)。
+  useSearchStore.subscribe((s, prev) => {
+    if (
+      s.pattern !== prev.pattern ||
+      s.isRegex !== prev.isRegex ||
+      s.matchCase !== prev.matchCase ||
+      s.wholeWord !== prev.wholeWord ||
+      s.include !== prev.include ||
+      s.exclude !== prev.exclude ||
+      s.detailsOpen !== prev.detailsOpen
     ) {
       markDirtyAndPersist();
     }
