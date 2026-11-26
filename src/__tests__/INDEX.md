@@ -668,6 +668,7 @@
 
 ## [重新打开已关闭的编辑器(⇧⌘T)](./editor-reopen-closed/README.md)
 
+- [`reopen-closed-editor-popout.spec.ts`](./editor-reopen-closed/reopen-closed-editor-popout.spec.ts)
 - [`reopen-closed-editor.spec.ts`](./editor-reopen-closed/reopen-closed-editor.spec.ts)
 
 ## [editor-revert-file](./editor-revert-file/README.md)

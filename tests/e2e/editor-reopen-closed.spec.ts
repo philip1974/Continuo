@@ -1,10 +1,10 @@
 // 重新打开已关闭的编辑器(⇧⌘T / Ctrl+Shift+T,VSCode workbench.action.reopenClosedEditor):回到原位置、焦点与光标
-// 回到关闭前;拆分后回原编辑器组;文件已删除则跳过取下一条。BDD: src/__tests__/editor-reopen-closed/
+// 回到关闭前;拆分后回原编辑器组;文件已删除则跳过取下一条;popout 子窗里按落在子窗。BDD: src/__tests__/editor-reopen-closed/
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { EDITOR_TABS } from './helpers/editor';
+import { DOCK_POPOUT, EDITOR_TABS } from './helpers/editor';
 import { openTreeItem } from './helpers/explorer';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
@@ -120,4 +120,32 @@ test('文件已删除 → 跳过它,重新打开再早关闭的那个', async ()
   await win.keyboard.press(REOPEN);
   await expect.poll(() => tabTitles(group(win, 0))).toEqual(['a.ts', 'c.ts']);
   await expect(group(win, 0).locator('.cm-content')).toContainText('export const a');
+});
+
+test('popout 子窗里 ⌘W 关掉 tab → 在子窗按 ⇧⌘T 回到子窗里的原组,焦点进子窗编辑器(主窗不变)', async () => {
+  test.setTimeout(90_000);
+  const win = await launch();
+  const app = apps[apps.length - 1]!;
+  await openFile(win, /^a\.ts$/, 'export const a');
+  await openFile(win, /^b\.ts$/, 'export const b');
+  await group(win, 0).locator('.cm-content').click();
+  const popoutBtn = win.getByRole('button', { name: DOCK_POPOUT });
+  await expect(popoutBtn).toBeEnabled({ timeout: 10_000 });
+  await popoutBtn.click();
+  await expect.poll(() => app.windows().length, { timeout: 10_000 }).toBe(2);
+  const child = app.windows().find((w) => w !== win)!;
+  await child.waitForLoadState('domcontentloaded');
+  const childGroup = group(child, 0);
+  await expect(childGroup.locator('.cm-content')).toContainText('export const b', { timeout: 10_000 });
+
+  await child.bringToFront();
+  await childGroup.locator('.cm-content').click();
+  await child.keyboard.press('ControlOrMeta+w');
+  await expect.poll(() => tabTitles(childGroup)).toEqual(['a.ts']);
+
+  await child.keyboard.press(REOPEN);
+  await expect.poll(() => tabTitles(childGroup)).toEqual(['a.ts', 'b.ts']);
+  await expect(childGroup.locator('.cm-content')).toContainText('export const b');
+  await expect(childGroup.locator('.cm-content')).toBeFocused();
+  await expect(groups(win)).toHaveCount(0); // 没在主窗补建编辑器组
 });

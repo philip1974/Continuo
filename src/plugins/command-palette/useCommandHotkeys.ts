@@ -24,6 +24,8 @@ import { hasOpenModalIn } from '@/design/Modal';
  */
 export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.closeActiveEditor',
+  // ⇧⌘T:子窗里触发时重开落在该子窗(见 reopen-closed-editor targetOf),不画到主窗
+  'workbench.action.reopenClosedEditor',
 ]);
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */
