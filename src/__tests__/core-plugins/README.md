@@ -40,9 +40,11 @@
 ### 设置 tab 内容懒加载(perf)
 
 - 内置插件不得静态导入 `CategoryTabContent` / `PluginsTabContent`(源码钉测试):General / Editor / Explorer / Terminal
-  共用 `src/core-plugins/lazy-category-tab.ts` 一个 lazy chunk,Plugins tab 内容独立 chunk;模式同 Keybindings
-  (`lazy()` + 模块级 `lazyPanel`,Suspense fallback=null,首次打开 tab 一帧空白后显示内容)。
+  共用 `src/core-plugins/lazy-category-tab.ts` 一个 lazy chunk,插件市场 / 插件 / 快捷键 tab 内容各自独立 chunk
+  (均经 `preloadableLazy` + 模块级 `lazyPanel`,Suspense fallback=null)。
 - 各 tab 的 `render()` 多次调用返回同一组件类型。
 - 设置首开不走两级 chunk 瀑布:SettingsPanel 外壳的 lazy 工厂同时发起 CategoryTabContent 加载(复用
   `lazy-category-tab` 的 `loadCategoryTabContent`,同一模块实例);注册期不加载;分类预取不阻塞外壳、失败不影响
   外壳加载(`settings-chunk-parallel.spec.tsx`)。
+- 插件市场 / 插件 / 快捷键 tab chunk 同样随设置外壳的 lazy 工厂预取(`preloadPluginsTabs` / `preloadKeybindingsTab`,
+  与各自 lazy 共用同一加载器):外壳出现后首次点开这些 tab,内容同步渲染、与左侧高亮同时切换,不再内容区空白约 300ms。

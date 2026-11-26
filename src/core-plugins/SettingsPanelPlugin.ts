@@ -11,11 +11,16 @@ import { Plugin } from '@/plugins/Plugin';
 import { lazyPanel, preloadableLazy } from '@/lib/lazy-panel';
 import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { loadCategoryTabContent } from './lazy-category-tab';
+import { preloadPluginsTabs } from './PluginsTabPlugin';
+import { preloadKeybindingsTab } from './KeybindingsTabPlugin';
 
 // perf:设置首开时外壳 chunk 与默认分类 tab 的 CategoryTabContent chunk 同时发起,不再「外壳加载渲染后才拉
 // 分类内容」两级瀑布。分类预取 fire-and-forget:不阻塞外壳,失败吞掉(分类 tab 自己的 lazy 照常重新 import)。
+// 插件市场 / 插件 / 快捷键页签 chunk 同样随外壳预取:首次点开这些页签,内容与左侧高亮同步出现,不再空白约 300ms。
 const settingsPanel = preloadableLazy(() => {
   loadCategoryTabContent().catch(() => {});
+  preloadPluginsTabs().catch(() => {});
+  preloadKeybindingsTab().catch(() => {});
   return import('@/plugins/settings/SettingsPanel').then((m) => ({
     default: m.SettingsPanel,
   }));

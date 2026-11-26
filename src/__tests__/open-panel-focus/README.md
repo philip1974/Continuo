@@ -37,3 +37,4 @@ VSCode:`workbench.view.output` / `workbench.view.debug` 等「显示视图」命
 - 预取前挂载(走 lazy)的实例在模块加载后父组件重渲染时不换组件类型、不重挂(状态保留)
 - 搜索 / 设置面板经 `preloadableLazy`,启动后空闲时预取(与面板 lazy 共用同一加载器 → 同一 chunk)
 - 设置的分类页签内容同经 `preloadableLazy`,设置预取时一并预取(设置外壳同步挂载后,分类内容不再另挂起约 300ms)
+- 插件市场 / 插件 / 快捷键页签内容同经 `preloadableLazy`,随设置预取一并预取(见 `core-plugins/settings-chunk-parallel.spec.tsx`)

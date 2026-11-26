@@ -1,6 +1,6 @@
 // Settings 内多 nav tab 切换 → 内容区随之切换.
 import { test, expect } from './fixtures/electron-app';
-import { SETTINGS, SETTINGS_NAV } from './helpers/settings';
+import { KEYBINDINGS_TAB, MARKETPLACE_TAB, PLUGINS_TAB, SETTINGS, SETTINGS_NAV } from './helpers/settings';
 
 const GENERAL = /^(通用|General|일반)$/;
 const EDITOR = /^(编辑器|Editor|편집기)$/;
@@ -37,4 +37,29 @@ test('依次切「通用 → 编辑器 → 资源管理器 → 终端 → 快捷
 
   await nav.getByRole('button', { name: PLUGINS }).click();
   await expect(window.getByText(REGISTERED_CONTRIBUTIONS)).toBeVisible();
+});
+
+// 首次点开「插件市场 / 插件 / 快捷键」:此前这三个页签内容 chunk 不随设置外壳预取,内容区约 310ms 全空白
+//(React.lazy 首次渲染必挂起、揭示被节流),第二次才即时。现在随外壳预取 → 首次点开下一帧即有内容、高亮同步。
+test('首次点开插件市场 / 插件 / 快捷键页签:下一帧即有内容,左侧高亮同步', async ({ window }) => {
+  await window.getByRole('button', { name: SETTINGS }).click();
+  const nav = window.getByRole('navigation', { name: SETTINGS_NAV });
+  await expect(nav).toBeVisible({ timeout: 10_000 });
+  await expect(window.getByText(THEME)).toBeVisible();
+  for (const name of [MARKETPLACE_TAB, PLUGINS_TAB, KEYBINDINGS_TAB]) {
+    const btn = nav.getByRole('button', { name });
+    await expect(btn).toBeVisible();
+    const handle = await btn.elementHandle();
+    const r = await window.evaluate(async (el) => {
+      const b = el as HTMLButtonElement;
+      const content = b.closest('nav')!.nextElementSibling as HTMLElement;
+      b.click();
+      // 两帧:提交 + 布局。挂起时内容区为空(fallback=null)。
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      // innerText:挂起时 React 把旧页签内容留在 DOM 里 display:none,textContent 仍有字。
+      return { current: b.getAttribute('aria-current'), text: content.innerText.trim().length };
+    }, handle);
+    expect(r.current).toBe('page');
+    expect(r.text).toBeGreaterThan(0);
+  }
 });
