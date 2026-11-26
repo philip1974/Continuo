@@ -33,6 +33,12 @@ export const WINDOW_CHANNELS = {
    */
   CLOSE: 'window:close',
   /**
+   * 激活发起方所在窗口(BrowserWindow.focus)。popout 子窗获焦时从它触发的命令在主窗打开面板 / 选择器(⇧⌘F 搜索、⌘, 设置、
+   * 新终端…)→ 主窗 renderer 请求激活自己,系统焦点随之进主窗(VSCode 同:辅助窗口里 ⇧⌘F 打开主窗的搜索视图并聚焦主窗)。
+   * renderer 的 window.focus() 无用户激活时不激活窗口,故经 main。BDD: src/__tests__/popout-picker/
+   */
+  FOCUS: 'window:focus',
+  /**
    * 重启应用(插件安装后「立即重启」)。main 走与 ⌘Q 相同的退出流程(各窗口脏文件确认 / flush / 清理),全部通过后
    * app.relaunch() 再退出;用户取消 → 不退出也不重启。
    */

@@ -206,6 +206,7 @@ const NotifyRootInput = z
   .strict();
 
 const CloseInput = z.object({}).strict();
+const FocusInput = z.object({}).strict();
 const RelaunchInput = z.object({}).strict();
 const ViewActionInput = z.object({ action: z.enum(WINDOW_VIEW_ACTIONS) }).strict();
 // 菜单命令的生效键位:键只限菜单命令 id(条数因此有界),值为归一后的 hotkey 或 null(未绑定 / 冲突落败)。
@@ -312,6 +313,12 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
   // 菜单命令的生效键位(renderer 改键 / 解绑 / 命令注册变化后推送):有变化才重建菜单(accelerator 只作显示)。
   safeHandle(WINDOW_CHANNELS.SET_MENU_KEYBINDINGS, SetMenuKeybindingsInput, (input) => {
     if (setMenuKeybindings(input.keybindings)) deps.rebuildAppMenu();
+  });
+  // 激活发起方所在窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时 → 焦点随之进主窗)。
+  safeHandleWithCtx(WINDOW_CHANNELS.FOCUS, FocusInput, (_input, { event }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    win.focus();
   });
   // 「立即重启」(插件安装后):交给组合根走退出流程,不在这里直接 app.relaunch()/exit()(会绕过脏文件确认丢未保存内容)。
   safeHandle(WINDOW_CHANNELS.RELAUNCH_APP, RelaunchInput, () => {

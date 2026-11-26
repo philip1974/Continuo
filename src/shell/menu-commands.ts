@@ -30,6 +30,8 @@ function menuCommandDocument(fromPopout: boolean): Document {
  * 对齐 VSCode)。命令作用于获焦的窗口(与热键分发同一机制 runInCommandDocument:popout 子窗获焦 → 该子窗)。
  * accelerator 触发(viaKey:按键已先经 renderer 分发而未被处理)→ 按命令的上下文条件重新判定,不成立不执行(终端里按 ⌘/
  * 不去注释编辑器);点击菜单项不受上下文条件限制,与命令面板一致(编辑器命令作用于该窗口的活动文本编辑器,没有则静默)。
+ * 选择器类命令(转到文件 / 转到行 / 命令面板 / 打开最近)画在该窗口;在主窗打开面板的命令(⌘, / ⇧⌘F…)从子窗触发时激活主窗
+ *(BDD: src/__tests__/popout-picker/)。
  */
 export function runMenuCommand(commands: CommandRegistry, payload: unknown): void {
   if (!isMenuCommandPayload(payload)) return;

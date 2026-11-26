@@ -1,15 +1,17 @@
 // mod+P 族的全局开关热键(命令面板 ⌘⇧P / Quick Open ⌘P 共用;此前两个 hook 逐行相同,只差 shift 与 store)。
 // 已 open 再按 → close;Esc / 遮罩点击由 Modal 自身处理。shift 区分两个面板:不带 shift = Quick Open
 // (文件),带 shift = 命令面板(对齐 VSCode)。两个面板互斥:打开一个时关掉另一个(占位文案「⌘⇧P 切到命令面板」
-// 的语义;否则两个 Modal 叠加,执行命令 / Esc 后底下那个还开着挡住结果)。
+// 的语义;否则两个 Modal 叠加,执行命令 / Esc 后底下那个还开着挡住结果)。主窗与每个 popout 子窗各自监听:选择器画在
+// 按键所在窗口(VSCode 同,见 picker-window;BDD: src/__tests__/popout-picker/)。
 
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import type { PickerSlice } from './picker-slice';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { resolveEffectiveHotkey, resolveEffectiveHotkeys } from '@/plugins/keybindings/keybindings-store';
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
+import { getPopoutDocuments, runInCommandDocument, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 
 /**
  * 这两个组合由下方 document 监听写死处理,不在 CommandRegistry 里:改绑命令时的冲突检测
@@ -112,7 +114,7 @@ function isPKey(key: string): boolean {
   return key === 'p' || key === 'P';
 }
 
-type PickerGetState = () => Pick<PickerSlice, 'isOpen' | 'open' | 'close'>;
+type PickerGetState = () => Pick<PickerSlice, 'isOpen' | 'hostDocument' | 'open' | 'close'>;
 
 /** 当前挂载的 picker(互斥用:打开一个前关掉其余)。 */
 const mountedPickers = new Set<PickerGetState>();
@@ -122,42 +124,58 @@ export function usePickerToggleHotkey(
   opts: { readonly shift: boolean },
 ): void {
   const { shift } = opts;
+  const popoutDocs = useSyncExternalStore(subscribePopoutDocuments, getPopoutDocuments);
+  useEffect(() => {
+    mountedPickers.add(getState);
+    return () => {
+      mountedPickers.delete(getState);
+    };
+  }, [getState]);
   useEffect(() => {
     // 只认平台主修饰键:mac = Cmd(meta),其它 = Ctrl。
     //  - 非 mac 不认 meta:否则 Windows/Linux 的 Super/Win 键会误触发面板(跨平台审计 P2)。
     //  - mac 不认 Ctrl:Ctrl+P 是终端 readline 的「上一条历史」等 Control 序列,认了的话焦点在终端时
     //    shell 收到按键的同时面板也弹出来抢焦点(与 useCommandHotkeys 的 R15 规则一致)。
     const isMac = detectPlatform() === 'mac';
-    const handler = (e: KeyboardEvent): void => {
+    const handlerFor = (doc: Document) => (e: KeyboardEvent): void => {
       const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
       if (mod && !e.altKey && e.shiftKey === shift && isPKey(e.key)) {
+        // 选择器画在按键所在窗口(VSCode:Quick Input 画在触发它的窗口,见 picker-window)。picker 所在窗口 = hostDocument
+        //(null = 主窗)。
+        const here = doc === document ? null : doc;
         // 有别的 Modal(确认框 / 授权框)开着 → 不打开、不切换、不 preventDefault(对话框期间工作台快捷键不触发,
-        // 对齐 VSCode)。picker 自己也是 Modal:只有它自己开着时(再按关闭 / 互斥切换)扣掉这一层。picker 之上
+        // 对齐 VSCode)。picker 自己也是 Modal:只有它自己在本窗口开着时(再按关闭 / 互斥切换)扣掉这一层。picker 之上
         // 又叠了授权框时栈深 2 → 同样不动,免得切出的命令面板盖在授权框上。
-        let pickerOpen = false;
-        for (const picker of mountedPickers) if (picker().isOpen) pickerOpen = true;
-        if (hasOpenModalIn(document, pickerOpen ? 1 : 0)) return;
+        let pickerOpenHere = false;
+        for (const picker of mountedPickers) {
+          const p = picker();
+          if (p.isOpen && p.hostDocument === here) pickerOpenHere = true;
+        }
+        if (hasOpenModalIn(doc, pickerOpenHere ? 1 : 0)) return;
         // 菜单开着(焦点在菜单内)→ 同样不动,按键留给菜单。
         if (isInsideMenu(e.target)) return;
         e.preventDefault();
-        const { isOpen, open, close } = getState();
-        if (isOpen) {
+        const { isOpen, hostDocument, open, close } = getState();
+        if (isOpen && hostDocument === here) {
           close();
           return;
         }
         for (const other of mountedPickers) {
           if (other !== getState) other().close();
         }
-        open();
+        // 已在别的窗口开着 → 移到本窗口(open 按触发窗口重取 hostDocument)
+        runInCommandDocument(doc, open);
       }
     };
-    mountedPickers.add(getState);
-    // 只挂主窗 document,不挂 popout 子窗:picker 是主窗 App 层的 Modal,从子窗打开时画在主窗、焦点却留在子窗
-    //(无激活主窗的通路)→ 接着输入的字进了子窗的编辑器 / 终端,且该 Modal 在子窗里 Esc 关不掉,比不响应更糟。
-    document.addEventListener('keydown', handler);
+    // 主窗与每个 popout 子窗各挂一个监听(子窗关闭 → popoutDocs 变化 → 移除旧监听)。
+    const docs = [document, ...popoutDocs];
+    const handlers = docs.map((doc) => {
+      const handler = handlerFor(doc);
+      doc.addEventListener('keydown', handler);
+      return { doc, handler };
+    });
     return () => {
-      document.removeEventListener('keydown', handler);
-      mountedPickers.delete(getState);
+      for (const { doc, handler } of handlers) doc.removeEventListener('keydown', handler);
     };
-  }, [getState, shift]);
+  }, [getState, shift, popoutDocs]);
 }

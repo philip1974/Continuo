@@ -66,6 +66,10 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
       'workbench.action.navigateForward',
       // 切换自动换行只翻转设置(workbench-missing-commands)
       'editor.action.toggleWordWrap',
+      // 选择器画在按键所在子窗(popout-picker)
+      'workbench.action.gotoLine',
+      'workbench.action.openRecent',
+      'workbench.action.showCommands',
     ]);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(NEXT_EDITOR_COMMAND_ID)).toBe(false);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(PREVIOUS_EDITOR_COMMAND_ID)).toBe(false);

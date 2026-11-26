@@ -5,7 +5,7 @@
 // - 加 loading: walk 期间 spinner
 
 import { create } from 'zustand';
-import { createPickerSlice, type PickerSlice } from '../picker/picker-slice';
+import { createPickerSlice, pickerOpenDocument, type PickerSlice } from '../picker/picker-slice';
 import { arraysEqual } from '@shared/array-equal';
 
 /**
@@ -82,5 +82,5 @@ export const useQuickOpenStore = create<QuickOpenState>((set) => ({
   setLoading: (b) => set((s) => (s.loading === b ? s : { loading: b })),
   setScanFailed: (b) =>
     set((s) => (s.scanFailed === b ? s : { scanFailed: b })),
-  openWith: (query) => set({ isOpen: true, query, selectedIndex: 0 }),
+  openWith: (query) => set({ isOpen: true, query, selectedIndex: 0, hostDocument: pickerOpenDocument() }),
 }));

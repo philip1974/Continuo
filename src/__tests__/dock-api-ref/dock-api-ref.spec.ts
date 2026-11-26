@@ -27,7 +27,7 @@ function fakeApi(panels: Record<string, FakePanel> = {}): FakeApi {
   return {
     getPanel: vi.fn((id: string) => panels[id]),
     // 真实 addPanel 返回新面板(addPanelAndFocus 据此判断它是否仍是活动面板)
-    addPanel: vi.fn(() => ({})),
+    addPanel: vi.fn(() => ({ api: { location: { type: 'grid' } } })),
   };
 }
 

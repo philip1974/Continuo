@@ -10,13 +10,11 @@ import { IconSidebar } from './IconSidebar';
 import { PopoutHost } from './PopoutHost';
 import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
-import { CommandPalette } from '@/plugins/command-palette/CommandPalette';
 import { useCommandPaletteHotkey } from '@/plugins/command-palette/useCommandPaletteHotkey';
 import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
 import { useExternalFileSync } from '@/panels/Editor/useExternalFileSync';
 import { useExternalSyncRootWatch } from '@/panels/Editor/useExternalSyncRootWatch';
-import { QuickOpenModal } from '@/plugins/quick-open/QuickOpenModal';
-import { OpenRecentModal } from '@/plugins/open-recent/OpenRecentModal';
+import { PickerModals } from './PickerModals';
 import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { PluginFailureNotifier } from '@/plugins/PluginFailureNotifier';
@@ -171,9 +169,7 @@ function MainApp() {
         </main>
         <StatusBar />
       </div>
-      <CommandPalette commands={coApp.commands} />
-      <QuickOpenModal />
-      <OpenRecentModal />
+      <PickerModals commands={coApp.commands} />
       <PermissionPrompt />
       <AgentAuthPrompt />
       {/* 插件激活 / 渲染失败主动 error 通知(BDD: plugin-failure-notify) */}

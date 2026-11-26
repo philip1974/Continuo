@@ -39,6 +39,11 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   // 切换自动换行:只翻转设置(所有编辑器随之换行),不在主窗画东西(BDD: src/__tests__/workbench-missing-commands/)。
   // 全部保存不在此列:保存失败的确认框画在各编辑器组所在窗口。
   'editor.action.toggleWordWrap',
+  // 选择器(⌃G 转到行、⌃R 打开最近、F1 显示所有命令):画在按键所在子窗(picker 切片按触发窗口取 hostDocument,见
+  // picker-window;VSCode 同)。⌘P / ⇧⌘P 由 picker 监听在各窗口处理。
+  'workbench.action.gotoLine',
+  'workbench.action.openRecent',
+  'workbench.action.showCommands',
 ]);
 
 /**
@@ -476,8 +481,7 @@ export function useCommandHotkeys(commands: CommandRegistry): void {
     if (bindings.length === 0) return;
     const handler = createHotkeyHandler(bindings, commands);
     // 主窗 document 分发全部命令。popout 子窗只分发 POPOUT_HOTKEY_COMMAND_IDS(见下):其它命令效果(新终端、设置面板等)
-    // 都画在主窗,从子窗触发时系统焦点留在子窗(renderer 无激活主窗的通路),接着输入的字进了子窗的编辑器 / 终端。
-    // 与 ⌘P / ⌘⇧P 同一规则。
+    // 画在主窗 —— mac 上子窗里没分发的键落到应用菜单 accelerator,经菜单命令在主窗打开并激活主窗(main-window-focus)。
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
     // commands 是稳定 registry 实例(挂载期不变);handler 内 commands.get 做 R51 live 查找。

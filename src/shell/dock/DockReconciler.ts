@@ -14,6 +14,7 @@ import {
   markPanelCloseSuppressed,
 } from './wrap-panel-close';
 import { mainWindowAddPosition } from './group-mru';
+import { focusMainWindowFromPopout } from './main-window-focus';
 import {
   panelIdFor,
   sessionIdFromPanel,
@@ -217,6 +218,8 @@ export function reconcileTerminalPanels(
         if (shouldFocus) {
           panel = api.addPanel(options);
           panel.api.setActive();
+          // 用户新建的终端落在主窗而系统焦点在 popout 子窗(子窗里经菜单 / 命令面板新建终端)→ 激活主窗
+          if (panel.api.location.type !== 'popout') focusMainWindowFromPopout();
         } else {
           panel = addPanelKeepingActive(api, options);
         }

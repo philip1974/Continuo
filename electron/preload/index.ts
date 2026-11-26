@@ -520,6 +520,8 @@ const api = {
     getZoomFactor: (): number => webFrame.getZoomFactor(),
     /** 关闭本窗口(经 main win.close(),走关窗脏确认)。⌘W 已无可关的编辑器 / 面板时调用(对齐 VSCode)。 */
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
+    /** 激活本窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时调用)。 */
+    focus: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS, {}),
     /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */
     relaunchApp: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.RELAUNCH_APP, {}),
     /** 对本窗口执行应用菜单 View 同款动作(重新加载 / 放大 / 缩小 / 重置缩放 / 切换全屏);重新加载走脏确认。 */

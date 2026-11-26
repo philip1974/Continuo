@@ -1565,6 +1565,11 @@
 - [`popout-panel-keyboard.spec.tsx`](./popout-panel-keyboard/popout-panel-keyboard.spec.tsx)
 - [`tablist-roving.spec.ts`](./popout-panel-keyboard/tablist-roving.spec.ts)
 
+## [popout-picker(popout 子窗里打开选择器 / 主窗面板时,焦点与界面在同一窗口)](./popout-picker/README.md)
+
+- [`popout-picker.spec.tsx`](./popout-picker/popout-picker.spec.tsx)
+- [`window-focus-ipc.spec.ts`](./popout-picker/window-focus-ipc.spec.ts)
+
 ## [preload-no-zod(preload sandbox zod 泄漏守卫)](./preload-no-zod/README.md)
 
 - [`channels-zod-free.spec.ts`](./preload-no-zod/channels-zod-free.spec.ts)

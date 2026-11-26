@@ -7,6 +7,7 @@ import type { AddPanelOptions, DockviewApi, IDockviewPanel } from 'dockview-reac
 import { activateDockPanel } from './wrap-panel-close';
 import { mainWindowAddPosition } from './group-mru';
 import { focusPanelContentWhenReady } from './panel-focus';
+import { focusMainWindowFromPopout } from './main-window-focus';
 import { notifyThrownError } from '@/notifications/notify-thrown-error';
 
 let apiRef: DockviewApi | null = null;
@@ -111,6 +112,8 @@ export function revealDockPanel(api: Pick<DockviewApi, 'activePanel'>, panel: ID
   activateDockPanel(panel);
   const location = panel.api.location;
   if (location?.type === 'popout') location.getWindow().focus();
+  // 在主窗而系统焦点在某个 popout 子窗(从子窗触发 ⌘, / ⇧⌘F…)→ 激活主窗(VSCode 同,见 main-window-focus)
+  else focusMainWindowFromPopout();
   focusPanelContentWhenReady(panel, () => api.activePanel === panel);
 }
 
@@ -124,6 +127,8 @@ export function addPanelAndFocus(
   options: AddPanelOptions,
 ): IDockviewPanel {
   const panel = api.addPanel(options);
+  // 落在主窗而系统焦点在某个 popout 子窗 → 激活主窗;落在子窗(子窗「⋯」菜单新建)→ 焦点本就在那边
+  if (panel.api.location?.type !== 'popout') focusMainWindowFromPopout();
   focusPanelContentWhenReady(panel, () => api.activePanel === panel);
   return panel;
 }

@@ -25,6 +25,7 @@ import { detectPlatform, type Platform } from '@/plugins/command-palette/format-
 import { useQuickOpenStore } from '@/plugins/quick-open/store';
 import { useCommandPaletteStore } from '@/plugins/command-palette/store';
 import { useOpenRecentStore } from '@/plugins/open-recent/store';
+import { focusMainWindowFromPopout } from '@/shell/dock/main-window-focus';
 
 export const NEW_FILE_COMMAND_ID = 'explorer.newFile';
 export const NEW_FOLDER_COMMAND_ID = 'explorer.newFolder';
@@ -41,6 +42,8 @@ export function openRecentPicker(): void {
 
 /** 显示资源管理器并聚焦:有工作区 → 树的焦点行(等文件树加载);无 → 空态的「打开文件夹」。 */
 export function showExplorer(): void {
+  // 侧栏在主窗:从 popout 子窗触发(菜单 显示 → 资源管理器)→ 激活主窗,焦点随之进文件树
+  focusMainWindowFromPopout();
   useLayoutUiStore.getState().setSidebarOpen(true);
   const root = useWorkspaceStore.getState().root;
   if (root) requestExplorer({ kind: 'focusTree', root });
