@@ -34,13 +34,11 @@ test('打开 .md → 设置面板显示自动保存默认值(开启、2000ms)', 
     window.locator('main').getByText(AUTO_SAVE_MARKDOWN),
   ).toBeVisible();
 
-  // 自动保存 toggle = on(boolean default=true).
-  // 「编辑器」tab 内 button[role=switch] 顺序:lineNumbers(外观) → autoSave.markdown.enabled(自动保存).
-  // 断言第二个 toggle(autoSave.markdown.enabled,priority 排序后在 lineNumbers 之后)为 true.
-  const toggles = window.locator('main button[role=switch]');
-  expect(await toggles.count()).toBeGreaterThanOrEqual(2);
-  // autoSave.markdown.enabled 是第二个(priority 排序后)
-  await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'true');
+  // 自动保存 toggle = on(boolean default=true)。按名称取(外观组另有行号、自动换行等开关,不按位置数)。
+  await expect(window.locator('main').getByRole('switch', { name: AUTO_SAVE_MARKDOWN })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
 
   // 也验证 autoSave.delayMs number input 默认 2000
   // 数 input 中至少有一个值是 2000(autoSave.delayMs);

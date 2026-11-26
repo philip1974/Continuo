@@ -139,7 +139,7 @@ test('⌃R 打开最近的文件夹:键盘选中 → 切换,焦点交给新文�
     .toBe(true);
 });
 
-test('⌥Z 切换自动换行:即时生效,再按恢复;设置页同一开关', async () => {
+test('⌥Z 切换自动换行:即时生效,再按恢复', async () => {
   test.setTimeout(90_000);
   const { win } = await launch({ 'wide.ts': `const s = '${'w'.repeat(600)}';\n` });
   await waitForTestHooks(win);
