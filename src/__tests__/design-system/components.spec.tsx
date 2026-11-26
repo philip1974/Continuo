@@ -156,6 +156,20 @@ describe('MenuItem', () => {
   it('未传 trailing → 不渲染 trailing 节点', () => {
     const { container } = render(<MenuItem onClick={() => {}}>X</MenuItem>);
     expect(container.querySelector('.wm-menu-item__trailing')).toBeNull();
+    expect(container.querySelector('.wm-menu-item__shortcut')).toBeNull();
+  });
+
+  it('shortcut 键位在 trailing 之后显示,不计入可访问名称', () => {
+    render(
+      <MenuItem onClick={() => {}} trailing="2 items" shortcut="⌘⌫">
+        Move to Trash
+      </MenuItem>,
+    );
+    const item = screen.getByRole('menuitem', { name: /^Move to Trash ?2 items$/ });
+    const shortcut = item.querySelector('.wm-menu-item__shortcut')!;
+    expect(shortcut.textContent).toBe('⌘⌫');
+    expect(shortcut.getAttribute('aria-hidden')).toBe('true');
+    expect(shortcut.previousElementSibling?.className).toBe('wm-menu-item__trailing');
   });
 });
 
@@ -179,6 +193,16 @@ describe('NavRailButton', () => {
       </NavRailButton>,
     );
     expect(container.querySelector('.wm-nav-rail-button__active-bar')).toBeNull();
+  });
+
+  it('tooltip 只改悬停提示,可访问名称仍是 title', () => {
+    render(
+      <NavRailButton title="Explorer" tooltip="Explorer (⌘B)" onClick={() => {}}>
+        E
+      </NavRailButton>,
+    );
+    const btn = screen.getByRole('button', { name: 'Explorer' });
+    expect(btn.getAttribute('title')).toBe('Explorer (⌘B)');
   });
 
   // a11y(A32):非 toggle 用法(不传 active)不应暴露 aria-pressed,否则 AT 误读成切换按钮。

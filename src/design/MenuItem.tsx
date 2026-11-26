@@ -29,6 +29,11 @@ export interface MenuItemProps
   readonly ariaLabel?: string;
   /** Right-aligned secondary content such as a shortcut (`F2`) or a count; kept outside the truncated label. */
   readonly trailing?: ReactNode;
+  /**
+   * Keyboard shortcut hint (`⌘C` / `Ctrl+C`), right-aligned after `trailing`. Visual only: hidden from the accessible
+   * name so the item is still announced (and matched) by its label. Defaults to none.
+   */
+  readonly shortcut?: string;
   /** Forwarded to the underlying button (React 19 ref-as-prop). */
   readonly ref?: Ref<HTMLButtonElement>;
   /** Row label or composed menu content. No default. */
@@ -42,6 +47,7 @@ export function MenuItem({
   title,
   ariaLabel,
   trailing,
+  shortcut,
   ref,
   children,
   ...rest
@@ -65,6 +71,11 @@ export function MenuItem({
     >
       <span className="wm-menu-item__content">{children}</span>
       {trailing != null && <span className="wm-menu-item__trailing">{trailing}</span>}
+      {shortcut ? (
+        <span className="wm-menu-item__shortcut" aria-hidden="true">
+          {shortcut}
+        </span>
+      ) : null}
     </button>
   );
 }

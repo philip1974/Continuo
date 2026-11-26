@@ -17,6 +17,11 @@ export interface NavRailButtonProps {
   readonly disabled?: boolean;
   /** Tooltip text and accessible name. No default. */
   readonly title: string;
+  /**
+   * Hover tooltip when it should differ from the accessible name (e.g. `Explorer (⌘B)` with a shortcut hint).
+   * Defaults to `title`.
+   */
+  readonly tooltip?: string;
   /** Called when the rail item is clicked. No default. */
   readonly onClick: () => void;
   /**
@@ -32,6 +37,7 @@ export function NavRailButton({
   active,
   disabled = false,
   title,
+  tooltip,
   onClick,
   describedById,
   children,
@@ -46,7 +52,7 @@ export function NavRailButton({
       aria-pressed={active === undefined ? undefined : active}
       aria-label={title}
       aria-describedby={describedById}
-      title={title}
+      title={tooltip ?? title}
       disabled={disabled}
       onClick={onClick}
     >

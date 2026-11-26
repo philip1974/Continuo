@@ -21,7 +21,7 @@ test('本地化 Settings 查询能匹配 settings.toggle 命令', async ({
   });
 
   const settingsQuery =
-    (await settingsButton.getAttribute('title'))?.toLocaleLowerCase() ??
+    (await settingsButton.getAttribute('aria-label'))?.toLocaleLowerCase() ??
     'settings';
 
   await dispatchModKey(window, 'p', { shift: true });
@@ -41,7 +41,7 @@ test('跨字符模糊查询匹配 settings.toggle 命令', async ({ window }) =>
   await expect(settingsButton).toBeVisible({
     timeout: 10_000,
   });
-  const settingsLabel = (await settingsButton.getAttribute('title')) ?? 'Settings';
+  const settingsLabel = (await settingsButton.getAttribute('aria-label')) ?? 'Settings';
 
   await dispatchModKey(window, 'p', { shift: true });
   const input = window.getByRole('combobox', { name: COMMAND_SEARCH });

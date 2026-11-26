@@ -16,6 +16,9 @@ import { coApp } from '@/plugins/co-app';
 import { PluginRenderBoundary } from '@/plugins/PluginRenderBoundary';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { isSortedBy } from '@/lib/is-sorted-by';
+import { hotkeyText } from '@/lib/hotkey-label';
+import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
+import { TREE_KEY_HOTKEYS, trashHotkey } from './tree-keyboard';
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
@@ -70,8 +73,10 @@ const contentCls =
 interface CtxItemProps {
   readonly onSelect: () => void;
   readonly variant?: MenuItemVariant;
-  /** 右侧快捷键 / 计数(design MenuItem trailing 槽)。 */
+  /** 右侧计数(design MenuItem trailing 槽)。 */
   readonly trailing?: ReactNode;
+  /** 右侧键位(design MenuItem shortcut 槽,不计入可访问名称)。 */
+  readonly shortcut?: string;
   readonly children: ReactNode;
 }
 
@@ -79,10 +84,10 @@ interface CtxItemProps {
  * 菜单项 = Radix ContextMenu.Item(asChild)包 design MenuItem:外观与 DropdownMenu 等其它菜单同一实现,
  * 键盘漫游 / Enter·Space 选中 / 关闭焦点还原 / 越界定位仍由 Radix 负责(MenuItem 透传 Radix 注入的 ref 与事件)。
  */
-function CtxItem({ onSelect, variant, trailing, children }: CtxItemProps) {
+function CtxItem({ onSelect, variant, trailing, shortcut, children }: CtxItemProps) {
   return (
     <Menu.Item asChild onSelect={onSelect}>
-      <MenuItem variant={variant} trailing={trailing}>
+      <MenuItem variant={variant} trailing={trailing} shortcut={shortcut}>
         {children}
       </MenuItem>
     </Menu.Item>
@@ -233,6 +238,11 @@ function ContextMenuContent({
       ? t('panels.explorer.ctx.items_count', { count: actionTargetCount })
       : undefined;
 
+  // 右侧键位(VSCode Explorer 右键菜单):与树内按键同一来源(tree-keyboard),按平台格式化(mac ⌘X,其它 Ctrl+X)。
+  // 多选时「移到废纸篓」右侧先条目数再键位。
+  const platform = detectPlatform();
+  const keyOf = (combo: string) => hotkeyText(combo, platform);
+
   // 创建上下文目录:文件夹 right-click → 它本身;空白 → root(文件行不显示「新建 / 粘贴」)。
   const createParent = (): string => (isFolder ? target!.path : rootPath);
 
@@ -265,7 +275,7 @@ function ContextMenuContent({
               {t('panels.explorer.ctx.new_folder')}
             </CtxItem>
             {hasClipboard && (
-              <CtxItem onSelect={() => actions.onPaste(createParent())}>
+              <CtxItem onSelect={() => actions.onPaste(createParent())} shortcut={keyOf(TREE_KEY_HOTKEYS.paste)}>
                 {t('panels.explorer.ctx.paste')}
               </CtxItem>
             )}
@@ -276,10 +286,10 @@ function ContextMenuContent({
         {!isBlank && (
           <>
             {/* 剪切 / 复制(in-app 剪贴板) */}
-            <CtxItem onSelect={() => actions.onCut(actionTargets)}>
+            <CtxItem onSelect={() => actions.onCut(actionTargets)} shortcut={keyOf(TREE_KEY_HOTKEYS.cut)}>
               {t('panels.explorer.ctx.cut')}
             </CtxItem>
-            <CtxItem onSelect={() => actions.onCopy(actionTargets)}>
+            <CtxItem onSelect={() => actions.onCopy(actionTargets)} shortcut={keyOf(TREE_KEY_HOTKEYS.copy)}>
               {t('panels.explorer.ctx.copy')}
             </CtxItem>
             <Menu.Separator className={sepCls} />
@@ -289,7 +299,7 @@ function ContextMenuContent({
                 focusRestore.skipOnce(); // 将打开 RenameInput 并自聚焦 → 跳过还原
                 actions.onRename(target!.path);
               }}
-              trailing="F2"
+              shortcut={keyOf(TREE_KEY_HOTKEYS.rename)}
             >
               {t('panels.explorer.ctx.rename')}
             </CtxItem>
@@ -328,6 +338,7 @@ function ContextMenuContent({
                 actions.onTrash(actionTargets);
               }}
               trailing={countTrailing}
+              shortcut={keyOf(trashHotkey(platform))}
             >
               {t('panels.explorer.ctx.trash')}
             </CtxItem>

@@ -16,7 +16,7 @@ test('多次执行同命令 → recent 不重复 + 该命令始终置顶', async
     timeout: 10_000,
   });
   const settingsQuery =
-    (await settingsButton.getAttribute('title'))?.toLocaleLowerCase() ??
+    (await settingsButton.getAttribute('aria-label'))?.toLocaleLowerCase() ??
     'settings';
 
   // 三次执行 settings.toggle

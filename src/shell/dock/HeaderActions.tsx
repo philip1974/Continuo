@@ -12,6 +12,17 @@ import { openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
 import { focusDockPanelSoon } from '@/shell/dock/panel-focus';
 import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
+import { commandHotkeyText } from '@/lib/hotkey-label';
+import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
+
+/**
+ * 面板类型 → 打开它的命令(菜单项右侧显示该命令当前生效键位,VSCode 菜单同款):新建终端 ⌘T、在文件中查找 ⇧⌘F、设置 ⌘,。
+ */
+const PANEL_OPEN_COMMAND: ReadonlyMap<string, string> = new Map([
+  [TERMINAL_PANEL_TYPE, 'terminal.new'],
+  ['search', 'workbench.action.findInFiles'],
+  ['settings', 'settings.toggle'],
+]);
 
 let panelCounter = 0;
 /**
@@ -49,6 +60,9 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
   const panelChoices = useRegistry(coApp.panels);
+  // 键位提示:改键 / 命令注册变化后跟随
+  const overrides = useKeybindingsStore((s) => s.overrides);
+  useRegistry(coApp.commands);
   // 成功新建面板时只关菜单(新面板 / 终端接管焦点);失败分支 closeAndRestore,焦点回到触发按钮而非 body。
   const addPanel = useCallback(
     async (
@@ -172,6 +186,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
             return (
               <MenuItem
                 key={c.type}
+                shortcut={commandHotkeyText(coApp.commands.get(PANEL_OPEN_COMMAND.get(c.type) ?? ''), overrides)}
                 // race(R60,R59 同族):点击时按 type 从 live coApp.panels 复查,而非用打开菜单时
                 // 捕获的快照。菜单打开期间该 panel type 可能被插件 disable/reload unregister;
                 // 已移除则关菜单不创建(否则得到 component 不存在的空白 panel,同 type 重注册时还

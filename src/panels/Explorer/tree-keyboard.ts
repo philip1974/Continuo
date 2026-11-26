@@ -22,6 +22,14 @@ import { dirname } from './path-utils';
 
 export type TreeKeyCommand = 'open' | 'trash' | 'copy' | 'cut' | 'paste';
 
+/** 剪切 / 复制 / 粘贴 / 重命名的树内键位(右键菜单右侧显示同一来源;树内键不经快捷键设置,不可改绑)。 */
+export const TREE_KEY_HOTKEYS = { cut: 'mod+x', copy: 'mod+c', paste: 'mod+v', rename: 'f2' } as const;
+
+/** 移到废纸篓的主键位:mac ⌘⌫(另认 Delete),其它 Delete。 */
+export function trashHotkey(platform: Platform): string {
+  return platform === 'mac' ? 'cmd+backspace' : 'delete';
+}
+
 /**
  * VSCode Explorer 键位:Enter 打开(文件)/ 切换展开(目录);Delete 移到废纸篓(mac 另有 ⌘⌫);
  * mod+C / mod+X / mod+V 复制 / 剪切 / 粘贴(mod = mac ⌘、其它 Ctrl)。
@@ -29,10 +37,10 @@ export type TreeKeyCommand = 'open' | 'trash' | 'copy' | 'cut' | 'paste';
 export function matchTreeKeyCommand(e: KeyboardEvent, platform: Platform): TreeKeyCommand | null {
   if (matchesHotkey('enter', e, platform)) return 'open';
   if (matchesHotkey('delete', e, platform)) return 'trash';
-  if (platform === 'mac' && matchesHotkey('cmd+backspace', e, platform)) return 'trash';
-  if (matchesHotkey('mod+c', e, platform)) return 'copy';
-  if (matchesHotkey('mod+x', e, platform)) return 'cut';
-  if (matchesHotkey('mod+v', e, platform)) return 'paste';
+  if (matchesHotkey(trashHotkey(platform), e, platform)) return 'trash';
+  if (matchesHotkey(TREE_KEY_HOTKEYS.copy, e, platform)) return 'copy';
+  if (matchesHotkey(TREE_KEY_HOTKEYS.cut, e, platform)) return 'cut';
+  if (matchesHotkey(TREE_KEY_HOTKEYS.paste, e, platform)) return 'paste';
   return null;
 }
 

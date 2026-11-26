@@ -10,7 +10,7 @@ test('settings.toggle 行右侧显示 hotkey 切片', async ({ window }) => {
   const settingsButton = window.getByRole('button', { name: SETTINGS });
   await expect(settingsButton).toBeVisible({ timeout: 10_000 });
   const settingsQuery =
-    (await settingsButton.getAttribute('title'))?.toLocaleLowerCase() ??
+    (await settingsButton.getAttribute('aria-label'))?.toLocaleLowerCase() ??
     'settings';
 
   await dispatchModKey(window, 'p', { shift: true });

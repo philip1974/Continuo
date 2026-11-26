@@ -66,8 +66,8 @@ vi.mock('@/plugins/co-app', () => ({
       get: vi.fn((type: string) => mocks.panels.find((p) => p.type === type)),
       subscribe: vi.fn(() => () => undefined),
     },
-    // 无工作区新建终端时经 live 命令注册表调起「打开文件夹」(本规范不关心其执行)。
-    commands: { get: vi.fn(() => undefined) },
+    // 无工作区新建终端时经 live 命令注册表调起「打开文件夹」(本规范不关心其执行);菜单键位提示订阅注册表。
+    commands: { get: vi.fn(() => undefined), getAll: vi.fn(() => []), subscribe: vi.fn(() => () => undefined) },
   },
 }));
 

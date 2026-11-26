@@ -13,6 +13,8 @@ export type TabMenuEntry =
       readonly label: string;
       readonly onSelect: () => void;
       readonly disabled?: boolean;
+      /** 右侧键位提示(如关闭的「⌘W」,design MenuItem shortcut 槽)。 */
+      readonly shortcut?: string;
       /**
        * 该项随后打开自聚焦的输入框(如终端「重命名…」):关闭菜单时不把焦点还给 tab(同 Explorer menu-close-focus 的
        * skipOnce),否则 Radix 的还原会抢走输入框焦点。其它关闭路径照常还原。
@@ -79,7 +81,9 @@ export function TabContextMenu({
                   }}
                   disabled={entry.disabled}
                 >
-                  <MenuItem disabled={entry.disabled}>{entry.label}</MenuItem>
+                  <MenuItem disabled={entry.disabled} shortcut={entry.shortcut}>
+                    {entry.label}
+                  </MenuItem>
                 </Menu.Item>
               ),
             )}

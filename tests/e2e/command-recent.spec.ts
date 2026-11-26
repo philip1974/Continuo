@@ -12,7 +12,7 @@ test('执行 settings.toggle → 关 + 重开 → recent 第一项是 Settings �
   const settingsButton = window.getByRole('button', { name: SETTINGS });
   await expect(settingsButton).toBeVisible({ timeout: 10_000 });
   const settingsQuery =
-    (await settingsButton.getAttribute('title'))?.toLocaleLowerCase() ??
+    (await settingsButton.getAttribute('aria-label'))?.toLocaleLowerCase() ??
     'settings';
 
   // 第一次:搜 Settings 命令执行

@@ -17,8 +17,10 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { setLocale } from '@/i18n';
 
 const items = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('[role=menuitem]'));
-const labels = (): string[] => items().map((el) => el.textContent ?? '');
-const item = (label: string): HTMLElement => items().find((el) => el.textContent === label)!;
+// 名称(不含右侧键位:shortcut 槽 aria-hidden,不计入可访问名称)
+const labelOf = (el: HTMLElement): string => el.querySelector('.wm-menu-item__content')?.textContent ?? '';
+const labels = (): string[] => items().map(labelOf);
+const item = (label: string): HTMLElement => items().find((el) => labelOf(el) === label)!;
 
 beforeEach(() => setLocale('en'));
 afterEach(() => {

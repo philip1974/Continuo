@@ -885,6 +885,10 @@
 
 - [`hotkey-editor-handled.spec.tsx`](./hotkey-editor-handled/hotkey-editor-handled.spec.tsx)
 
+## [快捷键提示:tooltip 与菜单项键位(对齐 VSCode)](./hotkey-hints/README.md)
+
+- [`hotkey-hints.spec.tsx`](./hotkey-hints/hotkey-hints.spec.tsx)
+
 ## [快捷键键名词汇:捕获 / 匹配 / 显示 一致](./hotkey-key-vocabulary/README.md)
 
 - [`key-vocabulary.spec.ts`](./hotkey-key-vocabulary/key-vocabulary.spec.ts)

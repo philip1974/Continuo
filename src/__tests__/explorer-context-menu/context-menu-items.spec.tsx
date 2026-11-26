@@ -56,9 +56,9 @@ describe('Explorer 右键菜单 — design MenuItem + shadow-popover', () => {
     expect(content.className).not.toMatch(/\bshadow-xl\b/);
   });
 
-  it('重命名项快捷键 F2 走 trailing 槽;移到废纸篓是 danger 变体', () => {
+  it('重命名项快捷键 F2 走 shortcut 槽;移到废纸篓是 danger 变体', () => {
     openMenu(makeActions());
-    const rename = items().find((el) => el.querySelector('.wm-menu-item__trailing')?.textContent === 'F2');
+    const rename = items().find((el) => el.querySelector('.wm-menu-item__shortcut')?.textContent === 'F2');
     expect(rename).toBeDefined();
     const trash = items().filter((el) => el.dataset.variant === 'danger');
     expect(trash).toHaveLength(1);

@@ -45,6 +45,8 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { tabLabelDescriptions } from './tab-label-description';
 import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
+import { commandHotkeyText } from '@/lib/hotkey-label';
+import { CLOSE_ACTIVE_EDITOR_COMMAND, SPLIT_EDITOR_COMMAND } from './editor-commands';
 
 /**
  * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
@@ -308,7 +310,8 @@ export const EditorHeader = memo(function EditorHeader({
       const close = (kind: TabCloseKind) => () => onCloseTabsRequest(tabCloseTargets(tabsChrome, tab.id, kind));
       const copyFailed = t('panels.explorer.copy_path_failed');
       return [
-        { label: t('shell.tab.ctx.close'), onSelect: close('close') },
+        // 右侧键位取当前生效绑定(菜单打开时构建,改键后下次打开即跟随;VSCode 标签右键「关闭 ⌘W」「向右拆分 ⌘\」)
+        { label: t('shell.tab.ctx.close'), onSelect: close('close'), shortcut: commandHotkeyText(CLOSE_ACTIVE_EDITOR_COMMAND) },
         { label: t('shell.tab.ctx.close_others'), onSelect: close('others'), disabled: tabsChrome.length <= 1 },
         { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= tabsChrome.length - 1 },
         { label: t('shell.tab.ctx.close_saved'), onSelect: close('saved') },
@@ -334,7 +337,11 @@ export const EditorHeader = memo(function EditorHeader({
         },
         'separator',
         // VSCode 编辑器 tab 右键「向右拆分 / 向下拆分」:以该 tab 的文件拆出新组(BDD: src/__tests__/editor-groups/)
-        { label: t('shell.tab.ctx.split_right'), onSelect: () => void splitEditor('right', { groupId, tabId: tab.id }) },
+        {
+          label: t('shell.tab.ctx.split_right'),
+          onSelect: () => void splitEditor('right', { groupId, tabId: tab.id }),
+          shortcut: commandHotkeyText(SPLIT_EDITOR_COMMAND),
+        },
         { label: t('shell.tab.ctx.split_down'), onSelect: () => void splitEditor('down', { groupId, tabId: tab.id }) },
       ];
     },

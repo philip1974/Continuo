@@ -14,10 +14,13 @@ import { toggleSettingsPanel } from '@/lib/toggle-settings-panel';
 import { useAvailableUpdates } from '@/marketplace/update-store';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import { useT } from '@/i18n';
+import { useRegisteredCommandHotkeyText, withHotkey } from '@/lib/hotkey-label';
 
 interface IconBarItemConfig {
   id: string;
   label: string;
+  /** 悬停 tooltip「名称 (⌘B)」(VSCode 活动栏):对应命令的当前生效键位;可访问名称仍是 label。 */
+  tooltip?: string;
   node: React.ReactNode;
   onClick: () => void;
   active?: boolean;
@@ -57,12 +60,14 @@ export function IconSidebar() {
   const ribbonActions = useRegistry(coApp.ribbon);
   // Marketplace 更新数 → Settings 齿轮右上角红圈
   const updateCount = useAvailableUpdates().length;
+  const toggleSidebarHotkey = useRegisteredCommandHotkeyText(coApp.commands, 'explorer.toggleSidebar');
+  const settingsHotkey = useRegisteredCommandHotkeyText(coApp.commands, 'settings.toggle');
 
+  const explorerLabel = sidebarOpen ? t('shell.iconbar.hide_explorer') : t('shell.iconbar.show_explorer');
   const explorerItem: IconBarItemConfig = {
     id: 'explorer',
-    label: sidebarOpen
-      ? t('shell.iconbar.hide_explorer')
-      : t('shell.iconbar.show_explorer'),
+    label: explorerLabel,
+    tooltip: withHotkey(explorerLabel, toggleSidebarHotkey),
     node: EXPLORER_ICON,
     onClick: toggleSidebar,
     active: sidebarOpen,
@@ -75,6 +80,7 @@ export function IconSidebar() {
   const settingsItem: IconBarItemConfig = {
     id: 'settings',
     label: t('shell.iconbar.settings'),
+    tooltip: withHotkey(t('shell.iconbar.settings'), settingsHotkey),
     node: SETTINGS_ICON,
     onClick: toggleSettingsPanel,
   };
@@ -83,6 +89,7 @@ export function IconSidebar() {
     <NavRailButton
       key={item.id}
       title={item.label}
+      tooltip={item.tooltip}
       // a11y(A33,A32 调用点传播):只有声明了状态的真 toggle(如 explorer=sidebarOpen)才传
       // active → 暴露 aria-pressed;undefined 会由 NavRailButton 视作未提供,避免 `?? false`
       // 强转出 aria-pressed="false" 被 AT 误读成切换按钮,且不再为 fallback 分配对象。

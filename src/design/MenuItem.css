@@ -47,12 +47,18 @@
 }
 
 /* 右侧次要内容(快捷键 / 计数):不参与 label 截断,靠右、弱化 */
-.wm-menu-item__trailing {
+.wm-menu-item__trailing,
+.wm-menu-item__shortcut {
   flex-shrink: 0;
   margin-left: auto;
   padding-left: var(--wm-space-3);
   color: var(--md-fg-dim);
   font-size: var(--wm-text-2xs);
+}
+
+/* 计数 + 快捷键同时出现:快捷键紧随计数,不再二次推到行尾 */
+.wm-menu-item__trailing + .wm-menu-item__shortcut {
+  margin-left: 0;
 }
 
 /* 强制颜色:高亮 / 悬停只靠 state-hover 底色(会被抹成 Canvas),且本组件 outline: none。键盘高亮
