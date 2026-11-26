@@ -12,7 +12,15 @@ import { withHotkey } from './hotkey-label';
 
 export type FindOption = 'caseSensitive' | 'wholeWord' | 'regex';
 
+/** 显示顺序(三处查找同序,VSCode findInput:Aa / ab / .*)。 */
 export const FIND_OPTIONS: readonly FindOption[] = ['caseSensitive', 'wholeWord', 'regex'];
+
+/** 选项 toggle 字形(VSCode codicon case-sensitive / whole-word / regex 的文字版)。 */
+export const FIND_OPTION_GLYPHS: Readonly<Record<FindOption, string>> = {
+  caseSensitive: 'Aa',
+  wholeWord: 'ab',
+  regex: '.*',
+};
 
 export const FIND_OPTIONS_GROUP_KEY: TranslationKey = 'find.options_group';
 

@@ -69,6 +69,22 @@ test('查找:计数「当前 / 总数」、无结果标红并播报、⌥⌘F �
       await win.keyboard.press(CASE_KEY);
       await expect(caseBox).not.toBeChecked();
 
+      // 选项是查找框后的 Aa / ab / .* toggle(同终端 / 在文件中查找,src/__tests__/find-options-parity):同顺序、20px 方块,
+      // 勾选态有主色描边;点击翻转
+      const options = win.getByRole('group', { name: /^(搜索选项|Search options|검색 옵션)$/ });
+      await expect(options.locator('[aria-hidden="true"]')).toHaveText(['Aa', 'ab', '.*']);
+      await expect(options.getByRole('checkbox')).toHaveCount(3);
+      const caseLabel = options.locator('label').first();
+      const box = await caseLabel.boundingBox();
+      expect([Math.round(box!.width), Math.round(box!.height)]).toEqual([20, 20]);
+      const shadow = () => caseLabel.evaluate((el) => getComputedStyle(el).boxShadow);
+      expect(await shadow()).toBe('none');
+      await caseLabel.click();
+      await expect(caseBox).toBeChecked();
+      expect(await shadow()).not.toBe('none');
+      await caseLabel.click();
+      await expect(caseBox).not.toBeChecked();
+
       // ↑ 历史:先前回车提交过 foo / foo1
       await retype(win, 'foo22');
       await win.keyboard.press('Enter');

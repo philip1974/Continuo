@@ -19,15 +19,27 @@
 - **tooltip**:选项按钮 / 复选框悬停「区分大小写 (⌥⌘C)」(Windows / Linux「(Alt+C)」);可访问名称仍是纯名称。编辑器查找面板的
   按钮也有 tooltip:下一个 (Enter)、上一个 (⇧Enter)、关闭 (Escape 键位),全部 / 替换 / 全部替换只有名称。
 
+- **顺序 / 字形 / 样式**(第三十轮审计):三处都是 **Aa(区分大小写)/ ab(全字匹配)/ .*(正则)** 同顺序的 toggle,位于查找框
+  之后(VSCode findInput)。
+  - 终端 / Markdown 查找条与在文件中查找共用 `FindOptionToggles`(role=group「搜索选项」内三个 `aria-pressed` 的 design
+    `IconButton` xs,按钮 className 相同);按下态 = 主色浅底 + 1px 主色内描边(design `IconButton[aria-pressed=true]`,VSCode
+    inputOption.activeBackground / activeBorder)。
+  - 编辑器查找面板(CodeMirror 默认面板,代码文件 + Markdown 源码 + Markdown 代码块)的三个复选框按同顺序移进查找框(计数)后的
+    role=group「搜索选项」,外观改为同尺寸 / 同按下态的 toggle(字形 aria-hidden,选项名视觉隐藏 —— 可访问名不变);仍是原生
+    复选框:勾选态随 CodeMirror 查找状态同步,点击 / 空格 / ⌥⌘C/W/R 照常翻转。
+
 ## Modules
 
 | File | Role |
 |---|---|
 | `src/lib/find-options.ts` | 共享:选项名称键、`findOptionHotkey`(平台键)、`matchFindOptionHotkey`(按键 → 选项)、`findOptionTooltip` |
+| `src/lib/FindOptionToggles.tsx` | 终端 / Markdown 查找条与在文件中查找共用的选项 toggle 组(`FIND_OPTIONS` 顺序 + `FIND_OPTION_GLYPHS`) |
+| `src/design/IconButton.css` | `aria-pressed=true` 按下态 |
 | `src/lib/hotkey-label.ts` | `withHotkey`「名称 (键位)」/ `hotkeyText` |
 | `src/panels/Search/SearchPanel.tsx` | 视图根节点 keydown 切换;选项按钮名称 / tooltip |
 | `src/panels/Terminal/TerminalSearchBar.tsx` | 查找条根节点 keydown 切换;选项按钮名称 / tooltip(Markdown 查找复用) |
-| `src/panels/Editor/codemirror-find.ts` / `codemirror-phrases.ts` | 面板复选框 / 按钮 tooltip;选项 phrase 映射到共享键 |
+| `src/panels/Editor/codemirror-find.ts` / `codemirror-phrases.ts` | 面板复选框 / 按钮 tooltip;复选框排成 Aa / ab / .* toggle(`arrangeOptionToggles`);选项 phrase 映射到共享键 |
+| `src/panels/Editor/code-editor-theme.ts` | CodeMirror 选项 toggle 外观(同 IconButton xs) |
 
 ## Specs
 

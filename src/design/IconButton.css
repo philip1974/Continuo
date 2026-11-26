@@ -24,6 +24,14 @@
   color: var(--md-on-surface);
 }
 
+/* 切换按钮按下态(aria-pressed=true,如查找选项 Aa / ab / .*):VSCode inputOption.activeBackground / activeBorder ——
+ * 主色浅底 + 1px 主色内描边。强制颜色模式由 styles/forced-colors.css 的 [aria-pressed="true"] 轮廓接管。 */
+.wm-icon-button[aria-pressed="true"] {
+  background-color: color-mix(in srgb, var(--md-primary) 20%, transparent);
+  box-shadow: inset 0 0 0 1px var(--md-primary);
+  color: var(--md-on-surface);
+}
+
 .wm-icon-button:focus-visible {
   outline: 2px solid var(--md-focus-ring);
   outline-offset: 2px;

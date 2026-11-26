@@ -3,13 +3,14 @@
 // aria-activedescendant),键盘 ↑↓ / ←→ / Home / End / Enter,单击打开。状态与调度在 search-store。
 // BDD: src/__tests__/workspace-search/
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useShallow } from 'zustand/react/shallow';
 import { Badge, IconButton, Input } from '@/design';
 import { isImeComposing } from '@/design/ime';
 import { translateCount, useT } from '@/i18n';
-import { FIND_OPTION_LABEL_KEYS, FIND_OPTIONS_GROUP_KEY, findOptionTooltip, matchFindOptionHotkey, type FindOption } from '@/lib/find-options';
+import { matchFindOptionHotkey, type FindOption } from '@/lib/find-options';
+import { FindOptionToggles } from '@/lib/FindOptionToggles';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { regexSyntaxError } from '@/lib/search-query';
 import { ChevronDownIcon, MoreActionsIcon } from '@/lib/ui-icons';
@@ -174,14 +175,6 @@ export function SearchPanel() {
   };
 
   // 三处查找共用的选项名称 / 切换键(src/lib/find-options):⌥⌘C / ⌥⌘W / ⌥⌘R(Windows / Linux Alt+C / W / R),焦点在本视图内即生效。
-  const toggle = (option: FindOption, pressed: boolean, glyph: ReactNode) => {
-    const label = t(FIND_OPTION_LABEL_KEYS[option]);
-    return (
-      <IconButton size="xs" aria-label={label} title={findOptionTooltip(label, option)} aria-pressed={pressed} onClick={() => actions.toggleOption(STORE_OPTION[option])}>
-        {glyph}
-      </IconButton>
-    );
-  };
   const onViewKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (isImeComposing(e.nativeEvent)) return;
     const option = matchFindOptionHotkey(e.nativeEvent);
@@ -206,11 +199,11 @@ export function SearchPanel() {
             title={regexError ?? undefined}
             className="min-w-0 flex-1"
           />
-          <div role="group" aria-label={t(FIND_OPTIONS_GROUP_KEY)} className="inline-flex shrink-0 items-center gap-0.5">
-            {toggle('caseSensitive', s.matchCase, 'Aa')}
-            {toggle('wholeWord', s.wholeWord, 'ab')}
-            {toggle('regex', s.isRegex, '.*')}
-          </div>
+          {/* 选项 toggle 组与终端 / Markdown 查找条共用(Aa / ab / .*) */}
+          <FindOptionToggles
+            values={{ caseSensitive: s.matchCase, wholeWord: s.wholeWord, regex: s.isRegex }}
+            onToggle={(option) => actions.toggleOption(STORE_OPTION[option])}
+          />
           <IconButton
             size="xs"
             aria-label={t('panels.search.toggle_details')}

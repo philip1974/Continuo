@@ -4,7 +4,8 @@
 //
 // 不自建面板(search({ createPanel })):@codemirror/search 不导出默认 SearchPanel,自建等于整段重写替换 / 只读 / 键盘
 // scope / phrases 逻辑。这里保留默认面板,ViewPlugin 在面板上追加一个计数元素并挂查找框按键 —— 面板结构只依赖
-// CodeMirror 自己也用的 `.cm-search` / `[main-field]` / `input[name=replace]`。选项复选框由默认面板随 setSearchQuery 自动同步。
+// CodeMirror 自己也用的 `.cm-search` / `[main-field]` / `input[name=replace]`。选项复选框由默认面板随 setSearchQuery 自动同步;
+// 复选框按共享顺序(Aa / ab / .*)移进查找框后的选项组,外观改为与终端 / 在文件中查找同款的 toggle(arrangeOptionToggles)。
 // CodeEditor(代码文件 + Markdown 源码)与 Markdown 代码块(经 markdownCodeBlockTheme)共用。
 // BDD: src/__tests__/editor-find-widget/
 
@@ -13,7 +14,8 @@ import { ViewPlugin, keymap, type Command, type EditorView, type ViewUpdate } fr
 import { SearchQuery, getSearchQuery, openSearchPanel, search, searchPanelOpen, setSearchQuery } from '@codemirror/search';
 import { isImeComposing } from '@/design/ime';
 import { regexSyntaxError } from '@/lib/search-query';
-import { findOptionTooltip, type FindOption } from '@/lib/find-options';
+import { t } from '@/i18n';
+import { FIND_OPTION_GLYPHS, FIND_OPTIONS, FIND_OPTIONS_GROUP_KEY, findOptionTooltip, type FindOption } from '@/lib/find-options';
 import { hotkeyText, withHotkey } from '@/lib/hotkey-label';
 import { editorFindHistory, FIND_MATCH_LIMIT, formatFindCount, type FindCountState } from './find-widget-model';
 
@@ -85,6 +87,7 @@ const OPTION_FIELDS: ReadonlyArray<readonly [name: string, option: FindOption, p
   ['word', 'wholeWord', 'by word'],
   ['re', 'regex', 'regexp'],
 ];
+const OPTION_INPUT_NAME: Readonly<Record<FindOption, string>> = { caseSensitive: 'case', wholeWord: 'word', regex: 're' };
 /** 按钮(默认面板 button name)→ 面板 phrase 与面板内按键(VSCode 查找控件 tooltip「下一个匹配项 (Enter)」)。 */
 const BUTTON_TITLES: ReadonlyArray<readonly [name: string, phrase: string, combo?: string]> = [
   ['next', 'next', 'enter'],
@@ -105,6 +108,38 @@ function addPanelTitles(view: EditorView, panel: HTMLElement): void {
     const label = view.state.phrase(phrase);
     panel.querySelector(`button[name="${name}"]`)?.setAttribute('title', withHotkey(label, combo && hotkeyText(combo)));
   }
+}
+
+/**
+ * 选项复选框 → toggle(VSCode findInput 与终端 / 在文件中查找的 Aa / ab / .*):按共享顺序(默认面板是 case / regexp / by word)
+ * 移进紧跟 after 的 role=group「搜索选项」;label 内补 aria-hidden 字形,原文字包成视觉隐藏(可访问名仍是选项名)。
+ * 仍是原生复选框:勾选态由默认面板随 setSearchQuery 同步,点击 / 空格照常翻转查找状态,无需另写同步。外观见 code-editor-theme。
+ */
+function arrangeOptionToggles(panel: HTMLElement, after: Element): void {
+  const doc = panel.ownerDocument;
+  const group = doc.createElement('span');
+  group.className = 'cm-search-options';
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', t(FIND_OPTIONS_GROUP_KEY));
+  for (const option of FIND_OPTIONS) {
+    const input = panel.querySelector(`input[name="${OPTION_INPUT_NAME[option]}"]`);
+    const label = input?.closest('label');
+    if (!input || !label) continue;
+    label.classList.add('cm-search-option');
+    for (const node of [...label.childNodes]) {
+      if (node.nodeType !== Node.TEXT_NODE) continue;
+      const name = doc.createElement('span');
+      name.className = 'cm-search-option-name';
+      node.replaceWith(name);
+      name.append(node);
+    }
+    const glyph = doc.createElement('span');
+    glyph.setAttribute('aria-hidden', 'true');
+    glyph.textContent = FIND_OPTION_GLYPHS[option];
+    input.after(glyph);
+    group.append(label);
+  }
+  after.after(group);
 }
 
 class FindWidget {
@@ -175,6 +210,7 @@ class FindWidget {
     count.setAttribute('role', 'status');
     this.count = count;
     this.input?.after(count);
+    arrangeOptionToggles(panel, count);
     this.input?.addEventListener('keydown', this.onKeyDown);
     this.input?.addEventListener('input', this.onInput);
     editorFindHistory.resetCursor();

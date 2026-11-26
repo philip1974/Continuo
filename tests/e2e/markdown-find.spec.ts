@@ -34,6 +34,8 @@ async function runFind(window: Page, focusTarget: Locator, shot: string): Promis
   await window.keyboard.press('ControlOrMeta+KeyF');
   const input = window.getByRole('textbox', { name: FIND_INPUT });
   await expect(input).toBeFocused();
+  // 选项 toggle 与在文件中查找 / 代码编辑器查找同顺序同字形(src/__tests__/find-options-parity)
+  await expect(window.getByRole('group', { name: /^(搜索选项|Search options|검색 옵션)$/ }).locator('button')).toHaveText(['Aa', 'ab', '.*']);
   await window.keyboard.type('needle');
   const status = window.locator('main [role="status"]', { hasText: /\d+ \/ 3/ });
   await expect(status).toHaveText('1 / 3');

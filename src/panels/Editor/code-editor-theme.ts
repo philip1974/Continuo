@@ -52,6 +52,8 @@ function chromeTheme(dark: boolean): Extension {
         '.cm-searchMatch': { outline: '1px dashed CanvasText' },
         '.cm-searchMatch.cm-searchMatch-selected': { outline: '2px solid Highlight' },
         '.cm-selectionBackground': { outline: '1px solid Highlight', outlineOffset: '-1px' },
+        // 查找选项 toggle 勾选态(同 forced-colors.css 的 [aria-pressed=true]:内嵌 2px Highlight 轮廓)
+        '.cm-panel label.cm-search-option:has(input:checked)': { outline: '2px solid Highlight', outlineOffset: '-2px' },
       },
       '.cm-selectionMatch': { backgroundColor: 'color-mix(in srgb, var(--md-primary) 14%, transparent)' },
       '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
@@ -107,6 +109,52 @@ function chromeTheme(dark: boolean): Extension {
         backgroundImage: 'linear-gradient(var(--md-state-hover), var(--md-state-hover))',
       },
       '.cm-panel input[type=checkbox]': { accentColor: 'var(--md-primary)', cursor: 'pointer' },
+      // 查找选项 toggle(codemirror-find 把复选框排成 Aa / ab / .*):外观同 design IconButton xs(20px 方块、按下态同
+      // .wm-icon-button[aria-pressed=true]),原生复选框透明铺满 label(仍可点 / 空格 / Tab 聚焦),选项名视觉隐藏。
+      '.cm-search-options': { display: 'inline-flex', alignItems: 'center', gap: '2px', margin: '0 .4em 0 0', verticalAlign: 'middle' },
+      '.cm-panel label.cm-search-option': {
+        position: 'relative',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '20px',
+        height: '20px',
+        borderRadius: '4px',
+        color: 'var(--md-on-surface-variant)',
+        fontSize: '11px',
+        lineHeight: '1',
+        cursor: 'pointer',
+      },
+      '.cm-panel label.cm-search-option:hover': {
+        backgroundColor: 'var(--md-state-hover)',
+        color: 'var(--md-on-surface)',
+      },
+      '.cm-panel label.cm-search-option:has(input:checked)': {
+        backgroundColor: 'color-mix(in srgb, var(--md-primary) 20%, transparent)',
+        color: 'var(--md-on-surface)',
+        boxShadow: 'inset 0 0 0 1px var(--md-primary)',
+      },
+      '.cm-panel label.cm-search-option input[type=checkbox]': {
+        position: 'absolute',
+        inset: '0',
+        width: '100%',
+        height: '100%',
+        margin: '0',
+        opacity: '0',
+        cursor: 'pointer',
+      },
+      '.cm-panel label.cm-search-option:has(input:focus-visible)': {
+        outline: '2px solid var(--md-focus-ring)',
+        outlineOffset: '1px',
+      },
+      '.cm-search-option-name': {
+        position: 'absolute',
+        width: '1px',
+        height: '1px',
+        overflow: 'hidden',
+        clip: 'rect(0 0 0 0)',
+        whiteSpace: 'nowrap',
+      },
       '.cm-panel button[name=close]': { color: 'var(--md-on-surface-variant)', cursor: 'pointer' },
       '.cm-panel button[name=close]:hover': { color: 'var(--md-on-surface)' },
       '.cm-button:focus-visible, .cm-panel input[type=checkbox]:focus-visible, .cm-panel button[name=close]:focus-visible': {

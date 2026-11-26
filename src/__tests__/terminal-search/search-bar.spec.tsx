@@ -64,14 +64,13 @@ describe('TerminalSearchBar UI', () => {
     );
 
     expect(src).toContain('const placeholderLabel = label ?? t(');
-    expect(src).toContain('const regexLabel = t(');
     expect(src).toContain('const closeLabel = t(');
     expect(src).toContain('placeholder={placeholderLabel}');
     expect(src).toContain('aria-label={placeholderLabel}');
-    expect(src).toContain('aria-label={regexLabel}');
-    expect(src).toContain("title={findOptionTooltip(regexLabel, 'regex')}");
     expect(src).toContain('aria-label={closeLabel}');
     expect(src).toContain('title={closeLabel}');
+    // 选项 toggle 名称 / tooltip 在共用组件 FindOptionToggles(行为见 find-options-parity)
+    expect(src).toContain('<FindOptionToggles');
   });
 
   it('S1 renders focused search input with no-match state', () => {

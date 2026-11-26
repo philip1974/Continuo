@@ -99,6 +99,15 @@ test('区分大小写 / 正则开关;非法正则提示', async ({ window, works
   await expect(window.locator(STATUS)).toHaveText(NO_RESULTS, { timeout: 10_000 });
   await input.press(process.platform === 'darwin' ? 'Meta+Alt+KeyC' : 'Alt+KeyC');
   await expect(caseToggle).toHaveAttribute('aria-pressed', 'false');
+  // 选项 toggle 顺序 / 字形同终端与编辑器查找(Aa / ab / .*);按下态有主色描边(design IconButton[aria-pressed=true])
+  await expect(window.locator('[data-testid=search-panel] [role=group] button')).toHaveText(['Aa', 'ab', '.*']);
+  const shadow = () => caseToggle.evaluate((el) => getComputedStyle(el).boxShadow);
+  expect(await shadow()).toBe('none');
+  await input.press(process.platform === 'darwin' ? 'Meta+Alt+KeyC' : 'Alt+KeyC');
+  await expect(caseToggle).toHaveAttribute('aria-pressed', 'true');
+  expect(await shadow()).not.toBe('none');
+  await input.press(process.platform === 'darwin' ? 'Meta+Alt+KeyC' : 'Alt+KeyC');
+  await expect(window.locator(STATUS)).toHaveText(summary(1, 2), { timeout: 10_000 });
 
   await toggle(window, /^(使用正则表达式|Use Regular Expression|정규식 사용)$/).click();
   await input.fill('al(pha|x) be');

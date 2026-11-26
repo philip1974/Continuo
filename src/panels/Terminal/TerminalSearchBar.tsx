@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { IconButton, Input } from '@/design';
 import { translateCount, useT } from '@/i18n';
 import { clampSearchQuery, regexSyntaxError } from '@/lib/search-query';
-import { FIND_OPTION_LABEL_KEYS, FIND_OPTIONS_GROUP_KEY, findOptionTooltip, matchFindOptionHotkey } from '@/lib/find-options';
+import { matchFindOptionHotkey } from '@/lib/find-options';
+import { FindOptionToggles } from '@/lib/FindOptionToggles';
 import { isImeComposing } from '@/design/ime';
 import { ChevronDownIcon, ChevronUpIcon, CloseIcon } from '@/lib/ui-icons';
 import type { FindHistory } from '@/panels/Editor/find-widget-model';
@@ -32,7 +33,7 @@ interface TerminalSearchBarProps {
   readonly enterFindsPrevious?: boolean;
 }
 
-// 上一个 / 下一个 / 关闭用 SVG 图标(此前是 ASCII「^ v x」,字形大小 / 基线与 .* / Aa / W 不齐)。模块级预创建。
+// 上一个 / 下一个 / 关闭用 SVG 图标(此前是 ASCII「^ v x」,字形大小 / 基线与 Aa / ab / .* 不齐)。模块级预创建。
 const PREV_MATCH_ICON = <ChevronUpIcon size={14} />;
 const NEXT_MATCH_ICON = <ChevronDownIcon size={14} />;
 const CLOSE_SEARCH_ICON = <CloseIcon size={14} />;
@@ -73,11 +74,6 @@ export function TerminalSearchBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const result = searchApi.result;
   const placeholderLabel = label ?? t('panels.terminal.search.placeholder');
-  // 选项名称 / 切换键与编辑器查找、在文件中查找共用(src/lib/find-options)。
-  const optionsGroupLabel = t(FIND_OPTIONS_GROUP_KEY);
-  const regexLabel = t(FIND_OPTION_LABEL_KEYS.regex);
-  const caseSensitiveLabel = t(FIND_OPTION_LABEL_KEYS.caseSensitive);
-  const wholeWordLabel = t(FIND_OPTION_LABEL_KEYS.wholeWord);
   const previousLabel = t('panels.terminal.search.previous');
   const nextLabel = t('panels.terminal.search.next');
   const closeLabel = t('panels.terminal.search.close');
@@ -200,50 +196,12 @@ export function TerminalSearchBar({
       >
         {countText}
       </span>
-      {/* a11y(A99,A97 同族):regex/case/whole-word 三 toggle 成组,用 role=group + aria-label
-          命名为「搜索选项」,否则 SR 逐个聚焦只听到单开关状态不知是选项组。inline-flex gap-1
-          保持与外层 gap-1 一致的视觉间距。 */}
-      <div
-        role="group"
-        aria-label={optionsGroupLabel}
-        className="inline-flex items-center gap-1 @max-xs/terminal:hidden"
-      >
-        <IconButton
-          size="xs"
-          aria-label={regexLabel}
-          title={findOptionTooltip(regexLabel, 'regex')}
-          aria-pressed={searchApi.options.regex}
-          onClick={() =>
-            searchApi.setOptions(toggleOption(searchApi.options, 'regex'))
-          }
-        >
-          .*
-        </IconButton>
-        <IconButton
-          size="xs"
-          aria-label={caseSensitiveLabel}
-          title={findOptionTooltip(caseSensitiveLabel, 'caseSensitive')}
-          aria-pressed={searchApi.options.caseSensitive}
-          onClick={() =>
-            searchApi.setOptions(
-              toggleOption(searchApi.options, 'caseSensitive'),
-            )
-          }
-        >
-          Aa
-        </IconButton>
-        <IconButton
-          size="xs"
-          aria-label={wholeWordLabel}
-          title={findOptionTooltip(wholeWordLabel, 'wholeWord')}
-          aria-pressed={searchApi.options.wholeWord}
-          onClick={() =>
-            searchApi.setOptions(toggleOption(searchApi.options, 'wholeWord'))
-          }
-        >
-          W
-        </IconButton>
-      </div>
+      {/* 选项 toggle 组(Aa / ab / .*,role=group「搜索选项」)与在文件中查找视图共用同一组件,顺序 / 字形 / 样式一致。 */}
+      <FindOptionToggles
+        values={searchApi.options}
+        onToggle={(option) => searchApi.setOptions(toggleOption(searchApi.options, option))}
+        className="@max-xs/terminal:hidden"
+      />
       <IconButton
         size="xs"
         aria-label={previousLabel}

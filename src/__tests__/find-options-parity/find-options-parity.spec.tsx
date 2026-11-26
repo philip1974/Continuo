@@ -3,7 +3,7 @@
 // ⌥⌘C / ⌥⌘W / ⌥⌘R(Windows / Linux Alt+C / W / R)切换一致(对齐 VSCode findInput)。
 // jsdom 平台非 mac:组件内走 Alt 变体;mac 变体在按键匹配处显式传 platform。
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView, runScopeHandlers } from '@codemirror/view';
 import { getSearchQuery } from '@codemirror/search';
@@ -158,11 +158,11 @@ describe('编辑器查找面板(⌘F)', () => {
     const view = await mountEditor();
     act(() => void runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, keyCode: 70 }), 'editor'));
     const labelOf = (name: string) => view.dom.querySelector(`.cm-search input[name="${name}"]`)!.closest('label')!;
-    expect(labelOf('case').textContent).toBe(LABEL.caseSensitive());
+    expect(screen.getByRole('checkbox', { name: LABEL.caseSensitive() }).getAttribute('name')).toBe('case');
+    expect(screen.getByRole('checkbox', { name: LABEL.wholeWord() }).getAttribute('name')).toBe('word');
+    expect(screen.getByRole('checkbox', { name: LABEL.regex() }).getAttribute('name')).toBe('re');
     expect(labelOf('case').getAttribute('title')).toBe(`${LABEL.caseSensitive()} (Alt+C)`);
-    expect(labelOf('word').textContent).toBe(LABEL.wholeWord());
     expect(labelOf('word').getAttribute('title')).toBe(`${LABEL.wholeWord()} (Alt+W)`);
-    expect(labelOf('re').textContent).toBe(LABEL.regex());
     expect(labelOf('re').getAttribute('title')).toBe(`${LABEL.regex()} (Alt+R)`);
     const button = (name: string) => view.dom.querySelector(`.cm-search button[name="${name}"]`)!;
     expect(button('next').getAttribute('title')).toBe(`${t('editor.cm.next')} (Enter)`);
@@ -171,6 +171,55 @@ describe('编辑器查找面板(⌘F)', () => {
     expect(button('close').getAttribute('title')).toBe(`${t('editor.cm.close')} (Esc)`);
     // 切换键仍是同一组(Alt+C)
     act(() => void runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', altKey: true, keyCode: 67 }), 'editor'));
+    expect(getSearchQuery(view.state).caseSensitive).toBe(true);
+  });
+});
+
+/** 选项组内按钮:[可访问名, 字形, aria-pressed]。 */
+function optionButtons(group: HTMLElement): Array<[string | null, string, string | null]> {
+  return [...group.querySelectorAll('button')].map((b) => [b.getAttribute('aria-label'), b.textContent ?? '', b.getAttribute('aria-pressed')]);
+}
+
+describe('选项 toggle 顺序 / 字形 / 样式统一(VSCode Aa / ab / .*)', () => {
+  const ORDER = () => [LABEL.caseSensitive(), LABEL.wholeWord(), LABEL.regex()];
+
+  it('终端 / Markdown 查找条与在文件中查找:同顺序 Aa / ab / .*、同样式', () => {
+    const term = render(<TerminalSearchBar searchApi={makeApi({ options: { regex: true, caseSensitive: false, wholeWord: false } })} onClose={vi.fn()} />);
+    const termGroup = within(term.container).getByRole('group', { name: t('find.options_group') });
+    expect(optionButtons(termGroup)).toEqual([
+      [ORDER()[0], 'Aa', 'false'],
+      [ORDER()[1], 'ab', 'false'],
+      [ORDER()[2], '.*', 'true'],
+    ]);
+    const search = render(<SearchPanel />);
+    const searchGroup = within(search.container).getByRole('group', { name: t('find.options_group') });
+    expect(optionButtons(searchGroup).map(([name, glyph]) => [name, glyph])).toEqual([
+      [ORDER()[0], 'Aa'],
+      [ORDER()[1], 'ab'],
+      [ORDER()[2], '.*'],
+    ]);
+    // 同一组件:按钮 className 逐个相同
+    const classes = (g: HTMLElement) => [...g.querySelectorAll('button')].map((b) => b.className);
+    expect(classes(termGroup)).toEqual(classes(searchGroup));
+  });
+
+  it('编辑器查找面板:选项为同顺序 Aa / ab / .* 的 toggle(可访问名 = 选项名,勾选态随查找状态),紧跟查找框', async () => {
+    const view = await mountEditor();
+    act(() => void runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, keyCode: 70 }), 'editor'));
+    const group = within(view.dom).getByRole('group', { name: t('find.options_group') });
+    const boxes = within(group).getAllByRole('checkbox');
+    expect(boxes.map((b) => b.getAttribute('name'))).toEqual(['case', 'word', 're']);
+    expect(boxes.map((b) => within(group).getByRole('checkbox', { name: ORDER()[boxes.indexOf(b)] }) === b)).toEqual([true, true, true]);
+    expect([...group.querySelectorAll('[aria-hidden="true"]')].map((g) => g.textContent)).toEqual(['Aa', 'ab', '.*']);
+    // 选项组紧跟查找框(与计数)之后,在「下一个」按钮之前(同终端 / 在文件中查找:输入框 → 选项)
+    const next = view.dom.querySelector('.cm-search button[name="next"]')!;
+    expect(group.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // ⌥⌘W / Alt+W 切换后勾选态同步
+    act(() => void runScopeHandlers(view, new KeyboardEvent('keydown', { key: 'w', code: 'KeyW', altKey: true, keyCode: 87 }), 'editor'));
+    expect(getSearchQuery(view.state).wholeWord).toBe(true);
+    expect((boxes[1] as HTMLInputElement).checked).toBe(true);
+    // 点击 toggle 翻转查找状态
+    act(() => (boxes[0] as HTMLInputElement).click());
     expect(getSearchQuery(view.state).caseSensitive).toBe(true);
   });
 });
