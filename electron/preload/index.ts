@@ -290,6 +290,15 @@ const api = {
         ),
       );
     },
+    /** 订阅「工作区根自身消失 / 重新出现」事件(payload 守卫同 onDirChanged);返回 unsubscribe. */
+    onRootPresenceChanged: (cb: (path: string) => void): (() => void) => {
+      return subscribeIpc(
+        FS_CHANNELS.ROOT_PRESENCE_CHANGED,
+        guardedListener(isFsDirChangedPayload, '[fs] invalid root-presence-changed payload, dropped', (payload) =>
+          cb(payload.path),
+        ),
+      );
+    },
   },
   terminal: {
     create: (

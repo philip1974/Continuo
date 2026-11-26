@@ -45,6 +45,7 @@ vi.mock('../../lib/co-api', () => ({
         mocks.dirChanged.push(cb);
         return () => {};
       },
+      onRootPresenceChanged: () => () => {},
     },
     shell: { openExternal: vi.fn() },
   },

@@ -26,7 +26,12 @@ import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
 import { selectTrashItem } from './fs/e2e-trash';
-import { createSameTickPathCoalescer, createWatcherPool, type WatcherCreator } from './fs/watch';
+import {
+  createRootPresenceTracker,
+  createSameTickPathCoalescer,
+  createWatcherPool,
+  type WatcherCreator,
+} from './fs/watch';
 import { broadcastToWindows, sendToWindow } from '../lib/broadcast';
 import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { showOpenDialogRemembering } from '../lib/open-dialog';
@@ -329,6 +334,21 @@ function normalizeRelativeSubdir(value: string, endExclusive: number): string {
   return out;
 }
 
+// 工作区根自身消失 / 重新出现(见 createRootPresenceTracker):广播给所有窗口,不带文件名。
+const checkRootPresence = createRootPresenceTracker({
+  isRoot: (p) => isAnyWorkspaceRoot(p),
+  exists: (p) =>
+    fs.promises.stat(p).then(
+      () => true,
+      (e: unknown) => {
+        const code = (e as { code?: string }).code;
+        return code === 'ENOENT' || code === 'ENOTDIR' ? false : null;
+      },
+    ),
+  onChange: (p) =>
+    broadcastToWindows(FS_CHANNELS.ROOT_PRESENCE_CHANGED, () => ({ path: p }), '[fs] ROOT_PRESENCE_CHANGED'),
+});
+
 // 生产 creator(导出仅供回归测试)。健壮性(独立审计):FSWatcher 在网络盘 / 可移动卷断开、目录失效时
 // 异步 emit('error'),EventEmitter 无 error 监听即抛 → 主进程未捕获异常崩溃。注册监听:warn + 上报池
 // 关闭并移出该 watcher(WatcherPool evictDead)。
@@ -345,6 +365,8 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
       }
       // 带上变更项名字(rename 的旧名/新名各回调一次),renderer 外部同步只重读命中的 clean tab
       const rel = filename;
+      // filename = 根自身的 basename:可能是根被改名 / 删除 / 恢复(也可能只是根下同名子项,由 stat 区分)
+      if (rel === path.basename(rootPath)) checkRootPresence(rootPath);
       // eventType 一并上抛,合并器据此判定「仅内容变化」(changeOnly,见 FsDirChangedPayload)
       onChange(resolveWatchChangedPath(rootPath, rel), resolveWatchChangedFileName(rel), eventType);
     },
@@ -352,6 +374,7 @@ export const createFsWatcher: WatcherCreator = (rootPath, onChange, onError) => 
   watcher.on('error', (err) => {
     console.warn('[fs] watcher error, closing:', rootPath, err);
     onError(err);
+    checkRootPresence(rootPath); // Windows 删除被 watch 的根 → EPERM error(不回调 basename)
   });
   return { close: () => watcher.close() };
 };

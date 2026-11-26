@@ -654,10 +654,13 @@
 
 ## [editor-orphaned-tab](./editor-orphaned-tab/README.md)
 
+- [`orphaned-external-clean.spec.tsx`](./editor-orphaned-tab/orphaned-external-clean.spec.tsx)
 - [`orphaned-external-sync.spec.tsx`](./editor-orphaned-tab/orphaned-external-sync.spec.tsx)
 - [`orphaned-panel.spec.tsx`](./editor-orphaned-tab/orphaned-panel.spec.tsx)
+- [`orphaned-root-gone.spec.tsx`](./editor-orphaned-tab/orphaned-root-gone.spec.tsx)
 - [`orphaned-store.spec.ts`](./editor-orphaned-tab/orphaned-store.spec.ts)
 - [`orphaned-trash-confirm.spec.tsx`](./editor-orphaned-tab/orphaned-trash-confirm.spec.tsx)
+- [`root-presence-main.spec.ts`](./editor-orphaned-tab/root-presence-main.spec.ts)
 
 ## [editor-pending-input-flush](./editor-pending-input-flush/README.md)
 

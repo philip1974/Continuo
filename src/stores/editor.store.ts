@@ -32,7 +32,8 @@ import {
 import { EDITOR_GROUPS_MAX, PRIMARY_EDITOR_GROUP_ID } from '../../electron/shared/editor-group-id';
 
 // ── 路径变更通知 ─────────────────────────────────────────────
-// removePaths / renamePath 是「文件已删除 / 已移走」的单一入口(资源管理器删除 / 改名 / 移动 / 撤销、外部删除确认)。
+// removePaths / renamePath / markPathsDeleted 是「文件已删除 / 已移走」的入口(资源管理器删除 / 改名 / 移动 / 撤销;
+// 外部删除确认 / 工作区根消失走 markPathsDeleted,只标记不关闭)。
 // 持有路径的其它视图(在文件中查找结果、Quick Open 最近打开)在此订阅,同步移除 / 改写旧路径。
 
 export type EditorPathChange =
@@ -125,8 +126,9 @@ export interface EditorTab {
    */
   readonly pluginOpenedPath?: string;
   /**
-   * 文件已被删除(Explorer 删除 / 外部删除确认后仍不存在)而 tab 因有未保存修改保留(VSCode orphaned:tab 显示
-   * 「(已删除)」+ 删除线)。置位后自动保存跳过(否则删除后几秒文件被写回);手动保存照常按路径重建并清除,
+   * 文件已被删除而 tab 保留(VSCode orphaned:tab 显示「(已删除)」+ 删除线):Explorer 删除时只有脏 tab 保留;
+   * 外部删除确认后仍不存在 / 工作区根消失时干净 tab 也保留(VSCode closeOnFileDelete: false,见 markPathsDeleted)。
+   * 置位后自动保存跳过(否则删除后几秒文件被写回);手动保存照常按路径重建并清除,
    * 重命名 / 移动、文件重新出现、还原也清除。runtime only,不持久化。
    */
   readonly orphaned?: boolean;
@@ -507,21 +509,27 @@ export function countDirtyTabsUnder(tabs: readonly EditorTab[], paths: readonly 
   return n;
 }
 
+/** 路径命中 isRemoved 且尚未标记的 tab 置 orphaned(见 EditorTab.orphaned);无变化返回原数组。 */
+function markOrphanedTabs(tabs: EditorTab[], isRemoved: (filePath: string) => boolean): EditorTab[] {
+  let out: EditorTab[] | null = null;
+  for (let i = 0; i < tabs.length; i++) {
+    const t = tabs[i]!;
+    if (t.orphaned || !isRemoved(t.filePath)) continue;
+    out ??= tabs.slice();
+    out[i] = { ...t, orphaned: true };
+  }
+  return out ?? tabs;
+}
+
 function removeMatchingCleanTabs(
   tabs: EditorTab[],
   activeTabId: string | null,
   isRemoved: (filePath: string) => boolean,
 ): CloseTabResult {
   const r = closeCleanFileTabsUnless(tabs, activeTabId, (filePath) => !isRemoved(filePath));
-  // 留下来的被删路径 tab 都是脏的(未保存修改不丢):标记 orphaned(见 EditorTab.orphaned)。
-  let out: EditorTab[] | null = null;
-  for (let i = 0; i < r.tabs.length; i++) {
-    const t = r.tabs[i]!;
-    if (t.orphaned || !isRemoved(t.filePath)) continue;
-    out ??= r.tabs.slice();
-    out[i] = { ...t, orphaned: true };
-  }
-  return out === null ? r : { tabs: out, activeTabId: r.activeTabId };
+  // 留下来的被删路径 tab 都是脏的(未保存修改不丢):标记 orphaned
+  const out = markOrphanedTabs(r.tabs, isRemoved);
+  return out === r.tabs ? r : { tabs: out, activeTabId: r.activeTabId };
 }
 
 /**
@@ -652,6 +660,11 @@ type EditorState = {
   restoreTabMru: (groupId: string, mru?: readonly string[]) => void;
   /** 文件/目录被删除后调用:精确匹配或前缀匹配的 clean tab 统一关闭,只 set 一次(chromeVersion 至多 bump 一次). */
   removePaths: (paths: readonly string[]) => void;
+  /**
+   * 外部删除确认后仍不存在 / 工作区根消失时调用(对齐 VSCode workbench.editor.closeOnFileDelete: false):精确或前缀匹配的
+   * tab(干净 / 脏)都不关闭,只标记 orphaned;有 tab 新被标记时发「已删除」路径通知并移除最近关闭条目(同 removePaths)。
+   */
+  markPathsDeleted: (paths: readonly string[]) => void;
   /** 文件/目录被重命名 / 移动时调用:精确或前缀匹配的 tab 同步路径. */
   renamePath: (oldPath: string, newPath: string) => void;
   /**
@@ -667,8 +680,8 @@ type EditorState = {
     opts?: { readonly discardChanges?: boolean },
   ) => void;
   /**
-   * 外部同步对脏 tab 的存在性检查结果:确认已删除 → true(只标记脏 tab,干净 tab 由 removePaths 关闭);
-   * 文件重新出现 → false。值不变为 no-op。
+   * 存在性结果:文件重新出现 → false;true 只标记脏 tab(自动保存读盘发现已不存在;外部删除确认走 markPathsDeleted)。
+   * 值不变为 no-op。
    */
   setOrphaned: (tabId: string, orphaned: boolean) => void;
   /** 工作区切换时调用:关闭 root 外的 clean file tabs(dirty 保留). */
@@ -1269,6 +1282,19 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
     emitPathChange({ kind: 'removed', paths });
   },
 
+  markPathsDeleted: (paths) => {
+    let marked = false;
+    set((s) => {
+      const tabs = markOrphanedTabs(s.tabs, (fp) => paths.some((removed) => isSameOrInsidePath(removed, fp)));
+      if (tabs === s.tabs) return s;
+      marked = true;
+      return { tabs, chromeVersion: s.chromeVersion + 1 };
+    });
+    if (!marked) return;
+    dropRecentlyClosedEditors((p) => paths.some((removed) => isSameOrInsidePath(removed, p)));
+    emitPathChange({ kind: 'removed', paths });
+  },
+
   // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃。
   // 编辑器视图状态(撤销历史 / 光标 / 滚动)随 tab 迁到新 id(BDD: src/__tests__/editor-view-state/)。
   renamePath: (oldPath, newPath) => {
@@ -1310,9 +1336,12 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       // dirty:保留用户改动,不覆盖(还原除外)
       if (cur.dirty && !discard) return s;
       const base = withRealPath(cur, realPath);
-      // 内容没变(stat 触发但实际未改):无需重渲;仅链接目标变了时同步 realPath(chrome 不变)
-      if (!cur.dirty && cur.originalContent === content && !cur.orphaned) {
-        return base === cur ? s : replaceTabBumpingChrome(s, idx, base);
+      // 内容没变(stat 触发但实际未改 / 已删除的文件以原内容重新出现,如 git checkout 切回):不重挂载视图;
+      // 仅同步 realPath、清除已删除标记
+      if (!cur.dirty && cur.originalContent === content) {
+        if (!cur.orphaned) return base === cur ? s : replaceTabBumpingChrome(s, idx, base);
+        const { orphaned: _back, ...kept } = base;
+        return replaceTabBumpingChrome(s, idx, kept);
       }
       // 基线已不是自己写盘的内容 → 保存记录失效;读到了磁盘内容 → 文件存在,清除已删除标记
       const { savedGen: _staleSave, orphaned: _exists, ...rest } = base;

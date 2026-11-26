@@ -7,7 +7,11 @@
 // 本 hook 不主动 watchDir:watcher 来自 Explorer 已展开目录,以及有打开 tab 时 useExternalSyncRootWatch
 // 持有的 workspace root watcher(不依赖侧栏 / 文件树是否挂载,见该文件)。
 // watcher 因 error 被驱逐后由 Explorer 重装成功时,断线期间的变化不会有 dir-changed;
-// 订阅本地 watch-restored(src/lib/fs-watch-restored.ts),重读该目录子树内的 clean tab。
+// 订阅本地 watch-restored(src/lib/fs-watch-restored.ts),复查该目录子树内的 tab。
+//
+// 外部删除(确认后仍不存在)不关 tab:干净 / 脏都保留并标「(已删除)」(VSCode closeOnFileDelete: false,
+// editor store markPathsDeleted);文件重新出现 → 清除标记(干净 tab 按磁盘重载)。资源管理器删除仍关干净 tab。
+// 工作区根自身被改名 / 删除 / 恢复:main 推 fs:root-presence-changed,复查根下全部 tab(同 watch-restored)。
 
 import { useEffect } from 'react';
 import { coApi } from '@/lib/co-api';
@@ -111,13 +115,14 @@ export function useExternalFileSync(): void {
           useEditorStore.getState().reloadFromDisk(tabId, r.data, r.realPath);
         }
       }
-      // 外部删除 / 改名(确认后仍不存在):与 Explorer 删除同一出口 removePaths —— 干净 tab 关闭,
-      // 脏 tab 保留(未保存内容不丢)。保存时:仅文件被删、父目录仍在 → 按路径重建;所在目录被移走 / 删除 →
-      // atomic-write 不建父目录,保存失败报 FS_NOT_FOUND(「找不到文件:{path}」),须用户另存。此前丢弃该结果 → 干净 tab 留着,继续输入后自动保存
-      // 把文件写回(mv 时与新名并存两份)。同样要求 live tab 仍是发起读取时那个实例(未变脏 / 未重开)。
+      // 外部删除 / 改名(确认后仍不存在,如 git checkout 切到删除它的分支):不关 tab(VSCode closeOnFileDelete:
+      // false;此前关闭,切回分支后 tab 不回来、⇧⌘T 也找不回)—— 保留并标记已删除(markPathsDeleted),自动保存
+      // 不再写回(否则继续输入后把文件写回,mv 时与新名并存两份)。手动保存:仅文件被删、父目录仍在 → 按路径重建;
+      // 所在目录被移走 / 删除 → atomic-write 不建父目录,保存失败报 FS_NOT_FOUND,须用户另存。
+      // 同样要求 live tab 仍是发起读取时那个实例(未变脏 / 未重开)。
       if (!superseded && isNotFound(r)) {
         const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
-        if (live !== null && live === tabRef) useEditorStore.getState().removePaths([path]);
+        if (live !== null && live === tabRef) useEditorStore.getState().markPathsDeleted([path]);
       }
       // 被合并的尾随事件 → 读最终内容并应用(本次中间结果已被取代,不落地)
       if (superseded) readAndApply(path, tabId);
@@ -207,7 +212,8 @@ export function useExternalFileSync(): void {
           checkOrphan(path, tabId); // 期间又有事件:以最新状态为准
           return;
         }
-        if (gone !== null) useEditorStore.getState().setOrphaned(tabId, gone);
+        if (gone === true) useEditorStore.getState().markPathsDeleted([path]);
+        else if (gone === false) useEditorStore.getState().setOrphaned(tabId, false);
       })();
     };
 
@@ -218,15 +224,17 @@ export function useExternalFileSync(): void {
       for (const tab of matchingCleanTabs(match)) void requestReload(tab.filePath!, tab.id);
     };
 
-    // watch-restored:覆盖整棵子树(macOS/Win 的 watcher 递归,断线期间子目录里的变化同样丢失)。
+    // watch-restored / 根消失或恢复:覆盖整棵子树(macOS/Win 的 watcher 递归,断线期间子目录里的变化同样丢失)。
+    // 脏 tab 只查存在性(checkOrphan,廉价 stat):根恢复 / watcher 重装后清除其已删除标记。
     // 内存:此前对子树内全部 clean tab 同时发起整文件 readFile(256 tab × 大文件 → main 峰值内存 GB 级),
     // 改为有界并发(同 hydrateEditorTabs 的 RESTORE_READ_CONCURRENCY)。排队项在真正发起时再复查
     // (effect 已卸载 / tab 已关或变 dirty → 跳过;该 path 已被 dir-changed 读取在途 → 并入 pending
     // 尾随一次),保持每 path 读严格串行。
     const reloadSubtree = (dir: string): void => {
-      const targets = matchingCleanTabs(
-        (fp, rp) => isSameOrInsidePath(dir, fp) || (rp !== undefined && isSameOrInsidePath(dir, rp)),
-      );
+      const inDir = (fp: string, rp: string | undefined): boolean =>
+        isSameOrInsidePath(dir, fp) || (rp !== undefined && isSameOrInsidePath(dir, rp));
+      for (const tab of matchingTabs(inDir, true)) checkOrphan(tab.filePath, tab.id);
+      const targets = matchingCleanTabs(inDir);
       void allSettledWithConcurrency(targets, RESTORED_RELOAD_CONCURRENCY, async (t) => {
         if (cancelled) return;
         const live = findEditorFileTabById(useEditorStore.getState().tabs, t.id);
@@ -243,7 +251,7 @@ export function useExternalFileSync(): void {
     // realPath 的目录与广播目录字面不同,但同目录链接仍能由「链接目录 + 目标名」命中;交叉误命中只多读一次。
     // 目录改名 / 移动 / 删除:macOS 递归 fs.watch 对 `mv src/foo src/bar` 只报 {dir:src, files:[foo, bar]},
     // 不列目录内文件 → 集合中的名字可能是 tab 的祖先目录。tab 在 changedDir 子树深处(非直接子项)且其相对
-    // 路径首段命中集合 → 同样纳入重读;读到不存在即走下方 removePaths(与文件层同一出口)。
+    // 路径首段命中集合 → 同样纳入重读;读到不存在即走 markPathsDeleted(与文件层同一出口)。
     const subtreeHit = (changedDir: string, names: ReadonlySet<string>, p: string): boolean => {
       if (!isSameOrInsidePath(changedDir, p)) return false;
       const rel = stripRootPrefix(changedDir, p);
@@ -265,10 +273,13 @@ export function useExternalFileSync(): void {
       for (const tab of matchingTabs(match, true)) checkOrphan(tab.filePath, tab.id);
     });
     const unsubRestored = onWatchRestored(reloadSubtree);
+    // 工作区根自身被改名 / 删除(根下文件名匹配不到 tab)/ 之后恢复:复查根下全部 tab。
+    const unsubRootPresence = coApi.fs.onRootPresenceChanged(reloadSubtree);
     return () => {
       cancelled = true; // race(R79):失效在途 readFile 的迟到 settle
       unsub();
       unsubRestored();
+      unsubRootPresence();
     };
   }, []);
 }

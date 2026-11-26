@@ -29,7 +29,7 @@ interface FsApi {
 
 function installFsApi(fs: FsApi): void {
   Object.defineProperty(window, 'api', {
-    value: { fs: { onWatchLost: () => () => {}, ...fs } },
+    value: { fs: { onWatchLost: () => () => {}, onRootPresenceChanged: () => () => {}, ...fs } },
     writable: true,
     configurable: true,
   });
@@ -501,6 +501,7 @@ describe('useExternalFileSync · 保存回声识别', () => {
             dirCb = cb;
             return () => {};
           },
+          onRootPresenceChanged: () => () => {},
           readFile,
           stat,
         },
@@ -608,10 +609,9 @@ describe('useExternalFileSync · 保存回声识别', () => {
   });
 });
 
-// 外部删除 / 改名走与 Explorer 删除同一出口(editor store removePaths):干净 tab 关闭,脏 tab 保留。
-// 此前 settle 只应用 ok 结果,FS_NOT_FOUND 被丢弃 → 干净 tab 留着,用户继续输入后保存把文件写回
-//(mv 时与新名并存两份)。读到不存在先等 EXTERNAL_DELETE_CONFIRM_MS 再确认一次,避免「先删后建」
-// 原子替换间隙误关。
+// 外部删除 / 改名(对齐 VSCode closeOnFileDelete: false):干净 tab 不关,保留并标「已删除」(editor store
+// markPathsDeleted;自动保存不写回,手动保存重建)。读到不存在先等 EXTERNAL_DELETE_CONFIRM_MS 再确认一次,避免
+// 「先删后建」原子替换间隙误标。资源管理器删除(removePaths)仍关闭干净 tab。
 describe('外部删除 / 改名(读到 FS_NOT_FOUND)', () => {
   const NF = { ok: false, code: 'FS_NOT_FOUND', message: 'gone' };
   const cleanTab = { id: '/proj/a.md', filePath: '/proj/a.md', content: 'old', originalContent: 'old', dirty: false };
@@ -625,17 +625,17 @@ describe('外部删除 / 改名(读到 FS_NOT_FOUND)', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('干净 tab:确认仍不存在 → 关闭(确认前不关)', async () => {
+  it('干净 tab:确认仍不存在 → 保留并标记已删除(确认前不标记)', async () => {
     const readFile = vi.fn(async () => NF);
     const fire = setup(readFile);
     fire();
     await flushMicrotasks(6);
-    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect(useEditorStore.getState().tabs[0]?.orphaned).toBeFalsy();
     await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
     await flushMicrotasks(6);
     expect(readFile).toHaveBeenCalledTimes(2);
-    expect(useEditorStore.getState().tabs).toHaveLength(0);
-    expect(useEditorStore.getState().activeTabId).toBeNull();
+    expect(useEditorStore.getState().tabs).toMatchObject([{ id: '/proj/a.md', orphaned: true, content: 'old' }]);
+    expect(useEditorStore.getState().activeTabId).toBe('/proj/a.md');
   });
 
   it('确认等待期间 tab 被编辑(变脏)→ 保留', async () => {
@@ -670,7 +670,7 @@ describe('外部删除 / 改名(读到 FS_NOT_FOUND)', () => {
     expect(useEditorStore.getState().tabs.map((t) => t.content)).toEqual(['replaced']);
   });
 
-  it('目录被外部改名 / 删除(只报目录名)→ 目录内干净 tab 确认不存在后关闭,目录外 tab 不动', async () => {
+  it('目录被外部改名 / 删除(只报目录名)→ 目录内干净 tab 确认不存在后标记已删除,目录外 tab 不动', async () => {
     const readFile = vi.fn(async (_p: string) => NF);
     let dirCb: ((dir: string, files?: readonly string[]) => void) | null = null;
     installFsApi({ onDirChanged: (cb) => { dirCb = cb; return () => {}; }, readFile });
@@ -682,16 +682,20 @@ describe('外部删除 / 改名(读到 FS_NOT_FOUND)', () => {
     await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
     await flushMicrotasks(6);
     expect(readFile.mock.calls.map((c) => c[0])).toEqual(['/proj/foo/deep/a.ts', '/proj/foo/deep/a.ts']);
-    expect(useEditorStore.getState().tabs.map((t) => t.id)).toEqual(['/proj/b.ts']);
+    expect(useEditorStore.getState().tabs.map((t) => [t.id, !!t.orphaned])).toEqual([
+      ['/proj/foo/deep/a.ts', true],
+      ['/proj/b.ts', false],
+    ]);
   });
 
-  it('其它读失败(非 FS_NOT_FOUND)→ 仍只跳过,不关', async () => {
+  it('其它读失败(非 FS_NOT_FOUND)→ 仍只跳过,不关、不标记', async () => {
     const readFile = vi.fn(async () => ({ ok: false, code: 'FS_IO', message: 'x' }));
     const fire = setup(readFile);
     fire();
     await vi.advanceTimersByTimeAsync(EXTERNAL_DELETE_CONFIRM_MS);
     await flushMicrotasks(6);
     expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect(useEditorStore.getState().tabs[0]?.orphaned).toBeFalsy();
   });
 });
 

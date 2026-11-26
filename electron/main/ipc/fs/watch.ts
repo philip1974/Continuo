@@ -266,3 +266,37 @@ export function createSameTickPathCoalescer(
     if (entry.files.size > maxFiles) entry.files = null;
   };
 }
+
+export interface RootPresenceDeps {
+  /** 是否是某窗口当前的工作区根(只跟踪根;子目录的消失由根 watcher 的子项事件覆盖)。 */
+  readonly isRoot: (path: string) => boolean;
+  /** true 存在 / false 不存在 / null 无法确定(不改状态、不通知)。 */
+  readonly exists: (path: string) => Promise<boolean | null>;
+  readonly onChange: (path: string) => void;
+}
+
+/**
+ * 工作区根自身被改名 / 删除 / 恢复的检测(VSCode:根消失后打开的编辑器全部显示已删除)。fs.watch 对被 watch 目录
+ * **自身**的改名 / 删除只回调一次、filename = 根的 basename(macOS 递归 FSEvents;Linux inotify IN_MOVE_SELF /
+ * IN_DELETE_SELF),按子项解析匹配不到任何 tab;Windows 删除被 watch 的目录则 FSWatcher emit('error')(EPERM),
+ * 改名不回调。调用方在这两种情形调本函数返回的 check(root):root 不存在 → 通知(每次);此前通知过消失、现在又存在
+ * (改回原名 / 重建,macOS 的 FSEvents 按路径继续回调同一 basename)→ 通知一次。根仍在且未消失过(如根下恰有同名
+ * 子项变化)→ 不通知。
+ */
+export function createRootPresenceTracker(deps: RootPresenceDeps): (rootPath: string) => void {
+  const gone = new Set<string>();
+  return (rootPath) => {
+    if (!deps.isRoot(rootPath)) return;
+    void deps.exists(rootPath).then(
+      (exists) => {
+        if (exists === false) {
+          gone.add(rootPath);
+          deps.onChange(rootPath);
+        } else if (exists === true && gone.delete(rootPath)) {
+          deps.onChange(rootPath);
+        }
+      },
+      () => {},
+    );
+  };
+}

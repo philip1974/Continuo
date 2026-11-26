@@ -81,6 +81,25 @@ describe('清除已删除标记', () => {
   });
 });
 
+describe('markPathsDeleted(外部删除确认 / 工作区根消失)', () => {
+  it('干净与脏 tab 都保留并标记(目录含其下全部);不关闭、不换活动 tab;无关 tab 不动', () => {
+    useEditorStore.getState().markPathsDeleted(['/w/b.md', '/w/dir']);
+    expect(find('/w/b.md')).toMatchObject({ orphaned: true, dirty: false, content: 'orig' });
+    expect(find('/w/dir/c.ts')).toMatchObject({ orphaned: true, dirty: true });
+    expect(find('/w/a.md')?.orphaned).toBeFalsy();
+    expect(useEditorStore.getState().tabs).toHaveLength(4);
+    expect(useEditorStore.getState().activeTabId).toBe('/w/a.md');
+    expect(useEditorStore.getState().chromeVersion).toBeGreaterThan(0);
+  });
+
+  it('全部已标记 → 不产生新状态', () => {
+    useEditorStore.getState().markPathsDeleted(['/w/b.md']);
+    const before = useEditorStore.getState();
+    useEditorStore.getState().markPathsDeleted(['/w/b.md']);
+    expect(useEditorStore.getState()).toBe(before);
+  });
+});
+
 describe('setOrphaned', () => {
   it('只标记脏 tab(干净 tab 的删除由关闭处理);值不变不产生新状态', () => {
     const before = useEditorStore.getState();

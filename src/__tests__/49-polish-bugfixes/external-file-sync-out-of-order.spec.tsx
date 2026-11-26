@@ -14,6 +14,7 @@ import { renderHook } from '@testing-library/react';
 
 const fsMock = vi.hoisted(() => ({
   onDirChanged: vi.fn(),
+  onRootPresenceChanged: vi.fn(() => () => {}),
   readFile: vi.fn(),
 }));
 const storeMock = vi.hoisted(() => ({

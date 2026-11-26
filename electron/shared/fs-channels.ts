@@ -33,6 +33,11 @@ export const FS_CHANNELS = {
   DIR_CHANGED: 'fs:dir-changed',
   /** main → renderer event:watcher 异步失效被驱逐,payload 同 DIR_CHANGED({ path }),只推给持有者窗口 */
   WATCH_LOST: 'fs:watch-lost',
+  /**
+   * main → renderer event:某窗口的工作区根**自身**被改名 / 删除,或之后重新出现(payload 同 DIR_CHANGED 的
+   * { path },不带文件名)。广播给所有窗口;订阅者复查该路径下全部打开的 tab(见 useExternalFileSync)。
+   */
+  ROOT_PRESENCE_CHANGED: 'fs:root-presence-changed',
 } as const;
 
 // 边界(E173,E168-E172 同族 IPC ingress 纵深防御):fs:dir-changed push payload 形态守卫。preload

@@ -6,6 +6,7 @@ import { useEditorStore } from '../../stores/editor.store';
 
 const fsMock = vi.hoisted(() => ({
   onDirChanged: vi.fn(),
+  onRootPresenceChanged: vi.fn(() => () => {}),
   readFile: vi.fn(),
   stat: vi.fn(),
 }));
