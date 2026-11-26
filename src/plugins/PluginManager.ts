@@ -556,7 +556,9 @@ export class PluginManager {
         await this.markDisabled(entry, `disabled elsewhere ${id}`);
         return;
       }
-      if (entry.status === 'enabled') {
+      // 已一致 = 实例在运行(不只看 status):启用后贡献渲染出错会把 status 改成 failed(RENDER_FAILED,实例保留),
+      // 此时收到本窗口写盘引发的启用广播若再激活 → 插件被无故重启(第二次激活 / 第二条失败通知,已打开的面板被关掉)。
+      if (entry.status === 'enabled' || this.activated(entry)) {
         entry.enabledIntent = true;
         return;
       }

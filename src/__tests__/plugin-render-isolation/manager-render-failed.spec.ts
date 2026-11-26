@@ -126,6 +126,18 @@ describe('启用后立即渲染出错(启用意图仍持久化,对齐 VSCode:视
     expect(restarted.listAll()[0]?.status).toBe('enabled');
   });
 
+  it('启用 → 渲染出错 → 收到自己写盘引发的启用广播:实例仍在运行即已一致,不重启插件(不出第二次激活 / 第二条失败通知)', async () => {
+    const { m } = await setupDisabled();
+    failRenderOnEnable(m);
+    await m.enable('acme.bad');
+    await m.handleEnabledChanged('acme.bad', true);
+    expect(events).toEqual(['load']);
+    expect(m.listAll()[0]).toMatchObject({ status: 'failed', error: { code: 'RENDER_FAILED' } });
+    // 启用意图仍在:重载照常重新激活
+    await m.reload('acme.bad');
+    expect(m.listAll()[0]?.status).toBe('enabled');
+  });
+
   it('别的窗口启用(广播)后本窗口渲染出错:重载仍重新激活(内存启用意图同样以激活成功为准)', async () => {
     const { m } = await setupDisabled();
     failRenderOnEnable(m);
