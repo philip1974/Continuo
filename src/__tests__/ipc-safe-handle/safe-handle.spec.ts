@@ -252,6 +252,51 @@ describe('formatZodErrorCapped', () => {
     expect(r).toEqual({ ok: false, code: 'FS_NOT_FOUND', message: 'not found' });
   });
 
+  // 结构化失败详情(如插件安装 EEXIST 带回 manifest id / name / version):只透传 plain object 的字符串字段,
+  // 键数与值长度限幅;无 details 时不出现该字段。
+  it('handler 抛带 details 的错 → 透传字符串字段(限幅),非字符串 / 非 plain object 丢弃', async () => {
+    const r = await processIpcCall(
+      z.unknown(),
+      () => {
+        throw Object.assign(new Error('exists'), {
+          code: 'EEXIST',
+          details: { id: 'acme.tools', name: 'Acme Tools', version: '1.1.0', n: 3, long: 'y'.repeat(ERR_CODE_MAX + 10) },
+        });
+      },
+      1,
+      fileFrame,
+      trustAll,
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.details).toMatchObject({ id: 'acme.tools', name: 'Acme Tools', version: '1.1.0' });
+    expect(r.details).not.toHaveProperty('n');
+    expect(r.details!['long']!.length).toBeLessThan(ERR_CODE_MAX + 50);
+
+    const many = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`k${i}`, 'v']));
+    const r2 = await processIpcCall(
+      z.unknown(),
+      () => {
+        throw Object.assign(new Error('m'), { code: 'C', details: many });
+      },
+      1,
+      fileFrame,
+      trustAll,
+    );
+    expect(!r2.ok && Object.keys(r2.details ?? {}).length).toBeLessThanOrEqual(16);
+
+    const r3 = await processIpcCall(
+      z.unknown(),
+      () => {
+        throw Object.assign(new Error('m'), { code: 'C', details: ['a'] });
+      },
+      1,
+      fileFrame,
+      trustAll,
+    );
+    expect(r3).toEqual({ ok: false, code: 'C', message: 'm' });
+  });
+
   it('handler 同步成功 → { ok:true, data }', async () => {
     const r = await processIpcCall(
       z.string(),

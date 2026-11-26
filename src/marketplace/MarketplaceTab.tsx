@@ -577,7 +577,11 @@ function GitUrlInstallSection() {
     if (!r.ok) {
       setMsg(
         r.alreadyInstalled
-          ? { text: translate('marketplace.install_already_installed', { name: repoNameFromGitUrl(url) }), isError: false }
+          ? {
+              // 插件名取 main 带回的仓库 manifest(EEXIST details),缺省才退回 URL 的仓库名。
+              text: translate('marketplace.install_already_installed', { name: r.existing?.name ?? repoNameFromGitUrl(url) }),
+              isError: false,
+            }
           : { text: translate('marketplace.install_failed_code', { message: r.message }), isError: true },
       );
       return false;

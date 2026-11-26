@@ -40,6 +40,8 @@ import { RibbonRegistry } from '../../plugins/registries/RibbonRegistry';
 import { SettingTabRegistry } from '../../plugins/registries/SettingTabRegistry';
 import { EditorActionRegistry } from '../../plugins/registries/EditorActionRegistry';
 import { ExplorerDecoratorRegistry } from '../../plugins/registries/ExplorerDecoratorRegistry';
+import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistry';
+import { ExplorerContextMenuRegistry } from '../../plugins/registries/ExplorerContextMenuRegistry';
 import { getUserPermissionStore } from '../../plugins/permissions/co-permission-store';
 import type { PluginListItem } from '../../plugins/PluginManager';
 import { _resetPendingInstallsForTest } from '../../plugins/pending-installs-store';
@@ -89,6 +91,9 @@ beforeEach(() => {
   (coApp as { editorActions: EditorActionRegistry }).editorActions = new EditorActionRegistry();
   (coApp as { explorerDecorators: ExplorerDecoratorRegistry }).explorerDecorators =
     new ExplorerDecoratorRegistry();
+  (coApp as { settingItems: SettingItemRegistry }).settingItems = new SettingItemRegistry();
+  (coApp as { explorerContextMenu: ExplorerContextMenuRegistry }).explorerContextMenu =
+    new ExplorerContextMenuRegistry();
   getMgr.mockReturnValue(null);
   getPerm.mockReturnValue(null);
   _resetPendingInstallsForTest(); // 待重启记录是会话级模块 store,用例间隔离
@@ -183,17 +188,19 @@ describe('PluginsTabContent — 贡献点统计', () => {
     }
   });
 
-  it('空 registry → 7 行 count=0,samples=「—」', () => {
+  it('空 registry → 9 行 count=0,samples=「—」', () => {
     const { container } = render(<PluginsTabContent />);
     expect(container.textContent).toContain('已注册贡献点');
-    // 7 个 label
+    // 9 个 label
     for (const label of [
       '面板类型',
       '命令',
       '状态栏项',
       '功能区图标',
       '设置标签页',
+      '设置项',
       '资源管理器装饰器',
+      '资源管理器右键菜单',
       '编辑器操作',
     ]) {
       expect(container.textContent).toContain(label);
@@ -249,6 +256,22 @@ describe('PluginsTabContent — 贡献点统计', () => {
       });
     });
     expect(container.textContent).toContain('plugin.late');
+  });
+
+  // 设置项(addSettingItem)与资源管理器右键菜单(registerExplorerContextMenuItem)同样是插件贡献点:同口径统计(count + id 示例)。
+  it('设置项 / 资源管理器右键菜单 → 各一行 count + id 示例,动态注册同步更新', () => {
+    const { getByText } = render(<PluginsTabContent />);
+    const row = (label: string) => getByText(label, { selector: 'div' }).parentElement!;
+    expect(row('设置项').textContent).toContain('0');
+    expect(row('资源管理器右键菜单').textContent).toContain('0');
+    act(() => {
+      coApp.settingItems.register({ id: 'acme.flag', category: 'general', title: 'Flag', type: 'boolean', default: false });
+      coApp.explorerContextMenu.register({ id: 'acme.ctx', label: 'Ctx', fn: () => {} });
+    });
+    expect(row('设置项').textContent).toContain('1');
+    expect(row('设置项').textContent).toContain('acme.flag');
+    expect(row('资源管理器右键菜单').textContent).toContain('1');
+    expect(row('资源管理器右键菜单').textContent).toContain('acme.ctx');
   });
 
   it('动态注册 Explorer decorator → 贡献统计同步更新', () => {
@@ -734,6 +757,64 @@ describe('PluginsTabContent — 启用/禁用/重载', () => {
   });
 });
 
+// 对齐 VSCode 扩展页:点「禁用 / 启用」后按钮切换,焦点仍在该行的切换按钮上,不掉到 body。
+describe('PluginsTabContent — 启用/禁用后焦点', () => {
+  function toggleSetup(initial: PluginListItem['status'], error?: PluginListItem['error']) {
+    installPluginsApi(vi.fn());
+    let status = initial;
+    const set = (next: PluginListItem['status']) => async () => {
+      status = next;
+      notifyUserPluginListChanged();
+    };
+    getMgr.mockReturnValue({
+      listAll: () => [plugin({ id: 'a', status, ...(status === 'failed' && error ? { error } : {}) })],
+      enable: vi.fn(set('enabled')),
+      disable: vi.fn(set('disabled')),
+    });
+    const utils = render(<PluginsTabContent />);
+    const button = (text: string) =>
+      Array.from(utils.container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === text);
+    return { ...utils, button };
+  }
+
+  it('启用中点「禁用」→ 焦点落在同一行变出的「启用」', async () => {
+    const { button } = toggleSetup('enabled');
+    const disable = button('禁用')!;
+    disable.focus();
+    fireEvent.click(disable);
+    await waitFor(() => expect(button('启用')).toBeDefined());
+    await waitFor(() => expect(document.activeElement).toBe(button('启用')));
+  });
+
+  it('已禁用点「启用」→ 焦点落在「禁用」', async () => {
+    const { button } = toggleSetup('disabled');
+    const enable = button('启用')!;
+    enable.focus();
+    fireEvent.click(enable);
+    await waitFor(() => expect(button('启用')).toBeUndefined());
+    await waitFor(() => expect(document.activeElement).toBe(button('禁用')));
+  });
+
+  it('失败后点「启用」重试成功 → 「启用」消失,焦点落在「禁用」', async () => {
+    const { button } = toggleSetup('failed', { code: 'EBOOM', message: 'kaput' });
+    const retry = button('启用')!;
+    retry.focus();
+    fireEvent.click(retry);
+    await waitFor(() => expect(button('启用')).toBeUndefined());
+    await waitFor(() => expect(document.activeElement).toBe(button('禁用')));
+  });
+
+  it('焦点已被移到别处 → 不抢', async () => {
+    const { button, container } = toggleSetup('enabled');
+    const input = container.querySelector('input')!;
+    fireEvent.click(button('禁用')!);
+    input.focus();
+    await waitFor(() => expect(button('启用')).toBeDefined());
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(document.activeElement).toBe(input);
+  });
+});
+
 describe('PluginsTabContent — Git URL 安装', () => {
   it('输入空 → 安装按钮 disabled', () => {
     installPluginsApi(vi.fn());
@@ -888,6 +969,78 @@ describe('PluginsTabContent — Git URL 安装', () => {
     await waitFor(() => expect(container.textContent).toContain('my-plugin 已安装 — 若尚未出现在插件列表中'));
     expect(container.textContent).not.toContain('文件已存在');
     expect(container.querySelector('[role=alert]')?.textContent ?? '').not.toContain('my-plugin');
+  });
+
+  // EEXIST 带回 manifest(details):用插件名而非仓库名;已在本窗口列表 → 版本不同弹「覆盖并更新」确认,同版本提示已是最新
+  //(对齐 VSCode:对已安装扩展再从 VSIX 安装即覆盖 / 更新)。
+  describe('EEXIST 带回插件身份', () => {
+    const EEXIST = { ok: false, code: 'EEXIST', message: 'exists', details: { id: 'acme.tools', name: 'Acme Tools', version: '1.1.0' } };
+    const URL = 'https://github.com/x/acme-tools.git';
+    function submit(container: HTMLElement): void {
+      const input = container.querySelector('input') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: URL } });
+      fireEvent.click(
+        Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装')!,
+      );
+    }
+    const dialogButton = (text: string) =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('.wm-modal-content button')).find((b) => b.textContent === text);
+
+    it('不在本窗口列表(其它窗口装的)→ 原提示,但用插件名', async () => {
+      installPluginsApi(vi.fn().mockResolvedValue(EEXIST));
+      const { container } = render(<PluginsTabContent />);
+      submit(container);
+      await waitFor(() => expect(container.textContent).toContain('Acme Tools 已安装 — 若尚未出现在插件列表中'));
+      expect(container.textContent).not.toContain('acme-tools 已安装');
+    });
+
+    it('已在列表且版本不同 → 确认「覆盖并更新」;确认后 overwrite 安装并提示已更新,输入框清空', async () => {
+      getMgr.mockReturnValue({
+        listAll: () => [plugin({ id: 'acme.tools', status: 'enabled', manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.0.0' } as never })],
+      });
+      const installFromGit = vi
+        .fn()
+        .mockResolvedValueOnce(EEXIST)
+        .mockResolvedValueOnce({ ok: true, data: { id: 'acme.tools', name: 'Acme Tools', version: '1.1.0' } });
+      installPluginsApi(installFromGit);
+      const { container } = render(<PluginsTabContent />);
+      submit(container);
+      await waitFor(() => expect(document.querySelector('.wm-modal-content')).not.toBeNull());
+      const body = document.querySelector('.wm-modal-content')!.textContent ?? '';
+      expect(body).toContain('「Acme Tools」已安装 v1.0.0');
+      expect(body).toContain('v1.1.0');
+      expect(container.textContent).not.toContain('若尚未出现在插件列表中');
+      fireEvent.click(dialogButton('覆盖并更新')!);
+      await waitFor(() => expect(installFromGit).toHaveBeenLastCalledWith(URL, true));
+      await waitFor(() => expect(container.textContent).toContain('已更新 Acme Tools v1.1.0'));
+      expect((container.querySelector('input') as HTMLInputElement).value).toBe('');
+    });
+
+    it('确认框点取消 → 不覆盖,无错误', async () => {
+      getMgr.mockReturnValue({
+        listAll: () => [plugin({ id: 'acme.tools', status: 'enabled', manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.0.0' } as never })],
+      });
+      const installFromGit = vi.fn().mockResolvedValue(EEXIST);
+      installPluginsApi(installFromGit);
+      const { container } = render(<PluginsTabContent />);
+      submit(container);
+      await waitFor(() => expect(dialogButton('取消')).toBeDefined());
+      fireEvent.click(dialogButton('取消')!);
+      await waitFor(() => expect(document.querySelector('.wm-modal-content')).toBeNull());
+      expect(installFromGit).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role=alert]')).toBeNull();
+    });
+
+    it('已在列表且同版本 → 提示已是最新,不弹确认', async () => {
+      getMgr.mockReturnValue({
+        listAll: () => [plugin({ id: 'acme.tools', status: 'enabled', manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.1.0' } as never })],
+      });
+      installPluginsApi(vi.fn().mockResolvedValue(EEXIST));
+      const { container } = render(<PluginsTabContent />);
+      submit(container);
+      await waitFor(() => expect(container.textContent).toContain('「Acme Tools」已是最新版本 v1.1.0'));
+      expect(document.querySelector('.wm-modal-content')).toBeNull();
+    });
   });
 
   // 内部错误码不进用户文案(code 已随 toast data-code / 日志带走):只显示本地化原因。

@@ -1374,7 +1374,10 @@ export async function installFromGit(
         targetExists = false;
       }
       if (targetExists && opts.overwrite !== true) {
-        throw codedError(ERROR_CODES.EEXIST, `插件 ${pluginId} 已安装,卸载后再装`);
+        // details:仓库 manifest 的身份与版本 —— renderer 据此按插件名提示,已在列表时提供「覆盖并更新」。
+        throw Object.assign(codedError(ERROR_CODES.EEXIST, `插件 ${pluginId} 已安装,卸载后再装`), {
+          details: { id: pluginId, name: pluginName, version: pluginVersion },
+        });
       }
 
       const suffix = randomUUID();

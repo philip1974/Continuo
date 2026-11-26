@@ -16,9 +16,12 @@ import { PluginManager, type ManagerHost } from '../../plugins/PluginManager';
 import { createTestCoApp } from '../../plugins/test-utils';
 
 const events: string[] = [];
+/** onload 期间执行(模拟激活中贡献已注册、React 已渲染并上报渲染出错)。 */
+let duringLoad: (() => void) | null = null;
 class Tracked extends Plugin {
   onload(): void {
     events.push('load');
+    duringLoad?.();
   }
   override onunload(): void {
     events.push('unload');
@@ -27,6 +30,7 @@ class Tracked extends Plugin {
 
 async function setup() {
   events.length = 0;
+  duringLoad = null;
   let enabled = new Set(['acme.bad']);
   const host: ManagerHost = {
     listPluginDirs: () => [
@@ -91,6 +95,7 @@ describe('启用后立即渲染出错(启用意图仍持久化,对齐 VSCode:视
 
   async function setupDisabled() {
     events.length = 0;
+    duringLoad = null;
     let enabled = new Set<string>();
     const host: ManagerHost = {
       listPluginDirs: () => [
@@ -145,5 +150,37 @@ describe('启用后立即渲染出错(启用意图仍持久化,对齐 VSCode:视
     expect(m.listAll()[0]?.status).toBe('failed');
     await m.reload('acme.bad');
     expect(m.listAll()[0]?.status).toBe('enabled');
+  });
+
+  it('激活期间(onload 未返回)就上报的渲染出错:激活结束后转 failed(RENDER_FAILED),不被 enabled 覆盖;启用意图照常持久化', async () => {
+    const { m, enabledIds } = await setupDisabled();
+    duringLoad = () => m.markRenderFailed('acme.bad', new Error('early boom'));
+    await m.enable('acme.bad');
+    expect(m.listAll()[0]).toMatchObject({ status: 'failed', error: { code: 'RENDER_FAILED', message: 'early boom' } });
+    expect(events).toEqual(['load']);
+    expect(enabledIds().has('acme.bad')).toBe(true);
+  });
+
+  it('渲染失败后「启用」重试、新实例激活期间再次渲染出错:仍落 failed(RENDER_FAILED)', async () => {
+    const m = await setup();
+    m.markRenderFailed('acme.bad', new Error('first'));
+    duringLoad = () => m.markRenderFailed('acme.bad', new Error('again'));
+    await m.enable('acme.bad');
+    expect(m.listAll()[0]).toMatchObject({ status: 'failed', error: { code: 'RENDER_FAILED', message: 'again' } });
+    expect(events).toEqual(['load', 'unload', 'load']);
+  });
+
+  it('激活期间记下的渲染出错只作用于本次激活:激活本身失败时按激活失败落 failed;下次干净激活为 enabled', async () => {
+    const { m } = await setupDisabled();
+    duringLoad = () => {
+      m.markRenderFailed('acme.bad', new Error('early boom'));
+      throw new Error('onload boom');
+    };
+    await m.enable('acme.bad');
+    expect(m.listAll()[0]?.error?.message).toBe('onload boom');
+    duringLoad = null;
+    await m.enable('acme.bad');
+    expect(m.listAll()[0]).toMatchObject({ status: 'enabled' });
+    expect(m.listAll()[0]?.error).toBeUndefined();
   });
 });

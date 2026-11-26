@@ -96,6 +96,11 @@ interface PluginEntry {
    */
   activating?: boolean;
   abortActivation?: () => void;
+  /**
+   * 激活期间(onload 已注册贡献、界面已渲染,但 status 尚未置 enabled)上报的渲染出错:激活成功置 enabled 后立即转
+   * failed(RENDER_FAILED),否则被 enabled 覆盖(界面显示错误而插件页显示正常、无失败通知)。只取首个;每次激活前清除。
+   */
+  pendingRenderError?: PluginError;
   pluginFsToken?: string;
   /** i18n(I4):存结构化 code+message,不存拼好的可见串. */
   error?: PluginError;
@@ -831,13 +836,20 @@ export class PluginManager {
 
   /**
    * 插件贡献的界面渲染抛错(PluginRenderBoundary 接住后上报,BDD: plugin-render-isolation):运行中的插件标 failed
-   *(RENDER_FAILED),实例保留 —— 对齐 VSCode,扩展视图出错不停用扩展,只就地显示错误。已非 enabled(已 failed /
-   * 停用中)→ 无操作(同一插件多处同时出错只记首个)。之后启用重试由 activateEntry 先停用这个仍在运行的实例。
+   *(RENDER_FAILED),实例保留 —— 对齐 VSCode,扩展视图出错不停用扩展,只就地显示错误。激活中(贡献已渲染、实例尚未
+   * 就位)→ 记下,激活成功后直接落 failed。其余(已 failed / 停用中)→ 无操作(同一插件多处同时出错只记首个)。
+   * 之后启用重试由 activateEntry 先停用这个仍在运行的实例。
    */
   markRenderFailed(id: string, err: unknown): void {
     const entry = this.entries.get(id);
-    if (entry?.status !== 'enabled' || !entry.instance) return;
-    this.setStatus(entry, 'failed', { code: 'RENDER_FAILED', message: errorMessage(err) });
+    if (!entry) return;
+    const error: PluginError = { code: 'RENDER_FAILED', message: errorMessage(err) };
+    if (entry.status === 'enabled' && entry.instance) {
+      this.setStatus(entry, 'failed', error);
+      return;
+    }
+    // 激活中(onload 已注册贡献、界面已渲染,实例尚未就位):先记下,激活成功后直接落 failed(见 activateEntryUnguarded 结尾)。
+    if (entry.activating && !entry.instance) entry.pendingRenderError ??= error;
   }
 
   /**
@@ -882,6 +894,7 @@ export class PluginManager {
     // 渲染出错标 failed 的插件实例仍在运行(见 markRenderFailed):重试激活前先停用,不留双实例 / 重复贡献。
     if (entry.instance) await this.deactivateEntry(entry, `reactivate ${entry.id}`);
     entry.activating = true;
+    entry.pendingRenderError = undefined;
     entry.awaitingGrantElsewhere = undefined; // 已在本窗口尝试激活(授权已决定或本窗口弹窗),不再等待别的窗口
     try {
       await this.activateEntryUnguarded(entry);
@@ -893,6 +906,7 @@ export class PluginManager {
     } finally {
       entry.activating = false;
       entry.abortActivation = undefined;
+      entry.pendingRenderError = undefined;
       // 被禁用 / 卸载中止的激活落到 disabled(非失败);启用意图由排队的停用清除 / 落盘。
       if (this.deactivationIntents.has(entry.id) && !entry.instance) this.setStatus(entry, 'disabled');
     }
@@ -1039,7 +1053,9 @@ export class PluginManager {
     }
 
     entry.instance = instance;
-    this.setStatus(entry, 'enabled');
+    // 激活期间界面已渲染出错:实例保留,直接落 failed(与激活后出错同一终态,通知由 PluginFailureNotifier 去重发出)。
+    if (entry.pendingRenderError) this.setStatus(entry, 'failed', entry.pendingRenderError);
+    else this.setStatus(entry, 'enabled');
     // entry.error / warning 已在方法开头清(成功路径不再重复 reset 错误,
     // warning 若 partial grant 已在权限段设了)
   }

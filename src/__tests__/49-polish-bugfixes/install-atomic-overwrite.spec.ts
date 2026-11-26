@@ -189,6 +189,8 @@ describe('topic 49 · installFromGit 原子覆盖 + 回滚', () => {
     ctl.manifest = { id: 'p', name: 'P', version: '9.9.9' };
     await expect(installFromGit(URL, baseDir)).rejects.toMatchObject({
       code: 'EEXIST',
+      // 带回仓库 manifest 的身份与版本:插件页据此按插件名提示,并在已在列表时提供「覆盖并更新」。
+      details: { id: 'p', name: 'P', version: '9.9.9' },
     });
     expect(await readVersion('p')).toBe('1.0.0');
   });

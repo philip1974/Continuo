@@ -10,6 +10,8 @@
 2. **zod 校验失败 → IPC_BAD_INPUT**:错误 message 带具体原因,便于 renderer 调试。
 3. **handler 抛普通 Error → IPC_HANDLER_ERROR**:吞异常包成失败结果,不让 renderer 拿到生 Error 堆栈。
 4. **handler 抛带 `code` 字段的错 → 透传 code**:业务错误码(如 `FS_NOT_FOUND`)直达 renderer。
+   错误另带 `details`(plain object)→ 只透传其中的字符串字段到 `IpcFail.details`(最多 16 个键,值按 code 上限限幅);
+   非 plain object / 无字符串字段 → 不出现 `details`(供 renderer 给可操作提示,如插件安装 EEXIST 带回 manifest 身份)。
 5. **handler 成功 → `{ ok: true, data }`**:同步/异步 handler 都支持。
 6. **`defaultIsTrustedFrame` 行为**:
    - `null` 或空 url → false

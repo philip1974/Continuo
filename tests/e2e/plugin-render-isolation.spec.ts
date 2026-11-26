@@ -14,24 +14,29 @@ const RENDER_ERROR = /^(插件「Acme Bad」渲染出错|Plugin “Acme Bad” f
 /** 块级错误(面板 / 设置页)含按钮文字,按子串匹配。 */
 const RENDER_ERROR_BLOCK = /(插件「Acme Bad」渲染出错|Plugin “Acme Bad” failed to render|플러그인 'Acme Bad' 렌더링 오류)/;
 const FAILURE_TOAST = /(Acme Bad)/;
+/** 失败通知的原因部分(plugin-error-text RENDER_FAILED)。 */
+const RENDER_ERROR_REASON = /(界面渲染出错|UI failed to render|렌더링)/;
 const DISABLE_PLUGIN = /^(禁用插件|Disable Plugin|플러그인 비활성화)$/;
 const DISABLED_PLACEHOLDER = /(插件「Acme Bad」已禁用|Plugin “Acme Bad” is disabled|'Acme Bad'이\(가\) 비활성화)/;
 const ENABLE = /^(启用|Enable|활성)$/;
 const RELOAD = /^(重载|Reload|다시 로드|새로 고침)$/;
 const ENABLE_ROW = /^(启用|Enable|활성) — Acme Bad$/;
+const DISABLE_ROW = /^(禁用|Disable|비활성) — Acme Bad$/;
 const BAD_TAB = /^Bad Tab$/;
 
-// 第三方插件:状态栏项 / 面板 / 设置页都渲染一个会抛错的组件;命令打开面板。
+// 第三方插件:状态栏项 / 面板 / 设置页都渲染一个会抛错的组件;命令打开面板。onload 注册完贡献后还有一段异步工作
+//(真实插件常见:await loadData() 等)—— 激活尚未结束时界面已渲染并出错,这次渲染出错不能被随后的「激活成功」覆盖。
 const MAIN_JS = `
 const { Plugin, React } = globalThis.co;
 const h = React.createElement;
 function Boom() { throw new Error('acme boom'); }
 export default class AcmeBad extends Plugin {
-  onload() {
+  async onload() {
     this.addStatusBarItem({ id: 'acme.bad.item', side: 'left', render: () => h(Boom) });
     this.registerPanel({ type: 'acme.bad.panel', title: 'Acme Panel', factory: () => h(Boom) });
     this.addSettingTab({ id: 'acme.bad.tab', title: 'Bad Tab', render: () => h(Boom) });
     this.addCommand({ id: 'acme.bad.open', title: 'Acme open', fn: () => this.app.dock.openPanel('acme.bad.panel') });
+    await new Promise((r) => setTimeout(r, 300));
   }
 }
 `;
@@ -134,6 +139,11 @@ test('启用后立即渲染出错:启用状态已持久化;错误块「重载」
     // 启用即渲染状态栏项并出错
     await expect(win.locator('footer').getByTitle(RENDER_ERROR)).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => readEnabledIds(ud)).toContain(PLUGIN_ID);
+    // 插件页行与失败通知同样反映渲染出错(激活期间上报的渲染出错不被随后的 enabled 覆盖)
+    await expect(win.locator('[data-plugins-section="user"] [data-code="RENDER_FAILED"]')).toBeVisible();
+    await expect(win.getByText(FAILURE_TOAST).filter({ hasText: RENDER_ERROR_REASON }).first()).toBeVisible();
+    // 「启用」与「禁用」是同一个切换按钮:点后变成「禁用」并保留焦点(不掉到 body)
+    await expect(win.getByRole('button', { name: DISABLE_ROW })).toBeFocused();
 
     await win.evaluate(() => globalThis.__continuoTest!.executeCommand('acme.bad.open'));
     const alert = win.getByRole('alert').filter({ hasText: RENDER_ERROR_BLOCK });
@@ -144,8 +154,10 @@ test('启用后立即渲染出错:启用状态已持久化;错误块「重载」
     await expect(win.getByText(DISABLED_PLACEHOLDER)).toHaveCount(0);
     await expect(win.locator('footer').getByTitle(RENDER_ERROR)).toBeVisible();
     expect(readEnabledIds(ud)).toContain(PLUGIN_ID);
-    // 焦点不掉到 body
-    expect(await win.evaluate(() => document.activeElement !== document.body && document.activeElement !== null)).toBe(true);
+    // 焦点不掉到 body(重载要等 onload 的异步部分结束才交焦点 → 轮询)
+    await expect
+      .poll(() => win.evaluate(() => document.activeElement !== document.body && document.activeElement !== null))
+      .toBe(true);
     await closeDiscardingUnsaved(app);
 
     ({ app, win } = await launch(ud));

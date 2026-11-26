@@ -87,7 +87,9 @@ function snapshot(): readonly ContributionRow[] {
   const statusItems = coApp.statusBar.getAll();
   const ribbon = coApp.ribbon.getAll();
   const settingTabs = coApp.settingTabs.getAll();
+  const settingItems = coApp.settingItems.getAll();
   const explorerDecorators = coApp.explorerDecorators.getAll();
+  const explorerContextMenu = coApp.explorerContextMenu.getAll();
   const editorActions = coApp.editorActions.getAll();
   return [
     contributionRow(
@@ -116,9 +118,19 @@ function snapshot(): readonly ContributionRow[] {
       collectContributionSamples(settingTabs, 'id'),
     ),
     contributionRow(
+      'plugins_tab.label.setting_items',
+      settingItems.length,
+      collectContributionSamples(settingItems, 'id'),
+    ),
+    contributionRow(
       'plugins_tab.label.explorer_decorators',
       explorerDecorators.length,
       EMPTY_CONTRIBUTION_SAMPLES,
+    ),
+    contributionRow(
+      'plugins_tab.label.explorer_context_menu',
+      explorerContextMenu.length,
+      collectContributionSamples(explorerContextMenu, 'id'),
     ),
     contributionRow(
       'plugins_tab.label.editor_actions',
@@ -136,7 +148,9 @@ function useContributionSnapshot(): readonly ContributionRow[] {
       coApp.statusBar,
       coApp.ribbon,
       coApp.settingTabs,
+      coApp.settingItems,
       coApp.explorerDecorators,
+      coApp.explorerContextMenu,
       coApp.editorActions,
     ],
     snapshot,
@@ -310,15 +324,50 @@ function UserPluginsSection() {
     }
   };
 
+  // 「覆盖并更新」确认(Git URL 安装撞上已在列表的插件):install 等用户决定后再继续(安装按钮保持忙碌,
+  // 确认后成功即清空输入框;关闭后焦点由 GitUrlInstallForm 还给输入框)。
+  const [updatePrompt, setUpdatePrompt] = useState<{ name: string; installed: string; version: string } | null>(null);
+  const updateDecision = useRef<((confirmed: boolean) => void) | null>(null);
+  const askUpdate = (prompt: { name: string; installed: string; version: string }) =>
+    new Promise<boolean>((resolve) => {
+      updateDecision.current = resolve;
+      setUpdatePrompt(prompt);
+    });
+  const settleUpdate = (confirmed: boolean) => {
+    const resolve = updateDecision.current;
+    updateDecision.current = null;
+    setUpdatePrompt(null);
+    resolve?.(confirmed);
+  };
+
   const install = async (url: string): Promise<boolean> => {
     setInstallMsg(null);
     // i18n(复查 P1):installFromGit 各错误站点的 Error.message 是硬编码中文,经 installFromGitLocalized
     // 按稳定 code 经 catalog 翻译(reject 分支同样处理)。
-    const r = await installFromGitLocalized(url);
+    let r = await installFromGitLocalized(url);
+    if (!r.ok && r.alreadyInstalled && r.existing) {
+      // 已在盘上:main 带回仓库 manifest。该 id 已在本窗口列表(读 manager 最新列表)→ 对齐 VSCode「再次安装 = 覆盖 / 更新」:
+      // 同版本提示已是最新;否则确认后覆盖安装(watcher 热重载,新增权限照常走授权确认)。不在列表(其它窗口装的)→ 下面的原提示。
+      const existing = r.existing;
+      const listed = (mgr?.listAll() ?? plugins).find((p) => p.id === existing.id);
+      if (listed) {
+        if (listed.manifest.version === existing.version) {
+          setInstallMsg({ text: t('plugins_tab.install.up_to_date', { name: existing.name, version: existing.version }), isError: false });
+          return false;
+        }
+        if (!(await askUpdate({ name: existing.name, installed: listed.manifest.version, version: existing.version }))) {
+          return false;
+        }
+        r = await installFromGitLocalized(url, true);
+      }
+    }
     if (!r.ok) {
       setInstallMsg(
         r.alreadyInstalled
-          ? { text: t('marketplace.install_already_installed', { name: repoNameFromGitUrl(url) }), isError: false }
+          ? {
+              text: t('marketplace.install_already_installed', { name: r.existing?.name ?? repoNameFromGitUrl(url) }),
+              isError: false,
+            }
           : // 内部错误码不进用户文案(code 已随 data-code / 日志带走),只显示本地化原因。
             { text: t('plugins_tab.error.generic', { message: r.message }), isError: true },
       );
@@ -346,6 +395,21 @@ function UserPluginsSection() {
       isError: true,
     });
   };
+  // 「启用」重试按钮(仅 failed 行)在重试成功后随状态消失:焦点那时掉到 body → 交给同一行的启用 / 禁用切换按钮
+  //(对齐 VSCode 扩展页:操作后焦点仍在该扩展的操作按钮上)。焦点已被用户移到别处则不抢。
+  const [retryFocusId, setRetryFocusId] = useState<string | null>(null);
+  useEffect(() => {
+    const list = listRef.current;
+    if (retryFocusId === null || !list) return;
+    // 按属性值比对而非拼选择器(插件 id 可含选择器特殊字符)。
+    const find = (attr: string) =>
+      Array.from(list.querySelectorAll<HTMLElement>(`[${attr}]`)).find((el) => el.getAttribute(attr) === retryFocusId);
+    if (find('data-plugin-retry')) return;
+    setRetryFocusId(null);
+    const active = list.ownerDocument.activeElement;
+    if (active === null || active === list.ownerDocument.body) find('data-plugin-toggle')?.focus();
+  }, [retryFocusId, plugins]);
+
   // 行内生命周期按钮共用:执行 → 失败 console.warn + 经 live region 反馈(此前 4 个按钮各写一遍)。
   const runLifecycle = (label: string, id: string, op: () => Promise<unknown> | undefined) => async () => {
     try {
@@ -477,24 +541,16 @@ function UserPluginsSection() {
                 >
                   {t('plugins_tab.btn.reload')}
                 </Button>
-                {p.status === 'disabled' ? (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={runLifecycle('enable', p.id, () => mgr?.enable(p.id))}
-                    aria-label={t('plugins_tab.action.row_button_aria', {
-                      action: t('plugins_tab.btn.enable'),
-                      name: p.manifest.name,
-                    })}
-                  >
-                    {t('plugins_tab.btn.enable')}
-                  </Button>
-                ) : p.status === 'failed' ? (
+                {p.status === 'failed' && (
                   // FAILED:启用按钮仍可点(权限拒绝时会清 deny + 复弹 Modal)
                   <Button
                     variant="primary"
                     size="sm"
-                    onClick={runLifecycle('retry', p.id, () => mgr?.enable(p.id))}
+                    data-plugin-retry={p.id}
+                    onClick={() => {
+                      setRetryFocusId(p.id);
+                      void runLifecycle('retry', p.id, () => mgr?.enable(p.id))();
+                    }}
                     title={t('plugins_tab.action.retry_enable_tooltip')}
                     aria-label={t('plugins_tab.action.row_button_aria', {
                       action: t('plugins_tab.btn.enable'),
@@ -503,21 +559,29 @@ function UserPluginsSection() {
                   >
                     {t('plugins_tab.btn.enable')}
                   </Button>
-                ) : null}
-                {/* FAILED 也可禁用:激活失败的插件不再每次启动重试;渲染出错时仍在运行的实例也能停掉(BDD: plugin-failure-notify)。 */}
-                {p.status !== 'disabled' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={runLifecycle('disable', p.id, () => mgr?.disable(p.id))}
-                    aria-label={t('plugins_tab.action.row_button_aria', {
-                      action: t('plugins_tab.btn.disable'),
-                      name: p.manifest.name,
-                    })}
-                  >
-                    {t('plugins_tab.btn.disable')}
-                  </Button>
                 )}
+                {/* 启用 / 禁用是同一个按钮(固定槽位,只换文字与动作):切换后同一 DOM 元素保留焦点,不掉到 body(对齐 VSCode
+                    扩展页)。FAILED 也可禁用:激活失败的插件不再每次启动重试;渲染出错时仍在运行的实例也能停掉
+                    (BDD: plugin-failure-notify)。 */}
+                {(() => {
+                  const enabling = p.status === 'disabled';
+                  const action = t(enabling ? 'plugins_tab.btn.enable' : 'plugins_tab.btn.disable');
+                  return (
+                    <Button
+                      variant={enabling ? 'primary' : 'ghost'}
+                      size="sm"
+                      data-plugin-toggle={p.id}
+                      onClick={
+                        enabling
+                          ? runLifecycle('enable', p.id, () => mgr?.enable(p.id))
+                          : runLifecycle('disable', p.id, () => mgr?.disable(p.id))
+                      }
+                      aria-label={t('plugins_tab.action.row_button_aria', { action, name: p.manifest.name })}
+                    >
+                      {action}
+                    </Button>
+                  );
+                })()}
                 {(p.manifest.permissions?.length ?? 0) > 0 && permStore && (
                   <Button
                     variant="ghost"
@@ -566,6 +630,22 @@ function UserPluginsSection() {
         destructive
         onConfirm={onConfirmUninstall}
         onCancel={() => setUninstallTarget(null)}
+      />
+      <ConfirmDialog
+        open={updatePrompt !== null}
+        title={t('plugins_tab.install.update_confirm_title')}
+        description={
+          updatePrompt
+            ? t('plugins_tab.install.update_confirm_body', {
+                name: updatePrompt.name,
+                installed: updatePrompt.installed,
+                version: updatePrompt.version,
+              })
+            : null
+        }
+        confirmLabel={t('plugins_tab.install.update_confirm')}
+        onConfirm={() => settleUpdate(true)}
+        onCancel={() => settleUpdate(false)}
       />
       {permStore && (
         <PermissionEditorModal

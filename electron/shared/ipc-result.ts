@@ -11,6 +11,11 @@ export interface IpcFail {
   readonly ok: false;
   readonly code: string;
   readonly message: string;
+  /**
+   * 可选的结构化失败详情(只含字符串值;由 handler 抛出错误的 `details` 字段经 safeHandle 限幅透传),供 renderer
+   * 据此给出可操作的提示(如插件安装 EEXIST 带回仓库 manifest 的 id / name / version)。
+   */
+  readonly details?: Readonly<Record<string, string>>;
 }
 
 export type IpcResult<T> = IpcOk<T> | IpcFail;

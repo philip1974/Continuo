@@ -18,6 +18,24 @@ describe('installFromGitLocalized · alreadyInstalled', () => {
     expect(await installFromGitLocalized('u')).toMatchObject({ ok: false, alreadyInstalled: false });
   });
 
+  it('EEXIST 带回 details(id / name / version)→ existing;缺字段 / 无 details → 无 existing', async () => {
+    h.install.mockResolvedValue({
+      ok: false,
+      code: 'EEXIST',
+      message: 'x',
+      details: { id: 'acme.tools', name: 'Acme Tools', version: '1.1.0' },
+    });
+    expect(await installFromGitLocalized('u')).toMatchObject({
+      ok: false,
+      alreadyInstalled: true,
+      existing: { id: 'acme.tools', name: 'Acme Tools', version: '1.1.0' },
+    });
+    h.install.mockResolvedValue({ ok: false, code: 'EEXIST', message: 'x', details: { id: 'acme.tools' } });
+    expect(await installFromGitLocalized('u')).not.toHaveProperty('existing');
+    h.install.mockResolvedValue({ ok: false, code: 'EEXIST', message: 'x' });
+    expect(await installFromGitLocalized('u')).not.toHaveProperty('existing');
+  });
+
   it('reject 带 EEXIST 同样标记', async () => {
     h.install.mockRejectedValue(Object.assign(new Error('x'), { code: 'EEXIST' }));
     expect(await installFromGitLocalized('u')).toMatchObject({ ok: false, alreadyInstalled: true });

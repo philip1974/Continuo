@@ -1622,6 +1622,26 @@ describe('MarketplaceTab — Git URL 安装段', () => {
     expect(container.textContent).not.toContain('文件已存在');
   });
 
+  it('Git URL 安装 EEXIST 带回插件身份(details)→ 提示用插件名而非仓库名', async () => {
+    installApi(
+      vi.fn().mockResolvedValue({
+        ok: false,
+        code: 'EEXIST',
+        message: 'exists',
+        details: { id: 'acme.cool', name: 'Cool Ext', version: '1.0.0' },
+      }),
+    );
+    fetchIndexMock.mockResolvedValue([entry({ id: 'a' })]);
+    const { container } = render(<MarketplaceTab />);
+    await waitFor(() => expect(container.textContent).toContain('从 Git URL 安装'));
+    const input = container.querySelector('input[placeholder^="https"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'https://github.com/x/cool-ext.git' } });
+    fireEvent.click(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === '安装插件')!,
+    );
+    await waitFor(() => expect(container.textContent).toContain('Cool Ext 已安装 — 若尚未出现在插件列表中'));
+  });
+
   it('Git URL trim 只在输入变化后派生一次,点击安装复用结果', async () => {
     const installFromGit = vi.fn().mockReturnValue(new Promise(() => {}));
     installApi(installFromGit);

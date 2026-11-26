@@ -15,6 +15,8 @@ import { capErrorText, codedError, thrownFields } from '../shared/error-message'
 // 的 code/message 限幅(两个 processIpcCall* 共用 helper),与 BAD_INPUT 限幅边界对齐。
 export const ERR_CODE_MAX = 256;
 export const ERR_MESSAGE_MAX = 8192;
+/** 错误 details 的键数上限(超出的键丢弃);每个值按 ERR_CODE_MAX 限幅。 */
+export const ERR_DETAILS_MAX_KEYS = 16;
 
 /** 把 catch 到的 err 规整为限幅后的 IpcResult 错误(code≤ERR_CODE_MAX,message≤ERR_MESSAGE_MAX)。 */
 function toCappedErrorResult(err: unknown): IpcResult<never> {
@@ -24,11 +26,28 @@ function toCappedErrorResult(err: unknown): IpcResult<never> {
   if (code === IPC_ERR.HANDLER_ERROR) {
     console.error('[ipc] unhandled error in handler:', err);
   }
+  const details = cappedErrorDetails(err);
   return {
     ok: false,
     code: capErrorText(code, ERR_CODE_MAX),
     message: capErrorText(message, ERR_MESSAGE_MAX),
+    ...(details ? { details } : {}),
   };
+}
+
+/** 抛出值的 `details`(plain object)中的字符串字段,键数 / 值长度限幅;无可用字段 → undefined。 */
+function cappedErrorDetails(err: unknown): Record<string, string> | undefined {
+  const raw = (err as { details?: unknown } | null | undefined)?.details;
+  if (raw === null || typeof raw !== 'object' || Object.getPrototypeOf(raw) !== Object.prototype) return undefined;
+  const out: Record<string, string> = {};
+  let n = 0;
+  for (const [key, value] of Object.entries(raw)) {
+    if (n >= ERR_DETAILS_MAX_KEYS) break;
+    if (typeof value !== 'string' || key.length > ERR_CODE_MAX) continue;
+    out[key] = capErrorText(value, ERR_CODE_MAX);
+    n++;
+  }
+  return n > 0 ? out : undefined;
 }
 
 // 边界(E256,E255 同族 / generic IPC 入口收口):processIpcCall* 直接对 rawInput 执行
