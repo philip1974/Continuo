@@ -53,12 +53,15 @@ test('exit 0:终端面板自动关闭', async ({ window }) => {
 test('运行 sleep 30 时关闭 tab → 弹终止确认;取消保留,终止后关闭', async ({ window }) => {
   const tab = await newTerminal(window);
   await run(window, 'sleep 30');
-  await window.waitForTimeout(500); // 等 sleep 成为前台进程
+  // 等 sleep 成为前台进程(tab 标题随之变成进程名)
+  await expect(tab).toContainText('sleep', { timeout: 5_000 });
   const close = tab.getByRole('button');
   await close.last().click();
   const dialog = window.getByRole('alertdialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
-  await expect(dialog).toContainText('sleep');
+  // 标题就是进程名 → 只写进程名,不写「「sleep」中的「sleep」」
+  await expect(dialog).toContainText(/(“sleep” is still running\.|「sleep」仍在运行|"sleep"이\(가\) 아직 실행 중)/);
+  await expect(dialog).not.toContainText(/( in “sleep”|「sleep」中的|"sleep"에서)/);
   await dialog.getByRole('button', { name: /^(Cancel|取消|취소)$/ }).click();
   await expect(dialog).toBeHidden();
   await expect(tab).toBeVisible();
