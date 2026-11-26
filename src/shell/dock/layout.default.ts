@@ -1,10 +1,10 @@
-import type { DockviewApi, DockviewGroupPanel } from 'dockview-react';
+import type { DockviewApi, DockviewGroupPanel, IDockviewPanel } from 'dockview-react';
 import { tWithFallback } from '@/i18n/translate';
 import { activateDockPanel } from './wrap-panel-close';
 import { editorGroupIdsOf, useEditorStore } from '@/stores/editor.store';
 import { mainEditorGroupOrder } from './editor-group-order';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
-import { focusPanelContent } from './panel-focus';
+import { focusPanelContent, focusPanelContentWhenReady } from './panel-focus';
 
 // Explorer 固定在左侧 sidebar(App.tsx 内的 ExplorerSidebar),不参与 Dockview。
 // 默认布局极简(VSCode 风):只 Editor 占主区。
@@ -19,11 +19,11 @@ export function applyDefaultLayout(
   group?: DockviewGroupPanel,
   // 编辑器面板 id = 活动编辑器组 id(拆分后只剩 editor:2 时恢复的是它,不另起一个空的 editor 组;BDD: editor-groups)
   id: string = useEditorStore.getState().activeGroupId,
-) {
+): IDockviewPanel {
   const existing = api.getPanel(id);
   if (existing) {
     activateDockPanel(existing);
-    return;
+    return existing;
   }
   const editor = api.addPanel({
     id,
@@ -34,6 +34,7 @@ export function applyDefaultLayout(
     ...(group ? { position: { referenceGroup: group } } : {}),
   });
   editor.api.setActive();
+  return editor;
 }
 
 /**
@@ -48,7 +49,12 @@ export function resetDockLayout(api: DockviewApi): void {
   if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
   const withPanels = api.groups.filter((g) => g.panels.length > 0);
   if (withPanels.length === 0) {
-    applyDefaultLayout(api);
+    // 空状态(按钮随空状态卸载 → 焦点落 body)/ 命令面板执行:新开的编辑器在内容挂载后接过焦点(VSCode:恢复后编辑区
+    // 可直接键入);焦点在 dock 区域外(命令面板关闭后还回 Explorer 等)不抢。
+    const editor = applyDefaultLayout(api);
+    const doc = editor.group.element.ownerDocument;
+    const dockPart = editor.group.element.closest('[data-workbench-part="dock"]');
+    focusPanelContentWhenReady(editor, () => api.activePanel === editor && focusWithinOrLost(doc, dockPart));
     return;
   }
   const isGrid = (g: DockviewGroupPanel | undefined): g is DockviewGroupPanel => g?.api.location.type === 'grid';

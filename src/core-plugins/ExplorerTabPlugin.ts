@@ -14,8 +14,7 @@ import {
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { ExplorerIcon } from '@/plugins/settings/tab-icons';
-import { useLayoutUiStore } from '@/stores/layout-ui.store';
-import { explorerCommandSpecs } from '@/panels/Explorer/explorer-commands';
+import { explorerCommandSpecs, toggleSidebarVisibility } from '@/panels/Explorer/explorer-commands';
 
 export default class ExplorerTabPlugin extends Plugin {
   onload(): void {
@@ -37,7 +36,8 @@ export default class ExplorerTabPlugin extends Plugin {
       // i18n(I18,I17 同族缺 Key):补 categoryKey,命令面板/快捷键分类经 tk 本地化
       categoryKey: 'commands.explorer.category',
       hotkey: 'mod+b',
-      fn: () => useLayoutUiStore.getState().toggleSidebar(),
+      // 隐藏含焦点的侧栏 → 焦点交给活动面板(VSCode),见 toggleSidebarVisibility
+      fn: () => toggleSidebarVisibility(),
     });
     for (const spec of explorerCommandSpecs()) this.addCommand(spec);
 

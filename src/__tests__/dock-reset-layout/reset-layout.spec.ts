@@ -91,6 +91,67 @@ describe('重置布局', () => {
     expect(api.panels.map((p) => p.id)).toEqual([editorId()]);
   });
 
+  // 空状态「恢复默认布局」按钮随空状态卸载 → 焦点落 body;重置后焦点交给新开的编辑器(内容挂载后,同 addPanelAndFocus);
+  // 焦点在 dock 外(如从命令面板执行、焦点还回 Explorer)不抢。
+  describe('空状态重置后的焦点', () => {
+    class NoopResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    /** dock 区域(data-workbench-part=dock)里:dockview(无面板)+ 空状态按钮;面板内容稍后才挂上编辑区(lazy 面板)。 */
+    function emptyDockPart() {
+      vi.stubGlobal('ResizeObserver', NoopResizeObserver);
+      const part = document.createElement('div');
+      part.dataset.workbenchPart = 'dock';
+      const container = document.createElement('div');
+      const empty = document.createElement('div');
+      empty.innerHTML = '<button data-x="restore">Restore</button>';
+      part.append(container, empty);
+      document.body.appendChild(part);
+      const contents: HTMLElement[] = [];
+      const dock = new DockviewComponent(container, {
+        createComponent: () => {
+          const element = document.createElement('div');
+          contents.push(element);
+          return { element, init: () => {} };
+        },
+      });
+      const mountEditable = () => {
+        const editable = document.createElement('textarea');
+        contents[0]!.appendChild(editable);
+        return editable;
+      };
+      return { api: dock.api as DockviewApi, empty, restore: empty.querySelector('button')!, mountEditable };
+    }
+
+    it('点「恢复默认布局」→ 空状态卸载、焦点丢失 → 编辑器内容挂载后其编辑区获焦,不留在 body', async () => {
+      const { api, empty, restore, mountEditable } = emptyDockPart();
+      restore.focus();
+      resetDockLayout(api);
+      empty.remove(); // React 随后卸载空状态,焦点落 body
+      await Promise.resolve();
+      expect(document.activeElement).toBe(document.body);
+      const editable = mountEditable();
+      await new Promise((r) => setTimeout(r, 0)); // MutationObserver 回调
+      expect(api.activePanel?.id).toBe(editorId());
+      expect(document.activeElement).toBe(editable);
+    });
+
+    it('焦点在 dock 外(从命令面板执行后焦点还回 Explorer)→ 只打开编辑器,不抢焦点', async () => {
+      const { api, mountEditable } = emptyDockPart();
+      const outside = document.createElement('button');
+      document.body.appendChild(outside);
+      outside.focus();
+      resetDockLayout(api);
+      await Promise.resolve();
+      mountEditable();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(api.panels.map((p) => p.id)).toEqual([editorId()]);
+      expect(document.activeElement).toBe(outside);
+    });
+  });
+
   // VSCode Reset View Locations 只动视图、不合并编辑器组:拆分出的编辑器组仍各自成组,左右分栏
   describe('多个编辑器组(⌘\\ 拆分 / 弹到子窗 / 叠进同一 dock 组)', () => {
     const editorPanels = (api: DockviewApi) => api.panels.filter((p) => p.view.contentComponent === 'editor');

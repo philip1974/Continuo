@@ -14,7 +14,7 @@
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { focusWorkbenchPart } from '@/shell/focus-parts';
+import { focusWorkbenchPart, WORKBENCH_PART_ATTR } from '@/shell/focus-parts';
 import { selectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { requestExplorer } from './explorer-requests';
 import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
@@ -31,6 +31,19 @@ export function showExplorer(): void {
   if (root) requestExplorer({ kind: 'focusTree', root });
   // 无工作区:等侧栏渲染出来(下一帧)再按 F6 的侧栏规则聚焦(第一个控件 =「打开文件夹」)。
   else requestAnimationFrame(() => focusWorkbenchPart('sidebar'));
+}
+
+/**
+ * ⌘B 切换侧栏(VSCode workbench.action.toggleSidebarVisibility)。隐藏的侧栏里有焦点(如资源管理器树)→ 焦点交给活动
+ * dock 面板(同 F6 的 dock 落点规则;VSCode:隐藏含焦点的侧栏后活动编辑器获焦),否则侧栏隐藏后焦点落 body、键入丢失。
+ * 焦点不在侧栏里、或是显示侧栏 → 不动焦点(VSCode 显示侧栏也不抢焦点)。
+ */
+export function toggleSidebarVisibility(doc: Document = document): void {
+  const { sidebarOpen, toggleSidebar } = useLayoutUiStore.getState();
+  const sidebar = doc.querySelector(`[${WORKBENCH_PART_ATTR}="sidebar"]`);
+  const focusInSidebar = sidebarOpen && sidebar !== null && sidebar.contains(doc.activeElement);
+  toggleSidebar();
+  if (focusInSidebar) focusWorkbenchPart('dock', doc);
 }
 
 /** 关闭文件夹(标题栏菜单与命令共用):回到未打开工作区。 */

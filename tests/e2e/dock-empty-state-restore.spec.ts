@@ -1,4 +1,4 @@
-// EmptyState 「恢复默认布局」 → addPanel(editor) → Editor 恢复 + EmptyState 消失.
+// EmptyState 「恢复默认布局」 → addPanel(editor) → Editor 恢复 + EmptyState 消失;焦点进编辑器面板(不留在 body).
 import { test, expect } from './fixtures/electron-app';
 import {
   DOCK_CLOSE_EDITOR,
@@ -23,4 +23,13 @@ test('EmptyState → 恢复 → Editor + EditorWelcome 都回来', async ({
   ).toBeVisible({ timeout: 5_000 });
   // EditorWelcome 仍渲染(无 active tab)
   await expect(window.getByText(EDITOR_NO_FILE_OPEN).first()).toBeVisible();
+  // 按钮随空状态卸载后焦点交给新开的编辑器面板(BDD: src/__tests__/dock-reset-layout/)
+  await expect
+    .poll(() =>
+      window.evaluate(() => {
+        const active = document.activeElement;
+        return active !== null && active !== document.body && active.closest('[data-editor-panel-root]') !== null;
+      }),
+    )
+    .toBe(true);
 });

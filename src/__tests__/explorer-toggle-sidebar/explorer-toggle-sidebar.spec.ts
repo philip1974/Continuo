@@ -7,9 +7,11 @@
 // 本 spec 只校验新增的命令贡献 — 不重复测既有 settings 行为。
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { DockviewApi } from 'dockview-react';
 import { bootCorePlugins, shutdownCorePlugins } from '../../core-plugins';
 import { coApp } from '../../plugins/co-app';
 import { useLayoutUiStore } from '../../stores/layout-ui.store';
+import { setDockApi } from '../../shell/dock/dock-api-ref';
 
 beforeEach(async () => {
   await shutdownCorePlugins();
@@ -73,5 +75,52 @@ describe('explorer.toggleSidebar · fn 行为', () => {
     await cmd.fn();
     await cmd.fn();
     expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+  });
+});
+
+// VSCode:隐藏含焦点的侧栏(⌘B)→ 焦点移到活动编辑器 / 面板,不落 body;侧栏外的焦点不动;显示侧栏不抢焦点。
+describe('explorer.toggleSidebar · 焦点', () => {
+  afterEach(() => {
+    setDockApi(null);
+    document.body.innerHTML = '';
+  });
+
+  /** 侧栏(Explorer 树)+ dock(活动面板内容里一个编辑区)+ 状态栏按钮;活动面板经 dock api 取。 */
+  function workbench() {
+    document.body.innerHTML = `
+      <aside data-workbench-part="sidebar">
+        <div role="tree"><div role="treeitem" tabindex="0" data-x="row">a</div></div>
+      </aside>
+      <div data-workbench-part="dock"><div data-x="panel-content"><textarea data-x="editor"></textarea></div></div>
+      <footer data-workbench-part="statusbar"><button data-x="status">MCP</button></footer>`;
+    const element = document.querySelector<HTMLElement>('[data-x="panel-content"]')!;
+    const panel: Record<string, unknown> = { id: 'editor', view: { content: { element } } };
+    panel.api = { id: 'editor', location: { type: 'grid' }, group: { panels: [panel] } };
+    setDockApi({ activePanel: panel } as unknown as DockviewApi);
+  }
+  const el = (x: string) => document.querySelector<HTMLElement>(`[data-x="${x}"]`)!;
+  const toggle = async () => {
+    await coApp.commands.getAll().find((c) => c.id === 'explorer.toggleSidebar')!.fn();
+  };
+
+  it('焦点在资源管理器树里 → 隐藏侧栏后焦点交给活动面板的编辑区(不落 body);再显示焦点仍在编辑区', async () => {
+    bootCorePlugins();
+    workbench();
+    el('row').focus();
+    await toggle();
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
+    expect(document.activeElement).toBe(el('editor'));
+    await toggle();
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(true);
+    expect(document.activeElement).toBe(el('editor'));
+  });
+
+  it('焦点不在侧栏里(状态栏按钮)→ 隐藏侧栏不移动焦点', async () => {
+    bootCorePlugins();
+    workbench();
+    el('status').focus();
+    await toggle();
+    expect(useLayoutUiStore.getState().sidebarOpen).toBe(false);
+    expect(document.activeElement).toBe(el('status'));
   });
 });
