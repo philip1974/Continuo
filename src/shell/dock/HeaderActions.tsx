@@ -40,7 +40,6 @@ const MORE_ACTIONS_ICON = <MoreActionsIcon size={14} />;
 export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const tk = useTWithFallback();
   const popoutLabel = t('shell.dock.popout_title');
@@ -99,6 +98,8 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   );
 
   const popout = useCallback(() => {
+    // 先关「⋯」菜单:面板弹走后主窗不再有焦点事件能关它(键盘 / 程序触发时没有 pointerdown)。
+    setOpen(false);
     if (activePanel) popoutPanel(containerApi, activePanel);
   }, [activePanel, containerApi]);
   // header 由主窗 React 经 portal 渲染进子窗,window.location 恒为主窗 → 只能按组的实际位置判定。
@@ -107,7 +108,6 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
 
   return (
     <div
-      ref={ref}
       className="group/header relative flex h-full items-center gap-1 pr-1"
     >
       {!isPopout && (
@@ -145,8 +145,6 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
         open={open}
         onOpenChange={setOpen}
         triggerRef={triggerRef}
-        // 点 header 容器(含 popout / 更多按钮)与菜单之外才关
-        dismissInsideRef={ref}
       >
         {(menu) =>
           panelChoices.map((c) => {

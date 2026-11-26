@@ -20,11 +20,6 @@ export interface DropdownMenuProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly triggerRef: RefObject<HTMLElement | null>;
-  /**
-   * 点外部关闭时视为「内部」的元素(缺省只有触发按钮)。如 dock 面板头部传整个 header 容器:点同组的
-   * popout 按钮不关菜单。
-   */
-  readonly dismissInsideRef?: RefObject<Node | null>;
   readonly children: (controls: DropdownMenuControls) => ReactNode;
 }
 
@@ -32,7 +27,6 @@ export function DropdownMenu({
   open,
   onOpenChange,
   triggerRef,
-  dismissInsideRef,
   children,
 }: DropdownMenuProps) {
   const close = () => onOpenChange(false);
@@ -42,13 +36,13 @@ export function DropdownMenu({
     onClose: close,
   });
   const anchor = useMenuAnchor(triggerRef, open);
-  const insideRef = dismissInsideRef ?? triggerRef;
-  useDismissOnOutsidePointer(open, [insideRef, menuNode], close);
-  // 焦点移出菜单(且不在触发按钮 / 「内部」元素里)→ 关闭(VSCode 上下文菜单失焦即关):否则别处把焦点移走后菜单留在屏上,
+  // 「内部」只有触发按钮与菜单(VSCode:菜单开着时点菜单外任何位置——含相邻工具栏按钮,如 dock 头部同组的弹出按钮——都先关菜单)。
+  useDismissOnOutsidePointer(open, [triggerRef, menuNode], close);
+  // 焦点移出菜单(且不在触发按钮里)→ 关闭(VSCode 上下文菜单失焦即关):否则别处把焦点移走后菜单留在屏上,
   // 菜单自己的 Esc 也收不到。relatedTarget 为 null(焦点去了 body / 窗口失焦)同样关闭。
   const onBlur = (e: FocusEvent<HTMLElement>) => {
     const next = e.relatedTarget as Node | null;
-    if (next && (menuNode.current?.contains(next) || insideRef.current?.contains(next))) return;
+    if (next && (menuNode.current?.contains(next) || triggerRef.current?.contains(next))) return;
     close();
   };
   // 文档级 Esc:焦点不在菜单里时(菜单自己的 onKeyDown 收不到)也能关;焦点仍在菜单内则还给触发按钮。
