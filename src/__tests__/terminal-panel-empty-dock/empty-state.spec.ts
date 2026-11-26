@@ -72,7 +72,18 @@ describe('terminal panel empty dock', () => {
   });
 
   it('面板全在 popout 子窗(totalPanels>0 但主窗无面板)→ 主窗同样渲染 EmptyState(VSCode:主窗保留空编辑器组)', async () => {
-    h.panels = [{ id: 'editor', api: { id: 'editor', location: { type: 'popout' }, close: vi.fn() } }];
+    h.panels = [
+      {
+        id: 'editor',
+        api: {
+          id: 'editor',
+          location: { type: 'popout' },
+          group: { id: 'pg', panels: [] },
+          close: vi.fn(),
+          onDidLocationChange: vi.fn(() => ({ dispose: vi.fn() })),
+        },
+      },
+    ];
     render(React.createElement(DockShell));
 
     expect(await screen.findByTestId('empty-state')).toBeTruthy();

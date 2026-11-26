@@ -57,6 +57,18 @@
 - dock 布局里的多个 `editor*` 面板随 dock 布局恢复;组与面板在启动恢复结束后对齐:没有面板的组并入有面板的组(文档不丢),
   没有文档的多余组面板关闭。
 
+## 组的空间顺序(`src/shell/dock/editor-group-order.ts`)
+
+对齐 VSCode `GroupsOrder.GRID_APPEARANCE`:用户可感知的「第 N 组」一律按位置 —— dock 标题「编辑器 N」、⌘1/⌘2/⌘3(及「组数 + 1」
+新建组时以空间上最后一组为参照)、重置布局的分栏次序、读屏名称里的组号。
+
+- 主窗:dockview 序列化网格树(`toJSON().grid.root`)深度优先 —— 横向分支从左到右、纵向分支从上到下;同一 dock 组里叠放的
+  多个编辑器组按 tab 顺序;浮动组排在网格之后;网格里找不到位置的(瞬时状态)按 store 组顺序兜底。不看 DOM 坐标。
+- popout 子窗:各子窗按其 dock 组的 tab 顺序各自从 1 编号,不计入主窗。
+- **store 的组顺序不随拖动改写**:`groups` 仍按创建 / 插入顺序(拆分插在源组之后),只用于持久化与内部查找;位置相关的
+  功能都从 dock 现场求,dock 布局本身随会话持久化,重启后编号与位置仍一致。不同步 store 顺序 → 拖动换位不触发编辑器会话写盘,
+  也不会与 popout 子窗各自编号的口径冲突。
+
 ## 适配点(按「活动编辑器组」语义)
 
 | 功能 | 处理 |
@@ -75,7 +87,8 @@
 | popout | 编辑器组面板可弹出(面板 id 不变,组随之);在 popout 组里拆分 → 新组作为同一 dock 组里的另一个面板(popout 组不能再分栏);⌘1/⌘2/⌘3 只在主窗分发,只数主窗(grid / floating)里的组,不够时以主窗最后一组为参照新建 —— 子窗里的组既不计入也不作参照 |
 | tab 栏样式 | 非活动组的活动 tab 用 design `TabNav` 的 `unfocused`:保留选中底色、去掉强调下划线、文字 fg-muted(VSCode `tab.unfocusedActive*`);活动组判定 = `activeGroupId` |
 | 单例面板去重 | `editor:N` 不当成旧版多开的重复编辑器面板关闭 |
-| dock 面板标题 | 「编辑器 N」的 N = 该组在**组顺序**里的位置(与 ⌘1/⌘2/⌘3 同一来源 `editorGroupIdsOf`、同一口径),第一位为「编辑器」不带号;**不是组 id 的号码**(`nextEditorGroupId` 复用最小空号:关掉中间组再拆分,新组 id `editor:2` 却在第三位)—— 对齐 VSCode EditorGroupView「Group N」按位置、增删后重新编号。主窗(grid / floating)一起编号;popout 子窗里的组按各自子窗编号(⌘N 不在子窗分发,VSCode 辅助窗口也各自从 Group 1 起)。组增删 / 换序 / 移入移出 popout / 恢复布局 / 切 locale 时重算(`panels.editor.title_numbered`,`useDockLocaleSync`)。用途:popout / 浮动组里拆分、拖进同一 dock 组时多个编辑器组面板叠成同组 tab 可区分(`i18n-strings-r2/dock-locale-sync.spec.tsx`,e2e `editor-split.spec.ts`) |
+| dock 面板标题 | 「编辑器 N」的 N = 该组在所在窗口里的**空间位置**(与 ⌘1/⌘2/⌘3、重置布局、读屏组号同一来源 `editorGroupNumbers`,见下「组的空间顺序」),第一位为「编辑器」不带号;**不是组 id 的号码**(`nextEditorGroupId` 复用最小空号)—— 对齐 VSCode EditorGroupView「Group N」按 GRID_APPEARANCE 位置、增删 / 换位后重新编号。主窗(grid / floating)一起编号;popout 子窗里的组按各自子窗的 tab 顺序编号(⌘N 不在子窗分发,VSCode 辅助窗口也各自从 Group 1 起)。组增删 / 拖动换位 / 移入移出 popout(含重启恢复的子窗挂上与关闭 —— dockview 此时不保证发布局事件,另订阅各编辑器组面板的 `onDidLocationChange`)/ 恢复布局 / 切 locale 时重算(`panels.editor.title_numbered`,`useDockLocaleSync`)。用途:popout / 浮动组里拆分、拖进同一 dock 组时多个编辑器组面板叠成同组 tab 可区分(`i18n-strings-r2/dock-locale-sync.spec.tsx`,e2e `editor-split.spec.ts`、`editor-group-order.spec.ts`) |
+| 读屏名称 | 所在窗口有多个编辑器组时编辑区名称「<文件名>，编辑器组 N」(VSCode「<name>, Editor Group N」),N 同 dock 标题;单组不变(见 `src/__tests__/editor-accessible-name/`) |
 | 视图:重置布局 | 编辑器组不合并,保持左右分栏(见 `src/__tests__/dock-reset-layout/`) |
 
 ## 未做
@@ -83,7 +96,7 @@
 - 拖文件 tab 到另一组 / 组边缘拆分(编辑器内层 TabNav 无跨组拖拽;dock 层仍可拖动整个组面板)。
 - 组间移动编辑器命令、合并组、组的 MRU 激活顺序(活动组关闭后落到相邻组而非最近使用)。
 - ⌘\ 拆分空组(无活动文件时为 no-op;⌘N 聚焦尚不存在的下一组仍会新建空组)。
-- 组顺序按创建 / 插入顺序(拆分插在源组之后),不是 VSCode 的 GRID_APPEARANCE(网格视觉顺序);复杂网格下 ⌘N 的 N 可能与视觉位置不一致。
+- 编辑器 tab 列表(tablist)的名称不带组号(仍为「编辑器标签」)。
 - 调试断点 / 执行行装饰按 `viewRefs`(每个文档指向最近登记的视图)同步:同一文件在两组打开时只有其中一个视图显示装饰。
 - 编辑器组全部在 popout 子窗时主窗 ⌘1 为 no-op(VSCode 主窗总有编辑器组;这里不为此在主窗补建空组)。
 - ⌘K ⌘\ 和弦(向下拆分在 VSCode 的默认键):命令分发不支持和弦,向下拆分无默认键(命令面板 / tab 右键 / 可自行绑定)。
@@ -97,4 +110,6 @@
 | `editor-groups-panel.spec.tsx` | 两个组面板各自渲染自己的 tab;一处编辑另一处同步;组内关闭;tab 右键向右拆分 |
 | `editor-groups-milkdown-sync.spec.tsx` | 真实 Crepe:另一组的编辑增量套进本组 Milkdown —— 不重挂载、光标映射、撤销只撤本组输入、不回抛;预览同样增量套用 |
 | `editor-groups-commands.spec.ts` | ⌘\ 拆分 / 向下拆分 / ⌘1⌘2⌘3 聚焦、命令注册与默认键、dock ↔ 组同步 |
+| `editor-groups-order.spec.tsx` | 真实 dockview:空间顺序(左右 / 上下 / 叠放 / 浮动 / popout)、拖动换位后标题 / ⌘N / 重置布局 / 读屏组号跟位置走、重启恢复的 popout 子窗挂上与关闭后重新编号 |
+| `tests/e2e/editor-group-order.spec.ts` | 真实应用:dock tab 拖到最左后标题 / ⌘1 跟位置、重启保留;重启恢复的 popout 子窗关掉后编号不重名;多组读屏名称带组号 |
 | `tests/e2e/editor-split.spec.ts` | 真实应用:⌘\ 拆分后两组同一文件、一处编辑另一处同步、⌘1/⌘2 切组、Explorer 打开落到活动组、⌘W 关掉组内最后一个文件关闭该组、重启恢复两组 |

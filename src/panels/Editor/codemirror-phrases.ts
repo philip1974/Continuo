@@ -50,10 +50,15 @@ export function codeMirrorPhrases(): Extension {
 
 /**
  * 编辑区文本框的可访问名称(WCAG 4.1.2;对齐 VSCode 编辑器「<文件名>, Editor Group N」):「<文件名>，编辑器」,
- * 无文件名退回「编辑器」。CodeEditor 与 Milkdown(ProseMirror)共用。BDD: src/__tests__/editor-accessible-name/
+ * 无文件名退回「编辑器」;所在窗口有多个编辑器组时(group = 组号,同 dock 标题「编辑器 N」的来源)为「<文件名>，编辑器组 N」/
+ *「编辑器组 N」。CodeEditor 与 Milkdown(ProseMirror)共用。BDD: src/__tests__/editor-accessible-name/
  */
-export function editorContentLabel(fileName: string | undefined): string {
+export function editorContentLabel(fileName: string | undefined, group?: number): string {
   const name = fileName ? basename(fileName) : '';
+  if (group !== undefined) {
+    const n = String(group);
+    return name ? t('editor.aria.content_group', { name, n }) : t('editor.aria.group', { n });
+  }
   return name ? t('editor.aria.content', { name }) : t('panels.editor.title');
 }
 

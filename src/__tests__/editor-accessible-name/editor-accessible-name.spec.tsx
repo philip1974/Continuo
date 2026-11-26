@@ -10,6 +10,8 @@ import { CodeEditor } from '../../panels/Editor/CodeEditor';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 import { ThemeContext } from '../../theme/ThemeProvider';
 import { getLocale, notifyLocaleChange, setLocale, t, type Locale } from '../../i18n';
+import { EditorGroupIdContext } from '../../panels/Editor/editor-group-context';
+import { publishEditorGroupNumbers } from '../../panels/Editor/editor-group-number';
 
 const instances = vi.hoisted(() => [] as CrepeType[]);
 
@@ -62,6 +64,7 @@ afterEach(() => {
   cleanup();
   instances.length = 0;
   switchLocale(original);
+  act(() => publishEditorGroupNumbers(new Map()));
 });
 
 describe('代码编辑器(CodeMirror)可访问名称', () => {
@@ -163,5 +166,68 @@ describe('Markdown 编辑器(Milkdown)可访问名称', () => {
     expect(ko['editor.aria.content']).toBe('{name}, 편집기');
     expect([en, zh, ko].map((d) => d['editor.aria.code_block'])).toEqual(['Code block', '代码块', '코드 블록']);
     expect([en, zh, ko].map((d) => d['editor.aria.preview'])).toEqual(['{name}, Preview', '{name}，预览', '{name}, 미리보기']);
+  });
+});
+
+// VSCode 多个编辑器组时编辑器名称「<文件名>, Editor Group N」:所在窗口有多个编辑器组 → 名称带组号(与 dock 标题「编辑器 N」
+// 同一来源 —— 空间顺序,useDockLocaleSync 发布);只有一个组 → 不带。组号变化时同一视图内更新(不重建编辑器)。
+describe('多个编辑器组:名称带组号', () => {
+  const inGroup = (groupId: string, node: React.ReactElement) => (
+    <EditorGroupIdContext.Provider value={groupId}>{node}</EditorGroupIdContext.Provider>
+  );
+
+  it('CodeMirror:「<文件名>，编辑器组 N」;组号变化 / 回到单组时同一视图内更新;三语', async () => {
+    switchLocale('zh');
+    act(() => publishEditorGroupNumbers(new Map([['editor', 1], ['editor:2', 2]])));
+    const { container } = render(
+      withTheme(inGroup('editor:2', <CodeEditor tabId="/r/a.ts" value={'x\n'} fileName="/r/a.ts" />)),
+    );
+    await act(async () => {});
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>('.cm-editor')!)!;
+    expect(view.contentDOM.getAttribute('aria-label')).toBe('a.ts，编辑器组 2');
+    // 拖动换位:editor:2 到了最左
+    act(() => publishEditorGroupNumbers(new Map([['editor:2', 1], ['editor', 2]])));
+    expect(view.contentDOM.getAttribute('aria-label')).toBe('a.ts，编辑器组 1');
+    switchLocale('en');
+    expect(view.contentDOM.getAttribute('aria-label')).toBe('a.ts, Editor Group 1');
+    switchLocale('ko');
+    expect(view.contentDOM.getAttribute('aria-label')).toBe('a.ts, 편집기 그룹 1');
+    // 关掉另一组 → 单组:名称不带组号
+    act(() => publishEditorGroupNumbers(new Map()));
+    expect(view.contentDOM.getAttribute('aria-label')).toBe('a.ts, 편집기');
+    expect(EditorView.findFromDOM(container.querySelector<HTMLElement>('.cm-editor')!)).toBe(view);
+  });
+
+  it('CodeMirror 无文件名:「编辑器组 N」', async () => {
+    switchLocale('zh');
+    act(() => publishEditorGroupNumbers(new Map([['editor', 1], ['editor:2', 2]])));
+    const { container } = render(withTheme(inGroup('editor:2', <CodeEditor tabId="x" value="" />)));
+    await act(async () => {});
+    expect(container.querySelector('.cm-content')!.getAttribute('aria-label')).toBe('编辑器组 2');
+  });
+
+  it('Milkdown 编辑区:「<文件名>，编辑器组 N」,组号变化时更新(不重挂)', async () => {
+    switchLocale('zh');
+    act(() => publishEditorGroupNumbers(new Map([['editor', 1], ['editor:3', 2]])));
+    const { container } = render(
+      inGroup('editor:3', <MilkdownEditor tabId="/r/doc.md" fileName="/r/doc.md" defaultValue="# T" />),
+    );
+    const pm = await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md，编辑器组 2"]'));
+    act(() => publishEditorGroupNumbers(new Map([['editor:3', 1], ['editor', 2]])));
+    await waitFor(() => container.querySelector('.ProseMirror[aria-label="doc.md，编辑器组 1"]'));
+    expect(container.querySelector('.ProseMirror')).toBe(pm);
+    expect(instances).toHaveLength(1);
+  });
+
+  it('三语文案', async () => {
+    const { en } = await import('../../../electron/shared/i18n-locales/en');
+    const { zh } = await import('../../../electron/shared/i18n-locales/zh');
+    const { ko } = await import('../../../electron/shared/i18n-locales/ko');
+    expect([en, zh, ko].map((d) => d['editor.aria.content_group'])).toEqual([
+      '{name}, Editor Group {n}',
+      '{name}，编辑器组 {n}',
+      '{name}, 편집기 그룹 {n}',
+    ]);
+    expect([en, zh, ko].map((d) => d['editor.aria.group'])).toEqual(['Editor Group {n}', '编辑器组 {n}', '편집기 그룹 {n}']);
   });
 });

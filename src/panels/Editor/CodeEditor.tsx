@@ -32,6 +32,7 @@ import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
 import { useLocale } from '@/i18n';
 import { codeMirrorContentLabel, codeMirrorPhrases, editorContentLabel } from './codemirror-phrases';
+import { useEditorGroupNumber } from './editor-group-number';
 import { debugDecorationsExtension } from './decorations/debug-decorations';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { registerEditorRootRebind } from './editor-root-registry';
@@ -266,6 +267,8 @@ export function CodeEditor({
   const { resolved } = useTheme();
   // 所在编辑器组:聚焦句柄按组登记(同一文件可在两个组各有一个视图)。挂载时取定(组面板不变)。
   const groupId = useEditorGroupId();
+  // 多个编辑器组时可访问名称带组号(随拖动换位 / 增删组变化,见 editor-group-number)
+  const groupNumber = useEditorGroupNumber(groupId);
   // 创建时已用的语言 / 主题输入:挂载时语言 / 主题 effect 也会跑一次,输入未变就不 reconfigure ——
   // markdown() 每次调用新建 Language,重配置会让整篇从 0 重新解析(每次切到 .md tab 首屏解析两遍)。
   const appliedLangKeyRef = useRef<string | null>(null);
@@ -294,7 +297,7 @@ export function CodeEditor({
     appliedLangKeyRef.current = `${fileName}\u0000${forceLanguage ?? ''}`;
     appliedThemeRef.current = resolved;
     appliedLocaleRef.current = locale;
-    appliedLabelRef.current = editorContentLabel(fileName);
+    appliedLabelRef.current = editorContentLabel(fileName, groupNumber);
     eolRef.current = detectLineEnding(value);
 
     const extensions: Extension[] = [
@@ -446,7 +449,7 @@ export function CodeEditor({
 
   // 可访问名称随文件名 / 界面语言变化:与 language / phrases 的 reconfigure 合并在同一次 dispatch 里(不额外派发)。
   const labelEffects = (): StateEffect<unknown>[] => {
-    const label = editorContentLabel(fileName);
+    const label = editorContentLabel(fileName, groupNumber);
     if (appliedLabelRef.current === label) return [];
     appliedLabelRef.current = label;
     return [labelCompartment.current.reconfigure(codeMirrorContentLabel(label))];
@@ -477,6 +480,15 @@ export function CodeEditor({
       effects: themeCompartment.current.reconfigure(themeExt),
     });
   }, [resolved]);
+
+  // 组号变化(拖动换位 / 增删组)→ 更新可访问名称
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const effects = labelEffects();
+    if (effects.length > 0) view.dispatch({ effects });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupNumber]);
 
   // 界面语言切换 → 热替换内建文案(已打开的查找面板保持原文,关闭重开即新语言 —— 面板 DOM 在打开时生成)
   useEffect(() => {

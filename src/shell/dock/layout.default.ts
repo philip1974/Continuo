@@ -2,6 +2,7 @@ import type { DockviewApi, DockviewGroupPanel } from 'dockview-react';
 import { tWithFallback } from '@/i18n/translate';
 import { activateDockPanel } from './wrap-panel-close';
 import { editorGroupIdsOf, useEditorStore } from '@/stores/editor.store';
+import { mainEditorGroupOrder } from './editor-group-order';
 
 // Explorer 固定在左侧 sidebar(App.tsx 内的 ExplorerSidebar),不参与 Dockview。
 // 默认布局极简(VSCode 风):只 Editor 占主区。
@@ -33,7 +34,7 @@ export function applyDefaultLayout(api: DockviewApi, group?: DockviewGroupPanel)
 /**
  * 「视图:重置布局」(VSCode View: Reset View Locations 类;空状态的「恢复默认布局」同一实现):把拖乱的布局收回默认形态
  * —— 退出最大化;拆分 / 浮动 / popout 子窗里的非编辑器面板收回主窗主编辑器组(popout 子窗随之关闭);编辑器组不合并
- *(VSCode 重置只动视图):第二个及以后的编辑器组各自成组,依次在主编辑器组右侧分栏;再按默认布局补上并激活编辑器。
+ *(VSCode 重置只动视图):第二个及以后的编辑器组(按空间顺序)各自成组,依次在主编辑器组右侧分栏;再按默认布局补上并激活编辑器。
  * **不关闭任何面板**:编辑器组(含未保存的 tab)、运行中的终端都原样保留,只换位置(同拖动 tab),无需确认。
  * BDD: src/__tests__/dock-reset-layout/
  */
@@ -45,8 +46,9 @@ export function resetDockLayout(api: DockviewApi): void {
     return;
   }
   const isGrid = (g: DockviewGroupPanel | undefined): g is DockviewGroupPanel => g?.api.location.type === 'grid';
-  // 编辑器组按 editor store 的组顺序(拆分顺序),不在 store 里的排后面。
-  const order = editorGroupIdsOf(useEditorStore.getState());
+  // 编辑器组按主窗里的空间顺序(网格从左到右、从上到下,同 ⌘1/⌘2/⌘3),popout 子窗里的按 store 组顺序排在后面,
+  // 都不在的排最后。
+  const order = [...new Set([...mainEditorGroupOrder(api), ...editorGroupIdsOf(useEditorStore.getState())])];
   const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
   const editors = api.panels
     .filter((p) => p.view.contentComponent === 'editor')

@@ -33,6 +33,7 @@ import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
 import { registerMarkdownReveal, type MarkdownRevealTarget } from './markdown-reveal-registry';
 import { useEditorGroupId } from './editor-group-context';
+import { useEditorGroupNumber } from './editor-group-number';
 import { setContentFocusHandler } from '@/lib/content-focus-target';
 import {
   markdownScrollTopOf,
@@ -323,6 +324,10 @@ function CrepeEditor({
   onWriteBackRef.current = onWriteBack;
   const writeBackRef = useRef<WriteBackHandle | null>(null);
   const crepeRef = useRef<Crepe | null>(null);
+  // 多个编辑器组时编辑区名称带组号(随拖动换位 / 增删组变化,见 editor-group-number);挂载时取最新值,之后就地更新
+  const groupNumber = useEditorGroupNumber(useEditorGroupId());
+  const groupNumberRef = useRef(groupNumber);
+  groupNumberRef.current = groupNumber;
 
   // 注:useEditor 的 callback 在 mount 时执行,defaultValue 只在挂载时生效。
   // 切 tab 时通过 EditorPanel 上的 key={activeTabId} 强制 remount,
@@ -596,7 +601,7 @@ function CrepeEditor({
               // 只读预览可聚焦(tabIndex=0):⌘F 查找、键盘滚动与 F6 落点都要焦点在预览区里(VSCode 预览 webview 同可聚焦)。
               attributes: readonly
                 ? { 'aria-label': previewContentLabel(fileName), 'aria-readonly': 'true', tabindex: '0' }
-                : { 'aria-label': editorContentLabel(fileName) },
+                : { 'aria-label': editorContentLabel(fileName, groupNumberRef.current) },
             });
         } catch {
           /* 已拆除 */
@@ -679,6 +684,20 @@ function CrepeEditor({
   useEffect(() => {
     if (value !== undefined) writeBackRef.current?.applyExternal(value);
   }, [value]);
+
+  useEffect(() => {
+    const crepe = crepeRef.current;
+    if (readonly || !crepe) return;
+    try {
+      crepe.editor.ctx
+        .get<{ setProps(props: { attributes: Record<string, string> }): void }, 'editorView'>('editorView')
+        .setProps({ attributes: { 'aria-label': editorContentLabel(fileName, groupNumber) } });
+    } catch {
+      /* 尚未挂载(挂载时按 groupNumberRef 取值)/ 已拆除 */
+    }
+    // 只随组号变化:文件名 / 只读 / 语言变化走重挂载
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupNumber]);
 
   return <Milkdown />;
 }

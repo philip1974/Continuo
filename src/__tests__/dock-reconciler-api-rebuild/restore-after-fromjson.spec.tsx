@@ -23,6 +23,7 @@ interface FakePanel {
     close: () => void;
     setTitle: (t: string) => void;
     location: { type: 'grid' };
+    onDidLocationChange: () => { dispose: () => void };
   };
 }
 
@@ -70,6 +71,7 @@ vi.mock('dockview-react', () => ({
                 if (i >= 0) panels.splice(i, 1);
               },
               setTitle: () => {},
+              onDidLocationChange: () => ({ dispose: () => {} }),
             },
           };
           panels.push(p);
