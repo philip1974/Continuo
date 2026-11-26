@@ -199,3 +199,38 @@ test('重启恢复的 popout 子窗关掉后:回到主窗的编辑器组重新�
   await expect.poll(() => dockNumbersLeftToRight(win)).toEqual([1, 2]);
   await expect.poll(() => ariaNumbersLeftToRight(win)).toEqual([1, 2]);
 });
+
+// dockview 移动面板后只激活不移 DOM 焦点:按下 tab 时焦点在 tab 上,tab 随移动被摘下 → 曾落到 body、键入丢失。
+// VSCode:拖放编辑器后它成为活动编辑器并获焦。BDD: src/__tests__/focus-after-close/(dock-drop-focus.spec.ts)
+for (const where of ['right', 'center'] as const) {
+  test(`三组分栏、焦点在组 1,把「编辑器 2」的 dock tab 拖到组 3 ${where === 'right' ? '右缘(分栏)' : '中央(叠放)'} → 被拖的编辑器获焦,可直接键入`, async () => {
+    test.setTimeout(90_000);
+    const ud = workspace();
+    const { win } = await launch(ud);
+    await splitInto(win, 3);
+    // 组 2 改显示 b.ts,便于认出被拖的编辑器
+    await groups(win).nth(1).locator('.cm-content').click();
+    await openTreeItem(win, /^b\.ts$/);
+    await expect.poll(() => contentsLeftToRight(win)).toEqual(['export const a = 1;', 'export const b = 2;', 'export const a = 1;']);
+    await groups(win).first().locator('.cm-content').click();
+    await expect.poll(() => focusedGroupPosition(win)).toBe(0);
+
+    const second = win.locator('.dv-tab').filter({ hasText: / 2$/ });
+    const target = dockGroupTitled(win, 3).locator('.dv-content-container');
+    const box = (await target.boundingBox())!;
+    await second.dragTo(target, {
+      targetPosition: where === 'right' ? { x: box.width - 8, y: box.height / 2 } : { x: box.width / 2, y: box.height / 2 },
+    });
+    if (where === 'right') {
+      await expect.poll(() => contentsLeftToRight(win)).toEqual(['export const a = 1;', 'export const a = 1;', 'export const b = 2;']);
+    } else {
+      await expect(groups(win)).toHaveCount(2, { timeout: 10_000 });
+    }
+    const focused = win.locator('[data-editor-panel-root] .cm-content:focus');
+    await expect(focused).toHaveCount(1, { timeout: 5_000 });
+    await expect(focused).toContainText('export const b = 2;');
+    await expect(win.locator('header').first()).toContainText('b.ts');
+    await win.keyboard.type('dropped-');
+    await expect(focused).toContainText('dropped-');
+  });
+}

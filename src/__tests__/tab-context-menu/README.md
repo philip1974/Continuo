@@ -40,8 +40,10 @@
   标 `opensDialog`:菜单先关闭、焦点按 Radix 还原到打开菜单前的 tab,**之后**才执行。否则 Radix 在菜单卸载后(setTimeout)才还原,
   抢走刚弹出的确认框的初始焦点(焦点留在背后 tab,Tab 进 CodeMirror)。期望同 VSCode:确认框模态,初始焦点在「全部保存」/
   「保存」(dock:终端运行中程序的关闭确认同理)。
-- 不弹框(无脏文件)时同 ⌘W / 点 ×:动作看到的焦点在本面板的 tab 上 → 关掉活动 tab 后焦点进新的活动编辑器;关掉的不是活动 tab →
-  焦点不进编辑区。
+- 不弹框(无脏文件)时同 ⌘W / 点 ×:动作看到的焦点在本面板的 tab 上 → 关掉活动 tab 后焦点进(全部关完后)新的活动编辑器;
+  只关掉非活动 tab:被右键的 tab 随之移除(关闭 / 关闭已保存)→ 焦点不落 body,留在该组活动编辑器(VSCode 同点 ×);
+  被右键的 tab 还在(关闭其他 / 关闭右侧只关了别的非活动 tab)→ 焦点没丢,留在该 tab 上(只在焦点丢失时补)。
+  dock 面板 tab 同理:右键「关闭」非活动面板后焦点进同组活动面板(`wrap-panel-close`)。
 - 菜单关闭后,**只在焦点已丢失**(随菜单卸载落到 body / 脱离文档)时回到**触发 tab**(右键 / Shift+F10 时的那个 tab),
   popout 子窗里同样回到子窗里的 tab(外壳自己还原:Radix FocusScope 按全局 document = 主窗记录 / 还原,子窗里会落到 body);
   随后确认框「取消」/ Esc → 焦点回该 tab(VSCode 辅助窗口同)。通用规则,不逐项标注:
@@ -60,9 +62,9 @@ tab 聚焦时 **Shift+F10 / 菜单键** 在 tab 左下角打开菜单(与终端�
 
 ## 规范
 
-`tab-context-menu-focus.spec.tsx`(右键关闭后确认框拿到焦点、不弹框时焦点进新的活动编辑器、外壳 opensDialog 语义、
+`tab-context-menu-focus.spec.tsx`(右键关闭后确认框拿到焦点、不弹框时焦点进新的活动编辑器、关掉非活动的被右键 tab 后焦点留在活动编辑器、外壳 opensDialog 语义、
 动作移动焦点时不还原 / 不移动时回 tab、子窗点外部焦点丢失时回 tab);
 `tab-context-menu.spec.tsx`(目标集合、批量确认推进、两类 tab 的菜单项与动作、键盘打开、dock 批量关闭先问完再关 / 遇取消
 整批不动);`editor-batch-close-confirm.spec.tsx`(多个脏文件的合并确认框:列表 / 全部保存 / 不保存 / 取消;「全部保存」中途遇写保护 / 磁盘冲突确认后继续或整批结束、其它失败整批结束);
 真机 e2e `tests/e2e/tab-context-menu.spec.ts`(编辑器 tab 全部关闭遇脏文件确认、多个脏文件合并框「全部保存」遇写保护覆盖后继续、dock tab 关闭其他、
-popout 子窗关闭 / 点正文关闭后的焦点)与 `tests/e2e/editor-split.spec.ts`(右键「向下拆分」后新组获焦)。
+popout 子窗关闭 / 点正文关闭后的焦点、右键关闭非活动 tab 后可直接键入)与 `tests/e2e/editor-split.spec.ts`(右键「向下拆分」后新组获焦)。

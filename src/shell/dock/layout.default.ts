@@ -3,6 +3,8 @@ import { tWithFallback } from '@/i18n/translate';
 import { activateDockPanel } from './wrap-panel-close';
 import { editorGroupIdsOf, useEditorStore } from '@/stores/editor.store';
 import { mainEditorGroupOrder } from './editor-group-order';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
+import { focusPanelContent } from './panel-focus';
 
 // Explorer 固定在左侧 sidebar(App.tsx 内的 ExplorerSidebar),不参与 Dockview。
 // 默认布局极简(VSCode 风):只 Editor 占主区。
@@ -12,9 +14,12 @@ import { mainEditorGroupOrder } from './editor-group-order';
 // callsite (onReady fallback + restore from EmptyState) 都可能让本函数跑两次。
 // 第二次 api.addPanel({id:'editor'}) 会 throw "panel with id editor already
 // exists"。check existence + 复活已有 editor focus 而非 throw。
-export function applyDefaultLayout(api: DockviewApi, group?: DockviewGroupPanel) {
+export function applyDefaultLayout(
+  api: DockviewApi,
+  group?: DockviewGroupPanel,
   // 编辑器面板 id = 活动编辑器组 id(拆分后只剩 editor:2 时恢复的是它,不另起一个空的 editor 组;BDD: editor-groups)
-  const id = useEditorStore.getState().activeGroupId;
+  id: string = useEditorStore.getState().activeGroupId,
+) {
   const existing = api.getPanel(id);
   if (existing) {
     activateDockPanel(existing);
@@ -39,6 +44,7 @@ export function applyDefaultLayout(api: DockviewApi, group?: DockviewGroupPanel)
  * BDD: src/__tests__/dock-reset-layout/
  */
 export function resetDockLayout(api: DockviewApi): void {
+  const activeGroupId = useEditorStore.getState().activeGroupId;
   if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
   const withPanels = api.groups.filter((g) => g.panels.length > 0);
   if (withPanels.length === 0) {
@@ -69,5 +75,19 @@ export function resetDockLayout(api: DockviewApi): void {
     previous = panel.group;
   }
   // 编辑器面板已关 → 建在落点组(各面板移动时不换活动组,活动组可能已随清空被移除)
-  applyDefaultLayout(api, main);
+  applyDefaultLayout(api, main, activeGroupId);
+  // 微任务里看焦点:等触发处收尾(如命令面板关闭后把焦点还给打开前的元素)。
+  queueMicrotask(() => restoreActiveEditorGroupFocus(api, activeGroupId));
+}
+
+/** 重置后:活动组仍为 id(dock 与 store 一致);焦点在 dock 里或已丢失、却不在该组 → 聚焦它的编辑区。焦点在 dock 外不抢。 */
+function restoreActiveEditorGroupFocus(api: DockviewApi, id: string): void {
+  const panel = api.getPanel(id);
+  if (!panel) return;
+  activateDockPanel(panel);
+  const doc = panel.group.element.ownerDocument;
+  const active = doc.activeElement;
+  if (panel.group.element.contains(active)) return;
+  const inDock = focusWithinOrLost(doc, null) || api.groups.some((g) => g.element.contains(active));
+  if (inDock) focusPanelContent(panel.api);
 }

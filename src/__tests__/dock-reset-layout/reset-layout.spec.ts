@@ -10,6 +10,8 @@ import { useEditorStore } from '@/stores/editor.store';
 import { en } from '@shared/i18n-locales/en';
 import { zh } from '@shared/i18n-locales/zh';
 import { ko } from '@shared/i18n-locales/ko';
+import { DockviewComponent } from 'dockview-react';
+import { trackEditorGroups } from '@/shell/dock/editor-groups-dock-sync';
 import { createDock, openFakePopout } from '../dock-terminal-vscode-focus/dock-fixtures';
 
 afterEach(() => {
@@ -151,6 +153,94 @@ describe('重置布局', () => {
       expect(api.groups.some((g) => g.api.location.type === 'popout')).toBe(false);
       expect(second.group.panels.map((p) => p.id)).toEqual(['editor:2']);
       expect(columns(api)).toHaveLength(2);
+    });
+  });
+
+  // VSCode Reset View Locations 不改变活动编辑器组:重置中途的移动会让 dockview 换活动组(新建的分栏组成为活动组)、编辑器
+  // 内容随移动被摘下(焦点落 body)。重置后活动组(dock 与 editor store 一致)仍是原来的,焦点在 dock 里(或已丢失)时进它的
+  // 编辑区;焦点在 dock 外(Explorer)不抢。
+  describe('活动编辑器组与焦点', () => {
+    const initialStore = useEditorStore.getState();
+    afterEach(() => useEditorStore.setState(initialStore, true));
+
+    class NoopResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    /** 「编辑器 2」叠进「编辑器」组,「编辑器 3」单独在右;每个面板内容里一个可编辑的 textarea(编辑区替身)。 */
+    function stackedDock() {
+      vi.stubGlobal('ResizeObserver', NoopResizeObserver);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dock = new DockviewComponent(container, {
+        createComponent: (opts) => {
+          const element = document.createElement('div');
+          const editable = document.createElement('textarea');
+          editable.dataset.panel = opts.id;
+          element.appendChild(editable);
+          return { element, init: () => {} };
+        },
+      });
+      const api = dock.api as DockviewApi;
+      const store = useEditorStore.getState();
+      store.ensureGroup('editor:2');
+      store.ensureGroup('editor:3');
+      const tracker = trackEditorGroups(api);
+      api.addPanel({ id: 'editor', component: 'editor', title: 'Editor' });
+      api.addPanel({ id: 'editor:2', component: 'editor', title: 'Editor 2', position: { referencePanel: 'editor', direction: 'within' } });
+      api.addPanel({ id: 'editor:3', component: 'editor', title: 'Editor 3', position: { referencePanel: 'editor', direction: 'right' } });
+      return { api, tracker };
+    }
+    const editableOf = (id: string) => document.querySelector<HTMLTextAreaElement>(`textarea[data-panel="${id}"]`);
+    /** ⌘N:激活该编辑器组并聚焦其编辑区。 */
+    function focusGroup(api: DockviewApi, id: string) {
+      api.getPanel(id)!.api.setActive();
+      editableOf(id)!.focus();
+      expect(useEditorStore.getState().activeGroupId).toBe(id);
+    }
+
+    it('焦点在单独成组的「编辑器 3」→ 重置后它仍是活动组(标题 / 活动下划线 / store 一致)且键入仍在它里面', async () => {
+      const { api, tracker } = stackedDock();
+      focusGroup(api, 'editor:3');
+
+      resetDockLayout(api);
+      await Promise.resolve();
+
+      expect(api.activePanel?.id).toBe('editor:3');
+      expect(useEditorStore.getState().activeGroupId).toBe('editor:3');
+      expect(document.activeElement).toBe(editableOf('editor:3'));
+      tracker.dispose();
+    });
+
+    it('焦点在叠放着的「编辑器 2」(重置把它拆出成组,编辑区随之被摘下)→ 重置后它是活动组且其编辑区获焦,不落 body', async () => {
+      const { api, tracker } = stackedDock();
+      focusGroup(api, 'editor:2');
+
+      resetDockLayout(api);
+      await Promise.resolve();
+
+      expect(api.getPanel('editor:2')!.group).not.toBe(api.getPanel('editor')!.group);
+      expect(api.activePanel?.id).toBe('editor:2');
+      expect(useEditorStore.getState().activeGroupId).toBe('editor:2');
+      expect(document.activeElement).toBe(editableOf('editor:2'));
+      tracker.dispose();
+    });
+
+    it('焦点在 dock 外(如 Explorer)→ 活动组照样保持,不抢焦点', async () => {
+      const { api, tracker } = stackedDock();
+      focusGroup(api, 'editor:2');
+      const outside = document.createElement('button');
+      document.body.appendChild(outside);
+      outside.focus();
+
+      resetDockLayout(api);
+      await Promise.resolve();
+
+      expect(api.activePanel?.id).toBe('editor:2');
+      expect(useEditorStore.getState().activeGroupId).toBe('editor:2');
+      expect(document.activeElement).toBe(outside);
+      tracker.dispose();
     });
   });
 

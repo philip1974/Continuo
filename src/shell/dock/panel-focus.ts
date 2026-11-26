@@ -1,7 +1,8 @@
 // dock 面板「把 DOM 焦点交给面板内容」的唯一实现:点 tab、关掉整组后 MRU 回落(group-mru)、关掉同组里非最后一个
 // 面板后新的活动面板(wrap-panel-close)共用。VSCode:点编辑器 tab / 关闭活动编辑器或编辑器组后,新的活动编辑器
 // 获焦,可直接继续输入。BDD: src/__tests__/focus-after-close/
-import type { DockviewPanelApi, IDockviewPanel } from 'dockview-react';
+import type { DockviewApi, DockviewPanelApi, IDockviewPanel } from 'dockview-react';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
 
@@ -44,5 +45,22 @@ export function focusPanelContent(api: DockviewPanelApi): void {
 export function focusDockPanelSoon(panel: IDockviewPanel, stillWanted: () => boolean): void {
   queueMicrotask(() => {
     if (stillWanted()) focusPanelContent(panel.api);
+  });
+}
+
+/**
+ * 拖放 dock tab 到别的组(分栏 / 叠放)/ 同组换位后,被拖的面板获焦(VSCode:拖放编辑器后它成为活动编辑器并获焦)。
+ * dockview 移动后只激活不移 DOM 焦点:按下 tab 时焦点在 tab 上,tab 随移动被摘下 → 焦点落 body、键入丢失。
+ * 落点在 onWillDrop(dockview 在同一次 drop 处理里随后同步移动面板并激活;移动的 onDidMovePanel 派发时拖放数据已随
+ * 被摘下的 tab 清掉,分不出是不是拖放;重置布局等程序化移动由调用方负责焦点):微任务里等这次移动收尾,只在焦点已丢失时
+ * 对活动面板 focusPanelContent(终端走其注册的 focus 句柄)。
+ * BDD: src/__tests__/focus-after-close/dock-drop-focus.spec.ts
+ */
+export function trackDropFocus(api: DockviewApi): { dispose(): void } {
+  return api.onWillDrop(() => {
+    queueMicrotask(() => {
+      const panel = api.activePanel;
+      if (panel && focusWithinOrLost(panel.group.element.ownerDocument, null)) focusPanelContent(panel.api);
+    });
   });
 }

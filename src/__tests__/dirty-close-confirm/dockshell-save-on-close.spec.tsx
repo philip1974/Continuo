@@ -43,6 +43,7 @@ vi.mock('dockview-react', () => ({
         // popout 文档跟踪(trackPopoutDocuments)。
         onDidAddGroup: disposable,
         onDidRemoveGroup: disposable,
+        onWillDrop: disposable,
         groups: [],
         panels: [],
       };

@@ -130,6 +130,47 @@ describe('tab 右键菜单关闭,无脏文件(不弹框)→ 同 ⌘W', () => {
     expect(useEditorStore.getState().tabs.map((x) => x.id)).toEqual([B, C]);
     expect(document.activeElement).toBe(screen.getByTestId('code-editor'));
   });
+
+  // 菜单关闭时焦点先还原到被右键的 tab,随后该 tab 被移除 → 焦点会落到 body、键入丢失。VSCode(同点 ×):焦点留在该组
+  // 活动编辑器。
+  it('关闭非活动 tab → 焦点留在该组活动编辑器(不落 body)', async () => {
+    await mount([tab(A), tab(B), tab(C)]);
+    await fromMenu('c.ts', 'Close');
+    expect(useEditorStore.getState().tabs.map((x) => x.id)).toEqual([A, B]);
+    expect(document.activeElement).toBe(screen.getByTestId('code-editor'));
+    expect(screen.getByTestId('code-editor').dataset.tab).toBe(A);
+  });
+
+  it('在非活动 tab 上关闭已保存(活动 tab 是脏的留下,被右键的 tab 随之关闭)→ 焦点留在活动编辑器', async () => {
+    await mount([tab(A, true), tab(B), tab(C)]);
+    await fromMenu('c.ts', 'Close Saved');
+    expect(useEditorStore.getState().tabs.map((x) => x.id)).toEqual([A]);
+    expect(document.activeElement).toBe(screen.getByTestId('code-editor'));
+    expect(screen.getByTestId('code-editor').dataset.tab).toBe(A);
+  });
+
+  it('在非活动 tab 上关闭右侧(被右键的 tab 还在)→ 焦点不丢,留在该 tab 上(只在焦点丢失时才补)', async () => {
+    await mount([tab(A), tab(B), tab(C)]);
+    await fromMenu('b.ts', 'Close to the Right');
+    expect(useEditorStore.getState().tabs.map((x) => x.id)).toEqual([A, B]);
+    expect(document.activeElement).toBe(tabEl('b.ts'));
+  });
+
+  it('在最右 tab 上关闭其他(活动 tab 与中间 tab 一起关)→ 留下的 tab 的编辑器获焦', async () => {
+    await mount([tab(A), tab(B), tab(C)]);
+    await fromMenu('c.ts', 'Close Others');
+    expect(useEditorStore.getState().tabs.map((x) => x.id)).toEqual([C]);
+    expect(document.activeElement).toBe(screen.getByTestId('code-editor'));
+    expect(screen.getByTestId('code-editor').dataset.tab).toBe(C);
+  });
+
+  it('关闭已保存(非活动的脏 tab 留下,其余关闭)→ 留下的 tab 的编辑器获焦', async () => {
+    await mount([tab(A), tab(B, true), tab(C)]);
+    await fromMenu('b.ts', 'Close Saved');
+    expect(useEditorStore.getState().tabs.map((x) => x.id)).toEqual([B]);
+    expect(document.activeElement).toBe(screen.getByTestId('code-editor'));
+    expect(screen.getByTestId('code-editor').dataset.tab).toBe(B);
+  });
 });
 
 // dock 面板 tab(SharedTab:终端运行中程序的关闭确认)与编辑器 tab 共用 TabContextMenu 外壳:opensDialog 项的语义在外壳上。

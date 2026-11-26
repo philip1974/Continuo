@@ -11,7 +11,7 @@ VSCode:Esc 关闭 Quick Input(⌘P / ⌘⇧P)后焦点回到打开前的编辑�
 | `src/design/focus-within-or-lost.ts` | `focusWithinOrLost`:焦点在容器内或已丢失(body / 脱离文档) |
 | `src/plugins/quick-open/QuickOpenModal.tsx` / `src/plugins/command-palette/CommandPalette.tsx` | 输入框初始焦点用 `data-autofocus` |
 | `src/panels/Editor/EditorPanel.tsx` | 面板内关闭 tab 的唯一入口 `closeTab`:关前焦点在本面板 / body → 关后 `focusActiveEditor()` |
-| `src/shell/dock/panel-focus.ts` | `focusPanelContent` / `focusDockPanelSoon`:点 tab、关组 MRU 回落、关面板后新活动面板共用 |
+| `src/shell/dock/panel-focus.ts` | `focusPanelContent` / `focusDockPanelSoon`:点 tab、关组 MRU 回落、关面板后新活动面板共用;`trackDropFocus`:拖放 tab 后焦点丢失时活动面板获焦 |
 | `src/shell/dock/wrap-panel-close.ts` | 真关闭前判断焦点是否在本组;关后同组新的活动面板获焦 |
 | `src/shell/dock/group-mru.ts` | 关掉整组后回落的面板(不限终端)获焦;焦点原不在该组时只换活动组 |
 
@@ -27,13 +27,24 @@ VSCode:Esc 关闭 Quick Input(⌘P / ⌘⇧P)后焦点回到打开前的编辑�
 ### 2. 关闭编辑器 tab / 同组面板(`editor-tab-close-focus.spec.tsx`、`dock-panel-close-focus.spec.ts`)
 
 - 编辑器:焦点在编辑器面板里(编辑区 / tab 行 / 本面板的关闭确认框)或已在 body 时,⌘W / 点 × / 确认框「不保存」
-  「保存」关闭活动 tab 后,新的活动 tab 的编辑器获焦;焦点在面板外(如 Explorer)或关闭的是非活动 tab → 不动焦点
+  「保存」关闭活动 tab 后,新的活动 tab 的编辑器获焦;一批关闭(右键关闭其他 / 关闭已保存…)按全部关完后的活动 tab 聚焦;
+  只关掉非活动 tab 时仅当焦点随被关的标签一起丢失(tab 右键菜单「关闭」先把焦点还给被右键的 tab)才交给本组活动编辑器,
+  焦点仍在编辑区 / 其它标签上不动;焦点在面板外(如 Explorer)不动焦点
 - dock:关闭同组里非最后一个、且是组内活动的面板(⌘W / 点 tab × / 终端以 0 退出自动关闭)前焦点在该组里或在 body →
-  同组新的活动面板获焦(终端走 xterm 句柄,其它面板聚焦内容里的可编辑元素);焦点在组外或关闭的是非活动面板 → 不动焦点
+  同组新的活动面板获焦(终端走 xterm 句柄,其它面板聚焦内容里的可编辑元素);关闭非活动面板时仅当焦点随它的 tab 一起丢失
+  (右键菜单「关闭」)才交给同组活动面板;焦点在组外 / 仍在别处 → 不动焦点
 - 关掉整组:MRU 回落的面板(终端 / 编辑器等)获焦,仅当焦点原在被移除的组里;popout 子窗关闭收回的面板总获焦
   (见 `dock-terminal-vscode-focus` 第 3 条)
+
+### 3. 拖放 dock tab 后(`dock-drop-focus.spec.ts`)
+
+- dockview 移动面板后只激活不移 DOM 焦点:按下 tab 时焦点在 tab 上,tab 随移动被摘下 → 焦点落 body。拖到别的组分栏 /
+  叠放 / 同组换位后,若焦点已丢失,活动面板(即被拖的面板)获焦(`trackDropFocus`,`src/shell/dock/panel-focus.ts`;终端走
+  xterm 句柄)。VSCode:拖放编辑器后它成为活动编辑器并获焦
+- 只认拖放(订阅 `onWillDrop`,dockview 在同一次 drop 处理里随后同步移动面板;移动的 `onDidMovePanel` 派发时拖放数据已随
+  被摘下的 tab 清掉,分不出拖放);重置布局等程序化移动由调用方负责焦点(见 `dock-reset-layout`);焦点在别处(如 Explorer)不抢
 
 ## 端到端
 
 - `tests/e2e/focus-after-close.spec.ts`:Esc 关闭 Quick Open 后焦点回编辑器;⌘W 关 tab 后直接键入进入下一个 tab;
-  Explorer 双击文件后直接键入进入编辑器
+  Explorer 双击文件后直接键入进入编辑器;三组分栏把「编辑器 2」的 dock tab 拖到组 3 右缘 / 叠放后直接键入进入编辑器 2

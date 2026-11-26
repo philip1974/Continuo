@@ -54,6 +54,7 @@ import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
 import { trackPopoutDocuments } from './popout-documents';
 import { isMainWindowDockEmpty, mainWindowAddPosition, trackGroupMru } from './group-mru';
+import { trackDropFocus } from './panel-focus';
 import { trackActiveTabReveal } from './reveal-active-tab';
 import { notify } from '@/notifications/notify';
 import { t as translate } from '@/i18n';
@@ -372,6 +373,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         trackPopoutDocuments(event.api),
         // 关掉活动组 / popout 子窗后激活最近使用的组、收回的面板获焦(VSCode),而非 dockview 默认的最早的组。
         trackGroupMru(event.api),
+        // 拖放 dock tab(分栏 / 叠放)后被拖的面板获焦(VSCode);dockview 只激活不移 DOM 焦点。
+        trackDropFocus(event.api),
         // 每个组的活动 tab 总在 tab 条可见区内(VSCode),不被挤进「⌄N」溢出菜单看不到。
         trackActiveTabReveal(event.api),
         // 编辑器组 ↔ editor 面板:组关闭 → 关面板;面板被关 → 移除组;激活面板 → 活动编辑器组(BDD: editor-groups)。

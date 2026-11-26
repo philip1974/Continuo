@@ -28,6 +28,7 @@ function makeApi() {
     // popout 文档跟踪(trackPopoutDocuments)。
     onDidAddGroup: vi.fn(() => ({ dispose: vi.fn() })),
     onDidRemoveGroup: vi.fn(() => ({ dispose: vi.fn() })),
+    onWillDrop: vi.fn(() => ({ dispose: vi.fn() })),
     groups: [],
     panels: [],
   };

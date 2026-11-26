@@ -59,6 +59,8 @@ vi.mock('dockview-react', () => ({
         // popout 文档跟踪(trackPopoutDocuments)。
         onDidAddGroup: fakeDisposable(),
         onDidRemoveGroup: fakeDisposable(),
+        // 拖放后补焦点(trackDropFocus)。
+        onWillDrop: fakeDisposable(),
         groups: [],
         panels: [],
       }),

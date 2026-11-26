@@ -110,6 +110,46 @@ test('编辑器 tab 右键「关闭」活动的干净 tab(不弹框)→ 同 ⌘W
   await expect(editable).toContainText('ctx-close');
 });
 
+// 菜单关闭先把焦点还给被右键的 tab,随后它被移除 → 曾落到 body、键入丢失。VSCode(同点 ×):焦点留在活动编辑器。
+test('编辑器 tab 右键「关闭」非活动的干净 tab → 焦点留在活动编辑器,可直接键入', async ({ window }) => {
+  await window.locator('text=README.md').first().click();
+  await window.locator('text=src').first().click();
+  await window.locator('text=a.ts').first().click();
+  const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
+  await expect(tabs).toHaveCount(2, { timeout: 10_000 });
+  const cm = window.locator('.cm-content');
+  await expect(cm).toContainText('export const a', { timeout: 10_000 });
+  await cm.click();
+
+  await tabs.filter({ hasText: 'README.md' }).click({ button: 'right' });
+  await window.getByRole('menuitem', { name: CLOSE }).click();
+  await expect(tabs).toHaveCount(1, { timeout: 5_000 });
+  await expect(cm).toBeFocused({ timeout: 5_000 });
+  await window.keyboard.type('ctx-inactive');
+  await expect(cm).toContainText('ctx-inactive');
+});
+
+test('dock tab 右键「关闭」非活动面板 → 焦点进同组活动的编辑器,可直接键入', async ({ window }) => {
+  await window.locator('text=src').first().click();
+  await window.locator('text=a.ts').first().click();
+  const cm = window.locator('.cm-content');
+  await expect(cm).toContainText('export const a', { timeout: 10_000 });
+  await window.getByRole('button', { name: SETTINGS }).click();
+  const settingsTab = window.locator('.dv-tab [role=tab]', { hasText: /^(设置|Settings|설정)/ });
+  await expect(settingsTab).toBeVisible({ timeout: 10_000 });
+  await expect(window.locator('.dv-tab')).toHaveCount(2);
+  // 切回编辑器(设置面板成为同组非活动面板)
+  await window.locator('.dv-tab [role=tab]', { hasText: /^(编辑器|Editor|편집기)$/ }).click();
+  await expect(cm).toBeFocused({ timeout: 5_000 });
+
+  await settingsTab.click({ button: 'right' });
+  await window.getByRole('menuitem', { name: CLOSE }).click();
+  await expect(window.locator('.dv-tab')).toHaveCount(1, { timeout: 5_000 });
+  await expect(cm).toBeFocused({ timeout: 5_000 });
+  await window.keyboard.type('dock-inactive');
+  await expect(cm).toContainText('dock-inactive');
+});
+
 test('dock tab 右键:Shift+F10 打开菜单,「关闭其他」只留当前面板', async ({ window }) => {
   await window.locator('text=README.md').first().click();
   await window.getByRole('button', { name: SETTINGS }).click();

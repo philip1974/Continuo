@@ -84,6 +84,7 @@ vi.mock('dockview-react', () => ({
         // popout 文档跟踪(trackPopoutDocuments)。
         onDidAddGroup: noopDisposable,
         onDidRemoveGroup: noopDisposable,
+        onWillDrop: noopDisposable,
         groups: [],
       };
       h.api = self;

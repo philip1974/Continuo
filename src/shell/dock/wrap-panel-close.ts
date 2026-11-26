@@ -121,20 +121,21 @@ export function wrapPanelClose(
       // 动画期间 reconciler 可能补标(会话恰好从可见快照消失)—— 以发起关闭时为准,这里清掉补上的标记。
       // 动画窗口内被复活(cancelPendingPanelClose 清 timer)则走不到这里,面板与会话都保留(R44)。
       if (!closedByReconciler) suppressedPanelCloses.delete(id);
-      // 关闭的是组里的活动面板、且关闭前焦点在本组里(内容 / tab)或已丢到 body → 关闭后同组新的活动面板获焦
-      //(VSCode:关闭活动编辑器后同组新的活动编辑器获焦;关闭非活动的不动焦点)。组随最后一个面板一起移除时由
-      // group-mru 回落。测试替身可能没有 group。
+      // 关闭前焦点在本组里(内容 / tab)或已丢到 body 时:关闭的是组里的活动面板 → 关闭后同组新的活动面板获焦
+      //(VSCode:关闭活动编辑器后同组新的活动编辑器获焦);关闭的是非活动面板 → 仅当焦点随它的 tab 一起丢失(tab 右键
+      // 菜单「关闭」先把焦点还给被右键的 tab)时交给同组活动面板(VSCode 同点 ×),焦点仍在别处不动。组随最后一个面板
+      // 一起移除时由 group-mru 回落。测试替身可能没有 group。
       const group: IDockviewPanel['group'] | undefined = panel.group;
-      const refocus =
-        group !== undefined &&
-        group.activePanel === panel &&
-        focusWithinOrLost(group.element.ownerDocument, group.element);
+      const doc = group?.element.ownerDocument;
+      const focusInGroup = group !== undefined && doc !== undefined && focusWithinOrLost(doc, group.element);
+      const wasActive = group?.activePanel === panel;
       try {
         original();
       } catch {
         // panel 已被其他路径(group teardown 等)移除,忽略。
       }
-      const next = refocus ? group.activePanel : undefined;
+      const next =
+        focusInGroup && (wasActive || focusWithinOrLost(doc, null)) ? group.activePanel : undefined;
       if (next !== undefined && next !== panel) focusDockPanelSoon(next, () => next.api.isActive);
     }, EXIT_DURATION_MS);
     pendingCloseTimers.set(id, timer);

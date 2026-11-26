@@ -183,18 +183,19 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   const setMode = useEditorStore((s) => s.setMode);
   const updateContent = useEditorStore((s) => s.updateContent);
   const closeStoreTab = useEditorStore((s) => s.closeTab);
-  // 面板内关闭 tab(⌘W / × / 关闭确认框)的唯一入口:关闭的是活动 tab、且关闭前焦点在本面板里(编辑区 / tab 行 /
-  // 本面板的确认框)或已丢到 body → 关闭后新的活动 tab 的编辑器获焦(VSCode:关闭活动编辑器后同组新的活动编辑器
-  // 获焦);关闭非活动 tab、焦点在面板外(如 Explorer)都不动焦点。BDD: src/__tests__/focus-after-close/
+  // 面板内关闭 tab(⌘W / × / 关闭确认框 / 右键批量关闭)的唯一入口,一批一起判定(按全部关完后的活动 tab 聚焦,
+  // 不按中途的):关闭前焦点在本面板里(编辑区 / tab 行 / 本面板的确认框)或已丢到 body 时 ——
+  // - 关掉了活动 tab → 新的活动 tab 的编辑器获焦(VSCode:关闭活动编辑器后同组新的活动编辑器获焦);
+  // - 只关掉非活动 tab → 仅当焦点随被关的标签一起丢失(右键菜单关闭先把焦点还给被右键的 tab)时交给本组活动编辑器
+  //   (VSCode 同点 ×),焦点仍在编辑区 / 其它标签上不动。
+  // 焦点在面板外(如 Explorer)不动焦点。BDD: src/__tests__/focus-after-close/、src/__tests__/tab-context-menu/
   const rootRef = useRef<HTMLDivElement>(null);
-  const closeTab = useCallback(
-    (id: string) => {
+  const closeTabs = useCallback(
+    (ids: readonly string[]) => {
       const root = rootRef.current;
-      const refocus =
-        root !== null &&
-        groupActiveTabIdOf(useEditorStore.getState(), groupId) === id &&
-        focusWithinOrLost(root.ownerDocument, root);
-      closeStoreTab(id, groupId);
+      const closesActive = ids.some((id) => id === groupActiveTabIdOf(useEditorStore.getState(), groupId));
+      const refocus = root !== null && focusWithinOrLost(root.ownerDocument, root);
+      for (const id of ids) closeStoreTab(id, groupId);
       if (!refocus) return;
       const s = useEditorStore.getState();
       // 组随最后一个 tab 关闭(closeEmptyGroups)→ 焦点交给新的活动组的编辑器。
@@ -204,8 +205,15 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       }
       const next = groupActiveTabIdOf(s, groupId);
       // 关掉的是最后一个 tab → 焦点留在空编辑器组(面板根,tabIndex=-1),不随卸载的编辑区掉到 body(VSCode 同)。
-      if (next === null) root.focus();
-      else requestEditorFocus(next, groupId);
+      const focusNext = () => (next === null ? root.focus() : requestEditorFocus(next, groupId));
+      if (closesActive) {
+        focusNext();
+        return;
+      }
+      // 标签在本次提交(useSyncExternalStore 同步优先级,微任务内)里才移除:下一帧再看焦点是否丢了。
+      requestAnimationFrame(() => {
+        if (focusWithinOrLost(root.ownerDocument, null)) focusNext();
+      });
     },
     [closeStoreTab, groupId],
   );
@@ -377,7 +385,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     (progress: BatchClose) => {
       const step = nextBatchCloseStep(groupTabsForClose(groupId), progress);
       if (step.kind === 'close') {
-        for (const id of step.ids) closeTab(id);
+        closeTabs(step.ids);
         return;
       }
       if (progress.saveAll) {
@@ -388,7 +396,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       setCloseCandidate({ ...step.tab, batch: step.batch });
     },
     // saveAndAdvance 引用恒定(latest-ref),它与本函数互相调用(调用时取最新)。
-    [closeTab, groupId, saveAndAdvance],
+    [closeTabs, groupId, saveAndAdvance],
   );
   const confirmOverwrite = useCallback(async () => {
     const candidate = overwriteCandidate;

@@ -97,6 +97,25 @@ describe('关闭同组里非最后一个面板', () => {
     expect(document.activeElement).toBe(control);
   });
 
+  // tab 右键菜单「关闭」先把焦点还给被右键的 tab,随后它随面板一起移除 → 焦点会落到 body、键入丢失。
+  // VSCode(同点 ×):焦点留在该组活动的编辑器 / 面板里。
+  it('关闭非活动面板、焦点在它的 tab 上(随面板移除而丢失)→ 同组活动面板获焦', async () => {
+    const api = createDock();
+    oneGroup(api);
+    const t1Tab = api.getPanel('t1')!.view.tab.element;
+    t1Tab.tabIndex = 0; // 同 SharedTab:tab 根可聚焦
+    t1Tab.focus();
+    expect(document.activeElement).toBe(t1Tab);
+
+    api.getPanel('t1')!.api.close();
+    await waitClose();
+    await flushMicrotasks();
+
+    expect(api.getPanel('t1')).toBeUndefined();
+    expect(api.activePanel?.id).toBe('t2');
+    expect(document.activeElement).toBe(editableOf('t2'));
+  });
+
   it('焦点在组外(如 Explorer)→ 不抢焦点', async () => {
     const api = createDock();
     oneGroup(api);

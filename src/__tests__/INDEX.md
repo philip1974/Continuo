@@ -859,6 +859,7 @@
 
 ## [关闭弹窗 / tab / 面板后的焦点归属(VSCode 对齐)](./focus-after-close/README.md)
 
+- [`dock-drop-focus.spec.ts`](./focus-after-close/dock-drop-focus.spec.ts)
 - [`dock-panel-close-focus.spec.ts`](./focus-after-close/dock-panel-close-focus.spec.ts)
 - [`editor-tab-close-focus.spec.tsx`](./focus-after-close/editor-tab-close-focus.spec.tsx)
 - [`modal-esc-focus.spec.tsx`](./focus-after-close/modal-esc-focus.spec.tsx)
