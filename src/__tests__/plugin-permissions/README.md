@@ -51,6 +51,9 @@ InMemoryPermissionStore(测试替身,`src/plugins/testing/in-memory-stores.ts`),
 但用户可能改主意,UI 提供 [启用] 按钮时:`PluginManager.enable(failedId)` 会先调
 `store.clearDenied(id)` 清掉 granted=false 的决策(保留 granted=true),再走
 activate → ensureAuthorized,这时 deny 已清,会重新 prompt 用户。
+**仅当失败原因是权限被拒(`entry.error.code === 'PERMISSION_DENIED'`)时才清**;其它原因失败(onload 抛错 / 渲染出错 /
+加载失败)的重试保留拒绝记录、不再弹已拒绝的权限(对齐 VSCode:不未经用户选择再次询问其明确拒绝的项;部分授权的拒绝项
+可在权限编辑器改)。见 `plugin-manager.spec.ts`「部分授权后…失败 → 重试 enable 不清拒绝记录」。
 
 ### ensureAuthorized(pluginId, requested, store, prompt)
 

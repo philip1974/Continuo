@@ -96,6 +96,32 @@ describe('外部删除干净 tab:保留并标记已删除', () => {
     expect(find(A)?.orphaned).toBeFalsy();
   });
 
+  // VSCode:文件重新出现即清除 deleted 状态,读错误另行处理。回来的文件读不了(如 chmod 000)→ 走存在性检查(stat):
+  // 存在 → 清标记(恢复自动保存),内容保持不变;读失败沿用外部同步的读失败处理(静默跳过,不新增提示)。
+  it('文件重新出现但读失败(非不存在,如无读权限)→ stat 确认存在即清除标记,内容不变', async () => {
+    fsMock.readFile.mockResolvedValue(NOT_FOUND);
+    fsMock.stat.mockResolvedValue(NOT_FOUND);
+    renderHook(() => useExternalFileSync());
+    emit('/w', ['a.md']);
+    await flush(EXTERNAL_DELETE_CONFIRM_MS);
+    expect(find(A)?.orphaned).toBe(true);
+    fsMock.readFile.mockResolvedValue({ ok: false, code: 'FS_DENIED', message: 'EACCES' });
+    fsMock.stat.mockResolvedValue({ ok: true, data: { mtimeMs: 2, size: 4, ino: 9 } });
+    emit('/w', ['a.md']);
+    await flush();
+    expect(find(A)).toMatchObject({ content: 'disk', originalContent: 'disk', dirty: false });
+    expect(find(A)?.orphaned).toBeFalsy();
+  });
+
+  it('未标记的干净 tab 读失败(非不存在)→ 仍只跳过,不发 stat、不标记', async () => {
+    fsMock.readFile.mockResolvedValue({ ok: false, code: 'FS_DENIED', message: 'EACCES' });
+    renderHook(() => useExternalFileSync());
+    emit('/w', ['a.md']);
+    await flush(EXTERNAL_DELETE_CONFIRM_MS);
+    expect(fsMock.stat).not.toHaveBeenCalled();
+    expect(find(A)?.orphaned).toBeFalsy();
+  });
+
   it('所在目录被外部改名(只报目录名)→ 目录内干净 tab 保留并标记', async () => {
     useEditorStore.setState({ tabs: [clean('/w/foo/deep/c.ts'), clean(B)], activeTabId: B });
     fsMock.readFile.mockResolvedValue(NOT_FOUND);

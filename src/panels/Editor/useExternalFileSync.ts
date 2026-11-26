@@ -124,6 +124,13 @@ export function useExternalFileSync(): void {
         const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
         if (live !== null && live === tabRef) useEditorStore.getState().markPathsDeleted([path]);
       }
+      // 已标「(已删除)」的干净 tab 重读失败但不是「不存在」(如文件回来了却无读权限):读失败本身照旧静默跳过、内容不动,
+      // 但标记改由存在性检查决定(同脏 tab 的 checkOrphan)—— VSCode:文件重新出现即清除 deleted 状态,读错误另行处理。
+      // 否则标记不清、自动保存一直关着。(已标记的 tab 不做回声判断,这里的 {ok:false} 必是真实读失败。)
+      if (!superseded && r && !r.ok && !isNotFound(r) && tabRef?.orphaned) {
+        const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+        if (live !== null && live === tabRef) checkOrphan(path, tabId);
+      }
       // 被合并的尾随事件 → 读最终内容并应用(本次中间结果已被取代,不落地)
       if (superseded) readAndApply(path, tabId);
     };

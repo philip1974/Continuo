@@ -500,9 +500,12 @@ export class PluginManager {
     if (!entry) throw new Error(`Plugin ${id} not found`);
     if (entry.status === 'enabled') return; // 幂等
 
-    // FAILED 重试:清掉旧的 deny 决策,让 ensureAuthorized 重新 prompt 用户
-    // (允许用户改主意 — 上次拒绝 ≠ 永远拒绝)
-    if (entry.status === 'failed') await this.host.permissionStore?.clearDenied(id);
+    // 因权限被拒而 FAILED 的重试:清掉旧的 deny 决策,让 ensureAuthorized 重新 prompt 用户
+    // (允许用户改主意 — 上次拒绝 ≠ 永远拒绝)。其它原因失败(onload 抛错 / 渲染出错 / 加载失败)的重试
+    // 保留拒绝记录 —— 对齐 VSCode,不未经用户选择再次询问其已明确拒绝的项(部分授权的拒绝项可在权限编辑器改)。
+    if (entry.status === 'failed' && entry.error?.code === 'PERMISSION_DENIED') {
+      await this.host.permissionStore?.clearDenied(id);
+    }
 
     await this.activateEntry(entry);
     // 以「激活成功」(有实例)为准记启用意图,不看瞬时 status:激活一完成贡献就渲染,渲染出错会在本 await 期间把

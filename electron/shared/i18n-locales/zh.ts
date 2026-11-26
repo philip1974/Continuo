@@ -697,6 +697,7 @@ export const zh: Record<TranslationKey, string> = {
   'plugins_tab.install.install': '安装',
   'plugins_tab.install.success': '已安装 {name} v{version}',
   'plugins_tab.install.updated': '已更新 {name} v{version} — 已重新加载',
+  'plugins_tab.install.updated_not_running': '已更新 {name} v{version}',
   'plugins_tab.install.update_confirm_title': '更新插件？',
   'plugins_tab.install.update_confirm_body': '「{name}」已安装 v{installed}，覆盖并更新到 v{version}？',
   'plugins_tab.install.update_confirm': '覆盖并更新',

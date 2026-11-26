@@ -728,6 +728,7 @@ export const en = {
   'plugins_tab.install.install': 'Install',
   'plugins_tab.install.success': 'Installed {name} v{version}',
   'plugins_tab.install.updated': 'Updated {name} v{version} — reloaded',
+  'plugins_tab.install.updated_not_running': 'Updated {name} v{version}',
   'plugins_tab.install.update_confirm_title': 'Update plugin?',
   'plugins_tab.install.update_confirm_body': '“{name}” v{installed} is already installed. Overwrite and update to v{version}?',
   'plugins_tab.install.update_confirm': 'Overwrite and Update',

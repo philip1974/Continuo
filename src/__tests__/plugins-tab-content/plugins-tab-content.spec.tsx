@@ -1012,8 +1012,27 @@ describe('PluginsTabContent — Git URL 安装', () => {
       expect(container.textContent).not.toContain('若尚未出现在插件列表中');
       fireEvent.click(dialogButton('覆盖并更新')!);
       await waitFor(() => expect(installFromGit).toHaveBeenLastCalledWith(URL, true));
-      await waitFor(() => expect(container.textContent).toContain('已更新 Acme Tools v1.1.0'));
+      await waitFor(() => expect(container.textContent).toContain('已更新 Acme Tools v1.1.0 — 已重新加载'));
       expect((container.querySelector('input') as HTMLInputElement).value).toBe('');
+    });
+
+    // 未运行(禁用 / 失败)的插件覆盖更新后 watcher 不会重新激活它 → 提示不得声称「已重新加载」。
+    it.each(['disabled', 'failed'] as const)('已在列表且状态为 %s → 覆盖更新后只提示已更新,不说已重新加载', async (status) => {
+      getMgr.mockReturnValue({
+        listAll: () => [plugin({ id: 'acme.tools', status, manifest: { id: 'acme.tools', name: 'Acme Tools', version: '1.0.0' } as never })],
+      });
+      installPluginsApi(
+        vi
+          .fn()
+          .mockResolvedValueOnce(EEXIST)
+          .mockResolvedValueOnce({ ok: true, data: { id: 'acme.tools', name: 'Acme Tools', version: '1.1.0' } }),
+      );
+      const { container } = render(<PluginsTabContent />);
+      submit(container);
+      await waitFor(() => expect(dialogButton('覆盖并更新')).toBeDefined());
+      fireEvent.click(dialogButton('覆盖并更新')!);
+      await waitFor(() => expect(container.textContent).toContain('已更新 Acme Tools v1.1.0'));
+      expect(container.textContent).not.toContain('已重新加载');
     });
 
     it('确认框点取消 → 不覆盖,无错误', async () => {

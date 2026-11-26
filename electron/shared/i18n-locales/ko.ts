@@ -700,6 +700,7 @@ export const ko: Record<TranslationKey, string> = {
   'plugins_tab.install.install': '설치',
   'plugins_tab.install.success': '{name} v{version} 설치됨',
   'plugins_tab.install.updated': '{name} v{version} 업데이트됨 — 다시 로드됨',
+  'plugins_tab.install.updated_not_running': '{name} v{version} 업데이트됨',
   'plugins_tab.install.update_confirm_title': '플러그인을 업데이트할까요?',
   'plugins_tab.install.update_confirm_body': "'{name}' v{installed}이(가) 이미 설치되어 있습니다. v{version}(으)로 덮어써서 업데이트할까요?",
   'plugins_tab.install.update_confirm': '덮어쓰고 업데이트',

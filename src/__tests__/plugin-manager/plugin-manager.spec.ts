@@ -1176,6 +1176,49 @@ describe('权限门 ensureAuthorized 集成', () => {
     warn.mockRestore();
   });
 
+  // 对齐 VSCode:非权限原因失败(onload 抛错 / 渲染出错)重试时,不再弹用户已明确拒绝的权限。
+  it.each([
+    ['onload 抛错', 'onload'],
+    ['渲染出错', 'render'],
+  ] as const)('部分授权后%s失败 → 重试 enable 不清拒绝记录、不再 prompt', async (_label, kind) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const state: MockHostState = {
+      dirs: [
+        {
+          id: 'a',
+          manifestText: manifestText('a', { permissions: ['fs', 'shell'] }),
+          moduleUrl: 'mod://a',
+        },
+      ],
+      enabled: new Set(['a']),
+      modules: new Map([
+        ['mod://a', { default: kind === 'onload' ? FailingOnloadPlugin : GoodPlugin }],
+      ]),
+      enabledWritten: new Set(),
+    };
+    const promptFn = vi.fn(async () => ['fs'] as const); // 授 fs、拒 shell
+    const store = new InMemoryPermissionStore();
+    const host: ManagerHost = {
+      ...makeHost(state),
+      permissionStore: store,
+      promptFn: promptFn as never,
+    };
+    const mgr = new PluginManager(fakeApp, host);
+    await mgr.init();
+    if (kind === 'render') mgr.markRenderFailed('a', new Error('boom in render'));
+    expect(mgr.listAll()[0]?.status).toBe('failed');
+    expect(mgr.listAll()[0]?.error?.code).not.toBe('PERMISSION_DENIED');
+
+    await mgr.enable('a');
+    expect(promptFn).toHaveBeenCalledTimes(1); // 仅安装 / 首次启用那次
+    expect(await store.get('a')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ permission: 'shell', granted: false })]),
+    );
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
   it('host 不配 permissionStore → 跳过权限门(向后兼容)', async () => {
     const state: MockHostState = {
       dirs: [
