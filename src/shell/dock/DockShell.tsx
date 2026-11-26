@@ -53,6 +53,7 @@ import {
 import { coApi } from '@/lib/co-api';
 import { readDockLayout } from './layout-prefetch';
 import { trackPopoutDocuments } from './popout-documents';
+import { trackPopoutWindowTitles } from './popout-window-titles';
 import { isMainWindowDockEmpty, mainWindowAddPosition, trackGroupMru } from './group-mru';
 import { trackDropFocus } from './panel-focus';
 import { trackActiveTabReveal } from './reveal-active-tab';
@@ -371,6 +372,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         }),
         // popout 子窗文档集合 → ToastViewport 把 toast 也渲染进子窗(弹出面板的 notify.* 进主窗 provider)。
         trackPopoutDocuments(event.api),
+        // popout 子窗原生标题 = 子窗自己的活动文件 / 面板(dockview 只在开窗时抄一次主窗标题)。
+        trackPopoutWindowTitles(event.api),
         // 关掉活动组 / popout 子窗后激活最近使用的组、收回的面板获焦(VSCode),而非 dockview 默认的最早的组。
         trackGroupMru(event.api),
         // 拖放 dock tab(分栏 / 叠放)后被拖的面板获焦(VSCode);dockview 只激活不移 DOM 焦点。

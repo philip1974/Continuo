@@ -7,16 +7,29 @@ import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
 import { focusPanelContent } from '@/shell/dock/panel-focus';
 import { mainEditorGroupOrder } from '@/shell/dock/editor-group-order';
+import { editorGroupInDocument } from '@/shell/dock/group-mru';
+import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { editorGroupIdsOf, groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
 import { tWithFallback } from '@/i18n/translate';
 import { nextEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { saveCodeEditorViewState, snapshotCodeEditorView } from './editor-view-state-cache';
 import { requestEditorFocus } from './editor-focus-registry';
 
+/**
+ * 编辑器组类命令作用的组:触发命令的窗口(按键所在窗口 / 命令面板所在窗口)的编辑器组(VSCode:命令作用于触发它的窗口的
+ * 活动编辑器组;见 editorGroupInDocument)。dock 未就绪 → 活动编辑器组;该窗口没有编辑器组 → undefined(命令 no-op)。
+ * 只在命令的同步部分有效(getCommandDocument)。
+ */
+export function commandEditorGroupId(): string | undefined {
+  const active = useEditorStore.getState().activeGroupId;
+  const api = getDockApi();
+  return api ? editorGroupInDocument(api, getCommandDocument(), active) : active;
+}
+
 export type SplitDirection = 'right' | 'down';
 
 export interface SplitEditorOptions {
-  /** 源组(缺省活动组)。 */
+  /** 源组(缺省触发窗口的编辑器组,见 commandEditorGroupId)。 */
   readonly groupId?: string;
   /** 拆分哪个文件(缺省源组的活动文件);null = 新建空组(⌘N 聚焦尚不存在的下一个组)。 */
   readonly tabId?: string | null;
@@ -30,9 +43,9 @@ export function splitEditor(direction: SplitDirection, opts: SplitEditorOptions 
   const api = getDockApi();
   if (!api) return false;
   const store = useEditorStore.getState();
-  const source = opts.groupId ?? store.activeGroupId;
-  const sourcePanel = api.getPanel(source);
-  if (!sourcePanel) return false;
+  const source = opts.groupId ?? commandEditorGroupId();
+  const sourcePanel = source === undefined ? undefined : api.getPanel(source);
+  if (source === undefined || !sourcePanel) return false;
   const tabId = opts.tabId === undefined ? groupActiveTabIdOf(store, source) : opts.tabId;
   const newId = nextEditorGroupId([...editorGroupIdsOf(store), ...api.panels.map((p) => p.id)]);
   // 新组的视图从源视图的当前状态起步(VSCode 拆分复制视图状态:光标 / 滚动 / 撤销历史):源 CodeMirror 视图还挂着,

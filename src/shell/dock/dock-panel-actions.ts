@@ -9,7 +9,8 @@ import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { notify } from '@/notifications/notify';
 import { t, tWithFallback } from '@/i18n';
 import { addPanelAndFocus, getDockApi, revealDockPanel, runWhenDockLayoutReady } from './dock-api-ref';
-import { mainWindowAddPosition } from './group-mru';
+import { activePanelInDocument, mainWindowAddPosition } from './group-mru';
+import { getCommandDocument } from './popout-documents';
 import { focusDockPanelSoon } from './panel-focus';
 import { resetDockLayout } from './layout.default';
 
@@ -79,10 +80,10 @@ export function showPanelOfType(type: string): void {
   });
 }
 
-/** 弹出 dock 活动面板所在组;无活动面板 / 已在子窗 → 无操作。 */
+/** 弹出触发窗口的活动面板所在组(VSCode:命令作用于触发它的窗口);无活动面板 / 已在子窗 → 无操作。 */
 function popoutActiveGroup(): void {
   const api = getDockApi();
-  const panel = api?.activePanel;
+  const panel = api && activePanelInDocument(api, getCommandDocument());
   if (!api || !panel || panel.group.api.location.type === 'popout') return;
   popoutPanel(api, panel);
 }

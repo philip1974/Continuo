@@ -46,6 +46,7 @@ function makeApi(opts: {
   return {
     api: {
       activePanel: opts.activePanel,
+      groups: [],
       hasMaximizedGroup: () => opts.hasMaxed ?? false,
       maximizeGroup: maximize,
       exitMaximizedGroup: exit,

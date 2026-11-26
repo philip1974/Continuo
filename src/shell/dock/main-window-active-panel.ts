@@ -1,7 +1,7 @@
 // 主窗当前活动的 dock 面板(id + 标题),供标题栏 / 状态栏 / 窗口标题。活动的是终端、设置、Debug 等非编辑器面板时,
 // 标题显示该面板名,编辑器专属的状态栏项(文件名、行 / 词 / 字符)隐藏 —— 不再显示被挡住的文件(VSCode:编辑区里活动的
 // 是终端等非文本编辑器时,窗口标题取其名称,编辑器状态栏项随之隐藏)。
-// 活动面板在 popout 子窗时取主窗最近使用的组的活动面板(子窗没有自己的标题栏 / 状态栏)。
+// 活动面板在 popout 子窗时取主窗最近使用的组的活动面板(子窗没有自己的标题栏 / 状态栏;子窗原生标题见 popout-window-titles)。
 // 面板所在窗口变化时 dockview 不保证发活动面板 / 活动组事件:重启恢复的 popout 组在 fromJSON 时已是活动组、子窗 load 后
 // 才把 location 改成 popout(无事件)→ 在恢复落定时重算;弹出 / 收回 / 移动面板时组结构事件派发在 location 改完之前 →
 // 延到 microtask 再算。
@@ -9,6 +9,7 @@
 
 import { useSyncExternalStore } from 'react';
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
+import { useEditorStore } from '@/stores/editor.store';
 import { getDockApi, subscribeDockApi } from './dock-api-ref';
 import { mainWindowActivePanel } from './group-mru';
 import { onPopoutRestoreSettled } from './popout-restore-settle';
@@ -97,4 +98,20 @@ export function useActiveNonEditorPanel(): ActiveDockPanel | null {
   const panel = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   // 编辑器面板 = 任一编辑器组(editor / editor:N;BDD: src/__tests__/editor-groups/)
   return panel !== null && !isEditorGroupId(panel.id) ? panel : null;
+}
+
+/**
+ * 主窗正显示的编辑器组(标题栏 / 状态栏 / 窗口标题取它的活动 tab;VSCode:窗口标题按窗口分别计算,主窗只显示主窗的活动编辑器):
+ * 主窗活动面板是非编辑器面板 → null;活动编辑器组在主窗(或其面板尚未建出 / dock 未就绪:启动期不闪)→ 它;活动编辑器组在
+ * popout 子窗 → 主窗正显示的编辑器组,主窗没有面板 → null(不显示子窗里的文件)。活动编辑器组会落到子窗:切到子窗(⌘` /
+ * 点标题栏)、重启恢复挂上子窗时它变成子窗的组。
+ */
+export function useMainWindowEditorGroupId(): string | null {
+  const panel = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const activeGroupId = useEditorStore((s) => s.activeGroupId);
+  if (panel !== null && !isEditorGroupId(panel.id)) return null;
+  const activeGroupPanel = getDockApi()?.getPanel(activeGroupId);
+  if (!activeGroupPanel) return panel?.id ?? activeGroupId;
+  if (activeGroupPanel.api.location.type !== 'popout') return activeGroupId;
+  return panel?.id ?? null;
 }

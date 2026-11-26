@@ -33,6 +33,19 @@ interface FakeGroup {
 interface FakePanel {
   id: string;
   group: FakeGroup;
+  view?: { contentComponent: string };
+  api?: { readonly location: FakeGroup['api']['location'] };
+}
+
+/** 面板的 dockview 形状:位置随所在组,editor* = 编辑器组面板。 */
+function shaped(panel: FakePanel): FakePanel {
+  panel.view = { contentComponent: panel.id.startsWith('editor') ? 'editor' : 'terminal' };
+  panel.api = {
+    get location() {
+      return panel.group.api.location;
+    },
+  };
+  return panel;
 }
 
 const mainGroup: FakeGroup = { id: 'g-main', api: { location: { type: 'grid' } } };
@@ -41,7 +54,7 @@ const popoutGroup: FakeGroup = { id: 'g-child', api: { location: { type: 'popout
 /** 假 dock:panels 里各面板所在的组(主窗 grid 组 / 子窗 popout 组);active = 全局活动面板(不一定在按键所在窗口)。 */
 function fakeDock(panels: FakePanel[], active: string) {
   const addPanel = vi.fn((o: { id: string; position?: { referenceGroup?: FakeGroup } }) => {
-    const panel: FakePanel = { id: o.id, group: o.position?.referenceGroup ?? { id: 'g-new', api: { location: { type: 'grid' } } } };
+    const panel = shaped({ id: o.id, group: o.position?.referenceGroup ?? { id: 'g-new', api: { location: { type: 'grid' } } } });
     panels.push(panel);
     return panel;
   });
@@ -50,7 +63,11 @@ function fakeDock(panels: FakePanel[], active: string) {
       return panels;
     },
     get groups() {
-      return [...new Set(panels.map((p) => p.group))];
+      // 组的面板 / 活动面板(组内第一个)按当前 panels 现算
+      return [...new Set(panels.map((p) => p.group))].map((group) => {
+        const own = panels.filter((p) => p.group === group);
+        return Object.assign(group, { panels: own, activePanel: own[0] });
+      });
     },
     get activePanel() {
       return panels.find((p) => p.id === active);
@@ -61,8 +78,8 @@ function fakeDock(panels: FakePanel[], active: string) {
   return { addPanel };
 }
 
-const inMain = (id: string): FakePanel => ({ id, group: mainGroup });
-const inChild = (id: string): FakePanel => ({ id, group: popoutGroup });
+const inMain = (id: string): FakePanel => shaped({ id, group: mainGroup });
+const inChild = (id: string): FakePanel => shaped({ id, group: popoutGroup });
 
 /** 在子窗里按 ⇧⌘T(热键分发把按键所在文档标为子窗)。 */
 const reopenInChild = (): Promise<boolean> => runInCommandDocument(childDoc, () => reopenClosedEditor(disk));
@@ -167,5 +184,19 @@ describe('popout 子窗里 ⇧⌘T', () => {
     expect(await reopenClosedEditor(disk)).toBe(true);
     expect(addPanel).not.toHaveBeenCalled();
     expect(ids('editor')).toContain(B);
+  });
+
+  it('活动编辑器组在子窗、在主窗里按(原组已不在)→ 落在主窗的编辑器组,不落进子窗', async () => {
+    twoGroups();
+    const D = '/w/d.ts';
+    st().splitGroup('editor', 'editor:3', null);
+    st().openTab(createTab(D, 'disk d'), { groupId: 'editor:3' });
+    fakeDock([inMain('editor'), inChild('editor:2'), inMain('editor:3')], 'editor:2');
+    st().closeTab(D, 'editor:3'); // 组随最后一个 tab 关闭
+    st().setActiveGroup('editor:2');
+
+    expect(await reopenClosedEditor(disk)).toBe(true);
+    expect(ids('editor')).toContain(D);
+    expect(ids('editor:2')).not.toContain(D);
   });
 });

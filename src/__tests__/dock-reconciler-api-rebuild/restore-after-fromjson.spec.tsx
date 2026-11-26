@@ -369,7 +369,8 @@ describe('布局恢复后 editor 自动激活不抢活动面板', () => {
       groups: unknown[];
       addPanel: ReturnType<typeof vi.fn>;
     };
-    const popoutGroup = { id: 'pg', api: { location: { type: 'popout' } }, activePanel: undefined };
+    const childDoc = document.implementation.createHTMLDocument('child');
+    const popoutGroup = { id: 'pg', api: { location: { type: 'popout', getWindow: () => ({ document: childDoc }) } }, activePanel: undefined };
     api.activeGroup = popoutGroup;
     api.groups = [popoutGroup];
     act(() => {

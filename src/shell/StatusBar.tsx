@@ -6,7 +6,7 @@ import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useRegistry } from '@/plugins/registries/useRegistry';
-import { useEditorStore } from '@/stores/editor.store';
+import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
@@ -29,7 +29,7 @@ import { codedError, errorCodeOf } from '../../electron/shared/error-message';
 import { createLatestGuard } from '@/lib/latest-wins';
 import { useCopyMcpConfig } from './use-copy-mcp-config';
 import { isImagePreviewPath } from '../../electron/shared/image-preview';
-import { useActiveNonEditorPanel } from '@/shell/dock/main-window-active-panel';
+import { useActiveNonEditorPanel, useMainWindowEditorGroupId } from '@/shell/dock/main-window-active-panel';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
 const MCP_COPY_ICON = (
@@ -244,11 +244,12 @@ export function StatusBar() {
   // 仍更新统计(配合 R1 的统计 memo)。R24 用 4 个 selector 各 some/find;R46 合并为
   // 单次 find 返回**扁平 primitive 对象**,useShallow 逐字段 Object.is 比较——content
   // 只是 string ref(不像旧 EditorHeader 的 JSON 签名 selector,这里避免序列化大文档正文)。
+  // 取主窗正显示的编辑器组的活动 tab(活动编辑器组可能在 popout 子窗,主窗状态栏不显示子窗的文件)。
+  const mainGroupId = useMainWindowEditorGroupId();
   const { activeTabId, activeFilePath, activeDirty, activeContent } =
     useEditorStore(
       useShallow((s) => {
-        const found =
-          findEditorFileTabById(s.tabs, s.activeTabId);
+        const found = findEditorFileTabById(s.tabs, mainGroupId === null ? null : groupActiveTabIdOf(s, mainGroupId));
         return {
           activeTabId: found?.id ?? null,
           activeFilePath: found?.filePath ?? null,

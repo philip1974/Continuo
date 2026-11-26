@@ -9,6 +9,8 @@
 // - 组内关闭类(closeOtherEditors / closeEditorsToTheRight / closeUnmodifiedEditors / closeEditorsInGroup)、copyFilePath /
 //   copyRelativeFilePath / revealFileInOS、markdown.switchTo*Mode:tab 右键 / 模式切换的同一动作,作用于活动编辑器组的活动 tab
 //   (BDD: src/__tests__/command-discoverability/)。
+// 编辑器组类命令(保存 / 还原 / 拆分 / 组内关闭 / 复制路径 / 模式切换 / 相邻编辑器)作用于触发它的窗口的编辑器组
+// (commandEditorGroupId;VSCode 同),不看全局活动编辑器组 —— 从子窗切回主窗时它可能仍在子窗。
 // 保存与「关当前 tab」依赖 EditorPanel 内的确认框状态(覆盖确认 / 保存·不保存·取消),由面板挂载时注册实现;
 // 本模块只依赖 store / dock api,不静态引入编辑器引擎(EditorPlugin 在启动路径上 import 本模块)。
 // BDD: src/__tests__/workbench-editor-commands/
@@ -22,7 +24,7 @@ import {
   type EditorTab,
 } from '@/stores/editor.store';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
-import { focusEditorGroup, splitEditor } from './editor-groups-actions';
+import { commandEditorGroupId, focusEditorGroup, splitEditor } from './editor-groups-actions';
 import type { IDockviewPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activePanelInDocument, popoutGroupOfDocument } from '@/shell/dock/group-mru';
@@ -107,9 +109,11 @@ export function registerMarkdownModeAction(fn: (mode: EditorMode) => void, group
   };
 }
 
-/** 活动编辑器组面板的动作(该组面板未挂载 → 任一已挂载的组面板)。 */
+/** 触发窗口的编辑器组面板的动作(该组面板未挂载 → 任一已挂载的组面板;该窗口没有编辑器组 → undefined)。 */
 function activeGroupActions(): EditorPanelActions | undefined {
-  return panelActions.get(useEditorStore.getState().activeGroupId) ?? panelActions.values().next().value;
+  const groupId = commandEditorGroupId();
+  if (groupId === undefined) return undefined;
+  return panelActions.get(groupId) ?? panelActions.values().next().value;
 }
 
 /** 保存活动编辑器组的活动文件 tab(编辑器面板未挂载 → no-op)。 */
@@ -117,10 +121,9 @@ export async function saveActiveEditor(): Promise<void> {
   await activeGroupActions()?.save();
 }
 
-/** 还原当前活动文件 tab 为磁盘内容(无活动 tab → no-op;读盘失败按 code 提示,tab 不变)。 */
+/** 还原触发窗口的编辑器组的活动文件 tab 为磁盘内容(无活动 tab → no-op;读盘失败按 code 提示,tab 不变)。 */
 export async function revertActiveEditor(): Promise<void> {
-  const { tabs, activeTabId } = useEditorStore.getState();
-  const tab = findEditorFileTabById(tabs, activeTabId);
+  const tab = activeGroupTab();
   if (!tab) return;
   const r = await revertFile(tab.id, editorFileDeps);
   if (!r.ok) notifyFailure(r);
@@ -164,16 +167,19 @@ function closePanelOrActiveTab(active: IDockviewPanel): void {
   active.api.close();
 }
 
-/** 活动编辑器组的活动文件 tab(无 → null)。 */
+/** 触发窗口的编辑器组(commandEditorGroupId)的活动文件 tab(无 → null)。 */
 function activeGroupTab(): EditorTab | null {
+  const groupId = commandEditorGroupId();
+  if (groupId === undefined) return null;
   const s = useEditorStore.getState();
-  return findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, s.activeGroupId));
+  return findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, groupId));
 }
 
-/** 活动编辑器组内,以活动 tab 为目标做 tab 右键的关闭类动作(无活动 tab / 组面板未挂载 → no-op)。 */
+/** 触发窗口的编辑器组内,以活动 tab 为目标做 tab 右键的关闭类动作(无活动 tab / 组面板未挂载 → no-op)。 */
 export function closeActiveGroupEditors(kind: TabCloseKind): void {
+  const groupId = commandEditorGroupId();
+  if (groupId === undefined) return;
   const s = useEditorStore.getState();
-  const groupId = s.activeGroupId;
   const activeId = groupActiveTabIdOf(s, groupId);
   if (activeId === null) return;
   const ids = tabCloseTargets(groupTabsOf(s, groupId), activeId, kind);
@@ -195,10 +201,11 @@ function revealActiveFile(): void {
   if (tab && tab.orphaned !== true) void revealPathOrNotify(tab.filePath);
 }
 
-/** 在编辑器组(缺省活动组)内切到相邻文件 tab(首尾相接);组内 tab 数 < 2 → no-op。 */
+/** 在编辑器组(缺省触发窗口的编辑器组)内切到相邻文件 tab(首尾相接);组内 tab 数 < 2 → no-op。 */
 export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
+  const gid = groupId ?? commandEditorGroupId();
+  if (gid === undefined) return;
   const s = useEditorStore.getState();
-  const gid = groupId ?? s.activeGroupId;
   const tabs = groupTabsOf(s, gid);
   if (tabs.length < 2) return;
   const activeTabId = groupActiveTabIdOf(s, gid);
@@ -366,7 +373,10 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
         titleKey: c.titleKey,
         category: 'Markdown',
         categoryKey: 'commands.markdown.category',
-        fn: () => markdownModeActions.get(useEditorStore.getState().activeGroupId)?.(c.mode),
+        fn: () => {
+          const groupId = commandEditorGroupId();
+          if (groupId !== undefined) markdownModeActions.get(groupId)?.(c.mode);
+        },
       }),
     ),
     ...FOCUS_EDITOR_GROUP_COMMANDS.map(

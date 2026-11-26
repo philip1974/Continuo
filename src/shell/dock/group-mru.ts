@@ -15,6 +15,8 @@ import type { DockviewApi, IDockviewGroupPanel, IDockviewPanel } from 'dockview-
 import { activateDockPanel } from './wrap-panel-close';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { focusDockPanelSoon } from './panel-focus';
+import { onPopoutRestoreSettled } from './popout-restore-settle';
+import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 
 type Group = DockviewApi['groups'][number];
 
@@ -61,6 +63,32 @@ export function popoutGroupOfDocument(api: DockviewApi, doc: Document): Group | 
  */
 export function activePanelInDocument(api: DockviewApi, doc: Document): IDockviewPanel | undefined {
   return doc === document ? mainWindowActivePanel(api) : popoutGroupOfDocument(api, doc)?.activePanel;
+}
+
+/** 编辑器组面板(面板 id = 编辑器组 id;BDD: src/__tests__/editor-groups/)。 */
+const isEditorGroupPanel = (panel: IDockviewPanel): boolean =>
+  isEditorGroupId(panel.id) && panel.view?.contentComponent === 'editor';
+
+/**
+ * doc 所在窗口的编辑器组(编辑器组类命令 ⌘\ / ⌘S / 关闭组中的编辑器… 作用的组;VSCode:命令作用于触发它的窗口的活动编辑器组):
+ * 该窗口的活动面板是编辑器组 → 它;否则 preferred(活动编辑器组)在该窗口 → preferred;否则该窗口最近使用的组里的编辑器组;
+ * 该窗口没有编辑器组(或子窗已不在)→ undefined。不用全局活动编辑器组:从子窗切回主窗时它可能仍在子窗,反之亦然。
+ */
+export function editorGroupInDocument(api: DockviewApi, doc: Document, preferred?: string): string | undefined {
+  const popout = doc === document ? undefined : popoutGroupOfDocument(api, doc);
+  if (doc !== document && !popout) return undefined;
+  const inWindow = (group: Pick<IDockviewGroupPanel, 'id' | 'api'>): boolean => (popout ? group === popout : windowKeyOf(group) === 'main');
+  const active = activePanelInDocument(api, doc);
+  if (active && isEditorGroupPanel(active)) return active.id;
+  const pref = preferred === undefined ? undefined : api.getPanel(preferred);
+  if (pref && isEditorGroupPanel(pref) && inWindow(pref.group)) return pref.id;
+  const recent = (mruByApi.get(api) ?? []).map((id) => api.getGroup(id));
+  for (const group of [...recent, ...api.groups]) {
+    if (!group || !inWindow(group)) continue;
+    const panel = group.activePanel && isEditorGroupPanel(group.activePanel) ? group.activePanel : group.panels.find(isEditorGroupPanel);
+    if (panel) return panel.id;
+  }
+  return undefined;
 }
 
 /**
@@ -194,6 +222,23 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
       doc.removeEventListener('focusin', onFocus);
     });
   };
+  // 主窗获得焦点(从子窗切回:点标题栏 / ⌘`)而活动组在子窗 → 主窗最近使用的组成为活动组(与子窗获焦对称;只换活动组、
+  // 不移 DOM 焦点)。此前切回主窗时焦点若不在面板内容里,活动组 / 活动编辑器组一直停在子窗,主窗的命令作用到子窗。
+  const activateMainWindowGroup = (): void => {
+    const active = api.activeGroup;
+    if (disposed || !active || windowKeyOf(active) === 'main') return;
+    mostRecentMainWindowPanel(api)?.group.api.setActive();
+  };
+  window.addEventListener('focus', activateMainWindowGroup);
+  // 重启恢复:dockview 挂上 popout 子窗时把 popout 组设为活动组(addPopoutGroup 的 doSetGroupAndPanelActive),覆盖了 fromJSON
+  // 恢复的主窗活动组 → 主窗标题 / 状态栏变成子窗的文件、活动编辑器组随之改成子窗的组并被写盘。恢复落定时改回主窗最近使用的组
+  //(跟踪始于 fromJSON 之后,MRU 首位即恢复出的活动组);用户期间已切到该子窗(子窗有焦点)→ 不改。
+  const offRestoreSettled = onPopoutRestoreSettled((settled) => {
+    if (settled !== api) return;
+    const location = api.activeGroup?.api.location;
+    if (location?.type === 'popout' && (location.getWindow() as Window | null)?.document.hasFocus()) return;
+    activateMainWindowGroup();
+  });
   const watchLocation = (group: Group): void => {
     if (locationSubs.has(group)) return;
     watchWindowFocus(group);
@@ -234,6 +279,8 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   return {
     dispose: () => {
       disposed = true;
+      window.removeEventListener('focus', activateMainWindowGroup);
+      offRestoreSettled();
       if (mruByApi.get(api) === mru) mruByApi.delete(api);
       for (const s of subs) s.dispose();
       for (const s of locationSubs.values()) s.dispose();

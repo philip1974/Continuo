@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DockviewComponent, type DockviewApi } from 'dockview-react';
 import { focusActiveEditorAfterRestore, RESTORE_FOCUS_TIMEOUT_MS } from '@/shell/dock/restore-focus';
 import { markDockLayoutRestored, setDockApi } from '@/shell/dock/dock-api-ref';
+import { trackGroupMru } from '@/shell/dock/group-mru';
 import { useEditorStore } from '@/stores/editor.store';
 import { setContentFocusHandler } from '@/lib/content-focus-target';
 
@@ -126,6 +127,27 @@ describe('启动恢复后聚焦活动编辑器', () => {
     mountEditable();
     vi.advanceTimersByTime(RESTORE_FOCUS_TIMEOUT_MS + 100);
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it('恢复期间 dockview 挂上 popout 子窗、把子窗的组设为活动组 → 仍聚焦主窗正显示的编辑器', () => {
+    const api = restoredDock();
+    const popout = api.addPanel({ id: 'ui', component: 'plugin', title: 'UI', position: { direction: 'right' } });
+    api.getPanel('editor')!.api.setActive(); // fromJSON 恢复的活动组
+    const mru = trackGroupMru(api);
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    focusActiveEditorAfterRestore(document);
+    vi.advanceTimersByTime(32);
+    (popout.group as unknown as { model: { location: unknown } }).model.location = {
+      type: 'popout',
+      getWindow: () => frame.contentWindow,
+    };
+    popout.group.api.setActive();
+    (document.activeElement as HTMLElement | null)?.blur();
+    const ta = mountEditable();
+    vi.advanceTimersByTime(32);
+    expect(document.activeElement).toBe(ta);
+    mru.dispose();
   });
 
   it('没有打开的 tab → 不聚焦', () => {

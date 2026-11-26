@@ -21,7 +21,7 @@ import { requestEditorFocus } from './editor-focus-registry';
 import { popRecentlyClosedEditor, type RecentlyClosedEditor } from './recently-closed-editors';
 import type { DockviewGroupPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
-import { popoutGroupOfDocument } from '@/shell/dock/group-mru';
+import { editorGroupInDocument, popoutGroupOfDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { tWithFallback } from '@/i18n/translate';
 import { nextEditorGroupId } from '../../../electron/shared/editor-group-id';
@@ -55,7 +55,9 @@ function targetOf(entry: RecentlyClosedEditor, doc: Document): ReopenTarget {
     const pick = [entry.groupId, s.activeGroupId].find((id) => here.includes(id)) ?? here[0];
     return pick !== undefined ? { groupId: pick } : { createIn: popout };
   }
-  return { groupId: groups.includes(entry.groupId) ? entry.groupId : s.activeGroupId };
+  if (groups.includes(entry.groupId)) return { groupId: entry.groupId };
+  // 原组已不在 → 主窗的编辑器组(活动编辑器组可能在子窗:从子窗切回主窗时它仍停在子窗)
+  return { groupId: (api && editorGroupInDocument(api, document, s.activeGroupId)) ?? s.activeGroupId };
 }
 
 function openInTargetGroup(entry: RecentlyClosedEditor, doc: Document): boolean {

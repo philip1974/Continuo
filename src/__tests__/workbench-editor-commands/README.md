@@ -39,6 +39,19 @@
      (`src/__tests__/editor-reopen-closed/` 第 6 条);
    - popout 子窗获得焦点(窗口 `focus`:点标题栏 / ⌘`;或焦点进入子窗元素 `focusin`)→ 其组成为 dock 活动组
      (`trackGroupMru` 跟踪;dockview 只在面板内容获焦时激活组)。停止跟踪 / 组移除后不再响应。
+8. **编辑器组类命令作用于触发窗口的编辑器组;主窗获焦 → 主窗最近使用的组成为活动组**(VSCode 同):
+   - 主窗获得焦点(窗口 `focus`:从子窗点主窗标题栏 / 资源管理器 / ⌘` 切回)而 dock 活动组在 popout 子窗 → 主窗最近使用的
+     (带面板的)组成为 dock 活动组,活动编辑器组随之回到主窗;**不移 DOM 焦点**(焦点留在用户点的资源管理器等处)。活动组本就
+     在主窗 → 不动;停止跟踪后不再响应;
+   - 重启恢复:dockview 挂上 popout 子窗时把子窗的组设为活动组(覆盖 fromJSON 恢复的主窗活动组,活动编辑器组随之改成子窗的组
+     并被写盘)→ popout 恢复落定时改回主窗最近使用的组(即恢复出的活动组);恢复期间用户已切到该子窗(子窗有焦点)→ 不改;
+   - 编辑器组类命令(拆分 ⌘\ / 向下拆分、⌘S 保存、还原文件、组内关闭「其它 / 右侧 / 已保存 / 全部」、复制路径 / 相对路径、
+     在 Finder 中显示、Markdown 模式切换、下一个 / 上一个编辑器)作用于 `commandEditorGroupId()`:触发窗口
+     (`getCommandDocument`)的编辑器组 —— 该窗口活动面板是编辑器组 → 它;否则活动编辑器组在该窗口 → 它;否则该窗口最近使用
+     的编辑器组;该窗口没有编辑器组 → no-op。**不看全局活动编辑器组**(从子窗切回主窗时它可能仍在子窗:⌘\ 在子窗新建组、
+     「关闭组中的所有编辑器」关掉子窗的 tab);
+   - 同源:⇧⌘Enter 最大化终端、「将组移到新窗口」作用于触发窗口的活动面板(`activePanelInDocument`);⇧⌘T 在主窗里原组已不在
+     时落在主窗的编辑器组(`src/__tests__/editor-reopen-closed/`)。
 
 ## 模块
 
@@ -49,7 +62,8 @@
 | `src/core-plugins/EditorPlugin.ts` | 注册上述命令 |
 | `src/plugins/command-palette/useCommandHotkeys.ts` | 全局热键分发;`POPOUT_HOTKEY_COMMAND_IDS` 在 popout 子窗文档分发;经 `runInCommandDocument` 标明按键所在窗口 |
 | `src/shell/dock/popout-documents.ts` | `runInCommandDocument` / `getCommandDocument`:命令的触发窗口 |
-| `src/shell/dock/group-mru.ts` | `popoutGroupOfDocument` / `activePanelInDocument`:触发窗口的组 / 活动面板;子窗获焦 → 其组成为活动组 |
+| `src/shell/dock/group-mru.ts` | `popoutGroupOfDocument` / `activePanelInDocument` / `editorGroupInDocument`:触发窗口的组 / 活动面板 / 编辑器组;子窗获焦 → 其组成为活动组;主窗获焦 / popout 恢复落定 → 主窗最近使用的组成为活动组 |
+| `src/panels/Editor/editor-groups-actions.ts` | `commandEditorGroupId`:编辑器组类命令作用的组 |
 | `electron/main/index.ts` | File 菜单「关闭窗口」`Shift+CmdOrCtrl+W` |
 | `electron/main/ipc/window.ipc.ts` | `window:close`:关闭发起方所在窗口(`win.close()`,走关窗脏确认) |
 
@@ -60,4 +74,6 @@
 - `save-hotkey-label.spec.tsx`:保存键文案填当前生效绑定
 - `popout-hotkeys.spec.tsx`:popout 子窗按键分发(白名单、生效绑定、监听随子窗移除)
 - `popout-close-target.spec.tsx`:⌘W 只作用于按键所在窗口(子窗不关主窗、空子窗只关子窗、主窗不关子窗面板);子窗获焦 → 活动组
+- `popout-editor-group-target.spec.tsx`:第 8 条(主窗获焦 / 恢复落定改回主窗活动组;编辑器组类命令、⇧⌘Enter、移到新窗口按触发窗口)
+- 端到端:`tests/e2e/popout-window-scope.spec.ts`(关掉 Playwright 焦点模拟、真实切换窗口)
 - 菜单项见 `dirty-close-confirm/close-confirm-flow.spec.ts`「File 菜单关闭窗口」;`window:close` 见 `window-close-ipc.spec.ts`

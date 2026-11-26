@@ -329,6 +329,7 @@
 ## [标题栏 / 状态栏 / 窗口标题跟随活动面板(VSCode 对齐)](./chrome-active-panel/README.md)
 
 - [`chrome-active-panel.spec.tsx`](./chrome-active-panel/chrome-active-panel.spec.tsx)
+- [`popout-window-titles.spec.tsx`](./chrome-active-panel/popout-window-titles.spec.tsx)
 
 ## [cli-args-folder (Issue #45)](./cli-args-folder/README.md)
 
@@ -2069,6 +2070,7 @@
 - [`editor-commands-registration.spec.ts`](./workbench-editor-commands/editor-commands-registration.spec.ts)
 - [`editor-commands.spec.tsx`](./workbench-editor-commands/editor-commands.spec.tsx)
 - [`popout-close-target.spec.tsx`](./workbench-editor-commands/popout-close-target.spec.tsx)
+- [`popout-editor-group-target.spec.tsx`](./workbench-editor-commands/popout-editor-group-target.spec.tsx)
 - [`popout-hotkeys.spec.tsx`](./workbench-editor-commands/popout-hotkeys.spec.tsx)
 - [`save-hotkey-label.spec.tsx`](./workbench-editor-commands/save-hotkey-label.spec.tsx)
 - [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)

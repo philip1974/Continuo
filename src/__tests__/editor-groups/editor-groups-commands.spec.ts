@@ -28,6 +28,15 @@ interface FakePanel {
     /** dockview 组位置:popout = 在子窗里。 */
     location: { type: 'grid' | 'floating' | 'popout' };
   };
+  /** 面板所在 dock 组(每个面板一组;位置随面板的 location)。 */
+  group: FakeGroup;
+}
+
+interface FakeGroup {
+  id: string;
+  panels: FakePanel[];
+  readonly activePanel: FakePanel | undefined;
+  readonly api: { readonly location: { type: string } };
 }
 
 function fakeDock(ids: string[]) {
@@ -35,7 +44,18 @@ function fakeDock(ids: string[]) {
   const removed: Listener[] = [];
   const activated: Listener[] = [];
   const add = (id: string): FakePanel => {
-    const group = { panels: [] as FakePanel[] };
+    const group: FakeGroup = {
+      id: `g-${id}`,
+      panels: [],
+      get activePanel() {
+        return this.panels[0];
+      },
+      api: {
+        get location() {
+          return panel.api.location;
+        },
+      },
+    };
     const panel: FakePanel = {
       id,
       view: { contentComponent: 'editor', content: { element: document.createElement('div') } },
@@ -50,6 +70,7 @@ function fakeDock(ids: string[]) {
         group,
         location: { type: 'grid' },
       },
+      group,
     };
     group.panels.push(panel);
     panels.push(panel);
@@ -68,6 +89,10 @@ function fakeDock(ids: string[]) {
       return panels;
     },
     getPanel: (id: string) => panels.find((p) => p.id === id),
+    get groups() {
+      return panels.map((p) => p.group);
+    },
+    getGroup: (id: string) => panels.find((p) => p.group.id === id)?.group,
     /** 把面板标成在 popout 子窗里。 */
     popout: (id: string) => {
       panels.find((p) => p.id === id)!.api.location = { type: 'popout' };

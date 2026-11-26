@@ -3,14 +3,17 @@
 //
 // 时机:启动恢复(explorer 段 + 编辑器 tab 读盘)结束后由 main-app 调用;dock 布局可能更晚恢复(排队到
 // markDockLayoutRestored),编辑器内容懒加载可能更晚挂上(逐帧等,限时后退到面板默认落点 focusPanelContent)。
-// 不抢:期间用户按过键 / 点过鼠标、焦点已不在 body、活动面板不是主窗里的编辑器(终端等)、没有活动 tab。
+// 不抢:期间用户按过键 / 点过鼠标、焦点已不在 body、主窗正显示的活动面板不是编辑器(终端等)、该编辑器组没有活动 tab。
+// 看主窗正显示的面板(mainWindowActivePanel)而非全局活动面板:恢复期间 dockview 挂上 popout 子窗时把子窗的组设为活动组,
+// 此前因此放弃,主窗焦点留在 body。
 // BDD: src/__tests__/window-state-restore/restore-focus.spec.tsx
 
 import type { DockviewApi } from 'dockview-react';
 import { getDockApi, runWhenDockLayoutReady } from './dock-api-ref';
 import { focusPanelContent } from './panel-focus';
 import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content-focus-target';
-import { useEditorStore } from '@/stores/editor.store';
+import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
+import { mainWindowActivePanel } from './group-mru';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 
 /** 等布局 / 编辑区挂上的上限。 */
@@ -31,13 +34,13 @@ export function focusActiveEditorAfterRestore(doc: Document = document): void {
 
   const tryFocus = (api: DockviewApi): void => {
     if (stopped) return;
-    const panel = api.activePanel;
+    const panel = mainWindowActivePanel(api);
     if (
       !focusIdle() ||
-      useEditorStore.getState().activeTabId === null ||
       panel === undefined ||
       !isEditorGroupId(panel.id) ||
-      panel.api.location.type !== 'grid'
+      panel.api.location.type !== 'grid' ||
+      groupActiveTabIdOf(useEditorStore.getState(), panel.id) === null
     ) {
       stop();
       return;
