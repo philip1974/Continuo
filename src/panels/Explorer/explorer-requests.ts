@@ -8,8 +8,11 @@ import { pathEquals } from '@/lib/path-cross';
 export type ExplorerRequest =
   /** 在树焦点项所在目录打开新建输入框。 */
   | { readonly kind: 'create'; readonly type: 'file' | 'dir' }
-  /** 焦点交给 root 这棵树(加载完成后:焦点行 / 空文件夹提示 / 读取失败的重试按钮)。 */
-  | { readonly kind: 'focusTree'; readonly root: string }
+  /**
+   * 焦点交给 root 这棵树(加载完成后:焦点行 / 空文件夹提示 / 读取失败的重试按钮)。origin = 发请求时的焦点元素
+   *(requestExplorer 自动记下):落点时焦点已被移到别处(不是它、也没丢失)→ 不抢。
+   */
+  | { readonly kind: 'focusTree'; readonly root: string; readonly origin?: Element | null }
   /** 全部折叠 / 刷新(同标题栏按钮;命令 collapseExplorerFolders / refreshFilesExplorer)。 */
   | { readonly kind: 'collapseAll' | 'refresh' }
   /** 撤销 / 重做文件操作(命令 explorer.undo / explorer.redo)。 */
@@ -23,6 +26,10 @@ const handlers = new Set<RequestHandler>();
 
 /** 发请求:已挂载的文件树立即处理;没人处理则挂起(后到的覆盖先到的),等文件树挂载时取走。 */
 export function requestExplorer(request: ExplorerRequest): void {
+  // 文件树可能稍后才挂载(新 root 的树重挂载):焦点起点须在发请求时记,挂载时再记会把期间用户新给的焦点当起点
+  if (request.kind === 'focusTree' && request.origin === undefined && typeof document !== 'undefined') {
+    request = { ...request, origin: document.activeElement };
+  }
   pending = request;
   for (const handler of handlers) {
     if (handler(request)) {

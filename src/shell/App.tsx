@@ -41,7 +41,7 @@ import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 import { RestoreWindowsFromSettings } from '@/plugins/settings/RestoreWindowsFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
-import { focusWindowIfWorkspaceOpen } from '@/lib/focus-workspace-window';
+import { switchToCheckedRoot } from '@/panels/Explorer/open-recent-root';
 
 function MainApp() {
   // 性能:Splash 只遮住布局恢复期,布局就绪即移除(此前另有 600ms 最短展示,布局 80ms 就绪也要
@@ -132,10 +132,8 @@ function MainApp() {
           // 期间有更新的 drop 发起 → 本次为过期请求,丢弃(不 setRoot 不反馈),由最新 drop 负责。
           if (!isLatest()) return;
           if (result.kind === 'open') {
-            // 拖入的文件夹已在别的窗口打开 → 那个窗口已被聚焦,本窗口不变(VSCode 同)。
-            if (await focusWindowIfWorkspaceOpen(result.path)) return;
-            if (!isLatest()) return;
-            setRoot(result.path);
+            // 已在别的窗口打开 → 聚焦那个窗口、本窗口不变;否则切换并把焦点交给新文件树(焦点在侧栏 / 已丢失时;同最近打开)。
+            await switchToCheckedRoot(result.path, isLatest, setRoot);
           }
           else if (result.kind === 'error') {
             notifyFailure(result);

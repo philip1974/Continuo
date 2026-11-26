@@ -2,6 +2,10 @@ import { coApi } from '@/lib/co-api';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
 import { focusWindowIfWorkspaceOpen } from '@/lib/focus-workspace-window';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
+import { WORKBENCH_PART_ATTR } from '@/shell/focus-parts';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+import { requestExplorer } from './explorer-requests';
 
 // race(R27,R18/R19 同族收口):改用全窗口共享的 workspaceRootSelectionGuard,使「打开最近」与
 // drop / EmptyWorkspace 打开 / ExplorerHeader 切换 互相失效(全局 last-wins,见 guard 注释)。
@@ -36,12 +40,37 @@ export async function openRecentRootOrNotify(
       else notifyFailure(r);
       return;
     }
-    // 已在别的窗口打开 → 那个窗口已被聚焦,本窗口不变(VSCode 同)。
-    if (await focusWindowIfWorkspaceOpen(path)) return;
-    if (!isLatest()) return;
-    setRoot(path);
+    await switchToCheckedRoot(path, isLatest, setRoot);
   } catch (err) {
     if (!isLatest()) return;
     notifyThrownError(err);
   }
+}
+
+/**
+ * 已确认可打开的目录 → 切到它(最近打开 / 拖入文件夹共用):已在别的窗口打开 → 那个窗口已被聚焦,本窗口(含焦点)不变
+ *(VSCode 同);期间有更新的选择 → 作废;否则 setRoot 并把焦点交给新 root 的文件树(focusTreeAfterRootSwitch)。
+ */
+export async function switchToCheckedRoot(
+  path: string,
+  isLatest: () => boolean,
+  setRoot: (p: string) => void,
+): Promise<void> {
+  if (await focusWindowIfWorkspaceOpen(path)) return;
+  if (!isLatest()) return;
+  setRoot(path);
+  focusTreeAfterRootSwitch();
+}
+
+/**
+ * 本窗口切换 root 之后:焦点仍在侧栏里或已丢失(触发它的「更多操作」/ 空态最近项随 root 变化卸载,焦点会掉到 body)→
+ * 交给新 root 的文件树(VSCode:切换文件夹后焦点在资源管理器;同「打开文件夹」的 focusTree 请求,树加载完再给)。焦点已被
+ * 用户移到别处(编辑器 / 终端)→ 不抢(focusWithinOrLost)。最近打开 / 拖入文件夹共用。
+ * BDD: src/__tests__/explorer-commands/(§4)
+ */
+export function focusTreeAfterRootSwitch(doc: Document = document): void {
+  const root = useWorkspaceStore.getState().root;
+  if (root === null) return;
+  const sidebar = doc.querySelector(`[${WORKBENCH_PART_ATTR}="sidebar"]`);
+  if (focusWithinOrLost(doc, sidebar)) requestExplorer({ kind: 'focusTree', root });
 }

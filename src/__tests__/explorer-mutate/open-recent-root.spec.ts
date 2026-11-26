@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // a11y(A147):openRecentRootOrNotify —— 点最近目录前 listDir 校验,失效则 notify.error 不切 root。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -13,11 +14,25 @@ vi.mock('@/lib/localize-error', () => ({
   localizeErrorByCode: (_code: string, msg: string) => msg,
 }));
 
-import { openRecentRootOrNotify } from '../../panels/Explorer/open-recent-root';
+const focusOther = vi.fn(async (_p: string) => false);
+vi.mock('@/lib/focus-workspace-window', () => ({
+  focusWindowIfWorkspaceOpen: (p: string) => focusOther(p),
+}));
+const requestExplorer = vi.fn();
+vi.mock('@/panels/Explorer/explorer-requests', () => ({
+  requestExplorer: (...a: unknown[]) => requestExplorer(...a),
+}));
+
+import { focusTreeAfterRootSwitch, openRecentRootOrNotify } from '../../panels/Explorer/open-recent-root';
+import { useWorkspaceStore } from '../../stores/workspace.store';
 
 beforeEach(() => {
   listDir.mockReset();
   notifyError.mockReset();
+  focusOther.mockReset();
+  focusOther.mockResolvedValue(false);
+  requestExplorer.mockReset();
+  document.body.innerHTML = '';
 });
 
 describe('openRecentRootOrNotify (A147)', () => {
@@ -98,5 +113,63 @@ describe('openRecentRootOrNotify (A147)', () => {
 
     expect(setRoot).toHaveBeenCalledTimes(1);
     expect(setRoot).toHaveBeenCalledWith('/B');
+  });
+});
+
+// VSCode:从「最近打开」切换文件夹后焦点在资源管理器。触发按钮(标题栏「更多操作」/ 空态的最近项)随 root 变化卸载,
+// 此前焦点落到 body 并一直停在那里。切换后把焦点交给新 root 的文件树(同「打开文件夹」的 focusTree 请求),但只在焦点
+// 仍在侧栏里或已丢失时(focusWithinOrLost:等待探测期间用户把焦点移到编辑器等别处 → 不抢)。
+describe('切换后焦点交给新 root 的文件树', () => {
+  function mount(): { sidebarButton: HTMLButtonElement; editor: HTMLTextAreaElement } {
+    document.body.innerHTML =
+      '<div data-workbench-part="sidebar"><button>more</button></div><div data-workbench-part="dock"><textarea></textarea></div>';
+    return {
+      sidebarButton: document.querySelector('button')!,
+      editor: document.querySelector('textarea')!,
+    };
+  }
+  const setRootInStore = (p: string) => useWorkspaceStore.getState().setRoot(p);
+
+  it('焦点在侧栏里(触发按钮)→ setRoot 后请求 focusTree(新 root)', async () => {
+    mount().sidebarButton.focus();
+    listDir.mockResolvedValue({ ok: true, data: [] });
+    await openRecentRootOrNotify('/proj-a', setRootInStore);
+    expect(requestExplorer).toHaveBeenCalledWith({ kind: 'focusTree', root: '/proj-a' });
+  });
+
+  it('焦点已丢失(body)→ 同样请求 focusTree', async () => {
+    mount();
+    (document.activeElement as HTMLElement | null)?.blur();
+    listDir.mockResolvedValue({ ok: true, data: [] });
+    await openRecentRootOrNotify('/proj-b', setRootInStore);
+    expect(requestExplorer).toHaveBeenCalledWith({ kind: 'focusTree', root: '/proj-b' });
+  });
+
+  it('等待探测期间焦点被移到编辑器 → 不抢焦点', async () => {
+    const { editor } = mount();
+    listDir.mockImplementation(async () => {
+      editor.focus();
+      return { ok: true, data: [] };
+    });
+    await openRecentRootOrNotify('/proj-c', setRootInStore);
+    expect(useWorkspaceStore.getState().root).toBe('/proj-c');
+    expect(requestExplorer).not.toHaveBeenCalled();
+  });
+
+  it('该文件夹已在别的窗口打开(聚焦那个窗口)/ 探测失败 → 不动本窗口焦点', async () => {
+    mount().sidebarButton.focus();
+    listDir.mockResolvedValue({ ok: true, data: [] });
+    focusOther.mockResolvedValue(true);
+    await openRecentRootOrNotify('/elsewhere', setRootInStore);
+    listDir.mockResolvedValue({ ok: false, code: 'FS_DENIED', message: 'denied' });
+    await openRecentRootOrNotify('/locked', setRootInStore);
+    expect(requestExplorer).not.toHaveBeenCalled();
+  });
+
+  it('focusTreeAfterRootSwitch:没有 root(关闭文件夹)→ 不请求', () => {
+    mount();
+    useWorkspaceStore.getState().setRoot(null);
+    focusTreeAfterRootSwitch();
+    expect(requestExplorer).not.toHaveBeenCalled();
   });
 });

@@ -8,7 +8,7 @@
 | 文件 | 职责 |
 |---|---|
 | `src/lib/window-drop.ts` | 纯函数 `pickDroppedDirectory(dataTransfer, getPath, isDir)` |
-| `src/shell/App.tsx` | useEffect 挂 dragover/drop 全局监听,绑 setRoot |
+| `src/shell/App.tsx` | useEffect 挂 dragover/drop 全局监听,经 `switchToCheckedRoot`(与「最近打开」共用:去重聚焦别的窗口 / 过期作废 / setRoot 后焦点交给新文件树,见 `explorer-commands/README.md` §4)切换 |
 
 ## 关键行为
 

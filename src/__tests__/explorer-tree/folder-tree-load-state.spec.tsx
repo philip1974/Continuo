@@ -475,6 +475,68 @@ describe('FolderTree · 重试后的焦点', () => {
     await waitFor(() => expect(document.activeElement).toBe(r.getByText(EMPTY)));
   });
 
+  // focusWithinOrLost:请求之后、树加载完之前用户把焦点移到别处(如切换文件夹后立刻打开「更多操作」菜单)→ 不抢;
+  // 请求时的焦点元素仍在焦点上 / 焦点已丢失(触发按钮随 root 变化卸载)→ 照常交给树。
+  it('请求焦点进树后、读取完成前焦点被移到别处 → 读取完成后不抢焦点', async () => {
+    h.rootListDir = async () => ({ ok: true, data: [] });
+    const r = render(<FolderTree root="/work" />);
+    await r.findByText(EMPTY);
+    let finishReload: (v: unknown) => void = () => {};
+    const reload = new Promise((res) => {
+      finishReload = res;
+    });
+    let call = 0;
+    h.rootListDir = async () =>
+      ++call === 1 ? { ok: false, code: 'FS_DENIED', message: 'denied' } : reload;
+    h.settings = { 'explorer.showHiddenFiles': true };
+    r.rerender(<FolderTree root="/work" />);
+    await waitFor(() => expect(call).toBe(2));
+    const origin = document.createElement('button');
+    const elsewhere = document.createElement('button');
+    document.body.append(origin, elsewhere);
+    origin.focus();
+    act(() => {
+      requestExplorer({ kind: 'focusTree', root: '/work' });
+    });
+    elsewhere.focus();
+    await act(async () => {
+      finishReload({ ok: true, data: [] });
+    });
+    await new Promise((res) => setTimeout(res, 20));
+    expect(document.activeElement).toBe(elsewhere);
+    origin.remove();
+    elsewhere.remove();
+  });
+
+  // 切换文件夹后新 root 的树稍后才挂载(请求先挂起):期间用户把焦点移到别处(如立刻打开「更多操作」菜单)→ 挂载、加载
+  // 完成后不抢。焦点起点按发请求时记,不按树挂载时记。
+  it('请求先挂起、树挂载前焦点被移到别处 → 挂载并加载完成后不抢焦点', async () => {
+    h.rootListDir = async () => ({ ok: true, data: [] });
+    const origin = document.createElement('button');
+    const elsewhere = document.createElement('button');
+    document.body.append(origin, elsewhere);
+    origin.focus();
+    requestExplorer({ kind: 'focusTree', root: '/work' });
+    elsewhere.focus();
+    const r = render(<FolderTree root="/work" />);
+    await r.findByText(EMPTY);
+    await new Promise((res) => setTimeout(res, 20));
+    expect(document.activeElement).toBe(elsewhere);
+    origin.remove();
+    elsewhere.remove();
+  });
+
+  it('请求先挂起、发请求时的焦点元素随后卸载(焦点丢失)→ 树挂载并加载完成后焦点进树', async () => {
+    h.rootListDir = async () => ({ ok: true, data: [] });
+    const origin = document.createElement('button');
+    document.body.append(origin);
+    origin.focus();
+    requestExplorer({ kind: 'focusTree', root: '/work' });
+    origin.remove();
+    const r = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(document.activeElement).toBe(r.getByText(EMPTY)));
+  });
+
   it('重试仍失败 → 焦点落在新的「重试」按钮', async () => {
     h.rootListDir = async () => ({ ok: false, code: 'FS_DENIED', message: 'denied' });
     const r = render(<FolderTree root="/work" />);

@@ -59,6 +59,7 @@ import { useEditorFile } from '@/panels/Editor/useEditorFile';
 import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
 import { countDirtyTabsUnder, useEditorStore } from '@/stores/editor.store';
 import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { forgetInExpanded, renameInExpanded, useExplorerStore } from '@/stores/explorer.store';
 import { coApi } from '@/lib/co-api';
 import { notify } from '@/notifications/notify';
@@ -434,6 +435,9 @@ export function FolderTree({ root }: { root: string }) {
   // 用 state 不用 ref:与 setRootLoad(ROOT_LOADING) 同批提交,下方 effect 看到「有请求」时 rootLoad 必是请求之后的值;
   // ref 会被请求前那次渲染尚未执行的 effect(闭包里还是旧的失败结果)读到并消费掉。
   const [focusPending, setFocusPending] = useState(false);
+  // focusTree 发请求时的焦点元素(request.origin;重试不记 = undefined):落点时焦点已被移到别处(不是它、也没丢失)→ 不抢
+  //(focusWithinOrLost)。
+  const focusOriginRef = useRef<Element | null | undefined>(undefined);
   const loadFailedRef = useRef<HTMLDivElement>(null);
   const emptyStateRef = useRef<HTMLDivElement>(null);
   // 子目录读取失败(VSCode:展开失败的目录下显示错误行):目录 → 原因;读到即删除。
@@ -1287,6 +1291,7 @@ export function FolderTree({ root }: { root: string }) {
             variant="outlined"
             size="sm"
             onClick={() => {
+              focusOriginRef.current = undefined;
               setFocusPending(true);
               setRootLoad(ROOT_LOADING);
               refreshAll();
@@ -1311,12 +1316,21 @@ export function FolderTree({ root }: { root: string }) {
   // 有项时 updateDomFocus 在定时器里聚焦,并轮询等焦点行挂载(取不到回落首项)。
   useEffect(() => {
     if (!focusPending || rootLoad === ROOT_LOADING) return;
+    const origin = focusOriginRef.current;
+    if (origin !== undefined && document.activeElement !== origin && !focusWithinOrLost(document, null)) {
+      setFocusPending(false); // 请求之后焦点被用户移到别处(如切换文件夹后立刻打开菜单)→ 不抢
+      return;
+    }
     if (typeof rootLoad === 'object') {
       setFocusPending(false);
       loadFailedRef.current?.querySelector('button')?.focus();
     } else if (items.length > 0) {
       setFocusPending(false);
-      tree.updateDomFocus();
+      // focusTree 请求:焦点行已渲染 → 当场聚焦(上面刚判过焦点没被移走;库的 updateDomFocus 在定时器里聚焦,期间用户
+      // 打开的菜单会被它关掉)。未渲染(虚拟窗口外)→ 交给库滚到它再聚焦。
+      const row = origin === undefined ? null : tree.getFocusedItem().getElement();
+      if (row) row.focus();
+      else tree.updateDomFocus();
     } else if (tree.getDataRef<AsyncDataLoaderDataRef>().current.childrenIds?.[root] !== undefined) {
       setFocusPending(false);
       emptyStateRef.current?.focus();
@@ -1350,6 +1364,7 @@ export function FolderTree({ root }: { root: string }) {
         } else if (request.kind === 'undo' || request.kind === 'redo') {
           runFileUndoStable(request.kind === 'undo');
         } else {
+          focusOriginRef.current = request.kind === 'focusTree' ? request.origin : undefined;
           setFocusPending(true);
         }
         return true;

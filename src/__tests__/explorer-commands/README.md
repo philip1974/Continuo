@@ -47,6 +47,11 @@
 - 复用同一流程(单飞锁 + 过期守卫 + 失败 toast);命令另先确保侧栏可见
 - 选定后焦点交给新 root 的文件树(VSCode:打开文件夹后焦点在资源管理器),不随卸载的空态按钮掉到 body
 - 取消选择 → 工作区与焦点不变
+- 从「最近打开」(标题栏「更多操作」菜单 / 空态最近项)或拖文件夹进窗口切换 root 后同样把焦点交给新 root 的文件树
+  (`switchToCheckedRoot` → `focusTreeAfterRootSwitch`;此前触发按钮随 root 变化卸载,焦点落到 body 并一直停在那里)。
+  只在焦点仍在侧栏里或已丢失时交(focusWithinOrLost:等待探测期间用户把焦点移到编辑器 / 终端 → 不抢);该文件夹已在别的
+  窗口打开(聚焦那个窗口)/ 探测失败 → 本窗口焦点不动;树加载完之前用户又把焦点移走(如立刻再开菜单)→ 落点时不抢(`explorer-tree/README.md`)(`explorer-mutate/open-recent-root.spec.ts`,真机
+  `tests/e2e/open-recent-focus-tree.spec.ts`)
 
 ### 5. 应用菜单「文件 → 打开文件夹… ⌘O」(`menu-open-folder.spec.ts`、`dirty-close-confirm/close-confirm-flow.spec.ts`)
 
