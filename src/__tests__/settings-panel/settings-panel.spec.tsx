@@ -410,7 +410,7 @@ describe('SettingsPanel · 搜索模式', () => {
     try {
       const buckets = groupSearchResults([itemA, itemB]);
       expect(arrayFromSpy).not.toHaveBeenCalled();
-      expect(buckets.map((bucket) => bucket.category)).toEqual(['general', 'editor']);
+      expect(buckets.map((bucket) => bucket.key)).toEqual(['general', 'editor']);
       expect(buckets[0]?.items).toEqual([itemA]);
       expect(buckets[1]?.items).toEqual([itemB]);
       expect(groupSearchResults.toString()).not.toContain('buckets.push(');
@@ -433,7 +433,7 @@ describe('SettingsPanel · 搜索模式', () => {
     try {
       const buckets = groupSearchResults([item]);
       expect(buckets).toHaveLength(1);
-      expect(buckets[0]?.category).toBe('editor');
+      expect(buckets[0]?.key).toBe('editor');
       expect(buckets[0]?.items).toEqual([item]);
       expect(mapGetSpy).not.toHaveBeenCalled();
     } finally {
@@ -470,7 +470,7 @@ describe('SettingsPanel · 搜索模式', () => {
     try {
       const buckets = groupSearchResults(items);
 
-      expect(buckets).toEqual([{ category: 'editor', label: '编辑器', items }]);
+      expect(buckets).toEqual([{ key: 'editor', label: '编辑器', items }]);
       expect(buckets[0]?.items).toBe(items);
       expect(mapCtorCount).toBe(0);
     } finally {

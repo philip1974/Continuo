@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { getUserPluginManager, type PluginListItem } from './PluginManager';
 
 const EMPTY_USER_PLUGIN_LIST: readonly PluginListItem[] = [];
@@ -26,4 +26,17 @@ export function useUserPluginList(): readonly PluginListItem[] {
 export function usePluginDisplayName(pluginId: string): string {
   const plugins = useUserPluginList();
   return plugins.find((p) => p.id === pluginId)?.manifest.name ?? pluginId;
+}
+
+/**
+ * 插件 id → manifest.name 的查询函数(设置页按插件分节 / 搜索分组标题用);列表里查不到 → undefined(调用方退回 id)。
+ * 列表不变时返回同一函数(可作 memo 依赖)。
+ */
+export function usePluginNameOf(): (pluginId: string) => string | undefined {
+  const plugins = useUserPluginList();
+  return useMemo(() => {
+    const names = new Map<string, string>();
+    for (const p of plugins) names.set(p.id, p.manifest.name);
+    return (id: string) => names.get(id);
+  }, [plugins]);
 }

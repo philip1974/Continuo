@@ -25,3 +25,12 @@ const CategoryTab = lazyPanel(CategoryTabContent);
 export function renderCategoryTab(category: string): ReactNode {
   return CategoryTab({ category });
 }
+
+// 「插件设置」页签内容与 CategoryTabContent 同一 chunk(BDD: plugin-settings-section)。
+export const renderPluginSettingsTab = lazyPanel(
+  lazy(() =>
+    loadCategoryTabContent().then((m) => ({
+      default: m.PluginSettingsTabContent,
+    })),
+  ),
+);

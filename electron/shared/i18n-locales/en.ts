@@ -267,6 +267,7 @@ export const en = {
   'settings.terminal.font_size': 'Font size',
   'settings.terminal.cursor_style': 'Cursor style',
   'settings.keybindings.tab_title': 'Keybindings',
+  'settings.plugin_settings.tab_title': 'Plugin Settings',
   'settings.editor.tab_title': 'Editor',
   'settings.editor.font_size': 'Font size',
   'settings.editor.show_line_numbers': 'Show line numbers',

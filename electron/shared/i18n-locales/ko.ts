@@ -254,6 +254,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.terminal.font_size': '글꼴 크기',
   'settings.terminal.cursor_style': '커서 스타일',
   'settings.keybindings.tab_title': '단축키',
+  'settings.plugin_settings.tab_title': '플러그인 설정',
   'settings.editor.tab_title': '편집기',
   'settings.editor.font_size': '글꼴 크기',
   'settings.editor.show_line_numbers': '줄 번호 표시',

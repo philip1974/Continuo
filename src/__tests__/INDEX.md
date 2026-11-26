@@ -1434,6 +1434,10 @@
 - [`manager-render-failed.spec.ts`](./plugin-render-isolation/manager-render-failed.spec.ts)
 - [`render-isolation.spec.tsx`](./plugin-render-isolation/render-isolation.spec.tsx)
 
+## [plugin-settings-section(插件自定义 category 的设置项)](./plugin-settings-section/README.md)
+
+- [`plugin-settings-section.spec.tsx`](./plugin-settings-section/plugin-settings-section.spec.tsx)
+
 ## [plugin-shell-kill-on-deactivate(停用/卸载插件终止其 shell 进程)](./plugin-shell-kill-on-deactivate/README.md)
 
 - [`main-kill.spec.ts`](./plugin-shell-kill-on-deactivate/main-kill.spec.ts)

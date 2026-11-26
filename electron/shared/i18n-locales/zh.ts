@@ -253,6 +253,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.terminal.font_size': '字号',
   'settings.terminal.cursor_style': '光标样式',
   'settings.keybindings.tab_title': '快捷键',
+  'settings.plugin_settings.tab_title': '插件设置',
   'settings.editor.tab_title': '编辑器',
   'settings.editor.font_size': '字号',
   'settings.editor.show_line_numbers': '显示行号',

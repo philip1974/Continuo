@@ -6,8 +6,9 @@
 //
 // BDD: src/__tests__/settings-panel/
 
-import { useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Input } from '@/design';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { isImeComposing } from '@/design/ime';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
@@ -19,8 +20,9 @@ import { SettingItemRow } from './SettingItemRow';
 import { useSettingsStore } from './store';
 import { useT, useLocale, tWithFallback } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
-import { ownValue } from '../../../electron/shared/own-value';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
+import { usePluginNameOf } from '../use-user-plugin-list';
+import { settingSectionOf, type PluginNameOf } from './plugin-setting-sections';
 
 interface SettingsPanelProps {
   /** 默认用全局 coApp.settingTabs;测试可注入隔离 registry. */
@@ -93,34 +95,31 @@ export function buildSearchableSettingItems(
   return out;
 }
 
-// 内置 4 类 category → catalog tab_title key 映射；plugin 自定义 category fallback raw 字符串
-const CATEGORY_TITLE_KEYS: Record<string, string> = {
-  general: 'settings.general.tab_title',
-  editor: 'settings.editor.tab_title',
-  explorer: 'settings.explorer.tab_title',
-  terminal: 'settings.terminal.tab_title',
-};
-
 interface SearchBucket {
-  readonly category: string;
+  /** 分组身份(settingSectionOf 的 key:内置 category / 插件 / 无所有者的 category)。 */
+  readonly key: string;
   readonly label: string;
   readonly items: readonly SettingItemSpec[];
 }
 
 const EMPTY_SEARCH_BUCKETS: readonly SearchBucket[] = [];
 
-/** 把搜索结果按 category 分组，label 走 i18n catalog（topic-20）。 */
-export function groupSearchResults(items: readonly SettingItemSpec[]): readonly SearchBucket[] {
+const NO_PLUGIN_NAMES: PluginNameOf = () => undefined;
+
+/**
+ * 把搜索结果按所属节分组(同「插件设置」页签的节划分):内置 category 的标题走 i18n catalog(topic-20);
+ * 插件自定义 category 按插件分组、标题为插件名(BDD: plugin-settings-section)。
+ */
+export function groupSearchResults(
+  items: readonly SettingItemSpec[],
+  nameOf: PluginNameOf = NO_PLUGIN_NAMES,
+): readonly SearchBucket[] {
   if (items.length === 0) return EMPTY_SEARCH_BUCKETS;
-  const groups = groupKeepingOrder(items, (spec) => spec.category);
+  const groups = groupKeepingOrder(items, (spec) => settingSectionOf(spec, nameOf).key);
   const buckets = new Array<SearchBucket>(groups.length);
   for (let i = 0; i < groups.length; i++) {
-    const { key: category, items: groupItems } = groups[i]!;
-    buckets[i] = {
-      category,
-      label: tWithFallback(ownValue(CATEGORY_TITLE_KEYS, category), category),
-      items: groupItems,
-    };
+    const { key, items: groupItems } = groups[i]!;
+    buckets[i] = { key, label: settingSectionOf(groupItems[0]!, nameOf).label, items: groupItems };
   }
   return buckets;
 }
@@ -160,6 +159,34 @@ export function SettingsPanel({
     (activeTabId ? registry.get(activeTabId) : undefined) ?? registry.getAll()[0] ?? null;
 
   const navRef = useRef<HTMLElement>(null);
+  const focusedTabRef = useRef<HTMLElement | null>(null);
+  const fallbackFocusRef = useRef<HTMLElement | null>(null);
+  // 插件热重载(停用 → 重新激活)期间它的页签按钮卸载重挂,焦点若在该按钮上就掉到 body(BDD: plugin-settings-section)。
+  // tabs 每次变化后检查:焦点所在的页签按钮已被卸载、焦点丢失(或仍停在我们的回落位置)→ 该页签还在则交回它的新按钮,
+  // 暂时 / 永久消失则先回落到导航当前选中项,之后页签重新出现时再交回。
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const lostTab = focusedTabRef.current;
+    if (nav === null || lostTab === null || lostTab.isConnected) return;
+    const doc = nav.ownerDocument;
+    const onFallback = fallbackFocusRef.current !== null && doc.activeElement === fallbackFocusRef.current;
+    if (!onFallback && !focusWithinOrLost(doc, null)) return; // 焦点已被移到别处,不抢
+    const tabId = lostTab.dataset.settingTab ?? '';
+    const back = Array.from(nav.querySelectorAll<HTMLElement>('[data-setting-tab]')).find(
+      (el) => el.dataset.settingTab === tabId,
+    );
+    if (back !== undefined) {
+      fallbackFocusRef.current = null;
+      focusedTabRef.current = back;
+      back.focus();
+      return;
+    }
+    if (onFallback) return;
+    const fallback = nav.querySelector<HTMLElement>('[aria-current="page"]');
+    if (fallback === null) return;
+    fallbackFocusRef.current = fallback;
+    fallback.focus();
+  }, [tabs]);
   const [query, setQuery] = useState('');
   const trimmed = normalizeSearchQuery(query);
   const searchPlaceholderLabel = t('settings.panel.search_placeholder');
@@ -199,6 +226,17 @@ export function SettingsPanel({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTabId(tab.id)}
+                onFocus={(e) => {
+                  if (e.currentTarget === fallbackFocusRef.current) return; // 我们回落交出的焦点:仍记着被卸载的页签
+                  focusedTabRef.current = e.currentTarget;
+                  fallbackFocusRef.current = null;
+                }}
+                onBlur={(e) => {
+                  // 焦点移到了另一个元素(用户操作);relatedTarget 为 null 时可能是按钮被卸载,保留记录。
+                  if (e.relatedTarget === null) return;
+                  focusedTabRef.current = null;
+                  fallbackFocusRef.current = null;
+                }}
                 // 程序化切页签后据此把焦点交给目标页签(如插件页空态「浏览插件市场」)。
                 data-setting-tab={tab.id}
                 // a11y(A17,A12 同族):搜索模式下 nav 仅 pointer-events-none(鼠标禁用)但键盘
@@ -288,7 +326,8 @@ function SettingsSearchResults({
   const matched = useMemo(() => {
     return selectMatchedSettingItems(searchable, trimmed);
   }, [trimmed, searchable]);
-  const matchedBuckets = useMemo(() => groupSearchResults(matched), [matched]);
+  const nameOf = usePluginNameOf();
+  const matchedBuckets = useMemo(() => groupSearchResults(matched, nameOf), [matched, nameOf]);
 
   return (
     <div>
@@ -300,7 +339,7 @@ function SettingsSearchResults({
           : t('settings.panel.matched', { count: matched.length, q: trimmed })}
       </div>
       {matchedBuckets.map((bucket) => (
-        <section key={bucket.category} className="first:mt-0 [&:not(:first-child)]:mt-10">
+        <section key={bucket.key} className="first:mt-0 [&:not(:first-child)]:mt-10">
           <h3 className="mb-3 border-b border-line pb-3 text-base font-medium text-fg">
             {bucket.label}
           </h3>

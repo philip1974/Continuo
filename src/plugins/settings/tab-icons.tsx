@@ -83,6 +83,16 @@ export function PluginsIcon() {
   );
 }
 
+/** 插件设置:滑杆(lucide sliders-horizontal 字形) */
+export function PluginSettingsIcon() {
+  return createElement(
+    'svg',
+    COMMON_PROPS,
+    createElement('path', { d: 'M2 4h5M10 4h4M2 8h2M7 8h7M2 12h7M12 12h2' }),
+    createElement('path', { d: 'M7 2.5v3M4 6.5v3M9 10.5v3' }),
+  );
+}
+
 /** 商店:购物袋 */
 export function MarketplaceIcon() {
   return createElement(
