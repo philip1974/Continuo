@@ -41,11 +41,31 @@ test('编辑模式下打开较大 Markdown → 源码 + 提示;小文件仍是�
 
   await editorTab(window, /^big\.md/).click();
   await expect(window.locator('main .cm-content')).toBeVisible({ timeout: 10_000 });
+  // 「正在渲染」只在点击后到 Milkdown 同步长渲染结束之间存在,渲染占住界面线程 → Playwright 轮询要到渲染结束才执行,
+  // 直接 toBeVisible 必然错过。点击前在页面里装 MutationObserver,记录提示出现过。
+  await window.evaluate((source) => {
+    const re = new RegExp(source);
+    const w = window as unknown as { __sawRenderingLarge?: boolean };
+    w.__sawRenderingLarge = false;
+    const main = document.querySelector('main')!;
+    const mo = new MutationObserver(() => {
+      for (const el of main.querySelectorAll('[role="status"]')) {
+        if (re.test(el.textContent ?? '')) {
+          w.__sawRenderingLarge = true;
+          mo.disconnect();
+          return;
+        }
+      }
+    });
+    mo.observe(main, { subtree: true, childList: true, characterData: true });
+  }, RENDERING.source);
   await editorModeButton(window, EDITOR_MODE_PREVIEW).click();
-  await expect(window.locator('main').getByText(RENDERING)).toBeVisible();
   const pm = window.locator('main .milkdown .ProseMirror');
   await expect(pm).toHaveAttribute('contenteditable', 'false', { timeout: 30_000 });
   await expect(pm.locator('h1')).toHaveText('Big doc');
+  expect(
+    await window.evaluate(() => (window as unknown as { __sawRenderingLarge?: boolean }).__sawRenderingLarge),
+  ).toBe(true);
   await expect(window.locator('main').getByText(RENDERING)).toHaveCount(0, { timeout: 10_000 });
   await expect(window.locator('main').getByText(LARGE_BANNER)).toHaveCount(0);
 });
