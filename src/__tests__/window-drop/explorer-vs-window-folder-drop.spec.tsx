@@ -36,7 +36,7 @@ vi.mock('@/lib/co-api', () => ({
       notifyRoot: vi.fn(async () => ({ ok: true })),
       getPathForFile: () => '/src-folder',
       focusWorkspaceWindow: h.focusWorkspaceWindow,
-      onMenuCommand: () => () => {},
+      onMenuCommand: () => () => {}, setMenuKeybindings: async () => ({ ok: true }),
     },
     fs: {
       listDir: h.listDir,

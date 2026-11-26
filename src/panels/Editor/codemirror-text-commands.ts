@@ -24,6 +24,7 @@ import {
 } from '@codemirror/commands';
 import { foldAll, foldCode, unfoldAll, unfoldCode } from '@codemirror/language';
 import { selectNextOccurrence, selectSelectionMatches } from '@codemirror/search';
+import { openFindPanel, openReplacePanel } from './codemirror-find';
 import { TEXT_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { registerTextCommandRunner } from './editor-text-commands';
 
@@ -99,8 +100,15 @@ export const ROUTED_KEYMAP_COMMANDS: ReadonlySet<Command> = new Set([
   selectLine,
 ]);
 
+// 查找 / 替换:默认键留在 CodeMirror 查找键表(查找面板内的 ⌘F 也靠它),不进 ROUTED_KEYMAP_COMMANDS。
+const FIND_RUNNERS: Readonly<Record<string, Command>> = {
+  'actions.find': openFindPanel,
+  'editor.action.startFindReplaceAction': openReplacePanel,
+};
+
 function runTextCommand(id: string, view: EditorView): void {
   if (Object.hasOwn(RUNNERS, id)) RUNNERS[id]!(view);
+  else if (Object.hasOwn(FIND_RUNNERS, id)) FIND_RUNNERS[id]!(view);
 }
 
 const textEditorMarker = EditorView.editorAttributes.of({ [TEXT_EDITOR_ATTR]: '' });

@@ -165,10 +165,10 @@ describe('Quick Open 开关键 / 应用菜单命令:焦点在菜单里 → 不�
     reg.register({ id: 'workbench.action.files.openFolder', title: 'Open Folder', hotkey: 'mod+o', fn: openFolder });
     render(<RadixMenu />);
     fireEvent.contextMenu(screen.getByTestId('area'));
-    runMenuCommand(reg, 'workbench.action.files.openFolder');
+    runMenuCommand(reg, { id: 'workbench.action.files.openFolder', fromPopout: false, viaKey: true });
     expect(openFolder).not.toHaveBeenCalled();
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
-    runMenuCommand(reg, 'workbench.action.files.openFolder');
+    runMenuCommand(reg, { id: 'workbench.action.files.openFolder', fromPopout: false, viaKey: true });
     expect(openFolder).toHaveBeenCalledTimes(1);
   });
 });

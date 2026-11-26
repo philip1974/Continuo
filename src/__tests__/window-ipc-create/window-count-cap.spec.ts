@@ -40,7 +40,7 @@ const createWin = (): unknown =>
 beforeEach(() => {
   h.handlers.clear();
   createMainWindow.mockClear();
-  registerWindowIpc({ createMainWindow, relaunchApp: vi.fn(), reloadWindow: vi.fn() });
+  registerWindowIpc({ createMainWindow, relaunchApp: vi.fn(), reloadWindow: vi.fn(), rebuildAppMenu: vi.fn() });
   setWindowSeq(1, 0); // 主窗
   opened.push(1);
 });

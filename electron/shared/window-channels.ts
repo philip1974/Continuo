@@ -38,10 +38,15 @@ export const WINDOW_CHANNELS = {
    */
   RELAUNCH_APP: 'window:relaunch-app',
   /**
-   * main → renderer:应用菜单里「即某条命令」的菜单项被点(或按其 accelerator)→ 请求目标主窗执行该命令(payload 命令 id,
-   * 仅限 MENU_COMMANDS 登记的 id)。popout 子窗聚焦时发给打开它的主窗。
+   * main → renderer:应用菜单里「即某条命令」的菜单项被点(或按其 accelerator)→ 请求目标主窗执行该命令(payload
+   * MenuCommandPayload,仅限 MENU_COMMAND_IDS 登记的 id)。popout 子窗聚焦时发给打开它的主窗。
    */
   RUN_MENU_COMMAND: 'window:run-menu-command',
+  /**
+   * renderer → main:菜单命令当前生效的主键(`{ keybindings: { [id]: 归一后的 hotkey | null } }`,跟随改键 / 解绑 / 冲突落败)。
+   * main 换算成 accelerator 只作显示,菜单随之重建。BDD: src/__tests__/app-menu-bar/
+   */
+  SET_MENU_KEYBINDINGS: 'window:set-menu-keybindings',
   /**
    * 命令面板里的「重新加载窗口 / 放大 / 缩小 / 重置缩放 / 切换全屏」(应用菜单 View 同款动作,payload `{ action }`,
    * 仅限 WINDOW_VIEW_ACTIONS):main 作用于发起方所在窗口;reload 走与菜单 ⌘R 相同的脏确认 + flush。
@@ -54,21 +59,80 @@ export const WINDOW_VIEW_ACTIONS = ['reload', 'zoomIn', 'zoomOut', 'resetZoom', 
 export type WindowViewAction = (typeof WINDOW_VIEW_ACTIONS)[number];
 
 /**
- * 应用菜单项即 renderer 命令:命令 id → 菜单 accelerator(必须等于该命令默认键,BDD explorer-commands 守护)。
- * 同一按键只执行一次:renderer 全局热键先收到 keydown 并 preventDefault,Electron 不再触发菜单 accelerator;renderer
- * 没处理时(改了键、焦点不在页面)才由菜单经 RUN_MENU_COMMAND 执行。对齐 VSCode 文件菜单「打开文件夹… ⌘O」、
- * 应用菜单「设置… ⌘,」。
+ * 应用菜单项即 renderer 命令(对齐 VSCode 菜单栏 MenuId.MenubarXxx 的命令项):main 只认这些 id 发 RUN_MENU_COMMAND,renderer
+ * 只执行这些 id。菜单上的 accelerator 由 renderer 推送的生效键位换算(SET_MENU_KEYBINDINGS),只作显示:按键由 renderer 的
+ * 全局热键分发处理(VSCode 同:菜单键位来自渲染进程的 keybinding service)。BDD: src/__tests__/app-menu-bar/
  */
-export const MENU_COMMANDS = {
-  'workbench.action.files.openFolder': 'CmdOrCtrl+O',
-  'settings.toggle': 'CmdOrCtrl+,',
-} as const satisfies Record<string, string>;
+export const MENU_COMMAND_IDS = [
+  // 文件
+  'workbench.action.files.openFolder',
+  'workbench.action.openRecent',
+  'workbench.action.files.saveAll',
+  // 首选项(macOS 应用菜单;其它平台 文件 → 首选项)
+  'settings.toggle',
+  'workbench.action.openGlobalKeybindings',
+  // 编辑
+  'actions.find',
+  'editor.action.startFindReplaceAction',
+  'workbench.action.findInFiles',
+  'editor.action.commentLine',
+  'editor.action.blockComment',
+  // 选择
+  'expandLineSelection',
+  'editor.action.copyLinesUpAction',
+  'editor.action.copyLinesDownAction',
+  'editor.action.moveLinesUpAction',
+  'editor.action.moveLinesDownAction',
+  'editor.action.insertCursorAbove',
+  'editor.action.insertCursorBelow',
+  'editor.action.addSelectionToNextFindMatch',
+  'editor.action.selectHighlights',
+  // 显示
+  'workbench.action.showCommands',
+  'workbench.view.explorer',
+  'workbench.view.output',
+  'workbench.action.terminal.toggleTerminal',
+  'explorer.toggleSidebar',
+  'editor.action.toggleWordWrap',
+  // 转到
+  'workbench.action.navigateBack',
+  'workbench.action.navigateForward',
+  'workbench.action.quickOpen',
+  'workbench.action.gotoLine',
+  'workbench.action.nextEditor',
+  'workbench.action.previousEditor',
+  // 终端
+  'terminal.new',
+] as const;
 
-export type MenuCommandId = keyof typeof MENU_COMMANDS;
+export type MenuCommandId = (typeof MENU_COMMAND_IDS)[number];
+
+const MENU_COMMAND_ID_SET: ReadonlySet<string> = new Set(MENU_COMMAND_IDS);
 
 export function isMenuCommandId(id: unknown): id is MenuCommandId {
-  return typeof id === 'string' && Object.hasOwn(MENU_COMMANDS, id);
+  return typeof id === 'string' && MENU_COMMAND_ID_SET.has(id);
 }
+
+/**
+ * RUN_MENU_COMMAND 的 payload:id = 菜单命令;fromPopout = 获焦的是 dockview popout 子窗(命令作用于该子窗,见 getCommandDocument);
+ * viaKey = 由菜单 accelerator 触发(Electron triggeredByAccelerator)—— 按键已先经 renderer 分发而未被处理,renderer 按
+ * 命令的上下文条件(when)重新判定,不成立不执行(VSCode 同:accelerator 触发时交给渲染进程按键位重新解析)。
+ */
+export interface MenuCommandPayload {
+  readonly id: MenuCommandId;
+  readonly fromPopout: boolean;
+  readonly viaKey: boolean;
+}
+
+/** RUN_MENU_COMMAND payload 校验(renderer 侧;preload 不校验)。 */
+export function isMenuCommandPayload(raw: unknown): raw is MenuCommandPayload {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const p = raw as Record<string, unknown>;
+  return isMenuCommandId(p['id']) && typeof p['fromPopout'] === 'boolean' && typeof p['viaKey'] === 'boolean';
+}
+
+/** SET_MENU_KEYBINDINGS 每条键位的长度上限(与命令注册表 CMD_HOTKEY_MAX 同值,只挡滥用)。 */
+export const MENU_HOTKEY_MAX = 64;
 
 /** window:create 入参:由 main 的 zod schema 推出(单一来源,见 window-create-schema.ts)。 */
 export type IpcWindowCreateInput = z.infer<typeof WindowCreateInputSchema>;

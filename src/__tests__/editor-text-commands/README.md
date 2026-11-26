@@ -23,6 +23,10 @@
    | `editor.foldAll` / `editor.unfoldAll` | Fold All / Unfold All | 无(VSCode 为 ⌘K 和弦,项目不支持和弦) | 无 |
    | `editor.action.jumpToBracket` | Go to Bracket | ⇧⌘\ | Ctrl+Shift+\ |
    | `cursorUndo` | Cursor Undo | ⌘U | Ctrl+U |
+   | `actions.find` / `editor.action.startFindReplaceAction` | Find / Replace | ⌘F / ⌥⌘F | Ctrl+F / Ctrl+H |
+
+   查找 / 替换(菜单 编辑 → 查找 / 替换,见 `app-menu-bar`)打开该编辑器的查找面板 / 替换框,焦点留在面板里;其默认键仍由
+   CodeMirror 查找键表处理(查找面板内同样生效),不从键表去掉。
 
    全部进命令面板与快捷键页:可改键、解绑,改后旧键失效、新键生效。
 2. **作用目标**:触发窗口的编辑器组(`commandEditorGroupId`)的活动文本编辑器(CodeMirror 视图)。没有文本编辑器(无 tab、

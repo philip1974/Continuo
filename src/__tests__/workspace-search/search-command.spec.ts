@@ -13,7 +13,6 @@ vi.mock('@/shell/dock/dock-api-ref', async (orig) => ({
 import { bootCorePlugins, shutdownCorePlugins } from '@/core-plugins';
 import { coApp } from '@/plugins/co-app';
 import { __resetSearchForTest, useSearchStore } from '@/panels/Search/search-store';
-import { MENU_COMMANDS } from '../../../electron/shared/window-channels';
 
 const FIND_IN_FILES = 'workbench.action.findInFiles';
 
@@ -41,7 +40,6 @@ describe('命令「在文件中查找」', () => {
   it('默认键不与其它命令 / 应用菜单冲突', () => {
     const same = coApp.commands.getAll().filter((c) => c.hotkey?.toLowerCase() === 'mod+shift+f');
     expect(same.map((c) => c.id)).toEqual([FIND_IN_FILES]);
-    expect(Object.values(MENU_COMMANDS)).not.toContain('CmdOrCtrl+Shift+F');
     const menu = ['index.ts', 'app-menu.ts']
       .map((f) => readFileSync(path.resolve(__dirname, '../../../electron/main', f), 'utf8'))
       .join('\n');

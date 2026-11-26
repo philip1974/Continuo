@@ -858,7 +858,7 @@ describe('File 菜单「关闭窗口」:Shift+CmdOrCtrl+W,经关窗脏确认', (
 });
 
 // BDD: explorer-commands 第 5 条 —— 文件菜单「打开文件夹… ⌘O」即 renderer 命令 workbench.action.files.openFolder。
-describe('File 菜单「打开文件夹…」:CmdOrCtrl+O,交给聚焦主窗的 renderer 命令执行', () => {
+describe('File 菜单「打开文件夹…」:显示生效键位,交给聚焦主窗的 renderer 命令执行', () => {
   function openFolderItem() {
     type Item = ReloadMenuItem & { readonly label?: string; readonly type?: string };
     const template = buildAppMenu(((key: string) => key) as never) as unknown as Item[];
@@ -871,12 +871,19 @@ describe('File 菜单「打开文件夹…」:CmdOrCtrl+O,交给聚焦主窗的 
     return items.find((m) => m.label === 'menu.file.open_folder')!;
   }
 
-  it('accelerator CmdOrCtrl+O;点击 → 向该主窗发送执行 workbench.action.files.openFolder 的请求', () => {
+  it('accelerator = renderer 推送的生效键位(见 app-menu-bar);点击 → 向该主窗发送执行 workbench.action.files.openFolder 的请求', async () => {
+    const { setMenuKeybindings } = await import('../../../electron/main/menu-keybindings');
+    setMenuKeybindings({ 'workbench.action.files.openFolder': 'ctrl+o' });
     const item = openFolderItem();
-    expect(item.accelerator).toBe('CmdOrCtrl+O');
+    expect(item.accelerator).toBe(process.platform === 'darwin' ? 'Control+O' : 'Ctrl+O');
+    setMenuKeybindings({});
     const win = createReadyWindow(71);
     item.click?.(item, win, {});
-    expect(win.webContents.send).toHaveBeenCalledWith('window:run-menu-command', 'workbench.action.files.openFolder');
+    expect(win.webContents.send).toHaveBeenCalledWith('window:run-menu-command', {
+      id: 'workbench.action.files.openFolder',
+      fromPopout: false,
+      viaKey: false,
+    });
   });
 
   it('没有聚焦窗口(mac 关掉所有窗口后)→ 弹选择文件夹,选定后在新窗口打开(同「在新窗口中打开文件夹」)', async () => {

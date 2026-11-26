@@ -9,6 +9,8 @@ import { app, BrowserWindow } from 'electron';
 import { safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { statDirGated } from '../lib/dir-stat-gate';
 import {
+  MENU_COMMAND_IDS,
+  MENU_HOTKEY_MAX,
   WINDOW_CHANNELS,
   WINDOW_VIEW_ACTIONS,
   type IpcWindowCreateInput,
@@ -38,6 +40,7 @@ import { codedError, errorMessage, thrownFields } from '../../shared/error-messa
 import { mapNodeErrnoCode } from './fs/path-utils';
 import { windowSeqCount } from '../services/window-seq.service';
 import { WINDOW_BACKGROUND_COLORS } from '../../shared/window-background';
+import { setMenuKeybindings } from '../menu-keybindings';
 import { getWindowTheme, setWindowTheme } from '../services/window-theme.service';
 
 function summarizePath(p: string): string {
@@ -62,6 +65,8 @@ export interface WindowIpcDeps {
   readonly relaunchApp: () => void;
   /** 重新加载窗口:与应用菜单 View → Reload(⌘R)同一的脏确认 + flush(见 index.ts reloadMainWindow)。 */
   readonly reloadWindow: (win: BrowserWindow) => void;
+  /** 重建应用菜单(菜单命令的生效键位变化后;见 index.ts rebuildAppMenu)。 */
+  readonly rebuildAppMenu: () => void;
 }
 
 // 边界(数量上限):renderer 发起的新建窗口(「新建窗口」命令 / 在新窗口打开文件夹)此前无上限。第三方插件经
@@ -203,6 +208,10 @@ const NotifyRootInput = z
 const CloseInput = z.object({}).strict();
 const RelaunchInput = z.object({}).strict();
 const ViewActionInput = z.object({ action: z.enum(WINDOW_VIEW_ACTIONS) }).strict();
+// 菜单命令的生效键位:键只限菜单命令 id(条数因此有界),值为归一后的 hotkey 或 null(未绑定 / 冲突落败)。
+const SetMenuKeybindingsInput = z
+  .object({ keybindings: z.partialRecord(z.enum(MENU_COMMAND_IDS), z.string().max(MENU_HOTKEY_MAX).nullable()) })
+  .strict();
 
 /** 缩放步长与 Electron 菜单 role zoomIn / zoomOut 相同(每次 ±0.5 级),resetZoom 归零。 */
 const ZOOM_STEP = 0.5;
@@ -299,6 +308,10 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     applyWindowViewAction(win, input.action, deps.reloadWindow);
+  });
+  // 菜单命令的生效键位(renderer 改键 / 解绑 / 命令注册变化后推送):有变化才重建菜单(accelerator 只作显示)。
+  safeHandle(WINDOW_CHANNELS.SET_MENU_KEYBINDINGS, SetMenuKeybindingsInput, (input) => {
+    if (setMenuKeybindings(input.keybindings)) deps.rebuildAppMenu();
   });
   // 「立即重启」(插件安装后):交给组合根走退出流程,不在这里直接 app.relaunch()/exit()(会绕过脏文件确认丢未保存内容)。
   safeHandle(WINDOW_CHANNELS.RELAUNCH_APP, RelaunchInput, () => {

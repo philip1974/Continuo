@@ -297,6 +297,13 @@
 - [`contracts.spec.ts`](./animation-contracts/contracts.spec.ts)
 - [`lazy-motion.spec.tsx`](./animation-contracts/lazy-motion.spec.tsx)
 
+## [应用菜单栏补全 + 「首选项:打开键盘快捷方式」](./app-menu-bar/README.md)
+
+- [`menu-command-routing.spec.ts`](./app-menu-bar/menu-command-routing.spec.ts)
+- [`menu-keybindings.spec.ts`](./app-menu-bar/menu-keybindings.spec.ts)
+- [`menu-template.spec.ts`](./app-menu-bar/menu-template.spec.ts)
+- [`open-keybindings.spec.tsx`](./app-menu-bar/open-keybindings.spec.tsx)
+
 ## [assert-json-value-sparse (E183)](./assert-json-value-sparse/README.md)
 
 - [`sparse-array.spec.ts`](./assert-json-value-sparse/sparse-array.spec.ts)

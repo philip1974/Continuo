@@ -93,7 +93,7 @@ describe('RestoreWindowsFromSettings(设置值 → main)', () => {
 
 describe('window:set-restore-windows(main)', () => {
   it('写入 userData/explorer.json 的启动偏好', async () => {
-    registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
+    registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn(), rebuildAppMenu: vi.fn() });
     const handler = h.handlers.get(WINDOW_CHANNELS.SET_RESTORE_WINDOWS)!;
     const r = await handler({ sender: {}, senderFrame: { url: 'file:///renderer/index.html' } }, { enabled: false });
     expect(r).toEqual({ ok: true, data: undefined });

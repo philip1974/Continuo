@@ -80,7 +80,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   current = fakeWin(1);
   h.senderToWindow.set(sender, current);
-  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
+  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn(), rebuildAppMenu: vi.fn() });
 });
 
 describe('window:focus-workspace-window(本窗口打开文件夹前询问)', () => {

@@ -51,7 +51,7 @@ beforeEach(() => {
   h.nativeTheme.shouldUseDarkColors = true;
   h.handlers.clear();
   _resetWindowThemeForTest();
-  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
+  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn(), rebuildAppMenu: vi.fn() });
 });
 afterEach(() => {
   rmSync(h.userData, { recursive: true, force: true });

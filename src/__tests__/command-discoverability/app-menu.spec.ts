@@ -1,5 +1,5 @@
 // BDD: command-discoverability —— 应用菜单随界面语言(role 项带三语 label、Edit / View / Window 显式子项),
-// 应用菜单有「设置… ⌘,」= 命令 settings.toggle。见同目录 README 第 1 条。
+// 应用菜单有「设置… ⌘,」= 命令 settings.toggle(在 首选项 ▸ 子菜单里,见 app-menu-bar)。见同目录 README 第 1 条。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MenuItemConstructorOptions } from 'electron';
 
@@ -15,7 +15,8 @@ vi.mock('electron', () => ({
 vi.mock('../../../electron/main/lib/menu-command', () => ({ sendMenuCommand: mocks.sendMenuCommand }));
 
 import { appMenuTemplate, type AppMenuActions } from '../../../electron/main/app-menu';
-import { MENU_COMMANDS } from '../../../electron/shared/window-channels';
+import { MENU_COMMAND_IDS } from '../../../electron/shared/window-channels';
+import { setMenuKeybindings } from '../../../electron/main/menu-keybindings';
 import { en } from '@shared/i18n-locales/en';
 import { zh } from '@shared/i18n-locales/zh';
 import { ko } from '@shared/i18n-locales/ko';
@@ -97,26 +98,28 @@ describe('「设置…」菜单项 = 命令 settings.toggle', () => {
     return flatten(items).find((m) => m.label === 'menu.app.settings');
   }
 
-  it('mac:在应用菜单里,accelerator CmdOrCtrl+,;点击经 RUN_MENU_COMMAND 发 settings.toggle', () => {
+  it('mac:在应用菜单里,accelerator = 推送的生效键位(⌘,);点击经 RUN_MENU_COMMAND 发 settings.toggle', () => {
+    setMenuKeybindings({ 'settings.toggle': 'meta+,' });
     const top = template(true);
     const appMenu = top[0]!;
     expect(appMenu.label).toBe('Continuo');
     const item = settingsItem(Array.isArray(appMenu.submenu) ? appMenu.submenu : []);
-    expect(item?.accelerator).toBe('CmdOrCtrl+,');
+    expect(item?.accelerator).toBe('Command+,');
     const win = new mocks.FakeBrowserWindow();
     item?.click?.(item as never, win as never, {} as never);
-    expect(mocks.sendMenuCommand).toHaveBeenCalledWith(win, 'settings.toggle');
+    expect(mocks.sendMenuCommand).toHaveBeenCalledWith(win, 'settings.toggle', false);
   });
 
   it('其它平台:在 File 菜单里', () => {
+    setMenuKeybindings({ 'settings.toggle': 'ctrl+,' });
     const file = template(false).find((m) => m.label === 'menu.file.label');
     const item = settingsItem(Array.isArray(file?.submenu) ? file.submenu : []);
-    expect(item?.accelerator).toBe('CmdOrCtrl+,');
+    expect(item?.accelerator).toBe('Ctrl+,');
   });
 
-  it('MENU_COMMANDS 登记 settings.toggle,accelerator 与命令默认键 mod+, 相同(一次按键只执行一次)', () => {
+  it('settings.toggle 是菜单命令,命令默认键 mod+,', () => {
     bootCorePlugins();
-    expect(MENU_COMMANDS['settings.toggle']).toBe('CmdOrCtrl+,');
+    expect(MENU_COMMAND_IDS).toContain('settings.toggle');
     expect(coApp.commands.get('settings.toggle')?.hotkey).toBe('mod+,');
   });
 });

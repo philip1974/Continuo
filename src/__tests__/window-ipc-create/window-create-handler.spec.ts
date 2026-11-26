@@ -90,7 +90,7 @@ beforeEach(() => {
   electronMock.senderToWindow.set(sender, fakeWindow);
   vi.clearAllMocks();
   fsMock.stat.mockReset();
-  registerWindowIpc({ createMainWindow, relaunchApp: vi.fn(), reloadWindow: vi.fn() });
+  registerWindowIpc({ createMainWindow, relaunchApp: vi.fn(), reloadWindow: vi.fn(), rebuildAppMenu: vi.fn() });
 });
 
 describe('window-ipc-create: createWindowHandler', () => {

@@ -34,7 +34,7 @@ vi.mock('electron', () => ({
   webContents: { fromFrame: (frame: object) => electronMock.frames.get(frame) },
 }));
 
-import { WINDOW_CHANNELS, MENU_COMMANDS } from '../../../electron/shared/window-channels';
+import { WINDOW_CHANNELS, MENU_COMMAND_IDS } from '../../../electron/shared/window-channels';
 import { menuCommandTargetWindow, sendMenuCommand } from '../../../electron/main/lib/menu-command';
 import { runMenuCommand } from '@/shell/menu-commands';
 import { CommandRegistry } from '@/plugins/registries/CommandRegistry';
@@ -54,23 +54,30 @@ function popoutOf(main: FakeWin | null): FakeWin {
 }
 
 describe('main:菜单命令发往哪个窗口', () => {
-  it('菜单项即命令:MENU_COMMANDS 登记 openFolder → CmdOrCtrl+O(与命令默认键 mod+o 相同)', () => {
-    expect(MENU_COMMANDS[OPEN_FOLDER_COMMAND.id]).toBe('CmdOrCtrl+O');
-    expect(MENU_COMMANDS[OPEN_FOLDER_COMMAND.id].toLowerCase().replace('cmdorctrl', 'mod')).toBe(OPEN_FOLDER_COMMAND.hotkey);
+  it('菜单项即命令:MENU_COMMAND_IDS 登记 openFolder(accelerator 由 renderer 推送的生效键位换算,见 app-menu-bar)', () => {
+    expect(MENU_COMMAND_IDS).toContain(OPEN_FOLDER_COMMAND.id);
   });
 
   it('聚焦的是主窗 → 发给它自己', () => {
     const main = new electronMock.FakeBrowserWindow();
     expect(menuCommandTargetWindow(main as never)).toBe(main);
     expect(sendMenuCommand(main as never, OPEN_FOLDER_COMMAND.id)).toBe(true);
-    expect(main.webContents.send).toHaveBeenCalledWith(WINDOW_CHANNELS.RUN_MENU_COMMAND, OPEN_FOLDER_COMMAND.id);
+    expect(main.webContents.send).toHaveBeenCalledWith(WINDOW_CHANNELS.RUN_MENU_COMMAND, {
+      id: OPEN_FOLDER_COMMAND.id,
+      fromPopout: false,
+      viaKey: false,
+    });
   });
 
   it('聚焦的是 popout 子窗 → 发给打开它的主窗(子窗的界面由主窗 renderer 驱动)', () => {
     const main = new electronMock.FakeBrowserWindow();
     const popout = popoutOf(main);
     expect(sendMenuCommand(popout as never, OPEN_FOLDER_COMMAND.id)).toBe(true);
-    expect(main.webContents.send).toHaveBeenCalledWith(WINDOW_CHANNELS.RUN_MENU_COMMAND, OPEN_FOLDER_COMMAND.id);
+    expect(main.webContents.send).toHaveBeenCalledWith(WINDOW_CHANNELS.RUN_MENU_COMMAND, {
+      id: OPEN_FOLDER_COMMAND.id,
+      fromPopout: true,
+      viaKey: false,
+    });
     expect(popout.webContents.send).not.toHaveBeenCalled();
   });
 
@@ -97,13 +104,13 @@ describe('renderer:收到菜单命令 → 经命令注册表执行', () => {
   afterEach(() => document.body.replaceChildren());
 
   it('登记过的菜单命令 → 执行一次', async () => {
-    runMenuCommand(reg, OPEN_FOLDER_COMMAND.id);
+    runMenuCommand(reg, { id: OPEN_FOLDER_COMMAND.id, fromPopout: false, viaKey: false });
     await Promise.resolve();
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it('不在 MENU_COMMANDS 里的 id / 非字符串 → 忽略(通道只为菜单项服务)', async () => {
-    runMenuCommand(reg, 'other.cmd');
+  it('不在 MENU_COMMAND_IDS 里的 id / 非法 payload → 忽略(通道只为菜单项服务)', async () => {
+    runMenuCommand(reg, { id: 'other.cmd', fromPopout: false, viaKey: false });
     runMenuCommand(reg, 42);
     await Promise.resolve();
     expect(reg.get('other.cmd')!.fn).not.toHaveBeenCalled();
@@ -114,7 +121,7 @@ describe('renderer:收到菜单命令 → 经命令注册表执行', () => {
     const { createElement } = await import('react');
     const { Modal } = await import('@/design');
     const view = render(createElement(Modal, { visible: true, onClose: () => {}, 'aria-label': 'x', children: 'body' }));
-    runMenuCommand(reg, OPEN_FOLDER_COMMAND.id);
+    runMenuCommand(reg, { id: OPEN_FOLDER_COMMAND.id, fromPopout: false, viaKey: false });
     await Promise.resolve();
     expect(fn).not.toHaveBeenCalled();
     view.unmount();

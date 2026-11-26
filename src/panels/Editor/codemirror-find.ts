@@ -44,6 +44,13 @@ export function toggleSearchOption(field: ToggleField): Command {
   };
 }
 
+/** 打开查找面板并聚焦查找框(VSCode「查找」;菜单 / 命令面板执行时焦点也落到查找框,不依赖 select() 顺带聚焦)。 */
+export const openFindPanel: Command = (view) => {
+  openSearchPanel(view);
+  view.dom.querySelector<HTMLInputElement>('.cm-search [main-field]')?.focus();
+  return true;
+};
+
 /** 打开查找面板并聚焦替换框(VSCode「替换」);只读文档无替换框,停在查找框。 */
 export const openReplacePanel: Command = (view) => {
   openSearchPanel(view);

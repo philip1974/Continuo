@@ -13,11 +13,27 @@ import { create } from 'zustand';
 
 interface SettingsState {
   activeTabId: string | null;
+  /**
+   * 待交给页签搜索框的焦点(命令「打开键盘快捷方式」切到快捷键页后,焦点落到该页搜索框):页签挂载 / 收到请求时取走并清除,
+   * 之后切走再切回不再抢焦点。
+   */
+  tabSearchFocusRequested: boolean;
   setActiveTabId: (id: string) => void;
+  /** 切到页签并请求把焦点交给它的搜索框。 */
+  showTabWithSearchFocus: (id: string) => void;
+  /** 取走焦点请求(返回是否有请求)。 */
+  takeTabSearchFocus: () => boolean;
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>((set, get) => ({
   activeTabId: null,
+  tabSearchFocusRequested: false,
   setActiveTabId: (id) =>
     set((s) => (s.activeTabId === id ? s : { activeTabId: id })),
+  showTabWithSearchFocus: (id) => set({ activeTabId: id, tabSearchFocusRequested: true }),
+  takeTabSearchFocus: () => {
+    if (!get().tabSearchFocusRequested) return false;
+    set({ tabSearchFocusRequested: false });
+    return true;
+  },
 }));

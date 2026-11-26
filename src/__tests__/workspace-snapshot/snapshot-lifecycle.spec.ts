@@ -96,7 +96,7 @@ beforeEach(async () => {
   resetWindowSeq();
   resetRoots();
   setWindowSeq(101, 2);
-  registerIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
+  registerIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn(), rebuildAppMenu: vi.fn() });
 });
 
 afterEach(async () => {

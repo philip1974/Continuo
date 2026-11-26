@@ -14,7 +14,7 @@
 //
 // BDD: settings-toggle
 
-import { openOrFocusPanel, runWhenDockLayoutReady } from '@/shell/dock/dock-api-ref';
+import { openOrFocusPanelNow, runWhenDockLayoutReady } from '@/shell/dock/dock-api-ref';
 import type { DockviewApi } from 'dockview-react';
 import { mainWindowActivePanel } from '@/shell/dock/group-mru';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
@@ -38,11 +38,21 @@ function toggleSettingsPanelNow(api: DockviewApi): void {
     return;
   }
 
-  // 收起侧栏是为主窗里的 Settings 让出宽度;Settings 在子窗里时主窗布局不动。
-  if (!inPopout) useLayoutUiStore.getState().setSidebarOpen(false);
+  openSettingsPanelNow(api);
+}
 
-  // 「存在则聚焦 / 不存在则新建」走共享 openOrFocusPanel:它负责撤销排定中的关闭动画(否则刚聚焦的
-  // Settings 会在 EXIT_DURATION_MS 后消失)并带上 params.titleKey(页签标题随语言切换)。此前这里手抄了
-  // 一份,两样都漏了。
-  openOrFocusPanel(SETTINGS_PANEL_ID, SETTINGS_COMPONENT, SETTINGS_TITLE, SETTINGS_TITLE_KEY);
+/**
+ * 打开设置(不切换,已显示也不关):不存在 → 新建;存在 → 在其所在窗口激活并聚焦。命令「首选项:打开键盘快捷方式」用。
+ */
+export function openSettingsPanel(): void {
+  runWhenDockLayoutReady(openSettingsPanelNow);
+}
+
+function openSettingsPanelNow(api: DockviewApi): void {
+  // 收起侧栏是为主窗里的 Settings 让出宽度;Settings 在子窗里时主窗布局不动。
+  if (api.getPanel(SETTINGS_PANEL_ID)?.api.location?.type !== 'popout') useLayoutUiStore.getState().setSidebarOpen(false);
+
+  // 「存在则聚焦 / 不存在则新建」走共享 openOrFocusPanelNow:它负责撤销排定中的关闭动画(否则刚聚焦的
+  // Settings 会在 EXIT_DURATION_MS 后消失)并带上 params.titleKey(页签标题随语言切换)。
+  openOrFocusPanelNow(api, SETTINGS_PANEL_ID, SETTINGS_COMPONENT, SETTINGS_TITLE, SETTINGS_TITLE_KEY);
 }

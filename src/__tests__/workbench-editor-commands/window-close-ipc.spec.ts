@@ -40,7 +40,7 @@ beforeEach(() => {
   electronMock.handlers.clear();
   electronMock.senderToWindow.clear();
   electronMock.senderToWindow.set(sender, win);
-  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
+  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn(), rebuildAppMenu: vi.fn() });
 });
 
 describe('window:close', () => {

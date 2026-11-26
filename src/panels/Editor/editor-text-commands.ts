@@ -65,6 +65,10 @@ export const EDITOR_TEXT_COMMANDS: readonly TextCommandDef[] = [
   { id: 'editor.unfoldAll', key: 'unfold_all', title: 'Unfold All' },
   { id: 'editor.action.jumpToBracket', key: 'jump_to_bracket', title: 'Go to Bracket', mac: 'mod+shift+\\' },
   { id: 'cursorUndo', key: 'cursor_undo', title: 'Cursor Undo', mac: 'mod+u' },
+  // 查找 / 替换(VSCode actions.find ⌘F、editor.action.startFindReplaceAction ⌥⌘F / Ctrl+H):打开该编辑器的查找面板(菜单 编辑 →
+  // 查找 / 替换、命令面板)。默认键仍由 CodeMirror 查找键表处理(查找面板内同样生效),这里登记同一默认键只为显示与改键。
+  { id: 'actions.find', key: 'find', title: 'Find', mac: 'mod+f' },
+  { id: 'editor.action.startFindReplaceAction', key: 'replace', title: 'Replace', mac: 'mod+alt+f', other: 'ctrl+h' },
 ];
 
 /** 命令 id → 在视图上执行(CodeMirror 命令;引擎 chunk 登记)。 */
@@ -92,7 +96,8 @@ export function runTextCommand(id: string): void {
   const view = activeTextView();
   if (!view || !runner) return;
   runner(id, view);
-  if (!view.hasFocus) view.focus();
+  // 焦点已在该编辑器里(正文,或刚打开的查找面板)→ 不动
+  if (!view.dom.contains(view.dom.ownerDocument.activeElement)) view.focus();
 }
 
 export function editorTextCommandSpecs(platform: Platform): CommandSpec[] {

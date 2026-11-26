@@ -2,7 +2,8 @@
 // 订阅 commands registry,列出全部命令(对齐 VSCode 键盘快捷方式编辑器:无快捷键的显示「未绑定」,可直接录键),按 category 分组。
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
 
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSettingsStore } from '@/plugins/settings/store';
 import { Badge, IconButton, Input, KeyCap } from '@/design';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
@@ -381,6 +382,11 @@ export function KeybindingsTabContent() {
     }
     searchRef.current?.focus();
   });
+  // 命令「首选项:打开键盘快捷方式」切到本页后焦点落到搜索框(本页挂载时 / 已显示时收到请求;取走即清除,之后切回不抢焦点)。
+  const searchFocusRequested = useSettingsStore((s) => s.tabSearchFocusRequested);
+  useEffect(() => {
+    if (searchFocusRequested && useSettingsStore.getState().takeTabSearchFocus()) searchRef.current?.focus();
+  }, [searchFocusRequested]);
 
   return (
     <div ref={rootRef} className="space-y-6">

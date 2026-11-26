@@ -11,7 +11,7 @@
 | `src/panels/Explorer/FolderTree.tsx` | 订阅请求:新建 → 复用 creating 流程;focusTree → 复用「重试」的焦点落点 |
 | `src/panels/Explorer/hooks/useSelectWorkspaceFolder.ts` | `selectWorkspaceFolder`:空态按钮 / 头部「切换文件夹」/ 命令共用;选定后发 focusTree |
 | `src/panels/Explorer/tree-keyboard.ts` | `focusedTargetDir`:树焦点项的目标目录(键盘粘贴与新建共用) |
-| `electron/shared/window-channels.ts` | `MENU_COMMANDS`:应用菜单项即 renderer 命令的登记表(命令 id → accelerator);`RUN_MENU_COMMAND` 通道 |
+| `electron/shared/window-channels.ts` | `MENU_COMMAND_IDS`:应用菜单项即 renderer 命令的登记表;`RUN_MENU_COMMAND` 通道 |
 | `electron/main/lib/menu-command.ts` | 菜单点击 → 目标主窗(popout 子窗 → 打开它的主窗)→ 发 `RUN_MENU_COMMAND` |
 | `src/shell/menu-commands.ts` | renderer 收到请求 → 经命令注册表执行(`useMenuCommands` 挂在 MainApp) |
 
@@ -58,10 +58,10 @@
 - VSCode 文件菜单有「打开文件夹… ⌘O」:位于「新建窗口」与分隔线之后、「在新窗口中打开文件夹…」之前;三语标题
 - 菜单项即命令 `workbench.action.files.openFolder`:点击 → main 向聚焦主窗发执行请求,renderer 经命令注册表执行(流程同第 4 条);
   聚焦的是 popout 子窗 → 发给打开它的主窗;没有可用主窗(mac 关光窗口)→ 选定后在新窗口打开
-- renderer 只执行 `MENU_COMMANDS` 登记的 id;任一文档有 Modal 打开时不执行(同工作台快捷键)
-- 菜单 accelerator 等于命令默认键(`MENU_COMMANDS` 守护,`explorer-commands.spec.ts`),不与其它命令默认键 / picker 保留键 /
-  其它菜单快捷键重合。一次按键只执行一次:Electron 先把 keydown 交给页面,页面全局热键执行命令并 `preventDefault` 后
-  菜单 accelerator 不再触发;页面没处理(用户改了键、Modal 打开时热键让路)才由菜单执行(打开文件夹本身单飞,重复触发也只弹一次框)。
+- renderer 只执行 `MENU_COMMAND_IDS` 登记的 id;任一文档有 Modal 打开时不执行(同工作台快捷键)
+- 菜单 accelerator 显示命令当前生效的主键(renderer 推送,跟随改键;只显示 `registerAccelerator: false`,见 `app-menu-bar`)。
+  一次按键只执行一次:Electron 先把 keydown 交给页面,页面全局热键执行命令并 `preventDefault` 后菜单 accelerator 不再触发;
+  页面没处理时 macOS 仍会触发菜单(打开文件夹本身单飞,重复触发也只弹一次框)。
   e2e 模式无应用菜单
 
 ## 端到端

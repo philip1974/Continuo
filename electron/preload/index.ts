@@ -532,8 +532,11 @@ const api = {
      */
     getPathForFile: (file: File): string => webUtils.getPathForFile(file),
     /** 订阅 main 的「执行菜单命令」请求(应用菜单项即 renderer 命令,如 文件 → 打开文件夹… ⌘O);返回 unsubscribe。payload 未经校验。 */
-    onMenuCommand: (cb: (id: unknown) => void): (() => void) =>
-      subscribeIpc(WINDOW_CHANNELS.RUN_MENU_COMMAND, (_event, id: unknown) => cb(id)),
+    onMenuCommand: (cb: (payload: unknown) => void): (() => void) =>
+      subscribeIpc(WINDOW_CHANNELS.RUN_MENU_COMMAND, (_event, payload: unknown) => cb(payload)),
+    /** 推送菜单命令当前生效的主键(归一后的 hotkey,未绑定为 null):main 换算成菜单 accelerator 显示并重建菜单。 */
+    setMenuKeybindings: (keybindings: Readonly<Record<string, string | null>>): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.SET_MENU_KEYBINDINGS, { keybindings }),
   },
   agentAuth: {
     /** 订阅 main 推的授权请求(MCP tool 调时);返回 unsubscribe。payload 未经校验(renderer isAgentAuthRequestPayload 校验)。 */

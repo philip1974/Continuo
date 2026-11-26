@@ -5,6 +5,7 @@ import { installPermissionHandlers } from './lib/permission-policy';
 import { installFileRequestGuard } from './lib/file-request-policy';
 import { showOpenDialogRemembering } from './lib/open-dialog';
 import { appMenuTemplate, type AppMenuActions } from './app-menu';
+import { installAppMenuE2eHook } from './app-menu-e2e';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL, type FlushRequestPayload } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
@@ -1453,13 +1454,20 @@ app.whenReady().then(async () => {
   // ⌘P,导致 Quick Open 收不到 keydown。e2e 显式禁用菜单(只影响测试模式)。
   if (process.env['CONTINUO_E2E'] === '1') {
     Menu.setApplicationMenu(null);
+    // 菜单不挂上,e2e 经钩子读同一模板、按路径调用菜单项 click
+    installAppMenuE2eHook(() => appMenuTemplate(getMainT(), appMenuActions));
   } else {
     Menu.setApplicationMenu(buildAppMenu(getMainT()));
     // macOS dock 右键菜单(快捷入口)。抽成 setDockMenu 复用,locale 切换时一并重建。
     setDockMenu();
   }
 
-  registerIpc({ createMainWindow, relaunchApp, reloadWindow: (win) => void reloadMainWindow(win, false) });
+  registerIpc({
+    createMainWindow,
+    relaunchApp,
+    reloadWindow: (win) => void reloadMainWindow(win, false),
+    rebuildAppMenu,
+  });
   // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
   setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY

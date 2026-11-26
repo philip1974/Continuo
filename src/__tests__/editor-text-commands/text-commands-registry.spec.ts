@@ -37,6 +37,9 @@ const EXPECTED: readonly (readonly [string, string, string | undefined, string |
   ['editor.unfoldAll', 'Unfold All', undefined, undefined],
   ['editor.action.jumpToBracket', 'Go to Bracket', 'mod+shift+\\', 'mod+shift+\\'],
   ['cursorUndo', 'Cursor Undo', 'mod+u', 'mod+u'],
+  // 查找 / 替换(菜单 编辑 → 查找 / 替换;默认键仍由 CodeMirror 查找键表处理,见 app-menu-bar 第 5 条)
+  ['actions.find', 'Find', 'mod+f', 'mod+f'],
+  ['editor.action.startFindReplaceAction', 'Replace', 'mod+alt+f', 'ctrl+h'],
 ];
 
 /** 在代码编辑器(CodeEditor)正文里按下的键(已派发,target = .cm-content)。 */

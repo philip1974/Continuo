@@ -14,7 +14,7 @@ import {
   OPEN_FOLDER_COMMAND,
   SHOW_EXPLORER_COMMAND,
 } from '@/panels/Explorer/explorer-commands';
-import { MENU_COMMANDS } from '../../../electron/shared/window-channels';
+import { MENU_COMMAND_IDS } from '../../../electron/shared/window-channels';
 import { en } from '../../../electron/shared/i18n-locales/en';
 import { zh } from '../../../electron/shared/i18n-locales/zh';
 import { ko } from '../../../electron/shared/i18n-locales/ko';
@@ -67,29 +67,31 @@ describe('默认键不冲突', () => {
   });
 });
 
-// 应用菜单里「即某条命令」的菜单项(MENU_COMMANDS:文件 → 打开文件夹… ⌘O)与该命令同一动作:accelerator 必须就是命令的
-// 默认键(不算冲突),且不得与任何别的命令默认键 / picker 保留键 / 其它菜单快捷键重合。一次按键只执行一次:renderer 全局
-// 热键先收到 keydown 并 preventDefault,Electron 不再触发菜单 accelerator;renderer 没处理(如改了键)才由菜单执行。
-describe('菜单项即命令:accelerator = 命令默认键,且与其它按键不冲突', () => {
+// 应用菜单里「即某条命令」的菜单项(MENU_COMMAND_IDS:文件 → 打开文件夹… ⌘O 等)的 accelerator 由 renderer 推送的生效键位换算
+//(只显示,见 app-menu-bar);菜单里写死 accelerator 的非命令项(新建窗口 / 重新加载 / 关闭窗口)不得与任何命令默认键 /
+// picker 保留键重合,否则一个按键两个动作。
+describe('菜单项即命令;写死的菜单快捷键不与命令按键冲突', () => {
   const literalMenuAccelerators = (): string[] => {
     const src = MENU_SOURCES.map((f) => readFileSync(join(process.cwd(), f), 'utf8')).join('\n');
     return Array.from(src.matchAll(/accelerator:\s*'([^']+)'/g), (m) => m[1]!.toLowerCase().replace('cmdorctrl', 'mod'));
   };
 
+  it('每个菜单命令都已注册', () => {
+    for (const id of MENU_COMMAND_IDS) expect(coApp.commands.get(id), id).toBeDefined();
+  });
+
   it.each(['mac', 'other'] as Platform[])('%s', (platform) => {
-    const entries = Object.entries(MENU_COMMANDS);
-    expect(entries.length).toBeGreaterThan(0);
-    for (const [id, accelerator] of entries) {
-      const spec = coApp.commands.get(id);
-      expect(spec?.hotkey, id).toBeDefined();
-      const mine = canonicalHotkey(accelerator.toLowerCase().replace('cmdorctrl', 'mod'), platform);
-      expect(mine).toBe(canonicalHotkey(spec!.hotkey!, platform));
-      const others = [
-        ...coApp.commands.getAll().filter((c) => c.id !== id && c.hotkey).map((c) => c.hotkey!),
-        ...Object.values(PICKER_TOGGLE_HOTKEYS),
-        ...literalMenuAccelerators(),
-      ].map((h) => canonicalHotkey(h, platform));
-      expect(others).not.toContain(mine);
-    }
+    const literal = literalMenuAccelerators().map((h) => canonicalHotkey(h, platform));
+    expect(literal.length).toBeGreaterThan(3);
+    const others = [
+      ...coApp.commands
+        .getAll()
+        // 「新建窗口」命令(⇧⌘N)与菜单 文件 → 新建窗口 同一动作(renderer 先处理,菜单项兜底没有窗口时)
+        .filter((c) => c.id !== 'window.new')
+        .flatMap((c) => [c.hotkey, ...(c.secondaryHotkeys ?? [])])
+        .filter((h): h is string => !!h),
+      ...Object.values(PICKER_TOGGLE_HOTKEYS),
+    ].map((h) => canonicalHotkey(h, platform));
+    for (const hotkey of literal) expect(others, hotkey).not.toContain(hotkey);
   });
 });
