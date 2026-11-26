@@ -9,6 +9,7 @@ import { EditorPanel } from '../../panels/Editor/EditorPanel';
 import { setLocale, t } from '../../i18n';
 import { TabContextMenu } from '../../lib/TabContextMenu';
 import { Modal } from '../../design';
+import { registerEditorFocus, requestEditorFocus } from '../../panels/Editor/editor-focus-registry';
 
 // CodeEditor 替身:视图就绪时按 tab 登记聚焦句柄(同真实引擎)
 vi.mock('../../panels/Editor/CodeEditor', async () => {
@@ -166,6 +167,84 @@ describe('TabContextMenu opensDialog 项', () => {
   });
 });
 
+// 菜单关闭时只在焦点已丢失时还原到触发 tab:动作自己移动了焦点(「向右拆分 / 向下拆分」聚焦新组的编辑器,同 ⌘\\)
+// 就以那里为准;不移动焦点的项(复制路径 / 在 Finder 中显示)回到 tab。
+describe('TabContextMenu:动作移动焦点 vs 不移动', () => {
+  // 真机次序:选项 → 菜单同步卸载 → 下一帧(编辑器聚焦请求兑现)→ Radix setTimeout 里的焦点还原。
+  // 这里手动排空 rAF 队列,固定成「先兑现聚焦请求、后还原」。
+  let frames: FrameRequestCallback[];
+  beforeEach(() => {
+    frames = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  function flushFrames() {
+    act(() => {
+      for (const cb of frames.splice(0)) cb(0);
+    });
+  }
+  /** 先兑现排队的帧,再等 Radix 的 setTimeout 还原(多轮,覆盖卸载后的后续任务)。 */
+  async function settleQueued() {
+    for (let i = 0; i < 3; i++) {
+      flushFrames();
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+    flushFrames();
+  }
+
+  function Harness() {
+    const ref = (el: HTMLDivElement | null) => {
+      if (el) registerEditorFocus('a.ts', () => el.focus(), 'g2');
+    };
+    return (
+      <>
+        <TabContextMenu
+          entries={() => [
+            { label: 'Split Right', onSelect: () => requestEditorFocus('a.ts', 'g2') },
+            { label: 'Copy Path', onSelect: () => undefined },
+          ]}
+        >
+          <div role="tab" tabIndex={0}>
+            t1
+          </div>
+        </TabContextMenu>
+        <div ref={ref} data-testid="new-group-editor" tabIndex={-1} />
+      </>
+    );
+  }
+
+  function choose(label: string) {
+    const tabNode = screen.getByRole('tab', { name: 't1' });
+    tabNode.focus();
+    fireEvent.contextMenu(tabNode);
+    const item = screen.getByRole('menuitem', { name: label });
+    item.focus();
+    fireEvent.click(item);
+    return tabNode;
+  }
+
+  it('「向右拆分」:新组的编辑器获焦,菜单关闭的还原不把焦点拉回原 tab', async () => {
+    render(<Harness />);
+    choose('Split Right');
+    expect(screen.queryByRole('menu')).toBeNull();
+    await settleQueued();
+    expect(document.activeElement).toBe(screen.getByTestId('new-group-editor'));
+  });
+
+  it('「复制路径」等不移动焦点的项:焦点回到触发 tab', async () => {
+    render(<Harness />);
+    const tabNode = choose('Copy Path');
+    await settleQueued();
+    expect(document.activeElement).toBe(tabNode);
+  });
+});
+
 // popout 子窗:tab 与菜单在子窗文档,代码跑在主窗(全局 document 是主窗)。Radix FocusScope 按全局 document 记录 / 还原
 // 打开前焦点 → 子窗里关闭菜单后焦点落到子窗 body。期望同主窗(VSCode 辅助窗口取消关闭确认焦点回该编辑器):回到触发 tab。
 describe('popout 子窗里的 tab 右键菜单', () => {
@@ -258,7 +337,18 @@ describe('popout 子窗里的 tab 右键菜单', () => {
     expect(child.activeElement).toBe(tabNode);
   });
 
-  it('点菜单外部关闭 → 不把焦点拉回 tab(同 Radix 默认)', async () => {
+  // 真机:子窗 body 在菜单打开期间是 pointer-events:none(Radix 模态菜单),点编辑器正文的 mousedown 落到 <html>、
+  // 编辑器拿不到焦点 → 菜单卸载后焦点在 body。此时回到打开前的焦点(tab),不让输入丢失。
+  it('点菜单外部关闭、被点处没拿到焦点(落在 body)→ 焦点回到子窗里的触发 tab', async () => {
+    const tabNode = mountInChild();
+    await settle(); // Radix 在下一任务才挂外部点按监听
+    fireEvent.pointerDown(child.documentElement);
+    await settle();
+    expect(within(child.body).queryByRole('menu')).toBeNull();
+    expect(child.activeElement).toBe(tabNode);
+  });
+
+  it('点菜单外部关闭 → 被点处拿到焦点则以它为准,不拉回 tab', async () => {
     mountInChild();
     await settle(); // Radix 在下一任务才挂外部点按监听
     const outside = child.createElement('button');

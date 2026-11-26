@@ -42,9 +42,14 @@
   「保存」(dock:终端运行中程序的关闭确认同理)。
 - 不弹框(无脏文件)时同 ⌘W / 点 ×:动作看到的焦点在本面板的 tab 上 → 关掉活动 tab 后焦点进新的活动编辑器;关掉的不是活动 tab →
   焦点不进编辑区。
-- 菜单关闭(选项 / Esc)后焦点回到**触发 tab**(右键 / Shift+F10 时的那个 tab),popout 子窗里同样回到子窗里的 tab
-  (外壳自己还原:Radix FocusScope 按全局 document = 主窗记录 / 还原,子窗里会落到 body);随后确认框「取消」/ Esc
-  → 焦点回该 tab(VSCode 辅助窗口同)。点菜单外部关闭不还原(焦点以点到的地方为准,同 Radix 默认)。
+- 菜单关闭后,**只在焦点已丢失**(随菜单卸载落到 body / 脱离文档)时回到**触发 tab**(右键 / Shift+F10 时的那个 tab),
+  popout 子窗里同样回到子窗里的 tab(外壳自己还原:Radix FocusScope 按全局 document = 主窗记录 / 还原,子窗里会落到 body);
+  随后确认框「取消」/ Esc → 焦点回该 tab(VSCode 辅助窗口同)。通用规则,不逐项标注:
+  - 动作自己移动了焦点 → 以它为准:「向右拆分 / 向下拆分」新组的编辑器获焦、成为活动组(同 ⌘\,VSCode 同);
+  - 不移动焦点的项(复制路径 / 复制相对路径 / 在 Finder 中显示)、Esc → 回到 tab;
+  - 点菜单外部:被点处拿到了焦点(主窗点编辑器正文)→ 以它为准;没拿到(popout 子窗:菜单打开期间子窗 body 是
+    `pointer-events:none`(Radix 模态菜单,菜单卸载即还原、无残留),mousedown 落到 `<html>`,Chromium 不把焦点给被点处)
+    → 回到 tab,键入不丢;再点正文即进编辑器。
 - 「重命名…」等随后打开自聚焦输入框的项仍是 `opensFocusedInput`(跳过还原);资源管理器右键「移到废纸篓」的确认框已由其
   `skipOnce` + FolderTree 接管焦点,不属本外壳。
 
@@ -55,7 +60,9 @@ tab 聚焦时 **Shift+F10 / 菜单键** 在 tab 左下角打开菜单(与终端�
 
 ## 规范
 
-`tab-context-menu-focus.spec.tsx`(右键关闭后确认框拿到焦点、不弹框时焦点进新的活动编辑器、外壳 opensDialog 语义);
+`tab-context-menu-focus.spec.tsx`(右键关闭后确认框拿到焦点、不弹框时焦点进新的活动编辑器、外壳 opensDialog 语义、
+动作移动焦点时不还原 / 不移动时回 tab、子窗点外部焦点丢失时回 tab);
 `tab-context-menu.spec.tsx`(目标集合、批量确认推进、两类 tab 的菜单项与动作、键盘打开、dock 批量关闭先问完再关 / 遇取消
 整批不动);`editor-batch-close-confirm.spec.tsx`(多个脏文件的合并确认框:列表 / 全部保存 / 不保存 / 取消;「全部保存」中途遇写保护 / 磁盘冲突确认后继续或整批结束、其它失败整批结束);
-真机 e2e `tests/e2e/tab-context-menu.spec.ts`(编辑器 tab 全部关闭遇脏文件确认、多个脏文件合并框「全部保存」遇写保护覆盖后继续、dock tab 关闭其他)。
+真机 e2e `tests/e2e/tab-context-menu.spec.ts`(编辑器 tab 全部关闭遇脏文件确认、多个脏文件合并框「全部保存」遇写保护覆盖后继续、dock tab 关闭其他、
+popout 子窗关闭 / 点正文关闭后的焦点)与 `tests/e2e/editor-split.spec.ts`(右键「向下拆分」后新组获焦)。

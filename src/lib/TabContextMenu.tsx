@@ -6,6 +6,7 @@
 import * as Menu from '@radix-ui/react-context-menu';
 import { useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
 import { MenuItem } from '@/design';
+import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { dispatchContextMenuAt, isContextMenuKey } from './context-menu-key';
 
 export type TabMenuEntry =
@@ -56,7 +57,6 @@ export function TabContextMenu({
   const skipFocusRestoreRef = useRef(false);
   const pendingActionRef = useRef<(() => void) | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
-  const interactedOutsideRef = useRef(false);
   return (
     <Menu.Root onOpenChange={setOpen}>
       <Menu.Trigger
@@ -67,7 +67,6 @@ export function TabContextMenu({
           // 不用 instanceof HTMLElement:子窗元素属子窗 realm。
           const active = e.currentTarget.ownerDocument.activeElement as HTMLElement | null;
           restoreFocusRef.current = active !== null && typeof active.focus === 'function' ? active : null;
-          interactedOutsideRef.current = false;
           setPortalHost(e.currentTarget.ownerDocument.body);
         }}
         onKeyDown={openFromKeyboard}
@@ -79,21 +78,18 @@ export function TabContextMenu({
           <Menu.Content
             className={contentCls}
             collisionPadding={8}
-            onInteractOutside={() => {
-              interactedOutsideRef.current = true;
-            }}
             onCloseAutoFocus={(e) => {
               // 焦点还原自己做:Radix FocusScope 按全局 document(主窗)记录 / 还原打开前焦点,popout 子窗里的 tab
-              // 菜单关闭后焦点会落到子窗 body。改为还原到触发区所在文档里打开前的焦点(主窗行为不变)。
-              // 点菜单外部关闭不还原(同 Radix ContextMenu 默认),焦点以用户点到的地方为准。
+              // 菜单关闭后焦点会落到子窗 body。改为还原到触发区所在文档里打开前的焦点。
+              // 只在焦点已丢失(随菜单卸载落到 body / 脱离文档)时还原:动作自己移动了焦点(如「向右拆分」聚焦新组的
+              // 编辑器)、点菜单外部时焦点进了被点的元素,都以那里为准(VSCode 同);点外部而焦点没去处(popout 子窗里
+              // 点到的元素被菜单的 pointer-events:none 挡住、拿不到焦点)→ 回到打开前的焦点,不丢输入。
               e.preventDefault();
-              const outside = interactedOutsideRef.current;
-              interactedOutsideRef.current = false;
               const skip = skipFocusRestoreRef.current;
               skipFocusRestoreRef.current = false;
               const prev = restoreFocusRef.current;
               restoreFocusRef.current = null;
-              if (!outside && !skip && prev?.isConnected) prev.focus({ preventScroll: true });
+              if (!skip && prev?.isConnected && focusWithinOrLost(prev.ownerDocument, null)) prev.focus({ preventScroll: true });
               // opensDialog 项:焦点回到 tab 后(同一任务内的微任务)再执行。
               const pending = pendingActionRef.current;
               if (pending) {

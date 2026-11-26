@@ -150,7 +150,7 @@ test('重启恢复两个编辑器组(各自的文件与活动组)', async () => 
   await expect(win2.locator('header').first()).toContainText('b.ts');
 });
 
-test('tab 右键「向下拆分」:新组在下方,显示该文件', async () => {
+test('tab 右键「向下拆分」:新组在下方,显示该文件,新组的编辑器获焦(同 ⌘\\,菜单关闭不把焦点拉回原 tab)', async () => {
   const win = await launch(workspace());
   await openTreeItem(win, /^a\.ts$/);
   await expect(group(win, 0).locator('.cm-content')).toContainText('export const a = 1;', { timeout: 10_000 });
@@ -160,6 +160,12 @@ test('tab 右键「向下拆分」:新组在下方,显示该文件', async () =>
   expect(await tabTitles(group(win, 1))).toEqual(['a.ts']);
   const [top, bottom] = await Promise.all([group(win, 0).boundingBox(), group(win, 1).boundingBox()]);
   expect(bottom!.y).toBeGreaterThan(top!.y + top!.height / 2);
+  await expect(group(win, 1).locator('.cm-content')).toBeFocused({ timeout: 5_000 });
+  await win.waitForTimeout(300); // 焦点稳定:菜单关闭后的还原不再迟到抢回
+  await expect(group(win, 1).locator('.cm-content')).toBeFocused();
+  const strip = (i: number): Locator => group(win, i).getByRole('tablist', { name: EDITOR_TABS });
+  await expect(strip(0)).toHaveAttribute('data-unfocused', 'true');
+  await expect(strip(1)).not.toHaveAttribute('data-unfocused', 'true');
 });
 
 // 同一 Markdown 两组都用富文本「编辑」:另一组的编辑增量套进本组(不重挂载),本组光标保持、撤销只撤本组输入;

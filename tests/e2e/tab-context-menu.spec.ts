@@ -160,3 +160,32 @@ test('popout 子窗里 tab 右键「关闭」遇脏文件 → Esc 取消确认 �
   await expect(child.getByRole('menu')).toHaveCount(0);
   await expect(tab).toBeFocused({ timeout: 5_000 });
 });
+
+// popout 子窗:菜单打开期间子窗 body 是 pointer-events:none(Radix 模态菜单),点编辑器正文只关菜单、编辑器拿不到焦点
+// (主窗 Chromium 会把焦点给被点处,子窗不会)→ 曾落到子窗 body、键入丢失。期望:回到打开前的焦点(tab),键入不丢;
+// 菜单关闭后子窗随即可点(pointer-events 已还原),再点正文即进编辑器。
+test('popout 子窗里 tab 右键菜单点编辑器正文关闭 → 焦点不落 body(回到 tab);再点正文可输入', async ({ electronApp, window }) => {
+  await window.locator('text=src').first().click();
+  await window.locator('text=a.ts').first().click();
+  await expect(window.locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
+  await window.getByRole('button', { name: DOCK_POPOUT }).click();
+  await expect.poll(() => electronApp.windows().length, { timeout: 10_000 }).toBe(2);
+  const child = electronApp.windows().find((w) => w !== window)!;
+  await child.waitForLoadState('domcontentloaded');
+  await child.bringToFront();
+  const tab = child.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab').filter({ hasText: 'a.ts' });
+  await expect(tab).toBeVisible({ timeout: 10_000 });
+  const cm = child.locator('.cm-content');
+  await expect(cm).toBeVisible();
+
+  await tab.click({ button: 'right' });
+  await expect(child.getByRole('menuitem', { name: CLOSE })).toBeVisible();
+  await cm.click({ force: true }); // 菜单打开时 body pointer-events:none,跳过可操作性检查
+  await expect(child.getByRole('menu')).toHaveCount(0);
+  await expect(tab).toBeFocused({ timeout: 5_000 });
+  expect(await child.evaluate(() => document.body.style.pointerEvents)).toBe('');
+  await cm.click();
+  await expect(cm).toBeFocused();
+  await child.keyboard.type('Z');
+  await expect(cm).toContainText('Z');
+});
