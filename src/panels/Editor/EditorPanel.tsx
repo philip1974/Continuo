@@ -45,7 +45,7 @@ import { rebindEditorRoots } from './editor-root-registry';
 import { applyEditorWriteBack, EDITOR_DISK_CHANGED, revertFile } from './editor-file-actions';
 import { editorFileDeps } from './editor-file-deps';
 import { useAutoSave, isAutoSaveEnabled } from './useAutoSave';
-import { useEditorFile } from './useEditorFile';
+import { NO_ACTIVE_TAB, useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
 import { startDebugDecorationSync } from './decorations/debug-decoration-sync';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -308,14 +308,16 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     const target = findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, groupId));
     const r = await saveActive(target?.id);
     if (!r.ok) {
+      // 没有可保存的 tab(无编辑器 tab 时按 ⌘S):VSCode 静默,不弹错误。真实保存失败仍提示。
+      if (r.code === NO_ACTIVE_TAB) return;
       if (r.code === EDITOR_DISK_CHANGED && target) {
         setOverwriteCandidate({ id: target.id, filePath: target.filePath });
         return;
       }
-      // i18n(I7,复查 P1):TAB_NOT_FOUND / NO_ACTIVE_TAB / FS_* 都到
+      // i18n(I7,复查 P1):TAB_NOT_FOUND / FS_* 都到
       // 这里,r.message 是 main/动作层的 raw(FS_* 英文)→ 双向泄漏。
       // 按 code 经 catalog 本地化(单一来源 localizeErrorByCode),未收录 code 回退原 message。
-      // 有目标 tab → 带文件名(保存失败 <name>:<原因>);无(NO_ACTIVE_TAB)→ 只有原因。
+      // 有目标 tab → 带文件名(保存失败 <name>:<原因>);无 → 只有原因。
       if (target) onSaveFailed(target, r);
       else notifyFailure(r);
     }

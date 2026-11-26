@@ -16,6 +16,7 @@
    提示里写到保存键的文案(磁盘冲突的 `errors.EDITOR_DISK_CHANGED`、关窗保存失败的
    `dialog.unsaved_close.disk_changed_note`,三语)用 `{hotkey}` 填**当前生效绑定**(`saveHotkeyLabel`,按平台格式化;
    未绑定 → 命令标题),改绑保存后提示跟随,不再写死 Cmd/Ctrl+S(`save-hotkey-label.spec.tsx`)。
+   没有可保存的 tab(无编辑器 tab 时按 ⌘S)→ 静默,不弹「没有活动标签页」(VSCode 同);真实保存失败仍提示。
 4. **`workbench.action.nextEditor` / `workbench.action.previousEditor`**:在编辑器文件 tab 间循环切换(首尾相接);
    默认键按平台对齐 VSCode:mac `⌥⌘→` / `⌥⌘←`(`mod+alt+right` / `mod+alt+left`),其它 `Ctrl+PageDown` /
    `Ctrl+PageUp`。tab 数 < 2 → no-op。

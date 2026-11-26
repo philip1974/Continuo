@@ -8,6 +8,9 @@ import { openFileByPath as openFileByPathImpl, saveFile as saveFileImpl, type Fi
 import { flushEditorWriteBacks } from './editor-writeback-registry';
 import { editorFileDeps } from './editor-file-deps';
 
+/** saveActive 没有目标 tab(无编辑器 tab 时按 ⌘S):调用方静默(VSCode 同),不当保存失败提示。 */
+export const NO_ACTIVE_TAB = 'NO_ACTIVE_TAB';
+
 export interface EditorFileApi {
   /** Explorer 单击文件触发. 返 IpcResult,UI 决定如何提示. */
   openFileByPath: (path: string) => Promise<FileOpResult>;
@@ -25,7 +28,7 @@ export function useEditorFile(): EditorFileApi {
       saveActive: async (tabId) => {
         const id = tabId ?? useEditorStore.getState().activeTabId;
         if (!id) {
-          return { ok: false, code: 'NO_ACTIVE_TAB', message: 'no active tab' };
+          return { ok: false, code: NO_ACTIVE_TAB, message: 'no active tab' };
         }
         // 先把编辑器里尚未上抛的输入(Milkdown 自适应延迟上抛窗口)同步写回 store,本次保存才包含最后几键。
         // 只回写要保存的 tab(回写会整篇序列化)。

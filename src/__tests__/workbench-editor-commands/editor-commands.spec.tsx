@@ -16,6 +16,7 @@ import { useCommandHotkeys } from '../../plugins/command-palette/useCommandHotke
 import { detectPlatform } from '../../plugins/command-palette/format-hotkey';
 import { setDockApi } from '../../shell/dock/dock-api-ref';
 import { t } from '../../i18n';
+import { notify } from '../../notifications/notify';
 
 const MOD = detectPlatform() === 'mac' ? { metaKey: true } : { ctrlKey: true };
 
@@ -203,6 +204,33 @@ describe('workbench.action.files.save(⌘S)', () => {
     });
     expect(await screen.findByText(t('panels.editor.disk_changed_title'))).toBeTruthy();
     expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('⌘S 没有可保存的目标', () => {
+  it('没有编辑器 tab → 静默(不弹「没有活动标签页」错误,连按也不叠加)', async () => {
+    useEditorStore.setState({ tabs: [], activeTabId: null });
+    mountWorkbench();
+    const outside = screen.getByRole('button', { name: 'explorer-row' });
+    outside.focus();
+    for (let i = 0; i < 2; i += 1) {
+      await act(async () => {
+        fireEvent.keyDown(outside, { key: 's', ...MOD });
+      });
+    }
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('真实保存失败仍提示', async () => {
+    mocks.writeFile.mockResolvedValue({ ok: false, code: 'FS_EACCES', message: 'denied' });
+    useEditorStore.setState({ tabs: [tab(A, true)], activeTabId: A });
+    mountWorkbench();
+    await screen.findByTestId('code-editor');
+    await act(async () => {
+      await saveActiveEditor();
+    });
+    expect(notify.error).toHaveBeenCalledTimes(1);
   });
 });
 
