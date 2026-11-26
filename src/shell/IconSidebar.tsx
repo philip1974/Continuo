@@ -1,6 +1,6 @@
 // 48px 竖向 Activity Bar(VSCode 风),Dockview 之外、main 之内。
 // 顶部:内置导航(Explorer)。中段:plugin 通过 ribbon 贡献的图标。
-// 底部:Settings / Account 等元类。
+// 底部:Settings 等元类(产品无账户体系,不放账户头像 chip)。
 // Explorer 按钮 toggle 左侧 Explorer Sidebar 显隐(active 状态显示左侧 accent bar);
 // Settings 按钮开关 Settings 面板。
 
@@ -153,27 +153,7 @@ export function IconSidebar() {
         ) : (
           renderItem(settingsItem)
         )}
-        <AccountChip />
       </div>
     </aside>
-  );
-}
-
-// 账户头像小卡(对齐 demo (3) 侧栏底部 profile chip)。
-// Continuo IconSidebar 只有 48px 宽,放不下完整的「头像 + 名称 + Plan」,
-// 退化为带 tooltip 的初字头像;后续接真实账户体系时再扩成弹层菜单。
-//
-// 审计 P2-D:账户菜单尚未实现前,这里**不能**用 <button>。带 hover/focus-ring 的
-// 可交互外观 + button 角色会向屏幕阅读器谎报这是个功能按钮,点击却空操作。
-// 退化成非交互的展示性 chip(div + title tooltip);接入真实账户体系时再恢复 button。
-function AccountChip() {
-  const t = useT();
-  return (
-    <div
-      className="mt-1 inline-flex h-7 w-7 select-none items-center justify-center rounded-full border border-line bg-canvas text-2xs font-semibold tracking-wide text-fg-muted"
-      title={t('shell.iconbar.account_title')}
-    >
-      CD
-    </div>
   );
 }

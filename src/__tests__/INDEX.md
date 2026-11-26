@@ -24,7 +24,6 @@
 
 ## [topic 49 · 打磨阶段缺陷修复(P1 批次)](./49-polish-bugfixes/README.md)
 
-- [`account-chip-not-button.spec.tsx`](./49-polish-bugfixes/account-chip-not-button.spec.tsx)
 - [`agent-auth-cancel-by-window.spec.ts`](./49-polish-bugfixes/agent-auth-cancel-by-window.spec.ts)
 - [`atomic-write-concurrent-same-path.spec.ts`](./49-polish-bugfixes/atomic-write-concurrent-same-path.spec.ts)
 - [`atomic-write-echo-stat-after-close.spec.ts`](./49-polish-bugfixes/atomic-write-echo-stat-after-close.spec.ts)

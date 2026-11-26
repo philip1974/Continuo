@@ -58,10 +58,12 @@
 - error 突发超过 `MAX_NOTIFICATIONS` → 底层数组截断到上限,保留最新、丢最旧(并清其 timer)。
 - 根因: error 级不 dedupe + 存活 15s,显示层只 slice 可见区,底层数组会无界堆积。
 
-### P2-D AccountChip 非交互 — `account-chip-not-button.spec.tsx`
-- 账户菜单未实现前,chip 渲染为非 `button` 元素(有 title tooltip,无 button 角色)。
+### P2-D AccountChip 非交互 — 已被后续移除取代
+- 原规范:账户菜单未实现前,chip 渲染为非 `button` 元素(有 title tooltip,无 button 角色)。
 - 根因: 旧实现是带 hover/focus-ring + `aria-label` 的空 onClick `<button>`,向屏幕阅读器
   谎报可点;同时移除已 orphan 的 `shell.iconbar.account_aria` i18n key(en/zh/ko)。
+- 后续:产品无账户体系,AccountChip 与 `shell.iconbar.account_title` 已整体移除,
+  `account-chip-not-button.spec.tsx` 随之删除;「无账户 chip」契约改由 `icon-sidebar` 主题守护。
 
 ## P2 批次(子系统二次审计 follow-up)
 ### P2-E popout 判定收紧 — `popout-url-detection.spec.ts`

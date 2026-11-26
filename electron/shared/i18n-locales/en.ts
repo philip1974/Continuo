@@ -795,7 +795,6 @@ export const en = {
   'shell.tab.ctx.split_right': 'Split Right',
   'shell.tab.ctx.split_down': 'Split Down',
   'shell.iconbar.updates_tooltip': '{count} plugin(s) updatable',
-  'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
   // marketplace.* (topic-21)
   'marketplace.search_placeholder': 'Search plugin name / description / tag…',

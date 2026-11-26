@@ -270,16 +270,14 @@ describe('IconSidebar — updateCount 角标', () => {
   });
 });
 
-describe('IconSidebar — AccountChip', () => {
-  it('渲染 CD + tooltip(topic 49: 非交互 chip,非 button)', () => {
+describe('IconSidebar — 无账户 chip', () => {
+  it('产品无账户体系:底部不渲染虚构的账户头像 / 订阅档位,只有 Settings', () => {
     const { container } = render(<IconSidebar />);
-    // topic 49 P2-D: 账户菜单未实现前不再用 <button>(避免谎报可点);
-    // 退化为带 title tooltip 的非交互 chip。title 走 i18n,三语相同。
-    const chip = container.querySelector(
-      '[title="Continuo Dev · PRO Plan"]',
-    ) as HTMLElement;
-    expect(chip).not.toBeNull();
-    expect(chip.tagName).not.toBe('BUTTON');
-    expect(chip.textContent).toBe('CD');
+    expect(container.textContent).not.toContain('CD');
+    expect(container.querySelector('[title*="Plan"]')).toBeNull();
+    // 底部分组只剩 Settings 齿轮一个入口(无更新角标时)
+    const bottom = container.querySelector('aside')!.lastElementChild!;
+    expect(bottom.children).toHaveLength(1);
+    expect(bottom.querySelector('button[title="设置"]')).not.toBeNull();
   });
 });

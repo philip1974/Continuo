@@ -759,7 +759,6 @@ export const zh: Record<TranslationKey, string> = {
   'shell.tab.ctx.split_right': '向右拆分',
   'shell.tab.ctx.split_down': '向下拆分',
   'shell.iconbar.updates_tooltip': '{count} 个插件可更新',
-  'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
   // marketplace.*
   'marketplace.search_placeholder': '搜索插件名 / 描述 / 标签…',

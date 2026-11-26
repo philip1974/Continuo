@@ -762,7 +762,6 @@ export const ko: Record<TranslationKey, string> = {
   'shell.tab.ctx.split_right': '오른쪽으로 분할',
   'shell.tab.ctx.split_down': '아래쪽으로 분할',
   'shell.iconbar.updates_tooltip': '업데이트 가능한 플러그인 {count}개',
-  'shell.iconbar.account_title': 'Continuo Dev · PRO Plan',
 
   // marketplace.*
   'marketplace.search_placeholder': '플러그인 이름 / 설명 / 태그 검색…',

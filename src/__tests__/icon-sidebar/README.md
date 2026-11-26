@@ -1,7 +1,7 @@
 # IconSidebar(48px 竖向 Activity Bar)
 
 行为契约:**顶部 Explorer toggle(active=sidebarOpen,点击 → toggleSidebar)+ ribbon
-插件贡献按钮(有时显示分隔线);底部 Settings 齿轮(点击 → toggleSettingsPanel)+ AccountChip。
+插件贡献按钮(有时显示分隔线);底部只有 Settings 齿轮(点击 → toggleSettingsPanel);产品无账户体系,不渲染账户头像 chip。
 Marketplace 可用更新数(`useAvailableUpdates()`:已安装列表 × 远端版本现算)> 0 时,Settings 角标红圈显数(>9 显「9+」)。**
 
 ## 模块
@@ -38,7 +38,6 @@ Marketplace 可用更新数(`useAvailableUpdates()`:已安装列表 × 远端版
 - 1-9 → 渲染角标显数字
 - ≥10 → 渲染「9+」
 
-### AccountChip
+### 无账户 chip
 
-- 显示 'CD' + tooltip 'Continuo Dev · PRO Plan'
-- 点击 noop(占位)
+- 底部分组只含 Settings 入口,不显示虚构账户头像('CD')或订阅档位 tooltip

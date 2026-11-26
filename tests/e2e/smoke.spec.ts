@@ -9,7 +9,7 @@ test('app 启动后渲染基本 shell 框架', async ({ window }) => {
   // 标题栏:无工作区 + 无 active tab 时 fallback 「Continuo」
   await expect(window.locator('header').first()).toContainText('Continuo');
 
-  // 左侧 IconSidebar(48px aside):Explorer 开关 + 设置齿轮 + AccountChip
+  // 左侧 IconSidebar(48px aside):Explorer 开关 + 设置齿轮
   const iconSidebar = window.locator('aside').first();
   await expect(iconSidebar).toBeVisible();
 

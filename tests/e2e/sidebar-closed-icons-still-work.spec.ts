@@ -1,4 +1,4 @@
-// 关闭 Explorer sidebar 后,IconSidebar 其它入口仍可用/可见(齿轮 / Account chip).
+// 关闭 Explorer sidebar 后,IconSidebar 其它入口仍可用/可见(设置齿轮).
 import { test, expect } from './fixtures/electron-app';
 import type { Page } from '@playwright/test';
 import { EXPLORER_HIDE, EXPLORER_SHOW } from './helpers/explorer';
@@ -24,15 +24,4 @@ test('sidebar 关闭后,设置齿轮仍能打开 SettingsPanel', async ({ window
   await expect(window.getByRole('navigation', { name: SETTINGS_NAV })).toBeVisible({
     timeout: 10_000,
   });
-});
-
-test('sidebar 关闭后,AccountChip 仍可见', async ({ window }) => {
-  await ensureExplorerSidebarClosed(window);
-
-  const chip = window.getByTitle('Continuo Dev · PRO Plan');
-  await expect(chip).toBeVisible();
-  await expect(chip).toHaveText('CD');
-  expect(await chip.evaluate((el) => el.tagName)).not.toBe('BUTTON');
-  await expect(chip).not.toHaveAttribute('role', 'button');
-  await expect(chip).toBeVisible();
 });
