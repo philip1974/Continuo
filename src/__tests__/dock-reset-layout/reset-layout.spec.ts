@@ -89,6 +89,71 @@ describe('重置布局', () => {
     expect(api.panels.map((p) => p.id)).toEqual([editorId()]);
   });
 
+  // VSCode Reset View Locations 只动视图、不合并编辑器组:拆分出的编辑器组仍各自成组,左右分栏
+  describe('多个编辑器组(⌘\\ 拆分 / 弹到子窗 / 叠进同一 dock 组)', () => {
+    const editorPanels = (api: DockviewApi) => api.panels.filter((p) => p.view.contentComponent === 'editor');
+    const columns = (api: DockviewApi) =>
+      visibleGroupsWithPanels(api).map((g) => g.panels.map((p) => p.id).sort());
+
+    it('拆分后重置 → 两个编辑器组仍左右分栏(不叠成同组 tab),其余面板收回主编辑器组', () => {
+      const { api } = messyDock();
+      api.addPanel({
+        id: 'editor:2',
+        component: 'editor',
+        title: 'Editor',
+        position: { referencePanel: editorId(), direction: 'right' },
+      });
+
+      resetDockLayout(api);
+
+      const groups = visibleGroupsWithPanels(api);
+      expect(groups).toHaveLength(2);
+      expect(groups.every((g) => g.api.location.type === 'grid')).toBe(true);
+      // 主编辑器组在左,收着其余面板;第二个编辑器组单独在其右侧
+      const main = api.getPanel(editorId())!.group;
+      const second = api.getPanel('editor:2')!.group;
+      expect(main).not.toBe(second);
+      expect(second.panels.map((p) => p.id)).toEqual(['editor:2']);
+      expect(main.panels.map((p) => p.id).sort()).toEqual([editorId(), 'output-1', 'terminal-a', 'terminal-b'].sort());
+      expect(main.element.compareDocumentPosition(second.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(editorPanels(api)).toHaveLength(2);
+    });
+
+    it('两个编辑器面板已叠在同一 dock 组 → 重置后拆回左右分栏', () => {
+      const { api } = messyDock();
+      api.addPanel({
+        id: 'editor:2',
+        component: 'editor',
+        title: 'Editor',
+        position: { referencePanel: editorId(), direction: 'within' },
+      });
+      resetDockLayout(api);
+      expect(api.getPanel(editorId())!.group).not.toBe(api.getPanel('editor:2')!.group);
+      expect(columns(api)).toHaveLength(2);
+    });
+
+    it('popout 子窗里的编辑器组收回主窗,作为主编辑器组旁的分栏(子窗关闭)', async () => {
+      const { dock, api } = messyDock();
+      api.addPanel({
+        id: 'editor:2',
+        component: 'editor',
+        title: 'Editor',
+        position: { referencePanel: editorId(), direction: 'right' },
+      });
+      const second = api.getPanel('editor:2')!;
+      await openFakePopout(dock, 'editor:2');
+      expect(second.api.location.type).toBe('popout');
+
+      resetDockLayout(api);
+
+      expect(api.getPanel('editor:2')).toBe(second);
+      expect(second.api.location.type).toBe('grid');
+      expect(api.groups.some((g) => g.api.location.type === 'popout')).toBe(false);
+      expect(second.group.panels.map((p) => p.id)).toEqual(['editor:2']);
+      expect(columns(api)).toHaveLength(2);
+    });
+  });
+
   it('注册为命令 workbench.action.resetViewLocations(视图分类,三语标题,无默认键),执行即重置当前窗口布局', async () => {
     const spec = dockCommandSpecs().find((c) => c.id === 'workbench.action.resetViewLocations');
     expect(spec).toBeDefined();

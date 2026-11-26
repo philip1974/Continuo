@@ -79,6 +79,31 @@ describe('useDockLocaleSync', () => {
     expect(setTitle).toHaveBeenCalledWith('터미널');
   });
 
+  // 编辑器组面板(editor / editor:N)可能叠在同一 dock 组里(popout / 浮动组里拆分、拖进同组):第二个起标题带编号可区分
+  // (BDD: src/__tests__/editor-groups/ 适配点「dock 面板标题」)
+  it('编辑器组面板 editor:N → 「编辑器 N」;第一个组 editor 仍是「编辑器」;随 locale 切换', () => {
+    setLocale('zh');
+    const first = vi.fn();
+    const second = vi.fn();
+    const api = makeApi([
+      { api: { id: 'editor', title: 'Editor', setTitle: first }, params: { titleKey: 'panels.editor.title' } },
+      { api: { id: 'editor:2', title: 'Editor', setTitle: second }, params: { titleKey: 'panels.editor.title' } },
+    ]);
+    renderHook(() => useDockLocaleSync(api));
+    expect(first).toHaveBeenLastCalledWith('编辑器');
+    expect(second).toHaveBeenLastCalledWith('编辑器 2');
+    act(() => {
+      setLocale('en');
+      notifyLocaleChange();
+    });
+    expect(second).toHaveBeenLastCalledWith('Editor 2');
+    act(() => {
+      setLocale('ko');
+      notifyLocaleChange();
+    });
+    expect(second).toHaveBeenLastCalledWith('편집기 2');
+  });
+
   it('api=null → no-op', () => {
     expect(() => renderHook(() => useDockLocaleSync(null))).not.toThrow();
   });

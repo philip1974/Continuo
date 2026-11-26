@@ -227,6 +227,7 @@ export const en = {
   // panels.* (5)
   'panels.terminal.title': 'Terminal',
   'panels.editor.title': 'Editor',
+  'panels.editor.title_numbered': 'Editor {n}',
   'panels.output.title': 'Output',
   'panels.output.empty': 'No output yet.',
   'panels.settings.title': 'Settings',

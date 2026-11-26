@@ -214,6 +214,7 @@ export const zh: Record<TranslationKey, string> = {
   // panels.*
   'panels.terminal.title': '终端',
   'panels.editor.title': '编辑器',
+  'panels.editor.title_numbered': '编辑器 {n}',
   'panels.output.title': '输出',
   'panels.output.empty': '暂无输出。',
   'panels.settings.title': '设置',

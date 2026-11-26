@@ -215,6 +215,7 @@ export const ko: Record<TranslationKey, string> = {
   // panels.*
   'panels.terminal.title': '터미널',
   'panels.editor.title': '편집기',
+  'panels.editor.title_numbered': '편집기 {n}',
   'panels.output.title': '출력',
   'panels.output.empty': '아직 출력이 없습니다.',
   'panels.settings.title': '설정',
