@@ -138,6 +138,8 @@ interface MoveConfirmState {
 /** 撤销新建前的确认(新建项被改过,见 file-undo.ts);resolve 存 ref。 */
 interface UndoCreateConfirmState {
   paths: string[];
+  /** 其下未保存的编辑器数(> 0 时同删除确认给出未保存警告)。 */
+  unsaved: number;
 }
 
 /** 外部 drop 遇同名文件的待确认(resolve 存 ref,见 confirmOverwrite)。 */
@@ -408,11 +410,11 @@ export function FolderTree({ root }: { root: string }) {
   const [undoCreateConfirm, setUndoCreateConfirm] = useState<UndoCreateConfirmState | null>(null);
   const undoCreateResolveRef = useRef<((ok: boolean) => void) | null>(null);
   const confirmUndoCreate = useCallback(
-    (paths: string[]) =>
+    (paths: string[], unsaved: number) =>
       new Promise<boolean>((resolve) => {
         undoCreateResolveRef.current?.(false);
         undoCreateResolveRef.current = resolve;
-        setUndoCreateConfirm({ paths });
+        setUndoCreateConfirm({ paths, unsaved });
       }),
     [],
   );
@@ -421,6 +423,12 @@ export function FolderTree({ root }: { root: string }) {
   // 也须如此(确认后由 runTrash 接着暂停到删除完成)。
   const trashConfirmPaths = trashConfirm?.paths;
   useEffect(() => (trashConfirmPaths === undefined ? undefined : holdAutoSave(trashConfirmPaths)), [trashConfirmPaths]);
+  // 撤销新建的确认框同理(它也说未保存修改不写回磁盘)。
+  const undoCreateConfirmPaths = undoCreateConfirm?.paths;
+  useEffect(
+    () => (undoCreateConfirmPaths === undefined ? undefined : holdAutoSave(undoCreateConfirmPaths)),
+    [undoCreateConfirmPaths],
+  );
   // 根目录「重试」后焦点去向(重试按钮随加载态卸载,不处理焦点会掉到 body):成功 → 树;成功但为空 → 空态提示;
   // 仍失败 → 新的重试按钮。「显示资源管理器」/ 打开文件夹的 focusTree 请求同一套落点。
   // 用 state 不用 ref:与 setRootLoad(ROOT_LOADING) 同批提交,下方 effect 看到「有请求」时 rootLoad 必是请求之后的值;
@@ -1155,7 +1163,7 @@ export function FolderTree({ root }: { root: string }) {
       onMoved: onPathMoved,
       refreshDir: refreshParent,
       confirmUndoCreate,
-      hasUnsavedUnder: (paths) => countDirtyTabsUnder(useEditorStore.getState().tabs, paths) > 0,
+      countUnsavedUnder: (paths) => countDirtyTabsUnder(useEditorStore.getState().tabs, paths),
     }),
     [mutateDeps, treeApi, onPathsRemoved, onPathMoved, refreshParent, confirmUndoCreate],
   );
@@ -1172,7 +1180,11 @@ export function FolderTree({ root }: { root: string }) {
             notify.error(
               t(isUndo ? 'panels.explorer.undo_failed' : 'panels.explorer.redo_failed', {
                 name: basenamePreserveTrailing(o.path),
-                message: localizeErrorByCode(o.code, o.message),
+                // 目标位置被占:原因写「此位置已存在「占位项」」(文件名归被撤销的项,不是占位项)。
+                message:
+                  o.existing !== undefined
+                    ? t('panels.explorer.file_undo_target_exists', { name: basenamePreserveTrailing(o.existing) })
+                    : localizeErrorByCode(o.code, o.message),
               }),
               { code: o.code, mirror: false },
             );
@@ -1345,6 +1357,13 @@ export function FolderTree({ root }: { root: string }) {
     [root, startCreateAtFocus, refreshAllStable, runFileUndoStable],
   );
 
+  // 删除 / 撤销新建确认框的未保存警告,按数量用单 / 复数句式:只删这一个脏文件 →「该文件……其编辑器」;
+  // 多项 / 文件夹里只有 1 个脏 →「其中 1 个文件……其编辑器」;否则「其中 N 个文件……它们的编辑器」。
+  const unsavedWarning = (count: number, singleFile: boolean): string =>
+    count > 1
+      ? tt('panels.explorer.trash_confirm.unsaved', { count })
+      : tt(singleFile ? 'panels.explorer.trash_confirm.unsaved_single' : 'panels.explorer.trash_confirm.unsaved_one');
+
   // 删除确认框文案(VSCode explorer.confirmDelete):单项按文件 / 文件夹区分,多项列出名字(最多 10 个)。
   const renderTrashConfirm = () => {
     const paths = trashConfirm?.paths ?? EMPTY_PATH_LIST;
@@ -1366,12 +1385,6 @@ export function FolderTree({ root }: { root: string }) {
       title = tt('panels.explorer.trash_confirm.multiple', { count: paths.length });
       names = paths.map(basenamePreserveTrailing);
     }
-    // 未保存警告按数量用单 / 复数句式:只删这一个脏文件 →「该文件……其编辑器」;多项 / 文件夹里只有 1 个脏 →
-    //「其中 1 个文件……其编辑器」;否则「其中 N 个文件……它们的编辑器」。
-    const unsavedWarning = (count: number): string =>
-      count > 1
-        ? tt('panels.explorer.trash_confirm.unsaved', { count })
-        : tt(singleFile ? 'panels.explorer.trash_confirm.unsaved_single' : 'panels.explorer.trash_confirm.unsaved_one');
     return (
       <ConfirmDialog
         open={trashConfirm !== null}
@@ -1381,7 +1394,7 @@ export function FolderTree({ root }: { root: string }) {
             {names.length > 0 && <ConfirmNameList names={names} />}
             {trashConfirm !== null && trashConfirm.unsaved > 0 && (
               <p className="mb-2 text-fg">
-                {unsavedWarning(trashConfirm.unsaved)}
+                {unsavedWarning(trashConfirm.unsaved, singleFile)}
               </p>
             )}
             <p>{tt('panels.explorer.trash_confirm.detail')}</p>
@@ -1463,7 +1476,11 @@ export function FolderTree({ root }: { root: string }) {
   };
   const renderUndoCreateConfirm = () => {
     if (undoCreateConfirm === null) return null;
-    const names = undoCreateConfirm.paths.map(basenamePreserveTrailing);
+    const { paths, unsaved } = undoCreateConfirm;
+    const names = paths.map(basenamePreserveTrailing);
+    const singleFile =
+      paths.length === 1 &&
+      tree.getDataRef<AsyncDataLoaderDataRef<FileEntry>>().current.itemData?.[paths[0]!]?.isDirectory !== true;
     return (
       <ConfirmDialog
         open
@@ -1475,6 +1492,7 @@ export function FolderTree({ root }: { root: string }) {
         description={
           <>
             {names.length > 1 && <ConfirmNameList names={names} />}
+            {unsaved > 0 && <p className="mb-2 text-fg">{unsavedWarning(unsaved, singleFile)}</p>}
             <p>{tt('panels.explorer.trash_confirm.detail')}</p>
           </>
         }

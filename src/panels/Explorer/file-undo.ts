@@ -34,7 +34,8 @@ export type FileUndoOutcome =
   | { status: 'empty' | 'busy' | 'cancelled' }
   /** reveal:要在树里定位的项(null = 不定位)。 */
   | { status: 'done'; reveal: string | null }
-  | { status: 'failed'; path: string; code: string; message: string };
+  /** path:本次撤销 / 重做的项;existing:目标位置已被它占用(FS_EEXIST,提示写「此位置已存在「…」」)。 */
+  | { status: 'failed'; path: string; code: string; message: string; existing?: string };
 
 type UndoFs = Pick<FsApi, 'stat' | 'move' | 'rename' | 'createFile' | 'createDir' | 'copy'>;
 
@@ -45,10 +46,10 @@ export interface FileUndoDeps {
   /** 路径已移走(editor tab / 展开集合 / 剪贴板跟随)。 */
   onMoved: (from: string, to: string) => void;
   refreshDir: (dir: string) => void;
-  /** 撤销新建前确认(新建项被改过);true = 继续。 */
-  confirmUndoCreate: (paths: string[]) => Promise<boolean>;
-  /** 这些路径下有未保存的编辑器。 */
-  hasUnsavedUnder: (paths: readonly string[]) => boolean;
+  /** 撤销新建前确认(新建项被改过);unsaved = 其下未保存的编辑器数(确认框同删除确认给出警告);true = 继续。 */
+  confirmUndoCreate: (paths: string[], unsaved: number) => Promise<boolean>;
+  /** 这些路径下未保存的编辑器数。 */
+  countUnsavedUnder: (paths: readonly string[]) => number;
 }
 
 interface Stacks {
@@ -121,7 +122,7 @@ async function expectFree(fs: UndoFs, path: string, sameAs?: FsFileStat): Promis
   const p = await probe(fs, path);
   if (p !== 'missing') {
     if ('status' in p) return p;
-    if (!(sameAs && sameAs.ino === p.st.ino)) return failure(path, ERROR_CODES.FS_EEXIST);
+    if (!(sameAs && sameAs.ino === p.st.ino)) return { ...failure(path, ERROR_CODES.FS_EEXIST), existing: path };
   }
   const parent = await expectExists(fs, dirname(path));
   return 'status' in parent ? parent : null;
@@ -136,7 +137,8 @@ async function runMoves(pairs: readonly MovePair[], forward: boolean, deps: File
     if (isFailure(st)) return st;
     const sameDir = pathEquals(dirname(src), dirname(dst));
     const busy = await expectFree(deps.fs, dst, sameDir ? st : undefined);
-    if (busy) return busy;
+    // 目标被占:失败归到本次撤销 / 重做的项(src),占位的路径放 existing。
+    if (busy) return busy.existing !== undefined ? { ...busy, path: src } : busy;
   }
   try {
     for (const { src, dst } of steps) {
@@ -157,13 +159,14 @@ async function runMoves(pairs: readonly MovePair[], forward: boolean, deps: File
 
 async function undoCreate(root: string, op: Extract<FileUndoOp, { kind: 'create' }>, deps: FileUndoDeps): Promise<FileUndoOutcome> {
   const paths = op.entries.map((e) => e.path);
-  let modified = deps.hasUnsavedUnder(paths);
+  const unsaved = deps.countUnsavedUnder(paths);
+  let modified = unsaved > 0;
   for (const e of op.entries) {
     const st = await expectExists(deps.fs, e.path);
     if (isFailure(st)) return st;
     if (!e.baseline || e.baseline.mtimeMs !== st.mtimeMs || e.baseline.size !== st.size) modified = true;
   }
-  if (modified && !(await deps.confirmUndoCreate(paths))) return { status: 'cancelled' };
+  if (modified && !(await deps.confirmUndoCreate(paths, unsaved))) return { status: 'cancelled' };
   const r = await deps.trash(paths);
   if (r.failure) return failure(r.failure.path, r.failure.code, r.failure.message);
   const parent = dirname(paths[0]!);

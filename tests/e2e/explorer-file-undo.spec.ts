@@ -119,3 +119,50 @@ test('新建后文件被改过 → ⌘Z 先确认;取消则不删', async ({ win
   await expect(dialog).toHaveCount(0);
   expect(await exists(p)).toBe(true);
 });
+
+test('撤销改名时原名已被外部占用:提示写被撤销的项与「此位置已存在「原名」」,不动磁盘', async ({
+  window,
+  workspaceRoot,
+}) => {
+  const src = rowOf(window, path.join(workspaceRoot, 'src'));
+  await expect(src).toBeVisible({ timeout: 10_000 });
+  await src.click();
+  const aPath = path.join(workspaceRoot, 'src/a.ts');
+  const fivePath = path.join(workspaceRoot, 'src/five.ts');
+  const a = rowOf(window, aPath);
+  await a.click();
+  await a.press('F2');
+  const input = window.locator('[role=treeitem] input');
+  await expect(input).toBeFocused({ timeout: 5_000 });
+  await input.fill('five.ts');
+  await input.press('Enter');
+  await expect.poll(() => exists(fivePath)).toBe(true);
+
+  await writeFile(aPath, 'external\n');
+  const five = rowOf(window, fivePath);
+  await five.click();
+  await five.press(UNDO);
+  const toast = window.locator('.toast[data-level="error"]');
+  await expect(toast).toContainText(/[“「]five\.ts[”」]/, { timeout: 5_000 });
+  await expect(toast).toContainText(
+    /(此位置已存在「a\.ts」|A file or folder “a\.ts” already exists at this location|이 위치에 “a\.ts”이\(가\) 이미 있습니다)/,
+  );
+  expect(await exists(fivePath)).toBe(true);
+});
+
+test('撤销新建时文件有未保存的编辑器:确认框同删除确认给出未保存警告', async ({ window, workspaceRoot }) => {
+  const p = await createFileInSrc(window, workspaceRoot, 'dirty.ts');
+  await window.locator('.cm-content').first().click();
+  await window.keyboard.type('let x = 1;');
+  const row = rowOf(window, p);
+  await row.click();
+  await row.press(UNDO);
+  const dialog = window.getByRole('alertdialog');
+  await expect(dialog).toContainText('dirty.ts');
+  await expect(dialog).toContainText(
+    /(该文件有未保存的更改|This file has unsaved changes|이 파일에 저장되지 않은 변경 내용이 있습니다)/,
+  );
+  await dialog.getByRole('button', { name: /^(取消|Cancel|취소)$/ }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await exists(p)).toBe(true);
+});

@@ -72,7 +72,7 @@ function makeWorld(initial: Record<string, 'file' | 'dir'>) {
   };
   const moved: Array<[string, string]> = [];
   const refreshed = new Set<string>();
-  const confirm = vi.fn(async (_paths: string[]) => true);
+  const confirm = vi.fn(async (_paths: string[], _unsaved: number) => true);
   const trash = vi.fn(async (paths: string[]) => {
     for (const p of paths) for (const k of [...files.keys()]) if (k === p || k.startsWith(`${p}/`)) files.delete(k);
     return { removed: paths };
@@ -83,7 +83,7 @@ function makeWorld(initial: Record<string, 'file' | 'dir'>) {
     onMoved: (from, to) => moved.push([from, to]),
     refreshDir: (d) => refreshed.add(d),
     confirmUndoCreate: confirm,
-    hasUnsavedUnder: () => false,
+    countUnsavedUnder: () => 0,
   };
   return { files, has, put, fs, deps, moved, refreshed, confirm, trash };
 }
@@ -129,10 +129,16 @@ describe('move(改名 / 移动)撤销与重做', () => {
     expect([...w.refreshed].sort()).toEqual(['/ws', '/ws/d']);
   });
 
-  it('原位置已被占用 → 不动磁盘,失败 FS_EEXIST,操作作废', async () => {
+  it('原位置已被占用 → 不动磁盘,失败 FS_EEXIST(path = 被撤销的项,existing = 占位的路径),操作作废', async () => {
     const w = makeWorld({ '/ws/a.txt': 'file', '/ws/b.txt': 'file' });
     recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a.txt', to: '/ws/b.txt' }] }, w.deps.fs);
-    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'failed', code: 'FS_EEXIST', path: '/ws/a.txt' });
+    // 提示写「无法撤销对「b.txt」的文件操作:此位置已存在「a.txt」」,不是对占位文件 a.txt 的操作
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({
+      status: 'failed',
+      code: 'FS_EEXIST',
+      path: '/ws/b.txt',
+      existing: '/ws/a.txt',
+    });
     expect(w.fs.rename).not.toHaveBeenCalled();
     expect(w.fs.move).not.toHaveBeenCalled();
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
@@ -194,19 +200,20 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
     w.files.get('/ws/n.txt')!.size = 42;
     w.confirm.mockResolvedValueOnce(false);
     expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'cancelled' });
-    expect(w.confirm).toHaveBeenCalledWith(['/ws/n.txt']);
+    expect(w.confirm).toHaveBeenCalledWith(['/ws/n.txt'], 0);
     expect(w.trash).not.toHaveBeenCalled();
     // 仍可再次撤销(这次确认)
     expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done' });
     expect(w.has('/ws/n.txt')).toBe(false);
   });
 
-  it('有未保存的编辑器 → 先确认', async () => {
+  it('有未保存的编辑器 → 先确认,并把未保存编辑器数交给确认框(同删除确认的未保存警告)', async () => {
     const w = makeWorld({});
     await createAndRecord(w, '/ws/n.txt', 'file');
-    w.deps.hasUnsavedUnder = (paths) => paths.includes('/ws/n.txt');
+    w.deps.countUnsavedUnder = (paths) => (paths.includes('/ws/n.txt') ? 1 : 0);
     await undoFileOp(ROOT, w.deps);
     expect(w.confirm).toHaveBeenCalledTimes(1);
+    expect(w.confirm).toHaveBeenCalledWith(['/ws/n.txt'], 1);
   });
 
   it('新建项已不存在 → 失败 FS_NOT_FOUND,不调删除', async () => {
@@ -228,7 +235,12 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
 
     await undoFileOp(ROOT, w.deps);
     w.put('/ws/a copy.txt', false);
-    expect(await redoFileOp(ROOT, w.deps)).toMatchObject({ status: 'failed', code: 'FS_EEXIST' });
+    expect(await redoFileOp(ROOT, w.deps)).toMatchObject({
+      status: 'failed',
+      code: 'FS_EEXIST',
+      path: '/ws/a copy.txt',
+      existing: '/ws/a copy.txt',
+    });
     expect(w.fs.copy).toHaveBeenCalledTimes(1);
   });
 

@@ -446,6 +446,7 @@ export const en = {
   'panels.explorer.rename_exists': 'A file or folder “{name}” already exists at this location. Please choose a different name.',
   'panels.explorer.undo_failed': 'Could not undo the file operation on “{name}”: {message}',
   'panels.explorer.redo_failed': 'Could not redo the file operation on “{name}”: {message}',
+  'panels.explorer.file_undo_target_exists': 'A file or folder “{name}” already exists at this location',
   'panels.explorer.undo_create_confirm.single': '“{name}” has changed since it was created. Undo creating it and move it to the Trash?',
   'panels.explorer.undo_create_confirm.multiple': 'The following {count} items have changed since they were created. Undo creating them and move them to the Trash?',
   'panels.explorer.rename_empty': 'A file or folder name must be provided.',
