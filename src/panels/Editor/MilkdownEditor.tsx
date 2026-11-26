@@ -907,7 +907,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
       const position = positionRef.current;
       if (!el || !position || !useEditorStore.getState().tabs?.some((t) => t.id === tabId)) return;
       const anchor = position.anchor(el);
-      if (anchor) saveMarkdownModeAnchor(tabId, { mode: viewMode, ...anchor });
+      if (anchor) saveMarkdownModeAnchor(tabId, { mode: viewMode, ...anchor }, groupId);
     },
     // tabId / 模式挂载时取定(父按 tab id + 模式换 key 重挂)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -930,7 +930,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         setMarkdownFindQuery(view, { term: findTermRef.current, ...findOptionsRef.current }, { select: false });
       }
       const el = wrapperRef.current;
-      const anchor = takeMarkdownModeAnchor(tabId, viewMode);
+      const anchor = takeMarkdownModeAnchor(tabId, viewMode, groupId);
       // 恢复期间(到下一帧补齐为止)的滚动是中间值(内容尚未撑开被夹小等),不记进缓存,免得覆盖要恢复的值
       if (el && anchor) {
         restoringScrollRef.current = true;
@@ -943,7 +943,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
           restoringScrollRef.current = false;
         });
       } else {
-        const top = markdownScrollTopOf(tabId);
+        const top = markdownScrollTopOf(tabId, groupId);
         if (el && top !== undefined) {
           restoringScrollRef.current = true;
           el.scrollTop = top;
@@ -968,9 +968,9 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   );
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
-      if (!restoringScrollRef.current) saveMarkdownScrollTop(tabId, e.currentTarget.scrollTop);
+      if (!restoringScrollRef.current) saveMarkdownScrollTop(tabId, e.currentTarget.scrollTop, groupId);
     },
-    [tabId],
+    [tabId, groupId],
   );
 
   // ref 跟踪最新 onLinkClick:外层 click handler 不重建,内部读最新值。

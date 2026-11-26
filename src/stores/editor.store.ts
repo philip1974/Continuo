@@ -20,6 +20,7 @@ import {
 } from '../../electron/shared/explorer-persistence-schema';
 import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
 import {
+  dropEditorViewStatesOfGroups,
   persistedEditorViewStateOf,
   renameEditorViewStates,
   retainEditorViewStates,
@@ -704,7 +705,8 @@ type EditorState = {
   acceptUnsafeEdit: (id: string) => void;
   /** 较大的 Markdown 用户手动选了编辑 / 预览:该 tab 按所选模式渲染(见 EditorTab.milkdownLargeAccepted)。 */
   acceptLargeMilkdown: (id: string) => void;
-  registerView: (tabId: string, view: EditorView) => void;
+  /** 登记 tab 在组 groupId(缺省第一个组)里挂着的 CodeMirror 视图。 */
+  registerView: (tabId: string, view: EditorView, groupId?: string) => void;
   unregisterView: (tabId: string, expectedView: EditorView) => void;
   waitForViewRef: (
     tabId: string,
@@ -712,8 +714,26 @@ type EditorState = {
   ) => Promise<EditorView | null>;
 };
 
-// 每个文档仍挂着的 CodeMirror 视图(按登记顺序;同一文档在多个编辑器组各有一个)。viewRefs 指向最近登记的那个。
-const liveViews = new Map<string, EditorView[]>();
+// 每个文档仍挂着的 CodeMirror 视图及其所在编辑器组(按登记顺序;同一文档在多个编辑器组各有一个)。viewRefs 指向最近
+// 登记的那个;按组取视图(视图状态按组 + 文件保存,BDD: src/__tests__/editor-view-state-groups/)用 liveEditorViewOf。
+interface LiveView {
+  readonly view: EditorView;
+  readonly groupId: string;
+}
+const liveViews = new Map<string, LiveView[]>();
+
+/** tab 在组 groupId 里挂着的 CodeMirror 视图(同组多个时取最近登记的)。 */
+export function liveEditorViewOf(tabId: string, groupId: string): EditorView | undefined {
+  const stack = liveViews.get(tabId);
+  if (!stack) return undefined;
+  for (let i = stack.length - 1; i >= 0; i--) if (stack[i]!.groupId === groupId) return stack[i]!.view;
+  return undefined;
+}
+
+/** tab 在各组挂着的 CodeMirror 视图(按登记顺序)。 */
+export function liveEditorViewsOf(tabId: string): readonly LiveView[] {
+  return liveViews.get(tabId) ?? [];
+}
 
 // perf P12:getStateAfter* 返回的新状态——tabs 引用变化(增删/改名)即 chrome 变,
 // bump chromeVersion;tabs 与 active 都未变时返回原 state,避免 no-op action 通知订阅者。
@@ -961,7 +981,7 @@ function groupRemovalMoves(s: Pick<EditorState, 'tabs' | 'groups'>, g: EditorGro
  * 用户关闭组 groupId 里的 tab(按关闭顺序)→ 各入最近关闭栈:路径、组、关闭时在组内的位置(按逐个关闭推算)、视图状态摘要。
  * 插件经 SDK 打开的 tab 不记(同会话快照:路径受主进程内存记录保护,不按路径重新读)。BDD: src/__tests__/editor-reopen-closed/
  */
-function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups' | 'viewRefs'>, groupId: string, closing: readonly string[]): void {
+function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: string, closing: readonly string[]): void {
   const order = groupTabsOf(s, groupId).map((t) => t.id);
   for (const id of closing) {
     const index = order.indexOf(id);
@@ -973,7 +993,7 @@ function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups' | 'viewRefs'
       path: tab.filePath,
       groupId,
       index,
-      viewState: persistedEditorViewStateOf(id, s.viewRefs.get(id)),
+      viewState: persistedEditorViewStateOf(id, liveEditorViewOf(id, groupId), groupId),
     });
   }
 }
@@ -1298,14 +1318,14 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
   // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃。
   // 编辑器视图状态(撤销历史 / 光标 / 滚动)随 tab 迁到新 id(BDD: src/__tests__/editor-view-state/)。
   renamePath: (oldPath, newPath) => {
-    const { tabs, viewRefs } = get();
+    const { tabs } = get();
     const renamed = getStateAfterRenamingPath(tabs, null, oldPath, newPath).tabs;
     if (renamed !== tabs) {
       const pairs: Array<readonly [string, string]> = [];
       for (let i = 0; i < tabs.length; i++) {
         if (tabs[i]!.id !== renamed[i]!.id) pairs.push([tabs[i]!.id, renamed[i]!.id]);
       }
-      renameEditorViewStates(pairs, (id) => viewRefs.get(id));
+      renameEditorViewStates(pairs, liveEditorViewsOf);
     }
     // 最近关闭栈里的旧路径同前缀改写(⇧⌘T 打开新位置)
     rewriteRecentlyClosedEditors((p) => rewriteMovedPath(p, oldPath, newPath));
@@ -1463,9 +1483,9 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       return replaceTabBumpingChrome(s, idx, { ...s.tabs[idx]!, milkdownLargeAccepted: true });
     }),
 
-  registerView: (tabId, view) => {
+  registerView: (tabId, view, groupId = PRIMARY_EDITOR_GROUP_ID) => {
     const stack = liveViews.get(tabId) ?? [];
-    if (!stack.includes(view)) liveViews.set(tabId, [...stack, view]);
+    if (!stack.some((l) => l.view === view)) liveViews.set(tabId, [...stack, { view, groupId }]);
     set((s) => {
       if (s.viewRefs.get(tabId) === view) return s;
       const viewRefs = new Map(s.viewRefs);
@@ -1475,14 +1495,14 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
   },
 
   unregisterView: (tabId, expectedView) => {
-    const rest = (liveViews.get(tabId) ?? []).filter((v) => v !== expectedView);
+    const rest = (liveViews.get(tabId) ?? []).filter((l) => l.view !== expectedView);
     if (rest.length > 0) liveViews.set(tabId, rest);
     else liveViews.delete(tabId);
     set((s) => {
       if (s.viewRefs.get(tabId) !== expectedView) return s;
       const viewRefs = new Map(s.viewRefs);
       // 同一文档在另一编辑器组还有视图 → 改指向它(最近登记的),不让仍挂着的视图从登记里消失
-      const fallback = rest[rest.length - 1];
+      const fallback = rest[rest.length - 1]?.view;
       if (fallback) viewRefs.set(tabId, fallback);
       else viewRefs.delete(tabId);
       return { viewRefs };
@@ -1520,7 +1540,14 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
 
 // tab 关闭 / 移除(close / 删除路径 / 切 root)后丢弃其编辑器视图状态。tab 增删改名必 bump chromeVersion,
 // 只在它变化时比对(正文输入不触发)。BDD: src/__tests__/editor-view-state/
+// 编辑器组关闭(含拆分组收拢回单组)后丢弃该组的视图状态;只丢「此前在、现在不在」的组 —— 会话恢复时为尚未建出的组
+// 回填的状态不受影响。BDD: src/__tests__/editor-view-state-groups/
 useEditorStore.subscribe((s, prev) => {
+  if (s.groups !== prev.groups) {
+    const now = new Set(s.groups.map((g) => g.id));
+    const gone = prev.groups.filter((g) => !now.has(g.id)).map((g) => g.id);
+    if (gone.length > 0) dropEditorViewStatesOfGroups((id) => gone.includes(id));
+  }
   if (s.chromeVersion === prev.chromeVersion) return;
   const open = new Set<string>();
   for (const t of s.tabs) open.add(t.id);

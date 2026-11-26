@@ -106,7 +106,7 @@ describe('锚点存取(editor-view-state-cache)', () => {
 
   it('重命名跟随新 id;关闭 tab 丢弃', () => {
     saveMarkdownModeAnchor(TAB, { mode: 'edit', topLine: 7 });
-    renameEditorViewStates([[TAB, '/w/x.md']], () => undefined);
+    renameEditorViewStates([[TAB, '/w/x.md']], () => []);
     expect(takeMarkdownModeAnchor('/w/x.md', 'source')).toEqual({ mode: 'edit', topLine: 7 });
     saveMarkdownModeAnchor('/w/x.md', { mode: 'edit', topLine: 7 });
     retainEditorViewStates(() => false);

@@ -61,14 +61,26 @@ export const EDITOR_VIEW_STATES_MAX = 256;
 export const EDITOR_VIEW_NUMBER_MAX = 2_147_483_647;
 const viewInt = (min: number): z.ZodNumber => z.number().int().min(min).max(EDITOR_VIEW_NUMBER_MAX);
 const viewScroll = (): z.ZodNumber => z.number().min(0).max(EDITOR_VIEW_NUMBER_MAX);
+/** 每个条目的折叠区域条数上限(运行时取折叠区域时同守)。 */
+export const EDITOR_VIEW_FOLDS_MAX = 500;
 
 const EditorViewStateEntrySchema = z
   .object({
     path: pathStr(),
+    /**
+     * 所属编辑器组(同一文件在多个组各一条,VSCode 按组 + 文件保存视图状态)。只在多于一个组时写;缺省 = 各组的回退值
+     *(旧数据 / 单组)。BDD: src/__tests__/editor-view-state-groups/
+     */
+    group: z.string().max(32).regex(EDITOR_GROUP_ID_RE).optional(),
     /** CodeMirror 主选区(文档偏移;恢复时收进文档范围)。 */
     selection: z.object({ anchor: viewInt(0), head: viewInt(0) }).strict().optional(),
     /** CodeMirror 顶部可见行(1 起)。 */
     topLine: viewInt(1).optional(),
+    /** CodeMirror 折叠区域(文档偏移;恢复时只折叠仍可原样折叠的)。 */
+    folds: z
+      .array(z.object({ from: viewInt(0), to: viewInt(0) }).strict())
+      .max(EDITOR_VIEW_FOLDS_MAX)
+      .optional(),
     /** Markdown(Milkdown 编辑 / 预览)滚动位置。 */
     scrollTop: viewScroll().optional(),
     /** 图片预览:'fit' 或相对原始尺寸的比例,及滚动位置。 */

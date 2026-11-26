@@ -9,7 +9,7 @@ import { focusPanelContent } from '@/shell/dock/panel-focus';
 import { mainEditorGroupOrder } from '@/shell/dock/editor-group-order';
 import { editorGroupInDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
-import { editorGroupIdsOf, groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
+import { editorGroupIdsOf, groupActiveTabIdOf, liveEditorViewOf, useEditorStore } from '@/stores/editor.store';
 import { tWithFallback } from '@/i18n/translate';
 import { nextEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { saveCodeEditorViewState, snapshotCodeEditorView } from './editor-view-state-cache';
@@ -48,10 +48,10 @@ export function splitEditor(direction: SplitDirection, opts: SplitEditorOptions 
   if (source === undefined || !sourcePanel) return false;
   const tabId = opts.tabId === undefined ? groupActiveTabIdOf(store, source) : opts.tabId;
   const newId = nextEditorGroupId([...editorGroupIdsOf(store), ...api.panels.map((p) => p.id)]);
-  // 新组的视图从源视图的当前状态起步(VSCode 拆分复制视图状态:光标 / 滚动 / 撤销历史):源 CodeMirror 视图还挂着,
-  // 先把它的状态存进按文档共享的视图状态缓存,新视图挂载时取用。
-  const live = tabId === null ? undefined : store.viewRefs.get(tabId);
-  if (tabId !== null && live) saveCodeEditorViewState(tabId, snapshotCodeEditorView(live));
+  // 新组的视图从源组视图的当前状态起步(VSCode 拆分复制视图状态:光标 / 滚动 / 折叠 / 撤销历史):源组的 CodeMirror 视图
+  // 还挂着,先把它的状态存成新组的视图状态,新视图挂载时取用(视图状态按组 + 文件;BDD: src/__tests__/editor-view-state-groups/)。
+  const live = tabId === null ? undefined : liveEditorViewOf(tabId, source);
+  if (tabId !== null && live) saveCodeEditorViewState(tabId, snapshotCodeEditorView(live), newId);
   if (!store.splitGroup(source, newId, tabId)) return false;
   const options = {
     id: newId,

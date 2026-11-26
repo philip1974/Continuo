@@ -102,16 +102,15 @@ async function reopenEntry(entry: RecentlyClosedEditor, deps: EditorFileDeps, do
     latest = my === getUserActivationGen();
     if (openInTargetGroup(entry, doc)) return false;
     tab = findEditorFileTabByPath(store.getState().tabs, entry.path);
-    if (!tab) {
-      tab = createTab(entry.path, r.data, r.realPath);
-      if (entry.viewState) seedPersistedEditorViewState(tab.id, entry.viewState);
-    }
+    if (!tab) tab = createTab(entry.path, r.data, r.realPath);
   }
   const id = tab.id;
   const target = targetOf(entry, doc);
   // 读盘期间用户已切走(只在后台插回)→ 不为此新建组(会抢激活),落到活动组
   const created = 'groupId' in target || !latest ? null : createGroupIn(target.createIn);
   const groupId = 'groupId' in target ? target.groupId : (created ?? useEditorStore.getState().activeGroupId);
+  // 关闭时的视图状态回填到重新打开它的组(视图状态按组 + 文件,不影响该文件在别的组里的视图;BDD: src/__tests__/editor-view-state-groups/)
+  if (entry.viewState) seedPersistedEditorViewState(id, entry.viewState, groupId);
   const where = { groupId, index: entry.index };
   store.getState().openTab(tab, latest ? where : { ...where, activate: false, requestFocus: false });
   // openTab 可能拒开(tab 数 / 路径长度上限)

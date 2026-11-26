@@ -22,8 +22,10 @@ editor?: {
   mode?: 'edit' | 'source' | 'preview';
   viewStates?: Array<{               // ≤ EDITOR_VIEW_STATES_MAX(256)条,只含打开中的 file tab
     path: string;
+    group?: string;                  // 编辑器组 id;多于一个组时按组各一条(见 editor-view-state-groups)
     selection?: { anchor: int ≥ 0; head: int ≥ 0 };
     topLine?: int ≥ 1;
+    folds?: Array<{ from: int ≥ 0; to: int ≥ 0 }>;  // ≤ 500 条折叠区域(见 editor-view-state-groups)
     scrollTop?: number ≥ 0;
     image?: { scale: 'fit' | 0.1–20; scrollLeft: ≥ 0; scrollTop: ≥ 0 };
   }>;
@@ -32,7 +34,7 @@ editor?: {
 
 - 两个字段都是 optional:旧快照照常读;无状态 / 默认模式时不写(旧形态不变)。
 - 读(`ExplorerSchemaV3`)与写(`ExplorerWritableSnapshotSchema`)共用同一个 EditorSessionSchema;条目 strict、数值有上下限。
-- 写端(`collectEditorViewStates`)守同一上限:按 tab 顺序至多 256 条,数值收进 schema 范围、非有限值丢弃 —— 运行时状态不会让
+- 写端(`collectEditorViewStates`)守同一上限:按组顺序、组内 tab 顺序至多 256 条,数值收进 schema 范围、非有限值丢弃 —— 运行时状态不会让
   `explorer:write` 拒整份快照。
 
 ## 行为(`editor-state-restart.spec.tsx`)

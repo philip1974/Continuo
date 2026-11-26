@@ -40,7 +40,12 @@ import { rebindCodeMirrorRoots } from './codemirror-root';
 import { codeEditorTheme } from './code-editor-theme';
 import { codeMirrorFind } from './codemirror-find';
 import {
+  fallbackCodeEditorSeed,
   markEditorViewStateChanged,
+  noteCodeEditorScroll,
+  otherGroupCodeEditorViewState,
+  rememberInitialCodeEditorScroll,
+  restorableFoldEffects,
   saveCodeEditorViewState,
   saveMarkdownModeAnchor,
   snapshotCodeEditorView,
@@ -48,6 +53,7 @@ import {
   takeCodeEditorViewState,
   takeMarkdownModeAnchor,
   type CodeEditorViewState,
+  type FoldRange,
   type PersistedCodeViewState,
 } from './editor-view-state-cache';
 import { registerEditorFocus } from './editor-focus-registry';
@@ -224,15 +230,20 @@ function restoreState(
   });
 }
 
-/** 上次会话快照的选区 → 初始状态(选区收进当前文档范围;文档以换行规范化后的长度为准)。 */
+/**
+ * 上次会话快照的选区 / 折叠 → 初始状态(选区收进当前文档范围;文档以换行规范化后的长度为准;折叠只恢复仍可原样折叠的,
+ * 见 restorableFoldEffects)。
+ */
 function seededState(seed: PersistedCodeViewState, value: string, extensions: Extension[]): EditorState {
   const doc = EditorState.create({ doc: value }).doc;
   const len = doc.length;
-  return EditorState.create({
+  const state = EditorState.create({
     doc,
     selection: { anchor: Math.min(seed.anchor, len), head: Math.min(seed.head, len) },
     extensions,
   });
+  const effects = restorableFoldEffects(state, seed.folds);
+  return effects.length > 0 ? state.update({ effects }).state : state;
 }
 
 export function CodeEditor({
@@ -273,6 +284,8 @@ export function CodeEditor({
   // markdown() 每次调用新建 Language,重配置会让整篇从 0 重新解析(每次切到 .md tab 首屏解析两遍)。
   const appliedLangKeyRef = useRef<string | null>(null);
   const appliedThemeRef = useRef<string | null>(null);
+  // 上次会话的折叠区域,语言包尚未加载(创建时无语法树、无从校验)→ 加载完再恢复一次
+  const pendingFoldsRef = useRef<readonly FoldRange[] | null>(null);
 
   // 语言表里的语言包尚未加载 → 先纯文本,加载完再换上。加载期间改名 / 换文件 / 卸载:语言 key 或 view 已变 →
   // 旧结果丢弃(不套到新文件上)。加载失败保持纯文本。
@@ -284,6 +297,10 @@ export function CodeEditor({
       (support) => {
         if (viewRef.current !== view || appliedLangKeyRef.current !== key) return;
         view.dispatch({ effects: langCompartment.current.reconfigure(support) });
+        const folds = pendingFoldsRef.current;
+        pendingFoldsRef.current = null;
+        const effects = restorableFoldEffects(view.state, folds ?? undefined);
+        if (effects.length > 0) view.dispatch({ effects });
       },
       () => {},
     );
@@ -330,7 +347,12 @@ export function CodeEditor({
         // 选区变化 → 会话快照的视图状态可能变了(关窗 / 退出时重取;BDD: src/__tests__/editor-state-restart/)
         if (update.selectionSet) markEditorViewStateChanged();
       }),
-      EditorView.domEventObservers({ scroll: markEditorViewStateChanged }),
+      EditorView.domEventObservers({
+        scroll: (_e, v) => {
+          markEditorViewStateChanged();
+          noteCodeEditorScroll(v);
+        },
+      }),
       EditorView.theme({
         // fontSize 走 inherit 从外层 div 继承,改 settings 字号无需重建 EditorView。
         // CodeMirror theme 注入的 stylesheet 中 var() 不会响应外部容器 inline
@@ -353,14 +375,19 @@ export function CodeEditor({
       }),
     ];
 
-    // 切 tab / 重命名 / 切模式后重挂:取回该 tab 上次卸载时的视图状态(BDD: src/__tests__/editor-view-state/)。
-    const saved = takeCodeEditorViewState(tabId);
+    // 视图状态按「本组 + 该 tab」取(同一文件在两个组各自一份;BDD: src/__tests__/editor-view-state-groups/),依次:
+    //   本组本会话上次卸载时的状态(切 tab / 重命名 / 切模式后重挂;BDD: src/__tests__/editor-view-state/)
+    //   → 上次会话留给本组的摘要(跨重启首次挂载;越界收进文档范围;BDD: src/__tests__/editor-state-restart/)
+    //   → 别的组本会话的状态(文件新挂进本组,如把 tab 拖到另一组)→ 上次会话不分组的摘要(旧数据 / 单组)。
+    const own = takeCodeEditorViewState(tabId, groupId);
+    const ownSeed = own ? undefined : takeCodeEditorSeed(tabId, groupId);
+    const saved = own ?? (ownSeed ? undefined : otherGroupCodeEditorViewState(tabId, groupId));
+    const seed = ownSeed ?? (saved ? undefined : fallbackCodeEditorSeed(tabId));
     // Markdown 源码视图:刚从编辑 / 预览切过来 → 滚到切换前顶部可见的源码行,光标带到原光标行(BDD: src/__tests__/markdown-mode-position/)。
-    const anchor = forceLanguage === 'markdown' ? takeMarkdownModeAnchor(tabId, 'source') : undefined;
-    // 本会话首次挂载(无缓存):用上次会话快照留下的选区 / 顶部可见行(跨重启;越界收进文档范围)。
-    // BDD: src/__tests__/editor-state-restart/
-    const seed = saved ? undefined : takeCodeEditorSeed(tabId);
+    const anchor = forceLanguage === 'markdown' ? takeMarkdownModeAnchor(tabId, 'source', groupId) : undefined;
     const restored = seed ? seededState(seed, value, extensions) : restoreState(saved, value, eolRef.current, extensions);
+    const pendingLanguage = forceLanguage ? null : languageDescriptionFor(fileName);
+    if (seed?.folds && pendingLanguage && !pendingLanguage.support) pendingFoldsRef.current = seed.folds;
     const seeded = seed && !anchor ? applySourceModeAnchor(restored, { mode: 'edit', topLine: seed.topLine }) : null;
     const anchored = anchor ? applySourceModeAnchor(restored, anchor) : seeded;
     const scrollTo = anchored?.scrollTo ?? saved?.scroll;
@@ -369,8 +396,10 @@ export function CodeEditor({
       parent: containerRef.current,
       ...(scrollTo ? { scrollTo } : {}),
     });
+    // 初始滚动要等视图有高度才应用;在那之前(所在面板隐藏 / 尚未显示)的快照按它记,不记成「滚在顶部」
+    if (scrollTo) rememberInitialCodeEditorScroll(view, scrollTo, anchor?.topLine ?? seed?.topLine ?? saved?.topLine ?? 1);
     viewRef.current = view;
-    useEditorStore.getState().registerView(tabId, view);
+    useEditorStore.getState().registerView(tabId, view, groupId);
     const unregisterFocus = registerEditorFocus(tabId, () => view.focus(), groupId);
     // popout 弹出 / 收回只移 DOM:按所在文档重绑 root(创建时面板 DOM 可能已不在主窗,先对齐一次)。
     const rebindRoot = () => rebindCodeMirrorRoots(view.dom);
@@ -396,9 +425,9 @@ export function CodeEditor({
       if (!view) return;
       const tabs = useEditorStore.getState().tabs;
       if (!tabs?.some((t) => t.id === tabId)) return;
-      saveCodeEditorViewState(tabId, snapshotCodeEditorView(view));
+      saveCodeEditorViewState(tabId, snapshotCodeEditorView(view), groupId);
       // 切到编辑 / 预览时据此定位(切 tab 时也记,回到源码模式本身不取用)
-      if (forceLanguage === 'markdown') saveMarkdownModeAnchor(tabId, sourceModeAnchor(view));
+      if (forceLanguage === 'markdown') saveMarkdownModeAnchor(tabId, sourceModeAnchor(view), groupId);
     },
     // tabId 挂载时取定(父按 tab id 换 key 重挂)
     // eslint-disable-next-line react-hooks/exhaustive-deps

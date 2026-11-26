@@ -7,7 +7,7 @@ Continuo 的编辑器按 tab 卸载 / 重挂(EditorPanel 的 key),视图状态�
 
 | 文件 | 职责 |
 |---|---|
-| `src/panels/Editor/editor-view-state-cache.ts` | 按 tab id 存 CodeMirror 视图状态 / Markdown 滚动位置 / 切模式锚点;LRU 上限 50;重命名迁移、关闭删除 |
+| `src/panels/Editor/editor-view-state-cache.ts` | 按「编辑器组 + tab id」存 CodeMirror 视图状态 / Markdown 滚动位置 / 切模式锚点(同一文件在两个组各一份,见 `editor-view-state-groups`);LRU 上限 50;重命名迁移、关闭删除、组关闭删除 |
 | `src/panels/Editor/CodeEditor.tsx` | 卸载(layout 清理,DOM 尚在)存 `EditorState` + `scrollSnapshot()`;挂载时取回 |
 | `src/panels/Editor/MilkdownEditor.tsx` | 滚动时记 scrollTop;编辑器就绪后恢复 |
 | `src/stores/editor.store.ts` | `renamePath` 迁移到新 id;tab 增删改名(chromeVersion 变)后丢弃已不存在 tab 的状态 |

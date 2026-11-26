@@ -26,6 +26,8 @@ import {
   createTab,
   defaultTabMru,
   editorGroupIdsOf,
+  editorGroupsOf,
+  liveEditorViewOf,
   type EditorGroup,
   type EditorGroupLayout,
   type EditorTab,
@@ -57,6 +59,7 @@ import type { EditorView } from '@codemirror/view';
 import type { FsReadFileResult } from '../../../electron/shared/fs-channels';
 import type { IpcResult } from '../fs/types';
 import {
+  EDITOR_VIEW_FOLDS_MAX,
   EDITOR_VIEW_NUMBER_MAX,
   EDITOR_VIEW_STATES_MAX,
   ExplorerSchema,
@@ -273,12 +276,17 @@ const viewScroll = (n: number): number => Math.min(EDITOR_VIEW_NUMBER_MAX, Math.
  * 把视图状态收进磁盘契约的范围(运行时写入守 schema 上限,否则 explorer:write 拒整份快照,E276 同族)。
  * 非有限值的部分整体丢弃。
  */
-function toViewStateEntry(path: string, v: PersistedEditorViewState): EditorViewStateEntry | null {
+function toViewStateEntry(path: string, v: PersistedEditorViewState, group?: string): EditorViewStateEntry | null {
   const out: { -readonly [K in keyof EditorViewStateEntry]: EditorViewStateEntry[K] } = { path };
   const sel = v.selection;
   if (sel && Number.isFinite(sel.anchor) && Number.isFinite(sel.head)) {
     out.selection = { anchor: viewInt(sel.anchor, 0), head: viewInt(sel.head, 0) };
     if (v.topLine !== undefined && Number.isFinite(v.topLine)) out.topLine = viewInt(v.topLine, 1);
+    const folds = (v.folds ?? [])
+      .filter((f) => Number.isFinite(f.from) && Number.isFinite(f.to))
+      .slice(0, EDITOR_VIEW_FOLDS_MAX)
+      .map((f) => ({ from: viewInt(f.from, 0), to: viewInt(f.to, 0) }));
+    if (folds.length > 0) out.folds = folds;
   }
   if (v.scrollTop !== undefined && Number.isFinite(v.scrollTop)) out.scrollTop = viewScroll(v.scrollTop);
   const img = v.image;
@@ -290,23 +298,33 @@ function toViewStateEntry(path: string, v: PersistedEditorViewState): EditorView
   ) {
     out.image = { scale: img.scale, scrollLeft: viewScroll(img.scrollLeft), scrollTop: viewScroll(img.scrollTop) };
   }
-  return Object.keys(out).length > 1 ? out : null;
+  if (Object.keys(out).length === 1) return null;
+  return group === undefined ? out : { ...out, group };
 }
 
 /**
- * 打开中的 file tab 的视图状态(与 openFilePaths 同口径:跳过插件打开的 tab),按 tab 顺序,至多 EDITOR_VIEW_STATES_MAX 条。
+ * 打开中的 file tab 的视图状态(与 openFilePaths 同口径:跳过插件打开的 tab),至多 EDITOR_VIEW_STATES_MAX 条。
+ * 按「编辑器组 + 文件」各一条(VSCode EditorMemento;BDD: src/__tests__/editor-view-state-groups/):每个组取该组自己的
+ * 视图(liveView(tabId, groupId)),按组顺序、组内 tab 顺序。只有一个组时不写 group(旧形态;该组 id 不随快照持久化)。
  */
 export function collectEditorViewStates(
   tabs: readonly EditorTab[],
-  liveViews: ReadonlyMap<string, EditorView>,
+  groups: readonly EditorGroup[],
+  liveView: (tabId: string, groupId: string) => EditorView | undefined,
 ): EditorViewStateEntry[] {
   const out: EditorViewStateEntry[] = [];
-  for (const tab of tabs) {
-    if (out.length >= EDITOR_VIEW_STATES_MAX) break;
-    if (tab.pluginOpenedPath !== undefined) continue;
-    const state = persistedEditorViewStateOf(tab.id, liveViews.get(tab.id));
-    const entry = state ? toViewStateEntry(tab.filePath, state) : null;
-    if (entry) out.push(entry);
+  const byId = new Map<string, EditorTab>();
+  for (const tab of tabs) byId.set(tab.id, tab);
+  const multi = groups.length > 1;
+  for (const g of groups) {
+    for (const id of g.tabIds) {
+      if (out.length >= EDITOR_VIEW_STATES_MAX) return out;
+      const tab = byId.get(id);
+      if (!tab || tab.pluginOpenedPath !== undefined) continue;
+      const state = persistedEditorViewStateOf(id, liveView(id, g.id), g.id);
+      const entry = state ? toViewStateEntry(tab.filePath, state, multi ? g.id : undefined) : null;
+      if (entry) out.push(entry);
+    }
   }
   return out;
 }
@@ -352,7 +370,7 @@ export function snapshotFromStores(
     ed.tabs,
     ed.activeTabId,
   );
-  const viewStates = collectEditorViewStates(ed.tabs, ed.viewRefs);
+  const viewStates = collectEditorViewStates(ed.tabs, editorGroupsOf(ed), liveEditorViewOf);
   const groupsSnap = collectEditorGroupsSnapshot(ed.tabs, ed.groups, ed.activeGroupId, ed.tabMru);
   const mruSnap = collectEditorMruSnapshot(ed.tabs, ed.activeTabId, ed.groups, ed.tabMru);
   const root = normalizeWorkspaceRoot(w.root);
@@ -515,18 +533,29 @@ export async function hydrateEditorTabs(
   const restoreOpts = keepUserActive
     ? ({ requestFocus: false, activate: false } as const)
     : ({ requestFocus: false } as const);
-  // 视图状态按路径索引(tab id = 打开时的路径);读盘成功、紧接 openTab 之前回填 —— 先回填未打开的 tab 会被
-  // 「tab 增删后只保留打开中 tab 的视图状态」清掉,读盘失败的 tab 也就不留状态。
-  const viewStates = new Map<string, EditorViewStateEntry>();
-  for (const v of entry.editor.viewStates ?? []) viewStates.set(v.path, v);
+  // 视图状态按路径索引(tab id = 打开时的路径),同一路径按组各一条;读盘成功、紧接 openTab 之前回填 —— 先回填未打开的
+  // tab 会被「tab 增删后只保留打开中 tab 的视图状态」清掉,读盘失败的 tab 也就不留状态。条目带组 → 回填到该组(组 id 随
+  // groups 持久化,下方 restoreGroups 原样恢复);不带组(旧数据 / 单组)或快照不是多组 → 各组的回退值。
+  // BDD: src/__tests__/editor-view-state-groups/
+  const multiGroup = (entry.editor.groups?.length ?? 0) > 1;
+  type SavedViewState = NonNullable<typeof entry.editor.viewStates>[number];
+  const viewStates = new Map<string, SavedViewState[]>();
+  for (const v of entry.editor.viewStates ?? []) {
+    const list = viewStates.get(v.path);
+    if (list) list.push(v);
+    else viewStates.set(v.path, [v]);
+  }
   for (let i = 0; i < paths.length; i++) {
     const s = settled[i];
     if (!s || s.status !== 'fulfilled') continue; // reject → 当失败跳过(不抛)
     const r = s.value;
     if (!r || !r.ok) continue;
-    const view = viewStates.get(paths[i]!);
     // 读盘期间用户已自己打开同一文件 → 保留其本会话状态
-    if (view && !hasEditorTabWithId(useEditorStore.getState().tabs, paths[i]!)) seedPersistedEditorViewState(paths[i]!, view);
+    if (!hasEditorTabWithId(useEditorStore.getState().tabs, paths[i]!)) {
+      for (const view of viewStates.get(paths[i]!) ?? []) {
+        seedPersistedEditorViewState(paths[i]!, view, multiGroup ? view.group : undefined);
+      }
+    }
     store.openTab(createTab(paths[i]!, r.data, r.realPath), restoreOpts);
   }
   // 多个编辑器组:按组分配刚恢复的文档(tab id = 打开时的路径;读盘失败的跳过,变空的组丢弃)。

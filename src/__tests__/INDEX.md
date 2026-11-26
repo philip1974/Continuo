@@ -696,6 +696,10 @@
 - [`code-editor-view-state.spec.tsx`](./editor-view-state/code-editor-view-state.spec.tsx)
 - [`milkdown-scroll-restore.spec.tsx`](./editor-view-state/milkdown-scroll-restore.spec.tsx)
 
+## [编辑器视图状态按「编辑器组 + 文件」保存(含折叠区域)](./editor-view-state-groups/README.md)
+
+- [`editor-view-state-groups.spec.tsx`](./editor-view-state-groups/editor-view-state-groups.spec.tsx)
+
 ## [EditorWelcome(无 tab 占位)](./editor-welcome/README.md)
 
 - [`editor-welcome.spec.tsx`](./editor-welcome/editor-welcome.spec.tsx)

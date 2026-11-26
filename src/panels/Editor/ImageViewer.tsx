@@ -97,7 +97,7 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
 
   const imgRef = useRef<HTMLImageElement>(null);
   // 挂载时取回该 tab 上次的比例与滚动位置(滚动在图片尺寸就绪后恢复一次)
-  const [initialView] = useState(() => imageViewStateOf(tabId));
+  const [initialView] = useState(() => imageViewStateOf(tabId, groupId));
   const [scale, setScale] = useState<Scale>(initialView?.scale ?? 'fit');
   const scaleRef = useRef<Scale>(scale);
   scaleRef.current = scale;
@@ -161,7 +161,7 @@ export function ImageViewer({ tabId, filePath }: ImageViewerProps) {
   const saveView = () => {
     const root = rootRef.current;
     if (!root || pendingScrollRef.current) return;
-    saveImageViewState(tabId, { scale: scaleRef.current, scrollLeft: root.scrollLeft, scrollTop: root.scrollTop });
+    saveImageViewState(tabId, { scale: scaleRef.current, scrollLeft: root.scrollLeft, scrollTop: root.scrollTop }, groupId);
   };
   // 挂载时的比例不必再记(未缩放过的图片不留状态)
   const scaleSavedRef = useRef(scale);
