@@ -337,6 +337,8 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'View',
       categoryKey: 'commands.view.category',
       hotkey: isMac ? 'mod+alt+right' : 'ctrl+pagedown',
+      // VSCode mac 附加默认键 ⇧⌘](Windows / Linux 无)
+      ...(isMac ? { secondaryHotkeys: ['mod+shift+]'] } : {}),
       fn: () => openAdjacentEditor(1),
     },
     {
@@ -346,6 +348,8 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'View',
       categoryKey: 'commands.view.category',
       hotkey: isMac ? 'mod+alt+left' : 'ctrl+pageup',
+      // VSCode mac 附加默认键 ⇧⌘[(Windows / Linux 无)
+      ...(isMac ? { secondaryHotkeys: ['mod+shift+['] } : {}),
       fn: () => openAdjacentEditor(-1),
     },
     {

@@ -29,8 +29,14 @@ export interface CommandSpec {
    * 渲染层 `tWithFallback(titleKey, title)` 兜底，缺 key 不退化为 key 字面量。
    */
   readonly titleKey?: string;
-  /** Accelerator string,如 'mod+s' / 'mod+shift+p',可选. */
+  /** Accelerator string,如 'mod+s' / 'mod+shift+p',可选. 主默认键:界面上显示的就是它. */
   readonly hotkey?: string;
+  /**
+   * 附加默认键(VSCode IKeybindings.secondary:一个命令多条 keybinding,如 nextEditor 的 ⌥⌘→ 与 ⇧⌘])。都参与分发与冲突
+   * 判定;显示只取主键(hotkey,缺省时取本列表第一条)。用户改键 / 解绑(keybindings override)覆盖全部默认键。
+   * BDD: src/__tests__/command-secondary-hotkeys/
+   */
+  readonly secondaryHotkeys?: readonly string[];
   /**
    * 分类前缀(如 'Settings' / 'Editor' / 'Git')。CommandPalette 显示
    * `${category}: ${title}`,fuzzy 匹配同时覆盖 category + title。
@@ -52,6 +58,8 @@ export interface CommandSpec {
 // 供 keybindings-store / recent 与注册侧用同一上限。
 export const CMD_ID_MAX = SPEC_ID_MAX;
 export const CMD_HOTKEY_MAX = 64;
+/** 附加默认键条数上限(只挡滥用)。 */
+export const CMD_SECONDARY_HOTKEYS_MAX = 8;
 // hotkey 形态(宽松):'+'-连接的非空段,段内无空白/'+'(允许 mod+, mod+/ 等标点主键)。挡空段
 // (mod++p)、含空白、超长 —— 不强限字符集以免误伤合法标点快捷键。
 // 边界(E145):isValidHotkeyShape 导出供 keybindings 捕获侧(eventToCombo)与写端(setHotkey)复用同一形态校验,
@@ -102,6 +110,28 @@ function validateCommandSpec(spec: CommandSpec): void {
       `[command-registry] invalid hotkey shape: "${spec.hotkey}"`,
     );
   }
+  const secondary: unknown = spec.secondaryHotkeys;
+  if (secondary === undefined) return;
+  if (!Array.isArray(secondary) || secondary.length > CMD_SECONDARY_HOTKEYS_MAX) {
+    throw new Error(`[command-registry] secondaryHotkeys must be an array of at most ${CMD_SECONDARY_HOTKEYS_MAX}`);
+  }
+  for (const hotkey of secondary as readonly unknown[]) {
+    assertSpecString(TAG, 'secondaryHotkeys[]', hotkey, CMD_HOTKEY_MAX);
+    if (!isValidHotkeyShape(hotkey as string)) {
+      throw new Error(`[command-registry] invalid hotkey shape: "${hotkey as string}"`);
+    }
+  }
+}
+
+const NO_HOTKEYS: readonly string[] = [];
+
+/** 命令的全部默认键(主键在前,再接附加默认键)。 */
+export function defaultHotkeysOf(spec: Pick<CommandSpec, 'hotkey' | 'secondaryHotkeys'>): readonly string[] {
+  // 空串主键(第三方插件 / 测试里的 hotkey: '')视为无主键,与此前「falsy 即未绑定」一致。
+  const primary = spec.hotkey ? spec.hotkey : undefined;
+  const secondary = spec.secondaryHotkeys;
+  if (!secondary || secondary.length === 0) return primary === undefined ? NO_HOTKEYS : [primary];
+  return primary === undefined ? secondary : [primary, ...secondary];
 }
 
 export class CommandRegistry extends KeyedRegistry<CommandSpec> {
@@ -124,23 +154,22 @@ export class CommandRegistry extends KeyedRegistry<CommandSpec> {
     previous: CommandSpec | undefined,
   ): void {
     // 先扣减被替换命令(同 id 重注册,如插件 reload)的占用:否则同 id 覆盖被误报为与自身冲突。
-    if (previous?.hotkey) this.decrementHotkey(previous.hotkey);
-    if (
-      spec.hotkey &&
-      (this.hotkeyCounts.get(canonicalHotkey(spec.hotkey, this.platform)) ?? 0) > 0
-    ) {
-      // 只陈述冲突事实,不断言谁生效:useCommandHotkeys 按 Map 迭代序先命中者执行,而同 id 替换时
-      // Map.set 保留原插入位置,迭代序未必等于注册时间先后。这里比较的是默认快捷键;用户在快捷键
-      // 设置里覆盖其中一个后冲突即解除,故文案限定"未被用户覆盖时"。
-      console.warn(
-        `[command-registry] 默认快捷键(hotkey) "${spec.hotkey}"(命令 "${spec.id}")与已注册的其他命令冲突,未被用户覆盖时只有其中一个会响应`,
-      );
+    if (previous) for (const hotkey of defaultHotkeysOf(previous)) this.decrementHotkey(hotkey);
+    for (const hotkey of defaultHotkeysOf(spec)) {
+      if ((this.hotkeyCounts.get(canonicalHotkey(hotkey, this.platform)) ?? 0) > 0) {
+        // 只陈述冲突事实,不断言谁生效:useCommandHotkeys 按 Map 迭代序先命中者执行,而同 id 替换时
+        // Map.set 保留原插入位置,迭代序未必等于注册时间先后。这里比较的是默认快捷键;用户在快捷键
+        // 设置里覆盖其中一个后冲突即解除,故文案限定"未被用户覆盖时"。
+        console.warn(
+          `[command-registry] 默认快捷键(hotkey) "${hotkey}"(命令 "${spec.id}")与已注册的其他命令冲突,未被用户覆盖时只有其中一个会响应`,
+        );
+      }
+      this.incrementHotkey(hotkey);
     }
-    if (spec.hotkey) this.incrementHotkey(spec.hotkey);
   }
 
   protected override onRemoved(spec: CommandSpec): void {
-    if (spec.hotkey) this.decrementHotkey(spec.hotkey);
+    for (const hotkey of defaultHotkeysOf(spec)) this.decrementHotkey(hotkey);
   }
 
   protected buildSnapshot(): readonly CommandSpec[] {

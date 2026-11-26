@@ -387,6 +387,10 @@
 
 - [`recent.spec.ts`](./command-palette-recent/recent.spec.ts)
 
+## [command-secondary-hotkeys](./command-secondary-hotkeys/README.md)
+
+- [`command-secondary-hotkeys.spec.tsx`](./command-secondary-hotkeys/command-secondary-hotkeys.spec.tsx)
+
 ## [ConfirmDialog(通用确认对话框)](./confirm-dialog/README.md)
 
 - [`confirm-dialog.spec.tsx`](./confirm-dialog/confirm-dialog.spec.tsx)
@@ -2106,6 +2110,10 @@
 - [`popout-hotkeys.spec.tsx`](./workbench-editor-commands/popout-hotkeys.spec.tsx)
 - [`save-hotkey-label.spec.tsx`](./workbench-editor-commands/save-hotkey-label.spec.tsx)
 - [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)
+
+## [workbench-missing-commands](./workbench-missing-commands/README.md)
+
+- [`additional-default-keys.spec.ts`](./workbench-missing-commands/additional-default-keys.spec.ts)
 
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)
 

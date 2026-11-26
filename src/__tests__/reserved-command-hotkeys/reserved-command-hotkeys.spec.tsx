@@ -90,9 +90,10 @@ describe('显示保留键', () => {
 });
 
 describe('不参与命令分发', () => {
-  it('两条命令不进热键表,存有旧 override 也不响应', () => {
+  it('两条命令的保留键 / 旧 override 不进热键表(只有显示所有命令的附加默认键 F1 进表)', () => {
     const overrides = { [QUICK_OPEN]: 'mod+k', [SHOW_COMMANDS]: 'mod+j' };
-    expect(buildCompiledBindings([spec(QUICK_OPEN), spec(SHOW_COMMANDS)], 'mac', overrides)).toEqual([]);
+    const table = buildCompiledBindings([spec(QUICK_OPEN), spec(SHOW_COMMANDS)], 'mac', overrides);
+    expect(table.map((b) => [b.cmd.id, b.sig.key])).toEqual([[SHOW_COMMANDS, 'f1']]);
     expect(resolveActiveHotkey(spec(QUICK_OPEN), overrides, 'mac')).toBeUndefined();
   });
 
@@ -114,7 +115,9 @@ describe('快捷键设置页', () => {
     ] as const) {
       const edit = document.querySelector<HTMLButtonElement>(`[data-keybinding-edit="${id}"]`)!;
       const row = edit.closest('li')!;
-      expect(within(row).getByTestId('keybinding-keys').textContent).toBe(formatHotkeyParts(combo, PLATFORM).join(''));
+      // 保留键在前;显示所有命令另有附加默认键 F1(command-secondary-hotkeys)
+      const extra = id === SHOW_COMMANDS ? '/F1' : '';
+      expect(within(row).getByTestId('keybinding-keys').textContent).toBe(formatHotkeyParts(combo, PLATFORM).join('') + extra);
       expect(within(row).getByText(t('keybindings.reserved_fixed'))).toBeTruthy();
       expect(within(row).queryByText(t('keybindings.unbound'))).toBeNull();
       expect(within(row).queryByText(t('keybindings.reserved_inactive'))).toBeNull();

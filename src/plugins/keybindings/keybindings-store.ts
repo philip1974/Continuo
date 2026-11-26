@@ -5,7 +5,8 @@
 // 值域:
 //   string non-empty = 自定义新组合(如 'mod+shift+x')
 //   ''(空字符串)   = 显式 unbind(VSCode 同款,即「我不要这个快捷键」)
-//   key 不存在        = 走 spec 默认
+//   key 不存在        = 走 spec 默认(主键 hotkey + 附加默认键 secondaryHotkeys)
+//   override(新组合或解绑)覆盖命令的全部默认键(含附加默认键);格式与多默认键之前相同,旧数据原样可读。
 //
 // 持久化:localStorage(同 settings values store 的轻量策略)。
 
@@ -13,6 +14,7 @@ import { create } from 'zustand';
 import {
   CMD_HOTKEY_MAX,
   CMD_ID_MAX,
+  defaultHotkeysOf,
   isValidHotkeyShape,
   type CommandSpec,
 } from '../registries/CommandRegistry';
@@ -76,13 +78,28 @@ export const useKeybindingsStore = create<KeybindingsState>(() => ({
  * 此前 5 处各手写一份,漏改任何一处就是「面板显示的键 ≠ 实际触发的键」。
  */
 export function resolveEffectiveHotkey(
-  spec: Pick<CommandSpec, 'id' | 'hotkey'>,
+  spec: Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>,
   overrides: Readonly<Record<string, string>>,
 ): string | undefined {
   // 只认自有属性:命令 id 为 toString / constructor 等时不得命中原型链返回函数(compileCombo 会抛 → 整窗白屏)。
   const override = ownValue(overrides, spec.id);
   if (override !== undefined) return override === '' ? undefined : override;
-  return spec.hotkey;
+  return spec.hotkey ? spec.hotkey : spec.secondaryHotkeys?.[0];
+}
+
+const NO_HOTKEYS: readonly string[] = [];
+
+/**
+ * 全部生效键(主键在前):有 override → 只有它(空串 = 解绑 → 无);无 → 命令的全部默认键(主键 + 附加默认键)。
+ * 分发 / 冲突判定用它;显示只取第一条(= resolveEffectiveHotkey)。
+ */
+export function resolveEffectiveHotkeys(
+  spec: Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>,
+  overrides: Readonly<Record<string, string>>,
+): readonly string[] {
+  const override = ownValue(overrides, spec.id);
+  if (override !== undefined) return override === '' ? NO_HOTKEYS : [override];
+  return defaultHotkeysOf(spec);
 }
 
 /** 取某 command 当前生效的 hotkey(读 store 的当前 overrides)。 */

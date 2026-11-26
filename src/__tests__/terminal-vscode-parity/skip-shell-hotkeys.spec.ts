@@ -87,15 +87,16 @@ describe('终端让出的键按生效绑定判定', () => {
     expect(terminalYieldedCommandId(key({ key: 'w', metaKey: true, altKey: true }), 'mac', {}, registry)).toBe('workbench.action.closeActiveEditor');
   });
   it('一张表裁决:别的命令占了该键(用户绑定优先)→ 终端不清屏 / 不保存,按键交给全局分发', () => {
+    // demo.other:终端不负责的命令(terminal.new 自身在让出列表里,⌃⇧` 见 workbench-missing-commands)
     const registry = specs([
-      { id: 'terminal.new', hotkey: 'mod+t' },
+      { id: 'demo.other', hotkey: 'mod+t' },
       { id: 'terminal.clear', hotkey: 'mod+k' },
       { id: 'workbench.action.files.save', hotkey: 'mod+s' },
     ]);
-    const o = { 'terminal.new': 'mod+s', 'workbench.action.files.save': 'mod+k' };
+    const o = { 'demo.other': 'mod+s', 'workbench.action.files.save': 'mod+k' };
     expect(terminalYieldedCommandId(key({ key: 's', metaKey: true }), 'mac', o, registry)).toBeNull();
     expect(terminalYieldedCommandId(key({ key: 'k', metaKey: true }), 'mac', o, registry)).toBe('workbench.action.files.save');
-    expect(terminalYieldedCommandId(key({ key: 'k', metaKey: true }), 'mac', { 'terminal.new': 'mod+k' }, registry)).toBeNull();
+    expect(terminalYieldedCommandId(key({ key: 'k', metaKey: true }), 'mac', { 'demo.other': 'mod+k' }, registry)).toBeNull();
   });
   it('输入法组合中 / keyup 不让出', () => {
     const composing = key({ key: 'w', metaKey: true });

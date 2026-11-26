@@ -15,6 +15,7 @@ import { clearTerminalPanel, openTerminalSearch } from '@/panels/Terminal/termin
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import {
   TERMINAL_CLEAR_COMMAND,
+  TERMINAL_NEW_COMMAND,
   TERMINAL_SEARCH_COMMAND,
   TERMINAL_TOGGLE_COMMAND,
   TERMINAL_ZOOM_COMMAND,
@@ -85,12 +86,14 @@ export default class TerminalPlugin extends Plugin {
       },
     });
     this.addCommand({
-      id: 'terminal.new',
+      id: TERMINAL_NEW_COMMAND.id,
       title: 'New Terminal',
       titleKey: 'commands.terminal.new.title',
       category: 'Terminal',
       categoryKey: 'commands.terminal.category',
-      hotkey: 'mod+t',
+      hotkey: TERMINAL_NEW_COMMAND.hotkey,
+      // VSCode workbench.action.terminal.new 的默认键 ⌃⇧`(各平台)作附加默认键
+      secondaryHotkeys: TERMINAL_NEW_COMMAND.secondaryHotkeys,
       // 可维护性 M1:终端创建流程抽到 createUserTerminal(与 Dock header 新建入口共用)。
       fn: () => createUserTerminal().then(() => undefined),
     });

@@ -10,7 +10,7 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry, type RegistryLike } from '@/plugins/registries/useRegistry';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 
-type HotkeySpec = Pick<CommandSpec, 'id' | 'hotkey'>;
+type HotkeySpec = Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>;
 
 /** tooltip 文案:有键位 →「名称 (键位)」,否则只有名称。 */
 export function withHotkey(label: string, hotkey: string | undefined): string {

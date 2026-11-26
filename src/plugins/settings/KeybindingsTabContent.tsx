@@ -7,7 +7,7 @@ import { Badge, IconButton, Input, KeyCap } from '@/design';
 import { clampSearchQuery, normalizeSearchQuery } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
-import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
+import { defaultHotkeysOf, type CommandSpec } from '@/plugins/registries/CommandRegistry';
 import {
   formatHotkey,
   hotkeyFilterQuery,
@@ -19,7 +19,7 @@ import {
 } from '@/plugins/command-palette/format-hotkey';
 import {
   getEffectiveHotkey,
-  resolveEffectiveHotkey,
+  resolveEffectiveHotkeys,
   useKeybindingsStore,
 } from '@/plugins/keybindings/keybindings-store';
 import { KeybindingCaptureModal } from '@/plugins/keybindings/KeybindingCaptureModal';
@@ -68,6 +68,10 @@ export interface DisplayCommand {
   readonly effectiveHotkey: string | undefined;
   /** 预计算的 hotkey 段(无则空数组). */
   readonly hotkeyParts: readonly string[];
+  /** 附加默认键(未被用户覆盖时;如下一个编辑器的 ⇧⌘])各自的 hotkey 段,排在主键之后显示。 */
+  readonly secondaryHotkeyParts?: readonly (readonly string[])[];
+  /** 附加默认键的运行时语义(按快捷键搜索时与主键一样比对)。 */
+  readonly secondaryHotkeySigs?: readonly (HotkeySignature | null)[];
   /** 该命令是否被用户 override(决定 reset 按钮可见). */
   readonly isOverridden: boolean;
   /** effective hotkey 落在 Quick Open / 命令面板保留键上(分发忽略,行内标注「未生效」)。 */
@@ -171,7 +175,12 @@ export function parseHotkeyQuery(qLower: string, platform: Platform): HotkeyQuer
  * 不命中 ⇧⌘E),引号精确查询要求修饰键集合相同。
  */
 function matchesHotkeyQuery(d: DisplayCommand, hq: HotkeyQuery): boolean {
-  const sig = d.hotkeySig;
+  if (sigMatchesQuery(d.hotkeySig, hq)) return true;
+  for (const sig of d.secondaryHotkeySigs ?? []) if (sigMatchesQuery(sig, hq)) return true;
+  return false;
+}
+
+function sigMatchesQuery(sig: HotkeySignature | null | undefined, hq: HotkeyQuery): boolean {
   if (!sig || sig.key !== hq.sig.key) return false;
   return hq.exact ? sig.mask === hq.sig.mask : (sig.mask & hq.sig.mask) === hq.sig.mask;
 }
@@ -259,7 +268,10 @@ export function buildKeybindingDisplayCommands(
     // 只认自有属性(toString 等命令 id)。保留键命令按「无 override」处理(旧版本存下的 override 不分发也不显示,
     // 行上无重置入口 —— 同 VSCode 不可改的行);存储原样保留不清理。
     const isOverridden = fixedHotkey === undefined && Object.hasOwn(overrides, cmd.id);
-    const effective = fixedHotkey ?? resolveEffectiveHotkey(cmd, overrides);
+    // 全部生效键(主键在前);保留键命令 = 保留键 + 附加默认键(显示所有命令的 F1)。
+    const all = fixedHotkey !== undefined ? [fixedHotkey, ...(cmd.secondaryHotkeys ?? [])] : resolveEffectiveHotkeys(cmd, overrides);
+    const effective = all[0];
+    const secondary = all.length > 1 ? all.slice(1) : undefined;
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     let englishText: string | undefined;
@@ -274,6 +286,12 @@ export function buildKeybindingDisplayCommands(
       displayCategory,
       effectiveHotkey: effective,
       hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
+      ...(secondary
+        ? {
+            secondaryHotkeyParts: secondary.map((h) => formatHotkeyParts(h, platform)),
+            secondaryHotkeySigs: secondary.map((h) => hotkeySignature(h, platform)),
+          }
+        : {}),
       isOverridden,
       reserved: fixedHotkey === undefined && reservedPickerHotkeyOf(effective, platform) !== null,
       fixed: fixedHotkey !== undefined,
@@ -284,7 +302,7 @@ export function buildKeybindingDisplayCommands(
         displayTitle,
         displayCategory,
         cmd.id,
-        effective ? hotkeySearchText(effective, platform) : undefined,
+        effective ? all.map((h) => hotkeySearchText(h, platform)).join(' ') : undefined,
         englishText,
       ),
       hotkeySig: effective ? hotkeySignature(effective, platform) : null,
@@ -404,7 +422,7 @@ export function KeybindingsTabContent() {
         commandId={editing?.id ?? ''}
         commandTitle={editing ? tk(editing.titleKey, editing.title) : ''}
         currentHotkey={editing ? getEffectiveHotkey(editing) : undefined}
-        defaultHotkey={editing?.hotkey}
+        defaultHotkey={editing ? defaultHotkeysOf(editing)[0] : undefined}
         allCommands={allCommands}
         overrides={overrides}
         onClose={() => setEditing(null)}
@@ -484,6 +502,15 @@ export function KeybindingsTabContent() {
                           {hotkeyParts.map((p) => (
                             <KeyCap key={p}>{p}</KeyCap>
                           ))}
+                          {/* 附加默认键:主键之后,以分隔符隔开(VSCode 键盘快捷方式编辑器每条键位一行;这里一命令一行)。 */}
+                          {d.secondaryHotkeyParts?.map((parts, i) => (
+                            <span key={i} className="contents">
+                              <span aria-hidden="true" className="px-1 text-fg-dim">/</span>
+                              {parts.map((p) => (
+                                <KeyCap key={p}>{p}</KeyCap>
+                              ))}
+                            </span>
+                          ))}
                         </span>
                       ) : (
                         <span className="shrink-0 text-2xs text-fg-dim">{unboundLabel}</span>
@@ -509,8 +536,10 @@ export function KeybindingsTabContent() {
                         size="xs"
                         title={t('keybindings.reset_default', {
                           // 与键帽同一格式化(⇧ ⌘ ↵),不显示原始串(shift+mod+enter)。
-                          hotkey: cmd.hotkey
-                            ? formatHotkeyParts(cmd.hotkey, PLATFORM).join(' ')
+                          hotkey: defaultHotkeysOf(cmd).length > 0
+                            ? defaultHotkeysOf(cmd)
+                                .map((h) => formatHotkeyParts(h, PLATFORM).join(' '))
+                                .join(' / ')
                             : unboundLabel,
                         })}
                         aria-label={t('keybindings.reset_default_for_aria', {

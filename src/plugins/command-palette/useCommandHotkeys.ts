@@ -12,7 +12,7 @@ import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotkey';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { baseKeyForShifted, legacyHotkeyKey, physicalHotkeyKey } from './event-hotkey-key';
-import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { resolveActiveHotkeys, reservedHotkeyOfCommand } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { getPopoutDocuments, runInCommandDocument, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
@@ -158,6 +158,8 @@ export function matchesHotkey(
 interface CompiledBinding {
   readonly sig: ComboSignature;
   readonly cmd: CommandSpec;
+  /** 命令的主键(界面显示的那条;保留键归属命令显示保留键,其附加默认键都不是主键)。 */
+  readonly primary: boolean;
 }
 
 const EMPTY_COMPILED_BINDINGS: readonly CompiledBinding[] = [];
@@ -184,8 +186,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 /**
  * 预编译分发表。同一按键命中多条时 handler 取表中第一条,故顺序即优先级(对齐 VSCode:用户绑定压过默认):
- * 先放有用户 override 的命令,再放默认绑定的命令;同一层内保持注册顺序。设置页的「冲突」标注
- *(selectShadowedBindings)基于同一张表,两者不会分叉。
+ * 先放有用户 override 的命令,再放默认绑定的命令;同一层内保持注册顺序。一个命令的多个默认键(主键 + 附加默认键)
+ * 各占一条、相邻。设置页的「冲突」标注(selectShadowedBindings)基于同一张表,两者不会分叉。
  */
 export function buildCompiledBindings(
   commands: readonly CommandSpec[],
@@ -193,24 +195,23 @@ export function buildCompiledBindings(
   overrides: Readonly<Record<string, string>> = {},
 ): readonly CompiledBinding[] {
   let out: CompiledBinding[] | undefined;
-  let count = 0;
   for (let pass = 0; pass < 2; pass++) {
     const userTier = pass === 0;
     for (const cmd of commands) {
       if (Object.hasOwn(overrides, cmd.id) !== userTier) continue; // 只认自有属性(toString 等命令 id)
       // 保留键(⌘P / ⌘⇧P 归 Quick Open / 命令面板)上的绑定(升级前已存的 override / 插件默认 hotkey)视为未绑定:
       // 不入表,否则一键两动作(同 document 监听 stopPropagation 拦不住)。设置页对该行标注未生效。
-      const effective = resolveActiveHotkey(cmd, overrides, platform);
-      if (!effective) continue; // 无 hotkey、显式 unbind 或落在保留键
-      const sig = compileCombo(effective, platform);
-      if (!sig) continue; // 未知修饰符 → 不可匹配,不入表
-      out ??= new Array<CompiledBinding>(commands.length);
-      out[count++] = { sig, cmd };
+      const active = resolveActiveHotkeys(cmd, overrides, platform);
+      // 无 hotkey、显式 unbind 或落在保留键 → 空。保留键归属命令的附加默认键(F1)都不是主键(显示的是保留键)。
+      const hasPrimary = active.length > 0 && reservedHotkeyOfCommand(cmd.id) === undefined;
+      for (let i = 0; i < active.length; i++) {
+        const sig = compileCombo(active[i]!, platform);
+        if (!sig) continue; // 未知修饰符 → 不可匹配,不入表
+        (out ??= []).push({ sig, cmd, primary: hasPrimary && i === 0 });
+      }
     }
   }
-  if (!out) return EMPTY_COMPILED_BINDINGS;
-  out.length = count;
-  return out;
+  return out ?? EMPTY_COMPILED_BINDINGS;
 }
 
 function signatureKey(sig: ComboSignature): string {
@@ -218,25 +219,47 @@ function signatureKey(sig: ComboSignature): string {
 }
 
 const EMPTY_SHADOWED: ReadonlyMap<string, CommandSpec> = new Map();
+const EMPTY_SHADOWED_PRIMARY: ReadonlySet<string> = new Set();
+
+interface ShadowedInfo {
+  /** 有任一绑定冲突落败的命令 id → 实际响应该键的命令(多个落败时取表中第一条)。 */
+  readonly any: ReadonlyMap<string, CommandSpec>;
+  /** 主键(界面显示的那条)冲突落败的命令 id。 */
+  readonly primary: ReadonlySet<string>;
+}
+
+function computeShadowed(
+  commands: readonly CommandSpec[],
+  platform: Platform,
+  overrides: Readonly<Record<string, string>>,
+): ShadowedInfo {
+  const winners = new Map<string, CommandSpec>();
+  let any: Map<string, CommandSpec> | null = null;
+  let primary: Set<string> | null = null;
+  for (const b of buildCompiledBindings(commands, platform, overrides)) {
+    const key = signatureKey(b.sig);
+    const winner = winners.get(key);
+    if (winner === undefined) winners.set(key, b.cmd);
+    else if (winner !== b.cmd) {
+      any ??= new Map();
+      if (!any.has(b.cmd.id)) any.set(b.cmd.id, winner);
+      if (b.primary) (primary ??= new Set()).add(b.cmd.id);
+    }
+  }
+  return { any: any ?? EMPTY_SHADOWED, primary: primary ?? EMPTY_SHADOWED_PRIMARY };
+}
 
 /**
  * 冲突落败的命令 id → 实际响应该按键的命令。与分发同一张表(buildCompiledBindings)、同一签名(修饰键 + 主键别名
- * 归一)判定:表中同签名的第一条胜出,其余落败。保留键 / 解绑 / 未知修饰符不入表,不算冲突。
+ * 归一)判定:表中同签名的第一条胜出,其余落败。保留键 / 解绑 / 未知修饰符不入表,不算冲突。多默认键的命令任一键落败
+ * 即列入(设置页「冲突」标注;同一命令自己的两个键相同不算)。
  */
 export function selectShadowedBindings(
   commands: readonly CommandSpec[],
   platform: Platform,
   overrides: Readonly<Record<string, string>>,
 ): ReadonlyMap<string, CommandSpec> {
-  const winners = new Map<string, CommandSpec>();
-  let shadowed: Map<string, CommandSpec> | null = null;
-  for (const b of buildCompiledBindings(commands, platform, overrides)) {
-    const key = signatureKey(b.sig);
-    const winner = winners.get(key);
-    if (winner === undefined) winners.set(key, b.cmd);
-    else (shadowed ??= new Map()).set(b.cmd.id, winner);
-  }
-  return shadowed ?? EMPTY_SHADOWED;
+  return computeShadowed(commands, platform, overrides).any;
 }
 
 // isHotkeyShadowed 的缓存(tooltip / 菜单键位每次渲染都查):命令快照、平台、overrides 引用不变即复用。
@@ -244,12 +267,12 @@ let cachedShadowed: {
   readonly commands: readonly CommandSpec[];
   readonly platform: Platform;
   readonly overrides: Readonly<Record<string, string>>;
-  readonly shadowed: ReadonlyMap<string, CommandSpec>;
+  readonly shadowed: ReadonlySet<string>;
 } | null = null;
 
 /**
- * 命令的生效键位是否冲突落败(按下执行的是别的命令,同 selectShadowedBindings / 设置页「冲突」)。界面上的键位提示
- *(命令面板行尾、tooltip、菜单项)据此不显示该键 —— 与保留键上的绑定一样,显示了按下也不会执行这条命令。
+ * 命令显示的键位(主键)是否冲突落败(按下执行的是别的命令,同设置页「冲突」)。界面上的键位提示(命令面板行尾、tooltip、
+ * 菜单项)据此不显示该键 —— 与保留键上的绑定一样,显示了按下也不会执行这条命令。只看主键:附加默认键落败不影响主键的显示。
  */
 export function isHotkeyShadowed(
   commandId: string,
@@ -258,10 +281,10 @@ export function isHotkeyShadowed(
   overrides: Readonly<Record<string, string>>,
 ): boolean {
   const c = cachedShadowed;
-  let shadowed: ReadonlyMap<string, CommandSpec>;
+  let shadowed: ReadonlySet<string>;
   if (c && c.commands === commands && c.platform === platform && c.overrides === overrides) shadowed = c.shadowed;
   else {
-    shadowed = selectShadowedBindings(commands, platform, overrides);
+    shadowed = computeShadowed(commands, platform, overrides).primary;
     cachedShadowed = { commands, platform, overrides, shadowed };
   }
   return shadowed.has(commandId);
@@ -320,7 +343,7 @@ export function winningCommandFor(
 const augmentedCache = new WeakMap<readonly CommandSpec[], Map<readonly DefaultCommand[], readonly CommandSpec[]>>();
 
 /** 约定的命令 id + 默认键(命令由别的模块注册,尚未注册时兜底)。 */
-export type DefaultCommand = Pick<CommandSpec, 'id' | 'hotkey'>;
+export type DefaultCommand = Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>;
 
 const NOOP = (): void => {};
 
@@ -338,7 +361,13 @@ export function withDefaultCommands(
   let out: CommandSpec[] | null = null;
   for (const d of defaults) {
     if (registered.some((c) => c.id === d.id)) continue;
-    (out ??= [...registered]).push({ id: d.id, title: d.id, hotkey: d.hotkey, fn: NOOP });
+    (out ??= [...registered]).push({
+      id: d.id,
+      title: d.id,
+      hotkey: d.hotkey,
+      ...(d.secondaryHotkeys ? { secondaryHotkeys: d.secondaryHotkeys } : {}),
+      fn: NOOP,
+    });
   }
   const result = out ?? registered;
   if (!byDefaults) augmentedCache.set(registered, (byDefaults = new Map()));

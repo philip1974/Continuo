@@ -1,4 +1,5 @@
 // 窗口类命令(VSCode 同名命令):转到文件…(Quick Open)、显示所有命令(命令面板)、关闭窗口、重新加载窗口、放大 / 缩小 / 重置缩放、切换全屏。
+// 显示所有命令另有附加默认键 F1(进命令分发)。
 // 与应用菜单同一动作:关闭窗口经 coApi.window.close(关窗脏确认),其余经 window:view-action(重新加载走菜单 ⌘R 的
 // 脏确认 + flush)。无默认键:按键由应用菜单 accelerator 处理;⌘P / ⇧⌘P 是 Quick Open / 命令面板保留键(picker 监听处理,
 // 两条命令只显示该键、不分发,见 PICKER_TOGGLE_COMMAND_IDS)。WindowPlugin 注册。
@@ -9,6 +10,7 @@ import { notifyFailure } from '@/notifications/notify-thrown-error';
 import { useQuickOpenStore } from '@/plugins/quick-open/store';
 import { useCommandPaletteStore } from '@/plugins/command-palette/store';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
+import { SHOW_COMMANDS_COMMAND } from '@/plugins/picker/use-picker-toggle-hotkey';
 import type { WindowViewAction } from '../../electron/shared/window-channels';
 
 async function runViewAction(action: WindowViewAction): Promise<void> {
@@ -47,6 +49,8 @@ export function windowCommandSpecs(): CommandSpec[] {
       id: 'workbench.action.showCommands',
       title: 'Show All Commands',
       titleKey: 'commands.show_commands.title',
+      // 附加默认键 F1(VSCode 同,各平台):进命令分发;⇧⌘P 仍由 picker 监听处理(保留键,显示用它)。
+      secondaryHotkeys: SHOW_COMMANDS_COMMAND.secondaryHotkeys,
       // 与 ⇧⌘P 同语义:两个 picker 互斥,打开命令面板前关掉 Quick Open。
       fn: () => {
         useQuickOpenStore.getState().close();

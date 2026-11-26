@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
 import type { PickerSlice } from './picker-slice';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
-import { resolveEffectiveHotkey } from '@/plugins/keybindings/keybindings-store';
+import { resolveEffectiveHotkey, resolveEffectiveHotkeys } from '@/plugins/keybindings/keybindings-store';
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
 
@@ -48,6 +48,12 @@ export const PICKER_TOGGLE_COMMAND_IDS: Readonly<Record<ReservedPickerHotkey, st
   command_palette: 'workbench.action.showCommands',
 };
 
+/** 显示所有命令的附加默认键 F1(VSCode 同,各平台):不是保留键,进命令分发(window-commands 注册,终端让出)。 */
+export const SHOW_COMMANDS_COMMAND = {
+  id: PICKER_TOGGLE_COMMAND_IDS.command_palette,
+  secondaryHotkeys: ['f1'] as readonly string[],
+} as const;
+
 /** 命令是保留键的归属命令 → 该保留键(hotkey 词汇);否则 undefined。 */
 export function reservedHotkeyOfCommand(id: string): string | undefined {
   for (const name of Object.keys(PICKER_TOGGLE_COMMAND_IDS) as ReservedPickerHotkey[]) {
@@ -57,12 +63,34 @@ export function reservedHotkeyOfCommand(id: string): string | undefined {
 }
 
 /**
- * 命令实际参与按键分发的 hotkey:生效绑定落在保留键上则视为未绑定;保留键归属命令恒为 undefined(键由 picker 监听处理,
- * 旧 override 也不响应)。命令分发、终端让出判定共用 —— 否则一处跳过、一处仍认,同一键既打开 picker 又执行命令。
- * 设置页另显「未生效」标注。对外显示用 resolveDisplayHotkey。
+ * 命令实际参与按键分发的 hotkey(全部,主键在前):生效绑定落在保留键上则视为未绑定;保留键归属命令的保留键与旧 override
+ * 都不参与(键由 picker 监听处理),只有附加默认键(显示所有命令的 F1)参与分发。命令分发、终端让出判定共用 —— 否则一处
+ * 跳过、一处仍认,同一键既打开 picker 又执行命令。设置页另显「未生效」标注。对外显示用 resolveDisplayHotkey。
+ */
+export function resolveActiveHotkeys(
+  spec: Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>,
+  overrides: Readonly<Record<string, string>>,
+  platform: Platform = detectPlatform(),
+): readonly string[] {
+  const all =
+    reservedHotkeyOfCommand(spec.id) !== undefined ? (spec.secondaryHotkeys ?? NO_HOTKEYS) : resolveEffectiveHotkeys(spec, overrides);
+  let out: string[] | null = null;
+  for (let i = 0; i < all.length; i++) {
+    const reserved = reservedPickerHotkeyOf(all[i], platform) !== null;
+    if (reserved && out === null) out = all.slice(0, i);
+    else if (!reserved && out !== null) out.push(all[i]!);
+  }
+  return out ?? all;
+}
+
+const NO_HOTKEYS: readonly string[] = [];
+
+/**
+ * 命令实际参与分发的主键(界面显示的那条):生效绑定落在保留键上视为未绑定;保留键归属命令恒为 undefined(其保留键由 picker
+ * 监听处理,显示走 resolveDisplayHotkey)。附加默认键见 resolveActiveHotkeys。
  */
 export function resolveActiveHotkey(
-  spec: Pick<CommandSpec, 'id' | 'hotkey'>,
+  spec: Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>,
   overrides: Readonly<Record<string, string>>,
   platform: Platform = detectPlatform(),
 ): string | undefined {
@@ -73,7 +101,7 @@ export function resolveActiveHotkey(
 
 /** 对外显示的 hotkey(命令面板、tooltip):保留键归属命令显示其保留键,其余同 resolveActiveHotkey(显示 ⌘P 就按得出)。 */
 export function resolveDisplayHotkey(
-  spec: Pick<CommandSpec, 'id' | 'hotkey'>,
+  spec: Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>,
   overrides: Readonly<Record<string, string>>,
   platform: Platform = detectPlatform(),
 ): string | undefined {

@@ -14,7 +14,7 @@ import {
 } from '@/plugins/command-palette/format-hotkey';
 import { isValidHotkeyShape, type CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useT, useTWithFallback } from '@/i18n';
-import { resolveEffectiveHotkey } from './keybindings-store';
+import { resolveEffectiveHotkeys } from './keybindings-store';
 import { eventHotkeyKey } from '@/plugins/command-palette/event-hotkey-key';
 import { useStableCallback } from '@/lib/use-stable-callback';
 import {
@@ -110,10 +110,14 @@ export function selectKeybindingConflicts(
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
-    // 保留键归属命令(转到文件… / 显示所有命令)不分发:其旧 override 不是冲突;其保留键由上方保留键拒绝处理。
-    if (command.id === commandId || reservedHotkeyOfCommand(command.id) !== undefined) continue;
-    const effective = resolveEffectiveHotkey(command, overrides);
-    if (!effective || canonicalHotkey(effective, PLATFORM) !== capturedCanonical) continue;
+    if (command.id === commandId) continue;
+    // 保留键归属命令(转到文件… / 显示所有命令)的保留键与旧 override 不分发,不是冲突(保留键由上方保留键拒绝处理);
+    // 其附加默认键(F1)照常分发,算冲突。多默认键命令任一键相同即冲突。
+    const effective =
+      reservedHotkeyOfCommand(command.id) !== undefined
+        ? (command.secondaryHotkeys ?? [])
+        : resolveEffectiveHotkeys(command, overrides);
+    if (!effective.some((h) => canonicalHotkey(h, PLATFORM) === capturedCanonical)) continue;
     if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);
     conflicts[conflictCount] = command;
     conflictCount += 1;
