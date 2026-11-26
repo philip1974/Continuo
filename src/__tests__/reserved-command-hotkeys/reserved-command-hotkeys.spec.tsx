@@ -123,6 +123,26 @@ describe('快捷键设置页', () => {
     expect(screen.getByText(t('keybindings.summary', { total: 2, bound: 2 }))).toBeTruthy();
   });
 
+  it('旧 override 按「无 override」处理:无可达的重置按钮,存储原样保留', () => {
+    coApp.commands.register(spec(QUICK_OPEN));
+    coApp.commands.register(spec(SHOW_COMMANDS));
+    const stored = { [QUICK_OPEN]: 'mod+k', [SHOW_COMMANDS]: '' };
+    useKeybindingsStore.setState({ overrides: stored });
+    render(<KeybindingsTabContent />);
+    for (const id of [QUICK_OPEN, SHOW_COMMANDS]) {
+      const row = document.querySelector(`[data-keybinding-edit="${id}"]`)!.closest('li')!;
+      const reset = within(row).getByRole('button', {
+        name: t('keybindings.reset_default_for_aria', { command: t(spec(id).titleKey as never) }),
+        hidden: true,
+      }) as HTMLButtonElement;
+      expect(reset.disabled).toBe(true);
+      expect(reset.className).toContain('invisible');
+    }
+    const [qo] = buildKeybindingDisplayCommands([spec(QUICK_OPEN)], tk, stored, 'mac');
+    expect(qo!.isOverridden).toBe(false);
+    expect(useKeybindingsStore.getState().overrides).toEqual(stored);
+  });
+
   it('按快捷键搜索能找到(ctrl+p / cmd+p)', () => {
     const [d] = buildKeybindingDisplayCommands([spec(QUICK_OPEN)], tk, {}, 'mac');
     expect(d!.effectiveHotkey).toBe('mod+p');

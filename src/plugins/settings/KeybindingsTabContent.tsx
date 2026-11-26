@@ -255,8 +255,10 @@ export function buildKeybindingDisplayCommands(
   const out = new Array<DisplayCommand>(allCommands.length);
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
-    const isOverridden = Object.hasOwn(overrides, cmd.id); // 只认自有属性(toString 等命令 id)
     const fixedHotkey = reservedHotkeyOfCommand(cmd.id);
+    // 只认自有属性(toString 等命令 id)。保留键命令按「无 override」处理(旧版本存下的 override 不分发也不显示,
+    // 行上无重置入口 —— 同 VSCode 不可改的行);存储原样保留不清理。
+    const isOverridden = fixedHotkey === undefined && Object.hasOwn(overrides, cmd.id);
     const effective = fixedHotkey ?? resolveEffectiveHotkey(cmd, overrides);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
@@ -345,7 +347,7 @@ export function KeybindingsTabContent() {
   );
 
   // 行内「恢复默认」后按钮变 disabled + invisible,焦点会掉到 body → 提交后移到同行的编辑按钮;该行被搜索过滤掉
-  //(按旧快捷键搜)时回到搜索框。
+  //(按旧快捷键搜)或编辑按钮已禁用(focus() 无效,焦点仍落 body)时回到搜索框。
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const focusEditAfterResetRef = useRef<string | null>(null);
@@ -353,8 +355,8 @@ export function KeybindingsTabContent() {
     const id = focusEditAfterResetRef.current;
     if (id === null) return;
     focusEditAfterResetRef.current = null;
-    for (const el of rootRef.current?.querySelectorAll<HTMLElement>('[data-keybinding-edit]') ?? []) {
-      if (el.dataset['keybindingEdit'] === id) {
+    for (const el of rootRef.current?.querySelectorAll<HTMLButtonElement>('[data-keybinding-edit]') ?? []) {
+      if (el.dataset['keybindingEdit'] === id && !el.disabled) {
         el.focus();
         return;
       }
