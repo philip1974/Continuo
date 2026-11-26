@@ -45,16 +45,36 @@ export function mainWindowActivePanel(api: DockviewApi): IDockviewPanel | undefi
   return panel?.api.location.type === 'popout' ? mostRecentMainWindowPanel(api) : panel;
 }
 
+/** doc 所在 popout 子窗的组(doc 是主窗文档 / 该子窗已不在 → undefined)。 */
+export function popoutGroupOfDocument(api: DockviewApi, doc: Document): Group | undefined {
+  return api.groups.find((group) => {
+    const location = group.api.location;
+    // 子窗关闭途中 dockview 的 getWindow() 可能已是 null(类型未标)
+    return location.type === 'popout' && (location.getWindow() as Window | null)?.document === doc;
+  });
+}
+
+/**
+ * doc 所在窗口正显示的活动面板(窗口级命令作用的面板;VSCode:命令作用于触发它的窗口):主窗文档 → mainWindowActivePanel;
+ * popout 子窗文档 → 该子窗组的活动面板(子窗已不在 → undefined)。不用全局 activePanel:用户从子窗切回主窗(点标题栏)时
+ * 活动组仍是子窗的组,反之亦然。
+ */
+export function activePanelInDocument(api: DockviewApi, doc: Document): IDockviewPanel | undefined {
+  return doc === document ? mainWindowActivePanel(api) : popoutGroupOfDocument(api, doc)?.activePanel;
+}
+
 /**
  * 从主窗入口(齿轮 / 菜单 / 命令 / 快捷键)新建面板的落点。dockview 缺省落进活动组,活动组在 popout 子窗时新面板会出现在
- * 子窗里(用户在主窗里看不到)。VSCode:在触发的窗口打开 → 活动组在主窗(grid / floating)时不干预(undefined);在
+ * 子窗里(用户在主窗里看不到)。VSCode:在触发的窗口打开 → 活动组在主窗(grid / floating)且可见时不干预(undefined);在
  * popout 时改投主窗最近使用的组;主窗没有带面板的组 → 取可见的 grid 组;都没有 → 在主窗 grid 新建一组。
+ * 活动组是主窗里隐藏的 popout 引用组(整组弹出后 dockview 留在 grid 里的 0 宽空组;关掉主窗最后一个面板后 dockview 把它
+ * 设为活动组)时同 popout 处理:加进去的面板主窗看不见。
  */
 export function mainWindowAddPosition(
   api: DockviewApi,
 ): { referenceGroup: Group; direction: 'within' } | { direction: 'right' } | undefined {
   const active = api.activeGroup;
-  if (!active || windowKeyOf(active) === 'main') return undefined;
+  if (!active || (windowKeyOf(active) === 'main' && active.api.isVisible)) return undefined;
   const group =
     mostRecentMainWindowPanel(api)?.group ??
     api.groups.find((g) => g.api.location.type === 'grid' && g.api.isVisible);
@@ -149,11 +169,38 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
   // doSetGroupAndPanelActive 因已是活动组直接返回 → 没有任何活动组 / 活动面板事件,touch 记不到 popout 组的活动面板,
   // 子窗关闭时收回的面板不获焦(主窗焦点留在 body)。组挂到子窗时 location 改为 popout(此时面板已挪入)→ 在此补记。
   const locationSubs = new Map<Group, { dispose: () => void }>();
+  // popout 子窗获得焦点(切到子窗:点标题栏 / ⌘` / 点进内容)→ 其组成为活动组(VSCode:辅助窗口获焦时其编辑器组成为活动组)。
+  // dockview 只在面板内容获焦时激活组(点标题栏、窗口切换都不会),此前活动组 / 活动面板停在主窗。
+  const windowFocusSubs = new Map<Group, () => void>();
+  const unwatchWindowFocus = (group: Group): void => {
+    windowFocusSubs.get(group)?.();
+    windowFocusSubs.delete(group);
+  };
+  const watchWindowFocus = (group: Group): void => {
+    unwatchWindowFocus(group);
+    const location = group.api.location;
+    if (location.type !== 'popout') return;
+    const win = location.getWindow() as Window | null;
+    if (!win) return;
+    const onFocus = (): void => {
+      if (!disposed && api.activeGroup !== group && group.api.location.type === 'popout') group.api.setActive();
+    };
+    // 文档在挂监听时取:子窗关闭后 win.document 可能已不可用
+    const doc = win.document;
+    win.addEventListener('focus', onFocus);
+    doc.addEventListener('focusin', onFocus);
+    windowFocusSubs.set(group, () => {
+      win.removeEventListener('focus', onFocus);
+      doc.removeEventListener('focusin', onFocus);
+    });
+  };
   const watchLocation = (group: Group): void => {
     if (locationSubs.has(group)) return;
+    watchWindowFocus(group);
     locationSubs.set(
       group,
       group.api.onDidLocationChange(() => {
+        watchWindowFocus(group);
         if (group.api.location.type !== 'popout') return;
         if (api.activeGroup === group) touch(group);
         else if (group.activePanel) lastActivePanel.set(group.id, group.activePanel.id);
@@ -176,6 +223,7 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
     api.onDidRemoveGroup((group) => {
       locationSubs.get(group)?.dispose();
       locationSubs.delete(group);
+      unwatchWindowFocus(group);
     }),
   ];
   for (const group of api.groups) watchLocation(group);
@@ -190,6 +238,8 @@ export function trackGroupMru(api: DockviewApi): { dispose: () => void } {
       for (const s of subs) s.dispose();
       for (const s of locationSubs.values()) s.dispose();
       locationSubs.clear();
+      for (const off of windowFocusSubs.values()) off();
+      windowFocusSubs.clear();
       mru.length = 0;
       lastActivePanel.clear();
     },

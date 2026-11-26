@@ -23,7 +23,10 @@ import {
 } from '@/stores/editor.store';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { focusEditorGroup, splitEditor } from './editor-groups-actions';
+import type { IDockviewPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
+import { activePanelInDocument, popoutGroupOfDocument } from '@/shell/dock/group-mru';
+import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { coApi } from '@/lib/co-api';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
@@ -124,17 +127,33 @@ export async function revertActiveEditor(): Promise<void> {
 }
 
 /**
- * ⌘W:dock 活动面板是编辑器且有活动文件 tab → 关该 tab;其它面板 / 编辑器已无 tab → 关闭该面板
- *(panel.api.close:与 dock tab × 同一路径,含面板自己的关闭守卫);没有可关的面板 → 关闭当前窗口。
+ * ⌘W:作用于触发它的窗口(按键所在窗口 / 命令面板所在的主窗;VSCode 同)的活动面板 —— 编辑器且有活动文件 tab → 关该 tab;
+ * 其它面板 / 编辑器已无 tab → 关闭该面板(panel.api.close:与 dock tab × 同一路径,含面板自己的关闭守卫)。
+ * 该窗口没有可关的面板 → 关闭该窗口:popout 子窗只关这个子窗,主窗走 window:close。不看全局 activePanel:从子窗切回
+ * 主窗(或反过来)时它仍停在另一个窗口,⌘W 会关掉别的窗口的面板,子窗里更会关掉整个主窗。
  */
 export function closeActiveEditor(): void {
-  const active = getDockApi()?.activePanel;
+  const api = getDockApi();
+  const doc = getCommandDocument();
+  if (api && doc !== document) {
+    const group = popoutGroupOfDocument(api, doc);
+    if (!group) return; // 子窗已不在
+    const panel = group.activePanel;
+    if (panel) closePanelOrActiveTab(panel);
+    else doc.defaultView?.close();
+    return;
+  }
+  const active = api ? activePanelInDocument(api, document) : undefined;
   if (!active) {
     void coApi.window.close().then((r) => {
       if (!r.ok) notifyFailure(r);
     });
     return;
   }
+  closePanelOrActiveTab(active);
+}
+
+function closePanelOrActiveTab(active: IDockviewPanel): void {
   if (
     active.view.contentComponent === 'editor' &&
     isEditorGroupId(active.id) &&

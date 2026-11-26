@@ -2068,6 +2068,7 @@
 
 - [`editor-commands-registration.spec.ts`](./workbench-editor-commands/editor-commands-registration.spec.ts)
 - [`editor-commands.spec.tsx`](./workbench-editor-commands/editor-commands.spec.tsx)
+- [`popout-close-target.spec.tsx`](./workbench-editor-commands/popout-close-target.spec.tsx)
 - [`popout-hotkeys.spec.tsx`](./workbench-editor-commands/popout-hotkeys.spec.tsx)
 - [`save-hotkey-label.spec.tsx`](./workbench-editor-commands/save-hotkey-label.spec.tsx)
 - [`window-close-ipc.spec.ts`](./workbench-editor-commands/window-close-ipc.spec.ts)

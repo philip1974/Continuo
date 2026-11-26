@@ -8,6 +8,7 @@ import { reopenClosedEditor } from '../../panels/Editor/reopen-closed-editor';
 import { clearRecentlyClosedEditors } from '../../panels/Editor/recently-closed-editors';
 import { registerEditorFocus } from '../../panels/Editor/editor-focus-registry';
 import { setDockApi } from '../../shell/dock/dock-api-ref';
+import { runInCommandDocument } from '../../shell/dock/popout-documents';
 import { POPOUT_HOTKEY_COMMAND_IDS } from '../../plugins/command-palette/useCommandHotkeys';
 import { REOPEN_CLOSED_EDITOR_COMMAND } from '../../panels/Editor/editor-commands';
 import type { EditorFileDeps } from '../../panels/Editor/editor-file-actions';
@@ -21,27 +22,35 @@ const disk = {
   fs: { readFile: vi.fn(async (p: string) => ({ ok: true as const, data: `disk ${p}` })), writeFile: vi.fn() },
 } as unknown as EditorFileDeps;
 
-const mainWin = { name: 'main' };
-const childWin = { name: 'child' };
+/** 子窗文档(按键所在窗口经 runInCommandDocument 标明)。 */
+const childDoc = document.implementation.createHTMLDocument('child');
+
+interface FakeGroup {
+  id: string;
+  api: { location: { type: string; getWindow?: () => { document: Document } } };
+}
 
 interface FakePanel {
   id: string;
-  group: { id: string };
-  api: { location: { type: string }; getWindow: () => unknown };
+  group: FakeGroup;
 }
 
-/** 假 dock:panels 里各面板所在窗口;active = 当前活动面板(焦点所在窗口)。 */
+const mainGroup: FakeGroup = { id: 'g-main', api: { location: { type: 'grid' } } };
+const popoutGroup: FakeGroup = { id: 'g-child', api: { location: { type: 'popout', getWindow: () => ({ document: childDoc }) } } };
+
+/** 假 dock:panels 里各面板所在的组(主窗 grid 组 / 子窗 popout 组);active = 全局活动面板(不一定在按键所在窗口)。 */
 function fakeDock(panels: FakePanel[], active: string) {
-  const addPanel = vi.fn((o: { id: string; position?: { referenceGroup?: { id: string } } }) => {
-    const group = o.position?.referenceGroup ?? { id: 'g-new' };
-    const ref = panels.find((p) => p.group === group);
-    const panel: FakePanel = { id: o.id, group, api: ref ? ref.api : { location: { type: 'grid' }, getWindow: () => mainWin } };
+  const addPanel = vi.fn((o: { id: string; position?: { referenceGroup?: FakeGroup } }) => {
+    const panel: FakePanel = { id: o.id, group: o.position?.referenceGroup ?? { id: 'g-new', api: { location: { type: 'grid' } } } };
     panels.push(panel);
     return panel;
   });
   setDockApi({
     get panels() {
       return panels;
+    },
+    get groups() {
+      return [...new Set(panels.map((p) => p.group))];
     },
     get activePanel() {
       return panels.find((p) => p.id === active);
@@ -52,17 +61,11 @@ function fakeDock(panels: FakePanel[], active: string) {
   return { addPanel };
 }
 
-const inMain = (id: string, group = 'g-main'): FakePanel => ({
-  id,
-  group: { id: group },
-  api: { location: { type: 'grid' }, getWindow: () => mainWin },
-});
-const popoutGroup = { id: 'g-child' };
-const inChild = (id: string): FakePanel => ({
-  id,
-  group: popoutGroup,
-  api: { location: { type: 'popout' }, getWindow: () => childWin },
-});
+const inMain = (id: string): FakePanel => ({ id, group: mainGroup });
+const inChild = (id: string): FakePanel => ({ id, group: popoutGroup });
+
+/** 在子窗里按 ⇧⌘T(热键分发把按键所在文档标为子窗)。 */
+const reopenInChild = (): Promise<boolean> => runInCommandDocument(childDoc, () => reopenClosedEditor(disk));
 
 const C = '/w/c.ts';
 
@@ -99,7 +102,7 @@ describe('popout 子窗里 ⇧⌘T', () => {
     const focused: string[] = [];
     const off = registerEditorFocus(B, () => focused.push('editor:2'), 'editor:2');
 
-    expect(await reopenClosedEditor(disk)).toBe(true);
+    expect(await reopenInChild()).toBe(true);
     await new Promise((r) => requestAnimationFrame(() => r(undefined)));
 
     expect(ids('editor:2')).toContain(B);
@@ -115,7 +118,7 @@ describe('popout 子窗里 ⇧⌘T', () => {
     st().closeTab(A, 'editor');
     expect(editorGroupIdsOf(st())).toEqual(['editor', 'editor:2']); // 原组仍在
 
-    expect(await reopenClosedEditor(disk)).toBe(true);
+    expect(await reopenInChild()).toBe(true);
     expect(ids('editor:2')).toContain(A);
     expect(ids('editor')).not.toContain(A);
     expect(st().activeGroupId).toBe('editor:2');
@@ -127,7 +130,7 @@ describe('popout 子窗里 ⇧⌘T', () => {
     expect(editorGroupIdsOf(st())).toEqual(['editor']);
     const { addPanel } = fakeDock([inMain('editor'), inChild('terminal-1')], 'terminal-1');
 
-    expect(await reopenClosedEditor(disk)).toBe(true);
+    expect(await reopenInChild()).toBe(true);
 
     const created = st().activeGroupId;
     expect(created).not.toBe('editor');
@@ -144,5 +147,25 @@ describe('popout 子窗里 ⇧⌘T', () => {
     st().closeTab(B, 'editor:2');
     expect(await reopenClosedEditor(disk)).toBe(true);
     expect(ids('editor:2')).toContain(B);
+  });
+  it('全局活动面板仍在主窗(点子窗标题栏 / ⌘` 切过去)、在子窗里按 → 仍落在子窗(按按键所在窗口,不看全局活动面板)', async () => {
+    twoGroups();
+    st().openTab(createTab('/w/d.ts', 'disk d'), { groupId: 'editor' });
+    fakeDock([inMain('editor'), inChild('editor:2')], 'editor');
+    st().closeTab(A, 'editor');
+
+    expect(await reopenInChild()).toBe(true);
+    expect(ids('editor:2')).toContain(A);
+    expect(ids('editor')).not.toContain(A);
+  });
+
+  it('全局活动面板在子窗、在主窗里按(原组已不在)→ 不在子窗新建编辑器组', async () => {
+    twoGroups(false);
+    st().closeTab(B, 'editor:2');
+    const { addPanel } = fakeDock([inMain('editor'), inChild('terminal-1')], 'terminal-1');
+
+    expect(await reopenClosedEditor(disk)).toBe(true);
+    expect(addPanel).not.toHaveBeenCalled();
+    expect(ids('editor')).toContain(B);
   });
 });

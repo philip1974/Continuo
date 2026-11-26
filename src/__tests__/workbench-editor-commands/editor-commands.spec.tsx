@@ -65,11 +65,11 @@ function tab(path: string, dirty = false): EditorTab {
 interface FakePanel {
   readonly id: string;
   readonly view: { readonly contentComponent: string };
-  readonly api: { readonly close: ReturnType<typeof vi.fn> };
+  readonly api: { readonly close: ReturnType<typeof vi.fn>; readonly location: { readonly type: 'grid' } };
 }
 
 function panel(id: string, component = id): FakePanel {
-  return { id, view: { contentComponent: component }, api: { close: vi.fn() } };
+  return { id, view: { contentComponent: component }, api: { close: vi.fn(), location: { type: 'grid' } } };
 }
 
 function useDock(activePanel: FakePanel | null): void {

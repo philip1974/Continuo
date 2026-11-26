@@ -31,7 +31,9 @@ function createDock(): DockviewApi {
 function popOut(panel: IDockviewPanel): ReturnType<typeof vi.fn> {
   const focus = vi.fn();
   const group = panel.group as unknown as { model: { location: unknown } };
-  group.model.location = { type: 'popout', getWindow: () => ({ focus }) };
+  // 子窗 window 桩:可挂监听(group-mru 跟踪子窗焦点)+ focus 桩
+  const win = Object.assign(new EventTarget(), { focus, document: document.implementation.createHTMLDocument() });
+  group.model.location = { type: 'popout', getWindow: () => win };
   return focus;
 }
 
@@ -99,6 +101,69 @@ describe('活动组在 popout 子窗时从主窗打开面板', () => {
     setDockApi(api);
     toggleSettingsPanel();
     expect(api.getPanel('settings')!.group).toBe(term.group);
+  });
+});
+
+/**
+ * 整组弹出后主窗只剩 dockview 留在 grid 里的隐藏引用组(0 宽、无面板);主窗关光其余面板后 dockview 把活动组置成它。
+ * 返回 { api, ref, ui }。
+ */
+function onlyHiddenReferenceGroupActive() {
+  const api = createDock();
+  const ref = api.addGroup();
+  const ui = api.addPanel({ id: 'ui44', component: 'plugin', title: 'UI44', position: { direction: 'right' } });
+  popOut(ui);
+  ref.api.setVisible(false);
+  ref.api.setActive();
+  setDockApi(api);
+  markDockLayoutRestored(api);
+  return { api, ref, ui };
+}
+
+describe('主窗只剩隐藏的 popout 引用组且它是活动组', () => {
+  it('前提:活动组在主窗 grid 但不可见、没有面板', () => {
+    const { api, ref } = onlyHiddenReferenceGroupActive();
+    expect(api.activeGroup).toBe(ref);
+    expect(ref.api.location.type).toBe('grid');
+    expect(ref.api.isVisible).toBe(false);
+  });
+
+  it('⌘, / 单例面板 / 显示输出 → 在主窗新建可见的组,不落进 0 宽的隐藏组', () => {
+    const { api, ref } = onlyHiddenReferenceGroupActive();
+    toggleSettingsPanel();
+    openOrFocusPanel('output', 'output', 'Output');
+    for (const id of ['settings', 'output']) {
+      const panel = api.getPanel(id)!;
+      expect(windowOf(panel)).toBe('main');
+      expect(panel.group).not.toBe(ref);
+      expect(panel.group.api.isVisible).toBe(true);
+    }
+    expect(ref.panels).toHaveLength(0);
+  });
+
+  it('打开后关光再打开(主窗回到空态再「显示输出」)→ 仍落在可见的组', () => {
+    const { api, ref, ui } = onlyHiddenReferenceGroupActive();
+    ui.api.setActive(); // 刚弹出:活动组是子窗的组 → 第一次打开落在主窗新建的组(此前也正常)
+    openOrFocusPanel('output', 'output', 'Output');
+    expect(api.getPanel('output')!.group).not.toBe(ref);
+    api.getPanel('output')!.api.close();
+    ref.api.setActive(); // dockview 移除活动组后兜底激活 groups[0](即隐藏引用组)
+    openOrFocusPanel('output', 'output', 'Output');
+    const output = api.getPanel('output')!;
+    expect(output.group).not.toBe(ref);
+    expect(output.group.api.isVisible).toBe(true);
+  });
+
+  it('新终端(无 grid 终端可作参照)→ 同样不落进隐藏组', () => {
+    const { api, ref } = onlyHiddenReferenceGroupActive();
+    reconcileTerminalPanels(api, {
+      previousSessions: [],
+      nextSessions: [{ id: 's1', title: 'zsh', originHint: 'user', createdAt: 1, status: 'running' } as never],
+    } as never);
+    const term = api.panels.find((p) => p.id !== 'ui44')!;
+    expect(windowOf(term)).toBe('main');
+    expect(term.group).not.toBe(ref);
+    expect(term.group.api.isVisible).toBe(true);
   });
 });
 

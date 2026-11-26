@@ -267,7 +267,7 @@ describe('编辑器面板内的确认框:按键冒泡到面板也不保存 / 不
     mocks.readFile.mockResolvedValue({ ok: true, data: 'orig' });
     mocks.writeFile.mockResolvedValue({ ok: true, data: undefined });
     useEditorStore.setState({ tabs: [tab(A, true), tab(B)], activeTabId: A, mode: 'source' });
-    setDockApi({ activePanel: { id: 'editor', view: { contentComponent: 'editor' }, api: { close: vi.fn() } } } as unknown as DockviewApi);
+    setDockApi({ activePanel: { id: 'editor', view: { contentComponent: 'editor' }, api: { close: vi.fn(), location: { type: 'grid' } } } } as unknown as DockviewApi);
     const reg = new CommandRegistry(detectPlatform());
     for (const spec of editorCommandSpecs(detectPlatform())) reg.register(spec);
     function Hotkeys() {

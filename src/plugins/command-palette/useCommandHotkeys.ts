@@ -13,13 +13,13 @@ import { canonicalHotkeyKey, detectPlatform, type Platform } from './format-hotk
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { baseKeyForShifted, legacyHotkeyKey, physicalHotkeyKey } from './event-hotkey-key';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
-import { getPopoutDocuments, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
+import { getPopoutDocuments, runInCommandDocument, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
 
 /**
- * dockview popout 子窗里也经热键分发的命令:只作用于子窗内的活动面板(dock 的 activePanel 随焦点落在子窗面板上),
- * 不在主窗画东西。mac 上 ⌘W 此前由应用菜单 role:'close' 关掉聚焦的子窗,改为 closeActiveEditor 后须在子窗分发。
+ * dockview popout 子窗里也经热键分发的命令:只作用于按键所在子窗的活动面板(分发时经 runInCommandDocument 标明按键所在窗口,
+ * 命令据 getCommandDocument 判断;全局 activePanel 不一定在该子窗 —— 点标题栏 / ⌘` 切到子窗不改活动组),不在主窗画东西。mac 上 ⌘W 此前由应用菜单 role:'close' 关掉聚焦的子窗,改为 closeActiveEditor 后须在子窗分发。
  * 保存与下一个 / 上一个编辑器由编辑器面板自己的按键处理覆盖(popout 内同样生效,且只作用于本编辑器 —— 放进这里时
  * 编辑器不在该子窗会切到主窗编辑器、子窗里看不到变化),不在此列。id 与 editor-commands 一致(规范守护)。
  */
@@ -338,11 +338,15 @@ export function withDefaultCommands(
   return result;
 }
 
+/** 事件所在文档(未派发的事件 —— target 为空 —— 按主窗文档;target 是 document 本身时 ownerDocument 为 null)。 */
+function eventDocument(e: Event): Document | null {
+  const target = e.target as Node | null;
+  return target?.ownerDocument ?? (target as Document | null) ?? (typeof document === 'undefined' ? null : document);
+}
+
 /** 事件所在文档有打开的 Modal(对话框期间工作台快捷键不执行,按键留给对话框;对齐 VSCode)。 */
 export function isModalOpenFor(e: Event): boolean {
-  // 未派发的事件(target 为空)按主窗文档判;target 是 document 本身时 ownerDocument 为 null。
-  const target = e.target as Node | null;
-  const doc = target?.ownerDocument ?? (target as Document | null) ?? (typeof document === 'undefined' ? null : document);
+  const doc = eventDocument(e);
   return doc !== null && hasOpenModalIn(doc);
 }
 
@@ -382,7 +386,11 @@ function createHotkeyHandler(
         // race(R51):触发时按 id 从 live registry 重查再执行,而非调缓存的 b.cmd.fn()。命令被
         // 插件 disable/reload 同步 unregister 后、到 React 重渲替换本 handler 前的窗口内,旧
         // bindings 闭包仍持已卸载命令的 fn;重查使死命令静默忽略,不再执行已卸载插件代码。
-        runRegisteredCommand(commands, b.cmd.id, tWithFallback(b.cmd.titleKey, b.cmd.title));
+        // 命令作用于按键所在窗口(⌘W 在子窗只关子窗的面板,不关主窗;见 getCommandDocument)。
+        const label = tWithFallback(b.cmd.titleKey, b.cmd.title);
+        const doc = eventDocument(e);
+        if (doc) void runInCommandDocument(doc, () => runRegisteredCommand(commands, b.cmd.id, label));
+        else void runRegisteredCommand(commands, b.cmd.id, label);
       }
     }
   };

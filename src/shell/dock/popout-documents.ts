@@ -33,6 +33,28 @@ export function getAnnouncingDocument(): Document {
   return document;
 }
 
+// 全局热键分发期间按键所在的文档(见 runInCommandDocument)。
+let dispatchingDocument: Document | null = null;
+
+/** 以 doc 为「触发命令的窗口」同步运行 fn(全局热键分发:主窗 / popout 子窗各自的 keydown 监听)。 */
+export function runInCommandDocument<T>(doc: Document, fn: () => T): T {
+  const previous = dispatchingDocument;
+  dispatchingDocument = doc;
+  try {
+    return fn();
+  } finally {
+    dispatchingDocument = previous;
+  }
+}
+
+/**
+ * 命令作用于哪个窗口的文档(VSCode:命令作用于触发它的窗口):热键分发期间 → 按键所在文档;否则(命令面板、菜单…)→
+ * 有焦点的 popout 子窗,没有则主窗。只在命令的同步部分有效 —— 有 await 的命令须在开头读出。
+ */
+export function getCommandDocument(): Document {
+  return dispatchingDocument ?? getAnnouncingDocument();
+}
+
 export function subscribePopoutDocuments(cb: () => void): () => void {
   subscribers.add(cb);
   return () => {

@@ -69,7 +69,7 @@ function mount() {
 
 beforeEach(() => {
   useEditorStore.setState({ tabs: [tab(A), tab(B), tab(C)], activeTabId: A, mode: 'source' });
-  setDockApi({ activePanel: { id: 'editor', view: { contentComponent: 'editor' }, api: { close: vi.fn() } } } as unknown as DockviewApi);
+  setDockApi({ activePanel: { id: 'editor', view: { contentComponent: 'editor' }, api: { close: vi.fn(), location: { type: 'grid' } } } } as unknown as DockviewApi);
 });
 afterEach(() => {
   cleanup();

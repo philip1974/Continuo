@@ -7,6 +7,8 @@ import { lazyPanel } from '@/lib/lazy-panel';
 import type { TerminalPanelViewParams } from '@/panels/Terminal/TerminalPanelView';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
+import { activePanelInDocument } from '@/shell/dock/group-mru';
+import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { clearTerminalPanel, openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
@@ -57,8 +59,9 @@ export default class TerminalPlugin extends Plugin {
       categoryKey: 'commands.terminal.category',
       hotkey: TERMINAL_SEARCH_COMMAND.hotkey,
       fn: () => {
+        // 作用于触发窗口的活动面板(主窗按键 / 命令面板时活动组可能仍在 popout 子窗)
         const api = getDockApi();
-        const active = api?.activePanel;
+        const active = api && activePanelInDocument(api, getCommandDocument());
         if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
         openTerminalSearch(active.id);
       },
@@ -73,7 +76,8 @@ export default class TerminalPlugin extends Plugin {
       categoryKey: 'commands.terminal.category',
       hotkey: terminalClearDefaultHotkey(detectPlatform()),
       fn: () => {
-        const active = getDockApi()?.activePanel;
+        const api = getDockApi();
+        const active = api && activePanelInDocument(api, getCommandDocument());
         if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
         clearTerminalPanel(active.id);
       },

@@ -21,13 +21,17 @@ import { requestEditorFocus } from './editor-focus-registry';
 import { popRecentlyClosedEditor, type RecentlyClosedEditor } from './recently-closed-editors';
 import type { DockviewGroupPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
+import { popoutGroupOfDocument } from '@/shell/dock/group-mru';
+import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { tWithFallback } from '@/i18n/translate';
 import { nextEditorGroupId } from '../../../electron/shared/editor-group-id';
 
 /** 重新打开栈顶的已关闭编辑器(跳过已打开 / 读不到的);重新打开了一个 → true,栈里没有可开的 → false。 */
 export async function reopenClosedEditor(deps: EditorFileDeps = editorFileDeps): Promise<boolean> {
+  // 触发窗口在第一个 await 前读出(之后不再是热键分发的同步上下文)
+  const doc = getCommandDocument();
   for (let entry = popRecentlyClosedEditor(); entry; entry = popRecentlyClosedEditor()) {
-    if (await reopenEntry(entry, deps)) return true;
+    if (await reopenEntry(entry, deps, doc)) return true;
   }
   return false;
 }
@@ -36,29 +40,26 @@ export async function reopenClosedEditor(deps: EditorFileDeps = editorFileDeps):
 type ReopenTarget = { readonly groupId: string } | { readonly createIn: DockviewGroupPanel };
 
 /**
- * 主窗里触发:原组还在 → 原组;否则活动组。popout 子窗里触发(⇧⌘T 在子窗分发,dock 活动面板随焦点在子窗)→ 落在该子窗
- *(VSCode:辅助窗口里重开落到该窗口的编辑器组;否则在主窗打开而子窗毫无反馈,renderer 也无激活主窗的通路):
- * 原组在该子窗 → 原组;否则子窗里的编辑器组(活动组优先);子窗里没有编辑器组 → 在子窗里新建一个(同子窗里拆分)。
+ * 主窗里触发:原组还在 → 原组;否则活动组。popout 子窗里触发(⇧⌘T 在子窗分发;按触发窗口判断,不看全局活动面板 ——
+ * 点标题栏切窗口不改活动组)→ 落在该子窗(VSCode:辅助窗口里重开落到该窗口的编辑器组;否则在主窗打开而子窗毫无反馈,
+ * renderer 也无激活主窗的通路):原组在该子窗 → 原组;否则子窗里的编辑器组(活动组优先);子窗里没有编辑器组 → 在子窗里
+ * 新建一个(同子窗里拆分)。
  */
-function targetOf(entry: RecentlyClosedEditor): ReopenTarget {
+function targetOf(entry: RecentlyClosedEditor, doc: Document): ReopenTarget {
   const s = useEditorStore.getState();
   const groups = editorGroupIdsOf(s);
   const api = getDockApi();
-  const active = api?.activePanel;
-  if (api && active?.api.location.type === 'popout') {
-    const win = active.api.getWindow();
-    const here = groups.filter((id) => {
-      const panel = api.getPanel(id);
-      return panel?.api.location.type === 'popout' && panel.api.getWindow() === win;
-    });
+  const popout = api && doc !== document ? popoutGroupOfDocument(api, doc) : undefined;
+  if (api && popout) {
+    const here = groups.filter((id) => api.getPanel(id)?.group === popout);
     const pick = [entry.groupId, s.activeGroupId].find((id) => here.includes(id)) ?? here[0];
-    return pick !== undefined ? { groupId: pick } : { createIn: active.group };
+    return pick !== undefined ? { groupId: pick } : { createIn: popout };
   }
   return { groupId: groups.includes(entry.groupId) ? entry.groupId : s.activeGroupId };
 }
 
-function openInTargetGroup(entry: RecentlyClosedEditor): boolean {
-  const target = targetOf(entry);
+function openInTargetGroup(entry: RecentlyClosedEditor, doc: Document): boolean {
+  const target = targetOf(entry, doc);
   if (!('groupId' in target)) return false;
   return groupTabsOf(useEditorStore.getState(), target.groupId).some((t) => pathEquals(t.filePath, entry.path));
 }
@@ -80,8 +81,8 @@ function createGroupIn(group: DockviewGroupPanel): string | null {
   return id;
 }
 
-async function reopenEntry(entry: RecentlyClosedEditor, deps: EditorFileDeps): Promise<boolean> {
-  if (openInTargetGroup(entry)) return false;
+async function reopenEntry(entry: RecentlyClosedEditor, deps: EditorFileDeps, doc: Document): Promise<boolean> {
+  if (openInTargetGroup(entry, doc)) return false;
   const store = useEditorStore;
   // 文档已在别的组打开 → 在目标组再打开它(共享同一文档,不重新读盘)
   let tab: EditorTab | null = findEditorFileTabByPath(store.getState().tabs, entry.path);
@@ -97,7 +98,7 @@ async function reopenEntry(entry: RecentlyClosedEditor, deps: EditorFileDeps): P
     }
     if (!r.ok) return false;
     latest = my === getUserActivationGen();
-    if (openInTargetGroup(entry)) return false;
+    if (openInTargetGroup(entry, doc)) return false;
     tab = findEditorFileTabByPath(store.getState().tabs, entry.path);
     if (!tab) {
       tab = createTab(entry.path, r.data, r.realPath);
@@ -105,7 +106,7 @@ async function reopenEntry(entry: RecentlyClosedEditor, deps: EditorFileDeps): P
     }
   }
   const id = tab.id;
-  const target = targetOf(entry);
+  const target = targetOf(entry, doc);
   // 读盘期间用户已切走(只在后台插回)→ 不为此新建组(会抢激活),落到活动组
   const created = 'groupId' in target || !latest ? null : createGroupIn(target.createIn);
   const groupId = 'groupId' in target ? target.groupId : (created ?? useEditorStore.getState().activeGroupId);
