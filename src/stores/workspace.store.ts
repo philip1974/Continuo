@@ -87,13 +87,28 @@ export function normalizeWorkspaceRoot(path: unknown): string | null {
   return isBlankString(path) ? null : trimTrailingSeparatorsKeepRoot(path);
 }
 
-export const useWorkspaceStore = create<WorkspaceState>((set) => ({
+/** 切换 root 前的回调(from = 当前 root,to = 新 root;同一文件夹不调)。 */
+export type BeforeWorkspaceRootSwitch = (from: string | null, to: string | null) => void;
+let beforeRootSwitch: BeforeWorkspaceRootSwitch | null = null;
+
+/**
+ * 登记 setRoot 切换 root 前的回调(持久化层据此在关掉 root 外 tab **之前**取当前文件夹的状态存为快照;
+ * BDD: src/__tests__/workspace-snapshot/)。null = 取消。只有一个登记者,后登记的替换先前的。
+ */
+export function setBeforeWorkspaceRootSwitch(fn: BeforeWorkspaceRootSwitch | null): void {
+  beforeRootSwitch = fn;
+}
+
+export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   root: null,
   recentRoots: [],
   rootRestored: false,
   markRootRestored: () => set((s) => (s.rootRestored ? s : { rootRestored: true })),
   setRoot: (path) => {
     const normalized = normalizeWorkspaceRoot(path);
+    const prev = get().root;
+    const switching = normalized === null ? prev !== null : prev === null || !pathEquals(prev, normalized);
+    if (switching) beforeRootSwitch?.(prev, normalized);
     // 切换/关闭 root 时同步清掉 root 外的 file tab,避免旧路径残留误导
     useEditorStore.getState().closeTabsOutsideRoot(normalized);
     set((s) => {

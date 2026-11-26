@@ -40,7 +40,8 @@ vi.mock('electron', () => ({
     fromId: vi.fn((id: number) => h.windows.get(id) ?? null),
   },
 }));
-vi.mock('../../../electron/main/persistence', () => ({ allocateWindowSeq: h.allocateWindowSeq }));
+// loadExplorer:新窗口按文件夹会话快照建段(workspace-snapshot);盘上无文件 → 没有快照,照旧 fresh
+vi.mock('../../../electron/main/persistence', () => ({ allocateWindowSeq: h.allocateWindowSeq, loadExplorer: async () => null }));
 
 import { openWorkspaceWindowWith, registerWindowIpc } from '../../../electron/main/ipc/window.ipc';
 import { _reset, setWorkspaceRoot } from '../../../electron/main/services/window-workspace-roots.service';

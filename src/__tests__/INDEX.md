@@ -2100,6 +2100,12 @@
 - [`search-query.spec.ts`](./workspace-search/search-query.spec.ts)
 - [`search-view.spec.tsx`](./workspace-search/search-view.spec.tsx)
 
+## [workspace-snapshot(按文件夹的会话快照)](./workspace-snapshot/README.md)
+
+- [`in-window-switch.spec.ts`](./workspace-snapshot/in-window-switch.spec.ts)
+- [`snapshot-lifecycle.spec.ts`](./workspace-snapshot/snapshot-lifecycle.spec.ts)
+- [`snapshot-store.spec.ts`](./workspace-snapshot/snapshot-store.spec.ts)
+
 ## [workspace-window-dedupe(同一文件夹只在一个窗口打开)](./workspace-window-dedupe/README.md)
 
 - [`find-window-with-workspace.spec.ts`](./workspace-window-dedupe/find-window-with-workspace.spec.ts)

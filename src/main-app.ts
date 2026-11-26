@@ -268,6 +268,7 @@ export async function init(): Promise<void> {
       touchRecent: (path) => coApi.explorer.touchRecent(path),
       removeRecent: (path) => coApi.explorer.removeRecent(path),
       onRecentChanged: (cb) => coApi.explorer.onRecentChanged(cb),
+      switchWorkspace: (input) => coApi.explorer.switchWorkspace(input),
     },
     {
       // 图片 tab 恢复同打开:stat 指纹,不读成文本(见 editor-image)
@@ -275,6 +276,8 @@ export async function init(): Promise<void> {
       windowSeq: initialWindowSeq,
       ...(initialWorkspace !== null ? { initialWorkspace } : {}),
       ...(initialFresh ? { fresh: true } : {}),
+      // 同一窗口切到有会话快照的文件夹后,恢复出的编辑器组与 dock 现有编辑器面板对齐(同启动恢复)
+      onWorkspaceSnapshotRestored: reconcileEditorGroupsAfterRestore,
     },
   ).then(() => {
     // 编辑器组与 dock 里的编辑器面板对齐(会话与 dock 布局分开持久化,可能不一致;BDD: editor-groups)

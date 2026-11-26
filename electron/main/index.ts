@@ -156,7 +156,9 @@ import { cancelScopeRequestsForWebContents } from './ipc/plugin-fs.ipc';
 import { registerDebugViewIpc } from './ipc/debug-view.ipc';
 import { DEBUG_VIEW_CHANNELS } from '../shared/debug-view-channels';
 import { sendToWindow } from './lib/broadcast';
-import { currentWindowBackgroundColor, openWorkspaceWindowWith } from './ipc/window.ipc';
+import { currentWindowBackgroundColor, openWorkspaceWindowWith, workspaceWindowOpts } from './ipc/window.ipc';
+import { saveWindowEntryAsSnapshot } from './services/workspace-snapshot.service';
+import { findWindowEntryBySeq } from '../shared/window-entry-lookup';
 import { runWindowOpen, type WindowOpenFailureUi } from './lib/run-window-open';
 import { onRendererDocumentGone } from './lib/renderer-document-gone';
 
@@ -752,7 +754,7 @@ function initialWindowPlacement(seq: number): { bounds: Rect; isMaximized: boole
  * 退出时把各主窗几何与「退出时开着的主窗口」(openWindowSeqs,按最近活动排序)等待落盘(关窗 closed 里的写是 void 异步,
  * 退出不等它)。没有开着的主窗口(macOS 关光窗口后退出)时保留运行期维护的列表。失败只告警,不阻断退出。
  */
-async function persistWindowStates(seqs: readonly number[], openSeqs: readonly number[]): Promise<void> {
+export async function persistWindowStates(seqs: readonly number[], openSeqs: readonly number[]): Promise<void> {
   const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
   try {
     await withExplorerFileMutex(async () => {
@@ -763,6 +765,9 @@ async function persistWindowStates(seqs: readonly number[], openSeqs: readonly n
         changed = true;
       }
       for (const seq of seqs) {
+        // 开着的窗口各自存为文件夹快照(退出 flush 之后;下次只恢复一个窗口时,其余文件夹再打开也能找回)。
+        const segment = findWindowEntryBySeq(payload.windows, seq);
+        if (segment && (await saveWindowEntryAsSnapshot(payload, segment))) changed = true;
         const state = knownWindowStates.get(seq);
         if (!state) continue;
         const entry = ensureWindowEntry(payload, seq);
@@ -823,6 +828,9 @@ export function createMainWindow(opts: CreateMainWindowOpts) {
       try {
         const payload = (await loadExplorer(explorerFile)) ?? defaultExplorerV3();
         const entry = ensureWindowEntry(payload, seq);
+        // 按文件夹的会话快照(段已随关窗 flush 落盘):先存快照,再移出 openWindowSeqs(同一次写盘)。之后再打开这个文件夹
+        // 按快照恢复。BDD: src/__tests__/workspace-snapshot/
+        await saveWindowEntryAsSnapshot(payload, entry);
         entry.lastClosedAt = closedAtNow();
         const windowState = knownWindowStates.get(seq);
         if (windowState) entry.windowState = windowState;
@@ -1476,12 +1484,9 @@ app.whenReady().then(async () => {
   // 主窗由 createMainWindow 创建(有副作用:开窗 + 挂就绪作废监听);冷启动协议 URL 经
   // dispatchProtocolUrl 走统一队列消费(R69),不再需要持有主窗引用直发。
   if (startup.mode === 'dock') {
-    // 第一个 dir 作主窗 workspace,覆盖持久化的 windows[0].workspace.root
-    createMainWindow({
-      windowSeq: 0,
-      workspace: startup.dirs[0]!,
-      fresh: true,
-    });
+    // 第一个 dir 作主窗 workspace,覆盖持久化的 windows[0].workspace.root(该文件夹有会话快照 → 按快照建段、非 fresh,
+    // 原 seq 0 段先存为它自己文件夹的快照;同 openWorkspaceWindowWith)
+    createMainWindow(await workspaceWindowOpts(0, startup.dirs[0]!));
     if (startup.dirs.length > 1) {
       void runWindowOpen(async () => {
         for (let i = 1; i < startup.dirs.length; i += 1) {

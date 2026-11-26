@@ -46,6 +46,7 @@ import { usePinnedStore } from '@/stores/pinned.store';
 import {
   buildRecentRoots,
   normalizeWorkspaceRoot,
+  setBeforeWorkspaceRootSwitch,
   useWorkspaceStore,
 } from '@/stores/workspace.store';
 import { debounce } from '@/lib/debounce';
@@ -64,9 +65,11 @@ import {
   EDITOR_VIEW_STATES_MAX,
   ExplorerSchema,
   ExplorerSchemaV3,
+  WorkspaceSnapshotStateSchema,
   type EditorViewStateEntry,
   type ExplorerPayloadV3,
   type WindowEntryV3,
+  type WorkspaceSwitchInput,
 } from '../../../electron/shared/explorer-persistence-schema';
 import { IMAGE_MAX_SCALE, IMAGE_MIN_SCALE } from '../../../electron/shared/image-preview';
 import {
@@ -123,6 +126,11 @@ export interface ExplorerPersistApi {
   removeRecent?: (path: string) => Promise<IpcResult<void>>;
   /** 订阅 main 广播的最新 recentRoots(任一窗口 touch / remove 后推给所有窗口),返 unsubscribe。 */
   onRecentChanged?: (cb: (recentRoots: string[]) => void) => () => void;
+  /**
+   * 同一窗口切换 root(explorer:switch-workspace):把切走前的状态存为旧 root 的快照,返回切到的 root 的快照(无则 null)。
+   * 缺省(测试)则不存不取。BDD: src/__tests__/workspace-snapshot/
+   */
+  switchWorkspace?: (input: DeepReadonly<WorkspaceSwitchInput>) => Promise<IpcResult<unknown>>;
 }
 
 /** Editor session 异步 hydrate 所需的 fs 子集(只用 readFile). */
@@ -150,6 +158,8 @@ export interface InitExplorerPersistenceExtras {
    * 仅当段缺失或 snap 读失败时,`initialWorkspace` 才作 fallback。
    */
   readonly fresh?: boolean;
+  /** 同一窗口切换 root 后按快照恢复完(含编辑器 tab 读盘)时调用(组与 dock 编辑器面板对齐)。 */
+  readonly onWorkspaceSnapshotRestored?: () => void;
 }
 
 // ──────────────────────────────────────────────
@@ -435,34 +445,42 @@ export function hydrateStores(
   });
   // 窗口段(无 entry 时复位默认)
   if (entry) {
-    // entry.explorer.activePath 故意不再回写 store(打磨 R18:store 已无该字段)。
-    // Markdown 模式在 tab 恢复(挂载编辑器)前回填,恢复出的 tab 直接按该模式挂载。
-    if (entry.editor?.mode !== undefined) useEditorStore.setState({ mode: entry.editor.mode });
-    restoreSearchInput(entry.search);
-    useExplorerStore.setState({
-      expandedPaths: new Set(entry.explorer.expandedPaths),
-      sort: entry.explorer.sort,
-    });
-    if (entry.layoutUi) {
-      useLayoutUiStore.setState({
-        sidebarOpen: entry.layoutUi.sidebarOpen,
-        sidebarWidth: clampWidth(
-          entry.layoutUi.sidebarWidth,
-          SIDEBAR_MIN_WIDTH,
-          SIDEBAR_MAX_WIDTH,
-        ),
-      });
-    } else {
-      useLayoutUiStore.setState({
-        sidebarOpen: true,
-        sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
-      });
-    }
+    hydrateWindowSegment(entry);
   } else {
     useExplorerStore.setState({
       expandedPaths: new Set(),
       sort: { by: 'name', reverse: false },
     });
+    useLayoutUiStore.setState({
+      sidebarOpen: true,
+      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+    });
+  }
+}
+
+/**
+ * 窗口段里与工作区相关的同步部分回填 store(启动恢复 / 同一窗口切到有快照的文件夹):Markdown 模式、搜索输入、展开 / 排序、侧栏。
+ * 编辑器 tab 另由 restoreEditorTabs 异步恢复。
+ */
+function hydrateWindowSegment(entry: ExplorerWindowEntry): void {
+  // entry.explorer.activePath 故意不再回写 store(打磨 R18:store 已无该字段)。
+  // Markdown 模式在 tab 恢复(挂载编辑器)前回填,恢复出的 tab 直接按该模式挂载。
+  if (entry.editor?.mode !== undefined) useEditorStore.setState({ mode: entry.editor.mode });
+  restoreSearchInput(entry.search);
+  useExplorerStore.setState({
+    expandedPaths: new Set(entry.explorer.expandedPaths),
+    sort: entry.explorer.sort,
+  });
+  if (entry.layoutUi) {
+    useLayoutUiStore.setState({
+      sidebarOpen: entry.layoutUi.sidebarOpen,
+      sidebarWidth: clampWidth(
+        entry.layoutUi.sidebarWidth,
+        SIDEBAR_MIN_WIDTH,
+        SIDEBAR_MAX_WIDTH,
+      ),
+    });
+  } else {
     useLayoutUiStore.setState({
       sidebarOpen: true,
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
@@ -480,7 +498,11 @@ export async function hydrateEditorTabs(
   windowSeq: number = PRIMARY_WINDOW_SEQ,
 ): Promise<void> {
   const entry = findWindowEntryBySeq(snap.windows, windowSeq);
-  if (!entry?.editor || entry.editor.openFilePaths.length === 0) return;
+  if (entry) await restoreEditorTabs(entry, fs);
+}
+
+async function restoreEditorTabs(entry: ExplorerWindowEntry, fs: EditorSessionFsApi): Promise<void> {
+  if (!entry.editor || entry.editor.openFilePaths.length === 0) return;
   // 本轮 restore 期望的 workspace root(= hydrateStores 刚据此 snapshot 段设的 root)。
   // readFile 是异步的,期间用户可能切到别的 workspace(setRoot 会关掉 root 外 tab,但此刻
   // 旧 tab 还没 restore 出来)。若读完后当前 root 已不是期望 root,把旧项目 tab 插进新
@@ -629,6 +651,7 @@ export async function initExplorerPersistence(
   const windowSeq = extras?.windowSeq ?? PRIMARY_WINDOW_SEQ;
   const initialWorkspace = extras?.initialWorkspace;
   const fresh = extras?.fresh === true;
+  setBeforeWorkspaceRootSwitch(null); // 按文件夹快照的切换钩子只在可信加载后接上(见步骤 3 末尾)
 
   // race(R38):捕获启动 root 选择代际。initExplorerPersistence 是 fire-and-forget,UI 在
   // `await api.read()` 完成前就以 root=null 渲染、可交互;冷启动磁盘/IPC 慢时用户可能经
@@ -827,6 +850,49 @@ export async function initExplorerPersistence(
   // consumeStartupQuery 去掉;dev 同 URL / DevTools 刷新不经 flush)会按盘上旧段恢复旧 root。初始
   // savedStoreVersion=-1 即视为脏,这里只需安排一次防抖写。
   if (hydratedAsNewWindow) persist();
+  wireWorkspaceSnapshots(api, windowSeq, extras);
+}
+
+/**
+ * 按文件夹的会话快照(VSCode workspace storage):同一窗口切换 root 前把当前文件夹的状态(此刻 root 外 tab 还没关)送 main
+ * 存为快照,并取切到的文件夹的快照;回复到达时 root 仍是它、期间没有更新的切换 → 恢复展开 / 侧栏 / 搜索 / 模式与编辑器 tab
+ *(读盘失败的跳过,同启动恢复)。没有快照 → 不动(原有行为)。dock 布局不随同一窗口切换(终端等面板留在窗口里)。
+ * BDD: src/__tests__/workspace-snapshot/
+ */
+function wireWorkspaceSnapshots(
+  api: ExplorerPersistApi,
+  windowSeq: number,
+  extras: InitExplorerPersistenceExtras | undefined,
+): void {
+  const switchWorkspace = api.switchWorkspace;
+  if (!switchWorkspace) return;
+  let switchGen = 0;
+  const restore = async (to: string, data: unknown, gen: number): Promise<void> => {
+    const parsed = WorkspaceSnapshotStateSchema.safeParse(data);
+    const root = useWorkspaceStore.getState().root;
+    if (!parsed.success || gen !== switchGen || root === null || !pathEquals(root, to)) return;
+    const entry: ExplorerWindowEntry = { windowSeq, ...parsed.data, workspace: { root } };
+    hydrateWindowSegment(entry);
+    if (extras?.fs) await restoreEditorTabs(entry, extras.fs);
+    extras?.onWorkspaceSnapshotRestored?.();
+  };
+  setBeforeWorkspaceRootSwitch((from, to) => {
+    const gen = ++switchGen;
+    let save: DeepReadonly<WorkspaceSwitchInput>['save'] = null;
+    if (from !== null) {
+      const { windowSeq: _seq, ...state } = snapshotFromStores(undefined, windowSeq).windows[0]!;
+      save = { ...state, workspace: { root: from } };
+    }
+    switchWorkspace({ save, open: to })
+      .then(async (r) => {
+        if (!r.ok) {
+          console.warn('[explorer-persist] switchWorkspace failed', r.code, r.message);
+          return;
+        }
+        if (to !== null && r.data !== null) await restore(to, r.data, gen);
+      })
+      .catch((err: unknown) => console.warn('[explorer-persist] switchWorkspace threw', err));
+  });
 }
 
 function withoutRecentRoot(list: readonly string[], path: string): string[] {

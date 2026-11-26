@@ -174,6 +174,9 @@ const api = {
     /** 从全局「最近打开」移除一项(main 锁内移除后广播 onRecentChanged). */
     removeRecent: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(EXPLORER_CHANNELS.REMOVE_RECENT, { path }),
+    /** 同一窗口切换 root:存切走前的状态为旧 root 的快照,返回切到的 root 的快照(无则 null;形态由 main zod 校验). */
+    switchWorkspace: (input: { save: unknown; open: string | null }): Promise<IpcResult<unknown | null>> =>
+      ipcRenderer.invoke(EXPLORER_CHANNELS.SWITCH_WORKSPACE, input),
     /** 订阅「最近打开」变更广播(任一窗口 touch 成功后 main 推给所有窗口),返 unsubscribe. */
     onRecentChanged: (cb: (recentRoots: string[]) => void): (() => void) =>
       subscribeIpc(

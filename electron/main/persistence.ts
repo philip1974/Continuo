@@ -317,6 +317,8 @@ export function mergeWritableIntoFull(
   };
   if (openWindowSeqs !== undefined) out.openWindowSeqs = openWindowSeqs;
   else delete out.openWindowSeqs;
+  // 按文件夹的会话快照同属 main-owned(renderer 可写 schema 不含它):保留盘上值。
+  if (current?.workspaceSnapshots !== undefined) out.workspaceSnapshots = current.workspaceSnapshots;
   return out;
 }
 

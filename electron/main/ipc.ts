@@ -16,7 +16,13 @@ import {
   type ExplorerWritablePayload,
   writeExplorerFile,
 } from './persistence';
-import { EXPLORER_FILE_NAME, MAIN_OWNED_WINDOW_FIELDS, PATH_STR_MAX } from '../shared/explorer-persistence-schema';
+import {
+  EXPLORER_FILE_NAME,
+  MAIN_OWNED_WINDOW_FIELDS,
+  PATH_STR_MAX,
+  WorkspaceSwitchInputSchema,
+} from '../shared/explorer-persistence-schema';
+import { switchWorkspaceSnapshot } from './services/workspace-snapshot.service';
 import { isBlankString } from '../shared/ecma-whitespace';
 import { broadcastToWindows } from './lib/broadcast';
 import { safeHandle, safeHandleWithCtx, withTrustedFrameGate } from './safe-handle';
@@ -91,6 +97,11 @@ export function filterWritableSnapshotForWindowSeq(
 export function stripMainOwnedWindowFields(payload: ExplorerPayloadV3): ExplorerPayloadV3 {
   const owns = (w: ExplorerPayloadV3['windows'][number]): boolean =>
     MAIN_OWNED_WINDOW_FIELDS.some((field) => w[field] !== undefined);
+  // 按文件夹的会话快照(含 dock 布局)同样只属 main:renderer 经 explorer:switch-workspace / 新窗口建段拿到需要的那一份。
+  if (payload.workspaceSnapshots !== undefined) {
+    const { workspaceSnapshots: _snapshots, ...rest } = payload;
+    return stripMainOwnedWindowFields(rest);
+  }
   if (!payload.windows.some(owns)) return payload;
   return {
     ...payload,
@@ -234,6 +245,12 @@ export function registerIpc(deps: WindowIpcDeps): void {
         await writeExplorerFile(explorerFile, merged);
       });
     },
+  );
+
+  // 同一窗口切换 root(⌘O / 最近打开 / 拖入文件夹 / 关闭文件夹):存旧 root 的快照、返回新 root 的快照。按 sender 的真实
+  // seq 取本窗段的 dock 布局(同 explorer:write 的持久化边界)。BDD: src/__tests__/workspace-snapshot/
+  safeHandleWithCtx(EXPLORER_CHANNELS.SWITCH_WORKSPACE, WorkspaceSwitchInputSchema, async (input, { event }) =>
+    switchWorkspaceSnapshot(explorerFile, senderWindowSeqOrThrow(event), input),
   );
 
   // 全局「最近打开」增量变更(多窗口:explorer:write 不再整表覆盖 recentRoots,见 mergeWritableIntoFull)。

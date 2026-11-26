@@ -288,11 +288,38 @@ export const ExplorerWritableSnapshotSchema = z
   })
   .strict();
 
+// 按文件夹的会话快照(VSCode workspace storage:工作区状态按文件夹保存,重开 / 切回时恢复)。内容 = 窗口段里与工作区相关的
+// 部分(复用窗口段 schema,去掉 windowSeq,root 必填),外加 main-owned 的 dock 布局;不含窗口几何 / lastClosedAt。
+// main-owned:只由 main 在切换 root / 关窗 / 退出时写,renderer 整份写回保留盘上值、explorer:read 剥离。
+// BDD: src/__tests__/workspace-snapshot/
+/** 快照表运行时上限(最近使用的文件夹数,超出淘汰最旧);schema 上限更宽,只挡损坏 / 滥用(同 recentRoots)。 */
+export const WORKSPACE_SNAPSHOTS_LIMIT = 20;
+const WORKSPACE_SNAPSHOTS_MAX = 1000;
+export const WorkspaceSnapshotStateSchema = WritableWindowEntrySchema.omit({ windowSeq: true })
+  .extend({ workspace: z.object({ root: pathStr() }).strict() })
+  .strict();
+const WorkspaceSnapshotSchema = WorkspaceSnapshotStateSchema.extend({ layout: LayoutSchema.optional() }).strict();
+/** 快照表的一项(最近使用在前)。WorkspaceSnapshotStateSchema 导出供 renderer 校验 explorer:switch-workspace 的返回值。 */
+export type WorkspaceSnapshot = z.infer<typeof WorkspaceSnapshotSchema>;
+/** 快照里 renderer 恢复的部分(不含 dock 布局)。 */
+export type WorkspaceSnapshotState = z.infer<typeof WorkspaceSnapshotStateSchema>;
+
+/**
+ * explorer:switch-workspace 入参(同一窗口切换 root):save = 切走前本窗的状态(dock 布局由 main 取盘上本窗段,入参不带),
+ * open = 切到的 root(null = 关闭文件夹)。
+ */
+export const WorkspaceSwitchInputSchema = z
+  .object({ save: WorkspaceSnapshotStateSchema.nullable(), open: pathStr().nullable() })
+  .strict();
+export type WorkspaceSwitchInput = z.infer<typeof WorkspaceSwitchInputSchema>;
+
 /** Full Explorer Schema v3(loadExplorer 返回此 shape). */
 export const ExplorerSchemaV3 = z
   .object({
     version: z.literal(3),
     ...explorerTopLevelShape,
+    /** 按文件夹的会话快照(main-owned;缺省 = 空)。 */
+    workspaceSnapshots: z.array(WorkspaceSnapshotSchema).max(WORKSPACE_SNAPSHOTS_MAX).optional(),
     windows: z.array(WindowEntrySchemaV3).max(WINDOWS_MAX), // 边界(E14)
   })
   .strict();

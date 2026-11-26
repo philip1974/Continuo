@@ -66,6 +66,8 @@ export const EXPLORER_CHANNELS = {
   TOUCH_RECENT: 'explorer:touch-recent',
   // invoke(renderer → main){ path }:从全局「最近打开」移除一项(锁内重读盘 → 移除 → 写盘 → 广播)。
   REMOVE_RECENT: 'explorer:remove-recent',
+  // invoke(renderer → main){ save, open }:同一窗口切换 root —— 把切走前的状态存为旧 root 的快照,返回 open 的快照或 null。
+  SWITCH_WORKSPACE: 'explorer:switch-workspace',
   // main → renderer push { recentRoots }:touch / remove 写盘后广播给所有窗口(含发起者)。
   RECENT_CHANGED: 'explorer:recent-changed',
 } as const;

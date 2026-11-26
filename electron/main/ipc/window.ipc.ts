@@ -20,6 +20,9 @@ import {
   setRestoreAllWindowsOnLaunch,
 } from '../persistence';
 import { EXPLORER_FILE_NAME } from '../../shared/explorer-persistence-schema';
+import { EXPLORER_CHANNELS } from '../../shared/persistence-channels';
+import { broadcastToWindows } from '../lib/broadcast';
+import { seedWindowFromWorkspaceSnapshot } from '../services/workspace-snapshot.service';
 import {
   clearWindow as clearWindowRoot,
   getWorkspaceRoot,
@@ -111,7 +114,8 @@ async function createWindowNow(
 
 /**
  * 开一个新主窗的单一规则:分配新 windowSeq;给了 workspace 则以它为 root 且 fresh(用户显式打开,不沿用该
- * seq 的历史持久化段 —— 漏写 fresh 即恢复成旧 workspace,见 index.ts MainWindowOpts.fresh),不给则空白新窗。
+ * seq 的历史持久化段 —— 漏写 fresh 即恢复成旧 workspace,见 index.ts MainWindowOpts.fresh),该文件夹有会话快照时
+ * 改为按快照建段后非 fresh 打开(见 workspaceWindowOpts),不给则空白新窗。
  * renderer window.new IPC 与 main 的菜单 / Dock 菜单 / argv / open-file / 冷启动多目录(index.ts
  * openWorkspaceWindow)共用。调用方负责校验 workspace。
  */
@@ -132,7 +136,31 @@ export async function openWorkspaceWindowWith(
     if (code !== undefined && Object.hasOwn(ERROR_CODES, code)) throw err;
     throw codedError(mapNodeErrnoCode(err), errorMessage(err));
   }
-  createMainWindow(workspace === undefined ? { windowSeq } : { windowSeq, workspace, fresh: true });
+  createMainWindow(await workspaceWindowOpts(windowSeq, workspace));
+}
+
+/**
+ * 新主窗的打开参数(seq 已分配):给了 workspace 且快照表有这个文件夹 → main 先把快照写成该 seq 的窗口段,以非 fresh 打开
+ *(renderer 按段恢复编辑器 / 展开 / 侧栏 / 搜索 / dock 布局,VSCode workspace storage 同),并广播置顶后的「最近打开」;
+ * 没有快照 / explorer.json 缺失、损坏或读写失败 → 照旧 fresh。冷启动 dock 模式的 seq 0 同样经这里。
+ * BDD: src/__tests__/workspace-snapshot/
+ */
+export async function workspaceWindowOpts(
+  windowSeq: number,
+  workspace?: string,
+): Promise<{ windowSeq: number; workspace?: string; fresh?: boolean }> {
+  if (workspace === undefined) return { windowSeq };
+  const explorerFile = path.join(app.getPath('userData'), EXPLORER_FILE_NAME);
+  let recentRoots: string[] | null = null;
+  try {
+    recentRoots = await seedWindowFromWorkspaceSnapshot(explorerFile, windowSeq, workspace);
+  } catch (err) {
+    console.warn('[window-ipc] workspace snapshot seed failed, opening fresh', err);
+  }
+  if (recentRoots === null) return { windowSeq, workspace, fresh: true };
+  const payload = { recentRoots };
+  broadcastToWindows(EXPLORER_CHANNELS.RECENT_CHANGED, () => payload, '[explorer] RECENT_CHANGED');
+  return { windowSeq, workspace };
 }
 
 /**

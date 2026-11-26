@@ -221,7 +221,7 @@ vi.mock('../../../electron/main/ipc/plugin-mcp.ipc', () => ({
   startPluginMcpIpc: vi.fn(),
 }));
 
-const { createMainWindow, FLUSH_ACK_TIMEOUT_MS } = await import(
+const { createMainWindow, FLUSH_ACK_TIMEOUT_MS, persistWindowStates } = await import(
   '../../../electron/main/index'
 );
 
@@ -694,6 +694,40 @@ describe('window close layout flush', () => {
     });
   });
 
+  // BDD: src/__tests__/workspace-snapshot/ —— 关窗存文件夹快照(同一次锁内先存快照、再移出 openWindowSeqs)
+  it('关窗存文件夹快照:窗口段(flush 后)存为该 root 的快照,同时移出 openWindowSeqs;段本身保留', async () => {
+    const seeded = defaultExplorerV3();
+    seeded.openWindowSeqs = [31, 32];
+    seeded.windows.push({
+      windowSeq: 31,
+      workspace: { root: '/ws2' },
+      explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
+      layoutUi: { sidebarOpen: false, sidebarWidth: 300 },
+      editor: { openFilePaths: ['/ws2/w1.ts'], activePath: '/ws2/w1.ts' },
+      layout: { version: 1, grid: { root: 'x' } },
+    });
+    await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(seeded));
+    const a = createMockMainWindow(31);
+    createMockMainWindow(32);
+
+    a.close();
+    ack(a);
+    await vi.waitFor(async () => {
+      const payload = await loadExplorer(path.join(dir, 'explorer.json'));
+      expect(payload?.openWindowSeqs).toEqual([32]);
+      expect(payload?.workspaceSnapshots).toEqual([
+        {
+          workspace: { root: '/ws2' },
+          explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
+          layoutUi: { sidebarOpen: false, sidebarWidth: 300 },
+          editor: { openFilePaths: ['/ws2/w1.ts'], activePath: '/ws2/w1.ts' },
+          layout: { version: 1, grid: { root: 'x' } },
+        },
+      ]);
+      expect(payload?.windows.some((w) => w.windowSeq === 31)).toBe(true);
+    });
+  });
+
   it('before-quit 扫描窗口不对 getAllWindows 结果 filter 出中间数组,且仍 flush 存活窗口', async () => {
     const a = createMockMainWindow(11);
     const b = createMockMainWindow(12);
@@ -733,5 +767,23 @@ describe('window close layout flush', () => {
     } finally {
       filterSpy.mockRestore();
     }
+  });
+
+  it('退出时开着的窗口各自存为文件夹快照(persistWindowStates,退出 flush 之后)', async () => {
+    const seeded = defaultExplorerV3();
+    for (const [seq, root] of [[41, '/q1'], [42, '/q2']] as const) {
+      seeded.windows.push({
+        windowSeq: seq,
+        workspace: { root },
+        explorer: { activePath: null, expandedPaths: [], sort: { by: 'name', reverse: false } },
+      });
+    }
+    await fs.writeFile(path.join(dir, 'explorer.json'), JSON.stringify(seeded));
+
+    await persistWindowStates([41, 42], [42, 41]);
+
+    const payload = await loadExplorer(path.join(dir, 'explorer.json'));
+    expect(new Set(payload?.workspaceSnapshots?.map((s) => s.workspace.root))).toEqual(new Set(['/q1', '/q2']));
+    expect(payload?.openWindowSeqs).toEqual([42, 41]);
   });
 });

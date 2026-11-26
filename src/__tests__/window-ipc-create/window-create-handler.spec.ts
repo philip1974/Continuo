@@ -58,6 +58,8 @@ vi.mock('../../../electron/main/index', () => ({
 
 vi.mock('../../../electron/main/persistence', () => ({
   allocateWindowSeq: vi.fn(async () => 7),
+  // 新窗口按文件夹会话快照建段(workspace-snapshot):盘上无文件 → 没有快照,照旧 fresh
+  loadExplorer: vi.fn(async () => null),
 }));
 
 vi.mock('node:fs', () => ({
