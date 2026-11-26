@@ -1619,6 +1619,10 @@
 - [`store.spec.ts`](./quick-open/store.spec.ts)
 - [`walk-files.spec.ts`](./quick-open/walk-files.spec.ts)
 
+## [Quick Open(⌘P)支持 `文件名:行号`](./quick-open-file-line/README.md)
+
+- [`quick-open-file-line.spec.tsx`](./quick-open-file-line/quick-open-file-line.spec.tsx)
+
 ## [QuickOpenModal(VSCode ⌘P 文件搜索)](./quick-open-modal/README.md)
 
 - [`quick-open-modal.spec.tsx`](./quick-open-modal/quick-open-modal.spec.tsx)

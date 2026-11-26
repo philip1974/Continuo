@@ -9,6 +9,8 @@
 //   BDD: src/__tests__/quick-open-recent/
 //   转到行 / 列:查询以 `:` 开头(⌃G 预填)→ 列表换成唯一一行「转到第 N 行」/ 提示,Enter 跳转(见 use-goto-line)。
 //   BDD: src/__tests__/editor-goto-line/
+//   文件名:行号(`long.ts:200`、`a.ts:3:5`、`a.ts(3,5)`,VSCode 同):剥掉末尾行列再匹配文件,打开后跳到该行(居中)。
+//   BDD: src/__tests__/quick-open-file-line/
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
@@ -31,6 +33,8 @@ import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { normalizeSearchQuery } from '@/lib/search-query';
 import { useGotoLine } from './use-goto-line';
+import { parseFileLineQuery, type GotoLineRequest } from './goto-line';
+import { coApp } from '@/plugins/co-app';
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -175,7 +179,9 @@ function QuickOpenBody() {
     () => (resultsRoot === root ? results : EMPTY_RESULTS),
     [resultsRoot, root, results],
   );
-  const effectiveQuery = normalizeSearchQuery(query);
+  // `文件:行[:列]` → 按剥掉行列的部分匹配文件,打开时跳到该行
+  const fileLine = useMemo(() => parseFileLineQuery(query), [query]);
+  const effectiveQuery = normalizeSearchQuery(fileLine?.filter ?? query);
   // 最近打开:打开面板时读一次(面板打开期间不会再打开文件)。已删除的文件不在扫描结果里,orderByRecent 自然略去。
   const recentPaths = useMemo(() => (root ? recentFilesFor(root) : []), [root]);
   const ordered = useMemo(() => orderByRecent(liveResults, recentPaths), [liveResults, recentPaths]);
@@ -197,16 +203,21 @@ function QuickOpenBody() {
   // 虚拟化列表(打磨 R25):filtered 仍是逻辑全集(最多 QUICK_OPEN_MAX_FILES),但只渲染可视行,
   // DOM 节点只有几十。复用项目已有 @tanstack/react-virtual(同
   // FolderTree)。selectedIndex / Enter 语义不变,键盘移动时 scrollToIndex 跟随。
+  const lineTarget = fileLine?.target;
   const openFile = useCallback(
-    async (file: QuickOpenFile) => {
+    async (file: QuickOpenFile, at: GotoLineRequest | undefined = lineTarget) => {
       close();
       // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应;P1-AX),按 code 本地化(I8)。
       // 成功 → 焦点进编辑器(VSCode:回车后可直接打字;否则弹窗还焦点给的旧编辑器随即卸载,焦点掉到 body)。
-      if (await openFileOrNotify(() => openFileByPath(file.absPath, editorFileDeps), file.name)) {
+      // 带行号:与搜索结果同一条「打开并定位」(居中;Markdown 编辑 / 预览按源码行),导航记录只记目标一条。
+      const open = at
+        ? () => coApp.editor.openFile(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) })
+        : () => openFileByPath(file.absPath, editorFileDeps);
+      if (await openFileOrNotify(open, file.name)) {
         focusActiveEditor();
       }
     },
-    [close],
+    [close, lineTarget],
   );
 
   // 列表机制(virtualizer / 越界钳制 / 滚动跟随 / 键盘导航 / ARIA)走共享 usePickerList。

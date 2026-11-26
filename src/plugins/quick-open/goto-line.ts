@@ -45,3 +45,31 @@ export function clampGotoLine(req: GotoLineRequest, doc: GotoLineDoc): GotoLineR
   if (req.column === undefined || req.column < 1) return { line };
   return { line, column: Math.min(req.column, doc.line(line).length + 1) };
 }
+
+/**
+ * 文件查询末尾的行列(照抄 VSCode extractRangeFromFilter 的 LINE_COLON_PATTERN):`file:行`、`file:行:列`、`file#行`、
+ * `file(行,列)`、`file (行)`、`file:line 行`、`file:行-行`(范围只取起点)等;只有分隔符没有数字(`file:`)→ 第 1 行(VSCode 同)。
+ */
+const FILE_LINE_PATTERN = /\s?[#:(](?:line )?(\d*)(?:[#:,](\d*))?(?:-(\d*)(?:[#:,](\d*))?)?\)?:?\s*$/;
+
+/** 文件查询 + 行列。 */
+export interface FileLineQuery {
+  /** 剥掉行列后的文件查询(拿去模糊匹配)。 */
+  readonly filter: string;
+  readonly target: GotoLineRequest;
+}
+
+/**
+ * `long.ts:200` → { filter: 'long.ts', target: { line: 200 } }。不带行列、转到行模式(以 `:` 开头)或剥掉后为空 → null。
+ * 行号 0 视为第 1 行(VSCode 打开时按文档范围校正)。
+ */
+export function parseFileLineQuery(query: string): FileLineQuery | null {
+  if (isGotoLineQuery(query)) return null;
+  const m = FILE_LINE_PATTERN.exec(query);
+  if (!m) return null;
+  const filter = query.slice(0, m.index).trim();
+  if (!filter) return null;
+  const line = Math.max(Number.parseInt(m[1] || '1', 10), 1);
+  const column = Number.parseInt(m[2] ?? '', 10);
+  return { filter, target: Number.isNaN(column) || column < 1 ? { line } : { line, column } };
+}
