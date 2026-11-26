@@ -13,9 +13,13 @@
 - 标题「未打开文件」,aria-hidden 装饰图标 svg。
 - 无工作区:「打开文件夹 ⌘O」(执行已注册的 `workbench.action.files.openFolder` 命令)、「显示所有命令 ⇧⌘P」(打开命令面板)。
   不再提示「在资源管理器中单击文件打开」(无工作区时资源管理器里没有文件可点)。
-- 有工作区:「转到文件 ⌘P」(打开 Quick Open)、「显示所有命令 ⇧⌘P」。
+- 有工作区:「转到文件 ⌘P」(打开 Quick Open)、「在文件中查找 ⇧⌘F」(执行已注册的 `workbench.action.findInFiles`)、
+  「新建终端 ⌘T」(执行已注册的 `terminal.new`)、「显示所有命令 ⇧⌘P」(VSCode 有工作区的水印同样列 Find in Files /
+  Toggle Terminal,首次使用时全局搜索与终端也有入口)。这两项的命令未注册时不列(注册后补上:订阅命令注册表)。
 - 各项文案 = 对应命令标题去掉末尾「…」(VSCode 水印同款),三语一致:打开文件夹 ↔ `commands.file.open_folder.title`、
-  转到文件 ↔ `commands.quick_open.title`、显示所有命令 ↔ `commands.show_commands.title`。
+  转到文件 ↔ `commands.quick_open.title`、显示所有命令 ↔ `commands.show_commands.title`、
+  在文件中查找 ↔ `commands.search.find_in_files.title`、新建终端 ↔ `commands.terminal.new.title`。
 - 每项是可聚焦的 design `Button`(键盘可达);快捷键 KeyCap 按平台渲染(mac ⌘ / 其它 Ctrl)。
-- 打开文件夹的快捷键取实际生效绑定(快捷键设置改键后跟随,解绑后不显示);⌘P / ⇧⌘P 是不可改绑的保留键。
+- 打开文件夹 / 在文件中查找 / 新建终端的快捷键取实际生效绑定(快捷键设置改键后跟随,解绑、被别的命令抢占(冲突落败)后
+  不显示,同命令面板 `isHotkeyShadowed`);⌘P / ⇧⌘P 是不可改绑的保留键。
 - 三语(en / zh / ko)。

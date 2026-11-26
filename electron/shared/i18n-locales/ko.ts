@@ -307,6 +307,8 @@ export const ko: Record<TranslationKey, string> = {
   'editor.welcome.open_folder': '폴더 열기',
   'editor.welcome.quick_open': '파일로 이동',
   'editor.welcome.show_commands': '모든 명령 표시',
+  'editor.welcome.find_in_files': '파일에서 찾기',
+  'editor.welcome.new_terminal': '새 터미널',
   // CodeMirror 기본 문구(⌘F 찾기 / 바꾸기 패널, 줄 이동, 접기 힌트), src/panels/Editor/codemirror-phrases.ts 참고
   'editor.cm.find': '찾기',
   'editor.cm.replace': '바꾸기',

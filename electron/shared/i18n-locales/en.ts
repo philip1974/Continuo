@@ -320,6 +320,8 @@ export const en = {
   'editor.welcome.open_folder': 'Open Folder',
   'editor.welcome.quick_open': 'Go to File',
   'editor.welcome.show_commands': 'Show All Commands',
+  'editor.welcome.find_in_files': 'Find in Files',
+  'editor.welcome.new_terminal': 'New Terminal',
   // CodeMirror built-in strings (⌘F find / replace panel, go to line, fold hints), see src/panels/Editor/codemirror-phrases.ts
   'editor.cm.find': 'Find',
   'editor.cm.replace': 'Replace',

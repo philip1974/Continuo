@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // BDD:编辑区无 tab 时的空状态(对齐 VSCode 空编辑区水印:Show All Commands / Open Folder / Go to File + 快捷键)。
-// 无工作区 →「打开文件夹 ⌘O」「显示所有命令 ⇧⌘P」;有工作区 →「转到文件 ⌘P」「显示所有命令 ⇧⌘P」。
+// 无工作区 →「打开文件夹 ⌘O」「显示所有命令 ⇧⌘P」;有工作区 →「转到文件 ⌘P」「在文件中查找 ⇧⌘F」「新建终端 ⌘T」
+//「显示所有命令 ⇧⌘P」。
 // 每项是可聚焦按钮,快捷键标签取命令的实际生效绑定(改键 / 解绑后跟随)。
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { act, render, cleanup, fireEvent, screen } from '@testing-library/react';
@@ -109,6 +110,99 @@ describe('EditorWelcome · 有工作区', () => {
   });
 });
 
+// VSCode 有工作区时的水印还列 Find in Files / Toggle Terminal:首次使用时终端与全局搜索也有入口。
+describe('EditorWelcome · 有工作区:在文件中查找 / 新建终端', () => {
+  const FIND = { id: 'workbench.action.findInFiles', hotkey: 'mod+shift+f' } as const;
+  const TERMINAL = { id: 'terminal.new', hotkey: 'mod+t' } as const;
+  /** 注册两条命令(核心插件里的同 id / 默认键)。 */
+  function registerCommands(find = vi.fn(), terminal = vi.fn()) {
+    const regs = [
+      coApp.commands.register({ ...FIND, title: 'Find in Files', fn: find }),
+      coApp.commands.register({ ...TERMINAL, title: 'New Terminal', fn: terminal }),
+    ];
+    return { find, terminal, dispose: () => regs.forEach((r) => r.dispose()) };
+  }
+  const findName = () => new RegExp(t('editor.welcome.find_in_files'));
+  const terminalName = () => new RegExp(t('editor.welcome.new_terminal'));
+
+  it('列「在文件中查找 ⇧⌘F」「新建终端 ⌘T」,顺序:转到文件 → 在文件中查找 → 新建终端 → 显示所有命令', () => {
+    useWorkspaceStore.setState({ root: '/ws' });
+    const cmds = registerCommands();
+    try {
+      const { container } = render(<EditorWelcome />);
+      expect(keycaps(screen.getByRole('button', { name: findName() }))).toEqual(['⇧', '⌘', 'F']);
+      expect(keycaps(screen.getByRole('button', { name: terminalName() }))).toEqual(['⌘', 'T']);
+      const order = [...container.querySelectorAll('[data-welcome-action]')].map((b) => b.getAttribute('data-welcome-action'));
+      expect(order).toEqual(['quick-open', 'find-in-files', 'new-terminal', 'show-commands']);
+    } finally {
+      cmds.dispose();
+    }
+  });
+
+  it('点击执行已注册的对应命令', () => {
+    useWorkspaceStore.setState({ root: '/ws' });
+    const cmds = registerCommands();
+    try {
+      render(<EditorWelcome />);
+      fireEvent.click(screen.getByRole('button', { name: findName() }));
+      expect(cmds.find).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole('button', { name: terminalName() }));
+      expect(cmds.terminal).toHaveBeenCalledTimes(1);
+    } finally {
+      cmds.dispose();
+    }
+  });
+
+  it('快捷键取实际生效绑定:改键后跟随、解绑后不显示、被别的命令抢占(冲突落败)后不显示', () => {
+    useWorkspaceStore.setState({ root: '/ws' });
+    const cmds = registerCommands();
+    try {
+      render(<EditorWelcome />);
+      act(() => useKeybindingsStore.getState().setHotkey(TERMINAL.id, 'mod+alt+j'));
+      expect(keycaps(screen.getByRole('button', { name: terminalName() }))).toEqual(['⌥', '⌘', 'J']);
+      act(() => useKeybindingsStore.getState().setHotkey(TERMINAL.id, ''));
+      expect(keycaps(screen.getByRole('button', { name: terminalName() }))).toEqual([]);
+      // 别的命令改绑到 ⇧⌘F:按下执行它(后者胜)→「在文件中查找」不再显示 ⇧⌘F
+      const other = coApp.commands.register({ id: 'test.other', title: 'Other', hotkey: 'mod+alt+o', fn: vi.fn() });
+      try {
+        act(() => useKeybindingsStore.getState().setHotkey('test.other', 'mod+shift+f'));
+        expect(keycaps(screen.getByRole('button', { name: findName() }))).toEqual([]);
+      } finally {
+        other.dispose();
+      }
+    } finally {
+      cmds.dispose();
+    }
+  });
+
+  it('命令晚于界面注册 → 补上这两行(订阅命令注册表)', () => {
+    useWorkspaceStore.setState({ root: '/ws' });
+    render(<EditorWelcome />);
+    expect(screen.queryByRole('button', { name: findName() })).toBeNull();
+    let cmds: ReturnType<typeof registerCommands> | undefined;
+    act(() => {
+      cmds = registerCommands();
+    });
+    try {
+      expect(keycaps(screen.getByRole('button', { name: findName() }))).toEqual(['⇧', '⌘', 'F']);
+      expect(screen.getByRole('button', { name: terminalName() })).toBeTruthy();
+    } finally {
+      cmds?.dispose();
+    }
+  });
+
+  it('无工作区不列这两行', () => {
+    const cmds = registerCommands();
+    try {
+      render(<EditorWelcome />);
+      expect(screen.queryByRole('button', { name: findName() })).toBeNull();
+      expect(screen.queryByRole('button', { name: terminalName() })).toBeNull();
+    } finally {
+      cmds.dispose();
+    }
+  });
+});
+
 describe('EditorWelcome · 文案与命令标题一致', () => {
   // VSCode 水印同款:水印项 = 对应命令标题去掉末尾「…」(命令面板 / 快捷键页显示「转到文件…」,水印显示「转到文件」)。
   it.each([
@@ -120,6 +214,8 @@ describe('EditorWelcome · 文案与命令标题一致', () => {
       ['editor.welcome.open_folder', 'commands.file.open_folder.title'],
       ['editor.welcome.quick_open', 'commands.quick_open.title'],
       ['editor.welcome.show_commands', 'commands.show_commands.title'],
+      ['editor.welcome.find_in_files', 'commands.search.find_in_files.title'],
+      ['editor.welcome.new_terminal', 'commands.terminal.new.title'],
     ] as const;
     for (const [watermark, command] of pairs) {
       expect(catalog[watermark], watermark).toBe(catalog[command].replace(/…$/, ''));

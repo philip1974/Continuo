@@ -1,8 +1,9 @@
 // 无 tab 时的占位(UI polish)。
 // 对齐 demo(industrial dark):大圆形 document icon + 标题;下方是 VSCode 空编辑区水印式的「下一步」入口:
-//   无工作区 → 打开文件夹 ⌘O / 显示所有命令 ⇧⌘P;有工作区 → 转到文件 ⌘P / 显示所有命令 ⇧⌘P。
-// 每项是可聚焦按钮(键盘可达),快捷键标签取实际生效绑定:打开文件夹走快捷键设置(改键 / 解绑后跟随),
-// 快速打开 / 命令面板是保留键(PICKER_TOGGLE_HOTKEYS,不可改绑)。
+//   无工作区 → 打开文件夹 ⌘O / 显示所有命令 ⇧⌘P;有工作区 → 转到文件 ⌘P / 在文件中查找 ⇧⌘F / 新建终端 ⌘T /
+//   显示所有命令 ⇧⌘P(VSCode 有工作区的水印同样列 Find in Files / Toggle Terminal)。
+// 每项是可聚焦按钮(键盘可达),快捷键标签取实际生效绑定:打开文件夹 / 在文件中查找 / 新建终端走快捷键设置(改键 /
+// 解绑 / 冲突落败后跟随),快速打开 / 命令面板是保留键(PICKER_TOGGLE_HOTKEYS,不可改绑)。
 // BDD: src/__tests__/editor-welcome/
 
 import { Button, KeyCap } from '@/design';
@@ -15,8 +16,14 @@ import { useQuickOpenStore } from '@/plugins/quick-open/store';
 import { coApp } from '@/plugins/co-app';
 import { runRegisteredCommand } from '@/lib/run-contributed-action';
 import { isHotkeyShadowed } from '@/plugins/command-palette/useCommandHotkeys';
+import { useRegistry } from '@/plugins/registries/useRegistry';
+import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { OPEN_FOLDER_COMMAND } from '../Explorer/explorer-commands';
+
+// 有工作区时的另两项:核心插件内联注册的命令(SearchPlugin / TerminalPlugin),按 id 从命令注册表取
+const FIND_IN_FILES_COMMAND_ID = 'workbench.action.findInFiles';
+const NEW_TERMINAL_COMMAND_ID = 'terminal.new';
 
 const DOCUMENT_ICON = (
   <svg
@@ -50,7 +57,24 @@ export function EditorWelcome() {
   const overrides = useKeybindingsStore((s) => s.overrides);
   const platform = detectPlatform();
 
-  const openFolderLabel = t('editor.welcome.open_folder');
+  // 订阅命令注册表:命令晚于界面注册 / 与之冲突的命令注册注销后,行与快捷键随之更新
+  const commands = useRegistry(coApp.commands);
+  // 与命令面板 / 全局分发同一来源:有 override 用 override,解绑 / 冲突落败 → 不显示。
+  const activeHotkey = (spec: Pick<CommandSpec, 'id' | 'hotkey'>): string | undefined =>
+    isHotkeyShadowed(spec.id, commands, platform, overrides) ? undefined : resolveActiveHotkey(spec, overrides, platform);
+  /** 经 live 命令注册表执行(与快捷键 / 命令面板同一实现,抛错有 toast)。 */
+  const commandAction = (spec: Pick<CommandSpec, 'id' | 'hotkey'>, actionId: string, label: string): WelcomeAction => ({
+    id: actionId,
+    label,
+    hotkey: activeHotkey(spec),
+    run: () => void runRegisteredCommand(coApp.commands, spec.id, label),
+  });
+  /** 已注册的命令才列出(没有就不放一个点了没反应的按钮)。 */
+  const registeredAction = (id: string, actionId: string, label: string): WelcomeAction[] => {
+    const spec = commands.find((c) => c.id === id);
+    return spec ? [commandAction(spec, actionId, label)] : [];
+  };
+
   const showCommands: WelcomeAction = {
     id: 'show-commands',
     label: t('editor.welcome.show_commands'),
@@ -65,19 +89,12 @@ export function EditorWelcome() {
           hotkey: PICKER_TOGGLE_HOTKEYS.quick_open,
           run: () => useQuickOpenStore.getState().open(),
         },
+        ...registeredAction(FIND_IN_FILES_COMMAND_ID, 'find-in-files', t('editor.welcome.find_in_files')),
+        ...registeredAction(NEW_TERMINAL_COMMAND_ID, 'new-terminal', t('editor.welcome.new_terminal')),
         showCommands,
       ]
     : [
-        {
-          id: 'open-folder',
-          label: openFolderLabel,
-          // 与命令面板 / 全局分发同一来源:有 override 用 override,解绑 / 冲突落败 → 不显示。
-          hotkey: isHotkeyShadowed(OPEN_FOLDER_COMMAND.id, coApp.commands.getAll(), platform, overrides)
-            ? undefined
-            : resolveActiveHotkey(OPEN_FOLDER_COMMAND, overrides, platform),
-          // 经 live 命令注册表执行「打开文件夹」命令(与 ⌘O / 命令面板同一实现,抛错有 toast)。
-          run: () => runRegisteredCommand(coApp.commands, OPEN_FOLDER_COMMAND.id, openFolderLabel),
-        },
+        commandAction(OPEN_FOLDER_COMMAND, 'open-folder', t('editor.welcome.open_folder')),
         showCommands,
       ];
 

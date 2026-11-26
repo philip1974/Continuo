@@ -306,6 +306,8 @@ export const zh: Record<TranslationKey, string> = {
   'editor.welcome.open_folder': '打开文件夹',
   'editor.welcome.quick_open': '转到文件',
   'editor.welcome.show_commands': '显示所有命令',
+  'editor.welcome.find_in_files': '在文件中查找',
+  'editor.welcome.new_terminal': '新建终端',
   // CodeMirror 内建文案(⌘F 查找 / 替换面板、跳转行、折叠提示),见 src/panels/Editor/codemirror-phrases.ts
   'editor.cm.find': '查找',
   'editor.cm.replace': '替换',
