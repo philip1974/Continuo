@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // BDD:编辑区无 tab 时的空状态(对齐 VSCode 空编辑区水印:Show All Commands / Open Folder / Go to File + 快捷键)。
-// 无工作区 →「打开文件夹 ⌘O」「显示所有命令 ⇧⌘P」;有工作区 →「快速打开文件 ⌘P」「显示所有命令 ⇧⌘P」。
+// 无工作区 →「打开文件夹 ⌘O」「显示所有命令 ⇧⌘P」;有工作区 →「转到文件 ⌘P」「显示所有命令 ⇧⌘P」。
 // 每项是可聚焦按钮,快捷键标签取命令的实际生效绑定(改键 / 解绑后跟随)。
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { act, render, cleanup, fireEvent, screen } from '@testing-library/react';
@@ -12,6 +12,9 @@ import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { useQuickOpenStore } from '../../plugins/quick-open/store';
 import { coApp } from '../../plugins/co-app';
 import { OPEN_FOLDER_COMMAND } from '../../panels/Explorer/explorer-commands';
+import { en } from '@shared/i18n-locales/en';
+import { zh } from '@shared/i18n-locales/zh';
+import { ko } from '@shared/i18n-locales/ko';
 
 let platformDesc: PropertyDescriptor | undefined;
 function setPlatform(value: string): void {
@@ -95,7 +98,7 @@ describe('EditorWelcome · 无工作区', () => {
 });
 
 describe('EditorWelcome · 有工作区', () => {
-  it('显示「快速打开文件 ⌘P」「显示所有命令 ⇧⌘P」,点快速打开打开文件选择器', () => {
+  it('显示「转到文件 ⌘P」「显示所有命令 ⇧⌘P」,点转到文件打开文件选择器', () => {
     useWorkspaceStore.setState({ root: '/ws' });
     render(<EditorWelcome />);
     expect(screen.queryByRole('button', { name: new RegExp(t('editor.welcome.open_folder')) })).toBeNull();
@@ -103,6 +106,24 @@ describe('EditorWelcome · 有工作区', () => {
     expect(keycaps(qo)).toEqual(['⌘', 'P']);
     fireEvent.click(qo);
     expect(useQuickOpenStore.getState().isOpen).toBe(true);
+  });
+});
+
+describe('EditorWelcome · 文案与命令标题一致', () => {
+  // VSCode 水印同款:水印项 = 对应命令标题去掉末尾「…」(命令面板 / 快捷键页显示「转到文件…」,水印显示「转到文件」)。
+  it.each([
+    ['en', en],
+    ['zh', zh],
+    ['ko', ko],
+  ] as const)('%s', (_locale, catalog) => {
+    const pairs = [
+      ['editor.welcome.open_folder', 'commands.file.open_folder.title'],
+      ['editor.welcome.quick_open', 'commands.quick_open.title'],
+      ['editor.welcome.show_commands', 'commands.show_commands.title'],
+    ] as const;
+    for (const [watermark, command] of pairs) {
+      expect(catalog[watermark], watermark).toBe(catalog[command].replace(/…$/, ''));
+    }
   });
 });
 
