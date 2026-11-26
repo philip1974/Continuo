@@ -180,6 +180,8 @@ export const zh: Record<TranslationKey, string> = {
   'commands.editor.goto_line.title': '转到行/列…',
   'commands.editor.recent_in_group.title': '打开组中上一个最近使用的编辑器',
   'commands.editor.least_recent_in_group.title': '打开组中最近最少使用的编辑器',
+  'commands.editor.navigate_back.title': '返回',
+  'commands.editor.navigate_forward.title': '前进',
   'commands.view.category': '查看',
   'commands.view.focus_next_part.title': '聚焦到下一部分',
   'commands.view.focus_previous_part.title': '聚焦到上一部分',

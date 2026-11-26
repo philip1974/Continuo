@@ -60,6 +60,7 @@ import {
 import { registerEditorFocus } from './editor-focus-registry';
 import { useEditorGroupId } from './editor-group-context';
 import { applySourceModeAnchor, sourceModeAnchor } from './codemirror-mode-anchor';
+import { navigationHistoryExtension } from './codemirror-navigation-history';
 
 interface CodeEditorProps {
   tabId: string;
@@ -334,6 +335,8 @@ export function CodeEditor({
       labelCompartment.current.of(codeMirrorContentLabel(appliedLabelRef.current)),
       langCompartment.current.of(lang),
       debugDecorationsExtension(),
+      // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
+      navigationHistoryExtension(tabId, groupId),
       EditorView.updateListener.of((update: ViewUpdate) => {
         if (
           update.docChanged &&

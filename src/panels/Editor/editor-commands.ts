@@ -7,6 +7,8 @@
 // - workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup / quickOpenLeastRecentlyUsedEditorInGroup(⌃Tab / ⌃⇧Tab):
 //   按组内最近使用顺序切换(BDD: src/__tests__/editor-recent-cycle/);
 // - workbench.action.gotoLine(⌃G,各平台同):Quick Open 预填 `:` 转到行 / 列(BDD: src/__tests__/editor-goto-line/);
+// - workbench.action.navigateBack / navigateForward(mac ⌃- / ⌃⇧-,Win/Linux Alt+← / Alt+→):后退 / 前进
+//   (BDD: src/__tests__/editor-navigation-history/);
 // - workbench.action.splitEditor(⌘\)/ splitEditorDown(无默认键)/ focusFirst·Second·ThirdEditorGroup(⌘1 / ⌘2 / ⌘3):
 //   编辑器组(BDD: src/__tests__/editor-groups/)。
 // - 组内关闭类(closeOtherEditors / closeEditorsToTheRight / closeUnmodifiedEditors / closeEditorsInGroup)、copyFilePath /
@@ -58,6 +60,13 @@ import {
   RECENT_EDITOR_IN_GROUP_COMMAND,
   openRecentlyUsedEditorInGroup,
 } from './editor-recent-cycle';
+import {
+  NAVIGATE_BACK_COMMAND_ID,
+  NAVIGATE_FORWARD_COMMAND_ID,
+  navigateBack,
+  navigateForward,
+  navigationCommandHotkeys,
+} from './navigation-history';
 
 /** 命令 id 与默认键(终端按生效绑定让出 ⌘W / ⌘S 时与此约定一致)。 */
 export const CLOSE_ACTIVE_EDITOR_COMMAND = { id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' } as const;
@@ -287,6 +296,7 @@ const MARKDOWN_MODE_COMMANDS: readonly { id: string; mode: EditorMode; title: st
  */
 export function editorCommandSpecs(platform: Platform): CommandSpec[] {
   const isMac = platform === 'mac';
+  const navigationKeys = navigationCommandHotkeys(isMac);
   return [
     {
       ...CLOSE_ACTIVE_EDITOR_COMMAND,
@@ -361,6 +371,24 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'View',
       categoryKey: 'commands.view.category',
       fn: openGotoLine,
+    },
+    {
+      id: NAVIGATE_BACK_COMMAND_ID,
+      title: 'Go Back',
+      titleKey: 'commands.editor.navigate_back.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      hotkey: navigationKeys.back,
+      fn: () => void navigateBack(),
+    },
+    {
+      id: NAVIGATE_FORWARD_COMMAND_ID,
+      title: 'Go Forward',
+      titleKey: 'commands.editor.navigate_forward.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      hotkey: navigationKeys.forward,
+      fn: () => void navigateForward(),
     },
     {
       ...SPLIT_EDITOR_COMMAND,

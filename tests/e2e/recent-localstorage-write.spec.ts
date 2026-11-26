@@ -3,7 +3,7 @@ import { test, expect } from './fixtures/electron-app';
 import {
   commandPaletteInput,
   openCommandPalette,
-  settingsCommandOption,
+  filterToSettingsCommand,
 } from './helpers/palette';
 import { SETTINGS } from './helpers/settings';
 
@@ -17,7 +17,7 @@ test('执行 settings.toggle → localStorage recent 含 settings.toggle id', as
   await openCommandPalette(window);
   const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
-  const option = settingsCommandOption(window);
+  const option = await filterToSettingsCommand(window);
   await expect(option).toBeVisible();
   await option.click();
   await expect(input).toBeHidden();

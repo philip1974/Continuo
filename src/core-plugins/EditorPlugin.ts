@@ -9,6 +9,7 @@ import { lazyPanel } from '@/lib/lazy-panel';
 import { loadEditorPanelModule } from '@/panels/Editor/editor-engine-loaders';
 import { editorCommandSpecs } from '@/panels/Editor/editor-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
+import { installNavigationHistory } from '@/panels/Editor/navigation-history';
 
 const Editor = lazy(() =>
   loadEditorPanelModule().then((m) => ({ default: m.EditorPanel })),
@@ -24,5 +25,7 @@ export default class EditorPlugin extends Plugin {
     });
     // ⌘W 关闭编辑器 / ⌘S 保存 / 下一个·上一个编辑器(VSCode 同名命令)。
     for (const spec of editorCommandSpecs(detectPlatform())) this.addCommand(spec);
+    // 后退 / 前进的导航记录(活动编辑器 / 路径变更 / 工作区根订阅;BDD: src/__tests__/editor-navigation-history/)
+    this.register({ dispose: installNavigationHistory() });
   }
 }

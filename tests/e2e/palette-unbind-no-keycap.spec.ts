@@ -3,7 +3,7 @@ import { test, expect } from './fixtures/electron-app';
 import {
   commandPaletteInput,
   openCommandPalette,
-  settingsCommandOption,
+  filterToSettingsCommand,
 } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
 
@@ -14,7 +14,7 @@ test('unbind settings.toggle → palette 该项无 KeyCap', async ({ window }) =
   await openCommandPalette(window);
   const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
-  const item = settingsCommandOption(window);
+  const item = await filterToSettingsCommand(window);
   await expect(item).toBeVisible();
   expect(await item.locator('kbd.wm-keycap').count()).toBeGreaterThan(0);
 
@@ -29,7 +29,7 @@ test('unbind settings.toggle → palette 该项无 KeyCap', async ({ window }) =
   await openCommandPalette(window);
   const input2 = commandPaletteInput(window);
   await expect(input2).toBeVisible();
-  const item2 = settingsCommandOption(window);
+  const item2 = await filterToSettingsCommand(window);
   await expect(item2).toBeVisible();
 
   // 应不显 KeyCap

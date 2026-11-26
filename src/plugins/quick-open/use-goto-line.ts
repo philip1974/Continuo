@@ -4,6 +4,7 @@
 // - 输入时实时预览(光标移到目标并居中,焦点留在输入框);Enter 确认跳转并把焦点交给编辑器;
 // - Esc 取消 / 删掉 `:` 离开该模式 → 光标与滚动位置回到打开前(VSCode 同:未确认就恢复视图状态);
 // - 行号越界夹到文档范围内(VSCode 对越界不跳;此处按产品要求夹取)。
+// - 后退 / 前进的导航记录:预览与取消恢复不记;Enter 记「原位置 → 目标」(BDD: src/__tests__/editor-navigation-history/)。
 // scrollToLine 依赖 @codemirror/view,动态 import(Quick Open 在启动路径上,不把编辑器引擎拖进启动包)。
 // BDD: src/__tests__/editor-goto-line/
 
@@ -13,6 +14,11 @@ import type { EditorSelection, StateEffect } from '@codemirror/state';
 import { useT } from '@/i18n';
 import { groupActiveTabIdOf, liveEditorViewOf, useEditorStore } from '@/stores/editor.store';
 import { commandEditorGroupId } from '@/panels/Editor/editor-groups-actions';
+import {
+  navigationSelectionOf,
+  notifyEditorSelection,
+  withoutNavigationRecording,
+} from '@/panels/Editor/navigation-history';
 import { clampGotoLine, isGotoLineQuery, parseGotoLineQuery } from './goto-line';
 
 type ScrollToLine = typeof import('@/panels/Editor/scrollToLine').scrollToLine;
@@ -32,6 +38,8 @@ function loadScrollToLine(): Promise<ScrollToLine> {
 
 interface GotoTarget {
   readonly view: EditorView;
+  readonly groupId: string;
+  readonly tabId: string;
   /** 进入该模式时的选区与滚动位置(取消时恢复)。 */
   readonly selection: EditorSelection;
   readonly scroll: StateEffect<unknown>;
@@ -45,14 +53,14 @@ function resolveGotoTarget(): GotoTarget | null {
   if (tabId === null) return null;
   const view = liveEditorViewOf(tabId, groupId);
   if (!view || !view.dom.isConnected) return null;
-  return { view, selection: view.state.selection, scroll: view.scrollSnapshot() };
+  return { view, groupId, tabId, selection: view.state.selection, scroll: view.scrollSnapshot() };
 }
 
 function restoreTarget(target: GotoTarget): void {
   const { view } = target;
   if (!view.dom.isConnected) return;
   try {
-    view.dispatch({ selection: target.selection, effects: target.scroll });
+    withoutNavigationRecording(() => view.dispatch({ selection: target.selection, effects: target.scroll }));
   } catch {
     // 期间文档被替换得比原选区短(外部同步)→ 不恢复
   }
@@ -100,7 +108,9 @@ export function useGotoLine(query: string, close: () => void): GotoLineState {
     let cancelled = false;
     loadScrollToLine().then(
       (scrollToLine) => {
-        if (!cancelled && target.view.dom.isConnected) scrollToLine(target.view, line, column, undefined, { focus: false });
+        if (!cancelled && target.view.dom.isConnected) {
+          withoutNavigationRecording(() => scrollToLine(target.view, line, column, undefined, { focus: false }));
+        }
       },
       () => {},
     );
@@ -117,6 +127,8 @@ export function useGotoLine(query: string, close: () => void): GotoLineState {
     void loadScrollToLine().then(
       (scrollToLine) => {
         if (!view.dom.isConnected) return;
+        // 导航记录:先记打开前的位置(预览已移走光标,选区变化里的「变化前」不再是它),再由跳转记目标
+        notifyEditorSelection(target.groupId, target.tabId, navigationSelectionOf(view.state.doc, target.selection));
         scrollToLine(view, line, column, undefined, { focus: false });
         // Modal 关闭时把焦点还给打开前的元素(可能不是编辑器,如从命令面板执行)→ 下一帧再交给编辑器。
         requestAnimationFrame(() => {

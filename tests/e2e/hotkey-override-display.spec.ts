@@ -3,7 +3,7 @@ import { test, expect } from './fixtures/electron-app';
 import {
   commandPaletteInput,
   openCommandPalette,
-  settingsCommandOption,
+  filterToSettingsCommand,
 } from './helpers/palette';
 import { waitForTestHooks } from './helpers/app-ready';
 
@@ -23,8 +23,8 @@ test('改 settings.toggle hotkey override → CommandPalette 显示新 hotkey', 
   const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
 
-  // 第一项 li 含 KeyCap Y(新 hotkey 的 key 部分)
-  const item = settingsCommandOption(window);
+  // 该项含 KeyCap Y(新 hotkey 的 key 部分)
+  const item = await filterToSettingsCommand(window);
   await expect(item).toBeVisible();
   // 'mod+shift+y' 切片含 'Y' 字符 — 用 textContent 验证
   const text = await item.textContent();

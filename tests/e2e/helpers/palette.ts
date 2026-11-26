@@ -53,5 +53,14 @@ export function settingsCommandOption(window: Page): Locator {
     .filter({ hasText: SETTINGS_COMMAND_TITLE });
 }
 
+/**
+ * 命令面板里按英文原名筛出「切换设置」(非英文界面也按英文原名匹配)并返回该项。空查询的列表按标题排序、只渲染可见范围附近的行,
+ * 新增命令会把它挤出渲染范围 —— 用例不依赖它在完整列表里的位置。
+ */
+export async function filterToSettingsCommand(window: Page): Promise<Locator> {
+  await commandPaletteInput(window).fill('Toggle Settings');
+  return settingsCommandOption(window);
+}
+
 /** 列表行选中态:className 含独立的 `border-accent`(pickerRowClassName;未选中行是 `border-transparent`)。 */
 export const ROW_SELECTED = /(^|\s)border-accent(\s|$)/;

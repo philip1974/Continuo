@@ -182,6 +182,8 @@ export const ko: Record<TranslationKey, string> = {
   'commands.editor.goto_line.title': '줄/열로 이동…',
   'commands.editor.recent_in_group.title': '그룹에서 이전에 최근 사용한 편집기 열기',
   'commands.editor.least_recent_in_group.title': '그룹에서 가장 오래전에 사용한 편집기 열기',
+  'commands.editor.navigate_back.title': '뒤로 이동',
+  'commands.editor.navigate_forward.title': '앞으로 이동',
   'commands.view.category': '보기',
   'commands.view.focus_next_part.title': '다음 부분에 포커스',
   'commands.view.focus_previous_part.title': '이전 부분에 포커스',

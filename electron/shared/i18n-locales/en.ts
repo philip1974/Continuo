@@ -194,6 +194,8 @@ export const en = {
   'commands.editor.goto_line.title': 'Go to Line/Column…',
   'commands.editor.recent_in_group.title': 'Open Previous Recently Used Editor in Group',
   'commands.editor.least_recent_in_group.title': 'Open Least Recently Used Editor in Group',
+  'commands.editor.navigate_back.title': 'Go Back',
+  'commands.editor.navigate_forward.title': 'Go Forward',
   'commands.view.category': 'View',
   'commands.view.focus_next_part.title': 'Focus Next Part',
   'commands.view.focus_previous_part.title': 'Focus Previous Part',

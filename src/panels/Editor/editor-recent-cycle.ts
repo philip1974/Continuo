@@ -4,6 +4,7 @@
 //   不会因每次切换都改写 MRU 而在两个 tab 间来回跳;
 // - 松开修饰键(keyup 时 ⌃ / ⌘ / ⌥ 都已松开)、窗口失焦、或期间别处换了活动 tab / 组内 tab 增删 → 导航结束,下次按从新的 MRU 开始;
 // - 组 MRU 只把最终落到的 tab 提到最前,途经的 tab 保持原相对顺序(VSCode:选择器里浏览不改变 MRU);
+// - 后退 / 前进(navigation-history)只记一次导航最后落到的编辑器;
 // - 作用于触发它的窗口的编辑器组(commandEditorGroupId;popout 子窗里按作用于子窗的组);编辑器组不是该窗口 dock 的活动面板
 //  (焦点在同组的终端里按)→ 先激活编辑器组面板;切过去的编辑器获焦(VSCode:选中后焦点进编辑器,终端里按也一样)。
 // BDD: src/__tests__/editor-recent-cycle/
@@ -20,6 +21,7 @@ import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { commandEditorGroupId } from './editor-groups-actions';
 import { requestEditorFocus } from './editor-focus-registry';
+import { replacingNavigationEntry } from './navigation-history';
 
 /** 命令 id 与默认键(VSCode 同:mac / Windows / Linux 都是 ⌃Tab / ⌃⇧Tab)。 */
 export const RECENT_EDITOR_IN_GROUP_COMMAND = {
@@ -94,6 +96,7 @@ export function openRecentlyUsedEditorInGroup(delta: 1 | -1): void {
   const s = useEditorStore.getState();
   const active = groupActiveTabIdOf(s, groupId);
   let nav = navigation;
+  let started = false;
   if (
     !nav ||
     nav.groupId !== groupId ||
@@ -105,6 +108,7 @@ export function openRecentlyUsedEditorInGroup(delta: 1 | -1): void {
     if (order.length < 2) return;
     nav = { groupId, order, index: 0, current: order[0]!, dispose: watchNavigationEnd(doc) };
     navigation = nav;
+    started = true;
   }
   const n = nav.order.length;
   nav.index = (nav.index + delta + n) % n;
@@ -114,7 +118,9 @@ export function openRecentlyUsedEditorInGroup(delta: 1 | -1): void {
   const api = getDockApi();
   const panel = api?.getPanel(groupId);
   if (panel) activateDockPanel(panel);
-  s.switchTab(target, { groupId });
+  // 后退 / 前进的导航记录:一次导航只记最后落到的编辑器(首按新记一条,之后的连按替换它;BDD: src/__tests__/editor-navigation-history/)
+  if (started) s.switchTab(target, { groupId });
+  else replacingNavigationEntry(() => s.switchTab(target, { groupId }));
   // 途经的 tab 不改变 MRU:只把落到的 tab 提到最前,其余按开始时的顺序
   useEditorStore.getState().restoreTabMru(groupId, [target, ...nav.order.filter((id) => id !== target)]);
   requestEditorFocus(target, groupId);

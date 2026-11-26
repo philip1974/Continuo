@@ -27,6 +27,8 @@ test('settings.toggle 命令显本地化 category 前缀 + title', async ({ wind
   });
   const input = window.getByRole('combobox', { name: COMMAND_SEARCH });
   await expect(input).toBeVisible();
+  // 按英文原名筛出该项(空查询的列表只渲染可见范围附近的行,不依赖它在完整列表里的位置)
+  await input.fill('Toggle Settings');
 
   const settingsOption = window
     .getByRole('listbox', { name: COMMAND_LIST })

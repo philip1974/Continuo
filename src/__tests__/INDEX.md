@@ -659,6 +659,13 @@
 - [`milkdown-ctx-contract.spec.tsx`](./editor-milkdown-writeback/milkdown-ctx-contract.spec.tsx)
 - [`milkdown-writeback.spec.tsx`](./editor-milkdown-writeback/milkdown-writeback.spec.tsx)
 
+## [后退 / 前进(⌃- / ⌃⇧-)](./editor-navigation-history/README.md)
+
+- [`navigation-goto-line.spec.tsx`](./editor-navigation-history/navigation-goto-line.spec.tsx)
+- [`navigation-history.spec.ts`](./editor-navigation-history/navigation-history.spec.ts)
+- [`navigation-popout.spec.tsx`](./editor-navigation-history/navigation-popout.spec.tsx)
+- [`navigation-stack.spec.ts`](./editor-navigation-history/navigation-stack.spec.ts)
+
 ## [editor-orphaned-tab](./editor-orphaned-tab/README.md)
 
 - [`orphaned-external-clean.spec.tsx`](./editor-orphaned-tab/orphaned-external-clean.spec.tsx)

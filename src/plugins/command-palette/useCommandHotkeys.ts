@@ -32,6 +32,9 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.quickOpenLeastRecentlyUsedEditorInGroup',
   // ⌃`:子窗里的终端 ↔ 子窗的编辑器(子窗没有终端时不新建,见 toggle-terminal)
   'workbench.action.terminal.toggleTerminal',
+  // 后退 / 前进:子窗与主窗共用一份导航栈;原组已不在时落到子窗的编辑器组(BDD: src/__tests__/editor-navigation-history/)
+  'workbench.action.navigateBack',
+  'workbench.action.navigateForward',
 ]);
 
 /** 解析后的修饰键 + 主键签名(平台感知). 解析一次,匹配时纯字段比较. */

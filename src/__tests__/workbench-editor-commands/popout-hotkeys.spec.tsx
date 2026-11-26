@@ -55,13 +55,15 @@ afterEach(() => {
 });
 
 describe('popout 子窗按键分发(只限作用于活动面板的命令)', () => {
-  it('白名单:关闭编辑器、重新打开已关闭的编辑器、⌃Tab / ⌃⇧Tab、⌃` 切换终端(都只作用于该子窗;下一个 / 上一个编辑器由编辑器面板自己处理,编辑器不在该子窗时不切主窗编辑器)', () => {
+  it('白名单:关闭编辑器、重新打开已关闭的编辑器、⌃Tab / ⌃⇧Tab、⌃` 切换终端、后退 / 前进(都只作用于该子窗;下一个 / 上一个编辑器由编辑器面板自己处理,编辑器不在该子窗时不切主窗编辑器)', () => {
     expect([...POPOUT_HOTKEY_COMMAND_IDS]).toEqual([
       CLOSE_ACTIVE_EDITOR_COMMAND.id,
       REOPEN_CLOSED_EDITOR_COMMAND.id,
       'workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup',
       'workbench.action.quickOpenLeastRecentlyUsedEditorInGroup',
       'workbench.action.terminal.toggleTerminal',
+      'workbench.action.navigateBack',
+      'workbench.action.navigateForward',
     ]);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(NEXT_EDITOR_COMMAND_ID)).toBe(false);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(PREVIOUS_EDITOR_COMMAND_ID)).toBe(false);

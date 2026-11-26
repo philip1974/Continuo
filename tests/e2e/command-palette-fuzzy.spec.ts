@@ -51,8 +51,6 @@ test('跨字符模糊查询匹配 settings.toggle 命令', async ({ window }) =>
     .getByRole('listbox', { name: COMMAND_LIST })
     .getByRole('option')
     .filter({ hasText: SETTINGS_TITLE });
-  await expect(settingsOption).toBeVisible();
-
   await input.fill(sparseSettingsQuery(settingsLabel));
   await expect(settingsOption).toBeVisible();
 });

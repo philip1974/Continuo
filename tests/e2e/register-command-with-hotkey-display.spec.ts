@@ -8,7 +8,8 @@ test('动态注册命令 + hotkey → palette 显 KeyCap', async ({ window }) =>
 
   await window.evaluate(() => {
     const t = globalThis.__continuoTest!;
-    t.registerCommand('e2e.kbd-display', 'KbdDisplay Test', 'mod+shift+t');
+    // 选一个没有内置命令占用的组合:被别的命令占用(如 mod+shift+t = 重新打开已关闭的编辑器)时键位按冲突落败不显示
+    t.registerCommand('e2e.kbd-display', 'KbdDisplay Test', 'mod+alt+shift+y');
   });
 
   await window.evaluate(() => {
@@ -37,4 +38,5 @@ test('动态注册命令 + hotkey → palette 显 KeyCap', async ({ window }) =>
   // 该项右侧有 ≥ 1 个 kbd.wm-keycap(formatHotkeyParts)
   const kbds = item.locator('kbd.wm-keycap');
   expect(await kbds.count()).toBeGreaterThan(0);
+  await expect(kbds.last()).toHaveText('Y');
 });

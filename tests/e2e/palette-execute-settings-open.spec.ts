@@ -3,7 +3,7 @@ import { test, expect } from './fixtures/electron-app';
 import {
   commandPaletteInput,
   openCommandPalette,
-  settingsCommandOption,
+  filterToSettingsCommand,
 } from './helpers/palette';
 import { SETTINGS_NAV } from './helpers/settings';
 
@@ -13,7 +13,7 @@ test('Cmd+Shift+P → 选择 Settings 命令 → Settings nav 出', async ({
   await openCommandPalette(window);
   const input = commandPaletteInput(window);
   await expect(input).toBeVisible();
-  const option = settingsCommandOption(window);
+  const option = await filterToSettingsCommand(window);
   await expect(option).toBeVisible();
 
   await option.click();
