@@ -85,6 +85,8 @@ vi.mock('dockview-react', () => ({
         onDidAddGroup: noopDisposable,
         onDidRemoveGroup: noopDisposable,
         onWillDrop: noopDisposable,
+        onUnhandledDragOverEvent: noopDisposable,
+        onDidDrop: noopDisposable,
         groups: [],
       };
       h.api = self;

@@ -801,6 +801,13 @@
 
 - [`explorer-decorator.spec.ts`](./explorer-decorator/explorer-decorator.spec.ts)
 
+## [从资源管理器拖到编辑器 / 终端(explorer-drag-out)](./explorer-drag-out/README.md)
+
+- [`drag-data.spec.ts`](./explorer-drag-out/drag-data.spec.ts)
+- [`editor-drop.spec.ts`](./explorer-drag-out/editor-drop.spec.ts)
+- [`tab-bar-drop.spec.tsx`](./explorer-drag-out/tab-bar-drop.spec.tsx)
+- [`terminal-drop.spec.tsx`](./explorer-drag-out/terminal-drop.spec.tsx)
+
 ## [explorer-dropzone (M-Explorer Step 5d)](./explorer-dropzone/README.md)
 
 - [`drop-handlers.spec.ts`](./explorer-dropzone/drop-handlers.spec.ts)

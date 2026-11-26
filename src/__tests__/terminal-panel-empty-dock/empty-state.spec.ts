@@ -31,6 +31,8 @@ vi.mock('dockview-react', () => ({
         onDidAddGroup: vi.fn(() => ({ dispose: vi.fn() })),
         onDidRemoveGroup: vi.fn(() => ({ dispose: vi.fn() })),
         onWillDrop: vi.fn(() => ({ dispose: vi.fn() })),
+        onUnhandledDragOverEvent: vi.fn(() => ({ dispose: vi.fn() })),
+        onDidDrop: vi.fn(() => ({ dispose: vi.fn() })),
         groups: [],
         get panels() {
           return h.panels;

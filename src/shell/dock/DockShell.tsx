@@ -23,6 +23,7 @@ import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose, activateDockPanel, addPanelKeepingActive } from './wrap-panel-close';
 import { trackEditorGroups } from './editor-groups-dock-sync';
+import { trackExplorerEditorDrop } from './explorer-editor-drop';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { handleTerminalPanelRemoved, removeTerminalSessionWithFeedback } from './DockReconciler';
 import { TerminalKillConfirmHost, cancelTerminalCloseGuard, terminalCloseGuard } from './terminal-close-confirm';
@@ -382,6 +383,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         trackActiveTabReveal(event.api),
         // 编辑器组 ↔ editor 面板:组关闭 → 关面板;面板被关 → 移除组;激活面板 → 活动编辑器组(BDD: editor-groups)。
         trackEditorGroups(event.api),
+        // 资源管理器的文件拖到编辑器组 → 在该组常驻打开 / 按落点拆分(VSCode;BDD: explorer-drag-out)。
+        trackExplorerEditorDrop(event.api),
       );
       event.api.panels.forEach(wrapPanelCloseGuarded);
     },

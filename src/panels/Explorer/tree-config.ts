@@ -12,6 +12,7 @@ import {
 } from './path-utils';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225,E224 兄弟):共享早停 hasFiles 替代 types.includes('Files')
 import { stripRootPrefix } from '@/lib/path-cross';
+import { setExplorerDragData } from '@/lib/explorer-drag';
 import { isImeComposing } from '@/design/ime';
 import {
   asyncDataLoaderFeature,
@@ -266,6 +267,38 @@ export const skipSymlinkExpandAllFeature: FeatureImplementation<FileEntry> = {
   },
 };
 
+/**
+ * 拖出树(到编辑器组 / 终端 / 应用外):dragstart 时写入被拖各项的路径(见 @/lib/explorer-drag;BDD:
+ * src/__tests__/explorer-drag-out/)。被拖的项与库 onDragStart 同口径:按下的行在选中集里 → 整个选中集,否则只有它
+ * (draggedItemOverwritesSelection 缺省 true)。库的 createForeignDragObject 只能写一种格式,这里包一层库的 onDragStart。
+ */
+export const explorerDragOutFeature: FeatureImplementation<FileEntry> = {
+  key: 'explorer-drag-out',
+  deps: ['drag-and-drop'],
+  itemInstance: {
+    getDragHandleProps: ({ tree, item, prev }) => {
+      const props = prev?.() ?? {};
+      const onDragStart = props.onDragStart as ((e: DragEvent) => void) | undefined;
+      return {
+        ...props,
+        onDragStart: (e: DragEvent) => {
+          const selected = tree.getSelectedItems();
+          const items = selected.some((s) => s.getId() === item.getId()) ? selected : [item];
+          onDragStart?.(e);
+          // React 合成事件 preventDefault 后 defaultPrevented 字段不更新,以 isDefaultPrevented() 为准
+          const prevented =
+            (e as { isDefaultPrevented?: () => boolean }).isDefaultPrevented?.() ?? e.defaultPrevented;
+          if (prevented || !e.dataTransfer) return;
+          setExplorerDragData(
+            e.dataTransfer,
+            items.map((it) => ({ path: it.getId(), isDirectory: it.isFolder() })),
+          );
+        },
+      };
+    },
+  },
+};
+
 export function createTreeConfig(
   deps: CreateTreeConfigDeps,
 ): TreeConfig<FileEntry> {
@@ -359,6 +392,7 @@ export function createTreeConfig(
       expandAllFeature, // tree.expandAll() / collapseAll() — UI-3 Header 按钮用
       skipSymlinkExpandAllFeature, // 须在 expandAllFeature 之后:覆盖 item.expandAll
       dragAndDropFeature, // 内部多选 move + 外部文件 drop on row
+      explorerDragOutFeature, // 须在 dragAndDropFeature 之后:包一层它的 onDragStart,写入拖出数据
     ],
   };
 

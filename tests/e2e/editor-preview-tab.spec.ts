@@ -61,8 +61,8 @@ test('单击打开为预览(斜体),再单击别的文件原位替换;Markdown �
   await clickFile(main, 'a.ts');
   await expect(tabs(main)).toHaveCount(1);
   expect(await isItalic(main, 'a.ts')).toBe(true);
-  // 读屏名称就是文件名,不带后缀
-  await expect(main.getByRole('tab', { name: 'a.ts', exact: true })).toHaveCount(1);
+  // 读屏名称追加「, 预览」(VSCode computeEditorAriaLabel)
+  await expect(main.getByRole('tab', { name: /^a\.ts(, preview|，预览|, 미리보기)$/ })).toHaveCount(1);
   await clickFile(main, 'b.ts');
   await expect(tabs(main)).toHaveCount(1);
   await expect(tabs(main).first()).toContainText('b.ts');
@@ -89,6 +89,8 @@ test('双击 tab 固定;资源管理器双击文件常驻', async () => {
   await clickFile(main, 'a.ts');
   await editorTab(main, 'a.ts').dblclick();
   await expect.poll(() => isItalic(main, 'a.ts')).toBe(false);
+  // 常驻后读屏名称去掉「, 预览」
+  await expect(main.getByRole('tab', { name: 'a.ts', exact: true })).toHaveCount(1);
   await clickFile(main, 'b.ts');
   await expect(tabs(main)).toHaveCount(2);
   // 双击预览中的 b.ts 文件 → 常驻;再单击 c.md 新增

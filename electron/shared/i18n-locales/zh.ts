@@ -599,6 +599,7 @@ export const zh: Record<TranslationKey, string> = {
   // panels.editor.*
   'panels.editor.unsaved_indicator': '未保存的更改',
   'panels.editor.tab_deleted': '（已删除）',
+  'panels.editor.tab_preview_suffix': '，预览',
   'panels.editor.placeholder.start_writing': '开始书写…',
   'panels.editor.mode.edit': '编辑',
   'panels.editor.mode.source': '源码',

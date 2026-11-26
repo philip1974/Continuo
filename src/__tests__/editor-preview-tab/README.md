@@ -16,7 +16,7 @@ tab 标题斜体;以预览方式再打开别的文件时**原位替换**它,不�
 - 资源管理器 / 搜索结果:列表单击 → 非 pinned(预览);双击 / Enter → pinned。`enablePreviewFromQuickOpen`、
   `enablePreviewFromCodeNavigation` 默认 `false`:⌘P、跳转定义打开的是常驻编辑器。
 - 「重新打开已关闭的编辑器」以 `pinned: true` 打开;后退 / 前进不指定 pinned(按上面的默认规则)。
-- 读屏:VSCode 的 `computeEditorAriaLabel` 给预览编辑器加「{0}, preview」后缀;Continuo **不加**(见「与 VSCode 的差异」)。
+- 读屏:VSCode 的 `computeEditorAriaLabel` 给预览编辑器的 tab 名称加「{0}, preview」后缀;Continuo 同。
 
 ## 行为
 
@@ -31,7 +31,8 @@ tab 标题斜体;以预览方式再打开别的文件时**原位替换**它,不�
 4. **转为常驻**:内容变脏(编辑)、保存(各组)、双击预览 tab、「保留编辑器」命令(`workbench.action.keepEditor`,三语标题,
    无默认键,只进命令面板;作用于触发窗口的编辑器组的活动 tab)、资源管理器双击 / Enter、⌘P 打开该文件。
    在预览 tab 里滚动、移动光标不算(VSCode 同)。脏 tab 一定常驻,所以替换不会丢改动(替换前先回写编辑器里未上抛的输入)。
-5. **显示**:预览 tab 的标题斜体(`italic`,颜色 token 不变);tab 的可访问名称不变。
+5. **显示**:预览 tab 的标题斜体(`italic`,颜色 token 不变);tab 的可访问名称追加「，预览」(en `, preview` / ko `, 미리보기`;
+   VSCode `computeEditorAriaLabel`),转常驻后去掉。常驻 tab 的名称不变。
 6. Markdown(编辑 / 源码 / 预览模式)、图片预览 tab 同样适用。
 7. **编辑器组**:预览状态按组记录。拆分(⌘\ / tab 右键拆分)出来的副本在新组里常驻(VSCode 复制编辑器 pinned),源组不变;
    关闭组时移到相邻组的 tab 常驻;文档改名 / 移动后常驻(不跟踪 id 映射,同 MRU 的取舍)。
@@ -43,7 +44,6 @@ tab 标题斜体;以预览方式再打开别的文件时**原位替换**它,不�
 
 ## 与 VSCode 的差异
 
-- 读屏名称不加「, 预览」后缀(VSCode 加):保持 tab 名称稳定;预览状态只有视觉区分。
 - 后退 / 前进重新打开未开着的文件时常驻(VSCode 不指定 pinned,按默认规则是预览)。
 - 编辑器 tab 不支持拖动排序 / 拖到别的组,「拖动 tab 转常驻」无对应入口;跨组移动只有关闭组时的移入,按常驻处理。
 - 搜索结果 F4 / ⇧F4 按常驻打开。

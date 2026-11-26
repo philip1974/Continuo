@@ -140,7 +140,7 @@ describe('FolderTree · 拖放结束不触发滚动', () => {
       fireEvent.click(row(container, '/work/f00.ts')!);
     });
     act(() => {
-      fireEvent.dragStart(row(container, '/work/f00.ts')!, { dataTransfer: { types: [] } });
+      fireEvent.dragStart(row(container, '/work/f00.ts')!, { dataTransfer: { types: [], setData: () => {} } });
     });
     await act(async () => {
       // 内部拖动:真实浏览器 drop 事件总带 dataTransfer(无 Files 类型)
@@ -212,7 +212,7 @@ describe('FolderTree · 长列表 drop 后焦点落在松手行', () => {
       fireEvent.click(row(container, '/work/f00.ts')!);
     });
     act(() => {
-      fireEvent.dragStart(row(container, '/work/f00.ts')!, { dataTransfer: { types: [] } });
+      fireEvent.dragStart(row(container, '/work/f00.ts')!, { dataTransfer: { types: [], setData: () => {} } });
     });
     scrollTo(40);
     expect(row(container, '/work/f00.ts')).toBeNull();

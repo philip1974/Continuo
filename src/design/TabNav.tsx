@@ -93,6 +93,12 @@ export interface TabNavItemProps {
   readonly onDragEnd?: (event: DragEvent<HTMLDivElement>) => void;
   /** Continuo-local(topic-05): 透传到根 div 的 data-* 属性(BDD 断言/a11y). */
   readonly dataAttrs?: Record<string, string>;
+  /**
+   * Accessible name of the tab, replacing the name taken from `children` (e.g. VSCode computeEditorAriaLabel, which
+   * appends `, preview` for a preview editor). Caller supplies the localized text (design layer has no i18n).
+   * Defaults to the label content.
+   */
+  readonly ariaLabel?: string;
   /** Tab label or composed tab content. No default. */
   readonly children: ReactNode;
 }
@@ -133,6 +139,7 @@ export function TabNavItem({
   onDragStart,
   onDragEnd,
   dataAttrs,
+  ariaLabel,
   children,
 }: TabNavItemProps) {
   // a11y(A106):优先用 caller 注入的本地化 closeLabel;未提供回退英文默认(design 层无 i18n)。
@@ -144,6 +151,7 @@ export function TabNavItem({
         : 'Close tab';
   const dirtyDescId = useId();
   const labelId = useId();
+  const hasAriaLabel = ariaLabel != null && ariaLabel.length > 0;
   const showDirtyDesc = dirty && dirtyLabel != null && dirtyLabel.length > 0;
   const closable = onClose != null && !disabled;
 
@@ -195,7 +203,8 @@ export function TabNavItem({
       role="tab"
       aria-selected={active}
       aria-disabled={disabled || undefined}
-      aria-labelledby={labelId}
+      aria-label={hasAriaLabel ? ariaLabel : undefined}
+      aria-labelledby={hasAriaLabel ? undefined : labelId}
       // a11y(A35):dirty 且调用方提供 dirtyLabel 时,经 aria-describedby 关联未保存状态文本。
       aria-describedby={showDirtyDesc ? dirtyDescId : undefined}
       // a11y(A23):roving tabindex —— 仅 active tab 在 Tab 顺序内(0),其余 -1,由 tablist

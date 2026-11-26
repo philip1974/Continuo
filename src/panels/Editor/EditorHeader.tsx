@@ -21,6 +21,7 @@ import {
 import { useEditorGroupId } from './editor-group-context';
 import { useEditorGroupNumber } from './editor-group-number';
 import { splitEditor } from './editor-groups-actions';
+import { useEditorTabBarDrop } from '@/shell/dock/explorer-editor-drop';
 import { useT } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import {
@@ -154,11 +155,26 @@ function useRevealActiveTab(wrapper: RefObject<HTMLDivElement | null>, activeTab
   }, [wrapper, tabsKey]);
 }
 
+const TAB_BAR_DROP_CLASS_NAME = 'bg-accent/20 ring-1 ring-inset ring-accent/60';
+
 /** 竖向滚轮在 tab 栏上横向滚动(VSCode 同款;触控板横向手势照常)。 */
 function scrollTabsOnWheel(e: WheelEvent<HTMLDivElement>): void {
   if (e.deltaX !== 0 || e.deltaY === 0) return;
   const list = e.currentTarget.querySelector<HTMLElement>('[role=tablist]');
   if (list && list.scrollWidth > list.clientWidth) list.scrollLeft += e.deltaY;
+}
+
+/** 编辑器 tab 的读屏名称:标题[ 已删除][ 描述][后缀](后缀如预览 tab 的「，预览」,VSCode computeEditorAriaLabel)。 */
+export function editorTabAriaLabel(
+  title: string,
+  deleted: string | null,
+  description: string | null,
+  suffix: string,
+): string {
+  let label = title;
+  if (deleted !== null) label += ` ${deleted}`;
+  if (description !== null) label += ` ${description}`;
+  return label + suffix;
 }
 
 export function buildEditorTabChrome(tabs: readonly EditorTab[], previewTabId?: string): TabChrome[] {
@@ -365,10 +381,17 @@ export const EditorHeader = memo(function EditorHeader({
     [onCloseTabsRequest, tabsChrome, t, groupId],
   );
 
+  const tabBarDrop = useEditorTabBarDrop(groupId);
+
   if (tabsChrome.length === 0) return null;
 
   return (
-    <div ref={headerRef} className="flex h-9 shrink-0 items-stretch bg-canvas">
+    <div
+      ref={headerRef}
+      // 从资源管理器拖文件到 tab 栏 → 放进本组(高亮同资源管理器的放置行)
+      className={`flex h-9 shrink-0 items-stretch ${tabBarDrop.isOver ? TAB_BAR_DROP_CLASS_NAME : 'bg-canvas'}`}
+      {...tabBarDrop.props}
+    >
       {/* 溢出:tab 栏横向滚动(不显示滚动条,竖向滚轮也可滚),两侧渐隐遮罩提示还有被遮住的 tab。 */}
       <div ref={tabsWrapperRef} className="relative flex min-w-0 flex-1" onWheel={scrollTabsOnWheel}>
       {/* a11y(A107):给 tablist 注入本地化组名(design 层无 i18n)。 */}
@@ -406,8 +429,19 @@ export const EditorHeader = memo(function EditorHeader({
               onClose={() => onCloseRequest(tab)}
               // 双击预览 tab → 常驻(VSCode;常驻 tab 双击无动作)
               onDoubleClick={tab.preview ? () => pinTab(tab.id, groupId) : undefined}
+              // 读屏名称:预览 tab 追加「，预览」(VSCode computeEditorAriaLabel);常驻 tab 照旧取标签内容
+              ariaLabel={
+                tab.preview
+                  ? editorTabAriaLabel(
+                      tabTitle,
+                      tab.orphaned ? t('panels.editor.tab_deleted') : null,
+                      description ?? null,
+                      t('panels.editor.tab_preview_suffix'),
+                    )
+                  : undefined
+              }
             >
-              {/* 预览 tab 标题斜体(VSCode;读屏名称不变) */}
+              {/* 预览 tab 标题斜体(VSCode) */}
               {tab.preview ? (
                 <span className="italic" data-preview="true">
                   {title}

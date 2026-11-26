@@ -603,6 +603,7 @@ export const ko: Record<TranslationKey, string> = {
   // panels.editor.*
   'panels.editor.unsaved_indicator': '저장되지 않은 변경 사항',
   'panels.editor.tab_deleted': '(삭제됨)',
+  'panels.editor.tab_preview_suffix': ', 미리보기',
   'panels.editor.placeholder.start_writing': '작성을 시작하세요…',
   'panels.editor.mode.edit': '편집',
   'panels.editor.mode.source': '소스',

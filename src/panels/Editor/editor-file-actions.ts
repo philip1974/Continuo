@@ -83,6 +83,8 @@ const exception = (err: unknown): IpcFail => ({
  */
 export interface OpenFileOptions {
   readonly preview?: boolean;
+  /** 打开到哪个编辑器组(缺省 = 活动组),该组随之成为活动组(从资源管理器拖到某个组;BDD: src/__tests__/explorer-drag-out/)。 */
+  readonly groupId?: string;
 }
 
 /**
@@ -105,10 +107,11 @@ export async function openFileByPath(
 }
 
 /** 预览设置关闭 → 以预览方式打开按缺省(常驻)处理。 */
-function previewOpt(opts: OpenFileOptions | undefined): { readonly preview?: boolean } | undefined {
-  if (opts?.preview === undefined) return undefined;
-  if (opts.preview && !isEditorPreviewEnabled()) return undefined;
-  return { preview: opts.preview };
+function previewOpt(opts: OpenFileOptions | undefined): OpenFileOptions | undefined {
+  const group = opts?.groupId === undefined ? undefined : { groupId: opts.groupId };
+  if (opts?.preview === undefined) return group;
+  if (opts.preview && !isEditorPreviewEnabled()) return group;
+  return { ...group, preview: opts.preview };
 }
 
 const OPENED: FileOpResult = { ok: true, data: undefined };
@@ -153,7 +156,7 @@ async function openTabWith(
   read: () => Promise<FsReadFileResult>,
   findExisting: (tabs: readonly EditorTab[]) => EditorTab | null,
   pluginOpenedPath?: string,
-  preview?: { readonly preview?: boolean },
+  preview?: OpenFileOptions,
 ): Promise<IpcResult<boolean>> {
   const store = useEditorStore;
   // 已开过 → 只切换。跨平台(复查 P1):用平台感知 pathEquals 而非 `===` —— Windows

@@ -26,6 +26,7 @@ export const MAX_TERMINAL_DROP_CHARS = Math.floor(TERMINAL_WRITE_MAX_BYTES / 3);
 // 边界(E189/E224,E176 同族有界遍历):hasFiles 收口到共享 @/lib/window-drop(与 captureBoundedFiles /
 // hasDirectoryInFirstItems 同处),Terminal 与 App.tsx 全局 drop 共用单一来源。
 import { MAX_DROP_FILES, captureBoundedFiles, hasFiles } from '@/lib/window-drop';
+import { hasExplorerDrag, readExplorerDragData } from '@/lib/explorer-drag';
 import { TERMINAL_WRITE_MAX_BYTES } from '../../../electron/shared/terminal-session-limits';
 
 // 边界(E189):DEV 调试日志的 types 也按上限有界读取(不全量 Array.from),防开发环境复现同类卡顿。
@@ -76,7 +77,8 @@ export function useTerminalDragDrop({
     const isTerminalFileDrag = (e: DragEvent): e is DragEvent & {
       dataTransfer: DataTransfer;
     } => {
-      if (!hasFiles(e.dataTransfer)) return false;
+      // OS 文件(Finder)或资源管理器树拖出(BDD: src/__tests__/explorer-drag-out/)
+      if (!hasFiles(e.dataTransfer) && !hasExplorerDrag(e.dataTransfer)) return false;
       const dropZone = ref.current;
       if (dropZone === null) return false;
       return pointInRect(e.clientX, e.clientY, dropZone.getBoundingClientRect());
@@ -99,9 +101,12 @@ export function useTerminalDragDrop({
       // Array.from 物化超大 FileList。同步截断到 MAX_TERMINAL_DROP_FILES + 1(多 1 个让下游
       // getPathForFile 循环的 cap 检测仍触发 partial_skip);未捕获的超限数记入 overLimitExtra,
       // seed 进 droppedForLimit 保证 partial_skip 计数准确。
+      // 资源管理器树拖出:自定义 MIME 里就是绝对路径(含文件夹),优先于 dataTransfer.files,不必 IPC 取路径。
+      const explorer = readExplorerDragData(dataTransfer, MAX_TERMINAL_DROP_FILES + 1);
+      const explorerPaths = explorer?.entries.map((entry) => entry.path) ?? null;
       const fileList = dataTransfer.files;
-      const totalFiles = fileList.length;
-      const files = captureBoundedFiles(fileList, MAX_TERMINAL_DROP_FILES + 1);
+      const totalFiles = explorer ? explorer.entries.length + explorer.overflow : fileList.length;
+      const files = explorerPaths ?? captureBoundedFiles(fileList, MAX_TERMINAL_DROP_FILES + 1);
       const overLimitExtra = totalFiles - files.length;
 
       if (import.meta.env.DEV) {
@@ -131,7 +136,7 @@ export function useTerminalDragDrop({
               droppedForLimit += 1;
               continue;
             }
-            const path = await coApi.window.getPathForFile(file);
+            const path = typeof file === 'string' ? file : await coApi.window.getPathForFile(file);
             if (!path) {
               webDragCount += 1;
               continue;

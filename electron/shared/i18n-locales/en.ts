@@ -625,6 +625,7 @@ export const en = {
   // panels.editor.*
   'panels.editor.unsaved_indicator': 'Unsaved changes',
   'panels.editor.tab_deleted': '(Deleted)',
+  'panels.editor.tab_preview_suffix': ', preview',
   'panels.editor.placeholder.start_writing': 'Start writing…',
   'panels.editor.mode.edit': 'Edit',
   'panels.editor.mode.source': 'Source',

@@ -26,7 +26,10 @@ export function commandEditorGroupId(): string | undefined {
   return api ? editorGroupInDocument(api, getCommandDocument(), active) : active;
 }
 
-export type SplitDirection = 'right' | 'down';
+/** 命令只用 right / down;left / up 供把资源管理器的文件拖到组的左 / 上边缘(VSCode 按落点四向拆分)。 */
+export type SplitDirection = 'right' | 'down' | 'left' | 'up';
+
+const DOCK_DIRECTION = { right: 'right', down: 'below', left: 'left', up: 'above' } as const;
 
 export interface SplitEditorOptions {
   /** 源组(缺省触发窗口的编辑器组,见 commandEditorGroupId)。 */
@@ -61,7 +64,7 @@ export function splitEditor(direction: SplitDirection, opts: SplitEditorOptions 
   };
   if (!api.getPanel(newId)) {
     try {
-      api.addPanel({ ...options, position: { referencePanel: sourcePanel, direction: direction === 'right' ? 'right' : 'below' } });
+      api.addPanel({ ...options, position: { referencePanel: sourcePanel, direction: DOCK_DIRECTION[direction] } });
     } catch {
       // popout / 浮动组不能再分栏:作为同一 dock 组里的另一个面板
       api.addPanel({ ...options, position: { referencePanel: sourcePanel, direction: 'within' } });

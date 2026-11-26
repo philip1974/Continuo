@@ -61,6 +61,8 @@ vi.mock('dockview-react', () => ({
         onDidRemoveGroup: fakeDisposable(),
         // 拖放后补焦点(trackDropFocus)。
         onWillDrop: fakeDisposable(),
+        onUnhandledDragOverEvent: fakeDisposable(),
+        onDidDrop: fakeDisposable(),
         groups: [],
         panels: [],
       }),
