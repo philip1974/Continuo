@@ -349,7 +349,11 @@ export const en = {
   'editor.save_failed': 'Failed to save',
 
   // 关窗 / 退出时的未保存确认(main dialog.showMessageBox)+ 保存失败提示(renderer toast)
-  'dialog.unsaved_close.message': 'Do you want to save the changes you made to {count} file(s)?',
+  // 仅多个文件(≥2)时使用(1 个时用 panels.editor.save_changes_title 写文件名);文件名逐行列出(VSCode showSaveConfirm)。
+  'dialog.unsaved_close.message': 'Do you want to save the changes to the following {count} files?',
+  'dialog.unsaved_close.more_other': '...{count} additional files not shown',
+  'dialog.unsaved_close.more_one': '...{count} additional file not shown',
+  'dialog.unsaved_close.save_all': 'Save All',
   'dialog.unsaved_close.detail': "Your changes will be lost if you don't save them.",
   'dialog.unsaved_close.dont_save': "Don't Save",
   'dialog.unsaved_close.save_failed': 'Failed to save {count} file(s) ({names}). The window was not closed.',

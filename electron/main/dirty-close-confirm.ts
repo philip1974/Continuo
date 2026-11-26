@@ -1,10 +1,12 @@
 // 关窗 / 退出时脏文件确认(纯函数,可单测;electron 依赖由调用方注入)。
 //
 // 代码文件不 autosave(ADR-015),此前关窗 / Cmd+Q 直接 flush 后关闭,脏 tab 静默丢失。
-// 参考 VSCode:关闭含未保存改动的窗口弹「是否保存 N 个文件的更改?」保存 / 不保存 / 取消。
+// 参考 VSCode:关闭含未保存改动的窗口弹「是否保存对 a.ts 的更改?」/「是否保存对以下 N 个文件的更改?」(逐行列出文件名)
+// 保存(全部保存)/ 不保存 / 取消。
 // renderer 在脏态变化时经 layout:dirty-state 上报计数与脏 tab id(main 按窗口存),关窗时据此决定是否弹框;
 // 选「保存」时 flush 请求带 save:true,renderer 先保存再 flush,回执里带 saveFailed。
 
+import { basename } from 'node:path';
 import type { MainT } from './i18n';
 import { PATH_ARRAY_MAX, PATH_STR_MAX } from '../shared/explorer-persistence-schema';
 import type { DirtyState, FlushAckPayload } from '../shared/persistence-channels';
@@ -59,15 +61,46 @@ export interface DirtyCloseDialogOptions {
   readonly detail: string;
 }
 
+/** 确认框里最多逐行列出的文件名数(VSCode getFileNamesMessage MAX_CONFIRM_FILES),其余一行概括。 */
+export const DIRTY_CLOSE_MAX_NAMES = 10;
+
+/** 脏 tab 身份 `${tabId}#${代际}`(tabId = 文件路径)→ 文件名。路径来自本机,按本机分隔符取 basename。 */
+function dirtyIdFileName(id: string): string {
+  const sep = id.lastIndexOf('#');
+  return basename(sep < 0 ? id : id.slice(0, sep));
+}
+
+/**
+ * VSCode showSaveConfirm:1 个文件 → 标题写文件名、按钮「保存」;多个 → 标题写数量、按钮「全部保存」,detail 逐行列出文件名
+ * (最多 DIRTY_CLOSE_MAX_NAMES 个),空一行后是丢失提示。文件名由脏态 id 推出(id 本身就是路径,不另加上报字段)。
+ */
 export function buildDirtyCloseDialog(state: DirtyState, t: MainT): DirtyCloseDialogOptions {
+  const single = state.ids.length === 1;
+  const lossNote = t('dialog.unsaved_close.detail');
+  let message: string;
+  let detail = lossNote;
+  if (single) {
+    message = t('panels.editor.save_changes_title', { name: dirtyIdFileName(state.ids[0]!) });
+  } else {
+    message = t('dialog.unsaved_close.message', { count: state.dirty });
+    const lines = state.ids.slice(0, DIRTY_CLOSE_MAX_NAMES).map(dirtyIdFileName);
+    const more = state.ids.length - lines.length;
+    // 单复数按 en 规则选 key(zh / ko 两条同文);main 侧无 translateCount。
+    if (more > 0) lines.push(t(more === 1 ? 'dialog.unsaved_close.more_one' : 'dialog.unsaved_close.more_other', { count: more }));
+    detail = [...lines, '', lossNote].join('\n');
+  }
   return {
     type: 'warning',
-    buttons: [t('common.save'), t('dialog.unsaved_close.dont_save'), t('common.cancel')],
+    buttons: [
+      t(single ? 'common.save' : 'dialog.unsaved_close.save_all'),
+      t('dialog.unsaved_close.dont_save'),
+      t('common.cancel'),
+    ],
     defaultId: SAVE_ID,
     cancelId: CANCEL_ID,
     noLink: true,
-    message: t('dialog.unsaved_close.message', { count: state.dirty }),
-    detail: t('dialog.unsaved_close.detail'),
+    message,
+    detail,
   };
 }
 

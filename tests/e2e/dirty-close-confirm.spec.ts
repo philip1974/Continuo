@@ -1,6 +1,6 @@
 // 真实 Electron 下的关窗未保存确认(单元规范见 src/__tests__/dirty-close-confirm/,那里 electron 全 mock)。
 // 原生 messageBox 无法由 Playwright 点击 → 在 main 里替换 dialog.showMessageBox 记录调用并按需应答:
-//   1. 改脏 a.ts → 关窗 → 确认框被调用(含未保存数量),选「取消」→ 窗口保持打开、tab 仍 dirty
+//   1. 改脏 a.ts → 关窗 → 确认框被调用(1 个脏文件时标题写文件名),选「取消」→ 窗口保持打开、tab 仍 dirty
 //   2. 再关窗选「不保存」→ 窗口关闭
 
 import { test, expect } from './fixtures/with-workspace';
@@ -50,8 +50,8 @@ test('改脏 a.ts → 关窗弹确认:取消保持打开,不保存则关闭', as
       { timeout: 10_000 },
     )
     .toBeGreaterThan(0);
-  // 消息含未保存数量 1(dialog.unsaved_close.message 三语)
-  expect((await calls())[0]).toMatch(/(对 1 个文件|to 1 file\(s\)|1개 파일)/);
+  // 只有 1 个脏文件 → 标题写文件名(panels.editor.save_changes_title 三语)
+  expect((await calls())[0]).toMatch(/(对「a\.ts」|made to a\.ts\?|a\.ts의)/);
   // 取消 → 窗口仍在、内容仍 dirty。
   expect(await windowCount()).toBe(1);
   await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible();

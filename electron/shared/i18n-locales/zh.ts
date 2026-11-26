@@ -334,7 +334,10 @@ export const zh: Record<TranslationKey, string> = {
   'editor.autosave_readonly_detail': '{reason}，按 {hotkey} 可选择覆盖',
   'editor.save_failed': '保存失败',
 
-  'dialog.unsaved_close.message': '是否要保存对 {count} 个文件的更改？',
+  'dialog.unsaved_close.message': '是否要保存对以下 {count} 个文件的更改？',
+  'dialog.unsaved_close.more_other': '…另有 {count} 个文件未列出',
+  'dialog.unsaved_close.more_one': '…另有 {count} 个文件未列出',
+  'dialog.unsaved_close.save_all': '全部保存',
   'dialog.unsaved_close.detail': '如果不保存，你的更改将丢失。',
   'dialog.unsaved_close.dont_save': '不保存',
   'dialog.unsaved_close.save_failed': '{count} 个文件保存失败（{names}），窗口未关闭。',

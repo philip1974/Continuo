@@ -35,6 +35,7 @@ const NO_PLURAL_NEEDED: Record<string, string> = {
   'errors.folder.batch_failed': '无可数名词(N failed)',
   'settings.panel.matched': '无可数名词(Matched N)',
   'permissions.prompt.grant_selected': '无可数名词(Grant selected (N))',
+  'dialog.unsaved_close.message': '仅多个文件(≥2)时使用(1 个用 panels.editor.save_changes_title 写文件名)',
 };
 
 const sess = (id: string, originHint: 'agent' | 'user') => ({

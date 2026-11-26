@@ -26,6 +26,9 @@
 ### 关窗有脏文件
 
 - 确认框挂在该窗口上(`dialog.showMessageBox(win, …)`),回答前不 hide、不 flush;框打开期间重复关闭不叠框。
+- 文案(VSCode `showSaveConfirm`):1 个脏文件 → 标题「是否要保存对「a.ts」的更改?」、按钮「保存」;多个 → 标题「是否要保存对以下
+  N 个文件的更改?」、按钮「全部保存」,detail 逐行列出文件名(最多 10 个,其余一行「…另有 N 个文件未列出」),空一行后是丢失提示。
+  文件名由脏态 id(`${文件路径}#${代际}`)推出 basename,上报协议不加字段。
 - **取消** → 窗口保持打开;再次关闭会再次确认。
 - **不保存** → 照旧 hide + flush 后关闭(请求带 `discard: true`,renderer 跳过最终脏检查)。
 - **保存** → flush 请求带 `save: true`,renderer 先保存所有脏 tab 再 flush;

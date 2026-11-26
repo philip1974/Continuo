@@ -86,12 +86,39 @@ describe('needsDirtyConfirm', () => {
 
 describe('buildDirtyCloseDialog:参考 VSCode 的 保存 / 不保存 / 取消', () => {
   it('按钮顺序固定,默认保存,Esc = 取消', () => {
-    const opts = buildDirtyCloseDialog(ds(['/a.ts', '/b.ts']), t);
+    const opts = buildDirtyCloseDialog(ds(['/w/a.ts#1']), t);
     expect(opts.buttons).toEqual(['Save', "Don't Save", 'Cancel']);
     expect(opts.defaultId).toBe(0);
     expect(opts.cancelId).toBe(2);
-    expect(opts.message).toContain('2');
+    expect(buildDirtyCloseDialog(ds(['/w/a.ts#1', '/w/b.ts#1']), t).buttons).toEqual([
+      'Save All',
+      "Don't Save",
+      'Cancel',
+    ]);
+  });
+
+  // VSCode showSaveConfirm:1 个 → 标题写文件名;多个 → 标题写数量、detail 逐行列出文件名(最多 10 个,其余一行概括)。
+  it('1 个脏文件 → 标题写文件名(id 去掉变脏代际后取 basename)', () => {
+    const opts = buildDirtyCloseDialog(ds(['/w/src/a#b.ts#3']), t);
+    expect(opts.message).toBe('Do you want to save the changes you made to a#b.ts?');
     expect(opts.detail).toBe(en['dialog.unsaved_close.detail']);
+  });
+
+  it('多个 → 标题写数量,detail 逐行列出文件名,末尾是丢失提示', () => {
+    const opts = buildDirtyCloseDialog(ds(['/w/a.ts#1', '/w/sub/b.md#2', '/w/c.ts#1']), t);
+    expect(opts.message).toBe('Do you want to save the changes to the following 3 files?');
+    expect(opts.detail).toBe(['a.ts', 'b.md', 'c.ts', '', en['dialog.unsaved_close.detail']].join('\n'));
+  });
+
+  it('超过 10 个 → 只列前 10 个,其余一行「另有 N 个未列出」', () => {
+    const ids = Array.from({ length: 13 }, (_, i) => `/w/f${i}.ts#1`);
+    const lines = buildDirtyCloseDialog(ds(ids), t).detail.split('\n');
+    expect(lines.slice(0, 10)).toEqual(ids.slice(0, 10).map((_, i) => `f${i}.ts`));
+    expect(lines[10]).toBe('...3 additional files not shown');
+    expect(lines.slice(11)).toEqual(['', en['dialog.unsaved_close.detail']]);
+    expect(buildDirtyCloseDialog(ds(ids.slice(0, 11)), t).detail.split('\n')[10]).toBe(
+      '...1 additional file not shown',
+    );
   });
 });
 

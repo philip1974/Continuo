@@ -335,7 +335,10 @@ export const ko: Record<TranslationKey, string> = {
   'editor.autosave_readonly_detail': '{reason}. {hotkey}로 덮어쓸지 선택할 수 있습니다.',
   'editor.save_failed': '저장 실패',
 
-  'dialog.unsaved_close.message': '{count}개 파일의 변경 내용을 저장하시겠습니까?',
+  'dialog.unsaved_close.message': '다음 {count}개 파일의 변경 내용을 저장하시겠습니까?',
+  'dialog.unsaved_close.more_other': '…외 {count}개 파일은 표시되지 않음',
+  'dialog.unsaved_close.more_one': '…외 {count}개 파일은 표시되지 않음',
+  'dialog.unsaved_close.save_all': '모두 저장',
   'dialog.unsaved_close.detail': '저장하지 않으면 변경 내용이 손실됩니다.',
   'dialog.unsaved_close.dont_save': '저장 안 함',
   'dialog.unsaved_close.save_failed': '{count}개 파일({names})을 저장하지 못해 창을 닫지 않았습니다.',
