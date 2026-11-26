@@ -4,13 +4,11 @@ import { setPageReloadPredicate, setReloadUrlPredicate } from './lib/wc-gone-hoo
 import { installPermissionHandlers } from './lib/permission-policy';
 import { installFileRequestGuard } from './lib/file-request-policy';
 import { showOpenDialogRemembering } from './lib/open-dialog';
-import { sendMenuCommand } from './lib/menu-command';
-import { MENU_COMMANDS, type MenuCommandId } from '../shared/window-channels';
+import { appMenuTemplate, type AppMenuActions } from './app-menu';
 import { LAYOUT_CHANNELS, WINDOW_ID_CHANNEL, type FlushRequestPayload } from '../shared/persistence-channels';
 import type {
   HandlerDetails,
   IpcMainEvent,
-  MenuItemConstructorOptions,
   WindowOpenHandlerResponse,
 } from 'electron';
 import nodeFs from 'node:fs';
@@ -901,102 +899,21 @@ async function openFolderInNewWindow(): Promise<void> {
   await openWorkspaceWindow(r.filePaths[0]!);
 }
 
-const OPEN_FOLDER_MENU_COMMAND: MenuCommandId = 'workbench.action.files.openFolder';
+/** 应用菜单里依赖本组合根的动作(开窗 / 重新加载);模板见 app-menu.ts。 */
+const appMenuActions: AppMenuActions = {
+  newWindow: () => {
+    void runWindowOpen(() => openWorkspaceWindow(), windowOpenFailureUi);
+  },
+  openFolderInNewWindow: () => {
+    void runWindowOpen(openFolderInNewWindow, windowOpenFailureUi);
+  },
+  reloadWindow: (win, ignoreCache) => {
+    void reloadMainWindow(win, ignoreCache);
+  },
+};
 
 export function buildAppMenu(t: MainT): Menu {
-  const isMac = process.platform === 'darwin';
-  const fileSubmenu: MenuItemConstructorOptions[] = [
-    {
-      label: t('menu.file.new_window'),
-      accelerator: 'CmdOrCtrl+Shift+N',
-      click: () => {
-        void runWindowOpen(() => openWorkspaceWindow(), windowOpenFailureUi);
-      },
-    },
-    { type: 'separator' },
-    // 打开文件夹(VSCode 文件菜单同款 ⌘O):即 renderer 命令 workbench.action.files.openFolder(在当前窗口切换工作区,
-    // 单飞 / 失败提示 / 焦点交文件树都在命令里)。没有可用主窗(mac 关光窗口)→ 选定后在新窗口打开。
-    {
-      label: t('menu.file.open_folder'),
-      accelerator: MENU_COMMANDS[OPEN_FOLDER_MENU_COMMAND],
-      click: (_item, win) => {
-        if (!sendMenuCommand(win, OPEN_FOLDER_MENU_COMMAND)) void runWindowOpen(openFolderInNewWindow, windowOpenFailureUi);
-      },
-    },
-    {
-      label: t('menu.file.open_folder_in_new_window'),
-      click: () => {
-        void runWindowOpen(openFolderInNewWindow, windowOpenFailureUi);
-      },
-    },
-    { type: 'separator' },
-    // 关窗口 = ⇧⌘W / Ctrl+Shift+W(对齐 VSCode workbench.action.closeWindow)。⌘W / Ctrl+W 归 renderer 的
-    // 「关闭编辑器」命令(workbench.action.closeActiveEditor:关当前文件 tab / 面板,无可关的才关窗口)。
-    // 不用 mac 的 { role: 'close' }:它自带 ⌘W,一按直接关整个窗口并杀掉窗内全部终端。
-    // win.close() 触发 'close' → 关窗脏确认;win 是聚焦窗口(含 popout 子窗)。
-    {
-      label: t('menu.file.close_window'),
-      accelerator: 'Shift+CmdOrCtrl+W',
-      click: (_item, win) => {
-        if (win instanceof BrowserWindow) win.close();
-      },
-    },
-    ...(isMac ? [] : ([{ role: 'quit' }] satisfies MenuItemConstructorOptions[])),
-  ];
-
-  const template: MenuItemConstructorOptions[] = [
-    ...(isMac
-      ? ([
-          {
-            label: app.name,
-            submenu: [
-              { role: 'about' },
-              { type: 'separator' },
-              { role: 'services' },
-              { type: 'separator' },
-              { role: 'hide' },
-              { role: 'hideOthers' },
-              { role: 'unhide' },
-              { type: 'separator' },
-              { role: 'quit' },
-            ],
-          },
-        ] satisfies MenuItemConstructorOptions[])
-      : []),
-    { label: t('menu.file.label'), submenu: fileSubmenu },
-    { role: 'editMenu' },
-    {
-      // 同 Electron 默认 viewMenu,只把 reload / forceReload 换成先走脏确认 + flush 的自定义项(role 项的
-      // click 会被 role 动作抢先执行,无法拦截)。
-      role: 'viewMenu',
-      submenu: [
-        {
-          label: t('menu.view.reload'),
-          accelerator: 'CmdOrCtrl+R',
-          click: (_item, win) => {
-            if (win instanceof BrowserWindow) void reloadMainWindow(win, false);
-          },
-        },
-        {
-          label: t('menu.view.force_reload'),
-          accelerator: 'Shift+CmdOrCtrl+R',
-          click: (_item, win) => {
-            if (win instanceof BrowserWindow) void reloadMainWindow(win, true);
-          },
-        },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-      ],
-    },
-    { role: 'windowMenu' },
-  ];
-
-  return Menu.buildFromTemplate(template);
+  return Menu.buildFromTemplate(appMenuTemplate(t, appMenuActions));
 }
 
 /** macOS dock 右键菜单(locale 依赖)。启动 + setLocale 后都要(重)建,否则切语言
@@ -1475,7 +1392,7 @@ app.whenReady().then(async () => {
     setDockMenu();
   }
 
-  registerIpc({ createMainWindow, relaunchApp });
+  registerIpc({ createMainWindow, relaunchApp, reloadWindow: (win) => void reloadMainWindow(win, false) });
   // topic 16: 把 rebuildAppMenu 注入 i18n.ipc，setLocale 时菜单整体重建
   setMenuRebuilder(rebuildAppMenu);
   // 在 createMainWindow 之前启 host,确保 renderer autoSpawn 的第一个 PTY

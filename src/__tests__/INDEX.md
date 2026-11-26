@@ -360,6 +360,14 @@
 
 - [`virtual-window.spec.tsx`](./combobox-virtual-activedescendant/virtual-window.spec.tsx)
 
+## [命令可发现性:应用菜单随界面语言 + 常用动作进命令面板(VSCode 对齐)](./command-discoverability/README.md)
+
+- [`app-menu.spec.ts`](./command-discoverability/app-menu.spec.ts)
+- [`commands-behavior.spec.tsx`](./command-discoverability/commands-behavior.spec.tsx)
+- [`explorer-tree-actions.spec.tsx`](./command-discoverability/explorer-tree-actions.spec.tsx)
+- [`window-view-action-ipc.spec.ts`](./command-discoverability/window-view-action-ipc.spec.ts)
+- [`workbench-commands.spec.ts`](./command-discoverability/workbench-commands.spec.ts)
+
 ## [command-hotkey-live-lookup](./command-hotkey-live-lookup/)
 
 - [`live-lookup.spec.tsx`](./command-hotkey-live-lookup/live-lookup.spec.tsx)

@@ -30,7 +30,7 @@ export default class ExplorerTabPlugin extends Plugin {
 
     this.addCommand({
       id: 'explorer.toggleSidebar',
-      title: 'Toggle Explorer sidebar',
+      title: 'Toggle Explorer Sidebar',
       titleKey: 'settings.explorer.toggle_sidebar',
       category: 'Explorer',
       // i18n(I18,I17 同族缺 Key):补 categoryKey,命令面板/快捷键分类经 tk 本地化

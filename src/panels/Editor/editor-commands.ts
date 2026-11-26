@@ -5,6 +5,9 @@
 // - workbench.action.nextEditor / previousEditor:编辑器文件 tab 间循环切换(活动编辑器组内);
 // - workbench.action.splitEditor(⌘\)/ splitEditorDown(无默认键)/ focusFirst·Second·ThirdEditorGroup(⌘1 / ⌘2 / ⌘3):
 //   编辑器组(BDD: src/__tests__/editor-groups/)。
+// - 组内关闭类(closeOtherEditors / closeEditorsToTheRight / closeUnmodifiedEditors / closeEditorsInGroup)、copyFilePath /
+//   copyRelativeFilePath / revealFileInOS、markdown.switchTo*Mode:tab 右键 / 模式切换的同一动作,作用于活动编辑器组的活动 tab
+//   (BDD: src/__tests__/command-discoverability/)。
 // 保存与「关当前 tab」依赖 EditorPanel 内的确认框状态(覆盖确认 / 保存·不保存·取消),由面板挂载时注册实现;
 // 本模块只依赖 store / dock api,不静态引入编辑器引擎(EditorPlugin 在启动路径上 import 本模块)。
 // BDD: src/__tests__/workbench-editor-commands/
@@ -14,6 +17,8 @@ import {
   groupActiveTabIdOf,
   groupTabsOf,
   useEditorStore,
+  type EditorMode,
+  type EditorTab,
 } from '@/stores/editor.store';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { focusEditorGroup, splitEditor } from './editor-groups-actions';
@@ -27,7 +32,12 @@ import { findEditorFileTabById } from './editor-tab-lookup';
 import { detectPlatform, formatHotkey, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
-import { tWithFallback } from '@/i18n';
+import { t, tWithFallback } from '@/i18n';
+import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
+import { stripRootPrefix } from '@/lib/path-cross';
+import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
+import { revealPathOrNotify } from '@/panels/Explorer/reveal-or-notify';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 
 /** 命令 id 与默认键(终端按生效绑定让出 ⌘W / ⌘S 时与此约定一致)。 */
 export const CLOSE_ACTIVE_EDITOR_COMMAND = { id: 'workbench.action.closeActiveEditor', hotkey: 'mod+w' } as const;
@@ -59,6 +69,8 @@ export interface EditorPanelActions {
   readonly save: () => Promise<void>;
   /** 按 tab × 同一路径关闭当前活动 tab;无活动 tab → false。 */
   readonly closeActiveTab: () => boolean;
+  /** 按 tab 右键「关闭其他 / 右侧 / 已保存 / 全部」同一路径关闭这些 tab(脏 tab 弹确认)。 */
+  readonly closeTabs: (ids: readonly string[]) => void;
 }
 
 // 按编辑器组(= 面板 id)登记:每个组面板各自一份。
@@ -69,6 +81,17 @@ export function registerEditorPanelActions(actions: EditorPanelActions, groupId:
   panelActions.set(groupId, actions);
   return () => {
     if (panelActions.get(groupId) === actions) panelActions.delete(groupId);
+  };
+}
+
+// Markdown 模式切换(EditorPanel 的 requestModeChange:unsafe 文档确认框 / 较大文档渲染提示在面板内),同样按组登记。
+const markdownModeActions = new Map<string, (mode: EditorMode) => void>();
+
+/** EditorPanel 挂载时注册本组的模式切换(活动 tab 不是 Markdown 时传入的实现自己忽略);disposer 只注销自己那份。 */
+export function registerMarkdownModeAction(fn: (mode: EditorMode) => void, groupId: string = 'editor'): () => void {
+  markdownModeActions.set(groupId, fn);
+  return () => {
+    if (markdownModeActions.get(groupId) === fn) markdownModeActions.delete(groupId);
   };
 }
 
@@ -113,6 +136,37 @@ export function closeActiveEditor(): void {
   active.api.close();
 }
 
+/** 活动编辑器组的活动文件 tab(无 → null)。 */
+function activeGroupTab(): EditorTab | null {
+  const s = useEditorStore.getState();
+  return findEditorFileTabById(s.tabs, groupActiveTabIdOf(s, s.activeGroupId));
+}
+
+/** 活动编辑器组内,以活动 tab 为目标做 tab 右键的关闭类动作(无活动 tab / 组面板未挂载 → no-op)。 */
+export function closeActiveGroupEditors(kind: TabCloseKind): void {
+  const s = useEditorStore.getState();
+  const groupId = s.activeGroupId;
+  const activeId = groupActiveTabIdOf(s, groupId);
+  if (activeId === null) return;
+  const ids = tabCloseTargets(groupTabsOf(s, groupId), activeId, kind);
+  if (ids.length > 0) panelActions.get(groupId)?.closeTabs(ids);
+}
+
+/** 复制活动文件的路径(relative:相对工作区根,同 tab 右键「复制相对路径」)。 */
+function copyActiveFilePath(relative: boolean): void {
+  const tab = activeGroupTab();
+  if (!tab) return;
+  const root = useWorkspaceStore.getState().root;
+  const text = relative && root !== null ? stripRootPrefix(root, tab.filePath) : tab.filePath;
+  void copyToClipboardOrNotify(text, t('panels.explorer.copy_path_failed'));
+}
+
+/** 在系统文件管理器中显示活动文件(文件已删除的 orphaned tab 无处可显示 → no-op)。 */
+function revealActiveFile(): void {
+  const tab = activeGroupTab();
+  if (tab && tab.orphaned !== true) void revealPathOrNotify(tab.filePath);
+}
+
 /** 在编辑器组(缺省活动组)内切到相邻文件 tab(首尾相接);组内 tab 数 < 2 → no-op。 */
 export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
   const s = useEditorStore.getState();
@@ -124,6 +178,51 @@ export function openAdjacentEditor(delta: 1 | -1, groupId?: string): void {
   const from = index < 0 ? (delta > 0 ? -1 : 0) : index;
   s.switchTab(tabs[(from + delta + tabs.length) % tabs.length]!.id, { groupId: gid });
 }
+
+/** 组内关闭类命令(VSCode 同名;tab 右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」)。 */
+const CLOSE_GROUP_EDITORS_COMMANDS: readonly { id: string; kind: TabCloseKind; title: string; titleKey: string }[] = [
+  {
+    id: 'workbench.action.closeOtherEditors',
+    kind: 'others',
+    title: 'Close Other Editors in Group',
+    titleKey: 'commands.editor.close_others.title',
+  },
+  {
+    id: 'workbench.action.closeEditorsToTheRight',
+    kind: 'right',
+    title: 'Close Editors to the Right in Group',
+    titleKey: 'commands.editor.close_right.title',
+  },
+  {
+    id: 'workbench.action.closeUnmodifiedEditors',
+    kind: 'saved',
+    title: 'Close Saved Editors in Group',
+    titleKey: 'commands.editor.close_saved.title',
+  },
+  {
+    id: 'workbench.action.closeEditorsInGroup',
+    kind: 'all',
+    title: 'Close All Editors in Group',
+    titleKey: 'commands.editor.close_all.title',
+  },
+];
+
+/** Markdown 编辑 / 源码 / 预览模式(编辑器的模式切换控件同一动作)。 */
+const MARKDOWN_MODE_COMMANDS: readonly { id: string; mode: EditorMode; title: string; titleKey: string }[] = [
+  { id: 'markdown.switchToEditMode', mode: 'edit', title: 'Switch to Edit Mode', titleKey: 'commands.markdown.edit_mode.title' },
+  {
+    id: 'markdown.switchToSourceMode',
+    mode: 'source',
+    title: 'Switch to Source Mode',
+    titleKey: 'commands.markdown.source_mode.title',
+  },
+  {
+    id: 'markdown.switchToPreviewMode',
+    mode: 'preview',
+    title: 'Switch to Preview Mode',
+    titleKey: 'commands.markdown.preview_mode.title',
+  },
+];
 
 /**
  * 命令 spec(EditorPlugin 注册)。下一个 / 上一个编辑器的默认键按平台对齐 VSCode:
@@ -190,6 +289,50 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       categoryKey: 'commands.view.category',
       fn: () => void splitEditor('down'),
     },
+    ...CLOSE_GROUP_EDITORS_COMMANDS.map(
+      (c): CommandSpec => ({
+        id: c.id,
+        title: c.title,
+        titleKey: c.titleKey,
+        category: 'View',
+        categoryKey: 'commands.view.category',
+        fn: () => closeActiveGroupEditors(c.kind),
+      }),
+    ),
+    {
+      id: 'copyFilePath',
+      title: 'Copy Path of Active File',
+      titleKey: 'commands.file.copy_path.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      fn: () => copyActiveFilePath(false),
+    },
+    {
+      id: 'copyRelativeFilePath',
+      title: 'Copy Relative Path of Active File',
+      titleKey: 'commands.file.copy_relative_path.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      fn: () => copyActiveFilePath(true),
+    },
+    {
+      id: 'revealFileInOS',
+      title: 'Reveal Active File in Finder',
+      titleKey: 'commands.file.reveal.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      fn: revealActiveFile,
+    },
+    ...MARKDOWN_MODE_COMMANDS.map(
+      (c): CommandSpec => ({
+        id: c.id,
+        title: c.title,
+        titleKey: c.titleKey,
+        category: 'Markdown',
+        categoryKey: 'commands.markdown.category',
+        fn: () => markdownModeActions.get(useEditorStore.getState().activeGroupId)?.(c.mode),
+      }),
+    ),
     ...FOCUS_EDITOR_GROUP_COMMANDS.map(
       (c): CommandSpec => ({
         id: c.id,

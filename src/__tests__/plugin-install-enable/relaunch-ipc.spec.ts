@@ -26,7 +26,7 @@ const relaunchApp = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
   electronMock.handlers.clear();
-  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp });
+  registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp, reloadWindow: vi.fn() });
 });
 
 describe('window:relaunch-app', () => {

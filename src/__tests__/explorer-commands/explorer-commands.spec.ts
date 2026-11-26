@@ -41,10 +41,13 @@ describe('命令注册', () => {
   });
 });
 
+// 写死 accelerator 的应用菜单源码(模板在 app-menu.ts,dock 菜单等在 index.ts)。
+const MENU_SOURCES = ['electron/main/app-menu.ts', 'electron/main/index.ts'];
+
 describe('默认键不冲突', () => {
   // Electron 应用菜单里写死的 accelerator(CmdOrCtrl → mod),与 renderer 命令同一按键空间。
   const menuAccelerators = (): string[] => {
-    const src = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const src = MENU_SOURCES.map((f) => readFileSync(join(process.cwd(), f), 'utf8')).join('\n');
     return Array.from(src.matchAll(/accelerator:\s*'([^']+)'/g), (m) =>
       m[1]!.toLowerCase().replace('cmdorctrl', 'mod'),
     );
@@ -69,7 +72,7 @@ describe('默认键不冲突', () => {
 // 热键先收到 keydown 并 preventDefault,Electron 不再触发菜单 accelerator;renderer 没处理(如改了键)才由菜单执行。
 describe('菜单项即命令:accelerator = 命令默认键,且与其它按键不冲突', () => {
   const literalMenuAccelerators = (): string[] => {
-    const src = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const src = MENU_SOURCES.map((f) => readFileSync(join(process.cwd(), f), 'utf8')).join('\n');
     return Array.from(src.matchAll(/accelerator:\s*'([^']+)'/g), (m) => m[1]!.toLowerCase().replace('cmdorctrl', 'mod'));
   };
 

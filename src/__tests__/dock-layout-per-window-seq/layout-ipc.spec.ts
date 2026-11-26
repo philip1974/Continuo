@@ -129,7 +129,7 @@ beforeEach(async () => {
   electronMock.senderToWindow.set(senderA, { id: 101 });
   electronMock.senderToWindow.set(senderB, { id: 202 });
   resetWindowSeq();
-  registerIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn() });
+  registerIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
 });
 
 afterEach(async () => {

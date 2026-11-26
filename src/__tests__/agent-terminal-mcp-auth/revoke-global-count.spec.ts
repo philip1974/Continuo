@@ -43,7 +43,7 @@ function invoke(frameUrl: string, raw: unknown = {}): Promise<unknown> {
 beforeEach(() => {
   h.handlers.clear();
   h.count.mockClear();
-  registerIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn() });
+  registerIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
 });
 
 describe('撤销确认用的全局 agent 终端计数(main IPC)', () => {

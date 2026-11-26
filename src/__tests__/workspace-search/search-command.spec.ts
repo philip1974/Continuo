@@ -42,7 +42,9 @@ describe('命令「在文件中查找」', () => {
     const same = coApp.commands.getAll().filter((c) => c.hotkey?.toLowerCase() === 'mod+shift+f');
     expect(same.map((c) => c.id)).toEqual([FIND_IN_FILES]);
     expect(Object.values(MENU_COMMANDS)).not.toContain('CmdOrCtrl+Shift+F');
-    const menu = readFileSync(path.resolve(__dirname, '../../../electron/main/index.ts'), 'utf8');
+    const menu = ['index.ts', 'app-menu.ts']
+      .map((f) => readFileSync(path.resolve(__dirname, '../../../electron/main', f), 'utf8'))
+      .join('\n');
     expect(menu).not.toMatch(/accelerator: '(Shift\+CmdOrCtrl|CmdOrCtrl\+Shift)\+F'/);
   });
 

@@ -32,15 +32,26 @@ export const WINDOW_CHANNELS = {
    * 仅限 MENU_COMMANDS 登记的 id)。popout 子窗聚焦时发给打开它的主窗。
    */
   RUN_MENU_COMMAND: 'window:run-menu-command',
+  /**
+   * 命令面板里的「重新加载窗口 / 放大 / 缩小 / 重置缩放 / 切换全屏」(应用菜单 View 同款动作,payload `{ action }`,
+   * 仅限 WINDOW_VIEW_ACTIONS):main 作用于发起方所在窗口;reload 走与菜单 ⌘R 相同的脏确认 + flush。
+   */
+  VIEW_ACTION: 'window:view-action',
 } as const;
+
+/** window:view-action 可执行的动作(BDD: src/__tests__/command-discoverability/)。 */
+export const WINDOW_VIEW_ACTIONS = ['reload', 'zoomIn', 'zoomOut', 'resetZoom', 'toggleFullScreen'] as const;
+export type WindowViewAction = (typeof WINDOW_VIEW_ACTIONS)[number];
 
 /**
  * 应用菜单项即 renderer 命令:命令 id → 菜单 accelerator(必须等于该命令默认键,BDD explorer-commands 守护)。
  * 同一按键只执行一次:renderer 全局热键先收到 keydown 并 preventDefault,Electron 不再触发菜单 accelerator;renderer
- * 没处理时(改了键、焦点不在页面)才由菜单经 RUN_MENU_COMMAND 执行。对齐 VSCode 文件菜单「打开文件夹… ⌘O」。
+ * 没处理时(改了键、焦点不在页面)才由菜单经 RUN_MENU_COMMAND 执行。对齐 VSCode 文件菜单「打开文件夹… ⌘O」、
+ * 应用菜单「设置… ⌘,」。
  */
 export const MENU_COMMANDS = {
   'workbench.action.files.openFolder': 'CmdOrCtrl+O',
+  'settings.toggle': 'CmdOrCtrl+,',
 } as const satisfies Record<string, string>;
 
 export type MenuCommandId = keyof typeof MENU_COMMANDS;

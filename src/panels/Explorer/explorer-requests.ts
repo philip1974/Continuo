@@ -9,7 +9,9 @@ export type ExplorerRequest =
   /** 在树焦点项所在目录打开新建输入框。 */
   | { readonly kind: 'create'; readonly type: 'file' | 'dir' }
   /** 焦点交给 root 这棵树(加载完成后:焦点行 / 空文件夹提示 / 读取失败的重试按钮)。 */
-  | { readonly kind: 'focusTree'; readonly root: string };
+  | { readonly kind: 'focusTree'; readonly root: string }
+  /** 全部折叠 / 刷新(同标题栏按钮;命令 collapseExplorerFolders / refreshFilesExplorer)。 */
+  | { readonly kind: 'collapseAll' | 'refresh' };
 
 /** 处理请求;返回 false = 不归自己(如 root 不符),请求继续挂起。 */
 type RequestHandler = (request: ExplorerRequest) => boolean;
@@ -37,9 +39,9 @@ export function onExplorerRequest(handler: RequestHandler): () => void {
   };
 }
 
-/** 请求是否给 root 这棵树(focusTree 只认同一 root;create 总是给当前树)。 */
+/** 请求是否给 root 这棵树(focusTree 只认同一 root;其余总是给当前树)。 */
 export function isRequestForRoot(request: ExplorerRequest, root: string): boolean {
-  return request.kind === 'create' || pathEquals(request.root, root);
+  return request.kind !== 'focusTree' || pathEquals(request.root, root);
 }
 
 /** 测试用:清掉挂起的请求。 */

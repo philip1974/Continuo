@@ -10,7 +10,9 @@ import { safeHandle, safeHandleWithCtx } from '../safe-handle';
 import { statDirGated } from '../lib/dir-stat-gate';
 import {
   WINDOW_CHANNELS,
+  WINDOW_VIEW_ACTIONS,
   type IpcWindowCreateInput,
+  type WindowViewAction,
 } from '../../shared/window-channels';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
@@ -48,6 +50,8 @@ export interface WindowIpcDeps {
   }) => { readonly id: number };
   /** 重启应用:走正常退出流程(脏文件确认等),退出确定发生后再 relaunch(见 index.ts relaunchApp)。 */
   readonly relaunchApp: () => void;
+  /** 重新加载窗口:与应用菜单 View → Reload(⌘R)同一的脏确认 + flush(见 index.ts reloadMainWindow)。 */
+  readonly reloadWindow: (win: BrowserWindow) => void;
 }
 
 // 边界(数量上限):renderer 发起的新建窗口(「新建窗口」命令 / 在新窗口打开文件夹)此前无上限。第三方插件经
@@ -130,6 +134,30 @@ const NotifyRootInput = z
 
 const CloseInput = z.object({}).strict();
 const RelaunchInput = z.object({}).strict();
+const ViewActionInput = z.object({ action: z.enum(WINDOW_VIEW_ACTIONS) }).strict();
+
+/** 缩放步长与 Electron 菜单 role zoomIn / zoomOut 相同(每次 ±0.5 级),resetZoom 归零。 */
+const ZOOM_STEP = 0.5;
+
+function applyWindowViewAction(win: BrowserWindow, action: WindowViewAction, reload: (win: BrowserWindow) => void): void {
+  switch (action) {
+    case 'reload':
+      reload(win);
+      return;
+    case 'zoomIn':
+      win.webContents.zoomLevel += ZOOM_STEP;
+      return;
+    case 'zoomOut':
+      win.webContents.zoomLevel -= ZOOM_STEP;
+      return;
+    case 'resetZoom':
+      win.webContents.zoomLevel = 0;
+      return;
+    case 'toggleFullScreen':
+      win.setFullScreen(!win.isFullScreen());
+      return;
+  }
+}
 
 const NotifyThemeInput = z
   .object({
@@ -181,6 +209,12 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
     win.close();
+  });
+  // 命令面板的「重新加载窗口 / 缩放 / 全屏」(应用菜单 View 同款动作):作用于发起方所在窗口。
+  safeHandleWithCtx(WINDOW_CHANNELS.VIEW_ACTION, ViewActionInput, (input, { event }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    applyWindowViewAction(win, input.action, deps.reloadWindow);
   });
   // 「立即重启」(插件安装后):交给组合根走退出流程,不在这里直接 app.relaunch()/exit()(会绕过脏文件确认丢未保存内容)。
   safeHandle(WINDOW_CHANNELS.RELAUNCH_APP, RelaunchInput, () => {

@@ -61,7 +61,7 @@ import { notifySaveFailed, openFileOrNotify } from '@/notifications/notify-open-
 import { basenameForChrome } from '@/lib/path-label';
 import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
 import { coApp } from '@/plugins/co-app';
-import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
+import { editorCommandSpecs, openAdjacentEditor, registerEditorPanelActions, registerMarkdownModeAction, SAVE_COMMAND, NEXT_EDITOR_COMMAND_ID, PREVIOUS_EDITOR_COMMAND_ID } from './editor-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
 /** 面板就地处理的命令(保存 / 下一个 / 上一个编辑器)的约定默认键:命令尚未注册时兜底,已注册以注册的 spec 为准。 */
@@ -431,10 +431,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
             onTabCloseRequest(tab);
             return true;
           },
+          closeTabs: onTabsCloseRequest,
         },
         groupId,
       ),
-    [handleSave, onTabCloseRequest, groupId],
+    [handleSave, onTabCloseRequest, onTabsCloseRequest, groupId],
   );
 
   // 切模式;较大的 Markdown 切到编辑 / 预览:该 tab 记为已接受。渲染是同步长任务 → 先让「正在渲染」提示画出来(下一帧之后)
@@ -469,6 +470,14 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       applyMode(next);
     },
     [applyMode, unsafeMarkdown, activeTab?.unsafeEditAccepted],
+  );
+  // 命令 markdown.switchTo*Mode(BDD: src/__tests__/command-discoverability/):与模式切换控件同一路径;活动 tab 不是 Markdown → 忽略。
+  useEffect(
+    () =>
+      registerMarkdownModeAction((next) => {
+        if (activeIsMarkdown) requestModeChange(next);
+      }, groupId),
+    [activeIsMarkdown, requestModeChange, groupId],
   );
   const activeTabId = activeTab?.id ?? null;
   // 确认框针对打开它时的 tab;active tab 换了(如 SDK openFile)就作废,免得确认到别的文件上

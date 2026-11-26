@@ -69,6 +69,7 @@ import {
 import {
   WINDOW_CHANNELS,
   type IpcWindowCreateInput,
+  type WindowViewAction,
 } from '../shared/window-channels';
 import {
   MARKETPLACE_CHANNELS,
@@ -500,6 +501,9 @@ const api = {
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
     /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */
     relaunchApp: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.RELAUNCH_APP, {}),
+    /** 对本窗口执行应用菜单 View 同款动作(重新加载 / 放大 / 缩小 / 重置缩放 / 切换全屏);重新加载走脏确认。 */
+    viewAction: (action: WindowViewAction): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.VIEW_ACTION, { action }),
     /**
      * Electron 38+ File.path 已弃用,改 webUtils.getPathForFile(file)。
      * renderer 拖文件 / 文件夹到窗口时,需要绝对路径才能调 fs / setRoot。

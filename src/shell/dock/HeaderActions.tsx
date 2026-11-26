@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
-import { popoutUrlFor } from '@/lib/popout-mode';
 import { IconButton, MenuItem } from '@/design';
 import { MoreActionsIcon } from '@/lib/ui-icons';
 import { DropdownMenu, type DropdownMenuControls } from '@/lib/dropdown-menu';
@@ -9,7 +8,7 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '@/plugins/registries/useRegistry';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
-import { focusDockPanelSoon } from '@/shell/dock/panel-focus';
+import { nextPanelId, popoutPanel } from '@/shell/dock/dock-panel-actions';
 import { notify } from '@/notifications/notify';
 import { useTWithFallback, t } from '@/i18n';
 import { commandHotkeyText } from '@/lib/hotkey-label';
@@ -24,18 +23,6 @@ const PANEL_OPEN_COMMAND: ReadonlyMap<string, string> = new Map([
   ['settings', 'settings.toggle'],
 ]);
 
-let panelCounter = 0;
-/**
- * 下一个未被占用的面板 id。计数器是模块级、每次启动归零,而持久化布局会恢复 `output-1` 这类旧 id;
- * dockview 对重复 id 直接抛错,所以跳过已存在的。
- */
-const nextPanelId = (key: string, isTaken: (id: string) => boolean): string => {
-  let id: string;
-  do {
-    id = `${key}-${++panelCounter}`;
-  } while (isTaken(id));
-  return id;
-};
 const POPOUT_ICON = (
   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
     <path
@@ -111,27 +98,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   );
 
   const popout = useCallback(() => {
-    if (!activePanel) return;
-    // a11y(A50,A46-A49 同族):addPopoutGroup 返回 Promise<boolean>,此前直接 void 丢弃异常 →
-    // 弹出失败时按钮无响应、无 toast/live 反馈。catch 后 notify.error 给可见+可播报反馈。
-    // 弹窗被拦截(window.open 返 null / 窗口立即被关)时 dockview resolve false 而非 reject → 同样反馈。
-    const onFailed = (err: unknown): void => {
-      console.warn('[dock] popout failed', err);
-      notify.error(t('shell.dock.popout_failed'));
-    };
-    void containerApi
-      .addPopoutGroup(activePanel, {
-        popoutUrl: popoutUrlFor(window.location.href),
-      })
-      .then((opened) => {
-        if (opened === false) {
-          onFailed('addPopoutGroup resolved false');
-          return;
-        }
-        // VSCode:移到新窗口的编辑器直接获焦。子窗打开后焦点在其 body;面板内容随组挪进子窗,交给它(仍是活动面板才交)。
-        // BDD: src/__tests__/keyboard-focus-parity/
-        focusDockPanelSoon(activePanel, () => activePanel.api.isActive);
-      }, onFailed);
+    if (activePanel) popoutPanel(containerApi, activePanel);
   }, [activePanel, containerApi]);
   // header 由主窗 React 经 portal 渲染进子窗,window.location 恒为主窗 → 只能按组的实际位置判定。
   // 位置变化时 dockview 会以新 location 重渲 header actions。

@@ -78,7 +78,7 @@ describe('main:window:notify-theme', () => {
       { setBackgroundColor: vi.fn(), isDestroyed: () => false },
       { setBackgroundColor: vi.fn(), isDestroyed: () => true },
     ];
-    registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn() });
+    registerWindowIpc({ createMainWindow: vi.fn(), relaunchApp: vi.fn(), reloadWindow: vi.fn() });
   });
 
   it('默认暗色;上报 light → 已开窗口改底色,之后新窗口用 light 底色;再上报 dark 切回', async () => {

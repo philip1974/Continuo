@@ -1,5 +1,5 @@
 // 内置 Window 插件(issue #23 Phase 1)。
-// 命令面板贡献"新窗口" / "在新窗口打开文件夹",Cmd+Shift+N 直开空 workspace 新窗口。
+// 命令面板贡献"新窗口" / "在新窗口打开文件夹",Cmd+Shift+N 直开空 workspace 新窗口;另注册窗口 / dock 类命令。
 
 import { Plugin } from '@/plugins/Plugin';
 import { coApi } from '@/lib/co-api';
@@ -9,6 +9,8 @@ import {
 } from '@/lib/select-directory-single-flight';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import { focusPartCommandSpecs } from '@/shell/focus-parts';
+import { windowCommandSpecs } from '@/shell/window-commands';
+import { dockCommandSpecs } from '@/shell/dock/dock-panel-actions';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -70,5 +72,9 @@ export default class WindowPlugin extends Plugin {
 
     // F6 / ⇧F6:在 dock 组 / 状态栏 / 侧栏间移动焦点(VSCode focusNextPart / focusPreviousPart)
     for (const spec of focusPartCommandSpecs()) this.addCommand(spec);
+    // 转到文件… / 关闭窗口 / 重新加载窗口 / 缩放 / 全屏 / 显示输出·调试 / 移到新窗口(应用菜单与 dock 标题栏的同一动作;
+    // BDD: src/__tests__/command-discoverability/)
+    for (const spec of windowCommandSpecs()) this.addCommand(spec);
+    for (const spec of dockCommandSpecs()) this.addCommand(spec);
   }
 }

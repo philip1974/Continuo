@@ -9,7 +9,7 @@ import { IconButton, MenuItem } from '@/design';
 import { openRecentRootOrNotify } from './open-recent-root';
 import { useRecentRootMissingPrompt } from './RecentRootMissingDialog';
 import { useSelectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
-import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
+import { closeWorkspaceFolder } from './explorer-commands';
 import { MoreActionsIcon } from '@/lib/ui-icons';
 import { DropdownMenu } from '@/lib/dropdown-menu';
 import { basename, recentRootAccessibleName } from './path-utils';
@@ -224,10 +224,7 @@ export function ExplorerHeader({
               onClick={() => {
                 // a11y(A30):关菜单 + 还原焦点(关闭文件夹会卸载本组件,triggerRef 已空 → focus no-op)
                 closeAndRestore();
-                // race(R28):关闭文件夹是同步 root 变更,须先作废所有在途异步 root 选择,否则
-                // 迟到的 open/drop/recent resolve 仍会 setRoot(oldPath) 撤销关闭、持久化写错 root。
-                cancelPendingWorkspaceRootSelection();
-                setRoot(null);
+                closeWorkspaceFolder();
               }}
             >
               {t('panels.explorer.menu.close_folder')}

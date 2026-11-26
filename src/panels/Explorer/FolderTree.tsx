@@ -82,6 +82,7 @@ import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { announce } from '@/lib/announce';
 import { holdAutoSave } from '@/panels/Editor/autosave-hold';
 import { isRequestForRoot, onExplorerRequest } from './explorer-requests';
+import { useStableCallback } from '@/lib/use-stable-callback';
 
 interface CreatingState {
   type: 'file' | 'dir';
@@ -1089,6 +1090,8 @@ export function FolderTree({ root }: { root: string }) {
       if (path !== root) refreshPath(path);
     }
   };
+  // 命令「刷新资源管理器」(explorer-requests)用:订阅只随 root 重建,调用时取最新的 refreshAll。
+  const refreshAllStable = useStableCallback(refreshAll);
 
   // 列表为空时区分三态(VSCode 同款):读取失败(原因 + 重试)/ 加载中 / 空文件夹。读取失败时 loader 也缓存 [],
   // 靠 rootLoad 区分。
@@ -1161,12 +1164,16 @@ export function FolderTree({ root }: { root: string }) {
         if (!isRequestForRoot(request, root)) return false;
         if (request.kind === 'create') {
           startCreateAtFocus(request.type);
+        } else if (request.kind === 'collapseAll') {
+          treeRef.current?.collapseAll();
+        } else if (request.kind === 'refresh') {
+          refreshAllStable();
         } else {
           setFocusPending(true);
         }
         return true;
       }),
-    [root, startCreateAtFocus],
+    [root, startCreateAtFocus, refreshAllStable],
   );
 
   // 删除确认框文案(VSCode explorer.confirmDelete):单项按文件 / 文件夹区分,多项列出名字(最多 10 个)。
