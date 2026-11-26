@@ -6,6 +6,7 @@
 // - editor.action.toggleWordWrap(⌥Z):切换代码编辑器自动换行(设置 editor.wordWrap,所有编辑器生效);
 //   BDD: src/__tests__/workbench-missing-commands/
 // - workbench.action.reopenClosedEditor(⇧⌘T):重新打开最近关闭的编辑器(BDD: src/__tests__/editor-reopen-closed/);
+// - workbench.action.keepEditor(无默认键):活动预览 tab 转常驻(BDD: src/__tests__/editor-preview-tab/);
 // - workbench.action.nextEditor / previousEditor:编辑器文件 tab 间循环切换(活动编辑器组内);
 // - workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup / quickOpenLeastRecentlyUsedEditorInGroup(⌃Tab / ⌃⇧Tab):
 //   按组内最近使用顺序切换(BDD: src/__tests__/editor-recent-cycle/);
@@ -43,6 +44,7 @@ import { notifyFailure } from '@/notifications/notify-thrown-error';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { revertFile } from './editor-file-actions';
 import { reopenClosedEditor } from './reopen-closed-editor';
+import { KEEP_EDITOR_COMMAND_ID, keepActiveEditor } from './editor-preview';
 import { editorFileDeps } from './editor-file-deps';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { detectPlatform, formatHotkey, type Platform } from '@/plugins/command-palette/format-hotkey';
@@ -382,6 +384,15 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'View',
       categoryKey: 'commands.view.category',
       fn: () => void reopenClosedEditor(),
+    },
+    {
+      // VSCode 默认键 ⌘K Enter 是组合键,Continuo 不支持 → 无默认键(BDD: src/__tests__/editor-preview-tab/)
+      id: KEEP_EDITOR_COMMAND_ID,
+      title: 'Keep Editor',
+      titleKey: 'commands.editor.keep.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: keepActiveEditor,
     },
     {
       id: REVERT_COMMAND_ID,

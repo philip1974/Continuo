@@ -5,10 +5,10 @@ import { EDITOR_CLOSE_A_TS, EDITOR_TABS } from './helpers/editor';
 test('开 README → a.ts → b.ts → 关中间 a.ts → 剩 README + b.ts', async ({
   window,
 }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
-  await window.locator('text=b.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
+  await window.locator('text=b.ts').first().dblclick();
 
   const items = window
     .getByRole('tablist', { name: EDITOR_TABS })

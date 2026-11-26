@@ -11,6 +11,7 @@ import { editorCommandSpecs } from '@/panels/Editor/editor-commands';
 import { editorTextCommandSpecs } from '@/panels/Editor/editor-text-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { installNavigationHistory } from '@/panels/Editor/navigation-history';
+import { installEditorPreviewSettingSync } from '@/panels/Editor/editor-preview';
 
 const Editor = lazy(() =>
   loadEditorPanelModule().then((m) => ({ default: m.EditorPanel })),
@@ -30,5 +31,7 @@ export default class EditorPlugin extends Plugin {
     for (const spec of editorTextCommandSpecs(detectPlatform())) this.addCommand(spec);
     // 后退 / 前进的导航记录(活动编辑器 / 路径变更 / 工作区根订阅;BDD: src/__tests__/editor-navigation-history/)
     this.register({ dispose: installNavigationHistory() });
+    // 预览编辑器设置关闭 → 已有预览 tab 转常驻(BDD: src/__tests__/editor-preview-tab/)
+    this.register({ dispose: installEditorPreviewSettingSync() });
   }
 }

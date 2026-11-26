@@ -10,14 +10,14 @@ test('开 2 tab → 关其中一个 → 只剩 1 个 tab', async ({
   window,
 }) => {
   // 开 README.md
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await expect(window.locator('header').first()).toContainText('README.md', {
     timeout: 10_000,
   });
 
   // 展开 src + 开 a.ts → 两个 tab
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   await expect(
     window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab'),
   ).toHaveCount(2, { timeout: 10_000 });
@@ -41,7 +41,7 @@ test('开 2 tab → 关其中一个 → 只剩 1 个 tab', async ({
 });
 
 test('单 tab 的 close × → 回 EditorWelcome', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await expect(window.locator('header').first()).toContainText('README.md', {
     timeout: 10_000,
   });

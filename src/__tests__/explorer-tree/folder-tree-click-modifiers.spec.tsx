@@ -96,7 +96,7 @@ describe('FolderTree · 修饰键单击只改选中不打开', () => {
     act(() => {
       fireEvent.click(row(container, '/work/beta.ts')!);
     });
-    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts'));
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts', { preview: true }));
   });
 
   it.each([

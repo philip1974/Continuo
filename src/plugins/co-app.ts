@@ -22,6 +22,7 @@ import {
   openFileByPath,
   openFileWithContent,
   type FileOpResult,
+  type OpenFileOptions,
 } from '@/panels/Editor/editor-file-actions';
 import { mapFsCodeToEditorCode } from './editor-open-codes';
 import { ensurePluginOpenedTabTracking, releasePluginOpenedPath } from './plugin-opened-tabs';
@@ -89,13 +90,21 @@ const invalidPathResult = {
   message: 'path must be absolute',
 } as const;
 
+/**
+ * 宿主内部的「打开并定位」(同 editor.openFile),可指定打开方式(OpenFileOptions.preview:搜索结果单击以预览方式、⌘P 常驻;
+ * BDD: src/__tests__/editor-preview-tab/)。插件 API 不暴露打开方式。
+ */
+export async function openFileInEditor(
+  path: string,
+  opts: EditorOpenOptions | undefined,
+  openOpts?: OpenFileOptions,
+): Promise<EditorOpenResult> {
+  if (!isAbsolutePath(path)) return invalidPathResult;
+  return openInEditor(path, opts, undefined, () => openFileByPath(path, editorFileDeps, openOpts));
+}
+
 const editor: CoHostEditorApi = {
-  async openFile(path, opts) {
-    if (!isAbsolutePath(path)) return invalidPathResult;
-    return openInEditor(path, opts, undefined, () =>
-      openFileByPath(path, editorFileDeps),
-    );
-  },
+  openFile: (path, opts) => openFileInEditor(path, opts),
   // 安全:插件发起的 openFile 由 scoped app 先经主进程「持锁校验 + 读取」,再用这份内容开标签(见 CoHostEditorApi)。
   // 那次读取在主进程记下的一份「插件打开的路径」归这里处置:新建了标签 → 交给标签(关闭时释放,见
   // plugin-opened-tabs);否则当即释放。

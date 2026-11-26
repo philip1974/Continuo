@@ -29,7 +29,7 @@ test('打开 20 个文件 → 最后打开的 tab 可见;缩窄窗口后仍可�
   await window.locator('text=src').first().click();
   for (let i = 1; i <= 20; i++) {
     const p = path.join(workspaceRoot, 'src', `file-${String(i).padStart(2, '0')}.ts`);
-    await window.locator(`[role=treeitem][title="${p}"]`).click();
+    await window.locator(`[role=treeitem][title="${p}"]`).dblclick();
     await expect(window.locator('.cm-content')).toContainText(`f${i} = ${i}`, { timeout: 10_000 });
   }
   const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');

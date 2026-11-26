@@ -22,9 +22,9 @@ const SAVE_ALL = /^(Save All|全部保存|모두 저장)$/;
 const SAVE = /^(Save|保存|저장)$/;
 
 test('编辑器 tab 右键「全部关闭」遇脏文件:先确认,取消则一个都不关;不保存则全部关闭', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
   await expect(tabs).toHaveCount(2, { timeout: 10_000 });
 
@@ -62,12 +62,12 @@ test('编辑器 tab「全部关闭」遇 2 个脏文件 → 一个合并框列�
   test.skip(process.platform === 'win32', 'chmod 444 在 Windows 只映射只读属性,由单测覆盖');
   const aPath = path.join(workspaceRoot, 'src/a.ts');
   const bPath = path.join(workspaceRoot, 'src/b.ts');
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
   const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
   const cm = window.locator('.cm-content');
   for (const name of ['a.ts', 'b.ts']) {
-    await window.locator(`text=${name}`).first().click();
+    await window.locator(`text=${name}`).first().dblclick();
     await expect(tabs.filter({ hasText: name })).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 });
     await expect(cm).toContainText(`export const ${name[0]}`, { timeout: 10_000 });
     await cm.click();
@@ -94,9 +94,9 @@ test('编辑器 tab「全部关闭」遇 2 个脏文件 → 一个合并框列�
 });
 
 test('编辑器 tab 右键「关闭」活动的干净 tab(不弹框)→ 同 ⌘W,焦点进新的活动编辑器,可直接键入', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
   await expect(tabs).toHaveCount(2, { timeout: 10_000 });
   await expect(window.locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
@@ -112,9 +112,9 @@ test('编辑器 tab 右键「关闭」活动的干净 tab(不弹框)→ 同 ⌘W
 
 // 菜单关闭先把焦点还给被右键的 tab,随后它被移除 → 曾落到 body、键入丢失。VSCode(同点 ×):焦点留在活动编辑器。
 test('编辑器 tab 右键「关闭」非活动的干净 tab → 焦点留在活动编辑器,可直接键入', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
   await expect(tabs).toHaveCount(2, { timeout: 10_000 });
   const cm = window.locator('.cm-content');
@@ -131,7 +131,7 @@ test('编辑器 tab 右键「关闭」非活动的干净 tab → 焦点留在活
 
 test('dock tab 右键「关闭」非活动面板 → 焦点进同组活动的编辑器,可直接键入', async ({ window }) => {
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   const cm = window.locator('.cm-content');
   await expect(cm).toContainText('export const a', { timeout: 10_000 });
   await window.getByRole('button', { name: SETTINGS }).click();
@@ -151,7 +151,7 @@ test('dock tab 右键「关闭」非活动面板 → 焦点进同组活动的编
 });
 
 test('dock tab 右键:Shift+F10 打开菜单,「关闭其他」只留当前面板', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.getByRole('button', { name: SETTINGS }).click();
   const settingsTab = window.locator('.dv-tab [role=tab]', { hasText: /^(设置|Settings|설정)/ });
   await expect(settingsTab).toBeVisible({ timeout: 10_000 });
@@ -171,7 +171,7 @@ test('popout 子窗里 tab 右键「关闭」遇脏文件 → Esc 取消确认 �
   window,
 }) => {
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   const cm = window.locator('.cm-content');
   await expect(cm).toContainText('export const a', { timeout: 10_000 });
   await cm.click();
@@ -206,7 +206,7 @@ test('popout 子窗里 tab 右键「关闭」遇脏文件 → Esc 取消确认 �
 // 菜单关闭后子窗随即可点(pointer-events 已还原),再点正文即进编辑器。
 test('popout 子窗里 tab 右键菜单点编辑器正文关闭 → 焦点不落 body(回到 tab);再点正文可输入', async ({ electronApp, window }) => {
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   await expect(window.locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
   await window.getByRole('button', { name: DOCK_POPOUT }).click();
   await expect.poll(() => electronApp.windows().length, { timeout: 10_000 }).toBe(2);

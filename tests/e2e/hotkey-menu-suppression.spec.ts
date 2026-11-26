@@ -4,9 +4,9 @@ import { EDITOR_TABS } from './helpers/editor';
 import { explorerMoreActionsButton } from './helpers/explorer';
 
 test('资源管理器右键菜单开着:⌘W 不关背后的编辑器、菜单仍开;Esc 关菜单后 ⌘W 照常', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   await expect(window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab')).toHaveCount(2, { timeout: 10_000 });
   // 菜单开着时 Radix 给菜单外节点加 aria-hidden(role 查询看不到 tab),按 DOM 数。
   const tabs = window.locator('[role="tablist"][aria-label] [role="tab"]').filter({ hasText: /README\.md|a\.ts/ });
@@ -31,7 +31,7 @@ test('资源管理器右键菜单开着:⌘W 不关背后的编辑器、菜单�
 });
 
 test('资源管理器「⋯」菜单开着:⌘B 不切侧栏、焦点留在菜单;Esc 关闭并还焦点;焦点被移走 → 菜单关闭', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   const cm = window.locator('.cm-content');
   await expect(cm).toBeVisible({ timeout: 10_000 });
   const sidebar = window.locator('aside[data-workbench-part="sidebar"]');

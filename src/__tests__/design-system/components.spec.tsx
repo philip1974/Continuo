@@ -390,6 +390,31 @@ describe('TabNav + TabNavItem', () => {
     expect(disabledClose).not.toHaveBeenCalled();
   });
 
+  it('双击 tab → onDoubleClick(onRename 优先;disabled 时不触发)', () => {
+    const onDoubleClick = vi.fn();
+    const onRename = vi.fn();
+    const { container } = render(
+      <TabNav>
+        <TabNavItem onSelect={() => {}} onDoubleClick={onDoubleClick}>
+          a.ts
+        </TabNavItem>
+        <TabNavItem onSelect={() => {}} onDoubleClick={onDoubleClick} onRename={onRename}>
+          b.ts
+        </TabNavItem>
+        <TabNavItem disabled onSelect={() => {}} onDoubleClick={onDoubleClick}>
+          c.ts
+        </TabNavItem>
+      </TabNav>,
+    );
+    const items = container.querySelectorAll('.wm-tab-nav-item');
+    fireEvent.doubleClick(items[0]!);
+    expect(onDoubleClick).toHaveBeenCalledTimes(1);
+    fireEvent.doubleClick(items[1]!);
+    expect(onRename).toHaveBeenCalledTimes(1);
+    fireEvent.doubleClick(items[2]!);
+    expect(onDoubleClick).toHaveBeenCalledTimes(1);
+  });
+
   it('dirty=true 渲染 __dirty-dot;onClose 提供时渲染 __close 按钮', () => {
     const { container } = render(
       <TabNav>

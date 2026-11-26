@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import { coApi } from '@/lib/co-api';
 import { clampSearchQuery, regexSyntaxError } from '@/lib/search-query';
-import { coApp } from '@/plugins/co-app';
+import { openFileInEditor } from '@/plugins/co-app';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { onEditorPathChange, useEditorStore } from '@/stores/editor.store';
@@ -290,12 +290,18 @@ export function rerunSearch(): void {
   useSearchStore.getState().searchNow();
 }
 
-/** 打开某个匹配并选中它(编辑器公共 API,失败统一提示;列 / 长度均为 UTF-16,与编辑器同一单位)。 */
-export function openSearchMatch(file: SearchFileResult, index: number): Promise<boolean> {
+/**
+ * 打开某个匹配并选中它(失败统一提示;列 / 长度均为 UTF-16,与编辑器同一单位)。preview:单击以预览方式打开(VSCode;
+ * 双击 / Enter / F4 常驻,BDD: src/__tests__/editor-preview-tab/)。
+ */
+export function openSearchMatch(file: SearchFileResult, index: number, preview = false): Promise<boolean> {
   const m = file.matches[index];
   if (!m) return Promise.resolve(false);
   const name = file.relPath.slice(file.relPath.lastIndexOf('/') + 1) || file.relPath;
-  return openFileOrNotify(() => coApp.editor.openFile(file.path, { line: m.line, column: m.column, length: m.length }), name);
+  return openFileOrNotify(
+    () => openFileInEditor(file.path, { line: m.line, column: m.column, length: m.length }, { preview }),
+    name,
+  );
 }
 
 /** F4 / ⇧F4(VSCode search.action.focusNext/PreviousSearchResult):活动行移到下 / 上一个匹配(循环、跨文件),并打开它。 */

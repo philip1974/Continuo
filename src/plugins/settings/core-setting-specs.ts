@@ -60,6 +60,24 @@ export const EDITOR_WORD_WRAP: CoreSettingSpec<boolean> = {
   priority: 3,
 };
 
+/**
+ * 预览编辑器(VSCode workbench.editor.enablePreview,默认开):资源管理器 / 搜索结果单击以预览方式打开(斜体标题,被下一次预览
+ * 原位替换,编辑 / 保存 / 双击 / 保留编辑器命令后常驻)。关闭 → 所有打开方式都常驻,已有的预览 tab 一并转常驻。
+ * BDD: src/__tests__/editor-preview-tab/
+ */
+export const EDITOR_ENABLE_PREVIEW: CoreSettingSpec<boolean> = {
+  id: 'workbench.editor.enablePreview',
+  category: 'editor',
+  group: 'tabs',
+  groupKey: 'settings.group.tabs',
+  title: 'Enable preview editors',
+  titleKey: 'settings.editor.enable_preview',
+  descriptionKey: 'settings.editor.enable_preview.desc',
+  type: 'boolean',
+  default: true,
+  priority: 20,
+};
+
 export const AUTO_SAVE_MARKDOWN_ENABLED: CoreSettingSpec<boolean> = {
   id: 'autoSave.markdown.enabled',
   category: 'editor',

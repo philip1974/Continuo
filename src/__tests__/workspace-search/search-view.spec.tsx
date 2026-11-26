@@ -24,7 +24,7 @@ vi.mock('@/lib/co-api', () => ({
     },
   },
 }));
-vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: h.openFile } } }));
+vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: h.openFile } }, openFileInEditor: h.openFile }));
 // jsdom 无布局:虚拟列表全量渲染
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -259,7 +259,8 @@ describe('结果树与计数', () => {
     await act(async () => {
       fireEvent.keyDown(tree, { key: 'Enter' });
     });
-    expect(h.openFile).toHaveBeenCalledWith('/w/src/a.ts', { line: 1, column: 7, length: 3 });
+    // Enter 常驻打开(单击才是预览;BDD: src/__tests__/editor-preview-tab/)
+    expect(h.openFile).toHaveBeenCalledWith('/w/src/a.ts', { line: 1, column: 7, length: 3 }, { preview: false });
     fireEvent.keyDown(tree, { key: 'ArrowLeft' }); // 匹配行 ← 回到文件行
     expect(active().getAttribute('aria-level')).toBe('1');
     fireEvent.keyDown(tree, { key: 'ArrowLeft' }); // 文件行 ← 折叠
@@ -277,7 +278,8 @@ describe('结果树与计数', () => {
     await act(async () => {
       fireEvent.click(items[4]!);
     });
-    expect(h.openFile).toHaveBeenCalledWith('/w/b.md', { line: 2, column: 3, length: 3 });
+    // 单击以预览方式打开(BDD: src/__tests__/editor-preview-tab/)
+    expect(h.openFile).toHaveBeenCalledWith('/w/b.md', { line: 2, column: 3, length: 3 }, { preview: true });
     fireEvent.click(items[0]!);
     expect(screen.getAllByRole('treeitem')).toHaveLength(3);
   });
@@ -285,16 +287,16 @@ describe('结果树与计数', () => {
   it('F4(下一个结果):依次打开各匹配,到末尾回到第一个', async () => {
     withResults();
     for (const expected of [
-      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }],
-      ['/w/src/a.ts', { line: 4, column: 1, length: 3 }],
-      ['/w/b.md', { line: 2, column: 3, length: 3 }],
-      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }],
+      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }, { preview: false }],
+      ['/w/src/a.ts', { line: 4, column: 1, length: 3 }, { preview: false }],
+      ['/w/b.md', { line: 2, column: 3, length: 3 }, { preview: false }],
+      ['/w/src/a.ts', { line: 1, column: 7, length: 3 }, { preview: false }],
     ]) {
       await act(async () => focusNextSearchResult(1));
       expect(h.openFile).toHaveBeenLastCalledWith(...expected);
     }
     await act(async () => focusNextSearchResult(-1));
-    expect(h.openFile).toHaveBeenLastCalledWith('/w/b.md', { line: 2, column: 3, length: 3 });
+    expect(h.openFile).toHaveBeenLastCalledWith('/w/b.md', { line: 2, column: 3, length: 3 }, { preview: false });
   });
 
   it('请求聚焦(⇧⌘F):焦点进查询框并全选;带入的选区文本替换查询', () => {

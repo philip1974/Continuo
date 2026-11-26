@@ -15,7 +15,7 @@ test('root/a.ts + src/a.ts 都打开 → 两个 tab 独立', async ({ window, wo
   });
 
   // 打开根 a.ts(此时 src 收起,treeitem a.ts 唯一)
-  await explorerTreeItem(window, /^a\.ts$/).click();
+  await explorerTreeItem(window, /^a\.ts$/).dblclick();
   let titleSpan = window.locator('header').first().locator('span[title]');
   await expect(titleSpan).toHaveAttribute('title', path.join(workspaceRoot, 'a.ts'));
 
@@ -28,7 +28,7 @@ test('root/a.ts + src/a.ts 都打开 → 两个 tab 独立', async ({ window, wo
   // treeitem 自身带 title=绝对路径(FileRow):直接按 src/a.ts 的路径定位点开
   await window
     .locator(`[role=treeitem][title="${path.join(workspaceRoot, 'src', 'a.ts')}"]`)
-    .click();
+    .dblclick();
 
   // tooltip 此时应是 src/a.ts
   titleSpan = window.locator('header').first().locator('span[title]');

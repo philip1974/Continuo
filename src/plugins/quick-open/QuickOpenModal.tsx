@@ -26,7 +26,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { coApi } from '@/lib/co-api';
 import { useT } from '@/i18n';
 import { dirname } from '@/lib/path-cross';
-import { openFileByPath } from '@/panels/Editor/editor-file-actions';
+import { openFileByPath, type OpenFileOptions } from '@/panels/Editor/editor-file-actions';
 import { preloadCodeEditorEngine } from '@/panels/Editor/editor-engine-loaders';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
@@ -34,7 +34,10 @@ import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { normalizeSearchQuery } from '@/lib/search-query';
 import { useGotoLine } from './use-goto-line';
 import { parseFileLineQuery, type GotoLineRequest } from './goto-line';
-import { coApp } from '@/plugins/co-app';
+import { openFileInEditor } from '@/plugins/co-app';
+
+/** ⌘P 打开为常驻(VSCode workbench.editor.enablePreviewFromQuickOpen 默认 false)。 */
+const PINNED: OpenFileOptions = { preview: false };
 
 // race(R2):稳定空数组引用,跨 root 时 liveResults 返回它,避免每次渲染新建 [] 触发 useMemo。
 const EMPTY_RESULTS: readonly QuickOpenFile[] = [];
@@ -210,9 +213,10 @@ function QuickOpenBody() {
       // 打开失败弹 error toast(modal 已关,旧实现只 console.warn → 用户点了没反应;P1-AX),按 code 本地化(I8)。
       // 成功 → 焦点进编辑器(VSCode:回车后可直接打字;否则弹窗还焦点给的旧编辑器随即卸载,焦点掉到 body)。
       // 带行号:与搜索结果同一条「打开并定位」(居中;Markdown 编辑 / 预览按源码行),导航记录只记目标一条。
+      // 常驻打开(见 PINNED;已是预览 tab 的转常驻)
       const open = at
-        ? () => coApp.editor.openFile(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) })
-        : () => openFileByPath(file.absPath, editorFileDeps);
+        ? () => openFileInEditor(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) }, PINNED)
+        : () => openFileByPath(file.absPath, editorFileDeps, PINNED);
       if (await openFileOrNotify(open, file.name)) {
         focusActiveEditor();
       }

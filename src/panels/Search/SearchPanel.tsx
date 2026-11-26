@@ -120,9 +120,10 @@ export function SearchPanel() {
   const regexError = s.isRegex && s.pattern ? regexSyntaxError(s.pattern) : null;
   const statusText = searchStatusText(s, t);
 
-  const activate = (row: Row) => {
+  // preview:匹配行单击以预览方式打开(双击的第二下 / Enter 常驻;BDD: src/__tests__/editor-preview-tab/)
+  const activate = (row: Row, preview = false) => {
     if (row.kind === 'file') actions.toggleCollapsed(row.file.path);
-    else void openSearchMatch(row.file, row.index);
+    else void openSearchMatch(row.file, row.index, preview);
   };
 
   const onTreeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -305,9 +306,9 @@ export function SearchPanel() {
                 title={m.preview}
                 style={style}
                 className={`${pickerRowClassName(selected)} min-w-0 pl-7`}
-                onClick={() => {
+                onClick={(e) => {
                   actions.setActiveKey(row.key);
-                  activate(row);
+                  activate(row, e.detail < 2);
                 }}
               >
                 <span className="min-w-0 truncate whitespace-pre font-mono">

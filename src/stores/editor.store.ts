@@ -155,10 +155,18 @@ export interface EditorGroupLayout {
   readonly activeTabId: string | null;
   /** 组内 tab 最近使用顺序;缺省 = 默认顺序(见 defaultTabMru)。 */
   readonly mru?: readonly string[] | undefined;
+  /** 组内的预览 tab(缺省 = 无,全部常驻)。BDD: src/__tests__/editor-preview-tab/ */
+  readonly preview?: string | undefined;
 }
 
 /** 组 id → 该组 tab 的最近使用顺序(首项 = 活动 tab)。BDD: src/__tests__/editor-close-mru/ */
 export type EditorTabMru = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * 组 id → 该组的预览 tab(VSCode preview editor:每组至多一个,标题斜体,以预览方式再打开别的文件时原位替换它)。
+ * 不在表里的 tab 都是常驻(pinned)。脏 tab 一定常驻(withTabMru 随状态变更剔除)。BDD: src/__tests__/editor-preview-tab/
+ */
+export type EditorPreviewTabs = ReadonlyMap<string, string>;
 
 // 变脏代际的全局单调计数器:按 tab 实例计数会在关闭重开同一路径后从 1 重算,与已接受的旧身份撞号(复审)。
 let dirtyGenCounter = 0;
@@ -583,6 +591,14 @@ export interface EditorFocusOpts {
    * 供重新打开已关闭的编辑器插回原位置(BDD: src/__tests__/editor-reopen-closed/)。
    */
   readonly index?: number;
+  /**
+   * 预览(VSCode pinned 的反面;BDD: src/__tests__/editor-preview-tab/):
+   * - `true`:tab 新加入目标组时作为该组的预览 tab —— 组里已有别的预览 tab 则原位替换它(被替换的文档不在别的组就关闭,
+   *   不进最近关闭栈);组里已有的 tab 不改常驻 / 预览状态。
+   * - `false`:常驻;目标组里它若是预览 tab → 转为常驻(资源管理器双击 / Enter、⌘P)。
+   * - 缺省:新加入的 tab 常驻,已在组里的不变(tab 栏点击、会话恢复、后退 / 前进等)。
+   */
+  readonly preview?: boolean;
 }
 
 function nextFocusPulse(pulse: number, opts: EditorFocusOpts | undefined): number {
@@ -614,6 +630,8 @@ type EditorState = {
   groups: EditorGroup[];
   /** 各组 tab 的最近使用顺序(由 withTabMru 随每次状态变更维护;关闭活动 tab 时据此选接替者)。 */
   tabMru: EditorTabMru;
+  /** 各组的预览 tab(见 EditorPreviewTabs;变化时 bump chromeVersion)。 */
+  previewTabs: EditorPreviewTabs;
   /** 最近活动的编辑器组:打开文件落在这里。 */
   activeGroupId: string;
   mode: EditorMode;
@@ -659,6 +677,10 @@ type EditorState = {
   restoreGroups: (layout: readonly EditorGroupLayout[], activeGroupId: string) => void;
   /** 会话恢复:设置组 groupId 的 tab MRU(缺省 = 默认顺序);活动 tab 始终居首,不在组里的 id 丢弃。 */
   restoreTabMru: (groupId: string, mru?: readonly string[]) => void;
+  /** 预览 tab 转为常驻(双击 tab / workbench.action.keepEditor);groupId 缺省 = 所有组。不是预览 tab → no-op。 */
+  pinTab: (id: string, groupId?: string) => void;
+  /** 会话恢复:tabId 成为组 groupId 的预览 tab(组里已有预览 tab / tab 不在组里 / 脏 → no-op)。 */
+  restorePreviewTab: (groupId: string, tabId: string | undefined) => void;
   /** 文件/目录被删除后调用:精确匹配或前缀匹配的 clean tab 统一关闭,只 set 一次(chromeVersion 至多 bump 一次). */
   removePaths: (paths: readonly string[]) => void;
   /**
@@ -1047,9 +1069,91 @@ export function groupTabMruOf(s: Pick<EditorState, 'tabMru'>, groupId: string): 
   return s.tabMru?.get(groupId);
 }
 
+// ── 预览 tab(BDD: src/__tests__/editor-preview-tab/)──────────────
+
+const EMPTY_PREVIEW_TABS: EditorPreviewTabs = new Map();
+
+/** 组 groupId 的预览 tab id(无 → undefined)。 */
+export function groupPreviewTabIdOf(s: Pick<EditorState, 'previewTabs'>, groupId: string): string | undefined {
+  return s.previewTabs?.get(groupId);
+}
+
+function withPreviewEntry(m: EditorPreviewTabs, groupId: string, tabId: string | null): EditorPreviewTabs {
+  if (tabId === null ? !m.has(groupId) : m.get(groupId) === tabId) return m;
+  const next = new Map(m);
+  if (tabId === null) next.delete(groupId);
+  else next.set(groupId, tabId);
+  return next;
+}
+
+/** 预览表规范化:剔除组已不在、tab 已不在该组、或 tab 已变脏(编辑即常驻,VSCode 同)的条目。无变化返回原表。 */
+function syncPreviewTabs(s: Pick<EditorState, 'tabs' | 'activeTabId' | 'groups' | 'previewTabs'>): EditorPreviewTabs {
+  const prev = s.previewTabs ?? EMPTY_PREVIEW_TABS;
+  if (prev.size === 0) return prev;
+  const groups = materializedGroups(s);
+  let next: Map<string, string> | null = null;
+  for (const [gid, id] of prev) {
+    const inGroup = groups.find((g) => g.id === gid)?.tabIds.includes(id) === true;
+    if (inGroup && s.tabs.some((t) => t.id === id && !t.dirty)) continue;
+    next ??= new Map(prev);
+    next.delete(gid);
+  }
+  return next ?? prev;
+}
+
 /**
- * 每次状态变更(含外部 setState)同一次提交里维护 tabMru(不多发通知):活动 tab / 组 / tab 增删改名(chromeVersion)/
- * tabMru 本身变了才重算(正文输入不触发)。
+ * tabId 以预览方式新加入组(组内 tab tabIds、活动 tab active)时被它原位替换的预览 tab:组里现有的、不是它自己、不脏的预览 tab;
+ * 后台加入(不激活)时不替换正在显示的那个。返回 undefined = 组里没有可用的预览 tab;null = 有但不能替换(新 tab 常驻)。
+ */
+function replaceablePreviewOf(
+  s: Pick<EditorState, 'tabs' | 'previewTabs'>,
+  groupId: string,
+  tabIds: readonly string[],
+  active: string | null,
+  tabId: string,
+  activating: boolean,
+): string | null | undefined {
+  const p = groupPreviewTabIdOf(s, groupId);
+  if (p === undefined || p === tabId || !tabIds.includes(p)) return undefined;
+  if (s.tabs.some((t) => t.id === p && t.dirty) || (!activating && p === active)) return null;
+  return p;
+}
+
+/** 已在组里的 tab 按 opts.preview 更新预览表:false 且它是该组预览 tab → 转为常驻;其余不变。 */
+function previewTabsAfterReopen(s: Pick<EditorState, 'previewTabs'>, groupId: string, tabId: string, preview: boolean | undefined): EditorPreviewTabs {
+  const m = s.previewTabs ?? EMPTY_PREVIEW_TABS;
+  return preview === false && m.get(groupId) === tabId ? withPreviewEntry(m, groupId, null) : m;
+}
+
+/**
+ * tabId 新加入组 g(不在组里):opts.preview 为 true → 替换组里的预览 tab(见 replaceablePreviewOf)或成为预览 tab;
+ * 否则同 activateInGroup。返回新组、被替换的 tab 与新预览表。
+ */
+function placeNewTabInGroup(
+  s: Pick<EditorState, 'tabs' | 'previewTabs'>,
+  g: EditorGroup,
+  tabId: string,
+  keepActive: boolean,
+  opts: EditorFocusOpts | undefined,
+): { group: EditorGroup; replaced: string | null; previewTabs: EditorPreviewTabs } {
+  const m = s.previewTabs ?? EMPTY_PREVIEW_TABS;
+  const activating = !(keepActive && g.activeTabId !== null);
+  const replaced = opts?.preview === true ? replaceablePreviewOf(s, g.id, g.tabIds, g.activeTabId, tabId, activating) : null;
+  if (replaced === null || replaced === undefined) {
+    const group = activateInGroup(g, tabId, keepActive, opts?.index);
+    return { group, replaced: null, previewTabs: replaced === undefined ? withPreviewEntry(m, g.id, tabId) : m };
+  }
+  const group: EditorGroup = {
+    id: g.id,
+    tabIds: g.tabIds.map((id) => (id === replaced ? tabId : id)),
+    activeTabId: activating ? tabId : g.activeTabId,
+  };
+  return { group, replaced, previewTabs: withPreviewEntry(m, g.id, tabId) };
+}
+
+/**
+ * 每次状态变更(含外部 setState)同一次提交里维护 tabMru 与预览表(不多发通知):活动 tab / 组 / tab 增删改名·变脏(chromeVersion)/
+ * tabMru / 预览表本身变了才重算(正文输入不触发)。预览表因此变化(如预览 tab 变脏转常驻)而 chromeVersion 未变 → bump。
  */
 function withTabMru(creator: StateCreator<EditorState>): StateCreator<EditorState> {
   type Patch = EditorState | Partial<EditorState>;
@@ -1064,12 +1168,21 @@ function withTabMru(creator: StateCreator<EditorState>): StateCreator<EditorStat
           cur.activeTabId === s.activeTabId &&
           cur.chromeVersion === s.chromeVersion &&
           cur.tabs?.length === s.tabs.length &&
-          cur.tabMru === s.tabMru
+          cur.tabMru === s.tabMru &&
+          cur.previewTabs === s.previewTabs
         ) {
           return patch;
         }
         const tabMru = syncTabMru(cur);
-        return tabMru === cur.tabMru ? patch : { ...patch, tabMru };
+        const previewTabs = syncPreviewTabs(cur);
+        if (tabMru === cur.tabMru && previewTabs === cur.previewTabs) return patch;
+        return {
+          ...patch,
+          ...(tabMru === cur.tabMru ? null : { tabMru }),
+          ...(previewTabs === cur.previewTabs
+            ? null
+            : { previewTabs, ...(cur.chromeVersion === s.chromeVersion ? { chromeVersion: s.chromeVersion + 1 } : null) }),
+        };
       };
       (set as (p: (s: EditorState) => Patch, r?: boolean) => void)(apply, replace);
     }) as typeof set;
@@ -1107,13 +1220,19 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
   activeTabId: null,
   groups: singleGroup(PRIMARY_EDITOR_GROUP_ID),
   tabMru: EMPTY_TAB_MRU,
+  previewTabs: EMPTY_PREVIEW_TABS,
   activeGroupId: PRIMARY_EDITOR_GROUP_ID,
   mode: 'source',
   editorFocusPulse: 0,
   chromeVersion: 0,
   viewRefs: new Map(),
 
-  openTab: (tab, opts) =>
+  openTab: (tab, opts) => {
+    // 以预览方式打开会原位替换组里的预览 tab:先把它未上抛的输入回写进 store —— 回写后变脏即常驻,不被替换
+    if (opts?.preview === true) {
+      const p = groupPreviewTabIdOf(get(), targetGroupId(get(), opts));
+      if (p !== undefined && p !== tab.id) flushEditorWriteBacks([p]);
+    }
     set((s) => {
       const pulse = nextFocusPulse(s.editorFocusPulse, opts);
       if (isMultiGroup(s)) {
@@ -1121,26 +1240,42 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
         const g = findGroup(s, gid)!;
         const exists = findEditorTabIndexById(s.tabs, tab.id) >= 0;
         if (!exists && (s.tabs.length >= PATH_ARRAY_MAX || tab.filePath.length > PATH_STR_MAX)) return s;
-        const nextG = activateInGroup(g, tab.id, opts?.activate === false, opts?.index);
+        const keepActive = opts?.activate === false;
+        const placed = g.tabIds.includes(tab.id)
+          ? { group: activateInGroup(g, tab.id, keepActive), replaced: null, previewTabs: previewTabsAfterReopen(s, gid, tab.id, opts?.preview) }
+          : placeNewTabInGroup(s, g, tab.id, keepActive, opts);
+        const nextG = placed.group;
         const activeGroupId = nextActiveGroupId(s, gid, opts);
+        const previewChanged = placed.previewTabs !== s.previewTabs;
         if (exists && nextG === g && activeGroupId === s.activeGroupId) {
-          return opts?.activate === false && g.activeTabId !== null ? s : { editorFocusPulse: pulse };
+          const base = opts?.activate === false && g.activeTabId !== null ? null : { editorFocusPulse: pulse };
+          if (!previewChanged) return base ?? s;
+          return { ...base, previewTabs: placed.previewTabs, chromeVersion: s.chromeVersion + 1 };
         }
         const groups = replaceGroup(s.groups, nextG);
         const active = groups.find((x) => x.id === activeGroupId)!;
+        let tabs = exists ? s.tabs : appendEditorTab(s.tabs, tab);
+        // 被替换的预览文档不在别的组 → 关闭(干净,无需确认)
+        const r = placed.replaced;
+        if (r !== null && !groups.some((x) => x.tabIds.includes(r))) tabs = tabs.filter((t) => t.id !== r);
         return {
-          tabs: exists ? s.tabs : appendEditorTab(s.tabs, tab),
+          tabs,
           groups,
           activeGroupId,
           activeTabId: active.activeTabId,
           editorFocusPulse: pulse,
           chromeVersion: s.chromeVersion + 1,
+          ...(previewChanged ? { previewTabs: placed.previewTabs } : null),
         };
       }
       const keepActive = opts?.activate === false && s.activeTabId !== null;
+      const gid = s.groups[0]?.id ?? PRIMARY_EDITOR_GROUP_ID;
       const existingIndex = findEditorTabIndexById(s.tabs, tab.id);
       if (existingIndex >= 0) {
-        return keepActive ? s : { activeTabId: tab.id, editorFocusPulse: pulse };
+        const previewTabs = previewTabsAfterReopen(s, gid, tab.id, opts?.preview);
+        const pin = previewTabs === s.previewTabs ? null : { previewTabs, chromeVersion: s.chromeVersion + 1 };
+        if (keepActive) return pin ?? s;
+        return { activeTabId: tab.id, editorFocusPulse: pulse, ...pin };
       }
       // 边界(E278,E276/E277 同族 / 运行时状态守持久化契约):file tab 经 snapshotFromStores 序列化成
       // editor.openFilePaths(持久化 PATH_ARRAY_MAX=100000 cap + 单条 PATH_STR_MAX)。插件经 SDK openFile
@@ -1149,13 +1284,28 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       if (s.tabs.length >= PATH_ARRAY_MAX || tab.filePath.length > PATH_STR_MAX) {
         return s;
       }
+      const placed = placeNewTabInGroup(
+        s,
+        { id: gid, tabIds: idsOf(s.tabs), activeTabId: s.activeTabId },
+        tab.id,
+        keepActive,
+        opts,
+      );
+      const replacedIndex = placed.replaced === null ? -1 : findEditorTabIndexById(s.tabs, placed.replaced);
       return {
-        tabs: opts?.index === undefined ? appendEditorTab(s.tabs, tab) : insertAt(s.tabs, tab, opts.index),
+        tabs:
+          replacedIndex >= 0
+            ? replaceTabAt(s.tabs, replacedIndex, tab)
+            : opts?.index === undefined
+              ? appendEditorTab(s.tabs, tab)
+              : insertAt(s.tabs, tab, opts.index),
         activeTabId: keepActive ? s.activeTabId : tab.id,
         editorFocusPulse: pulse,
         chromeVersion: s.chromeVersion + 1, // perf P12:新增 tab → chrome 变
+        ...(placed.previewTabs === s.previewTabs ? null : { previewTabs: placed.previewTabs }),
       };
-    }),
+    });
+  },
 
   // perf P12:getStateAfter* 在无变化时返回原 tabs 引用,变化时返回新数组;据此
   // 决定是否 bump chromeVersion(增删/改名都改 chrome)。
@@ -1270,15 +1420,17 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       }));
       // 恢复布局里没有文档的组(读盘失败)丢弃;此前为恢复出的面板占位的空组同样不保留
       const kept = groups.filter((g) => g.tabIds.length > 0);
-      // 组内 MRU 按布局(缺省 = 默认顺序);规范化(活动居首、剔除不在组里的)由 withTabMru 做
+      // 组内 MRU / 预览 tab 按布局(MRU 缺省 = 默认顺序);规范化(活动居首、剔除不在组里的 / 脏的)由 withTabMru 做
       const tabMru = new Map<string, readonly string[]>();
+      const previewTabs = new Map<string, string>();
       for (let i = 0; i < groups.length; i++) {
         const g = groups[i]!;
         if (g.tabIds.length === 0) continue;
-        const given = layout.find((x) => x.id === g.id)?.mru;
-        tabMru.set(g.id, given ?? defaultTabMru(g.tabIds, g.activeTabId));
+        const l = layout.find((x) => x.id === g.id);
+        tabMru.set(g.id, l?.mru ?? defaultTabMru(g.tabIds, g.activeTabId));
+        if (l?.preview !== undefined) previewTabs.set(g.id, l.preview);
       }
-      return { ...commitGroups(s, s.tabs, kept, groups[ai]!.id, kept), tabMru };
+      return { ...commitGroups(s, s.tabs, kept, groups[ai]!.id, kept), tabMru, previewTabs };
     }),
 
   restoreTabMru: (groupId, mru) =>
@@ -1392,22 +1544,38 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
 
   switchTab: (id, opts) => {
     if (opts?.requestFocus !== false) beginUserActivation();
+    if (opts?.preview === true && isMultiGroup(get())) {
+      const p = groupPreviewTabIdOf(get(), targetGroupId(get(), opts));
+      if (p !== undefined && p !== id) flushEditorWriteBacks([p]); // 同 openTab
+    }
     set((s) => {
       const pulse = nextFocusPulse(s.editorFocusPulse, opts);
-      if (!isMultiGroup(s)) return { activeTabId: id, editorFocusPulse: pulse };
-      // 多组:在目标组(缺省活动组)激活;文档在别的组打开而不在本组 → 本组也打开它(VSCode 在活动组打开)
+      if (!isMultiGroup(s)) {
+        const previewTabs = previewTabsAfterReopen(s, s.groups[0]?.id ?? PRIMARY_EDITOR_GROUP_ID, id, opts?.preview);
+        if (previewTabs === s.previewTabs) return { activeTabId: id, editorFocusPulse: pulse };
+        return { activeTabId: id, editorFocusPulse: pulse, previewTabs, chromeVersion: s.chromeVersion + 1 };
+      }
+      // 多组:在目标组(缺省活动组)激活;文档在别的组打开而不在本组 → 本组也打开它(VSCode 在活动组打开;以预览方式时同 openTab)
       if (findEditorTabIndexById(s.tabs, id) < 0) return { editorFocusPulse: pulse };
       const gid = targetGroupId(s, opts);
       const g = findGroup(s, gid)!;
-      const nextG = activateInGroup(g, id, false);
+      const placed = g.tabIds.includes(id)
+        ? { group: activateInGroup(g, id, false), replaced: null, previewTabs: previewTabsAfterReopen(s, gid, id, opts?.preview) }
+        : placeNewTabInGroup(s, g, id, false, opts);
+      const nextG = placed.group;
       const activeGroupId = nextActiveGroupId(s, gid, opts);
       const groups = nextG === g ? s.groups : replaceGroup(s.groups, nextG);
+      const r = placed.replaced;
+      const tabs = r !== null && !groups.some((x) => x.tabIds.includes(r)) ? s.tabs.filter((t) => t.id !== r) : s.tabs;
+      const chromeChanged = nextG.tabIds !== g.tabIds || placed.previewTabs !== s.previewTabs;
       return {
         groups,
         activeGroupId,
         activeTabId: groups.find((x) => x.id === activeGroupId)!.activeTabId,
         editorFocusPulse: pulse,
-        ...(nextG.tabIds !== g.tabIds ? { chromeVersion: s.chromeVersion + 1 } : null),
+        ...(tabs === s.tabs ? null : { tabs }),
+        ...(placed.previewTabs === s.previewTabs ? null : { previewTabs: placed.previewTabs }),
+        ...(chromeChanged ? { chromeVersion: s.chromeVersion + 1 } : null),
       };
     });
   },
@@ -1428,7 +1596,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       return replaceTabBumpingChrome(s, idx, next);
     }),
 
-  markSaved: (id, savedContent, savedGen) =>
+  markSaved: (id, savedContent, savedGen) => {
     set((s) => {
       const idx = findEditorTabIndexById(s.tabs, id);
       if (idx < 0) return s;
@@ -1457,6 +1625,28 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       // 保存期间继续输入 → 仍脏但换了新变脏代际,也须 bump —— 关窗脏确认的上报 effect 只订阅 chromeVersion,
       // 不 bump 则新代际不上报,main 仍按旧代际放行退出,丢失这段输入(终审 P1;dirtyGen 已在 tabChromeChanged)。
       return replaceTabBumpingChrome(s, idx, next);
+    });
+    get().pinTab(id); // 保存即常驻(各组;BDD: src/__tests__/editor-preview-tab/)
+  },
+
+  pinTab: (id, groupId) =>
+    set((s) => {
+      const prev = s.previewTabs ?? EMPTY_PREVIEW_TABS;
+      let next: Map<string, string> | null = null;
+      for (const [gid, pid] of prev) {
+        if (pid !== id || (groupId !== undefined && gid !== groupId)) continue;
+        next ??= new Map(prev);
+        next.delete(gid);
+      }
+      return next === null ? s : { previewTabs: next, chromeVersion: s.chromeVersion + 1 };
+    }),
+
+  restorePreviewTab: (groupId, tabId) =>
+    set((s) => {
+      if (tabId === undefined || groupPreviewTabIdOf(s, groupId) !== undefined) return s;
+      const g = materializedGroups(s).find((x) => x.id === groupId);
+      if (!g?.tabIds.includes(tabId) || s.tabs.some((t) => t.id === tabId && t.dirty)) return s;
+      return { previewTabs: withPreviewEntry(s.previewTabs ?? EMPTY_PREVIEW_TABS, groupId, tabId), chromeVersion: s.chromeVersion + 1 };
     }),
 
   setMode: (mode) => {

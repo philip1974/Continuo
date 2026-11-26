@@ -12,6 +12,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import {
   getEffectiveMode,
   groupActiveTabIdOf,
+  groupPreviewTabIdOf,
   groupTabsOf,
   useEditorStore,
   type EditorMode,
@@ -59,6 +60,8 @@ export interface TabChrome {
   readonly dirty: boolean;
   /** 文件已删除、tab 因未保存修改保留(EditorTab.orphaned):标题删除线 +「(已删除)」。 */
   readonly orphaned?: boolean;
+  /** 本组的预览 tab(VSCode preview editor):标题斜体,双击转常驻。BDD: src/__tests__/editor-preview-tab/ */
+  readonly preview?: boolean;
 }
 
 interface EditorHeaderProps {
@@ -158,7 +161,7 @@ function scrollTabsOnWheel(e: WheelEvent<HTMLDivElement>): void {
   if (list && list.scrollWidth > list.clientWidth) list.scrollLeft += e.deltaY;
 }
 
-export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
+export function buildEditorTabChrome(tabs: readonly EditorTab[], previewTabId?: string): TabChrome[] {
   if (tabs.length === 0) return EMPTY_TAB_CHROME;
   const out = new Array<TabChrome>(tabs.length);
   for (let i = 0; i < tabs.length; i++) {
@@ -168,6 +171,7 @@ export function buildEditorTabChrome(tabs: readonly EditorTab[]): TabChrome[] {
       filePath: tab.filePath,
       dirty: tab.dirty,
       ...(tab.orphaned ? { orphaned: true } : {}),
+      ...(tab.id === previewTabId ? { preview: true } : {}),
     };
   }
   return out;
@@ -264,7 +268,10 @@ export const EditorHeader = memo(function EditorHeader({
   const groupId = useEditorGroupId();
   const chromeVersion = useEditorStore((s) => s.chromeVersion);
   const tabsChrome = useMemo<readonly TabChrome[]>(
-    () => buildEditorTabChrome(groupTabsOf(useEditorStore.getState(), groupId)),
+    () => {
+      const s = useEditorStore.getState();
+      return buildEditorTabChrome(groupTabsOf(s, groupId), groupPreviewTabIdOf(s, groupId));
+    },
     // chromeVersion 作"失效键":body 用 getState() 读最新 tabs,version 变(chrome 真
     // 变)才重建对象数组。lint 看不到 body 引用 chromeVersion 故误判 unnecessary。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -277,6 +284,7 @@ export const EditorHeader = memo(function EditorHeader({
   const groupNumber = useEditorGroupNumber(groupId);
   const storeSwitchTab = useEditorStore((s) => s.switchTab);
   const switchTab = useCallback((id: string) => storeSwitchTab(id, { groupId }), [storeSwitchTab, groupId]);
+  const pinTab = useEditorStore((s) => s.pinTab);
   // active tab 的派生 primitive,供右侧 action 区(打磨 R23/R45 + 性能 P14)。旧实现每次
   // store 更新都 `tabs.find(...) + JSON.stringify([filePath, dirty, effectiveMode])`
   // (O(tab 数) find + 小分配/序列化)。现复用 chromeVersion(P12 已扩展为也在
@@ -376,6 +384,14 @@ export const EditorHeader = memo(function EditorHeader({
         {tabsChrome.map((tab, i) => {
           const tabTitle = basename(tab.filePath);
           const description = descriptions[i];
+          const title = tab.orphaned ? (
+            <>
+              <span className="line-through">{tabTitle}</span>
+              <span className="ml-1.5">{t('panels.editor.tab_deleted')}</span>
+            </>
+          ) : (
+            tabTitle
+          );
           const item = (
             <TabNavItem
               active={tab.id === activeTabId}
@@ -388,14 +404,16 @@ export const EditorHeader = memo(function EditorHeader({
               onSelect={() => switchTab(tab.id)}
               onMouseSelect={focusEditorContent}
               onClose={() => onCloseRequest(tab)}
+              // 双击预览 tab → 常驻(VSCode;常驻 tab 双击无动作)
+              onDoubleClick={tab.preview ? () => pinTab(tab.id, groupId) : undefined}
             >
-              {tab.orphaned ? (
-                <>
-                  <span className="line-through">{tabTitle}</span>
-                  <span className="ml-1.5">{t('panels.editor.tab_deleted')}</span>
-                </>
+              {/* 预览 tab 标题斜体(VSCode;读屏名称不变) */}
+              {tab.preview ? (
+                <span className="italic" data-preview="true">
+                  {title}
+                </span>
               ) : (
-                tabTitle
+                title
               )}
               {description != null && (
                 <span data-testid="tab-description" className="ml-1.5 text-fg-dim">

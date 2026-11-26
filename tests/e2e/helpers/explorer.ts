@@ -110,11 +110,16 @@ export async function expandTreeItem(window: Page, name: string | RegExp): Promi
   }
 }
 
+/**
+ * 双击打开文件 = 常驻打开(焦点进编辑器;VSCode 同):连续打开多个文件各占一个 tab。单击是以预览方式打开,下一次单击会
+ * 原位替换它(workbench.editor.enablePreview,见 src/__tests__/editor-preview-tab/)—— 要验证预览行为的用例直接单击行。
+ */
 export async function openTreeItem(window: Page, name: string | RegExp): Promise<void> {
   const row = explorerTreeItem(window, name);
   await expect(row).toBeVisible({ timeout: 10_000 });
-  await row.click();
+  await row.dblclick();
 }
+
 
 export function explorerMoreActionsButton(window: Page): Locator {
   return explorerSidebar(window).getByRole('button', {

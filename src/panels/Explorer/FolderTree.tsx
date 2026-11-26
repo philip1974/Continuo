@@ -59,7 +59,7 @@ import { gitDecorationOf, gitRelPath, type GitDecorationIndex } from './git-deco
 import type { GitStatusKind } from '../../../electron/shared/git-status';
 import { ExplorerVisibleContext } from './visibility';
 import { useEditorFile } from '@/panels/Editor/useEditorFile';
-import { warmEditorEngineFor } from '@/panels/Editor/editor-file-actions';
+import { warmEditorEngineFor, type OpenFileOptions } from '@/panels/Editor/editor-file-actions';
 import { countDirtyTabsUnder, useEditorStore } from '@/stores/editor.store';
 import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
@@ -1037,15 +1037,16 @@ export function FolderTree({ root }: { root: string }) {
   // Explorer ↔ Editor 联动(Step E5):单击文件 → openFileByPath
   const { openFileByPath } = useEditorFile();
   const handleFileOpen = useCallback(
-    (path: string): Promise<boolean> =>
+    (path: string, opts?: OpenFileOptions): Promise<boolean> =>
       // 点击文件是 Explorer 的主操作:ok:false 与 reject 都必须给反馈(P1-AX / A141),由 openFileOrNotify 统一。
-      openFileOrNotify(() => openFileByPath(path), basenamePreserveTrailing(path), 'explorer'),
+      openFileOrNotify(() => openFileByPath(path, opts), basenamePreserveTrailing(path), 'explorer'),
     [openFileByPath],
   );
   // 文件行单击 / 双击 / 键盘 Enter:双击与 Enter 打开成功后焦点进编辑器(VSCode;单击预览焦点留在树里)。
+  // 单击以预览方式打开,双击 / Enter 常驻(已是预览 tab 的转常驻;BDD: src/__tests__/editor-preview-tab/)。
   const handleRowFileOpen = useCallback(
     (path: string, focusEditor: boolean) => {
-      void handleFileOpen(path).then((ok) => {
+      void handleFileOpen(path, { preview: !focusEditor }).then((ok) => {
         if (ok && focusEditor) focusActiveEditor();
       });
     },

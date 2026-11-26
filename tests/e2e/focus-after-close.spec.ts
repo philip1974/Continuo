@@ -6,7 +6,7 @@ import { openQuickOpen, quickOpenInput } from './helpers/palette';
 
 test('焦点在编辑器 → ⌘P 打开 Quick Open → Esc → 焦点回编辑器,可直接键入', async ({ window }) => {
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
   const cm = window.locator('.cm-content');
   await expect(cm).toContainText('export const a', { timeout: 10_000 });
   await cm.click();
@@ -23,10 +23,10 @@ test('焦点在编辑器 → ⌘P 打开 Quick Open → Esc → 焦点回编辑�
 });
 
 test('三个 tab、焦点在编辑器 → ⌘W 关活动 tab → 直接键入进入新的活动 tab', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
-  await window.locator('text=b.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
+  await window.locator('text=b.ts').first().dblclick();
   const tabs = window.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab');
   await expect(tabs).toHaveCount(3, { timeout: 10_000 });
   const cm = window.locator('.cm-content');

@@ -36,6 +36,7 @@ describe('app.editor.openFile happy path', () => {
     expect(mockedOpenFileByPath).toHaveBeenCalledWith(
       '/work/a.ts',
       expect.objectContaining({ fs: expect.anything() }),
+      undefined, // 插件 API 不指定打开方式(新开常驻,已开着的不变;BDD: src/__tests__/editor-preview-tab/)
     );
     expect(result).toEqual({
       ok: true,
@@ -65,6 +66,7 @@ describe('app.editor.openFile happy path', () => {
     expect(mockedOpenFileByPath).toHaveBeenCalledWith(
       '/work/a.ts',
       expect.any(Object),
+      undefined,
     );
     expect(result).toEqual({
       ok: true,
@@ -82,6 +84,7 @@ describe('app.editor.openFile happy path', () => {
     expect(mockedOpenFileByPath).toHaveBeenCalledWith(
       '/work/new.ts',
       expect.any(Object),
+      undefined,
     );
     expect(result.ok).toBe(true);
   });

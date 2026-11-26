@@ -33,6 +33,7 @@ import {
   loadMilkdownEditorModule,
 } from './editor-engine-loaders';
 import { isImagePreviewPath } from './editor-image';
+import { isEditorPreviewEnabled } from './editor-preview';
 
 /** renderer 内部错误码:保存时发现磁盘已被外部修改(未覆盖)。EditorPanel 据此弹覆盖确认,dirty-close 单独计数。 */
 export const EDITOR_DISK_CHANGED = 'EDITOR_DISK_CHANGED';
@@ -75,17 +76,39 @@ const exception = (err: unknown): IpcFail => ({
 });
 
 /**
+ * 打开方式(VSCode pinned;BDD: src/__tests__/editor-preview-tab/)。`preview`:
+ * - `true`:以预览方式打开(资源管理器单击、搜索结果单击)—— 设置 workbench.editor.enablePreview 关闭时按缺省处理;
+ * - `false`:常驻打开,已开着的预览 tab 转为常驻(资源管理器双击 / Enter、⌘P);
+ * - 缺省:新开的常驻,已开着的不变(后退 / 前进、链接、插件等)。
+ */
+export interface OpenFileOptions {
+  readonly preview?: boolean;
+}
+
+/**
  * Explorer 单击文件触发。已开过同 path → 只 switchTab(不重读);
  * 否则 fs.readFile + createTab + openTab。
  */
 export async function openFileByPath(
   path: string,
   deps: EditorFileDeps,
+  opts?: OpenFileOptions,
 ): Promise<FileOpResult> {
-  const r = await openTabWith(path, () => deps.fs.readFile(path), (tabs) =>
-    findEditorFileTabByPath(tabs, path),
+  const r = await openTabWith(
+    path,
+    () => deps.fs.readFile(path),
+    (tabs) => findEditorFileTabByPath(tabs, path),
+    undefined,
+    previewOpt(opts),
   );
   return r.ok ? OPENED : r;
+}
+
+/** 预览设置关闭 → 以预览方式打开按缺省(常驻)处理。 */
+function previewOpt(opts: OpenFileOptions | undefined): { readonly preview?: boolean } | undefined {
+  if (opts?.preview === undefined) return undefined;
+  if (opts.preview && !isEditorPreviewEnabled()) return undefined;
+  return { preview: opts.preview };
 }
 
 const OPENED: FileOpResult = { ok: true, data: undefined };
@@ -130,6 +153,7 @@ async function openTabWith(
   read: () => Promise<FsReadFileResult>,
   findExisting: (tabs: readonly EditorTab[]) => EditorTab | null,
   pluginOpenedPath?: string,
+  preview?: { readonly preview?: boolean },
 ): Promise<IpcResult<boolean>> {
   const store = useEditorStore;
   // 已开过 → 只切换。跨平台(复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
@@ -138,7 +162,7 @@ async function openTabWith(
   // (大小写可能与传入 path 不同)。POSIX 大小写敏感不变(pathEquals 在非 Windows 即 ===)。
   const existing = findExisting(store.getState().tabs);
   if (existing) {
-    store.getState().switchTab(existing.id);
+    store.getState().switchTab(existing.id, preview);
     return { ok: true, data: false };
   }
 
@@ -164,7 +188,7 @@ async function openTabWith(
   const latest = my === getUserActivationGen();
   const raced = findExisting(store.getState().tabs);
   if (raced) {
-    if (latest) store.getState().switchTab(raced.id);
+    if (latest) store.getState().switchTab(raced.id, preview);
     return { ok: true, data: false };
   }
 
@@ -172,7 +196,7 @@ async function openTabWith(
   const tab = pluginOpenedPath === undefined ? created : { ...created, pluginOpenedPath };
   store
     .getState()
-    .openTab(tab, latest ? undefined : { activate: false, requestFocus: false });
+    .openTab(tab, latest ? preview : { ...preview, activate: false, requestFocus: false });
   // openTab 可能拒开(tab 数 / 路径长度上限)→ 按 store 里是否真有这个标签对象判定
   return { ok: true, data: store.getState().tabs.includes(tab) };
 }

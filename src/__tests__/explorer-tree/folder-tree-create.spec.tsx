@@ -174,7 +174,7 @@ describe('FolderTree · 新建成功后展开父目录、选中并打开', () =>
     const input = await startCreateIn(r, '/work/alpha', NEW_FILE);
     submit(input, 'new.ts');
     await waitFor(() => expect(coApi.fs.createFile).toHaveBeenCalledWith('/work/alpha', 'new.ts'));
-    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/alpha/new.ts'));
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/alpha/new.ts', undefined));
     await waitFor(() => expect(row(r.container, '/work/alpha/new.ts')).not.toBeNull());
     expect(row(r.container, '/work/alpha')!.getAttribute('aria-expanded')).toBe('true');
     await waitFor(() => expect(row(r.container, '/work/alpha/new.ts')!.getAttribute('aria-selected')).toBe('true'));
@@ -196,7 +196,7 @@ describe('FolderTree · 新建成功后展开父目录、选中并打开', () =>
     act(() => {
       fireEvent.click(row(r.container, '/work/beta.ts')!);
     });
-    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts'));
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts', { preview: true }));
     await new Promise((res) => setTimeout(res, 50));
     expect(focusEditor).not.toHaveBeenCalled();
     unregister();
@@ -264,7 +264,7 @@ describe('FolderTree · 新建时输入嵌套路径(VSCode 同款逐级创建)',
     const input = await startCreateIn(r, '/work/alpha', NEW_FILE);
     submit(input, 'na/nb/nc.ts');
     await waitFor(() => expect(coApi.fs.createFile).toHaveBeenCalledWith('/work/alpha', 'na/nb/nc.ts'));
-    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/alpha/na/nb/nc.ts'));
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/alpha/na/nb/nc.ts', undefined));
     await waitFor(() => expect(row(r.container, '/work/alpha/na/nb/nc.ts')).not.toBeNull());
     for (const dir of ['/work/alpha', '/work/alpha/na', '/work/alpha/na/nb']) {
       expect(row(r.container, dir)!.getAttribute('aria-expanded')).toBe('true');
@@ -309,7 +309,7 @@ describe('FolderTree · 新建失败保留输入并内联提示', () => {
     await waitFor(() => expect(coApi.fs.createFile).toHaveBeenLastCalledWith('/work/alpha', 'inner2.ts'));
     await waitFor(() => expect(document.querySelector('input[placeholder]')).toBeNull());
     expect(r.queryByRole('alert')).toBeNull();
-    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/alpha/inner2.ts'));
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/alpha/inner2.ts', undefined));
   });
 
   it('失败后 Esc → 放弃新建,输入框与错误一并消失', async () => {

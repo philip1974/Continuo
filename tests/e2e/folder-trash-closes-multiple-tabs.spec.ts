@@ -7,8 +7,8 @@ test('开 src/a.ts + src/b.ts → trash src → 两 tabs 都关 + EditorWelcome'
   window,
 }) => {
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
-  await window.locator('text=b.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
+  await window.locator('text=b.ts').first().dblclick();
 
   // 2 tabs 模式
   const items = window

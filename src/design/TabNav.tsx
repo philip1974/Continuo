@@ -81,6 +81,11 @@ export interface TabNavItemProps {
    * No default; if omitted, double-click is treated as a regular click.
    */
   readonly onRename?: () => void;
+  /**
+   * Called on double-click on the tab body when `onRename` is not given (e.g. editor tabs: keep a preview
+   * editor open). No default; if omitted, double-click is treated as a regular click.
+   */
+  readonly onDoubleClick?: () => void;
   /** Continuo-local(topic-05): 允许该 tab 被拖出。Defaults to `false`. */
   readonly draggable?: boolean;
   /** Continuo-local(topic-05): 拖拽开始时调用,callers 在此 setData(MIME). */
@@ -121,6 +126,7 @@ export function TabNavItem({
   onMouseSelect,
   onClose,
   onRename,
+  onDoubleClick,
   dirtyLabel,
   closeLabel: closeLabelProp,
   draggable = false,
@@ -204,7 +210,7 @@ export function TabNavItem({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={handleClick}
-      onDoubleClick={disabled ? undefined : onRename}
+      onDoubleClick={disabled ? undefined : (onRename ?? onDoubleClick)}
       onKeyDown={handleKeyDown}
       onMouseDown={handleMouseDown}
       onAuxClick={handleAuxClick}

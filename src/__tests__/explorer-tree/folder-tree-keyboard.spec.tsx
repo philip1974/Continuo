@@ -142,7 +142,7 @@ describe('FolderTree · Enter 打开 / 切换展开', () => {
     await focusRow(container, '/work/beta.ts');
     vi.mocked(h.openFileByPath!).mockClear();
     key(row(container, '/work/beta.ts')!, { key: 'Enter', code: 'Enter' });
-    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts'));
+    await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts', { preview: false }));
   });
 
   it('Enter 打开文件成功 → 焦点交给编辑器(VSCode explorer.openAndPassFocus)', async () => {
@@ -179,7 +179,7 @@ describe('FolderTree · Enter 打开 / 切换展开', () => {
     const unregister = registerEditorFocus('/work/beta.ts', focusEditor);
     try {
       key(row(container, '/work/beta.ts')!, { key: 'Enter', code: 'Enter' });
-      await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts'));
+      await waitFor(() => expect(h.openFileByPath).toHaveBeenCalledWith('/work/beta.ts', { preview: false }));
       await new Promise((r) => setTimeout(r, 50));
       expect(focusEditor).not.toHaveBeenCalled();
     } finally {

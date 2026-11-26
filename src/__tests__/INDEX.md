@@ -701,6 +701,15 @@
 
 - [`editor-popout-root.spec.tsx`](./editor-popout-root/editor-popout-root.spec.tsx)
 
+## [预览编辑器(preview editor)](./editor-preview-tab/README.md)
+
+- [`editor-preview-entry-points.spec.tsx`](./editor-preview-tab/editor-preview-entry-points.spec.tsx)
+- [`editor-preview-header.spec.tsx`](./editor-preview-tab/editor-preview-header.spec.tsx)
+- [`editor-preview-navigation.spec.ts`](./editor-preview-tab/editor-preview-navigation.spec.ts)
+- [`editor-preview-open.spec.ts`](./editor-preview-tab/editor-preview-open.spec.ts)
+- [`editor-preview-persist.spec.ts`](./editor-preview-tab/editor-preview-persist.spec.ts)
+- [`editor-preview-store.spec.ts`](./editor-preview-tab/editor-preview-store.spec.ts)
+
 ## [⌃Tab / ⌃⇧Tab:按组内最近使用顺序切换编辑器](./editor-recent-cycle/README.md)
 
 - [`editor-recent-cycle.spec.ts`](./editor-recent-cycle/editor-recent-cycle.spec.ts)

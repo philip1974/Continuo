@@ -10,10 +10,10 @@ import {
 test('打开 README.md + a.ts + b.ts(active)→ 关 b.ts → active 自动切回', async ({
   window,
 }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
-  await window.locator('text=b.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
+  await window.locator('text=b.ts').first().dblclick();
   // 此时 b.ts active
   await expect(window.locator('header').first()).toContainText('b.ts');
 
@@ -30,10 +30,10 @@ test('打开 README.md + a.ts + b.ts(active)→ 关 b.ts → active 自动切回
 });
 
 test('关 README.md(非 active)→ active 不变(仍 b.ts)', async ({ window }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
-  await window.locator('text=b.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
+  await window.locator('text=b.ts').first().dblclick();
   await expect(window.locator('header').first()).toContainText('b.ts');
 
   const closeReadme = window.getByRole('button', {
@@ -56,10 +56,10 @@ test('关 README.md(非 active)→ active 不变(仍 b.ts)', async ({ window }) 
 test('README → a.ts → b.ts,切回 README 再切到 b.ts → 关 b.ts 回到 README(最近使用),不是相邻的 a.ts', async ({
   window,
 }) => {
-  await window.locator('text=README.md').first().click();
+  await window.locator('text=README.md').first().dblclick();
   await window.locator('text=src').first().click();
-  await window.locator('text=a.ts').first().click();
-  await window.locator('text=b.ts').first().click();
+  await window.locator('text=a.ts').first().dblclick();
+  await window.locator('text=b.ts').first().dblclick();
   await editorTab(window, /^README\.md/).click();
   await expect(window.locator('header').first()).toContainText('README.md');
   await editorTab(window, /^b\.ts/).click();

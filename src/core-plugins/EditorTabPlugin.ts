@@ -7,6 +7,7 @@ import { Plugin } from '@/plugins/Plugin';
 import {
   AUTO_SAVE_DELAY_MS,
   AUTO_SAVE_MARKDOWN_ENABLED,
+  EDITOR_ENABLE_PREVIEW,
   EDITOR_FONT_SIZE,
   EDITOR_LINE_NUMBERS,
   EDITOR_WORD_WRAP,
@@ -34,5 +35,8 @@ export default class EditorTabPlugin extends Plugin {
     // ── Auto-save ──
     this.addSettingItem(AUTO_SAVE_MARKDOWN_ENABLED);
     this.addSettingItem(AUTO_SAVE_DELAY_MS);
+
+    // ── Tabs ──
+    this.addSettingItem(EDITOR_ENABLE_PREVIEW);
   }
 }

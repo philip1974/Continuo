@@ -4,7 +4,13 @@
 
 import { useMemo } from 'react';
 import { useEditorStore } from '@/stores/editor.store';
-import { openFileByPath as openFileByPathImpl, saveFile as saveFileImpl, type FileOpResult, type SaveFileOptions } from './editor-file-actions';
+import {
+  openFileByPath as openFileByPathImpl,
+  saveFile as saveFileImpl,
+  type FileOpResult,
+  type OpenFileOptions,
+  type SaveFileOptions,
+} from './editor-file-actions';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
 import { editorFileDeps } from './editor-file-deps';
 
@@ -12,8 +18,8 @@ import { editorFileDeps } from './editor-file-deps';
 export const NO_ACTIVE_TAB = 'NO_ACTIVE_TAB';
 
 export interface EditorFileApi {
-  /** Explorer 单击文件触发. 返 IpcResult,UI 决定如何提示. */
-  openFileByPath: (path: string) => Promise<FileOpResult>;
+  /** Explorer 单击文件触发(opts.preview 见 OpenFileOptions). 返 IpcResult,UI 决定如何提示. */
+  openFileByPath: (path: string, opts?: OpenFileOptions) => Promise<FileOpResult>;
   /** Cmd+S 触发(tabId 缺省 = 活动 tab;编辑器组面板传本组的活动 tab). 磁盘被外部改过 → EDITOR_DISK_CHANGED. */
   saveActive: (tabId?: string) => Promise<FileOpResult>;
   /** 按 tabId 保存(自动保存 / 确认覆盖用,不依赖当前 active tab). */
@@ -24,7 +30,7 @@ export function useEditorFile(): EditorFileApi {
   return useMemo<EditorFileApi>(() => {
     const deps = editorFileDeps;
     return {
-      openFileByPath: (path) => openFileByPathImpl(path, deps),
+      openFileByPath: (path, opts) => openFileByPathImpl(path, deps, opts),
       saveActive: async (tabId) => {
         const id = tabId ?? useEditorStore.getState().activeTabId;
         if (!id) {
