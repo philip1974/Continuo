@@ -166,6 +166,65 @@ describe('Editor popout:已挂载编辑器跟随面板所在文档', () => {
     expect(view.root).toBe(document);
   });
 
+  // VSCode Move Editor Group into New Window:光标 / 选区不变。CodeMirror 缓存「上次写入 / 读到的 DOM 选区」:节点随面板
+  // 移进子窗后缓存与光标位置仍「等价」,focus 时便不把 state 选区写进子窗文档;子窗随后报告的默认起点选区覆盖 state
+  //(光标回到第 1 行,接着输入插到文件开头)。
+  it('代码文件:弹出 / 收回后获焦,DOM 选区按 state 写进所在文档(光标不回到第 1 行),多次往返同理', async () => {
+    const text = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n');
+    useEditorStore.setState({ tabs: [createTab('/w/a.ts', text)], activeTabId: '/w/a.ts', mode: 'edit' });
+    const loc = createLocationApi();
+    const container = await renderPanel(loc.api);
+    const cmEl = await waitFor(() => container.querySelector<HTMLElement>('.cm-editor'));
+    const view = EditorView.findFromDOM(cmEl)!;
+    const head = view.state.doc.line(30).from + 3;
+    view.focus();
+    view.dispatch({ selection: { anchor: head } });
+    const domHead = (doc: Document) => {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || !sel.focusNode) return null;
+      return view.posAtDOM(sel.focusNode, sel.focusOffset);
+    };
+    expect(domHead(document)).toBe(head);
+
+    for (const [host, doc, type] of [
+      [child.host, child.doc, 'popout'],
+      [document.body, document, 'grid'],
+      [child.host, child.doc, 'popout'],
+    ] as const) {
+      // 移走前另一文档的选区留在别处(主窗焦点转走 / 子窗旧选区),模拟真实窗口
+      (doc === document ? document : child.doc).getSelection()?.removeAllRanges();
+      await moveTo(container, host, loc, type);
+      view.focus();
+      expect(domHead(doc)).toBe(head);
+      expect(view.state.selection.main.head).toBe(head);
+    }
+  });
+
+  it('代码文件:移动落定(重绑)前焦点已进新文档里的编辑器 → 重绑时按 state 写 DOM 选区', async () => {
+    const text = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n');
+    useEditorStore.setState({ tabs: [createTab('/w/a.ts', text)], activeTabId: '/w/a.ts', mode: 'edit' });
+    const loc = createLocationApi();
+    const container = await renderPanel(loc.api);
+    const cmEl = await waitFor(() => container.querySelector<HTMLElement>('.cm-editor'));
+    const view = EditorView.findFromDOM(cmEl)!;
+    const head = view.state.doc.line(20).from;
+    view.focus();
+    view.dispatch({ selection: { anchor: head } });
+
+    child.host.appendChild(container);
+    view.focus(); // root 仍是主窗文档:不归它管,不写选区
+    // 移动落定距获焦已久(CodeMirror「获焦 200ms 内起点选区按 state 复位」的兜底不再生效)
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + 1000);
+    loc.fire('popout');
+    await act(async () => {
+      await flushMicrotasks(2);
+    });
+    const sel = child.doc.getSelection()!;
+    expect(child.doc.activeElement).toBe(view.contentDOM);
+    expect(sel.focusNode && view.posAtDOM(sel.focusNode, sel.focusOffset)).toBe(head);
+  });
+
   it('Markdown 编辑:ProseMirror updateRoot 后 root = 子窗文档,正文代码块的 CodeMirror 同步;收回同理', async () => {
     useEditorStore.setState({
       tabs: [createTab('/w/a.md', '# T\n\n```js\nlet x = 1;\n```\n')],
