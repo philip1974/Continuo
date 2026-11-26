@@ -184,6 +184,7 @@ export const zh: Record<TranslationKey, string> = {
   'commands.file.category': '文件',
   // 菜单 / 右键 / 标题栏动作的命令(VSCode 同名命令;BDD: command-discoverability)
   'commands.quick_open.title': '转到文件…',
+  'commands.show_commands.title': '显示所有命令',
   'commands.window.close.title': '关闭窗口',
   'commands.window.reload.title': '重新加载窗口',
   'commands.view.zoom_in.title': '放大',
@@ -720,6 +721,7 @@ export const zh: Record<TranslationKey, string> = {
   'keybindings.no_match': '无匹配命令',
   'keybindings.unbound': '未绑定',
   'keybindings.reserved_inactive': '与快速打开 / 命令面板保留键冲突，未生效',
+  'keybindings.reserved_fixed': '保留键，不可更改',
   'keybindings.conflict': '冲突',
   'keybindings.conflict_shadowed_by': '与「{command}」使用同一快捷键，由「{command}」响应',
   'keybindings.edit_hotkey': '编辑快捷键',

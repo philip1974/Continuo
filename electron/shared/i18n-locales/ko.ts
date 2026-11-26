@@ -185,6 +185,7 @@ export const ko: Record<TranslationKey, string> = {
   'commands.file.category': '파일',
   // 菜单 / 右键 / 标题栏动作的命令(VSCode 同名命令;BDD: command-discoverability)
   'commands.quick_open.title': '파일로 이동…',
+  'commands.show_commands.title': '모든 명령 표시',
   'commands.window.close.title': '창 닫기',
   'commands.window.reload.title': '창 다시 로드',
   'commands.view.zoom_in.title': '확대',
@@ -723,6 +724,7 @@ export const ko: Record<TranslationKey, string> = {
   'keybindings.no_match': '일치하는 명령어 없음',
   'keybindings.unbound': '바인딩 없음',
   'keybindings.reserved_inactive': '빠른 열기 / 명령 팔레트 예약 키와 충돌하여 적용되지 않음',
+  'keybindings.reserved_fixed': '예약된 키, 변경할 수 없음',
   'keybindings.conflict': '충돌',
   'keybindings.conflict_shadowed_by': '“{command}”와(과) 같은 단축키, “{command}”이(가) 반응함',
   'keybindings.edit_hotkey': '단축키 편집',

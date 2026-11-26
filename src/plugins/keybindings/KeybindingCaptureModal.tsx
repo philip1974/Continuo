@@ -17,7 +17,11 @@ import { useT, useTWithFallback } from '@/i18n';
 import { resolveEffectiveHotkey } from './keybindings-store';
 import { eventHotkeyKey } from '@/plugins/command-palette/event-hotkey-key';
 import { useStableCallback } from '@/lib/use-stable-callback';
-import { reservedPickerHotkeyOf, type ReservedPickerHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import {
+  reservedHotkeyOfCommand,
+  reservedPickerHotkeyOf,
+  type ReservedPickerHotkey,
+} from '@/plugins/picker/use-picker-toggle-hotkey';
 import { selectShadowedBindings } from '@/plugins/command-palette/useCommandHotkeys';
 
 const PLATFORM = detectPlatform();
@@ -106,7 +110,8 @@ export function selectKeybindingConflicts(
   let conflicts: CommandSpec[] | null = null;
   let conflictCount = 0;
   for (const command of allCommands) {
-    if (command.id === commandId) continue;
+    // 保留键归属命令(转到文件… / 显示所有命令)不分发:其旧 override 不是冲突;其保留键由上方保留键拒绝处理。
+    if (command.id === commandId || reservedHotkeyOfCommand(command.id) !== undefined) continue;
     const effective = resolveEffectiveHotkey(command, overrides);
     if (!effective || canonicalHotkey(effective, PLATFORM) !== capturedCanonical) continue;
     if (conflicts === null) conflicts = new Array<CommandSpec>(allCommands.length);

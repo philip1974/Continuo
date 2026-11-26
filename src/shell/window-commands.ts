@@ -1,11 +1,13 @@
-// 窗口类命令(VSCode 同名命令):转到文件…(Quick Open)、关闭窗口、重新加载窗口、放大 / 缩小 / 重置缩放、切换全屏。
+// 窗口类命令(VSCode 同名命令):转到文件…(Quick Open)、显示所有命令(命令面板)、关闭窗口、重新加载窗口、放大 / 缩小 / 重置缩放、切换全屏。
 // 与应用菜单同一动作:关闭窗口经 coApi.window.close(关窗脏确认),其余经 window:view-action(重新加载走菜单 ⌘R 的
-// 脏确认 + flush)。无默认键:按键由应用菜单 accelerator 处理(⌘P 是 Quick Open 保留键)。WindowPlugin 注册。
-// BDD: src/__tests__/command-discoverability/
+// 脏确认 + flush)。无默认键:按键由应用菜单 accelerator 处理;⌘P / ⇧⌘P 是 Quick Open / 命令面板保留键(picker 监听处理,
+// 两条命令只显示该键、不分发,见 PICKER_TOGGLE_COMMAND_IDS)。WindowPlugin 注册。
+// BDD: src/__tests__/command-discoverability/、src/__tests__/reserved-command-hotkeys/
 
 import { coApi } from '@/lib/co-api';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import { useQuickOpenStore } from '@/plugins/quick-open/store';
+import { useCommandPaletteStore } from '@/plugins/command-palette/store';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import type { WindowViewAction } from '../../electron/shared/window-channels';
 
@@ -40,6 +42,16 @@ export function windowCommandSpecs(): CommandSpec[] {
       title: 'Go to File…',
       titleKey: 'commands.quick_open.title',
       fn: () => useQuickOpenStore.getState().open(),
+    },
+    {
+      id: 'workbench.action.showCommands',
+      title: 'Show All Commands',
+      titleKey: 'commands.show_commands.title',
+      // 与 ⇧⌘P 同语义:两个 picker 互斥,打开命令面板前关掉 Quick Open。
+      fn: () => {
+        useQuickOpenStore.getState().close();
+        useCommandPaletteStore.getState().open();
+      },
     },
     {
       id: 'workbench.action.closeWindow',

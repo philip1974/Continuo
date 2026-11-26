@@ -1,10 +1,10 @@
 // 界面上的快捷键提示(对齐 VSCode:tooltip「名称 (⌘B)」、菜单项右侧显示键位)。命令键取**当前生效绑定**
-//(resolveActiveHotkey:用户改绑跟随、解绑 / 落在 ⌘P·⌘⇧P 保留键 → 不显示),按平台格式化(formatHotkey:mac ⌘⇧⌥,
+//(resolveDisplayHotkey:用户改绑跟随、解绑 / 落在 ⌘P·⌘⇧P 保留键 → 不显示;转到文件… / 显示所有命令显示其保留键),按平台格式化(formatHotkey:mac ⌘⇧⌥,
 // 其它 Ctrl+Shift+Alt)。BDD: src/__tests__/hotkey-hints/
 
 import { detectPlatform, formatHotkey, type Platform } from '@/plugins/command-palette/format-hotkey';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
-import { resolveActiveHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { resolveDisplayHotkey } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { useRegistry, type RegistryLike } from '@/plugins/registries/useRegistry';
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 
@@ -27,7 +27,7 @@ export function commandHotkeyText(
   platform: Platform = detectPlatform(),
 ): string | undefined {
   if (!spec) return undefined;
-  const combo = resolveActiveHotkey(spec, overrides, platform);
+  const combo = resolveDisplayHotkey(spec, overrides, platform);
   return combo ? formatHotkey(combo, platform) : undefined;
 }
 

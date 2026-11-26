@@ -24,7 +24,8 @@
 
 | 命令 id | 标题(en) | 分类 | 动作(复用的现有实现) |
 |---|---|---|---|
-| `workbench.action.quickOpen` | Go to File… | — | 打开 Quick Open(⌘P 是保留键,不作命令默认键) |
+| `workbench.action.quickOpen` | Go to File… | — | 打开 Quick Open(⌘P 是保留键,不作命令默认键;只显示 ⌘P,见 `reserved-command-hotkeys`) |
+| `workbench.action.showCommands` | Show All Commands | — | 打开命令面板(⇧⌘P 同上,只显示) |
 | `workbench.action.closeWindow` | Close Window | Window | `coApi.window.close`(关窗脏确认) |
 | `workbench.action.reloadWindow` | Reload Window | Window | `window:view-action` reload = 菜单 ⌘R(脏确认 + flush) |
 | `workbench.action.zoomIn` / `zoomOut` / `zoomReset` | Zoom In / Zoom Out / Reset Zoom | View | `window:view-action`,同菜单 role 步长(±0.5 级 / 归零) |

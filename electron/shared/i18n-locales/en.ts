@@ -197,6 +197,7 @@ export const en = {
   'commands.file.category': 'File',
   // 菜单 / 右键 / 标题栏动作的命令(VSCode 同名命令;BDD: command-discoverability)
   'commands.quick_open.title': 'Go to File…',
+  'commands.show_commands.title': 'Show All Commands',
   'commands.window.close.title': 'Close Window',
   'commands.window.reload.title': 'Reload Window',
   'commands.view.zoom_in.title': 'Zoom In',
@@ -752,6 +753,7 @@ export const en = {
   'keybindings.no_match': 'No matching command',
   'keybindings.unbound': 'Unbound',
   'keybindings.reserved_inactive': 'Reserved by Quick Open / Command Palette — not active',
+  'keybindings.reserved_fixed': 'Reserved — cannot be changed',
   'keybindings.conflict': 'Conflict',
   'keybindings.conflict_shadowed_by': 'Same hotkey as “{command}”, which responds to it',
   'keybindings.edit_hotkey': 'Edit hotkey',

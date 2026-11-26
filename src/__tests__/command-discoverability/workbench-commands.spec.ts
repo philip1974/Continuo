@@ -12,6 +12,7 @@ type Key = keyof typeof en;
 // 命令 id → 英文标题 / 分类(无分类 = null)
 const NEW_COMMANDS: Record<string, readonly [string, string | null]> = {
   'workbench.action.quickOpen': ['Go to File…', null],
+  'workbench.action.showCommands': ['Show All Commands', null],
   'workbench.action.closeWindow': ['Close Window', 'Window'],
   'workbench.action.reloadWindow': ['Reload Window', 'Window'],
   'workbench.action.zoomIn': ['Zoom In', 'View'],

@@ -30,7 +30,7 @@ import { ResetIcon } from '@/lib/ui-icons';
 import { isSortedBy } from '@/lib/is-sorted-by';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { byDisplayTitle } from '@/plugins/command-palette/by-display-title';
-import { reservedPickerHotkeyOf } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { reservedHotkeyOfCommand, reservedPickerHotkeyOf } from '@/plugins/picker/use-picker-toggle-hotkey';
 import { selectShadowedBindings } from '@/plugins/command-palette/useCommandHotkeys';
 
 const PLATFORM = detectPlatform();
@@ -72,6 +72,8 @@ export interface DisplayCommand {
   readonly isOverridden: boolean;
   /** effective hotkey 落在 Quick Open / 命令面板保留键上(分发忽略,行内标注「未生效」)。 */
   readonly reserved?: boolean;
+  /** 保留键归属命令(转到文件… ⌘P / 显示所有命令 ⇧⌘P):显示保留键,标「保留键，不可更改」,不可编辑。 */
+  readonly fixed?: boolean;
   /** 搜索用小写 haystack,随命令/语言/override 变化预计算. */
   readonly searchHaystack: string;
   /** effective hotkey 的运行时语义(修饰键位 + 主键),按快捷键搜索(cmd+s)时比对;无快捷键则缺省. */
@@ -254,7 +256,8 @@ export function buildKeybindingDisplayCommands(
   for (let i = 0; i < allCommands.length; i++) {
     const cmd = allCommands[i]!;
     const isOverridden = Object.hasOwn(overrides, cmd.id); // 只认自有属性(toString 等命令 id)
-    const effective = resolveEffectiveHotkey(cmd, overrides);
+    const fixedHotkey = reservedHotkeyOfCommand(cmd.id);
+    const effective = fixedHotkey ?? resolveEffectiveHotkey(cmd, overrides);
     const displayTitle = tk(cmd.titleKey, cmd.title);
     const displayCategory = tk(cmd.categoryKey, cmd.category ?? '');
     let englishText: string | undefined;
@@ -270,7 +273,8 @@ export function buildKeybindingDisplayCommands(
       effectiveHotkey: effective,
       hotkeyParts: effective ? formatHotkeyParts(effective, platform) : EMPTY_HOTKEY_PARTS,
       isOverridden,
-      reserved: reservedPickerHotkeyOf(effective, platform) !== null,
+      reserved: fixedHotkey === undefined && reservedPickerHotkeyOf(effective, platform) !== null,
+      fixed: fixedHotkey !== undefined,
       // haystack 用 effective hotkey(含 override)而非原 cmd.hotkey(打磨 R29):
       // 否则 override 后搜索仍只能命中默认组合,与列表显示的 effective 不一致。
       // 打磨 R52:随 displayCommands 预计算,避免每次输入都逐行 join + lower-case。
@@ -331,6 +335,7 @@ export function KeybindingsTabContent() {
   const searchPlaceholderLabel = t('keybindings.search_placeholder');
   const unboundLabel = t('keybindings.unbound');
   const editHotkeyLabel = t('keybindings.edit_hotkey');
+  const reservedFixedLabel = t('keybindings.reserved_fixed');
 
   // race(R50):快捷键编辑弹窗持有打开时捕获的 editing command。若弹窗打开期间插件 reload/disable
   // 把该命令移出 registry,onSave/onReset 仍会用旧 command id 写 override → 写到已不存在的命令,
@@ -456,6 +461,7 @@ export function KeybindingsTabContent() {
                       {d.reserved && (
                         <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>
                       )}
+                      {d.fixed && <span className="shrink-0 text-2xs text-fg-dim">{reservedFixedLabel}</span>}
                       {shadowedBy && (
                         <span
                           data-testid="keybinding-conflict"
@@ -487,9 +493,13 @@ export function KeybindingsTabContent() {
                         aria-label={t('keybindings.edit_hotkey_for_aria', {
                           command: d.displayTitle,
                         })}
-                        onClick={() => setEditing(cmd)}
+                        onClick={() => {
+                          if (!d.fixed) setEditing(cmd);
+                        }}
                         data-keybinding-edit={cmd.id}
-                        className="shrink-0"
+                        // 保留键不可改:disabled(Tab 不可达)+ invisible 占位(各行键帽列对齐),同未覆盖时的重置按钮。
+                        disabled={d.fixed}
+                        className={d.fixed ? 'shrink-0 pointer-events-none invisible' : 'shrink-0'}
                       >
                         {EDIT_HOTKEY_ICON}
                       </IconButton>

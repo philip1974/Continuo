@@ -1574,6 +1574,10 @@
 - [`check-no-secrets.spec.ts`](./release-supply-chain/check-no-secrets.spec.ts)
 - [`sibling-ref-pinned.spec.ts`](./release-supply-chain/sibling-ref-pinned.spec.ts)
 
+## [保留键命令显示其键位(转到文件… ⌘P / 显示所有命令 ⇧⌘P)](./reserved-command-hotkeys/README.md)
+
+- [`reserved-command-hotkeys.spec.tsx`](./reserved-command-hotkeys/reserved-command-hotkeys.spec.tsx)
+
 ## [ResultMessage(带严重度的操作结果 live region)](./result-message/README.md)
 
 - [`result-message.spec.tsx`](./result-message/result-message.spec.tsx)

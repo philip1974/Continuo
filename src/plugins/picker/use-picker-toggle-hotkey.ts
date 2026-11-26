@@ -39,16 +39,44 @@ export function reservedPickerHotkeyOf(
 }
 
 /**
- * 命令实际生效(参与按键分发、对外显示)的 hotkey:生效绑定落在保留键上则视为未绑定。命令分发、终端让出判定、命令面板
- * 显示三处共用 —— 否则一处跳过、一处仍认,同一键既打开 picker 又执行命令,或显示 ⌘P 却按不出。设置页另显「未生效」标注。
+ * 保留键的归属命令(VSCode 同 id):命令面板 / 快捷键设置页 / tooltip 显示该键(VSCode「转到文件… ⌘P」),但不进命令分发 ——
+ * 按键只由下方 document 监听处理,否则一键两动作。设置页标「保留键，不可更改」。BDD: src/__tests__/reserved-command-hotkeys/
+ */
+export const PICKER_TOGGLE_COMMAND_IDS: Readonly<Record<ReservedPickerHotkey, string>> = {
+  quick_open: 'workbench.action.quickOpen',
+  command_palette: 'workbench.action.showCommands',
+};
+
+/** 命令是保留键的归属命令 → 该保留键(hotkey 词汇);否则 undefined。 */
+export function reservedHotkeyOfCommand(id: string): string | undefined {
+  for (const name of Object.keys(PICKER_TOGGLE_COMMAND_IDS) as ReservedPickerHotkey[]) {
+    if (PICKER_TOGGLE_COMMAND_IDS[name] === id) return PICKER_TOGGLE_HOTKEYS[name];
+  }
+  return undefined;
+}
+
+/**
+ * 命令实际参与按键分发的 hotkey:生效绑定落在保留键上则视为未绑定;保留键归属命令恒为 undefined(键由 picker 监听处理,
+ * 旧 override 也不响应)。命令分发、终端让出判定共用 —— 否则一处跳过、一处仍认,同一键既打开 picker 又执行命令。
+ * 设置页另显「未生效」标注。对外显示用 resolveDisplayHotkey。
  */
 export function resolveActiveHotkey(
   spec: Pick<CommandSpec, 'id' | 'hotkey'>,
   overrides: Readonly<Record<string, string>>,
   platform: Platform = detectPlatform(),
 ): string | undefined {
+  if (reservedHotkeyOfCommand(spec.id) !== undefined) return undefined;
   const effective = resolveEffectiveHotkey(spec, overrides);
   return reservedPickerHotkeyOf(effective, platform) === null ? effective : undefined;
+}
+
+/** 对外显示的 hotkey(命令面板、tooltip):保留键归属命令显示其保留键,其余同 resolveActiveHotkey(显示 ⌘P 就按得出)。 */
+export function resolveDisplayHotkey(
+  spec: Pick<CommandSpec, 'id' | 'hotkey'>,
+  overrides: Readonly<Record<string, string>>,
+  platform: Platform = detectPlatform(),
+): string | undefined {
+  return reservedHotkeyOfCommand(spec.id) ?? resolveActiveHotkey(spec, overrides, platform);
 }
 
 function isPKey(key: string): boolean {
