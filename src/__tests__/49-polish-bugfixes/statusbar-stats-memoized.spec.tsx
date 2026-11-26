@@ -10,7 +10,7 @@ import { render, cleanup, act, screen } from '@testing-library/react';
 // 三次调用)。memo 行为契约不变 —— spy computeTextStats 验命中/失效。
 const { computeTextStatsSpy } = vi.hoisted(() => ({
   computeTextStatsSpy: vi.fn((s: string) => ({
-    lines: s.length === 0 ? 0 : (s.match(/\n/g)?.length ?? 0) + 1,
+    lines: s.split(/\r\n?|\n/).length,
     words: s.trim() === '' ? 0 : s.trim().split(/\s+/).length,
     chars: s.length,
   })),
@@ -136,7 +136,7 @@ describe('StatusBar 文本统计延后到低优先级渲染(useDeferredValue)', 
     computeTextStatsSpy.mockImplementation((s: string) => {
       events.push(`compute:${s.length}`);
       return {
-        lines: s.length === 0 ? 0 : (s.match(/\n/g)?.length ?? 0) + 1,
+        lines: s.split(/\r\n?|\n/).length,
         words: s.trim() === '' ? 0 : s.trim().split(/\s+/).length,
         chars: s.length,
       };

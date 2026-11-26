@@ -40,7 +40,8 @@ describe('状态栏统计单复数', () => {
     cleanup();
     expect(renderWith('a b\nc')).toContain('2 lines · 3 words · 5 chars');
     cleanup();
-    expect(renderWith('')).toContain('0 lines · 0 words · 0 chars');
+    // 空文件:编辑器显示第 1 行,状态栏也是 1 行(与 CodeMirror doc.lines 一致)
+    expect(renderWith('')).toContain('1 line · 0 words · 0 chars');
   });
 
   it('zh / ko 不区分单复数', () => {

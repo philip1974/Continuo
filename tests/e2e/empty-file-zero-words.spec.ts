@@ -1,5 +1,5 @@
-// 空 file → footer 「0 词」.
-import { statusWords } from './helpers/status-bar';
+// 空 file → footer 「1 行 · 0 词」(行数与编辑器显示的第 1 行一致,CodeMirror doc.lines).
+import { statusLines, statusWords } from './helpers/status-bar';
 import { expect, test } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,6 +25,7 @@ test('empty file → footer 显「0 词」', async () => {
     });
 
     await expect(win.locator('footer')).toContainText(statusWords(0));
+    await expect(win.locator('footer')).toContainText(statusLines(1));
 
     await app.close();
   } finally {
