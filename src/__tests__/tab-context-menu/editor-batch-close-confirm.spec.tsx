@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-// BDD:编辑器 tab 批量关闭中途遇「磁盘已被外部修改 / 写保护」确认(对齐 VSCode 组内批量关闭):覆盖 / 放弃并重新加载
-// 成功后接着确认下一个脏 tab,全部确认完才一起关闭;任一处取消 / 失败 → 整批都不关。见同目录 README。
+// BDD:编辑器 tab 批量关闭遇多个脏文件 → 一个合并确认框(VSCode showSaveConfirm「全部保存 / 不保存 / 取消」,列出文件名);
+//「全部保存」中途遇「磁盘已被外部修改 / 写保护」确认:覆盖 / 放弃并重新加载成功后接着保存下一个,全部处理完才一起关闭;
+// 任一处取消 / 失败 → 整批都不关。见同目录 README。
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore, type EditorTab } from '../../stores/editor.store';
@@ -80,82 +81,150 @@ async function click(el: HTMLElement) {
 }
 const button = (name: string) => screen.getByRole('button', { name });
 
-/** 右键 file-00 tab →「全部关闭」→ 第一个确认针对 file-01,选「保存」。 */
-async function closeAllAndSaveFirst() {
+const multiTitle = (count: number) => t('dialog.unsaved_close.message', { count });
+const dialogText = () => document.querySelector('[role=dialog], [role=alertdialog]')?.textContent ?? '';
+/** 合并框里逐行列出的文件名。 */
+const listedNames = () =>
+  Array.from(document.querySelectorAll('[role=dialog] li')).map((li) => li.textContent);
+
+async function openPanel() {
   render(<EditorPanel />);
   await screen.findByTestId('code-editor');
+}
+/** 右键 file-00 tab →「全部关闭」。 */
+async function closeAll() {
   const first = Array.from(document.querySelectorAll<HTMLElement>('[role=tab]')).find((el) =>
     el.textContent?.startsWith('file-00'),
   )!;
   fireEvent.contextMenu(first);
   await click(screen.getByRole('menuitem', { name: 'Close All' }));
-  expect(screen.getByText(saveTitle('file-01.ts'))).toBeTruthy();
-  await click(button(t('common.save')));
+}
+/** 「全部关闭」→ 合并框(file-01、file-03)→「全部保存」。 */
+async function closeAllAndSaveAll() {
+  await openPanel();
+  await closeAll();
+  expect(screen.getByText(multiTitle(2))).toBeTruthy();
+  await click(button(t('dialog.unsaved_close.save_all')));
 }
 
-describe('批量关闭中途遇写保护 / 磁盘冲突确认', () => {
-  it('写保护 →「覆盖」成功 → 接着确认 file-03;「不保存」→ 全部关闭', async () => {
-    mocks.readonly.add(P[1]!);
-    await closeAllAndSaveFirst();
-    await screen.findByText(t('panels.editor.readonly_title'));
-    await click(button(t('panels.editor.readonly_confirm')));
+describe('多个脏文件 → 一个合并确认框', () => {
+  it('列出全部脏文件名(不含干净的),不逐个弹单文件确认框', async () => {
+    await openPanel();
+    await closeAll();
+    expect(screen.getByText(multiTitle(2))).toBeTruthy();
+    expect(listedNames()).toEqual(['file-01.ts', 'file-03.ts']);
+    expect(dialogText()).not.toContain('file-00.ts');
+    expect(dialogText()).toContain(t('dialog.unsaved_close.detail'));
+    expect(screen.queryByText(saveTitle('file-01.ts'))).toBeNull();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
+
+  it('「全部保存」→ 依次保存全部脏文件后一起关闭,不再弹框', async () => {
+    await closeAllAndSaveAll();
     expect(mocks.disk.get(P[1]!)).toBe('mine');
-    expect(openIds()).toEqual(P); // 尚未全部确认完 → 一个都不关
-    expect(screen.getByText(saveTitle('file-03.ts'))).toBeTruthy();
+    expect(mocks.disk.get(P[3]!)).toBe('mine');
+    expect(openIds()).toEqual([]);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('「不保存」→ 不写盘,全部关闭', async () => {
+    await openPanel();
+    await closeAll();
     await click(button(t('dialog.unsaved_close.dont_save')));
+    expect(mocks.writeFile).not.toHaveBeenCalled();
     expect(openIds()).toEqual([]);
   });
 
-  it('磁盘已修改 →「仍然覆盖」成功 → 接着确认 file-03', async () => {
-    mocks.disk.set(P[1]!, 'theirs');
-    await closeAllAndSaveFirst();
-    await click(button(t('panels.editor.disk_changed_confirm')));
+  it('「取消」→ 整批不动,不写盘', async () => {
+    await openPanel();
+    await closeAll();
+    await click(button(t('panels.explorer.confirm.cancel')));
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(openIds()).toEqual(P);
+  });
+
+  it('超过 10 个脏文件 → 只列前 10 个,其余一行概括', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => `/w/m-${String(i).padStart(2, '0')}.ts`);
+    useEditorStore.setState({ tabs: many.map((p) => tab(p, true)), activeTabId: many[0]!, mode: 'source' });
+    render(<EditorPanel />);
+    await screen.findByTestId('code-editor');
+    const first = document.querySelector<HTMLElement>('[role=tab]')!;
+    fireEvent.contextMenu(first);
+    await click(screen.getByRole('menuitem', { name: 'Close All' }));
+    expect(screen.getByText(multiTitle(12))).toBeTruthy();
+    expect(listedNames()).toEqual([
+      ...many.slice(0, 10).map((p) => p.slice('/w/'.length)),
+      t('dialog.unsaved_close.more_other', { count: 2 }),
+    ]);
+  });
+
+  it('只有 1 个脏文件 → 仍是单文件「保存 / 不保存 / 取消」确认框', async () => {
+    useEditorStore.setState({ tabs: [tab(P[0]!, false), tab(P[1]!, true)], activeTabId: P[0]!, mode: 'source' });
+    await openPanel();
+    await closeAll();
+    expect(screen.getByText(saveTitle('file-01.ts'))).toBeTruthy();
+    expect(screen.queryByText(multiTitle(1))).toBeNull();
+  });
+});
+
+describe('「全部保存」中途遇写保护 / 磁盘冲突 / 保存失败', () => {
+  it('写保护 →「覆盖」成功 → 接着保存 file-03 → 全部关闭', async () => {
+    mocks.readonly.add(P[1]!);
+    await closeAllAndSaveAll();
+    await screen.findByText(t('panels.editor.readonly_title'));
+    expect(openIds()).toEqual(P); // 尚未处理完 → 一个都不关
+    expect(mocks.disk.get(P[3]!)).toBe('orig'); // 按顺序:file-01 未解决前不保存后面的
+    await click(button(t('panels.editor.readonly_confirm')));
     expect(mocks.disk.get(P[1]!)).toBe('mine');
-    expect(screen.getByText(saveTitle('file-03.ts'))).toBeTruthy();
-    await click(button(t('common.save')));
     expect(mocks.disk.get(P[3]!)).toBe('mine');
     expect(openIds()).toEqual([]);
   });
 
-  it('磁盘已修改 →「放弃并重新加载」成功 → 接着确认 file-03', async () => {
+  it('磁盘已修改 →「仍然覆盖」成功 → 接着保存 file-03', async () => {
     mocks.disk.set(P[1]!, 'theirs');
-    await closeAllAndSaveFirst();
-    await click(button(t('panels.editor.disk_changed_revert')));
-    expect(screen.getByText(saveTitle('file-03.ts'))).toBeTruthy();
-    await click(button(t('dialog.unsaved_close.dont_save')));
+    await closeAllAndSaveAll();
+    await click(button(t('panels.editor.disk_changed_confirm')));
+    expect(mocks.disk.get(P[1]!)).toBe('mine');
+    expect(mocks.disk.get(P[3]!)).toBe('mine');
     expect(openIds()).toEqual([]);
   });
 
-  it('磁盘已修改 → 再遇写保护 →「覆盖」成功 → 仍接着确认 file-03', async () => {
+  it('磁盘已修改 →「放弃并重新加载」成功 → 接着保存 file-03', async () => {
+    mocks.disk.set(P[1]!, 'theirs');
+    await closeAllAndSaveAll();
+    await click(button(t('panels.editor.disk_changed_revert')));
+    expect(mocks.disk.get(P[1]!)).toBe('theirs');
+    expect(mocks.disk.get(P[3]!)).toBe('mine');
+    expect(openIds()).toEqual([]);
+  });
+
+  it('磁盘已修改 → 再遇写保护 →「覆盖」成功 → 仍接着保存 file-03', async () => {
     mocks.disk.set(P[1]!, 'theirs');
     mocks.readonly.add(P[1]!);
-    await closeAllAndSaveFirst();
+    await closeAllAndSaveAll();
     await click(button(t('panels.editor.disk_changed_confirm')));
     await screen.findByText(t('panels.editor.readonly_title'));
     await click(button(t('panels.editor.readonly_confirm')));
-    expect(screen.getByText(saveTitle('file-03.ts'))).toBeTruthy();
+    expect(mocks.disk.get(P[3]!)).toBe('mine');
+    expect(openIds()).toEqual([]);
   });
 
-  it('写保护确认「取消」→ 整批结束:一个都不关,不再问 file-03', async () => {
+  it('写保护确认「取消」→ 整批结束:一个都不关,不再保存 file-03', async () => {
     mocks.readonly.add(P[1]!);
-    await closeAllAndSaveFirst();
+    await closeAllAndSaveAll();
     await screen.findByText(t('panels.editor.readonly_title'));
     await click(button(t('panels.explorer.confirm.cancel')));
     expect(openIds()).toEqual(P);
-    expect(screen.queryByText(saveTitle('file-03.ts'))).toBeNull();
+    expect(mocks.disk.get(P[3]!)).toBe('orig');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('前面选「不保存」、后面「取消」→ 整批不动(已确认不保存的也不关)', async () => {
-    render(<EditorPanel />);
-    await screen.findByTestId('code-editor');
-    const first = Array.from(document.querySelectorAll<HTMLElement>('[role=tab]')).find((el) =>
-      el.textContent?.startsWith('file-00'),
-    )!;
-    fireEvent.contextMenu(first);
-    await click(screen.getByRole('menuitem', { name: 'Close All' }));
-    await click(button(t('dialog.unsaved_close.dont_save')));
-    expect(screen.getByText(saveTitle('file-03.ts'))).toBeTruthy();
-    await click(button(t('panels.explorer.confirm.cancel')));
+  it('其它保存失败 → 失败提示,整批结束:一个都不关,改动留在 tab 里,不再保存后面的', async () => {
+    mocks.writeFile.mockImplementationOnce(async () => ({ ok: false, code: 'FS_PERMISSION_DENIED', message: 'EACCES' }));
+    await closeAllAndSaveAll();
+    expect(mocks.error).toHaveBeenCalledTimes(1);
     expect(openIds()).toEqual(P);
+    expect(useEditorStore.getState().tabs.find((x) => x.id === P[1])!.dirty).toBe(true);
+    expect(mocks.disk.get(P[3]!)).toBe('orig');
   });
 });

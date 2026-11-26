@@ -24,7 +24,7 @@ import {
 } from '@/stores/editor.store';
 import { PRIMARY_EDITOR_GROUP_ID } from '../../../electron/shared/editor-group-id';
 import { EditorGroupIdContext } from './editor-group-context';
-import { t as translate, useLocale, type TranslationKey } from '@/i18n';
+import { t as translate, translateCount, useLocale, type TranslationKey } from '@/i18n';
 import { isMarkdownPath } from './editor-path-utils';
 import { basename } from '@/lib/path-cross';
 import { ConfirmDialog } from '@/lib/ConfirmDialog';
@@ -40,7 +40,8 @@ import { EditorEngineErrorBoundary } from './EditorEngineErrorBoundary';
 import { toPreviewMarkdown } from './milkdown-roundtrip-safety';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { flushEditorWriteBacks } from './editor-writeback-registry';
-import { nextBatchCloseStep, type BatchClose } from './tab-batch-close';
+import { dirtyTabsInBatch, nextBatchCloseStep, type BatchClose } from './tab-batch-close';
+import { useStableCallback } from '@/lib/use-stable-callback';
 import { rebindEditorRoots } from './editor-root-registry';
 import { applyEditorWriteBack, EDITOR_DISK_CHANGED, revertFile } from './editor-file-actions';
 import { editorFileDeps } from './editor-file-deps';
@@ -103,6 +104,28 @@ function withCodeName(key: TranslationKey, name: string): ReactNode {
       {before}
       <code className="text-fg">{name}</code>
       {after}
+    </>
+  );
+}
+
+/** 合并确认框里最多逐行列出的文件名数(同关窗确认框 / 删除确认框,VSCode MAX_CONFIRM_FILES),其余一行概括。 */
+const UNSAVED_LIST_MAX_NAMES = 10;
+
+/** 合并确认框正文:逐行文件名(列表样式同资源管理器删除确认)+ 丢失提示。 */
+function UnsavedFileList({ paths }: { readonly paths: readonly string[] }) {
+  const names = paths.slice(0, UNSAVED_LIST_MAX_NAMES).map((p) => basename(p));
+  const more = paths.length - names.length;
+  return (
+    <>
+      <ul className="mb-2 list-none">
+        {names.map((n, i) => (
+          <li key={i} className="truncate text-fg">
+            {n}
+          </li>
+        ))}
+        {more > 0 && <li>{translateCount('dialog.unsaved_close.more', more)}</li>}
+      </ul>
+      <p>{translate('dialog.unsaved_close.detail')}</p>
     </>
   );
 }
@@ -247,13 +270,18 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   // EditorTab/content,确认框只需 filePath,关闭只需 id)。
   // batch:所属的批量关闭进度(右键「全部关闭」等;单个关闭也是一批只含它自己),确认后接着推进。
   const [closeCandidate, setCloseCandidate] = useState<(TabChrome & { readonly batch: BatchClose }) | null>(null);
+  // 一批里多于 1 个脏 tab:合并确认框(VSCode showSaveConfirm「是否要保存对以下 N 个文件的更改?」全部保存 / 不保存 / 取消)。
+  const [multiCloseCandidate, setMultiCloseCandidate] = useState<{
+    readonly paths: readonly string[];
+    readonly batch: BatchClose;
+  } | null>(null);
 
   // 自动保存:Markdown 启用,代码不启用(决策 #3)。按 tabId 保存,切走/卸载时
   // flush pending,避免连续输入后立即切 tab 丢失整段编辑。
   // 关闭脏 tab 的「放弃修改?」确认框开着时暂停:否则停留超过 delay 会把待放弃的内容写盘。
   // !enabled 取消已排队的保存;取消确认后 enabled 恢复,仍脏照常重新排队。
   useAutoSave(saveTab, {
-    enabled: autoSaveEnabled && closeCandidate === null,
+    enabled: autoSaveEnabled && closeCandidate === null && multiCloseCandidate === null,
     delayMs: autoSaveDelayMs,
     groupId,
   });
@@ -322,8 +350,28 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       else notifyFailure(r);
     }
   }, [saveActive, onSaveFailed, groupId]);
-  // 关闭 tab(单个 × / ⌘W / 中键,与右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」同一路径):按 tab 顺序逐个确认仍脏的
-  // tab(保存 / 不保存 / 取消;批量时先切到该 tab,VSCode 同),全部确认完才一起关闭;任一处取消 → 整批不关。
+  // 「保存」(VSCode 关闭脏编辑器的默认按钮):保存成功才推进这批关闭;磁盘已被外部修改 / 写保护 → 走覆盖确认(覆盖或
+  // 放弃并重新加载成功后接着推进,取消 / 失败则整批结束);其它失败不关闭、按 code 提示,改动留在 tab 里。
+  // 合并框「全部保存」时每个脏 tab 也走这里(不弹单个确认框);某个失败 → 整批结束,之前已保存的落盘但 tab 不关。
+  const saveAndAdvance = useStableCallback(async (candidate: TabChrome & { readonly batch: BatchClose }) => {
+    try {
+      const r = await saveTab(candidate.id);
+      if (r.ok) {
+        advanceBatchClose(candidate.batch);
+        return;
+      }
+      if (r.code === EDITOR_DISK_CHANGED) {
+        setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, batch: candidate.batch });
+        return;
+      }
+      onSaveFailed(candidate, r, { batch: candidate.batch });
+    } catch (err) {
+      notifyThrownError(err);
+    }
+  });
+  // 关闭 tab(单个 × / ⌘W / 中键,与右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」同一路径):只有 1 个脏 tab → 确认它
+  // (保存 / 不保存 / 取消;批量时先切到该 tab,VSCode 同);多于 1 个 → onTabsCloseRequest 先弹合并框,选「全部保存」
+  // (saveAll)后不再逐个确认,按顺序保存(saveAndAdvance)。全部处理完才一起关闭;任一处取消 / 失败 → 整批不关。
   // closeCandidate 声明在 useAutoSave 之前,确认框开着时暂停 autosave。BDD: src/__tests__/tab-context-menu/
   const advanceBatchClose = useCallback(
     (progress: BatchClose) => {
@@ -332,10 +380,15 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         for (const id of step.ids) closeTab(id);
         return;
       }
+      if (progress.saveAll) {
+        void saveAndAdvance({ ...step.tab, batch: step.batch });
+        return;
+      }
       if (progress.closeIds.length > 1) useEditorStore.getState().switchTab(step.tab.id, { groupId });
       setCloseCandidate({ ...step.tab, batch: step.batch });
     },
-    [closeTab, groupId],
+    // saveAndAdvance 引用恒定(latest-ref),它与本函数互相调用(调用时取最新)。
+    [closeTab, groupId, saveAndAdvance],
   );
   const confirmOverwrite = useCallback(async () => {
     const candidate = overwriteCandidate;
@@ -386,36 +439,37 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       // 先同步回写未上抛的输入,再按 store 最新 dirty 判定。否则「干净」tab 直接关闭,
       // 随后卸载回写找不到 tab → 这段输入丢失。
       flushEditorWriteBacks(ids);
-      advanceBatchClose({ rest: ids, closeIds: ids });
+      const progress: BatchClose = { rest: ids, closeIds: ids };
+      const dirty = dirtyTabsInBatch(groupTabsForClose(groupId), progress);
+      if (dirty.length > 1) {
+        setMultiCloseCandidate({ paths: dirty.map((tab) => tab.filePath), batch: progress });
+        return;
+      }
+      advanceBatchClose(progress);
     },
-    [advanceBatchClose],
+    [advanceBatchClose, groupId],
   );
   const onTabCloseRequest = useCallback((tab: TabChrome) => onTabsCloseRequest([tab.id]), [onTabsCloseRequest]);
   const confirmDiscard = useCallback(() => {
     setCloseCandidate(null);
     if (closeCandidate) advanceBatchClose(closeCandidate.batch);
   }, [closeCandidate, advanceBatchClose]);
-  // 「保存」(VSCode 关闭脏编辑器的默认按钮):保存成功才推进这批关闭;磁盘已被外部修改 / 写保护 → 走覆盖确认(覆盖或
-  // 放弃并重新加载成功后接着推进,取消 / 失败则整批结束);其它失败不关闭、按 code 提示,改动留在 tab 里。
-  const confirmSaveAndClose = useCallback(async () => {
+  const confirmSaveAndClose = useCallback(() => {
     const candidate = closeCandidate;
     setCloseCandidate(null);
-    if (!candidate) return;
-    try {
-      const r = await saveTab(candidate.id);
-      if (r.ok) {
-        advanceBatchClose(candidate.batch);
-        return;
-      }
-      if (r.code === EDITOR_DISK_CHANGED) {
-        setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, batch: candidate.batch });
-        return;
-      }
-      onSaveFailed(candidate, r, { batch: candidate.batch });
-    } catch (err) {
-      notifyThrownError(err);
-    }
-  }, [closeCandidate, advanceBatchClose, saveTab, onSaveFailed]);
+    if (candidate) void saveAndAdvance(candidate);
+  }, [closeCandidate, saveAndAdvance]);
+  // 合并框:全部保存 → saveAll 进度逐个保存;不保存 → 关闭这批里仍在的全部 tab;取消 → 整批不动。
+  const confirmMultiSaveAll = useCallback(() => {
+    const candidate = multiCloseCandidate;
+    setMultiCloseCandidate(null);
+    if (candidate) advanceBatchClose({ ...candidate.batch, saveAll: true });
+  }, [multiCloseCandidate, advanceBatchClose]);
+  const confirmMultiDiscard = useCallback(() => {
+    const candidate = multiCloseCandidate;
+    setMultiCloseCandidate(null);
+    if (candidate) advanceBatchClose({ rest: [], closeIds: candidate.batch.closeIds });
+  }, [multiCloseCandidate, advanceBatchClose]);
 
   // 全局命令 workbench.action.files.save / closeActiveEditor(⌘S / ⌘W,焦点在面板外也生效)经此调用面板内同一实现
   //(覆盖确认 / 保存·不保存·取消 确认框状态在本组件)。BDD: src/__tests__/workbench-editor-commands/
@@ -634,10 +688,24 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         }
         description={translate('dialog.unsaved_close.detail')}
         confirmLabel={translate('common.save')}
-        onConfirm={() => void confirmSaveAndClose()}
+        onConfirm={confirmSaveAndClose}
         alternativeLabel={translate('dialog.unsaved_close.dont_save')}
         onAlternative={confirmDiscard}
         onCancel={() => setCloseCandidate(null)}
+      />
+      <ConfirmDialog
+        open={multiCloseCandidate !== null}
+        title={
+          multiCloseCandidate
+            ? translate('dialog.unsaved_close.message', { count: multiCloseCandidate.paths.length })
+            : ''
+        }
+        description={multiCloseCandidate ? <UnsavedFileList paths={multiCloseCandidate.paths} /> : null}
+        confirmLabel={translate('dialog.unsaved_close.save_all')}
+        onConfirm={confirmMultiSaveAll}
+        alternativeLabel={translate('dialog.unsaved_close.dont_save')}
+        onAlternative={confirmMultiDiscard}
+        onCancel={() => setMultiCloseCandidate(null)}
       />
       <ConfirmDialog
         open={overwriteCandidate !== null}
