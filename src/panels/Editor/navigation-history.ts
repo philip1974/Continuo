@@ -3,8 +3,10 @@
 // 记录(见 navigation-stack):
 // - 换编辑器:editor.store 的活动编辑器(活动组 + 其活动 tab)变了,且是用户动作 —— 打开 / 切换(editorFocusPulse 递增)、
 //   换活动组、原活动 tab 被关掉 / 改名;会话恢复的程序化打开(requestFocus:false)不记;
-// - 光标:活动编辑器的 CodeMirror 选区变化(codemirror-navigation-history)→ notifyEditorSelection;当前这条还没有光标时
-//   先按移动前的光标补上。
+// - 光标:活动编辑器的 CodeMirror 选区变化(codemirror-navigation-history)→ notifyEditorSelection;当前这条还没有光标、
+//   且这次是用户动作(点击 / 方向键 / 打字)时先按移动前的光标补上 —— 那是用户在该视图里实际停留过的位置。程序化定位
+//  (搜索结果 / 终端链接 / 后退到未打开的文件等「打开到第 N 行」:视图刚挂载即 scrollToLine)不补,目标直接替换只记文件的
+//   当前这条(VSCode:打开到某行只记一条,后退一次即回到来处)。
 // 执行:打开 / 激活该条的文件(原组不在 → 触发窗口的编辑器组),有光标则 scrollToLine 居中并聚焦;执行期间的通知不记录。
 // 文件删除 / 移动(onEditorPathChange)、切换工作区根 → 剔除 / 改写条目。
 // 本模块在启动路径上(editor-commands):不静态引入编辑引擎(scrollToLine 动态 import)。
@@ -107,6 +109,8 @@ function isActiveEditor(groupId: string, tabId: string): boolean {
 
 /**
  * 编辑器组 groupId 里 tab 的光标变成 selection(before = 变化前的光标,当前这条还没有光标时据此补上)。
+ * programmatic = 不是用户动作引起的选区变化(CodeMirror 事务无 userEvent,如 scrollToLine):不补 before(它只是视图刚挂载
+ * 时的初始光标,用户没有停留过),目标直接替换只记文件的当前这条。
  * 不是活动编辑器 / 正在被 withoutNavigationRecording 抑制 → 忽略。
  */
 export function notifyEditorSelection(
@@ -114,10 +118,11 @@ export function notifyEditorSelection(
   tabId: string,
   selection: NavigationSelection,
   before?: NavigationSelection,
+  programmatic = false,
 ): void {
   if (suppressed > 0 || !isActiveEditor(groupId, tabId)) return;
   const cur = stack.currentLocation;
-  if (before && (!cur || cur.groupId !== groupId || cur.path !== tabId || !cur.selection)) {
+  if (before && !programmatic && (!cur || cur.groupId !== groupId || cur.path !== tabId || !cur.selection)) {
     stack.notify({ groupId, path: tabId, selection: before }, navigating > 0);
   }
   stack.notify({ groupId, path: tabId, selection }, navigating > 0);

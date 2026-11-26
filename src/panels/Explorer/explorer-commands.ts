@@ -9,6 +9,9 @@
 //     newUntitledFile,Continuo 没有 untitled 编辑器,不占用)。
 //   - 打开文件夹 mod+O(VSCode mac ⌘O = 打开文件 / 文件夹;Continuo 无「打开文件」,⌘O 只开文件夹)。
 //   - 显示资源管理器 mod+shift+E(同 VSCode)。
+//   - 打开最近的文件夹 workbench.action.openRecent:mac ⌃R(同 VSCode);Windows / Linux 不设默认键 —— VSCode 是 Ctrl+R,
+//     但 Continuo 应用菜单的「重新加载窗口」占用 CmdOrCtrl+R(菜单 accelerator 先于页面)。终端里 ⌃R 照常进 shell
+//    (反向搜索历史;VSCode commandsToSkipShell 不含它)。Quick Pick 见 src/plugins/open-recent/。
 // BDD: src/__tests__/explorer-commands/
 
 import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
@@ -18,11 +21,23 @@ import { focusWorkbenchPart, WORKBENCH_PART_ATTR } from '@/shell/focus-parts';
 import { selectWorkspaceFolder } from './hooks/useSelectWorkspaceFolder';
 import { requestExplorer } from './explorer-requests';
 import { cancelPendingWorkspaceRootSelection } from '@/lib/workspace-root-guard';
+import { detectPlatform, type Platform } from '@/plugins/command-palette/format-hotkey';
+import { useQuickOpenStore } from '@/plugins/quick-open/store';
+import { useCommandPaletteStore } from '@/plugins/command-palette/store';
+import { useOpenRecentStore } from '@/plugins/open-recent/store';
 
 export const NEW_FILE_COMMAND_ID = 'explorer.newFile';
 export const NEW_FOLDER_COMMAND_ID = 'explorer.newFolder';
 export const OPEN_FOLDER_COMMAND = { id: 'workbench.action.files.openFolder', hotkey: 'mod+o' } as const;
 export const SHOW_EXPLORER_COMMAND = { id: 'workbench.view.explorer', hotkey: 'mod+shift+e' } as const;
+export const OPEN_RECENT_COMMAND_ID = 'workbench.action.openRecent';
+
+/** 打开「打开最近的文件夹」Quick Pick(与命令面板 / Quick Open 互斥)。 */
+export function openRecentPicker(): void {
+  useQuickOpenStore.getState().close();
+  useCommandPaletteStore.getState().close();
+  useOpenRecentStore.getState().open();
+}
 
 /** 显示资源管理器并聚焦:有工作区 → 树的焦点行(等文件树加载);无 → 空态的「打开文件夹」。 */
 export function showExplorer(): void {
@@ -75,7 +90,7 @@ function createInExplorer(type: 'file' | 'dir'): void {
   requestExplorer({ kind: 'create', type });
 }
 
-export function explorerCommandSpecs(): CommandSpec[] {
+export function explorerCommandSpecs(platform: Platform = detectPlatform()): CommandSpec[] {
   return [
     {
       id: NEW_FILE_COMMAND_ID,
@@ -103,6 +118,15 @@ export function explorerCommandSpecs(): CommandSpec[] {
         // 选定后焦点交给新文件树(selectWorkspaceFolder 内发 focusTree 请求),先确保侧栏可见。
         await selectWorkspaceFolder({ onSelected: () => useLayoutUiStore.getState().setSidebarOpen(true) });
       },
+    },
+    {
+      id: OPEN_RECENT_COMMAND_ID,
+      title: 'Open Recent…',
+      titleKey: 'commands.file.open_recent.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      ...(platform === 'mac' ? { hotkey: 'ctrl+r' } : {}),
+      fn: openRecentPicker,
     },
     {
       ...SHOW_EXPLORER_COMMAND,

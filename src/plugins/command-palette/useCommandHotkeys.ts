@@ -36,6 +36,9 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   // 后退 / 前进:子窗与主窗共用一份导航栈;原组已不在时落到子窗的编辑器组(BDD: src/__tests__/editor-navigation-history/)
   'workbench.action.navigateBack',
   'workbench.action.navigateForward',
+  // 切换自动换行:只翻转设置(所有编辑器随之换行),不在主窗画东西(BDD: src/__tests__/workbench-missing-commands/)。
+  // 全部保存不在此列:保存失败的确认框画在各编辑器组所在窗口。
+  'editor.action.toggleWordWrap',
 ]);
 
 /**

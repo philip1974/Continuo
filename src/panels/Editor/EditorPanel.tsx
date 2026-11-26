@@ -359,6 +359,24 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       else notifyFailure(r);
     }
   }, [saveActive, onSaveFailed, groupId]);
+  // 全部保存(⌥⌘S)的单个 tab(见 EditorPanelActions.saveTabForSaveAll):失败处理同显式保存;本次全部保存已弹过确认框
+  //(allowPrompt = false)→ 外部修改 / 写保护也只按 code 提示,不叠第二个框。
+  const saveTabForSaveAll = useStableCallback(async (tabId: string, allowPrompt: boolean): Promise<boolean> => {
+    const target = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+    if (!target) return false;
+    const r = await saveTab(tabId);
+    if (r.ok) return false;
+    if (!allowPrompt) {
+      notifySaveFailed(basenameForChrome(target.filePath), r);
+      return false;
+    }
+    if (r.code === EDITOR_DISK_CHANGED) {
+      setOverwriteCandidate({ id: target.id, filePath: target.filePath });
+      return true;
+    }
+    onSaveFailed(target, r);
+    return r.code === ERROR_CODES.FS_READONLY;
+  });
   // 「保存」(VSCode 关闭脏编辑器的默认按钮):保存成功才推进这批关闭;磁盘已被外部修改 / 写保护 → 走覆盖确认(覆盖或
   // 放弃并重新加载成功后接着推进,取消 / 失败则整批结束);其它失败不关闭、按 code 提示,改动留在 tab 里。
   // 合并框「全部保存」时每个脏 tab 也走这里(不弹单个确认框);某个失败 → 整批结束,之前已保存的落盘但 tab 不关。
@@ -495,10 +513,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
             return true;
           },
           closeTabs: onTabsCloseRequest,
+          saveTabForSaveAll,
         },
         groupId,
       ),
-    [handleSave, onTabCloseRequest, onTabsCloseRequest, groupId],
+    [handleSave, onTabCloseRequest, onTabsCloseRequest, saveTabForSaveAll, groupId],
   );
 
   // 切模式;较大的 Markdown 切到编辑 / 预览:该 tab 记为已接受。渲染是同步长任务 → 先让「正在渲染」提示画出来(下一帧之后)

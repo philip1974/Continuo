@@ -667,6 +667,7 @@
 
 - [`navigation-goto-line.spec.tsx`](./editor-navigation-history/navigation-goto-line.spec.tsx)
 - [`navigation-history.spec.ts`](./editor-navigation-history/navigation-history.spec.ts)
+- [`navigation-open-at-line.spec.ts`](./editor-navigation-history/navigation-open-at-line.spec.ts)
 - [`navigation-popout.spec.tsx`](./editor-navigation-history/navigation-popout.spec.tsx)
 - [`navigation-stack.spec.ts`](./editor-navigation-history/navigation-stack.spec.ts)
 
@@ -2120,6 +2121,9 @@
 ## [workbench-missing-commands](./workbench-missing-commands/README.md)
 
 - [`additional-default-keys.spec.ts`](./workbench-missing-commands/additional-default-keys.spec.ts)
+- [`open-recent.spec.tsx`](./workbench-missing-commands/open-recent.spec.tsx)
+- [`save-all.spec.ts`](./workbench-missing-commands/save-all.spec.ts)
+- [`toggle-word-wrap.spec.tsx`](./workbench-missing-commands/toggle-word-wrap.spec.tsx)
 
 ## [workspace-root-selection-guard](./workspace-root-selection-guard/)
 

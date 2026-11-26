@@ -202,6 +202,9 @@ export const en = {
   'commands.view.show_explorer.title': 'Show Explorer',
   'commands.file.save.title': 'Save',
   'commands.file.revert.title': 'Revert File',
+  'commands.file.save_all.title': 'Save All',
+  'commands.file.open_recent.title': 'Open Recent…',
+  'commands.editor.toggle_word_wrap.title': 'Toggle Word Wrap',
   'commands.file.open_folder.title': 'Open Folder…',
   'commands.file.category': 'File',
   // 文本编辑命令(VSCode 同名命令与标题;BDD: src/__tests__/editor-text-commands/)
@@ -303,6 +306,7 @@ export const en = {
   'settings.editor.tab_title': 'Editor',
   'settings.editor.font_size': 'Font size',
   'settings.editor.show_line_numbers': 'Show line numbers',
+  'settings.editor.word_wrap': 'Word wrap',
   'settings.editor.auto_save_markdown': 'Auto-save Markdown',
   'settings.editor.auto_save_delay': 'Auto-save delay',
   'settings.plugins.tab_title': 'Plugins',
@@ -321,6 +325,7 @@ export const en = {
   'settings.group.autosave': 'Auto-save',
   'settings.editor.font_size.desc': 'Font size for the code editor and the Markdown editor.',
   'settings.editor.show_line_numbers.desc': 'Whether the code editor shows line numbers (also controls fold markers).',
+  'settings.editor.word_wrap.desc': 'Wrap long lines at the editor width in the code editor (toggle with the “Toggle Word Wrap” command).',
   'settings.editor.auto_save_markdown.desc': 'Markdown auto-saves after edits in Edit mode. Source mode writes your input as-is without Milkdown serialization.',
   'settings.editor.auto_save_delay.desc': 'How long after the last keystroke auto-save fires.',
   'settings.terminal.font_size.desc': 'xterm font size. Refits on change.',
@@ -963,6 +968,12 @@ export const en = {
   'quick_open.goto.current_single': 'Current Line: {line}, Character: {column}. Type a line number to navigate to.',
   'quick_open.goto.line': 'Go to line {line}.',
   'quick_open.goto.line_column': 'Go to line {line} and character {column}.',
+  // 打开最近的文件夹(workbench.action.openRecent 的 Quick Pick)
+  'open_recent.placeholder': 'Select a recent folder to open',
+  'open_recent.input_aria': 'Search recent folders',
+  'open_recent.list_aria': 'Recent folders',
+  'open_recent.empty': 'No recent folders',
+  'open_recent.no_match': 'No matching folders',
   // 在文件中查找(workspace-search,VSCode Search 视图)
   'panels.search.title': 'Search',
   'panels.search.query_label': 'Search',

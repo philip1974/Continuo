@@ -188,6 +188,9 @@ export const zh: Record<TranslationKey, string> = {
   'commands.view.show_explorer.title': '显示资源管理器',
   'commands.file.save.title': '保存',
   'commands.file.revert.title': '还原文件',
+  'commands.file.save_all.title': '全部保存',
+  'commands.file.open_recent.title': '打开最近的文件夹…',
+  'commands.editor.toggle_word_wrap.title': '切换自动换行',
   'commands.file.open_folder.title': '打开文件夹…',
   'commands.file.category': '文件',
   // 文本编辑命令(VSCode 同名命令与标题;BDD: src/__tests__/editor-text-commands/)
@@ -288,6 +291,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.editor.tab_title': '编辑器',
   'settings.editor.font_size': '字号',
   'settings.editor.show_line_numbers': '显示行号',
+  'settings.editor.word_wrap': '自动换行',
   'settings.editor.auto_save_markdown': '自动保存 Markdown',
   'settings.editor.auto_save_delay': '自动保存延迟',
   'settings.plugins.tab_title': '插件',
@@ -306,6 +310,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.group.autosave': '自动保存',
   'settings.editor.font_size.desc': '代码编辑器与 Markdown 编辑器的字号。',
   'settings.editor.show_line_numbers.desc': '代码编辑器是否显示行号（同时控制代码折叠标记）。',
+  'settings.editor.word_wrap.desc': '代码编辑器里的长行按编辑器宽度折行显示（可用「切换自动换行」命令切换）。',
   'settings.editor.auto_save_markdown.desc': 'Markdown 在编辑模式下修改后自动保存。源码模式按用户输入原样写入，不经过 Milkdown 序列化。',
   'settings.editor.auto_save_delay.desc': '停止输入多久后触发自动保存。',
   'settings.terminal.font_size.desc': '终端字号。变化时自动重排。',
@@ -919,6 +924,12 @@ export const zh: Record<TranslationKey, string> = {
   'quick_open.goto.current_single': '当前行：{line}，字符：{column}。键入要导航到的行号。',
   'quick_open.goto.line': '转到第 {line} 行。',
   'quick_open.goto.line_column': '转到第 {line} 行第 {column} 个字符。',
+  // 打开最近的文件夹(workbench.action.openRecent 的 Quick Pick)
+  'open_recent.placeholder': '选择要打开的最近文件夹',
+  'open_recent.input_aria': '搜索最近打开的文件夹',
+  'open_recent.list_aria': '最近打开的文件夹',
+  'open_recent.empty': '没有最近打开的文件夹',
+  'open_recent.no_match': '没有匹配的文件夹',
   // 在文件中查找(workspace-search,VSCode Search 视图)
   'panels.search.title': '搜索',
   'panels.search.query_label': '搜索',

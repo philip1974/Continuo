@@ -16,6 +16,7 @@ import { useCommandHotkeys } from '@/plugins/command-palette/useCommandHotkeys';
 import { useExternalFileSync } from '@/panels/Editor/useExternalFileSync';
 import { useExternalSyncRootWatch } from '@/panels/Editor/useExternalSyncRootWatch';
 import { QuickOpenModal } from '@/plugins/quick-open/QuickOpenModal';
+import { OpenRecentModal } from '@/plugins/open-recent/OpenRecentModal';
 import { useQuickOpenHotkey } from '@/plugins/quick-open/useQuickOpenHotkey';
 import { PermissionPrompt } from '@/plugins/permissions/PermissionPrompt';
 import { PluginFailureNotifier } from '@/plugins/PluginFailureNotifier';
@@ -172,6 +173,7 @@ function MainApp() {
       </div>
       <CommandPalette commands={coApp.commands} />
       <QuickOpenModal />
+      <OpenRecentModal />
       <PermissionPrompt />
       <AgentAuthPrompt />
       {/* 插件激活 / 渲染失败主动 error 通知(BDD: plugin-failure-notify) */}

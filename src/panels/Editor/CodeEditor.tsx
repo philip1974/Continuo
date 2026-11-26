@@ -29,6 +29,7 @@ import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   EDITOR_FONT_SIZE,
   EDITOR_LINE_NUMBERS,
+  EDITOR_WORD_WRAP,
 } from '@/plugins/settings/core-setting-specs';
 import { useEditorStore } from '@/stores/editor.store';
 import { useTheme } from '@/theme';
@@ -270,6 +271,12 @@ export function CodeEditor({
   // 界面语言变化时 reconfigure,不重建编辑器。
   const labelCompartment = useRef(new Compartment());
   const appliedLabelRef = useRef<string | null>(null);
+  // 自动换行(设置 editor.wordWrap,⌥Z 切换):变化时 reconfigure,不重建编辑器(BDD: src/__tests__/workbench-missing-commands/)。
+  const wrapCompartment = useRef(new Compartment());
+  const wordWrap = useSettingValue(EDITOR_WORD_WRAP.id, EDITOR_WORD_WRAP.default);
+  const latestWrapRef = useRef(wordWrap);
+  latestWrapRef.current = wordWrap;
+  const appliedWrapRef = useRef(wordWrap);
   const suppressNextChange = useRef(false);
   // 性能 P6:记录「editor doc 当前反映的字符串」。本地打字时 onChange emit 的值会作为
   // value 回传(受控回声),此 ref 让 value-sync effect 直接 `value === lastSynced` 跳过,
@@ -319,6 +326,7 @@ export function CodeEditor({
     appliedLocaleRef.current = locale;
     appliedLabelRef.current = editorContentLabel(fileName, groupNumber);
     eolRef.current = detectLineEnding(value);
+    appliedWrapRef.current = latestWrapRef.current;
 
     const extensions: Extension[] = [
       // basicSetup 去掉与 VSCode 冲突的查找键(⌘⌥G 转到行小面板、Win/Linux 的 Ctrl+G 查找下一个),⌃G 归 workbench.action.gotoLine。
@@ -338,6 +346,7 @@ export function CodeEditor({
       phrasesCompartment.current.of(codeMirrorPhrases()),
       labelCompartment.current.of(codeMirrorContentLabel(appliedLabelRef.current)),
       langCompartment.current.of(lang),
+      wrapCompartment.current.of(appliedWrapRef.current ? EditorView.lineWrapping : []),
       debugDecorationsExtension(),
       // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
       navigationHistoryExtension(tabId, groupId),
@@ -543,6 +552,13 @@ export function CodeEditor({
   // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。
   const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
   const lineNumbers = useSettingValue(EDITOR_LINE_NUMBERS.id, EDITOR_LINE_NUMBERS.default);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || appliedWrapRef.current === wordWrap) return;
+    appliedWrapRef.current = wordWrap;
+    view.dispatch({ effects: wrapCompartment.current.reconfigure(wordWrap ? EditorView.lineWrapping : []) });
+  }, [wordWrap]);
 
   // editor.lineNumbers 变化 → 同步到 .cm-editor 的 className
   useEffect(() => {

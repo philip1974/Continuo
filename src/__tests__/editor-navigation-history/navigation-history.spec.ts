@@ -31,7 +31,7 @@ import { navigationHistoryExtension } from '@/panels/Editor/codemirror-navigatio
 import { endRecentEditorNavigation, openRecentlyUsedEditorInGroup } from '@/panels/Editor/editor-recent-cycle';
 import { codeEditorBasicSetup, withoutAltArrowSyntaxKeys } from '@/panels/Editor/codemirror-basic-setup';
 import { POPOUT_HOTKEY_COMMAND_IDS, winningCommandFor } from '@/plugins/command-palette/useCommandHotkeys';
-import { terminalYieldedCommandId } from '@/panels/Terminal/terminal-hotkeys';
+import { isTerminalKeptHotkey, terminalYieldedCommandId } from '@/panels/Terminal/terminal-hotkeys';
 import { en } from '@shared/i18n-locales/en';
 import { zh } from '@shared/i18n-locales/zh';
 import { ko } from '@shared/i18n-locales/ko';
@@ -136,12 +136,22 @@ describe('命令与键位', () => {
     );
   });
 
-  it('终端里不让出(照常进 shell,VSCode commandsToSkipShell 不含)', () => {
+  it('终端里不让出(照常进 shell,VSCode commandsToSkipShell 不含),也不冒泡到全局分发(焦点留在终端)', () => {
     const registry = (platform: 'mac' | 'other') => ({ getAll: () => editorCommandSpecs(platform) });
-    expect(terminalYieldedCommandId(key({ key: '-', code: 'Minus', ctrlKey: true }), 'mac', {}, registry('mac'))).toBeNull();
-    expect(
-      terminalYieldedCommandId(key({ key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }), 'other', {}, registry('other')),
-    ).toBeNull();
+    const macBack = key({ key: '-', code: 'Minus', ctrlKey: true });
+    const otherBack = key({ key: 'ArrowLeft', code: 'ArrowLeft', altKey: true });
+    expect(terminalYieldedCommandId(macBack, 'mac', {}, registry('mac'))).toBeNull();
+    expect(terminalYieldedCommandId(otherBack, 'other', {}, registry('other'))).toBeNull();
+    // 第四十轮审计:xterm 对 ⌃- 什么都不发,事件冒泡到全局执行了后退 → 终端截住冒泡
+    expect(isTerminalKeptHotkey(macBack, 'mac', {}, registry('mac'))).toBe(true);
+    expect(isTerminalKeptHotkey(otherBack, 'other', {}, registry('other'))).toBe(true);
+    expect(isTerminalKeptHotkey(key({ key: '_', code: 'Minus', ctrlKey: true, shiftKey: true }), 'mac', {}, registry('mac'))).toBe(
+      true,
+    );
+    // 用户改绑到带 ⌘ 的键 → 照常交给工作台(VSCode:Meta 键跳过 shell)
+    expect(isTerminalKeptHotkey(key({ key: '[', code: 'BracketLeft', metaKey: true }), 'mac', { [BACK]: 'mod+[' }, registry('mac'))).toBe(
+      false,
+    );
   });
 
   it('popout 子窗里也分发', () => {

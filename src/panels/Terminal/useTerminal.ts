@@ -42,6 +42,7 @@ import {
 } from '@continuo-terminal/react-terminal';
 import {
   isTerminalContextMenuKey,
+  isTerminalKeptHotkey,
   isTerminalSearchHotkey,
   isTerminalZoomHotkey,
   runTerminalCommandFromKey,
@@ -640,6 +641,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         term.input(sequence, true);
         return false;
       }
+      // 终端自己的键(⌃- 后退、⌃R 反向搜索、⌥Z 等,见 isTerminalKeptHotkey):照常交给 xterm,截住冒泡 —— 否则全局分发
+      // 再执行后退 / 打开最近,焦点离开终端(VSCode 终端获焦时这些键不触发工作台命令)。
+      if (isTerminalKeptHotkey(event)) event.stopPropagation();
       applyMappedKeyOnKeydown(__mappedKeyState__, event);
       return true;
     });

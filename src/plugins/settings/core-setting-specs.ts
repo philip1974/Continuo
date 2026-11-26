@@ -43,6 +43,23 @@ export const EDITOR_LINE_NUMBERS: CoreSettingSpec<boolean> = {
   priority: 2,
 };
 
+/**
+ * 代码编辑器自动换行(VSCode editor.wordWrap 的 off / on 两档;CodeMirror EditorView.lineWrapping)。切换自动换行命令
+ *(⌥Z)翻转它。BDD: src/__tests__/workbench-missing-commands/
+ */
+export const EDITOR_WORD_WRAP: CoreSettingSpec<boolean> = {
+  id: 'editor.wordWrap',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Word wrap',
+  titleKey: 'settings.editor.word_wrap',
+  descriptionKey: 'settings.editor.word_wrap.desc',
+  type: 'boolean',
+  default: false,
+  priority: 3,
+};
+
 export const AUTO_SAVE_MARKDOWN_ENABLED: CoreSettingSpec<boolean> = {
   id: 'autoSave.markdown.enabled',
   category: 'editor',

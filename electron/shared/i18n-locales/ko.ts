@@ -190,6 +190,9 @@ export const ko: Record<TranslationKey, string> = {
   'commands.view.show_explorer.title': '탐색기 표시',
   'commands.file.save.title': '저장',
   'commands.file.revert.title': '파일 되돌리기',
+  'commands.file.save_all.title': '모두 저장',
+  'commands.file.open_recent.title': '최근 폴더 열기…',
+  'commands.editor.toggle_word_wrap.title': '자동 줄 바꿈 설정/해제',
   'commands.file.open_folder.title': '폴더 열기…',
   'commands.file.category': '파일',
   // 文本编辑命令(VSCode 同名命令与标题;BDD: src/__tests__/editor-text-commands/)
@@ -290,6 +293,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.editor.tab_title': '편집기',
   'settings.editor.font_size': '글꼴 크기',
   'settings.editor.show_line_numbers': '줄 번호 표시',
+  'settings.editor.word_wrap': '자동 줄 바꿈',
   'settings.editor.auto_save_markdown': 'Markdown 자동 저장',
   'settings.editor.auto_save_delay': '자동 저장 지연',
   'settings.plugins.tab_title': '플러그인',
@@ -308,6 +312,7 @@ export const ko: Record<TranslationKey, string> = {
   'settings.group.autosave': '자동 저장',
   'settings.editor.font_size.desc': '코드 에디터와 Markdown 에디터의 글꼴 크기.',
   'settings.editor.show_line_numbers.desc': '코드 에디터에서 줄 번호 표시 여부(접기 마커도 같이 제어).',
+  'settings.editor.word_wrap.desc': '코드 에디터에서 긴 줄을 에디터 너비에 맞춰 줄 바꿈합니다(“자동 줄 바꿈 설정/해제” 명령으로 전환).',
   'settings.editor.auto_save_markdown.desc': '편집 모드에서 Markdown을 편집하면 자동 저장됩니다. 소스 모드는 입력한 내용을 그대로 쓰며 Milkdown 직렬화를 거치지 않습니다.',
   'settings.editor.auto_save_delay.desc': '입력 멈춤 후 자동 저장이 발동되기까지의 지연.',
   'settings.terminal.font_size.desc': '터미널 글꼴 크기. 변경 시 자동으로 다시 배치합니다.',
@@ -926,6 +931,12 @@ export const ko: Record<TranslationKey, string> = {
   'quick_open.goto.current_single': '현재 줄: {line}, 문자: {column}. 이동할 줄 번호를 입력하세요.',
   'quick_open.goto.line': '{line}줄로 이동합니다.',
   'quick_open.goto.line_column': '{line}줄의 {column}번째 문자로 이동합니다.',
+  // 打开最近的文件夹(workbench.action.openRecent 的 Quick Pick)
+  'open_recent.placeholder': '열 최근 폴더 선택',
+  'open_recent.input_aria': '최근 폴더 검색',
+  'open_recent.list_aria': '최근 폴더',
+  'open_recent.empty': '최근 폴더 없음',
+  'open_recent.no_match': '일치하는 폴더 없음',
   // 在文件中查找(workspace-search,VSCode Search 视图)
   'panels.search.title': '검색',
   'panels.search.query_label': '검색',

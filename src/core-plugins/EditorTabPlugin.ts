@@ -9,6 +9,7 @@ import {
   AUTO_SAVE_MARKDOWN_ENABLED,
   EDITOR_FONT_SIZE,
   EDITOR_LINE_NUMBERS,
+  EDITOR_WORD_WRAP,
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { EditorIcon } from '@/plugins/settings/tab-icons';
@@ -28,6 +29,7 @@ export default class EditorTabPlugin extends Plugin {
     // ── Appearance ──
     this.addSettingItem(EDITOR_FONT_SIZE);
     this.addSettingItem(EDITOR_LINE_NUMBERS);
+    this.addSettingItem(EDITOR_WORD_WRAP);
 
     // ── Auto-save ──
     this.addSettingItem(AUTO_SAVE_MARKDOWN_ENABLED);

@@ -182,6 +182,31 @@ export function terminalYieldedCommandId(
 }
 
 /**
+ * 终端获焦时由终端处理、不交给全局分发的命令(VSCode:终端获焦时不在 commandsToSkipShell 里的键交给 xterm,工作台命令不触发):
+ * 后退 / 前进(mac ⌃- / ⌃⇧-,Win/Linux Alt+← / Alt+→)、打开最近(⌃R 是 shell 的反向搜索历史)、切换自动换行(⌥Z)。
+ * 带 ⌘(Meta)的按键照常交给工作台(VSCode `event.metaKey` 一律跳过 shell)。id 与注册方一致(规范守护)。
+ * BDD: src/__tests__/workbench-missing-commands/、src/__tests__/editor-navigation-history/
+ */
+export const TERMINAL_KEPT_COMMAND_IDS: ReadonlySet<string> = new Set([
+  'workbench.action.navigateBack',
+  'workbench.action.navigateForward',
+  'workbench.action.openRecent',
+  'editor.action.toggleWordWrap',
+]);
+
+/** 按键胜出的是终端自己处理的命令(见 TERMINAL_KEPT_COMMAND_IDS):交给 xterm,不冒泡到全局分发。 */
+export function isTerminalKeptHotkey(
+  event: KeyboardEvent,
+  platform: Platform = detectPlatform(),
+  overrides: Overrides = useKeybindingsStore.getState().overrides,
+  registry: CommandLookup = coApp.commands,
+): boolean {
+  if (event.metaKey) return false;
+  const id = terminalWinner(event, platform, overrides, registry);
+  return id !== null && TERMINAL_KEPT_COMMAND_IDS.has(id);
+}
+
+/**
  * 终端让出的键:命令已注册 → 直接执行并截住冒泡(理由同 runTerminalZoomFromKey:无修饰键绑定经全局分发会被
  * A64 放行而吞掉,截住也免得执行两次);尚未注册 → 什么都不做,事件照常冒泡给全局分发(xterm 已因 return false
  * 不再把它发给 shell)。

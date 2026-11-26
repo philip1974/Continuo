@@ -2,6 +2,9 @@
 // - workbench.action.closeActiveEditor(⌘W):关当前文件 tab / 其它活动面板,无可关的才关窗口;
 // - workbench.action.files.save(⌘S):保存当前活动文件 tab,焦点在哪都生效;
 // - workbench.action.files.revert:还原当前活动文件 tab 为磁盘内容(丢弃未保存修改;同 VSCode 无默认键);
+// - workbench.action.files.saveAll(mac ⌥⌘S):保存所有编辑器组里的脏文件 tab,失败处理同 ⌘S;
+// - editor.action.toggleWordWrap(⌥Z):切换代码编辑器自动换行(设置 editor.wordWrap,所有编辑器生效);
+//   BDD: src/__tests__/workbench-missing-commands/
 // - workbench.action.reopenClosedEditor(⇧⌘T):重新打开最近关闭的编辑器(BDD: src/__tests__/editor-reopen-closed/);
 // - workbench.action.nextEditor / previousEditor:编辑器文件 tab 间循环切换(活动编辑器组内);
 // - workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup / quickOpenLeastRecentlyUsedEditorInGroup(⌃Tab / ⌃⇧Tab):
@@ -21,6 +24,7 @@
 // BDD: src/__tests__/workbench-editor-commands/
 
 import {
+  editorGroupIdsOf,
   findEditorTabIndexById,
   groupActiveTabIdOf,
   groupTabsOf,
@@ -60,6 +64,10 @@ import {
   RECENT_EDITOR_IN_GROUP_COMMAND,
   openRecentlyUsedEditorInGroup,
 } from './editor-recent-cycle';
+import { flushEditorWriteBacks } from './editor-writeback-registry';
+import { isImagePreviewPath } from './editor-image';
+import { EDITOR_WORD_WRAP } from '@/plugins/settings/core-setting-specs';
+import { getStoredSettingValue, useSettingsValuesStore } from '@/plugins/settings/values-store';
 import {
   NAVIGATE_BACK_COMMAND_ID,
   NAVIGATE_FORWARD_COMMAND_ID,
@@ -74,6 +82,13 @@ export const SAVE_COMMAND = { id: 'workbench.action.files.save', hotkey: 'mod+s'
 export const NEXT_EDITOR_COMMAND_ID = 'workbench.action.nextEditor';
 export const PREVIOUS_EDITOR_COMMAND_ID = 'workbench.action.previousEditor';
 export const REVERT_COMMAND_ID = 'workbench.action.files.revert';
+/**
+ * 全部保存(VSCode workbench.action.files.saveAll):mac ⌥⌘S;Windows / Linux 在 VSCode 是组合键 Ctrl+K S,Continuo 不支持
+ * 组合键 → 无默认键(可在快捷键设置里绑)。
+ */
+export const SAVE_ALL_COMMAND_ID = 'workbench.action.files.saveAll';
+/** 切换自动换行(VSCode editor.action.toggleWordWrap,各平台 ⌥Z / Alt+Z)。 */
+export const TOGGLE_WORD_WRAP_COMMAND = { id: 'editor.action.toggleWordWrap', hotkey: 'alt+z' } as const;
 export const SPLIT_EDITOR_COMMAND = { id: 'workbench.action.splitEditor', hotkey: 'mod+\\' } as const;
 /** 重新打开已关闭的编辑器(VSCode 同:⇧⌘T / Ctrl+Shift+T;BDD: src/__tests__/editor-reopen-closed/)。 */
 export const REOPEN_CLOSED_EDITOR_COMMAND = { id: 'workbench.action.reopenClosedEditor', hotkey: 'mod+shift+t' } as const;
@@ -116,6 +131,11 @@ export interface EditorPanelActions {
   readonly closeActiveTab: () => boolean;
   /** 按 tab 右键「关闭其他 / 右侧 / 已保存 / 全部」同一路径关闭这些 tab(脏 tab 弹确认)。 */
   readonly closeTabs: (ids: readonly string[]) => void;
+  /**
+   * 全部保存的单个 tab:失败处理同显式保存(磁盘已被外部修改 / 写保护 → 覆盖确认;其它 → 按 code 提示)。
+   * allowPrompt = false(这次全部保存已弹过一个确认框)→ 确认类失败也只提示,不再弹框。返回是否弹了确认框。
+   */
+  readonly saveTabForSaveAll: (tabId: string, allowPrompt: boolean) => Promise<boolean>;
 }
 
 // 按编辑器组(= 面板 id)登记:每个组面板各自一份。
@@ -150,6 +170,30 @@ function activeGroupActions(): EditorPanelActions | undefined {
 /** 保存活动编辑器组的活动文件 tab(编辑器面板未挂载 → no-op)。 */
 export async function saveActiveEditor(): Promise<void> {
   await activeGroupActions()?.save();
+}
+
+/**
+ * 全部保存(VSCode saveAll):所有编辑器组里的脏文件 tab 逐个保存(先把编辑器里尚未上抛的输入写回 store;图片 tab 只读不算)。
+ * 每个 tab 交给它所在编辑器组的面板(覆盖确认框在那个面板里);一次全部保存最多弹一个确认框,其余确认类失败只提示。
+ * Continuo 没有无标题(untitled)编辑器,每个 tab 都有路径;已删除的文件按 ⌘S 同一约定重建。
+ */
+export async function saveAllEditors(): Promise<void> {
+  flushEditorWriteBacks(useEditorStore.getState().tabs.map((t) => t.id));
+  const dirty = useEditorStore.getState().tabs.filter((t) => t.dirty && !isImagePreviewPath(t.filePath));
+  let prompted = false;
+  for (const tab of dirty) {
+    const s = useEditorStore.getState();
+    const groupId = editorGroupIdsOf(s).find((g) => groupTabsOf(s, g).some((t) => t.id === tab.id));
+    const actions = (groupId !== undefined ? panelActions.get(groupId) : undefined) ?? panelActions.values().next().value;
+    if (!actions) return;
+    if (await actions.saveTabForSaveAll(tab.id, !prompted)) prompted = true;
+  }
+}
+
+/** 切换自动换行:翻转设置 editor.wordWrap(所有代码编辑器随之 reconfigure;设置页同一开关)。 */
+export function toggleWordWrap(): void {
+  const on = (getStoredSettingValue(EDITOR_WORD_WRAP.id) ?? EDITOR_WORD_WRAP.default) === true;
+  useSettingsValuesStore.getState().setValue(EDITOR_WORD_WRAP.id, !on);
 }
 
 /** 还原触发窗口的编辑器组的活动文件 tab 为磁盘内容(无活动 tab → no-op;读盘失败按 code 提示,tab 不变)。 */
@@ -313,6 +357,23 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'File',
       categoryKey: 'commands.file.category',
       fn: saveActiveEditor,
+    },
+    {
+      id: SAVE_ALL_COMMAND_ID,
+      title: 'Save All',
+      titleKey: 'commands.file.save_all.title',
+      category: 'File',
+      categoryKey: 'commands.file.category',
+      ...(isMac ? { hotkey: 'mod+alt+s' } : {}),
+      fn: saveAllEditors,
+    },
+    {
+      ...TOGGLE_WORD_WRAP_COMMAND,
+      title: 'Toggle Word Wrap',
+      titleKey: 'commands.editor.toggle_word_wrap.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: toggleWordWrap,
     },
     {
       ...REOPEN_CLOSED_EDITOR_COMMAND,
