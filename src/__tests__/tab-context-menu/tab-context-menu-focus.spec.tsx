@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // BDD:从 tab 右键菜单关闭(关闭 / 关闭其他 / 全部关闭…)后的焦点(VSCode:确认框模态、初始焦点在「保存 / 全部保存」;
 // 不弹框时同 ⌘W,焦点进新的活动编辑器)。菜单关闭时的焦点还原不得抢走确认框的焦点。见同目录 README「焦点」。
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { useEditorStore, type EditorTab } from '../../stores/editor.store';
@@ -163,5 +163,110 @@ describe('TabContextMenu opensDialog 项', () => {
     render(<Harness />);
     await fromMenu('t1', 'Close');
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'confirm-ok' }));
+  });
+});
+
+// popout 子窗:tab 与菜单在子窗文档,代码跑在主窗(全局 document 是主窗)。Radix FocusScope 按全局 document 记录 / 还原
+// 打开前焦点 → 子窗里关闭菜单后焦点落到子窗 body。期望同主窗(VSCode 辅助窗口取消关闭确认焦点回该编辑器):回到触发 tab。
+describe('popout 子窗里的 tab 右键菜单', () => {
+  let child: Document;
+  let frame: HTMLIFrameElement;
+  beforeEach(() => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    child = frame.contentDocument!;
+    // 主窗里另有焦点(如主窗编辑器):Radix 记下的就是它
+    const mainBtn = document.createElement('button');
+    mainBtn.textContent = 'main';
+    document.body.appendChild(mainBtn);
+    mainBtn.focus();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  function ChildHarness({ onClose }: { onClose: () => void }) {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <TabContextMenu
+          entries={() => [
+            { label: 'Close', onSelect: () => setOpen(true), opensDialog: true },
+            { label: 'Copy Path', onSelect: () => undefined },
+          ]}
+        >
+          {/* 同编辑器 tab:触发区是 display:contents 包裹层(不可聚焦),tab 在其内 */}
+          <div className="contents">
+            <div role="tab" tabIndex={0}>
+              t1
+            </div>
+          </div>
+        </TabContextMenu>
+        <Modal
+          visible={open}
+          onClose={() => {
+            setOpen(false);
+            onClose();
+          }}
+          aria-label="confirm"
+        >
+          <button type="button" data-autofocus>
+            confirm-ok
+          </button>
+        </Modal>
+      </>
+    );
+  }
+
+  function mountInChild() {
+    const host = child.createElement('div');
+    child.body.appendChild(host);
+    render(<ChildHarness onClose={() => undefined} />, { container: host });
+    const tabNode = within(child.body).getByRole('tab', { name: 't1' });
+    tabNode.focus();
+    fireEvent.contextMenu(tabNode);
+    return tabNode;
+  }
+
+  it('「关闭」→ 确认框 → Esc 取消 → 焦点回到子窗里的触发 tab', async () => {
+    const tabNode = mountInChild();
+    const item = within(child.body).getByRole('menuitem', { name: 'Close' });
+    item.focus();
+    fireEvent.click(item);
+    await settle();
+    const ok = within(child.body).getByRole('button', { name: 'confirm-ok' });
+    expect(child.activeElement).toBe(ok);
+    fireEvent.keyDown(child, { key: 'Escape' });
+    await settle();
+    expect(within(child.body).queryByRole('button', { name: 'confirm-ok' })).toBeNull();
+    expect(child.activeElement).toBe(tabNode);
+  });
+
+  it('菜单直接 Esc → 焦点回到子窗里的触发 tab', async () => {
+    const tabNode = mountInChild();
+    const item = within(child.body).getByRole('menuitem', { name: 'Copy Path' });
+    item.focus();
+    fireEvent.keyDown(item, { key: 'Escape' });
+    await settle();
+    expect(within(child.body).queryByRole('menu')).toBeNull();
+    expect(child.activeElement).toBe(tabNode);
+  });
+
+  it('点菜单外部关闭 → 不把焦点拉回 tab(同 Radix 默认)', async () => {
+    mountInChild();
+    await settle(); // Radix 在下一任务才挂外部点按监听
+    const outside = child.createElement('button');
+    child.body.appendChild(outside);
+    fireEvent.pointerDown(outside);
+    outside.focus();
+    await settle();
+    expect(within(child.body).queryByRole('menu')).toBeNull();
+    expect(child.activeElement).toBe(outside);
   });
 });

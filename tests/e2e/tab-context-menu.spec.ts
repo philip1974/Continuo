@@ -8,6 +8,7 @@ import {
   EDITOR_SAVE_CHANGES_TITLE,
   EDITOR_TABS,
   EDITOR_UNSAVED_CHANGES_SELECTOR,
+  DOCK_POPOUT,
 } from './helpers/editor';
 import { SETTINGS } from './helpers/settings';
 
@@ -121,4 +122,41 @@ test('dock tab 右键:Shift+F10 打开菜单,「关闭其他」只留当前面�
   await window.getByRole('menuitem', { name: CLOSE_OTHERS }).click();
   await expect(window.locator('.dv-tab')).toHaveCount(1, { timeout: 5_000 });
   await expect(settingsTab).toBeVisible();
+});
+
+// popout 子窗:Radix 右键菜单按全局 document(主窗)记录 / 还原焦点,子窗里关闭菜单 / 取消确认后焦点曾落到子窗 body。
+// 期望同主窗(VSCode 辅助窗口):焦点回到右键的那个 tab。
+test('popout 子窗里 tab 右键「关闭」遇脏文件 → Esc 取消确认 → 焦点回到该 tab;菜单直接 Esc 同样回到 tab', async ({
+  electronApp,
+  window,
+}) => {
+  await window.locator('text=src').first().click();
+  await window.locator('text=a.ts').first().click();
+  const cm = window.locator('.cm-content');
+  await expect(cm).toContainText('export const a', { timeout: 10_000 });
+  await cm.click();
+  await window.keyboard.type(' // dirty');
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toBeVisible({ timeout: 5_000 });
+  await window.getByRole('button', { name: DOCK_POPOUT }).click();
+  await expect.poll(() => electronApp.windows().length, { timeout: 10_000 }).toBe(2);
+  const child = electronApp.windows().find((w) => w !== window)!;
+  await child.waitForLoadState('domcontentloaded');
+  await child.bringToFront();
+  const tab = child.getByRole('tablist', { name: EDITOR_TABS }).getByRole('tab').filter({ hasText: 'a.ts' });
+  await expect(tab).toBeVisible({ timeout: 10_000 });
+
+  await tab.click({ button: 'right' });
+  await child.getByRole('menuitem', { name: CLOSE }).click();
+  const dialog = child.locator('.wm-modal-content');
+  await expect(dialog).toContainText(EDITOR_SAVE_CHANGES_TITLE);
+  await expect(dialog.getByRole('button', { name: SAVE })).toBeFocused({ timeout: 5_000 });
+  await child.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(tab).toBeFocused({ timeout: 5_000 });
+
+  await tab.click({ button: 'right' });
+  await expect(child.getByRole('menuitem', { name: CLOSE })).toBeVisible();
+  await child.keyboard.press('Escape');
+  await expect(child.getByRole('menu')).toHaveCount(0);
+  await expect(tab).toBeFocused({ timeout: 5_000 });
 });

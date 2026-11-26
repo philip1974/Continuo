@@ -55,11 +55,21 @@ export function TabContextMenu({
   const [portalHost, setPortalHost] = useState<HTMLElement | undefined>(undefined);
   const skipFocusRestoreRef = useRef(false);
   const pendingActionRef = useRef<(() => void) | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const interactedOutsideRef = useRef(false);
   return (
     <Menu.Root onOpenChange={setOpen}>
       <Menu.Trigger
         asChild
-        onContextMenu={(e) => setPortalHost(e.currentTarget.ownerDocument.body)}
+        onContextMenu={(e) => {
+          // 记下打开前的焦点(右键按下 / Shift+F10 时在 tab 上),按触发区所在文档取 —— popout 子窗里全局 document 是主窗。
+          // 不直接用 currentTarget:编辑器 tab 的触发区是 display:contents 包裹层,不可聚焦。
+          // 不用 instanceof HTMLElement:子窗元素属子窗 realm。
+          const active = e.currentTarget.ownerDocument.activeElement as HTMLElement | null;
+          restoreFocusRef.current = active !== null && typeof active.focus === 'function' ? active : null;
+          interactedOutsideRef.current = false;
+          setPortalHost(e.currentTarget.ownerDocument.body);
+        }}
         onKeyDown={openFromKeyboard}
       >
         {children}
@@ -69,17 +79,27 @@ export function TabContextMenu({
           <Menu.Content
             className={contentCls}
             collisionPadding={8}
+            onInteractOutside={() => {
+              interactedOutsideRef.current = true;
+            }}
             onCloseAutoFocus={(e) => {
-              // opensDialog 项:不拦 Radix 的还原(焦点回到打开菜单前的 tab),还原后(同一任务内的微任务)再执行。
+              // 焦点还原自己做:Radix FocusScope 按全局 document(主窗)记录 / 还原打开前焦点,popout 子窗里的 tab
+              // 菜单关闭后焦点会落到子窗 body。改为还原到触发区所在文档里打开前的焦点(主窗行为不变)。
+              // 点菜单外部关闭不还原(同 Radix ContextMenu 默认),焦点以用户点到的地方为准。
+              e.preventDefault();
+              const outside = interactedOutsideRef.current;
+              interactedOutsideRef.current = false;
+              const skip = skipFocusRestoreRef.current;
+              skipFocusRestoreRef.current = false;
+              const prev = restoreFocusRef.current;
+              restoreFocusRef.current = null;
+              if (!outside && !skip && prev?.isConnected) prev.focus({ preventScroll: true });
+              // opensDialog 项:焦点回到 tab 后(同一任务内的微任务)再执行。
               const pending = pendingActionRef.current;
               if (pending) {
                 pendingActionRef.current = null;
                 queueMicrotask(pending);
-                return;
               }
-              if (!skipFocusRestoreRef.current) return;
-              skipFocusRestoreRef.current = false;
-              e.preventDefault();
             }}
           >
             {entries().map((entry, i) =>
