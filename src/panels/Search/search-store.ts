@@ -2,6 +2,8 @@
 // search.searchOnTypeDebouncePeriod)发起 main 搜索;新查询先取消在途查询,迟到的旧 searchId 事件丢弃;结果按文件分组累加。
 // 状态放在模块级 store:面板关掉再开(⇧⌘F)仍保留上次查询与结果(VSCode 搜索视图同)。
 // 已打开的编辑器在内存内容上搜(含未保存修改、不受大小上限),结果先显示并覆盖磁盘同一文件的结果(open-editor-search)。
+// 文件删除 / 改名 / 移动(editor.store 路径变更通知)→ 其结果从列表移除(VSCode SearchView.onFilesChanged:删除的
+// 文件移除匹配;移动 = 旧路径删除,新位置不自动补搜)。
 // BDD: src/__tests__/workspace-search/
 
 import { create } from 'zustand';
@@ -10,7 +12,8 @@ import { clampSearchQuery, regexSyntaxError } from '@/lib/search-query';
 import { coApp } from '@/plugins/co-app';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { useEditorStore } from '@/stores/editor.store';
+import { onEditorPathChange, useEditorStore } from '@/stores/editor.store';
+import { isSameOrInsidePath } from '@/lib/path-cross';
 import { mergeDiskBatch, searchOpenEditors, searchOverrideKey, searchRelPath } from './open-editor-search';
 import {
   buildSearchRegExp,
@@ -254,6 +257,26 @@ function applyEvent(e: SearchEvent): void {
     skippedLarge: Math.max(0, skippedLarge),
   });
 }
+
+/** 移除 isGone(path) 为真的文件结果(计数 / 折叠 / 活动行一并修正);无命中不写 store。 */
+function dropResultFiles(isGone: (path: string) => boolean): void {
+  useSearchStore.setState((s) => {
+    const files = s.files.filter((f) => !isGone(f.path));
+    if (files.length === s.files.length) return s;
+    let resultCount = 0;
+    for (const f of files) resultCount += f.matches.length;
+    const kept = new Set(files.map((f) => f.path));
+    const collapsed = new Set([...s.collapsed].filter((p) => kept.has(p)));
+    const activePath = s.activeKey === null ? null : s.activeKey.split('\0')[0]!;
+    const activeKey = activePath !== null && kept.has(activePath) ? s.activeKey : null;
+    return { files, resultCount, collapsed, activeKey };
+  });
+}
+
+onEditorPathChange((c) => {
+  if (c.kind === 'moved') dropResultFiles((p) => isSameOrInsidePath(c.oldPath, p));
+  else dropResultFiles((p) => c.paths.some((r) => isSameOrInsidePath(r, p)));
+});
 
 /** 工作区切换:旧结果作废,按当前查询重搜(查询为空则只清空)。 */
 export function rerunSearch(): void {

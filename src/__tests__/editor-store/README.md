@@ -52,6 +52,11 @@ interface EditorTab {
 ### `setMode(mode)`
 - 全局编辑模式切换:`'edit' | 'source' | 'preview'`
 
+### 路径变更通知 `onEditorPathChange(listener)`
+- `renamePath(old, new)` 后通知 `{ kind: 'moved', oldPath, newPath }`,`removePaths(paths)` 后通知 `{ kind: 'removed', paths }`
+  (与是否有匹配的 tab 无关),供持有路径的视图(在文件中查找结果、Quick Open 最近打开)同步
+- 单个监听器抛错不影响其它监听器;返回值取消订阅
+
 ### `createTab(filePath, content)` 纯 helper
 - 返回 EditorTab,id = filePath
 - originalContent = content,dirty = false

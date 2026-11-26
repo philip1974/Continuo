@@ -10,6 +10,7 @@ import {
   getStateAfterRemovingPaths,
   getStateAfterRenamingPath,
   isTabMilkdownUnsafe,
+  onEditorPathChange,
   replaceTabAt,
   useEditorStore,
   type EditorTab,
@@ -1494,5 +1495,26 @@ describe('perf P12 — chromeVersion bump 契约', () => {
     expect(tab.dirty).toBe(true);
     expect(tab.dirtyGen).not.toBe(genBefore);
     expect(ver()).toBe(verBefore + 1);
+  });
+});
+
+describe('路径变更通知 onEditorPathChange', () => {
+  it('renamePath / removePaths 后通知(无匹配 tab 也通知);抛错的监听器不影响其它;可取消订阅', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const seen: unknown[] = [];
+    const offBad = onEditorPathChange(() => {
+      throw new Error('boom');
+    });
+    const off = onEditorPathChange((c) => seen.push(c));
+    useEditorStore.getState().renamePath('/w/a.ts', '/w/b.ts');
+    useEditorStore.getState().removePaths(['/w/c']);
+    off();
+    offBad();
+    useEditorStore.getState().removePaths(['/w/d']);
+    expect(seen).toEqual([
+      { kind: 'moved', oldPath: '/w/a.ts', newPath: '/w/b.ts' },
+      { kind: 'removed', paths: ['/w/c'] },
+    ]);
+    warn.mockRestore();
   });
 });

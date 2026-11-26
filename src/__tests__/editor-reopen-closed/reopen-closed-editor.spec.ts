@@ -69,6 +69,30 @@ function diskOf(files: readonly string[]): EditorFileDeps & { readFile: ReturnTy
 
 const nextFrame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()));
 
+describe('改名 / 移动后的已关闭栈', () => {
+  it('关闭后文件改名 / 所在目录移动 → 条目改写为新路径,⇧⌘T 打开新位置', async () => {
+    open('/w/d/x.ts');
+    open(A);
+    st().closeTab('/w/d/x.ts');
+    st().closeTab(A);
+    st().renamePath(A, '/w/a2.ts');
+    st().renamePath('/w/d', '/w/e');
+    expect(recentlyClosedEditorPaths()).toEqual(['/w/e/x.ts', '/w/a2.ts']);
+    const disk = diskOf(['/w/a2.ts', '/w/e/x.ts']);
+    expect(await reopenClosedEditor(disk)).toBe(true);
+    expect(ids()).toEqual(['/w/a2.ts']);
+  });
+
+  it('改写后与栈里已有路径重复 → 只留更近关闭的那条', () => {
+    open(A);
+    open(B);
+    st().closeTab(A);
+    st().closeTab(B);
+    st().renamePath(A, B);
+    expect(recentlyClosedEditorPaths()).toEqual([B]);
+  });
+});
+
 describe('关闭后重新打开(单组)', () => {
   it('关闭中间的 tab → 重新打开回到原位置并激活,焦点进入它的编辑器', async () => {
     open(A);

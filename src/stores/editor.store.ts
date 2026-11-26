@@ -24,8 +24,38 @@ import {
   renameEditorViewStates,
   retainEditorViewStates,
 } from '@/panels/Editor/editor-view-state-cache';
-import { dropRecentlyClosedEditors, pushRecentlyClosedEditor } from '@/panels/Editor/recently-closed-editors';
+import {
+  dropRecentlyClosedEditors,
+  pushRecentlyClosedEditor,
+  rewriteRecentlyClosedEditors,
+} from '@/panels/Editor/recently-closed-editors';
 import { EDITOR_GROUPS_MAX, PRIMARY_EDITOR_GROUP_ID } from '../../electron/shared/editor-group-id';
+
+// ── 路径变更通知 ─────────────────────────────────────────────
+// removePaths / renamePath 是「文件已删除 / 已移走」的单一入口(资源管理器删除 / 改名 / 移动 / 撤销、外部删除确认)。
+// 持有路径的其它视图(在文件中查找结果、Quick Open 最近打开)在此订阅,同步移除 / 改写旧路径。
+
+export type EditorPathChange =
+  | { readonly kind: 'moved'; readonly oldPath: string; readonly newPath: string }
+  | { readonly kind: 'removed'; readonly paths: readonly string[] };
+
+const pathChangeListeners = new Set<(change: EditorPathChange) => void>();
+
+/** 订阅路径删除 / 移动;返回取消订阅。 */
+export function onEditorPathChange(listener: (change: EditorPathChange) => void): () => void {
+  pathChangeListeners.add(listener);
+  return () => pathChangeListeners.delete(listener);
+}
+
+function emitPathChange(change: EditorPathChange): void {
+  for (const l of pathChangeListeners) {
+    try {
+      l(change);
+    } catch (err) {
+      console.warn('[editor.store] path change listener threw', err);
+    }
+  }
+}
 
 // ── 类型 ─────────────────────────────────────────────────────
 
@@ -274,6 +304,11 @@ function flushWriteBacksForAffectedTabs(
   if (affected.length > 0) flushEditorWriteBacks(affected);
 }
 
+/** oldPath 移到 newPath 后 path 的新路径(path 即 oldPath 或在其下);不受影响 → null。 */
+export function rewriteMovedPath(path: string, oldPath: string, newPath: string): string | null {
+  return isSameOrInsidePath(oldPath, path) ? newPath + path.slice(oldPath.length) : null;
+}
+
 /**
  * 文件 / 目录被重命名 / 移动后的 tab 状态:
  * - 精确匹配 filePath === oldPath → 改 id+filePath 为 newPath
@@ -291,10 +326,7 @@ export function getStateAfterRenamingPath(
   // 匹配平台感知大小写(Windows 运行时 `C:\Repo\dir` 匹配 tab `c:\repo\dir\a.md`,否则 tab
   // 指向失效旧路径)。后缀切片用**原** filePath + oldPath.length —— 大小写折叠不改长度,
   // oldPath 无尾分隔符故 slice 点正确;精确匹配时 slice 得 '' → newPath。
-  const rewrite = (filePath: string): string | null =>
-    isSameOrInsidePath(oldPath, filePath)
-      ? newPath + filePath.slice(oldPath.length)
-      : null;
+  const rewrite = (filePath: string): string | null => rewriteMovedPath(filePath, oldPath, newPath);
 
   let newTabs: EditorTab[] | null = null;
   let nextActive = activeTabId;
@@ -1234,6 +1266,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
     changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterRemovingPaths(tabs, active, paths),
     );
+    emitPathChange({ kind: 'removed', paths });
   },
 
   // 换 tab id 前按旧 id 回写:卸载回写的闭包仍持旧 id,换完就找不到 tab 而丢弃。
@@ -1248,9 +1281,12 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       }
       renameEditorViewStates(pairs, (id) => viewRefs.get(id));
     }
+    // 最近关闭栈里的旧路径同前缀改写(⇧⌘T 打开新位置)
+    rewriteRecentlyClosedEditors((p) => rewriteMovedPath(p, oldPath, newPath));
     changeTabsWithWriteBack(get, set, (cur, active) =>
       getStateAfterRenamingPath(cur, active, oldPath, newPath),
     );
+    emitPathChange({ kind: 'moved', oldPath, newPath });
   },
 
   closeTabsOutsideRoot: (root) => {

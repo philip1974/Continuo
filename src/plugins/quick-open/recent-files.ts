@@ -2,13 +2,14 @@
 //
 // localStorage key=continuo:quick-open:recent,形态 [{ root, paths }](最近用的工作区在前,各自最近打开的文件在前)。
 // 记录点:编辑器的「用户激活」—— 打开 / 切换文件都递增 editorFocusPulse(会话恢复不递增),此时记活动 tab 的路径;
-// 只记当前工作区内的文件。读写都 try/catch(隐私模式 / 配额 / 篡改),读回逐项校验、有界迭代。
+// 只记当前工作区内的文件。文件改名 / 移动(editor.store 路径变更通知)→ 旧路径(含目录前缀)原位改写为新路径
+// (VSCode HistoryService.moveInHistory);删除 → 移除。读写都 try/catch(隐私模式 / 配额 / 篡改),读回逐项校验、有界迭代。
 //
 // BDD: src/__tests__/quick-open-recent/
 
 import { clearStoredKey, readStoredJson } from '../storage/local-storage-record';
 import { isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
-import { useEditorStore } from '@/stores/editor.store';
+import { onEditorPathChange, rewriteMovedPath, useEditorStore } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { PATH_STR_MAX } from '../../../electron/shared/explorer-persistence-schema';
 
@@ -114,4 +115,26 @@ useEditorStore.subscribe((s, prev) => {
   const tab = s.tabs.find((t) => t.id === s.activeTabId);
   if (!root || !tab || !isSameOrInsidePath(root, tab.filePath)) return;
   recordRecentFile(root, tab.filePath);
+});
+
+/** 所有工作区的最近列表按 map 改写(null = 移除;顺序不变、去重保留靠前的);无变化不写。 */
+function rewriteRecentFiles(map: (path: string) => string | null): void {
+  const all = readAll();
+  let changed = false;
+  const next = all.map((e) => {
+    const paths: string[] = [];
+    for (const p of e.paths) {
+      const np = map(p);
+      if (np !== p) changed = true;
+      if (np !== null && isPath(np) && isSameOrInsidePath(e.root, np) && !paths.includes(np)) paths.push(np);
+    }
+    return { root: e.root, paths };
+  });
+  if (changed) writeAll(next);
+}
+
+// 改名 / 移动 / 删除 → 最近记录跟随(否则改名后的文件从「最近打开」消失,要再激活一次 tab 才回来)。
+onEditorPathChange((c) => {
+  if (c.kind === 'moved') rewriteRecentFiles((p) => rewriteMovedPath(p, c.oldPath, c.newPath) ?? p);
+  else rewriteRecentFiles((p) => (c.paths.some((r) => isSameOrInsidePath(r, p)) ? null : p));
 });

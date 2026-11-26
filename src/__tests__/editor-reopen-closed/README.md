@@ -22,6 +22,9 @@
      切换工作区根而关闭的 tab、删除文件而关闭的 tab。
    - 关整个窗口不记(栈随窗口消失)。
 2. **失效**:删除文件 / 目录 → 该路径及其下的条目移除;切换工作区根 → 不在新根下的条目移除(根为空 → 全部移除)。
+   **改名 / 移动**(资源管理器改名 / 移动 / 撤销,`renamePath`):该路径及其下的条目改写为新路径(顺序不变;与已有条目重复
+   → 只留更近关闭的那条),⇧⌘T 打开新位置。取舍:VSCode 的 `move` 不改写 `recentlyClosedEditors`,旧条目随 watcher
+   的删除事件被移除;改写比丢失更有用,成本只是一次映射。
 3. **重新打开**(命令 `workbench.action.reopenClosedEditor`,默认键 `mod+shift+t`,三语标题,View 分类):
    - 取栈顶。原编辑器组还在 → 回原组;否则落到当前活动组。按记录的位置插回组内(越界收进范围)并激活,该组成为活动组,
      焦点进入重开的编辑器。
@@ -42,7 +45,7 @@
 | 文件 | 职责 |
 |---|---|
 | `src/panels/Editor/recently-closed-editors.ts` | 每窗口最近关闭编辑器栈(上限 / 去重 / 失效),不依赖 store |
-| `src/stores/editor.store.ts` | `closeTab` / `removeGroup` 入栈;`removePaths` / `closeTabsOutsideRoot` 失效;`openTab` 的 `index` 选项 |
+| `src/stores/editor.store.ts` | `closeTab` / `removeGroup` 入栈;`removePaths` / `closeTabsOutsideRoot` 失效;`renamePath` 改写;`openTab` 的 `index` 选项 |
 | `src/panels/Editor/reopen-closed-editor.ts` | 重新打开栈顶(目标组 / 跳过 / 读盘 / 视图状态回填 / 焦点) |
 | `src/panels/Editor/editor-commands.ts` | 命令 spec |
 | `src/panels/Terminal/terminal-hotkeys.ts` | 终端让出 `⇧⌘T`(仅带 Meta) |

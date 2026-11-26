@@ -111,6 +111,49 @@ describe('记录:按工作区记最近打开的文件', () => {
   });
 });
 
+describe('改名 / 移动 / 删除后最近记录跟随(VSCode HistoryService.moveInHistory)', () => {
+  it('文件改名 / 移动 → 旧路径原位改写为新路径(顺序不变)', () => {
+    recordRecentFile('/proj', '/proj/c.ts');
+    recordRecentFile('/proj', '/proj/file-3.ts');
+    recordRecentFile('/proj', '/proj/a.ts');
+    useEditorStore.getState().renamePath('/proj/file-3.ts', '/proj/sub/file-3.ts');
+    expect(recentFilesFor('/proj')).toEqual(['/proj/a.ts', '/proj/sub/file-3.ts', '/proj/c.ts']);
+  });
+
+  it('目录改名 → 其下全部最近文件同前缀改写;同前缀的兄弟目录不受影响', () => {
+    recordRecentFile('/proj', '/proj/src/x.ts');
+    recordRecentFile('/proj', '/proj/srcx/y.ts');
+    recordRecentFile('/proj', '/proj/src/deep/z.ts');
+    useEditorStore.getState().renamePath('/proj/src', '/proj/lib');
+    expect(recentFilesFor('/proj')).toEqual(['/proj/lib/deep/z.ts', '/proj/srcx/y.ts', '/proj/lib/x.ts']);
+  });
+
+  it('改名(含撤销改名)后打开着的 tab 仍在「最近打开」里,无需再激活一次', async () => {
+    useWorkspaceStore.setState({ root: '/proj', recentRoots: [] });
+    useEditorStore.getState().openTab(createTab('/proj/b.ts', ''));
+    useEditorStore.getState().renamePath('/proj/b.ts', '/proj/renamed.ts');
+    useEditorStore.getState().renamePath('/proj/renamed.ts', '/proj/b2.ts');
+    await openModal([file('a.ts'), file('b2.ts')]);
+    expect(rowNames()).toEqual(['b2.ts', 'a.ts']);
+    expect(rows()[0]!.textContent).toContain(t('quick_open.recently_opened'));
+  });
+
+  it('移到已在列表里的路径 → 去重,保留靠前的一条', () => {
+    recordRecentFile('/proj', '/proj/old.ts');
+    recordRecentFile('/proj', '/proj/new.ts');
+    useEditorStore.getState().renamePath('/proj/old.ts', '/proj/new.ts');
+    expect(recentFilesFor('/proj')).toEqual(['/proj/new.ts']);
+  });
+
+  it('删除文件 / 目录 → 从最近记录移除', () => {
+    recordRecentFile('/proj', '/proj/d/a.ts');
+    recordRecentFile('/proj', '/proj/b.ts');
+    recordRecentFile('/proj', '/proj/c.ts');
+    useEditorStore.getState().removePaths(['/proj/d', '/proj/c.ts']);
+    expect(recentFilesFor('/proj')).toEqual(['/proj/b.ts']);
+  });
+});
+
 describe('Quick Open 列表', () => {
   it('空查询:最近打开的排最前(按最近顺序)并标「最近打开」,其后为其余文件', async () => {
     recordRecentFile('/proj', '/proj/src/c.ts');
