@@ -1,6 +1,6 @@
 // dock 面板动作:dock 标题栏「⋯」菜单 / 「弹出到独立窗口」按钮(HeaderActions)与命令共用。
 // 命令:显示输出 / 显示调试(已有同类面板 → 激活;没有 → 新建)、把活动面板所在组移到新窗口(VSCode
-// workbench.action.moveEditorGroupToNewWindow)。WindowPlugin 注册。BDD: src/__tests__/command-discoverability/
+// workbench.action.moveEditorGroupToNewWindow)、重置布局(workbench.action.resetViewLocations)。WindowPlugin 注册。BDD: src/__tests__/command-discoverability/
 
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { popoutUrlFor } from '@/lib/popout-mode';
@@ -11,6 +11,7 @@ import { t, tWithFallback } from '@/i18n';
 import { getDockApi, revealDockPanel, runWhenDockLayoutReady } from './dock-api-ref';
 import { mainWindowAddPosition } from './group-mru';
 import { focusDockPanelSoon } from './panel-focus';
+import { resetDockLayout } from './layout.default';
 
 let panelCounter = 0;
 /**
@@ -108,6 +109,16 @@ export function dockCommandSpecs(): CommandSpec[] {
       category: 'View',
       categoryKey: 'commands.view.category',
       fn: popoutActiveGroup,
+    },
+    {
+      // VSCode workbench.action.resetViewLocations(View: Reset View Locations):有面板时也能把布局收回默认形态。
+      // BDD: src/__tests__/dock-reset-layout/
+      id: 'workbench.action.resetViewLocations',
+      title: 'Reset Layout',
+      titleKey: 'commands.view.reset_layout.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: () => runWhenDockLayoutReady(resetDockLayout),
     },
   ];
 }

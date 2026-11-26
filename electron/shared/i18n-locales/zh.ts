@@ -192,6 +192,7 @@ export const zh: Record<TranslationKey, string> = {
   'commands.view.show_output.title': '显示输出',
   'commands.view.show_debug.title': '显示调试',
   'commands.view.move_group_to_new_window.title': '将组移到新窗口',
+  'commands.view.reset_layout.title': '重置布局',
   'commands.editor.close_others.title': '关闭组中的其他编辑器',
   'commands.editor.close_right.title': '关闭组中右侧的编辑器',
   'commands.editor.close_saved.title': '关闭组中已保存的编辑器',

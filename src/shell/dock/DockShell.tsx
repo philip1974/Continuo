@@ -9,7 +9,7 @@ import {
 import 'dockview-react/dist/styles/dockview.css';
 import { usePanelComponents } from './panel-components';
 import { coApp } from '@/plugins/co-app';
-import { applyDefaultLayout } from './layout.default';
+import { applyDefaultLayout, resetDockLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
 import { markDockLayoutRestored, setDockApi } from './dock-api-ref';
@@ -392,8 +392,9 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
     return () => clearTimeout(timer);
   }, [layoutRestored, terminalsReady]);
 
+  // 空状态「恢复默认布局」与命令「视图:重置布局」同一实现(BDD: src/__tests__/dock-reset-layout/)。
   const restore = useCallback(() => {
-    if (apiRef.current) applyDefaultLayout(apiRef.current);
+    if (apiRef.current) resetDockLayout(apiRef.current);
   }, []);
 
   // unmount 时 reset 单例,防 stale 引用;并 dispose onReady 注册的 dockview listeners +

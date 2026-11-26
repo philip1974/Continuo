@@ -205,6 +205,7 @@ export const en = {
   'commands.view.show_output.title': 'Show Output',
   'commands.view.show_debug.title': 'Show Debug',
   'commands.view.move_group_to_new_window.title': 'Move Group into New Window',
+  'commands.view.reset_layout.title': 'Reset Layout',
   'commands.editor.close_others.title': 'Close Other Editors in Group',
   'commands.editor.close_right.title': 'Close Editors to the Right in Group',
   'commands.editor.close_saved.title': 'Close Saved Editors in Group',

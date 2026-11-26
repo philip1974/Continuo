@@ -193,6 +193,7 @@ export const ko: Record<TranslationKey, string> = {
   'commands.view.show_output.title': '출력 표시',
   'commands.view.show_debug.title': '디버그 표시',
   'commands.view.move_group_to_new_window.title': '그룹을 새 창으로 이동',
+  'commands.view.reset_layout.title': '레이아웃 초기화',
   'commands.editor.close_others.title': '그룹의 다른 편집기 닫기',
   'commands.editor.close_right.title': '그룹에서 오른쪽 편집기 닫기',
   'commands.editor.close_saved.title': '그룹의 저장된 편집기 닫기',

@@ -1,4 +1,4 @@
-import type { DockviewApi } from 'dockview-react';
+import type { DockviewApi, DockviewGroupPanel } from 'dockview-react';
 import { tWithFallback } from '@/i18n/translate';
 import { activateDockPanel } from './wrap-panel-close';
 import { useEditorStore } from '@/stores/editor.store';
@@ -26,4 +26,25 @@ export function applyDefaultLayout(api: DockviewApi) {
     params: { titleKey: 'panels.editor.title' },
   });
   editor.api.setActive();
+}
+
+/**
+ * 「视图:重置布局」(VSCode View: Reset View Locations 类;空状态的「恢复默认布局」同一实现):把拖乱的布局收回默认形态
+ * —— 退出最大化;拆分 / 浮动 / popout 子窗里的所有面板收回主窗同一个组(popout 子窗随之关闭);再按默认布局补上并激活编辑器。
+ * **不关闭任何面板**:编辑器组(含未保存的 tab)、运行中的终端都原样保留,只换位置(同拖动 tab),无需确认。
+ * BDD: src/__tests__/dock-reset-layout/
+ */
+export function resetDockLayout(api: DockviewApi): void {
+  if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
+  const withPanels = api.groups.filter((g) => g.panels.length > 0);
+  if (withPanels.length > 0) {
+    const isGrid = (g: DockviewGroupPanel | undefined): g is DockviewGroupPanel => g?.api.location.type === 'grid';
+    const editorGroup = api.getPanel(useEditorStore.getState().activeGroupId)?.group;
+    // 落点:编辑器所在的主窗组 > 第一个有面板的主窗组 > 新建主窗组(面板全在子窗 / 浮动时)。
+    const target = (isGrid(editorGroup) ? editorGroup : withPanels.find(isGrid)) ?? api.addGroup();
+    for (const group of withPanels) {
+      if (group !== target) group.api.moveTo({ group: target, position: 'center', skipSetActive: true });
+    }
+  }
+  applyDefaultLayout(api);
 }
