@@ -54,6 +54,8 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.gotoSymbol',
   'workbench.action.openRecent',
   'workbench.action.showCommands',
+  // 切换窗口(⌃W):选择器画在按键所在子窗,当前窗口 = 该子窗(BDD: src/__tests__/switch-window/)
+  'workbench.action.switchWindow',
   // 颜色主题选择器画在按键所在子窗;切换浅深只改设置(BDD: src/__tests__/theme-commands/)
   'workbench.action.selectTheme',
   'workbench.action.toggleLightDarkThemes',

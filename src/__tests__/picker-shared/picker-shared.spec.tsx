@@ -198,7 +198,7 @@ describe('usePickerList', () => {
       [-1, 5],
     ]);
     expect(fireEvent.keyDown(input, { key: 'Enter' })).toBe(false);
-    expect(onEnter).toHaveBeenCalledWith(2);
+    expect(onEnter).toHaveBeenCalledWith(2, expect.anything());
     expect(fireEvent.keyDown(input, { key: 'a' })).toBe(true);
     expect(onEnter).toHaveBeenCalledTimes(1);
   });
@@ -252,7 +252,7 @@ describe('usePickerList', () => {
     expect(onEnter).not.toHaveBeenCalled();
     expect(moveSelection).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onEnter).toHaveBeenCalledWith(2);
+    expect(onEnter).toHaveBeenCalledWith(2, expect.anything());
   });
 
   it('count 变化 → clampSelection;selectedIndex 变化 → scrollToIndex(空列表不滚)', () => {

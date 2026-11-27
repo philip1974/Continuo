@@ -7,16 +7,18 @@ const h = vi.hoisted(() => ({
   listDir: vi.fn(),
   selectDirectory: vi.fn(),
   focusWorkspaceWindow: vi.fn(),
+  create: vi.fn(),
+  notifyError: vi.fn(),
 }));
 vi.mock('@/lib/co-api', () => ({
   coApi: {
     fs: { listDir: h.listDir, selectDirectory: h.selectDirectory },
-    window: { focusWorkspaceWindow: h.focusWorkspaceWindow },
+    window: { focusWorkspaceWindow: h.focusWorkspaceWindow, create: h.create },
   },
 }));
-vi.mock('@/notifications/notify', () => ({ notify: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('@/notifications/notify', () => ({ notify: { error: h.notifyError, info: vi.fn() } }));
 
-import { openRecentRootOrNotify } from '../../panels/Explorer/open-recent-root';
+import { openRecentRootInNewWindow, openRecentRootOrNotify } from '../../panels/Explorer/open-recent-root';
 import { selectWorkspaceFolder } from '../../panels/Explorer/hooks/useSelectWorkspaceFolder';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { workspaceRootSelectionGuard } from '@/lib/workspace-root-guard';
@@ -25,7 +27,32 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.listDir.mockResolvedValue({ ok: true, data: [] });
   h.focusWorkspaceWindow.mockResolvedValue({ ok: true, data: false });
+  h.create.mockResolvedValue({ ok: true, data: undefined });
   useWorkspaceStore.setState({ root: null });
+});
+
+describe('最近打开 · 在新窗口打开(⌘Enter / ⌘ 单击)', () => {
+  it('同「在新窗口打开文件夹…」走 window.create({ workspace })(main 发现已在某窗口打开就聚焦它);本窗口 root 不变、不先问本窗口去重', async () => {
+    useWorkspaceStore.setState({ root: '/u/current' });
+    await openRecentRootInNewWindow('/u/ws-x');
+    expect(h.create).toHaveBeenCalledWith({ workspace: '/u/ws-x' });
+    expect(h.focusWorkspaceWindow).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().root).toBe('/u/current');
+  });
+
+  it('目录已不存在 → onMissing(询问是否从列表删除),不开窗', async () => {
+    h.listDir.mockResolvedValue({ ok: false, code: 'FS_NOT_FOUND', message: 'gone' });
+    const onMissing = vi.fn();
+    await openRecentRootInNewWindow('/u/gone', onMissing);
+    expect(onMissing).toHaveBeenCalledWith('/u/gone');
+    expect(h.create).not.toHaveBeenCalled();
+  });
+
+  it('开窗失败 → 可见提示', async () => {
+    h.create.mockResolvedValue({ ok: false, code: 'NO_WINDOW_SEQ', message: 'x' });
+    await openRecentRootInNewWindow('/u/ws-x');
+    expect(h.notifyError).toHaveBeenCalled();
+  });
 });
 
 describe('最近打开', () => {

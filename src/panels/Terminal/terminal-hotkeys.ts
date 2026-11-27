@@ -307,7 +307,8 @@ export function terminalYieldedCommandId(
 
 /**
  * 终端获焦时由终端处理、不交给全局分发的命令(VSCode:终端获焦时不在 commandsToSkipShell 里的键交给 xterm,工作台命令不触发):
- * 后退 / 前进(mac ⌃- / ⌃⇧-,Win/Linux Alt+← / Alt+→)、打开最近(⌃R 是 shell 的反向搜索历史)、切换自动换行(⌥Z)。
+ * 后退 / 前进(mac ⌃- / ⌃⇧-,Win/Linux Alt+← / Alt+→)、打开最近(⌃R 是 shell 的反向搜索历史)、切换自动换行(⌥Z)、
+ * 切换窗口(mac ⌃W 是 shell 的删前一个词)。
  * 带 ⌘(Meta)的按键照常交给工作台(VSCode `event.metaKey` 一律跳过 shell)。id 与注册方一致(规范守护)。
  * BDD: src/__tests__/workbench-missing-commands/、src/__tests__/editor-navigation-history/
  */
@@ -316,6 +317,8 @@ export const TERMINAL_KEPT_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.navigateForward',
   'workbench.action.openRecent',
   'editor.action.toggleWordWrap',
+  // 切换窗口(mac ⌃W):⌃W 是 shell 的删前一个词;VSCode commandsToSkipShell 默认列表不含 switchWindow(BDD: src/__tests__/switch-window/)
+  'workbench.action.switchWindow',
 ]);
 
 /** 按键胜出的是终端自己处理的命令(见 TERMINAL_KEPT_COMMAND_IDS):交给 xterm,不冒泡到全局分发。 */

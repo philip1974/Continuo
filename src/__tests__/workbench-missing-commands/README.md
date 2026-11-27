@@ -33,6 +33,11 @@
 - 打开走「最近打开」同一路径(`openRecentRootOrNotify`):已在别的窗口打开 → 聚焦那个窗口(去重);目录已不存在 → 询问是否从
   列表删除(picker 关闭后仍显示);切换后焦点交给新文件树(`switchToCheckedRoot` / `focusTreeAfterRootSwitch`)。
 - 终端获焦时 ⌃R 留给 shell(反向搜索历史;VSCode commandsToSkipShell 不含),不打开 picker。
+- **⌘Enter / ⌘ 单击(Windows / Linux Ctrl)在新窗口打开**(VSCode openRecent `keyMods.ctrlCmd → forceNewWindow`):走与「在新窗口打开
+  文件夹…」相同的 `window.create({ workspace })`(main 发现已在某个窗口打开 → 聚焦那个窗口,不开第二个),本窗口 root / 焦点不变;
+  目录已不存在 → 同样询问是否删除(`openRecentRootInNewWindow`,`workspace-window-dedupe/renderer-entries.spec.ts`)。占位文字照抄
+  VSCode 的修饰键提示(mac「hold Cmd-key to force new window or Option-key for same window」,其它平台 Ctrl / Alt),三语。
+  VSCode 的行尾按钮是「从最近打开中删除 / 已在窗口中打开」,没有「在新窗口中打开」按钮,这里也不加。
 
 ## §4 切换自动换行(`toggle-word-wrap.spec.tsx`)
 

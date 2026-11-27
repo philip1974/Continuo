@@ -5,9 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const openRecent = vi.hoisted(() => vi.fn());
+const openInNewWindow = vi.hoisted(() => vi.fn());
+const platform = vi.hoisted(() => ({ value: 'mac' as 'mac' | 'other' }));
 vi.mock('../../panels/Explorer/open-recent-root', async (orig) => ({
   ...(await orig<object>()),
   openRecentRootOrNotify: openRecent,
+  openRecentRootInNewWindow: openInNewWindow,
+}));
+vi.mock('@/plugins/command-palette/format-hotkey', async (orig) => ({
+  ...(await orig<object>()),
+  detectPlatform: () => platform.value,
 }));
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -37,6 +44,8 @@ const options = () => screen.queryAllByRole('option').map((o) => o.textContent);
 beforeEach(() => {
   setLocale('en');
   openRecent.mockReset();
+  openInNewWindow.mockReset();
+  platform.value = 'mac';
   useOpenRecentStore.setState({ isOpen: false, query: '', selectedIndex: 0 });
   useWorkspaceStore.setState({ root: '/p/current', recentRoots: ['/p/current', '/p/alpha', '/q/beta'] });
 });
@@ -96,6 +105,48 @@ describe('Quick Pick', () => {
     fireEvent.keyDown(input(), { key: 'Enter' });
     expect(useOpenRecentStore.getState().isOpen).toBe(false);
     expect(screen.getByRole('dialog').textContent).toContain('/p/alpha');
+  });
+
+  it('⌘Enter(mac)/ Ctrl+Enter(Windows / Linux)→ 在新窗口打开选中项,本窗口不切换;只按另一个修饰键 → 照常在本窗口', () => {
+    act(() => useOpenRecentStore.getState().open());
+    render(<OpenRecentModal />);
+    fireEvent.keyDown(input(), { key: 'Enter', metaKey: true });
+    expect(openInNewWindow).toHaveBeenCalledWith('/p/alpha', expect.any(Function));
+    expect(openRecent).not.toHaveBeenCalled();
+    expect(useOpenRecentStore.getState().isOpen).toBe(false);
+    cleanup();
+
+    act(() => useOpenRecentStore.getState().open());
+    render(<OpenRecentModal />);
+    fireEvent.keyDown(input(), { key: 'Enter', ctrlKey: true }); // mac 上 Ctrl 不是新窗口修饰键
+    expect(openRecent).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    platform.value = 'other';
+    act(() => useOpenRecentStore.getState().open());
+    render(<OpenRecentModal />);
+    fireEvent.keyDown(input(), { key: 'Enter', ctrlKey: true });
+    expect(openInNewWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it('⌘ 单击 → 在新窗口打开', () => {
+    act(() => useOpenRecentStore.getState().open());
+    render(<OpenRecentModal />);
+    fireEvent.click(screen.getByRole('option', { name: /beta/ }), { metaKey: true });
+    expect(openInNewWindow).toHaveBeenCalledWith('/q/beta', expect.any(Function));
+    expect(openRecent).not.toHaveBeenCalled();
+  });
+
+  it('占位文字照抄 VSCode 的修饰键提示(mac Cmd / Option,其它 Ctrl / Alt),三语', () => {
+    act(() => useOpenRecentStore.getState().open());
+    render(<OpenRecentModal />);
+    expect(input().getAttribute('placeholder')).toBe(en['open_recent.placeholder_mac']);
+    expect(en['open_recent.placeholder_mac']).toBe('Select to open (hold Cmd-key to force new window or Option-key for same window)');
+    expect(en['open_recent.placeholder']).toBe('Select to open (hold Ctrl-key to force new window or Alt-key for same window)');
+    for (const locale of [zh, ko]) {
+      expect(locale['open_recent.placeholder_mac']).toContain('Cmd');
+      expect(locale['open_recent.placeholder']).toContain('Ctrl');
+    }
   });
 
   it('没有最近打开的文件夹 → 空态提示', () => {

@@ -16,8 +16,10 @@ import {
   POPOUT_NAME_MAX,
   WINDOW_VIEW_ACTIONS,
   type IpcWindowCreateInput,
+  type WindowSwitchEntry,
   type WindowViewAction,
 } from '../../shared/window-channels';
+import { listSwitchWindows } from '../services/window-switch.service';
 import { ERROR_CODES } from '../../shared/error-codes';
 import {
   allocateWindowSeq,
@@ -212,6 +214,19 @@ const NotifyRootInput = z
   })
   .strict();
 
+const ListWindowsInput = z.object({ popoutName: z.string().min(1).max(POPOUT_NAME_MAX).optional() }).strict();
+const FocusWindowInput = z.object({ id: z.number().int().positive() }).strict();
+
+/** 切换窗口可列出 / 聚焦的窗口(主窗 + 其 popout 子窗,见 window-switch.service)。 */
+function switchWindows(current: BrowserWindow | null): { entries: WindowSwitchEntry[]; byId: Map<number, BrowserWindow> } {
+  const all = BrowserWindow.getAllWindows();
+  const live = all.filter((w) => !w.isDestroyed() && !w.webContents.isDestroyed());
+  return {
+    entries: listSwitchWindows(live, (w) => menuCommandTargetWindow(w), current),
+    byId: new Map(live.map((w) => [w.id, w])),
+  };
+}
+
 const CloseInput = z.object({}).strict();
 const FocusInput = z.object({}).strict();
 const RelaunchInput = z.object({}).strict();
@@ -341,6 +356,22 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
   safeHandleWithCtx(WINDOW_CHANNELS.FOCUS, FocusInput, (_input, { event }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    win.focus();
+  });
+  // 切换窗口(workbench.action.switchWindow):列出各主窗及其 popout 子窗;当前窗口 = 发起方(带 popoutName → 发起方的那个子窗,
+  // 子窗界面跑在主窗 renderer,IPC 发起方总是主窗)。
+  safeHandleWithCtx(WINDOW_CHANNELS.LIST_WINDOWS, ListWindowsInput, (input, { event }) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner) throw codedError(ERROR_CODES.NO_WINDOW, 'no browser window');
+    const current = input.popoutName === undefined ? owner : (ownedPopoutWindow(owner, input.popoutName) ?? owner);
+    return switchWindows(current).entries;
+  });
+  // 切换窗口选中 → 聚焦它(最小化的先还原)。只限列表会列出的窗口(不聚焦正在关闭 / 不属于任何主窗的窗口)。
+  safeHandle(WINDOW_CHANNELS.FOCUS_WINDOW, FocusWindowInput, (input) => {
+    const { entries, byId } = switchWindows(null);
+    const win = entries.some((e) => e.id === input.id) ? byId.get(input.id) : undefined;
+    if (!win) throw codedError(ERROR_CODES.NO_WINDOW, 'no such window');
+    if (win.isMinimized()) win.restore();
     win.focus();
   });
   // 「立即重启」(插件安装后):交给组合根走退出流程,不在这里直接 app.relaunch()/exit()(会绕过脏文件确认丢未保存内容)。

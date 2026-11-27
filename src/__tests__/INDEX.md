@@ -2037,6 +2037,11 @@
 - [`broker-reliability.spec.ts`](./stop-hook-broker-reliability/broker-reliability.spec.ts)
 - [`install-malformed-config.spec.ts`](./stop-hook-broker-reliability/install-malformed-config.spec.ts)
 
+## [switch-window(切换窗口:workbench.action.switchWindow)](./switch-window/README.md)
+
+- [`switch-window-main.spec.ts`](./switch-window/switch-window-main.spec.ts)
+- [`switch-window-picker.spec.tsx`](./switch-window/switch-window-picker.spec.tsx)
+
 ## [tab 右键菜单(对齐 VSCode 编辑器标签右键菜单)](./tab-context-menu/README.md)
 
 - [`editor-batch-close-confirm.spec.tsx`](./tab-context-menu/editor-batch-close-confirm.spec.tsx)

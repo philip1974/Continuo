@@ -1,6 +1,8 @@
 // 打开最近的文件夹(VSCode workbench.action.openRecent 的 Quick Pick,⌃R):列出「最近打开」的文件夹(当前文件夹除外,同资源管理器
 // 「打开最近」菜单),可输入过滤,↑↓ / Enter / 点击打开。打开与「最近打开」菜单同一路径(openRecentRootOrNotify):已在别的窗口
 // 打开 → 聚焦那个窗口;目录已不存在 → 询问是否从列表删除;切换后焦点交给新文件树(switchToCheckedRoot)。
+// ⌘Enter / ⌘ 单击(Windows / Linux Ctrl)在新窗口打开(openRecentRootInNewWindow,同「在新窗口打开文件夹…」;VSCode 同,占位文字
+// 照抄其提示)。
 // 列表机制(虚拟化 / 键盘 / ARIA)走共享 usePickerList,与命令面板 / Quick Open 一致。
 // BDD: src/__tests__/workbench-missing-commands/
 
@@ -11,7 +13,8 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { pathEquals } from '@/lib/path-cross';
 import { normalizeSearchQuery } from '@/lib/search-query';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
-import { openRecentRootOrNotify } from '@/panels/Explorer/open-recent-root';
+import { openRecentRootInNewWindow, openRecentRootOrNotify } from '@/panels/Explorer/open-recent-root';
+import { detectPlatform } from '../command-palette/format-hotkey';
 import { useRecentRootMissingPrompt } from '@/panels/Explorer/RecentRootMissingDialog';
 import { recentRootAccessibleName, recentRootLabelParts } from '@/panels/Explorer/path-utils';
 import { usePickerList } from '../picker/use-picker-list';
@@ -36,6 +39,11 @@ export function openRecentItems(recentRoots: readonly string[], root: string | n
     out.push({ path: p, name, parent, lower: lowerIfNeeded(`${name} ${p}`.normalize('NFC')) });
   }
   return out;
+}
+
+/** 「在新窗口打开」的修饰键:mac ⌘,Windows / Linux Ctrl(VSCode keyMods.ctrlCmd)。 */
+function isCtrlCmd(mods: { readonly metaKey: boolean; readonly ctrlKey: boolean }): boolean {
+  return detectPlatform() === 'mac' ? mods.metaKey : mods.ctrlKey;
 }
 
 /** 常驻 App 顶层:询问框(目录已不存在)在 picker 关闭后仍要显示,故挂在外层;列表只在打开时挂载。 */
@@ -71,9 +79,11 @@ function OpenRecentBody({ onMissing }: { readonly onMissing: (path: string) => v
   const items = useMemo(() => openRecentItems(recentRoots, root), [recentRoots, root]);
   const filtered = useMemo(() => fuzzyFilter(items, normalizeSearchQuery(query), (i) => i.lower), [items, query]);
 
-  const openItem = (item: RecentItem): void => {
+  // ⌘Enter / ⌘ 单击(Windows / Linux Ctrl)→ 在新窗口打开(VSCode openRecent:keyMods.ctrlCmd → forceNewWindow)
+  const openItem = (item: RecentItem, mods: { readonly metaKey: boolean; readonly ctrlKey: boolean }): void => {
     close();
-    void openRecentRootOrNotify(item.path, setRoot, onMissing);
+    if (isCtrlCmd(mods)) void openRecentRootInNewWindow(item.path, onMissing);
+    else void openRecentRootOrNotify(item.path, setRoot, onMissing);
   };
 
   const { scrollRef, virtualItems, comboboxProps, listboxProps, getOptionProps } = usePickerList({
@@ -84,9 +94,9 @@ function OpenRecentBody({ onMissing }: { readonly onMissing: (path: string) => v
     overscan: 12,
     moveSelection,
     clampSelection,
-    onEnter: (index) => {
+    onEnter: (index, e) => {
       const item = filtered[index];
-      if (item) openItem(item);
+      if (item) openItem(item, e);
     },
   });
 
@@ -99,7 +109,7 @@ function OpenRecentBody({ onMissing }: { readonly onMissing: (path: string) => v
           data-autofocus
           aria-label={t('open_recent.input_aria')}
           {...comboboxProps}
-          placeholder={t('open_recent.placeholder')}
+          placeholder={t(detectPlatform() === 'mac' ? 'open_recent.placeholder_mac' : 'open_recent.placeholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -122,7 +132,7 @@ function OpenRecentBody({ onMissing }: { readonly onMissing: (path: string) => v
                   className={pickerRowClassName(selected)}
                   title={item.path}
                   aria-label={recentRootAccessibleName(item.path)}
-                  onClick={() => openItem(item)}
+                  onClick={(e) => openItem(item, e)}
                 >
                   <span className="max-w-[60%] shrink-0 truncate font-medium">{item.name}</span>
                   {item.parent !== '' && (

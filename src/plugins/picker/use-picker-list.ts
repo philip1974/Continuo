@@ -37,8 +37,8 @@ export interface UsePickerListOptions {
   readonly overscan: number;
   readonly moveSelection: (delta: number, max: number) => void;
   readonly clampSelection: (len: number) => void;
-  /** Enter:调用方按 index 取项并执行(index 可能越界,自行判空)。 */
-  readonly onEnter: (index: number) => void;
+  /** Enter:调用方按 index 取项并执行(index 可能越界,自行判空);e 供看修饰键(打开最近 ⌘Enter = 在新窗口打开)。 */
+  readonly onEnter: (index: number, e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
 export interface PickerComboboxProps {
@@ -124,7 +124,7 @@ export function usePickerList(opts: UsePickerListOptions): PickerList {
       if (target !== selectedIndex) moveSelection(target - selectedIndex, count);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      onEnter(selectedIndex);
+      onEnter(selectedIndex, e);
     }
   };
 

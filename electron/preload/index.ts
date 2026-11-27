@@ -72,6 +72,7 @@ import {
 import {
   WINDOW_CHANNELS,
   type IpcWindowCreateInput,
+  type WindowSwitchEntry,
   type WindowViewAction,
   type WindowViewActionTarget,
 } from '../shared/window-channels';
@@ -564,6 +565,17 @@ const api = {
     close: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.CLOSE, {}),
     /** 激活本窗口(主窗 renderer 把面板 / 选择器打开在主窗、而系统焦点在 popout 子窗时调用)。 */
     focus: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS, {}),
+    /**
+     * 切换窗口的列表:各主窗口及其 popout 子窗(标题、所属主窗、是否当前窗口)。target.popoutName → 当前窗口是本窗口打开的那个子窗
+     *(在子窗里触发)。
+     */
+    listWindows: (target?: WindowViewActionTarget): Promise<IpcResult<WindowSwitchEntry[]>> =>
+      ipcRenderer.invoke(
+        WINDOW_CHANNELS.LIST_WINDOWS,
+        target?.popoutName === undefined ? {} : { popoutName: target.popoutName },
+      ),
+    /** 切换窗口:聚焦列表里的那个窗口(最小化的先还原)。 */
+    focusWindow: (id: number): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS_WINDOW, { id }),
     /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */
     relaunchApp: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.RELAUNCH_APP, {}),
     /**

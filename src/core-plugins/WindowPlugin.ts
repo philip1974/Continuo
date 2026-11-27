@@ -11,6 +11,7 @@ import {
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import { focusPartCommandSpecs } from '@/shell/focus-parts';
 import { windowCommandSpecs } from '@/shell/window-commands';
+import { switchWindowCommandSpec } from '@/plugins/switch-window/switch-window-command';
 import { dockCommandSpecs } from '@/shell/dock/dock-panel-actions';
 import { themeCommandSpecs } from '@/plugins/theme-picker/theme-commands';
 
@@ -77,6 +78,8 @@ export default class WindowPlugin extends Plugin {
     // 转到文件… / 关闭窗口 / 重新加载窗口 / 缩放 / 全屏 / 显示输出·调试 / 移到新窗口(应用菜单与 dock 标题栏的同一动作;
     // BDD: src/__tests__/command-discoverability/)
     for (const spec of windowCommandSpecs()) this.addCommand(spec);
+    // 切换窗口(mac ⌃W;BDD: src/__tests__/switch-window/)
+    this.addCommand(switchWindowCommandSpec());
     for (const spec of dockCommandSpecs()) this.addCommand(spec);
     // 首选项:颜色主题 / 在浅色和深色主题之间切换(BDD: src/__tests__/theme-commands/)
     for (const spec of themeCommandSpecs()) this.addCommand(spec);

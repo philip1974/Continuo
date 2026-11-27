@@ -69,7 +69,26 @@ export const WINDOW_CHANNELS = {
    *(在 dockview popout 子窗里触发:子窗的 window.open 名)→ 作用于发起方打开的那个子窗。
    */
   VIEW_ACTION: 'window:view-action',
+  /**
+   * 切换窗口(workbench.action.switchWindow)的列表:各主窗口及其 popout 子窗(VSCode 同列辅助窗口,排在所属主窗之后),标题与
+   * 「当前窗口」(发起方所在窗口;带 popoutName → 发起方的那个子窗)。payload `{ popoutName? }`,返回 WindowSwitchEntry[]。
+   * BDD: src/__tests__/switch-window/
+   */
+  LIST_WINDOWS: 'window:list-windows',
+  /** 切换窗口选中后聚焦该窗口(payload `{ id }`;只限 LIST_WINDOWS 会列出的窗口,最小化的先还原)。 */
+  FOCUS_WINDOW: 'window:focus-window',
 } as const;
+
+/** 切换窗口列表的一项(window:list-windows)。 */
+export interface WindowSwitchEntry {
+  /** BrowserWindow id(window:focus-window 用它)。 */
+  readonly id: number;
+  readonly title: string;
+  /** popout 子窗所属主窗的 id;主窗口 → null。 */
+  readonly parentId: number | null;
+  /** 发起切换的窗口(列表里标「当前窗口」)。 */
+  readonly current: boolean;
+}
 
 /** window:view-action 可执行的动作(BDD: src/__tests__/command-discoverability/)。 */
 // 放大 / 缩小 / 重置缩放不在此列:它们改设置项 window.zoomLevel(所有窗口统一,见 SET_ZOOM_LEVEL)。

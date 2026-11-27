@@ -77,6 +77,8 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
       'workbench.action.gotoSymbol',
       'workbench.action.openRecent',
       'workbench.action.showCommands',
+      // 切换窗口:选择器画在按键所在子窗,当前窗口 = 该子窗(switch-window)
+      'workbench.action.switchWindow',
       // 颜色主题选择器画在按键所在子窗;切换浅深只改设置(theme-commands)
       'workbench.action.selectTheme',
       'workbench.action.toggleLightDarkThemes',

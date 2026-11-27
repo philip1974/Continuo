@@ -48,6 +48,26 @@ export async function openRecentRootOrNotify(
 }
 
 /**
+ * 在新窗口打开最近的文件夹(「打开最近」⌘Enter / ⌘ 单击,Windows / Linux Ctrl;VSCode openRecent 的 forceNewWindow):同「在新窗口
+ * 打开文件夹…」走 window.create({ workspace })—— main 发现它已在某个窗口打开就聚焦那个窗口,不再开第二个。先探测可访问性(同
+ * openRecentRootOrNotify):目录已不存在 → onMissing(询问是否从列表删除),其它失败 → toast。不改本窗口(root / 焦点)。
+ */
+export async function openRecentRootInNewWindow(path: string, onMissing?: (p: string) => void): Promise<void> {
+  try {
+    const r = await coApi.fs.listDir(path, { withStats: false });
+    if (!r.ok) {
+      if (onMissing !== undefined && MISSING_CODES.has(r.code)) onMissing(path);
+      else notifyFailure(r);
+      return;
+    }
+    const cr = await coApi.window.create({ workspace: path });
+    if (!cr.ok) notifyFailure(cr, { mirror: false });
+  } catch (err) {
+    notifyThrownError(err);
+  }
+}
+
+/**
  * 已确认可打开的目录 → 切到它(最近打开 / 拖入文件夹共用):已在别的窗口打开 → 那个窗口已被聚焦,本窗口(含焦点)不变
  *(VSCode 同);期间有更新的选择 → 作废;否则 setRoot 并把焦点交给新 root 的文件树(focusTreeAfterRootSwitch)。
  */
