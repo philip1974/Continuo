@@ -42,8 +42,14 @@ describe('formatJson', () => {
     expect(formatJson('42\n', '  ')).toBe('42\n');
   });
 
-  it('语法错误 → null(缺逗号 / 尾逗号 / 未闭合 / 单引号)', () => {
-    for (const bad of ['{"a":1 "b":2}', '{"a":1,}', '{"a":[1', '{"a":"x}', "{'a':1}", '{"a":01x}']) {
+  it('尾逗号(jsonc / tsconfig.json,普通 .json 同样)→ 照常格式化,尾逗号原样保留(VSCode jsonc-parser format 只按 token 排版)', () => {
+    expect(formatJson('{"a":1,"b":[2,3,],}\n', '  ')).toBe('{\n  "a": 1,\n  "b": [\n    2,\n    3,\n  ],\n}\n');
+    expect(formatJson('{\n"a": 1, // tail\n}', '  ')).toBe('{\n  "a": 1, // tail\n}');
+    expect(formatJson('[1, /* c */ ]', '  ')).toBe('[\n  1, /* c */\n]');
+  });
+
+  it('语法错误 → null(缺逗号 / 未闭合 / 单引号 / 连续逗号 / 空容器里的逗号)', () => {
+    for (const bad of ['{"a":1 "b":2}', '{"a":[1', '{"a":"x}', "{'a':1}", '{"a":01x}', '{"a":1,,}', '[,]', '{,}', '{"a":,}']) {
       expect(formatJson(bad, '  '), bad).toBeNull();
     }
   });
