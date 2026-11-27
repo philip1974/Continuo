@@ -338,6 +338,10 @@
 - [`chrome-active-panel.spec.tsx`](./chrome-active-panel/chrome-active-panel.spec.tsx)
 - [`popout-window-titles.spec.tsx`](./chrome-active-panel/popout-window-titles.spec.tsx)
 
+## [chrome-select-none(界面外框的标题栏 / tab 栏不可选中文字)](./chrome-select-none/README.md)
+
+- [`chrome-select-none.spec.tsx`](./chrome-select-none/chrome-select-none.spec.tsx)
+
 ## [cli-args-folder (Issue #45)](./cli-args-folder/README.md)
 
 - [`cli-args-folder.spec.ts`](./cli-args-folder/cli-args-folder.spec.ts)
@@ -475,6 +479,11 @@
 ## [Dock 组不随面板内容滚动(标签栏固定,只滚内容)](./dock-group-scroll-containment/README.md)
 
 - [`group-scroll-containment.spec.ts`](./dock-group-scroll-containment/group-scroll-containment.spec.ts)
+
+## [dock-group-sizes(只用鼠标调整组大小:双击分隔条等分 / 双击 tab 展开 / 最大化组)](./dock-group-sizes/README.md)
+
+- [`group-sizes.spec.ts`](./dock-group-sizes/group-sizes.spec.ts)
+- [`tab-double-click.spec.tsx`](./dock-group-sizes/tab-double-click.spec.tsx)
 
 ## [dock-layout-json-safe-write — 布局写盘前清洗成 JSON-safe](./dock-layout-json-safe-write/README.md)
 
@@ -884,6 +893,10 @@
 
 - [`explorer-decorator.spec.ts`](./explorer-decorator/explorer-decorator.spec.ts)
 
+## [explorer-drag-copy(资源管理器树内 ⌥ 拖放复制)](./explorer-drag-copy/README.md)
+
+- [`drag-copy.spec.tsx`](./explorer-drag-copy/drag-copy.spec.tsx)
+
 ## [从资源管理器拖到编辑器 / 终端(explorer-drag-out)](./explorer-drag-out/README.md)
 
 - [`drag-data.spec.ts`](./explorer-drag-out/drag-data.spec.ts)
@@ -911,6 +924,10 @@
 - [`file-undo.spec.ts`](./explorer-file-undo/file-undo.spec.ts)
 - [`record-sources.spec.ts`](./explorer-file-undo/record-sources.spec.ts)
 - [`tree-keys.spec.ts`](./explorer-file-undo/tree-keys.spec.ts)
+
+## [explorer-find-in-folder(资源管理器「在文件夹中查找…」)](./explorer-find-in-folder/README.md)
+
+- [`find-in-folder.spec.tsx`](./explorer-find-in-folder/find-in-folder.spec.tsx)
 
 ## [explorer-git-decorations(资源管理器 git 状态装饰 + 默认显示点文件)](./explorer-git-decorations/README.md)
 
@@ -943,6 +960,12 @@
 ## [explorer-open-in-terminal — Explorer 右键「在终端中打开」](./explorer-open-in-terminal/README.md)
 
 - [`open-in-terminal.spec.tsx`](./explorer-open-in-terminal/open-in-terminal.spec.tsx)
+
+## [explorer-open-to-side(资源管理器「在侧边打开」)](./explorer-open-to-side/README.md)
+
+- [`folder-tree-wiring.spec.tsx`](./explorer-open-to-side/folder-tree-wiring.spec.tsx)
+- [`open-files-to-side.spec.ts`](./explorer-open-to-side/open-files-to-side.spec.ts)
+- [`open-to-side-entry.spec.tsx`](./explorer-open-to-side/open-to-side-entry.spec.tsx)
 
 ## [explorer-path-utils(Explorer 跨平台路径 helper)](./explorer-path-utils/README.md)
 

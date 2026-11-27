@@ -8,7 +8,7 @@ import {
   renameTarget,
   sameNameKey,
 } from './path-utils';
-import { joinPath, stripRootPrefix, isSameOrInsidePath, splitPathSegments } from '@/lib/path-cross';
+import { joinPath, stripRootPrefix, isSameOrInsidePath, pathEquals, splitPathSegments } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer, type Range, type Virtualizer } from '@tanstack/react-virtual';
 import { rangeWithPinnedIndex } from '@/lib/virtual-range';
@@ -63,6 +63,7 @@ import { cleanupAfterPathMoved, cleanupAfterPathsRemoved } from './path-gone-cle
 import { resolveDropTarget, type DropTargetEntry } from './drop-handlers';
 import {
   dropForeignFilesInto,
+  isCopyDragEvent,
   sourcesToMove,
   transferEntriesInto,
   type BatchTransferKind,
@@ -103,6 +104,8 @@ import { useExplorerClipboardStore } from './clipboard-store';
 import { t, useT } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { createUserTerminal } from '@/shell/dock/create-user-terminal';
+import { openDroppedFiles, openFilesToSide } from '@/shell/dock/explorer-editor-drop';
+import { findInFolders } from '@/panels/Search/find-in-folder';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { ERROR_CODES } from '@shared/error-codes';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
@@ -398,6 +401,8 @@ export function FolderTree({ root }: { root: string }) {
   // handleDropCapture 记录(库清 dnd 状态后再调 onDrop,回调参数里的 target 可能是窗口外的父目录 / 不渲染的 root)。
   const suppressDropScrollRef = useRef(false);
   const dropRowIdRef = useRef<string | null>(null);
+  // 本次树内 drop 是否复制(isCopyDragEvent):容器捕获阶段的 handleDropCapture 记下,早于行 / 容器的 drop 回调读取。
+  const dropCopyRef = useRef(false);
   const suppressNextDropScroll = useCallback(() => {
     suppressDropScrollRef.current = true;
     setTimeout(() => {
@@ -727,11 +732,12 @@ export function FolderTree({ root }: { root: string }) {
       srcs: readonly string[],
       destDir: string,
       logLabel: string,
-      failedKey: 'errors.folder.move_failed' | 'errors.folder.paste_failed',
-    ): Promise<void> => {
+      failedKey: 'errors.folder.move_failed' | 'errors.folder.paste_failed' | 'errors.folder.copy_failed',
+    ): Promise<readonly MovePair[]> => {
       // 实际成功的项入撤销栈(部分成功只记成功项,见 file-undo.ts)。
       const moved: MovePair[] = [];
       const copied: CreatedEntry[] = [];
+      const copiedPairs: MovePair[] = [];
       return transferEntriesInto(
         kind,
         srcs,
@@ -744,7 +750,10 @@ export function FolderTree({ root }: { root: string }) {
             onPathMoved(src, dest);
             moved.push({ from: src, to: dest });
           },
-          onCopied: (src, dest) => copied.push({ path: dest, redo: { type: 'copy', src } }),
+          onCopied: (src, dest) => {
+            copied.push({ path: dest, redo: { type: 'copy', src } });
+            copiedPairs.push({ from: src, to: dest });
+          },
           root,
           onItemFailed: (src, code, message) => {
             console.warn(`[explorer] ${logLabel} failed`, src, code, message);
@@ -762,6 +771,8 @@ export function FolderTree({ root }: { root: string }) {
           root,
           kind === 'move' ? { kind: 'move', pairs: moved } : { kind: 'create', entries: copied },
         );
+        // 实际成功的「源 → 目标」(复制拖放据此打开复制出的文件)
+        return kind === 'move' ? moved : copiedPairs;
       });
     },
     [makeUniqueDestPicker, onPathMoved, refreshParent, root],
@@ -773,7 +784,25 @@ export function FolderTree({ root }: { root: string }) {
     [root],
   );
 
-  // 树内拖动移动(拖到 row / 空白 root)的入口:VSCode explorer.confirmDragAndDrop 开着就先确认(⌥ 拖复制本树不支持)。
+  // 树内拖放复制(mac ⌥ / 其它 Ctrl 松手,VSCode doHandleExplorerDropOnCopy):不确认(VSCode confirmDragAndDrop 只管移动),
+  // 同名自动改名(「x copy.ts」,拖到原父目录即生成副本),完成后以常驻方式打开复制出的文件(第一个成为活动编辑器)。
+  // BDD: src/__tests__/explorer-drag-copy/
+  const copyDraggedItems = useCallback(
+    (items: readonly ItemInstance<FileEntry>[], destDir: string, logLabel: string): void => {
+      const dirs = new Set<string>();
+      for (const it of items) if (it.isFolder()) dirs.add(it.getId());
+      void runBatchTransfer('copy', selectDraggedItemPaths(items), destDir, logLabel, 'errors.folder.copy_failed').then(
+        (pairs) => {
+          const files: string[] = [];
+          for (const { from, to } of pairs) if (!dirs.has(from)) files.push(to);
+          if (files.length > 0) void openDroppedFiles(files, undefined);
+        },
+      );
+    },
+    [runBatchTransfer],
+  );
+
+  // 树内拖动移动(拖到 row / 空白 root)的入口:VSCode explorer.confirmDragAndDrop 开着就先确认(按住 ⌥ / Ctrl 是复制,见上)。
   // 全是 no-op(都已在目标目录)不弹框;确认后原样交给 runBatchTransfer(同父跳过 / 嵌套等仍在漏斗内判定)。
   const requestDragMove = useCallback(
     (srcs: string[], destDir: string, logLabel: string): void => {
@@ -876,6 +905,11 @@ export function FolderTree({ root }: { root: string }) {
         // 内部多选拖动 → 批量 fs.move,语义同 cut→paste(但不经剪贴板)
         onDropItems: (items, destDir) => {
           suppressNextDropScroll();
+          // 按住 ⌥(mac)/ Ctrl 松手 → 复制(松手时的按键在 handleDropCapture 记下)
+          if (dropCopyRef.current) {
+            copyDraggedItems(items, destDir, 'drop copy');
+            return;
+          }
           // 拖到原父目录 → no-op(canDrop 已挡掉拖到自身;同父跳过在 sourcesToMove / transferEntriesInto 内)
           requestDragMove(selectDraggedItemPaths(items), destDir, 'drop move');
         },
@@ -897,6 +931,7 @@ export function FolderTree({ root }: { root: string }) {
       refreshParent,
       root,
       requestDragMove,
+      copyDraggedItems,
       confirmOverwrite,
       recordDropped,
       setExpandedItems,
@@ -1130,8 +1165,13 @@ export function FolderTree({ root }: { root: string }) {
   );
   // 文件行单击 / 双击 / 键盘 Enter:双击与 Enter 打开成功后焦点进编辑器(VSCode;单击预览焦点留在树里)。
   // 单击以预览方式打开,双击 / Enter 常驻(已是预览 tab 的转常驻;BDD: src/__tests__/editor-preview-tab/)。
+  // ⌥ 单击 / ⌥ 双击:同样的预览 / 常驻与焦点规则,打开到侧边组(VSCode sideBySide;单击不激活侧边组,见 openFilesToSide)。
   const handleRowFileOpen = useCallback(
-    (path: string, focusEditor: boolean) => {
+    (path: string, focusEditor: boolean, toSide = false) => {
+      if (toSide) {
+        void openFilesToSide([path], { preview: !focusEditor, preserveFocus: !focusEditor });
+        return;
+      }
       void handleFileOpen(path, { preview: !focusEditor }).then((ok) => {
         if (ok && focusEditor) focusActiveEditor();
       });
@@ -1209,6 +1249,19 @@ export function FolderTree({ root }: { root: string }) {
     if (next) focusAndSelect(t, next);
   }, []);
 
+  // 路径是不是文件夹(按树里已加载的项;根 = 文件夹;未加载的按文件)。
+  const isTreeFolder = useCallback(
+    (path: string): boolean => {
+      if (pathEquals(path, root)) return true;
+      try {
+        return treeRef.current?.getItemInstance(path)?.isFolder() ?? false;
+      } catch {
+        return false;
+      }
+    },
+    [root],
+  );
+
   const contextActions = useMemo<ContextMenuActions>(
     () => ({
       onRename: (path) => treeRef.current?.getItemInstance(path)?.startRenaming(),
@@ -1255,6 +1308,18 @@ export function FolderTree({ root }: { root: string }) {
       onCopy: (paths: string[]) => {
         useExplorerClipboardStore.getState().set('copy', paths);
       },
+      // 在侧边打开(右键 / ⌃Enter):文件夹不打开(VSCode openToSide 只取非目录);常驻、侧边组获焦。
+      onOpenToSide: (paths: string[]) => {
+        const files = paths.filter((p) => !isTreeFolder(p));
+        if (files.length > 0) void openFilesToSide(files);
+      },
+      // 在文件夹中查找(右键 / ⇧⌥F):文件取所在目录(VSCode searchWithFolderCommand)。
+      onFindInFolder: (paths: string[]) => {
+        findInFolders(
+          root,
+          paths.map((p) => (isTreeFolder(p) ? p : dirname(p))),
+        );
+      },
       onPaste: (destDir: string) => {
         const { kind, paths } = useExplorerClipboardStore.getState();
         if (!kind || paths.length === 0) return;
@@ -1269,7 +1334,7 @@ export function FolderTree({ root }: { root: string }) {
         );
       },
     }),
-    [focusNeighborOf, root, runBatchTransfer, runTrash, startCreating, tt],
+    [focusNeighborOf, isTreeFolder, root, runBatchTransfer, runTrash, startCreating, tt],
   );
 
   // 撤销 / 重做文件操作(键盘 mod+Z / mod+shift+Z 与命令 explorer.undo / explorer.redo 共用,见 file-undo.ts)。
@@ -1772,8 +1837,15 @@ export function FolderTree({ root }: { root: string }) {
     const dnd = tree.getState().dnd;
     if (dnd?.draggedItems && dnd.draggedItems.length > 0) {
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = isCopyDragEvent(e, platform) ? 'copy' : 'move';
     }
+  };
+  // 树内拖动经过行时光标显示复制 / 移动(VSCode ListDragOverEffectType.Copy / Move):行的 dragover 由 headless-tree 处理且
+  // 不冒泡到容器,在捕获阶段先写 dropEffect(库只决定是否 preventDefault,不覆盖它)。
+  const handleDragOverCapture = (e: React.DragEvent) => {
+    const dnd = tree.getState().dnd;
+    if (!dnd?.draggedItems || dnd.draggedItems.length === 0) return;
+    e.dataTransfer.dropEffect = isCopyDragEvent(e, platform) ? 'copy' : 'move';
   };
   const handleDragLeave = (e: React.DragEvent) => {
     if (!hasFiles(e.dataTransfer)) return;
@@ -1821,6 +1893,7 @@ export function FolderTree({ root }: { root: string }) {
   };
   const handleDropCapture = (e: React.DragEvent) => {
     dropRowIdRef.current = findRenderedRowId(e.target);
+    dropCopyRef.current = isCopyDragEvent(e, platform);
     if (!hasFiles(e.dataTransfer)) return;
     foreignDropTargetRef.current = resolveDropTarget(hoverTarget, root);
     dragDepthRef.current = 0;
@@ -1841,6 +1914,11 @@ export function FolderTree({ root }: { root: string }) {
       const dnd = tree.getState().dnd;
       if (!dnd?.draggedItems || dnd.draggedItems.length === 0) return;
       e.preventDefault();
+      // 按住 ⌥ / Ctrl → 复制到根(已在根下的也复制,生成副本;VSCode 只在移动时拒绝「全在根下」)
+      if (isCopyDragEvent(e, platform)) {
+        copyDraggedItems(dnd.draggedItems, root, 'root drop copy');
+        return;
+      }
       // 已经在 root 下的不动(VSCode 同款)。selectRootDropMoveablePaths 只用于「全在 root 下」早退;
       // 实际交给漏斗的是全部拖动路径 —— 漏斗先剔后代再跳过同父项。若交预筛结果,
       // 多选 root 下的 A 与 A/B 时 A 被预先剔掉,只剩 A/B 被移到 root,层级被拆散。
@@ -1860,6 +1938,7 @@ export function FolderTree({ root }: { root: string }) {
       className="relative flex h-full w-full flex-col"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
+      onDragOverCapture={handleDragOverCapture}
       onDragLeave={handleDragLeave}
       onDropCapture={handleDropCapture}
       onDrop={handleDrop}

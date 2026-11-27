@@ -21,7 +21,16 @@ import type { Platform } from '@/plugins/command-palette/format-hotkey';
 import { getContextActionTargets, type ContextMenuActions } from './ContextMenu';
 import { dirname } from './path-utils';
 
-export type TreeKeyCommand = 'open' | 'trash' | 'copy' | 'cut' | 'paste' | 'undo' | 'redo';
+export type TreeKeyCommand =
+  | 'open'
+  | 'trash'
+  | 'copy'
+  | 'cut'
+  | 'paste'
+  | 'undo'
+  | 'redo'
+  | 'openToSide'
+  | 'findInFolder';
 
 /** 剪切 / 复制 / 粘贴 / 重命名的树内键位(右键菜单右侧显示同一来源;树内键不经快捷键设置,不可改绑)。 */
 export const TREE_KEY_HOTKEYS = { cut: 'mod+x', copy: 'mod+c', paste: 'mod+v', rename: 'f2' } as const;
@@ -29,6 +38,11 @@ export const TREE_KEY_HOTKEYS = { cut: 'mod+x', copy: 'mod+c', paste: 'mod+v', r
 /** 撤销 / 重做文件操作(VSCode explorer 同款):mod+Z 撤销;重做 mod+shift+Z,非 mac 另认 Ctrl+Y。 */
 export const TREE_UNDO_HOTKEY = 'mod+z';
 export const TREE_REDO_HOTKEY = 'mod+shift+z';
+
+/** 在侧边打开(VSCode explorer.openToSide:mac ⌃Enter(WinCtrl),其它 Ctrl+Enter —— 两者都是物理 Ctrl)。 */
+export const OPEN_TO_SIDE_HOTKEY = 'ctrl+enter';
+/** 在文件夹中查找(VSCode filesExplorer.findInFolder:⇧⌥F,资源管理器聚焦且焦点项是文件夹)。 */
+export const FIND_IN_FOLDER_HOTKEY = 'shift+alt+f';
 
 /** 移到废纸篓的主键位:mac ⌘⌫(另认 Delete),其它 Delete。 */
 export function trashHotkey(platform: Platform): string {
@@ -41,6 +55,8 @@ export function trashHotkey(platform: Platform): string {
  */
 export function matchTreeKeyCommand(e: KeyboardEvent, platform: Platform): TreeKeyCommand | null {
   if (matchesHotkey('enter', e, platform)) return 'open';
+  if (matchesHotkey(OPEN_TO_SIDE_HOTKEY, e, platform)) return 'openToSide';
+  if (matchesHotkey(FIND_IN_FOLDER_HOTKEY, e, platform)) return 'findInFolder';
   if (matchesHotkey('delete', e, platform)) return 'trash';
   if (matchesHotkey(trashHotkey(platform), e, platform)) return 'trash';
   if (matchesHotkey(TREE_KEY_HOTKEYS.copy, e, platform)) return 'copy';
@@ -95,7 +111,7 @@ export interface TreeKeyContext {
   readonly tree: TreeInstance<FileEntry>;
   /** 实际渲染的行(隐藏文件过滤后);键入跳转只在其中找。 */
   readonly items: readonly ItemInstance<FileEntry>[];
-  readonly actions: Pick<ContextMenuActions, 'onTrash' | 'onCopy' | 'onCut' | 'onPaste'>;
+  readonly actions: Pick<ContextMenuActions, 'onTrash' | 'onCopy' | 'onCut' | 'onPaste' | 'onOpenToSide' | 'onFindInFolder'>;
   /** 打开文件(与单击同一入口)。 */
   readonly openFile: (path: string) => void;
   readonly rootPath: string;
@@ -376,6 +392,18 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
     const selected = new Set<string>();
     for (const id of tree.getState().selectedItems ?? []) if (rendered.has(id)) selected.add(id);
     const targets = getContextActionTargets(focused.getItemData(), selected);
+    if (command === 'openToSide') {
+      // VSCode:资源管理器聚焦即可(焦点项是文件夹也认,目标里的文件夹不打开;全是文件夹 → 无动作)
+      if (!ctx.actions.onOpenToSide) return false;
+      ctx.actions.onOpenToSide(targets);
+      return consume();
+    }
+    if (command === 'findInFolder') {
+      // VSCode when: ExplorerFolderContext —— 焦点项是文件夹才响应,否则按键照常交给别处
+      if (!ctx.actions.onFindInFolder || !focused.isFolder()) return false;
+      ctx.actions.onFindInFolder(targets);
+      return consume();
+    }
     if (command === 'copy') ctx.actions.onCopy(targets);
     else if (command === 'cut') ctx.actions.onCut(targets);
     else {

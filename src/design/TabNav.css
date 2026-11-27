@@ -10,6 +10,8 @@
   overflow: hidden;
   border-bottom: 1px solid var(--md-outline-variant);
   font-family: var(--wm-font-sans);
+  /* tab 栏是界面外框:右键 / 拖选不选中标签文字(VSCode tab 不可选;dock tab 标题同为 select-none) */
+  user-select: none;
 }
 
 .wm-tab-nav-item {

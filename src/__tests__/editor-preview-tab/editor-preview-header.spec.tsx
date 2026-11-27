@@ -49,7 +49,7 @@ describe('预览 tab 的显示', () => {
     expect(screen.queryByRole('tab', { name: PREVIEW_B })).toBeNull();
   });
 
-  it('双击预览 tab → 转常驻,斜体消失;双击常驻 tab 无动作', () => {
+  it('双击预览 tab → 转常驻,斜体消失;双击常驻 tab 不改预览状态(改为切换组大小,见 dock-group-sizes)', () => {
     render(<EditorHeader onCloseRequest={vi.fn()} />);
     const before = useEditorStore.getState().previewTabs;
     fireEvent.doubleClick(tabEl('a.ts'));

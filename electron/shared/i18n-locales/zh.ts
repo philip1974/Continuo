@@ -662,6 +662,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.ctx.copy_relative_path': '复制相对路径',
   'panels.explorer.ctx.reveal_in_finder': '在 Finder 中显示',
   'panels.explorer.ctx.open_in_terminal': '在集成终端中打开',
+  'panels.explorer.ctx.open_to_side': '在侧边打开',
+  'panels.explorer.ctx.find_in_folder': '在文件夹中查找…',
   'panels.explorer.ctx.trash': '移到废纸篓',
   'panels.explorer.ctx.items_count': '{count} 项',
 
@@ -887,6 +889,7 @@ export const zh: Record<TranslationKey, string> = {
   'errors.dock.layout_save_failed': '保存面板布局失败',
   'errors.folder.move_failed': '移动失败：{src}: {message}',
   'errors.folder.paste_failed': '粘贴失败：{src}: {message}',
+  'errors.folder.copy_failed': '复制失败：{src}: {message}',
   'errors.folder.trash_failed': '无法将「{name}」移到废纸篓：{message}',
   'errors.folder.delete_failed': '永久删除「{name}」失败：{message}',
   'errors.folder.skipped_dirs': '跳过 {count} 个文件夹（暂不支持目录拖入）',
@@ -1027,6 +1030,8 @@ export const zh: Record<TranslationKey, string> = {
   'shell.tab.ctx.close_all': '全部关闭',
   'shell.tab.ctx.split_right': '向右拆分',
   'shell.tab.ctx.split_down': '向下拆分',
+  'shell.tab.ctx.maximize_group': '最大化组',
+  'shell.tab.ctx.unmaximize_group': '取消最大化组',
   'shell.iconbar.updates_tooltip': '{count} 个插件可更新',
 
   // marketplace.*

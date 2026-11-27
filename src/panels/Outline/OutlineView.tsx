@@ -80,7 +80,8 @@ function OutlineHeader({ bodyId }: { readonly bodyId: string }) {
   const collapseAllLabel = t('panels.outline.collapse_all');
   const moreLabel = t('panels.outline.more_actions');
   return (
-    <div className="group flex h-7 shrink-0 items-center gap-0.5 bg-panel-soft/50 pr-2">
+    // select-none:标题栏是界面外框,右键不选中文字(同 ExplorerHeader;BDD: src/__tests__/chrome-select-none/)
+    <div className="group flex h-7 shrink-0 items-center gap-0.5 bg-panel-soft/50 pr-2 select-none">
       <Button
         variant="ghost"
         size="sm"

@@ -10,7 +10,7 @@ tab 标题斜体;以预览方式再打开别的文件时**原位替换**它,不�
   已打开的编辑器以 `pinned: true` 再打开 → `pin`;以非 pinned 再打开不会取消常驻。
 - `editorGroupView.doOpenEditor`:`pinned = sticky || !enablePreview || editor.isDirty() || options.pinned ?? (有 index)`。
 - 预览编辑器变脏 → `onDidChangeEditorDirty` 里 `pinEditor`(「Always show dirty editors pinned」)。
-- `multiEditorTabsControl`:非 pinned 的 tab 标题 `italic`;双击预览 tab → `pinEditor`(双击常驻 tab 是切换组大小,Continuo 无此功能)。
+- `multiEditorTabsControl`:非 pinned 的 tab 标题 `italic`;双击预览 tab → `pinEditor`(双击常驻 tab 是切换组大小,见 `src/__tests__/dock-group-sizes/`)。
 - 跨组移动 / 复制(拆分)的编辑器一律 `pinned: true`;组内移动到别的位置也会 pin。
 - `workbench.action.keepEditor`(默认键 ⌘K Enter)把活动编辑器转常驻;关闭 `enablePreview` 时现有预览编辑器全部 pin。
 - 资源管理器 / 搜索结果:列表单击 → 非 pinned(预览);双击 / Enter → pinned。`enablePreviewFromQuickOpen`、

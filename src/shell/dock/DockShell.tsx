@@ -24,6 +24,7 @@ import { useDockLocaleSync } from './useDockLocaleSync';
 import { wrapPanelClose, addPanelKeepingActive } from './wrap-panel-close';
 import { trackEditorGroups } from './editor-groups-dock-sync';
 import { trackExplorerEditorDrop } from './explorer-editor-drop';
+import { trackSashReset } from './group-sizes';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
 import { handleTerminalPanelRemoved, removeTerminalSessionWithFeedback } from './DockReconciler';
 import { TerminalKillConfirmHost, cancelTerminalCloseGuard, terminalCloseGuard } from './terminal-close-confirm';
@@ -382,6 +383,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
         trackEditorGroups(event.api),
         // 资源管理器的文件拖到编辑器组 → 在该组常驻打开 / 按落点拆分(VSCode;BDD: explorer-drag-out)。
         trackExplorerEditorDrop(event.api),
+        // 双击组之间的分隔条 → 该排等分(VSCode sash 双击;BDD: dock-group-sizes)。
+        trackSashReset(event.api),
       );
       event.api.panels.forEach(wrapPanelCloseGuarded);
     },

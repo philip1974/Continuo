@@ -15,6 +15,7 @@ import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { requestTerminalRename } from '@/panels/Terminal/terminal-rename-request';
 import { sessionIdFromPanel } from '@/shell/dock/terminal-panel-id';
+import { groupSizeMenuEntries, toggleExpandGroup } from '@/shell/dock/group-sizes';
 import {
   panelTitleLayoutId,
   tabIndicatorLayoutId,
@@ -209,6 +210,19 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
     [api],
   );
 
+  // 双击 tab 切换组大小(VSCode workbench.editor.doubleClickTabToToggleEditorGroupSizes 默认 expand:展开该组 / 再次全部等分;
+  // dock 面板没有预览态,双击总是切换大小)。双击关闭 / 退出最大化按钮不算。BDD: src/__tests__/dock-group-sizes/
+  const handleDoubleClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      if ((event.target as Element).closest?.('[role="button"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleExpandGroup(containerApi, api.group);
+    },
+    [api, containerApi],
+  );
+
   // a11y(A119/A120):tab 根键盘模型。Enter/Space 激活当前 tab;A120 补完整 WAI-ARIA tablist
   // 方向键模型 —— ArrowLeft/Right 在同组 tab 间循环移动并激活,Home/End 到首尾,且焦点跟随到
   // 新 active tab(经 data-panel-id 定位)。否则键盘用户 Tab 只能落到 active tab,无法切其它。
@@ -320,8 +334,9 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       { label: t('shell.tab.ctx.close_right'), onSelect: close('right'), disabled: index >= panels.length - 1, opensDialog: true },
       'separator',
       { label: t('shell.tab.ctx.close_all'), onSelect: close('all'), opensDialog: true },
+      ...groupSizeMenuEntries(containerApi, api.group, t),
     ];
-  }, [api, t]);
+  }, [api, containerApi, t]);
 
   return (
     <TabContextMenu entries={menuEntries}>
@@ -342,6 +357,7 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
     >
       {/* 落点 ③:active tab 标题挂 layoutId,跨 group 拖动后让标题"飞"过去。
           只对 active 加,避免 inactive tab 的 portal 测量噪声(R2)。 */}

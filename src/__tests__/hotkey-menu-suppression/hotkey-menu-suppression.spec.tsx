@@ -181,7 +181,11 @@ describe('编辑器面板:tab 右键菜单里的按键(经 React 树冒泡到面
     mocks.readFile.mockResolvedValue({ ok: true, data: 'orig' });
     mocks.writeFile.mockResolvedValue({ ok: true, data: undefined });
     useEditorStore.setState({ tabs: [tab(A)], activeTabId: A, mode: 'source' });
-    setDockApi({ activePanel: { id: 'editor', view: { contentComponent: 'editor' }, api: { close: vi.fn() } } } as unknown as DockviewApi);
+    setDockApi({
+      activePanel: { id: 'editor', view: { contentComponent: 'editor' }, api: { close: vi.fn() } },
+      // tab 右键菜单按编辑器组找所在 dock 组(「最大化组」项,dock-group-sizes);假 dock 里没有 → 不列该项
+      getPanel: () => undefined,
+    } as unknown as DockviewApi);
     const reg = new CommandRegistry(detectPlatform());
     for (const spec of editorCommandSpecs(detectPlatform())) reg.register(spec);
     function Hotkeys() {

@@ -18,7 +18,10 @@ import { useEditorStore } from '@/stores/editor.store';
 import { openFileByPath } from '@/panels/Editor/editor-file-actions';
 import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 import { findEditorFileTabByPath } from '@/panels/Editor/editor-tab-lookup';
-import { splitEditor, type SplitDirection } from '@/panels/Editor/editor-groups-actions';
+import { commandEditorGroupId, splitEditor, type SplitDirection } from '@/panels/Editor/editor-groups-actions';
+import { getDockApi } from './dock-api-ref';
+import { rightNeighborGroup } from './group-sizes';
+import { activateDockPanel } from './wrap-panel-close';
 import { requestEditorFocus } from '@/panels/Editor/editor-focus-registry';
 import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { basenamePreserveTrailing } from '@/panels/Explorer/path-utils';
@@ -67,34 +70,86 @@ export function splitDirectionOfDrop(position: Position): SplitDirection | undef
   }
 }
 
+export interface OpenInGroupOptions {
+  /** 以预览方式打开(缺省 false = 常驻)。 */
+  readonly preview?: boolean;
+  /**
+   * 不动焦点、活动编辑器组不变(VSCode preserveFocus 打开到 SIDE_GROUP:该组不激活)。缺省 false:目标组成为活动组并获焦。
+   */
+  readonly preserveFocus?: boolean;
+}
+
 /**
- * 在编辑器组 groupId(给了 direction → 先在它那一侧拆出新组)以常驻方式依次打开 paths;第一个打开成功的成为该组活动编辑器并获焦。
+ * 在编辑器组 groupId(给了 direction → 先在它那一侧拆出新组)依次打开 paths(缺省常驻);第一个打开成功的成为该组活动编辑器并获焦。
  * groupId 缺省 = 活动编辑器组(从 Finder 拖到编辑区以外,见 os-file-drop)。打不开的照常提示(与资源管理器单击打开同一套反馈)。
+ * preserveFocus:打开后把活动编辑器组还给打开前的组,不聚焦编辑器。
  */
 export async function openDroppedFiles(
   paths: readonly string[],
   groupId: string | undefined,
   direction?: SplitDirection,
+  opts: OpenInGroupOptions = {},
 ): Promise<void> {
+  const preview = opts.preview ?? false;
+  const activeBefore = useEditorStore.getState().activeGroupId;
   let target = groupId;
-  if (groupId !== undefined && direction !== undefined && splitEditor(direction, { groupId, tabId: null })) {
+  if (
+    groupId !== undefined &&
+    direction !== undefined &&
+    splitEditor(direction, opts.preserveFocus === true ? { groupId, tabId: null, focus: false } : { groupId, tabId: null })
+  ) {
     target = useEditorStore.getState().activeGroupId;
   }
   const inGroup = target === undefined ? {} : { groupId: target };
   let first: string | null = null;
   for (const path of paths) {
     const ok = await openFileOrNotify(
-      () => openFileByPath(path, editorFileDeps, { preview: false, ...inGroup }),
+      () => openFileByPath(path, editorFileDeps, { preview, ...inGroup }),
       basenamePreserveTrailing(path),
       'editor-drop',
-      (encoding) => openFileByPath(path, editorFileDeps, { preview: false, ...inGroup, encoding }),
+      (encoding) => openFileByPath(path, editorFileDeps, { preview, ...inGroup, encoding }),
     );
     if (ok && first === null) first = findEditorFileTabByPath(useEditorStore.getState().tabs, path)?.id ?? null;
   }
   if (first === null) return;
   const group = target ?? useEditorStore.getState().activeGroupId;
   useEditorStore.getState().switchTab(first, { groupId: group });
+  if (opts.preserveFocus === true) {
+    restoreActiveEditorGroup(activeBefore);
+    return;
+  }
   requestEditorFocus(first, group);
+}
+
+/** 活动编辑器组还给 groupId(store 与 dock 活动面板一起;不移动 DOM 焦点)。 */
+function restoreActiveEditorGroup(groupId: string): void {
+  const store = useEditorStore.getState();
+  if (store.activeGroupId === groupId) return;
+  const panel = getDockApi()?.getPanel(groupId);
+  if (panel) activateDockPanel(panel);
+  store.setActiveGroup(groupId);
+}
+
+/**
+ * 资源管理器「在侧边打开」(VSCode explorer.openToSide / ⌥ 单击 → SIDE_GROUP):打开到源组(触发窗口的活动编辑器组)右侧紧挨着的
+ * 编辑器组,右边没有编辑器组就向右拆分出新组。文件夹由调用方滤掉。
+ * - 右键菜单 / ⌃Enter:常驻打开,侧边组成为活动组并获焦(多选时依次打开,第一个成为活动编辑器);
+ * - ⌥ 单击:与单击一样以预览方式、焦点留在资源管理器,且活动组不变(VSCode 对 SIDE_GROUP + preserveFocus 不激活该组 ——
+ *   反复 ⌥ 单击都落在同一个侧边组,不会每次再拆一个);⌥ 双击常驻并聚焦。
+ * dock 未就绪 / 没有源组 → 按普通方式在活动组打开。BDD: src/__tests__/explorer-open-to-side/
+ */
+export async function openFilesToSide(paths: readonly string[], opts: OpenInGroupOptions = {}): Promise<void> {
+  if (paths.length === 0) return;
+  const api = getDockApi();
+  const source = commandEditorGroupId();
+  const sourcePanel = source === undefined ? undefined : api?.getPanel(source);
+  if (!api || source === undefined || !sourcePanel) {
+    await openDroppedFiles(paths, undefined, undefined, opts);
+    return;
+  }
+  const side = editorGroupIdOfDockGroup(rightNeighborGroup(api, sourcePanel.group));
+  if (side !== undefined) await openDroppedFiles(paths, side, undefined, opts);
+  else await openDroppedFiles(paths, source, 'right', opts);
 }
 
 export type OpenDroppedFiles = (paths: readonly string[], groupId: string, direction?: SplitDirection) => unknown;

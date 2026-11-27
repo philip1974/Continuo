@@ -95,7 +95,8 @@ export function ExplorerHeader({
 
 
   return (
-    <div className="group flex h-9 shrink-0 items-center gap-0.5 border-b border-line bg-panel-soft/50 px-3 text-xs">
+    // select-none:标题栏是界面外框,右键 / 拖选不选中文字(VSCode 工作台外框不可选;BDD: src/__tests__/chrome-select-none/)
+    <div className="group flex h-9 shrink-0 items-center gap-0.5 border-b border-line bg-panel-soft/50 px-3 text-xs select-none">
       <span
         className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-fg"
         title={root}

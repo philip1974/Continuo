@@ -21,6 +21,7 @@
 // BDD: src/__tests__/explorer-batch-transfer/
 
 import type { FsApi } from '@/lib/fs/api';
+import type { Platform } from '@/plugins/command-palette/format-hotkey';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
@@ -85,6 +86,14 @@ export interface BatchTransferDeps {
  */
 export function sourcesToMove(srcs: readonly string[], destDir: string): string[] {
   return outermostPaths(srcs).filter((src) => !pathEquals(dirname(src), destDir));
+}
+
+/**
+ * 树内拖放是复制还是移动(VSCode explorerViewer isCopy):mac 按住 ⌥、其它平台按住 Ctrl 松手 = 复制(不弹移动确认、同名自动
+ * 改名「x copy.ts」、可拖到原父目录生成副本);否则移动。拖动经过时光标同此判定(dropEffect copy / move)。
+ */
+export function isCopyDragEvent(e: { readonly altKey: boolean; readonly ctrlKey: boolean }, platform: Platform): boolean {
+  return platform === 'mac' ? e.altKey : e.ctrlKey;
 }
 
 export async function transferEntriesInto(

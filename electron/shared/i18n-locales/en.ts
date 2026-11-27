@@ -687,6 +687,8 @@ export const en = {
   'panels.explorer.ctx.copy_relative_path': 'Copy Relative Path',
   'panels.explorer.ctx.reveal_in_finder': 'Reveal in Finder',
   'panels.explorer.ctx.open_in_terminal': 'Open in Integrated Terminal',
+  'panels.explorer.ctx.open_to_side': 'Open to the Side',
+  'panels.explorer.ctx.find_in_folder': 'Find in Folder…',
   'panels.explorer.ctx.trash': 'Move to Trash',
   'panels.explorer.ctx.items_count': '{count} items',
 
@@ -922,6 +924,7 @@ export const en = {
   'errors.dock.layout_save_failed': 'Failed to save panel layout',
   'errors.folder.move_failed': 'Move failed: {src}: {message}',
   'errors.folder.paste_failed': 'Paste failed: {src}: {message}',
+  'errors.folder.copy_failed': 'Copy failed: {src}: {message}',
   'errors.folder.trash_failed': 'Could not move “{name}” to the Trash: {message}',
   'errors.folder.delete_failed': 'Failed to permanently delete “{name}”: {message}',
   'errors.folder.skipped_dirs': 'Skipped {count} folder(s) (directories not supported)',
@@ -1067,6 +1070,8 @@ export const en = {
   'shell.tab.ctx.close_all': 'Close All',
   'shell.tab.ctx.split_right': 'Split Right',
   'shell.tab.ctx.split_down': 'Split Down',
+  'shell.tab.ctx.maximize_group': 'Maximize Group',
+  'shell.tab.ctx.unmaximize_group': 'Unmaximize Group',
   'shell.iconbar.updates_tooltip': '{count} plugin(s) updatable',
 
   // marketplace.* (topic-21)

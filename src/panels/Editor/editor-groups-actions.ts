@@ -36,6 +36,8 @@ export interface SplitEditorOptions {
   readonly groupId?: string;
   /** 拆分哪个文件(缺省源组的活动文件);null = 新建空组(⌘N 聚焦尚不存在的下一个组)。 */
   readonly tabId?: string | null;
+  /** 新组获焦(缺省 true);false = 只建组不动焦点(资源管理器 ⌥ 单击在侧边打开,VSCode preserveFocus)。 */
+  readonly focus?: boolean;
 }
 
 /**
@@ -70,6 +72,7 @@ export function splitEditor(direction: SplitDirection, opts: SplitEditorOptions 
       api.addPanel({ ...options, position: { referencePanel: sourcePanel, direction: 'within' } });
     }
   }
+  if (opts.focus === false) return true;
   if (tabId !== null) requestEditorFocus(tabId, newId);
   else {
     const panel = api.getPanel(newId);

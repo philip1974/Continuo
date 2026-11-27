@@ -12,7 +12,7 @@
 4. 取消 / Esc → 不移动。无论确认或取消,框关闭后焦点还给树(`tree.updateDomFocus`,被拖项仍是焦点 / 选中项)。
 5. 设置关掉 → 拖动立即移动,无框。
 6. 全部被拖项都已在目标目录(拖到原父目录,no-op)→ 不弹框、不移动。
-7. ⌥ 拖动复制:本树不支持(只有移动);VSCode 对复制本就不确认。
+7. 按住 ⌥(mac)/ Ctrl 拖放 = 复制,不确认(VSCode `confirmDragAndDrop = !isCopy && 设置`),见 `src/__tests__/explorer-drag-copy/`。
 
 ### 外部(Finder)拖入遇同名(VSCode `getMultipleFilesOverwriteConfirm`)
 

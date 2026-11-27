@@ -666,6 +666,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.ctx.copy_relative_path': '상대 경로 복사',
   'panels.explorer.ctx.reveal_in_finder': 'Finder에서 보기',
   'panels.explorer.ctx.open_in_terminal': '통합 터미널에서 열기',
+  'panels.explorer.ctx.open_to_side': '측면에서 열기',
+  'panels.explorer.ctx.find_in_folder': '폴더에서 찾기…',
   'panels.explorer.ctx.trash': '휴지통으로 이동',
   'panels.explorer.ctx.items_count': '{count}개 항목',
 
@@ -891,6 +893,7 @@ export const ko: Record<TranslationKey, string> = {
   'errors.dock.layout_save_failed': '패널 레이아웃 저장 실패',
   'errors.folder.move_failed': '이동 실패: {src}: {message}',
   'errors.folder.paste_failed': '붙여넣기 실패: {src}: {message}',
+  'errors.folder.copy_failed': '복사 실패: {src}: {message}',
   'errors.folder.trash_failed': "'{name}'을(를) 휴지통으로 이동할 수 없습니다: {message}",
   'errors.folder.delete_failed': "'{name}'을(를) 영구적으로 삭제하지 못했습니다: {message}",
   'errors.folder.skipped_dirs': '{count}개의 폴더를 건너뛰었습니다 (디렉터리 드롭은 아직 지원되지 않음)',
@@ -1031,6 +1034,8 @@ export const ko: Record<TranslationKey, string> = {
   'shell.tab.ctx.close_all': '모두 닫기',
   'shell.tab.ctx.split_right': '오른쪽으로 분할',
   'shell.tab.ctx.split_down': '아래쪽으로 분할',
+  'shell.tab.ctx.maximize_group': '그룹 최대화',
+  'shell.tab.ctx.unmaximize_group': '그룹 최대화 해제',
   'shell.iconbar.updates_tooltip': '업데이트 가능한 플러그인 {count}개',
 
   // marketplace.*

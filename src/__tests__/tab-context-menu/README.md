@@ -58,7 +58,7 @@
 ## 键盘
 
 tab 聚焦时 **Shift+F10 / 菜单键** 在 tab 左下角打开菜单(与终端右键菜单同一判定 `src/lib/context-menu-key.ts`);菜单内
-方向键 / Enter / Esc 由 Radix 负责。双击 tab / 双击 tab 栏空白不做(前几轮已评估)。
+方向键 / Enter / Esc 由 Radix 负责。双击 tab 切换组大小、菜单末尾「最大化组」见 `src/__tests__/dock-group-sizes/`;双击 tab 栏空白不做(前几轮已评估)。
 
 ## 规范
 

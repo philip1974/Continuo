@@ -245,7 +245,8 @@ function globSource(glob: string): string {
       if (end < 0) {
         out += '\\[';
       } else {
-        let body = glob.slice(i + 1, end).replace(/\\/g, '\\\\');
+        // 紧跟 `[` 的 `]` 是字面字符(`[]]` 匹配 `]`,VSCode escapeGlobPattern 即这样转义);在正则字符类里须写成 `\]`。
+        let body = glob.slice(i + 1, end).replace(/\\/g, '\\\\').replace(/]/g, '\\]');
         if (body.startsWith('!')) body = `^${body.slice(1)}`;
         out += `[${body}]`;
         i = end;

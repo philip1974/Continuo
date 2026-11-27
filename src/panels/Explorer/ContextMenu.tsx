@@ -18,7 +18,7 @@ import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { isSortedBy } from '@/lib/is-sorted-by';
 import { hotkeyText } from '@/lib/hotkey-label';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
-import { TREE_KEY_HOTKEYS, trashHotkey } from './tree-keyboard';
+import { FIND_IN_FOLDER_HOTKEY, OPEN_TO_SIDE_HOTKEY, TREE_KEY_HOTKEYS, trashHotkey } from './tree-keyboard';
 
 export interface ContextMenuActions {
   onRename: (path: string) => void;
@@ -44,6 +44,15 @@ export interface ContextMenuActions {
   onCopy: (paths: string[]) => void;
   /** 粘贴 in-app 剪贴板的内容到目标目录. */
   onPaste: (destDir: string) => void;
+  /**
+   * 在侧边打开(VSCode explorer.openToSide,文件菜单首项):多选时为选中集(其中的文件夹由实现方滤掉)。未提供则不显示该项。
+   */
+  onOpenToSide?: (paths: string[]) => void;
+  /**
+   * 在文件夹中查找…(VSCode filesExplorer.findInFolder,文件夹 / 空白处菜单):多选时为选中集(文件取其所在目录),空白处为根。
+   * 未提供则不显示该项。
+   */
+  onFindInFolder?: (paths: string[]) => void;
 }
 
 interface ContextMenuProps {
@@ -256,6 +265,21 @@ function ContextMenuContent({
         // 自聚焦,还原会把焦点抢回行 div(导致 Esc 落错元素被树 hotkeys 吞)。见 menu-close-focus.ts。
         onCloseAutoFocus={focusRestore.onCloseAutoFocus}
       >
+        {/* 文件:「在侧边打开」在最前(VSCode navigation 组首项) */}
+        {!isFolder && !isBlank && actions.onOpenToSide && (
+          <>
+            <CtxItem
+              onSelect={() => {
+                focusRestore.skipOnce(); // 焦点交给侧边组的编辑器 → 跳过还原(否则 Radix 稍后把焦点抢回树行)
+                actions.onOpenToSide?.(actionTargets);
+              }}
+              shortcut={keyOf(OPEN_TO_SIDE_HOTKEY)}
+            >
+              {t('panels.explorer.ctx.open_to_side')}
+            </CtxItem>
+            <Menu.Separator className={sepCls} />
+          </>
+        )}
         {(isFolder || isBlank) && (
           <>
             <CtxItem
@@ -279,7 +303,22 @@ function ContextMenuContent({
                 {t('panels.explorer.ctx.paste')}
               </CtxItem>
             )}
-            {!isBlank && <Menu.Separator className={sepCls} />}
+            {(!isBlank || actions.onFindInFolder) && <Menu.Separator className={sepCls} />}
+            {/* 「在文件夹中查找…」单独一组,紧随新建组(VSCode 4_search;空白处 = 根) */}
+            {actions.onFindInFolder && (
+              <>
+                <CtxItem
+                  onSelect={() => {
+                    focusRestore.skipOnce(); // 焦点交给搜索视图的查询框 → 跳过还原
+                    actions.onFindInFolder?.(isBlank ? [rootPath] : actionTargets);
+                  }}
+                  shortcut={keyOf(FIND_IN_FOLDER_HOTKEY)}
+                >
+                  {t('panels.explorer.ctx.find_in_folder')}
+                </CtxItem>
+                {!isBlank && <Menu.Separator className={sepCls} />}
+              </>
+            )}
           </>
         )}
 

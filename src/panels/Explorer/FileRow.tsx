@@ -91,9 +91,10 @@ interface FileRowProps extends FileRowState {
   isDropHover?: boolean;
   /**
    * 单击 / 双击文件触发(目录的展开仍由 headless-tree mousedown 接管)。focusEditor:双击(click.detail ≥ 2)——
-   * VSCode 单击预览、焦点留在树里;双击打开后焦点交给编辑器。
+   * VSCode 单击预览、焦点留在树里;双击打开后焦点交给编辑器。toSide:按住 ⌥(Alt)单击 = 在侧边打开(VSCode 列表多选键为
+   * ⌘ / Ctrl 时 Alt 单击即 sideBySide;BDD: src/__tests__/explorer-open-to-side/)。
    */
-  onFileOpen?: (path: string, focusEditor: boolean) => void;
+  onFileOpen?: (path: string, focusEditor: boolean, toSide: boolean) => void;
   /** perf:文件行 pointerdown(早于 click)预热打开所需资源,如编辑引擎 chunk。 */
   onFileIntent?: (path: string) => void;
   /** 插件装饰器快照(FolderTree 一次订阅后下传,避免每行各自订阅). */
@@ -323,7 +324,7 @@ export const FileRow = memo(function FileRow({
         // 单击目录由 headless-tree 默认行为处理(展开/折叠)。
         // 带 ⌘ / Ctrl / Shift 的单击是多选(selectionFeature 已改选中),只改选中不打开(VSCode 同款)。
         if (!isDir && !isRenaming && !hasSelectionModifier(e)) {
-          onFileOpen?.(data.path, e.detail >= 2);
+          onFileOpen?.(data.path, e.detail >= 2, e.altKey);
         }
       }}
       onContextMenu={() => {

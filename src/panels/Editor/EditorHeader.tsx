@@ -22,6 +22,8 @@ import { useEditorGroupId } from './editor-group-context';
 import { useEditorGroupNumber } from './editor-group-number';
 import { splitEditor } from './editor-groups-actions';
 import { useEditorTabBarDrop } from '@/shell/dock/explorer-editor-drop';
+import { getDockApi } from '@/shell/dock/dock-api-ref';
+import { groupSizeMenuEntries, toggleExpandGroup } from '@/shell/dock/group-sizes';
 import { useT } from '@/i18n';
 import { runContributedAction } from '@/lib/run-contributed-action';
 import {
@@ -176,6 +178,24 @@ function scrollTabsOnWheel(e: WheelEvent<HTMLDivElement>): void {
   if (e.deltaX !== 0 || e.deltaY === 0) return;
   const list = e.currentTarget.querySelector<HTMLElement>('[role=tablist]');
   if (list && list.scrollWidth > list.clientWidth) list.scrollLeft += e.deltaY;
+}
+
+/** 编辑器组所在的 dock 组(dock 未就绪 / 面板不在 → undefined)。 */
+function dockGroupOfEditorGroup(groupId: string) {
+  const api = getDockApi();
+  const group = api?.getPanel(groupId)?.group;
+  return api && group ? { api, group } : undefined;
+}
+
+/** 双击常驻 tab:展开该编辑器组 / 再次全部等分(同 dock tab 双击)。 */
+function toggleEditorGroupExpand(groupId: string): void {
+  const target = dockGroupOfEditorGroup(groupId);
+  if (target) toggleExpandGroup(target.api, target.group);
+}
+
+function dockGroupSizeMenuEntries(groupId: string, t: Parameters<typeof groupSizeMenuEntries>[2]): TabMenuEntry[] {
+  const target = dockGroupOfEditorGroup(groupId);
+  return target ? groupSizeMenuEntries(target.api, target.group, t) : [];
 }
 
 /** 编辑器 tab 的读屏名称:标题[ 已删除][ 描述][后缀](后缀如预览 tab 的「，预览」,VSCode computeEditorAriaLabel)。 */
@@ -394,6 +414,8 @@ export const EditorHeader = memo(function EditorHeader({
           shortcut: commandHotkeyText(SPLIT_EDITOR_COMMAND),
         },
         { label: t('shell.tab.ctx.split_down'), onSelect: () => void splitEditor('down', { groupId, tabId: tab.id }) },
+        // 「最大化组 / 取消最大化组」(VSCode toggleMaximizeEditorGroup,dock tab 菜单同一项;BDD: src/__tests__/dock-group-sizes/)
+        ...dockGroupSizeMenuEntries(groupId, t),
       ];
     },
     [onCloseTabsRequest, tabsChrome, t, groupId],
@@ -482,8 +504,9 @@ export const EditorHeader = memo(function EditorHeader({
               onSelect={() => switchTab(tab.id)}
               onMouseSelect={focusEditorContent}
               onClose={() => onCloseRequest(tab)}
-              // 双击预览 tab → 常驻(VSCode;常驻 tab 双击无动作)
-              onDoubleClick={tab.preview ? () => pinTab(tab.id, groupId) : undefined}
+              // 双击预览 tab → 常驻;双击常驻 tab → 切换组大小(VSCode doubleClickTabToToggleEditorGroupSizes 默认 expand;
+              // BDD: src/__tests__/dock-group-sizes/)
+              onDoubleClick={tab.preview ? () => pinTab(tab.id, groupId) : () => toggleEditorGroupExpand(groupId)}
               // 读屏名称:预览 tab 追加「，预览」(VSCode computeEditorAriaLabel);常驻 tab 照旧取标签内容
               // git 字母放 trailing 槽位:长标题截断时字母仍可见(VSCode tab 装饰徽标)
               trailing={
