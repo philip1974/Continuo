@@ -41,7 +41,7 @@
      再截断文件名,徽标始终可见),可折叠;
      匹配行 `treeitem`(`aria-level=2`;预览文本,命中用 `<mark>` 高亮 —— 复用 Quick Open 的 `PICKER_MATCH_CLASS_NAME`,
      `--md-list-highlight`,强制颜色下改下划线)。虚拟化渲染,`aria-activedescendant` 只指向已挂载行。
-   - 键盘:查询框 ↓ 进入结果树;树内 ↑ / ↓ 移动、Home / End、→ 展开 / 进入首个匹配、← 折叠 / 回到文件行、Enter / Space
+   - 键盘:查询框 ↓ 进入结果树;树内 ↑ / ↓ 移动、Home / End、PageDown / PageUp(先到可视区末 / 首行,再按可视行数翻页,不循环;VSCode `list.focusPageDown/Up`,共用 `src/lib/list-page-nav.ts`)、→ 展开 / 进入首个匹配、← 折叠 / 回到文件行、Enter / Space
      打开当前匹配(文件行:切换折叠);F4 / ⇧F4(面板内)下一个 / 上一个结果并以预览方式打开(VSCode pinned=false,见 editor-preview-tab)。打开 = `editor.openFile(path, { line, column, length })`
      (公共 API,打开失败统一提示):选中匹配范围(列 / 长度为 UTF-16,与 worker 同一单位);Markdown 编辑 / 预览模式同样定位并选中
      (见 `search-open-markdown`)。单击匹配行打开;单击文件行切换折叠。

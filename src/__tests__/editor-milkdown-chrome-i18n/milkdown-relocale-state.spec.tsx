@@ -8,6 +8,7 @@ import { TextSelection } from '@milkdown/kit/prose/state';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
 import { markdownFindOf } from '../../panels/Editor/markdown-find-registry';
+import { markdownFindResult } from '../../panels/Editor/markdown-find';
 import { createTab, useEditorStore } from '../../stores/editor.store';
 import { clearEditorViewStates } from '../../panels/Editor/editor-view-state-cache';
 import { getLocale, notifyLocaleChange, setLocale, type Locale } from '../../i18n';
@@ -151,5 +152,30 @@ describe('切换界面语言后 Markdown 编辑区的状态', () => {
     expect(input.isConnected).toBe(true);
     expect(document.activeElement).toBe(input);
     expect(input.value).toBe('one');
+  });
+
+  it('查找条开着:重挂后当前匹配(计数 / 高亮)与切换前一致,下一次「查找下一个」从它接着走', async () => {
+    render(<MilkdownEditor tabId={TAB} fileName={TAB} defaultValue={DOC} />);
+    const before = await waitCrepe(1);
+    await nextFrames();
+    const find = () => markdownFindOf(TAB, PRIMARY_EDITOR_GROUP_ID)!;
+    act(() => find().open());
+    const input = document.activeElement as HTMLInputElement;
+    // 「a」:Para 两个、has、列表项 a → 4 个匹配
+    fireEvent.change(input, { target: { value: 'a' } });
+    act(() => find().step(1));
+    act(() => find().step(1));
+    expect(markdownFindResult(before.state)).toEqual({ count: 4, index: 2 });
+    const status = () => document.querySelector('[role="status"]')!.textContent;
+    expect(status()).toMatch(/3\D+4/);
+
+    switchLocale('zh');
+    const after = await waitCrepe(2);
+    await nextFrames();
+    expect(markdownFindResult(after.state)).toEqual({ count: 4, index: 2 });
+    expect(after.dom.querySelectorAll('.co-find-match-current')).toHaveLength(1);
+    expect(status()).toMatch(/3\D+4/);
+    act(() => find().step(1));
+    expect(markdownFindResult(after.state).index).toBe(3);
   });
 });

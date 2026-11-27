@@ -999,6 +999,11 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
           if (!current) return;
           try {
             restoreRelocaleSnapshot(current, relocale);
+            // 查找条开着:上面就绪时按新实例的初始选区(文档开头)算出的当前匹配是 1 / N,而下一次 Enter 从还原后的选区起跳
+            // → 按还原后的选区重算当前匹配(不动选区),计数 / 高亮与下一步一致
+            if (findOpenRef.current && findTermRef.current) {
+              setMarkdownFindQuery(current, { term: findTermRef.current, ...findOptionsRef.current }, { select: false });
+            }
           } catch {
             /* 已拆除 */
           }

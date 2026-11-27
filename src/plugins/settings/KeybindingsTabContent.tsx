@@ -536,9 +536,10 @@ export function KeybindingsTabContent() {
                   const { hotkeyParts, isOverridden } = d; // 预计算(打磨 R29)
                   const shadowedBy = shadowed.get(cmd.id);
                   // 行可聚焦(tabIndex=-1,不进 Tab 序):右键按下即聚焦本行,菜单 Esc 关闭后焦点回到本行。
+                  // 键盘回焦(Esc)时 focus-visible 画内嵌 focus-ring 轮廓(同搜索结果树 / 资源管理器行);鼠标点击不画。
                   return (
                     <TabContextMenu key={cmd.id} entries={menuEntriesFor(d)}>
-                      <li tabIndex={-1} data-keybinding-row={cmd.id} className={`${keybindingRowClassName(idx)} outline-none`}>
+                      <li tabIndex={-1} data-keybinding-row={cmd.id} className={`${keybindingRowClassName(idx)} outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring`}>
                         <span className={KEYBINDING_TITLE_CLASS_NAME} title={d.displayTitle}>
                           {d.displayTitle}
                         </span>

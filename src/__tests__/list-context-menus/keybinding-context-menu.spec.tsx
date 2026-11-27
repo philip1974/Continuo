@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 // BDD:快捷键页行右键菜单(VSCode keybindingsEditor onContextMenu)。见同目录 README。
 // jsdom 的 navigator.platform 为空 → 非 mac 平台(mod = ctrl)。
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 
@@ -157,5 +159,41 @@ describe('键盘与焦点', () => {
     fireEvent.keyDown(items()[0]!, { key: 'Escape' });
     await settle();
     expect(document.activeElement).toBe(row);
+  });
+});
+
+// 键盘回焦(菜单 / 对话框 Esc)时行上看得见焦点:与搜索结果树 / 资源管理器行同一组 focus-visible 内嵌 focus-ring 轮廓(鼠标点击不画)
+const FOCUS_RING = ['outline-none', 'focus-visible:outline-solid', 'focus-visible:outline-1', 'focus-visible:-outline-offset-1', 'focus-visible:outline-focus-ring'];
+
+/** WCAG 相对亮度对比度。 */
+function contrast(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * bl!;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+describe('行的键盘焦点环', () => {
+  it('快捷键行:focus-visible 内嵌 focus-ring 轮廓', () => {
+    render(<KeybindingsTabContent />);
+    const cls = rowOf('file.save').className.split(' ');
+    for (const c of FOCUS_RING) expect(cls).toContain(c);
+  });
+
+  it('focus-ring 色对设置页可能的各级底色(surface ~ surface-container-highest)亮 / 暗主题均 ≥ 3:1', () => {
+    const css = readFileSync(path.resolve(__dirname, '../../styles/design-tokens.css'), 'utf8');
+    const dark = css.indexOf('.dark');
+    for (const block of [css.slice(0, dark), css.slice(dark)]) {
+      const token = (name: string) => block.match(new RegExp(`--md-${name}:\\s*(#[0-9a-fA-F]{6})`))![1]!;
+      const ring = token('focus-ring');
+      for (const bg of ['surface', 'surface-container-lowest', 'surface-container-low', 'surface-container', 'surface-container-high', 'surface-container-highest']) {
+        expect(contrast(ring, token(bg)), bg).toBeGreaterThanOrEqual(3);
+      }
+    }
   });
 });

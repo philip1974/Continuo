@@ -170,3 +170,14 @@ describe('popout 子窗', () => {
     frame.remove();
   });
 });
+
+// 键盘回焦(菜单 / 对话框 Esc)时行上看得见焦点:与搜索结果树 / 资源管理器行同一组 focus-visible 内嵌 focus-ring 轮廓(鼠标点击不画)
+const FOCUS_RING = ['outline-none', 'focus-visible:outline-solid', 'focus-visible:outline-1', 'focus-visible:-outline-offset-1', 'focus-visible:outline-focus-ring'];
+
+describe('行的键盘焦点环', () => {
+  it('设置项行:focus-visible 内嵌 focus-ring 轮廓', () => {
+    render(<SettingItemRow spec={spec({})} />);
+    const cls = rowOf('general.test').className.split(' ');
+    for (const c of FOCUS_RING) expect(cls).toContain(c);
+  });
+});

@@ -19,6 +19,7 @@ import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { ChevronDownIcon, MoreActionsIcon } from '@/lib/ui-icons';
 import { PICKER_MATCH_CLASS_NAME, pickerRowClassName, pickerRowSecondaryClassName } from '@/plugins/picker/picker-row';
 import { isVirtualIndexRendered } from '@/plugins/picker/use-picker-list';
+import { measurePageNavGeometry, pageNavTarget } from '@/lib/list-page-nav';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
 import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
@@ -159,6 +160,14 @@ export function SearchPanel() {
         return go(0);
       case 'End':
         return go(rows.length - 1);
+      // VSCode list.focusPageDown / focusPageUp:先到可视区末 / 首行,再按可视行数翻页(list-page-nav)
+      case 'PageDown':
+      case 'PageUp': {
+        const el = treeRef.current;
+        if (!el) return;
+        const dir = e.key === 'PageDown' ? 1 : -1;
+        return go(pageNavTarget(dir, activeIndex, rows.length, measurePageNavGeometry(el, el.firstElementChild as HTMLElement | null, ROW_HEIGHT)));
+      }
       case 'ArrowRight':
         if (row.kind !== 'file') return;
         e.preventDefault();

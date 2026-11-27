@@ -273,6 +273,29 @@ describe('结果树与计数', () => {
     expect(active().textContent).toContain('# foo');
   });
 
+  it('PageDown / PageUp:先到可视区末 / 首行,再按可视行数翻页,不循环(VSCode list.focusPageDown / Up)', () => {
+    withResults();
+    const tree = screen.getByRole('tree');
+    // 可视 3 行(3 × 22px);5 行:文件 a、匹配×2、文件 b、匹配
+    Object.defineProperty(tree, 'clientHeight', { configurable: true, value: 66 });
+    fireEvent.keyDown(queryBox(), { key: 'ArrowDown' });
+    const activeIndex = () => Number(document.getElementById(tree.getAttribute('aria-activedescendant')!)!.dataset['rowIndex']);
+    expect(activeIndex()).toBe(0);
+    expect(fireEvent.keyDown(tree, { key: 'PageDown' })).toBe(false); // preventDefault,不只原生滚动
+    expect(activeIndex()).toBe(2); // 可视区末行
+    fireEvent.keyDown(tree, { key: 'PageDown' });
+    expect(activeIndex()).toBe(4); // 翻页(夹到最后一行)
+    fireEvent.keyDown(tree, { key: 'PageDown' });
+    expect(activeIndex()).toBe(4);
+    Object.defineProperty(tree, 'scrollTop', { configurable: true, value: 44 });
+    // 行容器随滚动上移(jsdom 无布局,手动给出)
+    (tree.firstElementChild as HTMLElement).getBoundingClientRect = () => new DOMRect(0, -44, 100, 110); // 已滚到底:可视 2..4
+    fireEvent.keyDown(tree, { key: 'PageUp' });
+    expect(activeIndex()).toBe(2); // 可视区首行
+    fireEvent.keyDown(tree, { key: 'PageUp' });
+    expect(activeIndex()).toBe(0);
+  });
+
   it('单击匹配行打开;单击文件行切换折叠', async () => {
     withResults();
     const items = screen.getAllByRole('treeitem');

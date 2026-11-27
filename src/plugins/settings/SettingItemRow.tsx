@@ -208,12 +208,13 @@ export function SettingItemRow({
   // 在下(VSCode 设置项本就是上下排列);宽于 32rem 才左右并排。左右并排时控件区 shrink-0,若不换行,
   // 左侧只剩几十像素 → 描述一行一个词、标题被截断。标题行可换行;id 徽标过长时省略号截断而不撑破行。
   // 行可聚焦(tabIndex=-1,不进 Tab 序):右键按下即聚焦本行,菜单 Esc 关闭后焦点回到本行。
+  // 键盘回焦(Esc)时 focus-visible 画内嵌 focus-ring 轮廓(同搜索结果树 / 资源管理器行);鼠标点击不画。
   return (
     <TabContextMenu entries={menuEntries} keyboardAnchor={() => moreRef.current}>
       <div
         tabIndex={-1}
         data-setting-row={spec.id}
-        className="group/setting @container border-b border-line/50 py-5 outline-none last:border-b-0"
+        className="group/setting @container border-b border-line/50 py-5 outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring last:border-b-0"
       >
         <div className={SETTING_ROW_LAYOUT_CLASS_NAME}>
           <div className="min-w-0 max-w-full flex-1">

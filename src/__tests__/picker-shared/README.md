@@ -20,9 +20,12 @@ DOM 输出与收口前逐属性一致。
 5. combobox:`role=combobox`、`aria-expanded` 恒 true;仅 `count>0` 时 `aria-controls` 指向
    `${idPrefix}-listbox`;`aria-activedescendant` 仅当选中下标在范围内**且**在渲染窗口内时指向
    `${idPrefix}-option-${index}`。
-6. 键盘:ArrowDown / ArrowUp → `moveSelection(±1, count)`;Enter → `onEnter(selectedIndex)`;三者都
-   `preventDefault`,其余键不拦。IME 组合中(`isComposing` / `keyCode 229`)的按键一律不处理(不执行、不移动、不拦默认)。
-7. `count` 变化 → `clampSelection(count)`;`selectedIndex` 变化且 `count>0` → `scrollToIndex`。
+6. 键盘:ArrowDown / ArrowUp → `moveSelection(±1, count)`;Enter → `onEnter(selectedIndex)`;PageDown / PageUp →
+   按可视行数翻页(VSCode Quick Input / List `focusNextPage` / `focusPreviousPage`:先到可视区完全可见的末 / 首行;已在末行 →
+   末行成为首行后的新末行,已在首行 → 向上翻整页;不循环,共用 `src/lib/list-page-nav.ts`;所有用 `usePickerList` 的选择器:命令面板 /
+   Quick Open(含转到行)/ 打开最近 / 主题选择器);以上都 `preventDefault`,其余键不拦。IME 组合中(`isComposing` / `keyCode 229`)的按键一律不处理(不执行、不移动、不拦默认)。
+7. `count` 变化 → `clampSelection(count)`;`selectedIndex` 变化且 `count>0` → `scrollToIndex`。滚动容器带 `py-1`(4px,`PICKER_SCROLL_PADDING_Y`),
+   listbox 在滚动内容里下移 4px → virtualizer 以 `scrollPaddingEnd` 4px 对齐行底,滚入的行完整可见(此前 ↓ / PageDown 滚入的行底被裁 4px)。
 8. option:`id` / `role=option` / `aria-selected` / 绝对定位样式由 `getOptionProps(row)` 给出。
 
 ### 规则(usePickerToggleHotkey)

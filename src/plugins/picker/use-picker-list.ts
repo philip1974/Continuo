@@ -11,6 +11,10 @@ import { useEffect, useRef } from 'react';
 import type React from 'react';
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { isImeComposing } from '@/design/ime';
+import { measurePageNavGeometry, pageNavTarget } from '@/lib/list-page-nav';
+
+/** 选择器滚动容器的上下 padding(py-1)。 */
+export const PICKER_SCROLL_PADDING_Y = 4;
 
 /** 单趟判断 index 是否在 virtualizer 当前渲染窗口内。 */
 export function isVirtualIndexRendered(
@@ -79,6 +83,9 @@ export function usePickerList(opts: UsePickerListOptions): PickerList {
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     overscan: opts.overscan,
+    // 各选择器的滚动容器都带 py-1(4px):listbox 在滚动内容里下移 4px,virtualizer 不知道 → scrollToIndex 把行底对齐到视口底时
+    // 实际差 4px 被裁(PageDown / ↓ 滚入的行看不全)。按底部留 4px 对齐。
+    scrollPaddingEnd: PICKER_SCROLL_PADDING_Y,
   });
 
   // race(R48/R49):列表动态变短时把 selectedIndex 钳回 [0,len-1],防 Enter 读越界项 + 高亮/滚动
@@ -107,6 +114,14 @@ export function usePickerList(opts: UsePickerListOptions): PickerList {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       moveSelection(-1, count);
+    } else if (e.key === 'PageDown' || e.key === 'PageUp') {
+      // VSCode Quick Input:PageDown / PageUp 按可视行数翻页(先到可视区末 / 首行),不循环(list-page-nav)
+      const el = scrollRef.current;
+      if (!el || count === 0) return;
+      e.preventDefault();
+      const geometry = measurePageNavGeometry(el, el.querySelector<HTMLElement>('[role="listbox"]'), rowHeight);
+      const target = pageNavTarget(e.key === 'PageDown' ? 1 : -1, selectedIndex, count, geometry);
+      if (target !== selectedIndex) moveSelection(target - selectedIndex, count);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       onEnter(selectedIndex);

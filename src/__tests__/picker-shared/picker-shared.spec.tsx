@@ -6,13 +6,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { create } from 'zustand';
 
-const { scrollToIndexSpy, windowSize } = vi.hoisted(() => ({
+const { scrollToIndexSpy, windowSize, virtualizerOpts } = vi.hoisted(() => ({
   scrollToIndexSpy: vi.fn(),
   windowSize: { value: 3 },
+  virtualizerOpts: { last: null as Record<string, unknown> | null },
 }));
 // 固定窗口(index 0..windowSize-1):证明 hook 只对渲染窗口内的选中项给 aria-activedescendant。
 vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: (opts: { count: number; estimateSize: () => number }) => ({
+  useVirtualizer: (opts: { count: number; estimateSize: () => number }) => (virtualizerOpts.last = opts, {
     getTotalSize: () => opts.count * opts.estimateSize(),
     getVirtualItems: () =>
       Array.from({ length: Math.min(windowSize.value, opts.count) }, (_, i) => ({
@@ -26,12 +27,13 @@ vi.mock('@tanstack/react-virtual', () => ({
 }));
 
 import { createPickerSlice, type PickerSlice } from '../../plugins/picker/picker-slice';
-import { isVirtualIndexRendered, usePickerList } from '../../plugins/picker/use-picker-list';
+import { isVirtualIndexRendered, PICKER_SCROLL_PADDING_Y, usePickerList } from '../../plugins/picker/use-picker-list';
 import { useCommandPaletteStore } from '../../plugins/command-palette/store';
 import { useQuickOpenStore } from '../../plugins/quick-open/store';
 import { useCommandPaletteHotkey } from '../../plugins/command-palette/useCommandPaletteHotkey';
 import { useQuickOpenHotkey } from '../../plugins/quick-open/useQuickOpenHotkey';
 import { MAX_SEARCH_QUERY_LEN } from '../../lib/search-query';
+import { pageNavTarget } from '../../lib/list-page-nav';
 
 afterEach(() => cleanup());
 
@@ -201,6 +203,42 @@ describe('usePickerList', () => {
     expect(onEnter).toHaveBeenCalledTimes(1);
   });
 
+  it('PageDown / PageUp:先到可视区末 / 首行,再按可视行数翻页,不循环(VSCode Quick Input)', () => {
+    const store = create<PickerSlice>((set) => createPickerSlice(set));
+    function Live() {
+      const selectedIndex = store((st) => st.selectedIndex);
+      return (
+        <Harness
+          count={10}
+          selectedIndex={selectedIndex}
+          moveSelection={store.getState().moveSelection}
+          onEnter={noop}
+        />
+      );
+    }
+    const { getByTestId, getByRole } = render(<Live />);
+    // 可视 4 行(4 × 20px)
+    const scroller = getByRole('listbox').parentElement!;
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 80 });
+    const input = getByTestId('input');
+    expect(fireEvent.keyDown(input, { key: 'PageDown' })).toBe(false);
+    expect(store.getState().selectedIndex).toBe(3); // 可视区末行
+    fireEvent.keyDown(input, { key: 'PageDown' });
+    expect(store.getState().selectedIndex).toBe(6); // 末行成为首行后的新末行
+    fireEvent.keyDown(input, { key: 'PageDown' });
+    fireEvent.keyDown(input, { key: 'PageDown' });
+    expect(store.getState().selectedIndex).toBe(9); // 夹到最后一行,不循环
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, value: 120 });
+    // listbox 随滚动上移(jsdom 无布局,手动给出)
+    getByRole('listbox').getBoundingClientRect = () => new DOMRect(0, -120, 100, 200); // 可视 6..9
+    fireEvent.keyDown(input, { key: 'PageUp' });
+    expect(store.getState().selectedIndex).toBe(6); // 可视区首行
+    fireEvent.keyDown(input, { key: 'PageUp' });
+    expect(store.getState().selectedIndex).toBe(2); // 向上翻整页
+    fireEvent.keyDown(input, { key: 'PageUp' });
+    expect(store.getState().selectedIndex).toBe(0);
+  });
+
   it('IME 组合中的 Enter / 方向键(isComposing 或 keyCode 229)→ 不执行、不移动、不拦默认;普通 Enter 照常', () => {
     const moveSelection = vi.fn();
     const onEnter = vi.fn();
@@ -235,6 +273,29 @@ describe('usePickerList', () => {
     rerender(<Harness count={0} selectedIndex={0} clampSelection={clampSelection} />);
     expect(clampSelection).toHaveBeenLastCalledWith(0);
     expect(scrollToIndexSpy).not.toHaveBeenCalled();
+  });
+
+  it('滚动跟随按滚动容器的 py-1 底部留白对齐(scrollPaddingEnd),滚入的行不被裁掉 4px;四个选择器的滚动容器都是 py-1', () => {
+    render(<Harness count={10} selectedIndex={0} />);
+    expect(virtualizerOpts.last?.['scrollPaddingEnd']).toBe(PICKER_SCROLL_PADDING_Y);
+    expect(PICKER_SCROLL_PADDING_Y).toBe(4);
+    for (const f of ['command-palette/CommandPalette.tsx', 'quick-open/QuickOpenModal.tsx', 'open-recent/OpenRecentModal.tsx', 'theme-picker/ThemePickerModal.tsx']) {
+      const src = readFileSync(join(__dirname, '../../plugins', f), 'utf8');
+      expect(src, f).toMatch(/<div ref=\{scrollRef\} className="[^"]*\bpy-1\b[^"]*"/);
+    }
+  });
+
+  it('pageNavTarget:按完全可见的首 / 末行计算(含列表上方 padding、半行可见、无活动行、空列表)', () => {
+    // 4px padding + 28px 行,可视 120px:scrollTop 0 时完全可见 0..3(第 4 行底 144 > 120)
+    const g = { scrollTop: 0, viewportHeight: 120, listOffset: 4, rowHeight: 28 };
+    expect(pageNavTarget(1, 0, 50, g)).toBe(3);
+    expect(pageNavTarget(1, 3, 50, g)).toBe(6);
+    expect(pageNavTarget(1, -1, 50, g)).toBe(3);
+    expect(pageNavTarget(-1, -1, 50, g)).toBe(0);
+    // 滚动 50px:第 1 行只露下半 → 首行是 2
+    expect(pageNavTarget(-1, 5, 50, { ...g, scrollTop: 50 })).toBe(2);
+    expect(pageNavTarget(-1, 2, 50, { ...g, scrollTop: 50 })).toBe(0);
+    expect(pageNavTarget(1, 0, 0, g)).toBe(-1);
   });
 
   it('isVirtualIndexRendered 单趟判断', () => {

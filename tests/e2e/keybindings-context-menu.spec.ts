@@ -64,3 +64,23 @@ test('行内编辑按钮聚焦时 Shift+F10 → 该行菜单;Esc → 焦点回�
   await expect(menu).toHaveCount(0);
   await expect(edit).toBeFocused();
 });
+
+test('右键行后 Esc:焦点回到该行,行上画出键盘焦点环(focus-ring 轮廓)', async ({ window }) => {
+  await openSettingsTab(window, KEYBINDINGS_TAB);
+  const settingsRow = row(window, 'settings.toggle');
+  await expect(settingsRow).toBeVisible({ timeout: 10_000 });
+  await settingsRow.locator('span').first().click({ button: 'right' });
+  const menu = window.getByRole('menu');
+  await expect(menu.getByRole('menuitem', { name: CHANGE })).toBeVisible();
+  await window.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(settingsRow).toBeFocused();
+  const outline = await settingsRow.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { style: cs.outlineStyle, width: cs.outlineWidth, color: cs.outlineColor, visible: el.matches(':focus-visible') };
+  });
+  expect(outline.visible).toBe(true);
+  expect(outline.style).toBe('solid');
+  expect(outline.width).toBe('1px');
+  await window.screenshot({ path: test.info().outputPath('keybinding-row-focus-ring.png') });
+});
