@@ -120,6 +120,46 @@ export const EDITOR_SCROLL_BEYOND_LAST_LINE: CoreSettingSpec<boolean> = {
 };
 
 /**
+ * 缩进参考线(VSCode editor.guides.indentation,默认开;当前块那一条高亮同 editor.guides.highlightActiveIndentation 默认):代码编辑器与
+ * Markdown 源码模式(VSCode 对 Markdown 无语言级覆盖)。BDD: src/__tests__/editor-indent-guides/
+ */
+export const EDITOR_GUIDES_INDENTATION: CoreSettingSpec<boolean> = {
+  id: 'editor.guides.indentation',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Indentation guides',
+  titleKey: 'settings.editor.guides_indentation',
+  descriptionKey: 'settings.editor.guides_indentation.desc',
+  type: 'boolean',
+  default: true,
+  priority: 3.6,
+};
+
+export type EditorOccurrencesHighlight = 'off' | 'singleFile';
+
+/**
+ * 光标处单词的其它出现处高亮(VSCode editor.occurrencesHighlight,默认 singleFile;VSCode 另有实验性的 multiFile 跨文件高亮,
+ * 这里不提供)。BDD: src/__tests__/editor-occurrences-highlight/
+ */
+export const EDITOR_OCCURRENCES_HIGHLIGHT: CoreSettingSpec<EditorOccurrencesHighlight> = {
+  id: 'editor.occurrencesHighlight',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Occurrences highlight',
+  titleKey: 'settings.editor.occurrences_highlight',
+  descriptionKey: 'settings.editor.occurrences_highlight.desc',
+  type: 'select',
+  default: 'singleFile',
+  enum: [
+    { value: 'off', label: 'Off', labelKey: 'settings.editor.occurrences_highlight.off' },
+    { value: 'singleFile', label: 'Current file', labelKey: 'settings.editor.occurrences_highlight.single_file' },
+  ],
+  priority: 3.7,
+};
+
+/**
  * 缩进(VSCode editor.tabSize / editor.insertSpaces / editor.detectIndentation,默认 4 / 开 / 开):打开文档时的缩进默认值;
  * 检测开着时按内容推断(推断不出用默认值)。Makefile / Go 默认用 tab(VSCode 内置语言默认)。改设置 → 已打开文档即时按新设置重定。
  * BDD: src/__tests__/editor-indentation/

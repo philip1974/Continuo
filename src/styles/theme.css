@@ -81,6 +81,11 @@
   --md-git-deleted: #ad0707;
   --md-git-conflict: #ad0707;
   --md-git-ignored: #646467;
+
+  /* 编辑器缩进参考线(VSCode editorIndentGuide.background1 / activeBackground1 亮色默认 #d3d3d3 / #939393;MD3 无对应槽)。
+   * 非文字装饰,只求与底色可辨、当前块那一条明显更深。 */
+  --md-indent-guide: #d3d3d8;
+  --md-indent-guide-active: #939399;
 }
 
 /* ── Continuo 自有槽位的暗色值(MD3 色板本体在 design-tokens.css .dark)── */
@@ -122,6 +127,10 @@
   --md-git-deleted: #e27967;
   --md-git-conflict: #e7767a;
   --md-git-ignored: #979797;
+
+  /* 编辑器缩进参考线:VSCode 暗色默认 #404040 / #707070(底 #1e1e1e),按 --md-surface #11131b 取同等明度差、带底色色相。 */
+  --md-indent-guide: #343744;
+  --md-indent-guide-active: #6c6f7e;
 }
 
 /* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */

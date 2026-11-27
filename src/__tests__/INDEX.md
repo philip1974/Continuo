@@ -655,6 +655,10 @@
 - [`read-image.spec.ts`](./editor-image-preview/read-image.spec.ts)
 - [`statusbar-image.spec.tsx`](./editor-image-preview/statusbar-image.spec.tsx)
 
+## [缩进参考线(editor.guides.indentation)](./editor-indent-guides/README.md)
+
+- [`indent-guides.spec.tsx`](./editor-indent-guides/indent-guides.spec.tsx)
+
 ## [editor-indentation](./editor-indentation/README.md)
 
 - [`code-editor-indentation.spec.tsx`](./editor-indentation/code-editor-indentation.spec.tsx)
@@ -732,6 +736,10 @@
 - [`navigation-open-at-line.spec.ts`](./editor-navigation-history/navigation-open-at-line.spec.ts)
 - [`navigation-popout.spec.tsx`](./editor-navigation-history/navigation-popout.spec.tsx)
 - [`navigation-stack.spec.ts`](./editor-navigation-history/navigation-stack.spec.ts)
+
+## [光标处单词的其它出现处(editor.occurrencesHighlight)](./editor-occurrences-highlight/README.md)
+
+- [`occurrences-highlight.spec.tsx`](./editor-occurrences-highlight/occurrences-highlight.spec.tsx)
 
 ## [editor-orphaned-tab](./editor-orphaned-tab/README.md)
 

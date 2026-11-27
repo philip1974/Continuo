@@ -18,6 +18,8 @@ import {
   EDITOR_LINE_HEIGHT,
   EDITOR_LINE_NUMBERS,
   EDITOR_SCROLL_BEYOND_LAST_LINE,
+  EDITOR_GUIDES_INDENTATION,
+  EDITOR_OCCURRENCES_HIGHLIGHT,
   EDITOR_WORD_WRAP,
   FILES_AUTO_SAVE,
   FILES_AUTO_SAVE_DELAY,
@@ -44,6 +46,8 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem(EDITOR_LINE_NUMBERS);
     this.addSettingItem(EDITOR_WORD_WRAP);
     this.addSettingItem(EDITOR_SCROLL_BEYOND_LAST_LINE);
+    this.addSettingItem(EDITOR_GUIDES_INDENTATION);
+    this.addSettingItem(EDITOR_OCCURRENCES_HIGHLIGHT);
 
     // ── Indentation(BDD: src/__tests__/editor-indentation/)──
     this.addSettingItem(EDITOR_TAB_SIZE);

@@ -31,7 +31,9 @@ import {
   EDITOR_FONT_SIZE,
   EDITOR_LINE_HEIGHT,
   EDITOR_DETECT_INDENTATION,
+  EDITOR_GUIDES_INDENTATION,
   EDITOR_INSERT_SPACES,
+  EDITOR_OCCURRENCES_HIGHLIGHT,
   EDITOR_LINE_NUMBERS,
   EDITOR_SCROLL_BEYOND_LAST_LINE,
   EDITOR_TAB_SIZE,
@@ -76,6 +78,7 @@ import { codeMirrorMediaDrop } from './codemirror-media-drop';
 import { ensureTabIndentation, indentUnitText, useTabIndentation, type IndentOptions } from './editor-indentation';
 import { clearEditorSelectionStatus, selectionStatusOf, setEditorSelectionStatus } from './editor-selection-status';
 import { codeEditorContextMenuMarker } from './codemirror-context-menu';
+import { editorGuides, type EditorGuidesOptions } from './codemirror-editor-guides';
 
 interface CodeEditorProps {
   tabId: string;
@@ -301,6 +304,15 @@ export function CodeEditor({
   const latestScrollBeyondRef = useRef(scrollBeyondLastLine);
   latestScrollBeyondRef.current = scrollBeyondLastLine;
   const appliedScrollBeyondRef = useRef(scrollBeyondLastLine);
+  // 缩进参考线(editor.guides.indentation)与光标处单词的其它出现处高亮(editor.occurrencesHighlight):变化时 reconfigure。
+  // BDD: src/__tests__/editor-indent-guides/、src/__tests__/editor-occurrences-highlight/
+  const guidesCompartment = useRef(new Compartment());
+  const guideIndentation = useSettingValue(EDITOR_GUIDES_INDENTATION.id, EDITOR_GUIDES_INDENTATION.default);
+  const guideOccurrences =
+    useSettingValue(EDITOR_OCCURRENCES_HIGHLIGHT.id, EDITOR_OCCURRENCES_HIGHLIGHT.default) !== 'off';
+  const latestGuidesRef = useRef<EditorGuidesOptions>({ indentation: guideIndentation, occurrences: guideOccurrences });
+  latestGuidesRef.current = { indentation: guideIndentation, occurrences: guideOccurrences };
+  const appliedGuidesRef = useRef(latestGuidesRef.current);
   // 缩进(indentUnit + tabSize):打开时按设置 / 内容推断,之后随状态栏缩进项 / 命令 / 设置变化 reconfigure(BDD: src/__tests__/editor-indentation/)。
   const indentCompartment = useRef(new Compartment());
   const indentation = useTabIndentation(tabId);
@@ -362,6 +374,7 @@ export function CodeEditor({
     eolRef.current = detectLineEnding(value);
     appliedWrapRef.current = latestWrapRef.current;
     appliedScrollBeyondRef.current = latestScrollBeyondRef.current;
+    appliedGuidesRef.current = latestGuidesRef.current;
     appliedIndentRef.current = ensureTabIndentation(tabId, fileName, value, indentSettings);
 
     const publishSelectionStatus = (state: EditorState) =>
@@ -389,6 +402,8 @@ export function CodeEditor({
       scrollPastEndCompartment.current.of(appliedScrollBeyondRef.current ? scrollPastEnd() : []),
       // 回车自动缩进 / Tab / ⇧Tab / ⌘] / ⌘[ 都按文档缩进(4 空格文件缩 4 格,tab 文件插 tab;此前写死 CodeMirror 默认 2 空格)
       indentCompartment.current.of(indentationExtension(appliedIndentRef.current)),
+      // 缩进参考线按上面的文档缩进计级(Markdown 源码模式同样显示,VSCode 同)
+      guidesCompartment.current.of(editorGuides(appliedGuidesRef.current)),
       debugDecorationsExtension(),
       // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
       navigationHistoryExtension(tabId, groupId),
@@ -631,6 +646,14 @@ export function CodeEditor({
     appliedScrollBeyondRef.current = scrollBeyondLastLine;
     view.dispatch({ effects: scrollPastEndCompartment.current.reconfigure(scrollBeyondLastLine ? scrollPastEnd() : []) });
   }, [scrollBeyondLastLine]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    const applied = appliedGuidesRef.current;
+    if (!view || (applied.indentation === guideIndentation && applied.occurrences === guideOccurrences)) return;
+    appliedGuidesRef.current = { indentation: guideIndentation, occurrences: guideOccurrences };
+    view.dispatch({ effects: guidesCompartment.current.reconfigure(editorGuides(appliedGuidesRef.current)) });
+  }, [guideIndentation, guideOccurrences]);
 
   useEffect(() => {
     const view = viewRef.current;
