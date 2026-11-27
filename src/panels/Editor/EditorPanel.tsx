@@ -50,7 +50,7 @@ import { editorTabTitle } from './untitled';
 import { openConflictCompare } from './conflict-compare';
 import { editorFileDeps, saveAsDeps } from './editor-file-deps';
 import { useAutoSave } from './useAutoSave';
-import { resolveAutoSave, savesOnClose, useAutoSaveSettings } from './auto-save-config';
+import { resolveAutoSave, useAutoSaveSettings } from './auto-save-config';
 import { NO_ACTIVE_TAB, useEditorFile } from './useEditorFile';
 import { resolveLink } from './link-resolve';
 import { followMarkdownLink } from './markdown-link-follow';
@@ -313,8 +313,6 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   const [multiCloseCandidate, setMultiCloseCandidate] = useState<{
     readonly paths: readonly string[];
     readonly batch: BatchClose;
-    /** 这批里关闭时直接自动保存的脏 tab(不列入框;选「不保存」时仍逐个自动保存)。 */
-    readonly autoIds: readonly string[];
   } | null>(null);
 
   // 自动保存:按活动 tab 的生效模式(默认 Markdown 停手 2 秒、代码不自动保存)。按 tabId 保存,切走/卸载时
@@ -523,35 +521,6 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       notifyThrownError(err);
     }
   });
-  // 弹单文件「保存 / 不保存 / 取消」确认框;批量时先切到该 tab(VSCode 同)。
-  const askCloseCandidate = useStableCallback((candidate: TabChrome & { readonly batch: BatchClose }) => {
-    if (candidate.batch.closeIds.length > 1) useEditorStore.getState().switchTab(candidate.id, { groupId });
-    setCloseCandidate(candidate);
-  });
-  // 关闭时按生效自动保存模式直接保存、不弹框(VSCode doHandleCloseConfirmation,见 auto-save-config.savesOnClose)。
-  // 已删除(orphaned)不算:自动保存不重建已删除的文件(Continuo 既有规则),照常弹框由用户决定。
-  const autoSavesOnClose = useStableCallback((tabId: string): boolean => {
-    const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
-    if (!tab || tab.orphaned) return false;
-    return savesOnClose(resolveAutoSave(tab.filePath, autoSaveSettings), detectPlatform() === 'mac');
-  });
-  // 自动保存后关闭:成功(且保存完仍不脏)→ 推进这批关闭;失败(无权限 / 磁盘冲突 / 写保护 / 期间被删除…)→ 提示失败、tab 不关,
-  // 改弹确认框(VSCode:自动保存失败后以 skipAutoSave 重新确认)。不覆盖外部修改、不去写保护、不重建已删除的文件。
-  const autoSaveAndAdvance = useStableCallback(async (candidate: TabChrome & { readonly batch: BatchClose }) => {
-    try {
-      const r = await saveTab(candidate.id, { recreateMissing: false });
-      const after = findEditorFileTabById(useEditorStore.getState().tabs, candidate.id);
-      if (!after) return;
-      if (r.ok && !after.dirty) {
-        advanceBatchClose(candidate.batch);
-        return;
-      }
-      if (!r.ok) notifySaveFailed(editorTabTitle(candidate.filePath), r, undefined, candidate.filePath);
-    } catch (err) {
-      notifyThrownError(err);
-    }
-    askCloseCandidate(candidate);
-  });
   // 关闭 tab(单个 × / ⌘W / 中键,与右键「关闭其他 / 关闭右侧 / 关闭已保存 / 全部关闭」同一路径):只有 1 个脏 tab → 确认它
   // (保存 / 不保存 / 取消;批量时先切到该 tab,VSCode 同);多于 1 个 → onTabsCloseRequest 先弹合并框,选「全部保存」
   // (saveAll)后不再逐个确认,按顺序保存(saveAndAdvance)。全部处理完才一起关闭;任一处取消 / 失败 → 整批不关。
@@ -567,14 +536,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         void saveAndAdvance({ ...step.tab, batch: step.batch });
         return;
       }
-      if (autoSavesOnClose(step.tab.id)) {
-        void autoSaveAndAdvance({ ...step.tab, batch: step.batch });
-        return;
-      }
-      askCloseCandidate({ ...step.tab, batch: step.batch });
+      if (progress.closeIds.length > 1) useEditorStore.getState().switchTab(step.tab.id, { groupId });
+      setCloseCandidate({ ...step.tab, batch: step.batch });
     },
-    // saveAndAdvance / autoSaveAndAdvance 引用恒定(latest-ref),它们与本函数互相调用(调用时取最新)。
-    [closeTabs, groupId, saveAndAdvance, autoSaveAndAdvance, autoSavesOnClose, askCloseCandidate],
+    // saveAndAdvance 引用恒定(latest-ref),它与本函数互相调用(调用时取最新)。
+    [closeTabs, groupId, saveAndAdvance],
   );
   const confirmOverwrite = useCallback(async () => {
     const candidate = overwriteCandidate;
@@ -639,17 +605,14 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       // 随后卸载回写找不到 tab → 这段输入丢失。
       flushEditorWriteBacks(ids);
       const progress: BatchClose = { rest: ids, closeIds: ids };
-      // 关闭时直接自动保存的 tab 不进合并框(VSCode 不为它们确认),「不保存」时它们照常保存。
       const dirty = dirtyTabsInBatch(groupTabsForClose(groupId), progress);
-      const ask = dirty.filter((tab) => !autoSavesOnClose(tab.id));
-      if (ask.length > 1) {
-        const autoIds = dirty.filter((tab) => !ask.includes(tab)).map((tab) => tab.id);
-        setMultiCloseCandidate({ paths: ask.map((tab) => tab.filePath), batch: progress, autoIds });
+      if (dirty.length > 1) {
+        setMultiCloseCandidate({ paths: dirty.map((tab) => tab.filePath), batch: progress });
         return;
       }
       advanceBatchClose(progress);
     },
-    [advanceBatchClose, autoSavesOnClose, groupId],
+    [advanceBatchClose, groupId],
   );
   const onTabCloseRequest = useCallback((tab: TabChrome) => onTabsCloseRequest([tab.id]), [onTabsCloseRequest]);
   const confirmDiscard = useCallback(() => {
@@ -670,7 +633,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
   const confirmMultiDiscard = useCallback(() => {
     const candidate = multiCloseCandidate;
     setMultiCloseCandidate(null);
-    if (candidate) advanceBatchClose({ rest: candidate.autoIds, closeIds: candidate.batch.closeIds });
+    if (candidate) advanceBatchClose({ rest: [], closeIds: candidate.batch.closeIds });
   }, [multiCloseCandidate, advanceBatchClose]);
 
   // 全局命令 workbench.action.files.save / closeActiveEditor(⌘S / ⌘W,焦点在面板外也生效)经此调用面板内同一实现

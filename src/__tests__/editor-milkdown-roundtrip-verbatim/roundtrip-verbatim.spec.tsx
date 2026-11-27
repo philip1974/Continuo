@@ -14,7 +14,6 @@ import { configureMarkdownStyle } from '../../panels/Editor/milkdown-markdown-st
 import { configureMarkdownMath } from '../../panels/Editor/milkdown-math';
 import { configureSourceBlocks, sameBlock, splitTableRow } from '../../panels/Editor/milkdown-source-blocks';
 import { MilkdownEditor } from '../../panels/Editor/MilkdownEditor';
-import { markdownWritingKeys } from '../../panels/Editor/milkdown-writing-keys';
 
 const instances = vi.hoisted(() => [] as Crepe[]);
 
@@ -35,7 +34,7 @@ vi.mock('../../plugins/settings/values-store', () => ({
 
 const editors: Crepe[] = [];
 
-/** 与 MilkdownEditor 相同的序列化配置(风格 + 原样写回 + 公式 + 写作按键:编辑自动链接时地址跟随文字)。 */
+/** 与 MilkdownEditor 相同的序列化配置(风格 + 原样写回 + 公式)。 */
 async function open(markdown: string): Promise<{ crepe: Crepe; view: EditorView }> {
   const root = document.createElement('div');
   document.body.appendChild(root);
@@ -43,7 +42,6 @@ async function open(markdown: string): Promise<{ crepe: Crepe; view: EditorView 
   configureMarkdownStyle(crepe, markdown);
   configureSourceBlocks(crepe, markdown);
   configureMarkdownMath(crepe);
-  crepe.editor.use(markdownWritingKeys);
   editors.push(crepe);
   await crepe.create();
   return { crepe, view: crepe.editor.ctx.get<EditorView, 'editorView'>('editorView') };

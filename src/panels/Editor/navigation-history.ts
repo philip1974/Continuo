@@ -32,6 +32,7 @@ import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { activateDockPanel } from '@/shell/dock/wrap-panel-close';
 import { notifyFailure } from '@/notifications/notify-thrown-error';
 import { commandEditorGroupId } from './editor-groups-actions';
+import { editorGroupForOpen } from './editor-open-group';
 import { requestEditorFocus } from './editor-focus-registry';
 import { openFileByPath } from './editor-file-actions';
 import { editorFileDeps } from './editor-file-deps';
@@ -226,7 +227,10 @@ function waitForGroupView(tabId: string, groupId: string): Promise<EditorView | 
 /** 打开 / 激活该条的文件并恢复光标。fallbackGroup = 原组已不在时用的组(触发窗口的编辑器组)。 */
 async function openLocation(loc: NavigationLocation, fallbackGroup: string | undefined): Promise<void> {
   const s = useEditorStore.getState();
-  const groupId = editorGroupIdsOf(s).includes(loc.groupId) ? loc.groupId : (fallbackGroup ?? s.activeGroupId);
+  // 原组已不在且触发窗口没有编辑器组 → 同打开文件(editorGroupForOpen):活动编辑器组在别的窗口时不落进去,主窗新建一个
+  const groupId = editorGroupIdsOf(s).includes(loc.groupId)
+    ? loc.groupId
+    : (fallbackGroup ?? editorGroupForOpen() ?? useEditorStore.getState().activeGroupId);
   // 编辑器组面板不是所在窗口 dock 的活动面板(同组里终端在前)→ 先显示它
   const panel = getDockApi()?.getPanel(groupId);
   if (panel) activateDockPanel(panel);
@@ -237,7 +241,8 @@ async function openLocation(loc: NavigationLocation, fallbackGroup: string | und
     return; // 已关闭的无标题文件没有可重新打开的内容(不按「路径」读盘报错)
   } else {
     s.setActiveGroup(groupId);
-    const r = await openFileByPath(loc.path, editorFileDeps);
+    // 显式指定组:openFileByPath 不再按触发窗口改投(原组可以在别的窗口,VSCode 后退 / 前进回到原组)
+    const r = await openFileByPath(loc.path, editorFileDeps, { groupId });
     if (!r.ok) {
       notifyFailure(r);
       return;

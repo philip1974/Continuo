@@ -118,6 +118,17 @@ export function revealDockPanel(api: Pick<DockviewApi, 'activePanel'>, panel: ID
 }
 
 /**
+ * 用户打开 / 切换文件后显示其编辑器组面板(DockShell 消费 editorFocusPulse):激活面板;面板在 popout 子窗 → 聚焦该子窗,键盘随之
+ * 过去(dockview 只在活动组变化时 focus 子窗;此前文件落进子窗而焦点留在主窗,接着打字进了主窗)。不把焦点交给面板内容:资源管理器
+ * 单击以预览方式打开时焦点留在树里,编辑器获焦由打开方决定(requestEditorFocus)。BDD: src/__tests__/popout-open-target/
+ */
+export function showEditorGroupPanel(panel: IDockviewPanel): void {
+  activateDockPanel(panel);
+  const location = panel.api.location;
+  if (location?.type === 'popout') location.getWindow().focus();
+}
+
+/**
  * 用户入口新建面板并让它接过键盘焦点(内容挂载后,见 focusPanelContentWhenReady);返回新面板。
  * 只给用户发起的入口(⌘, / ⇧⌘F / dock「⋯」/ 查看:显示输出 / 插件 app.dock.openPanel)—— 后台 / agent 建面板
  *(DockReconciler 建终端、会话恢复)直接 api.addPanel,不抢焦点。BDD: src/__tests__/open-panel-focus/

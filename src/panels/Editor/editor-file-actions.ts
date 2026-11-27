@@ -36,6 +36,8 @@ import { isUntitledPath } from '../../../electron/shared/untitled';
 import { isEditorPreviewEnabled } from './editor-preview';
 import { readEncodingOf, readOptionsForTab, tabEncodingOf } from './editor-encoding';
 import type { TextEncodingId } from '../../../electron/shared/text-encoding';
+import { getCommandDocument } from '@/shell/dock/popout-documents';
+import { editorGroupForOpen } from './editor-open-group';
 
 /** renderer 内部错误码:保存时发现磁盘已被外部修改(未覆盖)。EditorPanel 据此弹覆盖确认,dirty-close 单独计数。 */
 export const EDITOR_DISK_CHANGED = 'EDITOR_DISK_CHANGED';
@@ -171,13 +173,20 @@ async function openTabWith(
   pinEncoding = false,
 ): Promise<IpcResult<boolean>> {
   const store = useEditorStore;
+  // 没指定组 → 在触发打开的窗口里打开(活动编辑器组在别的窗口时改投该窗口的编辑器组,主窗没有就新建;见 editor-open-group)。
+  // 触发窗口在第一个 await 前读出;要新建组的等读盘成功、仍是最新的用户选择时再建。
+  const doc = preview?.groupId === undefined && typeof document !== 'undefined' ? getCommandDocument() : null;
+  const where = (): OpenFileOptions | undefined => {
+    const groupId = doc === null ? undefined : editorGroupForOpen(doc);
+    return groupId === undefined ? preview : { ...preview, groupId };
+  };
   // 已开过 → 只切换。跨平台(复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
   // 上同一文件以 `C:\Repo\a.md` / `c:\repo\a.md` 不同大小写打开,`===` 判不等 → 开出两个
   // tab,分别编辑保存同一文件 → 后保存者覆盖前者丢改。switchTab 用**已存在 tab 的真实 id**
   // (大小写可能与传入 path 不同)。POSIX 大小写敏感不变(pathEquals 在非 Windows 即 ===)。
   const existing = findExisting(store.getState().tabs);
   if (existing) {
-    store.getState().switchTab(existing.id, preview);
+    store.getState().switchTab(existing.id, where());
     return { ok: true, data: false };
   }
 
@@ -203,7 +212,7 @@ async function openTabWith(
   const latest = my === getUserActivationGen();
   const raced = findExisting(store.getState().tabs);
   if (raced) {
-    if (latest) store.getState().switchTab(raced.id, preview);
+    if (latest) store.getState().switchTab(raced.id, where());
     return { ok: true, data: false };
   }
 
@@ -215,7 +224,7 @@ async function openTabWith(
   const tab = pluginOpenedPath === undefined ? created : { ...created, pluginOpenedPath };
   store
     .getState()
-    .openTab(tab, latest ? preview : { ...preview, activate: false, requestFocus: false });
+    .openTab(tab, latest ? where() : { ...preview, activate: false, requestFocus: false });
   // openTab 可能拒开(tab 数 / 路径长度上限)→ 按 store 里是否真有这个标签对象判定
   return { ok: true, data: store.getState().tabs.includes(tab) };
 }

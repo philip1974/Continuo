@@ -1,8 +1,7 @@
 // Markdown 编辑模式(Milkdown)的写作行为(第四十七轮审计 B4 / B7 / B9、第四十八轮审计 A2–A6):
 //  - 改一处保存,文件只变那一行(未改动的块原样写回,序列化风格跟随原文件);CRLF / UTF-16 LE CRLF 的行尾与编码保持;
 //  - 选中文字粘贴 URL 成链接;⌘K / Ctrl+K 打开链接框给选区加链接;之后接着打字不替换链接文字;
-//  - 表格最后一格 Tab 新起一行(不在格内插空格);
-//  - 裸链接末尾接着打字,地址跟随文字(第五十轮审计 A2,src/__tests__/editor-markdown-autolink-edit/)。
+//  - 表格最后一格 Tab 新起一行(不在格内插空格)。
 // 见 src/__tests__/editor-milkdown-roundtrip-style/、src/__tests__/editor-milkdown-roundtrip-verbatim/、
 // src/__tests__/editor-markdown-writing-keys/。
 import { readFile } from 'node:fs/promises';
@@ -191,29 +190,6 @@ test('裸链接 + 含 `$` 的行内代码 + 硬换行的段落里打一个字:�
   await save(window);
   await expect(async () => {
     expect(await readFile(file, 'utf8')).toBe(doc.replace('then', 'thenq'));
-  }).toPass({ timeout: 5_000 });
-});
-
-test('裸链接末尾接着打字:保存成裸链接、地址跟随文字(不写成文字与地址分家的链接)', async ({ window, workspaceRoot }) => {
-  const doc = 'Para with https://example.com bare.\n\nTail.\n';
-  const file = await openInEdit(window, workspaceRoot, 'bare-link.md', doc);
-  await window.locator(PM).getByText('Tail.').click();
-  // 光标放到链接文字末尾(DOM 选区,ProseMirror 经 selectionchange 读回)
-  await window.evaluate((sel) => {
-    const a = document.querySelector(`${sel} a`)!;
-    const text = a.firstChild!;
-    const range = document.createRange();
-    range.setStart(text, text.textContent!.length);
-    const s = document.getSelection()!;
-    s.removeAllRanges();
-    s.addRange(range);
-  }, PM);
-  await expect.poll(() => window.evaluate(() => document.getSelection()?.anchorNode?.parentElement?.tagName)).toBe('A');
-  await window.keyboard.type('/p');
-  await expect(window.locator(`${PM} a`).first()).toHaveAttribute('href', 'https://example.com/p');
-  await save(window);
-  await expect(async () => {
-    expect(await readFile(file, 'utf8')).toBe(doc.replace('https://example.com', 'https://example.com/p'));
   }).toPass({ timeout: 5_000 });
 });
 

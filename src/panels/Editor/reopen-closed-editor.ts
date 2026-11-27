@@ -24,6 +24,7 @@ import type { DockviewGroupPanel } from 'dockview-react';
 import { getDockApi } from '@/shell/dock/dock-api-ref';
 import { editorGroupInDocument, popoutGroupOfDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
+import { editorGroupForOpen } from './editor-open-group';
 import { tWithFallback } from '@/i18n/translate';
 import { nextEditorGroupId } from '../../../electron/shared/editor-group-id';
 
@@ -37,8 +38,8 @@ export async function reopenClosedEditor(deps: EditorFileDeps = editorFileDeps):
   return false;
 }
 
-/** 目标:已有的编辑器组,或在 popout 子窗的这个 dock 组里新建一个编辑器组。 */
-type ReopenTarget = { readonly groupId: string } | { readonly createIn: DockviewGroupPanel };
+/** 目标:已有的编辑器组,或在 popout 子窗的这个 dock 组里 / 主窗('main')新建一个编辑器组。 */
+type ReopenTarget = { readonly groupId: string } | { readonly createIn: DockviewGroupPanel | 'main' };
 
 /**
  * 主窗里触发:原组还在 → 原组;否则活动组。popout 子窗里触发(⇧⌘T 在子窗分发;按触发窗口判断,不看全局活动面板 ——
@@ -57,8 +58,11 @@ function targetOf(entry: RecentlyClosedEditor, doc: Document): ReopenTarget {
     return pick !== undefined ? { groupId: pick } : { createIn: popout };
   }
   if (groups.includes(entry.groupId)) return { groupId: entry.groupId };
-  // 原组已不在 → 主窗的编辑器组(活动编辑器组可能在子窗:从子窗切回主窗时它仍停在子窗)
-  return { groupId: (api && editorGroupInDocument(api, document, s.activeGroupId)) ?? s.activeGroupId };
+  // 原组已不在 → 主窗的编辑器组(活动编辑器组可能在子窗:从子窗切回主窗时它仍停在子窗);主窗没有编辑器组而活动编辑器组
+  // 在子窗 → 在主窗新建一个(同打开文件,见 editor-open-group;VSCode 主窗总保留一个编辑器组)
+  const main = api ? editorGroupInDocument(api, document, s.activeGroupId) : undefined;
+  if (main !== undefined) return { groupId: main };
+  return api?.getPanel(s.activeGroupId)?.api.location.type === 'popout' ? { createIn: 'main' } : { groupId: s.activeGroupId };
 }
 
 function openInTargetGroup(entry: RecentlyClosedEditor, doc: Document): boolean {
@@ -67,8 +71,9 @@ function openInTargetGroup(entry: RecentlyClosedEditor, doc: Document): boolean 
   return groupTabsOf(useEditorStore.getState(), target.groupId).some((t) => pathEquals(t.filePath, entry.path));
 }
 
-/** 在 popout 子窗的 dock 组里新建空编辑器组(同一 dock 组里的另一个面板,同子窗里拆分);组数已达上限 → null。 */
-function createGroupIn(group: DockviewGroupPanel): string | null {
+/** 在 popout 子窗的 dock 组里新建空编辑器组(同一 dock 组里的另一个面板,同子窗里拆分)/ 在主窗新建;组数已达上限 → null。 */
+function createGroupIn(group: DockviewGroupPanel | 'main'): string | null {
+  if (group === 'main') return editorGroupForOpen(document) ?? null;
   const api = getDockApi();
   if (!api) return null;
   const s = useEditorStore.getState();

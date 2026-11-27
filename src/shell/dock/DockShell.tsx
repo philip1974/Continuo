@@ -12,7 +12,7 @@ import { coApp } from '@/plugins/co-app';
 import { applyDefaultLayout, resetDockLayout } from './layout.default';
 import { HeaderActions } from './HeaderActions';
 import { EmptyState } from './EmptyState';
-import { markDockLayoutRestored, setDockApi } from './dock-api-ref';
+import { markDockLayoutRestored, setDockApi, showEditorGroupPanel } from './dock-api-ref';
 import { focusTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import { stripTerminalPanelsFromLayout } from './strip-terminal-layout';
@@ -21,7 +21,7 @@ import { trackPopoutRestore, whenPopoutRestoreSettled } from './popout-restore-s
 import { makeJsonSafe } from '../../../electron/shared/make-json-safe';
 import { useDockReconciler } from './DockReconciler';
 import { useDockLocaleSync } from './useDockLocaleSync';
-import { wrapPanelClose, activateDockPanel, addPanelKeepingActive } from './wrap-panel-close';
+import { wrapPanelClose, addPanelKeepingActive } from './wrap-panel-close';
 import { trackEditorGroups } from './editor-groups-dock-sync';
 import { trackExplorerEditorDrop } from './explorer-editor-drop';
 import { isEditorGroupId } from '../../../electron/shared/editor-group-id';
@@ -584,8 +584,8 @@ export function DockShell({ onLayoutReady }: { onLayoutReady?: () => void }) {
       return;
     }
     // 已有面板可能正处于关闭 EXIT 动画窗口内(用户刚关 editor 面板随即又点开文件):activateDockPanel 撤销排定的
-    // 真 close,否则刚打开的文件随面板一起消失。
-    activateDockPanel(editorPanel);
+    // 真 close,否则刚打开的文件随面板一起消失。面板在 popout 子窗 → 聚焦子窗(showEditorGroupPanel)。
+    showEditorGroupPanel(editorPanel);
     handledFocusPulseRef.current = editorFocusPulse;
   }, [editorActiveTabId, editorFocusPulse, layoutRestored, editorGroupId]);
 

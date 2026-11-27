@@ -3,8 +3,7 @@
 // 重复键丢掉),注释(jsonc:tsconfig.json / settings.json)保留在原处(同行尾注释仍在同一行)。
 // 格式:`{` / `[` 后换行缩进一层,`,` 后换行,`:` 后一个空格,空对象 / 空数组写成 `{}` / `[]`;缩进单位由调用方给(CodeMirror
 // indentUnit,随文件缩进)。文末换行保持原样(有则保留一个,无则不加)。
-// 尾逗号照常格式化、原样保留(VSCode jsonc-parser format 同款,.json / .jsonc 一样)。其它语法错误(去掉注释与尾逗号后 JSON.parse
-// 不通过,如缺逗号)→ 返回 null,调用方提示且不改文档。
+// 语法错误(去掉注释后 JSON.parse 不通过,如缺逗号 / 尾逗号)→ 返回 null,调用方提示且不改文档。
 // BDD: src/__tests__/editor-language-commands/
 
 type Token =
@@ -58,22 +57,9 @@ function tokenize(src: string): Token[] | null {
   return out;
 }
 
-/**
- * 去掉注释与尾逗号后是否为合法 JSON。注释、尾逗号(值后紧跟 `}` / `]` 的 `,`)按 jsonc 容忍 —— VSCode 的 JSON 格式化(jsonc-parser
- * format)只按 token 排版,.json 与 .jsonc 都照常格式化并保留尾逗号;其它语法错误(缺逗号、连续逗号、`[,]`)不容忍。
- */
+/** 去掉注释后是否为合法 JSON(注释按 jsonc 容忍;尾逗号等其它语法错误不容忍)。 */
 function isValidJson(tokens: readonly Token[]): boolean {
-  const code = tokens.filter((t) => t.kind === 'value' || t.kind === 'punct');
-  const text = code
-    .filter((t, i) => {
-      if (t.text !== ',' || t.kind !== 'punct') return true;
-      const next = code[i + 1]?.text;
-      const prev = code[i - 1]?.text;
-      const trailing = (next === '}' || next === ']') && prev !== undefined && !['{', '[', ',', ':'].includes(prev);
-      return !trailing;
-    })
-    .map((t) => t.text)
-    .join(' ');
+  const text = tokens.filter((t) => t.kind === 'value' || t.kind === 'punct').map((t) => t.text).join(' ');
   if (text === '') return false;
   try {
     JSON.parse(text);
