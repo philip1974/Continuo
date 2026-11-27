@@ -4,7 +4,9 @@
 //   Markdown 编辑 / 预览(Milkdown,外层带 MARKDOWN_EDITOR_ATTR)及其查找条也算:查找类命令在其中转给它的查找条(可改键)。
 // CodeEditor 的 .cm-editor 带 TEXT_EDITOR_ATTR 标记;Milkdown 代码块里的 CodeMirror 没有 → 都不算(代码块保留 CodeMirror 自带的
 // 查找键)。输入法组字中都不算(按键属于组字)。
-// BDD: src/__tests__/editor-text-commands/、src/__tests__/editor-find-keybindings/
+// - `terminalNormalBufferFocus`:按键落在终端里且终端在主缓冲(VSCode `terminalFocusInAny && !terminalAltBufferActive`,滚动命令用它):
+//   全屏程序(vim / less)切到备用屏时不成立,按键照常交给程序。终端容器带 TERMINAL_ATTR,备用屏时另带 TERMINAL_ALT_BUFFER_ATTR。
+// BDD: src/__tests__/editor-text-commands/、src/__tests__/editor-find-keybindings/、src/__tests__/terminal-scroll-commands/
 
 /** CodeEditor 根元素(.cm-editor)上的标记属性。 */
 export const TEXT_EDITOR_ATTR = 'data-co-text-editor';
@@ -12,11 +14,15 @@ export const TEXT_EDITOR_ATTR = 'data-co-text-editor';
 /** Markdown 编辑 / 预览(MilkdownEditor)外层(含查找条)上的标记属性。 */
 export const MARKDOWN_EDITOR_ATTR = 'data-co-markdown-editor';
 
+/** 终端容器(useTerminal 挂 xterm 的元素)上的标记属性;备用屏(alternate screen)激活时另带 TERMINAL_ALT_BUFFER_ATTR。 */
+export const TERMINAL_ATTR = 'data-co-terminal';
+export const TERMINAL_ALT_BUFFER_ATTR = 'data-co-terminal-alt-buffer';
+
 /** 命令的上下文条件(CommandSpec.when)。 */
-export type CommandWhen = 'editorTextFocus' | 'editorFocus';
+export type CommandWhen = 'editorTextFocus' | 'editorFocus' | 'terminalNormalBufferFocus';
 
 export function isCommandWhen(value: unknown): value is CommandWhen {
-  return value === 'editorTextFocus' || value === 'editorFocus';
+  return value === 'editorTextFocus' || value === 'editorFocus' || value === 'terminalNormalBufferFocus';
 }
 
 /**
@@ -45,7 +51,15 @@ export function isEditorElement(el: Element | null): boolean {
   return el.closest(`[${MARKDOWN_EDITOR_ATTR}]`) !== null;
 }
 
+/** 元素是否在主缓冲(非备用屏)的终端里。 */
+export function isTerminalNormalBufferElement(el: Element | null): boolean {
+  if (typeof el?.closest !== 'function') return false;
+  const host = el.closest(`[${TERMINAL_ATTR}]`);
+  return host !== null && !host.hasAttribute(TERMINAL_ALT_BUFFER_ATTR);
+}
+
 function holdsFor(when: CommandWhen, el: Element | null): boolean {
+  if (when === 'terminalNormalBufferFocus') return isTerminalNormalBufferElement(el);
   return when === 'editorFocus' ? isEditorElement(el) : isEditorTextElement(el);
 }
 

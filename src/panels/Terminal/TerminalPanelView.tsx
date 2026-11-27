@@ -126,7 +126,9 @@ function TerminalPanelContent({
     requestFit,
     focus,
     clear,
+    scroll,
     readText,
+    readViewport,
     contextMenuActions,
     searchApi,
     setRendererVisible,
@@ -147,8 +149,8 @@ function TerminalPanelContent({
   // 同一 panel 已 active 时 onDidActiveChange 不会再触发);openSearch 供
   // terminal.search.toggle command 打开搜索条;clear 供 terminal.clear command 清屏。
   useEffect(() => {
-    return registerTerminalPanelHandles(api.id, { focus, openSearch: searchApi.open, clear, readText });
-  }, [api.id, focus, searchApi.open, clear, readText]);
+    return registerTerminalPanelHandles(api.id, { focus, openSearch: searchApi.open, clear, scroll, readText, readViewport });
+  }, [api.id, focus, searchApi.open, clear, scroll, readText, readViewport]);
 
   // issue #38 R2: ref-capture latest searchApi.isOpen so the
   // onDidActiveChange handler reads fresh value without re-creating

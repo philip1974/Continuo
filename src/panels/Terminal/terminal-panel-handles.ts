@@ -7,19 +7,31 @@
 // - openSearch:TerminalPlugin 的 terminal.search.toggle command 经 openTerminalSearch(panelId)
 //   打开当前 active panel 的搜索条(Cmd+F)。
 // - clear:terminal.clear command(⌘K)与终端右键菜单「清除」清空屏幕与滚动缓冲。
+// - scroll:终端滚动命令(⌘Home / ⌘End / PageUp …,见 terminal-hotkeys TERMINAL_SCROLL_COMMANDS)滚动视口。
 // - readText:当前缓冲区文本(e2e 测试钩子读终端内容;WebGL 渲染时 DOM 里没有文字)。
+// - readViewport:视口位置(e2e 测试钩子读滚动结果)。
 //
 // stale 安全:createCallbackRegistry 的 disposer 带 Symbol token,同 id 被新注册覆盖后旧
 // disposer 不会误删新句柄;句柄内部用 termRef.current?.focus() 等 optional chain,
 // useTerminal 卸载时已置 null。module-scope 单例 = 进程级单一 command bus。
 
 import { createCallbackRegistry } from '@continuo-terminal/react-terminal';
+import type { TerminalScrollAction } from './terminal-hotkeys';
+
+/** 视口位置:viewportY = 视口首行在缓冲区的行号,baseY = 滚到底时的 viewportY;alternate = 备用屏激活。 */
+export interface TerminalViewport {
+  readonly viewportY: number;
+  readonly baseY: number;
+  readonly alternate: boolean;
+}
 
 export interface TerminalPanelHandles {
   readonly focus: () => void;
   readonly openSearch: () => void;
   readonly clear: () => void;
+  readonly scroll: (action: TerminalScrollAction) => void;
   readonly readText: () => string;
+  readonly readViewport: () => TerminalViewport | null;
 }
 
 const handlesRegistry = createCallbackRegistry<TerminalPanelHandles>();
@@ -48,6 +60,16 @@ export function openTerminalSearch(panelId: string): void {
 /** 清空该 panel 的屏幕与滚动缓冲;未注册时 no-op。 */
 export function clearTerminalPanel(panelId: string): void {
   handlesRegistry.get(panelId)?.clear();
+}
+
+/** 按动作滚动该 panel 的视口;未注册时 no-op。 */
+export function scrollTerminalPanel(panelId: string, action: TerminalScrollAction): void {
+  handlesRegistry.get(panelId)?.scroll(action);
+}
+
+/** 该 panel 的视口位置;未注册 → null。 */
+export function readTerminalPanelViewport(panelId: string): TerminalViewport | null {
+  return handlesRegistry.get(panelId)?.readViewport() ?? null;
 }
 
 /** 该 panel 当前缓冲区文本(每行去尾空白,\n 连接);未注册 → null。 */

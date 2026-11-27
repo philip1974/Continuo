@@ -46,12 +46,16 @@ import {
   isTerminalContextMenuKey,
   isTerminalKeptHotkey,
   isTerminalSearchHotkey,
+  isTerminalUnboundMetaKey,
   isTerminalZoomHotkey,
   runTerminalCommandFromKey,
   runTerminalZoomFromKey,
   terminalSendSequenceForKey,
   terminalYieldedCommandId,
+  type TerminalScrollAction,
 } from './terminal-hotkeys';
+import type { TerminalViewport } from './terminal-panel-handles';
+import { TERMINAL_ALT_BUFFER_ATTR, TERMINAL_ATTR } from '@/lib/editor-text-focus';
 import { createOutputCoalescer } from './output-coalescer';
 import { createTerminalWebgl, type TerminalWebgl } from './terminal-webgl';
 import { installTerminalPasteSanitizer, sanitizeTerminalPaste } from './terminal-paste-sanitize';
@@ -557,6 +561,14 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       ),
     );
     term.open(container);
+    // 滚动命令的 when(terminalNormalBufferFocus,见 editor-text-focus):容器标记终端,备用屏激活时另加标记 → vim / less 里
+    // ⌘Home / PageUp 等不再胜出为滚动命令,交给程序。测试桩可能不带 buffer → 可选链。
+    container.setAttribute(TERMINAL_ATTR, '');
+    const syncAltBufferAttr = () => {
+      container.toggleAttribute(TERMINAL_ALT_BUFFER_ATTR, term.buffer?.active?.type === 'alternate');
+    };
+    syncAltBufferAttr();
+    const bufferChangeDisposable = term.buffer?.onBufferChange?.(syncAltBufferAttr);
     if (inputAriaLabelRef.current) term.textarea?.setAttribute('aria-label', inputAriaLabelRef.current);
     // 安全(pastejacking):粘贴先剥离控制字符(防伪造 \x1b[201~ 跳出 bracketed paste),见 terminal-paste-sanitize。
     const disposePasteSanitizer = installTerminalPasteSanitizer(container, term);
@@ -656,6 +668,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         term.input(sequence, true);
         return false;
       }
+      // mac 上未被命令 / 上面的映射接走的 ⌘ + 功能键(⌘Home / ⌘End / ⌘PageDown / ⌘Delete / ⌘F5 / ⌘Enter …):xterm 会编码成
+      // `ESC[1;9H` 等发给 shell(打出 `;9H` / `~`)或程序 —— 不交给 xterm;不截冒泡,全局分发照常(见 isTerminalUnboundMetaKey)。
+      if (isTerminalUnboundMetaKey(event)) return false;
       // 终端自己的键(⌃- 后退、⌃R 反向搜索、⌥Z 等,见 isTerminalKeptHotkey):照常交给 xterm,截住冒泡 —— 否则全局分发
       // 再执行后退 / 打开最近,焦点离开终端(VSCode 终端获焦时这些键不触发工作台命令)。
       if (isTerminalKeptHotkey(event)) event.stopPropagation();
@@ -879,6 +894,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
         unsubExit();
         onDataDisposable.dispose();
         disposePasteSanitizer();
+        bufferChangeDisposable?.dispose();
+        container.removeAttribute(TERMINAL_ATTR);
+        container.removeAttribute(TERMINAL_ALT_BUFFER_ATTR);
         osc7Disposable.dispose();
         reportCwd.cancel(); // 卸载丢弃待发 cwd(会话将随面板关闭/改绑)
         fileLinksDisposable.dispose();
@@ -1033,6 +1051,24 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
   // terminal.clear / 右键菜单「清除」:清空屏幕与滚动缓冲(xterm clear 保留当前提示行,同 VSCode)。
   const clear = useCallback(() => {
     termRef.current?.clear();
+  }, []);
+
+  // 终端滚动命令(TERMINAL_SCROLL_COMMANDS):同 VSCode xterm.scrollToTop / scrollToBottom / scrollUpPage(scrollPages)/ scrollUpLine。
+  const scroll = useCallback((action: TerminalScrollAction) => {
+    const term = termRef.current;
+    if (!term) return;
+    if (action === 'top') term.scrollToTop();
+    else if (action === 'bottom') term.scrollToBottom();
+    else if (action === 'pageUp') term.scrollPages(-1);
+    else if (action === 'pageDown') term.scrollPages(1);
+    else if (action === 'lineUp') term.scrollLines(-1);
+    else term.scrollLines(1);
+  }, []);
+
+  const readViewport = useCallback((): TerminalViewport | null => {
+    const buffer = termRef.current?.buffer.active;
+    if (!buffer) return null;
+    return { viewportY: buffer.viewportY, baseY: buffer.baseY, alternate: buffer.type === 'alternate' };
   }, []);
 
   const readText = useCallback((): string => {
@@ -1220,7 +1256,9 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     requestFit,
     focus,
     clear,
+    scroll,
     readText,
+    readViewport,
     contextMenuActions,
     searchApi,
     setRendererVisible,

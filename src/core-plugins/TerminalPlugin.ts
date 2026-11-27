@@ -11,15 +11,18 @@ import { activePanelInDocument } from '@/shell/dock/group-mru';
 import { getCommandDocument } from '@/shell/dock/popout-documents';
 import { toggleActiveTerminalZoom } from '@/shell/dock/terminal-panel-zoom';
 import { toggleTerminal } from '@/shell/dock/toggle-terminal';
-import { clearTerminalPanel, openTerminalSearch } from '@/panels/Terminal/terminal-panel-handles';
+import { clearTerminalPanel, openTerminalSearch, scrollTerminalPanel } from '@/panels/Terminal/terminal-panel-handles';
 import { TERMINAL_PANEL_TYPE } from '@/panels/Terminal/constants';
 import {
   TERMINAL_CLEAR_COMMAND,
   TERMINAL_NEW_COMMAND,
+  TERMINAL_SCROLL_COMMANDS,
+  TERMINAL_SCROLL_WHEN,
   TERMINAL_SEARCH_COMMAND,
   TERMINAL_TOGGLE_COMMAND,
   TERMINAL_ZOOM_COMMAND,
   terminalClearDefaultHotkey,
+  terminalScrollDefaultHotkeys,
 } from '@/panels/Terminal/terminal-hotkeys';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 
@@ -85,6 +88,26 @@ export default class TerminalPlugin extends Plugin {
         clearTerminalPanel(active.id);
       },
     });
+    // VSCode workbench.action.terminal.scrollToTop / scrollToBottom / scrollUpPage / scrollDownPage / scrollUp / scrollDown:滚动活动终端
+    // 的视口;键只在终端主缓冲获焦时分发(when),命令面板执行不受限;活动面板不是终端 → no-op。BDD: src/__tests__/terminal-scroll-commands/
+    const platform = detectPlatform();
+    for (const scroll of TERMINAL_SCROLL_COMMANDS) {
+      this.addCommand({
+        id: scroll.id,
+        title: scroll.title,
+        titleKey: scroll.titleKey,
+        category: 'Terminal',
+        categoryKey: 'commands.terminal.category',
+        ...terminalScrollDefaultHotkeys(scroll, platform),
+        when: TERMINAL_SCROLL_WHEN,
+        fn: () => {
+          const api = getDockApi();
+          const active = api && activePanelInDocument(api, getCommandDocument());
+          if (!active || active.view.contentComponent !== TERMINAL_PANEL_TYPE) return;
+          scrollTerminalPanel(active.id, scroll.action);
+        },
+      });
+    }
     this.addCommand({
       id: TERMINAL_NEW_COMMAND.id,
       title: 'New Terminal',

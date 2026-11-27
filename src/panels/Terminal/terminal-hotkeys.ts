@@ -74,6 +74,88 @@ export const TERMINAL_NEW_COMMAND = {
   secondaryHotkeys: ['ctrl+shift+`'] as readonly string[],
 } as const;
 
+/** 终端滚动动作(终端面板句柄 scroll 执行:scrollToTop / scrollToBottom / scrollPages(±1) / scrollLines(±1))。 */
+export type TerminalScrollAction = 'top' | 'bottom' | 'pageUp' | 'pageDown' | 'lineUp' | 'lineDown';
+
+/**
+ * 终端滚动命令(VSCode terminalActions 的 ScrollToTop / ScrollToBottom / ScrollUpPage / ScrollDownPage / ScrollUpLine / ScrollDownLine,
+ * 同 id、同标题;在 commandsToSkipShell 默认列表里 → 胜出即让出)。when = 终端获焦且在主缓冲(VSCode focusInAny_and_normalBuffer):
+ * vim / less 等全屏程序的备用屏里不生效,按键交给程序。
+ * 默认键同 VSCode:mac ⌘Home / ⌘End / PageUp / PageDown / ⌥⌘PageUp / ⌥⌘PageDown;Windows Ctrl+Home / Ctrl+End / ⇧PageUp /
+ * ⇧PageDown / Ctrl+Alt+PageUp / Ctrl+Alt+PageDown(Platform 不区分 Linux,Linux 同 Windows —— VSCode Linux 是 ⇧Home / ⇧End /
+ * Ctrl+⇧↑ / Ctrl+⇧↓)。mac 另把 ⌘PageUp / ⌘PageDown 作翻页的附加默认键(Continuo 偏离:mac 终端惯例,VSCode 未绑时会把 `ESC[5~`
+ * 发给 shell)。BDD: src/__tests__/terminal-scroll-commands/
+ */
+export interface TerminalScrollCommand {
+  readonly id: string;
+  readonly action: TerminalScrollAction;
+  readonly title: string;
+  readonly titleKey: string;
+  readonly mac: { readonly hotkey: string; readonly secondaryHotkeys?: readonly string[] };
+  readonly other: { readonly hotkey: string };
+}
+
+export const TERMINAL_SCROLL_WHEN = 'terminalNormalBufferFocus' as const;
+
+export const TERMINAL_SCROLL_COMMANDS: readonly TerminalScrollCommand[] = [
+  {
+    id: 'workbench.action.terminal.scrollToTop',
+    action: 'top',
+    title: 'Scroll to Top',
+    titleKey: 'commands.terminal.scrollToTop.title',
+    mac: { hotkey: 'mod+home' },
+    other: { hotkey: 'mod+home' },
+  },
+  {
+    id: 'workbench.action.terminal.scrollToBottom',
+    action: 'bottom',
+    title: 'Scroll to Bottom',
+    titleKey: 'commands.terminal.scrollToBottom.title',
+    mac: { hotkey: 'mod+end' },
+    other: { hotkey: 'mod+end' },
+  },
+  {
+    id: 'workbench.action.terminal.scrollUpPage',
+    action: 'pageUp',
+    title: 'Scroll Up (Page)',
+    titleKey: 'commands.terminal.scrollUpPage.title',
+    mac: { hotkey: 'pageup', secondaryHotkeys: ['mod+pageup'] },
+    other: { hotkey: 'shift+pageup' },
+  },
+  {
+    id: 'workbench.action.terminal.scrollDownPage',
+    action: 'pageDown',
+    title: 'Scroll Down (Page)',
+    titleKey: 'commands.terminal.scrollDownPage.title',
+    mac: { hotkey: 'pagedown', secondaryHotkeys: ['mod+pagedown'] },
+    other: { hotkey: 'shift+pagedown' },
+  },
+  {
+    id: 'workbench.action.terminal.scrollUp',
+    action: 'lineUp',
+    title: 'Scroll Up (Line)',
+    titleKey: 'commands.terminal.scrollUpLine.title',
+    mac: { hotkey: 'mod+alt+pageup' },
+    other: { hotkey: 'mod+alt+pageup' },
+  },
+  {
+    id: 'workbench.action.terminal.scrollDown',
+    action: 'lineDown',
+    title: 'Scroll Down (Line)',
+    titleKey: 'commands.terminal.scrollDownLine.title',
+    mac: { hotkey: 'mod+alt+pagedown' },
+    other: { hotkey: 'mod+alt+pagedown' },
+  },
+];
+
+/** 滚动命令在该平台的默认键(主键 + 附加默认键)。 */
+export function terminalScrollDefaultHotkeys(
+  command: TerminalScrollCommand,
+  platform: Platform,
+): { readonly hotkey: string; readonly secondaryHotkeys?: readonly string[] } {
+  return platform === 'mac' ? command.mac : command.other;
+}
+
 /**
  * terminal.clear 的默认键:同 VSCode workbench.action.terminal.clear(primary: 0, mac: Cmd+K)只 mac 有 ⌘K;
  * Windows / Linux 不设默认键 —— Ctrl+K 是 shell(readline)的「删到行尾」,须照常进 shell。
@@ -91,7 +173,7 @@ export function terminalClearDefaultHotkey(platform: Platform): string | undefin
  * - F6 / ⇧F6 区域切换(focusNextPart / focusPreviousPart)在默认列表里 → 胜出即让出(终端吃掉 Tab,键盘用户靠它离开)。
  * - ⌃Tab / ⌃⇧Tab 切换最近使用的编辑器、⌃` 切换终端、⌃⇧` 新建终端、F1 显示所有命令 → 胜出即让出(VSCode 终端里同样生效)。
  */
-const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> = new Map([
+const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> = new Map<string, { readonly metaOnly: boolean }>([
   [TERMINAL_CLEAR_COMMAND.id, { metaOnly: false }],
   [FOCUS_NEXT_PART_COMMAND.id, { metaOnly: false }],
   [FOCUS_PREVIOUS_PART_COMMAND.id, { metaOnly: false }],
@@ -109,6 +191,8 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   // 放大 / 缩小 / 重置缩放(⌘= / ⌘- / ⌘0):不在 commandsToSkipShell 默认列表 → 只有带 Meta 时让出(VSCode 同;Win/Linux 的
   // Ctrl+= / Ctrl+- 照常进 shell)。BDD: src/__tests__/window-zoom/
   ...WINDOW_ZOOM_COMMAND_IDS.map((id) => [id, { metaOnly: true }] as const),
+  // 滚动(⌘Home / ⌘End / PageUp …):在 commandsToSkipShell 默认列表里 → 胜出即让出(when 限主缓冲,备用屏里不胜出)。
+  ...TERMINAL_SCROLL_COMMANDS.map((c) => [c.id, { metaOnly: false }] as const),
 ]);
 
 /** 终端判定涉及的命令的约定默认键(命令尚未注册时兜底;已注册以注册的 hotkey 为准)。按平台(clear 仅 mac 有默认键)。 */
@@ -135,6 +219,11 @@ function terminalDefaults(platform: Platform): readonly DefaultCommand[] {
     SHOW_COMMANDS_COMMAND,
     FOCUS_NEXT_PART_COMMAND,
     FOCUS_PREVIOUS_PART_COMMAND,
+    ...TERMINAL_SCROLL_COMMANDS.map((c) => ({
+      id: c.id,
+      ...terminalScrollDefaultHotkeys(c, platform),
+      when: TERMINAL_SCROLL_WHEN,
+    })),
   ];
 }
 
@@ -254,6 +343,20 @@ export function terminalSendSequenceForKey(
     if (event.key === 'ArrowRight') return '\x1bf';
   }
   return null;
+}
+
+/**
+ * mac 上没有被任何命令 / 行内编辑映射接走的 ⌘ + 功能键(Home / End / PageUp / PageDown / Delete / Insert / F1…F24 / Enter / Tab /
+ * Escape / 方向键等非字符键):不交给 xterm。xterm 会把它们编码成带 Meta 修饰的序列(⌘Home = `ESC[1;9H`、⌘End = `ESC[1;9F`、
+ * ⌘PageDown = `ESC[6~`、⌘Delete = `ESC[3;9~`、⌘F5 = `ESC[15;9~`)或照发 ⌘Enter = CR、⌘Tab = HT,shell 打出 `;9H` / `~` 乱码,
+ * 全屏程序收到无意义按键。mac 终端(Terminal.app / iTerm2)⌘ 组合一律留给应用,不发给程序。
+ * Continuo 偏离 VSCode:VSCode 只截住解析到命令的 ⌘ 键,未绑定的照常交给 xterm(会发出上述乱码)。
+ * ⌘ + 字符键(⌘C / ⌘V / ⌘A …)xterm 本就不发字节,复制 / 粘贴 / 全选靠浏览器默认行为与 xterm 自身处理 → 不在此列。
+ * 只让 xterm 跳过、不 preventDefault / 不截冒泡:全局分发与菜单加速键照常处理。
+ */
+export function isTerminalUnboundMetaKey(event: KeyboardEvent, platform: Platform = detectPlatform()): boolean {
+  if (platform !== 'mac' || event.type !== 'keydown' || event.isComposing || !event.metaKey) return false;
+  return event.key.length > 1 && event.key !== 'Meta';
 }
 
 /** 键盘打开终端右键菜单:Shift+F10 / 菜单键(Windows / Linux 约定,mac 上同样可用)。 */

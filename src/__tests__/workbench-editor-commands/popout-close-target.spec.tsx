@@ -159,7 +159,7 @@ describe('同源的窗口级命令:终端查找 / 清屏作用于触发窗口的
     const win = childWindow();
     act(() => popOut(childTerm.group, win));
     const handles = (id: string) => {
-      const h = { focus: vi.fn(), openSearch: vi.fn(), clear: vi.fn(), readText: vi.fn(() => '') };
+      const h = { focus: vi.fn(), openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), readText: vi.fn(() => ''), readViewport: vi.fn(() => null) };
       disposers.push({ dispose: registerTerminalPanelHandles(id, h) });
       return h;
     };

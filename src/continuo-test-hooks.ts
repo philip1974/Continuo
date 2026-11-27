@@ -30,4 +30,6 @@ export interface ContinuoTestHooks {
   setHotkey: (commandId: string, hotkey: string) => void;
   /** 活动 dock 面板是终端 → 其缓冲区文本;否则 null(WebGL 渲染时 DOM 里读不到终端文字)。 */
   readActiveTerminalText: () => string | null;
+  /** 活动 dock 面板是终端 → 其视口位置(viewportY / baseY / 是否备用屏);否则 null。 */
+  readActiveTerminalViewport: () => { viewportY: number; baseY: number; alternate: boolean } | null;
 }

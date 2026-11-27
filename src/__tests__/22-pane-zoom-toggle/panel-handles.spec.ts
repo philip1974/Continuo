@@ -17,7 +17,7 @@ import {
 } from '@/panels/Terminal/terminal-panel-handles';
 
 function handles() {
-  return { focus: vi.fn(), openSearch: vi.fn(), clear: vi.fn(), readText: vi.fn(() => "") };
+  return { focus: vi.fn(), openSearch: vi.fn(), clear: vi.fn(), scroll: vi.fn(), readText: vi.fn(() => ""), readViewport: vi.fn(() => null) };
 }
 
 describe('terminal-panel-handles (T6b)', () => {

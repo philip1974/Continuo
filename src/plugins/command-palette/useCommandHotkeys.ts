@@ -387,7 +387,7 @@ export function winningCommandFor(
 const augmentedCache = new WeakMap<readonly CommandSpec[], Map<readonly DefaultCommand[], readonly CommandSpec[]>>();
 
 /** 约定的命令 id + 默认键(命令由别的模块注册,尚未注册时兜底)。 */
-export type DefaultCommand = Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys'>;
+export type DefaultCommand = Pick<CommandSpec, 'id' | 'hotkey' | 'secondaryHotkeys' | 'when'>;
 
 const NOOP = (): void => {};
 
@@ -410,6 +410,7 @@ export function withDefaultCommands(
       title: d.id,
       hotkey: d.hotkey,
       ...(d.secondaryHotkeys ? { secondaryHotkeys: d.secondaryHotkeys } : {}),
+      ...(d.when ? { when: d.when } : {}),
       fn: NOOP,
     });
   }

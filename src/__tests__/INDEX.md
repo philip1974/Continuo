@@ -2125,6 +2125,11 @@
 - [`screen-reader-mode.spec.tsx`](./terminal-screen-reader/screen-reader-mode.spec.tsx)
 - [`terminal-input-aria-label.spec.tsx`](./terminal-screen-reader/terminal-input-aria-label.spec.tsx)
 
+## [终端滚动命令与未绑定 ⌘ 组合不进 shell](./terminal-scroll-commands/README.md)
+
+- [`scroll-commands.spec.ts`](./terminal-scroll-commands/scroll-commands.spec.ts)
+- [`terminal-wiring.spec.tsx`](./terminal-scroll-commands/terminal-wiring.spec.tsx)
+
 ## [terminal-search](./terminal-search/README.md)
 
 - [`byte-identical.spec.ts`](./terminal-search/byte-identical.spec.ts)
