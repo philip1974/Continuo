@@ -55,6 +55,15 @@ export function savesOnWindowBlur(r: ResolvedAutoSave): boolean {
   return r.mode === 'onFocusChange' || r.mode === 'onWindowChange';
 }
 
+/**
+ * 关闭脏 tab 时直接保存、不弹「是否保存」确认框的模式(VSCode editorGroupView.doHandleCloseConfirmation):onFocusChange 总是
+ *(对话框会抢走焦点,microsoft/vscode#108752);onWindowChange 只在 Windows / Linux(原生对话框会让窗口失焦,#134250),macOS 照常弹框。
+ * 无标题文件 resolveAutoSave 已是 off。保存失败时调用方改弹确认框(VSCode skipAutoSave)。
+ */
+export function savesOnClose(r: ResolvedAutoSave, isMac: boolean): boolean {
+  return r.mode === 'onFocusChange' || (r.mode === 'onWindowChange' && !isMac);
+}
+
 /** React hook:四个自动保存设置(跨窗同步经 values-store)。 */
 export function useAutoSaveSettings(): AutoSaveSettings {
   const mode = useSettingValue(FILES_AUTO_SAVE.id, FILES_AUTO_SAVE.default);

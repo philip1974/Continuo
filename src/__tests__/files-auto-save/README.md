@@ -56,6 +56,21 @@
 
 设置值经 localStorage 跨窗同步(既有 values-store),各窗口的编辑器即时按新模式工作,菜单勾选随之更新。
 
+### 6. 关闭脏 tab 时直接保存(`auto-save-close-tab.spec.tsx`)
+
+对照 VSCode `editorGroupView.doHandleCloseConfirmation`:
+
+- 生效模式为 `onFocusChange` → 关闭(× / ⌘W / 中键 / 右键批量关闭)时**直接保存后关闭,不弹「是否保存」**(VSCode:对话框会抢走焦点,
+  microsoft/vscode#108752)
+- `onWindowChange` → 只在 Windows / Linux 直接保存(VSCode:原生对话框会让窗口失焦,#134250);**macOS 照常弹框**
+- `afterDelay`(含 Markdown 语言级覆盖)/ `off` / 无标题 → 照常弹框
+- 保存失败(无权限等)/ 磁盘已被外部修改 / 写保护 → 提示保存失败、**tab 不关**,改弹「是否保存」确认框(VSCode 自动保存失败后以
+  `skipAutoSave` 重新确认);不覆盖外部修改、不去写保护。保存期间又变脏 → 同样弹框
+- 已删除(orphaned)→ 不自动重建,弹框由用户决定(沿用本仓「已删除暂停自动保存」;VSCode 此处会按路径重建文件)
+- 批量关闭:直接保存的 tab 不进合并确认框;合并框只列其余脏文件,选「不保存」只丢弃列出的文件,直接保存的照常保存;
+  需要确认的只剩 1 个 → 只为它弹单文件框;某个直接保存失败 → 为它弹单文件框,取消则整批不关
+- 关窗:沿用第 3 条(生效模式 ≠ off 的活动 tab 由关窗 flush 落盘,不计入「未保存」确认)
+
 ## 与 VSCode 的差异
 
 - 语言级覆盖只做 Markdown 这一项(专用设置,不做通用 `[lang]` 语法)
@@ -78,4 +93,4 @@
 ## E2E
 
 `tests/e2e/files-auto-save.spec.ts`:默认 md 自动 / ts 不自动;Markdown 覆盖关 + off → md 不写盘;afterDelay 下 ts 自动写盘;
-onFocusChange 切 tab / 终端时保存;onWindowChange 窗口失焦保存;菜单 / 命令切换;打开自动保存(命令 / 设置页)立即保存已有脏文件,多窗口各自保存。
+onFocusChange 切 tab / 终端时保存;onFocusChange 下 ⌘W 关闭脏 tab 不弹框且已保存;onWindowChange 窗口失焦保存;菜单 / 命令切换;打开自动保存(命令 / 设置页)立即保存已有脏文件,多窗口各自保存。
