@@ -23,14 +23,17 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { yamlFrontmatter } from '@codemirror/lang-yaml';
-import { LanguageDescription } from '@codemirror/language';
+import { indentUnit, LanguageDescription } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
   EDITOR_FONT_FAMILY,
   EDITOR_FONT_SIZE,
   EDITOR_LINE_HEIGHT,
+  EDITOR_DETECT_INDENTATION,
+  EDITOR_INSERT_SPACES,
   EDITOR_LINE_NUMBERS,
+  EDITOR_TAB_SIZE,
   EDITOR_WORD_WRAP,
 } from '@/plugins/settings/core-setting-specs';
 import { useEditorStore } from '@/stores/editor.store';
@@ -69,6 +72,7 @@ import { markdownLinkClickExtension } from './codemirror-markdown-links';
 import { lastSeparatorIndex } from '@/lib/path-cross';
 import { detectLineEnding } from './editor-encoding';
 import { codeMirrorMediaDrop } from './codemirror-media-drop';
+import { ensureTabIndentation, indentUnitText, useTabIndentation, type IndentOptions } from './editor-indentation';
 
 interface CodeEditorProps {
   tabId: string;
@@ -130,6 +134,11 @@ function isLowSurrogate(code: number): boolean {
 }
 
 const EMPTY_LANGUAGE_EXTENSIONS: Extension[] = [];
+
+/** 文档缩进 → CodeMirror 配置:一级缩进单位与 tab 宽度(BDD: src/__tests__/editor-indentation/)。 */
+export function indentationExtension(opts: IndentOptions): Extension {
+  return [indentUnit.of(indentUnitText(opts)), EditorState.tabSize.of(opts.tabSize)];
+}
 
 /** Markdown:文首 `---` 包起来的 YAML frontmatter 按 YAML 解析(否则 `key: v\n---` 会被当成 Setext 标题)。 */
 function markdownWithFrontmatter(): Extension {
@@ -282,6 +291,16 @@ export function CodeEditor({
   const latestWrapRef = useRef(wordWrap);
   latestWrapRef.current = wordWrap;
   const appliedWrapRef = useRef(wordWrap);
+  // 缩进(indentUnit + tabSize):打开时按设置 / 内容推断,之后随状态栏缩进项 / 命令 / 设置变化 reconfigure(BDD: src/__tests__/editor-indentation/)。
+  const indentCompartment = useRef(new Compartment());
+  const indentation = useTabIndentation(tabId);
+  // 打开时的缩进默认值(经 useSettingValue 取:按 spec 规整;设置之后的变化由 installIndentationSync 统一重定)
+  const indentSettings = {
+    tabSize: useSettingValue(EDITOR_TAB_SIZE.id, EDITOR_TAB_SIZE.default),
+    insertSpaces: useSettingValue(EDITOR_INSERT_SPACES.id, EDITOR_INSERT_SPACES.default),
+    detectIndentation: useSettingValue(EDITOR_DETECT_INDENTATION.id, EDITOR_DETECT_INDENTATION.default),
+  };
+  const appliedIndentRef = useRef<IndentOptions | null>(null);
   const suppressNextChange = useRef(false);
   // 性能 P6:记录「editor doc 当前反映的字符串」。本地打字时 onChange emit 的值会作为
   // value 回传(受控回声),此 ref 让 value-sync effect 直接 `value === lastSynced` 跳过,
@@ -332,6 +351,7 @@ export function CodeEditor({
     appliedLabelRef.current = editorContentLabel(fileName, groupNumber);
     eolRef.current = detectLineEnding(value);
     appliedWrapRef.current = latestWrapRef.current;
+    appliedIndentRef.current = ensureTabIndentation(tabId, fileName, value, indentSettings);
 
     const extensions: Extension[] = [
       // basicSetup 去掉与 VSCode 冲突的查找键(⌘⌥G 转到行小面板、Win/Linux 的 Ctrl+G 查找下一个),⌃G 归 workbench.action.gotoLine。
@@ -352,6 +372,8 @@ export function CodeEditor({
       labelCompartment.current.of(codeMirrorContentLabel(appliedLabelRef.current)),
       langCompartment.current.of(lang),
       wrapCompartment.current.of(appliedWrapRef.current ? EditorView.lineWrapping : []),
+      // 回车自动缩进 / Tab / ⇧Tab / ⌘] / ⌘[ 都按文档缩进(4 空格文件缩 4 格,tab 文件插 tab;此前写死 CodeMirror 默认 2 空格)
+      indentCompartment.current.of(indentationExtension(appliedIndentRef.current)),
       debugDecorationsExtension(),
       // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
       navigationHistoryExtension(tabId, groupId),
@@ -579,6 +601,15 @@ export function CodeEditor({
     appliedWrapRef.current = wordWrap;
     view.dispatch({ effects: wrapCompartment.current.reconfigure(wordWrap ? EditorView.lineWrapping : []) });
   }, [wordWrap]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    const applied = appliedIndentRef.current;
+    if (!view || !indentation || indentation === applied) return;
+    appliedIndentRef.current = indentation;
+    if (applied && applied.tabSize === indentation.tabSize && applied.insertSpaces === indentation.insertSpaces) return;
+    view.dispatch({ effects: indentCompartment.current.reconfigure(indentationExtension(indentation)) });
+  }, [indentation]);
 
   // editor.lineNumbers 变化 → 同步到 .cm-editor 的 className
   useEffect(() => {

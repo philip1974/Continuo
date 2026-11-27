@@ -9,6 +9,8 @@ import { lazyPanel } from '@/lib/lazy-panel';
 import { loadEditorPanelModule } from '@/panels/Editor/editor-engine-loaders';
 import { editorCommandSpecs } from '@/panels/Editor/editor-commands';
 import { encodingCommandSpecs } from '@/plugins/editor-encoding/encoding-actions';
+import { indentationCommandSpecs } from '@/plugins/editor-encoding/indentation-actions';
+import { installIndentationSync } from '@/panels/Editor/editor-indentation';
 import { editorTextCommandSpecs } from '@/panels/Editor/editor-text-commands';
 import { detectPlatform } from '@/plugins/command-palette/format-hotkey';
 import { installNavigationHistory } from '@/panels/Editor/navigation-history';
@@ -45,6 +47,10 @@ export default class EditorPlugin extends Plugin {
     for (const spec of editorCommandSpecs(detectPlatform())) this.addCommand(spec);
     // 更改文件编码 / 更改行尾序列(VSCode workbench.action.editor.changeEncoding / changeEOL;BDD: src/__tests__/editor-text-encoding/)
     for (const spec of encodingCommandSpecs()) this.addCommand(spec);
+    // 缩进:使用空格 / Tab 缩进、从内容中检测、转换缩进(VSCode editor.action.indentUsingSpaces 等;BDD: src/__tests__/editor-indentation/)
+    for (const spec of indentationCommandSpecs()) this.addCommand(spec);
+    // 缩进设置变化 → 已打开文档按新设置重定;文档关闭 → 丢弃其缩进记录
+    this.register({ dispose: installIndentationSync() });
     // 文本编辑命令(切换注释 / 移动行 / 选中行 / 折叠 …;BDD: src/__tests__/editor-text-commands/)
     for (const spec of editorTextCommandSpecs(detectPlatform())) this.addCommand(spec);
     // 后退 / 前进的导航记录(活动编辑器 / 路径变更 / 工作区根订阅;BDD: src/__tests__/editor-navigation-history/)

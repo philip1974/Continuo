@@ -12,6 +12,7 @@ import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { useEditorStore } from '@/stores/editor.store';
 import { findEditorFileTabById } from '@/panels/Editor/editor-tab-lookup';
 import { lineEndingOf, tabEncodingOf } from '@/panels/Editor/editor-encoding';
+import { creationIndentOptions, useTabIndentation } from '@/panels/Editor/editor-indentation';
 import { usePickerList } from '../picker/use-picker-list';
 import { pickerRowClassName, pickerRowSecondaryClassName } from '../picker/picker-row';
 import { fuzzyFilter } from '../command-palette/fuzzy';
@@ -61,6 +62,10 @@ function placeholderOf(request: EncodingPickRequest, t: ReturnType<typeof useT>)
       return t('encoding_picker.pick_open', { name: request.name });
     case 'eol':
       return t('encoding_picker.pick_eol');
+    case 'indent':
+      return t('encoding_picker.pick_action');
+    case 'indent-size':
+      return t('encoding_picker.pick_indent_size');
   }
 }
 
@@ -73,11 +78,17 @@ function EncodingPickerBody({ request }: { readonly request: EncodingPickRequest
   const moveSelection = useEncodingPickerStore((s) => s.moveSelection);
   const clampSelection = useEncodingPickerStore((s) => s.clampSelection);
   const tabId = request.kind === 'open' ? null : request.tabId;
-  // 当前编码 / 行尾:行尾标「当前」(初始选中它);编码同样标出(VSCode 只靠初始选中)
+  // 当前编码 / 行尾:行尾标「当前」(初始选中它);编码同样标出(VSCode 只靠初始选中)。缩进项不标(宽度项自带说明)。
   const current = useEditorStore((s) => {
+    if (request.kind === 'indent' || request.kind === 'indent-size') return null;
     const tab = tabId === null ? null : findEditorFileTabById(s.tabs, tabId);
     if (!tab) return null;
     return request.kind === 'eol' ? lineEndingOf(tab.content) : tabEncodingOf(tab);
+  });
+  const indent = useTabIndentation(request.kind === 'indent-size' ? request.tabId : null);
+  const filePath = useEditorStore((s) => {
+    const tab = tabId === null ? null : findEditorFileTabById(s.tabs, tabId);
+    return tab?.filePath ?? null;
   });
   const fileName = useEditorStore((s) => {
     const tab = tabId === null ? null : findEditorFileTabById(s.tabs, tabId);
@@ -86,12 +97,18 @@ function EncodingPickerBody({ request }: { readonly request: EncodingPickRequest
 
   const items = useMemo(
     () =>
-      encodingPickItems(request).items.map((item) => {
+      encodingPickItems(
+        request,
+        request.kind === 'indent-size' && filePath !== null
+          ? { indent, configuredTabSize: creationIndentOptions(filePath).tabSize }
+          : {},
+      ).items.map((item) => {
         const label = item.labelKey !== undefined ? t(item.labelKey) : (item.label ?? item.id);
-        return { ...item, text: label, lower: lowerIfNeeded(`${label} ${item.description ?? ''}`) };
+        const description = item.descriptionKey !== undefined ? t(item.descriptionKey) : item.description;
+        return { ...item, description, text: label, lower: lowerIfNeeded(`${label} ${description ?? ''}`) };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t 是稳定引用,切语言靠 locale 重算
-    [request, t, locale],
+    [request, t, locale, indent, filePath],
   );
   const filtered = useMemo(() => fuzzyFilter(items, normalizeSearchQuery(query), (i) => i.lower), [items, query]);
 

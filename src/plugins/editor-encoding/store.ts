@@ -1,4 +1,4 @@
-// 编码 / 行尾选择器(VSCode workbench.action.editor.changeEncoding / changeEOL 的 Quick Pick)状态:共享 picker 切片 + 本次请求。
+// 编码 / 行尾 / 缩进选择器(VSCode workbench.action.editor.changeEncoding / changeEOL / 状态栏缩进项的 Quick Pick)状态:共享 picker 切片 + 本次请求。
 // 关闭只收起列表;「放弃更改并重新打开」确认框由 confirmReopen 驱动(选择器已关)。BDD: src/__tests__/editor-text-encoding/
 
 import { create } from 'zustand';
@@ -16,7 +16,11 @@ export type EncodingPickRequest =
   | { readonly kind: 'save'; readonly tabId: string }
   /** 打开非 UTF-8 文件失败(FS_UNKNOWN_ENCODING):选编码后按它打开(open 负责打开与失败提示)。 */
   | { readonly kind: 'open'; readonly name: string; readonly open: (encoding: TextEncodingId) => unknown }
-  | { readonly kind: 'eol'; readonly tabId: string };
+  | { readonly kind: 'eol'; readonly tabId: string }
+  /** 状态栏缩进项:使用空格缩进 / 使用 Tab 缩进 / 从内容中检测缩进方式 / 转换缩进(VSCode showIndentationPicker)。 */
+  | { readonly kind: 'indent'; readonly tabId: string }
+  /** 选缩进宽度 1..8(VSCode ChangeIndentationSizeAction;insertSpaces = 选定后用空格还是 tab)。 */
+  | { readonly kind: 'indent-size'; readonly tabId: string; readonly insertSpaces: boolean };
 
 export interface EncodingPickerState extends PickerSlice {
   readonly request: EncodingPickRequest | null;

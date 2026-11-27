@@ -6,7 +6,7 @@ import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { SR_ONLY_STYLE } from '@/lib/sr-only';
 import { useRegistry } from '@/plugins/registries/useRegistry';
-import { groupActiveTabIdOf, useEditorStore } from '@/stores/editor.store';
+import { groupActiveTabIdOf, useEditorStore, usesMilkdownEngine } from '@/stores/editor.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import { useTerminalStore, type TerminalSession } from '@/stores/terminal.store';
@@ -33,6 +33,8 @@ import { isImagePreviewPath } from '../../electron/shared/image-preview';
 import { useActiveNonEditorPanel, useMainWindowEditorGroupId } from '@/shell/dock/main-window-active-panel';
 import { encodingLabelShort, lineEndingOf } from '@/panels/Editor/editor-encoding';
 import { openChangeEncoding, openChangeEol } from '@/plugins/editor-encoding/encoding-actions';
+import { openIndentationPicker } from '@/plugins/editor-encoding/indentation-actions';
+import { useTabIndentation } from '@/panels/Editor/editor-indentation';
 import type { TextEncodingId } from '../../electron/shared/text-encoding';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
@@ -275,6 +277,30 @@ const EditorEncodingItems = memo(function EditorEncodingItems({
   );
 });
 
+/**
+ * 缩进项(VSCode status.editor.indentation):「空格: 4」/「制表符长度: 4」,点击打开缩进动作选择器。文档缩进由代码编辑器打开时确定
+ *(未确定 —— 如 Markdown 编辑 / 预览模式 —— 不显示)。BDD: src/__tests__/editor-indentation/
+ */
+const EditorIndentationItem = memo(function EditorIndentationItem({ tabId }: { tabId: string }) {
+  const t = useT();
+  const indent = useTabIndentation(tabId);
+  if (!indent) return null;
+  // native button:同编码 / 行尾项(24px 状态栏行内文本按钮);可访问名称 = 可见文字,动作说明在 title(VSCode「选择缩进」)。
+  return (
+    <button
+      type="button"
+      data-statusbar-indentation=""
+      title={t('statusbar.indent.tooltip')}
+      onClick={() => openIndentationPicker(tabId)}
+      className="shrink-0 whitespace-nowrap text-fg-dim hover:text-fg transition-colors @max-lg:hidden"
+    >
+      {indent.insertSpaces
+        ? t('statusbar.indent.spaces', { size: indent.tabSize })
+        : t('statusbar.indent.tabs', { size: indent.tabSize })}
+    </button>
+  );
+});
+
 export function StatusBar() {
   const t = useT();
   const root = useWorkspaceStore((s) => s.root);
@@ -297,7 +323,7 @@ export function StatusBar() {
   // 只是 string ref(不像旧 EditorHeader 的 JSON 签名 selector,这里避免序列化大文档正文)。
   // 取主窗正显示的编辑器组的活动 tab(活动编辑器组可能在 popout 子窗,主窗状态栏不显示子窗的文件)。
   const mainGroupId = useMainWindowEditorGroupId();
-  const { activeTabId, activeFilePath, activeDirty, activeContent, activeEncoding } =
+  const { activeTabId, activeFilePath, activeDirty, activeContent, activeEncoding, activeMilkdown } =
     useEditorStore(
       useShallow((s) => {
         const found = findEditorFileTabById(s.tabs, mainGroupId === null ? null : groupActiveTabIdOf(s, mainGroupId));
@@ -307,6 +333,8 @@ export function StatusBar() {
           activeDirty: found?.dirty ?? false,
           activeContent: found?.content,
           activeEncoding: found?.encoding ?? 'utf8',
+          // Markdown 编辑 / 预览(Milkdown)不涉及缩进:不显示缩进项(mode 在同一 store,随之重算)
+          activeMilkdown: found ? s.mode !== 'source' && usesMilkdownEngine(found.filePath, found) : false,
         };
       }),
     );
@@ -429,6 +457,9 @@ export function StatusBar() {
             </span>
             {/* 图片 tab 的内容是 stat 指纹,不是文本:不显示统计(尺寸 / 大小在图片视图里)。 */}
             {!isImagePreviewPath(activeFilePath) && <EditorStats tabId={activeTabId} content={activeContent} />}
+            {!isImagePreviewPath(activeFilePath) && activeTabId !== null && !activeMilkdown && (
+              <EditorIndentationItem tabId={activeTabId} />
+            )}
             {!isImagePreviewPath(activeFilePath) && activeTabId !== null && activeContent !== undefined && (
               <EditorEncodingItems tabId={activeTabId} content={activeContent} encoding={activeEncoding} />
             )}

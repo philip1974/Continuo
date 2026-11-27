@@ -65,7 +65,8 @@ describe('常用动作注册为命令', () => {
 });
 
 // VSCode 命令标题风格:Title Case,只有虚词小写(between:VSCode「Toggle between Light/Dark Themes」)。
-const LOWERCASE_WORDS = new Set(['in', 'to', 'the', 'of', 'and', 'a', 'an', 'for', 'on', 'into', 'between']);
+// 'from':VSCode「Detect Indentation from Content」(editor.action.detectIndentation)照抄
+const LOWERCASE_WORDS = new Set(['in', 'to', 'the', 'of', 'and', 'a', 'an', 'for', 'on', 'into', 'between', 'from']);
 
 describe('英文命令标题大小写统一', () => {
   it('核心命令英文标题每个实词首字母大写(「Toggle Explorer Sidebar」)', () => {

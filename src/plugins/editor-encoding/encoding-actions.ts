@@ -23,6 +23,7 @@ import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { isTextEncodingId, TEXT_ENCODINGS, type TextEncodingId } from '../../../electron/shared/text-encoding';
 import { encodingPickItems } from './encoding-picks';
 import { showEncodingPicker as show, useEncodingPickerStore, type EncodingPickRequest } from './store';
+import { acceptIndentationPick } from './indentation-actions';
 
 export const CHANGE_ENCODING_COMMAND_ID = 'workbench.action.editor.changeEncoding';
 export const CHANGE_EOL_COMMAND_ID = 'workbench.action.editor.changeEOL';
@@ -59,6 +60,11 @@ export function openChangeEol(tabId?: string): void {
 /** 选择器里确定了一项(Enter / 单击)。 */
 export function acceptEncodingPick(request: EncodingPickRequest, id: string): void {
   const store = useEncodingPickerStore.getState();
+  // 状态栏缩进项 / 缩进宽度(BDD: src/__tests__/editor-indentation/)
+  if (request.kind === 'indent' || request.kind === 'indent-size') {
+    acceptIndentationPick(request, id);
+    return;
+  }
   if (request.kind === 'action') {
     if (id !== 'reopen' && id !== 'save') return;
     const tab = textTab(request.tabId);

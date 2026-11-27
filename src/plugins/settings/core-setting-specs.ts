@@ -103,6 +103,53 @@ export const EDITOR_WORD_WRAP: CoreSettingSpec<boolean> = {
 };
 
 /**
+ * 缩进(VSCode editor.tabSize / editor.insertSpaces / editor.detectIndentation,默认 4 / 开 / 开):打开文档时的缩进默认值;
+ * 检测开着时按内容推断(推断不出用默认值)。Makefile / Go 默认用 tab(VSCode 内置语言默认)。改设置 → 已打开文档即时按新设置重定。
+ * BDD: src/__tests__/editor-indentation/
+ */
+export const EDITOR_TAB_SIZE: CoreSettingSpec<number> = {
+  id: 'editor.tabSize',
+  category: 'editor',
+  group: 'indentation',
+  groupKey: 'settings.group.indentation',
+  title: 'Tab size',
+  titleKey: 'settings.editor.tab_size',
+  descriptionKey: 'settings.editor.tab_size.desc',
+  type: 'number',
+  default: 4,
+  min: 1,
+  max: 100,
+  step: 1,
+  priority: 4,
+};
+
+export const EDITOR_INSERT_SPACES: CoreSettingSpec<boolean> = {
+  id: 'editor.insertSpaces',
+  category: 'editor',
+  group: 'indentation',
+  groupKey: 'settings.group.indentation',
+  title: 'Insert spaces',
+  titleKey: 'settings.editor.insert_spaces',
+  descriptionKey: 'settings.editor.insert_spaces.desc',
+  type: 'boolean',
+  default: true,
+  priority: 5,
+};
+
+export const EDITOR_DETECT_INDENTATION: CoreSettingSpec<boolean> = {
+  id: 'editor.detectIndentation',
+  category: 'editor',
+  group: 'indentation',
+  groupKey: 'settings.group.indentation',
+  title: 'Detect indentation',
+  titleKey: 'settings.editor.detect_indentation',
+  descriptionKey: 'settings.editor.detect_indentation.desc',
+  type: 'boolean',
+  default: true,
+  priority: 6,
+};
+
+/**
  * 预览编辑器(VSCode workbench.editor.enablePreview,默认开):资源管理器 / 搜索结果单击以预览方式打开(斜体标题,被下一次预览
  * 原位替换,编辑 / 保存 / 双击 / 保留编辑器命令后常驻)。关闭 → 所有打开方式都常驻,已有的预览 tab 一并转常驻。
  * BDD: src/__tests__/editor-preview-tab/

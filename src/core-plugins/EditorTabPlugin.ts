@@ -9,7 +9,10 @@ import {
   AUTO_SAVE_MARKDOWN_ENABLED,
   EDITOR_DECORATIONS_BADGES,
   EDITOR_DECORATIONS_COLORS,
+  EDITOR_DETECT_INDENTATION,
   EDITOR_ENABLE_PREVIEW,
+  EDITOR_INSERT_SPACES,
+  EDITOR_TAB_SIZE,
   EDITOR_FONT_FAMILY,
   EDITOR_FONT_SIZE,
   EDITOR_LINE_HEIGHT,
@@ -37,6 +40,11 @@ export default class EditorTabPlugin extends Plugin {
     this.addSettingItem(EDITOR_LINE_HEIGHT);
     this.addSettingItem(EDITOR_LINE_NUMBERS);
     this.addSettingItem(EDITOR_WORD_WRAP);
+
+    // ── Indentation(BDD: src/__tests__/editor-indentation/)──
+    this.addSettingItem(EDITOR_TAB_SIZE);
+    this.addSettingItem(EDITOR_INSERT_SPACES);
+    this.addSettingItem(EDITOR_DETECT_INDENTATION);
 
     // ── Auto-save ──
     this.addSettingItem(AUTO_SAVE_MARKDOWN_ENABLED);

@@ -645,6 +645,12 @@
 - [`read-image.spec.ts`](./editor-image-preview/read-image.spec.ts)
 - [`statusbar-image.spec.tsx`](./editor-image-preview/statusbar-image.spec.tsx)
 
+## [editor-indentation](./editor-indentation/README.md)
+
+- [`code-editor-indentation.spec.tsx`](./editor-indentation/code-editor-indentation.spec.tsx)
+- [`indentation-guess.spec.ts`](./editor-indentation/indentation-guess.spec.ts)
+- [`indentation-statusbar-commands.spec.tsx`](./editor-indentation/indentation-statusbar-commands.spec.tsx)
+
 ## [editor-markdown-ime-composition](./editor-markdown-ime-composition/README.md)
 
 - [`ime-composition.spec.ts`](./editor-markdown-ime-composition/ime-composition.spec.ts)
