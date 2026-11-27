@@ -149,3 +149,39 @@ test('终端字体 / 行高:改设置后单元格尺寸变化、行列数重排,
   await setSetting(win, 'terminal.integrated.fontFamily', '');
   await expect.poll(async () => Math.abs((await terminalGeometry(win, 'G5')).cellW - base.cellW), { timeout: 20_000 }).toBeLessThan(0.5);
 });
+
+// VSCode getMassagedFontFamily / _wrapInQuotes:用户字体后接默认等宽链、单个名字加引号 → 本机没装的字体 / 数字开头的名字
+// 仍落到等宽字体(i 与 M 等宽),不回落系统比例字体。
+test('编辑器字体填本机没有的字体 / 数字开头的名字 → 仍是等宽字体(i 与 M 等宽)', async () => {
+  test.setTimeout(60_000);
+  const { win } = await launch();
+  await openTreeItem(win, /^a\.ts$/);
+  await expect(editorRoots(win).locator('.cm-content')).toContainText('export const a', { timeout: 10_000 });
+  /** 用代码行的计算字体量 10 个 i 与 10 个 M 的宽度。 */
+  const glyphWidths = () =>
+    editorRoots(win)
+      .locator('.cm-line')
+      .first()
+      .evaluate((line) => {
+        const style = getComputedStyle(line);
+        const measure = (text: string) => {
+          const span = document.createElement('span');
+          span.style.font = style.font;
+          span.style.whiteSpace = 'pre';
+          span.style.position = 'absolute';
+          span.textContent = text;
+          document.body.appendChild(span);
+          const w = span.getBoundingClientRect().width;
+          span.remove();
+          return w;
+        };
+        return { i: measure('iiiiiiiiii'), m: measure('MMMMMMMMMM'), family: style.fontFamily };
+      });
+  for (const family of ['Fira Code Not Installed Anywhere', '1st Font']) {
+    await setSetting(win, 'editor.fontFamily', family);
+    await expect.poll(async () => (await glyphWidths()).family).toContain(family);
+    const w = await glyphWidths();
+    expect(w.i).toBeGreaterThan(0);
+    expect(Math.abs(w.i - w.m)).toBeLessThan(0.5);
+  }
+});

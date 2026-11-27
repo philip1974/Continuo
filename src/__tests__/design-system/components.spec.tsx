@@ -315,6 +315,41 @@ describe('SegmentedControl', () => {
 });
 
 describe('TabNav + TabNavItem', () => {
+  // VSCode tab:标题(含目录说明)过长时截断,标题后的装饰徽标(git 字母等)始终可见。trailing 槽位在会截断的 label 之外、
+  // 未保存圆点之前,不收缩;不并入 tab 的可访问名(名称仍只取 label)。
+  it('trailing:渲染在 label 之外、dirty 圆点之前;CSS 不收缩、label 可截断;可访问名不含 trailing', () => {
+    const { container, getByRole } = render(
+      <TabNav>
+        <TabNavItem active dirty onSelect={() => {}} trailing={<span data-testid="badge">M</span>}>
+          a-very-long-file-name.ts
+        </TabNavItem>
+      </TabNav>,
+    );
+    const badge = container.querySelector('[data-testid=badge]')!;
+    const slot = badge.parentElement!;
+    expect(slot.className).toBe('wm-tab-nav-item__trailing');
+    expect(container.querySelector('.wm-tab-nav-item__label')!.contains(badge)).toBe(false);
+    const dot = container.querySelector('.wm-tab-nav-item__dirty-dot')!;
+    expect(slot.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(getByRole('tab', { name: 'a-very-long-file-name.ts' })).toBeTruthy();
+
+    const css = readFileSync(join(process.cwd(), 'src/design/TabNav.css'), 'utf8');
+    const trailing = /\.wm-tab-nav-item__trailing\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(trailing).toMatch(/flex:\s*0 0 auto/);
+    const label = /\.wm-tab-nav-item__label\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(label).toMatch(/min-width:\s*0/);
+    expect(label).toMatch(/text-overflow:\s*ellipsis/);
+  });
+
+  it('无 trailing → 不渲染槽位', () => {
+    const { container } = render(
+      <TabNav>
+        <TabNavItem onSelect={() => {}}>a.ts</TabNavItem>
+      </TabNav>,
+    );
+    expect(container.querySelector('.wm-tab-nav-item__trailing')).toBeNull();
+  });
+
   // VSCode tab.unfocusedActiveForeground / unfocusedActiveBorder:tab 栏所在组不是活动组时,活动 tab 文字变暗(fg-muted)、
   // 不显示强调下划线,但保留选中底色(仍与非活动 tab 有区分)。走语义 token,亮 / 暗同一规则。
   it('unfocused:tab 栏标 data-unfocused;样式只改活动 tab 的文字色与下划线,保留底色', () => {

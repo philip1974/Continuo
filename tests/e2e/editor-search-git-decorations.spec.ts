@@ -133,3 +133,28 @@ test('拖出到子窗的编辑器 tab 着色,并随文件变化更新', async ({
   writeFileSync(path.join(workspaceRoot, 'README.md'), '# popout\n');
   await expect(tabTitle(child, 'README.md')).toHaveClass(/\btext-git-modified\b/, { timeout: 10_000 });
 });
+
+// VSCode:tab 标题过长时截断,标题后的 git 字母始终可见(TabNavItem trailing 槽位,不随标题截断)。
+test('长文件名 tab:标题截断,git 字母仍在 tab 边界内可见', async ({ window, workspaceRoot }) => {
+  test.setTimeout(60_000);
+  await realFocus(window);
+  const long = 'a-very-very-long-file-name-that-will-be-truncated-in-the-tab.ts';
+  writeFileSync(path.join(workspaceRoot, long), 'export const x = 1;\n');
+  initRepo(workspaceRoot);
+  writeFileSync(path.join(workspaceRoot, long), 'export const x = 2;\n');
+  await openTreeItem(window, new RegExp(`^${long.replace(/[.-]/g, '\\$&')}$`));
+  const tab = tabOf(window, long);
+  await expect(tabLetter(window, long)).toHaveText('M', { timeout: 10_000 });
+  await expect(tabLetter(window, long)).toBeVisible();
+  // 标题确实被截断(否则本用例不成立)
+  const label = tab.locator('.wm-tab-nav-item__label');
+  expect(await label.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  const tabBox = (await tab.boundingBox())!;
+  const letterBox = (await tabLetter(window, long).boundingBox())!;
+  expect(letterBox.width).toBeGreaterThan(0);
+  expect(letterBox.x).toBeGreaterThanOrEqual(tabBox.x);
+  expect(letterBox.x + letterBox.width).toBeLessThanOrEqual(tabBox.x + tabBox.width);
+  // 字母不被标题裁剪:字母右缘在标题可见区域之外(标题的 overflow 裁不到它)
+  const labelBox = (await label.boundingBox())!;
+  expect(letterBox.x).toBeGreaterThanOrEqual(labelBox.x + labelBox.width - 0.5);
+});

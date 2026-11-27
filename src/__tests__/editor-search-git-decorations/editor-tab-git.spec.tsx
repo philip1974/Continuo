@@ -96,6 +96,9 @@ describe('tab 标题按 git 状态着色 + 字母', () => {
     expect(letterOf(tab('m.ts'))?.textContent).toBe('M');
     expect(letterOf(tab('m.ts'))?.className).toContain('text-git-modified');
     expect(letterOf(tab('m.ts'))?.getAttribute('aria-hidden')).toBe('true');
+    // 字母放在 tab 的 trailing 槽位(会截断的标题之外):长文件名截断时字母仍可见(VSCode)
+    expect(letterOf(tab('m.ts'))?.closest('.wm-tab-nav-item__label')).toBeNull();
+    expect(letterOf(tab('m.ts'))?.closest('.wm-tab-nav-item__trailing')).not.toBeNull();
     expect(titleOf(tab('x.ts'))?.className).toContain('text-git-untracked');
     expect(letterOf(tab('x.ts'))?.textContent).toBe('U');
   });

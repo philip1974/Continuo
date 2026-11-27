@@ -93,6 +93,7 @@ import { registerEditorFocus } from '../../panels/Editor/editor-focus-registry';
 import { FolderTree } from '../../panels/Explorer/FolderTree';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
 import { requestExplorer } from '../../panels/Explorer/explorer-requests';
+import { notify } from '@/notifications/notify';
 
 const row = (container: HTMLElement, p: string) =>
   container.querySelector(`[title="${p}"]`) as HTMLElement | null;
@@ -296,13 +297,14 @@ describe('FolderTree · 新建失败保留输入并内联提示', () => {
       code: 'FS_EEXIST',
       message: 'EEXIST: file already exists',
     } as never);
+    // 父目录已加载子项里没有它(实时校验放行),main 端仍报已存在(如外部进程刚建、隐藏文件同名)
     const input = await startCreateIn(r, '/work/alpha', NEW_FILE);
-    submit(input, 'inner.ts');
+    submit(input, 'ghost.ts');
     const alert = await r.findByRole('alert');
     expect(alert.textContent).toMatch(/已存在|Already exists/);
     const still = document.querySelector<HTMLInputElement>('input[placeholder]')!;
     expect(still).not.toBeNull();
-    expect(still.value).toBe('inner.ts');
+    expect(still.value).toBe('ghost.ts');
     expect(still.getAttribute('aria-invalid')).toBe('true');
     expect(h.openFileByPath).not.toHaveBeenCalled();
 
@@ -321,7 +323,7 @@ describe('FolderTree · 新建失败保留输入并内联提示', () => {
       message: 'exists',
     } as never);
     const input = await startCreateIn(r, '/work/alpha', NEW_FILE);
-    submit(input, 'inner.ts');
+    submit(input, 'ghost.ts');
     await r.findByRole('alert');
     act(() => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
@@ -441,5 +443,109 @@ describe('FolderTree · 再次新建与失焦(VSCode 行内输入框同款)', ()
     });
     expect(input()).not.toBeNull();
     expect(input()!.placeholder).toMatch(/新建文件夹名|New folder name/i);
+  });
+});
+
+// VSCode validateFileName(实时:同目录已有同名项 → 错误,Enter 不提交)+ InlineEditInputBox 失焦(输入无效 → 取消)。
+// 失焦触发的提交在 main 端失败(如未加载的同名项、权限)→ 直接放弃并 toast 原因,不留无焦点、带错误的孤立输入条。
+describe('FolderTree · 新建实时重名校验与失焦失败', () => {
+  const input = () => document.querySelector<HTMLInputElement>('input[placeholder]');
+  const flush = () =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  function outside(): HTMLButtonElement {
+    const b = document.body.appendChild(document.createElement('button'));
+    b.textContent = 'editor';
+    return b;
+  }
+  const type = (el: HTMLInputElement, value: string) =>
+    act(() => {
+      fireEvent.change(el, { target: { value } });
+    });
+  const enter = (el: HTMLInputElement) =>
+    act(() => {
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+
+  /** 无焦点行时「新建文件…」(命令面板 / 标题栏同一入口)→ 在工作区根下新建。 */
+  async function startCreateAtRoot(): Promise<HTMLInputElement> {
+    act(() => requestExplorer({ kind: 'create', type: 'file' }));
+    return (await waitFor(() => {
+      expect(input()).not.toBeNull();
+      return input()!;
+    }))!;
+  }
+
+  it('输入与父目录已加载子项同名 → 即时提示「已存在」,Enter 不创建;改名后提示消失并可创建', async () => {
+    const r = await mount();
+    const el = await startCreateAtRoot();
+    type(el, 'bravo.ts');
+    expect((await r.findByRole('alert')).textContent).toMatch(/已存在.*bravo\.ts|already exists/);
+    expect(el.getAttribute('aria-invalid')).toBe('true');
+    enter(el);
+    await flush();
+    expect(coApi.fs.createFile).not.toHaveBeenCalled();
+    expect(input()).toBe(el);
+    // 文件夹同名同样拦
+    type(el, 'alpha');
+    expect(r.getByRole('alert').textContent).toMatch(/alpha/);
+    type(el, 'delta.ts');
+    expect(r.queryByRole('alert')).toBeNull();
+    enter(el);
+    await waitFor(() => expect(coApi.fs.createFile).toHaveBeenCalledWith('/work', 'delta.ts'));
+  });
+
+  it('大小写不敏感文件系统(macOS / Windows)忽略大小写;Linux 区分', async () => {
+    const r = await mount();
+    const el = await startCreateAtRoot();
+    type(el, 'BRAVO.TS');
+    expect(r.getByRole('alert').textContent).toMatch(/BRAVO\.TS/);
+    cleanup();
+
+    setPlatform('Linux x86_64');
+    const r2 = await mount();
+    const el2 = await startCreateAtRoot();
+    type(el2, 'BRAVO.TS');
+    expect(r2.queryByRole('alert')).toBeNull();
+  });
+
+  it('同名时点到别处 → 放弃新建(不创建),输入条消失,焦点留在用户点的地方', async () => {
+    await mount();
+    const el = await startCreateAtRoot();
+    await waitFor(() => expect(document.activeElement).toBe(el));
+    type(el, 'bravo.ts');
+    const other = outside();
+    act(() => other.focus());
+    await flush();
+    await waitFor(() => expect(input()).toBeNull());
+    expect(coApi.fs.createFile).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(other);
+    other.remove();
+  });
+
+  it('失焦提交在 main 端失败 → 输入条消失(不留孤立输入条)并 toast 原因;焦点不被拉回树', async () => {
+    const notifyError = vi.spyOn(notify, 'error').mockImplementation(() => '');
+    const r = await mount();
+    vi.mocked(coApi.fs.createFile).mockResolvedValueOnce({
+      ok: false,
+      code: 'FS_EEXIST',
+      message: 'EEXIST: file already exists',
+    } as never);
+    // 已加载子项里没有(实时校验放行),main 端仍报已存在(外部进程刚建 / 隐藏文件同名等)
+    const el = await startCreateIn(r, '/work/alpha', NEW_FILE);
+    await waitFor(() => expect(document.activeElement).toBe(el));
+    type(el, 'ghost.ts');
+    const other = outside();
+    act(() => other.focus());
+    await flush();
+    await waitFor(() => expect(coApi.fs.createFile).toHaveBeenCalledWith('/work/alpha', 'ghost.ts'));
+    await waitFor(() => expect(input()).toBeNull());
+    expect(r.queryByRole('alert')).toBeNull();
+    await waitFor(() => expect(notifyError).toHaveBeenCalled());
+    expect(notifyError.mock.calls[0]![0]).toMatch(/已存在|Already exists/);
+    expect(document.activeElement).toBe(other);
+    other.remove();
+    notifyError.mockRestore();
   });
 });

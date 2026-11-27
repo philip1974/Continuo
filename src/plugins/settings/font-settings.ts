@@ -24,9 +24,30 @@ function cleanFontFamily(value: unknown): string {
   return value.trim().replace(/[\s,]+$/, '');
 }
 
-/** editor.fontFamily → 编辑器字体串(空 / 全空白 / 非字符串 → 默认)。 */
+/** CSS 通用字体族关键字:加引号就成了名为「monospace」的普通字体,不能包。 */
+const GENERIC_FONT_FAMILIES = new Set([
+  'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'math', 'emoji', 'fangsong',
+  'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded', 'inherit', 'initial', 'unset', 'revert',
+]);
+
+/**
+ * VSCode BareFontInfo._wrapInQuotes:单个字体名(不含逗号 / 引号)加双引号。未加引号的名字若不是合法 CSS 标识符
+ *(如数字开头的 `1st Font`)会让整条 font-family 声明无效、回落继承的比例字体。已是列表 / 已带引号的原样保留
+ *(用户自己负责转义)。VSCode 只包含空格 / + 的名字;这里不含逗号 / 引号的都包(通用族名除外),一并兜住 `1stFont`。
+ */
+function quoteSingleFamily(family: string): string {
+  if (/[,"']/.test(family) || GENERIC_FONT_FAMILIES.has(family.toLowerCase())) return family;
+  return `"${family.replace(/\\/g, '\\\\')}"`;
+}
+
+/**
+ * editor.fontFamily → 编辑器字体串(空 / 全空白 / 非字符串 → 默认)。非默认值后接默认字体(VSCode
+ * getMassagedFontFamily):用户填了本机没有的字体时仍落到等宽字体,不回落系统比例字体(代码列对不齐)。
+ */
 export function resolveEditorFontFamily(value: unknown): string {
-  return cleanFontFamily(value) || DEFAULT_EDITOR_FONT_FAMILY;
+  const user = cleanFontFamily(value);
+  if (!user || user === DEFAULT_EDITOR_FONT_FAMILY) return DEFAULT_EDITOR_FONT_FAMILY;
+  return `${quoteSingleFamily(user)}, ${DEFAULT_EDITOR_FONT_FAMILY}`;
 }
 
 /**
@@ -37,7 +58,7 @@ export function resolveTerminalFontFamily(terminalValue: unknown, editorValue: u
   const own = cleanFontFamily(terminalValue);
   const editor = cleanFontFamily(editorValue);
   const user = own || (editor === DEFAULT_EDITOR_FONT_FAMILY ? '' : editor);
-  return user ? `${user}, ${TERMINAL_SYMBOL_FALLBACK}` : DEFAULT_TERMINAL_FONT_FAMILY;
+  return user ? `${quoteSingleFamily(user)}, ${TERMINAL_SYMBOL_FALLBACK}` : DEFAULT_TERMINAL_FONT_FAMILY;
 }
 
 function finiteOr(value: unknown, fallback: number): number {

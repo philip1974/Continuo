@@ -123,6 +123,11 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   类型与目录随之改变,焦点进新输入框(`creating.seq` 递增作 key 重挂载;VSCode 每次新建都是新的行内输入框并聚焦)
 - 失焦(VSCode `InlineEditInputBox`):有名字 → 提交新建(同 Enter);空名 → 放弃,焦点留在用户点的地方(不拉回树)。
   失焦提交尚未完成时又开了新的新建 → 那次提交的成功 / 失败只回写它自己(按 seq),不关掉新输入条
+- 实时重名校验(VSCode `validateFileName`「已存在」,`parent.getChild` 平台感知大小写):输入与父目录**已加载**子项同名(文件
+  或文件夹;macOS / Windows 忽略大小写,Linux 区分)→ 输入框下方即时提示「已存在」,Enter 不创建;失焦 → 放弃,不创建,焦点
+  留在用户点的地方。嵌套名(`a/b.ts`)不在此判
+- 失焦触发的提交在 main 端失败(未加载 / 隐藏的同名项、权限等)→ 输入条直接关闭并 toast 原因(VSCode 失焦时输入无效即取消),
+  不留无焦点、带错误的孤立输入条;Enter 提交失败仍保留输入并内联提示(可改名重试)
 - 输入框组件契约(重试守卫 / aria-invalid / onEdit / 失焦)见 `create-input` 主题
 
 ## 空列表三态(`folder-tree-load-state.spec.tsx`,VSCode 同款)

@@ -461,6 +461,14 @@ export const EditorHeader = memo(function EditorHeader({
               // 双击预览 tab → 常驻(VSCode;常驻 tab 双击无动作)
               onDoubleClick={tab.preview ? () => pinTab(tab.id, groupId) : undefined}
               // 读屏名称:预览 tab 追加「，预览」(VSCode computeEditorAriaLabel);常驻 tab 照旧取标签内容
+              // git 字母放 trailing 槽位:长标题截断时字母仍可见(VSCode tab 装饰徽标)
+              trailing={
+                gitLetter !== '' ? (
+                  <span aria-hidden="true" data-git-letter="" className={`ml-1.5 font-medium ${GIT_KIND_TEXT_CLASS[git!.kind]}`}>
+                    {gitLetter}
+                  </span>
+                ) : undefined
+              }
               ariaLabel={
                 tab.preview
                   ? editorTabAriaLabel(
@@ -483,11 +491,6 @@ export const EditorHeader = memo(function EditorHeader({
               {description != null && (
                 <span data-testid="tab-description" className="ml-1.5 text-fg-dim">
                   {description}
-                </span>
-              )}
-              {gitLetter !== '' && (
-                <span aria-hidden="true" data-git-letter="" className={`ml-1.5 font-medium ${GIT_KIND_TEXT_CLASS[git!.kind]}`}>
-                  {gitLetter}
                 </span>
               )}
             </TabNavItem>

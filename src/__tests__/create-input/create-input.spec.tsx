@@ -214,7 +214,8 @@ describe('CreateInput — 失焦(VSCode InlineEditInputBox 同款)', () => {
     const other = outsideButton();
     act(() => other.focus());
     await tick();
-    expect(onSubmit).toHaveBeenCalledWith('b.ts');
+    // 第二参数标明是失焦提交:失败时父层直接放弃并 toast(不留无焦点的孤立输入条)
+    expect(onSubmit).toHaveBeenCalledWith('b.ts', 'blur');
     expect(onCancel).not.toHaveBeenCalled();
     other.remove();
   });
@@ -288,5 +289,66 @@ describe('CreateInput — 失焦(VSCode InlineEditInputBox 同款)', () => {
     expect(b.onCancel).toHaveBeenCalledTimes(1);
     expect(b.onCancel).toHaveBeenCalledWith();
     other.remove();
+  });
+});
+
+// VSCode InlineEditInputBox + validateFileName:边输入边校验(如同目录已存在同名项),有错时 Enter 不提交、失焦放弃。
+describe('CreateInput — 实时校验(validate)', () => {
+  const tick = () =>
+    act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  const validate = (name: string) => (name.trim() === 'dup.ts' ? '已存在 dup.ts' : null);
+
+  it('输入即校验:无效 → 下方 role=alert 提示、aria-invalid;改正后提示消失', () => {
+    const { input, queryByRole } = setup({ validate });
+    fireEvent.change(input, { target: { value: 'dup.ts' } });
+    expect(queryByRole('alert')?.textContent).toBe('已存在 dup.ts');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    fireEvent.change(input, { target: { value: 'dup2.ts' } });
+    expect(queryByRole('alert')).toBeNull();
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+  });
+
+  it('有校验错误时 Enter → 不提交也不取消,输入保留', () => {
+    const { input, onSubmit, onCancel } = setup({ validate });
+    fireEvent.change(input, { target: { value: 'dup.ts' } });
+    fireKey(input, 'Enter');
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(input.value).toBe('dup.ts');
+  });
+
+  it('有校验错误时失焦 → onCancel("blur"),不提交', async () => {
+    const { input, onSubmit, onCancel } = setup({ validate });
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: 'dup.ts' } });
+    const other = document.body.appendChild(document.createElement('button'));
+    act(() => other.focus());
+    await tick();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledWith('blur');
+    other.remove();
+  });
+
+  it('提交失败的 error 优先于校验结果显示', () => {
+    const { input, queryByRole } = setup({ validate, error: '权限不足' });
+    fireEvent.change(input, { target: { value: 'dup.ts' } });
+    expect(queryByRole('alert')?.textContent).toBe('权限不足');
+  });
+});
+
+describe('createNameConflict(新建实时重名判定)', () => {
+  it('与已加载子项同名 → 返回规范化后的名字;平台感知大小写;空名 / 嵌套名不判', async () => {
+    const { createNameConflict } = await import('../../panels/Explorer/path-utils');
+    const siblings = ['bravo.ts', 'alpha'];
+    expect(createNameConflict('  bravo.ts ', siblings, true)).toBe('bravo.ts');
+    expect(createNameConflict('ALPHA', siblings, true)).toBe('ALPHA');
+    expect(createNameConflict('ALPHA', siblings, false)).toBeNull();
+    expect(createNameConflict('delta.ts', siblings, true)).toBeNull();
+    expect(createNameConflict('   ', siblings, true)).toBeNull();
+    expect(createNameConflict('alpha/new.ts', siblings, true)).toBeNull();
+    // NFD(Finder 给的名字)与 NFC 视为同名
+    expect(createNameConflict('café.ts', ['café.ts'], true)).toBe('café.ts');
   });
 });

@@ -110,7 +110,7 @@ describe('终端字体族 / 行高', () => {
     h.settings.set('editor.fontFamily', 'Fira Code');
     h.settings.set('terminal.integrated.lineHeight', 0.3);
     render(createElement(Host, { tick: 0 }));
-    expect(options().fontFamily).toMatch(/^Fira Code, /);
+    expect(options().fontFamily).toMatch(/^"Fira Code", /);
     expect(options().lineHeight).toBe(1);
   });
 
@@ -121,7 +121,7 @@ describe('终端字体族 / 行高', () => {
     h.settings.set('terminal.integrated.fontFamily', 'Hack');
     view.rerender(createElement(Host, { tick: 1 }));
     expect(h.terms).toHaveLength(1);
-    expect(options().fontFamily).toMatch(/^Hack, .*monospace$/);
+    expect(options().fontFamily).toMatch(/^"Hack", .*monospace$/);
     expect(h.fits).toBeGreaterThan(fitsAfterMount);
 
     const fitsAfterFont = h.fits;
@@ -142,9 +142,9 @@ describe('终端字体族 / 行高', () => {
     const view = render(createElement(Host, { tick: 0 }));
     h.settings.set('editor.fontFamily', 'Fira Code');
     view.rerender(createElement(Host, { tick: 1 }));
-    expect(options().fontFamily).toMatch(/^Hack, /);
+    expect(options().fontFamily).toMatch(/^"Hack", /);
     h.settings.set('terminal.integrated.fontFamily', '  ');
     view.rerender(createElement(Host, { tick: 2 }));
-    expect(options().fontFamily).toMatch(/^Fira Code, /);
+    expect(options().fontFamily).toMatch(/^"Fira Code", /);
   });
 });

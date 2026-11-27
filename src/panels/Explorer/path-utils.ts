@@ -183,6 +183,21 @@ export function renameInputError(
   return null;
 }
 
+/**
+ * 新建输入时的实时重名校验(VSCode validateFileName 的「已存在」:`parent.getChild(name)`,平台感知大小写):规范化后的名字
+ * 与父目录已加载子项同名 → 返回该名字,否则 null。空名不报(Enter / 失焦按放弃处理);带路径分隔符的嵌套名(`a/b.ts`)
+ * 不在这里判(中间目录可以已存在,提交时由 main 逐级创建判定)。父目录未加载的子项看不到,提交后 main 端兜底。
+ */
+export function createNameConflict(
+  raw: string,
+  siblingNames: readonly string[],
+  ignoreCase: boolean,
+): string | null {
+  const name = normalizeLeafNameInput(raw);
+  if (name === null || /[\\/]/.test(name)) return null;
+  return renameInputError(name, '', siblingNames, ignoreCase)?.kind === 'exists' ? name : null;
+}
+
 /** 当前 renderer 所在系统的文件系统是否按惯例大小写敏感(VSCode 同:仅 Linux)。 */
 export function isCaseSensitiveFsRuntime(): boolean {
   return typeof navigator !== 'undefined' && /^linux/i.test(navigator.platform ?? '');

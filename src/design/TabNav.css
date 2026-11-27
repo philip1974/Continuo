@@ -86,6 +86,12 @@
   white-space: nowrap;
 }
 
+/* 标题后的装饰(git 字母等):不收缩,标题过长时只截断 label(VSCode tab 装饰徽标始终可见)。 */
+.wm-tab-nav-item__trailing {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .wm-tab-nav-item__dirty-dot {
   width: 4px;
   height: 4px;

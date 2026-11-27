@@ -1,6 +1,13 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { hasFiles } from '@/lib/window-drop'; // 边界(E225):共享早停 hasFiles
-import { basenamePreserveTrailing, dirname, renameTarget, sameNameKey } from './path-utils';
+import {
+  basenamePreserveTrailing,
+  createNameConflict,
+  dirname,
+  isCaseSensitiveFsRuntime,
+  renameTarget,
+  sameNameKey,
+} from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
@@ -1230,13 +1237,20 @@ export function FolderTree({ root }: { root: string }) {
 
   // 新建(VSCode 同款):成功 → 关输入框、展开父目录、新项选中并获得树焦点,文件随即在编辑器打开;
   // 失败(含同名冲突)→ 输入框与已输入的名字保留,下方内联显示本地化原因,可改名重试或 Esc 放弃。
-  const submitCreate = async (name: string): Promise<boolean> => {
+  // 失焦触发的提交失败 → 直接放弃并 toast 原因:焦点已在用户点的地方,留着无焦点、带错误的输入条只会一直挂在树顶
+  //(VSCode InlineEditInputBox:失焦时输入无效即取消)。
+  const submitCreate = async (name: string, trigger?: 'blur'): Promise<boolean> => {
     if (!creating) return true;
     const { type, parentDir, seq } = creating;
     const action = type === 'dir' ? createNewDir : createNewFile;
     const r = await action(parentDir, name, mutateDeps, treeApi);
     if (!r.ok) {
       const error = localizeErrorByCode(r.code, r.message);
+      if (trigger === 'blur') {
+        setCreating((c) => (c?.seq === seq ? null : c));
+        notify.error(error, { code: r.code });
+        return false;
+      }
       // 只回写仍是这次新建的输入框(等待期间已 Esc / 又开了新的新建则不动)
       setCreating((c) => (c?.seq === seq ? { ...c, error } : c));
       return false;
@@ -1261,6 +1275,23 @@ export function FolderTree({ root }: { root: string }) {
       });
     }
     return true;
+  };
+
+  // 新建输入的实时重名校验(VSCode validateFileName):与父目录已加载的子项同名 → 提示「已存在」,Enter 不提交、失焦放弃。
+  // 大小写策略同重命名(macOS / Windows 忽略大小写)。
+  const validateCreateName = (raw: string): string | null => {
+    if (!creating) return null;
+    const siblings: string[] = [];
+    try {
+      for (const child of tree.getItemInstance(creating.parentDir).getChildren()) {
+        const childName = child.getItemData()?.name;
+        if (childName !== undefined) siblings.push(childName);
+      }
+    } catch {
+      return null; // 父目录项已不在树里(外部删除):交给提交时 main 端判定
+    }
+    const conflict = createNameConflict(raw, siblings, !isCaseSensitiveFsRuntime());
+    return conflict === null ? null : t('panels.explorer.rename_exists', { name: conflict });
   };
 
   // 放弃新建(Esc / ✕ / 空名 Enter):输入框卸载,焦点还给树的焦点行(VSCode:取消后焦点回资源管理器树;
@@ -1705,6 +1736,7 @@ export function FolderTree({ root }: { root: string }) {
           onCancel={(reason) => cancelCreate(creating.seq, reason)}
           error={creating.error}
           onEdit={() => setCreating((c) => (c?.error ? { ...c, error: undefined } : c))}
+          validate={validateCreateName}
         />
       )}
       <ContextMenu

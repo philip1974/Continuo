@@ -35,6 +35,12 @@
   `aria-describedby` 指向提示
 - 修改输入 → 调 `onEdit`(父层据此清除错误)
 
+### 实时校验(`validate`,VSCode `validateFileName` + `InlineEditInputBox`)
+
+- 父层传 `validate(name)`:每次输入即校验,返回本地化错误 → 同一 `role="alert"` 位置提示、`aria-invalid`;改正后消失
+- 有校验错误时 Enter → 不提交也不取消,输入保留;失焦 → `onCancel('blur')`,不提交
+- `error`(上次提交失败)存在时优先显示它
+
 ### 关闭按钮
 
 - 点叉号 → onCancel
@@ -42,7 +48,8 @@
 ### 失焦(VSCode `InlineEditInputBox` 同款)
 
 - 焦点移到输入条之外(点编辑器 / 树 / 标题栏按钮、打开命令面板或右键菜单等)→ 等一个宏任务再判定(VSCode `timeout(0)`):
-  - 有可创建的名字且无错误提示 → onSubmit(同 Enter,受同一 once 守卫)
+  - 有可创建的名字且无错误提示(含实时校验)→ `onSubmit(name, 'blur')`(同 Enter,受同一 once 守卫;第二参数让父层在失败时
+    直接放弃并 toast,不留无焦点的错误输入条)
   - 空名 / 全空白,或上次提交失败(错误提示还在 = 输入无效)→ `onCancel('blur')`(父层据此不把焦点拉回树)
 - 焦点仍在输入条里(点了 ✕ 按钮)或 activeElement 仍是输入框(窗口失焦:切应用 / 输入法切换)→ 继续编辑
 - Enter 已提交 / Esc、空名 Enter、✕ 已放弃之后的失焦不再处理

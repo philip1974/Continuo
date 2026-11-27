@@ -13,15 +13,21 @@ interface CreateInputProps {
   rootPath?: string;
   /**
    * 提交名字。可返回 Promise<boolean>:结果为 false 表示创建失败 → 输入框保留已输入的名字,可改名重试;
-   * 其它结果视为成功(父层随后卸载本输入)。
+   * 其它结果视为成功(父层随后卸载本输入)。trigger='blur':失焦触发的提交(焦点已在别处,失败时父层应直接放弃并
+   * 告知原因,不留无焦点的错误输入条;VSCode 失焦时输入无效即取消)。
    */
-  onSubmit: (name: string) => void | Promise<boolean>;
+  onSubmit: (name: string, trigger?: 'blur') => void | Promise<boolean>;
   /** 放弃新建。reason='blur':失焦放弃(焦点已在别处,父层不要再把焦点拉回树)。 */
   onCancel: (reason?: 'blur') => void;
   /** 上次提交失败的原因(已本地化),显示在输入框下方;修改输入时父层经 onEdit 清除。 */
   error?: string | null;
   /** 输入内容变化(父层据此清除 error)。 */
   onEdit?: () => void;
+  /**
+   * 实时校验(VSCode validateFileName,如同目录已存在同名项):返回已本地化的错误 → 输入框下方提示,Enter 不提交、
+   * 失焦放弃;null = 有效。`error`(上次提交失败)存在时优先显示它。
+   */
+  validate?: (name: string) => string | null;
 }
 
 const ICON_SIZE = 14;
@@ -33,7 +39,7 @@ const ICON_SIZE = 14;
 // Esc/Enter 用原生 capture-phase listener,先于 headless-tree hotkeys 拦截
 // (CreateInput 在树容器外,但 React 合成事件分发时机仍可能晚)。
 //
-// 失焦(VSCode InlineEditInputBox 同款):焦点移到输入条之外 → 有可创建的名字且无错误提示就提交,否则放弃。
+// 失焦(VSCode InlineEditInputBox 同款):焦点移到输入条之外 → 有可创建的名字且无错误提示(含实时校验)就提交,否则放弃。
 // 失焦后等一个宏任务再判定(VSCode timeout(0)):焦点仍在输入条里(点了 ✕ / 窗口失焦后 activeElement 仍是输入框)→ 继续编辑。
 // 每次新建由父层换 key 重挂载本组件(见 FolderTree creating.seq)→ 挂载即聚焦,不会出现「输入条开着但焦点不在」再新建时落空。
 export function CreateInput({
@@ -44,6 +50,7 @@ export function CreateInput({
   onCancel,
   error,
   onEdit,
+  validate,
 }: CreateInputProps) {
   const ref = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
@@ -65,12 +72,15 @@ export function CreateInput({
   const rootRef = useRef<HTMLDivElement>(null);
   const errorRef = useRef(error);
   errorRef.current = error;
+  const validateRef = useRef(validate);
+  validateRef.current = validate;
+  const shownError = error || validate?.(value) || null;
 
-  const submit = (raw: string): boolean => {
+  const submit = (raw: string, trigger?: 'blur'): boolean => {
     const t = normalizeLeafNameInput(raw);
     if (t === null) return false;
     submittedRef.current = true;
-    const result = onSubmitRef.current(t);
+    const result = trigger === undefined ? onSubmitRef.current(t) : onSubmitRef.current(t, trigger);
     if (result) {
       void result.then((ok) => {
         if (ok === false) submittedRef.current = false;
@@ -102,6 +112,7 @@ export function CreateInput({
         e.preventDefault();
         e.stopPropagation();
         if (submittedRef.current) return; // race(R82):已提交,忽略重复 Enter
+        if (validateRef.current?.(el.value)) return; // 实时校验未通过(如重名):不提交,输入保留(VSCode)
         if (!submitRef.current(el.value)) {
           finishedRef.current = true;
           onCancelRef.current();
@@ -113,8 +124,8 @@ export function CreateInput({
         if (disposed || finishedRef.current || submittedRef.current) return;
         const active = el.ownerDocument.activeElement;
         if (active && rootRef.current?.contains(active)) return; // 仍在输入条里(✕ 按钮 / 窗口失焦)
-        // 上次提交失败(错误提示还在)= 输入无效 → 放弃(VSCode:无效输入失焦即取消)
-        if (!errorRef.current && submitRef.current(el.value)) return;
+        // 上次提交失败(错误提示还在)或实时校验未通过 = 输入无效 → 放弃(VSCode:无效输入失焦即取消)
+        if (!errorRef.current && !validateRef.current?.(el.value) && submitRef.current(el.value, 'blur')) return;
         finishedRef.current = true;
         onCancelRef.current('blur');
       }, 0);
@@ -167,8 +178,8 @@ export function CreateInput({
           className="flex-1"
           spellCheck={false}
           autoComplete="off"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-invalid={shownError ? true : undefined}
+          aria-describedby={shownError ? errorId : undefined}
         />
         <span
           className="max-w-[40%] truncate text-2xs text-fg-dim"
@@ -191,9 +202,9 @@ export function CreateInput({
         </IconButton>
       </div>
       {/* 创建失败原因(VSCode 同款:输入框下方内联提示,不关输入框)。role=alert 让读屏即时播报。 */}
-      {error && (
+      {shownError && (
         <div id={errorId} role="alert" className="mt-1 break-words text-2xs text-error">
-          {error}
+          {shownError}
         </div>
       )}
     </div>

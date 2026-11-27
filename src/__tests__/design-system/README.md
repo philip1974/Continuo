@@ -86,6 +86,11 @@
   去掉强调下划线、文字用 `--md-on-surface-variant`(VSCode `tab.unfocusedActiveForeground` / `unfocusedActiveBorder`);
   只用语义 token,亮 / 暗同一规则
 
+### TabNavItem trailing 槽位(`components.spec.tsx`)
+
+- `trailing`(如 git 状态字母)渲染在会截断的 `.wm-tab-nav-item__label` 之外、未保存圆点之前,`flex: 0 0 auto` 不收缩:
+  标题(含目录说明)过长时只截断标题,徽标始终可见(VSCode tab 装饰徽标);不并入 tab 可访问名;不传则不渲染槽位
+
 ### TabNavItem 关闭与焦点(`components.spec.tsx`)
 
 - 结构(axe aria-required-children / nested-interactive;VSCode multiEditorTabsControl 同为 div[role=tab] 内含关闭动作):

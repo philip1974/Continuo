@@ -99,6 +99,12 @@ export interface TabNavItemProps {
    * Defaults to the label content.
    */
   readonly ariaLabel?: string;
+  /**
+   * Decoration shown after the label (e.g. a git status letter). Unlike `children` it never truncates: when the
+   * label is too long the label is ellipsized and this stays visible (VSCode tab decoration badges). Not part of the
+   * tab's accessible name. Defaults to none.
+   */
+  readonly trailing?: ReactNode;
   /** Tab label or composed tab content. No default. */
   readonly children: ReactNode;
 }
@@ -140,6 +146,7 @@ export function TabNavItem({
   onDragEnd,
   dataAttrs,
   ariaLabel,
+  trailing,
   children,
 }: TabNavItemProps) {
   // a11y(A106):优先用 caller 注入的本地化 closeLabel;未提供回退英文默认(design 层无 i18n)。
@@ -229,6 +236,7 @@ export function TabNavItem({
         <span className="wm-tab-nav-item__label" id={labelId}>
           {children}
         </span>
+        {trailing != null ? <span className="wm-tab-nav-item__trailing">{trailing}</span> : null}
       </span>
       {dirty ? (
         <span

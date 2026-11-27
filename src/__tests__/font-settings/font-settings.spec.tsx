@@ -108,10 +108,21 @@ describe('设置项', () => {
 
 describe('取值规则', () => {
   it('编辑器字体:去首尾空白与结尾逗号;空 / 全空白 / 非字符串 → 默认', () => {
-    expect(resolveEditorFontFamily('  "Fira Code", Menlo, ')).toBe('"Fira Code", Menlo');
+    expect(resolveEditorFontFamily('  "Fira Code", Menlo, ')).toBe(`"Fira Code", Menlo, ${DEFAULT_EDITOR_FONT_FAMILY}`);
     expect(resolveEditorFontFamily('')).toBe(DEFAULT_EDITOR_FONT_FAMILY);
     expect(resolveEditorFontFamily('   ')).toBe(DEFAULT_EDITOR_FONT_FAMILY);
     expect(resolveEditorFontFamily(42)).toBe(DEFAULT_EDITOR_FONT_FAMILY);
+  });
+
+  // VSCode BareFontInfo.getMassagedFontFamily:用户字体后接默认字体(本机没有该字体时仍落到等宽字体,不回落系统比例字体);
+  // _wrapInQuotes:单个字体名(不含逗号 / 引号)加引号(`1st Font` 这类数字开头的未加引号名会让整条 font-family 无效)。
+  it('编辑器字体:非默认值后接默认字体回退;单个字体名加引号,已是列表 / 已带引号 / CSS 通用族名不改', () => {
+    expect(resolveEditorFontFamily('Fira Code')).toBe(`"Fira Code", ${DEFAULT_EDITOR_FONT_FAMILY}`);
+    expect(resolveEditorFontFamily('1st Font')).toBe(`"1st Font", ${DEFAULT_EDITOR_FONT_FAMILY}`);
+    expect(resolveEditorFontFamily('Hack')).toBe(`"Hack", ${DEFAULT_EDITOR_FONT_FAMILY}`);
+    expect(resolveEditorFontFamily("'Fira Code'")).toBe(`'Fira Code', ${DEFAULT_EDITOR_FONT_FAMILY}`);
+    expect(resolveEditorFontFamily('monospace')).toBe(`monospace, ${DEFAULT_EDITOR_FONT_FAMILY}`);
+    expect(resolveEditorFontFamily(` ${DEFAULT_EDITOR_FONT_FAMILY} `)).toBe(DEFAULT_EDITOR_FONT_FAMILY);
   });
 
   it('编辑器行高(VSCode fontInfo):0 自动;<8 为字号倍数;≥8 为像素;取整且不低于 8;非法值按 0 / 夹到 150', () => {
@@ -129,8 +140,11 @@ describe('取值规则', () => {
   it('终端字体:自己的值优先;空 → 跟随编辑器字体;编辑器也是默认 → 终端自带 Nerd Font 链;用户字体后接符号回退与 monospace', () => {
     expect(resolveTerminalFontFamily('', '')).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
     expect(resolveTerminalFontFamily('  ', DEFAULT_EDITOR_FONT_FAMILY)).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
-    expect(resolveTerminalFontFamily('', 'Fira Code')).toMatch(/^Fira Code, .*monospace$/);
-    expect(resolveTerminalFontFamily('Hack', 'Fira Code')).toMatch(/^Hack, .*"Symbols Nerd Font Mono".*monospace$/);
+    expect(resolveTerminalFontFamily('', 'Fira Code')).toMatch(/^"Fira Code", .*monospace$/);
+    expect(resolveTerminalFontFamily('Hack', 'Fira Code')).toMatch(/^"Hack", .*"Symbols Nerd Font Mono".*monospace$/);
+    // 单个字体名同编辑器加引号(数字开头的未加引号名会让整条 font-family 无效);已是列表不改
+    expect(resolveTerminalFontFamily('1st Font', '')).toMatch(/^"1st Font", "MesloLGS NF", .*monospace$/);
+    expect(resolveTerminalFontFamily('Hack, Menlo', '')).toMatch(/^Hack, Menlo, "MesloLGS NF"/);
     expect(DEFAULT_TERMINAL_FONT_FAMILY.startsWith('"MesloLGS NF"')).toBe(true);
   });
 
@@ -153,7 +167,7 @@ describe('编辑器侧生效', () => {
     set(EDITOR_FONT_FAMILY.id, 'Fira Code');
     set(EDITOR_LINE_HEIGHT.id, 2);
     set(EDITOR_FONT_SIZE.id, 15);
-    expect(htmlVar(EDITOR_FONT_FAMILY_VAR)).toBe('Fira Code');
+    expect(htmlVar(EDITOR_FONT_FAMILY_VAR)).toBe(`"Fira Code", ${DEFAULT_EDITOR_FONT_FAMILY}`);
     expect(htmlVar(EDITOR_LINE_HEIGHT_VAR)).toBe('30px');
 
     set(EDITOR_FONT_FAMILY.id, '   ');

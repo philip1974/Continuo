@@ -32,7 +32,8 @@
 
 ### 编辑器 tab(`editor-tab-git.spec.tsx`)
 
-- 工作区内文件的 tab 标题 `text-git-<kind>`(激活 / 非激活 tab 都着色,VSCode 同);标题后显示字母(与标题同色,`aria-hidden`)
+- 工作区内文件的 tab 标题 `text-git-<kind>`(激活 / 非激活 tab 都着色,VSCode 同);标题后显示字母(与标题同色,`aria-hidden`),
+  放在 `TabNavItem` 的 `trailing` 槽位:长文件名 / 带目录说明时只截断标题,字母始终可见
 - 未跟踪目录下的文件 → 未跟踪色 + U;`.gitignore` 命中 → 置灰、无字母;工作区外 / 无状态 → 不装饰
 - 悬浮提示:路径后追加「 · 已修改」等(VSCode `ResourceLabel` 把 decoration.tooltip 以 ` • ` 拼到 title);
   **可访问名称不变**(VSCode tab 的 aria-label 只用 `computeEditorAriaLabel`,不含 git 状态)

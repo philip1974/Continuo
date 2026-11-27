@@ -22,6 +22,10 @@
 ### 2. 取值规则(`font-settings.spec.tsx`)
 
 - 字体串去首尾空白与结尾多余逗号;空 → 回落(编辑器 → 默认,终端 → 编辑器 → 自带链)
+- 编辑器字体非默认值时后接默认字体链(VSCode `BareFontInfo.getMassagedFontFamily`):填了本机没装的字体(如 `Fira Code`)
+  仍落到等宽字体,代码列对齐;Markdown 代码块 / 行内代码取同一变量,一并受益
+- 单个字体名(不含逗号 / 引号)加双引号(VSCode `_wrapInQuotes`):`1st Font` 这类数字开头的未加引号名不再让整条
+  font-family 失效;已是列表 / 已带引号 / CSS 通用族名(`monospace` 等)原样保留。终端的用户字体同样处理
 - 用户指定的终端字体后面接 Nerd Font 符号回退与 `monospace`(VSCode 总接 `monospace`;符号回退保住 Powerline / 图标字形)
 - 编辑器行高按 VSCode fontInfo 换算成像素
 
