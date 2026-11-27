@@ -10,7 +10,7 @@ const h = vi.hoisted(() => ({
   start: vi.fn(async (_id: string, _q: unknown) => ({ ok: true })),
   cancel: vi.fn(async (_id: string) => ({ ok: true })),
   listener: null as ((e: unknown) => void) | null,
-  openSettings: vi.fn(),
+  openSettingsWithQuery: vi.fn(),
 }));
 vi.mock('@/lib/co-api', () => ({
   coApi: {
@@ -27,7 +27,7 @@ vi.mock('@/lib/co-api', () => ({
   },
 }));
 vi.mock('@/plugins/co-app', () => ({ coApp: { settingItems: new Map() }, openFileInEditor: vi.fn() }));
-vi.mock('@/lib/toggle-settings-panel', () => ({ openSettingsPanel: h.openSettings }));
+vi.mock('@/lib/toggle-settings-panel', () => ({ openSettingsWithQuery: h.openSettingsWithQuery }));
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 22,
@@ -40,7 +40,6 @@ vi.mock('@tanstack/react-virtual', () => ({
 import { setLocale, t } from '@/i18n';
 import { notifyLocaleChange } from '@/i18n/react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { useSettingsStore } from '@/plugins/settings/store';
 import { SEARCH_PROGRESS_DELAY_MS, SearchPanel } from '@/panels/Search/SearchPanel';
 import { __resetSearchForTest, SEARCH_DEBOUNCE_MS, useSearchStore } from '@/panels/Search/search-store';
 
@@ -70,6 +69,7 @@ const status = () => screen.getByRole('status').textContent;
 const progress = () => screen.queryByRole('progressbar');
 const cancelButton = () => screen.queryByRole('button', { name: '取消搜索' });
 const tree = () => screen.getByRole('tree');
+const queryInput = () => screen.getByRole('textbox', { name: '搜索' }) as HTMLInputElement;
 
 function startSearch(pattern = 'foo'): string {
   render(<SearchPanel />);
@@ -149,14 +149,65 @@ describe('搜索进行中:延迟出现的细进度条 + 取消搜索', () => {
   });
 });
 
+// VSCode SearchView.cancelSearch(focus = true) → searchWidget.focus()(全选);「重新搜索」/「在所有文件中重新搜索」
+// triggerQueryChange({ preserveFocus: false }) → searchWidget.focus(false)。被点的按钮随状态卸载,焦点不能掉到 body。
+describe('取消 / 重新搜索后焦点回到查询框', () => {
+  it('点「取消搜索」→ 焦点回查询框并全选', () => {
+    startSearch();
+    act(() => vi.advanceTimersByTime(SEARCH_PROGRESS_DELAY_MS));
+    cancelButton()!.focus();
+    fireEvent.click(cancelButton()!);
+    expect(cancelButton()).toBeNull();
+    expect(document.activeElement).toBe(queryInput());
+    expect([queryInput().selectionStart, queryInput().selectionEnd]).toEqual([0, 3]);
+  });
+
+  it('结果树上 Esc 取消 → 焦点同样回查询框(VSCode search.action.cancel 走同一 cancelSearch())', () => {
+    const id = startSearch();
+    emit({ searchId: id, kind: 'files', files });
+    tree().focus();
+    fireEvent.keyDown(tree(), { key: 'Escape' });
+    expect(useSearchStore.getState().status).toBe('cancelled');
+    expect(document.activeElement).toBe(queryInput());
+  });
+
+  it('「重新搜索」→ 重搜并把焦点交给查询框', () => {
+    startSearch();
+    act(() => vi.advanceTimersByTime(SEARCH_PROGRESS_DELAY_MS));
+    fireEvent.click(cancelButton()!);
+    const again = screen.getByRole('button', { name: '重新搜索' });
+    again.focus();
+    fireEvent.click(again);
+    expect(useSearchStore.getState().status).toBe('searching');
+    expect(document.activeElement).toBe(queryInput());
+  });
+
+  it('「在所有文件中重新搜索」→ 重搜并把焦点交给查询框', () => {
+    render(<SearchPanel />);
+    act(() => {
+      useSearchStore.getState().setInclude('src/**');
+      useSearchStore.getState().setPattern('zzz');
+    });
+    act(() => vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
+    emit({ searchId: h.start.mock.calls.at(-1)![0], kind: 'done', limitHit: false, filesLimitHit: false });
+    const all = screen.getByRole('button', { name: '在所有文件中重新搜索' });
+    all.focus();
+    fireEvent.click(all);
+    expect(useSearchStore.getState().status).toBe('searching');
+    expect(document.activeElement).toBe(queryInput());
+  });
+});
+
 describe('无结果时提示排除设置与忽略文件', () => {
-  it('使用排除设置与忽略文件(默认开)→ 追加提示 +「打开设置」(切到搜索设置所在页签并打开设置)', () => {
+  it('使用排除设置与忽略文件(默认开)→ 追加提示 +「打开设置」(按 VSCode onOpenSettings 的 @id: 查询打开设置,只列相关项)', () => {
     const id = startSearch('zzz');
     emit({ searchId: id, kind: 'done', limitHit: false, filesLimitHit: false });
     expect(status()).toBe('未找到结果。查看设置中配置的排除项并检查 gitignore 文件');
     fireEvent.click(screen.getByRole('button', { name: '打开设置' }));
-    expect(useSettingsStore.getState().activeTabId).toBe('core.explorer');
-    expect(h.openSettings).toHaveBeenCalledTimes(1);
+    expect(h.openSettingsWithQuery).toHaveBeenCalledTimes(1);
+    expect(h.openSettingsWithQuery).toHaveBeenCalledWith(
+      '@id:files.exclude,search.exclude,search.useParentIgnoreFiles,search.useGlobalIgnoreFiles,search.useIgnoreFiles',
+    );
   });
 
   it('关掉「使用排除设置与忽略文件」→ 不提示(已不受它们影响)', () => {

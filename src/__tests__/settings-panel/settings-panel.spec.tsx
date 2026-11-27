@@ -26,7 +26,7 @@ import { SettingItemRegistry } from '../../plugins/registries/SettingItemRegistr
 import { useSettingsValuesStore } from '../../plugins/settings/values-store';
 
 beforeEach(() => {
-  useSettingsStore.setState({ activeTabId: null });
+  useSettingsStore.setState({ activeTabId: null, pendingSearchQuery: null });
 });
 afterEach(() => cleanup());
 
@@ -615,6 +615,49 @@ describe('SettingsPanel · 搜索模式', () => {
     fireEvent.change(input, { target: { value: '主题' } });
     fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
     expect(input.value).toBe('主题');
+  });
+
+  // VSCode 设置编辑器 `@id:a,b`(settingsTreeModels parseQuery idRegex + matchesAnyId):逗号分隔的设置 id,`*` 结尾按前缀;
+  // 其余文字照常子串匹配。
+  it('@id: 过滤:只列出给定 id 的设置项(* 结尾按前缀),与其余文字同时生效', () => {
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '@id:editor.fontSize,general.theme,no.such' } });
+    expect(container.textContent).toMatch(/匹配\s*2\s*项/);
+    expect(container.textContent).toContain('字号');
+    expect(container.textContent).toContain('主题');
+    expect(container.textContent).not.toContain('Plugin Bar');
+
+    fireEvent.change(input, { target: { value: '@id:plugins.*' } });
+    expect(container.textContent).toMatch(/匹配\s*1\s*项/);
+    expect(container.textContent).toContain('Plugin Bar');
+
+    fireEvent.change(input, { target: { value: '@id:editor.fontSize,general.theme 主题' } });
+    expect(container.textContent).toMatch(/匹配\s*1\s*项/);
+    expect(container.textContent).not.toContain('字号');
+  });
+
+  // VSCode preferencesService.openSettings({ query }) → 设置编辑器搜索框填入查询并聚焦(focusSearch: true)。
+  it('带查询打开(requestSearchQuery):挂载时 / 已打开时都把查询填进搜索框并聚焦,只取用一次', () => {
+    useSettingsStore.getState().requestSearchQuery('@id:general.theme');
+    const { container } = render(
+      <SettingsPanel registry={makeReg()} itemRegistry={makeItemReg()} />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    expect(input.value).toBe('@id:general.theme');
+    expect(document.activeElement).toBe(input);
+    expect(container.textContent).toMatch(/匹配\s*1\s*项/);
+    expect(useSettingsStore.getState().pendingSearchQuery).toBeNull();
+
+    // 已打开:焦点在别处、搜索框里是别的词 → 再请求一次照样填入并聚焦
+    fireEvent.change(input, { target: { value: '字号' } });
+    input.blur();
+    act(() => useSettingsStore.getState().requestSearchQuery('@id:plugins.foo.bar'));
+    expect(input.value).toBe('@id:plugins.foo.bar');
+    expect(document.activeElement).toBe(input);
+    expect(container.textContent).toContain('Plugin Bar');
   });
 
   it('全空白 query 视为非搜索模式', () => {

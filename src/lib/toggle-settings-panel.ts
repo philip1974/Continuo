@@ -18,6 +18,7 @@ import { openOrFocusPanelNow, runWhenDockLayoutReady } from '@/shell/dock/dock-a
 import type { DockviewApi } from 'dockview-react';
 import { mainWindowActivePanel } from '@/shell/dock/group-mru';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
+import { useSettingsStore } from '@/plugins/settings/store';
 
 const SETTINGS_PANEL_ID = 'settings';
 const SETTINGS_COMPONENT = 'settings';
@@ -46,6 +47,15 @@ function toggleSettingsPanelNow(api: DockviewApi): void {
  */
 export function openSettingsPanel(): void {
   runWhenDockLayoutReady(openSettingsPanelNow);
+}
+
+/**
+ * 带查询打开设置(VSCode preferencesService.openSettings({ query })):打开 / 激活设置面板,搜索框填入查询并聚焦,
+ * 如 `@id:a,b` 只列出这几项(搜索视图无结果提示的「打开设置」用)。
+ */
+export function openSettingsWithQuery(query: string): void {
+  useSettingsStore.getState().requestSearchQuery(query);
+  openSettingsPanel();
 }
 
 function openSettingsPanelNow(api: DockviewApi): void {

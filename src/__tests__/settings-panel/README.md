@@ -32,6 +32,10 @@
 - 插件运行时 register 新 tab → registry notify → 列表自动更新
 - 搜索框(同 VSCode 设置编辑器):有内容时 Esc 清空并 stopPropagation(不冒泡到外层 Esc 处理);
   空时不拦截;输入法组字中的 Esc 不清空
+- 搜索支持 `@id:a,b`(VSCode 设置编辑器 `parseQuery` idFilters + `matchesAnyId`):只列这些 id 的设置项,
+  `*` 结尾按前缀匹配,不存在的 id 忽略;与其余文字同时生效(其余文字照常子串匹配)
+- 带查询打开(`requestSearchQuery` / `openSettingsWithQuery`,VSCode `openSettings({ query })` + `focusSearch`):面板挂载时或
+  已打开时收到请求 → 取走查询(只用一次)、填进搜索框并聚焦
 
 ### Panel 生命周期(单例)
 
@@ -47,6 +51,10 @@
 interface SettingsState {
   activeTabId: string | null;
   setActiveTabId: (id: string) => void;
+  pendingSearchQuery: string | null;            // 待填进搜索框的查询
+  requestSearchQuery: (query: string) => void;
+  takeSearchQuery: () => string | null;          // 取走并清除
+  // 另有快捷键页的搜索焦点请求(tabSearchFocusRequested,见 app-menu-bar)
 }
 ```
 

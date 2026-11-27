@@ -58,6 +58,11 @@
 * toggle 排队(`runWhenDockLayoutReady`),恢复完成后按**实际**面板状态判断:恢复出 active Settings → 关闭
 * 恢复前连按两次 → 恢复后开再关,相互抵消
 
+### `openSettingsWithQuery(query)`(VSCode `preferencesService.openSettings({ query })`)
+
+* 不切换:已在显示也不关;不存在 → 新建,存在 → 激活
+* 查询写入 `useSettingsStore.pendingSearchQuery`,由设置面板取走填进搜索框(见 `settings-panel`)
+
 ## 不在本主题验证
 
 * SettingsPanel 内部 UI — `settings-panel` 持有

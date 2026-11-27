@@ -52,7 +52,9 @@ FolderTree 有三个「把一批路径移动/复制进同一目录」的入口:�
    `EXPLORER_PROGRESS_DELAY_MS`(500ms,VSCode `ExplorerService.applyBulkEdit` 的 `withProgress({ location: Explorer, delay: 500 })`)
    → 资源管理器顶部(标题栏下、叠在树上不推动内容)出现 design `ProgressBar`(名称「正在执行文件操作…」,三语);全部结束即消失,
    很快完成的不出现。外部文件拖入(`dropForeignFilesInto`,可能停在同名确认框上)不计入。
-10. `runBatchTransfer` 逐批串行(组件内一条 `createSerialQueue`):每批开始时才按目标目录列表挑名字,上一批还在写时再粘贴,
-    后一批等它写完、看得到它写出的文件 → `a copy 2.txt`(VSCode 重复粘贴同),不再两批都挑 `a copy.txt`、后一批报「已存在」。
+10. `runBatchTransfer` 按目标目录逐批串行(`runSerialPerKey`,key = 目标目录):每批开始时才按目标目录列表挑名字,上一批还在写时
+    再粘贴到同一目录,后一批等它写完、看得到它写出的文件 → `a copy 2.txt`(VSCode 重复粘贴同),不再两批都挑 `a copy.txt`、
+    后一批报「已存在」。不同目标目录的批次互不等待(VSCode 文件操作经 BulkEditService 各自执行):慢的大目录复制进行中,
+    往别的目录的移动 / 粘贴立即开始。
 11. 某项失败的提示只写源的名字(`basenamePreserveTrailing`),不写绝对路径:「无法粘贴「a.txt」：{本地化原因}」/「无法移动…」/
     「无法复制…」(三语;VSCode 文件操作错误同样只给名字)。

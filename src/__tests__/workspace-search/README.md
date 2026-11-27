@@ -101,9 +101,14 @@
    - 取消(按钮;焦点在结果树时 Esc,VSCode `WorkbenchListFocusContextKey` + Escape):取消在途查询(`search.cancel`),
      已收到的结果保留,状态 `cancelled`,状态行「{计数}。搜索已取消」;还没有结果 →「搜索在找到任何结果前已取消」+ 行内
      「重新搜索」。迟到事件丢弃。不在搜索时 Esc 不被吞。
+   - 焦点(VSCode `SearchView.cancelSearch(focus = true)` → `searchWidget.focus()`;「重新搜索」/「在所有文件中重新搜索」
+     `triggerQueryChange({ preserveFocus: false })` → `searchWidget.focus(false)`):取消(按钮或结果树上 Esc)后焦点回查询框并全选;
+     点「重新搜索」/「在所有文件中重新搜索」后焦点回查询框。被点的按钮随状态卸载,焦点不掉到 body。
    - 无结果(`done` 且 0 个结果):有包含 / 排除条件 → 主句写明条件(「在「x」中未找到结果(已排除「y」)」等三种)+
      「在所有文件中重新搜索」(清空包含 / 排除后立即重搜);否则「使用排除设置与忽略文件」开着 → 追加「查看设置中配置的排除项
-     并检查 gitignore 文件」+「打开设置」(切到「使用忽略文件」所在的资源管理器设置页并打开设置);开关关着 → 不提示
+     并检查 gitignore 文件」+「打开设置」(照抄 VSCode `onOpenSettings` 的查询
+     `@id:files.exclude,search.exclude,search.useParentIgnoreFiles,search.useGlobalIgnoreFiles,search.useIgnoreFiles` 打开设置,
+     只列出相关项 —— 本项目目前只有「使用忽略文件」);开关关着 → 不提示
      (此时已不受排除表与忽略文件影响 —— 与 VSCode 的刻意差异:VSCode 无论开关都提示)。入口是状态行后的行内链接按钮,
      提示句在 `role=status` 内一并播报。
 9. **未做**:替换 / 全部替换(跨文件写入需确认与可撤销,超出本轮);搜索历史;`.git/info/exclude` 与全局 gitignore;多行正则;搜索编辑器。

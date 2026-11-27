@@ -124,15 +124,43 @@ export function groupSearchResults(
   return buckets;
 }
 
+const NO_ID_FILTERS: readonly string[] = [];
+// VSCode settingsTreeModels idRegex:`@id:` 后接逗号分隔的 id 列表(可加引号)。
+const ID_FILTER_RE = /(^|\s)@id:("([^"]*)"|[^"]\S*)?/g;
+
+/**
+ * 拆出 `@id:a,b` 过滤(VSCode 设置编辑器 parseQuery 的 idFilters),其余文字照常子串匹配。无 `@id:` 时原样返回。
+ */
+export function parseSettingsQuery(trimmed: string): { readonly ids: readonly string[]; readonly text: string } {
+  if (!trimmed.includes('@id:')) return { ids: NO_ID_FILTERS, text: trimmed };
+  const ids: string[] = [];
+  const text = trimmed.replace(ID_FILTER_RE, (_m, _lead, whole: string | undefined, quoted: string | undefined) => {
+    const list = quoted ?? whole;
+    if (list) for (const id of list.split(',')) if (id.trim() !== '') ids.push(id.trim());
+    return '';
+  });
+  return { ids, text: text.trim() };
+}
+
+/** VSCode SettingsTreeSettingElement.matchesAnyId:完全相同,或过滤项以 `*` 结尾时按前缀。 */
+function matchesAnyId(id: string, filters: readonly string[]): boolean {
+  for (const f of filters) {
+    if (f === id || (f.endsWith('*') && id.startsWith(f.slice(0, -1)))) return true;
+  }
+  return false;
+}
+
 export function selectMatchedSettingItems(
   searchable: readonly SearchableSettingItem[],
   trimmed: string,
 ): readonly SettingItemSpec[] {
   if (searchable.length === 0) return EMPTY_MATCHED_SETTING_ITEMS;
-  const ql = lowerIfNeeded(trimmed);
+  const { ids, text } = parseSettingsQuery(trimmed);
+  const ql = lowerIfNeeded(text);
   let matched: SettingItemSpec[] | null = null;
   let count = 0;
   for (const s of searchable) {
+    if (ids.length > 0 && !matchesAnyId(s.item.id, ids)) continue;
     if (!s.haystack.includes(ql)) continue;
     if (matched === null) matched = new Array<SettingItemSpec>(searchable.length);
     matched[count++] = s.item;
@@ -188,6 +216,16 @@ export function SettingsPanel({
     fallback.focus();
   }, [tabs]);
   const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  // 带查询打开(openSettingsWithQuery):挂载时 / 已打开时收到请求 → 取走、填入并聚焦搜索框(VSCode openSettings2 focusSearch)。
+  const pendingSearchQuery = useSettingsStore((s) => s.pendingSearchQuery);
+  useLayoutEffect(() => {
+    if (pendingSearchQuery === null) return;
+    const requested = useSettingsStore.getState().takeSearchQuery();
+    if (requested === null) return;
+    setQuery(clampSearchQuery(requested));
+    searchRef.current?.focus();
+  }, [pendingSearchQuery]);
   const trimmed = normalizeSearchQuery(query);
   const searchPlaceholderLabel = t('settings.panel.search_placeholder');
   // 搜索模式仅由 query 判定(打磨 R49):普通浏览设置 tab 时不订阅 itemRegistry、
@@ -198,6 +236,7 @@ export function SettingsPanel({
     <div className="@container/settings flex h-full flex-col bg-canvas">
       <div className="border-b border-line bg-panel-soft/50 p-3">
         <Input
+          ref={searchRef}
           size="sm"
           // a11y(A5,A1 同族):placeholder 无参数 → 复用作 aria-label 给屏幕阅读器可访问名。
           aria-label={searchPlaceholderLabel}

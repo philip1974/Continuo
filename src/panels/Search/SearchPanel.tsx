@@ -25,8 +25,7 @@ import { PICKER_MATCH_CLASS_NAME, pickerRowClassName, pickerRowSecondaryClassNam
 import { isVirtualIndexRendered } from '@/plugins/picker/use-picker-list';
 import { measurePageNavGeometry, pageNavTarget } from '@/lib/list-page-nav';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { useSettingsStore } from '@/plugins/settings/store';
-import { openSettingsPanel } from '@/lib/toggle-settings-panel';
+import { openSettingsWithQuery } from '@/lib/toggle-settings-panel';
 import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
 import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
 import { useSettingValue } from '@/plugins/settings/values-store';
@@ -56,8 +55,12 @@ const EXCLUDE_ICON = <ExcludeIcon size={14} />;
 const STOP_ICON = <StopIcon size={14} />;
 /** 进度条 / 「取消搜索」按钮的出现延迟(VSCode searchView withProgress delay 300):很快完成的搜索不闪。 */
 export const SEARCH_PROGRESS_DELAY_MS = 300;
-/** 「使用忽略文件」等搜索范围设置所在的设置页签(ExplorerTabPlugin)。 */
-const SEARCH_SETTINGS_TAB_ID = 'core.explorer';
+/**
+ * 无结果提示「打开设置」的设置查询(照抄 VSCode SearchView.onOpenSettings):排除设置 + 各忽略文件设置。本项目目前只有
+ * search.useIgnoreFiles,其余 id 无对应设置项、不显示。
+ */
+const SEARCH_EXCLUDE_SETTINGS_QUERY =
+  '@id:files.exclude,search.exclude,search.useParentIgnoreFiles,search.useGlobalIgnoreFiles,search.useIgnoreFiles';
 const PRE_STYLE = { whiteSpace: 'pre' } as const;
 
 type Row =
@@ -155,12 +158,28 @@ export function SearchPanel() {
   const statusAction = searchStatusAction(s);
   const searching = s.status === 'searching';
   const slowSearch = useDelayedActive(searching, SEARCH_PROGRESS_DELAY_MS);
+  // 被点的「取消搜索」/ 行内链接随状态卸载,焦点交回查询框而不是掉到 body。VSCode:cancelSearch(focus = true) →
+  // searchWidget.focus()(全选);「重新搜索」/「在所有文件中重新搜索」triggerQueryChange({ preserveFocus: false }) →
+  // searchWidget.focus(false)(不全选)。
+  const focusQueryInput = (select: boolean) => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    if (select) el.select();
+  };
+  const cancelSearch = () => {
+    actions.cancelSearch();
+    focusQueryInput(true);
+  };
   const runStatusAction = () => {
-    if (statusAction === 'open-settings') {
-      useSettingsStore.getState().setActiveTabId(SEARCH_SETTINGS_TAB_ID);
-      openSettingsPanel();
-    } else if (statusAction === 'search-all') actions.searchInAllFiles();
-    else if (statusAction === 'search-again') actions.searchNow();
+    if (statusAction === 'open-settings') openSettingsWithQuery(SEARCH_EXCLUDE_SETTINGS_QUERY);
+    else if (statusAction === 'search-all') {
+      actions.searchInAllFiles();
+      focusQueryInput(false);
+    } else if (statusAction === 'search-again') {
+      actions.searchNow();
+      focusQueryInput(false);
+    }
   };
 
   // preview:匹配行单击以预览方式打开(双击的第二下 / Enter 常驻;BDD: src/__tests__/editor-preview-tab/)
@@ -170,11 +189,11 @@ export function SearchPanel() {
   };
 
   const onTreeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    // Esc 取消在途搜索(VSCode search.action.cancel:焦点在结果列表时 Escape)
+    // Esc 取消在途搜索(VSCode search.action.cancel:焦点在结果列表时 Escape;同样经 cancelSearch() 把焦点交回查询框)
     if (e.key === 'Escape' && searching) {
       e.preventDefault();
       e.stopPropagation();
-      actions.cancelSearch();
+      cancelSearch();
       return;
     }
     if (rows.length === 0) return;
@@ -318,7 +337,7 @@ export function SearchPanel() {
                 size="xs"
                 aria-label={t('panels.search.cancel')}
                 title={t('panels.search.cancel')}
-                onClick={actions.cancelSearch}
+                onClick={cancelSearch}
                 className="shrink-0"
               >
                 {STOP_ICON}

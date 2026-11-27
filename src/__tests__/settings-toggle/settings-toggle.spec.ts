@@ -14,7 +14,8 @@ import { bootCorePlugins, shutdownCorePlugins } from '../../core-plugins';
 import { coApp } from '../../plugins/co-app';
 import { useLayoutUiStore } from '../../stores/layout-ui.store';
 import { markDockLayoutRestored, setDockApi } from '../../shell/dock/dock-api-ref';
-import { toggleSettingsPanel } from '../../lib/toggle-settings-panel';
+import { openSettingsWithQuery, toggleSettingsPanel } from '../../lib/toggle-settings-panel';
+import { useSettingsStore } from '../../plugins/settings/store';
 
 interface FakePanelApi {
   isActive: boolean;
@@ -217,5 +218,31 @@ describe('toggleSettingsPanel · 布局待恢复', () => {
     markDockLayoutRestored(fake as never);
     expect(fake.addPanel).toHaveBeenCalledTimes(1);
     expect((panel as unknown as FakePanel).api.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// helper: 带查询打开(VSCode preferencesService.openSettings({ query }))
+// ────────────────────────────────────────────────────────────
+
+describe('openSettingsWithQuery', () => {
+  it('已在显示也不关(不像 toggle 那样收起) + 把查询交给设置页搜索框', () => {
+    useSettingsStore.setState({ pendingSearchQuery: null });
+    const panel = makeFakePanel(true);
+    const fake = makeFakeApi({ panel });
+    setDockApi(fake as never);
+    openSettingsWithQuery('@id:search.useIgnoreFiles');
+    expect(panel.api.close).not.toHaveBeenCalled();
+    expect(fake.addPanel).not.toHaveBeenCalled();
+    expect(useSettingsStore.getState().pendingSearchQuery).toBe('@id:search.useIgnoreFiles');
+  });
+
+  it('面板不存在 → 新建,查询留给它挂载时取用', () => {
+    useSettingsStore.setState({ pendingSearchQuery: null });
+    const fake = makeFakeApi({ panel: null });
+    setDockApi(fake as never);
+    openSettingsWithQuery('@id:x');
+    expect(fake.addPanel).toHaveBeenCalledTimes(1);
+    expect(useSettingsStore.getState().pendingSearchQuery).toBe('@id:x');
   });
 });

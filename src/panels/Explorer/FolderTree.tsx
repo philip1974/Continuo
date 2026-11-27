@@ -20,7 +20,7 @@ import type {
 } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
 import { Button, ProgressBar } from '@/design';
-import { createSerialQueue } from '@/lib/serialize-per-key';
+import { runSerialPerKey } from '@/lib/serialize-per-key';
 import { ContextMenu, type ContextMenuActions } from './ContextMenu';
 import { CreateInput } from './CreateInput';
 import { DropOverlay } from './DropOverlay';
@@ -455,9 +455,10 @@ export function FolderTree({ root }: { root: string }) {
     setBusyOps((n) => n + 1);
     return work.finally(() => setBusyOps((n) => n - 1));
   }, []);
-  // 批量移动 / 复制逐批串行:每批开始时按目标目录列表挑名字(` copy` / ` copy 2`),上一批还在写时连按两次粘贴会
+  // 批量移动 / 复制按目标目录串行:每批开始时按目标目录列表挑名字(` copy` / ` copy 2`),上一批还在写时连按两次粘贴会
   // 挑到同一个名字,后一批报「已存在」。串行后后一批看得到前一批写出的文件(VSCode 重复粘贴得 `x copy 2`)。
-  const [transferQueue] = useState(createSerialQueue);
+  // 不同目标目录互不等待(VSCode 各操作经 BulkEditService 并发):慢的大目录复制不挡住无关的移动 / 粘贴。
+  const [transferChains] = useState(() => new Map<string, Promise<unknown>>());
   const [moveDontAsk, setMoveDontAsk] = useState(false);
   const [overwriteConfirm, setOverwriteConfirm] = useState<OverwriteConfirmState | null>(null);
   const overwriteResolveRef = useRef<((choice: OverwriteChoice) => void) | null>(null);
@@ -782,7 +783,7 @@ export function FolderTree({ root }: { root: string }) {
           },
         },
       );
-      return trackBusy(transferQueue.run(transfer)).then(() => {
+      return trackBusy(runSerialPerKey(transferChains, destDir, transfer)).then(() => {
         recordFileOp(
           root,
           kind === 'move' ? { kind: 'move', pairs: moved } : { kind: 'create', entries: copied },
@@ -791,7 +792,7 @@ export function FolderTree({ root }: { root: string }) {
         return kind === 'move' ? moved : copiedPairs;
       });
     },
-    [makeUniqueDestPicker, onPathMoved, refreshParent, root, trackBusy, transferQueue],
+    [makeUniqueDestPicker, onPathMoved, refreshParent, root, trackBusy, transferChains],
   );
   // 外部拖入写成的新文件入撤销栈(无法重做:内容未保留;选「替换」时 dropForeignFilesInto 不回报)。
   const recordDropped = useCallback(

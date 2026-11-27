@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // BDD: explorer-batch-transfer / 文件操作的进度与并发:粘贴 / 删除进行中顶部细进度条(VSCode ProgressLocation.Explorer,
-// delay 500);上一批还在写时再粘贴 → 挑到不同名字(`a copy 2.txt`),不报「已存在」;失败文案只写名字。
+// delay 500);上一批还在写时再粘贴 → 挑到不同名字(`a copy 2.txt`),不报「已存在」;粘贴到别的目录不被它挡住;
+// 失败文案只写名字。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
@@ -25,7 +26,10 @@ vi.mock('@/lib/co-api', () => ({
         ok: true,
         data:
           p === '/work'
-            ? [...h.names].map((name): FileEntry => ({ path: `/work/${name}`, name, isDirectory: false }))
+            ? [
+                ...[...h.names].map((name): FileEntry => ({ path: `/work/${name}`, name, isDirectory: false })),
+                { path: '/work/sub', name: 'sub', isDirectory: true },
+              ]
             : [],
       })),
       copy: vi.fn(
@@ -33,7 +37,7 @@ vi.mock('@/lib/co-api', () => ({
           new Promise((resolve) => {
             h.pending.push({
               resolve: (r) => {
-                if (r.ok) h.names.add(dest.slice('/work/'.length));
+                if (r.ok && dest.lastIndexOf('/') === '/work'.length) h.names.add(dest.slice('/work/'.length));
                 resolve(r);
               },
             });
@@ -182,6 +186,32 @@ describe('上一批还在写时再粘贴', () => {
     expect(vi.mocked(coApi.fs.copy).mock.calls[1]![1]).toBe('/work/a copy 2.txt');
     await act(async () => {
       h.pending.shift()!.resolve({ ok: true, data: undefined });
+    });
+    expect(h.notifyError).not.toHaveBeenCalled();
+  });
+});
+
+describe('不同目标目录的传输互不等待', () => {
+  // VSCode 文件操作经 BulkEditService 各自执行、互不排队;本项目只把同一目标目录的批次串行(挑名要看到上一批写出的文件)。
+  it('往 sub/ 的复制还没写完时往根目录粘贴 → 立即开始,不排在它后面', async () => {
+    const { container } = await focusRow('/work/b.txt');
+    act(() => {
+      fireEvent.click(row(container, '/work/sub')!);
+    });
+    await waitFor(() => expect(row(container, '/work/sub')!.getAttribute('tabindex')).toBe('0'));
+    paste(row(container, '/work/sub')!);
+    await waitFor(() => expect(coApi.fs.copy).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(coApi.fs.copy).mock.calls[0]![1]).toBe('/work/sub/a.txt');
+
+    act(() => {
+      fireEvent.click(row(container, '/work/b.txt')!);
+    });
+    await waitFor(() => expect(row(container, '/work/b.txt')!.getAttribute('tabindex')).toBe('0'));
+    paste(row(container, '/work/b.txt')!);
+    await waitFor(() => expect(coApi.fs.copy).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(coApi.fs.copy).mock.calls[1]![1]).toBe('/work/a copy.txt');
+    await act(async () => {
+      for (const d of h.pending.splice(0)) d.resolve({ ok: true, data: undefined });
     });
     expect(h.notifyError).not.toHaveBeenCalled();
   });
