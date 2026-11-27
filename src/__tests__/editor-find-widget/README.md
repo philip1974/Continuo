@@ -22,6 +22,9 @@
     复选框同步,计数按新选项重算;面板未打开时不处理(按键照常传出)。
 - **历史**:查找框里 ↑ 翻到更早的查找词、↓ 回到更新的,越过最新回到空;回车查找与关闭面板时把当前词记入。去重、最多 50 条,
   同一窗口内所有编辑器共享(内存,不落盘)。IME 组合中的方向键不处理。
+- **输入法组字**:查找框 / 替换框里组字中的按键(`isComposing` 或 `keyCode === 229`)止于面板(捕获阶段 `stopPropagation`,
+  不 `preventDefault`):Esc 是取消组字,不关查找条;Enter 是确认候选,不跳下一个、不进历史;方向键选候选,不翻历史;也不冒泡到
+  工作台全局热键。组字结束后 Esc / Enter 照常。代码编辑器与 Markdown 代码块同样生效。
 - **强制颜色**:`@media (forced-colors: active)` 下当前匹配 `2px solid Highlight`,其它匹配 `1px dashed CanvasText`,选区
   `.cm-selectionBackground` 画 Highlight 轮廓。
 - **键位冲突核查**:⌥⌘F / ⌥⌘C / ⌥⌘W / ⌥⌘R / Ctrl+H / Alt+C/W/R 不与工作台命令默认键(useCommandHotkeys 注册的命令、⌘P / ⌘⇧P

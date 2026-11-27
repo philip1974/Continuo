@@ -664,6 +664,7 @@
 ## [editor-milkdown-chrome-i18n](./editor-milkdown-chrome-i18n/README.md)
 
 - [`milkdown-chrome-i18n.spec.tsx`](./editor-milkdown-chrome-i18n/milkdown-chrome-i18n.spec.tsx)
+- [`milkdown-relocale-state.spec.tsx`](./editor-milkdown-chrome-i18n/milkdown-relocale-state.spec.tsx)
 
 ## [editor-milkdown-roundtrip-safety](./editor-milkdown-roundtrip-safety/README.md)
 
@@ -1020,6 +1021,10 @@
 ## [快捷键提示:tooltip 与菜单项键位(对齐 VSCode)](./hotkey-hints/README.md)
 
 - [`hotkey-hints.spec.tsx`](./hotkey-hints/hotkey-hints.spec.tsx)
+
+## [hotkey-ime-composition(输入法组字中的按键不触发工作台快捷键)](./hotkey-ime-composition/README.md)
+
+- [`hotkey-ime-composition.spec.tsx`](./hotkey-ime-composition/hotkey-ime-composition.spec.tsx)
 
 ## [快捷键键名词汇:捕获 / 匹配 / 显示 一致](./hotkey-key-vocabulary/README.md)
 

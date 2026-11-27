@@ -11,6 +11,7 @@ import type { CommandSpec } from '@/plugins/registries/CommandRegistry';
 import { resolveEffectiveHotkey, resolveEffectiveHotkeys } from '@/plugins/keybindings/keybindings-store';
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
+import { isImeComposing } from '@/design/ime';
 import { getPopoutDocuments, runInCommandDocument, subscribePopoutDocuments } from '@/shell/dock/popout-documents';
 
 /**
@@ -138,6 +139,8 @@ export function usePickerToggleHotkey(
     //    shell 收到按键的同时面板也弹出来抢焦点(与 useCommandHotkeys 的 R15 规则一致)。
     const isMac = detectPlatform() === 'mac';
     const handlerFor = (doc: Document) => (e: KeyboardEvent): void => {
+      // 输入法组字中的按键属于输入法,不当开关键(同全局命令分发 useCommandHotkeys)
+      if (isImeComposing(e)) return;
       const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
       if (mod && !e.altKey && e.shiftKey === shift && isPKey(e.key)) {
         // 选择器画在按键所在窗口(VSCode:Quick Input 画在触发它的窗口,见 picker-window)。picker 所在窗口 = hostDocument

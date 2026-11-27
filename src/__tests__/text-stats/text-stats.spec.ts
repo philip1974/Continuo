@@ -55,6 +55,56 @@ describe('wordCount', () => {
   });
 });
 
+describe('wordCount · CJK 口径(中日文每字一词,同 Word / Typora / Obsidian)', () => {
+  it('整段中文:每个汉字计 1 词(不再整段算 1 个)', () => {
+    expect(wordCount('今天天气很好')).toBe(6);
+    expect(wordCount('中文 词 测试\n第二行')).toBe(8);
+  });
+  it('平假名 / 片假名每字计 1 词;中点 ・ 不计', () => {
+    expect(wordCount('ひらがな')).toBe(4);
+    expect(wordCount('カタカナ・テスト')).toBe(7);
+    expect(wordCount('ｶﾀｶﾅ')).toBe(4); // 半角片假名
+  });
+  it('中英混排:CJK 字结束当前英文词,英文词照常按整词计', () => {
+    expect(wordCount('用React写组件')).toBe(5); // 用 / React / 写 / 组 / 件
+    expect(wordCount('hello世界world')).toBe(4);
+    expect(wordCount('Vue 3 很好用')).toBe(5);
+  });
+  it('全角 / CJK 标点不计词,且与空白一样分词', () => {
+    expect(wordCount('你好，世界！')).toBe(4);
+    expect(wordCount('「引用」《书名》、。')).toBe(4);
+    expect(wordCount('React，Vue')).toBe(2);
+    expect(wordCount('，。！？')).toBe(0);
+    expect(wordCount('中文\u3000空格')).toBe(4); // 全角空格
+  });
+  it('通用标点(“” — …)不单独成词;夹在英文词里照常连着', () => {
+    expect(wordCount('他说“你好”……')).toBe(4);
+    expect(wordCount('a — b')).toBe(2);
+    expect(wordCount('don’t stop')).toBe(2);
+  });
+  it('全角字母 / 数字是普通词字符', () => {
+    expect(wordCount('ＡＢＣ　１２３')).toBe(2);
+  });
+  it('扩展区表意字(代理对)每字计 1 词,不按 2 个码元算两次', () => {
+    expect(wordCount('𠀀𪚥')).toBe(2); // 扩展 B
+    expect(wordCount('a𠀀b')).toBe(3);
+    expect(wordCount('㐀')).toBe(1); // 扩展 A
+    expect(charCount('𠀀')).toBe(2); // 字符数口径不变(UTF-16 code unit)
+  });
+  it('韩文仍按空格切词', () => {
+    expect(wordCount('안녕하세요 세계')).toBe(2);
+  });
+  it('emoji(代理对)仍按非空白段计,不当 CJK', () => {
+    expect(wordCount('🌍')).toBe(1);
+    expect(wordCount('hi 🌍🌍 there')).toBe(3);
+    expect(wordCount('你🌍好')).toBe(3);
+  });
+  it('孤立代理码元不越界、不吞后面的字', () => {
+    expect(wordCount('\ud840中')).toBe(2);
+    expect(wordCount('中\udc00')).toBe(2);
+  });
+});
+
 describe('charCount', () => {
   it('空 → 0', () => {
     expect(charCount('')).toBe(0);
@@ -92,7 +142,6 @@ describe('perf P7 · computeTextStats 单遍统计', () => {
     'a\n',
     'a\r\nb',
     'line0\nline1\nline2\n',
-    '中文 词 测试\n第二行',
     'a\rb\r\n',
   ];
   it('空字符串统计复用稳定空对象', () => {
@@ -100,7 +149,7 @@ describe('perf P7 · computeTextStats 单遍统计', () => {
     expect(computeTextStats('')).toBe(computeTextStats(''));
   });
 
-  it('与正则口径等价(回归基准;行 = CodeMirror 的 /\\r\\n?|\\n/ 切分段数)', () => {
+  it('不含 CJK / 全角标点的文本与正则口径等价(回归基准;行 = CodeMirror 的 /\\r\\n?|\\n/ 切分段数)', () => {
     const oldLines = (s: string) => s.split(/\r\n?|\n/).length;
     const oldWords = (s: string) =>
       s.trim() === '' ? 0 : s.trim().split(/\s+/).length;
@@ -110,5 +159,20 @@ describe('perf P7 · computeTextStats 单遍统计', () => {
       expect(r.words).toBe(oldWords(s));
       expect(r.chars).toBe(s.replace(/\r\n/g, '\n').length);
     }
+  });
+});
+
+describe('大文件性能(每次输入都在状态栏全文扫描)', () => {
+  // 拉丁文本走快路径(只判空白),CJK 文本多一次码点分类;两者都应在百毫秒量级内扫完数 MB
+  const latin = 'lorem ipsum dolor sit amet, consectetur adipiscing elit\n'.repeat(80_000); // ≈4.6MB
+  const cjk = '今天天气很好，我们去公园散步吧。Hello 世界！\n'.repeat(120_000); // ≈3.4M 码元
+  it('数 MB 文本单次统计不超过 1 秒,且结果正确', () => {
+    const t0 = performance.now();
+    const a = computeTextStats(latin);
+    const b = computeTextStats(cjk);
+    const ms = performance.now() - t0;
+    expect(a.words).toBe(8 * 80_000);
+    expect(b.words).toBe((14 + 1 + 2) * 120_000);
+    expect(ms).toBeLessThan(1000);
   });
 });

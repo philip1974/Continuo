@@ -17,6 +17,7 @@ import { getPopoutDocuments, runInCommandDocument, subscribePopoutDocuments } fr
 import { hasOpenModalIn } from '@/design/Modal';
 import { isInsideMenu } from '@/lib/menu-focus';
 import { whenCoveredBy, whenHolds } from '@/lib/editor-text-focus';
+import { isImeComposing } from '@/design/ime';
 
 /**
  * dockview popout 子窗里也经热键分发的命令:只作用于按键所在子窗的活动面板(分发时经 runInCommandDocument 标明按键所在窗口,
@@ -432,6 +433,9 @@ function createHotkeyHandler(
   popoutOnly = false,
 ): (e: KeyboardEvent) => void {
   return (e: KeyboardEvent) => {
+    // 输入法组字中的按键(isComposing / keyCode 229)属于输入法:Esc 取消组字、Enter 确认候选、方向键选候选,
+    // 不当快捷键(VSCode 把 229 映射成 KEY_IN_COMPOSITION,不匹配任何绑定)。不 preventDefault。
+    if (isImeComposing(e)) return;
     // a11y(A64):事件来自可编辑文本控件(input/textarea/contenteditable/select)时,放行
     // 「无 ctrl/meta/alt 修饰」的绑定(单键如 'x' 或仅 shift 如 'X')—— 否则用户在搜索框/
     // 输入框里键入该字符会被全局命令劫持并 preventDefault,文本打不进去、焦点上下文被破坏。

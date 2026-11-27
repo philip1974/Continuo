@@ -11,6 +11,7 @@ import { Crepe, CrepeFeature } from '@milkdown/crepe';
 import { insertImageInputRule } from '@milkdown/kit/preset/commonmark';
 import { $prose } from '@milkdown/kit/utils';
 import type { EditorView } from '@milkdown/kit/prose/view';
+import { TextSelection } from '@milkdown/kit/prose/state';
 import { clampFloatingToViewport } from './milkdown-floating-clamp';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import '@milkdown/crepe/theme/common/style.css';
@@ -291,6 +292,23 @@ interface MarkdownPositionHandle {
 /** 编辑器视图就绪(Crepe 异步创建完成)时回调,带聚焦与定位句柄,以及取 ProseMirror 视图(查找用;已拆除 → null)。 */
 type OnEditorReady = (focus: () => void, position: MarkdownPositionHandle, getView: () => EditorView | null) => void;
 
+/** 切换界面语言重挂前记下的编辑状态(选区按 ProseMirror 位置;同一份内容重建的文档结构相同)。 */
+interface RelocaleSnapshot {
+  readonly anchor: number;
+  readonly head: number;
+  /** 焦点在编辑区内(含代码块里的 CodeMirror)。 */
+  readonly focused: boolean;
+}
+
+/** 重挂后还原选区与焦点(位置夹进新文档;TextSelection.between 落到最近的合法文本位置)。 */
+function restoreRelocaleSnapshot(view: EditorView, snapshot: RelocaleSnapshot): void {
+  const size = view.state.doc.content.size;
+  const clamp = (pos: number): number => Math.max(0, Math.min(pos, size));
+  const { doc } = view.state;
+  view.dispatch(view.state.tr.setSelection(TextSelection.between(doc.resolve(clamp(snapshot.anchor)), doc.resolve(clamp(snapshot.head)))));
+  if (snapshot.focused) focusEditorView(view);
+}
+
 /** 聚焦编辑区:只读预览的 ProseMirror 不可编辑,view.focus() 不聚焦它 → 直接聚焦其 DOM(预览区 tabIndex=0)。 */
 function focusEditorView(view: EditorView): void {
   if (view.editable === false) view.dom.focus({ preventScroll: true });
@@ -316,7 +334,8 @@ function CrepeEditor({
   onChange,
   onWriteBack,
   onReady,
-}: MilkdownEditorProps & { readonly onReady?: OnEditorReady }) {
+  onUnmount,
+}: MilkdownEditorProps & { readonly onReady?: OnEditorReady; readonly onUnmount?: () => void }) {
   const valueRef = useRef(value);
   valueRef.current = value;
   const onChangeRef = useRef(onChange);
@@ -664,6 +683,11 @@ function CrepeEditor({
 
   useEditor(editorCallback);
 
+  // 卸载前(layout 清理:先于子组件 <Milkdown/> 销毁编辑器,DOM 仍在)通知外层记下编辑状态(语言切换重挂用)
+  const onUnmountRef = useRef(onUnmount);
+  onUnmountRef.current = onUnmount;
+  useLayoutEffect(() => () => onUnmountRef.current?.(), []);
+
   // 关窗握手经注册表同步回写;卸载(切 tab / 切 mode / 重挂载)时也同步回写一次再停用。
   // 父组件的卸载清理先于子组件 <Milkdown/> 里的 editor.destroy(),此时仍可取全文。
   useEffect(() => {
@@ -718,8 +742,13 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     drawnThemeRef.current = theme;
     if (wrapperRef.current) redrawMermaidPreviews(wrapperRef.current);
   }, [theme]);
-  // 语言变化:代码块工具条 / placeholder 文案在 Crepe 创建时定死 → 用当前内容重挂载。语言只能在
-  // 设置面板里切,不会与输入同时发生。key 必须放在 MilkdownProvider 上:只 key 内层的话 Provider
+  // 语言变化:Crepe 浮层文案(斜杠菜单 / 工具条 / 链接框 / 代码块工具条 / 占位符)在创建时定死 → 用当前内容重挂载。
+  // 不能就地换文案:Crepe 7.23 没有运行时更新 featureConfigs 的接口 —— 工具条 / 斜杠菜单把 config 传给 Vue 组件,
+  // computed 不追踪普通对象(工具条的分组只算一次),代码块工具条文案在节点视图创建时读取;只有占位符读 ctx。
+  // 代价:撤销历史丢失 —— 它是旧 EditorState 里 prosemirror-history 的插件状态,而 Milkdown 每个实例自建 schema,
+  // 历史里的步骤 / 切片属于旧 schema,不能搬进新实例。故重挂前记下选区与焦点(onUnmount → relocaleRef),
+  // 就绪后还原(handleReady);滚动位置照常按缓存恢复。查找条在 Provider 外,不随之重挂(查找框焦点 / 输入不丢)。
+  // 语言只能在设置面板里切,不会与输入同时发生。key 必须放在 MilkdownProvider 上:只 key 内层的话 Provider
   // 里还留着旧 editorFactory,会先用旧挂载时的内容建一个临时编辑器(listener 仍连着 store)再建新的。
   const locale = useLocale();
   // 让 mermaid 预览能按内容反查到本编辑器里的代码块(连续输入时只渲染最后一版)。
@@ -898,6 +927,19 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
     [],
   );
   const getViewRef = useRef<() => EditorView | null>(() => null);
+  const relocaleRef = useRef<RelocaleSnapshot | null>(null);
+  // Crepe 卸载而本组件仍在 = Provider 按 locale 重挂(切 tab / 模式时本组件整个卸载,记下的状态随之丢弃)
+  const handleCrepeUnmount = useCallback(() => {
+    const view = getViewRef.current();
+    getViewRef.current = () => null;
+    const selection = view?.state?.selection;
+    if (!view?.dom || !selection) return; // 未就绪 / 已拆除
+    relocaleRef.current = {
+      anchor: selection.anchor,
+      head: selection.head,
+      focused: view.dom.contains(view.dom.ownerDocument.activeElement),
+    };
+  }, []);
   const restoringScrollRef = useRef(false);
   const groupId = useEditorGroupId();
   // 查找 / 查找下一个·上一个(按键、菜单「编辑 → 查找」、命令面板)转到这里(BDD: src/__tests__/editor-find-keybindings/)
@@ -947,6 +989,20 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
             restoringScrollRef.current = false;
           });
         }
+      }
+      // 语言切换重挂:还原选区与焦点。放在下一帧(排在上面的滚动恢复之后):列表项节点视图挂载后的下一帧会改回选区(同上)
+      const relocale = relocaleRef.current;
+      relocaleRef.current = null;
+      if (relocale) {
+        requestAnimationFrame(() => {
+          const current = getView();
+          if (!current) return;
+          try {
+            restoreRelocaleSnapshot(current, relocale);
+          } catch {
+            /* 已拆除 */
+          }
+        });
       }
       unregisterFocusRef.current?.();
       unregisterFocusRef.current = registerEditorFocus(tabId, focus, groupId);
@@ -1041,9 +1097,9 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   }, []);
 
   return (
-    <MilkdownProvider key={locale}>
-      {/* 外层不滚动:查找条浮在右上角不随正文滚动。@container/terminal:复用的终端查找条按此名的容器查询收缩窄宽布局。 */}
-      <div className="@container/terminal relative h-full w-full" {...{ [MARKDOWN_EDITOR_ATTR]: '' }}>
+    // 外层不滚动:查找条浮在右上角不随正文滚动。@container/terminal:复用的终端查找条按此名的容器查询收缩窄宽布局。
+    <div className="@container/terminal relative h-full w-full" {...{ [MARKDOWN_EDITOR_ATTR]: '' }}>
+      <MilkdownProvider key={locale}>
       <div
         ref={wrapperRef}
         className="h-full w-full overflow-auto"
@@ -1055,8 +1111,9 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
         onPointerDownCapture={handlePointerDownCapture}
         onScroll={handleScroll}
       >
-        <CrepeEditor {...props} onReady={handleReady} />
+        <CrepeEditor {...props} onReady={handleReady} onUnmount={handleCrepeUnmount} />
       </div>
+      </MilkdownProvider>
       {findOpen && (
         <TerminalSearchBar
           searchApi={searchApi}
@@ -1067,7 +1124,6 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
           history={editorFindHistory}
         />
       )}
-      </div>
-    </MilkdownProvider>
+    </div>
   );
 }

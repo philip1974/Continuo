@@ -225,6 +225,7 @@ class FindWidget {
     this.count = count;
     this.input?.after(count);
     arrangeOptionToggles(panel, count);
+    panel.addEventListener('keydown', this.onPanelKeyDownCapture, true);
     this.input?.addEventListener('keydown', this.onKeyDown);
     this.input?.addEventListener('input', this.onInput);
     editorFindHistory.resetCursor();
@@ -234,6 +235,7 @@ class FindWidget {
     if (!this.panel) return;
     // 关闭面板时查找框里的词也进历史(VSCode 同)
     if (this.input) editorFindHistory.add(this.input.value);
+    this.panel.removeEventListener('keydown', this.onPanelKeyDownCapture, true);
     this.input?.removeEventListener('keydown', this.onKeyDown);
     this.input?.removeEventListener('input', this.onInput);
     this.count?.remove();
@@ -241,6 +243,15 @@ class FindWidget {
   }
 
   private readonly onInput = (): void => editorFindHistory.resetCursor();
+
+  /**
+   * 组字中(拼音 / 日文 / 韩文输入法)的按键止于面板(捕获阶段,查找框与替换框都在面板内):Esc 是取消组字、Enter 是确认候选、
+   * 方向键是选候选,不能冒泡到默认面板的 keydown(runScopeHandlers 命中 Escape → closeSearchPanel 关掉整个查找条、
+   * Enter → 查找下一个)或全局热键。不 preventDefault,输入法照常处理。VSCode 查找框同样不把组字按键当面板键。
+   */
+  private readonly onPanelKeyDownCapture = (event: KeyboardEvent): void => {
+    if (isImeComposing(event)) event.stopPropagation();
+  };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (isImeComposing(event) || event.altKey || event.ctrlKey || event.metaKey) return;

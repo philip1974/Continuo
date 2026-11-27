@@ -284,6 +284,76 @@ describe('查找历史(查找框 ↑ / ↓,按窗口共享)', () => {
   });
 });
 
+describe('输入法组字中的按键不当面板键(拼音组字时 Esc 是取消组字,不关查找条)', () => {
+  /** 在查找 / 替换框里派发真实 keydown(冒泡经默认面板的 keydown 处理到 document)。 */
+  function pressIn(input: HTMLInputElement, init: KeyboardEventInit): KeyboardEvent {
+    const ev = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+    act(() => {
+      input.dispatchEvent(ev);
+    });
+    return ev;
+  }
+  const COMPOSING_ESC = { key: 'Escape', keyCode: 229, isComposing: true } as const;
+
+  it('查找框:组字中按 Esc(isComposing / keyCode 229)面板不关,事件不冒泡到工作台;组字结束后 Esc 照常关闭', async () => {
+    const view = await mount(FOO_154);
+    openFind(view);
+    typeQuery(view, 'foo');
+    const onDocKey = vi.fn();
+    document.addEventListener('keydown', onDocKey);
+    try {
+      const ev = pressIn(field(view, 'search'), COMPOSING_ESC);
+      // 只有 keyCode 229(部分输入法下组字结束那次按键 isComposing 已为 false)同样不关
+      pressIn(field(view, 'search'), { key: 'Escape', keyCode: 229 });
+      pressIn(field(view, 'search'), { key: 'Escape', keyCode: 27, isComposing: true });
+      expect(view.dom.querySelector('.cm-search')).not.toBeNull();
+      expect(ev.defaultPrevented).toBe(false); // 输入法照常处理
+      expect(onDocKey).not.toHaveBeenCalled();
+      pressIn(field(view, 'search'), { key: 'Escape', keyCode: 27 });
+      expect(view.dom.querySelector('.cm-search')).toBeNull();
+    } finally {
+      document.removeEventListener('keydown', onDocKey);
+    }
+  });
+
+  it('替换框:组字中按 Esc 面板不关', async () => {
+    const view = await mount(FOO_154);
+    openFind(view);
+    pressIn(field(view, 'replace'), COMPOSING_ESC);
+    expect(view.dom.querySelector('.cm-search')).not.toBeNull();
+    pressIn(field(view, 'replace'), { key: 'Escape', keyCode: 27 });
+    expect(view.dom.querySelector('.cm-search')).toBeNull();
+  });
+
+  it('组字中按 Enter(确认候选)不跳到下一个匹配、不进历史;组字中方向键不翻历史', async () => {
+    const view = await mount(FOO_154);
+    openFind(view);
+    typeQuery(view, 'foo1');
+    const before = view.state.selection.main.from;
+    pressIn(field(view, 'search'), { key: 'Enter', keyCode: 229, isComposing: true });
+    expect(view.state.selection.main.from).toBe(before);
+    expect(editorFindHistory.entries()).not.toContain('foo1');
+    editorFindHistory.add('older');
+    pressIn(field(view, 'search'), { key: 'ArrowUp', keyCode: 229, isComposing: true });
+    expect(field(view, 'search').value).toBe('foo1');
+  });
+
+  it('Markdown 代码块(Crepe 的 CodeMirror,经 markdownCodeBlockTheme)同样:组字中 Esc 不关', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const view = new EditorView({ state: EditorState.create({ doc: FOO_154, extensions: [basicSetup, markdownCodeBlockTheme] }), parent });
+    try {
+      openFind(view);
+      pressIn(field(view, 'search'), COMPOSING_ESC);
+      pressIn(field(view, 'replace'), COMPOSING_ESC);
+      expect(view.dom.querySelector('.cm-search')).not.toBeNull();
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
+  });
+});
+
 describe('强制颜色下当前匹配与其它匹配可区分', () => {
   it('forced-colors 媒体查询:当前匹配 2px Highlight 实线轮廓,其它匹配 1px CanvasText 虚线,选区用 Highlight', async () => {
     const view = await mount(FOO_154);
