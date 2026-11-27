@@ -20,6 +20,7 @@ import { remarkStringifyOptionsCtx } from '@milkdown/kit/core';
 import { remarkPreserveEmptyLinePlugin } from '@milkdown/kit/preset/commonmark';
 import { remarkGFMPlugin } from '@milkdown/kit/preset/gfm';
 import { $remark } from '@milkdown/kit/utils';
+import { gfmLiteralLinkAt, type ParseMarkdown } from './milkdown-autolink-follow';
 import { escapeUnescaped } from './milkdown-math';
 
 /** remark-stringify(mdast-util-to-markdown)的风格选项里本模块会设的部分。 */
@@ -227,9 +228,10 @@ function hardBreak(_node: unknown, _parent: unknown, state: StringifyState, info
   return state.options.continuoHardBreak === 'spaces' && !/[ \t]$/.test(info.before) ? '  \n' : '\\\n';
 }
 
-// 裸写后按 GFM 自动链接文字解析回同一链接的地址(保守:不含 `&` `*` `_`(域名)`'` 括号等,末字符不是会被剔除的标点)
+// 裸写的形状(保守:不含 `&` `*` `_`(域名)`'` 括号 `|` 反引号等;非 ASCII 字符(全角标点、中文)可以有)。是否解析回同一链接
+// 另由 GFM 解析器判定(gfmLiteralLinkAt,与编辑跟随同一认定)
 const BARE_URL =
-  /^(?:https?:\/\/|www\.)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?(?:[/?#][A-Za-z0-9\-._%/?#=+:@,;!$]*)?$/;
+  /^(?:https?:\/\/|www\.)[A-Za-z0-9\-\u0080-\u{10FFFF}]+(?:\.[A-Za-z0-9\-\u0080-\u{10FFFF}]+)+(?::\d+)?(?:[/?#][A-Za-z0-9\-._%/?#=+:@,;!$\u0080-\u{10FFFF}]*)?$/u;
 const BARE_EMAIL = /^[A-Za-z0-9._+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 interface MdLink extends MdParent {
@@ -239,28 +241,36 @@ interface MdLink extends MdParent {
 }
 
 /**
- * 链接能否裸写:与地址同文、地址形状保守,且前面是段首 / 空白 / 换行、后面是段尾 / 换行 / 空白(之间可有句末标点)。
- * 返回裸写的文字与它是否紧跟在换行之后(`afterEol`)。
+ * 链接能否裸写:与地址同文、地址形状保守,前面是段首 / 空白 / 换行、后面是段尾 / 换行 / 空白(之间可有句末标点),且连同后面紧跟的
+ * 文字按 GFM 解析回来恰好是这个链接(gfmLiteralLinkAt)。返回裸写的文字与它是否紧跟在换行之后(`afterEol`)。
  */
 function bareLinkText(
   link: MdLink,
   prev: MdLink | undefined,
   next: MdLink | undefined,
   nextNext: MdLink | undefined,
+  parse: ParseMarkdown,
 ): { readonly text: string; readonly afterEol: boolean } | null {
   if (!isAutolinkShaped(link as MdNode)) return null;
   const text = (link.children![0] as MdLink).value ?? '';
-  const ok = BARE_EMAIL.test(text) ? link.url === `mailto:${text}` : BARE_URL.test(text) && /[A-Za-z0-9/=#-]$/.test(text);
+  const ok = BARE_EMAIL.test(text) ? link.url === `mailto:${text}` : BARE_URL.test(text);
   if (!ok) return null;
   const isBreak = (n: MdLink | undefined): boolean => n === undefined || n.type === 'break';
   const prevText = prev?.type === 'text' ? (prev.value ?? '') : null;
   const afterEol = prev?.type === 'break' || (prevText !== null && /\n$/.test(prevText));
   if (prev !== undefined && !afterEol && !(prevText !== null && /[ \t]$/.test(prevText))) return null;
-  if (isBreak(next)) return { text, afterEol };
-  if (next!.type !== 'text') return null;
-  const v = next!.value ?? '';
-  if (/^[.,:!?]*\s/.test(v)) return { text, afterEol };
-  return /^[.,:!?]*$/.test(v) && isBreak(nextNext) ? { text, afterEol } : null;
+  // 后面紧跟的文字(到空白为止,GFM 连着看):只允许句末标点
+  let tail = '';
+  if (!isBreak(next)) {
+    if (next!.type !== 'text') return null;
+    const v = next!.value ?? '';
+    const ws = v.search(/\s/u);
+    if (ws < 0 && !isBreak(nextNext)) return null;
+    tail = ws < 0 ? v : v.slice(0, ws);
+    if (!/^[.,:!?]*$/.test(tail)) return null;
+  }
+  const parsed = gfmLiteralLinkAt(parse, null, text + tail);
+  return parsed && parsed.length === text.length && parsed.href === link.url ? { text, afterEol } : null;
 }
 
 /**
@@ -268,14 +278,14 @@ function bareLinkText(
  * 紧跟换行(软换行 / 硬换行)时把换行并进 html 节点 —— mdast-util-to-markdown 会把「换行 + 行内 html」的换行改成空格
  *(防止被当成 html 块),只在段落里这样做(标题 / 表格单元格里不能换行)。
  */
-function writeBareLinks(node: MdParent, hardBreak: string): void {
+function writeBareLinks(node: MdParent, hardBreak: string, parse: ParseMarkdown): void {
   const kids = node.children;
   if (!kids) return;
   for (let i = 0; i < kids.length; i += 1) {
     const child = kids[i]!;
-    const bare = child.type === 'link' ? bareLinkText(child, kids[i - 1], kids[i + 1], kids[i + 2]) : null;
+    const bare = child.type === 'link' ? bareLinkText(child, kids[i - 1], kids[i + 1], kids[i + 2], parse) : null;
     if (bare === null) {
-      writeBareLinks(child, hardBreak);
+      writeBareLinks(child, hardBreak, parse);
       continue;
     }
     if (!bare.afterEol) {
@@ -336,6 +346,7 @@ interface ProcessorLike {
   data(key: 'settings'): Record<string, unknown> | undefined;
   data(key: 'settings', value: Record<string, unknown>): void;
   compiler?: (tree: MdParent, file: unknown) => string;
+  parse(markdown: string): unknown;
 }
 
 const markdownStylePlugin = $remark('continuoMarkdownStyle', () => function continuoMarkdownStyle(this: unknown) {
@@ -352,7 +363,7 @@ const markdownStylePlugin = $remark('continuoMarkdownStyle', () => function cont
     self.compiler = (tree, file) => {
       const clean = withoutEmptyParagraphs(tree);
       if (settings!.continuoAutolink === 'literal') {
-        writeBareLinks(clean, settings!.continuoHardBreak === 'spaces' ? '  \n' : '\\\n');
+        writeBareLinks(clean, settings!.continuoHardBreak === 'spaces' ? '  \n' : '\\\n', (markdown) => self.parse(markdown));
       }
       // 占位符只出现在行内代码里(代码内容原样输出,不转义)
       if (settings!.continuoInlineCodeEol === 'keep' && !hasEolMark(clean)) {

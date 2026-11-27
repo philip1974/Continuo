@@ -168,5 +168,142 @@ for (const verbatim of [true, false]) {
       expect(links(view)).toEqual([['https://example.com', 'https://example.com']]);
       expect(crepe.getMarkdown()).toBe(PARA);
     });
+
+    // 第五十一轮审计 A2:链接后接全角标点 —— 链接与 GFM 解析保存结果的认定一致,保存时原文不变(不转义 `:` / `.`)
+    it('裸链接后接全角标点「。」「，」→ 链接同 GFM(micromark)认定,保存原样、不转义', async () => {
+      for (const [md, url, punct] of [
+        ['Para with https://example.com bare.\n', 'https://example.com', '。'],
+        ['Para with https://example.com bare.\n', 'https://example.com', '，'],
+        ['See www.example.com now.\n', 'www.example.com', '。'],
+      ] as const) {
+        const { crepe, view } = await open(md, verbatim);
+        typeAfter(view, url, punct);
+        const out = crepe.getMarkdown();
+        expect(out).toBe(md.replace(url, url + punct));
+        expect(links(view)).toEqual(await savedLinks(out));
+      }
+    });
+
+    // 第五十一轮审计 A4:续写 `.cn` / `?q=1`(逐键输入:先打的 `.` / `?` 一度是句末标点)→ 链接随后续字符延长,保存仍是裸链接
+    it('续写 `.cn`、`?q=1`、邮箱 `.cn` → 地址跟随整段,保存为裸链接(不变成 `<url>`)', async () => {
+      const a = await open(PARA, verbatim);
+      typeKeys(a.view, 'https://example.com', '.cn');
+      expect(links(a.view)).toEqual([['https://example.com.cn', 'https://example.com.cn']]);
+      expect(a.crepe.getMarkdown()).toBe('Para with https://example.com.cn bare.\n');
+      const b = await open(PARA, verbatim);
+      typeKeys(b.view, 'https://example.com', '/p?q=1');
+      expect(links(b.view)).toEqual([['https://example.com/p?q=1', 'https://example.com/p?q=1']]);
+      expect(b.crepe.getMarkdown()).toBe('Para with https://example.com/p?q=1 bare.\n');
+      const c = await open('Mail a@example.com now.\n', verbatim);
+      typeKeys(c.view, 'a@example.com', '.cn');
+      expect(links(c.view)).toEqual([['a@example.com.cn', 'mailto:a@example.com.cn']]);
+      expect(c.crepe.getMarkdown()).toBe('Mail a@example.com.cn now.\n');
+      // 中途停在标点处:标点仍是普通文字(GFM 不算进链接),保存原样
+      const d = await open(PARA, verbatim);
+      typeKeys(d.view, 'https://example.com', '/p?');
+      expect(links(d.view)).toEqual([['https://example.com/p', 'https://example.com/p']]);
+      expect(d.crepe.getMarkdown()).toBe('Para with https://example.com/p? bare.\n');
+      // 只有尖括号才成立的(`<url>` 后紧跟文字):不把后面的文字并进链接
+      const e = await open('See <https://example.com>abc now.\n', verbatim);
+      typeAfter(e.view, 'https://example.com', '/p');
+      expect(links(e.view)).toEqual([['https://example.com/p', 'https://example.com/p']]);
+      expect(e.crepe.getMarkdown()).toBe('See <https://example.com/p>abc now.\n');
+    });
+
+    // 第五十一轮审计 A3:输入法组字期间不改文档,组字结束后补判
+    it('输入法在链接末尾组字「中文」→ 组字期间不动,结束后地址跟随,保存为裸链接', async () => {
+      for (const flush of ['compositionend', 'next-transaction'] as const) {
+        const { crepe, view } = await open(PARA, verbatim);
+        const at = posAfter(view, 'https://example.com');
+        view.dispatch(view.state.tr.insertText('zhong', at).setMeta('composition', 1));
+        view.dispatch(view.state.tr.insertText('中文', at, at + 5).setMeta('composition', 1));
+        // 组字期间:地址不动(不改 mark)
+        expect(links(view)).toEqual([['https://example.com中文', 'https://example.com']]);
+        if (flush === 'compositionend') {
+          view.dom.dispatchEvent(new Event('compositionend'));
+          await new Promise((r) => setTimeout(r, 100));
+        } else {
+          view.dispatch(view.state.tr.setSelection(view.state.selection));
+        }
+        expect(links(view)).toEqual([['https://example.com中文', 'https://example.com中文']]);
+        const out = crepe.getMarkdown();
+        expect(out).toBe('Para with https://example.com中文 bare.\n');
+        expect(links(view)).toEqual(await savedLinks(out));
+      }
+    });
   });
 }
+
+/** 逐键输入(每个字符一次事务,同真实打字)。 */
+function typeKeys(view: EditorView, needle: string, text: string): void {
+  let pos = posAfter(view, needle);
+  for (const ch of text) {
+    view.dispatch(view.state.tr.insertText(ch, pos));
+    pos += ch.length;
+  }
+}
+
+/** 保存结果重新打开后的链接(= GFM 解析保存结果的认定)。 */
+async function savedLinks(markdown: string): Promise<[string, string][]> {
+  const { view } = await open(markdown);
+  return links(view);
+}
+
+function rng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// 第五十一轮审计 A2 / A3 / A4:链接附近随机逐键输入 / 删字后,编辑器里的链接与保存结果重新打开后的链接(GFM 认定)一致,文字不变
+//(没有多出的转义、没有变成别的写法而丢字)。FUZZ_N / FUZZ_FROM / FUZZ_SEED 分段加大轮数(jsdom 每轮有残留)。
+describe('模糊测试:链接附近随机编辑', () => {
+  const DOCS = [
+    'Para with https://example.com bare.\n',
+    'See www.example.com now.\n',
+    'Mail a@example.com now.\n',
+    'Go https://example.com/p\n',
+    '(see https://example.com/a)\n',
+  ];
+  const CHARS = ['.', '?', '。', '，', 'c', 'n', '/', ' ', ')', '(', '中', '=', '1', '-', ',', '!', ':', '#'];
+  it('编辑器里的链接 = 保存结果解析回来的链接,文字一致', async () => {
+    const rounds = Number(process.env.FUZZ_N ?? 30);
+    const from = Number(process.env.FUZZ_FROM ?? 0);
+    const seed = Number(process.env.FUZZ_SEED ?? 51);
+    for (let round = from; round < from + rounds; round += 1) {
+      const r = rng(Math.imul(seed, 100_003) + round);
+      const md = DOCS[Math.floor(r() * DOCS.length)]!;
+      const verbatim = r() < 0.5;
+      const { crepe, view } = await open(md, verbatim);
+      const start = posAfter(view, md.includes('Mail') ? 'Mail ' : md.split(/https|www/)[0]!);
+      const ops: string[] = [];
+      // 每轮只插字或只删字;链接整个去掉后本轮停止 —— 之后再编辑使普通文字重新成为链接形状(先插字打断、再删掉它)不在本规范范围:
+      // 普通文字不随编辑自动加链接(只有编辑前就是自动链接的才跟随)
+      const inserting = r() < 0.7;
+      for (let k = 1 + Math.floor(r() * 6); k > 0 && links(view).length > 0; k -= 1) {
+        const pos = Math.min(view.state.doc.content.size - 1, start - 1 + Math.floor(r() * 26));
+        if (inserting) {
+          const ch = CHARS[Math.floor(r() * CHARS.length)]!;
+          ops.push(`+${pos}${ch}`);
+          view.dispatch(view.state.tr.insertText(ch, pos));
+        } else if (pos > 1) {
+          ops.push(`-${pos}`);
+          view.dispatch(view.state.tr.delete(pos - 1, pos));
+        }
+      }
+      const out = crepe.getMarkdown();
+      const reopened = await open(out);
+      const ctx = `round ${round} ${verbatim ? 'verbatim' : 'rewrite'} ${JSON.stringify(md)} ${ops.join(' ')} → ${JSON.stringify(out)}`;
+      // 段尾空白 Markdown 本来就不保留
+      expect(reopened.view.state.doc.textContent, ctx).toBe(view.state.doc.textContent.trimEnd());
+      expect(links(reopened.view), ctx).toEqual(links(view));
+      for (const c of editors.splice(0)) await c.destroy();
+      document.body.innerHTML = '';
+    }
+  });
+});
