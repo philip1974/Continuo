@@ -74,6 +74,7 @@ export async function openDroppedFiles(
       () => openFileByPath(path, editorFileDeps, { preview: false, groupId: target }),
       basenamePreserveTrailing(path),
       'editor-drop',
+      (encoding) => openFileByPath(path, editorFileDeps, { preview: false, groupId: target, encoding }),
     );
     if (ok && first === null) first = findEditorFileTabByPath(useEditorStore.getState().tabs, path)?.id ?? null;
   }

@@ -35,6 +35,7 @@ import { normalizeSearchQuery } from '@/lib/search-query';
 import { useGotoLine } from './use-goto-line';
 import { parseFileLineQuery, type GotoLineRequest } from './goto-line';
 import { openFileInEditor, type EditorRevealOptions } from '@/plugins/co-app';
+import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 
 /** ⌘P 打开为常驻(VSCode workbench.editor.enablePreviewFromQuickOpen 默认 false)。 */
 const PINNED: OpenFileOptions = { preview: false };
@@ -225,7 +226,13 @@ function QuickOpenBody() {
         ? () =>
             openFileInEditor(file.absPath, { line: at.line, ...(at.column ? { column: at.column } : {}) }, PINNED, CLAMP)
         : () => openFileByPath(file.absPath, editorFileDeps, PINNED);
-      if (await openFileOrNotify(open, file.name)) {
+      // 不是 UTF-8 → 弹编码选择器,选定后按该编码打开(行号定位不保留;BDD: src/__tests__/editor-text-encoding/)
+      const openWithEncoding = (encoding: TextEncodingId) =>
+        openFileByPath(file.absPath, editorFileDeps, { ...PINNED, encoding }).then((r) => {
+          if (r.ok) focusActiveEditor();
+          return r;
+        });
+      if (await openFileOrNotify(open, file.name, undefined, openWithEncoding)) {
         focusActiveEditor();
       }
     },

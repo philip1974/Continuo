@@ -32,6 +32,8 @@ import { allSettledWithConcurrency } from '@/lib/map-with-concurrency';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { ownSaveStatCheck } from './saved-disk-stat';
 import { readEditorFile } from './editor-image';
+import { readEncodingOf, readOptionsForTab } from './editor-encoding';
+import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 
 /** watch-restored 子树重读的最大同时在途 readFile 数(与 hydrateEditorTabs RESTORE_READ_CONCURRENCY 同口径). */
@@ -46,7 +48,10 @@ export const EXTERNAL_DELETE_CONFIRM_MS = 500;
 /** 已标「(已删除)」的 tab 的存在性复查周期(另在窗口获得焦点时复查)。只 stat,不读内容;没有已删除 tab 时什么都不做。 */
 export const ORPHANED_RECHECK_MS = 5000;
 
-type ReadResult = { ok: true; data: string; realPath?: string } | { ok: false; code?: string } | null;
+type ReadResult =
+  | { ok: true; data: string; realPath?: string; encoding?: TextEncodingId }
+  | { ok: false; code?: string }
+  | null;
 
 const isNotFound = (r: ReadResult): boolean => r !== null && !r.ok && r.code === ERROR_CODES.FS_NOT_FOUND;
 
@@ -117,7 +122,7 @@ export function useExternalFileSync(): void {
         // live tab 仍是同一实例(未被 close+reopen、未被更新的 reload 替换、未变 dirty)才回写;否则丢弃。
         const live = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
         if (live !== null && live === tabRef) {
-          useEditorStore.getState().reloadFromDisk(tabId, r.data, r.realPath);
+          useEditorStore.getState().reloadFromDisk(tabId, r.data, r.realPath, { encoding: readEncodingOf(r) });
         }
       }
       // 外部删除 / 改名(确认后仍不存在,如 git checkout 切到删除它的分支):不关 tab(VSCode closeOnFileDelete:
@@ -149,16 +154,18 @@ export function useExternalFileSync(): void {
       // 已标记删除的 tab 不做回声判断:mv 走再 mv 回不改 mtime / size / ino,stat 仍与保存记录一致,跳过读盘
       // 就永远清不掉「(已删除)」(VSCode:文件重新出现即清除)—— 照常读盘,reloadFromDisk 清除标记。
       const echoCheck = tabRef?.orphaned ? null : ownSaveEchoCheck(path, tabRef);
+      // 用户选定过编码(通过编码重新打开 / 保存)→ 按它解码,否则自动识别(GBK 等自动识别必失败,外部修改就再也同步不进来)
+      const readOpts = readOptionsForTab(tabRef);
       const first: Promise<ReadResult> = echoCheck
         ? echoCheck.then(
-            (echo): ReadResult | Promise<ReadResult> => (echo ? { ok: false } : readEditorFile(coApi.fs, path)),
+            (echo): ReadResult | Promise<ReadResult> => (echo ? { ok: false } : readEditorFile(coApi.fs, path, readOpts)),
           )
-        : readEditorFile(coApi.fs, path);
+        : readEditorFile(coApi.fs, path, readOpts);
       // 读到不存在 → 延迟后再读一次确认(仍在 inFlight 内:等待期间的新事件并入尾随重读)。
       const read = first.then((r) =>
         isNotFound(r)
           ? new Promise<void>((res) => setTimeout(res, EXTERNAL_DELETE_CONFIRM_MS)).then(
-              (): ReadResult | Promise<ReadResult> => (cancelled ? null : readEditorFile(coApi.fs, path)),
+              (): ReadResult | Promise<ReadResult> => (cancelled ? null : readEditorFile(coApi.fs, path, readOpts)),
             )
           : r,
       );

@@ -1122,7 +1122,10 @@ export function FolderTree({ root }: { root: string }) {
   const handleFileOpen = useCallback(
     (path: string, opts?: OpenFileOptions): Promise<boolean> =>
       // 点击文件是 Explorer 的主操作:ok:false 与 reject 都必须给反馈(P1-AX / A141),由 openFileOrNotify 统一。
-      openFileOrNotify(() => openFileByPath(path, opts), basenamePreserveTrailing(path), 'explorer'),
+      // 不是 UTF-8 → 弹编码选择器,选定后按该编码打开(BDD: src/__tests__/editor-text-encoding/)
+      openFileOrNotify(() => openFileByPath(path, opts), basenamePreserveTrailing(path), 'explorer', (encoding) =>
+        openFileByPath(path, { ...opts, encoding }),
+      ),
     [openFileByPath],
   );
   // 文件行单击 / 双击 / 键盘 Enter:双击与 Enter 打开成功后焦点进编辑器(VSCode;单击预览焦点留在树里)。

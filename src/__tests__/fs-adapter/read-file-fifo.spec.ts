@@ -78,7 +78,7 @@ describe.skipIf(process.platform === 'win32')('readFile 拒绝 FIFO(不挂死主
     const f = join(dir, 'ok.txt');
     await writeFile(f, 'hi', 'utf8');
     expect(await withTimeout(stat(f).then(() => 'ok'))).toBe('ok');
-    expect(await withTimeout(readFile(f))).toBe('hi');
+    expect(await withTimeout(readFile(f).then((r) => r.content))).toBe('hi');
   });
 
   it('helper 层:跟随链接分支对 FIFO 抛 EFTYPE,普通文件读取不受 O_NONBLOCK 影响', async () => {

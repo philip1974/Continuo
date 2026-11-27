@@ -31,6 +31,8 @@ import { codeMirrorContentLabel, codeMirrorPhrases } from './codemirror-phrases'
 import { detectLineEnding, languageDescriptionFor, minimalChange, pickLanguage } from './CodeEditor';
 import { isMarkdownPath } from './editor-path-utils';
 import { findEditorFileTabById } from './editor-tab-lookup';
+import { readOptionsForTab } from './editor-encoding';
+import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 import { rebindCodeMirrorRoots } from './codemirror-root';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { resolveConflict, type ConflictResolution } from './conflict-compare';
@@ -51,7 +53,11 @@ type DiskVersion =
  * 磁盘版本:挂载时读一次;之后 dir-changed 命中该文件 / watcher 恢复(断线期间可能漏了变化)→ 重读。每次只有一个读在途,
  * 在途期间的事件合并成读完后再读一次(读到最终内容,不乱序回写)。
  */
-function useDiskVersion(filePath: string | null, realPath: string | undefined): DiskVersion {
+function useDiskVersion(
+  filePath: string | null,
+  realPath: string | undefined,
+  encoding: TextEncodingId | undefined,
+): DiskVersion {
   const [disk, setDisk] = useState<DiskVersion>({ kind: 'loading' });
   const realPathRef = useRef(realPath);
   realPathRef.current = realPath;
@@ -66,8 +72,8 @@ function useDiskVersion(filePath: string | null, realPath: string | undefined): 
         return;
       }
       inFlight = true;
-      void coApi.fs
-        .readFile(filePath)
+      // 按 tab 选定的编码读(同外部同步 / 保存前比对;缺省自动识别)
+      void (encoding === undefined ? coApi.fs.readFile(filePath) : coApi.fs.readFile(filePath, { encoding }))
         .then(
           (r): DiskVersion => (r.ok ? { kind: 'ok', text: r.data } : { kind: 'error', code: r.code, message: r.message }),
           (err: unknown): DiskVersion => ({ kind: 'error', code: errorCodeOf(err), message: errorMessage(err) }),
@@ -95,7 +101,7 @@ function useDiskVersion(filePath: string | null, realPath: string | undefined): 
       unsubDir();
       unsubRestored();
     };
-  }, [filePath]);
+  }, [filePath, encoding]);
   return disk;
 }
 
@@ -375,7 +381,8 @@ export function ConflictDiffPanel({ params }: ConflictDiffPanelProps) {
   const tr = useT();
   const filePath = useEditorStore((s) => findEditorFileTabById(s.tabs, tabId)?.filePath ?? null);
   const realPath = useEditorStore((s) => findEditorFileTabById(s.tabs, tabId)?.realPath);
-  const disk = useDiskVersion(filePath, realPath);
+  const readEncoding = useEditorStore((s) => readOptionsForTab(findEditorFileTabById(s.tabs, tabId))?.encoding);
+  const disk = useDiskVersion(filePath, realPath, readEncoding);
   const [busy, setBusy] = useState(false);
   const [chunks, setChunks] = useState<{ count: number; current: number }>({ count: 0, current: -1 });
   const navRef = useRef<((dir: 1 | -1) => void) | null>(null);

@@ -79,6 +79,12 @@ export const FS_ERROR_CODES = {
   FS_FILE_TOO_LARGE: 'FS_FILE_TOO_LARGE',
   // 数据安全:编辑器文本读取入口遇非法 UTF-8(GBK / 二进制等)拒绝打开,防 U+FFFD 替换后保存损坏原文件。
   FS_NOT_UTF8: 'FS_NOT_UTF8',
+  // 编码:像文本(无 0 字节)但无 BOM 且不是合法 UTF-8(GBK / Shift JIS / Latin-1 …)→ 不打开,提示「通过编码重新打开」。
+  FS_UNKNOWN_ENCODING: 'FS_UNKNOWN_ENCODING',
+  // 编码:按指定编码(或 BOM 声明的编码)无法可逆解码(打开后保存会改动原字节)→ 拒绝打开。
+  FS_DECODE_FAILED: 'FS_DECODE_FAILED',
+  // 编码:保存的文本含所选编码表示不了的字符(如以 GBK 保存 emoji)→ 拒绝写入,原文件不变。
+  FS_UNENCODABLE: 'FS_UNENCODABLE',
   // 边界(E30):目录条目数超硬上限(防超大目录一次性构造数组 + IPC 全量返回卡死)。
   FS_DIR_TOO_LARGE: 'FS_DIR_TOO_LARGE',
   // 边界(内存峰值):插件 fs 的大块读取(read-file / list-dir / 仓库对象读取 / editor.openFile)全局并发闸排队已满。

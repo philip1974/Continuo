@@ -31,6 +31,7 @@ import {
   rewriteRecentlyClosedEditors,
 } from '@/panels/Editor/recently-closed-editors';
 import { EDITOR_GROUPS_MAX, PRIMARY_EDITOR_GROUP_ID } from '../../electron/shared/editor-group-id';
+import type { TextEncodingId } from '../../electron/shared/text-encoding';
 
 // ── 路径变更通知 ─────────────────────────────────────────────
 // removePaths / renamePath / markPathsDeleted 是「文件已删除 / 已移走」的入口(资源管理器删除 / 改名 / 移动 / 撤销;
@@ -133,6 +134,28 @@ export interface EditorTab {
    * 重命名 / 移动、文件重新出现、还原也清除。runtime only,不持久化。
    */
   readonly orphaned?: boolean;
+  /**
+   * 磁盘编码(上次读盘 / 保存所用,见 shared/text-encoding;content 不含 BOM):保存按它写回(含 BOM)。缺省 = utf8。
+   * 读盘结果带来(createTab / reloadFromDisk),「通过编码保存」成功后改(setEncoding)。runtime only。
+   * BDD: src/__tests__/editor-text-encoding/
+   */
+  readonly encoding?: TextEncodingId;
+  /**
+   * 编码是用户经「通过编码重新打开 / 保存」选定的(VSCode preferredEncoding):之后的读盘(外部同步 / 还原 / 保存前比对 /
+   * 冲突比较)都按 encoding 解码;缺省 = 每次读盘自动识别(BOM / UTF-8)。会话内记住,runtime only。
+   */
+  readonly encodingPinned?: boolean;
+}
+
+/** 读盘结果里的编码写进 tab(utf8 = 缺省,不留字段);pinned 缺省保留原值。未变则原样返回(保持对象 identity)。 */
+export function withEncoding(tab: EditorTab, encoding: TextEncodingId, pinned: boolean = tab.encodingPinned === true): EditorTab {
+  if ((tab.encoding ?? 'utf8') === encoding && (tab.encodingPinned === true) === pinned) return tab;
+  const { encoding: _e, encodingPinned: _p, ...rest } = tab;
+  return {
+    ...rest,
+    ...(encoding === 'utf8' ? null : { encoding }),
+    ...(pinned ? { encodingPinned: true } : null),
+  };
 }
 
 /**
@@ -188,6 +211,7 @@ export function createTab(
   filePath: string,
   content: string,
   realPath?: string,
+  encoding?: TextEncodingId,
 ): EditorTab {
   const tab: EditorTab = {
     id: filePath,
@@ -198,7 +222,8 @@ export function createTab(
     milkdownUnsafe: computeMilkdownUnsafe(filePath, content), // perf P4
     milkdownTooLarge: computeMilkdownTooLarge(filePath, content),
   };
-  return realPath === undefined ? tab : { ...tab, realPath };
+  const linked = realPath === undefined ? tab : { ...tab, realPath };
+  return encoding === undefined ? linked : withEncoding(linked, encoding);
 }
 
 /** 按最新读盘结果设置 / 移除 realPath(未变则原样返回,保持对象 identity). */
@@ -700,8 +725,16 @@ type EditorState = {
     tabId: string,
     content: string,
     realPath?: string,
-    opts?: { readonly discardChanges?: boolean },
+    opts?: {
+      readonly discardChanges?: boolean;
+      /** 本次读盘所用编码(缺省 = 不改);随内容一起生效(脏 tab 不重载时也不改)。 */
+      readonly encoding?: TextEncodingId;
+      /** 编码是用户「通过编码重新打开」选定的:记为 encodingPinned(缺省保留原值)。 */
+      readonly pinEncoding?: boolean;
+    },
   ) => void;
+  /** 「通过编码保存」成功后:tab 的磁盘编码改为 encoding 并记为用户选定(encodingPinned)。 */
+  setEncoding: (tabId: string, encoding: TextEncodingId) => void;
   /**
    * 存在性结果:文件重新出现 → false;true 只标记脏 tab(自动保存读盘发现已不存在;外部删除确认走 markPathsDeleted)。
    * 值不变为 no-op。
@@ -1016,6 +1049,7 @@ function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: s
       groupId,
       index,
       viewState: persistedEditorViewStateOf(id, liveEditorViewOf(id, groupId), groupId),
+      ...(tab.encodingPinned === true && { encoding: tab.encoding ?? 'utf8' }),
     });
   }
 }
@@ -1507,7 +1541,11 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       const cur = s.tabs[idx]!;
       // dirty:保留用户改动,不覆盖(还原除外)
       if (cur.dirty && !discard) return s;
-      const base = withRealPath(cur, realPath);
+      const linked = withRealPath(cur, realPath);
+      const base =
+        opts?.encoding === undefined
+          ? linked
+          : withEncoding(linked, opts.encoding, opts.pinEncoding ?? linked.encodingPinned === true);
       // 内容没变(stat 触发但实际未改 / 已删除的文件以原内容重新出现,如 git checkout 切回):不重挂载视图;
       // 仅同步 realPath、清除已删除标记
       if (!cur.dirty && cur.originalContent === content) {
@@ -1531,6 +1569,15 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       return replaceTabBumpingChrome(s, idx, next);
     });
   },
+
+  setEncoding: (tabId, encoding) =>
+    set((s) => {
+      const idx = findEditorTabIndexById(s.tabs, tabId);
+      if (idx < 0) return s;
+      const cur = s.tabs[idx]!;
+      const next = withEncoding(cur, encoding, true);
+      return next === cur ? s : replaceTabBumpingChrome(s, idx, next);
+    }),
 
   setOrphaned: (tabId, orphaned) =>
     set((s) => {

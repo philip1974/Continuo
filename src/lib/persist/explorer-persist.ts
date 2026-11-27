@@ -608,7 +608,7 @@ async function restoreEditorTabs(entry: ExplorerWindowEntry, fs: EditorSessionFs
         seedPersistedEditorViewState(paths[i]!, view, multiGroup ? view.group : undefined);
       }
     }
-    store.openTab(createTab(paths[i]!, r.data, r.realPath), restoreOpts);
+    store.openTab(createTab(paths[i]!, r.data, r.realPath, r.encoding), restoreOpts);
   }
   // 多个编辑器组:按组分配刚恢复的文档(tab id = 打开时的路径;读盘失败的跳过,变空的组丢弃)。
   // 用户在读盘期间已打开 / 切换 → 那些文档留在活动组,不抢回活动组(同上方 keepUserActive)。

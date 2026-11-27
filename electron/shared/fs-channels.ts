@@ -6,6 +6,7 @@ import type { ListDirOptionsSchema } from './fs-list-dir-schema';
 
 import { FS_PATH_MAX } from './fs-limits';
 import { IPC_ERR, type IpcFail, type IpcOk, type IpcResult } from './ipc-result';
+import { isTextEncodingId, type TextEncodingId } from './text-encoding';
 
 export const FS_CHANNELS = {
   LIST_DIR: 'fs:list-dir',
@@ -104,6 +105,8 @@ export function readFsDirChangedChangeOnly(v: FsDirChangedPayload): boolean {
 export interface FsReadFileData {
   readonly content: string;
   readonly realPath?: string;
+  /** 解码所用编码(见 shared/text-encoding;content 不含 BOM)。缺省 = utf8(无 BOM 的 UTF-8)。 */
+  readonly encoding?: TextEncodingId;
 }
 
 /** fs:read-image 的 data:dataUrl = `data:<mime>;base64,…`;size = 文件字节数. */
@@ -113,7 +116,9 @@ export interface FsReadImageData {
 }
 
 /** 渲染端 readFile 结果:data 仍为文件内容 string(既有调用方不变),成功时可选附 realPath. */
-export type FsReadFileResult = (IpcOk<string> & { readonly realPath?: string }) | IpcFail;
+export type FsReadFileResult =
+  | (IpcOk<string> & { readonly realPath?: string; readonly encoding?: TextEncodingId })
+  | IpcFail;
 
 /**
  * preload 把 handler 结果映射为 FsReadFileResult;realPath 非字符串 / 空 / 超 maxPathLen → 丢弃
@@ -125,9 +130,15 @@ export function toFsReadFileResult(
 ): FsReadFileResult {
   if (!r.ok) return r;
   const realPath: unknown = r.data.realPath;
+  const encoding: unknown = r.data.encoding;
+  // encoding 畸形 / 未知 → 当作失败(按 UTF-8 理解别的编码的文本,保存即改写原文件的字节)
+  if (encoding !== undefined && !isTextEncodingId(encoding)) {
+    return { ok: false, code: IPC_ERR.HANDLER_ERROR, message: 'malformed fs:read-file result (unknown encoding)' };
+  }
+  const enc = encoding === undefined || encoding === 'utf8' ? null : { encoding };
   return typeof realPath === 'string' && realPath.length > 0 && realPath.length <= maxPathLen
-    ? { ok: true, data: r.data.content, realPath }
-    : { ok: true, data: r.data.content };
+    ? { ok: true, data: r.data.content, realPath, ...enc }
+    : { ok: true, data: r.data.content, ...enc };
 }
 
 /**

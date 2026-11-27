@@ -1,6 +1,8 @@
 import { ERROR_CODES } from '../../../shared/error-codes';
 import type { FileHandle } from 'node:fs/promises';
-import { readCappedFromHandle, readFileCappedFd, type CappedFdRead } from '../../lib/read-fh-capped';
+import { readBytesCappedFd, readCappedFromHandle, type CappedFdBytes, type CappedFdRead } from '../../lib/read-fh-capped';
+import { decodeTextFile } from '../../lib/text-codec';
+import type { TextEncodingId } from '../../../shared/text-encoding';
 import { fsError, lstatOrThrow, mapNodeErrnoCode } from './path-utils';
 import { MAX_WRITE_BYTES } from '../../../shared/fs-limits';
 
@@ -15,29 +17,55 @@ export interface ReadFileOptions {
   /**
    * 数据安全(独立审计):非法 UTF-8(GBK / Latin-1 / 二进制)抛 FS_NOT_UTF8,而非宽松解码成 U+FFFD ——
    * 编辑器打开后保存会把非法字节写回 EF BF BD,不可逆损坏原文件(参考 VSCode 不在文本编辑器中打开
-   * 二进制 / 不支持编码的文件)。编辑器入口 readFile 恒开启;插件 fs(readFileFromHandle)默认宽松,契约不变。
+   * 二进制 / 不支持编码的文件)。编辑器入口 readFile 按编码严格解码(见 readFile);插件 fs(readFileFromHandle)默认宽松,契约不变。
    */
   readonly requireUtf8?: boolean;
 }
 
-/** 编辑器入口(fs:read-file)的整文件读取:恒要求合法 UTF-8(见 ReadFileOptions.requireUtf8)。 */
-export async function readFile(filePath: string): Promise<string> {
+/** 编辑器入口(fs:read-file)读出的文本:content 不含 BOM,encoding = 实际使用的编码(BOM 由它表示)。 */
+export interface EditorTextRead {
+  readonly content: string;
+  readonly encoding: TextEncodingId;
+}
+
+/**
+ * 编辑器入口(fs:read-file)的整文件读取,按编码解码(见 text-codec decodeTextFile;BDD: src/__tests__/editor-text-encoding/):
+ * - 未指定编码:BOM → UTF-8 BOM / UTF-16 LE / BE;无 BOM 的 UTF-16(0 字节启发式);否则必须是合法 UTF-8。
+ *   二进制 → FS_NOT_UTF8(提示不变);像文本但不是 UTF-8 → FS_UNKNOWN_ENCODING(可「通过编码重新打开」)。
+ * - 指定编码(用户「通过编码重新打开」):按该编码;不可逆(保存会写坏原文件)→ FS_DECODE_FAILED。
+ * 数据安全(独立审计):永不宽松解码成 U+FFFD(否则保存把非法字节写回 EF BF BD,不可逆损坏原文件)。
+ */
+export async function readFile(filePath: string, encoding?: TextEncodingId): Promise<EditorTextRead> {
   const st = await lstatOrThrow(filePath);
   if (st.isDirectory()) {
     throw fsError(ERROR_CODES.FS_NOT_FILE, `not a file: ${filePath}`);
   }
   // 边界(E163,stat-before-read 族 symlink 变体):此前用 `lstat(filePath).size` 做 64MiB 上限检查,
   // 但 lstat 不跟随 symlink —— 一个很小的 symlink 可指向超大目标,而随后的 readFile **跟随 symlink**
-  // 读目标内容 → 绕过 cap,主进程整块读入 + IPC 发送 OOM/卡死。改用共享 readFileCappedFd(open 跟随
+  // 读目标内容 → 绕过 cap,主进程整块读入 + IPC 发送 OOM/卡死。改用共享有界单 fd 读(open 跟随
   // symlink → fstat 报目标真实大小 → 有界读 maxBytes+1),size 上限对读取的真实目标权威生效且读取量
   // 恒有界。isDirectory 检查仍用上面 lstat(no-follow)保留 FS_NOT_FILE 语义。
-  let read: CappedFdRead;
+  let read: CappedFdBytes;
   try {
-    read = await readFileCappedFd(filePath, MAX_READ_BYTES, { requireUtf8: true });
+    read = await readBytesCappedFd(filePath, MAX_READ_BYTES);
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `readFile failed: ${filePath}`);
   }
-  return unwrapCappedRead(read, filePath);
+  if (read.bytes === null) throw tooLargeError(read.size, filePath);
+  const decoded = decodeTextFile(read.bytes, encoding);
+  if (decoded.ok) return { content: decoded.text, encoding: decoded.encoding };
+  switch (decoded.reason) {
+    case 'binary':
+      throw fsError(ERROR_CODES.FS_NOT_UTF8, `file is binary: ${filePath}`);
+    case 'unknown-encoding':
+      throw fsError(ERROR_CODES.FS_UNKNOWN_ENCODING, `file is not valid UTF-8: ${filePath}`);
+    default:
+      throw fsError(ERROR_CODES.FS_DECODE_FAILED, `file cannot be decoded losslessly as ${encoding}: ${filePath}`);
+  }
+}
+
+function tooLargeError(size: number, filePath: string): Error {
+  return fsError(ERROR_CODES.FS_FILE_TOO_LARGE, `file too large (${size} > ${MAX_READ_BYTES}): ${filePath}`);
 }
 
 /**
@@ -59,12 +87,7 @@ export async function readFileFromHandle(
 }
 
 function unwrapCappedRead(read: CappedFdRead, filePath: string): string {
-  if (read.tooLarge) {
-    throw fsError(
-      ERROR_CODES.FS_FILE_TOO_LARGE,
-      `file too large (${read.size} > ${MAX_READ_BYTES}): ${filePath}`,
-    );
-  }
+  if (read.tooLarge) throw tooLargeError(read.size, filePath);
   if (read.notUtf8) {
     throw fsError(ERROR_CODES.FS_NOT_UTF8, `file is not valid UTF-8: ${filePath}`);
   }

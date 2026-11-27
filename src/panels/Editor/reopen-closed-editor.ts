@@ -9,6 +9,7 @@ import {
   editorGroupIdsOf,
   getUserActivationGen,
   groupTabsOf,
+  withEncoding,
   useEditorStore,
   type EditorTab,
 } from '@/stores/editor.store';
@@ -94,7 +95,9 @@ async function reopenEntry(entry: RecentlyClosedEditor, deps: EditorFileDeps, do
     const my = beginUserActivation();
     let r;
     try {
-      r = await deps.fs.readFile(entry.path);
+      r = await (entry.encoding === undefined
+        ? deps.fs.readFile(entry.path)
+        : deps.fs.readFile(entry.path, { encoding: entry.encoding }));
     } catch {
       return false;
     }
@@ -102,7 +105,10 @@ async function reopenEntry(entry: RecentlyClosedEditor, deps: EditorFileDeps, do
     latest = my === getUserActivationGen();
     if (openInTargetGroup(entry, doc)) return false;
     tab = findEditorFileTabByPath(store.getState().tabs, entry.path);
-    if (!tab) tab = createTab(entry.path, r.data, r.realPath);
+    if (!tab) {
+      const created = createTab(entry.path, r.data, r.realPath, r.encoding);
+      tab = entry.encoding === undefined ? created : withEncoding(created, created.encoding ?? 'utf8', true);
+    }
   }
   const id = tab.id;
   const target = targetOf(entry, doc);

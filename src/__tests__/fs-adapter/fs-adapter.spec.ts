@@ -302,7 +302,7 @@ describe('readFile', () => {
   it('utf-8 读已有文件', async () => {
     const f = path.join(dir, 'x.txt');
     await writeFile(f, 'hello 世界');
-    expect(await readFile(f)).toBe('hello 世界');
+    expect((await readFile(f)).content).toBe('hello 世界');
   });
 
   it('不存在 → FS_NOT_FOUND', async () => {
@@ -339,7 +339,7 @@ describe('readFile', () => {
     await writeFile(target, 'via link 世界');
     const link = path.join(dir, 'ok-link');
     await symlink(target, link);
-    expect(await readFile(link)).toBe('via link 世界');
+    expect((await readFile(link)).content).toBe('via link 世界');
   });
 });
 

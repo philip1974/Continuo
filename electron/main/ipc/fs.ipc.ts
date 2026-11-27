@@ -18,6 +18,8 @@ import type { FsScanFilesData } from '../../shared/fs-entry';
 import { FS_IPC_NAME_MAX, ListDirOptionsSchema } from '../../shared/fs-list-dir-schema';
 import { fsError, mapNodeErrnoCode } from './fs/path-utils';
 import { readFile } from './fs/read-file';
+import { encodeTextFile } from '../lib/text-codec';
+import { TEXT_ENCODING_IDS, type TextEncodingId } from '../../shared/text-encoding';
 import { readImage } from './fs/read-image';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
 import { getWorkspaceRoot, isAnyWorkspaceRoot } from '../services/window-workspace-roots.service';
@@ -59,7 +61,10 @@ export const listDirInputSchema = z
   })
   .strict();
 
-export const readFileInputSchema = z.object({ path: fsPath() }).strict();
+/** 编辑器文本编码(见 shared/text-encoding);缺省 = 读取时自动识别(BOM / UTF-8)、写入时 UTF-8 无 BOM(改动前的行为)。 */
+const textEncoding = () => z.enum(TEXT_ENCODING_IDS as [TextEncodingId, ...TextEncodingId[]]).optional();
+
+export const readFileInputSchema = z.object({ path: fsPath(), encoding: textEncoding() }).strict();
 
 export const statInputSchema = z.object({ path: fsPath() }).strict();
 
@@ -88,6 +93,8 @@ export const writeFileInputSchema = z
     }),
     // 用户已确认覆盖写保护文件(FS_READONLY 后的「覆盖」):去掉写保护再写,见 atomicWriteFile。
     overwriteReadonly: z.boolean().optional(),
+    // 按此编码(含其 BOM)写回;表示不了的字符 → FS_UNENCODABLE,不写。
+    encoding: textEncoding(),
   })
   .strict();
 
@@ -160,12 +167,14 @@ export const scanFilesHandler = async (input: ListDirInput): Promise<FsScanFiles
 // 拒绝(FS_NOT_UTF8),防 U+FFFD 替换后保存写回损坏原文件(独立审计)。插件 fs readFile 不经此处。
 // leaf 为 symlink 时随结果带 realPath(见 FsReadFileData):与保存写穿复用 resolveSymlinkTarget;解析失败 /
 // 断链(返回原路径)/ 超长 → 不带,不影响读取结果。
+// encoding:按编码解码(BOM / UTF-16 / 用户指定,见 read-file);结果的 encoding 只在不是 utf8 时带(旧形态不变)。
 export const readFileHandler = async (input: ReadFileInput): Promise<FsReadFileData> => {
-  const content = await readFile(input.path);
+  const { content, encoding } = await readFile(input.path, input.encoding);
   const target = await resolveSymlinkTarget(input.path).catch(() => input.path);
+  const enc = encoding === 'utf8' ? null : { encoding };
   return target !== input.path && target.length <= FS_PATH_MAX
-    ? { content, realPath: target }
-    : { content };
+    ? { content, realPath: target, ...enc }
+    : { content, ...enc };
 };
 /**
  * Markdown 图片的允许根(对齐 VSCode markdown 预览的 localResourceRoots):发送窗口的工作区根;documentPath 是**本窗口
@@ -195,8 +204,22 @@ export const guardedReadImageHandler = (
   );
 // 性能:返回写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),编辑器据此识别自己保存的 dir-changed 回声,
 // 免一次整文件 readFile(见 FsFileStat / useExternalFileSync)。
-export const writeFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
-  atomicWriteFile(input.path, input.content, { overwriteReadonly: input.overwriteReadonly === true });
+// encoding(utf8 以外):先整段编码成字节(含 BOM),表示不了的字符 → FS_UNENCODABLE,文件不动;再走同一原地写路径。
+export const writeFileHandler = async (input: WriteFileInput): Promise<FsFileStat | undefined> => {
+  const opts = { overwriteReadonly: input.overwriteReadonly === true };
+  if (input.encoding === undefined || input.encoding === 'utf8') return atomicWriteFile(input.path, input.content, opts);
+  const encoded = encodeTextFile(input.content, input.encoding);
+  if (!encoded.ok) {
+    throw fsError(
+      ERROR_CODES.FS_UNENCODABLE,
+      `content has characters not representable in ${input.encoding} (U+${(encoded.unencodable.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}): ${input.path}`,
+    );
+  }
+  if (encoded.bytes.length > MAX_WRITE_BYTES) {
+    throw fsError(ERROR_CODES.FS_FILE_TOO_LARGE, `content 超过上限 ${MAX_WRITE_BYTES} 字节: ${input.path}`);
+  }
+  return atomicWriteFile(input.path, encoded.bytes, opts);
+};
 // 安全:注册到 fs:read-file / fs:write-file 的是这两个包装 —— 路径是插件经 editor.openFile 打开过的标签时,
 // 读 / 写前在 plugin-fs 锁内确认路径没有被换入链接(见 guardPluginOpenedPath);其它路径原样直通。
 export const guardedReadFileHandler = (input: ReadFileInput): Promise<FsReadFileData> =>

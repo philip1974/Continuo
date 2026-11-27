@@ -92,6 +92,23 @@ export async function readFileCappedFd(
 ): Promise<CappedFdRead> {
   // open 错误(ENOENT/EACCES 等)透传给调用方;socket 等特殊文件 open 本身就失败(macOS EOPNOTSUPP,libuv 未映射成
   // 「Unknown system error -102」;Linux ENXIO)→ 与 FIFO(open 成功、fstat 判出)一样归为 EFTYPE(「不是文件」)。
+  return withCappedFd(filePath, opts, (fh) => readCappedFromHandle(fh, filePath, maxBytes, opts));
+}
+
+/** 同 readFileCappedFd,但返回原始字节(编辑器按编码解码,见 text-codec)。 */
+export function readBytesCappedFd(
+  filePath: string,
+  maxBytes: number,
+  opts: Pick<CappedFdReadOptions, 'noFollow'> = {},
+): Promise<CappedFdBytes> {
+  return withCappedFd(filePath, opts, (fh) => readBytesCappedFromHandle(fh, filePath, maxBytes, opts));
+}
+
+async function withCappedFd<T>(
+  filePath: string,
+  opts: Pick<CappedFdReadOptions, 'noFollow'>,
+  read: (fh: FileHandle) => Promise<T>,
+): Promise<T> {
   let fh: FileHandle;
   try {
     fh = opts.noFollow ? await openNoFollow(filePath) : await openForReadNonBlocking(filePath);
@@ -99,7 +116,7 @@ export async function readFileCappedFd(
     throw await specialFileOpenError(err, filePath, opts.noFollow === true);
   }
   try {
-    return await readCappedFromHandle(fh, filePath, maxBytes, opts);
+    return await read(fh);
   } finally {
     await fh.close().catch(() => {});
   }
@@ -127,6 +144,36 @@ export async function readCappedFromHandle(
   maxBytes: number,
   opts: CappedFdReadOptions = {},
 ): Promise<CappedFdRead> {
+  const { bytes, tooLarge, size, identity } = await readBytesCappedFromHandle(fh, filePath, maxBytes, opts);
+  if (bytes === null) return { text: null, tooLarge, size };
+  if (opts.requireUtf8) {
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+      return { text, tooLarge: false, size, ...(identity && { identity }) };
+    } catch {
+      return { text: null, tooLarge: false, size, notUtf8: true };
+    }
+  }
+  const encoding = opts.encoding ?? 'utf-8';
+  return { text: bytes.toString(encoding), tooLarge: false, size, ...(identity && { identity }) };
+}
+
+export interface CappedFdBytes {
+  /** 文件字节(≤maxBytes);tooLarge 时为 null。 */
+  readonly bytes: Buffer | null;
+  readonly tooLarge: boolean;
+  readonly size: number;
+  /** 同 CappedFdRead.identity(noFollow 时)。 */
+  readonly identity?: { readonly dev: bigint; readonly ino: bigint };
+}
+
+/** readCappedFromHandle 的字节部分:fstat → 有界读,不解码;不关闭 fd。 */
+export async function readBytesCappedFromHandle(
+  fh: FileHandle,
+  filePath: string,
+  maxBytes: number,
+  opts: Pick<CappedFdReadOptions, 'noFollow'> = {},
+): Promise<CappedFdBytes> {
   const st = await fh.stat({ bigint: true });
   // 只读普通文件(两分支都要):FIFO / socket / 设备 / 目录一律 EFTYPE,不进读循环。
   if (!st.isFile()) throw unsafeFileError('EFTYPE', filePath);
@@ -134,7 +181,7 @@ export async function readCappedFromHandle(
   const identity = opts.noFollow ? { dev: st.dev, ino: st.ino } : undefined;
   const size = Number(st.size);
   if (size > maxBytes) {
-    return { text: null, tooLarge: true, size };
+    return { bytes: null, tooLarge: true, size };
   }
   const buf = Buffer.allocUnsafe(Math.min(size, maxBytes) + 1);
   let total = 0;
@@ -144,19 +191,9 @@ export async function readCappedFromHandle(
     total += bytesRead;
   }
   if (total > maxBytes) {
-    return { text: null, tooLarge: true, size: total };
+    return { bytes: null, tooLarge: true, size: total };
   }
-  const bytes = buf.subarray(0, total);
-  if (opts.requireUtf8) {
-    try {
-      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-      return { text, tooLarge: false, size: total, ...(identity && { identity }) };
-    } catch {
-      return { text: null, tooLarge: false, size: total, notUtf8: true };
-    }
-  }
-  const encoding = opts.encoding ?? 'utf-8';
-  return { text: bytes.toString(encoding), tooLarge: false, size: total, ...(identity && { identity }) };
+  return { bytes: buf.subarray(0, total), tooLarge: false, size: total, ...(identity && { identity }) };
 }
 
 /**

@@ -10,7 +10,8 @@
 
 | 文件 | 职责 |
 |---|---|
-| `src/panels/Editor/CodeEditor.tsx` | `detectLineEnding`:全部换行是 CRLF 才判为 CRLF;emit 全文用 `doc.sliceString(0, len, eol)` 按文件风格拼接;外部重读按新内容重定风格 |
+| `src/panels/Editor/editor-encoding.ts` | `detectLineEnding`(CodeEditor 再导出;状态栏行尾项同口径):全部换行是 CRLF 才判为 CRLF |
+| `src/panels/Editor/CodeEditor.tsx` | emit 全文用 `doc.sliceString(0, len, eol)` 按文件风格拼接;外部重读按新内容重定风格 |
 
 ## 关键行为
 

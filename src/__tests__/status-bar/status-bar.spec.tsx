@@ -94,7 +94,7 @@ describe('StatusBar — 左侧 workspace', () => {
   });
 
   // 状态栏只显示真实信息:此前恒显示的分支名 main、编码 UTF-8、换行 LF 都是写死的占位
-  //(打开 CRLF 文件也显示 LF),已去掉。
+  //(打开 CRLF 文件也显示 LF),已去掉。编码 / 行尾现按活动 tab 的真实值显示(BDD: src/__tests__/editor-text-encoding/)。
   it('root 有 → basename;不显示写死的分支名', () => {
     installApi({});
     useWorkspaceStore.setState({
@@ -141,8 +141,9 @@ describe('StatusBar — 右侧文件信息', () => {
     expect(container.textContent).toContain('●'); // dirty 标记
     expect(container.textContent).toMatch(/2\s*行/);
     expect(container.textContent).toMatch(/词/);
-    expect(container.textContent).not.toContain('UTF-8');
-    expect(container.textContent).not.toMatch(/\bLF\b/);
+    // 编码 / 行尾是 tab 的真实值(缺省 UTF-8;内容只有 LF 换行)
+    expect(container.querySelector('[data-statusbar-encoding]')?.textContent).toBe('UTF-8');
+    expect(container.querySelector('[data-statusbar-eol]')?.textContent).toBe('LF');
   });
 
   // a11y(A37,A35 同族):状态栏 dirty 只用视觉 ● → AT 须有「未保存」文本,● 标 aria-hidden。

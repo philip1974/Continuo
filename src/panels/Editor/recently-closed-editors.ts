@@ -6,6 +6,7 @@
 // BDD: src/__tests__/editor-reopen-closed/
 
 import type { PersistedEditorViewState } from './editor-view-state-cache';
+import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 
 export const RECENTLY_CLOSED_EDITORS_MAX = 20;
 
@@ -18,6 +19,8 @@ export interface RecentlyClosedEditor {
   readonly index: number;
   /** 关闭前的视图状态摘要(与跨重启恢复同一形态);无 → undefined。 */
   readonly viewState: PersistedEditorViewState | undefined;
+  /** 关闭前用户选定的编码(通过编码重新打开 / 保存);重新打开时按它读(否则 GBK 等文件自动识别打不开)。 */
+  readonly encoding?: TextEncodingId;
 }
 
 let stack: RecentlyClosedEditor[] = [];

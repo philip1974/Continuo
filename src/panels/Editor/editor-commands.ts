@@ -245,7 +245,7 @@ function closePanelOrActiveTab(active: IDockviewPanel): void {
 }
 
 /** 触发窗口的编辑器组(commandEditorGroupId)的活动文件 tab(无 → null)。 */
-function activeGroupTab(): EditorTab | null {
+export function activeGroupTab(): EditorTab | null {
   const groupId = commandEditorGroupId();
   if (groupId === undefined) return null;
   const s = useEditorStore.getState();

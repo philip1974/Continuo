@@ -1,6 +1,6 @@
 // 底部状态栏(VSCode 风,24px,参考 stitch_desktop_design_reviewer)。
 // 左:workspace 名 + sidebar 收起提示。
-// 右:active editor tab 文件名 + dirty + 行 / 词 / 字符。
+// 右:active editor tab 文件名 + dirty + 行 / 词 / 字符 + 编码 / 行尾。
 
 import { memo, useDeferredValue, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -30,6 +30,9 @@ import { createLatestGuard } from '@/lib/latest-wins';
 import { useCopyMcpConfig } from './use-copy-mcp-config';
 import { isImagePreviewPath } from '../../electron/shared/image-preview';
 import { useActiveNonEditorPanel, useMainWindowEditorGroupId } from '@/shell/dock/main-window-active-panel';
+import { encodingLabelShort, lineEndingOf } from '@/panels/Editor/editor-encoding';
+import { openChangeEncoding, openChangeEol } from '@/plugins/editor-encoding/encoding-actions';
+import type { TextEncodingId } from '../../electron/shared/text-encoding';
 
 /** MCP 复制按钮在窄状态栏下的图标(lucide copy 字形;只在容器 < xl 时显示,替代文字)。 */
 const MCP_COPY_ICON = (
@@ -224,6 +227,53 @@ const EditorStats = memo(function EditorStats({
   );
 });
 
+/**
+ * 编码 / 行尾项(VSCode status.editor.encoding / status.editor.eol):显示 tab 的磁盘编码(UTF-8 / UTF-16 LE / GBK …)与行尾
+ *(LF / CRLF),点击打开更改文件编码 / 更改行尾序列。行尾按内容判定(O(N)),同 EditorStats 对延后的内容计算。
+ * BDD: src/__tests__/editor-text-encoding/
+ */
+const EditorEncodingItems = memo(function EditorEncodingItems({
+  tabId,
+  content,
+  encoding,
+}: {
+  tabId: string;
+  content: string;
+  encoding: TextEncodingId;
+}) {
+  const t = useT();
+  const deferredTabId = useDeferredValue(tabId);
+  const deferredContent = useDeferredValue(content);
+  const eolContent = deferredTabId === tabId ? deferredContent : content;
+  const eol = useMemo(() => lineEndingOf(eolContent), [eolContent]);
+  // native button:同 MCP 按钮(24px 状态栏内的行内文本按钮,design Button 最小高度超出状态栏);颜色走语义 token。
+  // 可访问名称 = 可见文字(UTF-8 / LF),动作说明在 title(VSCode tooltip「选择编码」/「选择行尾序列」)。
+  // 状态栏容器 < lg 时隐藏(在统计之后、文件名之前让位)。
+  const itemClass = 'shrink-0 whitespace-nowrap text-fg-dim hover:text-fg transition-colors @max-lg:hidden';
+  return (
+    <>
+      <button
+        type="button"
+        data-statusbar-encoding=""
+        title={t('statusbar.encoding.tooltip')}
+        onClick={() => openChangeEncoding(tabId)}
+        className={itemClass}
+      >
+        {encodingLabelShort(encoding)}
+      </button>
+      <button
+        type="button"
+        data-statusbar-eol=""
+        title={t('statusbar.eol.tooltip')}
+        onClick={() => openChangeEol(tabId)}
+        className={itemClass}
+      >
+        {eol}
+      </button>
+    </>
+  );
+});
+
 export function StatusBar() {
   const t = useT();
   const root = useWorkspaceStore((s) => s.root);
@@ -246,7 +296,7 @@ export function StatusBar() {
   // 只是 string ref(不像旧 EditorHeader 的 JSON 签名 selector,这里避免序列化大文档正文)。
   // 取主窗正显示的编辑器组的活动 tab(活动编辑器组可能在 popout 子窗,主窗状态栏不显示子窗的文件)。
   const mainGroupId = useMainWindowEditorGroupId();
-  const { activeTabId, activeFilePath, activeDirty, activeContent } =
+  const { activeTabId, activeFilePath, activeDirty, activeContent, activeEncoding } =
     useEditorStore(
       useShallow((s) => {
         const found = findEditorFileTabById(s.tabs, mainGroupId === null ? null : groupActiveTabIdOf(s, mainGroupId));
@@ -255,6 +305,7 @@ export function StatusBar() {
           activeFilePath: found?.filePath ?? null,
           activeDirty: found?.dirty ?? false,
           activeContent: found?.content,
+          activeEncoding: found?.encoding ?? 'utf8',
         };
       }),
     );
@@ -377,6 +428,9 @@ export function StatusBar() {
             </span>
             {/* 图片 tab 的内容是 stat 指纹,不是文本:不显示统计(尺寸 / 大小在图片视图里)。 */}
             {!isImagePreviewPath(activeFilePath) && <EditorStats tabId={activeTabId} content={activeContent} />}
+            {!isImagePreviewPath(activeFilePath) && activeTabId !== null && activeContent !== undefined && (
+              <EditorEncodingItems tabId={activeTabId} content={activeContent} encoding={activeEncoding} />
+            )}
           </>
         ) : null}
       </div>

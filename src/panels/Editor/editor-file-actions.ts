@@ -17,6 +17,7 @@ import {
   usesMilkdownEngine,
   getUserActivationGen,
   useEditorStore,
+  withEncoding,
   type EditorTab,
 } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
@@ -34,6 +35,8 @@ import {
 } from './editor-engine-loaders';
 import { isImagePreviewPath } from './editor-image';
 import { isEditorPreviewEnabled } from './editor-preview';
+import { readEncodingOf, readOptionsForTab, tabEncodingOf } from './editor-encoding';
+import type { TextEncodingId } from '../../../electron/shared/text-encoding';
 
 /** renderer 内部错误码:保存时发现磁盘已被外部修改(未覆盖)。EditorPanel 据此弹覆盖确认,dirty-close 单独计数。 */
 export const EDITOR_DISK_CHANGED = 'EDITOR_DISK_CHANGED';
@@ -85,6 +88,11 @@ export interface OpenFileOptions {
   readonly preview?: boolean;
   /** 打开到哪个编辑器组(缺省 = 活动组),该组随之成为活动组(从资源管理器拖到某个组;BDD: src/__tests__/explorer-drag-out/)。 */
   readonly groupId?: string;
+  /**
+   * 按此编码打开(资源管理器等打开非 UTF-8 文件失败后,用户在编码选择器里选的;BDD: src/__tests__/editor-text-encoding/):
+   * 新建的 tab 记为用户选定的编码。已开着同一文件 → 只切换(不重读)。
+   */
+  readonly encoding?: TextEncodingId;
 }
 
 /**
@@ -96,12 +104,14 @@ export async function openFileByPath(
   deps: EditorFileDeps,
   opts?: OpenFileOptions,
 ): Promise<FileOpResult> {
+  const encoding = opts?.encoding;
   const r = await openTabWith(
     path,
-    () => deps.fs.readFile(path),
+    () => (encoding === undefined ? deps.fs.readFile(path) : deps.fs.readFile(path, { encoding })),
     (tabs) => findEditorFileTabByPath(tabs, path),
     undefined,
     previewOpt(opts),
+    encoding !== undefined,
   );
   return r.ok ? OPENED : r;
 }
@@ -157,6 +167,7 @@ async function openTabWith(
   findExisting: (tabs: readonly EditorTab[]) => EditorTab | null,
   pluginOpenedPath?: string,
   preview?: OpenFileOptions,
+  pinEncoding = false,
 ): Promise<IpcResult<boolean>> {
   const store = useEditorStore;
   // 已开过 → 只切换。跨平台(复查 P1):用平台感知 pathEquals 而非 `===` —— Windows
@@ -198,7 +209,8 @@ async function openTabWith(
   // 以预览方式打开却已被更晚的用户选择超越(读盘慢时连点 A、B)→ 放弃:VSCode 连点两个文件只剩后一个预览 tab,
   // 前一个不该以常驻插进后台(后台加入不替换正在显示的预览 tab,会落成常驻)。常驻打开照旧后台加入。
   if (!latest && preview?.preview === true) return { ok: true, data: false };
-  const created = createTab(path, r.data, r.realPath);
+  const decoded = createTab(path, r.data, r.realPath, r.encoding);
+  const created = pinEncoding ? withEncoding(decoded, readEncodingOf(r), true) : decoded;
   const tab = pluginOpenedPath === undefined ? created : { ...created, pluginOpenedPath };
   store
     .getState()
@@ -225,6 +237,11 @@ export interface SaveFileOptions {
    * 只有显式保存的确认框传;自动保存遇 FS_READONLY 不重试(见 src/__tests__/save-readonly-file/)。
    */
   readonly overwriteReadonly?: boolean;
+  /**
+   * 「通过编码保存」(VSCode EncodingMode.Encode):按此编码写回(缺省 = tab 的磁盘编码);成功后 tab 的编码改为它并记为用户选定。
+   * 文本含该编码表示不了的字符 → FS_UNENCODABLE,不写、tab 编码不变(BDD: src/__tests__/editor-text-encoding/)。
+   */
+  readonly encoding?: TextEncodingId;
 }
 
 export async function saveFile(
@@ -249,11 +266,10 @@ export async function saveFile(
  */
 async function checkDiskBeforeSave(
   fs: EditorFileDeps['fs'],
-  filePath: string,
-  originalContent: string,
-  savedGen: number | undefined,
+  tab: EditorTab,
   recreateMissing: boolean,
 ): Promise<FileOpResult | null> {
+  const { filePath, originalContent, savedGen } = tab;
   // 快路径:磁盘 stat 仍与本 tab 上次保存时记下的一致 → 磁盘就是那次写入的内容(= originalContent),
   // 不必整文件回读(与外部同步的保存回声识别同一判断,见 saved-disk-stat)。不一致 / 无记录 → 整读比对。
   // 只在记录的 mtime 带亚毫秒小数(高精度文件系统:APFS / ext4 / NTFS)时适用:粗粒度 mtime(FAT32 / exFAT /
@@ -265,7 +281,9 @@ async function checkDiskBeforeSave(
   if (own && (await own)) return null;
   let r: IpcResult<string>;
   try {
-    r = await fs.readFile(filePath);
+    // 按 tab 选定的编码读(否则 GBK 等文件自动识别必失败 → 保存永远被拦)
+    const readOpts = readOptionsForTab(tab);
+    r = await (readOpts === undefined ? fs.readFile(filePath) : fs.readFile(filePath, readOpts));
     if (!r.ok && r.code === ERROR_CODES.FS_NOT_FOUND) return recreateMissing ? null : r;
   } catch (err) {
     // reject 或畸形结果(读 .ok 抛错):带 FS_NOT_FOUND 的 reject 同样视为不存在,其它中止。
@@ -290,13 +308,7 @@ async function saveFileNow(
   let tab = findEditorFileTabById(store.getState().tabs, tabId);
   if (opts?.force !== true && tab) {
     const recreateMissing = opts?.recreateMissing !== false;
-    const blocked = await checkDiskBeforeSave(
-      fs,
-      tab.filePath,
-      tab.originalContent,
-      tab.savedGen,
-      recreateMissing,
-    );
+    const blocked = await checkDiskBeforeSave(fs, tab, recreateMissing);
     if (blocked) {
       // 不重建:文件已删除 → 与外部同步确认删除同一结果(tab 显示「已删除」,自动保存不再尝试)。
       if (!recreateMissing && !blocked.ok && blocked.code === ERROR_CODES.FS_NOT_FOUND) {
@@ -317,10 +329,16 @@ async function saveFileNow(
   // 快照本次写盘的内容。markSaved 用它判定写盘 await 期间是否发生并发编辑:
   // 若 store 里 content 已领先此快照,保留 dirty 不被静默清掉。
   const savedContent = tab.content;
+  // 按磁盘编码(含 BOM)写回;「通过编码保存」用所选编码。utf8 不带 encoding(写入载荷与改动前一致)。
+  const encoding = opts?.encoding ?? tabEncodingOf(tab);
+  const writeOpts = {
+    ...(opts?.overwriteReadonly === true && { overwriteReadonly: true }),
+    ...(encoding !== 'utf8' && { encoding }),
+  };
   let r;
   try {
-    r = await (opts?.overwriteReadonly === true
-      ? fs.writeFile(tab.filePath, savedContent, { overwriteReadonly: true })
+    r = await (Object.keys(writeOpts).length > 0
+      ? fs.writeFile(tab.filePath, savedContent, writeOpts)
       : fs.writeFile(tab.filePath, savedContent));
   } catch (err) {
     return exception(err);
@@ -331,6 +349,7 @@ async function saveFileNow(
   // dir-changed 回声(免整文件重读)。
   const savedGen = recordSavedDiskStat(tab.filePath, r.data);
   store.getState().markSaved(tabId, savedContent, savedGen);
+  if (opts?.encoding !== undefined) store.getState().setEncoding(tabId, opts.encoding);
   return { ok: true, data: undefined };
 }
 
@@ -341,14 +360,42 @@ async function saveFileNow(
 export async function revertFile(tabId: string, deps: EditorFileDeps): Promise<FileOpResult> {
   const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
   if (!tab) return { ok: false, code: 'TAB_NOT_FOUND', message: `tab not found: ${tabId}` };
+  return reloadTabFromDisk(tab, deps, readOptionsForTab(tab), false);
+}
+
+/**
+ * 「通过编码重新打开」(VSCode EncodingMode.Decode):按 encoding 重读磁盘并换掉 tab 内容(未保存的修改丢弃 —— 调用方先经用户
+ * 确认,同 VSCode「放弃更改并重新打开」),之后的读盘都按它解码。解码不可逆(保存会改动原字节)→ FS_DECODE_FAILED,tab 不变。
+ * BDD: src/__tests__/editor-text-encoding/
+ */
+export async function reopenWithEncoding(
+  tabId: string,
+  encoding: TextEncodingId,
+  deps: EditorFileDeps,
+): Promise<FileOpResult> {
+  const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+  if (!tab) return { ok: false, code: 'TAB_NOT_FOUND', message: `tab not found: ${tabId}` };
+  return reloadTabFromDisk(tab, deps, { encoding }, true);
+}
+
+async function reloadTabFromDisk(
+  tab: EditorTab,
+  deps: EditorFileDeps,
+  readOpts: { readonly encoding: TextEncodingId } | undefined,
+  pinEncoding: boolean,
+): Promise<FileOpResult> {
   let r: FsReadFileResult;
   try {
-    r = await deps.fs.readFile(tab.filePath);
+    r = await (readOpts === undefined ? deps.fs.readFile(tab.filePath) : deps.fs.readFile(tab.filePath, readOpts));
   } catch (err) {
     return exception(err);
   }
   if (!r.ok) return r;
-  useEditorStore.getState().reloadFromDisk(tabId, r.data, r.realPath, { discardChanges: true });
+  useEditorStore.getState().reloadFromDisk(tab.id, r.data, r.realPath, {
+    discardChanges: true,
+    encoding: readEncodingOf(r),
+    ...(pinEncoding && { pinEncoding: true }),
+  });
   return { ok: true, data: undefined };
 }
 

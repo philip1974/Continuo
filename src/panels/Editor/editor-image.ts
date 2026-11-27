@@ -14,14 +14,15 @@ export function imageFingerprint(st: FsFileStat): string {
 }
 
 /**
- * 编辑器读盘入口:图片 → stat 指纹;其它 → 文本 readFile(要求合法 UTF-8)。非图片原样返回 readFile 的 promise
+ * 编辑器读盘入口:图片 → stat 指纹;其它 → 文本 readFile(按编码严格解码;opts.encoding = tab 选定的编码)。非图片原样返回 readFile 的 promise
  *(不多包一层 async:外部同步的在途合并与时序不变)。
  */
 export function readEditorFile(
   fs: Pick<FsApi, 'readFile' | 'stat'>,
   path: string,
+  opts?: Parameters<FsApi['readFile']>[1],
 ): Promise<FsReadFileResult> {
-  if (!isImagePreviewPath(path)) return fs.readFile(path);
+  if (!isImagePreviewPath(path)) return opts === undefined ? fs.readFile(path) : fs.readFile(path, opts);
   return fs.stat(path).then((r) => (r.ok ? { ok: true, data: imageFingerprint(r.data) } : r));
 }
 

@@ -765,6 +765,12 @@
 - [`text-commands-registry.spec.ts`](./editor-text-commands/text-commands-registry.spec.ts)
 - [`text-commands-run.spec.ts`](./editor-text-commands/text-commands-run.spec.ts)
 
+## [editor-text-encoding](./editor-text-encoding/README.md)
+
+- [`editor-encoding-flow.spec.ts`](./editor-text-encoding/editor-encoding-flow.spec.ts)
+- [`statusbar-encoding.spec.tsx`](./editor-text-encoding/statusbar-encoding.spec.tsx)
+- [`text-codec.spec.ts`](./editor-text-encoding/text-codec.spec.ts)
+
 ## [编辑器视图状态按 tab 保留(VSCode 对齐)](./editor-view-state/README.md)
 
 - [`code-editor-view-state.spec.tsx`](./editor-view-state/code-editor-view-state.spec.tsx)

@@ -4,6 +4,9 @@ import { t } from '@/i18n';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { failureOf, type Failure } from '@/lib/failure-of';
 import { notify } from './notify';
+import { promptOpenWithEncoding } from '@/plugins/editor-encoding/store';
+import { ERROR_CODES } from '../../electron/shared/error-codes';
+import type { TextEncodingId } from '../../electron/shared/text-encoding';
 
 /** `「打开失败」 <name>：<按 code 本地化的原因>`(冒号随语言),toast 附 code。调用方已自行 console 记录时传 mirror:false。 */
 export function notifyOpenFailed(
@@ -36,10 +39,17 @@ export function fileFailureText(action: string, name: string, failure: Failure):
  * 链接三处各自 try / then-catch,历史上多次只处理了一个分支 —— A127 / A141 / P1-AX)。给 logTag 时由这里记 console
  * 并关闭 toast 的 mirror(避免双写)。不抛;返回是否打开成功(成功后要不要把焦点交给编辑器由调用方定)。
  */
+type OpenResult = { readonly ok: true } | ({ readonly ok: false } & Failure);
+
 export async function openFileOrNotify(
-  open: () => Promise<{ readonly ok: true } | ({ readonly ok: false } & Failure)>,
+  open: () => Promise<OpenResult>,
   name: string,
   logTag?: string,
+  /**
+   * 文件不是 UTF-8(FS_UNKNOWN_ENCODING)时改为弹编码选择器,选定后用 openWithEncoding(encoding) 重新打开(失败照常提示),
+   * 不弹「打开失败」;返回 false(这次没打开)。缺省 → 照常提示。BDD: src/__tests__/editor-text-encoding/
+   */
+  openWithEncoding?: (encoding: TextEncodingId) => Promise<OpenResult>,
 ): Promise<boolean> {
   let failure: Failure | null = null;
   try {
@@ -49,6 +59,10 @@ export async function openFileOrNotify(
     failure = failureOf(err);
   }
   if (failure === null) return true;
+  if (failure.code === ERROR_CODES.FS_UNKNOWN_ENCODING && openWithEncoding !== undefined) {
+    promptOpenWithEncoding(name, (encoding) => openFileOrNotify(() => openWithEncoding(encoding), name, logTag));
+    return false;
+  }
   if (logTag === undefined) {
     notifyOpenFailed(name, failure);
     return false;

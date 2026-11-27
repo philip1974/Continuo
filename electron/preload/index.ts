@@ -28,6 +28,7 @@ import {
   type FsReadFileResult,
   type FsListDirOptions,
 } from '../shared/fs-channels';
+import type { TextEncodingId } from '../shared/text-encoding';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import { isSearchEvent, SEARCH_CHANNELS, type SearchEvent, type SearchQuery } from '../shared/workspace-search';
 import { GIT_CHANNELS, type GitStatusResult } from '../shared/git-status';
@@ -223,10 +224,16 @@ const api = {
       options?: PreloadListDirOptions,
     ): Promise<IpcResult<FsScanFilesData>> =>
       ipcRenderer.invoke(FS_CHANNELS.SCAN_FILES, { path, options }),
-    /** data = 文件内容;realPath = leaf 为符号链接时的真实目标(可选,FS_PATH_MAX 与 PATH_STR_MAX 同值). */
-    readFile: async (path: string): Promise<FsReadFileResult> =>
+    /**
+     * data = 文件内容(不含 BOM);realPath = leaf 为符号链接时的真实目标(可选,FS_PATH_MAX 与 PATH_STR_MAX 同值);
+     * encoding = 解码所用编码(缺省 = utf8)。opts.encoding:按该编码解码(「通过编码重新打开」),缺省自动识别 BOM / UTF-8.
+     */
+    readFile: async (path: string, opts?: { readonly encoding?: TextEncodingId }): Promise<FsReadFileResult> =>
       toFsReadFileResult(
-        (await ipcRenderer.invoke(FS_CHANNELS.READ_FILE, { path })) as IpcResult<FsReadFileData>,
+        (await ipcRenderer.invoke(
+          FS_CHANNELS.READ_FILE,
+          opts?.encoding === undefined ? { path } : { path, encoding: opts.encoding },
+        )) as IpcResult<FsReadFileData>,
         FS_PATH_MAX,
       ),
     /**
@@ -246,17 +253,19 @@ const api = {
           : { path },
       ),
     /** 成功时 data = 写入内容的 { mtimeMs, size, ino }(无法确认 → undefined),供编辑器识别自己保存的回声. */
-    /** opts.overwriteReadonly:用户已确认覆盖写保护文件(FS_READONLY 后的「覆盖」)。 */
+    /** opts.overwriteReadonly:用户已确认覆盖写保护文件(FS_READONLY 后的「覆盖」)。opts.encoding:按该编码写回(缺省 UTF-8 无 BOM)。 */
     writeFile: async (
       path: string,
       content: string,
-      opts?: { readonly overwriteReadonly?: boolean },
+      opts?: { readonly overwriteReadonly?: boolean; readonly encoding?: TextEncodingId },
     ): Promise<IpcResult<FsFileStat | undefined>> =>
       toFsWriteFileResult(
-        (await ipcRenderer.invoke(
-          FS_CHANNELS.WRITE_FILE,
-          opts?.overwriteReadonly === true ? { path, content, overwriteReadonly: true } : { path, content },
-        )) as IpcResult<unknown>,
+        (await ipcRenderer.invoke(FS_CHANNELS.WRITE_FILE, {
+          path,
+          content,
+          ...(opts?.overwriteReadonly === true && { overwriteReadonly: true }),
+          ...(opts?.encoding !== undefined && opts.encoding !== 'utf8' && { encoding: opts.encoding }),
+        })) as IpcResult<unknown>,
       ),
     /** 跟随 symlink 的廉价 stat({ mtimeMs, size, ino });畸形结果映射为失败. */
     stat: async (path: string): Promise<IpcResult<FsFileStat>> =>

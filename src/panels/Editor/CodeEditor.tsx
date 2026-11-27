@@ -66,6 +66,7 @@ import { useEditorGroupId } from './editor-group-context';
 import { applySourceModeAnchor, sourceModeAnchor } from './codemirror-mode-anchor';
 import { navigationHistoryExtension } from './codemirror-navigation-history';
 import { lastSeparatorIndex } from '@/lib/path-cross';
+import { detectLineEnding } from './editor-encoding';
 
 interface CodeEditorProps {
   tabId: string;
@@ -93,15 +94,7 @@ export function fileExtensionLower(fileName: string): string | undefined {
  * 文本(state.toText 只按配置分隔符切)整段塞进一行。混合换行文件维持既有行为(统一为 LF)——
  * 任何单一风格拼接都改不回原文,而按 /\r\n?|\n/ 切行显示最稳。
  */
-export function detectLineEnding(text: string): '\r\n' | '\n' {
-  let crlf = 0;
-  for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
-    if (text.charCodeAt(i - 1) !== 13) return '\n';
-    crlf++;
-  }
-  // 还有孤立 \r(老 Mac 换行)也算混合
-  return crlf > 0 && !/\r(?!\n)/.test(text) ? '\r\n' : '\n';
-}
+export { detectLineEnding } from './editor-encoding';
 
 /**
  * prev → next 的单段最小替换(去掉公共前缀与后缀;文档坐标,即 LF 拼接后的文本)。无公共前后缀(整篇不同)/ 无变化
