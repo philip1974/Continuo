@@ -109,15 +109,18 @@ export function classifyXY(xy: string): Classified | null {
  * 解析 `git status --porcelain=v1 -z` 输出。路径相对仓库根;prefix = 工作区根相对仓库根的前缀(`rev-parse --show-prefix`,
  * 以 `/` 结尾或为空)。只保留工作区根内的条目并去掉前缀;覆盖整个工作区根的目录条目(根本身在未跟踪 / 忽略目录内)记为 ''。
  * 重命名 / 复制记录(`XY 新路径\0旧路径\0`)只装饰新路径。同一路径多条(如 `D ` + `??`)按 rank 取高者。
+ * 路径与 prefix 一律 NFC:macOS 上 git 默认(core.precomposeunicode)输出 NFC,关掉 precompose 的仓库输出磁盘原样(可能 NFD);
+ * renderer 查询侧(gitRelPath)同样归一成 NFC,两边才对得上。
  */
-export function parsePorcelainZ(stdout: string, prefix: string): GitStatusEntry[] {
+export function parsePorcelainZ(stdout: string, rawPrefix: string): GitStatusEntry[] {
+  const prefix = rawPrefix.normalize('NFC');
   const byPath = new Map<string, Classified>();
   const tokens = stdout.split('\0');
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     if (token.length < 4 || token[2] !== ' ') continue;
     const xy = token.slice(0, 2);
-    const path = token.slice(3);
+    const path = token.slice(3).normalize('NFC');
     if (xy[0] === 'R' || xy[0] === 'C' || xy[1] === 'R' || xy[1] === 'C') i++; // 跳过旧路径
     const c = classifyXY(xy);
     if (!c) continue;

@@ -33,9 +33,11 @@ import {
 } from './tree-config';
 import {
   focusAndSelect,
+  focusFallbackIndex,
   handleTreeKeyDown,
   focusedTargetDir,
   neighborAfterRemoval,
+  pageFocusTarget,
   selectOnly,
   type TypeAheadState,
 } from './tree-keyboard';
@@ -986,6 +988,35 @@ export function FolderTree({ root }: { root: string }) {
     () => (focusedRowId === null ? (rows.length > 0 ? 0 : -1) : rowIndexOf(rows, focusedRowId)),
     [rows, focusedRowId],
   );
+  // 焦点项不再显示(「折叠全部」/ 折叠其祖先 / 外部删除 / 关掉显示隐藏文件)→ 没有 tabIndex=0 的行,Tab 进不了树;DOM 焦点原在
+  // 被移除的行上时还会掉到 body,方向键失效。VSCode 列表容器本身可 Tab 进入、焦点为空时 ↓ 从首项起;这里是 roving tabIndex,
+  // 须把焦点项修正到仍显示的行:最近的显示中的祖先目录,否则原下标附近的行(focusFallbackIndex)。DOM 焦点原在该行上
+  //(focusin 记录;行卸载时浏览器不一定派发带 relatedTarget 的 blur)且现已丢失 → 同时移过去。父目录正在重新读取
+  //(invalidate 后子项暂缺)不算移除,等读完。绘制前修正(layout effect),不闪出「无可聚焦行」的一帧。
+  // BDD: src/__tests__/explorer-tree/folder-tree-focus-repair.spec.tsx
+  const lastFocusedRowRef = useRef<{ id: string; index: number } | null>(null);
+  const domFocusedRowIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (focusedRowId === null) return;
+    if (focusedRowIndex >= 0) {
+      lastFocusedRowRef.current = { id: focusedRowId, index: focusedRowIndex };
+      return;
+    }
+    if (rows.length === 0) return;
+    const loading = tree.getState().loadingItemChildrens ?? EMPTY_PATH_LIST;
+    if (loading.some((dir) => dir !== focusedRowId && isSameOrInsidePath(dir, focusedRowId))) return;
+    const last = lastFocusedRowRef.current;
+    const ids = rows.map((r) => (isDirLoadErrorRow(r) ? null : r.getId()));
+    const index = focusFallbackIndex(ids, focusedRowId, last?.id === focusedRowId ? last.index : 0, root);
+    if (index < 0) return;
+    const container = scrollRef.current;
+    const hadDomFocus =
+      domFocusedRowIdRef.current === focusedRowId &&
+      container !== null &&
+      focusWithinOrLost(container.ownerDocument, null);
+    (rows[index] as ItemInstance<FileEntry>).setFocused();
+    if (hadDomFocus) tree.updateDomFocus();
+  }, [rows, focusedRowId, focusedRowIndex, root, tree]);
   const keepFocusedRowRange = useCallback(
     (range: Range) => rangeWithPinnedIndex(range, focusedRowIndex),
     [focusedRowIndex],
@@ -1690,6 +1721,24 @@ export function FolderTree({ root }: { root: string }) {
     }
     return null;
   };
+  // PageDown / PageUp(VSCode list.focusPageDown / focusPageUp):按可视区算落点(pageFocusTarget),必要时滚一页,焦点 + 选中移过去。
+  const pageFocus = (direction: 1 | -1) => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const target = pageFocusTarget(
+      {
+        sizes: rows.map((r) => (isDirLoadErrorRow(r) ? DIR_LOAD_ERROR_ROW_HEIGHT : FILE_ROW_HEIGHT)),
+        scrollTop: el.scrollTop,
+        viewportHeight: el.clientHeight,
+        isFocusable: (i) => !isDirLoadErrorRow(rows[i]),
+      },
+      focusedRowId === null || focusedRowIndex < 0 ? undefined : focusedRowIndex,
+      direction,
+    );
+    if (target === null) return;
+    if (el.scrollTop !== target.scrollTop) el.scrollTop = target.scrollTop;
+    focusAndSelect(tree, rows[target.index] as ItemInstance<FileEntry>);
+  };
   const handleDropCapture = (e: React.DragEvent) => {
     dropRowIdRef.current = findRenderedRowId(e.target);
     if (!hasFiles(e.dataTransfer)) return;
@@ -1797,7 +1846,17 @@ export function FolderTree({ root }: { root: string }) {
                   typeAhead: typeAheadRef.current,
                   onUndo,
                   onRedo,
+                  onPage: pageFocus,
                 });
+              }}
+              onFocus={(e) => {
+                const id = findRenderedRowId(e.target);
+                if (id !== null) domFocusedRowIdRef.current = id;
+              }}
+              onBlur={(e) => {
+                // 焦点移到树外的元素 → 不再算「DOM 焦点在焦点行上」;relatedTarget 为空(行被卸载 / 点到不可聚焦处)保留
+                const next = e.relatedTarget as Node | null;
+                if (next !== null && !e.currentTarget.contains(next)) domFocusedRowIdRef.current = null;
               }}
               style={{
                 height: virtualizer.getTotalSize(),

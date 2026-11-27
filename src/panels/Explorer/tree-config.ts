@@ -359,6 +359,24 @@ export function createTreeConfig(
     // 直接忽略。注意 hotkeys-core 1.6.3 匹配阶段是 {...presets, ...hotkeys} 浅合并整条(执行阶段才逐字段
     // 合并),故必须照抄 preset 的 hotkey / allowWhenInputFocused / isEnabled,只写 handler 会让匹配崩溃。
     hotkeys: {
+      // → 对齐 VSCode list.expand(when: 可展开 || 有子项):折叠的目录 → 展开;已展开且有子项 → 焦点到第一个子项;
+      // 文件 / 已展开的空目录 → 无动作(库默认 expandOrDown 在这两种情况下移到下一行)。
+      expandOrDown: {
+        hotkey: 'ArrowRight',
+        canRepeat: true,
+        handler: (_e, tree) => {
+          const item = tree.getFocusedItem();
+          if (!item.isFolder()) return;
+          if (!item.isExpanded()) {
+            item.expand();
+            return;
+          }
+          const below = item.getItemBelow();
+          if (below === undefined || below.getParent()?.getId() !== item.getId()) return;
+          below.setFocused();
+          tree.updateDomFocus();
+        },
+      },
       completeRenaming: {
         hotkey: 'Enter',
         allowWhenInputFocused: true,

@@ -67,6 +67,11 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   `explorer.openAndPassFocus`,同双击;打开失败焦点留在树里);目录 → 切换展开。不接库的 `onPrimaryAction`:
   库在每次行单击(含 ⌘ / Shift 多选单击)都调它
 - 方向键 / Home / End:库移动焦点后选中改为焦点项(Shift 扩选仍由库处理)
+- →(VSCode `list.expand`,when = 可展开 || 有子项):折叠的目录 → 展开;已展开且有子项 → 焦点到第一个子项;文件 / 已展开的空目录
+  → 无动作(焦点、选中都不动;库默认 `expandOrDown` 会移到下一行,`tree-config` 覆盖该热键)
+- PageDown / PageUp(VSCode `list.focusPageDown` / `focusPageUp`,`listWidget.focusNextPage` / `focusPreviousPage`,`pageFocusTarget`):
+  焦点不在可视区末行(首个完整可见行)→ 先移到那里;已在 → 滚一整页再移到新一页的末行(首行);落点是读取失败行则就近找;
+  选中跟随;preventDefault(浏览器不再滚一次)。Shift+PageDown / PageUp 在 VSCode 无绑定 → 不处理
 - Delete(mac 另有 ⌘⌫):移到废纸篓,与右键「移到废纸篓」同一 `onTrash`;多选且焦点在选中集内时作用于整组;
   确认后焦点与选中移到下一项(没有则上一项),取消则不动;按住不放的自动重复(`e.repeat`)不连删
 - 删除确认(VSCode `explorer.confirmDelete`,默认开,设置页可关):键盘与右键共用一处 `ConfirmDialog`(destructive,
@@ -169,3 +174,11 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
   `defaultRangeExtractor(range)` 结果中并入焦点行下标(`rangeWithPinnedIndex`,升序去重;越界原样返回)
 - 未聚焦过时(headless-tree `getFocusedItem` 回落首项)首项同样常驻,Tab 进树仍有落点
 - 滚出视口后 DOM 焦点仍在该行(不掉到 body),↓ / Shift+F10 / ⌘C 等照常;按 ↓ 焦点移到下一行并滚回(VSCode 列表滚动不丢焦点)
+
+## 焦点项不再显示时的修正(`folder-tree-focus-repair.spec.tsx`)
+
+- 焦点项从渲染行里消失(「折叠全部」/ 折叠其祖先 / 外部删除 / 关掉显示隐藏文件)→ 焦点项修正到最近的显示中祖先目录,
+  没有(在根下)则原下标处的行(越界取末行,跳过读取失败行;`focusFallbackIndex`)—— 始终有一行 tabIndex=0,Tab 能进树
+  (VSCode 列表容器本身可 Tab 进入、焦点为空时 ↓ 从首项起;这里是 roving tabIndex,须修正焦点项)
+- DOM 焦点原在被移除的行上(focusin 记录)且已丢失(落到 body)→ 同时移到新焦点行,↓ / ↑ 照常;DOM 焦点在树外 → 只修正 tabIndex,不抢焦点
+- 父目录正在重新读取(子项暂缺)不算移除,读完再判断

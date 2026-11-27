@@ -14,7 +14,7 @@ import type {
   TreeInstance,
 } from '@headless-tree/core';
 import type { FileEntry } from '@/lib/fs/types';
-import { isSameOrInsidePath } from '@/lib/path-cross';
+import { isSameOrInsidePath, pathEquals } from '@/lib/path-cross';
 import { dispatchContextMenuAt, isContextMenuKey } from '@/lib/context-menu-key';
 import { matchesHotkey } from '@/plugins/command-palette/useCommandHotkeys';
 import type { Platform } from '@/plugins/command-palette/format-hotkey';
@@ -106,6 +106,87 @@ export interface TreeKeyContext {
   /** 键入跳转缓冲(调用方持有的可变对象)。 */
   readonly typeAhead: TypeAheadState;
   readonly now?: () => number;
+  /**
+   * PageDown / PageUp(VSCode list.focusPageDown / focusPageUp):调用方按可视区计算落点、必要时滚动,并把焦点 + 选中移过去。
+   * 未提供则不处理这两个键。
+   */
+  readonly onPage?: (direction: 1 | -1) => void;
+}
+
+/** 翻页计算用的列表视图:各行高度(下标同虚拟列表的行)、滚动位置、可视高度;不可聚焦的行(读取失败行)跳过。 */
+export interface PageView {
+  readonly sizes: readonly number[];
+  readonly scrollTop: number;
+  readonly viewportHeight: number;
+  readonly isFocusable: (index: number) => boolean;
+}
+
+export interface PageTarget {
+  readonly index: number;
+  readonly scrollTop: number;
+}
+
+/**
+ * PageDown / PageUp 的焦点落点与滚动位置,照 VSCode listWidget focusNextPage / focusPreviousPage:
+ * - PageDown:焦点不在可视区末行(且在它之上 / 无焦点)→ 移到可视区末行;已在末行(或在可视区之下)→ 向下滚一整页,
+ *   再移到新一页的末行。PageUp 对称(首个完整可见行,向上滚一整页)。
+ * - 落点是不可聚焦行时就近找可聚焦行(PageDown 向上找、PageUp 向下找);找到的就是焦点本身 → 按「已在末行」继续翻页
+ *  (VSCode 此时落到不可聚焦行;这里没有可聚焦的落点,翻页免得卡住)。滚不动且无新落点 → null(不动)。
+ */
+export function pageFocusTarget(view: PageView, focused: number | undefined, direction: 1 | -1): PageTarget | null {
+  const { sizes, viewportHeight: height, isFocusable } = view;
+  const count = sizes.length;
+  if (count === 0) return null;
+  const starts = new Array<number>(count);
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    starts[i] = total;
+    total += sizes[i]!;
+  }
+  const maxTop = Math.max(0, total - height);
+  // VSCode rangeMap.indexAt:position 所在行;超出末尾 → count
+  const indexAt = (pos: number): number => {
+    if (pos >= total) return count;
+    let lo = 0;
+    let hi = count - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid]! <= pos) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+  const findFocusable = (from: number, step: 1 | -1): number => {
+    for (let i = from; i >= 0 && i < count; i += step) if (isFocusable(i)) return i;
+    return -1;
+  };
+  let top = Math.min(Math.max(0, view.scrollTop), maxTop);
+  let f = focused;
+  // VSCode 滚一页后清空焦点再递归一次:第二轮必定落点(或滚不动返回)
+  for (let round = 0; round < 2; round++) {
+    if (direction === 1) {
+      let last = indexAt(top + height);
+      last = last === 0 ? 0 : Math.min(last - 1, count - 1);
+      if (f !== last && (f === undefined || last > f)) {
+        const good = findFocusable(last, -1);
+        if (good >= 0 && good !== f) return { index: good, scrollTop: top };
+      }
+      const next = Math.min(top + height, maxTop);
+      if (next === top) return null;
+      top = next;
+    } else {
+      const first = top === 0 ? indexAt(0) : Math.min(indexAt(top - 1) + 1, count - 1);
+      if (f !== first && (f === undefined || f >= first)) {
+        const good = findFocusable(first, 1);
+        if (good >= 0 && good !== f) return { index: good, scrollTop: top };
+      }
+      const next = Math.max(0, top - height);
+      if (next === top) return null;
+      top = next;
+    }
+    f = undefined;
+  }
+  return null;
 }
 
 const NAVIGATION_KEYS: ReadonlySet<string> = new Set([
@@ -173,6 +254,34 @@ export function neighborAfterRemoval(
   for (let i = fromIndex + 1; i < items.length; i++) if (!gone(items[i]!.getId())) return items[i];
   for (let i = fromIndex - 1; i >= 0; i--) if (!gone(items[i]!.getId())) return items[i];
   return undefined;
+}
+
+/**
+ * 焦点项不再显示(折叠了它的祖先 / 「折叠全部」/ 外部删除 / 关掉显示隐藏文件)时焦点的去处:最近的仍显示的祖先目录;
+ * 没有(在根下)→ 它原来下标处的行(越界取末行),该行不可聚焦(读取失败行)则就近找。ids:各行的 id,不可聚焦行为 null。
+ * 无可聚焦行 → -1。
+ */
+export function focusFallbackIndex(
+  ids: readonly (string | null)[],
+  goneId: string,
+  lastIndex: number,
+  rootPath: string,
+): number {
+  const at = new Map<string, number>();
+  ids.forEach((id, i) => {
+    if (id !== null) at.set(id, i);
+  });
+  for (let p = dirname(goneId); isSameOrInsidePath(rootPath, p) && !pathEquals(p, rootPath); ) {
+    const i = at.get(p);
+    if (i !== undefined) return i;
+    const parent = dirname(p);
+    if (parent === p) break;
+    p = parent;
+  }
+  const from = Math.min(Math.max(0, lastIndex), ids.length - 1);
+  for (let i = from; i < ids.length; i++) if (ids[i] !== null) return i;
+  for (let i = from - 1; i >= 0; i--) if (ids[i] !== null) return i;
+  return -1;
 }
 
 /**
@@ -283,8 +392,18 @@ export function handleTreeKeyDown(e: KeyboardEvent, ctx: TreeKeyContext): boolea
   }
 
   const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
+  // PageDown / PageUp(VSCode list.focusPageDown / focusPageUp,只绑无修饰键;Shift+PageDown 在 VSCode 也无绑定 → 不处理)
+  if ((e.key === 'PageDown' || e.key === 'PageUp') && plain && !e.shiftKey) {
+    if (!ctx.onPage || tree.getState().dnd) return false;
+    e.preventDefault(); // 不让浏览器再滚一次滚动容器
+    e.stopPropagation();
+    ctx.onPage(e.key === 'PageDown' ? 1 : -1);
+    return true;
+  }
   // 焦点移动已由 headless-tree 在同一 keydown 的更早监听里完成;这里让选中跟上(Shift 扩选由库处理)。
   if (NAVIGATION_KEYS.has(e.key)) {
+    // → 在文件上无动作(VSCode list.expand 的 when 不含叶子;见 tree-config expandOrDown):焦点没动,选中也不动(保留多选)
+    if (e.key === 'ArrowRight' && focused && !focused.isFolder()) return false;
     // focused 已是库移动后的焦点项(且是渲染行,见上)
     if (plain && !e.shiftKey && focused && !tree.getState().dnd) selectOnly(tree, focused.getId());
     return false;

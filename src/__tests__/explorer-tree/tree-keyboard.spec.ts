@@ -5,8 +5,11 @@ import type { ItemInstance, TreeInstance } from '@headless-tree/core';
 import type { FileEntry } from '../../lib/fs/types';
 import {
   findTypeAheadIndex,
+  focusFallbackIndex,
   handleTreeKeyDown,
   matchTreeKeyCommand,
+  pageFocusTarget,
+  type PageView,
   type TreeKeyContext,
 } from '../../panels/Explorer/tree-keyboard';
 
@@ -142,5 +145,68 @@ describe('handleTreeKeyDown · 删除防误触', () => {
     const onConfirmed = actions.onTrash.mock.calls[0]![1] as () => void;
     onConfirmed();
     expect(b.setFocused).toHaveBeenCalled();
+  });
+});
+
+// VSCode listWidget focusNextPage / focusPreviousPage。视图:20 行 × 22px,可视高度 110(恰好 5 行)。
+describe('pageFocusTarget(PageDown / PageUp 落点)', () => {
+  const view = (scrollTop: number, extra: Partial<PageView> = {}): PageView => ({
+    sizes: Array.from({ length: 20 }, () => 22),
+    scrollTop,
+    viewportHeight: 110,
+    isFocusable: () => true,
+    ...extra,
+  });
+
+  it('PageDown:焦点不在可视区末行 → 先到末行(不滚);已在末行 → 向下滚一整页再到新一页的末行', () => {
+    expect(pageFocusTarget(view(0), 0, 1)).toEqual({ index: 4, scrollTop: 0 });
+    expect(pageFocusTarget(view(0), undefined, 1)).toEqual({ index: 4, scrollTop: 0 });
+    expect(pageFocusTarget(view(0), 4, 1)).toEqual({ index: 9, scrollTop: 110 });
+  });
+
+  it('PageDown 到底:滚不动且焦点已在末行 → null;最后一页不足一页 → 滚到底并落在末项', () => {
+    const bottom = 20 * 22 - 110;
+    expect(pageFocusTarget(view(bottom), 19, 1)).toBeNull();
+    expect(pageFocusTarget(view(bottom - 22), 18, 1)).toEqual({ index: 19, scrollTop: bottom });
+  });
+
+  it('PageUp:焦点不在首个完整可见行 → 先到它;已在 → 向上滚一页再到新一页的首行;到顶 → null', () => {
+    expect(pageFocusTarget(view(220), 14, -1)).toEqual({ index: 10, scrollTop: 220 });
+    expect(pageFocusTarget(view(220), 10, -1)).toEqual({ index: 5, scrollTop: 110 });
+    // 半行可见(scrollTop 不是行高整数倍)→ 首个完整可见行
+    expect(pageFocusTarget(view(230), 14, -1)).toEqual({ index: 11, scrollTop: 230 });
+    expect(pageFocusTarget(view(0), 0, -1)).toBeNull();
+  });
+
+  it('焦点在可视区之外(滚轮滚走)→ 按当前可视区计算', () => {
+    // 焦点在上方(第 0 行),可视区 [10, 15) → PageDown 到可视区末行
+    expect(pageFocusTarget(view(220), 0, 1)).toEqual({ index: 14, scrollTop: 220 });
+    // 焦点在下方(第 19 行),可视区 [0, 5) → PageDown 滚一页,落在新一页末行
+    expect(pageFocusTarget(view(0), 19, 1)).toEqual({ index: 9, scrollTop: 110 });
+  });
+
+  it('落点是不可聚焦行(读取失败行)→ 就近找可聚焦行;空列表 → null', () => {
+    expect(pageFocusTarget(view(0, { isFocusable: (i) => i !== 4 }), 0, 1)).toEqual({ index: 3, scrollTop: 0 });
+    // 就近找到的正是焦点本身 → 继续翻页(不卡住)
+    expect(pageFocusTarget(view(0, { isFocusable: (i) => i !== 4 }), 3, 1)).toEqual({ index: 9, scrollTop: 110 });
+    expect(pageFocusTarget(view(220, { isFocusable: (i) => i !== 10 }), 14, -1)).toEqual({ index: 11, scrollTop: 220 });
+    expect(pageFocusTarget({ sizes: [], scrollTop: 0, viewportHeight: 100, isFocusable: () => true }, undefined, 1)).toBeNull();
+  });
+});
+
+describe('focusFallbackIndex(焦点项不再显示时的去处)', () => {
+  const ids = ['/w/a', '/w/a/x.ts', '/w/b.ts', null, '/w/c.ts'];
+  it('最近的显示中祖先目录优先', () => {
+    expect(focusFallbackIndex(ids, '/w/a/deep/y.ts', 4, '/w')).toBe(0);
+    expect(focusFallbackIndex(ids, '/w/a/gone.ts', 2, '/w')).toBe(0);
+  });
+  it('无祖先(在根下)→ 原下标处的行;越界取末行;不可聚焦行跳过(先向后再向前)', () => {
+    expect(focusFallbackIndex(ids, '/w/gone.ts', 2, '/w')).toBe(2);
+    expect(focusFallbackIndex(ids, '/w/gone.ts', 9, '/w')).toBe(4);
+    expect(focusFallbackIndex(ids, '/w/gone.ts', 3, '/w')).toBe(4);
+    expect(focusFallbackIndex(['/w/a', null], '/w/gone.ts', 1, '/w')).toBe(0);
+  });
+  it('无可聚焦行 → -1', () => {
+    expect(focusFallbackIndex([null], '/w/gone.ts', 0, '/w')).toBe(-1);
   });
 });

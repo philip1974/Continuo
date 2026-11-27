@@ -16,6 +16,8 @@ const fsTree = new Map<string, FileEntry[]>([
       { path: '/work/.gitignore', name: '.gitignore', isDirectory: false },
       { path: '/work/debug.log', name: 'debug.log', isDirectory: false },
       { path: '/work/new.ts', name: 'new.ts', isDirectory: false },
+      // 磁盘原样 NFD 的韩文名(git 输出 NFC)
+      { path: '/work/\u1112\u1161\u11ab.ts', name: '\u1112\u1161\u11ab.ts', isDirectory: false },
     ],
   ],
 ]);
@@ -31,6 +33,7 @@ vi.mock('@/lib/co-api', () => ({
             ['src/a.ts', 'modified', 'M'],
             ['new.ts', 'untracked', 'U'],
             ['debug.log', 'ignored', ''],
+            ['\uD55C.ts', 'modified', 'M'],
           ],
         },
       })),
@@ -84,6 +87,9 @@ describe('文件树 git 装饰', () => {
     expect(nameOf(container, '/work/debug.log')!.className).toContain('text-git-ignored');
     expect(nameOf(container, '/work/src')!.className).toContain('text-git-modified');
     expect(container.querySelector('[title="/work/src"]')!.textContent).toBe('▸src');
+    // NFD 文件名照常着色 + 字母
+    expect(nameOf(container, '/work/\u1112\u1161\u11ab.ts')!.className).toContain('text-git-modified');
+    expect(container.querySelector('[title^="/work/\u1112\u1161\u11ab.ts"]')!.textContent).toMatch(/M$/);
   });
 
   it('decorations.badges 关 → 只着色无字母;decorations.colors 关 → 只有字母', async () => {

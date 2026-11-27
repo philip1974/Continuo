@@ -75,6 +75,16 @@ describe('porcelain v1 -z 解析', () => {
   it('工作区根本身在未跟踪 / 忽略目录内 → 记为 \'\'', () => {
     expect(parsePorcelainZ('!! build/\0', 'build/out/')).toEqual([['', 'ignored', '']]);
   });
+
+  it('路径与前缀统一成 NFC(关掉 core.precomposeunicode 的仓库输出磁盘原样 NFD)', () => {
+    const nfd = '\u1112\u1161\u11ab';
+    const nfc = nfd.normalize('NFC');
+    // 前缀 NFD、路径 NFC(或反之)也能去掉前缀
+    expect(parsePorcelainZ([` M ${nfc}/${nfd}.ts`, `?? ${nfd}/d/`, ''].join('\0'), `${nfd}/`)).toEqual([
+      [`${nfc}.ts`, 'modified', 'M'],
+      ['d/', 'untracked', 'U'],
+    ]);
+  });
 });
 
 describe.skipIf(!hasGit())('真实仓库', () => {

@@ -26,6 +26,7 @@ React hook 是薄壳(Step E4 接入 EditorPanel),业务逻辑都在纯函数里,
 
 ### `openFileByPath(path, deps)`
 - 已开过同 path → 不重读,只 switchTab → ok
+- macOS 上同一文件的 NFD / NFC 两种拼写(资源管理器的磁盘原样名 vs 终端键入 / 插件给的路径)算已开过(原样命中优先);Windows / Linux 不折叠
 - fs.readFile 成功 → createTab + openTab → ok
 - fs.readFile 失败 → 不 open,返 `{ok:false, code, message}` 透传
 - 最新请求胜出:快速连续打开(含切到已开 tab)时,读盘较慢的旧请求完成后只在后台加入 tab(`activate:false` + 不抢焦点),最终激活的是用户最后请求的文件;读盘期间在 tab 栏切换(store.switchTab)同样算更晚的用户选择(store 维护用户激活代际),会话恢复的 `requestFocus:false` 切换与关 tab 不算

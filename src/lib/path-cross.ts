@@ -42,6 +42,12 @@ export function isWindowsRuntime(): boolean {
   );
 }
 
+/** 当前 renderer 是否跑在 macOS(navigator.platform 以 mac 开头,大小写不敏感)。 */
+export function isMacRuntime(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return (navigator.platform ?? '').slice(0, 3).toLowerCase() === 'mac';
+}
+
 // 路径字符级 helper 的 renderer 单一来源(Explorer path-utils / Editor editor-path-utils /
 // link-resolve 共用;此前各自逐字复制)。
 export function isPathSeparatorCode(code: number): boolean {

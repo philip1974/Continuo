@@ -103,6 +103,16 @@ describe('tab 标题按 git 状态着色 + 字母', () => {
     expect(letterOf(tab('x.ts'))?.textContent).toBe('U');
   });
 
+  it('磁盘上 NFD 的文件名(如韩文)与 git 的 NFC 路径对得上 → 照常着色 + 字母', async () => {
+    const nfd = '\u1112\u1161\u11ab.ts';
+    h.status.mockResolvedValue(snap([[nfd.normalize('NFC'), 'modified', 'M']]));
+    openTabs(`/w/${nfd}`);
+    await renderHeader();
+    const t = screen.getByRole('tab');
+    expect(titleOf(t)?.className).toContain('text-git-modified');
+    expect(letterOf(t)?.textContent).toBe('M');
+  });
+
   it('忽略项置灰无字母;无状态 / 工作区外 → 不装饰', async () => {
     openTabs('/w/out.log', '/w/clean.ts', '/elsewhere/m.ts');
     await renderHeader();

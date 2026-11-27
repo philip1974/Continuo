@@ -60,9 +60,12 @@ export function buildGitDecorationIndex(entries: readonly GitStatusEntry[]): Git
   return { exact, wholeDirs, folders };
 }
 
-/** 树行路径 → 相对工作区根的 `/` 分隔路径。 */
+/**
+ * 树行路径 → 相对工作区根的 `/` 分隔路径,NFC 归一。装饰索引的键是 git 输出(macOS core.precomposeunicode 默认开 → NFC;
+ * main 解析时另统一成 NFC,兼容关掉 precompose 的仓库),而树行 / tab / 搜索结果用磁盘原样路径(可能是 NFD,如韩文文件名)。
+ */
 export function gitRelPath(root: string, path: string): string {
-  return stripRootPrefix(root, path).replace(/\\/g, '/');
+  return stripRootPrefix(root, path).replace(/\\/g, '/').normalize('NFC');
 }
 
 /** 某行的 git 装饰;无 → null。rel 为 gitRelPath 结果。 */

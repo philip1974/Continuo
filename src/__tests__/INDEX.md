@@ -919,6 +919,7 @@
 - [`folder-tree-click-modifiers.spec.tsx`](./explorer-tree/folder-tree-click-modifiers.spec.tsx)
 - [`folder-tree-create.spec.tsx`](./explorer-tree/folder-tree-create.spec.tsx)
 - [`folder-tree-focus-pinned.spec.tsx`](./explorer-tree/folder-tree-focus-pinned.spec.tsx)
+- [`folder-tree-focus-repair.spec.tsx`](./explorer-tree/folder-tree-focus-repair.spec.tsx)
 - [`folder-tree-keyboard.spec.tsx`](./explorer-tree/folder-tree-keyboard.spec.tsx)
 - [`folder-tree-load-state.spec.tsx`](./explorer-tree/folder-tree-load-state.spec.tsx)
 - [`folder-tree-rename-input.spec.tsx`](./explorer-tree/folder-tree-rename-input.spec.tsx)

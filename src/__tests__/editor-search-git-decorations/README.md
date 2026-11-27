@@ -40,6 +40,7 @@
 - 叠加:预览 tab 斜体 + 颜色;脏 tab 圆点 + 颜色;已删除(orphaned)删除线 + 颜色,「(已删除)」文字不着色
 - `workbench.editor.decorations.colors=false` → 不着色(字母仍在);`badges=false` → 无字母(颜色仍在);两项都关 → 不查询
 - 快照更新(文件被改 / 新建)后 tab 即时更新
+- 磁盘上 NFD 的文件名(如韩文;git 输出 NFC)照常着色 + 字母(查询键统一 NFC,见 `explorer-git-decorations/`);搜索结果同一函数
 
 ### 搜索结果(`search-file-git.spec.tsx`)
 

@@ -75,4 +75,17 @@ describe('树行路径 → 相对路径', () => {
     expect(gitRelPath('/w', '/w/src/a.ts')).toBe('src/a.ts');
     expect(gitRelPath('C:\\w', 'C:\\w\\src\\a.ts')).toBe('src/a.ts');
   });
+
+  it('NFC 归一:磁盘上 NFD 的名字(如韩文)与 git 输出的 NFC 键对得上(文件、文件夹继承、整目录)', () => {
+    const nfd = '\u1112\u1161\u11ab'; // 한(NFD:初声 + 中声 + 终声)
+    const nfc = nfd.normalize('NFC');
+    expect(gitRelPath('/w', `/w/${nfd}/${nfd}.ts`)).toBe(`${nfc}/${nfc}.ts`);
+    const i = idx([
+      [`${nfc}/${nfc}.ts`, 'modified', 'M'],
+      [`new-${nfc}/`, 'untracked', 'U'],
+    ]);
+    expect(gitDecorationOf(i, gitRelPath('/w', `/w/${nfd}/${nfd}.ts`), false)).toEqual({ kind: 'modified', letter: 'M' });
+    expect(gitDecorationOf(i, gitRelPath('/w', `/w/${nfd}`), true)).toEqual({ kind: 'modified', letter: '' });
+    expect(gitDecorationOf(i, gitRelPath('/w', `/w/new-${nfd}/x.ts`), false)).toEqual({ kind: 'untracked', letter: 'U' });
+  });
 });

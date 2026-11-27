@@ -169,6 +169,33 @@ describe('openFileByPath', () => {
     expect(useEditorStore.getState().tabs).toHaveLength(2); // 不同文件
   });
 
+  // macOS APFS / HFS+ 不区分 Unicode 规范化形式:资源管理器给的磁盘原样 NFD 路径与终端里键入的 NFC 路径是同一个文件
+  it('macOS:同一文件 NFD / NFC 两种拼写 → 不开新 tab,只切已开(原样命中优先);Linux 视为不同文件', async () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    const nfd = '/repo/\u1112\u1161\u11ab.md';
+    const nfc = nfd.normalize('NFC');
+    try {
+      Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
+      useEditorStore.setState({ tabs: [createTab(nfd, 'cached')], activeTabId: null });
+      const readFile = vi.fn(async () => ok('SHOULD-NOT-BE-USED'));
+      expect((await openFileByPath(nfc, makeDeps({ readFile }))).ok).toBe(true);
+      expect(useEditorStore.getState().tabs).toHaveLength(1);
+      expect(useEditorStore.getState().activeTabId).toBe(nfd);
+      expect(readFile).not.toHaveBeenCalled();
+      // 两种拼写的 tab 都在时原样命中优先
+      const both = [createTab(nfc, 'a'), createTab(nfd, 'b')];
+      expect(findEditorFileTabByPath(both, nfd)).toBe(both[1]);
+
+      Object.defineProperty(navigator, 'platform', { value: 'Linux x86_64', configurable: true });
+      useEditorStore.setState({ tabs: [createTab(nfd, 'cached')], activeTabId: null });
+      await openFileByPath(nfc, makeDeps({ readFile: vi.fn(async () => ok('other')) }));
+      expect(useEditorStore.getState().tabs).toHaveLength(2);
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
+
   it('fs.readFile IpcFail → 不 open,返 IpcFail 透传', async () => {
     const deps = makeDeps({
       readFile: vi.fn(async () => fail('FS_NOT_FOUND', 'gone')),

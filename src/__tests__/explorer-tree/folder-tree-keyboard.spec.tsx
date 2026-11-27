@@ -221,6 +221,77 @@ describe('FolderTree · 方向键选中跟随焦点', () => {
   });
 });
 
+describe('FolderTree · →(VSCode list.expand:叶子上无动作)', () => {
+  it('文件上按 → → 焦点与选中都不动(不移到下一行)', async () => {
+    const { container } = await mount();
+    await focusRow(container, '/work/beta.ts');
+    key(row(container, '/work/beta.ts')!, { key: 'ArrowRight', code: 'ArrowRight' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(row(container, '/work/beta.ts')!.getAttribute('tabindex')).toBe('0');
+    expect(row(container, '/work/bravo.ts')!.getAttribute('tabindex')).toBe('-1');
+    expect(row(container, '/work/beta.ts')!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('折叠的目录上 → 展开(焦点不动);再按 → 焦点到第一个子项', async () => {
+    const { container } = await mount();
+    await focusRow(container, '/work/beta.ts');
+    key(row(container, '/work/beta.ts')!, { key: 'ArrowUp', code: 'ArrowUp' });
+    keyUp(row(container, '/work/beta.ts')!, { key: 'ArrowUp', code: 'ArrowUp' });
+    await waitFor(() => expect(row(container, '/work/alpha')!.getAttribute('tabindex')).toBe('0'));
+    key(row(container, '/work/alpha')!, { key: 'ArrowRight', code: 'ArrowRight' });
+    keyUp(row(container, '/work/alpha')!, { key: 'ArrowRight', code: 'ArrowRight' });
+    await waitFor(() => expect(row(container, '/work/alpha/inner.ts')).not.toBeNull());
+    expect(row(container, '/work/alpha')!.getAttribute('tabindex')).toBe('0');
+    key(row(container, '/work/alpha')!, { key: 'ArrowRight', code: 'ArrowRight' });
+    await waitFor(() => expect(row(container, '/work/alpha/inner.ts')!.getAttribute('tabindex')).toBe('0'));
+  });
+});
+
+describe('FolderTree · PageDown / PageUp(VSCode list.focusPageDown / focusPageUp)', () => {
+  it('PageDown → 先到可视区末行;再按 → 滚一页到新一页末行;PageUp → 首个完整可见行;选中跟随,不交给浏览器再滚一次', async () => {
+    const { container } = await mount();
+    // 可视高度 = 2 行(行高 FILE_ROW_HEIGHT = 28);行:alpha / beta.ts / bravo.ts / charlie.ts
+    const scroller = container.querySelector('[role="tree"]')!.parentElement!;
+    Object.defineProperty(scroller, 'clientHeight', { value: 28 * 2, configurable: true });
+    // 键盘把焦点移到 alpha(单击目录会展开它)
+    await focusRow(container, '/work/beta.ts');
+    key(row(container, '/work/beta.ts')!, { key: 'ArrowUp', code: 'ArrowUp' });
+    keyUp(row(container, '/work/beta.ts')!, { key: 'ArrowUp', code: 'ArrowUp' });
+    await waitFor(() => expect(row(container, '/work/alpha')!.getAttribute('tabindex')).toBe('0'));
+
+    const down = new KeyboardEvent('keydown', { key: 'PageDown', code: 'PageDown', bubbles: true, cancelable: true });
+    act(() => {
+      row(container, '/work/alpha')!.dispatchEvent(down);
+    });
+    expect(down.defaultPrevented).toBe(true);
+    await waitFor(() => expect(row(container, '/work/beta.ts')!.getAttribute('tabindex')).toBe('0'));
+    expect(row(container, '/work/beta.ts')!.getAttribute('aria-selected')).toBe('true');
+    expect(row(container, '/work/alpha')!.getAttribute('aria-selected')).toBe('false');
+    expect(scroller.scrollTop).toBe(0);
+    keyUp(row(container, '/work/beta.ts')!, { key: 'PageDown', code: 'PageDown' });
+
+    key(row(container, '/work/beta.ts')!, { key: 'PageDown', code: 'PageDown' });
+    await waitFor(() => expect(row(container, '/work/charlie.ts')!.getAttribute('tabindex')).toBe('0'));
+    expect(scroller.scrollTop).toBe(56);
+    keyUp(row(container, '/work/charlie.ts')!, { key: 'PageDown', code: 'PageDown' });
+
+    key(row(container, '/work/charlie.ts')!, { key: 'PageUp', code: 'PageUp' });
+    await waitFor(() => expect(row(container, '/work/bravo.ts')!.getAttribute('tabindex')).toBe('0'));
+    expect(row(container, '/work/bravo.ts')!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('Shift+PageDown 不处理(VSCode 无此绑定)', async () => {
+    const { container } = await mount();
+    await focusRow(container, '/work/beta.ts');
+    const ev = new KeyboardEvent('keydown', { key: 'PageDown', code: 'PageDown', shiftKey: true, bubbles: true, cancelable: true });
+    act(() => {
+      row(container, '/work/beta.ts')!.dispatchEvent(ev);
+    });
+    expect(ev.defaultPrevented).toBe(false);
+    expect(row(container, '/work/beta.ts')!.getAttribute('tabindex')).toBe('0');
+  });
+});
+
 describe('FolderTree · 删除 / 剪切 / 复制 / 粘贴热键(与右键菜单同一实现)', () => {
   it('Delete → 焦点项移到废纸篓,焦点与选中移到下一项', async () => {
     const { container } = await mount();
