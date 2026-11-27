@@ -290,6 +290,42 @@ describe('回车拆段:新段段首空白', () => {
   });
 });
 
+// 第五十三轮审计 4:拆点落在行内代码里 → 空格是代码内容,不删;强调 / 链接 / 删除线里的段首空格保存后被 CommonMark 丢弃 → 照删
+describe('回车拆段:新段段首是行内代码 / 强调 / 链接', () => {
+  function enterAfter(view: EditorView, needle: string): void {
+    select(view, posOf(view, needle) + needle.length);
+    press(view, { key: 'Enter' });
+  }
+
+  it('行内代码里空格前回车 → 代码内容不变(保存 `` ` de` ``,重新打开仍是「 de」)', async () => {
+    const a = await open('Para `co de` x\n');
+    enterAfter(a.view, 'co');
+    expect(a.view.state.doc.child(1).textContent).toBe(' de x');
+    const saved = a.crepe.getMarkdown();
+    expect(saved).toBe('Para `co`\n\n` de` x\n');
+    const b = await open(saved);
+    expect(b.view.state.doc.child(1).textContent).toBe(' de x');
+    // 强调里套行内代码:同样按代码内容保留
+    const c = await open('Para *em `co de`* x\n');
+    enterAfter(c.view, 'co');
+    expect(c.view.state.doc.child(1).textContent).toBe(' de x');
+  });
+
+  it('强调 / 加粗 / 链接 / 删除线里空格前回车 → 段首空格照删(否则保存成段首空格、重新打开就没了)', async () => {
+    for (const [md, needle, out] of [
+      ['Para *em ph* x\n', 'em', 'Para *em*\n\n*ph* x\n'],
+      ['Para **st ro** x\n', 'st', 'Para **st**\n\n**ro** x\n'],
+      ['Para [li nk](https://a.com) x\n', 'li', 'Para [li](https://a.com)\n\n[nk](https://a.com) x\n'],
+      ['Para ~~de l~~ x\n', 'de', 'Para ~~de~~\n\n~~l~~ x\n'],
+    ] as const) {
+      const { crepe, view } = await open(md);
+      enterAfter(view, needle);
+      expect(view.state.doc.child(1).textContent.startsWith(' ')).toBe(false);
+      expect(crepe.getMarkdown()).toBe(out);
+    }
+  });
+});
+
 describe('MilkdownEditor 接上了写作按键', () => {
   async function waitMounted(): Promise<Crepe> {
     for (let i = 0; i < 100; i++) {

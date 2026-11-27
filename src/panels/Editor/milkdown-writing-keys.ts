@@ -8,7 +8,7 @@
 //    末尾;链接 mark 是 inclusive 的,不收起会替换掉链接文字、收起后不清 storedMarks 会把输入并进链接)。
 //  - 编辑自动链接(裸链接 / `<url>`,文字 = 地址)的文字 → 地址跟随文字(milkdown-autolink-follow;输入法组字结束后补判)。
 //  - 拆段(回车)落在空白前:新段段首的空格 / 制表符去掉(CommonMark 段首空白不属于内容;否则保存成 `&#x20;tail`,编辑器里
-//    却显示成空格开头)。与回车同一步撤销。全角空格(U+3000)等不是 Markdown 空白,保留。
+//    却显示成空格开头)。与回车同一步撤销。全角空格(U+3000)等不是 Markdown 空白,保留;落在行内代码里不删(代码内容)。
 //  - 表格里 Tab:下一格;最后一格 → 在表格末尾加一行并进入其首格(不再由缩进插件在格内插 4 个空格)。⇧Tab:上一格;首格 → 不动。
 
 import { linkTooltipAPI, linkTooltipState } from '@milkdown/kit/component/link-tooltip';
@@ -124,6 +124,9 @@ function splitLeadingSpace(trs: readonly Transaction[], state: EditorState): { f
   const { $from, empty } = state.selection;
   if (!empty || $from.parentOffset !== 0 || !$from.parent.isTextblock || $from.parent.type.spec.code) return null;
   const first = $from.parent.firstChild;
+  // 行内代码里的空格是代码内容(保存成 `` ` de` `` 原样读回),不删;强调 / 链接 / 删除线里的段首空格保存时被移到标记外、落在
+  // 段首,重新打开即被 CommonMark 丢弃 → 照删(编辑器里与保存一致)
+  if (first?.marks.some((m) => m.type.spec.code)) return null;
   const lead = first?.isText ? /^[ \t]+/.exec(first.text!)?.[0] : undefined;
   return lead ? { from: $from.pos, to: $from.pos + lead.length } : null;
 }
