@@ -412,6 +412,165 @@ function serializeList(
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// 块内文字:就地改原文
+
+interface MdLeaf extends MdNode {
+  readonly value?: string;
+  readonly data?: { readonly isInline?: unknown };
+}
+
+/** 行内叶子(公式、硬换行、图片、行内 HTML……)在扁平文字里的占位。 */
+const LEAF = '\uFFFC';
+/** 扁平文字里按原文逐字对应的 mdast 节点。 */
+const SPLICEABLE = new Set(['text', 'inlineCode']);
+
+/** ProseMirror 块的扁平文字:文字逐字,其余叶子各一个占位。 */
+function pmFlat(node: PmNode): string {
+  let out = '';
+  node.descendants((n) => {
+    if (n.isText) out += n.text;
+    else if (n.isLeaf) out += LEAF;
+    return true;
+  });
+  return out;
+}
+
+interface FlatLeaf {
+  readonly md: MdLeaf;
+  readonly at: number;
+}
+
+/** Milkdown 把文字里的换行拆成 isInline 的 break(软换行),拆出的文字 / break 没有位置。 */
+function isSplitPiece(node: MdLeaf): boolean {
+  return node.position === undefined && (node.type === 'text' || (node.type === 'break' && node.data?.isInline === true));
+}
+
+interface FlatMd {
+  readonly text: string;
+  readonly leaves: readonly FlatLeaf[];
+  /** 节点边界:扁平文字下标 → 原文偏移(节点之间插字的候选处)。 */
+  readonly edges: ReadonlyArray<{ readonly at: number; readonly offset: number }>;
+}
+
+/** mdast 块的扁平文字(与 pmFlat 同口径)、可就地改的叶子与节点边界。 */
+function mdFlat(md: MdLeaf): FlatMd {
+  let text = '';
+  const leaves: FlatLeaf[] = [];
+  const edges: Array<{ at: number; offset: number }> = [];
+  const edge = (offset: number | undefined): void => {
+    if (offset !== undefined) edges.push({ at: text.length, offset });
+  };
+  const walk = (parent: MdLeaf): void => {
+    const kids = (parent.children ?? []) as readonly MdLeaf[];
+    for (let i = 0; i < kids.length; i += 1) {
+      const node = kids[i]!;
+      edge(node.position?.start.offset);
+      if (isSplitPiece(node)) {
+        // 被拆开的一段文字合回一个叶子(软换行记作 `\n`,扁平文字里仍是一个占位),区间取前后有位置的兄弟之间
+        let j = i;
+        let value = '';
+        const at = text.length;
+        for (; j < kids.length && isSplitPiece(kids[j]!); j += 1) {
+          const piece = kids[j]!;
+          value += piece.type === 'text' ? (piece.value ?? '') : '\n';
+          text += piece.type === 'text' ? (piece.value ?? '') : LEAF;
+        }
+        const from = i > 0 ? kids[i - 1]!.position?.end.offset : parent.position?.start.offset;
+        const to = j < kids.length ? kids[j]!.position?.start.offset : parent.position?.end.offset;
+        if (from !== undefined && to !== undefined) {
+          leaves.push({ md: { type: 'text', value, position: { start: { offset: from }, end: { offset: to } } }, at });
+        }
+        i = j - 1;
+      } else if (typeof node.value === 'string' && (SPLICEABLE.has(node.type) || node.type === 'code')) {
+        if (SPLICEABLE.has(node.type)) leaves.push({ md: node, at: text.length });
+        text += node.value;
+      } else if (node.children) walk(node);
+      else text += LEAF;
+      edge(node.position?.end.offset);
+    }
+  };
+  walk(md);
+  return { text, leaves, edges };
+}
+
+/**
+ * 叶子内容第 a..b 个字符在原文里的区间:内容按行切开,逐行在原文里找(行内代码先跳过开头的反引号,`skipPad` 时再跳过补的一个空格 / 换行;行与行之间
+ * 只能是行尾空白、换行与容器前缀 `>` / 缩进)。对不上(转义、实体……)→ null。
+ */
+function leafRange(source: string, leaf: MdLeaf, a: number, b: number, skipPad: boolean): readonly [number, number] | null {
+  const start = leaf.position?.start.offset;
+  const end = leaf.position?.end.offset;
+  if (start === undefined || end === undefined) return null;
+  const value = leaf.value ?? '';
+  const lines = value.split(/\r\n|\n|\r/);
+  let cursor = start;
+  if (leaf.type === 'inlineCode') {
+    cursor += /^`*/.exec(source.slice(start, end))![0].length;
+    // 两端补的一个空格(或换行,续行带容器前缀)
+    const pad = / |(?:\r\n|\n|\r)[ \t>]*/y;
+    pad.lastIndex = cursor;
+    if (skipPad && pad.exec(source)) cursor = pad.lastIndex;
+    else if (skipPad) return null;
+  }
+  let offset = 0; // 当前行在 value 里的起点
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (i > 0) {
+      const gap = /[ \t]*(?:\r\n|\n|\r)[ \t>]*/y;
+      gap.lastIndex = cursor;
+      if (!gap.exec(source)) return null;
+      cursor = gap.lastIndex;
+    }
+    if (!source.startsWith(line, cursor) || cursor + line.length > end) return null;
+    if (a >= offset && b <= offset + line.length) return [cursor + a - offset, cursor + b - offset];
+    offset += line.length + (/^\r\n/.test(value.slice(offset + line.length)) ? 2 : 1);
+    cursor += line.length;
+    if (a < offset) return null; // 改动跨行
+  }
+  return null;
+}
+
+/**
+ * 只改了块里一处文字(打字 / 删字,标记与结构不变):在原文里就地替换那几个字 —— 块里其余字节不变(remark 重写整块会改掉
+ * 跨行行内代码里的换行、两端空格等)。替换后用同一解析器解析回来须与当前块相同,否则 null。
+ */
+function spliceText(source: string, cp: SourceBlock, node: PmNode, roundTrips: (md: string, node: PmNode) => boolean): string | null {
+  const before = pmFlat(cp.node);
+  const after = pmFlat(node);
+  const flat = mdFlat(cp.md as MdLeaf);
+  if (flat.text !== before || before === after) return null;
+  let p = 0;
+  const max = Math.min(before.length, after.length);
+  while (p < max && before[p] === after[p]) p += 1;
+  let q = 0;
+  while (q < max - p && before[before.length - 1 - q] === after[after.length - 1 - q]) q += 1;
+  const e = before.length - q;
+  const insert = after.slice(p, after.length - q);
+  if (before.slice(p, e).includes(LEAF) || insert.includes(LEAF)) return null;
+  // 候选处:含改动处的文字 / 行内代码叶子;纯插入还可以在两个节点之间(如行内代码与公式之间)
+  const ranges: Array<readonly [number, number]> = [];
+  for (const leaf of flat.leaves) {
+    if (p < leaf.at || e > leaf.at + leaf.md.value!.length) continue;
+    // 行内代码两端可能补了一个空格(内容本身也可能以空格开头):两种对齐都试
+    for (const skipPad of leaf.md.type === 'inlineCode' ? [false, true] : [false]) {
+      const range = leafRange(source, leaf.md, p - leaf.at, e - leaf.at, skipPad);
+      if (range) ranges.push(range);
+    }
+  }
+  if (p === e) for (const { at, offset } of flat.edges) if (at === p) ranges.push([offset, offset]);
+  const block = source.slice(cp.from, cp.to);
+  const tried = new Set<string>();
+  for (const [from, to] of ranges) {
+    const key = `${from}:${to}`;
+    if (from < cp.from || to > cp.to || tried.has(key)) continue;
+    tried.add(key);
+    const out = block.slice(0, from - cp.from) + insert + block.slice(to - cp.from);
+    if (roundTrips(out, node)) return out;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 
 interface ProcessorLike {
   data(key: 'settings'): Record<string, unknown> | undefined;
@@ -424,18 +583,21 @@ function stripNewline(s: string): string {
   return s.endsWith('\n') ? s.slice(0, -1) : s;
 }
 
+/** 保守写法:地址同文的链接写 `<url>`,文字里的 `$` 与反引号一律转义(continuoSafeEscapes 见 milkdown-math / milkdown-markdown-style)。 */
+const SAFE_STYLE: Readonly<Record<string, unknown>> = { continuoAutolink: 'angle', continuoSafeEscapes: true };
+
 function createSerializers(ctx: Ctx, bound: Bound, base: Serializer): Serializers {
   const remark = ctx.get(remarkCtx) as unknown as ProcessorLike;
   const docOf = (nodes: readonly PmNode[]): PmNode => nodes[0]!.type.schema.topNodeType.create(null, nodes);
   const write = (nodes: readonly PmNode[]): string => stripNewline(base(docOf(nodes)));
   // 按块的原文写法临时覆盖 remark-stringify 设置(序列化是同步的,写完即还原)
-  const withStyle = <T,>(style: Partial<MarkdownStyle>, fn: () => T): T => {
+  const withStyle = <T,>(style: Readonly<Record<string, unknown>>, fn: () => T): T => {
     const settings = remark.data('settings');
     if (!settings) return fn();
     const saved: Record<string, unknown> = {};
     for (const key of Object.keys(style)) {
       saved[key] = settings[key];
-      settings[key] = style[key as keyof MarkdownStyle];
+      settings[key] = style[key];
     }
     try {
       return fn();
@@ -456,9 +618,12 @@ function createSerializers(ctx: Ctx, bound: Bound, base: Serializer): Serializer
   return {
     run: write,
     one: (node, cp) => {
+      // 表格不就地改:对齐的表格改了列宽要整表重排(serializeTable)
+      const spliced = node.type.name === 'table' ? null : spliceText(source, cp, node, roundTrips);
+      if (spliced !== null) return spliced;
       cp.style ??= inferMarkdownStyleParts(cp.md, source);
       const style = cp.style;
-      return withStyle(style, () => {
+      const styled = withStyle(style, () => {
         const plain = write([node]);
         const deep = node.type.name === 'table' || isList(node);
         if (!deep) return plain;
@@ -471,6 +636,20 @@ function createSerializers(ctx: Ctx, bound: Bound, base: Serializer): Serializer
             : serializeList(cp, level, node, source, (list) => write([list]));
         return custom !== null && custom !== plain && roundTrips(custom, node) ? custom : plain;
       });
+      if (roundTrips(styled, node)) return styled;
+      // 安全网:按原文写法(块风格推断、裸链接、`$` 不转义……)写出的块解析回来与当前块不同 → 依次退回:同写法但保留行内代码里的
+      // 换行、全文风格的 remark 默认写法、保守写法(`<url>`、`$` 与反引号一律转义;再加保留换行);都不行仍用原文写法
+      const fallbacks: ReadonlyArray<Readonly<Record<string, unknown>>> = [
+        { ...style, continuoInlineCodeEol: 'keep' },
+        {},
+        SAFE_STYLE,
+        { ...SAFE_STYLE, continuoInlineCodeEol: 'keep' },
+      ];
+      for (const fallback of fallbacks) {
+        const out = withStyle(fallback, () => write([node]));
+        if (roundTrips(out, node)) return out;
+      }
+      return styled;
     },
   };
 }

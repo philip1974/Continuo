@@ -96,7 +96,8 @@ describe('文字里的 `$`', () => {
   });
 
   it('去掉转义会新增 / 拆散公式 → 保留转义(含 Milkdown 对「以空白结尾的文字」跳过转义的情形)', () => {
-    for (const md of ['x \\$5 y $z$\n', 'a \\$x\\$ b\n', 'a\\$ $x$\n']) {
+    // 后两例(模糊测试换 Math.imul 后找到):`$_$` 与已有公式 `$a$` 映射后值碰巧相同、文字里的反引号与公式另一侧的配对
+    for (const md of ['x \\$5 y $z$\n', 'a \\$x\\$ b\n', 'a\\$ $x$\n', 'x .1  a\\$_$a$ y\n', 'x \\` $`$` y\n']) {
       const out = serialize(parse(md));
       expect(mathValues(out)).toEqual(mathValues(md));
       expect(semantic(parse(out))).toEqual(semantic(parse(md)));
@@ -112,12 +113,14 @@ describe('文字里的 `$`', () => {
     const alphabet = ['$', '$', '$', 'a', '1', ' ', '*', '\\', '`', '_', '.'];
     let seed = FUZZ_SEED;
     const rnd = (n: number): number => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      // Math.imul:普通乘法超出 2^53 精度,低位全是 0,实际只产出约 1600 种段落
+      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
       return seed % n;
     };
-    // 对照:`$` 换成字母后同样不稳的(Milkdown 既有的强调序列化问题,如 `*_*_*`)与公式无关,跳过
+    // 对照:`$` 换成同为标点的 `%` 后同样不稳的(Milkdown 既有的强调 / 反引号序列化问题,如 `*_*_*`、`1*_ .*!`)与公式无关,
+    // 跳过(换成字母会改变强调符两侧的「标点」判定,把这类问题误算成 `$` 的)
     const controlStable = (md: string): boolean => {
-      const c1 = parse(md.replace(/\$/g, 'a'));
+      const c1 = parse(md.replace(/\$/g, '%'));
       return c1.eq(parse(serialize(c1)));
     };
     const seen = new Set<string>();

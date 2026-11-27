@@ -20,6 +20,7 @@ import { remarkStringifyOptionsCtx } from '@milkdown/kit/core';
 import { remarkPreserveEmptyLinePlugin } from '@milkdown/kit/preset/commonmark';
 import { remarkGFMPlugin } from '@milkdown/kit/preset/gfm';
 import { $remark } from '@milkdown/kit/utils';
+import { escapeUnescaped } from './milkdown-math';
 
 /** remark-stringify(mdast-util-to-markdown)的风格选项里本模块会设的部分。 */
 export interface MarkdownStyle {
@@ -209,7 +210,8 @@ function listInScope(stack: readonly string[], list: string | readonly string[] 
 }
 
 /**
- * mdast-util-to-markdown 的 hardBreak 处理器(不能换行的结构 —— setext 标题、表格 —— 里写空格),换行写法按 continuoHardBreak。
+ * mdast-util-to-markdown 的 hardBreak 处理器(不能换行的结构 —— setext 标题、表格 —— 里写空格),换行写法按 continuoHardBreak
+ *(前面是空白时一律写 `\`)。
  */
 function hardBreak(_node: unknown, _parent: unknown, state: StringifyState, info: { readonly before: string }): string {
   for (const pattern of state.unsafe) {
@@ -221,7 +223,8 @@ function hardBreak(_node: unknown, _parent: unknown, state: StringifyState, info
       return /[ \t]/.test(info.before) ? '' : ' ';
     }
   }
-  return state.options.continuoHardBreak === 'spaces' ? '  \n' : '\\\n';
+  // 前面已是空白(`a \` 的写法)时不能写行尾两空格:行尾空白整个算进硬换行,那个空白随之丢失
+  return state.options.continuoHardBreak === 'spaces' && !/[ \t]$/.test(info.before) ? '  \n' : '\\\n';
 }
 
 // 裸写后按 GFM 自动链接文字解析回同一链接的地址(保守:不含 `&` `*` `_`(域名)`'` 括号等,末字符不是会被剔除的标点)
@@ -283,7 +286,9 @@ function writeBareLinks(node: MdParent, hardBreak: string): void {
     const prev = kids[i - 1] as MdLink;
     let eol: string;
     if (prev.type === 'break') {
-      eol = hardBreak;
+      // 硬换行前的文字以空白结尾:行尾两空格的写法会吞掉那个空白,写 `\`(同 hardBreak 处理器)
+      const before = kids[i - 2] as MdLink | undefined;
+      eol = before?.type === 'text' && /[ \t]$/.test(before.value ?? '') ? '\\\n' : hardBreak;
       kids.splice(i - 1, 1);
       i -= 1;
     } else {
@@ -296,6 +301,22 @@ function writeBareLinks(node: MdParent, hardBreak: string): void {
     }
     kids[i] = { type: 'html', value: eol + bare.text } as MdLink;
   }
+}
+
+// 行内代码里的换行:remark 把「换行 + 可能被当成块开头的字符」换成空格(渲染相同,但解析回来内容变了)。
+// continuoInlineCodeEol = 'keep'(试解析校验的候选写法,见 milkdown-source-blocks)时先换成私用区占位符、写完再换回。
+const EOL_MARKS: Readonly<Record<string, string>> = { '\r\n': '\uE000', '\n': '\uE001', '\r': '\uE002' };
+const EOL_BACK: Readonly<Record<string, string>> = { '\uE000': '\r\n', '\uE001': '\n', '\uE002': '\r' };
+const EOL_MARK_RE = /[\uE000-\uE002]/;
+
+function hasEolMark(node: MdLink): boolean {
+  return (typeof node.value === 'string' && EOL_MARK_RE.test(node.value)) || (node.children ?? []).some((c) => hasEolMark(c as MdLink));
+}
+
+/** 把行内代码里的换行换成占位符(就地改)。 */
+function markInlineCodeEols(node: MdLink): void {
+  if (node.type === 'inlineCode' && node.value) node.value = node.value.replace(/\r\n|\n|\r/g, (m) => EOL_MARKS[m]!);
+  for (const child of node.children ?? []) markInlineCodeEols(child as MdLink);
 }
 
 /** 去掉空段落(连按两次回车留下的空行;其余容器里的空段落同理)。原树不动,返回新树。 */
@@ -333,6 +354,11 @@ const markdownStylePlugin = $remark('continuoMarkdownStyle', () => function cont
       if (settings!.continuoAutolink === 'literal') {
         writeBareLinks(clean, settings!.continuoHardBreak === 'spaces' ? '  \n' : '\\\n');
       }
+      // 占位符只出现在行内代码里(代码内容原样输出,不转义)
+      if (settings!.continuoInlineCodeEol === 'keep' && !hasEolMark(clean)) {
+        markInlineCodeEols(clean);
+        return compile(clean, file).replace(/[\uE000-\uE002]/g, (m) => EOL_BACK[m]!);
+      }
       return compile(clean, file);
     };
   }
@@ -354,7 +380,12 @@ export function configureMarkdownStyle(crepe: Crepe, source: string): void {
       const text = (prev.handlers as Record<string, TextHandler> | undefined)?.text;
       const handlers: Record<string, unknown> = { ...prev.handlers, break: hardBreak };
       if (text) {
-        handlers.text = (...args: Parameters<TextHandler>) => dropNeedlessEscapes(text(...args), args[3]?.after ?? '');
+        handlers.text = (...args: Parameters<TextHandler>) => {
+          const out = dropNeedlessEscapes(text(...args), args[3]?.after ?? '');
+          // 保守写法(试解析校验的候选,见 milkdown-source-blocks):文字里的反引号一律转义(remark 不转义,可能与后面的行内代码配对)
+          const options = (args[2] as { options?: Record<string, unknown> } | undefined)?.options;
+          return options?.continuoSafeEscapes === true ? escapeUnescaped(out, '`') : out;
+        };
       }
       return { ...prev, handlers: handlers as typeof prev.handlers };
     });

@@ -326,6 +326,70 @@ describe('没闭合的围栏代码块在文末', () => {
   });
 });
 
+describe('被改动的段落里有跨行的行内代码', () => {
+  // 第五十轮:`$b `$` 按 Pandoc 规则是公式(吞掉一个反引号),其后的反引号两两错配,成了跨行(含硬换行那一行)的行内代码;
+  // remark 写行内代码时把「换行 + 可能被当成块开头的字符」换成空格、去掉两端补的空格 —— 改一字,整段被改写(看起来像
+  // 硬换行丢了、反引号错位),解析回来行内代码的内容也变了
+  const cases: ReadonlyArray<readonly [doc: string, needle: string, expected: string]> = [
+    // 模糊测试最小化:公式吞掉反引号 + 行尾两空格硬换行 + 下一行以 `[` 开头
+    ['a $b `$c` x  \n[y](u) `z`\n', 'a', 'aq $b `$c` x  \n[y](u) `z`\n'],
+    // 裸链接 + 含 `$` 的行内代码 + 硬换行(模糊测试原例的缩写)
+    [
+      'Bare https://b.com/p. `$HOME` then $PATH `$HOME` then $PATH  \n[delta](https://ex.com/5) $5 and $10 `alpha`\n',
+      'then',
+      'Bare https://b.com/p. `$HOME` thenq $PATH `$HOME` then $PATH  \n[delta](https://ex.com/5) $5 and $10 `alpha`\n',
+    ],
+    // 与 `$` 无关:本就跨行的行内代码
+    ['a `x\n#y` b\n', 'a', 'aq `x\n#y` b\n'],
+    // 改行内代码本身
+    ['a `x\n#y` b\n', 'x', 'a `xq\n#y` b\n'],
+    // 引用 / 列表里(续行带前缀)
+    ['> a `x\n> #y` b\n', 'a', '> aq `x\n> #y` b\n'],
+    ['- a `x\n  #y` b\n- c\n', 'b', '- a `x\n  #y` bq\n- c\n'],
+    // CRLF
+    ['a $b `$c` x  \r\n[y](u) `z`\r\n', 'a', 'aq $b `$c` x  \r\n[y](u) `z`\r\n'],
+  ];
+  for (const [doc, needle, expected] of cases) {
+    it(`${JSON.stringify(doc)} 改「${needle}」:只多一个字,其余字节不变`, async () => {
+      const { crepe, view } = await open(doc);
+      expect(crepe.getMarkdown()).toBe(doc);
+      typeAfter(view, needle, 'q');
+      expect(crepe.getMarkdown()).toBe(expected);
+    });
+  }
+
+  it('删一个字同样只少那一个字', async () => {
+    const doc = 'a $b `$c` xy  \n[y](u) `z`\n';
+    const { crepe, view } = await open(doc);
+    const pos = posAfter(view, 'x');
+    view.dispatch(view.state.tr.delete(pos, pos + 1));
+    expect(crepe.getMarkdown()).toBe('a $b `$c` x  \n[y](u) `z`\n');
+  });
+
+  it('改动会改变解析结果(输入反引号):不照原文拼接,输出解析回来与编辑后的文档相同', async () => {
+    const doc = 'a `x\n#y` b\n';
+    const { crepe, view } = await open(doc);
+    typeAfter(view, 'a', '`');
+    const out = crepe.getMarkdown();
+    const parsed = crepe.editor.ctx.get<(md: string) => PmNode, 'parser'>('parser')(out);
+    expect(sameBlock(parsed.child(0), view.state.doc.child(0)), out).toBe(true);
+  });
+});
+
+describe('硬换行前是空白(`a \\` 写法)、全文硬换行是行尾两空格', () => {
+  // 第五十轮模糊测试:按行尾两空格写 `cd ` 后的硬换行 → `cd   ` 三个空格,解析回来 `cd` 后的空格没了(紧跟裸链接时同样)
+  for (const [tail, expected] of [
+    ['z', 'b cd \\\nz'],
+    ['https://b.com/p', 'b cd \\\nhttps://b.com/p'],
+  ] as const) {
+    it(`拆段后新段走 remark:硬换行写成 \\,空格保留(下一行 ${tail})`, async () => {
+      const { crepe, view } = await open(`x  \ny\n\nab cd \\\n${tail}\n`);
+      view.dispatch(view.state.tr.split(posAfter(view, 'ab') - 1));
+      expect(crepe.getMarkdown()).toBe(`x  \ny\n\na\n\n${expected}\n`);
+    });
+  }
+});
+
 describe('同步 / 重建', () => {
   async function waitMounted(): Promise<Crepe> {
     for (let i = 0; i < 100; i++) {
@@ -478,7 +542,9 @@ function randomEdit(doc: PmNode, r: () => number): Edit | null {
     const i = 1 + Math.floor(r() * (len - 2));
     if (!/\s/.test(spot.text[i - 1]! + spot.text[i]! + spot.text[i + 1]!)) return { pos: spot.pos + i, del: true, block: spot.block };
   }
-  return { pos: spot.pos + Math.floor(r() * (len + 1)), del: false, block: spot.block };
+  const at = Math.floor(r() * (len + 1));
+  // 不插在 CRLF 的 CR 与 LF 之间(CRLF 文档的代码块文字里带 `\r\n`;光标到不了那里)
+  return { pos: spot.pos + (spot.text[at - 1] === '\r' ? at - 1 : at), del: false, block: spot.block };
 }
 
 interface MdPos {
@@ -497,13 +563,40 @@ function splitPoints(paragraph: PmNode): number[] {
   return out;
 }
 
+/** 模糊测试每轮收尾:销毁本轮的编辑器并放掉引用(FUZZ_N 上千轮时 instances / DOM 不累积,否则堆溢出)。 */
+async function closeLast(): Promise<void> {
+  await editors.pop()?.destroy();
+  instances.length = 0;
+  document.body.innerHTML = '';
+}
+
+/** 顶层块(不计空段落)。 */
+function topBlocks(doc: PmNode): PmNode[] {
+  const list: PmNode[] = [];
+  doc.forEach((c) => {
+    if (!(c.type.name === 'paragraph' && c.childCount === 0)) list.push(c);
+  });
+  return list;
+}
+
+/**
+ * 每轮独立的随机数(种子 + 轮次):失败信息里的 round 可单独重放(FUZZ_FROM=<round> FUZZ_N=1),上千轮也可分段跑
+ *(FUZZ_FROM 起 FUZZ_N 轮;jsdom 里 Crepe 销毁后仍有残留,单进程连跑上千轮会堆溢出)。
+ */
+const FUZZ_FROM = Number(process.env.FUZZ_FROM ?? 0);
+function roundRng(seed: number, round: number): () => number {
+  return rng(Math.imul(seed, 100_003) + round);
+}
+
 describe('模糊测试', () => {
   it('随机文档 × 随机单处编辑:被编辑块之外逐字节不变,输出解析回来与编辑后的文档相同', async () => {
-    // FUZZ_SEED / FUZZ_N:本地加大轮数找问题(默认固定种子 60 轮)
+    // FUZZ_SEED / FUZZ_N / FUZZ_FROM:本地加大轮数找问题(默认固定种子 60 轮)
     const rounds = Number(process.env.FUZZ_N ?? 60);
-    const r = rng(Number(process.env.FUZZ_SEED ?? 20261127));
+    const seed = Number(process.env.FUZZ_SEED ?? 20261127);
+    let r = rng(seed);
     let checked = 0;
-    for (let round = 0; round < rounds; round += 1) {
+    for (let round = FUZZ_FROM; round < FUZZ_FROM + rounds; round += 1) {
+      r = roundRng(seed, round);
       const n = 2 + Math.floor(r() * 6);
       const blocks: string[] = [];
       for (let i = 0; i < n; i += 1) blocks.push(BLOCKS[Math.floor(r() * BLOCKS.length)]!(r));
@@ -519,7 +612,10 @@ describe('模糊测试', () => {
       const label = `round ${round}: ${JSON.stringify(source)}`;
       expect(crepe.getMarkdown(), label).toBe(source);
       const edit = randomEdit(view.state.doc, r);
-      if (!edit) continue;
+      if (!edit) {
+        await closeLast();
+        continue;
+      }
       view.dispatch(edit.del ? view.state.tr.delete(edit.pos, edit.pos + 1) : view.state.tr.insertText('q', edit.pos));
       const out = crepe.getMarkdown();
       // 被编辑块在原文里的区间(同一 remark 解析;顶层块与 ProseMirror 顶层节点一一对应)
@@ -548,15 +644,86 @@ describe('模糊测试', () => {
       expect(a.length, `${label}\n${out}`).toBe(b.length);
       a.forEach((node, i) => expect(sameBlock(node, b[i]!), `${label}\n块 ${i} 不同:\n${out}`).toBe(true));
       checked += 1;
-      await editors.pop()!.destroy();
+      await closeLast();
     }
-    expect(checked).toBeGreaterThan(rounds * 0.6);
+    // 重放单轮(FUZZ_N 很小)时不查比例
+    if (rounds >= 20) expect(checked).toBeGreaterThan(rounds * 0.6);
+  }, 600_000);
+
+  it('定向:裸链接 + 含 `$` 的行内代码 + 硬换行 + `$` 混在多行段落 / 引用 / 列表里,随机插一个字:输出只比原文多那一个字', async () => {
+    // 这类组合让 `$…$` 吞掉反引号、行内代码跨行(第五十轮);默认 40 轮,FUZZ_N / FUZZ_SEED 可加大
+    const rounds = Number(process.env.FUZZ_N ?? 40);
+    const seed = Number(process.env.FUZZ_SEED ?? 50) + 2;
+    let r = rng(seed);
+    const PIECES = ['https://bare.example.com/p.', '`$HOME`', 'then', '$PATH', '$10', '$5 and', '`alpha`', '[delta](https://ex.com/5)', '#y', '[y](u)', '*em*', '$x$', '`a b`'];
+    const BREAKS = ['  \n', ' \\\n', '\n'];
+    const pick = <T,>(list: readonly T[]): T => list[Math.floor(r() * list.length)]!;
+    const lines = (): string[] => {
+      const out: string[] = [];
+      for (let i = 1 + Math.floor(r() * 3); i >= 0; i -= 1) {
+        const parts: string[] = [];
+        for (let j = 1 + Math.floor(r() * 4); j >= 0; j -= 1) parts.push(pick(PIECES));
+        out.push(parts.join(' '));
+      }
+      return out;
+    };
+    const joined = (ls: readonly string[], prefix: string): string =>
+      ls.map((l, i) => (i === 0 ? l : prefix + l)).reduce((acc, l) => acc + pick(BREAKS) + l);
+    const BLOCK = [
+      () => joined(lines(), ''),
+      () => `> ${joined(lines(), '> ')}`,
+      () => `- ${joined(lines(), '  ')}\n- tail`,
+    ];
+    let strict = 0;
+    for (let round = FUZZ_FROM; round < FUZZ_FROM + rounds; round += 1) {
+      r = roundRng(seed, round);
+      const blocks: string[] = [];
+      for (let i = 1 + Math.floor(r() * 3); i > 0; i -= 1) blocks.push(pick(BLOCK)());
+      const eol = r() < 0.3 ? '\r\n' : '\n';
+      const source = `${blocks.join('\n\n')}\n`.replace(/\n/g, eol);
+      const { crepe, view } = await open(source);
+      const label = `round ${round}: ${JSON.stringify(source)}`;
+      expect(crepe.getMarkdown(), label).toBe(source);
+      const edit = randomEdit(view.state.doc, r);
+      if (!edit) {
+        await closeLast();
+        continue;
+      }
+      const pos = edit.pos;
+      view.dispatch(view.state.tr.insertText('q', pos));
+      const out = crepe.getMarkdown();
+      const parse = crepe.editor.ctx.get<(md: string) => PmNode, 'parser'>('parser');
+      const a = topBlocks(parse(out));
+      const b = topBlocks(view.state.doc);
+      expect(a.length, `${label}\n${out}`).toBe(b.length);
+      a.forEach((node, i) => expect(sameBlock(node, b[i]!), `${label}\n块 ${i} 不同:\n${out}`).toBe(true));
+      // 原文某处插一个 q 就能解析成编辑后的文档 → 输出必须正是这样(只多一个 q);否则(挨着裸链接打字改了自动链接的范围、
+      // q 让两个 `$` 配成公式……)只要求解析回来相同
+      const isOneInsert = out.length === source.length + 1 && (() => {
+        const at = Array.from(out).findIndex((ch, i) => ch !== source[i]);
+        return out.slice(0, at) + out.slice(at + 1) === source;
+      })();
+      if (isOneInsert) strict += 1;
+      else {
+        for (let i = 0; i <= source.length; i += 1) {
+          const candidate = source.slice(0, i) + 'q' + source.slice(i);
+          const c = topBlocks(parse(candidate));
+          const ok = c.length === b.length && c.every((node, k) => sameBlock(node, b[k]!));
+          expect(ok, `${label}\n在原文第 ${i} 个字符处插 q 即可,却输出:\n${JSON.stringify(out)}`).toBe(false);
+        }
+      }
+      await closeLast();
+    }
+    // 重放单轮(FUZZ_N 很小)时不查比例
+    if (rounds >= 20) expect(strict).toBeGreaterThan(rounds * 0.5);
   }, 600_000);
 
   it('随机文档 × 随机结构编辑(删块 / 移块 / 拆段 / 新段):输出解析回来与编辑后的文档相同', async () => {
     const rounds = Number(process.env.FUZZ_N ?? 60);
-    const r = rng(Number(process.env.FUZZ_SEED ?? 7) + 1);
-    for (let round = 0; round < rounds; round += 1) {
+    const seed = Number(process.env.FUZZ_SEED ?? 7) + 1;
+    let r = rng(seed);
+    for (let round = FUZZ_FROM; round < FUZZ_FROM + rounds; round += 1) {
+      r = roundRng(seed, round);
       const n = 3 + Math.floor(r() * 5);
       const blocks: string[] = [];
       for (let i = 0; i < n; i += 1) blocks.push(BLOCKS[Math.floor(r() * BLOCKS.length)]!(r));
@@ -603,7 +770,7 @@ describe('模糊测试', () => {
       const b = strip(view.state.doc);
       expect(a.length, `${label}\n${out}`).toBe(b.length);
       a.forEach((node, i) => expect(sameBlock(node, b[i]!), `${label}\n块 ${i} 不同:\n${out}`).toBe(true));
-      await editors.pop()!.destroy();
+      await closeLast();
     }
   }, 600_000);
 });

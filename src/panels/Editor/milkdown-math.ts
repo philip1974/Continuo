@@ -144,6 +144,7 @@ interface MdNode {
   alt?: string | null;
   data?: Record<string, unknown>;
   children?: MdNode[];
+  position?: { start: { offset?: number }; end: { offset?: number } };
 }
 
 /** `$$` 公式块的源码信息(code_block 的 attrs.math)。 */
@@ -305,10 +306,28 @@ const PHRASING_ROOTS = new Set(['paragraph', 'heading', 'tableCell']);
 function markDollarText(node: MdNode, parse: (doc: string) => MdNode): void {
   if (!node.children) return;
   if (PHRASING_ROOTS.has(node.type)) {
+    markBackticksNearMath(node);
     decideDollarText(node, parse);
     return;
   }
   for (const child of node.children) markDollarText(child, parse);
+}
+
+/**
+ * 段落里有公式时,文字里的反引号一律转义(text.data.continuoBacktick = 'escape'):remark 只在少数情形转义文字里的反引号,
+ * 公式原文又原样写出,文字里的反引号可能与公式里 / 公式另一侧的反引号配成行内代码(`` \` $`$` `` 曾保存成 `` ` $`$\` ``)。
+ */
+function markBackticksNearMath(root: MdNode): void {
+  let hasMath = false;
+  const texts: MdNode[] = [];
+  const walk = (node: MdNode): void => {
+    if (node.type === 'inlineMath') hasMath = true;
+    else if (node.type === 'text') {
+      if ((node.value ?? '').includes('`')) texts.push(node);
+    } else for (const child of node.children ?? []) walk(child);
+  };
+  walk(root);
+  if (hasMath) for (const t of texts) t.data = { ...t.data, continuoBacktick: 'escape' };
 }
 
 /** 这些 `$` 结构相关的字符原样进试解析串,其余字符换成 `a`(不会构成任何 Markdown 结构)。 */
@@ -335,13 +354,14 @@ function inlineCodeProbe(value: string): string {
 
 /**
  * 段落(标题 / 表格单元格)里的文字含 `$` 时,按「去掉这些 `$` 的转义」构造只保留 `$` / 空白 / 数字的试解析串,用同一解析器
- * 解析:得到的公式与段落里现有的公式逐一相同 → 文字里的 `$` 不转义(text.data.continuoDollar = 'raw')。
+ * 解析:得到的公式与段落里现有的公式逐一同位置(只比值会把 `$_$` 误当成 `$a$`)→ 文字里的 `$` 不转义(text.data.continuoDollar = 'raw')。
  * 行内代码 / HTML 按其写法进试解析串(其中的 `$` 可能与文字里的 `$` 配成公式,照实试解析)。
  * 无法确定的情形(文字含反斜杠或 `$$`、链接地址 / 标题里有 `$`、出现空行)一律转义。
  */
 function decideDollarText(root: MdNode, parse: (doc: string) => MdNode): void {
   const texts: MdNode[] = [];
-  const expected: string[] = [];
+  // 公式在试解析串里的区间(值经字符映射后可能碰巧相同,如 `$_$` 与 `$a$`,故按位置比)
+  const expected: Array<readonly [number, number]> = [];
   let probe = 'a';
   let bail = false;
   const walk = (node: MdNode): void => {
@@ -356,10 +376,12 @@ function decideDollarText(root: MdNode, parse: (doc: string) => MdNode): void {
         for (const ch of v) probe += probeChar(ch);
         return;
       }
-      case 'inlineMath':
-        expected.push(node.value ?? '');
+      case 'inlineMath': {
+        const start = probe.length;
         probe += inlineMathMarkdown(node) ?? canonicalInlineMath(node.value ?? '');
+        expected.push([start, probe.length]);
         return;
+      }
       case 'break':
         probe += '\n';
         return;
@@ -382,10 +404,10 @@ function decideDollarText(root: MdNode, parse: (doc: string) => MdNode): void {
   };
   for (const child of root.children ?? []) walk(child);
   if (bail || texts.length === 0 || /\n[ ]*(?:\n|$)/.test(probe)) return;
-  const found: string[] = [];
+  const found: Array<readonly [number, number]> = [];
   let blocks = 0;
   const collect = (node: MdNode): void => {
-    if (node.type === 'inlineMath') found.push(node.value ?? '');
+    if (node.type === 'inlineMath') found.push([node.position?.start.offset ?? -1, node.position?.end.offset ?? -1]);
     if (node.children) for (const child of node.children) collect(child);
   };
   let tree: MdNode;
@@ -399,7 +421,7 @@ function decideDollarText(root: MdNode, parse: (doc: string) => MdNode): void {
     collect(child);
   }
   if (blocks !== 1 || tree.children![0]!.type !== 'paragraph') return;
-  if (found.length !== expected.length || found.some((v, i) => v !== expected[i])) return;
+  if (found.length !== expected.length || found.some(([a, b], i) => a !== expected[i]![0] || b !== expected[i]![1])) return;
   for (const t of texts) t.data = { ...t.data, continuoDollar: 'raw' };
 }
 
@@ -417,17 +439,23 @@ export function unescapeDollars(s: string): string {
   return out;
 }
 
-/** 给未转义的 `$` 加反斜杠(已有的转义原样保留)。 */
-export function escapeDollars(s: string): string {
+/** 给未转义的 `char` 加反斜杠(已有的转义原样保留)。 */
+export function escapeUnescaped(s: string, char: string): string {
+  if (!s.includes(char)) return s;
   let out = '';
   for (let i = 0; i < s.length; i += 1) {
     const ch = s[i]!;
     if (ch === '\\' && i + 1 < s.length) {
       out += ch + s[i + 1]!;
       i += 1;
-    } else out += ch === '$' ? '\\$' : ch;
+    } else out += ch === char ? `\\${ch}` : ch;
   }
   return out;
+}
+
+/** 给未转义的 `$` 加反斜杠(已有的转义原样保留)。 */
+export function escapeDollars(s: string): string {
+  return escapeUnescaped(s, '$');
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -561,10 +589,13 @@ export function configureMarkdownMath(crepe: Crepe): void {
       const text = (prev.handlers as Record<string, TextHandler> | undefined)?.text;
       if (!text) return prev;
       const handler: TextHandler = (node, parent, state, info) => {
-        const out = text(node, parent, state, info);
+        let out = text(node, parent, state, info);
+        if (node.data?.continuoBacktick === 'escape') out = escapeUnescaped(out, '`');
         if (!(node.value ?? '').includes('$')) return out;
         const plain = unescapeDollars(out);
-        return node.data?.continuoDollar === 'raw' ? plain : escapeDollars(plain);
+        // continuoSafeEscapes:保守写法(试解析校验的候选,见 milkdown-source-blocks)一律转义
+        const options = (state as { options?: Record<string, unknown> }).options;
+        return node.data?.continuoDollar === 'raw' && options?.continuoSafeEscapes !== true ? plain : escapeDollars(plain);
       };
       return { ...prev, handlers: { ...prev.handlers, text: handler as never } };
     });

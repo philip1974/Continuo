@@ -162,6 +162,37 @@ test('常见写法(表格 / 裸链接 / 硬换行 / `1. 1. 1.` / `[x]` / 文末�
   }).toPass({ timeout: 5_000 });
 });
 
+test('裸链接 + 含 `$` 的行内代码 + 硬换行的段落里打一个字:文件只多那一个字(行内代码不被改写成别的样子)', async ({
+  window,
+  workspaceRoot,
+}) => {
+  // `$PATH `$` 按 Pandoc 规则是公式(吞掉一个反引号),其后的反引号错配成跨行的行内代码;曾经改一字整段被 remark 改写(第五十轮)
+  const doc = 'Bare https://b.com/p. `$HOME` then $PATH `$HOME` then $PATH  \n[delta](https://ex.com/5) $5 and $10 `alpha`\n\nTail.\n';
+  const file = await openInEdit(window, workspaceRoot, 'combo.md', doc);
+  await window.locator(PM).getByText('Tail.').click();
+  // 光标放到第一处「then」之后(DOM 选区,ProseMirror 经 selectionchange 读回)
+  await window.evaluate((sel) => {
+    const walker = document.createTreeWalker(document.querySelector(sel)!, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = n.textContent!.indexOf('then');
+      if (i < 0) continue;
+      const range = document.createRange();
+      range.setStart(n, i + 4);
+      const s = document.getSelection()!;
+      s.removeAllRanges();
+      s.addRange(range);
+      return;
+    }
+    throw new Error('找不到 then');
+  }, PM);
+  await expect.poll(() => window.evaluate(() => document.getSelection()?.anchorNode?.textContent ?? '')).toContain('then');
+  await window.keyboard.type('q');
+  await save(window);
+  await expect(async () => {
+    expect(await readFile(file, 'utf8')).toBe(doc.replace('then', 'thenq'));
+  }).toPass({ timeout: 5_000 });
+});
+
 const footer = (window: Page) => window.locator('footer');
 const eolItem = (window: Page) => footer(window).locator('[data-statusbar-eol]');
 const LE_BOM = Buffer.from([0xff, 0xfe]);
