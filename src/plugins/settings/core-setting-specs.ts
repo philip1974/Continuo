@@ -79,6 +79,37 @@ export const EDITOR_ENABLE_PREVIEW: CoreSettingSpec<boolean> = {
   priority: 20,
 };
 
+/**
+ * 编辑器 tab 的 git 状态装饰(VSCode workbench.editor.decorations.colors / badges,默认都开 —— VSCode
+ * DEFAULT_EDITOR_PART_OPTIONS.decorations = { badges: true, colors: true }):标题按状态着色 / 标题后显示状态字母。
+ * 两者都关时 tab 栏不查询 git。BDD: src/__tests__/editor-search-git-decorations/
+ */
+export const EDITOR_DECORATIONS_COLORS: CoreSettingSpec<boolean> = {
+  id: 'workbench.editor.decorations.colors',
+  category: 'editor',
+  group: 'tabs',
+  groupKey: 'settings.group.tabs',
+  title: 'Decoration colors',
+  titleKey: 'settings.editor.decorations_colors',
+  descriptionKey: 'settings.editor.decorations_colors.desc',
+  type: 'boolean',
+  default: true,
+  priority: 21,
+};
+
+export const EDITOR_DECORATIONS_BADGES: CoreSettingSpec<boolean> = {
+  id: 'workbench.editor.decorations.badges',
+  category: 'editor',
+  group: 'tabs',
+  groupKey: 'settings.group.tabs',
+  title: 'Decoration badges',
+  titleKey: 'settings.editor.decorations_badges',
+  descriptionKey: 'settings.editor.decorations_badges.desc',
+  type: 'boolean',
+  default: true,
+  priority: 22,
+};
+
 export const AUTO_SAVE_MARKDOWN_ENABLED: CoreSettingSpec<boolean> = {
   id: 'autoSave.markdown.enabled',
   category: 'editor',
@@ -227,6 +258,35 @@ export const EXPLORER_DECORATIONS_BADGES: CoreSettingSpec<boolean> = {
   type: 'boolean',
   default: true,
   priority: 6,
+};
+
+// VSCode search.decorations.colors / search.decorations.badges(默认开):搜索结果文件名按 git 状态着色 / 显示状态字母。
+// Continuo 无单独的搜索设置页,放在资源管理器设置页的「搜索」组。两者都关时搜索视图不查询 git。
+// BDD: src/__tests__/editor-search-git-decorations/
+export const SEARCH_DECORATIONS_COLORS: CoreSettingSpec<boolean> = {
+  id: 'search.decorations.colors',
+  category: 'explorer',
+  group: 'search',
+  groupKey: 'settings.group.search',
+  title: 'Search decoration colors',
+  titleKey: 'settings.search.decorations_colors',
+  descriptionKey: 'settings.search.decorations_colors.desc',
+  type: 'boolean',
+  default: true,
+  priority: 20,
+};
+
+export const SEARCH_DECORATIONS_BADGES: CoreSettingSpec<boolean> = {
+  id: 'search.decorations.badges',
+  category: 'explorer',
+  group: 'search',
+  groupKey: 'settings.group.search',
+  title: 'Search decoration badges',
+  titleKey: 'settings.search.decorations_badges',
+  descriptionKey: 'settings.search.decorations_badges.desc',
+  type: 'boolean',
+  default: true,
+  priority: 21,
 };
 
 // ── 通用(general)────────────────────────────────────────────────────────────

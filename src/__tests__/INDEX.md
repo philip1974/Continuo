@@ -724,6 +724,14 @@
 
 - [`revert-file.spec.tsx`](./editor-revert-file/revert-file.spec.tsx)
 
+## [editor-search-git-decorations(编辑器 tab 标题 / 搜索结果文件名按 git 状态着色)](./editor-search-git-decorations/README.md)
+
+- [`contrast.spec.ts`](./editor-search-git-decorations/contrast.spec.ts)
+- [`editor-tab-git.spec.tsx`](./editor-search-git-decorations/editor-tab-git.spec.tsx)
+- [`git-status-shared.spec.tsx`](./editor-search-git-decorations/git-status-shared.spec.tsx)
+- [`search-file-git.spec.tsx`](./editor-search-git-decorations/search-file-git.spec.tsx)
+- [`settings.spec.ts`](./editor-search-git-decorations/settings.spec.ts)
+
 ## [editor-session-restore(Editor tab session 持久化与恢复)](./editor-session-restore/README.md)
 
 - [`editor-session-restore.spec.ts`](./editor-session-restore/editor-session-restore.spec.ts)

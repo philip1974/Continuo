@@ -13,6 +13,8 @@ import {
   EXPLORER_CONFIRM_DRAG_AND_DROP,
   EXPLORER_INDENT_SIZE,
   EXPLORER_SHOW_HIDDEN_FILES,
+  SEARCH_DECORATIONS_BADGES,
+  SEARCH_DECORATIONS_COLORS,
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { ExplorerIcon } from '@/plugins/settings/tab-icons';
@@ -56,5 +58,10 @@ export default class ExplorerTabPlugin extends Plugin {
     this.addSettingItem(EXPLORER_DECORATIONS_COLORS);
 
     this.addSettingItem(EXPLORER_DECORATIONS_BADGES);
+
+    // 「搜索」组:搜索结果的 git 装饰(VSCode search.decorations.*)
+    this.addSettingItem(SEARCH_DECORATIONS_COLORS);
+
+    this.addSettingItem(SEARCH_DECORATIONS_BADGES);
   }
 }

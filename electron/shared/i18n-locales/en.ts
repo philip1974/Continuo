@@ -371,12 +371,17 @@ export const en = {
   'settings.explorer.auto_reveal': 'Reveal active file',
   'settings.explorer.decorations_colors': 'Decoration colors',
   'settings.explorer.decorations_badges': 'Decoration badges',
+  'settings.editor.decorations_colors': 'Decoration colors',
+  'settings.editor.decorations_badges': 'Decoration badges',
+  'settings.search.decorations_colors': 'Search result decoration colors',
+  'settings.search.decorations_badges': 'Search result decoration badges',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': 'No settings in this category',
   'settings.group.appearance': 'Appearance',
   'settings.group.autosave': 'Auto-save',
   'settings.group.tabs': 'Tabs',
+  'settings.group.search': 'Search',
   'settings.editor.font_size.desc': 'Font size for the code editor and the Markdown editor.',
   'settings.editor.show_line_numbers.desc': 'Whether the code editor shows line numbers (also controls fold markers).',
   'settings.editor.word_wrap.desc': 'Wrap long lines at the editor width in the code editor (toggle with the “Toggle Word Wrap” command).',
@@ -394,6 +399,10 @@ export const en = {
   'settings.explorer.auto_reveal.desc': "Select and reveal the active editor's file in the Explorer.",
   'settings.explorer.decorations_colors.desc': 'Color file and folder names by their Git status (modified, untracked, ignored…).',
   'settings.explorer.decorations_badges.desc': 'Show a Git status letter (M / U / A …) to the right of file names.',
+  'settings.editor.decorations_colors.desc': 'Color editor tab titles by their Git status (modified, untracked, ignored…).',
+  'settings.editor.decorations_badges.desc': 'Show a Git status letter (M / U / A …) after editor tab titles.',
+  'settings.search.decorations_colors.desc': 'Color file names in search results by their Git status.',
+  'settings.search.decorations_badges.desc': 'Show a Git status letter (M / U / A …) next to file names in search results.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/

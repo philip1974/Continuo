@@ -29,7 +29,7 @@ vi.mock('@/lib/co-api', () => ({
     },
   },
 }));
-vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: vi.fn(async () => ({ ok: true })) } } }));
+vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: vi.fn(async () => ({ ok: true })) }, settingItems: new Map() } }));
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 22,

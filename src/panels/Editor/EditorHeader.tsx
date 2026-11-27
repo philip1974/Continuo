@@ -50,6 +50,10 @@ import { CONTENT_FOCUS_TARGET_SELECTOR, focusContentTarget } from '@/lib/content
 import { focusWithinOrLost } from '@/design/focus-within-or-lost';
 import { commandHotkeyText } from '@/lib/hotkey-label';
 import { CLOSE_ACTIVE_EDITOR_COMMAND, SPLIT_EDITOR_COMMAND } from './editor-commands';
+import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
+import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
+import { useSettingValue } from '@/plugins/settings/values-store';
+import { EDITOR_DECORATIONS_BADGES, EDITOR_DECORATIONS_COLORS } from '@/plugins/settings/core-setting-specs';
 
 /**
  * Tab 栏渲染所需的"chrome"子集(打磨 R23):只含标题/脏态相关字段,**不含
@@ -383,6 +387,18 @@ export const EditorHeader = memo(function EditorHeader({
 
   const tabBarDrop = useEditorTabBarDrop(groupId);
 
+  // tab 标题的 git 状态装饰(VSCode workbench.editor.decorations.colors / badges,默认都开;两项都关或无 tab 时不查询)。
+  // 与资源管理器 / 搜索共用窗口级数据源(每个编辑器组一个使用方,不是每个 tab 一个),侧栏隐藏时 tab 仍随之刷新。
+  // BDD: src/__tests__/editor-search-git-decorations/
+  const workspaceRoot = useWorkspaceStore((s) => s.root);
+  const gitColors = useSettingValue(EDITOR_DECORATIONS_COLORS.id, EDITOR_DECORATIONS_COLORS.default);
+  const gitBadges = useSettingValue(EDITOR_DECORATIONS_BADGES.id, EDITOR_DECORATIONS_BADGES.default);
+  const gitIndex = useGitStatus(
+    workspaceRoot ?? '',
+    (gitColors || gitBadges) && workspaceRoot !== null && tabsChrome.length > 0,
+    true,
+  );
+
   if (tabsChrome.length === 0) return null;
 
   return (
@@ -407,13 +423,28 @@ export const EditorHeader = memo(function EditorHeader({
         {tabsChrome.map((tab, i) => {
           const tabTitle = basename(tab.filePath);
           const description = descriptions[i];
+          // git 装饰:标题颜色(激活 / 非激活 tab 都显示,VSCode 同)、标题后字母(与标题同色,aria-hidden)、悬浮提示追加
+          // 状态(VSCode ResourceLabel 把 decoration.tooltip 拼到 title)。可访问名称不加状态(VSCode computeEditorAriaLabel)。
+          const git = fileGitDecoration(gitIndex, workspaceRoot, tab.filePath);
+          const gitClass = git !== null && gitColors ? GIT_KIND_TEXT_CLASS[git.kind] : '';
+          const gitLetter = git !== null && gitBadges ? git.letter : '';
+          const gitLabel = git !== null && git.kind !== 'ignored' ? t(GIT_KIND_LABEL_KEY[git.kind]) : null;
+          const nameClass = `${tab.orphaned ? 'line-through' : ''}${tab.orphaned && gitClass ? ' ' : ''}${gitClass}`;
+          const name =
+            nameClass === '' ? (
+              tabTitle
+            ) : (
+              <span className={nameClass} data-git-title={gitClass ? git!.kind : undefined}>
+                {tabTitle}
+              </span>
+            );
           const title = tab.orphaned ? (
             <>
-              <span className="line-through">{tabTitle}</span>
+              {name}
               <span className="ml-1.5">{t('panels.editor.tab_deleted')}</span>
             </>
           ) : (
-            tabTitle
+            name
           );
           const item = (
             <TabNavItem
@@ -423,7 +454,7 @@ export const EditorHeader = memo(function EditorHeader({
               dirtyLabel={t('panels.editor.unsaved_indicator')}
               // a11y(A106):icon-only 关闭按钮可访问名本地化(design 层无 i18n,调用点注入)。
               closeLabel={t('shell.tab.close', { title: tabTitle })}
-              title={tab.filePath}
+              title={gitLabel === null ? tab.filePath : `${tab.filePath} · ${gitLabel}`}
               onSelect={() => switchTab(tab.id)}
               onMouseSelect={focusEditorContent}
               onClose={() => onCloseRequest(tab)}
@@ -452,6 +483,11 @@ export const EditorHeader = memo(function EditorHeader({
               {description != null && (
                 <span data-testid="tab-description" className="ml-1.5 text-fg-dim">
                   {description}
+                </span>
+              )}
+              {gitLetter !== '' && (
+                <span aria-hidden="true" data-git-letter="" className={`ml-1.5 font-medium ${GIT_KIND_TEXT_CLASS[git!.kind]}`}>
+                  {gitLetter}
                 </span>
               )}
             </TabNavItem>

@@ -358,12 +358,17 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.auto_reveal': '활성 파일 표시',
   'settings.explorer.decorations_colors': '장식 색상',
   'settings.explorer.decorations_badges': '장식 배지',
+  'settings.editor.decorations_colors': '장식 색상',
+  'settings.editor.decorations_badges': '장식 배지',
+  'settings.search.decorations_colors': '검색 결과 장식 색상',
+  'settings.search.decorations_badges': '검색 결과 장식 배지',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '이 카테고리에 설정이 없습니다',
   'settings.group.appearance': '모양',
   'settings.group.autosave': '자동 저장',
   'settings.group.tabs': '탭',
+  'settings.group.search': '검색',
   'settings.editor.font_size.desc': '코드 에디터와 Markdown 에디터의 글꼴 크기.',
   'settings.editor.show_line_numbers.desc': '코드 에디터에서 줄 번호 표시 여부(접기 마커도 같이 제어).',
   'settings.editor.word_wrap.desc': '코드 에디터에서 긴 줄을 에디터 너비에 맞춰 줄 바꿈합니다(“자동 줄 바꿈 설정/해제” 명령으로 전환).',
@@ -381,6 +386,10 @@ export const ko: Record<TranslationKey, string> = {
   'settings.explorer.auto_reveal.desc': '편집기를 전환하면 탐색기에서 현재 파일을 선택하고 펼쳐 표시합니다.',
   'settings.explorer.decorations_colors.desc': 'Git 상태(수정됨, 추적되지 않음, 무시됨 등)에 따라 파일과 폴더 이름에 색을 입힙니다.',
   'settings.explorer.decorations_badges.desc': '파일 이름 오른쪽에 Git 상태 문자(M / U / A 등)를 표시합니다.',
+  'settings.editor.decorations_colors.desc': 'Git 상태(수정됨, 추적되지 않음, 무시됨 등)에 따라 편집기 탭 제목에 색을 입힙니다.',
+  'settings.editor.decorations_badges.desc': '편집기 탭 제목 뒤에 Git 상태 문자(M / U / A 등)를 표시합니다.',
+  'settings.search.decorations_colors.desc': 'Git 상태에 따라 검색 결과의 파일 이름에 색을 입힙니다.',
+  'settings.search.decorations_badges.desc': '검색 결과의 파일 이름 옆에 Git 상태 문자(M / U / A 등)를 표시합니다.',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/

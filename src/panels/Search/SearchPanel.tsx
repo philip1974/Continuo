@@ -17,6 +17,10 @@ import { ChevronDownIcon, MoreActionsIcon } from '@/lib/ui-icons';
 import { PICKER_MATCH_CLASS_NAME, pickerRowClassName, pickerRowSecondaryClassName } from '@/plugins/picker/picker-row';
 import { isVirtualIndexRendered } from '@/plugins/picker/use-picker-list';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useGitStatus } from '@/panels/Explorer/hooks/useGitStatus';
+import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/panels/Explorer/git-decorations';
+import { useSettingValue } from '@/plugins/settings/values-store';
+import { SEARCH_DECORATIONS_BADGES, SEARCH_DECORATIONS_COLORS } from '@/plugins/settings/core-setting-specs';
 import {
   matchRowKey,
   openSearchMatch,
@@ -101,6 +105,12 @@ export function SearchPanel() {
     rootRef.current = root;
     rerunSearch();
   }, [root]);
+
+  // 结果文件行的 git 装饰(VSCode searchResultsView fileDecorations = search.decorations.colors / badges,默认都开);
+  // 与资源管理器 / 编辑器 tab 共用窗口级数据源,无结果或两项都关时不查询。BDD: src/__tests__/editor-search-git-decorations/
+  const gitColors = useSettingValue(SEARCH_DECORATIONS_COLORS.id, SEARCH_DECORATIONS_COLORS.default);
+  const gitBadges = useSettingValue(SEARCH_DECORATIONS_BADGES.id, SEARCH_DECORATIONS_BADGES.default);
+  const gitIndex = useGitStatus(root ?? '', (gitColors || gitBadges) && root !== null && s.files.length > 0, true);
 
   const rows = useMemo(() => buildRows(s.files, s.collapsed), [s.files, s.collapsed]);
   const activeIndex = s.activeKey === null ? -1 : rows.findIndex((r) => r.key === s.activeKey);
@@ -265,6 +275,11 @@ export function SearchPanel() {
             if (row.kind === 'file') {
               const { name, dir } = splitRel(row.file.relPath);
               const count = row.file.matches.length;
+              // 名称着色 + 字母(在匹配数左侧,与名称同色、aria-hidden);悬浮提示追加状态,可访问名称不加(VSCode fileMatchAriaLabel)
+              const git = fileGitDecoration(gitIndex, root, row.file.path);
+              const gitClass = git !== null && gitColors ? GIT_KIND_TEXT_CLASS[git.kind] : '';
+              const gitLetter = git !== null && gitBadges ? git.letter : '';
+              const gitLabel = git !== null && git.kind !== 'ignored' ? t(GIT_KIND_LABEL_KEY[git.kind]) : null;
               return (
                 <div
                   key={row.key}
@@ -274,7 +289,7 @@ export function SearchPanel() {
                   aria-expanded={!row.collapsed}
                   aria-selected={selected}
                   aria-label={t('panels.search.file_aria', { path: row.file.relPath, results: translateCount('panels.search.result_count', count) })}
-                  title={row.file.relPath}
+                  title={gitLabel === null ? row.file.relPath : `${row.file.relPath} · ${gitLabel}`}
                   style={style}
                   className={`${pickerRowClassName(selected)} min-w-0 pl-1`}
                   onClick={() => {
@@ -286,9 +301,19 @@ export function SearchPanel() {
                     {CHEVRON_ICON}
                   </span>
                   {/* 超长时目录先收缩(收缩权重远大于文件名)、再截断文件名;徽标 shrink-0 始终可见(VSCode 搜索结果文件行同) */}
-                  <span className="min-w-0 truncate font-medium text-fg">{name}</span>
+                  <span
+                    className={`min-w-0 truncate font-medium ${gitClass || 'text-fg'}`}
+                    data-git-title={gitClass ? git!.kind : undefined}
+                  >
+                    {name}
+                  </span>
                   {dir && <span className={`min-w-0 shrink-[1000] truncate ${pickerRowSecondaryClassName(selected)}`}>{dir}</span>}
-                  <Badge size="xs" className="ml-auto shrink-0" aria-hidden="true">
+                  {gitLetter !== '' && (
+                    <span aria-hidden="true" data-git-letter="" className={`ml-auto shrink-0 font-medium ${GIT_KIND_TEXT_CLASS[git!.kind]}`}>
+                      {gitLetter}
+                    </span>
+                  )}
+                  <Badge size="xs" className={`${gitLetter !== '' ? '' : 'ml-auto '}shrink-0`} aria-hidden="true">
                     {row.file.truncated ? `${count}+` : count}
                   </Badge>
                 </div>

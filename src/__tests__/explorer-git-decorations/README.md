@@ -18,7 +18,7 @@
 | `electron/main/services/git-status.service.ts` | 跑 `git rev-parse` + `git status --porcelain=v1 -z --ignored=matching`;解析;超时 / 输出上限 / 并发上限 / 同根合并 |
 | `electron/main/ipc/git.ipc.ts` | safeHandle 接线;根取自发送窗口的工作区登记 |
 | `src/panels/Explorer/git-decorations.ts` | 快照 → 每行装饰(文件夹继承、整目录未跟踪 / 忽略);颜色 class、文案 key |
-| `src/panels/Explorer/hooks/useGitStatus.ts` | 取快照与刷新(fs watch 广播 / 保存 / 窗口获焦,防抖 + 单飞;侧栏隐藏期间只记脏) |
+| `src/panels/Explorer/hooks/useGitStatus.ts` | 窗口级共享数据源(资源管理器 / 编辑器 tab / 搜索共用,见 `editor-search-git-decorations/`):取快照与刷新(fs watch 广播 / 保存 / 窗口获焦,防抖 + 单飞;没有可见使用方期间只记脏) |
 | `src/panels/Explorer/FileRow.tsx` / `FolderTree.tsx` | 名称颜色、徽标字母、悬浮提示与读屏文案 |
 | `src/styles/theme.css` | `--md-git-*` 槽位(light / dark 各一套,取 VSCode `gitDecoration.*` 默认色,低对比的几个按 WCAG 调整)→ `text-git-*` |
 
@@ -57,7 +57,7 @@
   不必等窗口获焦或文件变化;卸载 / 换根后不再重试
 - 工作区根内的 `fs:dir-changed`(含仅内容变化)、编辑器保存、窗口获焦 → 防抖 300ms(持续变化下至多每 2s)刷新;根外变化忽略
 - 在途时再触发只补跑一次
-- 侧栏隐藏期间不查询,只记脏;再次显示时补一次
+- 侧栏隐藏期间(且没有别的可见使用方,如编辑器 tab 栏)不查询,只记脏;再次显示时补一次
 - 装饰两项设置都关 → 不查询
 
 ### 渲染(`file-row-git.spec.tsx`)

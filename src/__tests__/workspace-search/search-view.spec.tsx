@@ -24,7 +24,8 @@ vi.mock('@/lib/co-api', () => ({
     },
   },
 }));
-vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: h.openFile } }, openFileInEditor: h.openFile }));
+// settingItems:SearchPanel 读 search.decorations.* 设置(spec 未注册 → 用默认值)
+vi.mock('@/plugins/co-app', () => ({ coApp: { editor: { openFile: h.openFile }, settingItems: new Map() }, openFileInEditor: h.openFile }));
 // jsdom 无布局:虚拟列表全量渲染
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({

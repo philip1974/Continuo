@@ -4,7 +4,7 @@
 //   忽略项不传播(GitIgnoreDecorationProvider 无 propagate)。整个未跟踪 / 被忽略的目录(`dir/` 条目)其下各项同样处理。
 // BDD: src/__tests__/explorer-git-decorations/
 
-import { stripRootPrefix } from '@/lib/path-cross';
+import { isSameOrInsidePath, pathEquals, stripRootPrefix } from '@/lib/path-cross';
 import type { GitStatusEntry, GitStatusKind } from '../../../electron/shared/git-status';
 
 export interface GitRowDecoration {
@@ -91,6 +91,19 @@ export function gitDecorationOf(
     if (kind !== undefined) return { kind, letter: '' };
   }
   return null;
+}
+
+/**
+ * 任意文件路径(编辑器 tab、搜索结果)的 git 装饰:工作区根外 / 无快照 / 无状态 → null。
+ * BDD: src/__tests__/editor-search-git-decorations/
+ */
+export function fileGitDecoration(
+  index: GitDecorationIndex | null,
+  root: string | null,
+  path: string,
+): GitRowDecoration | null {
+  if (index === null || root === null || !isSameOrInsidePath(root, path) || pathEquals(root, path)) return null;
+  return gitDecorationOf(index, gitRelPath(root, path), false);
 }
 
 /** 名称 / 徽标颜色(语义 token,见 theme.css --md-git-*)。字面量写全,Tailwind 才能扫描生成。 */

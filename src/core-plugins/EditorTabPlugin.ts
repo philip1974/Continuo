@@ -7,6 +7,8 @@ import { Plugin } from '@/plugins/Plugin';
 import {
   AUTO_SAVE_DELAY_MS,
   AUTO_SAVE_MARKDOWN_ENABLED,
+  EDITOR_DECORATIONS_BADGES,
+  EDITOR_DECORATIONS_COLORS,
   EDITOR_ENABLE_PREVIEW,
   EDITOR_FONT_SIZE,
   EDITOR_LINE_NUMBERS,
@@ -38,5 +40,7 @@ export default class EditorTabPlugin extends Plugin {
 
     // ── Tabs ──
     this.addSettingItem(EDITOR_ENABLE_PREVIEW);
+    this.addSettingItem(EDITOR_DECORATIONS_COLORS);
+    this.addSettingItem(EDITOR_DECORATIONS_BADGES);
   }
 }

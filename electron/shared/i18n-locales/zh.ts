@@ -357,12 +357,17 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.auto_reveal': '跟随活动文件',
   'settings.explorer.decorations_colors': '装饰颜色',
   'settings.explorer.decorations_badges': '装饰徽标',
+  'settings.editor.decorations_colors': '装饰颜色',
+  'settings.editor.decorations_badges': '装饰徽标',
+  'settings.search.decorations_colors': '搜索结果装饰颜色',
+  'settings.search.decorations_badges': '搜索结果装饰徽标',
 
   // settings groups / descriptions / enum option labels (post-topic-21)
   'settings.category.empty': '本类暂无设置项',
   'settings.group.appearance': '外观',
   'settings.group.autosave': '自动保存',
   'settings.group.tabs': '标签页',
+  'settings.group.search': '搜索',
   'settings.editor.font_size.desc': '代码编辑器与 Markdown 编辑器的字号。',
   'settings.editor.show_line_numbers.desc': '代码编辑器是否显示行号（同时控制代码折叠标记）。',
   'settings.editor.word_wrap.desc': '代码编辑器里的长行按编辑器宽度折行显示（可用「切换自动换行」命令切换）。',
@@ -380,6 +385,10 @@ export const zh: Record<TranslationKey, string> = {
   'settings.explorer.auto_reveal.desc': '切换编辑器时在资源管理器中选中并展开到当前文件。',
   'settings.explorer.decorations_colors.desc': '按 Git 状态为文件和文件夹名称着色（已修改、未跟踪、已忽略等）。',
   'settings.explorer.decorations_badges.desc': '在文件名右侧显示 Git 状态字母（M / U / A 等）。',
+  'settings.editor.decorations_colors.desc': '按 Git 状态为编辑器标签标题着色（已修改、未跟踪、已忽略等）。',
+  'settings.editor.decorations_badges.desc': '在编辑器标签标题后显示 Git 状态字母（M / U / A 等）。',
+  'settings.search.decorations_colors.desc': '按 Git 状态为搜索结果中的文件名着色。',
+  'settings.search.decorations_badges.desc': '在搜索结果的文件名旁显示 Git 状态字母（M / U / A 等）。',
 
   // editor welcome / empty states (post-topic-21 round 2)
   // 编辑区文本框可访问名称(对齐 VSCode「<文件名>, Editor Group N」)。BDD: src/__tests__/editor-accessible-name/

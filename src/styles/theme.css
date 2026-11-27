@@ -69,16 +69,18 @@
   --md-syntax-link: #0b6d96;
   --md-syntax-invalid: #ca1243;
 
-  /* 资源管理器 git 状态装饰(VSCode gitDecoration.*ResourceForeground 亮色默认值;MD3 无对应槽)。
-   * renamed / copied 与 untracked 同色(VSCode 默认即同值),不另设槽。对 surface / container-high:
-   * modified 6.09 / 5.09、added 5.84 / 4.88(VSCode #587c0c 仅 4.76 / 3.98,同色相加深)、untracked 6.10 / 5.09、
-   * deleted / conflict 7.29 / 6.09、ignored 4.68 / 3.91(VSCode #8e8e90 仅 3.19,加深;仍比正文浅,保持「置灰」观感)。 */
+  /* git 状态装饰(资源管理器 / 编辑器 tab / 搜索结果;VSCode gitDecoration.*ResourceForeground 亮色默认值;MD3 无对应槽)。
+   * renamed / copied 与 untracked 同色(VSCode 默认即同值),不另设槽。最低对比度取 canvas / 激活 tab(container-high)/
+   * 悬停 tab(state-hover 合成)/ 搜索选中行(accent/15)/ 悬停行(accent/10)中最差者,均 ≥ 4.5
+   *(BDD: src/__tests__/editor-search-git-decorations/contrast.spec.ts):modified 4.90、added 4.70(VSCode #587c0c 仅 3.98,
+   * 同色相加深)、untracked 4.90、deleted / conflict 5.86、ignored 4.63(VSCode #8e8e90 仅 3.19;原 #727275 在激活 tab 上 3.91,
+   * 再加深;仍比正文浅,保持「置灰」观感)。 */
   --md-git-modified: #895503;
   --md-git-added: #4d6d0a;
   --md-git-untracked: #007100;
   --md-git-deleted: #ad0707;
   --md-git-conflict: #ad0707;
-  --md-git-ignored: #727275;
+  --md-git-ignored: #646467;
 }
 
 /* ── Continuo 自有槽位的暗色值(MD3 色板本体在 design-tokens.css .dark)── */
@@ -111,15 +113,15 @@
   --md-syntax-link: #7d8799;
   --md-syntax-invalid: #ffffff;
 
-  /* 资源管理器 git 状态装饰:VSCode gitDecoration.* 暗色默认值。对 surface / container-high:modified 10.73 / 8.29、
-   * added 8.09 / 6.24、untracked 9.26 / 7.15、deleted 5.86 / 4.53(VSCode #c74e39 仅 4.04 / 3.12,提亮)、
-   * conflict 5.69 / 4.40、ignored 5.51 / 4.26。 */
+  /* git 状态装饰:VSCode gitDecoration.* 暗色默认值。最低对比度(背景同亮色注释,最差多为搜索选中行 accent/15):
+   * modified 7.83、added 5.90、untracked 6.76、deleted 4.61(VSCode #c74e39 仅 3.12,提亮;原 #e0705c 在选中行 4.28)、
+   * conflict 4.68(原 #e4676b 在激活 tab 4.40)、ignored 4.63(原 #8c8c8c 在激活 tab 4.26),后三者同色相提亮。 */
   --md-git-modified: #e2c08d;
   --md-git-added: #81b88b;
   --md-git-untracked: #73c991;
-  --md-git-deleted: #e0705c;
-  --md-git-conflict: #e4676b;
-  --md-git-ignored: #8c8c8c;
+  --md-git-deleted: #e27967;
+  --md-git-conflict: #e7767a;
+  --md-git-ignored: #979797;
 }
 
 /* ── Tailwind v4 @theme:把 LM 14 个语义 token 映射到 MD3 ───── */
@@ -153,7 +155,7 @@
   --color-rating: var(--md-rating);
   /* 列表命中字符 text-list-highlight(命令面板 / Quick Open 匹配高亮) */
   --color-list-highlight: var(--md-list-highlight);
-  /* 资源管理器 git 装饰 text-git-*(名称 / 徽标颜色,见 src/panels/Explorer/git-decorations.ts) */
+  /* git 装饰 text-git-*(资源管理器 / 编辑器 tab / 搜索结果的名称与徽标颜色,见 src/panels/Explorer/git-decorations.ts) */
   --color-git-modified: var(--md-git-modified);
   --color-git-added: var(--md-git-added);
   --color-git-untracked: var(--md-git-untracked);
