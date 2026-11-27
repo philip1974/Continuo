@@ -46,6 +46,15 @@
   white-space: nowrap;
 }
 
+/* 可勾选项(menuitemcheckbox / menuitemradio)的前置勾:未勾选也占位,同组各项文字对齐 */
+.wm-menu-item__check {
+  flex-shrink: 0;
+  width: 1em;
+  margin-right: var(--wm-space-1_5);
+  color: var(--md-on-surface);
+  text-align: center;
+}
+
 /* 右侧次要内容(快捷键 / 计数):不参与 label 截断,靠右、弱化 */
 .wm-menu-item__trailing,
 .wm-menu-item__shortcut {

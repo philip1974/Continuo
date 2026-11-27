@@ -2,9 +2,11 @@
 // 不参与 Dockview 拖拽。右边 4px 拖拽条改宽度,clamp 200-500;
 // sidebarOpen / sidebarWidth 由 explorer.json 持久化(layoutUi 字段)。
 // 窄窗口让位(同 VSCode):显示宽度另受窗口宽约束,给编辑区留 EDITOR_MIN_WIDTH,保存值不变。
+// 文件树下方是可折叠的「大纲」分区(VSCode 资源管理器视图容器里的 Outline 视图;BDD: src/__tests__/markdown-outline/)。
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Explorer } from '@/panels/Explorer';
+import { OutlineSection } from '@/panels/Outline/OutlineView';
 import { ExplorerVisibleContext } from '@/panels/Explorer/visibility';
 import {
   SIDEBAR_MIN_WIDTH,
@@ -55,11 +57,14 @@ export function ExplorerSidebar() {
     <aside
       data-workbench-part="sidebar"
       hidden={!open}
-      className="relative shrink-0 border-r border-line bg-canvas"
+      className="relative flex shrink-0 flex-col border-r border-line bg-canvas"
     >
       <ExplorerVisibleContext.Provider value={open}>
         {/* Explorer 是 memo 组件且无 props:shell 重渲(开关)不级联重渲文件树,只经 context 通知可见性。 */}
-        <Explorer />
+        <div className="min-h-0 flex-1">
+          <Explorer />
+        </div>
+        <OutlineSection />
       </ExplorerVisibleContext.Provider>
       {open && <ExplorerSidebarResizer />}
     </aside>

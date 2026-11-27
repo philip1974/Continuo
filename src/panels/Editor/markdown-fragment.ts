@@ -15,6 +15,8 @@ export interface MarkdownHeading {
   /** 渲染后的文字。 */
   readonly text: string;
   readonly slug: string;
+  /** 级别 1–6(setext:`===` 为 1、`---` 为 2)。 */
+  readonly level: number;
 }
 
 /** 不出现在渲染文字里的语法节点(整段跳过)。 */
@@ -55,8 +57,11 @@ function blankFrontmatter(source: string): string {
   return source.slice(0, end).replace(/[^\r\n]/g, ' ') + source.slice(end);
 }
 
-/** 源码里的标题,按文档顺序,带 slug(重复加 -1 / -2;空标题不收)。 */
-export function markdownHeadings(source: string): MarkdownHeading[] {
+/**
+ * 源码里的标题,按文档顺序,带 slug(重复加 -1 / -2;空标题不收 —— keepEmpty 时也收,slug 为空且不参与重复编号:大纲 / 转到符号
+ * 按文档顺序与渲染出的标题节点一一对应,BDD: src/__tests__/markdown-outline/)。
+ */
+export function markdownHeadings(source: string, opts?: { readonly keepEmpty?: boolean }): MarkdownHeading[] {
   const text = blankFrontmatter(source);
   const tree = markdownLanguage.parser.parse(text);
   const lineStarts = [0];
@@ -84,7 +89,8 @@ export function markdownHeadings(source: string): MarkdownHeading[] {
         pos = Math.max(pos, to);
       };
       node.node.cursor().iterate((child) => {
-        if (child.from === node.from && child.to === node.to) return true; // 标题本身
+        // 标题本身(按名称判:空标题 `##` 的标记与标题同范围,不能当成标题本身下钻,否则标记被算成文字)
+        if (child.name === node.name && child.from === node.from && child.to === node.to) return true;
         const name = child.name;
         const parent = child.node.parent?.name;
         if (SKIP.has(name) || (name === 'URL' && parent !== 'Autolink')) {
@@ -109,7 +115,9 @@ export function markdownHeadings(source: string): MarkdownHeading[] {
       take(node.to);
       // setext 多行:续行行首缩进不算文字
       const plain = raw.replace(/[ \t]*\r?\n[ \t]*/g, '\n').trim();
-      if (plain !== '') out.push({ line: lineAt(node.from), text: plain, slug: slugOf(plain) });
+      const level = Number(node.name[node.name.length - 1]);
+      if (plain !== '') out.push({ line: lineAt(node.from), text: plain, slug: slugOf(plain), level });
+      else if (opts?.keepEmpty) out.push({ line: lineAt(node.from), text: '', slug: '', level });
       return false;
     },
   });

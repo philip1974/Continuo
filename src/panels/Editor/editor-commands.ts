@@ -64,6 +64,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useQuickOpenStore } from '@/plugins/quick-open/store';
 import { useCommandPaletteStore } from '@/plugins/command-palette/store';
 import { GOTO_LINE_PREFIX } from '@/plugins/quick-open/goto-line';
+import { GOTO_SYMBOL_PREFIX } from '@/plugins/quick-open/use-goto-symbol';
 import {
   LEAST_RECENT_EDITOR_IN_GROUP_COMMAND,
   RECENT_EDITOR_IN_GROUP_COMMAND,
@@ -112,6 +113,17 @@ export const GOTO_LINE_COMMAND = { id: 'workbench.action.gotoLine', hotkey: 'ctr
 export function openGotoLine(): void {
   useCommandPaletteStore.getState().close();
   useQuickOpenStore.getState().openWith(GOTO_LINE_PREFIX);
+}
+
+/**
+ * 转到编辑器中的符号(VSCode workbench.action.gotoSymbol:mac ⇧⌘O、Windows / Linux Ctrl+Shift+O)。BDD: src/__tests__/markdown-outline/
+ */
+export const GOTO_SYMBOL_COMMAND = { id: 'workbench.action.gotoSymbol', hotkey: 'mod+shift+o' } as const;
+
+/** 打开 Quick Open 并预填 `@`(与命令面板互斥,同 ⌘P)。 */
+export function openGotoSymbol(): void {
+  useCommandPaletteStore.getState().close();
+  useQuickOpenStore.getState().openWith(GOTO_SYMBOL_PREFIX);
 }
 /** 聚焦第 N 个编辑器组(N = 1..3)的命令 id 与默认键(VSCode 同:⌘1 / ⌘2 / ⌘3,其它平台 Ctrl+1 …)。 */
 export const FOCUS_EDITOR_GROUP_COMMANDS = [
@@ -477,6 +489,14 @@ export function editorCommandSpecs(platform: Platform): CommandSpec[] {
       category: 'View',
       categoryKey: 'commands.view.category',
       fn: openGotoLine,
+    },
+    {
+      ...GOTO_SYMBOL_COMMAND,
+      title: 'Go to Symbol in Editor…',
+      titleKey: 'commands.editor.goto_symbol.title',
+      category: 'View',
+      categoryKey: 'commands.view.category',
+      fn: openGotoSymbol,
     },
     {
       id: NAVIGATE_BACK_COMMAND_ID,

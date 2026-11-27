@@ -1275,6 +1275,15 @@
 - [`mode-handoff.spec.tsx`](./markdown-mode-position/mode-handoff.spec.tsx)
 - [`position-map.spec.tsx`](./markdown-mode-position/position-map.spec.tsx)
 
+## [转到符号(⇧⌘O,Quick Open `@`)与侧栏「大纲」视图](./markdown-outline/README.md)
+
+- [`goto-symbol-command.spec.ts`](./markdown-outline/goto-symbol-command.spec.ts)
+- [`goto-symbol-quick-open.spec.tsx`](./markdown-outline/goto-symbol-quick-open.spec.tsx)
+- [`markdown-symbols.spec.ts`](./markdown-outline/markdown-symbols.spec.ts)
+- [`outline-handle.spec.ts`](./markdown-outline/outline-handle.spec.ts)
+- [`outline-model.spec.ts`](./markdown-outline/outline-model.spec.ts)
+- [`outline-view.spec.tsx`](./markdown-outline/outline-view.spec.tsx)
+
 ## [marketplace(插件市场浏览 Phase 1)](./marketplace/README.md)
 
 - [`filter.spec.ts`](./marketplace/filter.spec.ts)

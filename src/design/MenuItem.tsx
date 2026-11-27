@@ -34,6 +34,14 @@ export interface MenuItemProps
    * name so the item is still announced (and matched) by its label. Defaults to none.
    */
   readonly shortcut?: string;
+  /**
+   * Makes the row checkable: `role="menuitemcheckbox"` (or `menuitemradio` with `checkKind="radio"`) with `aria-checked`, and a
+   * leading check mark when true (VSCode menus: toggles such as "Follow Cursor", one-of choices such as "Sort By"). Defaults to a
+   * plain `menuitem`.
+   */
+  readonly checked?: boolean;
+  /** `checkbox` (default) for an independent toggle, `radio` for one choice of a group. Ignored without `checked`. */
+  readonly checkKind?: 'checkbox' | 'radio';
   /** Forwarded to the underlying button (React 19 ref-as-prop). */
   readonly ref?: Ref<HTMLButtonElement>;
   /** Row label or composed menu content. No default. */
@@ -48,10 +56,13 @@ export function MenuItem({
   ariaLabel,
   trailing,
   shortcut,
+  checked,
+  checkKind = 'checkbox',
   ref,
   children,
   ...rest
 }: MenuItemProps) {
+  const checkable = checked !== undefined;
   return (
     <button
       // a11y(A31,A29 同族):role="menuitem" 须移出普通 Tab 顺序(menu composite 契约:Tab
@@ -62,13 +73,19 @@ export function MenuItem({
       {...rest}
       ref={ref}
       type="button"
-      role="menuitem"
+      role={checkable ? (checkKind === 'radio' ? 'menuitemradio' : 'menuitemcheckbox') : 'menuitem'}
+      aria-checked={checkable ? checked : undefined}
       className="wm-menu-item"
       data-variant={variant}
       disabled={disabled}
       title={title}
       onClick={onClick}
     >
+      {checkable && (
+        <span className="wm-menu-item__check" aria-hidden="true">
+          {checked ? '✓' : ''}
+        </span>
+      )}
       <span className="wm-menu-item__content">{children}</span>
       {trailing != null && <span className="wm-menu-item__trailing">{trailing}</span>}
       {shortcut ? (

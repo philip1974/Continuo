@@ -5,7 +5,7 @@
 // - Esc 取消 / 删掉 `:` 离开该模式 → 光标与滚动位置回到打开前(VSCode 同:未确认就恢复视图状态);
 // - 行号越界夹到文档范围内(VSCode 对越界不跳;此处按产品要求夹取)。
 // - 后退 / 前进的导航记录:预览与取消恢复不记;Enter 记「原位置 → 目标」(BDD: src/__tests__/editor-navigation-history/)。
-// scrollToLine 依赖 @codemirror/view,动态 import(Quick Open 在启动路径上,不把编辑器引擎拖进启动包)。
+// scrollToLine 依赖 @codemirror/view,动态 import(loadScrollToLine;Quick Open 在启动路径上,不把编辑器引擎拖进启动包)。
 // BDD: src/__tests__/editor-goto-line/
 
 import { useEffect, useMemo, useRef } from 'react';
@@ -19,22 +19,8 @@ import {
   notifyEditorSelection,
   withoutNavigationRecording,
 } from '@/panels/Editor/navigation-history';
+import { loadScrollToLine } from '@/panels/Editor/markdown-symbol-navigation';
 import { clampGotoLine, isGotoLineQuery, parseGotoLineQuery } from './goto-line';
-
-type ScrollToLine = typeof import('@/panels/Editor/scrollToLine').scrollToLine;
-
-let scrollToLineModule: Promise<ScrollToLine> | null = null;
-
-function loadScrollToLine(): Promise<ScrollToLine> {
-  scrollToLineModule ??= import('@/panels/Editor/scrollToLine').then(
-    (m) => m.scrollToLine,
-    (err: unknown) => {
-      scrollToLineModule = null; // 失败不缓存,下次再试
-      throw err;
-    },
-  );
-  return scrollToLineModule;
-}
 
 interface GotoTarget {
   readonly view: EditorView;

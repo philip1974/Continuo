@@ -37,6 +37,7 @@ import { registerEditorWriteBack } from './editor-writeback-registry';
 import { registerEditorRootRebind } from './editor-root-registry';
 import { registerEditorFocus } from './editor-focus-registry';
 import { registerMarkdownReveal, type MarkdownRevealTarget } from './markdown-reveal-registry';
+import { createPmOutlineHandle, registerMarkdownOutline, type PmOutlineView } from './markdown-outline-registry';
 import { installGithubHeadingIds } from './markdown-heading-id';
 import { useEditorGroupId } from './editor-group-context';
 import { useEditorGroupNumber } from './editor-group-number';
@@ -793,12 +794,14 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   const viewMode = props.readonly ? 'preview' : 'edit';
   const unregisterFocusRef = useRef<(() => void) | null>(null);
   const unregisterRevealRef = useRef<(() => void) | null>(null);
+  const unregisterOutlineRef = useRef<(() => void) | null>(null);
   const positionRef = useRef<MarkdownPositionHandle | null>(null);
   const unsubscribeFindRef = useRef<(() => void) | null>(null);
   useEffect(
     () => () => {
       unregisterFocusRef.current?.();
       unregisterRevealRef.current?.();
+      unregisterOutlineRef.current?.();
       unsubscribeFindRef.current?.();
       // tab 已关闭(先从 store 移除、随后卸载):查找状态不再保留,重新打开不恢复
       if (!useEditorStore.getState().tabs?.some((t) => t.id === tabId)) forgetMarkdownFindSession(tabId);
@@ -1046,6 +1049,13 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
           const anchor = wrapperRef.current ? position.anchor(wrapperRef.current) : null;
           return anchor ? (anchor.cursorLine ?? anchor.topLine) : null;
         },
+      );
+      // 转到符号(⇧⌘O)/ 侧栏大纲:按标题序号定位、读出当前节(BDD: src/__tests__/markdown-outline/)
+      unregisterOutlineRef.current?.();
+      unregisterOutlineRef.current = registerMarkdownOutline(
+        tabId,
+        groupId,
+        createPmOutlineHandle(() => getView() as unknown as PmOutlineView | null, () => wrapperRef.current, viewMode === 'preview'),
       );
       onViewReadyRef.current?.();
     },

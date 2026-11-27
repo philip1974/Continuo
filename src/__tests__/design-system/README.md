@@ -77,7 +77,8 @@
 ### MenuItem / Badge 组件契约(`components.spec.tsx`)
 
 - `MenuItem` 透传 `ref` 与其余 button 属性(可作 Radix `ContextMenu.Item asChild` 的子元素),`onClick` 可省略;
-  `trailing` 渲染在截断 label 之外
+  `trailing` 渲染在截断 label 之外;`checked`(可选 `checkKind="radio"`)→ `menuitemcheckbox` / `menuitemradio` + `aria-checked`,
+  前置勾(未勾选占位对齐),菜单方向键漫游同样经过这两类项(`use-menu-keyboard`)
 - `Badge` 默认 `size="sm"`(胶囊),`data-size` / `data-variant` 写入 DOM
 
 ### TabNav unfocused(`components.spec.tsx`)

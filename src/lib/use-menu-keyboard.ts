@@ -80,13 +80,13 @@ export function useMenuKeyboard(opts: {
   return { menuRef, menuNode, onKeyDown, closeAndRestore };
 }
 
-/** 菜单内所有「可用」menuitem(排除 disabled),按 DOM 顺序。 */
+/** 菜单内所有「可用」menuitem(含可勾选的 menuitemcheckbox / menuitemradio;排除 disabled),按 DOM 顺序。 */
 function getMenuItems(
   menu: HTMLElement | null,
 ): NodeListOf<HTMLButtonElement> | null {
   if (!menu) return null;
   return menu.querySelectorAll<HTMLButtonElement>(
-    '[role="menuitem"]:not([disabled])',
+    ':is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):not([disabled])',
   );
 }
 

@@ -197,6 +197,7 @@ export function appMenuTemplate(
     command('workbench.action.navigateForward', 'menu.go.forward'),
     SEPARATOR,
     command('workbench.action.quickOpen', 'menu.go.go_to_file'),
+    command('workbench.action.gotoSymbol', 'menu.go.go_to_symbol'),
     command('workbench.action.gotoLine', 'menu.go.go_to_line'),
     SEPARATOR,
     command('workbench.action.nextEditor', 'menu.go.next_editor'),

@@ -162,6 +162,7 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'workbench.action.navigateBack',
       'workbench.action.navigateForward',
       'workbench.action.quickOpen',
+      'workbench.action.gotoSymbol',
       'workbench.action.gotoLine',
       'workbench.action.nextEditor',
       'workbench.action.previousEditor',

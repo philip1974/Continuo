@@ -48,9 +48,10 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.zoomIn',
   'workbench.action.zoomOut',
   'workbench.action.zoomReset',
-  // 选择器(⌃G 转到行、⌃R 打开最近、F1 显示所有命令):画在按键所在子窗(picker 切片按触发窗口取 hostDocument,见
+  // 选择器(⌃G 转到行、⇧⌘O 转到符号、⌃R 打开最近、F1 显示所有命令):画在按键所在子窗(picker 切片按触发窗口取 hostDocument,见
   // picker-window;VSCode 同)。⌘P / ⇧⌘P 由 picker 监听在各窗口处理。
   'workbench.action.gotoLine',
+  'workbench.action.gotoSymbol',
   'workbench.action.openRecent',
   'workbench.action.showCommands',
   // 颜色主题选择器画在按键所在子窗;切换浅深只改设置(BDD: src/__tests__/theme-commands/)

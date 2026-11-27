@@ -19,6 +19,7 @@ import {
 import { renderCategoryTab } from './lazy-category-tab';
 import { ExplorerIcon } from '@/plugins/settings/tab-icons';
 import { explorerCommandSpecs, toggleSidebarVisibility } from '@/panels/Explorer/explorer-commands';
+import { outlineCommandSpecs } from '@/panels/Outline/outline-commands';
 
 export default class ExplorerTabPlugin extends Plugin {
   onload(): void {
@@ -44,6 +45,8 @@ export default class ExplorerTabPlugin extends Plugin {
       fn: () => toggleSidebarVisibility(),
     });
     for (const spec of explorerCommandSpecs()) this.addCommand(spec);
+    // 侧栏「大纲」视图(BDD: src/__tests__/markdown-outline/)
+    for (const spec of outlineCommandSpecs()) this.addCommand(spec);
 
     this.addSettingItem(EXPLORER_SHOW_HIDDEN_FILES);
 

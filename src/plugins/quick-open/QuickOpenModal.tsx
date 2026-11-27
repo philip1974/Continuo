@@ -11,6 +11,8 @@
 //   BDD: src/__tests__/editor-goto-line/
 //   文件名:行号(`long.ts:200`、`a.ts:3:5`、`a.ts(3,5)`,VSCode 同):剥掉末尾行列再匹配文件,打开后跳到该行(居中)。
 //   BDD: src/__tests__/quick-open-file-line/
+//   转到编辑器中的符号:查询以 `@` 开头(⇧⌘O 预填;`@:` 按类别分组)→ 列表换成活动编辑器的符号(Markdown 标题),
+//   选中项跟随预览、Enter 跳转(见 use-goto-symbol)。BDD: src/__tests__/markdown-outline/
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePickerList } from '../picker/use-picker-list';
@@ -33,6 +35,7 @@ import { editorFileDeps } from '@/panels/Editor/editor-file-deps';
 import { focusActiveEditor } from '@/panels/Editor/editor-focus-registry';
 import { normalizeSearchQuery } from '@/lib/search-query';
 import { useGotoLine } from './use-goto-line';
+import { useGotoSymbol } from './use-goto-symbol';
 import { parseFileLineQuery, type GotoLineRequest } from './goto-line';
 import { openFileInEditor, type EditorRevealOptions } from '@/plugins/co-app';
 import type { TextEncodingId } from '../../../electron/shared/text-encoding';
@@ -242,9 +245,10 @@ function QuickOpenBody() {
   // 列表机制(virtualizer / 越界钳制 / 滚动跟随 / 键盘导航 / ARIA)走共享 usePickerList。
   // filtered 仍是逻辑全集(最多 QUICK_OPEN_MAX_FILES),只渲染可视行。
   const gotoLine = useGotoLine(query, close);
+  const gotoSymbol = useGotoSymbol(query, selectedIndex, close);
   const { scrollRef, virtualItems, comboboxProps, listboxProps, getOptionProps } = usePickerList({
     idPrefix: 'quick-open',
-    count: gotoLine.active ? (gotoLine.canAccept ? 1 : 0) : filtered.length,
+    count: gotoLine.active ? (gotoLine.canAccept ? 1 : 0) : gotoSymbol.active ? gotoSymbol.items.length : filtered.length,
     selectedIndex,
     rowHeight: 28, // li: py-1.5 text-xs ≈ 28px
     overscan: 12,
@@ -253,6 +257,10 @@ function QuickOpenBody() {
     onEnter: (index) => {
       if (gotoLine.active) {
         gotoLine.accept();
+        return;
+      }
+      if (gotoSymbol.active) {
+        gotoSymbol.accept(index);
         return;
       }
       const file = filtered[index];
@@ -296,6 +304,44 @@ function QuickOpenBody() {
             // 无可跳转目标(只有 `:` / 没有文本编辑器):提示文字,焦点在输入框时读屏同样播报
             <div role="status" className="px-3 py-4 text-center text-xs text-fg-dim">
               {gotoLine.message}
+            </div>
+          )
+        ) : gotoSymbol.active ? (
+          gotoSymbol.items.length > 0 ? (
+            <ul {...listboxProps} aria-label={t('quick_open.symbol.list_aria')}>
+              {virtualItems.map((vRow) => {
+                const idx = vRow.index;
+                const sym = gotoSymbol.items[idx]!;
+                const container = gotoSymbol.containerOf(sym);
+                const hl = gotoSymbol.filter ? fuzzyMatchIndices(gotoSymbol.filter, sym.text) : null;
+                return (
+                  <li
+                    key={sym.ordinal}
+                    {...getOptionProps(vRow)}
+                    className={pickerRowClassName(idx === selectedIndex)}
+                    title={sym.name}
+                    onClick={() => gotoSymbol.accept(idx)}
+                  >
+                    {/* 名称(VSCode:`## 标题`)命中字符高亮(匹配源是标题文字,名称前有 级别 + 1 个字符);右侧容器名 + 首行分组标签 */}
+                    <span className="min-w-0 shrink truncate font-medium">{highlightMatches(sym.name, hl, -(sym.level + 1))}</span>
+                    {container !== undefined && (
+                      <span className={`min-w-0 flex-1 truncate text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}>
+                        {container}
+                      </span>
+                    )}
+                    {idx === 0 && (
+                      <span className={`ml-auto shrink-0 pl-2 text-2xs ${pickerRowSecondaryClassName(idx === selectedIndex)}`}>
+                        {gotoSymbol.groupLabel}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            // 无编辑器 / 不提供符号 / 无符号 / 无匹配(VSCode 同款提示);焦点在输入框时读屏同样播报
+            <div role="status" className="px-3 py-4 text-center text-xs text-fg-dim">
+              {gotoSymbol.message}
             </div>
           )
         ) : !root ? (

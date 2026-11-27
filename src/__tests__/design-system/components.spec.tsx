@@ -826,3 +826,28 @@ describe('EmptyState', () => {
     expect(el.dataset.testid).toBe('x');
   });
 });
+
+describe('MenuItem 可勾选(checked / checkKind)', () => {
+  it('checked → role=menuitemcheckbox + aria-checked,前置勾(勾选时 ✓,未勾选占位);checkKind=radio → menuitemradio', () => {
+    render(
+      <div role="menu">
+        <MenuItem checked>Follow</MenuItem>
+        <MenuItem checked={false}>Off</MenuItem>
+        <MenuItem checked checkKind="radio">
+          By position
+        </MenuItem>
+        <MenuItem>Plain</MenuItem>
+      </div>,
+    );
+    const on = screen.getByRole('menuitemcheckbox', { name: 'Follow' });
+    expect(on.getAttribute('aria-checked')).toBe('true');
+    expect(on.querySelector('.wm-menu-item__check')!.textContent).toBe('✓');
+    const off = screen.getByRole('menuitemcheckbox', { name: 'Off' });
+    expect(off.getAttribute('aria-checked')).toBe('false');
+    expect(off.querySelector('.wm-menu-item__check')!.textContent).toBe('');
+    expect(screen.getByRole('menuitemradio', { name: 'By position' }).getAttribute('aria-checked')).toBe('true');
+    const plain = screen.getByRole('menuitem', { name: 'Plain' });
+    expect(plain.hasAttribute('aria-checked')).toBe(false);
+    expect(plain.querySelector('.wm-menu-item__check')).toBeNull();
+  });
+});

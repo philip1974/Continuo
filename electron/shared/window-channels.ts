@@ -123,6 +123,7 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.navigateBack',
   'workbench.action.navigateForward',
   'workbench.action.quickOpen',
+  'workbench.action.gotoSymbol',
   'workbench.action.gotoLine',
   'workbench.action.nextEditor',
   'workbench.action.previousEditor',
