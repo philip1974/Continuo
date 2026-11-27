@@ -1823,6 +1823,10 @@
 - [`popout-picker.spec.tsx`](./popout-picker/popout-picker.spec.tsx)
 - [`window-focus-ipc.spec.ts`](./popout-picker/window-focus-ipc.spec.ts)
 
+## [popout-stylesheets(popout 子窗跟随主窗后加载的样式)](./popout-stylesheets/README.md)
+
+- [`popout-stylesheets.spec.ts`](./popout-stylesheets/popout-stylesheets.spec.ts)
+
 ## [posix-backslash-filename(macOS / Linux 上文件名含 `\`)](./posix-backslash-filename/README.md)
 
 - [`posix-backslash.spec.ts`](./posix-backslash-filename/posix-backslash.spec.ts)
