@@ -580,6 +580,8 @@ export const en = {
   'panels.explorer.rename_exists': 'A file or folder “{name}” already exists at this location. Please choose a different name.',
   'panels.explorer.undo_failed': 'Could not undo the file operation on “{name}”: {message}',
   'panels.explorer.redo_failed': 'Could not redo the file operation on “{name}”: {message}',
+  'panels.explorer.create_file_failed': 'Unable to create file “{name}”: {message}',
+  'panels.explorer.create_folder_failed': 'Unable to create folder “{name}”: {message}',
   'panels.explorer.undo_blocked_by_delete': 'Deleting can’t be undone. You can restore deleted items from the Trash.',
   'panels.explorer.file_undo_target_exists': 'A file or folder “{name}” already exists at this location',
   'panels.explorer.undo_create_confirm.single': 'Undo creating “{name}”? It will be moved to the Trash.',

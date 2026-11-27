@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
 import { IconButton, MenuItem } from '@/design';
 import { MoreActionsIcon } from '@/lib/ui-icons';
@@ -10,7 +10,8 @@ import { createUserTerminal } from '@/shell/dock/create-user-terminal';
 import { addPanelAndFocus, openOrFocusPanelNow } from '@/shell/dock/dock-api-ref';
 import { nextPanelId, popoutPanel } from '@/shell/dock/dock-panel-actions';
 import { notify } from '@/notifications/notify';
-import { useTWithFallback, t } from '@/i18n';
+import { useTWithFallback, useT, t } from '@/i18n';
+import { labelDockTablist } from '@/shell/dock/dock-tablist';
 import { commandHotkeyText } from '@/lib/hotkey-label';
 import { useKeybindingsStore } from '@/plugins/keybindings/keybindings-store';
 
@@ -42,6 +43,14 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const tk = useTWithFallback();
+  const tl = useT();
+  const rootRef = useRef<HTMLDivElement>(null);
+  // a11y:组级补本组 tab 条的 tablist 名称 —— header actions 每个组都渲染(含无 tab 的空组),SharedTab 只在有 tab 时
+  // 渲染:面板全弹出到子窗后主窗空占位组的 tablist 名称此前切语言不更新。每次渲染(useT 订阅 locale)重写。
+  useEffect(() => {
+    const header = rootRef.current?.closest('.dv-tabs-and-actions-container');
+    labelDockTablist(header?.querySelector('.dv-tabs-container'), tl('shell.tab.dock_tablist'));
+  });
   const popoutLabel = t('shell.dock.popout_title');
   const moreActionsLabel = t('panels.explorer.btn.more_actions');
   // 动态读取已注册 panel 类型(含内置 + 未来第三方插件)
@@ -108,6 +117,7 @@ export function HeaderActions(props: IDockviewHeaderActionsProps) {
 
   return (
     <div
+      ref={rootRef}
       className="group/header relative flex h-full items-center gap-1 pr-1"
     >
       {!isPopout && (

@@ -13,6 +13,8 @@ dockview 的组位置(`group.api.location.type`)或元素的 `ownerDocument` 取
   - 定位用触发按钮所在窗口的 viewport(`right = 子窗 innerWidth - 按钮 rect.right`);
   - 在子窗里点菜单 / 触发区之外 → 菜单关闭;
   - 方向键漫游按子窗的焦点元素计算(ArrowDown 从首项到第二项)。
+- **空组 tab 条名称**:组内没有 tab 时(面板全弹出到子窗后主窗留下的空占位组,SharedTab 不渲染),组级 header actions
+  仍给本组 `.dv-tabs-container` 补 `role=tablist` + 本地化 aria-label,切换语言后随之更新。
 - 触发按钮在主窗时行为不变(既有 `dropdown-menu` / `header-actions` 规范覆盖)。
 
 ## 不在本主题验证

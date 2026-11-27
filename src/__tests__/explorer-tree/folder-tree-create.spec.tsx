@@ -543,8 +543,30 @@ describe('FolderTree · 新建实时重名校验与失焦失败', () => {
     await waitFor(() => expect(input()).toBeNull());
     expect(r.queryByRole('alert')).toBeNull();
     await waitFor(() => expect(notifyError).toHaveBeenCalled());
-    expect(notifyError.mock.calls[0]![0]).toMatch(/已存在|Already exists/);
+    // toast 带上名字(VSCode 文件服务报错含资源名:Unable to create file '{0}' …),不只写原因
+    expect(notifyError.mock.calls[0]![0]).toBe('无法创建文件「ghost.ts」：已存在');
     expect(document.activeElement).toBe(other);
+    other.remove();
+    notifyError.mockRestore();
+  });
+
+  it('新建文件夹失焦提交失败 → toast 用文件夹文案并带名字', async () => {
+    const notifyError = vi.spyOn(notify, 'error').mockImplementation(() => '');
+    const r = await mount();
+    vi.mocked(coApi.fs.createDir).mockResolvedValueOnce({
+      ok: false,
+      code: 'FS_EEXIST',
+      message: 'EEXIST: file already exists',
+    } as never);
+    const el = await startCreateIn(r, '/work/alpha', NEW_FOLDER);
+    await waitFor(() => expect(document.activeElement).toBe(el));
+    type(el, 'ghost');
+    const other = outside();
+    act(() => other.focus());
+    await flush();
+    await waitFor(() => expect(notifyError).toHaveBeenCalled());
+    expect(notifyError.mock.calls[0]![0]).toBe('无法创建文件夹「ghost」：已存在');
+    expect(notifyError.mock.calls[0]![1]).toMatchObject({ code: 'FS_EEXIST' });
     other.remove();
     notifyError.mockRestore();
   });

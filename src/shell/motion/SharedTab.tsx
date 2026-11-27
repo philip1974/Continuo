@@ -8,6 +8,7 @@ import type {
 } from 'dockview-react';
 import { useT } from '@/i18n';
 import { focusPanelContent } from '@/shell/dock/panel-focus';
+import { labelDockTablist } from '@/shell/dock/dock-tablist';
 import { closePanelsInOrder } from '@/shell/dock/wrap-panel-close';
 import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { tabCloseTargets, type TabCloseKind } from '@/lib/tab-close-targets';
@@ -123,14 +124,9 @@ export function SharedTab(props: IDockviewPanelHeaderProps) {
   // 方向键 composite 模型也缺父语义。挂载时给最近的 tabs 容器补 role=tablist + 本地化 aria-label
   // (幂等:同容器多 tab 重复设无副作用;dockview 不控的 DOM 用 setAttribute 补语义)。
   useEffect(() => {
-    const container = rootRef.current?.closest('.dv-tabs-container');
-    if (!container) return;
-    if (container.getAttribute('role') !== 'tablist') {
-      container.setAttribute('role', 'tablist');
-    }
     // a11y(A125):每次(含 locale 变化 → useT 重渲)重写 aria-label,使组名随语言更新,不再用
-    // 「仅缺失时设」守卫(否则切语言后停留旧语言)。
-    container.setAttribute('aria-label', t('shell.tab.dock_tablist'));
+    // 「仅缺失时设」守卫(否则切语言后停留旧语言)。组内已无 tab(如面板全弹出后主窗的空占位组)时由 HeaderActions 更新。
+    labelDockTablist(rootRef.current?.closest('.dv-tabs-container'), t('shell.tab.dock_tablist'));
   });
 
   // dockview 的 Tab 构造时把外层 .dv-tab 写死 tabIndex=0:每个 tab 多一个无键盘行为的 Tab 停靠点,抵消下方内层

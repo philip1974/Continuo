@@ -558,6 +558,8 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.rename_exists': '此位置已存在文件或文件夹「{name}」。请选择其他名称。',
   'panels.explorer.undo_failed': '无法撤销对「{name}」的文件操作：{message}',
   'panels.explorer.redo_failed': '无法重做对「{name}」的文件操作：{message}',
+  'panels.explorer.create_file_failed': '无法创建文件「{name}」：{message}',
+  'panels.explorer.create_folder_failed': '无法创建文件夹「{name}」：{message}',
   'panels.explorer.undo_blocked_by_delete': '删除无法撤销，可从废纸篓恢复。',
   'panels.explorer.file_undo_target_exists': '此位置已存在「{name}」',
   'panels.explorer.undo_create_confirm.single': '确定要撤销新建「{name}」吗？它将被移到废纸篓。',

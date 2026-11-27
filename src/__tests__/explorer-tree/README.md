@@ -126,7 +126,7 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - 实时重名校验(VSCode `validateFileName`「已存在」,`parent.getChild` 平台感知大小写):输入与父目录**已加载**子项同名(文件
   或文件夹;macOS / Windows 忽略大小写,Linux 区分)→ 输入框下方即时提示「已存在」,Enter 不创建;失焦 → 放弃,不创建,焦点
   留在用户点的地方。嵌套名(`a/b.ts`)不在此判
-- 失焦触发的提交在 main 端失败(未加载 / 隐藏的同名项、权限等)→ 输入条直接关闭并 toast 原因(VSCode 失焦时输入无效即取消),
+- 失焦触发的提交在 main 端失败(未加载 / 隐藏的同名项、权限等)→ 输入条直接关闭并 toast「无法创建文件「名字」：原因」(文件夹另一条;输入条已消失,须带名字。VSCode 文件服务报错含资源名;失焦时输入无效即取消),
   不留无焦点、带错误的孤立输入条;Enter 提交失败仍保留输入并内联提示(可改名重试)
 - 输入框组件契约(重试守卫 / aria-invalid / onEdit / 失焦)见 `create-input` 主题
 
@@ -162,3 +162,10 @@ React 组件渲染 / 虚拟滚动 / 真键盘交互留 Step 7 smoke E2E。
 - selection feature 的内部 state 流转(headless-tree 自带覆盖)
 - `EmptyWorkspace` 按钮点击 → fs.selectDirectory → setRoot 的真实 IPC 路径(留 E2E)
 - `initExplorerPersistence` 在 main-app.ts 的接入(已在 explorer-stores 主题测过)
+
+## 焦点行滚出视口仍渲染(`folder-tree-focus-pinned.spec.tsx`)
+
+- 鼠标滚轮把 DOM 焦点所在行滚出视口时,虚拟列表不卸载它:virtualizer 的 `rangeExtractor` 在
+  `defaultRangeExtractor(range)` 结果中并入焦点行下标(`rangeWithPinnedIndex`,升序去重;越界原样返回)
+- 未聚焦过时(headless-tree `getFocusedItem` 回落首项)首项同样常驻,Tab 进树仍有落点
+- 滚出视口后 DOM 焦点仍在该行(不掉到 body),↓ / Shift+F10 / ⌘C 等照常;按 ↓ 焦点移到下一行并滚回(VSCode 列表滚动不丢焦点)

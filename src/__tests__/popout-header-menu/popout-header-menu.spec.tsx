@@ -8,7 +8,7 @@ import { DropdownMenu } from '../../lib/dropdown-menu';
 import { HeaderActions } from '../../shell/dock/HeaderActions';
 import { coApp } from '../../plugins/co-app';
 import { PanelRegistry } from '../../plugins/registries/PanelRegistry';
-import { t } from '../../i18n';
+import { t, setLocale, notifyLocaleChange } from '../../i18n';
 import { makeChildDocument, keydown, type ChildDocument } from '../_helpers/child-document';
 
 vi.mock('../../shell/dock/create-user-terminal', () => ({ createUserTerminal: vi.fn() }));
@@ -52,6 +52,35 @@ describe('弹出按钮按组位置显隐', () => {
   it('组在主窗 grid → 显示弹出按钮', () => {
     const { container } = render(<HeaderActions {...headerProps('grid')} />);
     expect(popoutBtn(container)).not.toBeNull();
+  });
+});
+
+// 面板全弹出到子窗后,主窗留下的空 dock 组没有任何 tab(SharedTab 不渲染),只有组级 header actions 仍渲染。
+// tab 条的 tablist 名称须由组级更新,切语言后不停留旧语言。
+describe('空组 tab 条的 tablist 名称随语言更新', () => {
+  it('组内无 tab → header actions 给本组 .dv-tabs-container 补 role=tablist,切语言后名称更新', () => {
+    // 照 dockview header 结构:.dv-tabs-and-actions-container > .dv-tabs-container(空)+ .dv-right-actions-container
+    const header = document.body.appendChild(document.createElement('div'));
+    header.className = 'dv-tabs-and-actions-container';
+    const strip = header.appendChild(document.createElement('div'));
+    strip.className = 'dv-tabs-container';
+    const actions = header.appendChild(document.createElement('div'));
+    actions.className = 'dv-right-actions-container';
+    try {
+      setLocale('en');
+      render(<HeaderActions {...headerProps('grid')} />, { container: actions });
+      expect(strip.getAttribute('role')).toBe('tablist');
+      expect(strip.getAttribute('aria-label')).toBe('Panel tabs');
+      act(() => {
+        setLocale('zh');
+        notifyLocaleChange();
+      });
+      expect(strip.getAttribute('aria-label')).toBe('面板标签');
+    } finally {
+      setLocale('zh');
+      cleanup();
+      header.remove();
+    }
   });
 });
 

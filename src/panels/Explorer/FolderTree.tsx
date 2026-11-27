@@ -10,7 +10,8 @@ import {
 } from './path-utils';
 import { joinPath, stripRootPrefix, isSameOrInsidePath } from '@/lib/path-cross';
 import { useTree } from '@headless-tree/react';
-import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer, type Range, type Virtualizer } from '@tanstack/react-virtual';
+import { rangeWithPinnedIndex } from '@/lib/virtual-range';
 import type {
   AsyncDataLoaderDataRef,
   ItemInstance,
@@ -977,11 +978,24 @@ export function FolderTree({ root }: { root: string }) {
     if (!visible || !el) return;
     if (el.scrollTop !== lastScrollTopRef.current) el.scrollTop = lastScrollTopRef.current;
   }, [visible]);
+  // 焦点行(tabIndex=0、DOM 焦点所在)常驻渲染:鼠标滚轮把它滚出视口时虚拟列表不卸载它,否则 DOM 焦点掉到 body,
+  // ↓ / Shift+F10 / ⌘C / Delete 全部失效(VSCode 列表滚动不丢焦点)。未聚焦过时库回落首项,同样常驻,Tab 进树仍有落点。
+  // BDD: src/__tests__/explorer-tree/folder-tree-focus-pinned.spec.tsx
+  const focusedRowId = tree.getState().focusedItem ?? null;
+  const focusedRowIndex = useMemo(
+    () => (focusedRowId === null ? (rows.length > 0 ? 0 : -1) : rowIndexOf(rows, focusedRowId)),
+    [rows, focusedRowId],
+  );
+  const keepFocusedRowRange = useCallback(
+    (range: Range) => rangeWithPinnedIndex(range, focusedRowIndex),
+    [focusedRowIndex],
+  );
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => (isDirLoadErrorRow(rows[i]) ? DIR_LOAD_ERROR_ROW_HEIGHT : FILE_ROW_HEIGHT),
     overscan: 8,
+    rangeExtractor: keepFocusedRowRange,
   });
   virtualizerRef.current = virtualizer;
 
@@ -1248,7 +1262,14 @@ export function FolderTree({ root }: { root: string }) {
       const error = localizeErrorByCode(r.code, r.message);
       if (trigger === 'blur') {
         setCreating((c) => (c?.seq === seq ? null : c));
-        notify.error(error, { code: r.code });
+        // 输入条已消失:toast 须带上名字(VSCode 文件服务报错含资源名),不能只写原因
+        notify.error(
+          t(type === 'dir' ? 'panels.explorer.create_folder_failed' : 'panels.explorer.create_file_failed', {
+            name,
+            message: error,
+          }),
+          { code: r.code },
+        );
         return false;
       }
       // 只回写仍是这次新建的输入框(等待期间已 Esc / 又开了新的新建则不动)

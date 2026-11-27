@@ -561,6 +561,8 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.rename_exists': '이 위치에 파일 또는 폴더 “{name}”이(가) 이미 있습니다. 다른 이름을 선택하세요.',
   'panels.explorer.undo_failed': '“{name}”에 대한 파일 작업을 실행 취소할 수 없습니다: {message}',
   'panels.explorer.redo_failed': '“{name}”에 대한 파일 작업을 다시 실행할 수 없습니다: {message}',
+  'panels.explorer.create_file_failed': '파일 “{name}”을(를) 만들 수 없습니다: {message}',
+  'panels.explorer.create_folder_failed': '폴더 “{name}”을(를) 만들 수 없습니다: {message}',
   'panels.explorer.undo_blocked_by_delete': '삭제는 실행 취소할 수 없습니다. 휴지통에서 복원할 수 있습니다.',
   'panels.explorer.file_undo_target_exists': '이 위치에 “{name}”이(가) 이미 있습니다',
   'panels.explorer.undo_create_confirm.single': '“{name}” 만들기를 실행 취소하시겠습니까? 휴지통으로 이동됩니다.',
