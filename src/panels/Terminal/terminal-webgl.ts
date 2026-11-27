@@ -34,7 +34,10 @@ export interface TerminalWebglDeps {
 }
 
 export interface TerminalWebgl {
-  /** 面板显隐(dockview onDidVisibilityChange;拆分并排 / popout 子窗里同时可见的都算可见)。可见且未装时下一帧装。 */
+  /**
+   * 面板显隐(dockview onDidVisibilityChange;拆分并排 / popout 子窗里同时可见的都算可见)。可见且未装时下一帧装;
+   * 隐藏时让出过名额的终端重新可见时当场装上并画出。
+   */
   setVisible(visible: boolean): void;
   dispose(): void;
   /** 当前是否在用 WebGL。 */
@@ -44,7 +47,8 @@ export interface TerminalWebgl {
 interface Slot {
   readonly visible: boolean;
   readonly lastShown: number;
-  release(): void;
+  /** 名额满时被让出(隐藏中)。 */
+  evict(): void;
 }
 
 /** 已装 WebGL 的终端(模块级:同一渲染进程里的所有窗口共用)。 */
@@ -61,13 +65,52 @@ export function activeTerminalWebglCount(): number {
  * class,跳过 —— 对已有 2d 上下文的 canvas 取 webgl2 返回 null,不会新建上下文)。
  */
 function webglContextOf(term: Terminal): WebGL2RenderingContext | null {
-  const screen = term.element?.querySelector?.('.xterm-screen');
-  for (const canvas of screen?.querySelectorAll<HTMLCanvasElement>(':scope > canvas') ?? []) {
-    if ([...canvas.classList].some((c) => c.startsWith('xterm-'))) continue;
+  for (const canvas of rendererCanvases(term)) {
     const gl = canvas.getContext('webgl2');
     if (gl) return gl;
   }
   return null;
+}
+
+function rendererCanvases(term: Terminal): HTMLCanvasElement[] {
+  const screen = term.element?.querySelector?.('.xterm-screen');
+  return [...(screen?.querySelectorAll<HTMLCanvasElement>(':scope > canvas') ?? [])].filter(
+    (canvas) => ![...canvas.classList].some((c) => c.startsWith('xterm-')),
+  );
+}
+
+/** canvas 宽高设为其设备像素尺寸(同 addon DevicePixelObserver 读到的 devicePixelContentBoxSize;相同则不动)。 */
+function matchDevicePixels(term: Terminal, dpr: number): void {
+  for (const canvas of rendererCanvases(term)) {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.round(rect.width * dpr);
+    const height = Math.round(rect.height * dpr);
+    if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+  }
+}
+
+/**
+ * 刚装上 WebGL 的终端在本帧画出(被让出过的终端重新可见时;不这样会空白 2~3 帧)。调用方在输入事件里(帧尚未开始):
+ * - xterm 的 RenderService 在 IntersectionObserver 回报可见前处于暂停(隐藏期间 refresh 只记一笔),回报在可见后的那一帧画完才到
+ *  —— 我们已从 dockview 得知可见,直接告诉它(私有 _handleIntersectionChange;xterm 改名则退化为等观察器,多空白一帧),
+ *  refresh 的渲染落在本帧 rAF;
+ * - addon 的 ResizeObserver 按 device-pixel-content-box 改 canvas 宽高(如 315 → 316)会清空已画内容,且发生在本帧 rAF 之后、
+ *  重画排到下一帧 —— 渲染前按同样的设备像素尺寸设好。放到微任务:同一事件里随后的 fit 若改了行列会按 cell 尺寸把 canvas 改回去。
+ */
+function paintNow(term: Terminal): void {
+  const win = term.element?.ownerDocument.defaultView;
+  if (win) queueMicrotask(() => matchDevicePixels(term, win.devicePixelRatio || 1));
+  const renderService = (term as unknown as { _core?: { _renderService?: { _handleIntersectionChange?(entry: unknown): void } } })._core
+    ?._renderService;
+  try {
+    renderService?._handleIntersectionChange?.({ isIntersecting: true, intersectionRatio: 1 });
+  } catch {
+    /* 私有实现变了:等观察器 */
+  }
+  term.refresh(0, term.rows - 1);
 }
 
 /**
@@ -101,7 +144,7 @@ function makeRoom(): void {
   for (const slot of installed) {
     if (!slot.visible && (!victim || slot.lastShown < victim.lastShown)) victim = slot;
   }
-  victim?.release();
+  victim?.evict();
 }
 
 export function createTerminalWebgl(term: Terminal, deps: TerminalWebglDeps = {}): TerminalWebgl {
@@ -118,6 +161,8 @@ export function createTerminalWebgl(term: Terminal, deps: TerminalWebglDeps = {}
   /** 待装的帧(装 WebGL 是同步 GPU 初始化,几十 ms:放到下一帧,不压在首屏 / 切 tab 的这一帧里)。 */
   let installFrame: { readonly win: Window | typeof globalThis; readonly id: number } | null = null;
   let disposed = false;
+  /** 隐藏时让出过名额:重新可见时同步装上并立即画(见 setVisible)。 */
+  let evicted = false;
 
   const termWindow = (): Window | null => term.element?.ownerDocument.defaultView ?? null;
 
@@ -128,7 +173,10 @@ export function createTerminalWebgl(term: Terminal, deps: TerminalWebglDeps = {}
     get lastShown() {
       return lastShown;
     },
-    release: () => release(),
+    evict: () => {
+      release();
+      evicted = true;
+    },
   };
   let lastShown = 0;
 
@@ -210,6 +258,14 @@ export function createTerminalWebgl(term: Terminal, deps: TerminalWebglDeps = {}
       lastShown = ++showClock;
       // 换了窗口(拖进 / 拖出 popout 子窗):canvas 的上下文属于原窗口,重建(VSCode updateGpuRendererWindow)
       if (addon && addonWindow !== termWindow()) release();
+      // 让出过名额(隐藏时换成的 DOM 渲染器在隐藏期间没画过):同步装上并当帧画出,不等下一帧(否则空白 2~3 帧)
+      if (evicted) {
+        evicted = false;
+        cancelInstallFrame();
+        install();
+        if (addon) paintNow(term);
+        return;
+      }
       scheduleInstall();
     },
     dispose() {

@@ -595,6 +595,7 @@
 
 - [`editor-find-widget.spec.tsx`](./editor-find-widget/editor-find-widget.spec.tsx)
 - [`find-match-scan.spec.ts`](./editor-find-widget/find-match-scan.spec.ts)
+- [`find-replace-step.spec.tsx`](./editor-find-widget/find-replace-step.spec.tsx)
 - [`find-widget-model.spec.ts`](./editor-find-widget/find-widget-model.spec.ts)
 
 ## [打开文件后焦点进编辑器(VSCode 对齐)](./editor-focus-on-open/README.md)

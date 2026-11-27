@@ -10,6 +10,10 @@
 - **名额**:所有终端(主窗与 popout 子窗同一渲染进程)同时持有 WebGL 的上限 `MAX_TERMINAL_WEBGL` = 12(低于 Chromium 的 16,
   留余量)。名额满、又有终端需要装时,卸掉**最久没显示的隐藏终端**(它回退 DOM,无可见代价;重新显示时再装,必要时再让出别的
   隐藏终端)。拆分并排 / popout 里同时可见的终端都算可见,不被让出;全是可见终端时照装。
+- **让出过名额的终端重新可见不空白**:隐藏时被让出、换成的 DOM 渲染器在隐藏期间没画过(xterm RenderService 在
+  IntersectionObserver 回报可见前暂停渲染);重新可见时**当场**装上 WebGL(不等下一帧),告诉 RenderService 已可见并 refresh 全部
+  行,canvas 先按设备像素(`devicePixelContentBox` 同值)设好宽高 —— 渲染落在本帧,addon 的 ResizeObserver 不再改尺寸清空画面。
+  CDP screencast 逐帧:修前切回空白 2~3 帧,修后 0 帧。没被让出过的终端(首次显示)照旧下一帧装。
 - **切 tab 不重建**:名额未满时,隐藏 / 重新显示不卸不装(不重复同步 GPU 初始化与纹理图集重建)。
 - **上下文丢失**(`onContextLoss`):卸掉回退 DOM;可见时按退避重试(1s、2s、4s),累计丢失 3 次后不再重试(防抖动);
   丢失时隐藏则等重新显示再装。
@@ -24,7 +28,7 @@
 
 | File | Role |
 |---|---|
-| `src/panels/Terminal/terminal-webgl.ts` | `createTerminalWebgl`:每终端的装 / 卸、模块级名额(LRU 让出隐藏终端)、上下文丢失退避重试、换窗口重建 |
+| `src/panels/Terminal/terminal-webgl.ts` | `createTerminalWebgl`:每终端的装 / 卸、模块级名额(LRU 让出隐藏终端)、让出过的终端重新可见时当场装上并画出、上下文丢失退避重试、换窗口重建 |
 | `src/panels/Terminal/useTerminal.ts` | 创建时 `setVisible(isVisible())`;返回 `setRendererVisible`;卸载时 dispose |
 | `src/panels/Terminal/TerminalPanelView.tsx` | dockview 显隐 / location 变化 → `setRendererVisible` |
 
@@ -33,3 +37,4 @@
 - `terminal-webgl.spec.ts`
 - `panel-visibility-wiring.spec.tsx`
 - e2e:`tests/e2e/terminal-webgl-many.spec.ts`(20 个终端时可见终端保持 WebGL、切 tab 耗时)
+- e2e:`tests/e2e/terminal-webgl-switch-frames.spec.ts`(22 个终端切回让出过的终端,screencast 逐帧无空白帧)

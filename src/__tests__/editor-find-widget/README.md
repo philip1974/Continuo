@@ -17,7 +17,15 @@
   匹配靠块尾重叠区接住;例外:跨行正则 + 全字匹配时 CodeMirror 自身在第一个不满足全字的匹配处就停,分片会数得更全)。
 - **查找下一个 / 上一个用已数到的匹配**:计数已完整(未封顶、查询与文档未变)时,查找框回车 / ⇧回车、面板「下一个 / 上一个」
   按钮、`editor.action.nextMatchFindAction` / `previousMatchFindAction`(⌘G / ⇧⌘G / F3)直接跳到已数到的匹配(从选区往后 / 往前,
-  到头绕回;读屏播报与滚动同 CodeMirror),不再整篇重新搜索;计数未完成 / 封顶 1000+ 时退回 CodeMirror 自己的 findNext / findPrevious。
+  到头绕回;读屏播报与滚动同 CodeMirror),不再整篇重新搜索;计数未完成 / 封顶 1000+ 时搜索(文本查询沿用 CodeMirror 的
+  findNext / findPrevious)。
+- **空匹配逐个前进**(VSCode `_moveToNextMatch` / `_moveToPrevMatch`):正则可匹配空串(`^`、`$`、`x*`、`\b`)时,下一个匹配恰是
+  选区终点处的空匹配 → 从下一位置再找(上一个对称:跳过选区起点处的空匹配),回车 / ⇧回车 / 按钮 / ⌘G 逐个走、到头绕回,不停在
+  原地;计数完整或封顶都一样。
+- **替换一次一步**(VSCode `findModel.replace()`):面板「替换」按钮与替换框回车 —— 选区恰是起点不早于选区起点的第一个匹配 →
+  替换它并选中替换结尾之后的下一个匹配;否则只选中那个匹配(第一次按 = 选中)。替换结果仍匹配(不区分大小写 `id`→`ID`)也从替换
+  结尾之后继续,不卡在同一处;`^` 替换为 `> ` 一次一行。一次替换一个撤销步;正则 `$1` / `$&` / `$$`、`\n` / `\t` 转义同
+  CodeMirror;计数分片期间同样一次一步。「全部替换」仍是 CodeMirror 的 replaceAll(`^` 每行一次)。
 - **非法正则**:正则模式下查找词不是合法正则 → 计数区显示「正则表达式无效」(en / zh / ko,`editor.find.invalid_regex`,
   同无结果标红 + `aria-invalid`),`new RegExp` 的错误信息(按 CodeMirror 编译用的 `gmu`)作查找框与计数区的 `title`
   (悬停可见,也是查找框的可访问描述;VSCode 查找框弹出正则错误信息)。改回合法 / 清空即恢复。
@@ -44,7 +52,7 @@
 | File | Role |
 |---|---|
 | `src/panels/Editor/find-widget-model.ts` | 引擎无关的纯逻辑:`FindHistory` / 窗口共享 `editorFindHistory`、`formatFindCount`、`FIND_MATCH_LIMIT` |
-| `src/panels/Editor/codemirror-find.ts` | `codeEditorFind` / `codeMirrorFind` 扩展:默认面板上追加计数(分片 / 防抖)、aria-invalid、↑↓ 历史、用已数到的匹配跳转(`findNextMatch` / `findPreviousMatch`);选项切换键位(`codeMirrorFind` 另带替换键) |
+| `src/panels/Editor/codemirror-find.ts` | `codeEditorFind` / `codeMirrorFind` 扩展:默认面板上追加计数(分片 / 防抖)、aria-invalid、↑↓ 历史、用已数到的匹配跳转(`findNextMatch` / `findPreviousMatch`)、空匹配前进、替换一次一步;选项切换键位(`codeMirrorFind` 另带替换键) |
 | `src/panels/Editor/find-match-scan.ts` | `MatchScan`:按时间预算分块扫描匹配,结果同整篇 cursor |
 | `src/panels/Editor/codemirror-text-commands.ts` | 查找下一个 / 上一个命令接 `findNextMatch` / `findPreviousMatch` |
 | `src/panels/Editor/CodeEditor.tsx` | 挂 `codeEditorFind` |
@@ -55,4 +63,6 @@
 - `editor-find-widget.spec.tsx`
 - `find-widget-model.spec.ts`
 - `find-match-scan.spec.ts`(分片 vs 整篇 cursor 的随机对照)
+- `find-replace-step.spec.tsx`(替换一次一步、空匹配逐个前进)
 - e2e:`tests/e2e/editor-find-large-file.spec.ts`(10 万行文件开查找条输入 / 编辑 / 回车的每键耗时)
+- e2e:`tests/e2e/editor-find-replace-step.spec.ts`(替换一次一处、替换结果仍匹配继续前进、`^` 回车逐行、全部替换 `^`)

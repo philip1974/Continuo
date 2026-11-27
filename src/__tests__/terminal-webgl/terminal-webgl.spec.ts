@@ -21,7 +21,16 @@ function harness(opts: { failCreate?: boolean; element?: unknown } = {}) {
   const element = (opts.element ?? { ownerDocument: { defaultView: window as Window } }) as {
     ownerDocument: { defaultView: Window };
   };
-  const term = { loadAddon: vi.fn(), element } as unknown as Terminal;
+  const handleIntersectionChange = vi.fn();
+  const refresh = vi.fn();
+  const term = {
+    loadAddon: vi.fn(),
+    element,
+    rows: 24,
+    refresh,
+    // xterm 私有:RenderService 在 IntersectionObserver 回报可见前暂停渲染
+    _core: { _renderService: { _handleIntersectionChange: handleIntersectionChange } },
+  } as unknown as Terminal;
   const onRendererChange = vi.fn();
   const webgl = createTerminalWebgl(term, {
     onRendererChange,
@@ -48,6 +57,8 @@ function harness(opts: { failCreate?: boolean; element?: unknown } = {}) {
     addons,
     element,
     onRendererChange,
+    refresh,
+    handleIntersectionChange,
     /** 当前装着的 addon(最后一个未 dispose 的)。 */
     get live(): FakeAddon | undefined {
       return addons.filter((a) => !a.disposed).at(-1);
@@ -165,6 +176,64 @@ describe('名额:超过上限时让出的是最久没显示的隐藏终端', () 
       visible.push(t);
     }
     expect(visible.every((t) => t.webgl.active)).toBe(true);
+  });
+});
+
+describe('让出过名额的终端重新可见:当场装上并画出(修前空白 2~3 帧)', () => {
+  /** 让 victim 被让出:先显示再隐藏,随后再建满名额的可见终端。 */
+  function evict(victim: Harness): void {
+    victim.webgl.setVisible(true);
+    nextFrame();
+    victim.webgl.setVisible(false);
+    for (let i = 0; i < MAX_TERMINAL_WEBGL; i++) {
+      const t = make();
+      t.webgl.setVisible(true);
+      nextFrame();
+    }
+    expect(victim.webgl.active).toBe(false);
+  }
+
+  it('同步装上(不等下一帧),解除 xterm 渲染暂停并 refresh 全部行', () => {
+    const victim = make();
+    evict(victim);
+    victim.refresh.mockClear();
+    victim.webgl.setVisible(true);
+    expect(victim.webgl.active).toBe(true);
+    expect(victim.handleIntersectionChange).toHaveBeenCalledWith(expect.objectContaining({ isIntersecting: true }));
+    expect(victim.refresh).toHaveBeenCalledWith(0, 23);
+  });
+
+  it('本帧渲染前 canvas 按设备像素设好宽高(addon 的 ResizeObserver 之后再改会清空本帧已画的内容)', async () => {
+    const element = document.createElement('div');
+    const screen = element.appendChild(document.createElement('div'));
+    screen.className = 'xterm-screen';
+    const linkLayer = screen.appendChild(document.createElement('canvas'));
+    linkLayer.className = 'xterm-link-layer';
+    linkLayer.width = 7;
+    const glCanvas = screen.appendChild(document.createElement('canvas'));
+    glCanvas.getContext = vi.fn(() => null) as never;
+    glCanvas.width = 315;
+    glCanvas.height = 1360;
+    glCanvas.getBoundingClientRect = () => ({ width: 158, height: 680 }) as DOMRect;
+    vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2);
+    const victim = make({ element });
+    evict(victim);
+    victim.webgl.setVisible(true);
+    // 同一事件里随后的 fit 可能按 cell 尺寸改回:微任务里(渲染帧之前)再设
+    expect(glCanvas.width).toBe(315);
+    await Promise.resolve();
+    expect([glCanvas.width, glCanvas.height]).toEqual([316, 1360]);
+    expect(linkLayer.width).toBe(7);
+  });
+
+  it('没被让出过的终端(首次显示 / 名额内切回)照旧下一帧装', () => {
+    const fresh = make();
+    fresh.webgl.setVisible(false);
+    fresh.webgl.setVisible(true);
+    expect(fresh.webgl.active).toBe(false);
+    expect(fresh.refresh).not.toHaveBeenCalled();
+    nextFrame();
+    expect(fresh.webgl.active).toBe(true);
   });
 });
 
