@@ -6,6 +6,7 @@
 //    只作用于终端)不再收到(useCommandHotkeys 对编辑器里已处理的键让行)。
 //  - 加链接(⌘K 链接框确认 / 粘贴 URL)后光标收到链接末尾,接着输入的文字不带链接(VSCode 粘贴成格式化链接后光标在插入内容
 //    末尾;链接 mark 是 inclusive 的,不收起会替换掉链接文字、收起后不清 storedMarks 会把输入并进链接)。
+//  - 编辑自动链接(裸链接 / `<url>`,文字 = 地址)的文字 → 地址跟随文字(milkdown-autolink-follow)。
 //  - 表格里 Tab:下一格;最后一格 → 在表格末尾加一行并进入其首格(不再由缩进插件在格内插 4 个空格)。⇧Tab:上一格;首格 → 不动。
 
 import { linkTooltipAPI, linkTooltipState } from '@milkdown/kit/component/link-tooltip';
@@ -17,6 +18,7 @@ import { keydownHandler } from '@milkdown/kit/prose/keymap';
 import type { Mark, MarkType } from '@milkdown/kit/prose/model';
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state';
 import { AddMarkStep } from '@milkdown/kit/prose/transform';
+import { followEditedAutolinks } from './milkdown-autolink-follow';
 import { goToNextCell, isInTable, selectedRect } from '@milkdown/kit/prose/tables';
 import type { EditorView } from '@milkdown/kit/prose/view';
 
@@ -114,10 +116,11 @@ function createWritingKeysPlugin(ctx: Ctx): Plugin {
   let resyncOnFocusUntil = 0;
   return new Plugin({
     key: writingKeysKey,
-    appendTransaction: (trs, _old, state) => {
+    appendTransaction: (trs, old, state) => {
       const tr = collapseConfirmedLink(ctx, trs, state);
       if (tr) resyncOnFocusUntil = performance.now() + 1000;
-      return tr;
+      // 编辑自动链接的文字 → 地址跟随文字(见 milkdown-autolink-follow)
+      return tr ?? followEditedAutolinks(trs, old, state, linkSchema.type(ctx));
     },
     props: {
       handleDOMEvents: {

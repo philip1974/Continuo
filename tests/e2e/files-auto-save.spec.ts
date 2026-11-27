@@ -6,6 +6,7 @@
 // 5. onWindowChange → 切 tab / 进终端不保存,窗口失焦时保存;popout 子窗的编辑器在子窗失焦时保存
 // 6. 文件 → 自动保存(勾选项)/ 命令面板「切换自动保存」
 // 7. 打开自动保存时立即保存已有的脏文件(命令切换 / 设置页修改;多窗口各自保存),不等延迟 / 失焦
+// 8. onFocusChange 下 ⌘W 关闭脏 tab 不弹框、直接保存;onWindowChange 在 macOS 照常弹框
 // 判断保存完成:磁盘出现内容且未保存标记消失(只看磁盘可能早于 markSaved,见 cdb8df29)。
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -211,6 +212,40 @@ test('onFocusChange:不按延迟保存;切到另一 tab、焦点进终端时保�
   expect(await disk(workspaceRoot, 'src/b.ts')).toBe('export const b = 2;\n');
   await focusTerminal(window);
   await expectSaved(window, workspaceRoot, 'src/b.ts', '// focus b');
+});
+
+test('onFocusChange:⌘W 关闭脏 tab 不弹「是否保存」,直接保存后关闭(VSCode #108752)', async ({ window, workspaceRoot }) => {
+  await setSetting(window, 'files.autoSave', 'onFocusChange');
+  await openSrcFile(window, 'a.ts');
+  await openSrcFile(window, 'b.ts');
+  await editorTab(window, 'a.ts').click();
+  await typeInEditor(window, ' // closed with save');
+  await expect(editorTab(window, 'a.ts').locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(1);
+  await window.keyboard.press('ControlOrMeta+w');
+  await expect(editorTab(window, 'a.ts')).toHaveCount(0, { timeout: 5_000 });
+  await expect(window.getByRole('alertdialog')).toHaveCount(0);
+  await expect(window.getByRole('dialog')).toHaveCount(0);
+  expect(await disk(workspaceRoot, 'src/a.ts')).toContain('// closed with save');
+});
+
+test('onWindowChange:macOS 上 ⌘W 关闭脏 tab 照常弹「是否保存」,Windows / Linux 直接保存', async ({
+  window,
+  workspaceRoot,
+}) => {
+  await setSetting(window, 'files.autoSave', 'onWindowChange');
+  await openSrcFile(window, 'a.ts');
+  await typeInEditor(window, ' // window close');
+  await window.keyboard.press('ControlOrMeta+w');
+  if (process.platform === 'darwin') {
+    const dialog = window.getByRole('alertdialog').or(window.getByRole('dialog'));
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    expect(await disk(workspaceRoot, 'src/a.ts')).toBe('export const a = 1;\n');
+    await window.keyboard.press('Escape');
+    await expect(editorTab(window, 'a.ts')).toHaveCount(1);
+  } else {
+    await expect(editorTab(window, 'a.ts')).toHaveCount(0, { timeout: 5_000 });
+    expect(await disk(workspaceRoot, 'src/a.ts')).toContain('// window close');
+  }
 });
 
 test('onWindowChange:切 tab / 进终端不保存,窗口失焦时保存(含后台 tab)', async ({

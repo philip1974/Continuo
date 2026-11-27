@@ -20,8 +20,10 @@ VSCode 迁移用户在代码编辑器(CodeEditor)里按 ⌥⇧F、F2、F12、⌘
      空数组写成 `{}` / `[]`;一层缩进取编辑器当前缩进单位(CodeMirror `indentUnit`,随文件缩进 / 设置)。只重排空白:数字、字符串
      逐字符保留(`1.0`、`é`、超出双精度的大整数、重复键都不变),注释(jsonc)保留在原处,行尾注释仍在同一行;文末换行有则
      保留、无则不加。一次撤销恢复原文;只替换真正变化的中间部分,光标不被甩到文首 / 文末。已格式化 → 不产生修改。
-   - JSON 语法错误(注释之外的错误,如缺逗号、尾逗号、未闭合)→ 提示「无法格式化:此 JSON 文档有语法错误,文档未改动」,
-     **不改文档**。
+   - 尾逗号(`{"a": 1,}`、`[1, 2,]`,tsconfig.json / settings.json 等 jsonc 常见)→ 照常格式化,尾逗号**原样保留**(VSCode JSON 格式化
+     用 jsonc-parser `format`,只按 token 排版、不删尾逗号;`.json` 与 `.jsonc` 一样,`.json` 里 VSCode 另有「Trailing comma」诊断)。
+   - JSON 语法错误(注释与尾逗号之外的错误,如缺逗号、连续逗号、`[,]`、未闭合)→ 提示「无法格式化:此 JSON 文档有语法错误,文档未改动」,
+     **不改文档**(VSCode 的 token 排版对这些也会尝试排版,这里保守不改)。
    - 其它语言 → 提示 VSCode 的「There is no formatter for '<语言>' files installed.」(中文「此语言暂无格式化程序」;语言名为
      CodeMirror 语言名,纯文本为 `plaintext`)。只读文档不做。
 2. **重命名 / 转到定义 / 快速修复**:本项目没有语言服务 → 按 VSCode 无结果时的文案提示,不再静默:F2「Rename Symbol: No result.」、
@@ -45,5 +47,5 @@ VSCode 迁移用户在代码编辑器(CodeEditor)里按 ⌥⇧F、F2、F12、⌘
 
 ## 规范
 
-- `json-format.spec.ts`:格式化输出、字面量 / 注释保留、缩进单位、文末换行、语法错误
+- `json-format.spec.ts`:格式化输出、字面量 / 注释保留、缩进单位、文末换行、尾逗号保留、语法错误
 - `language-commands.spec.ts`:命令键位(含附加默认键)、格式化在编辑器上的效果与撤销、各提示、键表去掉的键、扩展 / 收缩选区

@@ -149,10 +149,17 @@ describe('格式化文档', () => {
   });
 
   it('JSON 语法错误 → 提示且不改文档', async () => {
-    const v = mount('/w/a.json', '{"a":1,}', [json()]);
+    const v = mount('/w/a.json', '{"a":1 "b":2}', [json()]);
     await run('editor.action.formatDocument');
-    expect(text(v)).toBe('{"a":1,}');
+    expect(text(v)).toBe('{"a":1 "b":2}');
     expect(warn).toHaveBeenCalledWith(t('editor.format.json_syntax_error'));
+  });
+
+  it('jsonc / tsconfig.json 有尾逗号 → 照常格式化,尾逗号保留(VSCode jsonc-parser format)', async () => {
+    const v = mount('/w/tsconfig.json', '{"a":[1,],}', [json()]);
+    await run('editor.action.formatDocument');
+    expect(text(v)).toBe('{\n  "a": [\n    1,\n  ],\n}');
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('其它语言 → 「没有格式化程序」提示(含语言名),不改文档;纯文本为 plaintext', async () => {

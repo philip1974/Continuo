@@ -26,7 +26,8 @@ async function launch(): Promise<Page> {
   dirs.push(ud, ws);
   writeFileSync(path.join(ws, 'a.ts'), 'one\ntwo\nthree\n');
   writeFileSync(path.join(ws, 'b.json'), '{"a":1,"b":[true,{}],"c":1.0}\n');
-  writeFileSync(path.join(ws, 'bad.json'), '{"a":1,}\n');
+  // 缺逗号(尾逗号不算语法错误,照常格式化:见 editor-format-document.spec.ts)
+  writeFileSync(path.join(ws, 'bad.json'), '{"a":1 "b":2}\n');
   writeFileSync(path.join(ws, 'c.md'), '# Title\n\nbody text\n');
   seedExplorerJson(ud, { root: ws });
   const app = await launchContinuo(ud);
@@ -153,7 +154,7 @@ test('⇧⌥F:JSON 按缩进格式化(字面量不变),语法错误提示不改,
   await openCode(win, /^bad\.json$/, '"a"');
   await win.keyboard.press('Shift+Alt+f');
   await expect(toast(win, /JSON/)).toBeVisible({ timeout: 5_000 });
-  expect(await lines(win)).toEqual(['{"a":1,}', '']);
+  expect(await lines(win)).toEqual(['{"a":1 "b":2}', '']);
 
   await openCode(win, /^a\.ts$/, 'three');
   await win.keyboard.press('Shift+Alt+f');

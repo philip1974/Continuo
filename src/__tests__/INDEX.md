@@ -656,6 +656,10 @@
 - [`json-format.spec.ts`](./editor-language-commands/json-format.spec.ts)
 - [`language-commands.spec.ts`](./editor-language-commands/language-commands.spec.ts)
 
+## [editor-markdown-autolink-edit](./editor-markdown-autolink-edit/README.md)
+
+- [`autolink-edit.spec.tsx`](./editor-markdown-autolink-edit/autolink-edit.spec.tsx)
+
 ## [editor-markdown-ime-composition](./editor-markdown-ime-composition/README.md)
 
 - [`ime-composition.spec.ts`](./editor-markdown-ime-composition/ime-composition.spec.ts)
@@ -1021,6 +1025,7 @@
 
 ## [自动保存可配置(对照 VSCode `files.autoSave` / `files.autoSaveDelay`)](./files-auto-save/README.md)
 
+- [`auto-save-close-tab.spec.tsx`](./files-auto-save/auto-save-close-tab.spec.tsx)
 - [`auto-save-config.spec.ts`](./files-auto-save/auto-save-config.spec.ts)
 - [`auto-save-menu.spec.ts`](./files-auto-save/auto-save-menu.spec.ts)
 - [`auto-save-triggers.spec.tsx`](./files-auto-save/auto-save-triggers.spec.tsx)
