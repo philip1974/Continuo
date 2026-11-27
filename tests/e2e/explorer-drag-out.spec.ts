@@ -1,12 +1,20 @@
 // 从资源管理器树拖到编辑器 / 终端(对齐 VSCode;BDD: src/__tests__/explorer-drag-out/):
 // 拖到编辑器组 → 在该组常驻打开(多选打开多个);拖到组的右边缘 → 拆出新组打开;拖到终端 → 插入转义后的路径,不回车。
 // 真实鼠标拖动(Playwright dragTo 截获 HTML5 拖放并带上 dragstart 写入的数据)。
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/with-workspace';
 import { waitForTestHooks } from './helpers/app-ready';
-import { EDITOR_TABS, TERMINAL_INPUT, TERMINAL_PANEL_TAB } from './helpers/editor';
+import {
+  EDITOR_MODE_EDIT,
+  EDITOR_MODE_SOURCE,
+  EDITOR_TABS,
+  EDITOR_UNSAVED_CHANGES_SELECTOR,
+  TERMINAL_INPUT,
+  TERMINAL_PANEL_TAB,
+  editorModeButton,
+} from './helpers/editor';
 import { expandTreeItem, openTreeItem } from './helpers/explorer';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -121,4 +129,63 @@ test('拖到终端 → 插入转义后的绝对路径(多选空格分隔),不回
   await window.waitForTimeout(500);
   expect(await flat()).not.toMatch(/permission denied|command not found/i);
   await expect(window.getByRole('textbox', { name: TERMINAL_INPUT })).toBeFocused();
+});
+
+test('拖到编辑器内容区(md 源码 / 编辑视图、ts;中央与边缘)只打开,不改当前文档;⇧ 放下插入链接 / 路径', async ({
+  window,
+  workspaceRoot,
+}) => {
+  test.setTimeout(90_000);
+  const readme = path.join(workspaceRoot, 'README.md');
+  const a = path.join(workspaceRoot, 'src/a.ts');
+  const b = path.join(workspaceRoot, 'src/b.ts');
+  const readmeText = readFileSync(readme, 'utf8');
+  const aText = readFileSync(a, 'utf8');
+  const content = groups(window).nth(0);
+  const editorText = () => content.locator('.cm-content, .ProseMirror').first().innerText();
+  await expect(rowOf(window, readme)).toBeVisible({ timeout: 10_000 });
+  await expandTreeItem(window, 'src');
+  await expect(rowOf(window, a)).toBeVisible();
+
+  // md 源码视图:拖到中央 → 打开 a.ts;README 不变
+  await openTreeItem(window, 'README.md');
+  await editorModeButton(window, EDITOR_MODE_SOURCE).click();
+  await expect(content.locator('.cm-content')).toBeVisible({ timeout: 10_000 });
+  await rowOf(window, a).dragTo(content.locator('.cm-content'));
+  await expect.poll(() => activeTabName(window, 0)).toBe('a.ts');
+  // ts:拖到中央 → 打开 b.ts;a.ts 不变
+  await rowOf(window, b).dragTo(content.locator('.cm-content'));
+  await expect.poll(() => activeTabName(window, 0)).toBe('b.ts');
+  await openTreeItem(window, 'a.ts');
+  await expect.poll(() => activeTabName(window, 0)).toBe('a.ts');
+  expect((await editorText()).trim()).toBe(aText.trim());
+
+  // md 编辑视图:拖到中央 → 打开;拖到右边缘 → 拆分打开;README 不变
+  await openTreeItem(window, 'README.md');
+  await editorModeButton(window, EDITOR_MODE_EDIT).click();
+  const pm = content.locator('.ProseMirror');
+  await expect(pm).toBeVisible({ timeout: 10_000 });
+  await rowOf(window, b).dragTo(pm);
+  await expect.poll(() => activeTabName(window, 0)).toBe('b.ts');
+  await openTreeItem(window, 'README.md');
+  await expect(pm).toBeVisible({ timeout: 10_000 });
+  const box = (await content.boundingBox())!;
+  await rowOf(window, a).dragTo(content, { targetPosition: { x: box.width - 8, y: box.height / 2 } });
+  await expect(groups(window)).toHaveCount(2);
+  await expect.poll(() => tabNames(window, 1)).toEqual(['a.ts']);
+  await expect(pm).toHaveText('Test Workspace');
+  await window.waitForTimeout(1_500); // 自动保存的防抖过后,磁盘上也没变
+  expect(readFileSync(readme, 'utf8')).toBe(readmeText);
+  expect(readFileSync(a, 'utf8')).toBe(aText);
+  await expect(window.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(0);
+
+  // ⇧ 放下:md 编辑视图插入相对链接,不打开新 tab
+  await window.keyboard.down('Shift');
+  await rowOf(window, b).dragTo(pm);
+  await window.keyboard.up('Shift');
+  await expect(pm.locator('a', { hasText: 'b.ts' })).toBeVisible({ timeout: 5_000 });
+  await expect.poll(() => tabNames(window, 0)).toEqual(['README.md', 'a.ts', 'b.ts']);
+  await expect.poll(() => activeTabName(window, 0)).toBe('README.md');
+  await window.keyboard.press('ControlOrMeta+KeyS');
+  await expect.poll(() => readFileSync(readme, 'utf8')).toContain('[b.ts](src/b.ts)');
 });

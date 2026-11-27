@@ -34,6 +34,11 @@ export const FS_CHANNELS = {
   SELECT_DIRECTORY: 'fs:select-directory',
   /** 另存为的原生保存对话框:返回选定路径(取消 → null),不写盘. */
   SHOW_SAVE_DIALOG: 'fs:show-save-dialog',
+  /**
+   * Markdown 文档里粘贴 / 拖入的图片落盘:写进文档所在目录(须在发送窗口的工作区内),文件名由 main 生成、重名加序号不覆盖;
+   * data = 新文件路径。见 main/ipc/fs/save-document-image.ts.
+   */
+  SAVE_DOCUMENT_IMAGE: 'fs:save-document-image',
   WATCH: 'fs:watch',
   UNWATCH: 'fs:unwatch',
   /** main → renderer event(非 invoke),webContents.send(path) 通知目录变更 */

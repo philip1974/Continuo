@@ -490,6 +490,12 @@ export const en = {
   'editor.autosave_readonly_detail': '{reason}. Press {hotkey} to choose whether to overwrite it.',
   'editor.autosave_paused_deleted': 'Auto-save paused: {name} no longer exists on disk. Your changes are kept in the editor; press {hotkey} to save it again.',
   'editor.save_failed': 'Failed to save',
+  // Markdown 粘贴 / 拖入图片(editor-media-drop)
+  'editor.media.save_document_first': 'Save the file before adding images.',
+  'editor.media.outside_workspace': 'Images can only be saved next to Markdown files inside the open folder.',
+  'editor.media.image_save_failed': "Couldn't save image",
+  'editor.media.saving_image': 'Saving image…',
+  'editor.media.inline_image_skipped': "Embedded images that can't be saved as files were left out.",
   'editor.restore_failed': 'Failed to restore',
   // 无标题编辑器(⌘N)的 tab 名 / 保存失败提示的按钮(VSCode Save As… / Retry;BDD: src/__tests__/editor-save-as/)
   'editor.untitled_name': 'Untitled-{n}',

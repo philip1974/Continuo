@@ -41,6 +41,8 @@ import { makeWcGoneHook } from '../lib/wc-gone-hook';
 import { showOpenDialogRemembering } from '../lib/open-dialog';
 import { menuCommandTargetWindow } from '../lib/menu-command';
 import { makeShowSaveDialogHandler, showSaveDialogInputSchema } from './fs/save-dialog';
+import { saveDocumentImage } from './fs/save-document-image';
+import { MAX_DOCUMENT_IMAGE_BYTES } from '../../shared/document-image';
 
 // ────────────────────────────────────────────────────────────
 // schemas — 全部 .strict() 拒绝未知字段(防 IPC 注入)
@@ -107,6 +109,19 @@ export const writeBinaryInputSchema = z
       .instanceof(Uint8Array)
       .refine((u) => u.length <= MAX_WRITE_BYTES, {
         message: `content 超过上限 ${MAX_WRITE_BYTES} 字节`,
+      }),
+  })
+  .strict();
+
+// fs:save-document-image:Markdown 文档里粘贴 / 拖入的图片。fileName 只是「想要的名字」(main 取末段并清洗,见 save-document-image)。
+export const saveDocumentImageInputSchema = z
+  .object({
+    documentPath: fsPath(),
+    fileName: z.string().max(FS_IPC_NAME_MAX),
+    data: z
+      .instanceof(Uint8Array)
+      .refine((u) => u.length > 0 && u.length <= MAX_DOCUMENT_IMAGE_BYTES, {
+        message: `data 须为 1..${MAX_DOCUMENT_IMAGE_BYTES} 字节`,
       }),
   })
   .strict();
@@ -484,6 +499,14 @@ export function registerFsIpc(): void {
   );
   safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler);
+  // 工作区与「打开过的文档」取自 IPC 发送方窗口(main 记账,renderer 不自报)。
+  safeHandleWithCtx(FS_CHANNELS.SAVE_DOCUMENT_IMAGE, saveDocumentImageInputSchema, (input, { event }) => {
+    const windowId = senderWindowOrThrow(event, ERROR_CODES.FS_DENIED).id;
+    return saveDocumentImage(input, {
+      workspaceRoot: getWorkspaceRoot(windowId),
+      isWindowDocument: (p) => isEditorDocument(windowId, p),
+    });
+  });
   safeHandle(FS_CHANNELS.RENAME, renameInputSchema, renameHandler);
   safeHandle(FS_CHANNELS.CREATE_FILE, createFileInputSchema, createFileHandler);
   safeHandle(FS_CHANNELS.CREATE_DIR, createDirInputSchema, createDirHandler);

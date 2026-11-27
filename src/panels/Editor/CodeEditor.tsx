@@ -68,6 +68,7 @@ import { navigationHistoryExtension } from './codemirror-navigation-history';
 import { markdownLinkClickExtension } from './codemirror-markdown-links';
 import { lastSeparatorIndex } from '@/lib/path-cross';
 import { detectLineEnding } from './editor-encoding';
+import { codeMirrorMediaDrop } from './codemirror-media-drop';
 
 interface CodeEditorProps {
   tabId: string;
@@ -261,6 +262,8 @@ export function CodeEditor({
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const fileNameRef = useRef(fileName);
+  fileNameRef.current = fileName;
   const onLinkClickRef = useRef(onLinkClick);
   onLinkClickRef.current = onLinkClick;
   const langCompartment = useRef(new Compartment());
@@ -352,6 +355,9 @@ export function CodeEditor({
       debugDecorationsExtension(),
       // 选区变化 → 后退 / 前进的导航记录(BDD: src/__tests__/editor-navigation-history/)
       navigationHistoryExtension(tabId, groupId),
+      // 资源管理器拖来的文件只打开(⇧ 放下插入路径 / Markdown 链接);Markdown 源码视图粘贴 / 拖入图片存成文件再插相对路径。
+      // BDD: src/__tests__/explorer-drag-out/、src/__tests__/markdown-image-paste/
+      codeMirrorMediaDrop({ documentPath: () => fileNameRef.current, markdown: forceLanguage === 'markdown' }),
       // Markdown 源码模式 Cmd/Ctrl+click 链接跳转(含 `#标题` 锚点;BDD: src/__tests__/markdown-anchor-links/)
       markdownLinkClickExtension(() => onLinkClickRef.current),
       EditorView.updateListener.of((update: ViewUpdate) => {

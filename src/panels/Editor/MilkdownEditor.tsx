@@ -1,7 +1,8 @@
 // M-Editor Step E3:Milkdown/Crepe 包装。
 // 从维护者早期原型的 MilkdownEditor 移植,Crepe features 配置一致:
 //   开:CodeMirror / ListItem / LinkTooltip / Cursor / BlockEdit / Toolbar / Placeholder / Table
-//   关:ImageBlock / Latex(不接图片上传 UI 与数学公式;键入图片语法转图片由 insertImageInputRule 负责)
+//   关:ImageBlock / Latex(不接图片上传 UI 与数学公式;键入图片语法转图片由 insertImageInputRule 负责;
+//   粘贴 / 拖入图片由 milkdown-media-drop 覆盖 Crepe 的上传器,存成文件再插相对路径)
 // ```mermaid 代码块经 CodeMirror 特性的 renderPreview 渲染成图(见 mermaid-preview.ts)。
 //
 // 注意:Crepe 主题 CSS 自成体系,不与 Tailwind 冲突;直接 import frame-dark。
@@ -10,6 +11,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Crepe, CrepeFeature } from '@milkdown/crepe';
 import { insertImageInputRule } from '@milkdown/kit/preset/commonmark';
 import { $prose } from '@milkdown/kit/utils';
+import { uploadConfig } from '@milkdown/kit/plugin/upload';
+import { markdownImageUploadConfig, markdownMediaDropPlugin } from './milkdown-media-drop';
+import { codeMirrorMediaDrop } from './codemirror-media-drop';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { TextSelection } from '@milkdown/kit/prose/state';
 import { clampFloatingToViewport } from './milkdown-floating-clamp';
@@ -399,7 +403,12 @@ function CrepeEditor({
           theme: markdownCodeBlockTheme,
           // 代码块的 CodeMirror 同样带 basicSetup 的 ⌘F 查找面板:内建文案随界面语言(Provider 按 locale 重挂,创建时取当前语言)。
           // 代码块文本区同为 role=textbox,须有可访问名称(axe aria-input-field-name)。
-          extensions: [codeMirrorPhrases(), codeMirrorContentLabel(t('editor.aria.code_block'))],
+          // 资源管理器拖到代码块:只打开,⇧ 放下插入路径(同代码文件;BDD: src/__tests__/explorer-drag-out/)
+          extensions: [
+            codeMirrorPhrases(),
+            codeMirrorContentLabel(t('editor.aria.code_block')),
+            codeMirrorMediaDrop({ documentPath: () => fileName ?? '', markdown: false }),
+          ],
           renderPreview: renderMermaidPreview,
           copyText: t('panels.editor.codeBlock.copy'),
           searchPlaceholder: t('panels.editor.codeBlock.searchLanguage'),
@@ -434,6 +443,11 @@ function CrepeEditor({
     crepe.editor.use(insertImageInputRule);
     // ⌘F 查找的高亮 / 当前匹配(装饰,不改文档)。BDD: src/__tests__/markdown-find/
     crepe.editor.use($prose(() => markdownFindPlugin));
+    // 粘贴截图 / 拖入图片:存成文档旁的图片文件再插入相对路径(不写 blob: / data:);资源管理器拖来的文件只打开,⇧ 放下插入链接。
+    // BDD: src/__tests__/markdown-image-paste/、src/__tests__/explorer-drag-out/
+    const documentPath = (): string | null => fileName ?? null;
+    crepe.editor.config((ctx) => ctx.update(uploadConfig.key, markdownImageUploadConfig(documentPath)));
+    crepe.editor.use($prose(() => markdownMediaDropPlugin(documentPath)));
     // 标题 id = GitHub slug(重复加 -1 / -2),与 `#片段` 链接解析同一规则。BDD: src/__tests__/markdown-anchor-links/
     installGithubHeadingIds(crepe.editor);
     if (readonly) crepe.setReadonly(true);

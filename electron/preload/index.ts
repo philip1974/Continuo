@@ -272,6 +272,9 @@ const api = {
       toFsStatResult((await ipcRenderer.invoke(FS_CHANNELS.STAT, { path })) as IpcResult<unknown>),
     writeBinary: (path: string, content: Uint8Array): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.WRITE_BINARY, { path, content }),
+    /** Markdown 文档里粘贴 / 拖入的图片落盘到文档所在目录(须在工作区内;main 生成文件名、重名加序号);data = 新文件路径. */
+    saveDocumentImage: (documentPath: string, fileName: string, data: Uint8Array): Promise<IpcResult<string>> =>
+      ipcRenderer.invoke(FS_CHANNELS.SAVE_DOCUMENT_IMAGE, { documentPath, fileName, data }),
     rename: (path: string, newName: string): Promise<IpcResult<string>> =>
       ipcRenderer.invoke(FS_CHANNELS.RENAME, { path, newName }),
     /** name 可带中间目录(`a/b/c.ts`,逐级创建);data.created = 本次新建的最上层项(见 FsCreated)。 */

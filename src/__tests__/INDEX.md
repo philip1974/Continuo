@@ -851,6 +851,7 @@
 ## [从资源管理器拖到编辑器 / 终端(explorer-drag-out)](./explorer-drag-out/README.md)
 
 - [`drag-data.spec.ts`](./explorer-drag-out/drag-data.spec.ts)
+- [`editor-content-drop.spec.tsx`](./explorer-drag-out/editor-content-drop.spec.tsx)
 - [`editor-drop.spec.ts`](./explorer-drag-out/editor-drop.spec.ts)
 - [`tab-bar-drop.spec.tsx`](./explorer-drag-out/tab-bar-drop.spec.tsx)
 - [`terminal-drop.spec.tsx`](./explorer-drag-out/terminal-drop.spec.tsx)
@@ -1248,6 +1249,13 @@
 ## [Markdown 编辑 / 预览模式 ⌘F 查找(对齐 VSCode 编辑器 / Markdown 预览的查找)](./markdown-find/README.md)
 
 - [`markdown-find.spec.tsx`](./markdown-find/markdown-find.spec.tsx)
+
+## [Markdown 粘贴 / 拖入图片(markdown-image-paste)](./markdown-image-paste/README.md)
+
+- [`edit-mode-paste.spec.tsx`](./markdown-image-paste/edit-mode-paste.spec.tsx)
+- [`media-insert.spec.ts`](./markdown-image-paste/media-insert.spec.ts)
+- [`save-document-image.spec.ts`](./markdown-image-paste/save-document-image.spec.ts)
+- [`source-mode-paste.spec.ts`](./markdown-image-paste/source-mode-paste.spec.ts)
 
 ## [较大 Markdown 以源码模式打开](./markdown-large-file/README.md)
 

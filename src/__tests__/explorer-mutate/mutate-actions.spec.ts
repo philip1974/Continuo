@@ -41,6 +41,7 @@ const makeFs = (overrides: Partial<FsApi> = {}): FsApi => ({
   onWatchLost: vi.fn(() => () => {}),
   onRootPresenceChanged: vi.fn(() => () => {}),
   writeBinary: vi.fn(async () => ok(undefined as void)),
+  saveDocumentImage: vi.fn(async () => ok('')),
   ...overrides,
 });
 

@@ -3,6 +3,8 @@
 //   多选打开多个,第一个成为活动编辑器(VSCode openEditors:第一个激活,其余不激活),该组获焦;
 // - 拖到内容区的左 / 右 / 上 / 下边缘 → 在那一侧拆出新编辑器组并在其中打开(VSCode 按落点拆分);
 // - 文件夹不打开(VSCode 资源拖放数据里不含文件夹;它把单独拖入的文件夹当作工作区在新窗口打开,这里不做)。
+// - 编辑器内容区不把路径插进文档(codemirror-media-drop / milkdown-media-drop 拦下文本插入);按住 ⇧ 放到文本上 = 插入
+//   (VSCode editor.dropIntoEditor),这里不接收。
 // 编辑器组自己的 tab 栏在 dock 面板内容里:dockview 会把它当内容区顶部边缘(拆分),而 VSCode 的 tab 栏是放进该组 ——
 // tab 栏自己接收(useEditorTabBarDrop),经过它时不接受 dockview 的内容区高亮。
 // 只接收树拖出的自定义 MIME(dockview 自己的 tab / 组拖动有面板数据,不走这里;OS 文件拖放不变)。
@@ -30,6 +32,16 @@ export const EDITOR_TAB_BAR_ATTR = 'data-editor-tab-bar';
 export function isOverEditorTabBar(event: Pick<Event, 'target'>): boolean {
   const target = event.target as { closest?: (selector: string) => unknown } | null;
   return typeof target?.closest === 'function' && target.closest(`[${EDITOR_TAB_BAR_ATTR}]`) !== null;
+}
+
+/**
+ * ⇧ 拖到可编辑的文本内容上(代码编辑器 / Markdown 源码 · 编辑视图):VSCode 按住 ⇧ 放下 = 插入到编辑器里(由编辑器自己处理,
+ * 见 codemirror-media-drop / milkdown-media-drop),不打开、不拆分 —— dockview 不接收也不显示放置高亮。
+ */
+export function isShiftDropIntoText(event: Pick<DragEvent, 'target' | 'shiftKey'>): boolean {
+  if (!event.shiftKey) return false;
+  const target = event.target as { closest?: (selector: string) => unknown } | null;
+  return typeof target?.closest === 'function' && target.closest('[contenteditable="true"]') !== null;
 }
 
 /** dock 组当前显示的是编辑器组面板 → 该编辑器组 id;否则(终端、设置、插件面板,或没有组)undefined。 */
@@ -95,11 +107,13 @@ export function trackExplorerEditorDrop(
       if (event.target === 'edge' || event.getData() !== undefined) return;
       if (!hasExplorerDrag(event.nativeEvent.dataTransfer)) return;
       if (event.target === 'content' && isOverEditorTabBar(event.nativeEvent)) return; // tab 栏自己接收
+      if (event.target === 'content' && isShiftDropIntoText(event.nativeEvent)) return; // ⇧ 放下插入,编辑器处理
       if (editorGroupIdOfDockGroup(event.group) === undefined) return;
       event.accept();
     }),
     api.onDidDrop((event) => {
       if (event.getData() !== undefined) return;
+      if (isShiftDropIntoText(event.nativeEvent)) return;
       const groupId = editorGroupIdOfDockGroup(event.group);
       if (groupId === undefined) return;
       const data = readExplorerDragData(event.nativeEvent.dataTransfer);
