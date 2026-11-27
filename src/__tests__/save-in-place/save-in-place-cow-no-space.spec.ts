@@ -3,7 +3,8 @@
 // 要么报 FS_SAVE_ORIGINAL_DAMAGED 并给出完整原内容的恢复副本;回滚后读回与原内容一致就是前者(回滚的 fsync 失败也一样),
 // 只有确实不一致才是后者。行为见同目录 README「写时复制卷 / 磁盘将满」。被测:electron/main/ipc/fs/atomic-write.ts。
 // 真实 APFS 克隆复现见 tests/e2e/editor-save-in-place.spec.ts「APFS 克隆文件」。
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmod, link, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,6 +35,10 @@ const inject = vi.hoisted(() => ({
   readFailsAfterSyncFailure: false,
   /** 恢复副本(`wx` 新建)一律打不开。 */
   failRecoveryOpen: false,
+  /** 退路的 tmp(`.<名>.continuo.tmp`)写入 / fsync 报 ENOSPC。 */
+  tmpWriteFails: false,
+  /** rename 失败(EIO)。 */
+  renameFails: false,
   syncFailed: false,
   /** target 句柄上的操作序列。 */
   ops: [] as string[],
@@ -46,9 +51,22 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     statfs: vi.fn((...args: Parameters<typeof real.statfs>) =>
       inject.statfs ? inject.statfs(String(args[0])) : real.statfs(...args),
     ),
+    rename: vi.fn(async (...args: Parameters<typeof real.rename>) => {
+      if (inject.renameFails) throw Object.assign(new Error('EIO'), { code: 'EIO' });
+      return real.rename(...args);
+    }),
     open: vi.fn(async (...args: Parameters<typeof real.open>) => {
       if (inject.failRecoveryOpen && args[1] === 'wx' && !String(args[0]).endsWith('.continuo.tmp')) throw ENOSPC();
       const fh = await real.open(...args);
+      if (String(args[0]).endsWith('.continuo.tmp')) {
+        inject.ops.push('tmp-open');
+        if (inject.tmpWriteFails) {
+          fh.writeFile = async () => {
+            throw ENOSPC();
+          };
+        }
+        return fh;
+      }
       if (String(args[0]) !== inject.target) return fh;
       const realWrite = fh.write.bind(fh) as (...a: unknown[]) => Promise<{ bytesWritten: number }>;
       const realRead = fh.read.bind(fh) as (...a: unknown[]) => Promise<unknown>;
@@ -104,7 +122,10 @@ afterEach(() => {
   inject.writeFailsAfterSyncFailure = false;
   inject.readFailsAfterSyncFailure = false;
   inject.failRecoveryOpen = false;
+  inject.tmpWriteFails = false;
+  inject.renameFails = false;
   inject.syncFailed = false;
+  vi.restoreAllMocks();
   inject.ops = [];
 });
 
@@ -132,7 +153,6 @@ async function failureOf(p: Promise<unknown>): Promise<{ code?: string; message:
 
 /** 恢复目录里的副本数(目录不存在 = 0)。 */
 async function recoveryCopies(): Promise<number> {
-  const { readdir } = await import('node:fs/promises');
   return (await readdir(recoveryDir).catch(() => [])).length;
 }
 
@@ -169,6 +189,9 @@ const MEASURED_COW_REWRITE: readonly { volume: number; size: number; needed: num
   { volume: 1_048_536 * KB, size: 97_890, needed: 23_040 * KB },
   { volume: 1_048_536 * KB, size: 2_028_890, needed: 26_624 * KB },
   { volume: 3_989_464 * KB, size: 97_890, needed: 34_375 * KB },
+  // 第四十九轮 A1:536 GB 稀疏卷(statfs 卷大小 524_083_160 KB):0.1 MB 文件约 34.3 MB、2 MB 文件约 37.4 MB(按 MiB 从宽取)
+  { volume: 524_083_160 * KB, size: 97_890, needed: 35_124 * KB },
+  { volume: 524_083_160 * KB, size: 2_028_890, needed: 38_298 * KB },
 ];
 
 describe('可用空间预检:不够就一个字节都不写', () => {
@@ -182,18 +205,19 @@ describe('可用空间预检:不够就一个字节都不写', () => {
     expect(inPlaceSpaceNeeded(2_028_890, 20_440 * KB)).toBeGreaterThan(5_416 * KB);
   });
 
-  it('预检的额外余量有上限:大卷上不因为「卷很大」就拒绝普通保存(1 TB 卷、1 MB 文件:约需 3 MB + 256 MB)', () => {
-    expect(inPlaceSpaceNeeded(MB, 1024 * 1024 * MB)).toBe(3 * MB + 256 * MB);
+  it('预检的额外余量有上限 48 MiB:大卷上不因为「卷很大」就拒绝普通保存(1 TB 卷、1 MB 文件:约需 3 MB + 48 MiB)', () => {
+    expect(inPlaceSpaceNeeded(MB, 1024 * 1024 * MB)).toBe(3 * MB + 48 * MB);
   });
 
-  it('可用空间 < 预检要求 → FS_NO_SPACE,原文件逐字节不变、没有对它写任何字节', async () => {
-    const f = await fileWith(ORIGINAL);
-    const needed = inPlaceSpaceNeeded(Buffer.byteLength(DELETE_LINE_6), 1e9);
-    inject.statfs = async () => ({ bsize: 1, blocks: 1e9, bavail: needed - 1 });
-    const err = await failureOf(atomicWriteFile(f, DELETE_LINE_6));
-    expect(err.code).toBe(ERROR_CODES.FS_NO_SPACE);
-    expect((await readFile(f)).equals(Buffer.from(ORIGINAL))).toBe(true);
-    expect(inject.ops.filter((o) => o.startsWith('write') || o.startsWith('truncate'))).toEqual([]);
+  it('回归(第四十九轮 A1):536 GB 卷剩 40 / 200 MB 时 23 字节的普通文件加一行 → 预检通过,原地保存', async () => {
+    const volume = 524_083_160 * KB;
+    expect(inPlaceSpaceNeeded(40, volume)).toBeLessThan(200 * 1000 * 1000);
+    const f = await fileWith('hello note\nsecond ln\n');
+    const ino = (await stat(f)).ino;
+    inject.statfs = async () => ({ bsize: 4096, blocks: volume / 4096, bavail: (200 * 1000 * 1000) / 4096 });
+    await atomicWriteFile(f, 'hello note\nsecond ln\nmore\n');
+    expect(await readFile(f, 'utf-8')).toBe('hello note\nsecond ln\nmore\n');
+    expect((await stat(f)).ino).toBe(ino);
   });
 
   it('可用空间刚好够 → 正常原地保存(同一 inode)', async () => {
@@ -215,6 +239,101 @@ describe('可用空间预检:不够就一个字节都不写', () => {
     inject.statfs = async () => ({ bsize: 4096, blocks: 0, bavail: 0 });
     await atomicWriteFile(f, ORIGINAL);
     expect(await readFile(f, 'utf-8')).toBe(ORIGINAL);
+  });
+});
+
+describe('预检不过:不原地写,退回 tmp + rename(新内容写成同目录新文件,不覆盖原文件的块)', () => {
+  /** 可用空间比预检要求少 1 字节。 */
+  function justBelowPrecheck(content: string): void {
+    const needed = inPlaceSpaceNeeded(Buffer.byteLength(content), 1e9);
+    inject.statfs = async () => ({ bsize: 1, blocks: 1e9, bavail: needed - 1 });
+  }
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+  it('回归(第四十九轮 A1):保存成功,内容是新内容;原文件的块上没写任何字节(换成新 inode),权限位保留、无 tmp 残留', async () => {
+    const f = await fileWith(ORIGINAL);
+    if (process.platform !== 'win32') await chmod(f, 0o750);
+    const ino = (await stat(f)).ino;
+    justBelowPrecheck(DELETE_LINE_6);
+    await atomicWriteFile(f, DELETE_LINE_6);
+    expect(await readFile(f, 'utf-8')).toBe(DELETE_LINE_6);
+    expect(inject.ops.filter((o) => o.startsWith('write') || o.startsWith('truncate') || o.startsWith('sync'))).toEqual([]);
+    expect(inject.ops).toContain('tmp-open');
+    expect((await stat(f)).ino).not.toBe(ino);
+    if (process.platform !== 'win32') expect((await stat(f)).mode & 0o777).toBe(0o750);
+    expect((await readdir(join(f, '..'))).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+    expect(await recoveryCopies()).toBe(0);
+  });
+
+  it.runIf(process.platform === 'darwin')('macOS:扩展属性(Finder 标签、user.*)随克隆带到新文件', async () => {
+    const f = await fileWith(ORIGINAL);
+    execFileSync('xattr', ['-w', 'user.note', 'keep me', f]);
+    execFileSync('xattr', ['-w', 'com.apple.metadata:_kMDItemUserTags', '("Red\n6")', f]);
+    justBelowPrecheck(GROW_20K);
+    await atomicWriteFile(f, GROW_20K);
+    expect(await readFile(f, 'utf-8')).toBe(GROW_20K);
+    expect(execFileSync('xattr', ['-p', 'user.note', f], { encoding: 'utf-8' }).trim()).toBe('keep me');
+    expect(execFileSync('xattr', ['-p', 'com.apple.metadata:_kMDItemUserTags', f], { encoding: 'utf-8' })).toContain('Red');
+  });
+
+  it('硬链接(rename 会把它拆开)→ 不走退路:FS_NO_SPACE「原文件未改动」,两个名字都是原内容', async () => {
+    const f = await fileWith(ORIGINAL);
+    const other = join(f, '..', 'other-name.txt');
+    await link(f, other);
+    justBelowPrecheck(DELETE_LINE_6);
+    const err = await failureOf(atomicWriteFile(f, DELETE_LINE_6));
+    expect(err.code).toBe(ERROR_CODES.FS_NO_SPACE);
+    expect(err.message).toMatch(/original unchanged/);
+    expect((await readFile(f)).equals(Buffer.from(ORIGINAL))).toBe(true);
+    expect((await readFile(other)).equals(Buffer.from(ORIGINAL))).toBe(true);
+    expect((await stat(f)).nlink).toBe(2);
+    expect(inject.ops).not.toContain('tmp-open');
+  });
+
+  it.skipIf(process.platform === 'win32')('属主不是当前用户(rename 后属主会变)→ 不走退路,FS_NO_SPACE', async () => {
+    const f = await fileWith(ORIGINAL);
+    vi.spyOn(process as { getuid(): number }, 'getuid').mockReturnValue((await stat(f)).uid + 1);
+    justBelowPrecheck(DELETE_LINE_6);
+    const err = await failureOf(atomicWriteFile(f, DELETE_LINE_6));
+    expect(err.code).toBe(ERROR_CODES.FS_NO_SPACE);
+    expect((await readFile(f)).equals(Buffer.from(ORIGINAL))).toBe(true);
+    expect(inject.ops).not.toContain('tmp-open');
+  });
+
+  it('tmp 也写不下(ENOSPC)→ 删掉 tmp,FS_NO_SPACE「原文件未改动」,原文件逐字节不变、不写恢复副本', async () => {
+    const f = await fileWith(ORIGINAL);
+    inject.tmpWriteFails = true;
+    justBelowPrecheck(GROW_20K);
+    const err = await failureOf(atomicWriteFile(f, GROW_20K));
+    expect(err.code).toBe(ERROR_CODES.FS_NO_SPACE);
+    expect(err.message).toMatch(/original unchanged/);
+    expect((await readFile(f)).equals(Buffer.from(ORIGINAL))).toBe(true);
+    expect((await readdir(join(f, '..'))).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+    expect(await recoveryCopies()).toBe(0);
+  });
+
+  it('rename 失败 → 删掉 tmp,FS_NO_SPACE,原文件逐字节不变', async () => {
+    const f = await fileWith(ORIGINAL);
+    inject.renameFails = true;
+    justBelowPrecheck(DELETE_LINE_6);
+    const err = await failureOf(atomicWriteFile(f, DELETE_LINE_6));
+    expect(err.code).toBe(ERROR_CODES.FS_NO_SPACE);
+    expect((await readFile(f)).equals(Buffer.from(ORIGINAL))).toBe(true);
+    expect((await readdir(join(f, '..'))).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32' || isRoot)('只读目录(建不了 tmp)→ FS_NO_SPACE,原文件逐字节不变', async () => {
+    const f = await fileWith(ORIGINAL);
+    const dir = join(f, '..');
+    justBelowPrecheck(DELETE_LINE_6);
+    await chmod(dir, 0o555);
+    try {
+      const err = await failureOf(atomicWriteFile(f, DELETE_LINE_6));
+      expect(err.code).toBe(ERROR_CODES.FS_NO_SPACE);
+      expect((await readFile(f)).equals(Buffer.from(ORIGINAL))).toBe(true);
+    } finally {
+      await chmod(dir, 0o755);
+    }
   });
 });
 
@@ -311,7 +430,6 @@ describe('预检通过但覆盖时才 ENOSPC(写时复制卷 / 空间被别的�
     const second = await failureOf(atomicWriteFile(f, `${DELETE_LINE_6}more`));
     expect(second.code).toBe(ERROR_CODES.FS_SAVE_ORIGINAL_DAMAGED);
     expect(second.details!.recoveryPath).toBe(first.details!.recoveryPath);
-    const { readdir } = await import('node:fs/promises');
     expect(await readdir(recoveryDir)).toHaveLength(1);
   });
 

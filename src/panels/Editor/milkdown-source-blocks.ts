@@ -253,6 +253,11 @@ function assemble(bound: Bound, kids: readonly PmNode[], ser: Serializers): stri
     a = b;
     k = r + 1;
   }
+  // 原文最后一块是没闭合的围栏(它的区间吞掉了文末换行,gaps[n] 为空)且没有原样写在末尾(被改动 / 后面接了块 / 被删):
+  // 原文以换行结尾 → 输出也以换行结尾,否则文末换行丢失
+  if (n > 0 && gaps[n] === '' && !out.endsWith('\n') && isOpenEnded(source, blocks[n - 1]!)) {
+    if (source.endsWith('\n')) out += source.endsWith('\r\n') ? '\r\n' : '\n';
+  }
   return out;
 }
 

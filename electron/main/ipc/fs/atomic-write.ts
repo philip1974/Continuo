@@ -1,7 +1,9 @@
 import { access, chmod, lstat, mkdir, open, readFile, realpath, rename, rm, stat, statfs } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { constants as fsConstants, type Stats, type StatsFs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { promisify } from 'node:util';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 import { ERROR_CODES } from '../../../shared/error-codes';
 import { MAX_WRITE_BYTES } from '../../../shared/fs-limits';
@@ -182,15 +184,72 @@ async function atomicWriteFileInner(
   const existing = await existingFileMode(filePath, overwriteReadonly);
   if (inPlace && existing !== undefined) {
     const r = await writeInPlace(filePath, content);
+    if (r instanceof NoRoomInPlace) return replaceWhenNoRoomInPlace(filePath, content, existing, r);
     if (r !== FALLBACK_TO_RENAME) return r;
   }
   return replaceViaTmp(filePath, content, existing);
+}
+
+/**
+ * 原地写的空间预检不过时的退路:tmp + rename(新内容写成同目录新文件、fsync、rename 替换)。它不覆盖原文件的块 ——
+ * 写时复制卷上改写共享块要的额外空间(APFS 保留量 + 文件大小 + …,见 roomToWriteInPlace)它都不要,只要新内容本身的空间;
+ * 预检按最坏情况(克隆文件)留足余量,普通文件在大卷上剩几十 MB 时原地写本来能成,也被预检拒绝(第四十九轮 A1),由这里接住。
+ * 代价是 b07031dd 换掉的那些元数据:inode / 创建时间变;权限位照旧继承(fchmod);macOS 上 tmp 先克隆原文件(见 cloneOriginalToTmp)
+ * 带上扩展属性 / Finder 标签 / ACL / 文件标志,其它平台扩展属性丢失。成功即静默(同 VSCode 原子保存,不提示)。
+ * 以下情况 tmp + rename 会改变用户可见的语义,不走退路,直接报预检的「磁盘空间不足,原文件未改动」:
+ *   - 硬链接(nlink > 1):rename 会把它拆开,另一个名字仍是旧内容 —— 宁可不存,不悄悄拆开;
+ *   - 属主不是当前用户:rename 后属主变成保存者。
+ * 退路任何一步失败(tmp 建不了 —— 只读目录 / tmp 写入或 fsync ENOSPC / rename 失败)→ 删 tmp,同样报预检的错误:
+ * 这条路径在 rename 成功之前从不触碰原文件,「原文件未改动」天然成立。
+ */
+async function replaceWhenNoRoomInPlace(
+  filePath: string,
+  content: string | Uint8Array,
+  existing: { readonly mode: number },
+  noRoom: NoRoomInPlace,
+): Promise<FsFileStat | undefined> {
+  const { before, error } = noRoom;
+  if (before.nlink !== 1) throw error;
+  if (process.platform !== 'win32' && typeof process.getuid === 'function' && before.uid !== process.getuid()) throw error;
+  try {
+    return await replaceViaTmp(filePath, content, existing, process.platform === 'darwin');
+  } catch (err) {
+    console.warn('[fs] save: not enough room to write in place, and writing a replacement file failed too', filePath, err);
+    throw error;
+  }
+}
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * macOS:把原文件克隆(`cp -c -p`,clonefile(2):与原文件共享数据块,不占数据空间)成 tmp,截成 0 长度后交给调用方写新内容。
+ * 克隆带上扩展属性(Finder 标签、`user.*`)、ACL、文件标志与权限位 —— Node 没有扩展属性 API,`fs.copyFile` 只复制数据与权限位。
+ * 截短只是去掉 tmp 对共享块的引用,不改原文件(写时复制)。克隆不了(非 APFS 卷、空间不够建元数据等)→ 删掉 tmp,返回 undefined,
+ * 调用方照常新建空 tmp(扩展属性丢失)。只在 tmp 是本次克隆出的普通文件(nlink 1)时才用它。
+ */
+async function cloneOriginalToTmp(filePath: string, tmpPath: string): Promise<FileHandle | undefined> {
+  let fd: FileHandle | undefined;
+  try {
+    await rm(tmpPath, { force: true });
+    await execFileAsync('/bin/cp', ['-c', '-p', '--', filePath, tmpPath], { timeout: 10_000 });
+    fd = await open(tmpPath, fsConstants.O_RDWR | (fsConstants.O_NOFOLLOW ?? 0));
+    const st = await fd.stat();
+    if (!st.isFile() || st.nlink !== 1) throw new Error('clone is not a plain file');
+    await fd.truncate(0);
+    return fd;
+  } catch {
+    await fd?.close().catch(() => {});
+    await rm(tmpPath, { force: true }).catch(() => {});
+    return undefined;
+  }
 }
 
 async function replaceViaTmp(
   filePath: string,
   content: string | Uint8Array,
   existing: { readonly mode: number } | undefined,
+  /** 先克隆原文件当 tmp(保留扩展属性等,见 cloneOriginalToTmp);只用于原地写空间不够时的退路。 */
+  cloneOriginal = false,
 ): Promise<FsFileStat | undefined> {
   // tmp 用**隐藏标记名** `.<base>.continuo.tmp`(而非旧的可预测 `${filePath}.tmp`):
   // 旧名会与用户真实文件(如 `foo.md.tmp` —— 常见后缀)撞名,`open('w')` 直接截断它、
@@ -206,12 +265,15 @@ async function replaceViaTmp(
   // 本进程写的那份 tmp 的身份(dev/ino,关闭前经 fd 取,不受平台关闭时刷新 mtime 影响)。
   let handleId: Stats | undefined;
   try {
-    try {
-      fd = await open(tmpPath, 'wx');
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      await rm(tmpPath, { force: true }).catch(() => {});
-      fd = await open(tmpPath, 'wx'); // 重试;再 EEXIST(跨进程竞态)则抛
+    if (cloneOriginal) fd = await cloneOriginalToTmp(filePath, tmpPath);
+    if (fd === undefined) {
+      try {
+        fd = await open(tmpPath, 'wx');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+        await rm(tmpPath, { force: true }).catch(() => {});
+        fd = await open(tmpPath, 'wx'); // 重试;再 EEXIST(跨进程竞态)则抛
+      }
     }
     // 覆盖已有文件:tmp 继承原权限位(fchmod 不受 umask 影响),否则 rename 后 0755 脚本丢执行位、
     // 0600 私密文件被放宽成 0644。
@@ -293,6 +355,15 @@ async function confirmWrittenStat(
 /** writeInPlace 无法原地写(打不开读写,如只写权限的文件)→ 交回 tmp + rename(原文件未被改动)。 */
 const FALLBACK_TO_RENAME = Symbol('fallback-to-rename');
 
+/** writeInPlace 的空间预检不过(原文件未被改动)→ 交回 replaceWhenNoRoomInPlace;error = 预检的 FS_NO_SPACE。 */
+class NoRoomInPlace {
+  constructor(
+    readonly error: Error,
+    /** 打开时的 stat(硬链接数 / 属主)。 */
+    readonly before: Stats,
+  ) {}
+}
+
 type FileHandle = Awaited<ReturnType<typeof open>>;
 
 /** 循环写满 [offset, offset+length)(FileHandle.write 可能只写一部分)。 */
@@ -321,12 +392,16 @@ async function readFully(fh: FileHandle, length: number): Promise<Buffer> {
 const IN_PLACE_RESERVE_MIN = 4 * 1024 * 1024;
 /** 额外余量按卷大小的比例(APFS 不让改写克隆块用的保留量随卷变大)。 */
 const IN_PLACE_RESERVE_FRACTION = 0.04;
-/** 额外余量上限:大卷上不因「卷很大」拒绝普通保存。 */
-const IN_PLACE_RESERVE_MAX = 256 * 1024 * 1024;
+/**
+ * 额外余量上限。APFS 的保留量不随卷无限变大:实测 4 GB 卷约 33 MB、536 GB 卷约 33 MB(克隆文件改写所需 0.1 MB 文件 34.3 MB、
+ * 2 MB 文件 37.4 MB)。48 MiB 覆盖全部实测并留出 10 MB 以上;旧上限 256 MiB 在 ≥ 6.4 GB 的卷上把大卷剩 40–256 MB 时的
+ * 普通保存全部拒掉(第四十九轮 A1)。预检不过也不直接报错,先走 tmp + rename(replaceWhenNoRoomInPlace)。
+ */
+const IN_PLACE_RESERVE_MAX = 48 * 1024 * 1024;
 
 /**
- * 原地写 newSize 字节前要求的可用空间:3 × 新内容字节数 + 额外余量(卷大小的 4%,夹在 4 MiB 与 256 MiB 之间;卷大小未知按下限)。
- * 依据见 assertRoomToWriteInPlace。导出供测试按「刚好够 / 差一点」构造可用空间。
+ * 原地写 newSize 字节前要求的可用空间:3 × 新内容字节数 + 额外余量(卷大小的 4%,夹在 4 MiB 与 48 MiB 之间;卷大小未知按下限)。
+ * 依据见 roomToWriteInPlace。导出供测试按「刚好够 / 差一点」构造可用空间。
  */
 export function inPlaceSpaceNeeded(newSize: number, volumeBytes = 0): number {
   const reserve = Math.min(
@@ -338,37 +413,36 @@ export function inPlaceSpaceNeeded(newSize: number, volumeBytes = 0): number {
 
 /**
  * 原地写前的可用空间预检:可用空间(非特权用户可用,f_bavail × f_bsize)≥ inPlaceSpaceNeeded(新内容字节数, 卷大小)才原地写,
- * 不够 → FS_NO_SPACE,一个字节都不写。
+ * 不够 → 返回 FS_NO_SPACE 错误(不抛;原文件一个字节都没写),由调用方改走 tmp + rename。
  *
  * 为什么不只按「变长的部分」算:写时复制的文件系统(APFS 克隆文件 `cp -c` / Finder 复制、本地快照(Time Machine)
  * 仍引用的块、btrfs / ZFS / XFS reflink)上,覆盖**已有**的块也要分配新块,而且 ENOSPC 往往拖到 fsync / ftruncate
  * 才报(实测:6 MB 克隆文件、卷剩 1.1 MB,旧实现删一行保存后原文件末尾 30 字节变 NUL;变长保存后原文件尾部接上新内容)。
  * 实测(APFS dmg,克隆文件整段改写 + fsync 成功所需的最小 statfs 可用空间,见 save-in-place-cow-no-space.spec 的
  * MEASURED_COW_REWRITE):≈ 卷的保留量 + 文件大小 + min(文件大小, 约 2 MB);保留量 20 MB 卷约 2 MB、200 MB 卷约 5.7 MB、
- * 1 GB 卷约 23 MB、4 GB 卷约 33 MB(statfs 报的可用空间里含 APFS 不让改写克隆块用的部分)。例:20 MB 卷上 2 MB 文件需约 6.3 MB,
- * 旧预检(2 × 内容 + 1 MiB ≈ 5.2 MB)在 5.2–6.3 MB 之间放行、写入必然失败。故取 3 倍内容 + 卷大小的 4%(4 MiB–256 MiB),
+ * 1 GB 卷约 23 MB、4 GB 卷约 33 MB、536 GB 卷约 33 MB(statfs 报的可用空间里含 APFS 不让改写克隆块用的部分)。例:20 MB 卷上 2 MB 文件需约 6.3 MB,
+ * 旧预检(2 × 内容 + 1 MiB ≈ 5.2 MB)在 5.2–6.3 MB 之间放行、写入必然失败。故取 3 倍内容 + 卷大小的 4%(4 MiB–48 MiB),
  * 覆盖全部实测且小卷小文件留出约 0.4 MB 以上余地。无法可靠判断一个文件是否与别处共享块,一律按此预检。
- * 代价:普通(非写时复制)卷上可用空间小于预检要求时,本来能原地完成的保存也被拒绝(提示磁盘空间不足、原文件未改动)。
+ * 预检不过 → 不原地写,交回 tmp + rename(replaceWhenNoRoomInPlace:只要新内容本身的空间,不覆盖共享块);那也不行才报磁盘空间不足。
  *
  * 这只是第一道闸,并不精确(APFS 保留量随容器大小变化;检查与写之间空间也可能被别的进程占掉):写失败的处理见
  * restoreOriginal。statfs 不可用 / 返回无意义的值(部分 FUSE / 网络卷报 0 块)→ 视为未知,照常原地写。
  */
-async function assertRoomToWriteInPlace(filePath: string, newSize: number): Promise<void> {
+async function roomToWriteInPlace(filePath: string, newSize: number): Promise<Error | undefined> {
   let s: StatsFs;
   try {
     s = await statfs(filePath);
   } catch {
-    return;
+    return undefined;
   }
-  if (!(s.blocks > 0) || !(s.bsize > 0) || !Number.isFinite(s.bavail)) return;
+  if (!(s.blocks > 0) || !(s.bsize > 0) || !Number.isFinite(s.bavail)) return undefined;
   const available = s.bavail * s.bsize;
   const needed = inPlaceSpaceNeeded(newSize, s.blocks * s.bsize);
-  if (available < needed) {
-    throw fsError(
-      ERROR_CODES.FS_NO_SPACE,
-      `not enough free space to save (need ${needed} bytes, ${available} available; original unchanged): ${filePath}`,
-    );
-  }
+  if (available >= needed) return undefined;
+  return fsError(
+    ERROR_CODES.FS_NO_SPACE,
+    `not enough free space to save (need ${needed} bytes, ${available} available; original unchanged): ${filePath}`,
+  );
 }
 
 let saveRecoveryDir: string | undefined;
@@ -509,7 +583,7 @@ async function restoreOriginal(
  * VSCode 的原地写是 `open('w')` 先截断再写:写到一半失败(磁盘满)文件就只剩半截 / 空。这里的保证:**任何失败路径下,
  * 要么原文件逐字节不变,要么报 FS_SAVE_ORIGINAL_DAMAGED 并给出完整原内容的恢复副本路径**。步骤:
  *   0. 改动任何字节之前读出**完整**原内容 [0, 原长度) 作内存备份(原文件超过写入上限 → 交回 tmp + rename),
- *      并预检可用空间 ≥ 3 × 新内容字节数 + 余量(见 assertRoomToWriteInPlace;不够 → FS_NO_SPACE,不写)。
+ *      并预检可用空间 ≥ 3 × 新内容字节数 + 余量(见 roomToWriteInPlace;不够 → 不写,交回 tmp + rename,见 replaceWhenNoRoomInPlace)。
  *   ① 新内容比原文件长 → 先把超出原长度的尾部写到原文件末尾之后并 fdatasync,一次要到新增空间。
  *   ② 覆盖 [0, min(原长度, 新长度)) 并 fsync;③ 新内容更短 → 这之后才截到新长度并 fsync(覆盖失败时原文件长度与尾部都还在)。
  *   任一步失败 → restoreOriginal 回滚并逐字节核对:一致 → 报原错误(原文件未改动);不一致才写恢复副本。
@@ -522,7 +596,7 @@ async function restoreOriginal(
 async function writeInPlace(
   filePath: string,
   content: string | Uint8Array,
-): Promise<FsFileStat | undefined | typeof FALLBACK_TO_RENAME> {
+): Promise<FsFileStat | undefined | typeof FALLBACK_TO_RENAME | NoRoomInPlace> {
   const data = typeof content === 'string' ? Buffer.from(content, 'utf-8') : content;
   const newSize = data.byteLength;
   let fh: FileHandle;
@@ -548,7 +622,8 @@ async function writeInPlace(
     } catch (err) {
       throw fsError(mapNodeErrnoCode(err), `save in place read failed: ${filePath}`);
     }
-    await assertRoomToWriteInPlace(filePath, newSize);
+    const noRoom = await roomToWriteInPlace(filePath, newSize);
+    if (noRoom) return new NoRoomInPlace(noRoom, before);
     const touched: TouchedRanges = { head: false, truncated: false };
     try {
       // ① 先占新增空间。

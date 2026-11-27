@@ -288,6 +288,44 @@ describe('块移动 / 撤销 / 拆分合并', () => {
   });
 });
 
+describe('没闭合的围栏代码块在文末', () => {
+  // 第四十九轮审计 A2:没闭合的围栏延伸到文末,其区间吞掉了文末换行;后面再接块 / 改动它时不原样写,文末换行曾丢失
+  const UNCLOSED = '# F\n\nPara.\n\n```js\nconst a = 1;\n';
+
+  function appendParagraph(view: EditorView, text: string): void {
+    const { schema } = view.state;
+    view.dispatch(view.state.tr.insert(view.state.doc.content.size, schema.nodes.paragraph!.create(null, schema.text(text))));
+  }
+
+  it('代码块后新起一段:围栏补上闭合,文末换行保留', async () => {
+    const { crepe, view } = await open(UNCLOSED);
+    expect(crepe.getMarkdown()).toBe(UNCLOSED);
+    appendParagraph(view, 'AFTERCODE');
+    expect(crepe.getMarkdown()).toBe('# F\n\nPara.\n\n```js\nconst a = 1;\n```\n\nAFTERCODE\n');
+  });
+
+  it('CRLF 文档:同样保留文末换行,且是 CRLF', async () => {
+    const crlf = UNCLOSED.replace(/\n/g, '\r\n');
+    const { crepe, view } = await open(crlf);
+    appendParagraph(view, 'AFTERCODE');
+    const out = crepe.getMarkdown();
+    expect(out).toBe('# F\r\n\r\nPara.\r\n\r\n```js\r\nconst a = 1;\r\n```\r\n\r\nAFTERCODE\r\n');
+  });
+
+  it('改动代码块本身(其后没有块):文末换行保留', async () => {
+    const { crepe, view } = await open(UNCLOSED);
+    typeAfter(view, 'const a', 'Z');
+    expect(crepe.getMarkdown()).toMatch(/const aZ = 1;\n```\n$/);
+  });
+
+  it('原文没有文末换行:输出也不加', async () => {
+    const bare = UNCLOSED.slice(0, -1);
+    const { crepe, view } = await open(bare);
+    appendParagraph(view, 'AFTERCODE');
+    expect(crepe.getMarkdown()).toBe('# F\n\nPara.\n\n```js\nconst a = 1;\n```\n\nAFTERCODE');
+  });
+});
+
 describe('同步 / 重建', () => {
   async function waitMounted(): Promise<Crepe> {
     for (let i = 0; i < 100; i++) {
@@ -407,6 +445,9 @@ const BLOCKS: ReadonlyArray<(r: () => number) => string> = [
   () => '$$\nx^2\n$$',
 ];
 
+/** 没闭合的围栏代码块(只能是最后一块)。 */
+const UNCLOSED_FENCE = '```js\nconst open = 1;';
+
 interface Edit {
   readonly pos: number;
   readonly del: boolean;
@@ -466,6 +507,8 @@ describe('模糊测试', () => {
       const n = 2 + Math.floor(r() * 6);
       const blocks: string[] = [];
       for (let i = 0; i < n; i += 1) blocks.push(BLOCKS[Math.floor(r() * BLOCKS.length)]!(r));
+      const unclosed = r() < 0.2;
+      if (unclosed) blocks.push(UNCLOSED_FENCE);
       const eol = r() < 0.3 ? '\r\n' : '\n';
       const tail = ['', '\n', '\n\n\n'][Math.floor(r() * 3)]!;
       const source = (blocks.map((b, i) => (i === 0 ? '' : r() < 0.2 ? '\n\n\n' : '\n\n') + b).join('') + tail).replace(
@@ -487,7 +530,9 @@ describe('模糊测试', () => {
       const from = target.position!.start.offset!;
       const to = target.position!.end.offset!;
       expect(out.startsWith(source.slice(0, from)), `${label}\n前缀变了:\n${out}`).toBe(true);
-      expect(out.endsWith(source.slice(to)), `${label}\n后缀变了:\n${out}`).toBe(true);
+      // 文末没闭合的围栏:前面紧挨着的列表被改动时它随列表走 remark、补上闭合(既有规则),后缀不再逐字节相同;只查文末换行与解析结果
+      if (!unclosed) expect(out.endsWith(source.slice(to)), `${label}\n后缀变了:\n${out}`).toBe(true);
+      if (source.endsWith(eol)) expect(out.endsWith(eol), `${label}\n文末换行丢了:\n${JSON.stringify(out)}`).toBe(true);
       if (eol === '\r\n') expect(out.replace(/\r\n/g, ''), label).not.toContain('\n');
       // 输出按同一解析器解析回来,顶层块逐个与编辑后的文档相同
       const parsed = crepe.editor.ctx.get<(md: string) => PmNode, 'parser'>('parser')(out);
@@ -515,7 +560,10 @@ describe('模糊测试', () => {
       const n = 3 + Math.floor(r() * 5);
       const blocks: string[] = [];
       for (let i = 0; i < n; i += 1) blocks.push(BLOCKS[Math.floor(r() * BLOCKS.length)]!(r));
-      const source = `${blocks.join('\n\n')}\n`;
+      // 最后一块有时是没闭合的围栏(延伸到文末,区间吞掉文末换行)
+      if (r() < 0.25) blocks.push(UNCLOSED_FENCE);
+      const eol = r() < 0.3 ? '\r\n' : '\n';
+      const source = `${blocks.join('\n\n')}\n`.replace(/\n/g, eol);
       const { crepe, view } = await open(source);
       const label = `round ${round}: ${JSON.stringify(source)}`;
       const doc = view.state.doc;
@@ -540,6 +588,9 @@ describe('模糊测试', () => {
         view.dispatch(view.state.tr.insert(at, schema.nodes.paragraph!.create(null, schema.text('new para'))));
       }
       const out = crepe.getMarkdown();
+      // 原文以换行结尾 → 输出也是(行尾同原文)
+      expect(out.endsWith(eol), `${label}\n文末换行丢了:\n${JSON.stringify(out)}`).toBe(true);
+      if (eol === '\r\n') expect(out.replace(/\r\n/g, ''), label).not.toContain('\n');
       const parsed = crepe.editor.ctx.get<(md: string) => PmNode, 'parser'>('parser')(out);
       const strip = (d: PmNode): PmNode[] => {
         const list: PmNode[] = [];

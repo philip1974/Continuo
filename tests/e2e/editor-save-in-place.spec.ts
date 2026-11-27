@@ -186,35 +186,155 @@ test.describe('APFS 克隆文件(写时复制)磁盘将满', () => {
 
   // 回归(第四十八轮 A1):卷剩约 5.4 MB 时旧预检(2 × 内容 + 1 MiB ≈ 5.2 MB)放行、写入必然失败,旧回滚的 fsync 也 ENOSPC →
   // 误报「原文件可能已损坏」并写恢复副本(实际原文件完好),重复保存提示叠成 ×2。
+  // 第四十九轮 A1 起预检不过改走 tmp + rename(只要新内容本身的空间):实测这里通常保存成功;空间仍不够则「原文件未改动」。
+  // 两种结果都可以,但必须与界面一致,且绝不出现「可能已损坏」、恢复副本或第三种内容。
   for (const [name, next] of [
     ['删掉第 6 行', () => { const l = ORIGINAL.split('\n'); l.splice(5, 1); return l.join('\n'); }],
     ['末尾加一行', () => `${ORIGINAL}one more line;\n`],
     ['同长替换', () => `X${ORIGINAL.slice(1)}`],
   ] as const) {
-    test(`卷剩约 5.4 MB:${name}后 ⌘S → 「原文件未改动」、不写恢复副本;再按 ⌘S 仍只一条提示`, async ({ window, workspaceRoot, userDataDir }) => {
+    test(`卷剩约 5.4 MB:${name}后 ⌘S → 保存成功或「原文件未改动」、不写恢复副本;失败时再按 ⌘S 仍只一条提示`, async ({ window, workspaceRoot, userDataDir }) => {
       const f = path.join(workspaceRoot, 'f.txt');
       await openWorkspaceFile(window, ['f.txt']);
       await fillLeavingKb(workspaceRoot, 5400);
       const before = await readFile(f);
+      const content = next();
 
       const tabId = await window.evaluate(() => globalThis.__continuoTest!.getEditorActiveTabId());
       await window.evaluate(
         ({ tabId, content }) => globalThis.__continuoTest!.setEditorContent(tabId as string, content),
-        { tabId, content: next() },
+        { tabId, content },
       );
       await window.locator('.cm-content').first().click();
       await window.keyboard.press('ControlOrMeta+s');
-      const notice = window.locator('.toast__message', { hasText: /(磁盘上的原文件未改动|The file on disk was not changed|원본 파일은 변경되지 않았습니다)/ });
-      await expect(notice).toHaveCount(1, { timeout: 10_000 });
-      await expect(window.locator('.toast__message', { hasText: /(可能已损坏|may be damaged|손상되었을 수)/ })).toHaveCount(0);
-      await window.keyboard.press('ControlOrMeta+s');
-      await window.waitForTimeout(1_000);
-      await expect(notice).toHaveCount(1);
-      await expect(window.locator('.toast__count')).toHaveCount(0);
-
-      expect((await readFile(f)).equals(before)).toBe(true);
+      await expectSavedOrUnchanged(window, f, before, content);
       expect(await readdir(path.join(userDataDir, 'save-recovery')).catch(() => [])).toEqual([]);
       expect(await readdir(path.join(tmpdir(), 'continuo-save-recovery')).catch(() => [])).toEqual([]);
     });
   }
+});
+
+const UNCHANGED_NOTICE = /(磁盘上的原文件未改动|The file on disk was not changed|원본 파일은 변경되지 않았습니다)/;
+const DAMAGED_NOTICE = /(可能已损坏|may be damaged|손상되었을 수)/;
+
+/**
+ * 磁盘将满时的保存:要么成功(盘上 = 新内容,没有失败提示),要么「原文件未改动」(盘上逐字节 = 原内容,一条提示,再按 ⌘S 不叠加);
+ * 绝不出现「可能已损坏」或第三种内容。
+ */
+async function expectSavedOrUnchanged(window: Page, f: string, before: Buffer, content: string): Promise<'saved' | 'unchanged'> {
+  const notice = window.locator('.toast__message', { hasText: UNCHANGED_NOTICE });
+  const saved = (): Promise<boolean> => readFile(f).then((b) => b.equals(Buffer.from(content)));
+  await expect.poll(async () => (await saved()) || (await notice.count()) > 0, { timeout: 10_000 }).toBe(true);
+  await window.waitForTimeout(500);
+  await expect(window.locator('.toast__message', { hasText: DAMAGED_NOTICE })).toHaveCount(0);
+  if (await saved()) {
+    await expect(notice).toHaveCount(0);
+    return 'saved';
+  }
+  expect((await readFile(f)).equals(before)).toBe(true);
+  await expect(notice).toHaveCount(1);
+  await window.keyboard.press('ControlOrMeta+s');
+  await window.waitForTimeout(1_000);
+  await expect(notice).toHaveCount(1);
+  await expect(window.locator('.toast__count')).toHaveCount(0);
+  expect((await readFile(f)).equals(before)).toBe(true);
+  return 'unchanged';
+}
+
+// 第四十九轮 A1:大卷(536 GB 级 APFS)剩 40–256 MB 时保存任何已有文件都被拒绝(预检余量上限 256 MiB),VSCode 能存。
+// 500 GB 稀疏 dmg,用 F_PREALLOCATE 占住块(只记账、不写数据,dmg 文件本身不变大;不能再 ftruncate —— 那会真写零)。
+test.describe('大卷(500 GB 稀疏 APFS)将满', () => {
+  test.describe.configure({ timeout: 120_000 });
+  let scratch = '';
+  test.use({
+    // eslint-disable-next-line no-empty-pattern -- Playwright 夹具要求对象解构参数
+    workspaceRoot: async ({}, use) => {
+      scratch = await mkdtemp(path.join(DMG_DIR, 'ui140a-big-'));
+      const img = path.join(scratch, 'v.sparseimage');
+      const mnt = path.join(scratch, 'mnt');
+      execFileSync('hdiutil', ['create', '-type', 'SPARSE', '-size', '500g', '-fs', 'APFS', '-volname', 'UIBIG', img], { stdio: 'ignore' });
+      execFileSync('hdiutil', ['attach', img, '-mountpoint', mnt, '-nobrowse'], { stdio: 'ignore' });
+      try {
+        await writeFile(path.join(mnt, 'note.txt'), 'hello note\nsecond ln\n');
+        await writeFile(path.join(mnt, 'src.txt'), Array.from({ length: 60_000 }, (_, i) => `line ${i} some source code here;\n`).join(''));
+        execFileSync('cp', ['-c', path.join(mnt, 'src.txt'), path.join(mnt, 'clone.txt')]);
+        await use(mnt);
+      } finally {
+        try {
+          execFileSync('hdiutil', ['detach', mnt, '-force'], { stdio: 'ignore' });
+        } catch {
+          /* */
+        }
+        await rm(scratch, { recursive: true, force: true });
+      }
+    },
+  });
+
+  /** 预分配占位文件直到 statfs 可用空间约为 leaveKb(先清掉上次的占位)。 */
+  function preallocLeavingKb(root: string, leaveKb: number): void {
+    const script = [
+      'import os, sys, fcntl, struct',
+      'd, leave = sys.argv[1], int(sys.argv[2]) * 1024',
+      "for n in os.listdir(d):\n    if n.startswith('filler'): os.unlink(os.path.join(d, n))",
+      'os.sync()',
+      'def avail():\n    s = os.statvfs(d); return s.f_bavail * s.f_frsize',
+      'i, cap = 0, 64 << 30',
+      'while True:',
+      '    need = avail() - leave',
+      '    if need <= 64 * 1024: break',
+      '    chunk = min(need, cap)',
+      "    fd = os.open(os.path.join(d, 'filler%04d' % i), os.O_RDWR | os.O_CREAT, 0o644); i += 1",
+      '    try: fcntl.fcntl(fd, 42, struct.pack("=Iiqqq", 4, 3, 0, chunk, 0))',
+      '    except OSError: cap = chunk // 2',
+      '    os.close(fd)',
+      '    if cap < 64 * 1024: break',
+    ].join('\n');
+    execFileSync('python3', ['-I', '-c', script, root, String(leaveKb)], { stdio: 'ignore' });
+  }
+
+  async function editAndSave(window: Page, file: string, content: string): Promise<void> {
+    await openWorkspaceFile(window, [file]);
+    const tabId = await window.evaluate(() => globalThis.__continuoTest!.getEditorActiveTabId());
+    await window.evaluate(
+      ({ tabId, content }) => globalThis.__continuoTest!.setEditorContent(tabId as string, content),
+      { tabId, content },
+    );
+    await window.locator('.cm-content').first().click();
+    await window.keyboard.press('ControlOrMeta+s');
+  }
+
+  test('剩约 200 MB:23 字节的普通文件加一行 ⌘S → 保存成功(修前报「磁盘空间不足」)', async ({ window, workspaceRoot }) => {
+    const f = path.join(workspaceRoot, 'note.txt');
+    execFileSync('xattr', ['-w', 'user.note', 'keep me', f]);
+    preallocLeavingKb(workspaceRoot, 200 * 1024);
+    await editAndSave(window, 'note.txt', 'hello note\nsecond ln\none more line\n');
+    await expect.poll(() => readFile(f, 'utf8'), { timeout: 10_000 }).toBe('hello note\nsecond ln\none more line\n');
+    await expect(window.getByText(/(磁盘空间不足|Not enough disk space|디스크 공간이 부족)/)).toHaveCount(0);
+    expect(execFileSync('xattr', ['-p', 'user.note', f], { encoding: 'utf-8' }).trim()).toBe('keep me');
+  });
+
+  test('剩约 44 MB(原地写预检不过的区间):普通文件 ⌘S → 保存成功或「原文件未改动」,扩展属性 / 权限位保留', async ({ window, workspaceRoot }) => {
+    const f = path.join(workspaceRoot, 'note.txt');
+    await chmod(f, 0o640);
+    execFileSync('xattr', ['-w', 'user.note', 'keep me', f]);
+    preallocLeavingKb(workspaceRoot, 44 * 1024);
+    const before = await readFile(f);
+    await editAndSave(window, 'note.txt', 'hello note\nsecond ln\none more line\n');
+    if ((await expectSavedOrUnchanged(window, f, before, 'hello note\nsecond ln\none more line\n')) === 'saved') {
+      expect((await stat(f)).mode & 0o777).toBe(0o640);
+    }
+    expect(execFileSync('xattr', ['-p', 'user.note', f], { encoding: 'utf-8' }).trim()).toBe('keep me');
+    expect((await readdir(workspaceRoot)).filter((n) => n.endsWith('.continuo.tmp'))).toEqual([]);
+  });
+
+  test('剩约 44 MB:2 MB 克隆文件删一行 ⌘S → 保存成功或「原文件未改动」,绝不损坏', async ({ window, workspaceRoot }) => {
+    const f = path.join(workspaceRoot, 'clone.txt');
+    preallocLeavingKb(workspaceRoot, 44 * 1024);
+    const before = await readFile(f);
+    const l = before.toString('utf8').split('\n');
+    l.splice(5, 1);
+    await editAndSave(window, 'clone.txt', l.join('\n'));
+    await expectSavedOrUnchanged(window, f, before, l.join('\n'));
+    expect((await readdir(workspaceRoot)).filter((n) => n.endsWith('.continuo.tmp'))).toEqual([]);
+  });
 });
