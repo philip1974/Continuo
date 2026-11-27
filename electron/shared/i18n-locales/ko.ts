@@ -669,6 +669,7 @@ export const ko: Record<TranslationKey, string> = {
   'panels.explorer.create_file_failed': '파일 “{name}”을(를) 만들 수 없습니다: {message}',
   'panels.explorer.create_folder_failed': '폴더 “{name}”을(를) 만들 수 없습니다: {message}',
   'panels.explorer.undo_delete_not_restored': '실행 취소로 {names}을(를) 복원할 수 없습니다(너무 크거나 읽을 수 없음). 휴지통에서 복원할 수 있습니다.',
+  'panels.explorer.undo_delete_link_not_restored': '실행 취소로 {names}을(를) 복원할 수 없습니다(심볼릭 링크는 다시 만들 수 없음). 휴지통에서 복원할 수 있습니다.',
   'panels.explorer.undo_delete_empty_folder': '{names} 폴더를 다시 만들었습니다. 폴더 내용은 휴지통에서 복원할 수 있습니다.',
   'panels.explorer.file_undo_target_exists': '이 위치에 “{name}”이(가) 이미 있습니다',
   'panels.explorer.undo_create_confirm.single': '“{name}” 만들기를 실행 취소하시겠습니까? 휴지통으로 이동됩니다.',

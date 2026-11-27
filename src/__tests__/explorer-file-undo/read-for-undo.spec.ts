@@ -1,4 +1,4 @@
-// BDD:删除前为撤销读回(main fs:read-for-undo,README 规则 3):文件 → 内容;文件夹 → 只标记;符号链接不跟随 → unsupported;
+// BDD:删除前为撤销读回(main fs:read-for-undo,README 规则 3):文件 → 内容;文件夹 → 只标记;符号链接不跟随 → symlink;
 // 不存在 → FS_NOT_FOUND。超过 5MB 的 tooLarge 分支由 file-undo.spec 经假 fs 覆盖(不在测试里建大文件)。
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -19,11 +19,11 @@ describe('fs:read-for-undo', () => {
     expect(await readForUndoHandler({ path: join(root, 'd') })).toEqual({ kind: 'dir' });
   });
 
-  it.skipIf(process.platform === 'win32')('符号链接不跟随 → unsupported(不把链接目标的内容当成它)', async () => {
+  it.skipIf(process.platform === 'win32')('符号链接不跟随 → symlink(不把链接目标的内容当成它)', async () => {
     const root = await tmp.make('continuo-read-undo-');
     await writeFile(join(root, 'target'), 'secret');
     await symlink(join(root, 'target'), join(root, 'link'));
-    expect(await readForUndoHandler({ path: join(root, 'link') })).toEqual({ kind: 'unsupported' });
+    expect(await readForUndoHandler({ path: join(root, 'link') })).toEqual({ kind: 'symlink' });
   });
 
   it('不存在 → FS_NOT_FOUND', async () => {

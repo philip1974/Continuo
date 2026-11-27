@@ -20,12 +20,14 @@
 // 关闭时有撤销历史的 CodeMirror 状态另按路径留存,重新打开且内容未变时恢复撤销栈(见下「关闭文件的撤销历史」)。
 // 本模块不 import editor.store(store 反向调用这里)。
 
-import { redoDepth, undoDepth } from '@codemirror/commands';
+import { isolateHistory, redoDepth, undoDepth } from '@codemirror/commands';
 import { ensureSyntaxTree, foldable, foldedRanges, foldEffect } from '@codemirror/language';
-import type { EditorState, StateEffect } from '@codemirror/state';
+import { Transaction, type EditorState, type StateEffect } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import { PRIMARY_EDITOR_GROUP_ID } from '../../../electron/shared/editor-group-id';
 import { EDITOR_VIEW_FOLDS_MAX } from '../../../electron/shared/explorer-persistence-schema';
+import { detectLineEnding } from './editor-encoding';
+import { minimalChange } from './minimal-change';
 
 export const CODE_EDITOR_VIEW_STATE_LIMIT = 50;
 
@@ -397,6 +399,23 @@ export function stashClosedCodeEditorState(tabId: string, state: EditorState): v
   if (closedCost + cost > CLOSED_UNDO_MEMORY_MAX) return;
   closedStates.set(tabId, { state, cost });
   closedCost += cost;
+}
+
+/**
+ * 「不保存」关闭脏文件时留存的状态:把未保存内容 unsaved 以最小差异的一步换回已保存内容 saved(单独成组、进撤销栈),重新打开
+ *(磁盘仍是 saved)时状态与磁盘一致而被复用,⌘Z 一步找回丢弃的修改(VSCode「不保存」= editor.revert → ModelService.updateModel:
+ * 前后 pushStackElement、最小差异套进模型,再按 files.restoreUndoStack 留存撤销栈)。state 不是这份未保存内容(如 Markdown 编辑
+ * 模式里改的,留下的是更早的源码模式状态)/ 与已保存内容相同 → 原样返回。
+ */
+export function revertedForDiscard(state: EditorState, unsaved: string, saved: string): EditorState {
+  if (state.doc.sliceString(0, state.doc.length, detectLineEnding(unsaved)) !== unsaved) return state;
+  const cur = state.doc.toString();
+  const next = state.toText(saved).toString();
+  if (cur === next) return state;
+  return state.update({
+    changes: minimalChange(cur, next) ?? { from: 0, to: state.doc.length, insert: next },
+    annotations: [isolateHistory.of('full'), Transaction.addToHistory.of(true), Transaction.userEvent.of('revert')],
+  }).state;
 }
 
 /** 重新打开时取出(并移除)关闭时留下的 EditorState;调用方比对内容,不同则丢弃。 */

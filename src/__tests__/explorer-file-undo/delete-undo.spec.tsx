@@ -2,6 +2,7 @@
 // BDD:文件树里删除的撤销与撤销新建确认(README 规则 3、5;第五十五轮审计 B 组 #3)。
 //   - 复制粘贴得到「beta copy.ts」,再删除另一个文件,然后 ⌘Z(Win Ctrl+Z)→ 被删的文件按删除前读回的内容在原位置重建
 //    (不确认);再 ⌘Z → 才轮到撤销复制(弹确认),删除不再挡住更早的操作
+//   - 删除的是符号链接 → ⌘Z 不重建,提示写明是符号链接不能重建(第五十六轮审计 A 组 #3)
 //   - 没有删除时 ⌘Z 撤销复制 → 先弹确认(撤销会把文件移进废纸篓),初始焦点在「移到废纸篓」;确认后才移
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -74,6 +75,7 @@ import { useEditorStore } from '../../stores/editor.store';
 import { FolderTree } from '../../panels/Explorer/FolderTree';
 import { useExplorerClipboardStore } from '../../panels/Explorer/clipboard-store';
 import { __resetFileUndoForTest } from '../../panels/Explorer/file-undo';
+import { notify } from '@/notifications/notify';
 
 const COPY = '/work/beta copy.ts';
 const TRASH_LABEL = /^(移到废纸篓|Move to Trash)$/;
@@ -157,6 +159,30 @@ describe('删除后撤销:原位重建,不挡住更早的操作', () => {
     key(row(container, '/work/bravo.ts')!, { key: 'z', code: 'KeyZ', ctrlKey: true });
     const confirm = await screen.findByRole('alertdialog');
     expect(confirm.textContent).toMatch(/beta copy\.ts/);
+  });
+});
+
+describe('撤销删除符号链接:提示说明是符号链接', () => {
+  it('删除符号链接 → Ctrl+Z:不重建,提示「符号链接不能重建」(不是「文件过大或无法读取」)', async () => {
+    const info = vi.spyOn(notify, 'info');
+    vi.mocked(coApi.fs.readForUndo).mockResolvedValueOnce({ ok: true, data: { kind: 'symlink' } });
+    const { container } = render(<FolderTree root="/work" />);
+    await waitFor(() => expect(row(container, '/work/bravo.ts')).not.toBeNull());
+    await focusRow(container, '/work/bravo.ts');
+    key(row(container, '/work/bravo.ts')!, { key: 'Delete', code: 'Delete' });
+    const dialog = await screen.findByRole('alertdialog');
+    act(() => {
+      fireEvent.click(within(dialog).getByRole('button', { name: TRASH_LABEL }));
+    });
+    await waitFor(() => expect(row(container, '/work/bravo.ts')).toBeNull());
+    await focusRow(container, '/work/beta.ts');
+    key(row(container, '/work/beta.ts')!, { key: 'z', code: 'KeyZ', ctrlKey: true });
+    await waitFor(() => expect(info).toHaveBeenCalledTimes(1));
+    const text = String(info.mock.calls[0]![0]);
+    expect(text).toMatch(/bravo\.ts/);
+    expect(text).toMatch(/符号链接|symbolic link/);
+    expect(text).not.toMatch(/过大|too large/);
+    expect(coApi.fs.writeBinary).not.toHaveBeenCalled();
   });
 });
 

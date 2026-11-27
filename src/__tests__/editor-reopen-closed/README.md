@@ -54,7 +54,12 @@
    - 文件的最后一个编辑器关闭(`closeTab` / `removeGroup` 入最近关闭栈的同一处;别的组还开着它则不算)且 CodeMirror 有撤销 / 重做
      历史 → 按路径留下整个 `EditorState`(挂着的视图取当前状态,未挂着的取本组会话缓存)。
    - 之后以任何方式重新打开该路径(⇧⌘T、资源管理器、⌘P…;VSCode 同,不限于 ⇧⌘T):CodeEditor 挂载时取出,磁盘内容与留存的文档
-     相同 → 复用(⌘Z 可撤销关闭前的编辑,光标 / 折叠同关闭时),不同(外部修改 / 不保存就关闭)→ 丢弃。取出即移除。
+     相同 → 复用(⌘Z 可撤销关闭前的编辑,光标 / 折叠同关闭时),不同(外部修改)→ 丢弃。取出即移除。
+   - 脏文件关闭时选「不保存」(关闭时 tab 仍脏;「保存」的在关闭前已不脏):VSCode `editorGroupView` 的 `ConfirmResult.DONT_SAVE`
+     先 `editor.revert()`(`textFileEditorModel` 重新读盘 → `ModelService.updateModel`:前后 `pushStackElement`、以最小差异
+     `pushEditOperations` 套进模型),再随模型销毁按上条留存。这里同理:留存前对该状态以最小差异的一步换回已保存内容(单独成组、
+     进撤销历史),重开(磁盘未变)后内容为已保存版本、不脏,⌘Z 一步回到丢弃的未保存内容并标脏,再 ⌘Z 继续撤销更早的编辑。
+     留存的状态不是这份未保存内容(Markdown 编辑模式里改的,留下的是更早的源码模式状态)→ 不套,原样留存(重开时按上条比对)。
    - 上限:总量按文档 UTF-16 字节估算 ≤ 20MB(`CLOSED_UNDO_MEMORY_MAX`,超出淘汰最早关闭的),文档超过 10M 字符不留
      (`CLOSED_UNDO_DOC_MAX_CHARS`)。撤销历史本身的大小无从精确计量,按文档大小近似(VSCode 按撤销元素的 heapSize)。
    - 作废:文件 / 目录被删除、改名 / 移动(旧路径的留存作废,不随移动)、切换工作区根(不在新根下的作废)—— 与最近关闭条目同一处。
@@ -76,5 +81,5 @@
 ## 可执行规范
 
 - `reopen-closed-editor.spec.ts`
-- `reopen-undo-stack.spec.tsx`:第 7 条(恢复撤销栈 / 内容不同丢弃 / 作废 / 上限)
+- `reopen-undo-stack.spec.tsx`:第 7 条(恢复撤销栈 / 内容不同丢弃 / 「不保存」关闭后找回 / 作废 / 上限)
 - `reopen-closed-editor-popout.spec.ts`:popout 子窗里 ⇧⌘T(子窗分发、回原组、落到子窗的组、子窗无编辑器组时新建)

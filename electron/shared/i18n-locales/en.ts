@@ -690,6 +690,7 @@ export const en = {
   'panels.explorer.create_file_failed': 'Unable to create file “{name}”: {message}',
   'panels.explorer.create_folder_failed': 'Unable to create folder “{name}”: {message}',
   'panels.explorer.undo_delete_not_restored': 'Couldn’t restore {names} by undoing (too large or unreadable). You can restore it from the Trash.',
+  'panels.explorer.undo_delete_link_not_restored': 'Couldn’t restore {names} by undoing (symbolic links can’t be recreated). You can restore it from the Trash.',
   'panels.explorer.undo_delete_empty_folder': 'Recreated folder {names}. Its contents can be restored from the Trash.',
   'panels.explorer.file_undo_target_exists': 'A file or folder “{name}” already exists at this location',
   'panels.explorer.undo_create_confirm.single': 'Undo creating “{name}”? It will be moved to the Trash.',

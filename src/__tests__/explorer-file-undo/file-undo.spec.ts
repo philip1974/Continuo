@@ -86,7 +86,7 @@ function makeWorld(initial: Record<string, 'file' | 'dir'>) {
       const e = files.get(p);
       if (!e) return fail<never>('FS_NOT_FOUND');
       if (e.isDir) return ok({ kind: 'dir' as const });
-      if (e.link) return ok({ kind: 'unsupported' as const });
+      if (e.link) return ok({ kind: 'symlink' as const });
       if (e.size > MAX_UNDO_FILE_BYTES) return ok({ kind: 'tooLarge' as const });
       return ok({ kind: 'file' as const, content: e.content ?? new Uint8Array() });
     }),
@@ -355,7 +355,7 @@ describe('删除的撤销(VSCode DeleteOperation:删除前读回内容,撤销在
     expect(w.fs.readForUndo).toHaveBeenCalledTimes(1);
   });
 
-  it('超过 5MB 的文件、符号链接:删除照常,撤销不重建它,报告 notRestored;其余照常重建', async () => {
+  it('超过 5MB 的文件、符号链接:删除照常,撤销不重建它,分别报告 notRestored / notRestoredLinks(提示说明原因);其余照常重建', async () => {
     const w = makeWorld({});
     w.files.set('/ws/big.bin', { isDir: false, mtimeMs: 1, size: MAX_UNDO_FILE_BYTES + 1, ino: 99 });
     w.files.set('/ws/link', { isDir: false, mtimeMs: 1, size: 3, ino: 98, link: true });
@@ -365,7 +365,8 @@ describe('删除的撤销(VSCode DeleteOperation:删除前读回内容,撤销在
     expect(await undoFileOp(ROOT, w.deps)).toEqual({
       status: 'done',
       reveal: '/ws/small.ts',
-      notRestored: ['/ws/big.bin', '/ws/link'],
+      notRestored: ['/ws/big.bin'],
+      notRestoredLinks: ['/ws/link'],
     });
     expect(w.has('/ws/big.bin') || w.has('/ws/link')).toBe(false);
     expect(text(w.files.get('/ws/small.ts')?.content)).toBe('s');

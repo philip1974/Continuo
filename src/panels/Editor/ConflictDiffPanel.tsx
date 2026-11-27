@@ -38,7 +38,8 @@ import { errorCodeOf, errorMessage } from '../../../electron/shared/error-messag
 import { codeEditorBasicSetup } from './codemirror-basic-setup';
 import { codeEditorTheme } from './code-editor-theme';
 import { codeMirrorContentLabel, codeMirrorPhrases } from './codemirror-phrases';
-import { detectLineEnding, languageDescriptionFor, minimalChange, pickLanguage } from './CodeEditor';
+import { detectLineEnding, languageDescriptionFor, pickLanguage } from './CodeEditor';
+import { minimalChange } from './minimal-change';
 import { isMarkdownPath } from './editor-path-utils';
 import { findEditorFileTabById } from './editor-tab-lookup';
 import { readOptionsForTab } from './editor-encoding';

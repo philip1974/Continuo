@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // BDD: editor-reopen-closed 第 7 条 —— 关闭文件后重新打开,内容与关闭时相同 → 恢复撤销栈(VSCode files.restoreUndoStack,
-// 默认开;ModelService 关闭时按 URI 留下撤销元素与内容 SHA1,重开 SHA1 相同才恢复)。不同 → 丢弃。见同目录 README。
+// 默认开;ModelService 关闭时按 URI 留下撤销元素与内容 SHA1,重开 SHA1 相同才恢复)。不同 → 丢弃。「不保存」关闭先把磁盘
+// 内容作为可撤销的一步套回(VSCode DONT_SAVE → revert → updateModel),重开后 ⌘Z 找回。见同目录 README。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import type { EditorView } from '@codemirror/view';
@@ -16,11 +17,12 @@ import {
   CLOSED_UNDO_DOC_MAX_CHARS,
   CLOSED_UNDO_MEMORY_MAX,
   clearEditorViewStates,
+  revertedForDiscard,
   stashClosedCodeEditorState,
   takeClosedCodeEditorState,
 } from '../../panels/Editor/editor-view-state-cache';
 import { EditorState } from '@codemirror/state';
-import { history } from '@codemirror/commands';
+import { history, undoDepth } from '@codemirror/commands';
 
 const A = '/w/a.ts';
 const TEXT = 'line1\nline2\n';
@@ -86,6 +88,35 @@ describe('关闭后重新打开恢复撤销栈', () => {
     expect(undo(view)).toBe(false);
     // 用掉即丢:再关再开同样没有
     expect(takeClosedCodeEditorState(A)).toBeUndefined();
+  });
+
+  it('脏文件「不保存」关闭 → 重新打开是磁盘内容且不脏,⌘Z 一步找回丢弃的修改,再 ⌘Z 撤销更早的编辑', () => {
+    useEditorStore.setState({ tabs: [createTab(A, TEXT)], activeTabId: A, viewRefs: new Map() });
+    const { view, unmount } = mount(A, TEXT);
+    type(view, 0, 'kept\n');
+    type(view, TEXT.length + 5, 'lost\n');
+    const unsaved = view.state.doc.toString();
+    useEditorStore.getState().updateContent(A, unsaved);
+    expect(useEditorStore.getState().tabs[0]!.dirty).toBe(true);
+    useEditorStore.getState().closeTab(A); // 「不保存」:关闭时仍脏
+    unmount();
+
+    const { view: again } = reopen(TEXT);
+    expect(again.state.doc.toString()).toBe(TEXT);
+    expect(undo(again)).toBe(true);
+    expect(again.state.doc.toString()).toBe(unsaved);
+    expect(undo(again)).toBe(true);
+    expect(again.state.doc.toString()).not.toBe(unsaved);
+  });
+
+  it('CRLF 文件「不保存」关闭同样找回;留存状态不是这份未保存内容(Markdown 编辑模式里改的)→ 原样留存', () => {
+    const crlf = 'a\r\nb\r\n';
+    const base = EditorState.create({ doc: crlf, extensions: [history()] });
+    const typed = base.update({ changes: { from: 1, insert: 'X' }, userEvent: 'input.type' }).state;
+    const back = revertedForDiscard(typed, 'aX\r\nb\r\n', crlf);
+    expect(back.doc.sliceString(0, back.doc.length, '\r\n')).toBe(crlf);
+    expect(undoDepth(back)).toBe(2);
+    expect(revertedForDiscard(typed, 'something else', crlf)).toBe(typed);
   });
 
   it('文件被删除 / 移走、切换工作区根 → 留存作废', () => {

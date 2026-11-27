@@ -121,10 +121,13 @@ export interface FsReadFileData {
   readonly encoding?: TextEncodingId;
 }
 
-/** fs:read-for-undo 的 data:file = 内容;dir = 文件夹;tooLarge = 超过 MAX_UNDO_FILE_BYTES;unsupported = 符号链接等其它类型. */
+/**
+ * fs:read-for-undo 的 data:file = 内容;dir = 文件夹;tooLarge = 超过 MAX_UNDO_FILE_BYTES;symlink = 符号链接(不跟随);
+ * unsupported = 其它类型(FIFO / socket / 设备).
+ */
 export type FsUndoBackup =
   | { readonly kind: 'file'; readonly content: Uint8Array }
-  | { readonly kind: 'dir' | 'tooLarge' | 'unsupported' };
+  | { readonly kind: 'dir' | 'tooLarge' | 'symlink' | 'unsupported' };
 
 /** fs:read-image 的 data:dataUrl = `data:<mime>;base64,…`;size = 文件字节数. */
 export interface FsReadImageData {

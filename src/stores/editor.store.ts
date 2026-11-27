@@ -26,6 +26,7 @@ import {
   persistedEditorViewStateOf,
   renameEditorViewStates,
   retainEditorViewStates,
+  revertedForDiscard,
   stashClosedCodeEditorState,
 } from '@/panels/Editor/editor-view-state-cache';
 import {
@@ -1098,7 +1099,8 @@ function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: s
     // 文件的最后一个编辑器关闭 → 留下撤销历史,重新打开且内容未变时恢复(VSCode files.restoreUndoStack;BDD: src/__tests__/editor-reopen-closed/)
     if (!isTabOpenInOtherGroup(s, id, groupId)) {
       const state = liveEditorViewOf(id, groupId)?.state ?? cachedCodeEditorState(id, groupId);
-      if (state) stashClosedCodeEditorState(id, state);
+      // 关闭时仍脏 = 选了「不保存」(保存的在关闭前已不脏):丢弃的修改作为可撤销的一步留在历史里,重开后 ⌘Z 找回
+      if (state) stashClosedCodeEditorState(id, tab.dirty ? revertedForDiscard(state, tab.content, tab.originalContent) : state);
     }
   }
 }

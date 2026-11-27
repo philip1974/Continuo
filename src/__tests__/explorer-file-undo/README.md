@@ -23,11 +23,12 @@ Continuo 用一个轻量撤销栈实现同一语义(`src/panels/Explorer/file-un
      选「跳过」时写入的都是新文件,照常入栈。
 3. 新操作入栈清空重做栈。删除(移到废纸篓 / 永久删除,至少删掉一项)入栈 `delete`,只含实际删掉的项:
    - 删除前(暂停自动保存之后)经 main `fs:read-for-undo` 读回每一项(lstat,不跟随符号链接):文件 ≤ 5MB → 内容;文件夹 →
-     只标记;超过 5MB、符号链接等其它类型、读回失败 → 不重建(`skipped`)。一次删除读回总量超过 50MB(`MAX_UNDO_DELETE_TOTAL_BYTES`,
+     只标记;超过 5MB、符号链接(`symlink`)、其它类型(FIFO / socket 等)、读回失败 → 不重建(`skipped`)。一次删除读回总量超过 50MB(`MAX_UNDO_DELETE_TOTAL_BYTES`,
      撤销栈的内存兜底;VSCode 不限总量)的文件同样不重建。选中项嵌套时并入上级。
    - 撤销 `delete`:不确认(不是破坏性操作,VSCode `explorer.confirmUndo` 默认只对破坏性撤销确认);先校验全部要重建的原位置空闲、
      父目录存在(任一不满足 → 一项都不重建,失败同规则 4,位置被占提示「此位置已存在」),然后文件按原字节写回(`fs:write-binary`)、
-     文件夹建空文件夹;定位到重建的第一项。没能重建的项与重建成空文件夹的项各提示一次(`panels.explorer.undo_delete_not_restored` /
+     文件夹建空文件夹;定位到重建的第一项。没能重建的项与重建成空文件夹的项各提示一次(`panels.explorer.undo_delete_not_restored`
+     「文件过大或无法读取」/ 符号链接单独 `panels.explorer.undo_delete_link_not_restored`「符号链接不能重建」/
      `panels.explorer.undo_delete_empty_folder`,三语:「…可从废纸篓找回」;VSCode 静默,这里明说)。
    - 重做 `delete`:撤销时重建的项须仍在;重新读回(按最新内容)再移到废纸篓(同删除流程的清理),作为新的 `delete` 回到撤销栈。
    - 删除不再挡住更早的操作:撤销删除之后,下一次 ⌘Z 撤销更早的操作。

@@ -3,6 +3,8 @@
 // BDD: src/__tests__/explorer-commands/(第 5 条)、src/__tests__/app-menu-bar/
 
 import { useEffect, useMemo } from 'react';
+import { redo, undo } from '@codemirror/commands';
+import { EditorView } from '@codemirror/view';
 import { coApi } from '@/lib/co-api';
 import { tWithFallback } from '@/i18n';
 import { hasOpenModalIn } from '@/design/Modal';
@@ -56,9 +58,35 @@ export function runMenuCommand(commands: CommandRegistry, payload: unknown): voi
 }
 
 /**
- * 应用菜单「编辑 → 撤销 / 重做」被点(VSCode UndoCommand / RedoCommand 多实现,资源管理器实现优先):获焦窗口的文件树聚焦
- *(且没有 Modal)→ 撤销 / 重做文件操作(同树内 ⌘Z);否则请 main 对该窗口做原生撤销 / 重做(编辑器 / Markdown / 输入框 / 终端
- * 照旧;popout 子窗获焦 → 作用于该子窗)。BDD: src/__tests__/app-menu-bar/
+ * 焦点在编辑器正文里 → 用编辑器自己的撤销栈撤销 / 重做,返回 true(VSCode CoreEditingCommands.Undo / Redo 的 runEditorCommand:
+ * 编辑器聚焦 → editor.getModel().undo() / redo(),不走 document.execCommand)。Chromium 原生撤销栈只记它见过的输入:命令产生的修改
+ *(切换注释 / 缩进 / 替换 / 还原)、重做都不在其中,栈空时不派发 historyUndo / historyRedo,菜单点了没反应。
+ * - Milkdown(ProseMirror 正文,含其代码块里的 CodeMirror)→ 在 ProseMirror 根上派发 beforeinput historyUndo / historyRedo,由
+ *   prosemirror-history 自己的处理器执行(与 Chromium 原生撤销到达 ProseMirror 的同一入口;只读时它不处理)
+ * - CodeMirror 正文(代码编辑器 / Markdown 源码 / 差异视图…)→ @codemirror/commands 的 undo / redo(只读时它们不改)
+ * 输入框 / 文本域(含编辑器内的查找框)、终端等 → false,照旧原生(VSCode runDOMCommand)。
+ */
+function runFocusedEditorUndoRedo(doc: Document, op: 'undo' | 'redo'): boolean {
+  const active = doc.activeElement;
+  if (!active || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') return false;
+  const pm = active.closest('.ProseMirror');
+  if (pm) {
+    const InputEventCtor = doc.defaultView?.InputEvent ?? InputEvent;
+    const inputType = op === 'undo' ? 'historyUndo' : 'historyRedo';
+    pm.dispatchEvent(new InputEventCtor('beforeinput', { inputType, bubbles: true, cancelable: true }));
+    return true;
+  }
+  const root = active.closest('.cm-editor');
+  const view = root ? EditorView.findFromDOM(root as HTMLElement) : null;
+  if (!view || !view.contentDOM.contains(active)) return false;
+  (op === 'undo' ? undo : redo)(view);
+  return true;
+}
+
+/**
+ * 应用菜单「编辑 → 撤销 / 重做」被点(VSCode UndoCommand / RedoCommand 多实现,资源管理器实现优先):获焦窗口(popout 子窗获焦 →
+ * 该子窗)的文件树聚焦(且没有 Modal)→ 撤销 / 重做文件操作(同树内 ⌘Z);编辑器正文聚焦 → 编辑器自己的撤销栈(同 ⌘Z / ⇧⌘Z,见
+ * runFocusedEditorUndoRedo);否则请 main 对该窗口做原生撤销 / 重做(输入框 / 终端 / Modal 里照旧)。BDD: src/__tests__/app-menu-bar/
  */
 export function runEditUndoRedo(payload: unknown): void {
   if (!isEditUndoRedoPayload(payload)) return;
@@ -67,6 +95,7 @@ export function runEditUndoRedo(payload: unknown): void {
     requestExplorer({ kind: payload.op });
     return;
   }
+  if (!hasOpenModalIn(doc) && runFocusedEditorUndoRedo(doc, payload.op)) return;
   const popout = doc === document ? null : doc.defaultView;
   // 原生撤销失败(窗口已关等)无可提示的内容
   void Promise.resolve()

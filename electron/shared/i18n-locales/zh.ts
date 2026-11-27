@@ -665,6 +665,7 @@ export const zh: Record<TranslationKey, string> = {
   'panels.explorer.create_file_failed': '无法创建文件「{name}」：{message}',
   'panels.explorer.create_folder_failed': '无法创建文件夹「{name}」：{message}',
   'panels.explorer.undo_delete_not_restored': '无法通过撤销恢复「{names}」（文件过大或无法读取），可从废纸篓找回。',
+  'panels.explorer.undo_delete_link_not_restored': '无法通过撤销恢复「{names}」（符号链接不能重建），可从废纸篓找回。',
   'panels.explorer.undo_delete_empty_folder': '已重建文件夹「{names}」，其中的内容可从废纸篓找回。',
   'panels.explorer.file_undo_target_exists': '此位置已存在「{name}」',
   'panels.explorer.undo_create_confirm.single': '确定要撤销新建「{name}」吗？它将被移到废纸篓。',

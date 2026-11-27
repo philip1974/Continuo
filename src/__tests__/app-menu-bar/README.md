@@ -73,8 +73,12 @@ VSCode 菜单的撤销 / 重做是 `undo` / `redo` 多实现命令(`UndoCommand.
 - 鼠标点击 → 发 `window:edit-undo-redo { op, fromPopout }` 给目标主窗(popout 子窗获焦 → 打开它的主窗);DevTools 获焦 / 无可用主窗 →
   直接原生
 - renderer:获焦窗口的文档焦点在资源管理器文件树的行 / 树容器上(改名 / 新建输入框不算,同树内 ⌘Z 的条件)、没有 Modal、有工作区 →
-  撤销 / 重做文件操作(同 `explorer.undo` / `explorer.redo`,见 `explorer-file-undo`);否则经 `window:view-action` 的 `undo` / `redo`
-  请 main 对该窗口(popout → 该子窗)做 `webContents.undo()` / `redo()`,代码编辑器 / Markdown 编辑 / 输入框照旧撤销
+  撤销 / 重做文件操作(同 `explorer.undo` / `explorer.redo`,见 `explorer-file-undo`);焦点在编辑器正文 → 用编辑器自己的撤销栈
+  (VSCode `CoreEditingCommands.Undo` / `Redo` 的 `runEditorCommand`:`editor.getModel().undo()`):代码编辑器 / Markdown 源码等
+  CodeMirror → `@codemirror/commands` 的 `undo` / `redo`;Markdown 编辑(ProseMirror,含其代码块)→ 在 ProseMirror 根上派发
+  `beforeinput` `historyUndo` / `historyRedo`(prosemirror-history 处理)。命令产生的修改(切换注释 / 缩进 / 替换 / 还原)与重做都能
+  由菜单撤销 / 重做(Chromium 原生撤销栈没有这些,栈空时不派发)。其它(输入框 / 编辑器内查找框 / 终端 / Modal)经
+  `window:view-action` 的 `undo` / `redo` 请 main 对该窗口(popout → 该子窗)做 `webContents.undo()` / `redo()`(VSCode `runDOMCommand`)
 
 ## 与 VSCode 的差异
 
@@ -88,7 +92,8 @@ VSCode 菜单的撤销 / 重做是 `undo` / `redo` 多实现命令(`UndoCommand.
 
 `tests/e2e/app-menu-bar.spec.ts`:E2E 模式下应用菜单为 null,经 main 的 e2e 钩子(仅 `CONTINUO_E2E=1`)读取同一模板、按菜单
 路径调用菜单项的 click(与真实点击同一路径),验证 accelerator 跟随改键、主窗 / popout 子窗里执行正确;编辑 → 撤销 / 重做在代码编辑器里
-撤销输入、文件树聚焦时撤销 / 重做改名。
+撤销输入后可重做、打开文件后只做命令修改(切换行注释)也能撤销、popout 子窗的代码编辑器里同样生效、Markdown 编辑里撤销后可重做,
+文件树聚焦时撤销 / 重做改名。
 
 ## 模块
 

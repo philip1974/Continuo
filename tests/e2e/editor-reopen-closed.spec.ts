@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { DOCK_POPOUT, EDITOR_TABS, EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
+import { DOCK_POPOUT, EDITOR_DONT_SAVE, EDITOR_TABS, EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 import { openTreeItem } from './helpers/explorer';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
@@ -168,4 +168,30 @@ test('追加一行 ⌘S → ⌘W → ⇧⌘T → ⌘Z 撤掉追加的一行', as
   await expect(group(win, 0).locator('.cm-content')).toContainText('added', { timeout: 10_000 });
   await win.keyboard.press('ControlOrMeta+z');
   await expect(group(win, 0).locator('.cm-content')).not.toContainText('added', { timeout: 5_000 });
+});
+
+// 第五十六轮审计 A 组 #2:脏文件 ⌘W 选「不保存」→ ⇧⌘T → ⌘Z 找回丢弃的修改(VSCode DONT_SAVE → revert 进撤销栈 → restoreUndoStack)。
+test('输入 → ⌘W →「不保存」→ ⇧⌘T:磁盘内容、不脏;⌘Z 找回丢弃的修改并标脏', async () => {
+  test.setTimeout(60_000);
+  const win = await launch();
+  await openFile(win, /^b\.ts$/, 'export const b = 2;');
+  const cm = group(win, 0).locator('.cm-content');
+  await cm.click();
+  await win.keyboard.press('ControlOrMeta+End');
+  await win.keyboard.type('UNSAVED');
+  await expect(win.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(1, { timeout: 5_000 });
+  await win.keyboard.press('ControlOrMeta+w');
+  const dialog = win.locator('.wm-modal-content');
+  await expect(dialog).toBeVisible({ timeout: 5_000 });
+  await dialog.locator('button').filter({ hasText: EDITOR_DONT_SAVE }).click();
+  await expect.poll(() => tabTitles(group(win, 0)).catch(() => [] as string[])).not.toContain('b.ts');
+  expect(readFileSync(path.join(wsDir, 'b.ts'), 'utf8')).not.toContain('UNSAVED');
+
+  await win.keyboard.press(REOPEN);
+  await expect(group(win, 0).locator('.cm-content')).toContainText('export const bb = 3;', { timeout: 10_000 });
+  await expect(group(win, 0).locator('.cm-content')).not.toContainText('UNSAVED');
+  await expect(win.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(0);
+  await win.keyboard.press('ControlOrMeta+z');
+  await expect(group(win, 0).locator('.cm-content')).toContainText('UNSAVED', { timeout: 5_000 });
+  await expect(win.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(1, { timeout: 5_000 });
 });

@@ -1385,9 +1385,10 @@ export function FolderTree({ root }: { root: string }) {
         try {
           const o = await (isUndo ? undoFileOp : redoFileOp)(root, fileUndoDeps);
           if (o.status === 'done') {
-            // 撤销删除:没能重建的(过大 / 读不了)与只重建成空文件夹的,提示可从废纸篓找回(VSCode 静默,这里明说)。
+            // 撤销删除:没能重建的(过大 / 读不了;符号链接另说原因)与只重建成空文件夹的,提示可从废纸篓找回(VSCode 静默,这里明说)。
             const names = (paths: readonly string[] | undefined) => paths?.map(basenamePreserveTrailing).join(', ');
             if (o.notRestored) notify.info(t('panels.explorer.undo_delete_not_restored', { names: names(o.notRestored)! }), { mirror: false });
+            if (o.notRestoredLinks) notify.info(t('panels.explorer.undo_delete_link_not_restored', { names: names(o.notRestoredLinks)! }), { mirror: false });
             if (o.emptyFolders) notify.info(t('panels.explorer.undo_delete_empty_folder', { names: names(o.emptyFolders)! }), { mirror: false });
             if (o.reveal !== null) {
               // 撤销后选中并显示恢复的项(同改名后的定位;DOM 焦点已不在树里则不抢)。

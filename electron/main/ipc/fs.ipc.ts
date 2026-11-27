@@ -314,6 +314,7 @@ export const readForUndoHandler = async (input: StatInput): Promise<FsUndoBackup
     throw fsError(mapNodeErrnoCode(err), `lstat failed: ${input.path}`);
   }
   if (st.isDirectory()) return { kind: 'dir' };
+  if (st.isSymbolicLink()) return { kind: 'symlink' };
   if (!st.isFile()) return { kind: 'unsupported' };
   if (st.size > MAX_UNDO_FILE_BYTES) return { kind: 'tooLarge' };
   let buf: Buffer;

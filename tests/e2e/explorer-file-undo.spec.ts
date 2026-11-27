@@ -1,6 +1,6 @@
 // 资源管理器文件操作撤销 / 重做(VSCode 同款:树聚焦时 ⌘Z / ⇧⌘Z,Win/Linux Ctrl+Z / Ctrl+Y)。
 // BDD: src/__tests__/explorer-file-undo/
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { lstat, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EXPLORER_NEW_FILE, EXPLORER_NEW_FILE_PLACEHOLDER } from './helpers/explorer';
@@ -220,4 +220,28 @@ test('复制粘贴后再删除另一个文件,⌘Z:被删文件按原内容回�
   await expect(undoCopy).toContainText('a copy.ts', { timeout: 5_000 });
   await undoCopy.getByRole('button', { name: TRASH_BUTTON }).click();
   await expect.poll(() => exists(copyPath)).toBe(false);
+});
+
+// 第五十六轮审计 A 组 #3:撤销删除符号链接 → 不重建,提示写明是符号链接(不是「文件过大或无法读取」)。
+test('删除符号链接后 ⌘Z:不重建,提示「符号链接不能重建」', async ({ window, workspaceRoot }) => {
+  test.skip(process.platform === 'win32', '建符号链接要权限');
+  const linkPath = path.join(workspaceRoot, 'link.ts');
+  await symlink(path.join(workspaceRoot, 'src/a.ts'), linkPath);
+  // 链接行的 title 带链接目标,按可访问名称找
+  const link = window.getByRole('treeitem', { name: 'link.ts', exact: true });
+  await expect(link).toBeVisible({ timeout: 10_000 });
+  await link.click();
+  await link.press('Delete');
+  const dialog = window.getByRole('alertdialog');
+  await expect(dialog).toContainText('link.ts');
+  await window.keyboard.press('Enter');
+  await expect.poll(() => lstat(linkPath).then(() => true, () => false)).toBe(false);
+  const readme = rowOf(window, path.join(workspaceRoot, 'README.md'));
+  await readme.click();
+  await readme.press(UNDO);
+  const toasts = window.locator('.toast__message');
+  await expect(toasts.filter({ hasText: /link\.ts.*(符号链接不能重建|symbolic links can’t be recreated|심볼릭 링크)/ })).toHaveCount(1, { timeout: 5_000 });
+  await expect(toasts.filter({ hasText: /文件过大或无法读取|too large or unreadable|너무 크거나/ })).toHaveCount(0);
+  expect(await lstat(linkPath).then(() => true, () => false)).toBe(false);
+  expect(await exists(path.join(workspaceRoot, 'src/a.ts'))).toBe(true);
 });

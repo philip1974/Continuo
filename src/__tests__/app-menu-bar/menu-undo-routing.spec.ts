@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // BDD: app-menu-bar 第 6 条 —— 应用菜单「编辑 → 撤销 / 重做」按焦点分派(VSCode UndoCommand / RedoCommand 多实现,资源管理器
-// 实现优先):鼠标点击 → 发给目标主窗;renderer 里文件树聚焦 → 撤销 / 重做文件操作,否则请 main 做原生撤销(作用于获焦窗口,
-// popout 子窗获焦 → 该子窗);按键触发 / 无可用主窗 / DevTools 获焦 → 直接原生。见同目录 README。
+// 实现优先):鼠标点击 → 发给目标主窗;renderer 里文件树聚焦 → 撤销 / 重做文件操作,编辑器正文聚焦 → 编辑器自己的撤销栈,否则请 main
+// 做原生撤销(作用于获焦窗口,popout 子窗获焦 → 该子窗);按键触发 / 无可用主窗 / DevTools 获焦 → 直接原生。见同目录 README。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electronMock = vi.hoisted(() => {
@@ -37,6 +37,9 @@ vi.mock('electron', () => ({
 const coApiMock = vi.hoisted(() => ({ viewAction: vi.fn(async () => ({ ok: true, data: undefined })) }));
 vi.mock('@/lib/co-api', () => ({ coApi: { window: coApiMock } }));
 
+import { history } from '@codemirror/commands';
+import { EditorState } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import { WINDOW_CHANNELS } from '../../../electron/shared/window-channels';
 import { runEditUndoRedo as mainRunEditUndoRedo } from '../../../electron/main/lib/menu-command';
 import { runEditUndoRedo } from '@/shell/menu-commands';
@@ -107,7 +110,7 @@ describe('renderer:按焦点分派', () => {
     expect(coApiMock.viewAction).not.toHaveBeenCalled();
   });
 
-  it('焦点在别处(编辑器 / 输入框 / 树里的改名输入框)→ 请 main 原生撤销,不碰文件操作', async () => {
+  it('焦点在别处(输入框 / 树里的改名输入框)→ 请 main 原生撤销,不碰文件操作', async () => {
     for (const id of ['other', 'rename']) {
       (document.getElementById(id) as HTMLElement).focus();
       runEditUndoRedo({ op: 'undo', fromPopout: false });
@@ -117,6 +120,64 @@ describe('renderer:按焦点分派', () => {
     expect(requests).toEqual([]);
     expect(coApiMock.viewAction).toHaveBeenCalledTimes(2);
     expect(coApiMock.viewAction).toHaveBeenCalledWith('undo');
+  });
+
+  it('代码编辑器正文聚焦 → 用 CodeMirror 自己的撤销栈:命令产生的修改可撤销,撤销后可重做,不做原生撤销', async () => {
+    const parent = document.createElement('div');
+    document.body.append(parent);
+    const view = new EditorView({ state: EditorState.create({ doc: 'let a = 1;', extensions: [history()] }), parent });
+    try {
+      // 命令产生的修改(不经键盘输入,Chromium 原生撤销栈里没有它)
+      view.dispatch({ changes: { from: 0, insert: '// ' }, userEvent: 'input' });
+      view.contentDOM.focus();
+      expect(document.activeElement).toBe(view.contentDOM);
+      runEditUndoRedo({ op: 'undo', fromPopout: false });
+      expect(view.state.doc.toString()).toBe('let a = 1;');
+      runEditUndoRedo({ op: 'redo', fromPopout: false });
+      expect(view.state.doc.toString()).toBe('// let a = 1;');
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(coApiMock.viewAction).not.toHaveBeenCalled();
+      expect(requests).toEqual([]);
+    } finally {
+      view.destroy();
+    }
+  });
+
+  it('Markdown 编辑(ProseMirror 正文,含其中代码块)聚焦 → 在 ProseMirror 根上派发 historyUndo / historyRedo,不做原生撤销', async () => {
+    const pm = document.createElement('div');
+    pm.className = 'ProseMirror';
+    pm.contentEditable = 'true';
+    pm.innerHTML = '<p tabindex="0" id="para">x</p>';
+    document.body.append(pm);
+    const seen: string[] = [];
+    pm.addEventListener('beforeinput', (e) => {
+      if (e.target === pm) seen.push((e as InputEvent).inputType);
+    });
+    (document.getElementById('para') as HTMLElement).focus();
+    runEditUndoRedo({ op: 'undo', fromPopout: false });
+    runEditUndoRedo({ op: 'redo', fromPopout: false });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(seen).toEqual(['historyUndo', 'historyRedo']);
+    expect(coApiMock.viewAction).not.toHaveBeenCalled();
+  });
+
+  it('编辑器里的输入框(查找框等)聚焦 → 仍是原生撤销', async () => {
+    const parent = document.createElement('div');
+    document.body.append(parent);
+    const view = new EditorView({ state: EditorState.create({ doc: 'x', extensions: [history()] }), parent });
+    try {
+      const find = document.createElement('input');
+      view.dom.append(find);
+      find.focus();
+      runEditUndoRedo({ op: 'undo', fromPopout: false });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(coApiMock.viewAction).toHaveBeenCalledWith('undo');
+    } finally {
+      view.destroy();
+    }
   });
 
   it('没有工作区 / 畸形 payload → 不撤销文件操作', async () => {

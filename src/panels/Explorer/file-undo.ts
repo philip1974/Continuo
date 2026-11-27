@@ -38,11 +38,13 @@ export interface CreatedEntry {
 
 /**
  * 删除前读回的一项:file = 内容(撤销时原样写回);dir = 文件夹(撤销重建空文件夹,其下内容不重建,VSCode 同);
- * skipped = 过大(> MAX_UNDO_FILE_BYTES)/ 符号链接等 / 读不了 —— 撤销不重建,提示可从废纸篓找回。
+ * skipped = 过大(> MAX_UNDO_FILE_BYTES)/ 符号链接(symlink: true)/ 其它类型 / 读不了 —— 撤销不重建,提示可从废纸篓找回
+ *(符号链接单独说明原因)。
  */
 export type DeletedEntry =
   | { readonly path: string; readonly type: 'file'; readonly content: Uint8Array }
-  | { readonly path: string; readonly type: 'dir' | 'skipped' };
+  | { readonly path: string; readonly type: 'dir' }
+  | { readonly path: string; readonly type: 'skipped'; readonly symlink?: true };
 
 /** 一次删除读回内容的总量上限:超出的文件按过大处理(撤销栈常驻内存;VSCode 不限总量,这里给栈的内存兜底)。 */
 export const MAX_UNDO_DELETE_TOTAL_BYTES = 50 * 1024 * 1024;
@@ -55,13 +57,14 @@ export type FileUndoOp =
 export type FileUndoOutcome =
   | { status: 'empty' | 'busy' | 'cancelled' }
   /**
-   * reveal:要在树里定位的项(null = 不定位)。撤销删除时另带 notRestored(未重建的项:过大 / 读不了)与 emptyFolders
-   *(重建成空文件夹的项),调用方据此提示「可从废纸篓找回」。
+   * reveal:要在树里定位的项(null = 不定位)。撤销删除时另带 notRestored(未重建的项:过大 / 读不了)、notRestoredLinks
+   *(未重建的符号链接)与 emptyFolders(重建成空文件夹的项),调用方据此提示「可从废纸篓找回」。
    */
   | {
       status: 'done';
       reveal: string | null;
       notRestored?: readonly string[];
+      notRestoredLinks?: readonly string[];
       emptyFolders?: readonly string[];
     }
   /** path:本次撤销 / 重做的项;existing:目标位置已被它占用(FS_EEXIST,提示写「此位置已存在「…」」)。 */
@@ -129,6 +132,7 @@ export async function captureForUndo(fs: Pick<FsApi, 'readForUndo'>, paths: read
     try {
       const r = await fs.readForUndo(path);
       if (r.ok && r.data.kind === 'dir') entry = { path, type: 'dir' };
+      else if (r.ok && r.data.kind === 'symlink') entry = { path, type: 'skipped', symlink: true };
       else if (r.ok && r.data.kind === 'file' && total + r.data.content.length <= MAX_UNDO_DELETE_TOTAL_BYTES) {
         total += r.data.content.length;
         entry = { path, type: 'file', content: r.data.content };
@@ -272,12 +276,15 @@ async function undoDelete(op: Extract<FileUndoOp, { kind: 'delete' }>, deps: Fil
   } catch (err) {
     return failure(restorable[0]!.path, 'EXCEPTION', err instanceof Error ? err.message : String(err));
   }
-  const notRestored = op.entries.filter((e) => e.type === 'skipped').map((e) => e.path);
+  const skipped = op.entries.filter((e) => e.type === 'skipped');
+  const notRestored = skipped.filter((e) => !e.symlink).map((e) => e.path);
+  const notRestoredLinks = skipped.filter((e) => e.symlink).map((e) => e.path);
   const emptyFolders = restorable.filter((e) => e.type === 'dir').map((e) => e.path);
   return {
     status: 'done',
     reveal: restorable[0]?.path ?? null,
     ...(notRestored.length > 0 && { notRestored }),
+    ...(notRestoredLinks.length > 0 && { notRestoredLinks }),
     ...(emptyFolders.length > 0 && { emptyFolders }),
   };
 }
