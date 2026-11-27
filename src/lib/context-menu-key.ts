@@ -22,3 +22,14 @@ export function dispatchContextMenuAt(el: HTMLElement): void {
   const r = el.getBoundingClientRect();
   el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom }));
 }
+
+/**
+ * 事件目标是否可编辑文本控件(input / textarea / select / contenteditable):这类元素上右键 / Shift+F10 留给原生编辑菜单
+ *(main edit-context-menu),外层列表行的自定义菜单不接管(VSCode 设置项输入框里右键同样是剪切 / 复制 / 粘贴)。
+ */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
+}

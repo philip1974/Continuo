@@ -2,6 +2,8 @@
 // 编辑器文件 tab(EditorHeader)与 dock 面板 tab(SharedTab)共用外壳:Radix ContextMenu + design MenuItem(同 Explorer /
 // 终端右键菜单)。菜单项在打开时才构建;菜单画在 tab 所在文档(popout 子窗的 tab 菜单画在子窗)。
 // 键盘:tab 聚焦时 Shift+F10 / 菜单键在 tab 左下角打开。BDD: src/__tests__/tab-context-menu/
+// 列表行(搜索结果 / 设置项 / 快捷键)的右键菜单复用同一外壳,keyboardAnchor 指定键盘打开时的定位元素。
+// BDD: src/__tests__/list-context-menus/
 
 import * as Menu from '@radix-ui/react-context-menu';
 import { useRef, useState, type KeyboardEvent, type ReactElement } from 'react';
@@ -34,21 +36,33 @@ export type TabMenuEntry =
 const contentCls =
   'min-w-[180px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-popover outline-none';
 
-/** 聚焦的 tab 上按 Shift+F10 / 菜单键 → 在该元素处派发 contextmenu(冒泡到 Trigger 打开菜单)。 */
-function openFromKeyboard(event: KeyboardEvent<HTMLElement>): void {
+/**
+ * 聚焦的 tab 上按 Shift+F10 / 菜单键 → 在该元素(或 keyboardAnchor 给出的元素)处派发 contextmenu(冒泡到 Trigger 打开菜单)。
+ */
+function openFromKeyboard(
+  event: KeyboardEvent<HTMLElement>,
+  keyboardAnchor: ((target: HTMLElement) => HTMLElement | null) | undefined,
+): void {
   if (!isContextMenuKey(event.nativeEvent)) return;
   // 阻止 Windows 再按默认行为派发一次 contextmenu。
   event.preventDefault();
   event.stopPropagation();
-  dispatchContextMenuAt(event.target as HTMLElement);
+  const target = event.target as HTMLElement;
+  dispatchContextMenuAt(keyboardAnchor?.(target) ?? target);
 }
 
 export function TabContextMenu({
   entries,
+  keyboardAnchor,
   children,
 }: {
   /** 打开时调用一次,构建菜单项。 */
   readonly entries: () => readonly TabMenuEntry[];
+  /**
+   * 键盘(Shift+F10 / 菜单键)打开时菜单定位的元素(须在触发区内,contextmenu 由它冒泡到 Trigger);缺省 / 返回 null = 焦点元素。
+   * 如搜索结果树焦点在树容器上(aria-activedescendant)→ 定位到活动行;设置项 → 行上的「更多操作」按钮(VSCode 同)。
+   */
+  readonly keyboardAnchor?: (target: HTMLElement) => HTMLElement | null;
   /** 触发区(单个元素,Radix asChild 合并 contextmenu / keydown 处理)。 */
   readonly children: ReactElement;
 }) {
@@ -69,7 +83,7 @@ export function TabContextMenu({
           restoreFocusRef.current = active !== null && typeof active.focus === 'function' ? active : null;
           setPortalHost(e.currentTarget.ownerDocument.body);
         }}
-        onKeyDown={openFromKeyboard}
+        onKeyDown={(e) => openFromKeyboard(e, keyboardAnchor)}
       >
         {children}
       </Menu.Trigger>

@@ -1147,6 +1147,12 @@
 
 - [`leaf-name.spec.ts`](./leaf-name-guard/leaf-name.spec.ts)
 
+## [列表行右键菜单:搜索结果 / 设置项 / 快捷键(对齐 VSCode)](./list-context-menus/README.md)
+
+- [`keybinding-context-menu.spec.tsx`](./list-context-menus/keybinding-context-menu.spec.tsx)
+- [`search-context-menu.spec.tsx`](./list-context-menus/search-context-menu.spec.tsx)
+- [`setting-context-menu.spec.tsx`](./list-context-menus/setting-context-menu.spec.tsx)
+
 ## [live-announcer — 全局读屏播报](./live-announcer/README.md)
 
 - [`announce.spec.tsx`](./live-announcer/announce.spec.tsx)

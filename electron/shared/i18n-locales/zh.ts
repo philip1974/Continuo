@@ -778,6 +778,11 @@ export const zh: Record<TranslationKey, string> = {
   'settings.item.number_min': '值须不小于 {min}',
   'settings.item.number_max': '值须不大于 {max}',
   'settings.item.number_nan': '值须为数字',
+  'settings.item.more_actions': '更多操作…',
+  'settings.item.more_actions_aria': '{setting} 的更多操作',
+  'settings.item.ctx.reset': '重置设置',
+  'settings.item.ctx.copy_id': '复制设置 ID',
+  'settings.item.ctx.copy_json': '将设置复制为 JSON',
 
   // plugins_tab.*
   'plugins_tab.label.panels': '面板类型',
@@ -867,6 +872,14 @@ export const zh: Record<TranslationKey, string> = {
   'keybindings.reset_default': '恢复默认（{hotkey}）',
   'keybindings.edit_hotkey_for_aria': '编辑 {command} 的快捷键',
   'keybindings.reset_default_for_aria': '将 {command} 的快捷键恢复默认',
+  'keybindings.ctx.copy': '复制',
+  'keybindings.ctx.copy_command_id': '复制命令 ID',
+  'keybindings.ctx.copy_command_title': '复制命令标题',
+  'keybindings.ctx.change': '更改快捷键…',
+  'keybindings.ctx.add': '添加快捷键…',
+  'keybindings.ctx.remove': '删除快捷键',
+  'keybindings.ctx.reset': '重置快捷键',
+  'keybindings.ctx.show_same': '显示相同的快捷键',
 
   // shell aria/labels
   'shell.aria.drag_resize': '拖拽改变宽度',
@@ -1052,6 +1065,11 @@ export const zh: Record<TranslationKey, string> = {
   'panels.search.message_separator': '。',
   'panels.search.file_aria': '{path}：{results}',
   'panels.search.match_aria': '第 {line} 行，第 {column} 列：{text}',
+  'panels.search.ctx.dismiss': '移除',
+  'panels.search.ctx.exclude_file_type': '从搜索中排除此文件类型',
+  'panels.search.ctx.include_file_type': '在搜索中包含此文件类型',
+  'panels.search.ctx.copy': '复制',
+  'panels.search.ctx.copy_all': '全部复制',
   'commands.search.category': '搜索',
   'commands.search.find_in_files.title': '在文件中查找',
   'commands.search.next_result.title': '聚焦下一个搜索结果',

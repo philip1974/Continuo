@@ -781,6 +781,11 @@ export const ko: Record<TranslationKey, string> = {
   'settings.item.number_min': '값은 {min} 이상이어야 합니다',
   'settings.item.number_max': '값은 {max} 이하여야 합니다',
   'settings.item.number_nan': '값은 숫자여야 합니다',
+  'settings.item.more_actions': '기타 작업…',
+  'settings.item.more_actions_aria': '{setting} 기타 작업',
+  'settings.item.ctx.reset': '설정 초기화',
+  'settings.item.ctx.copy_id': '설정 ID 복사',
+  'settings.item.ctx.copy_json': '설정을 JSON으로 복사',
 
   // plugins_tab.*
   'plugins_tab.label.panels': '패널 유형',
@@ -870,6 +875,14 @@ export const ko: Record<TranslationKey, string> = {
   'keybindings.reset_default': '기본값으로 초기화 ({hotkey})',
   'keybindings.edit_hotkey_for_aria': '{command} 단축키 편집',
   'keybindings.reset_default_for_aria': '{command} 단축키를 기본값으로 초기화',
+  'keybindings.ctx.copy': '복사',
+  'keybindings.ctx.copy_command_id': '명령 ID 복사',
+  'keybindings.ctx.copy_command_title': '명령 제목 복사',
+  'keybindings.ctx.change': '단축키 변경…',
+  'keybindings.ctx.add': '단축키 추가…',
+  'keybindings.ctx.remove': '단축키 제거',
+  'keybindings.ctx.reset': '단축키 초기화',
+  'keybindings.ctx.show_same': '같은 단축키 표시',
 
   // shell aria/labels
   'shell.aria.drag_resize': '드래그하여 너비 조절',
@@ -1058,6 +1071,11 @@ export const ko: Record<TranslationKey, string> = {
   'panels.search.message_separator': '. ',
   'panels.search.file_aria': '{path}: {results}',
   'panels.search.match_aria': '{line}행 {column}열: {text}',
+  'panels.search.ctx.dismiss': '해제',
+  'panels.search.ctx.exclude_file_type': '검색에서 이 파일 형식 제외',
+  'panels.search.ctx.include_file_type': '검색에 이 파일 형식 포함',
+  'panels.search.ctx.copy': '복사',
+  'panels.search.ctx.copy_all': '모두 복사',
   'commands.search.category': '검색',
   'commands.search.find_in_files.title': '파일에서 찾기',
   'commands.search.next_result.title': '다음 검색 결과에 포커스',

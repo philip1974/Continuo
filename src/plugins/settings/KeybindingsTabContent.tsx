@@ -1,6 +1,7 @@
 // 快捷键参考表(Settings → 快捷键 tab)。
 // 订阅 commands registry,列出全部命令(对齐 VSCode 键盘快捷方式编辑器:无快捷键的显示「未绑定」,可直接录键),按 category 分组。
 // KeyCap 渲染 hotkey,跟 CommandPalette 风格一致。
+// 行右键 / Shift+F10 菜单(VSCode keybindingsEditor onContextMenu),外壳同 tab 右键菜单。BDD: src/__tests__/list-context-menus/
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSettingsStore } from '@/plugins/settings/store';
@@ -10,6 +11,7 @@ import { coApp } from '@/plugins/co-app';
 import { useRegistry } from '../registries/useRegistry';
 import { defaultHotkeysOf, type CommandSpec } from '@/plugins/registries/CommandRegistry';
 import {
+  canonicalHotkey,
   formatHotkey,
   hotkeyFilterQuery,
   formatHotkeyParts,
@@ -28,6 +30,8 @@ import { useT, useTWithFallback, useLocale, englishWithFallback } from '@/i18n';
 import { lowerIfNeeded } from '../../../electron/shared/lower-if-needed';
 import { groupKeepingOrder } from '@/lib/group-keeping-order';
 import { ResetIcon } from '@/lib/ui-icons';
+import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
+import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { isSortedBy } from '@/lib/is-sorted-by';
 import { useCloseWhenGone } from '@/lib/use-close-when-gone';
 import { byDisplayTitle } from '@/plugins/command-palette/by-display-title';
@@ -312,6 +316,15 @@ export function buildKeybindingDisplayCommands(
   return out;
 }
 
+/**
+ * 右键「复制」的文本(VSCode copyKeybinding:`{ "key": …, "command": … }`,两空格缩进)。key 用 VSCode keybindings.json 的写法
+ *(修饰键 + 主键小写,mac 上 ⌘ 写作 cmd);未绑定 → 空串。
+ */
+export function keybindingCopyText(commandId: string, hotkey: string | undefined, platform: Platform): string {
+  const key = hotkey === undefined ? '' : canonicalHotkey(hotkey, platform).replace('meta+', 'cmd+');
+  return JSON.stringify({ key, command: commandId }, null, '  ');
+}
+
 export function hasCommandId(commands: readonly CommandSpec[], id: string): boolean {
   for (const command of commands) {
     if (command.id === id) return true;
@@ -387,6 +400,46 @@ export function KeybindingsTabContent() {
   useEffect(() => {
     if (searchFocusRequested && useSettingsStore.getState().takeTabSearchFocus()) searchRef.current?.focus();
   }, [searchFocusRequested]);
+
+  // 行右键菜单(VSCode keybindingsEditor 同组同序):复制 / 复制命令 ID / 复制命令标题 ─ 更改快捷键…(未绑定时为「添加快捷键…」)
+  // ─ 删除快捷键 / 重置快捷键 ─ 显示相同的快捷键。不适用的项置灰(VSCode 同):未绑定 → 删除 / 显示相同置灰;未覆盖 → 重置置灰;
+  // 保留键命令不可改 → 更改 / 删除置灰。跳过:已绑定时的「添加快捷键…」(一个命令只存一条覆盖,无「再加一条」)、
+  // 更改 When 表达式(无 when 条件)。
+  const menuEntriesFor = (d: DisplayCommand) => (): TabMenuEntry[] => {
+    const cmd = d.cmd;
+    const bound = d.effectiveHotkey !== undefined;
+    const copyFailed = t('panels.terminal.ctx.copy_failed');
+    const copy = (text: string) => () => void copyToClipboardOrNotify(text, copyFailed);
+    return [
+      { label: t('keybindings.ctx.copy'), onSelect: copy(keybindingCopyText(cmd.id, d.effectiveHotkey, PLATFORM)) },
+      { label: t('keybindings.ctx.copy_command_id'), onSelect: copy(cmd.id) },
+      { label: t('keybindings.ctx.copy_command_title'), onSelect: copy(d.displayTitle) },
+      'separator',
+      {
+        label: bound ? t('keybindings.ctx.change') : t('keybindings.ctx.add'),
+        onSelect: () => setEditing(cmd),
+        disabled: d.fixed,
+        opensDialog: true,
+      },
+      'separator',
+      { label: t('keybindings.ctx.remove'), onSelect: () => setHotkey(cmd.id, ''), disabled: !bound || d.fixed },
+      {
+        label: t('keybindings.ctx.reset'),
+        onSelect: () => {
+          focusEditAfterResetRef.current = cmd.id;
+          reset(cmd.id);
+        },
+        disabled: !d.isOverridden,
+      },
+      'separator',
+      {
+        label: t('keybindings.ctx.show_same'),
+        // VSCode showSimilarKeybindings:引号精确搜索(修饰键集合相同),⌘S 不连带列出 ⌥⌘S。
+        onSelect: () => setQuery(`"${hotkeyFilterQuery(d.effectiveHotkey!, PLATFORM)}"`),
+        disabled: !bound,
+      },
+    ];
+  };
 
   return (
     <div ref={rootRef} className="space-y-6">
@@ -476,95 +529,98 @@ export function KeybindingsTabContent() {
                   const cmd = d.cmd;
                   const { hotkeyParts, isOverridden } = d; // 预计算(打磨 R29)
                   const shadowedBy = shadowed.get(cmd.id);
+                  // 行可聚焦(tabIndex=-1,不进 Tab 序):右键按下即聚焦本行,菜单 Esc 关闭后焦点回到本行。
                   return (
-                    <li key={cmd.id} className={keybindingRowClassName(idx)}>
-                      <span className={KEYBINDING_TITLE_CLASS_NAME} title={d.displayTitle}>
-                        {d.displayTitle}
-                      </span>
-                      <Badge size="xs" className={KEYBINDING_ID_BADGE_CLASS_NAME}>
-                        <code className="truncate">{cmd.id}</code>
-                      </Badge>
-                      {d.reserved && (
-                        <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>
-                      )}
-                      {d.fixed && <span className="shrink-0 text-2xs text-fg-dim">{reservedFixedLabel}</span>}
-                      {shadowedBy && (
-                        <span
-                          data-testid="keybinding-conflict"
-                          className="shrink-0 text-2xs text-warning"
-                          title={t('keybindings.conflict_shadowed_by', {
-                            command: tk(shadowedBy.titleKey, shadowedBy.title),
+                    <TabContextMenu key={cmd.id} entries={menuEntriesFor(d)}>
+                      <li tabIndex={-1} data-keybinding-row={cmd.id} className={`${keybindingRowClassName(idx)} outline-none`}>
+                        <span className={KEYBINDING_TITLE_CLASS_NAME} title={d.displayTitle}>
+                          {d.displayTitle}
+                        </span>
+                        <Badge size="xs" className={KEYBINDING_ID_BADGE_CLASS_NAME}>
+                          <code className="truncate">{cmd.id}</code>
+                        </Badge>
+                        {d.reserved && (
+                          <span className="shrink-0 text-2xs text-error">{t('keybindings.reserved_inactive')}</span>
+                        )}
+                        {d.fixed && <span className="shrink-0 text-2xs text-fg-dim">{reservedFixedLabel}</span>}
+                        {shadowedBy && (
+                          <span
+                            data-testid="keybinding-conflict"
+                            className="shrink-0 text-2xs text-warning"
+                            title={t('keybindings.conflict_shadowed_by', {
+                              command: tk(shadowedBy.titleKey, shadowedBy.title),
+                            })}
+                          >
+                            {t('keybindings.conflict')}
+                          </span>
+                        )}
+                        {hotkeyParts.length > 0 ? (
+                          // 键帽组可收缩并换行(窄列表 + 4 键组合时折成两行),不把编辑 / 重置按钮挤出行外。
+                          <span
+                            data-testid="keybinding-keys"
+                            className="flex min-w-0 flex-wrap items-center justify-end gap-0.5"
+                          >
+                            {hotkeyParts.map((p) => (
+                              <KeyCap key={p}>{p}</KeyCap>
+                            ))}
+                            {/* 附加默认键:主键之后,以分隔符隔开(VSCode 键盘快捷方式编辑器每条键位一行;这里一命令一行)。 */}
+                            {d.secondaryHotkeyParts?.map((parts, i) => (
+                              <span key={i} className="contents">
+                                <span aria-hidden="true" className="px-1 text-fg-dim">/</span>
+                                {parts.map((p) => (
+                                  <KeyCap key={p}>{p}</KeyCap>
+                                ))}
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="shrink-0 text-2xs text-fg-dim">{unboundLabel}</span>
+                        )}
+                        <IconButton
+                          size="xs"
+                          title={editHotkeyLabel}
+                          // a11y(A76,A75 同族):多命令行的编辑按钮可见图标通用,aria-label 补命令名以区分。
+                          aria-label={t('keybindings.edit_hotkey_for_aria', {
+                            command: d.displayTitle,
                           })}
+                          onClick={() => {
+                            if (!d.fixed) setEditing(cmd);
+                          }}
+                          data-keybinding-edit={cmd.id}
+                          // 保留键不可改:disabled(Tab 不可达)+ invisible 占位(各行键帽列对齐),同未覆盖时的重置按钮。
+                          disabled={d.fixed}
+                          className={d.fixed ? 'shrink-0 pointer-events-none invisible' : 'shrink-0'}
                         >
-                          {t('keybindings.conflict')}
-                        </span>
-                      )}
-                      {hotkeyParts.length > 0 ? (
-                        // 键帽组可收缩并换行(窄列表 + 4 键组合时折成两行),不把编辑 / 重置按钮挤出行外。
-                        <span
-                          data-testid="keybinding-keys"
-                          className="flex min-w-0 flex-wrap items-center justify-end gap-0.5"
+                          {EDIT_HOTKEY_ICON}
+                        </IconButton>
+                        <IconButton
+                          size="xs"
+                          title={t('keybindings.reset_default', {
+                            // 与键帽同一格式化(⇧ ⌘ ↵),不显示原始串(shift+mod+enter)。
+                            hotkey: defaultHotkeysOf(cmd).length > 0
+                              ? defaultHotkeysOf(cmd)
+                                  .map((h) => formatHotkeyParts(h, PLATFORM).join(' '))
+                                  .join(' / ')
+                              : unboundLabel,
+                          })}
+                          aria-label={t('keybindings.reset_default_for_aria', {
+                            command: d.displayTitle,
+                          })}
+                          onClick={() => {
+                            if (!isOverridden) return;
+                            focusEditAfterResetRef.current = cmd.id;
+                            reset(cmd.id);
+                          }}
+                          // a11y(A12 同族):未覆盖时 disabled,避免键盘 Tab 到不可见无效按钮。
+                          disabled={!isOverridden}
+                          // 未覆盖:宽时 invisible 占位(键帽列对齐);列表窄(@max-md)时 hidden 让出宽度给标题。
+                          // 有 override 时始终可见可达。
+                          className={isOverridden ? 'shrink-0' : 'shrink-0 pointer-events-none invisible @max-md:hidden'}
                         >
-                          {hotkeyParts.map((p) => (
-                            <KeyCap key={p}>{p}</KeyCap>
-                          ))}
-                          {/* 附加默认键:主键之后,以分隔符隔开(VSCode 键盘快捷方式编辑器每条键位一行;这里一命令一行)。 */}
-                          {d.secondaryHotkeyParts?.map((parts, i) => (
-                            <span key={i} className="contents">
-                              <span aria-hidden="true" className="px-1 text-fg-dim">/</span>
-                              {parts.map((p) => (
-                                <KeyCap key={p}>{p}</KeyCap>
-                              ))}
-                            </span>
-                          ))}
-                        </span>
-                      ) : (
-                        <span className="shrink-0 text-2xs text-fg-dim">{unboundLabel}</span>
-                      )}
-                      <IconButton
-                        size="xs"
-                        title={editHotkeyLabel}
-                        // a11y(A76,A75 同族):多命令行的编辑按钮可见图标通用,aria-label 补命令名以区分。
-                        aria-label={t('keybindings.edit_hotkey_for_aria', {
-                          command: d.displayTitle,
-                        })}
-                        onClick={() => {
-                          if (!d.fixed) setEditing(cmd);
-                        }}
-                        data-keybinding-edit={cmd.id}
-                        // 保留键不可改:disabled(Tab 不可达)+ invisible 占位(各行键帽列对齐),同未覆盖时的重置按钮。
-                        disabled={d.fixed}
-                        className={d.fixed ? 'shrink-0 pointer-events-none invisible' : 'shrink-0'}
-                      >
-                        {EDIT_HOTKEY_ICON}
-                      </IconButton>
-                      <IconButton
-                        size="xs"
-                        title={t('keybindings.reset_default', {
-                          // 与键帽同一格式化(⇧ ⌘ ↵),不显示原始串(shift+mod+enter)。
-                          hotkey: defaultHotkeysOf(cmd).length > 0
-                            ? defaultHotkeysOf(cmd)
-                                .map((h) => formatHotkeyParts(h, PLATFORM).join(' '))
-                                .join(' / ')
-                            : unboundLabel,
-                        })}
-                        aria-label={t('keybindings.reset_default_for_aria', {
-                          command: d.displayTitle,
-                        })}
-                        onClick={() => {
-                          if (!isOverridden) return;
-                          focusEditAfterResetRef.current = cmd.id;
-                          reset(cmd.id);
-                        }}
-                        // a11y(A12 同族):未覆盖时 disabled,避免键盘 Tab 到不可见无效按钮。
-                        disabled={!isOverridden}
-                        // 未覆盖:宽时 invisible 占位(键帽列对齐);列表窄(@max-md)时 hidden 让出宽度给标题。
-                        // 有 override 时始终可见可达。
-                        className={isOverridden ? 'shrink-0' : 'shrink-0 pointer-events-none invisible @max-md:hidden'}
-                      >
-                        {RESET_HOTKEY_ICON}
-                      </IconButton>
-                    </li>
+                          {RESET_HOTKEY_ICON}
+                        </IconButton>
+                      </li>
+                    </TabContextMenu>
                   );
                 })}
               </ul>

@@ -1,9 +1,10 @@
 // 在文件中查找视图(dock 单例面板 `search`,对齐 VSCode Search 视图):查询框 + 正则 / 大小写 / 全词开关 + 可折叠的包含 /
 // 排除 glob;状态行(aria-live)给出计数 / 搜索中 / 无结果 / 截断 / 失败;结果按文件分组的虚拟化树(role=tree,
 // aria-activedescendant),键盘 ↑↓ / ←→ / Home / End / Enter,单击打开。状态与调度在 search-store。
-// BDD: src/__tests__/workspace-search/
+// 结果行右键 / Shift+F10 菜单(VSCode MenuId.SearchContext),外壳同 tab 右键菜单(TabContextMenu)。
+// BDD: src/__tests__/workspace-search/、src/__tests__/list-context-menus/
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useShallow } from 'zustand/react/shallow';
 import { Badge, IconButton, Input } from '@/design';
@@ -13,6 +14,8 @@ import { matchFindOptionHotkey, type FindOption } from '@/lib/find-options';
 import { FindOptionToggles } from '@/lib/FindOptionToggles';
 import { localizeErrorByCode } from '@/lib/localize-error';
 import { regexSyntaxError } from '@/lib/search-query';
+import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
+import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { ChevronDownIcon, MoreActionsIcon } from '@/lib/ui-icons';
 import { PICKER_MATCH_CLASS_NAME, pickerRowClassName, pickerRowSecondaryClassName } from '@/plugins/picker/picker-row';
 import { isVirtualIndexRendered } from '@/plugins/picker/use-picker-list';
@@ -22,12 +25,15 @@ import { fileGitDecoration, GIT_KIND_LABEL_KEY, GIT_KIND_TEXT_CLASS } from '@/pa
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { SEARCH_DECORATIONS_BADGES, SEARCH_DECORATIONS_COLORS } from '@/plugins/settings/core-setting-specs';
 import {
+  addFileTypeToSearch,
+  dismissSearchResult,
   matchRowKey,
   openSearchMatch,
   rerunSearch,
   useSearchStore,
   type SearchRowKey,
 } from './search-store';
+import { searchAllText, searchFileText, searchLineDelimiter, searchMatchText } from './search-copy';
 import { SEARCH_MAX_FILES, type SearchFileResult } from '../../../electron/shared/workspace-search';
 
 const ROW_HEIGHT = 22;
@@ -173,6 +179,45 @@ export function SearchPanel() {
     }
   };
 
+  // 右键菜单(VSCode MenuId.SearchContext,同组同序):移除 / 排除 · 包含此文件类型(文件行)─ 复制 / 复制路径(文件行)/
+  // 全部复制。右键的行成为活动行(VSCode 同);空白处只有「全部复制」;无结果不弹。
+  // 跳过:替换类(本视图无替换)、文件夹行项(结果不按文件夹分组)、在资源管理器视图中显示(资源管理器无外部定位入口)。
+  const menuRowRef = useRef<Row | null>(null);
+  const onTreeContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-row-index]');
+    const row = el ? (rows[Number(el.dataset['rowIndex'])] ?? null) : null;
+    menuRowRef.current = row;
+    if (row) actions.setActiveKey(row.key);
+    else if (rows.length === 0) e.preventDefault(); // 阻止 Radix 打开空菜单
+  };
+  const menuEntries = (): TabMenuEntry[] => {
+    const row = menuRowRef.current;
+    const copyFailed = t('panels.terminal.ctx.copy_failed');
+    const copy = (text: string) => () => void copyToClipboardOrNotify(text, copyFailed);
+    const eol = searchLineDelimiter();
+    const copyAll: TabMenuEntry = {
+      label: t('panels.search.ctx.copy_all'),
+      onSelect: () => void copyToClipboardOrNotify(searchAllText(useSearchStore.getState().files, eol), copyFailed),
+    };
+    if (!row) return [copyAll];
+    const entries: TabMenuEntry[] = [{ label: t('panels.search.ctx.dismiss'), onSelect: () => dismissSearchResult(row.key) }];
+    if (row.kind === 'file') {
+      entries.push(
+        { label: t('panels.search.ctx.exclude_file_type'), onSelect: () => addFileTypeToSearch(row.file, 'exclude') },
+        { label: t('panels.search.ctx.include_file_type'), onSelect: () => addFileTypeToSearch(row.file, 'include') },
+      );
+    }
+    entries.push('separator', {
+      label: t('panels.search.ctx.copy'),
+      onSelect: copy(row.kind === 'file' ? searchFileText(row.file, eol) : searchMatchText(row.file.matches[row.index]!)),
+    });
+    if (row.kind === 'file') {
+      entries.push({ label: t('panels.explorer.ctx.copy_path'), onSelect: copy(row.file.path) });
+    }
+    entries.push(copyAll);
+    return entries;
+  };
+
   const onQueryKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (isImeComposing(e.nativeEvent)) return;
     if (e.key === 'Enter') {
@@ -255,97 +300,106 @@ export function SearchPanel() {
           {statusText}
         </div>
       </div>
-      <div
-        ref={treeRef}
-        role="tree"
-        aria-label={t('panels.search.results_label')}
-        tabIndex={rows.length > 0 ? 0 : -1}
-        aria-activedescendant={activeRendered ? rowId(activeIndex) : undefined}
-        onKeyDown={onTreeKeyDown}
-        onFocus={() => {
-          if (activeIndex < 0 && rows.length > 0) actions.setActiveKey(rows[0]!.key);
-        }}
-        className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring"
+      {/* Shift+F10 / 菜单键:焦点在树容器上,菜单定位到活动行 */}
+      <TabContextMenu
+        entries={menuEntries}
+        keyboardAnchor={() => treeRef.current?.querySelector<HTMLElement>(`[data-row-index="${activeIndex}"]`) ?? null}
       >
-        <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-          {virtualItems.map((item) => {
-            const row = rows[item.index]!;
-            const selected = item.index === activeIndex;
-            const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: ROW_HEIGHT, transform: `translateY(${item.start}px)` };
-            if (row.kind === 'file') {
-              const { name, dir } = splitRel(row.file.relPath);
-              const count = row.file.matches.length;
-              // 名称着色 + 字母(在匹配数左侧,与名称同色、aria-hidden);悬浮提示追加状态,可访问名称不加(VSCode fileMatchAriaLabel)
-              const git = fileGitDecoration(gitIndex, root, row.file.path);
-              const gitClass = git !== null && gitColors ? GIT_KIND_TEXT_CLASS[git.kind] : '';
-              const gitLetter = git !== null && gitBadges ? git.letter : '';
-              const gitLabel = git !== null && git.kind !== 'ignored' ? t(GIT_KIND_LABEL_KEY[git.kind]) : null;
+        <div
+          ref={treeRef}
+          role="tree"
+          aria-label={t('panels.search.results_label')}
+          tabIndex={rows.length > 0 ? 0 : -1}
+          aria-activedescendant={activeRendered ? rowId(activeIndex) : undefined}
+          onKeyDown={onTreeKeyDown}
+          onContextMenu={onTreeContextMenu}
+          onFocus={() => {
+            if (activeIndex < 0 && rows.length > 0) actions.setActiveKey(rows[0]!.key);
+          }}
+          className="relative min-h-0 flex-1 overflow-auto outline-none focus-visible:outline-solid focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-focus-ring"
+        >
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            {virtualItems.map((item) => {
+              const row = rows[item.index]!;
+              const selected = item.index === activeIndex;
+              const style = { position: 'absolute' as const, top: 0, left: 0, right: 0, height: ROW_HEIGHT, transform: `translateY(${item.start}px)` };
+              if (row.kind === 'file') {
+                const { name, dir } = splitRel(row.file.relPath);
+                const count = row.file.matches.length;
+                // 名称着色 + 字母(在匹配数左侧,与名称同色、aria-hidden);悬浮提示追加状态,可访问名称不加(VSCode fileMatchAriaLabel)
+                const git = fileGitDecoration(gitIndex, root, row.file.path);
+                const gitClass = git !== null && gitColors ? GIT_KIND_TEXT_CLASS[git.kind] : '';
+                const gitLetter = git !== null && gitBadges ? git.letter : '';
+                const gitLabel = git !== null && git.kind !== 'ignored' ? t(GIT_KIND_LABEL_KEY[git.kind]) : null;
+                return (
+                  <div
+                    key={row.key}
+                    id={rowId(item.index)}
+                    data-row-index={item.index}
+                    role="treeitem"
+                    aria-level={1}
+                    aria-expanded={!row.collapsed}
+                    aria-selected={selected}
+                    aria-label={t('panels.search.file_aria', { path: row.file.relPath, results: translateCount('panels.search.result_count', count) })}
+                    title={gitLabel === null ? row.file.relPath : `${row.file.relPath} · ${gitLabel}`}
+                    style={style}
+                    className={`${pickerRowClassName(selected)} min-w-0 pl-1`}
+                    onClick={() => {
+                      actions.setActiveKey(row.key);
+                      activate(row);
+                    }}
+                  >
+                    <span className={`shrink-0 text-fg-muted transition-transform ${row.collapsed ? '-rotate-90' : ''}`} aria-hidden="true">
+                      {CHEVRON_ICON}
+                    </span>
+                    {/* 超长时目录先收缩(收缩权重远大于文件名)、再截断文件名;徽标 shrink-0 始终可见(VSCode 搜索结果文件行同) */}
+                    <span
+                      className={`min-w-0 truncate font-medium ${gitClass || 'text-fg'}`}
+                      data-git-title={gitClass ? git!.kind : undefined}
+                    >
+                      {name}
+                    </span>
+                    {dir && <span className={`min-w-0 shrink-[1000] truncate ${pickerRowSecondaryClassName(selected)}`}>{dir}</span>}
+                    {gitLetter !== '' && (
+                      <span aria-hidden="true" data-git-letter="" className={`ml-auto shrink-0 font-medium ${GIT_KIND_TEXT_CLASS[git!.kind]}`}>
+                        {gitLetter}
+                      </span>
+                    )}
+                    <Badge size="xs" className={`${gitLetter !== '' ? '' : 'ml-auto '}shrink-0`} aria-hidden="true">
+                      {row.file.truncated ? `${count}+` : count}
+                    </Badge>
+                  </div>
+                );
+              }
+              const m = row.file.matches[row.index]!;
               return (
                 <div
                   key={row.key}
                   id={rowId(item.index)}
+                  data-row-index={item.index}
                   role="treeitem"
-                  aria-level={1}
-                  aria-expanded={!row.collapsed}
+                  aria-level={2}
                   aria-selected={selected}
-                  aria-label={t('panels.search.file_aria', { path: row.file.relPath, results: translateCount('panels.search.result_count', count) })}
-                  title={gitLabel === null ? row.file.relPath : `${row.file.relPath} · ${gitLabel}`}
+                  aria-label={t('panels.search.match_aria', { line: m.line, column: m.column, text: m.preview })}
+                  title={m.preview}
                   style={style}
-                  className={`${pickerRowClassName(selected)} min-w-0 pl-1`}
-                  onClick={() => {
+                  className={`${pickerRowClassName(selected)} min-w-0 pl-7`}
+                  onClick={(e) => {
                     actions.setActiveKey(row.key);
-                    activate(row);
+                    activate(row, e.detail < 2);
                   }}
                 >
-                  <span className={`shrink-0 text-fg-muted transition-transform ${row.collapsed ? '-rotate-90' : ''}`} aria-hidden="true">
-                    {CHEVRON_ICON}
+                  <span className="min-w-0 truncate whitespace-pre font-mono">
+                    {m.preview.slice(0, m.previewStart)}
+                    <mark className={PICKER_MATCH_CLASS_NAME}>{m.preview.slice(m.previewStart, m.previewStart + m.previewLength)}</mark>
+                    {m.preview.slice(m.previewStart + m.previewLength)}
                   </span>
-                  {/* 超长时目录先收缩(收缩权重远大于文件名)、再截断文件名;徽标 shrink-0 始终可见(VSCode 搜索结果文件行同) */}
-                  <span
-                    className={`min-w-0 truncate font-medium ${gitClass || 'text-fg'}`}
-                    data-git-title={gitClass ? git!.kind : undefined}
-                  >
-                    {name}
-                  </span>
-                  {dir && <span className={`min-w-0 shrink-[1000] truncate ${pickerRowSecondaryClassName(selected)}`}>{dir}</span>}
-                  {gitLetter !== '' && (
-                    <span aria-hidden="true" data-git-letter="" className={`ml-auto shrink-0 font-medium ${GIT_KIND_TEXT_CLASS[git!.kind]}`}>
-                      {gitLetter}
-                    </span>
-                  )}
-                  <Badge size="xs" className={`${gitLetter !== '' ? '' : 'ml-auto '}shrink-0`} aria-hidden="true">
-                    {row.file.truncated ? `${count}+` : count}
-                  </Badge>
                 </div>
               );
-            }
-            const m = row.file.matches[row.index]!;
-            return (
-              <div
-                key={row.key}
-                id={rowId(item.index)}
-                role="treeitem"
-                aria-level={2}
-                aria-selected={selected}
-                aria-label={t('panels.search.match_aria', { line: m.line, column: m.column, text: m.preview })}
-                title={m.preview}
-                style={style}
-                className={`${pickerRowClassName(selected)} min-w-0 pl-7`}
-                onClick={(e) => {
-                  actions.setActiveKey(row.key);
-                  activate(row, e.detail < 2);
-                }}
-              >
-                <span className="min-w-0 truncate whitespace-pre font-mono">
-                  {m.preview.slice(0, m.previewStart)}
-                  <mark className={PICKER_MATCH_CLASS_NAME}>{m.preview.slice(m.previewStart, m.previewStart + m.previewLength)}</mark>
-                  {m.preview.slice(m.previewStart + m.previewLength)}
-                </span>
-              </div>
-            );
-          })}
+            })}
+          </div>
         </div>
-      </div>
+      </TabContextMenu>
     </div>
   );
 }

@@ -809,6 +809,11 @@ export const en = {
   'settings.item.number_min': 'Value must be at least {min}.',
   'settings.item.number_max': 'Value must be at most {max}.',
   'settings.item.number_nan': 'Value must be a number.',
+  'settings.item.more_actions': 'More Actions…',
+  'settings.item.more_actions_aria': 'More actions for {setting}',
+  'settings.item.ctx.reset': 'Reset Setting',
+  'settings.item.ctx.copy_id': 'Copy Setting ID',
+  'settings.item.ctx.copy_json': 'Copy Setting as JSON',
 
   // plugins_tab.* (topic-20)
   'plugins_tab.label.panels': 'Panel types',
@@ -900,6 +905,14 @@ export const en = {
   // a11y(A76):per-row aria-label includes command name to distinguish rows for SR.
   'keybindings.edit_hotkey_for_aria': 'Edit hotkey for {command}',
   'keybindings.reset_default_for_aria': 'Reset hotkey for {command} to default',
+  'keybindings.ctx.copy': 'Copy',
+  'keybindings.ctx.copy_command_id': 'Copy Command ID',
+  'keybindings.ctx.copy_command_title': 'Copy Command Title',
+  'keybindings.ctx.change': 'Change Hotkey…',
+  'keybindings.ctx.add': 'Add Hotkey…',
+  'keybindings.ctx.remove': 'Remove Hotkey',
+  'keybindings.ctx.reset': 'Reset Hotkey',
+  'keybindings.ctx.show_same': 'Show Same Hotkeys',
 
   // shell aria/labels (6)
   'shell.aria.drag_resize': 'Drag to resize',
@@ -1095,6 +1108,11 @@ export const en = {
   'panels.search.message_separator': '. ',
   'panels.search.file_aria': '{path}: {results}',
   'panels.search.match_aria': 'Line {line}, column {column}: {text}',
+  'panels.search.ctx.dismiss': 'Dismiss',
+  'panels.search.ctx.exclude_file_type': 'Exclude File Type from Search',
+  'panels.search.ctx.include_file_type': 'Include File Type in Search',
+  'panels.search.ctx.copy': 'Copy',
+  'panels.search.ctx.copy_all': 'Copy All',
   'commands.search.category': 'Search',
   'commands.search.find_in_files.title': 'Find in Files',
   'commands.search.next_result.title': 'Focus Next Search Result',

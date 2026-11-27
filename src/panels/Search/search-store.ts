@@ -276,6 +276,69 @@ function dropResultFiles(isGone: (path: string) => boolean): void {
   });
 }
 
+/** 结果树可见行键(文件行 + 未折叠文件的匹配行,与视图同序)。 */
+export function visibleSearchRowKeys(files: readonly SearchFileResult[], collapsed: ReadonlySet<string>): SearchRowKey[] {
+  const keys: SearchRowKey[] = [];
+  for (const f of files) {
+    keys.push(f.path);
+    if (collapsed.has(f.path)) continue;
+    for (let i = 0; i < f.matches.length; i += 1) keys.push(matchRowKey(f.path, i));
+  }
+  return keys;
+}
+
+/** 行键 → 文件路径与匹配序号(文件行 index = null)。 */
+function parseRowKey(key: SearchRowKey): { path: string; index: number | null } {
+  const at = key.indexOf('\0');
+  return at < 0 ? { path: key, index: null } : { path: key.slice(0, at), index: Number(key.slice(at + 1)) };
+}
+
+/**
+ * 右键「移除」(VSCode search.action.remove「Dismiss」):文件行 → 移除该文件全部结果;匹配行 → 移除该匹配(文件不剩匹配则
+ * 连文件一起移除)。计数随之更新;活动行移到被移除行原位置上的下一行(没有则最后一行)。
+ */
+export function dismissSearchResult(key: SearchRowKey): void {
+  useSearchStore.setState((s) => {
+    const { path, index } = parseRowKey(key);
+    const file = s.files.find((f) => f.path === path);
+    if (!file || (index !== null && !file.matches[index])) return s;
+    const before = visibleSearchRowKeys(s.files, s.collapsed);
+    const at = before.indexOf(key);
+    const keepFile = index !== null && file.matches.length > 1;
+    const files = keepFile
+      ? s.files.map((f) => (f === file ? { ...f, matches: f.matches.filter((_, i) => i !== index) } : f))
+      : s.files.filter((f) => f !== file);
+    const collapsed = keepFile || !s.collapsed.has(path) ? s.collapsed : new Set([...s.collapsed].filter((p) => p !== path));
+    const after = visibleSearchRowKeys(files, collapsed);
+    const activeKey = after.length === 0 ? null : after[Math.min(Math.max(at, 0), after.length - 1)]!;
+    return { files, resultCount: s.resultCount - (index === null ? file.matches.length : 1), collapsed, activeKey };
+  });
+}
+
+/** VSCode extractSearchFilePattern:`a.test.ts` → `*.test.ts`;无扩展名 → 文件名本身。 */
+export function fileTypePattern(fileName: string): string {
+  const parts = fileName.split('.');
+  return parts.length <= 1 ? fileName : `*.${parts.slice(1).join('.')}`;
+}
+
+/**
+ * 右键「从搜索中排除 / 在搜索中包含文件类型」(VSCode modifySearchFileTypePattern):把该文件的类型 glob 追加到排除 / 包含框
+ *(已有则不动),展开详情并立即重搜。
+ */
+export function addFileTypeToSearch(file: SearchFileResult, kind: 'include' | 'exclude'): void {
+  const s = useSearchStore.getState();
+  const name = file.relPath.slice(file.relPath.lastIndexOf('/') + 1);
+  const pattern = fileTypePattern(name);
+  const current = kind === 'include' ? s.include : s.exclude;
+  const existing = current.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
+  if (existing.includes(pattern)) return;
+  const next = current.trim() === '' ? pattern : `${current}, ${pattern}`;
+  if (kind === 'include') s.setInclude(next);
+  else s.setExclude(next);
+  if (!useSearchStore.getState().detailsOpen) s.toggleDetails();
+  s.searchNow();
+}
+
 onEditorPathChange((c) => {
   if (c.kind === 'moved') dropResultFiles((p) => isSameOrInsidePath(c.oldPath, p));
   else dropResultFiles((p) => c.paths.some((r) => isSameOrInsidePath(r, p)));

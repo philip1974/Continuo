@@ -6,6 +6,8 @@
 //   - number  → Input + 单位 chip(右侧)
 //   - text    → Input
 //   - reset   → 始终占位的 ↺,override 时可见
+//   - 右键 / Shift+F10 / 行上的「更多操作」齿轮(悬停 / 聚焦时显示)→ 菜单:重置设置 ─ 复制设置 ID / 将设置复制为 JSON
+//     (VSCode settingsTree settingActions;外壳同 tab 右键菜单)。BDD: src/__tests__/list-context-menus/
 
 import { useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import {
@@ -17,7 +19,11 @@ import {
   type SegmentedControlOption,
 } from '@/design';
 import { useLocale, useT } from '@/i18n';
+import { dispatchContextMenuAt, isContextMenuKey, isEditableTarget } from '@/lib/context-menu-key';
+import { TabContextMenu, type TabMenuEntry } from '@/lib/TabContextMenu';
 import { ResetIcon } from '@/lib/ui-icons';
+import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
+import { GeneralIcon } from './tab-icons';
 import {
   clampSettingNumber,
   coerceSettingValue,
@@ -98,6 +104,7 @@ const EMPTY_SETTING_SELECT_OPTIONS: readonly SegmentedControlOption<string>[] = 
 /** 行内编辑控件(开关 / 输入框 / 分段控件里当前可 Tab 的那一项);重置后焦点移到这里。 */
 const ROW_CONTROL_SELECTOR = 'input, [role="switch"], [role="radio"][tabindex="0"]';
 const RESET_DEFAULT_ICON = <ResetIcon size={12} />;
+const MORE_ACTIONS_ICON = <GeneralIcon />;
 /** 设置项主体布局:窄于 32rem(行自身宽度)上下排列,否则左右并排(控件靠右)。导出供规范断言。 */
 export const SETTING_ROW_LAYOUT_CLASS_NAME =
   'flex flex-col items-start gap-3 @lg:flex-row @lg:justify-between @lg:gap-6';
@@ -181,106 +188,151 @@ export function SettingItemRow({
     return options;
   }, [locale, spec.enum, spec.type, t]);
 
+  // 右键菜单(VSCode settingsTree settingActions 同序):重置设置(未覆盖时置灰)─ 复制设置 ID / 将设置复制为 JSON
+  //(`"id": 值`,值为当前生效值)。跳过:复制为 URL(无 URL 协议入口)、应用到所有配置文件 / 同步(无配置文件 / 同步)。
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const menuEntries = (): TabMenuEntry[] => {
+    const copyFailed = t('panels.terminal.ctx.copy_failed');
+    return [
+      { label: t('settings.item.ctx.reset'), onSelect: () => reset(spec.id), disabled: !isOverridden },
+      'separator',
+      { label: t('settings.item.ctx.copy_id'), onSelect: () => void copyToClipboardOrNotify(spec.id, copyFailed) },
+      {
+        label: t('settings.item.ctx.copy_json'),
+        onSelect: () => void copyToClipboardOrNotify(`"${spec.id}": ${JSON.stringify(value, undefined, '  ')}`, copyFailed),
+      },
+    ];
+  };
+
   // 窄宽(设置面板被挤到几百像素)时按行自身宽度(容器查询 @container)改为上下排列:标题 / 描述在上、控件
   // 在下(VSCode 设置项本就是上下排列);宽于 32rem 才左右并排。左右并排时控件区 shrink-0,若不换行,
   // 左侧只剩几十像素 → 描述一行一个词、标题被截断。标题行可换行;id 徽标过长时省略号截断而不撑破行。
+  // 行可聚焦(tabIndex=-1,不进 Tab 序):右键按下即聚焦本行,菜单 Esc 关闭后焦点回到本行。
   return (
-    <div className="@container border-b border-line/50 py-5 last:border-b-0">
-      <div className={SETTING_ROW_LAYOUT_CLASS_NAME}>
-        <div className="min-w-0 max-w-full flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span id={titleId} className="min-w-0 break-words text-sm text-fg">
-              {title}
-            </span>
-            {/* id chip:design Badge xs(浅底)+ <code> 等宽紧贴 title 显示,取代独占一行;不 uppercase —— id 区分大小写 */}
-            <Badge size="xs" className="min-w-0 max-w-full">
-              <code className="min-w-0 truncate">{spec.id}</code>
-            </Badge>
-          </div>
-          {description && (
-            <div className="mt-1 text-xs text-fg-muted">{description}</div>
-          )}
-          {spec.type === 'number' && numberDraft.error !== null && (
-            <div id={numberErrorId} className="mt-1 text-xs text-error">
-              {numberDraft.error}
-            </div>
-          )}
-        </div>
-        <div ref={controlsRef} className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-2">
-        {spec.type === 'boolean' && (
-          // a11y(A4):role=switch 须有可访问名(= 设置标题),否则 AT 只读「switch checked」不知切换哪个设置。
-          <Switch
-            checked={Boolean(value)}
-            onCheckedChange={(v) => setValue(spec.id, v)}
-            aria-label={title}
-          />
-        )}
-        {spec.type === 'select' && spec.enum && (
-          <SegmentedControl
-            size="sm"
-            ariaLabelledby={titleId}
-            options={selectOptions}
-            value={String(value)}
-            onChange={(id) => setValue(spec.id, id)}
-          />
-        )}
-        {spec.type === 'number' && (
-          <div className="flex min-w-0 max-w-full items-center gap-1">
-            <Input
-              type="number"
-              size="sm"
-              aria-labelledby={titleId}
-              aria-invalid={numberDraft.error !== null ? true : undefined}
-              aria-describedby={numberDraft.error !== null ? numberErrorId : undefined}
-              min={spec.min}
-              max={spec.max}
-              step={spec.step}
-              {...numberDraft.inputProps}
-              className="w-24 min-w-0 max-w-full text-right"
-            />
-            {spec.unit && (
-              <Badge size="xs" className="select-none uppercase tracking-wider">
-                {spec.unit}
+    <TabContextMenu entries={menuEntries} keyboardAnchor={() => moreRef.current}>
+      <div
+        tabIndex={-1}
+        data-setting-row={spec.id}
+        className="group/setting @container border-b border-line/50 py-5 outline-none last:border-b-0"
+      >
+        <div className={SETTING_ROW_LAYOUT_CLASS_NAME}>
+          <div className="min-w-0 max-w-full flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span id={titleId} className="min-w-0 break-words text-sm text-fg">
+                {title}
+              </span>
+              {/* id chip:design Badge xs(浅底)+ <code> 等宽紧贴 title 显示,取代独占一行;不 uppercase —— id 区分大小写 */}
+              <Badge size="xs" className="min-w-0 max-w-full">
+                <code className="min-w-0 truncate">{spec.id}</code>
               </Badge>
+              {/* 「更多操作」(VSCode 设置项左侧齿轮):悬停 / 行内有焦点 / 菜单打开时显示,点击在按钮处打开同一菜单 */}
+              <IconButton
+                ref={moreRef}
+                size="xs"
+                title={t('settings.item.more_actions')}
+                aria-label={t('settings.item.more_actions_aria', { setting: title })}
+                aria-haspopup="menu"
+                onClick={(e) => dispatchContextMenuAt(e.currentTarget)}
+                className="self-center opacity-0 focus-visible:opacity-100 group-hover/setting:opacity-100 group-focus-within/setting:opacity-100 group-data-[state=open]/setting:opacity-100"
+              >
+                {MORE_ACTIONS_ICON}
+              </IconButton>
+            </div>
+            {description && (
+              <div className="mt-1 text-xs text-fg-muted">{description}</div>
+            )}
+            {spec.type === 'number' && numberDraft.error !== null && (
+              <div id={numberErrorId} className="mt-1 text-xs text-error">
+                {numberDraft.error}
+              </div>
             )}
           </div>
-        )}
-        {spec.type === 'text' && (
-          <Input
-            type="text"
-            size="sm"
-            aria-labelledby={titleId}
-            value={String(value)}
-            // 边界(E293,E290 同族 / before-store 输入截断):text 设置值 onChange 截断到 SI_TEXT_VALUE_MAX。
-            // values-store.setValue 虽已截断(E142/E241,持久层安全),但 UI 此前无 maxLength/slice → 超长
-            // paste 仍瞬时进 DOM 原生值 + onChange 事件 + setValue 调用链。maxLength 原生拦键入/paste,
-            // onChange slice 兜底(与 CreateInput leaf 名 E290 同款 UI-transient 防御)。
-            maxLength={SI_TEXT_VALUE_MAX}
-            onChange={(e) =>
-              setValue(
-                spec.id,
-                (e.target as HTMLInputElement).value.slice(0, SI_TEXT_VALUE_MAX),
-              )
-            }
-            className="w-48 max-w-full"
-          />
-        )}
-        {/* 常驻占位避免 reset 时 Input 等控件位置跳动;非 override 状态下
-         *  invisible + pointer-events-none 保留布局但不响应 */}
-        <IconButton
-          size="xs"
-          onClick={() => isOverridden && reset(spec.id)}
-          // a11y(A12):未覆盖时仅 invisible 仍可 Tab 聚焦到不可见无效按钮 → disabled 从 tab
-          // 顺序移除 + 不可点(常驻占位保留布局不跳动,但键盘/AT 不再触达)。
-          disabled={!isOverridden}
-          title={t('settings.item.reset_default', { default: defaultLabel })}
-          aria-label={t('settings.item.reset_default_aria')}
-          className={isOverridden ? '' : 'pointer-events-none invisible'}
-        >
-          {RESET_DEFAULT_ICON}
-        </IconButton>
+          {/* 输入框里右键 / Shift+F10 留给原生编辑菜单(剪切 / 复制 / 粘贴),不打开设置项菜单 */}
+          <div
+            ref={controlsRef}
+            className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-2"
+            onContextMenu={(e) => {
+              if (isEditableTarget(e.target)) e.stopPropagation();
+            }}
+            onKeyDown={(e) => {
+              if (isEditableTarget(e.target) && isContextMenuKey(e.nativeEvent)) e.stopPropagation();
+            }}
+          >
+          {spec.type === 'boolean' && (
+            // a11y(A4):role=switch 须有可访问名(= 设置标题),否则 AT 只读「switch checked」不知切换哪个设置。
+            <Switch
+              checked={Boolean(value)}
+              onCheckedChange={(v) => setValue(spec.id, v)}
+              aria-label={title}
+            />
+          )}
+          {spec.type === 'select' && spec.enum && (
+            <SegmentedControl
+              size="sm"
+              ariaLabelledby={titleId}
+              options={selectOptions}
+              value={String(value)}
+              onChange={(id) => setValue(spec.id, id)}
+            />
+          )}
+          {spec.type === 'number' && (
+            <div className="flex min-w-0 max-w-full items-center gap-1">
+              <Input
+                type="number"
+                size="sm"
+                aria-labelledby={titleId}
+                aria-invalid={numberDraft.error !== null ? true : undefined}
+                aria-describedby={numberDraft.error !== null ? numberErrorId : undefined}
+                min={spec.min}
+                max={spec.max}
+                step={spec.step}
+                {...numberDraft.inputProps}
+                className="w-24 min-w-0 max-w-full text-right"
+              />
+              {spec.unit && (
+                <Badge size="xs" className="select-none uppercase tracking-wider">
+                  {spec.unit}
+                </Badge>
+              )}
+            </div>
+          )}
+          {spec.type === 'text' && (
+            <Input
+              type="text"
+              size="sm"
+              aria-labelledby={titleId}
+              value={String(value)}
+              // 边界(E293,E290 同族 / before-store 输入截断):text 设置值 onChange 截断到 SI_TEXT_VALUE_MAX。
+              // values-store.setValue 虽已截断(E142/E241,持久层安全),但 UI 此前无 maxLength/slice → 超长
+              // paste 仍瞬时进 DOM 原生值 + onChange 事件 + setValue 调用链。maxLength 原生拦键入/paste,
+              // onChange slice 兜底(与 CreateInput leaf 名 E290 同款 UI-transient 防御)。
+              maxLength={SI_TEXT_VALUE_MAX}
+              onChange={(e) =>
+                setValue(
+                  spec.id,
+                  (e.target as HTMLInputElement).value.slice(0, SI_TEXT_VALUE_MAX),
+                )
+              }
+              className="w-48 max-w-full"
+            />
+          )}
+          {/* 常驻占位避免 reset 时 Input 等控件位置跳动;非 override 状态下
+           *  invisible + pointer-events-none 保留布局但不响应 */}
+          <IconButton
+            size="xs"
+            onClick={() => isOverridden && reset(spec.id)}
+            // a11y(A12):未覆盖时仅 invisible 仍可 Tab 聚焦到不可见无效按钮 → disabled 从 tab
+            // 顺序移除 + 不可点(常驻占位保留布局不跳动,但键盘/AT 不再触达)。
+            disabled={!isOverridden}
+            title={t('settings.item.reset_default', { default: defaultLabel })}
+            aria-label={t('settings.item.reset_default_aria')}
+            className={isOverridden ? '' : 'pointer-events-none invisible'}
+          >
+            {RESET_DEFAULT_ICON}
+          </IconButton>
+          </div>
         </div>
       </div>
-    </div>
+    </TabContextMenu>
   );
 }
