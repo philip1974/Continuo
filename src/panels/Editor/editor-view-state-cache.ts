@@ -17,8 +17,10 @@
 //(VSCode loadEditorState 的 fallbackToOtherGroupState 同理);新挂进某组、该组本会话无状态时也回退到别的组最近的状态
 //(把 tab 拖到另一组时光标随之过去)。
 // 条目随 tab 关闭删除、随重命名迁移、随组关闭删除(editor.store 调用);最多保留 CODE_EDITOR_VIEW_STATE_LIMIT 个(最久未用先淘汰)。
+// 关闭时有撤销历史的 CodeMirror 状态另按路径留存,重新打开且内容未变时恢复撤销栈(见下「关闭文件的撤销历史」)。
 // 本模块不 import editor.store(store 反向调用这里)。
 
+import { redoDepth, undoDepth } from '@codemirror/commands';
 import { ensureSyntaxTree, foldable, foldedRanges, foldEffect } from '@codemirror/language';
 import type { EditorState, StateEffect } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
@@ -359,7 +361,64 @@ export function dropEditorViewStatesOfGroups(isGone: (groupId: string) => boolea
   }
 }
 
+// ── 关闭文件的撤销历史(VSCode files.restoreUndoStack,默认开)──────────
+// VSCode ModelService:模型销毁(文件的最后一个编辑器关闭)时有撤销 / 重做元素就按 URI 留下(连同内容 SHA1),重新打开时内容
+// SHA1 相同 → 恢复撤销栈,不同 → 丢弃;留存总量上限 MAX_MEMORY_FOR_CLOSED_FILES_UNDO_STACK = 20MB(超出淘汰最早关闭的),
+// 超过 10MB 的模型不算 SHA1、不留。这里留整个 CodeMirror EditorState(文档 + 撤销历史 + 选区 / 折叠),重新打开时
+// 「磁盘内容 = 留存的文档」才复用(CodeEditor restoreState 的同一比较),否则丢弃。按 tab id(= 路径)记;文件被删除 / 移走、
+// 切换工作区根时作废(editor.store 调用)。Markdown 编辑视图(Milkdown)的撤销历史跨实例不复用,不在此列。
+// BDD: src/__tests__/editor-reopen-closed/
+
+/** 关闭文件撤销历史的留存总量上限(按 UTF-16 文档字节估算;VSCode 20MB)。 */
+export const CLOSED_UNDO_MEMORY_MAX = 20 * 1024 * 1024;
+/** 超过此长度(UTF-16 code unit)的文档不留(VSCode DefaultModelSHA1Computer.MAX_MODEL_SIZE = 10MB)。 */
+export const CLOSED_UNDO_DOC_MAX_CHARS = 10 * 1024 * 1024;
+
+const closedStates = new Map<string, { readonly state: EditorState; readonly cost: number }>();
+let closedCost = 0;
+
+function dropClosed(tabId: string): void {
+  const e = closedStates.get(tabId);
+  if (!e) return;
+  closedCost -= e.cost;
+  closedStates.delete(tabId);
+}
+
+/** 文件的最后一个编辑器关闭:有撤销 / 重做历史就留下它的 EditorState(超限淘汰最早关闭的;过大的文档不留)。 */
+export function stashClosedCodeEditorState(tabId: string, state: EditorState): void {
+  dropClosed(tabId);
+  if (undoDepth(state) === 0 && redoDepth(state) === 0) return;
+  if (state.doc.length > CLOSED_UNDO_DOC_MAX_CHARS) return;
+  const cost = state.doc.length * 2;
+  for (const key of closedStates.keys()) {
+    if (closedCost + cost <= CLOSED_UNDO_MEMORY_MAX) break;
+    dropClosed(key);
+  }
+  if (closedCost + cost > CLOSED_UNDO_MEMORY_MAX) return;
+  closedStates.set(tabId, { state, cost });
+  closedCost += cost;
+}
+
+/** 重新打开时取出(并移除)关闭时留下的 EditorState;调用方比对内容,不同则丢弃。 */
+export function takeClosedCodeEditorState(tabId: string): EditorState | undefined {
+  const e = closedStates.get(tabId);
+  dropClosed(tabId);
+  return e?.state;
+}
+
+/** 作废 isGone(tabId) 为真的留存(文件删除 / 移走 / 切换工作区根)。 */
+export function dropClosedCodeEditorStates(isGone: (tabId: string) => boolean): void {
+  for (const key of [...closedStates.keys()]) if (isGone(key)) dropClosed(key);
+}
+
+/** 本会话该组该 tab 缓存的 CodeMirror 状态(不取出;tab 关闭时留存撤销历史用)。 */
+export function cachedCodeEditorState(tabId: string, groupId = PRIMARY_EDITOR_GROUP_ID): EditorState | undefined {
+  return codeStates.get(keyOf(groupId, tabId))?.state;
+}
+
 /** 测试用:清空。 */
 export function clearEditorViewStates(): void {
   for (const map of ALL_MAPS) map.clear();
+  closedStates.clear();
+  closedCost = 0;
 }

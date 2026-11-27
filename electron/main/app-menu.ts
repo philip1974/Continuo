@@ -4,7 +4,7 @@
 // 当前生效主键(跟随改键 / 解绑 / 冲突落败,见 menu-keybindings),registerAccelerator: false 只显示不抢键。
 // 语言切换 / 键位变化时由 index.ts rebuildAppMenu 整体重建。BDD: src/__tests__/command-discoverability/、src/__tests__/app-menu-bar/
 import { app, BrowserWindow, type KeyboardEvent, type MenuItemConstructorOptions } from 'electron';
-import { sendMenuCommand } from './lib/menu-command';
+import { runEditUndoRedo, sendMenuCommand } from './lib/menu-command';
 import { menuAcceleratorOf } from './menu-keybindings';
 import { menuCheckedOf } from './menu-checked';
 import type { MenuCheckboxId, MenuCommandId } from '../shared/window-channels';
@@ -108,11 +108,19 @@ export function appMenuTemplate(
     ...(isMac ? [] : [{ role: 'quit', label: t('menu.app.exit') } satisfies Item]),
   ];
 
-  // 原生编辑项保留 role(输入框 / 终端 / 编辑器里由系统分发);其后是 VSCode 编辑菜单的查找 / 注释(作用于获焦窗口的活动文本编辑器,
+  // 撤销 / 重做不用 role(role 只做原生撤销):VSCode 菜单走 undo / redo 多实现命令 —— 文件树聚焦时撤销文件操作。按键触发照旧原生
+  //(文件树自己处理 ⌘Z,未处理的按键才到菜单);键位同 Electron role 默认(重做:Windows Ctrl+Y,其它 Shift+CmdOrCtrl+Z)。
+  // 其余原生编辑项保留 role(输入框 / 终端 / 编辑器里由系统分发);其后是 VSCode 编辑菜单的查找 / 注释(作用于获焦窗口的活动文本编辑器,
   // 没有文本编辑器 → 静默,与命令面板一致)。
+  const undoRedoItem = (op: 'undo' | 'redo', accelerator: string): Item => ({
+    id: op,
+    label: t(op === 'undo' ? 'menu.edit.undo' : 'menu.edit.redo'),
+    accelerator,
+    click: (_item, win, event: KeyboardEvent) => runEditUndoRedo(win, op, event?.triggeredByAccelerator === true),
+  });
   const editSubmenu: Item[] = [
-    { role: 'undo', label: t('menu.edit.undo') },
-    { role: 'redo', label: t('menu.edit.redo') },
+    undoRedoItem('undo', 'CmdOrCtrl+Z'),
+    undoRedoItem('redo', process.platform === 'win32' ? 'Control+Y' : 'Shift+CmdOrCtrl+Z'),
     SEPARATOR,
     { role: 'cut', label: t('menu.edit.cut') },
     { role: 'copy', label: t('menu.edit.copy') },

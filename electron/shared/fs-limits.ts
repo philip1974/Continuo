@@ -6,7 +6,12 @@
 //    传超大字符串时 renderer/preload IPC structured-clone 先序列化、主进程 schema 才拒绝的前置放大。
 
 export const MAX_WRITE_BYTES = 64 * 1024 * 1024; // 64 MiB:fs 写入内容上限
-export const FS_PATH_MAX = 8192; // 路径字符串上限(与 fs.ipc fsPath / plugin-fs scope path 一致)
+export const FS_PATH_MAX = 8192;
+/**
+ * 资源管理器删除前为撤销读回的单个文件内容上限(VSCode fileActions MAX_UNDO_FILE_SIZE = 5000000:超过的文件删除后撤销不重建)。
+ * BDD: src/__tests__/explorer-file-undo/
+ */
+export const MAX_UNDO_FILE_BYTES = 5_000_000; // 路径字符串上限(与 fs.ipc fsPath / plugin-fs scope path 一致)
 /** fs:list-dir 单次遍历的条目硬上限(main list-dir 早停;IPC schema 的 maxFiles 上界对齐到它,E275)。 */
 export const LIST_DIR_TOTAL_ENTRIES_MAX = 100_000;
 /**

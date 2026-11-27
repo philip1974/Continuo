@@ -54,6 +54,13 @@ export const WINDOW_CHANNELS = {
    */
   RUN_MENU_COMMAND: 'window:run-menu-command',
   /**
+   * main → renderer:点了应用菜单「编辑 → 撤销 / 重做」(鼠标点击;按键触发的直接走原生撤销)。payload EditUndoRedoPayload。
+   * renderer 按焦点分派(VSCode UndoCommand 多实现):资源管理器文件树聚焦 → 撤销 / 重做文件操作;否则请 main 对获焦窗口做原生
+   * 撤销 / 重做(window:view-action 'undo' / 'redo',编辑器 / 输入框 / 终端照旧)。popout 子窗获焦时发给打开它的主窗。
+   * BDD: src/__tests__/app-menu-bar/
+   */
+  EDIT_UNDO_REDO: 'window:edit-undo-redo',
+  /**
    * renderer → main:菜单命令当前生效的主键(`{ keybindings: { [id]: 归一后的 hotkey | null } }`,跟随改键 / 解绑 / 冲突落败)。
    * main 换算成 accelerator 只作显示,菜单随之重建。BDD: src/__tests__/app-menu-bar/
    */
@@ -99,7 +106,8 @@ export interface WindowSwitchEntry {
 
 /** window:view-action 可执行的动作(BDD: src/__tests__/command-discoverability/)。 */
 // 放大 / 缩小 / 重置缩放不在此列:它们改设置项 window.zoomLevel(所有窗口统一,见 SET_ZOOM_LEVEL)。
-export const WINDOW_VIEW_ACTIONS = ['reload', 'toggleFullScreen'] as const;
+// undo / redo:应用菜单「编辑 → 撤销 / 重做」焦点不在文件树时的原生撤销 / 重做(webContents.undo / redo,同 role 菜单项)。
+export const WINDOW_VIEW_ACTIONS = ['reload', 'toggleFullScreen', 'undo', 'redo'] as const;
 export type WindowViewAction = (typeof WINDOW_VIEW_ACTIONS)[number];
 /** window:view-action 的 popoutName 上限(dockview popout 名 = `<dockview id>-<组 id>`,远小于此)。 */
 export const POPOUT_NAME_MAX = 256;
@@ -199,6 +207,19 @@ export interface MenuCommandPayload {
   readonly id: MenuCommandId;
   readonly fromPopout: boolean;
   readonly viaKey: boolean;
+}
+
+/** EDIT_UNDO_REDO 的 payload:op = 撤销 / 重做;fromPopout = 获焦的是 dockview popout 子窗。 */
+export interface EditUndoRedoPayload {
+  readonly op: 'undo' | 'redo';
+  readonly fromPopout: boolean;
+}
+
+/** EDIT_UNDO_REDO payload 校验(renderer 侧;preload 不校验)。 */
+export function isEditUndoRedoPayload(raw: unknown): raw is EditUndoRedoPayload {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const p = raw as Record<string, unknown>;
+  return (p['op'] === 'undo' || p['op'] === 'redo') && typeof p['fromPopout'] === 'boolean';
 }
 
 /** RUN_MENU_COMMAND payload 校验(renderer 侧;preload 不校验)。 */

@@ -17,6 +17,7 @@ import { dropIndicatorDestroyGuard } from './milkdown-drop-indicator-guard';
 import { codeMirrorMediaDrop } from './codemirror-media-drop';
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { TextSelection } from '@milkdown/kit/prose/state';
+import { closeHistory } from '@milkdown/kit/prose/history';
 import { clampFloatingToViewport } from './milkdown-floating-clamp';
 import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import '@milkdown/crepe/theme/common/style.css';
@@ -109,6 +110,12 @@ interface MilkdownEditorProps {
    * → 以最小差异的事务套进视图:不重挂载,光标 / 选区随变化映射,本视图撤销栈保留(该事务不进撤销栈)。缺省不同步。
    */
   value?: string;
+  /**
+   * 磁盘重载代际(tab.reloadEpoch:还原文件 / 外部修改自动重载递增)。变化时随之到来的 value 以**可撤销**的一步套进视图
+   *(VSCode ModelService.updateModel:pushStackElement + 最小差异编辑),⌘Z 可找回重载前的内容;不重挂载,焦点 / 光标保留。
+   * BDD: src/__tests__/editor-revert-file/
+   */
+  reloadEpoch?: number;
   readonly?: boolean;
   onChange?: (markdown: string) => void;
   /**
@@ -245,8 +252,11 @@ function rebindMilkdownRoot(crepe: Crepe): void {
 interface WriteBackHandle {
   writeBack: () => void;
   dispose: () => void;
-  /** 套用别处改过的内容(见 props.value);视图未就绪时 no-op(挂载时再按最新 value 补)。 */
-  applyExternal: (markdown: string) => void;
+  /**
+   * 套用别处改过的内容(见 props.value);视图未就绪时 no-op(挂载时再按最新 value 补)。undoable = 磁盘重载(见
+   * props.reloadEpoch):这一步单独成一个撤销组;否则不进撤销栈。
+   */
+  applyExternal: (markdown: string, undoable?: boolean) => void;
 }
 
 /** 增量套用外部内容用到的 ProseMirror 部分(按 slice 名取,同 readEditor)。 */
@@ -258,19 +268,21 @@ interface PmSyncDoc {
   readonly content: PmFragmentLike;
   slice(from: number, to: number): unknown;
 }
+type PmSyncTr = Parameters<typeof closeHistory>[0];
 interface PmSyncView {
   readonly state: {
     readonly doc: PmSyncDoc;
-    readonly tr: { replace(from: number, to: number, slice: unknown): { setMeta(key: string, value: unknown): unknown } };
+    readonly tr: PmSyncTr;
   };
   dispatch(tr: unknown): void;
 }
 
 /**
  * 把视图文档换成 `next`,只替换两者不同的那一段(公共前后缀之外;ProseMirror 官方示例的 findDiffStart / findDiffEnd 做法):
- * 选区随事务映射,不进撤销栈(prosemirror-history 把本视图已有的撤销历史映射过这一步)。
+ * 选区随事务映射。缺省不进撤销栈(prosemirror-history 把本视图已有的撤销历史映射过这一步);undoable(磁盘重载)→ 进撤销栈且
+ * 前后各断开一次(closeHistory),自成一组:不与之前的输入合并,之后的输入也不并进来(VSCode updateModel 前后 pushStackElement)。
  */
-function replaceDocMinimal(view: PmSyncView, next: PmSyncDoc): void {
+function replaceDocMinimal(view: PmSyncView, next: PmSyncDoc, undoable = false): void {
   const cur = view.state.doc;
   const start = cur.content.findDiffStart(next.content);
   if (start === null) return;
@@ -280,7 +292,13 @@ function replaceDocMinimal(view: PmSyncView, next: PmSyncDoc): void {
     endA += overlap;
     endB += overlap;
   }
-  view.dispatch(view.state.tr.replace(start, endA, next.slice(start, endB)).setMeta('addToHistory', false));
+  const tr = view.state.tr.replace(start, endA, next.slice(start, endB) as Parameters<PmSyncTr['replace']>[2]);
+  if (!undoable) {
+    view.dispatch(tr.setMeta('addToHistory', false));
+    return;
+  }
+  view.dispatch(closeHistory(tr));
+  view.dispatch(closeHistory(view.state.tr));
 }
 
 /**
@@ -342,6 +360,7 @@ function CrepeEditor({
   fileName,
   defaultValue,
   value,
+  reloadEpoch,
   readonly = false,
   onChange,
   onWriteBack,
@@ -618,13 +637,13 @@ function CrepeEditor({
       },
       // 别处(另一编辑器组 / 程序化)改了内容:增量套进视图,基线换成该内容 —— 之后到点的上抛 / 回写按它判定,
       // 不把套用结果再上抛。本视图尚未上抛的输入被覆盖(同此前重挂载;两组在防抖窗口内同时输入时后上抛者覆盖)。
-      applyExternal: (markdown) => {
+      applyExternal: (markdown, undoable = false) => {
         if (disposed || markdown === lastEmitted) return;
         try {
           const ctx = crepe.editor.ctx;
           const view = ctx.get<PmSyncView, 'editorView'>('editorView');
           if (!view.state) return; // 未就绪(slice 初值是空对象):挂载时按最新 value 补
-          replaceDocMinimal(view, sourceBlocks.parse(markdown) as PmSyncDoc);
+          replaceDocMinimal(view, sourceBlocks.parse(markdown) as PmSyncDoc, undoable);
           // 原文块与行尾按新内容重建(状态栏改行尾后,编辑模式的保存也按新行尾);只读预览不序列化,不必重建
           if (!readonly) sourceBlocks.resync(markdown);
           if (emitTimer !== null) clearTimeout(emitTimer);
@@ -743,9 +762,13 @@ function CrepeEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // reloadEpoch 变了 → 这次的 value 是磁盘重载(还原 / 外部修改),可撤销地套用;其余变化(另一编辑器组)不进撤销栈。
+  const appliedEpochRef = useRef(reloadEpoch);
   useEffect(() => {
-    if (value !== undefined) writeBackRef.current?.applyExternal(value);
-  }, [value]);
+    const undoable = reloadEpoch !== appliedEpochRef.current;
+    appliedEpochRef.current = reloadEpoch;
+    if (value !== undefined) writeBackRef.current?.applyExternal(value, undoable);
+  }, [value, reloadEpoch]);
 
   useEffect(() => {
     const crepe = crepeRef.current;
@@ -796,7 +819,7 @@ export function MilkdownEditor(props: MilkdownEditorProps) {
   );
 
   // 视图状态按 tab 保留(BDD: src/__tests__/editor-view-state/):滚动位置随滚动记下,编辑器就绪后恢复 ——
-  // 切 tab / 切 Edit·Preview / 外部修改重载(reloadEpoch 重挂)都不跳回顶部。撤销历史在 ProseMirror 插件
+  // 切 tab / 切 Edit·Preview 都不跳回顶部(外部修改 / 还原就地套用,不重挂)。撤销历史在 ProseMirror 插件
   // state 里,跨 Crepe 实例不复用。就绪时同时登记聚焦句柄(打开文件后焦点进编辑器,见 editor-focus-registry)。
   //
   // 切换 源码 / 编辑 / 预览(按模式重挂)时按源码行保留位置(VSCode:Markdown 预览与源码按行同步滚动):卸载时记下顶部

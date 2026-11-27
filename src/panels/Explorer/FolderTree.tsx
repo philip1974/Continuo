@@ -38,6 +38,7 @@ import {
   handleTreeKeyDown,
   focusedTargetDir,
   neighborAfterRemoval,
+  EXPLORER_FILE_TREE_ATTR,
   pageFocusTarget,
   selectOnly,
   type TypeAheadState,
@@ -115,6 +116,8 @@ import { holdAutoSave } from '@/panels/Editor/autosave-hold';
 import { isRequestForRoot, onExplorerRequest } from './explorer-requests';
 import { useStableCallback } from '@/lib/use-stable-callback';
 import {
+  captureForUndo,
+  deleteOpFor,
   recordFileOp,
   redoFileOp,
   undoFileOp,
@@ -1213,12 +1216,14 @@ export function FolderTree({ root }: { root: string }) {
         // 纯 fs+tree helper(已测,且本为唯一生产 trash 路径却从未被调用)。见第七 session
         // R6 完整性批判。「路径已删除」清理(editor tab / 展开集合 / 剪贴板)只对 result.removed 做,在
         // trashItemsAndCleanup 一处完成(已测)。
-        const result = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved).finally(
-          releaseAutoSave,
-        );
-        // 删除不可撤销(shell.trashItem 无恢复 API):压删除屏障,之后的 ⌘Z 停在这里提示「可从废纸篓恢复」,
-        // 不越过它去撤销更早的新建 / 复制(那会把另一个文件静默移进废纸篓)。见 file-undo.ts。
-        if (result.removed.length > 0) recordFileOp(root, { kind: 'delete' });
+        // 删除前读回内容供 ⌘Z 原位重建(VSCode DeleteOperation;过大 / 读不了的不重建,见 file-undo.ts captureForUndo)。
+        const result = await captureForUndo(coApi.fs, paths)
+          .then(async (backup) => {
+            const r = await trashItemsAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved);
+            recordFileOp(root, deleteOpFor(backup, r.removed));
+            return r;
+          })
+          .finally(releaseAutoSave);
         if (!result.ok) {
           // 卷不支持废纸篓等(FS_TRASH_FAILED):询问是否永久删除(VSCode deleteFiles:trashFailed → Delete Permanently);
           // 权限 / 只读卷等原因永久删除同样会失败 → 只给本地化原因(不带原始 errno 串与完整路径)。
@@ -1235,15 +1240,18 @@ export function FolderTree({ root }: { root: string }) {
     [mutateDeps, onPathsRemoved, root, trackBusy, treeApi],
   );
 
-  // 永久删除(确认框里明确选择后;不可撤销,不进 ⌘Z 栈 —— 删除屏障已由上面的 trash 记录或在这里补上)。
+  // 永久删除(确认框里明确选择后):同样先读回内容入 ⌘Z 栈(VSCode 跳过废纸篓的删除同样可撤销)。
   const runPermanentDelete = useCallback(
     (paths: string[]) => {
       const releaseAutoSave = holdAutoSave(paths);
       void trackBusy((async () => {
-        const result = await deleteItemsPermanentlyAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved).finally(
-          releaseAutoSave,
-        );
-        if (result.removed.length > 0) recordFileOp(root, { kind: 'delete' });
+        const result = await captureForUndo(coApi.fs, paths)
+          .then(async (backup) => {
+            const r = await deleteItemsPermanentlyAndCleanup(paths, mutateDeps, treeApi, onPathsRemoved);
+            recordFileOp(root, deleteOpFor(backup, r.removed));
+            return r;
+          })
+          .finally(releaseAutoSave);
         if (!result.ok) {
           for (const f of result.failures) {
             console.warn('[explorer] permanent delete failed', f.path, f.code, f.message);
@@ -1376,12 +1384,16 @@ export function FolderTree({ root }: { root: string }) {
       void (async () => {
         try {
           const o = await (isUndo ? undoFileOp : redoFileOp)(root, fileUndoDeps);
-          if (o.status === 'blocked') {
-            notify.info(t('panels.explorer.undo_blocked_by_delete'), { mirror: false });
-          } else if (o.status === 'done' && o.reveal !== null) {
-            // 撤销后选中并显示恢复的项(同改名后的定位;DOM 焦点已不在树里则不抢)。
-            expandAncestors(o.reveal);
-            setPendingReveal({ path: o.reveal, focusRow: true, inputSeq: treeInputSeqRef.current });
+          if (o.status === 'done') {
+            // 撤销删除:没能重建的(过大 / 读不了)与只重建成空文件夹的,提示可从废纸篓找回(VSCode 静默,这里明说)。
+            const names = (paths: readonly string[] | undefined) => paths?.map(basenamePreserveTrailing).join(', ');
+            if (o.notRestored) notify.info(t('panels.explorer.undo_delete_not_restored', { names: names(o.notRestored)! }), { mirror: false });
+            if (o.emptyFolders) notify.info(t('panels.explorer.undo_delete_empty_folder', { names: names(o.emptyFolders)! }), { mirror: false });
+            if (o.reveal !== null) {
+              // 撤销后选中并显示恢复的项(同改名后的定位;DOM 焦点已不在树里则不抢)。
+              expandAncestors(o.reveal);
+              setPendingReveal({ path: o.reveal, focusRow: true, inputSeq: treeInputSeqRef.current });
+            }
           } else if (o.status === 'failed') {
             notify.error(
               t(isUndo ? 'panels.explorer.undo_failed' : 'panels.explorer.redo_failed', {
@@ -2019,6 +2031,7 @@ export function FolderTree({ root }: { root: string }) {
               // a11y(A25):headless-tree role="tree" 默认 aria-label="" → 屏幕阅读器进主文件树
               // 只感知无名 tree。传本地化 treeLabel 给容器一个可访问名。
               {...tree.getContainerProps(tt('panels.explorer.tree_aria'))}
+              {...{ [EXPLORER_FILE_TREE_ATTR]: '' }}
               onKeyDown={(e) => {
                 handleTreeKeyDown(e.nativeEvent, {
                   tree,

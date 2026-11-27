@@ -246,6 +246,19 @@ function isNonItemTarget(target: EventTarget | null): boolean {
   return el.closest('[role="treeitem"]') === null;
 }
 
+/** 资源管理器文件树容器的标记属性(isExplorerTreeFocused 据此认树)。 */
+export const EXPLORER_FILE_TREE_ATTR = 'data-explorer-file-tree';
+
+/**
+ * 文档焦点是否在资源管理器文件树的行(或树容器)上 —— 树内 ⌘Z 撤销文件操作的同一条件(VSCode explorerService.hasViewFocus):
+ * 改名 / 新建输入框、子目录读取失败行里的按钮等不算。应用菜单「编辑 → 撤销 / 重做」据此分派。
+ */
+export function isExplorerTreeFocused(doc: Document): boolean {
+  const el = doc.activeElement;
+  if (!el || typeof el.closest !== 'function' || el.closest(`[${EXPLORER_FILE_TREE_ATTR}]`) === null) return false;
+  return !isEditableTarget(el) && !isNonItemTarget(el);
+}
+
 /** 只选中 id 这一项,并把 Shift 扩选的锚点设到它。 */
 export function selectOnly(tree: TreeInstance<FileEntry>, id: string): void {
   tree.setSelectedItems([id]);

@@ -20,10 +20,13 @@ import {
 } from '../../electron/shared/explorer-persistence-schema';
 import { flushEditorWriteBacks } from '@/panels/Editor/editor-writeback-registry';
 import {
+  cachedCodeEditorState,
+  dropClosedCodeEditorStates,
   dropEditorViewStatesOfGroups,
   persistedEditorViewStateOf,
   renameEditorViewStates,
   retainEditorViewStates,
+  stashClosedCodeEditorState,
 } from '@/panels/Editor/editor-view-state-cache';
 import {
   dropRecentlyClosedEditors,
@@ -1092,7 +1095,18 @@ function recordClosedEditors(s: Pick<EditorState, 'tabs' | 'groups'>, groupId: s
       viewState: persistedEditorViewStateOf(id, liveEditorViewOf(id, groupId), groupId),
       ...(tab.encodingPinned === true && { encoding: tab.encoding ?? 'utf8' }),
     });
+    // 文件的最后一个编辑器关闭 → 留下撤销历史,重新打开且内容未变时恢复(VSCode files.restoreUndoStack;BDD: src/__tests__/editor-reopen-closed/)
+    if (!isTabOpenInOtherGroup(s, id, groupId)) {
+      const state = liveEditorViewOf(id, groupId)?.state ?? cachedCodeEditorState(id, groupId);
+      if (state) stashClosedCodeEditorState(id, state);
+    }
   }
+}
+
+/** 已删除 / 已移走 / 切换工作区根后不再有效的路径:最近关闭条目与关闭文件的撤销历史一并作废。 */
+function dropClosedEditorRecords(isGone: (path: string) => boolean): void {
+  dropRecentlyClosedEditors(isGone);
+  dropClosedCodeEditorStates(isGone);
 }
 
 // ── 组内 tab MRU(BDD: src/__tests__/editor-close-mru/)──────────
@@ -1522,7 +1536,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
   // 不改 id 与路径匹配;回写后变脏的 tab 按既有规则保留。
   removePaths: (paths) => {
     // 已删除的文件 / 目录:其下的最近关闭条目失效(VSCode 文件删除时同样移除)
-    dropRecentlyClosedEditors((p) => paths.some((removed) => isSameOrInsidePath(removed, p)));
+    dropClosedEditorRecords((p) => paths.some((removed) => isSameOrInsidePath(removed, p)));
     changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterRemovingPaths(tabs, active, paths),
     );
@@ -1538,7 +1552,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
       return { tabs, chromeVersion: s.chromeVersion + 1 };
     });
     if (!marked) return;
-    dropRecentlyClosedEditors((p) => paths.some((removed) => isSameOrInsidePath(removed, p)));
+    dropClosedEditorRecords((p) => paths.some((removed) => isSameOrInsidePath(removed, p)));
     emitPathChange({ kind: 'removed', paths });
   },
 
@@ -1556,6 +1570,8 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
     }
     // 最近关闭栈里的旧路径同前缀改写(⇧⌘T 打开新位置)
     rewriteRecentlyClosedEditors((p) => rewriteMovedPath(p, oldPath, newPath));
+    // 关闭文件的撤销历史不随移动(旧路径作废;VSCode 同:移走的是另一个 URI)
+    dropClosedCodeEditorStates((p) => rewriteMovedPath(p, oldPath, newPath) !== null);
     changeTabsWithWriteBack(get, set, (cur, active) =>
       getStateAfterRenamingPath(cur, active, oldPath, newPath),
     );
@@ -1582,7 +1598,7 @@ export const useEditorStore = create<EditorState>()(withTabMru((set, get, api) =
 
   closeTabsOutsideRoot: (root) => {
     // 切换工作区根:不在新根下的最近关闭条目失效(否则 ⇧⌘T 会打开旧工作区的文件)
-    dropRecentlyClosedEditors((p) => root === null || !isSameOrInsidePath(root, p));
+    dropClosedEditorRecords((p) => root === null || !isSameOrInsidePath(root, p));
     changeTabsWithWriteBack(get, set, (tabs, active) =>
       getStateAfterClosingTabsOutsideRoot(tabs, active, root),
     );

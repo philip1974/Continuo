@@ -9,8 +9,9 @@ import {
   type FsFileStat,
   type FsReadFileData,
   type FsReadImageData,
+  type FsUndoBackup,
 } from '../../shared/fs-channels';
-import { FS_PATH_MAX, MAX_WRITE_BYTES } from '../../shared/fs-limits';
+import { FS_PATH_MAX, MAX_UNDO_FILE_BYTES, MAX_WRITE_BYTES } from '../../shared/fs-limits';
 import { utf8BytesExceed } from '../../shared/utf8-byte-length';
 import { ERROR_CODES } from '../../shared/error-codes';
 import { listDir, scanDir } from './fs/list-dir';
@@ -287,7 +288,7 @@ export const recordingReadFileHandler = async (
 export const guardedWriteFileHandler = (input: WriteFileInput): Promise<FsFileStat | undefined> =>
   guardPluginOpenedPath(input.path, () => writeFileHandler(input));
 // writeBinary 契约仍为 void(Dropzone 不需要回声识别),不把 stat 带过 IPC。
-// 安全:唯一调用方是外部文件拖入 Explorer(新建 / 放入语义,同名静默覆盖)。不复用编辑器保存的
+// 安全:调用方是外部文件拖入 Explorer(新建 / 放入语义,同名静默覆盖)与撤销删除的原位重建(调用方先确认位置空闲)。不复用编辑器保存的
 // atomicWriteFile —— 它对 leaf 符号链接写穿到目标:恶意仓库放 `README.md -> ~/.ssh/authorized_keys`,
 // 用户拖入同名文件即无确认覆盖 workspace 外文件。改为不跟随:目标是链接时替换链接本身,链接目标不受影响;
 // 同名普通文件照旧原子覆盖。
@@ -302,6 +303,28 @@ export const statHandler = async (input: StatInput): Promise<FsFileStat> => {
   } catch (err) {
     throw fsError(mapNodeErrnoCode(err), `stat failed: ${input.path}`);
   }
+};
+// fs:read-for-undo:资源管理器删除前为撤销读回该项(VSCode DeleteOperation:删除前 readFile,超过 maxSize 的不重建;文件夹只记
+// 「是文件夹」,撤销重建空文件夹)。lstat 不跟随符号链接:链接不读成目标内容(撤销会把它重建成普通文件)。
+export const readForUndoHandler = async (input: StatInput): Promise<FsUndoBackup> => {
+  let st: fs.Stats;
+  try {
+    st = await fs.promises.lstat(input.path);
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `lstat failed: ${input.path}`);
+  }
+  if (st.isDirectory()) return { kind: 'dir' };
+  if (!st.isFile()) return { kind: 'unsupported' };
+  if (st.size > MAX_UNDO_FILE_BYTES) return { kind: 'tooLarge' };
+  let buf: Buffer;
+  try {
+    buf = await fs.promises.readFile(input.path);
+  } catch (err) {
+    throw fsError(mapNodeErrnoCode(err), `read failed: ${input.path}`);
+  }
+  // lstat 之后文件又变大(并发写入):同样按超限处理
+  if (buf.length > MAX_UNDO_FILE_BYTES) return { kind: 'tooLarge' };
+  return { kind: 'file', content: new Uint8Array(buf.buffer, buf.byteOffset, buf.length) };
 };
 export const renameHandler = (input: RenameInput) => renameEntry(input.path, input.newName);
 export const createFileHandler = (input: CreateFileInput) => createFile(input.dir, input.name);
@@ -538,6 +561,7 @@ export function registerFsIpc(): void {
   );
   safeHandle(FS_CHANNELS.WRITE_FILE, writeFileInputSchema, guardedWriteFileHandler);
   safeHandle(FS_CHANNELS.WRITE_BINARY, writeBinaryInputSchema, writeBinaryHandler);
+  safeHandle(FS_CHANNELS.READ_FOR_UNDO, statInputSchema, readForUndoHandler);
   // 工作区与「打开过的文档」取自 IPC 发送方窗口(main 记账,renderer 不自报)。
   safeHandleWithCtx(FS_CHANNELS.SAVE_DOCUMENT_IMAGE, saveDocumentImageInputSchema, (input, { event }) => {
     const windowId = senderWindowOrThrow(event, ERROR_CODES.FS_DENIED).id;

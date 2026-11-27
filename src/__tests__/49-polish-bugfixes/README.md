@@ -299,6 +299,7 @@
 - `EditorTab` 加 optional `reloadEpoch`,仅 `reloadFromDisk`(外部进程改文件后同步)递增
   (用户输入 `updateContent` / 保存 `markSaved` / dirty-skip / 内容未变-skip 都**不**动它)。
   EditorPanel 的 Milkdown `key` 并入 epoch:`${id}-${effective}-${reloadEpoch}`。
+  (后续:第五十五轮审计 B 组 #1 改为不重挂载 —— epoch 作为 prop 传给 Milkdown,磁盘内容可撤销地就地套用,见 `editor-revert-file`。)
 - 根因: MilkdownEditor 的 `defaultValue` 只在 mount 时读,视图靠 key remount 刷新。
   旧 key=`${id}-${effective}` 不含内容 → 外部进程/agent/git 改文件时
   `useExternalFileSync→reloadFromDisk` 更新了 store content,但 id/effective 都没变 →

@@ -15,7 +15,7 @@ store 里的内容 → 延迟窗口内的输入还没进 store:
   **之前**调 `flushEditorWriteBacks()`,从编辑器同步取全文(经 `readEditor` 取 editorView / serializer 序列化当前 doc)回写 store;
   doc 引用未变则不序列化(挂载时 plugin-listener 自身 `state.init` 仍会序列化一次,属库行为)。
 - 只在有尚未上抛的编辑时回写(与防抖上抛同口径:只差尾部空白不算编辑,issue #44);只读预览不回写。
-- Milkdown 卸载(切 tab / 切 mode / reloadEpoch 或 locale 重挂载)时同步回写一次,随后停用:迟到的防抖 emit
+- Milkdown 卸载(切 tab / 切 mode / locale 重挂载;外部重载与还原不重挂,见 `editor-revert-file`)时同步回写一次,随后停用:迟到的防抖 emit
   不再上抛(否则会覆盖之后在 Source 里的新输入或外部重载)。
 - `applyEditorWriteBack`:store 中该 tab 内容已不等于编辑器最近上抛的基线(外部改盘 reloadFromDisk 等)→ 不覆盖。
 - 回写使原本干净的 tab 变脏时,React 尚未重渲、autosave 还没排队 → 关窗 autosave flush 发现 store 内容 ≠

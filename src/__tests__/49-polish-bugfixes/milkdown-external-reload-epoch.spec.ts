@@ -9,6 +9,7 @@
 //
 // 修复:tab 加 reloadEpoch,仅 reloadFromDisk 递增(用户输入/保存不动),并入
 // Milkdown key → 外部改动时 remount 拿新内容,正常编辑不会每按键 remount。
+// (后续:不再并入 key 重挂载,epoch 作为 prop 让 Milkdown 可撤销地就地套用磁盘内容,见 src/__tests__/editor-revert-file/。)
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useEditorStore, createTab } from '../../stores/editor.store';

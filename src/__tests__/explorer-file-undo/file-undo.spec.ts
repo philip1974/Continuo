@@ -1,8 +1,11 @@
-// BDD:资源管理器文件操作撤销 / 重做的栈与语义(README 规则 1-9,删除屏障 / 嵌套新建见规则 3、5、8)。用内存假 fs 驱动 file-undo.ts。
+// BDD:资源管理器文件操作撤销 / 重做的栈与语义(README 规则 1-9,删除的撤销见规则 3、嵌套新建见规则 5、8)。用内存假 fs 驱动 file-undo.ts。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FILE_UNDO_LIMIT,
+  MAX_UNDO_DELETE_TOTAL_BYTES,
   __resetFileUndoForTest,
+  captureForUndo,
+  deleteOpFor,
   recordFileOp,
   redoFileOp,
   undoFileOp,
@@ -10,7 +13,10 @@ import {
 } from '../../panels/Explorer/file-undo';
 
 const ROOT = '/ws';
-type Entry = { isDir: boolean; mtimeMs: number; size: number; ino: number };
+type Entry = { isDir: boolean; mtimeMs: number; size: number; ino: number; content?: Uint8Array; link?: boolean };
+const MAX_UNDO_FILE_BYTES = 5_000_000;
+const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
+const text = (u: Uint8Array | undefined): string => new TextDecoder().decode(u);
 type R<T> = { ok: true; data: T } | { ok: false; code: string; message: string };
 const ok = <T,>(data: T): R<T> => ({ ok: true, data });
 const fail = <T,>(code: string): R<T> => ({ ok: false, code, message: code });
@@ -19,8 +25,8 @@ const dirOf = (p: string): string => p.slice(0, p.lastIndexOf('/')) || '/';
 function makeWorld(initial: Record<string, 'file' | 'dir'>) {
   let ino = 1;
   const files = new Map<string, Entry>();
-  const put = (p: string, isDir: boolean): void => {
-    files.set(p, { isDir, mtimeMs: 1000, size: 0, ino: ino++ });
+  const put = (p: string, isDir: boolean, content?: Uint8Array): void => {
+    files.set(p, { isDir, mtimeMs: 1000, size: content?.length ?? 0, ino: ino++, ...(content && { content }) });
   };
   put(ROOT, true);
   for (const [p, kind] of Object.entries(initial)) put(p, kind === 'dir');
@@ -73,6 +79,21 @@ function makeWorld(initial: Record<string, 'file' | 'dir'>) {
       if (!has(src)) return fail('FS_NOT_FOUND');
       if (has(dest)) return fail('FS_EEXIST');
       put(dest, files.get(src)!.isDir);
+      return ok(undefined);
+    }),
+    // 同 main fs:read-for-undo(lstat,不跟随链接)
+    readForUndo: vi.fn(async (p: string) => {
+      const e = files.get(p);
+      if (!e) return fail<never>('FS_NOT_FOUND');
+      if (e.isDir) return ok({ kind: 'dir' as const });
+      if (e.link) return ok({ kind: 'unsupported' as const });
+      if (e.size > MAX_UNDO_FILE_BYTES) return ok({ kind: 'tooLarge' as const });
+      return ok({ kind: 'file' as const, content: e.content ?? new Uint8Array() });
+    }),
+    // 同 main fs:write-binary(原子写,同名覆盖)
+    writeBinary: vi.fn(async (p: string, content: Uint8Array): Promise<R<void>> => {
+      if (!has(dirOf(p))) return fail('FS_NOT_FOUND');
+      put(p, false, content);
       return ok(undefined);
     }),
   };
@@ -260,31 +281,132 @@ describe('create(新建 / 粘贴复制 / 外部拖入)撤销与重做', () => {
   });
 });
 
-describe('删除屏障(删除不可撤销,可从废纸篓恢复)', () => {
-  it('复制后删除另一个文件再撤销 → blocked:不越过删除去撤销复制,不调废纸篓、不确认;屏障留在栈顶', async () => {
-    const w = makeWorld({ '/ws/x.ts': 'file', '/ws/x copy.ts': 'file' });
-    recordFileOp(ROOT, { kind: 'create', entries: [{ path: '/ws/x copy.ts', redo: { type: 'copy', src: '/ws/x.ts' } }] });
-    recordFileOp(ROOT, { kind: 'delete' });
+describe('删除的撤销(VSCode DeleteOperation:删除前读回内容,撤销在原位置重建)', () => {
+  /** 同 FolderTree 的删除:先读回,再删,按实际删掉的项入栈。 */
+  async function deleteAndRecord(w: ReturnType<typeof makeWorld>, paths: string[]): Promise<void> {
+    const backup = await captureForUndo(w.fs, paths);
+    const { removed } = await w.trash(paths);
+    recordFileOp(ROOT, deleteOpFor(backup, removed));
+  }
 
-    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'blocked' });
-    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'blocked' });
-    expect(w.trash).not.toHaveBeenCalled();
+  it('撤销删除文件 → 原位置按原内容重建、定位到它,不确认、不调废纸篓;重做 → 再次移到废纸篓,可再撤销', async () => {
+    const w = makeWorld({});
+    w.put('/ws/a.ts', false, bytes('hello'));
+    await deleteAndRecord(w, ['/ws/a.ts']);
+    expect(w.has('/ws/a.ts')).toBe(false);
+    w.trash.mockClear();
+
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: '/ws/a.ts' });
+    expect(text(w.files.get('/ws/a.ts')?.content)).toBe('hello');
+    expect(w.refreshed.has('/ws')).toBe(true);
     expect(w.confirm).not.toHaveBeenCalled();
-    expect(w.has('/ws/x copy.ts')).toBe(true);
+    expect(w.trash).not.toHaveBeenCalled();
+
+    expect(await redoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: null });
+    expect(w.trash).toHaveBeenCalledWith(['/ws/a.ts']);
+    expect(w.has('/ws/a.ts')).toBe(false);
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done', reveal: '/ws/a.ts' });
+    expect(text(w.files.get('/ws/a.ts')?.content)).toBe('hello');
   });
 
-  it('删除清空重做栈;屏障之后的新操作照常撤销,撤销到屏障处再停', async () => {
+  it('删除不再挡住更早的操作:撤销删除之后,下一次 ⌘Z 撤销更早的改名', async () => {
+    const w = makeWorld({ '/ws/b': 'file' });
+    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] });
+    w.put('/ws/x', false, bytes('x'));
+    await deleteAndRecord(w, ['/ws/x']);
+
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done', reveal: '/ws/x' });
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done', reveal: '/ws/a' });
+    expect(w.has('/ws/a') && w.has('/ws/x')).toBe(true);
+  });
+
+  it('原位置已被占 → 失败(此位置已存在),不覆盖,该操作出栈', async () => {
+    const w = makeWorld({});
+    w.put('/ws/a.ts', false, bytes('old'));
+    await deleteAndRecord(w, ['/ws/a.ts']);
+    w.put('/ws/a.ts', false, bytes('new'));
+
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'failed', path: '/ws/a.ts', existing: '/ws/a.ts' });
+    expect(text(w.files.get('/ws/a.ts')?.content)).toBe('new');
+    expect(w.fs.writeBinary).not.toHaveBeenCalled();
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
+  });
+
+  it('多项删除:任一原位置被占 → 一项都不重建', async () => {
+    const w = makeWorld({});
+    w.put('/ws/a', false, bytes('a'));
+    w.put('/ws/b', false, bytes('b'));
+    await deleteAndRecord(w, ['/ws/a', '/ws/b']);
+    w.put('/ws/b', false, bytes('other'));
+
+    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'failed', existing: '/ws/b' });
+    expect(w.has('/ws/a')).toBe(false);
+  });
+
+  it('文件夹:撤销只重建空文件夹(VSCode 同),并报告 emptyFolders 供提示「内容可从废纸篓找回」', async () => {
+    const w = makeWorld({ '/ws/dir': 'dir' });
+    w.put('/ws/dir/inner.ts', false, bytes('inner'));
+    await deleteAndRecord(w, ['/ws/dir', '/ws/dir/inner.ts']);
+
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: '/ws/dir', emptyFolders: ['/ws/dir'] });
+    expect(w.files.get('/ws/dir')?.isDir).toBe(true);
+    expect(w.has('/ws/dir/inner.ts')).toBe(false);
+    // 嵌套的项并入上级,只读回上级
+    expect(w.fs.readForUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it('超过 5MB 的文件、符号链接:删除照常,撤销不重建它,报告 notRestored;其余照常重建', async () => {
+    const w = makeWorld({});
+    w.files.set('/ws/big.bin', { isDir: false, mtimeMs: 1, size: MAX_UNDO_FILE_BYTES + 1, ino: 99 });
+    w.files.set('/ws/link', { isDir: false, mtimeMs: 1, size: 3, ino: 98, link: true });
+    w.put('/ws/small.ts', false, bytes('s'));
+    await deleteAndRecord(w, ['/ws/big.bin', '/ws/link', '/ws/small.ts']);
+
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({
+      status: 'done',
+      reveal: '/ws/small.ts',
+      notRestored: ['/ws/big.bin', '/ws/link'],
+    });
+    expect(w.has('/ws/big.bin') || w.has('/ws/link')).toBe(false);
+    expect(text(w.files.get('/ws/small.ts')?.content)).toBe('s');
+  });
+
+  it('读回失败的项同样不重建;一次删除读回总量超过上限的部分按过大处理', async () => {
+    const w = makeWorld({});
+    w.put('/ws/a', false, bytes('a'));
+    w.fs.readForUndo.mockRejectedValueOnce(new Error('ipc gone'));
+    expect(await captureForUndo(w.fs, ['/ws/a'])).toEqual([{ path: '/ws/a', type: 'skipped' }]);
+
+    const big = new Uint8Array(MAX_UNDO_DELETE_TOTAL_BYTES - 1);
+    w.put('/ws/p', false, big);
+    w.put('/ws/q', false, bytes('qq'));
+    // 假 fs 的单文件上限按真实值;这里只看总量:p 占满后 q 放不下
+    w.files.get('/ws/p')!.size = 1;
+    const entries = await captureForUndo(w.fs, ['/ws/p', '/ws/q']);
+    expect(entries.map((e) => e.type)).toEqual(['file', 'skipped']);
+  });
+
+  it('只记实际删掉的项:删除失败的项不入栈;一项都没删掉 → 不入栈', async () => {
+    const w = makeWorld({});
+    w.put('/ws/a', false, bytes('a'));
+    w.put('/ws/b', false, bytes('b'));
+    const backup = await captureForUndo(w.fs, ['/ws/a', '/ws/b']);
+    w.files.delete('/ws/a');
+    recordFileOp(ROOT, deleteOpFor(backup, ['/ws/a']));
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'done', reveal: '/ws/a' });
+    expect(w.fs.writeBinary).toHaveBeenCalledTimes(1);
+
+    recordFileOp(ROOT, deleteOpFor(backup, []));
+    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
+  });
+
+  it('删除清空重做栈', async () => {
     const w = makeWorld({ '/ws/b': 'file' });
     recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/b' }] });
     await undoFileOp(ROOT, w.deps);
-    recordFileOp(ROOT, { kind: 'delete' });
+    w.put('/ws/x', false, bytes('x'));
+    await deleteAndRecord(w, ['/ws/x']);
     expect(await redoFileOp(ROOT, w.deps)).toEqual({ status: 'empty' });
-
-    recordFileOp(ROOT, { kind: 'move', pairs: [{ from: '/ws/a', to: '/ws/c' }] });
-    w.files.delete('/ws/a');
-    w.put('/ws/c', false);
-    expect(await undoFileOp(ROOT, w.deps)).toMatchObject({ status: 'done', reveal: '/ws/a' });
-    expect(await undoFileOp(ROOT, w.deps)).toEqual({ status: 'blocked' });
   });
 });
 

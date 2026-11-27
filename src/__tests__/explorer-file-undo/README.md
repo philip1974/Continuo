@@ -5,10 +5,11 @@
 对齐 VSCode:资源管理器里的文件操作(改名 / 移动 / 新建 / 粘贴复制 / 从外部拖入)经 `IUndoRedoService`
 的资源管理器来源(`explorerService.UNDO_REDO_SOURCE`)入栈,资源管理器树聚焦时 ⌘Z / ⇧⌘Z
 (Win / Linux Ctrl+Z / Ctrl+Y、Ctrl+Shift+Z)撤销 / 重做;撤销「新建」= 删除新建项。
-Continuo 用一个轻量撤销栈实现同一语义(`src/panels/Explorer/file-undo.ts`)。删除走系统废纸篓,`shell.trashItem`
-没有从废纸篓恢复的 API,故删除**不可撤销**,但入栈一个**删除屏障**:⌘Z 停在这里提示「删除无法撤销,可从废纸篓恢复」,
-不越过它去撤销更早的操作(第四十一轮审计 #1:此前删除不入栈,⌘Z 会越过删除,把更早复制出的文件静默移进废纸篓)。
-VSCode 的删除可撤销(读回内容重建);这里的屏障是在无法恢复时的安全退化。
+Continuo 用一个轻量撤销栈实现同一语义(`src/panels/Explorer/file-undo.ts`)。删除同 VSCode `bulkFileEdits.ts` 的
+`DeleteOperation`:删除前读回每个文件的内容(单个文件上限 5MB,同 VSCode `fileActions.ts` 的 `MAX_UNDO_FILE_SIZE = 5000000`),
+⌘Z 在原位置按读回的内容重建;文件夹只记「是文件夹」,撤销重建**空**文件夹(VSCode 同);废纸篓里那份不动(VSCode 同)。
+移到废纸篓与永久删除都可撤销(VSCode 跳过废纸篓的删除同样带 `maxSize` 入栈)。
+(第四十一轮审计曾把删除做成「屏障」:删除不可撤销且挡住更早的操作;第五十五轮审计 B 组 #3 改为照 VSCode 可撤销。)
 
 ## 行为契约
 
@@ -20,11 +21,16 @@ VSCode 的删除可撤销(读回内容重建);这里的屏障是在无法恢复�
    - 新建文件 / 文件夹、粘贴复制、从 Finder 等外部拖入写成的**新**文件 → `create`。
    - 外部拖入里选了「替换」同名文件 → **不入栈**(被替换的原文件无法恢复,撤销只会删掉新文件、造成误解);
      选「跳过」时写入的都是新文件,照常入栈。
-3. 新操作入栈清空重做栈。删除(移到废纸篓,至少删掉一项)入栈一个删除屏障(`{ kind: 'delete' }`,也清空重做栈;
-   栈顶已是屏障时不重复压)。撤销遇到屏障 → `blocked`:不动磁盘、不确认、不出栈,调用方提示
-   `panels.explorer.undo_blocked_by_delete`(「删除无法撤销,可从废纸篓恢复」,三语);之后的 ⌘Z 一直停在这里。
-   屏障之后的新操作照常撤销,撤销到屏障处再停。重做方向:屏障永不出栈,不会进重做栈;重做栈里只有 move / create 的重做,
-   都不会把文件移进废纸篓。
+3. 新操作入栈清空重做栈。删除(移到废纸篓 / 永久删除,至少删掉一项)入栈 `delete`,只含实际删掉的项:
+   - 删除前(暂停自动保存之后)经 main `fs:read-for-undo` 读回每一项(lstat,不跟随符号链接):文件 ≤ 5MB → 内容;文件夹 →
+     只标记;超过 5MB、符号链接等其它类型、读回失败 → 不重建(`skipped`)。一次删除读回总量超过 50MB(`MAX_UNDO_DELETE_TOTAL_BYTES`,
+     撤销栈的内存兜底;VSCode 不限总量)的文件同样不重建。选中项嵌套时并入上级。
+   - 撤销 `delete`:不确认(不是破坏性操作,VSCode `explorer.confirmUndo` 默认只对破坏性撤销确认);先校验全部要重建的原位置空闲、
+     父目录存在(任一不满足 → 一项都不重建,失败同规则 4,位置被占提示「此位置已存在」),然后文件按原字节写回(`fs:write-binary`)、
+     文件夹建空文件夹;定位到重建的第一项。没能重建的项与重建成空文件夹的项各提示一次(`panels.explorer.undo_delete_not_restored` /
+     `panels.explorer.undo_delete_empty_folder`,三语:「…可从废纸篓找回」;VSCode 静默,这里明说)。
+   - 重做 `delete`:撤销时重建的项须仍在;重新读回(按最新内容)再移到废纸篓(同删除流程的清理),作为新的 `delete` 回到撤销栈。
+   - 删除不再挡住更早的操作:撤销删除之后,下一次 ⌘Z 撤销更早的操作。
 
 ### 撤销 / 重做
 
@@ -54,11 +60,14 @@ VSCode 的删除可撤销(读回内容重建);这里的屏障是在无法恢复�
 10. 树内键位(`tree-keyboard.ts`,只在树聚焦时生效,编辑器 / 输入框里的 ⌘Z 不受影响):mod+Z 撤销;
     mac ⌘⇧Z、其它 Ctrl+Y / Ctrl+Shift+Z 重做。无焦点项时也生效。
 11. 命令 `explorer.undo` / `explorer.redo`(「撤销文件操作」/「重做文件操作」,三语),无默认键;有工作区时打开侧栏并请求文件树执行。
+12. 应用菜单「编辑 → 撤销 / 重做」:文件树聚焦时同样撤销 / 重做文件操作(VSCode undo 多实现命令,见 `app-menu-bar` 第 6 条)。
 
 ## 规范
 
 - `file-undo.spec.ts`:栈与撤销 / 重做语义(规则 1-9)。
 - `record-sources.spec.ts`:入栈来源(规则 2:粘贴复制回报、外部拖入「替换」不入栈)。
-- `delete-barrier.spec.tsx`:文件树里复制 → 删除 → ⌘Z 停在屏障并提示(规则 3);撤销复制先确认、焦点在「移到废纸篓」(规则 5)。
+- `delete-undo.spec.tsx`:文件树里复制 → 删除 → ⌘Z 按删除前读回的内容原位重建(不确认),再 ⌘Z 才撤销复制(规则 3);撤销复制先确认、
+  焦点在「移到废纸篓」(规则 5)。
+- `read-for-undo.spec.ts`:main `fs:read-for-undo`(文件字节 / 文件夹 / 符号链接不跟随 / 不存在)。
 - `tree-keys.spec.ts`:键位(规则 10)与命令(规则 11)。
-- e2e:`tests/e2e/explorer-file-undo.spec.ts`(改名 / 移动 / 新建撤销重做、编辑器 tab 跟随、复制 → 删除 → ⌘Z 停在屏障)。
+- e2e:`tests/e2e/explorer-file-undo.spec.ts`(改名 / 移动 / 新建撤销重做、编辑器 tab 跟随、复制 → 删除 → ⌘Z 原位重建被删文件、再 ⌘Z 撤销复制)。

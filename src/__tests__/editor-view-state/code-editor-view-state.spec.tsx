@@ -105,7 +105,7 @@ describe('CodeEditor 视图状态按 tab 保留', () => {
     expect(hasCodeEditorViewState(A)).toBe(false);
   });
 
-  it('关闭 tab → 丢弃其视图状态;同路径重开不恢复旧撤销历史', () => {
+  it('关闭 tab → 丢弃其视图状态;同路径重开、内容与关闭时不同 → 不恢复旧撤销历史(内容相同的恢复见 editor-reopen-closed)', () => {
     const first = mount(A, TEXT);
     type(first.view, 0, 'a');
     first.unmount();
@@ -113,8 +113,8 @@ describe('CodeEditor 视图状态按 tab 保留', () => {
     useEditorStore.getState().closeTab(A);
     expect(hasCodeEditorViewState(A)).toBe(false);
 
-    useEditorStore.getState().openTab(createTab(A, `a${TEXT}`));
-    const second = mount(A, `a${TEXT}`);
+    useEditorStore.getState().openTab(createTab(A, TEXT));
+    const second = mount(A, TEXT);
     expect(undo(second.view)).toBe(false);
   });
 

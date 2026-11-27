@@ -1,10 +1,10 @@
 // 重新打开已关闭的编辑器(⇧⌘T / Ctrl+Shift+T,VSCode workbench.action.reopenClosedEditor):回到原位置、焦点与光标
 // 回到关闭前;拆分后回原编辑器组;文件已删除则跳过取下一条;popout 子窗里按落在子窗。BDD: src/__tests__/editor-reopen-closed/
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { DOCK_POPOUT, EDITOR_TABS } from './helpers/editor';
+import { DOCK_POPOUT, EDITOR_TABS, EDITOR_UNSAVED_CHANGES_SELECTOR } from './helpers/editor';
 import { openTreeItem } from './helpers/explorer';
 import { closeDiscardingUnsaved } from './helpers/close-app';
 import { launchContinuo } from './helpers/launch';
@@ -148,4 +148,24 @@ test('popout 子窗里 ⌘W 关掉 tab → 在子窗按 ⇧⌘T 回到子窗里�
   await expect(childGroup.locator('.cm-content')).toContainText('export const b');
   await expect(childGroup.locator('.cm-content')).toBeFocused();
   await expect(groups(win)).toHaveCount(0); // 没在主窗补建编辑器组
+});
+
+// 第五十五轮审计 B 组 #2:关闭后重开、内容未变 → 恢复撤销栈(VSCode files.restoreUndoStack)。
+test('追加一行 ⌘S → ⌘W → ⇧⌘T → ⌘Z 撤掉追加的一行', async () => {
+  test.setTimeout(60_000);
+  const win = await launch();
+  await openFile(win, /^a\.ts$/, 'export const a = 1;');
+  const cm = group(win, 0).locator('.cm-content');
+  await cm.click();
+  await win.keyboard.press('ControlOrMeta+End');
+  await win.keyboard.type('export const added = 2;');
+  await win.keyboard.press('ControlOrMeta+s');
+  await expect.poll(() => readFileSync(path.join(wsDir, 'a.ts'), 'utf8')).toContain('added');
+  await expect(win.locator(EDITOR_UNSAVED_CHANGES_SELECTOR)).toHaveCount(0, { timeout: 5_000 });
+  await win.keyboard.press('ControlOrMeta+w');
+  await expect.poll(() => tabTitles(group(win, 0)).catch(() => [] as string[])).not.toContain('a.ts');
+  await win.keyboard.press(REOPEN);
+  await expect(group(win, 0).locator('.cm-content')).toContainText('added', { timeout: 10_000 });
+  await win.keyboard.press('ControlOrMeta+z');
+  await expect(group(win, 0).locator('.cm-content')).not.toContainText('added', { timeout: 5_000 });
 });

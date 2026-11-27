@@ -18,7 +18,11 @@ import { canonicalHotkey, detectPlatform, type Platform } from '@/plugins/comman
 import { getPopoutDocuments, runInCommandDocument } from '@/shell/dock/popout-documents';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import { FILES_AUTO_SAVE, type FilesAutoSaveMode } from '@/plugins/settings/core-setting-specs';
+import { isExplorerTreeFocused } from '@/panels/Explorer/tree-keyboard';
+import { requestExplorer } from '@/panels/Explorer/explorer-requests';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import {
+  isEditUndoRedoPayload,
   isMenuCommandPayload,
   MENU_COMMAND_IDS,
   type MenuCheckboxId,
@@ -52,6 +56,27 @@ export function runMenuCommand(commands: CommandRegistry, payload: unknown): voi
 }
 
 /**
+ * 应用菜单「编辑 → 撤销 / 重做」被点(VSCode UndoCommand / RedoCommand 多实现,资源管理器实现优先):获焦窗口的文件树聚焦
+ *(且没有 Modal)→ 撤销 / 重做文件操作(同树内 ⌘Z);否则请 main 对该窗口做原生撤销 / 重做(编辑器 / Markdown / 输入框 / 终端
+ * 照旧;popout 子窗获焦 → 作用于该子窗)。BDD: src/__tests__/app-menu-bar/
+ */
+export function runEditUndoRedo(payload: unknown): void {
+  if (!isEditUndoRedoPayload(payload)) return;
+  const doc = menuCommandDocument(payload.fromPopout);
+  if (!hasOpenModalIn(doc) && isExplorerTreeFocused(doc) && useWorkspaceStore.getState().root) {
+    requestExplorer({ kind: payload.op });
+    return;
+  }
+  const popout = doc === document ? null : doc.defaultView;
+  // 原生撤销失败(窗口已关等)无可提示的内容
+  void Promise.resolve()
+    .then(() =>
+      popout ? coApi.window.viewAction(payload.op, { popoutName: popout.name }) : coApi.window.viewAction(payload.op),
+    )
+    .catch(() => undefined);
+}
+
+/**
  * 菜单命令当前显示的主键(归一后的 hotkey,见 canonicalHotkey):与命令面板 / tooltip 同一规则(resolveDisplayHotkey:改键跟随、
  * 解绑 / 落在保留键上不显示,转到文件… / 显示所有命令显示其保留键),冲突落败(按下执行别的命令)不显示。未注册 → null。
  */
@@ -77,6 +102,7 @@ export function menuCheckedState(autoSave: FilesAutoSaveMode): Record<MenuCheckb
 
 export function useMenuCommands(commands: CommandRegistry): void {
   useEffect(() => coApi.window.onMenuCommand((payload) => runMenuCommand(commands, payload)), [commands]);
+  useEffect(() => coApi.window.onEditUndoRedo(runEditUndoRedo), []);
 
   // 命令注册 / 注销、改键 / 解绑后重算;内容不变不重复推送。
   const all = useRegistry(commands);

@@ -19,6 +19,7 @@ import {
   type EditorTab,
 } from '@/stores/editor.store';
 import { runSerialPerKey } from '@/lib/serialize-per-key';
+import { flushEditorWriteBacks } from './editor-writeback-registry';
 import type { FsReadFileResult } from '../../../electron/shared/fs-channels';
 import {
   findEditorFileTabById,
@@ -367,13 +368,35 @@ async function saveFileNow(
 }
 
 /**
- * 还原文件(VSCode workbench.action.files.revert):重读磁盘,把 tab 换成磁盘内容并丢弃未保存的修改
- *(与外部同步同一出口 reloadFromDisk,Milkdown 视图按 reloadEpoch 重挂)。读盘失败原样返回,tab 不变。
+ * 还原后该 tab 会不会离开 Markdown 编辑视图(Milkdown):磁盘内容较大 / 含编辑模式会改写的语法 → 按规则落到源码模式,
+ * 编辑视图随之卸载,撤销历史跟着丢掉。
  */
-export async function revertFile(tabId: string, deps: EditorFileDeps): Promise<FileOpResult> {
+export function revertLeavesMilkdown(tab: EditorTab, diskContent: string): boolean {
+  if (!usesMilkdownEngine(tab.filePath, tab)) return false;
+  const { milkdownUnsafe: _u, milkdownTooLarge: _l, ...rest } = tab;
+  return !usesMilkdownEngine(tab.filePath, { ...rest, content: diskContent });
+}
+
+/**
+ * 还原文件(VSCode workbench.action.files.revert):重读磁盘,把 tab 换成磁盘内容并丢弃未保存的修改
+ *(与外部同步同一出口 reloadFromDisk;编辑视图里磁盘内容以可撤销的一步就地套用,⌘Z 可找回,VSCode 同)。读盘失败原样返回,
+ * tab 不变。唯一不能撤销的情况 —— 有未保存修改、且磁盘版本只能以源码模式显示(编辑视图随之卸载,见 revertLeavesMilkdown)
+ * → 先经 confirmLosingUndo 确认,取消则什么也不做。
+ */
+export async function revertFile(
+  tabId: string,
+  deps: EditorFileDeps,
+  opts?: { readonly confirmLosingUndo?: (tab: EditorTab) => Promise<boolean> },
+): Promise<FileOpResult> {
   const tab = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
   if (!tab) return { ok: false, code: 'TAB_NOT_FOUND', message: `tab not found: ${tabId}` };
-  return reloadTabFromDisk(tab, deps, readOptionsForTab(tab), false);
+  const confirm = opts?.confirmLosingUndo;
+  return reloadTabFromDisk(tab, deps, readOptionsForTab(tab), false, confirm && (async (content) => {
+    // 未上抛的输入先进 store,脏态才准
+    flushEditorWriteBacks([tabId]);
+    const cur = findEditorFileTabById(useEditorStore.getState().tabs, tabId);
+    return !cur?.dirty || !revertLeavesMilkdown(cur, content) || (await confirm(cur));
+  }));
 }
 
 /**
@@ -396,6 +419,8 @@ async function reloadTabFromDisk(
   deps: EditorFileDeps,
   readOpts: { readonly encoding: TextEncodingId } | undefined,
   pinEncoding: boolean,
+  /** 读到磁盘内容后、换掉 tab 前:false → 放弃(tab 不变,结果仍为成功)。 */
+  proceed?: (content: string) => Promise<boolean>,
 ): Promise<FileOpResult> {
   let r: FsReadFileResult;
   try {
@@ -404,6 +429,7 @@ async function reloadTabFromDisk(
     return exception(err);
   }
   if (!r.ok) return r;
+  if (proceed && !(await proceed(r.data))) return { ok: true, data: undefined };
   useEditorStore.getState().reloadFromDisk(tab.id, r.data, r.realPath, {
     discardChanges: true,
     encoding: readEncodingOf(r),

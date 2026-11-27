@@ -68,8 +68,11 @@ describe.each([
 
   it('Edit / View / Window 为显式子项(不用 Electron 默认英文子菜单)', () => {
     const top = template(isMac);
-    const edit = submenuOf(top, 'editMenu').map((m) => m.role).filter(Boolean);
-    expect(edit).toEqual(expect.arrayContaining(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']));
+    const editItems = submenuOf(top, 'editMenu');
+    const edit = editItems.map((m) => m.role).filter(Boolean);
+    expect(edit).toEqual(expect.arrayContaining(['cut', 'copy', 'paste', 'selectAll']));
+    // 撤销 / 重做是按焦点分派的自定义项(文件树聚焦撤销文件操作,见 app-menu-bar 第 6 条)
+    expect(editItems.map((m) => m.id)).toEqual(expect.arrayContaining(['undo', 'redo']));
     const view = submenuOf(top, 'viewMenu').map((m) => m.role).filter(Boolean);
     // 缩放是命令项(workbench.action.zoom*,所有窗口统一),不是 role
     expect(view).toEqual(['toggleDevTools', 'togglefullscreen']);

@@ -302,6 +302,7 @@
 - [`menu-command-routing.spec.ts`](./app-menu-bar/menu-command-routing.spec.ts)
 - [`menu-keybindings.spec.ts`](./app-menu-bar/menu-keybindings.spec.ts)
 - [`menu-template.spec.ts`](./app-menu-bar/menu-template.spec.ts)
+- [`menu-undo-routing.spec.ts`](./app-menu-bar/menu-undo-routing.spec.ts)
 - [`open-keybindings.spec.tsx`](./app-menu-bar/open-keybindings.spec.tsx)
 
 ## [assert-json-value-sparse (E183)](./assert-json-value-sparse/README.md)
@@ -786,10 +787,12 @@
 
 - [`reopen-closed-editor-popout.spec.ts`](./editor-reopen-closed/reopen-closed-editor-popout.spec.ts)
 - [`reopen-closed-editor.spec.ts`](./editor-reopen-closed/reopen-closed-editor.spec.ts)
+- [`reopen-undo-stack.spec.tsx`](./editor-reopen-closed/reopen-undo-stack.spec.tsx)
 
 ## [editor-revert-file](./editor-revert-file/README.md)
 
 - [`revert-file.spec.tsx`](./editor-revert-file/revert-file.spec.tsx)
+- [`revert-undo-milkdown.spec.tsx`](./editor-revert-file/revert-undo-milkdown.spec.tsx)
 
 ## [editor-save-as(另存为 + 新建无标题文件 + 保存失败提示带「另存为… / 重试」)](./editor-save-as/README.md)
 
@@ -941,8 +944,9 @@
 
 ## [explorer-file-undo(资源管理器文件操作撤销 / 重做)](./explorer-file-undo/README.md)
 
-- [`delete-barrier.spec.tsx`](./explorer-file-undo/delete-barrier.spec.tsx)
+- [`delete-undo.spec.tsx`](./explorer-file-undo/delete-undo.spec.tsx)
 - [`file-undo.spec.ts`](./explorer-file-undo/file-undo.spec.ts)
+- [`read-for-undo.spec.ts`](./explorer-file-undo/read-for-undo.spec.ts)
 - [`record-sources.spec.ts`](./explorer-file-undo/record-sources.spec.ts)
 - [`tree-keys.spec.ts`](./explorer-file-undo/tree-keys.spec.ts)
 

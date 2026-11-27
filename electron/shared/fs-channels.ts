@@ -19,6 +19,11 @@ export const FS_CHANNELS = {
   STAT: 'fs:stat',
   WRITE_FILE: 'fs:write-file',
   WRITE_BINARY: 'fs:write-binary',
+  /**
+   * 资源管理器删除前为撤销读回该项(不跟随符号链接):文件 ≤ MAX_UNDO_FILE_BYTES → 内容;文件夹 → 只记是文件夹(VSCode 撤销删除
+   * 只重建空文件夹);更大的文件 / 符号链接等 → 无法撤销。data = FsUndoBackup.
+   */
+  READ_FOR_UNDO: 'fs:read-for-undo',
   RENAME: 'fs:rename',
   CREATE_FILE: 'fs:create-file',
   CREATE_DIR: 'fs:create-dir',
@@ -115,6 +120,11 @@ export interface FsReadFileData {
   /** 解码所用编码(见 shared/text-encoding;content 不含 BOM)。缺省 = utf8(无 BOM 的 UTF-8)。 */
   readonly encoding?: TextEncodingId;
 }
+
+/** fs:read-for-undo 的 data:file = 内容;dir = 文件夹;tooLarge = 超过 MAX_UNDO_FILE_BYTES;unsupported = 符号链接等其它类型. */
+export type FsUndoBackup =
+  | { readonly kind: 'file'; readonly content: Uint8Array }
+  | { readonly kind: 'dir' | 'tooLarge' | 'unsupported' };
 
 /** fs:read-image 的 data:dataUrl = `data:<mime>;base64,…`;size = 文件字节数. */
 export interface FsReadImageData {

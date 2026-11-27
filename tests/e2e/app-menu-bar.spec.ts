@@ -3,7 +3,8 @@
 // 1. 菜单结构 + accelerator 跟随改键 / 解绑(renderer 推送生效键位,只显示 registerAccelerator: false)
 // 2. 帮助 → 键盘快捷方式参考:打开设置的快捷键页,焦点在该页搜索框
 // 3. 编辑 → 切换行注释:焦点不在编辑器也作用于活动文本编辑器(同命令面板);popout 子窗获焦 → 作用于子窗的编辑器,主窗不动
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+// 4. 编辑 → 撤销 / 重做:文件树聚焦 → 撤销 / 重做文件操作;代码编辑器聚焦 → 照旧撤销编辑器内容
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
@@ -24,7 +25,7 @@ test.afterEach(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-async function launch(): Promise<{ app: ElectronApplication; win: Page }> {
+async function launch(): Promise<{ app: ElectronApplication; win: Page; ws: string }> {
   const ud = mkdtempSync(path.join(tmpdir(), 'ui100c-ud-'));
   const ws = mkdtempSync(path.join(tmpdir(), 'ui100c-ws-'));
   dirs.push(ud, ws);
@@ -36,7 +37,7 @@ async function launch(): Promise<{ app: ElectronApplication; win: Page }> {
   apps.push(app);
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
-  return { app, win };
+  return { app, win, ws };
 }
 
 const snapshot = (app: ElectronApplication): Promise<MenuSnapshotItem[]> =>
@@ -158,4 +159,41 @@ test('编辑 → 切换行注释:作用于获焦窗口的活动文本编辑器;p
   await expect(childCm).toContainText('// let child = 2;');
   await expect(mainCm).toContainText('// let main = 1;');
   await expect(mainCm).not.toContainText('// // let main');
+});
+
+test('编辑 → 撤销 / 重做:文件树聚焦时撤销 / 重做文件操作;代码编辑器里照旧撤销输入', async () => {
+  test.setTimeout(90_000);
+  const { app, win, ws } = await launch();
+  const cdp = await win.context().newCDPSession(win);
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+  const exists = (p: string) => existsSync(p);
+
+  // 代码编辑器:输入后点菜单撤销 → 输入撤掉(原生撤销经 webContents.undo 到 CodeMirror)。菜单「重做」对 CodeMirror 无效是
+  // 原 role 菜单项即有的限制(Chromium 自己的重做栈为空时不派发 historyRedo),不在本条验证。
+  await openTreeItem(win, /^main-file\.ts$/);
+  const cm = win.locator('[data-editor-panel-root] .cm-content').first();
+  await expect(cm).toContainText('let main = 1;', { timeout: 10_000 });
+  await cm.click();
+  await win.keyboard.press('ControlOrMeta+End');
+  await win.keyboard.type('zzz');
+  await expect(cm).toContainText('zzz');
+  await clickMenu(app, EDIT, 'undo');
+  await expect(cm).not.toContainText('zzz', { timeout: 5_000 });
+
+  // 文件树:改名后焦点在树里,点菜单撤销 → 改名撤销,重做 → 再改回
+  const child = win.getByRole('treeitem', { name: /^child-file\.ts$/ });
+  await child.click();
+  await child.press('F2');
+  const input = win.locator('[role=treeitem] input');
+  await expect(input).toBeFocused({ timeout: 5_000 });
+  await input.fill('renamed-child.ts');
+  await input.press('Enter');
+  const renamed = path.join(ws, 'renamed-child.ts');
+  await expect.poll(() => exists(renamed)).toBe(true);
+  await win.getByRole('treeitem', { name: /^renamed-child\.ts$/ }).click();
+  await clickMenu(app, EDIT, 'undo');
+  await expect.poll(() => exists(path.join(ws, 'child-file.ts'))).toBe(true);
+  expect(existsSync(renamed)).toBe(false);
+  await clickMenu(app, EDIT, 'redo');
+  await expect.poll(() => exists(renamed)).toBe(true);
 });

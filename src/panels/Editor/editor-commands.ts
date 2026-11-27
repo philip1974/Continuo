@@ -162,6 +162,8 @@ export interface EditorPanelActions {
    * allowPrompt = false(这次全部保存已弹过一个确认框)→ 确认类失败也只提示,不再弹框。返回是否弹了确认框。
    */
   readonly saveTabForSaveAll: (tabId: string, allowPrompt: boolean) => Promise<boolean>;
+  /** 还原会丢掉未保存修改且无法撤销(见 revertLeavesMilkdown)时的确认框;true = 继续还原。 */
+  readonly confirmRevertLosingUndo: (tab: EditorTab) => Promise<boolean>;
 }
 
 // 按编辑器组(= 面板 id)登记:每个组面板各自一份。
@@ -249,11 +251,15 @@ export function toggleWordWrap(): void {
   useSettingsValuesStore.getState().setValue(EDITOR_WORD_WRAP.id, !on);
 }
 
-/** 还原触发窗口的编辑器组的活动文件 tab 为磁盘内容(无活动 tab → no-op;读盘失败按 code 提示,tab 不变)。 */
+/**
+ * 还原触发窗口的编辑器组的活动文件 tab 为磁盘内容(无活动 tab → no-op;读盘失败按 code 提示,tab 不变)。还原可撤销;唯一
+ * 不可撤销的情况(脏、且磁盘版本只能以源码模式显示)先经该组面板确认(破坏性,初始焦点在取消)。
+ */
 export async function revertActiveEditor(): Promise<void> {
   const tab = activeGroupTab();
   if (!tab) return;
-  const r = await revertFile(tab.id, editorFileDeps);
+  const actions = activeGroupActions();
+  const r = await revertFile(tab.id, editorFileDeps, actions ? { confirmLosingUndo: actions.confirmRevertLosingUndo } : undefined);
   if (!r.ok) notifyFailure(r);
 }
 

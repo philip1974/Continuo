@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // BDD: 还原文件(workbench.action.files.revert)与磁盘冲突时「放弃更改并重新加载」。见同目录 README。
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEditorStore } from '../../stores/editor.store';
 import { EditorPanel } from '../../panels/Editor/EditorPanel';
@@ -19,14 +19,25 @@ const mocks = vi.hoisted(() => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
   error: vi.fn(),
+  milkdownMounts: 0,
+  milkdownProps: [] as Array<{ value?: string; reloadEpoch?: number }>,
 }));
 
 vi.mock('../../panels/Editor/CodeEditor', () => ({
   CodeEditor: ({ value }: { value: string }) => <div data-testid="code-editor">{value}</div>,
 }));
-vi.mock('../../panels/Editor/MilkdownEditor', () => ({
-  MilkdownEditor: () => <div data-testid="milkdown-editor" />,
-}));
+vi.mock('../../panels/Editor/MilkdownEditor', async () => {
+  const { useEffect } = await import('react');
+  return {
+    MilkdownEditor: (props: { value?: string; reloadEpoch?: number }) => {
+      useEffect(() => {
+        mocks.milkdownMounts += 1;
+      }, []);
+      mocks.milkdownProps.push(props);
+      return <div data-testid="milkdown-editor" />;
+    },
+  };
+});
 vi.mock('../../plugins/settings/values-store', () => ({
   useSettingValue: <T,>(_id: string, fallback: T) => fallback,
 }));
@@ -166,5 +177,87 @@ describe('还原文件命令 workbench.action.files.revert', () => {
     });
     expect(mocks.readFile).not.toHaveBeenCalled();
     expect(mocks.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('Markdown 编辑视图里还原:可撤销,不重挂载;唯一不可撤销的情况先确认', () => {
+  const MD = '/work/note.md';
+  const cancelButton = () => screen.getByRole('button', { name: t('panels.explorer.confirm.cancel') });
+  beforeEach(() => {
+    mocks.milkdownMounts = 0;
+    mocks.milkdownProps.length = 0;
+    useEditorStore.setState({
+      tabs: [{ id: MD, filePath: MD, content: '# mine\n', originalContent: '# orig\n', dirty: true }],
+      activeTabId: MD,
+      mode: 'edit',
+    });
+  });
+
+  it('编辑视图不重挂载;磁盘内容经 value 连同递增的 reloadEpoch 交给视图(视图据此可撤销地套用);不弹确认', async () => {
+    mocks.readFile.mockResolvedValue({ ok: true, data: '# theirs\n' });
+    render(<EditorPanel />);
+    await screen.findByTestId('milkdown-editor');
+    const epoch = tab()?.reloadEpoch ?? 0;
+    await act(async () => {
+      await revertActiveEditor();
+    });
+    expect(tab()).toMatchObject({ content: '# theirs\n', dirty: false, reloadEpoch: epoch + 1 });
+    expect(mocks.milkdownMounts).toBe(1);
+    expect(mocks.milkdownProps.at(-1)).toMatchObject({ value: '# theirs\n', reloadEpoch: epoch + 1 });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('磁盘版本只能以源码模式显示(较大 / 编辑模式会改写的语法)且有未保存修改 → 先确认(初始焦点在取消);取消 → 什么也不变', async () => {
+    mocks.readFile.mockResolvedValue({ ok: true, data: 'x'.repeat(100_001) });
+    render(<EditorPanel />);
+    await screen.findByTestId('milkdown-editor');
+    let done = false;
+    let pending!: Promise<void>;
+    act(() => {
+      pending = revertActiveEditor().then(() => {
+        done = true;
+      });
+    });
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain('note.md');
+    await vi.waitFor(() => expect(document.activeElement).toBe(cancelButton()));
+    expect(done).toBe(false);
+    await click(cancelButton());
+    await act(async () => {
+      await pending;
+    });
+    expect(tab()).toMatchObject({ content: '# mine\n', dirty: true });
+  });
+
+  it('确认后照常还原', async () => {
+    const big = 'x'.repeat(100_001);
+    mocks.readFile.mockResolvedValue({ ok: true, data: big });
+    render(<EditorPanel />);
+    await screen.findByTestId('milkdown-editor');
+    let pending!: Promise<void>;
+    act(() => {
+      pending = revertActiveEditor();
+    });
+    const dialog = await screen.findByRole('alertdialog');
+    await click(within(dialog).getByRole('button', { name: t('panels.editor.revert_lose_undo_confirm') }));
+    await act(async () => {
+      await pending;
+    });
+    expect(tab()).toMatchObject({ content: big, dirty: false });
+  });
+
+  it('没有未保存修改 → 不确认(没有会丢的内容)', async () => {
+    useEditorStore.setState({
+      tabs: [{ id: MD, filePath: MD, content: '# orig\n', originalContent: '# orig\n', dirty: false }],
+    });
+    const big = 'x'.repeat(100_001);
+    mocks.readFile.mockResolvedValue({ ok: true, data: big });
+    render(<EditorPanel />);
+    await screen.findByTestId('milkdown-editor');
+    await act(async () => {
+      await revertActiveEditor();
+    });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(tab()).toMatchObject({ content: big });
   });
 });

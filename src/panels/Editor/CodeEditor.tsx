@@ -60,6 +60,7 @@ import {
   saveCodeEditorViewState,
   saveMarkdownModeAnchor,
   snapshotCodeEditorView,
+  takeClosedCodeEditorState,
   takeCodeEditorSeed,
   takeCodeEditorViewState,
   takeMarkdownModeAnchor,
@@ -228,17 +229,19 @@ export function pickLanguage(
  * 本实例的扩展(compartment / 更新监听闭包都属于新实例);两份配置共有的 state field(history、debug 装饰)保值。
  * 不一致(切走期间别处改了内容)→ 新建 state,只把旧光标 / 选区收进新文档范围(滚动由 scrollTo 快照自动收进范围)。
  */
+/** 留存的状态的文档是否就是 value(按 value 的换行风格拼接比较)。 */
+function sameDoc(state: EditorState, value: string, eol: '\r\n' | '\n'): boolean {
+  return state.doc.sliceString(0, state.doc.length, eol) === value;
+}
+
 function restoreState(
   saved: CodeEditorViewState | undefined,
   value: string,
   eol: '\r\n' | '\n',
   extensions: Extension[],
 ): EditorState {
-  if (saved) {
-    const doc = saved.state.doc;
-    if (doc.sliceString(0, doc.length, eol) === value) {
-      return saved.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state;
-    }
+  if (saved && sameDoc(saved.state, value, eol)) {
+    return saved.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state;
   }
   const state = EditorState.create({ doc: value, extensions });
   if (!saved) return state;
@@ -474,12 +477,19 @@ export function CodeEditor({
     //   → 上次会话留给本组的摘要(跨重启首次挂载;越界收进文档范围;BDD: src/__tests__/editor-state-restart/)
     //   → 别的组本会话的状态(文件新挂进本组,如把 tab 拖到另一组)→ 上次会话不分组的摘要(旧数据 / 单组)。
     const own = takeCodeEditorViewState(tabId, groupId);
+    // 关闭后重新打开:关闭时留下的撤销历史,内容未变才复用(VSCode files.restoreUndoStack;BDD: src/__tests__/editor-reopen-closed/)
+    const closed = own ? undefined : takeClosedCodeEditorState(tabId);
+    const reopened = closed && sameDoc(closed, value, eolRef.current) ? closed : undefined;
     const ownSeed = own ? undefined : takeCodeEditorSeed(tabId, groupId);
     const saved = own ?? (ownSeed ? undefined : otherGroupCodeEditorViewState(tabId, groupId));
     const seed = ownSeed ?? (saved ? undefined : fallbackCodeEditorSeed(tabId));
     // Markdown 源码视图:刚从编辑 / 预览切过来 → 滚到切换前顶部可见的源码行,光标带到原光标行(BDD: src/__tests__/markdown-mode-position/)。
     const anchor = forceLanguage === 'markdown' ? takeMarkdownModeAnchor(tabId, 'source', groupId) : undefined;
-    const restored = seed ? seededState(seed, value, extensions) : restoreState(saved, value, eolRef.current, extensions);
+    const restored = reopened
+      ? reopened.update({ effects: StateEffect.reconfigure.of(extensions) }).state
+      : seed
+        ? seededState(seed, value, extensions)
+        : restoreState(saved, value, eolRef.current, extensions);
     const pendingLanguage = forceLanguage ? null : languageDescriptionFor(fileName);
     if (seed?.folds && pendingLanguage && !pendingLanguage.support) pendingFoldsRef.current = seed.folds;
     const seeded = seed && !anchor ? applySourceModeAnchor(restored, { mode: 'edit', topLine: seed.topLine }) : null;

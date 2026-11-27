@@ -5,6 +5,7 @@ import type { MenuItemConstructorOptions } from 'electron';
 
 const mocks = vi.hoisted(() => ({
   sendMenuCommand: vi.fn(() => true),
+  runEditUndoRedo: vi.fn(),
   FakeBrowserWindow: class FakeBrowserWindow {},
 }));
 
@@ -12,7 +13,10 @@ vi.mock('electron', () => ({
   app: { name: 'Continuo' },
   BrowserWindow: mocks.FakeBrowserWindow,
 }));
-vi.mock('../../../electron/main/lib/menu-command', () => ({ sendMenuCommand: mocks.sendMenuCommand }));
+vi.mock('../../../electron/main/lib/menu-command', () => ({
+  sendMenuCommand: mocks.sendMenuCommand,
+  runEditUndoRedo: mocks.runEditUndoRedo,
+}));
 
 import { appMenuTemplate, type AppMenuActions } from '../../../electron/main/app-menu';
 import { setMenuKeybindings } from '../../../electron/main/menu-keybindings';
@@ -106,11 +110,27 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
     ]);
   });
 
-  it('编辑:原生 role 项不变,其后 查找 / 替换 / 在文件中查找 / 切换行注释 / 块注释', () => {
+  it('编辑 → 撤销 / 重做不是 role:点击经 runEditUndoRedo 按焦点分派(按键触发带 viaKey);键位同 Electron role 默认', () => {
+    const edit = submenu(template(true), 'menu.edit.label');
+    const undo = edit.find((m) => m.id === 'undo')!;
+    const redo = edit.find((m) => m.id === 'redo')!;
+    expect(undo.role).toBeUndefined();
+    expect(redo.role).toBeUndefined();
+    expect(undo.label).toBe('menu.edit.undo');
+    expect(undo.accelerator).toBe('CmdOrCtrl+Z');
+    expect(redo.accelerator).toBe(process.platform === 'win32' ? 'Control+Y' : 'Shift+CmdOrCtrl+Z');
+    const win = {};
+    undo.click!(undo as never, win as never, {} as never);
+    expect(mocks.runEditUndoRedo).toHaveBeenLastCalledWith(win, 'undo', false);
+    redo.click!(redo as never, win as never, { triggeredByAccelerator: true } as never);
+    expect(mocks.runEditUndoRedo).toHaveBeenLastCalledWith(win, 'redo', true);
+  });
+
+  it('编辑:撤销 / 重做,原生 role 项不变,其后 查找 / 替换 / 在文件中查找 / 切换行注释 / 块注释', () => {
     const edit = commandsOf(submenu(template(true), 'menu.edit.label'));
     expect(edit).toEqual([
-      'undo',
-      'redo',
+      'menu.edit.undo',
+      'menu.edit.redo',
       'cut',
       'copy',
       'paste',

@@ -28,7 +28,7 @@ const disposers: (() => void)[] = [];
 function panel(groupId: string, prompts: readonly string[] = []): EditorPanelActions['saveTabForSaveAll'] & ReturnType<typeof vi.fn> {
   const saveTabForSaveAll = vi.fn(async (id: string, allowPrompt: boolean) => allowPrompt && prompts.includes(id));
   disposers.push(
-    registerEditorPanelActions({ save: vi.fn(), saveAs: vi.fn(), closeActiveTab: () => false, closeTabs: vi.fn(), saveTabForSaveAll }, groupId),
+    registerEditorPanelActions({ save: vi.fn(), saveAs: vi.fn(), closeActiveTab: () => false, closeTabs: vi.fn(), saveTabForSaveAll, confirmRevertLosingUndo: async () => true }, groupId),
   );
   return saveTabForSaveAll as never;
 }

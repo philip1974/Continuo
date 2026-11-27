@@ -367,6 +367,29 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     | null
   >(null);
 
+  // 还原文件会丢掉未保存修改且无法撤销(磁盘版本只能以源码模式显示,编辑视图随之卸载;见 revertLeavesMilkdown)→ 先确认
+  //(破坏性,初始焦点在取消)。确认框开着时又来一次 / 面板卸载 → 前一次按取消结算。BDD: src/__tests__/editor-revert-file/
+  const [revertCandidate, setRevertCandidate] = useState<{
+    readonly filePath: string;
+    readonly resolve: (ok: boolean) => void;
+  } | null>(null);
+  const revertCandidateRef = useRef(revertCandidate);
+  revertCandidateRef.current = revertCandidate;
+  const confirmRevertLosingUndo = useCallback(
+    (tab: EditorTab) =>
+      new Promise<boolean>((resolve) => {
+        revertCandidateRef.current?.resolve(false);
+        setRevertCandidate({ filePath: tab.filePath, resolve });
+      }),
+    [],
+  );
+  const settleRevert = (ok: boolean) => {
+    const c = revertCandidateRef.current;
+    setRevertCandidate(null);
+    c?.resolve(ok);
+  };
+  useEffect(() => () => revertCandidateRef.current?.resolve(false), []);
+
   // 另存为(⇧⌘S;无标题文件的保存同样走这里;BDD: src/__tests__/editor-save-as/):取消 → false,不提示;失败 → 「保存失败
   // <文件名>:<原因>」附「另存为…」(重新选位置)。返回保存到的路径(= tab 的新 id);未保存 → null。
   // 焦点:成功 → 新 id 的编辑器获焦(换 id 后视图重挂载,原生对话框关闭后焦点回不到已卸载的旧视图;视图状态随 retargetTab 迁移);
@@ -703,10 +726,11 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
           },
           closeTabs: onTabsCloseRequest,
           saveTabForSaveAll,
+          confirmRevertLosingUndo,
         },
         groupId,
       ),
-    [handleSave, activePanelSaveAs, onTabCloseRequest, onTabsCloseRequest, saveTabForSaveAll, groupId],
+    [handleSave, activePanelSaveAs, onTabCloseRequest, onTabsCloseRequest, saveTabForSaveAll, confirmRevertLosingUndo, groupId],
   );
 
   // 切模式;较大的 Markdown 切到编辑 / 预览:该 tab 记为已接受。渲染是同步长任务 → 先让「正在渲染」提示画出来(下一帧之后)
@@ -785,10 +809,10 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
     const content = effective === 'preview' ? toPreviewMarkdown(activeTab.content) : activeTab.content;
     body = (
       <MilkdownEditor
-        // reloadEpoch 并入 key:外部进程改文件 → reloadFromDisk 递增 epoch →
-        // Milkdown remount 拿新内容,避免基于陈旧内容编辑后保存覆盖外部改动。
-        // 用户输入/保存不动 epoch,故不会每次按键 remount。
-        key={`${activeTab.id}-${effective}-${activeTab.reloadEpoch ?? 0}`}
+        // 外部进程改文件 / 还原文件 → reloadFromDisk 递增 reloadEpoch:不重挂载,磁盘内容经 value 以可撤销的一步就地套进视图
+        //(⌘Z 找回重载前的内容,焦点 / 光标保留;VSCode 同)。BDD: src/__tests__/editor-revert-file/
+        key={`${activeTab.id}-${effective}`}
+        reloadEpoch={activeTab.reloadEpoch ?? 0}
         tabId={activeTab.id}
         fileName={activeTab.filePath}
         defaultValue={content}
@@ -964,6 +988,19 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         destructive
         onConfirm={() => void confirmOverwriteReadonly()}
         onCancel={() => setReadonlyCandidate(null)}
+      />
+      <ConfirmDialog
+        open={revertCandidate !== null}
+        title={
+          revertCandidate
+            ? translate('panels.editor.revert_lose_undo_title', { name: editorTabTitle(revertCandidate.filePath) })
+            : ''
+        }
+        description={translate('panels.editor.revert_lose_undo_body')}
+        confirmLabel={translate('panels.editor.revert_lose_undo_confirm')}
+        destructive
+        onConfirm={() => settleRevert(true)}
+        onCancel={() => settleRevert(false)}
       />
       <ConfirmDialog
         open={unsafeEditConfirmOpen}

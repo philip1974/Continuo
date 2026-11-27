@@ -21,12 +21,13 @@ Continuo 的编辑器按 tab 卸载 / 重挂(EditorPanel 的 key),视图状态�
 - 切走期间内容被别处改了(Markdown 在 Edit 模式里改过再切回 Source、外部修改重载)→ 不复用撤销历史(旧历史对新
   文档无意义);光标 / 选区收进新文档范围,滚动快照按文档位置恢复并自动收进范围
 - 重命名 / 移动(tab 换 id)→ 视图状态跟随到新 id(旧视图还挂着时直接按它的当前状态迁移)
-- 关闭 tab(含删除文件、切工作区关掉的 tab)→ 丢弃其视图状态;同路径重开是全新历史;已关闭 tab 的编辑器随后卸载不再存入
+- 关闭 tab(含删除文件、切工作区关掉的 tab)→ 丢弃其视图状态;已关闭 tab 的编辑器随后卸载不再存入。用户关闭的文件另按路径
+  留存撤销历史,重开且内容未变时恢复(VSCode `files.restoreUndoStack`,见 `editor-reopen-closed` 第 7 条);内容变了 → 全新历史
 - 最多保留 50 个 tab 的状态,超出淘汰最久未用的
 
 ### Milkdown(Markdown Edit / Preview)(`milkdown-scroll-restore.spec.tsx`)
 
-- 滚动位置按 tab 记下,重挂(切 tab、Edit ↔ Preview、外部修改重载的 reloadEpoch 重挂)且编辑器就绪后恢复;
+- 滚动位置按 tab 记下,重挂(切 tab、Edit ↔ Preview)且编辑器就绪后恢复(外部修改重载 / 还原就地套用,不重挂);
   节点视图下一帧才撑开高度时再补一次;恢复期间(到补齐为止)的滚动是中间值,不记进缓存
 - 就绪时把 `view.focus()` 登记为可编辑区的聚焦方式:点 tab / dock tab、重启恢复聚焦不把恢复的视口拉回光标处
   (见 `focus-keeps-scroll`)
@@ -37,7 +38,7 @@ Continuo 的编辑器按 tab 卸载 / 重挂(EditorPanel 的 key),视图状态�
 
 ### Markdown 切换模式(源码 / 编辑 / 预览)
 
-- 从另一模式切来时按源码行交接位置与光标(锚点优先于本模式自己缓存的滚动);同模式重挂(切 tab 回来 / 外部修改重载)
+- 从另一模式切来时按源码行交接位置与光标(锚点优先于本模式自己缓存的滚动);同模式重挂(切 tab 回来)
   仍按上面各自的状态恢复。见 `markdown-mode-position`
 
 ## 端到端

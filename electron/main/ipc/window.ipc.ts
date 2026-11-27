@@ -262,6 +262,12 @@ function applyWindowViewAction(win: BrowserWindow, action: WindowViewAction, rel
     case 'toggleFullScreen':
       win.setFullScreen(!win.isFullScreen());
       return;
+    case 'undo':
+      win.webContents.undo();
+      return;
+    case 'redo':
+      win.webContents.redo();
+      return;
   }
 }
 

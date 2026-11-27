@@ -1,6 +1,6 @@
 // 资源管理器文件操作撤销 / 重做(VSCode 同款:树聚焦时 ⌘Z / ⇧⌘Z,Win/Linux Ctrl+Z / Ctrl+Y)。
 // BDD: src/__tests__/explorer-file-undo/
-import { stat, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test, expect } from './fixtures/with-workspace';
 import { EXPLORER_NEW_FILE, EXPLORER_NEW_FILE_PLACEHOLDER } from './helpers/explorer';
@@ -180,7 +180,7 @@ test('撤销新建时文件有未保存的编辑器:确认框同删除确认给�
   expect(await exists(p)).toBe(true);
 });
 
-test('复制粘贴后再删除另一个文件,⌘Z:提示删除无法撤销、可从废纸篓恢复;不把复制出的文件移进废纸篓', async ({
+test('复制粘贴后再删除另一个文件,⌘Z:被删文件按原内容回到原位(不确认);再 ⌘Z 才撤销复制(先确认)', async ({
   window,
   workspaceRoot,
 }) => {
@@ -196,6 +196,7 @@ test('复制粘贴后再删除另一个文件,⌘Z:提示删除无法撤销、�
   await expect.poll(() => exists(copyPath)).toBe(true);
 
   const readmePath = path.join(workspaceRoot, 'README.md');
+  const before = await readFile(readmePath);
   const readme = rowOf(window, readmePath);
   await readme.click();
   await readme.press('Delete');
@@ -207,16 +208,16 @@ test('复制粘贴后再删除另一个文件,⌘Z:提示删除无法撤销、�
   const copy = rowOf(window, copyPath);
   await copy.click();
   await copy.press(UNDO);
-  const toast = window.locator('.toast[data-level="info"]');
-  await expect(toast).toContainText(
-    /(删除无法撤销|Deleting can’t be undone|삭제는 실행 취소할 수 없습니다)/,
-    { timeout: 5_000 },
-  );
-  await window.waitForTimeout(300);
+  await expect.poll(() => exists(readmePath)).toBe(true);
+  expect((await readFile(readmePath)).equals(before)).toBe(true);
   await expect(window.getByRole('alertdialog')).toHaveCount(0);
+  await expect(readme).toHaveAttribute('aria-selected', 'true', { timeout: 5_000 });
   expect(await exists(copyPath)).toBe(true);
-  // 再按一次仍停在这里
-  await copy.press(UNDO);
-  await window.waitForTimeout(300);
-  expect(await exists(copyPath)).toBe(true);
+
+  // 删除不再挡住更早的操作:再 ⌘Z 撤销复制(先确认)
+  await readme.press(UNDO);
+  const undoCopy = window.getByRole('alertdialog');
+  await expect(undoCopy).toContainText('a copy.ts', { timeout: 5_000 });
+  await undoCopy.getByRole('button', { name: TRASH_BUTTON }).click();
+  await expect.poll(() => exists(copyPath)).toBe(false);
 });

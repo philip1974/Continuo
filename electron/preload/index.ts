@@ -25,6 +25,7 @@ import {
   type FsFileStat,
   type FsReadFileData,
   type FsReadImageData,
+  type FsUndoBackup,
   type FsReadFileResult,
   type FsListDirOptions,
 } from '../shared/fs-channels';
@@ -290,6 +291,9 @@ const api = {
       toFsStatResult((await ipcRenderer.invoke(FS_CHANNELS.STAT, { path })) as IpcResult<unknown>),
     writeBinary: (path: string, content: Uint8Array): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(FS_CHANNELS.WRITE_BINARY, { path, content }),
+    /** 资源管理器删除前为撤销读回该项(不跟随符号链接;文件 ≤ 5MB 带内容,文件夹只标记;见 FsUndoBackup). */
+    readForUndo: (path: string): Promise<IpcResult<FsUndoBackup>> =>
+      ipcRenderer.invoke(FS_CHANNELS.READ_FOR_UNDO, { path }),
     /** Markdown 文档里粘贴 / 拖入的图片落盘到文档所在目录(须在工作区内;main 生成文件名、重名加序号);data = 新文件路径. */
     saveDocumentImage: (documentPath: string, fileName: string, data: Uint8Array): Promise<IpcResult<string>> =>
       ipcRenderer.invoke(FS_CHANNELS.SAVE_DOCUMENT_IMAGE, { documentPath, fileName, data }),
@@ -620,6 +624,9 @@ const api = {
     /** 订阅 main 的「执行菜单命令」请求(应用菜单项即 renderer 命令,如 文件 → 打开文件夹… ⌘O);返回 unsubscribe。payload 未经校验。 */
     onMenuCommand: (cb: (payload: unknown) => void): (() => void) =>
       subscribeIpc(WINDOW_CHANNELS.RUN_MENU_COMMAND, (_event, payload: unknown) => cb(payload)),
+    /** 订阅 main 的「编辑 → 撤销 / 重做」(鼠标点击菜单项,按焦点分派);返回 unsubscribe。payload 未经校验。 */
+    onEditUndoRedo: (cb: (payload: unknown) => void): (() => void) =>
+      subscribeIpc(WINDOW_CHANNELS.EDIT_UNDO_REDO, (_event, payload: unknown) => cb(payload)),
     /** 推送菜单命令当前生效的主键(归一后的 hotkey,未绑定为 null):main 换算成菜单 accelerator 显示并重建菜单。 */
     setMenuKeybindings: (keybindings: Readonly<Record<string, string | null>>): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.SET_MENU_KEYBINDINGS, { keybindings }),

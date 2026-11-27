@@ -14,7 +14,7 @@
 |---|---|
 | 应用(macOS) | 首选项 ▸ 设置…(`settings.toggle`)、键盘快捷方式(`workbench.action.openGlobalKeybindings`);其余 role 项不变 |
 | 文件 | 新建窗口、打开文件夹…(`workbench.action.files.openFolder`)、在新窗口中打开文件夹…、打开最近的文件夹…(`workbench.action.openRecent`)、全部保存(`workbench.action.files.saveAll`)、自动保存(勾选项 `workbench.action.toggleAutoSave`,见 `files-auto-save`)、[Windows / Linux:首选项 ▸]、关闭窗口 |
-| 编辑 | 撤销 / 重做 / 剪切 / 复制 / 粘贴…(role 不变)、查找(`actions.find`)、替换(`editor.action.startFindReplaceAction`)、在文件中查找(`workbench.action.findInFiles`)、切换行注释 / 块注释(`editor.action.commentLine` / `blockComment`) |
+| 编辑 | 撤销 / 重做(按焦点分派,见第 6 条)、剪切 / 复制 / 粘贴…(role 不变)、查找(`actions.find`)、替换(`editor.action.startFindReplaceAction`)、在文件中查找(`workbench.action.findInFiles`)、切换行注释 / 块注释(`editor.action.commentLine` / `blockComment`) |
 | 选择 | 全选(role)、展开行选择(`expandLineSelection`)、向上 / 向下复制一行、向上 / 向下移动一行、在上面 / 下面添加光标、添加下一个匹配项(`addSelectionToNextFindMatch`)、选择所有匹配项(`selectHighlights`) |
 | 显示 | 命令面板…(`workbench.action.showCommands`)、资源管理器(`workbench.view.explorer`)、搜索(`workbench.action.findInFiles`)、终端(`workbench.action.terminal.toggleTerminal`)、输出(`workbench.view.output`)、切换侧栏(`explorer.toggleSidebar`)、自动换行(`editor.action.toggleWordWrap`)、重置缩放 / 放大 / 缩小(`workbench.action.zoomReset` / `zoomIn` / `zoomOut`,所有窗口统一,见 `src/__tests__/window-zoom/`);重新加载 / 开发者工具 / 全屏不变 |
 | 转到 | 返回 / 前进(`navigateBack` / `navigateForward`)、转到文件…(`quickOpen`)、转到编辑器中的符号…(`gotoSymbol`)、转到行/列…(`gotoLine`)、下一个 / 上一个编辑器 |
@@ -22,7 +22,7 @@
 | 帮助(role help) | 显示所有命令、键盘快捷方式参考(= 打开键盘快捷方式;VSCode 打开 PDF 速查表) |
 
 - 每个标签三语齐全(`menu.*`),界面语言切换时菜单整体重建(既有 `setMenuRebuilder`)
-- 原生编辑项(undo / copy / selectAll…)保留 role
+- 原生编辑项(cut / copy / selectAll…)保留 role;撤销 / 重做是自定义项(第 6 条)
 - 命令项点击 → `sendMenuCommand(获焦窗口, id)`;打开文件夹在没有可用主窗时(macOS 关光窗口)在新窗口打开
 
 ### 2. 快捷键显示跟随生效键位(`menu-keybindings.spec.ts`)
@@ -60,6 +60,22 @@
 - 执行 = 在活动文本编辑器打开查找面板 / 替换框(焦点留在面板里);键经命令注册表分发(可改键,查找面板内同样生效,见
   `editor-find-keybindings`);终端里 ⌘F 仍是终端查找(上下文条件不同,不算冲突)
 
+### 6. 「编辑 → 撤销 / 重做」按焦点分派(`menu-undo-routing.spec.ts`、`menu-template.spec.ts`)
+
+VSCode 菜单的撤销 / 重做是 `undo` / `redo` 多实现命令(`UndoCommand.addImplementation`,资源管理器实现
+`src/vs/workbench/contrib/files/browser/files.contribution.ts`:`explorerService.hasViewFocus()` 且有可撤销项 → 撤销文件操作,
+否则交给下一个实现,最终是原生 / 编辑器撤销)。这里:
+
+- 菜单项 id `undo` / `redo`,不是 role;键位同 Electron role 默认(撤销 CmdOrCtrl+Z;重做 Windows Control+Y,其它
+  Shift+CmdOrCtrl+Z)
+- 按键触发(`triggeredByAccelerator`:按键已先经 renderer 而未被处理,文件树 / CodeMirror / Milkdown 自己处理 ⌘Z)→ main 直接对获焦的
+  webContents 原生撤销 / 重做(同原 role 项;输入框 / 终端照旧)
+- 鼠标点击 → 发 `window:edit-undo-redo { op, fromPopout }` 给目标主窗(popout 子窗获焦 → 打开它的主窗);DevTools 获焦 / 无可用主窗 →
+  直接原生
+- renderer:获焦窗口的文档焦点在资源管理器文件树的行 / 树容器上(改名 / 新建输入框不算,同树内 ⌘Z 的条件)、没有 Modal、有工作区 →
+  撤销 / 重做文件操作(同 `explorer.undo` / `explorer.redo`,见 `explorer-file-undo`);否则经 `window:view-action` 的 `undo` / `redo`
+  请 main 对该窗口(popout → 该子窗)做 `webContents.undo()` / `redo()`,代码编辑器 / Markdown 编辑 / 输入框照旧撤销
+
 ## 与 VSCode 的差异
 
 - 只取关键入口;没有 打开最近 ▸ 子菜单(打开的是最近文件夹选择器)、Run 菜单、扩展 / 源代码管理等视图
@@ -71,7 +87,8 @@
 ## E2E
 
 `tests/e2e/app-menu-bar.spec.ts`:E2E 模式下应用菜单为 null,经 main 的 e2e 钩子(仅 `CONTINUO_E2E=1`)读取同一模板、按菜单
-路径调用菜单项的 click(与真实点击同一路径),验证 accelerator 跟随改键、主窗 / popout 子窗里执行正确。
+路径调用菜单项的 click(与真实点击同一路径),验证 accelerator 跟随改键、主窗 / popout 子窗里执行正确;编辑 → 撤销 / 重做在代码编辑器里
+撤销输入、文件树聚焦时撤销 / 重做改名。
 
 ## 模块
 
@@ -79,7 +96,7 @@
 |---|---|
 | `electron/main/app-menu.ts` | 菜单模板(纯函数,`acceleratorOf` 可注入) |
 | `electron/main/menu-keybindings.ts` | 推送键位的存储、hotkey → accelerator |
-| `electron/main/lib/menu-command.ts` | 菜单命令发往哪个窗口、payload |
+| `electron/main/lib/menu-command.ts` | 菜单命令发往哪个窗口、payload;撤销 / 重做的分派(`runEditUndoRedo`) |
 | `electron/shared/window-channels.ts` | `MENU_COMMAND_IDS`、`SET_MENU_KEYBINDINGS`、payload 校验 |
-| `src/shell/menu-commands.ts` | renderer 执行菜单命令、推送生效键位 |
+| `src/shell/menu-commands.ts` | renderer 执行菜单命令、推送生效键位、撤销 / 重做按焦点分派 |
 | `src/core-plugins/KeybindingsTabPlugin.ts` | 打开键盘快捷方式命令 |
