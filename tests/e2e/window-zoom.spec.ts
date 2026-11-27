@@ -81,6 +81,15 @@ async function menuPathOf(a: ElectronApplication, top: number, id: string): Prom
   return [top, i];
 }
 
+async function menuPathByAccelerator(a: ElectronApplication, top: number, accelerator: string): Promise<number[]> {
+  const items = await a.evaluate(() =>
+    (globalThis as { __continuoAppMenu?: AppMenuE2eHook }).__continuoAppMenu!.snapshot(),
+  );
+  const i = (items[top]!.submenu ?? []).findIndex((m) => m.accelerator === accelerator);
+  expect(i).toBeGreaterThan(-1);
+  return [top, i];
+}
+
 test('主窗放大 → popout 子窗与新窗口同一级别;重启后保持', async () => {
   test.setTimeout(120_000);
   let { app: a, main } = await launch();
@@ -100,8 +109,8 @@ test('主窗放大 → popout 子窗与新窗口同一级别;重启后保持', a
     [true, 2],
   ]);
 
-  // 文件 → 新建窗口(⇧⌘N):新窗口同一级别
-  await clickMenu(a, [FILE, 0]);
+  // 文件 → 新建窗口(⇧⌘N):新窗口同一级别。按快捷键找项,不按下标(5398b808 起文件菜单首项是「新建文本文件」⌘N)
+  await clickMenu(a, await menuPathByAccelerator(a, FILE, 'CmdOrCtrl+Shift+N'));
   await expect.poll(() => a.windows().length, { timeout: 15_000 }).toBe(3);
   await expect.poll(() => zoomLevels(a), { timeout: 15_000 }).toEqual([
     [false, 2],
