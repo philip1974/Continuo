@@ -1,4 +1,4 @@
-// 代码编辑器(CodeMirror)右键 → main 弹出原生菜单:VSCode 编辑器右键菜单(更改所有匹配项 / 格式化文档 / 剪切 / 复制 / 粘贴 / 命令面板)。
+// 代码编辑器(CodeMirror)右键 → main 弹出原生菜单:VSCode 编辑器右键菜单(转到定义(TS / JS)/ 更改所有匹配项 / 格式化文档 / 剪切 / 复制 / 粘贴 / 命令面板)。
 // Playwright 看不到原生菜单:在 main 里把 Menu.prototype.popup 换成记录器(不真正弹出),再验证记录的菜单项。
 // BDD 见 src/__tests__/edit-context-menu/。
 import { writeFileSync } from 'node:fs';
@@ -23,7 +23,7 @@ async function recordMenus(app: ElectronApplication): Promise<void> {
 const recorded = (app: ElectronApplication) =>
   app.evaluate(() => (globalThis as { __ctxMenuRoles?: string[][] }).__ctxMenuRoles);
 
-test('代码编辑器右键:更改所有匹配项 / ─ / 剪切 / 复制 / 粘贴 / ─ / 命令面板(VSCode 编辑器右键菜单,无全选)', async ({ window, electronApp }) => {
+test('代码编辑器右键(TS 文件):转到定义 / ─ / 更改所有匹配项 / ─ / 剪切 / 复制 / 粘贴 / ─ / 命令面板(VSCode 编辑器右键菜单,无全选)', async ({ window, electronApp }) => {
   await recordMenus(electronApp);
   await window.locator('text=src').first().click();
   await window.locator('text=a.ts').first().click();
@@ -32,7 +32,17 @@ test('代码编辑器右键:更改所有匹配项 / ─ / 剪切 / 复制 / 粘�
   await cm.click({ button: 'right' });
 
   await expect.poll(() => recorded(electronApp)).toEqual([
-    ['editor.action.changeAll', 'separator', 'cut', 'copy', 'paste', 'separator', 'workbench.action.showCommands'],
+    [
+      'editor.action.revealDefinition',
+      'separator',
+      'editor.action.changeAll',
+      'separator',
+      'cut',
+      'copy',
+      'paste',
+      'separator',
+      'workbench.action.showCommands',
+    ],
   ]);
 });
 

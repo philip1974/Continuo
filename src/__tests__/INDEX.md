@@ -613,6 +613,10 @@
 - [`editor-focus-registry.spec.ts`](./editor-focus-on-open/editor-focus-registry.spec.ts)
 - [`quick-open-focus.spec.tsx`](./editor-focus-on-open/quick-open-focus.spec.tsx)
 
+## [TS / JS 转到定义(F12 / ⌘ 单击 / ⌘ 悬停),接真实 TypeScript 语言服务](./editor-go-to-definition/README.md)
+
+- [`go-to-definition.spec.ts`](./editor-go-to-definition/go-to-definition.spec.ts)
+
 ## [转到行 / 列(⌃G,Quick Open `:`)](./editor-goto-line/README.md)
 
 - [`codemirror-keys.spec.ts`](./editor-goto-line/codemirror-keys.spec.ts)

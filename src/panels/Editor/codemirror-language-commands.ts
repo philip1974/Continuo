@@ -1,7 +1,9 @@
 // 语言功能类编辑器命令的 CodeMirror 实现(引擎 chunk;命令表见 editor-text-commands,经 codemirror-text-commands 的 RUNNERS 登记):
 // - 格式化文档(editor.action.formatDocument,⇧⌥F):JSON(含 jsonc)按当前缩进单位(indentUnit)重排空白,一次撤销;语法错误 →
 //   提示且不改文档;其它语言 → 提示「没有格式化程序」(VSCode formatDocument.none 的文案)。
-// - 重命名 / 转到定义 / 快速修复(F2 / F12 / ⌘.):本项目没有语言服务 → 按 VSCode 无结果时的文案提示,不再静默。
+// - 转到定义(F12):TS / JS 文件接语言服务(见 codemirror-go-to-definition;BDD: src/__tests__/editor-go-to-definition/);
+//   其它文件没有语言服务 → 按 VSCode 无结果时的文案提示,不再静默。
+// - 重命名 / 快速修复(F2 / ⌘.):本项目没有对应的语言服务功能 → 按 VSCode 无结果时的文案提示。
 // - 下一个问题(F8):跳到下一个诊断(CodeMirror lint 的 nextDiagnostic,⇧⌘M 的面板同源);没有诊断 → 提示。
 // - 触发建议(⌃Space / ⌘I):CodeMirror 补全的 startCompletion(⌃Space 同时仍在补全扩展自带的键表里,同一命令)。
 //   这两个 CodeMirror 命令按键从 basicSetup 键表里取(@codemirror/lint / autocomplete 不是本项目的直接依赖,不另引入)。
@@ -17,6 +19,7 @@ import { selectParentSyntax } from '@codemirror/commands';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
 import { formatJson } from './json-format';
+import { revealDefinitionWithService } from './codemirror-go-to-definition';
 
 /** 语言名(VSCode languageId 的近似):Markdown 源码模式的 frontmatter 包装语言按 markdown;纯文本 plaintext。 */
 export function languageIdOf(view: EditorView): string {
@@ -67,6 +70,7 @@ export const renameSymbol: Command = () => {
 };
 
 export const revealDefinition: Command = (view) => {
+  if (revealDefinitionWithService(view)) return true;
   const word = wordAtCursor(view);
   notify.info(word === undefined ? t('editor.definition.none') : t('editor.definition.none_for', { name: word }));
   return false;

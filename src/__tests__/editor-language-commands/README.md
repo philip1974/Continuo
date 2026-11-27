@@ -26,7 +26,8 @@ VSCode 迁移用户在代码编辑器(CodeEditor)里按 ⌥⇧F、F2、F12、⌘
      **不改文档**(VSCode 的 token 排版对这些也会尝试排版,这里保守不改)。
    - 其它语言 → 提示 VSCode 的「There is no formatter for '<语言>' files installed.」(中文「此语言暂无格式化程序」;语言名为
      CodeMirror 语言名,纯文本为 `plaintext`)。只读文档不做。
-2. **重命名 / 转到定义 / 快速修复**:本项目没有语言服务 → 按 VSCode 无结果时的文案提示,不再静默:F2「Rename Symbol: No result.」、
+2. **重命名 / 转到定义 / 快速修复**:TS / JS 文件的转到定义接语言服务(见 `src/__tests__/editor-go-to-definition/`);其余没有语言服务
+   → 按 VSCode 无结果时的文案提示,不再静默:F2「Rename Symbol: No result.」、
    F12「No definition found for '<光标处单词>'」(不在单词上「No definition found」)、⌘.「No code actions available」。
 3. **下一个问题**(F8):跳到下一个诊断(CodeMirror lint,⇧⌘M 打开的诊断面板同源);没有诊断 → 提示「No problems have been
    detected in the workspace.」。

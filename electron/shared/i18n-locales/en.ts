@@ -38,6 +38,7 @@ export const en = {
   'menu.edit.select_all': 'Select All',
   // 编辑器右键菜单追加项(VSCode EditorContext:changeAll.label / formatDocument.label / commandPalette)
   'menu.editor_context.change_all': 'Change All Occurrences',
+  'menu.editor_context.go_to_definition': 'Go to Definition',
   'menu.editor_context.format_document': 'Format Document',
   'menu.editor_context.command_palette': 'Command Palette...',
 
@@ -504,6 +505,8 @@ export const en = {
   'editor.rename.no_result': 'Rename Symbol: No result.',
   'editor.definition.none': 'No definition found',
   'editor.definition.none_for': 'No definition found for “{name}”',
+  'editor.ts_server.crashed': 'The JS/TS language service crashed.',
+  'editor.ts_server.crashed_fatal': 'The JS/TS language service crashed 5 times in the last 5 minutes. It will not be restarted until the window is reloaded or another folder is opened.',
   'editor.quick_fix.none': 'No code actions available',
   'editor.problems.none': 'No problems have been detected in the workspace.',
   'editor.aria.content_group': '{name}, Editor Group {n}',
@@ -1249,6 +1252,10 @@ export const en = {
   'switch_window.list_aria': 'Windows',
   'switch_window.no_match': 'No matching windows',
   'switch_window.current': 'Current Window',
+  'definition_picker.placeholder': 'Select a definition to go to',
+  'definition_picker.input_aria': 'Search definitions',
+  'definition_picker.list_aria': 'Definitions',
+  'definition_picker.no_match': 'No matching definitions',
   'theme_picker.placeholder': 'Select Color Theme',
   'theme_picker.input_aria': 'Search color themes',
   'theme_picker.list_aria': 'Color themes',

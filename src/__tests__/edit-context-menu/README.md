@@ -11,11 +11,13 @@
 - **代码编辑器(CodeMirror:代码文件 / Markdown 源码模式 / 冲突对比)里右键** → VSCode 编辑器右键菜单(`MenuId.EditorContext`,无语言服务时)的分组与顺序:
   「更改所有匹配项 ⌘F2 / 格式化文档 ⇧⌥F / ─ / 剪切 / 复制 / 粘贴 / ─ / 命令面板...」(三语照抄 VSCode `changeAll.label` / `formatDocument.label` / `commandPalette`)。
   - 「格式化文档」只在有格式化程序的文档上出现(JSON;VSCode 的该项 precondition 含 `hasDocumentFormattingProvider`,纯文本不出现)。
+  - TS / JS 文件(有语言服务,见 `src/__tests__/editor-go-to-definition/`)→ 最前另有「转到定义 F12 / ─」(VSCode 同);右键处不在任何
+    选区内时光标先移到右键处(VSCode 编辑器右键同),菜单项作用于右键处的单词。其它文件不移动光标。
   - VSCode 编辑器右键菜单没有「全选」→ 代码编辑器里不给(其它可编辑元素照旧)。
   - 编辑器项 = 菜单命令:点击经 `sendMenuCommand` 交给该窗口的主窗执行(popout 子窗 → 打开它的主窗,作用于该子窗的编辑器);
     键位显示同应用菜单(renderer 推送的生效键位,改键 / 解绑跟随)。「更改所有匹配项」(`editor.action.changeAll`,⌘F2 / Ctrl+F2)
     是新增命令,与「选择所有匹配项」(⇧⌘L)同一实现(VSCode CompatChangeAll)。
-  - 判定方式:CodeMirror 的 `contextmenu` 观察者在所在文档(主窗 / popout 子窗)的 `<html>` 上打标记(`code` / `code-format`),main 处理
+  - 判定方式:CodeMirror 的 `contextmenu` 观察者在所在文档(主窗 / popout 子窗)的 `<html>` 上打标记(`code` / `code-format` / `code-definition`),main 处理
     `context-menu` 时在触发右键的 frame 里读出并清除(DOM 事件先于原生菜单请求);下一次任意右键开始时清掉未被取走的标记,
     不串到之后在输入框上的右键。读不到 → 按普通可编辑元素。
 - Markdown 编辑 / 预览模式(Milkdown)保持普通编辑菜单:更改所有匹配项(多光标)、格式化文档不适用,VSCode 也没有所见即所得的 Markdown 编辑器可对照。

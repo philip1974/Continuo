@@ -30,6 +30,7 @@ import { withExplorerFileMutex } from './lib/file-mutex';
 import { getWindowSeq } from './services/window-seq.service';
 import { registerFsIpc } from './ipc/fs.ipc';
 import { registerSearchIpc } from './ipc/search.ipc';
+import { registerTsLanguageIpc } from './ipc/ts-language.ipc';
 import { registerGitIpc } from './ipc/git.ipc';
 import { registerTerminalIpc } from './ipc/terminal.ipc';
 import { registerPluginsIpc } from './ipc/plugins.ipc';
@@ -287,6 +288,9 @@ export function registerIpc(deps: WindowIpcDeps): void {
 
   // 在文件中查找 search.*(workspace-search)
   registerSearchIpc();
+
+  // TS / JS 语言服务(转到定义)ts-language.*
+  registerTsLanguageIpc();
 
   // 资源管理器 git 状态装饰 git.*
   registerGitIpc();

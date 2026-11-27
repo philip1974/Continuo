@@ -203,6 +203,18 @@ describe('代码编辑器右键 → VSCode 编辑器右键菜单项', () => {
     expect(shape().slice(0, 3)).toEqual(['editor.action.changeAll', 'editor.action.formatDocument', 'separator']);
   });
 
+  it('标记 code-definition(TS / JS,有语言服务)→ 最前是转到定义 + 分隔线(VSCode 编辑器右键菜单同),点击发菜单命令', async () => {
+    const { win, rightClick } = editorWindow('code-definition');
+    rightClick({ isEditable: true, selectionText: '', editFlags: ALL });
+    await vi.waitFor(() => expect(popup).toHaveBeenCalled());
+    expect(shape().slice(0, 3)).toEqual(['editor.action.revealDefinition', 'separator', 'editor.action.changeAll']);
+    const item = editorTemplate().find((i) => i.id === 'editor.action.revealDefinition')!;
+    expect(item.label).toBe('Go to Definition');
+    item.click!();
+    expect(sendMenuCommand).toHaveBeenLastCalledWith(win, 'editor.action.revealDefinition');
+    expect(MENU_COMMAND_IDS).toContain('editor.action.revealDefinition');
+  });
+
   it('点击编辑器项 → 菜单命令发给该窗口(popout 子窗由 sendMenuCommand 转给其主窗)', async () => {
     const { win, rightClick } = editorWindow('code-format');
     rightClick({ isEditable: true, selectionText: 'a', editFlags: ALL });

@@ -7,6 +7,12 @@ directories:
 files:
   - out-pack/**/*
   - package.json
+  # typescript(dependencies,TS / JS 语言服务进程运行时加载,随其它生产依赖进 asar)只用 lib/typescript.js 与 lib/lib.*.d.ts:
+  # 编译器 CLI(_tsc.js)、诊断文案本地化(只用于报错文本,转到定义不需要)、类型声明不打包(约 23MB → 约 12.5MB)。
+  # LICENSE.txt / ThirdPartyNoticeText.txt 保留。BDD: src/__tests__/editor-go-to-definition/
+  - "!node_modules/typescript/lib/_tsc.js"
+  - "!node_modules/typescript/lib/{cs,de,es,fr,it,ja,ko,pl,pt-br,ru,tr,zh-cn,zh-tw}/**"
+  - "!node_modules/typescript/lib/typescript.d.ts"
 # stdio MCP transport CLI proxy(被 Claude Code 等 spawn,需稳定路径)。
 # 放 extraResources 而非 asar:asar 内的 .mjs 不能被 fork/spawn。
 extraResources:

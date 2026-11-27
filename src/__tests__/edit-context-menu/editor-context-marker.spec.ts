@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { EditorState, type Extension } from '@codemirror/state';
 import { json } from '@codemirror/lang-json';
+import { goToDefinitionExtension } from '@/panels/Editor/codemirror-go-to-definition';
 import { codeEditorContextMenuMarker } from '@/panels/Editor/codemirror-context-menu';
 import {
   EDITOR_CONTEXT_MENU_ATTR,
@@ -37,6 +38,19 @@ describe('代码编辑器右键标记', () => {
     expect(mark()).toBe('code');
     rightClick(mount([json()]).contentDOM);
     expect(mark()).toBe('code-format');
+  });
+
+  it('TS / JS 文件(有转到定义)→ code-definition,右键处不在选区内时光标先移到右键处;其它文件不移光标', () => {
+    const ts = mount([goToDefinitionExtension(() => '/w/a.ts')]);
+    ts.posAtCoords = () => 4;
+    rightClick(ts.contentDOM);
+    expect(mark()).toBe('code-definition');
+    expect(ts.state.selection.main.head).toBe(4);
+    const md = mount([goToDefinitionExtension(() => '/w/a.md')]);
+    md.posAtCoords = () => 4;
+    rightClick(md.contentDOM);
+    expect(mark()).toBe('code');
+    expect(md.state.selection.main.head).toBe(0);
   });
 
   it('main 的读取脚本:返回标记并清除', () => {

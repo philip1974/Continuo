@@ -79,6 +79,7 @@ import { ensureTabIndentation, indentUnitText, useTabIndentation, type IndentOpt
 import { clearEditorSelectionStatus, selectionStatusOf, setEditorSelectionStatus } from './editor-selection-status';
 import { codeEditorContextMenuMarker } from './codemirror-context-menu';
 import { editorGuides, type EditorGuidesOptions } from './codemirror-editor-guides';
+import { goToDefinitionExtension } from './codemirror-go-to-definition';
 
 interface CodeEditorProps {
   tabId: string;
@@ -412,6 +413,8 @@ export function CodeEditor({
       codeMirrorMediaDrop({ documentPath: () => fileNameRef.current, markdown: forceLanguage === 'markdown' }),
       // Markdown 源码模式 Cmd/Ctrl+click 链接跳转(含 `#标题` 锚点;BDD: src/__tests__/markdown-anchor-links/)
       markdownLinkClickExtension(() => onLinkClickRef.current),
+      // TS / JS 转到定义:⌘ 单击 / ⌘ 悬停下划线 / F12 接语言服务(其它文件不做事;BDD: src/__tests__/editor-go-to-definition/)
+      goToDefinitionExtension(() => fileNameRef.current),
       // 右键菜单追加编辑器项(更改所有匹配项 / 格式化文档 / 命令面板;BDD: src/__tests__/edit-context-menu/)
       codeEditorContextMenuMarker,
       EditorView.updateListener.of((update: ViewUpdate) => {

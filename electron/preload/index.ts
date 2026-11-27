@@ -31,6 +31,13 @@ import {
 import type { TextEncodingId } from '../shared/text-encoding';
 import { FS_PATH_MAX } from '../shared/fs-limits';
 import { isSearchEvent, SEARCH_CHANNELS, type SearchEvent, type SearchQuery } from '../shared/workspace-search';
+import {
+  isTsLanguageEvent,
+  TS_LANGUAGE_CHANNELS,
+  type TsLanguageEvent,
+  type TsRequestInput,
+  type TsRequestReply,
+} from '../shared/ts-language';
 import { GIT_CHANNELS, type GitStatusResult } from '../shared/git-status';
 import {
   SESSION_UPDATE_CWD_CHANNEL,
@@ -211,6 +218,16 @@ const api = {
       subscribeIpc(
         SEARCH_CHANNELS.EVENT,
         guardedListener(isSearchEvent, '[search] dropped malformed search event', cb),
+      ),
+  },
+  /** TS / JS 语言服务(转到定义;BDD: src/__tests__/editor-go-to-definition/):根由 main 取自本窗口工作区;崩溃经 onEvent 推送。 */
+  tsLanguage: {
+    request: (input: TsRequestInput): Promise<IpcResult<TsRequestReply>> =>
+      ipcRenderer.invoke(TS_LANGUAGE_CHANNELS.REQUEST, input),
+    onEvent: (cb: (event: TsLanguageEvent) => void): (() => void) =>
+      subscribeIpc(
+        TS_LANGUAGE_CHANNELS.EVENT,
+        guardedListener(isTsLanguageEvent, '[ts-language] dropped malformed event', cb),
       ),
   },
   fs: {

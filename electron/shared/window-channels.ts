@@ -109,7 +109,11 @@ export interface WindowViewActionTarget {
 }
 
 /** 只出现在代码编辑器右键菜单里的菜单命令(edit-context-menu:更改所有匹配项 / 格式化文档;命令面板同时在应用菜单里)。 */
-export const EDITOR_CONTEXT_MENU_COMMAND_IDS = ['editor.action.changeAll', 'editor.action.formatDocument'] as const;
+export const EDITOR_CONTEXT_MENU_COMMAND_IDS = [
+  'editor.action.changeAll',
+  'editor.action.formatDocument',
+  'editor.action.revealDefinition',
+] as const;
 
 /**
  * 应用菜单项即 renderer 命令(对齐 VSCode 菜单栏 MenuId.MenubarXxx 的命令项):main 只认这些 id 发 RUN_MENU_COMMAND,renderer

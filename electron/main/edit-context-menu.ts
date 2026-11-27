@@ -1,6 +1,6 @@
 // 可编辑元素原生右键菜单(剪切 / 复制 / 粘贴 / 全选),对齐 VSCode / Electron 常见做法。
-// 代码编辑器(CodeMirror:代码文件 / Markdown 源码模式)里右键 → VSCode 编辑器右键菜单(无语言服务时):
-//   更改所有匹配项 ⌘F2 / 格式化文档 ⇧⌥F(有格式化程序时)/ ─ / 剪切 / 复制 / 粘贴 / ─ / 命令面板...
+// 代码编辑器(CodeMirror:代码文件 / Markdown 源码模式)里右键 → VSCode 编辑器右键菜单:
+//   [转到定义 F12 / ─](TS / JS,有语言服务时)/ 更改所有匹配项 ⌘F2 / 格式化文档 ⇧⌥F(有格式化程序时)/ ─ / 剪切 / 复制 / 粘贴 / ─ / 命令面板...
 // (VSCode 编辑器右键菜单没有「全选」。)编辑器项点击 = 菜单命令(sendMenuCommand:popout 子窗 → 打开它的主窗执行,作用于该子窗),
 // 键位显示同应用菜单(renderer 推送的生效键位)。是否代码编辑器由 renderer 在 DOM 上打的标记判定(见 shared/editor-context-menu)。
 // BDD:src/__tests__/edit-context-menu/。
@@ -52,6 +52,9 @@ export function buildEditContextMenuTemplate(
       return { id, label, ...(accelerator ? { accelerator, registerAccelerator: false } : {}), click: () => run(id) };
     };
     return [
+      ...(editorKind === 'code-definition'
+        ? [command('editor.action.revealDefinition', t('menu.editor_context.go_to_definition')), { type: 'separator' as const }]
+        : []),
       command('editor.action.changeAll', t('menu.editor_context.change_all')),
       ...(editorKind === 'code-format'
         ? [command('editor.action.formatDocument', t('menu.editor_context.format_document'))]
