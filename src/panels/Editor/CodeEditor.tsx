@@ -79,6 +79,7 @@ import { ensureTabIndentation, indentUnitText, useTabIndentation, type IndentOpt
 import { clearEditorSelectionStatus, selectionStatusOf, setEditorSelectionStatus } from './editor-selection-status';
 import { codeEditorContextMenuMarker } from './codemirror-context-menu';
 import { editorGuides, type EditorGuidesOptions } from './codemirror-editor-guides';
+import { editorWordWrap } from './codemirror-wrapping-indent';
 import { goToDefinitionExtension } from './codemirror-go-to-definition';
 
 interface CodeEditorProps {
@@ -293,6 +294,7 @@ export function CodeEditor({
   const labelCompartment = useRef(new Compartment());
   const appliedLabelRef = useRef<string | null>(null);
   // 自动换行(设置 editor.wordWrap,⌥Z 切换):变化时 reconfigure,不重建编辑器(BDD: src/__tests__/workbench-missing-commands/)。
+  // 续行与首行缩进对齐(VSCode editor.wrappingIndent 默认 same;BDD: src/__tests__/editor-wrapping-indent/)。
   const wrapCompartment = useRef(new Compartment());
   const wordWrap = useSettingValue(EDITOR_WORD_WRAP.id, EDITOR_WORD_WRAP.default);
   const latestWrapRef = useRef(wordWrap);
@@ -399,7 +401,7 @@ export function CodeEditor({
       phrasesCompartment.current.of(codeMirrorPhrases()),
       labelCompartment.current.of(codeMirrorContentLabel(appliedLabelRef.current)),
       langCompartment.current.of(lang),
-      wrapCompartment.current.of(appliedWrapRef.current ? EditorView.lineWrapping : []),
+      wrapCompartment.current.of(editorWordWrap(appliedWrapRef.current)),
       scrollPastEndCompartment.current.of(appliedScrollBeyondRef.current ? scrollPastEnd() : []),
       // 回车自动缩进 / Tab / ⇧Tab / ⌘] / ⌘[ 都按文档缩进(4 空格文件缩 4 格,tab 文件插 tab;此前写死 CodeMirror 默认 2 空格)
       indentCompartment.current.of(indentationExtension(appliedIndentRef.current)),
@@ -640,7 +642,7 @@ export function CodeEditor({
     const view = viewRef.current;
     if (!view || appliedWrapRef.current === wordWrap) return;
     appliedWrapRef.current = wordWrap;
-    view.dispatch({ effects: wrapCompartment.current.reconfigure(wordWrap ? EditorView.lineWrapping : []) });
+    view.dispatch({ effects: wrapCompartment.current.reconfigure(editorWordWrap(wordWrap)) });
   }, [wordWrap]);
 
   useEffect(() => {
@@ -655,7 +657,12 @@ export function CodeEditor({
     const applied = appliedGuidesRef.current;
     if (!view || (applied.indentation === guideIndentation && applied.occurrences === guideOccurrences)) return;
     appliedGuidesRef.current = { indentation: guideIndentation, occurrences: guideOccurrences };
-    view.dispatch({ effects: guidesCompartment.current.reconfigure(editorGuides(appliedGuidesRef.current)) });
+    // 带上原选区:highlightSelectionMatches 只在选区 / 文档 / 视口变化时重算,单换配置时光标处单词的高亮要等移光标才更新
+    //(关掉后残留、打开后不出现)。选区不变,光标 / 滚动 / 导航历史都不动。
+    view.dispatch({
+      effects: guidesCompartment.current.reconfigure(editorGuides(appliedGuidesRef.current)),
+      selection: view.state.selection,
+    });
   }, [guideIndentation, guideOccurrences]);
 
   useEffect(() => {

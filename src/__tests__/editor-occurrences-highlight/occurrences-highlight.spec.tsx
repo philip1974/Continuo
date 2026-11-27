@@ -97,6 +97,18 @@ describe('光标处单词的其它出现处', () => {
     expect(highlighted(view)).toHaveLength(3);
   });
 
+  it('改设置即时生效,不必先移光标:关掉 → 已有的高亮立即消失;打开 → 立即出现;光标不动', () => {
+    const view = open('/w/a.ts', SRC);
+    const at = SRC.indexOf('foo') + 1;
+    cursor(view, at);
+    expect(highlighted(view)).toHaveLength(3);
+    act(() => useSettingsValuesStore.getState().setValue(EDITOR_OCCURRENCES_HIGHLIGHT.id, 'off'));
+    expect(highlighted(view)).toEqual([]);
+    act(() => useSettingsValuesStore.getState().setValue(EDITOR_OCCURRENCES_HIGHLIGHT.id, 'singleFile'));
+    expect(highlighted(view)).toHaveLength(3);
+    expect(view.state.selection.main.head).toBe(at);
+  });
+
   it('设置项:editor.occurrencesHighlight,下拉 off / singleFile,默认 singleFile,编辑器 → 外观;三语文案', () => {
     expect(EDITOR_OCCURRENCES_HIGHLIGHT).toMatchObject({
       id: 'editor.occurrencesHighlight',

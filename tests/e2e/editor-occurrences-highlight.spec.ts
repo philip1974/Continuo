@@ -45,6 +45,18 @@ test('单击词内 → 该词每个出现处有高亮底色(区分大小写、�
   expect(await marks(window)).toEqual([]);
 });
 
+test('改设置即时生效,不必先移光标:off → 已有高亮立即消失;singleFile → 立即出现', async ({ window }) => {
+  await openWorkspaceFile(window, ['w.ts']);
+  await expect(window.locator('.cm-content').first()).toContainText('console.log');
+  await window.locator('.cm-line').first().getByText('total').click();
+  await expect.poll(async () => (await marks(window)).length).toBe(3);
+  await waitForTestHooks(window);
+  await window.evaluate(() => globalThis.__continuoTest!.setSettingValue('editor.occurrencesHighlight', 'off'));
+  await expect.poll(() => marks(window)).toEqual([]);
+  await window.evaluate(() => globalThis.__continuoTest!.setSettingValue('editor.occurrencesHighlight', 'singleFile'));
+  await expect.poll(async () => (await marks(window)).length).toBe(3);
+});
+
 test('大文件:10 万行与 2 MB 单行 minified,单词高亮开 / 关耗时相近', async ({ window }) => {
   test.setTimeout(180_000);
   await compareSettingCost(window, 'big.ts', false, 'editor.occurrencesHighlight', 'singleFile', 'off');

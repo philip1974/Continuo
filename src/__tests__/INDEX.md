@@ -859,6 +859,10 @@
 
 - [`editor-welcome.spec.tsx`](./editor-welcome/editor-welcome.spec.tsx)
 
+## [自动换行的续行缩进(VSCode editor.wrappingIndent: same)](./editor-wrapping-indent/README.md)
+
+- [`wrapping-indent.spec.tsx`](./editor-wrapping-indent/wrapping-indent.spec.tsx)
+
 ## [EmptyState(dock 全空时占位)](./empty-state/README.md)
 
 - [`empty-state.spec.tsx`](./empty-state/empty-state.spec.tsx)
