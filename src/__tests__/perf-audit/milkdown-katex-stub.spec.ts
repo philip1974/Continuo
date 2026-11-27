@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-// perf E6:@milkdown/crepe 静态 import katex,CrepeFeature.Latex=false 时仍把 ~260KB katex 打进
-// MilkdownEditor chunk。renderer 构建用插件把「来自 @milkdown 的」katex 导入换成空壳;mermaid 的 katex 不受影响。
-// 本 spec 钉:插件挂在 renderer、只匹配 @milkdown importer;Latex 关闭时真实 Crepe 渲染含 $...$ 的文档
-// 不调用 katex、不抛错(空壳下同样成立);MilkdownEditor 仍关闭 Latex(启用前须移除空壳)。
+// perf E6:@milkdown/crepe 静态 import katex,会把 ~260KB katex 打进 MilkdownEditor chunk。renderer 构建用插件把
+// 「来自 @milkdown 的」katex 导入换成空壳;公式渲染改由本项目懒加载的 katex 完成(katex-render,单独 chunk)。
+// 本 spec 钉:插件挂在 renderer、只匹配 @milkdown importer;Latex 开启 + configureMarkdownMath 时 Crepe 自带的
+// katex 调用点(行内公式 toDOM、latex 代码块预览)都不可达 —— 真实 Crepe 渲染含公式的文档不调用 @milkdown 的 katex。
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -24,7 +24,16 @@ vi.mock('katex', async () => {
   };
 });
 
+// 本项目的渲染路径换成桩:只数 Crepe 自身对 katex 的调用
+vi.mock('../../panels/Editor/katex-render', () => ({
+  renderMathInto: (el: HTMLElement, tex: string) => {
+    el.textContent = tex;
+  },
+  renderMathPreview: () => '<div class="continuo-math-block"></div>',
+}));
+
 import { Crepe, CrepeFeature } from '@milkdown/crepe';
+import { configureMarkdownMath } from '../../panels/Editor/milkdown-math';
 import katexStub from '../../../scripts/milkdown-katex-stub';
 import {
   MILKDOWN_KATEX_STUB_PATH,
@@ -69,27 +78,27 @@ describe('perf E6 — @milkdown 的 katex 导入换空壳', () => {
     expect(katexStub.renderToString()).toBe('');
   });
 
-  it('MilkdownEditor 仍关闭 Latex(启用前须移除空壳插件)', () => {
-    expect(src('src/panels/Editor/MilkdownEditor.tsx')).toMatch(
-      /\[CrepeFeature\.Latex\]:\s*false/,
-    );
+  it('MilkdownEditor 开启 Latex 并接 configureMarkdownMath(Crepe 的 katex 入口由它覆盖)', () => {
+    const editor = src('src/panels/Editor/MilkdownEditor.tsx');
+    expect(editor).toMatch(/\[CrepeFeature\.Latex\]:\s*true/);
+    expect(editor).toMatch(/configureMarkdownMath\(crepe\)/);
   });
 
-  it('Latex 关闭时真实 Crepe 渲染含 $...$ / $$...$$ 的文档不调用 katex 且原样往返', async () => {
+  it('Latex 开启时真实 Crepe 渲染含 $...$ / $$...$$ / ```latex 的文档不调用 @milkdown 的 katex 且原样往返', async () => {
     katexCalls.n = 0;
     const root = document.createElement('div');
     document.body.append(root);
-    // 含 ```latex 代码块:Latex 启用时 Crepe 会用 katex 渲染其预览,关闭时走普通代码块
     const markdown = 'inline $a^2$ math\n\n$$\nb\n$$\n\n```latex\nc^2\n```\n';
     const crepe = new Crepe({
       root,
       defaultValue: markdown,
-      features: { [CrepeFeature.Latex]: false, [CrepeFeature.ImageBlock]: false },
+      features: { [CrepeFeature.ImageBlock]: false },
     });
+    configureMarkdownMath(crepe);
     try {
       await crepe.create();
       expect(crepe.getMarkdown()).toBe(markdown);
-      expect(root.textContent).toContain('$a^2$');
+      expect(root.querySelector('[data-type="math_inline"]')?.textContent).toBe('a^2');
       expect(katexCalls.n).toBe(0);
     } finally {
       await crepe.destroy();

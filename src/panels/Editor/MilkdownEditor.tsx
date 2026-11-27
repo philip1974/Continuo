@@ -68,6 +68,7 @@ import { copyToClipboardOrNotify } from '@/panels/Explorer/copy-to-clipboard';
 import { MARKDOWN_EDITOR_ATTR } from '@/lib/editor-text-focus';
 import { markdownImageNodeView } from './markdown-image-view';
 import { configureMarkdownStyle } from './milkdown-markdown-style';
+import { configureMarkdownMath } from './milkdown-math';
 import { markdownWritingKeys } from './milkdown-writing-keys';
 import {
   escapeRegExp,
@@ -149,6 +150,7 @@ function crepeSlashMenuLabels() {
       label: t('panels.editor.md.slash.advancedGroup'),
       codeBlock: item('panels.editor.md.slash.codeBlock'),
       table: item('panels.editor.md.slash.table'),
+      math: item('panels.editor.md.slash.math'),
     },
   };
 }
@@ -375,15 +377,15 @@ function CrepeEditor({
         [CrepeFeature.Toolbar]: true,
         [CrepeFeature.Placeholder]: true,
         [CrepeFeature.Table]: true,
-        // MVP 不接 KaTeX:含公式的文档编辑模式会改坏公式(`x_1` → `x\_1`),由 isMilkdownUnsafe 锁在源码模式
-        [CrepeFeature.Latex]: false,
+        // 数学公式(KaTeX 懒加载;识别规则 / 原样往返 / 渲染见 milkdown-math、katex-render)。BDD: src/__tests__/markdown-math/
+        [CrepeFeature.Latex]: true,
       },
       featureConfigs: {
         [CrepeFeature.Placeholder]: {
           text: t('panels.editor.placeholder.start_writing'),
         },
         // Crepe 浮层文案默认英文,逐项接 catalog(语言切换靠 Provider 的 locale key 重挂)。
-        // 只配启用特性里会显示的项:图片 / 数学公式特性已关,其菜单项不出现。
+        // 只配启用特性里会显示的项:图片特性已关,其菜单项不出现。
         // 斜杠菜单只有 flip + offset,窄窗口时越出右边被裁 → 追加水平夹回视口的中间件(见 milkdown-floating-clamp)。
         [CrepeFeature.BlockEdit]: {
           ...crepeSlashMenuLabels(),
@@ -395,6 +397,7 @@ function CrepeEditor({
           strikethroughLabel: t('panels.editor.md.toolbar.strikethrough'),
           codeLabel: t('panels.editor.md.toolbar.code'),
           linkLabel: t('panels.editor.md.toolbar.link'),
+          latexLabel: t('panels.editor.md.toolbar.math'),
         },
         [CrepeFeature.LinkTooltip]: {
           inputPlaceholder: t('panels.editor.md.link.placeholder'),
@@ -427,6 +430,7 @@ function CrepeEditor({
     // 选中文字粘贴 URL 成链接、⌘K 链接框、表格 Tab。BDD: src/__tests__/editor-milkdown-roundtrip-style/、
     // src/__tests__/editor-markdown-writing-keys/
     configureMarkdownStyle(crepe, defaultValue);
+    configureMarkdownMath(crepe);
     crepe.editor.use(markdownWritingKeys);
 
     // Markdown 图片:image 节点换成自定义视图 —— 相对路径按文档目录解析、经受控通道(仅工作区内)加载,失败给 alt 占位;

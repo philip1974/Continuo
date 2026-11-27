@@ -1271,6 +1271,12 @@
 - [`link-click-no-navigation.spec.tsx`](./markdown-link-resolve/link-click-no-navigation.spec.tsx)
 - [`markdown-link-resolve.spec.ts`](./markdown-link-resolve/markdown-link-resolve.spec.ts)
 
+## [markdown-math](./markdown-math/README.md)
+
+- [`math-render.spec.tsx`](./markdown-math/math-render.spec.tsx)
+- [`math-roundtrip.spec.tsx`](./markdown-math/math-roundtrip.spec.tsx)
+- [`math-syntax.spec.ts`](./markdown-math/math-syntax.spec.ts)
+
 ## [Markdown 切换模式保留阅读位置与光标(对齐 VSCode 预览与源码按行同步)](./markdown-mode-position/README.md)
 
 - [`mode-handoff.spec.tsx`](./markdown-mode-position/mode-handoff.spec.tsx)

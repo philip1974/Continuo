@@ -77,40 +77,19 @@ describe('isMilkdownUnsafe', () => {
     expect(isMilkdownUnsafe('````\n[[Note]]\n```\n')).toBe(true); // 未闭合:保守
   });
 
-  // 公式:Milkdown 未接 Latex,编辑一次即把 `$x_1$` 写成 `$x\_1$`、`$a\,b$` 写成 `$a,b$`(第四十七轮审计 B3)。
-  it('flags inline and block math', () => {
-    expect(isMilkdownUnsafe('Energy $x_1 + y_2 = z_{max}$ here.\n')).toBe(true);
-    expect(isMilkdownUnsafe('Thin $a\\,b$ space.\n')).toBe(true);
-    expect(isMilkdownUnsafe('Set $\\{x\\}$.\n')).toBe(true);
-    expect(isMilkdownUnsafe('$$\n\\int_0^1 x\\,dx\n$$\n')).toBe(true);
-    expect(isMilkdownUnsafe('Inline $$E = mc^2$$ display.\n')).toBe(true);
-    // 块公式里可以有空行、反引号围栏样的行
-    expect(isMilkdownUnsafe('$$\na\n\nb\n$$\n')).toBe(true);
-    expect(isMilkdownUnsafe('$$\n```\n$$\n\ntext\n```\n')).toBe(true);
-    // 行内公式可跨行(同一段落),可在列表 / 引用 / 表格里
-    expect(isMilkdownUnsafe('see $a +\nb$ end\n')).toBe(true);
-    expect(isMilkdownUnsafe('- item $x_1$\n')).toBe(true);
-    expect(isMilkdownUnsafe('> $x^2$\n')).toBe(true);
-    expect(isMilkdownUnsafe('| a | $x_1$ |\n| - | - |\n')).toBe(true);
-    // 公式先开始:其中的反引号不构成行内代码
-    expect(isMilkdownUnsafe('$a `b$ c`\n')).toBe(true);
-    // 围栏代码块外的公式照样算
-    expect(isMilkdownUnsafe('```\ncode\n```\n\n$x_1$\n')).toBe(true);
+  // 公式不再判不安全:Latex 特性把公式解析成公式节点,未改动的公式原样写回(见 src/__tests__/markdown-math/)。
+  it('does not flag math (round-tripped by the Latex feature)', () => {
+    expect(isMilkdownUnsafe('Energy $x_1 + y_2 = z_{max}$ here.\n')).toBe(false);
+    expect(isMilkdownUnsafe('Thin $a\\,b$ space.\n')).toBe(false);
+    expect(isMilkdownUnsafe('Set $\\{x\\}$.\n')).toBe(false);
+    expect(isMilkdownUnsafe('$$\n\\int_0^1 x\\,dx\n$$\n')).toBe(false);
+    expect(isMilkdownUnsafe('Inline $$E = mc^2$$ display.\n')).toBe(false);
+    expect(isMilkdownUnsafe('Between $5 and $10 per seat.\n')).toBe(false);
   });
 
-  it('does not flag dollars in code, escaped dollars or currency', () => {
-    expect(isMilkdownUnsafe('Run `echo $HOME$PATH` now.\n')).toBe(false);
-    expect(isMilkdownUnsafe('Use ``a $x$ b`` here.\n')).toBe(false);
-    expect(isMilkdownUnsafe('```bash\necho $x_1$\n```\n')).toBe(false);
-    expect(isMilkdownUnsafe('```latex\n$$\n\\int_0^1\n$$\n```\n')).toBe(false);
-    expect(isMilkdownUnsafe('~~~\n$a$ and $$b$$\n~~~\n')).toBe(false);
-    expect(isMilkdownUnsafe('Escaped \\$x_1\\$ text.\n')).toBe(false);
-    expect(isMilkdownUnsafe('It costs $5.\n')).toBe(false);
-    expect(isMilkdownUnsafe('Between $5 and $10 per seat.\n')).toBe(false);
-    expect(isMilkdownUnsafe('Range $5-$10, or $20.\n')).toBe(false);
-    expect(isMilkdownUnsafe('Pay $ 5 and $ 6.\n')).toBe(false);
-    // 不跨段落配对
-    expect(isMilkdownUnsafe('costs $5\n\nnot$ math\n')).toBe(false);
+  it('still flags other unsafe syntax next to math', () => {
+    expect(isMilkdownUnsafe('$x_1$\n\n[ref]: https://example.com\n')).toBe(true);
+    expect(isMilkdownUnsafe('$$\nx\n$$\n\n[[Note]]\n')).toBe(true);
   });
 
   // 引用式链接定义:Milkdown 解析时把 `[text][ref]` 内联、删掉 `[ref]: …`(schema 没有对应节点)。
@@ -129,7 +108,7 @@ describe('isMilkdownUnsafe', () => {
     expect(isMilkdownUnsafe('    [x]: y\n')).toBe(false);
   });
 
-  it('math and definition scans stay linear', () => {
+  it('definition scans stay linear', () => {
     const t0 = performance.now();
     expect(isMilkdownUnsafe('$5 '.repeat(200_000))).toBe(false);
     expect(isMilkdownUnsafe('`'.repeat(3000) + ' $5 '.repeat(50_000))).toBe(false);

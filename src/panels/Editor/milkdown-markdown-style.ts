@@ -47,6 +47,7 @@ interface MdNode {
   readonly depth?: number;
   readonly position?: { readonly start: { readonly offset?: number }; readonly end: { readonly offset?: number } };
   readonly children?: readonly MdNode[];
+  readonly data?: { readonly continuoMath?: unknown };
 }
 
 /** 按 mdast(带位置)与源码推断风格:各取文档顺序里第一个对应结构。 */
@@ -77,7 +78,8 @@ export function inferMarkdownStyle(tree: MdNode, source: string): MarkdownStyle 
       } else if (node.type === 'heading' && (node.depth ?? 3) <= 2 && !seen.has('heading')) {
         style.setext = source.charAt(start) !== '#';
         seen.add('heading');
-      } else if (node.type === 'code' && !seen.has('code')) {
+      } else if (node.type === 'code' && !seen.has('code') && node.data?.continuoMath === undefined) {
+        // `$$` 公式块解析成 language=LaTeX 的 code 节点(见 milkdown-math),不是代码块风格的依据
         const ch = source.charAt(start);
         style.fences = ch === '`' || ch === '~';
         if (ch === '`' || ch === '~') style.fence = ch;

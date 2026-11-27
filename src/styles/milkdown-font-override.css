@@ -165,3 +165,27 @@
     outline: 2px solid Highlight;
   }
 }
+
+/* 数学公式(katex-render.ts / milkdown-math.ts;BDD: src/__tests__/markdown-math/)。公式用 currentColor 随正文;
+ * 错误公式的颜色由 KaTeX errorColor = var(--md-error) 内联给出。katex 尚未加载 / 排队补渲时先显示原文。 */
+.milkdown .ProseMirror span[data-type='math_inline'].continuo-math-pending,
+.milkdown .continuo-math-pending {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--md-on-surface-variant);
+}
+/* 公式用正文颜色(同 VSCode 预览);Crepe 默认把行内公式染成 primary,与链接难区分 */
+.milkdown .ProseMirror span[data-type='math_inline'] {
+  color: inherit;
+}
+/* 宽公式(块、`$$…$$`)横向滚动,不撑破编辑区 */
+.milkdown .continuo-math-block,
+.milkdown .ProseMirror span[data-type='math_inline'] .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.milkdown .continuo-math-block .katex-display {
+  margin: 0.5em 0;
+}
+.milkdown .katex-error {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}

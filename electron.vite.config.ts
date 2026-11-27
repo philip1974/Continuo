@@ -50,8 +50,8 @@ export default defineConfig({
   },
   renderer: {
     root: '.',
-    // milkdownKatexStubPlugin:CrepeFeature.Latex 关闭,@milkdown 内的 katex 导入换空壳(MilkdownEditor
-    // chunk 少 ~260KB);mermaid 的 katex 不受影响。⚠ 启用 CrepeFeature.Latex 前须移除。
+    // milkdownKatexStubPlugin:@milkdown 内的 katex 导入换空壳(MilkdownEditor chunk 少 ~260KB);Crepe 的 katex 调用点
+    // 都由 milkdown-math 覆盖,公式由懒加载的 katex-render 渲染。mermaid 的 katex 不受影响。⚠ 去掉 configureMarkdownMath 前须移除。
     // cspDevConnectPlugin:仅 dev server 把 HMR 所需的 localhost 来源加进 CSP connect-src(生产不含)。
     plugins: [
       react(),

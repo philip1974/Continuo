@@ -132,6 +132,9 @@ importers:
       iconv-lite:
         specifier: ^0.7.3
         version: 0.7.3
+      katex:
+        specifier: ^0.19.1
+        version: 0.19.1
       mermaid:
         specifier: ^11.17.2
         version: 11.17.2
