@@ -98,8 +98,8 @@ markdown autosave flush)完成后、回执之前,检查此刻仍 dirty 的 tab(a
 
 ### 主窗 Reload / Force Reload(View 菜单,Cmd+R / Shift+Cmd+R)
 
-reload 换掉 renderer 文档,未落盘编辑与关窗一样会丢。View 菜单保留 Electron 默认 viewMenu 其余项(DevTools / 缩放 /
-全屏),只把 reload / forceReload 换成自定义项(role 项的 click 会被 role 动作抢先执行,无法拦截),点击时走与关窗同一的
+reload 换掉 renderer 文档,未落盘编辑与关窗一样会丢。View 菜单保留 Electron 默认 viewMenu 其余项(DevTools /
+全屏;缩放改为命令项,见 `src/__tests__/window-zoom/`),只把 reload / forceReload 换成自定义项(role 项的 click 会被 role 动作抢先执行,无法拦截),点击时走与关窗同一的
 `confirmDirtyClose` + `requestWindowFlush` + `shouldAbortClose`,不隐藏窗口:
 
 - 有脏 tab → 先确认(挂在该窗口上),回答前不 flush、不 reload;确认框 / flush 在途期间重复触发不叠框。

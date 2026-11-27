@@ -23,6 +23,11 @@ export const WINDOW_CHANNELS = {
    */
   SET_RESTORE_WINDOWS: 'window:set-restore-windows',
   /**
+   * 设置项「缩放级别」(VSCode window.zoomLevel)→ main(payload `{ level }`):夹到 [-8, 8] 后立即套用到所有窗口(主窗 +
+   * popout),并缓存到 userData,冷启动首窗即用。BDD: src/__tests__/window-zoom/
+   */
+  SET_ZOOM_LEVEL: 'window:set-zoom-level',
+  /**
    * renderer 解析出的主题(light / dark)变化时调 → main 记住最近主题,把所有窗口的 backgroundColor 改为对应
    * 画布色,之后新建的窗口 / popout 也用它(否则亮色用户开窗 / 缩放时未绘制区闪深色)。
    */
@@ -54,14 +59,15 @@ export const WINDOW_CHANNELS = {
    */
   SET_MENU_KEYBINDINGS: 'window:set-menu-keybindings',
   /**
-   * 命令面板里的「重新加载窗口 / 放大 / 缩小 / 重置缩放 / 切换全屏」(应用菜单 View 同款动作,payload `{ action }`,
+   * 命令面板里的「重新加载窗口 / 切换全屏」(应用菜单 View 同款动作,payload `{ action }`,
    * 仅限 WINDOW_VIEW_ACTIONS):main 作用于发起方所在窗口;reload 走与菜单 ⌘R 相同的脏确认 + flush。
    */
   VIEW_ACTION: 'window:view-action',
 } as const;
 
 /** window:view-action 可执行的动作(BDD: src/__tests__/command-discoverability/)。 */
-export const WINDOW_VIEW_ACTIONS = ['reload', 'zoomIn', 'zoomOut', 'resetZoom', 'toggleFullScreen'] as const;
+// 放大 / 缩小 / 重置缩放不在此列:它们改设置项 window.zoomLevel(所有窗口统一,见 SET_ZOOM_LEVEL)。
+export const WINDOW_VIEW_ACTIONS = ['reload', 'toggleFullScreen'] as const;
 export type WindowViewAction = (typeof WINDOW_VIEW_ACTIONS)[number];
 
 /**
@@ -100,6 +106,9 @@ export const MENU_COMMAND_IDS = [
   'workbench.action.terminal.toggleTerminal',
   'explorer.toggleSidebar',
   'editor.action.toggleWordWrap',
+  'workbench.action.zoomReset',
+  'workbench.action.zoomIn',
+  'workbench.action.zoomOut',
   // 转到
   'workbench.action.navigateBack',
   'workbench.action.navigateForward',

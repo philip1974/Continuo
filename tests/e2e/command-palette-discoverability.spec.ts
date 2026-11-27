@@ -25,11 +25,12 @@ test('显示输出 → 打开输出面板', async ({ window }) => {
   await expect(window.getByText(OUTPUT_EMPTY)).toBeVisible({ timeout: 10_000 });
 });
 
-test('放大 / 重置缩放 → 经主进程改窗口缩放', async ({ window }) => {
+// 缩放命令带默认键(行尾是键位切片),标题不以 $ 锚定。见 src/__tests__/window-zoom/
+test('放大 / 重置缩放 → 改设置 window.zoomLevel,窗口随之缩放', async ({ window }) => {
   const ratio = (): Promise<number> => window.evaluate(() => globalThis.devicePixelRatio);
   const before = await ratio();
-  await runFromPalette(window, 'Zoom In', /(放大|Zoom In|확대)$/);
+  await runFromPalette(window, 'Zoom In', /(放大（缩放）|Zoom In|확대)/);
   await expect.poll(ratio).toBeGreaterThan(before);
-  await runFromPalette(window, 'Reset Zoom', /(重置缩放|Reset Zoom|확대\/축소 초기화)$/);
+  await runFromPalette(window, 'Reset Zoom', /(重置缩放|Reset Zoom|확대\/축소 초기화)/);
   await expect.poll(ratio).toBe(before);
 });

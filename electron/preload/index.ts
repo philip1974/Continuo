@@ -514,6 +514,9 @@ const api = {
     /** 设置项「启动时恢复所有窗口」:写入 main 的启动偏好(下次启动生效)。 */
     setRestoreWindows: (enabled: boolean): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.SET_RESTORE_WINDOWS, { enabled }),
+    /** 设置项「缩放级别」(window.zoomLevel):main 夹到 [-8, 8] 后套用到所有窗口(主窗 + popout)并缓存供冷启动。 */
+    setZoomLevel: (level: number): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(WINDOW_CHANNELS.SET_ZOOM_LEVEL, { level }),
     /**
      * renderer 解析出的主题(light / dark)变化时通知 main:所有窗口底色改为对应画布色,新窗口 / popout 沿用;
      * main 同时持久化(含主题模式 mode,system 时冷启动按 OS 外观),下次冷启动首窗即用。
@@ -534,7 +537,7 @@ const api = {
     focus: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.FOCUS, {}),
     /** 重启应用(插件安装后「立即重启」):main 走与 ⌘Q 相同的退出流程(脏文件确认),通过后重新启动。 */
     relaunchApp: (): Promise<IpcResult<void>> => ipcRenderer.invoke(WINDOW_CHANNELS.RELAUNCH_APP, {}),
-    /** 对本窗口执行应用菜单 View 同款动作(重新加载 / 放大 / 缩小 / 重置缩放 / 切换全屏);重新加载走脏确认。 */
+    /** 对本窗口执行应用菜单 View 同款动作(重新加载 / 切换全屏);重新加载走脏确认。 */
     viewAction: (action: WindowViewAction): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(WINDOW_CHANNELS.VIEW_ACTION, { action }),
     /**

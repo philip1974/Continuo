@@ -150,9 +150,9 @@ describe('菜单结构(对齐 VSCode mac 菜单栏)', () => {
       'menu.view.reload',
       'menu.view.force_reload',
       'toggleDevTools',
-      'resetZoom',
-      'zoomIn',
-      'zoomOut',
+      'workbench.action.zoomReset',
+      'workbench.action.zoomIn',
+      'workbench.action.zoomOut',
       'togglefullscreen',
     ]);
     expect(commandsOf(submenu(top, 'menu.go.label'))).toEqual([

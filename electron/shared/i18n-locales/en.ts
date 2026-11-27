@@ -118,6 +118,9 @@ export const en = {
   'settings.general.restore_windows': 'Restore all windows on launch',
   'settings.general.restore_windows.desc':
     'Reopen every window that was open when Continuo quit, each with its folder and layout. When off, only the last active window is restored.',
+  'settings.general.zoom_level': 'Zoom level',
+  'settings.general.zoom_level.desc':
+    'Adjust the zoom level for all windows. Each increment above 0 (e.g. 1) or below (e.g. -1) represents zooming 20% larger or smaller. You can also enter decimals for a finer granularity. Zoom In / Zoom Out / Reset Zoom change this value.',
 
   // errors.MAIN_* (27)
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': 'Authorization request is no longer pending',

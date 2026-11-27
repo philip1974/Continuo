@@ -16,7 +16,7 @@
 | 文件 | 新建窗口、打开文件夹…(`workbench.action.files.openFolder`)、在新窗口中打开文件夹…、打开最近的文件夹…(`workbench.action.openRecent`)、全部保存(`workbench.action.files.saveAll`)、[Windows / Linux:首选项 ▸]、关闭窗口 |
 | 编辑 | 撤销 / 重做 / 剪切 / 复制 / 粘贴…(role 不变)、查找(`actions.find`)、替换(`editor.action.startFindReplaceAction`)、在文件中查找(`workbench.action.findInFiles`)、切换行注释 / 块注释(`editor.action.commentLine` / `blockComment`) |
 | 选择 | 全选(role)、展开行选择(`expandLineSelection`)、向上 / 向下复制一行、向上 / 向下移动一行、在上面 / 下面添加光标、添加下一个匹配项(`addSelectionToNextFindMatch`)、选择所有匹配项(`selectHighlights`) |
-| 显示 | 命令面板…(`workbench.action.showCommands`)、资源管理器(`workbench.view.explorer`)、搜索(`workbench.action.findInFiles`)、终端(`workbench.action.terminal.toggleTerminal`)、输出(`workbench.view.output`)、切换侧栏(`explorer.toggleSidebar`)、自动换行(`editor.action.toggleWordWrap`);重新加载 / 开发者工具 / 缩放 / 全屏不变 |
+| 显示 | 命令面板…(`workbench.action.showCommands`)、资源管理器(`workbench.view.explorer`)、搜索(`workbench.action.findInFiles`)、终端(`workbench.action.terminal.toggleTerminal`)、输出(`workbench.view.output`)、切换侧栏(`explorer.toggleSidebar`)、自动换行(`editor.action.toggleWordWrap`)、重置缩放 / 放大 / 缩小(`workbench.action.zoomReset` / `zoomIn` / `zoomOut`,所有窗口统一,见 `src/__tests__/window-zoom/`);重新加载 / 开发者工具 / 全屏不变 |
 | 转到 | 返回 / 前进(`navigateBack` / `navigateForward`)、转到文件…(`quickOpen`)、转到行/列…(`gotoLine`)、下一个 / 上一个编辑器 |
 | 终端 | 新建终端(`terminal.new`)、切换终端(`workbench.action.terminal.toggleTerminal`) |
 | 帮助(role help) | 显示所有命令、键盘快捷方式参考(= 打开键盘快捷方式;VSCode 打开 PDF 速查表) |

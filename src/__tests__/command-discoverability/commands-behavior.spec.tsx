@@ -235,9 +235,6 @@ describe('窗口类命令', () => {
 
   it.each([
     ['workbench.action.reloadWindow', 'reload'],
-    ['workbench.action.zoomIn', 'zoomIn'],
-    ['workbench.action.zoomOut', 'zoomOut'],
-    ['workbench.action.zoomReset', 'resetZoom'],
     ['workbench.action.toggleFullScreen', 'toggleFullScreen'],
   ] as const)('%s → window:view-action %s', async (id, action) => {
     await run(id);

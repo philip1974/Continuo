@@ -2160,6 +2160,11 @@
 - [`service.spec.ts`](./window-workspace-roots-map/service.spec.ts)
 - [`workspace-store-empty-string.spec.ts`](./window-workspace-roots-map/workspace-store-empty-string.spec.ts)
 
+## [窗口缩放级别:所有窗口统一、可设置、重启保持(VSCode window.zoomLevel)](./window-zoom/README.md)
+
+- [`window-zoom-main.spec.ts`](./window-zoom/window-zoom-main.spec.ts)
+- [`window-zoom-settings.spec.tsx`](./window-zoom/window-zoom-settings.spec.tsx)
+
 ## [工作台编辑器命令(⌘W / ⌘S / 下一个·上一个编辑器)](./workbench-editor-commands/README.md)
 
 - [`editor-commands-registration.spec.ts`](./workbench-editor-commands/editor-commands-registration.spec.ts)

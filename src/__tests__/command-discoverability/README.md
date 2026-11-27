@@ -20,7 +20,7 @@
 
 ### 2. 常用动作注册为命令(`workbench-commands.spec.ts`、`commands-behavior.spec.tsx`、`window-view-action-ipc.spec.ts`)
 
-命令 id 照抄 VSCode(有对应的),三语标题 + 分类,命令面板可搜、快捷键设置页自动列出(无默认键)。
+命令 id 照抄 VSCode(有对应的),三语标题 + 分类,命令面板可搜、快捷键设置页自动列出(无默认键;缩放三条例外,带 VSCode 默认键)。
 
 | 命令 id | 标题(en) | 分类 | 动作(复用的现有实现) |
 |---|---|---|---|
@@ -28,7 +28,7 @@
 | `workbench.action.showCommands` | Show All Commands | — | 打开命令面板(⇧⌘P 同上,只显示) |
 | `workbench.action.closeWindow` | Close Window | Window | `coApi.window.close`(关窗脏确认) |
 | `workbench.action.reloadWindow` | Reload Window | Window | `window:view-action` reload = 菜单 ⌘R(脏确认 + flush) |
-| `workbench.action.zoomIn` / `zoomOut` / `zoomReset` | Zoom In / Zoom Out / Reset Zoom | View | `window:view-action`,同菜单 role 步长(±0.5 级 / 归零) |
+| `workbench.action.zoomIn` / `zoomOut` / `zoomReset` | Zoom In / Zoom Out / Reset Zoom | View | 改设置项 `window.zoomLevel`(±1 级取整 / 恢复默认 0,所有窗口统一);带 VSCode 默认键,见 `src/__tests__/window-zoom/` |
 | `workbench.action.toggleFullScreen` | Toggle Full Screen | View | `window:view-action` |
 | `workbench.action.closeOtherEditors` | Close Other Editors in Group | View | 活动编辑器组的 tab 右键「关闭其他」 |
 | `workbench.action.closeEditorsToTheRight` | Close Editors to the Right in Group | View | 「关闭右侧」 |

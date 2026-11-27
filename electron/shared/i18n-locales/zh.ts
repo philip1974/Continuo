@@ -108,6 +108,9 @@ export const zh: Record<TranslationKey, string> = {
   'settings.general.language.save_failed': '切换语言失败',
   'settings.general.restore_windows': '启动时恢复所有窗口',
   'settings.general.restore_windows.desc': '重新打开退出时开着的全部窗口（各自的文件夹与布局）。关闭后只恢复最后活动的窗口。',
+  'settings.general.zoom_level': '缩放级别',
+  'settings.general.zoom_level.desc':
+    '调整所有窗口的缩放级别。大于 0（例如 1）或小于 0（例如 -1）的每一级表示放大或缩小 20%。也可以输入小数以更精细地调整。「放大」「缩小」「重置缩放」命令改的就是这个值。',
 
   // errors.MAIN_*
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '授权请求已失效',
@@ -268,8 +271,9 @@ export const zh: Record<TranslationKey, string> = {
   'commands.show_commands.title': '显示所有命令',
   'commands.window.close.title': '关闭窗口',
   'commands.window.reload.title': '重新加载窗口',
-  'commands.view.zoom_in.title': '放大',
-  'commands.view.zoom_out.title': '缩小',
+  // 标题带「缩放」:命令面板搜「缩放」能找到放大 / 缩小(与「重置缩放」一致)。
+  'commands.view.zoom_in.title': '放大（缩放）',
+  'commands.view.zoom_out.title': '缩小（缩放）',
   'commands.view.zoom_reset.title': '重置缩放',
   'commands.view.toggle_full_screen.title': '切换全屏',
   'commands.view.show_output.title': '显示输出',

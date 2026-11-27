@@ -7,6 +7,7 @@
 import type { SettingItemSpec, SettingItemValue } from '../registries/SettingItemRegistry';
 import type { ThemeMode } from '@/theme/ThemeProvider';
 import type { Locale } from '../../../electron/shared/i18n-types';
+import { DEFAULT_ZOOM_LEVEL, MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL } from '../../../electron/shared/window-zoom';
 
 /** 带值类型的内置设置项 spec(default 的类型即消费方拿到的值类型)。 */
 export type CoreSettingSpec<T extends SettingItemValue> = SettingItemSpec & { readonly default: T };
@@ -290,6 +291,25 @@ export const GENERAL_RESTORE_WINDOWS: CoreSettingSpec<boolean> = {
   type: 'boolean',
   default: true,
   priority: 3,
+};
+
+/**
+ * 缩放级别(VSCode window.zoomLevel,默认 0,范围 -8..8,每级 ±20%,可填小数):作用于所有窗口(主窗、新窗口、popout 子窗),
+ * 重启后保持。放大 / 缩小 / 重置缩放命令改的就是它(VSCode window.zoomPerWindow=false 的语义);ZoomLevelFromSettings 推给 main
+ * 套用并缓存(冷启动首窗即用)。BDD: src/__tests__/window-zoom/
+ */
+export const WINDOW_ZOOM_LEVEL: CoreSettingSpec<number> = {
+  id: 'window.zoomLevel',
+  category: 'general',
+  title: 'Zoom level',
+  titleKey: 'settings.general.zoom_level',
+  descriptionKey: 'settings.general.zoom_level.desc',
+  type: 'number',
+  default: DEFAULT_ZOOM_LEVEL,
+  min: MIN_ZOOM_LEVEL,
+  max: MAX_ZOOM_LEVEL,
+  step: 1,
+  priority: 4,
 };
 
 /** 注册用的语言项:默认值 = main 的系统默认 locale(与首启默认一致),「已修改」/「恢复默认」都以它为准。 */

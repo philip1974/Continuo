@@ -178,9 +178,11 @@ export function appMenuTemplate(
     },
     { role: 'toggleDevTools', label: t('menu.view.toggle_dev_tools') },
     SEPARATOR,
-    { role: 'resetZoom', label: t('menu.view.reset_zoom') },
-    { role: 'zoomIn', label: t('menu.view.zoom_in') },
-    { role: 'zoomOut', label: t('menu.view.zoom_out') },
+    // 缩放 = renderer 命令(改设置项 window.zoomLevel,所有窗口统一;VSCode 同为命令项)。不用 role:role 按窗口各自缩放、
+    // 键位固定 ⌘+(US 键盘 ⌘= 不触发);命令的默认键 ⌘= / ⌘- / ⌘0(附加键 ⇧⌘= / ⇧⌘- / 小键盘)由 renderer 分发并显示在此。
+    command('workbench.action.zoomReset', 'menu.view.reset_zoom'),
+    command('workbench.action.zoomIn', 'menu.view.zoom_in'),
+    command('workbench.action.zoomOut', 'menu.view.zoom_out'),
     SEPARATOR,
     { role: 'togglefullscreen', label: t('menu.view.toggle_full_screen') },
   ];

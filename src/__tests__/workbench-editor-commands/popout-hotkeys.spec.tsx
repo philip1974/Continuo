@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe('popout 子窗按键分发(只限作用于活动面板的命令)', () => {
-  it('白名单:关闭编辑器、重新打开已关闭的编辑器、⌃Tab / ⌃⇧Tab、⌃` 切换终端、后退 / 前进、切换自动换行(都只作用于该子窗或不画在主窗;下一个 / 上一个编辑器由编辑器面板自己处理,编辑器不在该子窗时不切主窗编辑器)', () => {
+  it('白名单:关闭编辑器、重新打开已关闭的编辑器、⌃Tab / ⌃⇧Tab、⌃` 切换终端、后退 / 前进、切换自动换行、放大 / 缩小 / 重置缩放(都只作用于该子窗或不画在主窗;下一个 / 上一个编辑器由编辑器面板自己处理,编辑器不在该子窗时不切主窗编辑器)', () => {
     expect([...POPOUT_HOTKEY_COMMAND_IDS]).toEqual([
       CLOSE_ACTIVE_EDITOR_COMMAND.id,
       REOPEN_CLOSED_EDITOR_COMMAND.id,
@@ -66,6 +66,10 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
       'workbench.action.navigateForward',
       // 切换自动换行只翻转设置(workbench-missing-commands)
       'editor.action.toggleWordWrap',
+      // 放大 / 缩小 / 重置缩放:只改设置 window.zoomLevel(所有窗口统一,见 window-zoom)
+      'workbench.action.zoomIn',
+      'workbench.action.zoomOut',
+      'workbench.action.zoomReset',
       // 选择器画在按键所在子窗(popout-picker)
       'workbench.action.gotoLine',
       'workbench.action.openRecent',

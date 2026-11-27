@@ -109,6 +109,9 @@ export const ko: Record<TranslationKey, string> = {
   'settings.general.restore_windows': '시작 시 모든 창 복원',
   'settings.general.restore_windows.desc':
     'Continuo 종료 시 열려 있던 모든 창을 각자의 폴더와 레이아웃으로 다시 엽니다. 끄면 마지막으로 활성화된 창만 복원합니다.',
+  'settings.general.zoom_level': '확대/축소 수준',
+  'settings.general.zoom_level.desc':
+    '모든 창의 확대/축소 수준을 조정합니다. 0보다 크거나(예: 1) 작은(예: -1) 각 단계는 20% 확대 또는 축소를 나타냅니다. 더 세밀하게 조정하려면 소수를 입력할 수도 있습니다. 확대 / 축소 / 확대/축소 초기화 명령이 이 값을 변경합니다.',
 
   // errors.MAIN_*
   'errors.AGENT_AUTH_REQUEST_NOT_PENDING': '승인 요청이 더 이상 유효하지 않습니다',

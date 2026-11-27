@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { registerIpc } from './ipc';
 import { loadSettings } from './services/settings.service';
 import { loadWindowTheme } from './services/window-theme.service';
+import { loadWindowZoom, trackWindowZoom } from './services/window-zoom.service';
 import { getMainT, type MainT } from './i18n';
 import { installEditContextMenu } from './edit-context-menu';
 import { setMenuRebuilder } from './ipc/i18n.ipc';
@@ -1033,6 +1034,8 @@ app.on('browser-window-created', (_evt, win) => {
   watchAgentAuthRenderer(win);
   // 可编辑元素原生右键菜单(剪切 / 复制 / 粘贴 / 全选);渲染层 preventDefault 的区域不触发(见模块注释)。
   installEditContextMenu(win, getMainT);
+  // 统一缩放级别(设置项 window.zoomLevel):主窗与 popout 子窗每次加载都套用,不用 Chromium 按 URL 记的级别。
+  trackWindowZoom(win.webContents);
   win.once('closed', () => {
     void debugService.killByOwner(win.id, 'window-closed').catch((err) => {
       console.warn('[debug] killByOwner failed during window close', err);
@@ -1443,6 +1446,8 @@ app.whenReady().then(async () => {
     prepareExplorerFileForBoot(explorerFile, legacyLayoutFile, lruProtectedSeqs()),
     loadSettings(),
     loadWindowTheme(),
+    // 窗口缩放级别(设置项 window.zoomLevel 的上次值)同理:首窗加载即按它缩放。
+    loadWindowZoom(),
   ]);
   // 启动时的 explorer.json(迁移 / 收敛之后):首窗几何在建窗前取用,启动多窗恢复复用同一份读取。读与下方菜单 / MCP host
   // 启动并行。

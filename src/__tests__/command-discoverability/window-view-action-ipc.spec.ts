@@ -1,4 +1,4 @@
-// BDD: command-discoverability —— 命令面板里的「重新加载窗口 / 放大 / 缩小 / 重置缩放 / 切换全屏」经 window:view-action
+// BDD: command-discoverability —— 命令面板里的「重新加载窗口 / 切换全屏」经 window:view-action
 // 作用于发起方所在窗口(同应用菜单 View 的动作)。见同目录 README 第 2 条。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WINDOW_CHANNELS } from '../../../electron/shared/window-channels';
@@ -60,16 +60,6 @@ describe('window:view-action', () => {
     expect(reloadWindow).toHaveBeenCalledWith(win);
   });
 
-  it('zoomIn / zoomOut 每次 ±0.5 级,resetZoom 归零(同菜单 role 步长)', async () => {
-    await invoke({ action: 'zoomIn' });
-    await invoke({ action: 'zoomIn' });
-    expect(win.webContents.zoomLevel).toBe(1);
-    await invoke({ action: 'zoomOut' });
-    expect(win.webContents.zoomLevel).toBe(0.5);
-    await invoke({ action: 'resetZoom' });
-    expect(win.webContents.zoomLevel).toBe(0);
-  });
-
   it('toggleFullScreen 在全屏 / 非全屏间切换', async () => {
     await invoke({ action: 'toggleFullScreen' });
     expect(win.setFullScreen).toHaveBeenLastCalledWith(true);
@@ -78,7 +68,8 @@ describe('window:view-action', () => {
   });
 
   it('未知动作 / 多余字段 → 拒绝,不动窗口', async () => {
-    for (const raw of [{ action: 'close' }, { action: 'zoomIn', extra: 1 }, {}]) {
+    // 缩放不再是窗口动作(改设置项 window.zoomLevel,所有窗口统一,见 src/__tests__/window-zoom/)
+    for (const raw of [{ action: 'close' }, { action: 'zoomIn' }, { action: 'reload', extra: 1 }, {}]) {
       const r = (await invoke(raw)) as { ok: boolean };
       expect(r.ok).toBe(false);
     }

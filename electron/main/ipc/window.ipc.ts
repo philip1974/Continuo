@@ -42,6 +42,7 @@ import { windowSeqCount } from '../services/window-seq.service';
 import { WINDOW_BACKGROUND_COLORS } from '../../shared/window-background';
 import { setMenuKeybindings } from '../menu-keybindings';
 import { getWindowTheme, setWindowTheme } from '../services/window-theme.service';
+import { setWindowZoomLevel } from '../services/window-zoom.service';
 
 function summarizePath(p: string): string {
   return p.length > 60 ? p.slice(0, 50) + '...' : p;
@@ -198,6 +199,8 @@ const FocusWorkspaceWindowInput = z
   .strict();
 
 const SetRestoreWindowsInput = z.object({ enabled: z.boolean() }).strict();
+// 越界值由 setWindowZoomLevel 夹取(设置页数字框 / 篡改的 localStorage 不至于整条被拒、各窗不一致)。
+const SetZoomLevelInput = z.object({ level: z.number().finite() }).strict();
 
 const NotifyRootInput = z
   .object({
@@ -214,22 +217,10 @@ const SetMenuKeybindingsInput = z
   .object({ keybindings: z.partialRecord(z.enum(MENU_COMMAND_IDS), z.string().max(MENU_HOTKEY_MAX).nullable()) })
   .strict();
 
-/** 缩放步长与 Electron 菜单 role zoomIn / zoomOut 相同(每次 ±0.5 级),resetZoom 归零。 */
-const ZOOM_STEP = 0.5;
-
 function applyWindowViewAction(win: BrowserWindow, action: WindowViewAction, reload: (win: BrowserWindow) => void): void {
   switch (action) {
     case 'reload':
       reload(win);
-      return;
-    case 'zoomIn':
-      win.webContents.zoomLevel += ZOOM_STEP;
-      return;
-    case 'zoomOut':
-      win.webContents.zoomLevel -= ZOOM_STEP;
-      return;
-    case 'resetZoom':
-      win.webContents.zoomLevel = 0;
       return;
     case 'toggleFullScreen':
       win.setFullScreen(!win.isFullScreen());
@@ -289,6 +280,10 @@ export function registerWindowIpc(deps: WindowIpcDeps): void {
   // 设置项「启动时恢复所有窗口」→ explorer.json 顶层启动偏好(main 启动恢复在任何 renderer 之前读)。
   safeHandle(WINDOW_CHANNELS.SET_RESTORE_WINDOWS, SetRestoreWindowsInput, async (input) => {
     await setRestoreAllWindowsOnLaunch(path.join(app.getPath('userData'), EXPLORER_FILE_NAME), input.enabled);
+  });
+  // 设置项「缩放级别」→ 所有窗口(主窗 + popout)统一套用并缓存(冷启动首窗 / 新窗口 / 子窗沿用)。
+  safeHandle(WINDOW_CHANNELS.SET_ZOOM_LEVEL, SetZoomLevelInput, (input) => {
+    setWindowZoomLevel(input.level);
   });
   // 主题变化:记住(并持久化到 userData,供下次冷启动首窗)并把所有已开窗口(主窗 + popout)的底色改为对应画布色。
   safeHandle(WINDOW_CHANNELS.NOTIFY_THEME, NotifyThemeInput, (input) => {

@@ -39,6 +39,11 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   // 切换自动换行:只翻转设置(所有编辑器随之换行),不在主窗画东西(BDD: src/__tests__/workbench-missing-commands/)。
   // 全部保存不在此列:保存失败的确认框画在各编辑器组所在窗口。
   'editor.action.toggleWordWrap',
+  // 放大 / 缩小 / 重置缩放:只改设置 window.zoomLevel(所有窗口统一,VSCode 辅助窗口里同样生效),不在主窗画东西
+  //(BDD: src/__tests__/window-zoom/)。
+  'workbench.action.zoomIn',
+  'workbench.action.zoomOut',
+  'workbench.action.zoomReset',
   // 选择器(⌃G 转到行、⌃R 打开最近、F1 显示所有命令):画在按键所在子窗(picker 切片按触发窗口取 hostDocument,见
   // picker-window;VSCode 同)。⌘P / ⇧⌘P 由 picker 监听在各窗口处理。
   'workbench.action.gotoLine',

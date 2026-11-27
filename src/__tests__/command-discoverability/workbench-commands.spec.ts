@@ -37,13 +37,16 @@ const NEW_COMMANDS: Record<string, readonly [string, string | null]> = {
   'workbench.action.moveEditorGroupToNewWindow': ['Move Group into New Window', 'View'],
 };
 
+const ZOOM_COMMANDS = new Set(['workbench.action.zoomIn', 'workbench.action.zoomOut', 'workbench.action.zoomReset']);
+
 describe('常用动作注册为命令', () => {
   it('核心插件注册全部新命令:三语标题 + 分类,无默认键', () => {
     bootCorePlugins();
     for (const [id, [title, category]] of Object.entries(NEW_COMMANDS)) {
       const spec = coApp.commands.get(id);
       expect(spec, id).toBeDefined();
-      expect(spec!.hotkey, id).toBeUndefined();
+      // 缩放命令带 VSCode 默认键(见 src/__tests__/window-zoom/)
+      if (!ZOOM_COMMANDS.has(id)) expect(spec!.hotkey, id).toBeUndefined();
       const titleKey = spec!.titleKey as Key;
       expect(en[titleKey], id).toBe(title);
       expect(zh[titleKey], id).toBeTruthy();

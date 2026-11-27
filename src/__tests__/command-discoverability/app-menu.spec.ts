@@ -71,7 +71,8 @@ describe.each([
     const edit = submenuOf(top, 'editMenu').map((m) => m.role).filter(Boolean);
     expect(edit).toEqual(expect.arrayContaining(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']));
     const view = submenuOf(top, 'viewMenu').map((m) => m.role).filter(Boolean);
-    expect(view).toEqual(['toggleDevTools', 'resetZoom', 'zoomIn', 'zoomOut', 'togglefullscreen']);
+    // 缩放是命令项(workbench.action.zoom*,所有窗口统一),不是 role
+    expect(view).toEqual(['toggleDevTools', 'togglefullscreen']);
     const win = submenuOf(top, 'windowMenu').map((m) => m.role).filter(Boolean);
     expect(win).toContain('minimize');
     // 非 mac 的 role close 自带 Ctrl+W(直接关整窗);关窗口在 File 菜单(⇧Ctrl+W)

@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import { renderCategoryTab } from './lazy-category-tab';
 import { GeneralIcon } from '@/plugins/settings/tab-icons';
-import { GENERAL_RESTORE_WINDOWS, GENERAL_THEME } from '@/plugins/settings/core-setting-specs';
+import { GENERAL_RESTORE_WINDOWS, GENERAL_THEME, WINDOW_ZOOM_LEVEL } from '@/plugins/settings/core-setting-specs';
 
 export default class GeneralTabPlugin extends Plugin {
   onload(): void {
@@ -25,5 +25,7 @@ export default class GeneralTabPlugin extends Plugin {
     this.addSettingItem(GENERAL_THEME);
     // 启动时恢复所有窗口(VSCode window.restoreWindows;RestoreWindowsFromSettings 推给 main)
     this.addSettingItem(GENERAL_RESTORE_WINDOWS);
+    // 缩放级别(VSCode window.zoomLevel;ZoomLevelFromSettings 推给 main,所有窗口统一)
+    this.addSettingItem(WINDOW_ZOOM_LEVEL);
   }
 }

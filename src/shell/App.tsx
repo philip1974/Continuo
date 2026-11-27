@@ -39,6 +39,7 @@ import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
 import { RestoreWindowsFromSettings } from '@/plugins/settings/RestoreWindowsFromSettings';
+import { ZoomLevelFromSettings } from '@/plugins/settings/ZoomLevelFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { switchToCheckedRoot } from '@/panels/Explorer/open-recent-root';
 
@@ -158,6 +159,7 @@ function MainApp() {
     <>
       <TerminalSessionsSync />
       <RestoreWindowsFromSettings />
+      <ZoomLevelFromSettings />
       <div className="flex h-dvh w-dvw flex-col bg-canvas text-fg">
         <TitleBar />
         <main className="flex min-h-0 flex-1">

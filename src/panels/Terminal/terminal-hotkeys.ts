@@ -22,6 +22,7 @@ import { tWithFallback } from '@/i18n';
 import { FOCUS_NEXT_PART_COMMAND, FOCUS_PREVIOUS_PART_COMMAND } from '@/shell/focus-parts';
 // 显示所有命令的附加默认键 F1:VSCode showCommands 在 commandsToSkipShell 默认列表里 → 终端里让出。
 import { SHOW_COMMANDS_COMMAND } from '@/plugins/picker/use-picker-toggle-hotkey';
+import { WINDOW_ZOOM_COMMAND_IDS } from '../../../electron/shared/window-zoom';
 
 export const TERMINAL_ZOOM_COMMAND = { id: 'terminal.zoom.toggle', hotkey: 'shift+mod+enter' } as const;
 export const TERMINAL_SEARCH_COMMAND = { id: 'terminal.search.toggle', hotkey: 'mod+f' } as const;
@@ -99,6 +100,9 @@ const SKIP_SHELL_COMMANDS: ReadonlyMap<string, { readonly metaOnly: boolean }> =
   [TERMINAL_TOGGLE_COMMAND.id, { metaOnly: false }],
   [TERMINAL_NEW_COMMAND.id, { metaOnly: false }],
   [SHOW_COMMANDS_COMMAND.id, { metaOnly: false }],
+  // 放大 / 缩小 / 重置缩放(⌘= / ⌘- / ⌘0):不在 commandsToSkipShell 默认列表 → 只有带 Meta 时让出(VSCode 同;Win/Linux 的
+  // Ctrl+= / Ctrl+- 照常进 shell)。BDD: src/__tests__/window-zoom/
+  ...WINDOW_ZOOM_COMMAND_IDS.map((id) => [id, { metaOnly: true }] as const),
 ]);
 
 /** 终端判定涉及的命令的约定默认键(命令尚未注册时兜底;已注册以注册的 hotkey 为准)。按平台(clear 仅 mac 有默认键)。 */
