@@ -50,10 +50,11 @@ test('控件聚焦时 Shift+F10 → 菜单定位在「更多操作」按钮处;E
   // 行内有焦点 → 齿轮显示
   await expect.poll(() => more.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
 
+  // 按钮位置在打开前取:菜单打开期间 Radix 给菜单外节点加 aria-hidden(模态),按角色查不到
+  const btnBox = (await more.boundingBox())!;
   await window.keyboard.press('Shift+F10');
   const menu = window.getByRole('menu');
   await expect(menu).toBeVisible();
-  const btnBox = (await more.boundingBox())!;
   const menuBox = (await menu.boundingBox())!;
   expect(Math.abs(menuBox.y - (btnBox.y + btnBox.height))).toBeLessThan(40);
   await window.keyboard.press('Escape');

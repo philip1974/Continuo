@@ -61,11 +61,12 @@ test('结果树聚焦时 Shift+F10 → 活动行菜单(定位在该行);Esc → 
   await expect(tree).toBeFocused();
   await window.keyboard.press('ArrowDown'); // 第一个匹配
 
+  // 行位置在打开前取:菜单打开期间 Radix 给菜单外节点加 aria-hidden(模态),按角色查不到
+  const rowBox = (await tree.getByRole('treeitem').nth(1).boundingBox())!;
   await window.keyboard.press('Shift+F10');
   const menu = window.getByRole('menu');
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem')).toHaveText([DISMISS, COPY, COPY_ALL]);
-  const rowBox = (await tree.getByRole('treeitem').nth(1).boundingBox())!;
   const menuBox = (await menu.boundingBox())!;
   expect(Math.abs(menuBox.y - (rowBox.y + rowBox.height))).toBeLessThan(40);
 
