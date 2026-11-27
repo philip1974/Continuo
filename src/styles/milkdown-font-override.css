@@ -30,7 +30,8 @@
   /* 字体 / 阴影同样接项目 token(frame-dark 默认是 Noto Serif 标题 + Space Mono 代码 + 白色辉光阴影)。 */
   --crepe-font-default: var(--wm-font-sans);
   --crepe-font-title: var(--wm-font-sans);
-  --crepe-font-code: var(--wm-font-mono);
+  /* 代码(代码块 / 行内代码)跟随编辑器字体 editor.fontFamily(VSCode Markdown 预览代码同取编辑器字体);正文不受影响。 */
+  --crepe-font-code: var(--wm-editor-font-family, var(--wm-font-mono));
   --crepe-shadow-1: var(--wm-shadow-popover);
   --crepe-shadow-2: var(--wm-shadow-popover);
 

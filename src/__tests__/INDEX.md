@@ -960,6 +960,11 @@
 
 - [`rename-reject-feedback.spec.tsx`](./folder-tree-rename-feedback/rename-reject-feedback.spec.tsx)
 
+## [font-settings(编辑器 / 终端的字体族与行高)](./font-settings/README.md)
+
+- [`font-settings.spec.tsx`](./font-settings/font-settings.spec.tsx)
+- [`terminal-font-settings.spec.tsx`](./font-settings/terminal-font-settings.spec.tsx)
+
 ## [强制颜色模式下的选中 / 高亮 / 按下状态](./forced-colors-states/README.md)
 
 - [`forced-colors.spec.ts`](./forced-colors-states/forced-colors.spec.ts)
@@ -2075,6 +2080,10 @@
 ## [text-stats(StatusBar 用统计)](./text-stats/README.md)
 
 - [`text-stats.spec.ts`](./text-stats/text-stats.spec.ts)
+
+## [theme-commands(首选项:颜色主题 / 在浅色和深色主题之间切换)](./theme-commands/README.md)
+
+- [`theme-commands.spec.tsx`](./theme-commands/theme-commands.spec.tsx)
 
 ## [TitleBar(macOS 顶栏:workspace + active file 文件名)](./title-bar/README.md)
 

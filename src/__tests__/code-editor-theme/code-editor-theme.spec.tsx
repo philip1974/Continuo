@@ -68,11 +68,11 @@ describe('Markdown Source:YAML frontmatter', () => {
 });
 
 describe('CodeEditor 主题接设计 token', () => {
-  it.each(['dark', 'light'] as const)('%s:背景 / gutter / 字体取自 --md-* / --wm-font-mono,不带 oneDark 固定底色', async (theme) => {
+  it.each(['dark', 'light'] as const)('%s:背景 / gutter / 字体取自 --md-* / 编辑器字体变量(缺省 --wm-font-mono),不带 oneDark 固定底色', async (theme) => {
     await mount(theme);
     const css = injectedCss();
     expect(css).toMatch(/background(-color)?:\s*var\(--md-surface\)/);
-    expect(css).toContain('var(--wm-font-mono)');
+    expect(css).toContain('var(--wm-editor-font-family, var(--wm-font-mono))');
     expect(css).toMatch(/\.cm-gutters[^}]*var\(--md-/);
     expect(css).not.toMatch(/#282c34/i);
   });

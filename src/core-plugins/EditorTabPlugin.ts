@@ -10,7 +10,9 @@ import {
   EDITOR_DECORATIONS_BADGES,
   EDITOR_DECORATIONS_COLORS,
   EDITOR_ENABLE_PREVIEW,
+  EDITOR_FONT_FAMILY,
   EDITOR_FONT_SIZE,
+  EDITOR_LINE_HEIGHT,
   EDITOR_LINE_NUMBERS,
   EDITOR_WORD_WRAP,
 } from '@/plugins/settings/core-setting-specs';
@@ -30,7 +32,9 @@ export default class EditorTabPlugin extends Plugin {
     });
 
     // ── Appearance ──
+    this.addSettingItem(EDITOR_FONT_FAMILY);
     this.addSettingItem(EDITOR_FONT_SIZE);
+    this.addSettingItem(EDITOR_LINE_HEIGHT);
     this.addSettingItem(EDITOR_LINE_NUMBERS);
     this.addSettingItem(EDITOR_WORD_WRAP);
 

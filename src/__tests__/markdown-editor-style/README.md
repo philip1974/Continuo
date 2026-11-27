@@ -4,7 +4,7 @@
 
 ## 行为
 
-- 正文与标题用 `--wm-font-sans`,代码用 `--wm-font-mono`(不再是 Crepe frame-dark 的 Noto Serif / Space Mono)。
+- 正文与标题用 `--wm-font-sans`,代码(代码块 / 行内代码)跟随编辑器字体 `--wm-editor-font-family`(设置 `editor.fontFamily`,缺省 `--wm-font-mono`;见 font-settings)(不再是 Crepe frame-dark 的 Noto Serif / Space Mono)。
 - 浮层(工具条 / 菜单 / 提示)阴影用 `--wm-shadow-popover`,亮 / 暗各自取值(不再是暗色白辉光)。
 - 字号跟随设置 `editor.fontSize`(Crepe ≥7.22 在 `.milkdown` 上写死 `--crepe-base-font-size`,本项目改回继承外层容器);
   `--crepe-base-font-size` 本身也由外层容器按设置写入、`.milkdown` 继承,代码块占位层与真实 CodeMirror 字号一致,

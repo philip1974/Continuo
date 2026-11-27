@@ -27,7 +27,9 @@ import { LanguageDescription } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
+  EDITOR_FONT_FAMILY,
   EDITOR_FONT_SIZE,
+  EDITOR_LINE_HEIGHT,
   EDITOR_LINE_NUMBERS,
   EDITOR_WORD_WRAP,
 } from '@/plugins/settings/core-setting-specs';
@@ -377,10 +379,12 @@ export function CodeEditor({
         // CodeMirror theme 注入的 stylesheet 中 var() 不会响应外部容器 inline
         // style 变化,所以这里用 inherit 而非 var()。
         '&': { height: '100%', fontSize: 'inherit' },
-        // 字体族由 code-editor-theme 取 --wm-font-mono
+        // 字体族由 code-editor-theme 取 --wm-editor-font-family;行高取 editor.lineHeight 换算的 --wm-editor-line-height
+        //(EditorFontFromSettings 写到 <html>),自动 → CodeMirror 默认 1.4
         '.cm-scroller': {
           overflow: 'auto',
           fontSize: 'inherit',
+          lineHeight: 'var(--wm-editor-line-height, 1.4)',
         },
         // 横向 padding 16px:不让 markdown / 代码内容贴 editor 容器右边
         // (尤其中文长段无空格 wrap 时贴边格外难读);左侧 gutter 之后加
@@ -552,6 +556,14 @@ export function CodeEditor({
   // 都 inherit。改 settings 字号 → React 重渲外层 → CodeMirror 立即跟新。
   const fontSize = useSettingValue(EDITOR_FONT_SIZE.id, EDITOR_FONT_SIZE.default);
   const lineNumbers = useSettingValue(EDITOR_LINE_NUMBERS.id, EDITOR_LINE_NUMBERS.default);
+  const fontFamily = useSettingValue(EDITOR_FONT_FAMILY.id, EDITOR_FONT_FAMILY.default);
+  const lineHeight = useSettingValue(EDITOR_LINE_HEIGHT.id, EDITOR_LINE_HEIGHT.default);
+
+  // 字体族 / 行高 / 字号变了 → 让 CodeMirror 重新量行高与字符宽(样式经 CSS 变量变化,CodeMirror 自己不一定察觉,
+  // 不重量则光标 / 选区 / 点击定位按旧行高算)
+  useEffect(() => {
+    viewRef.current?.requestMeasure();
+  }, [fontFamily, lineHeight, fontSize]);
 
   useEffect(() => {
     const view = viewRef.current;

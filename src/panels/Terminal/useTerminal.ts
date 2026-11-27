@@ -20,9 +20,13 @@ import { openFileOrNotify } from '@/notifications/notify-open-failed';
 import { createTerminalFileLinkProvider } from './terminal-file-links';
 import { useSettingValue } from '@/plugins/settings/values-store';
 import {
+  EDITOR_FONT_FAMILY,
   TERMINAL_CURSOR_STYLE,
+  TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
+  TERMINAL_LINE_HEIGHT,
 } from '@/plugins/settings/core-setting-specs';
+import { resolveTerminalFontFamily, resolveTerminalLineHeight } from '@/plugins/settings/font-settings';
 import { useLayoutUiStore } from '@/stores/layout-ui.store';
 import {
   getIndexedTerminalSessionById,
@@ -311,20 +315,11 @@ function cancelTimer(ref: { current: ReturnType<typeof setTimeout> | null }): vo
   ref.current = null;
 }
 
+// 字号 / 行高 / 字体族 / 光标样式取设置(创建时 initOptionsRef,之后 settings effect 同步);字体族回退链见 font-settings
+// DEFAULT_TERMINAL_FONT_FAMILY(Nerd Font / Powerline 符号)。
 const TERM_OPTIONS = {
   scrollback: 20000, // 跑 Agent CLI 大输出留余量(决策 #3)
-  fontSize: 13,
-  lineHeight: 1.2,
   letterSpacing: 0.2,
-  // Powerline / Nerd 符号 fallback 链:
-  //   1. MesloLGS NF / JetBrainsMono Nerd Font Mono / Symbols Nerd Font Mono
-  //      — Nerd Fonts 现代版(用户装了哪种用哪种)
-  //   2. Meslo LG {L,M,S} for Powerline — 老 Powerline 项目,P10k/oh-my-zsh
-  //      用户常装,兜 powerline-extra-symbols
-  //   3. SF Mono / Menlo / Monaco — macOS 内置等宽,普通 ASCII
-  //   4. monospace 通用兜底
-  fontFamily:
-    '"MesloLGS NF", "JetBrainsMono Nerd Font Mono", "Symbols Nerd Font Mono", "Meslo LG M for Powerline", "Meslo LG L for Powerline", "Meslo LG S for Powerline", "SF Mono", Menlo, Monaco, Consolas, monospace',
   smoothScrollDuration: 0,
   fastScrollModifier: 'alt' as const,
   allowProposedApi: true,
@@ -435,14 +430,19 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
   // 首次 PTY stdout 到达前 = 还在 spawn shell + 跑 .zshrc。让上层显示 loading
   // overlay,用户看到"启动中..."而非纯黑框,减弱"卡顿"感(尤其 .zshrc 重的用户)。
   const [isReady, setIsReady] = useState(false);
-  // settings(实时):字号 / 光标样式
+  // settings(实时):字号 / 字体族(空 → 跟随 editor.fontFamily)/ 行高 / 光标样式
   const fontSize = useSettingValue(TERMINAL_FONT_SIZE.id, TERMINAL_FONT_SIZE.default);
+  const fontFamily = resolveTerminalFontFamily(
+    useSettingValue(TERMINAL_FONT_FAMILY.id, TERMINAL_FONT_FAMILY.default),
+    useSettingValue(EDITOR_FONT_FAMILY.id, EDITOR_FONT_FAMILY.default),
+  );
+  const lineHeight = resolveTerminalLineHeight(useSettingValue(TERMINAL_LINE_HEIGHT.id, TERMINAL_LINE_HEIGHT.default));
   const cursorStyle = useSettingValue(TERMINAL_CURSOR_STYLE.id, TERMINAL_CURSOR_STYLE.default);
   const { resolved } = useTheme();
   // 创建 xterm 时读这里的最新值。创建 effect 只依赖 termId,其闭包里的字号 / 光标 / 主题是挂载时的;
   // 0 尺寸挂载会推迟创建,期间的变化同步 effect 又因 term 尚不存在而跳过 → 不读 ref 就会用旧值创建。
-  const initOptionsRef = useRef({ fontSize, cursorStyle, resolved });
-  initOptionsRef.current = { fontSize, cursorStyle, resolved };
+  const initOptionsRef = useRef({ fontSize, fontFamily, lineHeight, cursorStyle, resolved });
+  initOptionsRef.current = { fontSize, fontFamily, lineHeight, cursorStyle, resolved };
   // term + fit 跨 effect 共享(创建 effect 写 ref,settings effect 读 ref 改 options)
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -515,6 +515,8 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
       ...terminalWindowsPtyOptions(isWindowsRuntime(), coApi.system?.windowsBuild),
       // 用当前 settings + 主题值开局,避免初始一帧的旧值闪烁
       fontSize: initOptions.fontSize,
+      fontFamily: initOptions.fontFamily,
+      lineHeight: initOptions.lineHeight,
       cursorStyle: initOptions.cursorStyle,
       theme: initOptions.resolved === 'dark' ? DARK_THEME : LIGHT_THEME,
       // light 7 (AAA), dark 1 — 见 LIGHT_THEME 注释 (issue #24)
@@ -919,15 +921,22 @@ export function useTerminal(termId: string, options?: UseTerminalOptions) {
     // 不放 deps 是有意的(否则改字号会重建 term 丢掉历史输出)。
   }, [termId]);
 
-  // settings → 已有 term 实例同步(不重建),改完 fit + resize 让 PTY 跟上新行列数
+  // settings → 已有 term 实例同步(不重建),改完 fit + resize 让 PTY 跟上新行列数。字体族 / 字号变化时 xterm 重新测量
+  // 字符尺寸(CharSizeService 监听这两项),WebGL 渲染器按新字体配置换用另一份纹理图集(图集按字体 / 字号 / 行高等配置
+  // 缓存共享),行高变化同样重算单元格;随后 fit 按新单元格尺寸重排行列。只改光标样式不影响单元格 → 不重新 fit。
   useEffect(() => {
     const term = termRef.current;
     const fit = fitRef.current;
     if (!term || !fit) return;
-    term.options.fontSize = fontSize;
-    term.options.cursorStyle = cursorStyle;
-    fitAndResize(term, fit, termId, lastSentSizeRef);
-  }, [fontSize, cursorStyle, termId]);
+    const next = { fontSize, fontFamily, lineHeight, cursorStyle } as const;
+    let layoutChanged = false;
+    for (const key of Object.keys(next) as (keyof typeof next)[]) {
+      if (term.options[key] === next[key]) continue;
+      (term.options as Record<string, unknown>)[key] = next[key];
+      if (key !== 'cursorStyle') layoutChanged = true;
+    }
+    if (layoutChanged) fitAndResize(term, fit, termId, lastSentSizeRef);
+  }, [fontSize, fontFamily, lineHeight, cursorStyle, termId]);
 
   // 主题切换 → 已有 term 实例同步 theme(不重建,保留历史输出)
   useEffect(() => {

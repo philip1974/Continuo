@@ -1,7 +1,7 @@
 // CodeEditor(代码文件 + Markdown Source 模式)的外观。
 //
 // 编辑器外观(背景 / gutter / 当前行 / 选区 / 光标 / 字体)一套 EditorView.theme 同时用于亮 / 暗:全部取
-// 设计 token(--md-* / --wm-font-mono),随 <html class="dark"> 切换自动变色,与画布 / 终端 / Markdown
+// 设计 token(--md-* / 字体取 editor.fontFamily 的 --wm-editor-font-family,缺省 --wm-font-mono),随 <html class="dark"> 切换自动变色,与画布 / 终端 / Markdown
 // 编辑器同底色。此前暗色直接用 oneDark(底色 #282c34 与 --md-surface #11131b 割裂),亮色用 CodeMirror
 // 默认主题(标题粗体加下划线、gutter #f5f5f5)。
 //
@@ -23,7 +23,8 @@ function chromeTheme(dark: boolean): Extension {
       // CodeMirror 基础主题给聚焦编辑器画 1px dotted #212121 轮廓;VSCode 编辑器聚焦无边框(光标 / 当前行即焦点指示)。
       // Markdown 代码块(markdownCodeBlockTheme)同用本外观。
       '&.cm-focused': { outline: 'none' },
-      '.cm-scroller': { fontFamily: 'var(--wm-font-mono)' },
+      // 字体族 = 设置 editor.fontFamily(EditorFontFromSettings 写到 <html>;Markdown 代码块同用本外观,一并跟随)
+      '.cm-scroller': { fontFamily: 'var(--wm-editor-font-family, var(--wm-font-mono))' },
       '.cm-content': { caretColor: 'var(--md-on-surface)' },
       '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--md-on-surface)' },
       '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':

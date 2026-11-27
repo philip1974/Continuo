@@ -49,6 +49,9 @@ export const POPOUT_HOTKEY_COMMAND_IDS: ReadonlySet<string> = new Set([
   'workbench.action.gotoLine',
   'workbench.action.openRecent',
   'workbench.action.showCommands',
+  // 颜色主题选择器画在按键所在子窗;切换浅深只改设置(BDD: src/__tests__/theme-commands/)
+  'workbench.action.selectTheme',
+  'workbench.action.toggleLightDarkThemes',
 ]);
 
 /**

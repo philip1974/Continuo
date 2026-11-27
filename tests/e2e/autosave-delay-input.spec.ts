@@ -3,7 +3,7 @@ import { test, expect } from './fixtures/electron-app';
 import { SETTINGS_NAV, EDITOR_TAB } from './helpers/settings';
 import { waitForTestHooks } from './helpers/app-ready';
 
-test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=4000', async ({
+test('编辑器 tab 第三个 number input(autoSave.delayMs)显示 store 值(3000)+ 改后 store=4000', async ({
   window,
 }) => {
   await waitForTestHooks(window);
@@ -26,13 +26,13 @@ test('编辑器 tab 第二 number input 显示 store 值(3000)+ 改后 store=400
     globalThis.__continuoTest!.setSettingValue('autoSave.delayMs', 3000),
   );
 
-  // 第一个 input(fontSize)+ 第二个(autoSave.delayMs)
+  // number input 依次:字号(fontSize)、行高(lineHeight)、自动保存延迟(autoSave.delayMs)
   const inputs = window.locator('input[type=number]');
   // 3000 非默认值(默认 2000):输入框显示它证明确实读自 store
-  await expect(inputs.nth(1)).toHaveValue('3000');
+  await expect(inputs.nth(2)).toHaveValue('3000');
 
-  await inputs.nth(1).fill('4000');
-  await expect(inputs.nth(1)).toHaveValue('4000');
+  await inputs.nth(2).fill('4000');
+  await expect(inputs.nth(2)).toHaveValue('4000');
 
   const v = await window.evaluate(
     () =>

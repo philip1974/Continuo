@@ -14,6 +14,27 @@ export type CoreSettingSpec<T extends SettingItemValue> = SettingItemSpec & { re
 
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar';
 
+/**
+ * 编辑器字体族(VSCode editor.fontFamily):代码编辑器、Markdown 源码模式与 Markdown 编辑 / 预览里的代码(代码块、行内代码;
+ * VSCode Markdown 预览代码同取编辑器字体)。默认值 = 设计 token --wm-font-mono(规范守护两者一致);空串 / 全空白回落默认。
+ * 终端字体留空时跟随它(terminal.integrated.fontFamily)。经 EditorFontFromSettings 写到各窗口 <html> 的 CSS 变量。
+ * BDD: src/__tests__/font-settings/
+ */
+export const DEFAULT_EDITOR_FONT_FAMILY = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace';
+
+export const EDITOR_FONT_FAMILY: CoreSettingSpec<string> = {
+  id: 'editor.fontFamily',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Font family',
+  titleKey: 'settings.editor.font_family',
+  descriptionKey: 'settings.editor.font_family.desc',
+  type: 'text',
+  default: DEFAULT_EDITOR_FONT_FAMILY,
+  priority: 0,
+};
+
 export const EDITOR_FONT_SIZE: CoreSettingSpec<number> = {
   id: 'editor.fontSize',
   category: 'editor',
@@ -29,6 +50,26 @@ export const EDITOR_FONT_SIZE: CoreSettingSpec<number> = {
   step: 1,
   unit: 'px',
   priority: 1,
+};
+
+/**
+ * 编辑器行高(VSCode editor.lineHeight,范围 0..150):0 = 按字号自动;0 < 值 < 8 = 字号的倍数;≥ 8 = 像素。换算后取整、
+ * 不低于 8px(VSCode fontInfo 同规则)。作用于代码编辑器与 Markdown 源码模式。BDD: src/__tests__/font-settings/
+ */
+export const EDITOR_LINE_HEIGHT: CoreSettingSpec<number> = {
+  id: 'editor.lineHeight',
+  category: 'editor',
+  group: 'appearance',
+  groupKey: 'settings.group.appearance',
+  title: 'Line height',
+  titleKey: 'settings.editor.line_height',
+  descriptionKey: 'settings.editor.line_height.desc',
+  type: 'number',
+  default: 0,
+  min: 0,
+  max: 150,
+  step: 0.1,
+  priority: 1.5,
 };
 
 export const EDITOR_LINE_NUMBERS: CoreSettingSpec<boolean> = {
@@ -154,6 +195,37 @@ export const TERMINAL_FONT_SIZE: CoreSettingSpec<number> = {
   step: 1,
   unit: 'px',
   priority: 1,
+};
+
+/**
+ * 终端字体族(VSCode terminal.integrated.fontFamily):空 = 跟随 editor.fontFamily(编辑器字体也是默认值时用终端自带的
+ * Nerd Font 回退链,保住 Powerline / 图标字形);填写的字体后面仍接 Nerd Font 符号回退与 monospace(VSCode 同样总接 monospace)。
+ * BDD: src/__tests__/font-settings/
+ */
+export const TERMINAL_FONT_FAMILY: CoreSettingSpec<string> = {
+  id: 'terminal.integrated.fontFamily',
+  category: 'terminal',
+  title: 'Font family',
+  titleKey: 'settings.terminal.font_family',
+  descriptionKey: 'settings.terminal.font_family.desc',
+  type: 'text',
+  default: '',
+  priority: 0,
+};
+
+/** 终端行高(VSCode terminal.integrated.lineHeight):字号的倍数,默认 1,不小于 1。BDD: src/__tests__/font-settings/ */
+export const TERMINAL_LINE_HEIGHT: CoreSettingSpec<number> = {
+  id: 'terminal.integrated.lineHeight',
+  category: 'terminal',
+  title: 'Line height',
+  titleKey: 'settings.terminal.line_height',
+  descriptionKey: 'settings.terminal.line_height.desc',
+  type: 'number',
+  default: 1,
+  min: 1,
+  max: 10,
+  step: 0.1,
+  priority: 1.5,
 };
 
 export const TERMINAL_CURSOR_STYLE: CoreSettingSpec<TerminalCursorStyle> = {

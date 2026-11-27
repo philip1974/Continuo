@@ -24,7 +24,7 @@ describe('Milkdown 样式覆写', () => {
     const root = block('.milkdown');
     expect(root).toMatch(/--crepe-font-default:\s*var\(--wm-font-sans\)/);
     expect(root).toMatch(/--crepe-font-title:\s*var\(--wm-font-sans\)/);
-    expect(root).toMatch(/--crepe-font-code:\s*var\(--wm-font-mono\)/);
+    expect(root).toMatch(/--crepe-font-code:\s*var\(--wm-editor-font-family, var\(--wm-font-mono\)\)/);
     expect(root).toMatch(/--crepe-shadow-1:\s*var\(--wm-shadow-popover\)/);
     expect(root).toMatch(/--crepe-shadow-2:\s*var\(--wm-shadow-popover\)/);
   });

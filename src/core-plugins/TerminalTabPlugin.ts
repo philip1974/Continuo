@@ -5,7 +5,9 @@ import { createElement } from 'react';
 import { Plugin } from '@/plugins/Plugin';
 import {
   TERMINAL_CURSOR_STYLE,
+  TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
+  TERMINAL_LINE_HEIGHT,
 } from '@/plugins/settings/core-setting-specs';
 import { renderCategoryTab } from './lazy-category-tab';
 import { TerminalIcon } from '@/plugins/settings/tab-icons';
@@ -22,7 +24,9 @@ export default class TerminalTabPlugin extends Plugin {
       render: () => renderCategoryTab('terminal'),
     });
 
+    this.addSettingItem(TERMINAL_FONT_FAMILY);
     this.addSettingItem(TERMINAL_FONT_SIZE);
+    this.addSettingItem(TERMINAL_LINE_HEIGHT);
 
     this.addSettingItem(TERMINAL_CURSOR_STYLE);
   }

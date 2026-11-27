@@ -74,6 +74,9 @@ describe('popout 子窗按键分发(只限作用于活动面板的命令)', () =
       'workbench.action.gotoLine',
       'workbench.action.openRecent',
       'workbench.action.showCommands',
+      // 颜色主题选择器画在按键所在子窗;切换浅深只改设置(theme-commands)
+      'workbench.action.selectTheme',
+      'workbench.action.toggleLightDarkThemes',
     ]);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(NEXT_EDITOR_COMMAND_ID)).toBe(false);
     expect(POPOUT_HOTKEY_COMMAND_IDS.has(PREVIOUS_EDITOR_COMMAND_ID)).toBe(false);

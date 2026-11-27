@@ -1,5 +1,6 @@
 // 内置 Window 插件(issue #23 Phase 1)。
-// 命令面板贡献"新窗口" / "在新窗口打开文件夹",Cmd+Shift+N 直开空 workspace 新窗口;另注册窗口 / dock 类命令。
+// 命令面板贡献"新窗口" / "在新窗口打开文件夹",Cmd+Shift+N 直开空 workspace 新窗口;另注册窗口 / dock 类命令与
+// 首选项:颜色主题 / 切换浅深(src/plugins/theme-picker/)。
 
 import { Plugin } from '@/plugins/Plugin';
 import { coApi } from '@/lib/co-api';
@@ -11,6 +12,7 @@ import { notifyFailure } from '@/notifications/notify-thrown-error';
 import { focusPartCommandSpecs } from '@/shell/focus-parts';
 import { windowCommandSpecs } from '@/shell/window-commands';
 import { dockCommandSpecs } from '@/shell/dock/dock-panel-actions';
+import { themeCommandSpecs } from '@/plugins/theme-picker/theme-commands';
 
 export default class WindowPlugin extends Plugin {
   onload(): void {
@@ -76,5 +78,7 @@ export default class WindowPlugin extends Plugin {
     // BDD: src/__tests__/command-discoverability/)
     for (const spec of windowCommandSpecs()) this.addCommand(spec);
     for (const spec of dockCommandSpecs()) this.addCommand(spec);
+    // 首选项:颜色主题 / 在浅色和深色主题之间切换(BDD: src/__tests__/theme-commands/)
+    for (const spec of themeCommandSpecs()) this.addCommand(spec);
   }
 }

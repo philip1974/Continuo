@@ -51,7 +51,7 @@
 ### 3. 命令标题大小写统一(`workbench-commands.spec.ts`)
 
 - 英文命令标题统一 Title Case(VSCode 风格):「Toggle Explorer sidebar」→「Toggle Explorer Sidebar」;核心命令英文标题里
-  首字母小写的只允许 `in / to / the / of / and / a` 等虚词
+  首字母小写的只允许 `in / to / the / of / and / a / between` 等虚词
 
 ## 模块
 

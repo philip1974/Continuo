@@ -4,7 +4,7 @@
 
 ## 行为
 
-- 编辑器背景、gutter、当前行、选区、光标、面板 / 提示框取自 `--md-*` token,字体取 `--wm-font-mono`;一套样式同时适配
+- 编辑器背景、gutter、当前行、选区、光标、面板 / 提示框取自 `--md-*` token,字体取设置 `editor.fontFamily` 的 `--wm-editor-font-family`(缺省 `--wm-font-mono`,见 font-settings);一套样式同时适配
   `:root`(亮)与 `.dark`(暗),底色与画布 / 终端 / Markdown 编辑器一致(不再是 oneDark 的 `#282c34`)。
 - 语法高亮:一套 HighlightStyle,颜色只引用 `theme.css` 的 Continuo 自有槽位 `--md-syntax-*`(keyword / name / function /
   constant / definition / type / operator / comment / string / heading / link / invalid),`:root` 与 `.dark` 各一套值:

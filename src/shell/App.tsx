@@ -38,6 +38,7 @@ import { useMenuCommands } from './menu-commands';
 import { NotificationsProvider } from '@/notifications/NotificationsProvider';
 import { ToastViewport } from '@/notifications/ToastViewport';
 import { LanguageFromSettings } from '@/plugins/settings/LanguageFromSettings';
+import { EditorFontFromSettings } from '@/plugins/settings/EditorFontFromSettings';
 import { RestoreWindowsFromSettings } from '@/plugins/settings/RestoreWindowsFromSettings';
 import { ZoomLevelFromSettings } from '@/plugins/settings/ZoomLevelFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
@@ -193,6 +194,7 @@ export function App() {
     <ThemeProvider>
       <WindowBackgroundSync />
       <LanguageFromSettings />
+      <EditorFontFromSettings />
       <NotificationsProvider>
         <ToastViewport />
         <LazyMotion features={loadMotionFeatures} strict>
