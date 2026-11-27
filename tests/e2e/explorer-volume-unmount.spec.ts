@@ -1,12 +1,14 @@
 // 工作区根是可移动卷(dmg):编辑 README.md(自动保存)→ hdiutil detach → tab 显示「(已删除)」、继续输入有一次「自动保存已暂停」提示、
 // 资源管理器显示根读取失败(不是卸载前的过期列表)→ 挂回 → 「(已删除)」清除、资源管理器恢复列表、继续输入自动保存写盘。
+// 卷挂在**已有的固定目录**上(卸载后挂载点目录还在):卸载后获焦 → 资源管理器不再列旧文件;挂回后获焦 → 列出卷内容,之后外部新建的
+// 文件照常出现(watcher 已重建)。
 // BDD: src/__tests__/editor-orphaned-tab/(orphaned-recheck / autosave-paused-notice / root-presence-main)、
 // src/__tests__/explorer-root-unavailable/
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 import { test, expect } from './fixtures/with-workspace';
 import { waitForTestHooks } from './helpers/app-ready';
 import { editorTab, openWorkspaceFile } from './helpers/editor';
@@ -86,4 +88,55 @@ test('卷卸载再挂回:已删除标记清除、自动保存恢复;卸载期间
   // 自动保存恢复:继续输入后写盘
   await setContent(window, '# Vol\n\nafter remount\n');
   await expect.poll(() => readFile(readmePath, 'utf8'), { timeout: 10_000 }).toContain('after remount');
+});
+
+test.describe('固定挂载点(卸载后挂载点目录仍在)', () => {
+  test.use({
+    // eslint-disable-next-line no-empty-pattern -- Playwright 夹具要求对象解构参数
+    workspaceRoot: async ({}, use) => {
+      const scratch = await mkdtemp(path.join(tmpdir(), 'ui127a-fixmp-'));
+      dmg = path.join(scratch, 'v.dmg');
+      mnt = path.join(scratch, 'mnt');
+      await mkdir(mnt); // 事先存在的目录:hdiutil 卸载后不删它
+      execFileSync('hdiutil', ['create', '-size', '2m', '-fs', 'HFS+', '-volname', 'UIFIX', '-layout', 'NONE', dmg], {
+        stdio: 'ignore',
+      });
+      attach();
+      try {
+        await writeFile(path.join(mnt, 'README.md'), '# Vol\n');
+        await writeFile(path.join(mnt, 'other.txt'), 'other\n');
+        await use(mnt);
+      } finally {
+        try {
+          detach();
+        } catch {
+          /* 已卸载 */
+        }
+        await rm(scratch, { recursive: true, force: true });
+      }
+    },
+  });
+
+  // 窗口获焦(app 'browser-window-focus';e2e 窗口不一定真拿到系统焦点,直接派发同一事件)。
+  const focusWindow = (app: ElectronApplication) =>
+    app.evaluate(({ app: electronApp, BrowserWindow }) => {
+      for (const w of BrowserWindow.getAllWindows()) electronApp.emit('browser-window-focus', {}, w);
+    });
+
+  test('卸载后获焦不再列旧文件;挂回后获焦列出卷内容,之后外部新建的文件照常出现', async ({ electronApp, window, workspaceRoot }) => {
+    await waitForTestHooks(window);
+    await expect(explorerTreeItem(window, /^other\.txt$/)).toBeVisible({ timeout: 15_000 });
+
+    detach();
+    expect(await readdir(workspaceRoot)).toEqual([]); // 挂载点目录还在,是空的
+    await focusWindow(electronApp);
+    await expect(explorerTreeItem(window, /^other\.txt$/)).toHaveCount(0, { timeout: 10_000 });
+
+    attach();
+    await focusWindow(electronApp);
+    await expect(explorerTreeItem(window, /^other\.txt$/)).toBeVisible({ timeout: 10_000 });
+
+    await writeFile(path.join(workspaceRoot, 'after-remount.txt'), 'x\n');
+    await expect(explorerTreeItem(window, /^after-remount\.txt$/)).toBeVisible({ timeout: 10_000 });
+  });
 });

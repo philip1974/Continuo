@@ -56,6 +56,11 @@ export interface WatcherPool {
   unwatchByOwner: (ownerId: number) => void;
   has: (path: string) => boolean;
   size: () => number;
+  /**
+   * 关闭并按原路径重建 match 命中的 watcher(引用计数 / 持有者不变;卷卸载挂回后旧 watcher 可能已失效)。
+   * 重建失败(目录此刻不在 / 无权)→ 按失效驱逐(onLost 通知持有者重装)。
+   */
+  recreate: (match: (path: string) => boolean) => void;
 }
 
 /**
@@ -71,7 +76,7 @@ export function createWatcherPool(
   onLost?: (path: string, ownerIds: number[]) => void,
   isPinned?: (path: string) => boolean,
 ): WatcherPool {
-  const watchers = new Map<string, { watcher: Watcher; refCount: number }>();
+  const watchers = new Map<string, { watcher: Watcher; refCount: number; onChange: WatchChangeListener }>();
   const order: string[] = []; // LRU,head 是最早
   // windowId → (path → 该窗口对此 path 的引用次数)。关窗时按此批量 decrement。
   const ownerPaths = new Map<number, Map<string, number>>();
@@ -169,7 +174,7 @@ export function createWatcherPool(
         }
       }
 
-      watchers.set(path, { watcher: w, refCount: 1 });
+      watchers.set(path, { watcher: w, refCount: 1, onChange });
       order.push(path);
       if (ownerId !== undefined) trackOwner(path, ownerId, 1);
     },
@@ -207,6 +212,28 @@ export function createWatcherPool(
 
     size() {
       return watchers.size;
+    },
+
+    recreate(match) {
+      for (const [path, entry] of [...watchers]) {
+        if (!match(path)) continue;
+        const old = entry.watcher;
+        let next: Watcher;
+        try {
+          // 失效回调只认这次新建的 watcher(同 watch)。
+          const w: Watcher = creator(path, entry.onChange, () => evictDead(path, w));
+          next = w;
+        } catch {
+          evictDead(path, old);
+          continue;
+        }
+        entry.watcher = next;
+        try {
+          old.close();
+        } catch {
+          // 已失效的 watcher close 抛错无需处理
+        }
+      }
     },
   };
 }
@@ -270,9 +297,16 @@ export function createSameTickPathCoalescer(
 export interface RootPresenceDeps {
   /** 是否是某窗口当前的工作区根(只跟踪根;子目录的消失由根 watcher 的子项事件覆盖)。 */
   readonly isRoot: (path: string) => boolean;
-  /** true 存在 / false 不存在 / null 无法确定(不改状态、不通知)。 */
-  readonly exists: (path: string) => Promise<boolean | null>;
+  /**
+   * 存在 → 根目录的身份串(`dev:ino`;只知存在、不知身份时可给 true)/ false 不存在 / null 无法确定(不改状态、不通知)。
+   */
+  readonly exists: (path: string) => Promise<string | boolean | null>;
   readonly onChange: (path: string) => void;
+  /**
+   * 根仍在、但已不是上次看到的那个目录(dev / ino 变了:卷卸载后露出挂载点目录、挂回、目录被换掉),或从消失恢复时调用
+   *(先于 onChange)。生产 = 重建该根下的 watcher:卷换了,旧 watcher 可能已失效。
+   */
+  readonly onReplaced?: (path: string) => void;
   /** 根事件后再复查一次的延迟(默认 ROOT_PRESENCE_SETTLE_MS)。 */
   readonly settleMs?: number;
   /** 定时器(测试注入;默认 setTimeout,不阻止进程退出)。 */
@@ -296,8 +330,16 @@ export const ROOT_PRESENCE_SETTLE_MS = 1500;
  * basename)→ 通知一次。根仍在且未消失过(如根下恰有同名子项变化)→ 不通知。
  * 每次根事件另在 settleMs 后复查一次(同一根合并为一个待复查):此时才发现消失 → 通知;事件当下刚判为恢复 → 再通知一次
  *(卷内容此时才就位,渲染端据此再复查一遍)。
+ *
+ * 身份比对:卷挂在**固定目录**上(`hdiutil attach -mountpoint <dir>`、NFS / SMB / sshfs 挂在用户目录下)时,卸载后挂载点
+ * 目录仍在(空目录),「存在」不变 → 只判存在会一直不通知,资源管理器停在旧列表 / 挂回后停在空列表。故每次检查还比对根的
+ * dev / ino(exists 返回的身份串):与上次看到的不同 → onReplaced + 通知,并像「恢复」一样在延迟复查时再通知一次。
+ * 首次看到的身份只记录不通知(调用方在窗口设定工作区根时检查一次作基线;窗口获焦时也检查,见 fs.ipc)。
  */
-export function createRootPresenceTracker(deps: RootPresenceDeps): (rootPath: string) => void {
+/** 根检查函数;`prime(root)` 只记下根当前的身份作基线(不通知、不改消失 / 恢复状态)。 */
+export type RootPresenceCheck = ((rootPath: string) => void) & { readonly prime: (rootPath: string) => void };
+
+export function createRootPresenceTracker(deps: RootPresenceDeps): RootPresenceCheck {
   const gone = new Set<string>();
   // 刚从消失转为存在、尚未经延迟复查再通知的根。
   const returned = new Set<string>();
@@ -308,6 +350,8 @@ export function createRootPresenceTracker(deps: RootPresenceDeps): (rootPath: st
     ((fn: () => void, ms: number) => {
       setTimeout(fn, ms).unref?.();
     });
+  // 上次看到的根身份(dev:ino)。消失期间保留,恢复时与之比对无意义(恢复本身就通知)。
+  const lastId = new Map<string, string>();
   const check = (rootPath: string, settle: boolean): void => {
     if (!deps.isRoot(rootPath)) return;
     void deps.exists(rootPath).then(
@@ -316,9 +360,17 @@ export function createRootPresenceTracker(deps: RootPresenceDeps): (rootPath: st
           gone.add(rootPath);
           returned.delete(rootPath);
           deps.onChange(rootPath);
-        } else if (exists === true) {
+        } else if (exists !== null) {
+          const id = typeof exists === 'string' ? exists : undefined;
+          const prevId = lastId.get(rootPath);
+          if (id !== undefined) lastId.set(rootPath, id);
           if (gone.delete(rootPath)) {
             if (!settle) returned.add(rootPath);
+            deps.onReplaced?.(rootPath);
+            deps.onChange(rootPath);
+          } else if (id !== undefined && prevId !== undefined && id !== prevId) {
+            if (!settle) returned.add(rootPath);
+            deps.onReplaced?.(rootPath);
             deps.onChange(rootPath);
           } else if (settle && returned.delete(rootPath)) {
             deps.onChange(rootPath);
@@ -328,7 +380,7 @@ export function createRootPresenceTracker(deps: RootPresenceDeps): (rootPath: st
       () => {},
     );
   };
-  return (rootPath) => {
+  const run = (rootPath: string): void => {
     if (!deps.isRoot(rootPath)) return;
     check(rootPath, false);
     if (settling.has(rootPath)) return;
@@ -338,4 +390,13 @@ export function createRootPresenceTracker(deps: RootPresenceDeps): (rootPath: st
       check(rootPath, true);
     }, settleMs);
   };
+  const prime = (rootPath: string): void => {
+    void deps.exists(rootPath).then(
+      (exists) => {
+        if (typeof exists === 'string' && !gone.has(rootPath)) lastId.set(rootPath, exists);
+      },
+      () => {},
+    );
+  };
+  return Object.assign(run, { prime });
 }

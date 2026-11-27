@@ -203,6 +203,9 @@ export const zh: Record<TranslationKey, string> = {
   'errors.FS_NOT_FOUND': '找不到文件',
   'errors.FS_READONLY': '文件是只读的（写保护）',
   'errors.FS_NO_SPACE': '磁盘空间不足',
+  'errors.FS_SAVE_ORIGINAL_DAMAGED': '保存失败，且未能还原原文件，原文件可能已损坏',
+  'fs.save_original_damaged_copy': '保存失败，且未能还原原文件，原文件可能已损坏。完整的原内容已另存到 {path}',
+  'fs.save_original_damaged_no_copy': '保存失败，且未能还原原文件，原文件可能已损坏；备份副本也没能写出。请不要关闭此标签页，腾出磁盘空间后重新保存',
   'errors.FS_READONLY_FS': '文件系统是只读的',
   'errors.FS_TRASH_FAILED': '无法移到废纸篓',
 

@@ -205,6 +205,9 @@ export const ko: Record<TranslationKey, string> = {
   'errors.FS_NOT_FOUND': '파일을 찾을 수 없습니다',
   'errors.FS_READONLY': '파일이 쓰기 보호되어 있습니다',
   'errors.FS_NO_SPACE': '디스크 공간이 부족합니다',
+  'errors.FS_SAVE_ORIGINAL_DAMAGED': '저장에 실패했고 원본 파일을 복원하지 못해 원본이 손상되었을 수 있습니다',
+  'fs.save_original_damaged_copy': '저장에 실패했고 원본 파일을 복원하지 못해 원본이 손상되었을 수 있습니다. 원본 전체 내용을 {path}에 저장했습니다',
+  'fs.save_original_damaged_no_copy': '저장에 실패했고 원본 파일을 복원하지 못해 원본이 손상되었을 수 있습니다. 백업 사본도 쓰지 못했습니다. 이 탭을 닫지 말고 디스크 공간을 확보한 뒤 다시 저장하세요',
   'errors.FS_READONLY_FS': '파일 시스템이 읽기 전용입니다',
   'errors.FS_TRASH_FAILED': '휴지통으로 이동할 수 없습니다',
 

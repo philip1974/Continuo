@@ -17,12 +17,20 @@ export function isAnyWorkspaceRoot(
   return false;
 }
 
+let onRootSet: ((root: string) => void) | undefined;
+
+/** 窗口设定(非空)工作区根后调用(生产 = fs.ipc 记下根的 dev / ino 作基线,见 createRootPresenceTracker)。 */
+export function setWorkspaceRootListener(listener: ((root: string) => void) | undefined): void {
+  onRootSet = listener;
+}
+
 export function setWorkspaceRoot(windowId: number, root: string | null): void {
   if (root === null) {
     map.delete(windowId);
     return;
   }
   map.set(windowId, root);
+  onRootSet?.(root);
 }
 
 export function getWorkspaceRoot(windowId: number): string | null {

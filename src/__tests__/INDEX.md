@@ -920,6 +920,7 @@
 
 ## [explorer-root-unavailable(工作区根不可用 / 恢复时资源管理器不显示过期列表)](./explorer-root-unavailable/README.md)
 
+- [`root-identity-change.spec.ts`](./explorer-root-unavailable/root-identity-change.spec.ts)
 - [`root-presence-refresh.spec.tsx`](./explorer-root-unavailable/root-presence-refresh.spec.tsx)
 
 ## [ExplorerSidebar(VSCode 风固定侧边栏)](./explorer-sidebar/README.md)
@@ -1804,6 +1805,7 @@
 
 ## [save-in-place(编辑器保存覆盖已有文件:原地写,保留文件身份与元数据)](./save-in-place/README.md)
 
+- [`save-in-place-cow-no-space.spec.ts`](./save-in-place/save-in-place-cow-no-space.spec.ts)
 - [`save-in-place-failure.spec.ts`](./save-in-place/save-in-place-failure.spec.ts)
 - [`save-in-place.spec.ts`](./save-in-place/save-in-place.spec.ts)
 

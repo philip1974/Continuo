@@ -22,9 +22,17 @@ import { encodeTextFile } from '../lib/text-codec';
 import { TEXT_ENCODING_IDS, type TextEncodingId } from '../../shared/text-encoding';
 import { readImage } from './fs/read-image';
 import { guardPluginOpenedPath } from '../services/plugin-fs.service';
-import { getWorkspaceRoot, isAnyWorkspaceRoot } from '../services/window-workspace-roots.service';
+import { getWorkspaceRoot, isAnyWorkspaceRoot, setWorkspaceRootListener } from '../services/window-workspace-roots.service';
+import { isSameOrInsidePath } from '../lib/path-inside';
 import { isEditorDocument, recordEditorDocument } from '../services/window-editor-documents.service';
-import { atomicReplaceFileNoFollow, atomicWriteFile, resolveSymlinkTarget } from './fs/atomic-write';
+import {
+  atomicReplaceFileNoFollow,
+  atomicWriteFile,
+  resolveSymlinkTarget,
+  setSaveRecoveryDir,
+  type AtomicWriteFileOptions,
+} from './fs/atomic-write';
+import { getMainT } from '../i18n';
 import { renameEntry } from './fs/rename';
 import { createDir, createFile } from './fs/create';
 import { copyEntry, moveEntry } from './fs/move-copy';
@@ -224,7 +232,7 @@ export const guardedReadImageHandler = (
 // encoding(utf8 以外):先整段编码成字节(含 BOM),表示不了的字符 → FS_UNENCODABLE,文件不动;再走同一原地写路径。
 export const writeFileHandler = async (input: WriteFileInput): Promise<FsFileStat | undefined> => {
   const opts = { overwriteReadonly: input.overwriteReadonly === true };
-  if (input.encoding === undefined || input.encoding === 'utf8') return atomicWriteFile(input.path, input.content, opts);
+  if (input.encoding === undefined || input.encoding === 'utf8') return saveEditorFile(input.path, input.content, opts);
   const encoded = encodeTextFile(input.content, input.encoding);
   if (!encoded.ok) {
     throw fsError(
@@ -235,8 +243,33 @@ export const writeFileHandler = async (input: WriteFileInput): Promise<FsFileSta
   if (encoded.bytes.length > MAX_WRITE_BYTES) {
     throw fsError(ERROR_CODES.FS_FILE_TOO_LARGE, `content 超过上限 ${MAX_WRITE_BYTES} 字节: ${input.path}`);
   }
-  return atomicWriteFile(input.path, encoded.bytes, opts);
+  return saveEditorFile(input.path, encoded.bytes, opts);
 };
+
+/**
+ * 编辑器保存写盘。原地写失败且没能还原原文件(FS_SAVE_ORIGINAL_DAMAGED)时把提示换成当前语言的完整说明(含恢复副本路径):
+ * catalog 的 errors.FS_SAVE_ORIGINAL_DAMAGED 装不下路径,renderer 对这个 code 有 message 就原样显示(见 localizeErrorByCode)。
+ * BDD: src/__tests__/save-in-place/save-in-place-cow-no-space.spec.ts
+ */
+async function saveEditorFile(
+  filePath: string,
+  content: string | Uint8Array,
+  opts: AtomicWriteFileOptions,
+): Promise<FsFileStat | undefined> {
+  try {
+    return await atomicWriteFile(filePath, content, opts);
+  } catch (err) {
+    if ((err as { code?: unknown }).code === ERROR_CODES.FS_SAVE_ORIGINAL_DAMAGED) {
+      const recoveryPath = (err as { details?: { recoveryPath?: unknown } }).details?.recoveryPath;
+      const t = getMainT();
+      (err as Error).message =
+        typeof recoveryPath === 'string'
+          ? t('fs.save_original_damaged_copy', { path: recoveryPath })
+          : t('fs.save_original_damaged_no_copy');
+    }
+    throw err;
+  }
+}
 // 安全:注册到 fs:read-file / fs:write-file 的是这两个包装 —— 路径是插件经 editor.openFile 打开过的标签时,
 // 读 / 写前在 plugin-fs 锁内确认路径没有被换入链接(见 guardPluginOpenedPath);其它路径原样直通。
 export const guardedReadFileHandler = (input: ReadFileInput): Promise<FsReadFileData> =>
@@ -400,20 +433,26 @@ function normalizeRelativeSubdir(value: string, endExclusive: number): string {
   return out;
 }
 
-// 工作区根自身消失 / 重新出现(见 createRootPresenceTracker):广播给所有窗口,不带文件名。
+// 工作区根自身消失 / 重新出现 / 换成了另一个目录(见 createRootPresenceTracker):广播给所有窗口,不带文件名。
+// 身份 = dev:ino(bigint,不丢精度):固定挂载点上的卷卸载 / 挂回时根路径一直存在,只有身份变。
+// 换了目录 → 重建该根下的全部 watcher(旧 watcher 盯的可能是已卸载卷,挂回后不再有事件)。
+// BDD: src/__tests__/explorer-root-unavailable/root-identity-change.spec.ts
 const checkRootPresence = createRootPresenceTracker({
   isRoot: (p) => isAnyWorkspaceRoot(p),
   exists: (p) =>
-    fs.promises.stat(p).then(
-      () => true,
+    fs.promises.stat(p, { bigint: true }).then(
+      (st) => `${st.dev}:${st.ino}`,
       (e: unknown) => {
         const code = (e as { code?: string }).code;
         return code === 'ENOENT' || code === 'ENOTDIR' ? false : null;
       },
     ),
+  onReplaced: (root) => watcherPool.recreate((p) => isSameOrInsidePath(root, p)),
   onChange: (p) =>
     broadcastToWindows(FS_CHANNELS.ROOT_PRESENCE_CHANGED, () => ({ path: p }), '[fs] ROOT_PRESENCE_CHANGED'),
 });
+// 窗口设定工作区根时就记下根的身份作基线(资源管理器 watch 根可能早于 / 晚于设定根,不能只靠 watch 时那一次)。
+setWorkspaceRootListener((root) => checkRootPresence.prime(root));
 
 // 生产 creator(导出仅供回归测试)。健壮性(独立审计):FSWatcher 在网络盘 / 可移动卷断开、目录失效时
 // 异步 emit('error'),EventEmitter 无 error 监听即抛 → 主进程未捕获异常崩溃。注册监听:warn + 上报池
@@ -589,6 +628,20 @@ export function registerFsIpc(): void {
     (input, { event }) =>
       watcherPool.unwatch(input.path, senderWindowOrThrow(event, ERROR_CODES.NO_WINDOW).id),
   );
+}
+
+/**
+ * 窗口获焦时(main index 接 app 'browser-window-focus')比对该窗口工作区根的身份:卷卸载 / 挂回不一定有任何 fs 事件
+ *(固定挂载点上 `hdiutil detach` / `attach` 实测一个都没有)。无根 → 不查。
+ */
+export function checkWindowRootPresence(windowId: number): void {
+  const root = getWorkspaceRoot(windowId);
+  if (root !== null) checkRootPresence(root);
+}
+
+/** 原地保存失败且无法还原原文件时,完整原内容副本写到 `<userData>/save-recovery`(main index 启动时调用)。 */
+export function configureSaveRecovery(userDataPath: string): void {
+  setSaveRecoveryDir(path.join(userDataPath, 'save-recovery'));
 }
 
 /** 窗口关闭时释放该窗口持有的全部 fs watcher 引用(审计 P2 资源泄漏)。 */

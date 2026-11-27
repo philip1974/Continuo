@@ -1,8 +1,10 @@
-import { access, chmod, lstat, open, realpath, rename, rm, stat } from 'node:fs/promises';
-import { constants as fsConstants, type Stats } from 'node:fs';
+import { access, chmod, lstat, mkdir, open, readFile, realpath, rename, rm, stat, statfs } from 'node:fs/promises';
+import { constants as fsConstants, type Stats, type StatsFs } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fsError, mapNodeErrnoCode } from './path-utils';
 import { ERROR_CODES } from '../../../shared/error-codes';
+import { MAX_WRITE_BYTES } from '../../../shared/fs-limits';
 import { runSerialPerKey } from '../../../shared/run-serial-per-key';
 import type { FsFileStat } from '../../../shared/fs-channels';
 
@@ -316,17 +318,177 @@ async function readFully(fh: FileHandle, length: number): Promise<Buffer> {
 }
 
 /**
+ * 原地写前要求的可用空间余量(字节):块取整与元数据开销。导出供测试按「刚好够 / 差一点」构造可用空间。
+ */
+export const IN_PLACE_SPACE_MARGIN = 1024 * 1024;
+
+/** 原地写 newSize 字节前要求的可用空间:2 × 新内容字节数 + 余量(依据见 assertRoomToWriteInPlace)。 */
+export function inPlaceSpaceNeeded(newSize: number): number {
+  return 2 * newSize + IN_PLACE_SPACE_MARGIN;
+}
+
+/**
+ * 原地写前的可用空间预检:可用空间(非特权用户可用,f_bavail × f_bsize)≥ inPlaceSpaceNeeded(新内容字节数)才原地写,
+ * 不够 → FS_NO_SPACE,一个字节都不写。
+ *
+ * 为什么不只按「变长的部分」算:写时复制的文件系统(APFS 克隆文件 `cp -c` / Finder 复制、本地快照(Time Machine)
+ * 仍引用的块、btrfs / ZFS / XFS reflink)上,覆盖**已有**的块也要分配新块,而且 ENOSPC 往往拖到 fsync / ftruncate
+ * 才报 —— 此时回滚写回原内容同样要新空间,同样失败(实测:6 MB 克隆文件、卷剩 1.1 MB,删一行保存后原文件末尾 30 字节
+ * 变 NUL;变长保存后原文件尾部接上新内容)。实测 APFS 改写克隆文件所需空间还明显多于文件大小(20 MB 卷:2 MB 文件
+ * 约需 6.2 MB、6 MB 文件约需 10 MB;200 MB 卷 6 MB 文件约需 19 MB —— statfs 报的可用空间里含 APFS 不让用的保留量),
+ * 故取 2 倍。无法可靠判断一个文件是否与别处共享块,一律按此预检。
+ * 代价:普通(非写时复制)卷上可用空间小于「2 × 文件大小 + 1 MiB」时,本来能原地完成的保存也被拒绝(提示磁盘空间不足,原文件不变)。
+ *
+ * 这只是第一道闸,并不精确(APFS 保留量随容器大小变化;检查与写之间空间也可能被别的进程占掉):写失败的处理见
+ * restoreOriginal。statfs 不可用 / 返回无意义的值(部分 FUSE / 网络卷报 0 块)→ 视为未知,照常原地写。
+ */
+async function assertRoomToWriteInPlace(filePath: string, newSize: number): Promise<void> {
+  let s: StatsFs;
+  try {
+    s = await statfs(filePath);
+  } catch {
+    return;
+  }
+  if (!(s.blocks > 0) || !(s.bsize > 0) || !Number.isFinite(s.bavail)) return;
+  const available = s.bavail * s.bsize;
+  const needed = inPlaceSpaceNeeded(newSize);
+  if (available < needed) {
+    throw fsError(
+      ERROR_CODES.FS_NO_SPACE,
+      `not enough free space to save (need ${needed} bytes, ${available} available; file not modified): ${filePath}`,
+    );
+  }
+}
+
+let saveRecoveryDir: string | undefined;
+
+/**
+ * 原地写失败且无法还原原文件时,完整原内容副本写到的目录(主进程启动时设为 `<userData>/save-recovery`)。
+ * 未设置(单测 / 早于注册)→ 只用系统临时目录下的 `continuo-save-recovery`。
+ */
+export function setSaveRecoveryDir(dir: string): void {
+  saveRecoveryDir = dir;
+}
+
+/** 恢复副本的候选目录:配置的目录优先,系统临时目录兜底(两者常不在同一个卷上,一个满了另一个仍可写)。 */
+function recoveryDirCandidates(): string[] {
+  const fallback = join(tmpdir(), 'continuo-save-recovery');
+  return saveRecoveryDir !== undefined && saveRecoveryDir !== fallback ? [saveRecoveryDir, fallback] : [fallback];
+}
+
+/** 每个文件最近一次写出的恢复副本路径:同样的原内容再次失败(自动保存反复重试)时复用,不在将满的磁盘上一份份堆副本。 */
+const lastRecoveryCopy = new Map<string, string>();
+
+/** 副本仍在且逐字节等于 original。 */
+async function recoveryCopyMatches(copyPath: string, original: Uint8Array): Promise<boolean> {
+  try {
+    return (await readFile(copyPath)).equals(original);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 把原内容完整写成一个新的恢复文件(0600,`wx` 排他新建,fsync),返回其路径;所有候选目录都写不成 → undefined。
+ * 文件名:`<时间戳>-<原文件名(截断)>`,保留扩展名便于用户直接打开。同一文件上次的副本仍在且内容相同 → 直接返回它。
+ */
+async function writeRecoveryCopy(filePath: string, original: Uint8Array): Promise<string | undefined> {
+  const previous = lastRecoveryCopy.get(filePath);
+  if (previous !== undefined && (await recoveryCopyMatches(previous, original))) return previous;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const base = basename(filePath);
+  const name = `${stamp}-${base.length > 100 ? base.slice(base.length - 100) : base}`;
+  for (const dir of recoveryDirCandidates()) {
+    const target = join(dir, name);
+    let fh: FileHandle | undefined;
+    try {
+      await mkdir(dir, { recursive: true, mode: 0o700 });
+      fh = await open(target, 'wx', 0o600);
+      await writeFully(fh, original, 0, 0, original.byteLength);
+      await fh.sync();
+      await fh.close();
+      fh = undefined;
+      lastRecoveryCopy.set(filePath, target);
+      return target;
+    } catch (err) {
+      console.error('[fs] save in place: writing recovery copy failed', target, err);
+      await fh?.close().catch(() => {});
+      if (fh !== undefined) await rm(target, { force: true }).catch(() => {});
+    }
+  }
+  return undefined;
+}
+
+/** 文件当前内容(经同一句柄读)是否与 expected 逐字节相同、长度相等。读不了 → false。 */
+async function contentEquals(fh: FileHandle, expected: Uint8Array): Promise<boolean> {
+  try {
+    if ((await fh.stat()).size !== expected.byteLength) return false;
+    return (await readFully(fh, expected.byteLength)).equals(expected);
+  } catch {
+    return false;
+  }
+}
+
+/** writeInPlace 已经动过的范围(回滚只写回这些范围,不重写未动的字节 —— 写时复制卷上重写同样要新空间)。 */
+interface TouchedRanges {
+  /** 已开始覆盖 [0, overlap)。 */
+  head: boolean;
+  /** 已开始截短到新长度([新长度, 原长度) 可能已丢)。 */
+  truncated: boolean;
+}
+
+/**
+ * 原地写失败后的回滚:按 touched 把动过的范围用写前读出的**完整**原内容写回,截回原长度(去掉 ① 追加的尾部),fsync,
+ * 再经句柄读回与原内容逐字节比对。
+ *   - 写回、截断、fsync 都成功且读回一致 → 原文件已还原,抛原错误(按 errno 映射,如 FS_NO_SPACE)。
+ *   - 任何一步失败或读回不一致(写时复制卷上回滚本身也要新空间,同样会 ENOSPC)→ 原文件可能已损坏:把完整原内容写成
+ *     恢复副本(见 writeRecoveryCopy),抛 FS_SAVE_ORIGINAL_DAMAGED,details.recoveryPath = 副本路径(写不成则缺省)。
+ *     绝不在这种情况下报普通的「保存失败」让用户以为原文件完好。
+ */
+async function restoreOriginal(
+  fh: FileHandle,
+  filePath: string,
+  backup: Buffer,
+  newSize: number,
+  touched: TouchedRanges,
+  cause: unknown,
+): Promise<never> {
+  const oldSize = backup.byteLength;
+  let restored = false;
+  try {
+    if (touched.head) await writeFully(fh, backup, 0, 0, Math.min(oldSize, newSize));
+    if (touched.truncated && newSize < oldSize) await writeFully(fh, backup, newSize, newSize, oldSize - newSize);
+    await fh.truncate(oldSize);
+    await fh.sync();
+    restored = await contentEquals(fh, backup);
+    if (!restored) console.error('[fs] save in place: restored content does not match the original', filePath);
+  } catch (restoreErr) {
+    console.error('[fs] save in place: restoring original failed', filePath, restoreErr);
+  }
+  if (restored) {
+    throw fsError(mapNodeErrnoCode(cause), `save in place failed (original restored): ${filePath}`);
+  }
+  const recoveryPath = await writeRecoveryCopy(filePath, backup);
+  const err = fsError(
+    ERROR_CODES.FS_SAVE_ORIGINAL_DAMAGED,
+    recoveryPath !== undefined
+      ? `save failed and the original could not be restored; it may be damaged. A complete copy of the original was saved to ${recoveryPath}: ${filePath}`
+      : `save failed and the original could not be restored; it may be damaged. Writing a recovery copy also failed: ${filePath}`,
+  );
+  throw Object.assign(err, recoveryPath !== undefined ? { details: { recoveryPath } } : {});
+}
+
+/**
  * 原地覆盖已有普通文件(同一 inode:目录权限、扩展属性 / Finder 标签、ACL、硬链接、属主、权限位、创建时间都不变)。
  *
- * VSCode 的原地写是 `open('w')` 先截断再写:写到一半失败(磁盘满)文件就只剩半截 / 空。这里保持旧实现
- * 「写失败原文件完整」的保证(数据安全审计实测磁盘满时原内容保住),按两阶段写:
- *   ① 新内容比原文件长 → 先把**超出原长度的尾部**写到原文件末尾之后并 fdatasync,一次性要到所需的新增空间;
- *      空间不足(ENOSPC 在 write 或 fdatasync 报出)→ 截回原长度,原内容 [0, 原长度) 一个字节没动。
- *   ② 读出将被覆盖的原内容 [0, min(原长度, 新长度))(≤ 新内容大小,受写入上限约束)作内存备份,覆盖写这一段、
- *      截到新长度、fsync。这一步不再需要新增空间(写自己已占的块);仍失败(I/O 错误 / 写时复制卷上快照占块)→
- *      用备份写回并截回原长度,再抛错。
- * 权衡:进程在 ② 中途被杀 / 断电会留下新旧混合的内容(VSCode 原地写同样;tmp + rename 没有此窗口但会丢上述元数据)。
- * ② 只覆盖已分配的块,通常很快;① 失败与 ② 的错误都能回滚。
+ * VSCode 的原地写是 `open('w')` 先截断再写:写到一半失败(磁盘满)文件就只剩半截 / 空。这里的保证:**任何失败路径下,
+ * 要么原文件逐字节不变,要么报 FS_SAVE_ORIGINAL_DAMAGED 并给出完整原内容的恢复副本路径**。步骤:
+ *   0. 改动任何字节之前读出**完整**原内容 [0, 原长度) 作内存备份(原文件超过写入上限 → 交回 tmp + rename),
+ *      并预检可用空间 ≥ 2 × 新内容字节数 + 余量(见 assertRoomToWriteInPlace;不够 → FS_NO_SPACE,不写)。
+ *   ① 新内容比原文件长 → 先把超出原长度的尾部写到原文件末尾之后并 fdatasync,一次要到新增空间。
+ *   ② 覆盖 [0, min(原长度, 新长度)) 并 fsync;③ 新内容更短 → 这之后才截到新长度并 fsync(覆盖失败时原文件长度与尾部都还在)。
+ *   任一步失败 → restoreOriginal 回滚并逐字节核对,核对不过则写恢复副本。
+ * 权衡:进程在 ②③ 中途被杀 / 断电会留下新旧混合的内容(VSCode 原地写同样;tmp + rename 没有此窗口但会丢上述元数据)。
  *
  * 打开用 O_RDWR | O_NOFOLLOW:调用方传入的已是 realpath,此刻若被换成符号链接(竞态)则拒绝(ELOOP),不写穿。
  * 打开得到的不是普通文件(竞态换成 FIFO / 目录)→ 不写,交回 tmp + rename(与新建 / 非普通文件同路径)。
@@ -351,39 +513,36 @@ async function writeInPlace(
     const before = await fh.stat();
     if (!before.isFile()) return FALLBACK_TO_RENAME;
     const oldSize = before.size;
+    // 完整备份放不进内存上限(编辑器打不开这么大的文件,只可能是外部把它换大了)→ tmp + rename:原文件到 rename 成功前不动。
+    if (oldSize > MAX_WRITE_BYTES) return FALLBACK_TO_RENAME;
     const overlap = Math.min(oldSize, newSize);
     // 备份在改动任何字节之前读:读失败 → 原文件未动,直接抛。
     let backup: Buffer;
     try {
-      backup = await readFully(fh, overlap);
+      backup = await readFully(fh, oldSize);
     } catch (err) {
       throw fsError(mapNodeErrnoCode(err), `save in place read failed: ${filePath}`);
     }
-    // ① 先占新增空间。
-    if (newSize > oldSize) {
-      try {
+    await assertRoomToWriteInPlace(filePath, newSize);
+    const touched: TouchedRanges = { head: false, truncated: false };
+    try {
+      // ① 先占新增空间。
+      if (newSize > oldSize) {
         await writeFully(fh, data, oldSize, oldSize, newSize - oldSize);
         await fh.datasync();
-      } catch (err) {
-        await fh.truncate(oldSize).catch(() => {});
-        await fh.datasync().catch(() => {});
-        throw fsError(mapNodeErrnoCode(err), `save in place failed (original kept): ${filePath}`);
       }
-    }
-    // ② 覆盖重叠段 + 截到新长度 + fsync;失败用备份回滚。
-    try {
+      // ② 覆盖重叠段 + fsync。
+      touched.head = true;
       await writeFully(fh, data, 0, 0, overlap);
-      if (newSize < oldSize) await fh.truncate(newSize);
       await fh.sync();
-    } catch (err) {
-      try {
-        await writeFully(fh, backup, 0, 0, overlap);
-        await fh.truncate(oldSize);
+      // ③ 覆盖已落盘后才截短。
+      if (newSize < oldSize) {
+        touched.truncated = true;
+        await fh.truncate(newSize);
         await fh.sync();
-      } catch (restoreErr) {
-        console.error('[fs] save in place: restoring original failed', filePath, restoreErr);
       }
-      throw fsError(mapNodeErrnoCode(err), `save in place failed: ${filePath}`);
+    } catch (err) {
+      await restoreOriginal(fh, filePath, backup, newSize, touched, err);
     }
     handleId = await fh.stat().catch(() => undefined);
   } finally {

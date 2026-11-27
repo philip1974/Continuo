@@ -150,7 +150,7 @@ import {
   type DirtyCloseChoice,
   type DirtyState,
 } from './dirty-close-confirm';
-import { releaseFsWatchersForWindow } from './ipc/fs.ipc';
+import { checkWindowRootPresence, configureSaveRecovery, releaseFsWatchersForWindow } from './ipc/fs.ipc';
 import { cleanupAllShellExecs, openExternalIfAllowed } from './services/shell.service';
 import { cleanupAllShellStreams } from './services/plugin-shell-stream.service';
 import { MAX_EXTERNAL_URL_LEN } from './../shared/url-limits';
@@ -1024,6 +1024,9 @@ function isReloadKey(key: string): boolean {
 // 但 main 端 dockview state 还在 → 子窗黑屏。
 // did-start-navigation 是 "did" 事件不能 preventDefault,改成在键盘事件层吞掉
 // Cmd+R / Ctrl+R / F5,并去掉 popout 的菜单(避免菜单里的 Reload)。
+// 窗口获焦:比对该窗口工作区根的 dev / ino(固定目录上的卷卸载 / 挂回没有 fs 事件,见 checkWindowRootPresence)。
+app.on('browser-window-focus', (_evt, win) => checkWindowRootPresence(win.id));
+
 app.on('browser-window-created', (_evt, win) => {
   // 窗口级资源清理:主窗 / 新窗 / dockview popout 子窗一视同仁(popout 不走
   // createMainWindow,镜像 terminal.ipc 的 windowClosedCleanup 覆盖全窗口挂法)。
@@ -1467,6 +1470,8 @@ app.whenReady().then(async () => {
     setDockMenu();
   }
 
+  // 编辑器原地保存失败且无法还原原文件时的恢复副本目录(<userData>/save-recovery)。
+  configureSaveRecovery(app.getPath('userData'));
   registerIpc({
     createMainWindow,
     relaunchApp,

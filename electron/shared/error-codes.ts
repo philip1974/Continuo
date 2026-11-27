@@ -95,6 +95,8 @@ export const FS_ERROR_CODES = {
   FS_READONLY: 'FS_READONLY',
   // ENOSPC:磁盘空间不足。
   FS_NO_SPACE: 'FS_NO_SPACE',
+  // 原地保存失败且没能把原文件还原(写时复制卷磁盘满时回滚本身也会失败):原文件可能已损坏;details.recoveryPath = 完整原内容的副本。
+  FS_SAVE_ORIGINAL_DAMAGED: 'FS_SAVE_ORIGINAL_DAMAGED',
   // EROFS:只读文件系统(只读挂载的卷 / 镜像)。
   FS_READONLY_FS: 'FS_READONLY_FS',
   // 移到废纸篓失败且不是权限 / 只读卷原因(卷不支持废纸篓等):资源管理器询问是否永久删除。

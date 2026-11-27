@@ -73,7 +73,8 @@ describe('unified-toast-notification: ERROR_CODES enum', () => {
     // 在文件中查找:+SEARCH_FAILED(61→62),搜索 worker 崩溃 / 异常退出。
     // Explorer:+FS_TRASH_FAILED(62→63),移到废纸篓失败且非权限原因 → 询问是否永久删除。
     // 编辑器编码:+FS_UNKNOWN_ENCODING / FS_DECODE_FAILED / FS_UNENCODABLE(63→66),非 UTF-8 文件可通过编码重新打开、保存不写坏。
-    expect(Object.keys(ERROR_CODES)).toHaveLength(66);
+    // 保存:+FS_SAVE_ORIGINAL_DAMAGED(66→67),原地保存失败且没能还原原文件(写时复制卷磁盘满)→ 明说可能已损坏并给恢复副本。
+    expect(Object.keys(ERROR_CODES)).toHaveLength(67);
     expect(ERROR_CODES.TERMINAL_CWD_UNRESOLVED).toBe(
       'TERMINAL_CWD_UNRESOLVED',
     );

@@ -217,6 +217,9 @@ export const en = {
   'errors.FS_NOT_FOUND': 'File not found',
   'errors.FS_READONLY': 'File is write-protected',
   'errors.FS_NO_SPACE': 'Not enough disk space',
+  'errors.FS_SAVE_ORIGINAL_DAMAGED': 'Save failed and the original file could not be restored, so it may be damaged',
+  'fs.save_original_damaged_copy': 'Save failed and the original file could not be restored, so it may be damaged. A complete copy of the original content was saved to {path}',
+  'fs.save_original_damaged_no_copy': 'Save failed and the original file could not be restored, so it may be damaged. A backup copy could not be written either: keep this tab open, free up disk space, then save again',
   'errors.FS_READONLY_FS': 'The file system is read-only',
   'errors.FS_TRASH_FAILED': 'Could not move to the Trash',
 

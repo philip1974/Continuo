@@ -1,5 +1,6 @@
 import { tWithFallback, type TranslateParams } from '@/i18n';
 import { errorMessage } from '@shared/error-message';
+import { ERROR_CODES } from '@shared/error-codes';
 
 function isPlaceholderStart(code: number): boolean {
   return (
@@ -40,7 +41,14 @@ function hasCatalogPlaceholder(text: string): boolean {
  * 所有「error toast / 错误反馈展示」入口的单一来源(Explorer FolderTree FS toast、Editor
  * 保存失败、等)。新增展示 main error 的入口都应走这里,不要直接 notify.error(r.message)。
  */
+/**
+ * main 已按当前语言写好完整说明的 code:message 带 catalog 文案装不下的具体信息,有 message 就原样显示。
+ * FS_SAVE_ORIGINAL_DAMAGED:原地保存失败且没能还原原文件,message 含完整原内容的恢复副本路径(见 fs.ipc saveEditorFile)。
+ */
+const MAIN_LOCALIZED_CODES: ReadonlySet<string> = new Set([ERROR_CODES.FS_SAVE_ORIGINAL_DAMAGED]);
+
 export function localizeErrorByCode(code: string, message?: string | null, params?: TranslateParams): string {
+  if (MAIN_LOCALIZED_CODES.has(code) && message) return message;
   // 原文缺省 / 空串 → 回退 code(未收录 code 时不显示空原因)。此前由各调用点自带回退,写法分成 `||` / `??` / 不回退三种。
   const fallback = message || code;
   const localized = tWithFallback(`errors.${code}`, fallback, params);
