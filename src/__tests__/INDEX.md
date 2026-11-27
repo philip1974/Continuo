@@ -1373,6 +1373,11 @@
 - [`open-panel-focus.spec.tsx`](./open-panel-focus/open-panel-focus.spec.tsx)
 - [`panel-chunk-preload.spec.tsx`](./open-panel-focus/panel-chunk-preload.spec.tsx)
 
+## [os-file-drop(从 Finder / 桌面拖入磁盘文件:打开,⇧ 才插入)](./os-file-drop/README.md)
+
+- [`editor-os-drop.spec.tsx`](./os-file-drop/editor-os-drop.spec.tsx)
+- [`window-os-drop.spec.ts`](./os-file-drop/window-os-drop.spec.ts)
+
 ## [path-cross](./path-cross/)
 
 - [`path-cross.spec.ts`](./path-cross/path-cross.spec.ts)
@@ -1811,6 +1816,7 @@
 
 ## [save-in-place(编辑器保存覆盖已有文件:原地写,保留文件身份与元数据)](./save-in-place/README.md)
 
+- [`save-failure-notice.spec.tsx`](./save-in-place/save-failure-notice.spec.tsx)
 - [`save-in-place-cow-no-space.spec.ts`](./save-in-place/save-in-place-cow-no-space.spec.ts)
 - [`save-in-place-failure.spec.ts`](./save-in-place/save-in-place-failure.spec.ts)
 - [`save-in-place.spec.ts`](./save-in-place/save-in-place.spec.ts)

@@ -72,7 +72,7 @@ describe('errno → 业务码细分', () => {
 });
 
 describe('显式保存失败提示带文件名', () => {
-  it('⌘S 写盘 FS_NO_SPACE → 「保存失败 a.ts：磁盘空间不足」', async () => {
+  it('⌘S 写盘 FS_NO_SPACE → 「保存失败 a.ts：磁盘空间不足，磁盘上的原文件未改动」(见 save-in-place README「提示」)', async () => {
     const path = '/work/a.ts';
     mocks.readFile.mockResolvedValue({ ok: true, data: 'orig' });
     mocks.writeFile.mockResolvedValue({ ok: false, code: 'FS_NO_SPACE', message: 'atomic write tmp failed: /work/a.ts' });
@@ -88,7 +88,7 @@ describe('显式保存失败提示带文件名', () => {
     });
     expect(mocks.error).toHaveBeenCalledTimes(1);
     expect(mocks.error.mock.calls[0]?.[0]).toBe(
-      t('common.label_detail', { label: `${t('editor.save_failed')} a.ts`, detail: t('errors.FS_NO_SPACE') }),
+      t('common.label_detail', { label: `${t('editor.save_failed')} a.ts`, detail: t('editor.save_no_space_unchanged') }),
     );
   });
 });

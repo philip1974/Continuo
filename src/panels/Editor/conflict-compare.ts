@@ -141,7 +141,7 @@ export async function resolveConflict(
     const r =
       choice === 'accept' ? await saveFile(tabId, deps, { force: true }) : await revertFile(tabId, deps);
     if (!r.ok) {
-      if (choice === 'accept') notifySaveFailed(basenameForChrome(tab.filePath), r);
+      if (choice === 'accept') notifySaveFailed(basenameForChrome(tab.filePath), r, undefined, tab.filePath);
       else notifyFailure(r);
       return false;
     }

@@ -1,7 +1,7 @@
 # 拖文件夹到窗口(`pickDroppedDirectory`)
 
 行为契约:**用户拖文件夹到 Continuo 窗口,当前窗口换 workspace(VSCode 同款)**;
-拖文件、混合内容、空 dataTransfer 不处理。issue #23 衍生 UX 缺口。
+混合内容取第一个文件夹,空 dataTransfer 不处理。拖入普通文件 → 在编辑器里打开(见 `os-file-drop`)。issue #23 衍生 UX 缺口。
 
 ## 模块
 
@@ -22,7 +22,7 @@ VSCode 同款。混合 dataTransfer 不报错。
 
 ### 全部是文件 → 返 null
 
-文件 drop 由 editor 自己处理(后续 Phase),本函数只关心目录 → workspace。
+本函数只关心目录 → workspace;普通文件在编辑器里打开(`os-file-drop`)。
 
 ### 空 dataTransfer → 返 null
 

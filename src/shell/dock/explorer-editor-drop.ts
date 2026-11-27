@@ -7,7 +7,7 @@
 //   (VSCode editor.dropIntoEditor),这里不接收。
 // 编辑器组自己的 tab 栏在 dock 面板内容里:dockview 会把它当内容区顶部边缘(拆分),而 VSCode 的 tab 栏是放进该组 ——
 // tab 栏自己接收(useEditorTabBarDrop),经过它时不接受 dockview 的内容区高亮。
-// 只接收树拖出的自定义 MIME(dockview 自己的 tab / 组拖动有面板数据,不走这里;OS 文件拖放不变)。
+// 只接收树拖出的自定义 MIME(dockview 自己的 tab / 组拖动有面板数据,不走这里;从 Finder 拖来的文件见 os-file-drop)。
 // dockview 的放置监听随组进 popout 子窗,不用另绑子窗文档。
 
 import { useCallback, useState, type DragEvent as ReactDragEvent } from 'react';
@@ -69,30 +69,32 @@ export function splitDirectionOfDrop(position: Position): SplitDirection | undef
 
 /**
  * 在编辑器组 groupId(给了 direction → 先在它那一侧拆出新组)以常驻方式依次打开 paths;第一个打开成功的成为该组活动编辑器并获焦。
- * 打不开的照常提示(与资源管理器单击打开同一套反馈)。
+ * groupId 缺省 = 活动编辑器组(从 Finder 拖到编辑区以外,见 os-file-drop)。打不开的照常提示(与资源管理器单击打开同一套反馈)。
  */
 export async function openDroppedFiles(
   paths: readonly string[],
-  groupId: string,
+  groupId: string | undefined,
   direction?: SplitDirection,
 ): Promise<void> {
   let target = groupId;
-  if (direction !== undefined && splitEditor(direction, { groupId, tabId: null })) {
+  if (groupId !== undefined && direction !== undefined && splitEditor(direction, { groupId, tabId: null })) {
     target = useEditorStore.getState().activeGroupId;
   }
+  const inGroup = target === undefined ? {} : { groupId: target };
   let first: string | null = null;
   for (const path of paths) {
     const ok = await openFileOrNotify(
-      () => openFileByPath(path, editorFileDeps, { preview: false, groupId: target }),
+      () => openFileByPath(path, editorFileDeps, { preview: false, ...inGroup }),
       basenamePreserveTrailing(path),
       'editor-drop',
-      (encoding) => openFileByPath(path, editorFileDeps, { preview: false, groupId: target, encoding }),
+      (encoding) => openFileByPath(path, editorFileDeps, { preview: false, ...inGroup, encoding }),
     );
     if (ok && first === null) first = findEditorFileTabByPath(useEditorStore.getState().tabs, path)?.id ?? null;
   }
   if (first === null) return;
-  useEditorStore.getState().switchTab(first, { groupId: target });
-  requestEditorFocus(first, target);
+  const group = target ?? useEditorStore.getState().activeGroupId;
+  useEditorStore.getState().switchTab(first, { groupId: group });
+  requestEditorFocus(first, group);
 }
 
 export type OpenDroppedFiles = (paths: readonly string[], groupId: string, direction?: SplitDirection) => unknown;

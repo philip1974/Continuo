@@ -43,6 +43,8 @@ import { RestoreWindowsFromSettings } from '@/plugins/settings/RestoreWindowsFro
 import { ZoomLevelFromSettings } from '@/plugins/settings/ZoomLevelFromSettings';
 import { notifyFailure, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { switchToCheckedRoot } from '@/panels/Explorer/open-recent-root';
+import { takeUnclaimedDroppedPaths } from '@/panels/Editor/os-file-drop';
+import { openDroppedFiles } from './dock/explorer-editor-drop';
 
 function MainApp() {
   // 性能:Splash 只遮住布局恢复期,布局就绪即移除(此前另有 600ms 最短展示,布局 80ms 就绪也要
@@ -87,7 +89,7 @@ function MainApp() {
   }, [workspaceRoot]);
 
   // 拖文件夹到当前窗口 → 换 workspace(VSCode 同款,issue #23 衍生 UX)。
-  // 文件 drop 暂不处理 — 让 dockview 子区域(editor)自己处理(它有自己的逻辑)。
+  // 拖入普通文件 → 在编辑器里打开(VSCode 同;编辑器面板 / 编辑器内容已处理的文件不再打开,见 os-file-drop)。
   // dragover 必 preventDefault,否则浏览器拒绝触发 drop。
   const setRoot = useWorkspaceStore((s) => s.setRoot);
   // race(R18→R27):workspace 文件夹 drop 的异步解析「最新者胜」守卫 —— 连续拖入 A 后 B,若 B 先
@@ -120,6 +122,14 @@ function MainApp() {
       // 且同步捕获避免进入 async 后 DataTransfer.files 失效。
       // 性能:webkitGetAsEntry 已能判定时只探测目录(纯文件拖入零 listDir IPC),否则回退全量探测。
       const { files: droppedFiles, hadDirectory } = captureDropCandidates(dt, MAX_DROP_FILES);
+      // 普通文件(落在编辑区以外,或编辑器没处理的):同步取路径(之后 DataTransfer 失效);有文件夹时不取 —— 照旧打开为工作区。
+      // 文件 / 文件夹无法同步判定时(取不到 entry)先按目录探测,探测不出目录再当文件打开。BDD: src/__tests__/os-file-drop/
+      const filePaths = hadDirectory ? [] : takeUnclaimedDroppedPaths(e);
+      if (droppedFiles.length === 0) {
+        // 可判定为全是文件(没有要探测的目录):直接打开,不作为一次工作区选择(不让在途的「打开最近」等失效)
+        if (filePaths.length > 0) void openDroppedFiles(filePaths, undefined);
+        return;
+      }
       const isLatest = workspaceRootSelectionGuard.begin(); // race(R18→R27):标记本次 root 选择为最新(全窗口共享守卫)
       void (async () => {
         try {
@@ -138,6 +148,8 @@ function MainApp() {
           }
           else if (result.kind === 'error') {
             notifyFailure(result);
+          } else if (filePaths.length > 0) {
+            void openDroppedFiles(filePaths, undefined);
           }
         } catch (err) {
           if (!isLatest()) return;

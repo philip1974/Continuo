@@ -493,6 +493,7 @@ export const ko: Record<TranslationKey, string> = {
   'editor.autosave_readonly_detail': '{reason}. {hotkey}로 덮어쓸지 선택할 수 있습니다.',
   'editor.autosave_paused_deleted': '자동 저장 일시 중지: 디스크에서 {name} 파일을 찾을 수 없습니다. 변경 내용은 편집기에 남아 있으며 {hotkey}로 다시 저장할 수 있습니다.',
   'editor.save_failed': '저장 실패',
+  'editor.save_no_space_unchanged': '디스크 공간이 부족합니다. 디스크의 원본 파일은 변경되지 않았습니다',
   // Markdown 粘贴 / 拖入图片(editor-media-drop)
   'editor.media.save_document_first': '이미지를 추가하려면 먼저 파일을 저장하세요.',
   'editor.media.outside_workspace': '열린 폴더 안의 Markdown 파일에만 이미지를 저장할 수 있습니다.',

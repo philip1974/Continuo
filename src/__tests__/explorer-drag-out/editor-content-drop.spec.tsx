@@ -136,6 +136,10 @@ async function mountedMilkdown(): Promise<{ crepe: CrepeType; view: PmLike }> {
 }
 
 describe('Markdown 编辑视图(真实 Crepe)', () => {
+  // drop 指示器在 drop 后 30 ms 收起:等它跑完再卸载编辑器(否则计时器在卸载后访问已销毁的 ctx,报未处理错误)
+  afterEach(() => act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  }));
   it('放下不改文档;⇧ 放下插入相对文档的链接 / 图片', async () => {
     useWorkspaceStore.setState({ root: '/w' });
     const { container } = render(<MilkdownEditor tabId="/w/docs/a.md" fileName="/w/docs/a.md" defaultValue={'hello\n'} />);

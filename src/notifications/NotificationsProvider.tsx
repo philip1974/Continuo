@@ -297,13 +297,21 @@ export function NotificationsProvider({
     ) => {
       const now = Date.now();
       const code = opts?.code;
+      const replaceKey = opts?.replaceKey;
+
+      // replaceKey:同 key 的旧通知先关闭,本条作为新通知加入(不合并计数,见 NotifyOpts.replaceKey)。
+      if (replaceKey !== undefined) {
+        for (const n of notificationsRef.current) {
+          if (n.replaceKey === replaceKey) dismiss(n.id);
+        }
+      }
 
       // VSCode 通知同款:同 level + 同 message 的通知还在列表里(显示中或排队中)就合并为一条 —— 计数 +1、
-      // 刷新自动消失计时(排队中的没有计时,补位时才开始),不再堆出多条相同 toast。error 同样合并。
+      // 刷新自动消失计时(排队中的没有计时,补位时才开始),不再堆出多条相同 toast。error 同样合并。带 replaceKey 的不参与。
       let existing: Notification | undefined;
-      for (let i = notificationsRef.current.length - 1; i >= 0; i--) {
+      for (let i = notificationsRef.current.length - 1; replaceKey === undefined && i >= 0; i--) {
         const n: Notification | undefined = notificationsRef.current[i];
-        if (n !== undefined && n.level === level && n.message === message) {
+        if (n !== undefined && n.level === level && n.message === message && n.replaceKey === undefined) {
           existing = n;
           break;
         }
@@ -342,10 +350,11 @@ export function NotificationsProvider({
         doc: getAnnouncingDocument(),
       });
       const id = `notif-${String(++counterRef.current)}`;
-      const n: Notification =
+      const base: Notification =
         opts?.actions !== undefined && opts.actions.length > 0
           ? { id, level, message, code, createdAt: now, actions: opts.actions }
           : { id, level, message, code, createdAt: now };
+      const n: Notification = replaceKey === undefined ? base : { ...base, replaceKey };
       // race(R13):同步把新通知写入 notificationsRef,使同一事件循环内后续 notify 的去重能看到
       // 这条 pending 通知。ref 原本只在 setNotifications 的 updater 执行时(延迟到 render)才更新
       // → 同 tick 连续两次同源 notify 第二次读到的 ref 仍缺第一条 → 各自入队绕过去重。下面的
@@ -360,7 +369,7 @@ export function NotificationsProvider({
       setNotificationList((prev) => appendCappedNotification(prev, n, onDrop));
       armVisibleTimers();
     },
-    [armVisibleTimers, clearDismissTimer, scheduleDismiss, setNotificationList],
+    [armVisibleTimers, clearDismissTimer, dismiss, scheduleDismiss, setNotificationList],
   );
 
   // epoch race 防护:mount 时注册,unmount 时仅当自身 epoch === 当前 currentEpoch 才清空

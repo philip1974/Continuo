@@ -64,6 +64,8 @@ import type { EditorTab } from '@/stores/editor.store';
 import { notifyFailure, notifyIfFailed, notifyThrownError } from '@/notifications/notify-thrown-error';
 import { ERROR_CODES } from '../../../electron/shared/error-codes';
 import { notifySaveFailed, openFileOrNotify } from '@/notifications/notify-open-failed';
+import { openOsDroppedFiles } from './os-file-drop';
+import { isOsFileDrop } from './editor-media-drop';
 import type { NotifyAction } from '@/notifications/notify';
 import { basenameForChrome } from '@/lib/path-label';
 import { isModalOpenFor, winningCommandFor, withDefaultCommands } from '@/plugins/command-palette/useCommandHotkeys';
@@ -367,9 +369,12 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         if (refocus) focusAfterSaveAs(r.data ?? tabId);
         return r.data;
       }
-      notifySaveFailed(editorTabTitle(tab.filePath), r, [
-        { label: translate('editor.save_as_action'), run: () => void saveAsTab(tabId) },
-      ]);
+      notifySaveFailed(
+        editorTabTitle(tab.filePath),
+        r,
+        [{ label: translate('editor.save_as_action'), run: () => void saveAsTab(tabId) }],
+        tab.filePath,
+      );
     } catch (err) {
       notifyThrownError(err);
     }
@@ -413,7 +418,12 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         setReadonlyCandidate({ id: target.id, filePath: target.filePath, ...flags });
         return;
       }
-      notifySaveFailed(editorTabTitle(target.filePath), r, saveFailureActions(target.id, r.code, flags.force === true));
+      notifySaveFailed(
+        editorTabTitle(target.filePath),
+        r,
+        saveFailureActions(target.id, r.code, flags.force === true),
+        target.filePath,
+      );
     },
   );
   const saveFailureActions = useStableCallback(
@@ -473,7 +483,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       return false;
     }
     if (!allowPrompt) {
-      notifySaveFailed(editorTabTitle(target.filePath), r, saveFailureActions(target.id, r.code, false));
+      notifySaveFailed(editorTabTitle(target.filePath), r, saveFailureActions(target.id, r.code, false), target.filePath);
       return false;
     }
     if (r.code === EDITOR_DISK_CHANGED) {
@@ -545,7 +555,12 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
         if (r.code === EDITOR_DISK_CHANGED) {
           setOverwriteCandidate({ id: candidate.id, filePath: candidate.filePath, batch: candidate.batch });
         } else {
-          notifySaveFailed(editorTabTitle(candidate.filePath), r, saveFailureActions(candidate.id, r.code, candidate.force === true));
+          notifySaveFailed(
+            editorTabTitle(candidate.filePath),
+            r,
+            saveFailureActions(candidate.id, r.code, candidate.force === true),
+            candidate.filePath,
+          );
         }
       } else if (candidate.batch) advanceBatchClose(candidate.batch);
     } catch (err) {
@@ -751,6 +766,7 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       // 空编辑器组的焦点落点(关掉最后一个 tab 后);只经脚本聚焦,不进 Tab 顺序。
       tabIndex={-1}
       data-editor-panel-root=""
+      data-editor-group-id={groupId}
       className="flex h-full w-full flex-col bg-canvas outline-none"
       onKeyDown={(e) => {
         // 保存 / 下一个 / 上一个编辑器在面板内就地处理并截住冒泡:不再到 document 的全局分发(否则一次按键执行两次);
@@ -774,6 +790,15 @@ export function EditorPanel({ api }: EditorPanelProps = {}) {
       }}
       // 焦点进入本组(编辑区 / tab 行)→ 成为活动组:之后打开的文件落在这里(VSCode 最近活动的组)。
       onFocus={() => useEditorStore.getState().setActiveGroup(groupId)}
+      // 从 Finder 拖来的磁盘文件(编辑器内容没插入的)在本组打开(VSCode 外部文件拖入一律打开;popout 子窗同样经这里)。
+      // BDD: src/__tests__/os-file-drop/
+      // dragover 必须 preventDefault 才会收到 drop:主窗口的窗口级监听已做,popout 子窗没有,这里补上。
+      onDragOver={(e) => {
+        if (isOsFileDrop(e.dataTransfer)) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        openOsDroppedFiles(e.nativeEvent, groupId);
+      }}
     >
       <EditorHeader onCloseRequest={onTabCloseRequest} onCloseTabsRequest={onTabsCloseRequest} />
       {activeIsMarkdown && (

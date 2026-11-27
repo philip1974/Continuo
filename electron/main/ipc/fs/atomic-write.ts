@@ -317,27 +317,38 @@ async function readFully(fh: FileHandle, length: number): Promise<Buffer> {
   return buf;
 }
 
-/**
- * 原地写前要求的可用空间余量(字节):块取整与元数据开销。导出供测试按「刚好够 / 差一点」构造可用空间。
- */
-export const IN_PLACE_SPACE_MARGIN = 1024 * 1024;
+/** 原地写前要求的额外余量下限(字节)。 */
+const IN_PLACE_RESERVE_MIN = 4 * 1024 * 1024;
+/** 额外余量按卷大小的比例(APFS 不让改写克隆块用的保留量随卷变大)。 */
+const IN_PLACE_RESERVE_FRACTION = 0.04;
+/** 额外余量上限:大卷上不因「卷很大」拒绝普通保存。 */
+const IN_PLACE_RESERVE_MAX = 256 * 1024 * 1024;
 
-/** 原地写 newSize 字节前要求的可用空间:2 × 新内容字节数 + 余量(依据见 assertRoomToWriteInPlace)。 */
-export function inPlaceSpaceNeeded(newSize: number): number {
-  return 2 * newSize + IN_PLACE_SPACE_MARGIN;
+/**
+ * 原地写 newSize 字节前要求的可用空间:3 × 新内容字节数 + 额外余量(卷大小的 4%,夹在 4 MiB 与 256 MiB 之间;卷大小未知按下限)。
+ * 依据见 assertRoomToWriteInPlace。导出供测试按「刚好够 / 差一点」构造可用空间。
+ */
+export function inPlaceSpaceNeeded(newSize: number, volumeBytes = 0): number {
+  const reserve = Math.min(
+    IN_PLACE_RESERVE_MAX,
+    Math.max(IN_PLACE_RESERVE_MIN, Math.ceil((Number.isFinite(volumeBytes) ? volumeBytes : 0) * IN_PLACE_RESERVE_FRACTION)),
+  );
+  return 3 * newSize + reserve;
 }
 
 /**
- * 原地写前的可用空间预检:可用空间(非特权用户可用,f_bavail × f_bsize)≥ inPlaceSpaceNeeded(新内容字节数)才原地写,
+ * 原地写前的可用空间预检:可用空间(非特权用户可用,f_bavail × f_bsize)≥ inPlaceSpaceNeeded(新内容字节数, 卷大小)才原地写,
  * 不够 → FS_NO_SPACE,一个字节都不写。
  *
  * 为什么不只按「变长的部分」算:写时复制的文件系统(APFS 克隆文件 `cp -c` / Finder 复制、本地快照(Time Machine)
  * 仍引用的块、btrfs / ZFS / XFS reflink)上,覆盖**已有**的块也要分配新块,而且 ENOSPC 往往拖到 fsync / ftruncate
- * 才报 —— 此时回滚写回原内容同样要新空间,同样失败(实测:6 MB 克隆文件、卷剩 1.1 MB,删一行保存后原文件末尾 30 字节
- * 变 NUL;变长保存后原文件尾部接上新内容)。实测 APFS 改写克隆文件所需空间还明显多于文件大小(20 MB 卷:2 MB 文件
- * 约需 6.2 MB、6 MB 文件约需 10 MB;200 MB 卷 6 MB 文件约需 19 MB —— statfs 报的可用空间里含 APFS 不让用的保留量),
- * 故取 2 倍。无法可靠判断一个文件是否与别处共享块,一律按此预检。
- * 代价:普通(非写时复制)卷上可用空间小于「2 × 文件大小 + 1 MiB」时,本来能原地完成的保存也被拒绝(提示磁盘空间不足,原文件不变)。
+ * 才报(实测:6 MB 克隆文件、卷剩 1.1 MB,旧实现删一行保存后原文件末尾 30 字节变 NUL;变长保存后原文件尾部接上新内容)。
+ * 实测(APFS dmg,克隆文件整段改写 + fsync 成功所需的最小 statfs 可用空间,见 save-in-place-cow-no-space.spec 的
+ * MEASURED_COW_REWRITE):≈ 卷的保留量 + 文件大小 + min(文件大小, 约 2 MB);保留量 20 MB 卷约 2 MB、200 MB 卷约 5.7 MB、
+ * 1 GB 卷约 23 MB、4 GB 卷约 33 MB(statfs 报的可用空间里含 APFS 不让改写克隆块用的部分)。例:20 MB 卷上 2 MB 文件需约 6.3 MB,
+ * 旧预检(2 × 内容 + 1 MiB ≈ 5.2 MB)在 5.2–6.3 MB 之间放行、写入必然失败。故取 3 倍内容 + 卷大小的 4%(4 MiB–256 MiB),
+ * 覆盖全部实测且小卷小文件留出约 0.4 MB 以上余地。无法可靠判断一个文件是否与别处共享块,一律按此预检。
+ * 代价:普通(非写时复制)卷上可用空间小于预检要求时,本来能原地完成的保存也被拒绝(提示磁盘空间不足、原文件未改动)。
  *
  * 这只是第一道闸,并不精确(APFS 保留量随容器大小变化;检查与写之间空间也可能被别的进程占掉):写失败的处理见
  * restoreOriginal。statfs 不可用 / 返回无意义的值(部分 FUSE / 网络卷报 0 块)→ 视为未知,照常原地写。
@@ -351,11 +362,11 @@ async function assertRoomToWriteInPlace(filePath: string, newSize: number): Prom
   }
   if (!(s.blocks > 0) || !(s.bsize > 0) || !Number.isFinite(s.bavail)) return;
   const available = s.bavail * s.bsize;
-  const needed = inPlaceSpaceNeeded(newSize);
+  const needed = inPlaceSpaceNeeded(newSize, s.blocks * s.bsize);
   if (available < needed) {
     throw fsError(
       ERROR_CODES.FS_NO_SPACE,
-      `not enough free space to save (need ${needed} bytes, ${available} available; file not modified): ${filePath}`,
+      `not enough free space to save (need ${needed} bytes, ${available} available; original unchanged): ${filePath}`,
     );
   }
 }
@@ -439,11 +450,19 @@ interface TouchedRanges {
 
 /**
  * 原地写失败后的回滚:按 touched 把动过的范围用写前读出的**完整**原内容写回,截回原长度(去掉 ① 追加的尾部),fsync,
- * 再经句柄读回与原内容逐字节比对。
- *   - 写回、截断、fsync 都成功且读回一致 → 原文件已还原,抛原错误(按 errno 映射,如 FS_NO_SPACE)。
- *   - 任何一步失败或读回不一致(写时复制卷上回滚本身也要新空间,同样会 ENOSPC)→ 原文件可能已损坏:把完整原内容写成
- *     恢复副本(见 writeRecoveryCopy),抛 FS_SAVE_ORIGINAL_DAMAGED,details.recoveryPath = 副本路径(写不成则缺省)。
+ * 再经句柄读回与原内容逐字节比对。三步各自尝试,某步失败不跳过后面的步骤,**结论只看读回比对**:
+ *   - 读回与原内容逐字节一致 → 原文件未改动,抛原错误(按 errno 映射,如 FS_NO_SPACE),不写恢复副本。回滚的 fsync 失败也算:
+ *     写时复制卷上将满时回滚的 fsync 同样 ENOSPC(要给共享块分配新块),但写回本身已进入文件。
+ *   - 读回不一致(写回 / 截断没成功,文件里仍有新内容或长度不对)→ 原文件可能已损坏:把完整原内容写成恢复副本
+ *    (见 writeRecoveryCopy),抛 FS_SAVE_ORIGINAL_DAMAGED,details.recoveryPath = 副本路径(写不成则缺省)。
  *     绝不在这种情况下报普通的「保存失败」让用户以为原文件完好。
+ *
+ * 读回读的是内核页缓存,不是盘上的块:fsync 失败后缓存里可以是没落盘的数据(实测 20 MB APFS 卷、2 MB 克隆文件:覆盖后 fsync
+ * ENOSPC,此时读回 —— 同一句柄或重新打开都一样 —— 是新内容,而卸载重挂后盘上是原内容或部分块已是新内容)。所以只在**写回之后**
+ * 比对:缓存里此时是原内容,盘上的块要么从未被覆盖(写时复制分配失败,旧块原样),要么是之前部分落盘的新块,之后按缓存
+ *(= 原内容)回写。实测同一卷在 2.5–6.2 MB 可用空间下回滚的 fsync 全部 ENOSPC,卸载重挂后原文件全部逐块等于原内容。
+ * 残留风险:回滚的 fsync 失败后、缓存回写前断电 / 内核崩溃,之前部分落盘的块可能仍是新内容 —— 这无法从用户态核实
+ *(fh.sync() 在 macOS 上已是 F_FULLFSYNC;重新打开再读仍走同一页缓存),预检按实测留足余量就是为了不走到这里。
  */
 async function restoreOriginal(
   fh: FileHandle,
@@ -454,20 +473,26 @@ async function restoreOriginal(
   cause: unknown,
 ): Promise<never> {
   const oldSize = backup.byteLength;
-  let restored = false;
   try {
     if (touched.head) await writeFully(fh, backup, 0, 0, Math.min(oldSize, newSize));
     if (touched.truncated && newSize < oldSize) await writeFully(fh, backup, newSize, newSize, oldSize - newSize);
-    await fh.truncate(oldSize);
-    await fh.sync();
-    restored = await contentEquals(fh, backup);
-    if (!restored) console.error('[fs] save in place: restored content does not match the original', filePath);
   } catch (restoreErr) {
-    console.error('[fs] save in place: restoring original failed', filePath, restoreErr);
+    console.error('[fs] save in place: writing the original back failed', filePath, restoreErr);
   }
-  if (restored) {
-    throw fsError(mapNodeErrnoCode(cause), `save in place failed (original restored): ${filePath}`);
+  try {
+    await fh.truncate(oldSize);
+  } catch (restoreErr) {
+    console.error('[fs] save in place: truncating back to the original length failed', filePath, restoreErr);
   }
+  try {
+    await fh.sync();
+  } catch (restoreErr) {
+    console.error('[fs] save in place: flushing the restored original failed', filePath, restoreErr);
+  }
+  if (await contentEquals(fh, backup)) {
+    throw fsError(mapNodeErrnoCode(cause), `save in place failed (original unchanged): ${filePath}`);
+  }
+  console.error('[fs] save in place: restored content does not match the original', filePath);
   const recoveryPath = await writeRecoveryCopy(filePath, backup);
   const err = fsError(
     ERROR_CODES.FS_SAVE_ORIGINAL_DAMAGED,
@@ -484,10 +509,10 @@ async function restoreOriginal(
  * VSCode 的原地写是 `open('w')` 先截断再写:写到一半失败(磁盘满)文件就只剩半截 / 空。这里的保证:**任何失败路径下,
  * 要么原文件逐字节不变,要么报 FS_SAVE_ORIGINAL_DAMAGED 并给出完整原内容的恢复副本路径**。步骤:
  *   0. 改动任何字节之前读出**完整**原内容 [0, 原长度) 作内存备份(原文件超过写入上限 → 交回 tmp + rename),
- *      并预检可用空间 ≥ 2 × 新内容字节数 + 余量(见 assertRoomToWriteInPlace;不够 → FS_NO_SPACE,不写)。
+ *      并预检可用空间 ≥ 3 × 新内容字节数 + 余量(见 assertRoomToWriteInPlace;不够 → FS_NO_SPACE,不写)。
  *   ① 新内容比原文件长 → 先把超出原长度的尾部写到原文件末尾之后并 fdatasync,一次要到新增空间。
  *   ② 覆盖 [0, min(原长度, 新长度)) 并 fsync;③ 新内容更短 → 这之后才截到新长度并 fsync(覆盖失败时原文件长度与尾部都还在)。
- *   任一步失败 → restoreOriginal 回滚并逐字节核对,核对不过则写恢复副本。
+ *   任一步失败 → restoreOriginal 回滚并逐字节核对:一致 → 报原错误(原文件未改动);不一致才写恢复副本。
  * 权衡:进程在 ②③ 中途被杀 / 断电会留下新旧混合的内容(VSCode 原地写同样;tmp + rename 没有此窗口但会丢上述元数据)。
  *
  * 打开用 O_RDWR | O_NOFOLLOW:调用方传入的已是 realpath,此刻若被换成符号链接(竞态)则拒绝(ELOOP),不写穿。

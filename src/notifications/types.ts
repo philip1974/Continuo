@@ -20,4 +20,6 @@ export interface Notification {
   readonly count?: number;
   /** 操作按钮(见 NotifyOpts.actions);有按钮的通知不自动消失。 */
   readonly actions?: readonly NotifyAction[];
+  /** 见 NotifyOpts.replaceKey。 */
+  readonly replaceKey?: string;
 }

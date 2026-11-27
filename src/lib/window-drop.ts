@@ -1,7 +1,7 @@
 // 拖文件夹到 Continuo 窗口(issue #23 衍生 UX)。
 //
-// VSCode 同款:用户拖文件夹到当前窗口 → 当前窗口换 workspace。文件 drop
-// 暂不处理,后续 Phase 接 editor open。
+// VSCode 同款:用户拖文件夹到当前窗口 → 当前窗口换 workspace;拖入普通文件 → 在编辑器里打开
+//(见 src/panels/Editor/os-file-drop.ts、src/__tests__/os-file-drop/)。
 //
 // 纯函数版,接注入的 getPath / isDir,便于单测。生产端 getPath 来自
 // coApi.window.getPathForFile(webUtils 包装),isDir 来自 coApi.fs.listDir
@@ -140,6 +140,46 @@ export function captureDropCandidates(
 }
 
 /**
+ * 拖入的磁盘文件里**不是目录**的那些(drop 回调里同步调用,最多 max 个,保持原顺序)。webkitGetAsEntry 全部可判定 → 去掉目录,
+ * hadDirectory 标记是否有目录;无法判定(合成拖放没有 entry / API 缺失 / 与 files 对不上)→ 全部当文件,hadDirectory 只看前 max 个
+ * item 能判定的部分。BDD: src/__tests__/os-file-drop/
+ */
+export function captureDroppedRegularFiles(
+  dt: { readonly items?: ArrayLike<unknown> | null; readonly files: ArrayLike<File> },
+  max: number,
+): { files: File[]; hadDirectory: boolean } {
+  const all = captureBoundedFiles(dt.files, max);
+  const expected = Math.min(dt.files.length, Math.max(max, 0));
+  const dirIdx = all.length === expected ? knownDirectoryIndexes(dt.items, expected) : null;
+  if (dirIdx === null) return { files: all, hadDirectory: hasDirectoryInFirstItems(dt.items, max) };
+  if (dirIdx.length === 0) return { files: all, hadDirectory: false };
+  const dirs = new Set(dirIdx);
+  return { files: all.filter((_f, i) => !dirs.has(i)), hadDirectory: true };
+}
+
+/**
+ * 一次 OS 文件拖放里已经被处理(插入到编辑器 / 已打开)的文件:编辑器内容先收到事件,认领它插入的;编辑器面板打开剩下的并认领;
+ * 窗口级监听只打开仍未认领的。按事件对象记(WeakMap,事件回收即释放)。不靠 defaultPrevented 判断:dockview 根 Droptarget 的 drop
+ * 无条件 preventDefault(见 src/__tests__/window-drop/README.md)。BDD: src/__tests__/os-file-drop/
+ */
+const claimedDropFiles = new WeakMap<Event, Set<File>>();
+
+export function claimDroppedFiles(event: Event, files: Iterable<File>): void {
+  let set = claimedDropFiles.get(event);
+  if (set === undefined) {
+    set = new Set();
+    claimedDropFiles.set(event, set);
+  }
+  for (const f of files) set.add(f);
+}
+
+/** files 里本次拖放还没被认领的(保持顺序)。 */
+export function unclaimedDroppedFiles(event: Event, files: readonly File[]): File[] {
+  const set = claimedDropFiles.get(event);
+  return set === undefined ? [...files] : files.filter((f) => !set.has(f));
+}
+
+/**
  * 从拖入的 dataTransfer.files 中挑出**第一个目录**绝对路径。
  *  - 单个目录 → 返路径
  *  - 文件 + 目录混合 → 取第一个目录
@@ -185,7 +225,7 @@ export type DroppedWorkspaceResult =
 /**
  * a11y(A149):在 pickDroppedDirectory 之上区分三态,让 UI 能精准反馈 —— 拖入目录可打开
  * → open;**拖入了目录但 listDir 失败/reject** → error(带 code,UI notify);只拖文件 /
- * 空 → ignore(静默,文件 drop 暂不处理)。hadDirectory 由调用方在事件回调里同步用
+ * 空 → ignore(不当工作区打开;普通文件由调用方在编辑器里打开)。hadDirectory 由调用方在事件回调里同步用
  * webkitGetAsEntry 探测(进入 async 后 DataTransferItem 失效),据此区分「坏目录」与「文件」。
  */
 export async function resolveDroppedWorkspace(

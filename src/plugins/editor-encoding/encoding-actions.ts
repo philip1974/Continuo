@@ -135,7 +135,7 @@ async function saveWithEncoding(tabId: string, encoding: TextEncodingId): Promis
     );
     return;
   }
-  notifySaveFailed(name, r);
+  notifySaveFailed(name, r, undefined, tab.filePath);
 }
 
 /** 整篇换行改成 eol(先写回编辑器里尚未上抛的输入);内容不变则不动。 */

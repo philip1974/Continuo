@@ -36,6 +36,11 @@ export interface NotifyOpts {
    * 点按钮或 ×),同内容合并时按钮换成最新一次的。BDD: src/__tests__/editor-save-as/
    */
   readonly actions?: readonly NotifyAction[];
+  /**
+   * 同一 replaceKey 的通知只保留最新一条:新的一条替换(关闭)仍在列表里的旧的,不按内容合并计数(VSCode TextFileSaveErrorHandler:
+   * 每个文件只留最近一次保存错误的通知)。如保存失败按文件路径(saveFailureNotifyKey)。BDD: src/__tests__/save-in-place/
+   */
+  readonly replaceKey?: string;
 }
 
 export interface NotifyApi {

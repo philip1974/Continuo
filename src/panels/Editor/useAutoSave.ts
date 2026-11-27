@@ -19,7 +19,7 @@ import { useAutoSaveHeld } from './autosave-hold';
 import { observeOrphanedAutoSave } from './autosave-orphan-notice';
 import { notify } from '@/notifications/notify';
 import { t } from '@/i18n';
-import { localizeErrorByCode } from '@/lib/localize-error';
+import { saveFailureNotifyKey, saveFailureReason } from '@/notifications/notify-open-failed';
 import { failureOf } from '@/lib/failure-of';
 import { basenameForChrome } from '@/lib/path-label';
 import { EDITOR_DISK_CHANGED, type SaveFileOptions } from './editor-file-actions';
@@ -114,15 +114,14 @@ export function useAutoSave(
       // 数据不丢(dirty 保持),仅补反馈 —— 否则后台静默失败用户无从知晓为何脏点不消。
       // scheduler 已 console.warn,故 mirror:false 防双写。见第二十一轮 P1-AZ。
       // 打磨 P2-BK:err 可能是 resolve 的 {ok:false,code,message} 失败结果 → 与 Cmd+S 失败
-      // 同走 localizeErrorByCode(按 code 本地化,未收录回退原 message)。
+      // 同走 saveFailureReason(按 code 本地化,未收录回退原 message)。
       (err) => {
         const { code, message } = failureOf(err);
         // 带文件名(同显式保存失败「保存失败 <name>:<原因>」):后台失败时用户需知道是哪个文件。
         const filePath = findEditorFileTabById(useEditorStore.getState().tabs, tabId)?.filePath ?? tabId;
         // 磁盘冲突的说明里写着保存键:填当前生效绑定(改绑后跟随)。
-        const reason = localizeErrorByCode(
-          code,
-          message,
+        const reason = saveFailureReason(
+          { code, message },
           code === EDITOR_DISK_CHANGED ? { hotkey: saveHotkeyLabel() } : undefined,
         );
         notify.warn(
@@ -134,7 +133,8 @@ export function useAutoSave(
                 ? t('editor.autosave_readonly_detail', { reason, hotkey: saveHotkeyLabel() })
                 : reason,
           }),
-          { mirror: false },
+          // 与 ⌘S 的保存失败提示同一个 key:同一文件只留最新一条(反复失败不叠加)
+          { mirror: false, replaceKey: saveFailureNotifyKey(filePath) },
         );
       },
     );

@@ -8,7 +8,8 @@
 import { t } from '@/i18n';
 import { coApi } from '@/lib/co-api';
 import { failureOf, type Failure } from '@/lib/failure-of';
-import { fileUrlOf, type ExplorerDragEntry } from '@/lib/explorer-drag';
+import { fileUrlOf, hasExplorerDrag, type ExplorerDragEntry } from '@/lib/explorer-drag';
+import { hasFiles } from '@/lib/window-drop';
 import {
   basename,
   dirname,
@@ -186,6 +187,21 @@ export function markdownSnippet(targets: readonly MarkdownLinkTarget[]): {
     text += `${label}](${escapeMarkdownLinkPath(target.href)})`;
   });
   return { text, placeholders };
+}
+
+/** 是从系统(Finder / 桌面)拖来的磁盘文件(不是资源管理器内部拖动、不是文字拖动)。BDD: src/__tests__/os-file-drop/ */
+export function isOsFileDrop(dt: DataTransfer | null | undefined): boolean {
+  return dt != null && hasFiles(dt) && !hasExplorerDrag(dt);
+}
+
+/** 有磁盘路径的文件的路径(顺序同 files;剪贴板 / 合成的 File 没有路径,跳过)。 */
+export function diskPathsOf(files: readonly File[], getPath: (file: File) => string = defaultMediaStoreDeps.getPathForFile): string[] {
+  const out: string[] = [];
+  for (const f of files) {
+    const p = getPath(f);
+    if (p !== '') out.push(p);
+  }
+  return out;
 }
 
 /** 资源管理器拖来的项里的文件(文件夹不插入:VSCode 拖动数据的资源列表只含文件)。 */

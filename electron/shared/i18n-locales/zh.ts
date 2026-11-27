@@ -492,6 +492,7 @@ export const zh: Record<TranslationKey, string> = {
   'editor.autosave_readonly_detail': '{reason}，按 {hotkey} 可选择覆盖',
   'editor.autosave_paused_deleted': '自动保存已暂停：磁盘上已找不到 {name}。修改仍保留在编辑器中，按 {hotkey} 可重新保存。',
   'editor.save_failed': '保存失败',
+  'editor.save_no_space_unchanged': '磁盘空间不足，磁盘上的原文件未改动',
   // Markdown 粘贴 / 拖入图片(editor-media-drop)
   'editor.media.save_document_first': '请先保存文件再添加图片。',
   'editor.media.outside_workspace': '只能为已打开文件夹内的 Markdown 文件保存图片。',

@@ -25,11 +25,35 @@ export function notifyOpenFailed(
  * 「Failed to save 'note.txt': …」—— 此前只弹按 code 本地化的原因(如「文件 I/O 错误」),看不出是哪个文件、什么动作。
  * actions:通知上的按钮(按错误类型给「另存为… / 重试」,见 EditorPanel saveFailureActions)。
  */
-export function notifySaveFailed(name: string, failure: Failure, actions?: readonly NotifyAction[]): void {
+export function notifySaveFailed(
+  name: string,
+  failure: Failure,
+  actions?: readonly NotifyAction[],
+  /** 给了 → 同一文件只留最新一条保存失败提示(见 saveFailureNotifyKey)。 */
+  filePath?: string,
+): void {
+  const replace = filePath === undefined ? null : { replaceKey: saveFailureNotifyKey(filePath) };
   notify.error(
-    fileFailureText(t('editor.save_failed'), name, failure),
-    actions !== undefined && actions.length > 0 ? { code: failure.code, actions } : { code: failure.code },
+    t('common.label_detail', { label: `${t('editor.save_failed')} ${name}`, detail: saveFailureReason(failure) }),
+    actions !== undefined && actions.length > 0 ? { code: failure.code, actions, ...replace } : { code: failure.code, ...replace },
   );
+}
+
+/**
+ * 保存失败提示的 replaceKey:同一文件反复保存失败(⌘S 重试、自动保存)只保留最新一条,不叠成「×2」(VSCode TextFileSaveErrorHandler
+ * 每个文件只留最近一次保存错误的通知)。BDD: src/__tests__/save-in-place/save-failure-notice.spec.tsx
+ */
+export function saveFailureNotifyKey(filePath: string): string {
+  return `editor.save-failed:${filePath}`;
+}
+
+/**
+ * 保存失败的原因:磁盘空间不足明说「磁盘上的原文件未改动」—— 保存报 FS_NO_SPACE 只有两种来路,都不改动原文件:原地写的空间预检拒绝
+ *(一个字节不写)、写失败后回滚并读回核对一致;写到 tmp 再 rename 的路径失败时目标不动。没能还原另报 FS_SAVE_ORIGINAL_DAMAGED。
+ */
+export function saveFailureReason(failure: Failure, params?: Parameters<typeof localizeErrorByCode>[2]): string {
+  if (failure.code === ERROR_CODES.FS_NO_SPACE) return t('editor.save_no_space_unchanged');
+  return localizeErrorByCode(failure.code, failure.message, params);
 }
 
 /** `<动作> <文件名>：<按 code 本地化的原因>`(冒号随语言)。打开 / 保存 / 自动保存失败共用。 */
